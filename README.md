@@ -1,4 +1,4 @@
-# BallrzAPP
+BallrzAPP
 import SwiftUI
 import Firebase
 
