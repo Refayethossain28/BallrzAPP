@@ -1,0 +1,129 @@
+// BallrzApp.swift
+import SwiftUI
+import Firebase
+
+@main
+struct BallrzApp: App {
+    init() {
+        FirebaseApp.configure()
+    }
+
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}
+
+// ContentView.swift
+struct ContentView: View {
+    @State private var isLoggedIn = false
+
+    var body: some View {
+        if isLoggedIn {
+            MainFeedView()
+        } else {
+            LoginView(isLoggedIn: $isLoggedIn)
+        }
+    }
+}
+
+// LoginView.swift
+struct LoginView: View {
+    @Binding var isLoggedIn: Bool
+    @State private var email = ""
+    @State private var password = ""
+
+    var body: some View {
+        VStack {
+            TextField("Email", text: $email)
+                .padding()
+            SecureField("Password", text: $password)
+                .padding()
+            Button("Login") {
+                Auth.auth().signIn(withEmail: email, password: password) { result, error in
+                    if result != nil {
+                        isLoggedIn = true
+                    }
+                }
+            }.padding()
+            Button("Register") {
+                Auth.auth().createUser(withEmail: email, password: password) { result, error in
+                    if result != nil {
+                        isLoggedIn = true
+                    }
+                }
+            }
+        }.padding()
+    }
+}
+
+// MainFeedView.swift
+struct MainFeedView: View {
+    @State private var videos = [Video]()
+
+    var body: some View {
+        NavigationView {
+            List(videos) { video in
+                VStack(alignment: .leading) {
+                    VideoPlayerView(url: video.url)
+                    Text(video.caption)
+                    Button("Like") {
+                        // Increment like count logic
+                    }
+                }
+            }
+            .navigationTitle("Ballrz Feed")
+            .toolbar {
+                NavigationLink(destination: UploadView()) {
+                    Image(systemName: "plus")
+                }
+            }
+        }
+        .onAppear {
+            // Load videos from Firebase Firestore
+        }
+    }
+}
+
+// UploadView.swift
+struct UploadView: View {
+    @State private var caption = ""
+    @State private var videoURL: URL?
+
+    var body: some View {
+        VStack {
+            TextField("Caption", text: $caption)
+                .padding()
+            Button("Pick Video") {
+                // Present video picker
+            }
+            Button("Upload") {
+                // Upload video to Firebase Storage and save URL in Firestore
+            }.padding()
+        }.padding()
+    }
+}
+
+// Video.swift
+import Foundation
+
+struct Video: Identifiable {
+    var id: String
+    var url: URL
+    var caption: String
+    var likes: Int
+}
+
+// VideoPlayerView.swift
+import SwiftUI
+import AVKit
+
+struct VideoPlayerView: View {
+    var url: URL
+
+    var body: some View {
+        VideoPlayer(player: AVPlayer(url: url))
+            .frame(height: 300)
+    }
+}
