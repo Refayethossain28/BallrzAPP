@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, MapPin, Car, Calendar, Clock, Users, CreditCard, Tag, Plane, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Car, CreditCard, Tag, Plane, ChevronDown } from 'lucide-react';
 import { useBooking } from '../context/BookingContext';
 import { VEHICLES, MOCK_PAYMENT_CARDS } from '../data/mockData';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -37,7 +37,7 @@ function calcPriceBreakdown(
 
 export default function BookingSummary() {
   const navigate = useNavigate();
-  const { booking, setBookingField, resetBooking } = useBooking();
+  const { booking, setBookingField } = useBooking();
   const [confirming, setConfirming] = useState(false);
   const [promoInput, setPromoInput] = useState('');
   const [promoApplied, setPromoApplied] = useState(false);

@@ -1,4 +1,4 @@
-import { Trip, Notification, PaymentCard, SavedAddress } from '../types';
+import type { Trip, Notification, PaymentCard, SavedAddress } from '../types';
 
 export const MOCK_TRIPS: Trip[] = [
   {

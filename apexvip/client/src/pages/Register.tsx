@@ -68,7 +68,7 @@ export default function Register() {
     setStep(3);
   };
 
-  const iconStyle = (field: string): React.CSSProperties => ({
+  const iconStyle = (): React.CSSProperties => ({
     position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)',
     pointerEvents: 'none', zIndex: 1,
   });
@@ -197,7 +197,7 @@ export default function Register() {
           <div style={{ display: 'flex', gap: 12 }}>
             {/* First name */}
             <div style={{ position: 'relative', flex: 1 }}>
-              <div style={iconStyle('firstName')}>
+              <div style={iconStyle()}>
                 <User size={17} color={focus === 'firstName' ? '#C9A84C' : '#555555'} />
               </div>
               <input
@@ -212,7 +212,7 @@ export default function Register() {
             </div>
             {/* Last name */}
             <div style={{ position: 'relative', flex: 1 }}>
-              <div style={iconStyle('lastName')}>
+              <div style={iconStyle()}>
                 <User size={17} color={focus === 'lastName' ? '#C9A84C' : '#555555'} />
               </div>
               <input
@@ -229,7 +229,7 @@ export default function Register() {
 
           {/* Email */}
           <div style={{ position: 'relative' }}>
-            <div style={iconStyle('email')}>
+            <div style={iconStyle()}>
               <Mail size={18} color={focus === 'email' ? '#C9A84C' : '#555555'} />
             </div>
             <input
@@ -246,7 +246,7 @@ export default function Register() {
 
           {/* Phone */}
           <div style={{ position: 'relative' }}>
-            <div style={iconStyle('phone')}>
+            <div style={iconStyle()}>
               <Phone size={18} color={focus === 'phone' ? '#C9A84C' : '#555555'} />
             </div>
             <input
@@ -295,7 +295,7 @@ export default function Register() {
         <form onSubmit={handleStep2} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {/* Password */}
           <div style={{ position: 'relative' }}>
-            <div style={iconStyle('password')}>
+            <div style={iconStyle()}>
               <Lock size={18} color={focus === 'password' ? '#C9A84C' : '#555555'} />
             </div>
             <input
@@ -322,7 +322,7 @@ export default function Register() {
 
           {/* Confirm */}
           <div style={{ position: 'relative' }}>
-            <div style={iconStyle('confirm')}>
+            <div style={iconStyle()}>
               <Lock size={18} color={focus === 'confirm' ? '#C9A84C' : '#555555'} />
             </div>
             <input

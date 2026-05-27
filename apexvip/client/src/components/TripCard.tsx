@@ -1,7 +1,6 @@
-import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plane, Clock, Calendar, ChevronRight } from 'lucide-react';
-import { Trip } from '../types';
+import type { Trip } from '../types';
 import StatusBadge from './StatusBadge';
 import { format, parseISO } from 'date-fns';
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell, MapPin, ArrowUpDown, Plane, Clock, Calendar } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
