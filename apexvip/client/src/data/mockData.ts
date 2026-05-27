@@ -1,0 +1,227 @@
+import { Trip, Notification, PaymentCard, SavedAddress } from '../types';
+
+export const MOCK_TRIPS: Trip[] = [
+  {
+    id: 'trip-001',
+    serviceType: 'airport',
+    vehicleType: 's-class',
+    status: 'upcoming',
+    date: '2026-06-02',
+    time: '05:30',
+    pickup: '47 Park Lane, Mayfair, London W1K 1PN',
+    dropoff: 'Heathrow Airport Terminal 5',
+    passengers: 2,
+    price: 95,
+    flightNumber: 'BA0117',
+    bookingRef: 'AVP-2026-0041',
+    driver: {
+      id: 'd-001',
+      name: 'James Harrington',
+      phone: '+44 7700 900123',
+      rating: 4.98,
+      vehicle: 'Mercedes-Benz S-Class',
+      plate: 'LN72 AVX',
+    },
+  },
+  {
+    id: 'trip-002',
+    serviceType: 'airport',
+    vehicleType: 'v-class',
+    status: 'completed',
+    date: '2026-05-20',
+    time: '14:15',
+    pickup: 'Heathrow Airport Terminal 2',
+    dropoff: 'The Savoy, Strand, London WC2R 0EU',
+    passengers: 5,
+    price: 145,
+    flightNumber: 'LH0903',
+    bookingRef: 'AVP-2026-0038',
+    driver: {
+      id: 'd-002',
+      name: 'Michael Okafor',
+      phone: '+44 7700 900456',
+      rating: 4.95,
+      vehicle: 'Mercedes-Benz V-Class',
+      plate: 'LN71 VMX',
+    },
+  },
+  {
+    id: 'trip-003',
+    serviceType: 'hourly',
+    vehicleType: 's-class',
+    status: 'completed',
+    date: '2026-05-15',
+    time: '10:00',
+    pickup: '1 Canada Square, Canary Wharf, London E14 5AB',
+    dropoff: '1 Canada Square, Canary Wharf, London E14 5AB',
+    passengers: 1,
+    price: 195,
+    duration: 3,
+    bookingRef: 'AVP-2026-0031',
+    driver: {
+      id: 'd-003',
+      name: 'David Chen',
+      phone: '+44 7700 900789',
+      rating: 4.97,
+      vehicle: 'Mercedes-Benz S-Class',
+      plate: 'LN70 SCX',
+    },
+  },
+  {
+    id: 'trip-004',
+    serviceType: 'airport',
+    vehicleType: 's-class',
+    status: 'completed',
+    date: '2026-05-08',
+    time: '19:45',
+    pickup: 'Claridge\'s Hotel, Brook Street, London W1K 4HR',
+    dropoff: 'Gatwick Airport South Terminal',
+    passengers: 2,
+    price: 110,
+    flightNumber: 'EK0003',
+    bookingRef: 'AVP-2026-0024',
+    driver: {
+      id: 'd-001',
+      name: 'James Harrington',
+      phone: '+44 7700 900123',
+      rating: 4.98,
+      vehicle: 'Mercedes-Benz S-Class',
+      plate: 'LN72 AVX',
+    },
+  },
+  {
+    id: 'trip-005',
+    serviceType: 'day',
+    vehicleType: 'v-class',
+    status: 'cancelled',
+    date: '2026-05-01',
+    time: '09:00',
+    pickup: '10 Downing Street, Westminster, London SW1A 2AA',
+    dropoff: '10 Downing Street, Westminster, London SW1A 2AA',
+    passengers: 4,
+    price: 580,
+    bookingRef: 'AVP-2026-0019',
+    notes: 'Corporate day hire — city tour',
+  },
+];
+
+export const MOCK_NOTIFICATIONS: Notification[] = [
+  {
+    id: 'notif-001',
+    title: 'Driver Assigned',
+    body: 'James Harrington has been assigned to your booking AVP-2026-0041. He will arrive in a Mercedes S-Class (LN72 AVX).',
+    timestamp: '2026-05-27T09:00:00Z',
+    read: false,
+    type: 'driver',
+  },
+  {
+    id: 'notif-002',
+    title: 'Booking Confirmed',
+    body: 'Your airport transfer on 2 June at 05:30 has been confirmed. Reference: AVP-2026-0041.',
+    timestamp: '2026-05-26T18:30:00Z',
+    read: false,
+    type: 'booking',
+  },
+  {
+    id: 'notif-003',
+    title: 'Exclusive Offer',
+    body: 'Use code APEX20 for 20% off your next hourly booking. Valid until 31 May 2026.',
+    timestamp: '2026-05-25T10:00:00Z',
+    read: true,
+    type: 'promo',
+  },
+  {
+    id: 'notif-004',
+    title: 'Trip Completed',
+    body: 'Your journey from Heathrow T2 to The Savoy has been completed. We hope you enjoyed the ride.',
+    timestamp: '2026-05-20T16:45:00Z',
+    read: true,
+    type: 'booking',
+  },
+  {
+    id: 'notif-005',
+    title: 'Receipt Available',
+    body: 'Your receipt for booking AVP-2026-0038 (£145.00) is now available in your trip history.',
+    timestamp: '2026-05-20T17:00:00Z',
+    read: true,
+    type: 'system',
+  },
+];
+
+export const MOCK_PAYMENT_CARDS: PaymentCard[] = [
+  {
+    id: 'card-001',
+    type: 'visa',
+    last4: '4242',
+    expiry: '09/27',
+    name: 'Alex Thornton',
+    isDefault: true,
+  },
+  {
+    id: 'card-002',
+    type: 'mastercard',
+    last4: '8913',
+    expiry: '03/26',
+    name: 'Alex Thornton',
+    isDefault: false,
+  },
+];
+
+export const MOCK_SAVED_ADDRESSES: SavedAddress[] = [
+  {
+    id: 'addr-001',
+    label: 'Home',
+    address: '47 Park Lane, Mayfair, London W1K 1PN',
+    icon: 'home',
+  },
+  {
+    id: 'addr-002',
+    label: 'Work',
+    address: '1 Canada Square, Canary Wharf, London E14 5AB',
+    icon: 'briefcase',
+  },
+];
+
+export const AIRPORTS = [
+  { code: 'LHR', name: 'Heathrow Airport', terminals: ['T1', 'T2', 'T3', 'T4', 'T5'] },
+  { code: 'LGW', name: 'Gatwick Airport', terminals: ['North Terminal', 'South Terminal'] },
+  { code: 'STN', name: 'Stansted Airport', terminals: ['Main Terminal'] },
+  { code: 'LTN', name: 'Luton Airport', terminals: ['Main Terminal'] },
+  { code: 'LCY', name: 'London City Airport', terminals: ['Main Terminal'] },
+];
+
+export const VEHICLES = [
+  {
+    id: 's-class' as const,
+    name: 'Mercedes S-Class',
+    category: 'Business Sedan',
+    passengers: 3,
+    luggage: 3,
+    baseAirport: 85,
+    hourlyRate: 65,
+    dayRate: 480,
+    features: ['WiFi', 'Bottled Water', 'USB Charging', 'Climate Control'],
+    description: 'The pinnacle of executive travel. Whisper-quiet, supremely comfortable.',
+  },
+  {
+    id: 'v-class' as const,
+    name: 'Mercedes V-Class',
+    category: 'Business Van',
+    passengers: 7,
+    luggage: 7,
+    baseAirport: 95,
+    hourlyRate: 75,
+    dayRate: 580,
+    features: ['WiFi', 'Bottled Water', 'USB Charging', 'Conference Seating'],
+    description: 'Spacious luxury for groups and families. Ample luggage for every journey.',
+  },
+];
+
+export const MOCK_USER = {
+  id: 'user-001',
+  name: 'Alex Thornton',
+  email: 'client@apexvip.com',
+  phone: '+44 7700 900000',
+};
+
+export const MOCK_PASSWORD = 'password';
