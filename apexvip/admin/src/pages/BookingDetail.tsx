@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import {
-  ArrowLeft, MapPin, User, Car, Phone, Mail,
+  ArrowLeft, MapPin, Car, Phone, Mail,
   Clock, FileText, CheckCircle, XCircle, AlertCircle,
   Plane, Users, Banknote, Edit,
 } from 'lucide-react';
