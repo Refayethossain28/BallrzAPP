@@ -1,4 +1,3 @@
-import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { Home, MapPin, Bell, User } from 'lucide-react';
 import { MOCK_NOTIFICATIONS } from '../data/mockData';

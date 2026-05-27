@@ -1,4 +1,3 @@
-import React from 'react';
 import { Check, Users, Briefcase, Wifi } from 'lucide-react';
 
 interface Vehicle {

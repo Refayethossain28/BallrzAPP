@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { BookingState, ServiceType, VehicleType } from '../types';
+import { createContext, useContext, useState, type ReactNode } from 'react';
+import type { BookingState, ServiceType, VehicleType } from '../types';
 
 const defaultBookingState: BookingState = {
   serviceType: null,

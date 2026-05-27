@@ -30,7 +30,7 @@ const labelStyle: React.CSSProperties = {
 
 export default function BookAirport() {
   const navigate = useNavigate();
-  const { booking, setBookingField, setBookingFields } = useBooking();
+  const { booking, setBookingField } = useBooking();
   const [focus, setFocus] = useState<string | null>(null);
 
   const today = new Date().toISOString().split('T')[0];

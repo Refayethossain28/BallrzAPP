@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Check, Phone, Star } from 'lucide-react';
 import { useBooking } from '../context/BookingContext';
@@ -11,7 +11,7 @@ function generateRef() {
 
 export default function BookingConfirmed() {
   const navigate = useNavigate();
-  const { booking, resetBooking } = useBooking();
+  const { resetBooking } = useBooking();
   const [visible, setVisible] = useState(false);
   const [ref] = useState(generateRef);
 
