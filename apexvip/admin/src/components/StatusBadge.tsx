@@ -15,7 +15,6 @@ const CONFIG: Record<string, { label: string; bg: string; text: string; dot?: st
   'on-trip': { label: 'On Trip',   bg: 'rgba(59,130,246,0.15)',  text: '#3b82f6',  dot: '#3b82f6' },
   // Vehicle statuses
   available:    { label: 'Available',    bg: 'rgba(34,197,94,0.15)',   text: '#22c55e' },
-  'on-trip':    { label: 'On Trip',       bg: 'rgba(59,130,246,0.15)',  text: '#3b82f6' },
   maintenance:  { label: 'Maintenance',  bg: 'rgba(239,68,68,0.15)',   text: '#ef4444' },
   // Client tiers
   Standard: { label: 'Standard', bg: 'rgba(136,136,136,0.15)', text: '#888888' },

@@ -91,7 +91,7 @@ export default function Sidebar() {
               position: 'relative',
             })}
           >
-            <Icon size={16} strokeWidth={isActive => isActive ? 2.5 : 2} />
+            <Icon size={16} strokeWidth={2} />
             <span style={{ flex: 1 }}>{label}</span>
             {label === 'Notifications' && unread > 0 && (
               <span style={{

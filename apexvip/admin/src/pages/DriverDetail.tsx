@@ -233,7 +233,7 @@ export default function DriverDetail() {
                   contentStyle={{ background: '#222', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
                   labelStyle={{ color: '#888', fontSize: 12 }}
                   itemStyle={{ color: '#C9A84C', fontSize: 13 }}
-                  formatter={(v: number) => [`£${v.toLocaleString()}`, 'Earnings']}
+                  formatter={(v) => [`£${Number(v).toLocaleString()}`, 'Earnings']}
                 />
                 <Bar dataKey="amount" fill="#C9A84C" radius={[4, 4, 0, 0]} />
               </BarChart>
