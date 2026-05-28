@@ -1,1004 +1,458 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black"/>
 <title>ApexVIP Driver</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #0a0a0a; color: #fff; font-family: system-ui,-apple-system,sans-serif; -webkit-font-smoothing: antialiased; }
-  #root { max-width: 480px; margin: 0 auto; min-height: 100vh; position: relative; }
-  .screen { padding: 0 20px 100px; min-height: 100vh; }
-  .bottom-nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; background: #111; border-top: 1px solid rgba(255,255,255,0.08); display: flex; padding: 8px 0 28px; z-index: 100; }
-  .nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; color: #666; font-size: 10px; padding: 8px 0; transition: color 0.2s; }
-  .nav-item.active { color: #C9A84C; }
-  .card { background: #111; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 16px; margin-bottom: 12px; }
-  .btn-gold { background: #C9A84C; color: #000; border: none; padding: 14px; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; width: 100%; }
-  .btn-green { background: #22c55e; color: #fff; border: none; padding: 14px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; width: 100%; }
-  .top-bar { display: flex; justify-content: space-between; align-items: center; padding: 20px 20px 12px; }
-  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 24px; }
-
-  @keyframes pulse-ring {
-    0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.4), 0 0 30px rgba(34,197,94,0.4); }
-    70% { box-shadow: 0 0 0 20px rgba(34,197,94,0), 0 0 30px rgba(34,197,94,0.4); }
-    100% { box-shadow: 0 0 0 0 rgba(34,197,94,0), 0 0 30px rgba(34,197,94,0.4); }
-  }
-  @keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-  }
-  .pulse-green { animation: pulse-ring 2s ease-out infinite; }
-
-  .tab-bar { display: flex; background: #1a1a1a; border-radius: 8px; padding: 4px; margin-bottom: 16px; }
-  .tab-btn { flex: 1; padding: 8px; border: none; background: transparent; color: #666; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; transition: all 0.2s; }
-  .tab-btn.active { background: #C9A84C; color: #000; }
-
-  .stepper { display: flex; align-items: center; margin-bottom: 20px; overflow-x: auto; padding-bottom: 8px; }
-  .step { display: flex; flex-direction: column; align-items: center; flex: 1; min-width: 50px; }
-  .step-circle { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
-  .step-line { flex: 1; height: 2px; margin: 0; }
-  .step-label { font-size: 9px; margin-top: 4px; text-align: center; max-width: 60px; line-height: 1.2; }
-
-  .route-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
-  .route-icon { font-size: 16px; margin-top: 2px; flex-shrink: 0; }
-  .route-text { font-size: 13px; color: #ccc; }
-  .route-label { font-size: 11px; color: #666; }
-
-  .stat-row { display: flex; gap: 12px; margin-bottom: 12px; }
-  .stat-card { flex: 1; background: #1a1a1a; border-radius: 10px; padding: 12px; text-align: center; }
-  .stat-val { font-size: 20px; font-weight: 700; color: #C9A84C; }
-  .stat-lbl { font-size: 11px; color: #666; margin-top: 2px; }
-
-  .earnings-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
-  .earnings-row:last-child { border-bottom: none; }
-
-  .bar-chart { display: flex; align-items: flex-end; gap: 6px; height: 100px; padding: 0 4px; }
-  .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
-  .bar-fill { width: 100%; background: #C9A84C; border-radius: 3px 3px 0 0; min-height: 2px; transition: height 0.3s; }
-  .bar-label { font-size: 9px; color: #666; }
-  .bar-val { font-size: 9px; color: #C9A84C; }
-
-  .history-row { display: flex; justify-content: space-between; align-items: flex-start; padding: 14px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
-  .history-row:last-child { border-bottom: none; }
-
-  .profile-section { margin-bottom: 8px; }
-  .profile-group { background: #111; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; overflow: hidden; margin-bottom: 12px; }
-  .profile-row { display: flex; justify-content: space-between; align-items: center; padding: 15px 16px; border-bottom: 1px solid rgba(255,255,255,0.06); cursor: pointer; }
-  .profile-row:last-child { border-bottom: none; }
-  .profile-row-left { display: flex; align-items: center; gap: 12px; }
-
-  .doc-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
-  .doc-row:last-child { border-bottom: none; }
-
-  .badge-verified { background: rgba(34,197,94,0.15); color: #22c55e; font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 20px; display: flex; align-items: center; gap: 4px; }
-
-  .job-card { background: #111; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 16px; margin-bottom: 12px; }
-  .job-type { font-size: 11px; font-weight: 600; color: #C9A84C; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
-  .job-route { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
-  .job-detail { font-size: 12px; color: #888; margin-bottom: 8px; }
-  .job-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }
-
-  .btn-accept { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); padding: 8px 20px; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; }
-  .btn-outline { background: transparent; color: #888; border: 1px solid rgba(255,255,255,0.15); padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
-  .btn-red { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.3); padding: 14px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; width: 100%; }
-
-  .map-placeholder { background: #1a1a1a; border: 2px dashed rgba(255,255,255,0.1); border-radius: 12px; height: 140px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; margin-bottom: 16px; color: #444; font-size: 13px; }
-
-  .input-field { width: 100%; background: #1a1a1a; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 14px 16px; color: #fff; font-size: 15px; outline: none; margin-bottom: 12px; }
-  .input-field:focus { border-color: #C9A84C; }
-  .input-label { font-size: 12px; color: #888; margin-bottom: 6px; }
-
-  .login-screen { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 24px; }
-
-  .countdown-container { position: relative; width: 120px; height: 120px; margin: 0 auto 20px; }
-  .countdown-number { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 36px; font-weight: 700; color: #C9A84C; }
-
-  .confirmed-badge { background: rgba(34,197,94,0.15); color: #22c55e; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 20px; }
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:#0a0a0a;color:#fff;font-family:-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased;min-height:100vh}
+#app{max-width:480px;margin:0 auto;min-height:100vh;position:relative}
+.screen{padding:0 20px 100px;min-height:100vh;animation:fadeIn .25s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.4)}50%{box-shadow:0 0 0 20px rgba(34,197,94,0)}}
+@keyframes scaleIn{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
+.card{background:#111;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:16px;margin-bottom:12px}
+.btn{width:100%;padding:15px;border-radius:10px;font-size:15px;font-weight:700;border:none;cursor:pointer;font-family:inherit;transition:opacity .15s}
+.btn:active{opacity:.8}
+.btn-gold{background:#C9A84C;color:#000}
+.btn-green{background:#22c55e;color:#fff}
+.btn-red{background:#ef4444;color:#fff}
+.btn-outline{background:transparent;border:1.5px solid #C9A84C;color:#C9A84C}
+.btn-dark{background:#1a1a1a;border:1px solid rgba(255,255,255,.12);color:#ccc}
+input{width:100%;padding:14px 16px;background:#1a1a1a;border:1px solid rgba(255,255,255,.1);border-radius:10px;color:#fff;font-size:16px;outline:none;font-family:inherit}
+input:focus{border-color:#C9A84C}
+.nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:#111;border-top:1px solid rgba(255,255,255,.08);display:flex;padding:8px 0 28px;z-index:100}
+.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;color:#444;font-size:10px;padding:6px 0}
+.nav-item.active{color:#C9A84C}
+.tab{flex:1;padding:10px;text-align:center;cursor:pointer;font-size:14px;color:#555;border-bottom:2px solid transparent}
+.tab.active{color:#C9A84C;border-bottom-color:#C9A84C}
+.top-bar{display:flex;justify-content:space-between;align-items:center;padding:22px 0 10px}
+.back-btn{background:none;border:none;color:#C9A84C;font-size:15px;cursor:pointer;padding:20px 0 10px;display:flex;align-items:center;gap:6px;font-family:inherit;font-weight:500}
+.badge{display:inline-flex;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700}
+.b-airport{background:rgba(59,130,246,.15);color:#3b82f6}
+.b-hourly{background:rgba(201,168,76,.15);color:#C9A84C}
+.b-day{background:rgba(168,85,247,.15);color:#a855f7}
+.b-confirmed{background:rgba(34,197,94,.15);color:#22c55e}
+.menu-row{display:flex;align-items:center;justify-content:space-between;padding:15px 0;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer}
+.menu-row:last-child{border-bottom:none}
+.divider{height:1px;background:rgba(255,255,255,.06);margin:12px 0}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.96);z-index:200;display:flex;align-items:center;justify-content:center;padding:24px}
+.stepper{display:flex;align-items:center;margin-bottom:20px}
+.step{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1}
+.step-circle{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
+.step-line-h{flex:1;height:2px;background:rgba(255,255,255,.1);margin-top:-14px}
+.bar-row{display:flex;align-items:flex-end;gap:6px;height:80px;margin:12px 0}
+.bar-col{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1}
+.bar-fill{border-radius:4px 4px 0 0;background:#C9A84C;width:100%;opacity:.8}
 </style>
 </head>
 <body>
-<div id="root"></div>
+<div id="app"></div>
+<script>
+const JOBS=[
+  {id:'J1',type:'airport',client:'Sarah M.',initials:'SM',service:'Airport Transfer',pickup:'Mayfair W1K',dropoff:'Heathrow Terminal 5',time:'In 45 min',pay:95,flight:'BA0247',notes:'1 passenger, 2 bags',vehicle:'S-Class'},
+  {id:'J2',type:'hourly',client:'Robert C.',initials:'RC',service:'By the Hour (4hrs)',pickup:'Canary Wharf E14',dropoff:'Various',time:'Tomorrow 10:00',pay:260,notes:'Business meetings, multiple stops',vehicle:'S-Class'},
+  {id:'J3',type:'airport',client:'Emma W.',initials:'EW',service:'Airport Transfer',pickup:'Knightsbridge SW1',dropoff:'Gatwick North Terminal',time:'Today 16:30',pay:195,flight:'EZY1234',notes:'2 passengers, 4 bags',vehicle:'S-Class'},
+];
+const HISTORY=[
+  {id:'H1',service:'Airport Transfer',pickup:'Heathrow T5',dropoff:'Mayfair',date:'Today',duration:'55 min',pay:95,rating:5},
+  {id:'H2',service:'By the Hour (2hr)',pickup:'Mayfair',dropoff:'Mayfair',date:'Today',duration:'2hr',pay:130,rating:5},
+  {id:'H3',service:'Airport Transfer',pickup:'Knightsbridge',dropoff:'Heathrow T3',date:'Yesterday',duration:'50 min',pay:185,rating:4},
+  {id:'H4',service:'Airport Transfer',pickup:'Chelsea',dropoff:'Stansted',date:'Yesterday',duration:'65 min',pay:195,rating:5},
+  {id:'H5',service:'Airport Transfer',pickup:'Belgravia',dropoff:'City Airport',date:'Monday',duration:'40 min',pay:125,rating:5},
+];
+const WEEK_DATA=[180,240,0,310,420,380,190];
+const WEEK_LABELS=['Mon','Tue','Wed','Thu','Fri','Sat','Today'];
 
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+let S={
+  screen:'login',
+  online:false,
+  jobOverlay:false,
+  countdown:30,
+  activeJob:null,
+  tripStep:1,
+  tripTimer:0,
+  _timer:null,
+  _cdTimer:null,
+  _tripTimerInterval:null,
+  histTab:'week',
+  earnTab:'today',
+  jobsTab:'available',
+};
 
-<script type="text/babel">
-const { useState, useEffect, useRef, useCallback } = React;
+function go(s){S.screen=s;render();window.scrollTo(0,0);}
 
-// ── SVG Icons ──────────────────────────────────────────────────────────────
-const IconHome = ({ active }) => (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill={active ? "#C9A84C" : "#666"}>
-    <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
-  </svg>
-);
-const IconBriefcase = ({ active }) => (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={active ? "#C9A84C" : "#666"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="2" y="7" width="20" height="14" rx="2"/>
-    <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
-    <line x1="12" y1="12" x2="12" y2="12"/>
-  </svg>
-);
-const IconCash = ({ active }) => (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={active ? "#C9A84C" : "#666"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="1" y="4" width="22" height="16" rx="2"/>
-    <circle cx="12" cy="12" r="3"/>
-    <path d="M17 12h4M3 12h4"/>
-  </svg>
-);
-const IconClock = ({ active }) => (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={active ? "#C9A84C" : "#666"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="10"/>
-    <polyline points="12 6 12 12 16 14"/>
-  </svg>
-);
-const IconUser = ({ active }) => (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={active ? "#C9A84C" : "#666"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-    <circle cx="12" cy="7" r="4"/>
-  </svg>
-);
-const IconChevronRight = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="9 18 15 12 9 6"/>
-  </svg>
-);
-const IconChevronLeft = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="15 18 9 12 15 6"/>
-  </svg>
-);
-const IconPhone = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.4 2 2 0 0 1 3.6 1.21h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.8a16 16 0 0 0 6.29 6.29l.96-.96a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
-  </svg>
-);
-const IconNavArrow = () => (
-  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#C9A84C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="3 11 22 2 13 21 11 13 3 11"/>
-  </svg>
-);
-const IconCar = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C9A84C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M5 17H3a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v9a2 2 0 0 1-2 2h-3"/>
-    <circle cx="7.5" cy="17.5" r="2.5"/>
-    <circle cx="17.5" cy="17.5" r="2.5"/>
-  </svg>
-);
-const IconDoc = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C9A84C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-    <polyline points="14 2 14 8 20 8"/>
-    <line x1="16" y1="13" x2="8" y2="13"/>
-    <line x1="16" y1="17" x2="8" y2="17"/>
-    <polyline points="10 9 9 9 8 9"/>
-  </svg>
-);
-const IconBank = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C9A84C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="3" y1="22" x2="21" y2="22"/>
-    <line x1="6" y1="18" x2="6" y2="11"/>
-    <line x1="10" y1="18" x2="10" y2="11"/>
-    <line x1="14" y1="18" x2="14" y2="11"/>
-    <line x1="18" y1="18" x2="18" y2="11"/>
-    <polygon points="12 2 20 7 4 7"/>
-  </svg>
-);
-const IconCalendar = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C9A84C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-    <line x1="16" y1="2" x2="16" y2="6"/>
-    <line x1="8" y1="2" x2="8" y2="6"/>
-    <line x1="3" y1="10" x2="21" y2="10"/>
-  </svg>
-);
-const IconStar = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C9A84C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-  </svg>
-);
-const IconHelp = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C9A84C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="10"/>
-    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
-    <line x1="12" y1="17" x2="12.01" y2="17"/>
-  </svg>
-);
-const IconLogout = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-    <polyline points="16 17 21 12 16 7"/>
-    <line x1="21" y1="12" x2="9" y2="12"/>
-  </svg>
-);
-const IconPlane = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="#C9A84C">
-    <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/>
-  </svg>
-);
-const IconUpload = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#C9A84C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="16 16 12 12 8 16"/>
-    <line x1="12" y1="12" x2="12" y2="21"/>
-    <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
-  </svg>
-);
-const IconCheck = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="20 6 9 17 4 12"/>
-  </svg>
-);
-
-// ── Login Screen ───────────────────────────────────────────────────────────
-function LoginScreen({ onLogin }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const handleLogin = () => {
-    if (email === 'driver@apexvip.com' && password === 'driver123') {
-      setLoading(true);
-      setTimeout(() => { setLoading(false); onLogin(); }, 800);
-    } else {
-      setError('Invalid credentials. Please try again.');
-    }
-  };
-
-  return (
-    <div className="login-screen">
-      <div style={{ textAlign: 'center', marginBottom: 40 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 8 }}>
-          <div style={{ width: 40, height: 40, background: '#C9A84C', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="#000">
-              <path d="M5 17H3a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v9a2 2 0 0 1-2 2h-3M7.5 20a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM17.5 20a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"/>
-            </svg>
-          </div>
-          <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: 2, color: '#C9A84C' }}>APEX VIP DRIVER</div>
-        </div>
-        <div style={{ fontSize: 13, color: '#666', letterSpacing: 1 }}>Driver Portal</div>
-      </div>
-
-      <div style={{ width: '100%', maxWidth: 360 }}>
-        <div className="input-label">Email Address</div>
-        <input
-          className="input-field"
-          type="email"
-          placeholder="driver@apexvip.com"
-          value={email}
-          onChange={e => { setEmail(e.target.value); setError(''); }}
-          autoCapitalize="none"
-          autoCorrect="off"
-        />
-        <div className="input-label">Password</div>
-        <input
-          className="input-field"
-          type="password"
-          placeholder="••••••••"
-          value={password}
-          onChange={e => { setPassword(e.target.value); setError(''); }}
-        />
-        {error && <div style={{ color: '#ef4444', fontSize: 13, marginBottom: 12, textAlign: 'center' }}>{error}</div>}
-        <button className="btn-gold" onClick={handleLogin} disabled={loading} style={{ opacity: loading ? 0.7 : 1 }}>
-          {loading ? 'Signing in...' : 'SIGN IN'}
-        </button>
-        <div style={{ textAlign: 'center', marginTop: 20, color: '#444', fontSize: 12 }}>
-          Approved drivers only · ApexVIP Chauffeur Ltd
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Job Request Overlay ────────────────────────────────────────────────────
-function JobRequestOverlay({ onAccept, onDecline }) {
-  const [seconds, setSeconds] = useState(30);
-  const RADIUS = 54;
-  const CIRCUM = 2 * Math.PI * RADIUS;
-
-  useEffect(() => {
-    if (seconds <= 0) { onDecline(); return; }
-    const t = setTimeout(() => setSeconds(s => s - 1), 1000);
-    return () => clearTimeout(t);
-  }, [seconds, onDecline]);
-
-  const progress = seconds / 30;
-  const dashOffset = CIRCUM * (1 - progress);
-
-  return (
-    <div className="overlay">
-      <div style={{ width: '100%', maxWidth: 400 }}>
-        <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <div style={{ fontSize: 11, letterSpacing: 2, color: '#C9A84C', marginBottom: 8, fontWeight: 700 }}>NEW JOB REQUEST</div>
-          <div style={{ height: 1, background: 'rgba(255,255,255,0.1)', margin: '0 0 20px' }}/>
-
-          <div className="countdown-container">
-            <svg width="120" height="120" style={{ transform: 'rotate(-90deg)' }}>
-              <circle cx="60" cy="60" r={RADIUS} fill="none" stroke="#1a1a1a" strokeWidth="6"/>
-              <circle
-                cx="60" cy="60" r={RADIUS}
-                fill="none"
-                stroke={seconds > 10 ? '#C9A84C' : '#ef4444'}
-                strokeWidth="6"
-                strokeDasharray={CIRCUM}
-                strokeDashoffset={dashOffset}
-                strokeLinecap="round"
-                style={{ transition: 'stroke-dashoffset 1s linear, stroke 0.3s' }}
-              />
-            </svg>
-            <div className="countdown-number">{seconds}</div>
-          </div>
-        </div>
-
-        <div className="card" style={{ marginBottom: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-            <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#1a1a1a', border: '2px solid #C9A84C', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: '#C9A84C', fontSize: 16 }}>SM</div>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 16 }}>S.M.</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><IconPlane /><span style={{ fontSize: 12, color: '#C9A84C', fontWeight: 600 }}> Airport Transfer</span></div>
-            </div>
-          </div>
-
-          <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', marginBottom: 14 }}/>
-
-          {[
-            ['📍 Pickup', 'Mayfair, London W1K'],
-            ['🏁 Drop-off', 'Heathrow Terminal 5'],
-            ['🕐 Time', 'In 45 minutes'],
-          ].map(([label, val]) => (
-            <div key={label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
-              <span style={{ color: '#666', fontSize: 13 }}>{label}</span>
-              <span style={{ fontSize: 13, fontWeight: 600, textAlign: 'right', maxWidth: '55%' }}>{val}</span>
-            </div>
-          ))}
-
-          <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', marginBottom: 14 }}/>
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ color: '#888', fontSize: 13 }}>Pay</span>
-            <span style={{ fontSize: 24, fontWeight: 800, color: '#C9A84C' }}>£95.00</span>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: 12 }}>
-          <button className="btn-green" style={{ flex: 1 }} onClick={onAccept}>ACCEPT</button>
-          <button className="btn-outline" style={{ flex: 1 }} onClick={onDecline}>DECLINE</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Home Screen ────────────────────────────────────────────────────────────
-function HomeScreen({ onJobAccepted }) {
-  const [online, setOnline] = useState(false);
-  const [showJobRequest, setShowJobRequest] = useState(false);
-  const [declined, setDeclined] = useState(false);
-
-  useEffect(() => {
-    if (!online) { setShowJobRequest(false); setDeclined(false); return; }
-    if (declined) return;
-    const t = setTimeout(() => setShowJobRequest(true), 3000);
-    return () => clearTimeout(t);
-  }, [online, declined]);
-
-  const handleDecline = useCallback(() => {
-    setShowJobRequest(false);
-    setDeclined(true);
-  }, []);
-
-  const handleAccept = useCallback(() => {
-    setShowJobRequest(false);
-    onJobAccepted();
-  }, [onJobAccepted]);
-
-  return (
-    <div>
-      {showJobRequest && <JobRequestOverlay onAccept={handleAccept} onDecline={handleDecline} />}
-
-      <div className="top-bar">
-        <div>
-          <div style={{ fontSize: 18, fontWeight: 700 }}>James Harrison</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: online ? '#22c55e' : '#666', transition: 'background 0.3s' }}/>
-            <span style={{ fontSize: 12, color: online ? '#22c55e' : '#666', fontWeight: 600 }}>{online ? 'Online' : 'Offline'}</span>
-          </div>
-        </div>
-        <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#1a1a1a', border: '2px solid #C9A84C', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: '#C9A84C', fontSize: 14 }}>JH</div>
-      </div>
-
-      <div className="screen" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 20 }}>
-        <div style={{ fontSize: 13, color: '#666', marginBottom: 40, textAlign: 'center' }}>
-          {online
-            ? declined ? 'Looking for nearby jobs...' : 'Waiting for job requests...'
-            : 'Go online to start receiving job requests'}
-        </div>
-
-        <button
-          onClick={() => { setOnline(o => !o); if (online) setDeclined(false); }}
-          style={{
-            width: 200, height: 200, borderRadius: '50%',
-            background: online ? '#16a34a' : '#1a1a1a',
-            border: `6px solid ${online ? '#22c55e' : '#333'}`,
-            cursor: 'pointer',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            gap: 8,
-            transition: 'all 0.4s',
-            ...(online ? { boxShadow: '0 0 30px rgba(34,197,94,0.4)' } : {}),
-          }}
-          className={online ? 'pulse-green' : ''}
-        >
-          <div style={{ fontSize: online ? 32 : 28, fontWeight: 900, color: online ? '#fff' : '#666', letterSpacing: 1 }}>
-            {online ? '●' : '○'}
-          </div>
-          <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, color: online ? '#fff' : '#555' }}>
-            {online ? 'AVAILABLE' : 'TAP TO GO ONLINE'}
-          </div>
-        </button>
-
-        {online && declined && (
-          <div style={{ marginTop: 24, padding: '10px 20px', background: '#1a1a1a', borderRadius: 20, border: '1px solid rgba(255,255,255,0.08)', fontSize: 12, color: '#666' }}>
-            No jobs nearby right now...
-          </div>
-        )}
-
-        <div style={{ width: '100%', marginTop: 40 }}>
-          <div className="card" style={{ display: 'flex', justifyContent: 'space-around', background: '#111' }}>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 24, fontWeight: 800, color: '#C9A84C' }}>2</div>
-              <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>Trips Today</div>
-            </div>
-            <div style={{ width: 1, background: 'rgba(255,255,255,0.08)' }}/>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 24, fontWeight: 800, color: '#C9A84C' }}>£190</div>
-              <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>Earnings Today</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Active Trip Screen ─────────────────────────────────────────────────────
-function ActiveTripScreen({ onComplete }) {
-  const [step, setStep] = useState(1);
-
-  const steps = ['Confirmed', 'En Route', 'Arrived', 'Onboard', 'Complete'];
-
-  const actionLabel = ['', '', 'I Have Arrived', 'Passenger Onboard', 'Complete Trip'][step];
-
-  const handleAction = () => {
-    if (step < 4) { setStep(s => s + 1); }
-    else { onComplete(); }
-  };
-
-  return (
-    <div>
-      <div className="top-bar" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: 16 }}>
-        <div>
-          <div style={{ fontSize: 11, color: '#C9A84C', fontWeight: 700, letterSpacing: 1, marginBottom: 2 }}>ACTIVE TRIP</div>
-          <div style={{ fontSize: 17, fontWeight: 700 }}>Airport Transfer</div>
-        </div>
-        <div className="confirmed-badge">In Progress</div>
-      </div>
-
-      <div className="screen" style={{ paddingTop: 16 }}>
-        {/* Stepper */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 24 }}>
-          {steps.map((label, i) => (
-            <React.Fragment key={i}>
-              <div className="step" style={{ flex: 'none', width: 52 }}>
-                <div className="step-circle" style={{
-                  background: i < step ? '#22c55e' : i === step ? '#C9A84C' : '#1a1a1a',
-                  border: `2px solid ${i < step ? '#22c55e' : i === step ? '#C9A84C' : '#333'}`,
-                  color: i < step ? '#fff' : i === step ? '#000' : '#444',
-                }}>
-                  {i < step ? <IconCheck /> : <span>{i + 1}</span>}
-                </div>
-                <div className="step-label" style={{ color: i < step ? '#22c55e' : i === step ? '#C9A84C' : '#555' }}>{label}</div>
-              </div>
-              {i < steps.length - 1 && (
-                <div style={{ flex: 1, height: 2, background: i < step ? '#22c55e' : '#333', marginTop: 13, transition: 'background 0.3s' }}/>
-              )}
-            </React.Fragment>
-          ))}
-        </div>
-
-        {/* Client card */}
-        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
-          <div style={{ width: 50, height: 50, borderRadius: '50%', background: '#1a1a1a', border: '2px solid #C9A84C', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: '#C9A84C', fontSize: 16, flexShrink: 0 }}>SM</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 700, fontSize: 16 }}>Sarah Mitchell</div>
-            <div style={{ fontSize: 13, color: '#C9A84C' }}>★★★★★</div>
-          </div>
-          <button style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-            <IconPhone />
-            <span style={{ fontSize: 12, color: '#22c55e', fontWeight: 600 }}>Call</span>
-          </button>
-        </div>
-
-        {/* Map placeholder */}
-        <div className="map-placeholder">
-          <IconNavArrow />
-          <span>Navigation</span>
-        </div>
-
-        {/* Route */}
-        <div className="card" style={{ marginBottom: 12 }}>
-          <div className="route-row">
-            <span className="route-icon">📍</span>
-            <div>
-              <div className="route-label">Pickup</div>
-              <div className="route-text">14 Park Lane, Mayfair W1K 1AA</div>
-            </div>
-          </div>
-          <div style={{ marginLeft: 26, marginBottom: 8, height: 20, borderLeft: '2px dashed rgba(255,255,255,0.15)' }}/>
-          <div className="route-row">
-            <span className="route-icon">🏁</span>
-            <div>
-              <div className="route-label">Drop-off</div>
-              <div className="route-text">Heathrow Terminal 5, TW6 2GA</div>
-            </div>
-          </div>
-
-          <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '12px 0' }}/>
-
-          <div style={{ display: 'flex', gap: 16 }}>
-            <div>
-              <div style={{ fontSize: 10, color: '#666' }}>Flight</div>
-              <div style={{ fontSize: 13, color: '#C9A84C', fontWeight: 600 }}>BA0247</div>
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 10, color: '#666' }}>Notes</div>
-              <div style={{ fontSize: 12, color: '#aaa', lineHeight: 1.4 }}>2 pieces of luggage, 1 passenger, please wait in arrivals</div>
-            </div>
-          </div>
-        </div>
-
-        {step < 4 && (
-          <button className="btn-green" onClick={handleAction} style={{ marginBottom: 10 }}>
-            {actionLabel}
-          </button>
-        )}
-        {step === 4 && (
-          <button className="btn-green" onClick={handleAction} style={{ marginBottom: 10 }}>
-            Complete Trip
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Jobs Screen ────────────────────────────────────────────────────────────
-function JobsScreen() {
-  const [tab, setTab] = useState('available');
-  const [accepted, setAccepted] = useState({});
-
-  return (
-    <div>
-      <div className="top-bar"><div style={{ fontSize: 20, fontWeight: 700 }}>Jobs</div></div>
-      <div className="screen" style={{ paddingTop: 0 }}>
-        <div className="tab-bar">
-          <button className={`tab-btn ${tab === 'available' ? 'active' : ''}`} onClick={() => setTab('available')}>Available</button>
-          <button className={`tab-btn ${tab === 'upcoming' ? 'active' : ''}`} onClick={() => setTab('upcoming')}>Upcoming</button>
-        </div>
-
-        {tab === 'available' && (
-          <div>
-            {[
-              { id: 1, type: 'Airport Transfer', route: 'Canary Wharf → Gatwick', time: 'Today 16:30', vehicle: 'S-Class', pay: '£145' },
-              { id: 2, type: 'Hourly', route: 'Knightsbridge', time: 'Tomorrow 10:00', vehicle: 'S-Class · 4 hours', pay: '£260' },
-            ].map(job => (
-              <div className="job-card" key={job.id}>
-                <div className="job-type">{job.type}</div>
-                <div className="job-route">{job.route}</div>
-                <div className="job-detail">{job.time} · {job.vehicle}</div>
-                <div className="job-footer">
-                  <div style={{ fontSize: 22, fontWeight: 800, color: '#C9A84C' }}>{job.pay}</div>
-                  {accepted[job.id]
-                    ? <div className="confirmed-badge">Accepted</div>
-                    : <button className="btn-accept" onClick={() => setAccepted(a => ({ ...a, [job.id]: true }))}>ACCEPT</button>
-                  }
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {tab === 'upcoming' && (
-          <div>
-            <div className="job-card">
-              <div className="job-type">Airport Transfer</div>
-              <div className="job-route">City Airport → Chelsea</div>
-              <div className="job-detail">Tomorrow 08:15 · S-Class</div>
-              <div className="job-footer">
-                <div style={{ fontSize: 22, fontWeight: 800, color: '#C9A84C' }}>£125</div>
-                <div className="confirmed-badge">Confirmed</div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Earnings Screen ────────────────────────────────────────────────────────
-function EarningsScreen() {
-  const [tab, setTab] = useState('today');
-
-  const barData = [
-    { day: 'Mon', val: 180 },
-    { day: 'Tue', val: 240 },
-    { day: 'Wed', val: 0 },
-    { day: 'Thu', val: 310 },
-    { day: 'Fri', val: 420 },
-    { day: 'Sat', val: 380 },
-    { day: 'Sun', val: 190 },
+function nav(){
+  const items=[
+    {id:'home',label:'Home',svg:'<svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>'},
+    {id:'jobs',label:'Jobs',svg:'<svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>'},
+    {id:'earnings',label:'Earnings',svg:'<svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>'},
+    {id:'history',label:'History',svg:'<svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>'},
+    {id:'profile',label:'Profile',svg:'<svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>'}
   ];
-  const maxVal = 420;
-
-  return (
-    <div>
-      <div className="top-bar"><div style={{ fontSize: 20, fontWeight: 700 }}>Earnings</div></div>
-      <div className="screen" style={{ paddingTop: 0 }}>
-        <div className="tab-bar">
-          {['today', 'week', 'month'].map(t => (
-            <button key={t} className={`tab-btn ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>
-              {t === 'today' ? 'Today' : t === 'week' ? 'This Week' : 'This Month'}
-            </button>
-          ))}
-        </div>
-
-        {tab === 'today' && (
-          <div>
-            <div style={{ textAlign: 'center', padding: '24px 0 28px' }}>
-              <div style={{ fontSize: 48, fontWeight: 900, color: '#C9A84C' }}>£205</div>
-              <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>Total Today · 2 trips</div>
-            </div>
-
-            <div className="card">
-              <div style={{ fontSize: 13, color: '#888', fontWeight: 600, marginBottom: 8 }}>Breakdown</div>
-              {[
-                ['Airport Transfers (2)', '£190'],
-                ['Tips', '£15'],
-              ].map(([label, val]) => (
-                <div className="earnings-row" key={label}>
-                  <span style={{ fontSize: 14, color: '#ccc' }}>{label}</span>
-                  <span style={{ fontSize: 14, fontWeight: 600 }}>{val}</span>
-                </div>
-              ))}
-              <div className="earnings-row" style={{ borderTop: '1px solid rgba(255,255,255,0.1)', marginTop: 4, paddingTop: 12 }}>
-                <span style={{ fontSize: 15, fontWeight: 700 }}>Total</span>
-                <span style={{ fontSize: 15, fontWeight: 800, color: '#C9A84C' }}>£205</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {tab === 'week' && (
-          <div>
-            <div style={{ textAlign: 'center', padding: '24px 0 28px' }}>
-              <div style={{ fontSize: 48, fontWeight: 900, color: '#C9A84C' }}>£1,720</div>
-              <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>This Week</div>
-            </div>
-
-            <div className="card">
-              <div style={{ fontSize: 13, color: '#888', fontWeight: 600, marginBottom: 16 }}>Daily Breakdown</div>
-              <div className="bar-chart">
-                {barData.map(({ day, val }) => (
-                  <div className="bar-col" key={day}>
-                    <div className="bar-val">{val > 0 ? `£${val}` : ''}</div>
-                    <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', width: '100%' }}>
-                      <div className="bar-fill" style={{ height: val === 0 ? 2 : `${(val / maxVal) * 90}%`, opacity: val === 0 ? 0.2 : 1 }}/>
-                    </div>
-                    <div className="bar-label">{day}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="card" style={{ marginTop: 12 }}>
-              {[
-                ['Airport Transfers (8)', '£1,430'],
-                ['Hourly Bookings (2)', '£290'],
-                ['Tips', '£65'],
-              ].map(([label, val]) => (
-                <div className="earnings-row" key={label}>
-                  <span style={{ fontSize: 14, color: '#ccc' }}>{label}</span>
-                  <span style={{ fontSize: 14, fontWeight: 600 }}>{val}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {tab === 'month' && (
-          <div>
-            <div style={{ textAlign: 'center', padding: '24px 0 28px' }}>
-              <div style={{ fontSize: 48, fontWeight: 900, color: '#C9A84C' }}>£6,840</div>
-              <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>May 2026 · 47 trips</div>
-            </div>
-
-            <div className="card">
-              {[
-                ['Airport Transfers', '£4,920'],
-                ['Hourly Bookings', '£1,680'],
-                ['Tips', '£240'],
-              ].map(([label, val]) => (
-                <div className="earnings-row" key={label}>
-                  <span style={{ fontSize: 14, color: '#ccc' }}>{label}</span>
-                  <span style={{ fontSize: 14, fontWeight: 600 }}>{val}</span>
-                </div>
-              ))}
-              <div className="earnings-row" style={{ borderTop: '1px solid rgba(255,255,255,0.1)', marginTop: 4, paddingTop: 12 }}>
-                <span style={{ fontSize: 15, fontWeight: 700 }}>Total</span>
-                <span style={{ fontSize: 15, fontWeight: 800, color: '#C9A84C' }}>£6,840</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Payout info */}
-        <div className="card" style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <div style={{ fontSize: 12, color: '#666', marginBottom: 3 }}>Next Payout</div>
-            <div style={{ fontSize: 15, fontWeight: 700 }}>Monday 2 June</div>
-            <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>Bank ••••1234 · Weekly</div>
-          </div>
-          <div style={{ padding: '6px 14px', background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.3)', borderRadius: 20 }}>
-            <span style={{ fontSize: 12, color: '#C9A84C', fontWeight: 600 }}>Scheduled</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  return`<nav class="nav">${items.map(i=>`<div class="nav-item${S.screen===i.id?' active':''}" onclick="go('${i.id}')">${i.svg}<span>${i.label}</span></div>`).join('')}</nav>`;
 }
 
-// ── History Screen ─────────────────────────────────────────────────────────
-function HistoryScreen() {
-  const [tab, setTab] = useState('week');
-
-  const trips = [
-    { from: 'Heathrow T5', to: 'Mayfair', type: 'Airport Transfer', day: 'Today', pay: '£95', stars: 5 },
-    { from: 'Mayfair', to: 'Canary Wharf', type: 'Hourly (2hr)', day: 'Today', pay: '£130', stars: 5 },
-    { from: 'Knightsbridge', to: 'Heathrow T3', type: 'Airport Transfer', day: 'Yesterday', pay: '£145', stars: 4 },
-    { from: 'Chelsea', to: 'Stansted', type: 'Airport Transfer', day: 'Yesterday', pay: '£165', stars: 5 },
-    { from: 'Belgravia', to: 'City Airport', type: 'Airport Transfer', day: 'Mon', pay: '£125', stars: 5 },
-  ];
-
-  const Stars = ({ n }) => (
-    <span style={{ color: '#C9A84C', fontSize: 12 }}>
-      {'★'.repeat(n)}{'☆'.repeat(5 - n)}
-    </span>
-  );
-
-  return (
-    <div>
-      <div className="top-bar"><div style={{ fontSize: 20, fontWeight: 700 }}>History</div></div>
-      <div className="screen" style={{ paddingTop: 0 }}>
-        <div className="tab-bar">
-          {['week', 'month', 'all'].map(t => (
-            <button key={t} className={`tab-btn ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>
-              {t === 'week' ? 'This Week' : t === 'month' ? 'This Month' : 'All Time'}
-            </button>
-          ))}
-        </div>
-
-        <div className="stat-row">
-          <div className="stat-card">
-            <div className="stat-val">247</div>
-            <div className="stat-lbl">Total Trips</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-val">£18,420</div>
-            <div className="stat-lbl">Total Earned</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-val">4.9 ★</div>
-            <div className="stat-lbl">Avg Rating</div>
-          </div>
-        </div>
-
-        <div className="card">
-          {trips.map((trip, i) => (
-            <div className="history-row" key={i}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2 }}>
-                  {trip.from} → {trip.to}
-                </div>
-                <div style={{ fontSize: 12, color: '#666' }}>{trip.type} · {trip.day}</div>
-                <Stars n={trip.stars} />
-              </div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#C9A84C', marginLeft: 12 }}>{trip.pay}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Documents Screen ───────────────────────────────────────────────────────
-function DocumentsScreen({ onBack }) {
-  const docs = [
-    { name: "Driver's Licence", expires: '14 Mar 2027' },
-    { name: 'Private Hire Licence', expires: '30 Jun 2025' },
-    { name: 'Insurance Certificate', expires: '31 Dec 2025' },
-    { name: 'DBS Check', expires: '15 Aug 2026' },
-    { name: 'Vehicle Registration', expires: '22 Nov 2025' },
-    { name: 'PCO Badge', expires: '30 Jun 2025' },
-  ];
-
-  return (
-    <div>
-      <div className="top-bar">
-        <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, color: '#C9A84C', fontWeight: 600, fontSize: 14, padding: 0 }}>
-          <IconChevronLeft /> Back
-        </button>
-        <div style={{ fontSize: 17, fontWeight: 700 }}>Documents</div>
-        <div style={{ width: 60 }}/>
-      </div>
-      <div className="screen" style={{ paddingTop: 0 }}>
-        <div className="card">
-          {docs.map((doc, i) => (
-            <div className="doc-row" key={i}>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 3 }}>{doc.name}</div>
-                <div style={{ fontSize: 11, color: '#666' }}>Expires {doc.expires}</div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div className="badge-verified"><IconCheck /> Verified</div>
-                <button style={{ background: 'transparent', border: '1px solid rgba(201,168,76,0.4)', borderRadius: 6, padding: '5px 10px', color: '#C9A84C', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <IconUpload /> Upload
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Profile Screen ─────────────────────────────────────────────────────────
-function ProfileScreen({ onSignOut }) {
-  const [showDocs, setShowDocs] = useState(false);
-
-  if (showDocs) return <DocumentsScreen onBack={() => setShowDocs(false)} />;
-
-  const groups = [
-    [
-      { label: 'My Vehicle', icon: <IconCar /> },
-      { label: 'Documents', icon: <IconDoc />, action: () => setShowDocs(true) },
-      { label: 'Bank Details', icon: <IconBank /> },
-    ],
-    [
-      { label: 'Availability Schedule', icon: <IconCalendar /> },
-      { label: 'Ratings & Reviews', icon: <IconStar /> },
-    ],
-    [
-      { label: 'Help & Support', icon: <IconHelp /> },
-      { label: 'Sign Out', icon: <IconLogout />, danger: true, action: onSignOut },
-    ],
-  ];
-
-  return (
-    <div>
-      <div className="top-bar"><div style={{ fontSize: 20, fontWeight: 700 }}>Profile</div></div>
-      <div className="screen" style={{ paddingTop: 0 }}>
-        {/* Avatar */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: 28 }}>
-          <div style={{ width: 84, height: 84, borderRadius: '50%', background: '#1a1a1a', border: '3px solid #C9A84C', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: '#C9A84C', fontSize: 28, marginBottom: 14 }}>JH</div>
-          <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>James Harrison</div>
-          <div style={{ fontSize: 14, color: '#C9A84C', marginBottom: 4 }}>★ 4.9 Rating</div>
-          <div style={{ fontSize: 12, color: '#666' }}>Member since Jan 2023</div>
-        </div>
-
-        {/* Vehicle card */}
-        <div className="card" style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 11, color: '#C9A84C', fontWeight: 700, letterSpacing: 1, marginBottom: 10 }}>VEHICLE</div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>Mercedes S-Class</div>
-              <div style={{ fontSize: 13, color: '#888', marginTop: 2 }}>LX73 ABC · 2023 · Black</div>
-            </div>
-            <div style={{ padding: '4px 10px', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 20 }}>
-              <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 600 }}>Active</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Menu groups */}
-        {groups.map((group, gi) => (
-          <div className="profile-group" key={gi}>
-            {group.map((item, ii) => (
-              <div className="profile-row" key={ii} onClick={item.action || (() => {})}>
-                <div className="profile-row-left">
-                  {item.icon}
-                  <span style={{ fontSize: 15, color: item.danger ? '#ef4444' : '#fff' }}>{item.label}</span>
-                </div>
-                <IconChevronRight />
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Bottom Nav ─────────────────────────────────────────────────────────────
-function BottomNav({ active, onChange }) {
-  const items = [
-    { id: 'home', label: 'Home', Icon: IconHome },
-    { id: 'jobs', label: 'Jobs', Icon: IconBriefcase },
-    { id: 'earnings', label: 'Earnings', Icon: IconCash },
-    { id: 'history', label: 'History', Icon: IconClock },
-    { id: 'profile', label: 'Profile', Icon: IconUser },
-  ];
-
-  return (
-    <nav className="bottom-nav">
-      {items.map(({ id, label, Icon }) => (
-        <div key={id} className={`nav-item ${active === id ? 'active' : ''}`} onClick={() => onChange(id)}>
-          <Icon active={active === id} />
-          <span>{label}</span>
-        </div>
-      ))}
-    </nav>
-  );
-}
-
-// ── Root App ───────────────────────────────────────────────────────────────
-function App() {
-  const [authed, setAuthed] = useState(false);
-  const [tab, setTab] = useState('home');
-  const [hasActiveTrip, setHasActiveTrip] = useState(false);
-
-  const handleJobAccepted = useCallback(() => {
-    setHasActiveTrip(true);
-    setTab('home');
-  }, []);
-
-  const handleTripComplete = useCallback(() => {
-    setHasActiveTrip(false);
-  }, []);
-
-  const handleSignOut = useCallback(() => {
-    setAuthed(false);
-    setTab('home');
-    setHasActiveTrip(false);
-  }, []);
-
-  if (!authed) {
-    return <LoginScreen onLogin={() => setAuthed(true)} />;
+function goOnline(){
+  S.online=!S.online;
+  if(S.online){
+    clearTimeout(S._timer);
+    S._timer=setTimeout(()=>{S.jobOverlay=true;S.countdown=30;startCountdown();render();},3000);
+  } else {
+    clearTimeout(S._timer);
+    clearInterval(S._cdTimer);
   }
-
-  const renderScreen = () => {
-    if (tab === 'home') {
-      if (hasActiveTrip) {
-        return <ActiveTripScreen onComplete={handleTripComplete} />;
-      }
-      return <HomeScreen onJobAccepted={handleJobAccepted} />;
-    }
-    if (tab === 'jobs') return <JobsScreen />;
-    if (tab === 'earnings') return <EarningsScreen />;
-    if (tab === 'history') return <HistoryScreen />;
-    if (tab === 'profile') return <ProfileScreen onSignOut={handleSignOut} />;
-  };
-
-  return (
-    <div>
-      {renderScreen()}
-      <BottomNav active={tab} onChange={setTab} />
-    </div>
-  );
+  render();
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+function startCountdown(){
+  clearInterval(S._cdTimer);
+  S._cdTimer=setInterval(()=>{
+    S.countdown--;
+    const el=document.getElementById('cd-num');
+    if(el)el.textContent=S.countdown;
+    const ring=document.getElementById('cd-ring');
+    if(ring){const pct=S.countdown/30;const circ=2*Math.PI*40;ring.style.strokeDashoffset=circ*(1-pct);}
+    if(S.countdown<=0){declineJob();}
+  },1000);
+}
+
+function acceptJob(){
+  clearInterval(S._cdTimer);
+  S.jobOverlay=false;
+  S.activeJob=JOBS[0];
+  S.tripStep=2;
+  S.tripTimer=0;
+  go('active');
+}
+
+function declineJob(){
+  clearInterval(S._cdTimer);
+  S.jobOverlay=false;
+  render();
+}
+
+function nextStep(){
+  if(S.tripStep<5){S.tripStep++;}
+  if(S.tripStep===4){
+    clearInterval(S._tripTimerInterval);
+    S._tripTimerInterval=setInterval(()=>{S.tripTimer++;const el=document.getElementById('trip-timer');if(el){const m=Math.floor(S.tripTimer/60);const s=S.tripTimer%60;el.textContent=(m<10?'0'+m:m)+':'+(s<10?'0'+s:s);}},1000);
+  }
+  if(S.tripStep===5){clearInterval(S._tripTimerInterval);S.activeJob=null;go('home');}
+  else render();
+}
+
+function jobBadge(type){const m={airport:'b-airport Airport',hourly:'b-hourly Hourly',day:'b-day Full Day'};const v=m[type]||'b-hourly';const[c,...r]=v.split(' ');return`<span class="badge ${c}">${r.join(' ')}</span>`;}
+function stars(r){return'★'.repeat(r)+'☆'.repeat(5-r);}
+function fmtTime(s){const m=Math.floor(s/60);const sec=s%60;return(m<10?'0'+m:m)+':'+(sec<10?'0'+sec:sec);}
+
+const pages={
+login:()=>`<div style="min-height:100vh;display:flex;flex-direction:column;padding:64px 24px 40px">
+  <div style="text-align:center;margin-bottom:48px">
+    <div style="width:72px;height:72px;border-radius:50%;border:2px solid #C9A84C;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;background:rgba(201,168,76,.07)">
+      <svg width="30" height="30" fill="none" viewBox="0 0 24 24" stroke="#C9A84C" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 3l14 9-14 9V3z"/></svg>
+    </div>
+    <div style="font-size:26px;font-weight:800;letter-spacing:6px;color:#C9A84C">APEX VIP</div>
+    <div style="font-size:12px;color:#444;letter-spacing:3px;margin-top:4px">DRIVER PORTAL</div>
+  </div>
+  <div style="margin-bottom:14px"><label style="font-size:12px;color:#666;display:block;margin-bottom:5px">Email</label><input type="email" value="driver@apexvip.com"/></div>
+  <div style="margin-bottom:28px"><label style="font-size:12px;color:#666;display:block;margin-bottom:5px">Password</label><input type="password" value="driver123"/></div>
+  <button class="btn btn-gold" onclick="go('home')">Driver Sign In</button>
+  <div style="margin-top:auto;background:#1a1a1a;border-radius:10px;padding:14px;font-size:13px;color:#555">
+    <div style="color:#666;font-weight:600;margin-bottom:3px">Demo credentials</div>
+    <div>driver@apexvip.com / driver123</div>
+  </div>
+</div>`,
+
+home:()=>{
+  const overlay=S.jobOverlay?`<div class="overlay">
+    <div style="width:100%;max-width:360px;background:#111;border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:28px;text-align:center;animation:scaleIn .3s ease">
+      <div style="font-size:12px;color:#888;letter-spacing:2px;margin-bottom:8px">NEW JOB REQUEST</div>
+      <div style="position:relative;width:100px;height:100px;margin:0 auto 20px">
+        <svg width="100" height="100" style="transform:rotate(-90deg)">
+          <circle cx="50" cy="50" r="40" fill="none" stroke="#222" stroke-width="6"/>
+          <circle id="cd-ring" cx="50" cy="50" r="40" fill="none" stroke="#C9A84C" stroke-width="6" stroke-linecap="round"
+            stroke-dasharray="${2*Math.PI*40}" stroke-dashoffset="${2*Math.PI*40*(1-S.countdown/30)}"/>
+        </svg>
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column">
+          <div id="cd-num" style="font-size:28px;font-weight:800;color:#C9A84C">${S.countdown}</div>
+          <div style="font-size:10px;color:#555">sec</div>
+        </div>
+      </div>
+      <div style="width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#C9A84C,#8B6914);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#000;margin:0 auto 12px">SM</div>
+      <div style="font-size:11px;color:#888;margin-bottom:12px">Sarah Mitchell</div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px">
+        <span style="color:#888">Service</span><span style="font-weight:600">✈ Airport Transfer</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px">
+        <span style="color:#888">Pickup</span><span style="font-weight:600">Mayfair W1K</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px">
+        <span style="color:#888">Drop-off</span><span style="font-weight:600">Heathrow T5</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:20px;font-size:13px">
+        <span style="color:#888">Time</span><span style="font-weight:600">In 45 minutes</span>
+      </div>
+      <div style="font-size:28px;font-weight:800;color:#C9A84C;margin-bottom:20px">£95.00</div>
+      <div style="display:flex;gap:12px">
+        <button class="btn btn-dark" style="flex:1" onclick="declineJob()">Decline</button>
+        <button class="btn btn-green" style="flex:1" onclick="acceptJob()">Accept</button>
+      </div>
+    </div>
+  </div>`:' ';
+
+  return`<div style="min-height:100vh">
+    ${overlay}
+    <div class="screen">
+      <div class="top-bar">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#C9A84C,#8B6914);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#000">JH</div>
+          <div><div style="font-size:16px;font-weight:700">James Harrison</div>
+            <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:${S.online?'#22c55e':'#555'}">
+              <div style="width:7px;height:7px;border-radius:50%;background:${S.online?'#22c55e':'#444'}"></div>
+              ${S.online?'Online':'Offline'}
+            </div>
+          </div>
+        </div>
+        <div style="font-size:13px;color:#888">Mercedes S-Class<br/><span style="color:#666;font-size:11px">LX73 ABC</span></div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;padding:32px 0 28px">
+        <div onclick="goOnline()" style="width:160px;height:160px;border-radius:50%;background:${S.online?'#0d2010':'#1a1a1a'};border:3px solid ${S.online?'#22c55e':'#333'};display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;transition:all .3s;${S.online?'box-shadow:0 0 40px rgba(34,197,94,.25);animation:pulse 2s infinite':''}">
+          <svg width="40" height="40" fill="none" viewBox="0 0 24 24" stroke="${S.online?'#22c55e':'#444'}" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 3l14 9-14 9V3z"/></svg>
+          <div style="font-size:13px;font-weight:700;margin-top:10px;color:${S.online?'#22c55e':'#555'};letter-spacing:1px">${S.online?'AVAILABLE':'TAP TO GO'}</div>
+          <div style="font-size:11px;color:${S.online?'#1a6630':'#444'};margin-top:2px">${S.online?'Looking for jobs...':'ONLINE'}</div>
+        </div>
+      </div>
+      ${S.activeJob?`<div class="card" style="background:rgba(34,197,94,.06);border-color:rgba(34,197,94,.2);cursor:pointer" onclick="go('active')">
+        <div style="font-size:12px;color:#22c55e;font-weight:700;margin-bottom:10px">ACTIVE JOB ›</div>
+        <div style="font-size:14px;font-weight:600">${S.activeJob.pickup} → ${S.activeJob.dropoff}</div>
+        <div style="font-size:13px;color:#888;margin-top:4px">${S.activeJob.service} · ${S.activeJob.client}</div>
+      </div>`:''}
+      <div style="display:flex;gap:12px;margin-top:8px">
+        ${[['2','Trips Today'],['£190','Earned Today']].map(([v,l])=>`<div class="card" style="flex:1;text-align:center;padding:14px">
+          <div style="font-size:22px;font-weight:800;color:#C9A84C">${v}</div>
+          <div style="font-size:12px;color:#555;margin-top:4px">${l}</div>
+        </div>`).join('')}
+      </div>
+      <div class="card" style="margin-top:12px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">Today's Schedule</div>
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06)">
+          <div style="width:8px;height:8px;border-radius:50%;background:#22c55e;flex-shrink:0"></div>
+          <div style="flex:1"><div style="font-size:14px">Heathrow T5 → Mayfair</div><div style="font-size:12px;color:#666;margin-top:2px">Completed · 14:30</div></div>
+          <div style="color:#C9A84C;font-weight:700">£95</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 0">
+          <div style="width:8px;height:8px;border-radius:2px;background:#C9A84C;flex-shrink:0"></div>
+          <div style="flex:1"><div style="font-size:14px">City Airport → Chelsea</div><div style="font-size:12px;color:#888;margin-top:2px">Tomorrow · 08:15</div></div>
+          <div style="color:#C9A84C;font-weight:700">£125</div>
+        </div>
+      </div>
+    </div>
+    ${nav()}
+  </div>`;
+},
+
+active:()=>{
+  const j=S.activeJob||JOBS[0];
+  const steps=[{l:'Confirmed'},{l:'En Route'},{l:'Arrived'},{l:'Onboard'},{l:'Complete'}];
+  const btnLabels={2:'I Have Arrived',3:'Passenger Onboard',4:'Complete Trip',5:'Done'};
+  return`<div class="screen">
+    <button class="back-btn" onclick="go('home')">‹ Home</button>
+    <div style="font-size:18px;font-weight:700;margin-bottom:16px">Active Trip</div>
+    <div class="stepper">
+      ${steps.map((s,i)=>`${i>0?`<div class="step-line-h" style="background:${i<S.tripStep?'#C9A84C':'rgba(255,255,255,.1)'}"></div>`:''}
+        <div class="step">
+          <div class="step-circle" style="background:${i+1<=S.tripStep?'#C9A84C':'#222'};color:${i+1<=S.tripStep?'#000':'#555'}">
+            ${i+1<S.tripStep?'✓':i+1}
+          </div>
+          <div style="font-size:9px;color:${i+1<=S.tripStep?'#C9A84C':'#444'};text-align:center">${s.l}</div>
+        </div>`).join('')}
+    </div>
+    <div class="card" style="display:flex;align-items:center;gap:14px;margin-bottom:12px">
+      <div style="width:50px;height:50px;border-radius:50%;background:linear-gradient(135deg,#C9A84C,#8B6914);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#000;flex-shrink:0">${j.initials}</div>
+      <div><div style="font-size:16px;font-weight:700">${j.client}</div><div style="display:flex;gap:2px;margin-top:4px;color:#C9A84C">★★★★★</div></div>
+      ${S.tripStep===4?`<div style="margin-left:auto;text-align:right"><div style="font-size:10px;color:#888">TRIP TIME</div><div id="trip-timer" style="font-size:20px;font-weight:800;color:#22c55e;font-variant-numeric:tabular-nums">${fmtTime(S.tripTimer)}</div></div>`:''}
+    </div>
+    <div class="card" style="margin-bottom:12px">
+      <div style="font-size:11px;color:#C9A84C;font-weight:700;letter-spacing:1px;margin-bottom:12px">ROUTE</div>
+      <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px">
+        <div style="width:8px;height:8px;border-radius:50%;background:#C9A84C;flex-shrink:0;margin-top:4px"></div>
+        <div><div style="font-size:14px;font-weight:600">Pickup</div><div style="font-size:14px;color:#888;margin-top:2px">${j.pickup}</div></div>
+      </div>
+      <div style="width:1px;height:20px;background:rgba(255,255,255,.1);margin-left:3px;margin-bottom:8px"></div>
+      <div style="display:flex;align-items:flex-start;gap:10px">
+        <div style="width:8px;height:8px;border-radius:2px;background:#888;flex-shrink:0;margin-top:4px"></div>
+        <div><div style="font-size:14px;font-weight:600">Drop-off</div><div style="font-size:14px;color:#888;margin-top:2px">${j.dropoff}</div></div>
+      </div>
+      ${j.flight?`<div style="margin-top:10px;font-size:13px;color:#888">✈ Flight ${j.flight}</div>`:''}
+    </div>
+    <div class="card" style="margin-bottom:12px">
+      <div style="font-size:13px;color:#888;line-height:1.6">${j.notes}</div>
+    </div>
+    <div style="height:140px;background:linear-gradient(135deg,#111,#1a1a1a);border-radius:14px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.06);margin-bottom:16px">
+      <div style="text-align:center;color:#444">
+        <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>
+        <div style="font-size:12px;margin-top:6px">Navigation</div>
+      </div>
+    </div>
+    ${S.tripStep<5?`<button class="btn btn-green" onclick="nextStep()">${btnLabels[S.tripStep]||'Next'}</button>`:''}
+    <div style="height:20px"></div>
+  </div>`;
+},
+
+jobs:()=>{
+  const t=S.jobsTab;
+  return`<div class="screen">
+    <div class="top-bar"><div style="font-size:22px;font-weight:700">Jobs</div></div>
+    <div style="display:flex;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:16px">
+      <div class="tab${t==='available'?' active':''}" onclick="S.jobsTab='available';render()">Available (2)</div>
+      <div class="tab${t==='upcoming'?' active':''}" onclick="S.jobsTab='upcoming';render()">Upcoming (1)</div>
+    </div>
+    ${t==='available'?JOBS.slice(0,2).map(j=>`<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+        ${jobBadge(j.type)}<span style="font-size:22px;font-weight:800;color:#C9A84C">£${j.pay}</span>
+      </div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px">${j.pickup}</div>
+      <div style="font-size:13px;color:#888;margin-bottom:10px">→ ${j.dropoff}</div>
+      <div style="font-size:12px;color:#666;margin-bottom:12px">${j.time} · ${j.vehicle} · ${j.notes}</div>
+      <button class="btn btn-green" style="padding:12px" onclick="S.activeJob=JOBS.find(x=>x.id==='${j.id}');S.tripStep=2;go('active')">Accept Job</button>
+    </div>`).join(''):''}
+    ${t==='upcoming'?`<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+        ${jobBadge('airport')}<span class="badge b-confirmed">Confirmed</span>
+      </div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px">City Airport</div>
+      <div style="font-size:13px;color:#888;margin-bottom:10px">→ Chelsea SW3</div>
+      <div style="font-size:12px;color:#666;margin-bottom:4px">Tomorrow · 08:15 · S-Class · 1 passenger</div>
+      <div style="font-size:24px;font-weight:800;color:#C9A84C;margin-top:10px">£125</div>
+    </div>`:''}
+    ${nav()}
+  </div>`;
+},
+
+earnings:()=>{
+  const t=S.earnTab;
+  const data={today:{total:'£205',trips:2,breakdown:[['Airport Transfers (2)','£190'],['Tips','£15']]},week:{total:'£1,720',trips:11,breakdown:[['Airport Transfers (8)','£1,280'],['Hourly (2)','£390'],['Tips','£50']]},month:{total:'£6,840',trips:42,breakdown:[['Airport Transfers (30)','£5,280'],['Hourly (8)','£1,360'],['Tips','£200']]}};
+  const d=data[t];
+  return`<div class="screen">
+    <div class="top-bar"><div style="font-size:22px;font-weight:700">Earnings</div></div>
+    <div style="display:flex;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:20px">
+      ${['today','week','month'].map(s=>`<div class="tab${t===s?' active':''}" onclick="S.earnTab='${s}';render()">${s.charAt(0).toUpperCase()+s.slice(1)}</div>`).join('')}
+    </div>
+    <div style="text-align:center;padding:20px 0 24px">
+      <div style="font-size:14px;color:#888;margin-bottom:4px">${t==='today'?"Today's Earnings":t==='week'?'This Week':'This Month'}</div>
+      <div style="font-size:48px;font-weight:800;color:#C9A84C">${d.total}</div>
+      <div style="font-size:14px;color:#666;margin-top:4px">${d.trips} trips completed</div>
+    </div>
+    <div class="card" style="margin-bottom:12px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px">Breakdown</div>
+      ${d.breakdown.map(([l,v])=>`<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:14px"><span style="color:#888">${l}</span><span style="font-weight:600">${v}</span></div>`).join('')}
+    </div>
+    ${t==='week'?`<div class="card" style="margin-bottom:12px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px">Daily Breakdown</div>
+      <div class="bar-row">
+        ${WEEK_DATA.map((v,i)=>`<div class="bar-col">
+          <div class="bar-fill" style="height:${v===0?4:Math.round((v/420)*60)+8}px;opacity:${v===0?.2:.8}"></div>
+          <div style="font-size:9px;color:#555">${WEEK_LABELS[i]}</div>
+        </div>`).join('')}
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:4px">${WEEK_DATA.map(v=>`<div style="flex:1;text-align:center;font-size:9px;color:#444">${v?'£'+v:''}</div>`).join('')}</div>
+    </div>`:''}
+    <div class="card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px">Payout Details</div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px"><span style="color:#888">Payment Schedule</span><span>Weekly — Mondays</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px"><span style="color:#888">Next Payout</span><span style="color:#C9A84C;font-weight:600">Monday 2 June</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#888">Bank Account</span><span>Lloyds ••••1234</span></div>
+    </div>
+    ${nav()}
+  </div>`;
+},
+
+history:()=>{
+  const t=S.histTab;
+  return`<div class="screen">
+    <div class="top-bar"><div style="font-size:22px;font-weight:700">Trip History</div></div>
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between">
+        ${[['247','Total Trips'],['£18,420','Total Earned'],['4.9','Avg Rating']].map(([v,l])=>`<div style="text-align:center"><div style="font-size:22px;font-weight:800;color:#C9A84C">${v}</div><div style="font-size:11px;color:#555;margin-top:3px">${l}</div></div>`).join('')}
+      </div>
+    </div>
+    <div style="display:flex;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:16px">
+      ${['week','month','all'].map(s=>`<div class="tab${t===s?' active':''}" onclick="S.histTab='${s}';render()">${s==='all'?'All Time':s.charAt(0).toUpperCase()+s.slice(1)}</div>`).join('')}
+    </div>
+    ${HISTORY.map(h=>`<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+        <div><div style="font-size:14px;font-weight:600">${h.pickup} → ${h.dropoff}</div><div style="font-size:12px;color:#666;margin-top:3px">${h.service} · ${h.date} · ${h.duration}</div></div>
+        <div style="text-align:right"><div style="font-size:18px;font-weight:800;color:#C9A84C">£${h.pay}</div><div style="font-size:13px;color:#C9A84C;margin-top:2px">${stars(h.rating)}</div></div>
+      </div>
+    </div>`).join('')}
+    ${nav()}
+  </div>`;
+},
+
+profile:()=>`<div class="screen">
+  <div class="top-bar"><div style="font-size:22px;font-weight:700">Profile</div></div>
+  <div style="text-align:center;padding:16px 0 24px">
+    <div style="width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#C9A84C,#8B6914);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:#000;margin:0 auto 14px">JH</div>
+    <div style="font-size:22px;font-weight:700">James Harrison</div>
+    <div style="display:flex;justify-content:center;align-items:center;gap:6px;margin-top:6px;color:#C9A84C">
+      <svg width="14" height="14" fill="#C9A84C" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+      <span style="font-size:16px;font-weight:700">4.9</span>
+      <span style="color:#555;font-size:14px">· 247 trips</span>
+    </div>
+  </div>
+  <div class="card" style="margin-bottom:12px;display:flex;align-items:center;gap:14px">
+    <div style="width:44px;height:44px;border-radius:10px;background:#1a1a1a;border:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center">
+      <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="#C9A84C" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 17l4 4 4-4m-4-5v9m0-9A5 5 0 1012 7a5 5 0 000 5z"/></svg>
+    </div>
+    <div><div style="font-size:15px;font-weight:600">Mercedes S-Class</div><div style="font-size:13px;color:#888;margin-top:2px">LX73 ABC · 2023 · Obsidian Black</div></div>
+  </div>
+  <div class="card" style="margin-bottom:12px">
+    ${[{icon:'📄',l:'Documents',a:"go('documents')"},{icon:'🏦',l:'Bank Details',a:''},{icon:'📅',l:'Availability Schedule',a:''},{icon:'⭐',l:'Ratings & Reviews',a:''}].map((r,i,a)=>`<div class="menu-row" style="border-bottom:${i<a.length-1?'1px solid rgba(255,255,255,.06)':'none'}" onclick="${r.a}">
+      <div style="display:flex;align-items:center;gap:12px"><span style="font-size:18px">${r.icon}</span><span style="font-size:15px">${r.l}</span></div>
+      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+    </div>`).join('')}
+  </div>
+  <div class="card" style="margin-bottom:12px">
+    ${[{icon:'💬',l:'Help & Support',a:''},{icon:'📞',l:'Call Dispatch',a:''}].map((r,i,a)=>`<div class="menu-row" style="border-bottom:${i<a.length-1?'1px solid rgba(255,255,255,.06)':'none'}" onclick="${r.a}">
+      <div style="display:flex;align-items:center;gap:12px"><span style="font-size:18px">${r.icon}</span><span style="font-size:15px">${r.l}</span></div>
+      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+    </div>`).join('')}
+  </div>
+  <button style="width:100%;padding:15px;background:transparent;border:1px solid rgba(239,68,68,.25);border-radius:10px;color:#ef4444;font-size:15px;cursor:pointer" onclick="go('login')">Sign Out</button>
+  ${nav()}
+</div>`,
+
+documents:()=>`<div class="screen">
+  <button class="back-btn" onclick="go('profile')">‹ Back</button>
+  <div style="font-size:22px;font-weight:700;margin-bottom:20px">Documents</div>
+  ${[
+    ['Driver\'s Licence','Expires 14 Mar 2027'],
+    ['Private Hire Licence','Expires 30 Jun 2025'],
+    ['Insurance Certificate','Expires 31 Dec 2025'],
+    ['DBS Check','Expires 15 Aug 2026'],
+    ['Vehicle Registration','Expires 22 Nov 2025'],
+    ['PCO Badge','Expires 30 Jun 2025'],
+  ].map(([name,exp])=>`<div class="card" style="display:flex;align-items:center;gap:14px">
+    <div style="width:40px;height:40px;border-radius:50%;background:rgba(34,197,94,.1);border:1.5px solid rgba(34,197,94,.3);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#22c55e;font-size:16px;font-weight:700">✓</div>
+    <div style="flex:1">
+      <div style="font-size:14px;font-weight:600">${name}</div>
+      <div style="font-size:12px;color:#22c55e;margin-top:3px">Verified · ${exp}</div>
+    </div>
+    <button style="background:#1a1a1a;border:1px solid rgba(255,255,255,.1);color:#888;padding:6px 12px;border-radius:8px;font-size:12px;cursor:pointer">Upload</button>
+  </div>`).join('')}
+</div>`,
+};
+
+function render(){
+  const fn=pages[S.screen]||pages.login;
+  document.getElementById('app').innerHTML=fn();
+}
+
+render();
 </script>
 </body>
 </html>
