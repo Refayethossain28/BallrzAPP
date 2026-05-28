@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>ApexVIP</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#0a0a0a;color:#fff;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;-webkit-font-smoothing:antialiased}
+    #root{max-width:480px;margin:0 auto;min-height:100vh;position:relative;overflow-x:hidden}
+    input,textarea,select{width:100%;padding:14px 16px;background:#1a1a1a;border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#fff;font-size:16px;outline:none;font-family:inherit;transition:border-color 0.2s}
+    input:focus,textarea:focus,select:focus{border-color:#C9A84C}
+    select option{background:#1a1a1a}
+    textarea{resize:none}
+    .btn-gold{background:#C9A84C;color:#000;border:none;padding:16px;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;width:100%;letter-spacing:0.5px;transition:opacity 0.2s}
+    .btn-gold:active{opacity:0.85}
+    .btn-outline{background:transparent;color:#C9A84C;border:1.5px solid #C9A84C;padding:15px;border-radius:10px;font-size:16px;font-weight:600;cursor:pointer;width:100%;transition:background 0.2s}
+    .btn-outline:active{background:rgba(201,168,76,0.1)}
+    .btn-ghost{background:transparent;color:#888;border:none;font-size:14px;cursor:pointer;padding:8px 0;font-family:inherit}
+    .card{background:#111;border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:16px}
+    .screen{padding:0 20px 100px;min-height:100vh}
+    .bottom-nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:#111;border-top:1px solid rgba(255,255,255,0.08);display:flex;padding:10px 0 28px;z-index:100}
+    .nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;color:#555;font-size:10px;padding:6px 0;transition:color 0.2s;-webkit-tap-highlight-color:transparent}
+    .nav-item.active{color:#C9A84C}
+    .top-bar{display:flex;justify-content:space-between;align-items:center;padding:20px 20px 8px}
+    .label{font-size:12px;color:#666;margin-bottom:6px;font-weight:500;letter-spacing:0.3px}
+    .section-title{font-size:17px;font-weight:700;margin-bottom:14px;color:#fff}
+    .gold{color:#C9A84C}
+    .muted{color:#888}
+    .pill{padding:8px 16px;border-radius:20px;border:1px solid rgba(255,255,255,0.12);background:transparent;color:#888;cursor:pointer;font-size:14px;white-space:nowrap;transition:all 0.2s;font-family:inherit}
+    .pill.active{background:#C9A84C;color:#000;border-color:#C9A84C;font-weight:600}
+    .tab{flex:1;padding:10px;text-align:center;cursor:pointer;font-size:14px;color:#666;border-bottom:2px solid transparent;transition:all 0.2s}
+    .tab.active{color:#C9A84C;border-bottom-color:#C9A84C}
+    .menu-row{display:flex;align-items:center;justify-content:space-between;padding:16px 0;border-bottom:1px solid rgba(255,255,255,0.06);cursor:pointer}
+    .menu-row:last-child{border-bottom:none}
+    .back-btn{background:none;border:none;color:#C9A84C;font-size:15px;cursor:pointer;padding:20px 20px 8px;display:flex;align-items:center;gap:6px;font-family:inherit;font-weight:500}
+    .input-group{margin-bottom:16px}
+    .error-msg{background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:#ef4444;padding:12px 16px;border-radius:8px;font-size:14px;margin-bottom:16px}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes scaleIn{from{opacity:0;transform:scale(0.8)}to{opacity:1;transform:scale(1)}}
+    .fade-in{animation:fadeIn 0.3s ease}
+    .overlay{position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:200;display:flex;align-items:flex-end;padding:20px}
+    .status-badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600}
+    .status-upcoming{background:rgba(201,168,76,0.15);color:#C9A84C}
+    .status-active{background:rgba(34,197,94,0.15);color:#22c55e}
+    .status-completed{background:rgba(100,100,100,0.2);color:#888}
+    .status-cancelled{background:rgba(239,68,68,0.15);color:#ef4444}
+    .divider{height:1px;background:rgba(255,255,255,0.06);margin:16px 0}
+    .step{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+    .step-dot{width:8px;height:8px;border-radius:50%;background:#C9A84C;flex-shrink:0}
+    .step-line{width:1px;height:20px;background:rgba(255,255,255,0.1);margin-left:3px}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useContext, createContext, useEffect, useCallback } = React;
+
+const AppContext = createContext(null);
+
+const MOCK_TRIPS = [
+  { id:'APX-4821', service:'Airport Transfer', pickup:'Heathrow Terminal 5', dropoff:'Mayfair, London W1', date:'29 May 2026', time:'14:30', vehicle:'Mercedes S-Class', status:'upcoming', price:'£185', driver:'James H.', rating:4.9, plate:'LX73 ABC', flightNum:'BA0247' },
+  { id:'APX-4788', service:'Airport Transfer', pickup:'Mayfair, London W1', dropoff:'Gatwick North Terminal', date:'24 May 2026', time:'06:15', vehicle:'Mercedes V-Class', status:'completed', price:'£225', driver:'Michael T.', rating:4.8, plate:'LX72 DEF' },
+  { id:'APX-4751', service:'By the Hour', pickup:'Knightsbridge', dropoff:'—', date:'18 May 2026', time:'10:00', vehicle:'Mercedes S-Class', status:'completed', price:'£260', driver:'David K.', rating:4.7, plate:'LX71 GHI' },
+  { id:'APX-4720', service:'Airport Transfer', pickup:'City Airport', dropoff:'Chelsea, London SW3', date:'10 May 2026', time:'19:45', vehicle:'Mercedes S-Class', status:'completed', price:'£125', driver:'James H.', rating:4.9, plate:'LX73 ABC' },
+];
+
+const MOCK_NOTIFICATIONS = [
+  { id:1, type:'driver', title:'Driver Assigned', body:'James Harrison will be your chauffeur for tomorrow\'s trip to Heathrow.', time:'2h ago' },
+  { id:2, type:'booking', title:'Booking Confirmed', body:'Your Airport Transfer on 29 May has been confirmed. Ref: APX-4821', time:'2h ago' },
+  { id:3, type:'promo', title:'Exclusive Offer', body:'Enjoy 20% off your next booking with code APEX20. Valid until 31 May.', time:'1d ago' },
+  { id:4, type:'system', title:'Payment Received', body:'£185.00 payment processed for booking APX-4821.', time:'2d ago' },
+];
+
+const MOCK_CARDS = [
+  { id:1, brand:'Visa', last4:'4242', expiry:'09/27', color:'linear-gradient(135deg,#C9A84C,#8B6914)', isDefault:true },
+  { id:2, brand:'Mastercard', last4:'8888', expiry:'03/26', color:'linear-gradient(135deg,#1a1a2e,#16213e)', isDefault:false },
+];
+
+// SVG Icons
+const IconHome = () => <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>;
+const IconTrips = () => <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>;
+const IconBell = () => <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>;
+const IconUser = () => <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>;
+const IconPlane = () => <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>;
+const IconClock = () => <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="10"/><path strokeLinecap="round" d="M12 6v6l4 2"/></svg>;
+const IconCalendar = () => <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path strokeLinecap="round" d="M16 2v4M8 2v4M3 10h18"/></svg>;
+const IconSwap = () => <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>;
+const IconChevron = () => <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>;
+const IconBack = () => <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7"/></svg>;
+const IconCheck = () => <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>;
+const IconCard = () => <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><rect x="1" y="4" width="22" height="16" rx="2"/><path d="M1 10h22"/></svg>;
+const IconMap = () => <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>;
+const IconStar = () => <svg width="14" height="14" fill="#C9A84C" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>;
+
+function BottomNav({ screen, navigate }) {
+  const tabs = [
+    { id:'home', label:'Home', icon:<IconHome/> },
+    { id:'trips', label:'Trips', icon:<IconTrips/> },
+    { id:'notifications', label:'Alerts', icon:<IconBell/> },
+    { id:'profile', label:'Profile', icon:<IconUser/> },
+  ];
+  return (
+    <nav className="bottom-nav">
+      {tabs.map(t => (
+        <div key={t.id} className={`nav-item ${screen===t.id?'active':''}`} onClick={()=>navigate(t.id)}>
+          {t.icon}<span>{t.label}</span>
+        </div>
+      ))}
+    </nav>
+  );
+}
+
+function SplashScreen() {
+  const { navigate } = useContext(AppContext);
+  return (
+    <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'40px 24px',background:'linear-gradient(180deg,#0a0a0a 0%,#111 100%)'}}>
+      <div style={{textAlign:'center',marginBottom:60}}>
+        <div style={{width:80,height:80,borderRadius:'50%',border:'2px solid #C9A84C',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 24px',background:'rgba(201,168,76,0.08)'}}>
+          <svg width="36" height="36" fill="none" viewBox="0 0 24 24" stroke="#C9A84C" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M5 3l14 9-14 9V3z"/></svg>
+        </div>
+        <div style={{fontSize:52,fontWeight:800,letterSpacing:12,color:'#C9A84C',lineHeight:1}}>APEX</div>
+        <div style={{fontSize:28,fontWeight:300,letterSpacing:16,color:'rgba(201,168,76,0.6)',marginTop:4}}>VIP</div>
+        <div style={{marginTop:20,color:'#666',fontSize:15,letterSpacing:2,textTransform:'uppercase'}}>Premium Chauffeur & Concierge</div>
+      </div>
+      <div style={{width:'100%',display:'flex',flexDirection:'column',gap:12}}>
+        <button className="btn-gold" onClick={()=>navigate('register')}>Get Started</button>
+        <button className="btn-outline" onClick={()=>navigate('login')}>Sign In</button>
+      </div>
+      <div style={{marginTop:32,color:'#444',fontSize:12,textAlign:'center'}}>
+        By continuing you agree to our Terms & Privacy Policy
+      </div>
+    </div>
+  );
+}
+
+function LoginScreen() {
+  const { navigate, setUser } = useContext(AppContext);
+  const [email, setEmail] = useState('');
+  const [pass, setPass] = useState('');
+  const [error, setError] = useState('');
+  const submit = () => {
+    if (email==='client@apexvip.com' && pass==='password') {
+      setUser({ name:'Alexandra', email });
+      navigate('home');
+    } else {
+      setError('Invalid email or password. Try client@apexvip.com / password');
+    }
+  };
+  return (
+    <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',padding:'60px 24px 40px'}}>
+      <div style={{textAlign:'center',marginBottom:40}}>
+        <div style={{fontSize:28,fontWeight:800,letterSpacing:6,color:'#C9A84C'}}>APEX VIP</div>
+        <div style={{color:'#666',fontSize:14,marginTop:6}}>Welcome back</div>
+      </div>
+      {error && <div className="error-msg">{error}</div>}
+      <div className="input-group"><div className="label">Email Address</div>
+        <input type="email" placeholder="your@email.com" value={email} onChange={e=>setEmail(e.target.value)} />
+      </div>
+      <div className="input-group"><div className="label">Password</div>
+        <input type="password" placeholder="••••••••" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==='Enter'&&submit()} />
+      </div>
+      <div style={{textAlign:'right',marginBottom:24}}>
+        <button className="btn-ghost">Forgot Password?</button>
+      </div>
+      <button className="btn-gold" onClick={submit}>Sign In</button>
+      <div style={{textAlign:'center',marginTop:24,color:'#666',fontSize:14}}>
+        Don't have an account?{' '}
+        <span style={{color:'#C9A84C',cursor:'pointer'}} onClick={()=>navigate('register')}>Register</span>
+      </div>
+      <div style={{marginTop:'auto',background:'#1a1a1a',borderRadius:10,padding:14,fontSize:13,color:'#666'}}>
+        <div style={{color:'#888',fontWeight:600,marginBottom:4}}>Demo credentials</div>
+        <div>Email: client@apexvip.com</div>
+        <div>Password: password</div>
+      </div>
+    </div>
+  );
+}
+
+function RegisterScreen() {
+  const { navigate, setUser } = useContext(AppContext);
+  const [step, setStep] = useState(1);
+  const [form, setForm] = useState({ firstName:'', lastName:'', email:'', phone:'', password:'', confirm:'' });
+  const set = (k,v) => setForm(p=>({...p,[k]:v}));
+  const next = () => {
+    if (step < 3) setStep(s=>s+1);
+    if (step === 2) setUser({ name: form.firstName, email: form.email });
+  };
+  return (
+    <div style={{minHeight:'100vh',padding:'0 24px 40px'}}>
+      <button className="back-btn" onClick={()=>step>1?setStep(s=>s-1):navigate('splash')}><IconBack/> Back</button>
+      {step < 3 && (
+        <div style={{padding:'0 0 24px'}}>
+          <div style={{fontSize:22,fontWeight:700,marginBottom:4}}>Create Account</div>
+          <div style={{color:'#666',fontSize:14}}>Step {step} of 2</div>
+          <div style={{display:'flex',gap:6,marginTop:12}}>
+            {[1,2].map(i=><div key={i} style={{flex:1,height:3,borderRadius:2,background:i<=step?'#C9A84C':'#222'}}/>)}
+          </div>
+        </div>
+      )}
+      {step===1 && <>
+        <div className="input-group"><div className="label">First Name</div><input placeholder="Alexandra" value={form.firstName} onChange={e=>set('firstName',e.target.value)}/></div>
+        <div className="input-group"><div className="label">Last Name</div><input placeholder="Stone" value={form.lastName} onChange={e=>set('lastName',e.target.value)}/></div>
+        <div className="input-group"><div className="label">Email Address</div><input type="email" placeholder="your@email.com" value={form.email} onChange={e=>set('email',e.target.value)}/></div>
+        <div className="input-group"><div className="label">Phone Number</div><input type="tel" placeholder="+44 7700 900000" value={form.phone} onChange={e=>set('phone',e.target.value)}/></div>
+        <button className="btn-gold" style={{marginTop:8}} onClick={next}>Continue</button>
+      </>}
+      {step===2 && <>
+        <div className="input-group"><div className="label">Password</div><input type="password" placeholder="Min. 8 characters" value={form.password} onChange={e=>set('password',e.target.value)}/></div>
+        <div className="input-group"><div className="label">Confirm Password</div><input type="password" placeholder="Repeat password" value={form.confirm} onChange={e=>set('confirm',e.target.value)}/></div>
+        <div style={{background:'#1a1a1a',borderRadius:10,padding:14,marginBottom:20,fontSize:13,color:'#666'}}>
+          By creating an account you agree to our <span style={{color:'#C9A84C'}}>Terms of Service</span> and <span style={{color:'#C9A84C'}}>Privacy Policy</span>.
+        </div>
+        <button className="btn-gold" onClick={next}>Create Account</button>
+      </>}
+      {step===3 && (
+        <div style={{textAlign:'center',padding:'60px 0'}}>
+          <div style={{width:80,height:80,borderRadius:'50%',background:'rgba(34,197,94,0.1)',border:'2px solid #22c55e',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 24px'}}>
+            <IconCheck/>
+          </div>
+          <div style={{fontSize:24,fontWeight:700,marginBottom:8}}>Welcome to ApexVIP!</div>
+          <div style={{color:'#666',marginBottom:40}}>Your account has been created successfully.</div>
+          <button className="btn-gold" onClick={()=>navigate('home')}>Go to Home</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HomeScreen() {
+  const { navigate, user, booking, setBooking } = useContext(AppContext);
+  const [pickup, setPickup] = useState('');
+  const [dropoff, setDropoff] = useState('');
+  const swap = () => { const t=pickup; setPickup(dropoff); setDropoff(t); };
+  const goBook = (type) => { setBooking(p=>({...p,serviceType:type,pickup,dropoff})); navigate('book-'+type); };
+  const hour = new Date().getHours();
+  const greeting = hour<12?'Good morning':hour<17?'Good afternoon':'Good evening';
+  const upcoming = MOCK_TRIPS.filter(t=>t.status==='upcoming');
+  const recent = MOCK_TRIPS.filter(t=>t.status==='completed').slice(0,2);
+  return (
+    <div className="screen fade-in">
+      <div className="top-bar">
+        <div>
+          <div style={{color:'#888',fontSize:13}}>{greeting},</div>
+          <div style={{fontSize:20,fontWeight:700}}>{user?.name || 'Guest'}</div>
+        </div>
+        <div style={{position:'relative',cursor:'pointer'}} onClick={()=>navigate('notifications')}>
+          <IconBell/>
+          <div style={{position:'absolute',top:-4,right:-4,width:8,height:8,borderRadius:'50%',background:'#C9A84C'}}/>
+        </div>
+      </div>
+
+      <div style={{padding:'16px 0'}}>
+        <div style={{background:'#1a1a1a',borderRadius:14,padding:4,border:'1px solid rgba(255,255,255,0.08)'}}>
+          <div style={{display:'flex',alignItems:'center',padding:'4px 8px'}}>
+            <div style={{width:8,height:8,borderRadius:'50%',background:'#C9A84C',margin:'0 12px 0 4px',flexShrink:0}}/>
+            <input style={{background:'transparent',border:'none',padding:'10px 0',fontSize:15}} placeholder="Pickup location" value={pickup} onChange={e=>setPickup(e.target.value)}/>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:8,padding:'0 8px'}}>
+            <div style={{flex:1,height:1,background:'rgba(255,255,255,0.06)'}}/>
+            <button onClick={swap} style={{background:'#111',border:'1px solid rgba(255,255,255,0.1)',borderRadius:'50%',width:32,height:32,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'#C9A84C',flexShrink:0}}><IconSwap/></button>
+            <div style={{flex:1,height:1,background:'rgba(255,255,255,0.06)'}}/>
+          </div>
+          <div style={{display:'flex',alignItems:'center',padding:'4px 8px'}}>
+            <div style={{width:8,height:8,borderRadius:2,background:'#888',margin:'0 12px 0 4px',flexShrink:0}}/>
+            <input style={{background:'transparent',border:'none',padding:'10px 0',fontSize:15}} placeholder="Dropoff location" value={dropoff} onChange={e=>setDropoff(e.target.value)}/>
+          </div>
+        </div>
+      </div>
+
+      <div style={{marginBottom:8,marginTop:8}}>
+        <div className="section-title">Our Services</div>
+        <div style={{display:'flex',gap:10}}>
+          {[
+            {type:'airport',label:'Airport Transfer',icon:<IconPlane/>,desc:'Door to terminal'},
+            {type:'hourly',label:'By the Hour',icon:<IconClock/>,desc:'From 2 hours'},
+            {type:'day',label:'By the Day',icon:<IconCalendar/>,desc:'Full day service'},
+          ].map(s=>(
+            <div key={s.type} onClick={()=>goBook(s.type)} style={{flex:1,background:'#111',border:'1px solid rgba(255,255,255,0.08)',borderRadius:12,padding:'16px 10px',textAlign:'center',cursor:'pointer',transition:'border-color 0.2s'}}>
+              <div style={{color:'#C9A84C',marginBottom:8,display:'flex',justifyContent:'center'}}>{s.icon}</div>
+              <div style={{fontSize:11,fontWeight:700,color:'#fff',marginBottom:2,lineHeight:1.2}}>{s.label}</div>
+              <div style={{fontSize:10,color:'#666'}}>{s.desc}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {upcoming.length > 0 && (
+        <div style={{marginTop:20}}>
+          <div className="section-title">Upcoming</div>
+          {upcoming.map(t=>(
+            <div key={t.id} className="card" style={{marginBottom:10,cursor:'pointer'}} onClick={()=>navigate('trip-detail',t)}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
+                <div style={{fontSize:13,color:'#888'}}>{t.date} · {t.time}</div>
+                <span className="status-badge status-upcoming">Upcoming</span>
+              </div>
+              <div className="step"><div className="step-dot"/><div style={{fontSize:14}}>{t.pickup}</div></div>
+              <div className="step-line" style={{marginLeft:3,marginBottom:8}}/>
+              <div className="step"><div style={{width:8,height:8,borderRadius:2,background:'#888',flexShrink:0}}/><div style={{fontSize:14}}>{t.dropoff}</div></div>
+              <div className="divider"/>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:13,color:'#888'}}>
+                <span>{t.vehicle}</span><span style={{color:'#C9A84C',fontWeight:700}}>{t.price}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{marginTop:20}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+          <div className="section-title" style={{marginBottom:0}}>Recent Trips</div>
+          <span style={{color:'#C9A84C',fontSize:13,cursor:'pointer'}} onClick={()=>navigate('trips')}>View all</span>
+        </div>
+        {recent.map(t=>(
+          <div key={t.id} className="card" style={{marginBottom:10,cursor:'pointer'}} onClick={()=>navigate('trip-detail',t)}>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
+              <div style={{fontSize:13,color:'#888'}}>{t.date}</div>
+              <span className="status-badge status-completed">Completed</span>
+            </div>
+            <div style={{fontSize:14,marginBottom:4}}>{t.pickup} → {t.dropoff}</div>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:13,color:'#888',marginTop:8}}>
+              <span>{t.vehicle}</span><span style={{color:'#fff',fontWeight:600}}>{t.price}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BookAirportScreen() {
+  const { navigate, booking, setBooking } = useContext(AppContext);
+  const [form, setForm] = useState({ pickup: booking.pickup||'', airport:'heathrow-t5', flight:'', date:'', time:'', passengers:2, childSeats:false, luggage:1 });
+  const set = (k,v) => setForm(p=>({...p,[k]:v}));
+  const airports = ['Heathrow T2','Heathrow T3','Heathrow T4','Heathrow T5','Gatwick North','Gatwick South','Stansted','Luton','City Airport'];
+  const next = () => { setBooking(p=>({...p,...form,serviceType:'airport'})); navigate('vehicle-select'); };
+  return (
+    <div className="screen fade-in">
+      <button className="back-btn" onClick={()=>navigate('home')}><IconBack/> Back</button>
+      <div style={{padding:'0 0 20px'}}>
+        <div style={{fontSize:22,fontWeight:700}}>Airport Transfer</div>
+        <div style={{color:'#666',fontSize:14,marginTop:4}}>Professional door-to-terminal service</div>
+      </div>
+      <div className="input-group"><div className="label">Pickup Address</div>
+        <input placeholder="Enter pickup location" value={form.pickup} onChange={e=>set('pickup',e.target.value)}/>
+      </div>
+      <div className="input-group"><div className="label">Airport</div>
+        <select value={form.airport} onChange={e=>set('airport',e.target.value)}>
+          {airports.map(a=><option key={a} value={a.toLowerCase().replace(/\s/g,'-')}>{a}</option>)}
+        </select>
+      </div>
+      <div style={{display:'flex',gap:12}}>
+        <div className="input-group" style={{flex:1}}><div className="label">Flight Number</div><input placeholder="BA0247" value={form.flight} onChange={e=>set('flight',e.target.value)}/></div>
+      </div>
+      <div style={{display:'flex',gap:12}}>
+        <div className="input-group" style={{flex:1}}><div className="label">Date</div><input type="date" value={form.date} onChange={e=>set('date',e.target.value)}/></div>
+        <div className="input-group" style={{flex:1}}><div className="label">Time</div><input type="time" value={form.time} onChange={e=>set('time',e.target.value)}/></div>
+      </div>
+      <div className="input-group">
+        <div className="label">Passengers</div>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+          {[1,2,3,4,5,6,7,8].map(n=>(
+            <button key={n} className={`pill ${form.passengers===n?'active':''}`} onClick={()=>set('passengers',n)}>{n}</button>
+          ))}
+        </div>
+      </div>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'14px 0',borderBottom:'1px solid rgba(255,255,255,0.06)'}}>
+        <div><div style={{fontSize:15,fontWeight:500}}>Child Seats</div><div style={{fontSize:12,color:'#666',marginTop:2}}>Appropriate for children under 12</div></div>
+        <div onClick={()=>set('childSeats',!form.childSeats)} style={{width:44,height:24,borderRadius:12,background:form.childSeats?'#C9A84C':'#333',position:'relative',cursor:'pointer',transition:'background 0.2s'}}>
+          <div style={{position:'absolute',top:2,left:form.childSeats?22:2,width:20,height:20,borderRadius:'50%',background:'#fff',transition:'left 0.2s'}}/>
+        </div>
+      </div>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'14px 0',marginBottom:20}}>
+        <div><div style={{fontSize:15,fontWeight:500}}>Luggage</div><div style={{fontSize:12,color:'#666',marginTop:2}}>Number of large bags</div></div>
+        <div style={{display:'flex',alignItems:'center',gap:16}}>
+          <button onClick={()=>set('luggage',Math.max(0,form.luggage-1))} style={{width:32,height:32,borderRadius:'50%',border:'1px solid rgba(255,255,255,0.15)',background:'transparent',color:'#fff',fontSize:20,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>−</button>
+          <span style={{fontSize:18,fontWeight:600,minWidth:20,textAlign:'center'}}>{form.luggage}</span>
+          <button onClick={()=>set('luggage',form.luggage+1)} style={{width:32,height:32,borderRadius:'50%',border:'1px solid rgba(255,255,255,0.15)',background:'transparent',color:'#fff',fontSize:20,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>+</button>
+        </div>
+      </div>
+      <button className="btn-gold" onClick={next}>Select Vehicle</button>
+    </div>
+  );
+}
+
+function BookHourlyScreen() {
+  const { navigate, booking, setBooking } = useContext(AppContext);
+  const [form, setForm] = useState({ pickup: booking.pickup||'', date:'', time:'', duration:3, passengers:2 });
+  const set = (k,v) => setForm(p=>({...p,[k]:v}));
+  const durations = [{hrs:2,price:130},{hrs:3,price:195},{hrs:4,price:260},{hrs:6,price:390},{hrs:8,price:520},{hrs:12,price:780}];
+  const next = () => { setBooking(p=>({...p,...form,serviceType:'hourly'})); navigate('vehicle-select'); };
+  return (
+    <div className="screen fade-in">
+      <button className="back-btn" onClick={()=>navigate('home')}><IconBack/> Back</button>
+      <div style={{padding:'0 0 20px'}}>
+        <div style={{fontSize:22,fontWeight:700}}>By the Hour</div>
+        <div style={{color:'#666',fontSize:14,marginTop:4}}>Flexible hourly chauffeur service</div>
+      </div>
+      <div className="input-group"><div className="label">Pickup Location</div><input placeholder="Enter pickup location" value={form.pickup} onChange={e=>set('pickup',e.target.value)}/></div>
+      <div style={{display:'flex',gap:12}}>
+        <div className="input-group" style={{flex:1}}><div className="label">Date</div><input type="date" value={form.date} onChange={e=>set('date',e.target.value)}/></div>
+        <div className="input-group" style={{flex:1}}><div className="label">Start Time</div><input type="time" value={form.time} onChange={e=>set('time',e.target.value)}/></div>
+      </div>
+      <div className="input-group">
+        <div className="label">Duration (S-Class prices shown)</div>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+          {durations.map(d=>(
+            <button key={d.hrs} className={`pill ${form.duration===d.hrs?'active':''}`} onClick={()=>set('duration',d.hrs)}>
+              {d.hrs}hr · £{d.price}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="input-group">
+        <div className="label">Passengers</div>
+        <div style={{display:'flex',gap:8}}>
+          {[1,2,3,4,5,6].map(n=>(
+            <button key={n} className={`pill ${form.passengers===n?'active':''}`} onClick={()=>set('passengers',n)}>{n}</button>
+          ))}
+        </div>
+      </div>
+      <div className="card" style={{marginBottom:20,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div><div style={{fontSize:13,color:'#888'}}>Selected</div><div style={{fontSize:16,fontWeight:600,marginTop:2}}>{form.duration} hours</div></div>
+        <div style={{textAlign:'right'}}><div style={{fontSize:13,color:'#888'}}>From</div><div style={{fontSize:22,fontWeight:700,color:'#C9A84C'}}>£{durations.find(d=>d.hrs===form.duration)?.price}</div></div>
+      </div>
+      <button className="btn-gold" onClick={next}>Select Vehicle</button>
+    </div>
+  );
+}
+
+function BookDayScreen() {
+  const { navigate, booking, setBooking } = useContext(AppContext);
+  const [form, setForm] = useState({ pickup: booking.pickup||'', date:'', notes:'', passengers:2 });
+  const set = (k,v) => setForm(p=>({...p,[k]:v}));
+  const next = () => { setBooking(p=>({...p,...form,serviceType:'day'})); navigate('vehicle-select'); };
+  return (
+    <div className="screen fade-in">
+      <button className="back-btn" onClick={()=>navigate('home')}><IconBack/> Back</button>
+      <div style={{padding:'0 0 20px'}}>
+        <div style={{fontSize:22,fontWeight:700}}>By the Day</div>
+        <div style={{color:'#666',fontSize:14,marginTop:4}}>Full-day concierge chauffeur service</div>
+      </div>
+      <div className="input-group"><div className="label">Pickup Location</div><input placeholder="Enter pickup location" value={form.pickup} onChange={e=>set('pickup',e.target.value)}/></div>
+      <div className="input-group"><div className="label">Date</div><input type="date" value={form.date} onChange={e=>set('date',e.target.value)}/></div>
+      <div className="input-group"><div className="label">Passengers</div>
+        <div style={{display:'flex',gap:8}}>
+          {[1,2,3,4,5,6,7].map(n=>(
+            <button key={n} className={`pill ${form.passengers===n?'active':''}`} onClick={()=>set('passengers',n)}>{n}</button>
+          ))}
+        </div>
+      </div>
+      <div className="input-group"><div className="label">Itinerary / Special Requests</div>
+        <textarea rows={4} placeholder="e.g. Multiple stops, business meetings, shopping, airport later in the day..." value={form.notes} onChange={e=>set('notes',e.target.value)}/>
+      </div>
+      <div style={{display:'flex',gap:10,marginBottom:20}}>
+        <div className="card" style={{flex:1,textAlign:'center'}}>
+          <div style={{fontSize:12,color:'#888',marginBottom:4}}>S-Class</div>
+          <div style={{fontSize:20,fontWeight:700,color:'#C9A84C'}}>£450</div>
+          <div style={{fontSize:11,color:'#666'}}>per day</div>
+        </div>
+        <div className="card" style={{flex:1,textAlign:'center'}}>
+          <div style={{fontSize:12,color:'#888',marginBottom:4}}>V-Class</div>
+          <div style={{fontSize:20,fontWeight:700,color:'#C9A84C'}}>£550</div>
+          <div style={{fontSize:11,color:'#666'}}>per day</div>
+        </div>
+      </div>
+      <button className="btn-gold" onClick={next}>Select Vehicle</button>
+    </div>
+  );
+}
+
+function VehicleSelectScreen() {
+  const { navigate, booking, setBooking } = useContext(AppContext);
+  const [selected, setSelected] = useState(null);
+  const prices = {
+    airport: { sClass:185, vClass:225 },
+    hourly: { sClass: (booking.duration||3)*65, vClass: (booking.duration||3)*75 },
+    day: { sClass:450, vClass:550 },
+  };
+  const p = prices[booking.serviceType] || prices.airport;
+  const vehicles = [
+    { id:'sClass', name:'Mercedes S-Class', type:'Business Sedan', pax:'Up to 3 passengers', price:p.sClass, features:['WiFi','Still & Sparkling Water','Newspapers','Phone Charger'], luggage:'2 large bags' },
+    { id:'vClass', name:'Mercedes V-Class', type:'Business Van', pax:'Up to 7 passengers', price:p.vClass, features:['WiFi','Still & Sparkling Water','Extra Legroom','Phone Charger'], luggage:'6 large bags' },
+  ];
+  const next = () => { if(!selected) return; const v=vehicles.find(v=>v.id===selected); setBooking(p=>({...p,vehicle:v.name,vehicleId:v.id,price:v.price})); navigate('booking-summary'); };
+  return (
+    <div className="screen fade-in">
+      <button className="back-btn" onClick={()=>navigate('book-'+booking.serviceType)}><IconBack/> Back</button>
+      <div style={{padding:'0 0 20px'}}>
+        <div style={{fontSize:22,fontWeight:700}}>Select Vehicle</div>
+        <div style={{color:'#666',fontSize:14,marginTop:4}}>All vehicles are latest model year</div>
+      </div>
+      {vehicles.map(v=>(
+        <div key={v.id} onClick={()=>setSelected(v.id)} className="card" style={{marginBottom:14,cursor:'pointer',border:`1.5px solid ${selected===v.id?'#C9A84C':'rgba(255,255,255,0.08)'}`,transition:'border-color 0.2s'}}>
+          <div style={{height:140,background:'linear-gradient(135deg,#1a1a1a,#0a0a0a)',borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center',marginBottom:14,position:'relative',overflow:'hidden'}}>
+            <div style={{position:'absolute',inset:0,background:'linear-gradient(135deg,rgba(201,168,76,0.05),transparent)'}}/>
+            <div style={{textAlign:'center'}}>
+              <div style={{fontSize:16,fontWeight:700,color:'#C9A84C',letterSpacing:2}}>{v.name.toUpperCase()}</div>
+              <div style={{fontSize:12,color:'#555',marginTop:4}}>{v.type}</div>
+            </div>
+          </div>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
+            <div>
+              <div style={{fontSize:17,fontWeight:700}}>{v.name}</div>
+              <div style={{fontSize:13,color:'#888',marginTop:2}}>{v.pax} · {v.luggage}</div>
+            </div>
+            <div style={{textAlign:'right'}}>
+              <div style={{fontSize:22,fontWeight:800,color:'#C9A84C'}}>£{v.price}</div>
+              <div style={{fontSize:11,color:'#666'}}>{booking.serviceType==='hourly'?'total':'flat rate'}</div>
+            </div>
+          </div>
+          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+            {v.features.map(f=><span key={f} style={{background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:20,padding:'4px 10px',fontSize:11,color:'#888'}}>{f}</span>)}
+          </div>
+          {selected===v.id && <div style={{marginTop:12,display:'flex',alignItems:'center',gap:6,color:'#C9A84C',fontSize:13,fontWeight:600}}><span>✓</span> Selected</div>}
+        </div>
+      ))}
+      <button className="btn-gold" onClick={next} style={{opacity:selected?1:0.5}}>Continue</button>
+    </div>
+  );
+}
+
+function BookingSummaryScreen() {
+  const { navigate, booking, setBooking } = useContext(AppContext);
+  const [promo, setPromo] = useState('');
+  const [promoApplied, setPromoApplied] = useState(false);
+  const [selectedCard, setSelectedCard] = useState(0);
+  const basePrice = booking.price || 185;
+  const discount = promoApplied ? Math.round(basePrice*0.2) : 0;
+  const discounted = basePrice - discount;
+  const vat = Math.round(discounted*0.2);
+  const total = discounted + vat;
+  const applyPromo = () => { if(promo.toUpperCase()==='APEX20') setPromoApplied(true); };
+  const serviceLabels = { airport:'Airport Transfer', hourly:'By the Hour', day:'By the Day' };
+  return (
+    <div className="screen fade-in">
+      <button className="back-btn" onClick={()=>navigate('vehicle-select')}><IconBack/> Back</button>
+      <div style={{fontSize:22,fontWeight:700,marginBottom:20}}>Booking Summary</div>
+      <div className="card" style={{marginBottom:14}}>
+        <div style={{fontSize:13,color:'#C9A84C',fontWeight:600,marginBottom:12,letterSpacing:1}}>TRIP DETAILS</div>
+        <div style={{fontSize:15,fontWeight:600,marginBottom:12}}>{serviceLabels[booking.serviceType]||'Airport Transfer'}</div>
+        <div className="step"><div className="step-dot"/><div style={{fontSize:14,color:'#ccc'}}>{booking.pickup||'Pickup location'}</div></div>
+        <div className="step-line" style={{marginLeft:3,marginBottom:8}}/>
+        <div className="step"><div style={{width:8,height:8,borderRadius:2,background:'#888',flexShrink:0}}/><div style={{fontSize:14,color:'#ccc'}}>{booking.airport||booking.dropoff||'Dropoff location'}</div></div>
+        {booking.date && <div style={{marginTop:12,fontSize:13,color:'#888'}}>{booking.date} at {booking.time}</div>}
+        {booking.flight && <div style={{fontSize:13,color:'#888'}}>Flight: {booking.flight}</div>}
+        {booking.passengers && <div style={{fontSize:13,color:'#888'}}>{booking.passengers} passenger{booking.passengers>1?'s':''}</div>}
+      </div>
+      <div className="card" style={{marginBottom:14}}>
+        <div style={{fontSize:13,color:'#C9A84C',fontWeight:600,marginBottom:12,letterSpacing:1}}>VEHICLE</div>
+        <div style={{fontSize:15,fontWeight:600}}>{booking.vehicle||'Mercedes S-Class'}</div>
+      </div>
+      <div className="card" style={{marginBottom:14}}>
+        <div style={{fontSize:13,color:'#C9A84C',fontWeight:600,marginBottom:12,letterSpacing:1}}>PAYMENT</div>
+        {MOCK_CARDS.map((c,i)=>(
+          <div key={c.id} onClick={()=>setSelectedCard(i)} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:i<MOCK_CARDS.length-1?'1px solid rgba(255,255,255,0.06)':'none',cursor:'pointer'}}>
+            <div style={{width:20,height:20,borderRadius:'50%',border:`2px solid ${selectedCard===i?'#C9A84C':'#444'}`,display:'flex',alignItems:'center',justifyContent:'center'}}>
+              {selectedCard===i&&<div style={{width:10,height:10,borderRadius:'50%',background:'#C9A84C'}}/>}
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:14,fontWeight:500}}>{c.brand} •••• {c.last4}</div>
+              <div style={{fontSize:12,color:'#666'}}>Expires {c.expiry}</div>
+            </div>
+            {c.isDefault&&<span style={{fontSize:10,color:'#C9A84C',background:'rgba(201,168,76,0.1)',padding:'2px 8px',borderRadius:10}}>Default</span>}
+          </div>
+        ))}
+      </div>
+      <div className="card" style={{marginBottom:14}}>
+        <div style={{fontSize:13,color:'#C9A84C',fontWeight:600,marginBottom:12,letterSpacing:1}}>PROMO CODE</div>
+        {promoApplied ? (
+          <div style={{display:'flex',alignItems:'center',gap:8,color:'#22c55e',fontSize:14}}>
+            <span>✓</span><span>APEX20 applied — 20% discount</span>
+          </div>
+        ):(
+          <div style={{display:'flex',gap:8}}>
+            <input placeholder="Enter promo code" value={promo} onChange={e=>setPromo(e.target.value)} style={{flex:1}}/>
+            <button onClick={applyPromo} style={{background:'#1a1a1a',border:'1px solid rgba(255,255,255,0.1)',color:'#C9A84C',padding:'0 16px',borderRadius:10,cursor:'pointer',fontWeight:600,fontSize:14,whiteSpace:'nowrap'}}>Apply</button>
+          </div>
+        )}
+      </div>
+      <div className="card" style={{marginBottom:20}}>
+        <div style={{fontSize:13,color:'#C9A84C',fontWeight:600,marginBottom:12,letterSpacing:1}}>PRICE BREAKDOWN</div>
+        <div style={{display:'flex',justifyContent:'space-between',marginBottom:8,fontSize:14}}><span style={{color:'#888'}}>Base fare</span><span>£{basePrice}</span></div>
+        {promoApplied&&<div style={{display:'flex',justifyContent:'space-between',marginBottom:8,fontSize:14}}><span style={{color:'#22c55e'}}>Discount (20%)</span><span style={{color:'#22c55e'}}>−£{discount}</span></div>}
+        <div style={{display:'flex',justifyContent:'space-between',marginBottom:8,fontSize:14}}><span style={{color:'#888'}}>VAT (20%)</span><span>£{vat}</span></div>
+        <div style={{height:1,background:'rgba(255,255,255,0.08)',margin:'12px 0'}}/>
+        <div style={{display:'flex',justifyContent:'space-between',fontSize:18,fontWeight:700}}><span>Total</span><span style={{color:'#C9A84C'}}>£{total}</span></div>
+      </div>
+      <button className="btn-gold" onClick={()=>navigate('booking-confirmed')}>Confirm Booking</button>
+    </div>
+  );
+}
+
+function BookingConfirmedScreen() {
+  const { navigate, setBooking } = useContext(AppContext);
+  const ref = 'APX-' + Math.floor(1000+Math.random()*9000);
+  return (
+    <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'40px 24px',textAlign:'center'}}>
+      <div style={{animation:'scaleIn 0.4s ease'}}>
+        <div style={{width:100,height:100,borderRadius:'50%',background:'rgba(34,197,94,0.1)',border:'2px solid #22c55e',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 24px'}}>
+          <IconCheck/>
+        </div>
+      </div>
+      <div style={{fontSize:26,fontWeight:800,marginBottom:8}}>Booking Confirmed!</div>
+      <div style={{color:'#888',marginBottom:4}}>Booking Reference</div>
+      <div style={{fontSize:22,fontWeight:700,color:'#C9A84C',marginBottom:24,letterSpacing:2}}>{ref}</div>
+      <div className="card" style={{width:'100%',marginBottom:24,textAlign:'left'}}>
+        <div style={{fontSize:13,color:'#888',marginBottom:12}}>YOUR DRIVER</div>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <div style={{width:48,height:48,borderRadius:'50%',background:'linear-gradient(135deg,#C9A84C,#8B6914)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,fontWeight:700,color:'#000'}}>JH</div>
+          <div>
+            <div style={{fontSize:16,fontWeight:600}}>James Harrison</div>
+            <div style={{fontSize:13,color:'#888',display:'flex',alignItems:'center',gap:4}}><IconStar/> 4.9 · Mercedes S-Class LX73 ABC</div>
+          </div>
+        </div>
+      </div>
+      <div style={{color:'#666',fontSize:14,marginBottom:32,lineHeight:1.6}}>Your driver will contact you 30 minutes before the scheduled pickup time.</div>
+      <div style={{width:'100%',display:'flex',flexDirection:'column',gap:12}}>
+        <button className="btn-gold" onClick={()=>navigate('trips')}>View My Trips</button>
+        <button className="btn-outline" onClick={()=>{ setBooking({}); navigate('home'); }}>Return Home</button>
+      </div>
+    </div>
+  );
+}
+
+function TripsScreen() {
+  const { navigate } = useContext(AppContext);
+  const [tab, setTab] = useState('upcoming');
+  const upcoming = MOCK_TRIPS.filter(t=>t.status==='upcoming');
+  const past = MOCK_TRIPS.filter(t=>t.status==='completed');
+  const trips = tab==='upcoming' ? upcoming : past;
+  return (
+    <div className="screen fade-in">
+      <div style={{padding:'20px 0 0'}}><div style={{fontSize:22,fontWeight:700}}>My Trips</div></div>
+      <div style={{display:'flex',borderBottom:'1px solid rgba(255,255,255,0.08)',marginBottom:16,marginTop:16}}>
+        <div className={`tab ${tab==='upcoming'?'active':''}`} onClick={()=>setTab('upcoming')}>Upcoming ({upcoming.length})</div>
+        <div className={`tab ${tab==='past'?'active':''}`} onClick={()=>setTab('past')}>Past ({past.length})</div>
+      </div>
+      {trips.length===0&&<div style={{textAlign:'center',padding:'60px 0',color:'#555'}}>No {tab} trips</div>}
+      {trips.map(t=>(
+        <div key={t.id} className="card" style={{marginBottom:12,cursor:'pointer'}} onClick={()=>navigate('trip-detail',t)}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
+            <div style={{fontSize:13,color:'#888'}}>{t.date} · {t.time}</div>
+            <span className={`status-badge status-${t.status}`}>{t.status.charAt(0).toUpperCase()+t.status.slice(1)}</span>
+          </div>
+          <div className="step"><div className="step-dot"/><div style={{fontSize:14}}>{t.pickup}</div></div>
+          <div className="step-line" style={{marginLeft:3,marginBottom:8}}/>
+          <div className="step"><div style={{width:8,height:8,borderRadius:2,background:'#888',flexShrink:0}}/><div style={{fontSize:14}}>{t.dropoff}</div></div>
+          <div className="divider"/>
+          <div style={{display:'flex',justifyContent:'space-between',fontSize:13}}>
+            <span style={{color:'#888'}}>{t.vehicle}</span>
+            <span style={{color:'#C9A84C',fontWeight:700}}>{t.price}</span>
+          </div>
+        </div>
+      ))}
+      {tab==='upcoming'&&trips.length===0&&(
+        <button className="btn-gold" style={{marginTop:16}} onClick={()=>navigate('home')}>Book a Ride</button>
+      )}
+      <BottomNav screen="trips" navigate={navigate}/>
+    </div>
+  );
+}
+
+function TripDetailScreen() {
+  const { navigate, selectedTrip } = useContext(AppContext);
+  const t = selectedTrip || MOCK_TRIPS[0];
+  const [cancelled, setCancelled] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  return (
+    <div className="screen fade-in">
+      <button className="back-btn" onClick={()=>navigate('trips')}><IconBack/> Back</button>
+      <div style={{fontSize:20,fontWeight:700,marginBottom:16}}>Trip Details</div>
+      <div style={{height:180,background:'linear-gradient(135deg,#111,#1a1a1a)',borderRadius:14,display:'flex',alignItems:'center',justifyContent:'center',marginBottom:16,border:'1px solid rgba(255,255,255,0.06)',position:'relative',overflow:'hidden'}}>
+        <div style={{position:'absolute',inset:0,backgroundImage:'repeating-linear-gradient(0deg,transparent,transparent 20px,rgba(255,255,255,0.02) 20px,rgba(255,255,255,0.02) 21px),repeating-linear-gradient(90deg,transparent,transparent 20px,rgba(255,255,255,0.02) 20px,rgba(255,255,255,0.02) 21px)'}}/>
+        <div style={{textAlign:'center',zIndex:1}}>
+          <IconMap/>
+          <div style={{fontSize:13,color:'#555',marginTop:8}}>Route Map</div>
+        </div>
+      </div>
+      <div className="card" style={{marginBottom:12}}>
+        <div style={{fontSize:13,color:'#C9A84C',fontWeight:600,marginBottom:12,letterSpacing:1}}>ROUTE</div>
+        <div className="step"><div className="step-dot"/><div><div style={{fontSize:14,fontWeight:500}}>{t.pickup}</div></div></div>
+        <div className="step-line" style={{marginLeft:3,marginBottom:8,height:30}}/>
+        <div className="step"><div style={{width:8,height:8,borderRadius:2,background:'#888',flexShrink:0}}/><div><div style={{fontSize:14,fontWeight:500}}>{t.dropoff}</div></div></div>
+        <div className="divider"/>
+        <div style={{display:'flex',gap:20,fontSize:13,color:'#888'}}>
+          <span>{t.date}</span><span>{t.time}</span>
+          {t.flightNum&&<span>✈ {t.flightNum}</span>}
+        </div>
+      </div>
+      <div className="card" style={{marginBottom:12}}>
+        <div style={{fontSize:13,color:'#C9A84C',fontWeight:600,marginBottom:12,letterSpacing:1}}>YOUR DRIVER</div>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <div style={{width:48,height:48,borderRadius:'50%',background:'linear-gradient(135deg,#C9A84C,#8B6914)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,fontWeight:700,color:'#000'}}>JH</div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:15,fontWeight:600}}>{t.driver}</div>
+            <div style={{fontSize:13,color:'#888',display:'flex',alignItems:'center',gap:4,marginTop:2}}><IconStar/> {t.rating} rating</div>
+          </div>
+          <div style={{fontSize:13,color:'#888'}}>
+            <div>{t.vehicle}</div>
+            <div style={{color:'#666'}}>{t.plate}</div>
+          </div>
+        </div>
+      </div>
+      <div className="card" style={{marginBottom:20,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div>
+          <div style={{fontSize:13,color:'#888'}}>Total Paid</div>
+          <div style={{fontSize:26,fontWeight:800,color:'#C9A84C'}}>{t.price}</div>
+        </div>
+        <span className={`status-badge status-${cancelled?'cancelled':t.status}`}>{cancelled?'Cancelled':t.status.charAt(0).toUpperCase()+t.status.slice(1)}</span>
+      </div>
+      {t.status==='completed'&&<button className="btn-outline">Download Receipt</button>}
+      {t.status==='upcoming'&&!cancelled&&!confirmCancel&&(
+        <button onClick={()=>setConfirmCancel(true)} style={{width:'100%',padding:14,background:'transparent',border:'1px solid rgba(239,68,68,0.3)',borderRadius:10,color:'#ef4444',fontSize:15,cursor:'pointer',marginTop:8}}>Cancel Booking</button>
+      )}
+      {confirmCancel&&(
+        <div style={{background:'rgba(239,68,68,0.08)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:12,padding:16,marginTop:8}}>
+          <div style={{fontSize:15,fontWeight:600,marginBottom:8}}>Cancel this booking?</div>
+          <div style={{fontSize:13,color:'#888',marginBottom:16}}>Cancellations made less than 24 hours before pickup may incur a fee.</div>
+          <div style={{display:'flex',gap:10}}>
+            <button onClick={()=>setConfirmCancel(false)} className="btn-outline" style={{flex:1,padding:12}}>Keep Booking</button>
+            <button onClick={()=>{setCancelled(true);setConfirmCancel(false);}} style={{flex:1,padding:12,background:'#ef4444',border:'none',borderRadius:10,color:'#fff',fontWeight:600,cursor:'pointer'}}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NotificationsScreen() {
+  const { navigate } = useContext(AppContext);
+  const [read, setRead] = useState([]);
+  const typeStyle = { driver:{icon:'🚗',color:'#C9A84C'}, booking:{icon:'✅',color:'#22c55e'}, promo:{icon:'⭐',color:'#a855f7'}, system:{icon:'💳',color:'#3b82f6'} };
+  return (
+    <div className="screen fade-in">
+      <div className="top-bar" style={{paddingTop:24}}>
+        <div style={{fontSize:22,fontWeight:700}}>Notifications</div>
+        <button className="btn-ghost" onClick={()=>setRead(MOCK_NOTIFICATIONS.map(n=>n.id))}>Mark all read</button>
+      </div>
+      <div style={{marginTop:8}}>
+        {MOCK_NOTIFICATIONS.map(n=>{
+          const s=typeStyle[n.type];
+          const isRead=read.includes(n.id);
+          return (
+            <div key={n.id} onClick={()=>setRead(p=>[...p,n.id])} style={{display:'flex',gap:14,padding:'16px 0',borderBottom:'1px solid rgba(255,255,255,0.06)',cursor:'pointer',opacity:isRead?0.5:1,transition:'opacity 0.2s'}}>
+              <div style={{width:44,height:44,borderRadius:'50%',background:`rgba(${s.color==='#C9A84C'?'201,168,76':s.color==='#22c55e'?'34,197,94':s.color==='#a855f7'?'168,85,247':'59,130,246'},0.12)`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>{s.icon}</div>
+              <div style={{flex:1}}>
+                <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+                  <div style={{fontSize:14,fontWeight:600}}>{n.title}</div>
+                  <div style={{fontSize:12,color:'#555'}}>{n.time}</div>
+                </div>
+                <div style={{fontSize:13,color:'#888',lineHeight:1.5}}>{n.body}</div>
+              </div>
+              {!isRead&&<div style={{width:8,height:8,borderRadius:'50%',background:'#C9A84C',marginTop:4,flexShrink:0}}/>}
+            </div>
+          );
+        })}
+      </div>
+      <BottomNav screen="notifications" navigate={navigate}/>
+    </div>
+  );
+}
+
+function ProfileScreen() {
+  const { navigate, user, setUser } = useContext(AppContext);
+  const initials = user?.name ? user.name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2) : 'AV';
+  const signOut = () => { setUser(null); navigate('splash'); };
+  const rows = [
+    { label:'Payment Methods', icon:'💳', action:()=>navigate('payment-methods') },
+    { label:'Saved Addresses', icon:'📍', action:()=>{} },
+    { label:'Preferences', icon:'⚙️', action:()=>{} },
+    { label:'Referral Code', icon:'🎁', action:()=>{} },
+    { label:'Help & Support', icon:'💬', action:()=>{} },
+  ];
+  return (
+    <div className="screen fade-in">
+      <div style={{padding:'24px 0 20px',textAlign:'center'}}>
+        <div style={{width:80,height:80,borderRadius:'50%',background:'linear-gradient(135deg,#C9A84C,#8B6914)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:28,fontWeight:800,color:'#000',margin:'0 auto 16px'}}>{initials}</div>
+        <div style={{fontSize:22,fontWeight:700}}>{user?.name||'Guest'}</div>
+        <div style={{color:'#888',fontSize:14,marginTop:4}}>{user?.email||''}</div>
+        <button className="btn-outline" style={{width:'auto',padding:'8px 24px',marginTop:14,fontSize:14}}>Edit Profile</button>
+      </div>
+      <div className="card" style={{marginBottom:12}}>
+        {rows.map((r,i)=>(
+          <div key={r.label} className="menu-row" onClick={r.action} style={{borderBottom:i<rows.length-1?'1px solid rgba(255,255,255,0.06)':'none'}}>
+            <div style={{display:'flex',alignItems:'center',gap:12}}>
+              <span style={{fontSize:18}}>{r.icon}</span>
+              <span style={{fontSize:15}}>{r.label}</span>
+            </div>
+            <IconChevron/>
+          </div>
+        ))}
+      </div>
+      <button onClick={signOut} style={{width:'100%',padding:16,background:'transparent',border:'1px solid rgba(239,68,68,0.25)',borderRadius:10,color:'#ef4444',fontSize:15,cursor:'pointer',marginTop:4}}>Sign Out</button>
+      <BottomNav screen="profile" navigate={navigate}/>
+    </div>
+  );
+}
+
+function PaymentMethodsScreen() {
+  const { navigate } = useContext(AppContext);
+  const [cards, setCards] = useState(MOCK_CARDS);
+  const [adding, setAdding] = useState(false);
+  return (
+    <div className="screen fade-in">
+      <button className="back-btn" onClick={()=>navigate('profile')}><IconBack/> Back</button>
+      <div style={{fontSize:22,fontWeight:700,marginBottom:20}}>Payment Methods</div>
+      {cards.map(c=>(
+        <div key={c.id} style={{background:c.color,borderRadius:14,padding:20,marginBottom:12,position:'relative'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+            <div style={{fontSize:12,fontWeight:700,letterSpacing:2,color:'rgba(255,255,255,0.7)'}}>{c.brand.toUpperCase()}</div>
+            {c.isDefault&&<span style={{background:'rgba(255,255,255,0.2)',borderRadius:10,padding:'2px 8px',fontSize:10,color:'#fff'}}>DEFAULT</span>}
+          </div>
+          <div style={{fontSize:20,letterSpacing:4,marginTop:20,fontWeight:500}}>•••• •••• •••• {c.last4}</div>
+          <div style={{display:'flex',justifyContent:'space-between',marginTop:16,alignItems:'flex-end'}}>
+            <div style={{fontSize:12,color:'rgba(255,255,255,0.7)'}}>EXPIRES<br/><span style={{color:'#fff',fontSize:14,fontWeight:600}}>{c.expiry}</span></div>
+            <button onClick={()=>setCards(p=>p.filter(x=>x.id!==c.id))} style={{background:'rgba(0,0,0,0.3)',border:'none',color:'#fff',padding:'6px 12px',borderRadius:8,fontSize:13,cursor:'pointer'}}>Remove</button>
+          </div>
+        </div>
+      ))}
+      {!adding ? (
+        <button onClick={()=>setAdding(true)} className="btn-outline" style={{marginBottom:16}}>+ Add New Card</button>
+      ):(
+        <div className="card" style={{marginBottom:16}}>
+          <div style={{fontSize:15,fontWeight:600,marginBottom:14}}>New Card</div>
+          <div className="input-group"><div className="label">Card Number</div><input placeholder="1234 5678 9012 3456"/></div>
+          <div style={{display:'flex',gap:12}}>
+            <div className="input-group" style={{flex:1}}><div className="label">Expiry</div><input placeholder="MM/YY"/></div>
+            <div className="input-group" style={{flex:1}}><div className="label">CVV</div><input placeholder="123" type="password"/></div>
+          </div>
+          <div style={{display:'flex',gap:10,marginTop:4}}>
+            <button onClick={()=>setAdding(false)} className="btn-outline" style={{flex:1,padding:12,fontSize:14}}>Cancel</button>
+            <button onClick={()=>setAdding(false)} className="btn-gold" style={{flex:1,padding:12,fontSize:14}}>Save Card</button>
+          </div>
+        </div>
+      )}
+      <div className="card" style={{opacity:0.5}}>
+        <div style={{fontSize:13,color:'#888',marginBottom:10}}>DIGITAL WALLETS</div>
+        <div style={{display:'flex',gap:10}}>
+          <div style={{flex:1,border:'1px solid rgba(255,255,255,0.1)',borderRadius:8,padding:'12px',textAlign:'center',fontSize:14,color:'#666'}}>Apple Pay<br/><span style={{fontSize:11}}>Coming Soon</span></div>
+          <div style={{flex:1,border:'1px solid rgba(255,255,255,0.1)',borderRadius:8,padding:'12px',textAlign:'center',fontSize:14,color:'#666'}}>Google Pay<br/><span style={{fontSize:11}}>Coming Soon</span></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [screen, setScreen] = useState('splash');
+  const [user, setUser] = useState(null);
+  const [booking, setBooking] = useState({});
+  const [selectedTrip, setSelectedTrip] = useState(null);
+
+  const navigate = useCallback((s, data=null) => {
+    if (s==='trip-detail' && data) setSelectedTrip(data);
+    setScreen(s);
+    window.scrollTo(0,0);
+  }, []);
+
+  const screens = {
+    splash: <SplashScreen/>,
+    login: <LoginScreen/>,
+    register: <RegisterScreen/>,
+    home: <HomeScreen/>,
+    'book-airport': <BookAirportScreen/>,
+    'book-hourly': <BookHourlyScreen/>,
+    'book-day': <BookDayScreen/>,
+    'vehicle-select': <VehicleSelectScreen/>,
+    'booking-summary': <BookingSummaryScreen/>,
+    'booking-confirmed': <BookingConfirmedScreen/>,
+    trips: <TripsScreen/>,
+    'trip-detail': <TripDetailScreen/>,
+    notifications: <NotificationsScreen/>,
+    profile: <ProfileScreen/>,
+    'payment-methods': <PaymentMethodsScreen/>,
+  };
+
+  return (
+    <AppContext.Provider value={{ screen, navigate, user, setUser, booking, setBooking, selectedTrip }}>
+      {screens[screen] || <SplashScreen/>}
+    </AppContext.Provider>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
