@@ -4,6 +4,10 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>ApexVIP Admin</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="firebase.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 body{background:#0f0f0f;color:#fff;font-family:-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased;display:flex;min-height:100vh}
@@ -75,7 +79,18 @@ select option{background:#222}
   <div class="modal" id="modal-box" onclick="event.stopPropagation()"></div>
 </div>
 <script>
-const BOOKINGS=[
+// ── Firebase init ──────────────────────────────────────────────────────
+let auth, db, FIREBASE_ENABLED = false;
+try {
+  if (typeof APEXVIP_FIREBASE_CONFIG !== 'undefined' && APEXVIP_FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY') {
+    firebase.initializeApp(APEXVIP_FIREBASE_CONFIG);
+    auth = firebase.auth();
+    db = firebase.firestore();
+    FIREBASE_ENABLED = true;
+  }
+} catch(e) { console.warn('Firebase init:', e.message); }
+
+let BOOKINGS=[
   {id:'APX-4821',client:'Sarah Mitchell',pickup:'Heathrow T5',dropoff:'Mayfair W1',date:'29 May',time:'14:30',vehicle:'S-Class',driver:'James H.',status:'confirmed',price:'£185'},
   {id:'APX-4820',client:'Robert Chen',pickup:'Canary Wharf',dropoff:'Gatwick North',date:'29 May',time:'11:15',vehicle:'V-Class',driver:'Michael T.',status:'active',price:'£225'},
   {id:'APX-4819',client:'Emma Walsh',pickup:'Knightsbridge',dropoff:'Stansted',date:'28 May',time:'09:00',vehicle:'S-Class',driver:'David K.',status:'completed',price:'£195'},
@@ -85,7 +100,7 @@ const BOOKINGS=[
   {id:'APX-4815',client:'Isabella Moore',pickup:'Chelsea',dropoff:'Luton Airport',date:'27 May',time:'08:00',vehicle:'V-Class',driver:'Ahmed H.',status:'completed',price:'£215'},
   {id:'APX-4814',client:'William Scott',pickup:'Kensington',dropoff:'City Airport',date:'27 May',time:'17:30',vehicle:'S-Class',driver:'Emma C.',status:'cancelled',price:'£125'},
 ];
-const DRIVERS=[
+let DRIVERS=[
   {id:'D1',name:'James Harrison',initials:'JH',color:'#C9A84C',rating:4.9,status:'online',vehicle:'S-Class LX73 ABC',trips:247,earnings:'£2,840'},
   {id:'D2',name:'Michael Torres',initials:'MT',color:'#3b82f6',rating:4.8,status:'ontrip',vehicle:'V-Class LX72 DEF',trips:189,earnings:'£2,210'},
   {id:'D3',name:'David Kim',initials:'DK',color:'#a855f7',rating:4.7,status:'online',vehicle:'S-Class LX71 GHI',trips:312,earnings:'£3,120'},
@@ -93,7 +108,7 @@ const DRIVERS=[
   {id:'D5',name:'Ahmed Hassan',initials:'AH',color:'#f59e0b',rating:4.6,status:'online',vehicle:'S-Class LX73 MNO',trips:156,earnings:'£1,680'},
   {id:'D6',name:'Emma Clarke',initials:'EC',color:'#ef4444',rating:4.8,status:'ontrip',vehicle:'V-Class LX72 PQR',trips:201,earnings:'£2,310'},
 ];
-const CLIENTS=[
+let CLIENTS=[
   {id:'C1',name:'Sarah Mitchell',email:'s.mitchell@email.com',phone:'+44 7700 900001',bookings:24,spent:'£4,820',tier:'vvip',joined:'Jan 2024'},
   {id:'C2',name:'Robert Chen',email:'r.chen@email.com',phone:'+44 7700 900002',bookings:18,spent:'£3,510',tier:'vip',joined:'Mar 2024'},
   {id:'C3',name:'Emma Walsh',email:'e.walsh@email.com',phone:'+44 7700 900003',bookings:9,spent:'£1,620',tier:'standard',joined:'May 2024'},
@@ -102,7 +117,7 @@ const CLIENTS=[
   {id:'C6',name:'Oliver Hart',email:'o.hart@email.com',phone:'+44 7700 900006',bookings:7,spent:'£1,240',tier:'standard',joined:'Jun 2024'},
   {id:'C7',name:'Isabella Moore',email:'i.moore@email.com',phone:'+44 7700 900007',bookings:22,spent:'£4,180',tier:'vip',joined:'Dec 2023'},
 ];
-const FLEET=[
+let FLEET=[
   {model:'Mercedes S-Class',reg:'LX73 ABC',year:'2023',color:'Obsidian Black',status:'available',driver:'James Harrison',mileage:'18,420'},
   {model:'Mercedes S-Class',reg:'LX71 GHI',year:'2022',color:'Obsidian Black',status:'ontrip',driver:'David Kim',mileage:'34,180'},
   {model:'Mercedes V-Class',reg:'LX72 DEF',year:'2023',color:'Obsidian Black',status:'ontrip',driver:'Michael Torres',mileage:'22,650'},
@@ -120,6 +135,78 @@ function go(s){S.screen=s;render();document.getElementById('sidebar').classList.
 function toggleMenu(){document.getElementById('sidebar').classList.toggle('open');}
 function openModal(h){document.getElementById('modal-box').innerHTML=h;document.getElementById('modal-bg').style.display='flex';}
 function closeModal(){document.getElementById('modal-bg').style.display='none';}
+
+async function adminLogin(){
+  if(!FIREBASE_ENABLED){go('dashboard');return;}
+  const email=document.querySelector('input[type=email]')?.value||'';
+  const pass=document.querySelector('input[type=password]')?.value||'';
+  try{
+    const cred=await auth.signInWithEmailAndPassword(email,pass);
+    const doc=await db.collection('users').doc(cred.user.uid).get();
+    if(doc.exists&&doc.data().role==='admin'){go('dashboard');}
+    else{auth.signOut();alert('Access denied. Admin accounts only.');}
+  }catch(err){alert('Invalid credentials');}
+}
+
+async function createBookingInFirestore(){
+  if(!FIREBASE_ENABLED){closeModal();return;}
+  const inputs=document.querySelectorAll('#modal-box input,#modal-box select');
+  const ref='APX-'+(Math.floor(1000+Math.random()*9000));
+  try{
+    await db.collection('bookings').add({
+      ref,clientName:inputs[0]?.value||'',pickup:inputs[1]?.value||'',
+      dropoff:inputs[2]?.value||'',date:inputs[3]?.value||'',
+      time:inputs[4]?.value||'',flight:inputs[5]?.value||'',
+      vehicle:(inputs[6]?.value||'').includes('V-Class')?'V-Class':'S-Class',
+      status:'pending',driver:'—',price:185,
+      createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+  }catch(err){console.warn('Create booking:',err.message);}
+  closeModal();render();
+}
+
+async function updateBookingStatus(id,status){
+  if(!FIREBASE_ENABLED)return;
+  try{await db.collection('bookings').doc(id).update({status});}catch(e){}
+}
+
+// ── Firebase real-time listeners ──────────────────────────────────────
+if(FIREBASE_ENABLED){
+  db.collection('bookings').orderBy('createdAt','desc').onSnapshot(snap=>{
+    BOOKINGS=snap.docs.map(d=>{
+      const x=d.data();
+      return{id:d.id,_docId:d.id,
+        client:x.clientName||'—',pickup:x.pickup||'',dropoff:x.dropoff||'',
+        date:x.date||'',time:x.time||'',vehicle:x.vehicle||'S-Class',
+        driver:x.driverName||x.driver||'—',status:x.status||'pending',
+        price:x.price?'£'+x.price:(x.priceStr||'£185'),
+        ref:x.ref||d.id
+      };
+    });
+    if(!['login'].includes(S.screen))render();
+  },e=>console.warn('Bookings:',e.code));
+  db.collection('drivers').onSnapshot(snap=>{
+    if(!snap.empty){
+      DRIVERS=snap.docs.map(d=>{
+        const x=d.data();
+        return{id:d.id,name:x.name||'',initials:(x.name||'??').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2),
+          color:x.color||'#C9A84C',rating:x.rating||4.8,status:x.status||'offline',
+          vehicle:x.vehicle||'S-Class',trips:x.trips||0,earnings:'£'+(x.earnings||0)};
+      });
+      if(!['login'].includes(S.screen))render();
+    }
+  },()=>{});
+  db.collection('users').where('role','==','client').onSnapshot(snap=>{
+    if(!snap.empty){
+      CLIENTS=snap.docs.map(d=>{
+        const x=d.data();
+        return{id:d.id,name:x.name||'',email:x.email||'',phone:x.phone||'',
+          bookings:x.bookings||0,spent:'£'+(x.spent||0),tier:x.tier||'standard',joined:x.joined||''};
+      });
+      if(!['login'].includes(S.screen))render();
+    }
+  },()=>{});
+}
 
 function badge(s){
   const m={pending:'b-pending Pending',confirmed:'b-confirmed Confirmed',active:'b-active Active',completed:'b-completed Completed',cancelled:'b-cancelled Cancelled',online:'b-online Online',ontrip:'b-ontrip On Trip',offline:'b-offline Offline',available:'b-available Available',vip:'b-vip VIP',vvip:'b-vvip VVIP',standard:'b-standard Standard'};
@@ -153,7 +240,7 @@ login:()=>`<div style="min-height:100vh;display:flex;align-items:center;justify-
     </div>
     <div style="margin-bottom:14px"><label style="font-size:12px;color:#666;display:block;margin-bottom:5px">Email</label><input type="email" value="admin@apexvip.com" style="width:100%"/></div>
     <div style="margin-bottom:24px"><label style="font-size:12px;color:#666;display:block;margin-bottom:5px">Password</label><input type="password" value="admin123" style="width:100%"/></div>
-    <button class="btn btn-gold" style="width:100%;padding:15px" onclick="go('dashboard')">Sign In</button>
+    <button class="btn btn-gold" style="width:100%;padding:15px" onclick="adminLogin()">Sign In</button>
     <div style="margin-top:14px;background:#1a1a1a;border-radius:8px;padding:12px;font-size:12px;color:#555">Demo: admin@apexvip.com / admin123</div>
   </div>
 </div>`,
@@ -293,7 +380,7 @@ pricing:()=>`<div class="screen">
   </div>
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">Airport Fixed Rates (from Central London)</div>
-    <div style="font-size:12px;color:#555;margin-bottom:14px">Including meet & greet, waiting time up to 60 min</div>
+    <div style="font-size:12px;color:#555;margin-bottom:14px">Including meet &amp; greet, waiting time up to 60 min</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">
       ${[['Heathrow','£185','£225'],['Gatwick','£195','£235'],['Stansted','£195','£235'],['Luton','£185','£225'],['City Airport','£125','£155']].map(([a,s,v])=>`<div style="background:#222;border-radius:8px;padding:14px">
         <div style="font-weight:600;margin-bottom:8px">${a}</div>
@@ -412,7 +499,7 @@ function newBookingForm(){return`<div>
   ${[['Client Name','text','e.g. Sarah Mitchell'],['Pickup Address','text','14 Park Lane, Mayfair'],['Dropoff / Airport','text','Heathrow Terminal 5'],['Date','date',''],['Time','time',''],['Flight Number (optional)','text','e.g. BA0247']].map(([l,t,p])=>`<div style="margin-bottom:12px"><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">${l}</label><input type="${t}" placeholder="${p}" style="width:100%"/></div>`).join('')}
   <div style="margin-bottom:16px"><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Vehicle</label><select style="width:100%"><option>Mercedes S-Class — £185</option><option>Mercedes V-Class — £225</option></select></div>
   <div style="display:flex;gap:8px">
-    <button class="btn btn-gold" style="flex:1" onclick="closeModal()">Create Booking</button>
+    <button class="btn btn-gold" style="flex:1" onclick="createBookingInFirestore()">Create Booking</button>
     <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
   </div>
 </div>`;}
