@@ -6,6 +6,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black"/>
 <title>ApexVIP</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="firebase.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 body{background:#0a0a0a;color:#fff;font-family:-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased;min-height:100vh}
@@ -55,6 +59,17 @@ textarea{resize:none}
 <body>
 <div id="app"></div>
 <script>
+// ── Firebase init — falls back to demo mode if firebase.js not configured ──
+let auth, db, FIREBASE_ENABLED = false;
+try {
+  if (typeof APEXVIP_FIREBASE_CONFIG !== 'undefined' && APEXVIP_FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY') {
+    firebase.initializeApp(APEXVIP_FIREBASE_CONFIG);
+    auth = firebase.auth();
+    db = firebase.firestore();
+    FIREBASE_ENABLED = true;
+  }
+} catch(e) { console.warn('Firebase init:', e.message); }
+
 const $ = id => document.getElementById(id);
 const app = document.getElementById('app');
 
@@ -69,7 +84,7 @@ let state = {
   ]
 };
 
-const TRIPS = [
+let TRIPS = [
   {id:'APX-4821',service:'Airport Transfer',pickup:'Heathrow Terminal 5',dropoff:'Mayfair, London W1',date:'29 May 2026',time:'14:30',vehicle:'Mercedes S-Class',status:'upcoming',price:'£185',driver:'James H.',rating:4.9,plate:'LX73 ABC',flight:'BA0247'},
   {id:'APX-4788',service:'Airport Transfer',pickup:'Mayfair, London W1',dropoff:'Gatwick North Terminal',date:'24 May 2026',time:'06:15',vehicle:'Mercedes V-Class',status:'completed',price:'£225',driver:'Michael T.',rating:4.8,plate:'LX72 DEF'},
   {id:'APX-4751',service:'By the Hour',pickup:'Knightsbridge',dropoff:'—',date:'18 May 2026',time:'10:00',vehicle:'Mercedes S-Class',status:'completed',price:'£260',driver:'David K.',rating:4.7,plate:'LX71 GHI'},
@@ -173,7 +188,7 @@ register: () => {
   </div>
   <div style="font-size:24px;font-weight:700;margin-bottom:8px">Welcome to ApexVIP!</div>
   <div class="muted" style="margin-bottom:40px">Your account has been created.</div>
-  <button class="btn btn-gold" onclick="state.user={name:'Alexandra',email:'client@apexvip.com'};state._regStep=1;go('home')">Go to Home</button>
+  <button class="btn btn-gold" onclick="state._regStep=1;go('home')">Go to Home</button>
 </div>`;
   return `
 <div class="screen">
@@ -188,12 +203,12 @@ register: () => {
   <div class="input-group"><label class="label">Last Name</label><input id="rln" placeholder="Stone"/></div>
   <div class="input-group"><label class="label">Email</label><input id="rem" type="email" placeholder="your@email.com"/></div>
   <div class="input-group"><label class="label">Phone</label><input id="rph" type="tel" placeholder="+44 7700 900000"/></div>
-  <button class="btn btn-gold" onclick="state._regStep=2;render()">Continue</button>
+  <button class="btn btn-gold" onclick="saveRegStep1()">Continue</button>
   `:`
   <div class="input-group"><label class="label">Password</label><input id="rpw" type="password" placeholder="Min. 8 characters"/></div>
   <div class="input-group"><label class="label">Confirm Password</label><input id="rpc" type="password" placeholder="Repeat password"/></div>
   <p style="font-size:13px;color:#666;margin-bottom:20px">By creating an account you agree to our <span class="gold">Terms</span> and <span class="gold">Privacy Policy</span>.</p>
-  <button class="btn btn-gold" onclick="state._regStep=3;render()">Create Account</button>
+  <button class="btn btn-gold" onclick="doRegister()">Create Account</button>
   `}
 </div>`;
 },
@@ -398,12 +413,12 @@ home: () => {
     <div class="divider"></div>
     <div style="display:flex;justify-content:space-between;font-size:18px;font-weight:700"><span>Total</span><span style="color:#C9A84C">£${total}</span></div>
   </div>
-  <button class="btn btn-gold" onclick="go('booking-confirmed')">Confirm Booking</button>
+  <button class="btn btn-gold" onclick="confirmBooking()">Confirm Booking</button>
 </div>`;
 },
 
 'booking-confirmed': () => {
-  const ref = 'APX-' + (Math.floor(1000+Math.random()*9000));
+  const ref = state._confirmedRef || ('APX-' + (Math.floor(1000+Math.random()*9000)));
   return `
 <div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 24px;text-align:center">
   <div style="width:100px;height:100px;border-radius:50%;background:rgba(34,197,94,.1);border:2px solid #22c55e;display:flex;align-items:center;justify-content:center;margin-bottom:24px;animation:scaleIn .4s ease">
@@ -589,11 +604,64 @@ profile: () => {
 
 };
 
-// Actions
-function doLogin(){
+// ── Actions ──────────────────────────────────────────────────────────
+async function doLogin(){
   const e=$('lemail')?.value||'',p=$('lpass')?.value||'';
-  if(e==='client@apexvip.com'&&p==='password'){state.user={name:'Alexandra',email:e};state._loginErr=null;go('home');}
-  else{state._loginErr='Invalid email or password.';render();}
+  if(!FIREBASE_ENABLED){
+    if(e==='client@apexvip.com'&&p==='password'){state.user={name:'Alexandra',email:e};state._loginErr=null;go('home');}
+    else{state._loginErr='Invalid email or password.';render();}
+    return;
+  }
+  try{await auth.signInWithEmailAndPassword(e,p);}
+  catch(err){state._loginErr='Invalid email or password.';render();}
+}
+function saveRegStep1(){
+  state._regName=($('rfn')?.value||'')+' '+($('rln')?.value||'');
+  state._regEmail=$('rem')?.value||'';
+  state._regPhone=$('rph')?.value||'';
+  state._regStep=2;render();
+}
+async function doRegister(){
+  const pw=$('rpw')?.value||'',pc=$('rpc')?.value||'';
+  if(pw.length<8){alert('Password must be at least 8 characters');return;}
+  if(pw!==pc){alert('Passwords do not match');return;}
+  if(!FIREBASE_ENABLED){state._regStep=3;render();return;}
+  try{
+    const cred=await auth.createUserWithEmailAndPassword(state._regEmail,pw);
+    await cred.user.updateProfile({displayName:state._regName});
+    await db.collection('users').doc(cred.user.uid).set({
+      name:state._regName,email:state._regEmail,phone:state._regPhone||'',
+      role:'client',tier:'standard',bookings:0,spent:0,
+      joined:new Date().toLocaleDateString('en-GB',{month:'short',year:'numeric'}),
+      createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+    state._regStep=3;render();
+  }catch(err){alert(err.message);}
+}
+async function confirmBooking(){
+  const ref='APX-'+(Math.floor(1000+Math.random()*9000));
+  const base=state.booking.price||185;
+  const disc=state._promoApplied?Math.round(base*.2):0;
+  const vat=Math.round((base-disc)*.2);
+  const total=base-disc+vat;
+  const svcLabel={airport:'Airport Transfer',hourly:'By the Hour',day:'By the Day'}[state.booking.serviceType]||'Airport Transfer';
+  if(FIREBASE_ENABLED&&auth.currentUser){
+    try{
+      await db.collection('bookings').add({
+        ref,clientId:auth.currentUser.uid,clientName:state.user?.name||'',
+        serviceType:state.booking.serviceType||'airport',serviceLabel:svcLabel,
+        pickup:state.booking.pickup||'',dropoff:state.booking.dropoff||'',
+        airport:state.booking.airport||'',flight:state.booking.flight||'',
+        date:state.booking.date||'',time:state.booking.time||'',
+        vehicle:state.booking.vehicle||'Mercedes S-Class',vehicleId:state.booking.vehicleId||'',
+        price:total,baseFare:base,discount:disc,vat,
+        promoApplied:state._promoApplied||false,status:'confirmed',
+        driverName:'James Harrison',driverRating:4.9,driverPlate:'LX73 ABC',
+        createdAt:firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }catch(err){console.warn('Booking save failed:',err.message);}
+  }
+  state._confirmedRef=ref;state._promoApplied=false;go('booking-confirmed');
 }
 function swapLocations(){
   const pu=$('pickup'),do_=$('dropoff');
@@ -617,7 +685,51 @@ function selectVehicle(id,price,name){state.booking.vehicleId=id;state.booking.p
 function goSummary(){if(state.booking.vehicleId)go('booking-summary');}
 function applyPromo(){const v=$('promo_in')?.value||'';if(v.toUpperCase()==='APEX20'){state._promoApplied=true;render();}else{alert('Invalid promo code');}}
 function removeCard(id){state.cards=state.cards.filter(c=>c.id!==id);render();}
-function signOut(){state.user=null;go('splash');}
+function signOut(){if(FIREBASE_ENABLED)auth.signOut();else{state.user=null;go('splash');}}
+
+// ── Firebase auth state listener ──────────────────────────────────────
+if(FIREBASE_ENABLED){
+  let _tripsUnsub=null;
+  auth.onAuthStateChanged(async user=>{
+    if(user){
+      try{
+        const doc=await db.collection('users').doc(user.uid).get();
+        const p=doc.exists?doc.data():{};
+        state.user={uid:user.uid,name:p.name||user.displayName||user.email.split('@')[0],email:user.email};
+      }catch(e){state.user={uid:user.uid,name:user.displayName||user.email.split('@')[0],email:user.email};}
+      if(_tripsUnsub)_tripsUnsub();
+      _tripsUnsub=db.collection('bookings').where('clientId','==',user.uid)
+        .onSnapshot(snap=>{
+          TRIPS.length=0;
+          const docs=snap.docs.map(d=>({_docId:d.id,...d.data()}));
+          docs.sort((a,b)=>(b.createdAt?.toMillis()||0)-(a.createdAt?.toMillis()||0));
+          docs.forEach(d=>TRIPS.push({
+            id:d.ref||d._docId,
+            service:d.serviceLabel||'Airport Transfer',
+            pickup:d.pickup||'',
+            dropoff:d.airport||d.dropoff||'',
+            date:d.date||'',time:d.time||'',
+            vehicle:d.vehicle||'Mercedes S-Class',
+            status:d.status||'confirmed',
+            price:'£'+(d.price||0),
+            driver:d.driverName||'TBA',
+            rating:d.driverRating||4.9,
+            plate:d.driverPlate||'',
+            flight:d.flight||''
+          }));
+          if(['home','trips'].includes(state.screen))render();
+        },()=>{});
+      state._loginErr=null;
+      if(state.screen==='splash'||state.screen==='login')go('home');
+      else render();
+    }else{
+      state.user=null;
+      if(_tripsUnsub){_tripsUnsub();_tripsUnsub=null;}
+      TRIPS.length=0;
+      if(!['splash','login','register'].includes(state.screen))go('splash');
+    }
+  });
+}
 
 function render(){
   const fn=screens[state.screen];

@@ -6,6 +6,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black"/>
 <title>ApexVIP Driver</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="firebase.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 body{background:#0a0a0a;color:#fff;font-family:-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased;min-height:100vh}
@@ -52,7 +56,18 @@ input:focus{border-color:#C9A84C}
 <body>
 <div id="app"></div>
 <script>
-const JOBS=[
+// ── Firebase init ──────────────────────────────────────────────────────
+let auth, db, FIREBASE_ENABLED = false, _driverId = null;
+try {
+  if (typeof APEXVIP_FIREBASE_CONFIG !== 'undefined' && APEXVIP_FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY') {
+    firebase.initializeApp(APEXVIP_FIREBASE_CONFIG);
+    auth = firebase.auth();
+    db = firebase.firestore();
+    FIREBASE_ENABLED = true;
+  }
+} catch(e) { console.warn('Firebase init:', e.message); }
+
+let JOBS=[
   {id:'J1',type:'airport',client:'Sarah M.',initials:'SM',service:'Airport Transfer',pickup:'Mayfair W1K',dropoff:'Heathrow Terminal 5',time:'In 45 min',pay:95,flight:'BA0247',notes:'1 passenger, 2 bags',vehicle:'S-Class'},
   {id:'J2',type:'hourly',client:'Robert C.',initials:'RC',service:'By the Hour (4hrs)',pickup:'Canary Wharf E14',dropoff:'Various',time:'Tomorrow 10:00',pay:260,notes:'Business meetings, multiple stops',vehicle:'S-Class'},
   {id:'J3',type:'airport',client:'Emma W.',initials:'EW',service:'Airport Transfer',pickup:'Knightsbridge SW1',dropoff:'Gatwick North Terminal',time:'Today 16:30',pay:195,flight:'EZY1234',notes:'2 passengers, 4 bags',vehicle:'S-Class'},
@@ -85,6 +100,37 @@ let S={
 
 function go(s){S.screen=s;render();window.scrollTo(0,0);}
 
+async function driverLogin(){
+  if(!FIREBASE_ENABLED){go('home');return;}
+  const email=document.querySelector('input[type=email]')?.value||'';
+  const pass=document.querySelector('input[type=password]')?.value||'';
+  try{
+    const cred=await auth.signInWithEmailAndPassword(email,pass);
+    const doc=await db.collection('users').doc(cred.user.uid).get();
+    if(doc.exists&&doc.data().role==='driver'){
+      _driverId=cred.user.uid;
+      setupDriverListeners(cred.user.uid);
+      go('home');
+    }else{auth.signOut();alert('Access denied. Driver accounts only.');}
+  }catch(err){alert('Invalid credentials');}
+}
+
+function setupDriverListeners(uid){
+  db.collection('jobs').where('driverId','==',uid).where('status','in',['pending'])
+    .onSnapshot(snap=>{
+      if(!snap.empty&&!S.jobOverlay&&!S.activeJob){
+        const doc=snap.docs[0];
+        const j={id:doc.id,...doc.data()};
+        JOBS[0]={id:j.id,type:j.type||'airport',client:j.clientName||'Client',
+          initials:(j.clientName||'CL').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2),
+          service:j.serviceLabel||'Airport Transfer',pickup:j.pickup||'',
+          dropoff:j.dropoff||j.airport||'',time:j.time||'Now',
+          pay:j.pay||j.price||95,flight:j.flight||'',notes:j.notes||'',vehicle:j.vehicle||'S-Class'};
+        S.jobOverlay=true;S.countdown=30;startCountdown();render();
+      }
+    },()=>{});
+}
+
 function nav(){
   const items=[
     {id:'home',label:'Home',svg:'<svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>'},
@@ -98,6 +144,9 @@ function nav(){
 
 function goOnline(){
   S.online=!S.online;
+  if(FIREBASE_ENABLED&&_driverId){
+    db.collection('drivers').doc(_driverId).set({status:S.online?'online':'offline'},{merge:true}).catch(()=>{});
+  }
   if(S.online){
     clearTimeout(S._timer);
     S._timer=setTimeout(()=>{S.jobOverlay=true;S.countdown=30;startCountdown();render();},3000);
@@ -126,6 +175,10 @@ function acceptJob(){
   S.activeJob=JOBS[0];
   S.tripStep=2;
   S.tripTimer=0;
+  if(FIREBASE_ENABLED&&S.activeJob?.id){
+    db.collection('jobs').doc(S.activeJob.id).update({status:'accepted'}).catch(()=>{});
+    if(_driverId) db.collection('drivers').doc(_driverId).set({status:'ontrip'},{merge:true}).catch(()=>{});
+  }
   go('active');
 }
 
@@ -137,11 +190,19 @@ function declineJob(){
 
 function nextStep(){
   if(S.tripStep<5){S.tripStep++;}
+  const stepNames={2:'en_route',3:'arrived',4:'onboard',5:'completed'};
+  if(FIREBASE_ENABLED&&S.activeJob?.id){
+    db.collection('jobs').doc(S.activeJob.id).update({tripStep:S.tripStep,status:stepNames[S.tripStep]||'active'}).catch(()=>{});
+  }
   if(S.tripStep===4){
     clearInterval(S._tripTimerInterval);
     S._tripTimerInterval=setInterval(()=>{S.tripTimer++;const el=document.getElementById('trip-timer');if(el){const m=Math.floor(S.tripTimer/60);const s=S.tripTimer%60;el.textContent=(m<10?'0'+m:m)+':'+(s<10?'0'+s:s);}},1000);
   }
-  if(S.tripStep===5){clearInterval(S._tripTimerInterval);S.activeJob=null;go('home');}
+  if(S.tripStep===5){
+    clearInterval(S._tripTimerInterval);
+    if(FIREBASE_ENABLED&&_driverId) db.collection('drivers').doc(_driverId).set({status:'online'},{merge:true}).catch(()=>{});
+    S.activeJob=null;go('home');
+  }
   else render();
 }
 
@@ -160,7 +221,7 @@ login:()=>`<div style="min-height:100vh;display:flex;flex-direction:column;paddi
   </div>
   <div style="margin-bottom:14px"><label style="font-size:12px;color:#666;display:block;margin-bottom:5px">Email</label><input type="email" value="driver@apexvip.com"/></div>
   <div style="margin-bottom:28px"><label style="font-size:12px;color:#666;display:block;margin-bottom:5px">Password</label><input type="password" value="driver123"/></div>
-  <button class="btn btn-gold" onclick="go('home')">Driver Sign In</button>
+  <button class="btn btn-gold" onclick="driverLogin()">Driver Sign In</button>
   <div style="margin-top:auto;background:#1a1a1a;border-radius:10px;padding:14px;font-size:13px;color:#555">
     <div style="color:#666;font-weight:600;margin-bottom:3px">Demo credentials</div>
     <div>driver@apexvip.com / driver123</div>
@@ -422,7 +483,7 @@ profile:()=>`<div class="screen">
       <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
     </div>`).join('')}
   </div>
-  <button style="width:100%;padding:15px;background:transparent;border:1px solid rgba(239,68,68,.25);border-radius:10px;color:#ef4444;font-size:15px;cursor:pointer" onclick="go('login')">Sign Out</button>
+  <button style="width:100%;padding:15px;background:transparent;border:1px solid rgba(239,68,68,.25);border-radius:10px;color:#ef4444;font-size:15px;cursor:pointer" onclick="FIREBASE_ENABLED?auth.signOut().then(()=>go('login')):go('login')">Sign Out</button>
   ${nav()}
 </div>`,
 
