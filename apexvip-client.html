@@ -19,6 +19,8 @@ body{background:#000;color:#fff;font-family:-apple-system,system-ui,sans-serif;-
 #app{max-width:430px;margin:0 auto;min-height:100vh;position:relative;overflow:hidden}
 
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes logoReveal{0%{opacity:0;transform:scale(.97) translateY(6px)}100%{opacity:1;transform:scale(1) translateY(0)}}
+@keyframes subtitleReveal{0%{opacity:0;letter-spacing:8px}100%{opacity:1;letter-spacing:5px}}
 @keyframes slideUp{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}
 @keyframes slideUpSheet{from{transform:translateY(100%)}to{transform:translateY(0)}}
 @keyframes scaleIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
@@ -121,7 +123,6 @@ input::placeholder,textarea::placeholder{color:rgba(255,255,255,.2)}
 <body>
 <div id="app"></div>
 <script>
-// ── Firebase ────────────────────────────────────────────────────────────────────────
 let auth, db, FIREBASE_ENABLED = false;
 try {
   if (typeof APEXVIP_FIREBASE_CONFIG !== 'undefined' && APEXVIP_FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY') {
@@ -191,20 +192,19 @@ function bottomNav(active) {
     </div>`).join('')}</nav>`;
 }
 
-// ── Screens ──────────────────────────────────────────────────────────────────────────
 const screens = {
 
 splash: () => `
-<div style="min-height:100vh;display:flex;flex-direction:column;background:#000;overflow:hidden;position:relative;animation:fadeIn .8s ease">
-  <div style="position:absolute;inset:0;background:radial-gradient(ellipse 80% 50% at 50% 100%,rgba(212,168,67,.055),transparent)"></div>
+<div style="min-height:100vh;display:flex;flex-direction:column;background:#000;overflow:hidden;position:relative">
+  <div style="position:absolute;inset:0;background:radial-gradient(ellipse 80% 50% at 50% 100%,rgba(212,168,67,.055),transparent);animation:fadeIn 2s 1s both ease"></div>
   <div style="position:absolute;width:700px;height:700px;top:-260px;left:50%;transform:translateX(-50%);background:radial-gradient(circle,rgba(212,168,67,.032),transparent 62%);animation:orb1 14s ease-in-out infinite alternate"></div>
   <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 32px;position:relative;z-index:1">
-    <div style="text-align:center;animation:slideUp .8s .15s both cubic-bezier(.16,1,.3,1)">
-      <div style="font-family:'Cormorant Garamond',Georgia,serif;font-size:72px;font-weight:300;color:#fff;letter-spacing:2px;line-height:1;margin-bottom:16px">ApexVIP</div>
-      <div style="font-family:-apple-system,system-ui,sans-serif;font-size:12px;font-weight:400;letter-spacing:5px;color:rgba(255,255,255,.38);text-transform:uppercase">Luxury Concierge Services</div>
+    <div style="text-align:center">
+      <div style="font-family:'Cormorant Garamond',Georgia,serif;font-size:72px;font-weight:300;color:#fff;letter-spacing:2px;line-height:1;margin-bottom:18px;animation:logoReveal 1.4s .3s both cubic-bezier(.16,1,.3,1)">ApexVIP</div>
+      <div style="font-family:-apple-system,system-ui,sans-serif;font-size:12px;font-weight:400;color:rgba(255,255,255,.38);text-transform:uppercase;animation:subtitleReveal 1.2s 1s both ease-out">Luxury Concierge Services</div>
     </div>
   </div>
-  <div style="padding:0 28px 52px;display:flex;flex-direction:column;gap:10px;position:relative;z-index:1;animation:slideUp .6s .5s both cubic-bezier(.16,1,.3,1)">
+  <div style="padding:0 28px 52px;display:flex;flex-direction:column;gap:10px;position:relative;z-index:1;animation:slideUp .6s 1.8s both cubic-bezier(.16,1,.3,1)">
     <button class="btn btn-white" onclick="go('register')">Get started</button>
     <button class="btn btn-glass" onclick="go('login')">Sign in</button>
   </div>
@@ -645,7 +645,6 @@ home: () => {
     <div style="font-size:32px;font-weight:800;margin-bottom:6px">Booked</div>
     <div style="font-size:12px;color:rgba(255,255,255,.3);letter-spacing:2px;margin-bottom:8px">REFERENCE</div>
     <div style="font-size:24px;font-weight:800;color:#D4A843;letter-spacing:4px;margin-bottom:40px">${ref}</div>
-
     <div class="card" style="width:100%;padding:20px;text-align:left">
       <div class="section-label" style="margin-bottom:16px">Your driver</div>
       <div style="display:flex;align-items:center;gap:14px">
@@ -658,9 +657,7 @@ home: () => {
           </div>
         </div>
       </div>
-      <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,.05);font-size:13px;color:rgba(255,255,255,.3);line-height:1.7">
-        Your driver will contact you 30 minutes before pickup.
-      </div>
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,.05);font-size:13px;color:rgba(255,255,255,.3);line-height:1.7">Your driver will contact you 30 minutes before pickup.</div>
     </div>
   </div>
   <div style="width:100%;padding-bottom:52px;display:flex;flex-direction:column;gap:10px">
@@ -752,7 +749,6 @@ trips: () => {
         <span>${t.date}</span><span>${t.time}</span>${t.flight?`<span>✈ ${t.flight}</span>`:''}
       </div>
     </div>
-
     <div class="card" style="padding:20px;margin-bottom:10px">
       <div style="display:flex;align-items:center;gap:14px">
         <div style="width:52px;height:52px;border-radius:16px;background:linear-gradient(135deg,#D4A843,#8B6914);display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800;color:#000;flex-shrink:0">JH</div>
@@ -766,12 +762,10 @@ trips: () => {
         <div style="font-size:12px;color:rgba(255,255,255,.25)">${t.plate}</div>
       </div>
     </div>
-
     <div class="card" style="padding:20px;margin-bottom:24px;display:flex;justify-content:space-between;align-items:center">
       <div style="font-size:14px;color:rgba(255,255,255,.35)">Total${t.status==='completed'?' paid':''}</div>
       <div style="font-size:32px;font-weight:800;color:#D4A843">${t.price}</div>
     </div>
-
     ${t.status==='completed'?`<button class="btn btn-glass" style="margin-bottom:12px">Download receipt</button>`:''}
     ${t.status==='upcoming'&&!cancelled&&!confirming?`<button class="btn-danger-outline" onclick="state._tripConfirming='${t.id}';render()">Cancel booking</button>`:''}
     ${confirming?`<div style="background:rgba(239,68,68,.05);border:1px solid rgba(239,68,68,.12);border-radius:18px;padding:22px">
@@ -874,7 +868,6 @@ profile: () => {
 
 };
 
-// ── Actions ──────────────────────────────────────────────────────────────────────────
 async function doLogin(){
   const e=$('lemail')?.value||'',p=$('lpass')?.value||'';
   if(!FIREBASE_ENABLED){
@@ -985,7 +978,6 @@ async function confirmBooking(){
 function removeCard(id){state.cards=state.cards.filter(c=>c.id!==id);render();}
 function signOut(){if(FIREBASE_ENABLED)auth.signOut();else{state.user=null;go('splash');}}
 
-// ── Firebase auth ──────────────────────────────────────────────────────────────────────────
 if(FIREBASE_ENABLED){
   let _unsub=null;
   auth.onAuthStateChanged(async user=>{
