@@ -14,8 +14,10 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="firebase.js"></script>
 <style>
+body{--bg:#000;--fg:#fff;--fg-muted:rgba(255,255,255,.38);--fg-dim:rgba(255,255,255,.3);--fg-subtle:rgba(255,255,255,.25);--fg-ghost:rgba(255,255,255,.2);--fg-faint:rgba(255,255,255,.15);--surface:rgba(255,255,255,.04);--surface-b:rgba(255,255,255,.07);--surface-c:rgba(255,255,255,.09);--border:rgba(255,255,255,.07);--border-b:rgba(255,255,255,.11);--divider:rgba(255,255,255,.05)}
+body.light{--bg:#f8f6f1;--fg:#0d0d0d;--fg-muted:rgba(0,0,0,.42);--fg-dim:rgba(0,0,0,.38);--fg-subtle:rgba(0,0,0,.32);--fg-ghost:rgba(0,0,0,.28);--fg-faint:rgba(0,0,0,.18);--surface:rgba(0,0,0,.04);--surface-b:rgba(0,0,0,.07);--surface-c:rgba(0,0,0,.09);--border:rgba(0,0,0,.09);--border-b:rgba(0,0,0,.13);--divider:rgba(0,0,0,.06)}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-body{background:#000;color:#fff;font-family:-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased;min-height:100vh;overflow:hidden}
+body{background:var(--bg);color:var(--fg);font-family:-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased;min-height:100vh;overflow:hidden;transition:background .3s,color .3s}
 #app{max-width:430px;margin:0 auto;min-height:100vh;position:relative;overflow:hidden}
 
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
@@ -37,6 +39,8 @@ body{background:#000;color:#fff;font-family:-apple-system,system-ui,sans-serif;-
 .map-orb-2{width:320px;height:320px;bottom:28%;right:-70px;background:radial-gradient(circle,rgba(80,100,200,.05) 0%,transparent 70%);animation:orb2 14s ease-in-out infinite alternate}
 .map-orb-3{width:220px;height:220px;top:12%;left:-50px;background:radial-gradient(circle,rgba(170,130,70,.04) 0%,transparent 70%);animation:orb3 8s ease-in-out infinite alternate}
 .map-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px);background-size:52px 52px}
+body.light .map-bg{background:#1c1c24}
+body.light .map-grid{background-image:linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px)}
 .map-pin{position:absolute;top:36%;left:50%;transform:translate(-50%,-50%);z-index:2}
 .map-pin-ring{position:absolute;width:36px;height:36px;border-radius:50%;border:1px solid rgba(212,168,67,.25);top:50%;left:50%;transform:translate(-50%,-50%);animation:pinPulse 2.8s ease-in-out infinite}
 .map-pin-ring2{position:absolute;width:36px;height:36px;border-radius:50%;border:1px solid rgba(212,168,67,.18);top:50%;left:50%;animation:ringExpand 3s ease-out infinite}
@@ -45,61 +49,64 @@ body{background:#000;color:#fff;font-family:-apple-system,system-ui,sans-serif;-
 
 /* Glass sheet */
 .sheet{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(180deg,rgba(6,6,6,.86) 0%,rgba(0,0,0,.97) 50%);backdrop-filter:blur(50px) saturate(160%);-webkit-backdrop-filter:blur(50px) saturate(160%);border-radius:28px 28px 0 0;border-top:1px solid rgba(255,255,255,.08);animation:slideUpSheet .45s cubic-bezier(.16,1,.3,1);z-index:10}
-.sheet-handle{width:30px;height:4px;background:rgba(255,255,255,.12);border-radius:2px;margin:14px auto 0}
+body.light .sheet{background:linear-gradient(180deg,rgba(244,242,237,.9) 0%,rgba(248,246,241,.98) 50%);border-top:1px solid rgba(0,0,0,.08)}
+.sheet-handle{width:30px;height:4px;background:var(--fg-ghost);border-radius:2px;margin:14px auto 0}
 
 /* Top bar */
 .top-bar{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:56px 22px 16px;z-index:5}
 
 /* Inputs */
-input,textarea,select{width:100%;background:transparent;border:none;color:#fff;font-size:16px;outline:none;font-family:inherit;-webkit-appearance:none}
-input::placeholder,textarea::placeholder{color:rgba(255,255,255,.2)}
-.field{background:rgba(255,255,255,.05);border-radius:16px;padding:15px 18px;border:1px solid rgba(255,255,255,.07);transition:border-color .2s}
+input,textarea,select{width:100%;background:transparent;border:none;color:var(--fg);font-size:16px;outline:none;font-family:inherit;-webkit-appearance:none}
+input::placeholder,textarea::placeholder{color:var(--fg-ghost)}
+.field{background:var(--surface);border-radius:16px;padding:15px 18px;border:1px solid var(--border);transition:border-color .2s}
 .field:focus-within{border-color:rgba(212,168,67,.35)}
-.inp-card{background:rgba(255,255,255,.04);border-radius:18px;padding:2px 16px;border:1px solid rgba(255,255,255,.07);transition:border-color .2s}
+.inp-card{background:var(--surface);border-radius:18px;padding:2px 16px;border:1px solid var(--border);transition:border-color .2s}
 .inp-card:focus-within{border-color:rgba(212,168,67,.3)}
 .inp-row{display:flex;align-items:center;gap:12px;padding:13px 0}
-.inp-row+.inp-row{border-top:1px solid rgba(255,255,255,.05)}
+.inp-row+.inp-row{border-top:1px solid var(--divider)}
 
 /* Buttons */
 .btn{width:100%;padding:18px;border-radius:18px;font-size:16px;font-weight:700;border:none;cursor:pointer;font-family:inherit;letter-spacing:.2px;transition:transform .12s,opacity .15s}
 .btn:active{transform:scale(.975);opacity:.88}
 .btn-white{background:#fff;color:#000}
 .btn-gold{background:linear-gradient(135deg,#D4A843 0%,#B8902E 100%);color:#000}
-.btn-glass{background:rgba(255,255,255,.06);color:#fff;border:1px solid rgba(255,255,255,.1)}
+.btn-glass{background:var(--surface-b);color:var(--fg);border:1px solid var(--border-b)}
 .btn-ghost{background:transparent;color:rgba(212,168,67,.9);font-size:15px;font-weight:600;border:none;cursor:pointer;font-family:inherit;padding:14px}
 .btn-danger-outline{width:100%;padding:16px;background:transparent;border:1px solid rgba(239,68,68,.2);border-radius:16px;color:#f87171;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit}
 
 /* Route */
 .rdot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
 .rdot-gold{background:#D4A843;box-shadow:0 0 0 3px rgba(212,168,67,.18)}
-.rdot-outline{background:transparent;border:1.5px solid rgba(255,255,255,.3)}
-.rline{width:1px;height:20px;background:rgba(255,255,255,.1);margin-left:4px}
+.rdot-outline{background:transparent;border:1.5px solid var(--fg-dim)}
+.rline{width:1px;height:20px;background:var(--fg-faint);margin-left:4px}
 
 /* Vehicle card */
-.vcard{background:#0c0c0c;border-radius:22px;overflow:hidden;border:1.5px solid rgba(255,255,255,.07);cursor:pointer;transition:border-color .2s,transform .15s}
+.vcard{background:var(--surface);border-radius:22px;overflow:hidden;border:1.5px solid var(--border);cursor:pointer;transition:border-color .2s,transform .15s}
 .vcard:active{transform:scale(.99)}
 .vcard.sel{border-color:#D4A843}
 .vcard-media{height:140px;position:relative;background:linear-gradient(145deg,#0a0a0a 0%,#151515 100%);display:flex;align-items:center;justify-content:center;overflow:hidden}
+body.light .vcard-media{background:linear-gradient(145deg,#e0deda 0%,#d4d2cd 100%)}
 .vcard-badge{position:absolute;top:14px;left:14px;background:rgba(212,168,67,.1);border:1px solid rgba(212,168,67,.22);color:#D4A843;padding:4px 11px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:1.2px}
 
 /* Trip card */
-.tcard{padding:18px 0;border-bottom:1px solid rgba(255,255,255,.05);cursor:pointer}
+.tcard{padding:18px 0;border-bottom:1px solid var(--divider);cursor:pointer}
 .tcard:last-child{border-bottom:none}
 
 /* Nav */
 .nav{position:absolute;bottom:0;left:0;right:0;display:flex;background:rgba(4,4,4,.93);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border-top:1px solid rgba(255,255,255,.06);padding:10px 0 34px}
-.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;color:rgba(255,255,255,.28);font-size:10px;font-weight:500;padding:6px 0;letter-spacing:.3px;transition:color .2s}
-.nav-item.on{color:#fff}
+body.light .nav{background:rgba(248,246,241,.96);border-top:1px solid rgba(0,0,0,.07)}
+.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;color:var(--fg-ghost);font-size:10px;font-weight:500;padding:6px 0;letter-spacing:.3px;transition:color .2s}
+.nav-item.on{color:var(--fg)}
 .nav-pip{width:4px;height:4px;border-radius:50%;background:#D4A843;opacity:0;margin-top:-1px;transition:opacity .2s}
 .nav-item.on .nav-pip{opacity:1}
 
 /* Cards */
-.card{background:rgba(255,255,255,.04);border-radius:20px;border:1px solid rgba(255,255,255,.07)}
+.card{background:var(--surface);border-radius:20px;border:1px solid var(--border)}
 
 /* Service grid */
 .svc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.svc-card{background:rgba(255,255,255,.05);border-radius:16px;border:1px solid rgba(255,255,255,.07);padding:14px 8px;display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer;transition:all .15s}
-.svc-card:active{background:rgba(255,255,255,.08);transform:scale(.96)}
+.svc-card{background:var(--surface);border-radius:16px;border:1px solid var(--border);padding:14px 8px;display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer;transition:all .15s}
+.svc-card:active{background:var(--surface-b);transform:scale(.96)}
 
 /* Scroll */
 .scroll{overflow-y:auto;-webkit-overflow-scrolling:touch}
@@ -108,16 +115,16 @@ input::placeholder,textarea::placeholder{color:rgba(255,255,255,.2)}
 /* Tags */
 .tag{display:inline-flex;align-items:center;padding:5px 12px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.4px}
 .tag-gold{background:rgba(212,168,67,.1);color:#D4A843}
-.tag-gray{background:rgba(255,255,255,.07);color:rgba(255,255,255,.45)}
+.tag-gray{background:var(--surface-b);color:var(--fg-muted)}
 .tag-green{background:rgba(34,197,94,.1);color:#22c55e}
 .tag-red{background:rgba(239,68,68,.1);color:#f87171}
 
 /* Misc */
 .back-row{display:flex;align-items:center;gap:12px;padding:56px 22px 20px}
-.back-btn{width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
-.section-label{font-size:10px;font-weight:700;letter-spacing:2.5px;color:rgba(255,255,255,.25);text-transform:uppercase}
+.back-btn{width:40px;height:40px;border-radius:50%;background:var(--surface-b);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
+.section-label{font-size:10px;font-weight:700;letter-spacing:2.5px;color:var(--fg-subtle);text-transform:uppercase}
 .err{background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.18);color:#f87171;padding:12px 16px;border-radius:14px;font-size:14px;margin-bottom:16px}
-.divider{height:1px;background:rgba(255,255,255,.05);margin:4px 0}
+.divider{height:1px;background:var(--divider);margin:4px 0}
 </style>
 </head>
 <body>
@@ -137,12 +144,14 @@ const app = document.getElementById('app');
 
 let state = {
   screen: 'splash', user: null, booking: {}, selectedTrip: null,
+  theme: localStorage.getItem('apexvip_theme') || 'dark',
   cards: [
     {id:1,brand:'Visa',last4:'4242',expiry:'09/27',color:'linear-gradient(135deg,#D4A843,#8B6914)',isDefault:true},
     {id:2,brand:'Mastercard',last4:'8888',expiry:'03/26',color:'linear-gradient(135deg,#1a1a2e,#16213e)',isDefault:false}
   ]
 };
 
+document.body.classList.toggle('light', state.theme === 'light');
 let TRIPS = [
   {id:'APX-4821',service:'Airport Transfer',pickup:'Heathrow Terminal 5',dropoff:'Mayfair, London W1',date:'29 May 2026',time:'14:30',vehicle:'Mercedes S-Class',status:'upcoming',price:'£185',driver:'James H.',rating:4.9,plate:'LX73 ABC',flight:'BA0247'},
   {id:'APX-4788',service:'Airport Transfer',pickup:'Mayfair, London W1',dropoff:'Gatwick North Terminal',date:'24 May 2026',time:'06:15',vehicle:'Mercedes V-Class',status:'completed',price:'£225',driver:'Michael T.',rating:4.8,plate:'LX72 DEF'},
@@ -197,7 +206,7 @@ function bottomNav(active) {
 const screens = {
 
 splash: () => `
-<div style="min-height:100vh;display:flex;flex-direction:column;background:#000;overflow:hidden;position:relative">
+<div style="min-height:100vh;display:flex;flex-direction:column;background:var(--bg);overflow:hidden;position:relative">
   <div style="position:absolute;inset:0;background:radial-gradient(ellipse 80% 50% at 50% 100%,rgba(212,168,67,.055),transparent);animation:fadeIn 2s 1s both ease"></div>
   <div style="position:absolute;width:700px;height:700px;top:-260px;left:50%;transform:translateX(-50%);background:radial-gradient(circle,rgba(212,168,67,.032),transparent 62%);animation:orb1 14s ease-in-out infinite alternate"></div>
   <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 32px;position:relative;z-index:1">
@@ -215,14 +224,14 @@ splash: () => `
 login: () => {
   const err = state._loginErr ? `<div class="err">${state._loginErr}</div>` : '';
   return `
-<div style="min-height:100vh;display:flex;flex-direction:column;background:#000;padding:0 24px;animation:fadeIn .3s ease">
+<div style="min-height:100vh;display:flex;flex-direction:column;background:var(--bg);padding:0 24px;animation:fadeIn .3s ease">
   <div style="padding:52px 0 36px;position:relative">
     <div class="back-btn" onclick="go('splash')" style="position:absolute;left:0;top:52px">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
     </div>
     <div style="text-align:center;padding-top:4px">
       <div style="font-family:'Cormorant Garamond',Georgia,serif;font-size:40px;font-weight:300;color:#fff;letter-spacing:1px;line-height:1;margin-bottom:8px">ApexVIP</div>
-      <div style="font-size:13px;color:rgba(255,255,255,.3);letter-spacing:.3px">Sign in to continue</div>
+      <div style="font-size:13px;color:var(--fg-dim);letter-spacing:.3px">Sign in to continue</div>
     </div>
   </div>
   <div style="flex:1">
@@ -230,14 +239,14 @@ login: () => {
     <div class="field" style="margin-bottom:10px"><input id="lemail" type="email" placeholder="Email address" value="client@apexvip.com"/></div>
     <div class="field" style="margin-bottom:8px"><input id="lpass" type="password" placeholder="Password" value="password"/></div>
     <div style="text-align:right;margin-bottom:28px">
-      <button style="background:none;border:none;color:rgba(255,255,255,.3);font-size:13px;cursor:pointer;padding:8px 0;font-family:inherit">Forgot password?</button>
+      <button style="background:none;border:none;color:var(--fg-dim);font-size:13px;cursor:pointer;padding:8px 0;font-family:inherit">Forgot password?</button>
     </div>
     <button class="btn btn-white" onclick="doLogin()">Sign in</button>
-    <div style="text-align:center;margin-top:22px;color:rgba(255,255,255,.3);font-size:14px">
+    <div style="text-align:center;margin-top:22px;color:var(--fg-dim);font-size:14px">
       New here? <span style="color:#D4A843;cursor:pointer;font-weight:600" onclick="go('register')">Create account</span>
     </div>
   </div>
-  <div style="margin-bottom:40px;padding:14px 18px;background:rgba(255,255,255,.03);border-radius:14px;border:1px solid rgba(255,255,255,.06);font-size:12px;color:rgba(255,255,255,.2);text-align:center;line-height:1.7">
+  <div style="margin-bottom:40px;padding:14px 18px;background:var(--surface);border-radius:14px;border:1px solid var(--border);font-size:12px;color:var(--fg-ghost);text-align:center;line-height:1.7">
     Demo account<br/>client@apexvip.com · password
   </div>
 </div>`;
@@ -247,23 +256,23 @@ register: () => {
   const s = state._regStep || 1;
   const prog = `<div style="display:flex;gap:5px;margin-bottom:32px">${[1,2].map(i=>`<div style="flex:1;height:2px;border-radius:2px;background:${i<=s?'#fff':'rgba(255,255,255,.1)'}"></div>`).join('')}</div>`;
   if (s===3) return `
-<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;background:#000;text-align:center;animation:scaleIn .35s ease">
+<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;background:var(--bg);text-align:center;animation:scaleIn .35s ease">
   <div style="width:82px;height:82px;border-radius:50%;background:rgba(34,197,94,.08);border:1.5px solid rgba(34,197,94,.25);display:flex;align-items:center;justify-content:center;margin-bottom:28px">
     <svg width="36" height="36" fill="none" viewBox="0 0 24 24" stroke="#22c55e" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
   </div>
   <div style="font-size:28px;font-weight:700;margin-bottom:8px">All set</div>
-  <div style="color:rgba(255,255,255,.35);font-size:15px;margin-bottom:48px;line-height:1.7">Your ApexVIP account is ready.</div>
+  <div style="color:var(--fg-muted);font-size:15px;margin-bottom:48px;line-height:1.7">Your ApexVIP account is ready.</div>
   <button class="btn btn-white" onclick="state._regStep=1;go('home')">Open app</button>
 </div>`;
   return `
-<div style="min-height:100vh;display:flex;flex-direction:column;background:#000;padding:0 24px;animation:fadeIn .3s ease">
+<div style="min-height:100vh;display:flex;flex-direction:column;background:var(--bg);padding:0 24px;animation:fadeIn .3s ease">
   <div class="back-row" style="padding-bottom:24px">
     <div class="back-btn" onclick="${s>1?'state._regStep=1;render()':'go(\'splash\')'}">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
     </div>
     <div>
       <div style="font-size:24px;font-weight:700">Create account</div>
-      <div style="font-size:14px;color:rgba(255,255,255,.3);margin-top:2px">Step ${s} of 2</div>
+      <div style="font-size:14px;color:var(--fg-dim);margin-top:2px">Step ${s} of 2</div>
     </div>
   </div>
   ${prog}
@@ -276,7 +285,7 @@ register: () => {
   `:`
   <div class="field" style="margin-bottom:10px"><input id="rpw" type="password" placeholder="Create password (min 8 chars)"/></div>
   <div class="field" style="margin-bottom:10px"><input id="rpc" type="password" placeholder="Confirm password"/></div>
-  <div style="color:rgba(255,255,255,.25);font-size:12px;margin-bottom:28px;line-height:1.7">By creating an account you agree to our Terms and Privacy Policy.</div>
+  <div style="color:var(--fg-subtle);font-size:12px;margin-bottom:28px;line-height:1.7">By creating an account you agree to our Terms and Privacy Policy.</div>
   <button class="btn btn-white" onclick="doRegister()">Create account</button>
   `}
 </div>`;
@@ -293,10 +302,10 @@ home: () => {
   ${mapBg()}
   <div class="top-bar">
     <div>
-      <div style="font-size:10px;color:rgba(255,255,255,.28);letter-spacing:3px;font-weight:600;text-transform:uppercase">ApexVIP</div>
+      <div style="font-size:10px;color:var(--fg-ghost);letter-spacing:3px;font-weight:600;text-transform:uppercase">ApexVIP</div>
       <div style="font-size:18px;font-weight:700;margin-top:3px">${greeting}, ${name}</div>
     </div>
-    <div onclick="go('notifications')" style="position:relative;width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.08);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.09);display:flex;align-items:center;justify-content:center;cursor:pointer">
+    <div onclick="go('notifications')" style="position:relative;width:42px;height:42px;border-radius:50%;background:var(--surface-c);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.09);display:flex;align-items:center;justify-content:center;cursor:pointer">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
       <div style="position:absolute;top:9px;right:9px;width:7px;height:7px;border-radius:50%;background:#D4A843;border:1.5px solid #000"></div>
     </div>
@@ -306,9 +315,9 @@ home: () => {
     <div class="sheet-handle"></div>
     <div style="padding:22px 22px 0">
 
-      <div onclick="go('route-input')" style="display:flex;align-items:center;gap:14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:17px 20px;margin-bottom:22px;cursor:pointer">
+      <div onclick="go('route-input')" style="display:flex;align-items:center;gap:14px;background:var(--surface-b);border:1px solid var(--border-b);border-radius:18px;padding:17px 20px;margin-bottom:22px;cursor:pointer">
         <svg width="17" height="17" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.3)" stroke-width="2"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" d="M21 21l-4.35-4.35"/></svg>
-        <span style="color:rgba(255,255,255,.3);font-size:16px;font-weight:500;flex:1">Where to?</span>
+        <span style="color:var(--fg-dim);font-size:16px;font-weight:500;flex:1">Where to?</span>
         <div style="background:#D4A843;border-radius:9px;padding:5px 11px;font-size:10px;font-weight:800;letter-spacing:1.5px;color:#000">BOOK</div>
       </div>
 
@@ -320,20 +329,20 @@ home: () => {
           {t:'day',icon:'📅',l:'Full Day'},
         ].map(s=>`<div class="svc-card" onclick="goBook('${s.t}')">
           <span style="font-size:22px">${s.icon}</span>
-          <span style="font-size:12px;font-weight:600;color:rgba(255,255,255,.65)">${s.l}</span>
+          <span style="font-size:12px;font-weight:600;color:var(--fg-muted)">${s.l}</span>
         </div>`).join('')}
       </div>
 
       ${upcoming.length ? `
       <div class="section-label" style="margin-bottom:12px">Upcoming</div>
       ${upcoming.slice(0,1).map(t=>`
-      <div onclick="go('trip-detail',TRIPS.find(x=>x.id==='${t.id}'))" style="display:flex;align-items:center;gap:14px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.07);border-radius:18px;padding:15px 16px;cursor:pointer">
+      <div onclick="go('trip-detail',TRIPS.find(x=>x.id==='${t.id}'))" style="display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:15px 16px;cursor:pointer">
         <div style="width:42px;height:42px;border-radius:14px;background:rgba(212,168,67,.07);border:1px solid rgba(212,168,67,.15);display:flex;align-items:center;justify-content:center;flex-shrink:0">
           <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#D4A843" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M5 3l14 9-14 9V3z"/></svg>
         </div>
         <div style="flex:1;min-width:0">
           <div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.pickup} → ${t.dropoff}</div>
-          <div style="font-size:12px;color:rgba(255,255,255,.3);margin-top:3px">${t.date} · ${t.time}</div>
+          <div style="font-size:12px;color:var(--fg-dim);margin-top:3px">${t.date} · ${t.time}</div>
         </div>
         <div style="font-size:16px;font-weight:800;color:#D4A843;flex-shrink:0">${t.price}</div>
       </div>`).join('')}` : ''}
@@ -344,14 +353,14 @@ home: () => {
 },
 
 'route-input': () => `
-<div style="min-height:100vh;background:#000;display:flex;flex-direction:column;animation:slideUp .25s ease">
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
   <div class="back-row">
     <div class="back-btn" onclick="go('home')">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
     </div>
     <div>
       <div style="font-size:20px;font-weight:700">Plan your ride</div>
-      <div style="font-size:13px;color:rgba(255,255,255,.3);margin-top:1px">Enter your route</div>
+      <div style="font-size:13px;color:var(--fg-dim);margin-top:1px">Enter your route</div>
     </div>
   </div>
   <div style="padding:0 22px">
@@ -368,11 +377,11 @@ home: () => {
     </div>
     <div class="section-label" style="margin-bottom:14px">Recent</div>
     ${RECENT.map(r=>`
-    <div onclick="$('ri_do').value='${r}'" style="display:flex;align-items:center;gap:14px;padding:13px 0;border-bottom:1px solid rgba(255,255,255,.04);cursor:pointer">
-      <div style="width:36px;height:36px;border-radius:12px;background:rgba(255,255,255,.05);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+    <div onclick="$('ri_do').value='${r}'" style="display:flex;align-items:center;gap:14px;padding:13px 0;border-bottom:1px solid var(--divider);cursor:pointer">
+      <div style="width:36px;height:36px;border-radius:12px;background:var(--surface);display:flex;align-items:center;justify-content:center;flex-shrink:0">
         <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.3)" stroke-width="2"><circle cx="12" cy="10" r="3"/><path stroke-linecap="round" d="M12 21.7C17.3 17 20 13 20 10a8 8 0 10-16 0c0 3 2.7 6.9 8 11.7z"/></svg>
       </div>
-      <span style="font-size:15px;color:rgba(255,255,255,.7)">${r}</span>
+      <span style="font-size:15px;color:var(--fg-muted)">${r}</span>
       <svg style="margin-left:auto;flex-shrink:0" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.15)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
     </div>`).join('')}
   </div>
@@ -382,14 +391,14 @@ home: () => {
 </div>`,
 
 'service-select': () => `
-<div style="min-height:100vh;background:#000;display:flex;flex-direction:column;animation:slideUp .25s ease">
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
   <div class="back-row">
     <div class="back-btn" onclick="go('route-input')">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
     </div>
     <div>
       <div style="font-size:20px;font-weight:700">Choose service</div>
-      <div style="font-size:13px;color:rgba(255,255,255,.3);margin-top:1px">All vehicles are 2025 model year</div>
+      <div style="font-size:13px;color:var(--fg-dim);margin-top:1px">All vehicles are 2025 model year</div>
     </div>
   </div>
   <div style="padding:0 22px 100px">
@@ -398,11 +407,11 @@ home: () => {
       {t:'hourly',icon:'⏱',l:'By the Hour',d:'Your chauffeur on demand · Minimum 2 hours',price:'from £130'},
       {t:'day',icon:'📅',l:'Full Day',d:'8 hours with your personal chauffeur',price:'from £450'},
     ].map(s=>`
-    <div onclick="goBook('${s.t}')" style="background:rgba(255,255,255,.04);border-radius:20px;padding:20px;margin-bottom:10px;cursor:pointer;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;gap:16px">
-      <div style="width:54px;height:54px;border-radius:16px;background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">${s.icon}</div>
+    <div onclick="goBook('${s.t}')" style="background:var(--surface);border-radius:20px;padding:20px;margin-bottom:10px;cursor:pointer;border:1px solid var(--border);display:flex;align-items:center;gap:16px">
+      <div style="width:54px;height:54px;border-radius:16px;background:var(--surface-b);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">${s.icon}</div>
       <div style="flex:1;min-width:0">
         <div style="font-size:16px;font-weight:700;margin-bottom:4px">${s.l}</div>
-        <div style="font-size:13px;color:rgba(255,255,255,.35);line-height:1.4">${s.d}</div>
+        <div style="font-size:13px;color:var(--fg-muted);line-height:1.4">${s.d}</div>
       </div>
       <div style="text-align:right;flex-shrink:0">
         <div style="font-size:15px;font-weight:700;color:#D4A843">${s.price}</div>
@@ -413,14 +422,14 @@ home: () => {
 </div>`,
 
 'book-airport': () => `
-<div style="min-height:100vh;background:#000;display:flex;flex-direction:column;animation:slideUp .25s ease">
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
   <div class="back-row">
     <div class="back-btn" onclick="go('service-select')">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
     </div>
     <div>
       <div style="font-size:20px;font-weight:700">Airport Transfer</div>
-      <div style="font-size:13px;color:rgba(255,255,255,.3);margin-top:1px">Door-to-terminal</div>
+      <div style="font-size:13px;color:var(--fg-dim);margin-top:1px">Door-to-terminal</div>
     </div>
   </div>
   <div style="padding:0 22px;flex:1" class="scroll">
@@ -432,7 +441,7 @@ home: () => {
       <div class="rline"></div>
       <div class="inp-row">
         <div class="rdot rdot-outline"></div>
-        <select id="ba_ap" style="color:rgba(255,255,255,.7);background:transparent">
+        <select id="ba_ap" style="color:var(--fg-muted);background:transparent">
           ${['Heathrow T2','Heathrow T3','Heathrow T4','Heathrow T5','Gatwick North','Gatwick South','Stansted','Luton','City Airport'].map(a=>`<option style="background:#111">${a}</option>`).join('')}
         </select>
       </div>
@@ -453,14 +462,14 @@ home: () => {
 </div>`,
 
 'book-hourly': () => `
-<div style="min-height:100vh;background:#000;display:flex;flex-direction:column;animation:slideUp .25s ease">
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
   <div class="back-row">
     <div class="back-btn" onclick="go('service-select')">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
     </div>
     <div>
       <div style="font-size:20px;font-weight:700">By the Hour</div>
-      <div style="font-size:13px;color:rgba(255,255,255,.3);margin-top:1px">Flexible chauffeur service</div>
+      <div style="font-size:13px;color:var(--fg-dim);margin-top:1px">Flexible chauffeur service</div>
     </div>
   </div>
   <div style="padding:0 22px;flex:1">
@@ -477,7 +486,7 @@ home: () => {
   </div>
   <div style="padding:0 22px 44px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <div style="font-size:13px;color:rgba(255,255,255,.35)">Total</div>
+      <div style="font-size:13px;color:var(--fg-muted)">Total</div>
       <div id="bh_price" style="font-size:28px;font-weight:800;color:#D4A843">£195</div>
     </div>
     <button class="btn btn-white" onclick="saveHourly()">Select vehicle</button>
@@ -485,14 +494,14 @@ home: () => {
 </div>`,
 
 'book-day': () => `
-<div style="min-height:100vh;background:#000;display:flex;flex-direction:column;animation:slideUp .25s ease">
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
   <div class="back-row">
     <div class="back-btn" onclick="go('service-select')">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
     </div>
     <div>
       <div style="font-size:20px;font-weight:700">Full Day</div>
-      <div style="font-size:13px;color:rgba(255,255,255,.3);margin-top:1px">8 hours · your schedule</div>
+      <div style="font-size:13px;color:var(--fg-dim);margin-top:1px">8 hours · your schedule</div>
     </div>
   </div>
   <div style="padding:0 22px;flex:1">
@@ -503,10 +512,10 @@ home: () => {
     </div>
     <div style="display:flex;gap:10px">
       ${[['S-Class','450'],['V-Class','550']].map(([m,p])=>`
-      <div style="flex:1;background:rgba(255,255,255,.04);border-radius:18px;padding:18px;text-align:center;border:1px solid rgba(255,255,255,.07)">
-        <div style="font-size:12px;color:rgba(255,255,255,.3);margin-bottom:8px;font-weight:600">${m}</div>
+      <div style="flex:1;background:var(--surface);border-radius:18px;padding:18px;text-align:center;border:1px solid var(--border)">
+        <div style="font-size:12px;color:var(--fg-dim);margin-bottom:8px;font-weight:600">${m}</div>
         <div style="font-size:28px;font-weight:800;color:#D4A843">£${p}</div>
-        <div style="font-size:11px;color:rgba(255,255,255,.2);margin-top:4px">per day</div>
+        <div style="font-size:11px;color:var(--fg-ghost);margin-top:4px">per day</div>
       </div>`).join('')}
     </div>
   </div>
@@ -524,14 +533,14 @@ home: () => {
     {id:'vClass',name:'V-Class',full:'Mercedes V-Class',sub:'Business Van · Up to 7 passengers',price:p.v,badge:'BUSINESS',features:['WiFi','Water','Charger','Child Seat']}
   ];
   return `
-<div style="min-height:100vh;background:#000;display:flex;flex-direction:column;animation:slideUp .25s ease">
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
   <div class="back-row">
     <div class="back-btn" onclick="go('book-'+state.booking.serviceType)">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
     </div>
     <div>
       <div style="font-size:20px;font-weight:700">Choose vehicle</div>
-      <div style="font-size:13px;color:rgba(255,255,255,.3);margin-top:1px">2025 model year fleet</div>
+      <div style="font-size:13px;color:var(--fg-dim);margin-top:1px">2025 model year fleet</div>
     </div>
   </div>
   <div style="padding:0 22px;flex:1">
@@ -542,7 +551,7 @@ home: () => {
         ${sel===v.id?`<div class="vcard-check"><svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="#000" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></div>`:''}
         <div style="text-align:center;user-select:none">
           <div style="font-size:52px;font-weight:900;color:rgba(255,255,255,.04);letter-spacing:2px;line-height:1">${v.name}</div>
-          <div style="font-size:9px;color:rgba(255,255,255,.1);letter-spacing:6px;margin-top:2px">MERCEDES-BENZ</div>
+          <div style="font-size:9px;color:var(--fg-faint);letter-spacing:6px;margin-top:2px">MERCEDES-BENZ</div>
         </div>
         <div style="position:absolute;bottom:0;left:0;right:0;height:50%;background:linear-gradient(to top,rgba(12,12,12,.9),transparent)"></div>
       </div>
@@ -550,15 +559,15 @@ home: () => {
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
           <div>
             <div style="font-size:17px;font-weight:700">${v.full}</div>
-            <div style="font-size:13px;color:rgba(255,255,255,.35);margin-top:3px">${v.sub}</div>
+            <div style="font-size:13px;color:var(--fg-muted);margin-top:3px">${v.sub}</div>
           </div>
           <div style="text-align:right">
             <div style="font-size:24px;font-weight:800;color:${sel===v.id?'#D4A843':'#fff'}">£${v.price}</div>
-            <div style="font-size:11px;color:rgba(255,255,255,.25);margin-top:2px">${state.booking.serviceType==='hourly'?'total':'flat rate'}</div>
+            <div style="font-size:11px;color:var(--fg-subtle);margin-top:2px">${state.booking.serviceType==='hourly'?'total':'flat rate'}</div>
           </div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          ${v.features.map(f=>`<span style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:4px 10px;font-size:11px;color:rgba(255,255,255,.4)">${f}</span>`).join('')}
+          ${v.features.map(f=>`<span style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:4px 10px;font-size:11px;color:var(--fg-muted)">${f}</span>`).join('')}
         </div>
       </div>
     </div>`).join('')}
@@ -579,7 +588,7 @@ home: () => {
   const total = base-disc+vat;
   const svcLabel = {airport:'Airport Transfer',hourly:'By the Hour',day:'By the Day'}[state.booking.serviceType]||'Airport Transfer';
   return `
-<div style="min-height:100vh;background:#000;display:flex;flex-direction:column;animation:slideUp .25s ease">
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
   <div class="back-row">
     <div class="back-btn" onclick="go('vehicle-select')">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
@@ -593,15 +602,15 @@ home: () => {
       <div style="font-size:15px;font-weight:600;color:#D4A843;margin-bottom:16px">${svcLabel}</div>
       <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:10px">
         <div class="rdot rdot-gold" style="margin-top:4px"></div>
-        <div><div style="font-size:11px;color:rgba(255,255,255,.3);margin-bottom:2px">Pickup</div><div style="font-size:15px">${state.booking.pickup||'—'}</div></div>
+        <div><div style="font-size:11px;color:var(--fg-dim);margin-bottom:2px">Pickup</div><div style="font-size:15px">${state.booking.pickup||'—'}</div></div>
       </div>
       <div class="rline" style="height:16px;margin-bottom:10px"></div>
       <div style="display:flex;align-items:flex-start;gap:12px">
         <div class="rdot rdot-outline" style="margin-top:4px"></div>
-        <div><div style="font-size:11px;color:rgba(255,255,255,.3);margin-bottom:2px">Drop-off</div><div style="font-size:15px">${state.booking.airport||state.booking.dropoff||'—'}</div></div>
+        <div><div style="font-size:11px;color:var(--fg-dim);margin-bottom:2px">Drop-off</div><div style="font-size:15px">${state.booking.airport||state.booking.dropoff||'—'}</div></div>
       </div>
-      ${state.booking.date?`<div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,.05);font-size:13px;color:rgba(255,255,255,.35)">${state.booking.date}${state.booking.time?' · '+state.booking.time:''}</div>`:''}
-      ${state.booking.flight?`<div style="font-size:13px;color:rgba(255,255,255,.35);margin-top:4px">✈ ${state.booking.flight}</div>`:''}
+      ${state.booking.date?`<div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--divider);font-size:13px;color:var(--fg-muted)">${state.booking.date}${state.booking.time?' · '+state.booking.time:''}</div>`:''}
+      ${state.booking.flight?`<div style="font-size:13px;color:var(--fg-muted);margin-top:4px">✈ ${state.booking.flight}</div>`:''}
     </div>
 
     <div class="card" style="padding:20px;margin-bottom:10px">
@@ -613,16 +622,16 @@ home: () => {
       <div class="section-label" style="margin-bottom:14px">Promo code</div>
       ${ok?`<div style="color:#22c55e;font-size:14px;font-weight:600">✓ APEX20 applied — 20% off</div>`:`
       <div style="display:flex;gap:8px">
-        <input id="promo_in" placeholder="Enter code" style="flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:11px 14px;font-size:14px;color:#fff;outline:none"/>
+        <input id="promo_in" placeholder="Enter code" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:11px 14px;font-size:14px;color:#fff;outline:none"/>
         <button onclick="applyPromo()" style="background:rgba(212,168,67,.1);border:1px solid rgba(212,168,67,.2);color:#D4A843;padding:0 18px;border-radius:12px;cursor:pointer;font-weight:700;font-size:14px;white-space:nowrap;font-family:inherit">Apply</button>
       </div>`}
     </div>
 
     <div class="card" style="padding:20px;margin-bottom:28px">
       <div class="section-label" style="margin-bottom:16px">Price</div>
-      <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:10px"><span style="color:rgba(255,255,255,.4)">Base fare</span><span>£${base}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:10px"><span style="color:var(--fg-muted)">Base fare</span><span>£${base}</span></div>
       ${ok?`<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:10px"><span style="color:#22c55e">Discount 20%</span><span style="color:#22c55e">−£${disc}</span></div>`:''}
-      <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:16px"><span style="color:rgba(255,255,255,.4)">VAT 20%</span><span>£${vat}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:16px"><span style="color:var(--fg-muted)">VAT 20%</span><span>£${vat}</span></div>
       <div class="divider" style="margin-bottom:16px"></div>
       <div style="display:flex;justify-content:space-between;align-items:center">
         <span style="font-size:16px;font-weight:700">Total</span>
@@ -641,7 +650,7 @@ payment: () => {
   const selId = state._payCardId || (state.cards[0]?.id);
   const adding = state._addingCard;
   return `
-<div style="min-height:100vh;background:#000;display:flex;flex-direction:column;animation:slideUp .25s ease">
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
   <div class="back-row">
     <div class="back-btn" onclick="go('booking-summary')">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
@@ -655,7 +664,7 @@ payment: () => {
       <div>
         <div class="section-label" style="margin-bottom:8px">Amount due</div>
         <div style="font-size:44px;font-weight:800;color:#D4A843;line-height:1">£${total}</div>
-        <div style="font-size:13px;color:rgba(255,255,255,.3);margin-top:6px">${{airport:'Airport Transfer',hourly:'By the Hour',day:'By the Day'}[state.booking.serviceType]||'Booking'}</div>
+        <div style="font-size:13px;color:var(--fg-dim);margin-top:6px">${{airport:'Airport Transfer',hourly:'By the Hour',day:'By the Day'}[state.booking.serviceType]||'Booking'}</div>
       </div>
       <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="rgba(212,168,67,.35)" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><path stroke-linecap="round" d="M2 10h20"/></svg>
     </div>
@@ -663,10 +672,10 @@ payment: () => {
     <div class="section-label" style="margin-bottom:12px">Saved cards</div>
     ${state.cards.map(c=>`
     <div onclick="state._payCardId=${c.id};state._addingCard=false;render()" style="display:flex;align-items:center;gap:14px;background:${selId===c.id?'rgba(212,168,67,.06)':'rgba(255,255,255,.04)'};border:1.5px solid ${selId===c.id?'rgba(212,168,67,.35)':'rgba(255,255,255,.07)'};border-radius:18px;padding:16px 18px;margin-bottom:10px;cursor:pointer;transition:all .2s">
-      <div style="width:38px;height:38px;border-radius:12px;background:${c.color};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;letter-spacing:1px;color:rgba(255,255,255,.7);flex-shrink:0">${c.brand.slice(0,2).toUpperCase()}</div>
+      <div style="width:38px;height:38px;border-radius:12px;background:${c.color};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;letter-spacing:1px;color:var(--fg-muted);flex-shrink:0">${c.brand.slice(0,2).toUpperCase()}</div>
       <div style="flex:1">
         <div style="font-size:15px;font-weight:600">${c.brand} •••• ${c.last4}</div>
-        <div style="font-size:12px;color:rgba(255,255,255,.3);margin-top:2px">Expires ${c.expiry}${c.isDefault?' · Default':''}</div>
+        <div style="font-size:12px;color:var(--fg-dim);margin-top:2px">Expires ${c.expiry}${c.isDefault?' · Default':''}</div>
       </div>
       <div style="width:20px;height:20px;border-radius:50%;border:2px solid ${selId===c.id?'#D4A843':'rgba(255,255,255,.2)'};display:flex;align-items:center;justify-content:center;flex-shrink:0">
         ${selId===c.id?`<div style="width:10px;height:10px;border-radius:50%;background:#D4A843"></div>`:''}
@@ -674,14 +683,14 @@ payment: () => {
     </div>`).join('')}
 
     <div onclick="state._addingCard=!state._addingCard;state._payCardId=null;render()" style="display:flex;align-items:center;gap:14px;background:${adding?'rgba(212,168,67,.06)':'rgba(255,255,255,.04)'};border:1.5px solid ${adding?'rgba(212,168,67,.35)':'rgba(255,255,255,.07)'};border-radius:18px;padding:16px 18px;margin-bottom:${adding?'0':'24px'};cursor:pointer;transition:all .2s">
-      <div style="width:38px;height:38px;border-radius:12px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+      <div style="width:38px;height:38px;border-radius:12px;background:var(--surface-b);display:flex;align-items:center;justify-content:center;flex-shrink:0">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.5)" stroke-width="2"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>
       </div>
-      <span style="font-size:15px;font-weight:600;color:rgba(255,255,255,.7)">Add new card</span>
+      <span style="font-size:15px;font-weight:600;color:var(--fg-muted)">Add new card</span>
     </div>
 
     ${adding?`
-    <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:0 0 18px 18px;padding:20px;margin-bottom:24px">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:0 0 18px 18px;padding:20px;margin-bottom:24px">
       <div class="field" style="margin-bottom:10px">
         <input id="cn" placeholder="Card number" type="tel" maxlength="19" oninput="fmtCard(this)"/>
       </div>
@@ -694,7 +703,7 @@ payment: () => {
 
     <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:28px">
       <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.2)" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path stroke-linecap="round" d="M7 11V7a5 5 0 0110 0v4"/></svg>
-      <span style="font-size:12px;color:rgba(255,255,255,.2);letter-spacing:.5px">256-bit SSL encrypted · PCI DSS compliant</span>
+      <span style="font-size:12px;color:var(--fg-ghost);letter-spacing:.5px">256-bit SSL encrypted · PCI DSS compliant</span>
     </div>
   </div>
 
@@ -709,13 +718,13 @@ payment: () => {
 'booking-confirmed': () => {
   const ref = state._confirmedRef || ('APX-'+(Math.floor(1000+Math.random()*9000)));
   return `
-<div style="min-height:100vh;background:#000;display:flex;flex-direction:column;align-items:center;padding:0 26px;animation:scaleIn .4s ease">
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;align-items:center;padding:0 26px;animation:scaleIn .4s ease">
   <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">
     <div style="width:90px;height:90px;border-radius:50%;background:rgba(34,197,94,.07);border:1.5px solid rgba(34,197,94,.2);display:flex;align-items:center;justify-content:center;margin-bottom:30px">
       <svg width="40" height="40" fill="none" viewBox="0 0 24 24" stroke="#22c55e" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
     </div>
     <div style="font-size:32px;font-weight:800;margin-bottom:6px">Booked</div>
-    <div style="font-size:12px;color:rgba(255,255,255,.3);letter-spacing:2px;margin-bottom:8px">REFERENCE</div>
+    <div style="font-size:12px;color:var(--fg-dim);letter-spacing:2px;margin-bottom:8px">REFERENCE</div>
     <div style="font-size:24px;font-weight:800;color:#D4A843;letter-spacing:4px;margin-bottom:40px">${ref}</div>
 
     <div class="card" style="width:100%;padding:20px;text-align:left">
@@ -724,13 +733,13 @@ payment: () => {
         <div style="width:52px;height:52px;border-radius:16px;background:linear-gradient(135deg,#D4A843,#8B6914);display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800;color:#000;flex-shrink:0">JH</div>
         <div style="flex:1">
           <div style="font-size:16px;font-weight:700">James Harrison</div>
-          <div style="font-size:13px;color:rgba(255,255,255,.35);margin-top:3px;display:flex;align-items:center;gap:5px">
+          <div style="font-size:13px;color:var(--fg-muted);margin-top:3px;display:flex;align-items:center;gap:5px">
             <svg width="11" height="11" fill="#D4A843" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
             4.9 · S-Class LX73 ABC
           </div>
         </div>
       </div>
-      <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,.05);font-size:13px;color:rgba(255,255,255,.3);line-height:1.7">
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--divider);font-size:13px;color:var(--fg-dim);line-height:1.7">
         Your driver will contact you 30 minutes before pickup.
       </div>
     </div>
@@ -748,10 +757,10 @@ trips: () => {
   const past = TRIPS.filter(t=>t.status==='completed');
   const list = tab==='upcoming'?upcoming:past;
   return `
-<div style="min-height:100vh;background:#000;display:flex;flex-direction:column;animation:fadeIn .3s ease">
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:fadeIn .3s ease">
   <div style="padding:56px 22px 0">
     <div style="font-size:32px;font-weight:800;margin-bottom:22px">Trips</div>
-    <div style="display:flex;margin-bottom:26px;background:rgba(255,255,255,.05);border-radius:14px;padding:3px">
+    <div style="display:flex;margin-bottom:26px;background:var(--surface);border-radius:14px;padding:3px">
       ${['upcoming','past'].map(t=>`<div onclick="state._tripsTab='${t}';render()" style="flex:1;padding:10px;text-align:center;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;background:${tab===t?'#fff':'transparent'};color:${tab===t?'#000':'rgba(255,255,255,.35)'};transition:all .2s">${t==='upcoming'?'Upcoming':'Past'}</div>`).join('')}
     </div>
   </div>
@@ -759,7 +768,7 @@ trips: () => {
     ${list.length===0?`<div style="text-align:center;padding:80px 0">
       <div style="font-size:44px;margin-bottom:16px">🚗</div>
       <div style="font-size:18px;font-weight:700;margin-bottom:8px">No ${tab} trips</div>
-      <div style="font-size:14px;color:rgba(255,255,255,.3);margin-bottom:32px">Ready when you are.</div>
+      <div style="font-size:14px;color:var(--fg-dim);margin-bottom:32px">Ready when you are.</div>
       ${tab==='upcoming'?`<button class="btn btn-white" style="max-width:200px;margin:0 auto" onclick="go('home')">Book a ride</button>`:''}
     </div>`:''}
     ${list.map(t=>{
@@ -769,21 +778,21 @@ trips: () => {
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">
           <div>
             <div style="font-size:16px;font-weight:700;margin-bottom:4px">${t.service}</div>
-            <div style="font-size:12px;color:rgba(255,255,255,.3)">${t.date} · ${t.time}</div>
+            <div style="font-size:12px;color:var(--fg-dim)">${t.date} · ${t.time}</div>
           </div>
           <span class="tag ${tagCls}">${tagLabel}</span>
         </div>
         <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:6px">
           <div class="rdot rdot-gold" style="margin-top:4px;flex-shrink:0"></div>
-          <div style="font-size:14px;color:rgba(255,255,255,.65)">${t.pickup}</div>
+          <div style="font-size:14px;color:var(--fg-muted)">${t.pickup}</div>
         </div>
         <div class="rline" style="height:14px;margin-bottom:6px"></div>
         <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:14px">
           <div class="rdot rdot-outline" style="margin-top:4px;flex-shrink:0"></div>
-          <div style="font-size:14px;color:rgba(255,255,255,.65)">${t.dropoff}</div>
+          <div style="font-size:14px;color:var(--fg-muted)">${t.dropoff}</div>
         </div>
         <div style="display:flex;justify-content:space-between;font-size:13px">
-          <span style="color:rgba(255,255,255,.3)">${t.vehicle}</span>
+          <span style="color:var(--fg-dim)">${t.vehicle}</span>
           <span style="font-weight:800;color:#D4A843">${t.price}</span>
         </div>
       </div>`;
@@ -801,7 +810,7 @@ trips: () => {
   const tagCls = cancelled?'tag-red':t.status==='upcoming'?'tag-gold':'tag-gray';
   const tagLabel = cancelled?'Cancelled':t.status==='upcoming'?'Upcoming':'Completed';
   return `
-<div style="min-height:100vh;background:#000;display:flex;flex-direction:column;animation:slideUp .25s ease">
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
   <div class="back-row" style="justify-content:space-between">
     <div class="back-btn" onclick="go('trips')">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
@@ -813,14 +822,14 @@ trips: () => {
       <div style="font-size:16px;font-weight:700;color:#D4A843;margin-bottom:18px">${t.service}</div>
       <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:10px">
         <div class="rdot rdot-gold" style="margin-top:4px;flex-shrink:0"></div>
-        <div><div style="font-size:11px;color:rgba(255,255,255,.3);margin-bottom:2px">Pickup</div><div style="font-size:15px">${t.pickup}</div></div>
+        <div><div style="font-size:11px;color:var(--fg-dim);margin-bottom:2px">Pickup</div><div style="font-size:15px">${t.pickup}</div></div>
       </div>
       <div class="rline" style="height:20px;margin-bottom:10px"></div>
       <div style="display:flex;align-items:flex-start;gap:12px">
         <div class="rdot rdot-outline" style="margin-top:4px;flex-shrink:0"></div>
-        <div><div style="font-size:11px;color:rgba(255,255,255,.3);margin-bottom:2px">Drop-off</div><div style="font-size:15px">${t.dropoff}</div></div>
+        <div><div style="font-size:11px;color:var(--fg-dim);margin-bottom:2px">Drop-off</div><div style="font-size:15px">${t.dropoff}</div></div>
       </div>
-      <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,.05);display:flex;gap:20px;font-size:13px;color:rgba(255,255,255,.35)">
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--divider);display:flex;gap:20px;font-size:13px;color:var(--fg-muted)">
         <span>${t.date}</span><span>${t.time}</span>${t.flight?`<span>✈ ${t.flight}</span>`:''}
       </div>
     </div>
@@ -830,17 +839,17 @@ trips: () => {
         <div style="width:52px;height:52px;border-radius:16px;background:linear-gradient(135deg,#D4A843,#8B6914);display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800;color:#000;flex-shrink:0">JH</div>
         <div style="flex:1">
           <div style="font-size:15px;font-weight:700">${t.driver}</div>
-          <div style="font-size:13px;color:rgba(255,255,255,.35);margin-top:3px;display:flex;align-items:center;gap:5px">
+          <div style="font-size:13px;color:var(--fg-muted);margin-top:3px;display:flex;align-items:center;gap:5px">
             <svg width="11" height="11" fill="#D4A843" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
             ${t.rating} · ${t.vehicle}
           </div>
         </div>
-        <div style="font-size:12px;color:rgba(255,255,255,.25)">${t.plate}</div>
+        <div style="font-size:12px;color:var(--fg-subtle)">${t.plate}</div>
       </div>
     </div>
 
     <div class="card" style="padding:20px;margin-bottom:24px;display:flex;justify-content:space-between;align-items:center">
-      <div style="font-size:14px;color:rgba(255,255,255,.35)">Total${t.status==='completed'?' paid':''}</div>
+      <div style="font-size:14px;color:var(--fg-muted)">Total${t.status==='completed'?' paid':''}</div>
       <div style="font-size:32px;font-weight:800;color:#D4A843">${t.price}</div>
     </div>
 
@@ -848,9 +857,9 @@ trips: () => {
     ${t.status==='upcoming'&&!cancelled&&!confirming?`<button class="btn-danger-outline" onclick="state._tripConfirming='${t.id}';render()">Cancel booking</button>`:''}
     ${confirming?`<div style="background:rgba(239,68,68,.05);border:1px solid rgba(239,68,68,.12);border-radius:18px;padding:22px">
       <div style="font-size:17px;font-weight:700;margin-bottom:8px">Cancel this booking?</div>
-      <div style="font-size:14px;color:rgba(255,255,255,.4);margin-bottom:22px;line-height:1.6">Cancellations within 24 hours may incur a fee.</div>
+      <div style="font-size:14px;color:var(--fg-muted);margin-bottom:22px;line-height:1.6">Cancellations within 24 hours may incur a fee.</div>
       <div style="display:flex;gap:10px">
-        <button onclick="state._tripConfirming=null;render()" style="flex:1;padding:15px;background:rgba(255,255,255,.06);border:none;border-radius:14px;color:#fff;font-weight:600;cursor:pointer;font-size:15px;font-family:inherit">Keep booking</button>
+        <button onclick="state._tripConfirming=null;render()" style="flex:1;padding:15px;background:var(--surface-b);border:none;border-radius:14px;color:#fff;font-weight:600;cursor:pointer;font-size:15px;font-family:inherit">Keep booking</button>
         <button onclick="state._tripCancelled='${t.id}';state._tripConfirming=null;render()" style="flex:1;padding:15px;background:#ef4444;border:none;border-radius:14px;color:#fff;font-weight:700;cursor:pointer;font-size:15px;font-family:inherit">Cancel</button>
       </div>
     </div>`:''}
@@ -860,7 +869,7 @@ trips: () => {
 },
 
 notifications: () => `
-<div style="min-height:100vh;background:#000;display:flex;flex-direction:column;animation:fadeIn .3s ease">
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:fadeIn .3s ease">
   <div style="padding:56px 22px 22px;display:flex;justify-content:space-between;align-items:center">
     <div style="font-size:32px;font-weight:800">Notifications</div>
     <button onclick="state._allRead=true;render()" style="background:none;border:none;color:#D4A843;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Mark all read</button>
@@ -868,14 +877,14 @@ notifications: () => `
   <div style="padding:0 22px;flex:1">
     ${NOTIFS.map(n=>{
       const read = state._allRead||n.read;
-      return `<div style="display:flex;gap:14px;padding:16px 0;border-bottom:1px solid rgba(255,255,255,.04);opacity:${read?.5:1}">
-        <div style="width:48px;height:48px;border-radius:15px;background:rgba(255,255,255,.05);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;border:1px solid rgba(255,255,255,.06)">${n.icon}</div>
+      return `<div style="display:flex;gap:14px;padding:16px 0;border-bottom:1px solid var(--divider);opacity:${read?.5:1}">
+        <div style="width:48px;height:48px;border-radius:15px;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;border:1px solid var(--border)">${n.icon}</div>
         <div style="flex:1;min-width:0">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px;gap:8px">
             <div style="font-size:14px;font-weight:600">${n.title}</div>
-            <div style="font-size:11px;color:rgba(255,255,255,.25);flex-shrink:0">${n.time}</div>
+            <div style="font-size:11px;color:var(--fg-subtle);flex-shrink:0">${n.time}</div>
           </div>
-          <div style="font-size:13px;color:rgba(255,255,255,.4);line-height:1.5">${n.body}</div>
+          <div style="font-size:13px;color:var(--fg-muted);line-height:1.5">${n.body}</div>
         </div>
         ${!read?`<div style="width:7px;height:7px;border-radius:50%;background:#D4A843;flex-shrink:0;margin-top:4px"></div>`:''}
       </div>`;
@@ -887,32 +896,33 @@ profile: () => {
   const u = state.user;
   const initials = u?.name?u.name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2):'AV';
   return `
-<div style="min-height:100vh;background:#000;display:flex;flex-direction:column;animation:fadeIn .3s ease">
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:fadeIn .3s ease">
   <div style="padding:56px 22px 0">
     <div style="font-size:32px;font-weight:800;margin-bottom:24px">Profile</div>
     <div class="card" style="padding:18px;margin-bottom:16px;display:flex;align-items:center;gap:16px">
       <div style="width:58px;height:58px;border-radius:18px;background:linear-gradient(135deg,#D4A843,#8B6914);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;color:#000;flex-shrink:0">${initials}</div>
       <div style="flex:1;min-width:0">
         <div style="font-size:17px;font-weight:700">${u?.name||'Guest'}</div>
-        <div style="font-size:13px;color:rgba(255,255,255,.35);margin-top:2px">${u?.email||''}</div>
+        <div style="font-size:13px;color:var(--fg-muted);margin-top:2px">${u?.email||''}</div>
       </div>
-      <button style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);color:rgba(255,255,255,.5);padding:7px 14px;border-radius:10px;font-size:13px;cursor:pointer;font-family:inherit">Edit</button>
+      <button style="background:var(--surface-b);border:1px solid var(--border);color:var(--fg-dim);padding:7px 14px;border-radius:10px;font-size:13px;cursor:pointer;font-family:inherit">Edit</button>
     </div>
   </div>
   <div style="padding:0 22px;flex:1">
-    <div style="background:rgba(255,255,255,.04);border-radius:20px;overflow:hidden;border:1px solid rgba(255,255,255,.07);margin-bottom:12px">
+    <div style="background:var(--surface);border-radius:20px;overflow:hidden;border:1px solid var(--border);margin-bottom:12px">
       ${[
+        {icon:state.theme==='light'?'☀️':'🌙',label:'Appearance',action:'toggleTheme()'},
         {icon:'💳',label:'Payment methods',action:"go('payment-methods')"},
         {icon:'📍',label:'Saved addresses',action:''},
         {icon:'🎁',label:'Referral code',action:''},
         {icon:'💬',label:'Help & support',action:''},
       ].map((r,i,a)=>`<div onclick="${r.action}" style="display:flex;align-items:center;gap:14px;padding:16px 18px;border-bottom:${i<a.length-1?'1px solid rgba(255,255,255,.05)':'none'};cursor:pointer">
-        <div style="width:36px;height:36px;border-radius:11px;background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">${r.icon}</div>
+        <div style="width:36px;height:36px;border-radius:11px;background:var(--surface-b);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">${r.icon}</div>
         <span style="font-size:15px;flex:1">${r.label}</span>
         <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.2)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
       </div>`).join('')}
     </div>
-    <button onclick="signOut()" style="width:100%;padding:16px;background:transparent;border:1px solid rgba(255,255,255,.07);border-radius:16px;color:rgba(255,255,255,.35);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">Sign out</button>
+    <button onclick="signOut()" style="width:100%;padding:16px;background:transparent;border:1px solid var(--border);border-radius:16px;color:var(--fg-muted);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">Sign out</button>
     <div style="height:120px"></div>
   </div>
   ${bottomNav('profile')}
@@ -920,7 +930,7 @@ profile: () => {
 },
 
 'payment-methods': () => `
-<div style="min-height:100vh;background:#000;display:flex;flex-direction:column;animation:slideUp .25s ease">
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
   <div class="back-row">
     <div class="back-btn" onclick="go('profile')">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
@@ -936,8 +946,8 @@ profile: () => {
       </div>
       <div style="font-size:22px;letter-spacing:6px;margin-top:24px;font-weight:400;color:rgba(255,255,255,.9)">•••• ${c.last4}</div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px">
-        <div style="font-size:12px;color:rgba(255,255,255,.45)">Expires ${c.expiry}</div>
-        <button onclick="removeCard(${c.id})" style="background:rgba(0,0,0,.25);border:none;color:rgba(255,255,255,.7);padding:7px 14px;border-radius:9px;font-size:12px;cursor:pointer;font-family:inherit">Remove</button>
+        <div style="font-size:12px;color:var(--fg-muted)">Expires ${c.expiry}</div>
+        <button onclick="removeCard(${c.id})" style="background:rgba(0,0,0,.25);border:none;color:var(--fg-muted);padding:7px 14px;border-radius:9px;font-size:12px;cursor:pointer;font-family:inherit">Remove</button>
       </div>
     </div>`).join('')}
     <button class="btn btn-glass">+ Add card</button>
@@ -1058,6 +1068,12 @@ function goPayment(total){state._payTotal=total;state._payCardId=state.cards[0]?
 function fmtCard(el){let v=el.value.replace(/\D/g,'').slice(0,16);el.value=v.replace(/(.{4})/g,'$1 ').trim();}
 function fmtExpiry(el){let v=el.value.replace(/\D/g,'').slice(0,4);if(v.length>2)v=v.slice(0,2)+' / '+v.slice(2);el.value=v;}
 function removeCard(id){state.cards=state.cards.filter(c=>c.id!==id);render();}
+function toggleTheme(){
+  state.theme=state.theme==='light'?'dark':'light';
+  localStorage.setItem('apexvip_theme',state.theme);
+  document.body.classList.toggle('light',state.theme==='light');
+  render();
+}
 function signOut(){if(FIREBASE_ENABLED)auth.signOut();else{state.user=null;go('splash');}}
 
 // ── Firebase auth ──────────────────────────────────────────────────────────
@@ -1099,7 +1115,7 @@ if(FIREBASE_ENABLED){
 
 function render(){
   const fn=screens[state.screen];
-  app.innerHTML=fn?fn():`<div style="padding:40px;text-align:center;color:rgba(255,255,255,.2)">Screen not found</div>`;
+  app.innerHTML=fn?fn():`<div style="padding:40px;text-align:center;color:var(--fg-ghost)">Screen not found</div>`;
 }
 
 render();
