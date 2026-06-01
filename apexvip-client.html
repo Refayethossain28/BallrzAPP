@@ -123,6 +123,7 @@ input::placeholder,textarea::placeholder{color:rgba(255,255,255,.2)}
 <body>
 <div id="app"></div>
 <script>
+// ── Firebase ────────────────────────────────────────────────────────────────────────
 let auth, db, FIREBASE_ENABLED = false;
 try {
   if (typeof APEXVIP_FIREBASE_CONFIG !== 'undefined' && APEXVIP_FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY') {
@@ -192,6 +193,7 @@ function bottomNav(active) {
     </div>`).join('')}</nav>`;
 }
 
+// ── Screens ──────────────────────────────────────────────────────────────────────────
 const screens = {
 
 splash: () => `
@@ -256,7 +258,7 @@ register: () => {
   return `
 <div style="min-height:100vh;display:flex;flex-direction:column;background:#000;padding:0 24px;animation:fadeIn .3s ease">
   <div class="back-row" style="padding-bottom:24px">
-    <div class="back-btn" onclick="${s>1?'state._regStep=1;render()':"go('splash')"}">
+    <div class="back-btn" onclick="${s>1?'state._regStep=1;render()':'go(\'splash\')'}">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
     </div>
     <div>
@@ -629,7 +631,77 @@ home: () => {
     </div>
   </div>
   <div style="padding:0 22px 44px">
-    <button class="btn btn-gold" onclick="confirmBooking()">Confirm · £${total}</button>
+    <button class="btn btn-gold" onclick="goPayment(${total})">Continue to payment · £${total}</button>
+  </div>
+</div>`;
+},
+
+payment: () => {
+  const total = state._payTotal || 0;
+  const selId = state._payCardId || (state.cards[0]?.id);
+  const adding = state._addingCard;
+  return `
+<div style="min-height:100vh;background:#000;display:flex;flex-direction:column;animation:slideUp .25s ease">
+  <div class="back-row">
+    <div class="back-btn" onclick="go('booking-summary')">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+    </div>
+    <div style="font-size:20px;font-weight:700">Payment</div>
+  </div>
+
+  <div style="padding:0 22px;flex:1" class="scroll">
+
+    <div style="background:linear-gradient(135deg,rgba(212,168,67,.12) 0%,rgba(212,168,67,.04) 100%);border:1px solid rgba(212,168,67,.2);border-radius:22px;padding:22px;margin-bottom:24px;display:flex;justify-content:space-between;align-items:flex-end">
+      <div>
+        <div class="section-label" style="margin-bottom:8px">Amount due</div>
+        <div style="font-size:44px;font-weight:800;color:#D4A843;line-height:1">£${total}</div>
+        <div style="font-size:13px;color:rgba(255,255,255,.3);margin-top:6px">${{airport:'Airport Transfer',hourly:'By the Hour',day:'By the Day'}[state.booking.serviceType]||'Booking'}</div>
+      </div>
+      <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="rgba(212,168,67,.35)" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><path stroke-linecap="round" d="M2 10h20"/></svg>
+    </div>
+
+    <div class="section-label" style="margin-bottom:12px">Saved cards</div>
+    ${state.cards.map(c=>`
+    <div onclick="state._payCardId=${c.id};state._addingCard=false;render()" style="display:flex;align-items:center;gap:14px;background:${selId===c.id?'rgba(212,168,67,.06)':'rgba(255,255,255,.04)'};border:1.5px solid ${selId===c.id?'rgba(212,168,67,.35)':'rgba(255,255,255,.07)'};border-radius:18px;padding:16px 18px;margin-bottom:10px;cursor:pointer;transition:all .2s">
+      <div style="width:38px;height:38px;border-radius:12px;background:${c.color};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;letter-spacing:1px;color:rgba(255,255,255,.7);flex-shrink:0">${c.brand.slice(0,2).toUpperCase()}</div>
+      <div style="flex:1">
+        <div style="font-size:15px;font-weight:600">${c.brand} •••• ${c.last4}</div>
+        <div style="font-size:12px;color:rgba(255,255,255,.3);margin-top:2px">Expires ${c.expiry}${c.isDefault?' · Default':''}</div>
+      </div>
+      <div style="width:20px;height:20px;border-radius:50%;border:2px solid ${selId===c.id?'#D4A843':'rgba(255,255,255,.2)'};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        ${selId===c.id?`<div style="width:10px;height:10px;border-radius:50%;background:#D4A843"></div>`:''}
+      </div>
+    </div>`).join('')}
+
+    <div onclick="state._addingCard=!state._addingCard;state._payCardId=null;render()" style="display:flex;align-items:center;gap:14px;background:${adding?'rgba(212,168,67,.06)':'rgba(255,255,255,.04)'};border:1.5px solid ${adding?'rgba(212,168,67,.35)':'rgba(255,255,255,.07)'};border-radius:18px;padding:16px 18px;margin-bottom:${adding?'0':'24px'};cursor:pointer;transition:all .2s">
+      <div style="width:38px;height:38px;border-radius:12px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.5)" stroke-width="2"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>
+      </div>
+      <span style="font-size:15px;font-weight:600;color:rgba(255,255,255,.7)">Add new card</span>
+    </div>
+
+    ${adding?`
+    <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:0 0 18px 18px;padding:20px;margin-bottom:24px">
+      <div class="field" style="margin-bottom:10px">
+        <input id="cn" placeholder="Card number" type="tel" maxlength="19" oninput="fmtCard(this)"/>
+      </div>
+      <div style="display:flex;gap:10px;margin-bottom:10px">
+        <div class="field" style="flex:1"><input id="ce" placeholder="MM / YY" type="tel" maxlength="7" oninput="fmtExpiry(this)"/></div>
+        <div class="field" style="flex:1"><input id="cv" placeholder="CVV" type="tel" maxlength="4"/></div>
+      </div>
+      <div class="field"><input id="ch" placeholder="Cardholder name"/></div>
+    </div>`:''}
+
+    <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:28px">
+      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.2)" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path stroke-linecap="round" d="M7 11V7a5 5 0 0110 0v4"/></svg>
+      <span style="font-size:12px;color:rgba(255,255,255,.2);letter-spacing:.5px">256-bit SSL encrypted · PCI DSS compliant</span>
+    </div>
+  </div>
+
+  <div style="padding:0 22px 44px">
+    <button class="btn btn-gold" onclick="confirmBooking()" ${!selId&&!adding?'style="opacity:.35"':''}>
+      Pay £${total}
+    </button>
   </div>
 </div>`;
 },
@@ -645,6 +717,7 @@ home: () => {
     <div style="font-size:32px;font-weight:800;margin-bottom:6px">Booked</div>
     <div style="font-size:12px;color:rgba(255,255,255,.3);letter-spacing:2px;margin-bottom:8px">REFERENCE</div>
     <div style="font-size:24px;font-weight:800;color:#D4A843;letter-spacing:4px;margin-bottom:40px">${ref}</div>
+
     <div class="card" style="width:100%;padding:20px;text-align:left">
       <div class="section-label" style="margin-bottom:16px">Your driver</div>
       <div style="display:flex;align-items:center;gap:14px">
@@ -657,7 +730,9 @@ home: () => {
           </div>
         </div>
       </div>
-      <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,.05);font-size:13px;color:rgba(255,255,255,.3);line-height:1.7">Your driver will contact you 30 minutes before pickup.</div>
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,.05);font-size:13px;color:rgba(255,255,255,.3);line-height:1.7">
+        Your driver will contact you 30 minutes before pickup.
+      </div>
     </div>
   </div>
   <div style="width:100%;padding-bottom:52px;display:flex;flex-direction:column;gap:10px">
@@ -749,6 +824,7 @@ trips: () => {
         <span>${t.date}</span><span>${t.time}</span>${t.flight?`<span>✈ ${t.flight}</span>`:''}
       </div>
     </div>
+
     <div class="card" style="padding:20px;margin-bottom:10px">
       <div style="display:flex;align-items:center;gap:14px">
         <div style="width:52px;height:52px;border-radius:16px;background:linear-gradient(135deg,#D4A843,#8B6914);display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800;color:#000;flex-shrink:0">JH</div>
@@ -762,10 +838,12 @@ trips: () => {
         <div style="font-size:12px;color:rgba(255,255,255,.25)">${t.plate}</div>
       </div>
     </div>
+
     <div class="card" style="padding:20px;margin-bottom:24px;display:flex;justify-content:space-between;align-items:center">
       <div style="font-size:14px;color:rgba(255,255,255,.35)">Total${t.status==='completed'?' paid':''}</div>
       <div style="font-size:32px;font-weight:800;color:#D4A843">${t.price}</div>
     </div>
+
     ${t.status==='completed'?`<button class="btn btn-glass" style="margin-bottom:12px">Download receipt</button>`:''}
     ${t.status==='upcoming'&&!cancelled&&!confirming?`<button class="btn-danger-outline" onclick="state._tripConfirming='${t.id}';render()">Cancel booking</button>`:''}
     ${confirming?`<div style="background:rgba(239,68,68,.05);border:1px solid rgba(239,68,68,.12);border-radius:18px;padding:22px">
@@ -868,6 +946,7 @@ profile: () => {
 
 };
 
+// ── Actions ──────────────────────────────────────────────────────────────────────────
 async function doLogin(){
   const e=$('lemail')?.value||'',p=$('lpass')?.value||'';
   if(!FIREBASE_ENABLED){
@@ -975,9 +1054,13 @@ async function confirmBooking(){
   }
   state._confirmedRef=ref;state._promoApplied=false;go('booking-confirmed');
 }
+function goPayment(total){state._payTotal=total;state._payCardId=state.cards[0]?.id||null;state._addingCard=false;go('payment');}
+function fmtCard(el){let v=el.value.replace(/\D/g,'').slice(0,16);el.value=v.replace(/(.{4})/g,'$1 ').trim();}
+function fmtExpiry(el){let v=el.value.replace(/\D/g,'').slice(0,4);if(v.length>2)v=v.slice(0,2)+' / '+v.slice(2);el.value=v;}
 function removeCard(id){state.cards=state.cards.filter(c=>c.id!==id);render();}
 function signOut(){if(FIREBASE_ENABLED)auth.signOut();else{state.user=null;go('splash');}}
 
+// ── Firebase auth ──────────────────────────────────────────────────────────────────────────
 if(FIREBASE_ENABLED){
   let _unsub=null;
   auth.onAuthStateChanged(async user=>{
