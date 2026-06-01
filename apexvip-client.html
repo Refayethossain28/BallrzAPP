@@ -9,6 +9,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
@@ -26,26 +28,8 @@ body{background:var(--bg);color:var(--fg);font-family:-apple-system,system-ui,sa
 @keyframes slideUp{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}
 @keyframes slideUpSheet{from{transform:translateY(100%)}to{transform:translateY(0)}}
 @keyframes scaleIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
-@keyframes pinPulse{0%,100%{box-shadow:0 0 0 4px rgba(212,168,67,.3),0 0 0 10px rgba(212,168,67,.1)}50%{box-shadow:0 0 0 7px rgba(212,168,67,.2),0 0 0 18px rgba(212,168,67,.04)}}
-@keyframes orb1{0%{transform:translate(0,0) scale(1)}100%{transform:translate(40px,-28px) scale(1.12)}}
-@keyframes orb2{0%{transform:translate(0,0) scale(1)}100%{transform:translate(-28px,36px) scale(.92)}}
-@keyframes orb3{0%{transform:translate(0,0)}100%{transform:translate(22px,-18px)}}
-@keyframes ringExpand{0%{transform:translate(-50%,-50%) scale(.8);opacity:.6}100%{transform:translate(-50%,-50%) scale(2.4);opacity:0}}
 
 /* Map */
-.map-bg{position:absolute;inset:0;background:#030303;overflow:hidden}
-.map-orb{position:absolute;border-radius:50%;filter:blur(70px)}
-.map-orb-1{width:480px;height:480px;top:0%;left:50%;transform:translateX(-50%);background:radial-gradient(circle,rgba(212,168,67,.07) 0%,transparent 70%);animation:orb1 10s ease-in-out infinite alternate}
-.map-orb-2{width:320px;height:320px;bottom:28%;right:-70px;background:radial-gradient(circle,rgba(80,100,200,.05) 0%,transparent 70%);animation:orb2 14s ease-in-out infinite alternate}
-.map-orb-3{width:220px;height:220px;top:12%;left:-50px;background:radial-gradient(circle,rgba(170,130,70,.04) 0%,transparent 70%);animation:orb3 8s ease-in-out infinite alternate}
-.map-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px);background-size:52px 52px}
-body.light .map-bg{background:#1c1c24}
-body.light .map-grid{background-image:linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px)}
-.map-pin{position:absolute;top:36%;left:50%;transform:translate(-50%,-50%);z-index:2}
-.map-pin-ring{position:absolute;width:36px;height:36px;border-radius:50%;border:1px solid rgba(212,168,67,.25);top:50%;left:50%;transform:translate(-50%,-50%);animation:pinPulse 2.8s ease-in-out infinite}
-.map-pin-ring2{position:absolute;width:36px;height:36px;border-radius:50%;border:1px solid rgba(212,168,67,.18);top:50%;left:50%;animation:ringExpand 3s ease-out infinite}
-.map-pin-dot{width:13px;height:13px;border-radius:50%;background:#D4A843;position:relative;z-index:1}
-.map-pin-shadow{width:5px;height:3px;background:rgba(0,0,0,.5);border-radius:50%;margin:5px auto 0;filter:blur(2px)}
 
 /* Glass sheet */
 .sheet{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(180deg,rgba(6,6,6,.86) 0%,rgba(0,0,0,.97) 50%);backdrop-filter:blur(50px) saturate(160%);-webkit-backdrop-filter:blur(50px) saturate(160%);border-radius:28px 28px 0 0;border-top:1px solid rgba(255,255,255,.08);animation:slideUpSheet .45s cubic-bezier(.16,1,.3,1);z-index:10}
@@ -125,6 +109,15 @@ body.light .nav{background:rgba(248,246,241,.96);border-top:1px solid rgba(0,0,0
 .section-label{font-size:10px;font-weight:700;letter-spacing:2.5px;color:var(--fg-subtle);text-transform:uppercase}
 .err{background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.18);color:#f87171;padding:12px 16px;border-radius:14px;font-size:14px;margin-bottom:16px}
 .divider{height:1px;background:var(--divider);margin:4px 0}
+
+/* Leaflet map */
+#map{position:absolute;inset:0;z-index:0}
+#map .leaflet-control-attribution{display:none!important}
+/* Recommendation cards */
+.rec-row{display:flex;gap:10px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px;scrollbar-width:none}
+.rec-row::-webkit-scrollbar{display:none}
+.rec-card{flex-shrink:0;width:128px;background:var(--surface-b);border:1px solid var(--border);border-radius:16px;padding:14px 12px;cursor:pointer;transition:transform .12s,opacity .12s}
+.rec-card:active{transform:scale(.96);opacity:.85}
 </style>
 </head>
 <body>
@@ -166,27 +159,50 @@ const NOTIFS = [
 
 const RECENT = ['Heathrow Terminal 5','Mayfair, London W1','Gatwick North Terminal','Canary Wharf E14'];
 
+const POIS = [
+  {name:'The Ritz London',    cat:'Hotel',      emoji:'🏨', lat:51.5067, lng:-0.1438},
+  {name:'Nobu London',        cat:'Dining',     emoji:'🍽', lat:51.5075, lng:-0.1458},
+  {name:'Harrods',            cat:'Shopping',   emoji:'🛍', lat:51.4994, lng:-0.1632},
+  {name:'The Shard',          cat:'Attraction', emoji:'🏙', lat:51.5045, lng:-0.0865},
+  {name:'Sketch London',      cat:'Dining',     emoji:'🍸', lat:51.5127, lng:-0.1421},
+  {name:"Claridge's",         cat:'Hotel',      emoji:'✨', lat:51.5120, lng:-0.1479},
+];
+
+let mapInstance=null,mapTileLayer=null;
+
+function initMap(){
+  const el=document.getElementById('map');
+  if(!el)return;
+  if(mapInstance){mapInstance.remove();mapInstance=null;mapTileLayer=null;}
+  const dark=state.theme!=='light';
+  const tileUrl=dark
+    ?'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+    :'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+  mapInstance=L.map('map',{center:[51.5074,-0.1278],zoom:13,zoomControl:false,attributionControl:false,scrollWheelZoom:false,dragging:true});
+  mapTileLayer=L.tileLayer(tileUrl,{maxZoom:19}).addTo(mapInstance);
+  POIS.forEach(p=>{
+    const icon=L.divIcon({className:'',html:`<div style="width:11px;height:11px;border-radius:50%;background:#D4A843;border:2px solid rgba(212,168,67,.4);box-shadow:0 0 8px rgba(212,168,67,.6)"></div>`,iconSize:[11,11],iconAnchor:[5,5]});
+    L.marker([p.lat,p.lng],{icon}).addTo(mapInstance).bindPopup(`<b style="font-family:sans-serif;font-size:13px">${p.name}</b><br><span style="color:#888;font-size:11px">${p.cat}</span>`);
+  });
+  if(navigator.geolocation){
+    navigator.geolocation.getCurrentPosition(({coords})=>{
+      if(!mapInstance)return;
+      mapInstance.setView([coords.latitude,coords.longitude],14);
+      const uIcon=L.divIcon({className:'',html:'<div style="width:14px;height:14px;border-radius:50%;background:#fff;border:3px solid #D4A843;box-shadow:0 0 0 5px rgba(212,168,67,.22)"></div>',iconSize:[14,14],iconAnchor:[7,7]});
+      L.marker([coords.latitude,coords.longitude],{icon:uIcon}).addTo(mapInstance).bindPopup('You are here');
+    },()=>{});
+  }
+}
+
 function go(screen, data) {
   if (data) state.selectedTrip = data;
+  if (state.screen==='home' && screen!=='home' && mapInstance){mapInstance.remove();mapInstance=null;mapTileLayer=null;}
   state.screen = screen;
   window.scrollTo(0,0);
   render();
 }
 
-function mapBg() {
-  return `<div class="map-bg">
-    <div class="map-orb map-orb-1"></div>
-    <div class="map-orb map-orb-2"></div>
-    <div class="map-orb map-orb-3"></div>
-    <div class="map-grid"></div>
-    <div class="map-pin">
-      <div class="map-pin-ring2"></div>
-      <div class="map-pin-ring"></div>
-      <div class="map-pin-dot"></div>
-      <div class="map-pin-shadow"></div>
-    </div>
-  </div>`;
-}
+function mapBg(){return'<div id="map" style="position:absolute;inset:0;z-index:0"></div>';}
 
 function bottomNav(active) {
   const items = [
@@ -296,7 +312,7 @@ home: () => {
   const hr = new Date().getHours();
   const greeting = hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
   const upcoming = TRIPS.filter(t=>t.status==='upcoming');
-  const sheetH = upcoming.length ? 418 : 360;
+  const sheetH = upcoming.length ? 580 : 520;
   return `
 <div style="position:relative;height:100vh;overflow:hidden;animation:fadeIn .3s ease">
   ${mapBg()}
@@ -313,7 +329,7 @@ home: () => {
 
   <div class="sheet" style="height:${sheetH}px">
     <div class="sheet-handle"></div>
-    <div style="padding:22px 22px 0">
+    <div style="padding:22px 22px 0;height:calc(100% - 26px);overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none">
 
       <div onclick="go('route-input')" style="display:flex;align-items:center;gap:14px;background:var(--surface-b);border:1px solid var(--border-b);border-radius:18px;padding:17px 20px;margin-bottom:22px;cursor:pointer">
         <svg width="17" height="17" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.3)" stroke-width="2"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" d="M21 21l-4.35-4.35"/></svg>
@@ -330,6 +346,17 @@ home: () => {
         ].map(s=>`<div class="svc-card" onclick="goBook('${s.t}')">
           <span style="font-size:22px">${s.icon}</span>
           <span style="font-size:12px;font-weight:600;color:var(--fg-muted)">${s.l}</span>
+        </div>`).join('')}
+      </div>
+
+      <div class="section-label" style="margin-bottom:12px">Discover</div>
+      <div class="rec-row" style="margin:0 -22px 22px;padding:4px 22px">
+        ${POIS.map(p=>`
+        <div class="rec-card" onclick="state.booking.dropoff='${p.name}';go('route-input')">
+          <div style="font-size:22px;margin-bottom:8px">${p.emoji}</div>
+          <div style="font-size:12px;font-weight:700;line-height:1.3;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name}</div>
+          <div style="font-size:10px;color:var(--fg-subtle);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">${p.cat}</div>
+          <div style="font-size:10px;font-weight:700;color:#D4A843">Book ride →</div>
         </div>`).join('')}
       </div>
 
@@ -1072,7 +1099,12 @@ function toggleTheme(){
   state.theme=state.theme==='light'?'dark':'light';
   localStorage.setItem('apexvip_theme',state.theme);
   document.body.classList.toggle('light',state.theme==='light');
-  render();
+  if(state.screen==='home'&&mapInstance&&mapTileLayer){
+    mapInstance.removeLayer(mapTileLayer);
+    mapTileLayer=L.tileLayer(state.theme!=='light'
+      ?'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+      :'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{maxZoom:19}).addTo(mapInstance);
+  }else{render();}
 }
 function signOut(){if(FIREBASE_ENABLED)auth.signOut();else{state.user=null;go('splash');}}
 

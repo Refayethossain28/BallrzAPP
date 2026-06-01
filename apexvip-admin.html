@@ -4,58 +4,89 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>ApexVIP Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&display=swap" rel="stylesheet"/>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="firebase.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-body{background:#0f0f0f;color:#fff;font-family:-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased;display:flex;min-height:100vh}
-.sidebar{width:240px;min-height:100vh;background:#161616;border-right:1px solid rgba(255,255,255,.06);position:fixed;top:0;left:0;display:flex;flex-direction:column;z-index:50;transition:transform .25s}
+body{background:var(--bg);color:var(--fg);font-family:-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased;display:flex;min-height:100vh;
+  --bg:#080808;--fg:#f0ece4;--fg-muted:#c8bfb0;--fg-dim:#8a8278;--fg-subtle:#5a5550;--fg-ghost:#3a3632;--fg-faint:#28251f;
+  --surface:rgba(255,255,255,.045);--surface-b:rgba(255,255,255,.03);--surface-c:rgba(255,255,255,.07);
+  --border:rgba(255,255,255,.08);--border-b:rgba(255,255,255,.05);--divider:rgba(255,255,255,.04);
+  --gold:#D4A843;--gold-dim:rgba(212,168,67,.14)}
+body.light{
+  --bg:#f5f0e8;--fg:#1a1612;--fg-muted:#3d3730;--fg-dim:#6b6258;--fg-subtle:#9a9088;--fg-ghost:#c8bfb0;--fg-faint:#e0d8cc;
+  --surface:rgba(0,0,0,.04);--surface-b:rgba(0,0,0,.025);--surface-c:rgba(0,0,0,.065);
+  --border:rgba(0,0,0,.08);--border-b:rgba(0,0,0,.05);--divider:rgba(0,0,0,.04)}
+
+/* ── Sidebar ── */
+.sidebar{width:240px;min-height:100vh;background:rgba(10,9,8,.92);border-right:1px solid var(--border);position:fixed;top:0;left:0;display:flex;flex-direction:column;z-index:50;transition:transform .25s;backdrop-filter:blur(24px)}
+body.light .sidebar{background:rgba(240,235,226,.92)}
 .main{margin-left:240px;flex:1;padding:32px;min-height:100vh}
 @media(max-width:768px){.sidebar{transform:translateX(-240px)}.sidebar.open{transform:translateX(0)}.main{margin-left:0;padding:20px 16px 80px}}
-.logo{padding:24px 20px;border-bottom:1px solid rgba(255,255,255,.06)}
-.nav-item{display:flex;align-items:center;gap:12px;padding:12px 20px;cursor:pointer;color:#777;font-size:14px;transition:all .15s;border-left:3px solid transparent}
-.nav-item:hover{color:#ccc;background:rgba(255,255,255,.03)}
-.nav-item.active{color:#C9A84C;background:rgba(201,168,76,.08);border-left-color:#C9A84C}
-.card{background:#1c1c1c;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:20px}
-.stat-card{background:#1c1c1c;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:20px;flex:1;min-width:150px}
-.btn{padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600;border:none;cursor:pointer;font-family:inherit}
-.btn-gold{background:#C9A84C;color:#000}
-.btn-outline{background:transparent;border:1px solid rgba(255,255,255,.15);color:#ccc}
-.btn-sm{padding:6px 14px;font-size:13px}
+
+/* ── Sidebar nav items ── */
+.s-nav-item{display:flex;align-items:center;gap:12px;padding:11px 20px;cursor:pointer;color:var(--fg-subtle);font-size:14px;transition:all .15s;border-left:3px solid transparent;position:relative}
+.s-nav-item:hover{color:var(--fg);background:var(--surface)}
+.s-nav-item.on{color:var(--gold);background:var(--gold-dim);border-left-color:var(--gold)}
+
+/* ── Keyframes ── */
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes logoReveal{0%{opacity:0;letter-spacing:18px}60%{opacity:1}100%{opacity:1;letter-spacing:10px}}
+@keyframes subtitleReveal{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes slideUp{from{opacity:0;transform:translateY(40px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── Cards ── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;flex:1;min-width:150px}
+
+/* ── Buttons ── */
+.btn{padding:10px 20px;border-radius:10px;font-size:14px;font-weight:600;border:none;cursor:pointer;font-family:inherit;transition:opacity .15s}
+.btn:active{opacity:.8}
+.btn-gold{background:var(--gold);color:#000}
+.btn-glass{background:var(--surface-c);border:1px solid var(--border);color:var(--fg)}
+.btn-sm{padding:7px 14px;font-size:13px}
+.btn-danger{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);color:#ef4444}
+
+/* ── Table ── */
 table{width:100%;border-collapse:collapse}
-th{text-align:left;padding:12px 16px;color:#666;font-size:11px;font-weight:600;border-bottom:1px solid rgba(255,255,255,.06);text-transform:uppercase;letter-spacing:.5px}
-td{padding:13px 16px;border-bottom:1px solid rgba(255,255,255,.04);font-size:14px;vertical-align:middle}
-tr:hover td{background:rgba(255,255,255,.02)}
-input,select{background:#222;border:1px solid rgba(255,255,255,.1);border-radius:8px;color:#fff;padding:10px 14px;font-size:14px;outline:none;font-family:inherit;-webkit-appearance:none}
-input:focus,select:focus{border-color:#C9A84C}
-select option{background:#222}
-.badge{display:inline-flex;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700}
-.b-pending{background:rgba(245,158,11,.15);color:#f59e0b}
-.b-confirmed{background:rgba(59,130,246,.15);color:#3b82f6}
-.b-active{background:rgba(34,197,94,.15);color:#22c55e}
-.b-completed{background:rgba(100,100,100,.2);color:#888}
-.b-cancelled{background:rgba(239,68,68,.15);color:#ef4444}
-.b-online{background:rgba(34,197,94,.15);color:#22c55e}
-.b-ontrip{background:rgba(245,158,11,.15);color:#f59e0b}
-.b-offline{background:rgba(100,100,100,.2);color:#666}
-.b-available{background:rgba(34,197,94,.15);color:#22c55e}
-.b-vip{background:rgba(201,168,76,.15);color:#C9A84C}
-.b-vvip{background:rgba(168,85,247,.15);color:#a855f7}
-.b-standard{background:rgba(100,100,100,.2);color:#888}
-.tab{padding:10px 18px;cursor:pointer;font-size:14px;color:#666;border-bottom:2px solid transparent;white-space:nowrap}
-.tab.active{color:#C9A84C;border-bottom-color:#C9A84C}
+th{text-align:left;padding:10px 14px;color:var(--fg-subtle);font-size:10px;font-weight:700;border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:1px}
+td{padding:12px 14px;border-bottom:1px solid var(--divider);font-size:14px;vertical-align:middle}
+tr:hover td{background:var(--surface-b)}
+input,select{background:var(--surface-c);border:1px solid var(--border);border-radius:8px;color:var(--fg);padding:10px 14px;font-size:14px;outline:none;font-family:inherit;-webkit-appearance:none}
+input:focus,select:focus{border-color:var(--gold)}
+select option{background:#111}
+body.light select option{background:#f5f0e8}
+
+/* ── Tags ── */
+.tag{display:inline-flex;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.2px}
+.tag-gold{background:rgba(212,168,67,.14);color:var(--gold)}
+.tag-green{background:rgba(34,197,94,.14);color:#22c55e}
+.tag-blue{background:rgba(59,130,246,.14);color:#3b82f6}
+.tag-amber{background:rgba(245,158,11,.14);color:#f59e0b}
+.tag-purple{background:rgba(168,85,247,.14);color:#a855f7}
+.tag-red{background:rgba(239,68,68,.14);color:#ef4444}
+.tag-gray{background:rgba(120,120,120,.14);color:var(--fg-dim)}
+
+/* ── Misc ── */
+.section-label{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--fg-subtle)}
 .section-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:12px}
 .section-title{font-size:22px;font-weight:700}
 .avatar{border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:#000;flex-shrink:0}
-.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px}
-.modal{background:#1c1c1c;border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:24px;width:100%;max-width:480px;max-height:85vh;overflow-y:auto}
-.menu-toggle{display:none;position:fixed;top:16px;left:16px;z-index:60;background:#1c1c1c;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:9px;cursor:pointer;color:#fff}
-@media(max-width:768px){.menu-toggle{display:flex}}
 .screen{animation:fadeIn .2s ease}
-@keyframes fadeIn{from{opacity:0}to{opacity:1}}
-.bar{border-radius:4px 4px 0 0;background:#C9A84C;opacity:.75;flex:1}
+.bar{border-radius:4px 4px 0 0;background:var(--gold);opacity:.75;flex:1}
+.menu-toggle{display:none;position:fixed;top:16px;left:16px;z-index:60;background:var(--surface-c);border:1px solid var(--border);border-radius:10px;padding:9px;cursor:pointer;color:var(--fg)}
+@media(max-width:768px){.menu-toggle{display:flex}}
+
+/* ── Modal (bottom-sheet on mobile, centred on desktop) ── */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:200;display:flex;align-items:flex-end;justify-content:center;padding:0}
+@media(min-width:640px){.modal-bg{align-items:center;padding:20px}}
+.modal{background:var(--bg);border:1px solid var(--border);border-radius:20px 20px 0 0;padding:28px;width:100%;max-height:90vh;overflow-y:auto}
+@media(min-width:640px){.modal{border-radius:20px;max-width:480px}}
 </style>
 </head>
 <body>
@@ -63,15 +94,16 @@ select option{background:#222}
   <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
 </button>
 <div id="sidebar" class="sidebar">
-  <div class="logo">
-    <div style="font-size:18px;font-weight:800;letter-spacing:4px;color:#C9A84C">APEX VIP</div>
-    <div style="font-size:10px;color:#444;letter-spacing:3px;margin-top:2px">ADMIN PORTAL</div>
+  <div style="padding:24px 20px;border-bottom:1px solid var(--border)">
+    <div style="font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:700;color:var(--gold);letter-spacing:3px">ApexVIP</div>
+    <div style="font-size:10px;color:var(--fg-subtle);letter-spacing:3px;margin-top:2px">ADMIN PORTAL</div>
   </div>
   <nav style="flex:1;padding:12px 0;overflow-y:auto" id="sidenav"></nav>
-  <div style="padding:16px 20px;border-top:1px solid rgba(255,255,255,.06);display:flex;align-items:center;gap:12px">
-    <div class="avatar" style="background:linear-gradient(135deg,#C9A84C,#8B6914);width:36px;height:36px;font-size:13px">AD</div>
-    <div><div style="font-size:13px;font-weight:600">Admin</div><div style="font-size:11px;color:#555">admin@apexvip.com</div></div>
-    <button onclick="go('login')" style="margin-left:auto;background:none;border:none;color:#555;cursor:pointer;font-size:20px;line-height:1">⏻</button>
+  <div style="padding:16px 20px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px">
+    <div class="avatar" style="background:linear-gradient(135deg,#D4A843,#8B6020);width:36px;height:36px;font-size:13px">AD</div>
+    <div style="flex:1"><div style="font-size:13px;font-weight:600">Admin</div><div style="font-size:11px;color:var(--fg-subtle)">admin@apexvip.com</div></div>
+    <button onclick="toggleTheme()" style="background:var(--surface);border:1px solid var(--border);border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center" id="theme-btn">☀️</button>
+    <button onclick="go('login')" style="background:none;border:none;color:var(--fg-dim);cursor:pointer;font-size:20px;line-height:1">⏻</button>
   </div>
 </div>
 <div class="main" id="main"></div>
@@ -101,7 +133,7 @@ let BOOKINGS=[
   {id:'APX-4814',client:'William Scott',pickup:'Kensington',dropoff:'City Airport',date:'27 May',time:'17:30',vehicle:'S-Class',driver:'Emma C.',status:'cancelled',price:'£125'},
 ];
 let DRIVERS=[
-  {id:'D1',name:'James Harrison',initials:'JH',color:'#C9A84C',rating:4.9,status:'online',vehicle:'S-Class LX73 ABC',trips:247,earnings:'£2,840'},
+  {id:'D1',name:'James Harrison',initials:'JH',color:'#D4A843',rating:4.9,status:'online',vehicle:'S-Class LX73 ABC',trips:247,earnings:'£2,840'},
   {id:'D2',name:'Michael Torres',initials:'MT',color:'#3b82f6',rating:4.8,status:'ontrip',vehicle:'V-Class LX72 DEF',trips:189,earnings:'£2,210'},
   {id:'D3',name:'David Kim',initials:'DK',color:'#a855f7',rating:4.7,status:'online',vehicle:'S-Class LX71 GHI',trips:312,earnings:'£3,120'},
   {id:'D4',name:'Sarah Johnson',initials:'SJ',color:'#22c55e',rating:4.9,status:'offline',vehicle:'V-Class LX70 JKL',trips:98,earnings:'£1,050'},
@@ -127,9 +159,28 @@ const REV=[2400,3100,2800,3600,2900,4200,3840];
 const DAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Today'];
 const MREV=[28,31,26,34,38,42];
 const MONTHS=['Jan','Feb','Mar','Apr','May','Jun'];
-const NAVITEMS=[{id:'dashboard',icon:'⊞',label:'Dashboard'},{id:'bookings',icon:'📋',label:'Bookings'},{id:'drivers',icon:'🚗',label:'Drivers'},{id:'clients',icon:'👤',label:'Clients'},{id:'fleet',icon:'🚙',label:'Fleet'},{id:'pricing',icon:'£',label:'Pricing'},{id:'analytics',icon:'📊',label:'Analytics'},{id:'settings',icon:'⚙',label:'Settings'}];
+const NAVITEMS=[
+  {id:'dashboard',icon:'⊞',label:'Dashboard'},
+  {id:'bookings',icon:'📋',label:'Bookings'},
+  {id:'drivers',icon:'🚗',label:'Drivers'},
+  {id:'clients',icon:'👤',label:'Clients'},
+  {id:'fleet',icon:'🚙',label:'Fleet'},
+  {id:'pricing',icon:'£',label:'Pricing'},
+  {id:'analytics',icon:'📊',label:'Analytics'},
+  {id:'settings',icon:'⚙',label:'Settings'},
+];
 
-let S={screen:'login',bFilter:'all',dFilter:'all',cFilter:'all'};
+let S={screen:'login',bFilter:'all',dFilter:'all',cFilter:'all',theme:localStorage.getItem('apexvip_admin_theme')||'dark'};
+
+if(S.theme==='light') document.body.classList.add('light');
+
+function toggleTheme(){
+  S.theme=S.theme==='light'?'dark':'light';
+  localStorage.setItem('apexvip_admin_theme',S.theme);
+  document.body.classList.toggle('light',S.theme==='light');
+  const btn=document.getElementById('theme-btn');
+  if(btn) btn.textContent=S.theme==='light'?'🌙':'☀️';
+}
 
 function go(s){S.screen=s;render();document.getElementById('sidebar').classList.remove('open');window.scrollTo(0,0);}
 function toggleMenu(){document.getElementById('sidebar').classList.toggle('open');}
@@ -170,18 +221,14 @@ async function updateBookingStatus(id,status){
   try{await db.collection('bookings').doc(id).update({status});}catch(e){}
 }
 
-// ── Firebase real-time listeners ──────────────────────────────────────
 if(FIREBASE_ENABLED){
   db.collection('bookings').orderBy('createdAt','desc').onSnapshot(snap=>{
     BOOKINGS=snap.docs.map(d=>{
       const x=d.data();
-      return{id:d.id,_docId:d.id,
-        client:x.clientName||'—',pickup:x.pickup||'',dropoff:x.dropoff||'',
+      return{id:d.id,_docId:d.id,client:x.clientName||'—',pickup:x.pickup||'',dropoff:x.dropoff||'',
         date:x.date||'',time:x.time||'',vehicle:x.vehicle||'S-Class',
         driver:x.driverName||x.driver||'—',status:x.status||'pending',
-        price:x.price?'£'+x.price:(x.priceStr||'£185'),
-        ref:x.ref||d.id
-      };
+        price:x.price?'£'+x.price:(x.priceStr||'£185'),ref:x.ref||d.id};
     });
     if(!['login'].includes(S.screen))render();
   },e=>console.warn('Bookings:',e.code));
@@ -190,7 +237,7 @@ if(FIREBASE_ENABLED){
       DRIVERS=snap.docs.map(d=>{
         const x=d.data();
         return{id:d.id,name:x.name||'',initials:(x.name||'??').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2),
-          color:x.color||'#C9A84C',rating:x.rating||4.8,status:x.status||'offline',
+          color:x.color||'#D4A843',rating:x.rating||4.8,status:x.status||'offline',
           vehicle:x.vehicle||'S-Class',trips:x.trips||0,earnings:'£'+(x.earnings||0)};
       });
       if(!['login'].includes(S.screen))render();
@@ -209,79 +256,108 @@ if(FIREBASE_ENABLED){
 }
 
 function badge(s){
-  const m={pending:'b-pending Pending',confirmed:'b-confirmed Confirmed',active:'b-active Active',completed:'b-completed Completed',cancelled:'b-cancelled Cancelled',online:'b-online Online',ontrip:'b-ontrip On Trip',offline:'b-offline Offline',available:'b-available Available',vip:'b-vip VIP',vvip:'b-vvip VVIP',standard:'b-standard Standard'};
-  const v=m[s]||('b-standard '+s);const[c,...r]=v.split(' ');return`<span class="badge ${c}">${r.join(' ')}</span>`;
+  const m={
+    pending:'tag-amber Pending',confirmed:'tag-blue Confirmed',active:'tag-green Active',
+    completed:'tag-gray Completed',cancelled:'tag-red Cancelled',
+    online:'tag-green Online',ontrip:'tag-amber On Trip',offline:'tag-gray Offline',
+    available:'tag-green Available',vip:'tag-gold VIP',vvip:'tag-purple VVIP',standard:'tag-gray Standard'
+  };
+  const v=m[s]||('tag-gray '+s);const[c,...r]=v.split(' ');
+  return`<span class="tag ${c}">${r.join(' ')}</span>`;
 }
 function av(initials,color,size=36){return`<div class="avatar" style="background:${color};width:${size}px;height:${size}px;font-size:${Math.round(size*.35)}px">${initials}</div>`;}
 function stars(r){return'★'.repeat(Math.floor(r))+'☆'.repeat(5-Math.floor(r));}
 
-function barChart(data,labels,height=70,color='#C9A84C'){
+function barChart(data,labels,height=70){
   const mx=Math.max(...data);
   return`<div style="display:flex;align-items:flex-end;gap:4px;height:${height}px">
     ${data.map((v,i)=>`<div style="display:flex;flex-direction:column;align-items:center;gap:3px;flex:1">
-      <div style="font-size:9px;color:#555">${labels?labels[i]:''}</div>
       <div class="bar" style="height:${Math.round((v/mx)*(.8*height))+6}px"></div>
+      <div style="font-size:9px;color:var(--fg-subtle)">${labels?labels[i]:''}</div>
     </div>`).join('')}
   </div>`;
 }
 
 function renderSidebar(){
-  if(S.screen==='login'){document.getElementById('sidebar').style.display='none';document.getElementById('main').style.marginLeft='0';document.querySelector('.menu-toggle').style.display='none';return;}
-  document.getElementById('sidebar').style.display='flex';document.getElementById('main').style.marginLeft='';document.querySelector('.menu-toggle').style.display='';
-  document.getElementById('sidenav').innerHTML=NAVITEMS.map(i=>`<div class="nav-item${S.screen===i.id?' active':''}" onclick="go('${i.id}')"><span style="font-size:16px">${i.icon}</span><span>${i.label}</span></div>`).join('');
+  const btn=document.getElementById('theme-btn');
+  if(btn) btn.textContent=S.theme==='light'?'🌙':'☀️';
+  if(S.screen==='login'){
+    document.getElementById('sidebar').style.display='none';
+    document.getElementById('main').style.marginLeft='0';
+    const mt=document.querySelector('.menu-toggle');if(mt)mt.style.display='none';
+    return;
+  }
+  document.getElementById('sidebar').style.display='flex';
+  document.getElementById('main').style.marginLeft='';
+  const mt=document.querySelector('.menu-toggle');if(mt)mt.style.display='';
+  document.getElementById('sidenav').innerHTML=NAVITEMS.map(i=>`
+    <div class="s-nav-item${S.screen===i.id?' on':''}" onclick="go('${i.id}')">
+      <span style="font-size:16px">${i.icon}</span><span>${i.label}</span>
+    </div>`).join('');
+}
+
+function filterBar(opts,current,key){
+  return`<div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
+    ${opts.map(([val,label])=>`<button class="btn btn-sm ${S[key]===val?'btn-gold':'btn-glass'}" onclick="S.${key}='${val}';render()">${label}</button>`).join('')}
+  </div>`;
+}
+function tabRow(opts,current,expr){
+  return`<div style="display:flex;border-bottom:1px solid var(--border);margin-bottom:20px;overflow-x:auto">
+    ${opts.map(([val,label])=>`<div onclick="${expr.replace('__VAL__',val)}" style="padding:10px 18px;cursor:pointer;font-size:14px;color:${current===val?'var(--gold)':'var(--fg-subtle)'};border-bottom:2px solid ${current===val?'var(--gold)':'transparent'};white-space:nowrap;transition:color .15s">${label}</div>`).join('')}
+  </div>`;
 }
 
 const pages={
-login:()=>`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center">
-  <div style="width:100%;max-width:380px;padding:24px">
-    <div style="text-align:center;margin-bottom:40px">
-      <div style="font-size:32px;font-weight:800;letter-spacing:6px;color:#C9A84C">APEX VIP</div>
-      <div style="font-size:11px;color:#444;letter-spacing:3px;margin-top:4px">ADMIN PORTAL</div>
+login:()=>`<div style="min-height:100vh;background:#050505;display:flex;align-items:center;justify-content:center;padding:24px">
+  <div style="width:100%;max-width:360px;text-align:center">
+    <div style="font-family:'Cormorant Garamond',serif;font-size:52px;font-weight:700;color:#D4A843;letter-spacing:10px;animation:logoReveal 1.4s cubic-bezier(.16,1,.3,1) .3s both">ApexVIP</div>
+    <div style="font-size:11px;color:#555;letter-spacing:4px;margin-top:6px;margin-bottom:52px;animation:subtitleReveal 1.2s ease 1s both">ADMINISTRATION</div>
+    <div style="animation:slideUp .6s cubic-bezier(.16,1,.3,1) 1.8s both">
+      <div style="margin-bottom:14px;text-align:left"><label style="font-size:11px;color:#666;display:block;margin-bottom:6px;letter-spacing:1px">EMAIL</label><input type="email" value="admin@apexvip.com" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.1);color:#f0ece4"/></div>
+      <div style="margin-bottom:24px;text-align:left"><label style="font-size:11px;color:#666;display:block;margin-bottom:6px;letter-spacing:1px">PASSWORD</label><input type="password" value="admin123" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.1);color:#f0ece4"/></div>
+      <button class="btn btn-gold" style="width:100%;padding:15px;font-size:15px" onclick="adminLogin()">Sign In</button>
+      <div style="margin-top:16px;background:rgba(255,255,255,.04);border-radius:10px;padding:12px;font-size:12px;color:#444">admin@apexvip.com / admin123</div>
     </div>
-    <div style="margin-bottom:14px"><label style="font-size:12px;color:#666;display:block;margin-bottom:5px">Email</label><input type="email" value="admin@apexvip.com" style="width:100%"/></div>
-    <div style="margin-bottom:24px"><label style="font-size:12px;color:#666;display:block;margin-bottom:5px">Password</label><input type="password" value="admin123" style="width:100%"/></div>
-    <button class="btn btn-gold" style="width:100%;padding:15px" onclick="adminLogin()">Sign In</button>
-    <div style="margin-top:14px;background:#1a1a1a;border-radius:8px;padding:12px;font-size:12px;color:#555">Demo: admin@apexvip.com / admin123</div>
   </div>
 </div>`,
 
 dashboard:()=>`<div class="screen">
   <div class="section-header">
-    <div><div class="section-title">Dashboard</div><div style="color:#666;font-size:13px;margin-top:2px">Wednesday, 28 May 2026</div></div>
+    <div><div class="section-title">Dashboard</div><div style="color:var(--fg-dim);font-size:13px;margin-top:2px">Wednesday, 28 May 2026</div></div>
     <button class="btn btn-gold btn-sm" onclick="openModal(newBookingForm())">+ New Booking</button>
   </div>
   <div style="display:flex;gap:14px;margin-bottom:24px;flex-wrap:wrap">
-    ${[["Today's Bookings",'12','+3 from yesterday','📋','#3b82f6'],['Active Rides','4','2 en route','🚗','#22c55e'],['Revenue Today','£3,840','+12% vs last week','£','#C9A84C'],['Drivers Online','6','2 on trip','👤','#a855f7']].map(([l,v,s,ic,c])=>`<div class="stat-card">
-      <div style="display:flex;justify-content:space-between;margin-bottom:12px"><span style="font-size:11px;color:#666;font-weight:600">${l}</span><span style="font-size:18px">${ic}</span></div>
-      <div style="font-size:30px;font-weight:800;color:${c}">${v}</div>
-      <div style="font-size:12px;color:#555;margin-top:4px">${s}</div>
+    ${[["Today's Bookings",'12','+3 from yesterday','#3b82f6'],['Active Rides','4','2 en route','#22c55e'],['Revenue Today','£3,840','+12% vs last week','#D4A843'],['Drivers Online','6','2 on trip','#a855f7']].map(([l,v,s,c])=>`<div class="stat-card">
+      <div class="section-label" style="margin-bottom:12px">${l}</div>
+      <div style="font-size:32px;font-weight:800;color:${c}">${v}</div>
+      <div style="font-size:12px;color:var(--fg-subtle);margin-top:4px">${s}</div>
     </div>`).join('')}
   </div>
   <div style="display:flex;gap:20px;margin-bottom:24px;flex-wrap:wrap">
     <div class="card" style="flex:2;min-width:280px">
-      <div style="font-size:14px;font-weight:600;margin-bottom:12px">Revenue — Last 7 Days</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:14px">Revenue — Last 7 Days</div>
       ${barChart(REV,DAYS,80)}
-      <div style="display:flex;justify-content:space-between;margin-top:6px">${REV.map((v,i)=>`<div style="flex:1;text-align:center;font-size:9px;color:#444">£${(v/1000).toFixed(1)}k</div>`).join('')}</div>
+      <div style="display:flex;justify-content:space-between;margin-top:6px">${REV.map(v=>`<div style="flex:1;text-align:center;font-size:9px;color:var(--fg-ghost)">£${(v/1000).toFixed(1)}k</div>`).join('')}</div>
     </div>
     <div class="card" style="flex:1;min-width:200px">
-      <div style="font-size:14px;font-weight:600;margin-bottom:14px">Live Drivers</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:16px">Live Drivers</div>
       ${DRIVERS.map(d=>`<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-        ${av(d.initials,d.color,32)}<div style="flex:1"><div style="font-size:13px;font-weight:600">${d.name}</div><div style="font-size:11px;color:#555">${d.vehicle}</div></div>${badge(d.status)}
+        ${av(d.initials,d.color,32)}<div style="flex:1"><div style="font-size:13px;font-weight:600">${d.name}</div><div style="font-size:11px;color:var(--fg-subtle)">${d.vehicle}</div></div>${badge(d.status)}
       </div>`).join('')}
     </div>
   </div>
   <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:14px">Recent Bookings</div>
+    <div style="font-size:14px;font-weight:600;margin-bottom:16px">Recent Bookings</div>
     <div style="overflow-x:auto"><table>
       <thead><tr><th>Client</th><th>Route</th><th>Vehicle</th><th>Driver</th><th>Status</th><th>Time</th><th></th></tr></thead>
       <tbody>${BOOKINGS.slice(0,5).map(b=>`<tr>
         <td style="font-weight:500">${b.client}</td>
-        <td style="color:#888;font-size:13px">${b.pickup} → ${b.dropoff}</td>
-        <td style="color:#888;font-size:13px">${b.vehicle}</td>
-        <td style="color:#888;font-size:13px">${b.driver}</td>
+        <td style="color:var(--fg-dim);font-size:13px">${b.pickup} → ${b.dropoff}</td>
+        <td style="color:var(--fg-dim);font-size:13px">${b.vehicle}</td>
+        <td style="color:var(--fg-dim);font-size:13px">${b.driver}</td>
         <td>${badge(b.status)}</td>
-        <td style="color:#888;font-size:13px">${b.time}</td>
-        <td><button class="btn btn-outline btn-sm" onclick="showBooking('${b.id}')">View</button></td>
+        <td style="color:var(--fg-dim);font-size:13px">${b.time}</td>
+        <td><button class="btn btn-glass btn-sm" onclick="showBooking('${b.id}')">View</button></td>
       </tr>`).join('')}</tbody>
     </table></div>
   </div>
@@ -289,39 +365,35 @@ dashboard:()=>`<div class="screen">
 
 bookings:()=>{const f=S.bFilter;const list=f==='all'?BOOKINGS:BOOKINGS.filter(b=>b.status===f);return`<div class="screen">
   <div class="section-header"><div class="section-title">Bookings</div><button class="btn btn-gold btn-sm" onclick="openModal(newBookingForm())">+ New Booking</button></div>
-  <div style="display:flex;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:20px;overflow-x:auto">
-    ${['all','pending','confirmed','active','completed','cancelled'].map(s=>`<div class="tab${f===s?' active':''}" onclick="S.bFilter='${s}';render()">${s==='all'?'All':s.charAt(0).toUpperCase()+s.slice(1)}</div>`).join('')}
-  </div>
+  ${tabRow([['all','All'],['pending','Pending'],['confirmed','Confirmed'],['active','Active'],['completed','Completed'],['cancelled','Cancelled']],f,"S.bFilter='__VAL__';render()")}
   <div class="card"><div style="overflow-x:auto"><table>
     <thead><tr><th>ID</th><th>Client</th><th>Route</th><th>Date</th><th>Vehicle</th><th>Driver</th><th>Status</th><th>Price</th><th></th></tr></thead>
     <tbody>${list.map(b=>`<tr>
-      <td style="color:#C9A84C;font-weight:600;font-size:12px">${b.id}</td>
+      <td style="color:var(--gold);font-weight:600;font-size:12px">${b.id}</td>
       <td style="font-weight:500">${b.client}</td>
-      <td style="color:#888;font-size:13px">${b.pickup} → ${b.dropoff}</td>
-      <td style="color:#888;font-size:12px">${b.date} ${b.time}</td>
-      <td style="color:#888;font-size:13px">${b.vehicle}</td>
-      <td style="color:#888;font-size:13px">${b.driver}</td>
+      <td style="color:var(--fg-dim);font-size:13px">${b.pickup} → ${b.dropoff}</td>
+      <td style="color:var(--fg-dim);font-size:12px">${b.date} ${b.time}</td>
+      <td style="color:var(--fg-dim);font-size:13px">${b.vehicle}</td>
+      <td style="color:var(--fg-dim);font-size:13px">${b.driver}</td>
       <td>${badge(b.status)}</td>
-      <td style="font-weight:600;color:#C9A84C">${b.price}</td>
-      <td><button class="btn btn-outline btn-sm" onclick="showBooking('${b.id}')">View</button></td>
+      <td style="font-weight:700;color:var(--gold)">${b.price}</td>
+      <td><button class="btn btn-glass btn-sm" onclick="showBooking('${b.id}')">View</button></td>
     </tr>`).join('')}</tbody>
   </table></div></div>
 </div>`},
 
 drivers:()=>{const f=S.dFilter;const list=f==='all'?DRIVERS:DRIVERS.filter(d=>d.status===f);return`<div class="screen">
   <div class="section-header"><div class="section-title">Drivers</div><button class="btn btn-gold btn-sm">+ Add Driver</button></div>
-  <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
-    ${['all','online','ontrip','offline'].map(s=>`<button class="btn btn-sm ${f===s?'btn-gold':'btn-outline'}" onclick="S.dFilter='${s}';render()">${s==='ontrip'?'On Trip':s.charAt(0).toUpperCase()+s.slice(1)}</button>`).join('')}
-  </div>
+  ${filterBar([['all','All'],['online','Online'],['ontrip','On Trip'],['offline','Offline']],f,'dFilter')}
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px">
     ${list.map(d=>`<div class="card" style="cursor:pointer" onclick="showDriver('${d.id}')">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-        ${av(d.initials,d.color,46)}<div style="flex:1"><div style="font-size:15px;font-weight:700">${d.name}</div><div style="font-size:12px;color:#C9A84C;margin-top:2px">★ ${d.rating}</div></div>${badge(d.status)}
+        ${av(d.initials,d.color,46)}<div style="flex:1"><div style="font-size:15px;font-weight:700">${d.name}</div><div style="font-size:12px;color:var(--gold);margin-top:2px">★ ${d.rating}</div></div>${badge(d.status)}
       </div>
-      <div style="font-size:12px;color:#555;margin-bottom:10px">${d.vehicle}</div>
+      <div style="font-size:12px;color:var(--fg-subtle);margin-bottom:12px">${d.vehicle}</div>
       <div style="display:flex;justify-content:space-between;font-size:13px">
-        <div><div style="color:#555;font-size:10px;margin-bottom:2px">TRIPS</div><div style="font-weight:700">${d.trips}</div></div>
-        <div style="text-align:right"><div style="color:#555;font-size:10px;margin-bottom:2px">THIS MONTH</div><div style="font-weight:700;color:#C9A84C">${d.earnings}</div></div>
+        <div><div class="section-label" style="margin-bottom:2px">Trips</div><div style="font-weight:700">${d.trips}</div></div>
+        <div style="text-align:right"><div class="section-label" style="margin-bottom:2px">This Month</div><div style="font-weight:700;color:var(--gold)">${d.earnings}</div></div>
       </div>
     </div>`).join('')}
   </div>
@@ -329,19 +401,19 @@ drivers:()=>{const f=S.dFilter;const list=f==='all'?DRIVERS:DRIVERS.filter(d=>d.
 
 clients:()=>{const f=S.cFilter;const list=f==='all'?CLIENTS:CLIENTS.filter(c=>c.tier===f);return`<div class="screen">
   <div class="section-header"><div class="section-title">Clients</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">${['all','vvip','vip','standard'].map(s=>`<button class="btn btn-sm ${f===s?'btn-gold':'btn-outline'}" onclick="S.cFilter='${s}';render()">${s.toUpperCase()}</button>`).join('')}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${[['all','ALL'],['vvip','VVIP'],['vip','VIP'],['standard','Standard']].map(([val,lbl])=>`<button class="btn btn-sm ${f===val?'btn-gold':'btn-glass'}" onclick="S.cFilter='${val}';render()">${lbl}</button>`).join('')}</div>
   </div>
   <div class="card"><div style="overflow-x:auto"><table>
     <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Bookings</th><th>Spent</th><th>Tier</th><th>Joined</th><th></th></tr></thead>
     <tbody>${list.map(c=>`<tr>
-      <td><div style="display:flex;align-items:center;gap:10px">${av(c.name.split(' ').map(n=>n[0]).join(''),'#2a2a2a',30)}<span style="font-weight:500">${c.name}</span></div></td>
-      <td style="color:#888;font-size:13px">${c.email}</td>
-      <td style="color:#888;font-size:13px">${c.phone}</td>
+      <td><div style="display:flex;align-items:center;gap:10px">${av(c.name.split(' ').map(n=>n[0]).join('').slice(0,2),'var(--surface-c)',30)}<span style="font-weight:500">${c.name}</span></div></td>
+      <td style="color:var(--fg-dim);font-size:13px">${c.email}</td>
+      <td style="color:var(--fg-dim);font-size:13px">${c.phone}</td>
       <td style="font-weight:600;text-align:center">${c.bookings}</td>
-      <td style="font-weight:600;color:#C9A84C">${c.spent}</td>
+      <td style="font-weight:700;color:var(--gold)">${c.spent}</td>
       <td>${badge(c.tier)}</td>
-      <td style="color:#888;font-size:12px">${c.joined}</td>
-      <td><button class="btn btn-outline btn-sm" onclick="showClient('${c.id}')">View</button></td>
+      <td style="color:var(--fg-dim);font-size:12px">${c.joined}</td>
+      <td><button class="btn btn-glass btn-sm" onclick="showClient('${c.id}')">View</button></td>
     </tr>`).join('')}</tbody>
   </table></div></div>
 </div>`},
@@ -350,14 +422,14 @@ fleet:()=>`<div class="screen">
   <div class="section-header"><div class="section-title">Fleet</div><button class="btn btn-gold btn-sm">+ Add Vehicle</button></div>
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">
     ${FLEET.map(v=>`<div class="card">
-      <div style="height:110px;background:linear-gradient(135deg,#1a1a1a,#0d0d0d);border-radius:10px;display:flex;align-items:center;justify-content:center;margin-bottom:14px">
-        <div style="text-align:center"><div style="font-size:12px;font-weight:700;color:#C9A84C;letter-spacing:2px">${v.model.toUpperCase()}</div><div style="font-size:11px;color:#444;margin-top:4px">${v.reg}</div></div>
+      <div style="height:100px;background:var(--surface-b);border-radius:12px;display:flex;align-items:center;justify-content:center;margin-bottom:14px;border:1px solid var(--border)">
+        <div style="text-align:center"><div style="font-size:11px;font-weight:700;color:var(--gold);letter-spacing:2px">${v.model.toUpperCase()}</div><div style="font-size:11px;color:var(--fg-subtle);margin-top:4px">${v.reg}</div></div>
       </div>
-      <div style="display:flex;justify-content:space-between;margin-bottom:10px"><div><div style="font-size:15px;font-weight:700">${v.model}</div><div style="font-size:12px;color:#555;margin-top:2px">${v.year} · ${v.color}</div></div>${badge(v.status)}</div>
-      <div style="font-size:13px;color:#666;display:flex;flex-direction:column;gap:5px">
-        <div style="display:flex;justify-content:space-between"><span>Driver</span><span style="color:#ccc">${v.driver}</span></div>
-        <div style="display:flex;justify-content:space-between"><span>Mileage</span><span style="color:#ccc">${v.mileage} mi</span></div>
-        <div style="display:flex;justify-content:space-between"><span>Reg</span><span style="color:#C9A84C;font-weight:600">${v.reg}</span></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:10px"><div><div style="font-size:15px;font-weight:700">${v.model}</div><div style="font-size:12px;color:var(--fg-subtle);margin-top:2px">${v.year} · ${v.color}</div></div>${badge(v.status)}</div>
+      <div style="font-size:13px;color:var(--fg-dim);display:flex;flex-direction:column;gap:5px">
+        <div style="display:flex;justify-content:space-between"><span>Driver</span><span style="color:var(--fg)">${v.driver}</span></div>
+        <div style="display:flex;justify-content:space-between"><span>Mileage</span><span style="color:var(--fg)">${v.mileage} mi</span></div>
+        <div style="display:flex;justify-content:space-between"><span>Reg</span><span style="color:var(--gold);font-weight:600">${v.reg}</span></div>
       </div>
     </div>`).join('')}
   </div>
@@ -366,7 +438,7 @@ fleet:()=>`<div class="screen">
 pricing:()=>`<div class="screen">
   <div class="section-header"><div class="section-title">Pricing</div><button class="btn btn-gold btn-sm" onclick="alert('Rates saved successfully!')">Save Changes</button></div>
   <div class="card" style="margin-bottom:20px">
-    <div style="font-size:14px;font-weight:600;margin-bottom:14px">Standard Rates</div>
+    <div style="font-size:14px;font-weight:600;margin-bottom:16px">Standard Rates</div>
     <div style="overflow-x:auto"><table>
       <thead><tr><th>Service</th><th>Mercedes S-Class</th><th>Mercedes V-Class</th></tr></thead>
       <tbody>${[
@@ -379,13 +451,13 @@ pricing:()=>`<div class="screen">
     </table></div>
   </div>
   <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">Airport Fixed Rates (from Central London)</div>
-    <div style="font-size:12px;color:#555;margin-bottom:14px">Including meet & greet, waiting time up to 60 min</div>
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">Airport Fixed Rates</div>
+    <div style="font-size:12px;color:var(--fg-subtle);margin-bottom:16px">Including meet & greet, waiting time up to 60 min</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">
-      ${[['Heathrow','£185','£225'],['Gatwick','£195','£235'],['Stansted','£195','£235'],['Luton','£185','£225'],['City Airport','£125','£155']].map(([a,s,v])=>`<div style="background:#222;border-radius:8px;padding:14px">
+      ${[['Heathrow','£185','£225'],['Gatwick','£195','£235'],['Stansted','£195','£235'],['Luton','£185','£225'],['City Airport','£125','£155']].map(([a,s,v])=>`<div style="background:var(--surface-b);border-radius:12px;padding:14px;border:1px solid var(--border)">
         <div style="font-weight:600;margin-bottom:8px">${a}</div>
-        <div style="font-size:12px;color:#888">S-Class <span style="color:#C9A84C">${s}</span></div>
-        <div style="font-size:12px;color:#888;margin-top:3px">V-Class <span style="color:#C9A84C">${v}</span></div>
+        <div style="font-size:12px;color:var(--fg-dim)">S-Class <span style="color:var(--gold);font-weight:600">${s}</span></div>
+        <div style="font-size:12px;color:var(--fg-dim);margin-top:3px">V-Class <span style="color:var(--gold);font-weight:600">${v}</span></div>
       </div>`).join('')}
     </div>
   </div>
@@ -393,35 +465,35 @@ pricing:()=>`<div class="screen">
 
 analytics:()=>`<div class="screen">
   <div class="section-header"><div class="section-title">Analytics</div>
-    <div style="display:flex;gap:8px">${['Week','Month','Year'].map((t,i)=>`<button class="btn btn-sm ${i===1?'btn-gold':'btn-outline'}">${t}</button>`).join('')}</div>
+    <div style="display:flex;gap:8px">${['Week','Month','Year'].map((t,i)=>`<button class="btn btn-sm ${i===1?'btn-gold':'btn-glass'}">${t}</button>`).join('')}</div>
   </div>
   <div style="display:flex;gap:14px;margin-bottom:24px;flex-wrap:wrap">
-    ${[['Total Revenue','£42,840','#C9A84C'],['Total Bookings','186','#3b82f6'],['Avg Booking Value','£230','#22c55e'],['Driver Utilization','78%','#a855f7']].map(([l,v,c])=>`<div class="stat-card"><div style="font-size:11px;color:#666;font-weight:600;margin-bottom:10px">${l}</div><div style="font-size:30px;font-weight:800;color:${c}">${v}</div></div>`).join('')}
+    ${[['Total Revenue','£42,840','#D4A843'],['Total Bookings','186','#3b82f6'],['Avg Booking Value','£230','#22c55e'],['Driver Utilization','78%','#a855f7']].map(([l,v,c])=>`<div class="stat-card"><div class="section-label" style="margin-bottom:10px">${l}</div><div style="font-size:30px;font-weight:800;color:${c}">${v}</div></div>`).join('')}
   </div>
   <div style="display:flex;gap:20px;margin-bottom:24px;flex-wrap:wrap">
     <div class="card" style="flex:2;min-width:280px">
-      <div style="font-size:14px;font-weight:600;margin-bottom:12px">Monthly Revenue 2026</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:14px">Monthly Revenue 2026</div>
       ${barChart(MREV,MONTHS,80)}
-      <div style="display:flex;justify-content:space-between;margin-top:6px">${MREV.map(v=>`<div style="flex:1;text-align:center;font-size:9px;color:#444">£${v}k</div>`).join('')}</div>
+      <div style="display:flex;justify-content:space-between;margin-top:6px">${MREV.map(v=>`<div style="flex:1;text-align:center;font-size:9px;color:var(--fg-ghost)">£${v}k</div>`).join('')}</div>
     </div>
     <div class="card" style="flex:1;min-width:200px">
-      <div style="font-size:14px;font-weight:600;margin-bottom:14px">Service Split</div>
-      ${[['Airport Transfer','52%','#C9A84C'],['By the Hour','31%','#3b82f6'],['By the Day','17%','#a855f7']].map(([l,p,c])=>`<div style="margin-bottom:12px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:16px">Service Split</div>
+      ${[['Airport Transfer','52%','#D4A843'],['By the Hour','31%','#3b82f6'],['By the Day','17%','#a855f7']].map(([l,p,c])=>`<div style="margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px"><span>${l}</span><span style="color:${c};font-weight:700">${p}</span></div>
-        <div style="height:6px;background:#222;border-radius:3px"><div style="height:6px;background:${c};border-radius:3px;width:${p}"></div></div>
+        <div style="height:5px;background:var(--surface-c);border-radius:3px"><div style="height:5px;background:${c};border-radius:3px;width:${p}"></div></div>
       </div>`).join('')}
     </div>
   </div>
   <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:14px">Driver Performance</div>
+    <div style="font-size:14px;font-weight:600;margin-bottom:16px">Driver Performance</div>
     <div style="overflow-x:auto"><table>
       <thead><tr><th>Driver</th><th>Trips</th><th>Rating</th><th>Earnings</th><th>Utilization</th></tr></thead>
       <tbody>${DRIVERS.map((d,i)=>`<tr>
         <td><div style="display:flex;align-items:center;gap:10px">${av(d.initials,d.color,28)}<span style="font-weight:500">${d.name}</span></div></td>
         <td style="font-weight:600">${d.trips}</td>
-        <td style="color:#C9A84C">★ ${d.rating}</td>
-        <td style="font-weight:600;color:#C9A84C">${d.earnings}</td>
-        <td><div style="height:5px;background:#222;border-radius:3px;width:100px"><div style="height:5px;background:#C9A84C;border-radius:3px;width:${55+i*7}%"></div></div></td>
+        <td style="color:var(--gold)">★ ${d.rating}</td>
+        <td style="font-weight:700;color:var(--gold)">${d.earnings}</td>
+        <td><div style="height:5px;background:var(--surface-c);border-radius:3px;width:100px"><div style="height:5px;background:var(--gold);border-radius:3px;width:${55+i*7}%"></div></div></td>
       </tr>`).join('')}</tbody>
     </table></div>
   </div>
@@ -432,27 +504,27 @@ settings:()=>`<div class="screen">
   <div style="display:flex;gap:20px;flex-wrap:wrap">
     <div style="flex:1;min-width:280px">
       <div class="card" style="margin-bottom:16px">
-        <div style="font-size:14px;font-weight:600;margin-bottom:14px">General</div>
-        ${[['Company Name','ApexVIP London'],['Support Email','support@apexvip.com'],['Phone','020 7000 0000'],['Currency','GBP (£)'],['Timezone','Europe/London (GMT+1)']].map(([l,v])=>`<div style="margin-bottom:12px"><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">${l}</label><input value="${v}" style="width:100%"/></div>`).join('')}
+        <div style="font-size:14px;font-weight:600;margin-bottom:16px">General</div>
+        ${[['Company Name','ApexVIP London'],['Support Email','support@apexvip.com'],['Phone','020 7000 0000'],['Currency','GBP (£)'],['Timezone','Europe/London (GMT+1)']].map(([l,v])=>`<div style="margin-bottom:12px"><label style="font-size:11px;color:var(--fg-subtle);display:block;margin-bottom:4px;letter-spacing:.5px">${l.toUpperCase()}</label><input value="${v}" style="width:100%"/></div>`).join('')}
         <button class="btn btn-gold" style="margin-top:6px" onclick="alert('Settings saved!')">Save Changes</button>
       </div>
     </div>
     <div style="flex:1;min-width:260px">
       <div class="card" style="margin-bottom:16px">
-        <div style="font-size:14px;font-weight:600;margin-bottom:14px">Notifications</div>
-        ${[['New Booking',true],['Driver Assigned',true],['Booking Cancelled',true],['Payment Received',false],['Daily Report',true]].map(([l,on])=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+        <div style="font-size:14px;font-weight:600;margin-bottom:16px">Notifications</div>
+        ${[['New Booking',true],['Driver Assigned',true],['Booking Cancelled',true],['Payment Received',false],['Daily Report',true]].map(([l,on])=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--divider)">
           <span style="font-size:14px">${l}</span>
-          <div style="width:40px;height:22px;border-radius:11px;background:${on?'#C9A84C':'#333'};position:relative;cursor:pointer;transition:background .2s" onclick="this.dataset.on=!this.dataset.on;this.style.background=this.style.background.includes('201')?'#333':'#C9A84C'">
-            <div style="position:absolute;top:2px;left:${on?20:2}px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left .2s"></div>
+          <div style="width:40px;height:22px;border-radius:11px;background:${on?'var(--gold)':'var(--surface-c)'};position:relative;cursor:pointer;border:1px solid var(--border)" onclick="this.style.background=this.style.background.includes('D4A')||this.style.background.includes('var(--gold)')&&!this.style.background.includes('surface')?'var(--surface-c)':'var(--gold)'">
+            <div style="position:absolute;top:2px;left:${on?18:2}px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .2s"></div>
           </div>
         </div>`).join('')}
       </div>
       <div class="card">
-        <div style="font-size:14px;font-weight:600;margin-bottom:14px">Admin Users</div>
-        ${[['AD','Admin','admin@apexvip.com','Super Admin'],['OP','Operations','ops@apexvip.com','Manager']].map(([i,n,e,r])=>`<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05)">
-          ${av(i,'#2a2a2a',32)}<div style="flex:1"><div style="font-size:13px;font-weight:500">${e}</div><div style="font-size:11px;color:#555">${r}</div></div>
+        <div style="font-size:14px;font-weight:600;margin-bottom:16px">Admin Users</div>
+        ${[['AD','Admin','admin@apexvip.com','Super Admin'],['OP','Operations','ops@apexvip.com','Manager']].map(([i,n,e,r])=>`<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--divider)">
+          ${av(i,'var(--surface-c)',32)}<div style="flex:1"><div style="font-size:13px;font-weight:500">${e}</div><div style="font-size:11px;color:var(--fg-subtle)">${r}</div></div>
         </div>`).join('')}
-        <button class="btn btn-outline btn-sm" style="margin-top:12px">+ Add User</button>
+        <button class="btn btn-glass btn-sm" style="margin-top:12px">+ Add User</button>
       </div>
     </div>
   </div>
@@ -460,47 +532,51 @@ settings:()=>`<div class="screen">
 };
 
 function showBooking(id){const b=BOOKINGS.find(x=>x.id===id);if(!b)return;
-  openModal(`<div><div style="font-size:17px;font-weight:700;margin-bottom:16px">Booking ${b.id}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
-      ${[['Client',b.client],['Vehicle',b.vehicle],['Pickup',b.pickup],['Driver',b.driver],['Dropoff',b.dropoff],['Date & Time',b.date+' '+b.time],['Price',b.price],['Status',badge(b.status)]].map(([l,v])=>`<div><div style="font-size:11px;color:#666;margin-bottom:3px">${l}</div><div style="font-size:14px;font-weight:500">${v}</div></div>`).join('')}
+  openModal(`<div>
+    <div style="font-size:17px;font-weight:700;margin-bottom:18px">Booking ${b.id}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px">
+      ${[['Client',b.client],['Vehicle',b.vehicle],['Pickup',b.pickup],['Driver',b.driver],['Drop-off',b.dropoff],['Date & Time',b.date+' '+b.time],['Price',`<span style="color:var(--gold);font-weight:700">${b.price}</span>`],['Status',badge(b.status)]].map(([l,v])=>`<div><div style="font-size:10px;color:var(--fg-subtle);margin-bottom:4px;letter-spacing:.5px">${l.toUpperCase()}</div><div style="font-size:14px;font-weight:500">${v}</div></div>`).join('')}
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-gold btn-sm" onclick="closeModal()">Assign Driver</button>
-      <button class="btn btn-outline btn-sm" onclick="closeModal()">Edit</button>
-      <button class="btn btn-sm" style="background:rgba(239,68,68,.12);color:#ef4444;border:none;border-radius:8px" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-glass btn-sm" onclick="closeModal()">Edit</button>
+      <button class="btn btn-danger btn-sm" onclick="closeModal()">Cancel</button>
     </div>
   </div>`);}
 
 function showDriver(id){const d=DRIVERS.find(x=>x.id===id);if(!d)return;
-  openModal(`<div><div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">
-    ${av(d.initials,d.color,52)}<div><div style="font-size:18px;font-weight:700">${d.name}</div><div style="color:#C9A84C;margin-top:3px">★ ${d.rating} &nbsp; ${badge(d.status)}</div></div></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
-      ${[['Vehicle',d.vehicle],['Total Trips',d.trips],['This Month',d.earnings],['Member Since','Jan 2023']].map(([l,v])=>`<div style="background:#222;border-radius:8px;padding:12px"><div style="font-size:11px;color:#666;margin-bottom:3px">${l}</div><div style="font-size:15px;font-weight:600">${v}</div></div>`).join('')}
+  openModal(`<div>
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px">
+      ${av(d.initials,d.color,52)}<div><div style="font-size:18px;font-weight:700">${d.name}</div><div style="color:var(--gold);margin-top:4px">★ ${d.rating} &nbsp; ${badge(d.status)}</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px">
+      ${[['Vehicle',d.vehicle],['Total Trips',d.trips],['This Month',d.earnings],['Member Since','Jan 2023']].map(([l,v])=>`<div style="background:var(--surface-b);border-radius:10px;padding:12px;border:1px solid var(--border)"><div style="font-size:10px;color:var(--fg-subtle);margin-bottom:3px;letter-spacing:.5px">${l.toUpperCase()}</div><div style="font-size:15px;font-weight:600">${v}</div></div>`).join('')}
     </div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-gold btn-sm" onclick="closeModal()">Assign Job</button>
-      <button class="btn btn-outline btn-sm" onclick="closeModal()">Edit Profile</button>
+      <button class="btn btn-glass btn-sm" onclick="closeModal()">Edit Profile</button>
     </div>
   </div>`);}
 
 function showClient(id){const c=CLIENTS.find(x=>x.id===id);if(!c)return;
-  openModal(`<div><div style="font-size:17px;font-weight:700;margin-bottom:16px">${c.name}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
-      ${[['Email',c.email],['Phone',c.phone],['Total Bookings',c.bookings],['Total Spent',c.spent],['Tier',badge(c.tier)],['Member Since',c.joined]].map(([l,v])=>`<div><div style="font-size:11px;color:#666;margin-bottom:3px">${l}</div><div style="font-size:14px;font-weight:500">${v}</div></div>`).join('')}
+  openModal(`<div>
+    <div style="font-size:17px;font-weight:700;margin-bottom:18px">${c.name}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px">
+      ${[['Email',c.email],['Phone',c.phone],['Total Bookings',c.bookings],['Total Spent',`<span style="color:var(--gold);font-weight:700">${c.spent}</span>`],['Tier',badge(c.tier)],['Member Since',c.joined]].map(([l,v])=>`<div><div style="font-size:10px;color:var(--fg-subtle);margin-bottom:4px;letter-spacing:.5px">${l.toUpperCase()}</div><div style="font-size:14px;font-weight:500">${v}</div></div>`).join('')}
     </div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-gold btn-sm" onclick="closeModal()">Book for Client</button>
-      <button class="btn btn-outline btn-sm" onclick="closeModal()">Edit</button>
+      <button class="btn btn-glass btn-sm" onclick="closeModal()">Edit</button>
     </div>
   </div>`);}
 
 function newBookingForm(){return`<div>
-  <div style="font-size:17px;font-weight:700;margin-bottom:18px">New Booking</div>
-  ${[['Client Name','text','e.g. Sarah Mitchell'],['Pickup Address','text','14 Park Lane, Mayfair'],['Dropoff / Airport','text','Heathrow Terminal 5'],['Date','date',''],['Time','time',''],['Flight Number (optional)','text','e.g. BA0247']].map(([l,t,p])=>`<div style="margin-bottom:12px"><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">${l}</label><input type="${t}" placeholder="${p}" style="width:100%"/></div>`).join('')}
-  <div style="margin-bottom:16px"><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Vehicle</label><select style="width:100%"><option>Mercedes S-Class — £185</option><option>Mercedes V-Class — £225</option></select></div>
+  <div style="font-size:17px;font-weight:700;margin-bottom:20px">New Booking</div>
+  ${[['Client Name','text','e.g. Sarah Mitchell'],['Pickup Address','text','14 Park Lane, Mayfair'],['Dropoff / Airport','text','Heathrow Terminal 5'],['Date','date',''],['Time','time',''],['Flight Number (optional)','text','e.g. BA0247']].map(([l,t,p])=>`<div style="margin-bottom:12px"><label style="font-size:11px;color:var(--fg-subtle);display:block;margin-bottom:5px;letter-spacing:.5px">${l.toUpperCase()}</label><input type="${t}" placeholder="${p}" style="width:100%"/></div>`).join('')}
+  <div style="margin-bottom:18px"><label style="font-size:11px;color:var(--fg-subtle);display:block;margin-bottom:5px;letter-spacing:.5px">VEHICLE</label><select style="width:100%"><option>Mercedes S-Class — £185</option><option>Mercedes V-Class — £225</option></select></div>
   <div style="display:flex;gap:8px">
     <button class="btn btn-gold" style="flex:1" onclick="createBookingInFirestore()">Create Booking</button>
-    <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+    <button class="btn btn-glass" onclick="closeModal()">Cancel</button>
   </div>
 </div>`;}
 
