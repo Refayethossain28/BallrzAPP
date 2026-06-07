@@ -421,7 +421,10 @@ home: () => {
     <div class="inp-card" style="margin-bottom:20px">
       <div class="inp-row">
         <div class="rdot rdot-gold"></div>
-        <input id="ri_pu" placeholder="Pickup location" style="font-size:15px" value="${state.booking.pickup||''}"/>
+        <input id="ri_pu" placeholder="Pickup location" style="font-size:15px;flex:1" value="${state.booking.pickup||''}"/>
+        <button onclick="useMyLocation('ri_pu')" title="Use my location" style="background:none;border:none;cursor:pointer;padding:4px;flex-shrink:0;display:flex;align-items:center">
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#D4A843" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path stroke-linecap="round" d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+        </button>
       </div>
       <div class="rline"></div>
       <div class="inp-row">
@@ -490,7 +493,10 @@ home: () => {
     <div class="inp-card" style="margin-bottom:12px">
       <div class="inp-row">
         <div class="rdot rdot-gold"></div>
-        <input id="ba_pu" placeholder="Pickup address" value="${state.booking.pickup||''}"/>
+        <input id="ba_pu" placeholder="Pickup address" style="flex:1" value="${state.booking.pickup||''}"/>
+        <button onclick="useMyLocation('ba_pu')" title="Use my location" style="background:none;border:none;cursor:pointer;padding:4px;flex-shrink:0;display:flex;align-items:center">
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#D4A843" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path stroke-linecap="round" d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+        </button>
       </div>
       <div class="rline"></div>
       <div class="inp-row">
@@ -528,7 +534,10 @@ home: () => {
     </div>
   </div>
   <div style="padding:0 22px;flex:1">
-    <div class="field" style="margin-bottom:12px"><input id="bh_pu" placeholder="Pickup location" value="${state.booking.pickup||''}"/></div>
+    <div class="field" style="margin-bottom:12px;display:flex;align-items:center;gap:0"><input id="bh_pu" placeholder="Pickup location" style="flex:1" value="${state.booking.pickup||''}"/>
+      <button onclick="useMyLocation('bh_pu')" title="Use my location" style="background:none;border:none;cursor:pointer;padding:4px;flex-shrink:0;display:flex;align-items:center">
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#D4A843" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path stroke-linecap="round" d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+      </button></div>
     <div style="display:flex;gap:10px;margin-bottom:26px">
       <div class="field" style="flex:1"><input id="bh_dt" type="date"/></div>
       <div class="field" style="flex:1"><input id="bh_tm" type="time"/></div>
@@ -561,7 +570,10 @@ home: () => {
     </div>
   </div>
   <div style="padding:0 22px;flex:1">
-    <div class="field" style="margin-bottom:12px"><input id="bd_pu" placeholder="Pickup location" value="${state.booking.pickup||''}"/></div>
+    <div class="field" style="margin-bottom:12px;display:flex;align-items:center;gap:0"><input id="bd_pu" placeholder="Pickup location" style="flex:1" value="${state.booking.pickup||''}"/>
+      <button onclick="useMyLocation('bd_pu')" title="Use my location" style="background:none;border:none;cursor:pointer;padding:4px;flex-shrink:0;display:flex;align-items:center">
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#D4A843" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path stroke-linecap="round" d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+      </button></div>
     <div class="field" style="margin-bottom:12px"><input id="bd_dt" type="date"/></div>
     <div class="field" style="margin-bottom:24px">
       <textarea id="bd_notes" rows="3" placeholder="Itinerary, special requests..." style="resize:none;line-height:1.5"></textarea>
@@ -1267,6 +1279,36 @@ function toggleTheme(){
   }else{render();}
 }
 function signOut(){if(FIREBASE_ENABLED)auth.signOut();else{state.user=null;go('splash');}}
+
+async function useMyLocation(inputId){
+  const input=document.getElementById(inputId);
+  if(!input||!navigator.geolocation){alert('Geolocation not available on this device.');return;}
+  const btn=input.nextElementSibling;
+  const origPh=input.placeholder;
+  input.placeholder='Locating…';
+  input.disabled=true;
+  if(btn)btn.style.opacity='.4';
+  navigator.geolocation.getCurrentPosition(async({coords})=>{
+    try{
+      const r=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${coords.latitude}&lon=${coords.longitude}&format=json&addressdetails=1`,{headers:{'Accept-Language':'en'}});
+      const d=await r.json();
+      const a=d.address||{};
+      const parts=[a.house_number,a.road,a.suburb||a.neighbourhood||a.quarter,a.city||a.town||a.village||a.county].filter(Boolean);
+      const addr=parts.length>=2?parts.join(', '):(d.display_name||`${coords.latitude.toFixed(4)}, ${coords.longitude.toFixed(4)}`);
+      input.value=addr;
+      state.booking.pickup=addr;
+    }catch(e){
+      const coords_str=`${coords.latitude.toFixed(4)}, ${coords.longitude.toFixed(4)}`;
+      input.value=coords_str;state.booking.pickup=coords_str;
+    }
+    input.placeholder=origPh;input.disabled=false;
+    if(btn)btn.style.opacity='1';
+  },()=>{
+    alert('Location access was denied. Please allow location access in your browser settings, or type your address manually.');
+    input.placeholder=origPh;input.disabled=false;
+    if(btn)btn.style.opacity='1';
+  },{enableHighAccuracy:true,timeout:10000,maximumAge:0});
+}
 
 // ── Firebase auth ──────────────────────────────────────────────────────────
 if(FIREBASE_ENABLED){
