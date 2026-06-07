@@ -100,6 +100,18 @@ try {
   }
 } catch(e) { console.warn('Firebase init:', e.message); }
 
+function track(event, props){
+  try{
+    const ev={event,ts:Date.now(),...props};
+    const key='apexvip_events';
+    const arr=JSON.parse(localStorage.getItem(key)||'[]');
+    arr.push(ev);
+    if(arr.length>2000) arr.splice(0,arr.length-2000);
+    localStorage.setItem(key,JSON.stringify(arr));
+    if(FIREBASE_ENABLED) db.collection('analytics').add(ev).catch(()=>{});
+  }catch(e){}
+}
+
 let JOBS=[
   {id:'J1',type:'airport',client:'Sarah M.',initials:'SM',service:'Airport Transfer',pickup:'Mayfair W1K',dropoff:'Heathrow Terminal 5',time:'In 45 min',pay:95,flight:'BA0247',notes:'1 passenger, 2 bags',vehicle:'S-Class'},
   {id:'J2',type:'hourly',client:'Robert C.',initials:'RC',service:'By the Hour (4hrs)',pickup:'Canary Wharf E14',dropoff:'Various',time:'Tomorrow 10:00',pay:260,notes:'Business meetings, multiple stops',vehicle:'S-Class'},

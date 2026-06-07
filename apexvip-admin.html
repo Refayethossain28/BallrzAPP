@@ -171,6 +171,18 @@ const NAVITEMS=[
   {id:'apexcoin',icon:'🪙',label:'ApexCoin'},
 ];
 
+function track(event, props){
+  try{
+    const ev={event,ts:Date.now(),...props};
+    const key='apexvip_events';
+    const arr=JSON.parse(localStorage.getItem(key)||'[]');
+    arr.push(ev);
+    if(arr.length>2000) arr.splice(0,arr.length-2000);
+    localStorage.setItem(key,JSON.stringify(arr));
+    if(FIREBASE_ENABLED) db.collection('analytics').add(ev).catch(()=>{});
+  }catch(e){}
+}
+
 let S={screen:'login',bFilter:'all',dFilter:'all',cFilter:'all',theme:localStorage.getItem('apexvip_admin_theme')||'dark'};
 
 if(S.theme==='light') document.body.classList.add('light');

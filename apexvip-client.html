@@ -132,6 +132,18 @@ try {
   }
 } catch(e) { console.warn('Firebase init:', e.message); }
 
+function track(event, props){
+  try{
+    const ev={event,ts:Date.now(),...props};
+    const key='apexvip_events';
+    const arr=JSON.parse(localStorage.getItem(key)||'[]');
+    arr.push(ev);
+    if(arr.length>2000) arr.splice(0,arr.length-2000);
+    localStorage.setItem(key,JSON.stringify(arr));
+    if(FIREBASE_ENABLED) db.collection('analytics').add(ev).catch(()=>{});
+  }catch(e){}
+}
+
 const $ = id => document.getElementById(id);
 const app = document.getElementById('app');
 
