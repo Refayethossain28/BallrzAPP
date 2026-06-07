@@ -167,6 +167,9 @@ async function driverLogin(){
   }catch(err){
     // Auto-create demo driver account on first run
     if(email==='driver@apexvip.com'&&pass==='driver123'){
+      if(err.code==='auth/configuration-not-found'||err.code==='auth/operation-not-allowed'){
+        track('driver_login',{method:'demo-fallback',src:'driver'});go('home');return;
+      }
       try{
         const cred=await auth.createUserWithEmailAndPassword(email,pass);
         await db.collection('users').doc(cred.user.uid).set({name:'James Harrison',email,role:'driver',vehicle:'Mercedes S-Class',plate:'LX73 ABC',rating:4.9,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
@@ -174,7 +177,11 @@ async function driverLogin(){
         track('driver_login',{method:'demo-created',src:'driver'});
         setupDriverListeners(cred.user.uid);
         go('home');
-      }catch(e2){alert('Setup error: '+e2.message);}
+      }catch(e2){
+        if(e2.code==='auth/configuration-not-found'||e2.code==='auth/operation-not-allowed'){
+          track('driver_login',{method:'demo-fallback',src:'driver'});go('home');
+        } else {alert('Setup error: '+e2.message);}
+      }
     } else {
       alert('Invalid credentials');
     }
