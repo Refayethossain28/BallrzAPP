@@ -149,10 +149,10 @@ function toggleTheme(){
   render();
 }
 
-function go(s){S.screen=s;render();window.scrollTo(0,0);}
+function go(s){S.screen=s;track('screen_view',{screen:s,src:'driver'});render();window.scrollTo(0,0);}
 
 async function driverLogin(){
-  if(!FIREBASE_ENABLED){go('home');return;}
+  if(!FIREBASE_ENABLED){track('driver_login',{method:'demo',src:'driver'});go('home');return;}
   const email=document.querySelector('input[type=email]')?.value||'';
   const pass=document.querySelector('input[type=password]')?.value||'';
   try{
@@ -197,6 +197,7 @@ function nav(){
 
 function goOnline(){
   S.online=!S.online;
+  track(S.online?'driver_online':'driver_offline',{src:'driver'});
   if(FIREBASE_ENABLED&&_driverId){
     db.collection('drivers').doc(_driverId).set({status:S.online?'online':'offline'},{merge:true}).catch(()=>{});
   }
@@ -238,6 +239,7 @@ function acceptJob(){
 function declineJob(){
   clearInterval(S._cdTimer);
   S.jobOverlay=false;
+  track('job_declined',{src:'driver'});
   render();
 }
 
@@ -258,6 +260,7 @@ function nextStep(){
     const jobPay=S.activeJob?.pay||0;
     const axcEarned=parseFloat((jobPay*0.02).toFixed(2));
     if(axcEarned>0){S.apexcoin=parseFloat((S.apexcoin+axcEarned).toFixed(2));S._axcHistory.unshift({desc:S.activeJob?.service||'Trip',type:'earn',amount:axcEarned,date:'Just now'});}
+    track('trip_completed',{pay:jobPay,axc:axcEarned,duration:S.tripTimer,src:'driver'});
     S.activeJob=null;go('home');
   }
   else render();

@@ -202,6 +202,7 @@ function go(screen, data) {
   if (state.screen==='home' && screen!=='home' && mapInstance){mapInstance.remove();mapInstance=null;mapTileLayer=null;}
   state.screen = screen;
   window.scrollTo(0,0);
+  track('screen_view',{screen,src:'client'});
   render();
 }
 
@@ -1034,7 +1035,7 @@ profile: () => {
 async function doLogin(){
   const e=$('lemail')?.value||'',p=$('lpass')?.value||'';
   if(!FIREBASE_ENABLED){
-    if(e==='client@apexvip.com'&&p==='password'){state.user={name:'Alexandra Stone',email:e};state._loginErr=null;go('home');}
+    if(e==='client@apexvip.com'&&p==='password'){state.user={name:'Alexandra Stone',email:e};state._loginErr=null;track('user_login',{method:'demo',src:'client'});go('home');}
     else{state._loginErr='Invalid email or password.';render();}
     return;
   }
@@ -1069,7 +1070,7 @@ function saveRouteAndBook(){
   state.booking.dropoff=$('ri_do')?.value||'';
   go('service-select');
 }
-function goBook(type){state.booking.serviceType=type;go('book-'+type);}
+function goBook(type){state.booking.serviceType=type;track('booking_started',{service:type,src:'client'});go('book-'+type);}
 function saveAirport(){
   state.booking={...state.booking,
     pickup:$('ba_pu')?.value||state.booking.pickup||'',
@@ -1094,11 +1095,11 @@ function saveDay(){
     notes:$('bd_notes')?.value||''};
   go('vehicle-select');
 }
-function selectVehicle(id,price,name){state.booking.vehicleId=id;state.booking.price=price;state.booking.vehicle=name;render();}
+function selectVehicle(id,price,name){state.booking.vehicleId=id;state.booking.price=price;state.booking.vehicle=name;track('vehicle_selected',{vehicle:name,price,src:'client'});render();}
 function goSummary(){if(state.booking.vehicleId)go('booking-summary');}
 function applyPromo(){
   const v=$('promo_in')?.value||'';
-  if(v.toUpperCase()==='APEX20'){state._promoApplied=true;render();}
+  if(v.toUpperCase()==='APEX20'){state._promoApplied=true;track('promo_applied',{code:'APEX20',src:'client'});render();}
   else alert('Invalid promo code');
 }
 function setPax(n,el){
@@ -1136,14 +1137,15 @@ async function confirmBooking(){
       });
     }catch(err){console.warn('Booking save:',err.message);}
   }
-  state._confirmedRef=ref;state._promoApplied=false;earnApex(Math.round(total*0.05),'Trip booking');go('booking-confirmed');
+  state._confirmedRef=ref;state._promoApplied=false;const _axcAmt=Math.round(total*0.05);earnApex(_axcAmt,'Trip booking');track('booking_confirmed',{service:state.booking.serviceType||'airport',vehicle:state.booking.vehicle||'',price:total,apex_earned:_axcAmt,paid_with_apex:!!(state._useApexCoin),src:'client'});go('booking-confirmed');
 }
-function goPayment(total){state._payTotal=total;state._payCardId=state.cards[0]?.id||null;state._addingCard=false;go('payment');}
+function goPayment(total){state._payTotal=total;state._payCardId=state.cards[0]?.id||null;state._addingCard=false;track('checkout_started',{total,src:'client'});go('payment');}
 function apexTier(b){return b>=5000?'Platinum':b>=2000?'Gold':b>=500?'Silver':'Bronze';}
 function apexTierColor(t){return{Bronze:'#cd7f32',Silver:'#a8a9ad',Gold:'#D4A843',Platinum:'#b9f2ff'}[t];}
 function earnApex(amount,reason){
   state.apexBalance+=amount;
   state._lastApexEarned=amount;
+  track('apex_earned',{amount,reason,src:'client'});
   const tx={id:Date.now(),amount,reason,ts:new Date().toISOString()};
   state.apexTransactions=[tx,...state.apexTransactions].slice(0,50);
   localStorage.setItem('apex_balance',state.apexBalance);
