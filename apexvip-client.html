@@ -68,7 +68,7 @@ input::placeholder,textarea::placeholder{color:var(--fg-ghost)}
 .vcard{background:var(--surface);border-radius:22px;overflow:hidden;border:1.5px solid var(--border);cursor:pointer;transition:border-color .2s,transform .15s}
 .vcard:active{transform:scale(.99)}
 .vcard.sel{border-color:#D4A843}
-.vcard-media{height:140px;position:relative;background:linear-gradient(145deg,#0a0a0a 0%,#151515 100%);display:flex;align-items:center;justify-content:center;overflow:hidden}
+.vcard-media{height:180px;position:relative;background:linear-gradient(145deg,#0a0a0a 0%,#151515 100%);display:flex;align-items:center;justify-content:center;overflow:hidden}
 body.light .vcard-media{background:linear-gradient(145deg,#e0deda 0%,#d4d2cd 100%)}
 .vcard-badge{position:absolute;top:14px;left:14px;background:rgba(212,168,67,.1);border:1px solid rgba(212,168,67,.22);color:#D4A843;padding:4px 11px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:1.2px}
 
@@ -202,6 +202,7 @@ function go(screen, data) {
   if (state.screen==='home' && screen!=='home' && mapInstance){mapInstance.remove();mapInstance=null;mapTileLayer=null;}
   state.screen = screen;
   window.scrollTo(0,0);
+  track('screen_view',{screen,src:'client'});
   render();
 }
 
@@ -420,7 +421,7 @@ home: () => {
       <svg style="margin-left:auto;flex-shrink:0" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.15)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
     </div>`).join('')}
   </div>
-  <div style="margin-top:auto;padding:20px 22px max(44px,calc(env(safe-area-inset-bottom,0px) + 28px))">
+  <div style="position:fixed;bottom:0;left:0;right:0;padding:12px 22px calc(env(safe-area-inset-bottom,0px) + 16px);background:var(--bg);border-top:1px solid var(--border);z-index:100">
     <button class="btn btn-white" onclick="saveRouteAndBook()">Choose service</button>
   </div>
 </div>`,
@@ -491,7 +492,8 @@ home: () => {
       ${[1,2,3,4,5,6,7,8].map(n=>`<button onclick="setPax(${n},this)" style="width:46px;height:46px;border-radius:13px;background:${n===2?'#D4A843':'rgba(255,255,255,.06)'};color:${n===2?'#000':'rgba(255,255,255,.5)'};font-weight:700;font-size:15px;border:1px solid ${n===2?'#D4A843':'rgba(255,255,255,.07)'};cursor:pointer;font-family:inherit;transition:all .15s">${n}</button>`).join('')}
     </div>
   </div>
-  <div style="padding:16px 22px max(44px,calc(env(safe-area-inset-bottom,0px) + 28px))">
+  <div style="height:90px"></div>
+  <div style="position:fixed;bottom:0;left:0;right:0;padding:12px 22px calc(env(safe-area-inset-bottom,0px) + 16px);background:var(--bg);border-top:1px solid var(--border);z-index:100">
     <button class="btn btn-white" onclick="saveAirport()">Select vehicle</button>
   </div>
 </div>`,
@@ -519,7 +521,8 @@ home: () => {
       <button onclick="setDur(${h},${p},this)" style="padding:12px 16px;border-radius:14px;background:${i===1?'#D4A843':'rgba(255,255,255,.06)'};color:${i===1?'#000':'rgba(255,255,255,.5)'};border:1px solid ${i===1?'#D4A843':'rgba(255,255,255,.07)'};cursor:pointer;font-family:inherit;font-weight:700;font-size:13px;transition:all .15s">${h}h · £${p}</button>`).join('')}
     </div>
   </div>
-  <div style="padding:0 22px max(44px,calc(env(safe-area-inset-bottom,0px) + 28px))">
+  <div style="height:90px"></div>
+  <div style="position:fixed;bottom:0;left:0;right:0;padding:12px 22px calc(env(safe-area-inset-bottom,0px) + 16px);background:var(--bg);border-top:1px solid var(--border);z-index:100">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <div style="font-size:13px;color:var(--fg-muted)">Total</div>
       <div id="bh_price" style="font-size:28px;font-weight:800;color:#D4A843">£195</div>
@@ -554,7 +557,8 @@ home: () => {
       </div>`).join('')}
     </div>
   </div>
-  <div style="padding:24px 22px max(44px,calc(env(safe-area-inset-bottom,0px) + 28px))">
+  <div style="height:90px"></div>
+  <div style="position:fixed;bottom:0;left:0;right:0;padding:12px 22px calc(env(safe-area-inset-bottom,0px) + 16px);background:var(--bg);border-top:1px solid var(--border);z-index:100">
     <button class="btn btn-white" onclick="saveDay()">Select vehicle</button>
   </div>
 </div>`,
@@ -564,8 +568,8 @@ home: () => {
   const p = pm[state.booking.serviceType]||pm.airport;
   const sel = state.booking.vehicleId||'';
   const vehicles = [
-    {id:'sClass',name:'S-Class',full:'Mercedes S-Class',sub:'Business Sedan · Up to 3 passengers',price:p.s,badge:'EXECUTIVE',features:['WiFi','Water','Charger','Meet & Greet']},
-    {id:'vClass',name:'V-Class',full:'Mercedes V-Class',sub:'Business Van · Up to 7 passengers',price:p.v,badge:'BUSINESS',features:['WiFi','Water','Charger','Child Seat']}
+    {id:'sClass',name:'S-Class',full:'Mercedes S-Class',sub:'Business Sedan · Up to 3 passengers',price:p.s,badge:'EXECUTIVE',features:['WiFi','Water','Charger','Meet & Greet'],img:'https://images.pexels.com/photos/18369292/pexels-photo-18369292.jpeg?auto=compress&cs=tinysrgb&w=900&h=400&dpr=1'},
+    {id:'vClass',name:'V-Class',full:'Mercedes V-Class',sub:'Business Van · Up to 7 passengers',price:p.v,badge:'BUSINESS',features:['WiFi','Water','Charger','Child Seat'],img:'https://images.pexels.com/photos/17455633/pexels-photo-17455633.jpeg?auto=compress&cs=tinysrgb&w=900&h=400&dpr=1'}
   ];
   return `
 <div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
@@ -582,13 +586,13 @@ home: () => {
     ${vehicles.map(v=>`
     <div id="vc_${v.id}" onclick="selectVehicle('${v.id}',${v.price},'${v.full}')" class="vcard ${sel===v.id?'sel':''}" style="margin-bottom:14px">
       <div class="vcard-media">
+        <img src="${v.img}" alt="${v.full}"
+          style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center"
+          onerror="this.style.display='none'"/>
+        <div style="position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,.18) 0%,rgba(0,0,0,.55) 100%)"></div>
         <div class="vcard-badge">${v.badge}</div>
         ${sel===v.id?`<div class="vcard-check"><svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="#000" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></div>`:''}
-        <div style="text-align:center;user-select:none">
-          <div style="font-size:52px;font-weight:900;color:rgba(255,255,255,.04);letter-spacing:2px;line-height:1">${v.name}</div>
-          <div style="font-size:9px;color:var(--fg-faint);letter-spacing:6px;margin-top:2px">MERCEDES-BENZ</div>
-        </div>
-        <div style="position:absolute;bottom:0;left:0;right:0;height:50%;background:linear-gradient(to top,rgba(12,12,12,.9),transparent)"></div>
+        <div style="position:absolute;bottom:0;left:0;right:0;height:50%;background:linear-gradient(to top,rgba(8,8,8,.85),transparent)"></div>
       </div>
       <div style="padding:16px 18px 18px">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
@@ -607,7 +611,8 @@ home: () => {
       </div>
     </div>`).join('')}
   </div>
-  <div style="padding:16px 22px max(44px,calc(env(safe-area-inset-bottom,0px) + 28px))">
+  <div style="height:90px"></div>
+  <div style="position:fixed;bottom:0;left:0;right:0;padding:12px 22px calc(env(safe-area-inset-bottom,0px) + 16px);background:var(--bg);border-top:1px solid var(--border);z-index:100">
     <button class="btn btn-white" onclick="goSummary()" ${!sel?'style="opacity:.3"':''}>
       ${sel?`Continue · £${vehicles.find(v=>v.id===sel)?.price||''}`:'Select a vehicle'}
     </button>
@@ -678,7 +683,8 @@ home: () => {
       </div>
     </div>
   </div>
-  <div style="padding:0 22px max(44px,calc(env(safe-area-inset-bottom,0px) + 28px))">
+  <div style="height:90px"></div>
+  <div style="position:fixed;bottom:0;left:0;right:0;padding:12px 22px calc(env(safe-area-inset-bottom,0px) + 16px);background:var(--bg);border-top:1px solid var(--border);z-index:100">
     <button class="btn btn-gold" onclick="goPayment(${total})">Continue to payment · £${total}</button>
   </div>
 </div>`;
@@ -745,8 +751,8 @@ payment: () => {
       <span style="font-size:12px;color:var(--fg-ghost);letter-spacing:.5px">256-bit SSL encrypted · PCI DSS compliant</span>
     </div>
   </div>
-
-  <div style="padding:0 22px max(44px,calc(env(safe-area-inset-bottom,0px) + 28px))">
+  <div style="height:90px"></div>
+  <div style="position:fixed;bottom:0;left:0;right:0;padding:12px 22px calc(env(safe-area-inset-bottom,0px) + 16px);background:var(--bg);border-top:1px solid var(--border);z-index:100">
     <button class="btn btn-gold" onclick="confirmBooking()" ${!selId&&!adding?'style="opacity:.35"':''}>
       Pay £${total}
     </button>
@@ -1029,7 +1035,7 @@ profile: () => {
 async function doLogin(){
   const e=$('lemail')?.value||'',p=$('lpass')?.value||'';
   if(!FIREBASE_ENABLED){
-    if(e==='client@apexvip.com'&&p==='password'){state.user={name:'Alexandra Stone',email:e};state._loginErr=null;go('home');}
+    if(e==='client@apexvip.com'&&p==='password'){state.user={name:'Alexandra Stone',email:e};state._loginErr=null;track('user_login',{method:'demo',src:'client'});go('home');}
     else{state._loginErr='Invalid email or password.';render();}
     return;
   }
@@ -1064,7 +1070,7 @@ function saveRouteAndBook(){
   state.booking.dropoff=$('ri_do')?.value||'';
   go('service-select');
 }
-function goBook(type){state.booking.serviceType=type;go('book-'+type);}
+function goBook(type){state.booking.serviceType=type;track('booking_started',{service:type,src:'client'});go('book-'+type);}
 function saveAirport(){
   state.booking={...state.booking,
     pickup:$('ba_pu')?.value||state.booking.pickup||'',
@@ -1089,11 +1095,11 @@ function saveDay(){
     notes:$('bd_notes')?.value||''};
   go('vehicle-select');
 }
-function selectVehicle(id,price,name){state.booking.vehicleId=id;state.booking.price=price;state.booking.vehicle=name;render();}
+function selectVehicle(id,price,name){state.booking.vehicleId=id;state.booking.price=price;state.booking.vehicle=name;track('vehicle_selected',{vehicle:name,price,src:'client'});render();}
 function goSummary(){if(state.booking.vehicleId)go('booking-summary');}
 function applyPromo(){
   const v=$('promo_in')?.value||'';
-  if(v.toUpperCase()==='APEX20'){state._promoApplied=true;render();}
+  if(v.toUpperCase()==='APEX20'){state._promoApplied=true;track('promo_applied',{code:'APEX20',src:'client'});render();}
   else alert('Invalid promo code');
 }
 function setPax(n,el){
@@ -1131,14 +1137,15 @@ async function confirmBooking(){
       });
     }catch(err){console.warn('Booking save:',err.message);}
   }
-  state._confirmedRef=ref;state._promoApplied=false;earnApex(Math.round(total*0.05),'Trip booking');go('booking-confirmed');
+  state._confirmedRef=ref;state._promoApplied=false;const _axcAmt=Math.round(total*0.05);earnApex(_axcAmt,'Trip booking');track('booking_confirmed',{service:state.booking.serviceType||'airport',vehicle:state.booking.vehicle||'',price:total,apex_earned:_axcAmt,paid_with_apex:!!(state._useApexCoin),src:'client'});go('booking-confirmed');
 }
-function goPayment(total){state._payTotal=total;state._payCardId=state.cards[0]?.id||null;state._addingCard=false;go('payment');}
+function goPayment(total){state._payTotal=total;state._payCardId=state.cards[0]?.id||null;state._addingCard=false;track('checkout_started',{total,src:'client'});go('payment');}
 function apexTier(b){return b>=5000?'Platinum':b>=2000?'Gold':b>=500?'Silver':'Bronze';}
 function apexTierColor(t){return{Bronze:'#cd7f32',Silver:'#a8a9ad',Gold:'#D4A843',Platinum:'#b9f2ff'}[t];}
 function earnApex(amount,reason){
   state.apexBalance+=amount;
   state._lastApexEarned=amount;
+  track('apex_earned',{amount,reason,src:'client'});
   const tx={id:Date.now(),amount,reason,ts:new Date().toISOString()};
   state.apexTransactions=[tx,...state.apexTransactions].slice(0,50);
   localStorage.setItem('apex_balance',state.apexBalance);
