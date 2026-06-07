@@ -14,6 +14,8 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
+<script src="https://web.squarecdn.com/v1/square.js"></script>
 <script src="firebase.js"></script>
 <style>
 body{--bg:#000;--fg:#fff;--fg-muted:rgba(255,255,255,.38);--fg-dim:rgba(255,255,255,.3);--fg-subtle:rgba(255,255,255,.25);--fg-ghost:rgba(255,255,255,.2);--fg-faint:rgba(255,255,255,.15);--surface:rgba(255,255,255,.04);--surface-b:rgba(255,255,255,.07);--surface-c:rgba(255,255,255,.09);--border:rgba(255,255,255,.07);--border-b:rgba(255,255,255,.11);--divider:rgba(255,255,255,.05)}
@@ -124,13 +126,17 @@ body.light .nav{background:rgba(248,246,241,.96);border-top:1px solid rgba(0,0,0
 <div id="app"></div>
 <script>
 // ── Firebase ──────────────────────────────────────────────────────────────
-let auth, db, FIREBASE_ENABLED = false;
+let auth, db, fns, FIREBASE_ENABLED = false;
 try {
   if (typeof APEXVIP_FIREBASE_CONFIG !== 'undefined' && APEXVIP_FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY') {
     firebase.initializeApp(APEXVIP_FIREBASE_CONFIG);
-    auth = firebase.auth(); db = firebase.firestore(); FIREBASE_ENABLED = true;
+    auth = firebase.auth(); db = firebase.firestore(); fns = firebase.functions(); FIREBASE_ENABLED = true;
   }
 } catch(e) { console.warn('Firebase init:', e.message); }
+
+const SQUARE_APP_ID = 'sq0idp-8Z5MqX7GA3M0Xnv-0utwMA';
+const SQUARE_LOCATION_ID = '1ZX0F29TX12HB';
+let _sqCard = null, _sqPayments = null;
 
 function track(event, props){
   try{
@@ -704,8 +710,7 @@ home: () => {
 
 payment: () => {
   const total = state._payTotal || 0;
-  const selId = state._payCardId || (state.cards[0]?.id);
-  const adding = state._addingCard;
+  const svc = {airport:'Airport Transfer',hourly:'By the Hour',day:'By the Day'}[state.booking.serviceType]||'Booking';
   return `
 <div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
   <div class="back-row">
@@ -715,59 +720,30 @@ payment: () => {
     <div style="font-size:20px;font-weight:700">Payment</div>
   </div>
 
-  <div style="padding:0 22px;flex:1" class="scroll">
-
-    <div style="background:linear-gradient(135deg,rgba(212,168,67,.12) 0%,rgba(212,168,67,.04) 100%);border:1px solid rgba(212,168,67,.2);border-radius:22px;padding:22px;margin-bottom:24px;display:flex;justify-content:space-between;align-items:flex-end">
+  <div style="padding:0 22px;flex:1">
+    <div style="background:linear-gradient(135deg,rgba(212,168,67,.12) 0%,rgba(212,168,67,.04) 100%);border:1px solid rgba(212,168,67,.2);border-radius:22px;padding:22px;margin-bottom:28px;display:flex;justify-content:space-between;align-items:flex-end">
       <div>
         <div class="section-label" style="margin-bottom:8px">Amount due</div>
         <div style="font-size:44px;font-weight:800;color:#D4A843;line-height:1">£${total}</div>
-        <div style="font-size:13px;color:var(--fg-dim);margin-top:6px">${{airport:'Airport Transfer',hourly:'By the Hour',day:'By the Day'}[state.booking.serviceType]||'Booking'}</div>
+        <div style="font-size:13px;color:var(--fg-dim);margin-top:6px">${svc}</div>
       </div>
       <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="rgba(212,168,67,.35)" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><path stroke-linecap="round" d="M2 10h20"/></svg>
     </div>
 
-    <div class="section-label" style="margin-bottom:12px">Saved cards</div>
-    ${state.cards.map(c=>`
-    <div onclick="state._payCardId=${c.id};state._addingCard=false;render()" style="display:flex;align-items:center;gap:14px;background:${selId===c.id?'rgba(212,168,67,.06)':'rgba(255,255,255,.04)'};border:1.5px solid ${selId===c.id?'rgba(212,168,67,.35)':'rgba(255,255,255,.07)'};border-radius:18px;padding:16px 18px;margin-bottom:10px;cursor:pointer;transition:all .2s">
-      <div style="width:38px;height:38px;border-radius:12px;background:${c.color};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;letter-spacing:1px;color:var(--fg-muted);flex-shrink:0">${c.brand.slice(0,2).toUpperCase()}</div>
-      <div style="flex:1">
-        <div style="font-size:15px;font-weight:600">${c.brand} •••• ${c.last4}</div>
-        <div style="font-size:12px;color:var(--fg-dim);margin-top:2px">Expires ${c.expiry}${c.isDefault?' · Default':''}</div>
-      </div>
-      <div style="width:20px;height:20px;border-radius:50%;border:2px solid ${selId===c.id?'#D4A843':'rgba(255,255,255,.2)'};display:flex;align-items:center;justify-content:center;flex-shrink:0">
-        ${selId===c.id?`<div style="width:10px;height:10px;border-radius:50%;background:#D4A843"></div>`:''}
-      </div>
-    </div>`).join('')}
+    <div class="section-label" style="margin-bottom:14px">Card details</div>
+    <div id="sq-card" style="min-height:88px;border-radius:16px;overflow:hidden"></div>
+    <div id="sq-error" style="color:#ef4444;font-size:13px;margin-top:10px;display:none;padding:10px 14px;background:rgba(239,68,68,.07);border-radius:10px"></div>
 
-    <div onclick="state._addingCard=!state._addingCard;state._payCardId=null;render()" style="display:flex;align-items:center;gap:14px;background:${adding?'rgba(212,168,67,.06)':'rgba(255,255,255,.04)'};border:1.5px solid ${adding?'rgba(212,168,67,.35)':'rgba(255,255,255,.07)'};border-radius:18px;padding:16px 18px;margin-bottom:${adding?'0':'24px'};cursor:pointer;transition:all .2s">
-      <div style="width:38px;height:38px;border-radius:12px;background:var(--surface-b);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.5)" stroke-width="2"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>
-      </div>
-      <span style="font-size:15px;font-weight:600;color:var(--fg-muted)">Add new card</span>
-    </div>
-
-    ${adding?`
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:0 0 18px 18px;padding:20px;margin-bottom:24px">
-      <div class="field" style="margin-bottom:10px">
-        <input id="cn" placeholder="Card number" type="tel" maxlength="19" oninput="fmtCard(this)"/>
-      </div>
-      <div style="display:flex;gap:10px;margin-bottom:10px">
-        <div class="field" style="flex:1"><input id="ce" placeholder="MM / YY" type="tel" maxlength="7" oninput="fmtExpiry(this)"/></div>
-        <div class="field" style="flex:1"><input id="cv" placeholder="CVV" type="tel" maxlength="4"/></div>
-      </div>
-      <div class="field"><input id="ch" placeholder="Cardholder name"/></div>
-    </div>`:''}
-
-    <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:28px">
-      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.2)" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path stroke-linecap="round" d="M7 11V7a5 5 0 0110 0v4"/></svg>
-      <span style="font-size:12px;color:var(--fg-ghost);letter-spacing:.5px">256-bit SSL encrypted · PCI DSS compliant</span>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:20px;margin-bottom:32px">
+      <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.22)" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path stroke-linecap="round" d="M7 11V7a5 5 0 0110 0v4"/></svg>
+      <span style="font-size:11px;color:var(--fg-ghost);letter-spacing:.5px">Secured by Square · PCI DSS compliant</span>
+      <img src="https://web.squarecdn.com/v1/assets/square-logo-outlined.svg" onerror="this.style.display='none'" style="height:14px;opacity:.25;margin-left:4px"/>
     </div>
   </div>
+
   <div style="height:90px"></div>
   <div style="position:fixed;bottom:0;left:0;right:0;padding:12px 22px calc(env(safe-area-inset-bottom,0px) + 16px);background:var(--bg);border-top:1px solid var(--border);z-index:100">
-    <button class="btn btn-gold" onclick="confirmBooking()" ${!selId&&!adding?'style="opacity:.35"':''}>
-      Pay £${total}
-    </button>
+    <button id="sq-pay-btn" class="btn btn-gold" onclick="runSquarePayment()">Pay £${total}</button>
   </div>
 </div>`;
 },
@@ -1144,8 +1120,80 @@ function setDur(h,p,el){
   el.style.background='#D4A843';el.style.color='#000';el.style.borderColor='#D4A843';
   const pr=$('bh_price');if(pr)pr.textContent='£'+p;
 }
-async function confirmBooking(){
-  const ref='APX-'+(Math.floor(1000+Math.random()*9000));
+async function initSquare(){
+  const el = document.getElementById('sq-card');
+  if(!el) return;
+  if(!window.Square){
+    el.innerHTML='<div style="padding:20px;color:var(--fg-dim);font-size:13px;text-align:center">Loading payment form…</div>';
+    return;
+  }
+  try{
+    if(!_sqPayments) _sqPayments = await Square.payments(SQUARE_APP_ID, SQUARE_LOCATION_ID);
+    if(_sqCard){ try{await _sqCard.destroy();}catch(e){} _sqCard=null; }
+    _sqCard = await _sqPayments.card({
+      style:{
+        '.input-container':{borderColor:'rgba(255,255,255,0.1)',borderRadius:'12px',borderWidth:'1.5px'},
+        '.input-container.is-focus':{borderColor:'#D4A843'},
+        '.input-container.is-error':{borderColor:'#ef4444'},
+        input:{color:'#f0ece4',fontFamily:'-apple-system,BlinkMacSystemFont,sans-serif',fontSize:'15px'},
+        'input::placeholder':{color:'rgba(255,255,255,0.22)'},
+        '.message-text':{color:'#ef4444'},
+        '.message-icon':{color:'#ef4444'},
+      }
+    });
+    await _sqCard.attach('#sq-card');
+  }catch(e){
+    console.warn('Square init:',e.message);
+    if(el) el.innerHTML='<div style="padding:16px;color:#ef4444;font-size:13px">Payment form failed to load. Please refresh.</div>';
+  }
+}
+
+async function runSquarePayment(){
+  const btn = document.getElementById('sq-pay-btn');
+  const errEl = document.getElementById('sq-error');
+  if(errEl) errEl.style.display='none';
+  if(!_sqCard){alert('Payment form not ready yet — please wait a moment and try again.');return;}
+  if(btn){btn.disabled=true;btn.textContent='Processing…';}
+  try{
+    const result = await _sqCard.tokenize();
+    if(result.status!=='OK'){
+      const msg = result.errors?.map(e=>e.message).join(', ')||'Card error';
+      if(errEl){errEl.textContent=msg;errEl.style.display='block';}
+      if(btn){btn.disabled=false;btn.textContent='Pay £'+(state._payTotal||0);}
+      return;
+    }
+    const sourceId = result.token;
+    const total = state._payTotal||0;
+    const ref = 'APX-'+(Math.floor(1000+Math.random()*9000));
+    state._confirmedRef = ref;
+    let paymentId = null;
+    // Try Cloud Function; fall back to storing token for manual processing
+    if(FIREBASE_ENABLED && fns){
+      try{
+        const fn = fns.httpsCallable('processSquarePayment');
+        const resp = await fn({sourceId, amount:total, bookingRef:ref});
+        paymentId = resp.data.paymentId;
+        track('payment_charged',{ref,total,paymentId,src:'client'});
+      }catch(fnErr){
+        await db.collection('pending_payments').add({
+          sourceId, amount:total, bookingRef:ref, status:'pending',
+          createdAt:firebase.firestore.FieldValue.serverTimestamp()
+        }).catch(()=>{});
+        track('payment_token_stored',{ref,total,src:'client'});
+      }
+    } else {
+      track('payment_demo',{ref,total,src:'client'});
+    }
+    state._squarePaymentId = paymentId;
+    await confirmBooking(ref);
+  }catch(e){
+    if(errEl){errEl.textContent='Payment failed: '+e.message;errEl.style.display='block';}
+    if(btn){btn.disabled=false;btn.textContent='Pay £'+(state._payTotal||0);}
+  }
+}
+
+async function confirmBooking(overrideRef){
+  const ref = overrideRef || state._confirmedRef || ('APX-'+(Math.floor(1000+Math.random()*9000)));
   const base=state.booking.price||185;
   const disc=state._promoApplied?Math.round(base*.2):0;
   const vat=Math.round((base-disc)*.2);
@@ -1162,12 +1210,14 @@ async function confirmBooking(){
         vehicle:state.booking.vehicle||'Mercedes S-Class',vehicleId:state.booking.vehicleId||'',
         price:total,baseFare:base,discount:disc,vat,
         promoApplied:state._promoApplied||false,status:'confirmed',
+        squarePaymentId:state._squarePaymentId||null,
+        paymentStatus:state._squarePaymentId?'paid':'pending',
         driverName:'James Harrison',driverRating:4.9,driverPlate:'LX73 ABC',
         createdAt:firebase.firestore.FieldValue.serverTimestamp()
       });
     }catch(err){console.warn('Booking save:',err.message);}
   }
-  state._confirmedRef=ref;state._promoApplied=false;
+  state._confirmedRef=ref;state._promoApplied=false;state._squarePaymentId=null;
   const _axcAmt=Math.round(total*0.05);
   earnApex(_axcAmt,'Trip booking');
   if(state._useApexCoin) track('apex_redeemed',{amount:total,src:'client'});
@@ -1255,6 +1305,8 @@ if(FIREBASE_ENABLED){
 function render(){
   const fn=screens[state.screen];
   app.innerHTML=fn?fn():`<div style="padding:40px;text-align:center;color:var(--fg-ghost)">Screen not found</div>`;
+  if(state.screen==='home') setTimeout(initMap,60);
+  if(state.screen==='payment') setTimeout(initSquare,60);
 }
 
 render();
