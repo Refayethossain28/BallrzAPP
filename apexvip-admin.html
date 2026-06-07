@@ -199,13 +199,21 @@ async function adminLogin(){
     else{auth.signOut();alert('Access denied. Admin accounts only.');}
   }catch(err){
     if(email==='admin@apexvip.com'&&pass==='admin123'){
+      if(err.code==='auth/configuration-not-found'||err.code==='auth/operation-not-allowed'){
+        // Firebase Auth not yet enabled — fall through with demo credentials
+        track('admin_login',{method:'demo-fallback',src:'admin'});
+        go('dashboard');return;
+      }
       try{
         const cred=await auth.createUserWithEmailAndPassword(email,pass);
         await db.collection('users').doc(cred.user.uid).set({name:'Admin',email,role:'admin',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
         track('admin_login',{method:'demo-created',src:'admin'});
         go('dashboard');
       }catch(e2){
-        if(e2.code==='auth/email-already-in-use'){
+        if(e2.code==='auth/configuration-not-found'||e2.code==='auth/operation-not-allowed'){
+          track('admin_login',{method:'demo-fallback',src:'admin'});
+          go('dashboard');
+        } else if(e2.code==='auth/email-already-in-use'){
           alert('Account exists but password is wrong. Check Firebase Auth console.');
         } else {
           alert('Setup error: '+e2.message);

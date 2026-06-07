@@ -1044,10 +1044,17 @@ async function doLogin(){
   } catch(err){
     // Auto-create demo account on first run
     if(e==='client@apexvip.com'&&p==='password'){
+      if(err.code==='auth/configuration-not-found'||err.code==='auth/operation-not-allowed'){
+        state.user={name:'Alexandra Stone',email:e};track('user_login',{method:'demo-fallback',src:'client'});go('home');return;
+      }
       try{
         const cred=await auth.createUserWithEmailAndPassword(e,p);
         await db.collection('users').doc(cred.user.uid).set({name:'Alexandra Stone',email:e,role:'client',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
-      }catch(e2){state._loginErr='Setup error. Try again.';render();}
+      }catch(e2){
+        if(e2.code==='auth/configuration-not-found'||e2.code==='auth/operation-not-allowed'){
+          state.user={name:'Alexandra Stone',email:e};track('user_login',{method:'demo-fallback',src:'client'});go('home');
+        } else {state._loginErr='Setup error. Try again.';render();}
+      }
     } else {
       state._loginErr='Invalid email or password.';render();
     }
