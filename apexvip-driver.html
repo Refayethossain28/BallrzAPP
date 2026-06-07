@@ -197,7 +197,7 @@ function nav(){
 
 function goOnline(){
   S.online=!S.online;
-  track(S.online?'driver_online':'driver_offline',{src:'driver'});
+  const _onTs=Date.now(); track(S.online?'driver_online':'driver_offline',{ts:_onTs,src:'driver'});
   if(FIREBASE_ENABLED&&_driverId){
     db.collection('drivers').doc(_driverId).set({status:S.online?'online':'offline'},{merge:true}).catch(()=>{});
   }
