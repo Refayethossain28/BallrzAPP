@@ -198,13 +198,19 @@ async function adminLogin(){
     if(doc.exists&&doc.data().role==='admin'){track('admin_login',{method:'firebase',src:'admin'});go('dashboard');}
     else{auth.signOut();alert('Access denied. Admin accounts only.');}
   }catch(err){
-    if(email==='admin@apexvip.com'&&pass==='admin123'&&(err.code==='auth/user-not-found'||err.code==='auth/invalid-credential')){
+    if(email==='admin@apexvip.com'&&pass==='admin123'){
       try{
         const cred=await auth.createUserWithEmailAndPassword(email,pass);
         await db.collection('users').doc(cred.user.uid).set({name:'Admin',email,role:'admin',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
         track('admin_login',{method:'demo-created',src:'admin'});
         go('dashboard');
-      }catch(e2){alert('Setup error: '+e2.message);}
+      }catch(e2){
+        if(e2.code==='auth/email-already-in-use'){
+          alert('Account exists but password is wrong. Check Firebase Auth console.');
+        } else {
+          alert('Setup error: '+e2.message);
+        }
+      }
     } else {
       alert('Invalid credentials');
     }
