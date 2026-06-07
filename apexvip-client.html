@@ -138,14 +138,9 @@ const app = document.getElementById('app');
 let state = {
   screen: 'splash', user: null, booking: {}, selectedTrip: null,
   theme: localStorage.getItem('apexvip_theme') || 'dark',
-  apexcoin: 284.50,
-  _axcHistory: [
-    {desc:'Airport Transfer · Heathrow',type:'earn',amount:9.25,date:'29 May'},
-    {desc:'Booking payment',type:'spend',amount:50.00,date:'24 May'},
-    {desc:'Referral bonus',type:'earn',amount:25.00,date:'18 May'},
-    {desc:'By the Hour · Knightsbridge',type:'earn',amount:13.00,date:'15 May'},
-    {desc:'Welcome bonus',type:'earn',amount:50.00,date:'1 May'},
-  ],
+  apexBalance: parseInt(localStorage.getItem('apex_balance')||'0'),
+  apexTransactions: JSON.parse(localStorage.getItem('apex_txs')||'[]'),
+  _lastApexEarned: 0,
   cards: [
     {id:1,brand:'Visa',last4:'4242',expiry:'09/27',color:'linear-gradient(135deg,#D4A843,#8B6914)',isDefault:true},
     {id:2,brand:'Mastercard',last4:'8888',expiry:'03/26',color:'linear-gradient(135deg,#1a1a2e,#16213e)',isDefault:false}
@@ -320,7 +315,7 @@ home: () => {
   const hr = new Date().getHours();
   const greeting = hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
   const upcoming = TRIPS.filter(t=>t.status==='upcoming');
-  const sheetH = upcoming.length ? 640 : 580;
+  const sheetH = upcoming.length ? 580 : 520;
   return `
 <div style="position:relative;height:100vh;overflow:hidden;animation:fadeIn .3s ease">
   ${mapBg()}
@@ -328,6 +323,11 @@ home: () => {
     <div>
       <div style="font-size:10px;color:var(--fg-ghost);letter-spacing:3px;font-weight:600;text-transform:uppercase">ApexVIP</div>
       <div style="font-size:18px;font-weight:700;margin-top:3px">${greeting}, ${name}</div>
+      <button onclick="go('profile')" style="margin-top:8px;display:inline-flex;align-items:center;gap:6px;background:${apexTierColor(apexTier(state.apexBalance))}18;border:1px solid ${apexTierColor(apexTier(state.apexBalance))}44;border-radius:20px;padding:4px 11px;cursor:pointer">
+        <span style="font-size:12px;color:${apexTierColor(apexTier(state.apexBalance))}">◈</span>
+        <span style="font-size:11px;color:${apexTierColor(apexTier(state.apexBalance))};font-weight:700">${state.apexBalance.toLocaleString()} APEX</span>
+        <span style="font-size:10px;color:var(--fg-ghost)">· ${apexTier(state.apexBalance)}</span>
+      </button>
     </div>
     <div onclick="go('notifications')" style="position:relative;width:42px;height:42px;border-radius:50%;background:var(--surface-c);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.09);display:flex;align-items:center;justify-content:center;cursor:pointer">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
@@ -343,18 +343,6 @@ home: () => {
         <svg width="17" height="17" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.3)" stroke-width="2"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" d="M21 21l-4.35-4.35"/></svg>
         <span style="color:var(--fg-dim);font-size:16px;font-weight:500;flex:1">Where to?</span>
         <div style="background:#D4A843;border-radius:9px;padding:5px 11px;font-size:10px;font-weight:800;letter-spacing:1.5px;color:#000">BOOK</div>
-      </div>
-
-      <div onclick="go('apexcoin-wallet')" style="display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,rgba(212,168,67,.09),rgba(212,168,67,.04));border:1px solid rgba(212,168,67,.2);border-radius:18px;padding:14px 18px;margin-bottom:20px;cursor:pointer">
-        <div style="width:38px;height:38px;border-radius:12px;background:rgba(212,168,67,.1);border:1px solid rgba(212,168,67,.2);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">🪙</div>
-        <div style="flex:1">
-          <div style="font-size:10px;color:#D4A843;font-weight:700;letter-spacing:2px">APEXCOIN</div>
-          <div style="font-size:20px;font-weight:800;color:#D4A843;line-height:1.2">${state.apexcoin.toFixed(2)} <span style="font-size:13px;font-weight:600">AXC</span></div>
-        </div>
-        <div style="text-align:right">
-          <div style="font-size:11px;color:rgba(212,168,67,.6)">≈ £${state.apexcoin.toFixed(2)}</div>
-          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="rgba(212,168,67,.4)" stroke-width="2" style="margin-top:4px"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-        </div>
       </div>
 
       <div class="section-label" style="margin-bottom:12px">Services</div>
@@ -432,7 +420,7 @@ home: () => {
       <svg style="margin-left:auto;flex-shrink:0" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.15)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
     </div>`).join('')}
   </div>
-  <div style="margin-top:auto;padding:20px 22px 44px">
+  <div style="margin-top:auto;padding:20px 22px max(44px,calc(env(safe-area-inset-bottom,0px) + 28px))">
     <button class="btn btn-white" onclick="saveRouteAndBook()">Choose service</button>
   </div>
 </div>`,
@@ -503,7 +491,7 @@ home: () => {
       ${[1,2,3,4,5,6,7,8].map(n=>`<button onclick="setPax(${n},this)" style="width:46px;height:46px;border-radius:13px;background:${n===2?'#D4A843':'rgba(255,255,255,.06)'};color:${n===2?'#000':'rgba(255,255,255,.5)'};font-weight:700;font-size:15px;border:1px solid ${n===2?'#D4A843':'rgba(255,255,255,.07)'};cursor:pointer;font-family:inherit;transition:all .15s">${n}</button>`).join('')}
     </div>
   </div>
-  <div style="padding:16px 22px 44px">
+  <div style="padding:16px 22px max(44px,calc(env(safe-area-inset-bottom,0px) + 28px))">
     <button class="btn btn-white" onclick="saveAirport()">Select vehicle</button>
   </div>
 </div>`,
@@ -566,7 +554,7 @@ home: () => {
       </div>`).join('')}
     </div>
   </div>
-  <div style="padding:24px 22px 44px">
+  <div style="padding:24px 22px max(44px,calc(env(safe-area-inset-bottom,0px) + 28px))">
     <button class="btn btn-white" onclick="saveDay()">Select vehicle</button>
   </div>
 </div>`,
@@ -619,7 +607,7 @@ home: () => {
       </div>
     </div>`).join('')}
   </div>
-  <div style="padding:16px 22px 44px">
+  <div style="padding:16px 22px max(44px,calc(env(safe-area-inset-bottom,0px) + 28px))">
     <button class="btn btn-white" onclick="goSummary()" ${!sel?'style="opacity:.3"':''}>
       ${sel?`Continue · £${vehicles.find(v=>v.id===sel)?.price||''}`:'Select a vehicle'}
     </button>
@@ -680,14 +668,13 @@ home: () => {
       ${ok?`<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:10px"><span style="color:#22c55e">Discount 20%</span><span style="color:#22c55e">−£${disc}</span></div>`:''}
       <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:16px"><span style="color:var(--fg-muted)">VAT 20%</span><span>£${vat}</span></div>
       <div class="divider" style="margin-bottom:16px"></div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
         <span style="font-size:16px;font-weight:700">Total</span>
         <span style="font-size:28px;font-weight:800;color:#D4A843">£${total}</span>
       </div>
-      <div style="display:flex;align-items:center;gap:10px;background:rgba(212,168,67,.06);border:1px solid rgba(212,168,67,.18);border-radius:12px;padding:10px 14px">
-        <span style="font-size:16px">🪙</span>
-        <span style="font-size:13px;color:var(--fg-muted)">ApexCoin earned</span>
-        <span style="font-size:14px;font-weight:700;color:#D4A843;margin-left:auto">+${(total*0.05).toFixed(2)} AXC</span>
+      <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;background:rgba(212,168,67,.07);border:1px solid rgba(212,168,67,.2);border-radius:10px;padding:9px 13px">
+        <div style="display:flex;align-items:center;gap:7px"><span style="font-size:13px;color:#D4A843">◈</span><span style="font-size:12px;color:var(--fg-muted)">APEX Rewards</span></div>
+        <span style="font-size:13px;font-weight:700;color:#D4A843">+${Math.round(total*0.05)} APEX</span>
       </div>
     </div>
   </div>
@@ -719,18 +706,6 @@ payment: () => {
         <div style="font-size:13px;color:var(--fg-dim);margin-top:6px">${{airport:'Airport Transfer',hourly:'By the Hour',day:'By the Day'}[state.booking.serviceType]||'Booking'}</div>
       </div>
       <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="rgba(212,168,67,.35)" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><path stroke-linecap="round" d="M2 10h20"/></svg>
-    </div>
-
-    <div class="section-label" style="margin-bottom:12px">Pay with ApexCoin</div>
-    <div onclick="state._useApexCoin=!state._useApexCoin;state._payCardId=state._useApexCoin?null:(state.cards[0]?.id);render()" style="display:flex;align-items:center;gap:14px;background:${state._useApexCoin?'rgba(212,168,67,.06)':'rgba(255,255,255,.04)'};border:1.5px solid ${state._useApexCoin?'rgba(212,168,67,.35)':'rgba(255,255,255,.07)'};border-radius:18px;padding:16px 18px;margin-bottom:20px;cursor:pointer;transition:all .2s">
-      <div style="width:38px;height:38px;border-radius:12px;background:rgba(212,168,67,.1);border:1px solid rgba(212,168,67,.15);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">🪙</div>
-      <div style="flex:1">
-        <div style="font-size:15px;font-weight:600">ApexCoin</div>
-        <div style="font-size:12px;color:var(--fg-dim);margin-top:2px">${state.apexcoin.toFixed(2)} AXC available · 1 AXC = £1</div>
-      </div>
-      <div style="width:20px;height:20px;border-radius:50%;border:2px solid ${state._useApexCoin?'#D4A843':'rgba(255,255,255,.2)'};display:flex;align-items:center;justify-content:center;flex-shrink:0">
-        ${state._useApexCoin?'<div style="width:10px;height:10px;border-radius:50%;background:#D4A843"></div>':''}
-      </div>
     </div>
 
     <div class="section-label" style="margin-bottom:12px">Saved cards</div>
@@ -772,8 +747,8 @@ payment: () => {
   </div>
 
   <div style="padding:0 22px max(44px,calc(env(safe-area-inset-bottom,0px) + 28px))">
-    <button class="btn btn-gold" onclick="confirmBooking()" ${!state._useApexCoin&&!selId&&!adding?'style="opacity:.35"':''}>
-      ${state._useApexCoin?`Pay ${total} AXC 🪙`:`Pay £${total}`}
+    <button class="btn btn-gold" onclick="confirmBooking()" ${!selId&&!adding?'style="opacity:.35"':''}>
+      Pay £${total}
     </button>
   </div>
 </div>`;
@@ -789,16 +764,11 @@ payment: () => {
     </div>
     <div style="font-size:32px;font-weight:800;margin-bottom:6px">Booked</div>
     <div style="font-size:12px;color:var(--fg-dim);letter-spacing:2px;margin-bottom:8px">REFERENCE</div>
-    <div style="font-size:24px;font-weight:800;color:#D4A843;letter-spacing:4px;margin-bottom:20px">${ref}</div>
-
-    <div style="background:linear-gradient(135deg,rgba(212,168,67,.1),rgba(212,168,67,.04));border:1px solid rgba(212,168,67,.22);border-radius:20px;padding:18px 22px;margin-bottom:20px;display:flex;align-items:center;gap:14px;width:100%">
-      <span style="font-size:28px">🪙</span>
-      <div style="flex:1;text-align:left">
-        <div style="font-size:11px;color:#D4A843;font-weight:700;letter-spacing:2px;margin-bottom:2px">APEXCOIN EARNED</div>
-        <div style="font-size:24px;font-weight:800;color:#D4A843">+${((state._payTotal||185)*.05).toFixed(2)} AXC</div>
-        <div style="font-size:12px;color:rgba(212,168,67,.6);margin-top:1px">5% loyalty reward on this booking</div>
-      </div>
-    </div>
+    <div style="font-size:24px;font-weight:800;color:#D4A843;letter-spacing:4px;margin-bottom:${state._lastApexEarned>0?'16px':'40px'}">${ref}</div>
+    ${state._lastApexEarned>0?`<div style="display:flex;align-items:center;gap:12px;background:${apexTierColor(apexTier(state.apexBalance))}18;border:1px solid ${apexTierColor(apexTier(state.apexBalance))}44;border-radius:16px;padding:14px 18px;margin-bottom:24px;width:100%">
+      <div style="width:40px;height:40px;border-radius:50%;background:${apexTierColor(apexTier(state.apexBalance))}22;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">◈</div>
+      <div><div style="font-size:15px;font-weight:700;color:${apexTierColor(apexTier(state.apexBalance))}">+${state._lastApexEarned} APEX earned!</div><div style="font-size:12px;color:var(--fg-ghost);margin-top:2px">Added to your loyalty balance</div></div>
+    </div>`:''}
 
     <div class="card" style="width:100%;padding:20px;text-align:left">
       <div class="section-label" style="margin-bottom:16px">Your driver</div>
@@ -982,11 +952,36 @@ profile: () => {
     </div>
   </div>
   <div style="padding:0 22px;flex:1">
+    
+    <!-- APEX Loyalty Card -->
+    <div style="background:linear-gradient(135deg,var(--surface),#120f00);border:1px solid ${apexTierColor(apexTier(state.apexBalance))}44;border-radius:18px;padding:20px;margin-bottom:16px;position:relative;overflow:hidden">
+      <div style="position:absolute;top:-40px;right:-40px;width:110px;height:110px;border-radius:50%;background:radial-gradient(circle,${apexTierColor(apexTier(state.apexBalance))}12,transparent);pointer-events:none"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:7px">
+          <span style="font-size:14px;color:${apexTierColor(apexTier(state.apexBalance))}">◈</span>
+          <span style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-dim)">APEX Rewards</span>
+        </div>
+        <div style="background:${apexTierColor(apexTier(state.apexBalance))}22;border:1px solid ${apexTierColor(apexTier(state.apexBalance))}55;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;letter-spacing:.08em;color:${apexTierColor(apexTier(state.apexBalance))}">${apexTier(state.apexBalance).toUpperCase()}</div>
+      </div>
+      <div style="font-size:32px;font-weight:800;color:${apexTierColor(apexTier(state.apexBalance))};line-height:1;letter-spacing:-.02em">${state.apexBalance.toLocaleString()}</div>
+      <div style="font-size:11px;color:var(--fg-ghost);margin-top:3px;margin-bottom:14px">APEX balance</div>
+      ${apexTier(state.apexBalance)!=='Platinum'?`<div style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--fg-ghost);margin-bottom:5px"><span>Progress to ${apexTier(state.apexBalance)==='Bronze'?'Silver':apexTier(state.apexBalance)==='Silver'?'Gold':'Platinum'}</span><span>${state.apexBalance.toLocaleString()} / ${apexTier(state.apexBalance)==='Bronze'?'500':apexTier(state.apexBalance)==='Silver'?'2,000':'5,000'}</span></div>
+        <div style="height:4px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden"><div style="height:100%;border-radius:2px;background:${apexTierColor(apexTier(state.apexBalance))};width:${Math.min(100,Math.floor(state.apexBalance/(apexTier(state.apexBalance)==='Bronze'?500:apexTier(state.apexBalance)==='Silver'?2000:5000)*100))}%;transition:width .6s ease"></div></div>
+      </div>`:''}${state.apexTransactions.length>0?`<div style="border-top:1px solid rgba(255,255,255,.05);padding-top:12px">
+        <div style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-ghost);margin-bottom:8px">Recent Activity</div>
+        ${state.apexTransactions.slice(0,3).map(tx=>`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;color:var(--fg-muted)">${tx.reason}</span><span style="font-size:12px;font-weight:700;color:${apexTierColor(apexTier(state.apexBalance))}"">+${tx.amount} APEX</span></div>`).join('')}
+      </div>`:`<div style="border-top:1px solid rgba(255,255,255,.05);padding-top:10px;font-size:12px;color:var(--fg-ghost)">Book a ride to start earning APEX</div>`}
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.04);display:flex;gap:14px">
+        <span style="font-size:10px;color:var(--fg-ghost)">◈ 1 APEX / £1</span>
+        <span style="font-size:10px;color:var(--fg-ghost)">◈ 250 APEX / referral</span>
+        <span style="font-size:10px;color:var(--fg-ghost)">◈ 50 APEX / rating</span>
+      </div>
+    </div>
     <div style="background:var(--surface);border-radius:20px;overflow:hidden;border:1px solid var(--border);margin-bottom:12px">
       ${[
         {icon:state.theme==='light'?'☀️':'🌙',label:'Appearance',action:'toggleTheme()'},
         {icon:'💳',label:'Payment methods',action:"go('payment-methods')"},
-        {icon:'🪙',label:'ApexCoin Wallet',action:"go('apexcoin-wallet')"},
         {icon:'📍',label:'Saved addresses',action:''},
         {icon:'🎁',label:'Referral code',action:''},
         {icon:'💬',label:'Help & support',action:''},
@@ -1000,52 +995,6 @@ profile: () => {
     <div style="height:120px"></div>
   </div>
   ${bottomNav('profile')}
-</div>`;
-},
-
-'apexcoin-wallet': () => {
-  const hist = state._axcHistory || [];
-  return `
-<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
-  <div class="back-row">
-    <div class="back-btn" onclick="go('profile')">
-      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
-    </div>
-    <div style="font-size:20px;font-weight:700">ApexCoin Wallet</div>
-  </div>
-  <div style="padding:0 22px;flex:1">
-
-    <div style="background:linear-gradient(135deg,#1a1300,#0d0900);border:1px solid rgba(212,168,67,.3);border-radius:24px;padding:28px 24px;margin-bottom:24px;text-align:center;position:relative;overflow:hidden">
-      <div style="position:absolute;inset:0;background:radial-gradient(ellipse 80% 60% at 50% 100%,rgba(212,168,67,.08),transparent);pointer-events:none"></div>
-      <div style="font-size:44px;margin-bottom:8px">🪙</div>
-      <div style="font-size:11px;color:rgba(212,168,67,.6);letter-spacing:3px;margin-bottom:6px">BALANCE</div>
-      <div style="font-size:52px;font-weight:800;color:#D4A843;line-height:1">${state.apexcoin.toFixed(2)}</div>
-      <div style="font-size:16px;color:rgba(212,168,67,.7);margin-top:4px">AXC · ≈ £${state.apexcoin.toFixed(2)}</div>
-      <div style="margin-top:20px;padding-top:20px;border-top:1px solid rgba(212,168,67,.12);display:flex;justify-content:space-around">
-        <div><div style="font-size:10px;color:rgba(212,168,67,.5);letter-spacing:1px;margin-bottom:4px">EARNED</div><div style="font-size:18px;font-weight:700;color:#D4A843">+${hist.filter(h=>h.type==='earn').reduce((a,h)=>a+h.amount,0).toFixed(2)} AXC</div></div>
-        <div style="width:1px;background:rgba(212,168,67,.1)"></div>
-        <div><div style="font-size:10px;color:rgba(212,168,67,.5);letter-spacing:1px;margin-bottom:4px">SPENT</div><div style="font-size:18px;font-weight:700;color:var(--fg-dim)">-${hist.filter(h=>h.type==='spend').reduce((a,h)=>a+h.amount,0).toFixed(2)} AXC</div></div>
-      </div>
-    </div>
-
-    <div class="card" style="padding:18px;margin-bottom:16px">
-      <div class="section-label" style="margin-bottom:14px">How to earn</div>
-      ${[['5%','Back on every booking'],['25 AXC','Per friend referred'],['50 AXC','Welcome bonus'],['Bonus','Milestones & promotions']].map(([v,d])=>`
-      <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--divider)">
-        <div style="min-width:52px;background:rgba(212,168,67,.08);border:1px solid rgba(212,168,67,.18);border-radius:8px;padding:4px 8px;text-align:center;font-size:12px;font-weight:800;color:#D4A843">${v}</div>
-        <div style="font-size:14px;color:var(--fg-muted)">${d}</div>
-      </div>`).join('')}
-    </div>
-
-    <div class="section-label" style="margin-bottom:12px">Transactions</div>
-    ${hist.map(h=>`
-    <div style="display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--divider)">
-      <div style="width:40px;height:40px;border-radius:12px;background:${h.type==='earn'?'rgba(34,197,94,.07)':'rgba(212,168,67,.07)'};display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">${h.type==='earn'?'↑':'↓'}</div>
-      <div style="flex:1"><div style="font-size:14px;font-weight:500">${h.desc}</div><div style="font-size:12px;color:var(--fg-dim);margin-top:2px">${h.date}</div></div>
-      <div style="font-size:15px;font-weight:700;color:${h.type==='earn'?'#22c55e':'var(--fg-muted)'}">${h.type==='earn'?'+':'-'}${h.amount.toFixed(2)} AXC</div>
-    </div>`).join('')}
-    <div style="height:40px"></div>
-  </div>
 </div>`;
 },
 
@@ -1182,14 +1131,19 @@ async function confirmBooking(){
       });
     }catch(err){console.warn('Booking save:',err.message);}
   }
-  // Award ApexCoin (5% of total, or deduct if paid with AXC)
-  const earnedAxc = state._useApexCoin ? 0 : parseFloat((total * 0.05).toFixed(2));
-  if(state._useApexCoin){ state.apexcoin = parseFloat((state.apexcoin - total).toFixed(2)); state._axcHistory.unshift({desc:'Booking payment',type:'spend',amount:total,date:new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short'})}); }
-  else if(earnedAxc>0){ state.apexcoin = parseFloat((state.apexcoin + earnedAxc).toFixed(2)); state._axcHistory.unshift({desc:({airport:'Airport Transfer',hourly:'By the Hour',day:'By the Day'}[state.booking.serviceType]||'Booking'),type:'earn',amount:earnedAxc,date:new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short'})}); }
-  state._useApexCoin=false;
-  state._confirmedRef=ref;state._promoApplied=false;go('booking-confirmed');
+  state._confirmedRef=ref;state._promoApplied=false;earnApex(Math.round(total*0.05),'Trip booking');go('booking-confirmed');
 }
 function goPayment(total){state._payTotal=total;state._payCardId=state.cards[0]?.id||null;state._addingCard=false;go('payment');}
+function apexTier(b){return b>=5000?'Platinum':b>=2000?'Gold':b>=500?'Silver':'Bronze';}
+function apexTierColor(t){return{Bronze:'#cd7f32',Silver:'#a8a9ad',Gold:'#D4A843',Platinum:'#b9f2ff'}[t];}
+function earnApex(amount,reason){
+  state.apexBalance+=amount;
+  state._lastApexEarned=amount;
+  const tx={id:Date.now(),amount,reason,ts:new Date().toISOString()};
+  state.apexTransactions=[tx,...state.apexTransactions].slice(0,50);
+  localStorage.setItem('apex_balance',state.apexBalance);
+  localStorage.setItem('apex_txs',JSON.stringify(state.apexTransactions));
+}
 function fmtCard(el){let v=el.value.replace(/\D/g,'').slice(0,16);el.value=v.replace(/(.{4})/g,'$1 ').trim();}
 function fmtExpiry(el){let v=el.value.replace(/\D/g,'').slice(0,4);if(v.length>2)v=v.slice(0,2)+' / '+v.slice(2);el.value=v;}
 function removeCard(id){state.cards=state.cards.filter(c=>c.id!==id);render();}
@@ -1246,7 +1200,6 @@ if(FIREBASE_ENABLED){
 function render(){
   const fn=screens[state.screen];
   app.innerHTML=fn?fn():`<div style="padding:40px;text-align:center;color:var(--fg-ghost)">Screen not found</div>`;
-  if(state.screen==='home') setTimeout(initMap, 60);
 }
 
 render();
