@@ -100,6 +100,18 @@ try {
   }
 } catch(e) { console.warn('Firebase init:', e.message); }
 
+function track(event, props){
+  try{
+    const ev={event,ts:Date.now(),...props};
+    const key='apexvip_events';
+    const arr=JSON.parse(localStorage.getItem(key)||'[]');
+    arr.push(ev);
+    if(arr.length>2000) arr.splice(0,arr.length-2000);
+    localStorage.setItem(key,JSON.stringify(arr));
+    if(FIREBASE_ENABLED) db.collection('analytics').add(ev).catch(()=>{});
+  }catch(e){}
+}
+
 let JOBS=[
   {id:'J1',type:'airport',client:'Sarah M.',initials:'SM',service:'Airport Transfer',pickup:'Mayfair W1K',dropoff:'Heathrow Terminal 5',time:'In 45 min',pay:95,flight:'BA0247',notes:'1 passenger, 2 bags',vehicle:'S-Class'},
   {id:'J2',type:'hourly',client:'Robert C.',initials:'RC',service:'By the Hour (4hrs)',pickup:'Canary Wharf E14',dropoff:'Various',time:'Tomorrow 10:00',pay:260,notes:'Business meetings, multiple stops',vehicle:'S-Class'},
@@ -118,6 +130,13 @@ const WEEK_LABELS=['Mon','Tue','Wed','Thu','Fri','Sat','Today'];
 let S={
   screen:'login',
   theme: localStorage.getItem('apexvip_driver_theme')||'dark',
+  apexcoin: 142.00,
+  _axcHistory:[
+    {desc:'Airport Transfer · Heathrow',type:'earn',amount:1.90,date:'Today'},
+    {desc:'By the Hour · 4hrs',type:'earn',amount:5.20,date:'Yesterday'},
+    {desc:'Milestone bonus — 200 trips',type:'earn',amount:50.00,date:'Last week'},
+    {desc:'Airport Transfer · Gatwick',type:'earn',amount:3.90,date:'Last week'},
+  ],
   online:false,
   jobOverlay:false,
   countdown:30,
@@ -142,10 +161,10 @@ function toggleTheme(){
   render();
 }
 
-function go(s){S.screen=s;render();window.scrollTo(0,0);}
+function go(s){S.screen=s;track('screen_view',{screen:s,src:'driver'});render();window.scrollTo(0,0);}
 
 async function driverLogin(){
-  if(!FIREBASE_ENABLED){go('home');return;}
+  if(!FIREBASE_ENABLED){track('driver_login',{method:'demo',src:'driver'});go('home');return;}
   const email=document.querySelector('input[type=email]')?.value||'';
   const pass=document.querySelector('input[type=password]')?.value||'';
   try{
@@ -153,10 +172,32 @@ async function driverLogin(){
     const doc=await db.collection('users').doc(cred.user.uid).get();
     if(doc.exists&&doc.data().role==='driver'){
       _driverId=cred.user.uid;
+      track('driver_login',{method:'firebase',src:'driver'});
       setupDriverListeners(cred.user.uid);
       go('home');
     }else{auth.signOut();alert('Access denied. Driver accounts only.');}
-  }catch(err){alert('Invalid credentials');}
+  }catch(err){
+    // Auto-create demo driver account on first run
+    if(email==='driver@apexvip.com'&&pass==='driver123'){
+      if(err.code==='auth/configuration-not-found'||err.code==='auth/operation-not-allowed'){
+        track('driver_login',{method:'demo-fallback',src:'driver'});go('home');return;
+      }
+      try{
+        const cred=await auth.createUserWithEmailAndPassword(email,pass);
+        await db.collection('users').doc(cred.user.uid).set({name:'James Harrison',email,role:'driver',vehicle:'Mercedes S-Class',plate:'LX73 ABC',rating:4.9,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+        _driverId=cred.user.uid;
+        track('driver_login',{method:'demo-created',src:'driver'});
+        setupDriverListeners(cred.user.uid);
+        go('home');
+      }catch(e2){
+        if(e2.code==='auth/configuration-not-found'||e2.code==='auth/operation-not-allowed'){
+          track('driver_login',{method:'demo-fallback',src:'driver'});go('home');
+        } else {alert('Setup error: '+e2.message);}
+      }
+    } else {
+      alert('Invalid credentials');
+    }
+  }
 }
 
 function setupDriverListeners(uid){
@@ -190,6 +231,7 @@ function nav(){
 
 function goOnline(){
   S.online=!S.online;
+  const _onTs=Date.now(); track(S.online?'driver_online':'driver_offline',{ts:_onTs,src:'driver'});
   if(FIREBASE_ENABLED&&_driverId){
     db.collection('drivers').doc(_driverId).set({status:S.online?'online':'offline'},{merge:true}).catch(()=>{});
   }
@@ -231,6 +273,7 @@ function acceptJob(){
 function declineJob(){
   clearInterval(S._cdTimer);
   S.jobOverlay=false;
+  track('job_declined',{src:'driver'});
   render();
 }
 
@@ -247,6 +290,11 @@ function nextStep(){
   if(S.tripStep===5){
     clearInterval(S._tripTimerInterval);
     if(FIREBASE_ENABLED&&_driverId) db.collection('drivers').doc(_driverId).set({status:'online'},{merge:true}).catch(()=>{});
+    // Award 2% of job value as ApexCoin
+    const jobPay=S.activeJob?.pay||0;
+    const axcEarned=parseFloat((jobPay*0.02).toFixed(2));
+    if(axcEarned>0){S.apexcoin=parseFloat((S.apexcoin+axcEarned).toFixed(2));S._axcHistory.unshift({desc:S.activeJob?.service||'Trip',type:'earn',amount:axcEarned,date:'Just now'});}
+    track('trip_completed',{pay:jobPay,axc:axcEarned,duration:S.tripTimer,src:'driver'});
     S.activeJob=null;go('home');
   }
   else render();
@@ -334,10 +382,10 @@ home:()=>{
           <div style="font-size:12px;color:var(--fg-dim);margin-top:4px">${S.activeJob.service} · ${S.activeJob.client}</div>
         </div>`:''}
 
-        <div style="display:flex;gap:10px;margin-bottom:12px">
-          ${[['2','Trips Today'],['£190','Earned Today']].map(([v,l])=>`<div class="card" style="flex:1;text-align:center;padding:16px;margin-bottom:0">
-            <div style="font-size:24px;font-weight:800;color:#D4A843">${v}</div>
-            <div style="font-size:11px;color:var(--fg-dim);margin-top:4px">${l}</div>
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          ${[['2','Trips Today'],['£190','Earned'],[`${S.apexcoin.toFixed(0)} AXC`,'ApexCoin']].map(([v,l],i)=>`<div class="card" onclick="${i===2?"go('axc-wallet')":''}" style="flex:1;text-align:center;padding:14px;margin-bottom:0;${i===2?'border-color:rgba(212,168,67,.25);background:rgba(212,168,67,.04);cursor:pointer':''}">
+            <div style="font-size:${i===2?16:22}px;font-weight:800;color:#D4A843">${v}</div>
+            <div style="font-size:10px;color:var(--fg-dim);margin-top:3px">${l}</div>
           </div>`).join('')}
         </div>
 
@@ -469,6 +517,14 @@ earnings:()=>{
       <div class="section-label" style="margin-bottom:14px">Payout Details</div>
       ${[['Payment Schedule','Weekly — Mondays'],['Next Payout','Monday 2 June'],['Bank Account','Lloyds ••••1234']].map(([l,v],i)=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:9px 0;border-bottom:${i<2?'1px solid var(--divider)':'none'}"><span style="color:var(--fg-dim)">${l}</span><span style="color:${i===1?'#D4A843':'var(--fg)'};font-weight:${i===1?700:400}">${v}</span></div>`).join('')}
     </div>
+    <div class="card" style="margin-top:12px">
+      <div class="section-label" style="margin-bottom:14px">ApexCoin</div>
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+        <span style="font-size:28px">🪙</span>
+        <div style="flex:1"><div style="font-size:11px;color:var(--fg-subtle)">BALANCE</div><div style="font-size:28px;font-weight:800;color:#D4A843">${S.apexcoin.toFixed(2)} AXC</div><div style="font-size:12px;color:rgba(212,168,67,.6)">≈ £${S.apexcoin.toFixed(2)}</div></div>
+      </div>
+      <div style="font-size:12px;color:var(--fg-dim);line-height:1.7">Drivers earn 2% of every completed job in ApexCoin. AXC can be redeemed as cash or used within the ApexVIP ecosystem.</div>
+    </div>
     ${nav()}
   </div>`;
 },
@@ -515,6 +571,11 @@ profile:()=>`<div class="screen">
     </div>
     <div><div style="font-size:15px;font-weight:600">Mercedes S-Class</div><div style="font-size:13px;color:var(--fg-dim);margin-top:2px">LX73 ABC · 2023 · Obsidian Black</div></div>
   </div>
+  <div class="card" onclick="go('axc-wallet')" style="margin-bottom:12px;display:flex;align-items:center;gap:14px;border-color:rgba(212,168,67,.22);background:rgba(212,168,67,.04);cursor:pointer">
+    <div style="width:44px;height:44px;border-radius:12px;background:rgba(212,168,67,.1);border:1px solid rgba(212,168,67,.2);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">🪙</div>
+    <div style="flex:1"><div style="font-size:12px;color:#D4A843;font-weight:700;letter-spacing:1px">APEXCOIN BALANCE</div><div style="font-size:22px;font-weight:800;color:#D4A843">${S.apexcoin.toFixed(2)} AXC</div></div>
+    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="rgba(212,168,67,.4)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+  </div>
   <div class="card" style="margin-bottom:12px">
     ${[{icon:'📄',l:'Documents',a:"go('documents')"},{icon:'🏦',l:'Bank Details',a:''},{icon:'📅',l:'Availability Schedule',a:''},{icon:'⭐',l:'Ratings & Reviews',a:''}].map((r,i,a)=>`<div class="menu-row" onclick="${r.a}">
       <div style="display:flex;align-items:center;gap:12px"><span style="font-size:18px">${r.icon}</span><span style="font-size:15px">${r.l}</span></div>
@@ -529,6 +590,34 @@ profile:()=>`<div class="screen">
   </div>
   <button style="width:100%;padding:15px;background:transparent;border:1px solid rgba(239,68,68,.2);border-radius:14px;color:#ef4444;font-size:15px;cursor:pointer;font-family:inherit;font-weight:600" onclick="FIREBASE_ENABLED?auth.signOut().then(()=>go('login')):go('login')">Sign Out</button>
   ${nav()}
+</div>`,
+
+axcWallet:()=>`<div class="screen">
+  <div class="back-row"><button class="back-btn" onclick="go('profile')">‹ Back</button></div>
+  <div style="font-size:22px;font-weight:700;margin-bottom:20px">ApexCoin Wallet</div>
+  <div style="background:linear-gradient(135deg,rgba(212,168,67,.1),rgba(212,168,67,.03));border:1px solid rgba(212,168,67,.25);border-radius:22px;padding:24px;margin-bottom:20px;text-align:center">
+    <div style="font-size:40px;margin-bottom:8px">🪙</div>
+    <div style="font-size:11px;color:rgba(212,168,67,.6);letter-spacing:3px;margin-bottom:4px">BALANCE</div>
+    <div style="font-size:48px;font-weight:800;color:#D4A843;line-height:1">${S.apexcoin.toFixed(2)}</div>
+    <div style="font-size:14px;color:rgba(212,168,67,.7);margin-top:4px">AXC · ≈ £${S.apexcoin.toFixed(2)}</div>
+  </div>
+  <div class="card" style="margin-bottom:16px">
+    <div class="section-label" style="margin-bottom:14px">How Drivers Earn</div>
+    ${[['2%','Of every completed trip'],['Bonus','High ratings (4.9+)'],['Milestone','Per 50 trips completed'],['Referral','Per driver referred']].map(([v,d])=>`
+    <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--divider)">
+      <div style="min-width:52px;background:rgba(212,168,67,.08);border:1px solid rgba(212,168,67,.15);border-radius:8px;padding:4px 8px;text-align:center;font-size:12px;font-weight:800;color:#D4A843">${v}</div>
+      <div style="font-size:13px;color:var(--fg-muted)">${d}</div>
+    </div>`).join('')}
+  </div>
+  <div class="section-label" style="margin-bottom:12px">Recent</div>
+  ${(S._axcHistory||[]).map(h=>`
+  <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--divider)">
+    <div style="width:36px;height:36px;border-radius:10px;background:${h.type==='earn'?'rgba(34,197,94,.07)':'rgba(212,168,67,.07)'};display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">${h.type==='earn'?'↑':'↓'}</div>
+    <div style="flex:1"><div style="font-size:13px;font-weight:500">${h.desc}</div><div style="font-size:11px;color:var(--fg-subtle);margin-top:1px">${h.date}</div></div>
+    <div style="font-size:14px;font-weight:700;color:${h.type==='earn'?'#22c55e':'var(--fg-dim)'}">+${h.amount.toFixed(2)} AXC</div>
+  </div>`).join('')}
+  <button class="btn btn-gold" style="margin-top:20px">Redeem as Cash</button>
+  <div style="height:20px"></div>
 </div>`,
 
 documents:()=>`<div class="screen">
@@ -553,6 +642,7 @@ documents:()=>`<div class="screen">
 };
 
 function render(){
+  if(S.screen==='axc-wallet'){document.getElementById('app').innerHTML=pages.axcWallet();return;}
   const fn=pages[S.screen]||pages.login;
   document.getElementById('app').innerHTML=fn();
 }

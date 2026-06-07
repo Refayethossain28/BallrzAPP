@@ -14,6 +14,8 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
+<script src="https://web.squarecdn.com/v1/square.js"></script>
 <script src="firebase.js"></script>
 <style>
 body{--bg:#000;--fg:#fff;--fg-muted:rgba(255,255,255,.38);--fg-dim:rgba(255,255,255,.3);--fg-subtle:rgba(255,255,255,.25);--fg-ghost:rgba(255,255,255,.2);--fg-faint:rgba(255,255,255,.15);--surface:rgba(255,255,255,.04);--surface-b:rgba(255,255,255,.07);--surface-c:rgba(255,255,255,.09);--border:rgba(255,255,255,.07);--border-b:rgba(255,255,255,.11);--divider:rgba(255,255,255,.05)}
@@ -68,7 +70,7 @@ input::placeholder,textarea::placeholder{color:var(--fg-ghost)}
 .vcard{background:var(--surface);border-radius:22px;overflow:hidden;border:1.5px solid var(--border);cursor:pointer;transition:border-color .2s,transform .15s}
 .vcard:active{transform:scale(.99)}
 .vcard.sel{border-color:#D4A843}
-.vcard-media{height:140px;position:relative;background:linear-gradient(145deg,#0a0a0a 0%,#151515 100%);display:flex;align-items:center;justify-content:center;overflow:hidden}
+.vcard-media{height:180px;position:relative;background:linear-gradient(145deg,#0a0a0a 0%,#151515 100%);display:flex;align-items:center;justify-content:center;overflow:hidden}
 body.light .vcard-media{background:linear-gradient(145deg,#e0deda 0%,#d4d2cd 100%)}
 .vcard-badge{position:absolute;top:14px;left:14px;background:rgba(212,168,67,.1);border:1px solid rgba(212,168,67,.22);color:#D4A843;padding:4px 11px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:1.2px}
 
@@ -124,13 +126,29 @@ body.light .nav{background:rgba(248,246,241,.96);border-top:1px solid rgba(0,0,0
 <div id="app"></div>
 <script>
 // ── Firebase ──────────────────────────────────────────────────────────────
-let auth, db, FIREBASE_ENABLED = false;
+let auth, db, fns, FIREBASE_ENABLED = false;
 try {
   if (typeof APEXVIP_FIREBASE_CONFIG !== 'undefined' && APEXVIP_FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY') {
     firebase.initializeApp(APEXVIP_FIREBASE_CONFIG);
-    auth = firebase.auth(); db = firebase.firestore(); FIREBASE_ENABLED = true;
+    auth = firebase.auth(); db = firebase.firestore(); fns = firebase.functions(); FIREBASE_ENABLED = true;
   }
 } catch(e) { console.warn('Firebase init:', e.message); }
+
+const SQUARE_APP_ID = 'sq0idp-8Z5MqX7GA3M0Xnv-0utwMA';
+const SQUARE_LOCATION_ID = '1ZX0F29TX12HB';
+let _sqCard = null, _sqPayments = null;
+
+function track(event, props){
+  try{
+    const ev={event,ts:Date.now(),...props};
+    const key='apexvip_events';
+    const arr=JSON.parse(localStorage.getItem(key)||'[]');
+    arr.push(ev);
+    if(arr.length>2000) arr.splice(0,arr.length-2000);
+    localStorage.setItem(key,JSON.stringify(arr));
+    if(FIREBASE_ENABLED) db.collection('analytics').add(ev).catch(()=>{});
+  }catch(e){}
+}
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById('app');
@@ -138,6 +156,9 @@ const app = document.getElementById('app');
 let state = {
   screen: 'splash', user: null, booking: {}, selectedTrip: null,
   theme: localStorage.getItem('apexvip_theme') || 'dark',
+  apexBalance: parseInt(localStorage.getItem('apex_balance')||'0'),
+  apexTransactions: JSON.parse(localStorage.getItem('apex_txs')||'[]'),
+  _lastApexEarned: 0,
   cards: [
     {id:1,brand:'Visa',last4:'4242',expiry:'09/27',color:'linear-gradient(135deg,#D4A843,#8B6914)',isDefault:true},
     {id:2,brand:'Mastercard',last4:'8888',expiry:'03/26',color:'linear-gradient(135deg,#1a1a2e,#16213e)',isDefault:false}
@@ -199,6 +220,7 @@ function go(screen, data) {
   if (state.screen==='home' && screen!=='home' && mapInstance){mapInstance.remove();mapInstance=null;mapTileLayer=null;}
   state.screen = screen;
   window.scrollTo(0,0);
+  track('screen_view',{screen,src:'client'});
   render();
 }
 
@@ -320,6 +342,11 @@ home: () => {
     <div>
       <div style="font-size:10px;color:var(--fg-ghost);letter-spacing:3px;font-weight:600;text-transform:uppercase">ApexVIP</div>
       <div style="font-size:18px;font-weight:700;margin-top:3px">${greeting}, ${name}</div>
+      <button onclick="go('profile')" style="margin-top:8px;display:inline-flex;align-items:center;gap:6px;background:${apexTierColor(apexTier(state.apexBalance))}18;border:1px solid ${apexTierColor(apexTier(state.apexBalance))}44;border-radius:20px;padding:4px 11px;cursor:pointer">
+        <span style="font-size:12px;color:${apexTierColor(apexTier(state.apexBalance))}">◈</span>
+        <span style="font-size:11px;color:${apexTierColor(apexTier(state.apexBalance))};font-weight:700">${state.apexBalance.toLocaleString()} APEX</span>
+        <span style="font-size:10px;color:var(--fg-ghost)">· ${apexTier(state.apexBalance)}</span>
+      </button>
     </div>
     <div onclick="go('notifications')" style="position:relative;width:42px;height:42px;border-radius:50%;background:var(--surface-c);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.09);display:flex;align-items:center;justify-content:center;cursor:pointer">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
@@ -412,7 +439,7 @@ home: () => {
       <svg style="margin-left:auto;flex-shrink:0" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.15)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
     </div>`).join('')}
   </div>
-  <div style="margin-top:auto;padding:20px 22px 44px">
+  <div style="position:fixed;bottom:0;left:0;right:0;padding:12px 22px calc(env(safe-area-inset-bottom,0px) + 16px);background:var(--bg);border-top:1px solid var(--border);z-index:100">
     <button class="btn btn-white" onclick="saveRouteAndBook()">Choose service</button>
   </div>
 </div>`,
@@ -483,7 +510,8 @@ home: () => {
       ${[1,2,3,4,5,6,7,8].map(n=>`<button onclick="setPax(${n},this)" style="width:46px;height:46px;border-radius:13px;background:${n===2?'#D4A843':'rgba(255,255,255,.06)'};color:${n===2?'#000':'rgba(255,255,255,.5)'};font-weight:700;font-size:15px;border:1px solid ${n===2?'#D4A843':'rgba(255,255,255,.07)'};cursor:pointer;font-family:inherit;transition:all .15s">${n}</button>`).join('')}
     </div>
   </div>
-  <div style="padding:16px 22px 44px">
+  <div style="height:90px"></div>
+  <div style="position:fixed;bottom:0;left:0;right:0;padding:12px 22px calc(env(safe-area-inset-bottom,0px) + 16px);background:var(--bg);border-top:1px solid var(--border);z-index:100">
     <button class="btn btn-white" onclick="saveAirport()">Select vehicle</button>
   </div>
 </div>`,
@@ -511,7 +539,8 @@ home: () => {
       <button onclick="setDur(${h},${p},this)" style="padding:12px 16px;border-radius:14px;background:${i===1?'#D4A843':'rgba(255,255,255,.06)'};color:${i===1?'#000':'rgba(255,255,255,.5)'};border:1px solid ${i===1?'#D4A843':'rgba(255,255,255,.07)'};cursor:pointer;font-family:inherit;font-weight:700;font-size:13px;transition:all .15s">${h}h · £${p}</button>`).join('')}
     </div>
   </div>
-  <div style="padding:0 22px 44px">
+  <div style="height:90px"></div>
+  <div style="position:fixed;bottom:0;left:0;right:0;padding:12px 22px calc(env(safe-area-inset-bottom,0px) + 16px);background:var(--bg);border-top:1px solid var(--border);z-index:100">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <div style="font-size:13px;color:var(--fg-muted)">Total</div>
       <div id="bh_price" style="font-size:28px;font-weight:800;color:#D4A843">£195</div>
@@ -546,7 +575,8 @@ home: () => {
       </div>`).join('')}
     </div>
   </div>
-  <div style="padding:24px 22px 44px">
+  <div style="height:90px"></div>
+  <div style="position:fixed;bottom:0;left:0;right:0;padding:12px 22px calc(env(safe-area-inset-bottom,0px) + 16px);background:var(--bg);border-top:1px solid var(--border);z-index:100">
     <button class="btn btn-white" onclick="saveDay()">Select vehicle</button>
   </div>
 </div>`,
@@ -556,8 +586,8 @@ home: () => {
   const p = pm[state.booking.serviceType]||pm.airport;
   const sel = state.booking.vehicleId||'';
   const vehicles = [
-    {id:'sClass',name:'S-Class',full:'Mercedes S-Class',sub:'Business Sedan · Up to 3 passengers',price:p.s,badge:'EXECUTIVE',features:['WiFi','Water','Charger','Meet & Greet']},
-    {id:'vClass',name:'V-Class',full:'Mercedes V-Class',sub:'Business Van · Up to 7 passengers',price:p.v,badge:'BUSINESS',features:['WiFi','Water','Charger','Child Seat']}
+    {id:'sClass',name:'S-Class',full:'Mercedes S-Class',sub:'Business Sedan · Up to 3 passengers',price:p.s,badge:'EXECUTIVE',features:['WiFi','Water','Charger','Meet & Greet'],img:'https://images.pexels.com/photos/18369292/pexels-photo-18369292.jpeg?auto=compress&cs=tinysrgb&w=900&h=400&dpr=1'},
+    {id:'vClass',name:'V-Class',full:'Mercedes V-Class',sub:'Business Van · Up to 7 passengers',price:p.v,badge:'BUSINESS',features:['WiFi','Water','Charger','Child Seat'],img:'https://images.pexels.com/photos/17455633/pexels-photo-17455633.jpeg?auto=compress&cs=tinysrgb&w=900&h=400&dpr=1'}
   ];
   return `
 <div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
@@ -574,13 +604,13 @@ home: () => {
     ${vehicles.map(v=>`
     <div id="vc_${v.id}" onclick="selectVehicle('${v.id}',${v.price},'${v.full}')" class="vcard ${sel===v.id?'sel':''}" style="margin-bottom:14px">
       <div class="vcard-media">
+        <img src="${v.img}" alt="${v.full}"
+          style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center"
+          onerror="this.style.display='none'"/>
+        <div style="position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,.18) 0%,rgba(0,0,0,.55) 100%)"></div>
         <div class="vcard-badge">${v.badge}</div>
         ${sel===v.id?`<div class="vcard-check"><svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="#000" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></div>`:''}
-        <div style="text-align:center;user-select:none">
-          <div style="font-size:52px;font-weight:900;color:rgba(255,255,255,.04);letter-spacing:2px;line-height:1">${v.name}</div>
-          <div style="font-size:9px;color:var(--fg-faint);letter-spacing:6px;margin-top:2px">MERCEDES-BENZ</div>
-        </div>
-        <div style="position:absolute;bottom:0;left:0;right:0;height:50%;background:linear-gradient(to top,rgba(12,12,12,.9),transparent)"></div>
+        <div style="position:absolute;bottom:0;left:0;right:0;height:50%;background:linear-gradient(to top,rgba(8,8,8,.85),transparent)"></div>
       </div>
       <div style="padding:16px 18px 18px">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
@@ -599,7 +629,8 @@ home: () => {
       </div>
     </div>`).join('')}
   </div>
-  <div style="padding:16px 22px 44px">
+  <div style="height:90px"></div>
+  <div style="position:fixed;bottom:0;left:0;right:0;padding:12px 22px calc(env(safe-area-inset-bottom,0px) + 16px);background:var(--bg);border-top:1px solid var(--border);z-index:100">
     <button class="btn btn-white" onclick="goSummary()" ${!sel?'style="opacity:.3"':''}>
       ${sel?`Continue · £${vehicles.find(v=>v.id===sel)?.price||''}`:'Select a vehicle'}
     </button>
@@ -664,9 +695,14 @@ home: () => {
         <span style="font-size:16px;font-weight:700">Total</span>
         <span style="font-size:28px;font-weight:800;color:#D4A843">£${total}</span>
       </div>
+      <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;background:rgba(212,168,67,.07);border:1px solid rgba(212,168,67,.2);border-radius:10px;padding:9px 13px">
+        <div style="display:flex;align-items:center;gap:7px"><span style="font-size:13px;color:#D4A843">◈</span><span style="font-size:12px;color:var(--fg-muted)">APEX Rewards</span></div>
+        <span style="font-size:13px;font-weight:700;color:#D4A843">+${Math.round(total*0.05)} APEX</span>
+      </div>
     </div>
   </div>
-  <div style="padding:0 22px 44px">
+  <div style="height:90px"></div>
+  <div style="position:fixed;bottom:0;left:0;right:0;padding:12px 22px calc(env(safe-area-inset-bottom,0px) + 16px);background:var(--bg);border-top:1px solid var(--border);z-index:100">
     <button class="btn btn-gold" onclick="goPayment(${total})">Continue to payment · £${total}</button>
   </div>
 </div>`;
@@ -674,8 +710,7 @@ home: () => {
 
 payment: () => {
   const total = state._payTotal || 0;
-  const selId = state._payCardId || (state.cards[0]?.id);
-  const adding = state._addingCard;
+  const svc = {airport:'Airport Transfer',hourly:'By the Hour',day:'By the Day'}[state.booking.serviceType]||'Booking';
   return `
 <div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
   <div class="back-row">
@@ -685,59 +720,30 @@ payment: () => {
     <div style="font-size:20px;font-weight:700">Payment</div>
   </div>
 
-  <div style="padding:0 22px;flex:1" class="scroll">
-
-    <div style="background:linear-gradient(135deg,rgba(212,168,67,.12) 0%,rgba(212,168,67,.04) 100%);border:1px solid rgba(212,168,67,.2);border-radius:22px;padding:22px;margin-bottom:24px;display:flex;justify-content:space-between;align-items:flex-end">
+  <div style="padding:0 22px;flex:1">
+    <div style="background:linear-gradient(135deg,rgba(212,168,67,.12) 0%,rgba(212,168,67,.04) 100%);border:1px solid rgba(212,168,67,.2);border-radius:22px;padding:22px;margin-bottom:28px;display:flex;justify-content:space-between;align-items:flex-end">
       <div>
         <div class="section-label" style="margin-bottom:8px">Amount due</div>
         <div style="font-size:44px;font-weight:800;color:#D4A843;line-height:1">£${total}</div>
-        <div style="font-size:13px;color:var(--fg-dim);margin-top:6px">${{airport:'Airport Transfer',hourly:'By the Hour',day:'By the Day'}[state.booking.serviceType]||'Booking'}</div>
+        <div style="font-size:13px;color:var(--fg-dim);margin-top:6px">${svc}</div>
       </div>
       <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="rgba(212,168,67,.35)" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><path stroke-linecap="round" d="M2 10h20"/></svg>
     </div>
 
-    <div class="section-label" style="margin-bottom:12px">Saved cards</div>
-    ${state.cards.map(c=>`
-    <div onclick="state._payCardId=${c.id};state._addingCard=false;render()" style="display:flex;align-items:center;gap:14px;background:${selId===c.id?'rgba(212,168,67,.06)':'rgba(255,255,255,.04)'};border:1.5px solid ${selId===c.id?'rgba(212,168,67,.35)':'rgba(255,255,255,.07)'};border-radius:18px;padding:16px 18px;margin-bottom:10px;cursor:pointer;transition:all .2s">
-      <div style="width:38px;height:38px;border-radius:12px;background:${c.color};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;letter-spacing:1px;color:var(--fg-muted);flex-shrink:0">${c.brand.slice(0,2).toUpperCase()}</div>
-      <div style="flex:1">
-        <div style="font-size:15px;font-weight:600">${c.brand} •••• ${c.last4}</div>
-        <div style="font-size:12px;color:var(--fg-dim);margin-top:2px">Expires ${c.expiry}${c.isDefault?' · Default':''}</div>
-      </div>
-      <div style="width:20px;height:20px;border-radius:50%;border:2px solid ${selId===c.id?'#D4A843':'rgba(255,255,255,.2)'};display:flex;align-items:center;justify-content:center;flex-shrink:0">
-        ${selId===c.id?`<div style="width:10px;height:10px;border-radius:50%;background:#D4A843"></div>`:''}
-      </div>
-    </div>`).join('')}
+    <div class="section-label" style="margin-bottom:14px">Card details</div>
+    <div id="sq-card" style="min-height:88px;border-radius:16px;overflow:hidden"></div>
+    <div id="sq-error" style="color:#ef4444;font-size:13px;margin-top:10px;display:none;padding:10px 14px;background:rgba(239,68,68,.07);border-radius:10px"></div>
 
-    <div onclick="state._addingCard=!state._addingCard;state._payCardId=null;render()" style="display:flex;align-items:center;gap:14px;background:${adding?'rgba(212,168,67,.06)':'rgba(255,255,255,.04)'};border:1.5px solid ${adding?'rgba(212,168,67,.35)':'rgba(255,255,255,.07)'};border-radius:18px;padding:16px 18px;margin-bottom:${adding?'0':'24px'};cursor:pointer;transition:all .2s">
-      <div style="width:38px;height:38px;border-radius:12px;background:var(--surface-b);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.5)" stroke-width="2"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>
-      </div>
-      <span style="font-size:15px;font-weight:600;color:var(--fg-muted)">Add new card</span>
-    </div>
-
-    ${adding?`
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:0 0 18px 18px;padding:20px;margin-bottom:24px">
-      <div class="field" style="margin-bottom:10px">
-        <input id="cn" placeholder="Card number" type="tel" maxlength="19" oninput="fmtCard(this)"/>
-      </div>
-      <div style="display:flex;gap:10px;margin-bottom:10px">
-        <div class="field" style="flex:1"><input id="ce" placeholder="MM / YY" type="tel" maxlength="7" oninput="fmtExpiry(this)"/></div>
-        <div class="field" style="flex:1"><input id="cv" placeholder="CVV" type="tel" maxlength="4"/></div>
-      </div>
-      <div class="field"><input id="ch" placeholder="Cardholder name"/></div>
-    </div>`:''}
-
-    <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:28px">
-      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.2)" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path stroke-linecap="round" d="M7 11V7a5 5 0 0110 0v4"/></svg>
-      <span style="font-size:12px;color:var(--fg-ghost);letter-spacing:.5px">256-bit SSL encrypted · PCI DSS compliant</span>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:20px;margin-bottom:32px">
+      <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.22)" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path stroke-linecap="round" d="M7 11V7a5 5 0 0110 0v4"/></svg>
+      <span style="font-size:11px;color:var(--fg-ghost);letter-spacing:.5px">Secured by Square · PCI DSS compliant</span>
+      <img src="https://web.squarecdn.com/v1/assets/square-logo-outlined.svg" onerror="this.style.display='none'" style="height:14px;opacity:.25;margin-left:4px"/>
     </div>
   </div>
 
-  <div style="padding:0 22px 44px">
-    <button class="btn btn-gold" onclick="confirmBooking()" ${!selId&&!adding?'style="opacity:.35"':''}>
-      Pay £${total}
-    </button>
+  <div style="height:90px"></div>
+  <div style="position:fixed;bottom:0;left:0;right:0;padding:12px 22px calc(env(safe-area-inset-bottom,0px) + 16px);background:var(--bg);border-top:1px solid var(--border);z-index:100">
+    <button id="sq-pay-btn" class="btn btn-gold" onclick="runSquarePayment()">Pay £${total}</button>
   </div>
 </div>`;
 },
@@ -752,7 +758,11 @@ payment: () => {
     </div>
     <div style="font-size:32px;font-weight:800;margin-bottom:6px">Booked</div>
     <div style="font-size:12px;color:var(--fg-dim);letter-spacing:2px;margin-bottom:8px">REFERENCE</div>
-    <div style="font-size:24px;font-weight:800;color:#D4A843;letter-spacing:4px;margin-bottom:40px">${ref}</div>
+    <div style="font-size:24px;font-weight:800;color:#D4A843;letter-spacing:4px;margin-bottom:${state._lastApexEarned>0?'16px':'40px'}">${ref}</div>
+    ${state._lastApexEarned>0?`<div style="display:flex;align-items:center;gap:12px;background:${apexTierColor(apexTier(state.apexBalance))}18;border:1px solid ${apexTierColor(apexTier(state.apexBalance))}44;border-radius:16px;padding:14px 18px;margin-bottom:24px;width:100%">
+      <div style="width:40px;height:40px;border-radius:50%;background:${apexTierColor(apexTier(state.apexBalance))}22;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">◈</div>
+      <div><div style="font-size:15px;font-weight:700;color:${apexTierColor(apexTier(state.apexBalance))}">+${state._lastApexEarned} APEX earned!</div><div style="font-size:12px;color:var(--fg-ghost);margin-top:2px">Added to your loyalty balance</div></div>
+    </div>`:''}
 
     <div class="card" style="width:100%;padding:20px;text-align:left">
       <div class="section-label" style="margin-bottom:16px">Your driver</div>
@@ -936,6 +946,32 @@ profile: () => {
     </div>
   </div>
   <div style="padding:0 22px;flex:1">
+    
+    <!-- APEX Loyalty Card -->
+    <div style="background:linear-gradient(135deg,var(--surface),#120f00);border:1px solid ${apexTierColor(apexTier(state.apexBalance))}44;border-radius:18px;padding:20px;margin-bottom:16px;position:relative;overflow:hidden">
+      <div style="position:absolute;top:-40px;right:-40px;width:110px;height:110px;border-radius:50%;background:radial-gradient(circle,${apexTierColor(apexTier(state.apexBalance))}12,transparent);pointer-events:none"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:7px">
+          <span style="font-size:14px;color:${apexTierColor(apexTier(state.apexBalance))}">◈</span>
+          <span style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-dim)">APEX Rewards</span>
+        </div>
+        <div style="background:${apexTierColor(apexTier(state.apexBalance))}22;border:1px solid ${apexTierColor(apexTier(state.apexBalance))}55;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;letter-spacing:.08em;color:${apexTierColor(apexTier(state.apexBalance))}">${apexTier(state.apexBalance).toUpperCase()}</div>
+      </div>
+      <div style="font-size:32px;font-weight:800;color:${apexTierColor(apexTier(state.apexBalance))};line-height:1;letter-spacing:-.02em">${state.apexBalance.toLocaleString()}</div>
+      <div style="font-size:11px;color:var(--fg-ghost);margin-top:3px;margin-bottom:14px">APEX balance</div>
+      ${apexTier(state.apexBalance)!=='Platinum'?`<div style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--fg-ghost);margin-bottom:5px"><span>Progress to ${apexTier(state.apexBalance)==='Bronze'?'Silver':apexTier(state.apexBalance)==='Silver'?'Gold':'Platinum'}</span><span>${state.apexBalance.toLocaleString()} / ${apexTier(state.apexBalance)==='Bronze'?'500':apexTier(state.apexBalance)==='Silver'?'2,000':'5,000'}</span></div>
+        <div style="height:4px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden"><div style="height:100%;border-radius:2px;background:${apexTierColor(apexTier(state.apexBalance))};width:${Math.min(100,Math.floor(state.apexBalance/(apexTier(state.apexBalance)==='Bronze'?500:apexTier(state.apexBalance)==='Silver'?2000:5000)*100))}%;transition:width .6s ease"></div></div>
+      </div>`:''}${state.apexTransactions.length>0?`<div style="border-top:1px solid rgba(255,255,255,.05);padding-top:12px">
+        <div style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-ghost);margin-bottom:8px">Recent Activity</div>
+        ${state.apexTransactions.slice(0,3).map(tx=>`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;color:var(--fg-muted)">${tx.reason}</span><span style="font-size:12px;font-weight:700;color:${apexTierColor(apexTier(state.apexBalance))}"">+${tx.amount} APEX</span></div>`).join('')}
+      </div>`:`<div style="border-top:1px solid rgba(255,255,255,.05);padding-top:10px;font-size:12px;color:var(--fg-ghost)">Book a ride to start earning APEX</div>`}
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.04);display:flex;gap:14px">
+        <span style="font-size:10px;color:var(--fg-ghost)">◈ 1 APEX / £1</span>
+        <span style="font-size:10px;color:var(--fg-ghost)">◈ 250 APEX / referral</span>
+        <span style="font-size:10px;color:var(--fg-ghost)">◈ 50 APEX / rating</span>
+      </div>
+    </div>
     <div style="background:var(--surface);border-radius:20px;overflow:hidden;border:1px solid var(--border);margin-bottom:12px">
       ${[
         {icon:state.theme==='light'?'☀️':'🌙',label:'Appearance',action:'toggleTheme()'},
@@ -987,12 +1023,30 @@ profile: () => {
 async function doLogin(){
   const e=$('lemail')?.value||'',p=$('lpass')?.value||'';
   if(!FIREBASE_ENABLED){
-    if(e==='client@apexvip.com'&&p==='password'){state.user={name:'Alexandra Stone',email:e};state._loginErr=null;go('home');}
+    if(e==='client@apexvip.com'&&p==='password'){state.user={name:'Alexandra Stone',email:e};state._loginErr=null;track('user_login',{method:'demo',src:'client'});go('home');}
     else{state._loginErr='Invalid email or password.';render();}
     return;
   }
-  try{await auth.signInWithEmailAndPassword(e,p);}
-  catch(err){state._loginErr='Invalid email or password.';render();}
+  try{
+    await auth.signInWithEmailAndPassword(e,p);
+  } catch(err){
+    // Auto-create demo account on first run
+    if(e==='client@apexvip.com'&&p==='password'){
+      if(err.code==='auth/configuration-not-found'||err.code==='auth/operation-not-allowed'){
+        state.user={name:'Alexandra Stone',email:e};track('user_login',{method:'demo-fallback',src:'client'});go('home');return;
+      }
+      try{
+        const cred=await auth.createUserWithEmailAndPassword(e,p);
+        await db.collection('users').doc(cred.user.uid).set({name:'Alexandra Stone',email:e,role:'client',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+      }catch(e2){
+        if(e2.code==='auth/configuration-not-found'||e2.code==='auth/operation-not-allowed'){
+          state.user={name:'Alexandra Stone',email:e};track('user_login',{method:'demo-fallback',src:'client'});go('home');
+        } else {state._loginErr='Setup error. Try again.';render();}
+      }
+    } else {
+      state._loginErr='Invalid email or password.';render();
+    }
+  }
 }
 function saveRegStep1(){
   state._regName=($('rfn')?.value||'')+' '+($('rln')?.value||'');
@@ -1022,7 +1076,7 @@ function saveRouteAndBook(){
   state.booking.dropoff=$('ri_do')?.value||'';
   go('service-select');
 }
-function goBook(type){state.booking.serviceType=type;go('book-'+type);}
+function goBook(type){state.booking.serviceType=type;track('booking_started',{service:type,src:'client'});go('book-'+type);}
 function saveAirport(){
   state.booking={...state.booking,
     pickup:$('ba_pu')?.value||state.booking.pickup||'',
@@ -1047,11 +1101,11 @@ function saveDay(){
     notes:$('bd_notes')?.value||''};
   go('vehicle-select');
 }
-function selectVehicle(id,price,name){state.booking.vehicleId=id;state.booking.price=price;state.booking.vehicle=name;render();}
+function selectVehicle(id,price,name){state.booking.vehicleId=id;state.booking.price=price;state.booking.vehicle=name;track('vehicle_selected',{vehicle:name,price,src:'client'});render();}
 function goSummary(){if(state.booking.vehicleId)go('booking-summary');}
 function applyPromo(){
   const v=$('promo_in')?.value||'';
-  if(v.toUpperCase()==='APEX20'){state._promoApplied=true;render();}
+  if(v.toUpperCase()==='APEX20'){state._promoApplied=true;track('promo_applied',{code:'APEX20',src:'client'});render();}
   else alert('Invalid promo code');
 }
 function setPax(n,el){
@@ -1066,8 +1120,80 @@ function setDur(h,p,el){
   el.style.background='#D4A843';el.style.color='#000';el.style.borderColor='#D4A843';
   const pr=$('bh_price');if(pr)pr.textContent='£'+p;
 }
-async function confirmBooking(){
-  const ref='APX-'+(Math.floor(1000+Math.random()*9000));
+async function initSquare(){
+  const el = document.getElementById('sq-card');
+  if(!el) return;
+  if(!window.Square){
+    el.innerHTML='<div style="padding:20px;color:var(--fg-dim);font-size:13px;text-align:center">Loading payment form…</div>';
+    return;
+  }
+  try{
+    if(!_sqPayments) _sqPayments = await Square.payments(SQUARE_APP_ID, SQUARE_LOCATION_ID);
+    if(_sqCard){ try{await _sqCard.destroy();}catch(e){} _sqCard=null; }
+    _sqCard = await _sqPayments.card({
+      style:{
+        '.input-container':{borderColor:'rgba(255,255,255,0.1)',borderRadius:'12px',borderWidth:'1.5px'},
+        '.input-container.is-focus':{borderColor:'#D4A843'},
+        '.input-container.is-error':{borderColor:'#ef4444'},
+        input:{color:'#f0ece4',fontFamily:'-apple-system,BlinkMacSystemFont,sans-serif',fontSize:'15px'},
+        'input::placeholder':{color:'rgba(255,255,255,0.22)'},
+        '.message-text':{color:'#ef4444'},
+        '.message-icon':{color:'#ef4444'},
+      }
+    });
+    await _sqCard.attach('#sq-card');
+  }catch(e){
+    console.warn('Square init:',e.message);
+    if(el) el.innerHTML='<div style="padding:16px;color:#ef4444;font-size:13px">Payment form failed to load. Please refresh.</div>';
+  }
+}
+
+async function runSquarePayment(){
+  const btn = document.getElementById('sq-pay-btn');
+  const errEl = document.getElementById('sq-error');
+  if(errEl) errEl.style.display='none';
+  if(!_sqCard){alert('Payment form not ready yet — please wait a moment and try again.');return;}
+  if(btn){btn.disabled=true;btn.textContent='Processing…';}
+  try{
+    const result = await _sqCard.tokenize();
+    if(result.status!=='OK'){
+      const msg = result.errors?.map(e=>e.message).join(', ')||'Card error';
+      if(errEl){errEl.textContent=msg;errEl.style.display='block';}
+      if(btn){btn.disabled=false;btn.textContent='Pay £'+(state._payTotal||0);}
+      return;
+    }
+    const sourceId = result.token;
+    const total = state._payTotal||0;
+    const ref = 'APX-'+(Math.floor(1000+Math.random()*9000));
+    state._confirmedRef = ref;
+    let paymentId = null;
+    // Try Cloud Function; fall back to storing token for manual processing
+    if(FIREBASE_ENABLED && fns){
+      try{
+        const fn = fns.httpsCallable('processSquarePayment');
+        const resp = await fn({sourceId, amount:total, bookingRef:ref});
+        paymentId = resp.data.paymentId;
+        track('payment_charged',{ref,total,paymentId,src:'client'});
+      }catch(fnErr){
+        await db.collection('pending_payments').add({
+          sourceId, amount:total, bookingRef:ref, status:'pending',
+          createdAt:firebase.firestore.FieldValue.serverTimestamp()
+        }).catch(()=>{});
+        track('payment_token_stored',{ref,total,src:'client'});
+      }
+    } else {
+      track('payment_demo',{ref,total,src:'client'});
+    }
+    state._squarePaymentId = paymentId;
+    await confirmBooking(ref);
+  }catch(e){
+    if(errEl){errEl.textContent='Payment failed: '+e.message;errEl.style.display='block';}
+    if(btn){btn.disabled=false;btn.textContent='Pay £'+(state._payTotal||0);}
+  }
+}
+
+async function confirmBooking(overrideRef){
+  const ref = overrideRef || state._confirmedRef || ('APX-'+(Math.floor(1000+Math.random()*9000)));
   const base=state.booking.price||185;
   const disc=state._promoApplied?Math.round(base*.2):0;
   const vat=Math.round((base-disc)*.2);
@@ -1084,14 +1210,45 @@ async function confirmBooking(){
         vehicle:state.booking.vehicle||'Mercedes S-Class',vehicleId:state.booking.vehicleId||'',
         price:total,baseFare:base,discount:disc,vat,
         promoApplied:state._promoApplied||false,status:'confirmed',
+        squarePaymentId:state._squarePaymentId||null,
+        paymentStatus:state._squarePaymentId?'paid':'pending',
         driverName:'James Harrison',driverRating:4.9,driverPlate:'LX73 ABC',
         createdAt:firebase.firestore.FieldValue.serverTimestamp()
       });
     }catch(err){console.warn('Booking save:',err.message);}
   }
-  state._confirmedRef=ref;state._promoApplied=false;go('booking-confirmed');
+  state._confirmedRef=ref;state._promoApplied=false;state._squarePaymentId=null;
+  const _axcAmt=Math.round(total*0.05);
+  earnApex(_axcAmt,'Trip booking');
+  if(state._useApexCoin) track('apex_redeemed',{amount:total,src:'client'});
+  track('booking_confirmed',{
+    service:state.booking.serviceType||'airport',
+    vehicle:state.booking.vehicle||'',
+    price:total, base:base, disc:disc, vat,
+    apex_earned:_axcAmt,
+    paid_with_apex:!!(state._useApexCoin),
+    pickup:state.booking.pickup||'',
+    dropoff:state.booking.dropoff||state.booking.airport||'',
+    scheduled_date:state.booking.date||'',
+    scheduled_time:state.booking.time||'',
+    user:state.user?.name||'Guest',
+    ref,
+    src:'client'
+  });
+  go('booking-confirmed');
 }
-function goPayment(total){state._payTotal=total;state._payCardId=state.cards[0]?.id||null;state._addingCard=false;go('payment');}
+function goPayment(total){state._payTotal=total;state._payCardId=state.cards[0]?.id||null;state._addingCard=false;track('checkout_started',{total,src:'client'});go('payment');}
+function apexTier(b){return b>=5000?'Platinum':b>=2000?'Gold':b>=500?'Silver':'Bronze';}
+function apexTierColor(t){return{Bronze:'#cd7f32',Silver:'#a8a9ad',Gold:'#D4A843',Platinum:'#b9f2ff'}[t];}
+function earnApex(amount,reason){
+  state.apexBalance+=amount;
+  state._lastApexEarned=amount;
+  track('apex_earned',{amount,reason,src:'client'});
+  const tx={id:Date.now(),amount,reason,ts:new Date().toISOString()};
+  state.apexTransactions=[tx,...state.apexTransactions].slice(0,50);
+  localStorage.setItem('apex_balance',state.apexBalance);
+  localStorage.setItem('apex_txs',JSON.stringify(state.apexTransactions));
+}
 function fmtCard(el){let v=el.value.replace(/\D/g,'').slice(0,16);el.value=v.replace(/(.{4})/g,'$1 ').trim();}
 function fmtExpiry(el){let v=el.value.replace(/\D/g,'').slice(0,4);if(v.length>2)v=v.slice(0,2)+' / '+v.slice(2);el.value=v;}
 function removeCard(id){state.cards=state.cards.filter(c=>c.id!==id);render();}
@@ -1148,6 +1305,8 @@ if(FIREBASE_ENABLED){
 function render(){
   const fn=screens[state.screen];
   app.innerHTML=fn?fn():`<div style="padding:40px;text-align:center;color:var(--fg-ghost)">Screen not found</div>`;
+  if(state.screen==='home') setTimeout(initMap,60);
+  if(state.screen==='payment') setTimeout(initSquare,60);
 }
 
 render();
