@@ -160,10 +160,25 @@ async function driverLogin(){
     const doc=await db.collection('users').doc(cred.user.uid).get();
     if(doc.exists&&doc.data().role==='driver'){
       _driverId=cred.user.uid;
+      track('driver_login',{method:'firebase',src:'driver'});
       setupDriverListeners(cred.user.uid);
       go('home');
     }else{auth.signOut();alert('Access denied. Driver accounts only.');}
-  }catch(err){alert('Invalid credentials');}
+  }catch(err){
+    // Auto-create demo driver account on first run
+    if(email==='driver@apexvip.com'&&pass==='driver123'&&(err.code==='auth/user-not-found'||err.code==='auth/invalid-credential')){
+      try{
+        const cred=await auth.createUserWithEmailAndPassword(email,pass);
+        await db.collection('users').doc(cred.user.uid).set({name:'James Harrison',email,role:'driver',vehicle:'Mercedes S-Class',plate:'LX73 ABC',rating:4.9,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+        _driverId=cred.user.uid;
+        track('driver_login',{method:'demo-created',src:'driver'});
+        setupDriverListeners(cred.user.uid);
+        go('home');
+      }catch(e2){alert('Setup error: '+e2.message);}
+    } else {
+      alert('Invalid credentials');
+    }
+  }
 }
 
 function setupDriverListeners(uid){
