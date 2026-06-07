@@ -1062,12 +1062,15 @@ async function doRegister(){
   try{
     const cred=await auth.createUserWithEmailAndPassword(state._regEmail,pw);
     await cred.user.updateProfile({displayName:state._regName});
-    await db.collection('users').doc(cred.user.uid).set({
-      name:state._regName,email:state._regEmail,phone:state._regPhone||'',
-      role:'client',tier:'standard',bookings:0,spent:0,
-      joined:new Date().toLocaleDateString('en-GB',{month:'short',year:'numeric'}),
-      createdAt:firebase.firestore.FieldValue.serverTimestamp()
-    });
+    try{
+      await db.collection('users').doc(cred.user.uid).set({
+        name:state._regName,email:state._regEmail,phone:state._regPhone||'',
+        role:'client',tier:'standard',bookings:0,spent:0,
+        joined:new Date().toLocaleDateString('en-GB',{month:'short',year:'numeric'}),
+        createdAt:firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }catch(fsErr){console.warn('Profile save:',fsErr.message);}
+    state.user={uid:cred.user.uid,name:state._regName,email:state._regEmail};
     state._regStep=3;render();
   }catch(err){alert(err.message);}
 }
