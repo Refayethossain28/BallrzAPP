@@ -4,6 +4,8 @@ import Firebase
 
 @main
 struct BallrzApp: App {
+    @StateObject private var languageManager = LanguageManager.shared
+
     init() {
         FirebaseApp.configure()
     }
@@ -11,17 +13,74 @@ struct BallrzApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(languageManager)
+                .environment(\.locale, Locale(identifier: LanguageManager.shared.selectedLanguage))
         }
+    }
+}
+
+// LanguageManager.swift
+import Foundation
+import Combine
+
+final class LanguageManager: ObservableObject {
+    static let shared = LanguageManager()
+
+    struct Language: Identifiable, Hashable {
+        let id: String        // BCP-47 code, e.g. "en", "es"
+        let nameKey: String   // Localizable.strings key for the language's own name
+        let isRTL: Bool
+
+        init(_ id: String, nameKey: String, isRTL: Bool = false) {
+            self.id = id
+            self.nameKey = nameKey
+            self.isRTL = isRTL
+        }
+    }
+
+    static let supported: [Language] = [
+        Language("en", nameKey: "language.en"),
+        Language("es", nameKey: "language.es"),
+        Language("fr", nameKey: "language.fr"),
+        Language("ar", nameKey: "language.ar", isRTL: true),
+        Language("pt", nameKey: "language.pt"),
+    ]
+
+    @Published var selectedLanguage: String {
+        didSet {
+            UserDefaults.standard.set(selectedLanguage, forKey: "appLanguage")
+        }
+    }
+
+    private init() {
+        selectedLanguage = UserDefaults.standard.string(forKey: "appLanguage")
+            ?? Locale.current.language.languageCode?.identifier
+            ?? "en"
+    }
+
+    var currentLanguage: Language {
+        LanguageManager.supported.first { $0.id == selectedLanguage }
+            ?? LanguageManager.supported[0]
+    }
+
+    // Resolve a localized string for the currently selected language bundle.
+    func localized(_ key: String) -> String {
+        guard let path = Bundle.main.path(forResource: selectedLanguage, ofType: "lproj"),
+              let bundle = Bundle(path: path) else {
+            return NSLocalizedString(key, comment: "")
+        }
+        return bundle.localizedString(forKey: key, value: nil, table: nil)
     }
 }
 
 // ContentView.swift
 struct ContentView: View {
+    @EnvironmentObject private var lang: LanguageManager
     @State private var isLoggedIn = false
 
     var body: some View {
         if isLoggedIn {
-            MainFeedView()
+            MainFeedView(isLoggedIn: $isLoggedIn)
         } else {
             LoginView(isLoggedIn: $isLoggedIn)
         }
@@ -30,56 +89,111 @@ struct ContentView: View {
 
 // LoginView.swift
 struct LoginView: View {
+    @EnvironmentObject private var lang: LanguageManager
     @Binding var isLoggedIn: Bool
     @State private var email = ""
     @State private var password = ""
+    @State private var errorMessage: String?
+    @State private var showError = false
 
     var body: some View {
-        VStack {
-            TextField("Email", text: $email)
-                .padding()
-            SecureField("Password", text: $password)
-                .padding()
-            Button("Login") {
+        VStack(spacing: 16) {
+            Spacer()
+
+            Text("Ballrz")
+                .font(.largeTitle.bold())
+
+            TextField(lang.localized("login.email.placeholder"), text: $email)
+                .textFieldStyle(.roundedBorder)
+                .keyboardType(.emailAddress)
+                .autocapitalization(.none)
+                .padding(.horizontal)
+
+            SecureField(lang.localized("login.password.placeholder"), text: $password)
+                .textFieldStyle(.roundedBorder)
+                .padding(.horizontal)
+
+            Button(lang.localized("login.button.login")) {
                 Auth.auth().signIn(withEmail: email, password: password) { result, error in
                     if result != nil {
                         isLoggedIn = true
-                    }
-                }
-            }.padding()
-            Button("Register") {
-                Auth.auth().createUser(withEmail: email, password: password) { result, error in
-                    if result != nil {
-                        isLoggedIn = true
+                    } else {
+                        errorMessage = error?.localizedDescription
+                            ?? lang.localized("alert.login.failed")
+                        showError = true
                     }
                 }
             }
-        }.padding()
+            .buttonStyle(.borderedProminent)
+
+            Button(lang.localized("login.button.register")) {
+                Auth.auth().createUser(withEmail: email, password: password) { result, error in
+                    if result != nil {
+                        isLoggedIn = true
+                    } else {
+                        errorMessage = error?.localizedDescription
+                            ?? lang.localized("alert.register.failed")
+                        showError = true
+                    }
+                }
+            }
+            .buttonStyle(.bordered)
+
+            Spacer()
+
+            LanguagePickerView()
+                .padding(.bottom)
+        }
+        .padding()
+        .environment(\.layoutDirection, lang.currentLanguage.isRTL ? .rightToLeft : .leftToRight)
+        .alert(lang.localized("alert.error.title"), isPresented: $showError) {
+            Button(lang.localized("alert.button.confirm"), role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "")
+        }
     }
 }
 
 // MainFeedView.swift
 struct MainFeedView: View {
+    @EnvironmentObject private var lang: LanguageManager
+    @Binding var isLoggedIn: Bool
     @State private var videos = [Video]()
 
     var body: some View {
         NavigationView {
             List(videos) { video in
-                VStack(alignment: .leading) {
+                VStack(alignment: .leading, spacing: 8) {
                     VideoPlayerView(url: video.url)
                     Text(video.caption)
-                    Button("Like") {
-                        // Increment like count logic
+                        .font(.body)
+                    HStack {
+                        Button(lang.localized("feed.button.like")) {
+                            // Increment like count logic
+                        }
+                        .buttonStyle(.bordered)
+                        Spacer()
+                        Text("\(video.likes)")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+            .navigationTitle(lang.localized("feed.navigation.title"))
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    NavigationLink(destination: SettingsView(isLoggedIn: $isLoggedIn)) {
+                        Image(systemName: "gear")
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    NavigationLink(destination: UploadView()) {
+                        Image(systemName: "plus")
                     }
                 }
             }
-            .navigationTitle("Ballrz Feed")
-            .toolbar {
-                NavigationLink(destination: UploadView()) {
-                    Image(systemName: "plus")
-                }
-            }
         }
+        .environment(\.layoutDirection, lang.currentLanguage.isRTL ? .rightToLeft : .leftToRight)
         .onAppear {
             // Load videos from Firebase Firestore
         }
@@ -88,20 +202,116 @@ struct MainFeedView: View {
 
 // UploadView.swift
 struct UploadView: View {
+    @EnvironmentObject private var lang: LanguageManager
     @State private var caption = ""
     @State private var videoURL: URL?
+    @State private var uploadSuccess = false
+    @State private var uploadError = false
 
     var body: some View {
-        VStack {
-            TextField("Caption", text: $caption)
-                .padding()
-            Button("Pick Video") {
+        VStack(spacing: 16) {
+            TextField(lang.localized("upload.caption.placeholder"), text: $caption)
+                .textFieldStyle(.roundedBorder)
+                .padding(.horizontal)
+
+            Button(lang.localized("upload.button.pickVideo")) {
                 // Present video picker
             }
-            Button("Upload") {
+            .buttonStyle(.bordered)
+
+            Button(lang.localized("upload.button.upload")) {
                 // Upload video to Firebase Storage and save URL in Firestore
-            }.padding()
-        }.padding()
+            }
+            .buttonStyle(.borderedProminent)
+            .padding(.horizontal)
+        }
+        .padding()
+        .navigationTitle(lang.localized("upload.navigation.title"))
+        .environment(\.layoutDirection, lang.currentLanguage.isRTL ? .rightToLeft : .leftToRight)
+        .alert(lang.localized("alert.success.title"), isPresented: $uploadSuccess) {
+            Button(lang.localized("alert.button.confirm"), role: .cancel) {}
+        } message: {
+            Text(lang.localized("alert.upload.success"))
+        }
+        .alert(lang.localized("alert.error.title"), isPresented: $uploadError) {
+            Button(lang.localized("alert.button.confirm"), role: .cancel) {}
+        } message: {
+            Text(lang.localized("alert.upload.failed"))
+        }
+    }
+}
+
+// SettingsView.swift
+struct SettingsView: View {
+    @EnvironmentObject private var lang: LanguageManager
+    @Binding var isLoggedIn: Bool
+    @State private var showLogoutConfirm = false
+
+    var body: some View {
+        Form {
+            Section(lang.localized("settings.language.section")) {
+                ForEach(LanguageManager.supported) { language in
+                    Button {
+                        lang.selectedLanguage = language.id
+                    } label: {
+                        HStack {
+                            Text(lang.localized(language.nameKey))
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            if lang.selectedLanguage == language.id {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(.accent)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Section(lang.localized("settings.account.section")) {
+                Button(lang.localized("settings.button.logout"), role: .destructive) {
+                    showLogoutConfirm = true
+                }
+            }
+        }
+        .navigationTitle(lang.localized("settings.navigation.title"))
+        .environment(\.layoutDirection, lang.currentLanguage.isRTL ? .rightToLeft : .leftToRight)
+        .alert(lang.localized("settings.button.logout"), isPresented: $showLogoutConfirm) {
+            Button(lang.localized("alert.button.cancel"), role: .cancel) {}
+            Button(lang.localized("alert.button.confirm"), role: .destructive) {
+                try? Auth.auth().signOut()
+                isLoggedIn = false
+            }
+        } message: {
+            Text(lang.localized("alert.logout.confirm"))
+        }
+    }
+}
+
+// LanguagePickerView.swift — compact inline picker used on the Login screen
+struct LanguagePickerView: View {
+    @EnvironmentObject private var lang: LanguageManager
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(LanguageManager.supported) { language in
+                    Button {
+                        lang.selectedLanguage = language.id
+                    } label: {
+                        Text(language.id.uppercased())
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(lang.selectedLanguage == language.id
+                                ? Color.accentColor : Color.secondary.opacity(0.2))
+                            .foregroundStyle(lang.selectedLanguage == language.id
+                                ? Color.white : Color.primary)
+                            .clipShape(Capsule())
+                    }
+                }
+            }
+            .padding(.horizontal)
+        }
     }
 }
 
