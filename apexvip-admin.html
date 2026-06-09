@@ -169,6 +169,7 @@ const NAVITEMS=[
   {id:'analytics',icon:'📊',label:'Analytics'},
   {id:'settings',icon:'⚙',label:'Settings'},
   {id:'apexcoin',icon:'🪙',label:'ApexCoin'},
+  {id:'corporate',icon:'🏢',label:'Corporate'},
 ];
 
 function track(event, props){
@@ -767,6 +768,58 @@ apexcoin:()=>`<div class="screen">
   </div>
 </div>`,
 
+corporate: () => {
+  const corps = S._corps || [
+    {id:'C1',name:'Clifford Chance LLP',email:'travel@cliffordchance.com',members:12,limit:15000,spent:8420,active:true},
+    {id:'C2',name:'Goldman Sachs',email:'concierge@gs.com',members:28,limit:50000,spent:31200,active:true},
+    {id:'C3',name:'Four Seasons Hotel',email:'ops@fourseasons.com',members:5,limit:8000,spent:2100,active:true},
+  ];
+  return `<div class="screen">
+    <div class="section-header"><div class="section-title">Corporate Accounts</div></div>
+    <div style="display:flex;gap:10px;margin-bottom:24px">
+      <div style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px;text-align:center">
+        <div style="font-size:28px;font-weight:800;color:#D4A843">${corps.length}</div>
+        <div style="font-size:11px;color:var(--fg-subtle);margin-top:3px">Active Accounts</div>
+      </div>
+      <div style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px;text-align:center">
+        <div style="font-size:28px;font-weight:800;color:#D4A843">${corps.reduce((s,c)=>s+c.members,0)}</div>
+        <div style="font-size:11px;color:var(--fg-subtle);margin-top:3px">Total Users</div>
+      </div>
+      <div style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px;text-align:center">
+        <div style="font-size:20px;font-weight:800;color:#D4A843">£${(corps.reduce((s,c)=>s+c.spent,0)/1000).toFixed(0)}k</div>
+        <div style="font-size:11px;color:var(--fg-subtle);margin-top:3px">Monthly Spend</div>
+      </div>
+    </div>
+    ${corps.map(c=>`
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+        <div>
+          <div style="font-size:15px;font-weight:700">${c.name}</div>
+          <div style="font-size:12px;color:var(--fg-dim);margin-top:2px">${c.email} · ${c.members} users</div>
+        </div>
+        <span style="background:rgba(34,197,94,.1);color:#22c55e;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700">${c.active?'Active':'Paused'}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <div style="flex:1;height:6px;background:rgba(255,255,255,.06);border-radius:3px;overflow:hidden">
+          <div style="height:100%;border-radius:3px;background:#D4A843;width:${Math.min(100,Math.round(c.spent/c.limit*100))}%;transition:width .4s ease"></div>
+        </div>
+        <div style="font-size:11px;color:var(--fg-subtle);white-space:nowrap">£${c.spent.toLocaleString()} / £${c.limit.toLocaleString()}</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button style="flex:1;padding:8px;background:rgba(212,168,67,.1);border:1px solid rgba(212,168,67,.2);border-radius:10px;color:#D4A843;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">Manage</button>
+        <button style="flex:1;padding:8px;background:var(--surface-b);border:1px solid var(--border);border-radius:10px;color:var(--fg-dim);font-size:12px;cursor:pointer;font-family:inherit">Invoice</button>
+      </div>
+    </div>`).join('')}
+    <div style="background:rgba(212,168,67,.04);border:1px solid rgba(212,168,67,.15);border-radius:16px;padding:20px;margin-top:16px">
+      <div style="font-size:13px;font-weight:700;color:#D4A843;margin-bottom:14px">+ New Corporate Account</div>
+      <input id="corp_name" placeholder="Company name" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:11px 14px;color:var(--fg);font-size:14px;outline:none;margin-bottom:10px;font-family:inherit"/>
+      <input id="corp_email" type="email" placeholder="Billing email" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:11px 14px;color:var(--fg);font-size:14px;outline:none;margin-bottom:10px;font-family:inherit"/>
+      <input id="corp_limit" type="number" placeholder="Monthly credit limit (£)" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:11px 14px;color:var(--fg);font-size:14px;outline:none;margin-bottom:14px;font-family:inherit"/>
+      <button onclick="createCorporate()" style="width:100%;padding:13px;background:#D4A843;border:none;border-radius:12px;color:#000;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Create Account</button>
+    </div>
+  </div>`;
+},
+
 settings:()=>`<div class="screen">
   <div class="section-header"><div class="section-title">Settings</div></div>
   <div style="display:flex;gap:20px;flex-wrap:wrap">
@@ -847,6 +900,20 @@ function newBookingForm(){return`<div>
     <button class="btn btn-glass" onclick="closeModal()">Cancel</button>
   </div>
 </div>`;}
+
+async function createCorporate(){
+  const name=document.getElementById('corp_name')?.value||'';
+  const email=document.getElementById('corp_email')?.value||'';
+  const limit=parseInt(document.getElementById('corp_limit')?.value||'0');
+  if(!name||!email){alert('Company name and billing email are required');return;}
+  const newCorp={id:'C'+(Date.now()),name,email,members:0,limit:limit||5000,spent:0,active:true};
+  if(!S._corps)S._corps=[];
+  S._corps.unshift(newCorp);
+  if(FIREBASE_ENABLED){
+    db.collection('corporates').add({...newCorp,createdAt:firebase.firestore.FieldValue.serverTimestamp()}).catch(()=>{});
+  }
+  go('corporate');
+}
 
 function render(){
   renderSidebar();

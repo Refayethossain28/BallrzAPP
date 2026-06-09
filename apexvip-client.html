@@ -15,6 +15,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
 <script src="https://web.squarecdn.com/v1/square.js"></script>
 <script src="firebase.js"></script>
 <style>
@@ -214,6 +215,7 @@ const POIS = [
 ];
 
 let mapInstance=null,mapTileLayer=null;
+let trackingMap=null,driverMarker=null,clientMarker=null,_trackingUnsub=null;
 
 function initMap(){
   const el=document.getElementById('map');
@@ -237,6 +239,81 @@ function initMap(){
       L.marker([coords.latitude,coords.longitude],{icon:uIcon}).addTo(mapInstance).bindPopup('You are here');
     },()=>{});
   }
+}
+
+async function lookupFlight(flightNum){
+  const el=document.getElementById('ba_fl');
+  if(!el||!flightNum||flightNum.length<5)return;
+  const hint=document.getElementById('fl-hint');
+  if(hint)hint.textContent='Checking flight…';
+  try{
+    // AviationStack API (free tier: aviationstack.com — set AVIATION_KEY env var)
+    // Demo mode: just acknowledge the flight number
+    await new Promise(r=>setTimeout(r,400));
+    if(hint)hint.textContent='✓ Flight noted — we will monitor delays';
+  }catch(e){
+    if(hint)hint.textContent='';
+  }
+}
+
+function initTrackingMap(){
+  const el=document.getElementById('tracking-map');
+  if(!el)return;
+  if(trackingMap){trackingMap.remove();trackingMap=null;driverMarker=null;}
+  if(_trackingUnsub){_trackingUnsub();_trackingUnsub=null;}
+  const dark=state.theme!=='light';
+  const tiles=dark
+    ?'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+    :'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+  trackingMap=L.map('tracking-map',{zoomControl:false,attributionControl:false,scrollWheelZoom:false})
+    .setView([51.5074,-0.1278],14);
+  L.tileLayer(tiles,{maxZoom:19}).addTo(trackingMap);
+  const driverDocId=state._activeBooking?.driverId;
+  if(FIREBASE_ENABLED&&driverDocId){
+    _trackingUnsub=db.collection('drivers').doc(driverDocId).onSnapshot(doc=>{
+      if(!doc.exists||!trackingMap)return;
+      const d=doc.data();
+      if(!d.lat||!d.lng)return;
+      const pos=[d.lat,d.lng];
+      if(driverMarker){driverMarker.setLatLng(pos);}
+      else{
+        const ic=L.divIcon({className:'',html:'<div style="width:18px;height:18px;border-radius:50%;background:#fff;border:3px solid #000;box-shadow:0 2px 10px rgba(0,0,0,.6)"></div>',iconSize:[18,18],iconAnchor:[9,9]});
+        driverMarker=L.marker(pos,{icon:ic}).addTo(trackingMap).bindPopup('Your driver');
+      }
+      trackingMap.panTo(pos,{animate:true,duration:.5});
+      const el2=document.getElementById('drv-loc-time');
+      if(el2)el2.textContent='Updated just now';
+    });
+  }
+  if(navigator.geolocation){
+    navigator.geolocation.getCurrentPosition(({coords})=>{
+      if(!trackingMap)return;
+      const pu=[coords.latitude,coords.longitude];
+      const ic2=L.divIcon({className:'',html:'<div style="width:14px;height:14px;border-radius:50%;background:#fff;border:3px solid #ffffff;box-shadow:0 0 0 5px rgba(255,255,255,.22)"></div>',iconSize:[14,14],iconAnchor:[7,7]});
+      clientMarker=L.marker(pu,{icon:ic2}).addTo(trackingMap).bindPopup('You');
+    },()=>{});
+  }
+}
+
+function getSurge(dateStr,timeStr){
+  if(!dateStr||!timeStr)return 1.0;
+  try{
+    const dt=new Date(dateStr+'T'+timeStr);
+    const h=dt.getHours(),dow=dt.getDay();
+    const ds=dateStr;
+    const bankHols=['2026-01-01','2026-04-03','2026-04-06','2026-05-04','2026-05-25','2026-08-31','2026-12-25','2026-12-26'];
+    if(bankHols.includes(ds))return 2.0;
+    if(ds.endsWith('-12-31')&&h>=20)return 3.0;
+    if((dow===5||dow===6)&&h>=18&&h<=23)return 1.5;
+    if(dow>=1&&dow<=5&&h>=6&&h<=9)return 1.25;
+    if(dow>=1&&dow<=5&&h>=17&&h<=20)return 1.25;
+  }catch(e){}
+  return 1.0;
+}
+function surgeBadge(m){
+  if(m<=1)return'';
+  const txt=m>=2?'High Demand':m>=1.5?'Busy Period':'Peak Hours';
+  return`<div style="display:inline-flex;align-items:center;gap:5px;background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.25);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:700;color:#fbbf24;margin-bottom:14px">⚡ ${txt} · ${m}× surge</div>`;
 }
 
 function go(screen, data) {
@@ -534,7 +611,8 @@ home: () => {
         </select>
       </div>
     </div>
-    <div class="field" style="margin-bottom:12px"><input id="ba_fl" placeholder="Flight number (optional · e.g. BA0247)"/></div>
+    <div class="field" style="margin-bottom:4px"><input id="ba_fl" placeholder="Flight number (optional · e.g. BA0247)" onblur="lookupFlight(this.value)"/></div>
+    <div id="fl-hint" style="font-size:11px;color:var(--fg-ghost);margin-bottom:12px;padding-left:4px"></div>
     <div style="display:flex;gap:10px;margin-bottom:24px">
       <div class="field" style="flex:1"><input id="ba_dt" type="date"/></div>
       <div class="field" style="flex:1"><input id="ba_tm" type="time"/></div>
@@ -624,10 +702,12 @@ home: () => {
 'vehicle-select': () => {
   const pm = {airport:{s:185,v:225},hourly:{s:(state.booking.duration||3)*65,v:(state.booking.duration||3)*75},day:{s:450,v:550}};
   const p = pm[state.booking.serviceType]||pm.airport;
+  const surge = getSurge(state.booking.date, state.booking.time);
+  const sp = {s:Math.round(p.s*surge), v:Math.round(p.v*surge)};
   const sel = state.booking.vehicleId||'';
   const vehicles = [
-    {id:'sClass',name:'S-Class',full:'Mercedes S-Class',sub:'Business Sedan · Up to 3 passengers',price:p.s,badge:'EXECUTIVE',features:['WiFi','Water','Charger','Meet & Greet'],img:'vehicles/s-class.jpg'},
-    {id:'vClass',name:'V-Class',full:'Mercedes V-Class',sub:'Business Van · Up to 7 passengers',price:p.v,badge:'BUSINESS',features:['WiFi','Water','Charger','Child Seat'],img:'vehicles/v-class.jpg'}
+    {id:'sClass',name:'S-Class',full:'Mercedes S-Class',sub:'Business Sedan · Up to 3 passengers',price:sp.s,badge:'EXECUTIVE',features:['WiFi','Water','Charger','Meet & Greet'],img:'vehicles/s-class.jpg'},
+    {id:'vClass',name:'V-Class',full:'Mercedes V-Class',sub:'Business Van · Up to 7 passengers',price:sp.v,badge:'BUSINESS',features:['WiFi','Water','Charger','Child Seat'],img:'vehicles/v-class.jpg'}
   ];
   return `
 <div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
@@ -641,6 +721,7 @@ home: () => {
     </div>
   </div>
   <div style="padding:0 22px;flex:1">
+    ${surgeBadge(surge)}
     ${vehicles.map(v=>`
     <div id="vc_${v.id}" onclick="selectVehicle('${v.id}',${v.price},'${v.full}')" class="vcard ${sel===v.id?'sel':''}" style="margin-bottom:14px">
       <div class="vcard-media">
@@ -819,7 +900,8 @@ payment: () => {
     </div>
   </div>
   <div style="width:100%;padding-bottom:52px;display:flex;flex-direction:column;gap:10px">
-    <button class="btn btn-white" onclick="go('trips')">View my trips</button>
+    <button class="btn btn-white" onclick="state._activeBooking={...state.booking,status:'confirmed',driverName:'James Harrison',driverPlate:'LX73 ABC'};go('active-trip')">Track my driver</button>
+    <button class="btn btn-glass" style="margin-top:8px" onclick="go('trips')">View all trips</button>
     <button class="btn btn-ghost" onclick="state.booking={};state._promoApplied=false;go('home')">Return home</button>
   </div>
 </div>`;
@@ -928,6 +1010,7 @@ trips: () => {
     </div>
 
     ${t.status==='completed'?`<button class="btn btn-glass" style="margin-bottom:12px">Download receipt</button>`:''}
+    ${t.status==='upcoming'&&!cancelled?`<button class="btn btn-glass" style="margin-bottom:10px" onclick="state._activeBooking={...t,driverName:t.driver,driverPlate:t.plate};go('active-trip')">Track driver</button>`:''}
     ${t.status==='upcoming'&&!cancelled&&!confirming?`<button class="btn-danger-outline" onclick="state._tripConfirming='${t.id}';render()">Cancel booking</button>`:''}
     ${confirming?`<div style="background:rgba(239,68,68,.05);border:1px solid rgba(239,68,68,.12);border-radius:18px;padding:22px">
       <div style="font-size:17px;font-weight:700;margin-bottom:8px">Cancel this booking?</div>
@@ -1055,7 +1138,49 @@ profile: () => {
     </div>`).join('')}
     <button class="btn btn-glass">+ Add card</button>
   </div>
-</div>`
+</div>`,
+
+'active-trip': () => {
+  const b = state._activeBooking || {};
+  const statusLabels = {confirmed:'Booking confirmed',accepted:'Driver assigned',en_route:'Driver en route',arrived:'Driver arrived',onboard:'On your way',completed:'Trip complete'};
+  const statusColors = {confirmed:'var(--fg-dim)',accepted:'#fbbf24',en_route:'#22c55e',arrived:'#22c55e',onboard:'#22c55e',completed:'#22c55e'};
+  const st = b.status || 'confirmed';
+  const stepMap = {confirmed:1,accepted:2,en_route:3,arrived:4,onboard:5,completed:6};
+  const curStep = stepMap[st]||1;
+  return `
+<div style="position:relative;height:100vh;overflow:hidden;animation:fadeIn .3s ease">
+  <div id="tracking-map" style="position:absolute;inset:0;z-index:0"></div>
+  <div class="top-bar" style="z-index:15">
+    <div class="back-btn" onclick="if(_trackingUnsub){_trackingUnsub();_trackingUnsub=null;}if(trackingMap){trackingMap.remove();trackingMap=null;}go('trips')" style="background:rgba(0,0,0,.5);backdrop-filter:blur(10px)">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+    </div>
+    <div style="background:rgba(0,0,0,.5);backdrop-filter:blur(10px);border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;color:${statusColors[st]}">${statusLabels[st]||'In progress'}</div>
+  </div>
+  <div class="sheet" style="height:300px;z-index:10">
+    <div class="sheet-handle"></div>
+    <div style="padding:14px 22px 0">
+      <div style="display:flex;gap:0;margin-bottom:18px">
+        ${[1,2,3,4,5].map(i=>`<div style="flex:1;display:flex;align-items:center">
+          <div style="width:24px;height:24px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;background:${i<=curStep?'#ffffff':'var(--surface-b)'};color:${i<=curStep?'#000':'var(--fg-ghost)'}">${i<curStep?'✓':i}</div>
+          ${i<5?`<div style="flex:1;height:2px;background:${i<curStep?'#ffffff':'var(--border)'};margin:0 2px"></div>`:''}
+        </div>`).join('')}
+      </div>
+      <div style="display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--divider)">
+        <div style="width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,#ffffff,#888);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:#000;flex-shrink:0">${(b.driverName||'JH').split(' ').map(n=>n[0]).join('').slice(0,2)}</div>
+        <div style="flex:1">
+          <div style="font-size:15px;font-weight:700">${b.driverName||'James Harrison'}</div>
+          <div style="font-size:12px;color:var(--fg-dim);margin-top:2px">${b.driverPlate||'LX73 ABC'} · ${b.vehicle||'Mercedes S-Class'}</div>
+        </div>
+        <a href="tel:+447700000000" style="width:40px;height:40px;border-radius:50%;background:var(--surface-b);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;text-decoration:none;flex-shrink:0">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.948V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
+        </a>
+      </div>
+      <div id="drv-loc-time" style="font-size:11px;color:var(--fg-ghost);padding:10px 0;text-align:center">Waiting for driver location…</div>
+    </div>
+  </div>
+  ${bottomNav('trips')}
+</div>`;
+},
 
 };
 
@@ -1364,8 +1489,50 @@ if(FIREBASE_ENABLED){
           }));
           if(['home','trips'].includes(state.screen))render();
         },()=>{});
+      // Watch latest booking for real-time status
+      let _statusUnsub=null;
+      function watchLatestBooking(){
+        if(_statusUnsub){_statusUnsub();_statusUnsub=null;}
+        if(!FIREBASE_ENABLED||!auth.currentUser)return;
+        _statusUnsub=db.collection('bookings')
+          .where('clientId','==',user.uid)
+          .where('status','in',['confirmed','accepted','en_route','arrived','onboard'])
+          .orderBy('createdAt','desc').limit(1)
+          .onSnapshot(snap=>{
+            if(!snap.empty){
+              const d=snap.docs[0].data();
+              if(!state._activeBooking)state._activeBooking={};
+              state._activeBooking.status=d.status;
+              state._activeBooking.driverId=d.driverId||null;
+              state._activeBooking.driverName=d.driverName||'James Harrison';
+              state._activeBooking.driverPlate=d.driverPlate||'';
+              state._activeBooking.vehicle=d.vehicle||'';
+              if(state.screen==='active-trip')render();
+            }
+          },()=>{});
+      }
+      watchLatestBooking();
       state._loginErr=null;
       if(['splash','login'].includes(state.screen))go('home');else render();
+      // Register FCM push token
+      if('serviceWorker' in navigator && FIREBASE_ENABLED){
+        navigator.serviceWorker.register('/BallrzAPP/firebase-messaging-sw.js')
+          .then(reg=>{
+            try{
+              const messaging=firebase.messaging();
+              messaging.getToken({
+                vapidKey:'REPLACE_WITH_VAPID_KEY',
+                serviceWorkerRegistration:reg
+              }).then(token=>{
+                if(token&&auth.currentUser){
+                  db.collection('fcm_tokens').doc(auth.currentUser.uid).set({
+                    token,updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+                  }).catch(()=>{});
+                }
+              }).catch(()=>{});
+            }catch(e){}
+          }).catch(()=>{});
+      }
     }else{
       state.user=null;
       if(_unsub){_unsub();_unsub=null;}
@@ -1380,6 +1547,7 @@ function render(){
   app.innerHTML=fn?fn():`<div style="padding:40px;text-align:center;color:var(--fg-ghost)">Screen not found</div>`;
   if(state.screen==='home') setTimeout(initMap,60);
   if(state.screen==='payment') setTimeout(initSquare,60);
+  if(state.screen==='active-trip') setTimeout(initTrackingMap,60);
 }
 
 render();

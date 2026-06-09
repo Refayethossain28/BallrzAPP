@@ -1,0 +1,105 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function authed() { return request.auth != null; }
+    function uid()    { return request.auth.uid; }
+
+    function role() {
+      return authed() && exists(/databases/$(database)/documents/users/$(uid()))
+        ? get(/databases/$(database)/documents/users/$(uid())).data.get('role','client')
+        : 'anon';
+    }
+    function isAdmin()  { return role() == 'admin'; }
+    function isDriver() { return role() == 'driver'; }
+
+    // ── Users ──────────────────────────────────────────────────────────────
+    match /users/{userId} {
+      allow read:   if authed() && (uid() == userId || isAdmin());
+      allow create: if authed() && uid() == userId;
+      allow update: if authed() && (uid() == userId || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // ── Bookings ───────────────────────────────────────────────────────────
+    match /bookings/{bookingId} {
+      allow create: if authed();
+      allow read:   if authed() && (
+        resource.data.get('clientId','') == uid() ||
+        resource.data.get('driverId','') == uid() ||
+        isAdmin()
+      );
+      allow update: if authed() && (
+        resource.data.get('driverId','') == uid() ||
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+
+    // ── Jobs (driver task queue) ───────────────────────────────────────────
+    match /jobs/{jobId} {
+      allow read: if authed() && (
+        resource.data.get('driverId','') == uid() || isAdmin()
+      );
+      allow create: if isAdmin();
+      allow update: if authed() && (
+        resource.data.get('driverId','') == uid() || isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+
+    // ── Drivers (location + status) ────────────────────────────────────────
+    // Clients need read access to see driver location on tracking map
+    match /drivers/{driverId} {
+      allow read:  if authed();
+      allow write: if authed() && (uid() == driverId || isAdmin());
+    }
+
+    // ── Analytics ─────────────────────────────────────────────────────────
+    match /analytics/{docId} {
+      allow create:          if authed();
+      allow read, update, delete: if isAdmin();
+    }
+
+    // ── Pending payments ───────────────────────────────────────────────────
+    match /pending_payments/{docId} {
+      allow create:          if authed();
+      allow read, update, delete: if isAdmin();
+    }
+
+    // ── Corporate accounts ────────────────────────────────────────────────
+    match /corporates/{corpId} {
+      allow read: if authed() && (
+        resource.data.get('adminId','') == uid() ||
+        uid() in resource.data.get('members',[]) ||
+        isAdmin()
+      );
+      allow write: if isAdmin();
+    }
+
+    // ── Corporate bookings ────────────────────────────────────────────────
+    match /corporate_bookings/{bookingId} {
+      allow create: if authed() && (
+        exists(/databases/$(database)/documents/users/$(uid())) &&
+        get(/databases/$(database)/documents/users/$(uid())).data.get('corporateId',null) != null
+      );
+      allow read: if authed() && (
+        resource.data.get('bookedBy','') == uid() ||
+        isAdmin()
+      );
+      allow update, delete: if isAdmin();
+    }
+
+    // ── Notifications ──────────────────────────────────────────────────────
+    match /notifications/{docId} {
+      allow read:          if authed() && resource.data.get('userId','') == uid();
+      allow create, update: if authed();
+      allow delete:        if isAdmin();
+    }
+
+    // ── FCM tokens ─────────────────────────────────────────────────────────
+    match /fcm_tokens/{tokenId} {
+      allow read, write: if authed() && (uid() == tokenId || isAdmin());
+    }
+  }
+}
