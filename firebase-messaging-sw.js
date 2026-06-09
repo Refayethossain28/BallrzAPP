@@ -9,8 +9,8 @@ firebase.initializeApp({
   apiKey: "AIzaSyAr3OsrEG3yVx-bD3jxc_kSBY7bkCQUPxI",
   authDomain: "apexvip-1b4a9.firebaseapp.com",
   projectId: "apexvip-1b4a9",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  messagingSenderId: "254410067879",
+  appId: "1:254410067879:web:754b71a35182c997f37082"
 });
 
 const messaging = firebase.messaging();
