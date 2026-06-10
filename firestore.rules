@@ -101,5 +101,19 @@ service cloud.firestore {
     match /fcm_tokens/{tokenId} {
       allow read, write: if authed() && (uid() == tokenId || isAdmin());
     }
+
+    // ── Trip ratings ───────────────────────────────────────────────────────
+    match /ratings/{ratingId} {
+      allow create: if authed();
+      allow read:   if authed() && (resource.data.get('clientId','') == uid() || isDriver() || isAdmin());
+      allow update, delete: if isAdmin();
+    }
+
+    // ── Booking messages (in-app chat) ────────────────────────────────────
+    match /bookings/{bookingId}/messages/{msgId} {
+      allow create: if authed();
+      allow read: if authed();
+      allow delete: if isAdmin();
+    }
   }
 }

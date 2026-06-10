@@ -333,3 +333,119 @@ async function isAdminUser(uid) {
     return doc.exists && doc.data().role === 'admin';
   } catch { return false; }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 8. parseBookingIntent  (AI Concierge — Claude claude-opus-4-8)
+// ─────────────────────────────────────────────────────────────────────────────
+exports.parseBookingIntent = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  const { message } = data;
+  if (!message || typeof message !== 'string')
+    throw new functions.https.HttpsError('invalid-argument', 'message required');
+
+  const Anthropic = require('@anthropic-ai/sdk');
+  const client = new Anthropic.Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' });
+
+  const systemPrompt = `You are the ApexVIP booking assistant for a luxury chauffeur service in London and Dubai.
+Extract booking details from the client's message and return them as JSON.
+
+Return ONLY valid JSON with these fields (use null for unknown fields):
+{
+  "serviceType": "airport" | "hourly" | "day" | "aviation" | null,
+  "pickup": string | null,
+  "dropoff": string | null,
+  "airport": string | null,
+  "flight": string | null,
+  "date": string | null,
+  "time": string | null,
+  "vehicle": "S-Class" | "V-Class" | "Phantom" | null,
+  "passengers": number | null,
+  "notes": string | null,
+  "reply": string
+}
+
+The "reply" field should be a warm, professional one-sentence confirmation of what you understood,
+in the style of a luxury concierge. If anything is unclear, ask for the missing detail in "reply".`;
+
+  const resp = await client.messages.create({
+    model: 'claude-opus-4-8',
+    max_tokens: 512,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: message }]
+  });
+
+  let parsed = null;
+  try {
+    const text = resp.content[0].type === 'text' ? resp.content[0].text : '';
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
+  } catch (e) {
+    parsed = { reply: 'I understand you need a car. Could you give me the pickup address and date?', serviceType: null };
+  }
+
+  await db.collection('analytics').add({
+    event: 'ai_concierge_used',
+    uid: context.auth.uid,
+    messageLength: message.length,
+    serviceType: parsed?.serviceType || null,
+    timestamp: admin.firestore.FieldValue.serverTimestamp()
+  }).catch(() => {});
+
+  return parsed || { reply: 'Could you share the pickup address, destination and date for your journey?', serviceType: null };
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 9. submitTripRating
+// ─────────────────────────────────────────────────────────────────────────────
+exports.submitTripRating = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  const { bookingRef, rating, comment, driverId } = data;
+  if (!bookingRef || !rating)
+    throw new functions.https.HttpsError('invalid-argument', 'bookingRef and rating required');
+
+  await db.collection('ratings').add({
+    bookingRef,
+    clientId: context.auth.uid,
+    driverId: driverId || null,
+    rating: Math.min(5, Math.max(1, Number(rating))),
+    comment: comment || '',
+    timestamp: admin.firestore.FieldValue.serverTimestamp()
+  });
+
+  // Update driver's average rating in Firestore
+  if (driverId) {
+    const ratingsSnap = await db.collection('ratings').where('driverId', '==', driverId).get();
+    const ratings = ratingsSnap.docs.map(d => d.data().rating);
+    const avg = ratings.reduce((a, b) => a + b, 0) / ratings.length;
+    await db.collection('drivers').doc(driverId).update({
+      rating: Math.round(avg * 10) / 10,
+      ratingCount: ratings.length
+    }).catch(() => {});
+  }
+
+  return { success: true };
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 10. sendChauffeurMessage
+// ─────────────────────────────────────────────────────────────────────────────
+exports.sendChauffeurMessage = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  const { bookingRef, message, fromRole } = data;
+  if (!bookingRef || !message)
+    throw new functions.https.HttpsError('invalid-argument', 'bookingRef and message required');
+
+  const msgDoc = await db.collection('bookings').where('ref', '==', bookingRef).limit(1).get();
+  if (msgDoc.empty) throw new functions.https.HttpsError('not-found', 'Booking not found');
+
+  const bookingId = msgDoc.docs[0].id;
+  await db.collection('bookings').doc(bookingId).collection('messages').add({
+    from: context.auth.uid,
+    fromRole: fromRole || 'client',
+    message,
+    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    read: false
+  });
+
+  return { success: true };
+});

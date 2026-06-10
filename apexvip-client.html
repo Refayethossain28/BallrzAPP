@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<link rel="manifest" href="manifest.json"/>
+<meta name="theme-color" content="#000000"/>
 <title>ApexVIP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -229,6 +231,8 @@ let state = {
   apexBalance: parseInt(localStorage.getItem('apex_balance')||'0'),
   apexTransactions: JSON.parse(localStorage.getItem('apex_txs')||'[]'),
   _lastApexEarned: 0,
+  paMode: false,
+  paPassenger: { name: '', phone: '' },
   cards: [
     {id:1,brand:'Visa',last4:'4242',expiry:'09/27',color:'linear-gradient(135deg,#2a2a2a,#111)',isDefault:true},
     {id:2,brand:'Mastercard',last4:'8888',expiry:'03/26',color:'linear-gradient(135deg,#1a1a2e,#16213e)',isDefault:false}
@@ -424,6 +428,146 @@ function optimiseItinerary(){
   render();
 }
 
+// ── AI Concierge Chat ──────────────────────────────────────────────────────
+const CONCIERGE_MSGS = [];
+let _conciergeLoading = false;
+
+async function sendConciergeMsg() {
+  const inp = document.getElementById('concierge-inp');
+  if (!inp || !inp.value.trim()) return;
+  const msg = inp.value.trim();
+  inp.value = '';
+  CONCIERGE_MSGS.push({ role: 'user', content: msg });
+  _conciergeLoading = true;
+  render();
+  try {
+    if (FIREBASE_ENABLED && fns) {
+      const fn = fns.httpsCallable('parseBookingIntent');
+      const res = await fn({ message: msg });
+      const d = res.data;
+      CONCIERGE_MSGS.push({ role: 'assistant', content: d.reply || 'Let me arrange that for you.' });
+      if (d.serviceType) {
+        state.booking.serviceType = d.serviceType;
+        if (d.pickup) state.booking.pickup = d.pickup;
+        if (d.dropoff) state.booking.dropoff = d.dropoff;
+        if (d.airport) state.booking.airport = d.airport;
+        if (d.flight) state.booking.flight = d.flight;
+        if (d.date) state.booking.date = d.date;
+        if (d.time) state.booking.time = d.time;
+        CONCIERGE_MSGS.push({ role: 'system', content: '✓ Booking details understood — tap "Review & Confirm" to continue.' });
+        state._conciergeParsed = d;
+      }
+    } else {
+      await new Promise(r => setTimeout(r, 900));
+      CONCIERGE_MSGS.push({ role: 'assistant', content: 'Understood. I\'ll arrange a Mercedes S-Class for your journey. Shall I confirm the booking?' });
+      state._conciergeParsed = { serviceType: 'airport', reply: 'Demo mode' };
+    }
+  } catch(e) {
+    CONCIERGE_MSGS.push({ role: 'assistant', content: 'I\'m sorry — let me connect you with our team directly. Please try again.' });
+  }
+  _conciergeLoading = false;
+  render();
+  setTimeout(() => {
+    const el = document.getElementById('concierge-msgs');
+    if (el) el.scrollTop = el.scrollHeight;
+  }, 60);
+}
+
+function conciergeReview() {
+  const d = state._conciergeParsed;
+  if (!d) return;
+  if (d.serviceType) state.booking.serviceType = d.serviceType;
+  go('vehicle-select');
+}
+
+// ── PA Mode ────────────────────────────────────────────────────────────────
+function togglePaMode(on) {
+  state.paMode = on !== undefined ? on : !state.paMode;
+  render();
+}
+function setPaPassenger(field, val) {
+  state.paPassenger[field] = val;
+}
+
+// ── Chauffeur Chat ─────────────────────────────────────────────────────────
+const CHAT_TEMPLATES = [
+  'I\'m on my way — approximately 5 minutes away.',
+  'I have arrived and am waiting at the agreed location.',
+  'I\'m in a black Mercedes S-Class, registration.',
+  'Please take your time — I\'ll be waiting.',
+  'Do you require any assistance with your luggage?',
+  'The route is clear. Estimated journey time is 35 minutes.',
+];
+function sendQuickMsg(idx) {
+  const msg = CHAT_TEMPLATES[idx];
+  _appendChatMsg(msg);
+  if (FIREBASE_ENABLED && fns && state._confirmedRef) {
+    const fn = fns.httpsCallable('sendChauffeurMessage');
+    fn({ bookingRef: state._confirmedRef, message: msg, fromRole: 'client' }).catch(() => {});
+  }
+}
+function sendCustomMsg() {
+  const inp = document.getElementById('chat-custom-inp');
+  if (!inp || !inp.value.trim()) return;
+  const msg = inp.value.trim();
+  inp.value = '';
+  _appendChatMsg(msg);
+  if (FIREBASE_ENABLED && fns && state._confirmedRef) {
+    const fn = fns.httpsCallable('sendChauffeurMessage');
+    fn({ bookingRef: state._confirmedRef, message: msg, fromRole: 'client' }).catch(() => {});
+  }
+}
+function _appendChatMsg(msg) {
+  const el = document.getElementById('chat-sent');
+  if (!el) return;
+  const div = document.createElement('div');
+  div.style.cssText = 'align-self:flex-end;max-width:82%;background:linear-gradient(135deg,#D4A843,#b8892f);border-radius:18px 18px 4px 18px;padding:12px 16px;font-size:13px;color:#000;font-weight:500';
+  div.textContent = msg;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+  track('chat_message_sent', { src: 'client' });
+}
+
+// ── Post-Trip Ratings ──────────────────────────────────────────────────────
+function submitRating(stars) {
+  state._tripRating = stars;
+  const ref = state._confirmedRef || state.selectedTrip?.id;
+  if (FIREBASE_ENABLED && fns && ref) {
+    const fn = fns.httpsCallable('submitTripRating');
+    const comment = document.getElementById('rating-comment')?.value || '';
+    fn({ bookingRef: ref, rating: stars, comment, driverId: state.selectedTrip?.driverId || null }).catch(() => {});
+  }
+  track('trip_rated', { stars, src: 'client' });
+  render();
+}
+
+// ── Apple Pay / Google Pay ─────────────────────────────────────────────────
+async function runApplePay() {
+  if (!window.ApplePaySession || !ApplePaySession.canMakePayments()) {
+    alert('Apple Pay is not available on this device. Please use the card form below.');
+    return;
+  }
+  const total = state._payTotal || 0;
+  const request = {
+    countryCode: 'GB', currencyCode: 'GBP',
+    supportedNetworks: ['visa', 'masterCard', 'amex'],
+    merchantCapabilities: ['supports3DS'],
+    total: { label: 'ApexVIP', amount: total.toFixed(2) }
+  };
+  const session = new ApplePaySession(3, request);
+  session.onvalidatemerchant = () => session.completeMerchantValidation({});
+  session.onpaymentauthorized = async (event) => {
+    session.completePayment(ApplePaySession.STATUS_SUCCESS);
+    track('apple_pay_used', { total, src: 'client' });
+    await confirmBooking();
+  };
+  session.begin();
+}
+async function runGooglePay() {
+  alert('Google Pay: Please complete payment via the secure card form below. Google Pay wallet integration requires app store deployment.');
+  track('google_pay_tapped', { src: 'client' });
+}
+
 function go(screen, data) {
   if (data) state.selectedTrip = data;
   if (state.screen==='home' && screen!=='home' && mapInstance){mapInstance.remove();mapInstance=null;mapTileLayer=null;}
@@ -591,6 +735,21 @@ home: () => {
           <span style="font-size:22px">${s.icon}</span>
           <span style="font-size:12px;font-weight:600;color:var(--fg-muted)">${s.l}</span>
         </div>`).join('')}
+        <div class="svc-card" onclick="go('aviation-booking')">
+          <span style="font-size:22px">🛫</span>
+          <span style="font-size:12px;font-weight:600;color:var(--fg-muted)">Aviation</span>
+        </div>
+      </div>
+
+      <div style="margin-bottom:22px">
+        <button class="card" onclick="go('concierge-chat')" style="width:100%;display:flex;align-items:center;gap:14px;padding:16px 18px;cursor:pointer;background:linear-gradient(135deg,rgba(212,168,67,.1),rgba(212,168,67,.04));border-color:rgba(212,168,67,.3)">
+          <div style="width:38px;height:38px;border-radius:12px;background:rgba(212,168,67,.15);border:1px solid rgba(212,168,67,.3);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px">✦</div>
+          <div style="flex:1;text-align:left">
+            <div style="font-size:14px;font-weight:700;color:#D4A843">Ask Concierge</div>
+            <div style="font-size:12px;color:var(--fg-dim);margin-top:2px">Book by conversation — just tell me where</div>
+          </div>
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="rgba(212,168,67,.6)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+        </button>
       </div>
 
       <div class="section-label" style="margin-bottom:12px">Discover</div>
@@ -1182,6 +1341,18 @@ payment: () => {
     <button class="btn btn-glass" style="margin-top:8px" onclick="go('trips')">View all trips</button>
     <button class="btn btn-ghost" onclick="state.booking={};state._promoApplied=false;go('home')">Return home</button>
   </div>
+  ${!state._tripRating ? `
+  <div style="padding:20px 22px 0;width:100%">
+    <div class="section-label" style="margin-bottom:12px">Rate Your Experience</div>
+    <div style="display:flex;gap:6px;justify-content:center;margin-bottom:12px">
+      ${[1,2,3,4,5].map(s=>`<span onclick="submitRating(${s})" style="font-size:34px;cursor:pointer;transition:transform .15s;color:${(state._tripRating||0)>=s?'#D4A843':'var(--fg-ghost)'}" onmouseover="this.style.transform='scale(1.2)'" onmouseout="this.style.transform='scale(1)'">★</span>`).join('')}
+    </div>
+    <div class="field"><textarea id="rating-comment" placeholder="Tell us about your experience (optional)" rows="2" style="font-size:13px;resize:none;line-height:1.5"></textarea></div>
+  </div>` : `
+  <div style="padding:16px 22px 0;text-align:center;width:100%">
+    <div style="font-size:24px;margin-bottom:6px">${'★'.repeat(state._tripRating)}${'☆'.repeat(5-state._tripRating)}</div>
+    <div style="font-size:13px;color:var(--fg-dim)">Thank you for your feedback</div>
+  </div>`}
 </div>`;
 },
 
@@ -1517,9 +1688,136 @@ profile: () => {
         </a>
       </div>
       <div id="drv-loc-time" style="font-size:11px;color:var(--fg-ghost);padding:10px 0;text-align:center">Waiting for driver location…</div>
+      <button onclick="go('driver-chat')" style="width:100%;padding:13px;background:var(--surface-b);border:1px solid var(--border);border-radius:14px;color:var(--fg);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:6px">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+        Chat with Chauffeur
+      </button>
     </div>
   </div>
   ${bottomNav('trips')}
+</div>`;
+},
+
+'concierge-chat': () => `
+<div style="min-height:100vh;display:flex;flex-direction:column;background:var(--bg)">
+  <div class="top-bar">
+    <div class="back-btn" onclick="go('home')">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+    </div>
+    <div style="font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase">AI Concierge</div>
+    <div style="width:36px"></div>
+  </div>
+  <div id="concierge-msgs" style="flex:1;overflow-y:auto;padding:90px 20px 20px;display:flex;flex-direction:column;gap:12px">
+    <div style="align-self:flex-start;max-width:82%">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:18px 18px 18px 4px;padding:14px 16px;font-size:14px;line-height:1.5">
+        Good ${new Date().getHours()<12?'morning':new Date().getHours()<18?'afternoon':'evening'}. I'm your ApexVIP concierge. Tell me where you'd like to go, and I'll arrange everything. You can say something like <em style="color:var(--fg-dim)">"I need a car to take me to Heathrow T5 tomorrow at 6am"</em>.
+      </div>
+    </div>
+    ${CONCIERGE_MSGS.map(m => m.role === 'user' ? `
+      <div style="align-self:flex-end;max-width:82%">
+        <div style="background:linear-gradient(135deg,#D4A843,#b8892f);border-radius:18px 18px 4px 18px;padding:14px 16px;font-size:14px;color:#000;font-weight:500;line-height:1.5">${m.content}</div>
+      </div>` : m.role === 'system' ? `
+      <div style="align-self:center;font-size:12px;color:#4CAF50;letter-spacing:.3px;text-align:center;padding:4px 12px;background:rgba(76,175,80,.1);border-radius:20px">${m.content}</div>` : `
+      <div style="align-self:flex-start;max-width:82%">
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:18px 18px 18px 4px;padding:14px 16px;font-size:14px;line-height:1.5">${m.content}</div>
+      </div>`).join('')}
+    ${_conciergeLoading ? `<div style="align-self:flex-start"><div style="background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:12px 18px;font-size:20px;letter-spacing:4px;color:var(--fg-dim)">···</div></div>` : ''}
+    ${state._conciergeParsed ? `<button class="btn btn-gold" style="margin-top:8px" onclick="conciergeReview()">Review &amp; Confirm Booking →</button>` : ''}
+  </div>
+  <div style="padding:16px 20px 34px;border-top:1px solid var(--divider);background:var(--bg);position:sticky;bottom:0">
+    <div class="field" style="display:flex;align-items:center;gap:10px;padding:12px 16px">
+      <input id="concierge-inp" placeholder="Tell me where you'd like to go…" style="flex:1;font-size:15px"
+        onkeydown="if(event.key==='Enter'){sendConciergeMsg();event.preventDefault()}"/>
+      <button onclick="sendConciergeMsg()" style="background:#D4A843;border:none;border-radius:10px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#000" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5M5 12l7-7 7 7"/></svg>
+      </button>
+    </div>
+  </div>
+</div>`,
+
+'aviation-booking': () => `
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column">
+  <div class="top-bar">
+    <div class="back-btn" onclick="go('home')">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+    </div>
+    <div style="font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Private Aviation</div>
+    <div style="width:36px"></div>
+  </div>
+  <div style="padding:90px 20px 20px">
+    <div style="font-size:22px;font-weight:300;font-family:'Cormorant Garamond',serif;margin-bottom:6px">FBO &amp; Private Terminal</div>
+    <div style="font-size:13px;color:var(--fg-dim);margin-bottom:28px">Tarmac transfers to private aviation terminals</div>
+    <div class="section-label" style="margin-bottom:12px">Select Terminal</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:24px">
+      ${[
+        {code:'FAB',name:'Farnborough Airport',sub:'TAG Farnborough — London\'s premier bizjet hub'},
+        {code:'LTN-H',name:'Luton Harrods Aviation',sub:'Signature by Harrods — ultra private terminal'},
+        {code:'LCY-P',name:'London City — Private',sub:'ATC / City gateway private suite'},
+        {code:'BQH',name:'Biggin Hill Airport',sub:'London Biggin Hill private terminal'},
+        {code:'NHT',name:'RAF Northolt',sub:'Diplomatic &amp; government private terminal'},
+      ].map(f=>`
+      <div class="card" onclick="state.booking={...state.booking,serviceType:'aviation',airport:'${f.name}',fbo:'${f.code}',flight:''};render()" style="padding:16px 18px;cursor:pointer;border-color:${state.booking.fbo===f.code?'#D4A843':'var(--border)'}">
+        <div style="display:flex;align-items:center;gap:14px">
+          <div style="font-size:22px">✈</div>
+          <div style="flex:1">
+            <div style="font-size:14px;font-weight:700">${f.name}</div>
+            <div style="font-size:12px;color:var(--fg-dim);margin-top:2px">${f.sub}</div>
+          </div>
+          ${state.booking.fbo===f.code?'<div style="width:8px;height:8px;border-radius:50%;background:#D4A843"></div>':''}
+        </div>
+      </div>`).join('')}
+    </div>
+    <div class="section-label" style="margin-bottom:10px">Tail Number (optional)</div>
+    <div class="field" style="margin-bottom:16px"><input placeholder="e.g. G-APEX or N123AB" value="${state.booking.flight||''}" oninput="state.booking.flight=this.value" style="font-size:15px;letter-spacing:1px;text-transform:uppercase"/></div>
+    <div class="section-label" style="margin-bottom:10px">Date &amp; Time</div>
+    <div style="display:flex;gap:10px;margin-bottom:28px">
+      <div class="field" style="flex:1"><input type="date" value="${state.booking.date||''}" oninput="state.booking.date=this.value" style="font-size:15px"/></div>
+      <div class="field" style="flex:1"><input type="time" value="${state.booking.time||''}" oninput="state.booking.time=this.value" style="font-size:15px"/></div>
+    </div>
+    <button class="btn btn-gold" onclick="if(state.booking.fbo){go('vehicle-select')}else{alert('Please select a terminal')}" style="width:100%">Select Vehicle →</button>
+  </div>
+</div>`,
+
+'driver-chat': () => {
+  const templates = [
+    'I\'m on my way — approximately 5 minutes away.',
+    'I have arrived and am waiting at the agreed location.',
+    'I\'m in a black Mercedes S-Class, registration ' + (state._activeBooking?.driverPlate || 'LX73 ABC') + '.',
+    'Please take your time — I\'ll be waiting.',
+    'Do you require any assistance with your luggage?',
+    'The route is clear. Estimated journey time is 35 minutes.',
+  ];
+  return `
+<div style="min-height:100vh;display:flex;flex-direction:column;background:var(--bg)">
+  <div class="top-bar">
+    <div class="back-btn" onclick="go('active-trip')">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+    </div>
+    <div>
+      <div style="font-size:13px;font-weight:700">Chauffeur Chat</div>
+      <div style="font-size:11px;color:var(--fg-dim)">${state._activeBooking?.driverName||'Your chauffeur'}</div>
+    </div>
+    <div style="width:36px"></div>
+  </div>
+  <div style="flex:1;padding:90px 20px 20px;display:flex;flex-direction:column;gap:10px;overflow-y:auto">
+    <div style="text-align:center;font-size:11px;color:var(--fg-dim);margin-bottom:8px">All messages are logged for your privacy and security</div>
+    <div class="section-label" style="margin-bottom:8px">Quick Messages</div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      ${templates.map((t,i)=>`
+      <button onclick="sendQuickMsg(${i})" class="card" style="text-align:left;padding:13px 16px;font-size:13px;color:var(--fg);cursor:pointer;background:var(--surface);border:none;border-radius:14px">
+        ${t}
+      </button>`).join('')}
+    </div>
+    <div id="chat-sent" style="margin-top:12px;display:flex;flex-direction:column;gap:8px"></div>
+  </div>
+  <div style="padding:16px 20px 34px;border-top:1px solid var(--divider)">
+    <div class="field" style="display:flex;gap:10px;padding:12px 16px;align-items:center">
+      <input id="chat-custom-inp" placeholder="Type a message…" style="flex:1;font-size:14px"/>
+      <button onclick="sendCustomMsg()" style="background:#D4A843;border:none;border-radius:10px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="#000" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5M5 12l7-7 7 7"/></svg>
+      </button>
+    </div>
+  </div>
 </div>`;
 },
 
