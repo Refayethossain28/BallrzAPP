@@ -118,7 +118,7 @@ body.light .nav{background:rgba(248,246,241,.96);border-top:1px solid rgba(0,0,0
 .card{background:var(--surface);border-radius:20px;border:1px solid var(--border)}
 
 /* Service grid */
-.svc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.svc-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 .svc-card{background:var(--surface);border-radius:16px;border:1px solid var(--border);padding:14px 8px;display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer;transition:all .15s}
 .svc-card:active{background:var(--surface-b);transform:scale(.96)}
 
@@ -692,7 +692,6 @@ home: () => {
   const hr = new Date().getHours();
   const greeting = hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
   const upcoming = TRIPS.filter(t=>t.status==='upcoming');
-  const sheetH = upcoming.length ? 580 : 520;
   return `
 <div style="position:relative;height:100vh;overflow:hidden;animation:fadeIn .3s ease">
   ${mapBg()}
@@ -701,55 +700,58 @@ home: () => {
     <div>
       <div style="font-size:10px;color:var(--fg-ghost);letter-spacing:3px;font-weight:600;text-transform:uppercase">ApexVIP</div>
       <div style="font-size:18px;font-weight:700;margin-top:3px">${greeting}, ${name}</div>
-      <button onclick="go('profile')" style="margin-top:8px;display:inline-flex;align-items:center;gap:6px;background:${apexTierColor(apexTier(state.apexBalance))}18;border:1px solid ${apexTierColor(apexTier(state.apexBalance))}44;border-radius:20px;padding:4px 11px;cursor:pointer">
-        <span style="font-size:12px;color:${apexTierColor(apexTier(state.apexBalance))}">◈</span>
-        <span style="font-size:11px;color:${apexTierColor(apexTier(state.apexBalance))};font-weight:700">${state.apexBalance.toLocaleString()} APEX</span>
-        <span style="font-size:10px;color:var(--fg-ghost)">· ${apexTier(state.apexBalance)}</span>
-      </button>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">
+        <button onclick="go('profile')" style="display:inline-flex;align-items:center;gap:6px;background:${apexTierColor(apexTier(state.apexBalance))}18;border:1px solid ${apexTierColor(apexTier(state.apexBalance))}44;border-radius:20px;padding:4px 11px;cursor:pointer">
+          <span style="font-size:12px;color:${apexTierColor(apexTier(state.apexBalance))}">◈</span>
+          <span style="font-size:11px;color:${apexTierColor(apexTier(state.apexBalance))};font-weight:700">${state.apexBalance.toLocaleString()} APEX</span>
+        </button>
+        <button onclick="togglePaMode();render()" style="display:inline-flex;align-items:center;gap:5px;background:${state.paMode?'rgba(212,168,67,.18)':'var(--surface)'};border:1px solid ${state.paMode?'rgba(212,168,67,.5)':'var(--border)'};border-radius:20px;padding:4px 11px;cursor:pointer">
+          <span style="font-size:11px;color:${state.paMode?'#D4A843':'var(--fg-dim)'};font-weight:700">${state.paMode?'PA ON':'PA Mode'}</span>
+        </button>
+      </div>
     </div>
-    <div onclick="go('notifications')" style="position:relative;width:42px;height:42px;border-radius:50%;background:var(--surface-c);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.09);display:flex;align-items:center;justify-content:center;cursor:pointer">
+    <div onclick="go('notifications')" style="position:relative;width:42px;height:42px;border-radius:50%;background:var(--surface-c);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.09);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
       <div style="position:absolute;top:9px;right:9px;width:7px;height:7px;border-radius:50%;background:#ffffff;border:1.5px solid #000"></div>
     </div>
   </div>
 
-  <div class="sheet" style="height:${sheetH}px">
+  <div class="sheet" style="height:calc(100vh - 130px)">
     <div class="sheet-handle"></div>
-    <div class="stagger" style="padding:22px 22px 0;height:calc(100% - 26px);overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:90px">
+    <div class="stagger" style="padding:18px 20px 0;height:calc(100% - 26px);overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:90px">
 
-      <div onclick="go('route-input')" style="display:flex;align-items:center;gap:14px;background:var(--surface-b);border:1px solid var(--border-b);border-radius:18px;padding:17px 20px;margin-bottom:22px;cursor:pointer">
+      <!-- AI Concierge — hero button at the top -->
+      <button onclick="go('concierge-chat')" style="width:100%;display:flex;align-items:center;gap:14px;padding:15px 18px;margin-bottom:14px;background:linear-gradient(135deg,rgba(212,168,67,.14),rgba(212,168,67,.04));border:1px solid rgba(212,168,67,.35);border-radius:18px;cursor:pointer;font-family:inherit">
+        <div style="width:36px;height:36px;border-radius:11px;background:rgba(212,168,67,.18);border:1px solid rgba(212,168,67,.35);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:17px">✦</div>
+        <div style="flex:1;text-align:left">
+          <div style="font-size:14px;font-weight:700;color:#D4A843">AI Concierge Chat</div>
+          <div style="font-size:12px;color:var(--fg-dim);margin-top:1px">Just tell me where you need to go</div>
+        </div>
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="rgba(212,168,67,.7)" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </button>
+
+      <div onclick="go('route-input')" style="display:flex;align-items:center;gap:14px;background:var(--surface-b);border:1px solid var(--border-b);border-radius:18px;padding:15px 18px;margin-bottom:16px;cursor:pointer">
         <svg width="17" height="17" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.3)" stroke-width="2"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" d="M21 21l-4.35-4.35"/></svg>
-        <span style="color:var(--fg-dim);font-size:16px;font-weight:500;flex:1">Where to?</span>
+        <span style="color:var(--fg-dim);font-size:15px;font-weight:500;flex:1">Where to?</span>
         <div style="background:#ffffff;border-radius:9px;padding:5px 11px;font-size:10px;font-weight:800;letter-spacing:1.5px;color:#000">BOOK</div>
       </div>
 
       ${silentServiceCard()}
 
-      <div class="section-label" style="margin-bottom:12px">Services</div>
-      <div class="svc-grid" style="margin-bottom:22px">
+      <div class="section-label" style="margin-bottom:10px">Services</div>
+      <div class="svc-grid" style="margin-bottom:16px">
         ${[
           {t:'airport',icon:'✈',l:'Airport'},
           {t:'hourly',icon:'⏱',l:'By Hour'},
           {t:'day',icon:'📅',l:'Full Day'},
         ].map(s=>`<div class="svc-card" onclick="goBook('${s.t}')">
-          <span style="font-size:22px">${s.icon}</span>
-          <span style="font-size:12px;font-weight:600;color:var(--fg-muted)">${s.l}</span>
+          <span style="font-size:20px">${s.icon}</span>
+          <span style="font-size:11px;font-weight:600;color:var(--fg-muted)">${s.l}</span>
         </div>`).join('')}
         <div class="svc-card" onclick="go('aviation-booking')">
-          <span style="font-size:22px">🛫</span>
-          <span style="font-size:12px;font-weight:600;color:var(--fg-muted)">Aviation</span>
+          <span style="font-size:20px">🛫</span>
+          <span style="font-size:11px;font-weight:600;color:var(--fg-muted)">Aviation</span>
         </div>
-      </div>
-
-      <div style="margin-bottom:22px">
-        <button class="card" onclick="go('concierge-chat')" style="width:100%;display:flex;align-items:center;gap:14px;padding:16px 18px;cursor:pointer;background:linear-gradient(135deg,rgba(212,168,67,.1),rgba(212,168,67,.04));border-color:rgba(212,168,67,.3)">
-          <div style="width:38px;height:38px;border-radius:12px;background:rgba(212,168,67,.15);border:1px solid rgba(212,168,67,.3);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px">✦</div>
-          <div style="flex:1;text-align:left">
-            <div style="font-size:14px;font-weight:700;color:#D4A843">Ask Concierge</div>
-            <div style="font-size:12px;color:var(--fg-dim);margin-top:2px">Book by conversation — just tell me where</div>
-          </div>
-          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="rgba(212,168,67,.6)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-        </button>
       </div>
 
       <div class="section-label" style="margin-bottom:12px">Discover</div>
