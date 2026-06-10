@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Travel Bot — Flights, Hotels & Deals</title>
+  <style>
+    :root {
+      --primary: #1a73e8;
+      --primary-dark: #1557b0;
+      --accent: #f59e0b;
+      --bg: #f0f4f8;
+      --card: #ffffff;
+      --text: #1e293b;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --radius: 12px;
+      --shadow: 0 4px 20px rgba(0,0,0,0.08);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    /* ── API Key banner ── */
+    #api-banner {
+      background: #fffbeb;
+      border-bottom: 2px solid var(--accent);
+      padding: 1rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    #api-banner label { font-size: .82rem; font-weight: 700; color: var(--text); white-space: nowrap; }
+    #api-banner input {
+      padding: .45rem .75rem;
+      border: 1.5px solid var(--border);
+      border-radius: 7px;
+      font-size: .88rem;
+      width: 220px;
+    }
+    #api-banner input:focus { outline: none; border-color: var(--primary); }
+    #save-keys-btn {
+      padding: .45rem 1.1rem;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 7px;
+      font-weight: 700;
+      font-size: .88rem;
+      cursor: pointer;
+    }
+    #save-keys-btn:hover { background: #d97706; }
+    .key-hint { font-size: .78rem; color: var(--muted); }
+    .key-hint a { color: var(--primary); }
+    #keys-ok { color: #065f46; font-weight: 700; font-size: .88rem; display: none; }
+
+    /* ── Header ── */
+    header { background: linear-gradient(135deg, #1a73e8 0%, #0f4c9e 100%); color: #fff; padding: 1.75rem 1.5rem 1.25rem; text-align: center; }
+    header h1 { font-size: 2rem; font-weight: 700; }
+    header p  { opacity: .85; margin-top: .35rem; font-size: .95rem; }
+
+    /* ── Tabs ── */
+    .tabs { display: flex; justify-content: center; gap: .5rem; background: rgba(0,0,0,.15); padding: .65rem 1.5rem; }
+    .tab { padding: .5rem 1.3rem; border-radius: 2rem; border: none; cursor: pointer; font-size: .9rem; font-weight: 600; transition: all .2s; background: transparent; color: rgba(255,255,255,.8); }
+    .tab.active { background: #fff; color: var(--primary); }
+    .tab:hover:not(.active) { background: rgba(255,255,255,.15); color: #fff; }
+
+    /* ── Layout ── */
+    main { max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+
+    /* ── Search card ── */
+    .search-card { background: var(--card); border-radius: var(--radius); padding: 1.75rem; box-shadow: var(--shadow); margin-bottom: 1.5rem; }
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: .85rem; }
+    .form-group { display: flex; flex-direction: column; gap: .35rem; }
+    .form-group label { font-size: .78rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+    .autocomplete-wrap { position: relative; }
+    .autocomplete-wrap input, .form-group input, .form-group select {
+      padding: .65rem .85rem; border: 1.5px solid var(--border); border-radius: 8px;
+      font-size: .95rem; color: var(--text); background: #fff; transition: border-color .2s; width: 100%;
+    }
+    .autocomplete-wrap input:focus, .form-group input:focus, .form-group select:focus { outline: none; border-color: var(--primary); }
+
+    .suggestions { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #fff; border: 1.5px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); z-index: 100; max-height: 210px; overflow-y: auto; }
+    .suggestion-item { padding: .6rem .85rem; cursor: pointer; display: flex; align-items: center; gap: .5rem; font-size: .88rem; }
+    .suggestion-item:hover { background: #f1f5f9; }
+    .suggestion-item .iata { font-weight: 700; color: var(--primary); min-width: 3ch; }
+    .suggestion-item .meta { font-size: .76rem; color: var(--muted); }
+
+    .search-btn { margin-top: 1.1rem; width: 100%; padding: .8rem; background: var(--primary); color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 700; cursor: pointer; transition: background .2s; display: flex; align-items: center; justify-content: center; gap: .5rem; }
+    .search-btn:hover { background: var(--primary-dark); }
+    .search-btn:disabled { opacity: .6; cursor: not-allowed; }
+
+    /* ── Result cards ── */
+    .results-header { font-size: .85rem; color: var(--muted); margin-bottom: .75rem; font-weight: 600; }
+    .result-card { background: var(--card); border-radius: var(--radius); padding: 1.25rem 1.4rem; box-shadow: var(--shadow); margin-bottom: .85rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; border-left: 4px solid transparent; transition: border-color .2s, transform .15s; }
+    .result-card:hover { transform: translateY(-2px); border-left-color: var(--primary); }
+    .result-card.best { border-left-color: var(--accent); }
+    .best-badge { display: inline-block; background: var(--accent); color: #fff; font-size: .7rem; font-weight: 700; padding: .15rem .5rem; border-radius: 2rem; margin-bottom: .3rem; }
+    .card-main { flex: 1; min-width: 160px; }
+    .card-main h3 { font-size: 1rem; font-weight: 700; margin-bottom: .2rem; }
+    .card-main .detail { font-size: .85rem; color: var(--muted); }
+    .stops-badge { display: inline-block; font-size: .72rem; padding: .1rem .45rem; border-radius: 2rem; font-weight: 600; margin-top: .3rem; }
+    .stops-badge.direct { background: #d1fae5; color: #065f46; }
+    .stops-badge.stops  { background: #fef3c7; color: #92400e; }
+    .card-route { display: flex; align-items: center; gap: .6rem; font-size: .9rem; flex-wrap: wrap; }
+    .card-route .airport { font-weight: 700; font-size: 1.05rem; }
+    .card-route .arrow { color: var(--muted); }
+    .card-route .time  { color: var(--muted); font-size: .8rem; }
+    .card-price { text-align: right; min-width: 100px; }
+    .card-price .price { font-size: 1.6rem; font-weight: 800; color: var(--primary); line-height: 1; }
+    .card-price .per { font-size: .75rem; color: var(--muted); margin-top: .15rem; }
+    .book-btn { display: inline-block; margin-top: .6rem; padding: .5rem 1.1rem; background: var(--primary); color: #fff; border-radius: 6px; font-size: .82rem; font-weight: 700; text-decoration: none; transition: background .2s; }
+    .book-btn:hover { background: var(--primary-dark); }
+    .hotel-stars { color: var(--accent); font-size: .9rem; }
+    .pkg-sections { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; flex: 1; min-width: 260px; }
+    .pkg-section { background: #f8fafc; border-radius: 8px; padding: .65rem .85rem; }
+    .pkg-section h4 { font-size: .72rem; font-weight: 700; text-transform: uppercase; color: var(--muted); margin-bottom: .25rem; }
+    .pkg-section p  { font-size: .87rem; }
+
+    /* ── States ── */
+    .spinner-wrap { display: flex; flex-direction: column; align-items: center; padding: 3rem; gap: 1rem; color: var(--muted); }
+    .spinner { width: 40px; height: 40px; border: 4px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .empty-state { text-align: center; padding: 3rem 1rem; color: var(--muted); }
+    .empty-state .icon { font-size: 3rem; margin-bottom: .75rem; }
+    .empty-state h3 { font-size: 1.1rem; margin-bottom: .4rem; color: var(--text); }
+    .error-banner { background: #fee2e2; color: #991b1b; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1rem; font-size: .9rem; }
+
+    @media (max-width: 600px) {
+      header h1 { font-size: 1.5rem; }
+      .pkg-sections { grid-template-columns: 1fr; }
+      .card-price .price { font-size: 1.3rem; }
+      #api-banner input { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- API Key Setup -->
+<div id="api-banner">
+  <div>
+    <label>Amadeus Client ID</label><br/>
+    <span class="key-hint">Free key at <a href="https://developers.amadeus.com" target="_blank">developers.amadeus.com</a></span>
+  </div>
+  <input id="inp-id"     type="text"     placeholder="Client ID" />
+  <input id="inp-secret" type="password" placeholder="Client Secret" />
+  <button id="save-keys-btn" onclick="saveKeys()">Save Keys</button>
+  <span id="keys-ok">✓ Keys saved — ready to search!</span>
+</div>
+
+<header>
+  <h1>✈️ Travel Bot</h1>
+  <p>Find the best flights, hotels &amp; holiday packages</p>
+</header>
+
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('flights')">✈️ Flights</button>
+  <button class="tab" onclick="switchTab('hotels')">🏨 Hotels</button>
+  <button class="tab" onclick="switchTab('packages')">🌴 Packages</button>
+</div>
+
+<main>
+  <!-- FLIGHTS -->
+  <div id="tab-flights">
+    <div class="search-card">
+      <div class="form-grid">
+        <div class="form-group"><label>From</label>
+          <div class="autocomplete-wrap">
+            <input id="fl-origin" type="text" placeholder="e.g. London LHR" autocomplete="off" oninput="autocomplete(this,'fl-origin-sug','fl-origin-code')" />
+            <input type="hidden" id="fl-origin-code" />
+            <div class="suggestions" id="fl-origin-sug" style="display:none"></div>
+          </div>
+        </div>
+        <div class="form-group"><label>To</label>
+          <div class="autocomplete-wrap">
+            <input id="fl-dest" type="text" placeholder="e.g. New York JFK" autocomplete="off" oninput="autocomplete(this,'fl-dest-sug','fl-dest-code')" />
+            <input type="hidden" id="fl-dest-code" />
+            <div class="suggestions" id="fl-dest-sug" style="display:none"></div>
+          </div>
+        </div>
+        <div class="form-group"><label>Departure</label><input id="fl-depart" type="date" /></div>
+        <div class="form-group"><label>Return (optional)</label><input id="fl-return" type="date" /></div>
+        <div class="form-group"><label>Passengers</label>
+          <select id="fl-adults"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select>
+        </div>
+      </div>
+      <button class="search-btn" onclick="searchFlights()">🔍 Search Flights</button>
+    </div>
+    <div id="fl-results"></div>
+  </div>
+
+  <!-- HOTELS -->
+  <div id="tab-hotels" style="display:none">
+    <div class="search-card">
+      <div class="form-grid">
+        <div class="form-group"><label>City</label>
+          <div class="autocomplete-wrap">
+            <input id="ht-city" type="text" placeholder="e.g. Paris CDG" autocomplete="off" oninput="autocomplete(this,'ht-city-sug','ht-city-code')" />
+            <input type="hidden" id="ht-city-code" />
+            <div class="suggestions" id="ht-city-sug" style="display:none"></div>
+          </div>
+        </div>
+        <div class="form-group"><label>Check-in</label><input id="ht-checkin" type="date" /></div>
+        <div class="form-group"><label>Check-out</label><input id="ht-checkout" type="date" /></div>
+        <div class="form-group"><label>Guests</label>
+          <select id="ht-adults"><option>1</option><option>2</option><option>3</option><option>4</option></select>
+        </div>
+        <div class="form-group"><label>Rooms</label>
+          <select id="ht-rooms"><option>1</option><option>2</option><option>3</option></select>
+        </div>
+      </div>
+      <button class="search-btn" onclick="searchHotels()">🔍 Search Hotels</button>
+    </div>
+    <div id="ht-results"></div>
+  </div>
+
+  <!-- PACKAGES -->
+  <div id="tab-packages" style="display:none">
+    <div class="search-card">
+      <div class="form-grid">
+        <div class="form-group"><label>From</label>
+          <div class="autocomplete-wrap">
+            <input id="pk-origin" type="text" placeholder="e.g. London LHR" autocomplete="off" oninput="autocomplete(this,'pk-origin-sug','pk-origin-code')" />
+            <input type="hidden" id="pk-origin-code" />
+            <div class="suggestions" id="pk-origin-sug" style="display:none"></div>
+          </div>
+        </div>
+        <div class="form-group"><label>To</label>
+          <div class="autocomplete-wrap">
+            <input id="pk-dest" type="text" placeholder="e.g. Barcelona BCN" autocomplete="off" oninput="autocomplete(this,'pk-dest-sug','pk-dest-code')" />
+            <input type="hidden" id="pk-dest-code" />
+            <div class="suggestions" id="pk-dest-sug" style="display:none"></div>
+          </div>
+        </div>
+        <div class="form-group"><label>Departure</label><input id="pk-depart" type="date" /></div>
+        <div class="form-group"><label>Return</label><input id="pk-return" type="date" /></div>
+        <div class="form-group"><label>Travellers</label>
+          <select id="pk-adults"><option>1</option><option>2</option><option>3</option><option>4</option></select>
+        </div>
+      </div>
+      <button class="search-btn" onclick="searchPackages()">🔍 Search Holiday Packages</button>
+    </div>
+    <div id="pk-results"></div>
+  </div>
+</main>
+
+<script>
+  // ── State ────────────────────────────────────────────────────────────────
+  const BASE = "https://test.api.amadeus.com";
+  let clientId = "", clientSecret = "";
+  let cachedToken = null, tokenExpiry = 0;
+
+  function saveKeys() {
+    clientId     = document.getElementById("inp-id").value.trim();
+    clientSecret = document.getElementById("inp-secret").value.trim();
+    cachedToken  = null;
+    if (clientId && clientSecret) {
+      document.getElementById("keys-ok").style.display = "inline";
+      setTimeout(() => document.getElementById("keys-ok").style.display = "none", 3000);
+    }
+  }
+
+  // ── Token ────────────────────────────────────────────────────────────────
+  async function getToken() {
+    if (!clientId || !clientSecret) throw new Error("Please enter your Amadeus API keys at the top of the page.");
+    if (cachedToken && Date.now() < tokenExpiry) return cachedToken;
+    const body = new URLSearchParams({ grant_type: "client_credentials", client_id: clientId, client_secret: clientSecret });
+    const r = await fetch(`${BASE}/v1/security/oauth2/token`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+    if (!r.ok) throw new Error("Invalid API keys — check your Client ID and Secret.");
+    const data = await r.json();
+    cachedToken = data.access_token;
+    tokenExpiry = Date.now() + (data.expires_in - 60) * 1000;
+    return cachedToken;
+  }
+
+  async function amadeusGet(path, params = {}) {
+    const token = await getToken();
+    const url = new URL(BASE + path);
+    Object.entries(params).forEach(([k, v]) => v !== undefined && v !== "" && url.searchParams.set(k, v));
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) { const err = await r.json().catch(() => ({})); throw new Error(err?.errors?.[0]?.detail || `API error ${r.status}`); }
+    return r.json();
+  }
+
+  // ── Tabs ─────────────────────────────────────────────────────────────────
+  const tabNames = ["flights", "hotels", "packages"];
+  function switchTab(name) {
+    tabNames.forEach((t, i) => {
+      document.getElementById("tab-" + t).style.display = t === name ? "" : "none";
+      document.querySelectorAll(".tab")[i].classList.toggle("active", t === name);
+    });
+  }
+
+  // ── Default dates ─────────────────────────────────────────────────────────
+  (function () {
+    const pad = n => String(n).padStart(2, "0");
+    const fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    const d7  = new Date(); d7.setDate(d7.getDate() + 7);
+    const d14 = new Date(); d14.setDate(d14.getDate() + 14);
+    ["fl-depart","pk-depart","ht-checkin"].forEach(id => { const e = document.getElementById(id); if(e) e.value = fmt(d7); });
+    ["fl-return","pk-return","ht-checkout"].forEach(id => { const e = document.getElementById(id); if(e) e.value = fmt(d14); });
+  })();
+
+  // ── Autocomplete ──────────────────────────────────────────────────────────
+  const debounce = {};
+  async function autocomplete(inputEl, sugId, codeId) {
+    const sugEl = document.getElementById(sugId);
+    clearTimeout(debounce[sugId]);
+    if (inputEl.value.length < 2) { sugEl.style.display = "none"; return; }
+    debounce[sugId] = setTimeout(async () => {
+      try {
+        const data = await amadeusGet("/v1/reference-data/locations", { keyword: inputEl.value, subType: "CITY,AIRPORT", view: "LIGHT" });
+        const locs = (data.data || []).slice(0, 8);
+        if (!locs.length) { sugEl.style.display = "none"; return; }
+        sugEl.innerHTML = locs.map(l => `
+          <div class="suggestion-item" onclick="pickLoc('${l.iataCode}','${(l.address?.cityName||l.name).replace(/'/g,"\\'")}','${inputEl.id}','${sugId}','${codeId}')">
+            <span class="iata">${l.iataCode}</span>
+            <div><div>${l.address?.cityName || l.name}</div><div class="meta">${l.name} · ${l.address?.countryName || ""}</div></div>
+          </div>`).join("");
+        sugEl.style.display = "block";
+      } catch { sugEl.style.display = "none"; }
+    }, 280);
+  }
+
+  function pickLoc(code, name, inputId, sugId, codeId) {
+    document.getElementById(inputId).value = `${name} (${code})`;
+    document.getElementById(codeId).value  = code;
+    document.getElementById(sugId).style.display = "none";
+  }
+
+  document.addEventListener("click", () => document.querySelectorAll(".suggestions").forEach(e => e.style.display = "none"));
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function loading(id, msg = "Searching for the best deals…") {
+    document.getElementById(id).innerHTML = `<div class="spinner-wrap"><div class="spinner"></div><span>${msg}</span></div>`;
+  }
+  function showError(id, msg) {
+    document.getElementById(id).innerHTML = `<div class="error-banner">⚠️ ${msg}</div><div class="empty-state"><div class="icon">✈️</div><h3>No results</h3><p>Try different dates or destinations.</p></div>`;
+  }
+  function fmtDT(iso) {
+    if (!iso) return "—";
+    return new Date(iso).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  }
+  function fmtDur(iso) {
+    const m = (iso||"").match(/PT(?:(\d+)H)?(?:(\d+)M)?/);
+    return m ? (m[1]?m[1]+"h ":"")+(m[2]?m[2]+"m":"") : iso;
+  }
+  function stars(n) { return "★".repeat(+n||0)+"☆".repeat(Math.max(0,5-(+n||0))); }
+
+  // ── Flight search ─────────────────────────────────────────────────────────
+  async function searchFlights() {
+    const origin = document.getElementById("fl-origin-code").value;
+    const dest   = document.getElementById("fl-dest-code").value;
+    const depart = document.getElementById("fl-depart").value;
+    const ret    = document.getElementById("fl-return").value;
+    const adults = document.getElementById("fl-adults").value;
+    if (!origin || !dest || !depart) { alert("Please select airports from the dropdown and pick a departure date."); return; }
+    loading("fl-results");
+    try {
+      const data = await amadeusGet("/v2/shopping/flight-offers", {
+        originLocationCode: origin, destinationLocationCode: dest,
+        departureDate: depart, returnDate: ret || undefined,
+        adults, max: 15, currencyCode: "GBP"
+      });
+      const offers = (data.data || []).map(o => {
+        const it = o.itineraries[0];
+        const s0 = it.segments[0], sN = it.segments[it.segments.length-1];
+        return { id: o.id, price: o.price.total, currency: o.price.currency,
+          airline: s0.carrierCode, flightNumber: s0.carrierCode+s0.number,
+          departure: s0.departure.at, arrival: sN.arrival.at,
+          origin: s0.departure.iataCode, destination: sN.arrival.iataCode,
+          stops: it.segments.length-1, duration: it.duration, seats: o.numberOfBookableSeats };
+      });
+      renderFlights(offers, "fl-results");
+    } catch(e) { showError("fl-results", e.message); }
+  }
+
+  function renderFlights(list, id) {
+    if (!list.length) { showError(id, "No flights found."); return; }
+    document.getElementById(id).innerHTML =
+      `<div class="results-header">${list.length} flights found — sorted by price</div>` +
+      list.map((f,i) => `
+        <div class="result-card ${i===0?"best":""}">
+          <div class="card-main">
+            ${i===0?"<span class='best-badge'>Best Deal</span>":""}
+            <h3>${f.airline} ${f.flightNumber}</h3>
+            <div class="detail">${fmtDur(f.duration)}</div>
+            <span class="stops-badge ${f.stops===0?"direct":"stops"}">${f.stops===0?"Direct":f.stops+" stop"+(f.stops>1?"s":"")}</span>
+          </div>
+          <div class="card-route">
+            <div><div class="airport">${f.origin}</div><div class="time">${fmtDT(f.departure)}</div></div>
+            <div class="arrow">→</div>
+            <div><div class="airport">${f.destination}</div><div class="time">${fmtDT(f.arrival)}</div></div>
+          </div>
+          <div class="card-price">
+            <div class="price">£${parseFloat(f.price).toFixed(0)}</div>
+            <div class="per">per person · ${f.seats} seats left</div>
+            <a class="book-btn" href="https://www.google.com/flights?q=${f.origin}+to+${f.destination}" target="_blank" rel="noopener">Book →</a>
+          </div>
+        </div>`).join("");
+  }
+
+  // ── Hotel search ──────────────────────────────────────────────────────────
+  async function searchHotels() {
+    const cityCode = document.getElementById("ht-city-code").value;
+    const checkIn  = document.getElementById("ht-checkin").value;
+    const checkOut = document.getElementById("ht-checkout").value;
+    const adults   = document.getElementById("ht-adults").value;
+    const rooms    = document.getElementById("ht-rooms").value;
+    if (!cityCode || !checkIn || !checkOut) { alert("Please select a city from the dropdown and pick dates."); return; }
+    loading("ht-results");
+    try {
+      const listData = await amadeusGet("/v1/reference-data/locations/hotels/by-city", { cityCode, radius: 20, radiusUnit: "KM", ratings: "3,4,5" });
+      const ids = (listData.data||[]).slice(0,20).map(h=>h.hotelId).join(",");
+      if (!ids) { showError("ht-results","No hotels found in this city."); return; }
+      const offersData = await amadeusGet("/v3/shopping/hotel-offers", { hotelIds: ids, checkInDate: checkIn, checkOutDate: checkOut, adults, roomQuantity: rooms, currencyCode: "GBP", bestRateOnly: true });
+      const hotels = (offersData.data||[]).map(h => {
+        const o = h.offers[0];
+        return { id: h.hotel.hotelId, name: h.hotel.name, rating: h.hotel.rating,
+          price: o.price.total, checkIn: o.checkInDate, checkOut: o.checkOutDate,
+          roomType: o.room?.typeEstimated?.category, bedType: o.room?.typeEstimated?.bedType,
+          deepLink: `https://www.booking.com/searchresults.html?ss=${cityCode}&checkin=${checkIn}&checkout=${checkOut}` };
+      }).sort((a,b) => parseFloat(a.price)-parseFloat(b.price));
+      renderHotels(hotels, "ht-results");
+    } catch(e) { showError("ht-results", e.message); }
+  }
+
+  function renderHotels(list, id) {
+    if (!list.length) { showError(id,"No hotels found."); return; }
+    document.getElementById(id).innerHTML =
+      `<div class="results-header">${list.length} hotels found — sorted by price</div>` +
+      list.map((h,i) => `
+        <div class="result-card ${i===0?"best":""}">
+          <div class="card-main">
+            ${i===0?"<span class='best-badge'>Best Price</span>":""}
+            <h3>${h.name}</h3>
+            <div class="hotel-stars">${stars(h.rating)}</div>
+            <div class="detail">${[h.roomType,h.bedType].filter(Boolean).join(" · ")||"Standard room"}</div>
+          </div>
+          <div class="card-main">
+            <div class="detail">📅 ${h.checkIn} → ${h.checkOut}</div>
+          </div>
+          <div class="card-price">
+            <div class="price">£${parseFloat(h.price).toFixed(0)}</div>
+            <div class="per">total stay</div>
+            <a class="book-btn" href="${h.deepLink}" target="_blank" rel="noopener">Book →</a>
+          </div>
+        </div>`).join("");
+  }
+
+  // ── Package search ────────────────────────────────────────────────────────
+  async function searchPackages() {
+    const origin = document.getElementById("pk-origin-code").value;
+    const dest   = document.getElementById("pk-dest-code").value;
+    const depart = document.getElementById("pk-depart").value;
+    const ret    = document.getElementById("pk-return").value;
+    const adults = document.getElementById("pk-adults").value;
+    if (!origin || !dest || !depart || !ret) { alert("Please fill in all fields."); return; }
+    loading("pk-results","Building your holiday packages…");
+    try {
+      const [flightData, hotelList] = await Promise.allSettled([
+        amadeusGet("/v2/shopping/flight-offers", { originLocationCode: origin, destinationLocationCode: dest, departureDate: depart, returnDate: ret, adults, max: 5, currencyCode: "GBP" }),
+        amadeusGet("/v1/reference-data/locations/hotels/by-city", { cityCode: dest, radius: 20, radiusUnit: "KM", ratings: "3,4,5" })
+      ]);
+
+      const flights = flightData.status === "fulfilled"
+        ? (flightData.value.data||[]).slice(0,3).map(o => {
+            const it = o.itineraries[0], s0 = it.segments[0], sN = it.segments[it.segments.length-1];
+            return { id: o.id, price: o.price.total, airline: s0.carrierCode,
+              flightNumber: s0.carrierCode+s0.number, departure: s0.departure.at,
+              origin: s0.departure.iataCode, destination: sN.arrival.iataCode,
+              stops: it.segments.length-1, duration: it.duration };
+          }) : [];
+
+      let hotels = [];
+      if (hotelList.status === "fulfilled") {
+        const ids = (hotelList.value.data||[]).slice(0,20).map(h=>h.hotelId).join(",");
+        if (ids) {
+          const offersData = await amadeusGet("/v3/shopping/hotel-offers", { hotelIds: ids, checkInDate: depart, checkOutDate: ret, adults, roomQuantity: 1, currencyCode: "GBP", bestRateOnly: true });
+          hotels = (offersData.data||[]).slice(0,3).map(h => ({ id: h.hotel.hotelId, name: h.hotel.name, rating: h.hotel.rating, price: h.offers[0].price.total }));
+        }
+      }
+
+      const packages = [];
+      for (const f of flights) for (const h of hotels) {
+        packages.push({ id: `${f.id}-${h.id}`, totalPrice: (parseFloat(f.price)+parseFloat(h.price)).toFixed(2), flight: f, hotel: h });
+      }
+      packages.sort((a,b) => parseFloat(a.totalPrice)-parseFloat(b.totalPrice));
+      renderPackages(packages.slice(0,9), "pk-results", origin, dest, depart, ret);
+    } catch(e) { showError("pk-results", e.message); }
+  }
+
+  function renderPackages(list, id, origin, dest, depart, ret) {
+    if (!list.length) { showError(id,"No packages found. Try different dates."); return; }
+    document.getElementById(id).innerHTML =
+      `<div class="results-header">${list.length} holiday packages found — flight + hotel combined</div>` +
+      list.map((p,i) => `
+        <div class="result-card ${i===0?"best":""}">
+          ${i===0?"<span class='best-badge' style='display:block;margin-bottom:.5rem'>Best Package</span>":""}
+          <div class="pkg-sections">
+            <div class="pkg-section">
+              <h4>✈️ Flight</h4>
+              <p>${p.flight.airline} ${p.flight.flightNumber}</p>
+              <p>${p.flight.origin} → ${p.flight.destination}</p>
+              <p style="font-size:.76rem;color:#64748b">${fmtDur(p.flight.duration)} · ${p.flight.stops===0?"Direct":p.flight.stops+" stop"}</p>
+            </div>
+            <div class="pkg-section">
+              <h4>🏨 Hotel</h4>
+              <p>${p.hotel.name}</p>
+              <p>${stars(p.hotel.rating)}</p>
+            </div>
+          </div>
+          <div class="card-price">
+            <div class="price">£${parseFloat(p.totalPrice).toFixed(0)}</div>
+            <div class="per">flight + hotel</div>
+            <a class="book-btn" href="https://www.google.com/flights?q=${origin}+to+${dest}" target="_blank" rel="noopener">Book →</a>
+          </div>
+        </div>`).join("");
+  }
+</script>
+</body>
+</html>
