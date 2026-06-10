@@ -29,6 +29,11 @@ body.light{
 
 /* ── Keyframes ── */
 @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes growBar{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes orbDrift1{from{transform:translate(0,0) scale(1)}to{transform:translate(60px,40px) scale(1.14)}}
+@keyframes orbDrift2{from{transform:translate(0,0) scale(1.06)}to{transform:translate(-70px,-50px) scale(.9)}}
+@keyframes orbDrift3{from{transform:translate(0,0) scale(1)}to{transform:translate(50px,-60px) scale(1.1)}}
 @keyframes logoReveal{0%{opacity:0;letter-spacing:18px}60%{opacity:1}100%{opacity:1;letter-spacing:10px}}
 @keyframes subtitleReveal{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @keyframes slideUp{from{opacity:0;transform:translateY(40px)}to{opacity:1;transform:translateY(0)}}
@@ -36,16 +41,29 @@ body.light{
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.4)}50%{box-shadow:0 0 0 20px rgba(34,197,94,0)}}
 @keyframes scaleIn{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
 
-/* ── Splash orbs (home bg) ── */
+/* ── Aurora orbs (home bg) ── */
 .orb-bg{position:absolute;inset:0;overflow:hidden;z-index:0}
-.orb{position:absolute;border-radius:50%;filter:blur(72px);opacity:.22}
-.orb-1{width:320px;height:320px;background:radial-gradient(circle,#D4A843,transparent 70%);top:-80px;left:-60px}
-.orb-2{width:260px;height:260px;background:radial-gradient(circle,#8a6020,transparent 70%);bottom:80px;right:-80px}
+.orb{position:absolute;border-radius:50%;filter:blur(90px);will-change:transform}
+.orb-1{width:340px;height:340px;background:radial-gradient(circle,#D4A843,transparent 70%);opacity:.2;top:-80px;left:-60px;animation:orbDrift1 24s ease-in-out infinite alternate}
+.orb-2{width:280px;height:280px;background:radial-gradient(circle,#8a6020,transparent 70%);opacity:.18;bottom:80px;right:-80px;animation:orbDrift2 30s ease-in-out infinite alternate}
+.orb-3{width:280px;height:280px;background:radial-gradient(circle,rgba(90,80,160,.9),transparent 70%);opacity:.14;top:38%;left:28%;animation:orbDrift3 27s ease-in-out infinite alternate}
+
+/* ── Staggered entrances ── */
+.stagger>*{opacity:0;animation:fadeUp .4s ease forwards}
+.stagger>*:nth-child(1){animation-delay:.03s}
+.stagger>*:nth-child(2){animation-delay:.08s}
+.stagger>*:nth-child(3){animation-delay:.13s}
+.stagger>*:nth-child(4){animation-delay:.18s}
+.stagger>*:nth-child(5){animation-delay:.23s}
+.stagger>*:nth-child(6){animation-delay:.28s}
+.stagger>*:nth-child(7){animation-delay:.33s}
+.stagger>*:nth-child(8){animation-delay:.38s}
 
 /* ── Components ── */
-.card{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:18px;margin-bottom:12px}
-.btn{width:100%;padding:15px;border-radius:14px;font-size:15px;font-weight:700;border:none;cursor:pointer;font-family:inherit;transition:opacity .15s,transform .1s}
-.btn:active{opacity:.8;transform:scale(.98)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:18px;margin-bottom:12px;transition:transform .18s,border-color .18s}
+.card:active{transform:scale(.99)}
+.btn{width:100%;padding:15px;border-radius:14px;font-size:15px;font-weight:700;border:none;cursor:pointer;font-family:inherit;transition:opacity .15s,transform .12s}
+.btn:active{opacity:.85;transform:scale(.97)}
 .btn-gold{background:var(--gold);color:#000}
 .btn-green{background:#22c55e;color:#fff}
 .btn-red{background:#ef4444;color:#fff}
@@ -82,7 +100,13 @@ input:focus{border-color:var(--gold)}
 .step-line{flex:1;height:2px;background:var(--border);margin-top:-14px}
 .bar-row{display:flex;align-items:flex-end;gap:6px;height:80px;margin:12px 0}
 .bar-col{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1}
-.bar-fill{border-radius:4px 4px 0 0;background:var(--gold);width:100%}
+.bar-fill{border-radius:4px 4px 0 0;background:var(--gold);width:100%;transform-origin:bottom;animation:growBar .5s ease both}
+.bar-col:nth-child(2) .bar-fill{animation-delay:.05s}
+.bar-col:nth-child(3) .bar-fill{animation-delay:.1s}
+.bar-col:nth-child(4) .bar-fill{animation-delay:.15s}
+.bar-col:nth-child(5) .bar-fill{animation-delay:.2s}
+.bar-col:nth-child(6) .bar-fill{animation-delay:.25s}
+.bar-col:nth-child(7) .bar-fill{animation-delay:.3s}
 .screen{padding:0 22px 100px;min-height:100vh;animation:fadeIn .25s ease}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:200;display:flex;align-items:center;justify-content:center;padding:24px}
 </style>
@@ -388,9 +412,9 @@ home:()=>{
 
   return`<div style="min-height:100vh;position:relative">
     ${overlay}
-    <div class="orb-bg"><div class="orb orb-1"></div><div class="orb orb-2"></div></div>
+    <div class="orb-bg"><div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div></div>
     <div style="position:relative;z-index:1">
-      <div class="screen">
+      <div class="screen stagger">
         <div class="top-bar">
           <div style="display:flex;align-items:center;gap:10px">
             <div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#D4A843,#8B6020);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#000">JH</div>
