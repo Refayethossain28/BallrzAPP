@@ -750,6 +750,127 @@ home: () => {
 </div>`;
 },
 
+'concierge-brief': () => {
+  if(!state.booking.concierge) resetConcierge();
+  const c = state.booking.concierge;
+  const reqLabels = {'still-water':'Still Water','sparkling-water':'Sparkling Water','coffee':'Coffee/Tea','champagne':'Champagne','snacks':'Premium Snacks','silence':'Silence Preferred','jazz':'Jazz','classical':'Classical','news':'Morning Papers','warm':'Warm Climate','multi-stop':'Multiple Stops OK','shopping':'Shopping Assist','collection':'Collections','restaurant':'Restaurant Res.','luggage':'Luggage Assist'};
+  const reqGroups = [
+    {label:'Refresh',keys:['still-water','sparkling-water','coffee','champagne','snacks']},
+    {label:'Comfort',keys:['silence','jazz','classical','news','warm']},
+    {label:'Service',keys:['multi-stop','shopping','collection','restaurant','luggage']}
+  ];
+  const commOpts = [['proactive','Proactive updates'],['on-request','Updates on request'],['minimal','Minimal contact']];
+  return `
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
+  <div class="back-row" style="padding:56px 22px 16px">
+    <div class="back-btn" onclick="go('vehicle-select')">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+    </div>
+    <div>
+      <div style="font-size:20px;font-weight:700">Personal Driver Brief</div>
+      <div style="font-size:13px;color:var(--fg-dim);margin-top:2px">Full Day · Concierge service</div>
+    </div>
+  </div>
+
+  <div style="padding:0 22px;overflow-y:auto;flex:1;padding-bottom:120px">
+
+    <!-- Gold service banner -->
+    <div style="background:linear-gradient(135deg,rgba(212,168,67,.14) 0%,rgba(212,168,67,.06) 100%);border:1px solid rgba(212,168,67,.3);border-radius:16px;padding:14px 16px;margin-bottom:18px;display:flex;align-items:center;gap:12px">
+      <div style="font-size:22px;flex-shrink:0">&#x1F3CE;</div>
+      <div>
+        <div style="font-size:12px;font-weight:700;color:#D4A843;letter-spacing:1px">PERSONAL DRIVER &amp; ASSISTANT</div>
+        <div style="font-size:12px;color:var(--fg-dim);margin-top:2px">Your driver is at your disposal all day. Use this brief to prepare them.</div>
+      </div>
+    </div>
+
+    <!-- Section 1: Itinerary -->
+    <div class="card" style="padding:20px;margin-bottom:10px">
+      <div class="section-label" style="margin-bottom:14px">Itinerary</div>
+      <div style="display:flex;gap:6px;margin-bottom:12px;align-items:flex-end">
+        <div style="flex:0 0 80px">
+          <div style="font-size:10px;color:var(--fg-subtle);margin-bottom:4px;letter-spacing:.5px">TIME</div>
+          <input id="ci_time" type="time" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:9px 10px;font-size:13px;color:var(--fg)"/>
+        </div>
+        <div style="flex:1">
+          <div style="font-size:10px;color:var(--fg-subtle);margin-bottom:4px;letter-spacing:.5px">PLACE / ACTIVITY</div>
+          <input id="ci_place" type="text" placeholder="e.g. Mayfair Hotel" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:9px 10px;font-size:13px;color:var(--fg)"/>
+        </div>
+        <div style="flex:1">
+          <div style="font-size:10px;color:var(--fg-subtle);margin-bottom:4px;letter-spacing:.5px">NOTE</div>
+          <input id="ci_note" type="text" placeholder="optional note" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:9px 10px;font-size:13px;color:var(--fg)"/>
+        </div>
+        <button onclick="addItineraryStop()" style="flex-shrink:0;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;padding:9px 14px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit">Add</button>
+      </div>
+      ${c.itinerary.length ? `
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${c.itinerary.map((s,i)=>`
+        <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:var(--surface);border-radius:12px;border:1px solid var(--border)">
+          <div style="width:8px;height:8px;border-radius:50%;background:#D4A843;flex-shrink:0;margin-top:5px"></div>
+          <div style="flex:1">
+            <div style="display:flex;align-items:baseline;gap:8px">
+              <span style="font-size:13px;font-weight:700;color:#D4A843;min-width:38px">${s.time||'—'}</span>
+              <span style="font-size:13px;font-weight:600">${s.place}</span>
+            </div>
+            ${s.note?`<div style="font-size:12px;color:var(--fg-dim);margin-top:2px">${s.note}</div>`:''}
+          </div>
+          <button onclick="removeItineraryStop(${i})" style="background:none;border:none;color:var(--fg-dim);font-size:16px;cursor:pointer;padding:0 2px;line-height:1">×</button>
+        </div>`).join('')}
+      </div>` : `<div style="font-size:13px;color:var(--fg-subtle);text-align:center;padding:10px 0">No stops added yet</div>`}
+    </div>
+
+    <!-- Section 2: Errands -->
+    <div class="card" style="padding:20px;margin-bottom:10px">
+      <div class="section-label" style="margin-bottom:14px">Errands &amp; Collections</div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <input id="ce_txt" type="text" placeholder="e.g. Pick up dry cleaning from Jeeves" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:13px;color:var(--fg)"/>
+        <button onclick="addErrand()" style="flex-shrink:0;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;padding:10px 14px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit">Add</button>
+      </div>
+      ${c.errands.length ? `
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${c.errands.map((e,i)=>`
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface);border-radius:12px;border:1px solid var(--border)">
+          <div style="width:16px;height:16px;border-radius:50%;border:1.5px solid var(--fg-dim);flex-shrink:0"></div>
+          <span style="flex:1;font-size:13px">${e.text}</span>
+          <button onclick="removeErrand(${i})" style="background:none;border:none;color:var(--fg-dim);font-size:16px;cursor:pointer;padding:0 2px;line-height:1">×</button>
+        </div>`).join('')}
+      </div>` : `<div style="font-size:13px;color:var(--fg-subtle);text-align:center;padding:10px 0">No errands added yet</div>`}
+    </div>
+
+    <!-- Section 3: In-Car Requirements -->
+    <div class="card" style="padding:20px;margin-bottom:10px">
+      <div class="section-label" style="margin-bottom:14px">In-Car Requirements</div>
+      ${reqGroups.map(g=>`
+      <div style="margin-bottom:14px">
+        <div style="font-size:10px;font-weight:700;color:var(--fg-subtle);letter-spacing:1.5px;margin-bottom:8px">${g.label.toUpperCase()}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:7px">
+          ${g.keys.map(k=>{const sel=c.requirements.includes(k);return`<button onclick="toggleReq('${k}')" style="background:${sel?'rgba(255,255,255,.12)':'var(--surface)'};border:1px solid ${sel?'rgba(255,255,255,.3)':'var(--border)'};color:${sel?'#fff':'var(--fg-dim)'};border-radius:20px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s">${reqLabels[k]}</button>`;}).join('')}
+        </div>
+      </div>`).join('')}
+    </div>
+
+    <!-- Section 4: Special Instructions -->
+    <div class="card" style="padding:20px;margin-bottom:10px">
+      <div class="section-label" style="margin-bottom:12px">Special Instructions</div>
+      <textarea id="ci_instructions" rows="4" placeholder="Any specific requests or information for your driver…" oninput="saveConciergeInstructions()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;font-size:13px;color:var(--fg);resize:none;line-height:1.6;font-family:inherit">${c.instructions||''}</textarea>
+    </div>
+
+    <!-- Section 5: Driver Communication -->
+    <div class="card" style="padding:20px;margin-bottom:10px">
+      <div class="section-label" style="margin-bottom:14px">Driver Communication</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${commOpts.map(([p,label])=>{const sel=c.commsPref===p;return`<button onclick="setConciergeComms('${p}')" style="display:flex;align-items:center;gap:10px;background:${sel?'rgba(212,168,67,.08)':'var(--surface)'};border:1px solid ${sel?'rgba(212,168,67,.5)':'var(--border)'};color:${sel?'#D4A843':'var(--fg-dim)'};border-radius:14px;padding:13px 16px;cursor:pointer;font-family:inherit;text-align:left;transition:all .15s;width:100%"><div style="width:16px;height:16px;border-radius:50%;border:2px solid ${sel?'#D4A843':'var(--fg-ghost)'};flex-shrink:0;display:flex;align-items:center;justify-content:center">${sel?`<div style="width:8px;height:8px;border-radius:50%;background:#D4A843"></div>`:''}</div><span style="font-size:14px;font-weight:600">${label}</span></button>`;}).join('')}
+      </div>
+    </div>
+
+  </div>
+
+  <div style="position:fixed;bottom:0;left:0;right:0;padding:12px 22px calc(env(safe-area-inset-bottom,0px) + 16px);background:var(--bg);border-top:1px solid var(--border);z-index:100;display:flex;gap:10px">
+    <button class="btn btn-glass" style="flex:0 0 90px" onclick="go('vehicle-select')">Back</button>
+    <button class="btn btn-white" style="flex:1" onclick="saveConciergeInstructions();go('booking-summary')">Continue</button>
+  </div>
+</div>`;
+},
+
 'booking-summary': () => {
   const base = state.booking.price||185;
   const ok = state._promoApplied;
@@ -760,7 +881,7 @@ home: () => {
   return `
 <div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
   <div class="back-row">
-    <div class="back-btn" onclick="go('vehicle-select')">
+    <div class="back-btn" onclick="go(state.booking.serviceType==='day'?'concierge-brief':'vehicle-select')">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
     </div>
     <div style="font-size:20px;font-weight:700">Review booking</div>
@@ -780,7 +901,7 @@ home: () => {
         <div><div style="font-size:11px;color:var(--fg-dim);margin-bottom:2px">Drop-off</div><div style="font-size:15px">${state.booking.airport||state.booking.dropoff||'—'}</div></div>
       </div>
       ${state.booking.date?`<div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--divider);font-size:13px;color:var(--fg-muted)">${state.booking.date}${state.booking.time?' · '+state.booking.time:''}</div>`:''}
-      ${state.booking.flight?`<div style="font-size:13px;color:var(--fg-muted);margin-top:4px">✈ ${state.booking.flight}</div>`:''}
+      ${state.booking.flight?`<div style="font-size:13px;color:var(--fg-muted);margin-top:4px">&#x2708; ${state.booking.flight}</div>`:''}
     </div>
 
     <div class="card" style="padding:20px;margin-bottom:10px">
@@ -788,9 +909,33 @@ home: () => {
       <div style="font-size:15px;font-weight:600">${state.booking.vehicle||'Mercedes S-Class'}</div>
     </div>
 
+    ${state.booking.serviceType==='day' && state.booking.concierge ? `
+    <div class="card" style="padding:20px;margin-bottom:10px">
+      <div class="section-label" style="margin-bottom:14px">Personal Driver Brief</div>
+      ${state.booking.concierge.itinerary.length ? `
+        <div style="font-size:12px;font-weight:600;color:var(--fg-subtle);margin-bottom:8px">ITINERARY</div>
+        ${state.booking.concierge.itinerary.map(s=>`<div style="display:flex;gap:10px;margin-bottom:6px;font-size:13px"><span style="color:#D4A843;font-weight:700;min-width:42px">${s.time||'—'}</span><span>${s.place}${s.note?' · <span style="color:var(--fg-dim)">'+s.note+'</span>':''}</span></div>`).join('')}
+      ` : ''}
+      ${state.booking.concierge.errands.length ? `
+        <div style="font-size:12px;font-weight:600;color:var(--fg-subtle);margin-top:12px;margin-bottom:8px">ERRANDS</div>
+        ${state.booking.concierge.errands.map(e=>`<div style="font-size:13px;color:var(--fg-muted);margin-bottom:4px">• ${e.text}</div>`).join('')}
+      ` : ''}
+      ${state.booking.concierge.requirements.length ? `
+        <div style="font-size:12px;font-weight:600;color:var(--fg-subtle);margin-top:12px;margin-bottom:8px">REQUIREMENTS</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">${state.booking.concierge.requirements.map(r=>`<span style="background:rgba(255,255,255,.08);border-radius:20px;padding:4px 10px;font-size:11px;color:var(--fg-muted)">${r.replace(/-/g,' ')}</span>`).join('')}</div>
+      ` : ''}
+      ${state.booking.concierge.instructions ? `
+        <div style="font-size:12px;font-weight:600;color:var(--fg-subtle);margin-top:12px;margin-bottom:6px">INSTRUCTIONS</div>
+        <div style="font-size:13px;color:var(--fg-muted);line-height:1.5">${state.booking.concierge.instructions}</div>
+      ` : ''}
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--divider);font-size:12px;color:var(--fg-subtle)">
+        Communication: <span style="color:var(--fg-muted)">${{'proactive':'Proactive updates','on-request':'Updates on request','minimal':'Minimal contact'}[state.booking.concierge.commsPref]||'Proactive'}</span>
+      </div>
+    </div>` : ''}
+
     <div class="card" style="padding:20px;margin-bottom:10px">
       <div class="section-label" style="margin-bottom:14px">Promo code</div>
-      ${ok?`<div style="color:#22c55e;font-size:14px;font-weight:600">✓ APEX20 applied — 20% off</div>`:`
+      ${ok?`<div style="color:#22c55e;font-size:14px;font-weight:600">&#x2713; APEX20 applied — 20% off</div>`:`
       <div style="display:flex;gap:8px">
         <input id="promo_in" placeholder="Enter code" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:11px 14px;font-size:14px;color:#fff;outline:none"/>
         <button onclick="applyPromo()" style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#ffffff;padding:0 18px;border-radius:12px;cursor:pointer;font-weight:700;font-size:14px;white-space:nowrap;font-family:inherit">Apply</button>
@@ -808,7 +953,7 @@ home: () => {
         <span style="font-size:28px;font-weight:800;color:#ffffff">£${total}</span>
       </div>
       <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:9px 13px">
-        <div style="display:flex;align-items:center;gap:7px"><span style="font-size:13px;color:#ffffff">◈</span><span style="font-size:12px;color:var(--fg-muted)">APEX Rewards</span></div>
+        <div style="display:flex;align-items:center;gap:7px"><span style="font-size:13px;color:#ffffff">&#x25C8;</span><span style="font-size:12px;color:var(--fg-muted)">APEX Rewards</span></div>
         <span style="font-size:13px;font-weight:700;color:#ffffff">+${Math.round(total*0.05)} APEX</span>
       </div>
     </div>
@@ -1324,10 +1469,50 @@ function saveDay(){
     pickup:$('bd_pu')?.value||state.booking.pickup||'',
     date:$('bd_dt')?.value||'',
     notes:$('bd_notes')?.value||''};
+  resetConcierge();
   go('vehicle-select');
 }
 function selectVehicle(id,price,name){state.booking.vehicleId=id;state.booking.price=price;state.booking.vehicle=name;track('vehicle_selected',{vehicle:name,price,src:'client'});render();}
-function goSummary(){if(state.booking.vehicleId)go('booking-summary');}
+function resetConcierge(){
+  state.booking.concierge={
+    itinerary:[],
+    errands:[],
+    requirements:[],
+    instructions:'',
+    commsPref:'proactive'
+  };
+}
+function goSummary(){
+  if(!state.booking.vehicleId) return;
+  if(state.booking.serviceType==='day'){
+    if(!state.booking.concierge) resetConcierge();
+    go('concierge-brief');
+  } else {
+    go('booking-summary');
+  }
+}
+function addItineraryStop(){
+  const t=$('ci_time')?.value||''; const p=$('ci_place')?.value||''; const n=$('ci_note')?.value||'';
+  if(!p) return;
+  state.booking.concierge.itinerary.push({time:t,place:p,note:n});
+  render();
+}
+function removeItineraryStop(i){ state.booking.concierge.itinerary.splice(i,1); render(); }
+function addErrand(){
+  const t=$('ce_txt')?.value||''; if(!t) return;
+  state.booking.concierge.errands.push({text:t,done:false}); render();
+}
+function removeErrand(i){ state.booking.concierge.errands.splice(i,1); render(); }
+function toggleReq(k){
+  const arr=state.booking.concierge.requirements;
+  const idx=arr.indexOf(k); if(idx>-1) arr.splice(idx,1); else arr.push(k);
+  render();
+}
+function saveConciergeInstructions(){
+  const v=$('ci_instructions')?.value||'';
+  state.booking.concierge.instructions=v;
+}
+function setConciergeComms(p){ state.booking.concierge.commsPref=p; render(); }
 function applyPromo(){
   const v=$('promo_in')?.value||'';
   if(v.toUpperCase()==='APEX20'){state._promoApplied=true;track('promo_applied',{code:'APEX20',src:'client'});render();}
@@ -1438,6 +1623,7 @@ async function confirmBooking(overrideRef){
         squarePaymentId:state._squarePaymentId||null,
         paymentStatus:state._squarePaymentId?'paid':'pending',
         driverName:'James Harrison',driverRating:4.9,driverPlate:'LX73 ABC',
+        concierge:state.booking.concierge||null,
         createdAt:firebase.firestore.FieldValue.serverTimestamp()
       });
     }catch(err){console.warn('Booking save:',err.message);}

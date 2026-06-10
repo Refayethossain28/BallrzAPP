@@ -118,6 +118,7 @@ let JOBS=[
   {id:'J1',type:'airport',client:'Sarah M.',initials:'SM',service:'Airport Transfer',pickup:'Mayfair W1K',dropoff:'Heathrow Terminal 5',time:'In 45 min',pay:95,flight:'BA0247',notes:'1 passenger, 2 bags',vehicle:'S-Class'},
   {id:'J2',type:'hourly',client:'Robert C.',initials:'RC',service:'By the Hour (4hrs)',pickup:'Canary Wharf E14',dropoff:'Various',time:'Tomorrow 10:00',pay:260,notes:'Business meetings, multiple stops',vehicle:'S-Class'},
   {id:'J3',type:'airport',client:'Emma W.',initials:'EW',service:'Airport Transfer',pickup:'Knightsbridge SW1',dropoff:'Gatwick North Terminal',time:'Today 16:30',pay:195,flight:'EZY1234',notes:'2 passengers, 4 bags',vehicle:'S-Class'},
+  {id:'J4',type:'day',client:'Oliver T.',initials:'OT',service:'By the Day',pickup:'Belgravia SW1X',dropoff:'Various',time:'08:00',pay:540,notes:'Full day personal driver service',vehicle:'S-Class',concierge:{itinerary:[{time:'08:00',place:'Belgravia SW1X',note:'Collect client'},{time:'09:30',place:'Mayfair Members Club',note:'Drop off for meeting'},{time:'12:00',place:'Nobu Mayfair',note:'Lunch reservation'},{time:'14:30',place:'Savile Row',note:'Tailoring appointment'}],errands:[{text:'Pick up dry cleaning from Jeeves & Son, Pont St',done:false},{text:'Collect watch from Patek Philippe, Bond St',done:false}],requirements:['still-water','champagne','silence','luggage'],instructions:'Client prefers no conversation unless initiated. Always open and close the door. Keep cabin at 21°C.',commsPref:'on-request'}},
 ];
 const HISTORY=[
   {id:'H1',service:'Airport Transfer',pickup:'Heathrow T5',dropoff:'Mayfair',date:'Today',duration:'55 min',pay:95,rating:5},
@@ -328,6 +329,13 @@ function nextStep(){
   else render();
 }
 
+function toggleErrand(jobId,idx){
+  S.errandsDone=S.errandsDone||{};
+  const k=jobId+':'+idx;
+  S.errandsDone[k]=!S.errandsDone[k];
+  render();
+}
+
 function jobTag(type){
   const m={airport:'tag-blue ✈ Airport',hourly:'tag-gold ⏱ Hourly',day:'tag-purple ◈ Full Day'};
   const v=m[type]||'tag-gold Hourly';const[c,...r]=v.split(' ');
@@ -367,7 +375,8 @@ home:()=>{
       </div>
       <div style="width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#D4A843,#8B6020);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#000;margin:0 auto 8px">${JOBS[0]?.initials||'CL'}</div>
       <div style="font-size:13px;font-weight:600;margin-bottom:4px">${JOBS[0]?.client||'Client'}</div>
-      <div style="font-size:11px;color:var(--fg-dim);margin-bottom:16px">${JOBS[0]?.type==='airport'?'✈':JOBS[0]?.type==='hourly'?'⏱':'📅'} ${JOBS[0]?.service||'Airport Transfer'}</div>
+      <div style="font-size:11px;color:var(--fg-dim);margin-bottom:${JOBS[0]?.type==='day'?'10':'16'}px">${JOBS[0]?.type==='airport'?'✈':JOBS[0]?.type==='hourly'?'⏱':'📅'} ${JOBS[0]?.service||'Airport Transfer'}</div>
+      ${JOBS[0]?.type==='day'?`<div style="background:linear-gradient(135deg,rgba(212,168,67,.18),rgba(212,168,67,.08));border:1px solid rgba(212,168,67,.35);border-radius:10px;padding:8px 12px;margin-bottom:14px;text-align:center"><div style="font-size:10px;font-weight:700;color:#D4A843;letter-spacing:1px">PERSONAL DRIVER · ALL DAY</div>${JOBS[0]?.concierge?.itinerary?.length?`<div style="font-size:11px;color:var(--fg-dim);margin-top:4px">First stop: ${JOBS[0].concierge.itinerary[0].place}${JOBS[0].concierge.errands?.length?` · ${JOBS[0].concierge.errands.length} errand${JOBS[0].concierge.errands.length!==1?'s':''}`:''}</div>`:''}  </div>`:''}
       ${[['Pickup',JOBS[0]?.pickup||'—'],['Drop-off',JOBS[0]?.dropoff||'—'],['In',JOBS[0]?.time||'Now']].map(([l,v])=>`<div style="display:flex;justify-content:space-between;margin-bottom:7px;font-size:13px"><span style="color:var(--fg-dim)">${l}</span><span style="font-weight:600">${v}</span></div>`).join('')}
       <div style="font-size:30px;font-weight:800;color:#D4A843;margin:16px 0 18px">£${JOBS[0]?.pay||95}</div>
       <div style="display:flex;gap:10px">
@@ -470,9 +479,73 @@ active:()=>{
       </div>
       ${j.flight?`<div style="margin-top:10px;font-size:12px;color:var(--fg-dim)">✈ Flight ${j.flight}</div>`:''}
     </div>
+    ${j.type==='day' ? `
+    <!-- Personal Driver Brief Panel -->
+    <div class="card" style="margin-bottom:12px;border-color:rgba(212,168,67,.25);background:linear-gradient(180deg,rgba(212,168,67,.06) 0%,transparent 100%)">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <div style="font-size:20px">&#x1F3CE;</div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:#D4A843;letter-spacing:1.5px">PERSONAL DRIVER</div>
+          <div style="font-size:10px;color:var(--fg-subtle);margin-top:1px">ALL DAY SERVICE</div>
+        </div>
+        ${j.concierge?.commsPref?`<div style="margin-left:auto"><span style="background:rgba(212,168,67,.12);border:1px solid rgba(212,168,67,.25);border-radius:20px;padding:4px 10px;font-size:10px;font-weight:700;color:#D4A843">${{'proactive':'Proactive','on-request':'On Request','minimal':'Minimal'}[j.concierge.commsPref]||j.concierge.commsPref}</span></div>`:''}
+      </div>
+
+      ${j.concierge?.itinerary?.length ? `
+      <div style="margin-bottom:14px">
+        <div style="font-size:10px;font-weight:700;color:var(--fg-subtle);letter-spacing:1.5px;margin-bottom:10px">ITINERARY</div>
+        <div style="position:relative">
+          <div style="position:absolute;left:4px;top:8px;bottom:8px;width:1px;background:rgba(212,168,67,.2)"></div>
+          ${j.concierge.itinerary.map((s,i)=>`
+          <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:10px;padding-left:2px">
+            <div style="width:9px;height:9px;border-radius:50%;background:#D4A843;flex-shrink:0;margin-top:4px;position:relative;z-index:1"></div>
+            <div style="flex:1">
+              <div style="display:flex;align-items:baseline;gap:8px">
+                <span style="font-size:12px;font-weight:700;color:#D4A843;min-width:38px">${s.time||'—'}</span>
+                <span style="font-size:13px;font-weight:600">${s.place}</span>
+              </div>
+              ${s.note?`<div style="font-size:12px;color:var(--fg-dim);margin-top:1px">${s.note}</div>`:''}
+            </div>
+          </div>`).join('')}
+        </div>
+      </div>` : ''}
+
+      ${j.concierge?.errands?.length ? `
+      <div style="margin-bottom:14px">
+        <div style="font-size:10px;font-weight:700;color:var(--fg-subtle);letter-spacing:1.5px;margin-bottom:10px">ERRANDS &amp; COLLECTIONS</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${j.concierge.errands.map((e,i)=>{
+            const k=j.id+':'+i;
+            const done=(S.errandsDone||{})[k];
+            return`<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface);border-radius:12px;border:1px solid ${done?'rgba(34,197,94,.25)':'var(--border)'};cursor:pointer" onclick="toggleErrand('${j.id}',${i})">
+              <div style="width:20px;height:20px;border-radius:50%;border:2px solid ${done?'#22c55e':'var(--fg-dim)'};flex-shrink:0;display:flex;align-items:center;justify-content:center;background:${done?'rgba(34,197,94,.12)':'transparent'}">
+                ${done?'<svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="#22c55e" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>':''}
+              </div>
+              <span style="flex:1;font-size:13px;${done?'text-decoration:line-through;color:var(--fg-dim)':''}">${e.text}</span>
+              ${done?'<span style="font-size:11px;color:#22c55e;font-weight:600">Done</span>':''}
+            </div>`;
+          }).join('')}
+        </div>
+      </div>` : ''}
+
+      ${j.concierge?.requirements?.length ? `
+      <div style="margin-bottom:14px">
+        <div style="font-size:10px;font-weight:700;color:var(--fg-subtle);letter-spacing:1.5px;margin-bottom:8px">REQUIREMENTS</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${j.concierge.requirements.map(r=>`<span style="background:rgba(212,168,67,.1);border:1px solid rgba(212,168,67,.25);border-radius:20px;padding:4px 10px;font-size:11px;color:#D4A843;font-weight:600">${r.replace(/-/g,' ')}</span>`).join('')}
+        </div>
+      </div>` : ''}
+
+      ${j.concierge?.instructions ? `
+      <div style="background:var(--surface);border-radius:12px;padding:12px 14px;border:1px solid var(--border)">
+        <div style="font-size:10px;font-weight:700;color:var(--fg-subtle);letter-spacing:1.5px;margin-bottom:6px">CLIENT INSTRUCTIONS</div>
+        <div style="font-size:13px;color:var(--fg-muted);line-height:1.6">${j.concierge.instructions}</div>
+      </div>` : ''}
+    </div>` : `
     <div class="card" style="margin-bottom:12px">
       <div style="font-size:13px;color:var(--fg-dim);line-height:1.6">${j.notes}</div>
-    </div>
+    </div>`}
+
     <div style="border-radius:18px;overflow:hidden;margin-bottom:16px">
       <a href="https://maps.google.com/?q=${encodeURIComponent(S.tripStep<=3?j.pickup:j.dropoff)}" target="_blank" rel="noopener"
          style="display:flex;align-items:center;justify-content:space-between;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);border-radius:18px;padding:16px 20px;text-decoration:none;color:var(--fg)">
