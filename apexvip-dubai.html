@@ -16,6 +16,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
 <script src="firebase.js"></script>
+<script src="apexvip-core.js"></script>
 <style>
 body{--bg:#000;--fg:#fff;--fg-muted:rgba(255,255,255,.38);--fg-dim:rgba(255,255,255,.3);--fg-subtle:rgba(255,255,255,.25);--fg-ghost:rgba(255,255,255,.2);--fg-faint:rgba(255,255,255,.15);--surface:rgba(255,255,255,.06);--surface-b:rgba(255,255,255,.1);--surface-c:rgba(255,255,255,.09);--border:rgba(255,255,255,.12);--border-b:rgba(255,255,255,.11);--divider:rgba(255,255,255,.05)}
 body.light{--bg:#f8f6f1;--fg:#0d0d0d;--fg-muted:rgba(0,0,0,.42);--fg-dim:rgba(0,0,0,.38);--fg-subtle:rgba(0,0,0,.32);--fg-ghost:rgba(0,0,0,.28);--fg-faint:rgba(0,0,0,.18);--surface:rgba(0,0,0,.04);--surface-b:rgba(0,0,0,.07);--surface-c:rgba(0,0,0,.09);--border:rgba(0,0,0,.09);--border-b:rgba(0,0,0,.13);--divider:rgba(0,0,0,.06)}
@@ -630,11 +631,16 @@ home: () => {
 'vehicle-select': () => {
   const pm = {airport:{s:490,v:690,r:2200},hourly:{s:(state.booking.duration||3)*300,v:(state.booking.duration||3)*400,r:(state.booking.duration||3)*1200},day:{s:2100,v:2800,r:7500}};
   const p = pm[state.booking.serviceType]||pm.airport;
+  const ySurge = typeof ApexCore!=='undefined'
+    ? ApexCore.apexYield({date:state.booking.date,time:state.booking.time,vehicle:'s',market:'dubai'})
+    : {multiplier:1.0,label:'Standard'};
+  const surge = ySurge.multiplier;
+  const sp = {s:Math.round(p.s*surge),v:Math.round(p.v*surge),r:Math.round(p.r*ApexCore?.apexYield({date:state.booking.date,time:state.booking.time,vehicle:'r',market:'dubai'}).multiplier||p.r)};
   const sel = state.booking.vehicleId||'';
   const vehicles = [
-    {id:'sClass',name:'S-Class',full:'Mercedes S-Class',sub:'Business Sedan · Up to 3 passengers',price:p.s,badge:'EXECUTIVE',features:['WiFi','Water','Charger','Meet & Greet'],img:'vehicles/s-class.jpg'},
-    {id:'vClass',name:'V-Class',full:'Mercedes V-Class',sub:'Business Van · Up to 7 passengers',price:p.v,badge:'BUSINESS',features:['WiFi','Water','Charger','Child Seat'],img:'vehicles/v-class.jpg'},
-    {id:'phantom',name:'Phantom',full:'Rolls-Royce Phantom',sub:'Ultra-Luxury Sedan · Up to 3 passengers',price:p.r,badge:'PRESTIGE',features:['Starlight Roof','Champagne','WiFi','Concierge'],img:'vehicles/phantom.jpg'}
+    {id:'sClass',name:'S-Class',full:'Mercedes S-Class',sub:'Business Sedan · Up to 3 passengers',price:sp.s,badge:'EXECUTIVE',features:['WiFi','Water','Charger','Meet & Greet'],img:'vehicles/s-class.jpg'},
+    {id:'vClass',name:'V-Class',full:'Mercedes V-Class',sub:'Business Van · Up to 7 passengers',price:sp.v,badge:'BUSINESS',features:['WiFi','Water','Charger','Child Seat'],img:'vehicles/v-class.jpg'},
+    {id:'phantom',name:'Phantom',full:'Rolls-Royce Phantom',sub:'Ultra-Luxury Sedan · Up to 3 passengers',price:sp.r,badge:'PRESTIGE',features:['Starlight Roof','Champagne','WiFi','Concierge'],img:'vehicles/phantom.jpg'}
   ];
   return `
 <div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
@@ -648,6 +654,7 @@ home: () => {
     </div>
   </div>
   <div style="padding:0 22px;flex:1">
+    ${surge>1.0?`<div style="display:inline-flex;align-items:center;gap:5px;background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.25);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:700;color:#fbbf24;margin-bottom:14px">⚡ ${ySurge.label} · ${surge}×</div>`:''}
     ${vehicles.map(v=>`
     <div id="vc_${v.id}" onclick="selectVehicle('${v.id}',${v.price},'${v.full}')" class="vcard ${sel===v.id?'sel':''}" style="margin-bottom:14px">
       <div class="vcard-media">
