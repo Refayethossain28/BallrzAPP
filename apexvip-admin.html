@@ -11,6 +11,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="firebase.js"></script>
+<script src="apexvip-core.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 body{background:var(--bg);color:var(--fg);font-family:-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased;display:flex;min-height:100vh;
@@ -405,16 +406,26 @@ bookings:()=>{const f=S.bFilter;const list=f==='all'?BOOKINGS:BOOKINGS.filter(b=
   <div style="background:var(--bg);border-radius:24px 24px 0 0;border:1px solid var(--border);width:100%;max-width:640px;padding:24px;animation:slideUp .25s ease" onclick="event.stopPropagation()">
     <div style="font-size:16px;font-weight:700;margin-bottom:4px">Assign Driver</div>
     <div style="font-size:12px;color:var(--fg-dim);margin-bottom:18px">Booking ${S._dispatchRef||''}</div>
-    ${DRIVERS.filter(d=>d.status==='available'||d.status==='online').map(d=>`
+    ${(()=>{
+      const avail = DRIVERS.filter(d=>d.status==='available'||d.status==='online');
+      const ref = BOOKINGS.find(b=>b.id===S._dispatchRef||b.ref===S._dispatchRef)||{};
+      const ranked = typeof ApexCore!=='undefined'
+        ? ApexCore.prestigeMatch({vehicleClass:ref.vehicle||'S-Class',corporateId:ref.corporateId,clientId:ref.clientId}, avail)
+        : avail.map(d=>({...d,matchScore:null}));
+      if(!ranked.length) return '<div style="text-align:center;padding:20px;color:var(--fg-ghost);font-size:13px">No available drivers right now</div>';
+      return ranked.map(d=>`
     <div onclick="confirmDispatch('${d.id||d.name}')" style="display:flex;align-items:center;gap:14px;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:14px;margin-bottom:8px;cursor:pointer">
       <div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#D4A843,#8B6020);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#000;flex-shrink:0">${(d.name||'DR').split(' ').map(n=>n[0]).join('').slice(0,2)}</div>
       <div style="flex:1">
         <div style="font-size:14px;font-weight:600">${d.name}</div>
         <div style="font-size:12px;color:var(--fg-dim);margin-top:2px">${d.model||d.vehicle||'S-Class'} · ${d.reg||d.plate||''}</div>
       </div>
-      <div style="width:8px;height:8px;border-radius:50%;background:${d.status==='online'?'#22c55e':'#D4A843'}"></div>
-    </div>`).join('')}
-    ${DRIVERS.filter(d=>d.status==='available'||d.status==='online').length===0 ? '<div style="text-align:center;padding:20px;color:var(--fg-ghost);font-size:13px">No available drivers right now</div>' : ''}
+      <div style="display:flex;align-items:center;gap:8px">
+        ${d.matchScore!==null?`<span style="font-size:11px;font-weight:700;color:#D4A843">${d.matchScore}pts</span>`:''}
+        <div style="width:8px;height:8px;border-radius:50%;background:${d.status==='online'?'#22c55e':'#D4A843'}"></div>
+      </div>
+    </div>`).join('');
+    })()}
     <button onclick="S._dispatchOpen=false;render()" style="width:100%;margin-top:8px;padding:14px;background:var(--surface-b);border:1px solid var(--border);border-radius:12px;color:var(--fg-dim);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>
   </div>
 </div>` : ''}

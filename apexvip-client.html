@@ -18,6 +18,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
 <script src="https://web.squarecdn.com/v1/square.js"></script>
 <script src="firebase.js"></script>
+<script src="apexvip-core.js"></script>
 <style>
 body{--bg:#000;--fg:#fff;--fg-muted:rgba(255,255,255,.38);--fg-dim:rgba(255,255,255,.3);--fg-subtle:rgba(255,255,255,.25);--fg-ghost:rgba(255,255,255,.2);--fg-faint:rgba(255,255,255,.15);--surface:rgba(255,255,255,.06);--surface-b:rgba(255,255,255,.1);--surface-c:rgba(255,255,255,.09);--border:rgba(255,255,255,.12);--border-b:rgba(255,255,255,.11);--divider:rgba(255,255,255,.05)}
 body.light{--bg:#f8f6f1;--fg:#0d0d0d;--fg-muted:rgba(0,0,0,.42);--fg-dim:rgba(0,0,0,.38);--fg-subtle:rgba(0,0,0,.32);--fg-ghost:rgba(0,0,0,.28);--fg-faint:rgba(0,0,0,.18);--surface:rgba(0,0,0,.04);--surface-b:rgba(0,0,0,.07);--surface-c:rgba(0,0,0,.09);--border:rgba(0,0,0,.09);--border-b:rgba(0,0,0,.13);--divider:rgba(0,0,0,.06)}
@@ -295,25 +296,15 @@ function initTrackingMap(){
   }
 }
 
-function getSurge(dateStr,timeStr){
-  if(!dateStr||!timeStr)return 1.0;
-  try{
-    const dt=new Date(dateStr+'T'+timeStr);
-    const h=dt.getHours(),dow=dt.getDay();
-    const ds=dateStr;
-    const bankHols=['2026-01-01','2026-04-03','2026-04-06','2026-05-04','2026-05-25','2026-08-31','2026-12-25','2026-12-26'];
-    if(bankHols.includes(ds))return 2.0;
-    if(ds.endsWith('-12-31')&&h>=20)return 3.0;
-    if((dow===5||dow===6)&&h>=18&&h<=23)return 1.5;
-    if(dow>=1&&dow<=5&&h>=6&&h<=9)return 1.25;
-    if(dow>=1&&dow<=5&&h>=17&&h<=20)return 1.25;
-  }catch(e){}
-  return 1.0;
+function getSurge(dateStr,timeStr,vehicle){
+  if(!dateStr||!timeStr||typeof ApexCore==='undefined')return 1.0;
+  const r=ApexCore.apexYield({date:dateStr,time:timeStr,vehicle:vehicle||'s',market:'london'});
+  return r.multiplier;
 }
-function surgeBadge(m){
-  if(m<=1)return'';
-  const txt=m>=2?'High Demand':m>=1.5?'Busy Period':'Peak Hours';
-  return`<div style="display:inline-flex;align-items:center;gap:5px;background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.25);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:700;color:#fbbf24;margin-bottom:14px">⚡ ${txt} · ${m}× surge</div>`;
+function surgeBadge(m,label){
+  if(m<=1.0)return'';
+  const txt=label||(m>=2.5?'Surge':m>=1.75?'High Demand':m>=1.25?'Peak':'');
+  return`<div style="display:inline-flex;align-items:center;gap:5px;background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.25);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:700;color:#fbbf24;margin-bottom:14px">⚡ ${txt} · ${m}×</div>`;
 }
 
 function go(screen, data) {
@@ -702,7 +693,10 @@ home: () => {
 'vehicle-select': () => {
   const pm = {airport:{s:185,v:225},hourly:{s:(state.booking.duration||3)*65,v:(state.booking.duration||3)*75},day:{s:450,v:550}};
   const p = pm[state.booking.serviceType]||pm.airport;
-  const surge = getSurge(state.booking.date, state.booking.time);
+  const ySurge = typeof ApexCore!=='undefined'
+    ? ApexCore.apexYield({date:state.booking.date,time:state.booking.time,vehicle:'s',market:'london'})
+    : {multiplier:1.0,label:'Standard'};
+  const surge = ySurge.multiplier;
   const sp = {s:Math.round(p.s*surge), v:Math.round(p.v*surge)};
   const sel = state.booking.vehicleId||'';
   const vehicles = [
@@ -721,7 +715,7 @@ home: () => {
     </div>
   </div>
   <div style="padding:0 22px;flex:1">
-    ${surgeBadge(surge)}
+    ${surgeBadge(surge,ySurge.label)}
     ${vehicles.map(v=>`
     <div id="vc_${v.id}" onclick="selectVehicle('${v.id}',${v.price},'${v.full}')" class="vcard ${sel===v.id?'sel':''}" style="margin-bottom:14px">
       <div class="vcard-media">
