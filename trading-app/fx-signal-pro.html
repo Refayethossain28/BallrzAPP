@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FX Signal Pro</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   :root{
@@ -298,7 +297,7 @@
 // ─── Constants ───────────────────────────────────────────────────────────────
 const PAIRS = ['EUR/USD','GBP/USD','USD/JPY','USD/CHF','AUD/USD','USD/CAD','NZD/USD','EUR/GBP','EUR/JPY','GBP/JPY','EUR/CHF','AUD/JPY','XAU/USD'];
 const FALLBACK_PRICES = {'EUR/USD':1.085,'GBP/USD':1.272,'USD/JPY':149.5,'USD/CHF':0.895,'AUD/USD':0.651,'USD/CAD':1.365,'NZD/USD':0.601,'EUR/GBP':0.852,'EUR/JPY':162.3,'GBP/JPY':190.1,'EUR/CHF':0.968,'AUD/JPY':97.3,'XAU/USD':2320.0};
-let chartInstance = null;
+let chartTooltipData = null;
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 function decimals(pair) {
@@ -678,35 +677,177 @@ function renderNews(articles, from, to) {
 }
 
 function renderChart(data, sig, pair) {
-  const labels=data.map(d=>d.t.slice(5));
-  const closes=data.map(d=>parseFloat(d.c.toFixed(decimals(pair))));
-  const isBuy=sig.type==='BUY',isSell=sig.type==='SELL';
-  const color=isBuy?'#00c853':isSell?'#d50000':'#f59e0b';
+  const canvas = document.getElementById('priceChart');
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.offsetWidth || 600;
+  const H = canvas.offsetHeight || 220;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
 
-  if(chartInstance){chartInstance.destroy();}
-  const ctx=document.getElementById('priceChart').getContext('2d');
-  const grad=ctx.createLinearGradient(0,0,0,220);
-  grad.addColorStop(0,color+'55'); grad.addColorStop(1,color+'00');
+  const isBuy = sig.type==='BUY', isSell = sig.type==='SELL';
+  const lineColor = isBuy?'#00c853':isSell?'#d50000':'#f59e0b';
+  const d = decimals(pair);
+  const closes = data.map(b => b.c);
 
-  chartInstance=new Chart(ctx,{
-    type:'line',
-    data:{labels,datasets:[
-      {label:'Close',data:closes,borderColor:color,backgroundColor:grad,borderWidth:2,pointRadius:0,fill:true,tension:0.3},
-      {label:'TP1',data:Array(closes.length).fill(parseFloat(sig.tp1.toFixed(decimals(pair)))),borderColor:'#00c853',borderWidth:1,borderDash:[6,4],pointRadius:0,fill:false},
-      {label:'SL',data:Array(closes.length).fill(parseFloat(sig.sl.toFixed(decimals(pair)))),borderColor:'#d50000',borderWidth:1,borderDash:[6,4],pointRadius:0,fill:false},
-      {label:'Entry',data:Array(closes.length).fill(parseFloat(sig.entry.toFixed(decimals(pair)))),borderColor:'#3b82f6',borderWidth:1,borderDash:[4,4],pointRadius:0,fill:false},
-    ]},
-    options:{
-      responsive:true,maintainAspectRatio:false,
-      interaction:{mode:'index',intersect:false},
-      plugins:{legend:{display:false},tooltip:{backgroundColor:'#1a1d2e',borderColor:'#2a2d3e',borderWidth:1,titleColor:'#e2e8f0',bodyColor:'#9ca3af',padding:10,
-        callbacks:{label:ctx=>`${ctx.dataset.label}: ${ctx.parsed.y.toFixed(decimals(pair))}`}}},
-      scales:{
-        x:{grid:{color:'#2a2d3e'},ticks:{color:'#6b7280',maxTicksLimit:8,font:{size:10}}},
-        y:{grid:{color:'#2a2d3e'},ticks:{color:'#6b7280',font:{size:10},callback:v=>v.toFixed(decimals(pair))},position:'right'}
-      }
-    }
-  });
+  // Padding
+  const pl=8, pr=56, pt=18, pb=28;
+  const cw = W-pl-pr, ch = H-pt-pb;
+
+  // Y range — include TP and SL
+  const allY = [...closes, sig.tp1, sig.tp2, sig.sl];
+  let yMin = Math.min(...allY), yMax = Math.max(...allY);
+  const yPad = (yMax-yMin)*0.12||yMin*0.01;
+  yMin -= yPad; yMax += yPad;
+  const yRange = yMax - yMin;
+
+  const xOf = i => pl + (i/(closes.length-1))*cw;
+  const yOf = v => pt + (1-(v-yMin)/yRange)*ch;
+
+  // Background
+  ctx.fillStyle='#1a1d2e'; ctx.fillRect(0,0,W,H);
+
+  // Grid lines & Y labels
+  const ticks = 5;
+  ctx.strokeStyle='#2a2d3e'; ctx.lineWidth=1; ctx.setLineDash([]);
+  ctx.fillStyle='#6b7280'; ctx.font=`10px monospace`; ctx.textAlign='right';
+  for(let i=0;i<=ticks;i++){
+    const v = yMin + (yRange*i/ticks);
+    const y = yOf(v);
+    ctx.beginPath(); ctx.moveTo(pl,y); ctx.lineTo(W-pr+4,y); ctx.stroke();
+    ctx.fillText(v.toFixed(d), W-2, y+3);
+  }
+
+  // X labels (every ~6 bars)
+  ctx.textAlign='center'; ctx.fillStyle='#6b7280'; ctx.font='10px sans-serif';
+  const step = Math.max(1, Math.floor(closes.length/6));
+  for(let i=0;i<closes.length;i+=step){
+    ctx.fillText(data[i].t.slice(5), xOf(i), H-8);
+  }
+
+  // Reference lines helper
+  function refLine(price, color, label) {
+    const y = yOf(price);
+    if(y < pt-4 || y > H-pb+4) return;
+    ctx.strokeStyle=color; ctx.lineWidth=1; ctx.setLineDash([6,4]);
+    ctx.beginPath(); ctx.moveTo(pl,y); ctx.lineTo(W-pr,y); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle=color; ctx.font='bold 10px sans-serif'; ctx.textAlign='left';
+    ctx.fillText(label, pl+4, y-3);
+  }
+  refLine(sig.tp1,'#00c853','TP1');
+  refLine(sig.tp2,'#00963d','TP2');
+  refLine(sig.sl,'#d50000','SL');
+  refLine(sig.entry,'#3b82f6','Entry');
+
+  // Area fill
+  const grad = ctx.createLinearGradient(0,pt,0,pt+ch);
+  grad.addColorStop(0, lineColor+'44');
+  grad.addColorStop(1, lineColor+'00');
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(xOf(0), yOf(closes[0]));
+  for(let i=1;i<closes.length;i++) ctx.lineTo(xOf(i), yOf(closes[i]));
+  ctx.lineTo(xOf(closes.length-1), pt+ch);
+  ctx.lineTo(xOf(0), pt+ch);
+  ctx.closePath();
+  ctx.fillStyle=grad; ctx.fill();
+
+  // Price line
+  ctx.strokeStyle=lineColor; ctx.lineWidth=2; ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(xOf(0), yOf(closes[0]));
+  for(let i=1;i<closes.length;i++) ctx.lineTo(xOf(i), yOf(closes[i]));
+  ctx.stroke();
+
+  // Hover tooltip
+  chartTooltipData = {closes, data, sig, pair, pl, pr, pt, pb, cw, ch, yMin, yRange, W, H, lineColor, d};
+  canvas.onmousemove = function(e) {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const td = chartTooltipData;
+    if(!td) return;
+    const idx = Math.round(((mx - td.pl) / td.cw) * (td.closes.length-1));
+    if(idx<0||idx>=td.closes.length) return;
+    drawChartWithTooltip(td, idx);
+  };
+  canvas.onmouseleave = function() {
+    if(chartTooltipData) drawChartWithTooltip(chartTooltipData, -1);
+  };
+}
+
+function drawChartWithTooltip(td, hoverIdx) {
+  const {closes, data, sig, pair, pl, pr, pt, pb, cw, ch, yMin, yRange, W, H, lineColor, d} = td;
+  const canvas = document.getElementById('priceChart');
+  const dpr = window.devicePixelRatio||1;
+  const ctx = canvas.getContext('2d');
+  ctx.save(); ctx.scale(dpr, dpr);
+
+  const xOf = i => pl + (i/(closes.length-1))*cw;
+  const yOf = v => pt + (1-(v-yMin)/yRange)*ch;
+
+  ctx.fillStyle='#1a1d2e'; ctx.fillRect(0,0,W,H);
+
+  // Grid
+  const ticks=5;
+  ctx.strokeStyle='#2a2d3e'; ctx.lineWidth=1; ctx.setLineDash([]);
+  ctx.fillStyle='#6b7280'; ctx.font='10px monospace'; ctx.textAlign='right';
+  for(let i=0;i<=ticks;i++){
+    const v=yMin+(yRange*i/ticks), y=yOf(v);
+    ctx.beginPath(); ctx.moveTo(pl,y); ctx.lineTo(W-pr+4,y); ctx.stroke();
+    ctx.fillText(v.toFixed(d),W-2,y+3);
+  }
+  ctx.textAlign='center'; ctx.fillStyle='#6b7280'; ctx.font='10px sans-serif';
+  const step=Math.max(1,Math.floor(closes.length/6));
+  for(let i=0;i<closes.length;i+=step) ctx.fillText(data[i].t.slice(5),xOf(i),H-8);
+
+  function refLine(price,color,label){
+    const y=yOf(price); if(y<pt-4||y>H-pb+4)return;
+    ctx.strokeStyle=color; ctx.lineWidth=1; ctx.setLineDash([6,4]);
+    ctx.beginPath(); ctx.moveTo(pl,y); ctx.lineTo(W-pr,y); ctx.stroke();
+    ctx.setLineDash([]); ctx.fillStyle=color; ctx.font='bold 10px sans-serif'; ctx.textAlign='left';
+    ctx.fillText(label,pl+4,y-3);
+  }
+  refLine(sig.tp1,'#00c853','TP1'); refLine(sig.tp2,'#00963d','TP2');
+  refLine(sig.sl,'#d50000','SL'); refLine(sig.entry,'#3b82f6','Entry');
+
+  const grad=ctx.createLinearGradient(0,pt,0,pt+ch);
+  grad.addColorStop(0,lineColor+'44'); grad.addColorStop(1,lineColor+'00');
+  ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(xOf(0),yOf(closes[0]));
+  for(let i=1;i<closes.length;i++) ctx.lineTo(xOf(i),yOf(closes[i]));
+  ctx.lineTo(xOf(closes.length-1),pt+ch); ctx.lineTo(xOf(0),pt+ch);
+  ctx.closePath(); ctx.fillStyle=grad; ctx.fill();
+
+  ctx.strokeStyle=lineColor; ctx.lineWidth=2; ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(xOf(0),yOf(closes[0]));
+  for(let i=1;i<closes.length;i++) ctx.lineTo(xOf(i),yOf(closes[i]));
+  ctx.stroke();
+
+  if(hoverIdx>=0&&hoverIdx<closes.length){
+    const x=xOf(hoverIdx), y=yOf(closes[hoverIdx]);
+    // Crosshair
+    ctx.strokeStyle='#ffffff33'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(x,pt); ctx.lineTo(x,pt+ch); ctx.stroke();
+    ctx.setLineDash([]);
+    // Dot
+    ctx.beginPath(); ctx.arc(x,y,4,0,Math.PI*2);
+    ctx.fillStyle=lineColor; ctx.fill();
+    ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; ctx.stroke();
+    // Tooltip box
+    const tx=data[hoverIdx].t.slice(5);
+    const tv=closes[hoverIdx].toFixed(d);
+    const label=`${tx}  ${tv}`;
+    ctx.font='11px monospace'; ctx.setLineDash([]);
+    const tw=ctx.measureText(label).width+16;
+    let bx=x+10; if(bx+tw>W-pr) bx=x-tw-10;
+    ctx.fillStyle='#1a1d2e'; ctx.strokeStyle='#3b82f6'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.roundRect(bx,y-14,tw,22,5); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='#e2e8f0'; ctx.textAlign='left';
+    ctx.fillText(label,bx+8,y+3);
+  }
+  ctx.restore();
 }
 
 // ─── Main Analysis Runner ─────────────────────────────────────────────────────
