@@ -144,6 +144,50 @@ body.light .nav{background:rgba(248,246,241,.96);border-top:1px solid rgba(0,0,0
 .rec-row::-webkit-scrollbar{display:none}
 .rec-card{flex-shrink:0;width:128px;background:var(--surface-b);border:1px solid var(--border);border-radius:16px;padding:14px 12px;cursor:pointer;transition:transform .12s,opacity .12s}
 .rec-card:active{transform:scale(.96);opacity:.85}
+
+/* ── 2026 visual layer ── */
+/* Aurora background — warm gold/amber drift for Dubai */
+@keyframes auroraDrift1{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(60px,50px) scale(1.15)}}
+@keyframes auroraDrift2{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-70px,-40px) scale(1.08)}}
+@keyframes auroraDrift3{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(40px,-70px) scale(1.2)}}
+.aurora{position:absolute;inset:0;overflow:hidden;z-index:0;pointer-events:none}
+.aurora i{position:absolute;border-radius:50%;filter:blur(90px);will-change:transform}
+.aurora i:nth-child(1){width:440px;height:440px;top:-140px;left:-110px;background:radial-gradient(circle,rgba(212,168,67,.12),transparent 65%);animation:auroraDrift1 24s ease-in-out infinite}
+.aurora i:nth-child(2){width:380px;height:380px;bottom:8%;right:-130px;background:radial-gradient(circle,rgba(180,120,60,.09),transparent 65%);animation:auroraDrift2 30s ease-in-out infinite}
+.aurora i:nth-child(3){width:340px;height:340px;top:38%;left:28%;background:radial-gradient(circle,rgba(120,90,160,.07),transparent 65%);animation:auroraDrift3 18s ease-in-out infinite}
+body.light .aurora{display:none}
+
+/* Staggered entrance */
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.stagger>*{opacity:0;animation:fadeUp .4s ease forwards}
+.stagger>*:nth-child(1){animation-delay:.03s}
+.stagger>*:nth-child(2){animation-delay:.06s}
+.stagger>*:nth-child(3){animation-delay:.09s}
+.stagger>*:nth-child(4){animation-delay:.12s}
+.stagger>*:nth-child(5){animation-delay:.15s}
+.stagger>*:nth-child(6){animation-delay:.18s}
+.stagger>*:nth-child(7){animation-delay:.21s}
+.stagger>*:nth-child(8){animation-delay:.24s}
+.stagger>*:nth-child(n+9){animation-delay:.27s}
+
+/* Micro-interactions */
+.btn:active{transform:scale(.97)}
+.card{transition:transform .18s,border-color .18s}
+.card:active{transform:scale(.985)}
+
+/* Sheen sweep on selected vehicle card */
+@keyframes sheenSweep{from{transform:translateX(-140%) skewX(-18deg)}to{transform:translateX(260%) skewX(-18deg)}}
+.vcard{position:relative}
+.vcard.sel::after{content:'';position:absolute;top:0;bottom:0;left:0;width:45%;background:linear-gradient(105deg,transparent,rgba(212,168,67,.13),transparent);transform:translateX(-140%) skewX(-18deg);animation:sheenSweep 1.1s .1s cubic-bezier(.4,0,.2,1) forwards;pointer-events:none;z-index:2}
+
+/* Tabular numerals for prices */
+.tnum{font-variant-numeric:tabular-nums}
+
+/* Modern scrollbar */
+*::-webkit-scrollbar{display:none}
+
+/* SilentService™ smart card — gold glow */
+.ss-card{background:linear-gradient(135deg,rgba(212,168,67,.13),rgba(212,168,67,.04));border:1px solid rgba(212,168,67,.38);border-radius:18px;padding:16px 18px;margin-bottom:22px;cursor:pointer;box-shadow:0 0 26px rgba(212,168,67,.10),inset 0 1px 0 rgba(255,255,255,.12)}
 </style>
 </head>
 <body>
@@ -257,6 +301,68 @@ function go(screen, data) {
 
 function mapBg(){return'<div id="map" style="position:absolute;inset:0;z-index:0"></div>';}
 
+// ── Aurora background (pure CSS, behind content) ──────────────────────────
+function auroraBg(extraStyle){
+  return `<div class="aurora"${extraStyle?` style="${extraStyle}"`:''}><i></i><i></i><i></i></div>`;
+}
+
+// ── SilentService™ — preference memory ─────────────────────────────────────
+const HISTORY_KEY='apexvip_dubai_history';
+function getBookingHistory(){
+  try{return JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]');}catch(e){return [];}
+}
+function pushBookingHistory(){
+  try{
+    const h=getBookingHistory();
+    h.push({
+      pickup:state.booking.pickup||'',
+      dropoff:state.booking.dropoff||state.booking.airport||'',
+      serviceType:state.booking.serviceType||'airport',
+      vehicle:state.booking.vehicle||'',
+      time:state.booking.time||'',
+      date:state.booking.date||'',
+      concierge:state.booking.concierge||null
+    });
+    if(h.length>50)h.splice(0,h.length-50);
+    localStorage.setItem(HISTORY_KEY,JSON.stringify(h));
+  }catch(e){}
+}
+function silentServiceCard(){
+  if(typeof ApexCore==='undefined')return'';
+  const history=getBookingHistory();
+  if(history.length<2)return'';
+  const profile=ApexCore.silentService(history);
+  if(!profile||!profile.prefill||!profile.prefill.pickup)return'';
+  const pf=profile.prefill;
+  return `
+      <div>
+        <div class="section-label" style="margin-bottom:10px;color:rgba(212,168,67,.75)">✦ Silent Service™ — For You</div>
+        <div class="ss-card" onclick="bookUsual()">
+          <div style="display:flex;align-items:center;gap:13px">
+            <div style="width:40px;height:40px;border-radius:13px;background:rgba(212,168,67,.12);border:1px solid rgba(212,168,67,.35);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#D4A843" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M4 9a8 8 0 0114-3M20 15a8 8 0 01-14 3"/></svg>
+            </div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Your usual — ${pf.pickup} → ${pf.dropoff}</div>
+              <div class="tnum" style="font-size:12px;color:var(--fg-dim);margin-top:3px">${pf.time} · learned from ${profile.bookings} bookings</div>
+            </div>
+            <div style="background:#D4A843;color:#000;border-radius:10px;padding:8px 13px;font-size:11px;font-weight:800;letter-spacing:.8px;flex-shrink:0">BOOK AGAIN</div>
+          </div>
+        </div>
+      </div>`;
+}
+function bookUsual(){
+  if(typeof ApexCore==='undefined')return;
+  const profile=ApexCore.silentService(getBookingHistory());
+  if(!profile||!profile.prefill)return;
+  const pf=profile.prefill;
+  state.booking={serviceType:pf.serviceType,pickup:pf.pickup,time:pf.time};
+  if(pf.serviceType==='airport')state.booking.airport=pf.dropoff;
+  else state.booking.dropoff=pf.dropoff;
+  track('silent_service_book_again',{service:pf.serviceType,src:'dubai'});
+  go('vehicle-select');
+}
+
 function bottomNav(active) {
   const items = [
     {id:'home',label:'Home',svg:`<svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>`},
@@ -278,6 +384,7 @@ splash: () => `
 <div style="min-height:100vh;display:flex;flex-direction:column;background:var(--bg);overflow:hidden;position:relative">
   <div style="position:absolute;inset:0;background:radial-gradient(ellipse 80% 50% at 50% 100%,rgba(255,255,255,.055),transparent);animation:fadeIn 2s 1s both ease"></div>
   <div style="position:absolute;width:700px;height:700px;top:-260px;left:50%;transform:translateX(-50%);background:radial-gradient(circle,rgba(255,255,255,.032),transparent 62%);animation:orb1 14s ease-in-out infinite alternate"></div>
+  ${auroraBg()}
   <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 32px;position:relative;z-index:1">
     <div style="text-align:center">
       <div style="position:relative;display:inline-block;margin-bottom:18px;animation:logoReveal 1.4s .3s both cubic-bezier(.16,1,.3,1)">
@@ -373,6 +480,7 @@ home: () => {
   return `
 <div style="position:relative;height:100vh;overflow:hidden;animation:fadeIn .3s ease">
   ${mapBg()}
+  ${auroraBg('z-index:1')}
   <div class="top-bar">
     <div>
       <div style="font-size:10px;color:var(--fg-ghost);letter-spacing:3px;font-weight:600;text-transform:uppercase">ApexVIP</div>
@@ -391,13 +499,15 @@ home: () => {
 
   <div class="sheet" style="height:${sheetH}px">
     <div class="sheet-handle"></div>
-    <div style="padding:22px 22px 0;height:calc(100% - 26px);overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:90px">
+    <div class="stagger" style="padding:22px 22px 0;height:calc(100% - 26px);overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:90px">
 
       <div onclick="go('route-input')" style="display:flex;align-items:center;gap:14px;background:var(--surface-b);border:1px solid var(--border-b);border-radius:18px;padding:17px 20px;margin-bottom:22px;cursor:pointer">
         <svg width="17" height="17" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.3)" stroke-width="2"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" d="M21 21l-4.35-4.35"/></svg>
         <span style="color:var(--fg-dim);font-size:16px;font-weight:500;flex:1">Where to?</span>
         <div style="background:#ffffff;border-radius:9px;padding:5px 11px;font-size:10px;font-weight:800;letter-spacing:1.5px;color:#000">BOOK</div>
       </div>
+
+      ${silentServiceCard()}
 
       <div class="section-label" style="margin-bottom:12px">Services</div>
       <div class="svc-grid" style="margin-bottom:22px">
@@ -635,7 +745,10 @@ home: () => {
     ? ApexCore.apexYield({date:state.booking.date,time:state.booking.time,vehicle:'s',market:'dubai'})
     : {multiplier:1.0,label:'Standard'};
   const surge = ySurge.multiplier;
-  const sp = {s:Math.round(p.s*surge),v:Math.round(p.v*surge),r:Math.round(p.r*ApexCore?.apexYield({date:state.booking.date,time:state.booking.time,vehicle:'r',market:'dubai'}).multiplier||p.r)};
+  const rSurge = typeof ApexCore!=='undefined'
+    ? ApexCore.apexYield({date:state.booking.date,time:state.booking.time,vehicle:'r',market:'dubai'}).multiplier
+    : 1.0;
+  const sp = {s:Math.round(p.s*surge),v:Math.round(p.v*surge),r:Math.round(p.r*rSurge)};
   const sel = state.booking.vehicleId||'';
   const vehicles = [
     {id:'sClass',name:'S-Class',full:'Mercedes S-Class',sub:'Business Sedan · Up to 3 passengers',price:sp.s,badge:'EXECUTIVE',features:['WiFi','Water','Charger','Meet & Greet'],img:'vehicles/s-class.jpg'},
@@ -653,7 +766,7 @@ home: () => {
       <div style="font-size:13px;color:var(--fg-dim);margin-top:1px">2025 model year fleet</div>
     </div>
   </div>
-  <div style="padding:0 22px;flex:1">
+  <div class="stagger" style="padding:0 22px;flex:1">
     ${surge>1.0?`<div style="display:inline-flex;align-items:center;gap:5px;background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.25);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:700;color:#fbbf24;margin-bottom:14px">⚡ ${ySurge.label} · ${surge}×</div>`:''}
     ${vehicles.map(v=>`
     <div id="vc_${v.id}" onclick="selectVehicle('${v.id}',${v.price},'${v.full}')" class="vcard ${sel===v.id?'sel':''}" style="margin-bottom:14px">
@@ -670,7 +783,7 @@ home: () => {
             <div style="font-size:13px;color:var(--fg-muted);margin-top:3px">${v.sub}</div>
           </div>
           <div style="text-align:right">
-            <div style="font-size:24px;font-weight:800;color:${sel===v.id?'#ffffff':'#fff'}">£${v.price}</div>
+            <div class="tnum" style="font-size:26px;font-weight:800;letter-spacing:-.02em;color:${sel===v.id?'#ffffff':'#fff'}">AED ${v.price.toLocaleString()}</div>
             <div style="font-size:11px;color:var(--fg-subtle);margin-top:2px">${state.booking.serviceType==='hourly'?'total':'flat rate'}</div>
           </div>
         </div>
@@ -744,7 +857,7 @@ home: () => {
       <div class="divider" style="margin-bottom:16px"></div>
       <div style="display:flex;justify-content:space-between;align-items:center">
         <span style="font-size:16px;font-weight:700">Total</span>
-        <span style="font-size:28px;font-weight:800;color:#ffffff">AED ${total.toLocaleString()}</span>
+        <span class="tnum" style="font-size:28px;font-weight:800;color:#ffffff">AED ${total.toLocaleString()}</span>
       </div>
       <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:9px 13px">
         <div style="display:flex;align-items:center;gap:7px"><span style="font-size:13px;color:#ffffff">◈</span><span style="font-size:12px;color:var(--fg-muted)">APEX Rewards</span></div>
@@ -775,7 +888,7 @@ payment: () => {
     <div style="background:linear-gradient(135deg,rgba(255,255,255,.12) 0%,rgba(255,255,255,.04) 100%);border:1px solid rgba(255,255,255,.2);border-radius:22px;padding:22px;margin-bottom:28px;display:flex;justify-content:space-between;align-items:flex-end">
       <div>
         <div class="section-label" style="margin-bottom:8px">Amount due</div>
-        <div style="font-size:36px;font-weight:800;color:#ffffff;line-height:1">AED ${total.toLocaleString()}</div>
+        <div class="tnum" style="font-size:36px;font-weight:800;color:#ffffff;line-height:1">AED ${total.toLocaleString()}</div>
         <div style="font-size:13px;color:var(--fg-dim);margin-top:6px">${svc}</div>
       </div>
       <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.35)" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><path stroke-linecap="round" d="M2 10h20"/></svg>
@@ -1302,6 +1415,7 @@ async function confirmBooking(overrideRef){
     }catch(err){console.warn('Booking save:',err.message);}
   }
   state._confirmedRef=ref;state._promoApplied=false;state._squarePaymentId=null;
+  pushBookingHistory();
   const _axcAmt=Math.round(total*0.02);
   earnApex(_axcAmt,'Trip booking');
   if(state._useApexCoin) track('apex_redeemed',{amount:total,src:'client'});
