@@ -1285,6 +1285,25 @@ payment: () => {
       <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.35)" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><path stroke-linecap="round" d="M2 10h20"/></svg>
     </div>
 
+    <div style="margin-bottom:16px">
+      <div class="section-label" style="margin-bottom:10px">Express Checkout</div>
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        <button onclick="runApplePay()" class="card" style="flex:1;padding:14px;display:flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--border);cursor:pointer;background:var(--surface);border-radius:16px">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+          <span style="font-size:14px;font-weight:600">Apple Pay</span>
+        </button>
+        <button onclick="runGooglePay()" class="card" style="flex:1;padding:14px;display:flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--border);cursor:pointer;background:var(--surface);border-radius:16px">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12.545 10.239v3.821h5.445c-.712 2.315-2.647 3.972-5.445 3.972a6.033 6.033 0 110-12.064c1.498 0 2.866.549 3.921 1.453l2.814-2.814A9.969 9.969 0 0012.545 2C7.021 2 2.543 6.477 2.543 12s4.478 10 10.002 10c8.396 0 10.249-7.85 9.426-11.748l-9.426-.013z"/></svg>
+          <span style="font-size:14px;font-weight:600">Google Pay</span>
+        </button>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+        <div style="flex:1;height:1px;background:var(--divider)"></div>
+        <div style="font-size:11px;color:var(--fg-ghost)">or pay by card</div>
+        <div style="flex:1;height:1px;background:var(--divider)"></div>
+      </div>
+    </div>
+
     <div class="section-label" style="margin-bottom:14px">Card details</div>
     <div id="sq-card" style="min-height:88px;border-radius:16px;overflow:hidden"></div>
     <div id="sq-error" style="color:#ef4444;font-size:13px;margin-top:10px;display:none;padding:10px 14px;background:rgba(239,68,68,.07);border-radius:10px"></div>
@@ -1558,6 +1577,21 @@ profile: () => {
         <span style="font-size:15px;flex:1">${r.label}</span>
         <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.2)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
       </div>`).join('')}
+    </div>
+    <div class="card" style="margin-bottom:12px;padding:18px 20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${state.paMode?'14px':'0'}">
+        <div>
+          <div style="font-size:15px;font-weight:700;margin-bottom:2px">PA / Book on Behalf</div>
+          <div style="font-size:12px;color:var(--fg-dim)">Book as a personal assistant for a client</div>
+        </div>
+        <div onclick="togglePaMode()" style="width:46px;height:26px;border-radius:13px;background:${state.paMode?'#D4A843':'var(--surface-b)'};border:1px solid ${state.paMode?'#D4A843':'var(--border)'};position:relative;cursor:pointer;transition:background .2s">
+          <div style="position:absolute;top:3px;left:${state.paMode?'23px':'3px'};width:18px;height:18px;border-radius:50%;background:#fff;transition:left .2s"></div>
+        </div>
+      </div>
+      ${state.paMode ? `
+      <div class="field" style="margin-bottom:8px"><input placeholder="Passenger name" value="${state.paPassenger.name||''}" oninput="setPaPassenger('name',this.value)" style="font-size:14px"/></div>
+      <div class="field"><input placeholder="Passenger phone" value="${state.paPassenger.phone||''}" oninput="setPaPassenger('phone',this.value)" type="tel" style="font-size:14px"/></div>
+      <div style="font-size:11px;color:var(--fg-dim);margin-top:8px">You will receive all updates. The passenger will receive the driver details.</div>` : ''}
     </div>
     <button onclick="signOut()" style="width:100%;padding:16px;background:transparent;border:1px solid var(--border);border-radius:16px;color:var(--fg-muted);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">Sign out</button>
     <div style="height:120px"></div>
@@ -2062,6 +2096,8 @@ async function confirmBooking(overrideRef){
         paymentStatus:state._squarePaymentId?'paid':'pending',
         driverName:'James Harrison',driverRating:4.9,driverPlate:'LX73 ABC',
         concierge:state.booking.concierge||null,
+        paMode: state.paMode || false,
+        paPassenger: state.paMode ? state.paPassenger : null,
         createdAt:firebase.firestore.FieldValue.serverTimestamp()
       });
     }catch(err){console.warn('Booking save:',err.message);}
