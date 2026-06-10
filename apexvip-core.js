@@ -218,12 +218,265 @@
   }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // SILENT SERVICE™ — preference memory engine
+  // Learns client patterns from booking history; returns a profile + prefill.
+  // ─────────────────────────────────────────────────────────────────────────
+  function silentService(history) {
+    if (!Array.isArray(history) || !history.length) return null;
+    const count = (arr) => arr.reduce((m, v) => { if (v) m[v] = (m[v] || 0) + 1; return m; }, {});
+    const top = (m, n = 3) => Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, n).map(([k]) => k);
+
+    const pickups   = count(history.map(b => b.pickup));
+    const dropoffs  = count(history.map(b => b.dropoff || b.airport));
+    const services  = count(history.map(b => b.serviceType));
+    const vehicles  = count(history.map(b => b.vehicle));
+    const hours     = count(history.map(b => (b.time || '').slice(0, 2)).filter(Boolean));
+
+    // Requirements that appear in ≥40% of day bookings become "always" prefs
+    const dayBookings = history.filter(b => b.serviceType === 'day' && b.concierge);
+    const reqFreq = {};
+    dayBookings.forEach(b => (b.concierge.requirements || []).forEach(r => { reqFreq[r] = (reqFreq[r] || 0) + 1; }));
+    const alwaysReqs = Object.entries(reqFreq)
+      .filter(([, c]) => dayBookings.length && c / dayBookings.length >= 0.4)
+      .map(([k]) => k);
+
+    const topService = top(services, 1)[0] || 'airport';
+    return {
+      bookings: history.length,
+      topPickups:   top(pickups),
+      topDropoffs:  top(dropoffs),
+      preferredService: topService,
+      preferredVehicle: top(vehicles, 1)[0] || null,
+      preferredHour:    top(hours, 1)[0] || null,
+      alwaysRequirements: alwaysReqs,
+      // Two-tap prefill suggestion
+      prefill: {
+        serviceType: topService,
+        pickup:  top(pickups, 1)[0]  || '',
+        dropoff: top(dropoffs, 1)[0] || '',
+        time:    (top(hours, 1)[0] || '10') + ':00',
+        requirements: alwaysReqs,
+      },
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // APEX ETA™ — certainty-calibrated arrival buffering
+  // Luxury optimises for *certainty*, not speed. Buffer scales by stakes.
+  // ─────────────────────────────────────────────────────────────────────────
+  // Percentile buffer factors by trip stakes (applied to base travel time)
+  const _ETA_STAKES = {
+    flight:     { pct: 0.97, factor: 0.45, floor: 20, label: 'Flight departure' },
+    eurostar:   { pct: 0.95, factor: 0.40, floor: 15, label: 'Rail departure'   },
+    event:      { pct: 0.93, factor: 0.30, floor: 12, label: 'Timed engagement' },
+    restaurant: { pct: 0.90, factor: 0.22, floor: 8,  label: 'Reservation'      },
+    general:    { pct: 0.85, factor: 0.15, floor: 5,  label: 'General'          },
+  };
+
+  function apexETA({ baseMinutes, tripType = 'general', hour = 12 }) {
+    const s = _ETA_STAKES[tripType] || _ETA_STAKES.general;
+    // Congestion widening: rush hours inflate variance
+    const congestion = (hour >= 7 && hour <= 9) || (hour >= 16 && hour <= 19) ? 1.35 : 1.0;
+    const buffer = Math.max(s.floor, Math.round(baseMinutes * s.factor * congestion));
+    return {
+      baseMinutes,
+      bufferMinutes: buffer,
+      totalMinutes: baseMinutes + buffer,
+      confidence: s.pct,
+      stakes: s.label,
+      promise: 'Arrive ' + buffer + ' min early — ' + Math.round(s.pct * 100) + '% on-time certainty',
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // QUIET ROUTE™ — comfort-weighted route scoring
+  // Scores candidate routes by glide quality, not just speed.
+  // route: { minutes, stopsPerKm, roughSegments, scenicKm, totalKm }
+  // ─────────────────────────────────────────────────────────────────────────
+  function quietRoute(routes, { maxExtraMinutes = 8 } = {}) {
+    if (!Array.isArray(routes) || !routes.length) return [];
+    const fastest = Math.min(...routes.map(r => r.minutes));
+    return routes.map(r => {
+      const extra = r.minutes - fastest;
+      const flow      = Math.max(0, 40 - (r.stopsPerKm || 1.5) * 14);          // 0-40: fewer stop-starts
+      const smooth    = Math.max(0, 30 - (r.roughSegments || 0) * 6);          // 0-30: surface quality
+      const scenic    = Math.min(20, ((r.scenicKm || 0) / (r.totalKm || 1)) * 40); // 0-20
+      const timeCost  = extra > maxExtraMinutes ? (extra - maxExtraMinutes) * 4 : 0;
+      const comfortScore = Math.max(0, Math.round(flow + smooth + scenic + 10 - timeCost));
+      return { ...r, comfortScore, extraMinutes: extra,
+        breakdown: { flow: Math.round(flow), smooth: Math.round(smooth), scenic: Math.round(scenic), timeCost: Math.round(timeCost) } };
+    }).sort((a, b) => b.comfortScore - a.comfortScore);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // APEX LIFETIME™ — client value tiering (RFM + growth trend)
+  // Tiers: Member → Gold → Black. Feeds PrestigeMatch + surge caps.
+  // ─────────────────────────────────────────────────────────────────────────
+  function apexLifetime(clientBookings, now = Date.now()) {
+    if (!Array.isArray(clientBookings) || !clientBookings.length)
+      return { tier: 'Member', score: 0, breakdown: {} };
+    const spend = clientBookings.reduce((s, b) => s + (parseFloat(b.price) || 0), 0);
+    const times = clientBookings.map(b => new Date(b.date || b.createdAt || now).getTime()).filter(t => !isNaN(t));
+    const daysSinceLast = times.length ? Math.floor((now - Math.max(...times)) / 86400000) : 999;
+
+    const R = daysSinceLast <= 14 ? 25 : daysSinceLast <= 45 ? 18 : daysSinceLast <= 90 ? 10 : 2;
+    const F = Math.min(25, clientBookings.length * 2.5);
+    const M = spend >= 10000 ? 30 : spend >= 4000 ? 22 : spend >= 1500 ? 14 : spend >= 500 ? 8 : 3;
+    // Growth: last-90-day spend vs prior 90 days
+    const cut = now - 90 * 86400000;
+    const recent = clientBookings.filter(b => new Date(b.date || b.createdAt || 0).getTime() >= cut)
+      .reduce((s, b) => s + (parseFloat(b.price) || 0), 0);
+    const prior = spend - recent;
+    const G = recent > prior * 1.2 ? 20 : recent > prior * 0.8 ? 12 : 5;
+
+    const score = Math.round(R + F + M + G);
+    const tier = score >= 75 ? 'Black' : score >= 45 ? 'Gold' : 'Member';
+    return { tier, score, spend: Math.round(spend), breakdown: { recency: R, frequency: F, monetary: M, growth: G } };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // FLEET PULSE™ — predictive driver positioning
+  // Converts the ApexYield event calendar into staging recommendations.
+  // ─────────────────────────────────────────────────────────────────────────
+  const _STAGING = {
+    "Wimbledon Fortnight": 'Wimbledon Village / SW19', "Wimbledon Final": 'Wimbledon Village / SW19',
+    "Royal Ascot": 'Windsor & Ascot approaches', "Henley Royal Regatta": 'Henley-on-Thames',
+    "London Fashion Week": 'Soho & The Strand', "Frieze Art Fair": "Regent's Park perimeter",
+    "BFI London Film Festival": 'South Bank & Leicester Sq', "New Year's Eve": 'Mayfair & Knightsbridge',
+    "Dubai World Cup": 'Meydan approaches', "GITEX Global": 'DWTC & Sheikh Zayed Rd',
+    "Dubai Airshow": 'DWC corridor', "Formula E Dubai": 'Downtown & DIFC',
+    "Dubai Shopping Festival": 'Dubai Mall & MoE', "Art Dubai": 'Madinat Jumeirah',
+  };
+
+  function fleetPulse(dateStr, { market = 'london', idleDrivers = 0 } = {}) {
+    const d = new Date(dateStr + 'T12:00:00');
+    if (isNaN(d)) return [];
+    const month = d.getMonth() + 1, day = d.getDate();
+    const recs = [];
+    for (const [em, esd, span, label, , mult] of _EVENTS) {
+      if (em === month && day >= esd && day < esd + span) {
+        const zone = _STAGING[label];
+        if (!zone) continue;
+        const cars = Math.max(1, Math.round(idleDrivers * Math.min(0.6, (mult - 1) * 0.5)));
+        recs.push({ event: label, zone, expectedSurge: mult,
+          suggestedCars: cars,
+          window: mult >= 2 ? 'Stage 90 min before peak' : 'Stage 45 min before peak' });
+      }
+    }
+    return recs.sort((a, b) => b.expectedSurge - a.expectedSurge);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // APEX GUARD™ — cancellation / no-show risk scoring
+  // ─────────────────────────────────────────────────────────────────────────
+  function apexGuard(booking, clientHistory = []) {
+    let risk = 0;
+    const reasons = [];
+    const total = clientHistory.length;
+    const cancelled = clientHistory.filter(b => b.status === 'cancelled').length;
+    if (total >= 3 && cancelled / total > 0.25) { risk += 35; reasons.push('Cancellation history'); }
+    else if (cancelled > 0) { risk += 12; reasons.push('Prior cancellation'); }
+    if (total === 0) { risk += 18; reasons.push('First booking'); }
+    if (booking.paymentStatus !== 'paid') { risk += 22; reasons.push('Unpaid at booking'); }
+    // Lead time: same-day low risk; >14 days ahead drifts
+    const lead = (new Date(booking.date + 'T' + (booking.time || '12:00')) - Date.now()) / 86400000;
+    if (lead > 14) { risk += 15; reasons.push('Long lead time'); }
+    if (booking.time) { const h = parseInt(booking.time); if (h >= 22 || h <= 4) { risk += 10; reasons.push('Late-night pickup'); } }
+    const score = Math.min(100, risk);
+    const level = score >= 55 ? 'high' : score >= 30 ? 'medium' : 'low';
+    return { score, level, reasons,
+      action: level === 'high' ? 'Require confirmation 3h before pickup'
+            : level === 'medium' ? 'Send gentle confirmation nudge'
+            : 'No action — trusted booking' };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // CONCIERGE AUTOPLAN™ — itinerary ordering optimiser
+  // Fixed-time stops are anchors; flexible stops slot between them by
+  // category opening-hours heuristics + greedy nearest-window assignment.
+  // ─────────────────────────────────────────────────────────────────────────
+  const _CATEGORY_WINDOWS = {
+    breakfast: [8, 10], collection: [9, 17], shopping: [10, 18], gallery: [10, 17],
+    lunch: [12, 14], business: [9, 17], spa: [10, 19], dinner: [19, 21], errand: [9, 17],
+  };
+
+  function _guessCategory(text) {
+    const t = (text || '').toLowerCase();
+    if (/breakfast|brunch/.test(t)) return 'breakfast';
+    if (/lunch/.test(t)) return 'lunch';
+    if (/dinner|restaurant/.test(t)) return 'dinner';
+    if (/shop|harrods|selfridges|bond st|boutique/.test(t)) return 'shopping';
+    if (/galler|museum|exhibit/.test(t)) return 'gallery';
+    if (/spa|salon|barber|groom/.test(t)) return 'spa';
+    if (/collect|pick ?up|dry clean|tailor|jewell?er/.test(t)) return 'collection';
+    if (/meeting|office|bank|sign/.test(t)) return 'business';
+    return 'errand';
+  }
+
+  function autoPlan(stops, { dayStart = 9, dayEnd = 19 } = {}) {
+    if (!Array.isArray(stops) || !stops.length) return [];
+    const fixed = [], flexible = [];
+    stops.forEach((s, i) => {
+      const item = { ...s, _i: i, category: s.category || _guessCategory(s.place + ' ' + (s.note || '')) };
+      if (s.time) { item._h = parseInt(s.time); fixed.push(item); } else flexible.push(item);
+    });
+    fixed.sort((a, b) => a._h - b._h);
+
+    // Score each flexible stop's affinity to each open hour slot, place greedily
+    const taken = new Set(fixed.map(f => f._h));
+    const placed = [];
+    flexible.forEach(f => {
+      const [wo, wc] = _CATEGORY_WINDOWS[f.category] || [dayStart, dayEnd];
+      let best = null, bestDist = 1e9;
+      for (let h = dayStart; h <= dayEnd; h++) {
+        if (taken.has(h)) continue;
+        const mid = (wo + wc) / 2;
+        const dist = h >= wo && h <= wc ? Math.abs(h - mid) : Math.abs(h - mid) + 6; // out-of-window penalty
+        if (dist < bestDist) { bestDist = dist; best = h; }
+      }
+      if (best !== null) { taken.add(best); f._h = best; placed.push(f); }
+    });
+
+    return [...fixed, ...placed].sort((a, b) => a._h - b._h)
+      .map(s => ({ time: (s.time || String(s._h).padStart(2, '0') + ':00'), place: s.place,
+        note: s.note || '', category: s.category, anchored: !!s.time }));
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // DISCRETE MODE™ — privacy-weighted dispatch for high-profile clients
+  // ─────────────────────────────────────────────────────────────────────────
+  function discreteMode(booking, drivers) {
+    const ranked = prestigeMatch(booking, drivers).map(d => {
+      let privacyScore = 0;
+      if (d.ndaSigned) privacyScore += 30;
+      if ((d.yearsService || 0) >= 3) privacyScore += 10;
+      if ((d.rating || 0) >= 4.8) privacyScore += 10;
+      if (d.mediaTrained) privacyScore += 15;
+      return { ...d, privacyScore, discreteTotal: d.matchScore + privacyScore };
+    }).sort((a, b) => b.discreteTotal - a.discreteTotal);
+    return {
+      drivers: ranked,
+      // Driver-facing preview is masked until acceptance
+      maskedPreview: { client: 'Private Client', pickup: (booking.pickup || '').split(',')[0],
+        dropoff: 'Disclosed on acceptance', notes: 'Discrete service protocol applies' },
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // Public API
   // ─────────────────────────────────────────────────────────────────────────
   return {
-    version: '1.0.0',
+    version: '2.0.0',
     apexYield,
     prestigeMatch,
+    silentService,
+    apexETA,
+    quietRoute,
+    apexLifetime,
+    fleetPulse,
+    apexGuard,
+    autoPlan,
+    discreteMode,
     // Expose raw tables for testing / visualisation
     _HOURLY,
     _DOW,
