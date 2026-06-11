@@ -14,6 +14,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
 <script src="firebase.js"></script>
 <script src="apexvip-core.js"></script>
 <style>
@@ -117,13 +118,14 @@ input:focus{border-color:var(--gold)}
 <div id="app"></div>
 <script>
 // ── Firebase init ──────────────────────────────────────────────────────
-let auth, db, FIREBASE_ENABLED = false, _driverId = null;
+let auth, db, fns = null, FIREBASE_ENABLED = false, _driverId = null;
 let _gpsInterval = null;
 try {
   if (typeof APEXVIP_FIREBASE_CONFIG !== 'undefined' && APEXVIP_FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY') {
     firebase.initializeApp(APEXVIP_FIREBASE_CONFIG);
     auth = firebase.auth();
     db = firebase.firestore();
+    fns = firebase.functions();
     FIREBASE_ENABLED = true;
   }
 } catch(e) { console.warn('Firebase init:', e.message); }
@@ -208,7 +210,7 @@ function toggleTheme(){
 function driverSendMsg(msg){
   const el=document.getElementById('driver-chat-sent');
   if(el){const d=document.createElement('div');d.style.cssText='background:linear-gradient(135deg,#C8A97E,#8B6020);border-radius:18px 18px 4px 18px;padding:12px 16px;font-size:13px;color:#000;font-weight:500;margin-bottom:4px';d.textContent=msg;el.appendChild(d);}
-  if(FIREBASE_ENABLED&&fns&&S.activeJob?.id){const fn=fns.httpsCallable('sendChauffeurMessage');fn({bookingRef:S.activeJob.id,message:msg,fromRole:'driver'}).catch(()=>{});}
+  if(FIREBASE_ENABLED&&fns&&S.activeJob){const fn=fns.httpsCallable('sendChauffeurMessage');fn({bookingRef:S.activeJob.bookingRef||S.activeJob.id,message:msg,fromRole:'driver'}).catch(()=>{});}
   track('driver_chat_sent',{src:'driver'});
 }
 function driverSendCustom(){
@@ -255,20 +257,60 @@ async function driverLogin(){
   }
 }
 
+function mapJob(doc){
+  const j={id:doc.id,...doc.data()};
+  return {id:j.id,bookingRef:j.bookingRef||'',bookingDocId:j.bookingDocId||'',type:j.type||'airport',
+    client:j.clientName||'Client',
+    initials:(j.clientName||'CL').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2),
+    service:j.serviceLabel||'Airport Transfer',pickup:j.pickup||'',
+    dropoff:j.dropoff||j.airport||'',time:j.time||'Now',
+    pay:j.pay||j.price||95,flight:j.flight||'',notes:j.notes||'',
+    vehicle:j.vehicle||'S-Class',status:j.status||'pending'};
+}
+
 function setupDriverListeners(uid){
-  db.collection('jobs').where('driverId','==',uid).where('status','in',['pending'])
+  // Publish driver profile so the admin dispatch list shows real details
+  db.collection('users').doc(uid).get().then(u=>{
+    const p=u.exists?u.data():{};
+    db.collection('drivers').doc(uid).set({
+      name:p.name||p.displayName||'James Harrison',
+      vehicle:p.vehicle||'Mercedes S-Class',model:p.vehicle||'Mercedes S-Class',
+      reg:p.reg||'LX73 ABC',rating:p.rating||4.96
+    },{merge:true}).catch(()=>{});
+  }).catch(()=>{});
+  db.collection('jobs').where('driverId','==',uid).where('status','in',['pending','accepted','en_route','arrived','onboard'])
     .onSnapshot(snap=>{
-      if(!snap.empty&&!S.jobOverlay&&!S.activeJob){
-        const doc=snap.docs[0];
-        const j={id:doc.id,...doc.data()};
-        JOBS[0]={id:j.id,type:j.type||'airport',client:j.clientName||'Client',
-          initials:(j.clientName||'CL').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2),
-          service:j.serviceLabel||'Airport Transfer',pickup:j.pickup||'',
-          dropoff:j.dropoff||j.airport||'',time:j.time||'Now',
-          pay:j.pay||j.price||95,flight:j.flight||'',notes:j.notes||'',vehicle:j.vehicle||'S-Class'};
-        S.jobOverlay=true;S.countdown=30;startCountdown();render();
+      // Live jobs from Firestore replace the demo list entirely
+      JOBS.length=0;
+      snap.docs.forEach(d=>JOBS.push(mapJob(d)));
+      // New pending job and driver is idle → ring the job offer overlay
+      const pending=JOBS.find(j=>j.status==='pending');
+      if(pending&&!S.jobOverlay&&!S.activeJob){
+        S._offeredJob=pending;
+        S.jobOverlay=true;S.countdown=30;startCountdown();
       }
+      // Resume an in-progress job after app reload
+      if(!S.activeJob){
+        const inProgress=JOBS.find(j=>['accepted','en_route','arrived','onboard'].includes(j.status));
+        if(inProgress){S.activeJob=inProgress;S.tripStep={accepted:2,en_route:2,arrived:3,onboard:4}[inProgress.status]||2;}
+      }
+      render();
     },()=>{});
+}
+
+// Mirror trip status onto the linked booking so the client app sees it live.
+// Prefer the direct doc ID — a where('ref'…) query without a driverId filter
+// is rejected by Firestore security rules.
+function syncBookingStatus(job,status,extra){
+  if(!FIREBASE_ENABLED)return;
+  const patch={status,...(extra||{})};
+  if(job?.bookingDocId){
+    db.collection('bookings').doc(job.bookingDocId).update(patch).catch(()=>{});
+  }else if(job?.bookingRef&&_driverId){
+    db.collection('bookings').where('ref','==',job.bookingRef).where('driverId','==',_driverId).limit(1).get()
+      .then(snap=>{if(!snap.empty)snap.docs[0].ref.update(patch).catch(()=>{});})
+      .catch(()=>{});
+  }
 }
 
 function startGPSStream(){
@@ -309,9 +351,10 @@ function goOnline(){
     db.collection('drivers').doc(_driverId).set({status:S.online?'online':'offline'},{merge:true}).catch(()=>{});
     if(S.online) startGPSStream(); else stopGPSStream();
   }
-  if(S.online){
+  if(S.online&&!FIREBASE_ENABLED){
+    // Demo mode only — simulate an incoming job offer
     clearTimeout(S._timer);
-    S._timer=setTimeout(()=>{S.jobOverlay=true;S.countdown=30;startCountdown();render();},3000);
+    S._timer=setTimeout(()=>{S._offeredJob=JOBS[0];S.jobOverlay=true;S.countdown=30;startCountdown();render();},3000);
   } else {
     clearTimeout(S._timer);
     clearInterval(S._cdTimer);
@@ -334,11 +377,13 @@ function startCountdown(){
 function acceptJob(){
   clearInterval(S._cdTimer);
   S.jobOverlay=false;
-  S.activeJob=JOBS[0];
+  S.activeJob=S._offeredJob||JOBS[0];
+  S._offeredJob=null;
   S.tripStep=2;
   S.tripTimer=0;
   if(FIREBASE_ENABLED&&S.activeJob?.id){
     db.collection('jobs').doc(S.activeJob.id).update({status:'accepted'}).catch(()=>{});
+    syncBookingStatus(S.activeJob,'accepted');
     if(_driverId) db.collection('drivers').doc(_driverId).set({status:'ontrip'},{merge:true}).catch(()=>{});
   }
   startGPSStream();
@@ -357,6 +402,7 @@ function nextStep(){
   const stepNames={2:'en_route',3:'arrived',4:'onboard',5:'completed'};
   if(FIREBASE_ENABLED&&S.activeJob?.id){
     db.collection('jobs').doc(S.activeJob.id).update({tripStep:S.tripStep,status:stepNames[S.tripStep]||'active'}).catch(()=>{});
+    if(S.tripStep<5) syncBookingStatus(S.activeJob,stepNames[S.tripStep]||'active');
   }
   if(S.tripStep===4){
     clearInterval(S._tripTimerInterval);
@@ -366,11 +412,9 @@ function nextStep(){
     stopGPSStream();
     clearInterval(S._tripTimerInterval);
     if(FIREBASE_ENABLED&&_driverId) db.collection('drivers').doc(_driverId).set({status:'online'},{merge:true}).catch(()=>{});
-    if(S.activeJob?.id){
+    if(FIREBASE_ENABLED&&S.activeJob?.id){
       db.collection('jobs').doc(S.activeJob.id).update({status:'completed',completedAt:firebase.firestore.FieldValue.serverTimestamp()}).catch(()=>{});
-      db.collection('bookings').where('ref','==',S.activeJob.id).limit(1).get()
-        .then(snap=>{if(!snap.empty)snap.docs[0].ref.update({status:'completed',completedAt:firebase.firestore.FieldValue.serverTimestamp()});})
-        .catch(()=>{});
+      syncBookingStatus(S.activeJob,'completed',{completedAt:firebase.firestore.FieldValue.serverTimestamp()});
     }
     // Award 2% of job value as ApexCoin
     const jobPay=S.activeJob?.pay||0;
@@ -413,6 +457,7 @@ login:()=>`<div style="min-height:100vh;background:#050505;display:flex;flex-dir
 </div>`,
 
 home:()=>{
+  const oj=S._offeredJob||JOBS[0];
   const overlay=S.jobOverlay?`<div class="overlay">
     <div style="width:100%;max-width:360px;background:rgba(14,12,10,.96);border:1px solid var(--border);border-radius:24px;padding:28px;text-align:center;animation:scaleIn .3s ease;backdrop-filter:blur(20px)">
       <div class="section-label" style="margin-bottom:10px">New Job Request</div>
@@ -427,12 +472,12 @@ home:()=>{
           <div style="font-size:10px;color:var(--fg-subtle)">sec</div>
         </div>
       </div>
-      <div style="width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#C8A97E,#8B6020);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#000;margin:0 auto 8px">${JOBS[0]?.initials||'CL'}</div>
-      <div style="font-size:13px;font-weight:600;margin-bottom:4px">${JOBS[0]?.client||'Client'}</div>
-      <div style="font-size:11px;color:var(--fg-dim);margin-bottom:${JOBS[0]?.type==='day'?'10':'16'}px">${JOBS[0]?.type==='airport'?'✈':JOBS[0]?.type==='hourly'?'⏱':'📅'} ${JOBS[0]?.service||'Airport Transfer'}</div>
-      ${JOBS[0]?.type==='day'?`<div style="background:linear-gradient(135deg,rgba(200,169,126,.18),rgba(200,169,126,.08));border:1px solid rgba(200,169,126,.35);border-radius:10px;padding:8px 12px;margin-bottom:14px;text-align:center"><div style="font-size:10px;font-weight:700;color:#C8A97E;letter-spacing:1px">PERSONAL DRIVER · ALL DAY</div>${JOBS[0]?.concierge?.itinerary?.length?`<div style="font-size:11px;color:var(--fg-dim);margin-top:4px">First stop: ${JOBS[0].concierge.itinerary[0].place}${JOBS[0].concierge.errands?.length?` · ${JOBS[0].concierge.errands.length} errand${JOBS[0].concierge.errands.length!==1?'s':''}`:''}</div>`:''}  </div>`:''}
-      ${[['Pickup',JOBS[0]?.pickup||'—'],['Drop-off',JOBS[0]?.dropoff||'—'],['In',JOBS[0]?.time||'Now']].map(([l,v])=>`<div style="display:flex;justify-content:space-between;margin-bottom:7px;font-size:13px"><span style="color:var(--fg-dim)">${l}</span><span style="font-weight:600">${v}</span></div>`).join('')}
-      <div style="font-size:30px;font-weight:800;color:#C8A97E;margin:16px 0 18px">£${JOBS[0]?.pay||95}</div>
+      <div style="width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#C8A97E,#8B6020);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#000;margin:0 auto 8px">${oj?.initials||'CL'}</div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px">${oj?.client||'Client'}</div>
+      <div style="font-size:11px;color:var(--fg-dim);margin-bottom:${oj?.type==='day'?'10':'16'}px">${oj?.type==='airport'?'✈':oj?.type==='hourly'?'⏱':'📅'} ${oj?.service||'Airport Transfer'}</div>
+      ${oj?.type==='day'?`<div style="background:linear-gradient(135deg,rgba(200,169,126,.18),rgba(200,169,126,.08));border:1px solid rgba(200,169,126,.35);border-radius:10px;padding:8px 12px;margin-bottom:14px;text-align:center"><div style="font-size:10px;font-weight:700;color:#C8A97E;letter-spacing:1px">PERSONAL DRIVER · ALL DAY</div>${oj?.concierge?.itinerary?.length?`<div style="font-size:11px;color:var(--fg-dim);margin-top:4px">First stop: ${oj.concierge.itinerary[0].place}${oj.concierge.errands?.length?` · ${oj.concierge.errands.length} errand${oj.concierge.errands.length!==1?'s':''}`:''}</div>`:''}  </div>`:''}
+      ${[['Pickup',oj?.pickup||'—'],['Drop-off',oj?.dropoff||'—'],['In',oj?.time||'Now']].map(([l,v])=>`<div style="display:flex;justify-content:space-between;margin-bottom:7px;font-size:13px"><span style="color:var(--fg-dim)">${l}</span><span style="font-weight:600">${v}</span></div>`).join('')}
+      <div style="font-size:30px;font-weight:800;color:#C8A97E;margin:16px 0 18px">£${oj?.pay||95}</div>
       <div style="display:flex;gap:10px">
         <button class="btn btn-glass" style="flex:1;padding:13px" onclick="declineJob()">Decline</button>
         <button class="btn btn-green" style="flex:1;padding:13px" onclick="acceptJob()">Accept</button>

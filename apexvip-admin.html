@@ -270,7 +270,7 @@ if(FIREBASE_ENABLED){
   db.collection('bookings').orderBy('createdAt','desc').onSnapshot(snap=>{
     BOOKINGS=snap.docs.map(d=>{
       const x=d.data();
-      return{id:d.id,_docId:d.id,client:x.clientName||'—',pickup:x.pickup||'',dropoff:x.dropoff||'',
+      return{id:d.id,docId:d.id,client:x.clientName||'—',pickup:x.pickup||'',dropoff:x.dropoff||'',
         date:x.date||'',time:x.time||'',vehicle:x.vehicle||'S-Class',
         driver:x.driverName||x.driver||'—',status:x.status||'pending',
         price:x.price?'£'+x.price:(x.priceStr||'£185'),ref:x.ref||d.id};
@@ -281,9 +281,11 @@ if(FIREBASE_ENABLED){
     if(!snap.empty){
       DRIVERS=snap.docs.map(d=>{
         const x=d.data();
-        return{id:d.id,name:x.name||'',initials:(x.name||'??').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2),
+        // Driver doc ID is the driver's auth uid (driver app writes drivers/{uid})
+        return{id:d.id,uid:d.id,name:x.name||'',initials:(x.name||'??').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2),
           color:x.color||'#C8A97E',rating:x.rating||4.8,status:x.status||'offline',
-          vehicle:x.vehicle||'S-Class',trips:x.trips||0,earnings:'£'+(x.earnings||0)};
+          vehicle:x.vehicle||'S-Class',model:x.model||x.vehicle||'S-Class',
+          reg:x.reg||x.plate||'',trips:x.trips||0,earnings:'£'+(x.earnings||0)};
       });
       if(!['login'].includes(S.screen))render();
     }
@@ -1092,6 +1094,7 @@ function confirmDispatch(driverIdOrName){
     if(driver.uid){
       db.collection('jobs').add({
         driverId:driver.uid,bookingRef:booking.ref||booking.id,
+        bookingDocId:booking.docId||'',
         clientName:booking.client||booking.clientName||'',
         pickup:booking.pickup||'',dropoff:booking.dropoff||'',
         date:booking.date||'',time:booking.time||'',
