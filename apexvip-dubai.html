@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<link rel="manifest" href="manifest.json"/>
+<meta name="theme-color" content="#000000"/>
 <title>ApexVIP Dubai</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -188,6 +190,15 @@ body.light .aurora{display:none}
 
 /* SilentService™ smart card — gold glow */
 .ss-card{background:linear-gradient(135deg,rgba(212,168,67,.13),rgba(212,168,67,.04));border:1px solid rgba(212,168,67,.38);border-radius:18px;padding:16px 18px;margin-bottom:22px;cursor:pointer;box-shadow:0 0 26px rgba(212,168,67,.10),inset 0 1px 0 rgba(255,255,255,.12)}
+
+/* RTL support */
+[dir="rtl"] .back-btn svg { transform: scaleX(-1); }
+[dir="rtl"] .nav { direction: rtl; }
+[dir="rtl"] .sheet { text-align: right; }
+[dir="rtl"] input, [dir="rtl"] textarea { text-align: right; direction: rtl; }
+[dir="rtl"] .section-label { letter-spacing: 0; }
+[dir="rtl"] .inp-row { flex-direction: row-reverse; }
+[dir="rtl"] .card { text-align: right; }
 </style>
 </head>
 <body>
@@ -227,7 +238,7 @@ const $ = id => document.getElementById(id);
 const app = document.getElementById('app');
 
 let state = {
-  screen: 'splash', user: null, booking: {}, selectedTrip: null,
+  screen: 'splash', user: null, booking: {}, selectedTrip: null, lang: 'en',
   theme: localStorage.getItem('apexvip_theme') || 'dark',
   apexBalance: parseInt(localStorage.getItem('apex_balance')||'0'),
   apexTransactions: JSON.parse(localStorage.getItem('apex_txs')||'[]'),
@@ -237,6 +248,10 @@ let state = {
     {id:2,brand:'Mastercard',last4:'8888',expiry:'03/26',color:'linear-gradient(135deg,#1a1a2e,#16213e)',isDefault:false}
   ]
 };
+
+// Initialize language from storage
+const _savedLang = localStorage.getItem('apexvip_dubai_lang');
+if (_savedLang) state.lang = _savedLang;
 
 document.body.classList.toggle('light', state.theme === 'light');
 let TRIPS = [
@@ -288,6 +303,86 @@ function initMap(){
       L.marker([coords.latitude,coords.longitude],{icon:uIcon}).addTo(mapInstance).bindPopup('You are here');
     },()=>{});
   }
+}
+
+const CONCIERGE_MSGS_DXB = [];
+let _conciergeDxbLoading = false;
+async function sendConciergeMsgDxb() {
+  const inp = document.getElementById('concierge-inp-dxb');
+  if (!inp || !inp.value.trim()) return;
+  const msg = inp.value.trim();
+  inp.value = '';
+  CONCIERGE_MSGS_DXB.push({ role: 'user', content: msg });
+  _conciergeDxbLoading = true;
+  render();
+  try {
+    if (FIREBASE_ENABLED && fns) {
+      const fn = fns.httpsCallable('parseBookingIntent');
+      const res = await fn({ message: msg });
+      const d = res.data;
+      CONCIERGE_MSGS_DXB.push({ role: 'assistant', content: d.reply || 'Let me arrange that for you.' });
+      if (d.serviceType) {
+        state.booking.serviceType = d.serviceType;
+        if (d.pickup) state.booking.pickup = d.pickup;
+        if (d.dropoff) state.booking.dropoff = d.dropoff;
+        state._conciergeParsedDxb = d;
+        CONCIERGE_MSGS_DXB.push({ role: 'system', content: '✓ Booking details understood — tap "Review & Confirm" to continue.' });
+      }
+    } else {
+      await new Promise(r => setTimeout(r, 900));
+      CONCIERGE_MSGS_DXB.push({ role: 'assistant', content: 'Understood. I will arrange a Rolls-Royce for your journey. Shall I confirm?' });
+      state._conciergeParsedDxb = { serviceType: 'airport' };
+    }
+  } catch(e) {
+    CONCIERGE_MSGS_DXB.push({ role: 'assistant', content: 'My apologies — please try again or call our Dubai desk.' });
+  }
+  _conciergeDxbLoading = false;
+  render();
+  setTimeout(() => { const el = document.getElementById('concierge-msgs-dxb'); if (el) el.scrollTop = el.scrollHeight; }, 60);
+}
+function conciergeReviewDxb() {
+  const d = state._conciergeParsedDxb;
+  if (!d) return;
+  if (d.serviceType) state.booking.serviceType = d.serviceType;
+  go('vehicle-select');
+}
+
+const AR = {
+  'Luxury Concierge Services': 'خدمات الكونسيرج الفاخرة',
+  'Get started': 'ابدأ الآن',
+  'Sign in': 'تسجيل الدخول',
+  'Home': 'الرئيسية',
+  'Trips': 'الرحلات',
+  'Profile': 'الملف الشخصي',
+  'Book a Car': 'احجز سيارة',
+  'Airport Transfer': 'النقل من/إلى المطار',
+  'By the Hour': 'بالساعة',
+  'By the Day': 'طوال اليوم',
+  'Good morning': 'صباح الخير',
+  'Good afternoon': 'مساء الخير',
+  'Good evening': 'مساء النور',
+  'Confirm Booking': 'تأكيد الحجز',
+  'Your Rides': 'رحلاتك',
+  'Upcoming': 'القادمة',
+  'Past Trips': 'الرحلات السابقة',
+  'Select Vehicle': 'اختر المركبة',
+  'Continue': 'متابعة',
+  'Cancel': 'إلغاء',
+  'Payment': 'الدفع',
+  'Total': 'الإجمالي',
+  'Sign Out': 'تسجيل الخروج',
+  'Settings': 'الإعدادات',
+};
+function t(key) {
+  if (state.lang === 'ar' && AR[key]) return AR[key];
+  return key;
+}
+function toggleLang() {
+  state.lang = state.lang === 'en' ? 'ar' : 'en';
+  localStorage.setItem('apexvip_dubai_lang', state.lang);
+  document.documentElement.setAttribute('dir', state.lang === 'ar' ? 'rtl' : 'ltr');
+  document.documentElement.setAttribute('lang', state.lang);
+  render();
 }
 
 function go(screen, data) {
@@ -491,9 +586,14 @@ home: () => {
         <span style="font-size:10px;color:var(--fg-ghost)">· ${apexTier(state.apexBalance)}</span>
       </button>
     </div>
-    <div onclick="go('notifications')" style="position:relative;width:42px;height:42px;border-radius:50%;background:var(--surface-c);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.09);display:flex;align-items:center;justify-content:center;cursor:pointer">
-      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
-      <div style="position:absolute;top:9px;right:9px;width:7px;height:7px;border-radius:50%;background:#ffffff;border:1.5px solid #000"></div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button onclick="toggleLang()" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:6px 10px;font-size:11px;font-weight:700;color:var(--fg);letter-spacing:.5px;cursor:pointer">
+        ${state.lang === 'en' ? 'عربي' : 'EN'}
+      </button>
+      <div onclick="go('notifications')" style="position:relative;width:42px;height:42px;border-radius:50%;background:var(--surface-c);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.09);display:flex;align-items:center;justify-content:center;cursor:pointer">
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+        <div style="position:absolute;top:9px;right:9px;width:7px;height:7px;border-radius:50%;background:#ffffff;border:1.5px solid #000"></div>
+      </div>
     </div>
   </div>
 
@@ -1108,7 +1208,10 @@ profile: () => {
     <div class="back-btn" onclick="go('home')">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
     </div>
-    <div style="font-size:32px;font-weight:800">Profile</div>
+    <div style="font-size:32px;font-weight:800;flex:1">Profile</div>
+    <button onclick="toggleLang()" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:6px 10px;font-size:11px;font-weight:700;color:var(--fg);letter-spacing:.5px;cursor:pointer">
+      ${state.lang === 'en' ? 'عربي' : 'EN'}
+    </button>
   </div>
   <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding:0 22px 100px">
     <div class="card" style="padding:18px;margin-bottom:16px;display:flex;align-items:center;gap:16px">
@@ -1250,6 +1353,38 @@ profile: () => {
       </div>
     </div>`).join('')}
     <button class="btn btn-glass">+ Add card</button>
+  </div>
+</div>`,
+
+'concierge-chat': () => `
+<div style="min-height:100vh;display:flex;flex-direction:column;background:var(--bg)">
+  <div class="top-bar">
+    <div class="back-btn" onclick="go('home')">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+    </div>
+    <div style="font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase">${state.lang==='ar'?'المساعد الذكي':'AI Concierge'}</div>
+    <div style="width:36px"></div>
+  </div>
+  <div id="concierge-msgs-dxb" style="flex:1;overflow-y:auto;padding:90px 20px 20px;display:flex;flex-direction:column;gap:12px">
+    <div style="align-self:flex-start;max-width:82%">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:18px 18px 18px 4px;padding:14px 16px;font-size:14px;line-height:1.5">
+        ${state.lang==='ar'?'مرحباً بكم في خدمة كونسيرج ApexVIP. أخبرني أين تريد الذهاب وسأرتب كل شيء لك.':'Welcome to ApexVIP Dubai. Tell me where you would like to go and I\'ll arrange everything — in English or Arabic.'}
+      </div>
+    </div>
+    ${CONCIERGE_MSGS_DXB.map(m => m.role === 'user' ? `
+      <div style="align-self:flex-end;max-width:82%"><div style="background:linear-gradient(135deg,#D4A843,#b8892f);border-radius:18px 18px 4px 18px;padding:14px 16px;font-size:14px;color:#000;font-weight:500;line-height:1.5">${m.content}</div></div>` : m.role === 'system' ? `
+      <div style="align-self:center;font-size:12px;color:#4CAF50;padding:4px 12px;background:rgba(76,175,80,.1);border-radius:20px">${m.content}</div>` : `
+      <div style="align-self:flex-start;max-width:82%"><div style="background:var(--surface);border:1px solid var(--border);border-radius:18px 18px 18px 4px;padding:14px 16px;font-size:14px;line-height:1.5">${m.content}</div></div>`).join('')}
+    ${_conciergeDxbLoading ? `<div style="align-self:flex-start"><div style="background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:12px 18px;font-size:20px;letter-spacing:4px;color:var(--fg-dim)">···</div></div>` : ''}
+    ${state._conciergeParsedDxb ? `<button class="btn btn-gold" style="margin-top:8px" onclick="conciergeReviewDxb()">Review & Confirm →</button>` : ''}
+  </div>
+  <div style="padding:16px 20px 34px;border-top:1px solid var(--divider)">
+    <div class="field" style="display:flex;gap:10px;padding:12px 16px;align-items:center">
+      <input id="concierge-inp-dxb" placeholder="${state.lang==='ar'?'أخبرني وجهتك…':'Tell me where you\'d like to go…'}" style="flex:1;font-size:15px" onkeydown="if(event.key==='Enter'){sendConciergeMsgDxb();event.preventDefault()}"/>
+      <button onclick="sendConciergeMsgDxb()" style="background:#D4A843;border:none;border-radius:10px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#000" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5M5 12l7-7 7 7"/></svg>
+      </button>
+    </div>
   </div>
 </div>`
 
@@ -1531,6 +1666,8 @@ if(FIREBASE_ENABLED){
 }
 
 function render(){
+  document.documentElement.setAttribute('dir', state.lang === 'ar' ? 'rtl' : 'ltr');
+  document.documentElement.setAttribute('lang', state.lang);
   const fn=screens[state.screen];
   app.innerHTML=fn?fn():`<div style="padding:40px;text-align:center;color:var(--fg-ghost)">Screen not found</div>`;
   if(state.screen==='home') setTimeout(initMap,60);

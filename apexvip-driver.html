@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black"/>
+<link rel="manifest" href="manifest.json"/>
+<meta name="theme-color" content="#000000"/>
 <title>ApexVIP Driver</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -188,6 +190,18 @@ function toggleTheme(){
   render();
 }
 
+function driverSendMsg(msg){
+  const el=document.getElementById('driver-chat-sent');
+  if(el){const d=document.createElement('div');d.style.cssText='background:linear-gradient(135deg,#D4A843,#8B6020);border-radius:18px 18px 4px 18px;padding:12px 16px;font-size:13px;color:#000;font-weight:500;margin-bottom:4px';d.textContent=msg;el.appendChild(d);}
+  if(FIREBASE_ENABLED&&fns&&S.activeJob?.id){const fn=fns.httpsCallable('sendChauffeurMessage');fn({bookingRef:S.activeJob.id,message:msg,fromRole:'driver'}).catch(()=>{});}
+  track('driver_chat_sent',{src:'driver'});
+}
+function driverSendCustom(){
+  const inp=document.getElementById('driver-chat-inp');
+  if(!inp||!inp.value.trim())return;
+  const msg=inp.value.trim();inp.value='';
+  driverSendMsg(msg);
+}
 function go(s){S.screen=s;track('screen_view',{screen:s,src:'driver'});render();window.scrollTo(0,0);}
 
 async function driverLogin(){
@@ -348,7 +362,8 @@ function nextStep(){
     const axcEarned=parseFloat((jobPay*0.02).toFixed(2));
     if(axcEarned>0){S.apexcoin=parseFloat((S.apexcoin+axcEarned).toFixed(2));S._axcHistory.unshift({desc:S.activeJob?.service||'Trip',type:'earn',amount:axcEarned,date:'Just now'});}
     track('trip_completed',{pay:jobPay,axc:axcEarned,duration:S.tripTimer,src:'driver'});
-    S.activeJob=null;go('home');
+    S._lastCompletedJob=S.activeJob;
+    S.activeJob=null;go('trip-complete');
   }
   else render();
 }
@@ -583,7 +598,13 @@ active:()=>{
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#22c55e" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
       </a>
     </div>
-    ${S.tripStep<5?`<button class="btn btn-green" onclick="nextStep()">${btnLabels[S.tripStep]||'Next'}</button>`:''}
+    <div style="display:flex;gap:8px;margin-bottom:0">
+      <button onclick="go('driver-client-chat')" style="flex:1;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:16px;font-size:13px;font-weight:600;color:var(--fg);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+        Client Chat
+      </button>
+      ${S.tripStep<5?`<button class="btn btn-green" style="flex:2" onclick="nextStep()">${btnLabels[S.tripStep]||'Next'}</button>`:''}
+    </div>
     <div style="height:20px"></div>
   </div>`;
 },
@@ -771,6 +792,67 @@ documents:()=>`<div class="screen">
     <button style="background:var(--surface-c);border:1px solid var(--border);color:var(--fg-dim);padding:6px 12px;border-radius:8px;font-size:12px;cursor:pointer">Upload</button>
   </div>`).join('')}
 </div>`,
+
+'driver-client-chat':()=>{
+  const j=S.activeJob||{client:'Client',id:'demo'};
+  const QUICK=[
+    'I\'m on my way — approximately 5 minutes away.',
+    'I have arrived and am waiting at the agreed location.',
+    'I\'m in a black Mercedes S-Class.',
+    'Please take your time — I\'ll be waiting.',
+    'Do you require assistance with your luggage?',
+    'The route is clear — approximately 35 minutes.',
+  ];
+  return`<div class="screen">
+    <div class="back-row"><button class="back-btn" onclick="go('active')">‹ Active Trip</button></div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+      <div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#D4A843,#8B6020);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;color:#000">${(j.initials||j.client?.charAt(0)||'C')}</div>
+      <div><div style="font-size:16px;font-weight:700">${j.client||'Client'}</div><div style="font-size:12px;color:var(--fg-dim)">Secure channel · messages logged</div></div>
+    </div>
+    <div style="font-size:11px;color:var(--fg-subtle);margin-bottom:14px;letter-spacing:.3px">QUICK MESSAGES</div>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:20px">
+      ${QUICK.map((q,i)=>`<button onclick="driverSendMsg('${q.replace(/'/g,"\\'")}')" style="text-align:left;padding:13px 16px;background:var(--surface);border:1px solid var(--border);border-radius:14px;font-size:13px;color:var(--fg);cursor:pointer;font-family:inherit">${q}</button>`).join('')}
+    </div>
+    <div style="font-size:11px;color:var(--fg-subtle);margin-bottom:10px;letter-spacing:.3px">CUSTOM MESSAGE</div>
+    <div class="card" style="display:flex;gap:10px;padding:12px 16px;align-items:center;margin-bottom:0">
+      <input id="driver-chat-inp" placeholder="Type a message…" style="flex:1;font-size:14px;background:transparent;border:none;color:var(--fg);font-family:inherit;outline:none"/>
+      <button onclick="driverSendCustom()" style="background:#D4A843;border:none;border-radius:10px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="#000" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5M5 12l7-7 7 7"/></svg>
+      </button>
+    </div>
+    <div id="driver-chat-sent" style="margin-top:16px;display:flex;flex-direction:column;gap:8px"></div>
+    <div style="height:20px"></div>
+  </div>`;
+},
+
+'trip-complete':()=>{
+  const j=S._lastCompletedJob||{client:'Passenger',pay:0};
+  return`<div class="screen" style="text-align:center;padding-top:60px">
+    <div style="font-size:64px;margin-bottom:16px">✓</div>
+    <div style="font-size:28px;font-weight:700;margin-bottom:6px">Trip Complete</div>
+    <div style="font-size:14px;color:var(--fg-dim);margin-bottom:32px">${j.client||'Passenger'} · ${j.service||'Airport Transfer'}</div>
+    <div style="display:flex;justify-content:center;gap:16px;margin-bottom:32px">
+      <div class="card" style="min-width:90px;text-align:center;padding:16px">
+        <div style="font-size:24px;font-weight:800;color:#D4A843">£${j.pay||0}</div>
+        <div style="font-size:11px;color:var(--fg-subtle);margin-top:4px">Earned</div>
+      </div>
+      <div class="card" style="min-width:90px;text-align:center;padding:16px">
+        <div style="font-size:24px;font-weight:800;color:#22c55e">${fmtTime(S.tripTimer||0)}</div>
+        <div style="font-size:11px;color:var(--fg-subtle);margin-top:4px">Duration</div>
+      </div>
+      <div class="card" style="min-width:90px;text-align:center;padding:16px">
+        <div style="font-size:24px;font-weight:800;color:#D4A843">+${((j.pay||0)*0.02).toFixed(1)}</div>
+        <div style="font-size:11px;color:var(--fg-subtle);margin-top:4px">AXC Earned</div>
+      </div>
+    </div>
+    <div style="margin-bottom:20px">
+      <div style="font-size:13px;color:var(--fg-dim);margin-bottom:10px">Client's rating will appear here once submitted</div>
+      <div style="display:flex;gap:6px;justify-content:center;font-size:28px;color:var(--fg-ghost)">★★★★★</div>
+    </div>
+    <button class="btn btn-gold" style="width:100%;max-width:280px" onclick="go('home')">Back to Home</button>
+    <div style="height:20px"></div>
+  </div>`;
+},
 };
 
 function render(){
