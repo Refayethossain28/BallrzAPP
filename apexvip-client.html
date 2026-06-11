@@ -2,11 +2,33 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="ApexVIP"/>
 <link rel="manifest" href="manifest.json"/>
-<meta name="theme-color" content="#000000"/>
+<meta name="theme-color" content="#050505"/>
+<meta name="msapplication-TileColor" content="#050505"/>
+<meta name="msapplication-TileImage" content="icon-144.png"/>
+<link rel="apple-touch-icon" href="icon-180.png"/>
+<link rel="apple-touch-icon" sizes="57x57"  href="icon-57.png"/>
+<link rel="apple-touch-icon" sizes="60x60"  href="icon-60.png"/>
+<link rel="apple-touch-icon" sizes="72x72"  href="icon-72.png"/>
+<link rel="apple-touch-icon" sizes="76x76"  href="icon-76.png"/>
+<link rel="apple-touch-icon" sizes="114x114" href="icon-114.png"/>
+<link rel="apple-touch-icon" sizes="120x120" href="icon-120.png"/>
+<link rel="apple-touch-icon" sizes="144x144" href="icon-144.png"/>
+<link rel="apple-touch-icon" sizes="152x152" href="icon-152.png"/>
+<link rel="apple-touch-icon" sizes="167x167" href="icon-167.png"/>
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png"/>
+<link rel="apple-touch-startup-image" media="(device-width:390px) and (device-height:844px) and (-webkit-device-pixel-ratio:3)" href="splashes/splash-1170x2532.png"/>
+<link rel="apple-touch-startup-image" media="(device-width:393px) and (device-height:852px) and (-webkit-device-pixel-ratio:3)" href="splashes/splash-1179x2556.png"/>
+<link rel="apple-touch-startup-image" media="(device-width:430px) and (device-height:932px) and (-webkit-device-pixel-ratio:3)" href="splashes/splash-1206x2622.png"/>
+<link rel="apple-touch-startup-image" media="(device-width:375px) and (device-height:812px) and (-webkit-device-pixel-ratio:3)" href="splashes/splash-1125x2436.png"/>
+<link rel="apple-touch-startup-image" media="(device-width:375px) and (device-height:667px) and (-webkit-device-pixel-ratio:2)" href="splashes/splash-750x1334.png"/>
+<link rel="apple-touch-startup-image" media="(device-width:414px) and (device-height:896px) and (-webkit-device-pixel-ratio:2)" href="splashes/splash-828x1792.png"/>
+<link rel="apple-touch-startup-image" media="(device-width:414px) and (device-height:896px) and (-webkit-device-pixel-ratio:3)" href="splashes/splash-1242x2688.png"/>
 <title>ApexVIP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -56,15 +78,33 @@ body.light{
 
 /* ── Reset & base ─────────────────────────────────────────────────── */
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html{height:-webkit-fill-available}
 body{
   background:var(--bg);color:var(--fg);
   font-family:var(--font-sans);
   -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
-  letter-spacing:-.015em;min-height:100vh;overflow:hidden;
+  letter-spacing:-.015em;min-height:100vh;min-height:-webkit-fill-available;overflow:hidden;
   transition:background .4s,color .4s;
   font-size:15px;line-height:1.5;
+  /* Prevent iOS momentum scroll on body */
+  overscroll-behavior:none;
+  /* Prevent callout on long press */
+  -webkit-touch-callout:none;
 }
-#app{max-width:430px;margin:0 auto;min-height:100vh;position:relative;overflow:hidden}
+/* Push content below the iOS status bar when running as installed PWA */
+body.ios-pwa{padding-top:env(safe-area-inset-top)}
+#app{max-width:430px;margin:0 auto;min-height:100vh;min-height:-webkit-fill-available;position:relative;overflow:hidden}
+/* iOS: prevent input zoom (inputs must be ≥16px) */
+input,select,textarea{font-size:16px !important}
+/* iOS install banner */
+#ios-install-banner{
+  position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);left:16px;right:16px;
+  background:rgba(20,16,12,.96);border:1px solid var(--border);border-radius:18px;
+  padding:14px 16px;z-index:999;display:flex;align-items:center;gap:12px;
+  backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+  animation:slideUp .35s ease;box-shadow:0 8px 40px rgba(0,0,0,.6);
+}
+#ios-install-banner.hidden{display:none}
 *::-webkit-scrollbar{display:none}
 
 /* ── Keyframes ─────────────────────────────────────────────────────── */
@@ -414,6 +454,16 @@ body.light .nav-pip{background:var(--gold)}
 </head>
 <body>
 <div id="app"></div>
+
+<!-- iOS Add to Home Screen banner — shown only in Safari, not already installed -->
+<div id="ios-install-banner" class="hidden">
+  <img src="icon-60.png" style="width:44px;height:44px;border-radius:10px;flex-shrink:0"/>
+  <div style="flex:1;min-width:0">
+    <div style="font-size:13px;font-weight:700;margin-bottom:2px">Add ApexVIP to Home Screen</div>
+    <div style="font-size:11px;color:var(--fg-3)">Tap <svg style="display:inline;vertical-align:middle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 12h8M12 8v8M12 3a9 9 0 100 18A9 9 0 0012 3z" stroke-linecap="round"/></svg> Share then "Add to Home Screen"</div>
+  </div>
+  <button onclick="document.getElementById('ios-install-banner').classList.add('hidden');localStorage.setItem('apexvip_pwa_dismissed','1')" style="background:none;border:none;color:var(--fg-3);font-size:20px;cursor:pointer;padding:4px;flex-shrink:0">×</button>
+</div>
 <script>
 // ── Firebase ──────────────────────────────────────────────────────────────
 let auth, db, fns, FIREBASE_ENABLED = false;
@@ -3449,6 +3499,24 @@ function render(){
 }
 
 render();
+</script>
+
+<script>
+// ── iOS PWA detection ────────────────────────────────────────────────
+(function(){
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isInstalled = window.navigator.standalone === true;
+  const isDismissed = localStorage.getItem('apexvip_pwa_dismissed');
+  if(isIOS && !isInstalled && !isDismissed){
+    // Show banner after a short delay so it doesn't interrupt the splash
+    setTimeout(()=>{
+      const b = document.getElementById('ios-install-banner');
+      if(b) b.classList.remove('hidden');
+    }, 4000);
+  }
+  // Mark body so safe-area padding applies when running installed
+  if(isInstalled) document.body.classList.add('ios-pwa');
+})();
 </script>
 </body>
 </html>

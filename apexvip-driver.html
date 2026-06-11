@@ -2,11 +2,23 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<meta name="apple-mobile-web-app-status-bar-style" content="black"/>
-<link rel="manifest" href="manifest.json"/>
-<meta name="theme-color" content="#000000"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="ApexVIP Driver"/>
+<link rel="manifest" href="manifest-driver.json"/>
+<meta name="theme-color" content="#050505"/>
+<link rel="apple-touch-icon" href="icon-180.png"/>
+<link rel="apple-touch-icon" sizes="120x120" href="icon-120.png"/>
+<link rel="apple-touch-icon" sizes="152x152" href="icon-152.png"/>
+<link rel="apple-touch-icon" sizes="167x167" href="icon-167.png"/>
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png"/>
+<link rel="apple-touch-startup-image" media="(device-width:390px) and (device-height:844px) and (-webkit-device-pixel-ratio:3)" href="splashes/splash-1170x2532.png"/>
+<link rel="apple-touch-startup-image" media="(device-width:393px) and (device-height:852px) and (-webkit-device-pixel-ratio:3)" href="splashes/splash-1179x2556.png"/>
+<link rel="apple-touch-startup-image" media="(device-width:430px) and (device-height:932px) and (-webkit-device-pixel-ratio:3)" href="splashes/splash-1206x2622.png"/>
+<link rel="apple-touch-startup-image" media="(device-width:375px) and (device-height:812px) and (-webkit-device-pixel-ratio:3)" href="splashes/splash-1125x2436.png"/>
+<link rel="apple-touch-startup-image" media="(device-width:375px) and (device-height:667px) and (-webkit-device-pixel-ratio:2)" href="splashes/splash-750x1334.png"/>
 <title>ApexVIP Driver</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -19,7 +31,8 @@
 <script src="apexvip-core.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-body{background:var(--bg);color:var(--fg);font-family:-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased;min-height:100vh;
+html{height:-webkit-fill-available}
+body{background:var(--bg);color:var(--fg);font-family:-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased;min-height:100vh;min-height:-webkit-fill-available;overscroll-behavior:none;-webkit-touch-callout:none;
   --bg:#050505;--fg:#f4f0ea;--fg-muted:#c8bfb0;--fg-dim:#8a8278;--fg-subtle:#5a5550;--fg-ghost:#3a3632;--fg-faint:#28251f;
   --surface:rgba(255,255,255,.045);--surface-b:rgba(255,255,255,.03);--surface-c:rgba(255,255,255,.07);
   --border:rgba(255,255,255,.08);--border-b:rgba(255,255,255,.05);--divider:rgba(255,255,255,.04);
@@ -28,7 +41,9 @@ body.light{
   --bg:#f5f0e8;--fg:#1a1612;--fg-muted:#3d3730;--fg-dim:#6b6258;--fg-subtle:#9a9088;--fg-ghost:#c8bfb0;--fg-faint:#e0d8cc;
   --surface:rgba(0,0,0,.04);--surface-b:rgba(0,0,0,.025);--surface-c:rgba(0,0,0,.065);
   --border:rgba(0,0,0,.08);--border-b:rgba(0,0,0,.05);--divider:rgba(0,0,0,.04)}
-#app{max-width:480px;margin:0 auto;min-height:100vh;position:relative}
+#app{max-width:480px;margin:0 auto;min-height:100vh;min-height:-webkit-fill-available;position:relative}
+body.ios-pwa{padding-top:env(safe-area-inset-top)}
+input,select,textarea{font-size:16px !important}
 
 /* ── Keyframes ── */
 @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
@@ -1076,6 +1091,11 @@ function render(){
 }
 
 render();
+
+// ── iOS PWA detection ────────────────────────────────────────────────
+(function(){
+  if(window.navigator.standalone === true) document.body.classList.add('ios-pwa');
+})();
 </script>
 </body>
 </html>
