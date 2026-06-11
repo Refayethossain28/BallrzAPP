@@ -9,6 +9,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
@@ -196,6 +198,8 @@ const NAVITEMS=[
   {id:'settings',icon:'⚙',label:'Settings'},
   {id:'apexcoin',icon:'🪙',label:'ApexCoin'},
   {id:'corporate',icon:'🏢',label:'Corporate'},
+  {id:'map',icon:'<svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>',label:'Live Map'},
+  {id:'payouts',icon:'💸',label:'Payouts'},
 ];
 
 function track(event, props){
@@ -211,6 +215,7 @@ function track(event, props){
 }
 
 let S={screen:'login',bFilter:'all',dFilter:'all',cFilter:'all',theme:localStorage.getItem('apexvip_admin_theme')||'dark',_dispatchOpen:false,_dispatchRef:null,_discreteDispatch:false,dispatchMode:localStorage.getItem('apexvip_dispatch_mode')||'manual'};
+let _adminMap = null, _adminMarkers = {};
 
 // Dispatch mode: 'manual' (admin assigns) or 'broadcast' (new bookings are
 // offered to every online driver instantly — first to accept wins)
@@ -1005,6 +1010,24 @@ corporate: () => {
   </div>`;
 },
 
+map: () => `<div class="screen" style="padding:0;height:calc(100vh - 60px);position:relative">
+  <div id="admin-map" style="width:100%;height:100%;z-index:0"></div>
+  <div style="position:absolute;top:16px;left:16px;z-index:1000;background:var(--bg);border:1px solid var(--border);border-radius:14px;padding:12px 16px;backdrop-filter:blur(20px)">
+    <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:var(--fg-4);text-transform:uppercase;margin-bottom:8px">Live Fleet</div>
+    ${DRIVERS.map(d=>`
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px">
+      <div style="width:8px;height:8px;border-radius:50%;background:${d.status==='online'||d.status==='ontrip'?'#22c55e':'rgba(255,255,255,.2)'}"></div>
+      <span style="font-weight:600">${d.name||'Driver'}</span>
+      <span style="color:var(--fg-4)">${d.status||'offline'}</span>
+    </div>`).join('')}
+  </div>
+</div>`,
+
+payouts: () => `<div class="screen">
+  <div class="section-header"><div class="section-title">Payout Requests</div></div>
+  <div id="payouts-list"><div style="text-align:center;padding:40px;color:var(--fg-4);font-size:13px">Loading…</div></div>
+</div>`,
+
 settings:()=>`<div class="screen">
   <div class="section-header"><div class="section-title">Settings</div></div>
   <div style="display:flex;gap:20px;flex-wrap:wrap">
@@ -1168,10 +1191,92 @@ function confirmDispatch(driverIdOrName){
   render();
 }
 
+function initAdminMap() {
+  const el = document.getElementById('admin-map');
+  if (!el) return;
+  if (_adminMap) { _adminMap.invalidateSize(); return; }
+  const dark = S.theme !== 'light';
+  _adminMap = L.map('admin-map', {zoomControl:true, attributionControl:false}).setView([51.5074,-0.1278], 12);
+  L.tileLayer(dark
+    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+    : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    {maxZoom:19}).addTo(_adminMap);
+
+  // Subscribe to all driver locations
+  if (FIREBASE_ENABLED) {
+    db.collection('drivers').onSnapshot(snap => {
+      snap.docs.forEach(doc => {
+        const d = doc.data();
+        const id = doc.id;
+        if (!d.lat || !d.lng) return;
+        const pos = [d.lat, d.lng];
+        const isActive = d.status === 'online' || d.status === 'ontrip';
+        if (_adminMarkers[id]) {
+          _adminMarkers[id].setLatLng(pos);
+        } else {
+          _adminMarkers[id] = L.circleMarker(pos, {
+            radius: 10,
+            fillColor: d.status === 'ontrip' ? '#D4A843' : (isActive ? '#22c55e' : '#666'),
+            color: '#fff', weight: 2, opacity: 1, fillOpacity: 0.9
+          }).addTo(_adminMap)
+            .bindPopup(`<b style="font-family:sans-serif;font-size:13px">${d.name||'Driver'}</b><br/><span style="font-size:11px;color:#888">${d.status||'offline'} · ${d.vehicle||''}</span>`);
+        }
+      });
+    }, () => {});
+  } else {
+    // Demo: place markers for each DRIVER with a fake London position
+    const londonArea = [[51.507,-0.127],[51.514,-0.142],[51.496,-0.108],[51.522,-0.098],[51.489,-0.154]];
+    DRIVERS.forEach((d,i) => {
+      const pos = londonArea[i % londonArea.length];
+      L.circleMarker(pos, {
+        radius:10, fillColor: d.status==='ontrip'?'#D4A843': d.status==='online'?'#22c55e':'#666',
+        color:'#fff', weight:2, opacity:1, fillOpacity:0.9
+      }).addTo(_adminMap)
+        .bindPopup(`<b style="font-family:sans-serif;font-size:13px">${d.name}</b><br/><span style="font-size:11px;color:#888">${d.status}</span>`);
+    });
+  }
+}
+
+function loadPayouts() {
+  const el = document.getElementById('payouts-list');
+  if (!el) return;
+  if (!FIREBASE_ENABLED) {
+    el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--fg-4);font-size:13px">No payout requests (demo mode)</div>';
+    return;
+  }
+  db.collection('payout_requests').orderBy('createdAt','desc').limit(50).get().then(snap => {
+    if (snap.empty) { el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--fg-4);font-size:13px">No pending requests</div>'; return; }
+    el.innerHTML = snap.docs.map(doc => {
+      const r = doc.data(); const id = doc.id;
+      return `<div class="card" style="padding:18px 20px;margin-bottom:10px;display:flex;align-items:center;gap:14px">
+        <div style="flex:1">
+          <div style="font-size:14px;font-weight:700;margin-bottom:3px">${r.driverName||'Driver'}</div>
+          <div style="font-size:12px;color:var(--fg-3)">£${r.amount||0} · ${r.bankName||''} ${r.accountNumber||''}</div>
+          <div style="font-size:11px;color:var(--fg-4);margin-top:2px">${r.sortCode||''}</div>
+        </div>
+        ${r.status==='pending'?`
+        <div style="display:flex;gap:8px">
+          <button onclick="approvePayoutReq('${id}')" style="background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);color:#22c55e;padding:7px 14px;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Approve</button>
+          <button onclick="rejectPayoutReq('${id}')" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);color:#ef4444;padding:7px 14px;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Reject</button>
+        </div>` : `<span class="tag ${r.status==='approved'?'tag-green':'tag-red'}">${r.status}</span>`}
+      </div>`;
+    }).join('');
+  }).catch(() => { el.innerHTML = '<div style="color:#ef4444;padding:20px">Could not load requests</div>'; });
+}
+
+function approvePayoutReq(id) {
+  db.collection('payout_requests').doc(id).update({status:'approved',approvedAt:firebase.firestore.FieldValue.serverTimestamp()}).then(loadPayouts).catch(()=>{});
+}
+function rejectPayoutReq(id) {
+  db.collection('payout_requests').doc(id).update({status:'rejected',rejectedAt:firebase.firestore.FieldValue.serverTimestamp()}).then(loadPayouts).catch(()=>{});
+}
+
 function render(){
   renderSidebar();
   const fn=pages[S.screen]||pages.dashboard;
   document.getElementById('main').innerHTML=fn();
+  if(S.screen==='map') setTimeout(initAdminMap, 50);
+  if(S.screen==='payouts') setTimeout(loadPayouts, 50);
 }
 
 render();

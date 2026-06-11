@@ -459,6 +459,12 @@ let state = {
   _recurringFreq: 'Every week',
   _shareCopied: false,
   _etaSeconds: 0,
+  _chatMessages: [],
+  _chatDocId: null,
+  _cancelOpen: false,
+  _cancelRef: '',
+  _cancelDocId: '',
+  _lastTrip: null,
   cards: [
     {id:1,brand:'Visa',last4:'4242',expiry:'09/27',color:'linear-gradient(135deg,#2a2a2a,#111)',isDefault:true},
     {id:2,brand:'Mastercard',last4:'8888',expiry:'03/26',color:'linear-gradient(135deg,#1a1a2e,#16213e)',isDefault:false}
@@ -971,6 +977,14 @@ function deleteAddress(id) {
   render();
 }
 
+// ── Receipt Share ─────────────────────────────────────────────────────────
+function shareReceipt() {
+  const t = state._lastTrip || {};
+  const text = `ApexVIP Receipt\nRef: ${t.ref||state._confirmedRef||''}\nFrom: ${t.pickup||''} → ${t.dropoff||''}\nTotal: £${t.price||''}`;
+  if (navigator.share) { navigator.share({title:'ApexVIP Receipt',text}).catch(()=>{}); }
+  else { navigator.clipboard?.writeText(text).catch(()=>{}); }
+}
+
 // ── Trip Sharing ──────────────────────────────────────────────────────────
 function shareTrip() {
   const ref = state._confirmedRef || state._activeBooking?.ref || 'APX-4821';
@@ -987,6 +1001,46 @@ function shareTrip() {
   }
 }
 
+// ── Client-side chauffeur chat ─────────────────────────────────────────────
+let _chatUnsub = null;
+function setupChatListener(docId) {
+  if (!FIREBASE_ENABLED || !docId || _chatUnsub) return;
+  state._chatDocId = docId;
+  _chatUnsub = db.collection('bookings').doc(docId).collection('messages')
+    .orderBy('timestamp','asc').limitToLast(50)
+    .onSnapshot(snap => {
+      state._chatMessages = snap.docs.map(d => ({...d.data(), _id: d.id}));
+      const el = document.getElementById('chat-msgs');
+      if (el) {
+        el.innerHTML = state._chatMessages.map(m => chatBubble(m)).join('');
+        el.scrollTop = el.scrollHeight;
+      }
+    }, () => {});
+}
+
+function chatBubble(m) {
+  const isMe = m.fromRole === 'client';
+  return `<div style="display:flex;justify-content:${isMe?'flex-end':'flex-start'};margin-bottom:8px">
+    <div style="max-width:75%;background:${isMe?'linear-gradient(135deg,#C8A97E,#8B6020)':'var(--surface-2)'};border-radius:${isMe?'18px 18px 4px 18px':'18px 18px 18px 4px'};padding:10px 14px;font-size:13px;color:${isMe?'#000':'var(--fg)'}">${m.message||''}</div>
+  </div>`;
+}
+
+function clientSendMsg() {
+  const inp = document.getElementById('client-chat-inp');
+  if (!inp || !inp.value.trim()) return;
+  const msg = inp.value.trim(); inp.value = '';
+  if (FIREBASE_ENABLED && fns && state._chatDocId) {
+    fns.httpsCallable('sendChauffeurMessage')({
+      bookingRef: state._activeBooking?.ref || state._chatDocId,
+      message: msg, fromRole: 'client'
+    }).catch(() => {});
+  }
+  // Optimistic local append
+  state._chatMessages.push({message: msg, fromRole: 'client', timestamp: {toMillis:()=>Date.now()}});
+  const el = document.getElementById('chat-msgs');
+  if (el) { el.innerHTML = state._chatMessages.map(chatBubble).join(''); el.scrollTop = el.scrollHeight; }
+}
+
 // ── Amenity Toggle ────────────────────────────────────────────────────────
 function toggleAmenity(item) {
   if (!state.booking.amenities) state.booking.amenities = [];
@@ -994,6 +1048,28 @@ function toggleAmenity(item) {
   if (idx > -1) state.booking.amenities.splice(idx, 1);
   else state.booking.amenities.push(item);
   render();
+}
+
+// ── Cancel Booking ────────────────────────────────────────────────────────
+async function cancelBooking(bookingId, docId) {
+  const reason = document.getElementById('cancel-reason')?.value || 'No reason given';
+  if (FIREBASE_ENABLED && docId) {
+    await db.collection('bookings').doc(docId).update({
+      status: 'cancelled',
+      cancelledAt: firebase.firestore.FieldValue.serverTimestamp(),
+      cancelReason: reason,
+      cancelledBy: 'client'
+    }).catch(() => {});
+    // Also cancel any pending/accepted jobs linked to this booking
+    db.collection('jobs').where('bookingRef','==',bookingId).limit(1).get()
+      .then(snap => { if(!snap.empty) snap.docs[0].ref.update({status:'cancelled'}).catch(()=>{}); })
+      .catch(() => {});
+  }
+  // Update local TRIPS array
+  const t = TRIPS.find(x => x.id === bookingId);
+  if (t) t.status = 'cancelled';
+  state._cancelOpen = false;
+  go('trips');
 }
 
 // ── ETA Countdown ─────────────────────────────────────────────────────────
@@ -2000,14 +2076,37 @@ trips: () => {
           <div class="rdot rdot-outline" style="margin-top:4px;flex-shrink:0"></div>
           <div style="font-size:14px;color:var(--fg-3)">${t.dropoff}</div>
         </div>
-        <div style="display:flex;justify-content:space-between;font-size:13px">
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px">
           <span style="color:var(--fg-3)">${t.vehicle}</span>
-          <span style="font-weight:800;color:#ffffff">${t.price}</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            ${t.status==='completed'?`<button onclick="event.stopPropagation();state._lastTrip=TRIPS.find(x=>x.id==='${t.id}');go('receipt')" style="background:var(--surface-2);border:1px solid var(--border);color:var(--fg);padding:6px 12px;border-radius:10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Receipt</button>`:''}
+            ${t.status!=='completed'&&t.status!=='cancelled'?`<button onclick="event.stopPropagation();state._cancelRef='${t.id}';state._cancelDocId='${t._docId||''}';state._cancelOpen=true;render()" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);color:#ef4444;padding:6px 12px;border-radius:10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Cancel</button>`:''}
+            <span style="font-weight:800;color:#ffffff">${t.price}</span>
+          </div>
         </div>
       </div>`;
     }).join('')}
     <div style="height:120px"></div>
   </div>
+  ${state._cancelOpen ? `
+<div style="position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:500;display:flex;align-items:flex-end;justify-content:center" onclick="state._cancelOpen=false;render()">
+  <div style="background:var(--bg);border-radius:24px 24px 0 0;border:1px solid var(--border);width:100%;max-width:480px;padding:28px;animation:slideUp .25s ease" onclick="event.stopPropagation()">
+    <div style="font-size:18px;font-weight:700;margin-bottom:6px">Cancel booking?</div>
+    <div style="font-size:13px;color:var(--fg-3);margin-bottom:20px">Cancellations made less than 2 hours before pickup may incur a fee.</div>
+    <div style="margin-bottom:16px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:var(--fg-4);text-transform:uppercase;margin-bottom:8px">Reason (optional)</div>
+      <select id="cancel-reason" style="width:100%;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;color:var(--fg);font-size:14px;font-family:inherit;outline:none">
+        <option>Change of plans</option>
+        <option>Booked by mistake</option>
+        <option>Found alternative transport</option>
+        <option>Flight cancelled</option>
+        <option>Other</option>
+      </select>
+    </div>
+    <button onclick="cancelBooking(state._cancelRef, state._cancelDocId)" class="btn" style="width:100%;padding:14px;background:#ef4444;border:none;border-radius:14px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:10px;font-family:inherit">Confirm cancellation</button>
+    <button onclick="state._cancelOpen=false;render()" class="btn btn-glass" style="width:100%;padding:14px">Keep booking</button>
+  </div>
+</div>` : ''}
   ${bottomNav('trips')}
 </div>`;
 },
@@ -2591,10 +2690,21 @@ profile: () => {
         </a>
       </div>
       <div id="drv-loc-time" style="font-size:11px;color:var(--fg-4);padding:10px 0;text-align:center">Waiting for driver location…</div>
-      <button onclick="go('driver-chat')" style="width:100%;padding:13px;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;color:var(--fg);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:6px">
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
-        Chat with Chauffeur
-      </button>
+      <div class="card" style="padding:0;overflow:hidden;margin-bottom:10px">
+        <div style="padding:14px 16px;border-bottom:1px solid var(--divider);display:flex;align-items:center;gap:8px">
+          <div style="width:8px;height:8px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite"></div>
+          <div style="font-size:13px;font-weight:700">Chat with chauffeur</div>
+        </div>
+        <div id="chat-msgs" style="padding:14px 16px;max-height:180px;overflow-y:auto;display:flex;flex-direction:column;scrollbar-width:none">
+          ${(state._chatMessages||[]).length ? (state._chatMessages||[]).map(m => chatBubble(m)).join('') : '<div style="font-size:12px;color:var(--fg-4);text-align:center;padding:20px 0">Messages appear here</div>'}
+        </div>
+        <div style="padding:10px 12px;border-top:1px solid var(--divider);display:flex;gap:8px">
+          <input id="client-chat-inp" placeholder="Message your chauffeur…" style="flex:1;background:var(--surface-2);border:1px solid var(--border);border-radius:22px;padding:10px 14px;font-size:13px;color:var(--fg);outline:none;font-family:inherit" onkeydown="if(event.key==='Enter')clientSendMsg()"/>
+          <button onclick="clientSendMsg()" style="background:var(--gold);border:none;border-radius:50%;width:38px;height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#000" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+          </button>
+        </div>
+      </div>
     </div>
   </div>
   <!-- SOS -->
@@ -2814,6 +2924,58 @@ profile: () => {
     <div style="height:60px"></div>
   </div>
 </div>`,
+
+'receipt': () => {
+  const t = state._lastTrip || {};
+  const base = t.base || t.price || 185;
+  const disc = t.discount || 0;
+  const vat = t.vat || Math.round((base-disc)*.2);
+  const total = base - disc + vat;
+  const axc = Math.round(total * 0.05);
+  return `
+<div style="height:100dvh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
+  <div class="back-row">
+    <div class="back-btn" onclick="go('trips')">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+    </div>
+    <div style="font-size:20px;font-weight:700">Receipt</div>
+    <button onclick="shareReceipt()" style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:7px 14px;font-size:12px;font-weight:700;color:var(--fg);cursor:pointer;font-family:inherit">Share</button>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:0 22px 40px">
+    <div style="text-align:center;padding:32px 0 24px">
+      <div style="width:64px;height:64px;border-radius:50%;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);display:flex;align-items:center;justify-content:center;margin:0 auto 16px">
+        <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="#22c55e" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+      </div>
+      <div style="font-size:22px;font-weight:800;margin-bottom:4px">Trip complete</div>
+      <div style="font-size:13px;color:var(--fg-3)">${t.ref || state._confirmedRef || 'APX-XXXX'}</div>
+    </div>
+    <div class="card" style="padding:20px;margin-bottom:12px">
+      <div class="section-label" style="margin-bottom:12px">Journey</div>
+      <div style="display:flex;gap:10px;margin-bottom:8px"><div class="rdot rdot-gold" style="margin-top:4px;flex-shrink:0"></div><div><div style="font-size:11px;color:var(--fg-3)">From</div><div style="font-size:14px;font-weight:600">${t.pickup||'—'}</div></div></div>
+      <div class="rline" style="height:12px;margin-bottom:8px"></div>
+      <div style="display:flex;gap:10px"><div class="rdot rdot-outline" style="margin-top:4px;flex-shrink:0"></div><div><div style="font-size:11px;color:var(--fg-3)">To</div><div style="font-size:14px;font-weight:600">${t.dropoff||'—'}</div></div></div>
+    </div>
+    <div class="card" style="padding:20px;margin-bottom:12px">
+      <div class="section-label" style="margin-bottom:14px">Fare breakdown</div>
+      <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:10px"><span style="color:var(--fg-3)">Base fare</span><span>£${base}</span></div>
+      ${disc?`<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:10px"><span style="color:#22c55e">Discount</span><span style="color:#22c55e">−£${disc}</span></div>`:''}
+      <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:14px"><span style="color:var(--fg-3)">VAT 20%</span><span>£${vat}</span></div>
+      <div style="height:1px;background:var(--divider);margin-bottom:14px"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:16px;font-weight:700">Total paid</span>
+        <span style="font-size:28px;font-weight:800;color:var(--gold)">£${total}</span>
+      </div>
+    </div>
+    <div class="card" style="padding:16px 20px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
+      <div style="display:flex;align-items:center;gap:8px"><span style="color:var(--gold)">◈</span><span style="font-size:14px">APEX Rewards earned</span></div>
+      <span style="font-weight:800;color:var(--gold)">+${axc} APEX</span>
+    </div>
+    <div class="card" style="padding:16px 20px">
+      <div style="font-size:13px;color:var(--fg-3);text-align:center">A receipt has been sent to<br/><span style="color:var(--fg);font-weight:600">${state.user?.email||'your email'}</span></div>
+    </div>
+  </div>
+</div>`;
+},
 
 'edit-profile': () => `
 <div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
@@ -3226,7 +3388,7 @@ if(FIREBASE_ENABLED){
         if(!FIREBASE_ENABLED||!auth.currentUser)return;
         _statusUnsub=db.collection('bookings')
           .where('clientId','==',user.uid)
-          .where('status','in',['confirmed','offered','accepted','en_route','arrived','onboard'])
+          .where('status','in',['confirmed','offered','accepted','en_route','arrived','onboard','completed'])
           .orderBy('createdAt','desc').limit(1)
           .onSnapshot(snap=>{
             if(!snap.empty){
@@ -3237,7 +3399,10 @@ if(FIREBASE_ENABLED){
               state._activeBooking.driverName=d.driverName||'James Harrison';
               state._activeBooking.driverPlate=d.driverPlate||'';
               state._activeBooking.vehicle=d.vehicle||'';
-              if(state.screen==='active-trip')render();
+              if(d.status==='completed'&&state.screen==='active-trip'){
+                state._lastTrip={ref:d.ref,pickup:d.pickup,dropoff:d.dropoff||d.airport,base:d.baseFare||d.price,discount:d.discount||0,vat:d.vat||0,price:d.price};
+                go('receipt');
+              } else if(state.screen==='active-trip')render();
             }
           },()=>{});
       }
@@ -3251,7 +3416,7 @@ if(FIREBASE_ENABLED){
             try{
               const messaging=firebase.messaging();
               messaging.getToken({
-                vapidKey:'REPLACE_WITH_VAPID_KEY',
+                vapidKey:(typeof APEXVIP_VAPID_KEY !== 'undefined' && APEXVIP_VAPID_KEY ? APEXVIP_VAPID_KEY : ''),
                 serviceWorkerRegistration:reg
               }).then(token=>{
                 if(token&&auth.currentUser){
@@ -3279,6 +3444,7 @@ function render(){
   if(state.screen==='payment') setTimeout(initSquare,60);
   if(state.screen==='active-trip') setTimeout(initTrackingMap,60);
   if(state.screen==='active-trip') setTimeout(startEtaCountdown,80);
+  if(state.screen==='active-trip') setTimeout(()=>{ setupChatListener(state._activeBooking?.docId); },0);
   if(state.screen==='profile') setTimeout(loadReferralCode,100);
 }
 
