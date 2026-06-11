@@ -210,7 +210,23 @@ function track(event, props){
   }catch(e){}
 }
 
-let S={screen:'login',bFilter:'all',dFilter:'all',cFilter:'all',theme:localStorage.getItem('apexvip_admin_theme')||'dark',_dispatchOpen:false,_dispatchRef:null,_discreteDispatch:false};
+let S={screen:'login',bFilter:'all',dFilter:'all',cFilter:'all',theme:localStorage.getItem('apexvip_admin_theme')||'dark',_dispatchOpen:false,_dispatchRef:null,_discreteDispatch:false,dispatchMode:localStorage.getItem('apexvip_dispatch_mode')||'manual'};
+
+// Dispatch mode: 'manual' (admin assigns) or 'broadcast' (new bookings are
+// offered to every online driver instantly — first to accept wins)
+function setDispatchMode(mode){
+  S.dispatchMode=mode;
+  localStorage.setItem('apexvip_dispatch_mode',mode);
+  if(FIREBASE_ENABLED) db.collection('settings').doc('dispatch').set({mode,updatedAt:firebase.firestore.FieldValue.serverTimestamp()}).catch(()=>{});
+  render();
+}
+
+function loadDispatchMode(){
+  if(!FIREBASE_ENABLED)return;
+  db.collection('settings').doc('dispatch').onSnapshot(doc=>{
+    if(doc.exists&&doc.data().mode){S.dispatchMode=doc.data().mode;localStorage.setItem('apexvip_dispatch_mode',S.dispatchMode);if(S.screen!=='login')render();}
+  },()=>{});
+}
 
 if(S.theme==='light') document.body.classList.add('light');
 
@@ -267,6 +283,7 @@ async function updateBookingStatus(id,status){
 }
 
 if(FIREBASE_ENABLED){
+  loadDispatchMode();
   db.collection('bookings').orderBy('createdAt','desc').onSnapshot(snap=>{
     BOOKINGS=snap.docs.map(d=>{
       const x=d.data();
@@ -306,6 +323,8 @@ if(FIREBASE_ENABLED){
 function badge(s){
   const m={
     pending:'tag-amber Pending',confirmed:'tag-blue Confirmed',active:'tag-green Active',
+    offered:'tag-gold 📢 Offered',accepted:'tag-green Accepted',
+    en_route:'tag-green En Route',arrived:'tag-green Arrived',onboard:'tag-green On Board',
     completed:'tag-gray Completed',cancelled:'tag-red Cancelled',
     online:'tag-green Online',ontrip:'tag-amber On Trip',offline:'tag-gray Offline',
     available:'tag-green Available',vip:'tag-gold VIP',vvip:'tag-purple VVIP',standard:'tag-gray Standard'
@@ -479,7 +498,16 @@ dashboard:()=>`<div class="screen">
 </div>`,
 
 bookings:()=>{const f=S.bFilter;const list=f==='all'?BOOKINGS:BOOKINGS.filter(b=>b.status===f);return`<div class="screen">
-  <div class="section-header"><div class="section-title">Bookings</div><button class="btn btn-gold btn-sm" onclick="openModal(newBookingForm())">+ New Booking</button></div>
+  <div class="section-header"><div class="section-title">Bookings</div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div style="display:flex;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:3px;gap:2px">
+        <button onclick="setDispatchMode('manual')" style="padding:7px 12px;border-radius:8px;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;background:${S.dispatchMode==='manual'?'var(--gold)':'transparent'};color:${S.dispatchMode==='manual'?'#000':'var(--fg-dim)'}">Manual dispatch</button>
+        <button onclick="setDispatchMode('broadcast')" style="padding:7px 12px;border-radius:8px;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;background:${S.dispatchMode==='broadcast'?'var(--gold)':'transparent'};color:${S.dispatchMode==='broadcast'?'#000':'var(--fg-dim)'}">📢 Instant broadcast</button>
+      </div>
+      <button class="btn btn-gold btn-sm" onclick="openModal(newBookingForm())">+ New Booking</button>
+    </div>
+  </div>
+  ${S.dispatchMode==='broadcast'?`<div style="background:rgba(200,169,126,.07);border:1px solid rgba(200,169,126,.18);border-radius:12px;padding:10px 16px;margin-bottom:14px;font-size:12px;color:var(--fg-dim)">📢 <b style="color:var(--gold)">Instant broadcast on</b> — new bookings are offered to all online drivers the moment they land. First driver to accept gets the job. You can still assign manually below.</div>`:''}
   ${tabRow([['all','All'],['pending','Pending'],['confirmed','Confirmed'],['active','Active'],['completed','Completed'],['cancelled','Cancelled']],f,"S.bFilter='__VAL__';render()")}
   <div class="card"><div style="overflow-x:auto"><table>
     <thead><tr><th>ID</th><th>Client</th><th>Route</th><th>Date</th><th>Vehicle</th><th>Driver</th><th>Status</th><th>Price</th><th></th></tr></thead>
@@ -500,6 +528,14 @@ bookings:()=>{const f=S.bFilter;const list=f==='all'?BOOKINGS:BOOKINGS.filter(b=
   <div style="background:var(--bg);border-radius:24px 24px 0 0;border:1px solid var(--border);width:100%;max-width:640px;padding:24px;animation:slideUp .25s ease" onclick="event.stopPropagation()">
     <div style="font-size:16px;font-weight:700;margin-bottom:4px">Assign Driver</div>
     <div style="font-size:12px;color:var(--fg-dim);margin-bottom:14px">Booking ${S._dispatchRef||''}</div>
+    <div onclick="broadcastDispatch()" style="display:flex;align-items:center;gap:14px;padding:14px;background:rgba(200,169,126,.08);border:1px solid rgba(200,169,126,.3);border-radius:14px;margin-bottom:12px;cursor:pointer">
+      <div style="width:42px;height:42px;border-radius:50%;background:rgba(200,169,126,.15);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">📢</div>
+      <div style="flex:1">
+        <div style="font-size:14px;font-weight:700;color:var(--gold)">Broadcast to all drivers</div>
+        <div style="font-size:12px;color:var(--fg-dim);margin-top:2px">Every online driver is offered this job — first to accept wins</div>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--fg-subtle);letter-spacing:1px;text-transform:uppercase;margin:6px 0 10px">Or assign directly</div>
     ${typeof ApexCore!=='undefined'?`
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface-b);border:1px solid ${S._discreteDispatch?'rgba(200,169,126,.3)':'var(--border)'};border-radius:12px;padding:10px 14px;margin-bottom:14px">
       <div>
@@ -1070,6 +1106,26 @@ function openDispatch(ref){
   render();
 }
 
+// Offer a booking to every online driver — first to accept claims it
+function broadcastDispatch(){
+  const booking=BOOKINGS.find(b=>b.id===S._dispatchRef||b.ref===S._dispatchRef);
+  if(booking){booking.status='offered';booking.driver='📢 Broadcast…';}
+  if(FIREBASE_ENABLED&&booking?.docId){
+    db.collection('open_jobs').add({
+      bookingDocId:booking.docId,bookingRef:booking.ref||booking.id,
+      clientName:booking.client||'',pickup:booking.pickup||'',
+      dropoff:booking.dropoff||'',date:booking.date||'',time:booking.time||'',
+      vehicle:booking.vehicle||'S-Class',
+      pay:parseInt((booking.price||'0').replace(/[^0-9]/g,'')),
+      status:'open',driverId:'',
+      createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(()=>{});
+    db.collection('bookings').doc(booking.docId).update({status:'offered'}).catch(()=>{});
+  }
+  S._dispatchOpen=false;
+  render();
+}
+
 function confirmDispatch(driverIdOrName){
   const driver=DRIVERS.find(d=>d.id===driverIdOrName||d.name===driverIdOrName);
   if(!driver){S._dispatchOpen=false;render();return;}
@@ -1084,6 +1140,9 @@ function confirmDispatch(driverIdOrName){
   }
   // Update Firestore
   if(FIREBASE_ENABLED&&booking?.docId){
+    // Manual assignment supersedes any live broadcast offer
+    db.collection('open_jobs').where('bookingDocId','==',booking.docId).where('status','==','open').get()
+      .then(snap=>snap.docs.forEach(d=>d.ref.update({status:'cancelled'}).catch(()=>{}))).catch(()=>{});
     db.collection('bookings').doc(booking.docId).update({
       driverId:driver.uid||driver.id||driver.name,
       driverName:driver.name,
