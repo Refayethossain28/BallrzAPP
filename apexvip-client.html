@@ -3076,7 +3076,7 @@ async function confirmBooking(overrideRef){
   const svcLabel={airport:'Airport Transfer',hourly:'By the Hour',day:'By the Day'}[state.booking.serviceType]||'Airport Transfer';
   if(FIREBASE_ENABLED&&auth.currentUser){
     try{
-      await db.collection('bookings').add({
+      const _bookingDoc = await db.collection('bookings').add({
         ref,clientId:auth.currentUser.uid,clientName:state.user?.name||'',
         serviceType:state.booking.serviceType||'airport',serviceLabel:svcLabel,
         pickup:state.booking.pickup||'',dropoff:state.booking.dropoff||'',
@@ -3093,6 +3093,25 @@ async function confirmBooking(overrideRef){
         paPassenger: state.paMode ? state.paPassenger : null,
         createdAt:firebase.firestore.FieldValue.serverTimestamp()
       });
+      // Instant broadcast mode: offer the booking to every online driver
+      // immediately — first driver to accept claims it
+      try{
+        const modeDoc=await db.collection('settings').doc('dispatch').get();
+        if(modeDoc.exists&&modeDoc.data().mode==='broadcast'){
+          await db.collection('open_jobs').add({
+            bookingDocId:_bookingDoc.id,bookingRef:ref,
+            clientName:state.user?.name||'',
+            pickup:state.booking.pickup||'',
+            dropoff:state.booking.dropoff||state.booking.airport||'',
+            date:state.booking.date||'',time:state.booking.time||'',
+            vehicle:state.booking.vehicle||'Mercedes S-Class',
+            pay:total,flight:state.booking.flight||'',
+            status:'open',driverId:'',
+            createdAt:firebase.firestore.FieldValue.serverTimestamp()
+          });
+          await _bookingDoc.update({status:'offered'});
+        }
+      }catch(e){/* broadcast is best-effort; admin can still dispatch manually */}
     }catch(err){console.warn('Booking save:',err.message);}
   }
   state._confirmedRef=ref;state._promoApplied=false;state._squarePaymentId=null;
@@ -3207,7 +3226,7 @@ if(FIREBASE_ENABLED){
         if(!FIREBASE_ENABLED||!auth.currentUser)return;
         _statusUnsub=db.collection('bookings')
           .where('clientId','==',user.uid)
-          .where('status','in',['confirmed','accepted','en_route','arrived','onboard'])
+          .where('status','in',['confirmed','offered','accepted','en_route','arrived','onboard'])
           .orderBy('createdAt','desc').limit(1)
           .onSnapshot(snap=>{
             if(!snap.empty){

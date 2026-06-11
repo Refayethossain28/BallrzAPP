@@ -296,6 +296,64 @@ function setupDriverListeners(uid){
       }
       render();
     },()=>{});
+
+  // Broadcast dispatch: open jobs are offered to every online driver at once.
+  // First driver to accept claims it via a transaction.
+  db.collection('open_jobs').where('status','==','open')
+    .onSnapshot(snap=>{
+      const open=snap.docs.map(d=>({_openId:d.id,_broadcast:true,bookingDocId:d.data().bookingDocId||'',bookingRef:d.data().bookingRef||'',
+        type:d.data().type||'airport',client:d.data().clientName||'Client',
+        initials:(d.data().clientName||'CL').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2),
+        service:d.data().serviceLabel||'Airport Transfer',pickup:d.data().pickup||'',
+        dropoff:d.data().dropoff||'',time:d.data().time||'Now',
+        pay:d.data().pay||95,flight:d.data().flight||'',notes:d.data().notes||'',
+        vehicle:d.data().vehicle||'S-Class',status:'pending'}));
+      S._openJobs=open;
+      // If the job we're ringing got claimed by another driver, stand down
+      if(S.jobOverlay&&S._offeredJob?._broadcast&&!open.find(j=>j._openId===S._offeredJob._openId)){
+        clearInterval(S._cdTimer);S.jobOverlay=false;S._offeredJob=null;
+        S._toast='That job was taken by another driver';
+        setTimeout(()=>{S._toast=null;render();},3500);
+        render();return;
+      }
+      // Ring the offer for online, idle drivers
+      if(open.length&&S.online&&!S.jobOverlay&&!S.activeJob){
+        S._offeredJob=open[0];
+        S.jobOverlay=true;S.countdown=30;startCountdown();render();
+      }
+    },()=>{});
+}
+
+// First-to-accept claim — the transaction guarantees only one driver wins
+async function claimBroadcastJob(job){
+  try{
+    await db.runTransaction(async tx=>{
+      const ref=db.collection('open_jobs').doc(job._openId);
+      const doc=await tx.get(ref);
+      if(!doc.exists||doc.data().status!=='open')throw new Error('taken');
+      tx.update(ref,{status:'claimed',driverId:_driverId,claimedAt:firebase.firestore.FieldValue.serverTimestamp()});
+    });
+    // Won the race — take ownership of the booking and create our job doc
+    const me=await db.collection('drivers').doc(_driverId).get();
+    const p=me.exists?me.data():{};
+    if(job.bookingDocId){
+      db.collection('bookings').doc(job.bookingDocId).update({
+        driverId:_driverId,driverName:p.name||'Driver',
+        driverPlate:p.reg||'',status:'accepted',
+        assignedAt:firebase.firestore.FieldValue.serverTimestamp()
+      }).catch(()=>{});
+    }
+    const jobDoc=await db.collection('jobs').add({
+      driverId:_driverId,bookingRef:job.bookingRef,bookingDocId:job.bookingDocId,
+      clientName:job.client,pickup:job.pickup,dropoff:job.dropoff,
+      date:job.date||'',time:job.time||'',vehicle:job.vehicle,pay:job.pay,
+      flight:job.flight||'',status:'accepted',
+      createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+    return {...job,id:jobDoc.id};
+  }catch(e){
+    return null; // lost the race
+  }
 }
 
 // Mirror trip status onto the linked booking so the client app sees it live.
@@ -351,6 +409,11 @@ function goOnline(){
     db.collection('drivers').doc(_driverId).set({status:S.online?'online':'offline'},{merge:true}).catch(()=>{});
     if(S.online) startGPSStream(); else stopGPSStream();
   }
+  if(S.online&&FIREBASE_ENABLED&&S._openJobs?.length&&!S.jobOverlay&&!S.activeJob){
+    // A broadcast offer is already live — ring it now that we're online
+    S._offeredJob=S._openJobs[0];
+    S.jobOverlay=true;S.countdown=30;startCountdown();
+  }
   if(S.online&&!FIREBASE_ENABLED){
     // Demo mode only — simulate an incoming job offer
     clearTimeout(S._timer);
@@ -374,10 +437,25 @@ function startCountdown(){
   },1000);
 }
 
-function acceptJob(){
+async function acceptJob(){
   clearInterval(S._cdTimer);
+  const offered=S._offeredJob||JOBS[0];
+  // Broadcast job: race against other drivers — transaction decides the winner
+  if(FIREBASE_ENABLED&&offered?._broadcast){
+    const won=await claimBroadcastJob(offered);
+    S.jobOverlay=false;S._offeredJob=null;
+    if(!won){
+      S._toast='That job was taken by another driver';
+      setTimeout(()=>{S._toast=null;render();},3500);
+      render();return;
+    }
+    S.activeJob=won;S.tripStep=2;S.tripTimer=0;
+    if(_driverId) db.collection('drivers').doc(_driverId).set({status:'ontrip'},{merge:true}).catch(()=>{});
+    startGPSStream();
+    go('active');return;
+  }
   S.jobOverlay=false;
-  S.activeJob=S._offeredJob||JOBS[0];
+  S.activeJob=offered;
   S._offeredJob=null;
   S.tripStep=2;
   S.tripTimer=0;
@@ -948,9 +1026,10 @@ documents:()=>`<div class="screen">
 };
 
 function render(){
-  if(S.screen==='axc-wallet'){document.getElementById('app').innerHTML=pages.axcWallet();return;}
+  const toast=S._toast?`<div style="position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:600;background:rgba(20,16,12,.95);border:1px solid var(--border);border-radius:14px;padding:12px 20px;font-size:13px;font-weight:600;color:var(--fg);backdrop-filter:blur(20px);animation:fadeIn .25s ease;white-space:nowrap;box-shadow:0 8px 32px rgba(0,0,0,.5)">${S._toast}</div>`:'';
+  if(S.screen==='axc-wallet'){document.getElementById('app').innerHTML=pages.axcWallet()+toast;return;}
   const fn=pages[S.screen]||pages.login;
-  document.getElementById('app').innerHTML=fn();
+  document.getElementById('app').innerHTML=fn()+toast;
 }
 
 render();

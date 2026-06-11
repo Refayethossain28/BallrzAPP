@@ -30,7 +30,11 @@ service cloud.firestore {
         isAdmin()
       );
       allow update: if authed() && (
+        resource.data.get('clientId','') == uid() ||
         resource.data.get('driverId','') == uid() ||
+        // Broadcast claim: a driver may take ownership of an unassigned booking
+        (isDriver() && resource.data.get('driverId','') == '' &&
+          request.resource.data.get('driverId','') == uid()) ||
         isAdmin()
       );
       allow delete: if isAdmin();
@@ -41,11 +45,35 @@ service cloud.firestore {
       allow read: if authed() && (
         resource.data.get('driverId','') == uid() || isAdmin()
       );
-      allow create: if isAdmin();
+      // Admin dispatches manually; a driver may create their own job doc
+      // after winning a broadcast claim
+      allow create: if isAdmin() ||
+        (isDriver() && request.resource.data.get('driverId','') == uid());
       allow update: if authed() && (
         resource.data.get('driverId','') == uid() || isAdmin()
       );
       allow delete: if isAdmin();
+    }
+
+    // ── Open jobs (instant broadcast dispatch) ─────────────────────────────
+    // Created when a booking is broadcast to all drivers. First driver to
+    // claim it (transaction flips status open → claimed) wins the booking.
+    match /open_jobs/{jobId} {
+      allow create: if authed();
+      allow read:   if authed();
+      allow update: if isAdmin() || (
+        isDriver() &&
+        resource.data.get('status','') == 'open' &&
+        request.resource.data.get('driverId','') == uid() &&
+        request.resource.data.get('status','') == 'claimed'
+      );
+      allow delete: if isAdmin();
+    }
+
+    // ── Settings (dispatch mode etc.) ──────────────────────────────────────
+    match /settings/{docId} {
+      allow read:  if authed();
+      allow write: if isAdmin();
     }
 
     // ── Drivers (location + status) ────────────────────────────────────────
