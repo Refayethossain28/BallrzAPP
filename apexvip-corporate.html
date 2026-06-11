@@ -18,17 +18,18 @@
 body{
   background:var(--bg);color:var(--fg);font-family:-apple-system,system-ui,sans-serif;
   -webkit-font-smoothing:antialiased;min-height:100vh;overflow-x:hidden;
-  --bg:#080808;--fg:#f0ece4;--fg-muted:#c8bfb0;--fg-dim:#8a8278;--fg-subtle:#5a5550;
+  --bg:#050505;--fg:#f4f0ea;--fg-muted:#c8bfb0;--fg-dim:#8a8278;--fg-subtle:#5a5550;
   --fg-ghost:#3a3632;--fg-faint:#28251f;
   --surface:rgba(255,255,255,.045);--surface-b:rgba(255,255,255,.03);--surface-c:rgba(255,255,255,.07);
   --border:rgba(255,255,255,.08);--border-b:rgba(255,255,255,.05);--divider:rgba(255,255,255,.04);
-  --gold:#D4A843;--gold-dim:rgba(212,168,67,.14);--gold-glow:rgba(212,168,67,.08);
+  --gold:#C8A97E;--gold-2:rgba(200,169,126,.22);--gold-3:rgba(200,169,126,.12);--gold-dim:rgba(200,169,126,.14);--gold-glow:rgba(200,169,126,.08);
   --radius:16px
 }
+body{--ease-spring:cubic-bezier(0.16,1,0.3,1);}
 
 /* Aurora background */
 body::before,body::after{content:'';position:fixed;border-radius:50%;filter:blur(100px);pointer-events:none;z-index:0}
-body::before{width:600px;height:600px;left:20%;top:-16%;background:radial-gradient(circle,rgba(212,168,67,.07),transparent 70%);animation:auroraA 28s ease-in-out infinite alternate}
+body::before{width:600px;height:600px;left:20%;top:-16%;background:radial-gradient(circle,rgba(200,169,126,.07),transparent 70%);animation:auroraA 28s ease-in-out infinite alternate}
 body::after{width:500px;height:500px;right:-10%;bottom:-14%;background:radial-gradient(circle,rgba(90,80,160,.055),transparent 70%);animation:auroraB 34s ease-in-out infinite alternate}
 @keyframes auroraA{from{transform:translate(0,0) scale(1)}to{transform:translate(130px,100px) scale(1.2)}}
 @keyframes auroraB{from{transform:translate(0,0) scale(1.1)}to{transform:translate(-150px,-100px) scale(.9)}}
@@ -60,12 +61,12 @@ body::after{width:500px;height:500px;right:-10%;bottom:-14%;background:radial-gr
 
 /* ── Cards ── */
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;transition:transform .18s,border-color .18s}
-.card:hover{border-color:rgba(212,168,67,.18)}
+.card:hover{border-color:rgba(200,169,126,.18)}
 .card-inset{background:var(--surface-b);border:1px solid var(--border-b);border-radius:12px;padding:16px}
 
 /* ── Stat cards ── */
 .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;flex:1;min-width:140px;position:relative;overflow:hidden;transition:transform .18s,border-color .18s}
-.stat-card:hover{transform:translateY(-2px);border-color:rgba(212,168,67,.2)}
+.stat-card:hover{transform:translateY(-2px);border-color:rgba(200,169,126,.2)}
 .stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.1),transparent)}
 .stat-wm{position:absolute;right:10px;bottom:6px;font-size:40px;line-height:1;opacity:.05;pointer-events:none;user-select:none}
 
@@ -85,7 +86,7 @@ body::after{width:500px;height:500px;right:-10%;bottom:-14%;background:radial-gr
 
 /* ── Tags ── */
 .tag{display:inline-flex;align-items:center;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.2px}
-.tag-gold{background:rgba(212,168,67,.14);color:var(--gold)}
+.tag-gold{background:rgba(200,169,126,.14);color:var(--gold)}
 .tag-green{background:rgba(34,197,94,.14);color:#22c55e}
 .tag-blue{background:rgba(59,130,246,.14);color:#3b82f6}
 .tag-amber{background:rgba(245,158,11,.14);color:#f59e0b}
@@ -121,7 +122,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.5}
 .topbar-logo{font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:700;color:var(--gold);letter-spacing:4px}
 
 /* ── Bottom nav ── */
-.bottomnav{position:fixed;bottom:0;left:0;right:0;background:rgba(8,8,8,.92);border-top:1px solid var(--border);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);display:flex;z-index:40;padding-bottom:env(safe-area-inset-bottom)}
+.bottomnav{position:fixed;bottom:0;left:0;right:0;background:rgba(5,5,5,.92);border-top:1px solid var(--border);backdrop-filter:blur(32px) saturate(180%);-webkit-backdrop-filter:blur(32px) saturate(180%);display:flex;z-index:40;padding-bottom:env(safe-area-inset-bottom)}
 .bnav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 4px;cursor:pointer;color:var(--fg-subtle);font-size:10px;font-weight:600;letter-spacing:.5px;transition:color .15s;text-transform:uppercase}
 .bnav-item svg{transition:transform .15s}
 .bnav-item.on{color:var(--gold)}
@@ -163,7 +164,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.5}
 /* ── Bar chart CSS ── */
 .bar-row{display:flex;align-items:center;gap:10px;padding:6px 0}
 .bar-track{flex:1;height:8px;background:var(--surface-c);border-radius:4px;overflow:hidden}
-.bar-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--gold),rgba(212,168,67,.5));animation:barGrow .7s ease both;width:var(--w)}
+.bar-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--gold),rgba(200,169,126,.5));animation:barGrow .7s ease both;width:var(--w)}
 @keyframes barGrow{from{width:0}to{width:var(--w)}}
 
 /* ── Segment bar ── */
@@ -198,8 +199,8 @@ textarea{resize:vertical;min-height:80px;line-height:1.5}
 .company-init{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--gold),#8B6020);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:#000;flex-shrink:0;letter-spacing:.5px}
 
 /* ── Confirm screen ── */
-.confirm-icon{width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,rgba(212,168,67,.2),rgba(212,168,67,.06));border:2px solid rgba(212,168,67,.3);display:flex;align-items:center;justify-content:center;margin:0 auto 24px;font-size:32px}
-.ref-badge{font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:700;color:var(--gold);letter-spacing:3px;text-align:center;padding:14px;background:var(--gold-dim);border-radius:12px;border:1px solid rgba(212,168,67,.2)}
+.confirm-icon{width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,rgba(200,169,126,.2),rgba(200,169,126,.06));border:2px solid rgba(200,169,126,.3);display:flex;align-items:center;justify-content:center;margin:0 auto 24px;font-size:32px}
+.ref-badge{font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:700;color:var(--gold);letter-spacing:3px;text-align:center;padding:14px;background:var(--gold-dim);border-radius:12px;border:1px solid rgba(200,169,126,.2)}
 
 /* ── Employee list item ── */
 .emp-item{display:flex;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid var(--divider)}
@@ -222,16 +223,16 @@ textarea{resize:vertical;min-height:80px;line-height:1.5}
 .scroll-x::-webkit-scrollbar{display:none}
 
 /* ── Inline add form ── */
-.inline-form{background:var(--surface-b);border:1px solid rgba(212,168,67,.15);border-radius:14px;padding:18px;margin-bottom:16px;animation:slideUp .3s ease}
+.inline-form{background:var(--surface-b);border:1px solid rgba(200,169,126,.15);border-radius:14px;padding:18px;margin-bottom:16px;animation:slideUp .3s ease}
 
 /* ── Quick action row ── */
 .qaction{display:flex;align-items:center;gap:12px;padding:13px 16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;cursor:pointer;transition:.15s}
-.qaction:hover{border-color:rgba(212,168,67,.2);background:var(--surface-c)}
+.qaction:hover{border-color:rgba(200,169,126,.2);background:var(--surface-c)}
 
 /* ── Period selector ── */
 .period-sel{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px}
 .period-btn{padding:7px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;background:var(--surface);border:1px solid var(--border);color:var(--fg-dim);transition:.15s;font-family:inherit}
-.period-btn.on{background:var(--gold-dim);border-color:rgba(212,168,67,.3);color:var(--gold)}
+.period-btn.on{background:var(--gold-dim);border-color:rgba(200,169,126,.3);color:var(--gold)}
 
 /* ── API key input ── */
 .api-key-wrap{position:relative}
@@ -941,7 +942,7 @@ function team() {
         ${empList}
       </div>
 
-      <div class="card" style="margin-top:16px;padding:16px;text-align:center;background:var(--gold-dim);border-color:rgba(212,168,67,.2)">
+      <div class="card" style="margin-top:16px;padding:16px;text-align:center;background:var(--gold-dim);border-color:rgba(200,169,126,.2)">
         <div style="font-size:12px;color:var(--fg-dim);margin-bottom:4px">Total team spend this month</div>
         <div style="font-family:'Cormorant Garamond',serif;font-size:32px;font-weight:700;color:var(--gold)">£18,410</div>
         <div style="font-size:11px;color:var(--fg-dim);margin-top:4px">Across 5 travellers · 33 trips</div>
@@ -967,7 +968,7 @@ function reports() {
     </div>`).join('');
 
   const tripTypes = [
-    {label:'Airport',pct:38,colour:'#D4A843'},
+    {label:'Airport',pct:38,colour:'#C8A97E'},
     {label:'Client',pct:28,colour:'#7c3aed'},
     {label:'Road Show',pct:18,colour:'#0ea5e9'},
     {label:'Commute',pct:10,colour:'#10b981'},
@@ -1003,7 +1004,7 @@ function reports() {
       </div>
 
       <!-- Total Spend -->
-      <div class="card" style="text-align:center;padding:28px;margin-bottom:16px;background:linear-gradient(135deg,rgba(212,168,67,.07),transparent)">
+      <div class="card" style="text-align:center;padding:28px;margin-bottom:16px;background:linear-gradient(135deg,rgba(200,169,126,.07),transparent)">
         <div class="section-label" style="margin-bottom:8px">Total Spend</div>
         <div style="font-family:'Cormorant Garamond',serif;font-size:52px;font-weight:700;color:var(--gold);line-height:1">£24,180</div>
         <div style="font-size:12px;color:var(--fg-dim);margin-top:8px">33 trips · 5 employees · June 2026</div>
@@ -1175,7 +1176,7 @@ function bindEvents() {
 
 function getEmpColour(name) {
   const emp = TEAM.find(t=>t.name===name);
-  return emp ? emp.colour : '#D4A843';
+  return emp ? emp.colour : '#C8A97E';
 }
 
 async function doLogin() {
@@ -1354,7 +1355,7 @@ function saveNewEmployee() {
   const email = document.getElementById('new-emp-email')?.value?.trim();
   const role  = document.getElementById('new-emp-role')?.value?.trim();
   if (!name) { showToast('Please enter a name'); return; }
-  const colours = ['#7c3aed','#0ea5e9','#10b981','#f59e0b','#ec4899','#ef4444','#D4A843'];
+  const colours = ['#7c3aed','#0ea5e9','#10b981','#f59e0b','#ec4899','#ef4444','#C8A97E'];
   TEAM.push({
     id: 'T' + (TEAM.length+1),
     name,
