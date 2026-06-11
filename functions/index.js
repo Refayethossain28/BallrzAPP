@@ -327,6 +327,25 @@ exports.assignDriverToBooking = functions.https.onCall(async (data, context) => 
 // ──────────────────────────────────────────────────────────────────────────
 // Helper
 // ──────────────────────────────────────────────────────────────────────────
+async function sendPushNotification(uid, title, body, data = {}) {
+  try {
+    const tokenDoc = await db.collection('fcm_tokens').doc(uid).get();
+    if (!tokenDoc.exists) return;
+    const token = tokenDoc.data().token;
+    if (!token) return;
+    const { getMessaging } = require('firebase-admin/messaging');
+    await getMessaging().send({
+      token,
+      notification: { title, body },
+      data: { ...Object.fromEntries(Object.entries(data).map(([k,v])=>[k,String(v)])) },
+      android: { priority: 'high' },
+      apns: { payload: { aps: { sound: 'default', badge: 1 } } },
+    });
+  } catch(e) {
+    console.warn('Push notification failed:', e.message);
+  }
+}
+
 async function isAdminUser(uid) {
   try {
     const doc = await db.collection('users').doc(uid).get();
@@ -583,4 +602,50 @@ exports.applyReferralCode = functions.https.onCall(async (data, context) => {
   await db.collection('users').doc(refData.ownerId).update({ apexBalance: admin.firestore.FieldValue.increment(100) }).catch(() => {});
   await db.collection('users').doc(context.auth.uid).update({ apexBalance: admin.firestore.FieldValue.increment(50) }).catch(() => {});
   return { success: true, creditsAwarded: 50, message: 'You\'ve received 50 APEX credits! Your referrer has received 100 APEX.' };
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 14. notifyBookingConfirmed — send push to client when booking is confirmed
+// ─────────────────────────────────────────────────────────────────────────────
+exports.notifyBookingConfirmed = functions.https.onCall(async (data, context) => {
+  const { bookingRef, clientId, serviceType, pickup, dropoff, date, time } = data;
+  if (!clientId || !bookingRef) throw new functions.https.HttpsError('invalid-argument', 'clientId and bookingRef required');
+  const svcLabel = { airport: 'Airport Transfer', hourly: 'By the Hour', day: 'Full Day' }[serviceType] || 'Booking';
+  await sendPushNotification(
+    clientId,
+    '✓ Booking Confirmed',
+    `${svcLabel} on ${date || 'your date'} at ${time || 'your time'} — ref ${bookingRef}`,
+    { screen: 'trips', bookingRef }
+  );
+  return { sent: true };
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 15. notifyDriverAssigned — send push to client when a driver is assigned
+// ─────────────────────────────────────────────────────────────────────────────
+exports.notifyDriverAssigned = functions.https.onCall(async (data, context) => {
+  const { clientId, driverName, vehicle, plate, bookingRef } = data;
+  if (!clientId) throw new functions.https.HttpsError('invalid-argument', 'clientId required');
+  await sendPushNotification(
+    clientId,
+    '🚗 Driver Assigned',
+    `${driverName} · ${vehicle} · ${plate} is your chauffeur`,
+    { screen: 'active-trip', bookingRef: bookingRef || '' }
+  );
+  return { sent: true };
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 16. notifyDriverArriving — send push to client when driver is nearly there
+// ─────────────────────────────────────────────────────────────────────────────
+exports.notifyDriverArriving = functions.https.onCall(async (data, context) => {
+  const { clientId, driverName, minutesAway, bookingRef } = data;
+  if (!clientId) throw new functions.https.HttpsError('invalid-argument', 'clientId required');
+  await sendPushNotification(
+    clientId,
+    `🏁 Driver ${minutesAway || 5} min away`,
+    `${driverName} is nearly there — please make your way to the pickup point`,
+    { screen: 'active-trip', bookingRef: bookingRef || '' }
+  );
+  return { sent: true };
 });

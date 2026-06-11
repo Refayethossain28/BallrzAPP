@@ -115,5 +115,23 @@ service cloud.firestore {
       allow read: if authed();
       allow delete: if isAdmin();
     }
+
+    // ── Saved addresses ────────────────────────────────────────────────────
+    match /saved_addresses/{userId} {
+      allow read, write: if authed() && uid() == userId;
+    }
+
+    // ── Memberships ────────────────────────────────────────────────────────
+    match /memberships/{userId} {
+      allow read: if authed() && (uid() == userId || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // ── Recurring bookings ─────────────────────────────────────────────────
+    match /recurring_bookings/{docId} {
+      allow create: if authed();
+      allow read: if authed() && (resource.data.get('clientId','') == uid() || isAdmin());
+      allow update, delete: if authed() && (resource.data.get('clientId','') == uid() || isAdmin());
+    }
   }
 }

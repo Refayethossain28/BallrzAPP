@@ -46,6 +46,70 @@ self.addEventListener('fetch', event => {
   );
 });
 
+// ── Offline Booking Queue ─────────────────────────────────────────────────────
+const QUEUE_KEY = 'apexvip_offline_bookings';
+
+// Register background sync when a booking is queued
+self.addEventListener('sync', event => {
+  if (event.tag === 'booking-sync') {
+    event.waitUntil(flushBookingQueue());
+  }
+});
+
+async function flushBookingQueue() {
+  const db = await openQueueDB();
+  const tx = db.transaction('queue', 'readwrite');
+  const store = tx.objectStore('queue');
+  const all = await storeGetAll(store);
+
+  for (const entry of all) {
+    try {
+      const resp = await fetch('/api/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(entry.data),
+      });
+      if (resp.ok) {
+        await store.delete(entry.id);
+        // Notify the client that the queued booking went through
+        const wins = await clients.matchAll({ type: 'window' });
+        wins.forEach(w => w.postMessage({ type: 'BOOKING_QUEUED_SYNCED', ref: entry.data.ref }));
+      }
+    } catch(e) {
+      console.warn('Queue flush failed for', entry.id, e.message);
+    }
+  }
+}
+
+function openQueueDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('apexvip-queue', 1);
+    req.onupgradeneeded = e => e.target.result.createObjectStore('queue', { keyPath: 'id', autoIncrement: true });
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+function storeGetAll(store) {
+  return new Promise((resolve, reject) => {
+    const req = store.getAll();
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+// Listen for messages from the main app to queue bookings
+self.addEventListener('message', event => {
+  if (event.data?.type === 'QUEUE_BOOKING') {
+    openQueueDB().then(db => {
+      const tx = db.transaction('queue', 'readwrite');
+      tx.objectStore('queue').add({ data: event.data.booking, queuedAt: Date.now() });
+      // Request background sync
+      self.registration.sync?.register('booking-sync').catch(() => {});
+    });
+  }
+});
+
 // ── Firebase Cloud Messaging ──────────────────────────────────────────────────
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js');
