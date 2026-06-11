@@ -449,3 +449,135 @@ exports.sendChauffeurMessage = functions.https.onCall(async (data, context) => {
 
   return { success: true };
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 11. hotelConciergeBook  (REST API for hotel concierge desks — POST /hotelBook)
+// ─────────────────────────────────────────────────────────────────────────────
+exports.hotelConciergeBook = functions.https.onRequest(async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, X-API-Key');
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
+
+  const apiKey = req.headers['x-api-key'];
+  if (!apiKey) { res.status(401).json({ error: 'API key required' }); return; }
+
+  // Verify API key against Firestore
+  const keySnap = await db.collection('api_keys').where('key', '==', apiKey).where('active', '==', true).limit(1).get();
+  if (keySnap.empty) { res.status(403).json({ error: 'Invalid or inactive API key' }); return; }
+
+  const partner = keySnap.docs[0].data();
+  const { guestName, guestPhone, pickup, dropoff, airport, date, time, vehicle, flight, notes } = req.body;
+  if (!guestName || !pickup || !date || !time) {
+    res.status(400).json({ error: 'Required: guestName, pickup, date, time' });
+    return;
+  }
+
+  const ref = 'APX-HTL-' + Math.floor(1000 + Math.random() * 9000);
+  const booking = {
+    ref, source: 'hotel_api', partnerName: partner.name || 'Hotel Partner',
+    clientName: guestName, clientPhone: guestPhone || '',
+    pickup, dropoff: dropoff || '', airport: airport || '',
+    date, time, flight: flight || '',
+    vehicle: vehicle || 'Mercedes S-Class',
+    notes: notes || '', status: 'confirmed',
+    price: 0, // priced on dispatch
+    createdAt: admin.firestore.FieldValue.serverTimestamp()
+  };
+
+  await db.collection('bookings').add(booking);
+  await db.collection('analytics').add({ event: 'hotel_api_booking', partner: partner.name, ref, timestamp: admin.firestore.FieldValue.serverTimestamp() }).catch(() => {});
+
+  res.status(201).json({ success: true, ref, message: `Booking confirmed. Reference: ${ref}`, estimatedArrival: '15 minutes' });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12. whatsappWebhook  (Twilio WhatsApp booking bot)
+// ─────────────────────────────────────────────────────────────────────────────
+exports.whatsappWebhook = functions.https.onRequest(async (req, res) => {
+  const { Body, From, ProfileName } = req.body;
+  if (!Body || !From) { res.status(400).send('Bad request'); return; }
+
+  const msg = Body.trim().toLowerCase();
+  const phone = From.replace('whatsapp:', '');
+  let reply = '';
+
+  // Simple stateless NLP — check for booking intent keywords
+  if (msg.includes('book') || msg.includes('car') || msg.includes('pickup') || msg.includes('airport') || msg.includes('heathrow') || msg.includes('gatwick')) {
+    // Parse with Claude if available
+    let parsed = null;
+    try {
+      const Anthropic = require('@anthropic-ai/sdk');
+      const client = new Anthropic.Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' });
+      const resp = await client.messages.create({
+        model: 'claude-opus-4-8', max_tokens: 256,
+        system: 'Extract booking details from this WhatsApp message. Return JSON only: { pickup, dropoff, date, time, flight }. Use null for unknown fields.',
+        messages: [{ role: 'user', content: Body }]
+      });
+      const text = resp.content[0]?.text || '';
+      const m = text.match(/\{[\s\S]*\}/);
+      if (m) parsed = JSON.parse(m[0]);
+    } catch(e) {}
+
+    if (parsed?.pickup || parsed?.dropoff) {
+      const ref = 'APX-WA-' + Math.floor(1000 + Math.random() * 9000);
+      await db.collection('bookings').add({
+        ref, source: 'whatsapp', clientName: ProfileName || 'WhatsApp Client',
+        clientPhone: phone, pickup: parsed.pickup || 'To be confirmed',
+        dropoff: parsed.dropoff || '', date: parsed.date || '',
+        time: parsed.time || '', flight: parsed.flight || '',
+        vehicle: 'Mercedes S-Class', status: 'pending_confirm',
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+      }).catch(() => {});
+      reply = `✦ *ApexVIP* — Perfect, ${ProfileName || 'valued guest'}.\n\nI've noted your request:\n📍 From: ${parsed.pickup || 'To confirm'}\n📍 To: ${parsed.dropoff || 'To confirm'}\n📅 ${parsed.date || 'Date TBC'} at ${parsed.time || 'Time TBC'}\n\nReference: *${ref}*\n\nA member of our team will confirm your booking within 5 minutes. For immediate assistance call +44 20 0000 0000.`;
+    } else {
+      reply = `✦ *ApexVIP Concierge*\n\nGood ${new Date().getHours() < 12 ? 'morning' : 'afternoon'}, ${ProfileName || 'valued guest'}.\n\nTo book a car, simply tell me:\n• Where you need picking up\n• Your destination or airport\n• Date and time\n\nExample: _"I need a car from Claridge's to Heathrow T5 tomorrow at 6am"_`;
+    }
+  } else if (msg.includes('cancel')) {
+    reply = `✦ *ApexVIP* — To cancel a booking please provide your reference number (e.g. APX-1234) or call +44 20 0000 0000.`;
+  } else if (msg.includes('hello') || msg.includes('hi') || msg.includes('hey') || msg === 'start') {
+    reply = `✦ *Welcome to ApexVIP Concierge*\n\nI can arrange luxury chauffeur services for you. Just tell me where you need to go.\n\nOr book online: https://refayethossain28.github.io/BallrzAPP/apexvip-client.html`;
+  } else {
+    reply = `✦ *ApexVIP* — I'm your luxury chauffeur assistant. Tell me where you'd like to go and I'll arrange everything.\n\nExample: _"Book a car from Mayfair to Heathrow T5 tomorrow at 7am"_`;
+  }
+
+  // Twilio TwiML response
+  res.set('Content-Type', 'text/xml');
+  res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${reply}</Message></Response>`);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13. generateReferralCode / applyReferralCode
+// ─────────────────────────────────────────────────────────────────────────────
+exports.generateReferralCode = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  const uid = context.auth.uid;
+  const existing = await db.collection('referrals').where('ownerId', '==', uid).limit(1).get();
+  if (!existing.empty) return { code: existing.docs[0].data().code };
+  const code = 'APEX' + uid.slice(0,4).toUpperCase() + Math.floor(100 + Math.random() * 900);
+  await db.collection('referrals').add({
+    code, ownerId: uid, uses: 0, creditsEarned: 0,
+    createdAt: admin.firestore.FieldValue.serverTimestamp()
+  });
+  return { code };
+});
+
+exports.applyReferralCode = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  const { code } = data;
+  if (!code) throw new functions.https.HttpsError('invalid-argument', 'code required');
+  const snap = await db.collection('referrals').where('code', '==', code.toUpperCase()).limit(1).get();
+  if (snap.empty) throw new functions.https.HttpsError('not-found', 'Invalid referral code');
+  const ref = snap.docs[0];
+  const refData = ref.data();
+  if (refData.ownerId === context.auth.uid) throw new functions.https.HttpsError('invalid-argument', 'Cannot use your own referral code');
+  // Check if already used by this user
+  const used = await db.collection('referral_uses').where('code', '==', code).where('uid', '==', context.auth.uid).limit(1).get();
+  if (!used.empty) throw new functions.https.HttpsError('already-exists', 'You have already used this code');
+  // Award credits: 50 APEX to new user, 100 APEX to referrer
+  await db.collection('referral_uses').add({ code, uid: context.auth.uid, timestamp: admin.firestore.FieldValue.serverTimestamp() });
+  await ref.ref.update({ uses: admin.firestore.FieldValue.increment(1), creditsEarned: admin.firestore.FieldValue.increment(100) });
+  await db.collection('users').doc(refData.ownerId).update({ apexBalance: admin.firestore.FieldValue.increment(100) }).catch(() => {});
+  await db.collection('users').doc(context.auth.uid).update({ apexBalance: admin.firestore.FieldValue.increment(50) }).catch(() => {});
+  return { success: true, creditsAwarded: 50, message: 'You\'ve received 50 APEX credits! Your referrer has received 100 APEX.' };
+});

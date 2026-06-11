@@ -568,6 +568,47 @@ async function runGooglePay() {
   track('google_pay_tapped', { src: 'client' });
 }
 
+async function loadReferralCode() {
+  if (state._referralCode) return;
+  if (FIREBASE_ENABLED && fns) {
+    try {
+      const fn = fns.httpsCallable('generateReferralCode');
+      const res = await fn({});
+      state._referralCode = res.data.code;
+      render();
+    } catch(e) {}
+  } else {
+    state._referralCode = 'APEX' + (state.user?.uid?.slice(0,4)?.toUpperCase() || 'DEMO') + '247';
+    render();
+  }
+}
+function copyReferralCode() {
+  if (!state._referralCode) { loadReferralCode(); return; }
+  navigator.clipboard?.writeText(state._referralCode).catch(() => {});
+  const el = document.querySelector('#referral-code-display button');
+  if (el) { el.textContent = 'COPIED!'; setTimeout(() => { el.textContent = 'COPY'; }, 2000); }
+  track('referral_code_copied', { src: 'client' });
+}
+async function applyReferral() {
+  const inp = document.getElementById('referral-inp');
+  if (!inp || !inp.value.trim()) return;
+  const code = inp.value.trim().toUpperCase();
+  if (FIREBASE_ENABLED && fns) {
+    try {
+      const fn = fns.httpsCallable('applyReferralCode');
+      const res = await fn({ code });
+      state._referralMsg = '✓ ' + res.data.message;
+      state.apexBalance += res.data.creditsAwarded || 50;
+    } catch(e) {
+      state._referralMsg = e.message?.includes('already') ? 'You\'ve already used this code.' : e.message?.includes('not-found') ? 'Invalid code — check and try again.' : 'Could not apply code — try again.';
+    }
+  } else {
+    state._referralMsg = '✓ 50 APEX credits added (demo mode)';
+    state.apexBalance += 50;
+  }
+  render();
+}
+
 function go(screen, data) {
   if (data) state.selectedTrip = data;
   if (state.screen==='home' && screen!=='home' && mapInstance){mapInstance.remove();mapInstance=null;mapTileLayer=null;}
@@ -1595,6 +1636,24 @@ profile: () => {
       <div class="field"><input placeholder="Passenger phone" value="${state.paPassenger.phone||''}" oninput="setPaPassenger('phone',this.value)" type="tel" style="font-size:14px"/></div>
       <div style="font-size:11px;color:var(--fg-dim);margin-top:8px">You will receive all updates. The passenger will receive the driver details.</div>` : ''}
     </div>
+    <div class="card" style="margin-bottom:12px;padding:18px 20px;background:linear-gradient(135deg,rgba(212,168,67,.08),rgba(212,168,67,.03));border-color:rgba(212,168,67,.25)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div>
+          <div style="font-size:15px;font-weight:700;margin-bottom:2px;color:#D4A843">Refer a Friend</div>
+          <div style="font-size:12px;color:var(--fg-dim)">Earn 100 APEX · They get 50 APEX</div>
+        </div>
+        <div style="font-size:24px">✦</div>
+      </div>
+      <div id="referral-code-display" style="background:var(--surface-b);border:1px solid var(--border);border-radius:12px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-size:16px;font-weight:800;letter-spacing:2px;color:#D4A843">${state._referralCode||'TAP TO GENERATE'}</div>
+        <button onclick="copyReferralCode()" style="background:rgba(212,168,67,.15);border:1px solid rgba(212,168,67,.3);border-radius:8px;padding:6px 12px;font-size:11px;font-weight:700;color:#D4A843;cursor:pointer">${state._referralCode?'COPY':'GET CODE'}</button>
+      </div>
+      <div class="field" style="display:flex;gap:8px;padding:0">
+        <input id="referral-inp" placeholder="Enter a friend's code" style="flex:1;padding:12px 14px;font-size:14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;color:var(--fg)"/>
+        <button onclick="applyReferral()" style="flex-shrink:0;padding:12px 16px;background:var(--surface-b);border:1px solid var(--border);border-radius:12px;font-size:13px;font-weight:700;color:var(--fg);cursor:pointer">Apply</button>
+      </div>
+      ${state._referralMsg?`<div style="margin-top:8px;font-size:12px;color:${state._referralMsg.startsWith('✓')?'#4CAF50':'#ef4444'}">${state._referralMsg}</div>`:''}
+    </div>
     <button onclick="signOut()" style="width:100%;padding:16px;background:transparent;border:1px solid var(--border);border-radius:16px;color:var(--fg-muted);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">Sign out</button>
     <div style="height:120px"></div>
   </div>
@@ -2268,6 +2327,7 @@ function render(){
   if(state.screen==='home') setTimeout(initMap,60);
   if(state.screen==='payment') setTimeout(initSquare,60);
   if(state.screen==='active-trip') setTimeout(initTrackingMap,60);
+  if(state.screen==='profile') setTimeout(loadReferralCode,100);
 }
 
 render();
