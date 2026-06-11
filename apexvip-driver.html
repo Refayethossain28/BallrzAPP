@@ -195,6 +195,7 @@ let S={
   histTab:'week',
   earnTab:'today',
   jobsTab:'available',
+  _payoutSent: false,
 };
 
 // Apply saved theme immediately
@@ -848,6 +849,25 @@ earnings:()=>{
       </div>
       <div style="font-size:12px;color:var(--fg-dim);line-height:1.7">Drivers earn 2% of every completed job in ApexCoin. AXC can be redeemed as cash or used within the ApexVIP ecosystem.</div>
     </div>
+    <div class="card" style="padding:22px;margin-top:8px;margin-bottom:10px">
+      <div class="section-label" style="margin-bottom:14px">Request payout</div>
+      ${S._payoutSent ? `
+      <div style="text-align:center;padding:16px 0">
+        <div style="font-size:24px;margin-bottom:8px">✓</div>
+        <div style="font-size:14px;font-weight:700;color:#22c55e">Request submitted</div>
+        <div style="font-size:12px;color:var(--fg-3);margin-top:4px">Admin will review within 1–2 business days</div>
+        <button onclick="S._payoutSent=false;render()" style="margin-top:14px;background:var(--surface-2);border:1px solid var(--border);color:var(--fg-3);padding:8px 16px;border-radius:10px;font-size:12px;cursor:pointer;font-family:inherit">Request another</button>
+      </div>` : `
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <input id="payout-amount" type="number" placeholder="Amount (£)" style="padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;color:var(--fg);font-size:14px;outline:none;font-family:inherit"/>
+        <input id="payout-bank" placeholder="Bank name" style="padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;color:var(--fg);font-size:14px;outline:none;font-family:inherit"/>
+        <div style="display:flex;gap:8px">
+          <input id="payout-acc" placeholder="Account number" style="flex:1;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;color:var(--fg);font-size:14px;outline:none;font-family:inherit"/>
+          <input id="payout-sort" placeholder="Sort code" style="width:120px;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;color:var(--fg);font-size:14px;outline:none;font-family:inherit"/>
+        </div>
+        <button onclick="submitPayoutRequest()" class="btn btn-gold" style="padding:14px">Submit payout request</button>
+      </div>`}
+    </div>
     ${nav()}
   </div>`;
 },
@@ -1024,6 +1044,29 @@ documents:()=>`<div class="screen">
   </div>`;
 },
 };
+
+async function submitPayoutRequest() {
+  const amount = parseFloat(document.getElementById('payout-amount')?.value || 0);
+  const bankName = document.getElementById('payout-bank')?.value?.trim() || '';
+  const accountNumber = document.getElementById('payout-acc')?.value?.trim() || '';
+  const sortCode = document.getElementById('payout-sort')?.value?.trim() || '';
+  if (!amount || !bankName || !accountNumber || !sortCode) {
+    alert('Please fill in all fields'); return;
+  }
+  if (FIREBASE_ENABLED && _driverId) {
+    try {
+      const me = await db.collection('drivers').doc(_driverId).get();
+      const driverName = me.exists ? (me.data().name || 'Driver') : 'Driver';
+      await db.collection('payout_requests').add({
+        driverId: _driverId, driverName, amount, bankName, accountNumber, sortCode,
+        status: 'pending',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    } catch(e) { alert('Could not submit: ' + e.message); return; }
+  }
+  S._payoutSent = true;
+  render();
+}
 
 function render(){
   const toast=S._toast?`<div style="position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:600;background:rgba(20,16,12,.95);border:1px solid var(--border);border-radius:14px;padding:12px 20px;font-size:13px;font-weight:600;color:var(--fg);backdrop-filter:blur(20px);animation:fadeIn .25s ease;white-space:nowrap;box-shadow:0 8px 32px rgba(0,0,0,.5)">${S._toast}</div>`:'';
