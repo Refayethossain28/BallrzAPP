@@ -1040,7 +1040,8 @@ function shareTrip() {
   const ref = state._confirmedRef || state._activeBooking?.ref || 'APX-4821';
   const dn = encodeURIComponent(state._activeBooking?.driverName || 'James Harrison');
   const dp = encodeURIComponent(state._activeBooking?.driverPlate || 'LX73 ABC');
-  const url = `https://refayethossain28.github.io/BallrzAPP/track.html?ref=${ref}&d=${dn}&p=${dp}`;
+  const did = state._activeBooking?.driverId || '';
+  const url = `https://refayethossain28.github.io/BallrzAPP/track.html?ref=${ref}&d=${dn}&p=${dp}${did?'&driverId='+did:''}`;
   track('trip_shared', { ref, src: 'client' });
   if (navigator.share) {
     navigator.share({ title: 'Track my ApexVIP ride', text: `I'm in a black Mercedes — track me live`, url }).catch(() => {});
