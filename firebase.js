@@ -8,3 +8,8 @@ var APEXVIP_FIREBASE_CONFIG = {
   appId: "1:254410067879:web:754b71a35182c997f37082",
   measurementId: "G-1DP3RTL1EB"
 };
+
+// Web Push (VAPID) key — one-time setup:
+// Firebase Console → Project Settings → Cloud Messaging
+// → Web Push certificates → Generate key pair → paste here
+var APEXVIP_VAPID_KEY = '';

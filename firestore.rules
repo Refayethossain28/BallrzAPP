@@ -161,5 +161,13 @@ service cloud.firestore {
       allow read: if authed() && (resource.data.get('clientId','') == uid() || isAdmin());
       allow update, delete: if authed() && (resource.data.get('clientId','') == uid() || isAdmin());
     }
+
+    // ── Payout requests ────────────────────────────────────────────────────
+    match /payout_requests/{docId} {
+      allow create: if isDriver() && request.resource.data.get('driverId','') == uid();
+      allow read:   if authed() && (resource.data.get('driverId','') == uid() || isAdmin());
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
   }
 }

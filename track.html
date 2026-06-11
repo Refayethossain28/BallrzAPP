@@ -8,6 +8,10 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;600&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="firebase.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-font-smoothing:antialiased}
@@ -114,6 +118,43 @@ const driverName = params.get('d') ? decodeURIComponent(params.get('d').replace(
 const plate = params.get('p') ? decodeURIComponent(params.get('p').replace(/\+/g,' ')) : '';
 const pickup = params.get('pu') ? decodeURIComponent(params.get('pu').replace(/\+/g,' ')) : '';
 const dropoff = params.get('do') ? decodeURIComponent(params.get('do').replace(/\+/g,' ')) : '';
+const driverId = params.get('driverId') || '';
+
+let _db = null, _trackingUnsub = null, _usingRealData = false;
+
+try {
+  if (typeof APEXVIP_FIREBASE_CONFIG !== 'undefined' && APEXVIP_FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY' && driverId) {
+    firebase.initializeApp(APEXVIP_FIREBASE_CONFIG);
+    firebase.auth().signInAnonymously().then(() => {
+      _db = firebase.firestore();
+      startFirebaseTracking();
+    }).catch(() => {});
+  }
+} catch(e) {}
+
+function startFirebaseTracking() {
+  if (!_db || !driverId) return;
+  _trackingUnsub = _db.collection('drivers').doc(driverId).onSnapshot(doc => {
+    if (!doc.exists) return;
+    const d = doc.data();
+    if (!d.lat || !d.lng) return;
+    if (!_usingRealData) {
+      _usingRealData = true;
+      // Stop the simulation interval now that real data is arriving
+      if (window._simInterval) { clearInterval(window._simInterval); window._simInterval = null; }
+      // Update status dot to green "Live"
+      const dot = document.querySelector('.status-dot');
+      const txt = document.querySelector('.status-text');
+      if (dot) { dot.style.background = '#22c55e'; dot.style.boxShadow = '0 0 8px rgba(34,197,94,.5)'; }
+      if (txt) txt.textContent = 'Live · Your driver is on the way';
+    }
+    const pos = [d.lat, d.lng];
+    if (driverMarker) {
+      driverMarker.setLatLng(pos);
+      if (!map.getBounds().contains(pos)) map.panTo(pos, {animate: true});
+    }
+  }, () => {});
+}
 
 // Simulated driver position (London) — in production this would be a Firestore real-time listener
 let driverLat = 51.5074 + (Math.random()-.5)*.02;
@@ -162,15 +203,17 @@ function initMap() {
     color:'rgba(200,169,126,.5)', weight:2, dashArray:'6,8'
   }).addTo(map);
 
-  // Animate driver movement toward destination
-  animateDriver();
+  // Only run simulation when no real Firebase driver is being tracked
+  if (!driverId) {
+    animateDriver();
+  }
 }
 
 function animateDriver() {
   const stepLat = (destLat - driverLat) / 180;
   const stepLng = (destLng - driverLng) / 180;
   let steps = 0;
-  setInterval(() => {
+  window._simInterval = setInterval(() => {
     if (steps > 120) return;
     steps++;
     driverLat += stepLat * (0.5 + Math.random());
@@ -204,11 +247,13 @@ function renderSheet() {
       </div>
     </div>`;
 
-  // Status row
+  // Status row — grey "Simulated" when no real driverId, green "Live" otherwise
+  const simDotStyle = !driverId ? 'background:#6b7280;box-shadow:none;animation:none' : '';
+  const simLabel = !driverId ? 'Simulated · Your driver is on the way' : 'Your driver is on the way';
   document.getElementById('status-section').innerHTML = `
     <div class="status-row" style="margin-bottom:14px">
-      <div class="status-dot"></div>
-      <span class="status-text">Your driver is on the way</span>
+      <div class="status-dot" style="${simDotStyle}"></div>
+      <span class="status-text">${simLabel}</span>
       <span class="eta-chip" id="eta-chip">${formatEta(etaSeconds)}</span>
     </div>`;
 
