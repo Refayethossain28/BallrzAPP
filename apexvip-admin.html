@@ -2,9 +2,23 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<link rel="manifest" href="manifest.json"/>
-<meta name="theme-color" content="#000000"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="AV Admin"/>
+<link rel="manifest" href="manifest-admin.json"/>
+<meta name="theme-color" content="#050505"/>
+<link rel="apple-touch-icon" href="icon-180.png"/>
+<link rel="apple-touch-icon" sizes="120x120" href="icon-120.png"/>
+<link rel="apple-touch-icon" sizes="152x152" href="icon-152.png"/>
+<link rel="apple-touch-icon" sizes="167x167" href="icon-167.png"/>
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png"/>
+<link rel="apple-touch-startup-image" media="(device-width:390px) and (device-height:844px) and (-webkit-device-pixel-ratio:3)" href="splashes/splash-1170x2532.png"/>
+<link rel="apple-touch-startup-image" media="(device-width:393px) and (device-height:852px) and (-webkit-device-pixel-ratio:3)" href="splashes/splash-1179x2556.png"/>
+<link rel="apple-touch-startup-image" media="(device-width:430px) and (device-height:932px) and (-webkit-device-pixel-ratio:3)" href="splashes/splash-1206x2622.png"/>
+<link rel="apple-touch-startup-image" media="(device-width:375px) and (device-height:812px) and (-webkit-device-pixel-ratio:3)" href="splashes/splash-1125x2436.png"/>
+<link rel="apple-touch-startup-image" media="(device-width:375px) and (device-height:667px) and (-webkit-device-pixel-ratio:2)" href="splashes/splash-750x1334.png"/>
 <title>ApexVIP Admin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -18,7 +32,8 @@
 <script src="apexvip-core.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-body{background:var(--bg);color:var(--fg);font-family:-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased;display:flex;min-height:100vh;
+html{height:-webkit-fill-available}
+body{background:var(--bg);color:var(--fg);font-family:-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased;display:flex;min-height:100vh;min-height:-webkit-fill-available;overscroll-behavior:none;-webkit-touch-callout:none;
   --bg:#050505;--fg:#f4f0ea;--fg-muted:#c8bfb0;--fg-dim:#8a8278;--fg-subtle:#5a5550;--fg-ghost:#3a3632;--fg-faint:#28251f;
   --surface:rgba(255,255,255,.045);--surface-b:rgba(255,255,255,.03);--surface-c:rgba(255,255,255,.07);
   --border:rgba(255,255,255,.08);--border-b:rgba(255,255,255,.05);--divider:rgba(255,255,255,.04);
@@ -36,10 +51,12 @@ body::after{width:480px;height:480px;right:-8%;bottom:-12%;background:radial-gra
 @keyframes auroraB{from{transform:translate(0,0) scale(1.08)}to{transform:translate(-140px,-90px) scale(.92)}}
 
 /* ── Sidebar ── */
-.sidebar{width:240px;min-height:100vh;background:rgba(10,9,8,.92);border-right:1px solid var(--border);position:fixed;top:0;left:0;display:flex;flex-direction:column;z-index:50;transition:transform .25s;backdrop-filter:blur(24px) saturate(1.3);-webkit-backdrop-filter:blur(24px) saturate(1.3);box-shadow:inset -1px 0 0 rgba(255,255,255,.05)}
+.sidebar{width:240px;min-height:100vh;background:rgba(10,9,8,.92);border-right:1px solid var(--border);position:fixed;top:0;left:0;display:flex;flex-direction:column;z-index:50;transition:transform .25s;backdrop-filter:blur(24px) saturate(1.3);-webkit-backdrop-filter:blur(24px) saturate(1.3);box-shadow:inset -1px 0 0 rgba(255,255,255,.05);
+  padding-top:env(safe-area-inset-top)}
 body.light .sidebar{background:rgba(240,235,226,.92)}
 .main{margin-left:240px;flex:1;padding:32px;min-height:100vh}
 @media(max-width:768px){.sidebar{transform:translateX(-240px)}.sidebar.open{transform:translateX(0)}.main{margin-left:0;padding:20px 16px 80px}}
+input,select,textarea{font-size:16px !important}
 
 /* ── Sidebar nav items ── */
 .s-nav-item{display:flex;align-items:center;gap:12px;padding:11px 20px;cursor:pointer;color:var(--fg-subtle);font-size:14px;transition:background .2s,color .2s;border-left:3px solid transparent;position:relative}
@@ -1280,6 +1297,7 @@ function render(){
 }
 
 render();
+(function(){ if(window.navigator.standalone===true) document.body.classList.add('ios-pwa'); })();
 </script>
 </body>
 </html>
