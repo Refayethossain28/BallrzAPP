@@ -309,10 +309,11 @@ if(FIREBASE_ENABLED){
   db.collection('bookings').orderBy('createdAt','desc').onSnapshot(snap=>{
     BOOKINGS=snap.docs.map(d=>{
       const x=d.data();
+      const priceStr=x.currency==='AED'?(x.price?'AED '+x.price:'AED 685'):(x.price?'£'+x.price:(x.priceStr||'£185'));
       return{id:d.id,docId:d.id,client:x.clientName||'—',pickup:x.pickup||'',dropoff:x.dropoff||'',
         date:x.date||'',time:x.time||'',vehicle:x.vehicle||'S-Class',
-        driver:x.driverName||x.driver||'—',status:x.status||'pending',
-        price:x.price?'£'+x.price:(x.priceStr||'£185'),ref:x.ref||d.id};
+        driver:x.driverName||x.driver||'—',driverId:x.driverId||'',status:x.status||'pending',
+        price:priceStr,ref:x.ref||d.id,location:x.location||'',currency:x.currency||'GBP'};
     });
     if(!['login'].includes(S.screen))render();
   },e=>console.warn('Bookings:',e.code));
@@ -534,7 +535,7 @@ bookings:()=>{const f=S.bFilter;const list=f==='all'?BOOKINGS:BOOKINGS.filter(b=
   <div class="card"><div style="overflow-x:auto"><table>
     <thead><tr><th>ID</th><th>Client</th><th>Route</th><th>Date</th><th>Vehicle</th><th>Driver</th><th>Status</th><th>Price</th><th></th></tr></thead>
     <tbody>${list.map(b=>`<tr>
-      <td style="color:var(--gold);font-weight:600;font-size:12px">${b.id}</td>
+      <td style="color:var(--gold);font-weight:600;font-size:12px">${b.id}${b.location==='dubai'?'<span style="margin-left:5px;font-size:10px;background:rgba(0,180,255,.12);color:#38bdf8;border:1px solid rgba(56,189,248,.25);border-radius:6px;padding:1px 5px;font-weight:700">AE</span>':b.location==='london'?'<span style="margin-left:5px;font-size:10px;background:rgba(200,169,126,.1);color:var(--gold);border:1px solid rgba(200,169,126,.2);border-radius:6px;padding:1px 5px;font-weight:700">GB</span>':''}</td>
       <td style="font-weight:500">${b.client}</td>
       <td style="color:var(--fg-dim);font-size:13px">${b.pickup} → ${b.dropoff}</td>
       <td style="color:var(--fg-dim);font-size:12px">${b.date} ${b.time}</td>
@@ -1081,14 +1082,26 @@ function showBooking(id){const b=BOOKINGS.find(x=>x.id===id);if(!b)return;
   openModal(`<div>
     <div style="font-size:17px;font-weight:700;margin-bottom:18px">Booking ${b.id}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px">
-      ${[['Client',b.client],['Vehicle',b.vehicle],['Pickup',b.pickup],['Driver',b.driver],['Drop-off',b.dropoff],['Date & Time',b.date+' '+b.time],['Price',`<span style="color:var(--gold);font-weight:700">${b.price}</span>`],['Status',badge(b.status)]].map(([l,v])=>`<div><div style="font-size:10px;color:var(--fg-subtle);margin-bottom:4px;letter-spacing:.5px">${l.toUpperCase()}</div><div style="font-size:14px;font-weight:500">${v}</div></div>`).join('')}
+      ${[['Client',b.client],['Vehicle',b.vehicle],['Pickup',b.pickup],['Driver',b.driver],['Drop-off',b.dropoff],['Date & Time',b.date+' '+b.time],['Price',`<span style="color:var(--gold);font-weight:700">${b.price}</span>`],['Status',badge(b.status)],b.location?['Market',b.location==='dubai'?'🇦🇪 Dubai':'🇬🇧 London']:null].filter(Boolean).map(([l,v])=>`<div><div style="font-size:10px;color:var(--fg-subtle);margin-bottom:4px;letter-spacing:.5px">${l.toUpperCase()}</div><div style="font-size:14px;font-weight:500">${v}</div></div>`).join('')}
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-gold btn-sm" onclick="closeModal()">Assign Driver</button>
-      <button class="btn btn-glass btn-sm" onclick="closeModal()">Edit</button>
-      <button class="btn btn-danger btn-sm" onclick="closeModal()">Cancel</button>
+      ${!b.driverId?`<button class="btn btn-gold btn-sm" onclick="closeModal();openDispatch('${b.id}')">Assign Driver</button>`:''}
+      <button class="btn btn-glass btn-sm" onclick="closeModal()">Close</button>
+      ${b.status!=='cancelled'&&b.status!=='completed'?`<button class="btn btn-danger btn-sm" onclick="adminCancelBooking('${b.docId}','${b.id}')">Cancel Booking</button>`:''}
     </div>
   </div>`);}
+
+function adminCancelBooking(docId,id){
+  if(!confirm('Cancel this booking?'))return;
+  closeModal();
+  const bk=BOOKINGS.find(x=>x.id===id||x.docId===docId);
+  if(bk)bk.status='cancelled';
+  render();
+  if(FIREBASE_ENABLED&&docId){
+    db.collection('bookings').doc(docId).update({status:'cancelled',cancelledAt:firebase.firestore.FieldValue.serverTimestamp()}).catch(()=>{});
+    db.collection('open_jobs').where('bookingDocId','==',docId).get().then(s=>s.docs.forEach(d=>d.ref.update({status:'cancelled'}).catch(()=>{}))).catch(()=>{});
+  }
+}
 
 function showDriver(id){const d=DRIVERS.find(x=>x.id===id);if(!d)return;
   openModal(`<div>

@@ -1548,7 +1548,7 @@ async function confirmBooking(overrideRef){
   const svcLabel={airport:'Airport Transfer',hourly:'By the Hour',day:'By the Day'}[state.booking.serviceType]||'Airport Transfer';
   if(FIREBASE_ENABLED&&auth.currentUser){
     try{
-      await db.collection('bookings').add({
+      const _bookingDoc=await db.collection('bookings').add({
         ref,clientId:auth.currentUser.uid,clientName:state.user?.name||'',
         serviceType:state.booking.serviceType||'airport',serviceLabel:svcLabel,
         pickup:state.booking.pickup||'',dropoff:state.booking.dropoff||'',
@@ -1559,9 +1559,26 @@ async function confirmBooking(overrideRef){
         promoApplied:state._promoApplied||false,status:'confirmed',
         squarePaymentId:state._squarePaymentId||null,
         paymentStatus:state._squarePaymentId?'paid':'pending',
-        driverName:'James Harrison',driverRating:4.9,driverPlate:'LX73 ABC',
+        driverName:'',driverRating:null,driverPlate:'',
+        location:'dubai',currency:'AED',
         createdAt:firebase.firestore.FieldValue.serverTimestamp()
       });
+      try{
+        const modeDoc=await db.collection('settings').doc('dispatch').get();
+        if(modeDoc.exists&&modeDoc.data().mode==='broadcast'){
+          await db.collection('open_jobs').add({
+            bookingDocId:_bookingDoc.id,bookingRef:ref,
+            clientName:state.user?.name||'',
+            pickup:state.booking.pickup||'',
+            dropoff:state.booking.dropoff||state.booking.airport||'',
+            date:state.booking.date||'',time:state.booking.time||'',
+            vehicle:state.booking.vehicle||'Mercedes S-Class',
+            pay:total,currency:'AED',flight:state.booking.flight||'',
+            location:'dubai',status:'open',driverId:'',
+            createdAt:firebase.firestore.FieldValue.serverTimestamp()
+          });
+        }
+      }catch(e){}
     }catch(err){console.warn('Booking save:',err.message);}
   }
   state._confirmedRef=ref;state._promoApplied=false;state._squarePaymentId=null;
