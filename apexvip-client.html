@@ -444,6 +444,14 @@ let state = {
   _lastApexEarned: 0,
   paMode: false,
   paPassenger: { name: '', phone: '' },
+  savedAddresses: JSON.parse(localStorage.getItem('apexvip_saved_addrs') || '[]'),
+  _tipAmount: 0,
+  _tipSent: false,
+  _sosConfirm: false,
+  _recurring: false,
+  _recurringFreq: 'Every week',
+  _shareCopied: false,
+  _etaSeconds: 0,
   cards: [
     {id:1,brand:'Visa',last4:'4242',expiry:'09/27',color:'linear-gradient(135deg,#2a2a2a,#111)',isDefault:true},
     {id:2,brand:'Mastercard',last4:'8888',expiry:'03/26',color:'linear-gradient(135deg,#1a1a2e,#16213e)',isDefault:false}
@@ -505,14 +513,26 @@ async function lookupFlight(flightNum){
   const el=document.getElementById('ba_fl');
   if(!el||!flightNum||flightNum.length<5)return;
   const hint=document.getElementById('fl-hint');
-  if(hint)hint.textContent='Checking flight…';
-  try{
-    // AviationStack API (free tier: aviationstack.com — set AVIATION_KEY env var)
-    // Demo mode: just acknowledge the flight number
-    await new Promise(r=>setTimeout(r,400));
-    if(hint)hint.textContent='✓ Flight noted — we will monitor delays';
-  }catch(e){
-    if(hint)hint.textContent='';
+  if(hint)hint.innerHTML='<span style="color:var(--fg-4)">Checking flight status…</span>';
+  await new Promise(r=>setTimeout(r,700));
+  // Demo: flights ending in odd digit are delayed
+  const num=parseInt(flightNum.replace(/\D/g,'').slice(-1));
+  const delayed = num%2===1;
+  state._flightStatus = delayed?'delayed':'on-time';
+  state._flightDelay = delayed?45:0;
+  if(hint){
+    if(delayed){
+      hint.innerHTML=`<span style="color:#fbbf24">⚠ ${flightNum.toUpperCase()} delayed ~45 min — pickup adjusted automatically</span>`;
+      const tmEl=document.getElementById('ba_tm');
+      if(tmEl&&tmEl.value){
+        const[h,m]=tmEl.value.split(':').map(Number);
+        const adj=new Date(2000,0,1,h,m+45);
+        const nt=`${String(adj.getHours()).padStart(2,'0')}:${String(adj.getMinutes()).padStart(2,'0')}`;
+        tmEl.value=nt; state.booking.time=nt;
+      }
+    } else {
+      hint.innerHTML=`<span style="color:#22c55e">✓ ${flightNum.toUpperCase()} on time — pickup window confirmed</span>`;
+    }
   }
 }
 
@@ -931,6 +951,66 @@ function skipGuide() {
   go('home');
 }
 
+// ── Saved Addresses ───────────────────────────────────────────────────────
+function saveAddress(addr, label, icon) {
+  if (!addr || !addr.trim()) return;
+  const entry = { label: label || addr, addr: addr.trim(), icon: icon || '📍', id: Date.now() };
+  state.savedAddresses = [entry, ...state.savedAddresses.filter(a => a.addr !== addr.trim())].slice(0, 8);
+  localStorage.setItem('apexvip_saved_addrs', JSON.stringify(state.savedAddresses));
+}
+function deleteAddress(id) {
+  state.savedAddresses = state.savedAddresses.filter(a => a.id !== id);
+  localStorage.setItem('apexvip_saved_addrs', JSON.stringify(state.savedAddresses));
+  render();
+}
+
+// ── Trip Sharing ──────────────────────────────────────────────────────────
+function shareTrip() {
+  const ref = state._confirmedRef || state._activeBooking?.ref || 'APX-4821';
+  const dn = encodeURIComponent(state._activeBooking?.driverName || 'James Harrison');
+  const dp = encodeURIComponent(state._activeBooking?.driverPlate || 'LX73 ABC');
+  const url = `https://refayethossain28.github.io/BallrzAPP/track.html?ref=${ref}&d=${dn}&p=${dp}`;
+  track('trip_shared', { ref, src: 'client' });
+  if (navigator.share) {
+    navigator.share({ title: 'Track my ApexVIP ride', text: `I'm in a black Mercedes — track me live`, url }).catch(() => {});
+  } else {
+    navigator.clipboard?.writeText(url).catch(() => {});
+    state._shareCopied = true; render();
+    setTimeout(() => { state._shareCopied = false; render(); }, 2500);
+  }
+}
+
+// ── Amenity Toggle ────────────────────────────────────────────────────────
+function toggleAmenity(item) {
+  if (!state.booking.amenities) state.booking.amenities = [];
+  const idx = state.booking.amenities.indexOf(item);
+  if (idx > -1) state.booking.amenities.splice(idx, 1);
+  else state.booking.amenities.push(item);
+  render();
+}
+
+// ── ETA Countdown ─────────────────────────────────────────────────────────
+let _etaTimer = null;
+function startEtaCountdown() {
+  if (_etaTimer) return;
+  if (!state._etaSeconds) state._etaSeconds = (4 + Math.floor(Math.random() * 7)) * 60;
+  _etaTimer = setInterval(() => {
+    if (state.screen !== 'active-trip') { clearInterval(_etaTimer); _etaTimer = null; return; }
+    if (state._etaSeconds > 0) {
+      state._etaSeconds--;
+      const el = document.getElementById('eta-countdown');
+      if (!el) { clearInterval(_etaTimer); _etaTimer = null; return; }
+      const m = Math.floor(state._etaSeconds / 60);
+      const s = state._etaSeconds % 60;
+      el.textContent = m > 0 ? `${m} min ${s < 10 ? '0' : ''}${s} sec` : `${s} seconds`;
+    } else {
+      clearInterval(_etaTimer); _etaTimer = null;
+      const el = document.getElementById('eta-countdown');
+      if (el) el.textContent = 'Arriving now';
+    }
+  }, 1000);
+}
+
 function go(screen, data) {
   if (data) state.selectedTrip = data;
   if (state.screen==='home' && screen!=='home' && mapInstance){mapInstance.remove();mapInstance=null;mapTileLayer=null;}
@@ -1229,6 +1309,16 @@ home: () => {
       <span style="font-size:15px;color:var(--fg-muted)">${r}</span>
       <svg style="margin-left:auto;flex-shrink:0" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.15)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
     </div>`).join('')}
+    ${state.savedAddresses.length>0?`
+    <div class="section-label" style="margin-bottom:14px;margin-top:8px">Saved</div>
+    ${state.savedAddresses.map(a=>`
+    <div onclick="$('ri_do').value='${a.addr}'" style="display:flex;align-items:center;gap:14px;padding:13px 0;border-bottom:1px solid var(--divider);cursor:pointer">
+      <div style="width:36px;height:36px;border-radius:12px;background:var(--gold-3);border:1px solid var(--gold-2);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px">${a.icon}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;color:var(--gold);font-weight:700;letter-spacing:.5px;margin-bottom:2px">${a.label}</div>
+        <div style="font-size:14px;color:var(--fg-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.addr}</div>
+      </div>
+    </div>`).join('')}`:''}
   </div>
   <div style="position:fixed;bottom:0;left:0;right:0;padding:12px 22px calc(env(safe-area-inset-bottom,0px) + 16px);background:var(--bg);border-top:1px solid var(--border);z-index:100">
     <button class="btn btn-white" onclick="saveRouteAndBook()">Choose service</button>
@@ -1658,6 +1748,16 @@ home: () => {
       </div>
     </div>` : ''}
 
+    <div class="card" style="padding:18px 20px;margin-bottom:10px;cursor:pointer;display:flex;align-items:center;gap:14px" onclick="go('amenities')">
+      <div style="width:38px;height:38px;border-radius:12px;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px">✨</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:15px;font-weight:700;margin-bottom:2px">In-car Amenities</div>
+        <div style="font-size:12px;color:var(--fg-3)">${(state.booking.amenities||[]).length>0?(state.booking.amenities||[]).join(', '):'Add water, champagne, newspapers…'}</div>
+      </div>
+      ${(state.booking.amenities||[]).length>0?`<span class="tag tag-gold">${(state.booking.amenities||[]).length} item${(state.booking.amenities||[]).length>1?'s':''}</span>`:''}
+      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="var(--fg-5)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+    </div>
+
     <div class="card" style="padding:20px;margin-bottom:10px">
       <div class="section-label" style="margin-bottom:14px">Promo code</div>
       ${ok?`<div style="color:#22c55e;font-size:14px;font-weight:600">&#x2713; APEX20 applied — 20% off</div>`:`
@@ -1667,7 +1767,7 @@ home: () => {
       </div>`}
     </div>
 
-    <div class="card" style="padding:20px;margin-bottom:28px">
+    <div class="card" style="padding:20px;margin-bottom:10px">
       <div class="section-label" style="margin-bottom:16px">Price</div>
       <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:10px"><span style="color:var(--fg-muted)">Base fare</span><span>£${base}</span></div>
       ${ok?`<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:10px"><span style="color:#22c55e">Discount 20%</span><span style="color:#22c55e">−£${disc}</span></div>`:''}
@@ -1681,6 +1781,23 @@ home: () => {
         <div style="display:flex;align-items:center;gap:7px"><span style="font-size:13px;color:#ffffff">&#x25C8;</span><span style="font-size:12px;color:var(--fg-muted)">APEX Rewards</span></div>
         <span style="font-size:13px;font-weight:700;color:#ffffff">+${Math.round(total*0.05)} APEX</span>
       </div>
+    </div>
+
+    <div class="card" style="padding:18px 20px;margin-bottom:28px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-size:15px;font-weight:700;margin-bottom:2px">Recurring booking</div>
+          <div style="font-size:12px;color:var(--fg-3)">Automatically repeat this journey</div>
+        </div>
+        <div onclick="state._recurring=!state._recurring;render()" style="width:46px;height:26px;border-radius:13px;background:${state._recurring?'var(--gold)':'var(--surface-2)'};border:1px solid ${state._recurring?'var(--gold)':'var(--border)'};position:relative;cursor:pointer;transition:background .2s;flex-shrink:0">
+          <div style="position:absolute;top:3px;left:${state._recurring?'23px':'3px'};width:18px;height:18px;border-radius:50%;background:#fff;transition:left .2s"></div>
+        </div>
+      </div>
+      ${state._recurring?`
+      <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+        ${['Every week','Weekdays','Monthly'].map(opt=>`<button onclick="state._recurringFreq='${opt}';render()" style="padding:8px 14px;border-radius:12px;background:${(state._recurringFreq||'Every week')===opt?'var(--gold)':'var(--surface)'};border:1px solid ${(state._recurringFreq||'Every week')===opt?'var(--gold)':'var(--border)'};color:${(state._recurringFreq||'Every week')===opt?'#0c0b09':'var(--fg)'};font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s">${opt}</button>`).join('')}
+      </div>
+      <div style="font-size:11px;color:var(--fg-4);margin-top:10px;line-height:1.55">Next occurrence: same time ${(state._recurringFreq||'Every week').toLowerCase()}. Cancel anytime from Trips.</div>`:''}
     </div>
   </div>
   <div style="height:90px"></div>
@@ -1790,8 +1907,36 @@ payment: () => {
   </div>
   <div style="width:100%;padding-bottom:52px;display:flex;flex-direction:column;gap:10px">
     <button class="btn btn-white" onclick="state._activeBooking={...state.booking,status:'confirmed',driverName:'James Harrison',driverPlate:'LX73 ABC'};go('active-trip')">Track my driver</button>
-    <button class="btn btn-glass" style="margin-top:8px" onclick="go('trips')">View all trips</button>
+    <button class="btn btn-glass" onclick="shareTrip()" style="margin-top:0">
+      ${state._shareCopied?'✓ Link copied to clipboard':'Share my ride'}
+    </button>
+    <button class="btn btn-glass" style="margin-top:0" onclick="go('trips')">View all trips</button>
     <button class="btn btn-ghost" onclick="state.booking={};state._promoApplied=false;go('home')">Return home</button>
+  </div>
+  <div class="card" style="width:100%;padding:20px;margin-top:10px;text-align:left">
+    <div class="section-label" style="margin-bottom:14px">Add Gratuity</div>
+    ${state._tipSent?`
+    <div style="text-align:center;padding:8px 0">
+      <div style="font-size:20px;margin-bottom:6px">✓</div>
+      <div style="font-size:14px;font-weight:600;color:#22c55e">£${state._tipAmount} gratuity added</div>
+      <div style="font-size:12px;color:var(--fg-4);margin-top:3px">Your driver will be notified. Thank you.</div>
+    </div>`:`
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      ${[0,5,10,15].map(t=>`<button onclick="state._tipAmount=${t};render()" style="flex:1;padding:11px 6px;border-radius:12px;background:${state._tipAmount===t?'var(--gold)':'var(--surface)'};border:1px solid ${state._tipAmount===t?'var(--gold)':'var(--border)'};color:${state._tipAmount===t?'#0c0b09':'var(--fg)'};font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;transition:all .15s">${t===0?'None':'£'+t}</button>`).join('')}
+    </div>
+    ${state._tipAmount>0?`<button class="btn btn-gold" onclick="state._tipSent=true;render()" style="font-size:14px">Add £${state._tipAmount} gratuity</button>`:''}
+    `}
+  </div>
+  <div class="card" style="width:100%;padding:20px;margin-top:10px;text-align:left">
+    <div class="section-label" style="margin-bottom:14px">Driver Verification</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      ${[['PCO Licence','LO/234 567 891'],['DBS Check','Enhanced CRB'],['Insurance','Hire & Reward'],['Experience','7 yrs ApexVIP']].map(([l,v])=>`
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px">
+        <div style="font-size:9px;color:var(--fg-4);letter-spacing:1.2px;text-transform:uppercase;margin-bottom:4px">${l}</div>
+        <div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:3px">${v}</div>
+        <div style="font-size:10px;color:#22c55e;display:flex;align-items:center;gap:4px"><svg width="9" height="9" fill="none" viewBox="0 0 24 24" stroke="#22c55e" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> Verified</div>
+      </div>`).join('')}
+    </div>
   </div>
   ${!state._tripRating ? `
   <div style="padding:20px 22px 0;width:100%">
@@ -1922,6 +2067,88 @@ trips: () => {
       </div>
     </div>`:''}
     <div style="height:40px"></div>
+  </div>
+</div>`;
+},
+
+'saved-addresses': () => {
+  const presets = [
+    { label:'Home', addr: state.savedAddresses.find(a=>a.label==='Home')?.addr||'', icon:'🏠', id:'home' },
+    { label:'Work', addr: state.savedAddresses.find(a=>a.label==='Work')?.addr||'', icon:'💼', id:'work' },
+  ];
+  return `
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
+  <div class="back-row">
+    <div class="back-btn" onclick="go('profile')">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+    </div>
+    <div>
+      <div style="font-size:20px;font-weight:700">Saved Addresses</div>
+      <div style="font-size:13px;color:var(--fg-3);margin-top:1px">Quick access to frequent locations</div>
+    </div>
+  </div>
+  <div style="padding:0 22px;flex:1" class="scroll">
+    <div class="section-label" style="margin-bottom:12px">Quick Access</div>
+    ${presets.map(p=>`
+    <div class="card" style="padding:16px 18px;margin-bottom:10px;display:flex;align-items:center;gap:14px">
+      <div style="width:40px;height:40px;border-radius:13px;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${p.icon}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700;color:var(--fg-3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">${p.label}</div>
+        <input placeholder="Add ${p.label.toLowerCase()} address" value="${p.addr}" onblur="saveAddress(this.value,'${p.label}','${p.icon}')" style="font-size:14px;width:100%;background:transparent;border:none;color:var(--fg);outline:none;padding:0"/>
+      </div>
+    </div>`).join('')}
+    ${state.savedAddresses.filter(a=>a.label!=='Home'&&a.label!=='Work').length>0?`
+    <div class="section-label" style="margin-bottom:12px;margin-top:8px">Other</div>
+    ${state.savedAddresses.filter(a=>a.label!=='Home'&&a.label!=='Work').map(a=>`
+    <div class="card" style="padding:16px 18px;margin-bottom:10px;display:flex;align-items:center;gap:14px">
+      <div style="width:40px;height:40px;border-radius:13px;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${a.icon}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:600">${a.label}</div>
+        <div style="font-size:12px;color:var(--fg-3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.addr}</div>
+      </div>
+      <button onclick="deleteAddress(${a.id})" style="background:none;border:none;cursor:pointer;padding:6px;color:var(--fg-4)">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+      </button>
+    </div>`).join('')}`:''}
+    <div style="padding:20px 0;text-align:center">
+      <div style="font-size:12px;color:var(--fg-4)">Tap any address field when booking to auto-fill</div>
+    </div>
+    <div style="height:60px"></div>
+  </div>
+</div>`;
+},
+
+amenities: () => {
+  const sel = state.booking.amenities || [];
+  const groups = [
+    { label:'Refreshments', items:['Still Water','Sparkling Water','Coffee','Champagne','Premium Snacks'] },
+    { label:'Comfort', items:['UK Newspapers','Phone Charger','Extra Blanket','Silence Preferred'] },
+    { label:'Special', items:['Child Seat','Baby Seat','Flowers','Birthday Setup'] },
+  ];
+  return `
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
+  <div class="back-row">
+    <div class="back-btn" onclick="go('booking-summary')">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+    </div>
+    <div>
+      <div style="font-size:20px;font-weight:700">In-car Amenities</div>
+      <div style="font-size:13px;color:var(--fg-3);margin-top:1px">Pre-ordered before pickup</div>
+    </div>
+  </div>
+  <div style="padding:0 22px;flex:1" class="scroll">
+    <div style="background:var(--gold-3);border:1px solid var(--gold-2);border-radius:16px;padding:14px 16px;margin-bottom:20px;font-size:13px;color:var(--fg-3);line-height:1.55">
+      Your driver will prepare all selected items before arriving. No extra charge for standard items.
+    </div>
+    ${groups.map(g=>`
+    <div class="section-label" style="margin-bottom:12px">${g.label}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px">
+      ${g.items.map(item=>{const active=sel.includes(item);return`<button onclick="toggleAmenity('${item}')" style="padding:10px 16px;border-radius:20px;background:${active?'var(--gold-3)':'var(--surface)'};border:${active?'1.5px solid var(--gold-2)':'1px solid var(--border)'};color:${active?'var(--gold)':'var(--fg-2)'};font-size:13px;font-weight:${active?'700':'500'};cursor:pointer;font-family:inherit;transition:all .15s">${active?'✓ ':''} ${item}</button>`;}).join('')}
+    </div>`).join('')}
+    <div style="height:100px"></div>
+  </div>
+  <div style="position:fixed;bottom:0;left:0;right:0;padding:12px 22px calc(env(safe-area-inset-bottom,0px)+16px);background:var(--bg);border-top:1px solid var(--border);z-index:100">
+    <button class="btn btn-white" onclick="go('booking-summary')">${sel.length>0?`Confirm ${sel.length} item${sel.length>1?'s':''}`:'Skip — no extras'}</button>
   </div>
 </div>`;
 },
@@ -2154,7 +2381,7 @@ profile: () => {
       ${[
         {icon:state.theme==='light'?'☀️':'🌙',label:'Appearance',action:'toggleTheme()'},
         {icon:'💳',label:'Payment methods',action:"go('payment-methods')"},
-        {icon:'📍',label:'Saved addresses',action:''},
+        {icon:'📍',label:'Saved addresses',action:"go('saved-addresses')"},
         {icon:'🎁',label:'Referral code',action:''},
         {icon:'✦',label:'How to use ApexVIP',action:"state.guideStep=0;go('guide')"},
         {icon:'💬',label:'Help & support',action:''},
@@ -2181,6 +2408,31 @@ profile: () => {
       <div class="field"><input placeholder="Passenger phone" value="${state.paPassenger.phone||''}" oninput="setPaPassenger('phone',this.value)" type="tel" style="font-size:14px"/></div>
       <div style="font-size:11px;color:var(--fg-dim);margin-top:8px">You will receive all updates. The passenger will receive the driver details.</div>` : ''}
     </div>
+    <div style="background:linear-gradient(135deg,rgba(5,5,5,1),rgba(18,14,8,1));border:1px solid rgba(200,169,126,.28);border-radius:22px;padding:22px;margin-bottom:14px;position:relative;overflow:hidden">
+      <div style="position:absolute;top:-40px;right:-40px;width:130px;height:130px;border-radius:50%;background:radial-gradient(circle,rgba(200,169,126,.09),transparent);pointer-events:none"></div>
+      <div style="position:absolute;bottom:-20px;left:-20px;width:80px;height:80px;border-radius:50%;background:radial-gradient(circle,rgba(200,169,126,.06),transparent);pointer-events:none"></div>
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px">
+        <div>
+          <div style="font-family:var(--font-serif);font-size:24px;font-weight:300;letter-spacing:1.5px;color:var(--gold);line-height:1">ApexVIP Black</div>
+          <div style="font-size:11px;color:var(--fg-4);margin-top:4px;letter-spacing:.3px">The pinnacle membership tier</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-size:20px;font-weight:800;color:var(--gold)">£199</div>
+          <div style="font-size:10px;color:var(--fg-4)">per month</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:9px;margin-bottom:18px">
+        ${['No surge pricing, ever','Guaranteed 10-min dispatch','Dedicated account manager','Priority support 24 / 7','500 APEX bonus every month'].map(b=>`
+        <div style="display:flex;align-items:center;gap:10px">
+          <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="var(--gold)" stroke-width="2.5" style="flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+          <span style="font-size:13px;color:var(--fg-2)">${b}</span>
+        </div>`).join('')}
+      </div>
+      <button onclick="state._blackWaitlist=true;render()" class="btn btn-gold" style="font-size:14px">
+        ${state._blackWaitlist?'✓ You\'re on the waitlist':'Join the waitlist'}
+      </button>
+    </div>
+
     <div class="card" style="margin-bottom:12px;padding:18px 20px;background:linear-gradient(135deg,rgba(212,168,67,.08),rgba(212,168,67,.03));border-color:rgba(212,168,67,.25)">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div>
@@ -2317,6 +2569,10 @@ profile: () => {
           ${i<5?`<div style="flex:1;height:2px;background:${i<curStep?'#ffffff':'var(--border)'};margin:0 2px"></div>`:''}
         </div>`).join('')}
       </div>
+      <div style="text-align:center;padding:16px;border-bottom:1px solid var(--divider)">
+        <div id="eta-countdown" style="font-family:var(--font-serif);font-size:36px;font-weight:300;color:var(--gold);letter-spacing:1px">${state._etaSeconds>0?Math.floor(state._etaSeconds/60)+' min':'8 min'}</div>
+        <div style="font-size:10px;color:var(--fg-4);letter-spacing:2px;text-transform:uppercase;margin-top:4px">Estimated arrival</div>
+      </div>
       <div style="display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--divider)">
         <div style="width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,#ffffff,#888);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:#000;flex-shrink:0">${(b.driverName||'JH').split(' ').map(n=>n[0]).join('').slice(0,2)}</div>
         <div style="flex:1">
@@ -2333,6 +2589,26 @@ profile: () => {
         Chat with Chauffeur
       </button>
     </div>
+  </div>
+  <!-- SOS -->
+  <div style="position:absolute;bottom:180px;right:16px;z-index:50">
+    ${state._sosConfirm?`
+    <div style="background:#7f1d1d;border:1px solid #ef4444;border-radius:18px;padding:16px 18px;box-shadow:0 4px 24px rgba(239,68,68,.4);max-width:200px">
+      <div style="color:#fca5a5;font-size:12px;font-weight:700;margin-bottom:12px;text-align:center;letter-spacing:.5px">CALL EMERGENCY SERVICES?</div>
+      <div style="display:flex;gap:8px">
+        <button onclick="state._sosConfirm=false;render()" style="flex:1;padding:9px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:10px;color:#fca5a5;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit">Cancel</button>
+        <button onclick="window.location.href='tel:999'" style="flex:1;padding:9px;background:#ef4444;border:none;border-radius:10px;color:#fff;font-weight:800;font-size:12px;cursor:pointer;font-family:inherit">Call 999</button>
+      </div>
+    </div>`:`
+    <button onclick="state._sosConfirm=true;render()" style="background:#ef4444;border:2px solid rgba(255,255,255,.3);border-radius:50%;width:52px;height:52px;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 20px rgba(239,68,68,.6),0 0 0 4px rgba(239,68,68,.15)">
+      <span style="color:#fff;font-size:12px;font-weight:800;letter-spacing:.5px">SOS</span>
+    </button>`}
+  </div>
+  <!-- Share my ride -->
+  <div style="position:absolute;bottom:180px;left:16px;z-index:50">
+    <button onclick="shareTrip()" style="background:var(--surface-2);border:1px solid var(--border);border-radius:50%;width:48px;height:48px;display:flex;align-items:center;justify-content:center;cursor:pointer;backdrop-filter:blur(12px)">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
+    </button>
   </div>
   ${bottomNav('trips')}
 </div>`;
@@ -2872,6 +3148,7 @@ function render(){
   if(state.screen==='home') setTimeout(initMap,60);
   if(state.screen==='payment') setTimeout(initSquare,60);
   if(state.screen==='active-trip') setTimeout(initTrackingMap,60);
+  if(state.screen==='active-trip') setTimeout(startEtaCountdown,80);
   if(state.screen==='profile') setTimeout(loadReferralCode,100);
 }
 

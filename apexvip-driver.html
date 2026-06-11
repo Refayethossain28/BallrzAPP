@@ -156,6 +156,21 @@ const HISTORY=[
 const WEEK_DATA=[180,240,0,310,420,380,190];
 const WEEK_LABELS=['Mon','Tue','Wed','Thu','Fri','Sat','Today'];
 
+function getClientPreferences(clientId) {
+  // In production this would come from Firestore booking history
+  // For now return curated preferences based on stored data or defaults
+  const stored = JSON.parse(localStorage.getItem('apexvip_client_prefs_' + (clientId||'demo')) || 'null');
+  if (stored) return stored;
+  // Default luxury preferences
+  return [
+    'Prefers still water — have ready before pickup',
+    'Silence preferred — no music unless requested',
+    'Non-stop route — no radio, no calls in car',
+    'Assist with luggage on arrival',
+    'Regular client — 12 previous journeys',
+  ];
+}
+
 let S={
   screen:'login',
   theme: localStorage.getItem('apexvip_driver_theme')||'dark',
@@ -491,6 +506,38 @@ active:()=>{
   return`<div class="screen">
     <div class="back-row"><button class="back-btn" onclick="go('home')">‹ Home</button></div>
     <div style="font-size:20px;font-weight:700;margin-bottom:18px">Active Trip</div>
+
+    <div class="card" style="padding:18px 20px;margin-bottom:12px;background:var(--gold-3);border-color:var(--gold-2)">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:${S._showPrefs?'12px':'0'}">
+        <div style="width:36px;height:36px;border-radius:11px;background:rgba(200,169,126,.2);border:1px solid var(--gold-2);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="var(--gold)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+        </div>
+        <div>
+          <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--gold);text-transform:uppercase">Client Brief</div>
+          <div style="font-size:14px;font-weight:700;color:var(--fg);margin-top:1px">${j?.client || 'VIP Guest'}</div>
+        </div>
+        <span onclick="S._showPrefs=!S._showPrefs;render()" style="margin-left:auto;background:var(--gold-2);border-radius:20px;padding:3px 10px;font-size:9px;font-weight:700;letter-spacing:1px;color:var(--gold);cursor:pointer">${S._showPrefs?'HIDE':'BRIEF'}</span>
+      </div>
+      ${S._showPrefs?`<div style="display:flex;flex-direction:column;gap:6px">
+        ${getClientPreferences(j?.clientId).map(p=>`
+        <div style="display:flex;align-items:center;gap:9px;font-size:13px;color:var(--fg-muted)">
+          <span style="color:var(--gold);font-size:11px">✦</span>${p}
+        </div>`).join('')}
+      </div>`:''}
+    </div>
+
+    ${j?.amenities?.length ? `
+    <div class="card" style="padding:18px 20px;margin-bottom:12px">
+      <div class="section-label" style="margin-bottom:12px">Prepare Before Pickup</div>
+      ${j.amenities.map((item,i)=>`
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:${i<j.amenities.length-1?'1px solid var(--divider)':'none'};cursor:pointer" onclick="S._amenityChecked=(S._amenityChecked||{});S._amenityChecked['${item}']=!S._amenityChecked?.['${item}'];render()">
+        <div style="width:22px;height:22px;border-radius:7px;background:${(S._amenityChecked||{})[item]?'#22c55e':'var(--surface-c)'};border:1px solid ${(S._amenityChecked||{})[item]?'#22c55e':'var(--border)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s">
+          ${(S._amenityChecked||{})[item]?'<svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="#fff" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>':''}
+        </div>
+        <span style="font-size:14px;color:${(S._amenityChecked||{})[item]?'var(--fg-subtle)':'var(--fg)'};text-decoration:${(S._amenityChecked||{})[item]?'line-through':'none'};transition:all .15s">${item}</span>
+      </div>`).join('')}
+    </div>` : ''}
+
     <div class="stepper">
       ${steps.map((s,i)=>`${i>0?`<div class="step-line" style="background:${i<S.tripStep?'#C8A97E':'var(--border)'}"></div>`:''}
         <div class="step">
