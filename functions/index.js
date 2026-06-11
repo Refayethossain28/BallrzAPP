@@ -338,13 +338,16 @@ async function isAdminUser(uid) {
 // 8. parseBookingIntent  (AI Concierge — Claude claude-opus-4-8)
 // ─────────────────────────────────────────────────────────────────────────────
 exports.parseBookingIntent = functions.https.onCall(async (data, context) => {
-  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  // Allow unauthenticated guests to use the AI concierge
   const { message } = data;
   if (!message || typeof message !== 'string')
     throw new functions.https.HttpsError('invalid-argument', 'message required');
 
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new functions.https.HttpsError('failed-precondition', 'ANTHROPIC_API_KEY not configured — add it to functions/.env and redeploy');
+
   const Anthropic = require('@anthropic-ai/sdk');
-  const client = new Anthropic.Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' });
+  const client = new Anthropic.Anthropic({ apiKey });
 
   const systemPrompt = `You are the ApexVIP booking assistant for a luxury chauffeur service in London and Dubai.
 Extract booking details from the client's message and return them as JSON.

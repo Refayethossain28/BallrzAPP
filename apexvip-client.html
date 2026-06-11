@@ -643,6 +643,100 @@ function optimiseItinerary(){
 const CONCIERGE_MSGS = [];
 let _conciergeLoading = false;
 
+// Client-side intent parser — runs when Cloud Functions are unavailable
+function _parseIntentLocal(msg) {
+  const lower = msg.toLowerCase();
+  const out = { serviceType: null, pickup: null, dropoff: null, airport: null, flight: null, date: null, time: null, reply: '' };
+
+  // Service type
+  if (/airport|terminal|heathrow|gatwick|stansted|luton|city airport|arrivals|departures|flying|flight|BA\d|EK\d/i.test(msg)) {
+    out.serviceType = 'airport';
+  } else if (/\bhour(ly)?\b|\bby the hour\b/i.test(msg)) {
+    out.serviceType = 'hourly';
+  } else if (/\bfull.?day\b|\ball.?day\b|\bday hire\b|\bday chauffeur\b/i.test(msg)) {
+    out.serviceType = 'day';
+  }
+
+  // Airport terminals
+  const AP = [
+    [/heathrow\s*(t|terminal)?\s*5/i, 'Heathrow T5'],
+    [/heathrow\s*(t|terminal)?\s*4/i, 'Heathrow T4'],
+    [/heathrow\s*(t|terminal)?\s*3/i, 'Heathrow T3'],
+    [/heathrow\s*(t|terminal)?\s*2/i, 'Heathrow T2'],
+    [/heathrow/i, 'Heathrow T5'],
+    [/gatwick\s*(north|south)?/i, 'Gatwick North'],
+    [/stansted/i, 'Stansted'],
+    [/luton/i, 'Luton'],
+    [/city\s*airport|london\s*city/i, 'London City Airport'],
+    [/biggin\s*hill/i, 'Biggin Hill'],
+    [/farnborough/i, 'Farnborough'],
+  ];
+  for (const [re, label] of AP) {
+    if (re.test(msg)) { out.airport = label; out.serviceType = out.serviceType || 'airport'; break; }
+  }
+
+  // Flight number (BA247, EK034, LH456 etc.)
+  const flt = msg.match(/\b([A-Z]{2}\s*\d{3,4})\b/i);
+  if (flt) { out.flight = flt[1].toUpperCase().replace(/\s+/, ''); out.serviceType = 'airport'; }
+
+  // Time — "3pm", "14:30", "3:30 pm", "at 9"
+  const tm = msg.match(/\b(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i) || msg.match(/\bat\s+(\d{1,2}(?::\d{2})?)\b/i) || msg.match(/\b(\d{2}:\d{2})\b/);
+  if (tm) out.time = tm[1].trim();
+
+  // Date keywords
+  const now = new Date();
+  if (/\btoday\b/i.test(msg)) out.date = now.toISOString().slice(0,10);
+  else if (/\btomorrow\b/i.test(msg)) { const d=new Date(now); d.setDate(d.getDate()+1); out.date=d.toISOString().slice(0,10); }
+  else {
+    const days = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+    for (let i=0;i<days.length;i++) {
+      if (lower.includes(days[i])) { const d=new Date(now); const diff=(i-now.getDay()+7)%7||7; d.setDate(d.getDate()+diff); out.date=d.toISOString().slice(0,10); break; }
+    }
+  }
+
+  // "from X to Y" / "from X" / "to Y"
+  const fromTo = msg.match(/\bfrom\s+([^,\.]+?)\s+to\s+([^,\.]+)/i);
+  if (fromTo) {
+    out.pickup = fromTo[1].trim();
+    if (!out.airport) out.dropoff = fromTo[2].trim();
+  } else {
+    const fm = msg.match(/\bfrom\s+([A-Z][^,\.]{3,40})/i);
+    if (fm) out.pickup = fm[1].trim();
+    const tm2 = msg.match(/\bto\s+([A-Z][^,\.]{3,40})/i);
+    if (tm2 && !out.airport) out.dropoff = tm2[1].trim();
+  }
+
+  // Pickup fallback — "pick me up at X", "collect me from X"
+  if (!out.pickup) {
+    const pu = msg.match(/(?:pick(?:ing)?\s+(?:me|us)\s+up|collect(?:ing)?\s+(?:me|us))(?:\s+(?:at|from))?\s+([A-Z][^,\.]{3,40})/i);
+    if (pu) out.pickup = pu[1].trim();
+  }
+
+  // Build natural reply
+  const dest = out.airport || out.dropoff;
+  const timeStr = out.time ? ` at ${out.time}` : '';
+  const dateStr = out.date ? ` on ${new Date(out.date+'T12:00:00').toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}` : '';
+  if (out.serviceType === 'airport' && dest && out.pickup) {
+    out.reply = `Of course. I'll arrange an airport transfer from ${out.pickup} to ${dest}${out.flight ? `, monitoring flight ${out.flight}` : ''}${dateStr}${timeStr}. Please review your booking details and select a vehicle.`;
+  } else if (out.serviceType === 'airport' && dest) {
+    out.reply = `Certainly. I'll arrange a transfer to ${dest}${out.flight ? ` for flight ${out.flight}` : ''}${dateStr}${timeStr}. What is your pickup address?`;
+  } else if (out.pickup && dest) {
+    out.reply = `Understood — a chauffeur from ${out.pickup} to ${dest}${dateStr}${timeStr}. I'll prepare your vehicle options now.`;
+  } else if (out.serviceType === 'hourly') {
+    out.reply = `I'll arrange an hourly hire${out.pickup ? ` from ${out.pickup}` : ''}${dateStr}${timeStr}. Please proceed to select your vehicle and duration.`;
+  } else if (out.serviceType === 'day') {
+    out.reply = `A full-day chauffeur is a wonderful choice. Where would you like your driver to collect you${dateStr}?`;
+  } else if (out.pickup || out.dropoff) {
+    out.serviceType = out.serviceType || 'airport';
+    out.reply = `I have${out.pickup ? ` ${out.pickup}` : ''}${dest ? ` → ${dest}` : ''}${dateStr}${timeStr}. Shall I proceed to vehicle selection?`;
+  } else {
+    out.reply = `Of course. Could you tell me your pickup address${out.airport ? '' : ' and destination'}, and when you need the car?`;
+    out.serviceType = null;
+  }
+
+  return out;
+}
+
 async function sendConciergeMsg() {
   const inp = document.getElementById('concierge-inp');
   if (!inp || !inp.value.trim()) return;
@@ -652,29 +746,35 @@ async function sendConciergeMsg() {
   _conciergeLoading = true;
   render();
   try {
+    let d;
     if (FIREBASE_ENABLED && fns) {
-      const fn = fns.httpsCallable('parseBookingIntent');
-      const res = await fn({ message: msg });
-      const d = res.data;
-      CONCIERGE_MSGS.push({ role: 'assistant', content: d.reply || 'Let me arrange that for you.' });
-      if (d.serviceType) {
-        state.booking.serviceType = d.serviceType;
-        if (d.pickup) state.booking.pickup = d.pickup;
-        if (d.dropoff) state.booking.dropoff = d.dropoff;
-        if (d.airport) state.booking.airport = d.airport;
-        if (d.flight) state.booking.flight = d.flight;
-        if (d.date) state.booking.date = d.date;
-        if (d.time) state.booking.time = d.time;
-        CONCIERGE_MSGS.push({ role: 'system', content: '✓ Booking details understood — tap "Review & Confirm" to continue.' });
-        state._conciergeParsed = d;
+      try {
+        const fn = fns.httpsCallable('parseBookingIntent');
+        const res = await fn({ message: msg });
+        d = res.data;
+      } catch(fnErr) {
+        // Cloud Function unavailable — fall back to local parser
+        await new Promise(r => setTimeout(r, 520));
+        d = _parseIntentLocal(msg);
       }
     } else {
-      await new Promise(r => setTimeout(r, 900));
-      CONCIERGE_MSGS.push({ role: 'assistant', content: 'Understood. I\'ll arrange a Mercedes S-Class for your journey. Shall I confirm the booking?' });
-      state._conciergeParsed = { serviceType: 'airport', reply: 'Demo mode' };
+      await new Promise(r => setTimeout(r, 520));
+      d = _parseIntentLocal(msg);
+    }
+    CONCIERGE_MSGS.push({ role: 'assistant', content: d.reply || 'Let me arrange that for you.' });
+    if (d.serviceType) {
+      state.booking.serviceType = d.serviceType;
+      if (d.pickup)  state.booking.pickup  = d.pickup;
+      if (d.dropoff) state.booking.dropoff = d.dropoff;
+      if (d.airport) state.booking.airport = d.airport;
+      if (d.flight)  state.booking.flight  = d.flight;
+      if (d.date)    state.booking.date    = d.date;
+      if (d.time)    state.booking.time    = d.time;
+      CONCIERGE_MSGS.push({ role: 'system', content: '✓ Details understood — tap "Review & Confirm" to select your vehicle.' });
+      state._conciergeParsed = d;
     }
   } catch(e) {
-    CONCIERGE_MSGS.push({ role: 'assistant', content: 'I\'m sorry — let me connect you with our team directly. Please try again.' });
+    CONCIERGE_MSGS.push({ role: 'assistant', content: 'I apologise — please try rephrasing, or call us directly on +44 20 1234 5678.' });
   }
   _conciergeLoading = false;
   render();
