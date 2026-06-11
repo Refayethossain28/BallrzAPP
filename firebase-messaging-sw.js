@@ -1,12 +1,21 @@
 // ApexVIP Service Worker — Push Notifications + Offline PWA shell
-// Version 2.0
+// Version 3.0
 
-const CACHE_NAME = 'apexvip-v2';
+const CACHE_NAME = 'apexvip-v3';
 const OFFLINE_URLS = [
   '/BallrzAPP/apexvip-client.html',
-  '/BallrzAPP/apexvip-dubai.html',
+  '/BallrzAPP/apexvip-driver.html',
   '/BallrzAPP/apexvip-core.js',
+  '/BallrzAPP/firebase.js',
   '/BallrzAPP/manifest.json',
+  '/BallrzAPP/manifest-driver.json',
+  '/BallrzAPP/icon-60.png',
+  '/BallrzAPP/icon-120.png',
+  '/BallrzAPP/icon-152.png',
+  '/BallrzAPP/icon-167.png',
+  '/BallrzAPP/icon-180.png',
+  '/BallrzAPP/icon-192.png',
+  '/BallrzAPP/icon-512.png',
 ];
 
 // ── Install: pre-cache the app shell ──────────────────────────────────────────
