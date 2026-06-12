@@ -229,29 +229,70 @@ function findSegment(z) { return G.segments[Math.floor(z / SEG_LEN) % G.segments
 // ---------------------------------------------------------------------------
 const LIVERIES = ['#e23b3b','#2f6cff','#22c55e','#f59e0b','#a855f7','#06b6d4',
                   '#ec4899','#facc15','#fb7185','#4ade80','#38bdf8','#fb923c','#ffffff'];
+// Lay the 40-car field out as a staggered starting grid AHEAD of the player,
+// so you start near the back (like the arcade's "33/40") and chase them down.
 function resetCars() {
   G.cars = [];
+  // four grid columns that deliberately leave a clear centre channel so the
+  // player (starting at offset 0) isn't rammed off the line by a car ahead
+  const laneX = [-0.75, 0.75, -0.4, 0.4];
   for (let i=0;i<OPPONENTS;i++) {
-    const z = ((i+1) / FIELD) * G.trackLength + (Math.random()*0.3-0.15)*SEG_LEN;
+    const row = Math.floor(i / 4);               // 4 cars per row
+    // stagger the pack up the road ahead so it sits at a clear racing distance
+    // (player starts at the back and chases) without filling the windshield
+    const z = ((10 + row * 2.4) * SEG_LEN) % G.trackLength;
+    const lane = i % 4;
     G.cars.push({
-      offset: (Math.random()*1.4 - 0.7),
-      z: ((z % G.trackLength) + G.trackLength) % G.trackLength,
-      speed: G.maxSpeed * (0.55 + Math.random()*0.34) * G.aiSpeedMul,
+      offset: laneX[lane],
+      targetLane: laneX[lane],
+      z,
+      // each rival has its own pace; cars further up the grid are a touch quicker
+      basePace: (0.80 + Math.random()*0.20) * G.aiSpeedMul,
+      speed: 0,
       color: LIVERIES[i % LIVERIES.length],
       lap: 1, progress: 0,
+      jitter: Math.random()*Math.PI*2,            // phase for small lane wandering
     });
   }
 }
+
 function updateCars(dt) {
   for (const car of G.cars) {
     const seg = findSegment(car.z);
-    const look = G.segments[(seg.index + 6) % G.segments.length];
-    let dir = 0;
-    if (look.curve > 1) dir = -0.4; else if (look.curve < -1) dir = 0.4;
-    const dz = loopDelta(car.z, G.position);
-    if (Math.abs(dz) < SEG_LEN*4 && Math.abs(car.offset - G.playerX) < 1.0)
-      dir += (car.offset > G.playerX ? 0.5 : -0.5);
-    car.offset = Math.max(-1.9, Math.min(1.9, car.offset + dir * dt * 1.2));
+
+    // --- desired pace: brake for sharp curves, rubber-band toward the player ---
+    const look = G.segments[(seg.index + 8) % G.segments.length];
+    let pace = car.basePace;
+    if (Math.abs(look.curve) > 4) pace *= 0.82;       // ease off for hard bends
+    else if (Math.abs(look.curve) > 2) pace *= 0.92;
+    const gap = loopDelta(car.z, G.position) / G.trackLength;   // + = ahead of player
+    if (gap > 0.04) pace *= 0.94;                     // leaders wait up a little
+    else if (gap < -0.04) pace *= 1.06;               // backmarkers push on
+    const targetSpeed = G.maxSpeed * Math.max(0.45, Math.min(1.02, pace));
+    car.speed = approach(car.speed, targetSpeed, (G.maxSpeed/3) * dt);
+
+    // --- choose a lane: hug the inside of the coming curve, else hold lane ---
+    if (look.curve > 2)      car.targetLane = -0.62;
+    else if (look.curve < -2) car.targetLane = 0.62;
+
+    // --- avoidance: dodge the player and other rivals just ahead ---
+    let dodge = 0;
+    const dzP = loopDelta(car.z, G.position);
+    if (dzP > 0 && dzP < SEG_LEN*5 && Math.abs(car.offset - G.playerX) < 0.7)
+      dodge += car.offset >= G.playerX ? 1 : -1;
+    for (const other of G.cars) {
+      if (other === car) continue;
+      const dz = loopDelta(other.z, car.z);
+      if (dz > 0 && dz < SEG_LEN*4 && Math.abs(other.offset - car.offset) < 0.6) {
+        dodge += car.offset >= other.offset ? 1 : -1;
+        car.speed = Math.min(car.speed, other.speed); // tuck in behind, no clipping
+      }
+    }
+    let desired = car.targetLane + dodge * 0.7 + Math.sin(car.jitter + car.z*0.0003)*0.06;
+    desired = Math.max(-0.95, Math.min(0.95, desired));
+    car.offset = approach(car.offset, desired, dt * 1.6);
+
+    // --- advance ---
     car.z += car.speed * dt;
     if (car.z >= G.trackLength) { car.z -= G.trackLength; car.lap++; }
     car.progress = car.lap * G.trackLength + car.z;
@@ -337,8 +378,11 @@ function update(dt) {
       const d = loopDelta(car.z, G.position);
       if (d > 0 && d < SEG_LEN*1.4 && Math.abs(G.playerX - car.offset) < 0.9) {
         G.speed = car.speed * 0.85;
-        G.playerX += (G.playerX > car.offset ? 0.4 : -0.4);
-        G.shake = 12; G.skid = 0.4; beep(90,0.12,'sawtooth',0.18);
+        // nudge to the open side, but gently and clamped so a near head-on
+        // tap bumps you aside rather than catapulting you off the track
+        const side = (G.playerX >= car.offset) ? 1 : -1;
+        G.playerX = Math.max(-1.0, Math.min(1.0, G.playerX + side * 0.18));
+        G.shake = 10; G.skid = 0.3; beep(90,0.12,'sawtooth',0.18);
       }
     }
   }
@@ -546,10 +590,10 @@ function drawChecker(p1, p2) {
 
 function drawSprite(seg, sp) {
   const p = seg.p1.screen;
-  if (p.scale<=0) return;
-  const w = p.scale * 2500 * WIDTH/2 * 0.0009;
+  if (p.scale<=0 || p.w<=0) return;
+  const w = p.w * 0.5;                 // size relative to the projected road width
   if (w < 2) return;
-  const sx = p.x + (p.scale * sp.offset * ROAD_WIDTH * WIDTH/2);
+  const sx = p.x + (sp.offset * p.w);  // offset measured in road-half-widths
   drawProp(sp.name, sx, p.y, w, w);
 }
 
@@ -624,10 +668,10 @@ function drawProp(name, x, y, w, h) {
 // Opponent cars (compact stock-car silhouette in their livery)
 function drawCar(seg, car) {
   const p = seg.p1.screen;
-  if (p.scale<=0) return;
-  const w = p.scale * 1700 * WIDTH/2 * 0.0011;
-  if (w < 3) return;
-  const x = p.x + (p.scale * car.offset * ROAD_WIDTH * WIDTH/2);
+  if (p.scale<=0 || p.w<=0) return;
+  const w = p.w * 0.40;                 // size relative to the projected road width
+  if (w < 4) return;
+  const x = p.x + (car.offset * p.w);   // offset measured in road-half-widths
   drawStockCar(x, p.y, w, w*0.62, car.color, null);
 }
 
