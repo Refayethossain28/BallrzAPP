@@ -217,6 +217,8 @@ const NAVITEMS=[
   {id:'corporate',icon:'🏢',label:'Corporate'},
   {id:'map',icon:'<svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>',label:'Live Map'},
   {id:'payouts',icon:'💸',label:'Payouts'},
+  {id:'waitlist',icon:'✦',label:'Waitlist'},
+  {id:'city-interest',icon:'🌍',label:'City Interest'},
 ];
 
 function track(event, props){
@@ -1047,6 +1049,71 @@ payouts: () => `<div class="screen">
   <div class="section-header"><div class="section-title">Payout Requests</div></div>
   <div id="payouts-list"><div style="text-align:center;padding:40px;color:var(--fg-4);font-size:13px">Loading…</div></div>
 </div>`,
+
+waitlist: () => {
+  const WL = S._waitlist || [
+    {email:'alexandra.reed@example.com',joined:'2 Jun 2026',status:'pending'},
+    {email:'james.whitfield@bnpparibas.com',joined:'1 Jun 2026',status:'invited'},
+    {email:'c.morrison@slaughterandmay.com',joined:'31 May 2026',status:'pending'},
+    {email:'v.santos@carlyle.com',joined:'30 May 2026',status:'pending'},
+    {email:'h.zhou@hsbc.com',joined:'29 May 2026',status:'rejected'},
+  ];
+  function genCode(){return 'APX'+Math.random().toString(36).slice(2,5).toUpperCase()+Math.floor(10+Math.random()*90);}
+  return `<div class="screen">
+    <div class="section-header"><div class="section-title">Waitlist</div><button class="btn btn-gold btn-sm" onclick="alert('Batch invite sent to all pending applicants.')">Invite All Pending</button></div>
+    <div style="display:flex;gap:10px;margin-bottom:24px;flex-wrap:wrap">
+      ${[['Pending',WL.filter(w=>w.status==='pending').length,'#fbbf24'],['Invited',WL.filter(w=>w.status==='invited').length,'#22c55e'],['Rejected',WL.filter(w=>w.status==='rejected').length,'#f87171']].map(([l,n,c])=>`<div style="flex:1;min-width:80px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;text-align:center"><div style="font-size:24px;font-weight:800;color:${c}">${n}</div><div style="font-size:11px;color:var(--fg-subtle);margin-top:3px">${l}</div></div>`).join('')}
+    </div>
+    <div class="card">
+      <div style="overflow-x:auto"><table><thead><tr><th>Email</th><th>Applied</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+        ${WL.map((w,i)=>`<tr>
+          <td style="font-weight:500;font-size:13px">${w.email}</td>
+          <td style="color:var(--fg-dim);font-size:12px">${w.joined}</td>
+          <td>${w.status==='invited'?'<span style="background:rgba(34,197,94,.1);color:#22c55e;padding:3px 9px;border-radius:20px;font-size:10px;font-weight:700">Invited</span>':w.status==='rejected'?'<span style="background:rgba(239,68,68,.1);color:#f87171;padding:3px 9px;border-radius:20px;font-size:10px;font-weight:700">Rejected</span>':'<span style="background:rgba(251,191,36,.1);color:#fbbf24;padding:3px 9px;border-radius:20px;font-size:10px;font-weight:700">Pending</span>'}</td>
+          <td><div style="display:flex;gap:6px">
+            ${w.status==='pending'?`<button onclick="alert('Invite code sent to ${w.email}: ${genCode()}')" style="padding:5px 10px;background:rgba(200,169,126,.12);border:1px solid rgba(200,169,126,.25);border-radius:8px;color:var(--gold);font-size:11px;font-weight:600;cursor:pointer">Send Invite</button>`:''}
+            ${w.status==='pending'?`<button onclick="alert('${w.email} rejected.')" style="padding:5px 10px;background:var(--surface-b);border:1px solid var(--border);border-radius:8px;color:var(--fg-dim);font-size:11px;cursor:pointer">Reject</button>`:''}
+          </div></td>
+        </tr>`).join('')}
+      </tbody></table></div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:14px">Generate Invite Code</div>
+      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <div style="flex:1;min-width:200px"><label style="font-size:11px;color:var(--fg-subtle);letter-spacing:.5px;display:block;margin-bottom:5px">EMAIL (OPTIONAL)</label><input id="inv-email" placeholder="recipient@example.com" style="width:100%"/></div>
+        <button onclick="const c='APX'+Math.random().toString(36).slice(2,5).toUpperCase()+Math.floor(10+Math.random()*90);if(FIREBASE_ENABLED){db.collection('invites').doc(c).set({email:document.getElementById('inv-email')?.value||'',created:firebase.firestore.FieldValue.serverTimestamp(),used:false}).catch(()=>{})}alert('Invite code: '+c+' — send this to the recipient.');" class="btn btn-gold" style="white-space:nowrap;flex-shrink:0">Generate Code</button>
+      </div>
+    </div>
+  </div>`;
+},
+
+'city-interest': () => {
+  const CITIES = [
+    {city:'Paris',emoji:'🗼',quarter:'Q4 2026',count:38},
+    {city:'New York',emoji:'🗽',quarter:'Q1 2027',count:27},
+    {city:'Singapore',emoji:'🦁',quarter:'Q2 2027',count:19},
+    {city:'Riyadh',emoji:'🕌',quarter:'TBA',count:12},
+  ];
+  return `<div class="screen">
+    <div class="section-header"><div class="section-title">City Expansion Interest</div></div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:24px">
+      ${CITIES.map(c=>`<div style="flex:1;min-width:180px;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;text-align:center">
+        <div style="font-size:32px;margin-bottom:8px">${c.emoji}</div>
+        <div style="font-size:16px;font-weight:700;margin-bottom:4px">${c.city}</div>
+        <div style="font-size:11px;color:var(--fg-subtle);margin-bottom:10px">${c.quarter}</div>
+        <div style="font-size:28px;font-weight:800;color:var(--gold)">${c.count}</div>
+        <div style="font-size:11px;color:var(--fg-dim)">interested</div>
+      </div>`).join('')}
+    </div>
+    <div class="card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:14px">Total registrations by city</div>
+      ${CITIES.map(c=>`<div style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px"><span>${c.emoji} ${c.city}</span><span style="color:var(--gold);font-weight:700">${c.count}</span></div>
+        <div style="height:6px;background:rgba(255,255,255,.05);border-radius:3px;overflow:hidden"><div style="height:100%;border-radius:3px;background:var(--gold);width:${Math.round(c.count/38*100)}%;transition:width .4s ease"></div></div>
+      </div>`).join('')}
+    </div>
+  </div>`;
+},
 
 settings:()=>`<div class="screen">
   <div class="section-header"><div class="section-title">Settings</div></div>

@@ -173,9 +173,22 @@ const HISTORY=[
 const WEEK_DATA=[180,240,0,310,420,380,190];
 const WEEK_LABELS=['Mon','Tue','Wed','Thu','Fri','Sat','Today'];
 
-function getClientPreferences(clientId) {
-  // In production this would come from Firestore booking history
-  // For now return curated preferences based on stored data or defaults
+function getClientPreferences(clientId, structuredPrefs) {
+  // Prefer structured prefs from the booking document (set by client in Preferences screen)
+  if (structuredPrefs && typeof structuredPrefs === 'object') {
+    const lines = [];
+    const tempMap = { cool: 'Prefers cool cabin — set A/C to 18°C', neutral: 'Neutral cabin temperature preferred', warm: 'Prefers warm cabin — set A/C to 22°C' };
+    const musicMap = { jazz: 'Jazz music preferred — keep low volume', classical: 'Classical music preferred — keep low volume', pop: 'Pop/contemporary music preferred', 'hip-hop': 'Hip-hop preferred', silence: 'Silence preferred — no music please' };
+    const convoMap = { friendly: 'Client enjoys friendly conversation', professional: 'Professional manner only — no small talk', silent: 'Silent journey — do not initiate conversation' };
+    const paperMap = { ft: 'FT (Financial Times) preferred', times: 'The Times preferred', telegraph: 'The Telegraph preferred', none: 'No newspaper required' };
+    if (tempMap[structuredPrefs.temperature]) lines.push(tempMap[structuredPrefs.temperature]);
+    if (musicMap[structuredPrefs.music]) lines.push(musicMap[structuredPrefs.music]);
+    if (convoMap[structuredPrefs.convo]) lines.push(convoMap[structuredPrefs.convo]);
+    if (paperMap[structuredPrefs.newspaper]) lines.push(paperMap[structuredPrefs.newspaper]);
+    if (structuredPrefs.discrete) lines.push('⚡ Discrete mode — confirm pickup location only at collection point');
+    if (lines.length > 0) return lines;
+  }
+  // Fallback: check legacy stored prefs
   const stored = JSON.parse(localStorage.getItem('apexvip_client_prefs_' + (clientId||'demo')) || 'null');
   if (stored) return stored;
   // Default luxury preferences
