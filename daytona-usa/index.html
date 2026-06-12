@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>DAYTONA USA — Web Arcade Racer</title>
+<style>
+  :root { --neon: #ff3b3b; --blue: #1f6dff; --yellow: #ffd400; }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #05060a;
+    font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+    color: #fff; overflow: hidden;
+    -webkit-user-select: none; user-select: none;
+  }
+  #wrap {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #game {
+    display: block;
+    width: 100%; height: 100%;
+    image-rendering: optimizeSpeed;
+    background: #000;
+  }
+  /* ---------- HUD ---------- */
+  #hud {
+    position: absolute; inset: 0; pointer-events: none;
+    font-weight: 800; letter-spacing: 1px;
+    text-shadow: 0 2px 0 rgba(0,0,0,.6);
+  }
+  .panel {
+    position: absolute; padding: 6px 12px; border-radius: 8px;
+    background: linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,.25));
+    border: 2px solid rgba(255,255,255,.15);
+    backdrop-filter: blur(2px);
+  }
+  #speedo { right: 18px; bottom: 18px; text-align: right; min-width: 160px; }
+  #speedo .big { font-size: 46px; line-height: 1; color: var(--yellow); }
+  #speedo .unit { font-size: 14px; opacity: .8; }
+  #speedo .gear { font-size: 16px; color: var(--neon); }
+  #lapinfo { left: 18px; top: 18px; }
+  #lapinfo .lap { font-size: 26px; color: #fff; }
+  #lapinfo .small { font-size: 13px; opacity: .85; font-weight: 600; }
+  #times { right: 18px; top: 18px; text-align: right; font-variant-numeric: tabular-nums; }
+  #times .cur { font-size: 30px; color: var(--yellow); }
+  #times .best { font-size: 14px; color: #9fe; }
+  #pos { left: 18px; bottom: 18px; }
+  #pos .big { font-size: 34px; color: var(--blue); }
+  #pos .small { font-size: 13px; opacity: .85; font-weight: 600; }
+  #mini { position: absolute; left: 50%; top: 14px; transform: translateX(-50%);
+          font-size: 13px; opacity: .8; font-weight: 600; }
+  /* ---------- Overlays ---------- */
+  #overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    background: radial-gradient(ellipse at center, rgba(10,12,30,.75), rgba(0,0,0,.92));
+    z-index: 5;
+  }
+  #overlay.hidden { display: none; }
+  .title {
+    font-size: 64px; font-weight: 900; letter-spacing: 4px; margin: 0;
+    color: #fff;
+    text-shadow: 0 0 18px var(--blue), 0 0 36px var(--neon), 4px 4px 0 #000;
+    transform: skewX(-8deg);
+  }
+  .title .red { color: var(--neon); }
+  .subtitle { font-size: 16px; opacity: .9; margin: 6px 0 28px; letter-spacing: 3px; }
+  .menu-card {
+    background: rgba(0,0,0,.5); border: 2px solid rgba(255,255,255,.18);
+    border-radius: 14px; padding: 22px 30px; max-width: 560px;
+  }
+  .menu-card h2 { margin: 0 0 10px; font-size: 22px; color: var(--yellow); }
+  .keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px;
+          font-size: 15px; margin: 14px 0 20px; text-align: left; }
+  .keys b { background:#111; border:1px solid #444; border-radius:6px; padding:2px 8px; }
+  .diff { display:flex; gap:10px; justify-content:center; margin-bottom: 18px; }
+  .diff button { flex:1; }
+  button.btn {
+    pointer-events: auto; cursor: pointer;
+    font-family: inherit; font-weight: 800; letter-spacing: 1px;
+    font-size: 18px; color: #fff; padding: 12px 26px;
+    border: none; border-radius: 10px;
+    background: linear-gradient(180deg, var(--neon), #b81f1f);
+    box-shadow: 0 4px 0 #6e0d0d, 0 8px 18px rgba(0,0,0,.5);
+    transition: transform .05s ease;
+  }
+  button.btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #6e0d0d; }
+  button.btn.sel { outline: 3px solid var(--yellow); }
+  button.ghost {
+    background: linear-gradient(180deg, #2a2f45, #1a1d2c);
+    box-shadow: 0 4px 0 #0c0e16;
+  }
+  .flash { animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: .25; } }
+  #countdown {
+    position: absolute; inset: 0; display:flex; align-items:center; justify-content:center;
+    font-size: 160px; font-weight: 900; color: var(--yellow);
+    text-shadow: 0 0 30px var(--neon), 6px 6px 0 #000; pointer-events: none;
+    z-index: 6;
+  }
+  #countdown.hidden { display:none; }
+  #banner {
+    position:absolute; left:50%; top:34%; transform:translate(-50%,-50%) skewX(-8deg);
+    font-size: 72px; font-weight: 900; color: var(--yellow);
+    text-shadow: 0 0 24px var(--neon), 5px 5px 0 #000; z-index: 6; pointer-events:none;
+  }
+  #banner.hidden { display:none; }
+  #touch { position:absolute; inset:0; z-index: 4; display:none; }
+  .tbtn { position:absolute; pointer-events:auto; width:90px; height:90px; border-radius:50%;
+          background: rgba(255,255,255,.10); border:2px solid rgba(255,255,255,.25);
+          display:flex; align-items:center; justify-content:center; font-size:34px; }
+  #tleft { left:18px; bottom:110px; } #tright { left:120px; bottom:40px; }
+  #tgas { right:18px; bottom:110px; background: rgba(255,59,59,.25); }
+  #tbrake { right:120px; bottom:40px; background: rgba(31,109,255,.25); }
+  .credit { position:absolute; bottom:10px; left:0; right:0; text-align:center;
+            font-size:11px; opacity:.5; }
+  @media (max-width: 760px) { .title { font-size: 44px; } #speedo .big { font-size:34px; } }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game" width="960" height="600"></canvas>
+
+  <div id="hud">
+    <div id="lapinfo" class="panel">
+      <div class="lap">LAP <span id="lapNum">1</span>/<span id="lapTotal">3</span></div>
+      <div class="small" id="trackName">THREE-SEVEN SPEEDWAY</div>
+    </div>
+    <div id="times" class="panel">
+      <div class="cur" id="curTime">0:00.00</div>
+      <div class="best">BEST <span id="bestTime">--:--.--</span></div>
+      <div class="best">LAST <span id="lastTime">--:--.--</span></div>
+    </div>
+    <div id="pos" class="panel">
+      <div class="big"><span id="posNum">1</span><span style="font-size:16px"> / <span id="posTotal">6</span></span></div>
+      <div class="small">POSITION</div>
+    </div>
+    <div id="speedo" class="panel">
+      <div><span class="big" id="speedVal">0</span> <span class="unit">KM/H</span></div>
+      <div class="gear" id="gearVal">GEAR 1</div>
+    </div>
+    <div id="mini">ARROWS / WASD to drive &nbsp;•&nbsp; SPACE = brake &nbsp;•&nbsp; P = pause</div>
+  </div>
+
+  <div id="banner" class="hidden"></div>
+  <div id="countdown" class="hidden"></div>
+
+  <div id="overlay">
+    <h1 class="title">DAYTONA <span class="red">USA</span></h1>
+    <div class="subtitle">WEB ARCADE EDITION</div>
+    <div class="menu-card">
+      <h2>CHOOSE YOUR COURSE DIFFICULTY</h2>
+      <div class="diff">
+        <button class="btn ghost" data-diff="0">BEGINNER</button>
+        <button class="btn ghost sel" data-diff="1">ADVANCED</button>
+        <button class="btn ghost" data-diff="2">EXPERT</button>
+      </div>
+      <div class="keys">
+        <b>↑ / W</b><span>Accelerate</span>
+        <b>↓ / S</b><span>Reverse</span>
+        <b>← → / A D</b><span>Steer</span>
+        <b>SPACE</b><span>Brake / Handbrake</span>
+        <b>P / ESC</b><span>Pause</span>
+      </div>
+      <button class="btn" id="startBtn">START ENGINE ▶</button>
+    </div>
+    <div class="credit">A homage to SEGA's Daytona USA (1993). Fan-made, non-commercial.</div>
+  </div>
+
+  <div id="touch">
+    <div id="tleft" class="tbtn">◀</div>
+    <div id="tright" class="tbtn">▶</div>
+    <div id="tbrake" class="tbtn">✋</div>
+    <div id="tgas" class="tbtn">⛽</div>
+  </div>
+</div>
+
+<script src="game.js"></script>
+</body>
+</html>
