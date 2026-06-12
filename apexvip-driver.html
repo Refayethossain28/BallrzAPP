@@ -52,12 +52,54 @@ input,select,textarea{font-size:16px !important}
 @keyframes orbDrift1{from{transform:translate(0,0) scale(1)}to{transform:translate(60px,40px) scale(1.14)}}
 @keyframes orbDrift2{from{transform:translate(0,0) scale(1.06)}to{transform:translate(-70px,-50px) scale(.9)}}
 @keyframes orbDrift3{from{transform:translate(0,0) scale(1)}to{transform:translate(50px,-60px) scale(1.1)}}
-@keyframes logoReveal{0%{opacity:0;letter-spacing:18px}60%{opacity:1}100%{opacity:1;letter-spacing:10px}}
-@keyframes subtitleReveal{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes logoReveal{
+  0%{opacity:0;transform:scale(.97) translateY(6px);filter:blur(6px)}
+  40%{opacity:.25;filter:blur(3px)}
+  75%{opacity:.8;filter:blur(.5px)}
+  100%{opacity:1;transform:scale(1) translateY(0);filter:blur(0)}
+}
+@keyframes subtitleReveal{0%{opacity:0;letter-spacing:10px}100%{opacity:1;letter-spacing:6px}}
+@keyframes sparkle{0%,100%{opacity:0;transform:scale(0) rotate(0deg)}40%,60%{opacity:1;transform:scale(1) rotate(72deg)}}
+@keyframes sparkleB{0%,100%{opacity:0;transform:scale(0) rotate(45deg)}45%,55%{opacity:.8;transform:scale(1) rotate(135deg)}}
+@keyframes diamondShimmer{0%{background-position:250% center}100%{background-position:-250% center}}
+@keyframes auroraDrift1{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(55px,45px) scale(1.12)}}
+@keyframes auroraDrift2{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-65px,-38px) scale(1.06)}}
+@keyframes auroraDrift3{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(38px,-65px) scale(1.16)}}
 @keyframes slideUp{from{opacity:0;transform:translateY(40px)}to{opacity:1;transform:translateY(0)}}
 @keyframes slideUpSheet{from{transform:translateY(100%)}to{transform:translateY(0)}}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.4)}50%{box-shadow:0 0 0 20px rgba(34,197,94,0)}}
 @keyframes scaleIn{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
+
+/* ── Splash aurora ── */
+.aurora{position:absolute;inset:0;overflow:hidden;z-index:0;pointer-events:none}
+.aurora i{position:absolute;border-radius:50%;filter:blur(110px);will-change:transform}
+.aurora i:nth-child(1){width:520px;height:520px;top:-180px;left:-140px;background:radial-gradient(circle,rgba(90,65,150,.16),transparent 65%);animation:auroraDrift1 28s ease-in-out infinite}
+.aurora i:nth-child(2){width:440px;height:440px;bottom:8%;right:-160px;background:radial-gradient(circle,rgba(180,140,55,.1),transparent 65%);animation:auroraDrift2 34s ease-in-out infinite}
+.aurora i:nth-child(3){width:380px;height:380px;top:38%;left:22%;background:radial-gradient(circle,rgba(75,55,145,.11),transparent 65%);animation:auroraDrift3 22s ease-in-out infinite}
+
+/* ── Diamond shimmer text ── */
+.diamond-text{
+  background:linear-gradient(108deg,
+    #fff8ee 0%,#f2e4c0 6%,#D4AF6E 14%,#fff 20%,
+    #f0e0b8 26%,#fff 32%,#e0c878 38%,#fff8ee 44%,
+    #f8f0dc 50%,#fff 56%,#D4AF6E 62%,#fff 68%,
+    #ecdcb0 74%,#fff 80%,#d8be84 86%,#fff8ee 94%,
+    #eedcc4 100%);
+  background-size:400% auto;
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  animation:diamondShimmer 6s 2s linear infinite;
+  filter:drop-shadow(0 0 28px rgba(212,175,110,.4)) drop-shadow(0 0 6px rgba(255,255,255,.35));
+}
+
+/* ── Sparkle decorators ── */
+.sp{position:absolute;opacity:0;color:rgba(255,255,255,.85);pointer-events:none;font-style:normal;line-height:1}
+.sp1{top:-14px;left:12%;font-size:12px;animation:sparkle 3s 2.2s ease-in-out infinite}
+.sp2{top:-8px;right:9%;font-size:17px;animation:sparkleB 3.4s 2.7s ease-in-out infinite}
+.sp3{bottom:-6px;left:5%;font-size:9px;animation:sparkle 2.6s 3.2s ease-in-out infinite}
+.sp4{top:18px;right:3%;font-size:13px;animation:sparkleB 3.8s 2.4s ease-in-out infinite}
+.sp5{bottom:2px;right:23%;font-size:8px;animation:sparkle 2.3s 3.9s ease-in-out infinite}
+.sp6{top:-4px;left:41%;font-size:10px;animation:sparkleB 3s 4.3s ease-in-out infinite}
+.sp7{bottom:10px;left:28%;font-size:7px;animation:sparkle 3.5s 3s ease-in-out infinite}
 
 /* ── Aurora orbs (home bg) ── */
 .orb-bg{position:absolute;inset:0;overflow:hidden;z-index:0}
@@ -532,16 +574,29 @@ function stars(r){return'★'.repeat(r)+'☆'.repeat(5-r);}
 function fmtTime(s){const m=Math.floor(s/60);const sec=s%60;return(m<10?'0'+m:m)+':'+(sec<10?'0'+sec:sec);}
 
 const pages={
-login:()=>`<div style="min-height:100vh;background:#050505;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 28px 60px">
-  <div style="text-align:center;margin-bottom:52px">
-    <div style="font-family:'Cormorant Garamond',serif;font-size:52px;font-weight:700;color:#C8A97E;letter-spacing:10px;animation:logoReveal 1.4s cubic-bezier(.16,1,.3,1) .3s both">ApexVIP</div>
-    <div style="font-size:11px;color:#555;letter-spacing:4px;margin-top:6px;animation:subtitleReveal 1.2s ease 1s both">DRIVER PORTAL</div>
+login:()=>`
+<div style="min-height:100vh;display:flex;flex-direction:column;background:#050505;overflow:hidden;position:relative">
+  <div class="aurora"><i></i><i></i><i></i></div>
+  <div style="position:absolute;inset:0;background:radial-gradient(ellipse 70% 40% at 50% 110%,rgba(200,169,126,.07),transparent);pointer-events:none;z-index:1"></div>
+
+  <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 40px;position:relative;z-index:2">
+    <div style="text-align:center">
+      <div style="position:relative;display:inline-block;margin-bottom:20px;animation:logoReveal 5.5s .4s both ease-out">
+        <div class="diamond-text" style="font-family:'Cormorant Garamond',serif;font-size:76px;font-weight:300;letter-spacing:4px;line-height:1">ApexVIP</div>
+        <i class="sp sp1">✦</i><i class="sp sp2">✧</i><i class="sp sp3">✦</i>
+        <i class="sp sp4">✧</i><i class="sp sp5">✦</i><i class="sp sp6">✧</i><i class="sp sp7">✦</i>
+      </div>
+      <div style="font-size:11px;font-weight:400;color:rgba(244,240,234,.35);text-transform:uppercase;letter-spacing:6px;animation:subtitleReveal 1.4s 1.2s both ease-out">Driver Portal</div>
+    </div>
   </div>
-  <div style="width:100%;max-width:340px;animation:slideUp .6s cubic-bezier(.16,1,.3,1) 1.8s both">
-    <div style="margin-bottom:14px"><label style="font-size:11px;color:#666;display:block;margin-bottom:6px;letter-spacing:1px">EMAIL</label><input type="email" placeholder="driver email" autocomplete="email" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.1);color:#f0ece4"/></div>
-    <div style="margin-bottom:28px"><label style="font-size:11px;color:#666;display:block;margin-bottom:6px;letter-spacing:1px">PASSWORD</label><input type="password" placeholder="password" autocomplete="current-password" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.1);color:#f0ece4"/></div>
+
+  <div style="padding:0 28px max(48px,calc(env(safe-area-inset-bottom)+32px));display:flex;flex-direction:column;gap:10px;position:relative;z-index:2;animation:slideUp .7s 2s both cubic-bezier(0.16,1,0.3,1)">
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:8px">
+      <input type="email" placeholder="Driver email" autocomplete="email" style="width:100%;padding:16px 18px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:16px;color:#f0ece4;font-size:15px;font-family:inherit;outline:none;-webkit-appearance:none"/>
+      <input type="password" placeholder="Password" autocomplete="current-password" style="width:100%;padding:16px 18px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:16px;color:#f0ece4;font-size:15px;font-family:inherit;outline:none;-webkit-appearance:none"/>
+    </div>
     <button class="btn btn-gold" onclick="driverLogin()">Driver Sign In</button>
-    ${!FIREBASE_ENABLED?`<div style="margin-top:20px;background:rgba(255,255,255,.04);border-radius:10px;padding:12px 14px;font-size:12px;color:#444;text-align:center">Demo mode — any credentials work</div>`:''}
+    ${!FIREBASE_ENABLED?`<div style="text-align:center;margin-top:6px;font-size:11px;color:rgba(244,240,234,.2);letter-spacing:.4px">Demo mode — any credentials work</div>`:''}
   </div>
 </div>`,
 
