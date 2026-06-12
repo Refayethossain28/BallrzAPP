@@ -106,6 +106,7 @@ function bindKey(code, down) {
 window.addEventListener('keydown', e => {
   if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space'].includes(e.code)) e.preventDefault();
   if (e.code === 'KeyP' || e.code === 'Escape') { if (!e.repeat) togglePause(); return; }
+  if (e.code === 'KeyM') { if (!e.repeat && window.GameMusic) window.GameMusic.toggleMute(); return; }
   bindKey(e.code, true);
   if (G.state === 'menu' && (e.code === 'Enter' || e.code === 'Space')) startRace();
 });
@@ -319,6 +320,7 @@ function initAudio() {
     engineGain = AC.createGain(); engineGain.gain.value = 0;
     engineOsc.connect(engineFilter).connect(engineGain).connect(AC.destination);
     engineOsc.start();
+    if (window.GameMusic) window.GameMusic.init(AC);
   } catch (e) { AC = null; }
 }
 function updateEngine() {
@@ -426,6 +428,7 @@ function timeUp() { flashBanner('TIME UP'); finishRace(false); }
 
 function finishRace(completed) {
   G.state = 'finished';
+  if (window.GameMusic) window.GameMusic.setMode('menu');
   const place = G.place;
   const ord = (place) + (['th','st','nd','rd'][(place%100>>3^1)&&place%10] || 'th');
   const win = completed && place === 1;
@@ -859,14 +862,17 @@ function menuHTML() {
         <b>↓ / S</b><span>Reverse</span>
         <b>← → / A D</b><span>Steer</span>
         <b>SPACE</b><span>Brake / Handbrake</span>
+        <b>M</b><span>Mute music</span>
         <b>P / ESC</b><span>Pause</span>
       </div>
       <button class="btn" id="startBtn">START ENGINE ▶</button>
     </div>
-    <div class="credit">A homage to SEGA's Daytona USA (1993). Fan-made, non-commercial.</div>`;
+    <div class="credit">A homage to SEGA's Daytona USA (1993). Fan-made, non-commercial. •
+      <a href="3d/index.html" style="color:#9fe">Try the 3D polygon version ▶</a></div>`;
 }
 function showMenu() {
   G.state='menu';
+  if (window.GameMusic) { window.GameMusic.setMode('menu'); window.GameMusic.duck(false); }
   const el=document.getElementById('overlay');
   el.innerHTML = menuHTML(); el.classList.remove('hidden'); wireMenu();
 }
@@ -883,6 +889,7 @@ function wireMenu() {
 
 function startRace() {
   initAudio(); if (AC && AC.state==='suspended') AC.resume();
+  if (window.GameMusic) { window.GameMusic.start(); window.GameMusic.setMode('race'); window.GameMusic.duck(false); }
   const d = DIFFS[G.diff];
   G.maxSpeed=d.maxSpeed; G.curveMul=d.curveMul; G.aiSpeedMul=d.aiSpeed;
   G.totalLaps=d.laps; G.timeLeft=d.startTime; G.lapBonus=d.lapBonus;
@@ -902,6 +909,7 @@ function startRace() {
 function togglePause() {
   if (G.state==='racing') {
     G.state='paused';
+    if (window.GameMusic) window.GameMusic.duck(true);
     const el=document.getElementById('overlay');
     el.innerHTML = `
       <h1 class="title">PAUSED</h1>
@@ -911,10 +919,11 @@ function togglePause() {
         <button class="btn ghost" id="quitBtn">QUIT TO MENU</button>
       </div>`;
     el.classList.remove('hidden');
-    document.getElementById('resumeBtn').onclick = () => { el.classList.add('hidden'); G.state='racing'; };
+    document.getElementById('resumeBtn').onclick = () => { el.classList.add('hidden'); G.state='racing'; if (window.GameMusic) window.GameMusic.duck(false); };
     document.getElementById('quitBtn').onclick = () => showMenu();
   } else if (G.state==='paused') {
     document.getElementById('overlay').classList.add('hidden'); G.state='racing';
+    if (window.GameMusic) window.GameMusic.duck(false);
   }
 }
 
