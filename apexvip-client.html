@@ -515,11 +515,32 @@ let state = {
   _cancelRef: '',
   _cancelDocId: '',
   _lastTrip: null,
+  _trackRef: '',
+  _trackDriverName: '',
+  _trackPlate: '',
+  _trackDriverId: '',
+  _trackEta: 420,
+  _trackSimInterval: null,
+  _trackUnsub: null,
+  _trackLive: false,
   cards: [
     {id:1,brand:'Visa',last4:'4242',expiry:'09/27',color:'linear-gradient(135deg,#2a2a2a,#111)',isDefault:true},
     {id:2,brand:'Mastercard',last4:'8888',expiry:'03/26',color:'linear-gradient(135deg,#1a1a2e,#16213e)',isDefault:false}
   ]
 };
+
+// ── Deep-link: open tracking view when URL contains ?track=1 ──────────────
+(function(){
+  const p = new URLSearchParams(location.search);
+  if (p.has('track')) {
+    state.screen = 'track';
+    state._trackRef = p.get('ref') || '';
+    state._trackDriverName = p.get('d') ? decodeURIComponent(p.get('d').replace(/\+/g,' ')) : 'Driver';
+    state._trackPlate = p.get('p') ? decodeURIComponent(p.get('p').replace(/\+/g,' ')) : '';
+    state._trackDriverId = p.get('driverId') || '';
+    state._trackEta = 420 + Math.floor(Math.random()*300);
+  }
+})();
 
 document.body.classList.toggle('light', state.theme === 'light');
 let TRIPS = [
@@ -1036,12 +1057,30 @@ function shareReceipt() {
 }
 
 // ── Trip Sharing ──────────────────────────────────────────────────────────
+function buildTrackUrl(ref, dn, dp, did) {
+  return `https://refayethossain28.github.io/BallrzAPP/apexvip-client.html?track=1&ref=${ref}&d=${dn}&p=${dp}${did?'&driverId='+did:''}`;
+}
+function shareTrackLink() {
+  const url = buildTrackUrl(
+    state._trackRef || 'APX-0000',
+    encodeURIComponent(state._trackDriverName || ''),
+    encodeURIComponent(state._trackPlate || ''),
+    state._trackDriverId || ''
+  );
+  if(navigator.share){
+    navigator.share({title:'Track my ApexVIP ride',text:`I'm on my way — track my ride in real time`,url}).catch(()=>{});
+  } else {
+    navigator.clipboard?.writeText(url).catch(()=>{});
+    const lbl=document.getElementById('track-share-lbl');
+    if(lbl){lbl.textContent='✓ Link copied';setTimeout(()=>{lbl.textContent='Share tracking link';},2200);}
+  }
+}
 function shareTrip() {
   const ref = state._confirmedRef || state._activeBooking?.ref || 'APX-4821';
   const dn = encodeURIComponent(state._activeBooking?.driverName || 'James Harrison');
   const dp = encodeURIComponent(state._activeBooking?.driverPlate || 'LX73 ABC');
   const did = state._activeBooking?.driverId || '';
-  const url = `https://refayethossain28.github.io/BallrzAPP/track.html?ref=${ref}&d=${dn}&p=${dp}${did?'&driverId='+did:''}`;
+  const url = buildTrackUrl(ref, dn, dp, did);
   track('trip_shared', { ref, src: 'client' });
   if (navigator.share) {
     navigator.share({ title: 'Track my ApexVIP ride', text: `I'm in a black Mercedes — track me live`, url }).catch(() => {});
@@ -3061,6 +3100,59 @@ profile: () => {
   </div>
 </div>`,
 
+// ── Live Tracking (public shareable view) ─────────────────────────────────
+'track': () => {
+  const dn = state._trackDriverName || 'Your Driver';
+  const plate = state._trackPlate || '';
+  const ref = state._trackRef || '';
+  const live = !!state._trackDriverId;
+  const dotStyle = live ? '' : 'background:#6b7280;box-shadow:none;animation:none';
+  const lbl = live ? 'Your driver is on the way' : 'Simulated · Your driver is on the way';
+  return `
+<div style="position:relative;height:100vh;overflow:hidden;background:var(--bg)">
+  <div id="track-map" style="position:absolute;inset:0;z-index:0"></div>
+  <div style="position:absolute;bottom:0;left:0;right:0;z-index:10;background:rgba(8,7,6,.85);backdrop-filter:blur(60px) saturate(180%);-webkit-backdrop-filter:blur(60px) saturate(180%);border-top:1px solid var(--border);border-radius:28px 28px 0 0;padding:12px 22px max(40px,calc(env(safe-area-inset-bottom,0px)+20px));animation:slideUpSheet .45s var(--ease-spring)">
+    <div style="width:36px;height:4px;border-radius:2px;background:var(--fg-5);margin:0 auto 18px"></div>
+    <div style="font-family:var(--font-serif);font-size:13px;font-weight:300;letter-spacing:3px;text-transform:uppercase;color:var(--gold);margin-bottom:16px;text-align:center">ApexVIP · Live Trip</div>
+    <div style="display:flex;align-items:center;gap:14px;padding:16px;background:var(--gold-3);border:1px solid var(--gold-2);border-radius:18px;margin-bottom:14px">
+      <div style="width:48px;height:48px;border-radius:50%;background:var(--gold-2);border:1.5px solid var(--gold-2);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">🚘</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:16px;font-weight:700;margin-bottom:3px">${dn}</div>
+        ${plate?`<div style="font-size:12px;color:var(--fg-3);letter-spacing:.5px">${plate}</div>`:''}
+        <div style="display:inline-flex;align-items:center;gap:4px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.25);border-radius:8px;padding:3px 7px;font-size:10px;color:#22c55e;margin-top:5px">
+          <svg width="9" height="9" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+          PCO Licensed · Verified
+        </div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:10px;color:var(--fg-4);margin-bottom:4px;letter-spacing:.5px">RATING</div>
+        <div style="font-size:15px;font-weight:700;color:var(--gold)">4.96 ★</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:18px;margin-bottom:14px">
+      <div id="track-dot" style="width:10px;height:10px;border-radius:50%;background:#22c55e;flex-shrink:0;box-shadow:0 0 8px rgba(34,197,94,.5);animation:pulse 2s ease-in-out infinite;${dotStyle}"></div>
+      <span id="track-lbl" style="font-size:14px;font-weight:600;flex:1">${lbl}</span>
+      <span id="track-eta" style="font-size:13px;font-weight:700;color:var(--gold);background:var(--gold-3);border:1px solid var(--gold-2);border-radius:10px;padding:4px 10px">${formatEtaMin(state._trackEta)}</span>
+    </div>
+    ${ref?`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px 16px">
+        <div style="font-size:10px;color:var(--fg-4);letter-spacing:1.2px;text-transform:uppercase;margin-bottom:5px">Booking Ref</div>
+        <div style="font-size:13px;font-weight:600;color:var(--fg-2);letter-spacing:.5px">${ref}</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px 16px">
+        <div style="font-size:10px;color:var(--fg-4);letter-spacing:1.2px;text-transform:uppercase;margin-bottom:5px">Vehicle</div>
+        <div style="font-size:14px;font-weight:600;color:var(--fg-2)">S-Class</div>
+      </div>
+    </div>`:''}
+    <button onclick="shareTrackLink()" style="width:100%;padding:15px;border-radius:16px;background:var(--surface);border:1px solid var(--border);color:var(--fg-2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;transition:transform .12s" onactive="this.style.transform='scale(.97)'">
+      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
+      <span id="track-share-lbl">Share tracking link</span>
+    </button>
+    <div style="text-align:center;font-size:11px;color:var(--fg-4);margin-top:14px;line-height:1.6">This link is secure and expires when the trip ends.<br>Powered by <strong style="color:var(--gold)">ApexVIP</strong> luxury chauffeur service.</div>
+  </div>
+</div>`;
+},
+
 };
 
 // ── Actions ────────────────────────────────────────────────────────────────
@@ -3489,6 +3581,81 @@ if(FIREBASE_ENABLED){
   });
 }
 
+// ── Embedded live tracking screen ──────────────────────────────────────────
+function initTrackScreen(){
+  const el=document.getElementById('track-map');
+  if(!el)return;
+  // Clean up any previous session
+  if(state._trackUnsub){state._trackUnsub();state._trackUnsub=null;}
+  if(state._trackSimInterval){clearInterval(state._trackSimInterval);state._trackSimInterval=null;}
+
+  let dLat=51.5074+(Math.random()-.5)*.02;
+  let dLng=-0.1278+(Math.random()-.5)*.02;
+  const tLat=51.5245,tLng=-0.0865;
+  const dark=state.theme!=='light';
+  const tiles=dark
+    ?'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+    :'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+
+  const tMap=L.map('track-map',{zoomControl:false,attributionControl:false,scrollWheelZoom:false})
+    .setView([dLat,dLng],14);
+  L.tileLayer(tiles,{maxZoom:19}).addTo(tMap);
+
+  const dIcon=L.divIcon({className:'',html:`<div style="width:38px;height:38px;border-radius:50%;background:#0c0b09;border:2.5px solid var(--gold,#C8A97E);display:flex;align-items:center;justify-content:center;box-shadow:0 0 20px rgba(200,169,126,.4)"><svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#C8A97E" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11a2 2 0 012 2v3m-1 9h-5m-1 0a2 2 0 100 4 2 2 0 000-4zm8 0a2 2 0 100 4 2 2 0 000-4zm-6-9h5l3 5"/></svg></div>`,iconSize:[38,38],iconAnchor:[19,19]});
+  let dMarker=L.marker([dLat,dLng],{icon:dIcon}).addTo(tMap);
+
+  L.polyline([[dLat,dLng],[tLat,tLng]],{color:'rgba(200,169,126,.45)',weight:2,dashArray:'6,8'}).addTo(tMap);
+
+  // Live Firebase tracking
+  if(FIREBASE_ENABLED&&state._trackDriverId){
+    const trackFn=()=>{
+      state._trackUnsub=db.collection('drivers').doc(state._trackDriverId).onSnapshot(doc=>{
+        if(!doc.exists)return;
+        const d=doc.data();
+        if(!d.lat||!d.lng)return;
+        if(!state._trackLive){
+          state._trackLive=true;
+          if(state._trackSimInterval){clearInterval(state._trackSimInterval);state._trackSimInterval=null;}
+          const dot=document.getElementById('track-dot');
+          const lbl=document.getElementById('track-lbl');
+          if(dot){dot.style.background='#22c55e';dot.style.boxShadow='0 0 8px rgba(34,197,94,.5)';}
+          if(lbl)lbl.textContent='Live · Your driver is on the way';
+        }
+        const pos=[d.lat,d.lng];
+        dMarker.setLatLng(pos);
+        if(!tMap.getBounds().contains(pos))tMap.panTo(pos,{animate:true});
+      },()=>{});
+    };
+    // May need anonymous auth for non-logged-in viewers
+    if(auth.currentUser){trackFn();}
+    else{auth.signInAnonymously().then(trackFn).catch(()=>{});}
+  } else {
+    // Simulation
+    const stepLat=(tLat-dLat)/180, stepLng=(tLng-dLng)/180;
+    let steps=0;
+    state._trackSimInterval=setInterval(()=>{
+      if(steps>120)return;
+      steps++;
+      dLat+=stepLat*(0.5+Math.random());
+      dLng+=stepLng*(0.5+Math.random());
+      dMarker.setLatLng([dLat,dLng]);
+    },3000);
+  }
+
+  // ETA countdown
+  const etaInterval=setInterval(()=>{
+    state._trackEta=Math.max(0,state._trackEta-3);
+    const el=document.getElementById('track-eta');
+    if(el)el.textContent=formatEtaMin(state._trackEta);
+    if(state._trackEta===0)clearInterval(etaInterval);
+  },3000);
+}
+function formatEtaMin(s){
+  if(s<=0)return'Arriving now';
+  const m=Math.ceil(s/60);
+  return m<2?'1 min':m+' mins';
+}
+
 function render(){
   const fn=screens[state.screen];
   app.innerHTML=fn?fn():`<div style="padding:40px;text-align:center;color:var(--fg-4)">Screen not found</div>`;
@@ -3496,6 +3663,7 @@ function render(){
   if(state.screen==='payment') setTimeout(initSquare,60);
   if(state.screen==='active-trip') setTimeout(initTrackingMap,60);
   if(state.screen==='active-trip') setTimeout(startEtaCountdown,80);
+  if(state.screen==='track') setTimeout(initTrackScreen,60);
   if(state.screen==='active-trip') setTimeout(()=>{ setupChatListener(state._activeBooking?.docId); },0);
   if(state.screen==='profile') setTimeout(loadReferralCode,100);
 }
