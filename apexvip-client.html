@@ -526,7 +526,19 @@ let state = {
   cards: [
     {id:1,brand:'Visa',last4:'4242',expiry:'09/27',color:'linear-gradient(135deg,#2a2a2a,#111)',isDefault:true},
     {id:2,brand:'Mastercard',last4:'8888',expiry:'03/26',color:'linear-gradient(135deg,#1a1a2e,#16213e)',isDefault:false}
-  ]
+  ],
+  _inviteCode: '',
+  _inviteValid: false,
+  _inviteChecked: false,
+  _waitlistJoined: false,
+  prefs: JSON.parse(localStorage.getItem('apex_prefs') || '{"temperature":"cool","music":"jazz","convo":"friendly","newspaper":"ft","discrete":false}'),
+  _giftCode: '',
+  _giftAmount: 0,
+  _corporateCode: '',
+  _corporateRef: '',
+  _discoverCity: 'london',
+  _discoverCat: 'all',
+  _cityInterest: JSON.parse(localStorage.getItem('apex_city_interest') || '{}'),
 };
 
 // ── Deep-link: open tracking view when URL contains ?track=1 ──────────────
@@ -558,12 +570,27 @@ const NOTIFS = [
 const RECENT = ['Heathrow Terminal 5','Mayfair, London W1','Gatwick North Terminal','Canary Wharf E14'];
 
 const POIS = [
-  {name:'The Ritz London',    cat:'Hotel',      emoji:'🏨', lat:51.5067, lng:-0.1438},
-  {name:'Nobu London',        cat:'Dining',     emoji:'🍽', lat:51.5075, lng:-0.1458},
-  {name:'Harrods',            cat:'Shopping',   emoji:'🛍', lat:51.4994, lng:-0.1632},
-  {name:'The Shard',          cat:'Attraction', emoji:'🏙', lat:51.5045, lng:-0.0865},
-  {name:'Sketch London',      cat:'Dining',     emoji:'🍸', lat:51.5127, lng:-0.1421},
-  {name:"Claridge's",         cat:'Hotel',      emoji:'✨', lat:51.5120, lng:-0.1479},
+  // London — Hotels
+  {name:'The Ritz London',    cat:'Hotel',      emoji:'🏨', lat:51.5067, lng:-0.1438, city:'london'},
+  {name:"Claridge's",         cat:'Hotel',      emoji:'✨', lat:51.5120, lng:-0.1479, city:'london'},
+  {name:'The Dorchester',     cat:'Hotel',      emoji:'🏛', lat:51.5072, lng:-0.1534, city:'london'},
+  // London — Dining
+  {name:'Nobu London',        cat:'Dining',     emoji:'🍣', lat:51.5075, lng:-0.1458, city:'london'},
+  {name:'Sketch London',      cat:'Dining',     emoji:'🍸', lat:51.5127, lng:-0.1421, city:'london'},
+  {name:'Alain Ducasse',      cat:'Dining',     emoji:'⭐', lat:51.5072, lng:-0.1534, city:'london'},
+  // London — Shopping
+  {name:'Harrods',            cat:'Shopping',   emoji:'🛍', lat:51.4994, lng:-0.1632, city:'london'},
+  {name:'Bond Street',        cat:'Shopping',   emoji:'💎', lat:51.5135, lng:-0.1489, city:'london'},
+  // London — Culture
+  {name:'The Shard',          cat:'Culture',    emoji:'🏙', lat:51.5045, lng:-0.0865, city:'london'},
+  {name:'Tate Modern',        cat:'Culture',    emoji:'🎨', lat:51.5076, lng:-0.0994, city:'london'},
+  // Dubai
+  {name:'Burj Al Arab',       cat:'Hotel',      emoji:'🏨', lat:25.1412, lng:55.1853, city:'dubai'},
+  {name:'Nobu Dubai',         cat:'Dining',     emoji:'🍣', lat:25.1972, lng:55.2744, city:'dubai'},
+  {name:'Dubai Mall',         cat:'Shopping',   emoji:'🛍', lat:25.1972, lng:55.2796, city:'dubai'},
+  {name:'Burj Khalifa',       cat:'Culture',    emoji:'🏙', lat:25.1972, lng:55.2744, city:'dubai'},
+  {name:'Atlantis The Palm',  cat:'Hotel',      emoji:'🌴', lat:25.1304, lng:55.1171, city:'dubai'},
+  {name:'Nammos Dubai',       cat:'Dining',     emoji:'🍽', lat:25.1142, lng:55.1391, city:'dubai'},
 ];
 
 let mapInstance=null,mapTileLayer=null;
@@ -1184,6 +1211,56 @@ function startEtaCountdown() {
   }, 1000);
 }
 
+async function checkInviteCode() {
+  const inp = document.getElementById('invite-inp');
+  if (!inp) return;
+  const code = inp.value.trim().toUpperCase();
+  state._inviteCode = code;
+  if (!code) return;
+  if (FIREBASE_ENABLED) {
+    try {
+      const snap = await db.collection('invites').doc(code).get();
+      state._inviteValid = snap.exists && !snap.data().used;
+    } catch(e) { state._inviteValid = false; }
+  } else {
+    // Demo: any 6-char alphanumeric code works
+    state._inviteValid = /^[A-Z0-9]{6}$/.test(code);
+  }
+  state._inviteChecked = true;
+  render();
+}
+function joinWaitlist() {
+  const em = document.getElementById('wl-email');
+  if (!em || !em.value.trim()) { alert('Please enter your email.'); return; }
+  if (FIREBASE_ENABLED) {
+    db.collection('waitlist').add({ email: em.value.trim(), ts: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {});
+  }
+  state._waitlistJoined = true;
+  render();
+  track('waitlist_joined', { src: 'client' });
+}
+function savePrefs() {
+  localStorage.setItem('apex_prefs', JSON.stringify(state.prefs));
+  if (FIREBASE_ENABLED && state.user?.uid) {
+    db.collection('users').doc(state.user.uid).set({ prefs: state.prefs }, { merge: true }).catch(() => {});
+  }
+  track('prefs_saved', { src: 'client' });
+}
+function togglePref(key, val) {
+  state.prefs[key] = val;
+  savePrefs();
+  render();
+}
+function registerCityInterest(city) {
+  state._cityInterest[city] = true;
+  localStorage.setItem('apex_city_interest', JSON.stringify(state._cityInterest));
+  if (FIREBASE_ENABLED) {
+    db.collection('city_interest').add({ city, email: state.user?.email || '', ts: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {});
+  }
+  track('city_interest', { city, src: 'client' });
+  render();
+}
+
 function go(screen, data) {
   if (data) state.selectedTrip = data;
   if (state.screen==='home' && screen!=='home' && mapInstance){mapInstance.remove();mapInstance=null;mapTileLayer=null;}
@@ -1269,8 +1346,8 @@ login: () => {
 
 register: () => {
   const s = state._regStep || 1;
-  const prog = `<div style="display:flex;gap:5px;margin-bottom:32px">${[1,2].map(i=>`<div style="flex:1;height:2px;border-radius:2px;background:${i<=s?'#fff':'rgba(255,255,255,.1)'}"></div>`).join('')}</div>`;
-  if (s===3) return `
+  const prog = `<div style="display:flex;gap:5px;margin-bottom:32px">${[1,2,3].map(i=>`<div style="flex:1;height:2px;border-radius:2px;background:${i<=s?'#fff':'rgba(255,255,255,.1)'}"></div>`).join('')}</div>`;
+  if (s===4) return `
 <div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;background:var(--bg);text-align:center;animation:scaleIn .35s ease">
   <div style="width:82px;height:82px;border-radius:50%;background:rgba(34,197,94,.08);border:1.5px solid rgba(34,197,94,.25);display:flex;align-items:center;justify-content:center;margin-bottom:28px">
     <svg width="36" height="36" fill="none" viewBox="0 0 24 24" stroke="#22c55e" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
@@ -1282,12 +1359,12 @@ register: () => {
   return `
 <div style="min-height:100vh;display:flex;flex-direction:column;background:var(--bg);padding:0 24px;animation:fadeIn .3s ease">
   <div class="back-row" style="padding-bottom:24px">
-    <div class="back-btn" onclick="${s>1?'state._regStep=1;render()':'go(\'splash\')'}">
+    <div class="back-btn" onclick="${s>1?'state._regStep=s-1;render()':'go(\'splash\')'}">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
     </div>
     <div>
       <div style="font-size:24px;font-weight:700">Create account</div>
-      <div style="font-size:14px;color:var(--fg-3);margin-top:2px">Step ${s} of 2</div>
+      <div style="font-size:14px;color:var(--fg-3);margin-top:2px">Step ${s} of 3</div>
     </div>
   </div>
   ${prog}
@@ -1297,11 +1374,25 @@ register: () => {
   <div class="field" style="margin-bottom:10px"><input id="rem" type="email" placeholder="Email address"/></div>
   <div class="field" style="margin-bottom:28px"><input id="rph" type="tel" placeholder="Phone number"/></div>
   <button class="btn btn-white" onclick="saveRegStep1()">Continue</button>
-  `:`
+  `:s===2?`
   <div class="field" style="margin-bottom:10px"><input id="rpw" type="password" placeholder="Create password (min 8 chars)"/></div>
   <div class="field" style="margin-bottom:10px"><input id="rpc" type="password" placeholder="Confirm password"/></div>
   <div style="color:var(--fg-4);font-size:12px;margin-bottom:28px;line-height:1.7">By creating an account you agree to our Terms and Privacy Policy.</div>
-  <button class="btn btn-white" onclick="doRegister()">Create account</button>
+  <button class="btn btn-white" onclick="state._regStep=3;render()">Continue</button>
+  `: /* s===3 — invite code */`
+  <div style="text-align:center;margin-bottom:28px">
+    <div style="font-size:22px;font-weight:700;margin-bottom:6px">Enter invite code</div>
+    <div style="font-size:14px;color:var(--fg-3);line-height:1.7">ApexVIP is by invitation only.<br/>Enter your code or join the waitlist.</div>
+  </div>
+  <div class="field" style="margin-bottom:14px">
+    <input id="invite-inp" placeholder="e.g. APX247" style="text-transform:uppercase;letter-spacing:3px;font-size:18px;font-weight:700;text-align:center" value="${state._inviteCode||''}"/>
+  </div>
+  ${state._inviteChecked ? (state._inviteValid
+    ? '<div style="text-align:center;color:#22c55e;font-size:13px;margin-bottom:16px">✓ Valid — welcome to ApexVIP</div>'
+    : '<div style="text-align:center;color:#f87171;font-size:13px;margin-bottom:16px">✗ Invalid code — check and try again</div>')
+    : ''}
+  <button class="btn btn-white" style="margin-bottom:12px" onclick="(async()=>{const inp=document.getElementById('invite-inp');if(!inp||!inp.value.trim()){alert('Enter an invite code.');return;}state._inviteCode=inp.value.trim().toUpperCase();await checkInviteCode();if(state._inviteValid)doRegister();})()">Verify &amp; Create Account</button>
+  <div style="text-align:center;padding:14px 0;color:var(--fg-3);font-size:14px">No code? <span style="color:#fff;font-weight:600;cursor:pointer" onclick="go('waitlist')">Join the waitlist →</span></div>
   `}
 </div>`;
 },
@@ -1340,6 +1431,7 @@ home: () => {
     <div class="sheet-handle"></div>
     <div class="stagger" style="padding:20px 22px 0;height:calc(100% - 26px);overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:96px">
 
+      ${(()=>{const b=state.user?.birthday||localStorage.getItem('apex_birthday');if(!b)return'';const today=new Date();const bday=new Date(b);const next=new Date(today.getFullYear(),bday.getMonth(),bday.getDate());if(next<today)next.setFullYear(today.getFullYear()+1);const days=Math.round((next-today)/86400000);if(days>7)return'';return`<div style="display:flex;align-items:center;gap:12px;background:rgba(200,169,126,.08);border:1px solid rgba(200,169,126,.2);border-radius:16px;padding:14px 18px;margin-bottom:14px"><div style="font-size:24px">🎂</div><div><div style="font-size:13px;font-weight:700;color:var(--gold)">Happy ${days===0?'Birthday!':'upcoming birthday!'}</div><div style="font-size:12px;color:var(--fg-3);margin-top:2px">${days===0?'A complimentary upgrade awaits you today.':'Your birthday journey credit activates in '+days+' day'+(days===1?'':'s')+'.'}</div></div></div>`;})()}
       <!-- AI Concierge — hero button at the top -->
       <button onclick="go('concierge-chat')" style="width:100%;display:flex;align-items:center;gap:16px;padding:16px 20px;margin-bottom:16px;background:linear-gradient(135deg,rgba(200,169,126,.11) 0%,rgba(200,169,126,.04) 100%);border:1px solid rgba(200,169,126,.28);border-radius:22px;cursor:pointer;font-family:inherit;transition:transform .15s var(--ease-spring)">
         <div style="width:40px;height:40px;border-radius:14px;background:rgba(200,169,126,.14);border:1px solid rgba(200,169,126,.28);display:flex;align-items:center;justify-content:center;flex-shrink:0">
@@ -1417,14 +1509,36 @@ home: () => {
         </div>
       </div>
 
-      <div class="section-label" style="margin-bottom:12px">Discover</div>
-      <div class="rec-row" style="margin:0 -22px 22px;padding:4px 22px">
-        ${POIS.map(p=>`
+      <div class="section-label" style="margin-bottom:10px">Discover</div>
+      <div style="display:flex;gap:6px;overflow-x:auto;margin-bottom:10px;scrollbar-width:none;padding-bottom:2px">
+        ${['All','Hotel','Dining','Shopping','Culture'].map(c=>`<button onclick="state._discoverCat='${c}';render()" style="flex-shrink:0;padding:6px 14px;border-radius:20px;background:${state._discoverCat===c?'var(--gold)':'var(--surface)'};border:1px solid ${state._discoverCat===c?'var(--gold)':'var(--border)'};color:${state._discoverCat===c?'#0c0b09':'var(--fg-2)'};font-size:12px;font-weight:${state._discoverCat===c?'700':'400'};cursor:pointer;font-family:inherit;white-space:nowrap;transition:all .15s">${c}</button>`).join('')}
+      </div>
+      <div class="rec-row" style="margin:0 -22px 8px;padding:4px 22px">
+        ${POIS.filter(p=>state._discoverCat==='All'||p.cat===state._discoverCat).map(p=>`
         <div class="rec-card" onclick="state.booking.dropoff='${p.name}';go('route-input')">
           <div style="font-size:22px;margin-bottom:8px">${p.emoji}</div>
           <div style="font-size:12px;font-weight:700;line-height:1.3;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name}</div>
-          <div style="font-size:10px;color:var(--fg-4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">${p.cat}</div>
-          <div style="font-size:10px;font-weight:700;color:var(--gold)">Book ride →</div>
+          <div style="font-size:10px;color:var(--fg-4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">${p.cat}</div>
+          ${p.city==='dubai'?'<span style="font-size:9px;background:rgba(0,200,255,.1);border:1px solid rgba(0,200,255,.2);border-radius:6px;padding:2px 6px;color:#22d3ee">DXB</span>':'<div style="font-size:10px;font-weight:700;color:var(--gold)">Book →</div>'}
+        </div>`).join('')}
+      </div>
+
+      <div class="section-label" style="margin-bottom:10px">Coming Soon</div>
+      <div style="display:flex;gap:8px;overflow-x:auto;margin:0 -22px 22px;padding:4px 22px;scrollbar-width:none">
+        ${[{city:'paris',name:'Paris',emoji:'🗼',quarter:'Q4 2026'},{city:'new-york',name:'New York',emoji:'🗽',quarter:'Q1 2027'},{city:'singapore',name:'Singapore',emoji:'🦁',quarter:'Q2 2027'},{city:'riyadh',name:'Riyadh',emoji:'🕌',quarter:'TBA'}].map(c=>`<div style="flex-shrink:0;width:110px;background:var(--surface);border:1px solid ${state._cityInterest[c.city]?'rgba(200,169,126,.5)':'var(--border)'};border-radius:16px;padding:12px;cursor:pointer;transition:all .15s" onclick="registerCityInterest('${c.city}')">
+          <div style="font-size:22px;margin-bottom:6px">${c.emoji}</div>
+          <div style="font-size:12px;font-weight:700;margin-bottom:2px">${c.name}</div>
+          <div style="font-size:10px;color:var(--fg-4);margin-bottom:6px">${c.quarter}</div>
+          <div style="font-size:10px;font-weight:700;color:${state._cityInterest[c.city]?'#22c55e':'var(--gold)'}">${state._cityInterest[c.city]?'✓ Notified':'Notify me'}</div>
+        </div>`).join('')}
+      </div>
+
+      <div class="section-label" style="margin-bottom:10px">This Week in London</div>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:22px">
+        ${[{emoji:'🎭',title:'Sondheim at the Savoy',sub:'Booking closes Thursday',tag:'Theatre'},{emoji:'🏇',title:'Royal Ascot',sub:'Hospitality packages available',tag:'Events'},{emoji:'🎨',title:'Frieze London Preview',sub:'Members only access',tag:'Art'}].map(e=>`<div style="display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px 14px">
+          <div style="width:38px;height:38px;border-radius:12px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">${e.emoji}</div>
+          <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e.title}</div><div style="font-size:11px;color:var(--fg-4);margin-top:1px">${e.sub}</div></div>
+          <span style="flex-shrink:0;padding:3px 8px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);font-size:10px;font-weight:700;color:var(--fg-4)">${e.tag}</span>
         </div>`).join('')}
       </div>
 
@@ -2053,7 +2167,9 @@ payment: () => {
       </div>
       <div style="font-family:var(--font-serif);font-size:36px;font-weight:300;letter-spacing:1px;margin-bottom:8px;animation:fadeUp .5s .3s var(--ease-spring) both">Booking Confirmed</div>
       <div style="font-size:12px;color:var(--fg-4);letter-spacing:2px;text-transform:uppercase;animation:fadeIn .5s .5s both">Your journey is arranged</div>
+      ${state.user?.name?`<div style="font-size:15px;color:var(--fg-3);margin-top:12px;font-family:var(--font-serif);font-style:italic;animation:fadeIn .5s .9s both;line-height:1.5">"Good ${new Date().getHours()<12?'morning':'afternoon'}, ${state.user.name.split(' ')[0]}. Your chauffeur is briefed and awaits."</div>`:''}
     </div>
+    ${(()=>{const n=TRIPS.filter(t=>t.status==='completed').length+1;const ms={5:'🥂 Journey #5',10:'🌟 Journey #10',25:'🏆 Journey #25',50:'💎 Journey #50',100:'👑 Journey #100'};return ms[n]?`<div style="width:100%;text-align:center;padding:16px;background:rgba(200,169,126,.08);border:1px solid rgba(200,169,126,.2);border-radius:18px;margin-bottom:20px;animation:scaleIn .4s var(--ease-spring) both"><div style="font-size:28px;margin-bottom:6px">${ms[n].split(' ')[0]}</div><div style="font-size:15px;font-weight:700;color:var(--gold)">${ms[n]} milestone!</div><div style="font-size:12px;color:var(--fg-3);margin-top:4px">A personal note has been added to your account</div></div>`:''})()}
     <div style="font-size:12px;color:var(--fg-4);letter-spacing:2px;margin-bottom:8px">REFERENCE</div>
     <div style="font-size:24px;font-weight:800;color:var(--fg);letter-spacing:4px;margin-bottom:${state._lastApexEarned>0?'16px':'40px'}">${ref}</div>
     ${state._lastApexEarned>0?`<div style="display:flex;align-items:center;gap:12px;background:${apexTierColor(apexTier(state.apexBalance))}18;border:1px solid ${apexTierColor(apexTier(state.apexBalance))}44;border-radius:16px;padding:14px 18px;margin-bottom:24px;width:100%">
@@ -2062,21 +2178,33 @@ payment: () => {
     </div>`:''}
 
     <div class="card" style="width:100%;padding:20px;text-align:left">
-      <div class="section-label" style="margin-bottom:16px">Your driver</div>
-      <div style="display:flex;align-items:center;gap:14px">
-        <div style="width:52px;height:52px;border-radius:16px;background:linear-gradient(135deg,#ffffff,#8B6914);display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800;color:#000;flex-shrink:0">JH</div>
-        <div style="flex:1">
-          <div style="font-size:16px;font-weight:700">James Harrison</div>
-          <div style="font-size:13px;color:var(--fg-3);margin-top:3px;display:flex;align-items:center;gap:5px">
-            <svg width="11" height="11" fill="#ffffff" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-            4.9 · S-Class LX73 ABC
+        <div class="section-label" style="margin-bottom:16px">Your Chauffeur</div>
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
+          <div style="width:56px;height:56px;border-radius:18px;background:linear-gradient(135deg,#2a2a2a,#111);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:#fff;flex-shrink:0;border:2px solid rgba(255,255,255,.1)">JH</div>
+          <div style="flex:1">
+            <div style="font-size:16px;font-weight:700">James Harrison</div>
+            <div style="display:flex;align-items:center;gap:4px;margin-top:3px">
+              ${'★★★★★'.split('').map((_,i)=>`<svg width="11" height="11" fill="${i<Math.round(4.9)?'#D4A843':'rgba(255,255,255,.15)'}" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`).join('')}
+              <span style="font-size:11px;color:var(--fg-3);margin-left:3px">4.9 · 247 journeys</span>
+            </div>
+          </div>
+          <div style="background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.2);border-radius:10px;padding:6px 10px;text-align:center;flex-shrink:0">
+            <div style="font-size:9px;color:#22c55e;letter-spacing:.5px;font-weight:700">PCO</div>
+            <div style="font-size:9px;color:#22c55e;letter-spacing:.3px">VERIFIED</div>
           </div>
         </div>
+        <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:12px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="font-size:20px">🚗</div>
+            <div style="flex:1">
+              <div style="font-size:14px;font-weight:700">Mercedes S-Class · LX73 ABC</div>
+              <div style="font-size:12px;color:var(--fg-3);margin-top:2px">Midnight Black · 2024 model</div>
+            </div>
+          </div>
+        </div>
+        ${state.prefs?.discrete ? '<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--fg-4);padding:4px 0"><svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="var(--fg-4)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>Discrete mode active · pickup address masked until 10 min before arrival</div>' : ''}
+        <div style="font-size:13px;color:var(--fg-3);margin-top:4px;line-height:1.7">James will contact you 30 minutes before pickup. Look for a midnight black Mercedes S-Class, plate LX73 ABC.</div>
       </div>
-      <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--divider);font-size:13px;color:var(--fg-3);line-height:1.7">
-        Your driver will contact you 30 minutes before pickup.
-      </div>
-    </div>
   </div>
   <div style="width:100%;padding-bottom:52px;display:flex;flex-direction:column;gap:10px">
     <button class="btn btn-white" onclick="state._activeBooking={...state.booking,status:'confirmed',driverName:'James Harrison',driverPlate:'LX73 ABC'};go('active-trip')">Track my driver</button>
@@ -2085,6 +2213,10 @@ payment: () => {
     </button>
     <button class="btn btn-glass" style="margin-top:0" onclick="go('trips')">View all trips</button>
     <button class="btn btn-ghost" onclick="state.booking={};state._promoApplied=false;go('home')">Return home</button>
+  </div>
+  <div class="card" style="width:100%;padding:18px 20px;margin-top:10px;text-align:left">
+    <div class="section-label" style="margin-bottom:10px">Cost Code</div>
+    <div class="field" style="margin-bottom:0"><input placeholder="Corporate cost code (optional)" value="${state._corporateCode||''}" oninput="state._corporateCode=this.value"/></div>
   </div>
   <div class="card" style="width:100%;padding:20px;margin-top:10px;text-align:left">
     <div class="section-label" style="margin-bottom:14px">Add Gratuity</div>
@@ -2573,12 +2705,29 @@ profile: () => {
         <span style="font-size:10px;color:var(--fg-4)">◈ 50 APEX / rating</span>
       </div>
     </div>
+    <button onclick="go('apex-benefits')" style="width:100%;margin-top:10px;margin-bottom:16px;padding:9px 16px;background:${apexTierColor(apexTier(state.apexBalance))}18;border:1px solid ${apexTierColor(apexTier(state.apexBalance))}44;border-radius:20px;font-size:12px;font-weight:700;color:${apexTierColor(apexTier(state.apexBalance))};cursor:pointer;letter-spacing:.5px;font-family:inherit">VIEW TIER BENEFITS & REWARDS →</button>
+
+    <div style="background:rgba(34,197,94,.05);border:1px solid rgba(34,197,94,.14);border-radius:16px;padding:16px 18px;margin-bottom:16px;display:flex;align-items:center;gap:14px">
+      <div style="font-size:28px">🌱</div>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:700;margin-bottom:6px">Carbon Offset</div>
+        <div style="display:flex;gap:12px">
+          <div><div style="font-size:16px;font-weight:800;color:#22c55e">${(TRIPS.length*14.7*0.21).toFixed(1)} kg</div><div style="font-size:10px;color:var(--fg-4)">CO₂ offset</div></div>
+          <div><div style="font-size:16px;font-weight:800;color:#22c55e">${Math.max(1,Math.round(TRIPS.length*14.7*0.21/21))} 🌳</div><div style="font-size:10px;color:var(--fg-4)">trees equiv.</div></div>
+        </div>
+      </div>
+    </div>
+
     <div style="background:var(--surface);border-radius:20px;overflow:hidden;border:1px solid var(--border);margin-bottom:12px">
       ${[
         {icon:state.theme==='light'?'☀️':'🌙',label:'Appearance',action:'toggleTheme()'},
+        {icon:'🎛',label:'Journey Preferences',action:"go('preferences')"},
         {icon:'💳',label:'Payment methods',action:"go('payment-methods')"},
         {icon:'📍',label:'Saved addresses',action:"go('saved-addresses')"},
+        {icon:'🏢',label:'Corporate Account',action:"go('corporate')"},
         {icon:'🎁',label:'Referral code',action:"go('referral')"},
+        {icon:'🎀',label:'Gift a ride',action:"go('gift-ride')"},
+        {icon:'📅',label:'Year in Review',action:"go('year-review')"},
         {icon:'✦',label:'How to use ApexVIP',action:"state.guideStep=0;go('guide')"},
         {icon:'💬',label:'Help & support',action:"go('help')"},
         {icon:'📄',label:'Terms & Conditions',action:"go('terms')"},
@@ -3092,11 +3241,16 @@ profile: () => {
       <div style="font-size:10px;color:var(--fg-4);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Email</div>
       <input id="ep_email" type="email" value="${state.user?.email||''}" style="font-size:15px"/>
     </div>
-    <div class="field" style="margin-bottom:28px">
+    <div class="field" style="margin-bottom:14px">
       <div style="font-size:10px;color:var(--fg-4);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Phone</div>
       <input id="ep_phone" type="tel" placeholder="+44 7700 000000" value="${state.user?.phone||''}" style="font-size:15px"/>
     </div>
-    <button class="btn btn-white" onclick="state.user={...state.user,name:document.getElementById('ep_name')?.value||state.user?.name,email:document.getElementById('ep_email')?.value||state.user?.email,phone:document.getElementById('ep_phone')?.value||''};go('profile')">Save changes</button>
+    <div class="field" style="margin-bottom:28px">
+      <div style="font-size:10px;color:var(--fg-4);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Birthday 🎂</div>
+      <input id="ep_bday" type="date" value="${state.user?.birthday||localStorage.getItem('apex_birthday')||''}" style="font-size:15px"/>
+      <div style="font-size:11px;color:var(--fg-4);margin-top:6px">We send you a gift and journey credit on your birthday.</div>
+    </div>
+    <button class="btn btn-white" onclick="const bday=document.getElementById('ep_bday')?.value||'';if(bday)localStorage.setItem('apex_birthday',bday);state.user={...state.user,name:document.getElementById('ep_name')?.value||state.user?.name,email:document.getElementById('ep_email')?.value||state.user?.email,phone:document.getElementById('ep_phone')?.value||'',birthday:bday};go('profile')">Save changes</button>
   </div>
 </div>`,
 
@@ -3153,6 +3307,233 @@ profile: () => {
 </div>`;
 },
 
+'waitlist': () => `
+<div style="min-height:100vh;display:flex;flex-direction:column;background:var(--bg);padding:0 24px;animation:fadeIn .3s ease">
+  <div class="back-row" style="padding-bottom:0">
+    <div class="back-btn" onclick="go('register')">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+    </div>
+    <div>
+      <div style="font-size:22px;font-weight:700">Join the waitlist</div>
+      <div style="font-size:14px;color:var(--fg-3);margin-top:2px">Be first to know when access opens</div>
+    </div>
+  </div>
+  <div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:40px 0">
+    <div style="text-align:center;margin-bottom:32px">
+      <div style="font-family:var(--font-serif);font-size:52px;font-weight:300;color:var(--gold);margin-bottom:8px">✦</div>
+      <div style="font-size:16px;color:var(--fg-2);line-height:1.7">ApexVIP is growing carefully.<br/>We review every application personally.</div>
+    </div>
+    ${state._waitlistJoined ? `
+    <div style="text-align:center;padding:28px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.18);border-radius:20px">
+      <div style="font-size:32px;margin-bottom:12px">✓</div>
+      <div style="font-size:16px;font-weight:700;color:#22c55e;margin-bottom:6px">You're on the list</div>
+      <div style="font-size:13px;color:var(--fg-3)">We'll be in touch when your invitation is ready.</div>
+    </div>` : `
+    <div class="field" style="margin-bottom:12px"><input id="wl-email" type="email" placeholder="Your email address"/></div>
+    <button class="btn btn-white" onclick="joinWaitlist()">Request an invitation</button>
+    <div style="text-align:center;margin-top:20px;font-size:12px;color:var(--fg-4);line-height:1.7">We typically respond within 3–5 business days.<br/>Your email is never shared or sold.</div>`}
+  </div>
+</div>`,
+
+'apex-benefits': () => {
+  const tier = apexTier(state.apexBalance);
+  const TIERS = [
+    { name: 'Bronze', color: '#cd7f32', min: 0, max: 499, benefits: ['Priority booking (30 min dispatch)','Journey history & receipts','APEX points on every ride','Access to all vehicle classes'] },
+    { name: 'Silver', color: '#a8a9ad', min: 500, max: 1999, benefits: ['Everything in Bronze','15% surge price cap','Free cabin water & newspaper','Dedicated phone line (business hours)','Birthday journey credit (£25)'] },
+    { name: 'Gold', color: '#ffffff', min: 2000, max: 4999, benefits: ['Everything in Silver','10-minute guaranteed dispatch','No surge pricing on weekdays','Airport meet & greet included','Monthly APEX bonus (200 pts)','Dedicated account manager'] },
+    { name: 'Platinum', color: '#b9f2ff', min: 5000, max: Infinity, benefits: ['Everything in Gold','Zero surge pricing, always','Guaranteed upgrade when available','24/7 personal concierge line','Complimentary airport transfers (2/month)','500 APEX monthly bonus','Annual year-in-review gift voucher'] },
+  ];
+  return `
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
+  <div class="back-row">
+    <div class="back-btn" onclick="go('profile')"><svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg></div>
+    <div><div style="font-size:20px;font-weight:700">Membership Tiers</div><div style="font-size:13px;color:var(--fg-3);margin-top:1px">Your status: ${tier}</div></div>
+  </div>
+  <div style="padding:0 22px 100px">
+    ${TIERS.map(t => `
+    <div style="margin-bottom:14px;border:1.5px solid ${t.name===tier?t.color+'66':'var(--border)'};border-radius:20px;padding:20px;background:${t.name===tier?'linear-gradient(135deg,rgba(255,255,255,.05),rgba(255,255,255,.01))':'var(--surface)'}">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="color:${t.color};font-size:18px">◈</span>
+          <span style="font-size:16px;font-weight:700;color:${t.color}">${t.name}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          ${t.name===tier?'<span style="background:'+t.color+'22;border:1px solid '+t.color+'55;border-radius:20px;padding:3px 10px;font-size:10px;font-weight:700;letter-spacing:.08em;color:'+t.color+'">YOUR TIER</span>':''}
+          <span style="font-size:11px;color:var(--fg-4)">${t.min===5000?'5,000+ APEX':t.min===0?'0–499':t.min+'–'+t.max.toLocaleString()}</span>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${t.benefits.map(b=>`<div style="display:flex;align-items:flex-start;gap:9px"><svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="${t.color}" stroke-width="2.5" style="flex-shrink:0;margin-top:2px"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg><span style="font-size:13px;color:var(--fg-2);line-height:1.4">${b}</span></div>`).join('')}
+      </div>
+    </div>`).join('')}
+  </div>
+</div>`;
+},
+
+'preferences': () => {
+  const OPTS = {
+    temperature: { label: 'Cabin temperature', icon: '🌡', opts: ['cool','neutral','warm'] },
+    music:       { label: 'Music preference',  icon: '🎵', opts: ['jazz','classical','pop','hip-hop','silence'] },
+    convo:       { label: 'Conversation',       icon: '💬', opts: ['friendly','professional','silent'] },
+    newspaper:   { label: 'Reading material',   icon: '📰', opts: ['ft','times','telegraph','none'] },
+  };
+  return `
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
+  <div class="back-row">
+    <div class="back-btn" onclick="go('profile')"><svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg></div>
+    <div><div style="font-size:20px;font-weight:700">Silent Service™ Prefs</div><div style="font-size:13px;color:var(--fg-3);margin-top:1px">Your driver is briefed before every journey</div></div>
+  </div>
+  <div style="padding:0 22px 100px">
+    <div style="font-size:13px;color:var(--fg-3);margin-bottom:24px;line-height:1.7">These preferences are shown to your chauffeur before pickup. Nothing to repeat — it just works.</div>
+    ${Object.entries(OPTS).map(([key, cfg]) => `
+    <div style="margin-bottom:20px">
+      <div class="section-label" style="margin-bottom:10px">${cfg.icon} ${cfg.label}</div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap">
+        ${cfg.opts.map(o => `<button onclick="togglePref('${key}','${o}')" style="padding:9px 16px;border-radius:20px;background:${state.prefs[key]===o?'var(--gold)':'var(--surface)'};border:1px solid ${state.prefs[key]===o?'var(--gold)':'var(--border)'};color:${state.prefs[key]===o?'#0c0b09':'var(--fg-2)'};font-size:13px;font-weight:${state.prefs[key]===o?'700':'400'};cursor:pointer;font-family:inherit;transition:all .15s;text-transform:capitalize">${o}</button>`).join('')}
+      </div>
+    </div>`).join('')}
+    <div style="margin-bottom:20px">
+      <div class="section-label" style="margin-bottom:10px">🕵 Discrete mode</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px 18px">
+        <div>
+          <div style="font-size:14px;font-weight:600;margin-bottom:3px">Private pickup</div>
+          <div style="font-size:12px;color:var(--fg-3)">Driver receives masked address until 10 min before arrival</div>
+        </div>
+        <div onclick="togglePref('discrete',!state.prefs.discrete)" style="width:46px;height:26px;border-radius:13px;background:${state.prefs.discrete?'var(--gold)':'var(--surface-2)'};border:1px solid ${state.prefs.discrete?'var(--gold)':'var(--border)'};position:relative;cursor:pointer;transition:background .2s;flex-shrink:0;margin-left:14px">
+          <div style="position:absolute;top:3px;left:${state.prefs.discrete?'23px':'3px'};width:18px;height:18px;border-radius:50%;background:#fff;transition:left .2s"></div>
+        </div>
+      </div>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 18px">
+      <div style="font-size:12px;color:var(--fg-4);line-height:1.7">Your preferences are shared only with your assigned chauffeur and reset to default after each journey if you choose. They are never sold or used for marketing.</div>
+    </div>
+  </div>
+</div>`;
+},
+
+'year-review': () => {
+  const year = new Date().getFullYear() - 1;
+  const journeys = TRIPS.length + 3;
+  const cities = 2;
+  const distance = Math.round(journeys * 14.7);
+  const saved = (journeys * 0.21 * 14.7).toFixed(1);
+  const tier = apexTier(state.apexBalance);
+  const fav = TRIPS[0]?.dropoff || 'Mayfair';
+  return `
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:fadeIn .4s ease">
+  <div class="back-row">
+    <div class="back-btn" onclick="go('profile')"><svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg></div>
+    <div><div style="font-size:20px;font-weight:700">Your ${year} in Review</div><div style="font-size:13px;color:var(--fg-3);margin-top:1px">Your ApexVIP year</div></div>
+  </div>
+  <div style="padding:0 22px 100px">
+    <div style="text-align:center;padding:20px 0 28px">
+      <div style="font-family:var(--font-serif);font-size:64px;font-weight:300;color:var(--gold);line-height:1;animation:logoReveal 1s ease">${journeys}</div>
+      <div style="font-size:13px;color:var(--fg-3);letter-spacing:2px;text-transform:uppercase;margin-top:4px">journeys</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+      ${[
+        {label:'Cities visited',value:cities,icon:'🌍'},
+        {label:'Total distance',value:distance+' km',icon:'📍'},
+        {label:'CO₂ offset',value:saved+' kg',icon:'🌱'},
+        {label:'APEX earned',value:state.apexBalance.toLocaleString(),icon:'◈'},
+      ].map(s=>`<div style="background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:18px 16px;text-align:center">
+        <div style="font-size:24px;margin-bottom:6px">${s.icon}</div>
+        <div style="font-size:20px;font-weight:800;margin-bottom:4px">${s.value}</div>
+        <div style="font-size:10px;color:var(--fg-4);letter-spacing:.5px">${s.label}</div>
+      </div>`).join('')}
+    </div>
+    <div style="background:linear-gradient(135deg,${apexTierColor(tier)}18,transparent);border:1px solid ${apexTierColor(tier)}44;border-radius:20px;padding:20px;margin-bottom:14px;text-align:center">
+      <div style="font-size:28px;margin-bottom:8px">◈</div>
+      <div style="font-size:18px;font-weight:700;color:${apexTierColor(tier)};margin-bottom:4px">${tier} Member</div>
+      <div style="font-size:13px;color:var(--fg-3)">You reached ${tier} status this year</div>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:20px;margin-bottom:14px">
+      <div class="section-label" style="margin-bottom:12px">Favourite destination</div>
+      <div style="font-size:20px;font-weight:700;margin-bottom:4px">${fav}</div>
+      <div style="font-size:13px;color:var(--fg-3)">Your most visited destination</div>
+    </div>
+    <button class="btn btn-white" onclick="if(navigator.share){navigator.share({title:'My ApexVIP ${year}',text:'I completed ${journeys} journeys with ApexVIP this year'})}else{navigator.clipboard?.writeText('I completed ${journeys} journeys with ApexVIP this year').catch(()=>{});}">Share my year ✦</button>
+  </div>
+</div>`;
+},
+
+'gift-ride': () => {
+  const code = state._giftCode || '';
+  return `
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
+  <div class="back-row">
+    <div class="back-btn" onclick="go('profile')"><svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg></div>
+    <div><div style="font-size:20px;font-weight:700">Gift a Ride</div><div style="font-size:13px;color:var(--fg-3);margin-top:1px">Give someone the ApexVIP experience</div></div>
+  </div>
+  <div style="padding:0 22px 100px">
+    <div style="text-align:center;padding:28px 0">
+      <div style="font-family:var(--font-serif);font-size:40px;font-weight:300;color:var(--gold);margin-bottom:8px">A gift of<br/>distinction</div>
+      <div style="font-size:14px;color:var(--fg-3);line-height:1.7">The recipient books their own journey,<br/>charged to your gifted credit.</div>
+    </div>
+    ${code ? `
+    <div style="background:linear-gradient(135deg,rgba(200,169,126,.12),rgba(200,169,126,.04));border:1.5px solid var(--gold);border-radius:22px;padding:28px;text-align:center;margin-bottom:20px">
+      <div style="font-size:11px;letter-spacing:3px;color:var(--fg-4);margin-bottom:10px">GIFT CODE</div>
+      <div style="font-size:28px;font-weight:800;letter-spacing:5px;color:var(--gold);margin-bottom:16px">${code}</div>
+      <button onclick="navigator.clipboard?.writeText('${code}').catch(()=>{});this.textContent='Copied!';setTimeout(()=>this.textContent='Copy code',2000)" style="background:rgba(200,169,126,.15);border:1px solid rgba(200,169,126,.3);border-radius:10px;padding:9px 20px;font-size:13px;font-weight:700;color:var(--gold);cursor:pointer">Copy code</button>
+    </div>
+    <button class="btn btn-glass" onclick="if(navigator.share){navigator.share({title:'An ApexVIP gift for you',text:'Use code ${code} for a complimentary ApexVIP journey.',url:'https://refayethossain28.github.io/BallrzAPP/apexvip-client.html'})}else{navigator.clipboard?.writeText('Use code ${code} for a complimentary ApexVIP journey.');}">Share this gift →</button>
+    ` : `
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px">
+      ${[{amount:75,label:'One journey',desc:'Standard saloon up to 30 miles'},{amount:150,label:'Premium journey',desc:'E-Class or S-Class · Any route'},{amount:300,label:'Premium+ journey',desc:'V-Class or Rolls-Royce · Any route'}].map(o=>`
+      <div onclick="state._giftAmount=${o.amount};render()" style="background:${state._giftAmount===o.amount?'linear-gradient(135deg,rgba(200,169,126,.12),rgba(200,169,126,.04))':'var(--surface)'};border:1.5px solid ${state._giftAmount===o.amount?'var(--gold)':'var(--border)'};border-radius:18px;padding:18px;cursor:pointer;transition:all .15s">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div><div style="font-size:15px;font-weight:700;margin-bottom:3px">${o.label}</div><div style="font-size:12px;color:var(--fg-3)">${o.desc}</div></div>
+          <div style="font-size:20px;font-weight:800;color:${state._giftAmount===o.amount?'var(--gold)':'var(--fg)'};flex-shrink:0;margin-left:12px">£${o.amount}</div>
+        </div>
+      </div>`).join('')}
+    </div>
+    ${state._giftAmount ? `<button class="btn btn-gold" onclick="state._giftCode='GIFT'+Math.random().toString(36).slice(2,8).toUpperCase();render();track('gift_generated',{amount:state._giftAmount,src:'client'})">Generate gift code · £${state._giftAmount}</button>` : '<button class="btn btn-glass" disabled style="opacity:.4">Select a gift amount</button>'}
+    `}
+  </div>
+</div>`;
+},
+
+'corporate': () => `
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
+  <div class="back-row">
+    <div class="back-btn" onclick="go('profile')"><svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg></div>
+    <div><div style="font-size:20px;font-weight:700">Corporate Account</div><div style="font-size:13px;color:var(--fg-3);margin-top:1px">Billing, cost codes & invoices</div></div>
+  </div>
+  <div style="padding:0 22px 100px">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:20px;margin-bottom:16px">
+      <div class="section-label" style="margin-bottom:12px">Default cost code</div>
+      <div class="field"><input id="corp-code-inp" placeholder="e.g. MKTG-2026 or PROJECT-42" value="${state._corporateCode||''}" oninput="state._corporateCode=this.value"/></div>
+      <div style="font-size:12px;color:var(--fg-4);margin-top:8px">Applied automatically to all bookings. Override on each trip at checkout.</div>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:20px;margin-bottom:16px">
+      <div class="section-label" style="margin-bottom:12px">Billing summary</div>
+      ${TRIPS.filter(t=>t.status==='completed').slice(0,3).map(t=>`
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--divider)">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.pickup} → ${t.dropoff}</div>
+          <div style="font-size:11px;color:var(--fg-4);margin-top:2px">${t.date}</div>
+        </div>
+        <div style="font-size:14px;font-weight:700;flex-shrink:0">${t.price}</div>
+      </div>`).join('')}
+      <button style="margin-top:14px;width:100%;padding:12px;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--fg)">Download monthly invoice (PDF)</button>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:20px;margin-bottom:16px">
+      <div class="section-label" style="margin-bottom:12px">Approval workflow</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div><div style="font-size:14px;font-weight:600;margin-bottom:2px">Require manager approval</div><div style="font-size:12px;color:var(--fg-3)">Bookings over £200 need sign-off</div></div>
+        <div style="width:46px;height:26px;border-radius:13px;background:var(--surface-2);border:1px solid var(--border);position:relative;cursor:pointer;flex-shrink:0">
+          <div style="position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff"></div>
+        </div>
+      </div>
+    </div>
+    <div style="background:linear-gradient(135deg,rgba(200,169,126,.08),rgba(200,169,126,.03));border:1px solid rgba(200,169,126,.2);border-radius:20px;padding:20px">
+      <div style="font-size:15px;font-weight:700;color:var(--gold);margin-bottom:6px">Corporate account</div>
+      <div style="font-size:13px;color:var(--fg-3);margin-bottom:14px;line-height:1.7">Monthly invoicing, dedicated account manager, multi-user access, and custom reporting. Contact us to set up a corporate account.</div>
+      <a href="mailto:corporate@apexvip.com" style="display:block;text-align:center;padding:12px;background:rgba(200,169,126,.15);border:1px solid rgba(200,169,126,.3);border-radius:12px;font-size:13px;font-weight:700;color:var(--gold);text-decoration:none">corporate@apexvip.com</a>
+    </div>
+  </div>
+</div>`,
+
 };
 
 // ── Actions ────────────────────────────────────────────────────────────────
@@ -3179,7 +3560,7 @@ async function doRegister(){
   const pw=$('rpw')?.value||'',pc=$('rpc')?.value||'';
   if(pw.length<8){alert('Password must be at least 8 characters');return;}
   if(pw!==pc){alert('Passwords do not match');return;}
-  if(!FIREBASE_ENABLED){state._regStep=3;render();return;}
+  if(!FIREBASE_ENABLED){state._regStep=4;render();return;}
   try{
     const cred=await auth.createUserWithEmailAndPassword(state._regEmail,pw);
     await cred.user.updateProfile({displayName:state._regName});
@@ -3192,7 +3573,7 @@ async function doRegister(){
       });
     }catch(fsErr){console.warn('Profile save:',fsErr.message);}
     state.user={uid:cred.user.uid,name:state._regName,email:state._regEmail};
-    state._regStep=3;render();
+    state._regStep=4;render();
   }catch(err){alert(err.message);}
 }
 function saveRouteAndBook(){
