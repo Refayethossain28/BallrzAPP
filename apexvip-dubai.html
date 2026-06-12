@@ -2,11 +2,23 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-<link rel="manifest" href="manifest.json"/>
-<meta name="theme-color" content="#000000"/>
+<meta name="apple-mobile-web-app-title" content="ApexVIP Dubai"/>
+<link rel="manifest" href="manifest-dubai.json"/>
+<meta name="theme-color" content="#050505"/>
+<link rel="apple-touch-icon" href="icon-180.png"/>
+<link rel="apple-touch-icon" sizes="120x120" href="icon-120.png"/>
+<link rel="apple-touch-icon" sizes="152x152" href="icon-152.png"/>
+<link rel="apple-touch-icon" sizes="167x167" href="icon-167.png"/>
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png"/>
+<link rel="apple-touch-startup-image" media="(device-width:390px) and (device-height:844px) and (-webkit-device-pixel-ratio:3)" href="splashes/splash-1170x2532.png"/>
+<link rel="apple-touch-startup-image" media="(device-width:393px) and (device-height:852px) and (-webkit-device-pixel-ratio:3)" href="splashes/splash-1179x2556.png"/>
+<link rel="apple-touch-startup-image" media="(device-width:430px) and (device-height:932px) and (-webkit-device-pixel-ratio:3)" href="splashes/splash-1206x2622.png"/>
+<link rel="apple-touch-startup-image" media="(device-width:375px) and (device-height:812px) and (-webkit-device-pixel-ratio:3)" href="splashes/splash-1125x2436.png"/>
+<link rel="apple-touch-startup-image" media="(device-width:375px) and (device-height:667px) and (-webkit-device-pixel-ratio:2)" href="splashes/splash-750x1334.png"/>
 <title>ApexVIP Dubai</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -23,8 +35,11 @@
 body{--bg:#050505;--fg:#fff;--fg-muted:rgba(255,255,255,.38);--fg-dim:rgba(255,255,255,.3);--fg-subtle:rgba(255,255,255,.25);--fg-ghost:rgba(255,255,255,.2);--fg-faint:rgba(255,255,255,.15);--surface:rgba(255,255,255,.06);--surface-b:rgba(255,255,255,.1);--surface-c:rgba(255,255,255,.09);--border:rgba(255,255,255,.12);--border-b:rgba(255,255,255,.11);--divider:rgba(255,255,255,.05)}
 body.light{--bg:#f8f6f1;--fg:#0d0d0d;--fg-muted:rgba(0,0,0,.42);--fg-dim:rgba(0,0,0,.38);--fg-subtle:rgba(0,0,0,.32);--fg-ghost:rgba(0,0,0,.28);--fg-faint:rgba(0,0,0,.18);--surface:rgba(0,0,0,.04);--surface-b:rgba(0,0,0,.07);--surface-c:rgba(0,0,0,.09);--border:rgba(0,0,0,.09);--border-b:rgba(0,0,0,.13);--divider:rgba(0,0,0,.06)}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-body{background:var(--bg);color:var(--fg);font-family:'Inter','Helvetica Neue',system-ui,sans-serif;-webkit-font-smoothing:antialiased;letter-spacing:-.01em;min-height:100vh;overflow:hidden;transition:background .3s,color .3s}
-#app{max-width:430px;margin:0 auto;min-height:100vh;position:relative;overflow:hidden}
+html{height:-webkit-fill-available}
+body{background:var(--bg);color:var(--fg);font-family:'Inter','Helvetica Neue',system-ui,sans-serif;-webkit-font-smoothing:antialiased;letter-spacing:-.01em;min-height:100vh;min-height:-webkit-fill-available;overflow:hidden;overscroll-behavior:none;-webkit-touch-callout:none;transition:background .3s,color .3s}
+body.ios-pwa{padding-top:env(safe-area-inset-top)}
+#app{max-width:430px;margin:0 auto;min-height:100vh;min-height:-webkit-fill-available;position:relative;overflow:hidden}
+input,select,textarea{font-size:16px !important}
 
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes logoReveal{0%{opacity:0;transform:scale(.97) translateY(6px)}100%{opacity:1;transform:scale(1) translateY(0)}}
@@ -1533,7 +1548,7 @@ async function confirmBooking(overrideRef){
   const svcLabel={airport:'Airport Transfer',hourly:'By the Hour',day:'By the Day'}[state.booking.serviceType]||'Airport Transfer';
   if(FIREBASE_ENABLED&&auth.currentUser){
     try{
-      await db.collection('bookings').add({
+      const _bookingDoc=await db.collection('bookings').add({
         ref,clientId:auth.currentUser.uid,clientName:state.user?.name||'',
         serviceType:state.booking.serviceType||'airport',serviceLabel:svcLabel,
         pickup:state.booking.pickup||'',dropoff:state.booking.dropoff||'',
@@ -1544,9 +1559,26 @@ async function confirmBooking(overrideRef){
         promoApplied:state._promoApplied||false,status:'confirmed',
         squarePaymentId:state._squarePaymentId||null,
         paymentStatus:state._squarePaymentId?'paid':'pending',
-        driverName:'James Harrison',driverRating:4.9,driverPlate:'LX73 ABC',
+        driverName:'',driverRating:null,driverPlate:'',
+        location:'dubai',currency:'AED',
         createdAt:firebase.firestore.FieldValue.serverTimestamp()
       });
+      try{
+        const modeDoc=await db.collection('settings').doc('dispatch').get();
+        if(modeDoc.exists&&modeDoc.data().mode==='broadcast'){
+          await db.collection('open_jobs').add({
+            bookingDocId:_bookingDoc.id,bookingRef:ref,
+            clientName:state.user?.name||'',
+            pickup:state.booking.pickup||'',
+            dropoff:state.booking.dropoff||state.booking.airport||'',
+            date:state.booking.date||'',time:state.booking.time||'',
+            vehicle:state.booking.vehicle||'Mercedes S-Class',
+            pay:total,currency:'AED',flight:state.booking.flight||'',
+            location:'dubai',status:'open',driverId:'',
+            createdAt:firebase.firestore.FieldValue.serverTimestamp()
+          });
+        }
+      }catch(e){}
     }catch(err){console.warn('Booking save:',err.message);}
   }
   state._confirmedRef=ref;state._promoApplied=false;state._squarePaymentId=null;
@@ -1674,6 +1706,23 @@ function render(){
 }
 
 render();
+(function(){
+  const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isInstalled=window.navigator.standalone===true;
+  if(isInstalled) document.body.classList.add('ios-pwa');
+  if(isIOS&&!isInstalled&&!localStorage.getItem('apexvip_dubai_pwa_dismissed')){
+    setTimeout(()=>{const b=document.getElementById('ios-install-banner-dubai');if(b)b.classList.remove('hidden');},4000);
+  }
+})();
 </script>
+
+<div id="ios-install-banner-dubai" class="hidden" style="position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);left:16px;right:16px;background:rgba(20,16,12,.96);border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:14px 16px;z-index:999;display:flex;align-items:center;gap:12px;backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);animation:slideUp .35s ease;box-shadow:0 8px 40px rgba(0,0,0,.6)">
+  <img src="icon-60.png" style="width:44px;height:44px;border-radius:10px;flex-shrink:0"/>
+  <div style="flex:1;min-width:0">
+    <div style="font-size:13px;font-weight:700;margin-bottom:2px;color:#f4f0ea">Add ApexVIP Dubai to Home Screen</div>
+    <div style="font-size:11px;color:rgba(244,240,234,.5)">Tap Share then "Add to Home Screen"</div>
+  </div>
+  <button onclick="document.getElementById('ios-install-banner-dubai').classList.add('hidden');localStorage.setItem('apexvip_dubai_pwa_dismissed','1')" style="background:none;border:none;color:rgba(244,240,234,.4);font-size:20px;cursor:pointer;padding:4px;flex-shrink:0">×</button>
+</div>
 </body>
 </html>
