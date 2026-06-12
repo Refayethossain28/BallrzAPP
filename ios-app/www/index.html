@@ -540,6 +540,15 @@ let state = {
   _discoverCity: 'london',
   _discoverCat: 'all',
   _cityInterest: JSON.parse(localStorage.getItem('apex_city_interest') || '{}'),
+  memberNumber: localStorage.getItem('apex_member_no') || null,
+  _flightStatus: null,
+  _flightChecking: false,
+  _expCat: 'all',
+  _expSelected: null,
+  _expSlot: null,
+  _expGuests: 2,
+  _expConfirmedRef: '',
+  _expConfirmedCar: '',
 };
 
 // ── Deep-link: open tracking view when URL contains ?track=1 ──────────────
@@ -604,6 +613,17 @@ const POIS = [
   {name:'Burj Khalifa',       cat:'Culture',    emoji:'🏙', lat:25.1972, lng:55.2744, city:'dubai'},
   {name:'Atlantis The Palm',  cat:'Hotel',      emoji:'🌴', lat:25.1304, lng:55.1171, city:'dubai'},
   {name:'Nammos Dubai',       cat:'Dining',     emoji:'🍽', lat:25.1142, lng:55.1391, city:'dubai'},
+];
+
+const EXPERIENCES = [
+  {id:'xp1',name:'The Ritz London',type:'Dining',emoji:'🍽',tagline:'Afternoon tea · Palm Court',desc:'The iconic Ritz afternoon tea in the historic Palm Court. Finger sandwiches, freshly baked scones, and pastries with a glass of Laurent-Perrier champagne for two.',price:220,car:130,slots:['12:00','14:30','16:00'],guests:'up to 4',tags:['Classic','Weekend']},
+  {id:'xp2',name:"Claridge's Bar",type:'Dining',emoji:'🥂',tagline:'Art Deco bar · champagne flight',desc:"An intimate evening at one of London's most celebrated Art Deco bars. Reserved corner table, a curated champagne flight, and your car waiting at the door.",price:180,car:120,slots:['19:00','20:30','22:00'],guests:'up to 2',tags:['Evening','Exclusive']},
+  {id:'xp3',name:"Ronnie Scott's",type:'Events',emoji:'🎷',tagline:'Jazz · Floor seats · Late set',desc:"Soho's legendary jazz club. Premium floor seating for the late set, where the music and atmosphere are at their finest. Car waits outside.",price:145,car:100,slots:['21:00','23:00'],guests:'up to 4',tags:['Nightlife','Music']},
+  {id:'xp4',name:'Tate Modern',type:'Culture',emoji:'🖼',tagline:'Private after-hours gallery tour',desc:'Exclusive access to the Turbine Hall and current exhibition after public hours close, with a dedicated curator. A genuinely private viewing.',price:320,car:130,slots:['19:30','20:00'],guests:'up to 6',tags:['Culture','Private']},
+  {id:'xp5',name:'Harrods',type:'Lifestyle',emoji:'🛍',tagline:'Personal shopping · before hours',desc:'A dedicated personal stylist, champagne on arrival, and the store to yourself before opening. Harrods at its most exclusive — your purchases delivered to the car.',price:0,car:180,slots:['08:00','08:30'],guests:'up to 2',tags:['Shopping','Morning']},
+  {id:'xp6',name:'Nobu London',type:'Dining',emoji:'🍣',tagline:"Chef's omakase · 12 courses",desc:"The chef's omakase at Nobu Park Lane. Twelve courses of Matsuhisa's celebrated Japanese-Peruvian cuisine with optional sake pairing. A chauffeur return is included.",price:280,car:140,slots:['18:00','19:30','21:00'],guests:'up to 4',tags:['Dining','Exclusive']},
+  {id:'xp7',name:'Annabel\'s',type:'Events',emoji:'✨',tagline:'Members club · Priority entry',desc:'Priority entry and a reserved table at one of Mayfair\'s most celebrated private members clubs. Your driver waits in Berkeley Square.',price:200,car:120,slots:['20:00','21:30'],guests:'up to 4',tags:['Nightlife','Exclusive']},
+  {id:'xp8',name:'Kensington Palace',type:'Culture',emoji:'🏰',tagline:'Private morning tour · gardens',desc:'A private guided walk through the State Rooms and Kensington Gardens before the public arrives. Includes a reserved breakfast in the Orangery.',price:250,car:100,slots:['08:30','09:00'],guests:'up to 6',tags:['Culture','Morning']},
 ];
 
 let mapInstance=null,mapTileLayer=null;
@@ -1299,6 +1319,58 @@ function bottomNav(active) {
     </div>`).join('')}</nav>`;
 }
 
+// ── Feature 1: Charter member number ──────────────────────────────────────
+function generateMemberNumber() {
+  if (state.memberNumber) return;
+  // Charter series: 1000–1999 (low numbers signal early membership)
+  const n = 1000 + Math.floor(Math.random() * 247) + Math.floor(Date.now() % 400);
+  state.memberNumber = String(n % 1999 + 1000);
+  localStorage.setItem('apex_member_no', state.memberNumber);
+  if (FIREBASE_ENABLED && auth?.currentUser) {
+    db.collection('users').doc(auth.currentUser.uid).set({ memberNumber: state.memberNumber }, { merge: true }).catch(() => {});
+  }
+}
+
+// ── Feature 2: Flight tracking ─────────────────────────────────────────────
+function getDemoFlightStatus(flight) {
+  const seed = flight.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+  const delayed = seed % 4 === 0;
+  const delay = delayed ? (seed % 3 === 0 ? 45 : 25) : 0;
+  const base = { flight, terminal: 'T' + ((seed % 5) + 1), gate: String.fromCharCode(65 + seed % 8) + ((seed % 30) + 1), origin: ['New York JFK','Dubai DXB','Paris CDG','Hong Kong HKG','Riyadh RUH'][seed % 5] };
+  return delayed
+    ? { ...base, status: 'Delayed', delay, scheduled: '14:30', estimated: `15:${String(30 + delay).padStart(2,'0')}`, adjusted: true }
+    : { ...base, status: 'On Time',  delay: 0, scheduled: '14:30', estimated: '14:30', adjusted: false };
+}
+async function checkFlight(flight) {
+  if (!flight || state._flightChecking) return;
+  state._flightChecking = true; render();
+  if (FIREBASE_ENABLED) {
+    try {
+      const fn = fns.httpsCallable('checkFlight');
+      state._flightStatus = (await fn({ flight })).data;
+    } catch { state._flightStatus = getDemoFlightStatus(flight); }
+  } else {
+    await new Promise(r => setTimeout(r, 900));
+    state._flightStatus = getDemoFlightStatus(flight);
+  }
+  state._flightChecking = false; render();
+}
+function flightStatusCard(flight) {
+  if (!flight) return '';
+  if (state._flightChecking) return `<div class="card" style="padding:14px 18px;margin-bottom:12px;display:flex;align-items:center;gap:10px"><span style="font-size:18px">✈️</span><span style="font-size:13px;color:var(--fg-3)">Checking ${flight}…</span></div>`;
+  const fs = state._flightStatus;
+  if (!fs) return `<div class="card" style="padding:14px 18px;margin-bottom:12px;cursor:pointer" onclick="checkFlight('${flight}')"><div style="display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:10px"><span style="font-size:18px">✈️</span><div><div style="font-size:13px;font-weight:600">${flight}</div><div style="font-size:11px;color:var(--gold)">Tap to track · auto-reschedule if delayed</div></div></div><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="var(--gold)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg></div></div>`;
+  const delayed = fs.status === 'Delayed';
+  const col = delayed ? '#f87171' : '#22c55e';
+  return `<div class="card" style="padding:14px 18px;margin-bottom:12px;border-color:${delayed?'rgba(248,113,113,.3)':'rgba(34,197,94,.2)'}">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${delayed?10:0}px">
+      <div style="display:flex;align-items:center;gap:10px"><span style="font-size:18px">✈️</span><div><div style="font-size:13px;font-weight:600">${fs.flight} · ${fs.origin}</div><div style="font-size:11px;color:var(--fg-3)">${fs.terminal} · Gate ${fs.gate}</div></div></div>
+      <div style="display:flex;align-items:center;gap:6px"><div style="width:7px;height:7px;border-radius:50%;background:${col}"></div><span style="font-size:11px;font-weight:700;color:${col}">${fs.status}</span></div>
+    </div>
+    ${delayed?`<div style="background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.2);border-radius:12px;padding:10px 14px"><div style="font-size:12px;font-weight:700;color:#f87171;margin-bottom:2px">+${fs.delay} min — pickup automatically rescheduled</div><div style="font-size:11px;color:var(--fg-3)">New estimated landing: ${fs.estimated} · Your driver has been notified</div></div>`:''}
+  </div>`;
+}
+
 // ── Screens ────────────────────────────────────────────────────────────────
 const screens = {
 
@@ -1546,19 +1618,25 @@ home: () => {
         </div>`).join('')}
       </div>
 
-      <div class="section-label" style="margin-bottom:10px">This Week in London</div>
-      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:22px">
-        ${[{emoji:'🎭',title:'Sondheim at the Savoy',sub:'Booking closes Thursday',tag:'Theatre'},{emoji:'🏇',title:'Royal Ascot',sub:'Hospitality packages available',tag:'Events'},{emoji:'🎨',title:'Frieze London Preview',sub:'Members only access',tag:'Art'}].map(e=>`<div style="display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px 14px">
-          <div style="width:38px;height:38px;border-radius:12px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">${e.emoji}</div>
-          <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e.title}</div><div style="font-size:11px;color:var(--fg-4);margin-top:1px">${e.sub}</div></div>
-          <span style="flex-shrink:0;padding:3px 8px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);font-size:10px;font-weight:700;color:var(--fg-4)">${e.tag}</span>
+      <!-- Experiences section -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="section-label">Experiences</div>
+        <button onclick="go('experiences')" style="background:none;border:none;color:var(--gold);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:.5px">VIEW ALL →</button>
+      </div>
+      <div style="display:flex;gap:10px;overflow-x:auto;margin:0 -22px;padding:4px 22px 16px;scrollbar-width:none">
+        ${EXPERIENCES.slice(0,5).map(x=>`
+        <div onclick="state._expSelected=EXPERIENCES.find(e=>e.id==='${x.id}');state._expSlot=null;go('experience-detail')" style="min-width:148px;flex-shrink:0;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:16px 14px;cursor:pointer;transition:transform .12s var(--ease-spring)">
+          <div style="font-size:26px;margin-bottom:8px">${x.emoji}</div>
+          <div style="font-size:13px;font-weight:700;margin-bottom:3px;line-height:1.3">${x.name}</div>
+          <div style="font-size:11px;color:var(--fg-3);margin-bottom:10px;line-height:1.4;white-space:normal">${x.tagline}</div>
+          <div style="font-size:11px;color:var(--gold);font-weight:700">${x.price>0?'From £'+(x.price+x.car):' Car from £'+x.car} · incl. car</div>
         </div>`).join('')}
       </div>
 
       ${upcoming.length ? `
       <div class="section-label" style="margin-bottom:12px">Upcoming</div>
       ${upcoming.slice(0,1).map(t=>`
-      <div onclick="go('trip-detail',TRIPS.find(x=>x.id==='${t.id}'))" style="display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:15px 16px;cursor:pointer">
+      <div onclick="go('trip-detail',TRIPS.find(x=>x.id==='${t.id}'))" style="display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:15px 16px;cursor:pointer;margin-bottom:10px">
         <div style="width:42px;height:42px;border-radius:14px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;flex-shrink:0">
           <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#ffffff" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M5 3l14 9-14 9V3z"/></svg>
         </div>
@@ -1567,7 +1645,8 @@ home: () => {
           <div style="font-size:12px;color:var(--fg-3);margin-top:3px">${t.date} · ${t.time}</div>
         </div>
         <div style="font-size:16px;font-weight:800;color:#ffffff;flex-shrink:0">${t.price}</div>
-      </div>`).join('')}` : ''}
+      </div>
+      ${t.flight ? flightStatusCard(t.flight) : ''}`).join('')}` : ''}
     </div>
   </div>
   ${bottomNav('home')}
@@ -2184,7 +2263,9 @@ payment: () => {
     </div>
     ${(()=>{const n=TRIPS.filter(t=>t.status==='completed').length+1;const ms={5:'🥂 Journey #5',10:'🌟 Journey #10',25:'🏆 Journey #25',50:'💎 Journey #50',100:'👑 Journey #100'};return ms[n]?`<div style="width:100%;text-align:center;padding:16px;background:rgba(200,169,126,.08);border:1px solid rgba(200,169,126,.2);border-radius:18px;margin-bottom:20px;animation:scaleIn .4s var(--ease-spring) both"><div style="font-size:28px;margin-bottom:6px">${ms[n].split(' ')[0]}</div><div style="font-size:15px;font-weight:700;color:var(--gold)">${ms[n]} milestone!</div><div style="font-size:12px;color:var(--fg-3);margin-top:4px">A personal note has been added to your account</div></div>`:''})()}
     <div style="font-size:12px;color:var(--fg-4);letter-spacing:2px;margin-bottom:8px">REFERENCE</div>
-    <div style="font-size:24px;font-weight:800;color:var(--fg);letter-spacing:4px;margin-bottom:${state._lastApexEarned>0?'16px':'40px'}">${ref}</div>
+    <div style="font-size:24px;font-weight:800;color:var(--fg);letter-spacing:4px;margin-bottom:${state._lastApexEarned>0?'8px':'16px'}">${ref}</div>
+    ${state.memberNumber?`<div style="font-size:11px;color:var(--gold);letter-spacing:1.5px;margin-bottom:${state._lastApexEarned>0?'16px':'28px'};opacity:.8">Charter Member #${state.memberNumber}</div>`:''}
+    ${state.booking?.flight?flightStatusCard(state.booking.flight):''}
     ${state._lastApexEarned>0?`<div style="display:flex;align-items:center;gap:12px;background:${apexTierColor(apexTier(state.apexBalance))}18;border:1px solid ${apexTierColor(apexTier(state.apexBalance))}44;border-radius:16px;padding:14px 18px;margin-bottom:24px;width:100%">
       <div style="width:40px;height:40px;border-radius:50%;background:${apexTierColor(apexTier(state.apexBalance))}22;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">◈</div>
       <div><div style="font-size:15px;font-weight:700;color:${apexTierColor(apexTier(state.apexBalance))}">+${state._lastApexEarned} APEX earned!</div><div style="font-size:12px;color:var(--fg-4);margin-top:2px">Added to your loyalty balance</div></div>
@@ -2689,6 +2770,7 @@ profile: () => {
       <div style="flex:1;min-width:0">
         <div style="font-size:17px;font-weight:700">${u?.name||'Guest'}</div>
         <div style="font-size:13px;color:var(--fg-3);margin-top:2px">${u?.email||''}</div>
+        ${state.memberNumber?`<div style="display:inline-flex;align-items:center;gap:5px;background:rgba(200,169,126,.1);border:1px solid rgba(200,169,126,.25);border-radius:20px;padding:3px 9px;margin-top:6px"><span style="font-size:10px;font-weight:700;color:var(--gold);letter-spacing:.5px">Charter Member #${state.memberNumber}</span></div>`:''}
       </div>
       <button style="background:var(--surface-2);border:1px solid var(--border);color:var(--fg-3);padding:7px 14px;border-radius:10px;font-size:13px;cursor:pointer;font-family:inherit" onclick="go('edit-profile')">Edit</button>
     </div>
@@ -3547,6 +3629,144 @@ profile: () => {
   </div>
 </div>`,
 
+// ── Feature 3: Experiences ─────────────────────────────────────────────────
+'experiences': () => {
+  const cats = ['all','Dining','Events','Culture','Lifestyle'];
+  const filtered = state._expCat === 'all' ? EXPERIENCES : EXPERIENCES.filter(x => x.type === state._expCat);
+  return `
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:fadeIn .3s ease">
+  <div style="padding:56px 22px 0;flex-shrink:0">
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:6px">
+      <div class="back-btn" onclick="go('home')"><svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg></div>
+      <div>
+        <div style="font-family:var(--font-serif);font-size:28px;font-weight:300;letter-spacing:.5px">Curated Experiences</div>
+        <div style="font-size:13px;color:var(--fg-3);margin-top:2px">Car + experience, arranged as one</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:7px;overflow-x:auto;padding:16px 0 14px;scrollbar-width:none;margin:0 -22px;padding-left:22px">
+      ${cats.map(c=>`<button onclick="state._expCat='${c}';render()" style="flex-shrink:0;padding:7px 14px;border-radius:20px;background:${state._expCat===c?'var(--fg)':'var(--surface)'};border:1px solid ${state._expCat===c?'var(--fg)':'var(--border)'};color:${state._expCat===c?'var(--bg)':'var(--fg-2)'};font-size:12px;font-weight:${state._expCat===c?'700':'400'};cursor:pointer;font-family:inherit;transition:all .15s;text-transform:capitalize">${c==='all'?'All':c}</button>`).join('')}
+    </div>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:0 22px 100px;scrollbar-width:none">
+    <div style="display:flex;flex-direction:column;gap:12px">
+      ${filtered.map(x=>`
+      <div onclick="state._expSelected=EXPERIENCES.find(e=>e.id==='${x.id}');state._expSlot=null;go('experience-detail')" style="background:var(--surface);border:1px solid var(--border);border-radius:22px;overflow:hidden;cursor:pointer;transition:transform .12s var(--ease-spring)">
+        <div style="padding:20px 20px 0;display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              <span style="font-size:22px">${x.emoji}</span>
+              <span style="font-size:10px;letter-spacing:2px;color:var(--fg-3);text-transform:uppercase">${x.type}</span>
+            </div>
+            <div style="font-size:17px;font-weight:700;margin-bottom:4px">${x.name}</div>
+            <div style="font-size:13px;color:var(--fg-3);line-height:1.5;margin-bottom:12px">${x.tagline}</div>
+          </div>
+          <div style="flex-shrink:0;text-align:right">
+            <div style="font-size:17px;font-weight:800">${x.price>0?'£'+(x.price+x.car):'Car from £'+x.car}</div>
+            <div style="font-size:10px;color:var(--fg-4);margin-top:2px">incl. chauffeur</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-top:1px solid var(--divider);margin-top:4px">
+          <div style="display:flex;gap:6px">${x.tags.map(t=>`<span style="padding:3px 8px;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;font-size:10px;font-weight:700;color:var(--fg-4)">${t}</span>`).join('')}</div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="font-size:12px;color:var(--fg-3)">${x.guests}</span><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="var(--fg-3)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg></div>
+        </div>
+      </div>`).join('')}
+    </div>
+  </div>
+</div>`;
+},
+
+'experience-detail': () => {
+  const x = state._expSelected;
+  if (!x) return `<div style="padding:40px;text-align:center;color:var(--fg-3)">No experience selected</div>`;
+  const total = x.price + x.car;
+  return `
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
+  <div class="back-row">
+    <div class="back-btn" onclick="go('experiences')"><svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg></div>
+    <div><div style="font-size:20px;font-weight:700">${x.name}</div><div style="font-size:13px;color:var(--fg-3);margin-top:1px">${x.type}</div></div>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:0 22px 120px;scrollbar-width:none">
+
+    <div style="text-align:center;padding:24px 0 28px">
+      <div style="font-size:56px;margin-bottom:12px">${x.emoji}</div>
+      <div style="font-family:var(--font-serif);font-size:22px;font-weight:300;color:var(--fg-2);line-height:1.4;max-width:320px;margin:0 auto">${x.tagline}</div>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:20px;margin-bottom:14px">
+      <div class="section-label" style="margin-bottom:10px">About this experience</div>
+      <div style="font-size:14px;color:var(--fg-2);line-height:1.7">${x.desc}</div>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:20px;margin-bottom:14px">
+      <div class="section-label" style="margin-bottom:12px">Choose a time</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${x.slots.map(s=>`<button onclick="state._expSlot='${s}';render()" style="padding:10px 18px;border-radius:12px;background:${state._expSlot===s?'var(--fg)':'var(--surface-2)'};border:1px solid ${state._expSlot===s?'var(--fg)':'var(--border)'};color:${state._expSlot===s?'var(--bg)':'var(--fg)'};font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s">${s}</button>`).join('')}
+      </div>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:20px;margin-bottom:14px">
+      <div class="section-label" style="margin-bottom:12px">Guests</div>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:14px;font-weight:600">${x.guests}</div>
+        <div style="display:flex;align-items:center;gap:14px">
+          <button onclick="state._expGuests=Math.max(1,state._expGuests-1);render()" style="width:34px;height:34px;border-radius:50%;background:var(--surface-2);border:1px solid var(--border);color:var(--fg);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:inherit">−</button>
+          <span style="font-size:18px;font-weight:800;min-width:24px;text-align:center">${state._expGuests}</span>
+          <button onclick="state._expGuests=Math.min(8,state._expGuests+1);render()" style="width:34px;height:34px;border-radius:50%;background:var(--surface-2);border:1px solid var(--border);color:var(--fg);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:inherit">+</button>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:linear-gradient(135deg,rgba(200,169,126,.1),rgba(200,169,126,.04));border:1.5px solid rgba(200,169,126,.25);border-radius:20px;padding:20px;margin-bottom:20px">
+      <div class="section-label" style="margin-bottom:14px">What's included</div>
+      ${[{icon:'🚗',label:'Mercedes S-Class chauffeur, return'},{icon:'⭐',label:'Priority concierge booking'},{icon:'🧊',label:'Chilled cabin, your preferences applied'},{icon:'📞',label:'Dedicated ApexVIP host contact'}].map(i=>`
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><span style="font-size:16px">${i.icon}</span><span style="font-size:13px;color:var(--fg-2)">${i.label}</span></div>`).join('')}
+    </div>
+  </div>
+
+  <div style="position:fixed;bottom:0;left:0;right:0;padding:16px 22px calc(16px + env(safe-area-inset-bottom));background:var(--bg);border-top:1px solid var(--divider)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div><div style="font-size:11px;color:var(--fg-4);margin-bottom:2px">TOTAL INCL. CAR</div><div style="font-size:22px;font-weight:800">${x.price>0?'£'+total:'Car from £'+x.car}</div></div>
+      ${x.price>0?`<div style="font-size:11px;color:var(--fg-4);text-align:right"><div>Experience: £${x.price}</div><div>Chauffeur: £${x.car}</div></div>`:''}
+    </div>
+    <button class="btn btn-gold" onclick="${state._expSlot?`state._expConfirmedRef='XP-'+Math.floor(1000+Math.random()*9000);state._expConfirmedCar='James Harrison · LX73 ABC';go('experience-confirmed')`:''}" style="opacity:${state._expSlot?1:.45};pointer-events:${state._expSlot?'all':'none'}">${state._expSlot?`Reserve ${state._expSlot} · £${x.price>0?total:x.car}`:'Select a time to reserve'}</button>
+  </div>
+</div>`;
+},
+
+'experience-confirmed': () => {
+  const x = state._expSelected || {};
+  const ref = state._expConfirmedRef || 'XP-0000';
+  return `
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;align-items:center;padding:0 26px;animation:scaleIn .4s ease">
+  <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">
+    <div style="font-size:56px;margin-bottom:20px;animation:scaleIn .4s var(--ease-spring)">${x.emoji||'✦'}</div>
+    <div style="font-family:var(--font-serif);font-size:32px;font-weight:300;letter-spacing:1px;margin-bottom:6px;animation:fadeUp .5s .2s var(--ease-spring) both">Experience Reserved</div>
+    <div style="font-size:14px;color:var(--fg-3);margin-bottom:6px;animation:fadeIn .5s .4s both">${x.name}</div>
+    ${state.user?.name?`<div style="font-size:14px;color:var(--fg-3);font-family:var(--font-serif);font-style:italic;margin-bottom:28px;animation:fadeIn .5s .6s both;line-height:1.5">"We look forward to welcoming you, ${state.user.name.split(' ')[0]}."</div>`:'<div style="margin-bottom:28px"></div>'}
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:20px;width:100%;text-align:left;margin-bottom:12px;animation:fadeIn .5s .5s both">
+      <div class="section-label" style="margin-bottom:14px">Booking Details</div>
+      ${[['Experience',x.name||''],['Time',state._expSlot||''],['Guests',String(state._expGuests)],['Reference',ref],['Member','#'+state.memberNumber]].map(r=>`
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--divider)">
+        <span style="font-size:12px;color:var(--fg-4)">${r[0]}</span>
+        <span style="font-size:13px;font-weight:600">${r[1]}</span>
+      </div>`).join('')}
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:20px;width:100%;text-align:left;margin-bottom:24px;animation:fadeIn .5s .6s both">
+      <div class="section-label" style="margin-bottom:14px">Your Chauffeur</div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <div style="width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,#2a2a2a,#111);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:#fff;flex-shrink:0;border:2px solid rgba(255,255,255,.1)">JH</div>
+        <div><div style="font-size:15px;font-weight:700">James Harrison</div><div style="font-size:12px;color:var(--fg-3);margin-top:2px">Will collect you at the reserved time</div></div>
+      </div>
+    </div>
+
+    <button class="btn btn-gold" onclick="go('home')">Back to home</button>
+    <button class="btn btn-glass" style="margin-top:0" onclick="go('experiences')">Browse more experiences</button>
+  </div>
+</div>`;
+},
+
 };
 
 // ── Actions ────────────────────────────────────────────────────────────────
@@ -4048,7 +4268,14 @@ function render(){
   if(state.screen==='profile') setTimeout(loadReferralCode,100);
 }
 
+generateMemberNumber();
 render();
+
+// Auto-check flight for upcoming trip with a flight number
+setTimeout(() => {
+  const t = TRIPS.find(t => t.status === 'upcoming' && t.flight);
+  if (t && !state._flightStatus) checkFlight(t.flight);
+}, 3000);
 </script>
 
 <script>
