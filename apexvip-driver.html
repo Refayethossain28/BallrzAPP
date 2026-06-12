@@ -251,25 +251,7 @@ async function driverLogin(){
       go('home');
     }else{auth.signOut();alert('Access denied. Driver accounts only.');}
   }catch(err){
-    // Auto-create demo driver account on first run
-    if(email==='driver@apexvip.com'&&pass==='driver123'){
-      if(err.code==='auth/configuration-not-found'||err.code==='auth/operation-not-allowed'){
-        track('driver_login',{method:'demo-fallback',src:'driver'});go('home');return;
-      }
-      try{
-        const cred=await auth.createUserWithEmailAndPassword(email,pass);
-        await db.collection('users').doc(cred.user.uid).set({name:'James Harrison',email,role:'driver',vehicle:'Mercedes S-Class',plate:'LX73 ABC',rating:4.9,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
-        _driverId=cred.user.uid;
-        track('driver_login',{method:'demo-created',src:'driver'});
-        setupDriverListeners(cred.user.uid);
-        go('home');
-      }catch(e2){
-        // Any Firebase issue with the demo account → just open in demo mode
-        track('driver_login',{method:'demo-fallback',src:'driver'});go('home');
-      }
-    } else {
-      alert('Invalid credentials');
-    }
+    alert('Invalid credentials');
   }
 }
 
@@ -543,10 +525,10 @@ login:()=>`<div style="min-height:100vh;background:#050505;display:flex;flex-dir
     <div style="font-size:11px;color:#555;letter-spacing:4px;margin-top:6px;animation:subtitleReveal 1.2s ease 1s both">DRIVER PORTAL</div>
   </div>
   <div style="width:100%;max-width:340px;animation:slideUp .6s cubic-bezier(.16,1,.3,1) 1.8s both">
-    <div style="margin-bottom:14px"><label style="font-size:11px;color:#666;display:block;margin-bottom:6px;letter-spacing:1px">EMAIL</label><input type="email" value="driver@apexvip.com" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.1);color:#f0ece4"/></div>
-    <div style="margin-bottom:28px"><label style="font-size:11px;color:#666;display:block;margin-bottom:6px;letter-spacing:1px">PASSWORD</label><input type="password" value="driver123" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.1);color:#f0ece4"/></div>
+    <div style="margin-bottom:14px"><label style="font-size:11px;color:#666;display:block;margin-bottom:6px;letter-spacing:1px">EMAIL</label><input type="email" placeholder="driver email" autocomplete="email" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.1);color:#f0ece4"/></div>
+    <div style="margin-bottom:28px"><label style="font-size:11px;color:#666;display:block;margin-bottom:6px;letter-spacing:1px">PASSWORD</label><input type="password" placeholder="password" autocomplete="current-password" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.1);color:#f0ece4"/></div>
     <button class="btn btn-gold" onclick="driverLogin()">Driver Sign In</button>
-    <div style="margin-top:20px;background:rgba(255,255,255,.04);border-radius:10px;padding:12px 14px;font-size:12px;color:#444;text-align:center">driver@apexvip.com / driver123</div>
+    ${!FIREBASE_ENABLED?`<div style="margin-top:20px;background:rgba(255,255,255,.04);border-radius:10px;padding:12px 14px;font-size:12px;color:#444;text-align:center">Demo mode — any credentials work</div>`:''}
   </div>
 </div>`,
 

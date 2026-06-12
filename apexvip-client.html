@@ -1251,8 +1251,8 @@ login: () => {
   </div>
   <div style="flex:1">
     ${err}
-    <div class="field" style="margin-bottom:10px"><input id="lemail" type="email" placeholder="Email address" value="client@apexvip.com"/></div>
-    <div class="field" style="margin-bottom:8px"><input id="lpass" type="password" placeholder="Password" value="password"/></div>
+    <div class="field" style="margin-bottom:10px"><input id="lemail" type="email" placeholder="Email address" autocomplete="email"/></div>
+    <div class="field" style="margin-bottom:8px"><input id="lpass" type="password" placeholder="Password" autocomplete="current-password"/></div>
     <div style="text-align:right;margin-bottom:28px">
       <button style="background:none;border:none;color:var(--fg-3);font-size:13px;cursor:pointer;padding:8px 0;font-family:inherit">Forgot password?</button>
     </div>
@@ -1261,9 +1261,9 @@ login: () => {
       New here? <span style="color:#ffffff;cursor:pointer;font-weight:600" onclick="go('register')">Create account</span>
     </div>
   </div>
-  <div style="margin-bottom:40px;padding:14px 18px;background:var(--surface);border-radius:14px;border:1px solid var(--border);font-size:12px;color:var(--fg-4);text-align:center;line-height:1.7">
-    Demo account<br/>client@apexvip.com · password
-  </div>
+  ${!FIREBASE_ENABLED?`<div style="margin-bottom:40px;padding:14px 18px;background:var(--surface);border-radius:14px;border:1px solid var(--border);font-size:12px;color:var(--fg-4);text-align:center;line-height:1.7">
+    Demo mode<br/>client@apexvip.com · password
+  </div>`:''}
 </div>`;
 },
 
@@ -3166,22 +3166,7 @@ async function doLogin(){
   try{
     await auth.signInWithEmailAndPassword(e,p);
   } catch(err){
-    // Auto-create demo account on first run
-    if(e==='client@apexvip.com'&&p==='password'){
-      if(err.code==='auth/configuration-not-found'||err.code==='auth/operation-not-allowed'){
-        state.user={name:'Alexandra Stone',email:e};track('user_login',{method:'demo-fallback',src:'client'});go('home');return;
-      }
-      try{
-        const cred=await auth.createUserWithEmailAndPassword(e,p);
-        await db.collection('users').doc(cred.user.uid).set({name:'Alexandra Stone',email:e,role:'client',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
-      }catch(e2){
-        if(e2.code==='auth/configuration-not-found'||e2.code==='auth/operation-not-allowed'){
-          state.user={name:'Alexandra Stone',email:e};track('user_login',{method:'demo-fallback',src:'client'});go('home');
-        } else {state._loginErr='Setup error. Try again.';render();}
-      }
-    } else {
-      state._loginErr='Invalid email or password.';render();
-    }
+    state._loginErr='Invalid email or password.';render();
   }
 }
 function saveRegStep1(){
@@ -3503,6 +3488,7 @@ async function useMyLocation(inputId){
 if(FIREBASE_ENABLED){
   let _unsub=null;
   auth.onAuthStateChanged(async user=>{
+    if(user&&user.isAnonymous)return; // anonymous track-link viewers: no profile, no navigation
     if(user){
       try{
         const doc=await db.collection('users').doc(user.uid).get();
