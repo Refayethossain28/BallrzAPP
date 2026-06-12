@@ -268,12 +268,14 @@ function closeModal(){document.getElementById('modal-bg').style.display='none';}
 async function adminLogin(){
   const email=document.querySelector('input[type=email]')?.value||'';
   const pass=document.querySelector('input[type=password]')?.value||'';
-  // Demo admin always works regardless of Firebase state
-  if(email==='admin@apexvip.com'&&pass==='admin123'){
-    track('admin_login',{method:'demo',src:'admin'});
-    go('dashboard');return;
+  if(!FIREBASE_ENABLED){
+    // Offline demo mode only — never active on the live site
+    if(email==='admin@apexvip.com'&&pass==='admin123'){
+      track('admin_login',{method:'demo',src:'admin'});
+      go('dashboard');return;
+    }
+    alert('Invalid credentials');return;
   }
-  if(!FIREBASE_ENABLED){alert('Invalid credentials');return;}
   try{
     const cred=await auth.signInWithEmailAndPassword(email,pass);
     const doc=await db.collection('users').doc(cred.user.uid).get();
@@ -436,10 +438,10 @@ login:()=>`<div style="min-height:100vh;background:#050505;display:flex;align-it
     <div style="font-family:'Cormorant Garamond',serif;font-size:52px;font-weight:700;color:#C8A97E;letter-spacing:10px;animation:logoReveal 1.4s cubic-bezier(.16,1,.3,1) .3s both">ApexVIP</div>
     <div style="font-size:11px;color:#555;letter-spacing:4px;margin-top:6px;margin-bottom:52px;animation:subtitleReveal 1.2s ease 1s both">ADMINISTRATION</div>
     <div style="animation:slideUp .6s cubic-bezier(.16,1,.3,1) 1.8s both">
-      <div style="margin-bottom:14px;text-align:left"><label style="font-size:11px;color:#666;display:block;margin-bottom:6px;letter-spacing:1px">EMAIL</label><input type="email" value="admin@apexvip.com" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.1);color:#f0ece4"/></div>
-      <div style="margin-bottom:24px;text-align:left"><label style="font-size:11px;color:#666;display:block;margin-bottom:6px;letter-spacing:1px">PASSWORD</label><input type="password" value="admin123" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.1);color:#f0ece4"/></div>
+      <div style="margin-bottom:14px;text-align:left"><label style="font-size:11px;color:#666;display:block;margin-bottom:6px;letter-spacing:1px">EMAIL</label><input type="email" placeholder="admin email" autocomplete="email" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.1);color:#f0ece4"/></div>
+      <div style="margin-bottom:24px;text-align:left"><label style="font-size:11px;color:#666;display:block;margin-bottom:6px;letter-spacing:1px">PASSWORD</label><input type="password" placeholder="password" autocomplete="current-password" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.1);color:#f0ece4"/></div>
       <button class="btn btn-gold" style="width:100%;padding:15px;font-size:15px" onclick="adminLogin()">Sign In</button>
-      <div style="margin-top:16px;background:rgba(255,255,255,.04);border-radius:10px;padding:12px;font-size:12px;color:#444">admin@apexvip.com / admin123</div>
+      ${!FIREBASE_ENABLED?`<div style="margin-top:16px;background:rgba(255,255,255,.04);border-radius:10px;padding:12px;font-size:12px;color:#444">Demo mode — admin@apexvip.com / admin123</div>`:''}
     </div>
   </div>
 </div>`,
