@@ -992,12 +992,15 @@ function togglePause(){
     const el=document.getElementById('overlay');
     el.innerHTML=`<h1 class="title">PAUSED</h1><div class="menu-card">
       <button class="btn" id="resumeBtn">RESUME ▶</button><div style="height:10px"></div>
-      <button class="btn ghost" id="quitBtn">QUIT TO MENU</button></div>`;
+      <button class="btn ghost" id="restartBtn">RESTART RACE ↻</button><div style="height:10px"></div>
+      <button class="btn ghost" id="quitBtn">EXIT TO MENU ✕</button></div>`;
     el.classList.remove('hidden');
     document.getElementById('resumeBtn').onclick=()=>{el.classList.add('hidden');G.state='racing';if(window.GameMusic)window.GameMusic.duck(false);};
+    document.getElementById('restartBtn').onclick=()=>startRace();
     document.getElementById('quitBtn').onclick=()=>showMenu();
   } else if (G.state==='paused'){ document.getElementById('overlay').classList.add('hidden'); G.state='racing'; if(window.GameMusic)window.GameMusic.duck(false); }
 }
+window.__togglePause = togglePause;   // for the on-screen pause button
 
 // ---------------------------------------------------------------------------
 // Resize + loop
@@ -1030,6 +1033,7 @@ try {
   const f=frameAt(0); worldPos(0,0,_tmp);
   camera.position.copy(_tmp).addScaledVector(f.tan,-11).add(new THREE.Vector3(0,5,0)); camera.lookAt(_tmp);
   wireMenu();
+  const pb=document.getElementById('pauseBtn'); if(pb) pb.onclick=togglePause;
   requestAnimationFrame(frame);
 } catch (e) {
   const err=document.getElementById('err');

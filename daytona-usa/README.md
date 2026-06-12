@@ -70,10 +70,13 @@ Recreates the look of Daytona's **Three-Seven Speedway** (Beginner course):
   cliffs, the 777 slot-machine start gantry, screen shake and tyre smoke.
 - **Procedural audio** — a WebAudio engine note that rises with RPM, plus
   collision and UI blips.
-- **Procedural music** — an upbeat arcade-rock loop synthesised in real time
-  (drums, bass, chord pads and an arpeggiated lead) with a driving "race" mode
-  and a mellow "menu" mode. No audio files; press **M** to mute. Shared by both
-  the 2D and 3D builds (`music.js`).
+- **Procedural dance music** — a four-on-the-floor house/EDM track synthesised
+  in real time: punchy kick, claps, open/closed hats, a **sidechain-pumped**
+  bass, detuned supersaw chord stabs, a plucky arpeggio lead and a pad, with a
+  delay send — driving "race" and mellow "menu" intensities. No audio files;
+  press **M** to mute. Shared by both builds (`music.js`).
+- **On-screen pause button** with **Resume / Restart / Exit** — works on touch,
+  and the menus compress to fit landscape phone screens.
 - Keyboard + on-screen touch controls; fully responsive (great on iPhone in
   landscape).
 

@@ -52,11 +52,18 @@
   /* ---------- Overlays ---------- */
   #overlay {
     position: absolute; inset: 0; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; text-align: center;
+    align-items: center; justify-content: center; text-align: center; overflow-y: auto;
+    padding: max(10px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right))
+             max(10px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));
     background: radial-gradient(ellipse at center, rgba(10,12,30,.75), rgba(0,0,0,.92));
     z-index: 5;
   }
   #overlay.hidden { display: none; }
+  #pauseBtn{position:absolute;left:50%;transform:translateX(-50%);
+    bottom:calc(10px + env(safe-area-inset-bottom));z-index:4;pointer-events:auto;cursor:pointer;
+    font-family:inherit;font-weight:800;font-size:14px;letter-spacing:1px;color:#fff;
+    background:rgba(0,0,0,.5);border:2px solid rgba(255,255,255,.3);border-radius:22px;padding:7px 18px;}
+  #pauseBtn:active{transform:translateX(-50%) translateY(2px);}
   .title {
     font-size: 64px; font-weight: 900; letter-spacing: 4px; margin: 0;
     color: #fff;
@@ -115,6 +122,18 @@
   .credit { position:absolute; bottom:10px; left:0; right:0; text-align:center;
             font-size:11px; opacity:.5; }
   @media (max-width: 760px) { .title { font-size: 44px; } #speedo .big { font-size:34px; } }
+  /* short / landscape-phone viewports: compress the menu so START always fits.
+     Placed last so it overrides the base rules above (equal specificity). */
+  @media (max-height:520px){
+    #overlay{justify-content:center;}
+    .title{font-size:24px;} .subtitle{margin:1px 0 5px;font-size:10px;}
+    .menu-card{padding:9px 16px;}
+    .menu-card h2{font-size:13px;margin:0 0 6px;}
+    .keys{display:none;}                 /* touch controls on screen — hide key list */
+    .diff{margin-bottom:8px;} .diff button{padding:7px 8px;font-size:13px;}
+    button.btn{font-size:14px;padding:8px 18px;}
+    .credit{font-size:9px;}
+  }
 </style>
 </head>
 <body>
@@ -137,6 +156,7 @@
     </div>
   </div>
 
+  <button id="pauseBtn" aria-label="Pause">❚❚ PAUSE</button>
   <div id="banner" class="hidden"></div>
   <div id="countdown" class="hidden"></div>
 
