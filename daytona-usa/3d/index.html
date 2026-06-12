@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>DAYTONA USA — 3D Polygon Edition</title>
+<style>
+  :root { --neon:#ff3b3b; --blue:#1f6dff; --yellow:#ffd400; }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;background:#05060a;
+    font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif;color:#fff;overflow:hidden;
+    -webkit-user-select:none;user-select:none;}
+  #wrap{position:fixed;inset:0;}
+  #gl{display:block;width:100%;height:100%;}
+  #hud2d{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;}
+  /* ---- text HUD ---- */
+  #hud{position:absolute;inset:0;pointer-events:none;font-weight:800;letter-spacing:1px;}
+  .ol{-webkit-text-stroke:3px #000;paint-order:stroke fill;text-shadow:3px 3px 0 rgba(0,0,0,.55);}
+  #lapinfo,#timer,#pos{position:absolute;}
+  #lapinfo{left:16px;top:10px;line-height:1;}
+  #lapinfo .laplabel{font-size:13px;letter-spacing:2px;}
+  #lapinfo .lap{font-size:40px;}
+  #lapinfo .ltime{font-size:18px;margin-top:4px;font-variant-numeric:tabular-nums;}
+  #timer{left:50%;top:6px;transform:translateX(-50%);text-align:center;}
+  #timer .timerval{font-size:56px;color:var(--yellow);line-height:1;}
+  #timer .timerlabel{font-size:11px;letter-spacing:3px;opacity:.9;}
+  #pos{right:16px;top:8px;text-align:right;line-height:1;}
+  #pos .poslabel{font-size:12px;letter-spacing:2px;}
+  #pos .posval{font-size:50px;color:#2bd451;}
+  /* ---- overlays ---- */
+  #overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;text-align:center;
+    background:radial-gradient(ellipse at center,rgba(10,12,30,.75),rgba(0,0,0,.92));z-index:5;}
+  #overlay.hidden{display:none;}
+  .title{font-size:64px;font-weight:900;letter-spacing:4px;margin:0;
+    text-shadow:0 0 18px var(--blue),0 0 36px var(--neon),4px 4px 0 #000;transform:skewX(-8deg);}
+  .title .red{color:var(--neon);}
+  .subtitle{font-size:16px;opacity:.9;margin:6px 0 28px;letter-spacing:3px;}
+  .menu-card{background:rgba(0,0,0,.5);border:2px solid rgba(255,255,255,.18);
+    border-radius:14px;padding:22px 30px;max-width:560px;}
+  .menu-card h2{margin:0 0 10px;font-size:22px;color:var(--yellow);}
+  .keys{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:15px;margin:14px 0 20px;text-align:left;}
+  .keys b{background:#111;border:1px solid #444;border-radius:6px;padding:2px 8px;}
+  .diff{display:flex;gap:10px;justify-content:center;margin-bottom:18px;}
+  .diff button{flex:1;}
+  button.btn{pointer-events:auto;cursor:pointer;font-family:inherit;font-weight:800;letter-spacing:1px;
+    font-size:18px;color:#fff;padding:12px 26px;border:none;border-radius:10px;
+    background:linear-gradient(180deg,var(--neon),#b81f1f);
+    box-shadow:0 4px 0 #6e0d0d,0 8px 18px rgba(0,0,0,.5);transition:transform .05s ease;}
+  button.btn:active{transform:translateY(3px);box-shadow:0 1px 0 #6e0d0d;}
+  button.btn.sel{outline:3px solid var(--yellow);}
+  button.ghost{background:linear-gradient(180deg,#2a2f45,#1a1d2c);box-shadow:0 4px 0 #0c0e16;}
+  .flash{animation:blink 1s steps(2) infinite;}
+  @keyframes blink{50%{opacity:.25;}}
+  #countdown{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:160px;font-weight:900;color:var(--yellow);
+    text-shadow:0 0 30px var(--neon),6px 6px 0 #000;pointer-events:none;z-index:6;}
+  #countdown.hidden{display:none;}
+  #banner{position:absolute;left:50%;top:34%;transform:translate(-50%,-50%) skewX(-8deg);
+    font-size:72px;font-weight:900;color:var(--yellow);
+    text-shadow:0 0 24px var(--neon),5px 5px 0 #000;z-index:6;pointer-events:none;}
+  #banner.hidden{display:none;}
+  #touch{position:absolute;inset:0;z-index:4;display:none;}
+  .tbtn{position:absolute;pointer-events:auto;width:90px;height:90px;border-radius:50%;
+    background:rgba(255,255,255,.10);border:2px solid rgba(255,255,255,.25);
+    display:flex;align-items:center;justify-content:center;font-size:34px;}
+  #tleft{left:18px;bottom:110px;} #tright{left:120px;bottom:40px;}
+  #tgas{right:18px;bottom:110px;background:rgba(255,59,59,.25);}
+  #tbrake{right:120px;bottom:40px;background:rgba(31,109,255,.25);}
+  .credit{position:absolute;bottom:10px;left:0;right:0;text-align:center;font-size:11px;opacity:.5;}
+  #err{position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;
+    padding:30px;z-index:9;font-size:16px;line-height:1.5;}
+  @media (max-width:760px){.title{font-size:44px;}#timer .timerval{font-size:40px;}}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="gl"></canvas>
+  <canvas id="hud2d"></canvas>
+
+  <div id="hud">
+    <div id="lapinfo">
+      <div class="laplabel ol">LAP</div>
+      <div class="lap ol"><span id="lapNum">1</span>/<span id="lapTotal">8</span></div>
+      <div class="ltime ol" id="lapTimeVal">0'00"00</div>
+    </div>
+    <div id="timer">
+      <div class="timerval ol" id="timerVal">50</div>
+      <div class="timerlabel ol" id="trackName">THREE-SEVEN SPEEDWAY</div>
+    </div>
+    <div id="pos">
+      <div class="poslabel ol">POSITION</div>
+      <div class="posval ol"><span id="posNum">40</span>/<span id="posTotal">40</span></div>
+    </div>
+  </div>
+
+  <div id="banner" class="hidden"></div>
+  <div id="countdown" class="hidden"></div>
+
+  <div id="overlay">
+    <h1 class="title">DAYTONA <span class="red">USA</span></h1>
+    <div class="subtitle">3D POLYGON EDITION</div>
+    <div class="menu-card">
+      <h2>SELECT COURSE</h2>
+      <div class="diff">
+        <button class="btn ghost sel" data-diff="0">BEGINNER</button>
+        <button class="btn ghost" data-diff="1">ADVANCED</button>
+        <button class="btn ghost" data-diff="2">EXPERT</button>
+      </div>
+      <div class="keys">
+        <b>↑ / W</b><span>Accelerate</span>
+        <b>↓ / S</b><span>Reverse</span>
+        <b>← → / A D</b><span>Steer</span>
+        <b>SPACE</b><span>Brake / Handbrake</span>
+        <b>C</b><span>Change camera</span>
+        <b>P / ESC</b><span>Pause</span>
+      </div>
+      <button class="btn" id="startBtn">START ENGINE ▶</button>
+    </div>
+    <div class="credit">A homage to SEGA's Daytona USA (1993). Fan-made, non-commercial. •
+      <a href="../index.html" style="color:#9fe">2D arcade version</a></div>
+  </div>
+
+  <div id="err"></div>
+
+  <div id="touch">
+    <div id="tleft" class="tbtn">◀</div>
+    <div id="tright" class="tbtn">▶</div>
+    <div id="tbrake" class="tbtn">✋</div>
+    <div id="tgas" class="tbtn">⛽</div>
+  </div>
+</div>
+
+<script type="module">
+  import './game3d.js';
+</script>
+<noscript><div style="padding:40px">This game needs JavaScript and WebGL.</div></noscript>
+</body>
+</html>

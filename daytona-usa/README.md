@@ -1,19 +1,29 @@
 # DAYTONA USA — Web Arcade Edition
 
-A browser-based, pseudo-3D arcade racing game inspired by SEGA's **Daytona USA**
-(1993). Built with plain HTML5 Canvas + JavaScript — no build step, no
-dependencies. Just open it and drive.
+A browser-based arcade racing game inspired by SEGA's **Daytona USA**
+(1993). Two renderers are included:
+
+- **2D arcade** (`index.html`) — the authentic *pseudo-3D* segment-projection
+  technique the real 1993 cabinet used. Zero dependencies, loads instantly,
+  runs on anything.
+- **3D polygon** (`3d/index.html`) — a true **WebGL / Three.js** rebuild: a
+  polygonal Hornet and rivals on a real extruded 3D road that loops via a
+  Catmull-Rom spline, with hills, a chase/hood camera, 3D scenery and the same
+  arcade HUD. Three.js is vendored locally (`3d/vendor/`), so it also needs no
+  network.
 
 ![type: arcade racer](https://img.shields.io/badge/genre-arcade%20racer-ff3b3b)
 
 ## ▶ Play
 
-Open `index.html` in any modern browser:
+Open `index.html` in any modern browser (or `3d/index.html` for the 3D
+version):
 
 ```bash
 # from this folder
 python3 -m http.server 8000
-# then visit http://localhost:8000
+# then visit http://localhost:8000          (2D)
+#         or http://localhost:8000/3d/       (3D)
 ```
 
 or simply double-click `index.html`.
