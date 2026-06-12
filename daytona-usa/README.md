@@ -7,13 +7,18 @@ A browser-based arcade racing game inspired by SEGA's **Daytona USA**
   technique the real 1993 cabinet used. Zero dependencies, loads instantly,
   runs on anything.
 - **3D polygon** (`3d/index.html`) — a true **WebGL / Three.js** rebuild for an
-  arcade-faithful look: a polygonal Hornet and rivals on a real extruded 3D road
-  that loops via a Catmull-Rom spline, with **banked corners**, hills,
+  arcade-faithful look: a polygonal Hornet and 39 numbered rivals on a real
+  extruded 3D road that loops via a Catmull-Rom spline, with **steep banked
+  corners**, hills, **textured asphalt** (lane markings baked in) and grass,
   **red/white guardrails**, **packed grandstands**, DAYTONA billboards, the 777
-  start gantry, a **painted sky with sun and clouds**, snowy mountains, a
-  chase/hood camera that rolls with the banking, **speed lines**, and the same
-  arcade HUD. Three.js is vendored locally (`3d/vendor/`), so it needs no
-  network.
+  start gantry, a **painted sky with sun and clouds**, a chase/hood camera that
+  rolls with the banking, and **speed lines**. Three **themed courses** with
+  their own palettes and set-pieces:
+  - *Three-Seven Speedway* — alpine, pines, snow-capped peaks, a tunnel
+  - *Dinosaur Canyon* — desert, rock spires, a roadside brontosaurus, a tunnel
+  - *Sea-Side Street Galaxy* — palms and an ocean plane
+
+  Three.js is vendored locally (`3d/vendor/`), so it needs no network.
 
 ![type: arcade racer](https://img.shields.io/badge/genre-arcade%20racer-ff3b3b)
 

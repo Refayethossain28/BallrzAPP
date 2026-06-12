@@ -28,9 +28,27 @@ const DIV = 1400;                 // spline samples (road resolution)
 const FPS = 60, STEP = 1/FPS;
 
 const DIFFS = [
-  { name:'THREE-SEVEN SPEEDWAY',  laps:8, maxSpeed:105, curveMul:0.8, aiSpeed:0.82, startTime:55, lapBonus:24, seed:1 },
-  { name:'DINOSAUR CANYON',       laps:4, maxSpeed:120, curveMul:1.0, aiSpeed:0.90, startTime:62, lapBonus:34, seed:7 },
-  { name:'SEA-SIDE STREET GALAXY',laps:8, maxSpeed:135, curveMul:1.2, aiSpeed:0.97, startTime:70, lapBonus:30, seed:3 },
+  { name:'THREE-SEVEN SPEEDWAY',  laps:8, maxSpeed:105, curveMul:0.8, aiSpeed:0.82, startTime:55, lapBonus:24, seed:1, theme:0 },
+  { name:'DINOSAUR CANYON',       laps:4, maxSpeed:120, curveMul:1.0, aiSpeed:0.90, startTime:62, lapBonus:34, seed:7, theme:1 },
+  { name:'SEA-SIDE STREET GALAXY',laps:8, maxSpeed:135, curveMul:1.2, aiSpeed:0.97, startTime:70, lapBonus:30, seed:3, theme:2 },
+];
+// per-course environment themes (colours, props, set-pieces)
+const THEMES = [
+  { // alpine speedway
+    asphalt:0x83878d, grass:0x4a9c54, grass2:0x3f8f49, mountain:0x8a9099, snow:true,
+    prop:'pine', water:false, dino:false, tunnel:true,
+    skyTop:'#1f6fd6', skyMid:'#5aa6f0', skyHorizon:'#dff0ff', fog:0xbfe2ff,
+  },
+  { // dinosaur canyon (desert)
+    asphalt:0x8a8079, grass:0xb89a5e, grass2:0xa98a4e, mountain:0xb5793f, snow:false,
+    prop:'rock', water:false, dino:true, tunnel:true,
+    skyTop:'#3a78c0', skyMid:'#9ab6d0', skyHorizon:'#e9d9b8', fog:0xe2d2ad,
+  },
+  { // sea-side galaxy
+    asphalt:0x8a8e94, grass:0x4aa86a, grass2:0x3f9a5e, mountain:0x6f88a0, snow:false,
+    prop:'palm', water:true, dino:false, tunnel:false,
+    skyTop:'#1a86d6', skyMid:'#57b6ef', skyHorizon:'#bfeaff', fog:0xbfeaff,
+  },
 ];
 const LIVERIES = [0xe23b3b,0x2f6cff,0x22c55e,0xf59e0b,0xa855f7,0x06b6d4,
                   0xec4899,0xfacc15,0xfb7185,0x4ade80,0x38bdf8,0xfb923c,0xffffff];
@@ -47,7 +65,7 @@ const G = {
   totalLaps:8, lap:1, lapTime:0, lastLapTime:0, bestLapTime:Infinity,
   totalTime:0, timeLeft:55, lapBonus:24,
   cars:[], place:FIELD, countdown:0, bannerTimer:0, shake:0, skid:0,
-  reversedLine:false, camMode:0,
+  reversedLine:false, camMode:0, theme:null,
 };
 
 // ---------------------------------------------------------------------------
@@ -59,10 +77,11 @@ let playerCar, rivalMeshes = [];
 const UP = new THREE.Vector3(0,1,0);
 
 // Painted sky: vertical gradient + a glowing sun + soft clouds, on a big dome
-function makeSkyTexture(){
+function makeSkyTexture(th){
+  th = th || THEMES[0];
   const cv=document.createElement('canvas'); cv.width=1024; cv.height=512; const x=cv.getContext('2d');
   const g=x.createLinearGradient(0,0,0,512);
-  g.addColorStop(0,'#1f6fd6'); g.addColorStop(0.55,'#5aa6f0'); g.addColorStop(0.8,'#a9d6ff'); g.addColorStop(1,'#dff0ff');
+  g.addColorStop(0,th.skyTop); g.addColorStop(0.55,th.skyMid); g.addColorStop(0.8,th.skyHorizon); g.addColorStop(1,th.skyHorizon);
   x.fillStyle=g; x.fillRect(0,0,1024,512);
   // sun with halo
   const sx=300, sy=120;
@@ -76,9 +95,10 @@ function makeSkyTexture(){
   for (let i=0;i<7;i++) cloud(120+Math.random()*900, 150+Math.random()*180, 22+Math.random()*26);
   const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace; return t;
 }
-function buildSky(){
+function buildSky(th){
+  if (sky){ scene.remove(sky); sky.geometry.dispose(); sky.material.map.dispose(); sky.material.dispose(); }
   const geo=new THREE.SphereGeometry(1200,32,16);
-  const mat=new THREE.MeshBasicMaterial({map:makeSkyTexture(), side:THREE.BackSide, fog:false, depthWrite:false});
+  const mat=new THREE.MeshBasicMaterial({map:makeSkyTexture(th), side:THREE.BackSide, fog:false, depthWrite:false});
   sky=new THREE.Mesh(geo,mat); scene.add(sky);
 }
 
@@ -110,6 +130,10 @@ function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.im
 let roadMesh=null, sceneryGroup=null, miniPath=[];
 
 function buildTrack(diff) {
+  G.theme = THEMES[diff.theme || 0];
+  scene.background.set(G.theme.skyHorizon);
+  scene.fog.color.setHex(G.theme.fog);
+  buildSky(G.theme);
   // ---- control points: an organic closed circuit with hills ----
   const rng = mulberry32(diff.seed * 2654435761);
   const NCP = 14;
@@ -147,7 +171,7 @@ function buildTrack(diff) {
     let s=0; for (let k=-WIN;k<=WIN;k++) s += frames[(i+k+DIV)%DIV].curv;
     sm[i] = s/(WIN*2+1);
   }
-  const BANK_K = 26, MAXB = 0.42;     // up to ~24° of banking on the hardest turns
+  const BANK_K = 42, MAXB = 0.62;     // up to ~35° of banking on the hardest turns (Daytona-style)
   for (let i=0;i<DIV;i++){
     const f = frames[i];
     f.bank = Math.max(-MAXB, Math.min(MAXB, sm[i]*BANK_K*G.curveMul));
@@ -160,89 +184,152 @@ function buildTrack(diff) {
   buildMinimap();
 }
 
-// Build the whole road (asphalt + kerbs + lines + grass) as one vertex-coloured mesh.
-// Normals are assigned explicitly from each frame's banked surface normal so the
-// lighting stays correct (and bright) even through banking and hills.
+// Build the road as: a UV-textured asphalt ribbon (with lane markings baked into
+// the texture), a tiled grass ribbon, and a vertex-coloured "trim" mesh for the
+// kerbs, guardrails and start/finish checker. Normals come from each frame's
+// banked surface normal so lighting stays correct through banking and hills.
+let roadParts = [];
+function clearRoadParts(){ for (const m of roadParts){ scene.remove(m); m.geometry.dispose(); } roadParts=[]; }
+const V3 = THREE.Vector3;
+
 function buildRoadMesh() {
-  if (roadMesh){ scene.remove(roadMesh); roadMesh.geometry.dispose(); }
-  const pos = [], col = [], nor = [];
-  const c = new THREE.Color();
+  clearRoadParts();
+  const th = G.theme;
+  const segLen = G.L/DIV;
+  const TILE = 20;                 // world units of track per texture repeat
+  const maxAniso = renderer.capabilities.getMaxAnisotropy();
 
   function pt(out, frame, lat, lift){
     out.copy(frame.pos).addScaledVector(frame.right, lat).addScaledVector(frame.up, lift); return out;
   }
-  function vert(p, color, n){ pos.push(p.x,p.y,p.z); col.push(color.r,color.g,color.b); nor.push(n.x,n.y,n.z); }
-  // a ribbon between two lateral offsets, coloured per-sample, with per-vertex normals
-  function ribbon(latIn, latOut, lift, colorFn){
-    const ia=new THREE.Vector3(), oa=new THREE.Vector3(), ib=new THREE.Vector3(), ob=new THREE.Vector3();
-    for (let i=0;i<DIV;i++){
-      const a=frames[i], b=frames[(i+1)%DIV];
-      pt(ia,a,latIn,lift); pt(oa,a,latOut,lift); pt(ib,b,latIn,lift); pt(ob,b,latOut,lift);
-      colorFn(i, c);
-      vert(ia,c,a.up); vert(ib,c,b.up); vert(ob,c,b.up);
-      vert(ia,c,a.up); vert(ob,c,b.up); vert(oa,c,a.up);
-    }
-  }
-  const asphalt = i => (Math.floor(i/5)%2 ? c.setHex(0x8d9197) : c.setHex(0x82868c));
-  const grass   = i => (Math.floor(i/5)%2 ? c.setHex(0x4a9c54) : c.setHex(0x429049));
-  // verges
-  ribbon(-ROAD_W*6, -ROAD_W-RUMBLE_W, -0.05, grass);
-  ribbon( ROAD_W+RUMBLE_W, ROAD_W*6, -0.05, grass);
-  // rumble kerbs
-  ribbon(-ROAD_W-RUMBLE_W, -ROAD_W, 0.02, i=> Math.floor(i/4)%2 ? c.setHex(0xd03a32) : c.setHex(0xe9e9ee));
-  ribbon( ROAD_W, ROAD_W+RUMBLE_W, 0.02, i=> Math.floor(i/4)%2 ? c.setHex(0xd03a32) : c.setHex(0xe9e9ee));
-  // asphalt
-  ribbon(-ROAD_W, ROAD_W, 0, asphalt);
-  // dashed centre line + two lane lines
-  const dash = i => (Math.floor(i/3)%2 ? c.setHex(0xe9e9ee) : c.setHex(0x82868c));
-  ribbon(-0.28, 0.28, 0.04, dash);
-  ribbon(-ROAD_W*0.34-0.25, -ROAD_W*0.34+0.25, 0.04, dash);
-  ribbon( ROAD_W*0.34-0.25,  ROAD_W*0.34+0.25, 0.04, dash);
-  // guardrails: low vertical walls just outside each kerb, facing the track
-  function guardrail(lat){
-    const lo=new THREE.Vector3(), hi=new THREE.Vector3(), lo2=new THREE.Vector3(), hi2=new THREE.Vector3();
-    const inward = lat>0 ? -1 : 1;          // normal points toward the road centre
-    for (let i=0;i<DIV;i++){
-      const a=frames[i], b=frames[(i+1)%DIV];
-      pt(lo,a,lat,0.15); pt(hi,a,lat,1.15); pt(lo2,b,lat,0.15); pt(hi2,b,lat,1.15);
-      const na=a.right.clone().multiplyScalar(inward), nb=b.right.clone().multiplyScalar(inward);
-      // rail is white with periodic red posts
-      c.setHex(Math.floor(i/3)%4===0 ? 0xd03a32 : 0xeef1f4);
-      vert(lo,c,na); vert(lo2,c,nb); vert(hi2,c,nb);
-      vert(lo,c,na); vert(hi2,c,nb); vert(hi,c,na);
-    }
-  }
-  guardrail(-ROAD_W-RUMBLE_W-0.4);
-  guardrail( ROAD_W+RUMBLE_W+0.4);
-  // start/finish checker band (first few samples)
+
+  // ---------- asphalt (textured) ----------
   {
-    const ia=new THREE.Vector3(),oa=new THREE.Vector3(),ib=new THREE.Vector3(),ob=new THREE.Vector3();
+    const pos=[],uv=[],nor=[];
+    const ia=new V3,oa=new V3,ib=new V3,ob=new V3;
+    const push=(p,u,v,n)=>{ pos.push(p.x,p.y,p.z); uv.push(u,v); nor.push(n.x,n.y,n.z); };
+    for (let i=0;i<DIV;i++){
+      const a=frames[i], b=frames[(i+1)%DIV];
+      pt(ia,a,-ROAD_W,0); pt(oa,a,ROAD_W,0); pt(ib,b,-ROAD_W,0); pt(ob,b,ROAD_W,0);
+      const va=i*segLen/TILE, vb=(i+1)*segLen/TILE;
+      push(ia,0,va,a.up); push(ib,0,vb,b.up); push(ob,1,vb,b.up);
+      push(ia,0,va,a.up); push(ob,1,vb,b.up); push(oa,1,va,a.up);
+    }
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+    geo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+    geo.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3));
+    const tex=makeAsphaltTexture(th);
+    tex.wrapS=THREE.ClampToEdgeWrapping; tex.wrapT=THREE.RepeatWrapping; tex.anisotropy=maxAniso;
+    const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({map:tex}));
+    scene.add(mesh); roadParts.push(mesh);
+  }
+
+  // ---------- grass verges (tiled texture) ----------
+  {
+    const pos=[],uv=[],nor=[];
+    const ia=new V3,oa=new V3,ib=new V3,ob=new V3;
+    const push=(p,u,v,n)=>{ pos.push(p.x,p.y,p.z); uv.push(u,v); nor.push(n.x,n.y,n.z); };
+    const GW=ROAD_W*6, GTILE=14;
+    for (const sgn of [-1,1]) for (let i=0;i<DIV;i++){
+      const a=frames[i], b=frames[(i+1)%DIV];
+      const li=sgn*(ROAD_W+RUMBLE_W), lo=sgn*GW;
+      pt(ia,a,li,-0.05); pt(oa,a,lo,-0.05); pt(ib,b,li,-0.05); pt(ob,b,lo,-0.05);
+      const va=i*segLen/GTILE, vb=(i+1)*segLen/GTILE, uo=(GW-ROAD_W-RUMBLE_W)/GTILE;
+      push(ia,0,va,a.up); push(ib,0,vb,b.up); push(ob,uo,vb,b.up);
+      push(ia,0,va,a.up); push(ob,uo,vb,b.up); push(oa,uo,va,a.up);
+    }
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+    geo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+    geo.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3));
+    const tex=makeGroundTexture(th);
+    tex.wrapS=THREE.RepeatWrapping; tex.wrapT=THREE.RepeatWrapping; tex.anisotropy=maxAniso;
+    const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({map:tex, side:THREE.DoubleSide}));
+    scene.add(mesh); roadParts.push(mesh);
+  }
+
+  // ---------- trim: kerbs + guardrails + checker (vertex colours) ----------
+  {
+    const pos=[],col=[],nor=[]; const c=new THREE.Color();
+    const vert=(p,n)=>{ pos.push(p.x,p.y,p.z); col.push(c.r,c.g,c.b); nor.push(n.x,n.y,n.z); };
+    const ia=new V3,oa=new V3,ib=new V3,ob=new V3;
+    function ribbon(latIn,latOut,lift,colorFn){
+      for (let i=0;i<DIV;i++){
+        const a=frames[i], b=frames[(i+1)%DIV];
+        pt(ia,a,latIn,lift); pt(oa,a,latOut,lift); pt(ib,b,latIn,lift); pt(ob,b,latOut,lift);
+        colorFn(i,c);
+        vert(ia,a.up); vert(ib,b.up); vert(ob,b.up); vert(ia,a.up); vert(ob,b.up); vert(oa,a.up);
+      }
+    }
+    // rumble kerbs
+    ribbon(-ROAD_W-RUMBLE_W,-ROAD_W,0.02, i=>Math.floor(i/4)%2?c.setHex(0xd03a32):c.setHex(0xe9e9ee));
+    ribbon( ROAD_W,ROAD_W+RUMBLE_W,0.02, i=>Math.floor(i/4)%2?c.setHex(0xd03a32):c.setHex(0xe9e9ee));
+    // guardrails
+    function guardrail(lat){
+      const inward=lat>0?-1:1;
+      for (let i=0;i<DIV;i++){
+        const a=frames[i], b=frames[(i+1)%DIV];
+        pt(ia,a,lat,0.15); pt(oa,a,lat,1.15); pt(ib,b,lat,0.15); pt(ob,b,lat,1.15);
+        const na=a.right.clone().multiplyScalar(inward), nb=b.right.clone().multiplyScalar(inward);
+        c.setHex(Math.floor(i/3)%4===0?0xd03a32:0xeef1f4);
+        vert(ia,na); vert(ib,nb); vert(ob,nb); vert(ia,na); vert(ob,nb); vert(oa,na);
+      }
+    }
+    guardrail(-ROAD_W-RUMBLE_W-0.4); guardrail(ROAD_W+RUMBLE_W+0.4);
+    // start/finish checker
     const NB=10;
     for (let i=0;i<3;i++){
       const a=frames[i], b=frames[(i+1)%DIV];
       for (let s=0;s<NB;s++){
-        const l1=-ROAD_W + (2*ROAD_W/NB)*s, l2=-ROAD_W + (2*ROAD_W/NB)*(s+1);
+        const l1=-ROAD_W+(2*ROAD_W/NB)*s, l2=-ROAD_W+(2*ROAD_W/NB)*(s+1);
         pt(ia,a,l1,0.05); pt(oa,a,l2,0.05); pt(ib,b,l1,0.05); pt(ob,b,l2,0.05);
         c.setHex((i+s)%2===0?0xffffff:0x14181c);
-        vert(ia,c,a.up); vert(ib,c,b.up); vert(ob,c,b.up);
-        vert(ia,c,a.up); vert(ob,c,b.up); vert(oa,c,a.up);
+        vert(ia,a.up); vert(ib,b.up); vert(ob,b.up); vert(ia,a.up); vert(ob,b.up); vert(oa,a.up);
       }
     }
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+    geo.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
+    geo.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3));
+    const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({vertexColors:true, side:THREE.DoubleSide}));
+    scene.add(mesh); roadParts.push(mesh);
   }
-
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
-  geo.setAttribute('color', new THREE.Float32BufferAttribute(col,3));
-  geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor,3));
-  roadMesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors:true, side:THREE.DoubleSide }));
-  scene.add(roadMesh);
 }
 
-// Pines, signs, the start gantry, distant mountains
-function buildScenery(rng) {
-  if (sceneryGroup){ scene.remove(sceneryGroup); }
-  sceneryGroup = new THREE.Group();
+// ---- procedural surface textures (theme-tinted) ----
+function makeAsphaltTexture(th){
+  const cv=document.createElement('canvas'); cv.width=128; cv.height=256; const x=cv.getContext('2d');
+  x.fillStyle='#'+th.asphalt.toString(16).padStart(6,'0'); x.fillRect(0,0,128,256);
+  // grain
+  for (let i=0;i<2600;i++){ const g=200+Math.random()*55|0; x.fillStyle=`rgba(${g},${g},${g},${Math.random()*0.10})`; x.fillRect(Math.random()*128,Math.random()*256,1.5,1.5); }
+  for (let i=0;i<1400;i++){ x.fillStyle=`rgba(0,0,0,${Math.random()*0.12})`; x.fillRect(Math.random()*128,Math.random()*256,2,2); }
+  // edge lines (solid white)
+  x.fillStyle='#eef1f4'; x.fillRect(3,0,4,256); x.fillRect(121,0,4,256);
+  // lane dividers (dashed white) at 1/3 and 2/3 across
+  for (const cx of [128/3, 256/3]){
+    x.fillStyle='#e9e9ee'; x.fillRect(cx-2,8,4,86); x.fillRect(cx-2,134,4,86);
+  }
+  const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace; return t;
+}
+function makeGroundTexture(th){
+  const cv=document.createElement('canvas'); cv.width=128; cv.height=128; const x=cv.getContext('2d');
+  const base=th.grass.toString(16).padStart(6,'0');
+  x.fillStyle='#'+base; x.fillRect(0,0,128,128);
+  const g2='#'+th.grass2.toString(16).padStart(6,'0');
+  for (let i=0;i<1800;i++){ x.fillStyle = Math.random()<0.5?g2:'rgba(255,255,255,0.05)'; x.fillRect(Math.random()*128,Math.random()*128,Math.random()*3+1,Math.random()*3+1); }
+  // blades / speckle
+  for (let i=0;i<500;i++){ x.fillStyle=`rgba(0,0,0,${Math.random()*0.08})`; x.fillRect(Math.random()*128,Math.random()*128,1,2); }
+  const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace; return t;
+}
 
+// Theme-aware scenery: course-specific props, set-pieces, a tunnel and the gantry
+function buildScenery(rng) {
+  if (sceneryGroup){ scene.remove(sceneryGroup); sceneryGroup.traverse(o=>{ if(o.geometry)o.geometry.dispose(); }); }
+  sceneryGroup = new THREE.Group();
+  const th = G.theme;
+
+  // ---- prop factories ----
   const pineTrunk = new THREE.MeshLambertMaterial({color:0x5b4226});
   const pineLeaf  = new THREE.MeshLambertMaterial({color:0x1f6b2e});
   function pine(scale){
@@ -252,30 +339,81 @@ function buildScenery(rng) {
       const cone = new THREE.Mesh(new THREE.ConeGeometry(2.2-k*0.5, 2.6, 7), pineLeaf);
       cone.position.y = 2.2 + k*1.5; g.add(cone);
     }
-    g.scale.setScalar(scale);
-    return g;
+    g.scale.setScalar(scale); return g;
   }
-  // line the verges with pines + the occasional sign
-  for (let i=0;i<DIV;i+=11){
-    const side = (i%22===0)?1:-1;
-    const f = frames[i];
-    const p = pine(1.4 + rng()*1.2);
+  const rockMat = new THREE.MeshLambertMaterial({color:0xb5793f, flatShading:true});
+  const rockMat2= new THREE.MeshLambertMaterial({color:0x9c6534, flatShading:true});
+  function rock(scale){
+    const g=new THREE.Group();
+    const h=3+rng()*4;
+    const m=new THREE.Mesh(new THREE.ConeGeometry(2.2+rng()*1.5, h, 5), rng()<0.5?rockMat:rockMat2);
+    m.position.y=h/2; m.rotation.y=rng()*6.28; g.add(m);
+    const m2=new THREE.Mesh(new THREE.DodecahedronGeometry(1.4+rng()), rockMat2); m2.position.set(1.5,0.8,0.5); g.add(m2);
+    g.scale.setScalar(scale); return g;
+  }
+  const palmTrunk=new THREE.MeshLambertMaterial({color:0x8a6a3a});
+  const palmLeaf =new THREE.MeshLambertMaterial({color:0x2f9c4a, side:THREE.DoubleSide});
+  function palm(scale){
+    const g=new THREE.Group();
+    const t=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.34,5,7), palmTrunk); t.position.y=2.5; t.rotation.z=0.12; g.add(t);
+    for (let k=0;k<7;k++){
+      const fr=new THREE.Mesh(new THREE.ConeGeometry(0.5,3.4,4), palmLeaf);
+      fr.position.y=5; fr.rotation.z=Math.PI/2 - 0.5; fr.rotation.y=k/7*6.28;
+      const piv=new THREE.Group(); piv.add(fr); piv.rotation.y=k/7*6.28; piv.children[0].position.set(1.6,5,0); piv.children[0].rotation.set(0,0,-0.5);
+      g.add(piv);
+    }
+    g.scale.setScalar(scale); return g;
+  }
+  const makeProp = th.prop==='rock' ? rock : th.prop==='palm' ? palm : pine;
+
+  // ---- line the verges with the course's props ----
+  for (let i=0;i<DIV;i+=10){
+    const side=(i%20===0)?1:-1, f=frames[i];
+    const p=makeProp(1.2 + rng()*1.3);
     p.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+6+rng()*16));
     sceneryGroup.add(p);
   }
-  // distant mountain ring
-  const rockMat = new THREE.MeshLambertMaterial({color:0x8a9099, flatShading:true});
+  // ---- distant mountain / canyon-wall ring ----
+  const mtnMat = new THREE.MeshLambertMaterial({color:th.mountain, flatShading:true});
   const snowMat = new THREE.MeshLambertMaterial({color:0xeef3f7, flatShading:true});
   for (let i=0;i<26;i++){
-    const ang = (i/26)*Math.PI*2;
-    const r = 760 + (mulberry32(i+99)())*220;
-    const h = 120 + (mulberry32(i+5)())*180;
-    const m = new THREE.Mesh(new THREE.ConeGeometry(h*0.9, h, 5), rockMat);
-    m.position.set(Math.cos(ang)*r, h/2-40, Math.sin(ang)*r);
-    sceneryGroup.add(m);
-    const cap = new THREE.Mesh(new THREE.ConeGeometry(h*0.32, h*0.34, 5), snowMat);
-    cap.position.set(Math.cos(ang)*r, h-40-h*0.17, Math.sin(ang)*r);
-    sceneryGroup.add(cap);
+    const ang=(i/26)*Math.PI*2;
+    const r=720 + (mulberry32(i+99)())*240;
+    const h=130 + (mulberry32(i+5)())*200;
+    const m=new THREE.Mesh(new THREE.ConeGeometry(h*0.9,h,5), mtnMat);
+    m.position.set(Math.cos(ang)*r, h/2-40, Math.sin(ang)*r); sceneryGroup.add(m);
+    if (th.snow){
+      const cap=new THREE.Mesh(new THREE.ConeGeometry(h*0.32,h*0.34,5), snowMat);
+      cap.position.set(Math.cos(ang)*r, h-40-h*0.17, Math.sin(ang)*r); sceneryGroup.add(cap);
+    }
+  }
+  // ---- sea-side water plane ----
+  if (th.water){
+    const water=new THREE.Mesh(new THREE.PlaneGeometry(3600,3600),
+      new THREE.MeshLambertMaterial({color:0x2a7fc4, transparent:true, opacity:0.88}));
+    water.rotation.x=-Math.PI/2; water.position.y=-6; sceneryGroup.add(water);
+  }
+  // ---- dinosaur set-piece (canyon) ----
+  if (th.dino){
+    const di=Math.floor(DIV*0.45), f=frames[di];
+    const dino=makeDinosaur();
+    dino.position.copy(f.pos).addScaledVector(f.right, 60).setY((f.pos.y||0));
+    dino.lookAt(f.pos.clone().setY(dino.position.y));
+    sceneryGroup.add(dino);
+  }
+  // ---- tunnel over a mid-track stretch ----
+  if (th.tunnel){
+    const stoneA=new THREE.MeshLambertMaterial({color:0x6b6f74}), stoneB=new THREE.MeshLambertMaterial({color:0x595d62});
+    const t0=Math.floor(DIV*0.6), t1=t0+34;
+    for (let i=t0;i<t1;i+=2){
+      const f=frames[i%DIV];
+      const portal=new THREE.Group();
+      const pl=new THREE.Mesh(new THREE.BoxGeometry(1.6,9,2.4), i%4?stoneA:stoneB); pl.position.set(-(ROAD_W+RUMBLE_W+0.8),4.5,0); portal.add(pl);
+      const pr=pl.clone(); pr.position.x=ROAD_W+RUMBLE_W+0.8; portal.add(pr);
+      const top=new THREE.Mesh(new THREE.BoxGeometry((ROAD_W+RUMBLE_W+1.6)*2,2.2,2.4), i%4?stoneB:stoneA); top.position.y=9.5; portal.add(top);
+      portal.position.copy(f.pos); portal.lookAt(f.pos.clone().add(f.tan));
+      sceneryGroup.add(portal);
+    }
   }
   // start/finish gantry over the line
   const f0 = frames[2];
@@ -327,6 +465,25 @@ function buildScenery(rng) {
 
   scene.add(sceneryGroup);
 }
+// A simple brontosaurus silhouette for Dinosaur Canyon
+function makeDinosaur(){
+  const g=new THREE.Group();
+  const skin=new THREE.MeshLambertMaterial({color:0x5f8a4a, flatShading:true});
+  const body=new THREE.Mesh(new THREE.SphereGeometry(7,10,8), skin); body.scale.set(1.6,1,1); body.position.y=14; g.add(body);
+  // neck
+  let nx=0, ny=20;
+  for (let k=0;k<6;k++){
+    const seg=new THREE.Mesh(new THREE.CylinderGeometry(2.4-k*0.25,2.7-k*0.25,3.2,7), skin);
+    nx+=2.0; ny+=2.4; seg.position.set(nx*0.4,ny-6, 6+k*1.2); seg.rotation.x=0.5; g.add(seg);
+  }
+  const head=new THREE.Mesh(new THREE.BoxGeometry(2.6,2.2,4), skin); head.position.set(1.0,21,13.5); g.add(head);
+  // tail
+  for (let k=0;k<6;k++){ const seg=new THREE.Mesh(new THREE.CylinderGeometry(2.6-k*0.4,3.0-k*0.4,3,7), skin); seg.position.set(0,12-k*0.6,-7-k*2.4); seg.rotation.x=-1.2; g.add(seg); }
+  // legs
+  for (const [lx,lz] of [[-3.5,4],[3.5,4],[-3.5,-4],[3.5,-4]]){ const leg=new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.9,9,7), skin); leg.position.set(lx,5,lz); g.add(leg); }
+  g.scale.setScalar(1.4);
+  return g;
+}
 function makeCrowdTexture(){
   const cv=document.createElement('canvas'); cv.width=256; cv.height=96; const x=cv.getContext('2d');
   x.fillStyle='#41474f'; x.fillRect(0,0,256,96);
@@ -358,10 +515,11 @@ function buildMinimap() {
 // ---------------------------------------------------------------------------
 // Car meshes
 // ---------------------------------------------------------------------------
-function buildCarMesh(bodyColor, isHornet) {
+function buildCarMesh(bodyColor, isHornet, number) {
+  number = number==null ? 41 : number;
   const g = new THREE.Group();
   const mat = c => new THREE.MeshLambertMaterial({color:c});
-  const roof = isHornet ? 0x2056cf : bodyColor;
+  const roof = isHornet ? 0x2056cf : shadeHex(bodyColor,-40);
   // low wide chassis
   const body = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.62, 4.9), mat(bodyColor));
   body.position.y = 0.62; g.add(body);
@@ -400,11 +558,12 @@ function buildCarMesh(bodyColor, isHornet) {
   const hl = mat(0xfff6c8);
   for (const sx of [-0.7,0.7]){ const l=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.3,0.1),hl); l.position.set(sx,0.7,2.46); g.add(l); }
   // racing number on roof + doors
-  const numTex = makeTextTexture('41');
+  const numTex = makeTextTexture(String(number));
   const roofN = new THREE.Mesh(new THREE.PlaneGeometry(1.4,1.4), new THREE.MeshBasicMaterial({map:numTex, transparent:true}));
   roofN.rotation.x=-Math.PI/2; roofN.rotation.z=Math.PI; roofN.position.set(0,1.47,-0.35); g.add(roofN);
+  const roundel = makeRoundelTexture(String(number), isHornet);
   for (const sx of [-1.06,1.06]){
-    const dr = new THREE.Mesh(new THREE.PlaneGeometry(1.2,1.0), new THREE.MeshBasicMaterial({map:makeRoundelTexture('41', isHornet), transparent:true}));
+    const dr = new THREE.Mesh(new THREE.PlaneGeometry(1.2,1.0), new THREE.MeshBasicMaterial({map:roundel, transparent:true}));
     dr.position.set(sx,0.7,-0.2); dr.rotation.y = sx<0?-Math.PI/2:Math.PI/2; g.add(dr);
   }
   return g;
@@ -525,13 +684,14 @@ function resetCars(){
   for (let i=0;i<OPPONENTS;i++){
     const row=Math.floor(i/4);
     const dist = ((10 + row*2.4) * (segLen*8)) % G.L;   // pack staggered up the road
+    const num = 2 + ((i*7+3) % 96);                 // varied racing numbers
     const car = {
       offset:laneX[i%4], targetLane:laneX[i%4], dist,
       basePace:(0.80+Math.random()*0.20)*G.aiSpeedMul, speed:0,
       color:LIVERIES[i%LIVERIES.length], lap:1, progress:0, jitter:Math.random()*6.28,
     };
     G.cars.push(car);
-    const mesh = buildCarMesh(car.color, false);
+    const mesh = buildCarMesh(car.color, false, num);
     scene.add(mesh); rivalMeshes.push(mesh);
   }
 }
