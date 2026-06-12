@@ -30,27 +30,25 @@
     font-weight: 800; letter-spacing: 1px;
     text-shadow: 0 2px 0 rgba(0,0,0,.6);
   }
-  .panel {
-    position: absolute; padding: 6px 12px; border-radius: 8px;
-    background: linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,.25));
-    border: 2px solid rgba(255,255,255,.15);
-    backdrop-filter: blur(2px);
-  }
-  #speedo { right: 18px; bottom: 18px; text-align: right; min-width: 160px; }
-  #speedo .big { font-size: 46px; line-height: 1; color: var(--yellow); }
-  #speedo .unit { font-size: 14px; opacity: .8; }
-  #speedo .gear { font-size: 16px; color: var(--neon); }
-  #lapinfo { left: 18px; top: 18px; }
-  #lapinfo .lap { font-size: 26px; color: #fff; }
-  #lapinfo .small { font-size: 13px; opacity: .85; font-weight: 600; }
-  #times { right: 18px; top: 18px; text-align: right; font-variant-numeric: tabular-nums; }
-  #times .cur { font-size: 30px; color: var(--yellow); }
-  #times .best { font-size: 14px; color: #9fe; }
-  #pos { left: 18px; bottom: 18px; }
-  #pos .big { font-size: 34px; color: var(--blue); }
-  #pos .small { font-size: 13px; opacity: .85; font-weight: 600; }
-  #mini { position: absolute; left: 50%; top: 14px; transform: translateX(-50%);
-          font-size: 13px; opacity: .8; font-weight: 600; }
+  /* Arcade HUD — flat outlined text like the real cabinet, no boxes */
+  #hud .ol { -webkit-text-stroke: 3px #000; paint-order: stroke fill;
+             text-shadow: 3px 3px 0 rgba(0,0,0,.55); }
+  #lapinfo, #timer, #pos { position: absolute; }
+  /* Top-left: LAP x/8 + lap time */
+  #lapinfo { left: 16px; top: 10px; line-height: 1; }
+  #lapinfo .laplabel { font-size: 13px; color:#fff; letter-spacing:2px; }
+  #lapinfo .lap { font-size: 40px; color: #fff; }
+  #lapinfo .lap b { color:#fff; }
+  #lapinfo .ltime { font-size: 18px; color:#fff; margin-top:4px; font-variant-numeric: tabular-nums; }
+  /* Top-centre: big yellow checkpoint timer */
+  #timer { left:50%; top:6px; transform:translateX(-50%); text-align:center; }
+  #timer .timerval { font-size: 56px; color: var(--yellow); line-height:1; }
+  #timer .timerlabel { font-size: 11px; letter-spacing:3px; color:#fff; opacity:.9; }
+  /* Top-right: green POSITION x/40 */
+  #pos { right: 16px; top: 8px; text-align: right; line-height:1; }
+  #pos .poslabel { font-size: 12px; letter-spacing:2px; color:#fff; }
+  #pos .posval { font-size: 50px; color: #2bd451; }
+  #mini { display:none; }
   /* ---------- Overlays ---------- */
   #overlay {
     position: absolute; inset: 0; display: flex; flex-direction: column;
@@ -124,24 +122,19 @@
   <canvas id="game" width="960" height="600"></canvas>
 
   <div id="hud">
-    <div id="lapinfo" class="panel">
-      <div class="lap">LAP <span id="lapNum">1</span>/<span id="lapTotal">3</span></div>
-      <div class="small" id="trackName">THREE-SEVEN SPEEDWAY</div>
+    <div id="lapinfo">
+      <div class="laplabel ol">LAP</div>
+      <div class="lap ol"><span id="lapNum">1</span>/<span id="lapTotal">8</span></div>
+      <div class="ltime ol" id="lapTimeVal">0'00"00</div>
     </div>
-    <div id="times" class="panel">
-      <div class="cur" id="curTime">0:00.00</div>
-      <div class="best">BEST <span id="bestTime">--:--.--</span></div>
-      <div class="best">LAST <span id="lastTime">--:--.--</span></div>
+    <div id="timer">
+      <div class="timerval ol" id="timerVal">50</div>
+      <div class="timerlabel ol" id="trackName">THREE-SEVEN SPEEDWAY</div>
     </div>
-    <div id="pos" class="panel">
-      <div class="big"><span id="posNum">1</span><span style="font-size:16px"> / <span id="posTotal">6</span></span></div>
-      <div class="small">POSITION</div>
+    <div id="pos">
+      <div class="poslabel ol">POSITION</div>
+      <div class="posval ol"><span id="posNum">40</span>/<span id="posTotal">40</span></div>
     </div>
-    <div id="speedo" class="panel">
-      <div><span class="big" id="speedVal">0</span> <span class="unit">KM/H</span></div>
-      <div class="gear" id="gearVal">GEAR 1</div>
-    </div>
-    <div id="mini">ARROWS / WASD to drive &nbsp;•&nbsp; SPACE = brake &nbsp;•&nbsp; P = pause</div>
   </div>
 
   <div id="banner" class="hidden"></div>
@@ -151,10 +144,10 @@
     <h1 class="title">DAYTONA <span class="red">USA</span></h1>
     <div class="subtitle">WEB ARCADE EDITION</div>
     <div class="menu-card">
-      <h2>CHOOSE YOUR COURSE DIFFICULTY</h2>
+      <h2>SELECT COURSE</h2>
       <div class="diff">
-        <button class="btn ghost" data-diff="0">BEGINNER</button>
-        <button class="btn ghost sel" data-diff="1">ADVANCED</button>
+        <button class="btn ghost sel" data-diff="0">BEGINNER</button>
+        <button class="btn ghost" data-diff="1">ADVANCED</button>
         <button class="btn ghost" data-diff="2">EXPERT</button>
       </div>
       <div class="keys">
