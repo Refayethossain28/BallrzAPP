@@ -1323,8 +1323,7 @@ function bottomNav(active) {
 function generateMemberNumber() {
   if (state.memberNumber) return;
   // Charter series: 1000–1999 (low numbers signal early membership)
-  const n = 1000 + Math.floor(Math.random() * 247) + Math.floor(Date.now() % 400);
-  state.memberNumber = String(n % 1999 + 1000);
+  state.memberNumber = String(1000 + (Math.floor(Math.random() * 600) + Math.floor(Date.now() % 400)) % 1000);
   localStorage.setItem('apex_member_no', state.memberNumber);
   if (FIREBASE_ENABLED && auth?.currentUser) {
     db.collection('users').doc(auth.currentUser.uid).set({ memberNumber: state.memberNumber }, { merge: true }).catch(() => {});
