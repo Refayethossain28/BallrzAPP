@@ -262,6 +262,10 @@ function updateCars(dt, playerSeg) {
   }
 }
 
+function approach(v, target, amt) {
+  return v > target ? Math.max(target, v - amt) : Math.min(target, v + amt);
+}
+
 function loopDelta(a, b) {
   let d = a - b;
   while (d >  G.trackLength/2) d -= G.trackLength;
@@ -338,8 +342,8 @@ function update(dt) {
   const decel = -G.maxSpeed / 5.5;
   if (keys.gas && !keys.reverse) G.speed += accel * dt;
   else if (keys.reverse) G.speed += brake * dt;
-  else G.speed += decel * dt;
-  if (keys.brake) G.speed += brake * dt;
+  else G.speed = approach(G.speed, 0, -decel * dt);   // coast: settle to a stop, never reverse
+  if (keys.brake) G.speed = approach(G.speed, 0, -brake * dt);
 
   // --- Off-road & collisions ---
   G.skid = Math.max(0, G.skid - dt);
@@ -370,9 +374,15 @@ function update(dt) {
   G.position += G.speed * dt;
   while (G.position >= G.trackLength) {
     G.position -= G.trackLength;
-    onLapComplete();
+    // a forward crossing after reversing over the line just undoes the rollback
+    if (G.reversedLine) { G.reversedLine = false; G.lap++; }
+    else onLapComplete();
   }
-  while (G.position < 0) G.position += G.trackLength;
+  while (G.position < 0) {
+    G.position += G.trackLength;
+    G.lap--;
+    G.reversedLine = true;
+  }
   G.playerX = Math.max(-2.2, Math.min(2.2, G.playerX));
 
   // --- Timers ---
@@ -757,7 +767,7 @@ function drawHUD() {
   document.getElementById('speedVal').textContent = Math.round(Math.abs(G.speed)/40);
   const gear = Math.min(6, 1 + Math.floor((G.speed/G.maxSpeed)*5.99));
   document.getElementById('gearVal').textContent = 'GEAR ' + (G.speed<0?'R':gear);
-  document.getElementById('lapNum').textContent = Math.min(G.lap, TOTAL_LAPS);
+  document.getElementById('lapNum').textContent = Math.max(1, Math.min(G.lap, TOTAL_LAPS));
   document.getElementById('lapTotal').textContent = TOTAL_LAPS;
   document.getElementById('curTime').textContent = fmtTime(G.lapTime);
   document.getElementById('bestTime').textContent = G.bestLapTime===Infinity?'--:--.--':fmtTime(G.bestLapTime);
@@ -822,6 +832,7 @@ function startRace() {
   G.position = 0; G.playerX = 0; G.speed = 0;
   G.lap = 1; G.lapTime = 0; G.lastLapTime = 0; G.bestLapTime = Infinity;
   G.totalTime = 0; G.place = OPPONENTS+1; G.shake = 0; G.skid = 0;
+  G.reversedLine = false;
 
   document.getElementById('overlay').classList.add('hidden');
   const cd = document.getElementById('countdown');
