@@ -1337,10 +1337,21 @@ async function applyReferral() {
   render();
 }
 
+function _guideRender() {
+  state._guideVideoTime = document.getElementById('guide-video')?.currentTime || 0;
+  render();
+  setTimeout(() => {
+    const v = document.getElementById('guide-video');
+    if (v && state._guideVideoTime) { v.currentTime = state._guideVideoTime; v.play(); }
+  }, 30);
+}
 function nextGuideStep() {
   state.guideStep = (state.guideStep || 0) + 1;
   if (state.guideStep >= 4) skipGuide();
-  else render();
+  else _guideRender();
+}
+function prevGuideStep() {
+  if ((state.guideStep || 0) > 0) { state.guideStep--; _guideRender(); }
 }
 function skipGuide() {
   localStorage.setItem('apexvip_guide_seen', '1');
@@ -2947,11 +2958,11 @@ guide: () => {
   return `
 <div style="height:100vh;background:#050505;display:flex;flex-direction:column;overflow:hidden;position:relative"
   ontouchstart="state._gTx=event.touches[0].clientX"
-  ontouchend="const dx=state._gTx-(event.changedTouches[0]?.clientX||state._gTx);if(dx>52)nextGuideStep();else if(dx<-52&&${step}>0){state.guideStep=${step}-1;render();}">
+  ontouchend="const dx=state._gTx-(event.changedTouches[0]?.clientX||state._gTx);if(dx>52)nextGuideStep();else if(dx<-52)prevGuideStep()">
 
   <!-- Video background (top half) -->
   <div style="position:relative;flex:1;overflow:hidden;min-height:0">
-    <video autoplay muted loop playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0" src="/guide-bg.mp4"></video>
+    <video id="guide-video" autoplay muted loop playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0" src="/guide-bg.mp4"></video>
     <div style="position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,.2) 0%,rgba(5,5,5,1) 100%);z-index:1;pointer-events:none"></div>
     <!-- Skip -->
     <div style="position:absolute;top:clamp(48px,12vw,60px);right:22px;z-index:20;animation:fadeIn .5s .7s both">
