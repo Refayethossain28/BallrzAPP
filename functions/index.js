@@ -357,82 +357,105 @@ async function isAdminUser(uid) {
 // 8. parseBookingIntent  (AI Concierge — Claude claude-opus-4-8)
 // ─────────────────────────────────────────────────────────────────────────────
 exports.parseBookingIntent = functions.https.onCall(async (data, context) => {
-  // Allow unauthenticated guests to use the AI concierge
-  const { message, history } = data;
+  const { message, history, trips, now } = data;
   if (!message || typeof message !== 'string')
     throw new functions.https.HttpsError('invalid-argument', 'message required');
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new functions.https.HttpsError('failed-precondition', 'ANTHROPIC_API_KEY not configured — add it to functions/.env and redeploy');
+  if (!apiKey) throw new functions.https.HttpsError('failed-precondition', 'ANTHROPIC_API_KEY not configured');
 
   const Anthropic = require('@anthropic-ai/sdk');
   const client = new Anthropic.Anthropic({ apiKey });
 
+  const tripsCtx = Array.isArray(trips) && trips.length
+    ? trips.slice(0,10).map(t=>`• ${t.ref}: ${t.pickup||'?'} → ${t.dropoff||t.airport||'?'}, ${t.date||'?'} ${t.time||''} [${t.status}]`).join('\n')
+    : 'No booking history.';
+
   const systemPrompt = `You are the ApexVIP AI Concierge for a premium chauffeur service in London and Dubai.
+You handle bookings, price quotes, destination suggestions, booking modifications, recurring schedules, and trip queries.
 
-Extract booking details from the full conversation and return ONLY valid JSON.
+══ INTENT — set the "intent" field:
+"book"          new booking
+"quote"         price enquiry ("how much", "what does it cost", "price for")
+"modify"        change/cancel existing booking ("reschedule", "move my booking", "cancel")
+"query"         question about past/upcoming trips ("when is my next trip", "last Heathrow")
+"suggest"       destination ideas ("nice restaurant", "somewhere for dinner", "recommend")
+"recurring"     repeating schedule ("every Monday", "weekly run", "every week at 8am")
+"flight_update" flight delay/change ("flight delayed", "pushed back", "flight cancelled")
+"chat"          general conversation, no booking action
 
-CRITICAL RULES — read carefully:
+══ PRICING GUIDE — set priceEstimate (GBP) for "quote" intent:
+Central London → Heathrow/Gatwick: S-Class £195, V-Class £245, Phantom £490
+Central ↔ Central (within M25): S-Class £85-130, V-Class £115-165, Phantom £300-400
+→ Stansted/Luton: S-Class £165, V-Class £210
+Hourly: S-Class £75/hr, V-Class £95/hr, Phantom £185/hr (2hr minimum)
+Day hire (up to 10hrs): S-Class £680, V-Class £850, Phantom £1,600
+Default to S-Class if no vehicle specified.
 
-1. TIMES vs FLIGHT NUMBERS (most common mistake):
-   - "1700", "at 1700", "for 1700", "17:00" = departure TIME (17:00 = 5pm). Set time: "17:00"
-   - "0600", "at 0600" = 6am. Set time: "06:00"
-   - "9am", "9 o'clock", "nine o'clock" = time: "09:00"
-   - Flight numbers ALWAYS have an airline IATA prefix (2 uppercase letters) joined to digits with NO space, e.g. "BA123", "EK456", "LH789", "AA001", "VS402"
-   - The phrase "at 1700" means departure at 5pm — it is NOT flight number "AT1700"
-   - Only set the flight field if the user explicitly states a flight code like "BA249" or "EK004"
+══ SMART PICKUP TIME — set suggestedPickupTime (HH:MM) when flight time is known:
+Heathrow or Gatwick: flight_time minus 3h 30min. Add 30min if between 07-09 or 17-19.
+Stansted or Luton: flight_time minus 3h.
+London City: flight_time minus 2h.
+Example: flight 08:00 Heathrow → suggestedPickupTime: "04:30"
 
-2. ADDRESSES — extract full addresses including house number, street, and postcode:
-   - "37 Letchworth Street SW17 8SX" → pickup: "37 Letchworth Street, SW17 8SX"
-   - A postcode alone in a follow-up (e.g. "SW17 8SX") refers to the address already mentioned
+══ MULTI-STOP — set stops array when user mentions several locations:
+stops: [{"name":"Harrods","address":"87-135 Brompton Rd SW1X 7XL"},{"name":"The Shard","address":"32 London Bridge St SE1 9SG"}]
+Multi-stop trips → serviceType: "day"
 
-3. AIRPORTS — set the airport field (not dropoff) for airport trips:
-   - "Heathrow" / "Heathrow Airport" → airport: "Heathrow T5" (default T5 if no terminal given)
-   - "Heathrow T3", "Terminal 3 Heathrow" → airport: "Heathrow T3"
-   - "Gatwick" → airport: "Gatwick", "Stansted" → airport: "Stansted", "Luton" → airport: "Luton"
-   - "London City Airport" → airport: "London City Airport"
+══ PA MODE — set paPassenger when booking is for someone else:
+Triggered by "for my client [name]", "book for [name]", "passenger is [name]"
+paPassenger: {"name":"Sarah Jones","notes":"VIP, prefers silence, champagne on board"}
 
-4. CONVERSATION CONTEXT — use the full message history:
-   - Do NOT ask for information already provided in a previous message
-   - Carry forward pickup, destination, date, and time from earlier in the conversation
-   - If a follow-up message provides just one piece (e.g. a postcode), merge it with known details
+══ RECURRING — set recurringPattern:
+recurringPattern: {"frequency":"weekly","dayOfWeek":"Monday","time":"08:00"}
 
-5. SERVICE TYPES:
-   - "airport" = any trip to or from an airport or involving a flight
-   - "hourly" = by the hour ("4 hours", "a few hours", "hourly hire")
-   - "day" = full day chauffeur ("full day", "all day", "day hire")
-   - "aviation" = private jet / FBO / aviation terminal
+══ DESTINATION SUGGESTIONS — for "suggest" intent return 4 curated spots:
+suggestions: [{"name":"Nobu London","type":"Dining","address":"15 Berkeley St W1J 8DY","notes":"World-class Japanese — book ahead"},...]
+Types: Dining, Hotel, Shopping, Nightlife, Spa, Experience, View
 
-Return ONLY valid JSON — no markdown, no prose outside the JSON:
+══ BOOKING MODIFICATIONS — for "modify" intent:
+Set modifyBookingRef to the booking ref (e.g. APX-4516).
+Set modifyFields as object with changed fields only e.g. {"time":"19:00"} or {"status":"cancelled"}.
+
+══ CLIENT TRIP HISTORY (for modify/query):
+${tripsCtx}
+
+══ CURRENT DATE/TIME: ${now || new Date().toISOString()}
+
+══ TIME vs FLIGHT NUMBER (critical rule):
+"at 1700", "for 1700", "1700hrs" = time 17:00. NEVER "AT1700" flight.
+Flight numbers = UPPERCASE airline code + digits with no space: BA123, EK456, LH789.
+
+Return ONLY valid JSON, no markdown wrapper:
 {
-  "serviceType": "airport" | "hourly" | "day" | "aviation" | null,
-  "pickup": string | null,
-  "dropoff": string | null,
-  "airport": string | null,
-  "flight": string | null,
-  "date": string | null,
-  "time": string | null,
-  "vehicle": "S-Class" | "V-Class" | "Phantom" | null,
-  "passengers": number | null,
-  "notes": string | null,
+  "intent": string,
+  "serviceType": "airport"|"hourly"|"day"|"aviation"|null,
+  "pickup": string|null, "dropoff": string|null, "airport": string|null,
+  "flight": string|null, "date": string|null, "time": string|null,
+  "suggestedPickupTime": string|null,
+  "vehicle": "S-Class"|"V-Class"|"Phantom"|null,
+  "passengers": number|null, "notes": string|null,
+  "stops": [{"name":string,"address":string}]|null,
+  "recurringPattern": {"frequency":string,"dayOfWeek":string,"time":string}|null,
+  "paPassenger": {"name":string,"notes":string}|null,
+  "priceEstimate": number|null,
+  "modifyBookingRef": string|null,
+  "modifyFields": object|null,
+  "suggestions": [{"name":string,"type":string,"address":string,"notes":string}]|null,
   "reply": string
 }
 
-"reply": one warm, professional sentence confirming what you understood, in the style of a luxury concierge.
-If essential information is still missing (pickup address OR destination/airport OR date), ask for exactly ONE missing item.
-Do NOT ask for anything the client has already provided in this conversation.`;
+"reply": one warm, professional sentence in luxury concierge style confirming what was understood.
+Ask for ONE missing essential item at a time. Never re-ask for info already given.`;
 
-  // Build message array: prior conversation + current message
   const priorMsgs = Array.isArray(history)
-    ? history
-        .filter(m => m.role === 'user' || m.role === 'assistant')
-        .slice(-8)
-        .map(m => ({ role: m.role, content: String(m.content) }))
+    ? history.filter(m=>m.role==='user'||m.role==='assistant').slice(-8)
+        .map(m=>({role:m.role, content:String(m.content)}))
     : [];
 
   const resp = await client.messages.create({
     model: 'claude-opus-4-8',
-    max_tokens: 600,
+    max_tokens: 800,
     system: systemPrompt,
     messages: [...priorMsgs, { role: 'user', content: message }]
   });
@@ -443,18 +466,19 @@ Do NOT ask for anything the client has already provided in this conversation.`;
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
   } catch (e) {
-    parsed = { reply: 'I understand you need a car. Could you give me the pickup address and date?', serviceType: null };
+    parsed = { intent:'chat', reply: 'I understand you need assistance. Could you tell me where you\'d like to go?' };
   }
 
   await db.collection('analytics').add({
     event: 'ai_concierge_used',
     uid: context.auth ? context.auth.uid : null,
     messageLength: message.length,
+    intent: parsed?.intent || null,
     serviceType: parsed?.serviceType || null,
     timestamp: admin.firestore.FieldValue.serverTimestamp()
   }).catch(() => {});
 
-  return parsed || { reply: 'Could you share the pickup address, destination and date for your journey?', serviceType: null };
+  return parsed || { intent:'chat', reply: 'Could you share your pickup address, destination and date?' };
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

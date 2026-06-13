@@ -989,42 +989,138 @@ async function sendConciergeMsg() {
     if (FIREBASE_ENABLED && fns) {
       try {
         const fn = fns.httpsCallable('parseBookingIntent');
-        // Pass prior conversation so AI can use context from earlier messages
-        const history = CONCIERGE_MSGS.slice(0, -1)
-          .filter(m => m.role === 'user' || m.role === 'assistant')
-          .slice(-8);
-        const res = await fn({ message: msg, history });
+        const history = CONCIERGE_MSGS.slice(0,-1)
+          .filter(m=>m.role==='user'||m.role==='assistant').slice(-8);
+        const tripsCtx = TRIPS.slice(0,10).map(t=>({
+          ref:t.id, pickup:t.pickup, dropoff:t.dropoff||'', airport:t.dropoff||'',
+          date:t.date, time:t.time, status:t.status, flight:t.flight||''
+        }));
+        const res = await fn({ message:msg, history, trips:tripsCtx, now:new Date().toISOString() });
         d = res.data;
       } catch(fnErr) {
-        // Cloud Function unavailable — fall back to local parser
-        await new Promise(r => setTimeout(r, 520));
+        await new Promise(r=>setTimeout(r,520));
         d = _parseIntentLocal(msg);
       }
     } else {
-      await new Promise(r => setTimeout(r, 520));
+      await new Promise(r=>setTimeout(r,520));
       d = _parseIntentLocal(msg);
     }
-    CONCIERGE_MSGS.push({ role: 'assistant', content: d.reply || 'Let me arrange that for you.' });
-    if (d.serviceType) {
-      state.booking.serviceType = d.serviceType;
-      if (d.pickup)  state.booking.pickup  = d.pickup;
-      if (d.dropoff) state.booking.dropoff = d.dropoff;
-      if (d.airport) state.booking.airport = d.airport;
-      if (d.flight)  state.booking.flight  = d.flight;
-      if (d.date)    state.booking.date    = d.date;
-      if (d.time)    state.booking.time    = d.time;
-      CONCIERGE_MSGS.push({ role: 'system', content: '✓ Details understood — tap "Review & Confirm" to select your vehicle.' });
+
+    CONCIERGE_MSGS.push({ role:'assistant', content: d.reply || 'Let me arrange that for you.' });
+    const intent = d.intent || 'book';
+
+    if (intent === 'suggest' && d.suggestions) {
+      state._conciergeSuggestions = d.suggestions;
+
+    } else if (intent === 'modify') {
+      if (d.modifyBookingRef) state._pendingModify = { ref: d.modifyBookingRef, fields: d.modifyFields||{} };
+
+    } else if (intent === 'recurring' && d.recurringPattern) {
+      _applyBookingFields(d);
+      state._pendingRecurring = d;
       state._conciergeParsed = d;
+
+    } else if (intent === 'flight_update') {
+      const trip = TRIPS.find(t => t.flight && d.flight && t.flight===d.flight && t.status==='upcoming');
+      if (trip) state._pendingFlightUpdate = { trip, newTime: d.time };
+
+    } else if (intent === 'quote') {
+      _applyBookingFields(d);
+      if (d.priceEstimate) { state._quotedPrice = d.priceEstimate; state._conciergeParsed = d; }
+
+    } else if (intent === 'book' || intent === 'chat' || !d.intent) {
+      if (d.serviceType) {
+        _applyBookingFields(d);
+        if (d.suggestedPickupTime && !d.time) {
+          state.booking.time = d.suggestedPickupTime;
+          CONCIERGE_MSGS.push({ role:'system', content:`🕐 Pickup time set to ${d.suggestedPickupTime} — timed for your flight.` });
+        }
+        if (d.stops && d.stops.length > 1) {
+          if (!state.booking.concierge) resetConcierge();
+          state.booking.concierge.itinerary = d.stops.map(s=>({place:s.name,time:'',note:s.address||''}));
+          state.booking.serviceType = 'day';
+        }
+        CONCIERGE_MSGS.push({ role:'system', content:'✓ Details understood — tap "Review & Confirm" to select your vehicle.' });
+        state._conciergeParsed = d;
+      }
     }
   } catch(e) {
-    CONCIERGE_MSGS.push({ role: 'assistant', content: 'I apologise — please try rephrasing, or call us directly on +44 20 1234 5678.' });
+    CONCIERGE_MSGS.push({ role:'assistant', content:'I apologise — please try rephrasing, or call us directly on +44 20 1234 5678.' });
   }
   _conciergeLoading = false;
   render();
-  setTimeout(() => {
-    const el = document.getElementById('concierge-msgs');
-    if (el) el.scrollTop = el.scrollHeight;
-  }, 60);
+  setTimeout(()=>{ const el=document.getElementById('concierge-msgs'); if(el)el.scrollTop=el.scrollHeight; }, 60);
+}
+
+function _applyBookingFields(d) {
+  if (d.serviceType) state.booking.serviceType = d.serviceType;
+  if (d.pickup)    state.booking.pickup    = d.pickup;
+  if (d.dropoff)   state.booking.dropoff   = d.dropoff;
+  if (d.airport)   state.booking.airport   = d.airport;
+  if (d.flight)    state.booking.flight    = d.flight;
+  if (d.date)      state.booking.date      = d.date;
+  if (d.time)      state.booking.time      = d.time;
+  if (d.vehicle)   state.booking.vehicle   = d.vehicle;
+  if (d.passengers) state.booking.passengers = d.passengers;
+  if (d.paPassenger) {
+    state.paMode = true;
+    state.paPassenger = { ...state.paPassenger, name: d.paPassenger.name, notes: d.paPassenger.notes };
+  }
+}
+
+async function applyModifyBooking() {
+  const m = state._pendingModify;
+  if (!m) return;
+  if (!auth.currentUser) { go('login'); return; }
+  try {
+    const snap = await db.collection('bookings')
+      .where('clientId','==',auth.currentUser.uid).where('ref','==',m.ref).limit(1).get();
+    if (!snap.empty) {
+      await snap.docs[0].ref.update(m.fields);
+      CONCIERGE_MSGS.push({ role:'system', content:`✓ Booking ${m.ref} updated.` });
+    } else {
+      CONCIERGE_MSGS.push({ role:'assistant', content:`I couldn't find booking ${m.ref}. Please check the reference.` });
+    }
+  } catch(e) {
+    CONCIERGE_MSGS.push({ role:'assistant', content:'Update failed — please contact us directly.' });
+  }
+  state._pendingModify = null;
+  render();
+}
+
+async function saveRecurringBooking() {
+  const r = state._pendingRecurring;
+  if (!r) return;
+  if (!auth.currentUser) { state._pendingScreen='concierge-chat'; go('login'); return; }
+  try {
+    await db.collection('recurring_bookings').add({
+      clientId: auth.currentUser.uid,
+      serviceType: r.serviceType||'airport',
+      pickup: r.pickup||'', dropoff: r.dropoff||r.airport||'',
+      vehicle: r.vehicle||'S-Class',
+      pattern: r.recurringPattern,
+      active: true,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    CONCIERGE_MSGS.push({ role:'system', content:`✓ Recurring booking set — every ${r.recurringPattern.dayOfWeek} at ${r.recurringPattern.time}.` });
+  } catch(e) {
+    CONCIERGE_MSGS.push({ role:'assistant', content:'Could not save recurring booking — please contact us.' });
+  }
+  state._pendingRecurring = null;
+  render();
+}
+
+async function applyFlightUpdate() {
+  const fu = state._pendingFlightUpdate;
+  if (!fu || !auth.currentUser) return;
+  try {
+    const snap = await db.collection('bookings')
+      .where('clientId','==',auth.currentUser.uid).where('ref','==',fu.trip.id).limit(1).get();
+    if (!snap.empty && fu.newTime) await snap.docs[0].ref.update({ time: fu.newTime });
+    CONCIERGE_MSGS.push({ role:'system', content:`✓ Pickup updated to ${fu.newTime||'the new time'} to match your flight.` });
+  } catch(e) {}
+  state._pendingFlightUpdate = null;
+  render();
 }
 
 // ── Voice Input ────────────────────────────────────────────────────────────
@@ -3243,7 +3339,59 @@ profile: () => {
         <div style="background:var(--surface);border:1px solid var(--border);border-radius:18px 18px 18px 4px;padding:14px 16px;font-size:14px;line-height:1.5">${m.content}</div>
       </div>`).join('')}
     ${_conciergeLoading ? `<div style="align-self:flex-start"><div style="background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:12px 18px;font-size:20px;letter-spacing:4px;color:var(--fg-3)">···</div></div>` : ''}
-    ${state._conciergeParsed ? `<button class="btn btn-gold" style="margin-top:8px" onclick="conciergeReview()">Review &amp; Confirm Booking →</button>` : ''}
+
+    ${state._quotedPrice ? `
+    <div style="align-self:stretch;background:var(--surface);border:1px solid rgba(212,168,67,.3);border-radius:18px;padding:18px 20px;margin-top:4px">
+      <div style="font-size:10px;color:var(--fg-4);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px">Price Estimate</div>
+      <div style="font-size:36px;font-weight:800;color:#D4A843;margin-bottom:4px">£${state._quotedPrice}</div>
+      <div style="font-size:12px;color:var(--fg-3);margin-bottom:14px">${state.booking.pickup||''} → ${state.booking.dropoff||state.booking.airport||''}</div>
+      <button class="btn btn-gold" onclick="state._quotedPrice=null;conciergeReview()">Book at this price →</button>
+    </div>` : ''}
+
+    ${state._conciergeSuggestions ? `
+    <div style="align-self:stretch;display:flex;flex-direction:column;gap:8px;margin-top:4px">
+      ${state._conciergeSuggestions.map(s=>`
+      <div onclick="state.booking.dropoff='${s.name}';state.booking.serviceType='airport';state._conciergeSuggestions=null;state._conciergeParsed={serviceType:'airport',dropoff:'${s.name}'};render()"
+        style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:12px">
+        <div style="width:36px;height:36px;border-radius:10px;background:rgba(212,168,67,.1);border:1px solid rgba(212,168,67,.2);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">${{Dining:'🍽',Hotel:'🏨',Shopping:'🛍',Nightlife:'🎵',Spa:'💆',Experience:'✨',View:'🏙',Bar:'🍸'}[s.type]||'📍'}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:700">${s.name}</div>
+          <div style="font-size:11px;color:#D4A843;margin-top:1px">${s.type}</div>
+          <div style="font-size:11px;color:var(--fg-3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.notes}</div>
+        </div>
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="var(--fg-4)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </div>`).join('')}
+    </div>` : ''}
+
+    ${state._pendingModify ? `
+    <div style="align-self:stretch;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-top:4px">
+      <div style="font-size:12px;color:var(--fg-3);margin-bottom:10px">Confirm change to booking <strong>${state._pendingModify.ref}</strong>?</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-gold" style="flex:1;font-size:13px" onclick="applyModifyBooking()">Confirm</button>
+        <button class="btn btn-glass" style="flex:1;font-size:13px" onclick="state._pendingModify=null;render()">Cancel</button>
+      </div>
+    </div>` : ''}
+
+    ${state._pendingRecurring ? `
+    <div style="align-self:stretch;background:var(--surface);border:1px solid rgba(212,168,67,.3);border-radius:14px;padding:14px 16px;margin-top:4px">
+      <div style="font-size:10px;color:var(--fg-4);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Recurring Booking</div>
+      <div style="font-size:15px;font-weight:700;margin-bottom:10px">Every ${state._pendingRecurring.recurringPattern?.dayOfWeek} at ${state._pendingRecurring.recurringPattern?.time}</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-gold" style="flex:1;font-size:13px" onclick="saveRecurringBooking()">Set up →</button>
+        <button class="btn btn-glass" style="flex:1;font-size:13px" onclick="state._pendingRecurring=null;render()">Cancel</button>
+      </div>
+    </div>` : ''}
+
+    ${state._pendingFlightUpdate ? `
+    <div style="align-self:stretch;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-top:4px">
+      <div style="font-size:12px;color:var(--fg-3);margin-bottom:10px">Update pickup time to <strong>${state._pendingFlightUpdate.newTime||'new time'}</strong>?</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-gold" style="flex:1;font-size:13px" onclick="applyFlightUpdate()">Update</button>
+        <button class="btn btn-glass" style="flex:1;font-size:13px" onclick="state._pendingFlightUpdate=null;render()">Dismiss</button>
+      </div>
+    </div>` : ''}
+
+    ${state._conciergeParsed && !state._quotedPrice && !state._pendingRecurring ? `<button class="btn btn-gold" style="margin-top:8px" onclick="conciergeReview()">Review &amp; Confirm Booking →</button>` : ''}
   </div>
   <div style="padding:12px 20px calc(env(safe-area-inset-bottom,0px) + 20px);border-top:1px solid var(--divider);background:var(--bg);position:sticky;bottom:0">
     <div class="field" style="display:flex;align-items:center;gap:8px;padding:10px 14px">
