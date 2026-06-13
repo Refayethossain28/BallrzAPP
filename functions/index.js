@@ -358,7 +358,7 @@ async function isAdminUser(uid) {
 // ─────────────────────────────────────────────────────────────────────────────
 exports.parseBookingIntent = functions.https.onCall(async (data, context) => {
   // Allow unauthenticated guests to use the AI concierge
-  const { message } = data;
+  const { message, history } = data;
   if (!message || typeof message !== 'string')
     throw new functions.https.HttpsError('invalid-argument', 'message required');
 
@@ -368,10 +368,42 @@ exports.parseBookingIntent = functions.https.onCall(async (data, context) => {
   const Anthropic = require('@anthropic-ai/sdk');
   const client = new Anthropic.Anthropic({ apiKey });
 
-  const systemPrompt = `You are the ApexVIP booking assistant for a luxury chauffeur service in London and Dubai.
-Extract booking details from the client's message and return them as JSON.
+  const systemPrompt = `You are the ApexVIP AI Concierge for a premium chauffeur service in London and Dubai.
 
-Return ONLY valid JSON with these fields (use null for unknown fields):
+Extract booking details from the full conversation and return ONLY valid JSON.
+
+CRITICAL RULES — read carefully:
+
+1. TIMES vs FLIGHT NUMBERS (most common mistake):
+   - "1700", "at 1700", "for 1700", "17:00" = departure TIME (17:00 = 5pm). Set time: "17:00"
+   - "0600", "at 0600" = 6am. Set time: "06:00"
+   - "9am", "9 o'clock", "nine o'clock" = time: "09:00"
+   - Flight numbers ALWAYS have an airline IATA prefix (2 uppercase letters) joined to digits with NO space, e.g. "BA123", "EK456", "LH789", "AA001", "VS402"
+   - The phrase "at 1700" means departure at 5pm — it is NOT flight number "AT1700"
+   - Only set the flight field if the user explicitly states a flight code like "BA249" or "EK004"
+
+2. ADDRESSES — extract full addresses including house number, street, and postcode:
+   - "37 Letchworth Street SW17 8SX" → pickup: "37 Letchworth Street, SW17 8SX"
+   - A postcode alone in a follow-up (e.g. "SW17 8SX") refers to the address already mentioned
+
+3. AIRPORTS — set the airport field (not dropoff) for airport trips:
+   - "Heathrow" / "Heathrow Airport" → airport: "Heathrow T5" (default T5 if no terminal given)
+   - "Heathrow T3", "Terminal 3 Heathrow" → airport: "Heathrow T3"
+   - "Gatwick" → airport: "Gatwick", "Stansted" → airport: "Stansted", "Luton" → airport: "Luton"
+   - "London City Airport" → airport: "London City Airport"
+
+4. CONVERSATION CONTEXT — use the full message history:
+   - Do NOT ask for information already provided in a previous message
+   - Carry forward pickup, destination, date, and time from earlier in the conversation
+   - If a follow-up message provides just one piece (e.g. a postcode), merge it with known details
+
+5. SERVICE TYPES:
+   - "airport" = any trip to or from an airport or involving a flight
+   - "hourly" = by the hour ("4 hours", "a few hours", "hourly hire")
+   - "day" = full day chauffeur ("full day", "all day", "day hire")
+   - "aviation" = private jet / FBO / aviation terminal
+
+Return ONLY valid JSON — no markdown, no prose outside the JSON:
 {
   "serviceType": "airport" | "hourly" | "day" | "aviation" | null,
   "pickup": string | null,
@@ -386,14 +418,23 @@ Return ONLY valid JSON with these fields (use null for unknown fields):
   "reply": string
 }
 
-The "reply" field should be a warm, professional one-sentence confirmation of what you understood,
-in the style of a luxury concierge. If anything is unclear, ask for the missing detail in "reply".`;
+"reply": one warm, professional sentence confirming what you understood, in the style of a luxury concierge.
+If essential information is still missing (pickup address OR destination/airport OR date), ask for exactly ONE missing item.
+Do NOT ask for anything the client has already provided in this conversation.`;
+
+  // Build message array: prior conversation + current message
+  const priorMsgs = Array.isArray(history)
+    ? history
+        .filter(m => m.role === 'user' || m.role === 'assistant')
+        .slice(-8)
+        .map(m => ({ role: m.role, content: String(m.content) }))
+    : [];
 
   const resp = await client.messages.create({
     model: 'claude-opus-4-8',
-    max_tokens: 512,
+    max_tokens: 600,
     system: systemPrompt,
-    messages: [{ role: 'user', content: message }]
+    messages: [...priorMsgs, { role: 'user', content: message }]
   });
 
   let parsed = null;
@@ -407,7 +448,7 @@ in the style of a luxury concierge. If anything is unclear, ask for the missing 
 
   await db.collection('analytics').add({
     event: 'ai_concierge_used',
-    uid: context.auth.uid,
+    uid: context.auth ? context.auth.uid : null,
     messageLength: message.length,
     serviceType: parsed?.serviceType || null,
     timestamp: admin.firestore.FieldValue.serverTimestamp()

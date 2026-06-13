@@ -880,13 +880,23 @@ function _parseIntentLocal(msg) {
     if (re.test(msg)) { out.airport = label; out.serviceType = out.serviceType || 'airport'; break; }
   }
 
-  // Flight number (BA247, EK034, LH456 etc.)
-  const flt = msg.match(/\b([A-Z]{2}\s*\d{3,4})\b/i);
-  if (flt) { out.flight = flt[1].toUpperCase().replace(/\s+/, ''); out.serviceType = 'airport'; }
+  // Flight number — require NO space between UPPERCASE airline code and digits (BA247, EK034)
+  // "at 1700" must NOT match — "at" is not an airline code
+  const flt = msg.match(/\b([A-Z]{2}\d{3,4})\b/);
+  if (flt) { out.flight = flt[1].toUpperCase(); out.serviceType = 'airport'; }
 
-  // Time — "3pm", "14:30", "3:30 pm", "at 9"
-  const tm = msg.match(/\b(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i) || msg.match(/\bat\s+(\d{1,2}(?::\d{2})?)\b/i) || msg.match(/\b(\d{2}:\d{2})\b/);
-  if (tm) out.time = tm[1].trim();
+  // Time — "3pm", "14:30", "3:30 pm", "at 1700" (4-digit 24h), "at 9"
+  const tmMatch =
+    msg.match(/\b(\d{1,2}:\d{2}\s*(?:am|pm)?)\b/i) ||
+    msg.match(/\b(\d{1,2}\s*(?:am|pm))\b/i) ||
+    msg.match(/\bat\s+((?:0[0-9]|1[0-9]|2[0-3])[0-5][0-9])\b/i) ||
+    msg.match(/\bfor\s+((?:0[0-9]|1[0-9]|2[0-3])[0-5][0-9])\b/i) ||
+    msg.match(/\bat\s+(\d{1,2})\b/i);
+  if (tmMatch) {
+    const raw = tmMatch[1].trim();
+    // Convert 4-digit military time "1700" → "17:00"
+    out.time = /^\d{4}$/.test(raw) ? raw.slice(0,2) + ':' + raw.slice(2) : raw;
+  }
 
   // Date keywords
   const now = new Date();
@@ -955,7 +965,11 @@ async function sendConciergeMsg() {
     if (FIREBASE_ENABLED && fns) {
       try {
         const fn = fns.httpsCallable('parseBookingIntent');
-        const res = await fn({ message: msg });
+        // Pass prior conversation so AI can use context from earlier messages
+        const history = CONCIERGE_MSGS.slice(0, -1)
+          .filter(m => m.role === 'user' || m.role === 'assistant')
+          .slice(-8);
+        const res = await fn({ message: msg, history });
         d = res.data;
       } catch(fnErr) {
         // Cloud Function unavailable — fall back to local parser
