@@ -909,22 +909,45 @@ function _parseIntentLocal(msg) {
     }
   }
 
-  // "from X to Y" / "from X" / "to Y"
-  const fromTo = msg.match(/\bfrom\s+([^,\.]+?)\s+to\s+([^,\.]+)/i);
+  // Temporal boundary — used to stop address extraction before time/date words
+  const _tBound = '(?=\\s*(?:tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|at\\s+\\d|\\bfor\\b|on\\s+\\w|\\d+\\s*(?:am|pm))|[,\\.]|$)';
+  const _addrPat = '(?:\\d+[\\s-]+)?[A-Za-z][^,\\.]{2,39}?';
+
+  // "from X to Y" pattern (pickup → destination)
+  const fromTo = msg.match(new RegExp(`\\bfrom\\s+(${_addrPat})\\s+to\\s+([^,\\.]+)`, 'i'));
   if (fromTo) {
     out.pickup = fromTo[1].trim();
     if (!out.airport) out.dropoff = fromTo[2].trim();
   } else {
-    const fm = msg.match(/\bfrom\s+([A-Z][^,\.]{3,40})/i);
+    // "from 37 Letchworth Street SW17 8SX tomorrow at..." — address allows leading digits
+    const fm = msg.match(new RegExp(`\\bfrom\\s+(${_addrPat})${_tBound}`, 'i'));
     if (fm) out.pickup = fm[1].trim();
-    const tm2 = msg.match(/\bto\s+([A-Z][^,\.]{3,40})/i);
+    const tm2 = msg.match(/\bto\s+([A-Za-z][^,\.]{3,40})/i);
     if (tm2 && !out.airport) out.dropoff = tm2[1].trim();
   }
 
   // Pickup fallback — "pick me up at X", "collect me from X"
   if (!out.pickup) {
-    const pu = msg.match(/(?:pick(?:ing)?\s+(?:me|us)\s+up|collect(?:ing)?\s+(?:me|us))(?:\s+(?:at|from))?\s+([A-Z][^,\.]{3,40})/i);
+    const pu = msg.match(/(?:pick(?:ing)?\s+(?:me|us)\s+up|collect(?:ing)?\s+(?:me|us))(?:\s+(?:at|from))?\s+((?:\d+[\s-]+)?[A-Za-z][^,\.]{3,40})/i);
     if (pu) out.pickup = pu[1].trim();
+  }
+
+  // Context-aware: if airport/destination already captured in a prior turn but pickup
+  // is still missing, treat this follow-up message as the pickup address
+  if (!out.pickup && (state.booking.airport || state.booking.dropoff) && !out.airport) {
+    const isAddress =
+      /\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i.test(msg) ||  // UK postcode (SW17 8SX)
+      /^\s*\d+\s+[A-Za-z]/.test(msg) ||                         // starts with house number
+      (msg.split(/\s+/).length <= 8 &&
+       !/\b(?:heathrow|gatwick|stansted|luton|airport|terminal|hotel|station)\b/i.test(msg));
+    if (isAddress) {
+      out.pickup = msg.trim();
+      out.serviceType = state.booking.serviceType || out.serviceType || 'airport';
+      if (!out.airport) out.airport = state.booking.airport || null;
+      if (!out.dropoff) out.dropoff = state.booking.dropoff || null;
+      if (!out.date) out.date = state.booking.date || null;
+      if (!out.time) out.time = state.booking.time || null;
+    }
   }
 
   // Build natural reply
