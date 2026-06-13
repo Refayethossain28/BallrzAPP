@@ -1131,12 +1131,24 @@ function drawTitle(){
   ctx.fillStyle='#8a97ab'; ctx.font='11px "Courier New",monospace';
   ctx.fillText('an original arcade fighter — no licensed characters', W/2, H-14);
 }
-function drawMascot(x,y,def,face){
-  const f={x,y,def,facing:face,state:'idle',atkFrame:0,attack:null,flash:0,
-           onGround:true,crouch:false,anim:G.fl*0.08,hitDone:false,knockdown:0,armor:0,hp:1,vy:0,
-           hurtbox(){return{}},computeSpecialHitbox(){return null},hitbox(){return null}};
-  ctx.save(); ctx.translate(0, y-FLOOR); drawFighter(f); ctx.restore();
+// a non-interactive stand-in fighter for menus (y=FLOOR so limbs anchor right)
+function stubFighter(def, x, facing, anim){
+  return { x, y:FLOOR, def, facing, state:'idle', atkFrame:0, attack:null, flash:0,
+           onGround:true, crouch:false, anim, hitDone:false, knockdown:0, armor:0, hp:1, vy:0,
+           hurtbox(){return{};}, computeSpecialHitbox(){return null;}, hitbox(){return null;} };
 }
+// draw a fighter standing with feet at (sx, feetY), optionally scaled & clipped
+function drawStanding(def, sx, feetY, facing, anim, scale, clip){
+  ctx.save();
+  if(clip){ ctx.beginPath(); roundRect(clip.x,clip.y,clip.w,clip.h,10); ctx.clip(); }
+  if(scale && scale!==1){
+    ctx.translate(sx, feetY); ctx.scale(scale, scale); ctx.translate(-sx, -feetY);
+  }
+  ctx.translate(0, feetY - FLOOR);
+  drawFighter(stubFighter(def, sx, facing, anim));
+  ctx.restore();
+}
+function drawMascot(x,y,def,face){ drawStanding(def, x, y, face, G.fl*0.08, 1, null); }
 
 /* ---------- character select ---------- */
 function drawSelect(){
@@ -1156,14 +1168,8 @@ function drawSelect(){
     // card
     ctx.fillStyle='#1a1330'; roundRect(cx,cy,cw,ch,10); ctx.fill();
     ctx.strokeStyle='#2e2350'; ctx.lineWidth=2; roundRect(cx,cy,cw,ch,10); ctx.stroke();
-    // portrait (mini fighter)
-    const mf={x:cx+cw/2, y:cy+ch-22, def:r, facing:1, state:'idle', atkFrame:0, attack:null,
-              flash:0, onGround:true, crouch:false, anim:G.fl*0.06+i, hitDone:false, knockdown:0,armor:0,hp:1,vy:0,
-              hurtbox(){return{}},computeSpecialHitbox(){return null},hitbox(){return null}};
-    ctx.save(); ctx.translate(0, mf.y-FLOOR);
-    ctx.save(); ctx.beginPath(); ctx.rect(cx,cy-200,cw,ch+200); ctx.clip();
-    ctx.translate(0,-(mf.y-FLOOR)); ctx.translate(0,mf.y-FLOOR);
-    drawFighter(mf); ctx.restore(); ctx.restore();
+    // portrait (mini fighter) — feet near card bottom, scaled to fit, clipped
+    drawStanding(r, cx+cw/2, cy+ch-12, 1, G.fl*0.06+i, 0.74, {x:cx,y:cy,w:cw,h:ch});
     // name
     ctx.fillStyle=r.col2; ctx.font='bold 16px "Courier New",monospace';
     ctx.fillText(r.name, cx+cw/2, cy+22);
