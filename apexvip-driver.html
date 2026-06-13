@@ -478,12 +478,35 @@ function nav(){
   </div>`).join('')}</nav>`;
 }
 
+async function registerDriverFCM(){
+  if(!FIREBASE_ENABLED||!_driverId) return;
+  try{
+    if(!('Notification' in window)) return;
+    const perm = await Notification.requestPermission();
+    if(perm !== 'granted') return;
+    if('serviceWorker' in navigator){
+      const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+      const messaging = firebase.messaging();
+      const token = await messaging.getToken({
+        vapidKey: (typeof APEXVIP_VAPID_KEY !== 'undefined' && APEXVIP_VAPID_KEY ? APEXVIP_VAPID_KEY : ''),
+        serviceWorkerRegistration: reg
+      });
+      if(token){
+        await db.collection('fcm_tokens').doc(_driverId).set({
+          token, role:'driver', updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+        });
+      }
+    }
+  }catch(e){ console.warn('Driver FCM registration failed:', e.message); }
+}
+
 function goOnline(){
   S.online=!S.online;
   const _onTs=Date.now(); track(S.online?'driver_online':'driver_offline',{ts:_onTs,src:'driver'});
   if(FIREBASE_ENABLED&&_driverId){
     db.collection('drivers').doc(_driverId).set({status:S.online?'online':'offline'},{merge:true}).catch(()=>{});
-    if(S.online) startGPSStream(); else stopGPSStream();
+    if(S.online){ startGPSStream(); registerDriverFCM(); }
+    else stopGPSStream();
   }
   if(S.online&&FIREBASE_ENABLED&&S._openJobs?.length&&!S.jobOverlay&&!S.activeJob){
     // A broadcast offer is already live — ring it now that we're online

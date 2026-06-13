@@ -160,7 +160,7 @@ exports.onBookingCreated = functions.firestore
       }
     }
 
-    // Create driver job
+    // Create driver job (pre-assigned) or broadcast to all online drivers
     if (b.driverId) {
       await db.collection('jobs').add({
         driverId: b.driverId, bookingRef: ref, bookingId: context.params.bookingId,
@@ -172,6 +172,52 @@ exports.onBookingCreated = functions.firestore
         status: 'pending', market: b.market || 'london',
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       }).catch(e => console.warn('Job create failed:', e.message));
+
+      // Notify pre-assigned driver
+      const tokenDoc = await db.collection('fcm_tokens').doc(b.driverId).get().catch(() => null);
+      if (tokenDoc && tokenDoc.exists && tokenDoc.data().token) {
+        await admin.messaging().send({
+          token: tokenDoc.data().token,
+          notification: { title: '🚗 New Job Assigned', body: `${b.serviceLabel || 'Transfer'} · ${b.pickup || '?'} → ${b.airport || b.dropoff || '?'} · ${b.date || ''} ${b.time || ''}` },
+          data: { screen: 'home', type: 'assigned_job' },
+          android: { priority: 'high' },
+          apns: { payload: { aps: { sound: 'default', badge: 1 } } },
+        }).catch(e => console.warn('Driver FCM failed:', e.message));
+      }
+    } else {
+      // Broadcast to all online drivers via open_jobs + FCM
+      await db.collection('open_jobs').add({
+        bookingDocId: context.params.bookingId,
+        bookingRef: ref,
+        status: 'open',
+        pickup: b.pickup || '',
+        dropoff: b.airport || b.dropoff || '',
+        date: b.date || '',
+        time: b.time || '',
+        serviceLabel: b.serviceLabel || 'Airport Transfer',
+        price: b.price || 0,
+        flight: b.flight || '',
+        market: b.market || 'london',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      }).catch(e => console.warn('open_jobs create failed:', e.message));
+
+      // Push FCM to every online driver
+      const onlineSnap = await db.collection('drivers').where('status', '==', 'online').get().catch(() => null);
+      if (onlineSnap && !onlineSnap.empty) {
+        const notifBody = `${b.serviceLabel || 'Airport Transfer'} · ${b.pickup || '?'} → ${b.airport || b.dropoff || '?'} · ${b.date || ''} ${b.time || ''}`;
+        const sends = onlineSnap.docs.map(async d => {
+          const tok = await db.collection('fcm_tokens').doc(d.id).get().catch(() => null);
+          if (!tok || !tok.exists || !tok.data().token) return;
+          return admin.messaging().send({
+            token: tok.data().token,
+            notification: { title: '🚗 New Job Available', body: notifBody },
+            data: { screen: 'home', type: 'new_job', bookingRef: ref },
+            android: { priority: 'high' },
+            apns: { payload: { aps: { sound: 'default', badge: 1 } } },
+          }).catch(e => console.warn('Driver FCM failed:', d.id, e.message));
+        });
+        await Promise.allSettled(sends);
+      }
     }
 
     return null;
