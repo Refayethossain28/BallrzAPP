@@ -1,0 +1,48 @@
+name: LLM self-verification
+
+on:
+  push:
+    branches: ["main", "claude/**"]
+    paths:
+      - "llm-from-scratch/**"
+      - ".github/workflows/llm.yml"
+  pull_request:
+    paths:
+      - "llm-from-scratch/**"
+      - ".github/workflows/llm.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: llm-from-scratch
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Gradient check (autograd correctness)
+        run: python test_autograd.py
+
+      - name: Smoke test — train a tiny model end to end
+        run: |
+          python train.py \
+            --steps 30 \
+            --eval_every 10 \
+            --n_layer 2 \
+            --n_head 2 \
+            --n_embd 32 \
+            --block_size 32 \
+            --batch_size 8 \
+            --out ci_ckpt.npz
+
+      - name: Smoke test — generate from the checkpoint
+        run: python sample.py --ckpt ci_ckpt.npz --prompt "The game" --tokens 80 --seed 0
