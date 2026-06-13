@@ -187,11 +187,11 @@ let auth, db, fns, storage, FIREBASE_ENABLED = false, _driverId = null;
 let _gpsInterval = null;
 try {
   if (typeof APEXVIP_FIREBASE_CONFIG !== 'undefined' && APEXVIP_FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY') {
-    firebase.initializeApp(APEXVIP_FIREBASE_CONFIG);
-    auth = firebase.auth();
-    db = firebase.firestore();
-    fns = firebase.functions();
-    storage = firebase.storage();
+    const _fbApp = firebase.apps.length ? firebase.app() : firebase.initializeApp(APEXVIP_FIREBASE_CONFIG);
+    auth = firebase.auth(_fbApp);
+    db = firebase.firestore(_fbApp);
+    fns = firebase.functions(_fbApp);
+    storage = firebase.storage(_fbApp);
     FIREBASE_ENABLED = true;
     // Auto-restore session if driver was previously logged in
     auth.onAuthStateChanged(async user => {

@@ -160,9 +160,9 @@ body.light select option{background:#f5f0e8}
 let auth, db, FIREBASE_ENABLED = false;
 try {
   if (typeof APEXVIP_FIREBASE_CONFIG !== 'undefined' && APEXVIP_FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY') {
-    firebase.initializeApp(APEXVIP_FIREBASE_CONFIG);
-    auth = firebase.auth();
-    db = firebase.firestore();
+    const _fbApp = firebase.apps.length ? firebase.app() : firebase.initializeApp(APEXVIP_FIREBASE_CONFIG);
+    auth = firebase.auth(_fbApp);
+    db = firebase.firestore(_fbApp);
     FIREBASE_ENABLED = true;
     // Auto-restore session if admin was previously logged in
     auth.onAuthStateChanged(async user => {
