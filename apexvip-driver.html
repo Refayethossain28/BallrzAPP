@@ -190,7 +190,8 @@ try {
     auth.onAuthStateChanged(async user => {
       if(user && S.screen === 'login'){
         const doc = await db.collection('users').doc(user.uid).get().catch(()=>null);
-        if(doc && doc.exists && doc.data().role === 'driver'){
+        const isDriver = !doc || !doc.exists || doc.data().role === 'driver';
+        if(isDriver){
           _driverId = user.uid;
           setupDriverListeners(user.uid);
           go('home');
@@ -313,10 +314,11 @@ async function driverLogin(){
   try{
     const cred=await auth.signInWithEmailAndPassword(email,pass);
     const doc=await db.collection('users').doc(cred.user.uid).get();
-    if(!doc.exists||doc.data().role==='driver'||email==='driver@apexvip.com'){
+    const isDriver=!doc.exists||doc.data().role==='driver';
+    if(isDriver){
       _driverId=cred.user.uid;
       track('driver_login',{method:'firebase',src:'driver'});
-      if(doc.exists) setupDriverListeners(cred.user.uid);
+      setupDriverListeners(cred.user.uid);
       go('home');
     }else{auth.signOut();alert('Access denied. Driver accounts only.');}
   }catch(err){
