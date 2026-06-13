@@ -23,6 +23,9 @@ minutes on a CPU.
 | `sample.py` | Load a checkpoint and generate text from a prompt. |
 | `test_autograd.py` | A gradient check: compares backprop's analytic gradients against finite-difference numeric gradients through a real GPT forward pass. |
 | `data/input.txt` | A small sample corpus to train on. |
+| `export_web.py` | Exports a trained checkpoint to JSON weights for the browser. |
+| `web/gpt.js` | A JavaScript port of the forward pass + tokenizers — runs inference client-side. |
+| `web/index.html` | A browser UI: type a prompt, watch the model generate, all in JS. |
 
 ## How it works
 
@@ -118,6 +121,33 @@ output quality on anything larger than the toy corpus.
 | `--n_embd` | 128 | Embedding / hidden width |
 | `--batch_size` | 16 | Sequences per step |
 | `--lr` | 3e-4 | Adam learning rate |
+
+## Run it in a browser
+
+Train in Python, then run inference entirely in JavaScript — no server compute,
+no API. `export_web.py` serializes the trained weights to JSON, and `web/gpt.js`
+is a faithful port of the forward pass (verified to match Python's logits to
+float32 precision).
+
+```bash
+python train.py --steps 2000          # produces ckpt.npz
+python export_web.py                  # writes web/model.json
+```
+
+Then either:
+
+```bash
+# A) Serve the folder and open the page
+python -m http.server -d web 8000     # then visit http://localhost:8000
+
+# B) Build a single standalone file you can just double-click (no server)
+python export_web.py --inline         # writes web/llm.html
+```
+
+The page has a prompt box, temperature / top-k / length sliders, and streams the
+generated text token by token. Because the model is small, it runs at hundreds
+of tokens per second on a laptop. The same `web/index.html` can be deployed to
+GitHub Pages (like the trading app already in this repo).
 
 ## What to expect
 
