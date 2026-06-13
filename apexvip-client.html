@@ -1038,31 +1038,53 @@ function startVoiceInput() {
     if (inp) { inp.placeholder = 'Voice not supported — type here'; inp.focus(); }
     return;
   }
-  if (_voiceRecording && _voiceRecognizer) {
-    _voiceRecognizer.stop();
-    return;
-  }
+  if (_voiceRecording && _voiceRecognizer) { _voiceRecognizer.stop(); return; }
+
   const rec = new SR();
   _voiceRecognizer = rec;
   rec.lang = 'en-GB';
   rec.continuous = false;
   rec.interimResults = true;
   rec.maxAlternatives = 1;
-  _voiceRecording = true;
-  render();
+
+  // Direct DOM updates — no render() calls, which would wipe the input field
+  // before sendConciergeMsg reads it and could break iOS gesture chain
+  const _setUI = on => {
+    _voiceRecording = on;
+    const btn = document.querySelector('[data-mic-btn]');
+    const ind = document.getElementById('voice-ind');
+    const inp = document.getElementById('concierge-inp');
+    if (btn) {
+      btn.style.background   = on ? '#ff3b30' : 'var(--surface-2)';
+      btn.style.borderColor  = on ? '#ff3b30' : 'var(--border)';
+      btn.style.animation    = on ? 'micPulse .75s ease-in-out infinite' : '';
+    }
+    if (ind) ind.style.display = on ? 'block' : 'none';
+    if (inp) inp.placeholder   = on ? 'Listening…' : "Tell me where you'd like to go…";
+  };
+
+  _setUI(true);
+
   rec.onresult = e => {
     const transcript = Array.from(e.results).map(r => r[0].transcript).join('');
     const inp = document.getElementById('concierge-inp');
     if (inp) inp.value = transcript;
     if (e.results[e.results.length - 1].isFinal) {
-      _voiceRecording = false;
       _voiceRecognizer = null;
-      render();
-      setTimeout(sendConciergeMsg, 350);
+      _setUI(false);
+      setTimeout(sendConciergeMsg, 400); // input still has transcript — no render() in between
     }
   };
-  rec.onerror = () => { _voiceRecording = false; _voiceRecognizer = null; render(); };
-  rec.onend   = () => { _voiceRecording = false; _voiceRecognizer = null; render(); };
+  rec.onerror = e => {
+    _voiceRecognizer = null;
+    _setUI(false);
+    const inp = document.getElementById('concierge-inp');
+    if (!inp) return;
+    if (e.error === 'not-allowed')  inp.placeholder = 'Mic blocked — check browser permissions';
+    else if (e.error === 'no-speech') inp.placeholder = 'Nothing heard — tap mic to try again';
+    else inp.placeholder = 'Voice unavailable — type your request';
+  };
+  rec.onend = () => { _voiceRecognizer = null; _setUI(false); };
   rec.start();
 }
 
@@ -3225,23 +3247,23 @@ profile: () => {
   </div>
   <div style="padding:12px 20px calc(env(safe-area-inset-bottom,0px) + 20px);border-top:1px solid var(--divider);background:var(--bg);position:sticky;bottom:0">
     <div class="field" style="display:flex;align-items:center;gap:8px;padding:10px 14px">
-      <!-- Mic button -->
-      <button onclick="startVoiceInput()" title="Voice input"
-        style="background:${_voiceRecording?'#ff3b30':'var(--surface-2)'};border:1px solid ${_voiceRecording?'#ff3b30':'var(--border)'};border-radius:10px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;transition:background .2s,border-color .2s;${_voiceRecording?'animation:micPulse .75s ease-in-out infinite':''}">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="${_voiceRecording?'#fff':'var(--fg-3)'}" xmlns="http://www.w3.org/2000/svg">
-          <rect x="9" y="2" width="6" height="11" rx="3"/>
-          <path d="M5 11a7 7 0 0 0 14 0" stroke="${_voiceRecording?'#fff':'var(--fg-3)'}" stroke-width="2" fill="none" stroke-linecap="round"/>
-          <line x1="12" y1="18" x2="12" y2="22" stroke="${_voiceRecording?'#fff':'var(--fg-3)'}" stroke-width="2" stroke-linecap="round"/>
-          <line x1="9" y1="22" x2="15" y2="22" stroke="${_voiceRecording?'#fff':'var(--fg-3)'}" stroke-width="2" stroke-linecap="round"/>
+      <!-- Mic button — styled by _setUI() directly, no render() dependency -->
+      <button data-mic-btn onclick="startVoiceInput()" title="Voice input"
+        style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;transition:background .2s,border-color .2s">
+        <svg width="15" height="15" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="color:var(--fg-3)">
+          <rect x="9" y="2" width="6" height="11" rx="3" fill="currentColor"/>
+          <path d="M5 11a7 7 0 0 0 14 0" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
+          <line x1="12" y1="18" x2="12" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <line x1="9" y1="22" x2="15" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
         </svg>
       </button>
-      <input id="concierge-inp" placeholder="${_voiceRecording?'Listening…':'Tell me where you\'d like to go…'}" style="flex:1;font-size:15px"
+      <input id="concierge-inp" placeholder="Tell me where you'd like to go…" style="flex:1;font-size:15px"
         onkeydown="if(event.key==='Enter'){sendConciergeMsg();event.preventDefault()}"/>
       <button onclick="sendConciergeMsg()" style="background:#D4A843;border:none;border-radius:10px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#000" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5M5 12l7-7 7 7"/></svg>
       </button>
     </div>
-    ${_voiceRecording ? `<div style="text-align:center;font-size:11px;color:#ff3b30;letter-spacing:.5px;margin-top:2px;animation:micPulse .75s ease-in-out infinite">● Recording — speak now</div>` : ''}
+    <div id="voice-ind" style="display:none;text-align:center;font-size:11px;color:#ff3b30;letter-spacing:.5px;margin-top:2px;animation:micPulse .75s ease-in-out infinite">● Recording — speak now</div>
   </div>
 </div>`,
 
