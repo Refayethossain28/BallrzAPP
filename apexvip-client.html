@@ -531,6 +531,25 @@ try {
   }
 } catch(e) { console.warn('Firebase init:', e.message); }
 
+// ── Live pricing (loaded from Firestore settings/pricing) ─────────────────
+const PRICES = {
+  airport_s:185, airport_v:225,
+  heathrow_s:185, heathrow_v:225,
+  gatwick_s:195,  gatwick_v:235,
+  stansted_s:195, stansted_v:235,
+  luton_s:185,    luton_v:225,
+  city_s:125,     city_v:155,
+  hourly_s_rate:65, hourly_v_rate:75,
+  day_s:450, day_v:550,
+  evening_supplement:50, peak_surcharge_pct:15,
+  membership:199,
+};
+if (FIREBASE_ENABLED) {
+  db.collection('settings').doc('pricing').get().then(d => {
+    if (d.exists) Object.assign(PRICES, d.data());
+  }).catch(() => {});
+}
+
 const SQUARE_APP_ID = 'sq0idp-8Z5MqX7GA3M0Xnv-0utwMA';
 const SQUARE_LOCATION_ID = '1ZX0F29TX12HB';
 let _sqCard = null, _sqPayments = null;
@@ -1991,9 +2010,9 @@ home: () => {
   </div>
   <div style="padding:0 22px 100px">
     ${[
-      {t:'airport',icon:'✈',l:'Airport Transfer',d:'Door-to-terminal · Meet & greet · Flight tracking',price:'from £125'},
-      {t:'hourly',icon:'⏱',l:'By the Hour',d:'Your chauffeur on demand · Minimum 2 hours',price:'from £130'},
-      {t:'day',icon:'📅',l:'Full Day',d:'8 hours with your personal chauffeur',price:'from £450'},
+      {t:'airport',icon:'✈',l:'Airport Transfer',d:'Door-to-terminal · Meet & greet · Flight tracking',price:`from £${PRICES.city_s}`},
+      {t:'hourly',icon:'⏱',l:'By the Hour',d:'Your chauffeur on demand · Minimum 2 hours',price:`from £${PRICES.hourly_s_rate*2}`},
+      {t:'day',icon:'📅',l:'Full Day',d:'8 hours with your personal chauffeur',price:`from £${PRICES.day_s}`},
     ].map(s=>`
     <div onclick="goBook('${s.t}')" style="background:var(--surface);border-radius:20px;padding:20px;margin-bottom:10px;cursor:pointer;border:1px solid var(--border);display:flex;align-items:center;gap:16px">
       <div style="width:54px;height:54px;border-radius:16px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">${s.icon}</div>
@@ -2076,8 +2095,8 @@ home: () => {
     </div>
     <div class="section-label" style="margin-bottom:14px">Duration</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:32px" id="bh_dur">
-      ${[[2,130],[3,195],[4,260],[6,390],[8,520],[12,780]].map(([h,p],i)=>`
-      <button onclick="setDur(${h},${p},this)" style="padding:12px 16px;border-radius:14px;background:${i===1?'#ffffff':'rgba(255,255,255,.06)'};color:${i===1?'#000':'rgba(255,255,255,.5)'};border:1px solid ${i===1?'#ffffff':'rgba(255,255,255,.07)'};cursor:pointer;font-family:inherit;font-weight:700;font-size:13px;transition:all .15s">${h}h · £${p}</button>`).join('')}
+      ${[[2],[3],[4],[6],[8],[12]].map(([h],i)=>{const p=Math.round(h*PRICES.hourly_s_rate);return`
+      <button onclick="setDur(${h},${p},this)" style="padding:12px 16px;border-radius:14px;background:${i===1?'#ffffff':'rgba(255,255,255,.06)'};color:${i===1?'#000':'rgba(255,255,255,.5)'};border:1px solid ${i===1?'#ffffff':'rgba(255,255,255,.07)'};cursor:pointer;font-family:inherit;font-weight:700;font-size:13px;transition:all .15s">${h}h · £${p}</button>`;}).join('')}
     </div>
   </div>
   <div style="height:90px"></div>
@@ -2126,7 +2145,7 @@ home: () => {
 </div>`,
 
 'vehicle-select': () => {
-  const pm = {airport:{s:185,v:225},hourly:{s:(state.booking.duration||3)*65,v:(state.booking.duration||3)*75},day:{s:450,v:550}};
+  const pm = {airport:{s:PRICES.airport_s,v:PRICES.airport_v},hourly:{s:(state.booking.duration||3)*PRICES.hourly_s_rate,v:(state.booking.duration||3)*PRICES.hourly_v_rate},day:{s:PRICES.day_s,v:PRICES.day_v}};
   const p = pm[state.booking.serviceType]||pm.airport;
   const ySurge = typeof ApexCore!=='undefined'
     ? ApexCore.apexYield({date:state.booking.date,time:state.booking.time,vehicle:'s',market:'london'})
@@ -3139,7 +3158,7 @@ profile: () => {
           <div style="font-size:11px;color:var(--fg-4);margin-top:4px;letter-spacing:.3px">The pinnacle membership tier</div>
         </div>
         <div style="text-align:right;flex-shrink:0">
-          <div style="font-size:20px;font-weight:800;color:var(--gold)">£199</div>
+          <div style="font-size:20px;font-weight:800;color:var(--gold)">£${PRICES.membership}</div>
           <div style="font-size:10px;color:var(--fg-4)">per month</div>
         </div>
       </div>

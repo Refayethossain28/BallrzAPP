@@ -244,7 +244,7 @@ function track(event, props){
   }catch(e){}
 }
 
-let S={screen:'login',bFilter:'all',dFilter:'all',cFilter:'all',theme:localStorage.getItem('apexvip_admin_theme')||'dark',_dispatchOpen:false,_dispatchRef:null,_discreteDispatch:false,dispatchMode:localStorage.getItem('apexvip_dispatch_mode')||'manual'};
+let S={screen:'login',bFilter:'all',dFilter:'all',cFilter:'all',theme:localStorage.getItem('apexvip_admin_theme')||'dark',_dispatchOpen:false,_dispatchRef:null,_discreteDispatch:false,dispatchMode:localStorage.getItem('apexvip_dispatch_mode')||'manual',_pricing:null};
 let _adminMap = null, _adminMarkers = {};
 
 // Dispatch mode: 'manual' (admin assigns) or 'broadcast' (new bookings are
@@ -273,7 +273,7 @@ function toggleTheme(){
   if(btn) btn.textContent=S.theme==='light'?'🌙':'☀️';
 }
 
-function go(s){S.screen=s;track('admin_screen_view',{screen:s,src:'admin'});render();document.getElementById('sidebar').classList.remove('open');window.scrollTo(0,0);}
+function go(s){S.screen=s;track('admin_screen_view',{screen:s,src:'admin'});render();document.getElementById('sidebar').classList.remove('open');window.scrollTo(0,0);if(s==='pricing')loadPricingAdmin();}
 function toggleMenu(){document.getElementById('sidebar').classList.toggle('open');}
 function openModal(h){document.getElementById('modal-box').innerHTML=h;document.getElementById('modal-bg').style.display='flex';}
 function closeModal(){document.getElementById('modal-bg').style.display='none';}
@@ -686,33 +686,48 @@ fleet:()=>`<div class="screen">
   </div>
 </div>`,
 
-pricing:()=>`<div class="screen">
-  <div class="section-header"><div class="section-title">Pricing</div><button class="btn btn-gold btn-sm" onclick="alert('Rates saved successfully!')">Save Changes</button></div>
+pricing:()=>{
+  const p=S._pricing||{airport_s:185,airport_v:225,heathrow_s:185,heathrow_v:225,gatwick_s:195,gatwick_v:235,stansted_s:195,stansted_v:235,luton_s:185,luton_v:225,city_s:125,city_v:155,hourly_s_rate:65,hourly_v_rate:75,day_s:450,day_v:550,evening_supplement:50,peak_surcharge_pct:15,membership:199};
+  const inp=(key,label,prefix='£',suffix='')=>`<div style="margin-bottom:14px"><div style="font-size:11px;color:var(--fg-subtle);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">${label}</div><div style="display:flex;align-items:center;gap:8px"><span style="color:var(--fg-subtle);font-size:14px">${prefix}</span><input id="pr_${key}" type="number" value="${p[key]}" style="width:110px" oninput="S._pricing=S._pricing||{};S._pricing['${key}']=+this.value"/><span style="color:var(--fg-subtle);font-size:13px">${suffix}</span></div></div>`;
+  const row=(label,ks,vs,sv)=>`<tr><td style="font-weight:500;color:var(--fg);padding:12px 8px 12px 0">${label}</td><td style="padding:8px">${inp(ks,'S-Class')}</td><td style="padding:8px">${inp(vs,'V-Class')}</td>${sv?`<td style="padding:8px">${inp(sv,'V-Class')}</td>`:''}</tr>`;
+  return`<div class="screen">
+  <div class="section-header"><div class="section-title">Pricing</div><button class="btn btn-gold btn-sm" onclick="savePricingAdmin()" id="pr-save-btn">Save Changes</button></div>
+  ${!FIREBASE_ENABLED?`<div style="background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);border-radius:12px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#fbbf24">Demo mode — changes will not be saved to Firebase</div>`:''}
   <div class="card" style="margin-bottom:20px">
-    <div style="font-size:14px;font-weight:600;margin-bottom:16px">Standard Rates</div>
-    <div style="overflow-x:auto"><table>
-      <thead><tr><th>Service</th><th>Mercedes S-Class</th><th>Mercedes V-Class</th></tr></thead>
-      <tbody>${[
-        ['Airport Transfer (any London airport)','£185','£225'],
-        ['Hourly Rate (minimum 2 hours)','£65/hr','£75/hr'],
-        ['Full Day Rate (8 hours)','£450','£550'],
-        ['Evening Supplement (after 22:00)','+ £50','+ £50'],
-        ['Peak Surcharge (Fri–Sun, Bank Holidays)','+ 15%','+ 15%'],
-      ].map(([s,a,b])=>`<tr><td style="font-weight:500">${s}</td><td><input value="${a}" style="width:100px"/></td><td><input value="${b}" style="width:100px"/></td></tr>`).join('')}</tbody>
+    <div style="font-size:14px;font-weight:600;margin-bottom:16px;color:var(--fg)">Standard Rates</div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">
+      <thead><tr style="border-bottom:1px solid var(--border)"><th style="text-align:left;padding:8px 0;font-size:12px;color:var(--fg-subtle);font-weight:600;text-transform:uppercase;letter-spacing:.6px">Service</th><th style="padding:8px;font-size:12px;color:var(--fg-subtle);font-weight:600;text-transform:uppercase;letter-spacing:.6px">S-Class</th><th style="padding:8px;font-size:12px;color:var(--fg-subtle);font-weight:600;text-transform:uppercase;letter-spacing:.6px">V-Class</th></tr></thead>
+      <tbody>
+        <tr><td style="font-weight:500;color:var(--fg);padding:12px 8px 12px 0">Airport Transfer</td><td style="padding:8px">${inp('airport_s','S-Class')}</td><td style="padding:8px">${inp('airport_v','V-Class')}</td></tr>
+        <tr><td style="font-weight:500;color:var(--fg);padding:12px 8px 12px 0">Hourly Rate (per hour)</td><td style="padding:8px">${inp('hourly_s_rate','S-Class /hr')}</td><td style="padding:8px">${inp('hourly_v_rate','V-Class /hr')}</td></tr>
+        <tr><td style="font-weight:500;color:var(--fg);padding:12px 8px 12px 0">Full Day (8 hours)</td><td style="padding:8px">${inp('day_s','S-Class')}</td><td style="padding:8px">${inp('day_v','V-Class')}</td></tr>
+      </tbody>
     </table></div>
   </div>
-  <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">Airport Fixed Rates</div>
-    <div style="font-size:12px;color:var(--fg-subtle);margin-bottom:16px">Including meet & greet, waiting time up to 60 min</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">
-      ${[['Heathrow','£185','£225'],['Gatwick','£195','£235'],['Stansted','£195','£235'],['Luton','£185','£225'],['City Airport','£125','£155']].map(([a,s,v])=>`<div style="background:var(--surface-b);border-radius:12px;padding:14px;border:1px solid var(--border)">
-        <div style="font-weight:600;margin-bottom:8px">${a}</div>
-        <div style="font-size:12px;color:var(--fg-dim)">S-Class <span style="color:var(--gold);font-weight:600">${s}</span></div>
-        <div style="font-size:12px;color:var(--fg-dim);margin-top:3px">V-Class <span style="color:var(--gold);font-weight:600">${v}</span></div>
+  <div class="card" style="margin-bottom:20px">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px;color:var(--fg)">Per-Airport Fixed Rates</div>
+    <div style="font-size:12px;color:var(--fg-subtle);margin-bottom:16px">Includes meet & greet and up to 60 min waiting time</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px">
+      ${[['Heathrow','heathrow_s','heathrow_v'],['Gatwick','gatwick_s','gatwick_v'],['Stansted','stansted_s','stansted_v'],['Luton','luton_s','luton_v'],['City Airport','city_s','city_v']].map(([name,ks,kv])=>`
+      <div style="background:var(--surface-b);border-radius:14px;padding:16px;border:1px solid var(--border)">
+        <div style="font-weight:600;margin-bottom:14px;color:var(--fg)">${name}</div>
+        ${inp(ks,'S-Class')}
+        ${inp(kv,'V-Class')}
       </div>`).join('')}
     </div>
   </div>
-</div>`,
+  <div class="card" style="margin-bottom:20px">
+    <div style="font-size:14px;font-weight:600;margin-bottom:16px;color:var(--fg)">Supplements & Surcharges</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px">
+      <div style="background:var(--surface-b);border-radius:14px;padding:16px;border:1px solid var(--border)">${inp('evening_supplement','Evening supplement (after 22:00)')}</div>
+      <div style="background:var(--surface-b);border-radius:14px;padding:16px;border:1px solid var(--border)">${inp('peak_surcharge_pct','Peak surcharge (Fri–Sun)','','%')}</div>
+    </div>
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:16px;color:var(--fg)">Membership</div>
+    ${inp('membership','Monthly membership price')}
+  </div>
+</div>`;},
 
 analytics:()=>{
   const raw=JSON.parse(localStorage.getItem('apexvip_events')||'[]');
@@ -1437,6 +1452,32 @@ function approvePayoutReq(id) {
 }
 function rejectPayoutReq(id) {
   db.collection('payout_requests').doc(id).update({status:'rejected',rejectedAt:firebase.firestore.FieldValue.serverTimestamp()}).then(loadPayouts).catch(()=>{});
+}
+
+async function loadPricingAdmin(){
+  if(!FIREBASE_ENABLED)return;
+  try{
+    const d=await db.collection('settings').doc('pricing').get();
+    if(d.exists){S._pricing={...S._pricing,...d.data()};}
+    render();
+  }catch(e){console.warn('loadPricing',e);}
+}
+
+async function savePricingAdmin(){
+  if(!FIREBASE_ENABLED){alert('Demo mode — pricing not saved');return;}
+  const keys=['airport_s','airport_v','heathrow_s','heathrow_v','gatwick_s','gatwick_v','stansted_s','stansted_v','luton_s','luton_v','city_s','city_v','hourly_s_rate','hourly_v_rate','day_s','day_v','evening_supplement','peak_surcharge_pct','membership'];
+  const data={};
+  keys.forEach(k=>{const el=document.getElementById('pr_'+k);if(el)data[k]=parseFloat(el.value)||0;});
+  const btn=document.getElementById('pr-save-btn');
+  if(btn){btn.textContent='Saving…';btn.disabled=true;}
+  try{
+    await db.collection('settings').doc('pricing').set(data,{merge:true});
+    S._pricing={...S._pricing,...data};
+    if(btn){btn.textContent='✓ Saved';setTimeout(()=>{btn.textContent='Save Changes';btn.disabled=false;},2000);}
+  }catch(e){
+    alert('Save failed: '+(e.message||e.code));
+    if(btn){btn.textContent='Save Changes';btn.disabled=false;}
+  }
 }
 
 async function approveDoc(driverId, type) {
