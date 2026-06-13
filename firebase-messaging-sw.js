@@ -1,25 +1,25 @@
 // ApexVIP Service Worker — Push Notifications + Offline PWA shell
 // Version 3.0
 
-const CACHE_NAME = 'apexvip-v4';
+const CACHE_NAME = 'apexvip-v5';
 const OFFLINE_URLS = [
-  '/BallrzAPP/apexvip-client.html',
-  '/BallrzAPP/apexvip-driver.html',
-  '/BallrzAPP/apexvip-dubai.html',
-  '/BallrzAPP/apexvip-admin.html',
-  '/BallrzAPP/apexvip-core.js',
-  '/BallrzAPP/firebase.js',
-  '/BallrzAPP/manifest.json',
-  '/BallrzAPP/manifest-driver.json',
-  '/BallrzAPP/manifest-admin.json',
-  '/BallrzAPP/manifest-dubai.json',
-  '/BallrzAPP/icon-60.png',
-  '/BallrzAPP/icon-120.png',
-  '/BallrzAPP/icon-152.png',
-  '/BallrzAPP/icon-167.png',
-  '/BallrzAPP/icon-180.png',
-  '/BallrzAPP/icon-192.png',
-  '/BallrzAPP/icon-512.png',
+  '/apexvip-client.html',
+  '/apexvip-driver.html',
+  '/apexvip-dubai.html',
+  '/apexvip-admin.html',
+  '/apexvip-core.js',
+  '/firebase.js',
+  '/manifest.json',
+  '/manifest-driver.json',
+  '/manifest-admin.json',
+  '/manifest-dubai.json',
+  '/icon-60.png',
+  '/icon-120.png',
+  '/icon-152.png',
+  '/icon-167.png',
+  '/icon-180.png',
+  '/icon-192.png',
+  '/icon-512.png',
 ];
 
 // ── Install: pre-cache the app shell ──────────────────────────────────────────
@@ -44,7 +44,7 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
-  if (!url.pathname.includes('/BallrzAPP/')) return;
+  if (url.origin !== self.location.origin) return;
 
   event.respondWith(
     fetch(event.request)
@@ -145,8 +145,8 @@ messaging.onBackgroundMessage(payload => {
 
   self.registration.showNotification(title || 'ApexVIP', {
     body: body || '',
-    icon: '/BallrzAPP/icon-192.png',
-    badge: '/BallrzAPP/icon-192.png',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
     data: { screen },
     actions: [
       { action: 'open', title: 'Open' },
@@ -167,7 +167,7 @@ self.addEventListener('notificationclick', event => {
         wins[0].focus();
         wins[0].postMessage({ type: 'NAVIGATE', screen });
       } else {
-        clients.openWindow('/BallrzAPP/apexvip-client.html');
+        clients.openWindow('/apexvip-client.html');
       }
     })
   );
