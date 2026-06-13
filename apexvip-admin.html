@@ -164,6 +164,16 @@ try {
     auth = firebase.auth();
     db = firebase.firestore();
     FIREBASE_ENABLED = true;
+    // Auto-restore session if admin was previously logged in
+    auth.onAuthStateChanged(async user => {
+      if(user && S.screen === 'login'){
+        const doc = await db.collection('users').doc(user.uid).get().catch(()=>null);
+        if(doc && doc.exists && doc.data().role === 'admin'){
+          startAdminListeners();
+          go('dashboard');
+        }
+      }
+    });
   }
 } catch(e) { console.warn('Firebase init:', e.message); }
 

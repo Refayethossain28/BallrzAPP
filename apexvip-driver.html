@@ -184,6 +184,17 @@ try {
     db = firebase.firestore();
     fns = firebase.functions();
     FIREBASE_ENABLED = true;
+    // Auto-restore session if driver was previously logged in
+    auth.onAuthStateChanged(async user => {
+      if(user && S.screen === 'login'){
+        const doc = await db.collection('users').doc(user.uid).get().catch(()=>null);
+        if(doc && doc.exists && doc.data().role === 'driver'){
+          _driverId = user.uid;
+          setupDriverListeners(user.uid);
+          go('home');
+        }
+      }
+    });
   }
 } catch(e) { console.warn('Firebase init:', e.message); }
 
