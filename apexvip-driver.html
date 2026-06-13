@@ -663,6 +663,93 @@ function declineJob(){
 }
 
 function nextStep(){
+  // Intercept "I Have Arrived" (step 2→3) to capture vehicle interior photo
+  if(S.tripStep===2){showInteriorPhotoPrompt();return;}
+  _advanceStep();
+}
+
+function showInteriorPhotoPrompt(){
+  const overlay=document.createElement('div');
+  overlay.id='interior-overlay';
+  overlay.style.cssText='position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.92);display:flex;align-items:flex-end;justify-content:center;padding:0 0 0 0;animation:fadeIn .2s ease';
+  overlay.innerHTML=`
+<div style="width:100%;max-width:480px;background:var(--surface);border-radius:28px 28px 0 0;padding:28px 24px calc(env(safe-area-inset-bottom)+28px);animation:slideUpSheet .3s cubic-bezier(0.16,1,0.3,1)">
+  <div style="width:40px;height:4px;border-radius:2px;background:var(--border);margin:0 auto 24px"></div>
+  <div style="text-align:center;margin-bottom:24px">
+    <div style="font-size:40px;margin-bottom:12px">📸</div>
+    <div style="font-size:20px;font-weight:700;margin-bottom:8px">Vehicle Interior Check</div>
+    <div style="font-size:14px;color:var(--fg-dim);line-height:1.6">Please take a photo of the vehicle interior before your passenger boards.<br><span style="color:var(--gold)">This is stored as evidence in case of any complaint.</span></div>
+  </div>
+  <div id="interior-preview" style="display:none;margin-bottom:16px;border-radius:16px;overflow:hidden;border:1px solid var(--border)">
+    <img id="interior-img" style="width:100%;max-height:240px;object-fit:cover;display:block"/>
+    <div id="interior-upload-status" style="padding:10px 14px;font-size:12px;color:var(--fg-dim);display:flex;align-items:center;gap:8px"></div>
+  </div>
+  <input type="file" id="interior-file" accept="image/*" capture="environment" style="display:none" onchange="handleInteriorPhoto(this)"/>
+  <button onclick="document.getElementById('interior-file').click()" id="interior-camera-btn" style="width:100%;padding:16px;background:var(--gold);border:none;border-radius:16px;font-size:16px;font-weight:700;color:#0c0b09;cursor:pointer;font-family:inherit;margin-bottom:10px">📷  Open Camera</button>
+  <button id="interior-confirm-btn" onclick="confirmInteriorPhoto()" style="display:none;width:100%;padding:16px;background:#22c55e;border:none;border-radius:16px;font-size:16px;font-weight:700;color:#fff;cursor:pointer;font-family:inherit;margin-bottom:10px">✓  Confirm & Mark Arrived</button>
+  <button onclick="skipInteriorPhoto()" style="width:100%;padding:13px;background:none;border:1px solid var(--border);border-radius:16px;font-size:14px;color:var(--fg-dim);cursor:pointer;font-family:inherit">Skip (not recommended)</button>
+</div>`;
+  document.body.appendChild(overlay);
+}
+
+let _interiorObjectURL=null;
+let _interiorUploadURL=null;
+
+function handleInteriorPhoto(input){
+  const file=input.files[0];
+  if(!file)return;
+  if(_interiorObjectURL)URL.revokeObjectURL(_interiorObjectURL);
+  _interiorObjectURL=URL.createObjectURL(file);
+  _interiorUploadURL=null;
+  const preview=document.getElementById('interior-preview');
+  const img=document.getElementById('interior-img');
+  const status=document.getElementById('interior-upload-status');
+  const cameraBtn=document.getElementById('interior-camera-btn');
+  const confirmBtn=document.getElementById('interior-confirm-btn');
+  if(preview)preview.style.display='block';
+  if(img)img.src=_interiorObjectURL;
+  if(cameraBtn)cameraBtn.textContent='📷  Retake Photo';
+  if(confirmBtn)confirmBtn.style.display='block';
+  if(status)status.innerHTML='<span style="animation:pulse 1s infinite;color:var(--gold)">⬆</span> Uploading…';
+
+  // Upload to Firebase Storage
+  if(FIREBASE_ENABLED&&_driverId){
+    const jobId=S.activeJob?.id||'nojob';
+    const path=`driver-docs/${_driverId}/interior/${jobId}-${Date.now()}.jpg`;
+    const ref=firebase.storage().ref(path);
+    ref.put(file).then(snap=>snap.ref.getDownloadURL()).then(url=>{
+      _interiorUploadURL=url;
+      if(status)status.innerHTML='<span style="color:#22c55e">✓</span> Photo saved securely';
+      // Store URL on the job document immediately
+      if(S.activeJob?.id){
+        db.collection('jobs').doc(S.activeJob.id).update({interiorPhotoUrl:url,interiorPhotoAt:firebase.firestore.FieldValue.serverTimestamp()}).catch(()=>{});
+      }
+    }).catch(e=>{
+      if(status)status.innerHTML='<span style="color:#f87171">⚠ Upload failed — photo saved locally</span>';
+      console.warn('Interior photo upload:',e.message);
+    });
+  }else{
+    if(status)status.innerHTML='<span style="color:var(--fg-dim)">Demo mode — photo not uploaded</span>';
+  }
+}
+
+function confirmInteriorPhoto(){
+  _closeInteriorOverlay();
+  _advanceStep();
+}
+
+function skipInteriorPhoto(){
+  if(!confirm('Skip the interior photo? This is not recommended — it protects you in case of a complaint.'))return;
+  _closeInteriorOverlay();
+  _advanceStep();
+}
+
+function _closeInteriorOverlay(){
+  const el=document.getElementById('interior-overlay');
+  if(el)el.remove();
+}
+
+function _advanceStep(){
   if(S.tripStep<5){S.tripStep++;}
   const stepNames={2:'en_route',3:'arrived',4:'onboard',5:'completed'};
   if(FIREBASE_ENABLED&&S.activeJob?.id){
