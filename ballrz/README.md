@@ -10,18 +10,21 @@ social apps big:
 | Pillar | How Ballrz v1 does it |
 |---|---|
 | Zero friction | Feed is watchable **without an account** — auth is only asked at the moment of action (like / comment / post) |
-| Network effects | Profiles, follows, likes, comments |
-| Content loop | Vertical full-screen swipe feed (TikTok-style), autoplay per page |
+| Network effects | Profiles, follows, likes, comments, native share |
+| Content loop | Vertical full-screen swipe feed (TikTok-style), autoplay per page, engagement-ranked **For You** tab |
 | Retention loop | **Weekly Challenge** with a live leaderboard — a scheduled reason to post and to come back |
 
 ## Features
 
 - 📱 Full-screen vertical video feed with swipe paging and autoplay
+- 🔀 **For You** tab (engagement-over-recency "hot" ranking) and **Following** tab
 - 👀 Browse without logging in; login wall only appears on interaction
 - ❤️ Likes (optimistic UI) and 💬 comments (real-time)
+- ↗️ Native share sheet on every video (viral loop)
 - 👤 Profiles with follower/following counts and post history
-- ➕ Video upload (gallery picker, max 60s) with captions
+- ➕ Post a highlight: **record in-app** or pick from gallery (max 60s), with captions
 - 🏆 Weekly challenge: banner on the feed, entry toggle on upload, live leaderboard
+- ⚑ Report button on every video (writes to a `reports` queue for review)
 
 ## Getting started
 
@@ -57,6 +60,7 @@ videos/{id}                 { ownerId, ownerHandle, url, caption, likes, comment
 videos/{id}/likes/{uid}     { createdAt }
 videos/{id}/comments/{id}   { userId, handle, text, createdAt }
 challenges/{id}             { title, description, endsAt }
+reports/{id}                { videoId, reporterId, reason, status, createdAt }
 ```
 
 Video files live in Storage under `videos/{uid}/{timestamp}.mp4`.
@@ -113,6 +117,11 @@ service cloud.firestore {
       allow read: if true;
       allow write: if false;   // managed from the console for now
     }
+    match /reports/{id} {
+      allow create: if request.auth != null
+        && request.resource.data.reporterId == request.auth.uid;
+      allow read, update, delete: if false;   // review from the console
+    }
   }
 }
 ```
@@ -137,12 +146,15 @@ service firebase.storage {
 
 ## Roadmap (chapter 2)
 
-- Ranked "For You" feed (engagement-weighted) and a separate Following feed
-- Push notifications (likes, comments, new followers, challenge reminders)
-- In-app camera recording and trimming
-- Shares / duets ("recreate this move")
+- Push notifications (likes, comments, new followers, challenge reminders) —
+  needs an EAS project + Cloud Functions
+- Server-side feed ranking (move the "hot" score into a Cloud Function /
+  scheduled job once volume grows)
+- Video trimming and filters
+- Duets ("recreate this move")
 - Local pickup-game discovery
-- Moderation & reporting (required before store submission)
+- Admin moderation dashboard for the `reports` queue (the in-app report
+  button already exists)
 
 ## Project structure
 

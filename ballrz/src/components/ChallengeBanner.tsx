@@ -1,14 +1,12 @@
 import { Link } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getActiveChallenge } from '@/lib/api';
 import { colors } from '@/lib/theme';
 import type { Challenge } from '@/lib/types';
 
-export default function ChallengeBanner() {
+export default function ChallengeBanner({ topOffset }: { topOffset: number }) {
   const [challenge, setChallenge] = useState<Challenge | null>(null);
-  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     getActiveChallenge().then(setChallenge).catch(() => {});
@@ -18,7 +16,7 @@ export default function ChallengeBanner() {
 
   return (
     <Link href="/challenge" asChild>
-      <TouchableOpacity style={[styles.banner, { top: insets.top + 8 }]}>
+      <TouchableOpacity style={[styles.banner, { top: topOffset }]}>
         <Text style={styles.text} numberOfLines={1}>
           🏆 {challenge.title} — tap for leaderboard
         </Text>

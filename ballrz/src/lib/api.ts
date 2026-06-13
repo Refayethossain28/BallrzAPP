@@ -27,6 +27,19 @@ export function subscribeFeed(cb: (videos: Video[]) => void): () => void {
   });
 }
 
+/**
+ * Engagement-over-recency "hot" ranking for the For You feed.
+ * Comments weigh more than likes; the time decay keeps the feed fresh.
+ */
+export function rankForYou(videos: Video[]): Video[] {
+  const now = Date.now();
+  const score = (v: Video) => {
+    const ageHours = Math.max(0, (now - v.createdAt) / 3600000);
+    return (v.likes * 2 + v.comments * 3 + 1) / Math.pow(ageHours + 2, 1.5);
+  };
+  return [...videos].sort((a, b) => score(b) - score(a));
+}
+
 // ---------- Likes ----------
 
 export async function hasLiked(videoId: string, uid: string): Promise<boolean> {
@@ -100,6 +113,11 @@ export async function getUserVideos(uid: string): Promise<Video[]> {
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 
+export async function getFollowingIds(uid: string): Promise<string[]> {
+  const snap = await getDocs(collection(db, 'users', uid, 'following'));
+  return snap.docs.map((d) => d.id);
+}
+
 export async function isFollowing(uid: string, targetId: string): Promise<boolean> {
   const snap = await getDoc(doc(db, 'users', uid, 'following', targetId));
   return snap.exists();
@@ -143,6 +161,18 @@ export async function uploadVideo(opts: {
     likes: 0,
     comments: 0,
     challengeId: opts.challengeId,
+    createdAt: Date.now(),
+  });
+}
+
+// ---------- Moderation ----------
+
+export async function reportVideo(videoId: string, reporterId: string, reason: string) {
+  await addDoc(collection(db, 'reports'), {
+    videoId,
+    reporterId,
+    reason,
+    status: 'open',
     createdAt: Date.now(),
   });
 }

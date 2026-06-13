@@ -43,6 +43,22 @@ export default function UploadScreen() {
     }
   };
 
+  const recordVideo = async () => {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      setError('Camera permission is needed to record.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['videos'],
+      videoMaxDuration: 60,
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setVideoUri(result.assets[0].uri);
+    }
+  };
+
   const submit = async () => {
     if (!videoUri || !user || uploading) return;
     setError(null);
@@ -65,12 +81,17 @@ export default function UploadScreen() {
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity style={styles.picker} onPress={pickVideo}>
-        <Text style={styles.pickerIcon}>{videoUri ? '✅' : '🎥'}</Text>
-        <Text style={styles.pickerText}>
-          {videoUri ? 'Video selected — tap to change' : 'Pick a highlight (max 60s)'}
-        </Text>
-      </TouchableOpacity>
+      <View style={styles.pickerRow}>
+        <TouchableOpacity style={styles.picker} onPress={recordVideo}>
+          <Text style={styles.pickerIcon}>📹</Text>
+          <Text style={styles.pickerText}>Record now</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.picker} onPress={pickVideo}>
+          <Text style={styles.pickerIcon}>📁</Text>
+          <Text style={styles.pickerText}>From gallery</Text>
+        </TouchableOpacity>
+      </View>
+      {videoUri && <Text style={styles.selected}>✅ Video ready — max 60s</Text>}
 
       <TextInput
         style={styles.input}
@@ -115,18 +136,21 @@ export default function UploadScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background, padding: 20, gap: 16 },
+  pickerRow: { flexDirection: 'row', gap: 12 },
   picker: {
+    flex: 1,
     backgroundColor: colors.surface,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.border,
     borderStyle: 'dashed',
     alignItems: 'center',
-    paddingVertical: 40,
+    paddingVertical: 32,
     gap: 8,
   },
-  pickerIcon: { fontSize: 36 },
+  pickerIcon: { fontSize: 32 },
   pickerText: { color: colors.textMuted },
+  selected: { color: colors.accent, textAlign: 'center', fontWeight: '600' },
   input: {
     backgroundColor: colors.surface,
     borderRadius: 12,

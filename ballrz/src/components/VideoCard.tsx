@@ -1,9 +1,9 @@
 import { Link, useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '@/hooks/useAuth';
-import { hasLiked, toggleLike } from '@/lib/api';
+import { hasLiked, reportVideo, toggleLike } from '@/lib/api';
 import { colors } from '@/lib/theme';
 import type { Video } from '@/lib/types';
 import CommentsSheet from './CommentsSheet';
@@ -60,6 +60,30 @@ export default function VideoCard({ video, height, isActive }: Props) {
     }
   };
 
+  const onShare = () => {
+    Share.share({
+      message: `🏀 Check out @${video.ownerHandle} on Ballrz: ${video.url}`,
+    }).catch(() => {});
+  };
+
+  const onReport = () => {
+    if (!user) {
+      router.push('/auth');
+      return;
+    }
+    Alert.alert('Report this highlight?', "We'll review it and take it down if it breaks the rules.", [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Report',
+        style: 'destructive',
+        onPress: () => {
+          reportVideo(video.id, user.uid, 'inappropriate').catch(() => {});
+          Alert.alert('Thanks', 'Your report was submitted.');
+        },
+      },
+    ]);
+  };
+
   return (
     <View style={[styles.container, { height }]}>
       <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />
@@ -80,6 +104,13 @@ export default function VideoCard({ video, height, isActive }: Props) {
         <TouchableOpacity style={styles.action} onPress={() => setCommentsOpen(true)}>
           <Text style={styles.actionIcon}>💬</Text>
           <Text style={styles.actionLabel}>{video.comments}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.action} onPress={onShare}>
+          <Text style={styles.actionIcon}>↗</Text>
+          <Text style={styles.actionLabel}>Share</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.action} onPress={onReport}>
+          <Text style={styles.actionIconSmall}>⚑</Text>
         </TouchableOpacity>
       </View>
 
@@ -123,6 +154,7 @@ const styles = StyleSheet.create({
   avatarText: { color: '#fff', fontWeight: '800', fontSize: 18 },
   action: { alignItems: 'center' },
   actionIcon: { fontSize: 30, color: '#fff' },
+  actionIconSmall: { fontSize: 22, color: 'rgba(255,255,255,0.7)' },
   actionLabel: { color: '#fff', fontSize: 12, marginTop: 2, fontWeight: '600' },
   captionBox: {
     position: 'absolute',
