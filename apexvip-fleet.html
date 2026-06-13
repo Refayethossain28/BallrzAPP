@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black"/>
+<meta name="theme-color" content="#000000"/>
+<title>ApexVIP Fleet Portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&display=swap" rel="stylesheet"/>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="firebase.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:var(--bg);color:var(--fg);font-family:-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased;min-height:100vh;
+  --bg:#050505;--fg:#f4f0ea;--fg-muted:#c8bfb0;--fg-dim:#8a8278;--fg-subtle:#5a5550;--fg-ghost:#3a3632;--fg-faint:#28251f;
+  --surface:rgba(255,255,255,.045);--surface-b:rgba(255,255,255,.03);--surface-c:rgba(255,255,255,.07);
+  --border:rgba(255,255,255,.08);--border-b:rgba(255,255,255,.05);--divider:rgba(255,255,255,.04);
+  --gold:#C8A97E;--gold-2:rgba(200,169,126,.22);--gold-3:rgba(200,169,126,.12);--gold-dim:rgba(200,169,126,.18);--gold-glow:rgba(200,169,126,.28)}
+body{--ease-spring:cubic-bezier(0.16,1,0.3,1);--font-serif:'Cormorant Garamond',serif;--font-sans:-apple-system,sans-serif;}
+#app{max-width:480px;margin:0 auto;min-height:100vh;position:relative}
+
+/* ── Keyframes ── */
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes growBar{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes orbDrift1{from{transform:translate(0,0) scale(1)}to{transform:translate(60px,40px) scale(1.14)}}
+@keyframes orbDrift2{from{transform:translate(0,0) scale(1.06)}to{transform:translate(-70px,-50px) scale(.9)}}
+@keyframes orbDrift3{from{transform:translate(0,0) scale(1)}to{transform:translate(50px,-60px) scale(1.1)}}
+@keyframes logoReveal{0%{opacity:0;letter-spacing:18px}60%{opacity:1}100%{opacity:1;letter-spacing:10px}}
+@keyframes subtitleReveal{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes slideUp{from{opacity:0;transform:translateY(40px)}to{opacity:1;transform:translateY(0)}}
+@keyframes slideUpSheet{from{transform:translateY(100%)}to{transform:translateY(0)}}
+@keyframes scaleIn{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
+@keyframes checkPop{0%{transform:scale(0) rotate(-20deg);opacity:0}70%{transform:scale(1.15) rotate(3deg)}100%{transform:scale(1) rotate(0deg);opacity:1}}
+
+/* ── Aurora orbs ── */
+.orb-bg{position:absolute;inset:0;overflow:hidden;z-index:0;pointer-events:none}
+.orb{position:absolute;border-radius:50%;filter:blur(90px);will-change:transform}
+.orb-1{width:340px;height:340px;background:radial-gradient(circle,#C8A97E,transparent 70%);opacity:.2;top:-80px;left:-60px;animation:orbDrift1 24s ease-in-out infinite alternate}
+.orb-2{width:280px;height:280px;background:radial-gradient(circle,#8a6020,transparent 70%);opacity:.18;bottom:80px;right:-80px;animation:orbDrift2 30s ease-in-out infinite alternate}
+.orb-3{width:280px;height:280px;background:radial-gradient(circle,rgba(90,80,160,.9),transparent 70%);opacity:.14;top:38%;left:28%;animation:orbDrift3 27s ease-in-out infinite alternate}
+
+/* ── Staggered entrances ── */
+.stagger>*{opacity:0;animation:fadeUp .4s ease forwards}
+.stagger>*:nth-child(1){animation-delay:.03s}
+.stagger>*:nth-child(2){animation-delay:.08s}
+.stagger>*:nth-child(3){animation-delay:.13s}
+.stagger>*:nth-child(4){animation-delay:.18s}
+.stagger>*:nth-child(5){animation-delay:.23s}
+.stagger>*:nth-child(6){animation-delay:.28s}
+.stagger>*:nth-child(7){animation-delay:.33s}
+.stagger>*:nth-child(8){animation-delay:.38s}
+
+/* ── Components ── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:18px;margin-bottom:12px;transition:transform .18s,border-color .18s}
+.card:active{transform:scale(.99)}
+.btn{width:100%;padding:15px;border-radius:14px;font-size:15px;font-weight:700;border:none;cursor:pointer;font-family:inherit;transition:opacity .15s,transform .12s}
+.btn:active{opacity:.85;transform:scale(.97)}
+.btn-gold{background:var(--gold);color:#000}
+.btn-green{background:#22c55e;color:#fff}
+.btn-red{background:#ef4444;color:#fff}
+.btn-glass{background:var(--surface-c);border:1px solid var(--border);color:var(--fg);backdrop-filter:blur(12px)}
+.btn-outline{background:none;border:1px solid var(--border);color:var(--fg-muted)}
+.btn-sm{padding:8px 16px;border-radius:10px;font-size:13px;font-weight:600;width:auto;border:none;cursor:pointer;font-family:inherit;transition:opacity .15s,transform .12s}
+.btn-sm:active{opacity:.85;transform:scale(.97)}
+input,select,textarea{width:100%;padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;color:var(--fg);font-size:16px;outline:none;font-family:inherit;transition:border-color .2s;appearance:none;-webkit-appearance:none}
+input:focus,select:focus,textarea:focus{border-color:var(--gold)}
+select option{background:#1a1612;color:var(--fg)}
+label{display:block;font-size:12px;font-weight:600;color:var(--fg-dim);margin-bottom:6px;letter-spacing:.3px}
+.field{margin-bottom:16px}
+.input-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+/* ── Nav ── */
+.nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:rgba(5,5,5,.96);border-top:1px solid var(--border);display:flex;padding:10px 0 30px;z-index:100;backdrop-filter:blur(32px) saturate(180%)}
+.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;color:var(--fg-ghost);font-size:10px;padding:4px 0;position:relative;transition:color .2s}
+.nav-item.on{color:var(--gold)}
+.nav-pip{position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--gold);opacity:0;transition:opacity .2s}
+.nav-item.on .nav-pip{opacity:1}
+
+/* ── Tags ── */
+.tag{display:inline-flex;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.2px}
+.tag-gold{background:rgba(200,169,126,.14);color:var(--gold)}
+.tag-green{background:rgba(34,197,94,.14);color:#22c55e}
+.tag-gray{background:rgba(120,120,120,.14);color:var(--fg-dim)}
+.tag-red{background:rgba(239,68,68,.14);color:#ef4444}
+.tag-blue{background:rgba(59,130,246,.14);color:#3b82f6}
+.tag-purple{background:rgba(168,85,247,.14);color:#a855f7}
+.tag-orange{background:rgba(251,146,60,.14);color:#fb923c}
+
+/* ── Misc ── */
+.section-label{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--fg-subtle)}
+.back-row{display:flex;align-items:center;padding:20px 0 10px}
+.back-btn{background:none;border:none;color:var(--gold);font-size:15px;cursor:pointer;display:flex;align-items:center;gap:6px;font-family:inherit;font-weight:600}
+.top-bar{display:flex;justify-content:space-between;align-items:center;padding:22px 0 10px}
+.divider{height:1px;background:var(--divider);margin:16px 0}
+.screen{padding:0 22px 100px;min-height:100vh;animation:fadeIn .25s ease}
+.screen-full{min-height:100vh;animation:fadeIn .25s ease}
+
+/* ── Progress stepper ── */
+.stepper{display:flex;align-items:center;margin-bottom:28px}
+.step-dot{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;transition:all .3s}
+.step-dot.done{background:var(--gold);color:#000}
+.step-dot.active{background:var(--gold-dim);border:2px solid var(--gold);color:var(--gold)}
+.step-dot.future{background:var(--surface);border:1px solid var(--border);color:var(--fg-ghost)}
+.step-line{flex:1;height:2px;background:var(--border)}
+.step-line.done{background:var(--gold)}
+
+/* ── Bar chart ── */
+.bar-row{display:flex;align-items:flex-end;gap:6px;height:80px;margin:12px 0}
+.bar-col{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1}
+.bar-fill{border-radius:4px 4px 0 0;background:var(--gold);width:100%;transform-origin:bottom;animation:growBar .5s ease both}
+.bar-col:nth-child(1) .bar-fill{animation-delay:.05s}
+.bar-col:nth-child(2) .bar-fill{animation-delay:.1s}
+.bar-col:nth-child(3) .bar-fill{animation-delay:.15s}
+.bar-col:nth-child(4) .bar-fill{animation-delay:.2s}
+.bar-col:nth-child(5) .bar-fill{animation-delay:.25s}
+.bar-col:nth-child(6) .bar-fill{animation-delay:.3s}
+.bar-col:nth-child(7) .bar-fill{animation-delay:.35s}
+.bar-label{font-size:9px;color:var(--fg-subtle)}
+
+/* ── Chip toggle ── */
+.chip-wrap{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.chip{padding:7px 14px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;background:var(--surface);border:1px solid var(--border);color:var(--fg-muted);transition:all .18s;user-select:none}
+.chip.active{background:var(--gold-dim);border-color:var(--gold);color:var(--gold)}
+
+/* ── Doc upload card ── */
+.doc-card{display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:10px;gap:12px}
+.doc-card.uploaded{border-color:rgba(34,197,94,.25)}
+.doc-info{flex:1;min-width:0}
+.doc-name{font-size:14px;font-weight:600;color:var(--fg);margin-bottom:2px}
+.doc-sub{font-size:11px;color:var(--fg-dim)}
+
+/* ── Stats row ── */
+.stats-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px}
+.stat-val{font-size:22px;font-weight:700;color:var(--fg);font-family:'Cormorant Garamond',serif;letter-spacing:.5px}
+.stat-label{font-size:10px;color:var(--fg-dim);margin-top:2px;font-weight:600;letter-spacing:.5px}
+
+/* ── Job card ── */
+.job-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:10px}
+.job-route{display:flex;align-items:center;gap:8px;margin:8px 0}
+.route-dot{width:7px;height:7px;border-radius:50%;background:var(--gold);flex-shrink:0}
+.route-line{width:1px;height:20px;background:var(--border);margin:2px auto}
+.route-text{font-size:13px;font-weight:600;color:var(--fg)}
+.route-sub{font-size:11px;color:var(--fg-dim)}
+.client-avatar{width:32px;height:32px;border-radius:50%;background:var(--gold-dim);border:1px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--gold);flex-shrink:0;font-family:'Cormorant Garamond',serif}
+
+/* ── Vehicle list item ── */
+.vehicle-row{display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--divider)}
+.vehicle-row:last-child{border-bottom:none}
+
+/* ── Tab bar ── */
+.tab-bar{display:flex;background:var(--surface);border-radius:12px;padding:4px;margin-bottom:16px}
+.tab{flex:1;padding:9px;text-align:center;font-size:13px;font-weight:600;color:var(--fg-dim);cursor:pointer;border-radius:9px;transition:all .2s}
+.tab.on{background:var(--gold-dim);color:var(--gold)}
+
+/* ── Earnings ── */
+.earn-total{font-family:'Cormorant Garamond',serif;font-size:58px;font-weight:700;color:var(--gold);line-height:1;letter-spacing:-1px}
+.earn-sub{font-size:12px;color:var(--fg-dim);margin-top:4px}
+
+/* ── Period selector ── */
+.period-row{display:flex;gap:8px;margin-bottom:20px}
+.period-btn{flex:1;padding:9px;border-radius:10px;font-size:13px;font-weight:600;border:1px solid var(--border);background:var(--surface);color:var(--fg-dim);cursor:pointer;font-family:inherit;text-align:center;transition:all .2s}
+.period-btn.on{background:var(--gold-dim);border-color:var(--gold);color:var(--gold)}
+
+/* ── API key ── */
+.api-key-box{background:var(--surface-b);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.api-key-text{font-family:monospace;font-size:13px;color:var(--fg-muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ── Jobs table ── */
+.job-row{display:flex;align-items:center;padding:14px 0;border-bottom:1px solid var(--divider);gap:10px}
+.job-row:last-child{border-bottom:none}
+.job-col-main{flex:1;min-width:0}
+.job-date{font-size:11px;color:var(--fg-dim);margin-bottom:2px}
+.job-route-text{font-size:13px;font-weight:600;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.job-meta{font-size:11px;color:var(--fg-dim);margin-top:2px}
+.job-fare{font-size:15px;font-weight:700;color:var(--gold);text-align:right;flex-shrink:0}
+
+/* ── Splash ── */
+.splash-wrap{position:relative;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden}
+.splash-content{position:relative;z-index:1;text-align:center;padding:0 32px;width:100%}
+.logo-wordmark{font-family:'Cormorant Garamond',serif;font-size:56px;font-weight:700;color:var(--gold);animation:logoReveal 1.6s ease forwards;letter-spacing:10px;display:block}
+.logo-sub{font-family:'Cormorant Garamond',serif;font-size:16px;color:var(--fg-muted);letter-spacing:6px;text-transform:uppercase;animation:subtitleReveal .8s ease .8s both}
+.splash-actions{margin-top:56px;animation:slideUp .6s ease 1.2s both;width:100%}
+.splash-divider{display:flex;align-items:center;gap:12px;margin:16px 0;color:var(--fg-ghost);font-size:12px}
+.splash-divider::before,.splash-divider::after{content:'';flex:1;height:1px;background:var(--border)}
+
+/* ── Applied ── */
+.check-circle{width:80px;height:80px;border-radius:50%;background:rgba(34,197,94,.1);border:2px solid rgba(34,197,94,.3);display:flex;align-items:center;justify-content:center;margin:0 auto 24px;animation:checkPop .6s cubic-bezier(.34,1.56,.64,1) .2s both;font-size:36px}
+
+/* ── Glass sheet ── */
+.glass-sheet{background:rgba(255,255,255,.03);backdrop-filter:blur(60px) saturate(180%);border-top:1px solid var(--border);border-radius:28px 28px 0 0;position:relative;z-index:1;padding:0 22px 110px;min-height:60vh;animation:slideUp .5s ease .2s both}
+
+/* ── Error ── */
+.err-msg{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:10px;padding:10px 14px;font-size:13px;color:#ef4444;margin-bottom:12px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+// ── Firebase init ──────────────────────────────────────────────────────
+let auth, db, FIREBASE_ENABLED = false;
+try {
+  if (typeof APEXVIP_FIREBASE_CONFIG !== 'undefined' && APEXVIP_FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY') {
+    firebase.initializeApp(APEXVIP_FIREBASE_CONFIG);
+    auth = firebase.auth();
+    db = firebase.firestore();
+    FIREBASE_ENABLED = true;
+  }
+} catch(e) { console.warn('Firebase init:', e.message); }
+
+// ── Demo data ──────────────────────────────────────────────────────────
+const FLEET_DEMO = [
+  {id:'V1', make:'Mercedes', model:'S-Class', plate:'LX73 ABC', year:2023, status:'on-job', driver:'James H.', colour:'Obsidian Black'},
+  {id:'V2', make:'Mercedes', model:'V-Class', plate:'LX73 DEF', year:2022, status:'available', driver:'Marcus T.', colour:'Polar White'},
+  {id:'V3', make:'Rolls-Royce', model:'Ghost', plate:'LX22 RRG', year:2022, status:'available', driver:'William F.', colour:'Arctic White'},
+  {id:'V4', make:'Bentley', model:'Flying Spur', plate:'LX21 BFS', year:2021, status:'offline', driver:'—', colour:'Midnight Emerald'},
+  {id:'V5', make:'Range Rover', model:'Autobiography', plate:'LX23 RRA', year:2023, status:'on-job', driver:'Oliver P.', colour:'Santorini Black'},
+  {id:'V6', make:'BMW', model:'7 Series', plate:'LX22 BMW', year:2022, status:'available', driver:'Henry C.', colour:'Carbon Black'},
+];
+const JOBS_DEMO = [
+  {id:'J1',date:'Today 14:30',client:'A.C.',route:"Claridge's → Heathrow T5",vehicle:'S-Class',driver:'James H.',fare:185,status:'confirmed'},
+  {id:'J2',date:'Today 09:15',client:'O.T.',route:'Chelsea → Canary Wharf',vehicle:'Range Rover',driver:'Oliver P.',fare:120,status:'completed'},
+  {id:'J3',date:'Yesterday',client:'W.S.',route:'Belgravia → Gatwick',vehicle:'V-Class',fare:195,driver:'Marcus T.',status:'completed'},
+  {id:'J4',date:'Yesterday',client:'H.B.',route:'Mayfair → Stansted',vehicle:'Ghost',fare:285,driver:'William F.',status:'completed'},
+  {id:'J5',date:'Mon',client:'E.R.',route:'Kensington → Heathrow T3',vehicle:'S-Class',fare:165,driver:'James H.',status:'completed'},
+];
+const EARN_DATA = [320, 480, 195, 560, 740, 650, 280];
+const EARN_LABELS = ['Mon','Tue','Wed','Thu','Fri','Sat','Today'];
+
+const VEHICLE_MAKES = {
+  'Mercedes':['S-Class','E-Class','V-Class'],
+  'BMW':['7 Series','5 Series'],
+  'Rolls-Royce':['Phantom','Ghost','Cullinan'],
+  'Bentley':['Mulsanne','Flying Spur','Bentayga'],
+  'Range Rover':['Autobiography'],
+  'Aston Martin':['Rapide'],
+};
+const ALL_MODELS = Object.entries(VEHICLE_MAKES).flatMap(([make,models])=>models.map(m=>({label:`${make} ${m}`,make,model:m})));
+
+const DOCS_LIST = [
+  {id:'reg', name:'Company Registration Certificate', sub:'Certificate of Incorporation or equivalent'},
+  {id:'ins', name:'Fleet Insurance Certificate', sub:'Minimum £10M public liability cover'},
+  {id:'pho', name:'Private Hire Operator Licence', sub:'TfL or local authority licence'},
+  {id:'dbs', name:'DBS / Background Checks', sub:'Enhanced DBS for each driver'},
+  {id:'mot', name:'Vehicle Roadworthiness Certificates', sub:'MOT or equivalent per vehicle'},
+  {id:'vat', name:'VAT Registration', sub:'If applicable — VAT registration number'},
+];
+
+const SERVICE_AREAS = ['Central London','Heathrow','Gatwick','Stansted','City Airport','Luton','M25 Corridor','UK Nationwide','Dubai','International'];
+
+const DEFAULT_PRICING = {
+  'S-Class': 85, 'E-Class': 75, 'V-Class': 95,
+  '7 Series': 90, '5 Series': 80,
+  'Phantom': 250, 'Ghost': 220, 'Cullinan': 240,
+  'Mulsanne': 230, 'Flying Spur': 210, 'Bentayga': 200,
+  'Autobiography': 130, 'Rapide': 180,
+};
+
+// ── State ──────────────────────────────────────────────────────────────
+let S = {
+  screen: 'splash',
+  step: 1,
+  fleet: [],
+  docs: {},
+  pricing: {...DEFAULT_PRICING},
+  serviceAreas: [],
+  user: null,
+  loginErr: '',
+  company: {name:'', regName:'', regNum:'', years:'', city:''},
+  vehicleForm: {makeModel:'Mercedes S-Class', year:'', plate:'', colour:''},
+  earnPeriod: 'week',
+  jobsTab: 'today',
+  editingVehicle: null,
+};
+
+function go(s) { S.screen = s; render(); window.scrollTo(0, 0); }
+
+// ── Firebase Auth ──────────────────────────────────────────────────────
+async function doLogin() {
+  S.loginErr = '';
+  const email = document.getElementById('login-email')?.value?.trim() || '';
+  const pass = document.getElementById('login-pass')?.value || '';
+  if (!email || !pass) { S.loginErr = 'Please enter email and password.'; render(); return; }
+
+  if (!FIREBASE_ENABLED) {
+    S.user = { email, displayName: 'Fleet Partner' };
+    go('home'); return;
+  }
+  try {
+    const cred = await auth.signInWithEmailAndPassword(email, pass);
+    S.user = { email: cred.user.email, displayName: cred.user.displayName || 'Fleet Partner' };
+    go('home');
+  } catch(err) {
+    if (err.code === 'auth/configuration-not-found' || err.code === 'auth/operation-not-allowed') {
+      S.user = { email, displayName: 'Fleet Partner' };
+      go('home'); return;
+    }
+    S.loginErr = err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found'
+      ? 'Invalid email or password.'
+      : 'Sign-in failed. Please try again.';
+    render();
+  }
+}
+
+async function doForgot() {
+  const email = document.getElementById('login-email')?.value?.trim() || '';
+  if (!email) { alert('Enter your email address above first.'); return; }
+  if (!FIREBASE_ENABLED) { alert('Password reset email sent (demo mode).'); return; }
+  try {
+    await auth.sendPasswordResetEmail(email);
+    alert('Password reset email sent. Check your inbox.');
+  } catch(e) { alert('Could not send reset email. Please check the address.'); }
+}
+
+function doLogout() {
+  if (FIREBASE_ENABLED) auth.signOut().catch(()=>{});
+  S.user = null; S.screen = 'splash'; render();
+}
+
+// ── Onboarding helpers ─────────────────────────────────────────────────
+function addVehicle() {
+  const mm = document.getElementById('vf-makemodel')?.value || '';
+  const year = document.getElementById('vf-year')?.value || '';
+  const plate = document.getElementById('vf-plate')?.value?.trim() || '';
+  const colour = document.getElementById('vf-colour')?.value?.trim() || '';
+  if (!mm || !year || !plate) { alert('Please fill in Make/Model, Year, and Plate.'); return; }
+  const parts = mm.split('|');
+  S.fleet.push({ id:'V'+(S.fleet.length+1), make:parts[0], model:parts[1], plate, year:parseInt(year), colour, status:'available', driver:'—' });
+  S.vehicleForm = { makeModel:'Mercedes|S-Class', year:'', plate:'', colour:'' };
+  render();
+}
+
+function toggleDoc(id) {
+  S.docs[id] = S.docs[id] === 'uploaded' ? 'pending' : 'uploaded';
+  render();
+}
+
+function toggleArea(area) {
+  const idx = S.serviceAreas.indexOf(area);
+  if (idx >= 0) S.serviceAreas.splice(idx, 1);
+  else S.serviceAreas.push(area);
+  render();
+}
+
+function updatePricing(model, val) {
+  S.pricing[model] = parseFloat(val) || 0;
+}
+
+function saveCompany() {
+  const n = document.getElementById('co-name')?.value?.trim() || '';
+  const rn = document.getElementById('co-regname')?.value?.trim() || '';
+  const num = document.getElementById('co-regnum')?.value?.trim() || '';
+  const yr = document.getElementById('co-years')?.value || '';
+  const city = document.getElementById('co-city')?.value || '';
+  if (!n || !rn || !city) { alert('Please fill in all required fields.'); return; }
+  S.company = { name: n, regName: rn, regNum: num, years: yr, city };
+  go('onboarding-2');
+}
+
+// ── Nav bar ────────────────────────────────────────────────────────────
+function navBar() {
+  const items = [
+    {id:'home', label:'Home', icon:`<svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>`},
+    {id:'jobs', label:'Jobs', icon:`<svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>`},
+    {id:'fleet', label:'Fleet', icon:`<svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4l8 4v5c0 4.418-3.582 8-8 8S4 17.418 4 13V8l8-4z"/></svg>`},
+    {id:'earnings', label:'Earnings', icon:`<svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`},
+    {id:'account', label:'Account', icon:`<svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V19a4 4 0 00-4-4H9a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z"/></svg>`},
+  ];
+  return `<nav class="nav">${items.map(i => `<div class="nav-item${S.screen===i.id?' on':''}" onclick="go('${i.id}')">
+    ${i.icon}<span>${i.label}</span><div class="nav-pip"></div>
+  </div>`).join('')}</nav>`;
+}
+
+// ── Stepper ────────────────────────────────────────────────────────────
+function stepperHtml(current) {
+  const steps = [1,2,3,4];
+  let html = `<div class="stepper">`;
+  steps.forEach((s, i) => {
+    const cls = s < current ? 'done' : s === current ? 'active' : 'future';
+    html += `<div class="step-dot ${cls}">${s < current ? '✓' : s}</div>`;
+    if (i < steps.length - 1) {
+      html += `<div class="step-line${s < current ? ' done':''}"></div>`;
+    }
+  });
+  html += `</div><p style="font-size:11px;color:var(--fg-subtle);margin-bottom:20px;letter-spacing:.5px">STEP ${current} OF 4</p>`;
+  return html;
+}
+
+// ── Status helpers ─────────────────────────────────────────────────────
+function vehicleStatusTag(status) {
+  if (status === 'available') return `<span class="tag tag-green">Available</span>`;
+  if (status === 'on-job') return `<span class="tag tag-gold">On Job</span>`;
+  return `<span class="tag tag-gray">Offline</span>`;
+}
+function jobStatusTag(status) {
+  if (status === 'confirmed') return `<span class="tag tag-blue">Confirmed</span>`;
+  if (status === 'completed') return `<span class="tag tag-green">Completed</span>`;
+  if (status === 'en-route') return `<span class="tag tag-gold">En Route</span>`;
+  return `<span class="tag tag-gray">${status}</span>`;
+}
+
+// ── Pages ──────────────────────────────────────────────────────────────
+const pages = {
+
+  // 1. Splash
+  splash() {
+    return `<div class="splash-wrap">
+      <div class="orb-bg"><div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div></div>
+      <div class="splash-content">
+        <span class="logo-wordmark">ApexVIP</span>
+        <p class="logo-sub" style="margin-top:10px">Fleet Partner Portal</p>
+        <div class="splash-actions">
+          <button class="btn btn-gold" onclick="go('onboarding-1')" style="font-family:'Cormorant Garamond',serif;font-size:17px;letter-spacing:1px;margin-bottom:14px">Apply to Join</button>
+          <div class="splash-divider">or</div>
+          <button class="btn btn-glass" onclick="go('login')" style="font-family:'Cormorant Garamond',serif;font-size:17px;letter-spacing:1px">Sign In</button>
+          <p style="font-size:11px;color:var(--fg-ghost);margin-top:28px;letter-spacing:.5px">LUXURY CHAUFFEUR FLEET NETWORK</p>
+        </div>
+      </div>
+    </div>`;
+  },
+
+  // 2. Login
+  login() {
+    return `<div class="screen" style="padding-top:0">
+      <div style="position:relative;min-height:220px;margin:-0px -22px 0;overflow:hidden">
+        <div class="orb-bg"><div class="orb orb-1" style="opacity:.12"></div><div class="orb orb-2" style="opacity:.1"></div></div>
+        <div style="position:relative;z-index:1;padding:60px 22px 30px;text-align:center">
+          <div style="font-family:'Cormorant Garamond',serif;font-size:36px;font-weight:700;color:var(--gold);letter-spacing:6px">ApexVIP</div>
+          <div style="font-size:12px;color:var(--fg-muted);letter-spacing:3px;margin-top:6px">FLEET PORTAL</div>
+        </div>
+      </div>
+      <div class="stagger" style="margin-top:8px">
+        <h2 style="font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:600;margin-bottom:6px">Welcome back</h2>
+        <p style="font-size:14px;color:var(--fg-dim);margin-bottom:24px">Sign in to your fleet account</p>
+        ${S.loginErr ? `<div class="err-msg">${S.loginErr}</div>` : ''}
+        <div class="field"><label>Email Address</label><input id="login-email" type="email" placeholder="partner@yourcompany.com" autocomplete="email"/></div>
+        <div class="field"><label>Password</label><input id="login-pass" type="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"/></div>
+        <button class="btn btn-gold" onclick="doLogin()" style="margin-bottom:16px">Sign In</button>
+        <div style="text-align:center">
+          <button onclick="doForgot()" style="background:none;border:none;color:var(--gold);font-size:14px;cursor:pointer;font-family:inherit">Forgot password?</button>
+        </div>
+        <div class="divider"></div>
+        <button class="btn btn-glass" onclick="go('splash')">← Back</button>
+      </div>
+    </div>`;
+  },
+
+  // 3. Onboarding step 1 — Company info
+  'onboarding-1'() {
+    const co = S.company;
+    return `<div class="screen">
+      <div class="back-row">
+        <button class="back-btn" onclick="go('splash')">← Back</button>
+      </div>
+      ${stepperHtml(1)}
+      <div class="stagger">
+        <h2 style="font-family:'Cormorant Garamond',serif;font-size:30px;font-weight:700;margin-bottom:4px">Tell us about<br>your company</h2>
+        <p style="font-size:14px;color:var(--fg-dim);margin-bottom:24px">We'll need these details to verify your business</p>
+        <div class="field"><label>Trading Name *</label><input id="co-name" type="text" placeholder="e.g. Premier Chauffeur Services" value="${co.name}"/></div>
+        <div class="field"><label>Registered Business Name *</label><input id="co-regname" type="text" placeholder="Legal registered name" value="${co.regName}"/></div>
+        <div class="field"><label>Company / Trade Licence Number</label><input id="co-regnum" type="text" placeholder="UK: 12345678 · UAE: CN-XXXXXXX" value="${co.regNum}"/></div>
+        <div class="field"><label>Years in Operation</label>
+          <select id="co-years">
+            <option value="" ${!co.years?'selected':''}>Select…</option>
+            ${['Less than 1 year','1–2 years','3–5 years','6–10 years','10+ years'].map(y=>`<option value="${y}" ${co.years===y?'selected':''}>${y}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field"><label>Headquarters City *</label>
+          <select id="co-city">
+            <option value="" ${!co.city?'selected':''}>Select city…</option>
+            ${['London','Dubai','Paris','New York','Singapore'].map(c=>`<option value="${c}" ${co.city===c?'selected':''}>${c}</option>`).join('')}
+          </select>
+        </div>
+        <button class="btn btn-gold" onclick="saveCompany()" style="margin-top:8px;font-family:'Cormorant Garamond',serif;font-size:17px">Next →</button>
+      </div>
+    </div>`;
+  },
+
+  // 4. Onboarding step 2 — Fleet
+  'onboarding-2'() {
+    const fleet = S.fleet;
+    const modelOptions = Object.entries(VEHICLE_MAKES).flatMap(([make, models]) =>
+      models.map(m => `<option value="${make}|${m}">${make} ${m}</option>`)
+    ).join('');
+    return `<div class="screen">
+      <div class="back-row">
+        <button class="back-btn" onclick="go('onboarding-1')">← Back</button>
+      </div>
+      ${stepperHtml(2)}
+      <div class="stagger">
+        <h2 style="font-family:'Cormorant Garamond',serif;font-size:30px;font-weight:700;margin-bottom:4px">Your fleet</h2>
+        <p style="font-size:14px;color:var(--fg-dim);margin-bottom:24px">Add the vehicles you'll operate. You can add more later.</p>
+
+        <div class="card" style="margin-bottom:20px">
+          <p class="section-label" style="margin-bottom:14px">Add a vehicle</p>
+          <div class="field"><label>Make &amp; Model</label>
+            <select id="vf-makemodel">${modelOptions}</select>
+          </div>
+          <div class="input-row">
+            <div class="field"><label>Year</label><input id="vf-year" type="number" placeholder="2023" min="2010" max="2025"/></div>
+            <div class="field"><label>Plate</label><input id="vf-plate" type="text" placeholder="LX73 ABC" style="text-transform:uppercase"/></div>
+          </div>
+          <div class="field"><label>Colour</label><input id="vf-colour" type="text" placeholder="e.g. Obsidian Black"/></div>
+          <button class="btn btn-glass" onclick="addVehicle()">+ Add Vehicle</button>
+        </div>
+
+        ${fleet.length === 0
+          ? `<div style="text-align:center;padding:24px;color:var(--fg-ghost);font-size:14px">No vehicles added yet</div>`
+          : `<p class="section-label" style="margin-bottom:10px">${fleet.length} vehicle${fleet.length>1?'s':''} added</p>
+            ${fleet.map(v => `<div class="card" style="padding:14px 16px">
+              <div style="display:flex;align-items:center;justify-content:space-between">
+                <div>
+                  <div style="font-weight:700;font-size:15px">${v.make} ${v.model}</div>
+                  <div style="font-size:12px;color:var(--fg-dim);margin-top:2px">${v.plate} · ${v.year} · ${v.colour||'—'}</div>
+                </div>
+                <button onclick="S.fleet=S.fleet.filter(x=>x.id!=='${v.id}');render()" style="background:none;border:none;color:var(--fg-ghost);font-size:18px;cursor:pointer;padding:4px">×</button>
+              </div>
+            </div>`).join('')}`
+        }
+
+        <button class="btn btn-gold" onclick="${fleet.length===0?`alert('Add at least one vehicle to continue.')`:`go('onboarding-3')`}" style="margin-top:16px;font-family:'Cormorant Garamond',serif;font-size:17px">Next →</button>
+      </div>
+    </div>`;
+  },
+
+  // 5. Onboarding step 3 — Documents
+  'onboarding-3'() {
+    return `<div class="screen">
+      <div class="back-row">
+        <button class="back-btn" onclick="go('onboarding-2')">← Back</button>
+      </div>
+      ${stepperHtml(3)}
+      <div class="stagger">
+        <h2 style="font-family:'Cormorant Garamond',serif;font-size:30px;font-weight:700;margin-bottom:4px">Documents</h2>
+        <p style="font-size:14px;color:var(--fg-dim);margin-bottom:24px">Upload the required compliance documents. Secure &amp; encrypted.</p>
+        ${DOCS_LIST.map(doc => {
+          const uploaded = S.docs[doc.id] === 'uploaded';
+          return `<div class="doc-card ${uploaded?'uploaded':''}">
+            <div class="doc-info">
+              <div class="doc-name">${doc.name}</div>
+              <div class="doc-sub">${doc.sub}</div>
+            </div>
+            ${uploaded
+              ? `<button class="btn-sm" style="background:rgba(34,197,94,.12);color:#22c55e;border:1px solid rgba(34,197,94,.25);cursor:pointer" onclick="toggleDoc('${doc.id}')">✓ Uploaded</button>`
+              : `<button class="btn-sm btn-glass" onclick="toggleDoc('${doc.id}')">Upload</button>`
+            }
+          </div>`;
+        }).join('')}
+        <button class="btn btn-gold" onclick="go('onboarding-4')" style="margin-top:16px;font-family:'Cormorant Garamond',serif;font-size:17px">Next →</button>
+      </div>
+    </div>`;
+  },
+
+  // 6. Onboarding step 4 — Pricing & service area
+  'onboarding-4'() {
+    const modelList = [...new Set(Object.values(VEHICLE_MAKES).flat())];
+    return `<div class="screen">
+      <div class="back-row">
+        <button class="back-btn" onclick="go('onboarding-3')">← Back</button>
+      </div>
+      ${stepperHtml(4)}
+      <div class="stagger">
+        <h2 style="font-family:'Cormorant Garamond',serif;font-size:30px;font-weight:700;margin-bottom:4px">Pricing &amp; Service Area</h2>
+        <p style="font-size:14px;color:var(--fg-dim);margin-bottom:24px">Set your base fares and select where you operate.</p>
+
+        <p class="section-label" style="margin-bottom:14px">Base fare per vehicle type (£)</p>
+        <div class="card" style="margin-bottom:20px">
+          ${modelList.map(model => `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--divider)">
+            <span style="font-size:14px;font-weight:600;color:var(--fg)">${model}</span>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="color:var(--fg-dim);font-size:14px">£</span>
+              <input type="number" id="price-${model.replace(/\s+/g,'_')}" value="${S.pricing[model]||''}" placeholder="0"
+                style="width:80px;text-align:right;padding:8px 10px;font-size:14px"
+                oninput="updatePricing('${model}',this.value)"/>
+            </div>
+          </div>`).join('')}
+        </div>
+
+        <p class="section-label" style="margin-bottom:10px">Service Areas</p>
+        <div class="chip-wrap" style="margin-bottom:24px">
+          ${SERVICE_AREAS.map(area => `<div class="chip ${S.serviceAreas.includes(area)?'active':''}" onclick="toggleArea('${area}')">${area}</div>`).join('')}
+        </div>
+
+        <button class="btn btn-gold" onclick="go('applied')" style="font-family:'Cormorant Garamond',serif;font-size:17px;letter-spacing:.5px">Submit Application →</button>
+      </div>
+    </div>`;
+  },
+
+  // 7. Applied — confirmation
+  applied() {
+    const email = S.user?.email || 'your email address';
+    return `<div class="screen" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;text-align:center">
+      <div style="animation:fadeIn .5s ease">
+        <div class="check-circle">✓</div>
+        <h2 style="font-family:'Cormorant Garamond',serif;font-size:36px;font-weight:700;margin-bottom:12px">Application Received</h2>
+        <p style="font-size:15px;color:var(--fg-muted);line-height:1.6;max-width:300px;margin:0 auto 32px">
+          Our team will review your application within 48 hours. You'll receive an email at
+          <span style="color:var(--gold)">${email}</span> with next steps.
+        </p>
+        <div style="display:flex;flex-direction:column;gap:10px;width:100%;max-width:320px;margin:0 auto">
+          <button class="btn btn-gold" onclick="go('splash')" style="font-family:'Cormorant Garamond',serif;font-size:17px">Back to Home</button>
+          <button class="btn btn-glass" onclick="S.user={email:'partner@example.com',displayName:'Demo Partner'};go('home')">Preview Dashboard →</button>
+        </div>
+      </div>
+    </div>`;
+  },
+
+  // 8. Home dashboard
+  home() {
+    const coName = S.company?.name || 'Premier Fleet Co.';
+    return `<div class="screen-full">
+      <div style="position:relative;min-height:260px;overflow:hidden">
+        <div class="orb-bg"><div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div></div>
+        <div style="position:relative;z-index:1;padding:52px 22px 28px">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px">
+            <div>
+              <p style="font-size:11px;color:var(--fg-muted);letter-spacing:2px;margin-bottom:4px">FLEET PARTNER</p>
+              <h1 style="font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:700;color:var(--fg)">${coName}</h1>
+            </div>
+            <span class="tag tag-green" style="margin-top:4px">LIVE</span>
+          </div>
+          <p style="font-size:12px;color:var(--fg-dim)">${new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}</p>
+        </div>
+      </div>
+
+      <div class="glass-sheet">
+        <div class="stats-row" style="margin-top:8px">
+          <div class="stat-card">
+            <div class="stat-val">3</div>
+            <div class="stat-label">Today's Jobs</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val" style="font-size:18px">£1,840</div>
+            <div class="stat-label">This Week</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val">4/6</div>
+            <div class="stat-label">Fleet Active</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val">4.9<span style="font-size:16px">★</span></div>
+            <div class="stat-label">Rating</div>
+          </div>
+        </div>
+
+        <p class="section-label" style="margin-bottom:12px;margin-top:8px">Active Jobs</p>
+        ${JOBS_DEMO.filter(j=>j.date.startsWith('Today')).map(j=>`
+          <div class="job-card">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <span class="tag tag-gold" style="font-size:10px">AIRPORT</span>
+              ${jobStatusTag(j.status)}
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:12px">
+              <div class="client-avatar">${j.client}</div>
+              <div style="flex:1;min-width:0">
+                <div class="route-text" style="font-size:14px;font-weight:700">${j.route}</div>
+                <div style="font-size:12px;color:var(--fg-dim);margin-top:3px">${j.driver} · ${FLEET_DEMO.find(v=>v.driver===j.driver)?.plate||'—'}</div>
+              </div>
+              <div style="font-size:16px;font-weight:700;color:var(--gold);flex-shrink:0">£${j.fare}</div>
+            </div>
+          </div>`).join('')}
+
+        <p class="section-label" style="margin-bottom:12px;margin-top:20px">Fleet Status</p>
+        <div class="card" style="padding:4px 16px">
+          ${FLEET_DEMO.map(v=>`<div class="vehicle-row">
+            <div style="flex:1">
+              <div style="font-size:14px;font-weight:700">${v.make} ${v.model}</div>
+              <div style="font-size:11px;color:var(--fg-dim);margin-top:2px">${v.plate} · ${v.driver}</div>
+            </div>
+            ${vehicleStatusTag(v.status)}
+          </div>`).join('')}
+        </div>
+      </div>
+      ${navBar()}
+    </div>`;
+  },
+
+  // 9. Fleet
+  fleet() {
+    const fleet = S.fleet.length > 0 ? S.fleet : FLEET_DEMO;
+    return `<div class="screen">
+      <div class="top-bar">
+        <h2 style="font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:700">Fleet</h2>
+        <button class="btn-sm btn-gold" onclick="alert('Add vehicle form coming soon.')" style="background:var(--gold);color:#000;font-weight:700">+ Add Vehicle</button>
+      </div>
+      <div class="stagger">
+        ${fleet.map(v=>`<div class="card">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px">
+            <div>
+              <div style="font-size:16px;font-weight:700;font-family:'Cormorant Garamond',serif">${v.make} ${v.model}</div>
+              <div style="font-size:12px;color:var(--fg-dim);margin-top:2px">${v.year} · ${v.colour}</div>
+            </div>
+            ${vehicleStatusTag(v.status)}
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div>
+              <div style="font-size:13px;font-weight:700;color:var(--fg-muted);letter-spacing:.5px">${v.plate}</div>
+              <div style="font-size:12px;color:var(--fg-dim);margin-top:2px">Driver: ${v.driver}</div>
+            </div>
+            <button class="btn-sm" style="background:var(--surface-c);border:1px solid var(--border);color:var(--fg-muted)" onclick="alert('Edit vehicle: ${v.plate}')">Edit</button>
+          </div>
+        </div>`).join('')}
+      </div>
+      ${navBar()}
+    </div>`;
+  },
+
+  // 10. Jobs
+  jobs() {
+    const tab = S.jobsTab;
+    const jobs = tab === 'today'
+      ? JOBS_DEMO.filter(j=>j.date.startsWith('Today'))
+      : tab === 'week'
+      ? JOBS_DEMO.filter(j=>!j.date.startsWith('Mon')||j.date.startsWith('Mon'))
+      : JOBS_DEMO;
+
+    return `<div class="screen">
+      <div class="top-bar">
+        <h2 style="font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:700">Jobs</h2>
+      </div>
+      <div class="tab-bar">
+        <div class="tab ${tab==='today'?'on':''}" onclick="S.jobsTab='today';render()">Today</div>
+        <div class="tab ${tab==='week'?'on':''}" onclick="S.jobsTab='week';render()">This Week</div>
+        <div class="tab ${tab==='all'?'on':''}" onclick="S.jobsTab='all';render()">All Time</div>
+      </div>
+      <div class="card" style="padding:4px 16px">
+        ${jobs.length === 0
+          ? `<div style="text-align:center;padding:24px;color:var(--fg-ghost);font-size:14px">No jobs in this period</div>`
+          : jobs.map(j=>`<div class="job-row">
+              <div class="job-col-main">
+                <div class="job-date">${j.date}</div>
+                <div class="job-route-text">${j.route}</div>
+                <div class="job-meta">${j.vehicle} · ${j.driver}</div>
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+                <div class="job-fare">£${j.fare}</div>
+                ${jobStatusTag(j.status)}
+              </div>
+            </div>`).join('')
+        }
+      </div>
+      ${navBar()}
+    </div>`;
+  },
+
+  // 11. Earnings
+  earnings() {
+    const period = S.earnPeriod;
+    const total = period === 'today' ? 405 : period === 'week' ? 3225 : 14780;
+    const trips = period === 'today' ? 3 : period === 'week' ? 22 : 97;
+    const avg = Math.round(total / trips);
+    const tips = period === 'today' ? 45 : period === 'week' ? 310 : 1240;
+    const commission = Math.round(total * 0.15);
+    const maxBar = Math.max(...EARN_DATA);
+
+    return `<div class="screen">
+      <div class="top-bar">
+        <h2 style="font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:700">Earnings</h2>
+      </div>
+      <div class="period-row">
+        <button class="period-btn ${period==='today'?'on':''}" onclick="S.earnPeriod='today';render()">Today</button>
+        <button class="period-btn ${period==='week'?'on':''}" onclick="S.earnPeriod='week';render()">Week</button>
+        <button class="period-btn ${period==='month'?'on':''}" onclick="S.earnPeriod='month';render()">Month</button>
+      </div>
+
+      <div style="animation:fadeIn .3s ease">
+        <div class="earn-total">£${total.toLocaleString()}</div>
+        <div class="earn-sub">${period === 'today' ? "Today's earnings" : period === 'week' ? 'This week' : 'This month'} · after 15% commission</div>
+      </div>
+
+      <div class="bar-row" style="margin-top:24px">
+        ${EARN_DATA.map((val, i) => `<div class="bar-col">
+          <div class="bar-fill" style="height:${Math.max(4, Math.round((val/maxBar)*72))}px"></div>
+          <div class="bar-label">${EARN_LABELS[i]}</div>
+        </div>`).join('')}
+      </div>
+
+      <div class="stats-row" style="margin-top:20px">
+        <div class="stat-card">
+          <div class="stat-val">${trips}</div>
+          <div class="stat-label">Completed Trips</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" style="font-size:18px">£${avg}</div>
+          <div class="stat-label">Avg Fare</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" style="font-size:18px">£${tips}</div>
+          <div class="stat-label">Tips</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" style="font-size:16px;color:var(--fg-dim)">−£${commission}</div>
+          <div class="stat-label">Commission (15%)</div>
+        </div>
+      </div>
+
+      <button class="btn btn-glass" onclick="alert('Invoice PDF download will be available for verified accounts.')" style="margin-top:8px">
+        ↓ Download Invoice PDF
+      </button>
+      ${navBar()}
+    </div>`;
+  },
+
+  // 12. Account
+  account() {
+    const coName = S.company?.name || 'Premier Fleet Co.';
+    const regName = S.company?.regName || 'Premier Chauffeur Services Ltd';
+    const regNum = S.company?.regNum || '12345678';
+    const city = S.company?.city || 'London';
+    const email = S.user?.email || 'partner@fleetco.com';
+    const apiKey = 'apx_fleet_••••••••••••••••••3f8a';
+
+    return `<div class="screen">
+      <div class="top-bar">
+        <h2 style="font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:700">Account</h2>
+        <button class="btn-sm" style="background:var(--surface-c);border:1px solid var(--border);color:var(--fg-muted)" onclick="alert('Edit details coming soon.')">Edit Details</button>
+      </div>
+      <div class="stagger">
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
+            <div style="width:52px;height:52px;border-radius:14px;background:var(--gold-dim);border:1px solid var(--gold);display:flex;align-items:center;justify-content:center;font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:700;color:var(--gold)">${(coName[0]||'F').toUpperCase()}</div>
+            <div>
+              <div style="font-size:17px;font-weight:700;font-family:'Cormorant Garamond',serif">${coName}</div>
+              <span class="tag tag-green" style="margin-top:4px">LIVE</span>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div><p class="section-label" style="margin-bottom:2px">Registered Name</p><p style="font-size:14px;color:var(--fg)">${regName}</p></div>
+            <div><p class="section-label" style="margin-bottom:2px">Company Number</p><p style="font-size:14px;color:var(--fg)">${regNum}</p></div>
+            <div><p class="section-label" style="margin-bottom:2px">Contact Email</p><p style="font-size:14px;color:var(--fg)">${email}</p></div>
+            <div>
+              <p class="section-label" style="margin-bottom:6px">Operational Cities</p>
+              <div style="display:flex;flex-wrap:wrap;gap:6px">
+                ${(S.serviceAreas.length>0?S.serviceAreas:['Central London','Heathrow','Gatwick']).slice(0,6).map(a=>`<span class="tag tag-gray">${a}</span>`).join('')}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <p class="section-label" style="margin-bottom:12px">API Access</p>
+          <p style="font-size:12px;color:var(--fg-dim);margin-bottom:10px">Use this key to integrate with ApexVIP's dispatch API.</p>
+          <div class="api-key-box">
+            <span class="api-key-text">${apiKey}</span>
+            <button class="btn-sm" style="background:var(--surface-c);border:1px solid var(--border);color:var(--fg-muted);flex-shrink:0" onclick="navigator.clipboard?.writeText('apx_fleet_demo_key_3f8a').then(()=>alert('API key copied.')).catch(()=>alert('Copy failed.'))">Copy</button>
+          </div>
+        </div>
+
+        <button class="btn btn-red" onclick="if(confirm('Sign out of Fleet Portal?'))doLogout()" style="margin-top:8px">Logout</button>
+      </div>
+      ${navBar()}
+    </div>`;
+  },
+};
+
+// ── Render ─────────────────────────────────────────────────────────────
+function render() {
+  const page = pages[S.screen];
+  if (!page) { S.screen = 'splash'; render(); return; }
+  document.getElementById('app').innerHTML = page();
+}
+
+// ── Boot ───────────────────────────────────────────────────────────────
+if (FIREBASE_ENABLED) {
+  auth.onAuthStateChanged(user => {
+    if (user && S.screen === 'login') {
+      S.user = { email: user.email, displayName: user.displayName || 'Fleet Partner' };
+      go('home');
+    }
+  });
+}
+
+render();
+</script>
+</body>
+</html>
