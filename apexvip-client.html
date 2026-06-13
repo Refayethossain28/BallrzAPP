@@ -1159,7 +1159,7 @@ function shareReceipt() {
 
 // ── Trip Sharing ──────────────────────────────────────────────────────────
 function buildTrackUrl(ref, dn, dp, did) {
-  return `https://refayethossain28.github.io/BallrzAPP/apexvip-client.html?track=1&ref=${ref}&d=${dn}&p=${dp}${did?'&driverId='+did:''}`;
+  return `https://apexvip.web.app/apexvip-client.html?track=1&ref=${ref}&d=${dn}&p=${dp}${did?'&driverId='+did:''}`;
 }
 function shareTrackLink() {
   const url = buildTrackUrl(
@@ -1386,7 +1386,7 @@ async function checkFlight(flight) {
   state._flightChecking = true; render();
   if (FIREBASE_ENABLED) {
     try {
-      const fn = fns.httpsCallable('checkFlight');
+      const fn = fns.httpsCallable('checkFlightStatus');
       state._flightStatus = (await fn({ flight })).data;
     } catch { state._flightStatus = getDemoFlightStatus(flight); }
   } else {
@@ -1503,7 +1503,7 @@ register: () => {
   <div class="field" style="margin-bottom:10px"><input id="rpw" type="password" placeholder="Create password (min 8 chars)"/></div>
   <div class="field" style="margin-bottom:10px"><input id="rpc" type="password" placeholder="Confirm password"/></div>
   <div style="color:var(--fg-4);font-size:12px;margin-bottom:28px;line-height:1.7">By creating an account you agree to our Terms and Privacy Policy.</div>
-  <button class="btn btn-white" onclick="state._regStep=3;render()">Continue</button>
+  <button class="btn btn-white" onclick="(()=>{const pw=$('rpw')?.value||'',pc=$('rpc')?.value||'';if(pw.length<8){alert('Password must be at least 8 characters');return;}if(pw!==pc){alert('Passwords do not match');return;}state._regPass=pw;state._regStep=3;render();})()">Continue</button>
   `: /* s===3 — invite code */`
   <div style="text-align:center;margin-bottom:28px">
     <div style="font-size:22px;font-weight:700;margin-bottom:6px">Enter invite code</div>
@@ -3293,7 +3293,7 @@ profile: () => {
       <div style="font-size:22px;font-weight:800;letter-spacing:3px;color:var(--gold)">${state._referralCode||'TAP BELOW'}</div>
       <button onclick="copyReferralCode()" style="background:var(--gold-3);border:1px solid var(--gold-2);border-radius:10px;padding:9px 16px;font-size:12px;font-weight:700;color:var(--gold);cursor:pointer;font-family:inherit">${state._referralCode?'COPY':'GET CODE'}</button>
     </div>
-    <button class="btn btn-gold" onclick="navigator.share?navigator.share({title:'Join ApexVIP',text:'Use my code for 50 APEX on your first ride!',url:'https://refayethossain28.github.io/BallrzAPP/apexvip-client.html'}):copyReferralCode()" style="margin-bottom:22px">Share your code</button>
+    <button class="btn btn-gold" onclick="navigator.share?navigator.share({title:'Join ApexVIP',text:'Use my code for 50 APEX on your first ride!',url:'https://apexvip.web.app/apexvip-client.html'}):copyReferralCode()" style="margin-bottom:22px">Share your code</button>
     <div class="section-label" style="margin-bottom:10px">Have a code? Enter it here</div>
     <div style="display:flex;gap:8px;margin-bottom:8px">
       <input id="referral-inp" placeholder="Enter a friend's code" style="flex:1;padding:14px 16px;font-size:15px;background:var(--surface);border:1px solid var(--border);border-radius:14px;color:var(--fg);outline:none"/>
@@ -3616,7 +3616,7 @@ profile: () => {
       <div style="font-size:28px;font-weight:800;letter-spacing:5px;color:var(--gold);margin-bottom:16px">${code}</div>
       <button onclick="navigator.clipboard?.writeText('${code}').catch(()=>{});this.textContent='Copied!';setTimeout(()=>this.textContent='Copy code',2000)" style="background:rgba(200,169,126,.15);border:1px solid rgba(200,169,126,.3);border-radius:10px;padding:9px 20px;font-size:13px;font-weight:700;color:var(--gold);cursor:pointer">Copy code</button>
     </div>
-    <button class="btn btn-glass" onclick="if(navigator.share){navigator.share({title:'An ApexVIP gift for you',text:'Use code ${code} for a complimentary ApexVIP journey.',url:'https://refayethossain28.github.io/BallrzAPP/apexvip-client.html'})}else{navigator.clipboard?.writeText('Use code ${code} for a complimentary ApexVIP journey.');}">Share this gift →</button>
+    <button class="btn btn-glass" onclick="if(navigator.share){navigator.share({title:'An ApexVIP gift for you',text:'Use code ${code} for a complimentary ApexVIP journey.',url:'https://apexvip.web.app/apexvip-client.html'})}else{navigator.clipboard?.writeText('Use code ${code} for a complimentary ApexVIP journey.');}">Share this gift →</button>
     ` : `
     <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px">
       ${[{amount:75,label:'One journey',desc:'Standard saloon up to 30 miles'},{amount:150,label:'Premium journey',desc:'E-Class or S-Class · Any route'},{amount:300,label:'Premium+ journey',desc:'V-Class or Rolls-Royce · Any route'}].map(o=>`
@@ -3862,9 +3862,8 @@ function saveRegStep1(){
   state._regStep=2;render();
 }
 async function doRegister(){
-  const pw=$('rpw')?.value||'',pc=$('rpc')?.value||'';
+  const pw=state._regPass||$('rpw')?.value||'';
   if(pw.length<8){alert('Password must be at least 8 characters');return;}
-  if(pw!==pc){alert('Passwords do not match');return;}
   if(!FIREBASE_ENABLED){state._regStep=4;render();return;}
   try{
     const cred=await auth.createUserWithEmailAndPassword(state._regEmail,pw);
@@ -4227,7 +4226,7 @@ if(FIREBASE_ENABLED){
       if(state.screen==='login')loginTransition();else if(state.screen==='splash')go('home');else render();
       // Register FCM push token
       if('serviceWorker' in navigator && FIREBASE_ENABLED){
-        navigator.serviceWorker.register('/BallrzAPP/firebase-messaging-sw.js')
+        navigator.serviceWorker.register('/firebase-messaging-sw.js')
           .then(reg=>{
             try{
               const messaging=firebase.messaging();
