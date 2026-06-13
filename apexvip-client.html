@@ -123,6 +123,7 @@ input,select,textarea{font-size:16px !important}
 @keyframes fadeDown{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
 @keyframes slideUp{from{opacity:0;transform:translateY(28px)}to{opacity:1;transform:translateY(0)}}
 @keyframes micPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.65;transform:scale(1.1)}}
+@keyframes chipFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
 @keyframes slideUpSheet{from{transform:translateY(100%)}to{transform:translateY(0)}}
 @keyframes scaleIn{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
 @keyframes logoReveal{
@@ -848,6 +849,22 @@ function optimiseItinerary(){
 // ── AI Concierge Chat ──────────────────────────────────────────────────────
 const CONCIERGE_MSGS = [];
 let _conciergeLoading = false;
+
+const CONCIERGE_EXAMPLES = [
+  { icon:'✈️', short:'Price to Heathrow',       text:'How much is a car to Heathrow from central London?' },
+  { icon:'🍽', short:'Dinner suggestions',       text:'Recommend somewhere nice for dinner tonight in London' },
+  { icon:'🔄', short:'Weekly booking',           text:'Book me to the office every Monday at 8am' },
+  { icon:'🕐', short:'Smart pickup time',        text:'My flight is BA249 at 7am tomorrow from Heathrow' },
+  { icon:'👤', short:'Book for someone',         text:'Book for my client James Smith going to The Ritz' },
+  { icon:'📍', short:'Multi-stop journey',       text:'Take me to Harrods, then The Shard, then back home' },
+  { icon:'✏️', short:'Change a booking',         text:'Move my booking to 7pm tonight' },
+  { icon:'📋', short:'My upcoming trips',        text:'When is my next trip?' },
+];
+
+function quickSend(text) {
+  const inp = document.getElementById('concierge-inp');
+  if (inp) { inp.value = text; sendConciergeMsg(); }
+}
 
 // Client-side intent parser — runs when Cloud Functions are unavailable
 function _parseIntentLocal(msg) {
@@ -3327,9 +3344,26 @@ profile: () => {
   <div id="concierge-msgs" style="flex:1;overflow-y:auto;padding:90px 20px 20px;display:flex;flex-direction:column;gap:12px">
     <div style="align-self:flex-start;max-width:82%">
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:18px 18px 18px 4px;padding:14px 16px;font-size:14px;line-height:1.5">
-        Good ${new Date().getHours()<12?'morning':new Date().getHours()<18?'afternoon':'evening'}. I'm your ApexVIP concierge. Tell me where you'd like to go, and I'll arrange everything. You can say something like <em style="color:var(--fg-3)">"I need a car to take me to Heathrow T5 tomorrow at 6am"</em>.
+        Good ${new Date().getHours()<12?'morning':new Date().getHours()<18?'afternoon':'evening'}. I'm your ApexVIP concierge. I can book rides, give quotes, suggest destinations, set up recurring journeys, and more. Tap an example below or tell me what you need.
       </div>
     </div>
+
+    ${CONCIERGE_MSGS.length===0?`
+    <div style="align-self:stretch;margin-top:4px">
+      <div style="font-size:10px;color:var(--fg-4);letter-spacing:1.5px;text-transform:uppercase;text-align:center;margin-bottom:14px">Try asking…</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        ${CONCIERGE_EXAMPLES.map((ex,i)=>`
+        <div onclick="quickSend(${JSON.stringify(ex.text)})"
+          style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px 13px;cursor:pointer;
+                 animation:chipFloat ${2.8+i*0.25}s ease-in-out infinite;animation-delay:${(i*0.18).toFixed(2)}s;
+                 transition:border-color .15s,transform .15s"
+          onmouseenter="this.style.borderColor='rgba(212,168,67,.45)';this.style.transform='scale(1.03)'"
+          onmouseleave="this.style.borderColor='';this.style.transform=''">
+          <div style="font-size:20px;margin-bottom:7px">${ex.icon}</div>
+          <div style="font-size:12px;font-weight:700;line-height:1.35;color:var(--fg)">${ex.short}</div>
+        </div>`).join('')}
+      </div>
+    </div>`:''}
     ${CONCIERGE_MSGS.map(m => m.role === 'user' ? `
       <div style="align-self:flex-end;max-width:82%">
         <div style="background:linear-gradient(135deg,#D4A843,#b8892f);border-radius:18px 18px 4px 18px;padding:14px 16px;font-size:14px;color:#000;font-weight:500;line-height:1.5">${m.content}</div>
