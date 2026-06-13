@@ -1,25 +1,25 @@
 // ApexVIP Service Worker — Push Notifications + Offline PWA shell
 // Version 3.0
 
-const CACHE_NAME = 'apexvip-v4';
+const CACHE_NAME = 'apexvip-v5';
 const OFFLINE_URLS = [
-  '/BallrzAPP/apexvip-client.html',
-  '/BallrzAPP/apexvip-driver.html',
-  '/BallrzAPP/apexvip-dubai.html',
-  '/BallrzAPP/apexvip-admin.html',
-  '/BallrzAPP/apexvip-core.js',
-  '/BallrzAPP/firebase.js',
-  '/BallrzAPP/manifest.json',
-  '/BallrzAPP/manifest-driver.json',
-  '/BallrzAPP/manifest-admin.json',
-  '/BallrzAPP/manifest-dubai.json',
-  '/BallrzAPP/icon-60.png',
-  '/BallrzAPP/icon-120.png',
-  '/BallrzAPP/icon-152.png',
-  '/BallrzAPP/icon-167.png',
-  '/BallrzAPP/icon-180.png',
-  '/BallrzAPP/icon-192.png',
-  '/BallrzAPP/icon-512.png',
+  '/apexvip-client.html',
+  '/apexvip-driver.html',
+  '/apexvip-dubai.html',
+  '/apexvip-admin.html',
+  '/apexvip-core.js',
+  '/firebase.js',
+  '/manifest.json',
+  '/manifest-driver.json',
+  '/manifest-admin.json',
+  '/manifest-dubai.json',
+  '/icon-60.png',
+  '/icon-120.png',
+  '/icon-152.png',
+  '/icon-167.png',
+  '/icon-180.png',
+  '/icon-192.png',
+  '/icon-512.png',
 ];
 
 // ── Install: pre-cache the app shell ──────────────────────────────────────────
@@ -44,7 +44,7 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
-  if (!url.pathname.includes('/BallrzAPP/')) return;
+  if (url.origin !== self.location.origin) return;
 
   event.respondWith(
     fetch(event.request)
@@ -62,7 +62,6 @@ self.addEventListener('fetch', event => {
 // ── Offline Booking Queue ─────────────────────────────────────────────────────
 const QUEUE_KEY = 'apexvip_offline_bookings';
 
-// Register background sync when a booking is queued
 self.addEventListener('sync', event => {
   if (event.tag === 'booking-sync') {
     event.waitUntil(flushBookingQueue());
@@ -84,7 +83,6 @@ async function flushBookingQueue() {
       });
       if (resp.ok) {
         await store.delete(entry.id);
-        // Notify the client that the queued booking went through
         const wins = await clients.matchAll({ type: 'window' });
         wins.forEach(w => w.postMessage({ type: 'BOOKING_QUEUED_SYNCED', ref: entry.data.ref }));
       }
@@ -111,13 +109,11 @@ function storeGetAll(store) {
   });
 }
 
-// Listen for messages from the main app to queue bookings
 self.addEventListener('message', event => {
   if (event.data?.type === 'QUEUE_BOOKING') {
     openQueueDB().then(db => {
       const tx = db.transaction('queue', 'readwrite');
       tx.objectStore('queue').add({ data: event.data.booking, queuedAt: Date.now() });
-      // Request background sync
       self.registration.sync?.register('booking-sync').catch(() => {});
     });
   }
@@ -127,7 +123,6 @@ self.addEventListener('message', event => {
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js');
 
-// NOTE: This config is intentionally public (it's the Firebase SDK config, not a secret)
 firebase.initializeApp({
   apiKey: "AIzaSyAr3OsrEG3yVx-bD3jxc_kSBY7bkCQUPxI",
   authDomain: "apexvip-1b4a9.firebaseapp.com",
@@ -138,15 +133,14 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
-// Handle background messages
 messaging.onBackgroundMessage(payload => {
   const { title, body } = payload.notification || {};
   const screen = payload.data?.screen || 'home';
 
   self.registration.showNotification(title || 'ApexVIP', {
     body: body || '',
-    icon: '/BallrzAPP/icon-192.png',
-    badge: '/BallrzAPP/icon-192.png',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
     data: { screen },
     actions: [
       { action: 'open', title: 'Open' },
@@ -156,7 +150,6 @@ messaging.onBackgroundMessage(payload => {
   });
 });
 
-// Click handler — focus or open the app
 self.addEventListener('notificationclick', event => {
   event.notification.close();
   if (event.action === 'dismiss') return;
@@ -167,7 +160,7 @@ self.addEventListener('notificationclick', event => {
         wins[0].focus();
         wins[0].postMessage({ type: 'NAVIGATE', screen });
       } else {
-        clients.openWindow('/BallrzAPP/apexvip-client.html');
+        clients.openWindow('/apexvip-client.html');
       }
     })
   );
