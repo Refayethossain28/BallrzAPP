@@ -493,10 +493,22 @@ body.light .section-label{color:rgba(140,100,20,.5)}
 /* ── Light mode overrides ────────────────────────────────────────── */
 body.light .vcard-badge{background:rgba(0,0,0,.06);border-color:rgba(0,0,0,.1);color:var(--fg)}
 body.light .nav-pip{background:var(--gold)}
+
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Landscape block (splash screen only, mobile) ────────────────── */
+@media (orientation:landscape) and (max-height:500px){
+  body[data-screen="splash"] #rotate-prompt{display:flex!important}
+}
 </style>
 </head>
 <body>
 <div id="app"></div>
+<div id="rotate-prompt" style="display:none;position:fixed;inset:0;z-index:99999;background:#050505;flex-direction:column;align-items:center;justify-content:center;gap:16px">
+  <div style="font-size:48px;animation:spin 2s linear infinite">↻</div>
+  <div style="font-family:'Cormorant Garamond',Georgia,serif;font-size:28px;font-weight:300;color:#fff;letter-spacing:2px">ApexVIP</div>
+  <div style="font-size:12px;color:rgba(255,255,255,.5);letter-spacing:3px;text-transform:uppercase">Please rotate your device</div>
+</div>
 
 <!-- Add to Home Screen banner — shown in browser, not when already installed -->
 <div id="ios-install-banner" class="hidden">
@@ -4676,6 +4688,7 @@ function formatEtaMin(s){
 }
 
 function render(){
+  document.body.setAttribute('data-screen',state.screen);
   const fn=screens[state.screen];
   app.innerHTML=fn?fn():`<div style="padding:40px;text-align:center;color:var(--fg-4)">Screen not found</div>`;
   if(state.screen==='home') setTimeout(initMap,60);
