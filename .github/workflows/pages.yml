@@ -1,10 +1,11 @@
-name: Deploy FX Signal Pro to Pages
+name: Deploy to GitHub Pages
 
 on:
   push:
     branches: ["main"]
     paths:
       - "trading-app/fx-signal-pro.html"
+      - "llm-from-scratch/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -28,10 +29,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install LLM dependencies
+        run: pip install -r llm-from-scratch/requirements.txt
+
+      # Train a small model and export it for the browser demo. Kept modest so
+      # the Pages build stays fast; bump these for a better-quality demo.
+      - name: Train and export the browser LLM
+        working-directory: llm-from-scratch
+        run: |
+          python train.py --steps 1200 --n_layer 4 --n_head 4 --n_embd 96 \
+            --block_size 64 --batch_size 16 --out ckpt.npz
+          python export_web.py --ckpt ckpt.npz --out web/model.json
+
       - name: Assemble site
         run: |
-          mkdir -p _site
+          mkdir -p _site/llm
+          # Trading app stays at the site root.
           cp trading-app/fx-signal-pro.html _site/index.html
+          # LLM demo lives at /llm/ (index.html, gpt.js, model.json).
+          cp llm-from-scratch/web/index.html _site/llm/index.html
+          cp llm-from-scratch/web/gpt.js _site/llm/gpt.js
+          cp llm-from-scratch/web/model.json _site/llm/model.json
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
