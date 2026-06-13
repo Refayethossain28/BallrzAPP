@@ -102,8 +102,8 @@ table{width:100%;border-collapse:collapse}
 th{text-align:left;padding:10px 14px;color:var(--fg-subtle);font-size:10px;font-weight:700;border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:1px}
 td{padding:12px 14px;border-bottom:1px solid var(--divider);font-size:14px;vertical-align:middle;transition:background .15s}
 tr:hover td{background:var(--surface-b)}
-input,select{background:var(--surface-c);border:1px solid var(--border);border-radius:8px;color:var(--fg);padding:10px 14px;font-size:14px;outline:none;font-family:inherit;-webkit-appearance:none}
-input:focus,select:focus{border-color:var(--gold)}
+input,select,textarea{background:var(--surface-c);border:1px solid var(--border);border-radius:8px;color:var(--fg);padding:10px 14px;font-size:14px;outline:none;font-family:inherit;-webkit-appearance:none}
+input:focus,select:focus,textarea:focus{border-color:var(--gold)}
 select option{background:#111}
 body.light select option{background:#f5f0e8}
 
@@ -218,6 +218,7 @@ const NAVITEMS=[
   {id:'dashboard',icon:'⊞',label:'Dashboard'},
   {id:'bookings',icon:'📋',label:'Bookings'},
   {id:'drivers',icon:'🚗',label:'Drivers'},
+  {id:'documents',icon:'📄',label:'Documents'},
   {id:'clients',icon:'👤',label:'Clients'},
   {id:'fleet',icon:'🚙',label:'Fleet'},
   {id:'pricing',icon:'£',label:'Pricing'},
@@ -341,7 +342,8 @@ function startAdminListeners(){
         return{id:d.id,uid:d.id,name:x.name||'',initials:(x.name||'??').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2),
           color:x.color||'#C8A97E',rating:x.rating||4.8,status:x.status||'offline',
           vehicle:x.vehicle||'S-Class',model:x.model||x.vehicle||'S-Class',
-          reg:x.reg||x.plate||'',trips:x.trips||0,earnings:'£'+(x.earnings||0)};
+          reg:x.reg||x.plate||'',trips:x.trips||0,earnings:'£'+(x.earnings||0),
+          documents:x.documents||{}};
       });
       if(!['login'].includes(S.screen))render();
     }
@@ -1127,6 +1129,61 @@ waitlist: () => {
   </div>`;
 },
 
+documents:()=>{
+  const DLABELS={licence:'Driving Licence',pco:'PCO Licence',insurance:'Motor Insurance',dbs:'DBS Certificate',v5c:'V5C Logbook',badge:'PHV Driver Badge'};
+  const filt=S._docFilter||'all';
+  let tot=0,pend=0,appr=0,rej=0;
+  DRIVERS.forEach(d=>{Object.values(d.documents||{}).forEach(doc=>{tot++;if(doc.status==='pending')pend++;else if(doc.status==='approved')appr++;else if(doc.status==='rejected')rej++;});});
+  const withDocs=DRIVERS.filter(d=>Object.keys(d.documents||{}).length>0);
+  return`<div class="screen">
+  <div class="section-header"><div class="section-title">Driver Documents</div></div>
+  <div class="stagger" style="display:flex;gap:14px;margin-bottom:24px;flex-wrap:wrap">
+    ${[['Total',tot,'var(--fg)','📄'],['Pending',pend,'#f59e0b','⏳'],['Approved',appr,'#22c55e','✓'],['Rejected',rej,'#ef4444','✗']].map(([l,v,c,ic])=>`<div class="stat-card"><div class="stat-watermark">${ic}</div><div class="section-label" style="margin-bottom:10px">${l}</div><div style="font-size:30px;font-weight:800;color:${c}">${v}</div></div>`).join('')}
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
+    ${[['all','All'],['pending','⏳ Pending'],['approved','✓ Approved'],['rejected','✗ Rejected']].map(([val,lbl])=>`<button class="btn btn-sm ${filt===val?'btn-gold':'btn-glass'}" onclick="S._docFilter='${val}';render()">${lbl}</button>`).join('')}
+  </div>
+  ${withDocs.length===0?`<div class="card" style="text-align:center;padding:60px 24px">
+    <div style="font-size:52px;margin-bottom:16px">📄</div>
+    <div style="font-size:18px;font-weight:700;margin-bottom:8px">No documents yet</div>
+    <div style="font-size:13px;color:var(--fg-subtle)">Documents uploaded by drivers will appear here for review.</div>
+  </div>`
+  :withDocs.map(d=>{
+    const docs=Object.entries(d.documents||{});
+    const filtered=filt==='all'?docs:docs.filter(([,doc])=>doc.status===filt);
+    if(!filtered.length)return'';
+    return`<div class="card" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+        ${av(d.initials,d.color,40)}
+        <div style="flex:1"><div style="font-size:15px;font-weight:700">${d.name}</div><div style="font-size:12px;color:var(--fg-subtle);margin-top:2px">${d.vehicle}</div></div>
+        ${badge(d.status)}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        ${filtered.map(([type,doc])=>{
+          const lbl=DLABELS[type]||type;
+          const dt=doc.uploadedAt?(new Date(doc.uploadedAt.seconds?doc.uploadedAt.seconds*1000:doc.uploadedAt)).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'—';
+          const sc=doc.status==='approved'?'tag-green':doc.status==='rejected'?'tag-red':'tag-amber';
+          const sl=doc.status==='approved'?'✓ Approved':doc.status==='rejected'?'✗ Rejected':'⏳ Pending';
+          return`<div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--surface-b);border-radius:12px;border:1px solid var(--border);flex-wrap:wrap">
+            <div style="flex:1;min-width:140px">
+              <div style="font-size:13px;font-weight:700;margin-bottom:3px">${lbl}</div>
+              <div style="font-size:11px;color:var(--fg-dim)">${doc.fileName||'File'} · ${dt}</div>
+              ${doc.rejectNote?`<div style="font-size:11px;color:#ef4444;margin-top:3px">Note: ${doc.rejectNote}</div>`:''}
+            </div>
+            <span class="tag ${sc}">${sl}</span>
+            <div style="display:flex;gap:6px;flex-shrink:0">
+              ${doc.url?`<a href="${doc.url}" target="_blank" rel="noopener" style="padding:6px 12px;background:var(--surface-c);border:1px solid var(--border);border-radius:8px;color:var(--fg);font-size:12px;font-weight:600;text-decoration:none">View</a>`:''}
+              ${doc.status!=='approved'?`<button onclick="approveDoc('${d.id}','${type}')" style="padding:6px 12px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.25);border-radius:8px;color:#22c55e;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Approve</button>`:''}
+              ${doc.status!=='rejected'?`<button onclick="rejectDoc('${d.id}','${type}')" style="padding:6px 12px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:8px;color:#ef4444;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Reject</button>`:''}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }).join('')}
+</div>`;
+},
+
 settings:()=>`<div class="screen">
   <div class="section-header"><div class="section-title">Settings</div></div>
   <div style="display:flex;gap:20px;flex-wrap:wrap">
@@ -1380,6 +1437,43 @@ function approvePayoutReq(id) {
 }
 function rejectPayoutReq(id) {
   db.collection('payout_requests').doc(id).update({status:'rejected',rejectedAt:firebase.firestore.FieldValue.serverTimestamp()}).then(loadPayouts).catch(()=>{});
+}
+
+async function approveDoc(driverId, type) {
+  if(!FIREBASE_ENABLED){alert('Demo mode — cannot update document status');return;}
+  try{
+    await db.collection('drivers').doc(driverId).set(
+      {documents:{[type]:{status:'approved',reviewedAt:firebase.firestore.FieldValue.serverTimestamp()}}},
+      {merge:true}
+    );
+  }catch(e){alert('Error: '+e.message);}
+}
+
+function rejectDoc(driverId, type) {
+  openModal(`<div>
+    <div style="font-size:16px;font-weight:700;margin-bottom:16px">Reject Document</div>
+    <p style="font-size:13px;color:var(--fg-dim);margin-bottom:16px">Optionally provide a reason so the driver knows what to resubmit.</p>
+    <div style="margin-bottom:18px">
+      <label style="font-size:11px;color:var(--fg-subtle);display:block;margin-bottom:6px;letter-spacing:.5px">REASON (OPTIONAL)</label>
+      <textarea id="reject-note" placeholder="e.g. Image too blurry — please re-upload a clearer photo" style="width:100%;min-height:80px;resize:vertical"></textarea>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-danger" style="flex:1" onclick="confirmRejectDoc('${driverId}','${type}')">Reject Document</button>
+      <button class="btn btn-glass" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>`);
+}
+
+async function confirmRejectDoc(driverId, type) {
+  const note = document.getElementById('reject-note')?.value||'';
+  closeModal();
+  if(!FIREBASE_ENABLED){alert('Demo mode — cannot update document status');return;}
+  try{
+    await db.collection('drivers').doc(driverId).set(
+      {documents:{[type]:{status:'rejected',reviewedAt:firebase.firestore.FieldValue.serverTimestamp(),rejectNote:note}}},
+      {merge:true}
+    );
+  }catch(e){alert('Error: '+e.message);}
 }
 
 function render(){
