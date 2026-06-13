@@ -51,17 +51,29 @@ we do supply a manual gradient is the fused softmax-cross-entropy in
 
 ## Quick start
 
+The fastest way — one command that trains a model (if you don't have one yet)
+and drops you into an interactive prompt:
+
+```bash
+./run.sh
+```
+
+Or do it step by step:
+
 ```bash
 pip install -r requirements.txt
 
 # 1. Verify the autograd engine is correct (numeric gradient check)
 python test_autograd.py
 
-# 2. Train on the sample corpus (~2 min on CPU)
+# 2. Train on the sample corpus (~2 min on CPU). Writes ckpt.npz.
 python train.py --steps 2000 --n_layer 4 --n_embd 128
 
-# 3. Generate from the trained checkpoint
+# 3a. Generate once from the trained checkpoint
 python sample.py --prompt "The game" --tokens 400
+
+# 3b. ...or chat interactively (type a prompt, see the model continue it)
+python chat.py
 ```
 
 Train on your own text by pointing `--data` at any UTF-8 file:
