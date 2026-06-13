@@ -1525,7 +1525,7 @@ login: () => {
     </div>
     <div style="text-align:center;padding-top:4px">
       <div id="login-logo" style="font-family:'Cormorant Garamond',Georgia,serif;font-size:40px;font-weight:300;color:#fff;letter-spacing:1px;line-height:1;margin-bottom:8px">ApexVIP</div>
-      <div style="font-size:13px;color:var(--fg-3);letter-spacing:.3px">Sign in to continue</div>
+      <div style="font-size:13px;color:var(--fg-3);letter-spacing:.3px">${state._pendingScreen?'Sign in to complete your booking':'Sign in to continue'}</div>
     </div>
   </div>
   <div style="flex:1">
@@ -4097,6 +4097,12 @@ async function initSquare(){
 }
 
 async function payOnArrival(){
+  if(FIREBASE_ENABLED && !auth.currentUser){
+    state._pendingScreen='payment';
+    state._pendingPayment='arrival';
+    go('login');
+    return;
+  }
   const btn = document.querySelector('[onclick="payOnArrival()"]');
   if(btn){btn.disabled=true;btn.textContent='Confirming…';}
   state._squarePaymentId = null;
@@ -4217,7 +4223,18 @@ async function confirmBooking(overrideRef){
   });
   go('booking-confirmed');
 }
-function goPayment(total){state._payTotal=total;state._payCardId=state.cards[0]?.id||null;state._addingCard=false;track('checkout_started',{total,src:'client'});go('payment');}
+function goPayment(total){
+  if(FIREBASE_ENABLED && !auth.currentUser){
+    // Require login before payment so booking is saved to Firestore
+    state._pendingScreen='payment';
+    state._payTotal=total;
+    go('login');
+    return;
+  }
+  state._payTotal=total;state._payCardId=state.cards[0]?.id||null;state._addingCard=false;
+  track('checkout_started',{total,src:'client'});
+  go('payment');
+}
 function apexTier(b){return b>=5000?'Platinum':b>=2000?'Gold':b>=500?'Silver':'Bronze';}
 function apexTierColor(t){return{Bronze:'#cd7f32',Silver:'#a8a9ad',Gold:'#ffffff',Platinum:'#b9f2ff'}[t];}
 function earnApex(amount,reason){
@@ -4329,7 +4346,19 @@ if(FIREBASE_ENABLED){
       }
       watchLatestBooking();
       state._loginErr=null;
-      if(state.screen==='login')loginTransition();else if(state.screen==='splash')go('home');else render();
+      // Resume pending screen (e.g. payment gate intercepted before login)
+      if(state._pendingScreen){
+        const next=state._pendingScreen, pay=state._pendingPayment;
+        state._pendingScreen=null; state._pendingPayment=null;
+        go(next);
+        if(pay==='arrival') setTimeout(payOnArrival, 500);
+      } else if(state.screen==='login'){
+        loginTransition();
+      } else if(state.screen==='splash'){
+        go('home');
+      } else {
+        render();
+      }
       // Register FCM push token
       if('serviceWorker' in navigator && FIREBASE_ENABLED){
         navigator.serviceWorker.register('/firebase-messaging-sw.js')
