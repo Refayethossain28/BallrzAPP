@@ -4309,14 +4309,21 @@ if(FIREBASE_ENABLED){
           TRIPS.length=0;
           const docs=snap.docs.map(d=>({_docId:d.id,...d.data()}));
           docs.sort((a,b)=>(b.createdAt?.toMillis()||0)-(a.createdAt?.toMillis()||0));
-          docs.forEach(d=>TRIPS.push({
-            id:d.ref||d._docId,service:d.serviceLabel||'Airport Transfer',
-            pickup:d.pickup||'',dropoff:d.airport||d.dropoff||'',
-            date:d.date||'',time:d.time||'',vehicle:d.vehicle||'Mercedes S-Class',
-            status:d.status||'confirmed',price:'£'+(d.price||0),
-            driver:d.driverName||'TBA',rating:d.driverRating||4.9,
-            plate:d.driverPlate||'',flight:d.flight||''
-          }));
+          docs.forEach(d=>{
+            const raw=d.status||'confirmed';
+            // Map Firestore statuses → display status
+            // 'confirmed','offered','accepted','en_route','arrived','onboard' → 'upcoming'
+            // 'completed' and 'cancelled' stay as-is
+            const dispStatus=['completed','cancelled'].includes(raw)?raw:'upcoming';
+            TRIPS.push({
+              id:d.ref||d._docId,service:d.serviceLabel||'Airport Transfer',
+              pickup:d.pickup||'',dropoff:d.airport||d.dropoff||'',
+              date:d.date||'',time:d.time||'',vehicle:d.vehicle||'Mercedes S-Class',
+              status:dispStatus,rawStatus:raw,price:'£'+(d.price||0),
+              driver:d.driverName||'TBA',rating:d.driverRating||4.9,
+              plate:d.driverPlate||'',flight:d.flight||''
+            });
+          });
           if(['home','trips'].includes(state.screen))render();
         },()=>{});
       // Watch latest booking for real-time status
