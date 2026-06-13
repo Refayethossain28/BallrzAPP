@@ -27,6 +27,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
 <script src="firebase.js"></script>
 <script src="apexvip-core.js"></script>
 <style>
@@ -175,7 +176,7 @@ input:focus{border-color:var(--gold)}
 <div id="app"></div>
 <script>
 // ── Firebase init ──────────────────────────────────────────────────────
-let auth, db, fns = null, FIREBASE_ENABLED = false, _driverId = null;
+let auth, db, fns, storage, FIREBASE_ENABLED = false, _driverId = null;
 let _gpsInterval = null;
 try {
   if (typeof APEXVIP_FIREBASE_CONFIG !== 'undefined' && APEXVIP_FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY') {
@@ -183,6 +184,7 @@ try {
     auth = firebase.auth();
     db = firebase.firestore();
     fns = firebase.functions();
+    storage = firebase.storage();
     FIREBASE_ENABLED = true;
     // Auto-restore session if driver was previously logged in
     auth.onAuthStateChanged(async user => {
@@ -334,6 +336,12 @@ function mapJob(doc){
 }
 
 function setupDriverListeners(uid){
+  // Live driver document statuses
+  db.collection('drivers').doc(uid).onSnapshot(snap=>{
+    if(snap.exists) S._driverDocs = snap.data().documents || {};
+    const el = document.getElementById('docs-list');
+    if(el) renderDocsList();
+  });
   // Load driver profile into state and publish to dispatch list
   db.collection('users').doc(uid).get().then(u=>{
     const p=u.exists?u.data():{};
@@ -476,6 +484,74 @@ function nav(){
   return`<nav class="nav">${items.map(i=>`<div class="nav-item${S.screen===i.id?' on':''}" onclick="go('${i.id}')">
     ${i.svg}<span>${i.label}</span><div class="nav-pip"></div>
   </div>`).join('')}</nav>`;
+}
+
+const DOC_TYPES = [
+  {key:'licence',   label:"Driver's Licence",        hint:'Front & back · PDF or image'},
+  {key:'pco',       label:'PCO Licence',              hint:'Private Hire Vehicle licence'},
+  {key:'insurance', label:'Insurance Certificate',    hint:'Motor trade or hire & reward'},
+  {key:'dbs',       label:'DBS Check',                hint:'Enhanced disclosure certificate'},
+  {key:'v5c',       label:'Vehicle Registration (V5C)',hint:'Logbook for your vehicle'},
+  {key:'badge',     label:'PCO Badge',                hint:'TfL driver badge photo'},
+];
+
+function renderDocsList(){
+  const el = document.getElementById('docs-list');
+  if(!el) return;
+  const docs = S._driverDocs || {};
+  el.innerHTML = DOC_TYPES.map(d=>{
+    const doc = docs[d.key] || {};
+    const st = doc.status || 'none';
+    const stLabel = {none:'Not uploaded',pending:'Under review',approved:'Approved',rejected:'Rejected'}[st];
+    const stColor = {none:'var(--fg-dim)',pending:'#D4A843',approved:'#22c55e',rejected:'#ef4444'}[st];
+    const icon = {none:'📄',pending:'🕐',approved:'✅',rejected:'❌'}[st];
+    return `<div class="card" style="margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:14px">
+        <div style="width:42px;height:42px;border-radius:12px;background:var(--surface-b);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">${icon}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:600;margin-bottom:2px">${d.label}</div>
+          <div style="font-size:11px;color:${stColor}">${stLabel}${doc.expiresAt?` · Expires ${doc.expiresAt}`:''}</div>
+          ${doc.note&&st==='rejected'?`<div style="font-size:11px;color:#ef4444;margin-top:3px">${doc.note}</div>`:''}
+        </div>
+        <label style="background:var(--surface-b);border:1px solid var(--border);color:var(--fg-dim);padding:7px 13px;border-radius:10px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0;white-space:nowrap">
+          ${st==='none'?'Upload':'Replace'}
+          <input type="file" accept="image/*,application/pdf" style="display:none" onchange="doUploadDoc('${d.key}',this)"/>
+        </label>
+      </div>
+      ${S._docProgress?.[d.key]!=null?`<div style="margin-top:10px;height:3px;background:var(--surface-b);border-radius:2px"><div style="height:3px;background:var(--gold);border-radius:2px;width:${S._docProgress[d.key]}%;transition:width .2s"></div></div>`:''}
+    </div>`;
+  }).join('');
+}
+
+async function doUploadDoc(type, input){
+  const file = input.files[0];
+  if(!file||!_driverId||!FIREBASE_ENABLED) return;
+  if(file.size > 10*1024*1024){ alert('File too large — max 10 MB'); return; }
+  if(!S._docProgress) S._docProgress = {};
+  S._docProgress[type] = 0;
+  renderDocsList();
+  try{
+    const path = `driver-docs/${_driverId}/${type}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g,'')}`;
+    const ref = storage.ref(path);
+    const task = ref.put(file);
+    task.on('state_changed', snap=>{
+      S._docProgress[type] = Math.round(snap.bytesTransferred/snap.totalBytes*100);
+      renderDocsList();
+    });
+    await task;
+    const url = await ref.getDownloadURL();
+    await db.collection('drivers').doc(_driverId).set({
+      documents: { [type]: { url, status:'pending', uploadedAt: new Date().toISOString().slice(0,10), fileName: file.name } }
+    },{merge:true});
+    S._docProgress[type] = null;
+    renderDocsList();
+  }catch(e){
+    S._docProgress[type] = null;
+    renderDocsList();
+    alert('Upload failed — please try again');
+    console.warn('Doc upload failed:', e.message);
+  }
+  input.value='';
 }
 
 async function registerDriverFCM(){
@@ -1074,25 +1150,26 @@ axcWallet:()=>`<div class="screen">
   <div style="height:20px"></div>
 </div>`,
 
-documents:()=>`<div class="screen">
+documents:()=>{
+  setTimeout(renderDocsList, 50);
+  const allDocs = S._driverDocs || {};
+  const approved = Object.values(allDocs).filter(d=>d.status==='approved').length;
+  const total = DOC_TYPES.length;
+  return `<div class="screen">
   <div class="back-row"><button class="back-btn" onclick="go('profile')">‹ Back</button></div>
-  <div style="font-size:22px;font-weight:700;margin-bottom:20px">Documents</div>
-  ${[
-    ['Driver\'s Licence','Expires 14 Mar 2027'],
-    ['Private Hire Licence','Expires 30 Jun 2025'],
-    ['Insurance Certificate','Expires 31 Dec 2025'],
-    ['DBS Check','Expires 15 Aug 2026'],
-    ['Vehicle Registration','Expires 22 Nov 2025'],
-    ['PCO Badge','Expires 30 Jun 2025'],
-  ].map(([name,exp])=>`<div class="card" style="display:flex;align-items:center;gap:14px">
-    <div style="width:40px;height:40px;border-radius:50%;background:rgba(34,197,94,.1);border:1.5px solid rgba(34,197,94,.25);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#22c55e;font-size:16px;font-weight:700">✓</div>
-    <div style="flex:1">
-      <div style="font-size:14px;font-weight:600">${name}</div>
-      <div style="font-size:12px;color:#22c55e;margin-top:3px">Verified · ${exp}</div>
+  <div style="margin-bottom:20px">
+    <div style="font-size:22px;font-weight:700;margin-bottom:4px">Documents</div>
+    <div style="font-size:13px;color:var(--fg-dim)">${approved} of ${total} verified</div>
+    <div style="margin-top:10px;height:4px;background:var(--surface-b);border-radius:2px">
+      <div style="height:4px;background:var(--gold);border-radius:2px;width:${Math.round(approved/total*100)}%;transition:width .3s"></div>
     </div>
-    <button style="background:var(--surface-c);border:1px solid var(--border);color:var(--fg-dim);padding:6px 12px;border-radius:8px;font-size:12px;cursor:pointer">Upload</button>
-  </div>`).join('')}
-</div>`,
+  </div>
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px 16px;margin-bottom:20px;font-size:13px;color:var(--fg-dim);line-height:1.6">
+    Upload clear photos or PDFs of each document. Admin will review within 24 hours. Max file size 10 MB.
+  </div>
+  <div id="docs-list"></div>
+</div>`;
+},
 
 'driver-client-chat':()=>{
   const j=S.activeJob||{client:'Client',id:'demo'};
