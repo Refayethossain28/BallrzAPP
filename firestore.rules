@@ -169,5 +169,37 @@ service cloud.firestore {
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }
+
+    // ── Invite codes ───────────────────────────────────────────────────────
+    // Anyone can read to validate; only admin can create/update/delete
+    match /invites/{code} {
+      allow read:   if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ── Waitlist ───────────────────────────────────────────────────────────
+    match /waitlist/{docId} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // ── Referrals ──────────────────────────────────────────────────────────
+    match /referrals/{docId} {
+      allow read:   if authed();
+      allow create: if authed() && request.resource.data.get('ownerId','') == uid();
+      allow update: if authed() && (resource.data.get('ownerId','') == uid() || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /referral_uses/{docId} {
+      allow create: if authed();
+      allow read:   if authed() && (resource.data.get('uid','') == uid() || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // ── API keys (hotel partners) ──────────────────────────────────────────
+    match /api_keys/{keyId} {
+      allow read, write: if isAdmin();
+    }
   }
 }
