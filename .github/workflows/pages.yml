@@ -37,12 +37,23 @@ jobs:
       - name: Install LLM dependencies
         run: pip install -r llm-from-scratch/requirements.txt
 
-      # Train a small model and export it for the browser demo. Kept modest so
-      # the Pages build stays fast; bump these for a better-quality demo.
+      # Grab a larger corpus (~1 MB tiny Shakespeare) so a bigger model has
+      # something real to learn. Falls back to the bundled sample if the
+      # download is unavailable.
+      - name: Fetch a larger corpus
+        working-directory: llm-from-scratch
+        run: python fetch_data.py shakespeare || echo "download failed; will fall back to sample corpus"
+
+      # Train a 1.3M-param BPE model and export it for the browser demo. Sized
+      # to keep the CPU-only build to ~15-20 min; bump for higher quality.
       - name: Train and export the browser LLM
         working-directory: llm-from-scratch
         run: |
-          python train.py --steps 1200 --n_layer 4 --n_head 4 --n_embd 96 \
+          DATA=data/shakespeare.txt
+          [ -f "$DATA" ] || DATA=data/input.txt
+          echo "training on $DATA"
+          python train.py --data "$DATA" --tokenizer bpe --vocab_size 512 \
+            --steps 1200 --n_layer 6 --n_head 8 --n_embd 128 \
             --block_size 64 --batch_size 16 --out ckpt.npz
           python export_web.py --ckpt ckpt.npz --out web/model.json
 
