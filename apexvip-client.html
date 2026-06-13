@@ -1503,7 +1503,7 @@ register: () => {
   <div class="field" style="margin-bottom:10px"><input id="rpw" type="password" placeholder="Create password (min 8 chars)"/></div>
   <div class="field" style="margin-bottom:10px"><input id="rpc" type="password" placeholder="Confirm password"/></div>
   <div style="color:var(--fg-4);font-size:12px;margin-bottom:28px;line-height:1.7">By creating an account you agree to our Terms and Privacy Policy.</div>
-  <button class="btn btn-white" onclick="state._regStep=3;render()">Continue</button>
+  <button class="btn btn-white" onclick="(()=>{const pw=$('rpw')?.value||'',pc=$('rpc')?.value||'';if(pw.length<8){alert('Password must be at least 8 characters');return;}if(pw!==pc){alert('Passwords do not match');return;}state._regPass=pw;state._regStep=3;render();})()">Continue</button>
   `: /* s===3 — invite code */`
   <div style="text-align:center;margin-bottom:28px">
     <div style="font-size:22px;font-weight:700;margin-bottom:6px">Enter invite code</div>
@@ -3862,9 +3862,8 @@ function saveRegStep1(){
   state._regStep=2;render();
 }
 async function doRegister(){
-  const pw=$('rpw')?.value||'',pc=$('rpc')?.value||'';
+  const pw=state._regPass||$('rpw')?.value||'';
   if(pw.length<8){alert('Password must be at least 8 characters');return;}
-  if(pw!==pc){alert('Passwords do not match');return;}
   if(!FIREBASE_ENABLED){state._regStep=4;render();return;}
   try{
     const cred=await auth.createUserWithEmailAndPassword(state._regEmail,pw);
