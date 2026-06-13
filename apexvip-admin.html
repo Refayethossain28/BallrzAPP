@@ -281,7 +281,7 @@ async function adminLogin(){
   try{
     const cred=await auth.signInWithEmailAndPassword(email,pass);
     const doc=await db.collection('users').doc(cred.user.uid).get();
-    if(doc.exists&&doc.data().role==='admin'){track('admin_login',{method:'firebase',src:'admin'});go('dashboard');}
+    if(doc.exists&&doc.data().role==='admin'){track('admin_login',{method:'firebase',src:'admin'});startAdminListeners();go('dashboard');}
     else{auth.signOut();alert('Access denied. Admin accounts only.');}
   }catch(err){alert('Invalid credentials');}
 }
@@ -308,7 +308,10 @@ async function updateBookingStatus(id,status){
   try{await db.collection('bookings').doc(id).update({status});}catch(e){}
 }
 
-if(FIREBASE_ENABLED){
+let _adminListenersStarted = false;
+function startAdminListeners(){
+  if(!FIREBASE_ENABLED||_adminListenersStarted)return;
+  _adminListenersStarted = true;
   loadDispatchMode();
   db.collection('bookings').orderBy('createdAt','desc').onSnapshot(snap=>{
     BOOKINGS=snap.docs.map(d=>{
@@ -325,7 +328,6 @@ if(FIREBASE_ENABLED){
     if(!snap.empty){
       DRIVERS=snap.docs.map(d=>{
         const x=d.data();
-        // Driver doc ID is the driver's auth uid (driver app writes drivers/{uid})
         return{id:d.id,uid:d.id,name:x.name||'',initials:(x.name||'??').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2),
           color:x.color||'#C8A97E',rating:x.rating||4.8,status:x.status||'offline',
           vehicle:x.vehicle||'S-Class',model:x.model||x.vehicle||'S-Class',
