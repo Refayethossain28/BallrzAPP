@@ -129,11 +129,12 @@ importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-comp
 
 // NOTE: This config is intentionally public (it's the Firebase SDK config, not a secret)
 firebase.initializeApp({
-  apiKey: "AIzaSyAr3OsrEG3yVx-bD3jxc_kSBY7bkCQUPxI",
-  authDomain: "apexvip-1b4a9.firebaseapp.com",
-  projectId: "apexvip-1b4a9",
-  messagingSenderId: "254410067879",
-  appId: "1:254410067879:web:754b71a35182c997f37082"
+  apiKey: "AIzaSyC0UQeh8dSw3dxx9hTS-STWKcXVEzOStks",
+  authDomain: "apexvip.firebaseapp.com",
+  projectId: "apexvip",
+  storageBucket: "apexvip.firebasestorage.app",
+  messagingSenderId: "125847962387",
+  appId: "1:125847962387:web:331a7de3eb8df8dc4b90e6"
 });
 
 const messaging = firebase.messaging();
