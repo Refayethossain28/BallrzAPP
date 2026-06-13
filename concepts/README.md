@@ -26,5 +26,19 @@ only became possible recently (agents that actually *do* things). Concept 2
 trades defensibility for raw speed-to-scale — games need no network and no
 trust, so they spread fastest, but retain worst.
 
-These are **specs, not running code**. See each doc's "Build order" section
-for the smallest first slice worth writing.
+## Runnable prototypes
+
+Each concept also ships the smallest slice of its build order as a
+**zero-build, single-file HTML prototype** you can open in a browser — see
+[`prototypes/`](./prototypes/):
+
+- **`prototypes/flow-game/`** — Concept 2's adaptive loop: on-device skill
+  model + offline-generated level pool + flow-band difficulty selection, with
+  the engine internals surfaced so you can watch it adapt.
+- **`prototypes/concierge-split/`** — Concept 1's viral agent action: chat →
+  agent proposes split → human confirms → idempotent payment requests as a
+  result card.
+
+Both had their core logic verified headlessly (convergence sim + idempotency /
+penny-distribution checks); results and one honest limitation are in the
+[prototypes README](./prototypes/README.md).
