@@ -55,7 +55,7 @@ body::after{width:480px;height:480px;right:-8%;bottom:-12%;background:radial-gra
   padding-top:env(safe-area-inset-top)}
 body.light .sidebar{background:rgba(240,235,226,.92)}
 .main{margin-left:240px;flex:1;padding:32px;min-height:100vh}
-@media(max-width:768px){.sidebar{transform:translateX(-240px)}.sidebar.open{transform:translateX(0)}.main{margin-left:0;padding:20px 16px 80px}}
+@media(max-width:768px){.sidebar{transform:translateX(-240px)}.sidebar.open{transform:translateX(0)}.main{margin-left:0;padding:calc(env(safe-area-inset-top) + 64px) 16px 80px}}
 input,select,textarea{font-size:16px !important}
 
 /* ── Sidebar nav items ── */
@@ -102,8 +102,8 @@ table{width:100%;border-collapse:collapse}
 th{text-align:left;padding:10px 14px;color:var(--fg-subtle);font-size:10px;font-weight:700;border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:1px}
 td{padding:12px 14px;border-bottom:1px solid var(--divider);font-size:14px;vertical-align:middle;transition:background .15s}
 tr:hover td{background:var(--surface-b)}
-input,select{background:var(--surface-c);border:1px solid var(--border);border-radius:8px;color:var(--fg);padding:10px 14px;font-size:14px;outline:none;font-family:inherit;-webkit-appearance:none}
-input:focus,select:focus{border-color:var(--gold)}
+input,select,textarea{background:var(--surface-c);border:1px solid var(--border);border-radius:8px;color:var(--fg);padding:10px 14px;font-size:14px;outline:none;font-family:inherit;-webkit-appearance:none}
+input:focus,select:focus,textarea:focus{border-color:var(--gold)}
 select option{background:#111}
 body.light select option{background:#f5f0e8}
 
@@ -124,7 +124,7 @@ body.light select option{background:#f5f0e8}
 .avatar{border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:#000;flex-shrink:0}
 .screen{animation:fadeIn .2s ease}
 .bar{border-radius:4px 4px 0 0;background:var(--gold);opacity:.75;flex:1;transform-origin:bottom;animation:growBar .5s ease both}
-.menu-toggle{display:none;position:fixed;top:16px;left:16px;z-index:60;background:var(--surface-c);border:1px solid var(--border);border-radius:10px;padding:9px;cursor:pointer;color:var(--fg)}
+.menu-toggle{display:none;align-items:center;justify-content:center;position:fixed;top:calc(env(safe-area-inset-top) + 12px);left:16px;z-index:120;background:var(--gold);border:none;border-radius:12px;padding:11px;cursor:pointer;color:#000;box-shadow:0 4px 16px rgba(0,0,0,.4)}
 @media(max-width:768px){.menu-toggle{display:flex}}
 
 /* ── Modal (bottom-sheet on mobile, centred on desktop) ── */
@@ -164,6 +164,16 @@ try {
     auth = firebase.auth();
     db = firebase.firestore();
     FIREBASE_ENABLED = true;
+    // Auto-restore session if admin was previously logged in
+    auth.onAuthStateChanged(async user => {
+      if(user && S.screen === 'login'){
+        const doc = await db.collection('users').doc(user.uid).get().catch(()=>null);
+        if(doc && doc.exists && doc.data().role === 'admin'){
+          startAdminListeners();
+          go('dashboard');
+        }
+      }
+    });
   }
 } catch(e) { console.warn('Firebase init:', e.message); }
 
@@ -208,6 +218,7 @@ const NAVITEMS=[
   {id:'dashboard',icon:'⊞',label:'Dashboard'},
   {id:'bookings',icon:'📋',label:'Bookings'},
   {id:'drivers',icon:'🚗',label:'Drivers'},
+  {id:'documents',icon:'📄',label:'Documents'},
   {id:'clients',icon:'👤',label:'Clients'},
   {id:'fleet',icon:'🚙',label:'Fleet'},
   {id:'pricing',icon:'£',label:'Pricing'},
@@ -233,7 +244,7 @@ function track(event, props){
   }catch(e){}
 }
 
-let S={screen:'login',bFilter:'all',dFilter:'all',cFilter:'all',theme:localStorage.getItem('apexvip_admin_theme')||'dark',_dispatchOpen:false,_dispatchRef:null,_discreteDispatch:false,dispatchMode:localStorage.getItem('apexvip_dispatch_mode')||'manual'};
+let S={screen:'login',bFilter:'all',dFilter:'all',cFilter:'all',theme:localStorage.getItem('apexvip_admin_theme')||'dark',_dispatchOpen:false,_dispatchRef:null,_discreteDispatch:false,dispatchMode:localStorage.getItem('apexvip_dispatch_mode')||'broadcast',_pricing:null};
 let _adminMap = null, _adminMarkers = {};
 
 // Dispatch mode: 'manual' (admin assigns) or 'broadcast' (new bookings are
@@ -262,7 +273,7 @@ function toggleTheme(){
   if(btn) btn.textContent=S.theme==='light'?'🌙':'☀️';
 }
 
-function go(s){S.screen=s;track('admin_screen_view',{screen:s,src:'admin'});render();document.getElementById('sidebar').classList.remove('open');window.scrollTo(0,0);}
+function go(s){S.screen=s;track('admin_screen_view',{screen:s,src:'admin'});render();document.getElementById('sidebar').classList.remove('open');window.scrollTo(0,0);if(s==='pricing')loadPricingAdmin();}
 function toggleMenu(){document.getElementById('sidebar').classList.toggle('open');}
 function openModal(h){document.getElementById('modal-box').innerHTML=h;document.getElementById('modal-bg').style.display='flex';}
 function closeModal(){document.getElementById('modal-bg').style.display='none';}
@@ -281,7 +292,7 @@ async function adminLogin(){
   try{
     const cred=await auth.signInWithEmailAndPassword(email,pass);
     const doc=await db.collection('users').doc(cred.user.uid).get();
-    if(doc.exists&&doc.data().role==='admin'){track('admin_login',{method:'firebase',src:'admin'});go('dashboard');}
+    if(doc.exists&&doc.data().role==='admin'){track('admin_login',{method:'firebase',src:'admin'});startAdminListeners();go('dashboard');}
     else{auth.signOut();alert('Access denied. Admin accounts only.');}
   }catch(err){alert('Invalid credentials');}
 }
@@ -308,7 +319,10 @@ async function updateBookingStatus(id,status){
   try{await db.collection('bookings').doc(id).update({status});}catch(e){}
 }
 
-if(FIREBASE_ENABLED){
+let _adminListenersStarted = false;
+function startAdminListeners(){
+  if(!FIREBASE_ENABLED||_adminListenersStarted)return;
+  _adminListenersStarted = true;
   loadDispatchMode();
   db.collection('bookings').orderBy('createdAt','desc').onSnapshot(snap=>{
     BOOKINGS=snap.docs.map(d=>{
@@ -325,11 +339,11 @@ if(FIREBASE_ENABLED){
     if(!snap.empty){
       DRIVERS=snap.docs.map(d=>{
         const x=d.data();
-        // Driver doc ID is the driver's auth uid (driver app writes drivers/{uid})
         return{id:d.id,uid:d.id,name:x.name||'',initials:(x.name||'??').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2),
           color:x.color||'#C8A97E',rating:x.rating||4.8,status:x.status||'offline',
           vehicle:x.vehicle||'S-Class',model:x.model||x.vehicle||'S-Class',
-          reg:x.reg||x.plate||'',trips:x.trips||0,earnings:'£'+(x.earnings||0)};
+          reg:x.reg||x.plate||'',trips:x.trips||0,earnings:'£'+(x.earnings||0),
+          documents:x.documents||{}};
       });
       if(!['login'].includes(S.screen))render();
     }
@@ -672,33 +686,48 @@ fleet:()=>`<div class="screen">
   </div>
 </div>`,
 
-pricing:()=>`<div class="screen">
-  <div class="section-header"><div class="section-title">Pricing</div><button class="btn btn-gold btn-sm" onclick="alert('Rates saved successfully!')">Save Changes</button></div>
+pricing:()=>{
+  const p=S._pricing||{airport_s:185,airport_v:225,heathrow_s:185,heathrow_v:225,gatwick_s:195,gatwick_v:235,stansted_s:195,stansted_v:235,luton_s:185,luton_v:225,city_s:125,city_v:155,hourly_s_rate:65,hourly_v_rate:75,day_s:450,day_v:550,evening_supplement:50,peak_surcharge_pct:15,membership:199};
+  const inp=(key,label,prefix='£',suffix='')=>`<div style="margin-bottom:14px"><div style="font-size:11px;color:var(--fg-subtle);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">${label}</div><div style="display:flex;align-items:center;gap:8px"><span style="color:var(--fg-subtle);font-size:14px">${prefix}</span><input id="pr_${key}" type="number" value="${p[key]}" style="width:110px" oninput="S._pricing=S._pricing||{};S._pricing['${key}']=+this.value"/><span style="color:var(--fg-subtle);font-size:13px">${suffix}</span></div></div>`;
+  const row=(label,ks,vs,sv)=>`<tr><td style="font-weight:500;color:var(--fg);padding:12px 8px 12px 0">${label}</td><td style="padding:8px">${inp(ks,'S-Class')}</td><td style="padding:8px">${inp(vs,'V-Class')}</td>${sv?`<td style="padding:8px">${inp(sv,'V-Class')}</td>`:''}</tr>`;
+  return`<div class="screen">
+  <div class="section-header"><div class="section-title">Pricing</div><button class="btn btn-gold btn-sm" onclick="savePricingAdmin()" id="pr-save-btn">Save Changes</button></div>
+  ${!FIREBASE_ENABLED?`<div style="background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);border-radius:12px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#fbbf24">Demo mode — changes will not be saved to Firebase</div>`:''}
   <div class="card" style="margin-bottom:20px">
-    <div style="font-size:14px;font-weight:600;margin-bottom:16px">Standard Rates</div>
-    <div style="overflow-x:auto"><table>
-      <thead><tr><th>Service</th><th>Mercedes S-Class</th><th>Mercedes V-Class</th></tr></thead>
-      <tbody>${[
-        ['Airport Transfer (any London airport)','£185','£225'],
-        ['Hourly Rate (minimum 2 hours)','£65/hr','£75/hr'],
-        ['Full Day Rate (8 hours)','£450','£550'],
-        ['Evening Supplement (after 22:00)','+ £50','+ £50'],
-        ['Peak Surcharge (Fri–Sun, Bank Holidays)','+ 15%','+ 15%'],
-      ].map(([s,a,b])=>`<tr><td style="font-weight:500">${s}</td><td><input value="${a}" style="width:100px"/></td><td><input value="${b}" style="width:100px"/></td></tr>`).join('')}</tbody>
+    <div style="font-size:14px;font-weight:600;margin-bottom:16px;color:var(--fg)">Standard Rates</div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">
+      <thead><tr style="border-bottom:1px solid var(--border)"><th style="text-align:left;padding:8px 0;font-size:12px;color:var(--fg-subtle);font-weight:600;text-transform:uppercase;letter-spacing:.6px">Service</th><th style="padding:8px;font-size:12px;color:var(--fg-subtle);font-weight:600;text-transform:uppercase;letter-spacing:.6px">S-Class</th><th style="padding:8px;font-size:12px;color:var(--fg-subtle);font-weight:600;text-transform:uppercase;letter-spacing:.6px">V-Class</th></tr></thead>
+      <tbody>
+        <tr><td style="font-weight:500;color:var(--fg);padding:12px 8px 12px 0">Airport Transfer</td><td style="padding:8px">${inp('airport_s','S-Class')}</td><td style="padding:8px">${inp('airport_v','V-Class')}</td></tr>
+        <tr><td style="font-weight:500;color:var(--fg);padding:12px 8px 12px 0">Hourly Rate (per hour)</td><td style="padding:8px">${inp('hourly_s_rate','S-Class /hr')}</td><td style="padding:8px">${inp('hourly_v_rate','V-Class /hr')}</td></tr>
+        <tr><td style="font-weight:500;color:var(--fg);padding:12px 8px 12px 0">Full Day (8 hours)</td><td style="padding:8px">${inp('day_s','S-Class')}</td><td style="padding:8px">${inp('day_v','V-Class')}</td></tr>
+      </tbody>
     </table></div>
   </div>
-  <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">Airport Fixed Rates</div>
-    <div style="font-size:12px;color:var(--fg-subtle);margin-bottom:16px">Including meet & greet, waiting time up to 60 min</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">
-      ${[['Heathrow','£185','£225'],['Gatwick','£195','£235'],['Stansted','£195','£235'],['Luton','£185','£225'],['City Airport','£125','£155']].map(([a,s,v])=>`<div style="background:var(--surface-b);border-radius:12px;padding:14px;border:1px solid var(--border)">
-        <div style="font-weight:600;margin-bottom:8px">${a}</div>
-        <div style="font-size:12px;color:var(--fg-dim)">S-Class <span style="color:var(--gold);font-weight:600">${s}</span></div>
-        <div style="font-size:12px;color:var(--fg-dim);margin-top:3px">V-Class <span style="color:var(--gold);font-weight:600">${v}</span></div>
+  <div class="card" style="margin-bottom:20px">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px;color:var(--fg)">Per-Airport Fixed Rates</div>
+    <div style="font-size:12px;color:var(--fg-subtle);margin-bottom:16px">Includes meet & greet and up to 60 min waiting time</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px">
+      ${[['Heathrow','heathrow_s','heathrow_v'],['Gatwick','gatwick_s','gatwick_v'],['Stansted','stansted_s','stansted_v'],['Luton','luton_s','luton_v'],['City Airport','city_s','city_v']].map(([name,ks,kv])=>`
+      <div style="background:var(--surface-b);border-radius:14px;padding:16px;border:1px solid var(--border)">
+        <div style="font-weight:600;margin-bottom:14px;color:var(--fg)">${name}</div>
+        ${inp(ks,'S-Class')}
+        ${inp(kv,'V-Class')}
       </div>`).join('')}
     </div>
   </div>
-</div>`,
+  <div class="card" style="margin-bottom:20px">
+    <div style="font-size:14px;font-weight:600;margin-bottom:16px;color:var(--fg)">Supplements & Surcharges</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px">
+      <div style="background:var(--surface-b);border-radius:14px;padding:16px;border:1px solid var(--border)">${inp('evening_supplement','Evening supplement (after 22:00)')}</div>
+      <div style="background:var(--surface-b);border-radius:14px;padding:16px;border:1px solid var(--border)">${inp('peak_surcharge_pct','Peak surcharge (Fri–Sun)','','%')}</div>
+    </div>
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:16px;color:var(--fg)">Membership</div>
+    ${inp('membership','Monthly membership price')}
+  </div>
+</div>`;},
 
 analytics:()=>{
   const raw=JSON.parse(localStorage.getItem('apexvip_events')||'[]');
@@ -1115,6 +1144,61 @@ waitlist: () => {
   </div>`;
 },
 
+documents:()=>{
+  const DLABELS={licence:'Driving Licence',pco:'PCO Licence',insurance:'Motor Insurance',dbs:'DBS Certificate',v5c:'V5C Logbook',badge:'PHV Driver Badge'};
+  const filt=S._docFilter||'all';
+  let tot=0,pend=0,appr=0,rej=0;
+  DRIVERS.forEach(d=>{Object.values(d.documents||{}).forEach(doc=>{tot++;if(doc.status==='pending')pend++;else if(doc.status==='approved')appr++;else if(doc.status==='rejected')rej++;});});
+  const withDocs=DRIVERS.filter(d=>Object.keys(d.documents||{}).length>0);
+  return`<div class="screen">
+  <div class="section-header"><div class="section-title">Driver Documents</div></div>
+  <div class="stagger" style="display:flex;gap:14px;margin-bottom:24px;flex-wrap:wrap">
+    ${[['Total',tot,'var(--fg)','📄'],['Pending',pend,'#f59e0b','⏳'],['Approved',appr,'#22c55e','✓'],['Rejected',rej,'#ef4444','✗']].map(([l,v,c,ic])=>`<div class="stat-card"><div class="stat-watermark">${ic}</div><div class="section-label" style="margin-bottom:10px">${l}</div><div style="font-size:30px;font-weight:800;color:${c}">${v}</div></div>`).join('')}
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
+    ${[['all','All'],['pending','⏳ Pending'],['approved','✓ Approved'],['rejected','✗ Rejected']].map(([val,lbl])=>`<button class="btn btn-sm ${filt===val?'btn-gold':'btn-glass'}" onclick="S._docFilter='${val}';render()">${lbl}</button>`).join('')}
+  </div>
+  ${withDocs.length===0?`<div class="card" style="text-align:center;padding:60px 24px">
+    <div style="font-size:52px;margin-bottom:16px">📄</div>
+    <div style="font-size:18px;font-weight:700;margin-bottom:8px">No documents yet</div>
+    <div style="font-size:13px;color:var(--fg-subtle)">Documents uploaded by drivers will appear here for review.</div>
+  </div>`
+  :withDocs.map(d=>{
+    const docs=Object.entries(d.documents||{});
+    const filtered=filt==='all'?docs:docs.filter(([,doc])=>doc.status===filt);
+    if(!filtered.length)return'';
+    return`<div class="card" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+        ${av(d.initials,d.color,40)}
+        <div style="flex:1"><div style="font-size:15px;font-weight:700">${d.name}</div><div style="font-size:12px;color:var(--fg-subtle);margin-top:2px">${d.vehicle}</div></div>
+        ${badge(d.status)}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        ${filtered.map(([type,doc])=>{
+          const lbl=DLABELS[type]||type;
+          const dt=doc.uploadedAt?(new Date(doc.uploadedAt.seconds?doc.uploadedAt.seconds*1000:doc.uploadedAt)).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'—';
+          const sc=doc.status==='approved'?'tag-green':doc.status==='rejected'?'tag-red':'tag-amber';
+          const sl=doc.status==='approved'?'✓ Approved':doc.status==='rejected'?'✗ Rejected':'⏳ Pending';
+          return`<div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--surface-b);border-radius:12px;border:1px solid var(--border);flex-wrap:wrap">
+            <div style="flex:1;min-width:140px">
+              <div style="font-size:13px;font-weight:700;margin-bottom:3px">${lbl}</div>
+              <div style="font-size:11px;color:var(--fg-dim)">${doc.fileName||'File'} · ${dt}</div>
+              ${doc.rejectNote?`<div style="font-size:11px;color:#ef4444;margin-top:3px">Note: ${doc.rejectNote}</div>`:''}
+            </div>
+            <span class="tag ${sc}">${sl}</span>
+            <div style="display:flex;gap:6px;flex-shrink:0">
+              ${doc.url?`<a href="${doc.url}" target="_blank" rel="noopener" style="padding:6px 12px;background:var(--surface-c);border:1px solid var(--border);border-radius:8px;color:var(--fg);font-size:12px;font-weight:600;text-decoration:none">View</a>`:''}
+              ${doc.status!=='approved'?`<button onclick="approveDoc('${d.id}','${type}')" style="padding:6px 12px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.25);border-radius:8px;color:#22c55e;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Approve</button>`:''}
+              ${doc.status!=='rejected'?`<button onclick="rejectDoc('${d.id}','${type}')" style="padding:6px 12px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:8px;color:#ef4444;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Reject</button>`:''}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }).join('')}
+</div>`;
+},
+
 settings:()=>`<div class="screen">
   <div class="section-header"><div class="section-title">Settings</div></div>
   <div style="display:flex;gap:20px;flex-wrap:wrap">
@@ -1368,6 +1452,69 @@ function approvePayoutReq(id) {
 }
 function rejectPayoutReq(id) {
   db.collection('payout_requests').doc(id).update({status:'rejected',rejectedAt:firebase.firestore.FieldValue.serverTimestamp()}).then(loadPayouts).catch(()=>{});
+}
+
+async function loadPricingAdmin(){
+  if(!FIREBASE_ENABLED)return;
+  try{
+    const d=await db.collection('settings').doc('pricing').get();
+    if(d.exists){S._pricing={...S._pricing,...d.data()};}
+    render();
+  }catch(e){console.warn('loadPricing',e);}
+}
+
+async function savePricingAdmin(){
+  if(!FIREBASE_ENABLED){alert('Demo mode — pricing not saved');return;}
+  const keys=['airport_s','airport_v','heathrow_s','heathrow_v','gatwick_s','gatwick_v','stansted_s','stansted_v','luton_s','luton_v','city_s','city_v','hourly_s_rate','hourly_v_rate','day_s','day_v','evening_supplement','peak_surcharge_pct','membership'];
+  const data={};
+  keys.forEach(k=>{const el=document.getElementById('pr_'+k);if(el)data[k]=parseFloat(el.value)||0;});
+  const btn=document.getElementById('pr-save-btn');
+  if(btn){btn.textContent='Saving…';btn.disabled=true;}
+  try{
+    await db.collection('settings').doc('pricing').set(data,{merge:true});
+    S._pricing={...S._pricing,...data};
+    if(btn){btn.textContent='✓ Saved';setTimeout(()=>{btn.textContent='Save Changes';btn.disabled=false;},2000);}
+  }catch(e){
+    alert('Save failed: '+(e.message||e.code));
+    if(btn){btn.textContent='Save Changes';btn.disabled=false;}
+  }
+}
+
+async function approveDoc(driverId, type) {
+  if(!FIREBASE_ENABLED){alert('Demo mode — cannot update document status');return;}
+  try{
+    await db.collection('drivers').doc(driverId).set(
+      {documents:{[type]:{status:'approved',reviewedAt:firebase.firestore.FieldValue.serverTimestamp()}}},
+      {merge:true}
+    );
+  }catch(e){alert('Error: '+e.message);}
+}
+
+function rejectDoc(driverId, type) {
+  openModal(`<div>
+    <div style="font-size:16px;font-weight:700;margin-bottom:16px">Reject Document</div>
+    <p style="font-size:13px;color:var(--fg-dim);margin-bottom:16px">Optionally provide a reason so the driver knows what to resubmit.</p>
+    <div style="margin-bottom:18px">
+      <label style="font-size:11px;color:var(--fg-subtle);display:block;margin-bottom:6px;letter-spacing:.5px">REASON (OPTIONAL)</label>
+      <textarea id="reject-note" placeholder="e.g. Image too blurry — please re-upload a clearer photo" style="width:100%;min-height:80px;resize:vertical"></textarea>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-danger" style="flex:1" onclick="confirmRejectDoc('${driverId}','${type}')">Reject Document</button>
+      <button class="btn btn-glass" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>`);
+}
+
+async function confirmRejectDoc(driverId, type) {
+  const note = document.getElementById('reject-note')?.value||'';
+  closeModal();
+  if(!FIREBASE_ENABLED){alert('Demo mode — cannot update document status');return;}
+  try{
+    await db.collection('drivers').doc(driverId).set(
+      {documents:{[type]:{status:'rejected',reviewedAt:firebase.firestore.FieldValue.serverTimestamp(),rejectNote:note}}},
+      {merge:true}
+    );
+  }catch(e){alert('Error: '+e.message);}
 }
 
 function render(){

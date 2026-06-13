@@ -122,6 +122,8 @@ input,select,textarea{font-size:16px !important}
 @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
 @keyframes fadeDown{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
 @keyframes slideUp{from{opacity:0;transform:translateY(28px)}to{opacity:1;transform:translateY(0)}}
+@keyframes micPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.65;transform:scale(1.1)}}
+@keyframes chipFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
 @keyframes slideUpSheet{from{transform:translateY(100%)}to{transform:translateY(0)}}
 @keyframes scaleIn{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
 @keyframes logoReveal{
@@ -491,17 +493,30 @@ body.light .section-label{color:rgba(140,100,20,.5)}
 /* ── Light mode overrides ────────────────────────────────────────── */
 body.light .vcard-badge{background:rgba(0,0,0,.06);border-color:rgba(0,0,0,.1);color:var(--fg)}
 body.light .nav-pip{background:var(--gold)}
+
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Landscape block (splash screen only, mobile) ────────────────── */
+@media (orientation:landscape) and (max-height:500px){
+  body[data-screen="splash"] #rotate-prompt,
+  body[data-screen="guide"] #rotate-prompt{display:flex!important}
+}
 </style>
 </head>
 <body>
 <div id="app"></div>
+<div id="rotate-prompt" style="display:none;position:fixed;inset:0;z-index:99999;background:#050505;flex-direction:column;align-items:center;justify-content:center;gap:16px">
+  <div style="font-size:48px;animation:spin 2s linear infinite">↻</div>
+  <div style="font-family:'Cormorant Garamond',Georgia,serif;font-size:28px;font-weight:300;color:#fff;letter-spacing:2px">ApexVIP</div>
+  <div style="font-size:12px;color:rgba(255,255,255,.5);letter-spacing:3px;text-transform:uppercase">Please rotate your device</div>
+</div>
 
 <!-- Add to Home Screen banner — shown in browser, not when already installed -->
 <div id="ios-install-banner" class="hidden">
   <img src="icon-60.png" style="width:44px;height:44px;border-radius:10px;flex-shrink:0"/>
   <div style="flex:1;min-width:0">
     <div style="font-size:13px;font-weight:700;margin-bottom:2px">Add ApexVIP to Home Screen</div>
-    <div id="pwa-install-hint" style="font-size:11px;color:var(--fg-3)">Tap <svg style="display:inline;vertical-align:middle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 12h8M12 8v8M12 3a9 9 0 100 18A9 9 0 0012 3z" stroke-linecap="round"/></svg> Share then "Add to Home Screen"</div>
+    <div id="pwa-install-hint" style="font-size:11px;color:var(--fg-3)">Tap <svg style="display:inline;vertical-align:middle" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v13M7 7l5-5 5 5"/><path d="M20 16v4a2 2 0 01-2 2H6a2 2 0 01-2-2v-4"/></svg> Share → "Add to Home Screen"</div>
   </div>
   <button id="pwa-install-btn" style="display:none;background:var(--gold);border:none;border-radius:10px;color:#0c0b09;font-size:12px;font-weight:700;padding:9px 14px;cursor:pointer;flex-shrink:0;font-family:inherit">Install</button>
   <button onclick="document.getElementById('ios-install-banner').classList.add('hidden');localStorage.setItem('apexvip_pwa_dismissed','1')" style="background:none;border:none;color:var(--fg-3);font-size:20px;cursor:pointer;padding:4px;flex-shrink:0">×</button>
@@ -515,6 +530,25 @@ try {
     auth = firebase.auth(); db = firebase.firestore(); fns = firebase.functions(); FIREBASE_ENABLED = true;
   }
 } catch(e) { console.warn('Firebase init:', e.message); }
+
+// ── Live pricing (loaded from Firestore settings/pricing) ─────────────────
+const PRICES = {
+  airport_s:185, airport_v:225,
+  heathrow_s:185, heathrow_v:225,
+  gatwick_s:195,  gatwick_v:235,
+  stansted_s:195, stansted_v:235,
+  luton_s:185,    luton_v:225,
+  city_s:125,     city_v:155,
+  hourly_s_rate:65, hourly_v_rate:75,
+  day_s:450, day_v:550,
+  evening_supplement:50, peak_surcharge_pct:15,
+  membership:199,
+};
+if (FIREBASE_ENABLED) {
+  db.collection('settings').doc('pricing').get().then(d => {
+    if (d.exists) Object.assign(PRICES, d.data());
+  }).catch(() => {});
+}
 
 const SQUARE_APP_ID = 'sq0idp-8Z5MqX7GA3M0Xnv-0utwMA';
 const SQUARE_LOCATION_ID = '1ZX0F29TX12HB';
@@ -657,14 +691,14 @@ const POIS = [
 ];
 
 const EXPERIENCES = [
-  {id:'xp1',name:'The Ritz London',type:'Dining',emoji:'🍽',tagline:'Afternoon tea · Palm Court',desc:'The iconic Ritz afternoon tea in the historic Palm Court. Finger sandwiches, freshly baked scones, and pastries with a glass of Laurent-Perrier champagne for two.',price:220,car:130,slots:['12:00','14:30','16:00'],guests:'up to 4',tags:['Classic','Weekend']},
-  {id:'xp2',name:"Claridge's Bar",type:'Dining',emoji:'🥂',tagline:'Art Deco bar · champagne flight',desc:"An intimate evening at one of London's most celebrated Art Deco bars. Reserved corner table, a curated champagne flight, and your car waiting at the door.",price:180,car:120,slots:['19:00','20:30','22:00'],guests:'up to 2',tags:['Evening','Exclusive']},
-  {id:'xp3',name:"Ronnie Scott's",type:'Events',emoji:'🎷',tagline:'Jazz · Floor seats · Late set',desc:"Soho's legendary jazz club. Premium floor seating for the late set, where the music and atmosphere are at their finest. Car waits outside.",price:145,car:100,slots:['21:00','23:00'],guests:'up to 4',tags:['Nightlife','Music']},
-  {id:'xp4',name:'Tate Modern',type:'Culture',emoji:'🖼',tagline:'Private after-hours gallery tour',desc:'Exclusive access to the Turbine Hall and current exhibition after public hours close, with a dedicated curator. A genuinely private viewing.',price:320,car:130,slots:['19:30','20:00'],guests:'up to 6',tags:['Culture','Private']},
-  {id:'xp5',name:'Harrods',type:'Lifestyle',emoji:'🛍',tagline:'Personal shopping · before hours',desc:'A dedicated personal stylist, champagne on arrival, and the store to yourself before opening. Harrods at its most exclusive — your purchases delivered to the car.',price:0,car:180,slots:['08:00','08:30'],guests:'up to 2',tags:['Shopping','Morning']},
-  {id:'xp6',name:'Nobu London',type:'Dining',emoji:'🍣',tagline:"Chef's omakase · 12 courses",desc:"The chef's omakase at Nobu Park Lane. Twelve courses of Matsuhisa's celebrated Japanese-Peruvian cuisine with optional sake pairing. A chauffeur return is included.",price:280,car:140,slots:['18:00','19:30','21:00'],guests:'up to 4',tags:['Dining','Exclusive']},
-  {id:'xp7',name:'Annabel\'s',type:'Events',emoji:'✨',tagline:'Members club · Priority entry',desc:'Priority entry and a reserved table at one of Mayfair\'s most celebrated private members clubs. Your driver waits in Berkeley Square.',price:200,car:120,slots:['20:00','21:30'],guests:'up to 4',tags:['Nightlife','Exclusive']},
-  {id:'xp8',name:'Kensington Palace',type:'Culture',emoji:'🏰',tagline:'Private morning tour · gardens',desc:'A private guided walk through the State Rooms and Kensington Gardens before the public arrives. Includes a reserved breakfast in the Orangery.',price:250,car:100,slots:['08:30','09:00'],guests:'up to 6',tags:['Culture','Morning']},
+  {id:'jun1',name:'Royal Ascot 2026',type:'Events',emoji:'🎩',tagline:'Royal Enclosure · June 16–20',desc:'The pinnacle of the British racing calendar. ApexVIP arranges Royal Enclosure badges, car to the course, and a reserved table at the Parade Ring restaurant. Dress code briefing and return journey included.',price:680,car:160,slots:["09:30","10:00","10:30"],guests:'up to 4',tags:["Racing","Season","Exclusive"],months:[6],priority:10},
+  {id:'jun2',name:'Trooping the Colour',type:'Culture',emoji:'👑',tagline:'Horse Guards Parade · Royal Procession',desc:'A grandstand seat for the King\'s Birthday Parade on Horse Guards Parade. Watch the Household Division\'s full-dress ceremony and the RAF flypast, car via St James\'s.',price:290,car:120,slots:["09:00","09:30"],guests:'up to 4',tags:["Royal","Culture","Season"],months:[6],priority:9},
+  {id:'jun3',name:'Glyndebourne Opera',type:'Culture',emoji:'🎭',tagline:'Evening performance · long interval picnic',desc:'A full evening at Glyndebourne Festival Opera in the Sussex Downs. During the long interval, a private Fortnum & Mason hamper awaits on the lawn. Evening dress, car throughout.',price:420,car:200,slots:["16:00","16:30"],guests:'up to 4',tags:["Opera","Evening","Classic"],months:[6,7,8],priority:8},
+  {id:'apr2',name:'Chelsea Physic Garden Evening',type:'Culture',emoji:'🌿',tagline:'Private evening · oldest botanic garden',desc:'A private evening in London\'s oldest botanic garden, opened exclusively after hours. Guided walk with the head botanist, a garden supper, and candlelit cocktails on the lawn.',price:290,car:110,slots:["18:30","19:00"],guests:'up to 8',tags:["Culture","Private","Garden"],months:[4,5,6],priority:7},
+  {id:'yr1',name:'Ikoyi London',type:'Dining',emoji:'🍽',tagline:'Two Michelin stars · West African tasting',desc:'Jeremy Chan\'s extraordinary two Michelin-starred tasting menu — West African spices and the finest seasonal British produce in precise, beautiful courses. One of London\'s most coveted reservations.',price:340,car:120,slots:["18:30","19:00","20:30"],guests:'up to 4',tags:["Michelin","Tasting","Exclusive"],months:[1,2,3,4,5,6,7,8,9,10,11,12],priority:6},
+  {id:'yr2',name:'The Ledbury',type:'Dining',emoji:'🥂',tagline:'Two Michelin stars · Notting Hill',desc:'Brett Graham\'s legendary restaurant in Notting Hill. The seasonal tasting menu with wine pairings by the sommelier. Among the most acclaimed dining rooms in Europe.',price:310,car:110,slots:["18:00","19:00","20:30"],guests:'up to 4',tags:["Michelin","Classic","Tasting"],months:[1,2,3,4,5,6,7,8,9,10,11,12],priority:6},
+  {id:'mar2',name:'Tate Modern: Special Exhibition',type:'Culture',emoji:'🖼',tagline:'Private after-hours viewing',desc:'Exclusive access to the current Tate Modern major exhibition after public hours close, with a dedicated curator. Fully private, champagne, car waits on Bankside.',price:320,car:130,slots:["19:30","20:00"],guests:'up to 6',tags:["Art","Private","Culture"],months:[3,4,5,6,7,8,9,10,11],priority:5},
+  {id:'yr5',name:'Kensington Palace Tour',type:'Culture',emoji:'🏰',tagline:'Private morning · State Rooms & gardens',desc:'A private guided walk through the State Rooms and Kensington Gardens before the public arrives. Reserved breakfast in the Orangery, car collects from your door.',price:250,car:100,slots:["08:30","09:00"],guests:'up to 6',tags:["Culture","Morning","Private"],months:[4,5,6,7,8,9,10],priority:5},
 ];
 
 let mapInstance=null,mapTileLayer=null;
@@ -844,9 +878,25 @@ function optimiseItinerary(){
   render();
 }
 
-// ── AI Concierge Chat ──────────────────────────────────────────────────────
+// ── ApexAI Chat ──────────────────────────────────────────────────────
 const CONCIERGE_MSGS = [];
 let _conciergeLoading = false;
+
+const CONCIERGE_EXAMPLES = [
+  { icon:'✈️', short:'Price to Heathrow',       text:'How much is a car to Heathrow from central London?' },
+  { icon:'🍽', short:'Dinner suggestions',       text:'Recommend somewhere nice for dinner tonight in London' },
+  { icon:'🔄', short:'Weekly booking',           text:'Book me to the office every Monday at 8am' },
+  { icon:'🕐', short:'Smart pickup time',        text:'My flight is BA249 at 7am tomorrow from Heathrow' },
+  { icon:'👤', short:'Book for someone',         text:'Book for my client James Smith going to The Ritz' },
+  { icon:'📍', short:'Multi-stop journey',       text:'Take me to Harrods, then The Shard, then back home' },
+  { icon:'✏️', short:'Change a booking',         text:'Move my booking to 7pm tonight' },
+  { icon:'📋', short:'My upcoming trips',        text:'When is my next trip?' },
+];
+
+function quickSend(text) {
+  const inp = document.getElementById('concierge-inp');
+  if (inp) { inp.value = text; sendConciergeMsg(); }
+}
 
 // Client-side intent parser — runs when Cloud Functions are unavailable
 function _parseIntentLocal(msg) {
@@ -880,13 +930,23 @@ function _parseIntentLocal(msg) {
     if (re.test(msg)) { out.airport = label; out.serviceType = out.serviceType || 'airport'; break; }
   }
 
-  // Flight number (BA247, EK034, LH456 etc.)
-  const flt = msg.match(/\b([A-Z]{2}\s*\d{3,4})\b/i);
-  if (flt) { out.flight = flt[1].toUpperCase().replace(/\s+/, ''); out.serviceType = 'airport'; }
+  // Flight number — require NO space between UPPERCASE airline code and digits (BA247, EK034)
+  // "at 1700" must NOT match — "at" is not an airline code
+  const flt = msg.match(/\b([A-Z]{2}\d{3,4})\b/);
+  if (flt) { out.flight = flt[1].toUpperCase(); out.serviceType = 'airport'; }
 
-  // Time — "3pm", "14:30", "3:30 pm", "at 9"
-  const tm = msg.match(/\b(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i) || msg.match(/\bat\s+(\d{1,2}(?::\d{2})?)\b/i) || msg.match(/\b(\d{2}:\d{2})\b/);
-  if (tm) out.time = tm[1].trim();
+  // Time — "3pm", "14:30", "3:30 pm", "at 1700" (4-digit 24h), "at 9"
+  const tmMatch =
+    msg.match(/\b(\d{1,2}:\d{2}\s*(?:am|pm)?)\b/i) ||
+    msg.match(/\b(\d{1,2}\s*(?:am|pm))\b/i) ||
+    msg.match(/\bat\s+((?:0[0-9]|1[0-9]|2[0-3])[0-5][0-9])\b/i) ||
+    msg.match(/\bfor\s+((?:0[0-9]|1[0-9]|2[0-3])[0-5][0-9])\b/i) ||
+    msg.match(/\bat\s+(\d{1,2})\b/i);
+  if (tmMatch) {
+    const raw = tmMatch[1].trim();
+    // Convert 4-digit military time "1700" → "17:00"
+    out.time = /^\d{4}$/.test(raw) ? raw.slice(0,2) + ':' + raw.slice(2) : raw;
+  }
 
   // Date keywords
   const now = new Date();
@@ -899,22 +959,45 @@ function _parseIntentLocal(msg) {
     }
   }
 
-  // "from X to Y" / "from X" / "to Y"
-  const fromTo = msg.match(/\bfrom\s+([^,\.]+?)\s+to\s+([^,\.]+)/i);
+  // Temporal boundary — used to stop address extraction before time/date words
+  const _tBound = '(?=\\s*(?:tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|at\\s+\\d|\\bfor\\b|on\\s+\\w|\\d+\\s*(?:am|pm))|[,\\.]|$)';
+  const _addrPat = '(?:\\d+[\\s-]+)?[A-Za-z][^,\\.]{2,39}?';
+
+  // "from X to Y" pattern (pickup → destination)
+  const fromTo = msg.match(new RegExp(`\\bfrom\\s+(${_addrPat})\\s+to\\s+([^,\\.]+)`, 'i'));
   if (fromTo) {
     out.pickup = fromTo[1].trim();
     if (!out.airport) out.dropoff = fromTo[2].trim();
   } else {
-    const fm = msg.match(/\bfrom\s+([A-Z][^,\.]{3,40})/i);
+    // "from 37 Letchworth Street SW17 8SX tomorrow at..." — address allows leading digits
+    const fm = msg.match(new RegExp(`\\bfrom\\s+(${_addrPat})${_tBound}`, 'i'));
     if (fm) out.pickup = fm[1].trim();
-    const tm2 = msg.match(/\bto\s+([A-Z][^,\.]{3,40})/i);
+    const tm2 = msg.match(/\bto\s+([A-Za-z][^,\.]{3,40})/i);
     if (tm2 && !out.airport) out.dropoff = tm2[1].trim();
   }
 
   // Pickup fallback — "pick me up at X", "collect me from X"
   if (!out.pickup) {
-    const pu = msg.match(/(?:pick(?:ing)?\s+(?:me|us)\s+up|collect(?:ing)?\s+(?:me|us))(?:\s+(?:at|from))?\s+([A-Z][^,\.]{3,40})/i);
+    const pu = msg.match(/(?:pick(?:ing)?\s+(?:me|us)\s+up|collect(?:ing)?\s+(?:me|us))(?:\s+(?:at|from))?\s+((?:\d+[\s-]+)?[A-Za-z][^,\.]{3,40})/i);
     if (pu) out.pickup = pu[1].trim();
+  }
+
+  // Context-aware: if airport/destination already captured in a prior turn but pickup
+  // is still missing, treat this follow-up message as the pickup address
+  if (!out.pickup && (state.booking.airport || state.booking.dropoff) && !out.airport) {
+    const isAddress =
+      /\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i.test(msg) ||  // UK postcode (SW17 8SX)
+      /^\s*\d+\s+[A-Za-z]/.test(msg) ||                         // starts with house number
+      (msg.split(/\s+/).length <= 8 &&
+       !/\b(?:heathrow|gatwick|stansted|luton|airport|terminal|hotel|station)\b/i.test(msg));
+    if (isAddress) {
+      out.pickup = msg.trim();
+      out.serviceType = state.booking.serviceType || out.serviceType || 'airport';
+      if (!out.airport) out.airport = state.booking.airport || null;
+      if (!out.dropoff) out.dropoff = state.booking.dropoff || null;
+      if (!out.date) out.date = state.booking.date || null;
+      if (!out.time) out.time = state.booking.time || null;
+    }
   }
 
   // Build natural reply
@@ -955,38 +1038,199 @@ async function sendConciergeMsg() {
     if (FIREBASE_ENABLED && fns) {
       try {
         const fn = fns.httpsCallable('parseBookingIntent');
-        const res = await fn({ message: msg });
+        const history = CONCIERGE_MSGS.slice(0,-1)
+          .filter(m=>m.role==='user'||m.role==='assistant').slice(-8);
+        const tripsCtx = TRIPS.slice(0,10).map(t=>({
+          ref:t.id, pickup:t.pickup, dropoff:t.dropoff||'', airport:t.dropoff||'',
+          date:t.date, time:t.time, status:t.status, flight:t.flight||''
+        }));
+        const res = await fn({ message:msg, history, trips:tripsCtx, now:new Date().toISOString() });
         d = res.data;
       } catch(fnErr) {
-        // Cloud Function unavailable — fall back to local parser
-        await new Promise(r => setTimeout(r, 520));
+        await new Promise(r=>setTimeout(r,520));
         d = _parseIntentLocal(msg);
       }
     } else {
-      await new Promise(r => setTimeout(r, 520));
+      await new Promise(r=>setTimeout(r,520));
       d = _parseIntentLocal(msg);
     }
-    CONCIERGE_MSGS.push({ role: 'assistant', content: d.reply || 'Let me arrange that for you.' });
-    if (d.serviceType) {
-      state.booking.serviceType = d.serviceType;
-      if (d.pickup)  state.booking.pickup  = d.pickup;
-      if (d.dropoff) state.booking.dropoff = d.dropoff;
-      if (d.airport) state.booking.airport = d.airport;
-      if (d.flight)  state.booking.flight  = d.flight;
-      if (d.date)    state.booking.date    = d.date;
-      if (d.time)    state.booking.time    = d.time;
-      CONCIERGE_MSGS.push({ role: 'system', content: '✓ Details understood — tap "Review & Confirm" to select your vehicle.' });
+
+    CONCIERGE_MSGS.push({ role:'assistant', content: d.reply || 'Let me arrange that for you.' });
+    const intent = d.intent || 'book';
+
+    if (intent === 'suggest' && d.suggestions) {
+      state._conciergeSuggestions = d.suggestions;
+
+    } else if (intent === 'modify') {
+      if (d.modifyBookingRef) state._pendingModify = { ref: d.modifyBookingRef, fields: d.modifyFields||{} };
+
+    } else if (intent === 'recurring' && d.recurringPattern) {
+      _applyBookingFields(d);
+      state._pendingRecurring = d;
       state._conciergeParsed = d;
+
+    } else if (intent === 'flight_update') {
+      const trip = TRIPS.find(t => t.flight && d.flight && t.flight===d.flight && t.status==='upcoming');
+      if (trip) state._pendingFlightUpdate = { trip, newTime: d.time };
+
+    } else if (intent === 'quote') {
+      _applyBookingFields(d);
+      if (d.priceEstimate) { state._quotedPrice = d.priceEstimate; state._conciergeParsed = d; }
+
+    } else if (intent === 'book' || intent === 'chat' || !d.intent) {
+      if (d.serviceType) {
+        _applyBookingFields(d);
+        if (d.suggestedPickupTime && !d.time) {
+          state.booking.time = d.suggestedPickupTime;
+          CONCIERGE_MSGS.push({ role:'system', content:`🕐 Pickup time set to ${d.suggestedPickupTime} — timed for your flight.` });
+        }
+        if (d.stops && d.stops.length > 1) {
+          if (!state.booking.concierge) resetConcierge();
+          state.booking.concierge.itinerary = d.stops.map(s=>({place:s.name,time:'',note:s.address||''}));
+          state.booking.serviceType = 'day';
+        }
+        CONCIERGE_MSGS.push({ role:'system', content:'✓ Details understood — tap "Review & Confirm" to select your vehicle.' });
+        state._conciergeParsed = d;
+      }
     }
   } catch(e) {
-    CONCIERGE_MSGS.push({ role: 'assistant', content: 'I apologise — please try rephrasing, or call us directly on +44 20 1234 5678.' });
+    CONCIERGE_MSGS.push({ role:'assistant', content:'I apologise — please try rephrasing, or call us directly on +44 20 1234 5678.' });
   }
   _conciergeLoading = false;
   render();
-  setTimeout(() => {
-    const el = document.getElementById('concierge-msgs');
-    if (el) el.scrollTop = el.scrollHeight;
-  }, 60);
+  setTimeout(()=>{ const el=document.getElementById('concierge-msgs'); if(el)el.scrollTop=el.scrollHeight; }, 60);
+}
+
+function _applyBookingFields(d) {
+  if (d.serviceType) state.booking.serviceType = d.serviceType;
+  if (d.pickup)    state.booking.pickup    = d.pickup;
+  if (d.dropoff)   state.booking.dropoff   = d.dropoff;
+  if (d.airport)   state.booking.airport   = d.airport;
+  if (d.flight)    state.booking.flight    = d.flight;
+  if (d.date)      state.booking.date      = d.date;
+  if (d.time)      state.booking.time      = d.time;
+  if (d.vehicle)   state.booking.vehicle   = d.vehicle;
+  if (d.passengers) state.booking.passengers = d.passengers;
+  if (d.paPassenger) {
+    state.paMode = true;
+    state.paPassenger = { ...state.paPassenger, name: d.paPassenger.name, notes: d.paPassenger.notes };
+  }
+}
+
+async function applyModifyBooking() {
+  const m = state._pendingModify;
+  if (!m) return;
+  if (!auth.currentUser) { go('login'); return; }
+  try {
+    const snap = await db.collection('bookings')
+      .where('clientId','==',auth.currentUser.uid).where('ref','==',m.ref).limit(1).get();
+    if (!snap.empty) {
+      await snap.docs[0].ref.update(m.fields);
+      CONCIERGE_MSGS.push({ role:'system', content:`✓ Booking ${m.ref} updated.` });
+    } else {
+      CONCIERGE_MSGS.push({ role:'assistant', content:`I couldn't find booking ${m.ref}. Please check the reference.` });
+    }
+  } catch(e) {
+    CONCIERGE_MSGS.push({ role:'assistant', content:'Update failed — please contact us directly.' });
+  }
+  state._pendingModify = null;
+  render();
+}
+
+async function saveRecurringBooking() {
+  const r = state._pendingRecurring;
+  if (!r) return;
+  if (!auth.currentUser) { state._pendingScreen='concierge-chat'; go('login'); return; }
+  try {
+    await db.collection('recurring_bookings').add({
+      clientId: auth.currentUser.uid,
+      serviceType: r.serviceType||'airport',
+      pickup: r.pickup||'', dropoff: r.dropoff||r.airport||'',
+      vehicle: r.vehicle||'S-Class',
+      pattern: r.recurringPattern,
+      active: true,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    CONCIERGE_MSGS.push({ role:'system', content:`✓ Recurring booking set — every ${r.recurringPattern.dayOfWeek} at ${r.recurringPattern.time}.` });
+  } catch(e) {
+    CONCIERGE_MSGS.push({ role:'assistant', content:'Could not save recurring booking — please contact us.' });
+  }
+  state._pendingRecurring = null;
+  render();
+}
+
+async function applyFlightUpdate() {
+  const fu = state._pendingFlightUpdate;
+  if (!fu || !auth.currentUser) return;
+  try {
+    const snap = await db.collection('bookings')
+      .where('clientId','==',auth.currentUser.uid).where('ref','==',fu.trip.id).limit(1).get();
+    if (!snap.empty && fu.newTime) await snap.docs[0].ref.update({ time: fu.newTime });
+    CONCIERGE_MSGS.push({ role:'system', content:`✓ Pickup updated to ${fu.newTime||'the new time'} to match your flight.` });
+  } catch(e) {}
+  state._pendingFlightUpdate = null;
+  render();
+}
+
+// ── Voice Input ────────────────────────────────────────────────────────────
+let _voiceRecording = false;
+let _voiceRecognizer = null;
+
+function startVoiceInput() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    const inp = document.getElementById('concierge-inp');
+    if (inp) { inp.placeholder = 'Voice not supported — type here'; inp.focus(); }
+    return;
+  }
+  if (_voiceRecording && _voiceRecognizer) { _voiceRecognizer.stop(); return; }
+
+  const rec = new SR();
+  _voiceRecognizer = rec;
+  rec.lang = 'en-GB';
+  rec.continuous = false;
+  rec.interimResults = true;
+  rec.maxAlternatives = 1;
+
+  // Direct DOM updates — no render() calls, which would wipe the input field
+  // before sendConciergeMsg reads it and could break iOS gesture chain
+  const _setUI = on => {
+    _voiceRecording = on;
+    const btn = document.querySelector('[data-mic-btn]');
+    const ind = document.getElementById('voice-ind');
+    const inp = document.getElementById('concierge-inp');
+    if (btn) {
+      btn.style.background   = on ? '#ff3b30' : 'var(--surface-2)';
+      btn.style.borderColor  = on ? '#ff3b30' : 'var(--border)';
+      btn.style.animation    = on ? 'micPulse .75s ease-in-out infinite' : '';
+    }
+    if (ind) ind.style.display = on ? 'block' : 'none';
+    if (inp) inp.placeholder   = on ? 'Listening…' : "Tell me where you'd like to go…";
+  };
+
+  _setUI(true);
+
+  rec.onresult = e => {
+    const transcript = Array.from(e.results).map(r => r[0].transcript).join('');
+    const inp = document.getElementById('concierge-inp');
+    if (inp) inp.value = transcript;
+    if (e.results[e.results.length - 1].isFinal) {
+      _voiceRecognizer = null;
+      _setUI(false);
+      setTimeout(sendConciergeMsg, 400); // input still has transcript — no render() in between
+    }
+  };
+  rec.onerror = e => {
+    _voiceRecognizer = null;
+    _setUI(false);
+    const inp = document.getElementById('concierge-inp');
+    if (!inp) return;
+    if (e.error === 'not-allowed')  inp.placeholder = 'Mic blocked — check browser permissions';
+    else if (e.error === 'no-speech') inp.placeholder = 'Nothing heard — tap mic to try again';
+    else inp.placeholder = 'Voice unavailable — type your request';
+  };
+  rec.onend = () => { _voiceRecognizer = null; _setUI(false); };
+  rec.start();
 }
 
 function conciergeReview() {
@@ -1125,15 +1369,26 @@ async function applyReferral() {
   render();
 }
 
+function _guideRender() {
+  state._guideVideoTime = document.getElementById('guide-video')?.currentTime || 0;
+  render();
+  setTimeout(() => {
+    const v = document.getElementById('guide-video');
+    if (v && state._guideVideoTime) { v.currentTime = state._guideVideoTime; v.play(); }
+  }, 30);
+}
 function nextGuideStep() {
   state.guideStep = (state.guideStep || 0) + 1;
   if (state.guideStep >= 4) skipGuide();
-  else render();
+  else _guideRender();
+}
+function prevGuideStep() {
+  if ((state.guideStep || 0) > 0) { state.guideStep--; _guideRender(); }
 }
 function skipGuide() {
   localStorage.setItem('apexvip_guide_seen', '1');
   state.guideStep = 0;
-  go('home');
+  go('splash');
 }
 
 // ── Saved Addresses ───────────────────────────────────────────────────────
@@ -1415,9 +1670,12 @@ function flightStatusCard(flight) {
 const screens = {
 
 splash: () => `
-<div style="min-height:100vh;display:flex;flex-direction:column;background:var(--bg);overflow:hidden;position:relative">
-  <div class="aurora"><i></i><i></i><i></i></div>
-  <div style="position:absolute;inset:0;background:radial-gradient(ellipse 70% 40% at 50% 110%,rgba(200,169,126,.07),transparent);pointer-events:none;z-index:1"></div>
+<div style="min-height:100vh;display:flex;flex-direction:column;overflow:hidden;position:relative;background:#050505">
+  <video autoplay muted loop playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0" src="/splash-bg.mp4"></video>
+  <div style="position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,.45) 0%,rgba(0,0,0,.25) 40%,rgba(0,0,0,.65) 100%);z-index:1;pointer-events:none"></div>
+  <div style="position:absolute;top:calc(env(safe-area-inset-top) + 16px);right:20px;z-index:10">
+    <button onclick="state.guideStep=0;go('guide')" style="background:rgba(0,0,0,.4);border:1px solid rgba(200,169,126,.4);border-radius:20px;padding:7px 14px;color:var(--gold);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:.5px;backdrop-filter:blur(8px)">▶ App Tour</button>
+  </div>
   <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 40px;position:relative;z-index:2">
     <div style="text-align:center">
       <div style="position:relative;display:inline-block;margin-bottom:20px;animation:logoReveal 5.5s .4s both ease-out">
@@ -1425,15 +1683,15 @@ splash: () => `
         <i class="sp sp1">✦</i><i class="sp sp2">✧</i><i class="sp sp3">✦</i>
         <i class="sp sp4">✧</i><i class="sp sp5">✦</i><i class="sp sp6">✧</i><i class="sp sp7">✦</i>
       </div>
-      <div style="font-size:11px;font-weight:400;color:var(--fg-4);text-transform:uppercase;letter-spacing:6px;animation:subtitleReveal 1.4s 1.2s both ease-out;margin-bottom:10px">Luxury Concierge Services</div>
-      <div style="font-size:11px;color:var(--fg-5);letter-spacing:3px;animation:fadeIn 1s 2.2s both ease">London · Dubai · Global</div>
+      <div style="font-size:11px;font-weight:400;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:6px;animation:subtitleReveal 1.4s 1.2s both ease-out;margin-bottom:10px">Luxury Concierge Services</div>
+      <div style="font-size:11px;color:rgba(255,255,255,.45);letter-spacing:3px;animation:fadeIn 1s 2.2s both ease">London · Dubai · Global</div>
     </div>
   </div>
-  <div style="padding:0 28px max(48px,calc(env(safe-area-inset-bottom)+32px));display:flex;flex-direction:column;gap:10px;position:relative;z-index:2;animation:slideUp .7s 2s both cubic-bezier(0.16,1,0.3,1)">
+  <div style="padding:0 28px calc(env(safe-area-inset-bottom) + 24px);display:flex;flex-direction:column;gap:10px;position:relative;z-index:2;animation:slideUp .7s 2s both cubic-bezier(0.16,1,0.3,1)">
     <button class="btn btn-white" onclick="go('register')" style="font-size:15px;font-weight:600;letter-spacing:.02em">Begin your journey</button>
     <button class="btn btn-glass" onclick="go('login')" style="font-size:15px;letter-spacing:.02em">Sign in</button>
-    <div style="text-align:center;padding-top:6px">
-      <button onclick="state.guideStep=0;go(localStorage.getItem('apexvip_guide_seen')?'home':'guide')" style="background:none;border:none;color:var(--fg-4);font-size:12px;cursor:pointer;font-family:inherit;letter-spacing:.5px">Continue as guest →</button>
+    <div style="display:flex;justify-content:center;align-items:center;padding-top:6px">
+      <button onclick="state.guideStep=0;go(localStorage.getItem('apexvip_guide_seen')?'home':'guide')" style="background:none;border:none;color:rgba(255,255,255,.5);font-size:12px;cursor:pointer;font-family:inherit;letter-spacing:.5px">Continue as guest →</button>
     </div>
   </div>
 </div>`,
@@ -1448,7 +1706,7 @@ login: () => {
     </div>
     <div style="text-align:center;padding-top:4px">
       <div id="login-logo" style="font-family:'Cormorant Garamond',Georgia,serif;font-size:40px;font-weight:300;color:#fff;letter-spacing:1px;line-height:1;margin-bottom:8px">ApexVIP</div>
-      <div style="font-size:13px;color:var(--fg-3);letter-spacing:.3px">Sign in to continue</div>
+      <div style="font-size:13px;color:var(--fg-3);letter-spacing:.3px">${state._pendingScreen?'Sign in to complete your booking':'Sign in to continue'}</div>
     </div>
   </div>
   <div style="flex:1">
@@ -1562,13 +1820,13 @@ home: () => {
     <div class="stagger" style="padding:20px 22px 0;height:calc(100% - 26px);overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:96px">
 
       ${(()=>{const b=state.user?.birthday||localStorage.getItem('apex_birthday');if(!b)return'';const today=new Date();const bday=new Date(b);const next=new Date(today.getFullYear(),bday.getMonth(),bday.getDate());if(next<today)next.setFullYear(today.getFullYear()+1);const days=Math.round((next-today)/86400000);if(days>7)return'';return`<div style="display:flex;align-items:center;gap:12px;background:rgba(200,169,126,.08);border:1px solid rgba(200,169,126,.2);border-radius:16px;padding:14px 18px;margin-bottom:14px"><div style="font-size:24px">🎂</div><div><div style="font-size:13px;font-weight:700;color:var(--gold)">Happy ${days===0?'Birthday!':'upcoming birthday!'}</div><div style="font-size:12px;color:var(--fg-3);margin-top:2px">${days===0?'A complimentary upgrade awaits you today.':'Your birthday journey credit activates in '+days+' day'+(days===1?'':'s')+'.'}</div></div></div>`;})()}
-      <!-- AI Concierge — hero button at the top -->
+      <!-- ApexAI — hero button at the top -->
       <button onclick="go('concierge-chat')" style="width:100%;display:flex;align-items:center;gap:16px;padding:16px 20px;margin-bottom:16px;background:linear-gradient(135deg,rgba(200,169,126,.11) 0%,rgba(200,169,126,.04) 100%);border:1px solid rgba(200,169,126,.28);border-radius:22px;cursor:pointer;font-family:inherit;transition:transform .15s var(--ease-spring)">
         <div style="width:40px;height:40px;border-radius:14px;background:rgba(200,169,126,.14);border:1px solid rgba(200,169,126,.28);display:flex;align-items:center;justify-content:center;flex-shrink:0">
           <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="var(--gold)" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
         </div>
         <div style="flex:1;text-align:left">
-          <div style="font-size:14px;font-weight:700;color:var(--gold);letter-spacing:.01em">AI Concierge</div>
+          <div style="font-size:14px;font-weight:700;color:var(--gold);letter-spacing:.01em">ApexAI</div>
           <div style="font-size:12px;color:var(--fg-3);margin-top:2px">Tell me where you need to go</div>
         </div>
         <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="var(--gold)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
@@ -1650,16 +1908,6 @@ home: () => {
           <div style="font-size:12px;font-weight:700;line-height:1.3;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name}</div>
           <div style="font-size:10px;color:var(--fg-4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">${p.cat}</div>
           ${p.city==='dubai'?'<span style="font-size:9px;background:rgba(0,200,255,.1);border:1px solid rgba(0,200,255,.2);border-radius:6px;padding:2px 6px;color:#22d3ee">DXB</span>':'<div style="font-size:10px;font-weight:700;color:var(--gold)">Book →</div>'}
-        </div>`).join('')}
-      </div>
-
-      <div class="section-label" style="margin-bottom:10px">Coming Soon</div>
-      <div style="display:flex;gap:8px;overflow-x:auto;margin:0 -22px 22px;padding:4px 22px;scrollbar-width:none">
-        ${[{city:'paris',name:'Paris',emoji:'🗼',quarter:'Q4 2026'},{city:'new-york',name:'New York',emoji:'🗽',quarter:'Q1 2027'},{city:'singapore',name:'Singapore',emoji:'🦁',quarter:'Q2 2027'},{city:'riyadh',name:'Riyadh',emoji:'🕌',quarter:'TBA'}].map(c=>`<div style="flex-shrink:0;width:110px;background:var(--surface);border:1px solid ${state._cityInterest[c.city]?'rgba(200,169,126,.5)':'var(--border)'};border-radius:16px;padding:12px;cursor:pointer;transition:all .15s" onclick="registerCityInterest('${c.city}')">
-          <div style="font-size:22px;margin-bottom:6px">${c.emoji}</div>
-          <div style="font-size:12px;font-weight:700;margin-bottom:2px">${c.name}</div>
-          <div style="font-size:10px;color:var(--fg-4);margin-bottom:6px">${c.quarter}</div>
-          <div style="font-size:10px;font-weight:700;color:${state._cityInterest[c.city]?'#22c55e':'var(--gold)'}">${state._cityInterest[c.city]?'✓ Notified':'Notify me'}</div>
         </div>`).join('')}
       </div>
 
@@ -1762,9 +2010,9 @@ home: () => {
   </div>
   <div style="padding:0 22px 100px">
     ${[
-      {t:'airport',icon:'✈',l:'Airport Transfer',d:'Door-to-terminal · Meet & greet · Flight tracking',price:'from £125'},
-      {t:'hourly',icon:'⏱',l:'By the Hour',d:'Your chauffeur on demand · Minimum 2 hours',price:'from £130'},
-      {t:'day',icon:'📅',l:'Full Day',d:'8 hours with your personal chauffeur',price:'from £450'},
+      {t:'airport',icon:'✈',l:'Airport Transfer',d:'Door-to-terminal · Meet & greet · Flight tracking',price:`from £${PRICES.city_s}`},
+      {t:'hourly',icon:'⏱',l:'By the Hour',d:'Your chauffeur on demand · Minimum 2 hours',price:`from £${PRICES.hourly_s_rate*2}`},
+      {t:'day',icon:'📅',l:'Full Day',d:'8 hours with your personal chauffeur',price:`from £${PRICES.day_s}`},
     ].map(s=>`
     <div onclick="goBook('${s.t}')" style="background:var(--surface);border-radius:20px;padding:20px;margin-bottom:10px;cursor:pointer;border:1px solid var(--border);display:flex;align-items:center;gap:16px">
       <div style="width:54px;height:54px;border-radius:16px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">${s.icon}</div>
@@ -1847,8 +2095,8 @@ home: () => {
     </div>
     <div class="section-label" style="margin-bottom:14px">Duration</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:32px" id="bh_dur">
-      ${[[2,130],[3,195],[4,260],[6,390],[8,520],[12,780]].map(([h,p],i)=>`
-      <button onclick="setDur(${h},${p},this)" style="padding:12px 16px;border-radius:14px;background:${i===1?'#ffffff':'rgba(255,255,255,.06)'};color:${i===1?'#000':'rgba(255,255,255,.5)'};border:1px solid ${i===1?'#ffffff':'rgba(255,255,255,.07)'};cursor:pointer;font-family:inherit;font-weight:700;font-size:13px;transition:all .15s">${h}h · £${p}</button>`).join('')}
+      ${[[2],[3],[4],[6],[8],[12]].map(([h],i)=>{const p=Math.round(h*PRICES.hourly_s_rate);return`
+      <button onclick="setDur(${h},${p},this)" style="padding:12px 16px;border-radius:14px;background:${i===1?'#ffffff':'rgba(255,255,255,.06)'};color:${i===1?'#000':'rgba(255,255,255,.5)'};border:1px solid ${i===1?'#ffffff':'rgba(255,255,255,.07)'};cursor:pointer;font-family:inherit;font-weight:700;font-size:13px;transition:all .15s">${h}h · £${p}</button>`;}).join('')}
     </div>
   </div>
   <div style="height:90px"></div>
@@ -1897,7 +2145,7 @@ home: () => {
 </div>`,
 
 'vehicle-select': () => {
-  const pm = {airport:{s:185,v:225},hourly:{s:(state.booking.duration||3)*65,v:(state.booking.duration||3)*75},day:{s:450,v:550}};
+  const pm = {airport:{s:PRICES.airport_s,v:PRICES.airport_v},hourly:{s:(state.booking.duration||3)*PRICES.hourly_s_rate,v:(state.booking.duration||3)*PRICES.hourly_v_rate},day:{s:PRICES.day_s,v:PRICES.day_v}};
   const p = pm[state.booking.serviceType]||pm.airport;
   const ySurge = typeof ApexCore!=='undefined'
     ? ApexCore.apexYield({date:state.booking.date,time:state.booking.time,vehicle:'s',market:'london'})
@@ -2733,47 +2981,45 @@ guide: () => {
   ];
 
   const meta = [
-    {num:'01', title:'Where to?',        desc:'Enter your destination, ask our AI Concierge, or choose a curated London destination from our Discover section.'},
-    {num:'02', title:'Choose a service', desc:'Airport transfers, hourly hire, or a full day with your personal chauffeur — built entirely around your schedule.'},
-    {num:'03', title:'Your vehicle',     desc:'Our 2025 S-Class and V-Class fleet. Every journey includes WiFi, chilled water, and a uniformed chauffeur.'},
-    {num:'04', title:'Confirm & ride',   desc:'Review your booking, pay instantly with Apple Pay or card, then track your driver live on the map.'},
+    {num:'01', title:'Book your ride',     desc:'Enter any destination, ask ApexAI to handle it for you, or tap a curated spot from the Discover section. Pickup is auto-filled from your location.'},
+    {num:'02', title:'Choose your service',desc:'Airport transfer, hourly hire, or a full-day chauffeur. Every service includes meet & greet, flight monitoring, and free waiting time.'},
+    {num:'03', title:'Your fleet',         desc:'Our 2025 Mercedes S-Class and V-Class. In-car WiFi, chilled water, phone charger, and a uniformed chauffeur — on every journey, every time.'},
+    {num:'04', title:'Confirm & track',    desc:'Pay with Apple Pay, card, or ApexCoin. Your driver\'s live location appears on the map the moment they\'re assigned — no guessing, no waiting.'},
   ];
   const m = meta[step];
   const isLast = step === 3;
 
   return `
-<div style="height:100vh;background:var(--bg);display:flex;flex-direction:column;overflow:hidden;position:relative"
+<div style="height:100vh;background:#050505;display:flex;flex-direction:column;overflow:hidden;position:relative"
   ontouchstart="state._gTx=event.touches[0].clientX"
-  ontouchend="const dx=state._gTx-(event.changedTouches[0]?.clientX||state._gTx);if(dx>52)nextGuideStep();else if(dx<-52&&${step}>0){state.guideStep=${step}-1;render();}">
-  <div class="aurora"><i></i><i></i><i></i></div>
-  <div style="position:absolute;inset:0;background:radial-gradient(ellipse 80% 45% at 50% 108%,rgba(200,169,126,.07),transparent);pointer-events:none;z-index:1"></div>
+  ontouchend="const dx=state._gTx-(event.changedTouches[0]?.clientX||state._gTx);if(dx>52)nextGuideStep();else if(dx<-52)prevGuideStep()">
 
-  <!-- Skip -->
-  <div style="position:absolute;top:clamp(48px,12vw,60px);right:22px;z-index:20;animation:fadeIn .5s .7s both">
-    <button onclick="skipGuide()" style="background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:7px 16px;font-size:12px;font-weight:600;color:var(--fg-3);cursor:pointer;font-family:inherit;letter-spacing:.2px">Skip</button>
-  </div>
-
-  <!-- Visual area -->
-  <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:0 22px 8px;position:relative;z-index:2;overflow:hidden">
-    ${visuals[step]}
+  <!-- Video background (top half) -->
+  <div style="position:relative;flex:1;overflow:hidden;min-height:0">
+    <video id="guide-video" autoplay muted loop playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0" src="/guide-bg.mp4"></video>
+    <div style="position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,.2) 0%,rgba(5,5,5,1) 100%);z-index:1;pointer-events:none"></div>
+    <!-- Skip -->
+    <div style="position:absolute;top:clamp(48px,12vw,60px);right:22px;z-index:20;animation:fadeIn .5s .7s both">
+      <button onclick="skipGuide()" style="background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.15);border-radius:20px;padding:7px 16px;font-size:12px;font-weight:600;color:rgba(255,255,255,.7);cursor:pointer;font-family:inherit;letter-spacing:.2px;backdrop-filter:blur(8px)">Skip</button>
+    </div>
   </div>
 
   <!-- Content area -->
-  <div style="flex-shrink:0;padding:0 28px max(44px,calc(env(safe-area-inset-bottom)+24px));z-index:2;background:linear-gradient(to top,var(--bg) 78%,transparent);padding-top:20px">
+  <div style="flex-shrink:0;padding:0 28px max(44px,calc(env(safe-area-inset-bottom)+24px));z-index:2;padding-top:24px;background:#050505">
     <!-- Decorative oversized step number -->
     <div style="font-family:var(--font-serif);font-size:72px;font-weight:300;color:var(--gold);opacity:.1;line-height:1;margin-bottom:-22px;pointer-events:none;user-select:none">${m.num}</div>
     <!-- Title -->
-    <div style="font-family:var(--font-serif);font-size:46px;font-weight:300;letter-spacing:.2px;line-height:1.05;margin-bottom:10px;animation:fadeUp .5s .04s var(--ease-spring) both">${m.title}</div>
+    <div style="font-family:var(--font-serif);font-size:46px;font-weight:300;letter-spacing:.2px;line-height:1.05;margin-bottom:10px;animation:fadeUp .5s .04s var(--ease-spring) both;color:#fff">${m.title}</div>
     <!-- Description -->
-    <div style="font-size:14px;color:var(--fg-3);line-height:1.65;margin-bottom:26px;animation:fadeUp .5s .1s var(--ease-spring) both;max-width:300px">${m.desc}</div>
+    <div style="font-size:14px;color:rgba(255,255,255,.5);line-height:1.65;margin-bottom:26px;animation:fadeUp .5s .1s var(--ease-spring) both;max-width:300px">${m.desc}</div>
 
     <!-- Progress dots + Next button -->
     <div style="display:flex;align-items:center;justify-content:space-between;animation:fadeUp .4s .18s var(--ease-spring) both">
       <div style="display:flex;align-items:center;gap:6px">
-        ${[0,1,2,3].map(i=>`<div style="height:7px;border-radius:4px;transition:all .38s var(--ease-spring);background:${i===step?'var(--gold)':'var(--fg-6)'};width:${i===step?'24px':'7px'}"></div>`).join('')}
+        ${[0,1,2,3].map(i=>`<div style="height:7px;border-radius:4px;transition:all .38s var(--ease-spring);background:${i===step?'var(--gold)':'rgba(255,255,255,.15)'};width:${i===step?'24px':'7px'}"></div>`).join('')}
       </div>
       <button onclick="${isLast?'skipGuide()':'nextGuideStep()'}"
-        style="width:54px;height:54px;border-radius:50%;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;transition:transform .18s var(--ease-spring),box-shadow .18s;background:${isLast?'linear-gradient(135deg,#C8A97E,#a8884e)':'var(--surface-2)'};border:${isLast?'none':'1px solid var(--border)'};box-shadow:${isLast?'var(--gold-glow)':'none'};color:${isLast?'#0c0b09':'var(--fg)'}">
+        style="width:54px;height:54px;border-radius:50%;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;transition:transform .18s var(--ease-spring),box-shadow .18s;background:${isLast?'linear-gradient(135deg,#C8A97E,#a8884e)':'rgba(255,255,255,.08)'};border:${isLast?'none':'1px solid rgba(255,255,255,.12)'};box-shadow:${isLast?'var(--gold-glow)':'none'};color:${isLast?'#0c0b09':'#fff'}">
         ${isLast
           ?'<svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>'
           :'<svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>'
@@ -2878,7 +3124,7 @@ profile: () => {
         {icon:'🎁',label:'Referral code',action:"go('referral')"},
         {icon:'🎀',label:'Gift a ride',action:"go('gift-ride')"},
         {icon:'📅',label:'Year in Review',action:"go('year-review')"},
-        {icon:'✦',label:'How to use ApexVIP',action:"state.guideStep=0;go('guide')"},
+        {icon:'✦',label:'App Tour',action:"state.guideStep=0;go('guide')"},
         {icon:'💬',label:'Help & support',action:"go('help')"},
         {icon:'📄',label:'Terms & Conditions',action:"go('terms')"},
         {icon:'🔒',label:'Privacy Policy',action:"go('privacy')"},
@@ -2912,7 +3158,7 @@ profile: () => {
           <div style="font-size:11px;color:var(--fg-4);margin-top:4px;letter-spacing:.3px">The pinnacle membership tier</div>
         </div>
         <div style="text-align:right;flex-shrink:0">
-          <div style="font-size:20px;font-weight:800;color:var(--gold)">£199</div>
+          <div style="font-size:20px;font-weight:800;color:var(--gold)">£${PRICES.membership}</div>
           <div style="font-size:10px;color:var(--fg-4)">per month</div>
         </div>
       </div>
@@ -3126,15 +3372,32 @@ profile: () => {
     <div class="back-btn" onclick="go('home')">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
     </div>
-    <div style="font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase">AI Concierge</div>
+    <div style="font-size:13px;font-weight:700;letter-spacing:.5px">ApexAI</div>
     <div style="width:36px"></div>
   </div>
   <div id="concierge-msgs" style="flex:1;overflow-y:auto;padding:90px 20px 20px;display:flex;flex-direction:column;gap:12px">
     <div style="align-self:flex-start;max-width:82%">
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:18px 18px 18px 4px;padding:14px 16px;font-size:14px;line-height:1.5">
-        Good ${new Date().getHours()<12?'morning':new Date().getHours()<18?'afternoon':'evening'}. I'm your ApexVIP concierge. Tell me where you'd like to go, and I'll arrange everything. You can say something like <em style="color:var(--fg-3)">"I need a car to take me to Heathrow T5 tomorrow at 6am"</em>.
+        Good ${new Date().getHours()<12?'morning':new Date().getHours()<18?'afternoon':'evening'}. I'm your ApexVIP concierge. I can book rides, give quotes, suggest destinations, set up recurring journeys, and more. Tap an example below or tell me what you need.
       </div>
     </div>
+
+    ${CONCIERGE_MSGS.length===0?`
+    <div style="align-self:stretch;margin-top:4px">
+      <div style="font-size:10px;color:var(--fg-4);letter-spacing:1.5px;text-transform:uppercase;text-align:center;margin-bottom:14px">Try asking…</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        ${CONCIERGE_EXAMPLES.map((ex,i)=>`
+        <div onclick="quickSend(${JSON.stringify(ex.text)})"
+          style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px 13px;cursor:pointer;
+                 animation:chipFloat ${2.8+i*0.25}s ease-in-out infinite;animation-delay:${(i*0.18).toFixed(2)}s;
+                 transition:border-color .15s,transform .15s"
+          onmouseenter="this.style.borderColor='rgba(212,168,67,.45)';this.style.transform='scale(1.03)'"
+          onmouseleave="this.style.borderColor='';this.style.transform=''">
+          <div style="font-size:20px;margin-bottom:7px">${ex.icon}</div>
+          <div style="font-size:12px;font-weight:700;line-height:1.35;color:var(--fg)">${ex.short}</div>
+        </div>`).join('')}
+      </div>
+    </div>`:''}
     ${CONCIERGE_MSGS.map(m => m.role === 'user' ? `
       <div style="align-self:flex-end;max-width:82%">
         <div style="background:linear-gradient(135deg,#D4A843,#b8892f);border-radius:18px 18px 4px 18px;padding:14px 16px;font-size:14px;color:#000;font-weight:500;line-height:1.5">${m.content}</div>
@@ -3144,16 +3407,79 @@ profile: () => {
         <div style="background:var(--surface);border:1px solid var(--border);border-radius:18px 18px 18px 4px;padding:14px 16px;font-size:14px;line-height:1.5">${m.content}</div>
       </div>`).join('')}
     ${_conciergeLoading ? `<div style="align-self:flex-start"><div style="background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:12px 18px;font-size:20px;letter-spacing:4px;color:var(--fg-3)">···</div></div>` : ''}
-    ${state._conciergeParsed ? `<button class="btn btn-gold" style="margin-top:8px" onclick="conciergeReview()">Review &amp; Confirm Booking →</button>` : ''}
+
+    ${state._quotedPrice ? `
+    <div style="align-self:stretch;background:var(--surface);border:1px solid rgba(212,168,67,.3);border-radius:18px;padding:18px 20px;margin-top:4px">
+      <div style="font-size:10px;color:var(--fg-4);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px">Price Estimate</div>
+      <div style="font-size:36px;font-weight:800;color:#D4A843;margin-bottom:4px">£${state._quotedPrice}</div>
+      <div style="font-size:12px;color:var(--fg-3);margin-bottom:14px">${state.booking.pickup||''} → ${state.booking.dropoff||state.booking.airport||''}</div>
+      <button class="btn btn-gold" onclick="state._quotedPrice=null;conciergeReview()">Book at this price →</button>
+    </div>` : ''}
+
+    ${state._conciergeSuggestions ? `
+    <div style="align-self:stretch;display:flex;flex-direction:column;gap:8px;margin-top:4px">
+      ${state._conciergeSuggestions.map(s=>`
+      <div onclick="state.booking.dropoff='${s.name}';state.booking.serviceType='airport';state._conciergeSuggestions=null;state._conciergeParsed={serviceType:'airport',dropoff:'${s.name}'};render()"
+        style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:12px">
+        <div style="width:36px;height:36px;border-radius:10px;background:rgba(212,168,67,.1);border:1px solid rgba(212,168,67,.2);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">${{Dining:'🍽',Hotel:'🏨',Shopping:'🛍',Nightlife:'🎵',Spa:'💆',Experience:'✨',View:'🏙',Bar:'🍸'}[s.type]||'📍'}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:700">${s.name}</div>
+          <div style="font-size:11px;color:#D4A843;margin-top:1px">${s.type}</div>
+          <div style="font-size:11px;color:var(--fg-3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.notes}</div>
+        </div>
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="var(--fg-4)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </div>`).join('')}
+    </div>` : ''}
+
+    ${state._pendingModify ? `
+    <div style="align-self:stretch;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-top:4px">
+      <div style="font-size:12px;color:var(--fg-3);margin-bottom:10px">Confirm change to booking <strong>${state._pendingModify.ref}</strong>?</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-gold" style="flex:1;font-size:13px" onclick="applyModifyBooking()">Confirm</button>
+        <button class="btn btn-glass" style="flex:1;font-size:13px" onclick="state._pendingModify=null;render()">Cancel</button>
+      </div>
+    </div>` : ''}
+
+    ${state._pendingRecurring ? `
+    <div style="align-self:stretch;background:var(--surface);border:1px solid rgba(212,168,67,.3);border-radius:14px;padding:14px 16px;margin-top:4px">
+      <div style="font-size:10px;color:var(--fg-4);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Recurring Booking</div>
+      <div style="font-size:15px;font-weight:700;margin-bottom:10px">Every ${state._pendingRecurring.recurringPattern?.dayOfWeek} at ${state._pendingRecurring.recurringPattern?.time}</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-gold" style="flex:1;font-size:13px" onclick="saveRecurringBooking()">Set up →</button>
+        <button class="btn btn-glass" style="flex:1;font-size:13px" onclick="state._pendingRecurring=null;render()">Cancel</button>
+      </div>
+    </div>` : ''}
+
+    ${state._pendingFlightUpdate ? `
+    <div style="align-self:stretch;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-top:4px">
+      <div style="font-size:12px;color:var(--fg-3);margin-bottom:10px">Update pickup time to <strong>${state._pendingFlightUpdate.newTime||'new time'}</strong>?</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-gold" style="flex:1;font-size:13px" onclick="applyFlightUpdate()">Update</button>
+        <button class="btn btn-glass" style="flex:1;font-size:13px" onclick="state._pendingFlightUpdate=null;render()">Dismiss</button>
+      </div>
+    </div>` : ''}
+
+    ${state._conciergeParsed && !state._quotedPrice && !state._pendingRecurring ? `<button class="btn btn-gold" style="margin-top:8px" onclick="conciergeReview()">Review &amp; Confirm Booking →</button>` : ''}
   </div>
-  <div style="padding:16px 20px 34px;border-top:1px solid var(--divider);background:var(--bg);position:sticky;bottom:0">
-    <div class="field" style="display:flex;align-items:center;gap:10px;padding:12px 16px">
+  <div style="padding:12px 20px calc(env(safe-area-inset-bottom,0px) + 20px);border-top:1px solid var(--divider);background:var(--bg);position:sticky;bottom:0">
+    <div class="field" style="display:flex;align-items:center;gap:8px;padding:10px 14px">
+      <!-- Mic button — styled by _setUI() directly, no render() dependency -->
+      <button data-mic-btn onclick="startVoiceInput()" title="Voice input"
+        style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;transition:background .2s,border-color .2s">
+        <svg width="15" height="15" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="color:var(--fg-3)">
+          <rect x="9" y="2" width="6" height="11" rx="3" fill="currentColor"/>
+          <path d="M5 11a7 7 0 0 0 14 0" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
+          <line x1="12" y1="18" x2="12" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <line x1="9" y1="22" x2="15" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </button>
       <input id="concierge-inp" placeholder="Tell me where you'd like to go…" style="flex:1;font-size:15px"
         onkeydown="if(event.key==='Enter'){sendConciergeMsg();event.preventDefault()}"/>
       <button onclick="sendConciergeMsg()" style="background:#D4A843;border:none;border-radius:10px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#000" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5M5 12l7-7 7 7"/></svg>
       </button>
     </div>
+    <div id="voice-ind" style="display:none;text-align:center;font-size:11px;color:#ff3b30;letter-spacing:.5px;margin-top:2px;animation:micPulse .75s ease-in-out infinite">● Recording — speak now</div>
   </div>
 </div>`,
 
@@ -4009,6 +4335,12 @@ async function initSquare(){
 }
 
 async function payOnArrival(){
+  if(FIREBASE_ENABLED && !auth.currentUser){
+    state._pendingScreen='payment';
+    state._pendingPayment='arrival';
+    go('login');
+    return;
+  }
   const btn = document.querySelector('[onclick="payOnArrival()"]');
   if(btn){btn.disabled=true;btn.textContent='Confirming…';}
   state._squarePaymentId = null;
@@ -4087,25 +4419,29 @@ async function confirmBooking(overrideRef){
         paPassenger: state.paMode ? state.paPassenger : null,
         createdAt:firebase.firestore.FieldValue.serverTimestamp()
       });
-      // Instant broadcast mode: offer the booking to every online driver
-      // immediately — first driver to accept claims it
+      // Broadcast booking to all online drivers — first to accept claims it.
+      // Default is broadcast; admin can switch to manual in settings.
       try{
         const modeDoc=await db.collection('settings').doc('dispatch').get();
-        if(modeDoc.exists&&modeDoc.data().mode==='broadcast'){
+        const mode=modeDoc.exists?modeDoc.data().mode:'broadcast';
+        if(mode!=='manual'){
           await db.collection('open_jobs').add({
             bookingDocId:_bookingDoc.id,bookingRef:ref,
             clientName:state.user?.name||'',
+            serviceType:state.booking.serviceType||'airport',
+            serviceLabel:svcLabel,
             pickup:state.booking.pickup||'',
             dropoff:state.booking.dropoff||state.booking.airport||'',
             date:state.booking.date||'',time:state.booking.time||'',
             vehicle:state.booking.vehicle||'Mercedes S-Class',
             pay:total,flight:state.booking.flight||'',
+            notes:state.booking.concierge?.instructions||'',
             status:'open',driverId:'',
             createdAt:firebase.firestore.FieldValue.serverTimestamp()
           });
           await _bookingDoc.update({status:'offered'});
         }
-      }catch(e){/* broadcast is best-effort; admin can still dispatch manually */}
+      }catch(e){console.warn('Broadcast:',e.message);/* admin can still dispatch manually */}
     }catch(err){console.warn('Booking save:',err.message);}
   }
   state._confirmedRef=ref;state._promoApplied=false;state._squarePaymentId=null;
@@ -4129,7 +4465,18 @@ async function confirmBooking(overrideRef){
   });
   go('booking-confirmed');
 }
-function goPayment(total){state._payTotal=total;state._payCardId=state.cards[0]?.id||null;state._addingCard=false;track('checkout_started',{total,src:'client'});go('payment');}
+function goPayment(total){
+  if(FIREBASE_ENABLED && !auth.currentUser){
+    // Require login before payment so booking is saved to Firestore
+    state._pendingScreen='payment';
+    state._payTotal=total;
+    go('login');
+    return;
+  }
+  state._payTotal=total;state._payCardId=state.cards[0]?.id||null;state._addingCard=false;
+  track('checkout_started',{total,src:'client'});
+  go('payment');
+}
 function apexTier(b){return b>=5000?'Platinum':b>=2000?'Gold':b>=500?'Silver':'Bronze';}
 function apexTierColor(t){return{Bronze:'#cd7f32',Silver:'#a8a9ad',Gold:'#ffffff',Platinum:'#b9f2ff'}[t];}
 function earnApex(amount,reason){
@@ -4204,14 +4551,21 @@ if(FIREBASE_ENABLED){
           TRIPS.length=0;
           const docs=snap.docs.map(d=>({_docId:d.id,...d.data()}));
           docs.sort((a,b)=>(b.createdAt?.toMillis()||0)-(a.createdAt?.toMillis()||0));
-          docs.forEach(d=>TRIPS.push({
-            id:d.ref||d._docId,service:d.serviceLabel||'Airport Transfer',
-            pickup:d.pickup||'',dropoff:d.airport||d.dropoff||'',
-            date:d.date||'',time:d.time||'',vehicle:d.vehicle||'Mercedes S-Class',
-            status:d.status||'confirmed',price:'£'+(d.price||0),
-            driver:d.driverName||'TBA',rating:d.driverRating||4.9,
-            plate:d.driverPlate||'',flight:d.flight||''
-          }));
+          docs.forEach(d=>{
+            const raw=d.status||'confirmed';
+            // Map Firestore statuses → display status
+            // 'confirmed','offered','accepted','en_route','arrived','onboard' → 'upcoming'
+            // 'completed' and 'cancelled' stay as-is
+            const dispStatus=['completed','cancelled'].includes(raw)?raw:'upcoming';
+            TRIPS.push({
+              id:d.ref||d._docId,service:d.serviceLabel||'Airport Transfer',
+              pickup:d.pickup||'',dropoff:d.airport||d.dropoff||'',
+              date:d.date||'',time:d.time||'',vehicle:d.vehicle||'Mercedes S-Class',
+              status:dispStatus,rawStatus:raw,price:'£'+(d.price||0),
+              driver:d.driverName||'TBA',rating:d.driverRating||4.9,
+              plate:d.driverPlate||'',flight:d.flight||''
+            });
+          });
           if(['home','trips'].includes(state.screen))render();
         },()=>{});
       // Watch latest booking for real-time status
@@ -4241,7 +4595,19 @@ if(FIREBASE_ENABLED){
       }
       watchLatestBooking();
       state._loginErr=null;
-      if(state.screen==='login')loginTransition();else if(state.screen==='splash')go('home');else render();
+      // Resume pending screen (e.g. payment gate intercepted before login)
+      if(state._pendingScreen){
+        const next=state._pendingScreen, pay=state._pendingPayment;
+        state._pendingScreen=null; state._pendingPayment=null;
+        go(next);
+        if(pay==='arrival') setTimeout(payOnArrival, 500);
+      } else if(state.screen==='login'){
+        loginTransition();
+      } else if(state.screen==='splash'){
+        go('home');
+      } else {
+        render();
+      }
       // Register FCM push token
       if('serviceWorker' in navigator && FIREBASE_ENABLED){
         navigator.serviceWorker.register('/firebase-messaging-sw.js')
@@ -4346,6 +4712,7 @@ function formatEtaMin(s){
 }
 
 function render(){
+  document.body.setAttribute('data-screen',state.screen);
   const fn=screens[state.screen];
   app.innerHTML=fn?fn():`<div style="padding:40px;text-align:center;color:var(--fg-4)">Screen not found</div>`;
   if(state.screen==='home') setTimeout(initMap,60);
