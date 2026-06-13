@@ -2944,38 +2944,36 @@ guide: () => {
   const isLast = step === 3;
 
   return `
-<div style="height:100vh;background:var(--bg);display:flex;flex-direction:column;overflow:hidden;position:relative"
+<div style="height:100vh;background:#050505;display:flex;flex-direction:column;overflow:hidden;position:relative"
   ontouchstart="state._gTx=event.touches[0].clientX"
   ontouchend="const dx=state._gTx-(event.changedTouches[0]?.clientX||state._gTx);if(dx>52)nextGuideStep();else if(dx<-52&&${step}>0){state.guideStep=${step}-1;render();}">
-  <div class="aurora"><i></i><i></i><i></i></div>
-  <div style="position:absolute;inset:0;background:radial-gradient(ellipse 80% 45% at 50% 108%,rgba(200,169,126,.07),transparent);pointer-events:none;z-index:1"></div>
 
-  <!-- Skip -->
-  <div style="position:absolute;top:clamp(48px,12vw,60px);right:22px;z-index:20;animation:fadeIn .5s .7s both">
-    <button onclick="skipGuide()" style="background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:7px 16px;font-size:12px;font-weight:600;color:var(--fg-3);cursor:pointer;font-family:inherit;letter-spacing:.2px">Skip</button>
-  </div>
-
-  <!-- Visual area -->
-  <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:0 22px 8px;position:relative;z-index:2;overflow:hidden">
-    ${visuals[step]}
+  <!-- Video background (top half) -->
+  <div style="position:relative;flex:1;overflow:hidden;min-height:0">
+    <video autoplay muted loop playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0" src="/guide-bg.mp4"></video>
+    <div style="position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,.2) 0%,rgba(5,5,5,1) 100%);z-index:1;pointer-events:none"></div>
+    <!-- Skip -->
+    <div style="position:absolute;top:clamp(48px,12vw,60px);right:22px;z-index:20;animation:fadeIn .5s .7s both">
+      <button onclick="skipGuide()" style="background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.15);border-radius:20px;padding:7px 16px;font-size:12px;font-weight:600;color:rgba(255,255,255,.7);cursor:pointer;font-family:inherit;letter-spacing:.2px;backdrop-filter:blur(8px)">Skip</button>
+    </div>
   </div>
 
   <!-- Content area -->
-  <div style="flex-shrink:0;padding:0 28px max(44px,calc(env(safe-area-inset-bottom)+24px));z-index:2;background:linear-gradient(to top,var(--bg) 78%,transparent);padding-top:20px">
+  <div style="flex-shrink:0;padding:0 28px max(44px,calc(env(safe-area-inset-bottom)+24px));z-index:2;padding-top:24px;background:#050505">
     <!-- Decorative oversized step number -->
     <div style="font-family:var(--font-serif);font-size:72px;font-weight:300;color:var(--gold);opacity:.1;line-height:1;margin-bottom:-22px;pointer-events:none;user-select:none">${m.num}</div>
     <!-- Title -->
-    <div style="font-family:var(--font-serif);font-size:46px;font-weight:300;letter-spacing:.2px;line-height:1.05;margin-bottom:10px;animation:fadeUp .5s .04s var(--ease-spring) both">${m.title}</div>
+    <div style="font-family:var(--font-serif);font-size:46px;font-weight:300;letter-spacing:.2px;line-height:1.05;margin-bottom:10px;animation:fadeUp .5s .04s var(--ease-spring) both;color:#fff">${m.title}</div>
     <!-- Description -->
-    <div style="font-size:14px;color:var(--fg-3);line-height:1.65;margin-bottom:26px;animation:fadeUp .5s .1s var(--ease-spring) both;max-width:300px">${m.desc}</div>
+    <div style="font-size:14px;color:rgba(255,255,255,.5);line-height:1.65;margin-bottom:26px;animation:fadeUp .5s .1s var(--ease-spring) both;max-width:300px">${m.desc}</div>
 
     <!-- Progress dots + Next button -->
     <div style="display:flex;align-items:center;justify-content:space-between;animation:fadeUp .4s .18s var(--ease-spring) both">
       <div style="display:flex;align-items:center;gap:6px">
-        ${[0,1,2,3].map(i=>`<div style="height:7px;border-radius:4px;transition:all .38s var(--ease-spring);background:${i===step?'var(--gold)':'var(--fg-6)'};width:${i===step?'24px':'7px'}"></div>`).join('')}
+        ${[0,1,2,3].map(i=>`<div style="height:7px;border-radius:4px;transition:all .38s var(--ease-spring);background:${i===step?'var(--gold)':'rgba(255,255,255,.15)'};width:${i===step?'24px':'7px'}"></div>`).join('')}
       </div>
       <button onclick="${isLast?'skipGuide()':'nextGuideStep()'}"
-        style="width:54px;height:54px;border-radius:50%;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;transition:transform .18s var(--ease-spring),box-shadow .18s;background:${isLast?'linear-gradient(135deg,#C8A97E,#a8884e)':'var(--surface-2)'};border:${isLast?'none':'1px solid var(--border)'};box-shadow:${isLast?'var(--gold-glow)':'none'};color:${isLast?'#0c0b09':'var(--fg)'}">
+        style="width:54px;height:54px;border-radius:50%;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;transition:transform .18s var(--ease-spring),box-shadow .18s;background:${isLast?'linear-gradient(135deg,#C8A97E,#a8884e)':'rgba(255,255,255,.08)'};border:${isLast?'none':'1px solid rgba(255,255,255,.12)'};box-shadow:${isLast?'var(--gold-glow)':'none'};color:${isLast?'#0c0b09':'#fff'}">
         ${isLast
           ?'<svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>'
           :'<svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>'
