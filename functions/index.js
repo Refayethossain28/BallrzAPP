@@ -1,7 +1,7 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 const nodemailer = require('nodemailer');
-const { ApiError, Client, Environment } = require('square');
+const { ApiError, SquareClient: Client, SquareEnvironment: Environment } = require('square');
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -38,7 +38,7 @@ exports.processSquarePayment = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('invalid-argument', 'Missing required fields');
 
   try {
-    const { result } = await squareClient.paymentsApi.createPayment({
+    const { result } = await squareClient.payments.create({
       sourceId,
       idempotencyKey: `${bookingRef}-${Date.now()}`,
       amountMoney: { amount: Math.round(amount * 100), currency: 'GBP' },
@@ -206,7 +206,7 @@ exports.handleCancellation = functions.https.onCall(async (data, context) => {
 
   if (b.squarePaymentId && fee === 0) {
     try {
-      await squareClient.refundsApi.refundPayment({
+      await squareClient.refunds.refundPayment({
         idempotencyKey: `refund-${bookingRef}-${Date.now()}`,
         paymentId: b.squarePaymentId,
         amountMoney: { amount: Math.round((b.price || 0) * 100), currency: 'GBP' },
