@@ -4419,25 +4419,29 @@ async function confirmBooking(overrideRef){
         paPassenger: state.paMode ? state.paPassenger : null,
         createdAt:firebase.firestore.FieldValue.serverTimestamp()
       });
-      // Instant broadcast mode: offer the booking to every online driver
-      // immediately — first driver to accept claims it
+      // Broadcast booking to all online drivers — first to accept claims it.
+      // Default is broadcast; admin can switch to manual in settings.
       try{
         const modeDoc=await db.collection('settings').doc('dispatch').get();
-        if(modeDoc.exists&&modeDoc.data().mode==='broadcast'){
+        const mode=modeDoc.exists?modeDoc.data().mode:'broadcast';
+        if(mode!=='manual'){
           await db.collection('open_jobs').add({
             bookingDocId:_bookingDoc.id,bookingRef:ref,
             clientName:state.user?.name||'',
+            serviceType:state.booking.serviceType||'airport',
+            serviceLabel:svcLabel,
             pickup:state.booking.pickup||'',
             dropoff:state.booking.dropoff||state.booking.airport||'',
             date:state.booking.date||'',time:state.booking.time||'',
             vehicle:state.booking.vehicle||'Mercedes S-Class',
             pay:total,flight:state.booking.flight||'',
+            notes:state.booking.concierge?.instructions||'',
             status:'open',driverId:'',
             createdAt:firebase.firestore.FieldValue.serverTimestamp()
           });
           await _bookingDoc.update({status:'offered'});
         }
-      }catch(e){/* broadcast is best-effort; admin can still dispatch manually */}
+      }catch(e){console.warn('Broadcast:',e.message);/* admin can still dispatch manually */}
     }catch(err){console.warn('Booking save:',err.message);}
   }
   state._confirmedRef=ref;state._promoApplied=false;state._squarePaymentId=null;
