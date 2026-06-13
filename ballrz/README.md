@@ -51,6 +51,28 @@ npx expo start
 Scan the QR code with the **Expo Go** app (iOS/Android), or press `i` / `a`
 for a simulator/emulator.
 
+### No computer? Build & install from the cloud (phone-only)
+
+You don't need a dev machine to get a real installable app — Expo Application
+Services (EAS) builds it in the cloud:
+
+1. Create a free account at [expo.dev](https://expo.dev)
+2. Connect this GitHub repo (expo.dev → your project → **GitHub** → install the
+   Expo GitHub App and pick `Refayethossain28/BallrzAPP`)
+3. Add your Firebase values as EAS **environment variables** (Project →
+   Environment variables — same `EXPO_PUBLIC_*` names as `.env`)
+4. Start a build from the dashboard: **Build → New build → Android → preview
+   profile**. EAS produces an installable **APK**.
+5. When it finishes, open the build's page on your phone and tap **Install**
+   (Android: allow "install from this source"). The app is now on your phone,
+   backed by your real Firebase project.
+
+> iOS installs need an Apple Developer account ($99/yr) + TestFlight. Android
+> APK sideloading is free, so it's the fastest phone-only route.
+
+The `eas.json` in this folder already defines the `preview` (APK) and
+`production` build profiles.
+
 ## Data model (Firestore)
 
 ```
