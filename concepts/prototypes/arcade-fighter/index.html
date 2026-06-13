@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Brawlers '94" />
+<meta name="theme-color" content="#05060a" />
 <title>STREET BRAWLERS '94 — arcade fighter (prototype)</title>
 <style>
   :root{ --bg:#05060a; --ink:#fdf6e3; --muted:#8a97ab; --accent:#ffcc33; }
@@ -15,7 +20,8 @@
     height:100%;gap:10px;padding:10px}
   #stage{position:relative;width:min(96vw,900px);aspect-ratio:16/9;
     border:3px solid #2a2f3a;border-radius:10px;overflow:hidden;
-    box-shadow:0 0 0 4px #11141c,0 18px 50px rgba(0,0,0,.6);background:#000}
+    box-shadow:0 0 0 4px #11141c,0 18px 50px rgba(0,0,0,.6);background:#000;
+    touch-action:none}
   canvas{display:block;width:100%;height:100%;image-rendering:pixelated;
     image-rendering:crisp-edges}
   #hint{font-size:11px;color:var(--muted);text-align:center;line-height:1.6;
@@ -23,11 +29,50 @@
   #hint b{color:var(--accent)}
   kbd{display:inline-block;background:#1a1f2b;border:1px solid #313a4a;border-bottom-width:2px;
     border-radius:4px;padding:0 5px;font-size:10px;color:var(--ink);margin:0 1px}
+
+  /* ---- on-screen touch controls (shown only on touch devices) ---- */
+  #pad{display:none}
+  body.touch #pad{display:block}
+  body.touch #hint{display:none}
+  body.touch #rotate{display:block}
+  #rotate{display:none;font-size:11px;color:var(--accent);text-align:center}
+  #pad .b{position:absolute;display:flex;align-items:center;justify-content:center;
+    width:13%;max-width:78px;aspect-ratio:1;border-radius:50%;
+    background:rgba(20,26,40,.5);border:2px solid rgba(255,255,255,.28);
+    color:#fdf6e3;font:bold 15px/1 "Courier New",monospace;letter-spacing:.5px;
+    touch-action:none;-webkit-user-select:none;user-select:none;
+    -webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);
+    box-shadow:0 2px 9px rgba(0,0,0,.45);z-index:5}
+  #pad .b:active{background:rgba(255,204,51,.55);color:#1a1209;transform:scale(.93)}
+  /* movement cross — bottom-left */
+  #bUp{left:14%;bottom:30%}  #bDown{left:14%;bottom:3%}
+  #bLeft{left:2%;bottom:16%} #bRight{left:26%;bottom:16%}
+  /* action buttons — bottom-right */
+  #bP{right:24%;bottom:4%;background:rgba(58,160,255,.42)}
+  #bK{right:5%;bottom:4%;background:rgba(232,65,58,.42)}
+  #bS{right:14%;bottom:30%;background:rgba(155,107,255,.45)}
+  /* mode toggle — only on title */
+  #bMode{display:none;top:4%;left:50%;transform:translateX(-50%);
+    width:auto;aspect-ratio:auto;border-radius:999px;padding:7px 14px;font-size:12px}
+  body.touch.in-menu #bMode{display:flex}
 </style>
 </head>
 <body>
 <div id="wrap">
-  <div id="stage"><canvas id="cv" width="800" height="450"></canvas></div>
+  <div id="stage">
+    <canvas id="cv" width="800" height="450"></canvas>
+    <div id="pad">
+      <div class="b" id="bUp">JUMP</div>
+      <div class="b" id="bDown">DUCK</div>
+      <div class="b" id="bLeft">◀</div>
+      <div class="b" id="bRight">▶</div>
+      <div class="b" id="bP">P</div>
+      <div class="b" id="bK">K</div>
+      <div class="b" id="bS">SP</div>
+      <div class="b" id="bMode">MODE</div>
+    </div>
+  </div>
+  <div id="rotate">↻ Rotate to landscape &amp; tap to start · add to Home Screen for fullscreen</div>
   <div id="hint">
     <b>P1</b> <kbd>A</kbd><kbd>D</kbd> move · <kbd>W</kbd> jump · <kbd>S</kbd> crouch ·
     <kbd>J</kbd> punch · <kbd>K</kbd> kick · <kbd>L</kbd> special &nbsp;|&nbsp;
@@ -760,6 +805,7 @@ G.fl=0;
    RENDERING
 ========================================================================== */
 function render(){
+  if(typeof syncMenuClass==='function') syncMenuClass();
   ctx.save();
   // screen shake
   if(G.shake>0.5){ ctx.translate((Math.random()-0.5)*G.shake, (Math.random()-0.5)*G.shake); }
@@ -1166,8 +1212,45 @@ function roundRect(x,y,w,h,r){
 }
 
 /* ============================================================================
+   TOUCH CONTROLS — map on-screen buttons onto the same key codes the game
+   already reads, so all input plumbing (edge detection, menus) is reused.
+========================================================================== */
+const TOUCH = ('ontouchstart' in window) || navigator.maxTouchPoints>0;
+if(TOUCH) document.body.classList.add('touch');
+
+function press(code){ ac(); keys[code]=true; handleMenuKey(code); }
+function release(code){ keys[code]=false; }
+function bindBtn(id, code){
+  const el=document.getElementById(id); if(!el) return;
+  const down=e=>{ e.preventDefault(); e.stopPropagation(); press(code); };
+  const up  =e=>{ e.preventDefault(); e.stopPropagation(); release(code); };
+  el.addEventListener('touchstart', down, {passive:false});
+  el.addEventListener('touchend',   up,   {passive:false});
+  el.addEventListener('touchcancel',up,   {passive:false});
+  el.addEventListener('mousedown',  down);
+  el.addEventListener('mouseup',    up);
+  el.addEventListener('mouseleave', up);
+}
+bindBtn('bLeft', P1MAP.left);  bindBtn('bRight', P1MAP.right);
+bindBtn('bUp',   P1MAP.up);    bindBtn('bDown',  P1MAP.down);
+bindBtn('bP',    P1MAP.punch); bindBtn('bK',     P1MAP.kick);
+bindBtn('bS',    P1MAP.special); bindBtn('bMode', 'KeyM');
+
+// tapping the stage confirms on menu/result screens (Enter)
+cv.addEventListener('touchstart', e=>{
+  if(G.scene==='title' || G.scene==='matchend'){ e.preventDefault(); press('Enter'); release('Enter'); }
+}, {passive:false});
+cv.addEventListener('mousedown', ()=>{
+  if(G.scene==='title' || G.scene==='matchend'){ press('Enter'); release('Enter'); }
+});
+
+// show the MODE button only on the title screen
+function syncMenuClass(){ document.body.classList.toggle('in-menu', G.scene==='title'); }
+
+/* ============================================================================
    GO
 ========================================================================== */
+syncMenuClass();
 requestAnimationFrame(loop);
 </script>
 </body>

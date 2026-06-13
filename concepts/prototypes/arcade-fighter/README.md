@@ -38,6 +38,15 @@ well served from any static host.) Click or press a key once to enable sound.
 - `Enter` confirms menus, `Esc` backs out, `M` on the title toggles
   **1P-vs-CPU** ↔ **1P-vs-2P**.
 
+### On iPhone / touch devices
+
+On a touch device the keyboard hints are replaced by an **on-screen gamepad**:
+a movement cross (JUMP / DUCK / ◀ / ▶) bottom-left and **P / K / SP** buttons
+bottom-right. **Tap the screen** to start or to play again, and a **MODE**
+button appears on the title screen. Best experience: **rotate to landscape**,
+then in Safari use **Share → Add to Home Screen** and launch from the icon for
+a fullscreen, no-chrome arcade feel. (Tap once first to enable sound.)
+
 ## What's implemented
 
 - **Title → character select → match** flow with an animated menu.
