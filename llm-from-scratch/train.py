@@ -15,7 +15,7 @@ import numpy as np
 
 from model import GPT, GPTConfig
 from optim import Adam, clip_grad_norm
-from tokenizer import CharTokenizer
+from tokenizer import BPETokenizer, CharTokenizer
 
 
 def get_batch(data, block_size, batch_size, rng):
@@ -39,6 +39,10 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--data", default="data/input.txt")
     p.add_argument("--out", default="ckpt.npz")
+    p.add_argument("--tokenizer", choices=["char", "bpe"], default="char",
+                   help="char = one token per character; bpe = learned subwords")
+    p.add_argument("--vocab_size", type=int, default=512,
+                   help="target vocabulary size for the bpe tokenizer")
     p.add_argument("--steps", type=int, default=2000)
     p.add_argument("--batch_size", type=int, default=16)
     p.add_argument("--block_size", type=int, default=64)
@@ -61,7 +65,11 @@ def main():
     with open(args.data, "r", encoding="utf-8") as f:
         text = f.read()
 
-    tok = CharTokenizer.from_text(text)
+    if args.tokenizer == "bpe":
+        print(f"training bpe tokenizer (target vocab {args.vocab_size})...")
+        tok = BPETokenizer.train(text, vocab_size=args.vocab_size)
+    else:
+        tok = CharTokenizer.from_text(text)
     data = np.array(tok.encode(text), dtype=np.int64)
     n = int(0.9 * len(data))
     train_data, val_data = data[:n], data[n:]

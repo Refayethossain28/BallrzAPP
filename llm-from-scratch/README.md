@@ -16,7 +16,8 @@ minutes on a CPU.
 | `autograd.py` | A reverse-mode automatic differentiation engine over NumPy arrays. A `Tensor` records the ops performed on it; `.backward()` walks the graph in reverse topological order and fills in gradients. This is the foundation everything else stands on. |
 | `nn.py` | Neural-net building blocks composed from the autograd primitives: `Linear`, `Embedding`, `LayerNorm`, `gelu`, and multi-head `CausalSelfAttention`. |
 | `model.py` | The `GPT` model — token + positional embeddings, a stack of pre-norm transformer blocks, a final layernorm, and a linear head to vocabulary logits. Plus autoregressive `generate()` and checkpointing. |
-| `tokenizer.py` | A character-level tokenizer (one token per distinct character). |
+| `tokenizer.py` | Two tokenizers: a character-level one, and a from-scratch **byte-pair encoding (BPE)** tokenizer that learns a subword vocabulary. |
+| `fetch_data.py` | Helper to download a larger corpus (tiny Shakespeare) or concatenate a folder of `.txt` files into one. |
 | `optim.py` | The Adam optimizer and gradient-norm clipping, implemented from scratch. |
 | `train.py` | The training loop: batch sampling, forward, backprop, optimizer step, evaluation, checkpointing. |
 | `sample.py` | Load a checkpoint and generate text from a prompt. |
@@ -76,11 +77,35 @@ python sample.py --prompt "The game" --tokens 400
 python chat.py
 ```
 
-Train on your own text by pointing `--data` at any UTF-8 file:
+## Training on more / your own data
+
+The tokenizer builds its vocabulary from whatever text you train on, so "more
+data" just means a bigger file — no code changes needed.
 
 ```bash
+# Any UTF-8 text file
 python train.py --data path/to/your.txt --steps 3000 --block_size 128
+
+# Grab a bigger classic corpus (~1 MB)
+python fetch_data.py shakespeare
+python train.py --data data/shakespeare.txt --tokenizer bpe \
+    --steps 5000 --n_layer 6 --n_embd 256 --block_size 128
+
+# Or combine a whole folder of .txt files into one corpus
+python fetch_data.py concat /path/to/texts data/corpus.txt
+python train.py --data data/corpus.txt --tokenizer bpe --steps 8000
 ```
+
+### Char vs. BPE tokenizer
+
+`--tokenizer char` (default) uses one token per character: tiny vocab, but the
+model must learn everything from single characters and sequences are long.
+
+`--tokenizer bpe` learns a subword vocabulary by repeatedly merging the most
+frequent adjacent pair (set the size with `--vocab_size`). Tokens become whole
+common words and word-pieces, so the model sees more meaningful units and fewer
+tokens per sentence — this is what real LLMs use, and it noticeably improves
+output quality on anything larger than the toy corpus.
 
 ### Useful flags (`train.py`)
 

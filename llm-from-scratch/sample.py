@@ -11,7 +11,7 @@ import argparse
 import numpy as np
 
 from model import GPT, GPTConfig
-from tokenizer import CharTokenizer
+from tokenizer import load_tokenizer
 
 
 def parse_args():
@@ -29,7 +29,7 @@ def main():
     args = parse_args()
     ck = np.load(args.ckpt, allow_pickle=True)
     config = GPTConfig(**ck["config"][0])
-    tok = CharTokenizer.from_json(ck["tokenizer"][0])
+    tok = load_tokenizer(ck["tokenizer"][0])
 
     model = GPT(config)
     model.load_state(list(ck["params"]))
