@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LLM from scratch — in the browser</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; background: #0b0e14; color: #e6e6e6;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      display: flex; justify-content: center; padding: 24px;
+    }
+    .wrap { width: 100%; max-width: 760px; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    .sub { color: #8b93a7; font-size: 13px; margin-bottom: 20px; }
+    .card { background: #131722; border: 1px solid #232838; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    label { display: block; font-size: 12px; color: #8b93a7; margin-bottom: 6px; }
+    textarea {
+      width: 100%; min-height: 70px; resize: vertical; background: #0b0e14; color: #e6e6e6;
+      border: 1px solid #2a3043; border-radius: 8px; padding: 10px; font-size: 14px; font-family: inherit;
+    }
+    .row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; margin-top: 12px; }
+    .ctrl { flex: 1; min-width: 120px; }
+    input[type=range] { width: 100%; }
+    .val { color: #e6e6e6; font-size: 12px; }
+    button {
+      background: #f5a524; color: #1a1300; border: 0; border-radius: 8px;
+      padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    button:disabled { opacity: .5; cursor: default; }
+    pre {
+      white-space: pre-wrap; word-break: break-word; background: #0b0e14;
+      border: 1px solid #232838; border-radius: 8px; padding: 14px; min-height: 120px;
+      font-size: 14px; line-height: 1.5; margin: 0;
+    }
+    .gen { color: #f5a524; }
+    .status { font-size: 12px; color: #8b93a7; margin-top: 8px; }
+    code { color: #8ab4ff; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>LLM from scratch — running in your browser</h1>
+    <div class="sub">A tiny GPT, trained in NumPy and exported to run entirely in JavaScript. No server, no API.</div>
+
+    <div class="card">
+      <label for="prompt">Prompt</label>
+      <textarea id="prompt">The game</textarea>
+      <div class="row">
+        <div class="ctrl">
+          <label>Tokens to generate: <span id="ntok" class="val">200</span></label>
+          <input id="tokens" type="range" min="20" max="500" step="10" value="200" />
+        </div>
+        <div class="ctrl">
+          <label>Temperature: <span id="tval" class="val">0.8</span></label>
+          <input id="temp" type="range" min="0.1" max="1.5" step="0.1" value="0.8" />
+        </div>
+        <div class="ctrl">
+          <label>Top-k: <span id="kval" class="val">20</span></label>
+          <input id="topk" type="range" min="1" max="60" step="1" value="20" />
+        </div>
+        <button id="go" disabled>Generate</button>
+      </div>
+      <div id="status" class="status">Loading model…</div>
+    </div>
+
+    <div class="card">
+      <pre id="out"></pre>
+    </div>
+  </div>
+
+  <!--INLINE_MODEL-->
+  <script src="gpt.js"></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const statusEl = $("status"), outEl = $("out"), goBtn = $("go");
+    let model = null;
+
+    bind("tokens", "ntok"); bind("temp", "tval"); bind("topk", "kval");
+    function bind(slider, label) {
+      const s = $(slider), l = $(label);
+      s.addEventListener("input", () => { l.textContent = s.value; });
+    }
+
+    async function loadSpec() {
+      // Prefer an inlined model (standalone llm.html); otherwise fetch model.json.
+      const inline = document.getElementById("inline-model");
+      if (inline) return JSON.parse(inline.textContent);
+      const res = await fetch("model.json");
+      if (!res.ok) throw new Error("could not fetch model.json (run a local server or use llm.html)");
+      return res.json();
+    }
+
+    (async function init() {
+      try {
+        const spec = await loadSpec();
+        model = new GPTLib.Model(spec);
+        const c = spec.config;
+        statusEl.innerHTML = `Ready — ${c.n_layer} layers, ${c.n_embd} dim, ` +
+          `vocab ${c.vocab_size}, context ${c.block_size}, ` +
+          `tokenizer <code>${spec.tokenizer.type}</code>.`;
+        goBtn.disabled = false;
+      } catch (e) {
+        statusEl.textContent = "Error: " + e.message;
+      }
+    })();
+
+    goBtn.addEventListener("click", () => {
+      if (!model) return;
+      goBtn.disabled = true;
+      const prompt = $("prompt").value;
+      const nTokens = +$("tokens").value;
+      const opts = { temperature: +$("temp").value, topK: +$("topk").value };
+      outEl.innerHTML = "";
+      outEl.appendChild(document.createTextNode(prompt));
+      const genSpan = document.createElement("span");
+      genSpan.className = "gen";
+      outEl.appendChild(genSpan);
+      statusEl.textContent = "Generating…";
+
+      // Run incrementally so the UI can paint each token as it arrives.
+      let ids = model.tokenizer.encode(prompt);
+      if (ids.length === 0) ids = [model.tokenizer.stoi["\n"] || 0];
+      let n = 0;
+      const t0 = performance.now();
+      function step() {
+        if (n >= nTokens) {
+          const dt = (performance.now() - t0) / 1000;
+          statusEl.textContent = `Done — ${nTokens} tokens in ${dt.toFixed(1)}s ` +
+            `(${(nTokens / dt).toFixed(0)} tok/s).`;
+          goBtn.disabled = false;
+          return;
+        }
+        const logits = model.logitsForLast(ids);
+        const next = sampleFrom(logits, opts.temperature, opts.topK);
+        ids.push(next);
+        genSpan.textContent += model.tokenizer.decode([next]);
+        n++;
+        setTimeout(step, 0);
+      }
+      step();
+    });
+
+    // Mirror of the sampler in gpt.js, exposed here for incremental UI updates.
+    function sampleFrom(logits, temperature, topK) {
+      const n = logits.length, z = new Float32Array(n);
+      for (let i = 0; i < n; i++) z[i] = logits[i] / Math.max(temperature, 1e-6);
+      if (topK && topK < n) {
+        const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => z[b] - z[a]);
+        const kth = z[order[topK - 1]];
+        for (let i = 0; i < n; i++) if (z[i] < kth) z[i] = -Infinity;
+      }
+      let maxv = -Infinity;
+      for (let i = 0; i < n; i++) if (z[i] > maxv) maxv = z[i];
+      let sum = 0;
+      for (let i = 0; i < n; i++) { z[i] = Math.exp(z[i] - maxv); sum += z[i]; }
+      let r = Math.random() * sum;
+      for (let i = 0; i < n; i++) { r -= z[i]; if (r <= 0) return i; }
+      return n - 1;
+    }
+  </script>
+</body>
+</html>
