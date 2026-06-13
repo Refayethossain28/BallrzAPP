@@ -38,6 +38,19 @@ The HUD shows your live skill estimate, the served level's difficulty, the
 predicted win, and a sparkline of your actual pass-rate converging toward the
 flow target.
 
+**Retention hooks** (build-order step 4):
+
+- **Daily challenge** — the default mode. Today's date seeds the run, so the
+  generated levels are identical for everyone playing today — a reason to come
+  back at a set time, and a fair basis for comparing scores.
+- **Shareable seed** — *Copy challenge link* puts `?seed=…` on the URL; opening
+  that link reproduces the exact same run (same pool, same selection order).
+  A lightweight social hook with no server and no social graph.
+- **Cosmetic progression** — ring skins unlock at lifetime-best thresholds
+  (0 / 25 / 75 / 150), persisted in `localStorage`. They change appearance
+  only, never difficulty, so identity investment can't distort the flow-band
+  fairness. "Free play" gives an unseeded random run for practice.
+
 ## 2. `concierge-split/` — Concept 1, split-the-bill agent action
 
 The smallest *viral* slice of the [AI Life Concierge](../01-ai-life-concierge.md):
@@ -51,10 +64,30 @@ the three architecture rules that matter:
 - **Idempotent execution** — every confirmed split carries an idempotency key;
   re-confirming the same proposal is a guaranteed no-op (no double charge).
 
-> The bill parser is a deterministic stub standing in for the LLM tool-use
-> layer. In production `runAgent()` is a Claude tool-use call returning the same
-> structured proposal object — everything downstream (confirm → idempotent
-> execution → result card) is already real here.
+**Two ways to run it:**
+
+- **Open `index.html` directly** → the bill parser runs as an in-page
+  deterministic stub. Everything downstream (confirm → idempotent execution →
+  result card) is fully real; only the natural-language parse is stubbed.
+- **Run the proxy for live Claude tool-use** (build-order: wire `runAgent()` to
+  a real model):
+
+  ```
+  cd concepts/prototypes/concierge-split
+  ANTHROPIC_API_KEY=sk-ant-... node server.mjs     # or: npm start
+  # open http://localhost:8787
+  ```
+
+  `server.mjs` is a **zero-dependency** Node 18+ proxy (built-in `fetch`/`http`,
+  no `npm install`). It calls Claude (`claude-opus-4-8`) with a **forced
+  `parse_bill` tool call**, so the model does the natural-language understanding
+  (the total + which people are involved) and the **server does the money math
+  deterministically** (even split + exact penny distribution + idempotency key).
+  That division is the doc's core rule made literal — *the LLM is the router;
+  reliable, idempotent tool execution is the product*; the model's arithmetic is
+  never trusted with money. The browser auto-detects the proxy and falls back to
+  the stub if it's absent, so the file always works. The API key stays
+  server-side and never reaches the client.
 
 ---
 

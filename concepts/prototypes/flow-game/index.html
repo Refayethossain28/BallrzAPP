@@ -46,6 +46,17 @@
   .legend{font-size:10px;color:var(--muted);text-align:center;padding-bottom:10px}
   .legend b{color:var(--ink);font-weight:600}
   .pill{display:inline-block;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:600}
+  .btnrow{display:flex;gap:10px}
+  button.cta.ghost{background:#22303a;color:var(--ink)}
+  #cosmetics{display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap}
+  .swatch{width:30px;height:30px;border-radius:50%;border:2px solid #2c3d47;cursor:pointer;
+    position:relative;display:flex;align-items:center;justify-content:center;font-size:11px}
+  .swatch.sel{outline:2px solid #fff;outline-offset:2px}
+  .swatch.locked{cursor:not-allowed;opacity:.45}
+  .swatch .lk{position:absolute;font-size:10px;color:#cfd9e4}
+  .cosline{font-size:10px;color:var(--muted)}
+  button.share{appearance:none;border:1px solid #2c3d47;background:#16202c;color:var(--ink);
+    border-radius:999px;padding:8px 14px;font-size:12px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -63,7 +74,13 @@
          The game silently models your skill and serves the next level to keep
          your win-rate in the <b style="color:var(--band)">flow band (~60%)</b>:
          winnable, never boring, never rage-quit.</p>
-      <button class="cta" id="startBtn">Play</button>
+      <div class="btnrow">
+        <button class="cta" id="dailyBtn">Daily challenge</button>
+        <button class="cta ghost" id="freeBtn">Free play</button>
+      </div>
+      <div class="cosline" id="cosLine">Ring skin — unlocks at your lifetime best</div>
+      <div id="cosmetics"></div>
+      <button class="share" id="shareBtn">🔗 Copy challenge link</button>
       <p style="font-size:11px">Everything below the board is normally invisible —
          it's the engine's internals, surfaced so you can watch it adapt.</p>
     </div>
@@ -118,9 +135,37 @@ function makeRng(seed){
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-const SEED = (Math.random()*1e9)|0;
+/* ---------- seed: daily challenge / shareable / free play ----------
+ * A seed fully determines the session (pool + selection order), so the same
+ * seed reproduces the same run — that's what makes a "daily challenge" and
+ * shareable links work without a server: everyone playing today's seed plays
+ * the same generated levels and can compare scores. */
+function hashStr(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return h>>>0;}
+function dailySeed(){const d=new Date();return hashStr('flow-'+d.getUTCFullYear()+'-'+(d.getUTCMonth()+1)+'-'+d.getUTCDate());}
+const urlSeed = new URLSearchParams(location.search).get('seed');
+let SEED, mode;
+if(urlSeed){ SEED = (parseInt(urlSeed,36)>>>0) || hashStr(urlSeed); mode='shared'; }
+else { SEED = dailySeed(); mode='daily'; }   // default to today's challenge
 let rng = makeRng(SEED);
-document.getElementById('seedLabel').textContent = 'seed ' + SEED.toString(36);
+function setSeedLabel(){
+  document.getElementById('seedLabel').textContent =
+    (mode==='daily'?'daily · ':mode==='shared'?'shared · ':'seed ') + SEED.toString(36);
+}
+setSeedLabel();
+
+/* ---------- cosmetics: identity investment, not pay-to-win ----------
+ * Ring skins unlock at lifetime-best thresholds (persisted locally). They
+ * change appearance only — never difficulty — so they're a retention hook
+ * that can't distort the flow-band fairness. */
+const SKINS=[
+  {id:'aqua',   name:'Aqua',   ring:'#4cc2ff', fill:'rgba(76,194,255,.16)',  need:0},
+  {id:'mint',   name:'Mint',   ring:'#3ddc97', fill:'rgba(61,220,151,.16)',  need:25},
+  {id:'gold',   name:'Gold',   ring:'#ffd166', fill:'rgba(255,209,102,.16)', need:75},
+  {id:'violet', name:'Violet', ring:'#b388ff', fill:'rgba(179,136,255,.16)', need:150},
+];
+let best = +(localStorage.getItem('flow.best')||0);
+let skinId = localStorage.getItem('flow.skin')||'aqua';
+function skin(){ return SKINS.find(s=>s.id===skinId) || SKINS[0]; }
 
 /* ---------- difficulty model ----------
  * A level's intrinsic difficulty d ∈ [0,1] is derived from its gameplay
@@ -213,7 +258,6 @@ function resize(){
 window.addEventListener('resize', resize);
 
 const overlay = document.getElementById('overlay');
-const startBtn = document.getElementById('startBtn');
 
 let state = 'idle';          // idle | playing | over
 let level = null;            // current served level
@@ -252,7 +296,8 @@ function spawnRound(){
 
 function endRound(won){
   updateSkill(level, won);
-  if(won){ score++; streak++; } else { streak=0; }
+  if(won){ score++; streak++; if(score>best){ best=score; localStorage.setItem('flow.best',best); renderCosmetics(); } }
+  else { streak=0; }
   refreshHud();
   drawSpark();
   if(state==='playing') spawnRound();
@@ -337,9 +382,9 @@ function frame(now){
         if(t.y<t.r||t.y>H-t.r){t.vy*=-1;t.y=Math.max(t.r,Math.min(H-t.r,t.y));}
         // draw
         ctx.beginPath();ctx.arc(t.x,t.y,t.r,0,7);
-        ctx.fillStyle = t.decoy ? 'rgba(255,107,107,.18)' : 'rgba(76,194,255,.16)';
+        ctx.fillStyle = t.decoy ? 'rgba(255,107,107,.18)' : skin().fill;
         ctx.fill();
-        ctx.lineWidth=3; ctx.strokeStyle=t.decoy?'#ff6b6b':'#4cc2ff';
+        ctx.lineWidth=3; ctx.strokeStyle=t.decoy?'#ff6b6b':skin().ring;
         ctx.beginPath();ctx.arc(t.x,t.y,t.r,0,7);ctx.stroke();
         // shrinking life ring on the real target
         if(!t.decoy){
@@ -364,7 +409,34 @@ function start(){
   state='playing'; overlay.style.display='none';
   spawnRound(); drawSpark();
 }
-startBtn.addEventListener('click', start);
+function startWith(newSeed, m){ SEED=newSeed; mode=m; setSeedLabel(); start(); }
+document.getElementById('dailyBtn').onclick = ()=> startWith(dailySeed(), 'daily');
+document.getElementById('freeBtn').onclick  = ()=> startWith((Math.random()*1e9)|0, 'free');
+
+/* cosmetics strip: pick an unlocked skin; locked ones show the score needed */
+function renderCosmetics(){
+  const wrap = document.getElementById('cosmetics'); wrap.innerHTML='';
+  for(const s of SKINS){
+    const unlocked = best >= s.need;
+    const d = el('swatch'+(s.id===skinId?' sel':'')+(unlocked?'':' locked'));
+    d.style.background = s.fill; d.style.borderColor = s.ring;
+    d.title = unlocked ? s.name : (s.name+' — reach '+s.need);
+    if(!unlocked){ const lk=el('span lk'); lk.textContent='🔒'; d.appendChild(lk); }
+    d.onclick = ()=>{ if(!unlocked) return; skinId=s.id; localStorage.setItem('flow.skin',s.id); renderCosmetics(); };
+    wrap.appendChild(d);
+  }
+  document.getElementById('cosLine').textContent =
+    'Ring skin — lifetime best '+best+' · unlocks at 0 / 25 / 75 / 150';
+}
+renderCosmetics();
+
+/* share the current seed as a deep link (same generated run for anyone) */
+document.getElementById('shareBtn').onclick = async ()=>{
+  const url = location.origin + location.pathname + '?seed=' + SEED.toString(36);
+  try{ await navigator.clipboard.writeText(url); }catch(_){}
+  const b = document.getElementById('shareBtn'); const t=b.textContent;
+  b.textContent='✓ Link copied'; setTimeout(()=>b.textContent=t, 1400);
+};
 
 resize();
 requestAnimationFrame(frame);

@@ -128,9 +128,33 @@ function bubble(who, text, mine){
 }
 function sys(text){ thread.appendChild(el('sys', text)); scroll(); }
 
-/* ---------- the agent (LLM tool-use layer, stubbed) ----------
+/* ---------- the agent ----------
+ * callAgent() tries the REAL Claude tool-use call via the local proxy
+ * (server.mjs) and falls back to the in-page deterministic stub when no
+ * server/key is present — so this file works opened directly OR served live.
+ * Either path returns the same structured proposal shape. */
+let agentMode = 'stub';   // 'claude' once a live call succeeds
+async function callAgent(text){
+  try{
+    const r = await fetch('/agent', {
+      method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({text})
+    });
+    if(!r.ok) throw new Error('proxy '+r.status);
+    const data = await r.json();
+    if(!data.ok) throw new Error(data.error||'agent error');
+    agentMode = 'claude';
+    return data.proposal;       // may be null if Claude saw nothing actionable
+  }catch(_){
+    agentMode = 'stub';
+    return runAgent(text);      // offline fallback — identical proposal shape
+  }
+}
+
+/* ---------- the agent (deterministic stub / LLM tool-use stand-in) ----------
  * Parses an amount + a set of named people from free text and returns a
- * structured split proposal. Returns null if there's nothing to act on. */
+ * structured split proposal. Returns null if there's nothing to act on.
+ * This is the fallback; server.mjs replaces it with a real Claude tool call. */
 function runAgent(text){
   const amtMatch = text.replace(/,/g,'').match(/\$?\s*(\d+(?:\.\d{1,2})?)/);
   if(!amtMatch) return null;
@@ -230,12 +254,14 @@ function handleUser(text){
   // exactly like the doc's "@assistant or implicit trigger".
   const typing = el('msg them typing', 'assistant is reading the thread…');
   thread.appendChild(typing); scroll();
-  setTimeout(()=>{
+  callAgent(text).then(prop=>{
     typing.remove();
-    const prop = runAgent(text);
     if(prop) postProposal(prop);
     else sys('(no actionable bill detected — the agent stays quiet)');
-  }, 520);
+    sys(agentMode==='claude'
+      ? '· parsed by live Claude tool-use ·'
+      : '· offline stub (run server.mjs with an API key for live Claude) ·');
+  });
 }
 
 document.getElementById('send').onclick = fire;
