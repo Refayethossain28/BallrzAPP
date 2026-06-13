@@ -122,6 +122,7 @@ input,select,textarea{font-size:16px !important}
 @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
 @keyframes fadeDown{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
 @keyframes slideUp{from{opacity:0;transform:translateY(28px)}to{opacity:1;transform:translateY(0)}}
+@keyframes micPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.65;transform:scale(1.1)}}
 @keyframes slideUpSheet{from{transform:translateY(100%)}to{transform:translateY(0)}}
 @keyframes scaleIn{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
 @keyframes logoReveal{
@@ -1024,6 +1025,45 @@ async function sendConciergeMsg() {
     const el = document.getElementById('concierge-msgs');
     if (el) el.scrollTop = el.scrollHeight;
   }, 60);
+}
+
+// ── Voice Input ────────────────────────────────────────────────────────────
+let _voiceRecording = false;
+let _voiceRecognizer = null;
+
+function startVoiceInput() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    const inp = document.getElementById('concierge-inp');
+    if (inp) { inp.placeholder = 'Voice not supported — type here'; inp.focus(); }
+    return;
+  }
+  if (_voiceRecording && _voiceRecognizer) {
+    _voiceRecognizer.stop();
+    return;
+  }
+  const rec = new SR();
+  _voiceRecognizer = rec;
+  rec.lang = 'en-GB';
+  rec.continuous = false;
+  rec.interimResults = true;
+  rec.maxAlternatives = 1;
+  _voiceRecording = true;
+  render();
+  rec.onresult = e => {
+    const transcript = Array.from(e.results).map(r => r[0].transcript).join('');
+    const inp = document.getElementById('concierge-inp');
+    if (inp) inp.value = transcript;
+    if (e.results[e.results.length - 1].isFinal) {
+      _voiceRecording = false;
+      _voiceRecognizer = null;
+      render();
+      setTimeout(sendConciergeMsg, 350);
+    }
+  };
+  rec.onerror = () => { _voiceRecording = false; _voiceRecognizer = null; render(); };
+  rec.onend   = () => { _voiceRecording = false; _voiceRecognizer = null; render(); };
+  rec.start();
 }
 
 function conciergeReview() {
@@ -3183,14 +3223,25 @@ profile: () => {
     ${_conciergeLoading ? `<div style="align-self:flex-start"><div style="background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:12px 18px;font-size:20px;letter-spacing:4px;color:var(--fg-3)">···</div></div>` : ''}
     ${state._conciergeParsed ? `<button class="btn btn-gold" style="margin-top:8px" onclick="conciergeReview()">Review &amp; Confirm Booking →</button>` : ''}
   </div>
-  <div style="padding:16px 20px 34px;border-top:1px solid var(--divider);background:var(--bg);position:sticky;bottom:0">
-    <div class="field" style="display:flex;align-items:center;gap:10px;padding:12px 16px">
-      <input id="concierge-inp" placeholder="Tell me where you'd like to go…" style="flex:1;font-size:15px"
+  <div style="padding:12px 20px calc(env(safe-area-inset-bottom,0px) + 20px);border-top:1px solid var(--divider);background:var(--bg);position:sticky;bottom:0">
+    <div class="field" style="display:flex;align-items:center;gap:8px;padding:10px 14px">
+      <!-- Mic button -->
+      <button onclick="startVoiceInput()" title="Voice input"
+        style="background:${_voiceRecording?'#ff3b30':'var(--surface-2)'};border:1px solid ${_voiceRecording?'#ff3b30':'var(--border)'};border-radius:10px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;transition:background .2s,border-color .2s;${_voiceRecording?'animation:micPulse .75s ease-in-out infinite':''}">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="${_voiceRecording?'#fff':'var(--fg-3)'}" xmlns="http://www.w3.org/2000/svg">
+          <rect x="9" y="2" width="6" height="11" rx="3"/>
+          <path d="M5 11a7 7 0 0 0 14 0" stroke="${_voiceRecording?'#fff':'var(--fg-3)'}" stroke-width="2" fill="none" stroke-linecap="round"/>
+          <line x1="12" y1="18" x2="12" y2="22" stroke="${_voiceRecording?'#fff':'var(--fg-3)'}" stroke-width="2" stroke-linecap="round"/>
+          <line x1="9" y1="22" x2="15" y2="22" stroke="${_voiceRecording?'#fff':'var(--fg-3)'}" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <input id="concierge-inp" placeholder="${_voiceRecording?'Listening…':'Tell me where you\'d like to go…'}" style="flex:1;font-size:15px"
         onkeydown="if(event.key==='Enter'){sendConciergeMsg();event.preventDefault()}"/>
       <button onclick="sendConciergeMsg()" style="background:#D4A843;border:none;border-radius:10px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#000" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5M5 12l7-7 7 7"/></svg>
       </button>
     </div>
+    ${_voiceRecording ? `<div style="text-align:center;font-size:11px;color:#ff3b30;letter-spacing:.5px;margin-top:2px;animation:micPulse .75s ease-in-out infinite">● Recording — speak now</div>` : ''}
   </div>
 </div>`,
 
