@@ -1,25 +1,22 @@
 // ApexVIP Service Worker — Push Notifications + Offline PWA shell
-// Version 3.0
+// Version 4.0
 
-const CACHE_NAME = 'apexvip-v5';
+const CACHE_NAME = 'apexvip-v6';
+const BASE = '/BallrzAPP';
 const OFFLINE_URLS = [
-  '/apexvip-client.html',
-  '/apexvip-driver.html',
-  '/apexvip-dubai.html',
-  '/apexvip-admin.html',
-  '/apexvip-core.js',
-  '/firebase.js',
-  '/manifest.json',
-  '/manifest-driver.json',
-  '/manifest-admin.json',
-  '/manifest-dubai.json',
-  '/icon-60.png',
-  '/icon-120.png',
-  '/icon-152.png',
-  '/icon-167.png',
-  '/icon-180.png',
-  '/icon-192.png',
-  '/icon-512.png',
+  BASE + '/apexvip-client.html',
+  BASE + '/apexvip-driver.html',
+  BASE + '/apexvip-admin.html',
+  BASE + '/apexvip-core.js',
+  BASE + '/firebase.js',
+  BASE + '/manifest.json',
+  BASE + '/manifest-driver.json',
+  BASE + '/icon-120.png',
+  BASE + '/icon-152.png',
+  BASE + '/icon-167.png',
+  BASE + '/icon-180.png',
+  BASE + '/icon-192.png',
+  BASE + '/icon-512.png',
 ];
 
 // ── Install: pre-cache the app shell ──────────────────────────────────────────
@@ -60,8 +57,6 @@ self.addEventListener('fetch', event => {
 });
 
 // ── Offline Booking Queue ─────────────────────────────────────────────────────
-const QUEUE_KEY = 'apexvip_offline_bookings';
-
 self.addEventListener('sync', event => {
   if (event.tag === 'booking-sync') {
     event.waitUntil(flushBookingQueue());
@@ -76,7 +71,7 @@ async function flushBookingQueue() {
 
   for (const entry of all) {
     try {
-      const resp = await fetch('/api/bookings', {
+      const resp = await fetch(BASE + '/api/bookings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(entry.data),
@@ -124,12 +119,12 @@ importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js'
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js');
 
 firebase.initializeApp({
-  apiKey: "AIzaSyC0UQeh8dSw3dxx9hTS-STWKcXVEzOStks",
-  authDomain: "apexvip.firebaseapp.com",
-  projectId: "apexvip",
-  storageBucket: "apexvip.firebasestorage.app",
-  messagingSenderId: "125847962387",
-  appId: "1:125847962387:web:331a7de3eb8df8dc4b90e6"
+  apiKey: "AIzaSyAr3OsrEG3yVx-bD3jxc_kSBY7bkCQUPxI",
+  authDomain: "apexvip-1b4a9.firebaseapp.com",
+  projectId: "apexvip-1b4a9",
+  storageBucket: "apexvip-1b4a9.firebasestorage.app",
+  messagingSenderId: "254410067879",
+  appId: "1:254410067879:web:754b71a35182c997f37082"
 });
 
 const messaging = firebase.messaging();
@@ -140,8 +135,8 @@ messaging.onBackgroundMessage(payload => {
 
   self.registration.showNotification(title || 'ApexVIP', {
     body: body || '',
-    icon: '/icon-192.png',
-    badge: '/icon-192.png',
+    icon: BASE + '/icon-192.png',
+    badge: BASE + '/icon-192.png',
     data: { screen },
     actions: [
       { action: 'open', title: 'Open' },
@@ -161,7 +156,7 @@ self.addEventListener('notificationclick', event => {
         wins[0].focus();
         wins[0].postMessage({ type: 'NAVIGATE', screen });
       } else {
-        clients.openWindow('/apexvip-client.html');
+        clients.openWindow(BASE + '/apexvip-client.html');
       }
     })
   );
