@@ -1170,7 +1170,31 @@ function setActive(pair) {
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
+function saveKeys() {
+  ['apiKey','newsKey','claudeKey'].forEach(id => {
+    const v = document.getElementById(id).value.trim();
+    if (v) localStorage.setItem('fxpro_'+id, v);
+    else localStorage.removeItem('fxpro_'+id);
+  });
+}
+
+function loadKeys() {
+  ['apiKey','newsKey','claudeKey'].forEach(id => {
+    const saved = localStorage.getItem('fxpro_'+id);
+    if (saved) document.getElementById(id).value = saved;
+  });
+}
+
 function init() {
+  // Restore saved API keys
+  loadKeys();
+
+  // Auto-save keys on change
+  ['apiKey','newsKey','claudeKey'].forEach(id => {
+    document.getElementById(id).addEventListener('input', saveKeys);
+    document.getElementById(id).addEventListener('change', saveKeys);
+  });
+
   // Quick pair buttons
   const qp=document.getElementById('quickPairs');
   PAIRS.slice(0,9).forEach(p=>{
