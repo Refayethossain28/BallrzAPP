@@ -6,6 +6,7 @@ const { ApiError, SquareClient: Client, SquareEnvironment: Environment } = requi
 
 admin.initializeApp();
 const db = admin.firestore();
+db.settings({ databaseId: 'default' });
 
 const squareClient = new Client({
   accessToken: process.env.SQUARE_ACCESS_TOKEN,
@@ -124,7 +125,7 @@ exports.processCheckoutPayment = onCall(async (request) => {
 });
 
 // ── 3. onBookingCreated ────────────────────────────────────────────────────
-exports.onBookingCreated = onDocumentCreated('bookings/{bookingId}', async (event) => {
+exports.onBookingCreated = onDocumentCreated({ document: 'bookings/{bookingId}', database: 'default' }, async (event) => {
   const snap = event.data;
   if (!snap) return null;
   const b = snap.data();
@@ -291,7 +292,7 @@ exports.checkFlightStatus = onCall(async (request) => {
 });
 
 // ── 6. onBookingStatusChange ──────────────────────────────────────────────
-exports.onBookingStatusChange = onDocumentUpdated('bookings/{bookingId}', async (event) => {
+exports.onBookingStatusChange = onDocumentUpdated({ document: 'bookings/{bookingId}', database: 'default' }, async (event) => {
   const before = event.data.before.data(), after = event.data.after.data();
   if (before.status === after.status) return null;
 
