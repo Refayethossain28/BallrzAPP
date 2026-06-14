@@ -527,7 +527,7 @@ let auth, db, fns, FIREBASE_ENABLED = false;
 try {
   if (typeof APEXVIP_FIREBASE_CONFIG !== 'undefined' && APEXVIP_FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY') {
     const _fbApp = firebase.apps.length ? firebase.app() : firebase.initializeApp(APEXVIP_FIREBASE_CONFIG);
-    auth = firebase.auth(_fbApp); db = firebase.firestore(_fbApp); fns = firebase.functions(_fbApp); FIREBASE_ENABLED = true;
+    auth = firebase.auth(_fbApp); db = firebase.firestore(_fbApp); db.settings({ databaseId: 'default' }); fns = firebase.functions(_fbApp); FIREBASE_ENABLED = true;
   }
 } catch(e) { console.warn('Firebase init:', e.message); }
 
