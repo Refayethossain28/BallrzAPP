@@ -285,12 +285,6 @@
     </div>
     <div class="divider"></div>
     <div class="api-key-group">
-      <label>NewsAPI:</label>
-      <input type="text" id="newsKey" placeholder="optional — for live news"/>
-      <a href="https://newsapi.org/register" target="_blank">Free key ↗</a>
-    </div>
-    <div class="divider"></div>
-    <div class="api-key-group">
       <label style="color:#a78bfa">✦ Claude AI:</label>
       <input type="password" id="claudeKey" placeholder="sk-ant-... — powers AI signal" style="border-color:rgba(139,92,246,.3)"/>
       <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:#7c3aed">Get key ↗</a>
@@ -671,17 +665,20 @@ async function fetchDaily(from, to) {
 }
 
 async function fetchNews(from, to, pair) {
-  const key = document.getElementById('newsKey').value.trim();
-  if(!key) return null;
+  const key = document.getElementById('apiKey').value.trim();
+  if(!key || key==='demo') return null;
   try {
-    const q=encodeURIComponent(`${from} ${to} forex exchange`);
-    const r=await fetch(`https://newsapi.org/v2/everything?q=${q}&language=en&sortBy=publishedAt&pageSize=10&apiKey=${key}`);
-    const j=await r.json();
-    if(!j.articles)return null;
-    return j.articles.map(a=>({
-      title:a.title,desc:a.description||'',url:a.url,source:a.source.name,pub:a.publishedAt,
-      sent:sentiment(`${a.title} ${a.description||''}`)
-    }));
+    const ticker = `FOREX:${from}${to}`;
+    const r = await fetch(`https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=${ticker}&limit=15&apikey=${key}`);
+    const j = await r.json();
+    if(!j.feed || !j.feed.length) return null;
+    return j.feed.slice(0,10).map(a => {
+      const label = (a.overall_sentiment_label||'Neutral').toLowerCase();
+      const sent = label.includes('bullish')?'positive':label.includes('bearish')?'negative':'neutral';
+      const t = a.time_published; // format: "20240614T123456"
+      const iso = `${t.slice(0,4)}-${t.slice(4,6)}-${t.slice(6,8)}T${t.slice(9,11)}:${t.slice(11,13)}:${t.slice(13,15)}`;
+      return {title:a.title, desc:a.summary||'', url:a.url, source:a.source, pub:iso, sent};
+    });
   } catch{return null;}
 }
 
@@ -1296,7 +1293,6 @@ function updateCountdown() {
 function copyPersonalLink() {
   const keys = {
     a: document.getElementById('apiKey').value.trim(),
-    n: document.getElementById('newsKey').value.trim(),
     c: document.getElementById('claudeKey').value.trim(),
   };
   const hash = btoa(JSON.stringify(keys));
@@ -1317,14 +1313,13 @@ function loadKeysFromHash() {
     if (!match) return false;
     const keys = JSON.parse(atob(match[1]));
     if (keys.a) document.getElementById('apiKey').value = keys.a;
-    if (keys.n) document.getElementById('newsKey').value = keys.n;
     if (keys.c) document.getElementById('claudeKey').value = keys.c;
     return true;
   } catch { return false; }
 }
 
 function saveKeys() {
-  ['apiKey','newsKey','claudeKey'].forEach(id => {
+  ['apiKey','claudeKey'].forEach(id => {
     const v = document.getElementById(id).value.trim();
     if (v) localStorage.setItem('fxpro_'+id, v);
     else localStorage.removeItem('fxpro_'+id);
@@ -1332,7 +1327,7 @@ function saveKeys() {
 }
 
 function loadKeys() {
-  ['apiKey','newsKey','claudeKey'].forEach(id => {
+  ['apiKey','claudeKey'].forEach(id => {
     const saved = localStorage.getItem('fxpro_'+id);
     if (saved) document.getElementById(id).value = saved;
   });
@@ -1343,7 +1338,7 @@ function init() {
   if (!loadKeysFromHash()) loadKeys();
 
   // Auto-save keys on change
-  ['apiKey','newsKey','claudeKey'].forEach(id => {
+  ['apiKey','claudeKey'].forEach(id => {
     document.getElementById(id).addEventListener('input', saveKeys);
     document.getElementById(id).addEventListener('change', saveKeys);
   });
