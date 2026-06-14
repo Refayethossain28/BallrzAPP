@@ -217,7 +217,7 @@
       <p>Currency Trading Analysis</p>
     </div>
   </div>
-  <div class="live-dot"><div class="dot"></div>Live Analysis</div>
+  <div class="live-dot"><div class="dot"></div>Live Analysis &nbsp;<span id="refreshCountdown" style="font-size:11px;color:var(--dim)"></span></div>
 </header>
 
 <main>
@@ -1134,6 +1134,7 @@ async function runAnalysis(pairOverride) {
     }
 
     showDashboard();
+    startAutoRefresh();
   } catch(e) {
     showError(`Analysis failed: ${e.message}`);
   }
@@ -1170,6 +1171,39 @@ function setActive(pair) {
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
+// ─── Auto-refresh (5 minutes) ─────────────────────────────────────────────────
+const REFRESH_INTERVAL = 5 * 60; // seconds
+let refreshTimer = null;
+let countdownTimer = null;
+let secondsLeft = 0;
+
+function startAutoRefresh() {
+  stopAutoRefresh();
+  secondsLeft = REFRESH_INTERVAL;
+  updateCountdown();
+  countdownTimer = setInterval(() => {
+    secondsLeft--;
+    updateCountdown();
+    if (secondsLeft <= 0) {
+      secondsLeft = REFRESH_INTERVAL;
+      if (currentPair) runAnalysis(currentPair);
+    }
+  }, 1000);
+}
+
+function stopAutoRefresh() {
+  if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+  document.getElementById('refreshCountdown').textContent = '';
+}
+
+function updateCountdown() {
+  if (!currentPair) return;
+  const m = Math.floor(secondsLeft / 60);
+  const s = secondsLeft % 60;
+  document.getElementById('refreshCountdown').textContent =
+    `· refresh in ${m}:${s.toString().padStart(2,'0')}`;
+}
+
 function saveKeys() {
   ['apiKey','newsKey','claudeKey'].forEach(id => {
     const v = document.getElementById(id).value.trim();
