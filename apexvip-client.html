@@ -4344,8 +4344,13 @@ async function payOnArrival(){
   const btn = document.querySelector('[onclick="payOnArrival()"]');
   if(btn){btn.disabled=true;btn.textContent='Confirming…';}
   state._squarePaymentId = null;
-  await confirmBooking();
-  go('booking-confirmed');
+  try{
+    await Promise.race([
+      confirmBooking(),
+      new Promise(r=>setTimeout(r,6000))
+    ]);
+  }catch(e){console.warn('confirmBooking:',e.message);}
+  if(state.screen!=='booking-confirmed') go('booking-confirmed');
 }
 
 async function runSquarePayment(){
