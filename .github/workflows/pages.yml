@@ -37,25 +37,26 @@ jobs:
       - name: Install LLM dependencies
         run: pip install -r llm-from-scratch/requirements.txt
 
-      # Grab a larger corpus (~1 MB tiny Shakespeare) so a bigger model has
-      # something real to learn. Falls back to the bundled sample if the
-      # download is unavailable.
-      - name: Fetch a larger corpus
-        working-directory: llm-from-scratch
-        run: python fetch_data.py shakespeare || echo "download failed; will fall back to sample corpus"
-
-      # Train a 1.3M-param BPE model and export it for the browser demo. Sized
-      # to keep the CPU-only build to ~15-20 min; bump for higher quality.
-      - name: Train and export the browser LLM
+      # If a model has been committed at web/model.json (e.g. trained on a GPU
+      # via notebooks/train_gpt_colab.ipynb), serve it as-is. Otherwise train a
+      # small one in CI as a fallback. Training is CPU-only here, so a committed
+      # GPU-trained model is both better and faster to deploy.
+      - name: Build or reuse the browser model
         working-directory: llm-from-scratch
         run: |
-          DATA=data/shakespeare.txt
-          [ -f "$DATA" ] || DATA=data/input.txt
-          echo "training on $DATA"
-          python train.py --data "$DATA" --tokenizer bpe --vocab_size 512 \
-            --steps 1200 --n_layer 6 --n_head 8 --n_embd 128 \
-            --block_size 64 --batch_size 16 --out ckpt.npz
-          python export_web.py --ckpt ckpt.npz --out web/model.json
+          if [ -f web/model.json ]; then
+            echo "Using committed web/model.json ($(du -h web/model.json | cut -f1)); skipping training."
+          else
+            echo "No committed model; training one in CI."
+            python fetch_data.py shakespeare || echo "download failed; falling back to sample corpus"
+            DATA=data/shakespeare.txt
+            [ -f "$DATA" ] || DATA=data/input.txt
+            echo "training on $DATA"
+            python train.py --data "$DATA" --tokenizer bpe --vocab_size 512 \
+              --steps 1200 --n_layer 6 --n_head 8 --n_embd 128 \
+              --block_size 64 --batch_size 16 --out ckpt.npz
+            python export_web.py --ckpt ckpt.npz --out web/model.json
+          fi
 
       - name: Assemble site
         run: |
