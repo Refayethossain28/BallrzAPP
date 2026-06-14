@@ -1,0 +1,1222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ApexVIP — London's Premier Luxury Chauffeur App</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500&display=swap" rel="stylesheet">
+
+  <style>
+    /* ─── DESIGN TOKENS ─────────────────────────────────────────── */
+    :root {
+      --gold:    #D4A843;
+      --gold-lt: #E8C870;
+      --gold-dk: #A07D2E;
+      --bg:      #050505;
+      --surface: #111111;
+      --surface2:#181818;
+      --fg:      #ffffff;
+      --muted:   rgba(255,255,255,0.55);
+      --border:  rgba(212,168,67,0.18);
+      --radius:  2px;
+      --gap:     clamp(2rem, 5vw, 4rem);
+    }
+
+    /* ─── RESET ─────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+      font-size: 16px;
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    /* ─── TYPOGRAPHY ─────────────────────────────────────────────── */
+    .serif {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+    }
+    h1, h2, h3, h4 {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-weight: 400;
+      letter-spacing: 0.02em;
+      line-height: 1.1;
+    }
+    .gold   { color: var(--gold); }
+    .muted  { color: var(--muted); }
+    .upper  { text-transform: uppercase; letter-spacing: 0.18em; font-size: 0.72rem; }
+
+    /* ─── SECTION WRAPPER ────────────────────────────────────────── */
+    section {
+      position: relative;
+      width: 100%;
+    }
+    .container {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 0 clamp(1.5rem, 5vw, 4rem);
+    }
+
+    /* ─── GOLD RULE ──────────────────────────────────────────────── */
+    .gold-rule {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin: var(--gap) auto;
+    }
+    .gold-rule::before,
+    .gold-rule::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--gold) 50%, transparent);
+      opacity: 0.4;
+    }
+    .gold-rule span {
+      color: var(--gold);
+      font-size: 1.1rem;
+      flex-shrink: 0;
+    }
+
+    /* ─── SECTION LABEL ──────────────────────────────────────────── */
+    .section-label {
+      display: inline-block;
+      color: var(--gold);
+      font-family: system-ui, sans-serif;
+      font-size: 0.68rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.28em;
+      margin-bottom: 1.25rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid rgba(212,168,67,0.3);
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       SECTION 1 — HERO
+    ═══════════════════════════════════════════════════════════════ */
+    #hero {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 6rem 2rem;
+      background:
+        radial-gradient(ellipse 70% 55% at 50% 45%, rgba(212,168,67,0.07) 0%, transparent 70%),
+        radial-gradient(ellipse 40% 30% at 20% 80%, rgba(212,168,67,0.04) 0%, transparent 60%),
+        radial-gradient(ellipse 30% 25% at 80% 15%, rgba(212,168,67,0.03) 0%, transparent 60%),
+        var(--bg);
+      overflow: hidden;
+    }
+
+    /* corner ornaments */
+    #hero::before,
+    #hero::after {
+      content: '';
+      position: absolute;
+      width: 320px;
+      height: 320px;
+      border: 1px solid rgba(212,168,67,0.12);
+      pointer-events: none;
+    }
+    #hero::before { top: -80px; left: -80px; transform: rotate(15deg); }
+    #hero::after  { bottom: -80px; right: -80px; transform: rotate(15deg); }
+
+    /* large geometric diamond */
+    .hero-diamond-wrap {
+      position: relative;
+      width: 240px;
+      height: 240px;
+      margin: 0 auto 3rem;
+      flex-shrink: 0;
+    }
+    .hero-diamond-wrap .d-outer {
+      position: absolute;
+      inset: 0;
+      border: 1px solid rgba(212,168,67,0.3);
+      transform: rotate(45deg);
+      border-radius: 4px;
+    }
+    .hero-diamond-wrap .d-inner {
+      position: absolute;
+      inset: 30px;
+      border: 1px solid rgba(212,168,67,0.5);
+      transform: rotate(45deg);
+      border-radius: 2px;
+    }
+    .hero-diamond-wrap .d-fill {
+      position: absolute;
+      inset: 60px;
+      background: linear-gradient(135deg, rgba(212,168,67,0.18), rgba(212,168,67,0.06));
+      transform: rotate(45deg);
+      border-radius: 2px;
+    }
+    .hero-diamond-wrap .d-glyph {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 3.5rem;
+      color: var(--gold);
+      text-shadow: 0 0 40px rgba(212,168,67,0.6);
+    }
+
+    /* corner tick marks */
+    .hero-diamond-wrap .tick {
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      border-color: var(--gold);
+      border-style: solid;
+      opacity: 0.5;
+    }
+    .hero-diamond-wrap .tick-tl { top: 12px;  left: 12px;  border-width: 1px 0 0 1px; }
+    .hero-diamond-wrap .tick-tr { top: 12px;  right: 12px; border-width: 1px 1px 0 0; }
+    .hero-diamond-wrap .tick-bl { bottom: 12px; left: 12px;  border-width: 0 0 1px 1px; }
+    .hero-diamond-wrap .tick-br { bottom: 12px; right: 12px; border-width: 0 1px 1px 0; }
+
+    .hero-wordmark {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: clamp(56px, 9vw, 96px);
+      font-weight: 300;
+      letter-spacing: 0.12em;
+      color: var(--fg);
+      line-height: 1;
+      margin-bottom: 1rem;
+    }
+    .hero-wordmark span { color: var(--gold); }
+
+    .hero-sub {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: clamp(1.2rem, 2.5vw, 1.7rem);
+      font-weight: 300;
+      font-style: italic;
+      color: var(--gold);
+      letter-spacing: 0.05em;
+      margin-bottom: 2.5rem;
+    }
+
+    .hero-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.8rem;
+      background: rgba(212,168,67,0.07);
+      border: 1px solid rgba(212,168,67,0.25);
+      border-radius: 100px;
+      padding: 0.55rem 1.6rem;
+      font-size: 0.78rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .hero-tag .dot {
+      width: 4px; height: 4px;
+      border-radius: 50%;
+      background: var(--gold);
+      opacity: 0.7;
+    }
+
+    .hero-scroll {
+      position: absolute;
+      bottom: 2.5rem;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--muted);
+      font-size: 0.68rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+    .hero-scroll .arrow {
+      color: var(--gold);
+      font-size: 1.1rem;
+      animation: bounce 2s ease-in-out infinite;
+    }
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); }
+      50%       { transform: translateY(6px); }
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       SECTION 2 — THE EXPERIENCE
+    ═══════════════════════════════════════════════════════════════ */
+    #experience {
+      padding: calc(var(--gap) * 2.5) 0;
+      background:
+        linear-gradient(180deg, var(--bg) 0%, var(--surface) 50%, var(--bg) 100%);
+    }
+
+    .experience-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 2px;
+      margin-top: calc(var(--gap) * 1.5);
+    }
+
+    .exp-card {
+      position: relative;
+      padding: 3rem 2.5rem 3.5rem;
+      background: var(--surface);
+      transition: background 0.3s ease;
+    }
+    .exp-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--gold) 50%, transparent);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    .exp-card:hover::before { opacity: 0.5; }
+    .exp-card:hover { background: var(--surface2); }
+
+    .exp-icon {
+      font-size: 1.8rem;
+      color: var(--gold);
+      margin-bottom: 1.5rem;
+      display: block;
+      line-height: 1;
+    }
+
+    .exp-card h3 {
+      font-size: clamp(1.3rem, 2vw, 1.6rem);
+      margin-bottom: 1rem;
+      color: var(--fg);
+    }
+
+    .exp-card p {
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.75;
+    }
+
+    .exp-card .exp-tag {
+      display: inline-block;
+      margin-top: 2rem;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+      color: var(--gold);
+      border-bottom: 1px solid rgba(212,168,67,0.3);
+      padding-bottom: 2px;
+    }
+
+    /* vertical gold line between cards */
+    .exp-divider {
+      width: 1px;
+      background: linear-gradient(180deg, transparent, rgba(212,168,67,0.3) 30%, rgba(212,168,67,0.3) 70%, transparent);
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       SECTION 3 — PREMIUM FLEET
+    ═══════════════════════════════════════════════════════════════ */
+    #fleet {
+      padding: calc(var(--gap) * 2.5) 0;
+      background: var(--bg);
+    }
+
+    .section-header {
+      max-width: 620px;
+    }
+    .section-header h2 {
+      font-size: clamp(2rem, 4vw, 3.2rem);
+      margin-bottom: 1rem;
+      color: var(--fg);
+    }
+    .section-header p {
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.75;
+    }
+
+    .fleet-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 2rem;
+      margin-top: calc(var(--gap) * 1.5);
+    }
+
+    .fleet-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      transition: border-color 0.4s ease, transform 0.3s ease, box-shadow 0.4s ease;
+      cursor: default;
+    }
+    .fleet-card:hover {
+      border-color: rgba(212,168,67,0.6);
+      transform: translateY(-4px);
+      box-shadow: 0 24px 64px rgba(0,0,0,0.6), 0 0 0 1px rgba(212,168,67,0.15);
+    }
+
+    .fleet-card-visual {
+      height: 220px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .fleet-s-class .fleet-card-visual {
+      background:
+        radial-gradient(ellipse 80% 60% at 50% 80%, rgba(212,168,67,0.12) 0%, transparent 70%),
+        linear-gradient(135deg, #0a0a0a 0%, #161616 50%, #0d0d0d 100%);
+    }
+
+    .fleet-v-class .fleet-card-visual {
+      background:
+        radial-gradient(ellipse 80% 60% at 50% 80%, rgba(212,168,67,0.08) 0%, transparent 70%),
+        linear-gradient(135deg, #0c0c0f 0%, #12121a 50%, #0a0a10 100%);
+    }
+
+    /* Stylised car silhouette via CSS */
+    .car-silhouette {
+      position: absolute;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 85%;
+      height: 90px;
+    }
+
+    /* Sedan shape */
+    .car-sedan .car-body {
+      position: absolute;
+      bottom: 0;
+      left: 5%;
+      width: 90%;
+      height: 38px;
+      background: linear-gradient(180deg, #2a2a2a, #1a1a1a);
+      border-radius: 2px 2px 0 0;
+    }
+    .car-sedan .car-roof {
+      position: absolute;
+      bottom: 36px;
+      left: 22%;
+      width: 50%;
+      height: 36px;
+      background: linear-gradient(180deg, #222, #2a2a2a);
+      border-radius: 18px 18px 0 0;
+    }
+    .car-sedan .car-wheel-l,
+    .car-sedan .car-wheel-r {
+      position: absolute;
+      bottom: -8px;
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 40% 40%, #333, #111);
+      border: 3px solid #444;
+    }
+    .car-sedan .car-wheel-l { left: 10%; }
+    .car-sedan .car-wheel-r { right: 10%; }
+    .car-sedan .car-window {
+      position: absolute;
+      bottom: 40px;
+      background: rgba(212,168,67,0.18);
+      border-radius: 8px 8px 0 0;
+    }
+    .car-sedan .car-window-l { left: 24%; width: 20%; height: 26px; }
+    .car-sedan .car-window-r { left: 46%; width: 22%; height: 28px; }
+    .car-sedan .car-grill {
+      position: absolute;
+      bottom: 8px;
+      right: 5%;
+      width: 10%;
+      height: 14px;
+      background: repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(212,168,67,0.4) 2px, rgba(212,168,67,0.4) 3px);
+      border-radius: 1px;
+    }
+    .car-sedan .car-light {
+      position: absolute;
+      width: 14px; height: 6px;
+      background: rgba(212,168,67,0.7);
+      border-radius: 3px;
+      box-shadow: 0 0 12px rgba(212,168,67,0.5);
+      bottom: 16px;
+    }
+    .car-sedan .car-light-f { right: 6%; }
+    .car-sedan .car-light-b { left: 6%; background: rgba(180,40,40,0.7); box-shadow: 0 0 8px rgba(180,40,40,0.4); }
+
+    /* Van/Vito shape */
+    .car-van .car-body {
+      position: absolute;
+      bottom: 0;
+      left: 3%;
+      width: 94%;
+      height: 72px;
+      background: linear-gradient(180deg, #252528, #1a1a1d);
+      border-radius: 4px 4px 0 0;
+    }
+    .car-van .car-roof-bar {
+      position: absolute;
+      bottom: 70px;
+      left: 3%;
+      width: 94%;
+      height: 6px;
+      background: rgba(212,168,67,0.2);
+      border-radius: 2px;
+    }
+    .car-van .car-window-front {
+      position: absolute;
+      bottom: 38px;
+      right: 5%;
+      width: 22%;
+      height: 28px;
+      background: rgba(212,168,67,0.15);
+      border-radius: 3px 3px 0 0;
+    }
+    .car-van .car-windows-side {
+      position: absolute;
+      bottom: 36px;
+      left: 8%;
+      width: 55%;
+      height: 26px;
+      display: flex;
+      gap: 4px;
+    }
+    .car-van .car-win {
+      flex: 1;
+      background: rgba(212,168,67,0.12);
+      border-radius: 2px;
+    }
+    .car-van .car-wheel-l,
+    .car-van .car-wheel-r {
+      position: absolute;
+      bottom: -8px;
+      width: 34px; height: 34px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 40% 40%, #333, #111);
+      border: 3px solid #444;
+    }
+    .car-van .car-wheel-l { left: 12%; }
+    .car-van .car-wheel-r { right: 10%; }
+    .car-van .car-light {
+      position: absolute;
+      width: 10px; height: 22px;
+      background: rgba(212,168,67,0.6);
+      border-radius: 2px;
+      box-shadow: 0 0 14px rgba(212,168,67,0.4);
+      bottom: 18px;
+    }
+    .car-van .car-light-f { right: 4%; }
+    .car-van .car-light-b { left: 4%; background: rgba(180,40,40,0.7); box-shadow: 0 0 8px rgba(180,40,40,0.4); }
+
+    .fleet-card-badge {
+      position: absolute;
+      top: 1.25rem;
+      right: 1.25rem;
+      background: rgba(5,5,5,0.8);
+      border: 1px solid rgba(212,168,67,0.35);
+      padding: 0.35rem 0.85rem;
+      font-size: 0.65rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold);
+      border-radius: 100px;
+      backdrop-filter: blur(8px);
+    }
+
+    .fleet-card-body {
+      padding: 2rem 2rem 2.5rem;
+    }
+
+    .fleet-card-body h3 {
+      font-size: 1.8rem;
+      color: var(--fg);
+      margin-bottom: 0.35rem;
+    }
+
+    .fleet-card-body .fleet-type {
+      font-size: 0.75rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 1.5rem;
+    }
+
+    .fleet-price {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 2rem;
+      color: var(--gold);
+      font-weight: 300;
+      margin-bottom: 1.75rem;
+      display: flex;
+      align-items: baseline;
+      gap: 0.5rem;
+    }
+    .fleet-price .from {
+      font-family: system-ui, sans-serif;
+      font-size: 0.72rem;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .fleet-amenities {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+    }
+    .fleet-amenities li {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 0.88rem;
+      color: var(--muted);
+    }
+    .fleet-amenities li::before {
+      content: '✦';
+      color: var(--gold);
+      font-size: 0.55rem;
+      flex-shrink: 0;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       SECTION 4 — MEMBERSHIP TIERS
+    ═══════════════════════════════════════════════════════════════ */
+    #membership {
+      padding: calc(var(--gap) * 2.5) 0;
+      background:
+        linear-gradient(180deg, var(--bg) 0%, var(--surface) 40%, var(--surface) 60%, var(--bg) 100%);
+    }
+
+    .tier-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 0;
+      margin-top: calc(var(--gap) * 1.5);
+      border: 1px solid var(--border);
+    }
+
+    .tier-card {
+      padding: 3rem 2.5rem 3.5rem;
+      border-right: 1px solid var(--border);
+      position: relative;
+      transition: background 0.3s ease;
+    }
+    .tier-card:last-child { border-right: none; }
+
+    .tier-card.featured {
+      background: linear-gradient(160deg, rgba(212,168,67,0.09) 0%, rgba(212,168,67,0.03) 100%);
+      border-right-color: rgba(212,168,67,0.3);
+      border-left: 1px solid rgba(212,168,67,0.3);
+      margin: -1px 0;
+      padding-top: 3.5rem;
+    }
+    .tier-card.featured::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    }
+
+    .tier-badge {
+      position: absolute;
+      top: -1px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--gold);
+      color: var(--bg);
+      font-size: 0.62rem;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      padding: 0.3rem 1.1rem;
+    }
+
+    .tier-name {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 2rem;
+      font-weight: 300;
+      margin-bottom: 0.35rem;
+    }
+    .tier-card.featured .tier-name { color: var(--gold); }
+
+    .tier-sub {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+      color: var(--muted);
+      margin-bottom: 2rem;
+    }
+
+    .tier-price {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 2.6rem;
+      font-weight: 300;
+      color: var(--fg);
+      margin-bottom: 0.4rem;
+      line-height: 1;
+    }
+    .tier-card.featured .tier-price { color: var(--gold); }
+    .tier-price-note {
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-bottom: 2.5rem;
+    }
+
+    .tier-features {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.9rem;
+    }
+    .tier-features li {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      font-size: 0.88rem;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .tier-features li .check {
+      color: var(--gold);
+      font-size: 0.6rem;
+      margin-top: 4px;
+      flex-shrink: 0;
+    }
+    .tier-card.featured .tier-features li { color: rgba(255,255,255,0.75); }
+
+    /* ═══════════════════════════════════════════════════════════════
+       SECTION 5 — BY THE NUMBERS
+    ═══════════════════════════════════════════════════════════════ */
+    #numbers {
+      padding: calc(var(--gap) * 2.5) 0;
+      background: var(--bg);
+    }
+
+    .numbers-intro {
+      text-align: center;
+      margin-bottom: calc(var(--gap) * 1.5);
+    }
+    .numbers-intro h2 {
+      font-size: clamp(2rem, 4vw, 3.2rem);
+      color: var(--fg);
+      margin-bottom: 0.75rem;
+    }
+    .numbers-intro p {
+      color: var(--muted);
+      max-width: 520px;
+      margin: 0 auto;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1px;
+      background: var(--border);
+    }
+
+    .stat-card {
+      background: var(--bg);
+      padding: 3.5rem 2.5rem;
+      text-align: center;
+      position: relative;
+      transition: background 0.3s ease;
+    }
+    .stat-card:hover { background: var(--surface); }
+
+    .stat-icon {
+      font-size: 1.4rem;
+      color: rgba(212,168,67,0.4);
+      margin-bottom: 1.5rem;
+      display: block;
+    }
+
+    .stat-number {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: clamp(2.5rem, 5vw, 3.8rem);
+      font-weight: 300;
+      color: var(--gold);
+      line-height: 1;
+      margin-bottom: 0.5rem;
+      display: block;
+    }
+
+    .stat-label {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       SECTION 6 — FOOTER CTA
+    ═══════════════════════════════════════════════════════════════ */
+    #cta {
+      padding: calc(var(--gap) * 3) 0 calc(var(--gap) * 2);
+      background:
+        radial-gradient(ellipse 80% 60% at 50% 0%, rgba(212,168,67,0.07) 0%, transparent 70%),
+        var(--surface);
+      text-align: center;
+      border-top: 1px solid var(--border);
+    }
+
+    .cta-ornament {
+      font-size: 1.6rem;
+      color: rgba(212,168,67,0.35);
+      letter-spacing: 1.5rem;
+      margin-bottom: 2.5rem;
+      display: block;
+    }
+
+    #cta h2 {
+      font-size: clamp(2.2rem, 5vw, 4rem);
+      font-weight: 300;
+      color: var(--fg);
+      margin-bottom: 0.75rem;
+    }
+
+    #cta .tagline {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-style: italic;
+      font-size: clamp(1.1rem, 2vw, 1.4rem);
+      color: var(--muted);
+      margin-bottom: 3rem;
+    }
+
+    .cta-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.75rem;
+      background: linear-gradient(135deg, var(--gold) 0%, var(--gold-dk) 100%);
+      color: var(--bg);
+      text-decoration: none;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      padding: 1.1rem 3rem;
+      border-radius: var(--radius);
+      transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.3s ease;
+      box-shadow: 0 8px 32px rgba(212,168,67,0.25);
+      margin-bottom: 1rem;
+    }
+    .cta-btn:hover {
+      opacity: 0.92;
+      transform: translateY(-2px);
+      box-shadow: 0 16px 48px rgba(212,168,67,0.35);
+    }
+
+    .cta-url {
+      display: block;
+      margin-top: 1.5rem;
+      font-size: 0.8rem;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      text-decoration: none;
+      transition: color 0.2s ease;
+    }
+    .cta-url:hover { color: var(--gold); }
+
+    .footer-geo {
+      margin-top: 3rem;
+      padding-top: 2.5rem;
+      border-top: 1px solid rgba(255,255,255,0.05);
+      font-size: 0.7rem;
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.2);
+    }
+    .footer-geo span { color: rgba(212,168,67,0.4); margin: 0 0.75rem; }
+
+    .footer-legal {
+      margin-top: 1rem;
+      font-size: 0.65rem;
+      color: rgba(255,255,255,0.12);
+      letter-spacing: 0.08em;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       SHARED HEADING STYLE
+    ═══════════════════════════════════════════════════════════════ */
+    .centered { text-align: center; }
+    .centered .section-header { margin: 0 auto; }
+
+    /* ═══════════════════════════════════════════════════════════════
+       PRINT STYLES
+    ═══════════════════════════════════════════════════════════════ */
+    @media print {
+      @page { size: A4; margin: 0; }
+
+      * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+      body { background: #050505 !important; }
+
+      section { page-break-inside: avoid; break-inside: avoid; }
+      #hero    { min-height: 100vh; page-break-after: always; break-after: page; }
+      #fleet   { page-break-before: always; break-before: page; }
+      #membership { page-break-before: always; break-before: page; }
+      #cta     { page-break-before: always; break-before: page; }
+
+      .cta-btn { display: none !important; }
+      .hero-scroll { display: none !important; }
+
+      .fleet-card:hover,
+      .stat-card:hover,
+      .exp-card:hover {
+        transform: none;
+        box-shadow: none;
+      }
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       RESPONSIVE
+    ═══════════════════════════════════════════════════════════════ */
+    @media (max-width: 768px) {
+      .tier-grid { border: none; gap: 1px; background: var(--border); }
+      .tier-card { border-right: none; border-bottom: 1px solid var(--border); }
+      .tier-card.featured { border-left: none; border: 1px solid rgba(212,168,67,0.4); margin: 0; }
+      .exp-divider { display: none; }
+      .experience-grid { gap: 1px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       SECTION 1 — HERO
+  ══════════════════════════════════════════════════════════════ -->
+  <section id="hero">
+    <div class="hero-diamond-wrap">
+      <div class="d-outer"></div>
+      <div class="d-inner"></div>
+      <div class="d-fill"></div>
+      <div class="d-glyph">◈</div>
+      <div class="tick tick-tl"></div>
+      <div class="tick tick-tr"></div>
+      <div class="tick tick-bl"></div>
+      <div class="tick tick-br"></div>
+    </div>
+
+    <p class="upper muted" style="letter-spacing:0.3em; margin-bottom:1.5rem; font-size:0.65rem;">Est. 2024 &nbsp;✦&nbsp; London</p>
+
+    <h1 class="hero-wordmark">Apex<span>VIP</span></h1>
+
+    <p class="hero-sub">London's Premier Luxury Chauffeur App</p>
+
+    <div class="hero-tag">
+      <span>Available on Web</span>
+      <span class="dot"></span>
+      <span>iOS</span>
+      <span class="dot"></span>
+      <span>Android</span>
+    </div>
+
+    <div class="hero-scroll">
+      <span>Discover</span>
+      <span class="arrow">↓</span>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       SECTION 2 — THE EXPERIENCE
+  ══════════════════════════════════════════════════════════════ -->
+  <section id="experience">
+    <div class="container">
+      <div class="centered" style="margin-bottom: 0;">
+        <span class="section-label">✦ &nbsp; The ApexVIP Experience</span>
+        <h2 class="serif" style="font-size: clamp(2rem, 4vw, 3.2rem); margin-bottom: 1rem;">
+          Every Journey, Elevated
+        </h2>
+        <p class="muted" style="max-width: 560px; margin: 0 auto; font-size: 1rem; line-height: 1.75;">
+          We built ApexVIP around a simple belief: getting there should be as refined as being there.
+          Three pillars define every ride.
+        </p>
+      </div>
+    </div>
+
+    <div class="experience-grid" style="margin-top: calc(var(--gap) * 1.5);">
+
+      <div class="exp-card">
+        <span class="exp-icon">◈</span>
+        <h3>Real-Time Chauffeur Tracking</h3>
+        <p>
+          Watch your chauffeur approach on a live GPS map with pinpoint precision. Know your driver's
+          exact ETA, vehicle, and registration — before they've even left the depot.
+          No waiting, no uncertainty, no compromise.
+        </p>
+        <span class="exp-tag">Live GPS &nbsp;→</span>
+      </div>
+
+      <div class="exp-card" style="border-left: 1px solid var(--border); border-right: 1px solid var(--border);">
+        <span class="exp-icon">✧</span>
+        <h3>Curated London Experiences</h3>
+        <p>
+          From Royal Ascot lawn enclosures to Centre Court at Wimbledon, from Michelin-starred
+          reservations to exclusive private members' clubs — your itinerary and your ride,
+          arranged as one seamless experience.
+        </p>
+        <span class="exp-tag">Explore London &nbsp;→</span>
+      </div>
+
+      <div class="exp-card">
+        <span class="exp-icon">✦</span>
+        <h3>ApexAI Concierge</h3>
+        <p>
+          Simply say what you need. <em style="color: var(--fg);">"Take me to Nobu at 8"</em> — understood
+          instantly. Our natural language AI concierge handles booking, routing, and preferences,
+          so you never have to think about the logistics.
+        </p>
+        <span class="exp-tag">Meet ApexAI &nbsp;→</span>
+      </div>
+
+    </div>
+
+    <div class="container">
+      <div class="gold-rule"><span>◈</span></div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       SECTION 3 — PREMIUM FLEET
+  ══════════════════════════════════════════════════════════════ -->
+  <section id="fleet">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-label">✦ &nbsp; The Fleet</span>
+        <h2>Every Vehicle,<br>Hand-Selected</h2>
+        <p class="muted" style="margin-top: 1rem;">
+          Our curated fleet comprises only the finest marques, maintained to exacting standards
+          and driven by chauffeurs trained in discretion, precision, and hospitality.
+        </p>
+      </div>
+
+      <div class="fleet-grid">
+
+        <!-- Mercedes S-Class -->
+        <div class="fleet-card fleet-s-class">
+          <div class="fleet-card-visual">
+            <div class="car-silhouette car-sedan">
+              <div class="car-body"></div>
+              <div class="car-roof"></div>
+              <div class="car-wheel-l"></div>
+              <div class="car-wheel-r"></div>
+              <div class="car-window car-window-l"></div>
+              <div class="car-window car-window-r"></div>
+              <div class="car-grill"></div>
+              <div class="car-light car-light-f"></div>
+              <div class="car-light car-light-b"></div>
+            </div>
+            <div class="fleet-card-badge">Executive Sedan</div>
+          </div>
+          <div class="fleet-card-body">
+            <h3>Mercedes S&#8209;Class</h3>
+            <p class="fleet-type">Executive Sedan &nbsp;·&nbsp; Up to 3 Passengers</p>
+            <div class="fleet-price">
+              <span class="from">From</span>
+              £185
+            </div>
+            <ul class="fleet-amenities">
+              <li>Complimentary High-Speed WiFi</li>
+              <li>Chilled Still &amp; Sparkling Water</li>
+              <li>Wireless Phone Charging</li>
+              <li>Meet &amp; Greet with Name Board</li>
+              <li>Flight Monitoring &amp; Free Waiting Time</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Mercedes V-Class -->
+        <div class="fleet-card fleet-v-class">
+          <div class="fleet-card-visual">
+            <div class="car-silhouette car-van">
+              <div class="car-body"></div>
+              <div class="car-roof-bar"></div>
+              <div class="car-window-front"></div>
+              <div class="car-windows-side">
+                <div class="car-win"></div>
+                <div class="car-win"></div>
+                <div class="car-win"></div>
+              </div>
+              <div class="car-wheel-l"></div>
+              <div class="car-wheel-r"></div>
+              <div class="car-light car-light-f"></div>
+              <div class="car-light car-light-b"></div>
+            </div>
+            <div class="fleet-card-badge">Business Van</div>
+          </div>
+          <div class="fleet-card-body">
+            <h3>Mercedes V&#8209;Class</h3>
+            <p class="fleet-type">Business Van &nbsp;·&nbsp; Up to 7 Passengers</p>
+            <div class="fleet-price">
+              <span class="from">From</span>
+              £225
+            </div>
+            <ul class="fleet-amenities">
+              <li>Complimentary High-Speed WiFi</li>
+              <li>Chilled Still &amp; Sparkling Water</li>
+              <li>Individual Phone Charging Points</li>
+              <li>Meet &amp; Greet with Name Board</li>
+              <li>Conference &amp; Privacy Partition Option</li>
+            </ul>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="gold-rule" style="margin-top: calc(var(--gap) * 2);"><span>◈</span></div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       SECTION 4 — MEMBERSHIP TIERS
+  ══════════════════════════════════════════════════════════════ -->
+  <section id="membership">
+    <div class="container">
+      <div class="centered">
+        <span class="section-label">✦ &nbsp; Membership</span>
+        <h2 class="serif" style="font-size: clamp(2rem, 4vw, 3.2rem); margin-bottom: 1rem;">Choose Your Standing</h2>
+        <p class="muted" style="max-width: 520px; margin: 0 auto; font-size: 1rem; line-height: 1.75;">
+          ApexVIP membership tiers reward loyalty with access, privilege, and the very
+          finest in chauffeured service.
+        </p>
+      </div>
+
+      <div class="tier-grid" style="margin-top: calc(var(--gap) * 1.5);">
+
+        <!-- Standard -->
+        <div class="tier-card">
+          <div class="tier-name">Standard</div>
+          <div class="tier-sub">Access Level One</div>
+          <div class="tier-price">Free</div>
+          <div class="tier-price-note">No commitment required</div>
+          <ul class="tier-features">
+            <li><span class="check">✦</span> Real-time chauffeur tracking</li>
+            <li><span class="check">✦</span> ApexAI natural language booking</li>
+            <li><span class="check">✦</span> Mercedes S&#8209;Class &amp; V&#8209;Class fleet</li>
+            <li><span class="check">✦</span> 24/7 in-app support</li>
+            <li><span class="check">✦</span> Flight monitoring included</li>
+          </ul>
+        </div>
+
+        <!-- VIP — featured -->
+        <div class="tier-card featured">
+          <div class="tier-badge">Most Popular</div>
+          <div class="tier-name">VIP</div>
+          <div class="tier-sub">Exclusive Privileges</div>
+          <div class="tier-price">£149<span style="font-size:1rem; font-family: system-ui; color: var(--muted);">/mo</span></div>
+          <div class="tier-price-note">Billed monthly, cancel anytime</div>
+          <ul class="tier-features">
+            <li><span class="check">✦</span> Everything in Standard</li>
+            <li><span class="check">✦</span> Priority booking — 0 wait queues</li>
+            <li><span class="check">✦</span> Dedicated VIP account manager</li>
+            <li><span class="check">✦</span> Curated London experience access</li>
+            <li><span class="check">✦</span> Monthly complimentary airport transfer</li>
+            <li><span class="check">✦</span> 10% loyalty credit on all rides</li>
+          </ul>
+        </div>
+
+        <!-- VVIP -->
+        <div class="tier-card">
+          <div class="tier-name">VVIP</div>
+          <div class="tier-sub">White-Glove Service</div>
+          <div class="tier-price">£499<span style="font-size:1rem; font-family: system-ui; color: var(--muted);">/mo</span></div>
+          <div class="tier-price-note">Or billed annually — 2 months free</div>
+          <ul class="tier-features">
+            <li><span class="check">✦</span> Everything in VIP</li>
+            <li><span class="check">✦</span> Named personal chauffeur option</li>
+            <li><span class="check">✦</span> Rolls&#8209;Royce &amp; Bentley fleet access</li>
+            <li><span class="check">✦</span> Private aviation &amp; yacht liaison</li>
+            <li><span class="check">✦</span> Unlimited complimentary transfers</li>
+            <li><span class="check">✦</span> 24/7 direct concierge line</li>
+            <li><span class="check">✦</span> Invitations to private ApexVIP events</li>
+          </ul>
+        </div>
+
+      </div>
+
+      <div class="gold-rule"><span>◈</span></div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       SECTION 5 — BY THE NUMBERS
+  ══════════════════════════════════════════════════════════════ -->
+  <section id="numbers">
+    <div class="container">
+      <div class="numbers-intro">
+        <span class="section-label">✦ &nbsp; By The Numbers</span>
+        <h2>The Standard We Set</h2>
+        <p class="muted" style="margin-top: 0.75rem;">
+          Measured in moments delivered flawlessly, across London and beyond.
+        </p>
+      </div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <span class="stat-icon">✦</span>
+        <span class="stat-number">200+</span>
+        <span class="stat-label">Vetted &amp;<br>Licensed Chauffeurs</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-icon">✧</span>
+        <span class="stat-number">4.9★</span>
+        <span class="stat-label">Average Passenger<br>Rating</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-icon">◈</span>
+        <span class="stat-number">60+</span>
+        <span class="stat-label">London Airports,<br>Hotels &amp; Venues</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-icon">✦</span>
+        <span class="stat-number">24/7</span>
+        <span class="stat-label">Around-the-Clock<br>Service, Every Day</span>
+      </div>
+    </div>
+
+    <div class="container">
+      <div class="gold-rule"><span>◈</span></div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       SECTION 6 — FOOTER CTA
+  ══════════════════════════════════════════════════════════════ -->
+  <section id="cta">
+    <div class="container">
+      <span class="cta-ornament">✦ &nbsp; ◈ &nbsp; ✦</span>
+
+      <h2>Begin Your Journey</h2>
+
+      <p class="tagline">The finest chauffeur experience in London awaits.</p>
+
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 0.5rem;" class="no-print">
+        <a href="https://apexvip.web.app" class="cta-btn">
+          Open ApexVIP &nbsp; →
+        </a>
+        <p class="muted" style="font-size: 0.78rem; margin-top: 0.5rem;">
+          Available on Web &nbsp;·&nbsp; iOS App Store &nbsp;·&nbsp; Google Play
+        </p>
+      </div>
+
+      <a href="https://apexvip.web.app" class="cta-url">apexvip.web.app</a>
+
+      <div class="footer-geo">
+        London <span>◈</span> Dubai <span>◈</span> Global
+      </div>
+      <div class="footer-legal">
+        &copy; 2024–2026 ApexVIP Ltd. &nbsp;·&nbsp; All rights reserved. &nbsp;·&nbsp;
+        Licensed by Transport for London. &nbsp;·&nbsp; Private Hire Vehicle Operator
+      </div>
+    </div>
+  </section>
+
+</body>
+</html>

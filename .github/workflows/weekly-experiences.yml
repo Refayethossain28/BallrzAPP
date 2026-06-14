@@ -1,0 +1,32 @@
+name: Weekly Experiences Update
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'   # Every Monday at 08:00 UTC
+  workflow_dispatch:        # Allow manual trigger from GitHub Actions tab
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: claude/apexvip-chauffeur-app-C2zxx
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run experiences updater
+        run: node scripts/update-experiences.js
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name  "ApexVIP Bot"
+          git config user.email "bot@apexvip.com"
+          git diff --quiet || (
+            git add apexvip-client.html &&
+            git commit -m "chore: auto-update experiences for week of $(date '+%d %b %Y')" &&
+            git push origin claude/apexvip-chauffeur-app-C2zxx
+          )

@@ -1,0 +1,1447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="theme-color" content="#080808"/>
+<title>ApexVIP Corporate</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&display=swap" rel="stylesheet"/>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="firebase.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+
+body{
+  background:var(--bg);color:var(--fg);font-family:-apple-system,system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;min-height:100vh;overflow-x:hidden;
+  --bg:#050505;--fg:#f4f0ea;--fg-muted:#c8bfb0;--fg-dim:#8a8278;--fg-subtle:#5a5550;
+  --fg-ghost:#3a3632;--fg-faint:#28251f;
+  --surface:rgba(255,255,255,.045);--surface-b:rgba(255,255,255,.03);--surface-c:rgba(255,255,255,.07);
+  --border:rgba(255,255,255,.08);--border-b:rgba(255,255,255,.05);--divider:rgba(255,255,255,.04);
+  --gold:#C8A97E;--gold-2:rgba(200,169,126,.22);--gold-3:rgba(200,169,126,.12);--gold-dim:rgba(200,169,126,.14);--gold-glow:rgba(200,169,126,.08);
+  --radius:16px
+}
+body{--ease-spring:cubic-bezier(0.16,1,0.3,1);}
+
+/* Aurora background */
+body::before,body::after{content:'';position:fixed;border-radius:50%;filter:blur(100px);pointer-events:none;z-index:0}
+body::before{width:600px;height:600px;left:20%;top:-16%;background:radial-gradient(circle,rgba(200,169,126,.07),transparent 70%);animation:auroraA 28s ease-in-out infinite alternate}
+body::after{width:500px;height:500px;right:-10%;bottom:-14%;background:radial-gradient(circle,rgba(90,80,160,.055),transparent 70%);animation:auroraB 34s ease-in-out infinite alternate}
+@keyframes auroraA{from{transform:translate(0,0) scale(1)}to{transform:translate(130px,100px) scale(1.2)}}
+@keyframes auroraB{from{transform:translate(0,0) scale(1.1)}to{transform:translate(-150px,-100px) scale(.9)}}
+
+/* Keyframes */
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes slideUp{from{opacity:0;transform:translateY(40px)}to{opacity:1;transform:translateY(0)}}
+@keyframes slideUpSheet{from{opacity:0;transform:translateY(60px)}to{opacity:1;transform:translateY(0)}}
+@keyframes logoReveal{0%{opacity:0;letter-spacing:22px}60%{opacity:1}100%{opacity:1;letter-spacing:12px}}
+@keyframes subtitleFade{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulseGold{0%,100%{opacity:.6}50%{opacity:1}}
+@keyframes barGrow{from{width:0}to{width:var(--w)}}
+
+/* App wrapper */
+#app{position:relative;z-index:1;min-height:100vh}
+
+/* Screen transitions */
+.screen{animation:fadeIn .25s ease}
+
+/* ── Splash ── */
+.splash{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:40px 24px;gap:0}
+.splash-logo{font-family:'Cormorant Garamond',serif;font-size:52px;font-weight:700;color:var(--gold);letter-spacing:12px;animation:logoReveal 1.4s ease forwards;text-align:center}
+.splash-sub{font-size:11px;letter-spacing:6px;text-transform:uppercase;color:var(--fg-dim);margin-top:8px;animation:subtitleFade .6s ease .9s both}
+.splash-divider{width:60px;height:1px;background:linear-gradient(90deg,transparent,var(--gold),transparent);margin:36px 0;animation:fadeIn .5s ease 1.2s both}
+.splash-tagline{font-family:'Cormorant Garamond',serif;font-size:18px;color:var(--fg-muted);text-align:center;animation:fadeIn .5s ease 1.4s both;margin-bottom:48px}
+.splash-btns{display:flex;flex-direction:column;gap:14px;width:100%;max-width:320px;animation:slideUp .5s ease 1.6s both}
+
+/* ── Cards ── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;transition:transform .18s,border-color .18s}
+.card:hover{border-color:rgba(200,169,126,.18)}
+.card-inset{background:var(--surface-b);border:1px solid var(--border-b);border-radius:12px;padding:16px}
+
+/* ── Stat cards ── */
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;flex:1;min-width:140px;position:relative;overflow:hidden;transition:transform .18s,border-color .18s}
+.stat-card:hover{transform:translateY(-2px);border-color:rgba(200,169,126,.2)}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.1),transparent)}
+.stat-wm{position:absolute;right:10px;bottom:6px;font-size:40px;line-height:1;opacity:.05;pointer-events:none;user-select:none}
+
+/* ── Buttons ── */
+.btn{padding:11px 22px;border-radius:10px;font-size:14px;font-weight:600;border:none;cursor:pointer;font-family:inherit;transition:opacity .15s,transform .12s;display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none}
+.btn:active{opacity:.82;transform:scale(.97)}
+.btn-gold{background:var(--gold);color:#000}
+.btn-gold:hover{background:#e0b84e}
+.btn-glass{background:var(--surface-c);border:1px solid var(--border);color:var(--fg)}
+.btn-glass:hover{background:rgba(255,255,255,.1)}
+.btn-ghost{background:none;border:1px solid var(--border);color:var(--fg-dim)}
+.btn-ghost:hover{color:var(--fg);border-color:rgba(255,255,255,.15)}
+.btn-danger{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);color:#ef4444}
+.btn-sm{padding:7px 14px;font-size:13px;border-radius:8px}
+.btn-xs{padding:5px 10px;font-size:12px;border-radius:7px}
+.btn-full{width:100%}
+
+/* ── Tags ── */
+.tag{display:inline-flex;align-items:center;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.2px}
+.tag-gold{background:rgba(200,169,126,.14);color:var(--gold)}
+.tag-green{background:rgba(34,197,94,.14);color:#22c55e}
+.tag-blue{background:rgba(59,130,246,.14);color:#3b82f6}
+.tag-amber{background:rgba(245,158,11,.14);color:#f59e0b}
+.tag-purple{background:rgba(168,85,247,.14);color:#a855f7}
+.tag-red{background:rgba(239,68,68,.14);color:#ef4444}
+.tag-gray{background:rgba(120,120,120,.14);color:var(--fg-dim)}
+.tag-cyan{background:rgba(6,182,212,.14);color:#06b6d4}
+
+/* ── Inputs ── */
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--fg-subtle)}
+input,select,textarea{background:var(--surface-c);border:1px solid var(--border);border-radius:10px;color:var(--fg);padding:11px 14px;font-size:14px;outline:none;font-family:inherit;width:100%;transition:border-color .18s;-webkit-appearance:none}
+input:focus,select:focus,textarea:focus{border-color:var(--gold)}
+input::placeholder,textarea::placeholder{color:var(--fg-ghost)}
+select option{background:#111;color:var(--fg)}
+textarea{resize:vertical;min-height:80px;line-height:1.5}
+.input-with-icon{position:relative}
+.input-with-icon input{padding-right:42px}
+.input-icon-btn{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--fg-dim);cursor:pointer;padding:4px;display:flex;align-items:center;justify-content:center;transition:color .15s}
+.input-icon-btn:hover{color:var(--gold)}
+
+/* ── Toggle ── */
+.toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.toggle{position:relative;width:44px;height:24px;flex-shrink:0;cursor:pointer}
+.toggle input{opacity:0;width:0;height:0;position:absolute}
+.toggle-track{position:absolute;inset:0;background:var(--surface-c);border:1px solid var(--border);border-radius:12px;transition:.25s}
+.toggle input:checked~.toggle-track{background:var(--gold);border-color:var(--gold)}
+.toggle-thumb{position:absolute;width:18px;height:18px;background:#fff;border-radius:50%;top:3px;left:3px;transition:.25s;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.toggle input:checked~.toggle-thumb{left:23px}
+
+/* ── Top bar ── */
+.topbar{display:flex;align-items:center;gap:12px;padding:16px 20px;background:rgba(8,8,8,.85);border-bottom:1px solid var(--border);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);position:sticky;top:0;z-index:40}
+.topbar-logo{font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:700;color:var(--gold);letter-spacing:4px}
+
+/* ── Bottom nav ── */
+.bottomnav{position:fixed;bottom:0;left:0;right:0;background:rgba(5,5,5,.92);border-top:1px solid var(--border);backdrop-filter:blur(32px) saturate(180%);-webkit-backdrop-filter:blur(32px) saturate(180%);display:flex;z-index:40;padding-bottom:env(safe-area-inset-bottom)}
+.bnav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 4px;cursor:pointer;color:var(--fg-subtle);font-size:10px;font-weight:600;letter-spacing:.5px;transition:color .15s;text-transform:uppercase}
+.bnav-item svg{transition:transform .15s}
+.bnav-item.on{color:var(--gold)}
+.bnav-item.on svg{transform:scale(1.12)}
+.bnav-item:active{opacity:.7}
+
+/* ── Page layout ── */
+.page{padding:20px 16px 96px;max-width:540px;margin:0 auto}
+.page-title{font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:700;margin-bottom:4px}
+.section-label{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--fg-subtle)}
+
+/* ── Avatar ── */
+.avatar{border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0;font-size:13px}
+
+/* ── Active trip card ── */
+.trip-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;position:relative;overflow:hidden}
+.trip-card::after{content:'';position:absolute;top:0;right:0;width:60px;height:100%;background:linear-gradient(90deg,transparent,var(--gold-glow));pointer-events:none}
+
+/* ── Tab bar ── */
+.tabbar{display:flex;gap:4px;background:var(--surface-b);border:1px solid var(--border);border-radius:12px;padding:4px;margin-bottom:20px}
+.tab{flex:1;padding:8px;border-radius:9px;font-size:13px;font-weight:600;text-align:center;cursor:pointer;color:var(--fg-subtle);transition:.15s;border:none;background:none;font-family:inherit}
+.tab.on{background:var(--surface-c);color:var(--fg);box-shadow:0 1px 4px rgba(0,0,0,.3)}
+
+/* ── Stagger ── */
+.stagger>*{opacity:0;animation:fadeUp .35s ease forwards}
+.stagger>*:nth-child(1){animation-delay:.04s}
+.stagger>*:nth-child(2){animation-delay:.09s}
+.stagger>*:nth-child(3){animation-delay:.14s}
+.stagger>*:nth-child(4){animation-delay:.19s}
+.stagger>*:nth-child(5){animation-delay:.24s}
+.stagger>*:nth-child(6){animation-delay:.29s}
+.stagger>*:nth-child(7){animation-delay:.34s}
+
+/* ── Login card ── */
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.login-card{background:rgba(12,11,10,.9);border:1px solid var(--border);border-radius:24px;padding:36px 28px;width:100%;max-width:380px;backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);animation:slideUp .5s ease;box-shadow:0 32px 80px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.06)}
+.login-title{font-family:'Cormorant Garamond',serif;font-size:32px;font-weight:700;color:var(--gold);letter-spacing:6px;text-align:center;margin-bottom:4px}
+
+/* ── Bar chart CSS ── */
+.bar-row{display:flex;align-items:center;gap:10px;padding:6px 0}
+.bar-track{flex:1;height:8px;background:var(--surface-c);border-radius:4px;overflow:hidden}
+.bar-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--gold),rgba(200,169,126,.5));animation:barGrow .7s ease both;width:var(--w)}
+@keyframes barGrow{from{width:0}to{width:var(--w)}}
+
+/* ── Segment bar ── */
+.seg-bar{display:flex;height:10px;border-radius:5px;overflow:hidden;gap:2px;margin:8px 0}
+.seg{height:100%;border-radius:3px;transition:width .5s ease}
+
+/* ── Cost savings badge ── */
+.savings-badge{background:linear-gradient(135deg,rgba(34,197,94,.1),rgba(16,185,129,.05));border:1px solid rgba(34,197,94,.2);border-radius:14px;padding:18px;text-align:center}
+
+/* ── Chip ── */
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--surface-c);border:1px solid var(--border);border-radius:20px;padding:4px 10px 4px 12px;font-size:12px;font-weight:600;color:var(--fg-muted)}
+.chip-del{background:none;border:none;cursor:pointer;color:var(--fg-dim);padding:0;line-height:1;font-size:14px;transition:color .15s}
+.chip-del:hover{color:#ef4444}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+
+/* ── Pulse dot ── */
+.pulse-dot{width:8px;height:8px;border-radius:50%;background:#22c55e;animation:pulseGold 1.5s ease infinite;flex-shrink:0}
+.pulse-dot.amber{background:var(--gold)}
+.pulse-dot.blue{background:#3b82f6}
+
+/* ── Divider ── */
+.divider{height:1px;background:var(--divider);margin:16px 0}
+
+/* ── Spinner ── */
+.spinner{width:36px;height:36px;border:3px solid var(--surface-c);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto}
+
+/* ── Back button ── */
+.back-btn{display:inline-flex;align-items:center;gap:6px;color:var(--fg-dim);font-size:13px;cursor:pointer;transition:color .15s;margin-bottom:20px;background:none;border:none;font-family:inherit;padding:0}
+.back-btn:hover{color:var(--fg)}
+
+/* ── Company badge (topbar) ── */
+.company-init{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--gold),#8B6020);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:#000;flex-shrink:0;letter-spacing:.5px}
+
+/* ── Confirm screen ── */
+.confirm-icon{width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,rgba(200,169,126,.2),rgba(200,169,126,.06));border:2px solid rgba(200,169,126,.3);display:flex;align-items:center;justify-content:center;margin:0 auto 24px;font-size:32px}
+.ref-badge{font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:700;color:var(--gold);letter-spacing:3px;text-align:center;padding:14px;background:var(--gold-dim);border-radius:12px;border:1px solid rgba(200,169,126,.2)}
+
+/* ── Employee list item ── */
+.emp-item{display:flex;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid var(--divider)}
+.emp-item:last-child{border-bottom:none}
+
+/* ── Spend meter ── */
+.spend-meter{height:3px;border-radius:2px;background:var(--surface-c);margin-top:4px;overflow:hidden}
+.spend-meter-fill{height:100%;border-radius:2px;background:var(--gold)}
+
+/* ── Settings section ── */
+.settings-section{margin-bottom:28px}
+.settings-section-title{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--fg-subtle);margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid var(--divider)}
+
+/* ── Route chip ── */
+.route-pill{font-size:13px;color:var(--fg-muted);display:flex;align-items:center;gap:6px}
+.route-arrow{color:var(--fg-ghost);font-size:11px}
+
+/* ── Scrollable horizontal ── */
+.scroll-x{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.scroll-x::-webkit-scrollbar{display:none}
+
+/* ── Inline add form ── */
+.inline-form{background:var(--surface-b);border:1px solid rgba(200,169,126,.15);border-radius:14px;padding:18px;margin-bottom:16px;animation:slideUp .3s ease}
+
+/* ── Quick action row ── */
+.qaction{display:flex;align-items:center;gap:12px;padding:13px 16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;cursor:pointer;transition:.15s}
+.qaction:hover{border-color:rgba(200,169,126,.2);background:var(--surface-c)}
+
+/* ── Period selector ── */
+.period-sel{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px}
+.period-btn{padding:7px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;background:var(--surface);border:1px solid var(--border);color:var(--fg-dim);transition:.15s;font-family:inherit}
+.period-btn.on{background:var(--gold-dim);border-color:rgba(200,169,126,.3);color:var(--gold)}
+
+/* ── API key input ── */
+.api-key-wrap{position:relative}
+.api-key-wrap input{font-family:monospace;font-size:13px;letter-spacing:1px}
+
+/* ── Responsive ── */
+@media(max-width:380px){
+  .stat-cards{gap:8px}
+  .stat-card{padding:14px}
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* ── Firebase ── */
+let auth, db, FIREBASE_ENABLED = false;
+try {
+  if (typeof APEXVIP_FIREBASE_CONFIG !== 'undefined' && APEXVIP_FIREBASE_CONFIG.apiKey) {
+    firebase.initializeApp(APEXVIP_FIREBASE_CONFIG);
+    auth = firebase.auth();
+    db = firebase.firestore();
+    FIREBASE_ENABLED = true;
+  }
+} catch(e) { console.warn('Firebase:', e.message); }
+
+/* ── Demo Data ── */
+const TEAM = [
+  {id:'T1',name:'Alexandra Chen',role:'Managing Director',trips:8,spend:4820,colour:'#7c3aed'},
+  {id:'T2',name:'James Whitfield',role:'Senior Partner',trips:6,spend:3640,colour:'#0ea5e9'},
+  {id:'T3',name:'Sophie Morrison',role:'Associate',trips:4,spend:1890,colour:'#10b981'},
+  {id:'T4',name:'Oliver Thompson',role:'Analyst',trips:3,spend:1240,colour:'#f59e0b'},
+  {id:'T5',name:'Charlotte Blake',role:'PA',trips:12,spend:6820,colour:'#ec4899'},
+];
+
+const CORP_TRIPS = [
+  {id:'CT1',emp:'Alexandra Chen',route:"Claridge's → Heathrow T5",date:'Today 14:30',driver:'James H.',plate:'LX73 ABC',status:'en_route',fare:185,code:'CC-DEAL-047',vehicle:'S-Class'},
+  {id:'CT2',emp:'Charlotte Blake',route:'Canary Wharf → Chelsea',date:'Today 11:00',driver:'Oliver P.',plate:'LX23 RRA',status:'onboard',fare:95,code:'CC-ADMIN-012',vehicle:'Range Rover'},
+  {id:'CT3',emp:'James Whitfield',route:'Mayfair → Gatwick',date:'Tomorrow 06:15',driver:'TBA',plate:'—',status:'confirmed',fare:210,code:'CC-DEAL-051',vehicle:'V-Class'},
+  {id:'CT4',emp:'Sophie Morrison',route:"King's Cross → City Airport",date:'Tomorrow 08:45',driver:'TBA',plate:'—',status:'confirmed',fare:140,code:'CC-CLIENT-008',vehicle:'S-Class'},
+];
+
+const PAST_TRIPS = [
+  {id:'PT1',emp:'Charlotte Blake',route:'Heathrow T5 → Mayfair',date:'8 Jun 2026',fare:185,code:'CC-DEAL-041',vehicle:'S-Class'},
+  {id:'PT2',emp:'Alexandra Chen',route:'Mayfair → Canary Wharf',date:'7 Jun 2026',fare:95,code:'CC-MEET-033',vehicle:'Range Rover'},
+  {id:'PT3',emp:'James Whitfield',route:"Gatwick → King's Cross",date:'6 Jun 2026',fare:210,code:'CC-DEAL-039',vehicle:'V-Class'},
+  {id:'PT4',emp:'Oliver Thompson',route:'City Airport → Chelsea',date:'5 Jun 2026',fare:125,code:'CC-CLIENT-022',vehicle:'S-Class'},
+  {id:'PT5',emp:'Sophie Morrison',route:'Knightsbridge → Stansted',date:'4 Jun 2026',fare:195,code:'CC-CONF-018',vehicle:'V-Class'},
+];
+
+const RECENT_BOOKINGS = [
+  {ref:'APX-CORP-8821',emp:'Charlotte Blake',route:'Canary Wharf → Chelsea',date:'Today 11:00',cost:95,status:'active'},
+  {ref:'APX-CORP-8820',emp:'Alexandra Chen',route:"Claridge's → Heathrow T5",date:'Today 14:30',cost:185,status:'active'},
+  {ref:'APX-CORP-8819',emp:'James Whitfield',route:'Mayfair → Gatwick',date:'Tomorrow 06:15',cost:210,status:'confirmed'},
+  {ref:'APX-CORP-8818',emp:'Sophie Morrison',route:"King's Cross → City Airport",date:'Tomorrow 08:45',cost:140,status:'confirmed'},
+  {ref:'APX-CORP-8817',emp:'Oliver Thompson',route:'City Airport → Chelsea',date:'5 Jun',cost:125,status:'completed'},
+];
+
+const TOP_ROUTES = [
+  {route:'Heathrow → Mayfair',count:14,total:2590},
+  {route:'Canary Wharf → Chelsea',count:11,total:1045},
+  {route:'Mayfair → Gatwick',count:9,total:1890},
+  {route:"King's Cross → City Airport",count:7,total:980},
+  {route:'Knightsbridge → Stansted',count:5,total:975},
+];
+
+const DEFAULT_CODES = ['CC-DEAL-047','CC-ADMIN-012','CC-CLIENT-008','CC-CONF-018'];
+
+/* ── State ── */
+let S = {
+  screen: 'splash',
+  user: null,
+  company: {name:'Apex Capital LLP',code:'APEX-CORP-001'},
+  bookingDraft: {},
+  tripsTab: 'active',
+  reportPeriod: 'month',
+  teamAddOpen: false,
+  costCodes: [...DEFAULT_CODES],
+  showAddCode: false,
+  webhookUrl: 'https://hooks.apexcapital.com/transport',
+  apiSecret: 'sk_live_ApexCorp_••••••••••••',
+  showSecret: false,
+  spendLimitEnabled: true,
+  spendLimitAmount: 500,
+  employeeSpendLimits: true,
+};
+
+/* ── Routing ── */
+function go(screen) {
+  S.screen = screen;
+  render();
+  window.scrollTo({top:0,behavior:'instant'});
+}
+
+/* ── Helpers ── */
+function initials(name) {
+  return name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
+}
+
+function statusTag(status) {
+  const map = {
+    en_route: ['blue','En Route'],
+    onboard:  ['green','Onboard'],
+    arrived:  ['amber','Arrived'],
+    confirmed:['gray','Confirmed'],
+    active:   ['green','Active'],
+    completed:['gray','Completed'],
+    cancelled:['red','Cancelled'],
+    pending:  ['amber','Pending'],
+  };
+  const [cls, label] = map[status] || ['gray', status];
+  return `<span class="tag tag-${cls}">${label}</span>`;
+}
+
+function vehicleIcon(v) {
+  if (!v) return '🚗';
+  if (v.includes('Rolls')) return '👑';
+  if (v.includes('V-Class')) return '🚐';
+  return '🚗';
+}
+
+function fmt(n) { return '£' + n.toLocaleString('en-GB'); }
+
+function genRef() {
+  return 'APX-CORP-' + (Math.floor(Math.random()*9000)+1000);
+}
+
+/* ── Render ── */
+function render() {
+  const app = document.getElementById('app');
+  const pages = {
+    splash,
+    login,
+    home,
+    book,
+    'booking-sent': bookingSent,
+    trips,
+    team,
+    reports,
+    settings,
+  };
+  const fn = pages[S.screen];
+  app.innerHTML = fn ? fn() : splash();
+  bindEvents();
+}
+
+/* ── Bottom nav HTML ── */
+function bottomNav(active) {
+  const items = [
+    {id:'home', icon:`<svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>`, label:'Home'},
+    {id:'book', icon:`<svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>`, label:'Book'},
+    {id:'trips', icon:`<svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>`, label:'Trips'},
+    {id:'team', icon:`<svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>`, label:'Team'},
+    {id:'reports', icon:`<svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>`, label:'Reports'},
+  ];
+  return `<nav class="bottomnav">
+    ${items.map(it=>`<div class="bnav-item${it.id===active?' on':''}" onclick="go('${it.id}')">${it.icon}<span>${it.label}</span></div>`).join('')}
+  </nav>`;
+}
+
+/* ── Top bar HTML ── */
+function topBar(showBack=false, title='') {
+  if (showBack) {
+    return `<div class="topbar">
+      <button class="back-btn" style="margin:0" onclick="go('home')">
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+        Back
+      </button>
+      <span style="flex:1;text-align:center;font-family:'Cormorant Garamond',serif;font-size:18px;font-weight:700;color:var(--fg)">${title}</span>
+      <div style="width:60px"></div>
+    </div>`;
+  }
+  return `<div class="topbar">
+    <div class="company-init">AC</div>
+    <div style="flex:1">
+      <div style="font-size:13px;font-weight:700">${S.company.name}</div>
+      <div style="font-size:10px;color:var(--fg-dim);letter-spacing:1px;text-transform:uppercase">Travel Manager</div>
+    </div>
+    <div style="font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:700;color:var(--gold);letter-spacing:3px">ApexVIP</div>
+    <button onclick="go('settings')" style="background:none;border:none;color:var(--fg-dim);cursor:pointer;padding:4px;display:flex;align-items:center">
+      <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+    </button>
+  </div>`;
+}
+
+/* ════════════════════════════════════════
+   SCREENS
+════════════════════════════════════════ */
+
+/* ── 1. SPLASH ── */
+function splash() {
+  return `<div class="splash screen">
+    <div class="splash-logo">ApexVIP</div>
+    <div class="splash-sub">Corporate Travel</div>
+    <div class="splash-divider"></div>
+    <div class="splash-tagline">Premium chauffeur services<br>for discerning organisations</div>
+    <div class="splash-btns">
+      <button class="btn btn-gold btn-full" style="font-size:16px;padding:14px;letter-spacing:1px" onclick="go('login')">Sign In</button>
+      <button class="btn btn-glass btn-full" style="font-size:15px;padding:13px" onclick="requestAccess()">Request Access</button>
+    </div>
+    <div style="margin-top:40px;font-size:11px;color:var(--fg-subtle);letter-spacing:1px;text-align:center;animation:fadeIn 1s ease 2s both">
+      APEX-CORP-001 &nbsp;·&nbsp; Apex Capital LLP
+    </div>
+  </div>`;
+}
+
+/* ── 2. LOGIN ── */
+function login() {
+  return `<div class="login-wrap screen">
+    <div class="login-card">
+      <div class="login-title">ApexVIP</div>
+      <div style="text-align:center;font-size:11px;letter-spacing:3px;color:var(--fg-subtle);margin-bottom:32px;text-transform:uppercase">Corporate Portal</div>
+
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div class="field">
+          <label>Work Email</label>
+          <input type="email" id="l-email" placeholder="you@company.com" autocomplete="email"/>
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"/>
+        </div>
+        <div class="field">
+          <label>Company Code</label>
+          <input type="text" id="l-code" placeholder="e.g. APEX-CORP-001" value="APEX-CORP-001" style="letter-spacing:1px;font-size:13px"/>
+        </div>
+      </div>
+
+      <button class="btn btn-gold btn-full" style="margin-top:24px;padding:14px;font-size:15px;letter-spacing:.5px" onclick="doLogin()">
+        Sign In
+      </button>
+
+      <div style="text-align:center;margin-top:16px">
+        <span style="font-size:12px;color:var(--fg-dim)">New organisation? &nbsp;</span>
+        <span style="font-size:12px;color:var(--gold);cursor:pointer" onclick="requestAccess()">Request Access</span>
+      </div>
+
+      <div style="margin-top:28px;padding-top:20px;border-top:1px solid var(--divider);text-align:center">
+        <div style="font-size:10px;color:var(--fg-subtle);letter-spacing:1px;margin-bottom:10px;text-transform:uppercase">Demo access</div>
+        <button class="btn btn-ghost btn-sm" onclick="demoLogin()">Use Demo Account</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ── 3. HOME ── */
+function home() {
+  const activeTrips = CORP_TRIPS.filter(t=>t.status==='en_route'||t.status==='onboard');
+
+  const recentRows = RECENT_BOOKINGS.map(b=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--divider)">
+      <div class="avatar" style="background:${getEmpColour(b.emp)};width:32px;height:32px;font-size:11px;color:#fff">${initials(b.emp)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${b.emp}</div>
+        <div style="font-size:11px;color:var(--fg-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${b.route}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:13px;font-weight:700;color:var(--gold)">${fmt(b.cost)}</div>
+        <div style="margin-top:3px">${statusTag(b.status)}</div>
+      </div>
+    </div>`).join('');
+
+  const activeTripCards = activeTrips.map(t=>`
+    <div class="trip-card stagger" style="margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div class="avatar" style="background:${getEmpColour(t.emp)};width:38px;height:38px;color:#fff">${initials(t.emp)}</div>
+        <div style="flex:1">
+          <div style="font-size:14px;font-weight:700">${t.emp}</div>
+          <div style="font-size:11px;color:var(--fg-dim)">${t.vehicle} · ${t.plate}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <div class="pulse-dot${t.status==='en_route'?' blue':t.status==='onboard'?' ':' amber'}"></div>
+          ${statusTag(t.status)}
+        </div>
+      </div>
+      <div class="route-pill" style="margin-bottom:8px;font-size:12px">
+        <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3"/></svg>
+        ${t.route}
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:11px;color:var(--fg-dim)">Driver: <strong style="color:var(--fg-muted)">${t.driver}</strong></span>
+        <span style="font-size:12px;font-weight:600;color:var(--gold)">${fmt(t.fare)}</span>
+      </div>
+    </div>`).join('');
+
+  return `<div class="screen">
+    ${topBar()}
+    <div class="page">
+
+      <!-- Stats -->
+      <div class="section-label" style="margin-bottom:12px">This Month</div>
+      <div class="scroll-x" style="margin:-4px -16px;padding:4px 16px">
+        <div style="display:flex;gap:10px;width:max-content;padding-bottom:4px">
+          <div class="stat-card" style="width:150px">
+            <div style="font-size:10px;color:var(--fg-subtle);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px">Total Spend</div>
+            <div style="font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:700;color:var(--gold)">£24,180</div>
+            <div style="font-size:11px;color:var(--fg-dim);margin-top:4px">+12% vs last month</div>
+            <div class="stat-wm">£</div>
+          </div>
+          <div class="stat-card" style="width:140px">
+            <div style="font-size:10px;color:var(--fg-subtle);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px">Active Trips</div>
+            <div style="font-family:'Cormorant Garamond',serif;font-size:36px;font-weight:700;color:var(--fg)">2</div>
+            <div style="font-size:11px;color:#22c55e;margin-top:4px">Live now</div>
+            <div class="stat-wm">🗺</div>
+          </div>
+          <div class="stat-card" style="width:150px">
+            <div style="font-size:10px;color:var(--fg-subtle);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px">Travelling</div>
+            <div style="font-family:'Cormorant Garamond',serif;font-size:36px;font-weight:700;color:var(--fg)">5</div>
+            <div style="font-size:11px;color:var(--fg-dim);margin-top:4px">Employees</div>
+            <div class="stat-wm">👤</div>
+          </div>
+          <div class="stat-card" style="width:150px">
+            <div style="font-size:10px;color:var(--fg-subtle);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px">Savings</div>
+            <div style="font-family:'Cormorant Garamond',serif;font-size:36px;font-weight:700;color:#22c55e">18%</div>
+            <div style="font-size:11px;color:var(--fg-dim);margin-top:4px">vs retail pricing</div>
+            <div class="stat-wm">↓</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Active Trips -->
+      <div style="margin-top:24px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="pulse-dot"></div>
+          <span class="section-label">Active Trips</span>
+        </div>
+        <button class="btn btn-ghost btn-xs" onclick="go('trips')">View All</button>
+      </div>
+      ${activeTripCards || '<div class="card-inset" style="text-align:center;color:var(--fg-dim);font-size:13px;padding:24px">No active trips</div>'}
+
+      <!-- Recent Bookings -->
+      <div style="margin-top:24px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
+        <span class="section-label">Recent Bookings</span>
+        <button class="btn btn-ghost btn-xs" onclick="go('trips')">See All</button>
+      </div>
+      <div class="card" style="padding:4px 16px">
+        ${recentRows}
+      </div>
+
+      <!-- Quick Book -->
+      <button class="btn btn-gold btn-full" style="margin-top:20px;padding:15px;font-size:15px;letter-spacing:.5px" onclick="go('book')">
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+        Quick Book
+      </button>
+
+    </div>
+    ${bottomNav('home')}
+  </div>`;
+}
+
+/* ── 4. BOOK ── */
+function book() {
+  const empOptions = TEAM.map(t=>`<option value="${t.name}">${t.name} — ${t.role}</option>`).join('');
+
+  return `<div class="screen">
+    ${topBar(true, 'Book a Car')}
+    <div class="page">
+
+      <!-- Employee -->
+      <div style="margin-bottom:20px">
+        <div class="section-label" style="margin-bottom:14px">Travelling Employee</div>
+        <div class="field">
+          <label>Employee</label>
+          <select id="b-emp">
+            <option value="">Select employee…</option>
+            ${empOptions}
+          </select>
+        </div>
+
+        <div class="toggle-row card" style="margin-top:10px;padding:14px 16px">
+          <div>
+            <div style="font-size:13px;font-weight:600">Passenger is a different person</div>
+            <div style="font-size:11px;color:var(--fg-dim);margin-top:2px">Enter passenger details below</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="b-diff-pax" onchange="togglePaxFields()"/>
+            <div class="toggle-track"></div>
+            <div class="toggle-thumb"></div>
+          </label>
+        </div>
+
+        <div id="pax-fields" style="display:none;margin-top:10px;display:flex;flex-direction:column;gap:10px;display:none" >
+          <div class="field">
+            <label>Passenger Name</label>
+            <input type="text" id="b-pax-name" placeholder="Full name"/>
+          </div>
+          <div class="field">
+            <label>Passenger Phone</label>
+            <input type="tel" id="b-pax-phone" placeholder="+44 7700 900000"/>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pickup -->
+      <div style="margin-bottom:20px">
+        <div class="section-label" style="margin-bottom:14px">Journey Details</div>
+        <div class="field" style="margin-bottom:10px">
+          <label>Pickup Address</label>
+          <div class="input-with-icon">
+            <input type="text" id="b-pickup" placeholder="Enter pickup address"/>
+            <button class="input-icon-btn" onclick="useCurrentLocation()">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="field" style="margin-bottom:10px">
+          <label>Service Type</label>
+          <select id="b-svc" onchange="renderDropoff()">
+            <option value="airport">Airport Transfer</option>
+            <option value="hour">By Hour</option>
+            <option value="day">By Day</option>
+            <option value="address">To Address</option>
+          </select>
+        </div>
+
+        <div id="dropoff-wrap">
+          <div class="field" style="margin-bottom:10px">
+            <label>Dropoff / Airport</label>
+            <select id="b-dropoff">
+              <option value="">Select airport…</option>
+              <option>Heathrow Terminal 2</option>
+              <option>Heathrow Terminal 3</option>
+              <option>Heathrow Terminal 4</option>
+              <option>Heathrow Terminal 5</option>
+              <option>Gatwick North</option>
+              <option>Gatwick South</option>
+              <option>London City Airport</option>
+              <option>Stansted</option>
+              <option>Luton</option>
+              <option>Custom Address</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div class="field">
+            <label>Date</label>
+            <input type="date" id="b-date"/>
+          </div>
+          <div class="field">
+            <label>Time</label>
+            <input type="time" id="b-time" value="09:00"/>
+          </div>
+        </div>
+      </div>
+
+      <!-- Vehicle & Cost -->
+      <div style="margin-bottom:20px">
+        <div class="section-label" style="margin-bottom:14px">Vehicle & Billing</div>
+        <div class="field" style="margin-bottom:10px">
+          <label>Vehicle Preference</label>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px" id="veh-picker">
+            ${['S-Class','V-Class','Rolls-Royce'].map((v,i)=>`
+              <div class="vehicle-opt card" data-veh="${v}" onclick="selectVehicle('${v}')" style="padding:12px 8px;text-align:center;cursor:pointer;${i===0?'border-color:var(--gold);background:var(--gold-dim)':''}">
+                <div style="font-size:22px;margin-bottom:4px">${vehicleIcon(v)}</div>
+                <div style="font-size:11px;font-weight:700;color:${i===0?'var(--gold)':'var(--fg-muted)'}">${v}</div>
+              </div>`).join('')}
+          </div>
+        </div>
+
+        <div class="field" style="margin-bottom:10px">
+          <label>Cost Code</label>
+          <input type="text" id="b-code" placeholder="e.g. CC-2024-DEAL-047" list="code-list"/>
+          <datalist id="code-list">
+            ${S.costCodes.map(c=>`<option value="${c}">`).join('')}
+          </datalist>
+        </div>
+
+        <div class="field" style="margin-bottom:10px">
+          <label>Trip Purpose</label>
+          <select id="b-purpose">
+            <option>Client Entertainment</option>
+            <option>Road Show</option>
+            <option>Airport Transfer</option>
+            <option>Office Commute</option>
+            <option>Conference</option>
+            <option>Other</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Special Instructions</label>
+          <textarea id="b-notes" placeholder="Flight number, luggage requirements, preferences…"></textarea>
+        </div>
+      </div>
+
+      <button class="btn btn-gold btn-full" style="padding:15px;font-size:15px;letter-spacing:.5px" onclick="submitBooking()">
+        Request Booking
+      </button>
+
+      <div style="text-align:center;margin-top:12px;font-size:11px;color:var(--fg-subtle)">
+        Bookings are typically confirmed within 5 minutes
+      </div>
+
+    </div>
+    ${bottomNav('book')}
+  </div>`;
+}
+
+/* ── 5. BOOKING SENT ── */
+function bookingSent() {
+  const d = S.bookingDraft;
+  const ref = d.ref || genRef();
+
+  return `<div class="screen">
+    ${topBar(false)}
+    <div class="page" style="display:flex;flex-direction:column;align-items:center;text-align:center;padding-top:40px">
+
+      <div class="confirm-icon">✓</div>
+
+      <div style="font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:700;margin-bottom:6px">Booking Requested</div>
+      <div style="font-size:14px;color:var(--fg-dim);margin-bottom:28px">Your chauffeur is being arranged</div>
+
+      <div class="ref-badge" style="width:100%;margin-bottom:24px">${ref}</div>
+
+      <div class="card" style="width:100%;text-align:left;margin-bottom:20px">
+        ${detailRow('Employee', d.employee || 'Alexandra Chen')}
+        ${detailRow('Pickup', d.pickup || 'Claridge\'s, Brook Street')}
+        ${detailRow('Dropoff', d.dropoff || 'Heathrow Terminal 5')}
+        ${detailRow('Date & Time', d.datetime || 'Tomorrow, 09:00')}
+        ${detailRow('Vehicle', d.vehicle || 'S-Class')}
+        ${detailRow('Cost Code', d.code || 'CC-DEAL-047')}
+        ${detailRow('Purpose', d.purpose || 'Airport Transfer')}
+      </div>
+
+      <button class="btn btn-glass btn-full" style="margin-bottom:10px;padding:13px" onclick="addToCalendar()">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        Add to Calendar
+      </button>
+      <button class="btn btn-gold btn-full" style="margin-bottom:10px;padding:13px" onclick="go('book')">Book Another</button>
+      <button class="btn btn-ghost btn-full" style="padding:12px" onclick="go('home')">Back to Dashboard</button>
+
+    </div>
+    ${bottomNav('book')}
+  </div>`;
+}
+
+function detailRow(label, value) {
+  return `<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--divider)">
+    <span style="font-size:12px;color:var(--fg-dim)">${label}</span>
+    <span style="font-size:13px;font-weight:600;text-align:right;max-width:60%">${value}</span>
+  </div>`;
+}
+
+/* ── 6. TRIPS ── */
+function trips() {
+  const tab = S.tripsTab;
+
+  const activeCards = CORP_TRIPS.filter(t=>t.status==='en_route'||t.status==='onboard').map(t=>`
+    <div class="trip-card" style="margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <div class="avatar" style="background:${getEmpColour(t.emp)};width:42px;height:42px;color:#fff;font-size:14px">${initials(t.emp)}</div>
+        <div style="flex:1">
+          <div style="font-size:14px;font-weight:700">${t.emp}</div>
+          <div style="font-size:11px;color:var(--fg-dim)">${t.code}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <div class="pulse-dot${t.status==='onboard'?'':' blue'}"></div>
+          ${statusTag(t.status)}
+        </div>
+      </div>
+      <div style="background:var(--surface-b);border-radius:10px;padding:12px;margin-bottom:10px">
+        <div style="font-size:12px;color:var(--fg-dim);margin-bottom:4px">Route</div>
+        <div style="font-size:13px;font-weight:600">${t.route}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:11px">
+        <div style="text-align:center;padding:8px;background:var(--surface-b);border-radius:8px">
+          <div style="color:var(--fg-dim);margin-bottom:2px">Driver</div>
+          <div style="font-weight:700;font-size:12px">${t.driver}</div>
+        </div>
+        <div style="text-align:center;padding:8px;background:var(--surface-b);border-radius:8px">
+          <div style="color:var(--fg-dim);margin-bottom:2px">Plate</div>
+          <div style="font-weight:700;font-size:12px">${t.plate}</div>
+        </div>
+        <div style="text-align:center;padding:8px;background:var(--surface-b);border-radius:8px">
+          <div style="color:var(--fg-dim);margin-bottom:2px">Fare</div>
+          <div style="font-weight:700;font-size:12px;color:var(--gold)">${fmt(t.fare)}</div>
+        </div>
+      </div>
+    </div>`).join('') || `<div class="card-inset" style="text-align:center;padding:32px;color:var(--fg-dim)">No active trips</div>`;
+
+  const upcomingList = CORP_TRIPS.filter(t=>t.status==='confirmed').map(t=>`
+    <div class="card" style="margin-bottom:10px;padding:16px">
+      <div style="display:flex;align-items:flex-start;gap:10px">
+        <div class="avatar" style="background:${getEmpColour(t.emp)};width:36px;height:36px;color:#fff;font-size:11px;flex-shrink:0">${initials(t.emp)}</div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:4px">
+            <div style="font-size:13px;font-weight:700">${t.emp}</div>
+            <span class="tag tag-amber" style="flex-shrink:0">${t.date}</span>
+          </div>
+          <div style="font-size:12px;color:var(--fg-dim);margin-bottom:6px">${t.route}</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap">
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <span class="tag tag-gray">${t.vehicle}</span>
+              <span class="tag tag-gray">${t.code}</span>
+            </div>
+            <button class="btn btn-danger btn-xs" onclick="cancelTrip('${t.id}')">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>`).join('') || `<div class="card-inset" style="text-align:center;padding:32px;color:var(--fg-dim)">No upcoming trips</div>`;
+
+  const pastList = PAST_TRIPS.map(t=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--divider)">
+      <div class="avatar" style="background:${getEmpColour(t.emp)};width:34px;height:34px;color:#fff;font-size:11px">${initials(t.emp)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.emp}</div>
+        <div style="font-size:11px;color:var(--fg-dim)">${t.date} · ${t.code}</div>
+        <div style="font-size:11px;color:var(--fg-subtle);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.route}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:13px;font-weight:700;color:var(--gold)">${fmt(t.fare)}</div>
+        <button class="btn btn-ghost btn-xs" style="margin-top:4px" onclick="alert('Receipt for ${t.id} — demo mode')">
+          <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          Receipt
+        </button>
+      </div>
+    </div>`).join('');
+
+  const content = tab === 'active' ? activeCards : tab === 'upcoming' ? upcomingList :
+    `<div class="card" style="padding:4px 16px">${pastList}</div>`;
+
+  return `<div class="screen">
+    ${topBar()}
+    <div class="page">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+        <div class="page-title">Trips</div>
+        <button class="btn btn-gold btn-sm" onclick="go('book')">+ Book</button>
+      </div>
+
+      <div class="tabbar">
+        <button class="tab${tab==='active'?' on':''}" onclick="setTripsTab('active')">Active (2)</button>
+        <button class="tab${tab==='upcoming'?' on':''}" onclick="setTripsTab('upcoming')">Upcoming (2)</button>
+        <button class="tab${tab==='past'?' on':''}" onclick="setTripsTab('past')">Past (5)</button>
+      </div>
+
+      ${content}
+    </div>
+    ${bottomNav('trips')}
+  </div>`;
+}
+
+/* ── 7. TEAM ── */
+function team() {
+  const empList = TEAM.map(emp=>`
+    <div class="emp-item">
+      <div class="avatar" style="background:${emp.colour};width:44px;height:44px;color:#fff;font-size:14px">${initials(emp.name)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:700">${emp.name}</div>
+        <div style="font-size:11px;color:var(--fg-dim);margin-bottom:6px">${emp.role}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <span class="tag tag-gray" style="font-size:10px">${emp.trips} trips</span>
+          <span class="tag tag-gold" style="font-size:10px">${fmt(emp.spend)}</span>
+        </div>
+        <div class="spend-meter" style="margin-top:8px">
+          <div class="spend-meter-fill" style="width:${Math.round(emp.spend/68.20)}%"></div>
+        </div>
+      </div>
+      <div style="text-align:right;flex-shrink:0;margin-left:8px">
+        <label class="toggle">
+          <input type="checkbox" checked onchange="toggleEmpStatus(this,'${emp.id}')"/>
+          <div class="toggle-track"></div>
+          <div class="toggle-thumb"></div>
+        </label>
+        <div style="font-size:10px;color:#22c55e;margin-top:4px;letter-spacing:.5px">Active</div>
+      </div>
+    </div>`).join('');
+
+  const addForm = S.teamAddOpen ? `
+    <div class="inline-form">
+      <div style="font-size:13px;font-weight:700;margin-bottom:14px;color:var(--gold)">Add New Traveller</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div class="field"><label>Full Name</label><input type="text" id="new-emp-name" placeholder="First Last"/></div>
+        <div class="field"><label>Work Email</label><input type="email" id="new-emp-email" placeholder="name@company.com"/></div>
+        <div class="field"><label>Role / Title</label><input type="text" id="new-emp-role" placeholder="e.g. Senior Partner"/></div>
+        <div class="field">
+          <label>Monthly Spend Limit</label>
+          <div class="input-with-icon">
+            <input type="number" id="new-emp-limit" placeholder="1000" style="padding-left:28px"/>
+            <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--fg-dim);font-size:14px">£</span>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px">
+          <button class="btn btn-glass btn-full" onclick="closeAddForm()">Cancel</button>
+          <button class="btn btn-gold btn-full" onclick="saveNewEmployee()">Add Traveller</button>
+        </div>
+      </div>
+    </div>` : '';
+
+  return `<div class="screen">
+    ${topBar()}
+    <div class="page">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+        <div class="page-title">Team</div>
+        <button class="btn btn-gold btn-sm" onclick="openAddForm()">
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+          Add Traveller
+        </button>
+      </div>
+
+      ${addForm}
+
+      <div class="section-label" style="margin-bottom:4px">Travellers (${TEAM.length})</div>
+      <div class="card" style="padding:0 16px">
+        ${empList}
+      </div>
+
+      <div class="card" style="margin-top:16px;padding:16px;text-align:center;background:var(--gold-dim);border-color:rgba(200,169,126,.2)">
+        <div style="font-size:12px;color:var(--fg-dim);margin-bottom:4px">Total team spend this month</div>
+        <div style="font-family:'Cormorant Garamond',serif;font-size:32px;font-weight:700;color:var(--gold)">£18,410</div>
+        <div style="font-size:11px;color:var(--fg-dim);margin-top:4px">Across 5 travellers · 33 trips</div>
+      </div>
+    </div>
+    ${bottomNav('team')}
+  </div>`;
+}
+
+/* ── 8. REPORTS ── */
+function reports() {
+  const p = S.reportPeriod;
+  const periods = [{id:'month',label:'This Month'},{id:'last',label:'Last Month'},{id:'q1',label:'Q1'},{id:'custom',label:'Custom'}];
+
+  const maxSpend = Math.max(...TEAM.map(t=>t.spend));
+  const empBars = TEAM.map(t=>`
+    <div class="bar-row">
+      <div style="width:110px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.name.split(' ')[0]} ${t.name.split(' ')[1]?.[0]}.</div>
+      <div class="bar-track">
+        <div class="bar-fill" style="--w:${Math.round(t.spend/maxSpend*100)}%"></div>
+      </div>
+      <div style="width:60px;text-align:right;font-size:12px;font-weight:700;color:var(--gold);flex-shrink:0">${fmt(t.spend)}</div>
+    </div>`).join('');
+
+  const tripTypes = [
+    {label:'Airport',pct:38,colour:'#C8A97E'},
+    {label:'Client',pct:28,colour:'#7c3aed'},
+    {label:'Road Show',pct:18,colour:'#0ea5e9'},
+    {label:'Commute',pct:10,colour:'#10b981'},
+    {label:'Other',pct:6,colour:'#f59e0b'},
+  ];
+
+  const segments = tripTypes.map(t=>`<div class="seg" style="width:${t.pct}%;background:${t.colour}"></div>`).join('');
+
+  const legend = tripTypes.map(t=>`
+    <div style="display:flex;align-items:center;gap:6px;font-size:12px">
+      <div style="width:10px;height:10px;border-radius:2px;background:${t.colour};flex-shrink:0"></div>
+      <span style="color:var(--fg-muted)">${t.label}</span>
+      <span style="color:var(--fg-dim);margin-left:auto">${t.pct}%</span>
+    </div>`).join('');
+
+  const routeList = TOP_ROUTES.map((r,i)=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--divider)">
+      <div style="width:22px;height:22px;border-radius:50%;background:var(--surface-c);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--gold);flex-shrink:0">${i+1}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.route}</div>
+        <div style="font-size:11px;color:var(--fg-dim);margin-top:1px">${r.count} trips</div>
+      </div>
+      <div style="font-size:13px;font-weight:700;color:var(--gold);flex-shrink:0">${fmt(r.total)}</div>
+    </div>`).join('');
+
+  return `<div class="screen">
+    ${topBar()}
+    <div class="page">
+      <div class="page-title" style="margin-bottom:16px">Reports</div>
+
+      <div class="period-sel">
+        ${periods.map(pr=>`<button class="period-btn${p===pr.id?' on':''}" onclick="setPeriod('${pr.id}')">${pr.label}</button>`).join('')}
+      </div>
+
+      <!-- Total Spend -->
+      <div class="card" style="text-align:center;padding:28px;margin-bottom:16px;background:linear-gradient(135deg,rgba(200,169,126,.07),transparent)">
+        <div class="section-label" style="margin-bottom:8px">Total Spend</div>
+        <div style="font-family:'Cormorant Garamond',serif;font-size:52px;font-weight:700;color:var(--gold);line-height:1">£24,180</div>
+        <div style="font-size:12px;color:var(--fg-dim);margin-top:8px">33 trips · 5 employees · June 2026</div>
+      </div>
+
+      <!-- Employee Breakdown -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="section-label" style="margin-bottom:14px">Spend by Employee</div>
+        ${empBars}
+      </div>
+
+      <!-- Trip Type Breakdown -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="section-label" style="margin-bottom:12px">Breakdown by Trip Type</div>
+        <div class="seg-bar">${segments}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px">
+          ${legend}
+        </div>
+      </div>
+
+      <!-- Top Routes -->
+      <div class="card" style="margin-bottom:16px;padding:16px">
+        <div class="section-label" style="margin-bottom:4px">Top Routes</div>
+        ${routeList}
+      </div>
+
+      <!-- Cost Savings -->
+      <div class="savings-badge" style="margin-bottom:16px">
+        <div style="font-size:24px;margin-bottom:8px">💰</div>
+        <div style="font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:700;color:#22c55e">£4,320 saved</div>
+        <div style="font-size:13px;color:var(--fg-muted);margin-top:6px;line-height:1.5">By using ApexVIP corporate rates you saved<br><strong>£4,320 vs retail pricing</strong> this month</div>
+        <div style="font-size:11px;color:var(--fg-dim);margin-top:8px">That's 18% below market rate</div>
+      </div>
+
+      <!-- Export -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+        <button class="btn btn-glass btn-full" onclick="alert('CSV export — demo mode')">
+          <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+          Export CSV
+        </button>
+        <button class="btn btn-gold btn-full" onclick="alert('PDF invoice — demo mode')">
+          <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          Download Invoice
+        </button>
+      </div>
+
+    </div>
+    ${bottomNav('reports')}
+  </div>`;
+}
+
+/* ── 9. SETTINGS ── */
+function settings() {
+  const chips = S.costCodes.map((c,i)=>`
+    <div class="chip">
+      ${c}
+      <button class="chip-del" onclick="removeCode(${i})">×</button>
+    </div>`).join('');
+
+  return `<div class="screen">
+    ${topBar(true, 'Settings')}
+    <div class="page">
+      <div class="page-title" style="margin-bottom:24px">Settings</div>
+
+      <!-- Company Info -->
+      <div class="settings-section">
+        <div class="settings-section-title">Company</div>
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div class="field"><label>Company Name</label><input type="text" id="s-name" value="${S.company.name}"/></div>
+          <div class="field"><label>Company Code</label><input type="text" value="${S.company.code}" readonly style="opacity:.6;cursor:not-allowed"/></div>
+          <div class="field"><label>Billing Address</label><textarea style="min-height:64px">One Canada Square, Canary Wharf, London E14 5AB</textarea></div>
+          <div class="field"><label>Invoicing Email</label><input type="email" value="finance@apexcapital.co.uk"/></div>
+        </div>
+      </div>
+
+      <!-- Cost Codes -->
+      <div class="settings-section">
+        <div class="settings-section-title">Default Cost Codes</div>
+        <div class="chips" id="chips-wrap">
+          ${chips}
+          <div class="chip" style="cursor:pointer;border-style:dashed;color:var(--fg-dim)" onclick="addCodePrompt()">
+            <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+            Add Code
+          </div>
+        </div>
+        ${S.showAddCode ? `
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <input type="text" id="new-code-input" placeholder="e.g. CC-2025-NEW-001" style="flex:1"/>
+            <button class="btn btn-gold btn-sm" onclick="saveNewCode()">Add</button>
+          </div>` : ''}
+      </div>
+
+      <!-- Spend Limits -->
+      <div class="settings-section">
+        <div class="settings-section-title">Spend Controls</div>
+        <div class="card" style="margin-bottom:10px;padding:14px 16px">
+          <div class="toggle-row">
+            <div>
+              <div style="font-size:13px;font-weight:600">Per-employee spend limits</div>
+              <div style="font-size:11px;color:var(--fg-dim);margin-top:2px">Alert when employee exceeds monthly limit</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" ${S.employeeSpendLimits?'checked':''} onchange="S.employeeSpendLimits=this.checked"/>
+              <div class="toggle-track"></div>
+              <div class="toggle-thumb"></div>
+            </label>
+          </div>
+        </div>
+        <div class="field">
+          <label>Default Monthly Limit per Employee</label>
+          <div class="input-with-icon">
+            <input type="number" id="s-limit" value="${S.spendLimitAmount}" style="padding-left:28px"/>
+            <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--fg-dim);font-size:14px">£</span>
+          </div>
+        </div>
+        <div style="margin-top:10px;font-size:11px;color:var(--fg-dim)">Individual limits can be set in the Team section</div>
+      </div>
+
+      <!-- API Integration -->
+      <div class="settings-section">
+        <div class="settings-section-title">API Integration</div>
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div class="field">
+            <label>Webhook URL</label>
+            <input type="url" id="s-webhook" value="${S.webhookUrl}" placeholder="https://your-server.com/hooks/transport"/>
+          </div>
+          <div class="field">
+            <label>Secret Key</label>
+            <div class="api-key-wrap input-with-icon">
+              <input type="${S.showSecret?'text':'password'}" id="s-secret" value="${S.apiSecret}"/>
+              <button class="input-icon-btn" onclick="toggleSecret()">
+                ${S.showSecret
+                  ? `<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`
+                  : `<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`
+                }
+              </button>
+            </div>
+          </div>
+          <button class="btn btn-glass btn-full" onclick="testWebhook()">
+            <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            Test Webhook
+          </button>
+        </div>
+      </div>
+
+      <!-- Danger zone / logout -->
+      <div class="settings-section">
+        <div class="settings-section-title">Account</div>
+        <button class="btn btn-ghost btn-full" style="margin-bottom:10px" onclick="alert('Support: support@apexvip.com')">Contact Support</button>
+        <button class="btn btn-danger btn-full" onclick="doLogout()">Sign Out</button>
+      </div>
+
+      <button class="btn btn-gold btn-full" style="padding:14px;font-size:15px;letter-spacing:.5px;margin-bottom:8px" onclick="saveSettings()">
+        Save Changes
+      </button>
+
+    </div>
+    ${bottomNav('home')}
+  </div>`;
+}
+
+/* ════════════════════════════════════════
+   ACTIONS / EVENT BINDING
+════════════════════════════════════════ */
+
+function bindEvents() {
+  // nothing needed — inline onclick handlers used throughout
+}
+
+function getEmpColour(name) {
+  const emp = TEAM.find(t=>t.name===name);
+  return emp ? emp.colour : '#C8A97E';
+}
+
+async function doLogin() {
+  const email = document.getElementById('l-email')?.value || '';
+  const pass  = document.getElementById('l-pass')?.value  || '';
+  const code  = document.getElementById('l-code')?.value  || '';
+
+  // Demo fallback — always works
+  if (email === 'travel@apexcapital.co.uk' && pass === 'corporate123') {
+    S.user = {email, name:'Travel Manager'};
+    go('home'); return;
+  }
+
+  if (FIREBASE_ENABLED && email && pass) {
+    try {
+      await auth.signInWithEmailAndPassword(email, pass);
+      S.user = {email};
+      go('home'); return;
+    } catch(e) {
+      // fall through to demo
+    }
+  }
+
+  // Allow any non-empty email + valid corp code for demo
+  if (email && code.startsWith('APEX-CORP')) {
+    S.user = {email, name:'Travel Manager'};
+    go('home');
+  } else {
+    showToast('Invalid credentials. Try the demo button below.');
+  }
+}
+
+function demoLogin() {
+  S.user = {email:'travel@apexcapital.co.uk', name:'Travel Manager'};
+  go('home');
+}
+
+function doLogout() {
+  if (FIREBASE_ENABLED) auth.signOut().catch(()=>{});
+  S.user = null;
+  go('splash');
+}
+
+function requestAccess() {
+  showToast('Request sent! Our corporate team will contact you within 24 hours.');
+}
+
+function togglePaxFields() {
+  const el = document.getElementById('pax-fields');
+  if (el) el.style.display = el.style.display === 'none' ? 'flex' : 'none';
+}
+
+function renderDropoff() {
+  const svc = document.getElementById('b-svc')?.value;
+  const wrap = document.getElementById('dropoff-wrap');
+  if (!wrap) return;
+  if (svc === 'airport') {
+    wrap.innerHTML = `<div class="field" style="margin-bottom:10px"><label>Airport</label><select id="b-dropoff">
+      <option value="">Select airport…</option>
+      <option>Heathrow Terminal 2</option><option>Heathrow Terminal 3</option>
+      <option>Heathrow Terminal 4</option><option>Heathrow Terminal 5</option>
+      <option>Gatwick North</option><option>Gatwick South</option>
+      <option>London City Airport</option><option>Stansted</option><option>Luton</option>
+    </select></div>`;
+  } else if (svc === 'hour') {
+    wrap.innerHTML = `<div class="field" style="margin-bottom:10px"><label>Duration (Hours)</label><select id="b-hours">
+      <option>2 Hours</option><option>3 Hours</option><option>4 Hours</option>
+      <option>6 Hours</option><option>8 Hours</option><option>10 Hours</option>
+    </select></div>`;
+  } else if (svc === 'day') {
+    wrap.innerHTML = `<div class="field" style="margin-bottom:10px"><label>Duration</label><select id="b-hours">
+      <option>Full Day (10 hrs)</option><option>Half Day (5 hrs)</option>
+    </select></div>`;
+  } else {
+    wrap.innerHTML = `<div class="field" style="margin-bottom:10px"><label>Dropoff Address</label>
+      <input type="text" id="b-dropoff" placeholder="Enter dropoff address"/></div>`;
+  }
+}
+
+function selectVehicle(v) {
+  document.querySelectorAll('.vehicle-opt').forEach(el=>{
+    const isSelected = el.dataset.veh === v;
+    el.style.borderColor = isSelected ? 'var(--gold)' : '';
+    el.style.background   = isSelected ? 'var(--gold-dim)' : '';
+    el.querySelector('div:last-child').style.color = isSelected ? 'var(--gold)' : 'var(--fg-muted)';
+  });
+  S.bookingDraft.vehicle = v;
+}
+
+function useCurrentLocation() {
+  const input = document.getElementById('b-pickup');
+  if (!input) return;
+  if (navigator.geolocation) {
+    showToast('Fetching location…');
+    navigator.geolocation.getCurrentPosition(
+      ()=>{ input.value = '1 Canada Square, Canary Wharf, London E14 5AB'; },
+      ()=>{ input.value = '1 Canada Square, Canary Wharf, London E14 5AB'; }
+    );
+  } else {
+    input.value = '1 Canada Square, Canary Wharf, London E14 5AB';
+  }
+}
+
+function submitBooking() {
+  const emp      = document.getElementById('b-emp')?.value;
+  const pickup   = document.getElementById('b-pickup')?.value;
+  const code     = document.getElementById('b-code')?.value;
+  const purpose  = document.getElementById('b-purpose')?.value;
+  const dateEl   = document.getElementById('b-date')?.value;
+  const timeEl   = document.getElementById('b-time')?.value;
+  const veh      = S.bookingDraft.vehicle || 'S-Class';
+  const dropEl   = document.getElementById('b-dropoff')?.value || document.getElementById('b-hours')?.value || 'Heathrow Terminal 5';
+
+  if (!emp)    { showToast('Please select a travelling employee'); return; }
+  if (!pickup) { showToast('Please enter a pickup address'); return; }
+
+  S.bookingDraft = {
+    ref: genRef(),
+    employee: emp,
+    pickup: pickup || '—',
+    dropoff: dropEl,
+    datetime: dateEl && timeEl ? `${dateEl}, ${timeEl}` : 'Tomorrow, 09:00',
+    vehicle: veh,
+    code: code || 'CC-DEAL-047',
+    purpose: purpose || 'Airport Transfer',
+  };
+
+  // Attempt Firestore write
+  if (FIREBASE_ENABLED) {
+    db.collection('corporate_bookings').add({
+      ...S.bookingDraft,
+      companyCode: S.company.code,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(()=>{});
+  }
+
+  go('booking-sent');
+}
+
+function addToCalendar() {
+  const d = S.bookingDraft;
+  const title = encodeURIComponent(`ApexVIP: ${d.employee} — ${d.route||d.pickup+' → '+d.dropoff}`);
+  const details = encodeURIComponent(`Ref: ${d.ref}\nVehicle: ${d.vehicle}\nCost Code: ${d.code}`);
+  const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${details}`;
+  window.open(url, '_blank');
+}
+
+function setTripsTab(tab) {
+  S.tripsTab = tab;
+  render();
+}
+
+function cancelTrip(id) {
+  if (confirm('Cancel this trip? This cannot be undone.')) {
+    showToast('Trip cancelled. You will receive a confirmation email.');
+  }
+}
+
+function setPeriod(p) {
+  S.reportPeriod = p;
+  render();
+}
+
+function openAddForm() {
+  S.teamAddOpen = true;
+  render();
+}
+
+function closeAddForm() {
+  S.teamAddOpen = false;
+  render();
+}
+
+function saveNewEmployee() {
+  const name  = document.getElementById('new-emp-name')?.value?.trim();
+  const email = document.getElementById('new-emp-email')?.value?.trim();
+  const role  = document.getElementById('new-emp-role')?.value?.trim();
+  if (!name) { showToast('Please enter a name'); return; }
+  const colours = ['#7c3aed','#0ea5e9','#10b981','#f59e0b','#ec4899','#ef4444','#C8A97E'];
+  TEAM.push({
+    id: 'T' + (TEAM.length+1),
+    name,
+    role: role || 'Employee',
+    trips: 0,
+    spend: 0,
+    colour: colours[TEAM.length % colours.length],
+  });
+  S.teamAddOpen = false;
+  showToast(`${name} added to your team`);
+  render();
+}
+
+function toggleEmpStatus(checkbox, id) {
+  const label = checkbox.parentElement.nextElementSibling;
+  if (label) {
+    label.textContent = checkbox.checked ? 'Active' : 'Inactive';
+    label.style.color = checkbox.checked ? '#22c55e' : 'var(--fg-dim)';
+  }
+}
+
+function removeCode(idx) {
+  S.costCodes.splice(idx, 1);
+  render();
+}
+
+function addCodePrompt() {
+  S.showAddCode = true;
+  render();
+  setTimeout(()=>document.getElementById('new-code-input')?.focus(), 50);
+}
+
+function saveNewCode() {
+  const val = document.getElementById('new-code-input')?.value?.trim();
+  if (val) {
+    S.costCodes.push(val);
+    S.showAddCode = false;
+    render();
+  }
+}
+
+function toggleSecret() {
+  S.showSecret = !S.showSecret;
+  render();
+}
+
+function testWebhook() {
+  showToast('Webhook test sent — check your server logs');
+}
+
+function saveSettings() {
+  const name = document.getElementById('s-name')?.value;
+  if (name) S.company.name = name;
+  const limit = document.getElementById('s-limit')?.value;
+  if (limit) S.spendLimitAmount = parseInt(limit);
+  const wh = document.getElementById('s-webhook')?.value;
+  if (wh) S.webhookUrl = wh;
+  showToast('Settings saved successfully');
+}
+
+/* ── Toast notification ── */
+function showToast(msg, duration=3000) {
+  let t = document.getElementById('toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'toast';
+    t.style.cssText = `position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:rgba(20,18,16,.95);color:var(--fg);border:1px solid var(--border);border-radius:10px;padding:12px 20px;font-size:13px;font-weight:500;z-index:999;white-space:nowrap;max-width:90vw;text-align:center;backdrop-filter:blur(20px);box-shadow:0 8px 32px rgba(0,0,0,.4);transition:opacity .3s`;
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.style.opacity = '1';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(()=>{ t.style.opacity = '0'; }, duration);
+}
+
+/* ── Init ── */
+if (FIREBASE_ENABLED) {
+  auth.onAuthStateChanged(user => {
+    if (user && S.screen === 'login') {
+      S.user = {email: user.email, name: user.displayName || 'Travel Manager'};
+      go('home');
+    }
+  });
+}
+
+render();
+</script>
+</body>
+</html>
