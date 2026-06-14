@@ -26,6 +26,7 @@ minutes on a CPU.
 | `export_web.py` | Exports a trained checkpoint to JSON weights for the browser. |
 | `web/gpt.js` | A JavaScript port of the forward pass + tokenizers — runs inference client-side. |
 | `web/index.html` | A browser UI: type a prompt, watch the model generate, all in JS. |
+| `notebooks/train_gpt_colab.ipynb` | Train a bigger version on a free GPU (Colab) and export a `model.json` for the browser. |
 
 ## How it works
 
@@ -148,6 +149,16 @@ The page has a prompt box, temperature / top-k / length sliders, and streams the
 generated text token by token. Because the model is small, it runs at hundreds
 of tokens per second on a laptop. The same `web/index.html` can be deployed to
 GitHub Pages (like the trading app already in this repo).
+
+## Train a bigger model on a GPU (Colab)
+
+Pure-NumPy CPU training caps out fast. To train a much larger model that
+produces genuinely readable text, use `notebooks/train_gpt_colab.ipynb`: a
+PyTorch port of this same architecture that runs on a free Colab GPU and exports
+a `model.json` byte-compatible with `web/gpt.js` (it includes a self-check that
+verifies the export matches the browser code). Open it in Google Colab, set the
+runtime to GPU, Run all, and commit the resulting `model.json` to `web/` — the
+Pages workflow serves a committed model directly instead of training one.
 
 ## What to expect
 
