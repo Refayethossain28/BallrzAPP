@@ -1,5 +1,6 @@
 'use client'
 import type { TradingSignal, SignalType } from '@/lib/types'
+import BrokerButtons from '@/components/BrokerButtons'
 
 interface Props {
   signal: TradingSignal
@@ -123,6 +124,9 @@ export default function SignalCard({ signal, pair, currentPrice }: Props) {
         <span>ATR (14) = {pips(pair, signal.pipValue)}</span>
         <span>Levels based on 1.0x / 1.5x ATR</span>
       </div>
+
+      {/* Broker Affiliate Buttons */}
+      <BrokerButtons signal={signal.type} />
     </div>
   )
 }
