@@ -235,7 +235,9 @@
     <label style="color:#a78bfa">✦ Claude AI:</label>
     <input type="password" id="claudeKey" placeholder="sk-ant-... — powers AI signal" style="max-width:220px;border-color:rgba(139,92,246,.3)"/>
     <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:#7c3aed">Get key ↗</a>
+    <button onclick="copyPersonalLink()" id="copyLinkBtn" style="padding:5px 12px;background:rgba(139,92,246,.15);border:1px solid rgba(139,92,246,.4);border-radius:7px;color:#a78bfa;font-size:11px;cursor:pointer;white-space:nowrap">📌 Copy Homepage Link</button>
   </div>
+  <div id="copyLinkMsg" style="display:none;font-size:11px;color:#a78bfa;text-align:center;margin-top:-16px;margin-bottom:8px">✓ Link copied! Save it as your homepage — your keys are embedded in it.</div>
 
   <!-- Search -->
   <div class="search-section">
@@ -1204,6 +1206,37 @@ function updateCountdown() {
     `· refresh in ${m}:${s.toString().padStart(2,'0')}`;
 }
 
+// ─── Personal link (keys embedded in URL hash) ────────────────────────────────
+function copyPersonalLink() {
+  const keys = {
+    a: document.getElementById('apiKey').value.trim(),
+    n: document.getElementById('newsKey').value.trim(),
+    c: document.getElementById('claudeKey').value.trim(),
+  };
+  const hash = btoa(JSON.stringify(keys));
+  const base = location.href.split('#')[0];
+  const link = base + '#keys=' + hash;
+  navigator.clipboard.writeText(link).then(() => {
+    const msg = document.getElementById('copyLinkMsg');
+    msg.style.display = 'block';
+    setTimeout(() => msg.style.display = 'none', 5000);
+  }).catch(() => {
+    prompt('Copy this link and save it as your homepage:', link);
+  });
+}
+
+function loadKeysFromHash() {
+  try {
+    const match = location.hash.match(/[#&]keys=([^&]+)/);
+    if (!match) return false;
+    const keys = JSON.parse(atob(match[1]));
+    if (keys.a) document.getElementById('apiKey').value = keys.a;
+    if (keys.n) document.getElementById('newsKey').value = keys.n;
+    if (keys.c) document.getElementById('claudeKey').value = keys.c;
+    return true;
+  } catch { return false; }
+}
+
 function saveKeys() {
   ['apiKey','newsKey','claudeKey'].forEach(id => {
     const v = document.getElementById(id).value.trim();
@@ -1220,8 +1253,8 @@ function loadKeys() {
 }
 
 function init() {
-  // Restore saved API keys
-  loadKeys();
+  // Restore saved API keys (hash takes priority over localStorage)
+  if (!loadKeysFromHash()) loadKeys();
 
   // Auto-save keys on change
   ['apiKey','newsKey','claudeKey'].forEach(id => {
