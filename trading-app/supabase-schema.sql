@@ -1,60 +1,42 @@
--- ============================================================
--- FX Signal Pro — Supabase Schema
--- Run this in your Supabase SQL Editor
--- ============================================================
-
--- 1. Create subscriptions table
-CREATE TABLE IF NOT EXISTS public.subscriptions (
-  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id      UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  tier         TEXT NOT NULL DEFAULT 'free' CHECK (tier IN ('free', 'pro')),
-  stripe_customer_id      TEXT,
-  stripe_subscription_id  TEXT,
-  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE(user_id)
+-- Create subscriptions table
+create table if not exists public.subscriptions (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references auth.users(id) on delete cascade not null unique,
+  tier text not null default 'free' check (tier in ('free', 'pro')),
+  stripe_customer_id text,
+  stripe_subscription_id text,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null
 );
 
--- 2. Enable Row Level Security
-ALTER TABLE public.subscriptions ENABLE ROW LEVEL SECURITY;
+-- Enable RLS
+alter table public.subscriptions enable row level security;
 
--- 3. Policy: users can only read their own subscription
-CREATE POLICY "Users can view own subscription"
-  ON public.subscriptions
-  FOR SELECT
-  USING (auth.uid() = user_id);
+-- Users can read their own subscription
+create policy "Users can read own subscription"
+  on public.subscriptions
+  for select
+  using (auth.uid() = user_id);
 
--- 4. Policy: service role can do everything (used by webhook + tier check)
--- The service role bypasses RLS by default, so no explicit policy needed.
--- But we add an explicit policy for clarity:
-CREATE POLICY "Service role full access"
-  ON public.subscriptions
-  FOR ALL
-  USING (true)
-  WITH CHECK (true);
+-- Service role can do everything (used server-side)
+create policy "Service role full access"
+  on public.subscriptions
+  for all
+  using (auth.role() = 'service_role')
+  with check (auth.role() = 'service_role');
 
--- (Note: the service role key always bypasses RLS, so the above is a
---  belt-and-suspenders measure for any future anon calls.)
+-- Auto-create free subscription on user signup
+create or replace function public.handle_new_user()
+returns trigger as $$
+begin
+  insert into public.subscriptions (user_id, tier)
+  values (new.id, 'free')
+  on conflict (user_id) do nothing;
+  return new;
+end;
+$$ language plpgsql security definer;
 
--- 5. Auto-insert 'free' subscription on user signup via trigger
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-  INSERT INTO public.subscriptions (user_id, tier)
-  VALUES (NEW.id, 'free')
-  ON CONFLICT (user_id) DO NOTHING;
-  RETURN NEW;
-END;
-$$;
-
--- Drop trigger if it already exists, then recreate
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW
-  EXECUTE FUNCTION public.handle_new_user();
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
