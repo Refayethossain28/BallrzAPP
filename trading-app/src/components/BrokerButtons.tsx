@@ -9,6 +9,11 @@ interface Broker {
 
 const BROKERS: Broker[] = [
   {
+    name: 'Plus500',
+    url: 'https://www.plus500.com/en/partners/affiliates',
+    color: '#00B4E0',
+  },
+  {
     name: 'eToro',
     url: 'https://www.etoro.com/?utm_source=fxsignalpro',
     color: '#00C805',
