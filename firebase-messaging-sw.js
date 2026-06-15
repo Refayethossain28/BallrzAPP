@@ -1,25 +1,23 @@
 // ApexVIP Service Worker — Push Notifications + Offline PWA shell
 // Version 3.0
 
-const CACHE_NAME = 'apexvip-v5';
+const CACHE_NAME = 'apexvip-v6';
 const OFFLINE_URLS = [
-  '/apexvip-client.html',
-  '/apexvip-driver.html',
-  '/apexvip-dubai.html',
-  '/apexvip-admin.html',
-  '/apexvip-core.js',
-  '/firebase.js',
-  '/manifest.json',
-  '/manifest-driver.json',
-  '/manifest-admin.json',
-  '/manifest-dubai.json',
-  '/icon-60.png',
-  '/icon-120.png',
-  '/icon-152.png',
-  '/icon-167.png',
-  '/icon-180.png',
-  '/icon-192.png',
-  '/icon-512.png',
+  '/BallrzAPP/apexvip-client.html',
+  '/BallrzAPP/apexvip-driver.html',
+  '/BallrzAPP/apexvip-dubai.html',
+  '/BallrzAPP/apexvip-admin.html',
+  '/BallrzAPP/apexvip-core.js',
+  '/BallrzAPP/firebase.js',
+  '/BallrzAPP/manifest.json',
+  '/BallrzAPP/manifest-driver.json',
+  '/BallrzAPP/icon-60.png',
+  '/BallrzAPP/icon-120.png',
+  '/BallrzAPP/icon-152.png',
+  '/BallrzAPP/icon-167.png',
+  '/BallrzAPP/icon-180.png',
+  '/BallrzAPP/icon-192.png',
+  '/BallrzAPP/icon-512.png',
 ];
 
 // ── Install: pre-cache the app shell ──────────────────────────────────────────
@@ -168,7 +166,7 @@ self.addEventListener('notificationclick', event => {
         wins[0].focus();
         wins[0].postMessage({ type: 'NAVIGATE', screen });
       } else {
-        clients.openWindow('/apexvip-client.html');
+        clients.openWindow('/BallrzAPP/apexvip-client.html');
       }
     })
   );
