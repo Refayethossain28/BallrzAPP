@@ -7,7 +7,7 @@
 <style>
   :root{
     --bg:#0b0e14; --panel:#141a26; --ink:#e6edf6; --muted:#8a97ab;
-    --accent:#4cc2ff; --good:#3ddc97; --bad:#ff6b6b; --band:#ffd166;
+    --accent:#4cc2ff; --good:#3ddc97; --bad:#ff6b6b; --band:#ffd166; --vs:#b388ff;
   }
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
@@ -20,14 +20,31 @@
   #stage{position:relative;flex:1;margin:0 10px;border-radius:16px;overflow:hidden;
     background:radial-gradient(120% 80% at 50% 0%,#1a2333 0%,#0c1019 70%);
     border:1px solid #1f2838;touch-action:none}
-  canvas{display:block;width:100%;height:100%}
-  #overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-    flex-direction:column;text-align:center;gap:14px;padding:24px;background:rgba(8,11,17,.72);
-    backdrop-filter:blur(3px)}
-  #overlay h2{margin:0;font-size:24px}
-  #overlay p{margin:0;color:var(--muted);font-size:13px;line-height:1.5;max-width:300px}
+  canvas#game{display:block;width:100%;height:100%}
+
+  /* full-stage screens (menu / pause / handoff / result) */
+  .screen{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    flex-direction:column;text-align:center;gap:12px;padding:20px;background:rgba(8,11,17,.80);
+    backdrop-filter:blur(3px);overflow:auto}
+  .screen h2{margin:0;font-size:26px;letter-spacing:.5px}
+  .screen p{margin:0;color:var(--muted);font-size:13px;line-height:1.5;max-width:330px}
+  .screen .lead{color:var(--ink);font-size:15px;font-weight:600}
+  .screen .tiny{font-size:11px;opacity:.8}
+  .demo{width:min(330px,92%);height:104px;border-radius:12px;background:#0c1119;border:1px solid #1f2838}
+
+  /* pause control, visible only while a round is live */
+  #pauseBtn{position:absolute;top:10px;right:10px;z-index:5;display:none;place-items:center;
+    width:38px;height:38px;border-radius:50%;border:1px solid #2c3d47;background:rgba(20,26,38,.88);
+    color:var(--ink);font-size:14px;cursor:pointer}
+
   button.cta{appearance:none;border:0;border-radius:999px;padding:13px 26px;font-size:15px;
     font-weight:600;background:var(--accent);color:#04121c;cursor:pointer}
+  button.cta.ghost{background:#22303a;color:var(--ink)}
+  button.cta.vs{background:#33285f;color:#ece2ff;border:1px solid #4a3da0}
+  .btnrow{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+  .menucol{display:flex;flex-direction:column;gap:10px;width:min(260px,80%)}
+  .menucol .cta{width:100%}
+
   .hud{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:10px}
   .card{background:var(--panel);border:1px solid #1f2838;border-radius:12px;padding:9px 10px}
   .card .k{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
@@ -46,8 +63,6 @@
   .legend{font-size:10px;color:var(--muted);text-align:center;padding-bottom:10px}
   .legend b{color:var(--ink);font-weight:600}
   .pill{display:inline-block;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:600}
-  .btnrow{display:flex;gap:10px}
-  button.cta.ghost{background:#22303a;color:var(--ink)}
   #cosmetics{display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap}
   .swatch{width:30px;height:30px;border-radius:50%;border:2px solid #2c3d47;cursor:pointer;
     position:relative;display:flex;align-items:center;justify-content:center;font-size:11px}
@@ -68,21 +83,53 @@
 
   <div id="stage">
     <canvas id="game"></canvas>
-    <div id="overlay">
-      <h2>Tap the target</h2>
-      <p>One thumb. Hit each circle before it fades — avoid the red decoys.
-         The game silently models your skill and serves the next level to keep
-         your win-rate in the <b style="color:var(--band)">flow band (~60%)</b>:
-         winnable, never boring, never rage-quit.</p>
+    <button id="pauseBtn" aria-label="Pause">⏸</button>
+
+    <!-- start / how-to -->
+    <div id="overlay" class="screen">
+      <h2>FLOW</h2>
+      <p class="lead">👆 Pop the glowing circle before it fades.<br>☠️ Dodge the red ✕ decoys. That's the whole game.</p>
+      <canvas id="demoC" class="demo"></canvas>
+      <p class="sub">It quietly learns how good you are and serves the next level to keep you right on the edge —
+         <b style="color:var(--band)">winnable about 60% of the time</b>. Never boring, never rage-quit.</p>
       <div class="btnrow">
         <button class="cta" id="dailyBtn">Daily challenge</button>
         <button class="cta ghost" id="freeBtn">Free play</button>
       </div>
-      <div class="cosline" id="cosLine">Ring skin — unlocks at your lifetime best</div>
+      <button class="cta vs" id="twoBtn">👥 2-Player duel</button>
       <div id="cosmetics"></div>
+      <div class="cosline" id="cosLine">Ring skin — unlocks at your lifetime best</div>
       <button class="share" id="shareBtn">🔗 Copy challenge link</button>
-      <p style="font-size:11px">Everything below the board is normally invisible —
-         it's the engine's internals, surfaced so you can watch it adapt.</p>
+      <p class="tiny">Everything below the board is the engine's internals, surfaced so you can watch it adapt.</p>
+    </div>
+
+    <!-- pause menu -->
+    <div id="pauseMenu" class="screen" style="display:none">
+      <h2>Paused</h2>
+      <div class="menucol">
+        <button class="cta" id="resumeBtn">▶ Resume</button>
+        <button class="cta ghost" id="restartBtn">↻ Restart</button>
+        <button class="cta ghost" id="menuBtn">⏏ End &amp; main menu</button>
+      </div>
+    </div>
+
+    <!-- 2-player hand-off -->
+    <div id="handoff" class="screen" style="display:none">
+      <h2>Pass the phone 📲</h2>
+      <p class="lead" id="handoffScore">Player 1 done</p>
+      <p class="sub">Hand the phone to <b style="color:var(--vs)">Player 2</b>. You both get the
+         <b>same levels</b> for 30 seconds — highest score wins.</p>
+      <button class="cta vs" id="readyBtn">Player 2 ready →</button>
+    </div>
+
+    <!-- 2-player result -->
+    <div id="result" class="screen" style="display:none">
+      <h2 id="resultTitle">Result</h2>
+      <p class="lead" id="resultScores"></p>
+      <div class="btnrow">
+        <button class="cta vs" id="rematchBtn">Rematch</button>
+        <button class="cta ghost" id="resultMenuBtn">Main menu</button>
+      </div>
     </div>
   </div>
 
@@ -123,6 +170,9 @@
  *   3. ONLINE FLOW SELECTION   -> each round we *select* (not generate) the
  *      pool level whose predicted win-probability for THIS player is closest
  *      to the flow target, with a little exploration for variety.
+ *
+ * Modes: 1-player endless (adaptive) and a 2-player pass-and-play duel
+ * (same seed -> identical levels for both -> fair time attack).
  * ------------------------------------------------------------------ */
 
 /* ---------- deterministic RNG so a "seed" reproduces a session ---------- */
@@ -135,11 +185,7 @@ function makeRng(seed){
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-/* ---------- seed: daily challenge / shareable / free play ----------
- * A seed fully determines the session (pool + selection order), so the same
- * seed reproduces the same run — that's what makes a "daily challenge" and
- * shareable links work without a server: everyone playing today's seed plays
- * the same generated levels and can compare scores. */
+/* ---------- seed: daily challenge / shareable / free play ---------- */
 function hashStr(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return h>>>0;}
 function dailySeed(){const d=new Date();return hashStr('flow-'+d.getUTCFullYear()+'-'+(d.getUTCMonth()+1)+'-'+d.getUTCDate());}
 const urlSeed = new URLSearchParams(location.search).get('seed');
@@ -148,15 +194,12 @@ if(urlSeed){ SEED = (parseInt(urlSeed,36)>>>0) || hashStr(urlSeed); mode='shared
 else { SEED = dailySeed(); mode='daily'; }   // default to today's challenge
 let rng = makeRng(SEED);
 function setSeedLabel(){
-  document.getElementById('seedLabel').textContent =
-    (mode==='daily'?'daily · ':mode==='shared'?'shared · ':'seed ') + SEED.toString(36);
+  const tag = mode==='daily'?'daily · ' : mode==='shared'?'shared · ' : mode==='2p'?'2-player · ' : 'free · ';
+  document.getElementById('seedLabel').textContent = tag + SEED.toString(36);
 }
 setSeedLabel();
 
-/* ---------- cosmetics: identity investment, not pay-to-win ----------
- * Ring skins unlock at lifetime-best thresholds (persisted locally). They
- * change appearance only — never difficulty — so they're a retention hook
- * that can't distort the flow-band fairness. */
+/* ---------- cosmetics: identity investment, not pay-to-win ---------- */
 const SKINS=[
   {id:'aqua',   name:'Aqua',   ring:'#4cc2ff', fill:'rgba(76,194,255,.16)',  need:0},
   {id:'mint',   name:'Mint',   ring:'#3ddc97', fill:'rgba(61,220,151,.16)',  need:25},
@@ -167,15 +210,12 @@ let best = +(localStorage.getItem('flow.best')||0);
 let skinId = localStorage.getItem('flow.skin')||'aqua';
 function skin(){ return SKINS.find(s=>s.id===skinId) || SKINS[0]; }
 
-/* ---------- difficulty model ----------
- * A level's intrinsic difficulty d ∈ [0,1] is derived from its gameplay
- * parameters. Win probability for a player of skill s is logistic in (s - d). */
+/* ---------- difficulty model ---------- */
 const K = 6.0;                       // logistic steepness
 const FLOW_TARGET = 0.60;            // we aim to keep predicted win here
 const winProb = (skill, diff) => 1 / (1 + Math.exp(-K * (skill - diff)));
 
 function paramsToDifficulty(p){
-  // smaller target, shorter life, faster drift, more decoys => harder.
   const sizeHard = 1 - (p.radius - 22) / (54 - 22);      // 0 easy .. 1 hard
   const lifeHard = 1 - (p.lifeMs - 650) / (1900 - 650);
   const speedHard = p.speed / 130;
@@ -184,17 +224,15 @@ function paramsToDifficulty(p){
   return Math.max(0, Math.min(1, d));
 }
 
-/* ---------- the "offline" generation pipeline ----------
- * Build a big library spread across the parameter space, each level pre-tagged
- * with its difficulty vector. Runs once; the hot path only ever selects. */
+/* ---------- the "offline" generation pipeline ---------- */
 function generateLevelPool(n){
   const pool = [];
   for (let i=0;i<n;i++){
     const p = {
-      radius: 22 + rng()*32,        // px (logical)
-      lifeMs: 650 + rng()*1250,     // ms target stays on screen
-      speed:  rng()*rng()*130,      // px/s drift (biased toward slower)
-      decoys: Math.floor(rng()*rng()*5), // 0..4, biased low
+      radius: 22 + rng()*32,
+      lifeMs: 650 + rng()*1250,
+      speed:  rng()*rng()*130,
+      decoys: Math.floor(rng()*rng()*5),
     };
     p.diff = paramsToDifficulty(p);
     pool.push(p);
@@ -206,14 +244,9 @@ const POOL = generateLevelPool(240);
 document.getElementById('poolN').textContent = POOL.length;
 
 /* ---------- on-device skill model ---------- */
-const player = {
-  skill: 0.45,            // latent skill, starts mid; adapts fast early
-  rounds: 0,
-  passHistory: [],        // 1/0 outcomes for the sparkline
-};
+const player = { skill: 0.45, rounds: 0, passHistory: [] };
 function updateSkill(level, won){
   const expected = winProb(player.skill, level.diff);
-  // higher learning rate early (cold start), settling as we learn the player.
   const lr = 0.30 / (1 + player.rounds*0.06) + 0.025;
   player.skill += lr * ((won?1:0) - expected);
   player.skill = Math.max(0.02, Math.min(0.98, player.skill));
@@ -222,114 +255,111 @@ function updateSkill(level, won){
   if (player.passHistory.length > 40) player.passHistory.shift();
 }
 
-/* ---------- online flow selection ----------
- * pick the pool level whose predicted win-prob is nearest FLOW_TARGET, among a
- * randomly sampled candidate set (exploration -> variety, not the same level). */
+/* ---------- level selection ---------- */
 let lastIdx = -1;
 function selectLevel(){
+  if(state==='match') return selectMatchLevel();   // 2P: fixed, skill-independent
+  // 1P adaptive: nearest predicted win-prob to the flow target, with exploration
   let best=null, bestScore=Infinity, bestIdx=-1;
-  const tries = 24;
-  for (let t=0;t<tries;t++){
+  for (let t=0;t<24;t++){
     const idx = Math.floor(rng()*POOL.length);
     if (idx === lastIdx) continue;
     const lvl = POOL[idx];
-    const pw = winProb(player.skill, lvl.diff);
-    const score = Math.abs(pw - FLOW_TARGET);
+    const score = Math.abs(winProb(player.skill, lvl.diff) - FLOW_TARGET);
     if (score < bestScore){ bestScore=score; best=lvl; bestIdx=idx; }
   }
   lastIdx = bestIdx;
   return best;
 }
+/* 2P: a gentle difficulty ramp driven only by the seeded RNG, so both players
+ * (who reset to the same seed) face a pixel-identical sequence of rounds. */
+function selectMatchLevel(){
+  const target = 0.30 + 0.40*Math.min(1, matchRound/24);  // ramps 0.30 -> 0.70
+  let best=null, bs=Infinity;
+  for(let k=0;k<20;k++){
+    const lvl = POOL[Math.floor(rng()*POOL.length)];
+    const s = Math.abs(lvl.diff - target);
+    if(s<bs){ bs=s; best=lvl; }
+  }
+  matchRound++;
+  return best;
+}
 
 /* ================================================================== *
- *  Rendering + game loop
+ *  Rendering, screens, and game control
  * ================================================================== */
-const stage = document.getElementById('stage');
-const cv = document.getElementById('game');
-const ctx = cv.getContext('2d');
+const stage    = document.getElementById('stage');
+const cv       = document.getElementById('game');
+const ctx      = cv.getContext('2d');
+const demoCv   = document.getElementById('demoC');
+const demoCtx  = demoCv.getContext('2d');
+const pauseBtn = document.getElementById('pauseBtn');
+
 let W=0,H=0,DPR=1;
 function resize(){
   const r = stage.getBoundingClientRect();
-  const nW = r.width, nH = r.height;
-  if(nW===0 || nH===0) return;            // box not laid out yet (e.g. inside an iframe) — wait
-  DPR = Math.min(window.devicePixelRatio||1, 2);
-  const hadSize = W>0 && H>0;
-  if(hadSize && targets.length){          // keep an in-progress round on-screen across size changes
-    const sx=nW/W, sy=nH/H;
-    for(const t of targets){ t.x*=sx; t.y*=sy; }
-  }
-  W = nW; H = nH;
-  cv.width = W*DPR; cv.height = H*DPR;
-  ctx.setTransform(DPR,0,0,DPR,0,0);
-  // If play began before the box had a real size, the round was laid out into
-  // nothing — re-deal it now that we have dimensions.
-  if(!hadSize && state==='playing') spawnRound();
+  const nW=r.width, nH=r.height;
+  if(nW===0 || nH===0) return;                 // box not laid out yet (iframe/late layout)
+  const dpr = Math.min(window.devicePixelRatio||1, 2);
+  if(nW===W && nH===H && dpr===DPR) return;    // unchanged — cheap to call every frame
+  const had = W>0 && H>0;
+  if(had && targets.length){ const sx=nW/W, sy=nH/H; for(const t of targets){ t.x*=sx; t.y*=sy; } }
+  W=nW; H=nH; DPR=dpr;
+  cv.width=W*DPR; cv.height=H*DPR; ctx.setTransform(DPR,0,0,DPR,0,0);
+  if(!had && live()) spawnRound();             // first real size after play began
 }
 window.addEventListener('resize', resize);
-// The stage flexes to fill its container, and that height can arrive late or
-// change (iframe embeds like htmlpreview, mobile Safari's collapsing toolbar,
-// rotation). Observe it so the canvas backing store always matches the box.
-if(window.ResizeObserver){ new ResizeObserver(resize).observe(stage); }
+if(window.ResizeObserver) new ResizeObserver(resize).observe(stage);
 
-const overlay = document.getElementById('overlay');
+/* ---------- state ---------- *
+ * idle | playing | paused | match | handoff | result */
+let state='idle', prevState='idle';
+let level=null, targets=[], roundStart=0, roundEnds=0, pausedAt=0;
+let score=0, streak=0;
+const live = ()=> state==='playing' || state==='match';
 
-let state = 'idle';          // idle | playing | over
-let level = null;            // current served level
-let targets = [];            // {x,y,r,vx,vy,decoy}
-let roundStart = 0, roundEnds = 0;
-let score = 0, streak = 0;
+/* 2-player */
+const MATCH_MS = 30000;
+let matchMode=false, matchPlayer=1, matchEndsAt=0, matchRound=0, p1Score=0, p2Score=0;
 
+/* ---------- screens / chrome ---------- */
+const SCREENS=['overlay','pauseMenu','handoff','result'];
+function showScreen(name){ for(const s of SCREENS) document.getElementById(s).style.display=(s===name)?'flex':'none'; }
+function updateChrome(){ pauseBtn.style.display = live() ? 'grid' : 'none'; }
+
+/* ---------- a round ---------- */
 function spawnRound(){
   level = selectLevel();
-  const margin = level.radius + 8;
+  const margin = level.radius+8, sp = level.speed;
   targets = [];
-  const ang = rng()*Math.PI*2, sp = level.speed;
-  // the real target
-  targets.push({
-    x: margin + rng()*(W-2*margin),
-    y: margin + rng()*(H-2*margin),
-    r: level.radius,
-    vx: Math.cos(ang)*sp, vy: Math.sin(ang)*sp,
-    decoy: false,
-  });
-  // decoys
-  for(let i=0;i<level.decoys;i++){
-    const a = rng()*Math.PI*2;
-    targets.push({
-      x: margin + rng()*(W-2*margin),
-      y: margin + rng()*(H-2*margin),
-      r: level.radius,
-      vx: Math.cos(a)*sp, vy: Math.sin(a)*sp,
-      decoy: true,
-    });
-  }
-  roundStart = performance.now();
-  roundEnds = roundStart + level.lifeMs;
+  const mk = (decoy)=>{ const a=rng()*Math.PI*2; return {
+      x: margin + rng()*(W-2*margin), y: margin + rng()*(H-2*margin), r: level.radius,
+      vx: Math.cos(a)*sp, vy: Math.sin(a)*sp, decoy }; };
+  targets.push(mk(false));
+  for(let i=0;i<level.decoys;i++) targets.push(mk(true));
+  roundStart = performance.now(); roundEnds = roundStart + level.lifeMs;
   refreshHud();
 }
-
 function endRound(won){
-  updateSkill(level, won);
-  if(won){ score++; streak++; if(score>best){ best=score; localStorage.setItem('flow.best',best); renderCosmetics(); } }
-  else { streak=0; }
+  if(state==='playing'){
+    updateSkill(level, won);
+    if(won && score+1>best){ best=score+1; localStorage.setItem('flow.best',best); renderCosmetics(); }
+    drawSpark();
+  }
+  if(won){ score++; streak++; } else streak=0;
   refreshHud();
-  drawSpark();
-  if(state==='playing') spawnRound();
+  if(live()) spawnRound();
 }
 
 function refreshHud(){
-  document.getElementById('skillV').innerHTML =
-    Math.round(player.skill*100) + '<small>/100</small>';
+  document.getElementById('skillV').innerHTML = Math.round(player.skill*100) + '<small>/100</small>';
   if(level){
-    document.getElementById('diffV').innerHTML =
-      Math.round(level.diff*100) + '<small>/100</small>';
+    document.getElementById('diffV').innerHTML = Math.round(level.diff*100) + '<small>/100</small>';
     const pw = winProb(player.skill, level.diff);
     document.getElementById('pwinV').innerHTML = Math.round(pw*100) + '<small>%</small>';
-    // flow bar: x position = win prob (0% hard at left -> 100% easy at right)
     const bar = document.getElementById('flowbar').clientWidth;
     document.getElementById('served').style.left = (pw*(bar-3))+'px';
   }
-  // band rectangle for ~55-70% win
   const bar = document.getElementById('flowbar').clientWidth;
   const band = document.getElementById('band');
   band.style.left = (0.50*bar)+'px';
@@ -345,12 +375,10 @@ function drawSpark(){
   sctx.setTransform(DPR,0,0,DPR,0,0);
   const w=r.width,h=r.height;
   sctx.clearRect(0,0,w,h);
-  // flow target line
   sctx.strokeStyle='rgba(255,209,102,.55)'; sctx.setLineDash([4,4]);
   const ty = h-(FLOW_TARGET*h);
   sctx.beginPath();sctx.moveTo(0,ty);sctx.lineTo(w,ty);sctx.stroke();
   sctx.setLineDash([]);
-  // rolling pass-rate curve (window of 8)
   const hist=player.passHistory; if(hist.length<2) return;
   sctx.strokeStyle='#3ddc97'; sctx.lineWidth=2; sctx.beginPath();
   for(let i=0;i<hist.length;i++){
@@ -363,69 +391,175 @@ function drawSpark(){
   sctx.stroke();
 }
 
-/* input */
-function hit(px,py){
-  if(state!=='playing') return;
-  for(let i=0;i<targets.length;i++){
-    const t=targets[i];
-    if((px-t.x)**2+(py-t.y)**2 <= (t.r+6)**2){
-      endRound(!t.decoy);     // hit real target = win; hit decoy = fail
-      return;
+/* ---------- drawing the board ---------- */
+function drawTargets(dt, advance){
+  const ref = (state==='paused') ? pausedAt : performance.now();
+  const remain = Math.max(0,(roundEnds-ref)/level.lifeMs);
+  for(const t of targets){
+    if(advance){
+      t.x+=t.vx*dt; t.y+=t.vy*dt;
+      if(t.x<t.r||t.x>W-t.r){t.vx*=-1;t.x=Math.max(t.r,Math.min(W-t.r,t.x));}
+      if(t.y<t.r||t.y>H-t.r){t.vy*=-1;t.y=Math.max(t.r,Math.min(H-t.r,t.y));}
+    }
+    ctx.beginPath();ctx.arc(t.x,t.y,t.r,0,7);
+    ctx.fillStyle = t.decoy ? 'rgba(255,107,107,.18)' : skin().fill; ctx.fill();
+    ctx.lineWidth=3; ctx.strokeStyle = t.decoy ? '#ff6b6b' : skin().ring;
+    ctx.beginPath();ctx.arc(t.x,t.y,t.r,0,7);ctx.stroke();
+    if(t.decoy){
+      const q=t.r*0.42; ctx.lineWidth=3; ctx.strokeStyle='#ff6b6b';
+      ctx.beginPath();ctx.moveTo(t.x-q,t.y-q);ctx.lineTo(t.x+q,t.y+q);
+      ctx.moveTo(t.x+q,t.y-q);ctx.lineTo(t.x-q,t.y+q);ctx.stroke();
+    } else {
+      ctx.lineWidth=3; ctx.strokeStyle='rgba(230,237,246,.9)';
+      ctx.beginPath();ctx.arc(t.x,t.y,t.r*0.55,-Math.PI/2,-Math.PI/2+remain*7,false);ctx.stroke();
     }
   }
-  // tapped empty space: a small streak penalty, not a fail (keeps it forgiving)
+}
+function drawScore(ref){
+  ctx.font='600 14px system-ui'; ctx.fillStyle='rgba(230,237,246,.9)';
+  if(matchMode){
+    const secs=Math.max(0,Math.ceil((matchEndsAt-ref)/1000));
+    ctx.textAlign='left';  ctx.fillText('Player '+matchPlayer+'   Score '+score, 12, 22);
+    ctx.textAlign='right'; ctx.fillText('⏱ '+secs+'s', W-12, 22);
+  } else {
+    ctx.textAlign='left';  ctx.fillText('Score '+score, 12, 22);
+    ctx.textAlign='right'; ctx.fillText(streak>1?'🔥 '+streak:'', W-12, 22);
+  }
+}
+
+/* ---------- looping how-to demo on the start screen ---------- */
+function drawDemo(now){
+  const r = demoCv.getBoundingClientRect();
+  if(r.width===0) return;
+  if(demoCv.width!==Math.round(r.width*DPR) || demoCv.height!==Math.round(r.height*DPR)){
+    demoCv.width=r.width*DPR; demoCv.height=r.height*DPR;
+  }
+  demoCtx.setTransform(DPR,0,0,DPR,0,0);
+  const w=r.width, h=r.height; demoCtx.clearRect(0,0,w,h);
+  const cyc=(now/2200)%1;                       // 0..1 loop
+  const R=Math.min(h*0.28,24);
+  const gx=w*0.32, gy=h*0.52;                   // good target
+  const dx=w*0.70+Math.sin(now/280)*4, dy=h*0.52;  // decoy wobbles
+
+  // good circle (pops near end of loop)
+  const pop = cyc>=0.72 && cyc<0.86 ? (cyc-0.72)/0.14 : -1;
+  demoCtx.beginPath();demoCtx.arc(gx,gy,R*(pop>=0?1+pop*0.4:1),0,7);
+  demoCtx.fillStyle='rgba(76,194,255,.18)';demoCtx.fill();
+  demoCtx.lineWidth=3;demoCtx.strokeStyle='#4cc2ff';
+  demoCtx.beginPath();demoCtx.arc(gx,gy,R,0,7);demoCtx.stroke();
+  if(pop>=0){ demoCtx.fillStyle='rgba(61,220,151,'+(0.45*(1-pop))+')';
+    demoCtx.beginPath();demoCtx.arc(gx,gy,R*(1+pop),0,7);demoCtx.fill(); }
+  // incoming tap ring + finger
+  if(cyc<0.72){
+    const app=cyc/0.72;
+    demoCtx.strokeStyle='rgba(255,255,255,'+(0.85*app)+')';demoCtx.lineWidth=2;
+    demoCtx.beginPath();demoCtx.arc(gx,gy,R+16-app*16,0,7);demoCtx.stroke();
+    demoCtx.font='20px system-ui';demoCtx.textAlign='center';
+    demoCtx.fillText('👆', gx+(1-app)*34, gy+R+10+(1-app)*8);
+  }
+  demoCtx.font='600 11px system-ui';demoCtx.textAlign='center';
+  demoCtx.fillStyle='#3ddc97';demoCtx.fillText('TAP', gx, gy-R-8);
+
+  // decoy (with X) — never tap this one
+  demoCtx.beginPath();demoCtx.arc(dx,dy,R,0,7);
+  demoCtx.fillStyle='rgba(255,107,107,.16)';demoCtx.fill();
+  demoCtx.lineWidth=3;demoCtx.strokeStyle='#ff6b6b';
+  demoCtx.beginPath();demoCtx.arc(dx,dy,R,0,7);demoCtx.stroke();
+  const q=R*0.45;demoCtx.beginPath();
+  demoCtx.moveTo(dx-q,dy-q);demoCtx.lineTo(dx+q,dy+q);
+  demoCtx.moveTo(dx+q,dy-q);demoCtx.lineTo(dx-q,dy+q);demoCtx.stroke();
+  demoCtx.fillStyle='#ff6b6b';demoCtx.fillText('AVOID', dx, dy-R-8);
+}
+
+/* ---------- input ---------- */
+function hit(px,py){
+  if(!live()) return;
+  for(const t of targets){
+    if((px-t.x)**2+(py-t.y)**2 <= (t.r+6)**2){ endRound(!t.decoy); return; }
+  }
 }
 stage.addEventListener('pointerdown', e=>{
+  if(!live()) return;
   const r=stage.getBoundingClientRect();
   hit(e.clientX-r.left, e.clientY-r.top);
 });
+pauseBtn.addEventListener('pointerdown', e=>e.stopPropagation());  // don't count as a board tap
 
-/* main loop */
+/* ---------- main loop ---------- */
 let last=performance.now();
 function frame(now){
-  const dt=(now-last)/1000; last=now;
+  let dt=(now-last)/1000; last=now; if(dt>0.05) dt=0.05;
+  resize();                       // keep canvas synced to a possibly-late/animated box
   ctx.clearRect(0,0,W,H);
-  if(state==='playing'){
-    // timeout = miss
-    if(now>roundEnds){ endRound(false); }
-    else {
-      const remain=(roundEnds-now)/level.lifeMs; // 1 -> 0
-      for(const t of targets){
-        t.x+=t.vx*dt; t.y+=t.vy*dt;
-        if(t.x<t.r||t.x>W-t.r){t.vx*=-1;t.x=Math.max(t.r,Math.min(W-t.r,t.x));}
-        if(t.y<t.r||t.y>H-t.r){t.vy*=-1;t.y=Math.max(t.r,Math.min(H-t.r,t.y));}
-        // draw
-        ctx.beginPath();ctx.arc(t.x,t.y,t.r,0,7);
-        ctx.fillStyle = t.decoy ? 'rgba(255,107,107,.18)' : skin().fill;
-        ctx.fill();
-        ctx.lineWidth=3; ctx.strokeStyle=t.decoy?'#ff6b6b':skin().ring;
-        ctx.beginPath();ctx.arc(t.x,t.y,t.r,0,7);ctx.stroke();
-        // shrinking life ring on the real target
-        if(!t.decoy){
-          ctx.lineWidth=3; ctx.strokeStyle='rgba(230,237,246,.9)';
-          ctx.beginPath();ctx.arc(t.x,t.y,t.r*0.55,-Math.PI/2,-Math.PI/2+remain*7,false);ctx.stroke();
-        }
-      }
-      // score
-      ctx.fillStyle='rgba(230,237,246,.85)';ctx.font='600 14px system-ui';
-      ctx.textAlign='left';ctx.fillText('Score '+score,12,22);
-      ctx.textAlign='right';ctx.fillText((streak>1?'🔥 '+streak:''),W-12,22);
-    }
-  }
+  if(state==='match' && now>matchEndsAt){ endMatchTurn(); requestAnimationFrame(frame); return; }
+  if(state==='playing' && now>roundEnds){ endRound(false); }
+  if(live()){ drawTargets(dt, true); drawScore(now); }
+  else if(state==='paused'){ drawTargets(0, false); drawScore(pausedAt); }
+  else if(state==='idle'){ drawDemo(now); }
   requestAnimationFrame(frame);
 }
 
-function start(){
-  resize();
-  // reset session
-  rng = makeRng(SEED);
+/* ---------- control ---------- */
+function start1P(seed, m){
+  matchMode=false; SEED=seed; mode=m; setSeedLabel(); rng=makeRng(SEED);
   player.skill=0.45; player.rounds=0; player.passHistory=[]; score=0; streak=0; lastIdx=-1;
-  state='playing'; overlay.style.display='none';
+  state='playing'; showScreen(null); updateChrome(); spawnRound(); drawSpark();
+}
+function pause(){
+  if(!live()) return;
+  prevState=state; pausedAt=performance.now(); state='paused';
+  updateChrome(); showScreen('pauseMenu');
+}
+function resume(){
+  if(state!=='paused') return;
+  const d=performance.now()-pausedAt;
+  roundStart+=d; roundEnds+=d; if(matchMode) matchEndsAt+=d;
+  state=prevState; updateChrome(); showScreen(null);
+}
+function restart(){ if(matchMode) startMatch(); else start1P(SEED, mode); }
+function toMenu(){ matchMode=false; state='idle'; updateChrome(); showScreen('overlay'); refreshHud(); }
+
+/* 2-player pass-and-play time attack */
+function startMatch(){
+  matchMode=true; matchPlayer=1; p1Score=0; p2Score=0;
+  SEED=(Math.random()*1e9)>>>0; mode='2p'; setSeedLabel();
+  beginTurn();
+}
+function beginTurn(){
+  rng=makeRng(SEED); matchRound=0; score=0; streak=0;
+  player.skill=0.45; player.rounds=0; player.passHistory=[];
+  state='match'; showScreen(null); updateChrome();
+  matchEndsAt=performance.now()+MATCH_MS;
   spawnRound(); drawSpark();
 }
-function startWith(newSeed, m){ SEED=newSeed; mode=m; setSeedLabel(); start(); }
-document.getElementById('dailyBtn').onclick = ()=> startWith(dailySeed(), 'daily');
-document.getElementById('freeBtn').onclick  = ()=> startWith((Math.random()*1e9)|0, 'free');
+function endMatchTurn(){
+  if(matchPlayer===1){
+    p1Score=score; matchPlayer=2;
+    document.getElementById('handoffScore').textContent='Player 1 scored '+p1Score;
+    state='handoff'; updateChrome(); showScreen('handoff');
+  } else {
+    p2Score=score; showResult();
+  }
+}
+function showResult(){
+  const title = p1Score===p2Score ? "It's a tie! 🤝"
+              : (p1Score>p2Score ? '🏆 Player 1 wins!' : '🏆 Player 2 wins!');
+  document.getElementById('resultTitle').textContent = title;
+  document.getElementById('resultScores').textContent = 'Player 1: '+p1Score+'    ·    Player 2: '+p2Score;
+  state='result'; updateChrome(); showScreen('result');
+}
+
+/* ---------- buttons ---------- */
+document.getElementById('dailyBtn').onclick = ()=> start1P(dailySeed(), 'daily');
+document.getElementById('freeBtn').onclick  = ()=> start1P((Math.random()*1e9)>>>0, 'free');
+document.getElementById('twoBtn').onclick   = ()=> startMatch();
+pauseBtn.onclick = pause;
+document.getElementById('resumeBtn').onclick  = resume;
+document.getElementById('restartBtn').onclick = ()=>{ showScreen(null); restart(); };
+document.getElementById('menuBtn').onclick    = toMenu;
+document.getElementById('readyBtn').onclick   = ()=> beginTurn();
+document.getElementById('rematchBtn').onclick = ()=> startMatch();
+document.getElementById('resultMenuBtn').onclick = toMenu;
 
 /* tiny DOM helper: a div with the given class string */
 function el(cls){ const d=document.createElement('div'); d.className=cls; return d; }
@@ -438,14 +572,13 @@ function renderCosmetics(){
     const d = el('swatch'+(s.id===skinId?' sel':'')+(unlocked?'':' locked'));
     d.style.background = s.fill; d.style.borderColor = s.ring;
     d.title = unlocked ? s.name : (s.name+' — reach '+s.need);
-    if(!unlocked){ const lk=el('span lk'); lk.textContent='🔒'; d.appendChild(lk); }
+    if(!unlocked){ const lk=el('lk'); lk.textContent='🔒'; d.appendChild(lk); }
     d.onclick = ()=>{ if(!unlocked) return; skinId=s.id; localStorage.setItem('flow.skin',s.id); renderCosmetics(); };
     wrap.appendChild(d);
   }
   document.getElementById('cosLine').textContent =
     'Ring skin — lifetime best '+best+' · unlocks at 0 / 25 / 75 / 150';
 }
-renderCosmetics();
 
 /* share the current seed as a deep link (same generated run for anyone) */
 document.getElementById('shareBtn').onclick = async ()=>{
@@ -455,6 +588,11 @@ document.getElementById('shareBtn').onclick = async ()=>{
   b.textContent='✓ Link copied'; setTimeout(()=>b.textContent=t, 1400);
 };
 
+/* ---------- init ---------- */
+renderCosmetics();
+refreshHud();
+showScreen('overlay');
+updateChrome();
 resize();
 requestAnimationFrame(frame);
 window.addEventListener('load', ()=>{ resize(); drawSpark(); });

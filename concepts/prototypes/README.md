@@ -51,6 +51,19 @@ flow target.
   only, never difficulty, so identity investment can't distort the flow-band
   fairness. "Free play" gives an unseeded random run for practice.
 
+**Session controls & modes:**
+
+- **Pause menu** — the ⏸ button (top-right, while playing) freezes the board and
+  the round/match timers and opens Resume / Restart / End & main menu.
+- **Animated how-to** — the start screen plays a looping demo (tap the glowing
+  circle, avoid the red ✕ decoy) so the mechanic reads at a glance.
+- **2-Player duel** — local pass-and-play time attack. Both players get a
+  30-second turn on the **same seed**; adaptation is off during a match and the
+  level sequence is driven purely by the seeded RNG, so each round-end consumes
+  an outcome-independent number of RNG draws — both players face a
+  pixel-identical sequence of levels. Highest score wins. This reuses the
+  engine's seed-determinism rather than adding any netcode.
+
 ## 2. `concierge-split/` — Concept 1, split-the-bill agent action
 
 The smallest *viral* slice of the [AI Life Concierge](../01-ai-life-concierge.md):
