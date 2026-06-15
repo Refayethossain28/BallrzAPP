@@ -36,6 +36,8 @@
   #pauseBtn{position:absolute;top:10px;right:10px;z-index:5;display:none;place-items:center;
     width:38px;height:38px;border-radius:50%;border:1px solid #2c3d47;background:rgba(20,26,38,.88);
     color:var(--ink);font-size:14px;cursor:pointer}
+  #muteBtn{appearance:none;border:1px solid #2c3d47;background:#16202c;color:var(--ink);
+    border-radius:50%;width:30px;height:30px;font-size:13px;cursor:pointer;line-height:1}
 
   button.cta{appearance:none;border:0;border-radius:999px;padding:13px 26px;font-size:15px;
     font-weight:600;background:var(--accent);color:#04121c;cursor:pointer}
@@ -78,7 +80,10 @@
 <div id="wrap">
   <header>
     <h1>FLOW <span style="color:var(--muted);font-weight:400">· adaptive prototype</span></h1>
-    <span class="seed" id="seedLabel">seed —</span>
+    <div style="display:flex;align-items:center;gap:10px">
+      <button id="muteBtn" aria-label="Mute sound">🔊</button>
+      <span class="seed" id="seedLabel">seed —</span>
+    </div>
   </header>
 
   <div id="stage">
@@ -127,8 +132,8 @@
       <h2 id="resultTitle">Result</h2>
       <p class="lead" id="resultScores"></p>
       <div class="btnrow">
-        <button class="cta vs" id="rematchBtn">Rematch</button>
-        <button class="cta ghost" id="resultMenuBtn">Main menu</button>
+        <button class="cta" id="okBtn">OK</button>
+        <button class="cta ghost" id="rematchBtn">Rematch</button>
       </div>
     </div>
   </div>
@@ -294,6 +299,90 @@ const ctx      = cv.getContext('2d');
 const demoCv   = document.getElementById('demoC');
 const demoCtx  = demoCv.getContext('2d');
 const pauseBtn = document.getElementById('pauseBtn');
+const muteBtn  = document.getElementById('muteBtn');
+
+/* ---------- audio: ting/buzz SFX + a synth techno loop (Web Audio, no assets) ---------- */
+let actx=null, master=null, noiseBuf=null;
+let muted = (localStorage.getItem('flow.muted')==='1');
+function ensureAudio(){
+  if(actx){ if(actx.state==='suspended') actx.resume(); return; }
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if(!AC) return;
+  actx = new AC();
+  master = actx.createGain(); master.gain.value = muted?0:0.7; master.connect(actx.destination);
+}
+function setMuted(m){
+  muted=m; localStorage.setItem('flow.muted', m?'1':'0');
+  if(master) master.gain.value = m?0:0.7;
+  muteBtn.textContent = m?'🔇':'🔊';
+}
+/* a "ting" when you pop a coloured ring — two bell-like partials */
+function ting(){
+  if(!actx || muted) return;
+  const t=actx.currentTime;
+  [1318.5,1979.5].forEach((f,i)=>{
+    const o=actx.createOscillator(), g=actx.createGain();
+    o.type='triangle'; o.frequency.value=f;
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.5/(i+1), t+0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+0.18);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t+0.2);
+  });
+}
+/* a harsh "buzz" when you hit a red decoy */
+function buzz(){
+  if(!actx || muted) return;
+  const t=actx.currentTime;
+  const o=actx.createOscillator(), o2=actx.createOscillator(), g=actx.createGain();
+  o.type='sawtooth'; o.frequency.setValueAtTime(165,t); o.frequency.exponentialRampToValueAtTime(70,t+0.22);
+  o2.type='square'; o2.frequency.value=55;
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.5,t+0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+0.28);
+  o.connect(g); o2.connect(g); g.connect(master);
+  o.start(t); o2.start(t); o.stop(t+0.3); o2.stop(t+0.3);
+}
+/* techno loop, scheduled on a sixteenth-note grid with a lookahead timer */
+const BPM=126, STEP=60/BPM/4;
+const BASS=[55,0,0,55, 0,55,0,0, 55,0,0,55, 0,55,0,82];
+let musicOn=false, schedTimer=null, nextStepTime=0, stepIx=0;
+function noise(){
+  if(!noiseBuf){ noiseBuf=actx.createBuffer(1, actx.sampleRate*0.2, actx.sampleRate);
+    const d=noiseBuf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1; }
+  const s=actx.createBufferSource(); s.buffer=noiseBuf; return s;
+}
+function kick(t){ const o=actx.createOscillator(), g=actx.createGain();
+  o.frequency.setValueAtTime(140,t); o.frequency.exponentialRampToValueAtTime(45,t+0.11);
+  g.gain.setValueAtTime(0.8,t); g.gain.exponentialRampToValueAtTime(0.0001,t+0.3);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t+0.32); }
+function hat(t,open){ const s=noise(), hp=actx.createBiquadFilter(), g=actx.createGain();
+  hp.type='highpass'; hp.frequency.value=8000; const dur=open?0.12:0.04;
+  g.gain.setValueAtTime(open?0.22:0.16,t); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  s.connect(hp); hp.connect(g); g.connect(master); s.start(t); s.stop(t+dur+0.02); }
+function bassNote(t,f){ const o=actx.createOscillator(), lp=actx.createBiquadFilter(), g=actx.createGain();
+  o.type='sawtooth'; o.frequency.value=f; lp.type='lowpass'; lp.frequency.value=520;
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.3,t+0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+STEP*1.8);
+  o.connect(lp); lp.connect(g); g.connect(master); o.start(t); o.stop(t+STEP*2); }
+function stab(t){ [220,277.2,329.6].forEach(f=>{ const o=actx.createOscillator(), g=actx.createGain();
+  o.type='sawtooth'; o.frequency.value=f;
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.1,t+0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+0.18);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t+0.2); }); }
+function scheduleStep(i,t){
+  if(i%4===0) kick(t);
+  hat(t, i%4===2);
+  const bf=BASS[i]; if(bf) bassNote(t,bf);
+  if(i%8===4) stab(t);
+}
+function musicTick(){
+  if(!actx) return;
+  while(nextStepTime < actx.currentTime + 0.12){
+    scheduleStep(stepIx, nextStepTime);
+    nextStepTime += STEP; stepIx=(stepIx+1)%16;
+  }
+}
+function startMusic(){ ensureAudio(); if(!actx || musicOn) return; musicOn=true; stepIx=0; nextStepTime=actx.currentTime+0.06; schedTimer=setInterval(musicTick,25); }
+function stopMusic(){ musicOn=false; if(schedTimer){ clearInterval(schedTimer); schedTimer=null; } }
 
 let W=0,H=0,DPR=1;
 function resize(){
@@ -475,7 +564,10 @@ function drawDemo(now){
 function hit(px,py){
   if(!live()) return;
   for(const t of targets){
-    if((px-t.x)**2+(py-t.y)**2 <= (t.r+6)**2){ endRound(!t.decoy); return; }
+    if((px-t.x)**2+(py-t.y)**2 <= (t.r+6)**2){
+      if(t.decoy) buzz(); else ting();      // 🔔 colour = ting, 🟥 = buzz
+      endRound(!t.decoy); return;
+    }
   }
 }
 stage.addEventListener('pointerdown', e=>{
@@ -503,21 +595,21 @@ function frame(now){
 function start1P(seed, m){
   matchMode=false; SEED=seed; mode=m; setSeedLabel(); rng=makeRng(SEED);
   player.skill=0.45; player.rounds=0; player.passHistory=[]; score=0; streak=0; lastIdx=-1;
-  state='playing'; showScreen(null); updateChrome(); spawnRound(); drawSpark();
+  state='playing'; showScreen(null); updateChrome(); spawnRound(); drawSpark(); startMusic();
 }
 function pause(){
   if(!live()) return;
   prevState=state; pausedAt=performance.now(); state='paused';
-  updateChrome(); showScreen('pauseMenu');
+  updateChrome(); showScreen('pauseMenu'); stopMusic();
 }
 function resume(){
   if(state!=='paused') return;
   const d=performance.now()-pausedAt;
   roundStart+=d; roundEnds+=d; if(matchMode) matchEndsAt+=d;
-  state=prevState; updateChrome(); showScreen(null);
+  state=prevState; updateChrome(); showScreen(null); startMusic();
 }
 function restart(){ if(matchMode) startMatch(); else start1P(SEED, mode); }
-function toMenu(){ matchMode=false; state='idle'; updateChrome(); showScreen('overlay'); refreshHud(); }
+function toMenu(){ matchMode=false; state='idle'; updateChrome(); showScreen('overlay'); refreshHud(); stopMusic(); }
 
 /* 2-player pass-and-play time attack */
 function startMatch(){
@@ -530,9 +622,10 @@ function beginTurn(){
   player.skill=0.45; player.rounds=0; player.passHistory=[];
   state='match'; showScreen(null); updateChrome();
   matchEndsAt=performance.now()+MATCH_MS;
-  spawnRound(); drawSpark();
+  spawnRound(); drawSpark(); startMusic();
 }
 function endMatchTurn(){
+  stopMusic();
   if(matchPlayer===1){
     p1Score=score; matchPlayer=2;
     document.getElementById('handoffScore').textContent='Player 1 scored '+p1Score;
@@ -559,7 +652,8 @@ document.getElementById('restartBtn').onclick = ()=>{ showScreen(null); restart(
 document.getElementById('menuBtn').onclick    = toMenu;
 document.getElementById('readyBtn').onclick   = ()=> beginTurn();
 document.getElementById('rematchBtn').onclick = ()=> startMatch();
-document.getElementById('resultMenuBtn').onclick = toMenu;
+document.getElementById('okBtn').onclick      = toMenu;   // 2P: acknowledge result, back to menu
+muteBtn.onclick = ()=> setMuted(!muted);
 
 /* tiny DOM helper: a div with the given class string */
 function el(cls){ const d=document.createElement('div'); d.className=cls; return d; }
@@ -591,6 +685,7 @@ document.getElementById('shareBtn').onclick = async ()=>{
 /* ---------- init ---------- */
 renderCosmetics();
 refreshHud();
+muteBtn.textContent = muted ? '🔇' : '🔊';
 showScreen('overlay');
 updateChrome();
 resize();

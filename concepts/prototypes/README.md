@@ -61,8 +61,12 @@ flow target.
   30-second turn on the **same seed**; adaptation is off during a match and the
   level sequence is driven purely by the seeded RNG, so each round-end consumes
   an outcome-independent number of RNG draws — both players face a
-  pixel-identical sequence of levels. Highest score wins. This reuses the
-  engine's seed-determinism rather than adding any netcode.
+  pixel-identical sequence of levels. When the second turn ends, a result screen
+  shows the winner and both scores; **OK** returns to the menu (or **Rematch**).
+  This reuses the engine's seed-determinism rather than adding any netcode.
+- **Sound** — synthesized live with Web Audio, no asset files: a *ting* when you
+  pop a coloured ring, a *buzz* on a red decoy, and a looping techno beat while
+  you play. 🔊/🔇 toggle in the header, persisted in `localStorage`.
 
 ## 2. `concierge-split/` — Concept 1, split-the-bill agent action
 
