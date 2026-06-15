@@ -755,22 +755,32 @@ function update(dt){
   const f = frameAt(G.dist);
   const sp = G.speed/G.maxSpeed;
   const segLen = G.L/DIV;
+  const offRoad = Math.abs(G.playerX) > 1;
 
-  const dx = dt*1.9*sp;
-  if (keys.left) G.playerX-=dx;
-  if (keys.right) G.playerX+=dx;
-  G.playerX -= dx*sp*f.curv*42*G.curveMul;     // centrifugal on curves
+  // --- steering: responsive, keeps authority at low speed, and much easier on grass ---
+  const steerAuth = Math.min(1, Math.abs(G.speed)/(G.maxSpeed*0.22) + 0.30);
+  let steer = dt * 2.6 * steerAuth;
+  if (offRoad) steer *= 2.4;                          // easy to wrestle back onto the track
+  if (keys.left)  G.playerX -= steer;
+  if (keys.right) G.playerX += steer;
+  G.playerX -= dt * sp*sp * f.curv * 40 * G.curveMul; // centrifugal (eases when off the throttle)
 
-  const accel=G.maxSpeed/4.5, brake=-G.maxSpeed/2.2, decel=-G.maxSpeed/5.5;
-  if (keys.gas && !keys.reverse) G.speed+=accel*dt;
-  else if (keys.reverse) G.speed+=brake*dt;
-  else G.speed=approach(G.speed,0,-decel*dt);
-  if (keys.brake) G.speed=approach(G.speed,0,-brake*dt);
+  // --- throttle / brake: punchy launch that eases near top speed, strong brakes ---
+  const accel = (G.maxSpeed/3.0) * (1 - sp*0.5);
+  const brakePow = G.maxSpeed/1.8;
+  const coast = G.maxSpeed/6.5;
+  if (keys.gas && !keys.reverse) G.speed += Math.max(0, accel) * dt;
+  else if (keys.reverse) G.speed = approach(G.speed, -G.maxSpeed*0.30, brakePow*dt);
+  else G.speed = approach(G.speed, 0, coast*dt);
+  if (keys.brake) G.speed = approach(G.speed, 0, brakePow*dt);
 
-  G.skid=Math.max(0,G.skid-dt);
-  if ((G.playerX<-1||G.playerX>1) && G.speed>G.maxSpeed*0.2){
-    G.speed += decel*dt*2; G.speed*=1-0.55*dt; G.shake=0.5;
-    if (Math.random()<0.1) beep(120,0.05,'sawtooth',0.05);
+  // --- grass: slow toward a moderate speed (not a crawl) so you can still steer back ---
+  G.skid = Math.max(0, G.skid - dt);
+  if (offRoad && Math.abs(G.speed) > G.maxSpeed*0.12){
+    const grassMax = G.maxSpeed * 0.42 * (G.speed < 0 ? -1 : 1);
+    G.speed = approach(G.speed, grassMax, G.maxSpeed*1.4*dt);
+    G.shake = 0.5;
+    if (Math.random()<0.08) beep(120,0.05,'sawtooth',0.05);
   }
   if (G.speed>0){
     for (const car of G.cars){
@@ -885,8 +895,12 @@ function drawHUD2D(){
   hctx.strokeStyle='#ffd400'; hctx.lineWidth=Math.max(2,gr*0.07);
   hctx.beginPath(); hctx.moveTo(gx,gy); hctx.lineTo(gx+Math.cos(na)*gr*0.92,gy+Math.sin(na)*gr*0.92); hctx.stroke();
   hctx.fillStyle='#ffd400'; hctx.beginPath(); hctx.arc(gx,gy,gr*0.11,0,6.28); hctx.fill();
-  hctx.fillStyle='#2bd451'; hctx.font=`bold ${Math.max(12,gr*0.4)}px Arial`; hctx.textBaseline='alphabetic';
-  hctx.fillText(Math.round(rev*100)+'%',gx,gy+gr*0.62);
+  const kmh = Math.round(rev*320);                 // arcade-style speed readout
+  hctx.textBaseline='alphabetic';
+  hctx.fillStyle='#2bd451'; hctx.font=`bold ${Math.max(14,gr*0.48)}px Arial`;
+  hctx.fillText(kmh, gx, gy+gr*0.62);
+  hctx.fillStyle='#bff5cc'; hctx.font=`bold ${Math.max(8,gr*0.18)}px Arial`;
+  hctx.fillText('KM/H', gx, gy+gr*0.90);
   // minimap
   drawMinimap(W,H);
 }

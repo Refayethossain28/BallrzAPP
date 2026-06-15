@@ -111,13 +111,23 @@
     text-shadow: 0 0 24px var(--neon), 5px 5px 0 #000; z-index: 6; pointer-events:none;
   }
   #banner.hidden { display:none; }
-  #touch { position:absolute; inset:0; z-index: 4; display:none; }
-  .tbtn { position:absolute; pointer-events:auto; width:90px; height:90px; border-radius:50%;
-          background: rgba(255,255,255,.10); border:2px solid rgba(255,255,255,.25);
-          display:flex; align-items:center; justify-content:center; font-size:34px; }
-  #tleft { left:18px; bottom:110px; } #tright { left:120px; bottom:40px; }
-  #tgas { right:18px; bottom:110px; background: rgba(255,59,59,.25); }
-  #tbrake { right:120px; bottom:40px; background: rgba(31,109,255,.25); }
+  #touch { position:absolute; inset:0; z-index: 4; display:none; touch-action:none; }
+  .tbtn { position:absolute; pointer-events:auto; touch-action:none;
+          display:flex; flex-direction:column; align-items:center; justify-content:center;
+          color:#fff; font-weight:800; letter-spacing:1px;
+          border-radius:20px; border:2px solid rgba(255,255,255,.4);
+          background: rgba(18,22,38,.40); backdrop-filter:blur(3px);
+          box-shadow:0 5px 14px rgba(0,0,0,.4); transition:transform .05s, background .05s;
+          -webkit-user-select:none; user-select:none; }
+  .tbtn:active { transform:scale(.92); background:rgba(255,255,255,.34); }
+  .tbtn .ic { font-size:40px; line-height:1; pointer-events:none; }
+  .tbtn .lbl { font-size:11px; opacity:.85; margin-top:2px; pointer-events:none; }
+  #tleft,#tright { width:94px; height:94px; bottom:calc(22px + env(safe-area-inset-bottom)); }
+  #tleft { left:calc(18px + env(safe-area-inset-left)); }
+  #tright { left:calc(120px + env(safe-area-inset-left)); }
+  #tgas,#tbrake { width:104px; height:104px; bottom:calc(22px + env(safe-area-inset-bottom)); }
+  #tgas { right:calc(18px + env(safe-area-inset-right)); background: rgba(34,170,80,.42); border-color:rgba(140,255,170,.65); }
+  #tbrake { right:calc(132px + env(safe-area-inset-right)); background: rgba(225,60,60,.42); border-color:rgba(255,150,150,.65); }
   .credit { position:absolute; bottom:10px; left:0; right:0; text-align:center;
             font-size:11px; opacity:.5; }
   @media (max-width: 760px) { .title { font-size: 44px; } }
@@ -184,10 +194,10 @@
   </div>
 
   <div id="touch">
-    <div id="tleft" class="tbtn">◀</div>
-    <div id="tright" class="tbtn">▶</div>
-    <div id="tbrake" class="tbtn">✋</div>
-    <div id="tgas" class="tbtn">⛽</div>
+    <div id="tleft" class="tbtn"><span class="ic">◀</span></div>
+    <div id="tright" class="tbtn"><span class="ic">▶</span></div>
+    <div id="tbrake" class="tbtn"><span class="ic">⊘</span><span class="lbl">BRAKE</span></div>
+    <div id="tgas" class="tbtn"><span class="ic">▲</span><span class="lbl">GAS</span></div>
   </div>
 </div>
 

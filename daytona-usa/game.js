@@ -355,26 +355,32 @@ function update(dt) {
 
   const playerSeg = findSegment(G.position + CAMERA_HEIGHT);
   const speedPercent = G.speed / G.maxSpeed;
+  const offRoad = Math.abs(G.playerX) > 1;
 
-  const dx = dt * 2 * speedPercent;
-  if (keys.left)  G.playerX -= dx;
-  if (keys.right) G.playerX += dx;
-  G.playerX -= dx * speedPercent * playerSeg.curve * CENTRIFUGAL;
+  // --- steering: responsive, keeps authority at low speed, and much easier on grass ---
+  const steerAuth = Math.min(1, Math.abs(G.speed)/(G.maxSpeed*0.22) + 0.30);
+  let steer = dt * 2.6 * steerAuth;
+  if (offRoad) steer *= 2.4;                          // easy to wrestle back onto the track
+  if (keys.left)  G.playerX -= steer;
+  if (keys.right) G.playerX += steer;
+  G.playerX -= dt * speedPercent*speedPercent * playerSeg.curve * 0.6; // centrifugal
 
-  const accel = G.maxSpeed / 4.5;
-  const brake = -G.maxSpeed / 2.2;
-  const decel = -G.maxSpeed / 5.5;
-  if (keys.gas && !keys.reverse) G.speed += accel * dt;
-  else if (keys.reverse) G.speed += brake * dt;
-  else G.speed = approach(G.speed, 0, -decel * dt);
-  if (keys.brake) G.speed = approach(G.speed, 0, -brake * dt);
+  // --- throttle / brake: punchy launch that eases near top speed, strong brakes ---
+  const accel = (G.maxSpeed/3.0) * (1 - speedPercent*0.5);
+  const brakePow = G.maxSpeed/1.8;
+  const coast = G.maxSpeed/6.5;
+  if (keys.gas && !keys.reverse) G.speed += Math.max(0, accel) * dt;
+  else if (keys.reverse) G.speed = approach(G.speed, -G.maxSpeed*0.30, brakePow*dt);
+  else G.speed = approach(G.speed, 0, coast*dt);
+  if (keys.brake) G.speed = approach(G.speed, 0, brakePow*dt);
 
+  // --- grass: slow toward a moderate speed (not a crawl) so you can still steer back ---
   G.skid = Math.max(0, G.skid - dt);
-  if ((G.playerX < -1 || G.playerX > 1) && G.speed > G.maxSpeed*0.2) {
-    G.speed += decel * dt * 2;
-    G.speed *= 1 - OFFROAD_DECEL * dt;
+  if (offRoad && Math.abs(G.speed) > G.maxSpeed*0.12) {
+    const grassMax = G.maxSpeed * 0.42 * (G.speed < 0 ? -1 : 1);
+    G.speed = approach(G.speed, grassMax, G.maxSpeed*1.4*dt);
     G.shake = 6;
-    if (Math.random()<0.1) beep(120,0.05,'sawtooth',0.05);
+    if (Math.random()<0.08) beep(120,0.05,'sawtooth',0.05);
   }
   if (G.speed > 0) {
     for (const car of G.cars) {
@@ -778,9 +784,13 @@ function drawArcadeHUD() {
   ctx.strokeStyle='#ffd400'; ctx.lineWidth=Math.max(2,gr*0.07); ctx.lineCap='round';
   ctx.beginPath(); ctx.moveTo(gx,gy); ctx.lineTo(gx+Math.cos(na)*gr*0.92, gy+Math.sin(na)*gr*0.92); ctx.stroke();
   ctx.fillStyle='#ffd400'; ctx.beginPath(); ctx.arc(gx,gy,gr*0.11,0,Math.PI*2); ctx.fill();
-  // speed % just below the pivot (green, like the screenshot)
-  ctx.fillStyle='#2bd451'; ctx.font=`bold ${Math.max(12,gr*0.40)}px Arial`; ctx.textBaseline='alphabetic';
-  ctx.fillText(Math.round(rev*100)+'%', gx, gy+gr*0.62);
+  // speed readout (km/h) just below the pivot
+  const kmh = Math.round(rev*320);
+  ctx.textBaseline='alphabetic';
+  ctx.fillStyle='#2bd451'; ctx.font=`bold ${Math.max(14,gr*0.48)}px Arial`;
+  ctx.fillText(kmh, gx, gy+gr*0.62);
+  ctx.fillStyle='#bff5cc'; ctx.font=`bold ${Math.max(8,gr*0.18)}px Arial`;
+  ctx.fillText('KM/H', gx, gy+gr*0.90);
   ctx.restore();
 
   // --- TRAFFIC minimap, right side ---
