@@ -224,6 +224,24 @@
   .ai-error{color:#f87171;font-size:12px;padding:12px;background:rgba(213,0,0,.06);border-radius:8px;border:1px solid rgba(213,0,0,.2)}
   .ai-timeframe{display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:2px 8px;border-radius:999px;background:rgba(139,92,246,.15);color:#a78bfa;border:1px solid rgba(139,92,246,.3);margin-bottom:8px}
 
+  /* Multi-timeframe */
+  .mtf-grid{display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:14px}
+  @media(min-width:600px){.mtf-grid{grid-template-columns:repeat(3,1fr)}}
+  .mtf-box{background:var(--muted);border-radius:10px;padding:12px 14px}
+  .mtf-tf{font-size:10px;color:var(--dim);font-weight:700;letter-spacing:1.5px;margin-bottom:8px}
+  .mtf-badge{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:4px 12px;border-radius:999px;margin-bottom:7px}
+  .mtf-conf{font-size:11px;color:var(--dim);margin-bottom:5px}
+  .mtf-bar{height:4px;background:var(--border);border-radius:2px;overflow:hidden}
+  .mtf-bar-fill{height:100%;border-radius:2px;transition:width .7s}
+  .mtf-consensus{padding-top:14px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+  .mtf-consensus-label{font-size:10px;color:var(--dim);font-weight:700;letter-spacing:1px;margin-bottom:5px}
+  .mtf-consensus-badge{display:inline-flex;align-items:center;gap:6px;padding:6px 18px;border-radius:999px;font-size:13px;font-weight:700}
+
+  /* Chart TF buttons */
+  .tf-btns{display:flex;gap:3px}
+  .tf-btn{padding:3px 9px;background:var(--muted);border:1px solid var(--border);border-radius:6px;color:var(--dim);font-size:11px;font-weight:600;cursor:pointer;transition:.15s}
+  .tf-btn.active,.tf-btn:hover{background:rgba(59,130,246,.2);border-color:var(--blue);color:#93c5fd}
+
   /* Affiliate buttons */
   .affiliate-btn{display:flex;align-items:center;gap:8px;padding:10px 16px;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--text);text-decoration:none;font-size:12px;font-weight:500;transition:.2s;min-width:140px}
   .affiliate-btn:hover{border-color:var(--blue);background:rgba(59,130,246,.08);color:var(--text);text-decoration:none}
@@ -331,6 +349,13 @@
       </div>
     </div>
 
+    <!-- Multi-Timeframe Confluence -->
+    <div class="grid-full card" id="mtfCard" style="display:none;margin-bottom:16px">
+      <div class="card-title">Multi-Timeframe Confluence</div>
+      <div class="mtf-grid" id="mtf-grid"></div>
+      <div class="mtf-consensus" id="mtf-consensus"></div>
+    </div>
+
     <!-- AI Analysis (full width) -->
     <div class="grid-full card ai-card" id="aiCard" style="margin-bottom:20px">
       <div class="ai-header">
@@ -351,8 +376,16 @@
     <!-- Chart + Signal -->
     <div class="grid-3">
       <div class="card">
-        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
-          Price Chart (Daily) <span style="font-size:11px;color:var(--dim);font-weight:400">Last 30 sessions</span>
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          Price Chart
+          <div style="display:flex;align-items:center;gap:8px">
+            <div class="tf-btns">
+              <button class="tf-btn" onclick="switchTF('1H')">1H</button>
+              <button class="tf-btn" onclick="switchTF('4H')">4H</button>
+              <button class="tf-btn active" onclick="switchTF('1D')">1D</button>
+            </div>
+            <span id="chartTFLabel" style="font-size:11px;color:var(--dim);font-weight:400">Last 30 days</span>
+          </div>
         </div>
         <div class="chart-wrap"><canvas id="priceChart"></canvas></div>
       </div>
@@ -662,6 +695,110 @@ async function fetchDaily(from, to) {
       t,o:parseFloat(b['1. open']),h:parseFloat(b['2. high']),l:parseFloat(b['3. low']),c:parseFloat(b['4. close']),v:0
     }));
   } catch{return [];}
+}
+
+// ─── Intraday + Multi-Timeframe ───────────────────────────────────────────────
+let g_chartData = {};
+let g_currentPair = '';
+let g_currentSig = null;
+
+async function fetchIntraday(from, to) {
+  const key = document.getElementById('apiKey').value.trim() || 'demo';
+  try {
+    const r = await fetch(`https://www.alphavantage.co/query?function=FX_INTRADAY&from_symbol=${from}&to_symbol=${to}&interval=60min&outputsize=full&apikey=${key}`);
+    const j = await r.json();
+    const series = j['Time Series FX (60min)'];
+    if (!series) return [];
+    return Object.entries(series).slice(0, 300).reverse().map(([t, b]) => ({
+      t, o: parseFloat(b['1. open']), h: parseFloat(b['2. high']),
+      l: parseFloat(b['3. low']), c: parseFloat(b['4. close']), v: 0
+    }));
+  } catch { return []; }
+}
+
+function aggregate4h(data1h) {
+  if (!data1h.length) return [];
+  const blocks = {};
+  data1h.forEach(d => {
+    const dt = new Date(d.t.replace(' ', 'T'));
+    const blockHour = Math.floor(dt.getHours() / 4) * 4;
+    const key = d.t.slice(0, 10) + ' ' + String(blockHour).padStart(2, '0') + ':00:00';
+    if (!blocks[key]) {
+      blocks[key] = { t: key, o: d.o, h: d.h, l: d.l, c: d.c, v: 0 };
+    } else {
+      blocks[key].h = Math.max(blocks[key].h, d.h);
+      blocks[key].l = Math.min(blocks[key].l, d.l);
+      blocks[key].c = d.c;
+    }
+  });
+  return Object.values(blocks).sort((a, b) => a.t.localeCompare(b.t));
+}
+
+function mockIntraday(base, hours = 250) {
+  const data = [], now = new Date();
+  let price = base * (0.98 + Math.random() * 0.04);
+  for (let i = hours; i >= 0; i--) {
+    const d = new Date(now.getTime() - i * 3600000);
+    if (d.getDay() === 0 || d.getDay() === 6) continue;
+    const chg = (Math.random() - .49) * base * 0.0015;
+    const o = price, c = price + chg;
+    const h = Math.max(o, c) + Math.random() * base * 0.0008;
+    const l = Math.min(o, c) - Math.random() * base * 0.0008;
+    const t = d.toISOString().slice(0, 13).replace('T', ' ') + ':00:00';
+    data.push({ t, o, h, l, c, v: 0 });
+    price = c;
+  }
+  return data;
+}
+
+function renderMTF(mtf) {
+  const card = document.getElementById('mtfCard');
+  card.style.display = 'block';
+  const tfLabels = { '1H': '1 HOUR', '4H': '4 HOUR', '1D': 'DAILY' };
+
+  document.getElementById('mtf-grid').innerHTML = ['1H', '4H', '1D'].map(tf => {
+    const sig = mtf[tf];
+    if (!sig) return `<div class="mtf-box"><div class="mtf-tf">${tfLabels[tf]}</div><div style="color:var(--dim);font-size:12px">No data</div></div>`;
+    const isBuy = sig.type === 'BUY', isSell = sig.type === 'SELL';
+    const color = isBuy ? 'var(--buy)' : isSell ? 'var(--sell)' : 'var(--warn)';
+    const cls = sig.type.toLowerCase();
+    const arrow = isBuy ? '▲' : isSell ? '▼' : '─';
+    return `<div class="mtf-box">
+      <div class="mtf-tf">${tfLabels[tf]}</div>
+      <span class="mtf-badge ${cls}" style="background:${isBuy?'rgba(0,200,83,.15)':isSell?'rgba(213,0,0,.15)':'rgba(245,158,11,.15)'};color:${color};border:1px solid ${isBuy?'rgba(0,200,83,.35)':isSell?'rgba(213,0,0,.35)':'rgba(245,158,11,.35)'}">${arrow} ${sig.type}</span>
+      <div class="mtf-conf">${sig.conf.toFixed(0)}% confidence</div>
+      <div class="mtf-bar"><div class="mtf-bar-fill" style="width:${sig.conf}%;background:${color}"></div></div>
+    </div>`;
+  }).join('');
+
+  const tfs = ['1H', '4H', '1D'];
+  const buys = tfs.filter(tf => mtf[tf]?.type === 'BUY').length;
+  const sells = tfs.filter(tf => mtf[tf]?.type === 'SELL').length;
+  let type = 'NEUTRAL', color = 'var(--warn)', arrow = '─';
+  let note = 'Timeframes in conflict — wait for alignment';
+  if (buys >= 2) {
+    type = 'BUY'; color = 'var(--buy)'; arrow = '▲';
+    note = buys === 3 ? 'All 3 timeframes bullish — strong confluence' : '2 of 3 timeframes bullish';
+  } else if (sells >= 2) {
+    type = 'SELL'; color = 'var(--sell)'; arrow = '▼';
+    note = sells === 3 ? 'All 3 timeframes bearish — strong confluence' : '2 of 3 timeframes bearish';
+  }
+
+  document.getElementById('mtf-consensus').innerHTML = `
+    <div>
+      <div class="mtf-consensus-label">CONSENSUS</div>
+      <span class="mtf-consensus-badge" style="background:${type==='BUY'?'rgba(0,200,83,.15)':type==='SELL'?'rgba(213,0,0,.15)':'rgba(245,158,11,.15)'};color:${color};border:1px solid ${type==='BUY'?'rgba(0,200,83,.35)':type==='SELL'?'rgba(213,0,0,.35)':'rgba(245,158,11,.35)'}">${arrow} ${type}</span>
+    </div>
+    <div style="font-size:12px;color:var(--sub)">${note}</div>`;
+}
+
+function switchTF(tf) {
+  if (!g_chartData[tf]) return;
+  document.querySelectorAll('.tf-btn').forEach(b => b.classList.toggle('active', b.textContent === tf));
+  const labels = { '1H': 'Last 72 hours', '4H': 'Last 50 sessions (4H)', '1D': 'Last 30 days' };
+  document.getElementById('chartTFLabel').textContent = labels[tf];
+  const { data, sig } = g_chartData[tf];
+  renderChart(data, sig, g_currentPair);
 }
 
 async function fetchNews(from, to, pair) {
@@ -1004,7 +1141,7 @@ function renderAffiliates() {
 }
 
 // ─── Claude AI Signal ─────────────────────────────────────────────────────────
-async function fetchAISignal(pair, price, ind, techSig, ohlcv, newsArticles) {
+async function fetchAISignal(pair, price, ind, techSig, ohlcv, newsArticles, mtf) {
   const key = document.getElementById('claudeKey').value.trim();
   if (!key) return null;
 
@@ -1015,30 +1152,36 @@ async function fetchAISignal(pair, price, ind, techSig, ohlcv, newsArticles) {
 
   const headlines = newsArticles.slice(0,5).map(a => `- ${a.title} [${a.sent}]`).join('\n') || 'No news available';
 
+  const mtfSummary = mtf ? `
+MULTI-TIMEFRAME SIGNALS:
+1H: ${mtf['1H']?.type||'N/A'} (${mtf['1H']?.conf?.toFixed(0)||'?'}% conf) — RSI ${mtf['1H'] ? computeIndicators.toString().includes('rsi') : ''}
+4H: ${mtf['4H']?.type||'N/A'} (${mtf['4H']?.conf?.toFixed(0)||'?'}% conf)
+1D: ${mtf['1D']?.type||'N/A'} (${mtf['1D']?.conf?.toFixed(0)||'?'}% conf)
+Confluence: ${['1H','4H','1D'].filter(tf=>mtf[tf]?.type==='BUY').length} bullish / ${['1H','4H','1D'].filter(tf=>mtf[tf]?.type==='SELL').length} bearish timeframes` : '';
+
   const prompt = `You are an expert forex analyst. Analyze ${pair} and provide a precise trading recommendation.
 
 MARKET DATA:
 Price: ${price.toFixed(d)}
 ATR(14): ${ind.atr.toFixed(d)}
 
-TECHNICAL INDICATORS:
+DAILY INDICATORS (trend bias):
 RSI(14): ${ind.rsi.toFixed(1)}
-MACD line: ${ind.macd.macd.toFixed(d)}, Signal: ${ind.macd.signal.toFixed(d)}, Histogram: ${ind.macd.hist.toFixed(d)}
+MACD: ${ind.macd.macd.toFixed(d)} / Signal: ${ind.macd.signal.toFixed(d)} / Hist: ${ind.macd.hist.toFixed(d)}
 EMA20: ${ind.ema20.toFixed(d)}, EMA50: ${ind.ema50.toFixed(d)}
-SMA20: ${ind.sma20.toFixed(d)}, SMA50: ${ind.sma50.toFixed(d)}
-Bollinger Upper: ${ind.bb.u.toFixed(d)}, Middle: ${ind.bb.m.toFixed(d)}, Lower: ${ind.bb.l.toFixed(d)}
+Bollinger: Upper ${ind.bb.u.toFixed(d)}, Mid ${ind.bb.m.toFixed(d)}, Lower ${ind.bb.l.toFixed(d)}
 Stochastic %K: ${ind.stoch.k.toFixed(1)}, %D: ${ind.stoch.d.toFixed(1)}
 ADX: ${ind.adx.toFixed(1)} (${ind.adx>25?'strong':'weak'} trend)
-
-RECENT PRICE HISTORY (last 10 sessions):
+${mtfSummary}
+RECENT PRICE HISTORY (last 10 daily sessions):
 ${recent}
 
 NEWS HEADLINES:
 ${headlines}
 
-RULE-BASED SIGNAL: ${techSig.type} (${techSig.conf.toFixed(0)}% confidence)
+RULE-BASED DAILY SIGNAL: ${techSig.type} (${techSig.conf.toFixed(0)}% confidence)
 
-Using ALL of the above, determine the best trade. Place TP levels at 1×, 2×, and 3× ATR from entry. Place SL at 1.5× ATR from entry. Adjust based on your analysis.
+Using ALL of the above — especially the multi-timeframe confluence — determine the best trade. Only give high-confidence signals when multiple timeframes agree. Place TP levels at 1×, 2×, and 3× ATR from entry. Place SL at 1.5× ATR from entry.
 
 Respond ONLY with this JSON (no markdown, no extra text):
 {
@@ -1161,10 +1304,11 @@ async function runAnalysis(pairOverride) {
   showLoading();
 
   try {
-    // Fetch forex data
-    const [rateResult, dailyResult] = await Promise.allSettled([
+    // Fetch all data in parallel
+    const [rateResult, dailyResult, intradayResult] = await Promise.allSettled([
       fetchRate(from, to),
-      fetchDaily(from, to)
+      fetchDaily(from, to),
+      fetchIntraday(from, to)
     ]);
 
     let price = FALLBACK_PRICES[pair] || 1.0;
@@ -1188,15 +1332,40 @@ async function runAnalysis(pairOverride) {
 
     if(bid===ask||bid===0){const sf=pair.includes('XAU')?0.0003:0.0001;bid=price*(1-sf);ask=price*(1+sf);}
 
+    // Build intraday candles (1H + 4H)
+    let data1h = (intradayResult.status==='fulfilled' && intradayResult.value.length>=50)
+      ? intradayResult.value : mockIntraday(price);
+    const data4h = aggregate4h(data1h);
+
+    // Compute indicators for all 3 timeframes
+    const ind1h = computeIndicators(data1h.slice(-100));
+    const ind4h = computeIndicators(data4h.slice(-60));
+    const ind   = computeIndicators(ohlcv);
+    const sig1h = generateSignal(ind1h, price, pair);
+    const sig4h = generateSignal(ind4h, price, pair);
+    const sig   = generateSignal(ind, price, pair);
+
+    // Store chart data globally for TF switching
+    g_currentPair = pair;
+    g_currentSig = sig;
+    g_chartData = {
+      '1H': { data: data1h.slice(-72), sig: sig1h },
+      '4H': { data: data4h.slice(-50), sig: sig4h },
+      '1D': { data: ohlcv.slice(-30),  sig: sig },
+    };
+
+    // Reset chart TF buttons to 1D
+    document.querySelectorAll('.tf-btn').forEach(b => b.classList.toggle('active', b.textContent === '1D'));
+    document.getElementById('chartTFLabel').textContent = 'Last 30 days';
+
     const prev=ohlcv.length>=2?ohlcv[ohlcv.length-2].c:price;
-    const ind=computeIndicators(ohlcv);
-    const sig=generateSignal(ind,price,pair);
 
     // Render all panels
     renderOverview(pair,price,prev,bid,ask,ind);
     renderSignal(sig,pair);
     renderIndicators(sig.scores);
     renderChart(ohlcv.slice(-30),sig,pair);
+    renderMTF({ '1H': sig1h, '4H': sig4h, '1D': sig });
 
     // News (async, doesn't block)
     document.getElementById('news-list').innerHTML='<div style="color:var(--dim);font-size:13px;text-align:center;padding:20px">Loading news...</div>';
@@ -1210,7 +1379,7 @@ async function runAnalysis(pairOverride) {
     const claudeKey = document.getElementById('claudeKey').value.trim();
     if (claudeKey) {
       renderAILoading();
-      fetchAISignal(pair, price, ind, sig, ohlcv, resolvedNews)
+      fetchAISignal(pair, price, ind, sig, ohlcv, resolvedNews, { '1H': sig1h, '4H': sig4h, '1D': sig })
         .then(result => { if(result) renderAISignal(result, pair); else renderAINoKey(); })
         .catch(err => renderAIError(err.message));
     } else {
