@@ -10,16 +10,11 @@ export default function PricingPage() {
     setError(null)
     try {
       const res = await fetch('/api/stripe/checkout', { method: 'POST' })
-      if (res.status === 401) {
-        window.location.href = '/auth/signup'
-        return
-      }
+      if (res.status === 401) { window.location.href = '/auth/signup'; return }
+      if (res.status === 503) { setError('Pro subscriptions coming soon — join the free tier now and you\'ll be notified.'); return }
       const data = await res.json()
-      if (data.url) {
-        window.location.href = data.url
-      } else {
-        setError('Failed to start checkout. Please try again.')
-      }
+      if (data.url) { window.location.href = data.url }
+      else { setError('Failed to start checkout. Please try again.') }
     } catch {
       setError('Network error. Please try again.')
     } finally {

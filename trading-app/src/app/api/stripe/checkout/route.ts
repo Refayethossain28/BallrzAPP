@@ -14,6 +14,10 @@ export async function POST(request: NextRequest) {
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
+  if (!stripe) {
+    return NextResponse.json({ error: 'Payments not yet enabled' }, { status: 503 })
+  }
+
   try {
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
