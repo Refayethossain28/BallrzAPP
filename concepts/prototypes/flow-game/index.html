@@ -249,13 +249,27 @@ const cv = document.getElementById('game');
 const ctx = cv.getContext('2d');
 let W=0,H=0,DPR=1;
 function resize(){
-  DPR = Math.min(window.devicePixelRatio||1, 2);
   const r = stage.getBoundingClientRect();
-  W = r.width; H = r.height;
+  const nW = r.width, nH = r.height;
+  if(nW===0 || nH===0) return;            // box not laid out yet (e.g. inside an iframe) — wait
+  DPR = Math.min(window.devicePixelRatio||1, 2);
+  const hadSize = W>0 && H>0;
+  if(hadSize && targets.length){          // keep an in-progress round on-screen across size changes
+    const sx=nW/W, sy=nH/H;
+    for(const t of targets){ t.x*=sx; t.y*=sy; }
+  }
+  W = nW; H = nH;
   cv.width = W*DPR; cv.height = H*DPR;
   ctx.setTransform(DPR,0,0,DPR,0,0);
+  // If play began before the box had a real size, the round was laid out into
+  // nothing — re-deal it now that we have dimensions.
+  if(!hadSize && state==='playing') spawnRound();
 }
 window.addEventListener('resize', resize);
+// The stage flexes to fill its container, and that height can arrive late or
+// change (iframe embeds like htmlpreview, mobile Safari's collapsing toolbar,
+// rotation). Observe it so the canvas backing store always matches the box.
+if(window.ResizeObserver){ new ResizeObserver(resize).observe(stage); }
 
 const overlay = document.getElementById('overlay');
 
