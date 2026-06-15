@@ -495,6 +495,75 @@ body.light .vcard-badge{background:rgba(0,0,0,.06);border-color:rgba(0,0,0,.1);c
 body.light .nav-pip{background:var(--gold)}
 
 @keyframes spin{to{transform:rotate(360deg)}}
+@keyframes toastIn{from{opacity:0;transform:translateY(14px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes toastOut{to{opacity:0;transform:translateY(-10px) scale(.94)}}
+@keyframes skeletonShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+@keyframes ripple{from{transform:scale(0);opacity:.4}to{transform:scale(2.8);opacity:0}}
+
+/* ── Toast notifications ─────────────────────────────────────────── */
+#toast-container{
+  position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 90px);
+  left:50%;transform:translateX(-50%);
+  z-index:9990;display:flex;flex-direction:column-reverse;gap:8px;
+  pointer-events:none;width:max-content;max-width:calc(100vw - 40px);
+}
+.toast{
+  background:rgba(12,9,6,.96);backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);
+  border:1px solid rgba(255,248,235,.11);border-radius:24px;
+  padding:11px 20px;font-size:13px;font-weight:600;
+  display:flex;align-items:center;gap:9px;
+  pointer-events:auto;letter-spacing:.01em;
+  animation:toastIn .4s var(--ease-spring) both;
+  box-shadow:0 8px 36px rgba(0,0,0,.6),0 1px 0 rgba(255,255,255,.07) inset;
+}
+.toast.out{animation:toastOut .28s ease forwards}
+.toast-icon{font-size:15px;flex-shrink:0}
+.toast.success{border-color:rgba(34,197,94,.22);color:#4ade80}
+.toast.error{border-color:rgba(239,68,68,.22);color:#f87171}
+.toast.info{border-color:rgba(212,175,110,.22);color:var(--gold)}
+body.light .toast{background:rgba(246,243,238,.98);color:var(--fg)}
+
+/* ── Skeleton loading ────────────────────────────────────────────── */
+.skeleton{
+  background:linear-gradient(90deg,var(--surface) 25%,var(--surface-2) 50%,var(--surface) 75%);
+  background-size:400% 100%;border-radius:10px;
+  animation:skeletonShimmer 1.6s infinite linear;
+}
+
+/* ── Autofill override ───────────────────────────────────────────── */
+input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus,input:-webkit-autofill:active{
+  -webkit-text-fill-color:var(--fg)!important;
+  -webkit-box-shadow:0 0 0 1000px rgba(5,4,3,0) inset!important;
+  transition:background-color 9999s ease-in-out 0s;
+  caret-color:var(--fg);
+}
+body.light input:-webkit-autofill,body.light input:-webkit-autofill:hover,body.light input:-webkit-autofill:focus{
+  -webkit-box-shadow:0 0 0 1000px rgba(246,243,238,0) inset!important;
+}
+
+/* ── Nav active background pill ──────────────────────────────────── */
+.nav-item{position:relative}
+.nav-item::before{
+  content:'';position:absolute;top:2px;left:50%;transform:translateX(-50%);
+  width:48px;height:calc(100% - 4px);border-radius:14px;
+  background:transparent;transition:background .25s var(--ease-spring);
+}
+.nav-item.on::before{background:rgba(212,175,110,.08)}
+body.light .nav-item.on::before{background:rgba(180,140,50,.07)}
+
+/* ── Ripple effect on buttons ────────────────────────────────────── */
+.ripple-host{position:relative;overflow:hidden}
+.ripple-host .ripple-el{
+  position:absolute;border-radius:50%;
+  background:rgba(255,255,255,.18);
+  width:80px;height:80px;margin:-40px;
+  animation:ripple .55s linear forwards;pointer-events:none;
+}
+body.light .ripple-host .ripple-el{background:rgba(0,0,0,.1)}
+
+/* ── Improved rec-card snap ──────────────────────────────────────── */
+.rec-row{scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch}
+.rec-card{scroll-snap-align:start}
 
 /* ── Landscape block (splash screen only, mobile) ────────────────── */
 @media (orientation:landscape) and (max-height:500px){
@@ -553,6 +622,43 @@ if (FIREBASE_ENABLED) {
 const SQUARE_APP_ID = 'sq0idp-8Z5MqX7GA3M0Xnv-0utwMA';
 const SQUARE_LOCATION_ID = '1ZX0F29TX12HB';
 let _sqCard = null, _sqPayments = null;
+
+function showToast(msg, type='info', dur=3200) {
+  let c = document.getElementById('toast-container');
+  if (!c) {
+    c = document.createElement('div'); c.id = 'toast-container'; document.body.appendChild(c);
+  }
+  const icons = {success:'✓', error:'✕', info:'✦'};
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.innerHTML = `<span class="toast-icon">${icons[type]||'✦'}</span>${msg}`;
+  c.appendChild(t);
+  const dismiss = () => {
+    if (!t.parentNode) return;
+    t.classList.add('out');
+    t.addEventListener('animationend', () => t.remove(), {once:true});
+  };
+  t._timer = setTimeout(dismiss, dur);
+  t.addEventListener('click', () => { clearTimeout(t._timer); dismiss(); });
+}
+
+function haptic(style) {
+  if (navigator.vibrate) {
+    const patterns = {light:[8], medium:[20], heavy:[35], success:[10,40,20], error:[30,50,30]};
+    navigator.vibrate(patterns[style]||patterns.light);
+  }
+}
+
+function addRipple(btn, e) {
+  btn.classList.add('ripple-host');
+  const r = document.createElement('span');
+  r.className = 'ripple-el';
+  const rect = btn.getBoundingClientRect();
+  r.style.left = (e.clientX - rect.left) + 'px';
+  r.style.top = (e.clientY - rect.top) + 'px';
+  btn.appendChild(r);
+  r.addEventListener('animationend', () => r.remove(), {once:true});
+}
 
 function track(event, props){
   try{
@@ -1317,6 +1423,8 @@ function submitRating(stars) {
     fn({ bookingRef: ref, rating: stars, comment, driverId: state.selectedTrip?.driverId || null }).catch(() => {});
   }
   track('trip_rated', { stars, src: 'client' });
+  haptic('success');
+  showToast('Rating submitted — thank you', 'success');
   render();
 }
 
@@ -1462,8 +1570,7 @@ function shareTrackLink() {
     navigator.share({title:'Track my ApexVIP ride',text:`I'm on my way — track my ride in real time`,url}).catch(()=>{});
   } else {
     navigator.clipboard?.writeText(url).catch(()=>{});
-    const lbl=document.getElementById('track-share-lbl');
-    if(lbl){lbl.textContent='✓ Link copied';setTimeout(()=>{lbl.textContent='Share tracking link';},2200);}
+    showToast('Tracking link copied', 'success');
   }
 }
 function shareTrip() {
@@ -1477,8 +1584,7 @@ function shareTrip() {
     navigator.share({ title: 'Track my ApexVIP ride', text: `I'm in a black Mercedes — track me live`, url }).catch(() => {});
   } else {
     navigator.clipboard?.writeText(url).catch(() => {});
-    state._shareCopied = true; render();
-    setTimeout(() => { state._shareCopied = false; render(); }, 2500);
+    showToast('Ride link copied to clipboard', 'success');
   }
 }
 
@@ -1723,10 +1829,10 @@ splash: () => `
     </div>
   </div>
   <div style="padding:0 28px max(44px,calc(env(safe-area-inset-bottom) + 24px));display:flex;flex-direction:column;gap:10px;position:relative;z-index:2;animation:slideUp .7s 2s both cubic-bezier(0.16,1,0.3,1)">
-    <button class="btn btn-white" onclick="go('register')" style="font-size:15px;font-weight:600;letter-spacing:.02em">Begin your journey</button>
-    <button class="btn btn-glass" onclick="go('login')" style="font-size:15px;letter-spacing:.02em">Sign in</button>
-    <div style="display:flex;justify-content:center;align-items:center;padding-top:6px">
-      <button onclick="state.guideStep=0;go(localStorage.getItem('apexvip_guide_seen')?'home':'guide')" style="background:none;border:none;color:rgba(255,255,255,.5);font-size:12px;cursor:pointer;font-family:inherit;letter-spacing:.5px">Continue as guest →</button>
+    <button class="btn btn-white ripple-host" onclick="haptic('light');addRipple(this,event);go('register')" style="font-size:15px;font-weight:700;letter-spacing:.04em;box-shadow:0 2px 0 rgba(0,0,0,.12),0 6px 24px rgba(0,0,0,.32),0 1px 0 rgba(255,255,255,.6) inset">Begin your journey</button>
+    <button class="btn btn-glass ripple-host" onclick="haptic('light');addRipple(this,event);go('login')" style="font-size:15px;letter-spacing:.02em">Sign in</button>
+    <div style="display:flex;justify-content:center;align-items:center;padding-top:8px">
+      <button onclick="state.guideStep=0;go(localStorage.getItem('apexvip_guide_seen')?'home':'guide')" style="background:none;border:none;color:rgba(255,255,255,.38);font-size:12px;cursor:pointer;font-family:inherit;letter-spacing:1.5px;text-transform:uppercase">Explore as guest</button>
     </div>
   </div>
 </div>`,
@@ -1740,8 +1846,8 @@ login: () => {
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
     </div>
     <div style="text-align:center;padding-top:4px">
-      <div id="login-logo" style="font-family:'Cormorant Garamond',Georgia,serif;font-size:40px;font-weight:300;color:#fff;letter-spacing:1px;line-height:1;margin-bottom:8px">ApexVIP</div>
-      <div style="font-size:13px;color:var(--fg-3);letter-spacing:.3px">${state._pendingScreen?'Sign in to complete your booking':'Sign in to continue'}</div>
+      <div id="login-logo" style="font-family:'Cormorant Garamond',Georgia,serif;font-size:42px;font-weight:300;letter-spacing:2px;line-height:1;margin-bottom:10px;animation:logoReveal 1.2s .1s both ease-out" class="diamond-text">ApexVIP</div>
+      <div style="font-size:12px;color:var(--fg-3);letter-spacing:3px;text-transform:uppercase;animation:fadeIn .6s .4s both">${state._pendingScreen?'Complete Your Booking':'Welcome Back'}</div>
     </div>
   </div>
   <div style="flex:1">
@@ -2641,7 +2747,7 @@ payment: () => {
   <div style="width:100%;padding-bottom:52px;display:flex;flex-direction:column;gap:10px">
     <button class="btn btn-white" onclick="state._activeBooking={...state.booking,status:'confirmed',docId:state._chatDocId,ref:state._confirmedRef,driverName:state._activeBooking?.driverName||'James Harrison',driverPlate:state._activeBooking?.driverPlate||'',driverId:state._activeBooking?.driverId||null};go('active-trip')">Track my driver</button>
     <button class="btn btn-glass" onclick="shareTrip()" style="margin-top:0">
-      ${state._shareCopied?'✓ Link copied to clipboard':'Share my ride'}
+      Share my ride
     </button>
     <button class="btn btn-glass" style="margin-top:0" onclick="go('trips')">View all trips</button>
     <button class="btn btn-ghost" onclick="state.booking={};state._promoApplied=false;go('home')">Return home</button>
@@ -2704,11 +2810,13 @@ trips: () => {
     </div>
   </div>
   <div style="padding:0 22px;flex:1" class="scroll">
-    ${list.length===0?`<div style="text-align:center;padding:80px 0">
-      <div style="font-size:44px;margin-bottom:16px">🚗</div>
-      <div style="font-size:18px;font-weight:700;margin-bottom:8px">No ${tab} trips</div>
-      <div style="font-size:14px;color:var(--fg-3);margin-bottom:32px">Ready when you are.</div>
-      ${tab==='upcoming'?`<button class="btn btn-white" style="max-width:200px;margin:0 auto" onclick="go('home')">Book a ride</button>`:''}
+    ${list.length===0?`<div style="text-align:center;padding:72px 20px;animation:fadeUp .5s var(--ease-spring) both">
+      <div style="width:80px;height:80px;border-radius:28px;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;margin:0 auto 22px;font-size:34px">
+        ${tab==='upcoming'?'🚘':'🕐'}
+      </div>
+      <div style="font-family:var(--font-serif);font-size:28px;font-weight:300;letter-spacing:.5px;margin-bottom:10px">${tab==='upcoming'?'No journeys booked':'No past journeys'}</div>
+      <div style="font-size:14px;color:var(--fg-3);margin-bottom:36px;line-height:1.65">${tab==='upcoming'?'Your next journey awaits.<br/>Book whenever you\'re ready.':'Your travel history will<br/>appear here after your first ride.'}</div>
+      ${tab==='upcoming'?`<button class="btn btn-gold ripple-host" style="max-width:220px;margin:0 auto" onclick="haptic('light');addRipple(this,event);go('home')">Book a journey</button>`:''}
     </div>`:''}
     ${list.map(t=>{
       const tagCls={upcoming:'tag-gold',completed:'tag-gray',cancelled:'tag-red'}[t.status];
@@ -4215,15 +4323,19 @@ function loginTransition(){
 
 async function doLogin(){
   const e=$('lemail')?.value||'',p=$('lpass')?.value||'';
+  const btn=document.querySelector('[onclick="doLogin()"]');
+  if(btn){btn.disabled=true;btn.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="animation:spin .7s linear infinite"><path d="M12 2a10 10 0 0 1 10 10"/></svg>';}
   if(!FIREBASE_ENABLED){
-    if(e==='client@apexvip.com'&&p==='password'){state.user={name:'Alexandra Stone',email:e};state._loginErr=null;track('user_login',{method:'demo',src:'client'});loginTransition();}
-    else{state._loginErr='Invalid email or password.';render();}
+    await new Promise(r=>setTimeout(r,800));
+    if(e==='client@apexvip.com'&&p==='password'){state.user={name:'Alexandra Stone',email:e};state._loginErr=null;track('user_login',{method:'demo',src:'client'});haptic('success');loginTransition();}
+    else{state._loginErr='Invalid email or password.';haptic('error');render();}
     return;
   }
   try{
     await auth.signInWithEmailAndPassword(e,p);
+    haptic('success');
   } catch(err){
-    state._loginErr='Invalid email or password.';render();
+    state._loginErr='Invalid email or password.';haptic('error');render();
   }
 }
 function saveRegStep1(){
@@ -4326,8 +4438,8 @@ function saveConciergeInstructions(){
 function setConciergeComms(p){ state.booking.concierge.commsPref=p; render(); }
 function applyPromo(){
   const v=$('promo_in')?.value||'';
-  if(v.toUpperCase()==='APEX20'){state._promoApplied=true;track('promo_applied',{code:'APEX20',src:'client'});render();}
-  else alert('Invalid promo code');
+  if(v.toUpperCase()==='APEX20'){state._promoApplied=true;track('promo_applied',{code:'APEX20',src:'client'});haptic('success');showToast('20% discount applied ✦','success');render();}
+  else{haptic('error');showToast('Invalid promo code','error');}
 }
 function setPax(n,el){
   document.querySelectorAll('#ba_pax button').forEach(b=>{b.style.background='rgba(255,255,255,.06)';b.style.color='rgba(255,255,255,.5)';b.style.borderColor='rgba(255,255,255,.07)';});
@@ -4385,6 +4497,7 @@ async function payOnArrival(){
       new Promise(r=>setTimeout(r,6000))
     ]);
   }catch(e){console.warn('confirmBooking:',e.message);}
+  haptic('success');
   if(state.screen!=='booking-confirmed') go('booking-confirmed');
 }
 

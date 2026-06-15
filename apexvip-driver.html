@@ -170,6 +170,38 @@ input:focus{border-color:var(--gold)}
 .bar-col:nth-child(7) .bar-fill{animation-delay:.3s}
 .screen{padding:0 22px 100px;min-height:100vh;animation:fadeIn .25s ease}
 @keyframes spin{to{transform:rotate(360deg)}}
+@keyframes toastIn{from{opacity:0;transform:translateY(14px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes toastOut{to{opacity:0;transform:translateY(-10px) scale(.94)}}
+@keyframes ripple{from{transform:scale(0);opacity:.4}to{transform:scale(2.8);opacity:0}}
+@keyframes sheenSweep{from{transform:translateX(-150%) skewX(-18deg)}to{transform:translateX(280%) skewX(-18deg)}}
+
+/* ── Toast ── */
+#toast-container{position:fixed;bottom:calc(env(safe-area-inset-bottom,0px)+90px);left:50%;transform:translateX(-50%);z-index:9990;display:flex;flex-direction:column-reverse;gap:8px;pointer-events:none;width:max-content;max-width:calc(100vw - 40px)}
+.toast{background:rgba(10,8,5,.97);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,.1);border-radius:22px;padding:11px 18px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;pointer-events:auto;animation:toastIn .4s ease both;box-shadow:0 8px 32px rgba(0,0,0,.6)}
+.toast.out{animation:toastOut .28s ease forwards}
+.toast.success{border-color:rgba(34,197,94,.2);color:#4ade80}
+.toast.error{border-color:rgba(239,68,68,.2);color:#f87171}
+.toast.info{border-color:rgba(200,169,126,.2);color:var(--gold)}
+
+/* ── Autofill ── */
+input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus{-webkit-text-fill-color:var(--fg)!important;-webkit-box-shadow:0 0 0 1000px rgba(5,4,3,0) inset!important;transition:background-color 9999s ease-in-out 0s}
+
+/* ── Button sheen ── */
+.btn-gold{position:relative;overflow:hidden}
+.btn-gold::after{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:linear-gradient(105deg,transparent 25%,rgba(255,255,255,.22) 50%,transparent 75%);transform:translateX(-120%) skewX(-18deg);animation:sheenSweep 4s 2.5s ease-in-out infinite}
+
+/* ── Nav pill ── */
+.nav-item{position:relative}
+.nav-item::before{content:'';position:absolute;top:2px;left:50%;transform:translateX(-50%);width:46px;height:calc(100% - 4px);border-radius:14px;background:transparent;transition:background .25s}
+.nav-item.on::before{background:rgba(200,169,126,.09)}
+
+/* ── Card hover ── */
+.card{box-shadow:0 2px 8px rgba(0,0,0,.12),0 1px 0 rgba(255,255,255,.04) inset}
+
+/* ── Ripple ── */
+.ripple-host{position:relative;overflow:hidden}
+.ripple-host .ripple-el{position:absolute;border-radius:50%;background:rgba(255,255,255,.16);width:80px;height:80px;margin:-40px;animation:ripple .55s linear forwards;pointer-events:none}
+
 @media(orientation:landscape)and(max-height:500px){body[data-screen="login"] #rotate-prompt{display:flex!important}}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:200;display:flex;align-items:center;justify-content:center;padding:24px}
 </style>
@@ -182,6 +214,30 @@ input:focus{border-color:var(--gold)}
   <div style="font-size:12px;color:rgba(255,255,255,.5);letter-spacing:3px;text-transform:uppercase">Please rotate your device</div>
 </div>
 <script>
+// ── UI utilities ───────────────────────────────────────────────────────
+function showToast(msg,type='info',dur=3200){
+  let c=document.getElementById('toast-container');
+  if(!c){c=document.createElement('div');c.id='toast-container';document.body.appendChild(c);}
+  const icons={success:'✓',error:'✕',info:'✦'};
+  const t=document.createElement('div');
+  t.className=`toast ${type}`;
+  t.innerHTML=`<span style="font-size:14px">${icons[type]||'✦'}</span>${msg}`;
+  c.appendChild(t);
+  const dismiss=()=>{if(!t.parentNode)return;t.classList.add('out');t.addEventListener('animationend',()=>t.remove(),{once:true});};
+  t._timer=setTimeout(dismiss,dur);
+  t.addEventListener('click',()=>{clearTimeout(t._timer);dismiss();});
+}
+function haptic(style){
+  if(navigator.vibrate){const p={light:[8],medium:[20],heavy:[35],success:[10,40,20],error:[30,50,30]};navigator.vibrate(p[style]||p.light);}
+}
+function addRipple(btn,e){
+  btn.classList.add('ripple-host');
+  const r=document.createElement('span');r.className='ripple-el';
+  const rect=btn.getBoundingClientRect();
+  r.style.left=(e.clientX-rect.left)+'px';r.style.top=(e.clientY-rect.top)+'px';
+  btn.appendChild(r);r.addEventListener('animationend',()=>r.remove(),{once:true});
+}
+
 // ── Firebase init ──────────────────────────────────────────────────────
 let auth, db, fns, storage, FIREBASE_ENABLED = false, _driverId = null;
 let _gpsInterval = null;
@@ -409,8 +465,7 @@ function setupDriverListeners(uid){
       // If the job we're ringing got claimed by another driver, stand down
       if(S.jobOverlay&&S._offeredJob?._broadcast&&!open.find(j=>j._openId===S._offeredJob._openId)){
         clearInterval(S._cdTimer);S.jobOverlay=false;S._offeredJob=null;
-        S._toast='That job was taken by another driver';
-        setTimeout(()=>{S._toast=null;render();},3500);
+        showToast('That job was taken by another driver','error');haptic('error');
         render();return;
       }
       // Ring the offer for online, idle drivers
@@ -595,6 +650,8 @@ async function registerDriverFCM(){
 
 function goOnline(){
   S.online=!S.online;
+  haptic(S.online?'success':'medium');
+  showToast(S.online?'You are now online — accepting jobs':'You are now offline','info');
   const _onTs=Date.now(); track(S.online?'driver_online':'driver_offline',{ts:_onTs,src:'driver'});
   if(FIREBASE_ENABLED&&_driverId){
     db.collection('drivers').doc(_driverId).set({status:S.online?'online':'offline'},{merge:true}).catch(()=>{});
@@ -642,6 +699,7 @@ function startCountdown(){
 }
 
 async function acceptJob(){
+  haptic('success');
   clearInterval(S._cdTimer);
   const offered=S._offeredJob||JOBS[0];
   // Broadcast job: race against other drivers — transaction decides the winner
@@ -649,8 +707,7 @@ async function acceptJob(){
     const won=await claimBroadcastJob(offered);
     S.jobOverlay=false;S._offeredJob=null;
     if(!won){
-      S._toast='That job was taken by another driver';
-      setTimeout(()=>{S._toast=null;render();},3500);
+      showToast('That job was taken by another driver','error');haptic('error');
       render();return;
     }
     S.activeJob=won;S.tripStep=2;S.tripTimer=0;
@@ -681,7 +738,7 @@ function declineJob(){
 
 function refreshJobs(){
   if(!FIREBASE_ENABLED)return;
-  S._toast='Checking for new jobs…';render();
+  showToast('Checking for new jobs…','info',2000);
   db.collection('open_jobs').where('status','==','open').get().then(snap=>{
     const open=snap.docs.map(d=>({_openId:d.id,_broadcast:true,bookingDocId:d.data().bookingDocId||'',bookingRef:d.data().bookingRef||'',
       type:d.data().type||'airport',client:d.data().clientName||'Client',
@@ -691,13 +748,12 @@ function refreshJobs(){
       pay:d.data().pay||95,flight:d.data().flight||'',notes:d.data().notes||'',
       vehicle:d.data().vehicle||'S-Class',status:'pending'}));
     S._openJobs=open;
-    S._toast=open.length?`${open.length} job${open.length!==1?'s':''} available`:'No open jobs right now';
-    setTimeout(()=>{S._toast=null;render();},2500);
+    showToast(open.length?`${open.length} job${open.length!==1?'s':''} available`:'No open jobs right now',open.length?'success':'info');
     if(open.length&&S.online&&!S.jobOverlay&&!S.activeJob){
       S._offeredJob=open[0];S.jobOverlay=true;S.countdown=30;startCountdown();
     }
     render();
-  }).catch(e=>{S._toast='Could not reach server';setTimeout(()=>{S._toast=null;render();},2500);render();});
+  }).catch(e=>{showToast('Could not reach server','error');render();});
 }
 
 async function claimAndActivate(openJobId){
@@ -705,7 +761,7 @@ async function claimAndActivate(openJobId){
   if(!job)return;
   S._offeredJob=job;
   const won=await claimBroadcastJob(job);
-  if(!won){S._toast='Job already taken';setTimeout(()=>{S._toast=null;render();},2500);render();return;}
+  if(!won){showToast('Job already taken','error');haptic('error');render();return;}
   S.activeJob=won;S.jobOverlay=false;S._offeredJob=null;S.tripStep=2;S.tripTimer=0;
   if(FIREBASE_ENABLED&&won.id){
     db.collection('jobs').doc(won.id).update({status:'accepted'}).catch(()=>{});
@@ -1595,10 +1651,9 @@ async function sendDriverAI(){
 
 function render(){
   document.body.setAttribute('data-screen',S.screen);
-  const toast=S._toast?`<div style="position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:600;background:rgba(20,16,12,.95);border:1px solid var(--border);border-radius:14px;padding:12px 20px;font-size:13px;font-weight:600;color:var(--fg);backdrop-filter:blur(20px);animation:fadeIn .25s ease;white-space:nowrap;box-shadow:0 8px 32px rgba(0,0,0,.5)">${S._toast}</div>`:'';
-  if(S.screen==='axc-wallet'){document.getElementById('app').innerHTML=pages.axcWallet()+toast;return;}
+  if(S.screen==='axc-wallet'){document.getElementById('app').innerHTML=pages.axcWallet();return;}
   const fn=pages[S.screen]||pages.login;
-  document.getElementById('app').innerHTML=fn()+toast;
+  document.getElementById('app').innerHTML=fn();
 }
 
 render();
