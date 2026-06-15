@@ -761,9 +761,14 @@ function update(dt){
   const steerAuth = Math.min(1, Math.abs(G.speed)/(G.maxSpeed*0.22) + 0.30);
   let steer = dt * 2.6 * steerAuth;
   if (offRoad) steer *= 2.4;                          // easy to wrestle back onto the track
-  if (keys.left)  G.playerX -= steer;
-  if (keys.right) G.playerX += steer;
+  // NOTE: in this scene's basis +playerX renders to screen-left, so RIGHT must
+  // decrease playerX for the car to move right on screen (matches the 2D game).
+  if (keys.left)  G.playerX += steer;
+  if (keys.right) G.playerX -= steer;
   G.playerX -= dt * sp*sp * f.curv * 40 * G.curveMul; // centrifugal (eases when off the throttle)
+  // smoothed visual steer for car turn-in / body roll (right key = +1)
+  const steerInput = (keys.right?1:0) - (keys.left?1:0);
+  G.steerVis = approach(G.steerVis||0, steerInput, dt*5);
 
   // --- throttle / brake: punchy launch that eases near top speed, strong brakes ---
   const accel = (G.maxSpeed/3.0) * (1 - sp*0.5);
@@ -834,13 +839,19 @@ const _camUp=new THREE.Vector3(0,1,0);
 function render(){
   // place player + rivals
   placeCar(playerCar, G.dist, G.playerX, 0);
+  const lean = G.steerVis || 0;                    // visible turn-in + body roll
+  playerCar.rotateY(-lean * 0.16);
+  playerCar.rotateZ(-lean * 0.07);
   for (let i=0;i<G.cars.length;i++) placeCar(rivalMeshes[i], G.cars[i].dist, G.cars[i].offset, 0);
 
   // chase / hood camera — lifts along the banked surface normal so it rolls
-  // through the banking, and the FOV opens up a touch with speed
+  // through the banking, and the FOV opens up a touch with speed.
+  // The chase cam follows mostly the ROAD (not the car's full offset) so the
+  // car visibly slides across the track when you steer — proper steering feel.
   const f = frameAt(G.dist);
   _fwd.copy(f.tan);
-  worldPos(G.dist, G.playerX, _tmp);
+  const camLat = (G.camMode===0) ? G.playerX*0.28 : G.playerX;
+  worldPos(G.dist, camLat, _tmp);
   if (G.camMode===0){
     _camPos.copy(_tmp).addScaledVector(_fwd,-11).addScaledVector(f.up,4.6);
     _look.copy(_tmp).addScaledVector(_fwd,12).addScaledVector(f.up,1.2);
