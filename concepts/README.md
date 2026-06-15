@@ -42,3 +42,13 @@ Each concept also ships the smallest slice of its build order as a
 Both had their core logic verified headlessly (convergence sim + idempotency /
 penny-distribution checks); results and one honest limitation are in the
 [prototypes README](./prototypes/README.md).
+
+## Native build slice
+
+[`concept-1-concierge/`](./concept-1-concierge/) takes Concept 1 past the web
+prototype into a **native iOS slice** (SwiftUI + an SPM kernel): the messaging
+thread + split-the-bill action wired through the doc's real boundaries —
+`MessageTransport` (the E2EE seam), `AgentService` (LLM behind a protocol), and
+an idempotent `SplitLedger`. The kernel is `swift test`-able; the SwiftUI app
+opens in Xcode. (Written without a Swift toolchain on hand, so it's a
+compile-and-tighten scaffold, not verified code — see its README.)
