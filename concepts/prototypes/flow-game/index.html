@@ -2,8 +2,17 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<title>Flow — adaptive infinite game (prototype)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Flow — adaptive arcade</title>
+<meta name="description" content="Stay in the zone. A one-thumb arcade that learns your skill and keeps every round on the edge." />
+<meta name="theme-color" content="#06070e" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Flow" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icon.svg" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%233ae1ff'/%3E%3Cstop offset='.55' stop-color='%239a7bff'/%3E%3Cstop offset='1' stop-color='%23ff63b6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='14' fill='%23070912'/%3E%3Ccircle cx='32' cy='32' r='20' fill='none' stroke='url(%23g)' stroke-width='4'/%3E%3Ccircle cx='32' cy='32' r='9' fill='url(%23g)'/%3E%3C/svg%3E" />
 <style>
   :root{
     --bg0:#06070e; --panel:rgba(255,255,255,.05); --ink:#eaf0ff; --muted:#8b94b8;
@@ -26,7 +35,8 @@
               radial-gradient(40% 30% at 70% 70%, rgba(154,123,255,.10), transparent 60%);
     animation:drift 18s ease-in-out infinite alternate}
   @keyframes drift{from{transform:translate3d(-3%,-2%,0) scale(1)}to{transform:translate3d(3%,3%,0) scale(1.08)}}
-  #wrap{position:relative;z-index:1;display:flex;flex-direction:column;height:100%;max-width:520px;margin:0 auto}
+  #wrap{position:relative;z-index:1;display:flex;flex-direction:column;height:100%;max-width:520px;margin:0 auto;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
 
   header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px}
   header h1{font-size:19px;margin:0;font-weight:800;letter-spacing:3px;line-height:1;
@@ -139,6 +149,16 @@
   @keyframes load{0%{margin-left:-40%}100%{margin-left:100%}}
   .sphint{font-size:11px;color:var(--muted);opacity:.6;animation:fadein 1s ease 1.4s both}
   @keyframes fadein{from{opacity:0}to{opacity:1}}
+
+  /* game-over + lives juice */
+  #stage.shake{animation:shake .4s cubic-bezier(.36,.07,.19,.97)}
+  @keyframes shake{10%,90%{transform:translateX(-2px)}20%,80%{transform:translateX(3px)}
+    30%,50%,70%{transform:translateX(-6px)}40%,60%{transform:translateX(6px)}}
+  .bigscore{font-size:60px;font-weight:900;letter-spacing:1px;line-height:1;
+    background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+    filter:drop-shadow(0 0 22px rgba(96,150,255,.4))}
+  .menustat{display:inline-flex;align-items:center;font-size:11px;color:var(--muted);font-weight:600;
+    background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 12px;backdrop-filter:blur(8px)}
 </style>
 </head>
 <body>
@@ -175,6 +195,7 @@
         <button class="cta ghost" id="freeBtn">Free play</button>
       </div>
       <button class="cta vs" id="twoBtn">👥 2-Player duel</button>
+      <div class="menustat" id="menuBest">★ Best 0</div>
       <div id="cosmetics"></div>
       <div class="cosline" id="cosLine">Ring skin — unlocks at your lifetime best</div>
       <button class="share" id="shareBtn">🔗 Copy challenge link</button>
@@ -207,6 +228,17 @@
       <div class="btnrow">
         <button class="cta" id="okBtn">OK</button>
         <button class="cta ghost" id="rematchBtn">Rematch</button>
+      </div>
+    </div>
+
+    <!-- 1-player game over -->
+    <div id="over" class="screen" style="display:none">
+      <h2>Game over</h2>
+      <div class="bigscore" id="overScore">0</div>
+      <p class="lead" id="overBest">Best 0</p>
+      <div class="btnrow">
+        <button class="cta" id="againBtn">Play again</button>
+        <button class="cta ghost" id="overMenuBtn">Menu</button>
       </div>
     </div>
   </div>
@@ -479,11 +511,18 @@ window.addEventListener('resize', resize);
 if(window.ResizeObserver) new ResizeObserver(resize).observe(stage);
 
 /* ---------- state ---------- *
- * idle | playing | paused | match | handoff | result */
+ * splash | idle | countdown | playing | paused | match | handoff | result | over */
 let state='idle', prevState='idle';
 let level=null, targets=[], roundStart=0, roundEnds=0, pausedAt=0;
 let score=0, streak=0;
 const live = ()=> state==='playing' || state==='match';
+
+/* lives + combo (1-player arcade mode) */
+const MAXLIVES=3;
+let lives=MAXLIVES, livesMode=false, cdStart=0, lastCdIdx=-1;
+function comboMult(){ return Math.min(5, 1 + Math.floor(streak/5)); }   // x1..x5
+function vibe(p){ if(navigator.vibrate){ try{ navigator.vibrate(p); }catch(_){} } }
+function shakeStage(){ stage.classList.remove('shake'); void stage.offsetWidth; stage.classList.add('shake'); }
 
 /* 2-player */
 const MATCH_MS = 30000;
@@ -539,9 +578,37 @@ function bonusSound(){
     g.gain.exponentialRampToValueAtTime(0.0001,ts+0.18);
     o.connect(g); g.connect(master); o.start(ts); o.stop(ts+0.2); });
 }
+/* soft descending "miss" when a target times out */
+function miss(){
+  if(!actx||muted) return;
+  const t=actx.currentTime, o=actx.createOscillator(), g=actx.createGain();
+  o.type='sine'; o.frequency.setValueAtTime(240,t); o.frequency.exponentialRampToValueAtTime(120,t+0.18);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.3,t+0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+0.22);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t+0.24);
+}
+/* descending three-note "game over" sting */
+function gameOverSound(){
+  if(!actx||muted) return;
+  const t=actx.currentTime;
+  [440,330,247].forEach((f,i)=>{ const o=actx.createOscillator(), g=actx.createGain();
+    o.type='sawtooth'; o.frequency.value=f; const ts=t+i*0.16;
+    g.gain.setValueAtTime(0.0001,ts); g.gain.exponentialRampToValueAtTime(0.28,ts+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,ts+0.32);
+    o.connect(g); g.connect(master); o.start(ts); o.stop(ts+0.34); });
+}
+/* a short tone for each 3·2·1·GO tick */
+function beep(f){
+  if(!actx||muted) return;
+  const t=actx.currentTime, o=actx.createOscillator(), g=actx.createGain();
+  o.type='triangle'; o.frequency.value=f;
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.35,t+0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+0.16);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t+0.18);
+}
 
 /* ---------- screens / chrome ---------- */
-const SCREENS=['overlay','pauseMenu','handoff','result'];
+const SCREENS=['overlay','pauseMenu','handoff','result','over'];
 function showScreen(name){ for(const s of SCREENS) document.getElementById(s).style.display=(s===name)?'flex':'none'; }
 function updateChrome(){ pauseBtn.style.display = live() ? 'grid' : 'none'; }
 
@@ -568,12 +635,21 @@ function spawnRound(){
   refreshHud();
 }
 function endRound(won){
-  if(state==='playing'){
-    updateSkill(level, won);
-    if(won && score+1>best){ best=score+1; localStorage.setItem('flow.best',best); renderCosmetics(); }
-    drawSpark();
+  if(state==='playing') updateSkill(level, won);
+  if(won){
+    score += comboMult(); streak++; vibe(12);
+    if(state==='playing'){
+      if(score>best){ best=score; localStorage.setItem('flow.best',best); renderCosmetics(); }
+      drawSpark();
+    }
+  } else {
+    streak=0;
+    if(state==='playing') drawSpark();
+    if(livesMode){
+      lives--; shakeStage(); vibe(60);
+      if(lives<=0){ refreshHud(); gameOver(); return; }
+    }
   }
-  if(won){ score++; streak++; } else streak=0;
   refreshHud();
   if(live()) spawnRound();
 }
@@ -660,15 +736,37 @@ function drawTargets(dt, advance){
   }
 }
 function drawScore(ref){
-  ctx.font='600 14px system-ui'; ctx.fillStyle='rgba(230,237,246,.9)';
+  ctx.font='700 15px system-ui'; ctx.textBaseline='alphabetic';
   if(matchMode){
     const secs=Math.max(0,Math.ceil((matchEndsAt-ref)/1000));
-    ctx.textAlign='left';  ctx.fillText('Player '+matchPlayer+'   Score '+score, 12, 22);
-    ctx.textAlign='right'; ctx.fillText('⏱ '+secs+'s', W-12, 22);
+    ctx.fillStyle='rgba(234,240,255,.92)';
+    ctx.textAlign='left';  ctx.fillText('P'+matchPlayer+'   Score '+score, 13, 25);
+    ctx.fillStyle = secs<=5 ? '#ff5d6c' : 'rgba(234,240,255,.92)';
+    ctx.textAlign='right'; ctx.fillText('⏱ '+secs+'s', W-13, 25);
   } else {
-    ctx.textAlign='left';  ctx.fillText('Score '+score, 12, 22);
-    ctx.textAlign='right'; ctx.fillText(streak>1?'🔥 '+streak:'', W-12, 22);
+    let x=13;
+    if(livesMode){
+      const hearts='♥'.repeat(Math.max(0,lives))+'♡'.repeat(Math.max(0,MAXLIVES-lives));
+      ctx.fillStyle='#ff5d6c'; ctx.textAlign='left'; ctx.fillText(hearts, x, 25);
+      x += ctx.measureText(hearts).width + 12;
+    }
+    ctx.fillStyle='rgba(234,240,255,.92)'; ctx.textAlign='left'; ctx.fillText('Score '+score, x, 25);
+    const m=comboMult();
+    if(m>1){ ctx.fillStyle='#ffd166'; ctx.textAlign='right'; ctx.fillText('x'+m+(streak>1?'  🔥'+streak:''), W-13, 25); }
   }
+}
+function drawCountdown(e){
+  const idx=Math.floor(e), frac=e-idx;
+  const label = idx>=3 ? 'GO' : String(3-idx);
+  const grow = Math.min(1, frac*3);
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, 1-Math.max(0,(frac-0.6)/0.4));
+  ctx.fillStyle = idx>=3 ? '#36f0a6' : '#eaf0ff';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.shadowColor='rgba(96,150,255,.7)'; ctx.shadowBlur=26;
+  ctx.font='800 '+(46+44*grow)+'px system-ui';
+  ctx.fillText(label, W/2, H/2);
+  ctx.restore(); ctx.textBaseline='alphabetic';
 }
 
 /* ---------- looping how-to demo on the start screen ---------- */
@@ -748,8 +846,15 @@ function frame(now){
   let dt=(now-last)/1000; last=now; if(dt>0.05) dt=0.05;
   resize();                       // keep canvas synced to a possibly-late/animated box
   ctx.clearRect(0,0,W,H);
+  if(state==='countdown'){
+    const e=(now-cdStart)/700, idx=Math.floor(e);
+    if(idx!==lastCdIdx && idx<=3){ lastCdIdx=idx; vibe(10); beep(idx>=3 ? 1320 : 660+idx*120); }
+    drawCountdown(e);
+    if(e>=3.4){ state='playing'; lastCdIdx=-1; updateChrome(); spawnRound(); }
+    requestAnimationFrame(frame); return;
+  }
   if(state==='match' && now>matchEndsAt){ endMatchTurn(); requestAnimationFrame(frame); return; }
-  if(state==='playing' && now>roundEnds){ endRound(false); }
+  if((state==='playing'||state==='match') && now>roundEnds){ if(livesMode) miss(); endRound(false); }
   if(live()){ drawTargets(dt, true); drawScore(now); }
   else if(state==='paused'){ drawTargets(0, false); drawScore(pausedAt); }
   else if(state==='idle'){ drawDemo(now); }
@@ -762,8 +867,11 @@ function start1P(seed, m){
   matchMode=false; SEED=seed; mode=m; setSeedLabel(); rng=makeRng(SEED);
   player.skill=0.45; player.rounds=0; player.passHistory=[]; score=0; streak=0; lastIdx=-1;
   bonus=null; fx=[];
-  state='playing'; showScreen(null); updateChrome(); spawnRound(); drawSpark(); startMusic();
+  livesMode = (m!=='free'); lives=MAXLIVES;       // Daily/shared = lives; Free play = endless zen
+  showScreen(null); drawSpark(); startMusic();
+  beginCountdown();
 }
+function beginCountdown(){ state='countdown'; cdStart=performance.now(); lastCdIdx=-1; updateChrome(); }
 function pause(){
   if(!live()) return;
   prevState=state; pausedAt=performance.now(); state='paused';
@@ -776,7 +884,16 @@ function resume(){
   state=prevState; updateChrome(); showScreen(null); startMusic();
 }
 function restart(){ if(matchMode) startMatch(); else start1P(SEED, mode); }
-function toMenu(){ matchMode=false; state='idle'; updateChrome(); showScreen('overlay'); refreshHud(); stopMusic(); }
+function toMenu(){ matchMode=false; livesMode=false; state='idle'; updateChrome(); showScreen('overlay'); refreshHud(); refreshMenuStats(); stopMusic(); }
+function refreshMenuStats(){ document.getElementById('menuBest').textContent = '★ Best '+best; }
+function gameOver(){
+  stopMusic(); gameOverSound(); vibe([60,40,90]);
+  const record = score>0 && score>=best;
+  document.getElementById('overScore').textContent = score;
+  document.getElementById('overBest').textContent = record ? '🎉 New best!' : 'Best '+best;
+  refreshMenuStats();
+  state='over'; updateChrome(); showScreen('over');
+}
 
 /* 2-player pass-and-play time attack */
 function startMatch(){
@@ -787,7 +904,7 @@ function startMatch(){
 function beginTurn(){
   rng=makeRng(SEED); matchRound=0; score=0; streak=0;
   player.skill=0.45; player.rounds=0; player.passHistory=[];
-  bonus=null; fx=[];
+  bonus=null; fx=[]; livesMode=false;
   state='match'; showScreen(null); updateChrome();
   matchEndsAt=performance.now()+MATCH_MS;
   spawnRound(); drawSpark(); startMusic();
@@ -820,7 +937,9 @@ document.getElementById('restartBtn').onclick = ()=>{ showScreen(null); restart(
 document.getElementById('menuBtn').onclick    = toMenu;
 document.getElementById('readyBtn').onclick   = ()=> beginTurn();
 document.getElementById('rematchBtn').onclick = ()=> startMatch();
-document.getElementById('okBtn').onclick      = toMenu;   // 2P: acknowledge result, back to menu
+document.getElementById('okBtn').onclick       = toMenu;   // 2P: acknowledge result, back to menu
+document.getElementById('againBtn').onclick    = ()=>{ showScreen(null); start1P(SEED, mode); };
+document.getElementById('overMenuBtn').onclick = toMenu;
 muteBtn.onclick = ()=> setMuted(!muted);
 
 /* tiny DOM helper: a div with the given class string */
@@ -853,12 +972,18 @@ document.getElementById('shareBtn').onclick = async ()=>{
 /* ---------- init ---------- */
 renderCosmetics();
 refreshHud();
+refreshMenuStats();
 muteBtn.textContent = muted ? '🔇' : '🔊';
 showScreen('overlay');
 updateChrome();
 resize();
 requestAnimationFrame(frame);
 window.addEventListener('load', ()=>{ resize(); drawSpark(); });
+
+/* installable PWA: register the offline service worker (https only, e.g. on Pages) */
+if('serviceWorker' in navigator && location.protocol==='https:'){
+  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('service-worker.js').catch(()=>{}); });
+}
 
 /* intro splash: auto-dismiss after a beat, or tap to skip (also warms audio) */
 const splash = document.getElementById('splash');
