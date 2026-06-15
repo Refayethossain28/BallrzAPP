@@ -72,6 +72,15 @@ flow target.
   are decided from the seeded RNG (and the draw is consumed every round either
   way), so a 2-player duel still gets identical drops. Popping a ring throws a
   sparkle burst as it fades; grabbing a bonus adds a floating `+N`.
+- **Arcade loop (Daily/shared mode)** — 3 lives, a 3·2·1 countdown to start, a
+  streak **combo multiplier** (x1→x5), and a **Game Over** screen with your score
+  and persistent high score. Missing a target or tapping a decoy costs a life
+  and shakes the screen (with haptics where supported). **Free play** stays a
+  no-lives "zen" mode so the adaptive engine is still demoable without stakes.
+- **Installable PWA** — `manifest.json` + an offline `service-worker.js`
+  (app-shell cache) + an SVG app icon and the iOS/Android meta tags, so it can
+  be added to a phone's home screen and launched full-screen offline. The
+  service worker only registers over HTTPS (e.g. on GitHub Pages).
 
 ## 2. `concierge-split/` — Concept 1, split-the-bill agent action
 
