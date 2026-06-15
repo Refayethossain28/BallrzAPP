@@ -6,83 +6,156 @@
 <title>Flow — adaptive infinite game (prototype)</title>
 <style>
   :root{
-    --bg:#0b0e14; --panel:#141a26; --ink:#e6edf6; --muted:#8a97ab;
-    --accent:#4cc2ff; --good:#3ddc97; --bad:#ff6b6b; --band:#ffd166; --vs:#b388ff;
+    --bg0:#06070e; --panel:rgba(255,255,255,.05); --ink:#eaf0ff; --muted:#8b94b8;
+    --line:rgba(255,255,255,.10);
+    --c1:#3ae1ff; --c2:#9a7bff; --c3:#ff63b6;
+    --accent:#3ae1ff; --good:#36f0a6; --bad:#ff5d6c; --band:#ffd166; --vs:#b388ff;
+    --grad:linear-gradient(135deg,var(--c1),var(--c2) 55%,var(--c3));
   }
   *{box-sizing:border-box}
-  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+  html,body{margin:0;height:100%;color:var(--ink);overflow:hidden;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;
-    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;overflow:hidden}
-  #wrap{display:flex;flex-direction:column;height:100%;max-width:520px;margin:0 auto}
-  header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px}
-  header h1{font-size:15px;margin:0;letter-spacing:.4px;font-weight:600}
-  header .seed{font-size:11px;color:var(--muted)}
-  #stage{position:relative;flex:1;margin:0 10px;border-radius:16px;overflow:hidden;
-    background:radial-gradient(120% 80% at 50% 0%,#1a2333 0%,#0c1019 70%);
-    border:1px solid #1f2838;touch-action:none}
-  canvas#game{display:block;width:100%;height:100%}
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
+    background:
+      radial-gradient(80% 55% at 50% -8%, rgba(154,123,255,.22), transparent 60%),
+      radial-gradient(70% 50% at 92% 6%, rgba(58,225,255,.14), transparent 55%),
+      radial-gradient(90% 60% at 8% 102%, rgba(255,99,182,.13), transparent 55%),
+      var(--bg0);}
+  body::before{content:"";position:fixed;inset:-20%;z-index:0;pointer-events:none;filter:blur(22px);
+    background:radial-gradient(40% 30% at 30% 30%, rgba(58,225,255,.10), transparent 60%),
+              radial-gradient(40% 30% at 70% 70%, rgba(154,123,255,.10), transparent 60%);
+    animation:drift 18s ease-in-out infinite alternate}
+  @keyframes drift{from{transform:translate3d(-3%,-2%,0) scale(1)}to{transform:translate3d(3%,3%,0) scale(1.08)}}
+  #wrap{position:relative;z-index:1;display:flex;flex-direction:column;height:100%;max-width:520px;margin:0 auto}
+
+  header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px}
+  header h1{font-size:19px;margin:0;font-weight:800;letter-spacing:3px;line-height:1;
+    background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+    filter:drop-shadow(0 0 14px rgba(96,150,255,.35))}
+  header h1 .sub{display:block;margin-top:2px;font-size:8.5px;letter-spacing:2.5px;font-weight:700;
+    text-transform:uppercase;color:var(--muted);-webkit-text-fill-color:var(--muted)}
+  .chip{display:inline-flex;align-items:center;font-size:11px;color:var(--muted);
+    background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 11px;backdrop-filter:blur(8px)}
+  #muteBtn{appearance:none;color:var(--ink);background:var(--panel);border:1px solid var(--line);
+    border-radius:50%;width:34px;height:34px;font-size:14px;cursor:pointer;line-height:1;backdrop-filter:blur(8px)}
+
+  #stage{position:relative;flex:1;margin:0 12px;border-radius:22px;overflow:hidden;touch-action:none;
+    border:1px solid var(--line);
+    background:linear-gradient(180deg,rgba(58,225,255,.06),transparent 30%),
+      radial-gradient(120% 90% at 50% -10%,#161d33 0%,#0a0d1a 70%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06), 0 20px 50px -22px rgba(0,0,0,.85), 0 0 60px -22px rgba(96,150,255,.4)}
+  canvas#game{display:block;width:100%;height:100%;position:relative;z-index:1}
+  #stage::after{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;
+    background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,.022) 0 1px, transparent 1px 40px),
+      repeating-linear-gradient(90deg, rgba(255,255,255,.022) 0 1px, transparent 1px 40px),
+      radial-gradient(120% 90% at 50% 50%, transparent 56%, rgba(0,0,0,.5))}
 
   /* full-stage screens (menu / pause / handoff / result) */
-  .screen{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-    flex-direction:column;text-align:center;gap:12px;padding:20px;background:rgba(8,11,17,.80);
-    backdrop-filter:blur(3px);overflow:auto}
-  .screen h2{margin:0;font-size:26px;letter-spacing:.5px}
-  .screen p{margin:0;color:var(--muted);font-size:13px;line-height:1.5;max-width:330px}
+  .screen{position:absolute;inset:0;z-index:6;display:flex;align-items:center;justify-content:center;
+    flex-direction:column;text-align:center;gap:13px;padding:22px;
+    background:rgba(7,9,16,.66);backdrop-filter:blur(11px) saturate(1.2);overflow:auto}
+  .screen h2{margin:0;font-size:30px;font-weight:800;letter-spacing:1px;
+    background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .screen p{margin:0;color:var(--muted);font-size:13px;line-height:1.55;max-width:340px}
   .screen .lead{color:var(--ink);font-size:15px;font-weight:600}
-  .screen .tiny{font-size:11px;opacity:.8}
-  .demo{width:min(330px,92%);height:104px;border-radius:12px;background:#0c1119;border:1px solid #1f2838}
+  .screen .tiny{font-size:11px;opacity:.65}
+  .demo{width:min(340px,92%);height:108px;border-radius:14px;border:1px solid var(--line);
+    background:rgba(0,0,0,.25);box-shadow:inset 0 0 30px rgba(96,150,255,.10)}
 
-  /* pause control, visible only while a round is live */
-  #pauseBtn{position:absolute;top:10px;right:10px;z-index:5;display:none;place-items:center;
-    width:38px;height:38px;border-radius:50%;border:1px solid #2c3d47;background:rgba(20,26,38,.88);
-    color:var(--ink);font-size:14px;cursor:pointer}
-  #muteBtn{appearance:none;border:1px solid #2c3d47;background:#16202c;color:var(--ink);
-    border-radius:50%;width:30px;height:30px;font-size:13px;cursor:pointer;line-height:1}
+  #pauseBtn{position:absolute;top:12px;right:12px;z-index:5;display:none;place-items:center;
+    width:40px;height:40px;border-radius:50%;border:1px solid var(--line);
+    background:rgba(12,16,28,.7);backdrop-filter:blur(8px);color:var(--ink);font-size:14px;cursor:pointer}
 
-  button.cta{appearance:none;border:0;border-radius:999px;padding:13px 26px;font-size:15px;
-    font-weight:600;background:var(--accent);color:#04121c;cursor:pointer}
-  button.cta.ghost{background:#22303a;color:var(--ink)}
-  button.cta.vs{background:#33285f;color:#ece2ff;border:1px solid #4a3da0}
+  button.cta{appearance:none;border:0;border-radius:14px;padding:14px 26px;font-size:15px;font-weight:700;
+    letter-spacing:.3px;color:#04121c;cursor:pointer;
+    background:var(--grad);box-shadow:0 8px 24px -8px rgba(58,225,255,.55),inset 0 1px 0 rgba(255,255,255,.4);
+    transition:transform .08s ease}
+  button.cta:active{transform:translateY(1px) scale(.99)}
+  button.cta.ghost{background:var(--panel);color:var(--ink);border:1px solid var(--line);box-shadow:none;backdrop-filter:blur(8px)}
+  button.cta.vs{background:linear-gradient(135deg,#a070ff,#ff63b6);color:#fff;
+    box-shadow:0 8px 24px -8px rgba(255,99,182,.55),inset 0 1px 0 rgba(255,255,255,.35)}
   .btnrow{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
-  .menucol{display:flex;flex-direction:column;gap:10px;width:min(260px,80%)}
+  .menucol{display:flex;flex-direction:column;gap:10px;width:min(280px,82%)}
   .menucol .cta{width:100%}
+  button.share{appearance:none;border:1px solid var(--line);background:var(--panel);color:var(--muted);
+    border-radius:999px;padding:8px 14px;font-size:12px;cursor:pointer;backdrop-filter:blur(8px)}
 
-  .hud{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:10px}
-  .card{background:var(--panel);border:1px solid #1f2838;border-radius:12px;padding:9px 10px}
-  .card .k{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
-  .card .v{font-size:18px;font-weight:700;margin-top:2px}
-  .card .v small{font-size:11px;color:var(--muted);font-weight:500}
-  #flowwrap{padding:0 10px 8px}
-  #flowbar{position:relative;height:30px;background:var(--panel);border:1px solid #1f2838;
-    border-radius:10px;overflow:hidden}
-  #band{position:absolute;top:0;bottom:0;background:rgba(255,209,102,.16);
-    border-left:1px dashed var(--band);border-right:1px dashed var(--band)}
-  #served{position:absolute;top:3px;bottom:3px;width:3px;border-radius:2px;background:var(--accent);
-    transition:left .35s ease}
-  #flowlabel{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:4px}
-  #spark{padding:0 10px 12px}
-  #spark canvas{height:46px;border-radius:10px;background:var(--panel);border:1px solid #1f2838}
-  .legend{font-size:10px;color:var(--muted);text-align:center;padding-bottom:10px}
+  /* bottom: "live engine" telemetry, styled as a premium HUD */
+  .telhead{display:flex;align-items:center;gap:8px;padding:12px 16px 7px;
+    font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);font-weight:700}
+  .telhead .dot{width:7px;height:7px;border-radius:50%;background:var(--good);
+    box-shadow:0 0 10px var(--good);animation:pulse 1.6s ease-in-out infinite}
+  .telhead .grow{flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
+  .telhead b{color:var(--ink)}
+  @keyframes pulse{0%,100%{opacity:.45}50%{opacity:1}}
+  .hud{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;padding:0 12px}
+  .card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:16px;
+    padding:11px 12px;backdrop-filter:blur(8px);overflow:hidden}
+  .card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--grad);opacity:.9}
+  .card .k{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;font-weight:600}
+  .card .v{font-size:22px;font-weight:800;margin-top:3px;letter-spacing:.5px;
+    font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+  .card .v small{font-size:11px;color:var(--muted);font-weight:600}
+  #flowwrap{padding:12px 12px 6px}
+  #flowbar{position:relative;height:34px;border-radius:12px;overflow:hidden;border:1px solid var(--line);
+    background:linear-gradient(90deg, rgba(255,93,108,.20), rgba(54,240,166,.10) 55%, rgba(255,255,255,.04))}
+  #band{position:absolute;top:0;bottom:0;background:rgba(255,209,102,.18);
+    border-left:1px dashed var(--band);border-right:1px dashed var(--band);box-shadow:inset 0 0 20px rgba(255,209,102,.25)}
+  #served{position:absolute;top:4px;bottom:4px;width:4px;border-radius:3px;background:#fff;
+    box-shadow:0 0 12px var(--c1),0 0 4px #fff;transition:left .35s cubic-bezier(.2,.7,.2,1)}
+  #flowlabel{display:flex;justify-content:space-between;font-size:9.5px;color:var(--muted);margin-top:5px;letter-spacing:.3px}
+  #spark{padding:0 12px 8px}
+  #spark canvas{height:48px;width:100%;border-radius:12px;border:1px solid var(--line);background:rgba(0,0,0,.22)}
+  .legend{font-size:10px;color:var(--muted);text-align:center;padding:2px 16px 12px;line-height:1.5}
   .legend b{color:var(--ink);font-weight:600}
-  .pill{display:inline-block;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:600}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:9.5px;font-weight:700}
   #cosmetics{display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap}
-  .swatch{width:30px;height:30px;border-radius:50%;border:2px solid #2c3d47;cursor:pointer;
-    position:relative;display:flex;align-items:center;justify-content:center;font-size:11px}
+  .swatch{width:32px;height:32px;border-radius:50%;border:2px solid rgba(255,255,255,.25);cursor:pointer;
+    position:relative;display:flex;align-items:center;justify-content:center;font-size:11px;
+    box-shadow:0 0 12px -2px currentColor}
   .swatch.sel{outline:2px solid #fff;outline-offset:2px}
-  .swatch.locked{cursor:not-allowed;opacity:.45}
+  .swatch.locked{cursor:not-allowed;opacity:.4;box-shadow:none}
   .swatch .lk{position:absolute;font-size:10px;color:#cfd9e4}
   .cosline{font-size:10px;color:var(--muted)}
-  button.share{appearance:none;border:1px solid #2c3d47;background:#16202c;color:var(--ink);
-    border-radius:999px;padding:8px 14px;font-size:12px;cursor:pointer}
+
+  /* intro splash */
+  #splash{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:18px;transition:opacity .55s ease;
+    background:radial-gradient(60% 50% at 50% 45%, #11152a, #06070e 75%)}
+  #splash.gone{opacity:0;pointer-events:none}
+  .splogo-wrap{position:relative;display:grid;place-items:center}
+  .splogo-wrap::before,.splogo-wrap::after{content:"";position:absolute;border-radius:50%}
+  .splogo-wrap::before{width:220px;height:220px;border:1px solid rgba(120,160,255,.35);animation:ring 2.4s ease-out infinite}
+  .splogo-wrap::after{width:150px;height:150px;border:1px solid rgba(255,99,182,.3);animation:ring 2.4s ease-out .6s infinite}
+  @keyframes ring{0%{transform:scale(.6);opacity:.8}100%{transform:scale(1.35);opacity:0}}
+  .splogo{font-size:64px;font-weight:900;letter-spacing:9px;
+    background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+    filter:drop-shadow(0 0 26px rgba(96,150,255,.55));animation:logoin 1s cubic-bezier(.2,.8,.2,1) both}
+  @keyframes logoin{0%{opacity:0;transform:translateY(10px) scale(.82);filter:blur(8px)}100%{opacity:1;transform:none}}
+  .sptag{font-size:12px;letter-spacing:4px;text-transform:uppercase;color:var(--muted);font-weight:600;animation:fadein 1s ease .5s both}
+  .spbar{width:160px;height:3px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden}
+  .spbar i{display:block;height:100%;width:40%;border-radius:3px;background:var(--grad);animation:load 1.5s ease-in-out infinite}
+  @keyframes load{0%{margin-left:-40%}100%{margin-left:100%}}
+  .sphint{font-size:11px;color:var(--muted);opacity:.6;animation:fadein 1s ease 1.4s both}
+  @keyframes fadein{from{opacity:0}to{opacity:1}}
 </style>
 </head>
 <body>
+<!-- intro splash -->
+<div id="splash">
+  <div class="splogo-wrap"><div class="splogo">FLOW</div></div>
+  <div class="sptag">stay in the zone</div>
+  <div class="spbar"><i></i></div>
+  <div class="sphint">tap to continue</div>
+</div>
+
 <div id="wrap">
   <header>
-    <h1>FLOW <span style="color:var(--muted);font-weight:400">· adaptive prototype</span></h1>
+    <h1>FLOW<span class="sub">adaptive arcade</span></h1>
     <div style="display:flex;align-items:center;gap:10px">
       <button id="muteBtn" aria-label="Mute sound">🔊</button>
-      <span class="seed" id="seedLabel">seed —</span>
+      <span class="chip" id="seedLabel">seed —</span>
     </div>
   </header>
 
@@ -138,10 +211,16 @@
     </div>
   </div>
 
+  <div class="telhead">
+    <span class="dot"></span> Live engine
+    <span class="grow"></span>
+    <span>pool · <b id="poolN">0</b> levels</span>
+  </div>
+
   <div class="hud">
-    <div class="card"><div class="k">Skill estimate</div><div class="v" id="skillV">—</div></div>
-    <div class="card"><div class="k">Served difficulty</div><div class="v" id="diffV">—</div></div>
-    <div class="card"><div class="k">Predicted win</div><div class="v" id="pwinV">—</div></div>
+    <div class="card"><div class="k">Your skill</div><div class="v" id="skillV">—</div></div>
+    <div class="card"><div class="k">Difficulty</div><div class="v" id="diffV">—</div></div>
+    <div class="card"><div class="k">Win chance</div><div class="v" id="pwinV">—</div></div>
   </div>
 
   <div id="flowwrap">
@@ -149,14 +228,13 @@
       <div id="band"></div>
       <div id="served"></div>
     </div>
-    <div id="flowlabel"><span>0% win (too hard)</span><span>flow band</span><span>too easy</span></div>
+    <div id="flowlabel"><span>too hard</span><span>◆ flow zone</span><span>too easy</span></div>
   </div>
 
   <div id="spark"><canvas id="sparkC"></canvas></div>
   <div class="legend">
-    <span class="pill" style="background:rgba(61,220,151,.18);color:var(--good)">actual pass-rate</span>
-    converging toward the <b style="color:var(--band)">flow target</b> as the model learns you ·
-    pool: <b id="poolN">0</b> offline-generated levels
+    <span class="pill" style="background:rgba(54,240,166,.18);color:var(--good)">live pass-rate</span>
+    homing in on the <b style="color:var(--band)">flow target</b> as it learns you
   </div>
 </div>
 
@@ -781,6 +859,16 @@ updateChrome();
 resize();
 requestAnimationFrame(frame);
 window.addEventListener('load', ()=>{ resize(); drawSpark(); });
+
+/* intro splash: auto-dismiss after a beat, or tap to skip (also warms audio) */
+const splash = document.getElementById('splash');
+function dismissSplash(){
+  if(!splash || splash.classList.contains('gone')) return;
+  splash.classList.add('gone');
+  setTimeout(()=>{ splash.style.display='none'; }, 600);
+}
+splash.addEventListener('pointerdown', ()=>{ ensureAudio(); dismissSplash(); });
+setTimeout(dismissSplash, 2300);
 </script>
 </body>
 </html>
