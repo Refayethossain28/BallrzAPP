@@ -761,10 +761,8 @@ function update(dt){
   const steerAuth = Math.min(1, Math.abs(G.speed)/(G.maxSpeed*0.22) + 0.30);
   let steer = dt * 2.6 * steerAuth;
   if (offRoad) steer *= 2.4;                          // easy to wrestle back onto the track
-  // NOTE: in this scene's basis +playerX renders to screen-left, so RIGHT must
-  // decrease playerX for the car to move right on screen (matches the 2D game).
-  if (keys.left)  G.playerX += steer;
-  if (keys.right) G.playerX -= steer;
+  if (keys.left)  G.playerX -= steer;
+  if (keys.right) G.playerX += steer;
   G.playerX -= dt * sp*sp * f.curv * 40 * G.curveMul; // centrifugal (eases when off the throttle)
   // smoothed visual steer for car turn-in / body roll (right key = +1)
   const steerInput = (keys.right?1:0) - (keys.left?1:0);
