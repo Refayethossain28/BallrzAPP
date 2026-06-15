@@ -93,7 +93,7 @@
     <!-- start / how-to -->
     <div id="overlay" class="screen">
       <h2>FLOW</h2>
-      <p class="lead">👆 Pop the glowing circle before it fades.<br>☠️ Dodge the red ✕ decoys. That's the whole game.</p>
+      <p class="lead">👆 Pop the glowing circle before it fades.<br>☠️ Dodge the red ✕ decoys.<br>⭐ Snatch bonus drops for extra points.</p>
       <canvas id="demoC" class="demo"></canvas>
       <p class="sub">It quietly learns how good you are and serves the next level to keep you right on the edge —
          <b style="color:var(--band)">winnable about 60% of the time</b>. Never boring, never rage-quit.</p>
@@ -411,6 +411,57 @@ const live = ()=> state==='playing' || state==='match';
 const MATCH_MS = 30000;
 let matchMode=false, matchPlayer=1, matchEndsAt=0, matchRound=0, p1Score=0, p2Score=0;
 
+/* ---------- bonuses + sparkle particles ---------- */
+let bonus=null, fx=[];
+const BONUSES=[
+  {id:'star', icon:'⭐', pts:3,  color:'#ffd166', w:6},
+  {id:'gem',  icon:'💎', pts:5,  color:'#7ee0ff', w:3},
+  {id:'jack', icon:'🌟', pts:10, color:'#ffe08a', w:1},
+];
+function pickBonus(){
+  const total=BONUSES.reduce((s,b)=>s+b.w,0); let r=rng()*total;
+  for(const b of BONUSES){ if((r-=b.w)<0) return b; }
+  return BONUSES[0];
+}
+function spawnSparkle(x,y,color,n=14,spread=120){
+  for(let i=0;i<n;i++){
+    const a=Math.random()*Math.PI*2, sp=spread*(0.4+Math.random());
+    fx.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-20,
+      life:0,max:0.45+Math.random()*0.3,size:2+Math.random()*3,
+      color: Math.random()<0.5?color:'#ffffff'});
+  }
+  fx.push({ring:true,x,y,life:0,max:0.4,size:8,color});
+}
+function floatText(x,y,txt,color){ fx.push({text:txt,x,y,vy:-46,life:0,max:0.85,color}); }
+function drawFx(dt){
+  for(let i=fx.length-1;i>=0;i--){
+    const p=fx[i]; p.life+=dt; const k=p.life/p.max;
+    if(k>=1){ fx.splice(i,1); continue; }
+    ctx.globalAlpha=1-k;
+    if(p.ring){
+      ctx.strokeStyle=p.color; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.size+k*46,0,7); ctx.stroke();
+    } else if(p.text){
+      p.y+=p.vy*dt; ctx.fillStyle=p.color; ctx.font='700 16px system-ui';
+      ctx.textAlign='center'; ctx.fillText(p.text,p.x,p.y);
+    } else {
+      p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=160*dt;
+      ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(p.x,p.y,p.size*(1-k*0.5),0,7); ctx.fill();
+    }
+    ctx.globalAlpha=1;
+  }
+}
+/* sparkly "coin" arpeggio when a bonus is grabbed */
+function bonusSound(){
+  if(!actx||muted) return;
+  const t=actx.currentTime, notes=[659.3,880,1174.7];
+  notes.forEach((f,i)=>{ const o=actx.createOscillator(), g=actx.createGain();
+    o.type='triangle'; o.frequency.value=f; const ts=t+i*0.06;
+    g.gain.setValueAtTime(0.0001,ts); g.gain.exponentialRampToValueAtTime(0.4,ts+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001,ts+0.18);
+    o.connect(g); g.connect(master); o.start(ts); o.stop(ts+0.2); });
+}
+
 /* ---------- screens / chrome ---------- */
 const SCREENS=['overlay','pauseMenu','handoff','result'];
 function showScreen(name){ for(const s of SCREENS) document.getElementById(s).style.display=(s===name)?'flex':'none'; }
@@ -426,6 +477,15 @@ function spawnRound(){
       vx: Math.cos(a)*sp, vy: Math.sin(a)*sp, decoy }; };
   targets.push(mk(false));
   for(let i=0;i<level.decoys;i++) targets.push(mk(true));
+  // ~1 in 3 rounds drops a tappable bonus. Decided from the seeded RNG (and the
+  // draw is consumed every round regardless), so a 2-player duel stays fair.
+  // Grabbing it scores extra and does NOT end the round.
+  bonus = null;
+  if(rng() < 0.34){
+    const b=pickBonus(), a=rng()*Math.PI*2, bsp=40+rng()*60, br=20;
+    bonus={ type:b, r:br, x:br+rng()*(W-2*br), y:br+rng()*(H-2*br),
+            vx:Math.cos(a)*bsp, vy:Math.sin(a)*bsp, pulse:rng()*6 };
+  }
   roundStart = performance.now(); roundEnds = roundStart + level.lifeMs;
   refreshHud();
 }
@@ -503,6 +563,23 @@ function drawTargets(dt, advance){
       ctx.beginPath();ctx.arc(t.x,t.y,t.r*0.55,-Math.PI/2,-Math.PI/2+remain*7,false);ctx.stroke();
     }
   }
+  // bonus object (glowing, pulsing, with its icon)
+  if(bonus){
+    if(advance){
+      bonus.x+=bonus.vx*dt; bonus.y+=bonus.vy*dt;
+      if(bonus.x<bonus.r||bonus.x>W-bonus.r){bonus.vx*=-1;bonus.x=Math.max(bonus.r,Math.min(W-bonus.r,bonus.x));}
+      if(bonus.y<bonus.r||bonus.y>H-bonus.r){bonus.vy*=-1;bonus.y=Math.max(bonus.r,Math.min(H-bonus.r,bonus.y));}
+    }
+    const pulse=1+0.12*Math.sin(performance.now()/120+bonus.pulse);
+    ctx.save();
+    ctx.shadowColor=bonus.type.color; ctx.shadowBlur=16;
+    ctx.beginPath(); ctx.arc(bonus.x,bonus.y,bonus.r*pulse,0,7);
+    ctx.fillStyle='rgba(255,255,255,.10)'; ctx.fill();
+    ctx.lineWidth=3; ctx.strokeStyle=bonus.type.color; ctx.stroke();
+    ctx.restore();
+    ctx.font=(bonus.r*1.2)+'px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(bonus.type.icon, bonus.x, bonus.y+1); ctx.textBaseline='alphabetic';
+  }
 }
 function drawScore(ref){
   ctx.font='600 14px system-ui'; ctx.fillStyle='rgba(230,237,246,.9)';
@@ -563,9 +640,19 @@ function drawDemo(now){
 /* ---------- input ---------- */
 function hit(px,py){
   if(!live()) return;
+  // bonus first — grabbing it scores extra but does not end the round
+  if(bonus && (px-bonus.x)**2+(py-bonus.y)**2 <= (bonus.r+8)**2){
+    const pts=bonus.type.pts; score+=pts;
+    if(state==='playing' && score>best){ best=score; localStorage.setItem('flow.best',best); renderCosmetics(); }
+    spawnSparkle(bonus.x,bonus.y,bonus.type.color,22,160);
+    floatText(bonus.x,bonus.y-bonus.r-6,'+'+pts,bonus.type.color);
+    bonusSound(); refreshHud(); bonus=null;
+    return;
+  }
   for(const t of targets){
     if((px-t.x)**2+(py-t.y)**2 <= (t.r+6)**2){
-      if(t.decoy) buzz(); else ting();      // 🔔 colour = ting, 🟥 = buzz
+      if(t.decoy){ buzz(); }
+      else { ting(); spawnSparkle(t.x,t.y,skin().ring); }   // ✨ sparkle as it fades
       endRound(!t.decoy); return;
     }
   }
@@ -588,6 +675,7 @@ function frame(now){
   if(live()){ drawTargets(dt, true); drawScore(now); }
   else if(state==='paused'){ drawTargets(0, false); drawScore(pausedAt); }
   else if(state==='idle'){ drawDemo(now); }
+  if(fx.length) drawFx(state==='paused' ? 0 : dt);   // sparkles finish over any state
   requestAnimationFrame(frame);
 }
 
@@ -595,6 +683,7 @@ function frame(now){
 function start1P(seed, m){
   matchMode=false; SEED=seed; mode=m; setSeedLabel(); rng=makeRng(SEED);
   player.skill=0.45; player.rounds=0; player.passHistory=[]; score=0; streak=0; lastIdx=-1;
+  bonus=null; fx=[];
   state='playing'; showScreen(null); updateChrome(); spawnRound(); drawSpark(); startMusic();
 }
 function pause(){
@@ -620,6 +709,7 @@ function startMatch(){
 function beginTurn(){
   rng=makeRng(SEED); matchRound=0; score=0; streak=0;
   player.skill=0.45; player.rounds=0; player.passHistory=[];
+  bonus=null; fx=[];
   state='match'; showScreen(null); updateChrome();
   matchEndsAt=performance.now()+MATCH_MS;
   spawnRound(); drawSpark(); startMusic();
