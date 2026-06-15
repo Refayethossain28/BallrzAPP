@@ -67,6 +67,11 @@ flow target.
 - **Sound** — synthesized live with Web Audio, no asset files: a *ting* when you
   pop a coloured ring, a *buzz* on a red decoy, and a looping techno beat while
   you play. 🔊/🔇 toggle in the header, persisted in `localStorage`.
+- **Bonus drops** — about 1 round in 3 also spawns a tappable bonus (⭐ +3,
+  💎 +5, 🌟 +10). Grabbing one scores extra and does *not* end the round. Spawns
+  are decided from the seeded RNG (and the draw is consumed every round either
+  way), so a 2-player duel still gets identical drops. Popping a ring throws a
+  sparkle burst as it fades; grabbing a bonus adds a floating `+N`.
 
 ## 2. `concierge-split/` — Concept 1, split-the-bill agent action
 
