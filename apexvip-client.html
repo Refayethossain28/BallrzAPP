@@ -556,7 +556,8 @@ let _sqCard = null, _sqPayments = null;
 
 function track(event, props){
   try{
-    const ev={event,ts:Date.now(),...props};
+    // Store both 'e' and 'event' so admin analytics filters work (uses e.e)
+    const ev={e:event,event,ts:Date.now(),t:Date.now(),...props};
     const key='apexvip_events';
     const arr=JSON.parse(localStorage.getItem(key)||'[]');
     arr.push(ev);
@@ -733,19 +734,37 @@ async function lookupFlight(flightNum){
   if(!el||!flightNum||flightNum.length<5)return;
   const hint=document.getElementById('fl-hint');
   if(hint)hint.innerHTML='<span style="color:var(--fg-4)">Checking flight status…</span>';
-  await new Promise(r=>setTimeout(r,700));
-  // Demo: flights ending in odd digit are delayed
-  const num=parseInt(flightNum.replace(/\D/g,'').slice(-1));
-  const delayed = num%2===1;
-  state._flightStatus = delayed?'delayed':'on-time';
-  state._flightDelay = delayed?45:0;
+  state.booking.flight=flightNum;
+  let delayed=false,delayMins=0;
+  try{
+    if(FIREBASE_ENABLED&&fns){
+      const fn=firebase.functions(_fbApp).httpsCallable('checkFlightStatus');
+      const res=await fn({flight:flightNum.toUpperCase().replace(/\s+/g,'')});
+      const d=res.data;
+      delayed=d.delayed||false;
+      delayMins=d.delayMins||0;
+      state._flightStatus=delayed?'delayed':'on-time';
+      state._flightDelay=delayMins;
+    } else {
+      // Demo fallback: flights ending in odd digit are shown as delayed
+      await new Promise(r=>setTimeout(r,700));
+      const num=parseInt(flightNum.replace(/\D/g,'').slice(-1));
+      delayed=num%2===1;delayMins=delayed?45:0;
+      state._flightStatus=delayed?'delayed':'on-time';
+      state._flightDelay=delayMins;
+    }
+  }catch(e){
+    // Demo fallback on API error
+    await new Promise(r=>setTimeout(r,400));
+    state._flightStatus='on-time';state._flightDelay=0;
+  }
   if(hint){
-    if(delayed){
-      hint.innerHTML=`<span style="color:#fbbf24">⚠ ${flightNum.toUpperCase()} delayed ~45 min — pickup adjusted automatically</span>`;
+    if(delayed&&delayMins>0){
+      hint.innerHTML=`<span style="color:#fbbf24">⚠ ${flightNum.toUpperCase()} delayed ~${delayMins} min — pickup adjusted automatically</span>`;
       const tmEl=document.getElementById('ba_tm');
       if(tmEl&&tmEl.value){
         const[h,m]=tmEl.value.split(':').map(Number);
-        const adj=new Date(2000,0,1,h,m+45);
+        const adj=new Date(2000,0,1,h,m+delayMins);
         const nt=`${String(adj.getHours()).padStart(2,'0')}:${String(adj.getMinutes()).padStart(2,'0')}`;
         tmEl.value=nt; state.booking.time=nt;
       }
@@ -1315,7 +1334,23 @@ async function runApplePay() {
     total: { label: 'ApexVIP', amount: total.toFixed(2) }
   };
   const session = new ApplePaySession(3, request);
-  session.onvalidatemerchant = () => session.completeMerchantValidation({});
+  session.onvalidatemerchant = async (event) => {
+    // Server-side merchant validation required for production Apple Pay
+    // Without a registered merchant ID + server endpoint, fall back gracefully
+    try {
+      if(FIREBASE_ENABLED&&fns){
+        const fn = firebase.functions(_fbApp).httpsCallable('validateApplePayMerchant');
+        const res = await fn({ validationURL: event.validationURL });
+        session.completeMerchantValidation(res.data);
+      } else {
+        session.abort();
+        alert('Apple Pay requires a registered merchant ID. Please use the card form below.');
+      }
+    } catch(e) {
+      session.abort();
+      alert('Apple Pay merchant validation failed. Please use the card form below.');
+    }
+  };
   session.onpaymentauthorized = async (event) => {
     session.completePayment(ApplePaySession.STATUS_SUCCESS);
     track('apple_pay_used', { total, src: 'client' });
@@ -2160,7 +2195,7 @@ home: () => {
   return `
 <div style="height:100dvh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
   <div class="back-row">
-    <div class="back-btn" onclick="go('book-'+state.booking.serviceType)">
+    <div class="back-btn" onclick="go(state.booking.serviceType?'book-'+state.booking.serviceType:'home')">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
     </div>
     <div>
@@ -4408,6 +4443,7 @@ async function confirmBooking(overrideRef){
     try{
       const _bookingDoc = await db.collection('bookings').add({
         ref,clientId:auth.currentUser.uid,clientName:state.user?.name||'',
+        clientEmail:auth.currentUser.email||'',
         serviceType:state.booking.serviceType||'airport',serviceLabel:svcLabel,
         pickup:state.booking.pickup||'',dropoff:state.booking.dropoff||'',
         airport:state.booking.airport||'',flight:state.booking.flight||'',
@@ -4424,29 +4460,10 @@ async function confirmBooking(overrideRef){
         paPassenger: state.paMode ? state.paPassenger : null,
         createdAt:firebase.firestore.FieldValue.serverTimestamp()
       });
-      // Broadcast booking to all online drivers — first to accept claims it.
-      // Default is broadcast; admin can switch to manual in settings.
-      try{
-        const modeDoc=await db.collection('settings').doc('dispatch').get();
-        const mode=modeDoc.exists?modeDoc.data().mode:'broadcast';
-        if(mode!=='manual'){
-          await db.collection('open_jobs').add({
-            bookingDocId:_bookingDoc.id,bookingRef:ref,
-            clientName:state.user?.name||'',
-            serviceType:state.booking.serviceType||'airport',
-            serviceLabel:svcLabel,
-            pickup:state.booking.pickup||'',
-            dropoff:state.booking.dropoff||state.booking.airport||'',
-            date:state.booking.date||'',time:state.booking.time||'',
-            vehicle:state.booking.vehicle||'Mercedes S-Class',
-            pay:total,flight:state.booking.flight||'',
-            notes:state.booking.concierge?.instructions||'',
-            status:'open',driverId:'',
-            createdAt:firebase.firestore.FieldValue.serverTimestamp()
-          });
-          await _bookingDoc.update({status:'offered'});
-        }
-      }catch(e){console.warn('Broadcast:',e.message);/* admin can still dispatch manually */}
+      // open_jobs broadcast is handled exclusively by the onBookingCreated Cloud Function
+      // to avoid duplicates. The function checks dispatch mode before broadcasting.
+      state._chatDocId = _bookingDoc.id;
+      state.booking.id = _bookingDoc.id;
     }catch(err){console.warn('Booking save:',err.message);}
   }
   state._confirmedRef=ref;state._promoApplied=false;state._squarePaymentId=null;

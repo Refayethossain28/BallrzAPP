@@ -337,7 +337,7 @@ function startAdminListeners(){
   },e=>console.warn('Bookings:',e.code));
   db.collection('drivers').onSnapshot(snap=>{
     if(!snap.empty){
-      DRIVERS=snap.docs.map(d=>{
+      DRIVERS=snap.docs.filter(d=>d.data().role!=='admin').map(d=>{
         const x=d.data();
         return{id:d.id,uid:d.id,name:x.name||'',initials:(x.name||'??').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2),
           color:x.color||'#C8A97E',rating:x.rating||4.8,status:x.status||'offline',
@@ -1362,10 +1362,14 @@ function confirmDispatch(driverIdOrName){
       db.collection('jobs').add({
         driverId:driver.uid,bookingRef:booking.ref||booking.id,
         bookingDocId:booking.docId||'',
-        clientName:booking.client||booking.clientName||'',
+        clientId:booking.clientId||'',clientName:booking.client||booking.clientName||'',
+        serviceLabel:booking.serviceLabel||booking.vehicleLabel||'Airport Transfer',
+        type:booking.serviceType||'airport',
         pickup:booking.pickup||'',dropoff:booking.dropoff||'',
         date:booking.date||'',time:booking.time||'',
+        flight:booking.flight||'',notes:booking.notes||booking.specialRequests||'',
         vehicle:driver.model||driver.vehicle||'',
+        market:booking.location||booking.market||'london',
         pay:parseInt((booking.price||'0').replace(/[^0-9]/g,'')),
         status:'pending',
         createdAt:firebase.firestore.FieldValue.serverTimestamp()
