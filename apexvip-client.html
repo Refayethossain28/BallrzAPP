@@ -2639,7 +2639,7 @@ payment: () => {
       </div>
   </div>
   <div style="width:100%;padding-bottom:52px;display:flex;flex-direction:column;gap:10px">
-    <button class="btn btn-white" onclick="state._activeBooking={...state.booking,status:'confirmed',driverName:'James Harrison',driverPlate:'LX73 ABC'};go('active-trip')">Track my driver</button>
+    <button class="btn btn-white" onclick="state._activeBooking={...state.booking,status:'confirmed',docId:state._chatDocId,ref:state._confirmedRef,driverName:state._activeBooking?.driverName||'James Harrison',driverPlate:state._activeBooking?.driverPlate||'',driverId:state._activeBooking?.driverId||null};go('active-trip')">Track my driver</button>
     <button class="btn btn-glass" onclick="shareTrip()" style="margin-top:0">
       ${state._shareCopied?'✓ Link copied to clipboard':'Share my ride'}
     </button>
@@ -2816,7 +2816,7 @@ trips: () => {
     </div>
 
     ${t.status==='completed'?`<button class="btn btn-glass" style="margin-bottom:12px">Download receipt</button>`:''}
-    ${t.status==='upcoming'&&!cancelled?`<button class="btn btn-glass" style="margin-bottom:10px" onclick="state._activeBooking={...t,driverName:t.driver,driverPlate:t.plate};go('active-trip')">Track driver</button>`:''}
+    ${t.status==='upcoming'&&!cancelled?`<button class="btn btn-glass" style="margin-bottom:10px" onclick="state._activeBooking={...t,driverName:t.driver,driverPlate:t.plate,driverId:t.driverId||null,docId:t.docId||null};state._chatDocId=t.docId||state._chatDocId;go('active-trip')">Track driver</button>`:''}
     ${t.status==='upcoming'&&!cancelled&&!confirming?`<button class="btn-danger-outline" onclick="state._tripConfirming='${t.id}';render()">Cancel booking</button>`:''}
     ${confirming?`<div style="background:rgba(239,68,68,.05);border:1px solid rgba(239,68,68,.12);border-radius:18px;padding:22px">
       <div style="font-size:17px;font-weight:700;margin-bottom:8px">Cancel this booking?</div>
@@ -4580,11 +4580,11 @@ if(FIREBASE_ENABLED){
             // 'completed' and 'cancelled' stay as-is
             const dispStatus=['completed','cancelled'].includes(raw)?raw:'upcoming';
             TRIPS.push({
-              id:d.ref||d._docId,service:d.serviceLabel||'Airport Transfer',
+              id:d.ref||d._docId,docId:d._docId,service:d.serviceLabel||'Airport Transfer',
               pickup:d.pickup||'',dropoff:d.airport||d.dropoff||'',
               date:d.date||'',time:d.time||'',vehicle:d.vehicle||'Mercedes S-Class',
               status:dispStatus,rawStatus:raw,price:'£'+(d.price||0),
-              driver:d.driverName||'TBA',rating:d.driverRating||4.9,
+              driver:d.driverName||'TBA',driverId:d.driverId||null,rating:d.driverRating||4.9,
               plate:d.driverPlate||'',flight:d.flight||''
             });
           });
@@ -4603,6 +4603,11 @@ if(FIREBASE_ENABLED){
             if(!snap.empty){
               const d=snap.docs[0].data();
               if(!state._activeBooking)state._activeBooking={};
+              const _bDocId=snap.docs[0].id;
+              state._activeBooking.docId=_bDocId;
+              state._chatDocId=_bDocId;
+              state._confirmedRef=state._confirmedRef||d.ref||_bDocId;
+              state._activeBooking.ref=d.ref||_bDocId;
               state._activeBooking.status=d.status;
               state._activeBooking.driverId=d.driverId||null;
               state._activeBooking.driverName=d.driverName||'James Harrison';
@@ -4632,7 +4637,7 @@ if(FIREBASE_ENABLED){
       }
       // Register FCM push token
       if('serviceWorker' in navigator && FIREBASE_ENABLED){
-        navigator.serviceWorker.register('/firebase-messaging-sw.js')
+        navigator.serviceWorker.register('firebase-messaging-sw.js')
           .then(reg=>{
             try{
               const messaging=firebase.messaging();
@@ -4742,7 +4747,7 @@ function render(){
   if(state.screen==='active-trip') setTimeout(initTrackingMap,60);
   if(state.screen==='active-trip') setTimeout(startEtaCountdown,80);
   if(state.screen==='track') setTimeout(initTrackScreen,60);
-  if(state.screen==='active-trip') setTimeout(()=>{ setupChatListener(state._activeBooking?.docId); },0);
+  if(state.screen==='active-trip') setTimeout(()=>{ setupChatListener(state._chatDocId||state._activeBooking?.docId); },0);
   if(state.screen==='profile') setTimeout(loadReferralCode,100);
 }
 
