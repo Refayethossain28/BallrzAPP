@@ -127,7 +127,7 @@ function initThree() {
 // ---------------------------------------------------------------------------
 function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 
-let roadMesh=null, sceneryGroup=null, miniPath=[];
+let sceneryGroup=null, miniPath=[];
 
 function buildTrack(diff) {
   G.theme = THEMES[diff.theme || 0];
@@ -189,7 +189,16 @@ function buildTrack(diff) {
 // kerbs, guardrails and start/finish checker. Normals come from each frame's
 // banked surface normal so lighting stays correct through banking and hills.
 let roadParts = [];
-function clearRoadParts(){ for (const m of roadParts){ scene.remove(m); m.geometry.dispose(); } roadParts=[]; }
+// Fully release a mesh/group's GPU resources (geometry, materials, textures) so
+// rebuilding the world each race (incl. the Restart button) doesn't leak.
+function disposeTree(obj){
+  obj.traverse(o=>{
+    if (o.geometry) o.geometry.dispose();
+    const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+    for (const mt of mats){ if (mt.map) mt.map.dispose(); mt.dispose(); }
+  });
+}
+function clearRoadParts(){ for (const m of roadParts){ scene.remove(m); disposeTree(m); } roadParts=[]; }
 const V3 = THREE.Vector3;
 
 function buildRoadMesh() {
@@ -325,7 +334,7 @@ function makeGroundTexture(th){
 
 // Theme-aware scenery: course-specific props, set-pieces, a tunnel and the gantry
 function buildScenery(rng) {
-  if (sceneryGroup){ scene.remove(sceneryGroup); sceneryGroup.traverse(o=>{ if(o.geometry)o.geometry.dispose(); }); }
+  if (sceneryGroup){ scene.remove(sceneryGroup); disposeTree(sceneryGroup); }
   sceneryGroup = new THREE.Group();
   const th = G.theme;
 
@@ -665,6 +674,7 @@ function updateEngine(){
   engOsc.frequency.setTargetAtTime(60+r*220+(G.skid>0?40:0), AC.currentTime,0.05);
   engFilter.frequency.setTargetAtTime(500+r*2500, AC.currentTime,0.05);
   engGain.gain.setTargetAtTime(G.state==='racing'?0.04+r*0.10:0, AC.currentTime,0.1);
+  if (window.GameMusic) window.GameMusic.setIntensity(G.state==='racing'?r:0);
 }
 function beep(f,d,t,v){
   if(!AC) return;
@@ -678,7 +688,7 @@ function beep(f,d,t,v){
 // Opponents
 // ---------------------------------------------------------------------------
 function resetCars(){
-  G.cars=[]; rivalMeshes.forEach(m=>scene.remove(m)); rivalMeshes=[];
+  G.cars=[]; rivalMeshes.forEach(m=>{ scene.remove(m); disposeTree(m); }); rivalMeshes=[];
   const laneX=[-0.75,0.75,-0.4,0.4];
   const segLen = G.L/DIV;
   for (let i=0;i<OPPONENTS;i++){
@@ -786,15 +796,22 @@ function update(dt){
   G.shake=Math.max(0,G.shake-dt*2);
 
   updateCars(dt);
-  const myProg=G.lap*G.L+G.dist; let ah=0;
+  const myProg=Math.max(1,G.lap)*G.L+G.dist; let ah=0;   // guard reverse-over-line
   for (const car of G.cars) if (car.progress>myProg) ah++;
   G.place=ah+1;
 }
 function onLapComplete(){
   G.lastLapTime=G.lapTime;
-  if (G.lapTime<G.bestLapTime){ G.bestLapTime=G.lapTime; flashBanner('FAST LAP!'); beep(1046,0.4,'square',0.18); }
-  G.lapTime=0; G.lap++; G.timeLeft+=G.lapBonus; flashBanner('CHECKPOINT +'+G.lapBonus);
+  const hadBest = G.bestLapTime !== Infinity;       // no "fast lap" on the very first lap
+  if (G.lapTime<G.bestLapTime){ G.bestLapTime=G.lapTime; if (hadBest){ flashBanner('FAST LAP!'); beep(1046,0.4,'square',0.18); } }
+  G.lapTime=0; G.lap++; G.timeLeft+=G.lapBonus;
   if (G.lap>G.totalLaps){ finishRace(true); return; }
+  if (G.lap===G.totalLaps){                        // final lap: kick the music up a gear
+    flashBanner('FINAL LAP!');
+    if (window.GameMusic) window.GameMusic.setFinalLap(true);
+  } else {
+    flashBanner('CHECKPOINT +'+G.lapBonus);
+  }
   beep(660,0.25,'square',0.15);
 }
 function flashBanner(t){ const b=document.getElementById('banner'); b.textContent=t; b.classList.remove('hidden'); G.bannerTimer=1.4; }

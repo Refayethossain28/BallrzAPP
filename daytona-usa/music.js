@@ -28,8 +28,8 @@
   const ARP   = [0,1,2,1, 3,2,1,2, 0,1,2,3, 4,3,2,1];   // arpeggio indices
 
   const M = {
-    ctx:null, master:null, bus:null, delay:null, delayGain:null, noiseBuf:null,
-    comp:null, on:false, muted:false, mode:'menu', ducked:false,
+    ctx:null, master:null, bus:null, busFilter:null, delay:null, delayGain:null, noiseBuf:null,
+    comp:null, on:false, muted:false, mode:'menu', ducked:false, intensity:0, finalLap:false,
     bpm:126, step:0, nextTime:0, timer:null, sixteenth:0,
   };
 
@@ -42,8 +42,11 @@
     M.comp = ctx.createDynamicsCompressor();
     M.comp.threshold.value = -10; M.comp.ratio.value = 6; M.comp.release.value = 0.25;
     M.master.connect(M.comp).connect(ctx.destination);
-    // sidechained bus (everything melodic pumps on the kick); kick goes direct
-    M.bus = ctx.createGain(); M.bus.gain.value = 1; M.bus.connect(M.master);
+    // sidechained, speed-filtered bus (melodic parts pump on the kick); kick goes direct
+    M.bus = ctx.createGain(); M.bus.gain.value = 1;
+    M.busFilter = ctx.createBiquadFilter(); M.busFilter.type = 'lowpass';
+    M.busFilter.frequency.value = 7000; M.busFilter.Q.value = 0.7;
+    M.bus.connect(M.busFilter).connect(M.master);
     // feedback delay send for stabs / lead
     M.delay = ctx.createDelay(1.0);
     M.delay.delayTime.value = (60 / M.bpm) * 0.75;   // dotted-eighth
@@ -122,17 +125,19 @@
 
   // ---- sequencer -----------------------------------------------------------
   function scheduleStep(step, t) {
+    if (M.muted || !M.on) return;                   // don't synth voices when silent
     const e = step % 16;
     const bar = Math.floor(step / 16) % 4;
     const chord = PROG[bar];
     const race = M.mode === 'race';
     const sixteenth = M.sixteenth;
 
+    const fin = race && M.finalLap;                 // final-lap energy boost
     if (KICK[e]) kick(t);
-    if (race && CLAP[e]) clap(t);
-    else if (CLAP[e]) clap(t);
-    // hats
-    if (e % 2 === 1) noise(t, 0.03, race ? 0.16 : 0.10, 'highpass', 9000, M.bus); // closed
+    if (CLAP[e]) clap(t);
+    if (fin && (e === 2 || e === 10)) clap(t);       // extra claps on the run-in
+    // hats — double-time on the final lap
+    if (e % 2 === 1 || fin) noise(t, 0.03, race ? 0.16 : 0.10, 'highpass', 9000, M.bus); // closed
     if (OHAT[e]) noise(t, 0.12, race ? 0.14 : 0.09, 'highpass', 8000, M.bus);     // open
 
     // bass (ducked via bus): sub root + a brighter saw an octave up for groove
@@ -156,10 +161,10 @@
         saw(m2f(note), t, sixteenth * 16 * 2 * 0.95, 0.05, 1400, M.bus, 6);
     }
 
-    // arpeggio lead (race only), 16ths through the delay
+    // arpeggio lead (race only), 16ths through the delay; octave-up on the final lap
     if (race) {
       const ext = [chord.tri[0], chord.tri[1], chord.tri[2], chord.tri[0] + 12, chord.tri[1] + 12];
-      const note = ext[ARP[e] % ext.length];
+      const note = ext[ARP[e] % ext.length] + (fin ? 12 : 0);
       pluck(m2f(note + 12), t, sixteenth * 0.9, 0.12, M.delay);
       pluck(m2f(note + 12), t, sixteenth * 0.9, 0.10, M.bus);
     }
@@ -178,13 +183,22 @@
   M.start = function () {
     if (!M.ctx) return;
     if (M.ctx.state === 'suspended') M.ctx.resume();
-    M.on = true;
+    M.on = true; M.finalLap = false;
     if (!M.timer) { M.nextTime = M.ctx.currentTime + 0.06; M.step = 0; loop(); }
-    fade();
+    M.setIntensity(0); fade();
   };
   M.setMode = function (mode) { M.mode = mode; fade(); };
   M.duck = function (on) { M.ducked = on; fade(); };
-  M.stop = function () { M.on = false; fade(); };
+  // 0..1 (engine RPM): sweeps the bus low-pass so the track opens up with speed
+  M.setIntensity = function (v) {
+    M.intensity = v = Math.max(0, Math.min(1, v || 0));
+    if (!M.busFilter) return;
+    const floor = M.finalLap ? 2200 : 700;
+    const cutoff = floor + Math.pow(v, 1.4) * (12000 - floor);
+    M.busFilter.frequency.setTargetAtTime(cutoff, M.ctx.currentTime, 0.08);
+  };
+  M.setFinalLap = function (on) { M.finalLap = !!on; M.setIntensity(M.intensity); };
+  M.stop = function () { M.on = false; fade(); if (M.timer){ clearTimeout(M.timer); M.timer=null; } };
   M.toggleMute = function () { M.muted = !M.muted; fade(); return M.muted; };
   M.isMuted = function () { return M.muted; };
 

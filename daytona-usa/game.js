@@ -329,6 +329,7 @@ function updateEngine() {
   engineOsc.frequency.setTargetAtTime(60 + r*220 + (G.skid>0?40:0), AC.currentTime, 0.05);
   engineFilter.frequency.setTargetAtTime(500 + r*2500, AC.currentTime, 0.05);
   engineGain.gain.setTargetAtTime(G.state==='racing' ? 0.04 + r*0.10 : 0, AC.currentTime, 0.1);
+  if (window.GameMusic) window.GameMusic.setIntensity(G.state==='racing' ? r : 0);
 }
 function beep(freq, dur, type, vol) {
   if (!AC) return;
@@ -407,7 +408,7 @@ function update(dt) {
   G.shake = Math.max(0, G.shake - dt*30);
 
   updateCars(dt);
-  const myProg = G.lap * G.trackLength + G.position;
+  const myProg = Math.max(1, G.lap) * G.trackLength + G.position;   // guard reverse-over-line
   let ahead = 0;
   for (const car of G.cars) if (car.progress > myProg) ahead++;
   G.place = ahead + 1;
@@ -415,12 +416,18 @@ function update(dt) {
 
 function onLapComplete() {
   G.lastLapTime = G.lapTime;
-  if (G.lapTime < G.bestLapTime) { G.bestLapTime = G.lapTime; flashBanner('FAST LAP!'); beep(1046,0.4,'square',0.18); }
+  const hadBest = G.bestLapTime !== Infinity;       // no "fast lap" on the very first lap
+  if (G.lapTime < G.bestLapTime) { G.bestLapTime = G.lapTime; if (hadBest) { flashBanner('FAST LAP!'); beep(1046,0.4,'square',0.18); } }
   G.lapTime = 0;
   G.lap++;
   G.timeLeft += G.lapBonus;                       // checkpoint extends the clock
-  flashBanner('CHECKPOINT +' + G.lapBonus);
   if (G.lap > G.totalLaps) { finishRace(true); return; }
+  if (G.lap === G.totalLaps) {                    // final lap: kick the music up a gear
+    flashBanner('FINAL LAP!');
+    if (window.GameMusic) window.GameMusic.setFinalLap(true);
+  } else {
+    flashBanner('CHECKPOINT +' + G.lapBonus);
+  }
   beep(660,0.25,'square',0.15);
 }
 

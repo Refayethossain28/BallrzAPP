@@ -73,7 +73,8 @@ Recreates the look of Daytona's **Three-Seven Speedway** (Beginner course):
 - **Procedural dance music** — a four-on-the-floor house/EDM track synthesised
   in real time: punchy kick, claps, open/closed hats, a **sidechain-pumped**
   bass, detuned supersaw chord stabs, a plucky arpeggio lead and a pad, with a
-  delay send — driving "race" and mellow "menu" intensities. No audio files;
+  delay send. It reacts to the race: a low-pass **filter opens up with your
+  speed**, and the **final lap kicks into a higher-energy mix**. No audio files;
   press **M** to mute. Shared by both builds (`music.js`).
 - **On-screen pause button** with **Resume / Restart / Exit** — works on touch,
   and the menus compress to fit landscape phone screens.
