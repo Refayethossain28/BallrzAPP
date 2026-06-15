@@ -327,6 +327,7 @@
 
   <!-- Dynamic content area -->
   <div id="errorBox" class="error-box" style="display:none"></div>
+  <div id="dataWarn" style="display:none;padding:10px 14px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:10px;color:#d97706;font-size:12px;margin-bottom:14px"></div>
   <div id="dashboard" style="display:none">
     <!-- Market Overview -->
     <div class="grid-full card" id="overviewCard">
@@ -461,7 +462,7 @@
 <script>
 // ─── Constants ───────────────────────────────────────────────────────────────
 const PAIRS = ['EUR/USD','GBP/USD','USD/JPY','USD/CHF','AUD/USD','USD/CAD','NZD/USD','EUR/GBP','EUR/JPY','GBP/JPY','EUR/CHF','AUD/JPY','XAU/USD'];
-const FALLBACK_PRICES = {'EUR/USD':1.085,'GBP/USD':1.272,'USD/JPY':149.5,'USD/CHF':0.895,'AUD/USD':0.651,'USD/CAD':1.365,'NZD/USD':0.601,'EUR/GBP':0.852,'EUR/JPY':162.3,'GBP/JPY':190.1,'EUR/CHF':0.968,'AUD/JPY':97.3,'XAU/USD':2320.0};
+const FALLBACK_PRICES = {'EUR/USD':1.115,'GBP/USD':1.285,'USD/JPY':160.1,'USD/CHF':0.895,'AUD/USD':0.645,'USD/CAD':1.355,'NZD/USD':0.595,'EUR/GBP':0.867,'EUR/JPY':178.5,'GBP/JPY':205.0,'EUR/CHF':1.048,'AUD/JPY':103.3,'XAU/USD':3300.0};
 let chartTooltipData = null;
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
@@ -1161,8 +1162,8 @@ Confluence: ${['1H','4H','1D'].filter(tf=>mtf[tf]?.type==='BUY').length} bullish
 
   const prompt = `You are an expert forex analyst. Analyze ${pair} and provide a precise trading recommendation.
 
-MARKET DATA:
-Price: ${price.toFixed(d)}
+CURRENT LIVE PRICE: ${price.toFixed(d)}
+IMPORTANT: You MUST use ${price.toFixed(d)} as the entry price. Do NOT use any other entry. Calculate all TP and SL levels relative to this exact price.
 ATR(14): ${ind.atr.toFixed(d)}
 
 DAILY INDICATORS (trend bias):
@@ -1314,20 +1315,40 @@ async function runAnalysis(pairOverride) {
     let price = FALLBACK_PRICES[pair] || 1.0;
     currentPrice = price;
     let bid = price, ask = price;
+    let livePrice = false, liveOHLCV = false;
 
     if(rateResult.status==='fulfilled' && rateResult.value) {
       price=rateResult.value.price||price;
       currentPrice=price;
       bid=rateResult.value.bid||price;
       ask=rateResult.value.ask||price;
+      livePrice = true;
+      // Cache last known good price
+      localStorage.setItem('fxpro_price_'+pair, price);
+    } else {
+      // Try cached price first
+      const cached = parseFloat(localStorage.getItem('fxpro_price_'+pair));
+      if (cached && !isNaN(cached)) { price = cached; currentPrice = cached; }
     }
 
     let ohlcv = [];
     if(dailyResult.status==='fulfilled' && dailyResult.value.length>=30) {
       ohlcv=dailyResult.value;
-      if(!rateResult.value) price=ohlcv[ohlcv.length-1].c;
+      liveOHLCV = true;
+      // Make sure OHLCV last close matches live price (AV daily lags intraday)
+      if(livePrice) ohlcv[ohlcv.length-1].c = price;
+      if(!livePrice) price=ohlcv[ohlcv.length-1].c;
     } else {
       ohlcv=mockOHLCV(price);
+    }
+
+    // Show data quality warning
+    const dataWarn = document.getElementById('dataWarn');
+    if (!livePrice) {
+      dataWarn.style.display = 'block';
+      dataWarn.textContent = '⚠️ Live price unavailable — using cached/estimated data. Check your Alpha Vantage key or wait a minute (rate limit: 5 calls/min).';
+    } else {
+      dataWarn.style.display = 'none';
     }
 
     if(bid===ask||bid===0){const sf=pair.includes('XAU')?0.0003:0.0001;bid=price*(1-sf);ask=price*(1+sf);}
