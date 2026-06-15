@@ -195,14 +195,22 @@ exports.onBookingCreated = onDocumentCreated('bookings/{bookingId}', async (even
       }).catch(e => console.warn('Driver FCM failed:', e.message));
     }
   } else {
+    // Check dispatch mode — manual mode skips broadcast
+    const modeDoc = await db.collection('settings').doc('dispatch').get().catch(() => null);
+    const dispatchMode = modeDoc && modeDoc.exists ? modeDoc.data().mode : 'broadcast';
+    if (dispatchMode !== 'manual') {
     await db.collection('open_jobs').add({
       bookingDocId: event.params.bookingId, bookingRef: ref, status: 'open',
       pickup: b.pickup || '', dropoff: b.airport || b.dropoff || '',
       date: b.date || '', time: b.time || '',
       serviceLabel: b.serviceLabel || 'Airport Transfer',
-      price: b.price || 0, flight: b.flight || '', market: b.market || 'london',
+      type: b.serviceType || 'airport',
+      clientId: b.clientId || '', clientName: b.clientName || '',
+      notes: b.notes || '',
+      price: b.price || 0, pay: b.price || 0, flight: b.flight || '', market: b.market || 'london',
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     }).catch(e => console.warn('open_jobs create failed:', e.message));
+    await snap.ref.update({ status: 'offered' }).catch(() => {});
 
     const onlineSnap = await db.collection('drivers').where('status', '==', 'online').get().catch(() => null);
     if (onlineSnap && !onlineSnap.empty) {
@@ -219,6 +227,7 @@ exports.onBookingCreated = onDocumentCreated('bookings/{bookingId}', async (even
         }).catch(e => console.warn('Driver FCM failed:', d.id, e.message));
       });
       await Promise.allSettled(sends);
+    }
     }
   }
 
@@ -241,8 +250,18 @@ exports.handleCancellation = onCall(async (request) => {
 
   let fee = 0;
   if (b.date && b.time) {
-    const hoursUntil = (new Date(`${b.date}T${b.time}`).getTime() - Date.now()) / 3_600_000;
-    if (hoursUntil < 24) fee = Math.round((b.price || 0) * 0.5);
+    // Normalise 12h format (e.g. "2:30 PM") to 24h ("14:30") before parsing
+    const timeStr = b.time.includes('M')
+      ? (() => {
+          const [t, m] = b.time.split(' ');
+          let [h, min] = t.split(':').map(Number);
+          if (m === 'PM' && h < 12) h += 12;
+          if (m === 'AM' && h === 12) h = 0;
+          return `${String(h).padStart(2,'0')}:${String(min).padStart(2,'0')}`;
+        })()
+      : b.time;
+    const hoursUntil = (new Date(`${b.date}T${timeStr}`).getTime() - Date.now()) / 3_600_000;
+    if (!isNaN(hoursUntil) && hoursUntil < 24) fee = Math.round((b.price || 0) * 0.5);
   }
 
   await doc.ref.update({
@@ -314,6 +333,7 @@ exports.onBookingStatusChange = onDocumentUpdated('bookings/{bookingId}', async 
     token: tokenDoc.data().token,
     notification: { title: msg.title, body: msg.body },
     data: { screen: 'active-trip', bookingId: event.params.bookingId },
+    android: { priority: 'high' },
     apns: { payload: { aps: { badge: 1, sound: 'default' } } },
   }).catch(e => console.warn('FCM push failed:', e.message));
 
@@ -340,13 +360,23 @@ exports.assignDriverToBooking = onCall(async (request) => {
     assignedAt: admin.firestore.FieldValue.serverTimestamp(),
   });
 
+  // Cancel any broadcast open_jobs for this booking so drivers stop seeing it
+  const openJobsSnap = await db.collection('open_jobs')
+    .where('bookingDocId', '==', bSnap.docs[0].id).where('status', '==', 'open').get().catch(() => null);
+  if (openJobsSnap && !openJobsSnap.empty) {
+    const batch = db.batch();
+    openJobsSnap.docs.forEach(d => batch.update(d.ref, { status: 'cancelled' }));
+    await batch.commit().catch(e => console.warn('open_jobs cancel:', e.message));
+  }
+
   const jobRef = await db.collection('jobs').add({
     driverId, bookingRef, bookingId: bSnap.docs[0].id,
-    clientId: b.clientId, clientName: b.clientName,
-    type: b.serviceType || 'airport', serviceLabel: b.serviceLabel,
-    pickup: b.pickup, dropoff: b.airport || b.dropoff,
-    date: b.date, time: b.time, flight: b.flight || '',
-    vehicle: b.vehicle, pay: b.price || 0,
+    clientId: b.clientId || '', clientName: b.clientName || '',
+    type: b.serviceType || 'airport', serviceLabel: b.serviceLabel || 'Airport Transfer',
+    pickup: b.pickup || '', dropoff: b.airport || b.dropoff || '',
+    date: b.date || '', time: b.time || '', flight: b.flight || '',
+    vehicle: b.vehicle || '', pay: b.price || 0,
+    notes: b.notes || '', market: b.market || 'london',
     status: 'pending', createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
 
@@ -354,8 +384,10 @@ exports.assignDriverToBooking = onCall(async (request) => {
   if (tokenDoc && tokenDoc.exists) {
     await admin.messaging().send({
       token: tokenDoc.data().token,
-      notification: { title: 'New Job Request', body: `${b.serviceLabel} · ${b.pickup} → ${b.airport || b.dropoff}` },
+      notification: { title: 'New Job Request', body: `${b.serviceLabel || 'Transfer'} · ${b.pickup || '?'} → ${b.airport || b.dropoff || '?'}` },
       data: { screen: 'jobs', jobId: jobRef.id },
+      android: { priority: 'high' },
+      apns: { payload: { aps: { sound: 'default', badge: 1 } } },
     }).catch(() => {});
   }
 
@@ -432,7 +464,7 @@ Return ONLY valid JSON:
     : [];
 
   const resp = await client.messages.create({
-    model: 'claude-opus-4-8',
+    model: 'claude-opus-4-5',
     max_tokens: 800,
     system: systemPrompt,
     messages: [...priorMsgs, { role: 'user', content: message }]
@@ -473,13 +505,19 @@ exports.submitTripRating = onCall(async (request) => {
   });
 
   if (driverId) {
-    const ratingsSnap = await db.collection('ratings').where('driverId', '==', driverId).get();
-    const ratings = ratingsSnap.docs.map(d => d.data().rating);
-    const avg = ratings.reduce((a, b) => a + b, 0) / ratings.length;
+    // Atomic increment avoids race condition when concurrent ratings are submitted
     await db.collection('drivers').doc(driverId).update({
-      rating: Math.round(avg * 10) / 10,
-      ratingCount: ratings.length
+      ratingTotal: admin.firestore.FieldValue.increment(Math.min(5, Math.max(1, Number(rating)))),
+      ratingCount: admin.firestore.FieldValue.increment(1),
     }).catch(() => {});
+    // Recompute average from source-of-truth fields
+    const driverDoc = await db.collection('drivers').doc(driverId).get().catch(() => null);
+    if (driverDoc && driverDoc.exists) {
+      const d = driverDoc.data();
+      const cnt = d.ratingCount || 1;
+      const avg = Math.round((d.ratingTotal || Number(rating)) / cnt * 10) / 10;
+      await db.collection('drivers').doc(driverId).update({ rating: avg }).catch(() => {});
+    }
   }
 
   return { success: true };
@@ -556,7 +594,7 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
       const Anthropic = require('@anthropic-ai/sdk');
       const client = new Anthropic.Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' });
       const resp = await client.messages.create({
-        model: 'claude-opus-4-8', max_tokens: 256,
+        model: 'claude-opus-4-5', max_tokens: 256,
         system: 'Extract booking details from this WhatsApp message. Return JSON only: { pickup, dropoff, date, time, flight }. Use null for unknown fields.',
         messages: [{ role: 'user', content: Body }]
       });

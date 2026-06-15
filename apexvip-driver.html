@@ -364,12 +364,13 @@ function setupDriverListeners(uid){
       model:p.vehicleModel||p.vehicle||'',
       reg:p.reg||'',
       rating:p.rating||4.9,
-      trips:p.trips||0
+      trips:p.trips||0,
+      market:p.market||'london'
     };
     db.collection('drivers').doc(uid).set({
       name,vehicle:S.profile.model||S.profile.vehicle,
       model:S.profile.model||S.profile.vehicle,
-      reg:S.profile.reg,rating:S.profile.rating
+      reg:S.profile.reg,rating:S.profile.rating,role:'driver'
     },{merge:true}).catch(()=>{});
     render();
   }).catch(()=>{});
@@ -394,7 +395,8 @@ function setupDriverListeners(uid){
 
   // Broadcast dispatch: open jobs are offered to every online driver at once.
   // First driver to accept claims it via a transaction.
-  db.collection('open_jobs').where('status','==','open')
+  const market = S.driverProfile?.market || S.profile?.market || 'london';
+  db.collection('open_jobs').where('status','==','open').where('market','==',market)
     .onSnapshot(snap=>{
       const open=snap.docs.map(d=>({_openId:d.id,_broadcast:true,bookingDocId:d.data().bookingDocId||'',bookingRef:d.data().bookingRef||'',
         type:d.data().type||'airport',client:d.data().clientName||'Client',
@@ -440,9 +442,12 @@ async function claimBroadcastJob(job){
     }
     const jobDoc=await db.collection('jobs').add({
       driverId:_driverId,bookingRef:job.bookingRef,bookingDocId:job.bookingDocId,
-      clientName:job.client,pickup:job.pickup,dropoff:job.dropoff,
+      clientId:job.clientId||'',clientName:job.client||'',
+      type:job.type||'airport',serviceLabel:job.service||'Airport Transfer',
+      pickup:job.pickup,dropoff:job.dropoff,
       date:job.date||'',time:job.time||'',vehicle:job.vehicle,pay:job.pay,
-      flight:job.flight||'',status:'accepted',
+      flight:job.flight||'',notes:job.notes||'',market:job.market||'london',
+      status:'accepted',
       createdAt:firebase.firestore.FieldValue.serverTimestamp()
     });
     return {...job,id:jobDoc.id};
@@ -991,7 +996,7 @@ active:()=>{
         <span onclick="S._showPrefs=!S._showPrefs;render()" style="margin-left:auto;background:var(--gold-2);border-radius:20px;padding:3px 10px;font-size:9px;font-weight:700;letter-spacing:1px;color:var(--gold);cursor:pointer">${S._showPrefs?'HIDE':'BRIEF'}</span>
       </div>
       ${S._showPrefs?`<div style="display:flex;flex-direction:column;gap:6px">
-        ${getClientPreferences(j?.clientId).map(p=>`
+        ${getClientPreferences(j?.clientId, j?.preferences).map(p=>`
         <div style="display:flex;align-items:center;gap:9px;font-size:13px;color:var(--fg-muted)">
           <span style="color:var(--gold);font-size:11px">✦</span>${p}
         </div>`).join('')}
