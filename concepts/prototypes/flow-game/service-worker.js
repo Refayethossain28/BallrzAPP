@@ -1,8 +1,9 @@
 /* Offline app-shell cache for Flow. Cache-first for the few static assets,
  * with a network fallthrough that also fills the cache. Bump CACHE to ship
  * an update. */
-const CACHE = 'flow-v1';
-const ASSETS = ['./', './index.html', './manifest.json', './icon.svg'];
+const CACHE = 'flow-v2';
+const ASSETS = ['./', './index.html', './manifest.json', './icon.svg',
+                './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(

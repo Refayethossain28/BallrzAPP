@@ -93,8 +93,11 @@ function makeSandbox() {
     crypto: { getRandomValues: (a) => a, randomUUID: () => 'stub' },
     Image: class {}, Audio: class {}, Worker: class {}, WebSocket: class {},
     alert: noop, confirm: () => true, prompt: () => null,
-    document: makeStub(), navigator: makeStub(), localStorage: makeStub(),
-    sessionStorage: makeStub(), location: makeStub(), history: makeStub(),
+    document: makeStub(), navigator: makeStub(), location: makeStub(), history: makeStub(),
+    // faithful empty Storage: getItem returns null (not a stub), so the common
+    // `JSON.parse(localStorage.getItem(k) || '{}')` fallback works like a real browser
+    localStorage: { getItem: () => null, setItem() {}, removeItem() {}, clear() {}, key: () => null, length: 0 },
+    sessionStorage: { getItem: () => null, setItem() {}, removeItem() {}, clear() {}, key: () => null, length: 0 },
     getComputedStyle: () => makeStub(),
     // window-as-EventTarget surface and common window props
     addEventListener: noop, removeEventListener: noop, dispatchEvent: () => true,
