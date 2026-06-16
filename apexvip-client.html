@@ -959,16 +959,26 @@ function initTrackingMap(){
   // Driver marker icon
   const driverIcon=()=>L.divIcon({className:'',html:`<div style="width:38px;height:38px;border-radius:50%;background:#0c0b09;border:2.5px solid var(--gold,#D4A843);display:flex;align-items:center;justify-content:center;box-shadow:0 0 20px rgba(212,168,67,.4)"><svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#D4A843" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11a2 2 0 012 2v3m-1 9h-5m-1 0a2 2 0 100 4 2 2 0 000-4zm8 0a2 2 0 100 4 2 2 0 000-4zm-6-9h5l3 5"/></svg></div>`,iconSize:[38,38],iconAnchor:[19,19]});
 
+  const _locEl=()=>document.getElementById('drv-loc-time');
+  let _liveMode=false;
+
   function placeOrMoveDriver(pos){
     if(driverMarker){driverMarker.setLatLng(pos);}
     else{driverMarker=L.marker(pos,{icon:driverIcon()}).addTo(trackingMap).bindPopup('Your chauffeur');}
     if(trackingMap)trackingMap.panTo(pos,{animate:true,duration:.5});
-    const el2=document.getElementById('drv-loc-time');
-    if(el2)el2.textContent='Updated just now';
+    const now=new Date();
+    const t=now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0')+':'+now.getSeconds().toString().padStart(2,'0');
+    const el2=_locEl();
+    if(el2) el2.innerHTML=_liveMode
+      ?`<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:#22c55e;display:inline-block"></span> Live GPS · ${t}</span>`
+      :`<span style="color:var(--fg-4)">Demo mode · ${t}</span>`;
   }
 
   const driverDocId=state._activeBooking?.driverId;
   if(FIREBASE_ENABLED&&driverDocId){
+    _liveMode=true;
+    const el2=_locEl();
+    if(el2) el2.innerHTML='<span style="color:var(--fg-4)">Connecting to driver GPS…</span>';
     _trackingUnsub=db.collection('drivers').doc(driverDocId).onSnapshot(doc=>{
       if(!doc.exists||!trackingMap)return;
       const d=doc.data();

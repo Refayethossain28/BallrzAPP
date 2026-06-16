@@ -240,7 +240,7 @@ function addRipple(btn,e){
 
 // ── Firebase init ──────────────────────────────────────────────────────
 let auth, db, fns, storage, FIREBASE_ENABLED = false, _driverId = null;
-let _gpsInterval = null;
+let _gpsInterval = null, _gpsWatchId = null, _gpsLastWrite = 0;
 try {
   if (typeof APEXVIP_FIREBASE_CONFIG !== 'undefined' && APEXVIP_FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY') {
     const _fbApp = firebase.apps.length ? firebase.app() : firebase.initializeApp(APEXVIP_FIREBASE_CONFIG);
@@ -526,21 +526,38 @@ function syncBookingStatus(job,status,extra){
   }
 }
 
+function _writeLocation(pos){
+  if(!FIREBASE_ENABLED||!_driverId)return;
+  const now=Date.now();
+  if(now-_gpsLastWrite<4000)return; // max 1 Firestore write per 4 s
+  _gpsLastWrite=now;
+  db.collection('drivers').doc(_driverId).set({
+    lat:pos.coords.latitude,lng:pos.coords.longitude,
+    heading:pos.coords.heading||0,speed:pos.coords.speed||0,
+    updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+  },{merge:true}).catch(()=>{});
+}
+
 function startGPSStream(){
-  if(!FIREBASE_ENABLED||!_driverId||_gpsInterval)return;
-  _gpsInterval=setInterval(()=>{
-    if(!navigator.geolocation)return;
-    navigator.geolocation.getCurrentPosition(pos=>{
-      db.collection('drivers').doc(_driverId).set({
-        lat:pos.coords.latitude,lng:pos.coords.longitude,
-        heading:pos.coords.heading||0,speed:pos.coords.speed||0,
-        updatedAt:firebase.firestore.FieldValue.serverTimestamp()
-      },{merge:true}).catch(()=>{});
-    },null,{enableHighAccuracy:true,timeout:8000,maximumAge:5000});
-  },10000);
+  if(!FIREBASE_ENABLED||!_driverId)return;
+  if(_gpsWatchId!=null||_gpsInterval)return; // already running
+  if(navigator.geolocation){
+    _gpsWatchId=navigator.geolocation.watchPosition(
+      pos=>_writeLocation(pos),
+      err=>{ // watchPosition failed — fall back to polling
+        console.warn('GPS watch error:',err.message);
+        if(_gpsWatchId!=null){navigator.geolocation.clearWatch(_gpsWatchId);_gpsWatchId=null;}
+        if(!_gpsInterval) _gpsInterval=setInterval(()=>{
+          navigator.geolocation.getCurrentPosition(_writeLocation,()=>{},{enableHighAccuracy:true,timeout:8000,maximumAge:3000});
+        },8000);
+      },
+      {enableHighAccuracy:true,timeout:10000,maximumAge:3000}
+    );
+  }
 }
 
 function stopGPSStream(){
+  if(_gpsWatchId!=null){navigator.geolocation.clearWatch(_gpsWatchId);_gpsWatchId=null;}
   if(_gpsInterval){clearInterval(_gpsInterval);_gpsInterval=null;}
 }
 
