@@ -1736,6 +1736,11 @@ function clientSendMsg() {
   if (el) { el.innerHTML = state._chatMessages.map(chatBubble).join(''); el.scrollTop = el.scrollHeight; }
 }
 
+function quickReply(msg) {
+  const inp = document.getElementById('client-chat-inp');
+  if (inp) { inp.value = msg; clientSendMsg(); }
+}
+
 // ── Amenity Toggle ────────────────────────────────────────────────────────
 function toggleAmenity(item) {
   if (!state.booking.amenities) state.booking.amenities = [];
@@ -2973,6 +2978,10 @@ payment: () => {
   </div>
   <div style="width:100%;padding-bottom:52px;display:flex;flex-direction:column;gap:10px">
     <button class="btn btn-white" onclick="state._activeBooking={...state.booking,...(state._activeBooking||{}),status:'confirmed',docId:state._chatDocId,ref:state._confirmedRef};go('active-trip')">Track my driver</button>
+    ${state._activeBooking?.driverName ? `<button class="btn btn-gold" onclick="state._prevScreen='booking-confirmed';go('client-chat')" style="margin-top:0;display:flex;align-items:center;justify-content:center;gap:10px">
+      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+      Message ${state._activeBooking.driverName.split(' ')[0]}
+    </button>` : ''}
     <button class="btn btn-glass" onclick="shareTrip()" style="margin-top:0">
       Share my ride
     </button>
@@ -3694,22 +3703,17 @@ profile: () => {
           <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.948V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
         </a>
       </div>
-      <div id="drv-loc-time" style="font-size:11px;color:var(--fg-4);padding:10px 0;text-align:center">Waiting for driver location…</div>
-      <div class="card" style="padding:0;overflow:hidden;margin-bottom:10px">
-        <div style="padding:14px 16px;border-bottom:1px solid var(--divider);display:flex;align-items:center;gap:8px">
-          <div style="width:8px;height:8px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite"></div>
-          <div style="font-size:13px;font-weight:700">Chat with chauffeur</div>
+      <div id="drv-loc-time" style="font-size:11px;color:var(--fg-4);padding:6px 0 10px;text-align:center">Waiting for driver location…</div>
+      <button onclick="state._prevScreen='active-trip';go('client-chat')" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:13px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;text-align:left;margin-bottom:10px">
+        <div style="width:36px;height:36px;border-radius:12px;background:rgba(212,168,67,.12);border:1px solid rgba(212,168,67,.2);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#D4A843" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
         </div>
-        <div id="chat-msgs" style="padding:14px 16px;max-height:180px;overflow-y:auto;display:flex;flex-direction:column;scrollbar-width:none">
-          ${(state._chatMessages||[]).length ? (state._chatMessages||[]).map(m => chatBubble(m)).join('') : '<div style="font-size:12px;color:var(--fg-4);text-align:center;padding:20px 0">Messages appear here</div>'}
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:700;color:var(--fg)">Message your chauffeur</div>
+          <div style="font-size:11px;color:var(--fg-4);margin-top:1px">${(state._chatMessages||[]).length ? `${state._chatMessages.length} message${state._chatMessages.length!==1?'s':''}` : 'Tap to open chat'}</div>
         </div>
-        <div style="padding:10px 12px;border-top:1px solid var(--divider);display:flex;gap:8px">
-          <input id="client-chat-inp" placeholder="Message your chauffeur…" style="flex:1;background:var(--surface-2);border:1px solid var(--border);border-radius:22px;padding:10px 14px;font-size:13px;color:var(--fg);outline:none;font-family:inherit" onkeydown="if(event.key==='Enter')clientSendMsg()"/>
-          <button onclick="clientSendMsg()" style="background:var(--gold);border:none;border-radius:50%;width:38px;height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
-            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#000" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
-          </button>
-        </div>
-      </div>
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="var(--fg-4)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </button>
     </div>
   </div>
   <!-- SOS -->
@@ -4009,6 +4013,51 @@ profile: () => {
     <div style="height:60px"></div>
   </div>
 </div>`,
+
+'client-chat': () => {
+  const b = state._activeBooking || {};
+  const dn = b.driverName || 'Chauffeur';
+  const initials = dn.split(' ').map(n=>n[0]||'').join('').slice(0,2).toUpperCase();
+  const msgs = state._chatMessages || [];
+  const prev = state._prevScreen || 'active-trip';
+  return `
+<div style="height:100vh;height:100dvh;display:flex;flex-direction:column;background:var(--bg)">
+  <div style="padding:max(env(safe-area-inset-top),20px) 20px 14px;border-bottom:1px solid var(--divider);display:flex;align-items:center;gap:12px;flex-shrink:0;background:var(--bg)">
+    <button onclick="go('${prev}')" style="width:38px;height:38px;border-radius:50%;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+    </button>
+    <div style="width:42px;height:42px;border-radius:13px;background:linear-gradient(135deg,#2a2a2a,#111);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;border:2px solid rgba(255,255,255,.1);flex-shrink:0">${initials}</div>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:15px;font-weight:700">${dn}</div>
+      <div style="font-size:11px;color:var(--fg-4);display:flex;align-items:center;gap:5px;margin-top:1px">
+        <div style="width:6px;height:6px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite;flex-shrink:0"></div>
+        Chauffeur · En route
+      </div>
+    </div>
+    <a href="tel:+447700000000" style="width:38px;height:38px;border-radius:50%;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;text-decoration:none;flex-shrink:0">
+      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.948V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
+    </a>
+  </div>
+  <div id="chat-msgs" class="scroll" style="flex:1;padding:16px 20px 8px;display:flex;flex-direction:column;overflow-y:auto">
+    ${msgs.length ? msgs.map(m=>chatBubble(m)).join('') : `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 20px">
+      <div style="width:56px;height:56px;border-radius:20px;background:rgba(212,168,67,.1);border:1px solid rgba(212,168,67,.15);display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
+        <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="#D4A843" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+      </div>
+      <div style="font-size:15px;font-weight:600;margin-bottom:6px">Start a conversation</div>
+      <div style="font-size:13px;color:var(--fg-4);line-height:1.6">Let your chauffeur know if you need anything<br>or have any changes to your journey.</div>
+    </div>`}
+  </div>
+  <div style="padding:6px 16px 8px;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;flex-shrink:0;-webkit-overflow-scrolling:touch">
+    ${["👋 On my way down","Running 5 min late","Which entrance?","Need luggage help","Thank you!"].map(q=>`<button onclick="quickReply('${q}')" style="white-space:nowrap;padding:8px 14px;background:var(--surface);border:1px solid var(--border);border-radius:20px;font-size:12px;color:var(--fg-3);cursor:pointer;font-family:inherit;flex-shrink:0;transition:background .15s" ontouchstart="" onmousedown="this.style.background='var(--surface-2)'" onmouseup="this.style.background='var(--surface)'">${q}</button>`).join('')}
+  </div>
+  <div style="padding:10px 16px calc(env(safe-area-inset-bottom) + 10px);border-top:1px solid var(--divider);display:flex;gap:8px;flex-shrink:0;background:var(--bg)">
+    <input id="client-chat-inp" placeholder="Message your chauffeur…" autocomplete="off" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:24px;padding:12px 16px;font-size:16px;color:var(--fg);outline:none;font-family:inherit;transition:border-color .15s" onfocus="this.style.borderColor='rgba(212,168,67,.4)'" onblur="this.style.borderColor=''" onkeydown="if(event.key==='Enter'){event.preventDefault();clientSendMsg()}"/>
+    <button onclick="clientSendMsg()" style="background:var(--gold);border:none;border-radius:50%;width:46px;height:46px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;box-shadow:0 2px 12px rgba(212,168,67,.3)">
+      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#0c0b09" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+    </button>
+  </div>
+</div>`;
+},
 
 'receipt': () => {
   const t = state._lastTrip || {};
@@ -5237,7 +5286,8 @@ function render(){
   if(state.screen==='active-trip') setTimeout(initTrackingMap,60);
   if(state.screen==='active-trip') setTimeout(startEtaCountdown,80);
   if(state.screen==='track') setTimeout(initTrackScreen,60);
-  if(state.screen==='active-trip') setTimeout(()=>{ setupChatListener(state._chatDocId||state._activeBooking?.docId); },0);
+  if(state.screen==='active-trip'||state.screen==='client-chat') setTimeout(()=>{ setupChatListener(state._chatDocId||state._activeBooking?.docId); },0);
+  if(state.screen==='client-chat') setTimeout(()=>{ const el=document.getElementById('chat-msgs'); if(el)el.scrollTop=el.scrollHeight; },50);
   if(state.screen==='profile') setTimeout(loadReferralCode,100);
 }
 
