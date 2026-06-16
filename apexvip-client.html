@@ -1836,6 +1836,7 @@ function registerCityInterest(city) {
 function go(screen, data) {
   if (data) state.selectedTrip = data;
   state._airportPicker = false;
+  document.getElementById('apex-picker-portal')?.remove();
   if (state.screen==='home' && screen!=='home' && mapInstance){mapInstance.remove();mapInstance=null;mapTileLayer=null;}
   if (state.screen==='active-trip' && screen!=='active-trip'){
     if(_trackingUnsub){_trackingUnsub();_trackingUnsub=null;}
@@ -2152,29 +2153,6 @@ home: () => {
         </div>
       </div>
 
-      ${state._airportPicker ? `
-      <div onclick="state._airportPicker=false;render()" style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:300;backdrop-filter:blur(4px)"></div>
-      <div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:var(--bg);border-radius:28px 28px 0 0;padding:12px 22px calc(env(safe-area-inset-bottom)+24px);z-index:301;animation:slideUpSheet .28s cubic-bezier(.16,1,.3,1)">
-        <div style="width:36px;height:4px;border-radius:2px;background:var(--border);margin:0 auto 22px"></div>
-        <div style="font-size:18px;font-weight:700;margin-bottom:6px">Airport & Aviation</div>
-        <div style="font-size:13px;color:var(--fg-3);margin-bottom:20px">Choose your service type</div>
-        <div onclick="state._airportPicker=false;goBook('airport')" style="display:flex;align-items:center;gap:16px;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:18px;cursor:pointer;margin-bottom:12px;transition:border-color .15s" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='var(--border)'">
-          <div style="width:50px;height:50px;border-radius:16px;background:rgba(212,175,110,.1);border:1px solid rgba(212,175,110,.2);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">✈</div>
-          <div>
-            <div style="font-size:15px;font-weight:700;margin-bottom:3px">Airport Transfer</div>
-            <div style="font-size:12px;color:var(--fg-3);line-height:1.4">Door-to-terminal · meet & greet<br>flight monitoring included</div>
-          </div>
-          <svg style="margin-left:auto;flex-shrink:0" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--fg-4)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-        </div>
-        <div onclick="state._airportPicker=false;go('aviation-booking')" style="display:flex;align-items:center;gap:16px;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:18px;cursor:pointer;transition:border-color .15s" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='var(--border)'">
-          <div style="width:50px;height:50px;border-radius:16px;background:rgba(212,175,110,.1);border:1px solid rgba(212,175,110,.2);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">🛩</div>
-          <div>
-            <div style="font-size:15px;font-weight:700;margin-bottom:3px">Private Aviation</div>
-            <div style="font-size:12px;color:var(--fg-3);line-height:1.4">Charter flights · private jets<br>helicopter transfers</div>
-          </div>
-          <svg style="margin-left:auto;flex-shrink:0" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--fg-4)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-        </div>
-      </div>` : ''}
 
       <div class="section-label" style="margin-bottom:10px">Discover</div>
       <div style="display:flex;gap:6px;overflow-x:auto;margin-bottom:10px;scrollbar-width:none;padding-bottom:2px">
@@ -5126,10 +5104,46 @@ function formatEtaMin(s){
   return m<2?'1 min':m+' mins';
 }
 
+function renderAirportPickerPortal(){
+  let p=document.getElementById('apex-picker-portal');
+  if(!state._airportPicker){if(p)p.remove();return;}
+  if(!p){p=document.createElement('div');p.id='apex-picker-portal';document.body.appendChild(p);}
+  const isDark=state.theme!=='light';
+  const bg=isDark?'#0d0c0a':'#f5f0e8';
+  const fg=isDark?'#f4f0ea':'#1a1612';
+  const fg3=isDark?'rgba(244,240,234,.5)':'rgba(26,22,18,.5)';
+  const surf=isDark?'rgba(255,255,255,.045)':'rgba(0,0,0,.04)';
+  const bdr=isDark?'rgba(255,255,255,.08)':'rgba(0,0,0,.08)';
+  p.innerHTML=`
+    <div onclick="state._airportPicker=false;document.getElementById('apex-picker-portal')?.remove()" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)"></div>
+    <div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:${bg};border-radius:28px 28px 0 0;padding:12px 22px calc(env(safe-area-inset-bottom)+28px);z-index:9001;animation:slideUpSheet .28s cubic-bezier(.16,1,.3,1)">
+      <div style="width:36px;height:4px;border-radius:2px;background:${bdr};margin:0 auto 22px"></div>
+      <div style="font-size:18px;font-weight:700;margin-bottom:6px;color:${fg}">Airport & Aviation</div>
+      <div style="font-size:13px;color:${fg3};margin-bottom:20px">Choose your service type</div>
+      <div onclick="state._airportPicker=false;document.getElementById('apex-picker-portal')?.remove();goBook('airport')" style="display:flex;align-items:center;gap:16px;background:${surf};border:1px solid ${bdr};border-radius:18px;padding:18px;cursor:pointer;margin-bottom:12px">
+        <div style="width:50px;height:50px;border-radius:16px;background:rgba(212,175,110,.1);border:1px solid rgba(212,175,110,.2);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">✈</div>
+        <div>
+          <div style="font-size:15px;font-weight:700;margin-bottom:3px;color:${fg}">Airport Transfer</div>
+          <div style="font-size:12px;color:${fg3};line-height:1.4">Door-to-terminal · meet & greet<br>flight monitoring included</div>
+        </div>
+        <svg style="margin-left:auto;flex-shrink:0" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="${fg3}" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </div>
+      <div onclick="state._airportPicker=false;document.getElementById('apex-picker-portal')?.remove();go('aviation-booking')" style="display:flex;align-items:center;gap:16px;background:${surf};border:1px solid ${bdr};border-radius:18px;padding:18px;cursor:pointer">
+        <div style="width:50px;height:50px;border-radius:16px;background:rgba(212,175,110,.1);border:1px solid rgba(212,175,110,.2);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">🛩</div>
+        <div>
+          <div style="font-size:15px;font-weight:700;margin-bottom:3px;color:${fg}">Private Aviation</div>
+          <div style="font-size:12px;color:${fg3};line-height:1.4">Charter flights · private jets<br>helicopter transfers</div>
+        </div>
+        <svg style="margin-left:auto;flex-shrink:0" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="${fg3}" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </div>
+    </div>`;
+}
+
 function render(){
   document.body.setAttribute('data-screen',state.screen);
   const fn=screens[state.screen];
   app.innerHTML=fn?fn():`<div style="padding:40px;text-align:center;color:var(--fg-4)">Screen not found</div>`;
+  renderAirportPickerPortal();
   if(state.screen==='home') setTimeout(initMap,60);
   if(state.screen==='payment') setTimeout(initSquare,60);
   if(state.screen==='active-trip') setTimeout(initTrackingMap,60);
