@@ -394,13 +394,13 @@ body.light .nav-item.on{color:var(--gold-b)}
 .nav-item.on .nav-pip{opacity:1;transform:scaleX(1)}
 
 /* ── Service grid ────────────────────────────────────────────────── */
-.svc-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px}
+.svc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
 .svc-card{
   background:linear-gradient(155deg,rgba(255,248,235,.064) 0%,rgba(255,248,235,.04) 100%);
-  border-radius:16px;
+  border-radius:20px;
   border:1px solid rgba(255,248,235,.09);
-  padding:15px 6px 12px;
-  display:flex;flex-direction:column;align-items:center;gap:6px;
+  padding:22px 8px 18px;
+  display:flex;flex-direction:column;align-items:center;gap:8px;
   cursor:pointer;
   box-shadow:0 1px 0 rgba(255,255,255,.04) inset;
   transition:transform .15s var(--ease-spring),box-shadow .15s;
@@ -612,11 +612,71 @@ const PRICES = {
   day_s:450, day_v:550,
   evening_supplement:50, peak_surcharge_pct:15,
   membership:199,
+  // Dynamic engine (~10% below Blacklane)
+  base_s:10, per_km_s:2.20, per_min_s:0.32, min_fare_s:38,
+  base_v:13, per_km_v:2.75, per_min_v:0.40, min_fare_v:50,
+  cc_charge:15,
 };
 if (FIREBASE_ENABLED) {
   db.collection('settings').doc('pricing').get().then(d => {
     if (d.exists) Object.assign(PRICES, d.data());
   }).catch(() => {});
+}
+
+// ── Pricing engine ─────────────────────────────────────────────────────────
+function calcFare(distKm, durationMin, cls, booking) {
+  cls = cls || 's';
+  booking = booking || {};
+  const base   = PRICES['base_'+cls]    || (cls==='v'?16:12);
+  const perKm  = PRICES['per_km_'+cls]  || (cls==='v'?3.50:2.80);
+  const perMin = PRICES['per_min_'+cls] || (cls==='v'?0.55:0.45);
+  const minFare= PRICES['min_fare_'+cls]|| (cls==='v'?75:60);
+
+  let fare = base + distKm*perKm + durationMin*perMin;
+  fare = Math.max(fare, minFare);
+
+  // Evening supplement (22:00–06:00)
+  if (booking.time) {
+    const h = parseInt(booking.time.split(':')[0], 10);
+    if (h >= 22 || h < 6) fare += (PRICES.evening_supplement||50);
+  }
+
+  // Weekend peak surcharge (Fri–Sun)
+  if (booking.date) {
+    const day = new Date(booking.date).getDay(); // 0=Sun,5=Fri,6=Sat
+    if (day===0||day===5||day===6) fare *= 1 + (PRICES.peak_surcharge_pct||0)/100;
+  }
+
+  return Math.ceil(fare/5)*5; // round up to nearest £5
+}
+
+async function getRouteData(from, to) {
+  if (!from || !to) throw new Error('Missing addresses');
+  async function geocode(addr) {
+    const q = encodeURIComponent(addr.includes('UK')||addr.includes('London')||addr.includes('Heathrow')||addr.includes('Gatwick')||addr.includes('Stansted')||addr.includes('Luton') ? addr : addr+', UK');
+    const r = await fetch('https://nominatim.openstreetmap.org/search?q='+q+'&format=json&limit=1',
+      {headers:{'Accept-Language':'en','User-Agent':'ApexVIP/1.0'}});
+    const d = await r.json();
+    if (!d.length) throw new Error('Cannot geocode: '+addr);
+    return {lat:+d[0].lat, lng:+d[0].lon};
+  }
+  const [A, B] = await Promise.all([geocode(from), geocode(to)]);
+
+  // Try OSRM public routing API
+  try {
+    const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${A.lng},${A.lat};${B.lng},${B.lat}?overview=false`);
+    const d = await r.json();
+    if (d.routes && d.routes.length) {
+      return {distKm: d.routes[0].distance/1000, durationMin: d.routes[0].duration/60, source:'osrm', from:A, to:B};
+    }
+  } catch(e) {}
+
+  // Haversine fallback with 1.35 road-factor
+  const R=6371, toRad=x=>x*Math.PI/180;
+  const dLat=toRad(B.lat-A.lat), dLng=toRad(B.lng-A.lng);
+  const a=Math.sin(dLat/2)**2+Math.cos(toRad(A.lat))*Math.cos(toRad(B.lat))*Math.sin(dLng/2)**2;
+  const distKm=2*R*Math.asin(Math.sqrt(a))*1.35;
+  return {distKm, durationMin:distKm*2.5, source:'est', from:A, to:B};
 }
 
 const SQUARE_APP_ID = 'sq0idp-8Z5MqX7GA3M0Xnv-0utwMA';
@@ -721,10 +781,17 @@ let state = {
   _corporateRef: '',
   _discoverCity: 'london',
   _discoverCat: 'all',
+  _airportPicker: false,
   _cityInterest: JSON.parse(localStorage.getItem('apex_city_interest') || '{}'),
   memberNumber: localStorage.getItem('apex_member_no') || null,
   _flightStatus: null,
   _flightChecking: false,
+  _flightSearch: '',
+  _flightFilter: 'All',
+  _flightAddMode: false,
+  _flightAddInput: '',
+  _flightAddChecking: false,
+  _customFlights: JSON.parse(localStorage.getItem('apex_custom_flights')||'[]'),
   _expCat: 'all',
   _expSelected: null,
   _expSlot: null,
@@ -880,11 +947,13 @@ async function lookupFlight(flightNum){
   }
 }
 
+let _trackingSimInterval=null;
 function initTrackingMap(){
   const el=document.getElementById('tracking-map');
   if(!el||typeof L==='undefined')return;
   if(trackingMap){trackingMap.remove();trackingMap=null;driverMarker=null;}
   if(_trackingUnsub){_trackingUnsub();_trackingUnsub=null;}
+  if(_trackingSimInterval){clearInterval(_trackingSimInterval);_trackingSimInterval=null;}
   const dark=state.theme!=='light';
   const tiles=dark
     ?'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
@@ -892,23 +961,54 @@ function initTrackingMap(){
   trackingMap=L.map('tracking-map',{zoomControl:false,attributionControl:false,scrollWheelZoom:false})
     .setView([51.5074,-0.1278],14);
   L.tileLayer(tiles,{maxZoom:19}).addTo(trackingMap);
+
+  // Driver marker icon
+  const driverIcon=()=>L.divIcon({className:'',html:`<div style="width:38px;height:38px;border-radius:50%;background:#0c0b09;border:2.5px solid var(--gold,#D4A843);display:flex;align-items:center;justify-content:center;box-shadow:0 0 20px rgba(212,168,67,.4)"><svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#D4A843" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11a2 2 0 012 2v3m-1 9h-5m-1 0a2 2 0 100 4 2 2 0 000-4zm8 0a2 2 0 100 4 2 2 0 000-4zm-6-9h5l3 5"/></svg></div>`,iconSize:[38,38],iconAnchor:[19,19]});
+
+  const _locEl=()=>document.getElementById('drv-loc-time');
+  let _liveMode=false;
+
+  function placeOrMoveDriver(pos){
+    if(driverMarker){driverMarker.setLatLng(pos);}
+    else{driverMarker=L.marker(pos,{icon:driverIcon()}).addTo(trackingMap).bindPopup('Your chauffeur');}
+    if(trackingMap)trackingMap.panTo(pos,{animate:true,duration:.5});
+    const now=new Date();
+    const t=now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0')+':'+now.getSeconds().toString().padStart(2,'0');
+    const el2=_locEl();
+    if(el2) el2.innerHTML=_liveMode
+      ?`<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:#22c55e;display:inline-block"></span> Live GPS · ${t}</span>`
+      :`<span style="color:var(--fg-4)">Demo mode · ${t}</span>`;
+  }
+
   const driverDocId=state._activeBooking?.driverId;
   if(FIREBASE_ENABLED&&driverDocId){
+    _liveMode=true;
+    const el2=_locEl();
+    if(el2) el2.innerHTML='<span style="color:var(--fg-4)">Connecting to driver GPS…</span>';
     _trackingUnsub=db.collection('drivers').doc(driverDocId).onSnapshot(doc=>{
       if(!doc.exists||!trackingMap)return;
       const d=doc.data();
       if(!d.lat||!d.lng)return;
-      const pos=[d.lat,d.lng];
-      if(driverMarker){driverMarker.setLatLng(pos);}
-      else{
-        const ic=L.divIcon({className:'',html:'<div style="width:18px;height:18px;border-radius:50%;background:#fff;border:3px solid #000;box-shadow:0 2px 10px rgba(0,0,0,.6)"></div>',iconSize:[18,18],iconAnchor:[9,9]});
-        driverMarker=L.marker(pos,{icon:ic}).addTo(trackingMap).bindPopup('Your driver');
-      }
-      trackingMap.panTo(pos,{animate:true,duration:.5});
-      const el2=document.getElementById('drv-loc-time');
-      if(el2)el2.textContent='Updated just now';
-    });
+      placeOrMoveDriver([d.lat,d.lng]);
+    },()=>{});
+  } else {
+    // Simulation — driver starts near pickup and moves toward client
+    let dLat=51.5074+(Math.random()-.5)*.018;
+    let dLng=-0.1278+(Math.random()-.5)*.018;
+    const tLat=51.5245,tLng=-0.0865;
+    placeOrMoveDriver([dLat,dLng]);
+    L.polyline([[dLat,dLng],[tLat,tLng]],{color:'rgba(212,168,67,.35)',weight:2,dashArray:'5,7'}).addTo(trackingMap);
+    let steps=0;
+    const stepLat=(tLat-dLat)/90,stepLng=(tLng-dLng)/90;
+    _trackingSimInterval=setInterval(()=>{
+      if(!trackingMap||steps>80){if(_trackingSimInterval){clearInterval(_trackingSimInterval);_trackingSimInterval=null;}return;}
+      steps++;
+      dLat+=stepLat*(0.6+Math.random()*.8);
+      dLng+=stepLng*(0.6+Math.random()*.8);
+      placeOrMoveDriver([dLat,dLng]);
+    },3000);
   }
+
   if(navigator.geolocation){
     navigator.geolocation.getCurrentPosition(({coords})=>{
       if(!trackingMap)return;
@@ -1612,6 +1712,14 @@ function chatBubble(m) {
   </div>`;
 }
 
+function trackTrip() {
+  const t = state.selectedTrip || TRIPS[0];
+  if (!t) return;
+  state._activeBooking = {...t, driverName:t.driver, driverPlate:t.plate, driverId:t.driverId||null, docId:t.docId||null};
+  state._chatDocId = t.docId || state._chatDocId;
+  go('active-trip');
+}
+
 function clientSendMsg() {
   const inp = document.getElementById('client-chat-inp');
   if (!inp || !inp.value.trim()) return;
@@ -1626,6 +1734,11 @@ function clientSendMsg() {
   state._chatMessages.push({message: msg, fromRole: 'client', timestamp: {toMillis:()=>Date.now()}});
   const el = document.getElementById('chat-msgs');
   if (el) { el.innerHTML = state._chatMessages.map(chatBubble).join(''); el.scrollTop = el.scrollHeight; }
+}
+
+function quickReply(msg) {
+  const inp = document.getElementById('client-chat-inp');
+  if (inp) { inp.value = msg; clientSendMsg(); }
 }
 
 // ── Amenity Toggle ────────────────────────────────────────────────────────
@@ -1733,7 +1846,14 @@ function registerCityInterest(city) {
 
 function go(screen, data) {
   if (data) state.selectedTrip = data;
+  state._airportPicker = false;
+  document.getElementById('apex-picker-portal')?.remove();
   if (state.screen==='home' && screen!=='home' && mapInstance){mapInstance.remove();mapInstance=null;mapTileLayer=null;}
+  if (state.screen==='active-trip' && screen!=='active-trip'){
+    if(_trackingUnsub){_trackingUnsub();_trackingUnsub=null;}
+    if(_trackingSimInterval){clearInterval(_trackingSimInterval);_trackingSimInterval=null;}
+    if(trackingMap){trackingMap.remove();trackingMap=null;driverMarker=null;clientMarker=null;}
+  }
   state.screen = screen;
   window.scrollTo(0,0);
   track('screen_view',{screen,src:'client'});
@@ -1768,6 +1888,11 @@ function generateMemberNumber() {
 }
 
 // ── Feature 2: Flight tracking ─────────────────────────────────────────────
+const DEMO_TRACKED_FLIGHTS = [
+  {flight:'BA0247',from:'New York JFK',city:'New York',iata:'JFK',terminal:'T4',belt:'7',dep:'09:30',arr:'14:18',arrOrig:'14:45',duration:'7h 15m',status:'early',statusLabel:'EXPECTED AT 14:18',updated:'14:09'},
+  {flight:'EK006',from:'Dubai DXB',city:'Dubai',iata:'DXB',terminal:'T3',belt:'12',dep:'08:00',arr:'13:55',arrOrig:'13:55',duration:'7h 55m',status:'on-time',statusLabel:'ON TIME',updated:'13:40'},
+  {flight:'QR002',from:'Doha DOH',city:'Doha',iata:'DOH',terminal:'T4',belt:'--',dep:'06:45',arr:'12:30',arrOrig:'12:00',duration:'7h 15m',status:'delayed',statusLabel:'DELAYED — NEW ARR 12:30',updated:'12:01'},
+];
 function getDemoFlightStatus(flight) {
   const seed = flight.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
   const delayed = seed % 4 === 0;
@@ -1791,6 +1916,57 @@ async function checkFlight(flight) {
   }
   state._flightChecking = false; render();
 }
+
+async function addTrackedFlight() {
+  const num = (state._flightAddInput||'').trim().toUpperCase().replace(/\s+/g,'');
+  if (!num) return;
+  state._flightAddChecking = true; render();
+  let entry;
+  if (FIREBASE_ENABLED && fns) {
+    try {
+      const res = await fns.httpsCallable('checkFlightStatus')({ flight: num });
+      const d = res.data;
+      entry = {
+        flight: num,
+        from: d.origin || 'Unknown',
+        city: d.originCity || d.origin || 'Unknown',
+        iata: d.originIata || num.slice(0,3),
+        terminal: d.terminal || 'T1',
+        belt: d.belt || '--',
+        dep: d.scheduled || '--:--',
+        arr: d.estimated || d.scheduled || '--:--',
+        arrOrig: d.scheduled || '--:--',
+        duration: d.duration || '--',
+        status: d.delayed ? 'delayed' : 'on-time',
+        statusLabel: d.delayed ? `DELAYED` : 'ON TIME',
+        updated: new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})
+      };
+    } catch(e) { entry = null; }
+  }
+  if (!entry) {
+    const demo = DEMO_TRACKED_FLIGHTS.find(f=>f.flight===num);
+    entry = demo || {
+      flight: num, from: 'Unknown origin', city: 'Unknown', iata: num.slice(2,5)||'???',
+      terminal: 'T1', belt: '--', dep: '--:--', arr: '--:--', arrOrig: '--:--',
+      duration: '--', status: 'on-time', statusLabel: 'TRACKING', updated: new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})
+    };
+  }
+  const exists = state._customFlights.findIndex(f=>f.flight===num);
+  if (exists >= 0) state._customFlights[exists] = entry;
+  else state._customFlights.unshift(entry);
+  localStorage.setItem('apex_custom_flights', JSON.stringify(state._customFlights));
+  state._flightAddChecking = false;
+  state._flightAddMode = false;
+  state._flightAddInput = '';
+  render();
+}
+
+function removeTrackedFlight(flightNum) {
+  state._customFlights = state._customFlights.filter(f=>f.flight!==flightNum);
+  localStorage.setItem('apex_custom_flights', JSON.stringify(state._customFlights));
+  render();
+}
+
 function flightStatusCard(flight) {
   if (!flight) return '';
   if (state._flightChecking) return `<div class="card" style="padding:14px 18px;margin-bottom:12px;display:flex;align-items:center;gap:10px"><span style="font-size:18px">✈️</span><span style="font-size:13px;color:var(--fg-3)">Checking ${flight}…</span></div>`;
@@ -2022,21 +2198,22 @@ home: () => {
 
       ${silentServiceCard()}
 
-      <div class="section-label" style="margin-bottom:10px">Services</div>
+      <div class="section-label" style="margin-bottom:12px">Services</div>
       <div class="svc-grid">
-        ${[
-          {t:'airport',icon:'✈',l:'Airport'},
-          {t:'hourly',icon:'⏱',l:'By Hour'},
-          {t:'day',icon:'📅',l:'Full Day'},
-        ].map(s=>`<div class="svc-card" onclick="goBook('${s.t}')">
-          <div style="font-size:22px;line-height:1;margin-bottom:2px">${s.icon}</div>
-          <div style="font-size:10px;font-weight:700;color:var(--fg-3);letter-spacing:.5px;text-align:center;line-height:1.3">${s.l}</div>
-        </div>`).join('')}
-        <div class="svc-card" onclick="go('aviation-booking')">
-          <div style="font-size:22px;line-height:1;margin-bottom:2px">✈</div>
-          <div style="font-size:10px;font-weight:700;color:var(--fg-3);letter-spacing:.5px;text-align:center;line-height:1.3">Aviation</div>
+        <div class="svc-card" onclick="state._airportPicker=true;render()">
+          <div style="font-size:28px;line-height:1">✈</div>
+          <div style="font-size:12px;font-weight:700;color:var(--fg-2);letter-spacing:.3px;text-align:center;line-height:1.3">Airport &<br>Aviation</div>
+        </div>
+        <div class="svc-card" onclick="goBook('hourly')">
+          <div style="font-size:28px;line-height:1">⏱</div>
+          <div style="font-size:12px;font-weight:700;color:var(--fg-2);letter-spacing:.3px;text-align:center;line-height:1.3">By Hour</div>
+        </div>
+        <div class="svc-card" onclick="goBook('day')">
+          <div style="font-size:28px;line-height:1">📅</div>
+          <div style="font-size:12px;font-weight:700;color:var(--fg-2);letter-spacing:.3px;text-align:center;line-height:1.3">Full Day</div>
         </div>
       </div>
+
 
       <div class="section-label" style="margin-bottom:10px">Discover</div>
       <div style="display:flex;gap:6px;overflow-x:auto;margin-bottom:10px;scrollbar-width:none;padding-bottom:2px">
@@ -2286,18 +2463,51 @@ home: () => {
 </div>`,
 
 'vehicle-select': () => {
-  const pm = {airport:{s:PRICES.airport_s,v:PRICES.airport_v},hourly:{s:(state.booking.duration||3)*PRICES.hourly_s_rate,v:(state.booking.duration||3)*PRICES.hourly_v_rate},day:{s:PRICES.day_s,v:PRICES.day_v}};
-  const p = pm[state.booking.serviceType]||pm.airport;
+  const bk = state.booking;
+  const svc = bk.serviceType;
+
+  // For point-to-point and airport bookings: trigger async route fetch if not cached
+  const needsRoute = (svc==='airport'||svc==='point'||!svc) && bk.pickup && (bk.dropoff||bk.airport);
+  if (needsRoute && !bk._route && !bk._routeLoading) {
+    bk._routeLoading = true;
+    getRouteData(bk.pickup, bk.dropoff||bk.airport||'Heathrow Terminal 5').then(rt => {
+      bk._route = rt; bk._routeLoading = false; render();
+    }).catch(() => { bk._routeLoading = false; bk._routeErr = true; render(); });
+  }
+
+  // Compute prices
+  let sp = {s:0, v:0};
+  let fareBreakdown = null;
+  if (needsRoute && bk._route) {
+    const rt = bk._route;
+    const fs = calcFare(rt.distKm, rt.durationMin, 's', bk);
+    const fv = calcFare(rt.distKm, rt.durationMin, 'v', bk);
+    sp = {s: fs, v: fv};
+    fareBreakdown = {distKm: rt.distKm, durationMin: rt.durationMin, source: rt.source};
+  } else if (svc==='hourly') {
+    const hrs = bk.duration||3;
+    sp = {s: hrs*PRICES.hourly_s_rate, v: hrs*PRICES.hourly_v_rate};
+  } else if (svc==='day') {
+    sp = {s: PRICES.day_s, v: PRICES.day_v};
+  } else {
+    // Flat airport rate fallback (while route loads or for fixed airports)
+    const ySurge = typeof ApexCore!=='undefined'
+      ? ApexCore.apexYield({date:bk.date,time:bk.time,vehicle:'s',market:'london'})
+      : {multiplier:1.0,label:'Standard'};
+    const surge = ySurge.multiplier;
+    sp = {s:Math.round(PRICES.airport_s*surge), v:Math.round(PRICES.airport_v*surge)};
+  }
   const ySurge = typeof ApexCore!=='undefined'
-    ? ApexCore.apexYield({date:state.booking.date,time:state.booking.time,vehicle:'s',market:'london'})
+    ? ApexCore.apexYield({date:bk.date,time:bk.time,vehicle:'s',market:'london'})
     : {multiplier:1.0,label:'Standard'};
   const surge = ySurge.multiplier;
-  const sp = {s:Math.round(p.s*surge), v:Math.round(p.v*surge)};
   const sel = state.booking.vehicleId||'';
   const vehicles = [
     {id:'sClass',name:'S-Class',full:'Mercedes S-Class',sub:'Business Sedan · Up to 3 passengers',price:sp.s,badge:'EXECUTIVE',features:['WiFi','Water','Charger','Meet & Greet'],img:'vehicles/s-class.jpg'},
     {id:'vClass',name:'V-Class',full:'Mercedes V-Class',sub:'Business Van · Up to 7 passengers',price:sp.v,badge:'BUSINESS',features:['WiFi','Water','Charger','Child Seat'],img:'vehicles/v-class.jpg'}
   ];
+  // Loading/route state
+  const isLoading = needsRoute && !bk._route && !bk._routeErr;
   return `
 <div style="height:100dvh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
   <div class="back-row">
@@ -2311,6 +2521,14 @@ home: () => {
   </div>
   <div class="stagger" style="padding:0 22px;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:calc(88px + env(safe-area-inset-bottom,0px))">
     ${surgeBadge(surge,ySurge.label)}
+    ${isLoading ? `<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;gap:12px"><div style="width:18px;height:18px;border:2px solid var(--gold);border-top-color:transparent;border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0"></div><div style="font-size:13px;color:var(--fg-3)">Calculating route &amp; fare…</div></div>` : ''}
+    ${fareBreakdown ? `<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 18px;margin-bottom:14px">
+      <div style="font-size:10px;font-weight:700;color:var(--fg-4);letter-spacing:.8px;text-transform:uppercase;margin-bottom:10px">Route · ${fareBreakdown.source==='osrm'?'Live route':'Estimate'}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><div style="font-size:11px;color:var(--fg-4)">Distance</div><div style="font-size:16px;font-weight:700">${fareBreakdown.distKm.toFixed(1)} km</div></div>
+        <div><div style="font-size:11px;color:var(--fg-4)">Est. journey</div><div style="font-size:16px;font-weight:700">${Math.round(fareBreakdown.durationMin)} min</div></div>
+      </div>
+    </div>` : ''}
     ${vehicles.map(v=>`
     <div id="vc_${v.id}" onclick="selectVehicle('${v.id}',${v.price},'${v.full}')" class="vcard ${sel===v.id?'sel':''}" style="margin-bottom:14px">
       <div class="vcard-media">
@@ -2327,7 +2545,7 @@ home: () => {
           </div>
           <div style="text-align:right">
             <div class="tnum" style="font-size:26px;font-weight:800;letter-spacing:-.02em;color:${sel===v.id?'#ffffff':'#fff'}">£${v.price}</div>
-            <div style="font-size:11px;color:var(--fg-4);margin-top:2px">${state.booking.serviceType==='hourly'?'total':'flat rate'}</div>
+            <div style="font-size:11px;color:var(--fg-4);margin-top:2px">${isLoading?'calculating…':svc==='hourly'?'total':fareBreakdown?'calculated fare':'flat rate'}</div>
           </div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -2717,35 +2935,53 @@ payment: () => {
 
     <div class="card" style="width:100%;padding:20px;text-align:left">
         <div class="section-label" style="margin-bottom:16px">Your Chauffeur</div>
-        <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
-          <div style="width:56px;height:56px;border-radius:18px;background:linear-gradient(135deg,#2a2a2a,#111);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:#fff;flex-shrink:0;border:2px solid rgba(255,255,255,.1)">JH</div>
-          <div style="flex:1">
-            <div style="font-size:16px;font-weight:700">James Harrison</div>
-            <div style="display:flex;align-items:center;gap:4px;margin-top:3px">
-              ${'★★★★★'.split('').map((_,i)=>`<svg width="11" height="11" fill="${i<Math.round(4.9)?'#D4A843':'rgba(255,255,255,.15)'}" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`).join('')}
-              <span style="font-size:11px;color:var(--fg-3);margin-left:3px">4.9 · 247 journeys</span>
+        ${(()=>{
+          const dn = state._activeBooking?.driverName;
+          const dp = state._activeBooking?.driverPlate;
+          const dv = state._activeBooking?.vehicle;
+          if (!dn) return `
+          <div style="display:flex;align-items:center;gap:14px;padding:8px 0">
+            <div style="width:48px;height:48px;border-radius:14px;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">⏳</div>
+            <div>
+              <div style="font-size:15px;font-weight:600">Assigning your chauffeur…</div>
+              <div style="font-size:12px;color:var(--fg-3);margin-top:3px">You'll be notified as soon as a driver is confirmed</div>
             </div>
-          </div>
-          <div style="background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.2);border-radius:10px;padding:6px 10px;text-align:center;flex-shrink:0">
-            <div style="font-size:9px;color:#22c55e;letter-spacing:.5px;font-weight:700">PCO</div>
-            <div style="font-size:9px;color:#22c55e;letter-spacing:.3px">VERIFIED</div>
-          </div>
-        </div>
-        <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:12px">
-          <div style="display:flex;align-items:center;gap:10px">
-            <div style="font-size:20px">🚗</div>
+          </div>`;
+          const initials = dn.split(' ').map(n=>n[0]||'').join('').slice(0,2).toUpperCase();
+          return `
+          <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
+            <div style="width:56px;height:56px;border-radius:18px;background:linear-gradient(135deg,#2a2a2a,#111);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:#fff;flex-shrink:0;border:2px solid rgba(255,255,255,.1)">${initials}</div>
             <div style="flex:1">
-              <div style="font-size:14px;font-weight:700">Mercedes S-Class · LX73 ABC</div>
-              <div style="font-size:12px;color:var(--fg-3);margin-top:2px">Midnight Black · 2024 model</div>
+              <div style="font-size:16px;font-weight:700">${dn}</div>
+              <div style="display:flex;align-items:center;gap:4px;margin-top:3px">
+                ${'★★★★★'.split('').map((_,i)=>`<svg width="11" height="11" fill="${i<5?'#D4A843':'rgba(255,255,255,.15)'}" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`).join('')}
+              </div>
+            </div>
+            <div style="background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.2);border-radius:10px;padding:6px 10px;text-align:center;flex-shrink:0">
+              <div style="font-size:9px;color:#22c55e;letter-spacing:.5px;font-weight:700">PCO</div>
+              <div style="font-size:9px;color:#22c55e;letter-spacing:.3px">VERIFIED</div>
             </div>
           </div>
-        </div>
-        ${state.prefs?.discrete ? '<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--fg-4);padding:4px 0"><svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="var(--fg-4)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>Discrete mode active · pickup address masked until 10 min before arrival</div>' : ''}
-        <div style="font-size:13px;color:var(--fg-3);margin-top:4px;line-height:1.7">James will contact you 30 minutes before pickup. Look for a midnight black Mercedes S-Class, plate LX73 ABC.</div>
+          ${dp||dv?`<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:12px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <div style="font-size:20px">🚗</div>
+              <div style="flex:1">
+                <div style="font-size:14px;font-weight:700">${dv||'Mercedes S-Class'}${dp?' · '+dp:''}</div>
+                <div style="font-size:12px;color:var(--fg-3);margin-top:2px">Midnight Black · 2024 model</div>
+              </div>
+            </div>
+          </div>`:''}
+          ${state.prefs?.discrete ? '<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--fg-4);padding:4px 0"><svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="var(--fg-4)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>Discrete mode active · pickup address masked until 10 min before arrival</div>' : ''}
+          <div style="font-size:13px;color:var(--fg-3);margin-top:4px;line-height:1.7">${dn.split(' ')[0]} will contact you 30 minutes before pickup.${dp?' Look for your vehicle, plate '+dp+'.':''}</div>`;
+        })()}
       </div>
   </div>
   <div style="width:100%;padding-bottom:52px;display:flex;flex-direction:column;gap:10px">
-    <button class="btn btn-white" onclick="state._activeBooking={...state.booking,status:'confirmed',docId:state._chatDocId,ref:state._confirmedRef,driverName:state._activeBooking?.driverName||'James Harrison',driverPlate:state._activeBooking?.driverPlate||'',driverId:state._activeBooking?.driverId||null};go('active-trip')">Track my driver</button>
+    <button class="btn btn-white" onclick="state._activeBooking={...state.booking,...(state._activeBooking||{}),status:'confirmed',docId:state._chatDocId,ref:state._confirmedRef};go('active-trip')">Track my driver</button>
+    ${state._activeBooking?.driverName ? `<button class="btn btn-gold" onclick="state._prevScreen='booking-confirmed';go('client-chat')" style="margin-top:0;display:flex;align-items:center;justify-content:center;gap:10px">
+      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+      Message ${state._activeBooking.driverName.split(' ')[0]}
+    </button>` : ''}
     <button class="btn btn-glass" onclick="shareTrip()" style="margin-top:0">
       Share my ride
     </button>
@@ -2924,7 +3160,7 @@ trips: () => {
     </div>
 
     ${t.status==='completed'?`<button class="btn btn-glass" style="margin-bottom:12px">Download receipt</button>`:''}
-    ${t.status==='upcoming'&&!cancelled?`<button class="btn btn-glass" style="margin-bottom:10px" onclick="state._activeBooking={...t,driverName:t.driver,driverPlate:t.plate,driverId:t.driverId||null,docId:t.docId||null};state._chatDocId=t.docId||state._chatDocId;go('active-trip')">Track driver</button>`:''}
+    ${t.status==='upcoming'&&!cancelled?`<button class="btn btn-glass" style="margin-bottom:10px" onclick="trackTrip()">Track driver</button>`:''}
     ${t.status==='upcoming'&&!cancelled&&!confirming?`<button class="btn-danger-outline" onclick="state._tripConfirming='${t.id}';render()">Cancel booking</button>`:''}
     ${confirming?`<div style="background:rgba(239,68,68,.05);border:1px solid rgba(239,68,68,.12);border-radius:18px;padding:22px">
       <div style="font-size:17px;font-weight:700;margin-bottom:8px">Cancel this booking?</div>
@@ -3439,7 +3675,7 @@ profile: () => {
 <div style="position:relative;height:100vh;overflow:hidden;animation:fadeIn .3s ease">
   <div id="tracking-map" style="position:absolute;inset:0;z-index:0"></div>
   <div class="top-bar" style="z-index:15">
-    <div class="back-btn" onclick="if(_trackingUnsub){_trackingUnsub();_trackingUnsub=null;}if(trackingMap){trackingMap.remove();trackingMap=null;}go('trips')" style="background:rgba(0,0,0,.5);backdrop-filter:blur(10px)">
+    <div class="back-btn" onclick="if(_trackingUnsub){_trackingUnsub();_trackingUnsub=null;}if(_trackingSimInterval){clearInterval(_trackingSimInterval);_trackingSimInterval=null;}if(trackingMap){trackingMap.remove();trackingMap=null;driverMarker=null;}go('trips')" style="background:rgba(0,0,0,.5);backdrop-filter:blur(10px)">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
     </div>
     <div style="background:rgba(0,0,0,.5);backdrop-filter:blur(10px);border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;color:${statusColors[st]}">${statusLabels[st]||'In progress'}</div>
@@ -3467,22 +3703,17 @@ profile: () => {
           <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.948V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
         </a>
       </div>
-      <div id="drv-loc-time" style="font-size:11px;color:var(--fg-4);padding:10px 0;text-align:center">Waiting for driver location…</div>
-      <div class="card" style="padding:0;overflow:hidden;margin-bottom:10px">
-        <div style="padding:14px 16px;border-bottom:1px solid var(--divider);display:flex;align-items:center;gap:8px">
-          <div style="width:8px;height:8px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite"></div>
-          <div style="font-size:13px;font-weight:700">Chat with chauffeur</div>
+      <div id="drv-loc-time" style="font-size:11px;color:var(--fg-4);padding:6px 0 10px;text-align:center">Waiting for driver location…</div>
+      <button onclick="state._prevScreen='active-trip';go('client-chat')" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:13px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;text-align:left;margin-bottom:10px">
+        <div style="width:36px;height:36px;border-radius:12px;background:rgba(212,168,67,.12);border:1px solid rgba(212,168,67,.2);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#D4A843" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
         </div>
-        <div id="chat-msgs" style="padding:14px 16px;max-height:180px;overflow-y:auto;display:flex;flex-direction:column;scrollbar-width:none">
-          ${(state._chatMessages||[]).length ? (state._chatMessages||[]).map(m => chatBubble(m)).join('') : '<div style="font-size:12px;color:var(--fg-4);text-align:center;padding:20px 0">Messages appear here</div>'}
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:700;color:var(--fg)">Message your chauffeur</div>
+          <div style="font-size:11px;color:var(--fg-4);margin-top:1px">${(state._chatMessages||[]).length ? `${state._chatMessages.length} message${state._chatMessages.length!==1?'s':''}` : 'Tap to open chat'}</div>
         </div>
-        <div style="padding:10px 12px;border-top:1px solid var(--divider);display:flex;gap:8px">
-          <input id="client-chat-inp" placeholder="Message your chauffeur…" style="flex:1;background:var(--surface-2);border:1px solid var(--border);border-radius:22px;padding:10px 14px;font-size:13px;color:var(--fg);outline:none;font-family:inherit" onkeydown="if(event.key==='Enter')clientSendMsg()"/>
-          <button onclick="clientSendMsg()" style="background:var(--gold);border:none;border-radius:50%;width:38px;height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
-            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#000" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
-          </button>
-        </div>
-      </div>
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="var(--fg-4)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </button>
     </div>
   </div>
   <!-- SOS -->
@@ -3782,6 +4013,51 @@ profile: () => {
     <div style="height:60px"></div>
   </div>
 </div>`,
+
+'client-chat': () => {
+  const b = state._activeBooking || {};
+  const dn = b.driverName || 'Chauffeur';
+  const initials = dn.split(' ').map(n=>n[0]||'').join('').slice(0,2).toUpperCase();
+  const msgs = state._chatMessages || [];
+  const prev = state._prevScreen || 'active-trip';
+  return `
+<div style="height:100vh;height:100dvh;display:flex;flex-direction:column;background:var(--bg)">
+  <div style="padding:max(env(safe-area-inset-top),20px) 20px 14px;border-bottom:1px solid var(--divider);display:flex;align-items:center;gap:12px;flex-shrink:0;background:var(--bg)">
+    <button onclick="go('${prev}')" style="width:38px;height:38px;border-radius:50%;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+    </button>
+    <div style="width:42px;height:42px;border-radius:13px;background:linear-gradient(135deg,#2a2a2a,#111);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;border:2px solid rgba(255,255,255,.1);flex-shrink:0">${initials}</div>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:15px;font-weight:700">${dn}</div>
+      <div style="font-size:11px;color:var(--fg-4);display:flex;align-items:center;gap:5px;margin-top:1px">
+        <div style="width:6px;height:6px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite;flex-shrink:0"></div>
+        Chauffeur · En route
+      </div>
+    </div>
+    <a href="tel:+447700000000" style="width:38px;height:38px;border-radius:50%;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;text-decoration:none;flex-shrink:0">
+      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.948V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
+    </a>
+  </div>
+  <div id="chat-msgs" class="scroll" style="flex:1;padding:16px 20px 8px;display:flex;flex-direction:column;overflow-y:auto">
+    ${msgs.length ? msgs.map(m=>chatBubble(m)).join('') : `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 20px">
+      <div style="width:56px;height:56px;border-radius:20px;background:rgba(212,168,67,.1);border:1px solid rgba(212,168,67,.15);display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
+        <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="#D4A843" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+      </div>
+      <div style="font-size:15px;font-weight:600;margin-bottom:6px">Start a conversation</div>
+      <div style="font-size:13px;color:var(--fg-4);line-height:1.6">Let your chauffeur know if you need anything<br>or have any changes to your journey.</div>
+    </div>`}
+  </div>
+  <div style="padding:6px 16px 8px;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;flex-shrink:0;-webkit-overflow-scrolling:touch">
+    ${["👋 On my way down","Running 5 min late","Which entrance?","Need luggage help","Thank you!"].map(q=>`<button onclick="quickReply('${q}')" style="white-space:nowrap;padding:8px 14px;background:var(--surface);border:1px solid var(--border);border-radius:20px;font-size:12px;color:var(--fg-3);cursor:pointer;font-family:inherit;flex-shrink:0;transition:background .15s" ontouchstart="" onmousedown="this.style.background='var(--surface-2)'" onmouseup="this.style.background='var(--surface)'">${q}</button>`).join('')}
+  </div>
+  <div style="padding:10px 16px calc(env(safe-area-inset-bottom) + 10px);border-top:1px solid var(--divider);display:flex;gap:8px;flex-shrink:0;background:var(--bg)">
+    <input id="client-chat-inp" placeholder="Message your chauffeur…" autocomplete="off" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:24px;padding:12px 16px;font-size:16px;color:var(--fg);outline:none;font-family:inherit;transition:border-color .15s" onfocus="this.style.borderColor='rgba(212,168,67,.4)'" onblur="this.style.borderColor=''" onkeydown="if(event.key==='Enter'){event.preventDefault();clientSendMsg()}"/>
+    <button onclick="clientSendMsg()" style="background:var(--gold);border:none;border-radius:50%;width:46px;height:46px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;box-shadow:0 2px 12px rgba(212,168,67,.3)">
+      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#0c0b09" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+    </button>
+  </div>
+</div>`;
+},
 
 'receipt': () => {
   const t = state._lastTrip || {};
@@ -4291,6 +4567,112 @@ profile: () => {
 </div>`;
 },
 
+'flights': () => {
+  const allFlights = [...state._customFlights, ...DEMO_TRACKED_FLIGHTS];
+  const q = (state._flightSearch||'').toLowerCase();
+  const filt = state._flightFilter||'All';
+  const flights = allFlights.filter(f=>{
+    if(q && !f.flight.toLowerCase().includes(q) && !f.city.toLowerCase().includes(q) && !(f.iata||'').toLowerCase().includes(q)) return false;
+    if(filt==='Delayed') return f.status==='delayed';
+    if(filt==='Departing') return f.status==='departing';
+    return true;
+  });
+  const today = new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short'});
+  return `
+<div style="height:100dvh;background:var(--bg);display:flex;flex-direction:column;overflow:hidden;animation:slideUp .22s ease">
+  <div style="padding:calc(env(safe-area-inset-top) + 18px) 22px 0;flex-shrink:0">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <div style="font-size:26px;font-weight:700">My Flights</div>
+      <button onclick="state._flightAddMode=true;render()" style="display:flex;align-items:center;gap:7px;background:rgba(139,92,246,.18);border:1px solid rgba(139,92,246,.35);border-radius:20px;padding:8px 16px;cursor:pointer;font-family:inherit">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="#a78bfa" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+        <span style="font-size:13px;font-weight:600;color:#a78bfa">Track flight</span>
+      </button>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:10px 14px;margin-bottom:14px">
+      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--fg-dim)" stroke-width="2" style="flex-shrink:0"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" d="M21 21l-4.35-4.35"/></svg>
+      <input value="${state._flightSearch||''}" oninput="state._flightSearch=this.value;render()" placeholder="Search by flight, city or IATA…" style="flex:1;background:transparent;border:none;color:var(--fg);font-size:14px;outline:none;font-family:inherit" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false"/>
+      ${state._flightSearch?`<button onclick="state._flightSearch='';render()" style="background:transparent;border:none;color:var(--fg-dim);cursor:pointer;padding:0;font-size:16px;line-height:1">✕</button>`:''}
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:18px;overflow-x:auto;scrollbar-width:none">
+      ${['All','Arriving','Departing','Delayed'].map(c=>`<button onclick="state._flightFilter='${c}';render()" style="flex-shrink:0;padding:6px 16px;border-radius:20px;background:${filt===c?'rgba(139,92,246,.2)':'var(--surface)'};border:1px solid ${filt===c?'rgba(139,92,246,.4)':'var(--border)'};color:${filt===c?'#a78bfa':'var(--fg-dim)'};font-size:12px;font-weight:${filt===c?'700':'400'};cursor:pointer;font-family:inherit">${c}</button>`).join('')}
+    </div>
+  </div>
+  <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 22px calc(env(safe-area-inset-bottom) + 80px)">
+    ${state._flightAddChecking ? `<div class="card" style="display:flex;align-items:center;gap:12px;padding:16px 18px;margin-bottom:14px"><span style="font-size:20px">✈</span><span style="font-size:14px;color:var(--fg-dim)">Looking up flight…</span></div>` : ''}
+    ${flights.length===0 ? `<div style="text-align:center;padding:60px 20px"><div style="font-size:40px;margin-bottom:16px">✈</div><div style="font-size:16px;font-weight:600;margin-bottom:8px">No flights found</div><div style="font-size:13px;color:var(--fg-dim)">${q?'Try a different search term':'Tap Track flight to add one'}</div></div>` :
+    flights.map(f=>{
+      const early = f.status==='early';
+      const delayed = f.status==='delayed';
+      const arrColor = early ? '#4ade80' : delayed ? '#f87171' : 'var(--fg)';
+      const badgeBg = early||f.status==='on-time'||f.status==='tracking' ? '#16a34a' : f.status==='delayed' ? '#b91c1c' : '#374151';
+      const isCustom = state._customFlights.some(cf=>cf.flight===f.flight);
+      return `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:18px;margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:32px;height:32px;border-radius:8px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font-size:18px">✈</div>
+          <div>
+            <div style="font-size:13px;font-weight:700;color:var(--fg)">${f.flight} · ${today}</div>
+            <div style="font-size:11px;color:var(--fg-dim)">Arriving from</div>
+          </div>
+        </div>
+        ${isCustom?`<button onclick="removeTrackedFlight('${f.flight}')" style="width:32px;height:32px;border-radius:50%;background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.2);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;line-height:1">✕</button>`:''}
+      </div>
+      <div style="margin-bottom:6px">
+        <div style="font-size:38px;font-weight:700;color:#a78bfa;line-height:1.1;letter-spacing:-1px">${f.city}</div>
+        <div style="font-size:15px;font-weight:600;color:#e879f9;margin-top:2px">${f.iata} / ${f.terminal}</div>
+      </div>
+      <div style="height:1px;background:var(--divider);margin:14px 0"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px">
+        <div>
+          <div style="font-size:10px;color:var(--fg-dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Departure</div>
+          <div style="font-size:20px;font-weight:700;color:var(--fg)">${f.dep}</div>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--fg-dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Arrival</div>
+          <div style="font-size:20px;font-weight:700;color:${arrColor}">${f.arr}</div>
+          ${f.arr!==f.arrOrig?`<div style="font-size:12px;color:var(--fg-ghost);text-decoration:line-through;margin-top:1px">${f.arrOrig}</div>`:''}
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--fg-dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Duration</div>
+          <div style="font-size:15px;font-weight:700;color:var(--fg);margin-top:3px">${f.duration}</div>
+        </div>
+      </div>
+      <div style="height:1px;background:var(--divider);margin-bottom:14px"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
+        <div>
+          <div style="font-size:10px;color:var(--fg-dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Terminal</div>
+          <div style="font-size:20px;font-weight:700;color:var(--fg)">${f.terminal.replace('T','')}</div>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--fg-dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Belt</div>
+          <div style="font-size:20px;font-weight:700;color:var(--fg)">${f.belt}</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div style="background:${badgeBg};border-radius:8px;padding:8px 14px">
+          <div style="font-size:11px;font-weight:800;color:#fff;letter-spacing:.8px;text-transform:uppercase">${f.statusLabel}</div>
+        </div>
+        <div style="font-size:11px;color:var(--fg-dim)">Last Updated: ${f.updated}</div>
+      </div>
+    </div>`;}).join('')}
+  </div>
+  ${state._flightAddMode ? `
+  <div onclick="state._flightAddMode=false;render()" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)"></div>
+  <div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:var(--bg);border-radius:28px 28px 0 0;padding:12px 22px calc(env(safe-area-inset-bottom)+28px);z-index:9001;animation:slideUpSheet .28s cubic-bezier(.16,1,.3,1)">
+    <div style="width:36px;height:4px;border-radius:2px;background:var(--border);margin:0 auto 22px"></div>
+    <div style="font-size:18px;font-weight:700;margin-bottom:6px">Track a Flight</div>
+    <div style="font-size:13px;color:var(--fg-dim);margin-bottom:20px">Enter the flight number to add it to your tracker</div>
+    <div style="display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:10px 14px;margin-bottom:16px">
+      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--fg-dim)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+      <input id="flight-add-inp" value="${state._flightAddInput||''}" oninput="state._flightAddInput=this.value" onkeydown="if(event.key==='Enter')addTrackedFlight()" placeholder="e.g. BA0247, EK006…" style="flex:1;background:transparent;border:none;color:var(--fg);font-size:16px;outline:none;font-family:inherit;text-transform:uppercase" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false"/>
+    </div>
+    <button onclick="addTrackedFlight()" style="width:100%;padding:14px;background:rgba(139,92,246,.18);border:1px solid rgba(139,92,246,.4);border-radius:14px;color:#a78bfa;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Add Flight</button>
+  </div>` : ''}
+  ${bottomNav('')}
+</div>`;
+},
+
 };
 
 // ── Actions ────────────────────────────────────────────────────────────────
@@ -4723,13 +5105,13 @@ if(FIREBASE_ENABLED){
               state._activeBooking.ref=d.ref||_bDocId;
               state._activeBooking.status=d.status;
               state._activeBooking.driverId=d.driverId||null;
-              state._activeBooking.driverName=d.driverName||'James Harrison';
+              state._activeBooking.driverName=d.driverName||null;
               state._activeBooking.driverPlate=d.driverPlate||'';
               state._activeBooking.vehicle=d.vehicle||'';
               if(d.status==='completed'&&state.screen==='active-trip'){
                 state._lastTrip={ref:d.ref,pickup:d.pickup,dropoff:d.dropoff||d.airport,base:d.baseFare||d.price,discount:d.discount||0,vat:d.vat||0,price:d.price};
                 go('receipt');
-              } else if(state.screen==='active-trip')render();
+              } else if(state.screen==='active-trip'||state.screen==='booking-confirmed')render();
             }
           },()=>{});
       }
@@ -4851,16 +5233,61 @@ function formatEtaMin(s){
   return m<2?'1 min':m+' mins';
 }
 
+function renderAirportPickerPortal(){
+  let p=document.getElementById('apex-picker-portal');
+  if(!state._airportPicker){if(p)p.remove();return;}
+  if(!p){p=document.createElement('div');p.id='apex-picker-portal';document.body.appendChild(p);}
+  const isDark=state.theme!=='light';
+  const bg=isDark?'#0d0c0a':'#f5f0e8';
+  const fg=isDark?'#f4f0ea':'#1a1612';
+  const fg3=isDark?'rgba(244,240,234,.5)':'rgba(26,22,18,.5)';
+  const surf=isDark?'rgba(255,255,255,.045)':'rgba(0,0,0,.04)';
+  const bdr=isDark?'rgba(255,255,255,.08)':'rgba(0,0,0,.08)';
+  p.innerHTML=`
+    <div onclick="state._airportPicker=false;document.getElementById('apex-picker-portal')?.remove()" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)"></div>
+    <div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:${bg};border-radius:28px 28px 0 0;padding:12px 22px calc(env(safe-area-inset-bottom)+28px);z-index:9001;animation:slideUpSheet .28s cubic-bezier(.16,1,.3,1)">
+      <div style="width:36px;height:4px;border-radius:2px;background:${bdr};margin:0 auto 22px"></div>
+      <div style="font-size:18px;font-weight:700;margin-bottom:6px;color:${fg}">Airport & Aviation</div>
+      <div style="font-size:13px;color:${fg3};margin-bottom:20px">Choose your service type</div>
+      <div onclick="state._airportPicker=false;document.getElementById('apex-picker-portal')?.remove();goBook('airport')" style="display:flex;align-items:center;gap:16px;background:${surf};border:1px solid ${bdr};border-radius:18px;padding:18px;cursor:pointer;margin-bottom:12px">
+        <div style="width:50px;height:50px;border-radius:16px;background:rgba(212,175,110,.1);border:1px solid rgba(212,175,110,.2);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">✈</div>
+        <div>
+          <div style="font-size:15px;font-weight:700;margin-bottom:3px;color:${fg}">Airport Transfer</div>
+          <div style="font-size:12px;color:${fg3};line-height:1.4">Door-to-terminal · meet & greet<br>flight monitoring included</div>
+        </div>
+        <svg style="margin-left:auto;flex-shrink:0" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="${fg3}" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </div>
+      <div onclick="state._airportPicker=false;document.getElementById('apex-picker-portal')?.remove();go('aviation-booking')" style="display:flex;align-items:center;gap:16px;background:${surf};border:1px solid ${bdr};border-radius:18px;padding:18px;cursor:pointer;margin-bottom:12px">
+        <div style="width:50px;height:50px;border-radius:16px;background:rgba(212,175,110,.1);border:1px solid rgba(212,175,110,.2);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">🛩</div>
+        <div>
+          <div style="font-size:15px;font-weight:700;margin-bottom:3px;color:${fg}">Private Aviation</div>
+          <div style="font-size:12px;color:${fg3};line-height:1.4">Charter flights · private jets<br>helicopter transfers</div>
+        </div>
+        <svg style="margin-left:auto;flex-shrink:0" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="${fg3}" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </div>
+      <div onclick="state._airportPicker=false;document.getElementById('apex-picker-portal')?.remove();go('flights')" style="display:flex;align-items:center;gap:16px;background:${surf};border:1px solid ${bdr};border-radius:18px;padding:18px;cursor:pointer">
+        <div style="width:50px;height:50px;border-radius:16px;background:rgba(139,92,246,.1);border:1px solid rgba(139,92,246,.2);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">✈</div>
+        <div>
+          <div style="font-size:15px;font-weight:700;margin-bottom:3px;color:${fg}">Flight Tracker</div>
+          <div style="font-size:12px;color:${fg3};line-height:1.4">Monitor arrivals · check status<br>live terminal & belt info</div>
+        </div>
+        <svg style="margin-left:auto;flex-shrink:0" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="${fg3}" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </div>
+    </div>`;
+}
+
 function render(){
   document.body.setAttribute('data-screen',state.screen);
   const fn=screens[state.screen];
   app.innerHTML=fn?fn():`<div style="padding:40px;text-align:center;color:var(--fg-4)">Screen not found</div>`;
+  renderAirportPickerPortal();
   if(state.screen==='home') setTimeout(initMap,60);
   if(state.screen==='payment') setTimeout(initSquare,60);
   if(state.screen==='active-trip') setTimeout(initTrackingMap,60);
   if(state.screen==='active-trip') setTimeout(startEtaCountdown,80);
   if(state.screen==='track') setTimeout(initTrackScreen,60);
-  if(state.screen==='active-trip') setTimeout(()=>{ setupChatListener(state._chatDocId||state._activeBooking?.docId); },0);
+  if(state.screen==='active-trip'||state.screen==='client-chat') setTimeout(()=>{ setupChatListener(state._chatDocId||state._activeBooking?.docId); },0);
+  if(state.screen==='client-chat') setTimeout(()=>{ const el=document.getElementById('chat-msgs'); if(el)el.scrollTop=el.scrollHeight; },50);
   if(state.screen==='profile') setTimeout(loadReferralCode,100);
 }
 
