@@ -3,7 +3,7 @@ import Foundation
 /// A chat message. `sender` is a participant id ("you", "Sam", "Alex").
 /// In production the message body travels the encrypted transport; the relay
 /// never sees this struct in plaintext (see `MessageTransport`).
-public struct Message: Identifiable, Codable, Equatable {
+public struct Message: Identifiable, Codable, Equatable, Sendable {
     public let id: UUID
     public let sender: String
     public let text: String
