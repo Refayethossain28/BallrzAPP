@@ -880,11 +880,13 @@ async function lookupFlight(flightNum){
   }
 }
 
+let _trackingSimInterval=null;
 function initTrackingMap(){
   const el=document.getElementById('tracking-map');
   if(!el||typeof L==='undefined')return;
   if(trackingMap){trackingMap.remove();trackingMap=null;driverMarker=null;}
   if(_trackingUnsub){_trackingUnsub();_trackingUnsub=null;}
+  if(_trackingSimInterval){clearInterval(_trackingSimInterval);_trackingSimInterval=null;}
   const dark=state.theme!=='light';
   const tiles=dark
     ?'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
@@ -892,23 +894,44 @@ function initTrackingMap(){
   trackingMap=L.map('tracking-map',{zoomControl:false,attributionControl:false,scrollWheelZoom:false})
     .setView([51.5074,-0.1278],14);
   L.tileLayer(tiles,{maxZoom:19}).addTo(trackingMap);
+
+  // Driver marker icon
+  const driverIcon=()=>L.divIcon({className:'',html:`<div style="width:38px;height:38px;border-radius:50%;background:#0c0b09;border:2.5px solid var(--gold,#D4A843);display:flex;align-items:center;justify-content:center;box-shadow:0 0 20px rgba(212,168,67,.4)"><svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#D4A843" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11a2 2 0 012 2v3m-1 9h-5m-1 0a2 2 0 100 4 2 2 0 000-4zm8 0a2 2 0 100 4 2 2 0 000-4zm-6-9h5l3 5"/></svg></div>`,iconSize:[38,38],iconAnchor:[19,19]});
+
+  function placeOrMoveDriver(pos){
+    if(driverMarker){driverMarker.setLatLng(pos);}
+    else{driverMarker=L.marker(pos,{icon:driverIcon()}).addTo(trackingMap).bindPopup('Your chauffeur');}
+    if(trackingMap)trackingMap.panTo(pos,{animate:true,duration:.5});
+    const el2=document.getElementById('drv-loc-time');
+    if(el2)el2.textContent='Updated just now';
+  }
+
   const driverDocId=state._activeBooking?.driverId;
   if(FIREBASE_ENABLED&&driverDocId){
     _trackingUnsub=db.collection('drivers').doc(driverDocId).onSnapshot(doc=>{
       if(!doc.exists||!trackingMap)return;
       const d=doc.data();
       if(!d.lat||!d.lng)return;
-      const pos=[d.lat,d.lng];
-      if(driverMarker){driverMarker.setLatLng(pos);}
-      else{
-        const ic=L.divIcon({className:'',html:'<div style="width:18px;height:18px;border-radius:50%;background:#fff;border:3px solid #000;box-shadow:0 2px 10px rgba(0,0,0,.6)"></div>',iconSize:[18,18],iconAnchor:[9,9]});
-        driverMarker=L.marker(pos,{icon:ic}).addTo(trackingMap).bindPopup('Your driver');
-      }
-      trackingMap.panTo(pos,{animate:true,duration:.5});
-      const el2=document.getElementById('drv-loc-time');
-      if(el2)el2.textContent='Updated just now';
-    });
+      placeOrMoveDriver([d.lat,d.lng]);
+    },()=>{});
+  } else {
+    // Simulation — driver starts near pickup and moves toward client
+    let dLat=51.5074+(Math.random()-.5)*.018;
+    let dLng=-0.1278+(Math.random()-.5)*.018;
+    const tLat=51.5245,tLng=-0.0865;
+    placeOrMoveDriver([dLat,dLng]);
+    L.polyline([[dLat,dLng],[tLat,tLng]],{color:'rgba(212,168,67,.35)',weight:2,dashArray:'5,7'}).addTo(trackingMap);
+    let steps=0;
+    const stepLat=(tLat-dLat)/90,stepLng=(tLng-dLng)/90;
+    _trackingSimInterval=setInterval(()=>{
+      if(!trackingMap||steps>80){if(_trackingSimInterval){clearInterval(_trackingSimInterval);_trackingSimInterval=null;}return;}
+      steps++;
+      dLat+=stepLat*(0.6+Math.random()*.8);
+      dLng+=stepLng*(0.6+Math.random()*.8);
+      placeOrMoveDriver([dLat,dLng]);
+    },3000);
   }
+
   if(navigator.geolocation){
     navigator.geolocation.getCurrentPosition(({coords})=>{
       if(!trackingMap)return;
@@ -1734,6 +1757,11 @@ function registerCityInterest(city) {
 function go(screen, data) {
   if (data) state.selectedTrip = data;
   if (state.screen==='home' && screen!=='home' && mapInstance){mapInstance.remove();mapInstance=null;mapTileLayer=null;}
+  if (state.screen==='active-trip' && screen!=='active-trip'){
+    if(_trackingUnsub){_trackingUnsub();_trackingUnsub=null;}
+    if(_trackingSimInterval){clearInterval(_trackingSimInterval);_trackingSimInterval=null;}
+    if(trackingMap){trackingMap.remove();trackingMap=null;driverMarker=null;clientMarker=null;}
+  }
   state.screen = screen;
   window.scrollTo(0,0);
   track('screen_view',{screen,src:'client'});
