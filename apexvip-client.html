@@ -612,11 +612,71 @@ const PRICES = {
   day_s:450, day_v:550,
   evening_supplement:50, peak_surcharge_pct:15,
   membership:199,
+  // Dynamic engine
+  base_s:12, per_km_s:2.80, per_min_s:0.45, min_fare_s:60,
+  base_v:16, per_km_v:3.50, per_min_v:0.55, min_fare_v:75,
+  cc_charge:15,
 };
 if (FIREBASE_ENABLED) {
   db.collection('settings').doc('pricing').get().then(d => {
     if (d.exists) Object.assign(PRICES, d.data());
   }).catch(() => {});
+}
+
+// ── Pricing engine ─────────────────────────────────────────────────────────
+function calcFare(distKm, durationMin, cls, booking) {
+  cls = cls || 's';
+  booking = booking || {};
+  const base   = PRICES['base_'+cls]    || (cls==='v'?16:12);
+  const perKm  = PRICES['per_km_'+cls]  || (cls==='v'?3.50:2.80);
+  const perMin = PRICES['per_min_'+cls] || (cls==='v'?0.55:0.45);
+  const minFare= PRICES['min_fare_'+cls]|| (cls==='v'?75:60);
+
+  let fare = base + distKm*perKm + durationMin*perMin;
+  fare = Math.max(fare, minFare);
+
+  // Evening supplement (22:00–06:00)
+  if (booking.time) {
+    const h = parseInt(booking.time.split(':')[0], 10);
+    if (h >= 22 || h < 6) fare += (PRICES.evening_supplement||50);
+  }
+
+  // Weekend peak surcharge (Fri–Sun)
+  if (booking.date) {
+    const day = new Date(booking.date).getDay(); // 0=Sun,5=Fri,6=Sat
+    if (day===0||day===5||day===6) fare *= 1 + (PRICES.peak_surcharge_pct||0)/100;
+  }
+
+  return Math.ceil(fare/5)*5; // round up to nearest £5
+}
+
+async function getRouteData(from, to) {
+  if (!from || !to) throw new Error('Missing addresses');
+  async function geocode(addr) {
+    const q = encodeURIComponent(addr.includes('UK')||addr.includes('London')||addr.includes('Heathrow')||addr.includes('Gatwick')||addr.includes('Stansted')||addr.includes('Luton') ? addr : addr+', UK');
+    const r = await fetch('https://nominatim.openstreetmap.org/search?q='+q+'&format=json&limit=1',
+      {headers:{'Accept-Language':'en','User-Agent':'ApexVIP/1.0'}});
+    const d = await r.json();
+    if (!d.length) throw new Error('Cannot geocode: '+addr);
+    return {lat:+d[0].lat, lng:+d[0].lon};
+  }
+  const [A, B] = await Promise.all([geocode(from), geocode(to)]);
+
+  // Try OSRM public routing API
+  try {
+    const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${A.lng},${A.lat};${B.lng},${B.lat}?overview=false`);
+    const d = await r.json();
+    if (d.routes && d.routes.length) {
+      return {distKm: d.routes[0].distance/1000, durationMin: d.routes[0].duration/60, source:'osrm', from:A, to:B};
+    }
+  } catch(e) {}
+
+  // Haversine fallback with 1.35 road-factor
+  const R=6371, toRad=x=>x*Math.PI/180;
+  const dLat=toRad(B.lat-A.lat), dLng=toRad(B.lng-A.lng);
+  const a=Math.sin(dLat/2)**2+Math.cos(toRad(A.lat))*Math.cos(toRad(B.lat))*Math.sin(dLng/2)**2;
+  const distKm=2*R*Math.asin(Math.sqrt(a))*1.35;
+  return {distKm, durationMin:distKm*2.5, source:'est', from:A, to:B};
 }
 
 const SQUARE_APP_ID = 'sq0idp-8Z5MqX7GA3M0Xnv-0utwMA';
@@ -2354,18 +2414,51 @@ home: () => {
 </div>`,
 
 'vehicle-select': () => {
-  const pm = {airport:{s:PRICES.airport_s,v:PRICES.airport_v},hourly:{s:(state.booking.duration||3)*PRICES.hourly_s_rate,v:(state.booking.duration||3)*PRICES.hourly_v_rate},day:{s:PRICES.day_s,v:PRICES.day_v}};
-  const p = pm[state.booking.serviceType]||pm.airport;
+  const bk = state.booking;
+  const svc = bk.serviceType;
+
+  // For point-to-point and airport bookings: trigger async route fetch if not cached
+  const needsRoute = (svc==='airport'||svc==='point'||!svc) && bk.pickup && (bk.dropoff||bk.airport);
+  if (needsRoute && !bk._route && !bk._routeLoading) {
+    bk._routeLoading = true;
+    getRouteData(bk.pickup, bk.dropoff||bk.airport||'Heathrow Terminal 5').then(rt => {
+      bk._route = rt; bk._routeLoading = false; render();
+    }).catch(() => { bk._routeLoading = false; bk._routeErr = true; render(); });
+  }
+
+  // Compute prices
+  let sp = {s:0, v:0};
+  let fareBreakdown = null;
+  if (needsRoute && bk._route) {
+    const rt = bk._route;
+    const fs = calcFare(rt.distKm, rt.durationMin, 's', bk);
+    const fv = calcFare(rt.distKm, rt.durationMin, 'v', bk);
+    sp = {s: fs, v: fv};
+    fareBreakdown = {distKm: rt.distKm, durationMin: rt.durationMin, source: rt.source};
+  } else if (svc==='hourly') {
+    const hrs = bk.duration||3;
+    sp = {s: hrs*PRICES.hourly_s_rate, v: hrs*PRICES.hourly_v_rate};
+  } else if (svc==='day') {
+    sp = {s: PRICES.day_s, v: PRICES.day_v};
+  } else {
+    // Flat airport rate fallback (while route loads or for fixed airports)
+    const ySurge = typeof ApexCore!=='undefined'
+      ? ApexCore.apexYield({date:bk.date,time:bk.time,vehicle:'s',market:'london'})
+      : {multiplier:1.0,label:'Standard'};
+    const surge = ySurge.multiplier;
+    sp = {s:Math.round(PRICES.airport_s*surge), v:Math.round(PRICES.airport_v*surge)};
+  }
   const ySurge = typeof ApexCore!=='undefined'
-    ? ApexCore.apexYield({date:state.booking.date,time:state.booking.time,vehicle:'s',market:'london'})
+    ? ApexCore.apexYield({date:bk.date,time:bk.time,vehicle:'s',market:'london'})
     : {multiplier:1.0,label:'Standard'};
   const surge = ySurge.multiplier;
-  const sp = {s:Math.round(p.s*surge), v:Math.round(p.v*surge)};
   const sel = state.booking.vehicleId||'';
   const vehicles = [
     {id:'sClass',name:'S-Class',full:'Mercedes S-Class',sub:'Business Sedan · Up to 3 passengers',price:sp.s,badge:'EXECUTIVE',features:['WiFi','Water','Charger','Meet & Greet'],img:'vehicles/s-class.jpg'},
     {id:'vClass',name:'V-Class',full:'Mercedes V-Class',sub:'Business Van · Up to 7 passengers',price:sp.v,badge:'BUSINESS',features:['WiFi','Water','Charger','Child Seat'],img:'vehicles/v-class.jpg'}
   ];
+  // Loading/route state
+  const isLoading = needsRoute && !bk._route && !bk._routeErr;
   return `
 <div style="height:100dvh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
   <div class="back-row">
@@ -2379,6 +2472,14 @@ home: () => {
   </div>
   <div class="stagger" style="padding:0 22px;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:calc(88px + env(safe-area-inset-bottom,0px))">
     ${surgeBadge(surge,ySurge.label)}
+    ${isLoading ? `<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;gap:12px"><div style="width:18px;height:18px;border:2px solid var(--gold);border-top-color:transparent;border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0"></div><div style="font-size:13px;color:var(--fg-3)">Calculating route &amp; fare…</div></div>` : ''}
+    ${fareBreakdown ? `<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 18px;margin-bottom:14px">
+      <div style="font-size:10px;font-weight:700;color:var(--fg-4);letter-spacing:.8px;text-transform:uppercase;margin-bottom:10px">Route · ${fareBreakdown.source==='osrm'?'Live route':'Estimate'}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><div style="font-size:11px;color:var(--fg-4)">Distance</div><div style="font-size:16px;font-weight:700">${fareBreakdown.distKm.toFixed(1)} km</div></div>
+        <div><div style="font-size:11px;color:var(--fg-4)">Est. journey</div><div style="font-size:16px;font-weight:700">${Math.round(fareBreakdown.durationMin)} min</div></div>
+      </div>
+    </div>` : ''}
     ${vehicles.map(v=>`
     <div id="vc_${v.id}" onclick="selectVehicle('${v.id}',${v.price},'${v.full}')" class="vcard ${sel===v.id?'sel':''}" style="margin-bottom:14px">
       <div class="vcard-media">
@@ -2395,7 +2496,7 @@ home: () => {
           </div>
           <div style="text-align:right">
             <div class="tnum" style="font-size:26px;font-weight:800;letter-spacing:-.02em;color:${sel===v.id?'#ffffff':'#fff'}">£${v.price}</div>
-            <div style="font-size:11px;color:var(--fg-4);margin-top:2px">${state.booking.serviceType==='hourly'?'total':'flat rate'}</div>
+            <div style="font-size:11px;color:var(--fg-4);margin-top:2px">${isLoading?'calculating…':svc==='hourly'?'total':fareBreakdown?'calculated fare':'flat rate'}</div>
           </div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">

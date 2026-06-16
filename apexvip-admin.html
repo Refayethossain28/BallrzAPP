@@ -744,7 +744,7 @@ fleet:()=>`<div class="screen">
 </div>`,
 
 pricing:()=>{
-  const p=S._pricing||{airport_s:185,airport_v:225,heathrow_s:185,heathrow_v:225,gatwick_s:195,gatwick_v:235,stansted_s:195,stansted_v:235,luton_s:185,luton_v:225,city_s:125,city_v:155,hourly_s_rate:65,hourly_v_rate:75,day_s:450,day_v:550,evening_supplement:50,peak_surcharge_pct:15,membership:199};
+  const p=S._pricing||{airport_s:185,airport_v:225,heathrow_s:185,heathrow_v:225,gatwick_s:195,gatwick_v:235,stansted_s:195,stansted_v:235,luton_s:185,luton_v:225,city_s:125,city_v:155,hourly_s_rate:65,hourly_v_rate:75,day_s:450,day_v:550,evening_supplement:50,peak_surcharge_pct:15,membership:199,base_s:12,base_v:16,per_km_s:2.80,per_km_v:3.50,per_min_s:0.45,per_min_v:0.55,min_fare_s:60,min_fare_v:75,cc_charge:15};
   const inp=(key,label,prefix='£',suffix='')=>`<div style="margin-bottom:14px"><div style="font-size:11px;color:var(--fg-subtle);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">${label}</div><div style="display:flex;align-items:center;gap:8px"><span style="color:var(--fg-subtle);font-size:14px">${prefix}</span><input id="pr_${key}" type="number" value="${p[key]}" style="width:110px" oninput="S._pricing=S._pricing||{};S._pricing['${key}']=+this.value"/><span style="color:var(--fg-subtle);font-size:13px">${suffix}</span></div></div>`;
   const row=(label,ks,vs,sv)=>`<tr><td style="font-weight:500;color:var(--fg);padding:12px 8px 12px 0">${label}</td><td style="padding:8px">${inp(ks,'S-Class')}</td><td style="padding:8px">${inp(vs,'V-Class')}</td>${sv?`<td style="padding:8px">${inp(sv,'V-Class')}</td>`:''}</tr>`;
   return`<div class="screen">
@@ -779,6 +779,20 @@ pricing:()=>{
       <div style="background:var(--surface-b);border-radius:14px;padding:16px;border:1px solid var(--border)">${inp('evening_supplement','Evening supplement (after 22:00)')}</div>
       <div style="background:var(--surface-b);border-radius:14px;padding:16px;border:1px solid var(--border)">${inp('peak_surcharge_pct','Peak surcharge (Fri–Sun)','','%')}</div>
     </div>
+  </div>
+  <div class="card" style="margin-bottom:20px">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px;color:var(--fg)">Dynamic Pricing Engine</div>
+    <div style="font-size:12px;color:var(--fg-subtle);margin-bottom:16px">Used for point-to-point fares: fare = base + (km × rate) + (min × rate), minimum applied, rounded to nearest £5</div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">
+      <thead><tr style="border-bottom:1px solid var(--border)"><th style="text-align:left;padding:8px 0;font-size:12px;color:var(--fg-subtle);font-weight:600;text-transform:uppercase;letter-spacing:.6px">Component</th><th style="padding:8px;font-size:12px;color:var(--fg-subtle);font-weight:600;text-transform:uppercase;letter-spacing:.6px">S-Class</th><th style="padding:8px;font-size:12px;color:var(--fg-subtle);font-weight:600;text-transform:uppercase;letter-spacing:.6px">V-Class</th></tr></thead>
+      <tbody>
+        <tr><td style="font-weight:500;color:var(--fg);padding:12px 8px 12px 0">Base flag-fall</td><td style="padding:8px">${inp('base_s','S-Class')}</td><td style="padding:8px">${inp('base_v','V-Class')}</td></tr>
+        <tr><td style="font-weight:500;color:var(--fg);padding:12px 8px 12px 0">Per km</td><td style="padding:8px">${inp('per_km_s','S-Class /km','£','/km')}</td><td style="padding:8px">${inp('per_km_v','V-Class /km','£','/km')}</td></tr>
+        <tr><td style="font-weight:500;color:var(--fg);padding:12px 8px 12px 0">Per minute</td><td style="padding:8px">${inp('per_min_s','S-Class /min','£','/min')}</td><td style="padding:8px">${inp('per_min_v','V-Class /min','£','/min')}</td></tr>
+        <tr><td style="font-weight:500;color:var(--fg);padding:12px 8px 12px 0">Minimum fare</td><td style="padding:8px">${inp('min_fare_s','S-Class min')}</td><td style="padding:8px">${inp('min_fare_v','V-Class min')}</td></tr>
+      </tbody>
+    </table></div>
+    <div style="margin-top:16px">${inp('cc_charge','Congestion charge passthrough')}</div>
   </div>
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:16px;color:var(--fg)">Membership</div>
@@ -1574,7 +1588,7 @@ async function loadPricingAdmin(){
 
 async function savePricingAdmin(){
   if(!FIREBASE_ENABLED){alert('Demo mode — pricing not saved');return;}
-  const keys=['airport_s','airport_v','heathrow_s','heathrow_v','gatwick_s','gatwick_v','stansted_s','stansted_v','luton_s','luton_v','city_s','city_v','hourly_s_rate','hourly_v_rate','day_s','day_v','evening_supplement','peak_surcharge_pct','membership'];
+  const keys=['airport_s','airport_v','heathrow_s','heathrow_v','gatwick_s','gatwick_v','stansted_s','stansted_v','luton_s','luton_v','city_s','city_v','hourly_s_rate','hourly_v_rate','day_s','day_v','evening_supplement','peak_surcharge_pct','membership','base_s','base_v','per_km_s','per_km_v','per_min_s','per_min_v','min_fare_s','min_fare_v','cc_charge'];
   const data={};
   keys.forEach(k=>{const el=document.getElementById('pr_'+k);if(el)data[k]=parseFloat(el.value)||0;});
   const btn=document.getElementById('pr-save-btn');
