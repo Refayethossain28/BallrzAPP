@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Flow" />
 <link rel="manifest" href="manifest.json" />
-<link rel="apple-touch-icon" href="icon.svg" />
+<link rel="apple-touch-icon" href="icon-180.png" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%233ae1ff'/%3E%3Cstop offset='.55' stop-color='%239a7bff'/%3E%3Cstop offset='1' stop-color='%23ff63b6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='14' fill='%23070912'/%3E%3Ccircle cx='32' cy='32' r='20' fill='none' stroke='url(%23g)' stroke-width='4'/%3E%3Ccircle cx='32' cy='32' r='9' fill='url(%23g)'/%3E%3C/svg%3E" />
 <style>
   :root{
@@ -380,7 +380,7 @@ function selectLevel(){
     const idx = Math.floor(rng()*POOL.length);
     if (idx === lastIdx) continue;
     const lvl = POOL[idx];
-    const score = Math.abs(winProb(player.skill, lvl.diff) - FLOW_TARGET);
+    const score = Math.abs(winProb(player.skill, lvl.diff) - flowTarget());
     if (score < bestScore){ bestScore=score; best=lvl; bestIdx=idx; }
   }
   lastIdx = bestIdx;
@@ -419,7 +419,7 @@ function ensureAudio(){
   const AC = window.AudioContext || window.webkitAudioContext;
   if(!AC) return;
   actx = new AC();
-  master = actx.createGain(); master.gain.value = muted?0:0.7; master.connect(actx.destination);
+  master = actx.createGain(); master.gain.value = muted?0:0.6; master.connect(actx.destination);
 }
 function setMuted(m){
   muted=m; localStorage.setItem('flow.muted', m?'1':'0');
@@ -462,7 +462,7 @@ function noise(){
 }
 function kick(t){ const o=actx.createOscillator(), g=actx.createGain();
   o.frequency.setValueAtTime(140,t); o.frequency.exponentialRampToValueAtTime(45,t+0.11);
-  g.gain.setValueAtTime(0.8,t); g.gain.exponentialRampToValueAtTime(0.0001,t+0.3);
+  g.gain.setValueAtTime(0.7,t); g.gain.exponentialRampToValueAtTime(0.0001,t+0.3);
   o.connect(g); g.connect(master); o.start(t); o.stop(t+0.32); }
 function hat(t,open){ const s=noise(), hp=actx.createBiquadFilter(), g=actx.createGain();
   hp.type='highpass'; hp.frequency.value=8000; const dur=open?0.12:0.04;
@@ -518,9 +518,12 @@ let score=0, streak=0;
 const live = ()=> state==='playing' || state==='match';
 
 /* lives + combo (1-player arcade mode) */
-const MAXLIVES=3;
-let lives=MAXLIVES, livesMode=false, cdStart=0, lastCdIdx=-1;
+const MAXLIVES=3, LIFE_CAP=5;
+let lives=MAXLIVES, livesMode=false, cdStart=0, lastCdIdx=-1, graceUntil=0;
 function comboMult(){ return Math.min(5, 1 + Math.floor(streak/5)); }   // x1..x5
+/* In a lives run the engine aims a little higher than the 60% flow target, so
+ * misses (which cost a life) are rarer and a run lasts longer; zen/2P stay at 60%. */
+function flowTarget(){ return (livesMode && state==='playing') ? 0.70 : FLOW_TARGET; }
 function vibe(p){ if(navigator.vibrate){ try{ navigator.vibrate(p); }catch(_){} } }
 function shakeStage(){ stage.classList.remove('shake'); void stage.offsetWidth; stage.classList.add('shake'); }
 
@@ -638,6 +641,10 @@ function endRound(won){
   if(state==='playing') updateSkill(level, won);
   if(won){
     score += comboMult(); streak++; vibe(12);
+    // reward a long clean streak with a life back (capped)
+    if(livesMode && streak>0 && streak%10===0 && lives<LIFE_CAP){
+      lives++; floatText(W/2, 42, '+1 ♥', '#ff8fa0'); beep(990);
+    }
     if(state==='playing'){
       if(score>best){ best=score; localStorage.setItem('flow.best',best); renderCosmetics(); }
       drawSpark();
@@ -646,8 +653,11 @@ function endRound(won){
     streak=0;
     if(state==='playing') drawSpark();
     if(livesMode){
-      lives--; shakeStage(); vibe(60);
-      if(lives<=0){ refreshHud(); gameOver(); return; }
+      const now=performance.now();
+      if(now >= graceUntil){                 // brief immunity prevents a cascade double-hit
+        lives--; graceUntil=now+800; shakeStage(); vibe(60);
+        if(lives<=0){ refreshHud(); gameOver(); return; }
+      }
     }
   }
   refreshHud();
@@ -867,7 +877,7 @@ function start1P(seed, m){
   matchMode=false; SEED=seed; mode=m; setSeedLabel(); rng=makeRng(SEED);
   player.skill=0.45; player.rounds=0; player.passHistory=[]; score=0; streak=0; lastIdx=-1;
   bonus=null; fx=[];
-  livesMode = (m!=='free'); lives=MAXLIVES;       // Daily/shared = lives; Free play = endless zen
+  livesMode = (m!=='free'); lives=MAXLIVES; graceUntil=0;   // Daily/shared = lives; Free play = endless zen
   showScreen(null); drawSpark(); startMusic();
   beginCountdown();
 }
