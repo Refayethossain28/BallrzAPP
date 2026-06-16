@@ -180,7 +180,7 @@ exports.onBookingCreated = onDocumentCreated('bookings/{bookingId}', async (even
       type: b.serviceType || 'airport', serviceLabel: b.serviceLabel || 'Airport Transfer',
       pickup: b.pickup || '', dropoff: b.airport || b.dropoff || '',
       date: b.date || '', time: b.time || '', flight: b.flight || '',
-      vehicle: b.vehicle || '', pay: b.price || 0, notes: b.notes || '',
+      vehicle: b.vehicle || '', pay: Math.round((b.price || 0) * 0.80), totalFare: b.price || 0, platformFee: Math.round((b.price || 0) * 0.20), notes: b.notes || '',
       status: 'pending', market: b.market || 'london',
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     }).catch(e => console.warn('Job create failed:', e.message));
@@ -208,7 +208,7 @@ exports.onBookingCreated = onDocumentCreated('bookings/{bookingId}', async (even
       type: b.serviceType || 'airport',
       clientId: b.clientId || '', clientName: b.clientName || '',
       notes: b.notes || '',
-      price: b.price || 0, pay: b.price || 0, flight: b.flight || '', market: b.market || 'london',
+      price: b.price || 0, pay: Math.round((b.price || 0) * 0.80), totalFare: b.price || 0, platformFee: Math.round((b.price || 0) * 0.20), flight: b.flight || '', market: b.market || 'london',
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     }).catch(e => console.warn('open_jobs create failed:', e.message));
     await snap.ref.update({ status: 'offered' }).catch(() => {});
@@ -377,7 +377,7 @@ exports.assignDriverToBooking = onCall(async (request) => {
     type: b.serviceType || 'airport', serviceLabel: b.serviceLabel || 'Airport Transfer',
     pickup: b.pickup || '', dropoff: b.airport || b.dropoff || '',
     date: b.date || '', time: b.time || '', flight: b.flight || '',
-    vehicle: b.vehicle || '', pay: b.price || 0,
+    vehicle: b.vehicle || '', pay: Math.round((b.price || 0) * 0.80), totalFare: b.price || 0, platformFee: Math.round((b.price || 0) * 0.20),
     notes: b.notes || '', market: b.market || 'london',
     status: 'pending', createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });

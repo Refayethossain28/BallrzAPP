@@ -277,19 +277,19 @@ function track(event, props){
 }
 
 let JOBS=[
-  {id:'J1',type:'airport',client:'Sarah M.',initials:'SM',service:'Airport Transfer',pickup:'Mayfair W1K',dropoff:'Heathrow Terminal 5',time:'In 45 min',pay:95,flight:'BA0247',notes:'1 passenger, 2 bags',vehicle:'S-Class'},
-  {id:'J2',type:'hourly',client:'Robert C.',initials:'RC',service:'By the Hour (4hrs)',pickup:'Canary Wharf E14',dropoff:'Various',time:'Tomorrow 10:00',pay:260,notes:'Business meetings, multiple stops',vehicle:'S-Class'},
-  {id:'J3',type:'airport',client:'Emma W.',initials:'EW',service:'Airport Transfer',pickup:'Knightsbridge SW1',dropoff:'Gatwick North Terminal',time:'Today 16:30',pay:195,flight:'EZY1234',notes:'2 passengers, 4 bags',vehicle:'S-Class'},
-  {id:'J4',type:'day',client:'Oliver T.',initials:'OT',service:'By the Day',pickup:'Belgravia SW1X',dropoff:'Various',time:'08:00',pay:540,notes:'Full day personal driver service',vehicle:'S-Class',concierge:{itinerary:[{time:'08:00',place:'Belgravia SW1X',note:'Collect client'},{time:'09:30',place:'Mayfair Members Club',note:'Drop off for meeting'},{time:'12:00',place:'Nobu Mayfair',note:'Lunch reservation'},{time:'14:30',place:'Savile Row',note:'Tailoring appointment'}],errands:[{text:'Pick up dry cleaning from Jeeves & Son, Pont St',done:false},{text:'Collect watch from Patek Philippe, Bond St',done:false}],requirements:['still-water','champagne','silence','luggage'],instructions:'Client prefers no conversation unless initiated. Always open and close the door. Keep cabin at 21°C.',commsPref:'on-request'}},
+  {id:'J1',type:'airport',client:'Sarah M.',initials:'SM',service:'Airport Transfer',pickup:'Mayfair W1K',dropoff:'Heathrow Terminal 5',time:'In 45 min',totalFare:95,pay:76,flight:'BA0247',notes:'1 passenger, 2 bags',vehicle:'S-Class'},
+  {id:'J2',type:'hourly',client:'Robert C.',initials:'RC',service:'By the Hour (4hrs)',pickup:'Canary Wharf E14',dropoff:'Various',time:'Tomorrow 10:00',totalFare:260,pay:208,notes:'Business meetings, multiple stops',vehicle:'S-Class'},
+  {id:'J3',type:'airport',client:'Emma W.',initials:'EW',service:'Airport Transfer',pickup:'Knightsbridge SW1',dropoff:'Gatwick North Terminal',time:'Today 16:30',totalFare:195,pay:156,flight:'EZY1234',notes:'2 passengers, 4 bags',vehicle:'S-Class'},
+  {id:'J4',type:'day',client:'Oliver T.',initials:'OT',service:'By the Day',pickup:'Belgravia SW1X',dropoff:'Various',time:'08:00',totalFare:540,pay:432,notes:'Full day personal driver service',vehicle:'S-Class',concierge:{itinerary:[{time:'08:00',place:'Belgravia SW1X',note:'Collect client'},{time:'09:30',place:'Mayfair Members Club',note:'Drop off for meeting'},{time:'12:00',place:'Nobu Mayfair',note:'Lunch reservation'},{time:'14:30',place:'Savile Row',note:'Tailoring appointment'}],errands:[{text:'Pick up dry cleaning from Jeeves & Son, Pont St',done:false},{text:'Collect watch from Patek Philippe, Bond St',done:false}],requirements:['still-water','champagne','silence','luggage'],instructions:'Client prefers no conversation unless initiated. Always open and close the door. Keep cabin at 21°C.',commsPref:'on-request'}},
 ];
 const HISTORY=[
-  {id:'H1',service:'Airport Transfer',pickup:'Heathrow T5',dropoff:'Mayfair',date:'Today',duration:'55 min',pay:95,rating:5},
-  {id:'H2',service:'By the Hour (2hr)',pickup:'Mayfair',dropoff:'Mayfair',date:'Today',duration:'2hr',pay:130,rating:5},
-  {id:'H3',service:'Airport Transfer',pickup:'Knightsbridge',dropoff:'Heathrow T3',date:'Yesterday',duration:'50 min',pay:185,rating:4},
-  {id:'H4',service:'Airport Transfer',pickup:'Chelsea',dropoff:'Stansted',date:'Yesterday',duration:'65 min',pay:195,rating:5},
-  {id:'H5',service:'Airport Transfer',pickup:'Belgravia',dropoff:'City Airport',date:'Monday',duration:'40 min',pay:125,rating:5},
+  {id:'H1',service:'Airport Transfer',pickup:'Heathrow T5',dropoff:'Mayfair',date:'Today',duration:'55 min',totalFare:95,pay:76,rating:5},
+  {id:'H2',service:'By the Hour (2hr)',pickup:'Mayfair',dropoff:'Mayfair',date:'Today',duration:'2hr',totalFare:130,pay:104,rating:5},
+  {id:'H3',service:'Airport Transfer',pickup:'Knightsbridge',dropoff:'Heathrow T3',date:'Yesterday',duration:'50 min',totalFare:185,pay:148,rating:4},
+  {id:'H4',service:'Airport Transfer',pickup:'Chelsea',dropoff:'Stansted',date:'Yesterday',duration:'65 min',totalFare:195,pay:156,rating:5},
+  {id:'H5',service:'Airport Transfer',pickup:'Belgravia',dropoff:'City Airport',date:'Monday',duration:'40 min',totalFare:125,pay:100,rating:5},
 ];
-const WEEK_DATA=[180,240,0,310,420,380,190];
+const WEEK_DATA=[144,192,0,248,336,304,152];
 const WEEK_LABELS=['Mon','Tue','Wed','Thu','Fri','Sat','Today'];
 
 function getClientPreferences(clientId, structuredPrefs) {
@@ -963,7 +963,8 @@ home:()=>{
       <div style="font-size:11px;color:var(--fg-dim);margin-bottom:${oj?.type==='day'?'10':'16'}px">${oj?.type==='airport'?'✈':oj?.type==='hourly'?'⏱':'📅'} ${oj?.service||'Airport Transfer'}</div>
       ${oj?.type==='day'?`<div style="background:linear-gradient(135deg,rgba(200,169,126,.18),rgba(200,169,126,.08));border:1px solid rgba(200,169,126,.35);border-radius:10px;padding:8px 12px;margin-bottom:14px;text-align:center"><div style="font-size:10px;font-weight:700;color:#C8A97E;letter-spacing:1px">PERSONAL DRIVER · ALL DAY</div>${oj?.concierge?.itinerary?.length?`<div style="font-size:11px;color:var(--fg-dim);margin-top:4px">First stop: ${oj.concierge.itinerary[0].place}${oj.concierge.errands?.length?` · ${oj.concierge.errands.length} errand${oj.concierge.errands.length!==1?'s':''}`:''}</div>`:''}  </div>`:''}
       ${[['Pickup',oj?.pickup||'—'],['Drop-off',oj?.dropoff||'—'],['In',oj?.time||'Now']].map(([l,v])=>`<div style="display:flex;justify-content:space-between;margin-bottom:7px;font-size:13px"><span style="color:var(--fg-dim)">${l}</span><span style="font-weight:600">${v}</span></div>`).join('')}
-      <div style="font-size:30px;font-weight:800;color:#C8A97E;margin:16px 0 18px">£${oj?.pay||95}</div>
+      <div style="font-size:30px;font-weight:800;color:#C8A97E;margin:16px 0 4px">£${oj?.pay||95}</div>
+      <div style="font-size:11px;color:var(--fg-subtle);letter-spacing:.8px;margin-bottom:18px">YOUR EARNINGS (80%)</div>
       <div style="display:flex;gap:10px">
         <button class="btn btn-glass" style="flex:1;padding:13px" onclick="declineJob()">Decline</button>
         <button class="btn btn-green" style="flex:1;padding:13px" onclick="acceptJob()">Accept</button>
@@ -1218,7 +1219,7 @@ jobs:()=>{
       ${S.online?`<button onclick="refreshJobs()" style="margin-top:20px;background:rgba(200,169,126,.12);border:1px solid rgba(200,169,126,.35);border-radius:20px;padding:10px 24px;color:#C8A97E;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Check for Jobs</button>`:''}
     </div>`:liveJobs.map(j=>`<div class="card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
-        ${jobTag(j.type)}<span style="font-size:22px;font-weight:800;color:#C8A97E">£${j.pay}</span>
+        ${jobTag(j.type)}<div style="text-align:right"><span style="font-size:22px;font-weight:800;color:#C8A97E">£${j.pay}</span><div style="font-size:9px;color:var(--fg-subtle);letter-spacing:.5px;margin-top:1px">YOUR EARNINGS</div></div>
       </div>
       <div style="font-size:15px;font-weight:600;margin-bottom:4px">${j.pickup||j.client||'Pickup'}</div>
       <div style="font-size:13px;color:var(--fg-dim);margin-bottom:10px">→ ${j.dropoff}</div>
@@ -1240,7 +1241,7 @@ jobs:()=>{
 
 earnings:()=>{
   const t=S.earnTab;
-  const data={today:{total:'£205',trips:2,breakdown:[['Airport Transfers (2)','£190'],['Tips','£15']]},week:{total:'£1,720',trips:11,breakdown:[['Airport Transfers (8)','£1,280'],['Hourly (2)','£390'],['Tips','£50']]},month:{total:'£6,840',trips:42,breakdown:[['Airport Transfers (30)','£5,280'],['Hourly (8)','£1,360'],['Tips','£200']]}};
+  const data={today:{total:'£192',trips:2,breakdown:[['Airport Transfers (1)','£76'],['By the Hour (1)','£104'],['Tips','£12']]},week:{total:'£1,376',trips:11,breakdown:[['Airport Transfers (8)','£1,024'],['Hourly (2)','£312'],['Tips','£40']]},month:{total:'£5,472',trips:42,breakdown:[['Airport Transfers (30)','£4,224'],['Hourly (8)','£1,088'],['Tips','£160']]}};
   const d=data[t];
   return`<div class="screen">
     <div class="top-bar"><div style="font-size:22px;font-weight:700">Earnings</div></div>
@@ -1307,7 +1308,7 @@ history:()=>{
     <div class="top-bar"><div style="font-size:22px;font-weight:700">Trip History</div></div>
     <div class="card" style="margin-bottom:18px">
       <div style="display:flex;justify-content:space-between">
-        ${[['247','Total Trips'],['£18,420','Total Earned'],['4.9','Avg Rating']].map(([v,l])=>`<div style="text-align:center"><div style="font-size:22px;font-weight:800;color:#C8A97E">${v}</div><div style="font-size:11px;color:var(--fg-subtle);margin-top:3px">${l}</div></div>`).join('')}
+        ${[['247','Total Trips'],['£14,736','Total Earned'],['4.9','Avg Rating']].map(([v,l])=>`<div style="text-align:center"><div style="font-size:22px;font-weight:800;color:#C8A97E">${v}</div><div style="font-size:11px;color:var(--fg-subtle);margin-top:3px">${l}</div></div>`).join('')}
       </div>
     </div>
     <div style="display:flex;gap:8px;margin-bottom:18px">
@@ -1447,23 +1448,32 @@ documents:()=>{
 
 'trip-complete':()=>{
   const j=S._lastCompletedJob||{client:'Passenger',pay:0};
+  const driverEarned=j.pay||0;
+  const totalFare=j.totalFare||Math.round(driverEarned/0.8);
+  const platformFee=totalFare-driverEarned;
   return`<div class="screen" style="text-align:center;padding-top:60px">
     <div style="font-size:64px;margin-bottom:16px">✓</div>
     <div style="font-size:28px;font-weight:700;margin-bottom:6px">Trip Complete</div>
     <div style="font-size:14px;color:var(--fg-dim);margin-bottom:32px">${j.client||'Passenger'} · ${j.service||'Airport Transfer'}</div>
-    <div style="display:flex;justify-content:center;gap:16px;margin-bottom:32px">
+    <div style="display:flex;justify-content:center;gap:12px;margin-bottom:20px">
       <div class="card" style="min-width:90px;text-align:center;padding:16px">
-        <div style="font-size:24px;font-weight:800;color:#C8A97E">£${j.pay||0}</div>
-        <div style="font-size:11px;color:var(--fg-subtle);margin-top:4px">Earned</div>
+        <div style="font-size:24px;font-weight:800;color:#C8A97E">£${driverEarned}</div>
+        <div style="font-size:11px;color:var(--fg-subtle);margin-top:4px">Your earnings</div>
       </div>
       <div class="card" style="min-width:90px;text-align:center;padding:16px">
         <div style="font-size:24px;font-weight:800;color:#22c55e">${fmtTime(S.tripTimer||0)}</div>
         <div style="font-size:11px;color:var(--fg-subtle);margin-top:4px">Duration</div>
       </div>
       <div class="card" style="min-width:90px;text-align:center;padding:16px">
-        <div style="font-size:24px;font-weight:800;color:#C8A97E">+${((j.pay||0)*0.02).toFixed(1)}</div>
+        <div style="font-size:24px;font-weight:800;color:#C8A97E">+${(driverEarned*0.02).toFixed(1)}</div>
         <div style="font-size:11px;color:var(--fg-subtle);margin-top:4px">AXC Earned</div>
       </div>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 18px;margin-bottom:20px;text-align:left">
+      <div style="font-size:10px;color:var(--fg-subtle);letter-spacing:.8px;text-transform:uppercase;margin-bottom:10px">Fare breakdown</div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;padding:7px 0;border-bottom:1px solid var(--divider)"><span style="color:var(--fg-dim)">Total fare paid</span><span>£${totalFare}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;padding:7px 0;border-bottom:1px solid var(--divider)"><span style="color:var(--fg-dim)">ApexVIP commission (20%)</span><span style="color:var(--fg-dim)">−£${platformFee}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;padding:7px 0"><span>Your earnings (80%)</span><span style="color:#C8A97E">£${driverEarned}</span></div>
     </div>
     <div style="margin-bottom:20px">
       <div style="font-size:13px;color:var(--fg-dim);margin-bottom:10px">Client's rating will appear here once submitted</div>
