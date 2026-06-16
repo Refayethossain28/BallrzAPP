@@ -159,6 +159,46 @@
     filter:drop-shadow(0 0 22px rgba(96,150,255,.4))}
   .menustat{display:inline-flex;align-items:center;font-size:11px;color:var(--muted);font-weight:600;
     background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 12px;backdrop-filter:blur(8px)}
+
+  /* ---- title-screen treatment ---- */
+  .screen.menu{justify-content:flex-start;gap:13px;padding-top:20px}
+  .hero{position:relative;display:grid;place-items:center;padding:10px 0 2px;margin-bottom:2px}
+  .hero::before,.hero::after{content:"";position:absolute;border-radius:50%;pointer-events:none}
+  .hero::before{width:148px;height:148px;border:1px solid rgba(120,160,255,.22);animation:spin 16s linear infinite}
+  .hero::after{width:108px;height:108px;border:1px dashed rgba(255,99,182,.20);animation:spin 11s linear infinite reverse}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .hero-title{position:relative;font-size:54px;font-weight:900;letter-spacing:7px;line-height:1;
+    background:linear-gradient(100deg,#3ae1ff,#9a7bff,#ff63b6,#3ae1ff);background-size:220% 100%;
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+    filter:drop-shadow(0 0 26px rgba(96,150,255,.45));animation:shimmer 6s linear infinite}
+  @keyframes shimmer{to{background-position:220% 0}}
+  .hero-tag{position:relative;margin-top:9px;font-size:10.5px;letter-spacing:5px;text-transform:uppercase;
+    color:var(--muted);font-weight:700}
+
+  .rules{display:flex;flex-direction:column;gap:8px;width:min(330px,94%)}
+  .rule{display:flex;align-items:center;gap:11px;font-size:13.5px;color:var(--ink);text-align:left;
+    background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:9px 12px;backdrop-filter:blur(8px)}
+  .ic{width:30px;height:30px;flex:0 0 30px;border-radius:9px;display:grid;place-items:center;font-size:15px}
+  .ic-tap{background:rgba(58,225,255,.16);box-shadow:inset 0 0 0 1px rgba(58,225,255,.45)}
+  .ic-avoid{background:rgba(255,93,108,.16);box-shadow:inset 0 0 0 1px rgba(255,93,108,.45)}
+  .ic-bonus{background:rgba(255,209,102,.16);box-shadow:inset 0 0 0 1px rgba(255,209,102,.45)}
+
+  .menu-cta{display:flex;flex-direction:column;gap:10px;width:min(330px,94%)}
+  .cta.big{display:flex;flex-direction:column;align-items:center;gap:1px;padding:13px;border-radius:16px;
+    position:relative;overflow:hidden}
+  .cta.big b{font-size:16px;letter-spacing:.3px}
+  .cta.big small{font-weight:600;font-size:11px;color:rgba(4,18,28,.66)}
+  .cta.big::after{content:"";position:absolute;top:0;left:-60%;width:40%;height:100%;
+    background:linear-gradient(100deg,transparent,rgba(255,255,255,.5),transparent);
+    transform:skewX(-18deg);animation:sheen 4.5s ease-in-out infinite}
+  @keyframes sheen{0%,72%{left:-60%}88%{left:130%}100%{left:130%}}
+  .cta-row{display:flex;gap:10px}
+  .cta-row .cta{flex:1}
+  .menu-note{font-size:12px;max-width:320px}
+  .menu-foot{display:flex;align-items:center;gap:10px;justify-content:center}
+  @media (prefers-reduced-motion: reduce){
+    .hero::before,.hero::after,.hero-title,.cta.big::after,body::before{animation:none}
+  }
 </style>
 </head>
 <body>
@@ -184,22 +224,37 @@
     <button id="pauseBtn" aria-label="Pause">⏸</button>
 
     <!-- start / how-to -->
-    <div id="overlay" class="screen">
-      <h2>FLOW</h2>
-      <p class="lead">👆 Pop the glowing circle before it fades.<br>☠️ Dodge the red ✕ decoys.<br>⭐ Snatch bonus drops for extra points.</p>
-      <canvas id="demoC" class="demo"></canvas>
-      <p class="sub">It quietly learns how good you are and serves the next level to keep you right on the edge —
-         <b style="color:var(--band)">winnable about 60% of the time</b>. Never boring, never rage-quit.</p>
-      <div class="btnrow">
-        <button class="cta" id="dailyBtn">Daily challenge</button>
-        <button class="cta ghost" id="freeBtn">Free play</button>
+    <div id="overlay" class="screen menu">
+      <div class="hero">
+        <div class="hero-title">FLOW</div>
+        <div class="hero-tag">stay in the zone</div>
       </div>
-      <button class="cta vs" id="twoBtn">👥 2-Player duel</button>
-      <div class="menustat" id="menuBest">★ Best 0</div>
+
+      <div class="rules">
+        <div class="rule"><span class="ic ic-tap">👆</span><span>Pop the glowing circle before it fades</span></div>
+        <div class="rule"><span class="ic ic-avoid">⛔</span><span>Dodge the red <b style="color:var(--bad)">✕</b> decoys</span></div>
+        <div class="rule"><span class="ic ic-bonus">⭐</span><span>Grab bonus drops for extra points</span></div>
+      </div>
+
+      <canvas id="demoC" class="demo"></canvas>
+
+      <div class="menu-cta">
+        <button class="cta big" id="dailyBtn"><b>▶ Daily challenge</b><small>3 lives · today's seed</small></button>
+        <div class="cta-row">
+          <button class="cta ghost" id="freeBtn">Free play</button>
+          <button class="cta vs" id="twoBtn">👥 2-Player</button>
+        </div>
+      </div>
+
+      <p class="menu-note">Learns your skill and keeps every round
+        <b style="color:var(--band)">~60% winnable</b> — never boring, never rage-quit.</p>
+
+      <div class="menu-foot">
+        <span class="menustat" id="menuBest">★ Best 0</span>
+        <button class="share" id="shareBtn">🔗 Share</button>
+      </div>
       <div id="cosmetics"></div>
       <div class="cosline" id="cosLine">Ring skin — unlocks at your lifetime best</div>
-      <button class="share" id="shareBtn">🔗 Copy challenge link</button>
-      <p class="tiny">Everything below the board is the engine's internals, surfaced so you can watch it adapt.</p>
     </div>
 
     <!-- pause menu -->
