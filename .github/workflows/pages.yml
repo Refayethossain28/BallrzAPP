@@ -1,12 +1,17 @@
 name: Deploy to GitHub Pages
 
+# Publishes the FULL site so every app is reachable under /BallrzAPP/…:
+#   • ApexVIP client / driver / admin + all PWA assets at the site root
+#   • the runnable prototypes (concierge-split, flow-game) under /concepts/
+#   • the FX trading app under /trading-app/
+#   • the browser LLM demo under /llm/ (built on demand, cached between runs)
+#
+# This is the single Pages source — it replaces the previous _site that only
+# contained the trading app + LLM demo (which made apexvip-*.html 404).
+
 on:
   push:
     branches: ["main"]
-    paths:
-      - "trading-app/fx-signal-pro.html"
-      - "llm-from-scratch/**"
-      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
@@ -29,26 +34,56 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ── Always-published static site (fast) ─────────────────────────────────
+      - name: Assemble site
+        run: |
+          set -e
+          mkdir -p _site
+
+          # ApexVIP apps + every PWA asset, at the site root.
+          cp apexvip-client.html apexvip-driver.html apexvip-admin.html _site/ 2>/dev/null || true
+          cp apexvip-core.js firebase.js firebase-messaging-sw.js _site/ 2>/dev/null || true
+          cp manifest*.json _site/ 2>/dev/null || true
+          cp icon-*.png _site/ 2>/dev/null || true
+          cp -r splashes _site/ 2>/dev/null || true
+
+          # Landing page + Jekyll opt-out so files starting with _ are served.
+          cp index.html _site/index.html 2>/dev/null || true
+          cp .nojekyll _site/.nojekyll 2>/dev/null || touch _site/.nojekyll
+
+          # Runnable prototypes keep their original paths.
+          mkdir -p _site/concepts
+          cp -r concepts/prototypes _site/concepts/ 2>/dev/null || true
+
+          # FX trading app.
+          mkdir -p _site/trading-app
+          cp trading-app/fx-signal-pro.html _site/trading-app/ 2>/dev/null || true
+
+          echo "Assembled _site:"; ls -1 _site | head -40
+
+      # ── Browser LLM demo (optional, cached) ─────────────────────────────────
+      # Restore a previously-trained model. Only (re)train on a manual run or
+      # when the LLM sources change — keeps ordinary ApexVIP deploys quick.
       - name: Set up Python
+        if: hashFiles('llm-from-scratch/**.py') != ''
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install LLM dependencies
-        run: pip install -r llm-from-scratch/requirements.txt
+      - name: Cache trained LLM model
+        if: hashFiles('llm-from-scratch/**.py') != ''
+        id: llm-cache
+        uses: actions/cache@v4
+        with:
+          path: llm-from-scratch/web/model.json
+          key: llm-model-${{ hashFiles('llm-from-scratch/**.py', 'llm-from-scratch/requirements.txt') }}
 
-      # Grab a larger corpus (~1 MB tiny Shakespeare) so a bigger model has
-      # something real to learn. Falls back to the bundled sample if the
-      # download is unavailable.
-      - name: Fetch a larger corpus
-        working-directory: llm-from-scratch
-        run: python fetch_data.py shakespeare || echo "download failed; will fall back to sample corpus"
-
-      # Train a 1.3M-param BPE model and export it for the browser demo. Sized
-      # to keep the CPU-only build to ~15-20 min; bump for higher quality.
-      - name: Train and export the browser LLM
+      - name: Train and export the browser LLM (manual run, on cache miss)
+        if: github.event_name == 'workflow_dispatch' && steps.llm-cache.outputs.cache-hit != 'true'
         working-directory: llm-from-scratch
         run: |
+          pip install -r requirements.txt
+          python fetch_data.py shakespeare || echo "download failed; falling back to sample corpus"
           DATA=data/shakespeare.txt
           [ -f "$DATA" ] || DATA=data/input.txt
           echo "training on $DATA"
@@ -57,15 +92,17 @@ jobs:
             --block_size 64 --batch_size 16 --out ckpt.npz
           python export_web.py --ckpt ckpt.npz --out web/model.json
 
-      - name: Assemble site
+      - name: Add LLM demo to site (if a model is available)
         run: |
-          mkdir -p _site/llm
-          # Trading app stays at the site root.
-          cp trading-app/fx-signal-pro.html _site/index.html
-          # LLM demo lives at /llm/ (index.html, gpt.js, model.json).
-          cp llm-from-scratch/web/index.html _site/llm/index.html
-          cp llm-from-scratch/web/gpt.js _site/llm/gpt.js
-          cp llm-from-scratch/web/model.json _site/llm/model.json
+          if [ -f llm-from-scratch/web/model.json ]; then
+            mkdir -p _site/llm
+            cp llm-from-scratch/web/index.html _site/llm/index.html
+            cp llm-from-scratch/web/gpt.js     _site/llm/gpt.js
+            cp llm-from-scratch/web/model.json _site/llm/model.json
+            echo "LLM demo included."
+          else
+            echo "No trained model yet — skipping /llm (run this workflow manually to build it)."
+          fi
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
