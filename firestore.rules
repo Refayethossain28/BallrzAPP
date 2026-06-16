@@ -139,8 +139,16 @@ service cloud.firestore {
 
     // ── Booking messages (in-app chat) ────────────────────────────────────
     match /bookings/{bookingId}/messages/{msgId} {
-      allow create: if authed();
-      allow read: if authed();
+      allow create: if authed() && (
+        get(/databases/$(database)/documents/bookings/$(bookingId)).data.get('clientId','') == uid() ||
+        get(/databases/$(database)/documents/bookings/$(bookingId)).data.get('driverId','') == uid() ||
+        isAdmin()
+      );
+      allow read: if authed() && (
+        get(/databases/$(database)/documents/bookings/$(bookingId)).data.get('clientId','') == uid() ||
+        get(/databases/$(database)/documents/bookings/$(bookingId)).data.get('driverId','') == uid() ||
+        isAdmin()
+      );
       allow delete: if isAdmin();
     }
 

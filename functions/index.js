@@ -60,7 +60,8 @@ exports.processSquarePayment = onCall(async (request) => {
   try {
     const { result } = await squareClient.payments.create({
       sourceId,
-      idempotencyKey: `${bookingRef}-${Date.now()}`,
+      // Stable key: same bookingRef + uid always maps to one payment attempt
+      idempotencyKey: `${bookingRef}-${request.auth.uid}`,
       amountMoney: { amount: Math.round(amount * 100), currency: 'GBP' },
       locationId: '1ZX0F29TX12HB',
       note: `ApexVIP Booking ${bookingRef}`,
@@ -286,14 +287,15 @@ exports.handleCancellation = onCall(async (request) => {
 
 // ── 5. checkFlightStatus ──────────────────────────────────────────────────
 exports.checkFlightStatus = onCall(async (request) => {
-  const { flightNumber } = request.data;
-  if (!flightNumber) throw new HttpsError('invalid-argument', 'flightNumber required');
+  // Accept both 'flight' (client app) and 'flightNumber' (legacy callers)
+  const flightNumber = request.data.flight || request.data.flightNumber;
+  if (!flightNumber) throw new HttpsError('invalid-argument', 'flight required');
   if (!AVIATION_KEY) return { demo: true, status: 'scheduled', delayed: false };
 
   const fetch = require('node-fetch');
   const iata = flightNumber.replace(/\s/g, '').toUpperCase();
   try {
-    const resp = await fetch(`http://api.aviationstack.com/v1/flights?access_key=${AVIATION_KEY}&flight_iata=${iata}&limit=1`);
+    const resp = await fetch(`https://api.aviationstack.com/v1/flights?access_key=${AVIATION_KEY}&flight_iata=${iata}&limit=1`);
     const json = await resp.json();
     const f = json?.data?.[0];
     if (!f) return { status: 'unknown', delayed: false };
@@ -497,27 +499,27 @@ exports.submitTripRating = onCall(async (request) => {
   if (!bookingRef || !rating)
     throw new HttpsError('invalid-argument', 'bookingRef and rating required');
 
+  const clampedRating = Math.min(5, Math.max(1, Number(rating)));
+
   await db.collection('ratings').add({
     bookingRef, clientId: request.auth.uid, driverId: driverId || null,
-    rating: Math.min(5, Math.max(1, Number(rating))),
+    rating: clampedRating,
     comment: comment || '',
     timestamp: admin.firestore.FieldValue.serverTimestamp()
   });
 
   if (driverId) {
-    // Atomic increment avoids race condition when concurrent ratings are submitted
-    await db.collection('drivers').doc(driverId).update({
-      ratingTotal: admin.firestore.FieldValue.increment(Math.min(5, Math.max(1, Number(rating)))),
-      ratingCount: admin.firestore.FieldValue.increment(1),
-    }).catch(() => {});
-    // Recompute average from source-of-truth fields
-    const driverDoc = await db.collection('drivers').doc(driverId).get().catch(() => null);
-    if (driverDoc && driverDoc.exists) {
-      const d = driverDoc.data();
-      const cnt = d.ratingCount || 1;
-      const avg = Math.round((d.ratingTotal || Number(rating)) / cnt * 10) / 10;
-      await db.collection('drivers').doc(driverId).update({ rating: avg }).catch(() => {});
-    }
+    // Transaction keeps increment + average recompute atomic, preventing race conditions
+    await db.runTransaction(async tx => {
+      const dRef = db.collection('drivers').doc(driverId);
+      const dSnap = await tx.get(dRef);
+      if (!dSnap.exists) return;
+      const d = dSnap.data();
+      const newTotal = (d.ratingTotal || 0) + clampedRating;
+      const newCount = (d.ratingCount || 0) + 1;
+      const newAvg = Math.round(newTotal / newCount * 10) / 10;
+      tx.update(dRef, { ratingTotal: newTotal, ratingCount: newCount, rating: newAvg });
+    }).catch(e => console.warn('Rating transaction failed:', e.message));
   }
 
   return { success: true };
@@ -565,7 +567,7 @@ exports.hotelConciergeBook = onRequest(async (req, res) => {
     return;
   }
 
-  const ref = 'APX-HTL-' + Math.floor(1000 + Math.random() * 9000);
+  const ref = 'APX-HTL-' + Date.now().toString(36).toUpperCase().slice(-5) + Math.floor(100 + Math.random() * 900);
   await db.collection('bookings').add({
     ref, source: 'hotel_api', partnerName: partner.name || 'Hotel Partner',
     clientName: guestName, clientPhone: guestPhone || '',
@@ -581,6 +583,16 @@ exports.hotelConciergeBook = onRequest(async (req, res) => {
 
 // ── 12. whatsappWebhook ───────────────────────────────────────────────────
 exports.whatsappWebhook = onRequest(async (req, res) => {
+  // Verify the request is genuinely from Twilio
+  const twilio = require('twilio');
+  const authToken = process.env.TWILIO_AUTH;
+  if (authToken) {
+    const signature = req.headers['x-twilio-signature'] || '';
+    const url = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+    const valid = twilio.validateRequest(authToken, signature, url, req.body || {});
+    if (!valid) { res.status(403).send('Forbidden'); return; }
+  }
+
   const { Body, From, ProfileName } = req.body;
   if (!Body || !From) { res.status(400).send('Bad request'); return; }
 
