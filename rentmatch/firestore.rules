@@ -1,0 +1,87 @@
+rules_version = '2';
+
+// RentMatch Firestore security rules.
+//
+// Core principle: money, deal-stage and contract fields are written ONLY by
+// Cloud Functions (privileged Admin SDK, which bypasses these rules). Clients
+// may create an enquiry and post messages, but may never mutate a deal's stage,
+// signatures, payment or contract — those flow exclusively through callable
+// Functions that enforce the state machine and compliance gates.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() { return request.auth != null; }
+    function uid() { return request.auth.uid; }
+    function isParticipant(deal) {
+      return uid() == deal.renterId || uid() == deal.landlordId;
+    }
+
+    // Users can read/write only their own profile.
+    match /users/{userId} {
+      allow read, write: if isSignedIn() && uid() == userId;
+    }
+
+    // Properties + their compliance docs are owned by the landlord.
+    match /properties/{propertyId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.landlordId == uid();
+      allow update, delete: if isSignedIn() && resource.data.landlordId == uid();
+
+      match /complianceDocs/{docId} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn() &&
+          get(/databases/$(database)/documents/properties/$(propertyId)).data.landlordId == uid();
+      }
+    }
+
+    // Live listings are publicly readable; only the owning landlord edits them.
+    match /listings/{listingId} {
+      allow read: if true;
+      allow create: if isSignedIn() && request.resource.data.landlordId == uid();
+      allow update, delete: if isSignedIn() && resource.data.landlordId == uid();
+    }
+
+    // Deals: a renter may open one; both participants may read it; but the
+    // privileged fields are immutable from the client.
+    match /deals/{dealId} {
+      allow read: if isSignedIn() && isParticipant(resource.data);
+      allow create: if isSignedIn() && request.resource.data.renterId == uid();
+      // Clients can never change stage / signatures / payment / contract.
+      allow update: if false;
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if isSignedIn() &&
+          isParticipant(get(/databases/$(database)/documents/deals/$(dealId)).data);
+        allow create: if isSignedIn() &&
+          isParticipant(get(/databases/$(database)/documents/deals/$(dealId)).data) &&
+          request.resource.data.senderId == uid();
+        allow update, delete: if false;
+      }
+
+      // Audit trail is append-only via Functions; clients read only.
+      match /events/{eventId} {
+        allow read: if isSignedIn() &&
+          isParticipant(get(/databases/$(database)/documents/deals/$(dealId)).data);
+        allow write: if false;
+      }
+    }
+
+    // Viewings: participants read; writes go through Functions.
+    match /viewings/{viewingId} {
+      allow read: if isSignedIn() && isParticipant(resource.data);
+      allow write: if false;
+    }
+
+    // Contracts + payments are entirely Function-managed and read-only to clients.
+    match /contracts/{contractId} {
+      allow read: if isSignedIn() && isParticipant(resource.data);
+      allow write: if false;
+    }
+    match /payments/{paymentId} {
+      allow read: if isSignedIn() && uid() == resource.data.landlordId;
+      allow write: if false;
+    }
+  }
+}
