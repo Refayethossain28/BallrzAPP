@@ -22,9 +22,11 @@ ios/
 │   ├── Sources/ConciergeCore/
 │   │   ├── Models.swift           ← Message, SplitProposal, SplitMath (deterministic cents)
 │   │   ├── Agent.swift            ← AgentService protocol, StubAgent, ClaudeAgent, SplitLedger
-│   │   └── Transport.swift        ← MessageTransport protocol + LocalTransport (E2EE seam)
+│   │   └── Transport.swift        ← MessageTransport, LocalTransport, + the E2EE relay
+│   │                                 (MessageCipher, MessageRelay, RelayTransport)
 │   └── Tests/ConciergeCoreTests/
-│       └── SplitTests.swift       ← penny-sum, remainder, idempotency, parse cases
+│       ├── SplitTests.swift       ← penny-sum, remainder, idempotency, parse cases
+│       └── TransportTests.swift   ← two-device round-trip, relay-sees-only-ciphertext
 └── ConciergeApp/                  ← SwiftUI app (open in Xcode; depends on ConciergeCore)
     ├── ConciergeApp.swift         ← @main
     ├── ConversationStore.swift    ← view-model: thread + agent + ledger
@@ -36,9 +38,14 @@ ios/
 Straight from [Part B of the concept doc](../01-ai-life-concierge.md#part-b--architecture-sketch):
 
 1. **Messaging core stays dumb and encrypted** → `MessageTransport`. The app is
-   written against this protocol; the slice ships a `LocalTransport` loopback,
-   and the production Signal-protocol/E2EE transport drops in without the UI
-   knowing. The seam is the deliverable.
+   written against this protocol. Beyond the `LocalTransport` loopback, the slice
+   now models the real shape: a `MessageCipher` boundary (plaintext crosses it on
+   the device only), an untrusted `MessageRelay` that fans out **`SealedEnvelope`s
+   and never decrypts**, and a `RelayTransport` that seals on the way out and opens
+   on the way in. `RotatingXORCipher` is an explicit *insecure placeholder* where
+   the Signal-style double ratchet lands — the boundary and routing are real, the
+   crypto primitive is the one piece left to swap. Tests drive two devices through
+   one relay and assert the relay only ever held ciphertext.
 2. **The agent is opt-in and the tool layer is the product** → `AgentService`.
    The model only does the natural-language parse (who + how much); the dollar
    math lives in `SplitMath` in trusted code and is **never** delegated to the
@@ -51,7 +58,7 @@ Straight from [Part B of the concept doc](../01-ai-life-concierge.md#part-b--arc
 
 | Piece | This slice | Production |
 |-------|-----------|------------|
-| Messaging transport | in-memory loopback | Signal double-ratchet over an encrypted relay |
+| Messaging transport | `RelayTransport` over an `InProcessRelay`, `RotatingXORCipher` placeholder | same shape, real relay + Signal double-ratchet cipher |
 | Bill parsing | deterministic `StubAgent`, or `ClaudeAgent` → backend | `ClaudeAgent` → your agent service |
 | Money math | `SplitMath` (exact cents, on-device) | same — trusted code, both ends |
 | Idempotency | in-memory `SplitLedger` | durable ledger keyed by idempotency key |
