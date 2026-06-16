@@ -34,7 +34,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
@@ -813,7 +813,7 @@ let trackingMap=null,driverMarker=null,clientMarker=null,_trackingUnsub=null;
 
 function initMap(){
   const el=document.getElementById('map');
-  if(!el)return;
+  if(!el||typeof L==='undefined')return;
   if(mapInstance){mapInstance.remove();mapInstance=null;mapTileLayer=null;}
   const dark=state.theme!=='light';
   const tileUrl=dark
@@ -882,7 +882,7 @@ async function lookupFlight(flightNum){
 
 function initTrackingMap(){
   const el=document.getElementById('tracking-map');
-  if(!el)return;
+  if(!el||typeof L==='undefined')return;
   if(trackingMap){trackingMap.remove();trackingMap=null;driverMarker=null;}
   if(_trackingUnsub){_trackingUnsub();_trackingUnsub=null;}
   const dark=state.theme!=='light';
@@ -4779,7 +4779,7 @@ if(FIREBASE_ENABLED){
 // ── Embedded live tracking screen ──────────────────────────────────────────
 function initTrackScreen(){
   const el=document.getElementById('track-map');
-  if(!el)return;
+  if(!el||typeof L==='undefined')return;
   // Clean up any previous session
   if(state._trackUnsub){state._trackUnsub();state._trackUnsub=null;}
   if(state._trackSimInterval){clearInterval(state._trackSimInterval);state._trackSimInterval=null;}
