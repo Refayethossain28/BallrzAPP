@@ -5,12 +5,20 @@ trading-app build. Full write-ups live in [`concepts/`](./concepts/).
 
 ## ▶️ Live demos
 
-Hosted on GitHub Pages — open on desktop or mobile, no install:
+Live on GitHub Pages — open on desktop or mobile, no install needed:
 
 - **[Landing page](https://refayethossain28.github.io/BallrzAPP/)** — links to everything below
 - **[Concierge split](https://refayethossain28.github.io/BallrzAPP/concepts/prototypes/concierge-split/)** (Concept 1) — chat → agent proposes a bill split → you confirm → idempotent payment requests. Runs offline in stub mode; the "Live" Claude toggle needs the local proxy.
-- **[Flow game](https://refayethossain28.github.io/BallrzAPP/concepts/prototypes/flow-game/)** (Concept 2) — on-device skill model + offline level pool + flow-band difficulty selection, with the engine internals surfaced.
+- **[Flow game](https://refayethossain28.github.io/BallrzAPP/concepts/prototypes/flow-game/)** (Concept 2) — adaptive tap arcade: on-device skill model + offline level pool keep every round on the edge. Lives, combos, bonuses, 2-player duel, sound, and an **installable PWA**.
 - **[FX Signal Pro](https://refayethossain28.github.io/BallrzAPP/trading-app/fx-signal-pro.html)** — single-file currency-pair trading signal app.
+
+### 📲 Install Flow as an app
+
+The Flow game is a PWA — add it to your home screen for a full-screen, offline,
+native-feeling launch:
+
+- **iOS (Safari):** open the [Flow game](https://refayethossain28.github.io/BallrzAPP/concepts/prototypes/flow-game/) → **Share** → **Add to Home Screen**.
+- **Android (Chrome):** open it → menu **⋮** → **Install app** / **Add to Home screen**.
 
 ## Concepts
 
