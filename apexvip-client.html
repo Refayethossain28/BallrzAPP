@@ -5354,6 +5354,14 @@ setTimeout(() => {
   }
   // Mark body so safe-area padding applies when running installed
   if(window.navigator.standalone === true) document.body.classList.add('ios-pwa');
+  // Register the service worker unconditionally so offline shell caching + the
+  // offline booking queue work whether or not Firebase push is enabled. The
+  // FCM token registration later reuses this same registration (idempotent).
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', ()=>{
+      navigator.serviceWorker.register('firebase-messaging-sw.js').catch(()=>{});
+    });
+  }
 })();
 </script>
 </body>
