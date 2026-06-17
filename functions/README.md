@@ -6,6 +6,8 @@ Functions in this codebase:
 - **`processSquarePayment`** — authorize (pre-auth) a card payment via **Square**.
 - **`captureSquarePayment`** — capture the authorized payment on trip completion.
 - **`refundSquarePayment`** — full/partial refund per the cancellation policy.
+- **`onBookingWrite`** — Firestore trigger that emails (SendGrid) and texts
+  (Twilio) the client as a booking moves through its lifecycle.
 
 All hold their provider secret server-side so the browser never sees it. See
 [`docs/apexvip-payments.md`](../docs/apexvip-payments.md) for the payment flow.
@@ -17,7 +19,7 @@ other functions (`parseBookingIntent`, `checkFlightStatus`, …), which live els
 **Always scope the deploy** so you don't touch the others:
 
 ```sh
-firebase deploy --only functions:getHotelRates,functions:processSquarePayment,functions:captureSquarePayment,functions:refundSquarePayment
+firebase deploy --only functions:getHotelRates,functions:processSquarePayment,functions:captureSquarePayment,functions:refundSquarePayment,functions:onBookingWrite
 ```
 
 A bare `firebase deploy` from here could try to delete functions it doesn't see.
@@ -28,6 +30,16 @@ firebase functions:secrets:set SQUARE_ACCESS_TOKEN
 # Non-secret config (functions/.env): SQUARE_ENV=production|sandbox, SQUARE_LOCATION_ID=...
 ```
 Default is the Square **sandbox**; set `SQUARE_ENV=production` for live charges.
+
+## Notifications setup (onBookingWrite)
+```sh
+firebase functions:secrets:set SENDGRID_API_KEY
+firebase functions:secrets:set TWILIO_ACCOUNT_SID
+firebase functions:secrets:set TWILIO_AUTH_TOKEN
+# Non-secret config (functions/.env): NOTIFY_FROM_EMAIL, NOTIFY_FROM_NAME, TWILIO_FROM_NUMBER
+```
+Each channel is optional — if a provider's secret/number is unset, that channel is
+skipped. Emails need a SendGrid verified sender; SMS needs a Twilio number.
 
 ## Setup
 

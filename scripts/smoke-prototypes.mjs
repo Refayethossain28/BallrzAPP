@@ -110,12 +110,37 @@ function makeSandbox() {
   return sandbox;
 }
 
+/* ---- local (same-repo) <script src> files, so the page's own modules
+       (e.g. apexvip-core.js, apexvip-lib.js) are available to inline code.
+       Remote/CDN and data: srcs are skipped — we can't fetch them. ---- */
+function localScriptSrcs(html) {
+  const srcs = [];
+  const re = /<script\b([^>]*)\bsrc\s*=\s*["']([^"']+)["']([^>]*)>/gi;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    const attrs = (m[1] || '') + (m[3] || '');
+    if (/type\s*=\s*["']?module/i.test(attrs)) continue;
+    const src = m[2];
+    if (/^(https?:)?\/\//i.test(src) || /^data:/i.test(src)) continue;
+    srcs.push(src);
+  }
+  return srcs;
+}
+
 /* ---- run one file: each inline block in a shared context, like a browser ---- */
 function smokeFile(path) {
   const html = readFileSync(path, 'utf8');
   const blocks = inlineScripts(html);
   if (blocks.length === 0) return { path, status: 'skip', reason: 'no inline script' };
   const context = vm.createContext(makeSandbox());
+  // Load the page's own local scripts first (best-effort). A missing/failing
+  // local dependency is left to surface as the inline ReferenceError it causes.
+  const baseDir = dirname(path);
+  for (const src of localScriptSrcs(html)) {
+    try {
+      vm.runInContext(readFileSync(join(baseDir, src), 'utf8'), context, { filename: join(baseDir, src), timeout: 5000 });
+    } catch { /* best-effort: ignore */ }
+  }
   for (let i = 0; i < blocks.length; i++) {
     try {
       vm.runInContext(blocks[i], context, { filename: `${path}#script${i + 1}`, timeout: 5000 });
