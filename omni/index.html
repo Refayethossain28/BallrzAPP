@@ -258,6 +258,8 @@
   </div>
   <div id="toast" class="toast"></div>
 
+<script src="../helix/helix.js"></script>
+<script src="../helix/helix-bridge.js"></script>
 <script>
 (function(){
 'use strict';
@@ -696,6 +698,10 @@ function pmAdvance(completed){
 }
 
 /* ============================================================ HABITS */
+// Helix: learns each habit's follow-through (done today = win, un-done = loss)
+// and surfaces the one you most often let slip, so you tackle it first. Guarded
+// and evidence-gated — the nudge only appears once a habit is genuinely lagging.
+function omniHabitEngine(){ try{ var HB=window.HelixBridge; if(HB&&HB.available()) return HB.engine('omni-habits',{decay:0.9}); }catch(e){} return null; }
 function weekDates(){ var d=new Date(); var day=(d.getDay()+6)%7; var mon=new Date(d); mon.setDate(d.getDate()-day); var out=[]; for(var i=0;i<7;i++){ var x=new Date(mon); x.setDate(mon.getDate()+i); out.push(x); } return out; }
 function streak(log){ var n=0; var d=new Date(); for(var i=0;i<400;i++){ if(log[todayKey(d)]){ n++; d.setDate(d.getDate()-1); } else { if(i===0){ d.setDate(d.getDate()-1); continue; } break; } } return n; }
 def('habits', { label:'Habits', icon:'🔥', group:'Plan', tag:'Streaks & routines', body:function(){
@@ -707,12 +713,27 @@ def('habits', { label:'Habits', icon:'🔥', group:'Plan', tag:'Streaks & routin
     return '<div class="hgrid"><div><div style="font-weight:600">'+esc(h.name)+'</div><div class="faint" style="font-size:12.5px">'+(s>0?'🔥 '+plural(s,'day')+' streak':'No streak yet')+'</div></div>'+
       '<div class="row"><div class="days">'+days+'</div><button class="iconbtn" data-act="habit.del" data-id="'+h.id+'">✕</button></div></div>';
   }).join('');
-  return '<h1 class="page">Habits</h1><p class="page-sub">Small things, every day. Tap a square to mark it done.</p>'+
-    '<div class="card"><form data-submit="habit.add"><div class="row"><input class="in" name="h" placeholder="New habit — e.g. Read 20 min" autocomplete="off"><button class="btn pri" type="submit">Add</button></div></form></div>'+
+  // Helix nudge: the most at-risk habit not yet done today (lowest learned
+  // follow-through, and only if it's actually lagging below 50/50).
+  var nudge='';
+  var eng=omniHabitEngine();
+  if(eng && habits.length){
+    var undone=habits.filter(function(h){ return !((h.log||{})[tk]); });
+    if(undone.length){
+      var pick=undone.slice().sort(function(a,b){ var sa=eng.stats(a.id),sb=eng.stats(b.id); return (sa?sa.mean:0.5)-(sb?sb.mean:0.5); })[0];
+      var sp=eng.stats(pick.id);
+      if(sp && sp.mean<0.5) nudge='<div class="card" style="margin-top:14px;border-left:3px solid var(--bad,#e5484d)"><strong>🎯 Focus today</strong><div class="faint" style="font-size:13px;margin-top:4px">'+esc(pick.name)+' — the habit you most often let slip. Knock it out first.</div></div>';
+    }
+  }
+  return '<h1 class="page">Habits</h1><p class="page-sub">Small things, every day. Tap a square to mark it done.</p>'+nudge+
+    '<div class="card" style="margin-top:14px"><form data-submit="habit.add"><div class="row"><input class="in" name="h" placeholder="New habit — e.g. Read 20 min" autocomplete="off"><button class="btn pri" type="submit">Add</button></div></form></div>'+
     (habits.length?'<div class="card" style="margin-top:14px">'+rows+'</div>':'<div class="empty"><div class="big">🔥</div>Add a habit to start a streak.</div>');
 }});
 on('habit.add', function(el){ var inp=$('input[name=h]',el); var v=(inp&&inp.value||'').trim(); if(!v) return; var h=DB.get('habits',[]); h.push({id:uid(),name:v,log:{}}); DB.set('habits',h); rerender(); });
-on('habit.toggle', function(el){ var id=el.getAttribute('data-id'), k=el.getAttribute('data-k'); var h=DB.get('habits',[]); h.forEach(function(x){ if(x.id===id){ x.log=x.log||{}; if(x.log[k]) delete x.log[k]; else x.log[k]=1; } }); DB.set('habits',h); rerender(); });
+on('habit.toggle', function(el){ var id=el.getAttribute('data-id'), k=el.getAttribute('data-k'); var h=DB.get('habits',[]); var nowOn=false; h.forEach(function(x){ if(x.id===id){ x.log=x.log||{}; if(x.log[k]){ delete x.log[k]; nowOn=false; } else { x.log[k]=1; nowOn=true; } } }); DB.set('habits',h);
+  // Helix: marking done is a win, un-marking a loss — feeds the at-risk nudge.
+  try{ var HB=window.HelixBridge; if(HB&&HB.available()) HB.reward('omni-habits', id, nowOn?1:0); }catch(e){}
+  rerender(); });
 on('habit.del', function(el){ var id=el.getAttribute('data-id'); DB.set('habits', DB.get('habits',[]).filter(function(x){return x.id!==id;})); rerender(); });
 
 /* ============================================================ MONEY */

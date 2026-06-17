@@ -5,8 +5,40 @@
 > starves an eligible option.
 
 - **`helix.js`** — the engine (UMD: `window.Helix` in the browser, `require()`/`vm` in Node). Zero dependencies, fully deterministic.
+- **`helix-bridge.js`** — the glue every app uses: a named, `localStorage`-persisted engine in one call (`window.HelixBridge`).
 - **`demo.html`** — an interactive, in-browser demo. Open it and watch the engine learn.
-- **`../scripts/test-helix-logic.mjs`** — 23 unit tests (`npm run test:helix`).
+- **`../scripts/test-helix-logic.mjs`** + **`../scripts/test-helix-bridge.mjs`** — 31 unit tests (`npm run test:helix`).
+
+## Wired into every app
+
+Helix is live in all five apps via the bridge. Each integration is **additive and
+fully guarded** — if `helix.js` fails to load, `localStorage` is unavailable, or a
+snapshot is corrupt, the app behaves exactly as before. Every one is also a
+**cold-start no-op**: the uniform prior means zero behavior change until there's
+real evidence, then it gently adapts.
+
+| App | What Helix learns | Decision it shapes | Feedback signal | Store key |
+|-----|-------------------|--------------------|-----------------|-----------|
+| **cusp** | follow-through by task *load* | tilts the "what now" ranking | done = win, skip = loss | `cusp-follow` |
+| **apexvip** (client) | vehicle preference | reorders the vehicle picker | chosen = win, other shown = loss | `apex-vehicle` |
+| **apexvip** (driver) | which job *types* you accept | which job to offer first (+ fairness floor) | accept = win, decline/timeout = loss | `apex-driver-offer` |
+| **rentmatch** | interest by bedroom bucket | floats those homes up the feed | enquiry = win | `rentmatch-interest` |
+| **trading-app** | per-indicator reliability | scales each indicator's ensemble weight | Won/Lost button on a signal | `fx-indicators` |
+| **omni** | habit follow-through | surfaces your most at-risk habit | marked done = win, un-done = loss | `omni-habits` |
+
+### The bridge API
+
+```js
+var e = HelixBridge.engine('apex-vehicle', { decay: 0.97 }); // get-or-create, auto-restored
+e.arm('sClass').arm('vClass');
+var pick = e.best();
+HelixBridge.reward('apex-vehicle', pick, 1); // learn + auto-persist in one call
+HelixBridge.available();  // is Helix loaded?
+HelixBridge.reset(name);  // forget engine + stored snapshot
+```
+
+State persists under `localStorage["helix.<name>"]`, so learning survives reloads.
+Load order in a page is `helix.js` then `helix-bridge.js`.
 
 ---
 

@@ -267,6 +267,7 @@
           <span id="sig-atr-note"></span>
           <span>1× / 1.5× ATR</span>
         </div>
+        <div id="sig-feedback" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px"></div>
       </div>
     </div>
 
@@ -335,6 +336,8 @@
 
 </main>
 
+<script src="../helix/helix.js"></script>
+<script src="../helix/helix-bridge.js"></script>
 <script>
 // ─── Constants ───────────────────────────────────────────────────────────────
 const PAIRS = ['EUR/USD','GBP/USD','USD/JPY','USD/CHF','AUD/USD','USD/CAD','NZD/USD','EUR/GBP','EUR/JPY','GBP/JPY','EUR/CHF','AUD/JPY','XAU/USD'];
@@ -481,6 +484,31 @@ function computeIndicators(data) {
   };
 }
 
+// Helix: each indicator's vote is scaled by its learned reliability. The engine
+// updates these from real trade outcomes (the Won/Lost control on a signal), so
+// the ensemble leans on whatever is actually working in the current regime.
+// Cold-start is a no-op: the uniform prior (mean 0.5) gives ×1.0, i.e. the
+// original fixed weights. Fully guarded — no Helix ⇒ identical behavior.
+function helixW(name, w) {
+  try {
+    const HB=window.HelixBridge;
+    if(HB&&HB.available()){ const s=HB.engine('fx-indicators',{decay:0.97}).stats(name); return w*(0.5+(s?s.mean:0.5)); }
+  } catch(e){}
+  return w;
+}
+// Grade the most recent signal: reward every indicator that voted in its
+// direction (win) or down-weight them (loss). Wired to the Won/Lost buttons.
+function helixGradeSignal(win){
+  try{
+    const HB=window.HelixBridge, sig=window._fxLastSignal;
+    if(HB&&HB.available()&&sig&&(sig.type==='BUY'||sig.type==='SELL')){
+      sig.scores.forEach(function(s){ if(s.w>0 && s.sig===sig.type) HB.reward('fx-indicators', s.n, win?1:0); });
+      const fb=document.getElementById('sig-feedback');
+      if(fb) fb.innerHTML='<span style="font-size:12px;color:var(--dim)">Logged — indicator reliability updated.</span>';
+    }
+  }catch(e){}
+}
+
 function generateSignal(ind, price, pair) {
   const scores=[];
   let buy=0,sell=0;
@@ -489,29 +517,29 @@ function generateSignal(ind, price, pair) {
   const rsiW=ind.rsi<25||ind.rsi>75?25:15;
   scores.push({n:'RSI (14)',sig:rsiSig,w:rsiW,v:ind.rsi.toFixed(1),
     d:rsiSig==='BUY'?'Oversold — bullish reversal likely':rsiSig==='SELL'?'Overbought — bearish reversal likely':'Neutral territory'});
-  if(rsiSig==='BUY')buy+=rsiW; else if(rsiSig==='SELL')sell+=rsiW;
+  { const w=helixW('RSI (14)',rsiW); if(rsiSig==='BUY')buy+=w; else if(rsiSig==='SELL')sell+=w; }
 
   const macdSig=ind.macd.hist>0&&ind.macd.macd>ind.macd.signal?'BUY':ind.macd.hist<0&&ind.macd.macd<ind.macd.signal?'SELL':'NEUTRAL';
   scores.push({n:'MACD',sig:macdSig,w:20,v:`${ind.macd.macd.toFixed(5)}`,
     d:macdSig==='BUY'?'MACD above signal line — bullish momentum':macdSig==='SELL'?'MACD below signal line — bearish momentum':'MACD converging with signal'});
-  if(macdSig==='BUY')buy+=20; else if(macdSig==='SELL')sell+=20;
+  { const w=helixW('MACD',20); if(macdSig==='BUY')buy+=w; else if(macdSig==='SELL')sell+=w; }
 
   const maSig=ind.ema20>ind.ema50&&ind.sma20>ind.sma50?'BUY':ind.ema20<ind.ema50&&ind.sma20<ind.sma50?'SELL':'NEUTRAL';
   scores.push({n:'MA Cross (20/50)',sig:maSig,w:20,v:`EMA20: ${fmt(pair,ind.ema20)}`,
     d:maSig==='BUY'?'Short MA above long MA — uptrend':maSig==='SELL'?'Short MA below long MA — downtrend':'Mixed MA alignment'});
-  if(maSig==='BUY')buy+=20; else if(maSig==='SELL')sell+=20;
+  { const w=helixW('MA Cross (20/50)',20); if(maSig==='BUY')buy+=w; else if(maSig==='SELL')sell+=w; }
 
   const bbRange=ind.bb.u-ind.bb.l;
   const bbPos=bbRange===0?0.5:(price-ind.bb.l)/bbRange;
   const bbSig=bbPos<0.2?'BUY':bbPos>0.8?'SELL':'NEUTRAL';
   scores.push({n:'Bollinger Bands',sig:bbSig,w:15,v:`${(bbPos*100).toFixed(0)}% of band`,
     d:bbSig==='BUY'?'Price near lower band — potential bounce':bbSig==='SELL'?'Price near upper band — potential reversal':'Price within normal range'});
-  if(bbSig==='BUY')buy+=15; else if(bbSig==='SELL')sell+=15;
+  { const w=helixW('Bollinger Bands',15); if(bbSig==='BUY')buy+=w; else if(bbSig==='SELL')sell+=w; }
 
   const stSig=ind.stoch.k<25&&ind.stoch.d<25?'BUY':ind.stoch.k>75&&ind.stoch.d>75?'SELL':'NEUTRAL';
   scores.push({n:'Stochastic (14,3)',sig:stSig,w:15,v:`%K: ${ind.stoch.k.toFixed(1)}`,
     d:stSig==='BUY'?'Stochastic in oversold zone':stSig==='SELL'?'Stochastic in overbought zone':'Stochastic in neutral range'});
-  if(stSig==='BUY')buy+=15; else if(stSig==='SELL')sell+=15;
+  { const w=helixW('Stochastic (14,3)',15); if(stSig==='BUY')buy+=w; else if(stSig==='SELL')sell+=w; }
 
   const trendStrong=ind.adx>25;
   scores.push({n:'ADX (Trend Strength)',sig:'NEUTRAL',w:0,v:ind.adx.toFixed(1),
@@ -661,6 +689,18 @@ function renderSignal(sig, pair) {
       <span class="level-price ${l.cls}">${fmt(pair,l.price)}</span>
     </div>
   `).join('');
+
+  // Helix feedback control: let the user grade the trade so the ensemble learns.
+  window._fxLastSignal=sig;
+  const fb=document.getElementById('sig-feedback');
+  if(fb){
+    const btn='padding:7px 14px;border-radius:8px;border:1px solid var(--line,#2a3142);background:transparent;color:inherit;font-size:13px;cursor:pointer';
+    fb.innerHTML=(sig.type==='BUY'||sig.type==='SELL')
+      ? `<span style="font-size:12px;color:var(--dim)">Trade outcome?</span>`
+        + `<button style="${btn}" onclick="helixGradeSignal(true)">✓ Won</button>`
+        + `<button style="${btn}" onclick="helixGradeSignal(false)">✗ Lost</button>`
+      : '';
+  }
 }
 
 function renderIndicators(scores) {

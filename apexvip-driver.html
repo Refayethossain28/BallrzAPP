@@ -30,6 +30,8 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
 <script src="firebase.js"></script>
 <script src="apexvip-core.js"></script>
+<script src="helix/helix.js"></script>
+<script src="helix/helix-bridge.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html{height:-webkit-fill-available}
@@ -478,7 +480,7 @@ function setupDriverListeners(uid){
       }
       // Ring the offer for online, idle drivers
       if(open.length&&S.online&&!S.jobOverlay&&!S.activeJob){
-        S._offeredJob=open[0];
+        S._offeredJob=helixPickOffer(open);
         S.jobOverlay=true;S.countdown=30;startCountdown();render();
       }
     },()=>{});
@@ -734,10 +736,30 @@ function startCountdown(){
   },1000);
 }
 
+// Helix: learn which job *types* this driver actually accepts and offer those
+// first (with a fairness floor so every type still gets shown). Falls back to
+// open[0] if Helix is unavailable — fully guarded, never throws into the app.
+function helixPickOffer(open){
+  try{
+    var HB=window.HelixBridge;
+    if(HB&&HB.available()&&open&&open.length>1){
+      var e=HB.engine('apex-driver-offer',{decay:0.95,starvationBudget:20});
+      var types=[]; open.forEach(function(j){ if(types.indexOf(j.type)<0){ types.push(j.type); e.arm(j.type); } });
+      var order=e.rank(types,types.length);
+      for(var i=0;i<order.length;i++){ var m=open.find(function(j){return j.type===order[i];}); if(m) return m; }
+    }
+  }catch(e){}
+  return open[0];
+}
+function helixLearnOffer(win){
+  try{ var HB=window.HelixBridge; var j=S&&S._offeredJob; if(HB&&HB.available()&&j&&j.type){ HB.reward('apex-driver-offer', j.type, win?1:0); } }catch(e){}
+}
+
 async function acceptJob(){
   haptic('success');
   clearInterval(S._cdTimer);
   const offered=S._offeredJob||JOBS[0];
+  helixLearnOffer(true); // the driver accepted this job type — reinforce it
   // Broadcast job: race against other drivers — transaction decides the winner
   if(FIREBASE_ENABLED&&offered?._broadcast){
     const won=await claimBroadcastJob(offered);
@@ -767,6 +789,7 @@ async function acceptJob(){
 
 function declineJob(){
   clearInterval(S._cdTimer);
+  helixLearnOffer(false); // declined/timed out on this job type — down-weight it
   S.jobOverlay=false;
   track('job_declined',{src:'driver'});
   render();
@@ -786,7 +809,7 @@ function refreshJobs(){
     S._openJobs=open;
     showToast(open.length?`${open.length} job${open.length!==1?'s':''} available`:'No open jobs right now',open.length?'success':'info');
     if(open.length&&S.online&&!S.jobOverlay&&!S.activeJob){
-      S._offeredJob=open[0];S.jobOverlay=true;S.countdown=30;startCountdown();
+      S._offeredJob=helixPickOffer(open);S.jobOverlay=true;S.countdown=30;startCountdown();
     }
     render();
   }).catch(e=>{showToast('Could not reach server','error');render();});

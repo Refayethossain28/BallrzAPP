@@ -224,6 +224,8 @@
 <div class="sheet-bg" id="sheetBg"><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast"></div>
 
+<script src="helix/helix.js"></script>
+<script src="helix/helix-bridge.js"></script>
 <script>
 /* ============================================================================
    Apex — UK lettings marketplace prototype
@@ -389,9 +391,29 @@ const STAGE_LABEL = { enquiry: 'Enquiry', viewing: 'Viewing', agreed: 'Terms agr
 function dealFor(listingId) { return S.deals.find((d) => d.listingId === listingId); }
 function getDeal(id) { return S.deals.find((d) => d.id === id); }
 
+// Helix: "interest" is learned per bedroom-count bucket — it generalizes across
+// listings, so enquiring about 2-beds floats other 2-beds up. All guarded.
+function listingBucket(l) { return (l.beds === 0 ? 'studio' : l.beds + 'bed'); }
+function helixSortFeed(listings) {
+  try {
+    const HB = window.HelixBridge;
+    if (!HB || !HB.available() || listings.length < 2) return;
+    const e = HB.engine('rentmatch-interest', { decay: 0.98 });
+    const m = (l) => { const s = e.stats(listingBucket(l)); return s ? s.mean : 0.5; };
+    listings.sort((a, b) => m(b) - m(a)); // higher learned interest first
+  } catch (e) {}
+}
+function helixLearnInterest(listingId) {
+  try {
+    const HB = window.HelixBridge; const l = S.listings.find((x) => x.id === listingId);
+    if (HB && HB.available() && l) HB.reward('rentmatch-interest', listingBucket(l), 1);
+  } catch (e) {}
+}
+
 function createDeal(listingId, firstMsg) {
   let d = dealFor(listingId);
   if (d) return d;
+  helixLearnInterest(listingId); // enquiry = strong interest signal for this kind of home
   d = {
     id: uid(), listingId, createdAt: now(), stage: 'enquiry',
     messages: [], viewing: null,
@@ -490,6 +512,9 @@ function browseScreen() {
     (!filters.city || l.city === filters.city) &&
     (filters.beds === '' || (filters.beds === '0' ? l.beds === 0 : l.beds >= +filters.beds)) &&
     (!filters.max || l.rentPence <= +filters.max * 100));
+  // Helix: float the kinds of homes you actually enquire about (learned by
+  // bedroom-count bucket) to the top. Stable + guarded: a no-op until you engage.
+  helixSortFeed(filtered);
   return `
     <h2 class="screen-t">Find your next home</h2>
     <p class="sub">${filtered.length} propert${filtered.length === 1 ? 'y' : 'ies'} available to rent</p>

@@ -246,10 +246,28 @@
 <div class="toast" id="toast"></div>
 
 <script src="engine.js"></script>
+<script src="../helix/helix.js"></script>
+<script src="../helix/helix-bridge.js"></script>
 <script>
 (function(){
   "use strict";
   var E = window.Cusp;
+
+  /* ---------- Helix: learned follow-through ---------- */
+  // The Salience Engine decides what *should* matter; Helix learns what you
+  // actually act on. Arms are task "load" (light/medium/deep); a completion is a
+  // win, a skip is a loss. It then gently tilts the ranking toward the kinds of
+  // tasks you really follow through on. Cold-start is a no-op: the uniform prior
+  // gives mean 0.5 → multiplier 1.0, so the Salience ranking is untouched until
+  // there's real evidence. Fully guarded — if Helix didn't load, nothing changes.
+  var HB = (typeof window !== "undefined") ? window.HelixBridge : null;
+  var FOLLOW = (HB && HB.available()) ? HB.engine("cusp-follow", { decay: 0.97 }) : null;
+  function followAdj(load){
+    if(!FOLLOW) return 1;
+    var b = FOLLOW.stats(load);
+    return 0.8 + 0.4 * (b ? b.mean : 0.5); // ∈ [0.8,1.2]; exactly 1.0 at the prior
+  }
+  function learnFollow(load, win){ if(HB && FOLLOW) HB.reward("cusp-follow", load, win ? 1 : 0); }
   var $ = function(s,r){return (r||document).querySelector(s);};
   var KEY = "cusp.v1";
 
@@ -336,6 +354,12 @@
     $("#resetEnergy").hidden = state.energyOverride==null;
 
     var r = E.rank(state.tasks, ctx());
+    if(FOLLOW && r.ranked.length > 1){
+      // Re-rank by salience tilted toward what you actually follow through on.
+      r.ranked = r.ranked.slice().sort(function(a,b){
+        return (b.salience * followAdj(b.task.load)) - (a.salience * followAdj(a.task.load));
+      });
+    }
     renderAnswer(r.ranked);
     renderPlan(r.ranked);
     renderQueue(r.ranked);
@@ -466,6 +490,7 @@
     var t=find(id); if(!t) return;
     t.done=true; t.doneAt=Date.now();
     state.lastProject = t.project||null;   // momentum carries to the next pick
+    learnFollow(t.load, true);             // Helix: you followed through on this kind of task
     save(); toast("Done — momentum kept ✓"); if(focusId===id) stopFocus(); render();
   }
   function skip(id){
@@ -474,6 +499,7 @@
     // engine surfaces something else now, and bump the skip count (feeds rot detection).
     t.skips=(t.skips||0)+1; t.lastSeen=Date.now();
     t.snoozeUntil=Date.now()+Math.max(15,state.windowMin)*60000;
+    learnFollow(t.load, false);            // Helix: you bounced off this kind of task
     save(); toast("Skipped — surfacing the next pick"); render();
   }
   function drop(id){

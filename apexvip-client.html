@@ -45,6 +45,8 @@
 <script src="firebase.js"></script>
 <script src="apexvip-core.js"></script>
 <script src="apexvip-lib.js"></script>
+<script src="helix/helix.js"></script>
+<script src="helix/helix-bridge.js"></script>
 <style>
 /* ── Design tokens ─────────────────────────────────────────────────── */
 body{
@@ -2915,6 +2917,18 @@ home: () => {
     {id:'sClass',name:'S-Class',full:'Mercedes S-Class',sub:'Business Sedan · Up to 3 passengers',price:sp.s,badge:'EXECUTIVE',features:['WiFi','Water','Charger','Meet & Greet'],img:'vehicles/s-class.jpg'},
     {id:'vClass',name:'V-Class',full:'Mercedes V-Class',sub:'Business Van · Up to 7 passengers',price:sp.v,badge:'BUSINESS',features:['WiFi','Water','Charger','Child Seat'],img:'vehicles/v-class.jpg'}
   ];
+  // Helix: surface the vehicle this client tends to pick first (learned from past
+  // choices). Guarded + stable-sorted, so it's a no-op until there's real history.
+  try {
+    const HB = window.HelixBridge;
+    if (HB && HB.available()) {
+      const ve = HB.engine('apex-vehicle', { decay: 0.97 });
+      vehicles.sort((a,b)=>{
+        const sa = ve.stats(a.id), sb = ve.stats(b.id);
+        return ((sb?sb.mean:0.5) - (sa?sa.mean:0.5));
+      });
+    }
+  } catch(e){}
   // Loading/route state
   const isLoading = needsRoute && !bk._route && !bk._routeErr;
   return `
@@ -5439,7 +5453,11 @@ function saveDay(){
   resetConcierge();
   go('vehicle-select');
 }
-function selectVehicle(id,price,name){state.booking.vehicleId=id;state.booking.price=price;state.booking.vehicle=name;track('vehicle_selected',{vehicle:name,price,src:'client'});render();}
+function selectVehicle(id,price,name){state.booking.vehicleId=id;state.booking.price=price;state.booking.vehicle=name;track('vehicle_selected',{vehicle:name,price,src:'client'});
+  // Helix: the chosen vehicle is a win, the alternative shown is a loss — over
+  // time this learns the client's preference and reorders the picker. Guarded.
+  try{ var HB=window.HelixBridge; if(HB&&HB.available()){ ['sClass','vClass'].forEach(function(v){ HB.reward('apex-vehicle', v, v===id?1:0); }); } }catch(e){}
+  render();}
 function resetConcierge(){
   state._autoPlanned=false;
   state.booking.concierge={
