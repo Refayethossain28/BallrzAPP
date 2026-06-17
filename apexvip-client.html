@@ -1127,6 +1127,7 @@ let _conciergeLoading = false;
 const CONCIERGE_EXAMPLES = [
   { icon:'✈️', short:'Price to Heathrow',       text:'How much is a car to Heathrow from central London?' },
   { icon:'🍽', short:'Dinner suggestions',       text:'Recommend somewhere nice for dinner tonight in London' },
+  { icon:'🏨', short:'Find a hotel',             text:'Find me a hotel in Mayfair' },
   { icon:'🔄', short:'Weekly booking',           text:'Book me to the office every Monday at 8am' },
   { icon:'🕐', short:'Smart pickup time',        text:'My flight is BA249 at 7am tomorrow from Heathrow' },
   { icon:'👤', short:'Book for someone',         text:'Book for my client James Smith going to The Ritz' },
@@ -1144,6 +1145,33 @@ function quickSend(text) {
 function _parseIntentLocal(msg) {
   const lower = msg.toLowerCase();
   const out = { serviceType: null, pickup: null, dropoff: null, airport: null, flight: null, date: null, time: null, reply: '' };
+
+  // ── Hotel discovery — "find me a hotel in Mayfair", "where should I stay?" ──
+  // Only when the request is about staying somewhere, not a ride TO a hotel.
+  const _rideSignal = /\b(car|chauffeur|drive|driver|take me|pick (me|us) up|collect (me|us)|going to|ride|transfer|airport|terminal|flight|to the\b)\b/i;
+  const _hotelSignal = /\b(hotels?|stay(?:ing|s)?|accommodation|somewhere to stay|place to stay|where (?:to|should i|can i) stay|book(?:ing)? a room|need a room|a room for)\b/i;
+  if (_hotelSignal.test(msg) && !_rideSignal.test(msg)) {
+    const areas = [
+      [/mayfair/i, 'mayfair'], [/knightsbridge/i, 'knightsbridge'], [/piccadilly/i, 'piccadilly'],
+      [/covent\s*garden|the\s*strand|\bstrand\b/i, 'strand'], [/hyde\s*park/i, 'hyde park'],
+      [/london\s*bridge|the\s*shard|southwark/i, 'london bridge'], [/whitehall|westminster/i, 'whitehall'],
+    ];
+    let matched = HOTELS, areaLabel = '';
+    for (const [re, key] of areas) {
+      if (re.test(msg)) { const f = HOTELS.filter(h => h.area.toLowerCase().includes(key)); if (f.length) { matched = f; areaLabel = key; } break; }
+    }
+    // Budget filter — "under £800", "below 700"
+    const budget = msg.match(/(?:under|below|less than|up to|max(?:imum)?)\s*£?\s*([\d,]{3,5})/i);
+    if (budget) { const cap = parseInt(budget[1].replace(/,/g, ''), 10); const f = matched.filter(h => h.price <= cap); if (f.length) matched = f; }
+    matched = [...matched].sort((a, b) => b.rating - a.rating).slice(0, 5);
+    const where = areaLabel ? ` in ${areaLabel.replace(/\b\w/g, c => c.toUpperCase())}` : ' in London';
+    out.intent = 'hotel';
+    out.hotels = matched.length ? matched : HOTELS.slice(0, 5);
+    out.reply = matched.length
+      ? `With pleasure. Here ${matched.length === 1 ? 'is a hotel' : 'are some of London\'s finest hotels'}${where}${budget ? ` under £${budget[1]}` : ''}. Tap to book directly — and I'll have a chauffeur ready whenever you arrive.`
+      : `I couldn't find an exact match${where}, but here are London's finest stays. Tap to book, and I'll arrange your car.`;
+    return out;
+  }
 
   // Service type
   if (/airport|terminal|heathrow|gatwick|stansted|luton|city airport|arrivals|departures|flying|flight|BA\d|EK\d/i.test(msg)) {
@@ -1277,7 +1305,12 @@ async function sendConciergeMsg() {
   render();
   try {
     let d;
-    if (FIREBASE_ENABLED && fns) {
+    // Hotel discovery is handled locally (with booking links), regardless of backend.
+    const _localFirst = _parseIntentLocal(msg);
+    if (_localFirst.intent === 'hotel') {
+      await new Promise(r=>setTimeout(r,420));
+      d = _localFirst;
+    } else if (FIREBASE_ENABLED && fns) {
       try {
         const fn = fns.httpsCallable('parseBookingIntent');
         const history = CONCIERGE_MSGS.slice(0,-1)
@@ -1299,8 +1332,12 @@ async function sendConciergeMsg() {
 
     CONCIERGE_MSGS.push({ role:'assistant', content: d.reply || 'Let me arrange that for you.' });
     const intent = d.intent || 'book';
+    state._conciergeHotels = null;
 
-    if (intent === 'suggest' && d.suggestions) {
+    if (intent === 'hotel') {
+      state._conciergeHotels = d.hotels && d.hotels.length ? d.hotels : HOTELS.slice(0,5);
+
+    } else if (intent === 'suggest' && d.suggestions) {
       state._conciergeSuggestions = d.suggestions;
 
     } else if (intent === 'modify') {
@@ -1899,6 +1936,7 @@ function bottomNav(active) {
   const items = [
     {id:'home',label:'Home',svg:`<svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>`},
     {id:'trips',label:'Trips',svg:`<svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>`},
+    {id:'hotels',label:'Hotels',svg:`<svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M3 21h18M5 21V5a1 1 0 011-1h8a1 1 0 011 1v16M16 21V9a1 1 0 011-1h2a1 1 0 011 1v12M8 7h1m-1 4h1m-1 4h1m2-8h1m-1 4h1m-1 4h1"/></svg>`},
     {id:'profile',label:'Profile',svg:`<svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>`}
   ];
   return `<nav class="nav">${items.map(i=>`
@@ -3860,6 +3898,29 @@ profile: () => {
       </div>`).join('')}
     </div>` : ''}
 
+    ${state._conciergeHotels && state._conciergeHotels.length ? `
+    <div style="align-self:stretch;display:flex;flex-direction:column;gap:8px;margin-top:4px">
+      ${state._conciergeHotels.map(h=>`
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+          <div style="width:38px;height:38px;border-radius:10px;background:rgba(212,168,67,.1);border:1px solid rgba(212,168,67,.2);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${h.emoji}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:14px;font-weight:700">${h.name}</div>
+            <div style="font-size:11px;color:var(--fg-3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h.area} · ★ ${h.rating.toFixed(1)}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-size:14px;font-weight:800;color:#D4A843">£${h.price.toLocaleString()}</div>
+            <div style="font-size:9px;color:var(--fg-4)">from / night</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button onclick="state.booking.dropoff='${h.name.replace(/'/g,"\\'")}';state.booking.serviceType='airport';state._conciergeHotels=null;state._conciergeParsed={serviceType:'airport',dropoff:'${h.name.replace(/'/g,"\\'")}'};render()" style="flex:1;padding:9px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--fg-2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Car to hotel</button>
+          <button onclick="openHotelBooking('${h.url}','${h.name.replace(/'/g,"\\'")}')" style="flex:1;padding:9px;background:var(--gold);border:none;border-radius:10px;color:#0c0b09;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">Book hotel ↗</button>
+        </div>
+      </div>`).join('')}
+      <button onclick="state._conciergeHotels=null;go('hotels')" style="background:none;border:none;color:#D4A843;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;padding:6px;align-self:center">View all hotels →</button>
+    </div>` : ''}
+
     ${state._pendingModify ? `
     <div style="align-self:stretch;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-top:4px">
       <div style="font-size:12px;color:var(--fg-3);margin-bottom:10px">Confirm change to booking <strong>${state._pendingModify.ref}</strong>?</div>
@@ -4579,6 +4640,7 @@ profile: () => {
     </div>
     <div style="font-size:11px;color:var(--fg-5);text-align:center;line-height:1.6;margin-top:18px;padding:0 12px">Rates are indicative lead-in prices and shown for guidance only. Tap "Book hotel" to view live availability and reserve on the hotel's official site.</div>
   </div>
+  ${bottomNav('hotels')}
 </div>`;
 },
 
