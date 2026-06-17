@@ -28,7 +28,7 @@ export default function Layout() {
   return (
     <div className="app">
       <header className="bar">
-        <div className="logo"><span className="mk">⌂</span> Rent<b>Match</b></div>
+        <div className="logo"><span className="mk">⌂</span> <b>Apex</b></div>
         <div className="spacer" />
         <div className="roleswitch">
           <button className={role === 'renter' ? 'on' : ''} onClick={() => toggle('renter')}>Renter</button>

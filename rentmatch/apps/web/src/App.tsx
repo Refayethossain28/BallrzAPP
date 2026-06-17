@@ -19,7 +19,7 @@ const queryClient = new QueryClient({
 function Gate() {
   const { user, loading } = useAuth();
   if (loading) {
-    return <div className="centerpage"><p className="sub" style={{ textAlign: 'center' }}>Loading RentMatch…</p></div>;
+    return <div className="centerpage"><p className="sub" style={{ textAlign: 'center' }}>Loading Apex…</p></div>;
   }
   if (!user) return <SignIn />;
 

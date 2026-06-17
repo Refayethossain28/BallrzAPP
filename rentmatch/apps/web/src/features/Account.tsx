@@ -15,7 +15,7 @@ export default function Account() {
   }
 
   async function eraseData() {
-    if (!window.confirm('Erase your personal data? This redacts your name and email across RentMatch. Completed tenancy records are retained where the law requires. You will be signed out.')) return;
+    if (!window.confirm('Erase your personal data? This redacts your name and email across Apex. Completed tenancy records are retained where the law requires. You will be signed out.')) return;
     setErasing(true);
     try {
       await requestDataErasure();
@@ -47,7 +47,7 @@ export default function Account() {
       </p>
 
       <div className="notice" style={{ marginTop: 16 }}>
-        RentMatch charges landlords a one-off <b>£100</b> fee when a tenancy agreement is fully signed.
+        Apex charges landlords a one-off <b>£100</b> fee when a tenancy agreement is fully signed.
         Renters are never charged a fee (Tenant Fees Act 2019).
       </div>
 

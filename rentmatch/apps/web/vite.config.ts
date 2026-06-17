@@ -8,8 +8,8 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'RentMatch — UK lettings',
-        short_name: 'RentMatch',
+        name: 'Apex — UK lettings',
+        short_name: 'Apex',
         description: 'Landlords advertise property, renters find a home.',
         start_url: '/',
         display: 'standalone',

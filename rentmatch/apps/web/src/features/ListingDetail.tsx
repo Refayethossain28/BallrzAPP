@@ -79,7 +79,7 @@ export default function ListingDetail() {
 
       <div className="notice">
         💡 Under the Tenant Fees Act 2019, renters are only charged rent, a capped tenancy deposit and a capped
-        holding deposit. RentMatch never charges renters a fee.
+        holding deposit. Apex never charges renters a fee.
       </div>
 
       {ownListing ? (
@@ -95,7 +95,7 @@ export default function ListingDetail() {
             {l.status !== 'live' ? 'This property has been let' : busy ? 'Opening…' : 'Enquire & message landlord'}
           </button>
           <p className="faint" style={{ textAlign: 'center', fontSize: 11, marginTop: 10 }}>
-            Drafting &amp; signing the tenancy agreement arrive in M4–M5.
+            Message the landlord, arrange a viewing, agree terms, then sign the tenancy.
           </p>
         </>
       )}

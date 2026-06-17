@@ -51,7 +51,7 @@ export default function ContractView() {
 
       <div className="notice">
         This Assured Shorthold Tenancy is governed by the {a.governingAct}. Both parties must sign for it to take
-        effect. On full execution, RentMatch charges the landlord a one-off <b>{formatGBP(contract.feePence)}</b> fee.
+        effect. On full execution, Apex charges the landlord a one-off <b>{formatGBP(contract.feePence)}</b> fee.
       </div>
 
       <div style={{ background: '#0d1322', border: '1px solid var(--line)', borderRadius: 14, padding: 16, fontSize: 12.5, lineHeight: 1.6, color: '#cdd7f0' }}>
