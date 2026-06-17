@@ -61,7 +61,28 @@ reference. The full architecture is in
 - New shared helpers `bothSigned` / `awaitingFee` pinpoint the moment M5 charges
   (4 new tests → 37 kernel tests)
 
-Next: M5 — Stripe £100 fee on full execution → deal `completed`, listing `let`.
+**M5 — Stripe £100 landlord fee on full execution ✅ (headline)**
+- `createSetupIntent` saves the landlord's card; `chargePlatformFee` charges the
+  £100 **off-session** once both parties have signed, with an idempotency key of
+  the dealId so retries never double-bill
+- `completeDeal` (transactional, idempotent) marks the deal `completed`, flips the
+  listing to `let`, records the payment and posts the receipt message. Called by
+  the synchronous charge **and** by the `stripeWebhook` (durable source of truth,
+  signature-verified)
+- Web `PaymentPanel` (Stripe Elements): save card → pay → the live deal
+  subscription flips the agreement to "in force"
+
+This closes the original brief end-to-end: advertise → find → message → view →
+agree → sign → **the landlord is charged £100 and the tenancy completes**.
+
+Next: M6 compliance docs + notifications; M7 hardening, GDPR/retention, launch.
+
+### Verification status
+The shared kernel (deal state machine incl. the both-signed-**and**-fee-paid
+completion guard, compliance, money, search, contract) is unit-tested — 37
+tests, `npm test`. The web app and Cloud Functions are written against the
+Firebase + Stripe + e-sign SDKs but require `npm install`, the Firebase Emulator
+Suite and live test keys to run; they have **not** been executed in CI here.
 
 > Server-authoritativeness: contract/signature/payment now flow through Cloud
 > Functions (M3 starts this). M1's listing compliance gate and M2's enquiry/

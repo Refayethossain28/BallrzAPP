@@ -6,6 +6,7 @@ import { useAuth } from '../auth/AuthProvider';
 import { useDeal } from '../lib/hooks';
 import { fetchContract } from '../lib/db';
 import { openSigning, recordSignature } from '../lib/functions';
+import PaymentPanel from '../components/PaymentPanel';
 
 const fmtDate = (ms: number) => new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 const fmtDateTime = (ms: number) => new Date(ms).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -106,14 +107,18 @@ export default function ContractView() {
       {deal.stage === 'signing' && !fullyExecuted && deal.signed[party] != null && (
         <div className="notice">You've signed — waiting for the other party.</div>
       )}
-      {deal.stage === 'signing' && fullyExecuted && (
-        <div className="notice">
-          ✅ Both parties have signed. The landlord's <b>{formatGBP(contract.feePence)}</b> fee completes the tenancy — payment arrives in M5.
-        </div>
+      {deal.stage === 'signing' && fullyExecuted && !deal.feePaid && party === 'landlord' && (
+        <>
+          <div className="notice">✅ Both parties have signed. Pay the one-off platform fee to complete the tenancy.</div>
+          <PaymentPanel dealId={id} />
+        </>
+      )}
+      {deal.stage === 'signing' && fullyExecuted && !deal.feePaid && party === 'renter' && (
+        <div className="notice">✅ Both parties have signed. The landlord is completing the {formatGBP(contract.feePence)} platform fee.</div>
       )}
       {deal.stage === 'completed' && (
         <div className="notice" style={{ borderColor: 'rgba(54,240,166,.4)', background: 'rgba(54,240,166,.07)' }}>
-          🎉 Fully executed. The tenancy is in force.
+          🎉 Fully executed — the {formatGBP(contract.feePence)} fee is paid and the tenancy is in force.
         </div>
       )}
     </>

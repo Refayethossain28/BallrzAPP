@@ -8,9 +8,10 @@
  * deal, and appends an audit event. The e-sign (M4) and Stripe £100 fee (M5)
  * handlers below remain seams that build on this same pattern.
  */
-import { onCall, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
+import { onCall, onRequest, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import Stripe from 'stripe';
 import {
   buildTenancyAgreement, evaluateSigningCompliance, recomputeStage,
   tenancyDepositCapPence, PLATFORM_FEE_PENCE,
@@ -19,6 +20,7 @@ import {
 
 initializeApp();
 const db = getFirestore();
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? '');
 
 type StoredDeal = DealRecord & {
   listingId: string;
@@ -213,8 +215,141 @@ export const recordSignature = onCall(async (req: CallableRequest<DraftRequest>)
   return { stage: nextStage, bothSigned: fullyExecuted };
 });
 
+/* ---- M5: the £100 landlord fee on full execution ---- */
+
+async function getOrCreateCustomer(landlordId: string, email: string): Promise<string> {
+  const ref = db.doc(`users/${landlordId}`);
+  const existing = (await ref.get()).data()?.stripeCustomerId as string | undefined;
+  if (existing) return existing;
+  const customer = await stripe.customers.create({ email, metadata: { landlordId } });
+  await ref.update({ stripeCustomerId: customer.id });
+  return customer.id;
+}
+
 /**
- * M5: Stripe `payment_intent.succeeded` for the landlord fee → mark the deal
- * completed and the listing let, store the executed PDF, email receipts. — seam.
+ * Mark a deal completed once its £100 fee is captured. Idempotent and
+ * transactional, so the synchronous charge path and the Stripe webhook can both
+ * call it safely. Completing the deal also flips the listing to `let`.
  */
-// export const stripeWebhook = onRequest(...)
+async function completeDeal(dealId: string, paymentIntentId: string): Promise<void> {
+  const dealRef = db.doc(`deals/${dealId}`);
+  const didComplete = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(dealRef);
+    if (!snap.exists) return false;
+    const deal = snap.data() as StoredDeal;
+    if (deal.feePaid) return false; // already done — idempotent
+    tx.update(dealRef, {
+      feePaid: true,
+      stage: recomputeStage({ ...deal, feePaid: true }),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    tx.update(db.doc(`listings/${deal.listingId}`), { status: 'let' });
+    tx.set(
+      db.doc(`payments/${dealId}`),
+      { status: 'succeeded', stripePaymentIntentId: paymentIntentId, paidAt: FieldValue.serverTimestamp() },
+      { merge: true },
+    );
+    return true;
+  });
+  if (!didComplete) return;
+  await dealRef.collection('events').add({ type: 'completed', at: FieldValue.serverTimestamp(), paymentIntentId });
+  await dealRef.collection('messages').add({
+    senderId: 'system', senderRole: 'system',
+    text: 'The £100 platform fee was paid. The tenancy is fully executed and in force. 🎉',
+    ts: FieldValue.serverTimestamp(),
+  });
+}
+
+/** Save a landlord card for the off-session fee charge (Stripe SetupIntent). */
+export const createSetupIntent = onCall(async (req: CallableRequest) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
+  const email = (req.auth?.token.email as string | undefined) ?? '';
+  const customerId = await getOrCreateCustomer(uid, email);
+  const si = await stripe.setupIntents.create({
+    customer: customerId,
+    usage: 'off_session',
+    payment_method_types: ['card'],
+  });
+  return { clientSecret: si.client_secret };
+});
+
+/**
+ * Charge the landlord's £100 fee on full execution. Landlord-only, requires
+ * both signatures and an unpaid deal. Charges the saved card off-session with an
+ * idempotency key of the dealId so retries never double-bill. On success the
+ * deal completes immediately; the Stripe webhook reconciles durably.
+ */
+export const chargePlatformFee = onCall(async (req: CallableRequest<DraftRequest>) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
+  const dealId = req.data?.dealId;
+  if (!dealId) throw new HttpsError('invalid-argument', 'dealId is required.');
+
+  const dealRef = db.doc(`deals/${dealId}`);
+  const dealSnap = await dealRef.get();
+  if (!dealSnap.exists) throw new HttpsError('not-found', 'Deal not found.');
+  const deal = dealSnap.data() as StoredDeal;
+
+  if (deal.landlordId !== uid) throw new HttpsError('permission-denied', 'Only the landlord pays the platform fee.');
+  if (!(deal.signed?.renter != null && deal.signed?.landlord != null)) {
+    throw new HttpsError('failed-precondition', 'Both parties must sign before the fee is charged.');
+  }
+  if (deal.feePaid) throw new HttpsError('failed-precondition', 'The fee has already been paid.');
+
+  const email = (req.auth?.token.email as string | undefined) ?? '';
+  const customerId = await getOrCreateCustomer(uid, email);
+  const cards = await stripe.paymentMethods.list({ customer: customerId, type: 'card' });
+  if (cards.data.length === 0) {
+    throw new HttpsError('failed-precondition', 'Add a card before paying the £100 fee.');
+  }
+
+  const intent = await stripe.paymentIntents.create(
+    {
+      amount: PLATFORM_FEE_PENCE,
+      currency: 'gbp',
+      customer: customerId,
+      payment_method: cards.data[0].id,
+      off_session: true,
+      confirm: true,
+      description: `RentMatch platform fee — tenancy ${dealId}`,
+      metadata: { dealId, landlordId: uid },
+    },
+    { idempotencyKey: `fee_${dealId}` },
+  );
+
+  await db.doc(`payments/${dealId}`).set(
+    {
+      dealId,
+      landlordId: uid,
+      amountPence: PLATFORM_FEE_PENCE,
+      currency: 'gbp',
+      stripePaymentIntentId: intent.id,
+      status: intent.status,
+      createdAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+
+  if (intent.status === 'succeeded') await completeDeal(dealId, intent.id);
+  return { status: intent.status };
+});
+
+/** Stripe webhook — durable source of truth for fee capture. */
+export const stripeWebhook = onRequest(async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  const secret = process.env.STRIPE_WEBHOOK_SECRET ?? '';
+  let event: Stripe.Event;
+  try {
+    event = stripe.webhooks.constructEvent(req.rawBody, sig as string, secret);
+  } catch {
+    res.status(400).send('Webhook signature verification failed.');
+    return;
+  }
+  if (event.type === 'payment_intent.succeeded') {
+    const pi = event.data.object as Stripe.PaymentIntent;
+    const dealId = pi.metadata?.dealId;
+    if (dealId) await completeDeal(dealId, pi.id);
+  }
+  res.json({ received: true });
+});
