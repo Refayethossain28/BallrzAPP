@@ -585,6 +585,76 @@ body.light .ripple-host .ripple-el{background:rgba(0,0,0,.1)}
   body[data-screen="splash"] #rotate-prompt,
   body[data-screen="guide"] #rotate-prompt{display:flex!important}
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   LIQUID GLASS — translucent, refractive surfaces with a bright specular
+   rim. Layered over the base components so it propagates app-wide.
+   ════════════════════════════════════════════════════════════════════ */
+:root{
+  /* frosted glass fill + rim-light (dark theme) */
+  --lg-fill:linear-gradient(155deg,rgba(255,250,240,.10) 0%,rgba(255,250,240,.045) 55%,rgba(255,250,240,.07) 100%);
+  --lg-border:rgba(255,250,240,.16);
+  --lg-blur:saturate(180%) blur(18px);
+  --lg-shadow:inset 0 1px .5px rgba(255,255,255,.4),inset 0 0 22px rgba(255,255,255,.035),0 12px 32px -14px rgba(0,0,0,.6);
+  --lg-rim:inset 0 1px .5px rgba(255,255,255,.4);
+}
+body.light{
+  --lg-fill:linear-gradient(155deg,rgba(255,255,255,.62) 0%,rgba(255,255,255,.34) 55%,rgba(255,255,255,.5) 100%);
+  --lg-border:rgba(255,255,255,.7);
+  --lg-blur:saturate(160%) blur(16px);
+  --lg-shadow:inset 0 1px .5px rgba(255,255,255,.9),0 10px 28px -14px rgba(0,0,0,.22);
+  --lg-rim:inset 0 1px .5px rgba(255,255,255,.9);
+}
+
+.card,.svc-card,.vcard,.field,.inp-card,.ss-card,.btn-glass{
+  background:var(--lg-fill)!important;
+  border:1px solid var(--lg-border)!important;
+  box-shadow:var(--lg-shadow)!important;
+  -webkit-backdrop-filter:var(--lg-blur);backdrop-filter:var(--lg-blur);
+}
+.btn-glass{padding:17px 24px}
+.field:focus-within,.inp-card:focus-within{
+  border-color:rgba(212,175,110,.5)!important;
+  box-shadow:var(--lg-rim),0 0 0 3px rgba(212,175,110,.12)!important;
+}
+/* Selected vehicle keeps its gold rim on top of the glass */
+.vcard.sel{
+  border-color:var(--gold)!important;
+  box-shadow:var(--lg-rim),0 0 0 1px rgba(212,175,110,.2),var(--gold-glow)!important;
+}
+
+/* Floating chrome: nav, sheet & top-bar pills get heavier frost + a crisp top rim */
+.nav{
+  background:rgba(8,6,3,.55)!important;
+  -webkit-backdrop-filter:saturate(180%) blur(34px);backdrop-filter:saturate(180%) blur(34px);
+  border-top:1px solid rgba(255,250,240,.16)!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.18);
+}
+body.light .nav{background:rgba(246,243,238,.6)!important;border-top:1px solid rgba(255,255,255,.8)!important}
+.sheet{
+  background:linear-gradient(175deg,rgba(14,10,6,.72) 0%,rgba(7,5,3,.82) 100%)!important;
+  -webkit-backdrop-filter:saturate(180%) blur(50px);backdrop-filter:saturate(180%) blur(50px);
+  border-top:1px solid rgba(255,250,235,.2)!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 -60px 120px rgba(0,0,0,.5)!important;
+}
+body.light .sheet{background:linear-gradient(175deg,rgba(255,255,255,.78),rgba(246,243,238,.88))!important;border-top:1px solid rgba(255,255,255,.9)!important}
+
+/* Specular sweep — a soft moving highlight that gives the glass its "liquid" life.
+   Used on the hero surfaces only, kept slow and subtle. */
+@keyframes lgGlint{0%{transform:translateX(-120%) skewX(-16deg)}100%{transform:translateX(220%) skewX(-16deg)}}
+.svc-card{position:relative}
+.svc-card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:42%;pointer-events:none;border-radius:inherit;z-index:0;
+  background:linear-gradient(to bottom,rgba(255,255,255,.12),transparent);
+}
+.svc-card>*{position:relative;z-index:1}
+@media (prefers-reduced-motion:no-preference){
+  .btn-white::before{
+    content:'';position:absolute;inset:0;pointer-events:none;
+    background:linear-gradient(105deg,transparent 38%,rgba(255,255,255,.45) 50%,transparent 62%);
+    transform:translateX(-120%) skewX(-16deg);animation:lgGlint 7s 3s ease-in-out infinite;
+  }
+}
 </style>
 </head>
 <body>
