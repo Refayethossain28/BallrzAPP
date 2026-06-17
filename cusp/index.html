@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0d18">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Cusp">
+<meta name="description" content="The app that tells you the one thing to do right now. Powered by the on-device Salience Engine.">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<title>Cusp — what to do right now</title>
+<style>
+  :root{
+    color-scheme: dark;
+    --bg:#0a0d18; --panel:#121626; --panel2:#171c30; --line:rgba(255,255,255,.09);
+    --ink:#eef1fb; --dim:#9aa6c8; --faint:#6c779b;
+    --a:#6e8bff; --b:#8b7cff; --c:#39e6b4; --warn:#ffb454; --bad:#ff6b81;
+    --field-I:#6e8bff; --field-U:#ff6b81; --field-E:#39e6b4; --field-W:#ffb454; --field-M:#8b7cff; --field-S:#9aa6c8;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:radial-gradient(1200px 760px at 72% -12%,#1b2647 0,transparent 60%),
+               radial-gradient(900px 700px at 0% 110%,#152138 0,transparent 55%), var(--bg);
+    color:var(--ink); min-height:100dvh;
+    padding:max(14px,env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));
+  }
+  .wrap{max-width:760px;margin:0 auto}
+  header{display:flex;align-items:center;gap:12px;margin:6px 2px 18px}
+  .logo{width:38px;height:38px;border-radius:11px;flex:none;
+    background:conic-gradient(from 210deg,var(--a),var(--b),var(--c),var(--a));
+    box-shadow:0 6px 20px rgba(110,139,255,.35); position:relative}
+  .logo::after{content:"";position:absolute;inset:11px;border-radius:50%;background:var(--bg)}
+  .logo::before{content:"";position:absolute;left:50%;top:7px;width:2px;height:13px;background:var(--ink);
+    transform-origin:bottom;transform:translateX(-50%) rotate(38deg);border-radius:2px;z-index:1}
+  h1{font-size:21px;letter-spacing:-.02em;margin:0;line-height:1}
+  .tag{color:var(--faint);font-size:12.5px;margin-top:3px}
+  .panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);
+    border-radius:18px;padding:16px;margin-bottom:14px}
+
+  /* ---- context bar ---- */
+  .ctx{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .ctx .field{min-width:0}
+  label.k{display:block;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin-bottom:7px}
+  .val{font-variant-numeric:tabular-nums;color:var(--ink);font-weight:600;font-size:14px}
+  input[type=range]{width:100%;accent-color:var(--a);margin:0}
+  .windowpills{display:flex;gap:6px;flex-wrap:wrap}
+  .pill{border:1px solid var(--line);background:rgba(255,255,255,.03);color:var(--dim);
+    border-radius:999px;padding:6px 11px;font-size:13px;cursor:pointer;font-variant-numeric:tabular-nums}
+  .pill.on{background:rgba(110,139,255,.18);border-color:rgba(110,139,255,.6);color:#cdd7ff}
+  .energy-row{display:flex;align-items:center;gap:10px}
+  .energy-row .val{min-width:118px;text-align:right}
+  .reset-energy{font-size:11.5px;color:var(--a);cursor:pointer;background:none;border:0;padding:0}
+
+  /* ---- the answer ---- */
+  .hero{background:
+      radial-gradient(120% 130% at 100% 0,rgba(110,139,255,.18),transparent 55%),
+      linear-gradient(180deg,var(--panel),var(--panel2));
+    border:1px solid rgba(110,139,255,.3);border-radius:20px;padding:18px;margin-bottom:14px}
+  .hero .eyebrow{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--a);font-weight:700}
+  .hero h2{margin:6px 0 2px;font-size:24px;letter-spacing:-.02em;line-height:1.18}
+  .meta{display:flex;flex-wrap:wrap;gap:7px;margin:11px 0 4px}
+  .chip{font-size:12px;color:var(--dim);background:rgba(255,255,255,.05);border:1px solid var(--line);
+    border-radius:8px;padding:3px 9px}
+  .chip.score{color:#cdd7ff;background:rgba(110,139,255,.14);border-color:rgba(110,139,255,.45);font-weight:700;font-variant-numeric:tabular-nums}
+  .reasons{margin:10px 0 0;color:var(--dim);font-size:13.5px}
+  .reasons b{color:var(--ink);font-weight:600}
+  /* why-bar: stacked field contributions */
+  .why{margin-top:14px}
+  .whybar{display:flex;height:10px;border-radius:6px;overflow:hidden;border:1px solid var(--line);background:rgba(0,0,0,.25)}
+  .whybar i{display:block;height:100%}
+  .legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
+  .legend span{font-size:11.5px;color:var(--faint);display:flex;align-items:center;gap:5px}
+  .dot{width:8px;height:8px;border-radius:2px;display:inline-block}
+  .actions{display:flex;gap:8px;margin-top:15px;flex-wrap:wrap}
+  button.act{flex:1;min-width:96px;border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--ink);
+    border-radius:12px;padding:11px 12px;font-size:14px;font-weight:600;cursor:pointer}
+  button.act.primary{background:linear-gradient(180deg,#6e8bff,#5a6fe0);border-color:transparent;color:#fff;
+    box-shadow:0 6px 18px rgba(90,111,224,.4)}
+  button.act.ghost{flex:0 0 auto;min-width:0;color:var(--dim)}
+  button.act:active{transform:translateY(1px)}
+  .empty{color:var(--faint);text-align:center;padding:14px 4px}
+
+  /* ---- focus timer ---- */
+  .focus{display:none;text-align:center}
+  .focus.on{display:block}
+  .clock{font-size:52px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em;margin:6px 0 2px}
+  .clock.over{color:var(--warn)}
+
+  /* ---- section headers ---- */
+  .sec{display:flex;align-items:baseline;justify-content:space-between;margin:20px 2px 9px}
+  .sec h3{font-size:13px;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);margin:0;font-weight:700}
+  .sec .hint{font-size:12px;color:var(--faint)}
+
+  /* ---- queue rows ---- */
+  ul.list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+  li.row{display:flex;align-items:center;gap:11px;background:var(--panel);border:1px solid var(--line);
+    border-radius:14px;padding:11px 12px}
+  li.row.plan{border-color:rgba(57,230,180,.32);background:linear-gradient(180deg,rgba(57,230,180,.05),transparent)}
+  .rank{font-variant-numeric:tabular-nums;font-weight:700;color:var(--faint);width:18px;text-align:center;flex:none}
+  .rowmain{min-width:0;flex:1}
+  .rowtitle{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rowsub{font-size:12px;color:var(--faint);margin-top:2px;display:flex;gap:8px;flex-wrap:wrap}
+  .rowsub .s{color:var(--c);font-weight:700;font-variant-numeric:tabular-nums}
+  .micro{width:64px;height:8px;border-radius:4px;overflow:hidden;display:flex;border:1px solid var(--line);flex:none}
+  .micro i{height:100%}
+  .row .done{width:26px;height:26px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--dim);
+    cursor:pointer;flex:none;font-size:15px;line-height:1}
+  .row .done:hover{border-color:var(--c);color:var(--c)}
+  .row.rot{border-color:rgba(255,180,84,.35)}
+  .rotbadge{font-size:11px;color:var(--warn);border:1px solid rgba(255,180,84,.4);border-radius:6px;padding:1px 6px}
+  .blockicon{color:var(--faint);font-size:13px}
+
+  /* ---- add form ---- */
+  .add input[type=text]{width:100%;background:rgba(0,0,0,.22);border:1px solid var(--line);border-radius:12px;
+    color:var(--ink);padding:12px 13px;font-size:15px}
+  .add input[type=text]::placeholder{color:var(--faint)}
+  .opts{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:10px}
+  .opts .field{min-width:0}
+  select,input[type=number],input[type=datetime-local]{width:100%;background:rgba(0,0,0,.22);border:1px solid var(--line);
+    border-radius:10px;color:var(--ink);padding:9px 10px;font-size:14px}
+  .seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .seg button{flex:1;background:none;border:0;color:var(--dim);padding:9px 4px;font-size:13px;cursor:pointer}
+  .seg button.on{background:rgba(110,139,255,.2);color:#cdd7ff;font-weight:600}
+  .imp{display:flex;gap:5px}
+  .imp button{flex:1;background:rgba(0,0,0,.22);border:1px solid var(--line);border-radius:8px;color:var(--faint);
+    padding:8px 0;cursor:pointer;font-size:14px;font-weight:700}
+  .imp button.on{background:rgba(110,139,255,.2);border-color:rgba(110,139,255,.55);color:#cdd7ff}
+  .addbtn{margin-top:12px;width:100%;background:linear-gradient(180deg,#39e6b4,#22c89a);border:0;color:#04221a;
+    font-weight:800;border-radius:12px;padding:12px;font-size:15px;cursor:pointer}
+  .full{grid-column:1/-1}
+  details.adv summary{cursor:pointer;color:var(--a);font-size:13px;margin-top:11px;list-style:none}
+  details.adv summary::-webkit-details-marker{display:none}
+
+  .foot{color:var(--faint);font-size:12px;text-align:center;margin-top:22px;line-height:1.7}
+  .foot a{color:var(--dim)}
+  .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);
+    background:#1c2238;border:1px solid var(--line);color:var(--ink);padding:10px 16px;border-radius:12px;
+    font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;box-shadow:0 10px 30px rgba(0,0,0,.5);z-index:9}
+  .toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo" aria-hidden="true"></div>
+    <div>
+      <h1>Cusp</h1>
+      <div class="tag">the one thing to do <b>right&nbsp;now</b> · Salience Engine</div>
+    </div>
+  </header>
+
+  <!-- CONTEXT: the two inputs the engine needs about *this moment* -->
+  <div class="panel">
+    <div class="ctx">
+      <div class="field">
+        <label class="k">Time I have right now</label>
+        <div class="windowpills" id="windowpills"></div>
+      </div>
+      <div class="field">
+        <label class="k">My energy <button class="reset-energy" id="resetEnergy" type="button" hidden>↺ auto</button></label>
+        <div class="energy-row">
+          <input type="range" id="energy" min="0" max="100" step="1">
+          <div class="val" id="energyVal">—</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- THE ANSWER -->
+  <div class="hero" id="hero">
+    <div class="eyebrow">Do this now</div>
+    <div id="answer"></div>
+    <!-- focus timer overlays the same card -->
+    <div class="focus" id="focus">
+      <div class="eyebrow" style="color:var(--c)">Focusing on</div>
+      <h2 id="focusTitle" style="margin-bottom:10px"></h2>
+      <div class="clock" id="clock">00:00</div>
+      <div class="actions">
+        <button class="act primary" id="focusDone">✓ Done</button>
+        <button class="act" id="focusStop">Stop</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT-NOW PLAN (window packing) -->
+  <div id="planWrap"></div>
+
+  <!-- UP NEXT -->
+  <div class="sec"><h3>Up next</h3><span class="hint" id="upnextHint"></span></div>
+  <ul class="list" id="queue"></ul>
+
+  <!-- BLOCKED / ROT -->
+  <div id="blockedWrap"></div>
+
+  <!-- ADD -->
+  <div class="sec"><h3>Add a task</h3></div>
+  <div class="panel add">
+    <input type="text" id="t_title" placeholder="What needs doing?  (⏎ to add)" autocomplete="off">
+    <div class="opts">
+      <div class="field full">
+        <label class="k">Importance</label>
+        <div class="imp" id="t_imp">
+          <button data-v="1" type="button">1</button><button data-v="2" type="button">2</button>
+          <button data-v="3" class="on" type="button">3</button><button data-v="4" type="button">4</button>
+          <button data-v="5" type="button">5</button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="k">Effort (min)</label>
+        <input type="number" id="t_effort" value="30" min="1" max="600" step="5">
+      </div>
+      <div class="field">
+        <label class="k">Mental load</label>
+        <div class="seg" id="t_load">
+          <button data-v="light" type="button">Light</button>
+          <button data-v="medium" class="on" type="button">Medium</button>
+          <button data-v="deep" type="button">Deep</button>
+        </div>
+      </div>
+      <details class="adv full">
+        <summary>+ deadline, project, depends-on</summary>
+        <div class="opts" style="margin-top:10px">
+          <div class="field"><label class="k">Due</label><input type="datetime-local" id="t_due"></div>
+          <div class="field"><label class="k">Project</label><input type="text" id="t_project" placeholder="optional tag" autocomplete="off"></div>
+          <div class="field full"><label class="k">Depends on (blocked until done)</label>
+            <select id="t_dep"><option value="">— nothing —</option></select></div>
+        </div>
+      </details>
+    </div>
+    <button class="addbtn" id="addBtn">Add task</button>
+  </div>
+
+  <div class="foot">
+    Cusp scores every task with the <b>Salience Engine</b> — importance · urgency ·
+    energy-fit · window-fit · momentum · staleness — and shows its working.<br>
+    No account, no cloud. Everything stays on this device. ·
+    <a href="../index.html">all prototypes</a>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="engine.js"></script>
+<script>
+(function(){
+  "use strict";
+  var E = window.Cusp;
+  var $ = function(s,r){return (r||document).querySelector(s);};
+  var KEY = "cusp.v1";
+
+  /* ---------- state ---------- */
+  var state = load();
+  function load(){
+    try{ var s = JSON.parse(localStorage.getItem(KEY)||"{}");
+      return { tasks: s.tasks||[], lastProject: s.lastProject||null,
+               windowMin: s.windowMin||30, energyOverride: (s.energyOverride==null?null:s.energyOverride) };
+    }catch(e){ return { tasks:[], lastProject:null, windowMin:30, energyOverride:null }; }
+  }
+  function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} }
+  var uid = function(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6); };
+
+  function seedIfEmpty(){
+    if(state.tasks.length) return;
+    var now = Date.now(), H=3600000;
+    state.tasks = [
+      mk("Reply to the landlord about the lease",5,15,"medium",{due:now+3*H,project:"Move"}),
+      mk("Deep-work block: finish the Q3 deck",5,90,"deep",{project:"Work",due:now+30*H}),
+      mk("Book dentist appointment",3,10,"light",{}),
+      mk("Outline the launch email",4,25,"medium",{project:"Work"}),
+      mk("Stretch / 10-min walk",2,10,"light",{}),
+      mk("Read 3 articles in read-later",2,30,"light",{})
+    ];
+    save();
+  }
+  function mk(title,imp,eff,load,opt){
+    return { id:uid(), title:title, importance:imp, effort:eff, load:load,
+      due:opt.due||null, project:opt.project||null, deps:opt.deps||[],
+      createdAt:Date.now(), skips:0, done:false };
+  }
+
+  /* ---------- context (window + energy) ---------- */
+  var WINDOWS = [10,15,25,45,90];
+  function currentEnergy(){
+    return state.energyOverride!=null ? state.energyOverride
+         : E.circadianEnergy(new Date().getHours());
+  }
+  function energyLabel(v){
+    return v>=.8?"Sharp":v>=.62?"Good":v>=.42?"Steady":v>=.25?"Low":"Drained";
+  }
+  function ctx(){
+    return { now:Date.now(), windowMin:state.windowMin, energy:currentEnergy(), lastProject:state.lastProject };
+  }
+
+  /* ---------- rendering ---------- */
+  var FIELDS = [["I","Importance"],["U","Urgency"],["E","Energy fit"],["W","Window fit"],["M","Momentum"],["S","Staleness"]];
+  function fmtEffort(m){ return m>=60 ? (m/60).toFixed(m%60?1:0)+"h" : m+"m"; }
+  function fmtDue(due){
+    if(due==null) return null;
+    var h=(due-Date.now())/3600000;
+    if(h<0) return "overdue";
+    if(h<1) return "due <1h";
+    if(h<24) return "due "+Math.round(h)+"h";
+    return "due "+Math.round(h/24)+"d";
+  }
+  function whyBar(contrib){
+    var html="<div class='whybar'>";
+    FIELDS.forEach(function(f){
+      var w = contrib[f[0]]; if(w<=0) return;
+      html += "<i style='width:"+w+"%;background:var(--field-"+f[0]+")' title='"+f[1]+" +"+w+"'></i>";
+    });
+    return html+"</div>";
+  }
+  function microBar(contrib){
+    var html="<span class='micro'>";
+    FIELDS.forEach(function(f){ var w=contrib[f[0]]; if(w>0) html+="<i style='width:"+(w*2)+"%;background:var(--field-"+f[0]+")'></i>"; });
+    return html+"</span>";
+  }
+
+  function render(){
+    // context widgets
+    var wp = $("#windowpills"); wp.innerHTML="";
+    WINDOWS.forEach(function(m){
+      var b=document.createElement("button");
+      b.className="pill"+(state.windowMin===m?" on":""); b.textContent=m+" min";
+      b.onclick=function(){ state.windowMin=m; save(); render(); };
+      wp.appendChild(b);
+    });
+    var en = currentEnergy();
+    $("#energy").value = Math.round(en*100);
+    $("#energyVal").textContent = energyLabel(en)+" · "+Math.round(en*100);
+    $("#resetEnergy").hidden = state.energyOverride==null;
+
+    var r = E.rank(state.tasks, ctx());
+    renderAnswer(r.ranked);
+    renderPlan(r.ranked);
+    renderQueue(r.ranked);
+    renderBlocked(r.ranked, r.blocked);
+    renderDepOptions();
+  }
+
+  function renderAnswer(ranked){
+    if(focusId) return; // timer owns the card
+    var host = $("#answer"); host.style.display="";
+    if(!ranked.length){
+      host.innerHTML = "<div class='empty'>Nothing to do — you’re clear. ✨<br><span style='font-size:13px'>Add a task below and the engine will pick your next move.</span></div>";
+      return;
+    }
+    var top = ranked[0], t = top.task;
+    var reasons = top.reasons.slice(0,3).map(function(x){return "<b>"+x+"</b>";});
+    var rtext = reasons.length ? "Because it’s "+joinNice(reasons)+"." : "Highest salience on your list right now.";
+    var meta = [];
+    meta.push("<span class='chip score'>"+top.salience+" salience</span>");
+    meta.push("<span class='chip'>"+fmtEffort(t.effort)+"</span>");
+    meta.push("<span class='chip'>"+capitalize(t.load)+"</span>");
+    if(t.project) meta.push("<span class='chip'>"+esc(t.project)+"</span>");
+    var d=fmtDue(t.due); if(d) meta.push("<span class='chip' style='color:"+(d==='overdue'?'var(--bad)':'var(--warn)')+"'>"+d+"</span>");
+
+    host.innerHTML =
+      "<h2>"+esc(t.title)+"</h2>"+
+      "<div class='meta'>"+meta.join("")+"</div>"+
+      "<div class='reasons'>"+rtext+"</div>"+
+      "<div class='why'>"+whyBar(top.contrib)+legend()+"</div>"+
+      "<div class='actions'>"+
+        "<button class='act primary' id='startBtn'>▶ Start "+fmtEffort(t.effort)+"</button>"+
+        "<button class='act' id='heroDone'>✓ Done</button>"+
+        "<button class='act ghost' id='heroSkip'>Skip</button>"+
+      "</div>";
+    $("#startBtn").onclick=function(){ startFocus(t.id); };
+    $("#heroDone").onclick=function(){ complete(t.id); };
+    $("#heroSkip").onclick=function(){ skip(t.id); };
+  }
+  function legend(){
+    return "<div class='legend'>"+FIELDS.map(function(f){
+      return "<span><i class='dot' style='background:var(--field-"+f[0]+")'></i>"+f[1]+"</span>";
+    }).join("")+"</div>";
+  }
+
+  function renderPlan(ranked){
+    var wrap = $("#planWrap"); wrap.innerHTML="";
+    if(ranked.length<2) return;
+    var p = E.planWindow(ranked, state.windowMin);
+    if(p.plan.length<2) return; // only worth showing if it chains ≥2
+    var html = "<div class='sec'><h3>Right-now plan</h3><span class='hint'>"+p.usedMin+" of "+state.windowMin+" min</span></div><ul class='list'>";
+    p.plan.forEach(function(it,i){
+      html += "<li class='row plan'><span class='rank'>"+(i+1)+"</span>"+
+        "<span class='rowmain'><div class='rowtitle'>"+esc(it.task.title)+"</div>"+
+        "<div class='rowsub'><span>"+fmtEffort(it.task.effort)+"</span><span class='s'>"+it.salience+"</span></div></span></li>";
+    });
+    wrap.innerHTML = html+"</ul>";
+  }
+
+  function renderQueue(ranked){
+    var ul = $("#queue"); ul.innerHTML="";
+    var rest = ranked.slice(1);
+    $("#upnextHint").textContent = rest.length ? rest.length+" more" : "";
+    if(!rest.length){ ul.innerHTML="<div class='empty' style='padding:8px'>Nothing queued behind it.</div>"; return; }
+    rest.forEach(function(it,i){
+      var t=it.task, d=fmtDue(t.due);
+      var sub=["<span>"+fmtEffort(t.effort)+"</span>","<span>"+capitalize(t.load)+"</span>"];
+      if(t.project) sub.push("<span>"+esc(t.project)+"</span>");
+      if(d) sub.push("<span style='color:"+(d==='overdue'?'var(--bad)':'var(--warn)')+"'>"+d+"</span>");
+      sub.push("<span class='s'>"+it.salience+"</span>");
+      var li=document.createElement("li");
+      li.className="row"+(it.rot?" rot":"");
+      li.innerHTML="<span class='rank'>"+(i+2)+"</span>"+
+        "<span class='rowmain'><div class='rowtitle'>"+esc(t.title)+(it.rot?" <span class='rotbadge'>rotting</span>":"")+"</div>"+
+        "<div class='rowsub'>"+sub.join("")+"</div></span>"+
+        microBar(it.contrib)+
+        "<button class='done' title='Done' aria-label='Mark done'>✓</button>";
+      $(".done",li).onclick=function(){ complete(t.id); };
+      li.querySelector(".rowmain").onclick=function(){ startFocus(t.id); };
+      ul.appendChild(li);
+    });
+  }
+
+  function renderBlocked(ranked, blocked){
+    var wrap=$("#blockedWrap"); wrap.innerHTML="";
+    var byId={}; state.tasks.forEach(function(t){byId[t.id]=t;});
+    var rotting = ranked.filter(function(it){return it.rot;}).map(function(it){return it.task;});
+    if(!blocked.length && !rotting.length) return;
+    var html="";
+    if(blocked.length){
+      html+="<div class='sec'><h3>Blocked</h3><span class='hint'>waiting on a prerequisite</span></div><ul class='list'>";
+      blocked.forEach(function(t){
+        var waiting=(t.deps||[]).map(function(id){return byId[id]&&!byId[id].done?esc(byId[id].title):null;}).filter(Boolean);
+        html+="<li class='row'><span class='rank blockicon'>🔒</span>"+
+          "<span class='rowmain'><div class='rowtitle'>"+esc(t.title)+"</div>"+
+          "<div class='rowsub'><span>waiting on: "+(waiting.join(", ")||"—")+"</span></div></span>"+
+          "<button class='done' data-id='"+t.id+"' title='Done' aria-label='Mark done'>✓</button></li>";
+      });
+      html+="</ul>";
+    }
+    if(rotting.length){
+      html+="<div class='sec'><h3>Decision debt</h3><span class='hint'>kept getting skipped — decide</span></div><ul class='list'>";
+      rotting.forEach(function(t){
+        html+="<li class='row rot'><span class='rank'>⚠️</span>"+
+          "<span class='rowmain'><div class='rowtitle'>"+esc(t.title)+"</div>"+
+          "<div class='rowsub'><span>skipped "+(t.skips||0)+"×. Still matters?</span></div></span>"+
+          "<button class='done' data-id='"+t.id+"' title='Done'>✓</button>"+
+          "<button class='done' data-drop='"+t.id+"' title='Drop it' style='color:var(--bad)'>✕</button></li>";
+      });
+      html+="</ul>";
+    }
+    wrap.innerHTML=html;
+    wrap.querySelectorAll("[data-id]").forEach(function(b){ b.onclick=function(){ complete(b.getAttribute("data-id")); }; });
+    wrap.querySelectorAll("[data-drop]").forEach(function(b){ b.onclick=function(){ drop(b.getAttribute("data-drop")); }; });
+  }
+
+  function renderDepOptions(){
+    var sel=$("#t_dep"); var cur=sel.value;
+    sel.innerHTML="<option value=''>— nothing —</option>";
+    state.tasks.filter(function(t){return !t.done;}).forEach(function(t){
+      var o=document.createElement("option"); o.value=t.id; o.textContent=t.title; sel.appendChild(o);
+    });
+    sel.value=cur;
+  }
+
+  /* ---------- task lifecycle ---------- */
+  function find(id){ return state.tasks.filter(function(t){return t.id===id;})[0]; }
+  function complete(id){
+    var t=find(id); if(!t) return;
+    t.done=true; t.doneAt=Date.now();
+    state.lastProject = t.project||null;   // momentum carries to the next pick
+    save(); toast("Done — momentum kept ✓"); if(focusId===id) stopFocus(); render();
+  }
+  function skip(id){
+    var t=find(id); if(!t) return;
+    // Skipping the top pick: snooze it past the rest of your current window so the
+    // engine surfaces something else now, and bump the skip count (feeds rot detection).
+    t.skips=(t.skips||0)+1; t.lastSeen=Date.now();
+    t.snoozeUntil=Date.now()+Math.max(15,state.windowMin)*60000;
+    save(); toast("Skipped — surfacing the next pick"); render();
+  }
+  function drop(id){
+    state.tasks=state.tasks.filter(function(t){return t.id!==id;});
+    save(); toast("Dropped"); render();
+  }
+
+  /* ---------- focus timer ---------- */
+  var focusId=null, focusEnd=0, tick=null;
+  function startFocus(id){
+    var t=find(id); if(!t) return;
+    focusId=id; focusEnd=Date.now()+ (t.effort||30)*60000;
+    $("#answer").style.display="none";
+    $("#focus").classList.add("on");
+    $("#focusTitle").textContent=t.title;
+    clearInterval(tick); tick=setInterval(updateClock,1000); updateClock();
+  }
+  function updateClock(){
+    var ms=focusEnd-Date.now(), over=ms<0; ms=Math.abs(ms);
+    var m=Math.floor(ms/60000), s=Math.floor((ms%60000)/1000);
+    var c=$("#clock"); c.textContent=(over?"+":"")+pad(m)+":"+pad(s);
+    c.classList.toggle("over",over);
+  }
+  function stopFocus(){
+    clearInterval(tick); tick=null; focusId=null;
+    $("#focus").classList.remove("on"); $("#answer").style.display="";
+    render();
+  }
+  $("#focusDone").onclick=function(){ if(focusId) complete(focusId); };
+  $("#focusStop").onclick=stopFocus;
+
+  /* ---------- add form ---------- */
+  var form={imp:3, load:"medium"};
+  $("#t_imp").querySelectorAll("button").forEach(function(b){
+    b.onclick=function(){ form.imp=+b.getAttribute("data-v");
+      $("#t_imp").querySelectorAll("button").forEach(function(x){x.classList.toggle("on",x===b);}); };
+  });
+  $("#t_load").querySelectorAll("button").forEach(function(b){
+    b.onclick=function(){ form.load=b.getAttribute("data-v");
+      $("#t_load").querySelectorAll("button").forEach(function(x){x.classList.toggle("on",x===b);}); };
+  });
+  function addTask(){
+    var title=$("#t_title").value.trim(); if(!title){ $("#t_title").focus(); return; }
+    var dueRaw=$("#t_due").value, dep=$("#t_dep").value;
+    var t=mk(title, form.imp, Math.max(1,+$("#t_effort").value||30), form.load, {
+      due: dueRaw ? new Date(dueRaw).getTime() : null,
+      project: $("#t_project").value.trim()||null,
+      deps: dep ? [dep] : []
+    });
+    state.tasks.unshift(t); save();
+    $("#t_title").value=""; $("#t_due").value=""; $("#t_project").value=""; $("#t_dep").value="";
+    toast("Added — re-ranked"); render(); $("#t_title").focus();
+  }
+  $("#addBtn").onclick=addTask;
+  $("#t_title").addEventListener("keydown",function(e){ if(e.key==="Enter") addTask(); });
+
+  /* ---------- energy slider ---------- */
+  $("#energy").addEventListener("input",function(e){
+    state.energyOverride=+e.target.value/100; save(); render();
+  });
+  $("#resetEnergy").onclick=function(){ state.energyOverride=null; save(); render(); };
+
+  /* ---------- helpers ---------- */
+  function pad(n){ return (n<10?"0":"")+n; }
+  function capitalize(s){ return s? s[0].toUpperCase()+s.slice(1) : s; }
+  function esc(s){ return String(s).replace(/[&<>"']/g,function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]; }); }
+  function joinNice(a){ if(a.length===1)return a[0]; if(a.length===2)return a[0]+" and "+a[1];
+    return a.slice(0,-1).join(", ")+", and "+a[a.length-1]; }
+  var toastT=null;
+  function toast(msg){ var el=$("#toast"); el.textContent=msg; el.classList.add("show");
+    clearTimeout(toastT); toastT=setTimeout(function(){ el.classList.remove("show"); },1600); }
+
+  /* ---------- boot ---------- */
+  seedIfEmpty();
+  render();
+  // energy drifts with the clock — refresh the read-out a few times an hour
+  setInterval(function(){ if(!focusId) render(); }, 5*60000);
+
+  if("serviceWorker" in navigator){
+    window.addEventListener("load",function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); });
+  }
+})();
+</script>
+</body>
+</html>
