@@ -323,11 +323,14 @@ const PHOTOS = [
   'photo-1480074568708-e7b720bb3f09', 'photo-1572120360610-d971b9d7767c',
 ].map((id) => `https://images.unsplash.com/${id}?auto=format&fit=crop&w=800&q=70`);
 
-/** A CSS background: the listing's real photo, with the generated SVG as fallback. */
+/** A CSS background: the listing's real photo, with the generated SVG as fallback.
+   Output is injected into an HTML style="…" attribute via innerHTML, so the url()
+   quotes are written as &quot; (and & as &amp;) to survive attribute parsing —
+   plain " would close the attribute early and the background would never apply. */
 const grad = (seed) => {
   const svg = buildingSVG(seed).replace(/\n/g, '').replace(/#/g, '%23');
-  const photo = PHOTOS[Math.abs(hashStr(String(seed))) % PHOTOS.length];
-  return `url("${photo}") center/cover no-repeat, url("data:image/svg+xml,${svg}") center/cover no-repeat, #142033`;
+  const photo = PHOTOS[Math.abs(hashStr(String(seed))) % PHOTOS.length].replace(/&/g, '&amp;');
+  return `url(&quot;${photo}&quot;) center/cover no-repeat, url(&quot;data:image/svg+xml,${svg}&quot;) center/cover no-repeat, #142033`;
 };
 const uid = () => 'id' + Math.random().toString(36).slice(2, 9);
 const now = () => Date.now();
