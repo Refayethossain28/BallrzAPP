@@ -40,12 +40,23 @@ reference. The full architecture is in
 - Firestore rules tightened to match: participants may only touch
   messaging/viewing/agreement fields and can't drive a deal past `agreed`
 
-Next: M3–M5 — agreement drafting, e-signature, and the £100 fee.
+**M3 — tenancy-agreement drafting (Cloud Functions come online) ✅**
+- First server-authoritative transition: the `draftContract` **callable Cloud
+  Function** lets only the landlord, only once both parties have agreed, generate
+  the Assured Shorthold Tenancy. It runs the shared compliance + contract kernel
+  under the Admin SDK, writes an immutable `contracts/{dealId}` doc, advances the
+  deal to `contract`, and appends an audit `event`
+- Renter + landlord can **review the generated agreement** (parties, term, rent,
+  capped deposit, numbered clauses) with the statutory compliance checklist
+- Functions build bundles `@rentmatch/shared` via esbuild (deployable +
+  emulator-runnable); the £100 fee is surfaced but charged on signing in M5
 
-> Client-side note: M1's compliance gate and M2's deal transitions run on the
-> client for now; M3+ moves stage transitions and system messages behind Cloud
-> Functions for full server-authoritativeness (the rules already lock the
-> payment/signature/contract fields).
+Next: M4 e-signature, M5 Stripe £100 fee on full execution.
+
+> Server-authoritativeness: contract/signature/payment now flow through Cloud
+> Functions (M3 starts this). M1's listing compliance gate and M2's enquiry/
+> viewing/agreement transitions still run client-side under tightened rules;
+> they move behind Functions in M6.
 
 ## Layout
 

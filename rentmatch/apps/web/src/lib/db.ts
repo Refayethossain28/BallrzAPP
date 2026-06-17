@@ -14,7 +14,7 @@ import { db } from './firebase';
 import {
   evaluateListingCompliance, newDealRecord, recomputeStage,
   type ComplianceCheck, type ComplianceDoc, type DealParty, type DealRecord,
-  type DealViewing, type EpcRating, type ListingSummary,
+  type DealViewing, type EpcRating, type ListingSummary, type TenancyAgreement,
 } from '@rentmatch/shared';
 
 export type Role = 'renter' | 'landlord';
@@ -318,6 +318,35 @@ export async function agreeToProceed(deal: Deal, party: DealParty): Promise<void
   const name = party === 'renter' ? deal.renterName : deal.landlordName;
   await addSystemMessage(deal.id, `${name} agreed to proceed to a tenancy.`);
   if (agreed.renter && agreed.landlord) {
-    await addSystemMessage(deal.id, 'Both parties have agreed terms. The tenancy agreement step arrives next.');
+    await addSystemMessage(deal.id, 'Both parties have agreed terms. The landlord can now draft the tenancy agreement.');
   }
+}
+
+/* ---- contracts (M3) ---- */
+
+export interface Contract {
+  dealId: string;
+  renterId: string;
+  landlordId: string;
+  version: number;
+  agreement: TenancyAgreement;
+  compliance: ComplianceCheck[];
+  feePence: number;
+}
+
+const contractsCol = collection(db, 'contracts');
+
+export async function fetchContract(dealId: string): Promise<Contract | null> {
+  const snap = await getDoc(doc(contractsCol, dealId));
+  if (!snap.exists()) return null;
+  const d = snap.data();
+  return {
+    dealId,
+    renterId: String(d.renterId ?? ''),
+    landlordId: String(d.landlordId ?? ''),
+    version: Number(d.version ?? 1),
+    agreement: d.agreement as TenancyAgreement,
+    compliance: (d.compliance as ComplianceCheck[]) ?? [],
+    feePence: Number(d.feePence ?? 0),
+  };
 }
