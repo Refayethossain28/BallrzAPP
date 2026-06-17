@@ -53,6 +53,20 @@ function findValidDoc(docs: ComplianceDoc[], type: ComplianceDocType, now: numbe
   return !!doc && (doc.expiresAt == null || doc.expiresAt > now);
 }
 
+/** Lifecycle status of a single compliance document. */
+export type DocStatus = 'missing' | 'valid' | 'expiring' | 'expired';
+
+/** A document is flagged "expiring" within this window of its expiry. */
+export const EXPIRY_SOON_MS = 30 * 86_400_000; // 30 days
+
+export function docStatus(doc: ComplianceDoc | undefined, now: number = Date.now()): DocStatus {
+  if (!doc) return 'missing';
+  if (doc.expiresAt == null) return 'valid';
+  if (doc.expiresAt <= now) return 'expired';
+  if (doc.expiresAt - now <= EXPIRY_SOON_MS) return 'expiring';
+  return 'valid';
+}
+
 /** Gate for publishing a listing. */
 export function evaluateListingCompliance(
   input: PropertyComplianceInput,

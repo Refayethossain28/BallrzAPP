@@ -10,10 +10,11 @@ import {
   serverTimestamp, Timestamp, onSnapshot, orderBy, or,
   type Unsubscribe,
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from './firebase';
 import {
-  evaluateListingCompliance, newDealRecord, recomputeStage,
-  type ComplianceCheck, type ComplianceDoc, type DealParty, type DealRecord,
+  newDealRecord, recomputeStage,
+  type ComplianceDoc, type ComplianceDocType, type DealParty, type DealRecord,
   type DealViewing, type EpcRating, type ListingSummary, type TenancyAgreement,
 } from '@rentmatch/shared';
 
@@ -36,6 +37,7 @@ export interface Listing extends ListingSummary {
   hasGasSupply: boolean;
   smokeAlarmsPerStorey: boolean;
   coAlarmsWhereRequired: boolean;
+  complianceDocs: ComplianceDoc[];
 }
 
 const listingsCol = collection(db, 'listings');
@@ -97,6 +99,7 @@ function mapListing(id: string, data: Record<string, unknown>): Listing {
     hasGasSupply: Boolean(data.hasGasSupply),
     smokeAlarmsPerStorey: Boolean(data.smokeAlarmsPerStorey),
     coAlarmsWhereRequired: Boolean(data.coAlarmsWhereRequired),
+    complianceDocs: Array.isArray(data.complianceDocs) ? (data.complianceDocs as ComplianceDoc[]) : [],
   };
 }
 
@@ -136,38 +139,54 @@ export interface NewListingInput {
   coAlarmsWhereRequired: boolean;
 }
 
-export interface CreateListingResult {
-  id: string;
-  status: Listing['status'];
-  checks: ComplianceCheck[];
-}
-
 /**
- * Create a listing. The shared compliance kernel decides whether it can go
- * `live`; if any blocking statutory check fails it is saved as a `draft` and
- * the failing checks are returned so the UI can prompt the landlord.
+ * Create a listing as a `draft`. It only goes `live` once the landlord uploads
+ * the required compliance documents and calls the server-authoritative
+ * `publishListing` Cloud Function (clients can't set `status` directly).
  */
-export async function createListing(input: NewListingInput): Promise<CreateListingResult> {
-  // M1 records the attestations; actual document uploads land in M6.
-  const docs: ComplianceDoc[] = [{ type: 'epc' }, { type: 'eicr' }];
-  if (input.hasGasSupply) docs.push({ type: 'gas-safety' });
-  const { checks, canGoLive } = evaluateListingCompliance({
-    nation: 'england',
-    epcRating: input.epcRating,
-    hasGasSupply: input.hasGasSupply,
-    smokeAlarmsPerStorey: input.smokeAlarmsPerStorey,
-    coAlarmsWhereRequired: input.coAlarmsWhereRequired,
-    docs,
-  });
-  const status: Listing['status'] = canGoLive ? 'live' : 'draft';
+export async function createListing(input: NewListingInput): Promise<{ id: string }> {
   const ref = await addDoc(listingsCol, {
     ...input,
-    status,
+    status: 'draft',
+    complianceDocs: [] as ComplianceDoc[],
     features: [input.furnished, `EPC ${input.epcRating}`, 'Available soon'],
     availableFrom: Timestamp.fromMillis(Date.now() + 14 * 86_400_000),
     createdAt: serverTimestamp(),
   });
-  return { id: ref.id, status, checks };
+  return { id: ref.id };
+}
+
+/** Default validity windows for each compliance document type. */
+const DOC_VALIDITY_MS: Partial<Record<ComplianceDocType, number>> = {
+  'gas-safety': 365 * 86_400_000, // annual
+  eicr: 5 * 365 * 86_400_000, // 5-yearly
+  epc: 10 * 365 * 86_400_000, // 10-yearly
+};
+
+/**
+ * Upload a compliance document to Storage and record its metadata on the
+ * listing (deduped by type). Status stays unchanged — publishing is a separate,
+ * server-side step.
+ */
+export async function uploadComplianceDoc(
+  listing: Listing,
+  type: ComplianceDocType,
+  file: File,
+): Promise<void> {
+  const path = `compliance/${listing.landlordId}/${listing.id}/${type}.pdf`;
+  const r = storageRef(storage, path);
+  await uploadBytes(r, file);
+  const fileRef = await getDownloadURL(r);
+  const now = Date.now();
+  const expiresAt = DOC_VALIDITY_MS[type] != null ? now + DOC_VALIDITY_MS[type]! : undefined;
+
+  const snap = await getDoc(doc(listingsCol, listing.id));
+  const current = (snap.data()?.complianceDocs ?? []) as ComplianceDoc[];
+  const next: ComplianceDoc[] = [
+    ...current.filter((d) => d.type !== type),
+    { type, issuedAt: now, ...(expiresAt ? { expiresAt } : {}), reference: fileRef },
+  ];
+  await updateDoc(doc(listingsCol, listing.id), { complianceDocs: next });
 }
 
 /* ---- deals, messaging & viewings (M2) ---- */

@@ -7,6 +7,7 @@ import {
 import { useAuth } from '../auth/AuthProvider';
 import { fetchListing, createOrGetDeal } from '../lib/db';
 import { photoGradient, formatDate } from '../components/ui';
+import ComplianceManager from './ComplianceManager';
 
 export default function ListingDetail() {
   const { id = '' } = useParams();
@@ -82,7 +83,12 @@ export default function ListingDetail() {
       </div>
 
       {ownListing ? (
-        <div className="notice">This is your own listing. Enquiries from renters will appear in your Enquiries tab.</div>
+        <>
+          <ComplianceManager listing={l} />
+          <p className="faint" style={{ textAlign: 'center', fontSize: 11, marginTop: 12 }}>
+            Enquiries from renters appear in your Enquiries tab.
+          </p>
+        </>
       ) : (
         <>
           <button className="cta" disabled={l.status !== 'live' || busy} onClick={enquire}>
