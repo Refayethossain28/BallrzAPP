@@ -10,14 +10,29 @@ This is the real, structured application. The single-file
 reference. The full architecture is in
 [`docs/rentmatch-foundation.md`](../docs/rentmatch-foundation.md).
 
-## Status — M0 (foundation) ✅
+## Status
 
+**M0 — foundation ✅**
 - Monorepo scaffold (`apps/web`, `functions`, `packages/shared`)
 - Firebase config + emulator suite (`firebase.json`, `*.rules`, indexes)
 - **`packages/shared`** — the tested domain kernel: deal state machine, UK
   compliance gates, money / Tenant Fees Act caps, tenancy-agreement generation
 
-Next: M1 auth + listings + search. See the roadmap in the foundation doc.
+**M1 — auth · properties/listings · search ✅**
+- Firebase Auth (email/password); every account can act as renter **or**
+  landlord, toggled in the header and persisted to the user profile
+- Renter: browse + filter/sort live listings (`searchListings`), listing detail
+  with Tenant-Fees-Act deposit/holding figures
+- Landlord: advertise a property; the shared compliance kernel decides whether
+  it goes **live** or is held as a **draft** with the failing statutory checks shown
+- React + Vite + TanStack Query, reusing `@rentmatch/shared` (search logic added
+  there with tests — 27 kernel tests total)
+
+Next: M2 messaging + viewings. See the roadmap in the foundation doc.
+
+> M1 note: listing creation runs the compliance gate client-side for now; M6
+> moves document verification (and status changes) behind Cloud Functions so it
+> is fully server-authoritative.
 
 ## Layout
 
