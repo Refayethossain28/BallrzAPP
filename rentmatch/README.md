@@ -51,7 +51,17 @@ reference. The full architecture is in
 - Functions build bundles `@rentmatch/shared` via esbuild (deployable +
   emulator-runnable); the £100 fee is surfaced but charged on signing in M5
 
-Next: M4 e-signature, M5 Stripe £100 fee on full execution.
+**M4 — e-signature ✅**
+- `openSigning` (landlord) opens the e-signature envelope and advances the deal
+  to `signing`; `recordSignature` captures each party's signature — both are
+  Cloud Functions standing in for the e-sign provider's hosted signing + webhook
+- ContractView shows live signature status and a Sign action for the signed-in
+  party; the deal **stays at `signing` even once both have signed** — completion
+  waits on the £100 fee, exactly as the shared completion guard requires
+- New shared helpers `bothSigned` / `awaitingFee` pinpoint the moment M5 charges
+  (4 new tests → 37 kernel tests)
+
+Next: M5 — Stripe £100 fee on full execution → deal `completed`, listing `let`.
 
 > Server-authoritativeness: contract/signature/payment now flow through Cloud
 > Functions (M3 starts this). M1's listing compliance gate and M2's enquiry/

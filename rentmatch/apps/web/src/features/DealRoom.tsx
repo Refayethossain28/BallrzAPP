@@ -185,7 +185,7 @@ function Actions({ deal, me }: { deal: Deal; me: DealParty }) {
       )}
       {deal.contractDrafted && (
         <button className="cta" style={{ marginBottom: 10 }} onClick={() => navigate(`/deal/${deal.id}/contract`)}>
-          📄 Review the tenancy agreement
+          📄 {deal.stage === 'signing' ? 'Review & sign the tenancy agreement' : deal.stage === 'completed' ? 'View the tenancy agreement' : 'Review the tenancy agreement'}
         </button>
       )}
     </div>
