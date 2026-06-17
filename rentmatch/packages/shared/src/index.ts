@@ -7,3 +7,4 @@ export * from './contractTemplate.ts';
 export * from './search.ts';
 export * from './deal.ts';
 export * from './notifications.ts';
+export * from './retention.ts';

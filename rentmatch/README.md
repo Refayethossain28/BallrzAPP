@@ -88,7 +88,25 @@ agree → sign → **the landlord is charged £100 and the tenancy completes**.
   the same seam); `registerPushToken` + an Account opt-in store the device token
 - 3 new tests (notification copy + doc-expiry) → 40 kernel tests
 
-Next: M7 — hardening, GDPR/retention, launch.
+**M7 — hardening, GDPR/retention, launch readiness ✅**
+- **App Check** (reCAPTCHA v3) initialised in the web app (enforce in console
+  before launch)
+- **UK GDPR right to erasure** (`requestDataErasure`): redacts profile PII and
+  names across deals, retaining completed-tenancy records within their legal
+  window; Account has an "Erase my personal data" action
+- **Retention sweep** (`purgeStaleData`, scheduled daily): purges stale drafts
+  (90d) and abandoned enquiries (180d); completed tenancies kept ~7 years
+- **Email channel** seam wired (e.g. the £100 receipt) behind `sendEmail`
+- Playwright happy-path scaffold; launch & security checklist in
+  [`LAUNCH.md`](./LAUNCH.md)
+- Retention/erasure helpers added to the shared kernel (4 tests → **44 total**)
+
+**Status: feature-complete through M7.** The full brief runs end-to-end —
+advertise → find → message → view → agree → sign → the landlord is charged £100
+→ the tenancy completes — with server-authoritative money/contract handling, UK
+statutory gates, notifications, and GDPR controls. Remaining work to go live is
+credential wiring and the items in [`LAUNCH.md`](./LAUNCH.md) (real e-sign
+provider, email provider, App Check enforcement, deposit-scheme API, CI).
 
 ### Verification status
 The shared kernel (deal state machine incl. the both-signed-**and**-fee-paid

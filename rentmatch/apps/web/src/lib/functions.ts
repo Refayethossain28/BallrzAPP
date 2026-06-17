@@ -49,3 +49,9 @@ export const registerPushToken = httpsCallable<{ token: string }, { ok: boolean 
   functions,
   'registerPushToken',
 );
+
+/** UK GDPR right to erasure — redacts the signed-in user's personal data. */
+export const requestDataErasure = httpsCallable<void, { ok: boolean }>(
+  functions,
+  'requestDataErasure',
+);

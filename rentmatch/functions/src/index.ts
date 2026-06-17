@@ -10,19 +10,30 @@
  */
 import { onCall, onRequest, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import { onDocumentCreated } from 'firebase-functions/v2/firestore';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 import Stripe from 'stripe';
 import {
   buildTenancyAgreement, evaluateListingCompliance, evaluateSigningCompliance, recomputeStage,
-  tenancyDepositCapPence, buildNotification, PLATFORM_FEE_PENCE,
+  tenancyDepositCapPence, buildNotification, isStale, withinLegalRetention, REDACTED, PLATFORM_FEE_PENCE,
   type ComplianceDoc, type DealRecord, type EpcRating, type Party,
 } from '@rentmatch/shared';
 
 initializeApp();
 const db = getFirestore();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? '');
+
+/** Provider-agnostic transactional email. Swap the body for Postmark/SendGrid. */
+async function sendEmail(to: string, subject: string, text: string): Promise<void> {
+  if (!process.env.EMAIL_API_KEY || !to) {
+    console.log(`[email:noop] "${subject}" -> ${to || '(no address)'}`);
+    return;
+  }
+  // TODO: POST to the transactional email provider using EMAIL_API_KEY.
+  void text;
+}
 
 type StoredDeal = DealRecord & {
   listingId: string;
@@ -260,6 +271,15 @@ async function completeDeal(dealId: string, paymentIntentId: string): Promise<vo
     text: 'The £100 platform fee was paid. The tenancy is fully executed and in force. 🎉',
     ts: FieldValue.serverTimestamp(),
   });
+  const deal = (await dealRef.get()).data() as StoredDeal | undefined;
+  if (deal) {
+    const landlordEmail = String((await db.doc(`users/${deal.landlordId}`).get()).data()?.email ?? '');
+    await sendEmail(
+      landlordEmail,
+      'RentMatch — your £100 platform fee receipt',
+      `The tenancy is now in force. A one-off £100 platform fee was charged (payment ${paymentIntentId}).`,
+    );
+  }
 }
 
 /** Save a landlord card for the off-session fee charge (Stripe SetupIntent). */
@@ -436,5 +456,54 @@ export const onDealMessageCreated = onDocumentCreated('deals/{dealId}/messages/{
     });
   } catch {
     // best-effort; an email fallback (e.g. Postmark/SendGrid) would go here.
+  }
+});
+
+/* ---- M7: GDPR data erasure + retention ---- */
+
+/**
+ * Right to erasure (UK GDPR Art. 17). Redacts the user's profile PII and removes
+ * their push tokens, and redacts their name across deals — except completed
+ * tenancies still within their legal retention period, where the record must be
+ * kept (lawful basis: legal obligation / legitimate interest).
+ */
+export const requestDataErasure = onCall(async (req: CallableRequest) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
+
+  await db.doc(`users/${uid}`).set(
+    { displayName: REDACTED, email: REDACTED, pushTokens: FieldValue.delete(), erasedAt: FieldValue.serverTimestamp() },
+    { merge: true },
+  );
+
+  const now = Date.now();
+  const redactName = async (field: 'renterName' | 'landlordName', idField: 'renterId' | 'landlordId') => {
+    const snap = await db.collection('deals').where(idField, '==', uid).get();
+    for (const d of snap.docs) {
+      const deal = d.data() as StoredDeal & { updatedAt?: { toMillis?: () => number } };
+      const completedAt = deal.updatedAt?.toMillis?.() ?? 0;
+      if (deal.stage === 'completed' && withinLegalRetention(completedAt, now)) continue;
+      await d.ref.update({ [field]: REDACTED });
+    }
+  };
+  await redactName('renterName', 'renterId');
+  await redactName('landlordName', 'landlordId');
+  return { ok: true };
+});
+
+/** Daily retention sweep: purge stale drafts and abandoned enquiries. */
+export const purgeStaleData = onSchedule('every 24 hours', async () => {
+  const now = Date.now();
+
+  const drafts = await db.collection('listings').where('status', '==', 'draft').get();
+  for (const d of drafts.docs) {
+    const created = d.data().createdAt?.toMillis?.() ?? now;
+    if (isStale('draft-listing', created, now)) await d.ref.delete();
+  }
+
+  const enquiries = await db.collection('deals').where('stage', '==', 'enquiry').get();
+  for (const d of enquiries.docs) {
+    const updated = d.data().updatedAt?.toMillis?.() ?? now;
+    if (isStale('abandoned-enquiry', updated, now)) await d.ref.delete();
   }
 });
