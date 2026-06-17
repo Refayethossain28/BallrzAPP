@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Helix — live decision engine</title>
+<style>
+  :root { --bg:#0b0f17; --panel:#131a26; --ink:#e8eef7; --mut:#8da2bd; --line:#22304a;
+          --good:#36d399; --bad:#f87272; --acc:#6ea8fe; --warn:#fbbf24; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+         background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased; }
+  header { padding:22px 20px 8px; }
+  h1 { margin:0; font-size:21px; letter-spacing:.2px; }
+  h1 small { color:var(--mut); font-weight:500; font-size:13px; }
+  .lede { color:var(--mut); margin:6px 0 0; max-width:62ch; font-size:13.5px; }
+  .wrap { padding:14px 20px 60px; max-width:980px; margin:0 auto; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px; margin-top:14px; }
+  .controls { display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; }
+  .controls label { color:var(--mut); font-size:13px; display:flex; gap:7px; align-items:center; }
+  input[type=range] { accent-color:var(--acc); }
+  button { background:var(--acc); color:#04122e; border:0; border-radius:9px; padding:9px 14px;
+           font-weight:700; cursor:pointer; font-size:13.5px; }
+  button.ghost { background:transparent; color:var(--ink); border:1px solid var(--line); }
+  button:active { transform:translateY(1px); }
+  table { width:100%; border-collapse:collapse; margin-top:6px; }
+  th,td { text-align:left; padding:8px 8px; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; }
+  th { color:var(--mut); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.4px; }
+  .bar { position:relative; height:9px; border-radius:5px; background:#1d2940; overflow:hidden; min-width:120px; }
+  .bar > i { position:absolute; inset:0 auto 0 0; background:linear-gradient(90deg,var(--acc),var(--good)); }
+  .bar > .ci { position:absolute; top:0; bottom:0; background:rgba(255,255,255,.16); }
+  .tag { font-size:11px; padding:2px 7px; border-radius:999px; border:1px solid var(--line); color:var(--mut); }
+  .tag.lead { color:#04122e; background:var(--good); border-color:transparent; font-weight:700; }
+  .tag.starve { color:#1a1206; background:var(--warn); border-color:transparent; font-weight:700; }
+  .stat { display:flex; gap:18px; flex-wrap:wrap; margin-top:10px; color:var(--mut); font-size:13px; }
+  .stat b { color:var(--ink); }
+  .truth { width:74px; }
+  code { background:#0d1422; padding:1px 6px; border-radius:6px; color:#bcd3ff; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Helix <small>— online · non-stationary · fairness-aware decision engine</small></h1>
+  <p class="lede">Five options with hidden true win-rates (editable below). Helix doesn't know them —
+    it learns by trying. Watch it converge on the best, keep a sliver of exploration, and (with a
+    fairness budget on) refuse to starve any option. Flip a slider mid-run and the decayed memory re-learns.</p>
+</header>
+
+<div class="wrap">
+  <div class="panel">
+    <div class="controls">
+      <button id="step">Run 200 rounds</button>
+      <button id="play" class="ghost">▶ Auto</button>
+      <button id="reset" class="ghost">Reset</button>
+      <label>decay <input id="decay" type="range" min="0.9" max="1" step="0.005" value="1"><span id="decayv">1.000</span></label>
+      <label>fairness budget <input id="budget" type="range" min="0" max="60" step="1" value="0"><span id="budgetv">off</span></label>
+    </div>
+    <div class="stat">
+      <span>round <b id="round">0</b></span>
+      <span>total reward <b id="reward">0</b></span>
+      <span>oracle (always-best) <b id="oracle">0</b></span>
+      <span>avg regret/round <b id="regret">0.000</b></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <table>
+      <thead><tr><th>option</th><th>true rate</th><th>belief (mean ± 95% CI)</th><th>pulls</th><th>idle</th><th></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</div>
+
+<script src="helix.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // True (hidden) success probabilities. The engine never sees these.
+  var TRUTH = { Alpha: 0.32, Bravo: 0.55, Charlie: 0.78, Delta: 0.61, Echo: 0.20 };
+  var IDS = Object.keys(TRUTH);
+
+  var engine, env, round, totalReward, oracleReward;
+
+  function build() {
+    var decay = parseFloat(document.getElementById('decay').value);
+    var budgetRaw = parseInt(document.getElementById('budget').value, 10);
+    engine = Helix({ seed: 'helix-demo', decay: decay, starvationBudget: budgetRaw > 0 ? budgetRaw : Infinity });
+    IDS.forEach(function (id) { engine.arm(id); });
+    env = Helix.mulberry32(20260617); // independent stream for "real" outcomes
+    round = 0; totalReward = 0; oracleReward = 0;
+  }
+
+  function bestTrueRate() {
+    return Math.max.apply(null, IDS.map(function (id) { return TRUTH[id]; }));
+  }
+
+  // One decision → observe a real outcome → learn from it.
+  function tick() {
+    var pick = engine.best();              // explore/exploit selection
+    var r = env() < TRUTH[pick] ? 1 : 0;   // the world responds
+    engine.reward(pick, r);                // update belief
+    totalReward += r;
+    oracleReward += bestTrueRate();
+    round++;
+  }
+
+  function fmt(n, d) { return Number(n).toFixed(d == null ? 0 : d); }
+
+  function render() {
+    var rows = document.getElementById('rows');
+    var ranked = engine.score().map(function (s) { return s.id; });
+    var leader = ranked[0];
+    var html = IDS.map(function (id) {
+      var s = engine.stats(id);
+      var pct = Math.round(s.mean * 100);
+      var lo = Math.round(s.ci[0] * 100), hi = Math.round(s.ci[1] * 100);
+      var idle = s.staleness === Infinity ? '∞' : s.staleness;
+      var tag = id === leader
+        ? '<span class="tag lead">leading</span>'
+        : (s.staleness !== Infinity && s.staleness >= 12 ? '<span class="tag starve">stale</span>' : '');
+      return '<tr>'
+        + '<td><b>' + id + '</b></td>'
+        + '<td><input class="truth" type="number" min="0" max="1" step="0.01" value="' + TRUTH[id] + '" data-id="' + id + '"></td>'
+        + '<td><div class="bar"><span class="ci" style="left:' + lo + '%;width:' + Math.max(1, hi - lo) + '%"></span>'
+        + '<i style="width:' + pct + '%"></i></div><span class="tag">' + pct + '%</span></td>'
+        + '<td>' + s.pulls + '</td>'
+        + '<td>' + idle + '</td>'
+        + '<td>' + tag + '</td>'
+        + '</tr>';
+    }).join('');
+    rows.innerHTML = html;
+
+    document.getElementById('round').textContent = round;
+    document.getElementById('reward').textContent = fmt(totalReward);
+    document.getElementById('oracle').textContent = fmt(oracleReward);
+    document.getElementById('regret').textContent =
+      fmt(round ? (oracleReward - totalReward) / round : 0, 3);
+
+    // Re-bind truth editors (live concept-drift: change a rate mid-run).
+    Array.prototype.forEach.call(rows.querySelectorAll('.truth'), function (inp) {
+      inp.addEventListener('change', function () {
+        var v = parseFloat(inp.value);
+        if (isFinite(v)) TRUTH[inp.getAttribute('data-id')] = Math.max(0, Math.min(1, v));
+      });
+    });
+  }
+
+  function runBatch(n) { for (var i = 0; i < n; i++) tick(); render(); }
+
+  // ── wiring ──
+  document.getElementById('step').addEventListener('click', function () { runBatch(200); });
+  document.getElementById('reset').addEventListener('click', function () { build(); render(); });
+
+  var timer = null;
+  document.getElementById('play').addEventListener('click', function () {
+    var btn = this;
+    if (timer) { clearInterval(timer); timer = null; btn.textContent = '▶ Auto'; return; }
+    btn.textContent = '⏸ Pause';
+    timer = setInterval(function () { runBatch(20); }, 60);
+  });
+
+  ['decay', 'budget'].forEach(function (id) {
+    document.getElementById(id).addEventListener('input', function () {
+      document.getElementById('decayv').textContent = fmt(parseFloat(document.getElementById('decay').value), 3);
+      var b = parseInt(document.getElementById('budget').value, 10);
+      document.getElementById('budgetv').textContent = b > 0 ? b + ' rounds' : 'off';
+      build(); render(); // reconfiguring rebuilds the learner
+    });
+  });
+
+  build();
+  render();
+})();
+</script>
+</body>
+</html>
