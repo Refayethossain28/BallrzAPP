@@ -250,3 +250,104 @@ exports.refundSquarePayment = onCall(
     }
   }
 );
+
+// ── Booking-lifecycle notifications ─────────────────────────────────────────
+// Firestore-triggered: emails (SendGrid) and texts (Twilio) the client as their
+// booking moves through its lifecycle. Providers are called directly via fetch.
+// All credentials are secrets; if a provider isn't configured it's skipped, so a
+// partial setup never errors. Set the non-secret from-address/number via env.
+
+const { onDocumentWritten } = require('firebase-functions/v2/firestore');
+
+const SENDGRID_API_KEY   = defineSecret('SENDGRID_API_KEY');
+const TWILIO_ACCOUNT_SID = defineSecret('TWILIO_ACCOUNT_SID');
+const TWILIO_AUTH_TOKEN  = defineSecret('TWILIO_AUTH_TOKEN');
+
+const NOTIFY_FROM_EMAIL = process.env.NOTIFY_FROM_EMAIL || 'concierge@apexvip.com';
+const NOTIFY_FROM_NAME  = process.env.NOTIFY_FROM_NAME  || 'ApexVIP';
+const TWILIO_FROM_NUMBER = process.env.TWILIO_FROM_NUMBER || '';
+
+async function sendEmail(to, subject, text) {
+  const key = SENDGRID_API_KEY.value();
+  if (!key || !to) return;
+  const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      personalizations: [{ to: [{ email: to }] }],
+      from: { email: NOTIFY_FROM_EMAIL, name: NOTIFY_FROM_NAME },
+      subject,
+      content: [{ type: 'text/plain', value: text }],
+    }),
+  });
+  if (!res.ok) logger.warn('SendGrid', res.status, await res.text().catch(() => ''));
+}
+
+async function sendSms(to, body) {
+  const sid = TWILIO_ACCOUNT_SID.value(), tok = TWILIO_AUTH_TOKEN.value();
+  if (!sid || !tok || !TWILIO_FROM_NUMBER || !to) return;
+  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Basic ' + Buffer.from(`${sid}:${tok}`).toString('base64'),
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({ To: to, From: TWILIO_FROM_NUMBER, Body: body }),
+  });
+  if (!res.ok) logger.warn('Twilio', res.status, await res.text().catch(() => ''));
+}
+
+// Decide which lifecycle message (if any) this write represents.
+function bookingEvent(before, after) {
+  if (!after) return null;                                   // deleted
+  if (!before) return 'received';                            // newly created
+  if (before.status !== after.status) {
+    switch (after.status) {
+      case 'confirmed':       return 'confirmed';
+      case 'driver_assigned': return 'driver_assigned';
+      case 'en_route':
+      case 'arriving':        return 'en_route';
+      case 'completed':       return 'completed';
+      case 'cancelled':       return 'cancelled';
+      default: return null;
+    }
+  }
+  if (!before.driverName && after.driverName) return 'driver_assigned';
+  return null;
+}
+
+function bookingMessage(event, b) {
+  const ref = b.ref || b.bookingRef || '';
+  const route = [b.pickup, b.dropoff || b.airport].filter(Boolean).join(' → ');
+  const when = [b.date, b.time].filter(Boolean).join(' ');
+  const M = {
+    received:        ['We\'ve received your booking', `Thank you — we've received your ApexVIP booking ${ref}. ${route}${when ? ' · ' + when : ''}. We'll confirm your chauffeur shortly.`],
+    confirmed:       ['Your booking is confirmed', `Your ApexVIP journey ${ref} is confirmed. ${route}${when ? ' · ' + when : ''}.`],
+    driver_assigned: ['Your chauffeur is assigned', `${b.driverName || 'Your chauffeur'} will be looking after you for booking ${ref}${b.vehicle ? ' in a ' + b.vehicle : ''}.`],
+    en_route:        ['Your chauffeur is on the way', `Your ApexVIP chauffeur is en route for booking ${ref}. ${route}.`],
+    completed:       ['Thank you for travelling with ApexVIP', `Your journey ${ref} is complete. A receipt is available in the app. We hope to welcome you again soon.`],
+    cancelled:       ['Your booking has been cancelled', `Your ApexVIP booking ${ref} has been cancelled. Any eligible refund will follow per our cancellation policy.`],
+  };
+  return M[event] || null;
+}
+
+exports.onBookingWrite = onDocumentWritten(
+  { document: 'bookings/{bookingId}', secrets: [SENDGRID_API_KEY, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN], region: 'us-central1' },
+  async (event) => {
+    const before = event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
+    const after  = event.data && event.data.after  && event.data.after.exists  ? event.data.after.data()  : null;
+    const kind = bookingEvent(before, after);
+    if (!kind) return;
+    const msg = bookingMessage(kind, after);
+    if (!msg) return;
+    const [subject, text] = msg;
+    const email = after.clientEmail || after.email || '';
+    const phone = after.clientPhone || after.phone || '';
+    try {
+      await Promise.all([ sendEmail(email, subject, text), sendSms(phone, `ApexVIP: ${text}`) ]);
+      logger.info('booking notification sent', { kind, ref: after.ref || event.params.bookingId });
+    } catch (err) {
+      logger.error('onBookingWrite', err.message);
+    }
+  }
+);
