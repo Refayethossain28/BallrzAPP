@@ -6,6 +6,7 @@ import { useDeal, useMessages } from '../lib/hooks';
 import {
   sendMessage, proposeViewing, confirmViewing, agreeToProceed, type Deal,
 } from '../lib/db';
+import { draftContract } from '../lib/functions';
 import { photoGradient } from '../components/ui';
 
 const fmtDateTime = (ms: number) =>
@@ -99,8 +100,24 @@ function Pipeline({ deal }: { deal: Deal }) {
 }
 
 function Actions({ deal, me }: { deal: Deal; me: DealParty }) {
+  const navigate = useNavigate();
   const [showSlot, setShowSlot] = useState(false);
   const [slot, setSlot] = useState(defaultSlot());
+  const [drafting, setDrafting] = useState(false);
+  const [draftError, setDraftError] = useState('');
+
+  async function draft() {
+    setDrafting(true);
+    setDraftError('');
+    try {
+      await draftContract({ dealId: deal.id });
+      navigate(`/deal/${deal.id}/contract`);
+    } catch (err) {
+      setDraftError(err instanceof Error ? err.message : 'Could not draft the agreement.');
+    } finally {
+      setDrafting(false);
+    }
+  }
 
   async function propose(e: FormEvent) {
     e.preventDefault();
@@ -153,8 +170,23 @@ function Actions({ deal, me }: { deal: Deal; me: DealParty }) {
           {deal.agreed[me] ? "✓ You've agreed — awaiting the other party" : '🤝 Agree to proceed to a tenancy'}
         </button>
       )}
-      {bothAgreed && (
-        <div className="notice">🤝 Both parties have agreed terms. Drafting &amp; signing the tenancy agreement arrives in M4–M5.</div>
+
+      {/* contract drafting (M3) */}
+      {bothAgreed && !deal.contractDrafted && me === 'landlord' && (
+        <>
+          <button className="cta" style={{ marginBottom: draftError ? 4 : 10 }} disabled={drafting} onClick={draft}>
+            {drafting ? 'Drafting…' : '📄 Draft the tenancy agreement'}
+          </button>
+          {draftError && <p className="error" style={{ marginBottom: 10 }}>{draftError}</p>}
+        </>
+      )}
+      {bothAgreed && !deal.contractDrafted && me === 'renter' && (
+        <div className="notice">🤝 Both parties agreed. The landlord is preparing the tenancy agreement.</div>
+      )}
+      {deal.contractDrafted && (
+        <button className="cta" style={{ marginBottom: 10 }} onClick={() => navigate(`/deal/${deal.id}/contract`)}>
+          📄 Review the tenancy agreement
+        </button>
       )}
     </div>
   );

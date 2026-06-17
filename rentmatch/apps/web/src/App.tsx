@@ -10,6 +10,7 @@ import NewProperty from './features/NewProperty';
 import Account from './features/Account';
 import Chats from './features/Chats';
 import DealRoom from './features/DealRoom';
+import ContractView from './features/ContractView';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false } },
@@ -31,6 +32,7 @@ function Gate() {
         <Route path="/landlord/new" element={<NewProperty />} />
         <Route path="/chats" element={<Chats />} />
         <Route path="/deal/:id" element={<DealRoom />} />
+        <Route path="/deal/:id/contract" element={<ContractView />} />
         <Route path="/account" element={<Account />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

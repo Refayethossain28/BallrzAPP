@@ -1,52 +1,137 @@
 /**
- * Cloud Functions entry point (M0 scaffold — seams only, no live wiring yet).
+ * Cloud Functions — server-authoritative deal logic.
  *
- * Everything money- or state-related runs here under the Admin SDK so it
- * bypasses Firestore rules. The handlers below sketch the seams that M3–M5
- * fill in; each one leans on the shared, tested kernel for its logic.
+ * `draftContract` is the first real transition moved off the client: only the
+ * landlord, only when both parties have agreed, can generate the tenancy
+ * agreement. It runs the shared compliance + contract kernel under the Admin
+ * SDK (bypassing Firestore rules), writes the immutable contract, advances the
+ * deal, and appends an audit event. The e-sign (M4) and Stripe £100 fee (M5)
+ * handlers below remain seams that build on this same pattern.
  */
+import { onCall, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
+import { initializeApp } from 'firebase-admin/app';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import {
-  canTransition,
-  evaluateSigningCompliance,
-  buildTenancyAgreement,
-  PLATFORM_FEE_PENCE,
-  type DealSnapshot,
-  type DealStage,
+  buildTenancyAgreement, evaluateSigningCompliance, recomputeStage,
+  tenancyDepositCapPence, PLATFORM_FEE_PENCE,
+  type DealRecord, type EpcRating, type Party,
 } from '@rentmatch/shared';
 
-/**
- * Callable: advance a deal. Loads the deal, derives a DealSnapshot, and only
- * writes the new stage if the shared state machine allows it. (M3)
- */
-export async function advanceDeal(_dealId: string, _to: DealStage): Promise<void> {
-  // const deal = await loadDeal(dealId);
-  // const snapshot: DealSnapshot = deriveSnapshot(deal);
-  // const guard = canTransition(snapshot, to);
-  // if (!guard.ok) throw new HttpsError('failed-precondition', guard.reason);
-  // await writeStage(dealId, to); await appendEvent(dealId, ...);
-  void canTransition;
-  void buildTenancyAgreement;
-  void evaluateSigningCompliance;
+initializeApp();
+const db = getFirestore();
+
+type StoredDeal = DealRecord & {
+  listingId: string;
+  renterId: string;
+  landlordId: string;
+  renterName: string;
+  landlordName: string;
+};
+
+interface DraftRequest {
+  dealId: string;
 }
 
-/**
- * E-sign webhook: on "envelope complete" (signature verified), capture the
- * landlord's saved card for the £100 fee via Stripe with an idempotency key of
- * the dealId, then let `payment_intent.succeeded` finish the deal. (M4 → M5)
- */
-export async function onEsignComplete(_envelopeId: string): Promise<void> {
-  // verify webhook signature → mark signatures
-  // stripe.paymentIntents.create({ amount: PLATFORM_FEE_PENCE, currency: 'gbp', ... },
-  //   { idempotencyKey: dealId });
-  void PLATFORM_FEE_PENCE;
-}
+export const draftContract = onCall(async (req: CallableRequest<DraftRequest>) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
+  const dealId = req.data?.dealId;
+  if (!dealId) throw new HttpsError('invalid-argument', 'dealId is required.');
+
+  const dealRef = db.doc(`deals/${dealId}`);
+  const dealSnap = await dealRef.get();
+  if (!dealSnap.exists) throw new HttpsError('not-found', 'Deal not found.');
+  const deal = dealSnap.data() as StoredDeal;
+
+  if (deal.landlordId !== uid) {
+    throw new HttpsError('permission-denied', 'Only the landlord can draft the agreement.');
+  }
+  if (!(deal.agreed?.renter && deal.agreed?.landlord)) {
+    throw new HttpsError('failed-precondition', 'Both parties must agree before drafting.');
+  }
+  if (deal.contractDrafted) {
+    throw new HttpsError('failed-precondition', 'The agreement has already been drafted.');
+  }
+
+  const listingSnap = await db.doc(`listings/${deal.listingId}`).get();
+  if (!listingSnap.exists) throw new HttpsError('not-found', 'Listing not found.');
+  const listing = listingSnap.data() as Record<string, unknown>;
+
+  const [landlordSnap, renterSnap] = await Promise.all([
+    db.doc(`users/${deal.landlordId}`).get(),
+    db.doc(`users/${deal.renterId}`).get(),
+  ]);
+  const landlord: Party = { name: deal.landlordName, email: String(landlordSnap.data()?.email ?? '') };
+  const tenant: Party = { name: deal.renterName, email: String(renterSnap.data()?.email ?? '') };
+
+  const monthlyRentPence = Number(listing.rentPence ?? 0);
+
+  // Statutory pre-signing gate (How to Rent / Right to Rent become real in M6).
+  const { checks, canSign } = evaluateSigningCompliance({
+    nation: 'england',
+    monthlyRentPence,
+    proposedDepositPence: tenancyDepositCapPence(monthlyRentPence),
+    howToRentServed: true,
+    rightToRentChecked: true,
+  });
+  if (!canSign) {
+    throw new HttpsError('failed-precondition', 'Statutory pre-signing checks are not met.');
+  }
+
+  const agreement = buildTenancyAgreement({
+    nation: 'england',
+    landlord,
+    tenant,
+    propertyAddress: `${listing.street}, ${listing.area}, ${listing.city}, ${listing.postcode}`,
+    monthlyRentPence,
+    startDate: Date.now() + 14 * 86_400_000,
+    termMonths: 12,
+    furnished: (listing.furnished as 'Furnished' | 'Unfurnished' | 'Part-furnished') ?? 'Unfurnished',
+    epcRating: (listing.epcRating as EpcRating) ?? 'D',
+  });
+
+  await db.doc(`contracts/${dealId}`).set({
+    dealId,
+    renterId: deal.renterId,
+    landlordId: deal.landlordId,
+    version: 1,
+    agreement,
+    compliance: checks,
+    feePence: PLATFORM_FEE_PENCE,
+    draftedAt: FieldValue.serverTimestamp(),
+  });
+
+  const nextStage = recomputeStage({ ...deal, contractDrafted: true });
+  await dealRef.update({
+    contractDrafted: true,
+    stage: nextStage,
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  await dealRef.collection('events').add({
+    type: 'contract_drafted',
+    actor: uid,
+    at: FieldValue.serverTimestamp(),
+  });
+  await dealRef.collection('messages').add({
+    senderId: 'system',
+    senderRole: 'system',
+    text: 'Tenancy agreement drafted and shared with both parties for review.',
+    ts: FieldValue.serverTimestamp(),
+  });
+
+  return { contractId: dealId, stage: nextStage };
+});
 
 /**
- * Stripe webhook: on `payment_intent.succeeded` for the landlord fee, mark the
- * deal completed and the listing let, store the executed PDF, email receipts. (M5)
+ * M4: open the e-sign envelope (stage → signing), then capture each signature
+ * from the provider's webhook. On the "envelope complete" event, charge the
+ * landlord's saved card for the £100 fee (idempotency key = dealId). — seam.
  */
-export async function onStripeWebhook(_signature: string, _payload: string): Promise<void> {
-  // verify signature → completeDeal(dealId)
-  const _snapshot: DealSnapshot | null = null;
-  void _snapshot;
-}
+// export const openSigning = onCall(...)
+// export const esignWebhook = onRequest(...)
+
+/**
+ * M5: Stripe `payment_intent.succeeded` for the landlord fee → mark the deal
+ * completed and the listing let, store the executed PDF, email receipts. — seam.
+ */
+// export const stripeWebhook = onRequest(...)
