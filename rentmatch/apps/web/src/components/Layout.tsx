@@ -16,10 +16,12 @@ export default function Layout() {
     role === 'renter'
       ? [
           { to: '/', ic: '🔎', label: 'Search', end: true },
+          { to: '/chats', ic: '💬', label: 'Chats', end: false },
           { to: '/account', ic: '👤', label: 'Account', end: false },
         ]
       : [
           { to: '/landlord', ic: '🏠', label: 'Listings', end: true },
+          { to: '/chats', ic: '💬', label: 'Enquiries', end: false },
           { to: '/account', ic: '👤', label: 'Account', end: false },
         ];
 

@@ -42,21 +42,30 @@ service cloud.firestore {
       allow update, delete: if isSignedIn() && resource.data.landlordId == uid();
     }
 
-    // Deals: a renter may open one; both participants may read it; but the
-    // privileged fields are immutable from the client.
+    // Deals: a renter may open one; both participants may read it.
     match /deals/{dealId} {
+      function changedKeys() {
+        return request.resource.data.diff(resource.data).affectedKeys();
+      }
       allow read: if isSignedIn() && isParticipant(resource.data);
       allow create: if isSignedIn() && request.resource.data.renterId == uid();
-      // Clients can never change stage / signatures / payment / contract.
-      allow update: if false;
+      // M2: participants may update only the messaging/viewing/agreement fields,
+      // and stage may never be driven past `agreed` from the client. Signatures,
+      // payment, contract and stage→contract/signing/completed stay locked to
+      // Cloud Functions (M3+).
+      allow update: if isSignedIn() && isParticipant(resource.data)
+        && changedKeys().hasOnly(['stage', 'viewing', 'agreed', 'updatedAt'])
+        && request.resource.data.stage in ['enquiry', 'viewing', 'agreed', 'cancelled'];
       allow delete: if false;
 
       match /messages/{messageId} {
+        // M2: either participant may post in their own deal (this includes the
+        // client-generated "system" notes for viewings/agreement). M3 moves
+        // system messages behind Cloud Functions so they can't be forged.
         allow read: if isSignedIn() &&
           isParticipant(get(/databases/$(database)/documents/deals/$(dealId)).data);
         allow create: if isSignedIn() &&
-          isParticipant(get(/databases/$(database)/documents/deals/$(dealId)).data) &&
-          request.resource.data.senderId == uid();
+          isParticipant(get(/databases/$(database)/documents/deals/$(dealId)).data);
         allow update, delete: if false;
       }
 
