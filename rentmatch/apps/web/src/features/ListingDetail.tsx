@@ -1,18 +1,35 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   formatGBP, tenancyDepositCapPence, holdingDepositCapPence, weeklyRentPence,
 } from '@rentmatch/shared';
-import { fetchListing } from '../lib/db';
+import { useAuth } from '../auth/AuthProvider';
+import { fetchListing, createOrGetDeal } from '../lib/db';
 import { photoGradient, formatDate } from '../components/ui';
 
 export default function ListingDetail() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
+  const { user, profile } = useAuth();
+  const [busy, setBusy] = useState(false);
   const { data: l, isLoading } = useQuery({ queryKey: ['listing', id], queryFn: () => fetchListing(id) });
 
   if (isLoading) return <p className="sub">Loading…</p>;
   if (!l) return <div className="empty"><div className="big">🤔</div>Listing not found.</div>;
+
+  const ownListing = !!user && l.landlordId === user.uid;
+
+  async function enquire() {
+    if (!user || !l) return;
+    setBusy(true);
+    try {
+      const dealId = await createOrGetDeal(l, { uid: user.uid, name: profile?.displayName ?? 'Renter' });
+      navigate(`/deal/${dealId}`);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <>
@@ -64,12 +81,18 @@ export default function ListingDetail() {
         holding deposit. RentMatch never charges renters a fee.
       </div>
 
-      <button className="cta" disabled={l.status !== 'live'}>
-        {l.status === 'live' ? 'Enquire & message landlord' : 'This property has been let'}
-      </button>
-      <p className="faint" style={{ textAlign: 'center', fontSize: 11, marginTop: 10 }}>
-        Messaging, viewings and signing arrive in M2–M5.
-      </p>
+      {ownListing ? (
+        <div className="notice">This is your own listing. Enquiries from renters will appear in your Enquiries tab.</div>
+      ) : (
+        <>
+          <button className="cta" disabled={l.status !== 'live' || busy} onClick={enquire}>
+            {l.status !== 'live' ? 'This property has been let' : busy ? 'Opening…' : 'Enquire & message landlord'}
+          </button>
+          <p className="faint" style={{ textAlign: 'center', fontSize: 11, marginTop: 10 }}>
+            Drafting &amp; signing the tenancy agreement arrive in M4–M5.
+          </p>
+        </>
+      )}
     </>
   );
 }

@@ -7,12 +7,14 @@
  */
 import {
   collection, doc, getDoc, getDocs, query, where, addDoc, setDoc, updateDoc,
-  serverTimestamp, Timestamp,
+  serverTimestamp, Timestamp, onSnapshot, orderBy, or,
+  type Unsubscribe,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import {
-  evaluateListingCompliance,
-  type ComplianceCheck, type ComplianceDoc, type EpcRating, type ListingSummary,
+  evaluateListingCompliance, newDealRecord, recomputeStage,
+  type ComplianceCheck, type ComplianceDoc, type DealParty, type DealRecord,
+  type DealViewing, type EpcRating, type ListingSummary,
 } from '@rentmatch/shared';
 
 export type Role = 'renter' | 'landlord';
@@ -166,4 +168,156 @@ export async function createListing(input: NewListingInput): Promise<CreateListi
     createdAt: serverTimestamp(),
   });
   return { id: ref.id, status, checks };
+}
+
+/* ---- deals, messaging & viewings (M2) ---- */
+
+/** A deal document as stored in Firestore (DealRecord + ids and display data). */
+export interface Deal extends DealRecord {
+  id: string;
+  listingId: string;
+  renterId: string;
+  landlordId: string;
+  renterName: string;
+  landlordName: string;
+  listingArea: string;
+  listingCity: string;
+  rentPence: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface Message {
+  id: string;
+  senderId: string;
+  senderRole: DealParty | 'system';
+  text: string;
+  ts: number;
+}
+
+const dealsCol = collection(db, 'deals');
+const toMs = (v: unknown): number => (v instanceof Timestamp ? v.toMillis() : typeof v === 'number' ? v : Date.now());
+
+function mapDeal(id: string, d: Record<string, unknown>): Deal {
+  const rec = newDealRecord();
+  return {
+    id,
+    listingId: String(d.listingId ?? ''),
+    renterId: String(d.renterId ?? ''),
+    landlordId: String(d.landlordId ?? ''),
+    renterName: String(d.renterName ?? 'Renter'),
+    landlordName: String(d.landlordName ?? 'Landlord'),
+    listingArea: String(d.listingArea ?? ''),
+    listingCity: String(d.listingCity ?? ''),
+    rentPence: Number(d.rentPence ?? 0),
+    stage: (d.stage ?? 'enquiry') as Deal['stage'],
+    viewing: (d.viewing as DealViewing | null) ?? null,
+    agreed: (d.agreed as Deal['agreed']) ?? rec.agreed,
+    contractDrafted: Boolean(d.contractDrafted),
+    esignEnvelopeOpen: Boolean(d.esignEnvelopeOpen),
+    signed: (d.signed as Deal['signed']) ?? rec.signed,
+    feePaid: Boolean(d.feePaid),
+    createdAt: toMs(d.createdAt),
+    updatedAt: toMs(d.updatedAt),
+  };
+}
+
+/** Find an existing renter↔listing deal, or create one with an opening message. */
+export async function createOrGetDeal(
+  listing: Listing,
+  renter: { uid: string; name: string },
+): Promise<string> {
+  const existing = await getDocs(
+    query(dealsCol, where('listingId', '==', listing.id), where('renterId', '==', renter.uid)),
+  );
+  if (!existing.empty) return existing.docs[0].id;
+
+  const landlordSnap = await getDoc(doc(usersCol, listing.landlordId));
+  const landlordName = landlordSnap.exists() ? String(landlordSnap.data().displayName ?? 'Landlord') : 'Landlord';
+
+  const ref = await addDoc(dealsCol, {
+    ...newDealRecord(),
+    listingId: listing.id,
+    renterId: renter.uid,
+    landlordId: listing.landlordId,
+    renterName: renter.name,
+    landlordName,
+    listingArea: listing.area,
+    listingCity: listing.city,
+    rentPence: listing.rentPence,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  await sendMessage(ref.id, renter.uid, 'renter', "Hi, I'm interested in this property — is it still available?");
+  await addSystemMessage(ref.id, 'Enquiry started. Say hello and arrange a viewing.');
+  return ref.id;
+}
+
+/** Live subscription to the deals a user is part of, in either role. */
+export function watchUserDeals(uid: string, cb: (deals: Deal[]) => void): Unsubscribe {
+  const q = query(dealsCol, or(where('renterId', '==', uid), where('landlordId', '==', uid)));
+  return onSnapshot(q, (snap) => {
+    const deals = snap.docs.map((d) => mapDeal(d.id, d.data())).sort((a, b) => b.updatedAt - a.updatedAt);
+    cb(deals);
+  });
+}
+
+export function watchDeal(dealId: string, cb: (deal: Deal | null) => void): Unsubscribe {
+  return onSnapshot(doc(dealsCol, dealId), (snap) => cb(snap.exists() ? mapDeal(snap.id, snap.data()) : null));
+}
+
+export function watchMessages(dealId: string, cb: (messages: Message[]) => void): Unsubscribe {
+  const q = query(collection(dealsCol, dealId, 'messages'), orderBy('ts', 'asc'));
+  return onSnapshot(q, (snap) => {
+    cb(snap.docs.map((m) => {
+      const data = m.data();
+      return {
+        id: m.id,
+        senderId: String(data.senderId ?? ''),
+        senderRole: (data.senderRole ?? 'system') as Message['senderRole'],
+        text: String(data.text ?? ''),
+        ts: toMs(data.ts),
+      };
+    }));
+  });
+}
+
+export async function sendMessage(dealId: string, senderId: string, senderRole: DealParty, text: string): Promise<void> {
+  await addDoc(collection(dealsCol, dealId, 'messages'), { senderId, senderRole, text, ts: serverTimestamp() });
+  await updateDoc(doc(dealsCol, dealId), { updatedAt: serverTimestamp() });
+}
+
+async function addSystemMessage(dealId: string, text: string): Promise<void> {
+  await addDoc(collection(dealsCol, dealId, 'messages'), { senderId: 'system', senderRole: 'system', text, ts: serverTimestamp() });
+}
+
+/** Re-derive and persist the stage from the deal's facts, then nudge updatedAt. */
+async function syncStage(deal: Deal, patch: Partial<DealRecord>): Promise<void> {
+  const next: DealRecord = { ...deal, ...patch };
+  await updateDoc(doc(dealsCol, deal.id), {
+    ...patch,
+    stage: recomputeStage(next),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function proposeViewing(deal: Deal, by: DealParty, ts: number): Promise<void> {
+  await syncStage(deal, { viewing: { ts, status: 'proposed', proposedBy: by } });
+  await addSystemMessage(deal.id, `${by === 'renter' ? deal.renterName : deal.landlordName} proposed a viewing for ${new Date(ts).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.`);
+}
+
+export async function confirmViewing(deal: Deal): Promise<void> {
+  if (!deal.viewing) return;
+  await syncStage(deal, { viewing: { ...deal.viewing, status: 'confirmed' } });
+  await addSystemMessage(deal.id, 'Viewing confirmed. ✅');
+}
+
+export async function agreeToProceed(deal: Deal, party: DealParty): Promise<void> {
+  const agreed = { ...deal.agreed, [party]: true };
+  await syncStage(deal, { agreed });
+  const name = party === 'renter' ? deal.renterName : deal.landlordName;
+  await addSystemMessage(deal.id, `${name} agreed to proceed to a tenancy.`);
+  if (agreed.renter && agreed.landlord) {
+    await addSystemMessage(deal.id, 'Both parties have agreed terms. The tenancy agreement step arrives next.');
+  }
 }

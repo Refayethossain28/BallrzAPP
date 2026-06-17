@@ -28,11 +28,24 @@ reference. The full architecture is in
 - React + Vite + TanStack Query, reusing `@rentmatch/shared` (search logic added
   there with tests — 27 kernel tests total)
 
-Next: M2 messaging + viewings. See the roadmap in the foundation doc.
+**M2 — messaging · viewings · agreement ✅**
+- Renter enquiry from a listing opens a shared **deal** (one per renter↔listing)
+- **Realtime chat** between renter and landlord (Firestore `onSnapshot`)
+- **Viewings** — either party proposes a date/time; the other confirms or
+  suggests another; a confirmed viewing advances the deal to the `viewing` stage
+- **Agree to proceed** — both parties agree to reach `agreed`
+- Stage is always re-derived from the deal's facts via the shared
+  `recomputeStage` (6 new tests → 33 kernel tests). A live progress pipeline
+  shows where the deal stands
+- Firestore rules tightened to match: participants may only touch
+  messaging/viewing/agreement fields and can't drive a deal past `agreed`
 
-> M1 note: listing creation runs the compliance gate client-side for now; M6
-> moves document verification (and status changes) behind Cloud Functions so it
-> is fully server-authoritative.
+Next: M3–M5 — agreement drafting, e-signature, and the £100 fee.
+
+> Client-side note: M1's compliance gate and M2's deal transitions run on the
+> client for now; M3+ moves stage transitions and system messages behind Cloud
+> Functions for full server-authoritativeness (the rules already lock the
+> payment/signature/contract fields).
 
 ## Layout
 
