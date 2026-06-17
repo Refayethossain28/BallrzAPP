@@ -84,6 +84,12 @@ service cloud.firestore {
       allow read, update, delete: if isAdmin();
     }
 
+    // Crash/error reports — write-only from the app; admins read.
+    match /errors/{id} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
+
     // Lead capture (write-only from the app; admins read).
     match /city_interest/{id} { allow create: if true; allow read, update, delete: if isAdmin(); }
     match /waitlist/{id}      { allow create: if true; allow read, update, delete: if isAdmin(); }

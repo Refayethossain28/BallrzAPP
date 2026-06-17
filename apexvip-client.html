@@ -125,6 +125,11 @@ input,select,textarea{font-size:16px !important}
 }
 #cookie-consent.hidden{display:none}
 *::-webkit-scrollbar{display:none}
+/* Accessibility: visible keyboard focus + honour reduced-motion */
+:focus-visible{outline:2px solid var(--gold,#C8A97E);outline-offset:2px;border-radius:8px}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
+}
 
 /* ── Keyframes ─────────────────────────────────────────────────────── */
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
@@ -734,6 +739,40 @@ function haptic(style) {
     const patterns = {light:[8], medium:[20], heavy:[35], success:[10,40,20], error:[30,50,30]};
     navigator.vibrate(patterns[style]||patterns.light);
   }
+}
+
+// ── Reliability: lightweight crash reporting ──────────────────────────────
+// Keeps the last 50 errors on-device and (when available) writes to a Firestore
+// `errors` collection. Swap in Sentry/Crashlytics later via the same entry point.
+function reportError(kind, detail){
+  try{
+    const e={ kind, detail:String(detail||'').slice(0,800), screen:(typeof state!=='undefined'?state.screen:'') , ts:Date.now(), ua:(navigator.userAgent||'').slice(0,140) };
+    const arr=JSON.parse(localStorage.getItem('apexvip_errors')||'[]'); arr.push(e);
+    if(arr.length>50) arr.splice(0,arr.length-50);
+    localStorage.setItem('apexvip_errors',JSON.stringify(arr));
+    if(typeof FIREBASE_ENABLED!=='undefined' && FIREBASE_ENABLED && db) db.collection('errors').add(e).catch(()=>{});
+  }catch(_){ /* never let the reporter throw */ }
+}
+window.addEventListener('error', ev=>reportError('error', (ev.error&&ev.error.stack)||ev.message));
+window.addEventListener('unhandledrejection', ev=>reportError('promise', (ev.reason&&ev.reason.stack)||ev.reason));
+
+// ── Accessibility: make every onclick element keyboard-operable ───────────
+// The app renders many clickable <div>s; after each render, give them button
+// semantics, focusability, Enter/Space activation, and a label when missing.
+function enhanceA11y(){
+  if(!app) return;
+  app.querySelectorAll('[onclick]').forEach(el=>{
+    const tag=el.tagName;
+    if(tag!=='BUTTON'&&tag!=='A'&&tag!=='INPUT'&&tag!=='SELECT'&&tag!=='TEXTAREA'){
+      if(!el.hasAttribute('role')) el.setAttribute('role','button');
+      if(!el.hasAttribute('tabindex')) el.setAttribute('tabindex','0');
+      el.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); el.click(); } });
+    }
+    if(!el.getAttribute('aria-label')){
+      const t=(el.textContent||'').trim();
+      if(t && t.length<=60) el.setAttribute('aria-label',t);
+    }
+  });
 }
 
 function addRipple(btn, e) {
@@ -5811,19 +5850,32 @@ function renderAirportPickerPortal(){
 }
 
 function render(){
-  document.body.setAttribute('data-screen',state.screen);
-  const fn=screens[state.screen];
-  app.innerHTML=fn?fn():`<div style="padding:40px;text-align:center;color:var(--fg-4)">Screen not found</div>`;
-  renderAirportPickerPortal();
-  if(state.screen==='home') setTimeout(initMap,60);
-  if(state.screen==='payment') setTimeout(initSquare,60);
-  if(state.screen==='active-trip') setTimeout(initTrackingMap,60);
-  if(state.screen==='active-trip') setTimeout(startEtaCountdown,80);
-  if(state.screen==='track') setTimeout(initTrackScreen,60);
-  if(state.screen==='active-trip'||state.screen==='client-chat') setTimeout(()=>{ setupChatListener(state._chatDocId||state._activeBooking?.docId); },0);
-  if(state.screen==='client-chat') setTimeout(()=>{ const el=document.getElementById('chat-msgs'); if(el)el.scrollTop=el.scrollHeight; },50);
-  if(state.screen==='profile') setTimeout(loadReferralCode,100);
-  if(state.screen==='hotels') setTimeout(refreshHotelRates,0);
+  try{
+    document.body.setAttribute('data-screen',state.screen);
+    const fn=screens[state.screen];
+    app.innerHTML=fn?fn():`<div style="padding:40px;text-align:center;color:var(--fg-4)">Screen not found</div>`;
+    renderAirportPickerPortal();
+    if(state.screen==='home') setTimeout(initMap,60);
+    if(state.screen==='payment') setTimeout(initSquare,60);
+    if(state.screen==='active-trip') setTimeout(initTrackingMap,60);
+    if(state.screen==='active-trip') setTimeout(startEtaCountdown,80);
+    if(state.screen==='track') setTimeout(initTrackScreen,60);
+    if(state.screen==='active-trip'||state.screen==='client-chat') setTimeout(()=>{ setupChatListener(state._chatDocId||state._activeBooking?.docId); },0);
+    if(state.screen==='client-chat') setTimeout(()=>{ const el=document.getElementById('chat-msgs'); if(el)el.scrollTop=el.scrollHeight; },50);
+    if(state.screen==='profile') setTimeout(loadReferralCode,100);
+    if(state.screen==='hotels') setTimeout(refreshHotelRates,0);
+    enhanceA11y();
+  }catch(err){
+    reportError('render', (err&&err.stack)||err);
+    try{
+      app.innerHTML=`<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:32px;text-align:center;background:var(--bg)">
+        <div style="font-size:40px">⚠️</div>
+        <div style="font-family:var(--font-serif);font-size:22px;font-weight:300">Something went wrong</div>
+        <div style="font-size:13px;color:var(--fg-3);max-width:280px;line-height:1.6">We hit an unexpected error. Please try again — your bookings are safe.</div>
+        <button class="btn btn-gold" style="max-width:220px" onclick="location.reload()">Reload</button>
+      </div>`;
+    }catch(_){}
+  }
 }
 
 generateMemberNumber();
