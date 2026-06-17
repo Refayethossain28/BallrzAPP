@@ -3,9 +3,10 @@
  * This SW lives at the repo root, which it shares with other prototypes on the
  * same origin. To avoid hijacking their requests, the fetch handler ONLY takes
  * over RentMatch's own URLs (anything containing "rentmatch"); everything else
- * falls through to the network untouched. Cache-first for the shell, with a
- * network fill and an offline fallback to the app page. Bump CACHE to update. */
-const CACHE = 'rentmatch-v1';
+ * falls through to the network untouched. The HTML document is network-first
+ * (so deployed fixes show up on the next load, with a cached offline fallback);
+ * static assets are cache-first. Bump CACHE to evict a stale shell. */
+const CACHE = 'rentmatch-v2';
 const ASSETS = [
   './rentmatch.html',
   './rentmatch-manifest.json',
@@ -36,16 +37,31 @@ self.addEventListener('fetch', (e) => {
   const isOurs = url.origin === self.location.origin && url.pathname.includes('rentmatch');
   if (!isOurs) return; // leave other apps on this origin alone
 
-  e.respondWith(
-    caches.match(req).then((hit) =>
-      hit ||
+  // Network-first for the app page so deployed fixes are picked up immediately;
+  // fall back to the cached shell when offline.
+  const isDoc = req.mode === 'navigate' || url.pathname.endsWith('rentmatch.html');
+  if (isDoc) {
+    e.respondWith(
       fetch(req)
         .then((resp) => {
           const copy = resp.clone();
           caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
           return resp;
         })
-        .catch(() => caches.match('./rentmatch.html')),
+        .catch(() => caches.match(req).then((hit) => hit || caches.match('./rentmatch.html'))),
+    );
+    return;
+  }
+
+  // Cache-first for static assets (icons, manifest), with a network fill.
+  e.respondWith(
+    caches.match(req).then((hit) =>
+      hit ||
+      fetch(req).then((resp) => {
+        const copy = resp.clone();
+        caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+        return resp;
+      }),
     ),
   );
 });
