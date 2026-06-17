@@ -1,21 +1,33 @@
 # ApexVIP Cloud Functions
 
-Currently one function: **`getHotelRates`** — serves live hotel pricing to the client
-app (`apexvip-client.html`) from **Amadeus**, server-side, so the API secret never
-ships to the browser. See [`docs/apexvip-live-hotel-rates.md`](../docs/apexvip-live-hotel-rates.md)
-for how it plugs into the client.
+Functions in this codebase:
+- **`getHotelRates`** — live hotel pricing from **Amadeus** (server-side; see
+  [`docs/apexvip-live-hotel-rates.md`](../docs/apexvip-live-hotel-rates.md)).
+- **`processSquarePayment`** — authorize (pre-auth) a card payment via **Square**.
+- **`captureSquarePayment`** — capture the authorized payment on trip completion.
+- **`refundSquarePayment`** — full/partial refund per the cancellation policy.
 
-## ⚠️ Deploy ONLY this function
+All hold their provider secret server-side so the browser never sees it. See
+[`docs/apexvip-payments.md`](../docs/apexvip-payments.md) for the payment flow.
+
+## ⚠️ Deploy ONLY these functions
 
 This repo is a **separate functions codebase** (`apexvip-hotels`) from the project's
 other functions (`parseBookingIntent`, `checkFlightStatus`, …), which live elsewhere.
 **Always scope the deploy** so you don't touch the others:
 
 ```sh
-firebase deploy --only functions:getHotelRates
+firebase deploy --only functions:getHotelRates,functions:processSquarePayment,functions:captureSquarePayment,functions:refundSquarePayment
 ```
 
 A bare `firebase deploy` from here could try to delete functions it doesn't see.
+
+## Square setup
+```sh
+firebase functions:secrets:set SQUARE_ACCESS_TOKEN
+# Non-secret config (functions/.env): SQUARE_ENV=production|sandbox, SQUARE_LOCATION_ID=...
+```
+Default is the Square **sandbox**; set `SQUARE_ENV=production` for live charges.
 
 ## Setup
 
