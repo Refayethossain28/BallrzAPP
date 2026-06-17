@@ -12,3 +12,15 @@ export const draftContract = httpsCallable<{ dealId: string }, { contractId: str
   functions,
   'draftContract',
 );
+
+/** Landlord opens the e-signature envelope (stage → signing). */
+export const openSigning = httpsCallable<{ dealId: string }, { stage: string; envelopeId: string }>(
+  functions,
+  'openSigning',
+);
+
+/** Record the calling party's signature (stands in for the e-sign webhook). */
+export const recordSignature = httpsCallable<{ dealId: string }, { stage: string; bothSigned: boolean }>(
+  functions,
+  'recordSignature',
+);

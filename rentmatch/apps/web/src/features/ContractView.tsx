@@ -1,20 +1,42 @@
-import { type ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
-import { formatGBP } from '@rentmatch/shared';
+import { formatGBP, type DealParty } from '@rentmatch/shared';
+import { useAuth } from '../auth/AuthProvider';
+import { useDeal } from '../lib/hooks';
 import { fetchContract } from '../lib/db';
+import { openSigning, recordSignature } from '../lib/functions';
 
 const fmtDate = (ms: number) => new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+const fmtDateTime = (ms: number) => new Date(ms).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
 export default function ContractView() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const { deal } = useDeal(id);
   const { data: contract, isLoading } = useQuery({ queryKey: ['contract', id], queryFn: () => fetchContract(id) });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
   if (isLoading) return <p className="sub">Loading…</p>;
-  if (!contract) return <div className="empty"><div className="big">📄</div>No agreement drafted yet.</div>;
+  if (!contract || !deal) return <div className="empty"><div className="big">📄</div>No agreement drafted yet.</div>;
 
   const a = contract.agreement;
+  const party: DealParty = deal.renterId === user?.uid ? 'renter' : 'landlord';
+  const fullyExecuted = deal.signed.renter != null && deal.signed.landlord != null;
+
+  async function run(fn: () => Promise<unknown>) {
+    setBusy(true);
+    setError('');
+    try {
+      await fn();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong.');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <>
@@ -28,7 +50,7 @@ export default function ContractView() {
 
       <div className="notice">
         This Assured Shorthold Tenancy is governed by the {a.governingAct}. Both parties must sign for it to take
-        effect. On signing, RentMatch charges the landlord a one-off <b>{formatGBP(contract.feePence)}</b> fee.
+        effect. On full execution, RentMatch charges the landlord a one-off <b>{formatGBP(contract.feePence)}</b> fee.
       </div>
 
       <div style={{ background: '#0d1322', border: '1px solid var(--line)', borderRadius: 14, padding: 16, fontSize: 12.5, lineHeight: 1.6, color: '#cdd7f0' }}>
@@ -60,17 +82,52 @@ export default function ContractView() {
 
       <div className="section-t">Signatures</div>
       <div className="card"><div className="body">
-        <div className="row center" style={{ justifyContent: 'space-between' }}>
-          <span className="muted">Landlord — {a.parties.landlord.name}</span><span className="pill warn">Awaiting</span>
-        </div>
-        <div className="row center" style={{ justifyContent: 'space-between', marginTop: 10 }}>
-          <span className="muted">Tenant — {a.parties.tenant.name}</span><span className="pill warn">Awaiting</span>
-        </div>
+        <SigRow label={`Landlord — ${a.parties.landlord.name}`} at={deal.signed.landlord} />
+        <SigRow label={`Tenant — ${a.parties.tenant.name}`} at={deal.signed.renter} />
       </div></div>
-      <p className="faint" style={{ textAlign: 'center', fontSize: 11, marginTop: 12 }}>
-        E-signature and the £100 fee arrive in M4–M5.
-      </p>
+
+      {error && <p className="error">{error}</p>}
+
+      {/* actions by stage */}
+      {deal.stage === 'contract' && party === 'landlord' && (
+        <button className="cta" disabled={busy} onClick={() => run(() => openSigning({ dealId: id }))}>
+          {busy ? 'Sending…' : '✍️ Send for e-signature'}
+        </button>
+      )}
+      {deal.stage === 'contract' && party === 'renter' && (
+        <div className="notice">The landlord is about to send this agreement for e-signature.</div>
+      )}
+
+      {deal.stage === 'signing' && !fullyExecuted && deal.signed[party] == null && (
+        <button className="cta" disabled={busy} onClick={() => run(() => recordSignature({ dealId: id }))}>
+          {busy ? 'Signing…' : `✍️ Sign as ${party === 'renter' ? a.parties.tenant.name : a.parties.landlord.name}`}
+        </button>
+      )}
+      {deal.stage === 'signing' && !fullyExecuted && deal.signed[party] != null && (
+        <div className="notice">You've signed — waiting for the other party.</div>
+      )}
+      {deal.stage === 'signing' && fullyExecuted && (
+        <div className="notice">
+          ✅ Both parties have signed. The landlord's <b>{formatGBP(contract.feePence)}</b> fee completes the tenancy — payment arrives in M5.
+        </div>
+      )}
+      {deal.stage === 'completed' && (
+        <div className="notice" style={{ borderColor: 'rgba(54,240,166,.4)', background: 'rgba(54,240,166,.07)' }}>
+          🎉 Fully executed. The tenancy is in force.
+        </div>
+      )}
     </>
+  );
+}
+
+function SigRow({ label, at }: { label: string; at: number | null }) {
+  return (
+    <div className="row center" style={{ justifyContent: 'space-between', padding: '8px 0' }}>
+      <span className="muted">{label}</span>
+      {at != null
+        ? <span className="pill good">Signed {fmtDateTime(at)}</span>
+        : <span className="pill warn">Awaiting</span>}
+    </div>
   );
 }
 

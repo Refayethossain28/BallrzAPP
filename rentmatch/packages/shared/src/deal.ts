@@ -72,3 +72,16 @@ export function newDealRecord(): DealRecord {
 export function awaitingAgreement(d: DealRecord, party: DealParty): boolean {
   return !d.agreed[party];
 }
+
+/** Whether both parties have signed (the agreement is fully executed). */
+export function bothSigned(d: DealRecord): boolean {
+  return d.signed.renter != null && d.signed.landlord != null;
+}
+
+/**
+ * Fully executed but not yet completed — both have signed but the landlord's
+ * £100 fee has not been captured. This is the precise point M5's charge fires.
+ */
+export function awaitingFee(d: DealRecord): boolean {
+  return bothSigned(d) && !d.feePaid;
+}

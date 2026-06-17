@@ -123,12 +123,95 @@ export const draftContract = onCall(async (req: CallableRequest<DraftRequest>) =
 });
 
 /**
- * M4: open the e-sign envelope (stage → signing), then capture each signature
- * from the provider's webhook. On the "envelope complete" event, charge the
- * landlord's saved card for the £100 fee (idempotency key = dealId). — seam.
+ * M4 — open the e-signature envelope. Landlord-only, once the contract is
+ * drafted. In production this calls the e-sign provider's API to create an
+ * envelope for both signers; here we record the envelope and advance the deal
+ * to `signing`. The provider's hosted signing + webhook replace `recordSignature`.
  */
-// export const openSigning = onCall(...)
-// export const esignWebhook = onRequest(...)
+export const openSigning = onCall(async (req: CallableRequest<DraftRequest>) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
+  const dealId = req.data?.dealId;
+  if (!dealId) throw new HttpsError('invalid-argument', 'dealId is required.');
+
+  const dealRef = db.doc(`deals/${dealId}`);
+  const dealSnap = await dealRef.get();
+  if (!dealSnap.exists) throw new HttpsError('not-found', 'Deal not found.');
+  const deal = dealSnap.data() as StoredDeal;
+
+  if (deal.landlordId !== uid) throw new HttpsError('permission-denied', 'Only the landlord can send for signing.');
+  if (!deal.contractDrafted) throw new HttpsError('failed-precondition', 'Draft the agreement first.');
+  if (deal.esignEnvelopeOpen) throw new HttpsError('failed-precondition', 'Already sent for signing.');
+
+  const envelopeId = `env_${dealId}`; // provider envelope id — seam
+  await db.doc(`contracts/${dealId}`).update({
+    esign: {
+      provider: 'demo',
+      envelopeId,
+      sentAt: FieldValue.serverTimestamp(),
+      signers: { renter: 'sent', landlord: 'sent' },
+    },
+  });
+
+  const nextStage = recomputeStage({ ...deal, esignEnvelopeOpen: true });
+  await dealRef.update({ esignEnvelopeOpen: true, stage: nextStage, updatedAt: FieldValue.serverTimestamp() });
+  await dealRef.collection('events').add({ type: 'signing_opened', actor: uid, at: FieldValue.serverTimestamp() });
+  await dealRef.collection('messages').add({
+    senderId: 'system', senderRole: 'system',
+    text: 'Tenancy agreement sent for e-signature.', ts: FieldValue.serverTimestamp(),
+  });
+  return { stage: nextStage, envelopeId };
+});
+
+/**
+ * M4 — record a party's signature. Stands in for the e-sign provider's
+ * "signed" webhook: in production the verified webhook calls this path. The
+ * deal stays at `signing` even once both have signed — completion waits on the
+ * £100 fee (M5), exactly as the shared completion guard requires.
+ */
+export const recordSignature = onCall(async (req: CallableRequest<DraftRequest>) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
+  const dealId = req.data?.dealId;
+  if (!dealId) throw new HttpsError('invalid-argument', 'dealId is required.');
+
+  const dealRef = db.doc(`deals/${dealId}`);
+  const dealSnap = await dealRef.get();
+  if (!dealSnap.exists) throw new HttpsError('not-found', 'Deal not found.');
+  const deal = dealSnap.data() as StoredDeal;
+
+  const party = deal.renterId === uid ? 'renter' : deal.landlordId === uid ? 'landlord' : null;
+  if (!party) throw new HttpsError('permission-denied', 'You are not a party to this deal.');
+  if (!deal.esignEnvelopeOpen) throw new HttpsError('failed-precondition', 'The agreement is not open for signing.');
+  if (deal.signed?.[party] != null) throw new HttpsError('failed-precondition', 'You have already signed.');
+
+  const now = Date.now();
+  const signed = { ...deal.signed, [party]: now };
+  const nextStage = recomputeStage({ ...deal, signed });
+
+  await dealRef.update({
+    [`signed.${party}`]: now,
+    stage: nextStage,
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  await db.doc(`contracts/${dealId}`).update({ [`esign.signers.${party}`]: 'signed' });
+  await dealRef.collection('events').add({ type: 'signed', actor: uid, party, at: FieldValue.serverTimestamp() });
+
+  const name = party === 'renter' ? deal.renterName : deal.landlordName;
+  await dealRef.collection('messages').add({
+    senderId: 'system', senderRole: 'system',
+    text: `${name} signed the tenancy agreement.`, ts: FieldValue.serverTimestamp(),
+  });
+  const fullyExecuted = signed.renter != null && signed.landlord != null;
+  if (fullyExecuted) {
+    await dealRef.collection('messages').add({
+      senderId: 'system', senderRole: 'system',
+      text: `Both parties have signed. The landlord's ${'£100'} platform fee will be charged to complete the tenancy.`,
+      ts: FieldValue.serverTimestamp(),
+    });
+  }
+  return { stage: nextStage, bothSigned: fullyExecuted };
+});
 
 /**
  * M5: Stripe `payment_intent.succeeded` for the landlord fee → mark the deal
