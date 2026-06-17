@@ -1,15 +1,28 @@
 import { useState } from 'react';
 import { useAuth } from '../auth/AuthProvider';
 import { registerForPush } from '../lib/push';
+import { requestDataErasure } from '../lib/functions';
 
 export default function Account() {
   const { profile, signOutUser } = useAuth();
   const [pushState, setPushState] = useState<'idle' | 'working' | 'on' | 'off'>('idle');
+  const [erasing, setErasing] = useState(false);
   if (!profile) return null;
 
   async function enablePush() {
     setPushState('working');
     setPushState((await registerForPush()) ? 'on' : 'off');
+  }
+
+  async function eraseData() {
+    if (!window.confirm('Erase your personal data? This redacts your name and email across RentMatch. Completed tenancy records are retained where the law requires. You will be signed out.')) return;
+    setErasing(true);
+    try {
+      await requestDataErasure();
+      await signOutUser();
+    } finally {
+      setErasing(false);
+    }
   }
 
   return (
@@ -37,6 +50,14 @@ export default function Account() {
         RentMatch charges landlords a one-off <b>£100</b> fee when a tenancy agreement is fully signed.
         Renters are never charged a fee (Tenant Fees Act 2019).
       </div>
+
+      <div className="section-t">Privacy</div>
+      <button className="cta ghost" disabled={erasing} onClick={eraseData}>
+        {erasing ? 'Erasing…' : 'Erase my personal data'}
+      </button>
+      <p className="faint" style={{ fontSize: 11, margin: '8px 0 16px' }}>
+        UK GDPR right to erasure. Completed tenancy records are kept where the law requires.
+      </p>
 
       <button className="cta ghost" onClick={signOutUser}>Sign out</button>
     </>
