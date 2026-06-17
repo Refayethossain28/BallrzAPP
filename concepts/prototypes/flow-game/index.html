@@ -1131,8 +1131,15 @@ resize();
 requestAnimationFrame(frame);
 window.addEventListener('load', ()=>{ resize(); drawSpark(); });
 
-/* installable PWA: register the offline service worker (https only, e.g. on Pages) */
+/* installable PWA: register the offline service worker (https only, e.g. on Pages).
+ * Auto-reload once when a NEW worker takes over, so deployed updates apply without
+ * a manual hard-refresh (but not on the very first install). */
 if('serviceWorker' in navigator && location.protocol==='https:'){
+  const hadController = !!navigator.serviceWorker.controller;
+  let swReloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+    if(swReloading || !hadController) return; swReloading=true; location.reload();
+  });
   window.addEventListener('load', ()=>{ navigator.serviceWorker.register('service-worker.js').catch(()=>{}); });
 }
 
