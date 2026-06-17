@@ -35,11 +35,16 @@ service cloud.firestore {
       }
     }
 
-    // Live listings are publicly readable; only the owning landlord edits them.
+    // Live listings are publicly readable; only the owning landlord edits them —
+    // but `status` is server-authoritative: it changes only via the
+    // `publishListing` Cloud Function (Admin SDK), never directly from a client.
     match /listings/{listingId} {
       allow read: if true;
-      allow create: if isSignedIn() && request.resource.data.landlordId == uid();
-      allow update, delete: if isSignedIn() && resource.data.landlordId == uid();
+      allow create: if isSignedIn() && request.resource.data.landlordId == uid()
+        && request.resource.data.status == 'draft';
+      allow update: if isSignedIn() && resource.data.landlordId == uid()
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'landlordId']);
+      allow delete: if isSignedIn() && resource.data.landlordId == uid();
     }
 
     // Deals: a renter may open one; both participants may read it.

@@ -9,13 +9,15 @@
  * handlers below remain seams that build on this same pattern.
  */
 import { onCall, onRequest, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
+import { onDocumentCreated } from 'firebase-functions/v2/firestore';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getMessaging } from 'firebase-admin/messaging';
 import Stripe from 'stripe';
 import {
-  buildTenancyAgreement, evaluateSigningCompliance, recomputeStage,
-  tenancyDepositCapPence, PLATFORM_FEE_PENCE,
-  type DealRecord, type EpcRating, type Party,
+  buildTenancyAgreement, evaluateListingCompliance, evaluateSigningCompliance, recomputeStage,
+  tenancyDepositCapPence, buildNotification, PLATFORM_FEE_PENCE,
+  type ComplianceDoc, type DealRecord, type EpcRating, type Party,
 } from '@rentmatch/shared';
 
 initializeApp();
@@ -352,4 +354,87 @@ export const stripeWebhook = onRequest(async (req, res) => {
     if (dealId) await completeDeal(dealId, pi.id);
   }
   res.json({ received: true });
+});
+
+/* ---- M6: compliance documents + notifications ---- */
+
+interface PublishRequest {
+  listingId: string;
+}
+
+/**
+ * Server-authoritative listing publish. Re-runs the shared compliance gate
+ * against the documents actually uploaded to the listing and only then flips it
+ * `live`; otherwise it stays `draft`. Clients can edit a listing but can't set
+ * its status (Firestore rules), so this is the single way a listing goes live.
+ */
+export const publishListing = onCall(async (req: CallableRequest<PublishRequest>) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
+  const listingId = req.data?.listingId;
+  if (!listingId) throw new HttpsError('invalid-argument', 'listingId is required.');
+
+  const ref = db.doc(`listings/${listingId}`);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Listing not found.');
+  const listing = snap.data() as Record<string, unknown>;
+  if (listing.landlordId !== uid) throw new HttpsError('permission-denied', 'Not your listing.');
+
+  const docs = (Array.isArray(listing.complianceDocs) ? listing.complianceDocs : []) as ComplianceDoc[];
+  const { checks, canGoLive } = evaluateListingCompliance({
+    nation: 'england',
+    epcRating: (listing.epcRating as EpcRating) ?? 'D',
+    hasGasSupply: Boolean(listing.hasGasSupply),
+    smokeAlarmsPerStorey: Boolean(listing.smokeAlarmsPerStorey),
+    coAlarmsWhereRequired: Boolean(listing.coAlarmsWhereRequired),
+    docs,
+  });
+
+  const status = canGoLive ? 'live' : 'draft';
+  await ref.update({ status, complianceCheckedAt: FieldValue.serverTimestamp() });
+  return { status, checks };
+});
+
+/** Store a Web Push (FCM) token for the signed-in user. */
+export const registerPushToken = onCall(async (req: CallableRequest<{ token: string }>) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
+  const token = req.data?.token;
+  if (!token) throw new HttpsError('invalid-argument', 'token is required.');
+  await db.doc(`users/${uid}`).set({ pushTokens: FieldValue.arrayUnion(token) }, { merge: true });
+  return { ok: true };
+});
+
+/**
+ * Notify the counterparty when a (non-system) message is posted. Builds the copy
+ * from the shared kernel and fans out to the recipient's FCM tokens; an email
+ * channel would hang off the same point. Best-effort — failures never block the
+ * write that triggered it.
+ */
+export const onDealMessageCreated = onDocumentCreated('deals/{dealId}/messages/{msgId}', async (event) => {
+  const msg = event.data?.data();
+  if (!msg || msg.senderRole === 'system') return;
+
+  const dealSnap = await db.doc(`deals/${event.params.dealId}`).get();
+  if (!dealSnap.exists) return;
+  const deal = dealSnap.data() as StoredDeal & { listingArea?: string; listingCity?: string };
+
+  const senderIsRenter = msg.senderRole === 'renter';
+  const recipientId = senderIsRenter ? deal.landlordId : deal.renterId;
+  const fromName = senderIsRenter ? deal.renterName : deal.landlordName;
+  const listingLabel = [deal.listingArea, deal.listingCity].filter(Boolean).join(', ') || 'your enquiry';
+
+  const note = buildNotification('message', { fromName, listingLabel, preview: String(msg.text ?? '') });
+
+  const tokens = ((await db.doc(`users/${recipientId}`).get()).data()?.pushTokens ?? []) as string[];
+  if (tokens.length === 0) return; // no devices registered yet
+  try {
+    await getMessaging().sendEachForMulticast({
+      tokens,
+      notification: { title: note.title, body: note.body },
+      data: { dealId: event.params.dealId },
+    });
+  } catch {
+    // best-effort; an email fallback (e.g. Postmark/SendGrid) would go here.
+  }
 });
