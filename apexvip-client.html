@@ -798,6 +798,7 @@ let state = {
   _expGuests: 2,
   _expConfirmedRef: '',
   _expConfirmedCar: '',
+  _hotelSort: 'rating',
 };
 
 // ── Deep-link: open tracking view when URL contains ?track=1 ──────────────
@@ -873,6 +874,22 @@ const EXPERIENCES = [
   {id:'yr2',name:'The Ledbury',type:'Dining',emoji:'🥂',tagline:'Two Michelin stars · Notting Hill',desc:'Brett Graham\'s legendary restaurant in Notting Hill. The seasonal tasting menu with wine pairings by the sommelier. Among the most acclaimed dining rooms in Europe.',price:310,car:110,slots:["18:00","19:00","20:30"],guests:'up to 4',tags:["Michelin","Classic","Tasting"],months:[1,2,3,4,5,6,7,8,9,10,11,12],priority:6},
   {id:'mar2',name:'Tate Modern: Special Exhibition',type:'Culture',emoji:'🖼',tagline:'Private after-hours viewing',desc:'Exclusive access to the current Tate Modern major exhibition after public hours close, with a dedicated curator. Fully private, champagne, car waits on Bankside.',price:320,car:130,slots:["19:30","20:00"],guests:'up to 6',tags:["Art","Private","Culture"],months:[3,4,5,6,7,8,9,10,11],priority:5},
   {id:'yr5',name:'Kensington Palace Tour',type:'Culture',emoji:'🏰',tagline:'Private morning · State Rooms & gardens',desc:'A private guided walk through the State Rooms and Kensington Gardens before the public arrives. Reserved breakfast in the Orangery, car collects from your door.',price:250,car:100,slots:["08:30","09:00"],guests:'up to 6',tags:["Culture","Morning","Private"],months:[4,5,6,7,8,9,10],priority:5},
+];
+
+// London's finest hotels — indicative lead room rates per night (GBP). Booking links open the hotel's official reservations page.
+const HOTELS = [
+  {name:'The Ritz London',                emoji:'🏨', area:'Piccadilly, Mayfair',      price:780,  rating:5.0, tagline:'Louis XVI grandeur on Piccadilly',           url:'https://www.theritzlondon.com/stay/'},
+  {name:"Claridge's",                     emoji:'✨', area:'Brook Street, Mayfair',     price:920,  rating:5.0, tagline:'Art Deco icon, the heart of Mayfair',        url:'https://www.claridges.co.uk/rooms-and-suites/'},
+  {name:'The Dorchester',                 emoji:'🏛', area:'Park Lane, Mayfair',        price:850,  rating:5.0, tagline:'Park Lane legend overlooking Hyde Park',     url:'https://www.dorchestercollection.com/london/the-dorchester/'},
+  {name:'The Savoy',                      emoji:'🛎', area:'Strand, Covent Garden',     price:790,  rating:5.0, tagline:'Thames-side glamour on the Strand',          url:'https://www.thesavoylondon.com/rooms-suites/'},
+  {name:'The Connaught',                  emoji:'🥂', area:'Carlos Place, Mayfair',     price:980,  rating:5.0, tagline:'Discreet luxury, two Michelin stars',         url:'https://www.the-connaught.co.uk/rooms-and-suites/'},
+  {name:'The Berkeley',                   emoji:'🌿', area:'Knightsbridge',             price:720,  rating:5.0, tagline:'Knightsbridge cool with a rooftop pool',      url:'https://www.the-berkeley.co.uk/rooms-and-suites/'},
+  {name:'Mandarin Oriental Hyde Park',    emoji:'🏯', area:'Knightsbridge',             price:890,  rating:5.0, tagline:'Hyde Park views, world-class spa',            url:'https://www.mandarinoriental.com/en/london/hyde-park/luxury-hotel/accommodation'},
+  {name:'Four Seasons Park Lane',         emoji:'🌆', area:'Park Lane, Mayfair',        price:760,  rating:5.0, tagline:'Contemporary calm with a sky-bar spa',        url:'https://www.fourseasons.com/london/'},
+  {name:'Bulgari Hotel London',           emoji:'💎', area:'Knightsbridge',             price:1050, rating:5.0, tagline:'Italian jeweller glamour, vast spa',         url:'https://www.bulgarihotels.com/en_US/london'},
+  {name:'The Lanesborough',               emoji:'👑', area:'Hyde Park Corner',          price:880,  rating:5.0, tagline:'Regency palace with a personal butler',       url:'https://www.oetkercollection.com/hotels/the-lanesborough/'},
+  {name:'Corinthia London',               emoji:'🏰', area:'Whitehall Place',           price:800,  rating:5.0, tagline:'Grand Victorian splendour near the river',     url:'https://www.corinthia.com/london/'},
+  {name:'Shangri-La The Shard',           emoji:'🏙', area:'London Bridge',             price:690,  rating:5.0, tagline:'Britain\'s highest hotel, sky-high views',    url:'https://www.shangri-la.com/london/shangrila/'},
 ];
 
 let mapInstance=null,mapTileLayer=null;
@@ -1871,6 +1888,13 @@ function go(screen, data) {
 
 function mapBg(){return'<div id="map" style="position:absolute;inset:0;z-index:0"></div>';}
 
+// Open a hotel's official booking page in a new tab
+function openHotelBooking(url, name){
+  track('hotel_booking_opened',{hotel:name||'',src:'client'});
+  haptic('light');
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 function bottomNav(active) {
   const items = [
     {id:'home',label:'Home',svg:`<svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>`},
@@ -2250,6 +2274,24 @@ home: () => {
           <div style="font-size:13px;font-weight:700;margin-bottom:3px;line-height:1.3">${x.name}</div>
           <div style="font-size:11px;color:var(--fg-3);margin-bottom:10px;line-height:1.4;white-space:normal">${x.tagline}</div>
           <div style="font-size:11px;color:var(--gold);font-weight:700">${x.price>0?'From £'+(x.price+x.car):' Car from £'+x.car} · incl. car</div>
+        </div>`).join('')}
+      </div>
+
+      <!-- Hotels section — London's finest stays -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="section-label">Stay in London</div>
+        <button onclick="go('hotels')" style="background:none;border:none;color:var(--gold);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:.5px">VIEW ALL →</button>
+      </div>
+      <div style="display:flex;gap:10px;overflow-x:auto;margin:0 -22px;padding:4px 22px 16px;scrollbar-width:none">
+        ${HOTELS.slice(0,6).map(h=>`
+        <div onclick="go('hotels')" style="min-width:172px;flex-shrink:0;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:16px 14px;cursor:pointer;transition:transform .12s var(--ease-spring)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div style="font-size:26px">${h.emoji}</div>
+            <span style="font-size:10px;font-weight:700;color:var(--gold)">★ ${h.rating.toFixed(1)}</span>
+          </div>
+          <div style="font-size:13px;font-weight:700;margin-bottom:3px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h.name}</div>
+          <div style="font-size:11px;color:var(--fg-4);margin-bottom:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h.area}</div>
+          <div style="font-size:12px;color:var(--gold);font-weight:700">From £${h.price.toLocaleString()} <span style="color:var(--fg-4);font-weight:400">/ night</span></div>
         </div>`).join('')}
       </div>
 
@@ -4484,6 +4526,58 @@ profile: () => {
         </div>
       </div>`).join('')}
     </div>
+  </div>
+</div>`;
+},
+
+'hotels': () => {
+  const sorted = [...HOTELS].sort((a,b)=> state._hotelSort==='price' ? a.price-b.price : b.rating-a.rating);
+  return `
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:fadeIn .3s ease">
+  <div style="padding:56px 22px 0;flex-shrink:0">
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:6px">
+      <div class="back-btn" onclick="go('home')"><svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg></div>
+      <div>
+        <div style="font-family:var(--font-serif);font-size:28px;font-weight:300;letter-spacing:.5px">London's Finest Hotels</div>
+        <div style="font-size:13px;color:var(--fg-3);margin-top:2px">Handpicked stays · book direct, arrive by chauffeur</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:7px;padding:16px 0 14px">
+      ${[['rating','Top rated'],['price','Lowest price']].map(([k,l])=>`<button onclick="state._hotelSort='${k}';render()" style="flex-shrink:0;padding:7px 14px;border-radius:20px;background:${(state._hotelSort||'rating')===k?'var(--fg)':'var(--surface)'};border:1px solid ${(state._hotelSort||'rating')===k?'var(--fg)':'var(--border)'};color:${(state._hotelSort||'rating')===k?'var(--bg)':'var(--fg-2)'};font-size:12px;font-weight:${(state._hotelSort||'rating')===k?'700':'400'};cursor:pointer;font-family:inherit;transition:all .15s">${l}</button>`).join('')}
+    </div>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:0 22px 100px;scrollbar-width:none">
+    <div style="display:flex;flex-direction:column;gap:12px">
+      ${sorted.map(h=>`
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:22px;overflow:hidden;transition:transform .12s var(--ease-spring)">
+        <div style="padding:20px 20px 0;display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              <span style="font-size:22px">${h.emoji}</span>
+              <span style="font-size:10px;letter-spacing:2px;color:var(--fg-3);text-transform:uppercase">${h.area}</span>
+            </div>
+            <div style="font-size:17px;font-weight:700;margin-bottom:4px">${h.name}</div>
+            <div style="font-size:13px;color:var(--fg-3);line-height:1.5;margin-bottom:12px">${h.tagline}</div>
+          </div>
+          <div style="flex-shrink:0;text-align:right">
+            <div style="font-size:17px;font-weight:800">£${h.price.toLocaleString()}</div>
+            <div style="font-size:10px;color:var(--fg-4);margin-top:2px">from / night</div>
+            <div style="font-size:11px;color:var(--gold);font-weight:700;margin-top:6px">★ ${h.rating.toFixed(1)}</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 20px;border-top:1px solid var(--divider);margin-top:4px">
+          <button onclick="state.booking.dropoff='${h.name.replace(/'/g,"\\'")}';go('route-input')" style="flex:1;padding:11px;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;color:var(--fg-2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px">
+            <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>
+            Car to hotel
+          </button>
+          <button onclick="openHotelBooking('${h.url}','${h.name.replace(/'/g,"\\'")}')" style="flex:1;padding:11px;background:var(--gold);border:none;border-radius:12px;color:#0c0b09;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px">
+            Book hotel
+            <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M14 5h5v5M19 5l-9 9M10 5H5a1 1 0 00-1 1v13a1 1 0 001 1h13a1 1 0 001-1v-5"/></svg>
+          </button>
+        </div>
+      </div>`).join('')}
+    </div>
+    <div style="font-size:11px;color:var(--fg-5);text-align:center;line-height:1.6;margin-top:18px;padding:0 12px">Rates are indicative lead-in prices and shown for guidance only. Tap "Book hotel" to view live availability and reserve on the hotel's official site.</div>
   </div>
 </div>`;
 },
