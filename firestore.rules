@@ -1,0 +1,92 @@
+rules_version = '2';
+
+// ApexVIP Firestore security rules.
+// Secure-by-default: everything is denied unless explicitly allowed below.
+// NOTE: this is a strong starting point — review against your final data model
+// and Cloud Functions (which use the Admin SDK and bypass these rules) before launch.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn()      { return request.auth != null; }
+    function isUser(uid)     { return signedIn() && request.auth.uid == uid; }
+    function isAdmin()       { return signedIn() && request.auth.token.admin == true; }
+    function isDriver()      { return signedIn() && request.auth.token.driver == true; }
+
+    // User profiles — a user can read/write only their own; admins can read all.
+    match /users/{uid} {
+      allow read:   if isUser(uid) || isAdmin();
+      allow create: if isUser(uid);
+      allow update: if isUser(uid) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Bookings — owned by the client; the assigned driver and admins may access.
+    match /bookings/{bookingId} {
+      allow create: if signedIn() && request.resource.data.clientId == request.auth.uid;
+      allow read, update: if isAdmin()
+        || (signedIn() && resource.data.clientId == request.auth.uid)
+        || (isDriver() && resource.data.driverId == request.auth.uid);
+      allow delete: if isAdmin();
+
+      // Chat between the booking's client and driver.
+      match /messages/{messageId} {
+        function booking() { return get(/databases/$(database)/documents/bookings/$(bookingId)).data; }
+        allow read: if isAdmin()
+          || request.auth.uid == booking().clientId
+          || request.auth.uid == booking().driverId;
+        allow create: if signedIn()
+          && (request.auth.uid == booking().clientId || request.auth.uid == booking().driverId)
+          && request.resource.data.senderId == request.auth.uid;
+      }
+    }
+
+    // Recurring bookings — owned by the client.
+    match /recurring_bookings/{id} {
+      allow create: if signedIn() && request.resource.data.clientId == request.auth.uid;
+      allow read, update, delete: if isAdmin()
+        || (signedIn() && resource.data.clientId == request.auth.uid);
+    }
+
+    // Pending payments — created and read by their owner only.
+    match /pending_payments/{id} {
+      allow create: if signedIn() && request.resource.data.clientId == request.auth.uid;
+      allow read:   if isAdmin() || (signedIn() && resource.data.clientId == request.auth.uid);
+    }
+
+    // Push tokens — strictly per-user.
+    match /fcm_tokens/{uid} {
+      allow read, write: if isUser(uid);
+    }
+
+    // Drivers — anyone signed in may read live status (for trip tracking);
+    // a driver writes only their own record; admins manage all.
+    match /drivers/{driverId} {
+      allow read:  if signedIn();
+      allow write: if isUser(driverId) || isAdmin();
+    }
+
+    // Job queue — drivers and admins only.
+    match /jobs/{id} {
+      allow read, update: if isDriver() || isAdmin();
+      allow create, delete: if isAdmin();
+    }
+
+    // Public settings (e.g. pricing) — read-only to clients; admins manage.
+    match /settings/{doc} {
+      allow read:  if true;
+      allow write: if isAdmin();
+    }
+
+    // Analytics — write-only telemetry (no client reads); admins read.
+    match /analytics/{id} {
+      allow create: if signedIn();
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Lead capture (write-only from the app; admins read).
+    match /city_interest/{id} { allow create: if true; allow read, update, delete: if isAdmin(); }
+    match /waitlist/{id}      { allow create: if true; allow read, update, delete: if isAdmin(); }
+    match /invites/{id}       { allow create: if true; allow read, update, delete: if isAdmin(); }
+  }
+}

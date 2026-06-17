@@ -13,3 +13,8 @@ var APEXVIP_FIREBASE_CONFIG = {
 // Firebase Console → Project Settings → Cloud Messaging
 // → Web Push certificates → Generate key pair → paste here
 var APEXVIP_VAPID_KEY = '';
+
+// App Check (reCAPTCHA v3) site key — protects the backend from abuse.
+// Firebase Console → App Check → register the web app with reCAPTCHA v3,
+// then paste the site key here. Left blank, App Check stays off.
+var APEXVIP_RECAPTCHA_KEY = '';
