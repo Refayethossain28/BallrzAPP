@@ -1,21 +1,22 @@
-import { useState, type FormEvent } from 'react';
+import { type FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import type { EpcRating } from '@rentmatch/shared';
 import { useAuth } from '../auth/AuthProvider';
-import { createListing, type CreateListingResult, type NewListingInput } from '../lib/db';
+import { createListing, type NewListingInput } from '../lib/db';
 
 export default function NewProperty() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [result, setResult] = useState<CreateListingResult | null>(null);
 
   const mutation = useMutation({
     mutationFn: (input: NewListingInput) => createListing(input),
-    onSuccess: (res) => {
-      setResult(res);
+    onSuccess: ({ id }) => {
       queryClient.invalidateQueries({ queryKey: ['listings'] });
+      // Drafts go live only after compliance docs are uploaded + published,
+      // which happens on the listing's own page.
+      navigate(`/listing/${id}`);
     },
   });
 
@@ -43,8 +44,6 @@ export default function NewProperty() {
     };
     mutation.mutate(input);
   }
-
-  if (result) return <Result result={result} onDone={() => navigate('/landlord')} />;
 
   return (
     <>
@@ -88,12 +87,12 @@ export default function NewProperty() {
           <Check name="co" label="Carbon-monoxide alarms where required" defaultChecked />
         </div></div>
         <p className="faint" style={{ fontSize: 11, margin: '0 0 14px' }}>
-          We check these against UK letting rules. If anything’s missing, your listing is saved as a draft until it’s resolved.
+          Next you’ll upload the certificates (EPC, EICR, gas). We re-check everything before the listing goes live.
         </p>
 
         {mutation.isError && <p className="error">Could not save — please try again.</p>}
         <button className="cta" type="submit" disabled={mutation.isPending}>
-          {mutation.isPending ? 'Publishing…' : 'Publish listing'}
+          {mutation.isPending ? 'Creating…' : 'Create listing & add documents'}
         </button>
       </form>
     </>
@@ -109,31 +108,3 @@ function Check({ name, label, defaultChecked }: { name: string; label: string; d
   );
 }
 
-function Result({ result, onDone }: { result: CreateListingResult; onDone: () => void }) {
-  const live = result.status === 'live';
-  return (
-    <div style={{ paddingTop: 20 }}>
-      <div className="empty">
-        <div className="big">{live ? '✅' : '📝'}</div>
-        <h2 className="title">{live ? 'Listing is live' : 'Saved as a draft'}</h2>
-        <p className="sub">
-          {live
-            ? 'Your property passed all statutory checks and is now searchable by renters.'
-            : 'Some statutory checks aren’t met yet — fix these to publish.'}
-        </p>
-      </div>
-      <ul className="checklist">
-        {result.checks.map((c) => (
-          <li key={c.id}>
-            <span className={`ck ${c.ok ? 'ok' : 'no'}`}>{c.ok ? '✓' : '✕'}</span>
-            <div>
-              {c.label}
-              {c.detail && <><br /><span className="faint" style={{ fontSize: 12 }}>{c.detail}</span></>}
-            </div>
-          </li>
-        ))}
-      </ul>
-      <button className="cta" style={{ marginTop: 18 }} onClick={onDone}>Back to your listings</button>
-    </div>
-  );
-}

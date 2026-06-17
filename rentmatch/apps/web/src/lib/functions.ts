@@ -1,4 +1,5 @@
 import { getFunctions, httpsCallable, connectFunctionsEmulator } from 'firebase/functions';
+import type { ComplianceCheck } from '@rentmatch/shared';
 import { app } from './firebase';
 
 export const functions = getFunctions(app);
@@ -35,4 +36,16 @@ export const createSetupIntent = httpsCallable<void, { clientSecret: string }>(
 export const chargePlatformFee = httpsCallable<{ dealId: string }, { status: string }>(
   functions,
   'chargePlatformFee',
+);
+
+/** Server-authoritative publish: re-checks uploaded docs, flips to live or draft. */
+export const publishListing = httpsCallable<{ listingId: string }, { status: 'live' | 'draft'; checks: ComplianceCheck[] }>(
+  functions,
+  'publishListing',
+);
+
+/** Store this device's Web Push (FCM) token for the signed-in user. */
+export const registerPushToken = httpsCallable<{ token: string }, { ok: boolean }>(
+  functions,
+  'registerPushToken',
 );

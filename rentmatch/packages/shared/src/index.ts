@@ -6,3 +6,4 @@ export * from './compliance.ts';
 export * from './contractTemplate.ts';
 export * from './search.ts';
 export * from './deal.ts';
+export * from './notifications.ts';

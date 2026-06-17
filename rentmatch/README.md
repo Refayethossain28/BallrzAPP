@@ -75,7 +75,20 @@ reference. The full architecture is in
 This closes the original brief end-to-end: advertise → find → message → view →
 agree → sign → **the landlord is charged £100 and the tenancy completes**.
 
-Next: M6 compliance docs + notifications; M7 hardening, GDPR/retention, launch.
+**M6 — compliance documents + notifications ✅**
+- Listings are now created as **drafts** and only go `live` through the
+  server-authoritative `publishListing` Cloud Function, which re-runs the shared
+  compliance gate against the documents actually uploaded. Firestore rules stop
+  clients setting `status` directly
+- Landlords upload EPC / EICR / gas (CP12) PDFs to Storage via `ComplianceManager`;
+  doc lifecycle (`missing`/`valid`/`expiring`/`expired`) comes from the shared
+  `docStatus` helper with sensible default validity windows
+- Notifications: a Firestore trigger (`onDealMessageCreated`) builds copy from the
+  shared `buildNotification` and fans out to the recipient's FCM tokens (email is
+  the same seam); `registerPushToken` + an Account opt-in store the device token
+- 3 new tests (notification copy + doc-expiry) → 40 kernel tests
+
+Next: M7 — hardening, GDPR/retention, launch.
 
 ### Verification status
 The shared kernel (deal state machine incl. the both-signed-**and**-fee-paid
