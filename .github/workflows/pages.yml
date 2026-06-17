@@ -2,6 +2,7 @@ name: Deploy to GitHub Pages
 
 # Publishes the FULL site so every app is reachable under /BallrzAPP/…:
 #   • ApexVIP client / driver / admin + all PWA assets at the site root
+#   • the RentMatch prototype (rentmatch.html) + its PWA assets at the root
 #   • the runnable prototypes (concierge-split, flow-game) under /concepts/
 #   • the FX trading app under /trading-app/
 #   • the browser LLM demo under /llm/ (built on demand, cached between runs)
@@ -50,6 +51,12 @@ jobs:
           # Landing page + Jekyll opt-out so files starting with _ are served.
           cp index.html _site/index.html 2>/dev/null || true
           cp .nojekyll _site/.nojekyll 2>/dev/null || touch _site/.nojekyll
+
+          # RentMatch prototype + its PWA assets (manifest*.json above does not
+          # match rentmatch-manifest.json, so copy them explicitly).
+          cp rentmatch.html _site/ 2>/dev/null || true
+          cp rentmatch-manifest.json rentmatch-sw.js _site/ 2>/dev/null || true
+          cp rentmatch-icon-*.png rentmatch-icon.svg _site/ 2>/dev/null || true
 
           # Runnable prototypes keep their original paths.
           mkdir -p _site/concepts
