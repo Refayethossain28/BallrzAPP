@@ -1,0 +1,26 @@
+rules_version = '2';
+
+// Storage holds compliance documents (EPC, gas, EICR) and executed contract
+// PDFs. Compliance docs are uploaded by the owning landlord; executed contracts
+// are written only by Cloud Functions and are read-only to the deal's parties.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() { return request.auth != null; }
+
+    // Landlord-uploaded compliance documents, namespaced by landlord uid.
+    match /compliance/{landlordId}/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == landlordId
+        && request.resource.size < 20 * 1024 * 1024
+        && request.resource.contentType.matches('application/pdf|image/.*');
+    }
+
+    // Executed tenancy agreements — written by Functions (Admin SDK) only.
+    match /contracts/{dealId}/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+  }
+}
