@@ -24,3 +24,15 @@ export const recordSignature = httpsCallable<{ dealId: string }, { stage: string
   functions,
   'recordSignature',
 );
+
+/** Create a Stripe SetupIntent so the landlord can save a card. */
+export const createSetupIntent = httpsCallable<void, { clientSecret: string }>(
+  functions,
+  'createSetupIntent',
+);
+
+/** Charge the landlord's £100 fee on full execution (off-session, idempotent). */
+export const chargePlatformFee = httpsCallable<{ dealId: string }, { status: string }>(
+  functions,
+  'chargePlatformFee',
+);
