@@ -5418,17 +5418,34 @@ async function runSquarePayment(){
     const total = state._payTotal||0;
     const ref = 'APX-'+(Math.floor(1000+Math.random()*9000));
     state._confirmedRef = ref;
+
+    // Strong Customer Authentication (UK/EU SCA / 3-D Secure) — required for most
+    // card payments. Produces a verification token the server passes to Square.
+    let verificationToken = null;
+    if(btn) btn.textContent='Verifying…';
+    try{
+      const nm=(state.user?.name||'').trim().split(' ');
+      const vr = await _sqPayments.verifyBuyer(sourceId, {
+        amount:String(total), currencyCode:'GBP', intent:'CHARGE',
+        billingContact:{ givenName:nm[0]||'', familyName:nm.slice(1).join(' ')||'', email:state.user?.email||'' }
+      });
+      verificationToken = vr && vr.token || null;
+    }catch(vErr){ console.warn('SCA verifyBuyer:', vErr.message); }
+    if(btn) btn.textContent='Processing…';
+
+    // Idempotency key so a retry never double-charges the customer.
+    const idempotencyKey = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (ref+'-'+Date.now());
     let paymentId = null;
     // Try Cloud Function; fall back to storing token for manual processing
     if(FIREBASE_ENABLED && fns){
       try{
         const fn = fns.httpsCallable('processSquarePayment');
-        const resp = await fn({sourceId, amount:total, bookingRef:ref});
+        const resp = await fn({sourceId, verificationToken, idempotencyKey, amount:total, currency:'GBP', bookingRef:ref});
         paymentId = resp.data.paymentId;
         track('payment_charged',{ref,total,paymentId,src:'client'});
       }catch(fnErr){
         await db.collection('pending_payments').add({
-          sourceId, amount:total, bookingRef:ref, status:'pending',
+          sourceId, verificationToken, idempotencyKey, amount:total, currency:'GBP', bookingRef:ref, status:'pending',
           createdAt:firebase.firestore.FieldValue.serverTimestamp()
         }).catch(()=>{});
         track('payment_token_stored',{ref,total,src:'client'});
