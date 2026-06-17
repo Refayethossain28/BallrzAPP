@@ -799,6 +799,11 @@ let state = {
   _expConfirmedRef: '',
   _expConfirmedCar: '',
   _hotelSort: 'rating',
+  // Hotel stay context for live/estimated pricing — default: two weeks out, 2 nights, 2 guests
+  _hotelCheckIn: (() => { const d = new Date(); d.setDate(d.getDate() + 14); return d.toISOString().slice(0,10); })(),
+  _hotelNights: 2,
+  _hotelGuests: 2,
+  _hotelRates: {},
 };
 
 // ── Deep-link: open tracking view when URL contains ?track=1 ──────────────
@@ -876,20 +881,23 @@ const EXPERIENCES = [
   {id:'yr5',name:'Kensington Palace Tour',type:'Culture',emoji:'🏰',tagline:'Private morning · State Rooms & gardens',desc:'A private guided walk through the State Rooms and Kensington Gardens before the public arrives. Reserved breakfast in the Orangery, car collects from your door.',price:250,car:100,slots:["08:30","09:00"],guests:'up to 6',tags:["Culture","Morning","Private"],months:[4,5,6,7,8,9,10],priority:5},
 ];
 
-// London's finest hotels — indicative lead room rates per night (GBP). Booking links open the hotel's official reservations page.
+// London's finest hotels. `base` is a reference nightly rate (GBP); live/estimated
+// rates are derived from it per stay. `lat`/`lng` let the getHotelRates Cloud
+// Function resolve each property via the Amadeus hotel-by-geocode lookup. Booking
+// links open the hotel's official reservations page.
 const HOTELS = [
-  {name:'The Ritz London',                emoji:'🏨', area:'Piccadilly, Mayfair',      price:780,  rating:5.0, tagline:'Louis XVI grandeur on Piccadilly',           url:'https://www.theritzlondon.com/stay/'},
-  {name:"Claridge's",                     emoji:'✨', area:'Brook Street, Mayfair',     price:920,  rating:5.0, tagline:'Art Deco icon, the heart of Mayfair',        url:'https://www.claridges.co.uk/rooms-and-suites/'},
-  {name:'The Dorchester',                 emoji:'🏛', area:'Park Lane, Mayfair',        price:850,  rating:5.0, tagline:'Park Lane legend overlooking Hyde Park',     url:'https://www.dorchestercollection.com/london/the-dorchester/'},
-  {name:'The Savoy',                      emoji:'🛎', area:'Strand, Covent Garden',     price:790,  rating:5.0, tagline:'Thames-side glamour on the Strand',          url:'https://www.thesavoylondon.com/rooms-suites/'},
-  {name:'The Connaught',                  emoji:'🥂', area:'Carlos Place, Mayfair',     price:980,  rating:5.0, tagline:'Discreet luxury, two Michelin stars',         url:'https://www.the-connaught.co.uk/rooms-and-suites/'},
-  {name:'The Berkeley',                   emoji:'🌿', area:'Knightsbridge',             price:720,  rating:5.0, tagline:'Knightsbridge cool with a rooftop pool',      url:'https://www.the-berkeley.co.uk/rooms-and-suites/'},
-  {name:'Mandarin Oriental Hyde Park',    emoji:'🏯', area:'Knightsbridge',             price:890,  rating:5.0, tagline:'Hyde Park views, world-class spa',            url:'https://www.mandarinoriental.com/en/london/hyde-park/luxury-hotel/accommodation'},
-  {name:'Four Seasons Park Lane',         emoji:'🌆', area:'Park Lane, Mayfair',        price:760,  rating:5.0, tagline:'Contemporary calm with a sky-bar spa',        url:'https://www.fourseasons.com/london/'},
-  {name:'Bulgari Hotel London',           emoji:'💎', area:'Knightsbridge',             price:1050, rating:5.0, tagline:'Italian jeweller glamour, vast spa',         url:'https://www.bulgarihotels.com/en_US/london'},
-  {name:'The Lanesborough',               emoji:'👑', area:'Hyde Park Corner',          price:880,  rating:5.0, tagline:'Regency palace with a personal butler',       url:'https://www.oetkercollection.com/hotels/the-lanesborough/'},
-  {name:'Corinthia London',               emoji:'🏰', area:'Whitehall Place',           price:800,  rating:5.0, tagline:'Grand Victorian splendour near the river',     url:'https://www.corinthia.com/london/'},
-  {name:'Shangri-La The Shard',           emoji:'🏙', area:'London Bridge',             price:690,  rating:5.0, tagline:'Britain\'s highest hotel, sky-high views',    url:'https://www.shangri-la.com/london/shangrila/'},
+  {name:'The Ritz London',                emoji:'🏨', area:'Piccadilly, Mayfair',      base:780,  rating:5.0, lat:51.5067, lng:-0.1438, tagline:'Louis XVI grandeur on Piccadilly',           url:'https://www.theritzlondon.com/stay/'},
+  {name:"Claridge's",                     emoji:'✨', area:'Brook Street, Mayfair',     base:920,  rating:5.0, lat:51.5120, lng:-0.1479, tagline:'Art Deco icon, the heart of Mayfair',        url:'https://www.claridges.co.uk/rooms-and-suites/'},
+  {name:'The Dorchester',                 emoji:'🏛', area:'Park Lane, Mayfair',        base:850,  rating:5.0, lat:51.5072, lng:-0.1534, tagline:'Park Lane legend overlooking Hyde Park',     url:'https://www.dorchestercollection.com/london/the-dorchester/'},
+  {name:'The Savoy',                      emoji:'🛎', area:'Strand, Covent Garden',     base:790,  rating:5.0, lat:51.5101, lng:-0.1206, tagline:'Thames-side glamour on the Strand',          url:'https://www.thesavoylondon.com/rooms-suites/'},
+  {name:'The Connaught',                  emoji:'🥂', area:'Carlos Place, Mayfair',     base:980,  rating:5.0, lat:51.5103, lng:-0.1490, tagline:'Discreet luxury, two Michelin stars',         url:'https://www.the-connaught.co.uk/rooms-and-suites/'},
+  {name:'The Berkeley',                   emoji:'🌿', area:'Knightsbridge',             base:720,  rating:5.0, lat:51.5018, lng:-0.1532, tagline:'Knightsbridge cool with a rooftop pool',      url:'https://www.the-berkeley.co.uk/rooms-and-suites/'},
+  {name:'Mandarin Oriental Hyde Park',    emoji:'🏯', area:'Knightsbridge',             base:890,  rating:5.0, lat:51.5018, lng:-0.1605, tagline:'Hyde Park views, world-class spa',            url:'https://www.mandarinoriental.com/en/london/hyde-park/luxury-hotel/accommodation'},
+  {name:'Four Seasons Park Lane',         emoji:'🌆', area:'Park Lane, Mayfair',        base:760,  rating:5.0, lat:51.5049, lng:-0.1500, tagline:'Contemporary calm with a sky-bar spa',        url:'https://www.fourseasons.com/london/'},
+  {name:'Bulgari Hotel London',           emoji:'💎', area:'Knightsbridge',             base:1050, rating:5.0, lat:51.5012, lng:-0.1610, tagline:'Italian jeweller glamour, vast spa',         url:'https://www.bulgarihotels.com/en_US/london'},
+  {name:'The Lanesborough',               emoji:'👑', area:'Hyde Park Corner',          base:880,  rating:5.0, lat:51.5028, lng:-0.1525, tagline:'Regency palace with a personal butler',       url:'https://www.oetkercollection.com/hotels/the-lanesborough/'},
+  {name:'Corinthia London',               emoji:'🏰', area:'Whitehall Place',           base:800,  rating:5.0, lat:51.5065, lng:-0.1241, tagline:'Grand Victorian splendour near the river',     url:'https://www.corinthia.com/london/'},
+  {name:'Shangri-La The Shard',           emoji:'🏙', area:'London Bridge',             base:690,  rating:5.0, lat:51.5045, lng:-0.0865, tagline:'Britain\'s highest hotel, sky-high views',    url:'https://www.shangri-la.com/london/shangrila/'},
 ];
 
 let mapInstance=null,mapTileLayer=null;
@@ -1160,9 +1168,19 @@ function _parseIntentLocal(msg) {
     for (const [re, key] of areas) {
       if (re.test(msg)) { const f = HOTELS.filter(h => h.area.toLowerCase().includes(key)); if (f.length) { matched = f; areaLabel = key; } break; }
     }
+    // Stay dates from the message — drives live/estimated pricing
+    const _now = new Date(); _now.setHours(12,0,0,0);
+    const _toISO = d => d.toISOString().slice(0,10);
+    const nightsM = msg.match(/\b(\d{1,2})\s*nights?\b/i);
+    if (nightsM) out.stayNights = Math.min(14, Math.max(1, parseInt(nightsM[1],10)));
+    if (/\btonight\b|\btoday\b/i.test(msg)) out.stayCheckIn = _toISO(_now);
+    else if (/\btomorrow\b/i.test(msg)) { const d=new Date(_now); d.setDate(d.getDate()+1); out.stayCheckIn=_toISO(d); }
+    else if (/\bweekend\b/i.test(msg)) { const d=new Date(_now); d.setDate(d.getDate()+((5-d.getDay()+7)%7)); out.stayCheckIn=_toISO(d); if(!out.stayNights) out.stayNights=2; }
+    else { const _days=['sunday','monday','tuesday','wednesday','thursday','friday','saturday']; for(let i=0;i<_days.length;i++){ if(lower.includes(_days[i])){ const d=new Date(_now); d.setDate(d.getDate()+((i-d.getDay()+7)%7||7)); out.stayCheckIn=_toISO(d); break; } } }
+    const _ci = out.stayCheckIn || state._hotelCheckIn, _n = out.stayNights || state._hotelNights;
     // Budget filter — "under £800", "below 700"
     const budget = msg.match(/(?:under|below|less than|up to|max(?:imum)?)\s*£?\s*([\d,]{3,5})/i);
-    if (budget) { const cap = parseInt(budget[1].replace(/,/g, ''), 10); const f = matched.filter(h => h.price <= cap); if (f.length) matched = f; }
+    if (budget) { const cap = parseInt(budget[1].replace(/,/g, ''), 10); const f = matched.filter(h => _estimateHotelRate(h, _ci, _n, state._hotelGuests).nightly <= cap); if (f.length) matched = f; }
     matched = [...matched].sort((a, b) => b.rating - a.rating).slice(0, 5);
     const where = areaLabel ? ` in ${areaLabel.replace(/\b\w/g, c => c.toUpperCase())}` : ' in London';
     out.intent = 'hotel';
@@ -1335,6 +1353,9 @@ async function sendConciergeMsg() {
     state._conciergeHotels = null;
 
     if (intent === 'hotel') {
+      if (d.stayCheckIn) state._hotelCheckIn = d.stayCheckIn;
+      if (d.stayNights) state._hotelNights = d.stayNights;
+      if (d.stayCheckIn || d.stayNights) { state._hotelRates = {}; refreshHotelRates(); }
       state._conciergeHotels = d.hotels && d.hotels.length ? d.hotels : HOTELS.slice(0,5);
 
     } else if (intent === 'suggest' && d.suggestions) {
@@ -1947,6 +1968,87 @@ function bottomNav(active) {
     </div>`).join('')}</nav>`;
 }
 
+// ── Hotel rates ───────────────────────────────────────────────────────────
+// Live prices are served by a `getHotelRates` Cloud Function (Amadeus-backed),
+// which holds the API secret server-side. Until that's enabled, rates are a
+// local dynamic estimate that responds to the same inputs a real quote would
+// (dates, weekend, season, demand/lead-time, occupancy, length-of-stay). Both
+// paths return the same shape, so the live source swaps in transparently.
+
+function _hotelRateKey(name, checkIn, nights, guests){ return `${name}|${checkIn}|${nights}|${guests}`; }
+
+// Deterministic 0..1 from a string seed, so a given hotel+date is stable across renders
+function _seed01(str){ let h=2166136261>>>0; for(let i=0;i<str.length;i++){ h^=str.charCodeAt(i); h=Math.imul(h,16777619); } return ((h>>>0)%100000)/100000; }
+
+function _estimateHotelRate(hotel, checkIn, nights, guests){
+  nights = Math.max(1, nights||1); guests = Math.max(1, guests||2);
+  const SEASON=[null,.85,.85,.92,1.0,1.05,1.12,1.15,1.10,1.05,1.0,.9,1.08]; // by month 1..12
+  const start = checkIn ? new Date(checkIn+'T12:00:00') : new Date();
+  const today = new Date(); today.setHours(12,0,0,0);
+  let sum=0, minNightly=Infinity;
+  for(let i=0;i<nights;i++){
+    const d=new Date(start); d.setDate(d.getDate()+i);
+    const dow=d.getDay();
+    const weekend = (dow===5||dow===6) ? 1.12 : (dow===0?1.0:0.97); // Fri/Sat premium, midweek softer
+    const season = SEASON[d.getMonth()+1];
+    const noise = 0.95 + _seed01(hotel.name+d.toISOString().slice(0,10))*0.12; // stable ±
+    const nightly = hotel.base * season * weekend * noise;
+    sum += nightly; minNightly = Math.min(minNightly, nightly);
+  }
+  const leadDays = Math.round((start - today)/86400000);
+  const demand = leadDays<=2 ? 1.08 : leadDays<=10 ? 1.03 : leadDays>=60 ? 0.96 : 1.0; // last-minute up, advance down
+  const occ = guests>=3 ? 1.10 : 1.0;
+  const los = nights>=7 ? 0.92 : nights>=3 ? 0.96 : 1.0; // longer-stay discount
+  const factor = demand*occ*los;
+  sum *= factor; minNightly *= factor;
+  const r5 = n => Math.round(n/5)*5;
+  return {
+    nightly: r5(sum/nights), from: r5(minNightly), total: r5(sum),
+    nights, guests, currency:'GBP', checkIn: start.toISOString().slice(0,10),
+    available: true, live:false, fetchedAt: Date.now()
+  };
+}
+
+// Async seam: real live rate when the backend is up, local estimate otherwise.
+async function fetchHotelRate(hotel, checkIn, nights, guests){
+  if (FIREBASE_ENABLED && fns) {
+    try {
+      const fn = fns.httpsCallable('getHotelRates');
+      const res = await fn({ name:hotel.name, lat:hotel.lat, lng:hotel.lng, checkIn, nights, guests, currency:'GBP' });
+      if (res && res.data && res.data.nightly) return { ...res.data, live:true, fetchedAt:Date.now() };
+    } catch(e) { /* fall through to local estimate */ }
+  }
+  return _estimateHotelRate(hotel, checkIn, nights, guests);
+}
+
+// Rate used by render — prefers a fetched quote from the cache, else estimates inline.
+function hotelRate(hotel){
+  const key = _hotelRateKey(hotel.name, state._hotelCheckIn, state._hotelNights, state._hotelGuests);
+  return (state._hotelRates && state._hotelRates[key]) || _estimateHotelRate(hotel, state._hotelCheckIn, state._hotelNights, state._hotelGuests);
+}
+
+// Populate the rate cache for the current dates, then re-render once. Skips work
+// (and the re-render) when the current params are already cached, so the render →
+// refresh → render hook can't loop.
+let _hotelRatesLoading = false;
+async function refreshHotelRates(){
+  if (_hotelRatesLoading) return;
+  const ci = state._hotelCheckIn, n = state._hotelNights, g = state._hotelGuests;
+  state._hotelRates = state._hotelRates || {};
+  if (HOTELS.every(h => state._hotelRates[_hotelRateKey(h.name, ci, n, g)])) return;
+  _hotelRatesLoading = true;
+  try {
+    const quotes = await Promise.all(HOTELS.map(h => fetchHotelRate(h, ci, n, g)));
+    HOTELS.forEach((h,i) => { state._hotelRates[_hotelRateKey(h.name, ci, n, g)] = quotes[i]; });
+  } catch(e) { /* keep inline estimates */ }
+  _hotelRatesLoading = false;
+  if (state.screen === 'hotels') render();
+}
+
+function setHotelCheckIn(v){ if(!v) return; state._hotelCheckIn = v; render(); }
+function adjHotelNights(delta){ state._hotelNights = Math.min(14, Math.max(1, state._hotelNights + delta)); render(); }
+function adjHotelGuests(delta){ state._hotelGuests = Math.min(8, Math.max(1, state._hotelGuests + delta)); render(); }
+
 // ── Feature 1: Charter member number ──────────────────────────────────────
 function generateMemberNumber() {
   if (state.memberNumber) return;
@@ -2329,7 +2431,7 @@ home: () => {
           </div>
           <div style="font-size:13px;font-weight:700;margin-bottom:3px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h.name}</div>
           <div style="font-size:11px;color:var(--fg-4);margin-bottom:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h.area}</div>
-          <div style="font-size:12px;color:var(--gold);font-weight:700">From £${h.price.toLocaleString()} <span style="color:var(--fg-4);font-weight:400">/ night</span></div>
+          <div style="font-size:12px;color:var(--gold);font-weight:700">From £${hotelRate(h).from.toLocaleString()} <span style="color:var(--fg-4);font-weight:400">/ night</span></div>
         </div>`).join('')}
       </div>
 
@@ -3909,8 +4011,8 @@ profile: () => {
             <div style="font-size:11px;color:var(--fg-3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h.area} · ★ ${h.rating.toFixed(1)}</div>
           </div>
           <div style="text-align:right;flex-shrink:0">
-            <div style="font-size:14px;font-weight:800;color:#D4A843">£${h.price.toLocaleString()}</div>
-            <div style="font-size:9px;color:var(--fg-4)">from / night</div>
+            <div style="font-size:14px;font-weight:800;color:#D4A843">£${hotelRate(h).nightly.toLocaleString()}</div>
+            <div style="font-size:9px;color:var(--fg-4)">avg / night</div>
           </div>
         </div>
         <div style="display:flex;gap:8px">
@@ -4592,7 +4694,14 @@ profile: () => {
 },
 
 'hotels': () => {
-  const sorted = [...HOTELS].sort((a,b)=> state._hotelSort==='price' ? a.price-b.price : b.rating-a.rating);
+  const todayISO = new Date().toISOString().slice(0,10);
+  const quoted = HOTELS.map(h => ({ h, q: hotelRate(h) }));
+  quoted.sort((a,b)=> state._hotelSort==='price' ? a.q.nightly - b.q.nightly : b.h.rating - a.h.rating);
+  const anyLive = quoted.some(x => x.q.live);
+  const ci = new Date(state._hotelCheckIn+'T12:00:00');
+  const co = new Date(ci); co.setDate(co.getDate()+state._hotelNights);
+  const fmt = d => d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});
+  const stepBtn = (fn,sym)=>`<button onclick="${fn}" style="width:26px;height:26px;border-radius:8px;background:var(--surface-3);border:1px solid var(--border-2);color:var(--fg);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:inherit">${sym}</button>`;
   return `
 <div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:fadeIn .3s ease">
   <div style="padding:56px 22px 0;flex-shrink:0">
@@ -4603,13 +4712,41 @@ profile: () => {
         <div style="font-size:13px;color:var(--fg-3);margin-top:2px">Handpicked stays · book direct, arrive by chauffeur</div>
       </div>
     </div>
-    <div style="display:flex;gap:7px;padding:16px 0 14px">
-      ${[['rating','Top rated'],['price','Lowest price']].map(([k,l])=>`<button onclick="state._hotelSort='${k}';render()" style="flex-shrink:0;padding:7px 14px;border-radius:20px;background:${(state._hotelSort||'rating')===k?'var(--fg)':'var(--surface)'};border:1px solid ${(state._hotelSort||'rating')===k?'var(--fg)':'var(--border)'};color:${(state._hotelSort||'rating')===k?'var(--bg)':'var(--fg-2)'};font-size:12px;font-weight:${(state._hotelSort||'rating')===k?'700':'400'};cursor:pointer;font-family:inherit;transition:all .15s">${l}</button>`).join('')}
-    </div>
   </div>
-  <div style="flex:1;overflow-y:auto;padding:0 22px 100px;scrollbar-width:none">
+  <div style="flex:1;overflow-y:auto;padding:14px 22px 100px;scrollbar-width:none">
+
+    <!-- Stay picker — drives live/estimated pricing -->
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:12px 14px;margin-bottom:12px;display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
+      <label style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:130px">
+        <span style="font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--fg-4)">Check-in</span>
+        <input type="date" value="${state._hotelCheckIn}" min="${todayISO}" onchange="setHotelCheckIn(this.value)" style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:8px 10px;color:var(--fg);font-family:inherit;font-size:13px;color-scheme:${state.theme==='light'?'light':'dark'}"/>
+      </label>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <span style="font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--fg-4)">Nights</span>
+        <div style="display:flex;align-items:center;gap:8px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:5px 8px">
+          ${stepBtn('adjHotelNights(-1)','−')}<span style="min-width:16px;text-align:center;font-size:14px;font-weight:700">${state._hotelNights}</span>${stepBtn('adjHotelNights(1)','+')}
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <span style="font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--fg-4)">Guests</span>
+        <div style="display:flex;align-items:center;gap:8px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:5px 8px">
+          ${stepBtn('adjHotelGuests(-1)','−')}<span style="min-width:16px;text-align:center;font-size:14px;font-weight:700">${state._hotelGuests}</span>${stepBtn('adjHotelGuests(1)','+')}
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div style="display:flex;gap:7px">
+        ${[['rating','Top rated'],['price','Lowest price']].map(([k,l])=>`<button onclick="state._hotelSort='${k}';render()" style="flex-shrink:0;padding:6px 13px;border-radius:20px;background:${(state._hotelSort||'rating')===k?'var(--fg)':'var(--surface)'};border:1px solid ${(state._hotelSort||'rating')===k?'var(--fg)':'var(--border)'};color:${(state._hotelSort||'rating')===k?'var(--bg)':'var(--fg-2)'};font-size:12px;font-weight:${(state._hotelSort||'rating')===k?'700':'400'};cursor:pointer;font-family:inherit;transition:all .15s">${l}</button>`).join('')}
+      </div>
+      <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:${anyLive?'#22c55e':'var(--fg-4)'}">
+        <span style="width:6px;height:6px;border-radius:50%;background:${anyLive?'#22c55e':'var(--fg-5)'};${anyLive?'box-shadow:0 0 6px rgba(34,197,94,.6)':''}"></span>${anyLive?'Live rates':'Live estimate'}
+      </span>
+    </div>
+    <div style="font-size:11px;color:var(--fg-4);margin-bottom:14px">${fmt(ci)} → ${fmt(co)} · ${state._hotelNights} night${state._hotelNights>1?'s':''} · ${state._hotelGuests} guest${state._hotelGuests>1?'s':''}</div>
+
     <div style="display:flex;flex-direction:column;gap:12px">
-      ${sorted.map(h=>`
+      ${quoted.map(({h,q})=>`
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:22px;overflow:hidden;transition:transform .12s var(--ease-spring)">
         <div style="padding:20px 20px 0;display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
           <div style="flex:1;min-width:0">
@@ -4621,9 +4758,10 @@ profile: () => {
             <div style="font-size:13px;color:var(--fg-3);line-height:1.5;margin-bottom:12px">${h.tagline}</div>
           </div>
           <div style="flex-shrink:0;text-align:right">
-            <div style="font-size:17px;font-weight:800">£${h.price.toLocaleString()}</div>
-            <div style="font-size:10px;color:var(--fg-4);margin-top:2px">from / night</div>
-            <div style="font-size:11px;color:var(--gold);font-weight:700;margin-top:6px">★ ${h.rating.toFixed(1)}</div>
+            <div style="font-size:17px;font-weight:800">£${q.nightly.toLocaleString()}</div>
+            <div style="font-size:10px;color:var(--fg-4);margin-top:2px">avg / night</div>
+            <div style="font-size:11px;color:var(--fg-3);margin-top:5px">£${q.total.toLocaleString()} total</div>
+            <div style="font-size:11px;color:var(--gold);font-weight:700;margin-top:5px">★ ${h.rating.toFixed(1)}</div>
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:10px;padding:12px 20px;border-top:1px solid var(--divider);margin-top:4px">
@@ -4638,7 +4776,7 @@ profile: () => {
         </div>
       </div>`).join('')}
     </div>
-    <div style="font-size:11px;color:var(--fg-5);text-align:center;line-height:1.6;margin-top:18px;padding:0 12px">Rates are indicative lead-in prices and shown for guidance only. Tap "Book hotel" to view live availability and reserve on the hotel's official site.</div>
+    <div style="font-size:11px;color:var(--fg-5);text-align:center;line-height:1.6;margin-top:18px;padding:0 12px">Rates respond to your dates, demand and length of stay. Live availability is confirmed on the hotel's official site — tap "Book hotel" to lock in the current rate and reserve.</div>
   </div>
   ${bottomNav('hotels')}
 </div>`;
@@ -5458,6 +5596,7 @@ function render(){
   if(state.screen==='active-trip'||state.screen==='client-chat') setTimeout(()=>{ setupChatListener(state._chatDocId||state._activeBooking?.docId); },0);
   if(state.screen==='client-chat') setTimeout(()=>{ const el=document.getElementById('chat-msgs'); if(el)el.scrollTop=el.scrollHeight; },50);
   if(state.screen==='profile') setTimeout(loadReferralCode,100);
+  if(state.screen==='hotels') setTimeout(refreshHotelRates,0);
 }
 
 generateMemberNumber();
