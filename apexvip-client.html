@@ -40,6 +40,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-check-compat.js"></script>
 <script src="https://web.squarecdn.com/v1/square.js" async></script>
 <script src="firebase.js"></script>
 <script src="apexvip-core.js"></script>
@@ -619,6 +620,10 @@ try {
   if (typeof APEXVIP_FIREBASE_CONFIG !== 'undefined' && APEXVIP_FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY') {
     const _fbApp = firebase.apps.length ? firebase.app() : firebase.initializeApp(APEXVIP_FIREBASE_CONFIG);
     auth = firebase.auth(_fbApp); db = firebase.firestore(_fbApp); fns = firebase.functions(_fbApp); FIREBASE_ENABLED = true;
+    // App Check (reCAPTCHA v3) — only when a site key is configured
+    if (typeof APEXVIP_RECAPTCHA_KEY !== 'undefined' && APEXVIP_RECAPTCHA_KEY && firebase.appCheck) {
+      try { firebase.appCheck(_fbApp).activate(APEXVIP_RECAPTCHA_KEY, true); } catch(e) { console.warn('App Check:', e.message); }
+    }
   }
 } catch(e) { console.warn('Firebase init:', e.message); }
 
@@ -2271,9 +2276,22 @@ login: () => {
     <div class="field" style="margin-bottom:10px"><input id="lemail" type="email" placeholder="Email address" autocomplete="email"/></div>
     <div class="field" style="margin-bottom:8px"><input id="lpass" type="password" placeholder="Password" autocomplete="current-password"/></div>
     <div style="text-align:right;margin-bottom:28px">
-      <button style="background:none;border:none;color:var(--fg-3);font-size:13px;cursor:pointer;padding:8px 0;font-family:inherit">Forgot password?</button>
+      <button onclick="forgotPassword()" style="background:none;border:none;color:var(--fg-3);font-size:13px;cursor:pointer;padding:8px 0;font-family:inherit">Forgot password?</button>
     </div>
     <button class="btn btn-white" onclick="doLogin()">Sign in</button>
+    <div style="display:flex;align-items:center;gap:12px;margin:22px 0">
+      <div style="flex:1;height:1px;background:var(--border)"></div>
+      <span style="font-size:11px;color:var(--fg-4);letter-spacing:1px">OR</span>
+      <div style="flex:1;height:1px;background:var(--border)"></div>
+    </div>
+    <button class="btn btn-glass" onclick="socialSignIn('google')" style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:10px">
+      <svg width="17" height="17" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84z"/><path fill="#EA4335" d="M12 4.75c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 1.46 14.97.5 12 .5A11 11 0 0 0 2.18 7.06l3.66 2.84C6.71 6.68 9.14 4.75 12 4.75z"/></svg>
+      Continue with Google
+    </button>
+    <button class="btn btn-glass" onclick="socialSignIn('apple')" style="display:flex;align-items:center;justify-content:center;gap:10px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 12.04c-.03-2.6 2.12-3.85 2.22-3.91-1.21-1.77-3.09-2.01-3.76-2.04-1.6-.16-3.12.94-3.93.94-.81 0-2.06-.92-3.39-.89-1.74.03-3.35 1.01-4.25 2.57-1.81 3.15-.46 7.81 1.3 10.37.86 1.25 1.88 2.66 3.22 2.61 1.29-.05 1.78-.83 3.34-.83 1.56 0 2 .83 3.37.81 1.39-.03 2.27-1.28 3.12-2.54.98-1.46 1.39-2.87 1.41-2.94-.03-.01-2.71-1.04-2.74-4.11l.02-.01zM14.6 4.3c.71-.86 1.19-2.06 1.06-3.25-1.02.04-2.26.68-2.99 1.54-.66.76-1.23 1.97-1.08 3.13 1.14.09 2.3-.58 3.01-1.42z"/></svg>
+      Continue with Apple
+    </button>
     <div style="text-align:center;margin-top:22px;color:var(--fg-3);font-size:14px">
       New here? <span style="color:#ffffff;cursor:pointer;font-weight:600" onclick="go('register')">Create account</span>
     </div>
@@ -2377,6 +2395,11 @@ home: () => {
     <div class="stagger" style="padding:20px 22px 0;height:calc(100% - 26px);overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:96px">
 
       ${(()=>{const b=state.user?.birthday||localStorage.getItem('apex_birthday');if(!b)return'';const today=new Date();const bday=new Date(b);const next=new Date(today.getFullYear(),bday.getMonth(),bday.getDate());if(next<today)next.setFullYear(today.getFullYear()+1);const days=Math.round((next-today)/86400000);if(days>7)return'';return`<div style="display:flex;align-items:center;gap:12px;background:rgba(200,169,126,.08);border:1px solid rgba(200,169,126,.2);border-radius:16px;padding:14px 18px;margin-bottom:14px"><div style="font-size:24px">🎂</div><div><div style="font-size:13px;font-weight:700;color:var(--gold)">Happy ${days===0?'Birthday!':'upcoming birthday!'}</div><div style="font-size:12px;color:var(--fg-3);margin-top:2px">${days===0?'A complimentary upgrade awaits you today.':'Your birthday journey credit activates in '+days+' day'+(days===1?'':'s')+'.'}</div></div></div>`;})()}
+      ${(FIREBASE_ENABLED && auth?.currentUser && auth.currentUser.emailVerified===false)?`<div style="display:flex;align-items:center;gap:12px;background:rgba(212,168,67,.08);border:1px solid rgba(212,168,67,.28);border-radius:16px;padding:13px 16px;margin-bottom:14px">
+        <div style="font-size:20px">✉️</div>
+        <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:var(--gold)">Verify your email</div><div style="font-size:12px;color:var(--fg-3);margin-top:1px">Confirm ${auth.currentUser.email} to secure your account.</div></div>
+        <button onclick="resendVerification()" style="background:var(--gold);border:none;border-radius:10px;color:#0c0b09;font-size:12px;font-weight:800;padding:8px 12px;cursor:pointer;font-family:inherit;flex-shrink:0">Resend</button>
+      </div>`:''}
       <!-- ApexAI — hero button at the top -->
       <button onclick="go('concierge-chat')" style="width:100%;display:flex;align-items:center;gap:16px;padding:16px 20px;margin-bottom:16px;background:linear-gradient(135deg,rgba(200,169,126,.11) 0%,rgba(200,169,126,.04) 100%);border:1px solid rgba(200,169,126,.28);border-radius:22px;cursor:pointer;font-family:inherit;transition:transform .15s var(--ease-spring)">
         <div style="width:40px;height:40px;border-radius:14px;background:rgba(200,169,126,.14);border:1px solid rgba(200,169,126,.28);display:flex;align-items:center;justify-content:center;flex-shrink:0">
@@ -5149,12 +5172,63 @@ async function doLogin(){
     else{state._loginErr='Invalid email or password.';haptic('error');render();}
     return;
   }
+  if(!e||!p){state._loginErr='Please enter your email and password.';haptic('error');render();return;}
   try{
     await auth.signInWithEmailAndPassword(e,p);
     haptic('success');
   } catch(err){
-    state._loginErr='Invalid email or password.';haptic('error');render();
+    state._loginErr=_authErrorMsg(err);haptic('error');render();
   }
+}
+// Map Firebase auth error codes to clear, friendly copy
+function _authErrorMsg(err){
+  const c=(err&&err.code)||'';
+  switch(c){
+    case 'auth/invalid-email': return 'That email address doesn\'t look right.';
+    case 'auth/user-disabled': return 'This account has been disabled. Contact support.';
+    case 'auth/user-not-found':
+    case 'auth/wrong-password':
+    case 'auth/invalid-credential': return 'Email or password is incorrect.';
+    case 'auth/too-many-requests': return 'Too many attempts. Please try again shortly.';
+    case 'auth/email-already-in-use': return 'An account with this email already exists.';
+    case 'auth/weak-password': return 'Please choose a stronger password (8+ characters).';
+    case 'auth/popup-closed-by-user': return 'Sign-in was cancelled.';
+    case 'auth/operation-not-allowed': return 'This sign-in method isn\'t enabled yet.';
+    case 'auth/network-request-failed': return 'Network error — check your connection.';
+    default: return (err&&err.message)||'Something went wrong. Please try again.';
+  }
+}
+async function forgotPassword(){
+  const e=$('lemail')?.value||'';
+  if(!FIREBASE_ENABLED){ alert('Password reset is available once connected to the live service.'); return; }
+  if(!e){ state._loginErr='Enter your email above, then tap “Forgot password?”.'; render(); return; }
+  try{
+    await auth.sendPasswordResetEmail(e);
+    state._loginErr=null; haptic('success');
+    alert('If an account exists for '+e+', a password-reset link is on its way. Check your inbox.');
+  }catch(err){ state._loginErr=_authErrorMsg(err); render(); }
+}
+async function socialSignIn(which){
+  if(!FIREBASE_ENABLED){ alert('Social sign-in is available once connected to the live service.'); return; }
+  try{
+    const provider = which==='apple'
+      ? new firebase.auth.OAuthProvider('apple.com')
+      : new firebase.auth.GoogleAuthProvider();
+    const cred = await auth.signInWithPopup(provider);
+    // First social sign-in: create a client profile if missing
+    const u = cred.user;
+    if(u){
+      const ref = db.collection('users').doc(u.uid);
+      const snap = await ref.get().catch(()=>null);
+      if(snap && !snap.exists){
+        await ref.set({ name:u.displayName||'', email:u.email||'', phone:u.phoneNumber||'',
+          role:'client', tier:'standard', bookings:0, spent:0,
+          joined:new Date().toLocaleDateString('en-GB',{month:'short',year:'numeric'}),
+          createdAt:firebase.firestore.FieldValue.serverTimestamp() }, {merge:true}).catch(()=>{});
+      }
+    }
+    track('user_login',{method:which,src:'client'}); haptic('success');
+  }catch(err){ state._loginErr=_authErrorMsg(err); haptic('error'); render(); }
 }
 function saveRegStep1(){
   state._regName=($('rfn')?.value||'')+' '+($('rln')?.value||'');
@@ -5169,6 +5243,7 @@ async function doRegister(){
   try{
     const cred=await auth.createUserWithEmailAndPassword(state._regEmail,pw);
     await cred.user.updateProfile({displayName:state._regName});
+    cred.user.sendEmailVerification().catch(()=>{}); // verify email (non-blocking)
     try{
       await db.collection('users').doc(cred.user.uid).set({
         name:state._regName,email:state._regEmail,phone:state._regPhone||'',
@@ -5179,7 +5254,13 @@ async function doRegister(){
     }catch(fsErr){console.warn('Profile save:',fsErr.message);}
     state.user={uid:cred.user.uid,name:state._regName,email:state._regEmail};
     state._regStep=4;render();
-  }catch(err){alert(err.message);}
+  }catch(err){state._loginErr=_authErrorMsg(err);alert(_authErrorMsg(err));}
+}
+// Resend the verification email for the signed-in user
+async function resendVerification(){
+  if(!FIREBASE_ENABLED||!auth.currentUser) return;
+  try{ await auth.currentUser.sendEmailVerification(); haptic('success'); alert('Verification email sent to '+auth.currentUser.email+'.'); }
+  catch(err){ alert(_authErrorMsg(err)); }
 }
 function saveRouteAndBook(){
   state.booking.pickup=$('ri_pu')?.value||'';
