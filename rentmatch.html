@@ -311,10 +311,23 @@ function buildingSVG(seed) {
     + tree + scene + bushes
     + `</svg>`;
 }
-/** A CSS background showing the listing's generated photo (offline data URI). */
+/* Real property photos (Unsplash CDN). Listings map to one deterministically.
+   The generated SVG illustration is layered underneath as an offline / failed-
+   load fallback, so a missing photo degrades to art, not a broken image. */
+const PHOTOS = [
+  'photo-1568605114967-8130f3a36994', 'photo-1570129477492-45c003edd2be',
+  'photo-1512917774080-9991f1c4c750', 'photo-1605276374104-dee2a0ed3cd6',
+  'photo-1582268611958-ebfd161ef9cf', 'photo-1493809842364-78817add7ffb',
+  'photo-1502005229762-cf1b2da7c5d6', 'photo-1512918728675-ed5a9ecdebfd',
+  'photo-1560448204-e02f11c3d0e2', 'photo-1484154218962-a197022b5858',
+  'photo-1480074568708-e7b720bb3f09', 'photo-1572120360610-d971b9d7767c',
+].map((id) => `https://images.unsplash.com/${id}?auto=format&fit=crop&w=800&q=70`);
+
+/** A CSS background: the listing's real photo, with the generated SVG as fallback. */
 const grad = (seed) => {
   const svg = buildingSVG(seed).replace(/\n/g, '').replace(/#/g, '%23');
-  return `#142033 url("data:image/svg+xml,${svg}") center/cover no-repeat`;
+  const photo = PHOTOS[Math.abs(hashStr(String(seed))) % PHOTOS.length];
+  return `url("${photo}") center/cover no-repeat, url("data:image/svg+xml,${svg}") center/cover no-repeat, #142033`;
 };
 const uid = () => 'id' + Math.random().toString(36).slice(2, 9);
 const now = () => Date.now();

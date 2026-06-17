@@ -73,10 +73,22 @@ function buildingSVG(seed: string): string {
   );
 }
 
-/** A deterministic, offline generated "photo" of the property as a CSS background. */
+/* Real property photos (Unsplash CDN); the generated SVG is layered underneath
+   as an offline / failed-load fallback. */
+const PHOTOS = [
+  'photo-1568605114967-8130f3a36994', 'photo-1570129477492-45c003edd2be',
+  'photo-1512917774080-9991f1c4c750', 'photo-1605276374104-dee2a0ed3cd6',
+  'photo-1582268611958-ebfd161ef9cf', 'photo-1493809842364-78817add7ffb',
+  'photo-1502005229762-cf1b2da7c5d6', 'photo-1512918728675-ed5a9ecdebfd',
+  'photo-1560448204-e02f11c3d0e2', 'photo-1484154218962-a197022b5858',
+  'photo-1480074568708-e7b720bb3f09', 'photo-1572120360610-d971b9d7767c',
+].map((id) => `https://images.unsplash.com/${id}?auto=format&fit=crop&w=800&q=70`);
+
+/** The listing's real photo as a CSS background, with the generated SVG as fallback. */
 export function photoGradient(seed: string): string {
   const svg = encodeURIComponent(buildingSVG(seed));
-  return `#142033 url("data:image/svg+xml,${svg}") center/cover no-repeat`;
+  const photo = PHOTOS[Math.abs(hash(seed)) % PHOTOS.length];
+  return `url("${photo}") center/cover no-repeat, url("data:image/svg+xml,${svg}") center/cover no-repeat, #142033`;
 }
 
 export function formatDate(ms: number): string {
