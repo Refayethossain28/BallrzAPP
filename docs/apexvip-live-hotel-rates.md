@@ -43,6 +43,12 @@ Amadeus property by geocode.
 
 ## Cloud Function (Amadeus Self-Service)
 
+> **The function is already scaffolded** in [`functions/`](../functions/) —
+> see [`functions/README.md`](../functions/README.md) for install + deploy. The steps
+> below summarise what it does. **Deploy it with `firebase deploy --only
+> functions:getHotelRates`** so you don't disturb the project's other functions (which
+> live in a separate codebase).
+
 1. **Get keys:** https://developers.amadeus.com → Self-Service → create an app →
    `AMADEUS_CLIENT_ID` / `AMADEUS_CLIENT_SECRET`. Test environment is free; switch the
    host to `api.amadeus.com` for production (paid).
