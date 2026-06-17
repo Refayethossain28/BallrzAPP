@@ -27,7 +27,7 @@ export default function SignIn() {
   return (
     <div className="centerpage">
       <div className="logo" style={{ fontSize: 24, marginBottom: 6 }}>
-        <span className="mk">⌂</span> Rent<b>Match</b>
+        <span className="mk">⌂</span> <b>Apex</b>
       </div>
       <p className="sub">UK lettings — advertise, find, message, sign.</p>
 
@@ -53,7 +53,7 @@ export default function SignIn() {
       </form>
 
       <p className="muted" style={{ textAlign: 'center', marginTop: 16, fontSize: 13 }}>
-        {mode === 'in' ? 'New to RentMatch?' : 'Already have an account?'}{' '}
+        {mode === 'in' ? 'New to Apex?' : 'Already have an account?'}{' '}
         <a href="#" onClick={(e) => { e.preventDefault(); setMode(mode === 'in' ? 'up' : 'in'); setError(''); }}>
           {mode === 'in' ? 'Create one' : 'Sign in'}
         </a>

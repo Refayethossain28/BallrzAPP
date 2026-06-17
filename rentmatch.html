@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-<title>RentMatch — UK lettings, landlord ↔ renter</title>
+<title>Apex — UK lettings, landlord ↔ renter</title>
 <meta name="description" content="Landlords advertise property, renters find a home. Message, book a viewing, then both parties sign a UK-compliant Assured Shorthold Tenancy. The landlord pays £100 on signing." />
 <meta name="theme-color" content="#0b0f1a" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="RentMatch" />
+<meta name="apple-mobile-web-app-title" content="Apex" />
 <link rel="manifest" href="rentmatch-manifest.json" />
 <link rel="apple-touch-icon" href="rentmatch-icon-180.png" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%2334e1c0'/%3E%3Cstop offset='1' stop-color='%237b8cff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='14' fill='%230b0f1a'/%3E%3Cpath d='M18 30 L32 18 L46 30 V46 H38 V36 H26 V46 H18 Z' fill='none' stroke='url(%23g)' stroke-width='3.4' stroke-linejoin='round'/%3E%3C/svg%3E" />
@@ -180,12 +180,37 @@
     padding:11px 18px;border-radius:999px;font-size:13.5px;font-weight:600;opacity:0;transition:all .25s;
     box-shadow:0 12px 30px -10px rgba(0,0,0,.7)}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* Apex splash screen — shown on launch, fades out */
+  #splash{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
+    background:radial-gradient(85% 60% at 50% 38%, #15233f, #0b0f1a 72%);transition:opacity .55s ease;}
+  #splash.hide{opacity:0;pointer-events:none}
+  #splash .mark{width:104px;height:104px;border-radius:28px;background:var(--grad);display:grid;place-items:center;
+    font-size:56px;color:#04121c;box-shadow:0 26px 64px -18px rgba(52,225,192,.6), inset 0 1px 0 rgba(255,255,255,.4);
+    animation:apexpop .6s cubic-bezier(.2,.8,.2,1) both;}
+  #splash .word{font-size:38px;font-weight:800;letter-spacing:1px;line-height:1;
+    background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+    animation:apexrise .6s .12s both;}
+  #splash .tag{color:var(--muted);font-size:12px;letter-spacing:4px;text-transform:uppercase;animation:apexrise .6s .26s both;}
+  #splash .dots{display:flex;gap:6px;margin-top:8px;animation:apexrise .6s .4s both}
+  #splash .dots i{width:7px;height:7px;border-radius:50%;background:var(--c1);opacity:.5;animation:apexpulse 1.1s ease-in-out infinite}
+  #splash .dots i:nth-child(2){animation-delay:.18s;background:var(--c2)}
+  #splash .dots i:nth-child(3){animation-delay:.36s;background:var(--c2)}
+  @keyframes apexpop{from{transform:scale(.55);opacity:0}to{transform:scale(1);opacity:1}}
+  @keyframes apexrise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes apexpulse{0%,100%{opacity:.35;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}
 </style>
 </head>
 <body>
+<div id="splash">
+  <div class="mark">⌂</div>
+  <div class="word">Apex</div>
+  <div class="tag">UK lettings</div>
+  <div class="dots"><i></i><i></i><i></i></div>
+</div>
 <div id="app">
   <header>
-    <div class="logo"><span class="mk">⌂</span> <span>Rent<b>Match</b></span></div>
+    <div class="logo"><span class="mk">⌂</span> <span><b>Apex</b></span></div>
     <div class="spacer"></div>
     <div class="roleswitch" id="roleSwitch">
       <button data-role="renter">Renter</button>
@@ -201,7 +226,7 @@
 
 <script>
 /* ============================================================================
-   RentMatch — UK lettings marketplace prototype
+   Apex — UK lettings marketplace prototype
    Single-file, zero-build. Landlords advertise; renters search; both parties
    message, arrange a viewing, agree terms, then sign a UK-compliant Assured
    Shorthold Tenancy (AST). The landlord is charged £100 on contract signing.
@@ -221,14 +246,65 @@ const fmtDate = (ts) => new Date(ts).toLocaleDateString('en-GB', { day: 'numeric
 const fmtDateTime = (ts) => new Date(ts).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const addDays = (ts, d) => ts + d * 864e5;
 const escapeHtml = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const gradients = [
-  'linear-gradient(135deg,#3b5bdb,#5f3dc4)', 'linear-gradient(135deg,#0b7285,#15aabf)',
-  'linear-gradient(135deg,#2b8a3e,#66a80f)', 'linear-gradient(135deg,#c2255c,#e8590c)',
-  'linear-gradient(135deg,#5c5f66,#343a40)', 'linear-gradient(135deg,#1864ab,#1098ad)',
-  'linear-gradient(135deg,#862e9c,#d6336c)', 'linear-gradient(135deg,#e67700,#f59f00)',
-];
-const grad = (seed) => gradients[Math.abs(hashStr(String(seed))) % gradients.length];
 function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h << 5) - h + s.charCodeAt(i) | 0; return h; }
+
+/* ---- generated property imagery ----------------------------------------------
+   Each listing gets a deterministic, fully offline SVG "photo" of the building
+   (no network, no binary assets). We avoid encodeURIComponent (not present in
+   the smoke-test sandbox) by single-quoting attributes and escaping only '#'. */
+const PALETTES = [
+  { sky1: '#bfe3ff', sky2: '#7fb4e8', wall: '#ece3d4', wall2: '#dccfba', roof: '#7b4a3a', ground: '#cdbfae' },
+  { sky1: '#ffd9a8', sky2: '#ff9e7d', wall: '#f1e7da', wall2: '#e5d6c4', roof: '#5b4a8a', ground: '#c9b29a' },
+  { sky1: '#cfe9ff', sky2: '#9ec9f0', wall: '#dfe3ea', wall2: '#cdd3df', roof: '#3a4a6b', ground: '#b9c2cc' },
+  { sky1: '#d7f0e6', sky2: '#9fd4c2', wall: '#efe9df', wall2: '#ddd5c7', roof: '#874c3a', ground: '#c2c7ba' },
+  { sky1: '#e7dcff', sky2: '#b9a6f0', wall: '#ece6f3', wall2: '#dcd2ea', roof: '#4a3a6b', ground: '#bdb6c9' },
+];
+const GLASS = '#bfe0ff';
+function buildingSVG(seed) {
+  const h = Math.abs(hashStr(String(seed)));
+  const P = PALETTES[h % PALETTES.length];
+  const v = h % 3;
+  let scene = '';
+  if (v === 0) { // detached house
+    scene = `<polygon points='110,122 200,66 290,122' fill='${P.roof}'/>`
+      + `<rect x='132' y='120' width='136' height='74' fill='${P.wall}'/>`
+      + `<rect x='150' y='136' width='30' height='26' rx='2' fill='${GLASS}'/>`
+      + `<rect x='220' y='136' width='30' height='26' rx='2' fill='${GLASS}'/>`
+      + `<rect x='188' y='152' width='24' height='42' rx='2' fill='${P.roof}'/>`;
+  } else if (v === 1) { // apartment block
+    let win = '';
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) {
+      const lit = (h >> (r * 4 + c)) & 1;
+      win += `<rect x='${120 + c * 41}' y='${74 + r * 28}' width='27' height='18' rx='2' fill='${lit ? '#dff0ff' : '#9bb6d6'}'/>`;
+    }
+    scene = `<rect x='108' y='58' width='184' height='136' fill='${P.wall}'/>${win}`
+      + `<rect x='186' y='162' width='28' height='32' fill='${P.roof}'/>`;
+  } else { // pair of townhouses
+    scene = `<rect x='96' y='112' width='104' height='82' fill='${P.wall}'/>`
+      + `<polygon points='96,112 148,74 200,112' fill='${P.roof}'/>`
+      + `<rect x='204' y='112' width='104' height='82' fill='${P.wall2}'/>`
+      + `<polygon points='204,112 256,74 308,112' fill='${P.roof}'/>`
+      + `<rect x='120' y='150' width='22' height='44' fill='${P.roof}'/>`
+      + `<rect x='244' y='150' width='22' height='44' fill='${P.roof}'/>`
+      + `<rect x='156' y='128' width='28' height='20' rx='2' fill='${GLASS}'/>`
+      + `<rect x='268' y='128' width='28' height='20' rx='2' fill='${GLASS}'/>`;
+  }
+  return `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 240' preserveAspectRatio='xMidYMid slice'>`
+    + `<defs><linearGradient id='s' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='${P.sky1}'/><stop offset='1' stop-color='${P.sky2}'/></linearGradient></defs>`
+    + `<rect width='400' height='240' fill='url(%23s)'/>`
+    + `<circle cx='330' cy='52' r='24' fill='#fff' opacity='0.85'/>`
+    + `<ellipse cx='86' cy='54' rx='40' ry='14' fill='#fff' opacity='0.6'/>`
+    + `<ellipse cx='150' cy='64' rx='30' ry='11' fill='#fff' opacity='0.45'/>`
+    + `<rect x='0' y='186' width='400' height='54' fill='${P.ground}'/>`
+    + `<rect x='0' y='186' width='400' height='7' fill='#000' opacity='0.07'/>`
+    + scene
+    + `</svg>`;
+}
+/** A CSS background showing the listing's generated photo (offline data URI). */
+const grad = (seed) => {
+  const svg = buildingSVG(seed).replace(/\n/g, '').replace(/#/g, '%23');
+  return `#142033 url("data:image/svg+xml,${svg}") center/cover no-repeat`;
+};
 const uid = () => 'id' + Math.random().toString(36).slice(2, 9);
 const now = () => Date.now();
 
@@ -484,7 +560,7 @@ function accountScreen() {
     <div class="card"><div class="body">
       <div class="kv"><span class="k">Tenancies completed</span><span class="v">${paid.length}</span></div>
       <div class="kv"><span class="k">Platform fees paid</span><span class="v">${gbp(earned)}</span></div>
-      <p class="muted" style="font-size:12.5px;margin:12px 0 0">RentMatch charges landlords a one-off <b>${gbp(FEE_PENCE)}</b> fee at the point the tenancy agreement is signed by both parties. Renters are never charged a fee (Tenant Fees Act 2019).</p>
+      <p class="muted" style="font-size:12.5px;margin:12px 0 0">Apex charges landlords a one-off <b>${gbp(FEE_PENCE)}</b> fee at the point the tenancy agreement is signed by both parties. Renters are never charged a fee (Tenant Fees Act 2019).</p>
     </div></div>
     <div class="section-t">Reset</div>
     <button class="cta ghost" data-act="reset">Reset demo data</button>
@@ -565,7 +641,7 @@ function detailScreen(id) {
         <div class="kv"><span class="k">Tenancy deposit (max 5 weeks)</span><span class="v">${gbp(dep)}</span></div>
         <div class="kv"><span class="k">Available from</span><span class="v">${fmtDate(l.available)}</span></div>
       </div></div>
-      <div class="notice">💡 Under the <b>Tenant Fees Act 2019</b> the only payments a renter can be charged are rent, a capped tenancy deposit, a capped holding deposit and a few default fees. RentMatch never charges renters.</div>
+      <div class="notice">💡 Under the <b>Tenant Fees Act 2019</b> the only payments a renter can be charged are rent, a capped tenancy deposit, a capped holding deposit and a few default fees. Apex never charges renters.</div>
 
       ${isLandlord
         ? (d
@@ -725,7 +801,7 @@ function contractScreen(dealId) {
       <div class="muted" style="font-size:12.5px">${c.type} (England) · drafted ${fmtDate(c.drafted)}</div></div>
     </div>
 
-    <div class="notice">This Assured Shorthold Tenancy is governed by the Housing Act 1988 (as amended). Both parties must sign for it to take effect. ${role === 'landlord' ? `On signing, RentMatch charges the landlord a one-off <b>${gbp(FEE_PENCE)}</b> platform fee.` : 'Renters are never charged a platform fee.'}</div>
+    <div class="notice">This Assured Shorthold Tenancy is governed by the Housing Act 1988 (as amended). Both parties must sign for it to take effect. ${role === 'landlord' ? `On signing, Apex charges the landlord a one-off <b>${gbp(FEE_PENCE)}</b> platform fee.` : 'Renters are never charged a platform fee.'}</div>
 
     ${contractBody(c)}
 
@@ -999,7 +1075,7 @@ function submitViewing(e) {
 function openPaymentSheet(d) {
   openSheet(`
     <h3>Confirm &amp; pay platform fee</h3>
-    <p class="muted" style="font-size:13px;margin:0 0 6px">RentMatch charges the landlord a one-off fee at the point the tenancy is signed. Your signature is applied once payment succeeds.</p>
+    <p class="muted" style="font-size:13px;margin:0 0 6px">Apex charges the landlord a one-off fee at the point the tenancy is signed. Your signature is applied once payment succeeds.</p>
     <div class="fee">
       <div class="muted" style="font-size:12px;letter-spacing:.4px;text-transform:uppercase;font-weight:700">Platform fee</div>
       <div class="amt">${gbp(FEE_PENCE)}</div>
@@ -1079,6 +1155,15 @@ $('#tabbar').addEventListener('click', (e) => {
    ---------------------------------------------------------------------------- */
 render();
 if (!S.seenToast) { S.seenToast = true; save(); setTimeout(() => toast('Tip: switch Renter ↔ Landlord up top to play both sides'), 700); }
+
+/* dismiss the Apex splash after a beat (or on tap) */
+(function () {
+  const splash = document.getElementById('splash');
+  if (!splash) return;
+  const hide = () => splash.classList.add('hide');
+  setTimeout(hide, 1600);
+  splash.addEventListener('click', hide);
+})();
 </script>
 <script>
 /* PWA: register the offline app-shell service worker (https only). */
