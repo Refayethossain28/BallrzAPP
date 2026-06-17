@@ -115,6 +115,14 @@ input,select,textarea{font-size:16px !important}
   animation:slideUp .35s ease;box-shadow:0 8px 40px rgba(0,0,0,.6);
 }
 #ios-install-banner.hidden{display:none}
+#cookie-consent{
+  position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);left:16px;right:16px;
+  background:rgba(20,16,12,.97);border:1px solid var(--border);border-radius:18px;
+  padding:16px 18px;z-index:1000;
+  backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+  animation:slideUp .35s ease;box-shadow:0 8px 40px rgba(0,0,0,.6);
+}
+#cookie-consent.hidden{display:none}
 *::-webkit-scrollbar{display:none}
 
 /* ── Keyframes ─────────────────────────────────────────────────────── */
@@ -590,6 +598,20 @@ body.light .ripple-host .ripple-el{background:rgba(0,0,0,.1)}
   <button id="pwa-install-btn" style="display:none;background:var(--gold);border:none;border-radius:10px;color:#0c0b09;font-size:12px;font-weight:700;padding:9px 14px;cursor:pointer;flex-shrink:0;font-family:inherit">Install</button>
   <button onclick="document.getElementById('ios-install-banner').classList.add('hidden');localStorage.setItem('apexvip_pwa_dismissed','1')" style="background:none;border:none;color:var(--fg-3);font-size:20px;cursor:pointer;padding:4px;flex-shrink:0">×</button>
 </div>
+
+<!-- Cookie / privacy consent — shown on first visit (UK GDPR / PECR) -->
+<div id="cookie-consent" class="hidden">
+  <div style="font-size:13px;font-weight:700;margin-bottom:6px">Your privacy</div>
+  <div style="font-size:12px;color:var(--fg-3);line-height:1.6;margin-bottom:14px">
+    We use essential cookies to run the app and, with your consent, analytics to improve it.
+    You can change this any time in <strong>Profile → Cookie preferences</strong>.
+    <span onclick="go('cookies')" style="color:var(--gold);cursor:pointer;white-space:nowrap">Learn more</span>
+  </div>
+  <div style="display:flex;gap:8px">
+    <button onclick="setCookieConsent('essential')" style="flex:1;padding:11px;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;color:var(--fg-2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Essential only</button>
+    <button onclick="setCookieConsent('all')" style="flex:1;padding:11px;background:var(--gold);border:none;border-radius:11px;color:#0c0b09;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">Accept all</button>
+  </div>
+</div>
 <script>
 // ── Firebase ──────────────────────────────────────────────────────────────
 let auth, db, fns, FIREBASE_ENABLED = false;
@@ -729,8 +751,52 @@ function track(event, props){
     arr.push(ev);
     if(arr.length>2000) arr.splice(0,arr.length-2000);
     localStorage.setItem(key,JSON.stringify(arr));
-    if(FIREBASE_ENABLED) db.collection('analytics').add(ev).catch(()=>{});
+    // Off-device analytics only with explicit consent (UK GDPR / PECR)
+    if(FIREBASE_ENABLED && localStorage.getItem('apex_consent')==='all') db.collection('analytics').add(ev).catch(()=>{});
   }catch(e){}
+}
+
+// ── Cookie / privacy consent ──────────────────────────────────────────────
+function setCookieConsent(level){ // 'all' | 'essential'
+  localStorage.setItem('apex_consent', level);
+  localStorage.setItem('apex_consent_at', new Date().toISOString());
+  document.getElementById('cookie-consent')?.classList.add('hidden');
+  if(state.screen==='cookies') render();
+}
+function maybeShowConsent(){
+  if(localStorage.getItem('apex_consent')) return;
+  document.getElementById('cookie-consent')?.classList.remove('hidden');
+}
+// Visible reminder that the legal copy is a template pending professional review
+function legalDraftNotice(){
+  return `<div style="display:flex;gap:10px;align-items:flex-start;background:rgba(212,168,67,.08);border:1px solid rgba(212,168,67,.25);border-radius:14px;padding:12px 14px;margin-bottom:22px">
+    <span style="font-size:15px;line-height:1.2">⚠️</span>
+    <div style="font-size:11px;color:var(--fg-3);line-height:1.6">Draft template for illustration — must be reviewed and finalised by a qualified solicitor before launch. Not legal advice.</div>
+  </div>`;
+}
+function toggleMarketing(){
+  state._marketingOptIn = !state._marketingOptIn;
+  localStorage.setItem('apex_marketing', state._marketingOptIn?'1':'0');
+  haptic('light');
+  render();
+}
+function requestDataExport(){
+  try{
+    const data = { exportedAt:new Date().toISOString(), account:state.user||null, member:state.memberNumber||null,
+      preferences:{theme:state.theme, marketing:state._marketingOptIn, consent:localStorage.getItem('apex_consent')},
+      bookings:JSON.parse(localStorage.getItem('apexvip_bookings')||'[]'),
+      events:JSON.parse(localStorage.getItem('apexvip_events')||'[]') };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
+    const a=document.createElement('a'); a.href=url; a.download='apexvip-my-data.json'; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    haptic('success');
+    alert('A copy of the data held on this device has been downloaded. For a complete record across our systems, email privacy@apexvip.com — we respond to verified requests within one month.');
+  }catch(e){ window.location.href='mailto:privacy@apexvip.com?subject=Data%20access%20request'; }
+}
+function requestDataErasure(){
+  if(!confirm('Request deletion of your ApexVIP account and personal data?\n\nWe erase your data within one month, except records we must keep by law (e.g. tax). This also clears your data on this device.')) return;
+  try{ ['apexvip_events','apexvip_bookings','apex_marketing','apex_birthday'].forEach(k=>localStorage.removeItem(k)); }catch(e){}
+  window.location.href='mailto:privacy@apexvip.com?subject=Account%20%26%20data%20erasure%20request&body=Please%20erase%20my%20ApexVIP%20account%20and%20personal%20data.';
 }
 
 const $ = id => document.getElementById(id);
@@ -804,6 +870,7 @@ let state = {
   _hotelNights: 2,
   _hotelGuests: 2,
   _hotelRates: {},
+  _marketingOptIn: localStorage.getItem('apex_marketing')==='1',
 };
 
 // ── Deep-link: open tracking view when URL contains ?track=1 ──────────────
@@ -3700,6 +3767,8 @@ profile: () => {
         {icon:'📅',label:'Year in Review',action:"go('year-review')"},
         {icon:'✦',label:'App Tour',action:"state.guideStep=0;go('guide')"},
         {icon:'💬',label:'Help & support',action:"go('help')"},
+        {icon:'🛡',label:'Your data (GDPR)',action:"go('your-data')"},
+        {icon:'🍪',label:'Cookie preferences',action:"go('cookies')"},
         {icon:'📄',label:'Terms & Conditions',action:"go('terms')"},
         {icon:'🔒',label:'Privacy Policy',action:"go('privacy')"},
       ].map((r,i,a)=>`<div onclick="${r.action}" style="display:flex;align-items:center;gap:14px;padding:16px 18px;border-bottom:${i<a.length-1?'1px solid rgba(255,255,255,.05)':'none'};cursor:pointer">
@@ -3783,23 +3852,26 @@ profile: () => {
     <div style="font-size:20px;font-weight:700">Terms &amp; Conditions</div>
   </div>
   <div style="padding:0 22px 80px;flex:1;overflow-y:auto">
-    <div style="font-size:11px;color:var(--fg-4);margin-bottom:24px">Last updated: June 2026</div>
+    <div style="font-size:11px;color:var(--fg-4);margin-bottom:14px">Last updated: June 2026</div>
+    ${legalDraftNotice()}
     ${[
-      ['1. Service', 'ApexVIP provides luxury chauffeur services. By booking through this app you agree to these terms. Services are subject to availability and vehicle availability.'],
-      ['2. Booking & Payment', 'All bookings require full payment at the time of booking. Prices include 20% VAT (UK). Corporate accounts may be invoiced monthly by agreement. Surge pricing applies during peak periods.'],
-      ['3. Cancellation Policy', 'Cancellations made more than 24 hours before pickup: full refund. Cancellations within 24 hours: 50% cancellation fee applies. No-shows are charged in full.'],
-      ['4. Meet & Greet', 'For airport transfers, your driver will wait up to 60 minutes after the scheduled landing time at no extra charge. Extended waiting time is charged at the hourly rate.'],
-      ['5. Passenger Responsibility', 'Passengers are responsible for their own luggage. Any damage to the vehicle caused by passengers will be charged to the booking holder.'],
-      ['6. Privacy', 'We collect only the data necessary to process your booking and improve our service. We do not sell your data to third parties. See our Privacy Policy for details.'],
-      ['7. Liability', 'ApexVIP is not liable for delays caused by traffic, weather, or circumstances beyond our control. Our liability is limited to the value of the booking.'],
-      ['8. Governing Law', 'These terms are governed by the laws of England and Wales. Any disputes shall be resolved in the courts of England and Wales.'],
+      ['1. Who we are', 'ApexVIP London Ltd, registered in England and Wales. We operate as a licensed private hire vehicle (PHV) operator — TfL operator licence no. 00000 (to be confirmed). All journeys are provided by licensed PHV drivers in licensed vehicles.'],
+      ['2. Service', 'ApexVIP provides pre-booked luxury chauffeur services. All travel must be booked in advance; we do not accept street hails. Services are subject to driver and vehicle availability.'],
+      ['3. Booking & Payment', 'Bookings require payment authorisation at the time of booking, captured on completion. Prices include 20% VAT. Corporate accounts may be invoiced by agreement. Surge pricing may apply during peak periods and is shown before you confirm.'],
+      ['4. Your cancellation rights', 'Cancel more than 24 hours before pickup for a full refund. Within 24 hours a 50% fee applies; no-shows are charged in full. As these are transport services on a specified date, the 14-day cancellation right under the Consumer Contracts Regulations 2013 does not apply once the journey is performed.'],
+      ['5. Meet & Greet', 'For airport transfers your driver waits up to 60 minutes after the scheduled landing time at no extra charge. Extended waiting is charged at the hourly rate.'],
+      ['6. Passenger responsibility', 'Passengers must wear seatbelts and behave lawfully and safely. You are responsible for your luggage. Any damage or soiling caused to the vehicle will be charged to the booking holder.'],
+      ['7. Liability', 'Nothing in these terms limits our liability for death or personal injury caused by negligence, or for fraud. Otherwise we are not liable for delays caused by traffic, weather or events beyond our reasonable control, and our liability is limited to the value of the booking. Your statutory rights are unaffected.'],
+      ['8. Complaints', 'We aim to resolve complaints within 14 days. Email support@apexvip.com. Licensing complaints may also be raised with Transport for London.'],
+      ['9. Privacy', 'We process your data as described in our Privacy Policy. We do not sell your data to third parties.'],
+      ['10. Governing law', 'These terms are governed by the laws of England and Wales, and disputes are subject to the courts of England and Wales.'],
     ].map(([h,b])=>`
     <div style="margin-bottom:22px">
       <div style="font-size:13px;font-weight:700;margin-bottom:7px;color:var(--fg)">${h}</div>
       <div style="font-size:13px;color:var(--fg-3);line-height:1.8">${b}</div>
     </div>`).join('')}
     <div style="padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:14px;font-size:12px;color:var(--fg-4);text-align:center;margin-top:8px">
-      ApexVIP London · Registered in England and Wales
+      ApexVIP London Ltd · Registered in England and Wales · TfL PHV operator (licence to be confirmed)
     </div>
   </div>
 </div>`,
@@ -3813,24 +3885,81 @@ profile: () => {
     <div style="font-size:20px;font-weight:700">Privacy Policy</div>
   </div>
   <div style="padding:0 22px 80px;flex:1;overflow-y:auto">
-    <div style="font-size:11px;color:var(--fg-4);margin-bottom:24px">Last updated: June 2026</div>
+    <div style="font-size:11px;color:var(--fg-4);margin-bottom:14px">Last updated: June 2026 · UK GDPR &amp; Data Protection Act 2018</div>
+    ${legalDraftNotice()}
     ${[
-      ['What we collect', 'Name, email address, phone number, pickup/dropoff addresses, payment card details (tokenised — we never store raw card numbers), and app usage analytics.'],
-      ['How we use it', 'To process your bookings, assign your driver, send booking confirmations, and improve our service. We do not sell or share your data with third parties for marketing.'],
-      ['Payment data', 'Card payments are processed by Square. We store only a payment reference ID — your full card details never touch our servers.'],
-      ['Location data', 'We request your location only to auto-fill the pickup address and to show you relevant nearby destinations. We do not store your location history.'],
-      ['Push notifications', 'With your permission, we send push notifications for booking confirmations and driver status updates. You can disable these at any time in your device settings.'],
-      ['Data retention', 'Booking records are kept for 7 years for legal and tax compliance. Account data is deleted within 30 days of account closure upon request.'],
-      ['Your rights', 'You have the right to access, correct, or delete your personal data at any time. Email privacy@apexvip.com to make a request.'],
-      ['Cookies', 'The app uses localStorage to save your theme preference and session state. No third-party tracking cookies are used.'],
+      ['Who we are', 'ApexVIP London Ltd ("we") is the data controller for your personal data, registered in England and Wales and registered with the Information Commissioner\'s Office (ICO reg. no. ZA000000 — to be confirmed). Contact our Data Protection Officer at dpo@apexvip.com.'],
+      ['What we collect', 'Identity & contact data (name, email, phone), booking data (pickup/dropoff addresses, dates, passengers, preferences), payment data (a tokenised card reference — never raw card numbers), approximate location (only when you grant permission), and device/usage analytics.'],
+      ['Lawful basis', 'Contract — to provide the chauffeur service you book. Legal obligation — tax, accounting and licensing records. Legitimate interests — securing and improving the service and preventing fraud. Consent — analytics and any marketing, which you can withdraw at any time.'],
+      ['Who we share it with', 'Our licensed drivers (booking details needed for your journey), and processors who act on our instructions: payment provider (Square), hosting/notifications (Google Firebase), and mapping (where applicable). We never sell your personal data.'],
+      ['International transfers', 'Some processors may handle data outside the UK. Where they do, transfers are protected by UK adequacy regulations or Standard Contractual Clauses.'],
+      ['Data retention', 'Booking and financial records are kept for 7 years to meet UK tax and licensing law. Other account data is deleted within 30 days of account closure or an erasure request, unless we must keep it by law.'],
+      ['Your rights', 'You may access, correct, erase, restrict or object to processing of your data, withdraw consent, and request portability. Manage these in the app (Profile → Your data) or email privacy@apexvip.com. You can also complain to the ICO at ico.org.uk.'],
+      ['Cookies & storage', 'We use essential on-device storage to run the app and remember your preferences. Analytics is used only with your consent — manage it in Profile → Cookie preferences.'],
     ].map(([h,b])=>`
     <div style="margin-bottom:22px">
       <div style="font-size:13px;font-weight:700;margin-bottom:7px;color:var(--fg)">${h}</div>
       <div style="font-size:13px;color:var(--fg-3);line-height:1.8">${b}</div>
     </div>`).join('')}
-    <div style="padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:14px;font-size:12px;color:var(--fg-4);text-align:center;margin-top:8px">
-      Questions? privacy@apexvip.com
+    <button onclick="go('your-data')" class="btn btn-gold" style="margin:4px 0 14px">Manage your data &amp; rights →</button>
+    <div style="padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:14px;font-size:12px;color:var(--fg-4);text-align:center">
+      Questions? privacy@apexvip.com · dpo@apexvip.com
     </div>
+  </div>
+</div>`,
+
+'cookies': () => `
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
+  <div class="back-row">
+    <div class="back-btn" onclick="go('profile')">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+    </div>
+    <div style="font-size:20px;font-weight:700">Cookie preferences</div>
+  </div>
+  <div style="padding:0 22px 80px;flex:1;overflow-y:auto">
+    <div style="font-size:13px;color:var(--fg-3);line-height:1.8;margin-bottom:20px">We use a small amount of on-device storage to run the app, and optional analytics to understand usage and improve the service. Choose what you're comfortable with — you can change it any time.</div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px;margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div style="font-size:14px;font-weight:700">Essential</div>
+        <div style="font-size:12px;color:var(--fg-4);font-weight:700">Always on</div>
+      </div>
+      <div style="font-size:12px;color:var(--fg-3);line-height:1.7">Required to sign you in, remember your preferences and process bookings. The app cannot work without these.</div>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px;margin-bottom:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div style="font-size:14px;font-weight:700">Analytics</div>
+        <div onclick="setCookieConsent(localStorage.getItem('apex_consent')==='all'?'essential':'all')" style="width:46px;height:26px;border-radius:13px;background:${localStorage.getItem('apex_consent')==='all'?'#D4A843':'var(--surface-2)'};border:1px solid ${localStorage.getItem('apex_consent')==='all'?'#D4A843':'var(--border)'};position:relative;cursor:pointer;transition:background .2s">
+          <div style="position:absolute;top:3px;left:${localStorage.getItem('apex_consent')==='all'?'23px':'3px'};width:18px;height:18px;border-radius:50%;background:#fff;transition:left .2s"></div>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--fg-3);line-height:1.7">Helps us understand how the app is used so we can improve it. No third-party advertising trackers are used.</div>
+    </div>
+    <div style="font-size:11px;color:var(--fg-4);text-align:center">${localStorage.getItem('apex_consent')?`Your choice: <strong>${localStorage.getItem('apex_consent')==='all'?'Essential + Analytics':'Essential only'}</strong>${localStorage.getItem('apex_consent_at')?' · set '+new Date(localStorage.getItem('apex_consent_at')).toLocaleDateString('en-GB'):''}`:'No preference set yet'}</div>
+  </div>
+</div>`,
+
+'your-data': () => `
+<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
+  <div class="back-row">
+    <div class="back-btn" onclick="go('profile')">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+    </div>
+    <div style="font-size:20px;font-weight:700">Your data</div>
+  </div>
+  <div style="padding:0 22px 80px;flex:1;overflow-y:auto">
+    <div style="font-size:13px;color:var(--fg-3);line-height:1.8;margin-bottom:20px">Under UK GDPR you control your personal data. Use the options below — we respond to verified requests within one month.</div>
+    ${[
+      {icon:'📥',label:'Download my data',sub:'Get a copy of your account & booking data',action:"requestDataExport()"},
+      {icon:'✏️',label:'Correct my details',sub:'Update your profile information',action:"go('preferences')"},
+      {icon:'🔕',label:'Marketing emails',sub:state._marketingOptIn?'You are opted in':'You are opted out',action:"toggleMarketing()"},
+      {icon:'🍪',label:'Cookie preferences',sub:'Manage analytics consent',action:"go('cookies')"},
+      {icon:'🗑',label:'Delete my account & data',sub:'Erase your data, subject to legal retention',action:"requestDataErasure()"},
+    ].map((r,i,a)=>`<div onclick="${r.action}" style="display:flex;align-items:center;gap:14px;padding:16px 18px;background:var(--surface);border:1px solid var(--border);border-radius:14px;margin-bottom:10px;cursor:pointer">
+      <div style="width:36px;height:36px;border-radius:11px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">${r.icon}</div>
+      <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:700">${r.label}</div><div style="font-size:12px;color:var(--fg-3);margin-top:2px">${r.sub}</div></div>
+      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="var(--fg-5)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+    </div>`).join('')}
+    <div style="font-size:11px;color:var(--fg-4);text-align:center;margin-top:10px;line-height:1.7">Data Protection Officer · dpo@apexvip.com<br>You may also complain to the ICO at ico.org.uk</div>
   </div>
 </div>`,
 
@@ -5601,6 +5730,7 @@ function render(){
 
 generateMemberNumber();
 render();
+maybeShowConsent();
 
 // Auto-check flight for upcoming trip with a flight number
 setTimeout(() => {
@@ -5644,8 +5774,9 @@ setTimeout(() => {
   window.addEventListener('appinstalled', ()=>{ if(banner) banner.classList.add('hidden'); });
 
   if(isIOS && !isInstalled && (fromQR || !isDismissed)){
-    // From QR show at once; organic visits get it after the splash settles
-    setTimeout(()=>{ if(banner) banner.classList.remove('hidden'); }, fromQR ? 600 : 4000);
+    // From QR show at once; organic visits get it after the splash settles — but
+    // never on top of the cookie-consent banner (wait until consent is resolved)
+    setTimeout(()=>{ if(banner && localStorage.getItem('apex_consent')) banner.classList.remove('hidden'); }, fromQR ? 600 : 4000);
   }
   // Mark body so safe-area padding applies when running installed
   if(window.navigator.standalone === true) document.body.classList.add('ios-pwa');
