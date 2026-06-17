@@ -119,10 +119,6 @@ input,select,textarea{font-size:16px !important}
 
 /* ── Keyframes ─────────────────────────────────────────────────────── */
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
-/* Screen-to-screen transition: old screen fades + slides out, new fades + slides in */
-#app{transition:opacity .26s ease, transform .26s cubic-bezier(.16,1,.3,1)}
-#app.screen-leave{opacity:0;transform:translateY(12px) scale(.985)}
-@media (prefers-reduced-motion:reduce){#app{transition:none}#app.screen-leave{transform:none}}
 @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
 @keyframes fadeDown{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
 @keyframes slideUp{from{opacity:0;transform:translateY(28px)}to{opacity:1;transform:translateY(0)}}
@@ -5587,39 +5583,20 @@ function renderAirportPickerPortal(){
     </div>`;
 }
 
-let _renderedScreen=null, _navToken=0;
 function render(){
   document.body.setAttribute('data-screen',state.screen);
   const fn=screens[state.screen];
-  const html=fn?fn():`<div style="padding:40px;text-align:center;color:var(--fg-4)">Screen not found</div>`;
-  // Transition only when the screen actually changes — same-screen re-renders stay instant
-  const isNav=_renderedScreen!==null && _renderedScreen!==state.screen;
-  _renderedScreen=state.screen;
-  const reduce=window.matchMedia && window.matchMedia('(prefers-reduced-motion:reduce)').matches;
-  const token=++_navToken;
-  const paint=()=>{
-    if(token!==_navToken) return; // superseded by a newer render
-    app.innerHTML=html;
-    renderAirportPickerPortal();
-    if(state.screen==='home') setTimeout(initMap,60);
-    if(state.screen==='payment') setTimeout(initSquare,60);
-    if(state.screen==='active-trip') setTimeout(initTrackingMap,60);
-    if(state.screen==='active-trip') setTimeout(startEtaCountdown,80);
-    if(state.screen==='track') setTimeout(initTrackScreen,60);
-    if(state.screen==='active-trip'||state.screen==='client-chat') setTimeout(()=>{ setupChatListener(state._chatDocId||state._activeBooking?.docId); },0);
-    if(state.screen==='client-chat') setTimeout(()=>{ const el=document.getElementById('chat-msgs'); if(el)el.scrollTop=el.scrollHeight; },50);
-    if(state.screen==='profile') setTimeout(loadReferralCode,100);
-    if(state.screen==='hotels') setTimeout(refreshHotelRates,0);
-    // Reveal the freshly-painted screen (fade + slide in) on the next frame
-    if(isNav && !reduce) requestAnimationFrame(()=>{ if(token===_navToken) app.classList.remove('screen-leave'); });
-  };
-  if(isNav && !reduce){
-    app.classList.add('screen-leave'); // fade + slide the old screen out, then swap + animate in
-    setTimeout(paint,200);
-  } else {
-    app.classList.remove('screen-leave');
-    paint();
-  }
+  app.innerHTML=fn?fn():`<div style="padding:40px;text-align:center;color:var(--fg-4)">Screen not found</div>`;
+  renderAirportPickerPortal();
+  if(state.screen==='home') setTimeout(initMap,60);
+  if(state.screen==='payment') setTimeout(initSquare,60);
+  if(state.screen==='active-trip') setTimeout(initTrackingMap,60);
+  if(state.screen==='active-trip') setTimeout(startEtaCountdown,80);
+  if(state.screen==='track') setTimeout(initTrackScreen,60);
+  if(state.screen==='active-trip'||state.screen==='client-chat') setTimeout(()=>{ setupChatListener(state._chatDocId||state._activeBooking?.docId); },0);
+  if(state.screen==='client-chat') setTimeout(()=>{ const el=document.getElementById('chat-msgs'); if(el)el.scrollTop=el.scrollHeight; },50);
+  if(state.screen==='profile') setTimeout(loadReferralCode,100);
+  if(state.screen==='hotels') setTimeout(refreshHotelRates,0);
 }
 
 generateMemberNumber();
