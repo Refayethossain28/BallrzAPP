@@ -322,13 +322,16 @@
         Analyze
       </button>
     </div>
-    <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:10px">
-      <label style="font-size:12px;color:var(--dim)">Price override:</label>
-      <input type="number" id="priceOverride" placeholder="e.g. 160.112 from Plus500" step="any"
-        style="background:var(--muted);border:1px solid var(--border);border-radius:8px;padding:6px 12px;color:var(--text);font-size:13px;font-family:monospace;outline:none;width:220px;max-width:60vw"/>
-      <button onclick="document.getElementById('priceOverride').value=''" title="Clear override"
+    <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+      <label style="font-size:12px;color:var(--dim)">Broker price override:</label>
+      <input type="number" id="sellOverride" placeholder="Sell (bid)" step="any"
+        style="background:var(--muted);border:1px solid var(--border);border-radius:8px;padding:6px 12px;color:var(--text);font-size:13px;font-family:monospace;outline:none;width:120px"/>
+      <input type="number" id="buyOverride" placeholder="Buy (ask)" step="any"
+        style="background:var(--muted);border:1px solid var(--border);border-radius:8px;padding:6px 12px;color:var(--text);font-size:13px;font-family:monospace;outline:none;width:120px"/>
+      <button onclick="document.getElementById('sellOverride').value='';document.getElementById('buyOverride').value='';" title="Clear override"
         style="background:none;border:none;color:var(--dim);font-size:16px;cursor:pointer;padding:0 4px">✕</button>
     </div>
+    <div style="text-align:center;font-size:11px;color:var(--dim);margin-bottom:10px">Optional — enter both from Plus500 for exact spread, or just one to set the price</div>
     <div class="quick-pairs" id="quickPairs"></div>
   </div>
 
@@ -1324,14 +1327,24 @@ async function runAnalysis(pairOverride) {
     let bid = price, ask = price;
     let livePrice = false, liveOHLCV = false;
 
-    // Manual override takes top priority
-    const overrideVal = parseFloat(document.getElementById('priceOverride').value);
-    const usingOverride = !isNaN(overrideVal) && overrideVal > 0;
+    // Manual override takes top priority — accept Sell (bid) and/or Buy (ask)
+    const sellVal = parseFloat(document.getElementById('sellOverride').value);
+    const buyVal = parseFloat(document.getElementById('buyOverride').value);
+    const hasSell = !isNaN(sellVal) && sellVal > 0;
+    const hasBuy = !isNaN(buyVal) && buyVal > 0;
+    const usingOverride = hasSell || hasBuy;
 
     if (usingOverride) {
-      price = overrideVal; currentPrice = price; livePrice = true;
-      const sf = pair.includes('XAU') ? 0.0003 : 0.0001;
-      bid = price * (1 - sf); ask = price * (1 + sf);
+      if (hasSell && hasBuy) {
+        bid = sellVal; ask = buyVal; price = (sellVal + buyVal) / 2;
+      } else if (hasBuy) {
+        ask = buyVal; const sf = pair.includes('XAU') ? 0.0003 : 0.0001;
+        bid = buyVal * (1 - 2*sf); price = buyVal;
+      } else {
+        bid = sellVal; const sf = pair.includes('XAU') ? 0.0003 : 0.0001;
+        ask = sellVal * (1 + 2*sf); price = sellVal;
+      }
+      currentPrice = price; livePrice = true;
     } else if(rateResult.status==='fulfilled' && rateResult.value) {
       price=rateResult.value.price||price;
       currentPrice=price;
@@ -1351,7 +1364,8 @@ async function runAnalysis(pairOverride) {
       dataWarnEl.style.background = 'rgba(59,130,246,.08)';
       dataWarnEl.style.borderColor = 'rgba(59,130,246,.3)';
       dataWarnEl.style.color = '#93c5fd';
-      dataWarnEl.textContent = `📌 Using manual price override: ${price}. All signals calculated from this price.`;
+      const spread = ask - bid;
+      dataWarnEl.textContent = `📌 Manual override — Mid: ${price.toFixed(decimals(pair))}  ·  Bid: ${bid.toFixed(decimals(pair))}  ·  Ask: ${ask.toFixed(decimals(pair))}  ·  Spread: ${spread.toFixed(decimals(pair))}`;
     }
 
     let ohlcv = [];
