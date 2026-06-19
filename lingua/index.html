@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0e17">
+<title>Lingua — learn & translate any language (and its dialects)</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Lingua">
+<style>
+  :root{
+    color-scheme: dark;
+    --bg:#0b0e17; --panel:rgba(255,255,255,0.04); --panel2:rgba(255,255,255,0.06);
+    --line:rgba(255,255,255,0.09); --ink:#e8ecf6; --muted:#93a0c0; --muted2:#6b779a;
+    --accent:#6e8bff; --accent2:#8b7cff; --teal:#34e1c0; --warn:#ffcf6e; --bad:#ff7a8a;
+    --radius:16px;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ margin:0; }
+  body{
+    min-height:100vh; color:var(--ink);
+    font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,sans-serif;
+    background:radial-gradient(1200px 800px at 75% -10%, #1b2440, #0b0e17 60%);
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  .wrap{ width:100%; max-width:760px; margin:0 auto; padding:20px 16px 60px; }
+  header.top{ display:flex; align-items:center; gap:12px; margin-bottom:6px; }
+  .logo{ width:40px; height:40px; border-radius:12px; flex:0 0 auto;
+    background:linear-gradient(135deg,var(--accent),var(--accent2) 55%,var(--teal)); display:grid; place-items:center;
+    font-weight:800; color:#0b0e17; font-size:20px; letter-spacing:-.04em; }
+  h1{ font-size:24px; margin:0; letter-spacing:-.02em; }
+  .sub{ color:var(--muted); margin:2px 0 0; font-size:13.5px; }
+  .ai-pill{ margin-left:auto; display:inline-flex; align-items:center; gap:7px; cursor:pointer;
+    font-size:12px; font-weight:700; padding:7px 11px; border-radius:999px;
+    border:1px solid var(--line); background:var(--panel); color:var(--muted); white-space:nowrap; }
+  .ai-pill .dot{ width:8px; height:8px; border-radius:50%; background:var(--muted2); }
+  .ai-pill.live{ color:var(--teal); border-color:rgba(52,225,192,.4); background:rgba(52,225,192,.08); }
+  .ai-pill.live .dot{ background:var(--teal); box-shadow:0 0 8px var(--teal); }
+
+  .card{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:16px; margin-top:14px; }
+  .card h2{ font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:0 0 12px; font-weight:700; }
+  label.fld{ display:block; font-size:12.5px; color:var(--muted); margin:0 0 6px; font-weight:600; }
+
+  .search{ position:relative; }
+  input[type=text], input[type=search], textarea, select{
+    width:100%; color:var(--ink); background:rgba(0,0,0,.25); border:1px solid var(--line);
+    border-radius:12px; padding:12px 14px; font:inherit; outline:none; }
+  input:focus, textarea:focus, select:focus{ border-color:var(--accent); box-shadow:0 0 0 3px rgba(110,139,255,.18); }
+  textarea{ resize:vertical; min-height:96px; line-height:1.5; }
+
+  .langgrid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; margin-top:12px;
+    max-height:340px; overflow:auto; padding:2px; }
+  .langbtn{ display:flex; align-items:center; gap:9px; text-align:left; cursor:pointer;
+    background:var(--panel2); border:1px solid var(--line); border-radius:12px; padding:10px 11px; color:var(--ink); font:inherit; }
+  .langbtn:hover{ border-color:rgba(110,139,255,.5); }
+  .langbtn .flag{ font-size:20px; line-height:1; flex:0 0 auto; }
+  .langbtn .nm{ font-size:14px; font-weight:600; line-height:1.15; }
+  .langbtn .nat{ font-size:11.5px; color:var(--muted2); line-height:1.15; }
+  .langbtn .has-d{ margin-left:auto; font-size:10px; font-weight:700; color:var(--teal);
+    border:1px solid rgba(52,225,192,.35); border-radius:999px; padding:2px 6px; }
+
+  .selbar{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  .selbar .big{ font-size:20px; }
+  .selbar .nm{ font-weight:700; font-size:18px; }
+  .selbar .nat{ color:var(--muted); font-size:14px; }
+  .ghost{ background:transparent; border:1px solid var(--line); color:var(--muted); border-radius:10px;
+    padding:7px 12px; font:inherit; font-size:13px; cursor:pointer; }
+  .ghost:hover{ color:var(--ink); border-color:var(--accent); }
+
+  .chips{ display:flex; flex-wrap:wrap; gap:8px; }
+  .chip{ cursor:pointer; font:inherit; font-size:13px; padding:8px 13px; border-radius:999px;
+    border:1px solid var(--line); background:var(--panel2); color:var(--muted); }
+  .chip[aria-selected=true]{ color:#0b0e17; background:linear-gradient(135deg,var(--accent),var(--accent2)); border-color:transparent; font-weight:700; }
+  .chip.dia[aria-selected=true]{ background:linear-gradient(135deg,var(--teal),var(--accent)); }
+
+  .tabs{ display:flex; gap:6px; background:rgba(0,0,0,.25); padding:5px; border-radius:13px; border:1px solid var(--line); }
+  .tab{ flex:1; cursor:pointer; font:inherit; font-weight:700; font-size:14px; padding:10px; border-radius:9px;
+    border:0; background:transparent; color:var(--muted); }
+  .tab[aria-selected=true]{ background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#0b0e17; }
+
+  .row{ display:flex; gap:10px; align-items:center; }
+  .row.wrap{ flex-wrap:wrap; }
+  .grow{ flex:1 1 auto; min-width:0; }
+  .btn{ cursor:pointer; font:inherit; font-weight:700; font-size:15px; padding:12px 18px; border-radius:12px; border:0;
+    color:#0b0e17; background:linear-gradient(135deg,var(--accent),var(--accent2)); white-space:nowrap; }
+  .btn:disabled{ opacity:.55; cursor:default; }
+  .btn.sec{ background:var(--panel2); color:var(--ink); border:1px solid var(--line); }
+  .swap{ flex:0 0 auto; width:42px; height:42px; border-radius:12px; border:1px solid var(--line);
+    background:var(--panel2); color:var(--muted); font-size:18px; cursor:pointer; }
+
+  .out{ margin-top:14px; }
+  .result{ border:1px solid var(--line); border-radius:14px; padding:15px; background:rgba(0,0,0,.22); }
+  .result .target{ font-size:24px; line-height:1.35; font-weight:600; }
+  .result.rtl .target{ direction:rtl; text-align:right; }
+  .result .pron{ color:var(--teal); font-size:15px; margin-top:6px; }
+  .meta{ display:grid; gap:8px; margin-top:12px; }
+  .meta .m{ font-size:13.5px; color:var(--muted); }
+  .meta .m b{ color:var(--ink); font-weight:600; }
+  .lesson .item{ padding:12px 0; border-top:1px solid var(--line); }
+  .lesson .item:first-child{ border-top:0; padding-top:0; }
+  .lesson .ph{ font-size:19px; font-weight:600; }
+  .lesson.rtl .ph{ direction:rtl; text-align:right; }
+  .lesson .pr{ color:var(--teal); font-size:14px; }
+  .lesson .mn{ color:var(--muted); font-size:14px; }
+  .tip{ margin-top:12px; padding:11px 13px; border-radius:11px; background:rgba(110,139,255,.10);
+    border:1px solid rgba(110,139,255,.30); font-size:13.5px; color:#cdd6f5; }
+  .tip.teal{ background:rgba(52,225,192,.09); border-color:rgba(52,225,192,.3); }
+  .ask-out{ white-space:pre-wrap; font-size:15px; line-height:1.6; }
+  .hint{ color:var(--muted2); font-size:12.5px; margin-top:8px; }
+  .err{ color:var(--bad); font-size:13.5px; }
+  .spin{ display:inline-block; width:15px; height:15px; border:2px solid rgba(11,14,23,.35);
+    border-top-color:#0b0e17; border-radius:50%; animation:sp .7s linear infinite; vertical-align:-2px; }
+  @keyframes sp{ to{ transform:rotate(360deg); } }
+  .hidden{ display:none !important; }
+  .badge-src{ display:inline-block; font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+    color:var(--muted2); margin-top:10px; }
+  .badge-src.ai{ color:var(--teal); }
+  footer{ color:var(--muted2); font-size:12px; margin-top:26px; text-align:center; }
+  footer a{ color:var(--muted); }
+  /* live-config modal */
+  .modal{ position:fixed; inset:0; background:rgba(4,6,12,.66); display:grid; place-items:center; padding:18px; z-index:50; }
+  .modal .box{ width:100%; max-width:440px; background:#11152333; backdrop-filter:blur(14px);
+    background:linear-gradient(180deg,#141a2e,#0e1320); border:1px solid var(--line); border-radius:18px; padding:20px; }
+  .modal h3{ margin:0 0 6px; font-size:18px; }
+  .modal p{ color:var(--muted); font-size:13.5px; margin:0 0 14px; }
+  .modal code{ background:rgba(255,255,255,.08); padding:1px 6px; border-radius:6px; font-size:12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="logo">あ</div>
+    <div>
+      <h1>Lingua</h1>
+      <p class="sub">Learn &amp; translate any language — including Arabic &amp; Urdu dialects</p>
+    </div>
+    <button id="aiPill" class="ai-pill" type="button" title="AI accuracy mode">
+      <span class="dot"></span><span id="aiPillText">AI: offline</span>
+    </button>
+  </header>
+
+  <!-- STEP 1 — pick a language -->
+  <section id="picker" class="card">
+    <h2>1 · Choose a language to work with</h2>
+    <div class="search">
+      <input id="langSearch" type="search" placeholder="Search 90+ languages — try “arabic”, “urdu”, “japanese”…" autocomplete="off">
+    </div>
+    <div id="langGrid" class="langgrid"></div>
+  </section>
+
+  <!-- STEP 2 — the workspace -->
+  <section id="workspace" class="card hidden">
+    <div class="selbar">
+      <span class="big" id="selFlag">🌐</span>
+      <span class="nm" id="selName">—</span>
+      <span class="nat" id="selNative"></span>
+      <button class="ghost" id="changeLang" type="button" style="margin-left:auto">Change</button>
+    </div>
+
+    <!-- dialect picker (only some languages) -->
+    <div id="dialectWrap" class="hidden" style="margin-top:14px">
+      <label class="fld" id="dialectLabel">Dialect / variety</label>
+      <div id="dialectChips" class="chips"></div>
+      <div id="dialectNote" class="hint"></div>
+    </div>
+
+    <!-- mode tabs -->
+    <div class="tabs" style="margin-top:16px" role="tablist">
+      <button class="tab" id="tabTranslate" role="tab" aria-selected="true" type="button">🔁 Translate</button>
+      <button class="tab" id="tabTeach" role="tab" aria-selected="false" type="button">🎓 Teach me</button>
+    </div>
+
+    <!-- TRANSLATE pane -->
+    <div id="paneTranslate" style="margin-top:16px">
+      <label class="fld" id="dirLabel">Translate from … to …</label>
+      <div class="row" id="dirRow" style="margin-bottom:12px">
+        <div class="grow" id="colOther"><select id="srcLang"></select></div>
+        <button class="swap" id="swapBtn" type="button" title="Swap direction">⇄</button>
+        <div class="grow" id="colStudy">
+          <input id="dstLabel" type="text" readonly value="—" style="opacity:.9">
+        </div>
+      </div>
+      <textarea id="srcText" placeholder="Type or paste text to translate…"></textarea>
+      <div class="row wrap" style="margin-top:12px">
+        <button class="btn" id="translateBtn" type="button">Translate</button>
+        <button class="btn sec" id="clearBtn" type="button">Clear</button>
+        <span class="hint" id="translateHint">Tip: enable Live AI (top-right) for full-accuracy translations.</span>
+      </div>
+      <div id="translateOut" class="out"></div>
+    </div>
+
+    <!-- TEACH pane -->
+    <div id="paneTeach" class="hidden" style="margin-top:16px">
+      <label class="fld">Pick a topic to learn</label>
+      <div id="topicChips" class="chips"></div>
+
+      <label class="fld" style="margin-top:14px">Your level</label>
+      <div id="levelChips" class="chips"></div>
+
+      <div class="row wrap" style="margin-top:14px">
+        <button class="btn" id="teachBtn" type="button">Teach me</button>
+        <span class="hint">Generates a short, dialect-aware lesson with pronunciation.</span>
+      </div>
+      <div id="teachOut" class="out"></div>
+
+      <div style="margin-top:20px; border-top:1px solid var(--line); padding-top:16px">
+        <label class="fld">…or ask anything about this language</label>
+        <div class="row">
+          <div class="grow"><input id="askText" type="text" placeholder="e.g. “How do I count to ten?” or “Explain the past tense”"></div>
+          <button class="btn" id="askBtn" type="button">Ask</button>
+        </div>
+        <div id="askOut" class="out"></div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Lingua · part of <a href="../">BallrzAPP prototypes</a> · works offline · enable Live AI for accuracy
+  </footer>
+</div>
+
+<!-- Live AI config modal -->
+<div id="aiModal" class="modal hidden">
+  <div class="box">
+    <h3>Enable Live AI accuracy</h3>
+    <p>Translations and lessons are powered by Claude through a tiny local proxy so your API key never touches the browser. Start it once:</p>
+    <p style="background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:10px;padding:12px;color:#cdd6f5;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.7">
+      cd lingua<br>ANTHROPIC_API_KEY=sk-ant-… node server.mjs
+    </p>
+    <p>Then open this page from <code>http://localhost:8788</code>. Until then, Lingua runs offline with a built-in starter phrasebook.</p>
+    <div class="row" style="justify-content:flex-end">
+      <button class="ghost" id="aiRetry" type="button">Re-check connection</button>
+      <button class="btn sec" id="aiClose" type="button">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===========================================================================
+   Lingua — single-file language learning + translation app.
+   Pure front-end. Accuracy comes from Claude via the local proxy (server.mjs);
+   when that's not running, an honest offline starter phrasebook fills in and
+   the UI clearly labels which engine produced each answer.
+   =========================================================================== */
+"use strict";
+
+/* ---- language catalogue. `d` = dialects/varieties; `rtl` = right-to-left. ---- */
+var LANGS = [
+  { id:"ar", name:"Arabic", native:"العربية", flag:"🇸🇦", rtl:true, d:[
+      { id:"msa", name:"Modern Standard (Fusha)", native:"الفُصحى", note:"The formal, pan-Arab written & broadcast standard. Best for documents, news and learners." },
+      { id:"egy", name:"Egyptian", native:"المصري", note:"Cairo/Delta Arabic — the most widely understood spoken dialect thanks to film & TV." },
+      { id:"sau", name:"Saudi", native:"السعودي", note:"Najdi & Hejazi varieties of the Arabian Peninsula." },
+      { id:"are", name:"Emirati", native:"الإماراتي", note:"Gulf (Khaleeji) Arabic as spoken in the UAE." },
+      { id:"lev", name:"Levantine", native:"الشامي", note:"Syria, Lebanon, Jordan & Palestine." },
+      { id:"glf", name:"Gulf", native:"الخليجي", note:"Broader Khaleeji across Kuwait, Qatar, Bahrain & the Gulf." },
+      { id:"irq", name:"Iraqi", native:"العراقي", note:"Mesopotamian Arabic." },
+      { id:"mor", name:"Maghrebi (Darija)", native:"الدارجة", note:"Morocco, Algeria & Tunisia." }
+    ] },
+  { id:"ur", name:"Urdu", native:"اردو", flag:"🇵🇰", rtl:true, d:[
+      { id:"std", name:"Standard Urdu", native:"معیاری اردو", note:"The literary & official register taught in schools and used in media." },
+      { id:"lah", name:"Lahori", native:"لاہوری", note:"Lahore/Punjab speech — Punjabi-influenced vocabulary, rhythm and intonation." },
+      { id:"khi", name:"Karachi", native:"کراچی", note:"Cosmopolitan Karachi Urdu with Sindhi & English borrowings." },
+      { id:"dak", name:"Dakhini", native:"دکنی", note:"Deccani Urdu of southern India — older forms and distinct vocabulary." },
+      { id:"hyd", name:"Hyderabadi", native:"حیدرآبادی", note:"Hyderabad speech, famous for “nakko / hau / miyan”." },
+      { id:"rek", name:"Rekhta", native:"ریختہ", note:"The classical, poetic register of ghazals and Urdu literature." }
+    ] },
+  { id:"en", name:"English", native:"English", flag:"🇬🇧" },
+  { id:"es", name:"Spanish", native:"Español", flag:"🇪🇸" },
+  { id:"fr", name:"French", native:"Français", flag:"🇫🇷" },
+  { id:"de", name:"German", native:"Deutsch", flag:"🇩🇪" },
+  { id:"it", name:"Italian", native:"Italiano", flag:"🇮🇹" },
+  { id:"pt", name:"Portuguese", native:"Português", flag:"🇵🇹" },
+  { id:"nl", name:"Dutch", native:"Nederlands", flag:"🇳🇱" },
+  { id:"ru", name:"Russian", native:"Русский", flag:"🇷🇺" },
+  { id:"pl", name:"Polish", native:"Polski", flag:"🇵🇱" },
+  { id:"uk", name:"Ukrainian", native:"Українська", flag:"🇺🇦" },
+  { id:"cs", name:"Czech", native:"Čeština", flag:"🇨🇿" },
+  { id:"sk", name:"Slovak", native:"Slovenčina", flag:"🇸🇰" },
+  { id:"ro", name:"Romanian", native:"Română", flag:"🇷🇴" },
+  { id:"bg", name:"Bulgarian", native:"Български", flag:"🇧🇬" },
+  { id:"sr", name:"Serbian", native:"Српски", flag:"🇷🇸" },
+  { id:"hr", name:"Croatian", native:"Hrvatski", flag:"🇭🇷" },
+  { id:"sl", name:"Slovenian", native:"Slovenščina", flag:"🇸🇮" },
+  { id:"el", name:"Greek", native:"Ελληνικά", flag:"🇬🇷" },
+  { id:"tr", name:"Turkish", native:"Türkçe", flag:"🇹🇷" },
+  { id:"hu", name:"Hungarian", native:"Magyar", flag:"🇭🇺" },
+  { id:"fi", name:"Finnish", native:"Suomi", flag:"🇫🇮" },
+  { id:"sv", name:"Swedish", native:"Svenska", flag:"🇸🇪" },
+  { id:"no", name:"Norwegian", native:"Norsk", flag:"🇳🇴" },
+  { id:"da", name:"Danish", native:"Dansk", flag:"🇩🇰" },
+  { id:"is", name:"Icelandic", native:"Íslenska", flag:"🇮🇸" },
+  { id:"et", name:"Estonian", native:"Eesti", flag:"🇪🇪" },
+  { id:"lv", name:"Latvian", native:"Latviešu", flag:"🇱🇻" },
+  { id:"lt", name:"Lithuanian", native:"Lietuvių", flag:"🇱🇹" },
+  { id:"sq", name:"Albanian", native:"Shqip", flag:"🇦🇱" },
+  { id:"mk", name:"Macedonian", native:"Македонски", flag:"🇲🇰" },
+  { id:"ga", name:"Irish", native:"Gaeilge", flag:"🇮🇪" },
+  { id:"cy", name:"Welsh", native:"Cymraeg", flag:"🏴" },
+  { id:"ca", name:"Catalan", native:"Català", flag:"🇪🇸" },
+  { id:"eu", name:"Basque", native:"Euskara", flag:"🇪🇸" },
+  { id:"gl", name:"Galician", native:"Galego", flag:"🇪🇸" },
+  { id:"he", name:"Hebrew", native:"עברית", flag:"🇮🇱", rtl:true },
+  { id:"fa", name:"Persian (Farsi)", native:"فارسی", flag:"🇮🇷", rtl:true },
+  { id:"prs", name:"Dari", native:"دری", flag:"🇦🇫", rtl:true },
+  { id:"ps", name:"Pashto", native:"پښتو", flag:"🇦🇫", rtl:true },
+  { id:"ku", name:"Kurdish", native:"Kurdî", flag:"🟨" },
+  { id:"hi", name:"Hindi", native:"हिन्दी", flag:"🇮🇳" },
+  { id:"bn", name:"Bengali", native:"বাংলা", flag:"🇧🇩" },
+  { id:"pa", name:"Punjabi", native:"ਪੰਜਾਬੀ", flag:"🇮🇳" },
+  { id:"gu", name:"Gujarati", native:"ગુજરાતી", flag:"🇮🇳" },
+  { id:"mr", name:"Marathi", native:"मराठी", flag:"🇮🇳" },
+  { id:"ta", name:"Tamil", native:"தமிழ்", flag:"🇮🇳" },
+  { id:"te", name:"Telugu", native:"తెలుగు", flag:"🇮🇳" },
+  { id:"kn", name:"Kannada", native:"ಕನ್ನಡ", flag:"🇮🇳" },
+  { id:"ml", name:"Malayalam", native:"മലയാളം", flag:"🇮🇳" },
+  { id:"si", name:"Sinhala", native:"සිංහල", flag:"🇱🇰" },
+  { id:"ne", name:"Nepali", native:"नेपाली", flag:"🇳🇵" },
+  { id:"zh", name:"Chinese (Mandarin)", native:"中文 / 普通话", flag:"🇨🇳" },
+  { id:"yue", name:"Chinese (Cantonese)", native:"廣東話", flag:"🇭🇰" },
+  { id:"ja", name:"Japanese", native:"日本語", flag:"🇯🇵" },
+  { id:"ko", name:"Korean", native:"한국어", flag:"🇰🇷" },
+  { id:"vi", name:"Vietnamese", native:"Tiếng Việt", flag:"🇻🇳" },
+  { id:"th", name:"Thai", native:"ภาษาไทย", flag:"🇹🇭" },
+  { id:"lo", name:"Lao", native:"ລາວ", flag:"🇱🇦" },
+  { id:"km", name:"Khmer", native:"ខ្មែរ", flag:"🇰🇭" },
+  { id:"my", name:"Burmese", native:"မြန်မာ", flag:"🇲🇲" },
+  { id:"id", name:"Indonesian", native:"Bahasa Indonesia", flag:"🇮🇩" },
+  { id:"ms", name:"Malay", native:"Bahasa Melayu", flag:"🇲🇾" },
+  { id:"tl", name:"Filipino (Tagalog)", native:"Tagalog", flag:"🇵🇭" },
+  { id:"sw", name:"Swahili", native:"Kiswahili", flag:"🇰🇪" },
+  { id:"am", name:"Amharic", native:"አማርኛ", flag:"🇪🇹" },
+  { id:"ha", name:"Hausa", native:"Hausa", flag:"🇳🇬" },
+  { id:"yo", name:"Yoruba", native:"Yorùbá", flag:"🇳🇬" },
+  { id:"ig", name:"Igbo", native:"Igbo", flag:"🇳🇬" },
+  { id:"zu", name:"Zulu", native:"isiZulu", flag:"🇿🇦" },
+  { id:"xh", name:"Xhosa", native:"isiXhosa", flag:"🇿🇦" },
+  { id:"af", name:"Afrikaans", native:"Afrikaans", flag:"🇿🇦" },
+  { id:"so", name:"Somali", native:"Soomaali", flag:"🇸🇴" },
+  { id:"hy", name:"Armenian", native:"Հայերեն", flag:"🇦🇲" },
+  { id:"ka", name:"Georgian", native:"ქართული", flag:"🇬🇪" },
+  { id:"az", name:"Azerbaijani", native:"Azərbaycan", flag:"🇦🇿" },
+  { id:"kk", name:"Kazakh", native:"Қазақ", flag:"🇰🇿" },
+  { id:"uz", name:"Uzbek", native:"Oʻzbek", flag:"🇺🇿" },
+  { id:"mn", name:"Mongolian", native:"Монгол", flag:"🇲🇳" },
+  { id:"eo", name:"Esperanto", native:"Esperanto", flag:"🟩" },
+  { id:"la", name:"Latin", native:"Latina", flag:"🏛️" },
+  { id:"ht", name:"Haitian Creole", native:"Kreyòl", flag:"🇭🇹" },
+  { id:"mi", name:"Māori", native:"Te Reo Māori", flag:"🇳🇿" },
+  { id:"haw", name:"Hawaiian", native:"ʻŌlelo Hawaiʻi", flag:"🌺" },
+  { id:"sm", name:"Samoan", native:"Gagana Sāmoa", flag:"🇼🇸" }
+];
+
+/* honest, tiny offline starter phrasebook — only confident basics. Keyed by
+   language id (and dialect id for Arabic/Urdu). The full, accurate experience
+   comes from Live AI; this just keeps the demo alive on a plane. */
+var PHRASES = {
+  en:{ hello:["Hello","",""], thanks:["Thank you","",""], bye:["Goodbye","",""], yes:["Yes","",""], no:["No","",""] },
+  es:{ hello:["Hola","OH-lah",""], thanks:["Gracias","GRAH-syas",""], bye:["Adiós","ah-DYOHS",""], yes:["Sí","see",""], no:["No","noh",""] },
+  fr:{ hello:["Bonjour","bon-ZHOOR",""], thanks:["Merci","mehr-SEE",""], bye:["Au revoir","oh ruh-VWAHR",""], yes:["Oui","wee",""], no:["Non","nohn",""] },
+  de:{ hello:["Hallo","HAH-loh",""], thanks:["Danke","DAHN-kuh",""], bye:["Tschüss","chooss",""], yes:["Ja","yah",""], no:["Nein","nine",""] },
+  it:{ hello:["Ciao","chow",""], thanks:["Grazie","GRAH-tsyeh",""], bye:["Arrivederci","ah-ree-veh-DEHR-chee",""], yes:["Sì","see",""], no:["No","noh",""] },
+  pt:{ hello:["Olá","oh-LAH",""], thanks:["Obrigado","oh-bree-GAH-doo",""], bye:["Tchau","chow",""], yes:["Sim","seeng",""], no:["Não","nowng",""] },
+  hi:{ hello:["नमस्ते","na-mas-TÉ",""], thanks:["धन्यवाद","dhan-ya-VAAD",""], bye:["अलविदा","al-vi-DAA",""], yes:["हाँ","haan",""], no:["नहीं","na-HEEN",""] },
+  ja:{ hello:["こんにちは","kon-nichi-wa",""], thanks:["ありがとう","a-ri-ga-tou",""], bye:["さようなら","sa-yoo-na-ra",""], yes:["はい","hai",""], no:["いいえ","ii-e",""] },
+  zh:{ hello:["你好","nǐ hǎo",""], thanks:["谢谢","xièxie",""], bye:["再见","zàijiàn",""], yes:["是","shì",""], no:["不","bù",""] },
+  ko:{ hello:["안녕하세요","an-nyeong-ha-se-yo",""], thanks:["감사합니다","gam-sa-ham-ni-da",""], bye:["안녕히 가세요","an-nyeong-hi ga-se-yo",""], yes:["네","ne",""], no:["아니요","a-ni-yo",""] },
+  ru:{ hello:["Здравствуйте","ZDRAHST-vooy-tye",""], thanks:["Спасибо","spa-SEE-ba",""], bye:["До свидания","da svee-DAH-nya",""], yes:["Да","da",""], no:["Нет","nyet",""] },
+  tr:{ hello:["Merhaba","MEHR-ha-ba",""], thanks:["Teşekkürler","te-shek-kur-LER",""], bye:["Güle güle","gu-LE gu-LE",""], yes:["Evet","e-VET",""], no:["Hayır","ha-YUR",""] },
+  sw:{ hello:["Habari","ha-BA-ri",""], thanks:["Asante","a-SAN-te",""], bye:["Kwaheri","kwa-HE-ri",""], yes:["Ndiyo","n-DEE-yo",""], no:["Hapana","ha-PA-na",""] },
+  "ar:msa":{ hello:["السلام عليكم","as-salāmu ʿalaykum","Peace be upon you"], thanks:["شكراً","shukran",""], bye:["مع السلامة","maʿa s-salāma",""], yes:["نعم","naʿam",""], no:["لا","lā",""] },
+  "ar:egy":{ hello:["إزيك","izzayyak","How are you / hi"], thanks:["شكراً","shukran",""], bye:["سلام","salām",""], yes:["أيوة","aywa",""], no:["لأ","laʾ",""] },
+  "ar:sau":{ hello:["السلام عليكم","as-salām ʿalaykum",""], thanks:["مشكور","mashkūr",""], bye:["مع السلامة","maʿa s-salāma",""], yes:["إي","ee",""], no:["لا","la",""] },
+  "ar:are":{ hello:["السلام عليكم","as-salām ʿalaykum",""], thanks:["مشكور","mashkūr",""], bye:["فمان الله","fī amān illah",""], yes:["إي","ee",""], no:["لا","la",""] },
+  "ur:std":{ hello:["السلام علیکم","as-salām ʿalaikum",""], thanks:["شکریہ","shukriya",""], bye:["خدا حافظ","khudā hāfiz",""], yes:["جی ہاں","jī hāñ",""], no:["نہیں","nahīñ",""] },
+  "ur:lah":{ hello:["السلام علیکم","as-salām ʿalaikum",""], thanks:["مہربانی","mehrbānī","(Punjabi-flavoured ‘thanks’)"], bye:["اللہ بیلی","allāh bēlī","‘God be your friend’ — typically Lahori/Punjabi"], yes:["ہاں جی","hāñ jī",""], no:["نہیں جی","nahīñ jī",""] }
+};
+
+/* ---- tiny DOM helpers ---- */
+function $(id){ return document.getElementById(id); }
+function el(tag, cls, txt){ var e = document.createElement(tag); if(cls) e.className = cls; if(txt!=null) e.textContent = txt; return e; }
+function clear(node){ if(node) node.innerHTML = ""; }
+function on(node, ev, fn){ if(node && node.addEventListener) node.addEventListener(ev, fn); }
+function show(node){ if(node) node.classList.remove("hidden"); }
+function hide(node){ if(node) node.classList.add("hidden"); }
+
+/* ---- app state ---- */
+var state = {
+  lang: null,        // selected LANGS entry
+  dialect: null,     // selected dialect object (or null)
+  mode: "translate",
+  src: "en",         // the "other" (non-study) language id in the translate pane
+  reversed: false,   // false: other → study ; true: study → other
+  tgtRtl: false,     // is the active translation target right-to-left?
+  topic: "greetings",
+  level: "beginner",
+  live: false        // is the AI proxy reachable?
+};
+
+var TOPICS = [
+  { id:"greetings", label:"Greetings" },
+  { id:"intro", label:"Introduce yourself" },
+  { id:"numbers", label:"Numbers 1–10" },
+  { id:"travel", label:"Getting around" },
+  { id:"food", label:"Food & ordering" },
+  { id:"shopping", label:"Shopping" },
+  { id:"directions", label:"Directions" },
+  { id:"emergency", label:"Emergencies" },
+  { id:"smalltalk", label:"Small talk" },
+  { id:"grammar", label:"Grammar basics" }
+];
+var LEVELS = [
+  { id:"beginner", label:"Beginner" },
+  { id:"intermediate", label:"Intermediate" },
+  { id:"advanced", label:"Advanced" }
+];
+
+/* =========================================================================
+   AI layer — talks to server.mjs when present, else falls back offline.
+   ========================================================================= */
+function variantName(){
+  if(!state.lang) return "";
+  if(state.dialect) return state.lang.name + " — " + state.dialect.name + " dialect";
+  return state.lang.name;
+}
+function phraseKey(){
+  if(!state.lang) return null;
+  return state.dialect ? (state.lang.id + ":" + state.dialect.id) : state.lang.id;
+}
+
+/* POST to the local proxy. Returns parsed JSON or throws. */
+function callProxy(payload){
+  return fetch("/ai", {
+    method:"POST",
+    headers:{ "content-type":"application/json" },
+    body: JSON.stringify(payload)
+  }).then(function(res){
+    if(!res.ok) throw new Error("proxy " + res.status);
+    return res.json();
+  }).then(function(data){
+    if(!data || data.ok === false) throw new Error((data && data.error) || "no result");
+    return data.result;
+  });
+}
+
+/* health check: flips Live indicator. Never throws to the caller. */
+function checkLive(){
+  return fetch("/health").then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(d){ var ok = !!(d && d.live); setLive(ok); return ok; })
+    .catch(function(){ setLive(false); return false; });
+}
+function setLive(v){
+  state.live = v;
+  var pill = $("aiPill"), txt = $("aiPillText");
+  if(v){ pill.classList.add("live"); txt.textContent = "AI: live"; }
+  else { pill.classList.remove("live"); txt.textContent = "AI: offline"; }
+}
+
+/* ---- offline fallbacks (clearly labelled in the UI) ---- */
+function offlineTranslate(text){
+  // The offline starter set only covers English → study-language basics.
+  if(state.reversed){ return { _offline:true, _need:true }; }
+  var key = phraseKey(), book = key && PHRASES[key];
+  var t = (text||"").trim().toLowerCase();
+  var map = { "hello":"hello","hi":"hello","hey":"hello","thank you":"thanks","thanks":"thanks",
+              "goodbye":"bye","bye":"bye","yes":"yes","no":"no" };
+  var slot = map[t];
+  if(book && slot && book[slot]){
+    var e = book[slot];
+    return { translation:e[0], pronunciation:e[1]||"", literal:e[2]||"", register:"", notes:"",
+             _offline:true };
+  }
+  return { _offline:true, _need:true };
+}
+function offlineLesson(){
+  var key = phraseKey(), book = key && PHRASES[key];
+  var items = [];
+  if(book){
+    var order = ["hello","thanks","bye","yes","no"];
+    var labels = { hello:"Hello", thanks:"Thank you", bye:"Goodbye", yes:"Yes", no:"No" };
+    for(var i=0;i<order.length;i++){
+      var e = book[order[i]];
+      if(e && e[0]) items.push({ phrase:e[0], pronunciation:e[1]||"", meaning:labels[order[i]] });
+    }
+  }
+  return {
+    title: "Starter phrases — " + variantName(),
+    intro: items.length ? "A few essentials to get you started." : "",
+    items: items,
+    tip: "This is the built-in offline starter set. Enable Live AI (top-right) for a full lesson tailored to “" +
+         (TOPICS.filter(function(x){return x.id===state.topic;})[0]||{}).label + "” at your level.",
+    dialectNote: state.dialect ? state.dialect.note : "",
+    _offline:true,
+    _need: items.length === 0
+  };
+}
+
+/* =========================================================================
+   Rendering
+   ========================================================================= */
+function buildLangGrid(filter){
+  var grid = $("langGrid");
+  clear(grid);
+  var f = (filter||"").trim().toLowerCase();
+  var n = 0;
+  for(var i=0;i<LANGS.length;i++){
+    var L = LANGS[i];
+    if(f && L.name.toLowerCase().indexOf(f) < 0 && (L.native||"").toLowerCase().indexOf(f) < 0 && L.id.indexOf(f) < 0) continue;
+    n++;
+    var b = el("button","langbtn"); b.type = "button";
+    b.appendChild(el("span","flag", L.flag || "🌐"));
+    var box = el("span"); box.style.display="block";
+    var nm = el("span","nm", L.name); nm.style.display="block";
+    var nat = el("span","nat", L.native||""); nat.style.display="block";
+    box.appendChild(nm); box.appendChild(nat);
+    b.appendChild(box);
+    if(L.d && L.d.length){ b.appendChild(el("span","has-d", L.d.length + " dialects")); }
+    (function(entry){ on(b,"click",function(){ selectLanguage(entry); }); })(L);
+    grid.appendChild(b);
+  }
+  if(n===0){ var none = el("div","hint","No language matches “"+filter+"”."); none.style.gridColumn="1/-1"; grid.appendChild(none); }
+}
+
+function selectLanguage(L){
+  state.lang = L;
+  state.dialect = (L.d && L.d.length) ? L.d[0] : null;
+  $("selFlag").textContent = L.flag || "🌐";
+  $("selName").textContent = L.name;
+  $("selNative").textContent = L.native || "";
+  hide($("picker")); show($("workspace"));
+
+  // dialect chips
+  if(L.d && L.d.length){
+    show($("dialectWrap"));
+    var wrap = $("dialectChips"); clear(wrap);
+    for(var i=0;i<L.d.length;i++){
+      (function(dia){
+        var c = el("button","chip dia"); c.type="button";
+        c.textContent = dia.name + (dia.native ? "  "+dia.native : "");
+        c.setAttribute("aria-selected", dia.id===state.dialect.id ? "true":"false");
+        on(c,"click",function(){ selectDialect(dia); });
+        wrap.appendChild(c);
+      })(L.d[i]);
+    }
+    $("dialectNote").textContent = state.dialect ? state.dialect.note : "";
+  } else {
+    hide($("dialectWrap"));
+  }
+  state.reversed = false;
+  buildSrcOptions();
+  updateDstLabel();
+  clear($("translateOut")); clear($("teachOut")); clear($("askOut"));
+  // default to translate mode
+  setMode("translate");
+  try{ window.scrollTo(0,0); }catch(e){}
+}
+
+function selectDialect(dia){
+  state.dialect = dia;
+  var chips = $("dialectChips").children;
+  for(var i=0;i<chips.length;i++){ chips[i].setAttribute("aria-selected","false"); }
+  for(var j=0;j<chips.length;j++){
+    if(chips[j].textContent.indexOf(dia.name)===0){ chips[j].setAttribute("aria-selected","true"); }
+  }
+  $("dialectNote").textContent = dia.note || "";
+  updateDstLabel();
+}
+
+function buildSrcOptions(){
+  var sel = $("srcLang"); clear(sel);
+  // English first, then the rest alphabetically by name
+  var sorted = LANGS.slice().sort(function(a,b){ return a.name<b.name?-1:1; });
+  function opt(L){ var o=el("option"); o.value=L.id; o.textContent=(L.flag?L.flag+" ":"")+L.name; return o; }
+  // ensure source defaults to English unless target is English
+  for(var i=0;i<sorted.length;i++){ sel.appendChild(opt(sorted[i])); }
+  state.src = (state.lang && state.lang.id==="en") ? "es" : "en";
+  sel.value = state.src;
+}
+
+function otherLang(){ return LANGS.filter(function(x){return x.id===state.src;})[0]; }
+
+function updateDstLabel(){
+  // colStudy always shows the chosen study language/variant; colOther holds the
+  // dropdown. The `reversed` flag flips visual order and translation direction.
+  $("dstLabel").value = (state.lang ? (state.lang.flag||"")+" " : "") + variantName();
+  var colOther = $("colOther"), colStudy = $("colStudy"), swap = $("swapBtn");
+  if(swap) swap.style.order = "2";
+  if(colOther) colOther.style.order = state.reversed ? "3" : "1";
+  if(colStudy) colStudy.style.order = state.reversed ? "1" : "3";
+  var oth = otherLang();
+  var othName = oth ? oth.name : state.src;
+  var from = state.reversed ? variantName() : othName;
+  var to   = state.reversed ? othName : variantName();
+  if($("dirLabel")) $("dirLabel").textContent = "Translate  " + from + "  →  " + to;
+  $("srcText").placeholder = "Type or paste " + from + " text to translate…";
+}
+
+function setMode(m){
+  state.mode = m;
+  $("tabTranslate").setAttribute("aria-selected", m==="translate"?"true":"false");
+  $("tabTeach").setAttribute("aria-selected", m==="teach"?"true":"false");
+  if(m==="translate"){ show($("paneTranslate")); hide($("paneTeach")); }
+  else { hide($("paneTranslate")); show($("paneTeach")); }
+}
+
+function buildTopicChips(){
+  var wrap = $("topicChips"); clear(wrap);
+  for(var i=0;i<TOPICS.length;i++){
+    (function(t){
+      var c = el("button","chip"); c.type="button"; c.textContent=t.label;
+      c.setAttribute("aria-selected", t.id===state.topic?"true":"false");
+      on(c,"click",function(){
+        state.topic = t.id;
+        var k = wrap.children;
+        for(var x=0;x<k.length;x++){ k[x].setAttribute("aria-selected","false"); }
+        c.setAttribute("aria-selected","true");
+      });
+      wrap.appendChild(c);
+    })(TOPICS[i]);
+  }
+  var lw = $("levelChips"); clear(lw);
+  for(var j=0;j<LEVELS.length;j++){
+    (function(lv){
+      var c = el("button","chip"); c.type="button"; c.textContent=lv.label;
+      c.setAttribute("aria-selected", lv.id===state.level?"true":"false");
+      on(c,"click",function(){
+        state.level = lv.id;
+        var k = lw.children;
+        for(var x=0;x<k.length;x++){ k[x].setAttribute("aria-selected","false"); }
+        c.setAttribute("aria-selected","true");
+      });
+      lw.appendChild(c);
+    })(LEVELS[j]);
+  }
+}
+
+function busy(node, msg){
+  clear(node);
+  var d = el("div"); d.style.color="var(--muted)"; d.style.fontSize="14px";
+  d.appendChild(el("span","spin")); d.appendChild(document.createTextNode("  " + (msg||"Thinking…")));
+  node.appendChild(d);
+}
+function srcLabel(ai){ var b = el("div", ai ? "badge-src ai" : "badge-src", ai ? "✦ Claude AI" : "offline starter set"); return b; }
+
+/* ---- TRANSLATE ---- */
+function doTranslate(){
+  var text = $("srcText").value;
+  if(!text.trim()){ $("srcText").focus(); return; }
+  var out = $("translateOut");
+  busy(out, "Translating…");
+  var oth = otherLang();
+  var studyName = variantName();
+  var fromName = state.reversed ? studyName : (oth ? oth.name : state.src);
+  var toName   = state.reversed ? (oth ? oth.name : state.src) : studyName;
+  // RTL of the *target* drives result text direction.
+  state.tgtRtl = state.reversed ? !!(oth && oth.rtl) : !!state.lang.rtl;
+  var payload = {
+    mode:"translate", text:text,
+    sourceName: fromName,
+    targetName: toName,
+    targetNative: state.reversed ? (oth ? oth.native : "") : state.lang.native,
+    dialect: state.dialect ? state.dialect.name : "",
+    dialectNote: state.dialect ? state.dialect.note : ""
+  };
+  var done = function(r, ai){ renderTranslate(out, r, ai); };
+  if(state.live){
+    callProxy(payload).then(function(r){ done(r,true); })
+      .catch(function(){ setLive(false); done(offlineTranslate(text), false); });
+  } else {
+    done(offlineTranslate(text), false);
+  }
+}
+function renderTranslate(out, r, ai){
+  clear(out);
+  out.removeAttribute("data-translation");
+  if(r._need){
+    var box = el("div","result");
+    box.appendChild(el("div","err","No offline entry for that phrase."));
+    box.appendChild(el("div","hint","Enable Live AI (top-right) for an accurate translation of any text."));
+    out.appendChild(box);
+    out.appendChild(srcLabel(false));
+    return;
+  }
+  if(r.translation) out.setAttribute("data-translation", r.translation);
+  var card = el("div","result" + (state.tgtRtl ? " rtl":""));
+  card.appendChild(el("div","target", r.translation || "—"));
+  if(r.pronunciation) card.appendChild(el("div","pron", "🔊 " + r.pronunciation));
+  var meta = el("div","meta");
+  if(r.literal){ var m1=el("div","m"); m1.innerHTML=""; m1.appendChild(strong("Literal: ")); m1.appendChild(document.createTextNode(r.literal)); meta.appendChild(m1); }
+  if(r.register){ var m2=el("div","m"); m2.appendChild(strong("Register: ")); m2.appendChild(document.createTextNode(r.register)); meta.appendChild(m2); }
+  if(r.notes){ var m3=el("div","m"); m3.appendChild(strong("Notes: ")); m3.appendChild(document.createTextNode(r.notes)); meta.appendChild(m3); }
+  if(meta.children.length) card.appendChild(meta);
+  out.appendChild(card);
+  out.appendChild(srcLabel(ai));
+}
+function strong(t){ var s=el("b"); s.textContent=t; return s; }
+
+/* ---- TEACH ---- */
+function doTeach(){
+  var out = $("teachOut");
+  busy(out, "Building your lesson…");
+  var topicLabel = (TOPICS.filter(function(x){return x.id===state.topic;})[0]||{}).label;
+  var payload = {
+    mode:"teach", topic: topicLabel, level: state.level,
+    targetName: state.lang.name, targetNative: state.lang.native,
+    dialect: state.dialect ? state.dialect.name : "",
+    dialectNote: state.dialect ? state.dialect.note : ""
+  };
+  var done = function(r, ai){ renderLesson(out, r, ai); };
+  if(state.live){
+    callProxy(payload).then(function(r){ done(r,true); })
+      .catch(function(){ setLive(false); done(offlineLesson(), false); });
+  } else {
+    done(offlineLesson(), false);
+  }
+}
+function renderLesson(out, r, ai){
+  clear(out);
+  var card = el("div","result lesson" + (state.lang.rtl ? " rtl":""));
+  var h = el("div"); h.style.fontWeight="700"; h.style.fontSize="17px"; h.style.marginBottom="4px"; h.textContent=r.title||"Lesson";
+  card.appendChild(h);
+  if(r.intro){ var ip=el("div","mn"); ip.style.marginBottom="6px"; ip.textContent=r.intro; card.appendChild(ip); }
+  var items = r.items || [];
+  for(var i=0;i<items.length;i++){
+    var it = items[i];
+    var box = el("div","item");
+    box.appendChild(el("div","ph", it.phrase||""));
+    if(it.pronunciation) box.appendChild(el("div","pr","🔊 " + it.pronunciation));
+    if(it.meaning) box.appendChild(el("div","mn", it.meaning));
+    card.appendChild(box);
+  }
+  if(r.dialectNote){ var dn=el("div","tip teal"); dn.textContent="Dialect: " + r.dialectNote; card.appendChild(dn); }
+  if(r.tip){ var tp=el("div","tip"); tp.textContent="💡 " + r.tip; card.appendChild(tp); }
+  out.appendChild(card);
+  out.appendChild(srcLabel(ai));
+}
+
+/* ---- ASK ANYTHING ---- */
+function doAsk(){
+  var q = $("askText").value;
+  if(!q.trim()){ $("askText").focus(); return; }
+  var out = $("askOut");
+  busy(out, "Asking Claude…");
+  if(!state.live){
+    clear(out);
+    var box = el("div","result");
+    box.appendChild(el("div","err","Free-form questions need Live AI."));
+    box.appendChild(el("div","hint","Enable Live AI (top-right) to ask anything about " + variantName() + " and get an accurate answer."));
+    out.appendChild(box);
+    return;
+  }
+  var payload = {
+    mode:"ask", question:q,
+    targetName: state.lang.name,
+    dialect: state.dialect ? state.dialect.name : "",
+    dialectNote: state.dialect ? state.dialect.note : ""
+  };
+  callProxy(payload).then(function(r){
+    clear(out);
+    var card = el("div","result");
+    var a = el("div","ask-out"); a.textContent = r.answer || "—"; card.appendChild(a);
+    out.appendChild(card);
+    out.appendChild(srcLabel(true));
+  }).catch(function(){
+    setLive(false);
+    clear(out);
+    var c = el("div","result"); c.appendChild(el("div","err","Lost the connection to the AI proxy. Re-check from the top-right pill.")); out.appendChild(c);
+  });
+}
+
+/* =========================================================================
+   Wiring
+   ========================================================================= */
+function init(){
+  buildLangGrid("");
+  buildTopicChips();
+
+  on($("langSearch"),"input",function(e){ buildLangGrid(e.target.value); });
+  on($("changeLang"),"click",function(){ show($("picker")); hide($("workspace")); try{window.scrollTo(0,0);}catch(_){} });
+
+  on($("tabTranslate"),"click",function(){ setMode("translate"); });
+  on($("tabTeach"),"click",function(){ setMode("teach"); });
+
+  on($("srcLang"),"change",function(e){ state.src = e.target.value; updateDstLabel(); });
+  on($("swapBtn"),"click",function(){
+    // Flip translation direction between the "other" language and the study
+    // language. If there's a previous result, feed it back in as the new input.
+    state.reversed = !state.reversed;
+    var prev = $("translateOut").getAttribute("data-translation");
+    if(prev){ $("srcText").value = prev; clear($("translateOut")); }
+    updateDstLabel();
+  });
+  on($("translateBtn"),"click",doTranslate);
+  on($("clearBtn"),"click",function(){ $("srcText").value=""; clear($("translateOut")); $("srcText").focus(); });
+  on($("srcText"),"keydown",function(e){ if((e.metaKey||e.ctrlKey) && e.key==="Enter") doTranslate(); });
+
+  on($("teachBtn"),"click",doTeach);
+  on($("askBtn"),"click",doAsk);
+  on($("askText"),"keydown",function(e){ if(e.key==="Enter") doAsk(); });
+
+  // AI pill / modal
+  on($("aiPill"),"click",function(){ show($("aiModal")); });
+  on($("aiClose"),"click",function(){ hide($("aiModal")); });
+  on($("aiRetry"),"click",function(){ checkLive().then(function(ok){ if(ok) hide($("aiModal")); }); });
+
+  // detect the proxy (no-op offline)
+  checkLive();
+}
+
+/* run after DOM is parsed; smoke-test stubs make every call above safe */
+if(document.readyState === "loading"){ on(document,"DOMContentLoaded",init); } else { init(); }
+
+/* PWA service worker — guarded & .catch() only, mirroring the other prototypes
+   so the headless smoke test never executes a real registration. */
+if("serviceWorker" in navigator){
+  on(window,"load",function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); });
+}
+</script>
+</body>
+</html>
