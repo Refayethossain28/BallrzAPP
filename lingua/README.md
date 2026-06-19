@@ -59,6 +59,27 @@ your browser — the pill flips to **AI: live** and every answer is labelled
 | `PORT`              | `8788`            | Port to serve on.                |
 | `LINGUA_MODEL`      | `claude-opus-4-8` | Model id (e.g. `claude-sonnet-4-6`). |
 
+### Confirm the AI is connected (one-command self-test)
+
+With the server running in another terminal, check the health endpoint and post
+a sample translation. If Claude is wired up you'll get a real translation back:
+
+```sh
+# 1) Is the key loaded?  →  expect "live":true
+curl -s http://localhost:8788/health
+
+# 2) Ask Claude to translate "Good morning, how are you?" into Egyptian Arabic
+curl -s -X POST http://localhost:8788/ai \
+  -H 'content-type: application/json' \
+  -d '{"mode":"translate","text":"Good morning, how are you?","sourceName":"English","targetName":"Arabic","dialect":"Egyptian"}'
+```
+
+- **Connected:** step 1 shows `"live":true` and step 2 returns
+  `{"ok":true,"result":{"translation":"…","pronunciation":"…",…}}`.
+- **Not connected:** step 1 shows `"live":false` and step 2 returns
+  `{"ok":false,"error":"no ANTHROPIC_API_KEY in env"}` — set the key and restart
+  the server.
+
 ### Install as an app (PWA)
 
 Open the page in Safari/Chrome → **Add to Home Screen** / **Install app** for a
