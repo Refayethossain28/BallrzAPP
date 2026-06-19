@@ -113,6 +113,11 @@
     });
   }
 
+  // Normalise a chosen username/handle to a safe, lookup-friendly key.
+  function normalizeHandle(s) {
+    return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
+  }
+
   // Render a whole conversation to plain text for export/backup.
   function exportChatText(chat, messages, opts) {
     opts = opts || {};
@@ -768,6 +773,7 @@
     beatsToSeconds: beatsToSeconds, niceDuration: niceDuration,
     replyOutlook: replyOutlook, echoReplyDelay: echoReplyDelay,
     nextPeakTime: nextPeakTime, groupPulse: groupPulse,
-    forwardMessage: forwardMessage, exportChatText: exportChatText
+    forwardMessage: forwardMessage, exportChatText: exportChatText,
+    normalizeHandle: normalizeHandle
   };
 });

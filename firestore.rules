@@ -110,6 +110,23 @@ service cloud.firestore {
     match /ripple_push/{uid} {
       allow read, write: if isUser(uid);
     }
+    // Public username directory: handle -> {uid,name,avatar}. Anyone signed in
+    // can look someone up; you may only claim/update a handle that points at YOU
+    // (and can't steal one already owned by someone else).
+    match /ripple_directory/{handle} {
+      allow read:   if signedIn();
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow update: if signedIn() && request.resource.data.uid == request.auth.uid
+                    && resource.data.uid == request.auth.uid;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+    // Direct-connect invites: A adds B by username, which drops an invite here.
+    // The sender writes it; only the two parties can read or remove it.
+    match /ripple_invites/{inviteId} {
+      allow create: if signedIn() && request.resource.data.from == request.auth.uid;
+      allow read, delete: if signedIn() &&
+        (resource.data.to == request.auth.uid || resource.data.from == request.auth.uid);
+    }
     match /ripple_chats/{chatId} {
       function isMember()    { return signedIn() && request.auth.uid in resource.data.members; }
       function willBeMember(){ return signedIn() && request.auth.uid in request.resource.data.members; }

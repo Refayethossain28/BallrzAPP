@@ -123,6 +123,17 @@ lets a delete win, keeps `ts` order — the unit tests pin this).
   key per device (no multi-device key sync), and no post-compromise key rotation
   — real ECDH+AES E2EE, not yet a production Signal-grade system.
 
+### Direct connect by username (no link needed)
+
+Pick a **username** in Settings and you're listed in a public `ripple_directory`
+(handle → uid/name/avatar). In **New chat → "Add someone by username"**, type
+their handle and **Connect**: Ripple creates the 1:1 chat and drops an invite in
+`ripple_invites`; the other person's app **auto-joins** it and the chat appears in
+their list — no link to copy. Each side sees the *other* person's name/avatar
+(resolved per-viewer). Rules: directory is world-readable but you can only claim a
+handle pointing at yourself; invites are readable/removable only by the two
+parties.
+
 ### Invite tokens (closed by default)
 
 New cloud chats carry a random **`joinCode`** included in the invite link
