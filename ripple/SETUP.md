@@ -134,6 +134,12 @@ no link to copy. Each side sees the *other* person's name/avatar (resolved
 per-viewer). Rules: directory is world-readable but you can only claim a handle
 pointing at yourself; invites are readable/removable only by the two parties.
 
+You can also show a **QR code** of your username (New chat → *Show my QR code*).
+It encodes an `?add=<handle>` deep link — scanning it opens Ripple and sends you a
+contact request. The QR is generated entirely on-device by
+[`qr.js`](./qr.js) (a dependency-free encoder; structurally unit-tested in
+[`../scripts/test-ripple-qr.mjs`](../scripts/test-ripple-qr.mjs)).
+
 ### Invite tokens (closed by default)
 
 New cloud chats carry a random **`joinCode`** included in the invite link
