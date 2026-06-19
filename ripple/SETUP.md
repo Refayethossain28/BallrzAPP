@@ -3,6 +3,23 @@
 Ripple ships in two layers so it's genuinely useful the moment you open it, and
 genuinely deployable when you're ready for real users.
 
+## ✨ Pulse — the one thing no other messenger does
+
+Open any chat and look just under the name: a live **rhythm strip** reads the
+*tempo* of that specific relationship straight from the message timestamps —
+on-device, no servers, no ML — and distils it into a single living **beat**
+(⚡ Rapid · warming up · ~30s beat · sync 82). It tracks cadence, momentum
+(warming / cooling / resting), who's leading, and an in-sync score.
+
+The beat powers a brand-new messaging primitive: **time measured in
+conversational beats instead of clock seconds.** Set a chat to disappear "in 1
+beat" and each message lives exactly *one of your volleys* — seconds in a
+rapid-fire chat, a day in a slow burn — because the timer breathes with the two
+people in the conversation rather than an arbitrary wall-clock. Tap the strip to
+see the full read and pick a beat timer. The algorithm is `conversationPulse()`
+in [`engine.js`](./engine.js), covered by unit tests in
+[`../scripts/test-ripple-logic.mjs`](../scripts/test-ripple-logic.mjs).
+
 ## 1. What works with zero setup (today)
 
 Open [`ripple/index.html`](./index.html) — no build, no account:
