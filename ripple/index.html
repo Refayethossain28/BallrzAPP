@@ -502,7 +502,12 @@
    * demo — and the headless smoke test — are unaffected. */
   var FBCONFIG = (typeof RIPPLE_FIREBASE_CONFIG !== 'undefined' && RIPPLE_FIREBASE_CONFIG)
     || (typeof window !== 'undefined' && window.RIPPLE_FIREBASE_CONFIG) || null;
+  // Web-push (FCM) needs the project's "Web Push certificate" public key (VAPID).
+  var FCM_VAPID = (typeof RIPPLE_FCM_VAPID_KEY !== 'undefined' && RIPPLE_FCM_VAPID_KEY)
+    || (typeof window !== 'undefined' && window.RIPPLE_FCM_VAPID_KEY) || null;
   function cloudAvailable(){ return !!FBCONFIG; }
+  function pushAvailable(){ return !!(FCM_VAPID && typeof Notification !== 'undefined' &&
+    typeof navigator !== 'undefined' && navigator.serviceWorker); }
   // Reflect connection state in the sidebar chip.
   function updateCloudStatus(){
     var el=$('cloudChip'); if(!el) return;
@@ -522,9 +527,9 @@
   var FB_VER = '9.23.0';
   function loadFirebaseSdk(){
     return new Promise(function(resolve, reject){
-      if (typeof firebase !== 'undefined' && firebase.firestore && firebase.storage){ resolve(); return; }
+      if (typeof firebase !== 'undefined' && firebase.firestore && firebase.storage && firebase.messaging){ resolve(); return; }
       if (typeof document === 'undefined'){ reject(new Error('no dom')); return; }
-      var parts = ['app','auth','firestore','storage'];
+      var parts = ['app','auth','firestore','storage','messaging'];
       var i = 0;
       (function next(){
         if (i >= parts.length){ resolve(); return; }
@@ -583,11 +588,34 @@
         subscribeCloudChats();
         if (opts.join) cloudJoin(opts.join);
         if (opts.interactive) toast('Connected ✓');
+        // Silently refresh the push token if the user already opted in.
+        if (pushAvailable() && Notification.permission === 'granted') enablePush(false);
       });
     }).catch(function(err){
       cloud.connecting = false; updateCloudStatus();
       if (opts.interactive) toast(err && err.message ? err.message : 'Could not connect');
     });
+  }
+
+  // Register this device for web push: ask permission, mint an FCM token, and
+  // store it in the private ripple_push/{uid} doc. The Cloud Function reads that
+  // to notify members when the app is closed. interactive=true surfaces toasts.
+  function enablePush(interactive){
+    if (!cloud.on || !pushAvailable()){ if(interactive) toast(FCM_VAPID?'Connect to the cloud first':'Push needs a VAPID key in config.js (see SETUP.md)'); return; }
+    Notification.requestPermission().then(function(perm){
+      if (perm !== 'granted'){ if(interactive) toast('Notifications blocked in your browser'); return; }
+      return navigator.serviceWorker.ready.then(function(reg){
+        var messaging = firebase.messaging(cloud.app);
+        return messaging.getToken({ vapidKey: FCM_VAPID, serviceWorkerRegistration: reg });
+      }).then(function(token){
+        if (!token) return;
+        cloud.pushToken = token;
+        return cloud.db.collection('ripple_push').doc(cloud.uid).set({
+          fcmTokens: firebase.firestore.FieldValue.arrayUnion(token),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge:true }).then(function(){ if(interactive) toast('Push notifications on ✓'); });
+      });
+    }).catch(function(err){ if(interactive) toast((err && err.message) || 'Could not enable push'); });
   }
 
   function subscribeCloudChats(){
@@ -1343,6 +1371,7 @@
       '</div></div>'+
       '<div class="field"><label>Accent</label><div class="swatches" id="accentPick">'+swatches+'</div></div>'+
       '<div class="setrow"><span class="ic">🔔</span><div class="gr"><div class="t">Notifications</div><div class="d">Alerts when a chat isn’t open</div></div>'+sw('swNotify',s.notify)+'</div>'+
+      (pushAvailable()?'<div class="setrow"><span class="ic">📣</span><div class="gr"><div class="t">Push notifications</div><div class="d">Get notified even when Ripple is closed</div></div>'+sw('swPush', cloud.on && typeof Notification!=='undefined' && Notification.permission==='granted')+'</div>':'')+
       '<div class="setrow"><span class="ic">⏎</span><div class="gr"><div class="t">Enter to send</div><div class="d">Off = Enter makes a new line</div></div>'+sw('swEnter',s.enterToSend)+'</div>'+
       '<div class="setrow"><span class="ic">🔐</span><div class="gr"><div class="t">App Lock</div><div class="d">Encrypt everything on this device with a passphrase (AES-GCM)</div></div>'+sw('swLock',s.lock)+'</div>'+
       '<button class="btn" id="setSave">Save</button>'+
@@ -1364,6 +1393,10 @@
       });
     });
     ['swNotify','swEnter','swLock'].forEach(function(id){ on(id,'click',function(){ $(id).classList.toggle('on'); }); });
+    if($('swPush')) on('swPush','click',function(){
+      var el=$('swPush'), turningOn=!el.classList.contains('on'); el.classList.toggle('on');
+      if(turningOn){ if(!cloud.on){ el.classList.remove('on'); toast('Connect to the cloud first'); } else enablePush(true); }
+    });
     on('setSave','click', saveSettings);
     on('setInstall','click', doInstall);
     on('setClear','click', function(){

@@ -105,6 +105,11 @@ service cloud.firestore {
       allow read:  if signedIn();
       allow write: if isUser(uid);
     }
+    // Private push tokens — readable/writable ONLY by their owner (the Cloud
+    // Function reads them with the Admin SDK, which bypasses these rules).
+    match /ripple_push/{uid} {
+      allow read, write: if isUser(uid);
+    }
     match /ripple_chats/{chatId} {
       function isMember()    { return signedIn() && request.auth.uid in resource.data.members; }
       function willBeMember(){ return signedIn() && request.auth.uid in request.resource.data.members; }
