@@ -99,23 +99,37 @@ ripple_chats/{chatId}/messages/{msgId}  → the Message shape from engine.js
 reconcile than replace wholesale (it de-dupes by id, prefers the newest edit,
 lets a delete win, keeps `ts` order — the unit tests pin this).
 
-### End-to-end encryption (already wired, 1:1 chats)
+### End-to-end encryption (already wired — DMs and groups)
 
 - Each device holds an **ECDH P-256** identity key. Its public half is published
   to `ripple_users/<uid>.pubKey`; the private half never leaves the device
   (stored locally, encrypted at rest when **App Lock** is on).
-- In a **two-member chat**, both sides run ECDH over each other's public keys to
-  derive the same **AES-GCM-256** key, so message **text** is encrypted
-  client-side. The server stores only ciphertext (`m.enc = {v,iv,ct}`, `text:''`)
-  and the chat's `lastText` becomes `🔒 Message`; even the push notification body
-  shows `🔒 New message`. Plaintext is decrypted into memory for display/search
-  only. The chat header shows **🔒 end-to-end** and a banner confirms it.
-- It activates automatically once both people are on this build (keys published).
-  No setup or extra deploy beyond the cloud rules — the only new field is the
-  public key, and tokens/keys are covered by the existing rules.
-- **Honest scope:** text only, and only when a chat has exactly two members
-  (group E2EE needs sender-key distribution; media/polls are not yet encrypted).
-  This is real ECDH+AES E2EE for DMs, not a production multi-device/group system.
+- **1:1 chats** derive a shared **AES-GCM-256** key directly via ECDH over the
+  two public keys — no key storage at all.
+- **Group chats** use a shared per-chat AES key. A single elected **key-owner**
+  (the creator, or the first opener via a transaction) generates it and **wraps a
+  copy for every member** with ECDH, stored ciphertext-only in
+  `ripple_chats/<id>/keys/<uid>`. New members are wrapped a copy when the owner
+  next opens the chat. The plaintext key never reaches the server.
+- Either way, message **text** is encrypted client-side: the server stores only
+  ciphertext (`m.enc = {v,iv,ct}`, `text:''`), the chat's `lastText` becomes
+  `🔒 Message`, and the push body shows `🔒 New message`. Plaintext is decrypted
+  into memory for display/search only. The header shows **🔒** and a banner
+  confirms it.
+- **Fail-safe:** if any key isn't available yet (a member hasn't published a key,
+  or the owner is offline), that message gracefully falls back to plaintext / a
+  `🔒 waiting for a key` placeholder — encryption never breaks the chat.
+- **Honest scope:** text only (media/polls aren't encrypted yet), one identity
+  key per device (no multi-device key sync), and no post-compromise key rotation
+  — real ECDH+AES E2EE, not yet a production Signal-grade system.
+
+### Invite tokens (closed by default)
+
+New cloud chats carry a random **`joinCode`** included in the invite link
+(`?join=<id>&k=<code>`). The Firestore rules require a joiner to present the
+matching token (`joinProof`) to add themselves — so knowing the chat id alone is
+no longer enough to join. Chats created before this stay open for backward
+compatibility.
 
 ### Media & typing (already wired)
 
@@ -160,9 +174,8 @@ lets a delete win, keeps `ts` order — the unit tests pin this).
 
 ### Production hardening (recommended before opening sign-ups)
 
-- **Invite scope** — the rules let anyone holding a link add *themselves* to a
-  chat. For closed groups, gate joins behind a Cloud Function or short-lived
-  invite tokens instead.
+- **Stronger invites** — `joinCode` tokens gate joins today; for revocable or
+  expiring invites, rotate the code (a Cloud Function can issue short-lived ones).
 
 ## Tests
 
