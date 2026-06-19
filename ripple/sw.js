@@ -22,7 +22,7 @@ try {
   firebase.messaging();
 } catch (e) { /* messaging unavailable — offline shell still works */ }
 
-const CACHE = 'ripple-v6';
+const CACHE = 'ripple-v7';
 const ASSETS = ['./', './index.html', './engine.js', './config.js', './manifest.json',
                 './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 

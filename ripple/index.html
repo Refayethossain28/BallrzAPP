@@ -544,6 +544,81 @@
   // Firestore docs can't hold `undefined`; produce a clean, serialisable copy.
   function serializeMsg(m){ return JSON.parse(JSON.stringify(m)); }
 
+  /* ======================= End-to-end encryption =======================
+   * Each device holds an ECDH (P-256) identity key. Its PUBLIC half is
+   * published to ripple_users/{uid}; the private half never leaves the
+   * device. For a 1:1 chat (exactly two members) both sides run ECDH over
+   * each other's public keys to derive the SAME AES-GCM key — so message
+   * text is encrypted client-side and the server only ever stores ciphertext
+   * (`m.enc = {v,iv,ct}`, `text:''`). Plaintext is decrypted into `m.text`
+   * in memory for display/search only.
+   *
+   * Scope (honest prototype limits): text messages in 2-member chats only —
+   * group chats and media payloads are not yet E2E encrypted. */
+  var e2ee = { chatKeys:{}, pubCache:{}, dec:{} };
+  function e2eeReady(){ return typeof crypto !== 'undefined' && crypto.subtle && typeof TextEncoder !== 'undefined'; }
+  function canEncrypt(c){ return e2eeReady() && cloud.on && c && c.cloud && !!S.e2ee &&
+    Array.isArray(c.members) && c.members.length === 2 && c.members.indexOf(cloud.uid) !== -1; }
+  function _ab2b64(buf){ var b=new Uint8Array(buf), s=''; for(var i=0;i<b.length;i++) s+=String.fromCharCode(b[i]); return btoa(s); }
+  function _b642ab(b64){ var s=atob(b64), u=new Uint8Array(s.length); for(var i=0;i<s.length;i++) u[i]=s.charCodeAt(i); return u.buffer; }
+  // Generate (once) this device's identity keypair and stash JWKs in state.
+  function e2eeGenIdentity(){
+    return crypto.subtle.generateKey({ name:'ECDH', namedCurve:'P-256' }, true, ['deriveKey']).then(function(kp){
+      return Promise.all([
+        crypto.subtle.exportKey('jwk', kp.privateKey),
+        crypto.subtle.exportKey('jwk', kp.publicKey)
+      ]).then(function(j){ return { priv:j[0], pub:j[1] }; });
+    });
+  }
+  function e2eeSetup(){
+    if(!e2eeReady() || !cloud.on) return;
+    var p = (S.e2ee && S.e2ee.priv) ? Promise.resolve(S.e2ee) :
+      e2eeGenIdentity().then(function(id){ S.e2ee=id; persist(); return id; });
+    p.then(function(id){
+      try{ cloud.db.collection('ripple_users').doc(cloud.uid).set({ pubKey:id.pub }, { merge:true }).catch(function(){}); }catch(e){}
+    }).catch(function(){});
+  }
+  function e2eeGetPub(uid){
+    if(e2ee.pubCache[uid]) return Promise.resolve(e2ee.pubCache[uid]);
+    return cloud.db.collection('ripple_users').doc(uid).get().then(function(d){
+      var pk = d.exists && d.data().pubKey; if(pk) e2ee.pubCache[uid]=pk; return pk||null;
+    }).catch(function(){ return null; });
+  }
+  function e2eeDeriveKey(privJwk, pubJwk){
+    return Promise.all([
+      crypto.subtle.importKey('jwk', privJwk, { name:'ECDH', namedCurve:'P-256' }, false, ['deriveKey']),
+      crypto.subtle.importKey('jwk', pubJwk, { name:'ECDH', namedCurve:'P-256' }, false, [])
+    ]).then(function(k){
+      return crypto.subtle.deriveKey({ name:'ECDH', public:k[1] }, k[0],
+        { name:'AES-GCM', length:256 }, false, ['encrypt','decrypt']);
+    });
+  }
+  function e2eeChatKey(c){
+    if(!canEncrypt(c)) return Promise.resolve(null);
+    if(e2ee.chatKeys[c.id]) return Promise.resolve(e2ee.chatKeys[c.id]);
+    var other=c.members.filter(function(u){ return u!==cloud.uid; })[0];
+    if(!other) return Promise.resolve(null);
+    return e2eeGetPub(other).then(function(pub){
+      if(!pub || !S.e2ee) return null;
+      return e2eeDeriveKey(S.e2ee.priv, pub);
+    }).then(function(key){ if(key) e2ee.chatKeys[c.id]=key; return key; }).catch(function(){ return null; });
+  }
+  function e2eeEncrypt(c, text){
+    return e2eeChatKey(c).then(function(key){
+      if(!key) return null;
+      var iv=crypto.getRandomValues(new Uint8Array(12));
+      return crypto.subtle.encrypt({ name:'AES-GCM', iv:iv }, key, new TextEncoder().encode(text))
+        .then(function(ct){ return { v:1, iv:_ab2b64(iv), ct:_ab2b64(ct) }; });
+    }).catch(function(){ return null; });
+  }
+  function e2eeDecrypt(c, enc){
+    return e2eeChatKey(c).then(function(key){
+      if(!key || !enc) return null;
+      return crypto.subtle.decrypt({ name:'AES-GCM', iv:new Uint8Array(_b642ab(enc.iv)) }, key, _b642ab(enc.ct))
+        .then(function(pt){ return new TextDecoder().decode(pt); });
+    }).catch(function(){ return null; });
+  }
+
   // Upload media to Firebase Storage and resolve to a download URL. Keeps large
   // photos/voice OUT of the Firestore doc (which has a 1 MB limit). Falls back to
   // the inline data URL if Storage isn't available.
@@ -585,6 +660,7 @@
           name: S.me.name || 'You', avatar: S.me.avatar || '🙂',
           updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         }, { merge:true }).catch(function(){});
+        e2eeSetup();
         subscribeCloudChats();
         if (opts.join) cloudJoin(opts.join);
         if (opts.interactive) toast('Connected ✓');
@@ -646,9 +722,12 @@
     cloud.subs[id] = cloud.db.collection('ripple_chats').doc(id).collection('messages')
       .orderBy('ts').onSnapshot(function(snap){
         var prevStar = {}; (S.msgs[id]||[]).forEach(function(m){ if(m.starred) prevStar[m.id]=true; });
-        var arr = [];
-        snap.forEach(function(doc){ var m=doc.data(); if(prevStar[m.id]) m.starred=true; arr.push(m); });
+        var arr = [], need = [];
+        snap.forEach(function(doc){ var m=doc.data(); if(prevStar[m.id]) m.starred=true;
+          if(m.enc){ var ck=m.id+':'+m.enc.iv; if(e2ee.dec[ck]!=null) m.text=e2ee.dec[ck]; else need.push(m); }
+          arr.push(m); });
         S.msgs[id] = arr;
+        if(need.length) e2eeDecryptInto(id, need);
         var mine = myId(chat(id));
         var focused = active===id && hasDoc && !document.hidden;
         if (focused) markCloudRead(id);
@@ -660,6 +739,18 @@
           cloud._note[id] = last.id; notify(chat(id), nameOf(last), R.previewText(last));
         }
       }, function(){});
+  }
+  // Decrypt a batch of E2E messages, cache the plaintext, then repaint.
+  function e2eeDecryptInto(id, list){
+    var c=chat(id); if(!c) return;
+    e2eeChatKey(c).then(function(key){
+      if(!key) return;
+      return Promise.all(list.map(function(m){
+        return e2eeDecrypt(c, m.enc).then(function(pt){
+          if(pt!=null){ m.text=pt; e2ee.dec[m.id+':'+m.enc.iv]=pt; }
+        }).catch(function(){});
+      })).then(function(){ if(active===id) renderTimeline(); renderSidebar(); });
+    }).catch(function(){});
   }
   // Write a read receipt as a targeted arrayUnion so we never clobber another
   // member's receipt or reactions (which a full-doc overwrite would risk).
@@ -729,11 +820,23 @@
     if (!cloud.on) return;
     var c = chat(chatId); if (!c || !c.cloud) return;
     try {
-      cloud.db.collection('ripple_chats').doc(chatId).collection('messages').doc(m.id).set(serializeMsg(m));
+      var payload = serializeMsg(m), preview;
+      if (m.enc){ payload.text = ''; preview = '🔒 Message'; } // never write plaintext for E2E messages
+      else { preview = R.previewText(m); }
+      cloud.db.collection('ripple_chats').doc(chatId).collection('messages').doc(m.id).set(payload);
       cloud.db.collection('ripple_chats').doc(chatId).set({
-        lastText: R.previewText(m), updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        lastText: preview, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
       }, { merge:true }).catch(function(){});
     } catch(e){}
+  }
+  // Push a text message, encrypting it first when the chat is E2E-capable.
+  function cloudSend(c, m){
+    if(m.type==='text' && m.text && canEncrypt(c)){
+      e2eeEncrypt(c, m.text).then(function(enc){
+        if(enc){ m.enc=enc; e2ee.dec[m.id+':'+enc.iv]=m.text; } // cache so it doesn't flash on round-trip
+        cloudPush(c.id, m);
+      }).catch(function(){ cloudPush(c.id, m); });
+    } else { cloudPush(c.id, m); }
   }
   function cloudCreateChat(name, avatar, type){
     var ref = cloud.db.collection('ripple_chats').doc();
@@ -840,7 +943,8 @@
   function presence(c){
     if (c.type==='saved') return { txt:'Your private notes', off:true };
     if (c.id==='echo') return { txt:'online · replies instantly', off:false };
-    if (c.cloud) return { txt:'🟢 Connected · '+((c.members&&c.members.length)||1)+' member'+(((c.members&&c.members.length)||1)===1?'':'s'), off:false };
+    if (c.cloud){ var n=(c.members&&c.members.length)||1;
+      return { txt:'🟢 Connected · '+n+' member'+(n===1?'':'s')+(canEncrypt(c)?' · 🔒 end-to-end':''), off:false }; }
     if (c.type==='group') return { txt:(c.members.length)+' members', off:true };
     return { txt:'last seen recently', off:true };
   }
@@ -935,6 +1039,8 @@
     var all = msgsOf(active).filter(function(mm){ return !R.isExpired(mm,now()) && !R.isPending(mm,now()); });
     var groups = R.groupByDay(all, now());
     var html='';
+    if (canEncrypt(c))
+      html += '<div class="sys">🔒 Messages in this chat are end-to-end encrypted. Only you and them can read them.</div>';
     if (c.disappearBeats)
       html += '<div class="sys">⏱ Beat timer on — new messages vanish after '+c.disappearBeats+' conversation beat'+(c.disappearBeats>1?'s':'')+' (~'+humanDur(disSec(c))+' at the current rhythm).</div>';
     else if (c.disappearSec)
@@ -1021,6 +1127,7 @@
       inner+='<div class="tot">'+total+' vote'+(total===1?'':'s')+'</div></div>';
       return inner;
     }
+    if (mm.enc && !mm.text) return '<div class="txt" style="opacity:.7">🔒 <i>Encrypted — waiting for a key…</i></div>';
     return '<div class="txt">'+R.renderText(mm.text, { members:[] })+'</div>';
   }
 
@@ -1064,7 +1171,7 @@
       // server can release + deliver them even if this device goes offline. The
       // rippleMaintenance function (or this client's tick) clears scheduledAt when due.
       if(!wasScheduled) m.state='sent';
-      cloudPush(c.id, m);
+      cloudSend(c, m); // encrypts text first when the chat is end-to-end encrypted
       if(wasScheduled) toast('Message scheduled for '+formatClock(wasScheduled));
       return;
     }
@@ -1131,8 +1238,13 @@
     updateCmdHint('✏️ Editing — press send to save, Esc to cancel'); closeMenu();
   }
   function commitEdit(text){
-    var m=findMsg(active,editing); editing=null;
-    if(m&&text){ R.editMessage(m,text,now()); cloudPush(active, m); }
+    var m=findMsg(active,editing); editing=null; var c=chat(active);
+    if(m&&text){ R.editMessage(m,text,now());
+      if(m.type==='text' && canEncrypt(c)){
+        e2ee.dec[m.id+':'+(m.enc&&m.enc.iv)]=undefined; // invalidate stale plaintext cache
+        e2eeEncrypt(c, m.text).then(function(enc){ m.enc=enc||null; if(m.enc) e2ee.dec[m.id+':'+m.enc.iv]=m.text; cloudPush(active, m); }).catch(function(){ m.enc=null; cloudPush(active, m); });
+      } else { m.enc=null; cloudPush(active, m); }
+    }
     $('ta').value=''; updateCmdHint(''); renderTimeline(); renderSidebar(); persist();
   }
   function unsend(mid){

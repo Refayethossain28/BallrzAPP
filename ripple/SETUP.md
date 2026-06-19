@@ -99,6 +99,24 @@ ripple_chats/{chatId}/messages/{msgId}  → the Message shape from engine.js
 reconcile than replace wholesale (it de-dupes by id, prefers the newest edit,
 lets a delete win, keeps `ts` order — the unit tests pin this).
 
+### End-to-end encryption (already wired, 1:1 chats)
+
+- Each device holds an **ECDH P-256** identity key. Its public half is published
+  to `ripple_users/<uid>.pubKey`; the private half never leaves the device
+  (stored locally, encrypted at rest when **App Lock** is on).
+- In a **two-member chat**, both sides run ECDH over each other's public keys to
+  derive the same **AES-GCM-256** key, so message **text** is encrypted
+  client-side. The server stores only ciphertext (`m.enc = {v,iv,ct}`, `text:''`)
+  and the chat's `lastText` becomes `🔒 Message`; even the push notification body
+  shows `🔒 New message`. Plaintext is decrypted into memory for display/search
+  only. The chat header shows **🔒 end-to-end** and a banner confirms it.
+- It activates automatically once both people are on this build (keys published).
+  No setup or extra deploy beyond the cloud rules — the only new field is the
+  public key, and tokens/keys are covered by the existing rules.
+- **Honest scope:** text only, and only when a chat has exactly two members
+  (group E2EE needs sender-key distribution; media/polls are not yet encrypted).
+  This is real ECDH+AES E2EE for DMs, not a production multi-device/group system.
+
 ### Media & typing (already wired)
 
 - **Media → Storage** — in a synced chat, photos and voice notes upload to
