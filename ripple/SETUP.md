@@ -1,0 +1,91 @@
+# Ripple — from demo to public messenger
+
+Ripple ships in two layers so it's genuinely useful the moment you open it, and
+genuinely deployable when you're ready for real users.
+
+## 1. What works with zero setup (today)
+
+Open [`ripple/index.html`](./index.html) — no build, no account:
+
+- **Real messaging UX** — chat list, conversations, day dividers, delivery/read
+  ticks, typing indicators, reactions, replies, **edit**, **unsend**, star, pin,
+  mute, archive, search across every chat.
+- **Differentiators over WhatsApp** — **schedule** a message for later,
+  **disappearing messages** with a per-chat timer, inline **polls**, **slash
+  commands** (`/poll`, `/remind`, `/expire`, `/me`, `/shrug`, `/shout`, `/clear`),
+  rich text (`*bold*`, `_italic_`, `~strike~`, `` `code` ``), voice notes, photos.
+- **Echo**, a built-in auto-responder, replies to you so the app feels alive
+  without anyone else online.
+- **Multi-tab live sync** — open Ripple in two browser tabs/windows; they stay in
+  sync over `BroadcastChannel`. Your data is persisted on-device in `localStorage`.
+- **App Lock** — optionally encrypt everything on the device with a passphrase
+  (AES-GCM, PBKDF2-derived key, 150k iterations). The key is never stored.
+- **Installable PWA** — Add to Home Screen for a full-screen, offline app.
+
+The **product logic** (search ranking, disappearing/scheduled dispatch, reaction
+toggling, poll tally, sidebar summaries, sync de-duplication) lives in
+[`engine.js`](./engine.js) and is covered by `npm run test:ripple`.
+
+## 2. Going multi-user — real people, real devices (built in)
+
+The cloud transport is **already wired** — it just needs a backend. Out of the
+box Ripple talks to **Firebase** (Anonymous Auth + Firestore). Turn it on:
+
+1. **Add your config** — open [`config.js`](./config.js) and replace `null` with
+   your Firebase web config. (You can reuse the project in
+   [`../firebase.js`](../firebase.js) — paste the same object.)
+2. **Enable Anonymous sign-in** — Firebase console → Authentication → Sign-in
+   method → **Anonymous**.
+3. **Deploy the rules** — [`../firestore.rules`](../firestore.rules) now contains
+   a `ripple_*` section that restricts every chat to its members:
+   ```sh
+   firebase deploy --only firestore:rules
+   ```
+
+That's it. On next load Ripple signs the user in anonymously, and **New chat →
+Sync to cloud** creates a real-time chat. Hit **🔗 Share invite link** (in the
+chat's ⋮ info, or right after creating it) and send it to anyone — opening the
+link (`…/ripple/?join=<chatId>`) joins them to the chat. Messages, edits,
+unsends, reactions, poll votes and read receipts all sync live via Firestore
+`onSnapshot`. Disappearing and scheduled messages stay client-evaluated.
+
+### Data model (what the app reads/writes)
+
+```
+ripple_users/{uid}                      → { name, avatar, updatedAt }
+ripple_chats/{chatId}                   → { type, name, avatar, members:[uid],
+                                            disappearSec, lastText, updatedAt }
+ripple_chats/{chatId}/messages/{msgId}  → the Message shape from engine.js
+                                          (id, senderId, text, ts, type,
+                                           reactions, replyTo, editedAt, deleted,
+                                           expireAt, scheduledAt, readBy, meta)
+```
+
+`Ripple.mergeMessages(local, remote)` is available for any place you'd rather
+reconcile than replace wholesale (it de-dupes by id, prefers the newest edit,
+lets a delete win, keeps `ts` order — the unit tests pin this).
+
+### Production hardening (recommended before opening sign-ups)
+
+- **Media** — photos/voice are inlined as data URLs, which is fine for a demo but
+  bumps the 1 MB Firestore document limit. For real use, upload to Firebase
+  Storage and store only the URL in `meta.src`.
+- **Push** — reuse [`firebase-messaging-sw.js`](../firebase-messaging-sw.js) and a
+  Cloud Function that fans out a notification on each new message.
+- **Server-side expiry/scheduling** — move disappearing/scheduled dispatch into a
+  Cloud Function for cross-device correctness when clients are offline.
+- **End-to-end encryption** — generate a per-device key pair, publish public keys
+  on `ripple_users/{uid}`, and encrypt `text`/`meta` before writing so the server
+  only ever sees ciphertext; `renderText`/search operate on decrypted text in
+  memory. (App Lock already encrypts the on-device cache.)
+- **Invite scope** — the rules let anyone holding a link add *themselves* to a
+  chat. For closed groups, gate joins behind a Cloud Function or short-lived
+  invite tokens instead.
+
+## Tests
+
+```sh
+npm run test:ripple   # engine unit tests
+npm run test:smoke    # boots the page in a headless sandbox
+npm test              # everything
+```
