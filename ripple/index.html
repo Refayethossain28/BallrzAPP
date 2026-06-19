@@ -455,7 +455,7 @@
   var editing = null;   // message id being edited
   var menuMsg = null;   // message for open action menu
   var rec = null, recTimer = null, recStart = 0, recChunks = [];
-  var cloud = { on:false, connecting:false, uid:null, app:null, db:null, auth:null, storage:null, subs:{}, chatsSub:null, _note:{}, typingSub:null, typingFor:null, typingNames:[], _typeAt:0, _typeClear:null };
+  var cloud = { on:false, connecting:false, uid:null, app:null, db:null, auth:null, storage:null, subs:{}, chatsSub:null, _note:{}, typingSub:null, typingFor:null, typingNames:[], _typeAt:0, _typeClear:null, presence:{}, presenceSub:null, presenceFor:null, hbTimer:null };
 
   function uid(){ return R.makeId('u', Date.now(), Math.random()); }
   function now(){ return Date.now(); }
@@ -706,9 +706,11 @@
         cloud.on = true; cloud.connecting = false; updateCloudStatus();
         cloud.db.collection('ripple_users').doc(cloud.uid).set({
           name: S.me.name || 'You', avatar: S.me.avatar || '🙂',
+          statusText: (S.me.status||''),
           updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         }, { merge:true }).catch(function(){});
         e2eeSetup();
+        startPresence();
         subscribeCloudChats();
         if (opts.join) cloudJoin(opts.join);
         if (opts.interactive) toast('Connected ✓');
@@ -853,6 +855,44 @@
     if(cloud.typingSub){ try{ cloud.typingSub(); }catch(e){} cloud.typingSub=null; }
     cloud.typingFor=null; cloud.typingNames=[];
   }
+
+  /* ---------- presence (online / last seen) ---------- */
+  var PRESENCE_TTL = 40000;
+  function presenceBeat(){
+    if(!cloud.on) return;
+    try{ cloud.db.collection('ripple_users').doc(cloud.uid).set({
+      lastActive: Date.now(), online: !(typeof document!=='undefined' && document.hidden)
+    }, { merge:true }).catch(function(){}); }catch(e){}
+  }
+  function startPresence(){
+    if(cloud.hbTimer) return;
+    presenceBeat();
+    cloud.hbTimer=setInterval(presenceBeat, 25000);
+    if(typeof document!=='undefined') document.addEventListener('visibilitychange', presenceBeat);
+    if(typeof window!=='undefined') window.addEventListener('focus', presenceBeat);
+  }
+  function subscribePresence(c){
+    unsubscribePresence();
+    if(!c || !c.cloud || !Array.isArray(c.members) || c.members.length!==2) return;
+    var other=c.members.filter(function(u){ return u!==cloud.uid; })[0]; if(!other) return;
+    cloud.presenceFor=c.id;
+    cloud.presenceSub=cloud.db.collection('ripple_users').doc(other).onSnapshot(function(d){
+      if(d.exists){ var dt=d.data(); cloud.presence[other]={ lastActive:dt.lastActive, online:dt.online, statusText:dt.statusText }; refreshConvStatus(); }
+    }, function(){});
+  }
+  function unsubscribePresence(){
+    if(cloud.presenceSub){ try{ cloud.presenceSub(); }catch(e){} cloud.presenceSub=null; }
+    cloud.presenceFor=null;
+  }
+  // Compose the peer's "online / last seen …" line for a 1:1 cloud chat.
+  function peerPresence(c){
+    var other=c.members.filter(function(u){ return u!==cloud.uid; })[0];
+    var p=other && cloud.presence[other]; if(!p) return null;
+    var onl = p.online && p.lastActive && (Date.now()-p.lastActive < PRESENCE_TTL);
+    var txt = onl ? 'online' : (p.lastActive ? 'last seen '+R.relativeTime(p.lastActive, now()) : 'offline');
+    if(p.statusText) txt += ' · ' + p.statusText;
+    return { txt: txt, off: !onl };
+  }
   // Repaint the conversation subtitle: live "typing…" wins over static presence.
   function refreshConvStatus(){
     if(!active) return; var c=chat(active); if(!c) return; var st=$('convStatus'); if(!st) return;
@@ -994,6 +1034,8 @@
     if (c.type==='saved') return { txt:'Your private notes', off:true };
     if (c.id==='echo') return { txt:'online · replies instantly', off:false };
     if (c.cloud){ var n=(c.members&&c.members.length)||1;
+      var lock=canEncrypt(c)?' · 🔒':'';
+      if(n===2){ var pp=peerPresence(c); if(pp) return { txt:pp.txt+lock, off:pp.off }; }
       return { txt:'🟢 Connected · '+n+' member'+(n===1?'':'s')+(canEncrypt(c)?' · 🔒 end-to-end':''), off:false }; }
     if (c.type==='group') return { txt:(c.members.length)+' members', off:true };
     return { txt:'last seen recently', off:true };
@@ -1060,7 +1102,7 @@
     active = id; replyTo=null; editing=null; scheduleAt=null; quietDismissedFor=null;
     var et=$('emojiTray'); if(et) et.classList.add('hidden');
     var c = chat(id); if(!c) return;
-    if(c.cloud) subscribeTyping(id); else unsubscribeTyping();
+    if(c.cloud){ subscribeTyping(id); subscribePresence(c); } else { unsubscribeTyping(); unsubscribePresence(); }
     if (hasDoc) document.body.classList.add('show-chat');
     $('placeholder').classList.add('hidden');
     $('convHead').classList.remove('hidden');
@@ -1650,6 +1692,7 @@
         '<div style="flex:1"><div class="field" style="margin:0"><label>Display name</label>'+
           '<input id="setName" value="'+esc(S.me.name)+'" placeholder="Your name"></div></div>'+
       '</div>'+
+      '<div class="field"><label>Status</label><input id="setStatus" value="'+esc(S.me.status||'')+'" maxlength="60" placeholder="e.g. 🌴 On vacation · 🎧 Focusing"></div>'+
       '<div class="field"><label>Avatar</label><div class="emojipick" id="avatarPick">'+
         ['🙂','😎','🦊','🐼','🌸','🚀','🎧','🐱','🍀','⚡','🔥','🌙'].map(function(e){
           return '<button data-emoji="'+e+'" class="'+(e===S.me.avatar?'sel':'')+'">'+e+'</button>'; }).join('')+
@@ -1695,6 +1738,7 @@
   }
   function saveSettings(){
     S.me.name = ($('setName').value||'').trim() || S.me.name || 'You';
+    S.me.status = ($('setStatus').value||'').trim().slice(0,60);
     var sel=$('avatarPick').querySelector('.sel'); if(sel) S.me.avatar=sel.getAttribute('data-emoji');
     var acc=$('accentPick').querySelector('.sel'); if(acc) S.settings.accent=acc.getAttribute('data-acc');
     S.settings.notify=$('swNotify').classList.contains('on');
@@ -1703,7 +1747,7 @@
     if(S.settings.notify && typeof Notification!=='undefined' && Notification.permission==='default'){
       try{ Notification.requestPermission(); }catch(e){}
     }
-    if(cloud.on){ try{ cloud.db.collection('ripple_users').doc(cloud.uid).set({ name:S.me.name, avatar:S.me.avatar },{merge:true}); }catch(e){} }
+    if(cloud.on){ try{ cloud.db.collection('ripple_users').doc(cloud.uid).set({ name:S.me.name, avatar:S.me.avatar, statusText:S.me.status||'' },{merge:true}); }catch(e){} }
     if(wantLock && !S.settings.lock){ enableLock(); return; }
     if(!wantLock && S.settings.lock){ S.settings.lock=false; lockKey=null; }
     S.settings.lock=wantLock?S.settings.lock:false;
@@ -1947,7 +1991,7 @@
   }
   function showPlaceholder(){
     if(cloud.on && cloud.typingFor) clearTyping(cloud.typingFor);
-    unsubscribeTyping();
+    unsubscribeTyping(); unsubscribePresence();
     active=null;
     if(!hasDoc) return;
     document.body.classList.remove('show-chat');
