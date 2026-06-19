@@ -22,6 +22,15 @@
     --out:#26407a; --out2:#2b3f74; --in:#1a2036;
     --bubble-radius:16px;
   }
+  body.light{
+    color-scheme: light;
+    --bg:#eef1f8; --panel:#ffffff; --panel2:#f3f5fb; --line:rgba(20,30,60,.12);
+    --ink:#141a2e; --dim:#52607f; --faint:#8a94ad;
+    --c:#12b886; --warn:#e8870b; --bad:#e23a52;
+    --out:#d6e2ff; --out2:#c7d6ff; --in:#ffffff;
+  }
+  body.light .msg.out .bubble{color:#13245a}
+  body.light .send,body.light .voice button,body.light .badge{color:#fff}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;height:100%}
   body{
@@ -142,6 +151,19 @@
   .pickrow{display:flex;align-items:center;gap:11px;padding:9px 6px;border-radius:11px;cursor:pointer}
   .pickrow:hover{background:rgba(255,255,255,.05)}
   .pickrow .gr{min-width:0}.pickrow .gr .t{font-weight:600}
+  /* emoji & sticker tray */
+  .emoji-tray{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:8px;margin-bottom:8px;max-height:230px;overflow-y:auto}
+  .etabs{display:flex;gap:6px;margin-bottom:6px}
+  .etab{flex:1;padding:6px;border-radius:9px;border:1px solid var(--line);background:none;color:var(--dim);font-weight:600}
+  .etab.on{background:color-mix(in srgb,var(--accent) 20%,transparent);border-color:var(--accent);color:var(--ink)}
+  .egrid{display:grid;grid-template-columns:repeat(8,1fr);gap:2px}
+  .egrid button{font-size:21px;padding:5px 0;border:0;background:none;border-radius:8px;cursor:pointer}
+  .egrid button:hover{background:rgba(255,255,255,.08)}
+  .egrid.stick{grid-template-columns:repeat(5,1fr)}
+  .egrid.stick button{font-size:38px;padding:7px 0}
+  .msg.sticker .bubble{background:none;border:none;box-shadow:none;padding:0}
+  .msg.sticker .stamp{justify-content:flex-end;padding-right:2px}
+  .sticker-em{font-size:56px;line-height:1.05}
   /* Pulse sheet: 24-hour "best time to reach" histogram */
   .ohist{display:flex;align-items:flex-end;gap:2px;height:26px;margin:4px 0 2px}
   .ohist .oh{flex:1;border-radius:2px 2px 0 0;background:var(--line);min-width:0}
@@ -377,8 +399,10 @@
         <div class="rt" id="quietText"></div><span class="go" id="quietGo">Schedule</span><button class="x" id="quietDismiss">×</button>
       </div>
       <div class="cmd-hint" id="cmdHint"></div>
+      <div class="emoji-tray hidden" id="emojiTray"></div>
       <div class="cbar">
         <button class="iconbtn" id="btnAttach" title="Attach">＋</button>
+        <button class="iconbtn" id="btnEmoji" title="Emoji & stickers">😊</button>
         <div class="ta-wrap">
           <textarea id="ta" rows="1" placeholder="Message" autocomplete="off"></textarea>
         </div>
@@ -414,6 +438,12 @@
 
   var KEY = 'ripple.store.v1';
   var EMOJIS = ['❤','👍','😂','😮','😢','🙏','🔥','🎉'];
+  var EMOJI_PICK = ('😀 😁 😂 🤣 😊 😍 😘 😎 🤔 😴 😭 😡 🥳 🤩 😇 🙃 😉 😋 🤤 🤗 '+
+    '🤫 🤭 😶 😐 😬 🙄 😲 😳 🥺 😤 😱 🤯 😢 😅 😆 🤪 😜 🤓 🧐 🤠 '+
+    '👍 👎 👏 🙏 🙌 💪 🤝 ✌ 🤞 👌 🤙 👋 🫶 🤟 ✊ 👊 '+
+    '❤ 🧡 💛 💚 💙 💜 🖤 🤍 💔 💕 💞 💯 ✨ ⭐ 🔥 🎉 🎊 🥂 🍻 ☕ '+
+    '😺 🐶 🐱 🦊 🐼 🐧 🐢 🦄 🌸 🌹 🌈 ☀ 🌙 ⚡ ❄ 🍀 🍕 🍔 🍩 🎂').split(' ');
+  var STICKERS = ['🎉','🔥','😂','😍','🥳','👍','🙏','💯','❤','😎','🤯','👀','💀','✨','🚀','🍕','🌈','🦄','☕','😴'];
   var ACCENTS = ['#6e8bff','#39e6b4','#ff6b81','#ffb454','#8b7cff','#37c2ff','#9be15d'];
 
   /* ---------- state ---------- */
@@ -1028,6 +1058,7 @@
   function openChat(id){
     if(cloud.on && cloud.typingFor && cloud.typingFor!==id) clearTyping(cloud.typingFor);
     active = id; replyTo=null; editing=null; scheduleAt=null; quietDismissedFor=null;
+    var et=$('emojiTray'); if(et) et.classList.add('hidden');
     var c = chat(id); if(!c) return;
     if(c.cloud) subscribeTyping(id); else unsubscribeTyping();
     if (hasDoc) document.body.classList.add('show-chat');
@@ -1109,7 +1140,7 @@
     var out = isMe(mm.senderId);
     var grp = c.type==='group' && !out;
     var showWho = grp && prevSender!==mm.senderId;
-    var cls='msg '+(out?'out':'in')+(grp?' grp':'');
+    var cls='msg '+(out?'out':'in')+(grp?' grp':'')+((mm.meta&&mm.meta.sticker)?' sticker':'');
     var h='<div class="'+cls+'" data-id="'+mm.id+'">';
     if(showWho) h+='<div class="who" style="color:'+memberColor(mm.senderId)+'">'+esc(nameOf(mm))+'</div>';
     h+='<div class="bubble">';
@@ -1158,6 +1189,7 @@
       inner+='<div class="tot">'+total+' vote'+(total===1?'':'s')+'</div></div>';
       return inner;
     }
+    if (mm.meta && mm.meta.sticker) return '<div class="sticker-em">'+esc(mm.text)+'</div>';
     if (mm.enc && !mm.text) return '<div class="txt" style="opacity:.7">🔒 <i>Encrypted — waiting for a key…</i></div>';
     return '<div class="txt">'+R.renderText(mm.text, { members:[] })+'</div>';
   }
@@ -1214,8 +1246,55 @@
     maybeAutoReply(c, text);
   }
 
+  /* ---------- emoji & sticker tray ---------- */
+  var emojiMode='emoji';
+  function toggleEmojiTray(){
+    var tray=$('emojiTray'); if(!tray) return;
+    if(tray.classList.contains('hidden')){ renderEmojiTray(); tray.classList.remove('hidden'); }
+    else tray.classList.add('hidden');
+  }
+  function renderEmojiTray(){
+    var tray=$('emojiTray'); if(!tray) return;
+    var tabs='<div class="etabs">'+
+      '<button class="etab '+(emojiMode==='emoji'?'on':'')+'" data-emode="emoji">Emoji</button>'+
+      '<button class="etab '+(emojiMode==='sticker'?'on':'')+'" data-emode="sticker">Stickers</button></div>';
+    var grid;
+    if(emojiMode==='sticker'){
+      grid='<div class="egrid stick">'+STICKERS.map(function(e){ return '<button data-sticker="'+e+'">'+e+'</button>'; }).join('')+'</div>';
+    } else {
+      grid='<div class="egrid">'+EMOJI_PICK.map(function(e){ return '<button data-emoji="'+e+'">'+e+'</button>'; }).join('')+'</div>';
+    }
+    tray.innerHTML=tabs+grid;
+    Array.prototype.forEach.call(tray.querySelectorAll('[data-emode]'), function(b){
+      b.addEventListener('click', function(){ emojiMode=b.getAttribute('data-emode'); renderEmojiTray(); });
+    });
+    Array.prototype.forEach.call(tray.querySelectorAll('[data-emoji]'), function(b){
+      b.addEventListener('click', function(){ insertAtCursor($('ta'), b.getAttribute('data-emoji')); });
+    });
+    Array.prototype.forEach.call(tray.querySelectorAll('[data-sticker]'), function(b){
+      b.addEventListener('click', function(){ sendSticker(b.getAttribute('data-sticker')); });
+    });
+  }
+  function insertAtCursor(ta, text){
+    if(!ta) return; ta.focus();
+    var s=ta.selectionStart==null?ta.value.length:ta.selectionStart, e=ta.selectionEnd==null?ta.value.length:ta.selectionEnd;
+    ta.value=ta.value.slice(0,s)+text+ta.value.slice(e);
+    var pos=s+text.length; try{ ta.setSelectionRange(pos,pos); }catch(_){}
+    if(active) chat(active).draft=ta.value; autosize(ta);
+  }
+  function sendSticker(emoji){
+    if(!active) return; var c=chat(active);
+    var m=mkMsg({ chatId:active, text:emoji, ts:now(), rand:Math.random(), type:'text',
+      state:c.cloud?'sent':'sending', disappearSec:disSec(c), meta:{ sticker:true } });
+    msgsOf(active).push(m);
+    if(c.cloud) cloudSend(c, m);
+    else { advanceState(m,'delivered',500); if(c.id==='echo') maybeAutoReply(c, '👋'); else if(c.id!=='saved') advanceState(m,'read',1200); }
+    var tray=$('emojiTray'); if(tray) tray.classList.add('hidden');
+    renderTimeline(); renderSidebar(); persist();
+  }
   function afterSend(){
     var c=chat(active); if(c) c.draft='';
+    var et=$('emojiTray'); if(et) et.classList.add('hidden');
     if(c && c.cloud) clearTyping(c.id);
     updateReplyBar(); updateSchedBar(); updateCmdHint('');
     autosize($('ta')); renderTimeline(); renderSidebar(); persist();
@@ -1579,6 +1658,7 @@
       '<div class="setrow"><span class="ic">🔔</span><div class="gr"><div class="t">Notifications</div><div class="d">Alerts when a chat isn’t open</div></div>'+sw('swNotify',s.notify)+'</div>'+
       (pushAvailable()?'<div class="setrow"><span class="ic">📣</span><div class="gr"><div class="t">Push notifications</div><div class="d">Get notified even when Ripple is closed</div></div>'+sw('swPush', cloud.on && typeof Notification!=='undefined' && Notification.permission==='granted')+'</div>':'')+
       '<div class="setrow"><span class="ic">⏎</span><div class="gr"><div class="t">Enter to send</div><div class="d">Off = Enter makes a new line</div></div>'+sw('swEnter',s.enterToSend)+'</div>'+
+      '<div class="setrow"><span class="ic">🌗</span><div class="gr"><div class="t">Light mode</div><div class="d">Switch between dark and light themes</div></div>'+sw('swLight',s.theme==='light')+'</div>'+
       '<div class="setrow"><span class="ic">🔐</span><div class="gr"><div class="t">App Lock</div><div class="d">Encrypt everything on this device with a passphrase (AES-GCM)</div></div>'+sw('swLock',s.lock)+'</div>'+
       '<button class="btn" id="setSave">Save</button>'+
       '<button class="btn ghost" id="setInstall" style="margin-top:8px">📲 Install Ripple</button>'+
@@ -1599,6 +1679,8 @@
       });
     });
     ['swNotify','swEnter','swLock'].forEach(function(id){ on(id,'click',function(){ $(id).classList.toggle('on'); }); });
+    on('swLight','click',function(){ $('swLight').classList.toggle('on');
+      S.settings.theme=$('swLight').classList.contains('on')?'light':'dark'; applyTheme(); persist(); });
     if($('swPush')) on('swPush','click',function(){
       var el=$('swPush'), turningOn=!el.classList.contains('on'); el.classList.toggle('on');
       if(turningOn){ if(!cloud.on){ el.classList.remove('on'); toast('Connect to the cloud first'); } else enablePush(true); }
@@ -1859,6 +1941,10 @@
     document.documentElement.style.setProperty('--accent', acc);
     var meta=document.querySelector('meta[name=theme-color]');
   }
+  function applyTheme(){
+    if(!hasDoc) return;
+    document.body.classList.toggle('light', !!(S && S.settings && S.settings.theme==='light'));
+  }
   function showPlaceholder(){
     if(cloud.on && cloud.typingFor) clearTyping(cloud.typingFor);
     unsubscribeTyping();
@@ -1937,6 +2023,7 @@
     on('btnChatSearch','click', function(){ var i=$('searchInput'); if(i) i.focus(); });
     on('btnSend','click', function(){ if(rec){ stopRecord(true); } else send(); });
     on('btnAttach','click', function(){ var f=$('fileInput'); if(f) f.click(); });
+    on('btnEmoji','click', toggleEmojiTray);
     on('fileInput','change', function(e){ attachImage(e.target.files[0]); e.target.value=''; });
     on('replyCancel','click', function(){ replyTo=null; updateReplyBar(); });
     on('schedCancel','click', function(){ scheduleAt=null; updateSchedBar(); });
@@ -2004,6 +2091,7 @@
   var _tickStarted=false;
   function startUI(){
     applyAccent();
+    applyTheme();
     renderSidebar();
     updateCloudStatus();
     if(!S.me.name && hasDoc) onboard();
