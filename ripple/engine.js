@@ -61,6 +61,7 @@
       muted: !!opts.muted,
       archived: !!opts.archived,
       disappearSec: opts.disappearSec || 0, // 0 = off; else seconds-to-live
+      disappearBeats: opts.disappearBeats || 0, // 0 = off; else Pulse beats-to-live
       accent: opts.accent || null,          // per-chat theme override
       draft: opts.draft || '',
       createdAt: opts.now || 0
@@ -459,8 +460,155 @@
     return /[.!?…]$/.test(s) ? s : s + '.';
   }
 
+  /* ============================================================= *
+   *  PULSE — the conversational rhythm engine                     *
+   * ============================================================= *
+   * Every relationship has its own tempo: how fast you volley, who
+   * leads, whether things are heating up or cooling down. Pulse reads
+   * that tempo straight from the message timestamps — fully on-device,
+   * no servers, no ML — and distils it into a single living "beat".
+   *
+   * That beat powers something no other messenger does: time measured
+   * in conversational beats instead of clock seconds. A message set to
+   * disappear "in 1 beat" lives exactly one of *your* volleys — seconds
+   * for a rapid back-and-forth, a day for a slow burn — because the
+   * timer is relative to the rhythm of the two people in the chat, not
+   * an absolute wall-clock the relationship has nothing to do with.
+   */
+  function _median(arr) {
+    if (!arr.length) return 0;
+    var s = arr.slice().sort(function (a, b) { return a - b; });
+    var m = s.length >> 1;
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  }
+  function _clamp(x, lo, hi) { return x < lo ? lo : x > hi ? hi : x; }
+  // Snap a raw millisecond duration to a friendly value so a "beat" reads
+  // as ~30s / ~2m / ~1h rather than 1m43s.
+  var _NICE = [15 * SECOND, 30 * SECOND, MINUTE, 2 * MINUTE, 5 * MINUTE, 10 * MINUTE,
+    20 * MINUTE, 30 * MINUTE, HOUR, 2 * HOUR, 4 * HOUR, 8 * HOUR, 12 * HOUR,
+    DAY, 2 * DAY, 3 * DAY, 7 * DAY];
+  function niceDuration(ms) {
+    var best = _NICE[0], bd = Infinity;
+    for (var i = 0; i < _NICE.length; i++) {
+      // compare on a log scale so "closest" is proportional, not absolute
+      var d = Math.abs(Math.log(_NICE[i]) - Math.log(Math.max(1, ms)));
+      if (d < bd) { bd = d; best = _NICE[i]; }
+    }
+    return best;
+  }
+
+  // Read the rhythm of a conversation from its messages.
+  //   messages : array of message objects (uses .ts, .senderId, .type, .deleted)
+  //   meId     : the viewer's id (for the lead/balance read)
+  //   now      : current time in ms
+  function conversationPulse(messages, meId, now) {
+    now = now || 0;
+    var msgs = (messages || []).filter(function (m) {
+      return m && !m.deleted && m.type !== 'system' && m.ts != null && m.ts <= now &&
+        !(m.scheduledAt && m.scheduledAt > now);
+    }).sort(function (a, b) { return a.ts - b.ts; });
+
+    var n = msgs.length;
+    var out = {
+      samples: n, mine: 0, theirs: 0,
+      cadenceMs: HOUR, beatMs: HOUR,
+      tempo: 'new', momentum: 'steady', lead: 'balanced',
+      balance: 0, consistency: 0, syncScore: 0,
+      lastTs: n ? msgs[n - 1].ts : 0, idleMs: n ? now - msgs[n - 1].ts : 0
+    };
+    for (var k = 0; k < n; k++) { if (msgs[k].senderId === meId) out.mine++; else out.theirs++; }
+    if (n < 2) return out;
+
+    // Turn-taking reply gaps (sender changes) capture responsiveness; fall back
+    // to all gaps when one side monologues.
+    var replyGaps = [], allGaps = [], turns = 0;
+    for (var i = 1; i < n; i++) {
+      var g = msgs[i].ts - msgs[i - 1].ts; if (g < 0) g = 0;
+      allGaps.push(g);
+      if (msgs[i].senderId !== msgs[i - 1].senderId) { replyGaps.push(g); turns++; }
+    }
+    var gaps = replyGaps.length >= 2 ? replyGaps : allGaps;
+
+    // Typical cadence: recency-weighted EWMA blended with the median (robust to
+    // the odd overnight gap), clamped to a sane band.
+    var ew = gaps[0], alpha = 0.4;
+    for (var j = 1; j < gaps.length; j++) ew = alpha * gaps[j] + (1 - alpha) * ew;
+    var med = _median(gaps);
+    var cadence = _clamp(Math.round(0.6 * ew + 0.4 * med), 5 * SECOND, 14 * DAY);
+    out.cadenceMs = cadence;
+    out.beatMs = niceDuration(cadence);
+
+    // Consistency: how regular the rhythm is (1 = metronome). Median absolute
+    // deviation normalised by the median.
+    var devs = gaps.map(function (x) { return Math.abs(x - med); });
+    out.consistency = clamp01(1 - (med ? _median(devs) / med : 1));
+
+    // Balance / lead: -1 = all them, +1 = all me.
+    out.balance = (out.mine - out.theirs) / n;
+    out.lead = out.balance > 0.2 ? 'you lead' : out.balance < -0.2 ? 'they lead' : 'balanced';
+
+    // Momentum: compare the most-recent third of gaps with the earlier ones.
+    // Shrinking gaps = warming; growing = cooling. A long idle tail overrides.
+    if (out.idleMs > cadence * 8 && out.idleMs > 30 * MINUTE) {
+      out.momentum = 'quiet';
+    } else if (gaps.length >= 4) {
+      var cut = Math.max(1, Math.floor(gaps.length / 3));
+      var recent = _median(gaps.slice(gaps.length - cut));
+      var earlier = _median(gaps.slice(0, gaps.length - cut)) || med;
+      if (recent < earlier * 0.7) out.momentum = 'warming';
+      else if (recent > earlier * 1.5) out.momentum = 'cooling';
+      else out.momentum = 'steady';
+    }
+
+    // Tempo bucket from cadence.
+    out.tempo = cadence < 90 * SECOND ? 'rapid'
+      : cadence < 10 * MINUTE ? 'lively'
+        : cadence < 2 * HOUR ? 'steady'
+          : cadence < 12 * HOUR ? 'relaxed' : 'slow';
+
+    // Sync score (0–100): in-rhythm = regular + balanced + genuinely two-sided.
+    var turnRatio = clamp01(turns / (n - 1));
+    var momentumBonus = out.momentum === 'warming' ? 1 : out.momentum === 'cooling' ? 0.6
+      : out.momentum === 'quiet' ? 0.35 : 0.8;
+    out.syncScore = Math.round(100 * clamp01(
+      0.45 * out.consistency + 0.25 * (1 - Math.abs(out.balance)) +
+      0.18 * turnRatio + 0.12 * momentumBonus));
+    return out;
+  }
+
+  var _TEMPO = {
+    rapid: { emoji: '⚡', label: 'Rapid' }, lively: { emoji: '💬', label: 'Lively' },
+    steady: { emoji: '🎵', label: 'Steady' }, relaxed: { emoji: '🌿', label: 'Relaxed' },
+    slow: { emoji: '🌙', label: 'Slow' }, 'new': { emoji: '✨', label: 'New' }
+  };
+  var _MOMENTUM = {
+    warming: 'warming up ↑', cooling: 'cooling ↓', steady: 'in step →', quiet: 'resting ·'
+  };
+  // Human-readable summary of a pulse for the UI.
+  function formatPulse(p) {
+    var t = _TEMPO[p.tempo] || _TEMPO['new'];
+    if (p.samples < 2) {
+      return { emoji: t.emoji, tempo: t.label, momentum: '', beat: '', line: 'Finding your rhythm…' };
+    }
+    var beat = formatDur(Math.round(p.beatMs / SECOND));
+    // formatDur is mm:ss; turn longer beats into words for the strip.
+    var bl = p.beatMs < HOUR ? '~' + (p.beatMs < MINUTE ? Math.round(p.beatMs / SECOND) + 's'
+      : Math.round(p.beatMs / MINUTE) + 'm')
+      : p.beatMs < DAY ? '~' + Math.round(p.beatMs / HOUR) + 'h' : '~' + Math.round(p.beatMs / DAY) + 'd';
+    var mo = _MOMENTUM[p.momentum] || '';
+    return {
+      emoji: t.emoji, tempo: t.label, momentum: mo, beat: bl,
+      line: t.emoji + ' ' + t.label + (mo ? ' · ' + mo : '') + ' · ' + bl + ' beat · sync ' + p.syncScore
+    };
+  }
+  // Convert a count of beats into seconds-to-live for the current rhythm.
+  function beatsToSeconds(pulse, beats) {
+    var ms = (pulse && pulse.beatMs ? pulse.beatMs : HOUR) * (beats || 1);
+    return Math.max(15, Math.round(ms / SECOND));
+  }
+
   return {
-    version: '1.0.0',
+    version: '1.1.0',
     SECOND: SECOND, MINUTE: MINUTE, HOUR: HOUR, DAY: DAY,
     makeId: makeId, createChat: createChat, createMessage: createMessage,
     escapeHtml: escapeHtml, renderText: renderText, extractMentions: extractMentions,
@@ -473,6 +621,8 @@
     lastVisible: lastVisible, unreadCount: unreadCount, previewText: previewText,
     summarizeChats: summarizeChats, totalUnread: totalUnread, mergeMessages: mergeMessages,
     formatDur: formatDur, relativeTime: relativeTime, dayLabel: dayLabel, groupByDay: groupByDay,
-    autoReply: autoReply
+    autoReply: autoReply,
+    conversationPulse: conversationPulse, formatPulse: formatPulse,
+    beatsToSeconds: beatsToSeconds, niceDuration: niceDuration
   };
 });

@@ -223,6 +223,102 @@ test('formatDur mm:ss', () => {
   assert.equal(E.formatDur(5), '0:05');
 });
 
+/* ---------- Pulse: conversational rhythm engine ---------- */
+// helper: build a back-and-forth thread with given gaps (seconds) between msgs
+const thread = (gapsSec, opts = {}) => {
+  const start = opts.start != null ? opts.start : NOW - 3 * DAY;
+  let t = start, who = 0;
+  const out = [E.createMessage({ chatId: 'c1', senderId: 'me', text: 'hi', ts: t })];
+  for (const g of gapsSec) {
+    t += g * SECOND; who ^= 1;
+    out.push(E.createMessage({ chatId: 'c1', senderId: who ? 'them' : 'me', text: 'x', ts: t }));
+  }
+  return out;
+};
+
+test('conversationPulse: empty / single message is neutral "new"', () => {
+  const p0 = E.conversationPulse([], 'me', NOW);
+  assert.equal(p0.samples, 0);
+  assert.equal(p0.tempo, 'new');
+  const p1 = E.conversationPulse([msg({ senderId: 'me' })], 'me', NOW);
+  assert.equal(p1.samples, 1);
+  assert.equal(p1.tempo, 'new');
+  assert.equal(E.formatPulse(p1).line, 'Finding your rhythm…');
+});
+
+test('conversationPulse: rapid volleys classify as rapid with a short beat', () => {
+  // ~20s replies, recent → ends near now
+  const msgs = thread(new Array(12).fill(20), { start: NOW - 5 * MINUTE });
+  const p = E.conversationPulse(msgs, 'me', NOW);
+  assert.equal(p.tempo, 'rapid');
+  assert.ok(p.beatMs <= E.MINUTE, 'beat should be ≤1m for rapid chat, got ' + p.beatMs);
+  assert.ok(p.syncScore >= 0 && p.syncScore <= 100);
+});
+
+test('conversationPulse: slow thread classifies relaxed/slow with a long beat', () => {
+  const msgs = thread(new Array(8).fill(6 * 3600), { start: NOW - 30 * DAY }); // 6h gaps
+  const p = E.conversationPulse(msgs, 'me', NOW);
+  assert.ok(p.tempo === 'relaxed' || p.tempo === 'slow', 'got ' + p.tempo);
+  assert.ok(p.beatMs >= E.HOUR, 'beat should be hours, got ' + p.beatMs);
+});
+
+test('conversationPulse: shrinking gaps read as "warming"', () => {
+  const g = [3600, 3600, 1800, 1800, 600, 120, 60, 30];
+  const total = g.reduce((a, b) => a + b, 0);
+  const msgs = thread(g, { start: NOW - (total + 2) * SECOND }); // ends ~now
+  const p = E.conversationPulse(msgs, 'me', NOW);
+  assert.equal(p.momentum, 'warming');
+});
+
+test('conversationPulse: a long silence reads as "quiet"', () => {
+  // brisk early chat, then nothing for two days
+  const msgs = thread([60, 60, 60, 60], { start: NOW - 2 * DAY - 5 * MINUTE });
+  const p = E.conversationPulse(msgs, 'me', NOW);
+  assert.equal(p.momentum, 'quiet');
+  assert.ok(p.idleMs > DAY);
+});
+
+test('conversationPulse: lead/balance reflects who talks more', () => {
+  const mine = [0, 1, 2, 3, 4].map(i =>
+    E.createMessage({ chatId: 'c1', senderId: 'me', text: 'x', ts: NOW - (5 - i) * MINUTE }));
+  mine.push(E.createMessage({ chatId: 'c1', senderId: 'them', text: 'x', ts: NOW }));
+  const p = E.conversationPulse(mine, 'me', NOW);
+  assert.equal(p.lead, 'you lead');
+  assert.ok(p.balance > 0.2);
+});
+
+test('conversationPulse is deterministic and ignores deleted/system/future msgs', () => {
+  const base = thread(new Array(6).fill(45), { start: NOW - 30 * MINUTE });
+  const noisy = base.concat([
+    E.createMessage({ chatId: 'c1', senderId: 'me', type: 'system', text: 'joined', ts: NOW - MINUTE }),
+    E.createMessage({ chatId: 'c1', senderId: 'me', text: 'gone', ts: NOW - MINUTE, deleted: true }),
+    E.createMessage({ chatId: 'c1', senderId: 'me', text: 'later', ts: NOW + HOUR, scheduledAt: NOW + HOUR })
+  ]);
+  const a = E.conversationPulse(base, 'me', NOW);
+  const b = E.conversationPulse(noisy, 'me', NOW);
+  assert.equal(a.cadenceMs, b.cadenceMs, 'noise must not change the cadence');
+  assert.equal(a.syncScore, b.syncScore);
+});
+
+test('beatsToSeconds scales the beat and never goes below 15s', () => {
+  const p = E.conversationPulse(thread(new Array(8).fill(40), { start: NOW - 6 * MINUTE }), 'me', NOW);
+  assert.equal(E.beatsToSeconds(p, 3), Math.max(15, Math.round(p.beatMs * 3 / SECOND)));
+  assert.ok(E.beatsToSeconds({ beatMs: 1000 }, 1) >= 15);
+});
+
+test('niceDuration snaps to friendly buckets', () => {
+  assert.equal(E.niceDuration(33 * SECOND), 30 * SECOND);
+  assert.equal(E.niceDuration(50 * MINUTE), 60 * MINUTE);
+});
+
+test('formatPulse renders a compact rhythm line', () => {
+  const p = E.conversationPulse(thread(new Array(10).fill(25), { start: NOW - 5 * MINUTE }), 'me', NOW);
+  const f = E.formatPulse(p);
+  assert.ok(/sync \d+/.test(f.line));
+  assert.ok(f.line.includes('beat'));
+  assert.equal(f.tempo, 'Rapid');
+});
+
 /* ---------- demo auto-responder ---------- */
 test('autoReply is deterministic and responsive', () => {
   assert.equal(E.autoReply('hey', { seed: 1 }), E.autoReply('hey', { seed: 1 }));
