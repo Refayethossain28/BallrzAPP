@@ -8,11 +8,20 @@ languages. Pick a language and you get two modes:
   script, romanized pronunciation, a literal gloss, register, and dialect notes.
 - **🎓 Teach me** — pick a topic and level for a short, dialect-aware lesson with
   pronunciation, plus an "ask anything about this language" box.
+- **🔊 Listen** — tap the speaker on any translation or lesson phrase to hear it
+  read aloud (browser speech synthesis; uses the dialect's voice where available).
+  Works offline.
+- **🕘 Saved** — every translation is saved on-device automatically; reopen, replay
+  the audio, or delete from the **Saved** panel. No account, no cloud.
 
 ### Dialect support
 - **Arabic** — Fusha (MSA), Egyptian, Saudi, Emirati, Levantine, Gulf, Iraqi,
-  Maghrebi.
+  Maghrebi, Sudanese, Yemeni.
 - **Urdu** — Standard, Lahori, Karachi, Dakhini, Hyderabadi, Rekhta.
+- **English** — British, American, Australian, Indian.
+- **Spanish** — Castilian, Mexican, Rioplatense, Colombian/Andean.
+- **Portuguese** — Brazilian, European · **French** — Metropolitan, Québécois ·
+  **German** — Germany, Austrian, Swiss · **Chinese** — Mainland, Taiwan.
 
 Each is treated as a distinct variety with its own phrasing and notes.
 
@@ -80,6 +89,34 @@ curl -s -X POST http://localhost:8788/ai \
   `{"ok":false,"error":"no ANTHROPIC_API_KEY in env"}` — set the key and restart
   the server.
 
+### Option 3 — Hosted (cloud) AI for the live web link
+
+So the public link (GitHub Pages) gets accurate AI **without anyone running a
+local proxy**, Lingua can call a Firebase Cloud Function (`linguaAI`) that holds
+the Anthropic key server-side. The function lives in this repo at
+[`functions/index.js`](../functions/index.js).
+
+Deploy it once (needs the Firebase CLI and access to the project):
+
+```sh
+firebase functions:secrets:set ANTHROPIC_API_KEY      # paste your sk-ant-… key
+firebase deploy --only functions:linguaAI
+```
+
+That's it — the client is already wired to use it. On the hosted page, the AI
+pill flips to **AI: cloud** on the first successful call. Notes:
+
+- The browser calls the function via the Firebase SDK; the key never reaches the
+  client. The web Firebase config in `index.html` is the public project config
+  (safe to expose).
+- To disable the cloud fallback entirely, set `LINGUA_HOSTED_AI = false` near the
+  top of the `index.html` script.
+- The callable caps input length to bound cost on a public endpoint. For heavier
+  protection, enable Firebase **App Check** on the function.
+
+**Engine priority:** local proxy (`/health` live) → hosted `linguaAI` → offline
+starter set. Every answer is labelled so you always know which produced it.
+
 ### Install as an app (PWA)
 
 Open the page in Safari/Chrome → **Add to Home Screen** / **Install app** for a
@@ -93,15 +130,20 @@ full-screen, offline launch.
 - For Translate and Teach the proxy **forces a tool call**, so Claude returns
   structured JSON the front-end renders deterministically (no brittle parsing).
 - For free-form **Ask**, Claude answers in prose.
-- When the proxy is unreachable, the client falls back to the offline starter
+- The same logic runs in two places: `server.mjs` (local proxy) and the
+  `linguaAI` Cloud Function (hosted), so both paths return identical shapes.
+- When no AI engine is reachable, the client falls back to the offline starter
   set and clearly labels every answer (`✦ Claude AI` vs. `offline starter set`).
+- Audio and Saved translations are pure on-device features — they keep working
+  with no network and no AI engine.
 
 ## Files
 
-| File              | What it is                                          |
-| ----------------- | --------------------------------------------------- |
-| `index.html`      | The whole app (UI + logic, single file).            |
-| `server.mjs`      | Zero-dependency local Claude proxy (`npm start`).   |
-| `manifest.json`   | PWA manifest.                                        |
-| `sw.js`           | Service worker (offline shell; never caches `/ai`). |
-| `icon.*`          | App icons (regenerate via `node scripts/gen-lingua-icons.mjs`). |
+| File                    | What it is                                          |
+| ----------------------- | --------------------------------------------------- |
+| `index.html`            | The whole app (UI + logic, single file).            |
+| `server.mjs`            | Zero-dependency local Claude proxy (`npm start`).   |
+| `../functions/index.js` | Hosted `linguaAI` Cloud Function (cloud AI path).   |
+| `manifest.json`         | PWA manifest.                                        |
+| `sw.js`                 | Service worker (offline shell; never caches `/ai`). |
+| `icon.*`                | App icons (regenerate via `node scripts/gen-lingua-icons.mjs`). |
