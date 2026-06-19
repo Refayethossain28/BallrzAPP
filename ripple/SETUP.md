@@ -114,11 +114,23 @@ lets a delete win, keeps `ts` order — the unit tests pin this).
   `ripple_chats/<chatId>/typing/<uid>` (throttled, auto-expiring after ~6s) so
   members see "typing…" in real time. You write only your own doc (enforced in
   the rules).
+- **Push notifications** — `ripplePushOnMessage` (in [`../functions/index.js`](../functions/index.js))
+  fires on each new message and pushes to every other member's devices via FCM.
+  Tokens live in the private `ripple_push/<uid>` collection (owner-only by rules;
+  the function reads them with the Admin SDK). The Ripple service worker doubles
+  as the FCM background worker. To turn it on:
+  1. Firebase console → Project settings → **Cloud Messaging** → **Web Push
+     certificates** → copy the public **Key pair** and paste it as
+     `RIPPLE_FCM_VAPID_KEY` in [`config.js`](./config.js).
+  2. Deploy everything:
+     ```sh
+     firebase deploy --only firestore:rules,storage,functions
+     ```
+  3. In Ripple → **Settings → Push notifications** to grant permission and
+     register the device. Notifications arrive even when the app is closed.
 
 ### Production hardening (recommended before opening sign-ups)
 
-- **Push** — reuse [`firebase-messaging-sw.js`](../firebase-messaging-sw.js) and a
-  Cloud Function that fans out a notification on each new message.
 - **Server-side expiry/scheduling** — move disappearing/scheduled dispatch into a
   Cloud Function for cross-device correctness when clients are offline.
 - **End-to-end encryption** — generate a per-device key pair, publish public keys

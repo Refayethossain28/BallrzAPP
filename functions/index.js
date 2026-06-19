@@ -578,3 +578,100 @@ exports.linguaAI = onCall(
     }
   }
 );
+
+/* ===========================================================================
+ * ripplePushOnMessage — Web push for the Ripple messenger (ripple/index.html)
+ *
+ * Fires when a new message lands in a synced chat and pushes a notification to
+ * every OTHER member's registered devices. FCM tokens live in the private
+ * `ripple_push/{uid}` collection (owner-only by rules; we read them here with
+ * the Admin SDK, which bypasses rules). Dead tokens are pruned automatically.
+ * No secrets or external services — just Firebase Cloud Messaging.
+ * ======================================================================== */
+const { onDocumentCreated } = require('firebase-functions/v2/firestore');
+const admin = require('firebase-admin');
+if (!admin.apps.length) admin.initializeApp();
+
+function ripplePreview(m) {
+  if (!m) return 'New message';
+  if (m.deleted) return 'Message unsent';
+  if (m.type === 'image') return '📷 Photo';
+  if (m.type === 'voice') return '🎤 Voice message';
+  if (m.type === 'poll') return '📊 ' + ((m.meta && m.meta.question) || 'Poll');
+  const t = String(m.text || '').replace(/\s+/g, ' ').trim();
+  if (!t) return 'New message';
+  return t.length > 120 ? t.slice(0, 117) + '…' : t;
+}
+
+exports.ripplePushOnMessage = onDocumentCreated(
+  { document: 'ripple_chats/{chatId}/messages/{messageId}', region: 'us-central1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const m = snap.data();
+    if (!m || m.type === 'system') return;
+    // Don't notify for messages still waiting to be delivered (scheduled).
+    if (m.scheduledAt && m.scheduledAt > Date.now()) return;
+
+    const chatId = event.params.chatId;
+    const db = admin.firestore();
+    const chatSnap = await db.collection('ripple_chats').doc(chatId).get();
+    if (!chatSnap.exists) return;
+    const chat = chatSnap.data();
+    const recipients = (chat.members || []).filter((uid) => uid && uid !== m.senderId);
+    if (!recipients.length) return;
+
+    // Gather each recipient's tokens (token → owning uid, for pruning).
+    const tokenOwner = {};
+    await Promise.all(recipients.map(async (uid) => {
+      try {
+        const ps = await db.collection('ripple_push').doc(uid).get();
+        const toks = (ps.exists && ps.data().fcmTokens) || [];
+        toks.forEach((t) => { if (t) tokenOwner[t] = uid; });
+      } catch (e) { /* skip this recipient */ }
+    }));
+    const tokens = Object.keys(tokenOwner);
+    if (!tokens.length) return;
+
+    const senderName = (m.meta && m.meta.fromName) || 'Someone';
+    const isGroup = chat.type === 'group';
+    const title = isGroup ? (chat.name || 'New message') : senderName;
+    const body = (isGroup ? senderName + ': ' : '') + ripplePreview(m);
+    const link = 'https://refayethossain28.github.io/BallrzAPP/ripple/';
+
+    let res;
+    try {
+      res = await admin.messaging().sendEachForMulticast({
+        tokens,
+        notification: { title, body },
+        data: { chatId, url: link },
+        webpush: {
+          fcmOptions: { link },
+          notification: { icon: link + 'icon-192.png', badge: link + 'icon-192.png', tag: chatId },
+        },
+      });
+    } catch (err) {
+      logger.error('ripplePushOnMessage send', err.message);
+      return;
+    }
+
+    // Prune tokens FCM reports as permanently invalid.
+    const dead = {};
+    res.responses.forEach((r, i) => {
+      if (r.success) return;
+      const code = r.error && r.error.code;
+      if (code === 'messaging/registration-token-not-registered' ||
+          code === 'messaging/invalid-registration-token' ||
+          code === 'messaging/invalid-argument') {
+        const uid = tokenOwner[tokens[i]];
+        (dead[uid] = dead[uid] || []).push(tokens[i]);
+      }
+    });
+    await Promise.all(Object.keys(dead).map((uid) =>
+      db.collection('ripple_push').doc(uid).update({
+        fcmTokens: admin.firestore.FieldValue.arrayRemove(...dead[uid]),
+      }).catch(() => {})
+    ));
+    logger.info('ripplePush', { chatId, sent: res.successCount, failed: res.failureCount });
+  }
+);

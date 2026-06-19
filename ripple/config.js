@@ -32,3 +32,15 @@ var RIPPLE_FIREBASE_CONFIG = {
 };
 if (typeof window !== 'undefined') window.RIPPLE_FIREBASE_CONFIG = RIPPLE_FIREBASE_CONFIG;
 
+/* Push notifications (optional)
+ * -----------------------------
+ * To enable web push (notifications when Ripple is closed), paste the project's
+ * "Web Push certificate" public key here:
+ *   Firebase console → Project settings → Cloud Messaging → Web configuration →
+ *   "Web Push certificates" → Key pair (the long Base64 string).
+ * Then deploy the ripplePushOnMessage Cloud Function (firebase deploy --only
+ * functions). Leave as null to keep push off. (This is a public VAPID key — safe
+ * to commit.) */
+var RIPPLE_FCM_VAPID_KEY = null;
+if (typeof window !== 'undefined') window.RIPPLE_FCM_VAPID_KEY = RIPPLE_FCM_VAPID_KEY;
+
