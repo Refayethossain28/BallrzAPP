@@ -164,6 +164,13 @@
   .msg.sticker .bubble{background:none;border:none;box-shadow:none;padding:0}
   .msg.sticker .stamp{justify-content:flex-end;padding-right:2px}
   .sticker-em{font-size:56px;line-height:1.05}
+  /* jump-to-latest button */
+  .jump-latest{position:absolute;right:16px;bottom:84px;width:42px;height:42px;border-radius:50%;
+    background:var(--panel);border:1px solid var(--line);color:var(--ink);font-size:20px;line-height:1;
+    box-shadow:0 6px 18px rgba(0,0,0,.35);cursor:pointer;z-index:6;display:flex;align-items:center;justify-content:center}
+  .jbadge{position:absolute;top:-6px;right:-4px;min-width:18px;height:18px;border-radius:999px;background:var(--accent);
+    color:#06121e;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px}
+  .timeline.drop{outline:2px dashed var(--accent);outline-offset:-6px}
   /* Pulse sheet: 24-hour "best time to reach" histogram */
   .ohist{display:flex;align-items:flex-end;gap:2px;height:26px;margin:4px 0 2px}
   .ohist .oh{flex:1;border-radius:2px 2px 0 0;background:var(--line);min-width:0}
@@ -386,6 +393,7 @@
     <div class="pinned-bar hidden" id="pinnedBar"></div>
 
     <div class="timeline hidden" id="timeline"></div>
+    <button class="jump-latest hidden" id="jumpLatest" title="Jump to latest">⌄<span class="jbadge hidden" id="jumpBadge"></span></button>
 
     <div class="composer hidden" id="composer">
       <div class="reply-bar" id="replyBar">
@@ -1227,14 +1235,28 @@
       }
     });
     applyAccent(c.accent);
+    _forceBottom=true; _jumpNew=0; _lastCount=-1;
     renderTimeline(); renderRhythm(); renderSidebar(); persist();
     var ta=$('ta'); if(ta){ ta.value=c.draft||''; autosize(ta); }
   }
 
+  var _forceBottom=false, _jumpNew=0, _lastCount=-1;
+  function nearBottom(tl){ return tl.scrollHeight - tl.scrollTop - tl.clientHeight < 90; }
+  function updateJumpBtn(){
+    var tl=$('timeline'), b=$('jumpLatest'); if(!tl||!b) return;
+    var show = !nearBottom(tl) && active;
+    b.classList.toggle('hidden', !show);
+    var badge=$('jumpBadge');
+    if(badge){ badge.classList.toggle('hidden', !(show && _jumpNew>0)); if(_jumpNew>0) badge.textContent=_jumpNew>99?'99+':_jumpNew; }
+  }
+  function jumpToLatest(){ var tl=$('timeline'); if(tl){ _jumpNew=0; _forceBottom=true; tl.scrollTop=tl.scrollHeight; updateJumpBtn(); } }
   function renderTimeline(){
     var tl=$('timeline'); if(!tl||!active) return;
+    var stick = _forceBottom || nearBottom(tl);
     var c=chat(active);
     var all = msgsOf(active).filter(function(mm){ return !R.isExpired(mm,now()) && !R.isPending(mm,now()); });
+    if(!stick && _lastCount>=0 && all.length>_lastCount) _jumpNew += all.length-_lastCount;
+    _lastCount = all.length;
     var groups = R.groupByDay(all, now());
     var html='';
     if (chatEncrypted(c))
@@ -1265,7 +1287,8 @@
     Array.prototype.forEach.call(tl.querySelectorAll('.voice button'), function(el){
       el.addEventListener('click', function(){ playVoice(el); });
     });
-    tl.scrollTop = tl.scrollHeight;
+    if(stick){ tl.scrollTop = tl.scrollHeight; _forceBottom=false; }
+    updateJumpBtn();
     renderRhythm(); renderPinnedBar();
   }
   function renderPinnedBar(){
@@ -2173,6 +2196,23 @@
     on('btnSend','click', function(){ if(rec){ stopRecord(true); } else send(); });
     on('btnAttach','click', function(){ var f=$('fileInput'); if(f) f.click(); });
     on('btnEmoji','click', toggleEmojiTray);
+    on('jumpLatest','click', jumpToLatest);
+    var tlEl=$('timeline'); if(tlEl) tlEl.addEventListener('scroll', updateJumpBtn);
+    // paste an image straight into a chat
+    if(typeof document!=='undefined') document.addEventListener('paste', function(e){
+      if(!active) return; var items=(e.clipboardData&&e.clipboardData.items)||[];
+      for(var i=0;i<items.length;i++){ if(items[i].type&&items[i].type.indexOf('image')===0){ var f=items[i].getAsFile(); if(f){ attachImage(f); e.preventDefault(); return; } } }
+    });
+    // drag & drop an image onto the conversation
+    var dz=$('timeline');
+    if(dz){
+      ['dragover','dragenter'].forEach(function(ev){ dz.addEventListener(ev, function(e){ e.preventDefault(); dz.classList.add('drop'); }); });
+      ['dragleave','dragend'].forEach(function(ev){ dz.addEventListener(ev, function(){ dz.classList.remove('drop'); }); });
+      dz.addEventListener('drop', function(e){ e.preventDefault(); dz.classList.remove('drop');
+        if(!active) return; var f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];
+        if(f && f.type && f.type.indexOf('image')===0) attachImage(f);
+      });
+    }
     on('fileInput','change', function(e){ attachImage(e.target.files[0]); e.target.value=''; });
     on('replyCancel','click', function(){ replyTo=null; updateReplyBar(); });
     on('schedCancel','click', function(){ scheduleAt=null; updateSchedBar(); });
