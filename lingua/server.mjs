@@ -1,14 +1,13 @@
-// server.mjs — Lingua's local AI proxy. Wires the Translate / Teach / Ask
-// actions to REAL Claude calls so answers are accurate, while keeping the API
-// key server-side (the browser never sees ANTHROPIC_API_KEY). Zero dependencies:
+// server.mjs — Lingua's local AI proxy. Wires Translate / Teach / Ask / Practice
+// / Chat to REAL Claude calls so answers are accurate, while keeping the API key
+// server-side (the browser never sees ANTHROPIC_API_KEY). Zero dependencies:
 // Node 18+ built-in `fetch` + `http`, matching the repo's zero-build ethos.
 //
 //   • The model does the linguistics — translation, dialect rendering,
-//     romanization and grammar explanation — which is exactly what a strong
-//     LLM is good at and what hard-coded tables get wrong.
-//   • For Translate and Teach we FORCE a tool call so the result is structured
-//     JSON the front-end can render deterministically (no brittle parsing).
-//   • For free-form "Ask" we let Claude answer in prose.
+//     romanization, grammar explanation, quiz generation and tutor role-play.
+//   • Translate / Teach / Practice / Chat FORCE a tool call so the result is
+//     structured JSON the front-end renders deterministically.
+//   • Free-form "Ask" lets Claude answer in prose.
 //   • Same origin as the page (we also serve index.html), so there's no CORS.
 //
 // Run:  ANTHROPIC_API_KEY=sk-ant-... node server.mjs
@@ -70,10 +69,51 @@ const LESSON_TOOL = {
   }
 };
 
+const PRACTICE_TOOL = {
+  name: "practice_set",
+  description: "Return a set of vocabulary/phrase cards for flashcard and quiz practice.",
+  input_schema: {
+    type: "object",
+    properties: {
+      items: {
+        type: "array",
+        description: "8–10 useful items for the requested topic & level.",
+        items: {
+          type: "object",
+          properties: {
+            front:         { type: "string", description: "The English prompt / meaning to test recall from." },
+            back:          { type: "string", description: "The answer in the target language/dialect (native script)." },
+            pronunciation: { type: "string", description: "Romanized pronunciation. Empty if Latin script." }
+          },
+          required: ["front", "back"]
+        }
+      }
+    },
+    required: ["items"]
+  }
+};
+
+const CHAT_TOOL = {
+  name: "tutor_reply",
+  description: "Reply as a friendly native-speaker tutor in the target dialect, and gently correct the learner.",
+  input_schema: {
+    type: "object",
+    properties: {
+      reply:         { type: "string", description: "Your conversational reply in the target language/dialect (native script). Keep it short and natural for the learner's level." },
+      pronunciation: { type: "string", description: "Romanized pronunciation of your reply. Empty if Latin script." },
+      english:       { type: "string", description: "A brief English gloss of your reply." },
+      correction:    { type: "string", description: "A short, encouraging note correcting the learner's last message if needed. Empty if it was fine." }
+    },
+    required: ["reply"]
+  }
+};
+
 function targetLabel(p) {
   return p.dialect ? `${p.targetName} (${p.dialect} dialect)` : p.targetName;
 }
 
+// Returns { sys, messages, tools, force }. Chat passes a conversation; everything
+// else is a single user turn.
 function buildRequest(p) {
   if (p.mode === "translate") {
     const sys =
@@ -85,7 +125,7 @@ function buildRequest(p) {
       `Translate the following from ${p.sourceName} into ${targetLabel(p)}.` +
       (p.dialectNote ? ` Dialect context: ${p.dialectNote}.` : "") +
       `\n\nText:\n${JSON.stringify(p.text || "")}`;
-    return { sys, user, tools: [TRANSLATE_TOOL], force: "translation_result" };
+    return { sys, messages: [{ role: "user", content: user }], tools: [TRANSLATE_TOOL], force: "translation_result" };
   }
   if (p.mode === "teach") {
     const sys =
@@ -96,7 +136,32 @@ function buildRequest(p) {
     const user =
       `Teach a ${p.level} learner the topic "${p.topic}" in ${targetLabel(p)}.` +
       (p.dialectNote ? ` Dialect context: ${p.dialectNote}.` : "");
-    return { sys, user, tools: [LESSON_TOOL], force: "lesson" };
+    return { sys, messages: [{ role: "user", content: user }], tools: [LESSON_TOOL], force: "lesson" };
+  }
+  if (p.mode === "practice") {
+    const sys =
+      "You are a language tutor building flashcards. Produce genuinely useful, correct items " +
+      "for the SPECIFIC dialect requested, with native script and romanized pronunciation for " +
+      "non-Latin scripts. Vary the items; keep them appropriate to the learner's level.";
+    const user =
+      `Create a practice set of about ${p.count || 10} items on "${p.topic}" for a ${p.level} ` +
+      `learner of ${targetLabel(p)}.` + (p.dialectNote ? ` Dialect context: ${p.dialectNote}.` : "");
+    return { sys, messages: [{ role: "user", content: user }], tools: [PRACTICE_TOOL], force: "practice_set" };
+  }
+  if (p.mode === "chat") {
+    const sys =
+      `You are a warm, encouraging native-speaker conversation partner and tutor for a ${p.level || "beginner"} ` +
+      `learner of ${targetLabel(p)}.` + (p.dialectNote ? ` Dialect context: ${p.dialectNote}.` : "") +
+      " Stay in character as a friendly local. Reply in the target dialect's natural everyday speech, " +
+      "kept short and simple for the learner's level. Always provide romanized pronunciation and a brief " +
+      "English gloss. If the learner's last message has a mistake, add a short kind correction; otherwise leave it empty. " +
+      "Keep the conversation going with a simple question.";
+    const history = Array.isArray(p.messages) ? p.messages : [];
+    const messages = history
+      .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
+      .map((m) => ({ role: m.role, content: m.content }));
+    if (!messages.length) messages.push({ role: "user", content: "(Start the conversation with a friendly greeting and a simple question.)" });
+    return { sys, messages, tools: [CHAT_TOOL], force: "tutor_reply" };
   }
   // ask
   const sys =
@@ -107,18 +172,13 @@ function buildRequest(p) {
     `Language: ${targetLabel(p)}.` +
     (p.dialectNote ? ` Dialect context: ${p.dialectNote}.` : "") +
     `\n\nQuestion: ${p.question || ""}`;
-  return { sys, user, tools: null, force: null };
+  return { sys, messages: [{ role: "user", content: user }], tools: null, force: null };
 }
 
 async function callClaude(p) {
   if (!API_KEY) throw new Error("no ANTHROPIC_API_KEY in env");
-  const { sys, user, tools, force } = buildRequest(p);
-  const body = {
-    model: MODEL,
-    max_tokens: 1500,
-    system: sys,
-    messages: [{ role: "user", content: user }],
-  };
+  const { sys, messages, tools, force } = buildRequest(p);
+  const body = { model: MODEL, max_tokens: 1500, system: sys, messages };
   if (tools) {
     body.tools = tools;
     body.tool_choice = { type: "tool", name: force };

@@ -8,9 +8,15 @@ languages. Pick a language and you get two modes:
   script, romanized pronunciation, a literal gloss, register, and dialect notes.
 - **🎓 Teach me** — pick a topic and level for a short, dialect-aware lesson with
   pronunciation, plus an "ask anything about this language" box.
-- **🔊 Listen** — tap the speaker on any translation or lesson phrase to hear it
-  read aloud (browser speech synthesis; uses the dialect's voice where available).
-  Works offline.
+- **🃏 Practice** — turn a topic into **flashcards** (recall + reveal, mark
+  *Got it* / *Again*) and a **multiple-choice quiz** with scoring. AI-generated
+  sets when Live AI is on; offline basics otherwise.
+- **💬 Chat** — practise a real conversation with an AI tutor who replies in your
+  chosen dialect, gives romanization + an English gloss, and gently corrects you.
+- **🔊 Listen** — tap the speaker on any phrase to hear it read aloud (browser
+  speech synthesis; uses the dialect's voice where available). Works offline.
+- **🎤 Speak** — dictate into the translate box or chat with the mic button
+  (Web Speech API; Chrome/Edge/Safari).
 - **🕘 Saved** — every translation is saved on-device automatically; reopen, replay
   the audio, or delete from the **Saved** panel. No account, no cloud.
 
@@ -127,9 +133,12 @@ full-screen, offline launch.
 - The model does the linguistics — translation, dialect rendering, romanization
   and grammar explanation — which is what a strong LLM is good at and what
   hard-coded tables get wrong.
-- For Translate and Teach the proxy **forces a tool call**, so Claude returns
-  structured JSON the front-end renders deterministically (no brittle parsing).
+- For Translate, Teach, Practice and Chat the proxy **forces a tool call**, so
+  Claude returns structured JSON the front-end renders deterministically (no
+  brittle parsing). Chat additionally passes the running conversation.
 - For free-form **Ask**, Claude answers in prose.
+- Audio (🔊), speech input (🎤) and Saved translations are pure on-device browser
+  features — they need no AI engine and work offline.
 - The same logic runs in two places: `server.mjs` (local proxy) and the
   `linguaAI` Cloud Function (hosted), so both paths return identical shapes.
 - When no AI engine is reachable, the client falls back to the offline starter
