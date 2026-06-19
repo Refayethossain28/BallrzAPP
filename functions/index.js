@@ -417,6 +417,46 @@ function linguaTargetLabel(p) {
   return p.dialect ? `${p.targetName} (${p.dialect} dialect)` : p.targetName;
 }
 
+const LINGUA_PRACTICE_TOOL = {
+  name: 'practice_set',
+  description: 'Return a set of vocabulary/phrase cards for flashcard and quiz practice.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      items: {
+        type: 'array',
+        description: '8–10 useful items for the requested topic & level.',
+        items: {
+          type: 'object',
+          properties: {
+            front:         { type: 'string', description: 'The English prompt / meaning to test recall from.' },
+            back:          { type: 'string', description: 'The answer in the target language/dialect (native script).' },
+            pronunciation: { type: 'string', description: 'Romanized pronunciation. Empty if Latin script.' },
+          },
+          required: ['front', 'back'],
+        },
+      },
+    },
+    required: ['items'],
+  },
+};
+const LINGUA_CHAT_TOOL = {
+  name: 'tutor_reply',
+  description: 'Reply as a friendly native-speaker tutor in the target dialect, and gently correct the learner.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      reply:         { type: 'string', description: "Conversational reply in the target language/dialect (native script). Short and natural for the learner's level." },
+      pronunciation: { type: 'string', description: 'Romanized pronunciation of the reply. Empty if Latin script.' },
+      english:       { type: 'string', description: 'A brief English gloss of the reply.' },
+      correction:    { type: 'string', description: "A short, encouraging correction of the learner's last message if needed. Empty if it was fine." },
+    },
+    required: ['reply'],
+  },
+};
+
+// Returns { sys, messages, tools, force }. Chat passes a conversation; everything
+// else is a single user turn.
 function linguaBuildRequest(p) {
   if (p.mode === 'translate') {
     const sys =
@@ -428,7 +468,7 @@ function linguaBuildRequest(p) {
       `Translate the following from ${p.sourceName} into ${linguaTargetLabel(p)}.` +
       (p.dialectNote ? ` Dialect context: ${p.dialectNote}.` : '') +
       `\n\nText:\n${JSON.stringify(p.text || '')}`;
-    return { sys, user, tools: [LINGUA_TRANSLATE_TOOL], force: 'translation_result' };
+    return { sys, messages: [{ role: 'user', content: user }], tools: [LINGUA_TRANSLATE_TOOL], force: 'translation_result' };
   }
   if (p.mode === 'teach') {
     const sys =
@@ -439,7 +479,32 @@ function linguaBuildRequest(p) {
     const user =
       `Teach a ${p.level} learner the topic "${p.topic}" in ${linguaTargetLabel(p)}.` +
       (p.dialectNote ? ` Dialect context: ${p.dialectNote}.` : '');
-    return { sys, user, tools: [LINGUA_LESSON_TOOL], force: 'lesson' };
+    return { sys, messages: [{ role: 'user', content: user }], tools: [LINGUA_LESSON_TOOL], force: 'lesson' };
+  }
+  if (p.mode === 'practice') {
+    const sys =
+      'You are a language tutor building flashcards. Produce genuinely useful, correct items ' +
+      'for the SPECIFIC dialect requested, with native script and romanized pronunciation for ' +
+      "non-Latin scripts. Vary the items; keep them appropriate to the learner's level.";
+    const user =
+      `Create a practice set of about ${p.count || 10} items on "${p.topic}" for a ${p.level} ` +
+      `learner of ${linguaTargetLabel(p)}.` + (p.dialectNote ? ` Dialect context: ${p.dialectNote}.` : '');
+    return { sys, messages: [{ role: 'user', content: user }], tools: [LINGUA_PRACTICE_TOOL], force: 'practice_set' };
+  }
+  if (p.mode === 'chat') {
+    const sys =
+      `You are a warm, encouraging native-speaker conversation partner and tutor for a ${p.level || 'beginner'} ` +
+      `learner of ${linguaTargetLabel(p)}.` + (p.dialectNote ? ` Dialect context: ${p.dialectNote}.` : '') +
+      " Stay in character as a friendly local. Reply in the target dialect's natural everyday speech, " +
+      "kept short and simple for the learner's level. Always provide romanized pronunciation and a brief " +
+      'English gloss. If the learner\'s last message has a mistake, add a short kind correction; otherwise leave it empty. ' +
+      'Keep the conversation going with a simple question.';
+    const history = Array.isArray(p.messages) ? p.messages : [];
+    const messages = history
+      .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+      .map((m) => ({ role: m.role, content: m.content }));
+    if (!messages.length) messages.push({ role: 'user', content: '(Start the conversation with a friendly greeting and a simple question.)' });
+    return { sys, messages, tools: [LINGUA_CHAT_TOOL], force: 'tutor_reply' };
   }
   const sys =
     'You are an expert, accurate language teacher. Answer the learner\'s question about the ' +
@@ -449,16 +514,16 @@ function linguaBuildRequest(p) {
     `Language: ${linguaTargetLabel(p)}.` +
     (p.dialectNote ? ` Dialect context: ${p.dialectNote}.` : '') +
     `\n\nQuestion: ${p.question || ''}`;
-  return { sys, user, tools: null, force: null };
+  return { sys, messages: [{ role: 'user', content: user }], tools: null, force: null };
 }
 
 async function linguaCallClaude(p, apiKey) {
-  const { sys, user, tools, force } = linguaBuildRequest(p);
+  const { sys, messages, tools, force } = linguaBuildRequest(p);
   const body = {
     model: LINGUA_MODEL,
     max_tokens: 1500,
     system: sys,
-    messages: [{ role: 'user', content: user }],
+    messages,
   };
   if (tools) {
     body.tools = tools;
@@ -489,13 +554,17 @@ exports.linguaAI = onCall(
   { secrets: [ANTHROPIC_API_KEY], region: 'us-central1' },
   async (request) => {
     const p = request.data || {};
-    const mode = p.mode === 'teach' || p.mode === 'ask' ? p.mode : 'translate';
+    const ALLOWED = ['translate', 'teach', 'ask', 'practice', 'chat'];
+    const mode = ALLOWED.indexOf(p.mode) >= 0 ? p.mode : 'translate';
     // Light input caps to bound cost/abuse on a public callable.
     if (typeof p.text === 'string' && p.text.length > 4000) {
       throw new HttpsError('invalid-argument', 'Text too long (max 4000 chars).');
     }
     if (typeof p.question === 'string' && p.question.length > 1000) {
       throw new HttpsError('invalid-argument', 'Question too long (max 1000 chars).');
+    }
+    if (Array.isArray(p.messages) && p.messages.length > 40) {
+      p.messages = p.messages.slice(-40); // cap conversation length
     }
     const apiKey = ANTHROPIC_API_KEY.value();
     if (!apiKey) throw new HttpsError('failed-precondition', 'ANTHROPIC_API_KEY not configured.');

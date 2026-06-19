@@ -81,9 +81,9 @@
   .chip[aria-selected=true]{ color:#0b0e17; background:linear-gradient(135deg,var(--accent),var(--accent2)); border-color:transparent; font-weight:700; }
   .chip.dia[aria-selected=true]{ background:linear-gradient(135deg,var(--teal),var(--accent)); }
 
-  .tabs{ display:flex; gap:6px; background:rgba(0,0,0,.25); padding:5px; border-radius:13px; border:1px solid var(--line); }
-  .tab{ flex:1; cursor:pointer; font:inherit; font-weight:700; font-size:14px; padding:10px; border-radius:9px;
-    border:0; background:transparent; color:var(--muted); }
+  .tabs{ display:flex; gap:4px; background:rgba(0,0,0,.25); padding:5px; border-radius:13px; border:1px solid var(--line); }
+  .tab{ flex:1; cursor:pointer; font:inherit; font-weight:700; font-size:13px; padding:9px 6px; border-radius:9px;
+    border:0; background:transparent; color:var(--muted); white-space:nowrap; }
   .tab[aria-selected=true]{ background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#0b0e17; }
 
   .row{ display:flex; gap:10px; align-items:center; }
@@ -147,6 +147,25 @@
   .hist-actions{ margin-left:auto; display:flex; gap:6px; flex:0 0 auto; }
   .mini{ background:transparent; border:1px solid var(--line); color:var(--muted); border-radius:8px; padding:6px 9px; font:inherit; font-size:12px; cursor:pointer; }
   .mini:hover{ color:var(--ink); border-color:var(--accent); }
+  /* speech input mic */
+  .spk.mic{ color:var(--accent); }
+  .spk.mic.rec{ color:var(--bad); border-color:var(--bad); animation:pulse 1s infinite; }
+  @keyframes pulse{ 50%{ opacity:.45; } }
+  /* practice (flashcards + quiz) */
+  .qopt{ display:block; width:100%; text-align:left; margin:8px 0; }
+  .lesson.rtl .qopt, .qopt.rtl{ direction:rtl; text-align:right; }
+  /* chat */
+  #chatLog{ max-height:380px; overflow:auto; display:flex; flex-direction:column; gap:10px; padding:4px 2px; }
+  .bubble{ max-width:86%; padding:10px 12px; border-radius:14px; font-size:15px; line-height:1.45; word-wrap:break-word; }
+  .bubble.user{ align-self:flex-end; background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#0b0e17; border-bottom-right-radius:5px; }
+  .bubble.bot{ align-self:flex-start; background:var(--panel2); border:1px solid var(--line); border-bottom-left-radius:5px; }
+  .bubble.bot.rtl{ direction:rtl; text-align:right; }
+  .bubble .pr{ color:var(--teal); font-size:12.5px; margin-top:4px; }
+  .bubble .en{ color:var(--muted); font-size:12.5px; margin-top:4px; }
+  .bubble .row2{ display:flex; align-items:center; gap:8px; margin-top:8px; }
+  .bubble.bot.rtl .row2{ flex-direction:row-reverse; }
+  .correction{ align-self:flex-start; max-width:90%; font-size:12.5px; color:var(--warn);
+    background:rgba(255,207,110,.08); border:1px solid rgba(255,207,110,.3); border-radius:10px; padding:7px 10px; }
   footer{ color:var(--muted2); font-size:12px; margin-top:26px; text-align:center; }
   footer a{ color:var(--muted); }
   /* live-config modal */
@@ -202,7 +221,9 @@
     <!-- mode tabs -->
     <div class="tabs" style="margin-top:16px" role="tablist">
       <button class="tab" id="tabTranslate" role="tab" aria-selected="true" type="button">🔁 Translate</button>
-      <button class="tab" id="tabTeach" role="tab" aria-selected="false" type="button">🎓 Teach me</button>
+      <button class="tab" id="tabTeach" role="tab" aria-selected="false" type="button">🎓 Teach</button>
+      <button class="tab" id="tabPractice" role="tab" aria-selected="false" type="button">🃏 Practice</button>
+      <button class="tab" id="tabChat" role="tab" aria-selected="false" type="button">💬 Chat</button>
     </div>
 
     <!-- TRANSLATE pane -->
@@ -219,7 +240,8 @@
       <div class="row wrap" style="margin-top:12px">
         <button class="btn" id="translateBtn" type="button">Translate</button>
         <button class="btn sec" id="clearBtn" type="button">Clear</button>
-        <span class="hint" id="translateHint">Tip: enable Live AI (top-right) for full-accuracy translations.</span>
+        <button class="spk mic" id="translateMic" type="button" title="Speak to translate">🎤</button>
+        <span class="hint" id="translateHint">Tip: tap 🎤 to dictate · enable Live AI for full-accuracy translations.</span>
       </div>
       <div id="translateOut" class="out"></div>
     </div>
@@ -245,6 +267,32 @@
           <button class="btn" id="askBtn" type="button">Ask</button>
         </div>
         <div id="askOut" class="out"></div>
+      </div>
+    </div>
+
+    <!-- PRACTICE pane -->
+    <div id="panePractice" class="hidden" style="margin-top:16px">
+      <label class="fld">Flashcards &amp; quiz</label>
+      <div class="row wrap">
+        <button class="btn" id="practiceGen" type="button">New practice set</button>
+        <span class="hint" id="practiceHint">Builds cards from the topic &amp; level set in “Teach”, via AI — or the offline basics.</span>
+      </div>
+      <div id="practiceArea" class="out"></div>
+    </div>
+
+    <!-- CHAT pane -->
+    <div id="paneChat" class="hidden" style="margin-top:16px">
+      <label class="fld">Conversation practice</label>
+      <div id="chatLog"></div>
+      <div class="row" style="margin-top:12px">
+        <button class="spk mic" id="chatMic" type="button" title="Speak">🎤</button>
+        <div class="grow"><input id="chatInput" type="text" placeholder="Chat here…"></div>
+        <button class="btn" id="chatSend" type="button">Send</button>
+      </div>
+      <div class="row wrap" style="margin-top:8px">
+        <button class="mini" id="chatStart" type="button">✨ Start a conversation</button>
+        <button class="mini" id="chatClear" type="button">Clear</button>
+        <span class="hint">The tutor replies in your dialect and gently corrects you. Needs Live AI.</span>
       </div>
     </div>
   </section>
@@ -512,6 +560,29 @@ function speakBtn(text, bcp){
   return b;
 }
 
+/* ---- speech INPUT (talk to translate / chat) via Web Speech API ---- */
+function speechInOK(){ try{ return typeof window !== "undefined" && !!(window.SpeechRecognition || window.webkitSpeechRecognition); }catch(e){ return false; } }
+var _rec = null;
+function listen(bcp, btn, onText){
+  try{
+    var R = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if(!R) return;
+    if(_rec){ try{ _rec.stop(); }catch(e){} _rec = null; if(btn) btn.classList.remove("rec"); return; }
+    var r = new R(); _rec = r;
+    r.lang = bcp || "en-US"; r.interimResults = false; r.maxAlternatives = 1;
+    if(btn) btn.classList.add("rec");
+    r.onresult = function(ev){ try{ onText(ev.results[0][0].transcript); }catch(e){} };
+    r.onerror = function(){};
+    r.onend = function(){ if(btn) btn.classList.remove("rec"); _rec = null; };
+    r.start();
+  }catch(e){ if(btn) btn.classList.remove("rec"); _rec = null; }
+}
+function wireMic(btn, getBcp, onText){
+  if(!btn) return;
+  if(!speechInOK()){ btn.disabled = true; btn.style.opacity = "0.45"; btn.title = "Speech input not supported on this browser"; return; }
+  on(btn,"click",function(){ listen(getBcp(), btn, onText); });
+}
+
 /* =========================================================================
    Saved translations — stored on-device (localStorage). No account, no cloud.
    ========================================================================= */
@@ -573,6 +644,8 @@ var state = {
   lastFrom: "", lastTo: "", lastSrc: "", // context for saving translations
   topic: "greetings",
   level: "beginner",
+  practice: null,    // {items, queue, right, again, mode, revealed}
+  chat: [],          // [{role:'user'|'assistant', text, data}]
   engine: "offline", // "local" | "hosted" | "offline"
   live: false        // is an AI engine reachable?
 };
@@ -745,9 +818,12 @@ function selectLanguage(L){
     hide($("dialectWrap"));
   }
   state.reversed = false;
+  state.practice = null; state.chat = [];
   buildSrcOptions();
   updateDstLabel();
   clear($("translateOut")); clear($("teachOut")); clear($("askOut"));
+  clear($("practiceArea")); clear($("chatLog"));
+  $("chatInput").placeholder = "Chat in " + L.name + " or English…";
   // default to translate mode
   setMode("translate");
   try{ window.scrollTo(0,0); }catch(e){}
@@ -793,12 +869,15 @@ function updateDstLabel(){
   $("srcText").placeholder = "Type or paste " + from + " text to translate…";
 }
 
+var MODE_TAB = { translate:"tabTranslate", teach:"tabTeach", practice:"tabPractice", chat:"tabChat" };
+var MODE_PANE = { translate:"paneTranslate", teach:"paneTeach", practice:"panePractice", chat:"paneChat" };
 function setMode(m){
   state.mode = m;
-  $("tabTranslate").setAttribute("aria-selected", m==="translate"?"true":"false");
-  $("tabTeach").setAttribute("aria-selected", m==="teach"?"true":"false");
-  if(m==="translate"){ show($("paneTranslate")); hide($("paneTeach")); }
-  else { hide($("paneTranslate")); show($("paneTeach")); }
+  for(var k in MODE_TAB){
+    if(!MODE_TAB.hasOwnProperty(k)) continue;
+    $(MODE_TAB[k]).setAttribute("aria-selected", k===m ? "true":"false");
+    if(k===m) show($(MODE_PANE[k])); else hide($(MODE_PANE[k]));
+  }
 }
 
 function buildTopicChips(){
@@ -983,6 +1062,186 @@ function doAsk(){
   });
 }
 
+/* =========================================================================
+   PRACTICE — flashcards + multiple-choice quiz
+   ========================================================================= */
+function shuffle(a){ a = a.slice(); for(var i=a.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function offlinePractice(){
+  var book = bookFor(), items = [];
+  if(book){
+    var order = ["hello","thanks","bye","yes","no"];
+    var labels = { hello:"Hello", thanks:"Thank you", bye:"Goodbye", yes:"Yes", no:"No" };
+    for(var i=0;i<order.length;i++){ var e=book[order[i]]; if(e&&e[0]) items.push({ front:labels[order[i]], back:e[0], pronunciation:e[1]||"" }); }
+  }
+  return items;
+}
+function genPractice(){
+  var area = $("practiceArea"); busy(area, "Building practice set…");
+  var topicLabel = (TOPICS.filter(function(x){return x.id===state.topic;})[0]||{}).label;
+  var payload = {
+    mode:"practice", topic:topicLabel, level:state.level, count:10,
+    targetName:state.lang.name, targetNative:state.lang.native,
+    dialect:state.dialect?state.dialect.name:"", dialectNote:state.dialect?state.dialect.note:""
+  };
+  var go = function(items){ startPractice(items); };
+  if(aiAvailable()){
+    callAI(payload).then(function(r){ go(r.items||[]); })
+      .catch(function(){ if(state.engine==="local"){ setLive(false); state.engine="offline"; } go(offlinePractice()); });
+  } else { go(offlinePractice()); }
+}
+function startPractice(items){
+  var clean = (items||[]).filter(function(x){ return x && x.front && x.back; });
+  if(!clean.length){
+    var area = $("practiceArea"); clear(area);
+    var box = el("div","result");
+    box.appendChild(el("div","err","No practice items available offline for this selection."));
+    box.appendChild(el("div","hint","Enable Live AI (top-right) to generate a full practice set for any language, dialect, topic and level."));
+    area.appendChild(box);
+    return;
+  }
+  state.practice = { items:clean, queue:[], right:0, again:0, mode:"flash", revealed:false };
+  for(var i=0;i<clean.length;i++) state.practice.queue.push(i);
+  renderPractice();
+}
+function practiceSummary(area, title){
+  var P = state.practice;
+  var done = el("div","result");
+  var h = el("div"); h.style.fontWeight="700"; h.style.fontSize="17px"; h.textContent = title; done.appendChild(h);
+  var rrow = el("div","row wrap"); rrow.style.marginTop="12px";
+  var fc = el("button","btn"); fc.type="button"; fc.textContent="↻ Flashcards"; on(fc,"click",function(){ startPractice(P.items); }); rrow.appendChild(fc);
+  var qz = el("button","btn sec"); qz.type="button"; qz.textContent="🎯 Quiz me"; on(qz,"click",function(){ startQuiz(P.items); }); rrow.appendChild(qz);
+  var nu = el("button","mini"); nu.type="button"; nu.textContent="New set"; on(nu,"click",genPractice); rrow.appendChild(nu);
+  done.appendChild(rrow);
+  area.appendChild(done);
+}
+function renderPractice(){
+  var area = $("practiceArea"); clear(area);
+  var P = state.practice; if(!P) return;
+  var bcp = bcpForLang(state.lang, state.dialect);
+  if(!P.queue.length){ practiceSummary(area, "Nice work! 🎉  " + P.right + " known, " + P.again + " to review."); return; }
+  var pos = P.items.length - P.queue.length + 1;
+  area.appendChild(el("div","hint","Card " + pos + " of " + P.items.length));
+  var card = P.items[P.queue[0]];
+  var c = el("div","result"); c.style.textAlign="center";
+  c.appendChild(el("div","mn","What's this in " + variantName() + "?"));
+  var front = el("div"); front.style.fontSize="22px"; front.style.fontWeight="600"; front.style.margin="10px 0"; front.textContent = card.front; c.appendChild(front);
+  if(!P.revealed){
+    var sa = el("button","btn"); sa.type="button"; sa.textContent="Show answer";
+    on(sa,"click",function(){ P.revealed=true; renderPractice(); });
+    c.appendChild(sa);
+  } else {
+    var brow = el("div","target-row"); brow.style.justifyContent="center";
+    var back = el("div","target"); back.textContent = card.back; if(state.lang.rtl){ back.style.direction="rtl"; }
+    brow.appendChild(back); brow.appendChild(speakBtn(card.back, bcp)); c.appendChild(brow);
+    if(card.pronunciation){ var pr=el("div","pron"); pr.textContent="🗣 "+card.pronunciation; c.appendChild(pr); }
+    var arow = el("div","row"); arow.style.justifyContent="center"; arow.style.marginTop="12px";
+    var ok = el("button","btn"); ok.type="button"; ok.textContent="✓ Got it";
+    on(ok,"click",function(){ P.right++; P.queue.shift(); P.revealed=false; renderPractice(); });
+    var no = el("button","btn sec"); no.type="button"; no.textContent="↻ Again";
+    on(no,"click",function(){ P.again++; var f=P.queue.shift(); P.queue.push(f); P.revealed=false; renderPractice(); });
+    arow.appendChild(ok); arow.appendChild(no); c.appendChild(arow);
+  }
+  area.appendChild(c);
+}
+function startQuiz(items){
+  var clean = (items||[]).filter(function(x){ return x && x.front && x.back; });
+  state.practice = { items:clean, queue:[], right:0, again:0, mode:"quiz" };
+  for(var i=0;i<clean.length;i++) state.practice.queue.push(i);
+  renderQuiz();
+}
+function renderQuiz(){
+  var area = $("practiceArea"); clear(area);
+  var P = state.practice; if(!P) return;
+  var bcp = bcpForLang(state.lang, state.dialect);
+  if(!P.queue.length){ practiceSummary(area, "Quiz complete — " + P.right + "/" + P.items.length + " 🎯"); return; }
+  var idx = P.queue[0], card = P.items[idx];
+  var pos = P.items.length - P.queue.length + 1;
+  area.appendChild(el("div","hint","Question " + pos + " of " + P.items.length + " · score " + P.right));
+  var c = el("div","result");
+  c.appendChild(el("div","mn","Which is “" + card.front + "” in " + variantName() + "?"));
+  var others = [];
+  for(var i=0;i<P.items.length;i++){ if(i!==idx) others.push(P.items[i].back); }
+  var opts = shuffle([card.back].concat(shuffle(others).slice(0,3)));
+  var answered = false;
+  for(var k=0;k<opts.length;k++){
+    (function(opt){
+      var b = el("button","btn sec qopt" + (state.lang.rtl?" rtl":"")); b.type="button"; b.textContent = opt;
+      on(b,"click",function(){
+        if(answered) return; answered = true;
+        if(opt===card.back){ P.right++; b.style.background="rgba(52,225,192,.25)"; b.style.borderColor="var(--teal)"; }
+        else { b.style.background="rgba(255,122,138,.2)"; b.style.borderColor="var(--bad)"; }
+        speak(card.back, bcp);
+        var nx = el("button","btn"); nx.type="button"; nx.textContent="Next"; nx.style.marginTop="6px";
+        on(nx,"click",function(){ P.queue.shift(); renderQuiz(); });
+        c.appendChild(nx);
+      });
+      c.appendChild(b);
+    })(opts[k]);
+  }
+  area.appendChild(c);
+}
+
+/* =========================================================================
+   CHAT — conversation practice with the AI tutor (needs Live AI)
+   ========================================================================= */
+function renderChat(){
+  var log = $("chatLog"); clear(log);
+  var bcp = bcpForLang(state.lang, state.dialect);
+  if(!state.chat.length){
+    var hint = el("div","hint");
+    hint.textContent = aiAvailable()
+      ? "Say hello, or tap “Start a conversation” and the tutor will get you going."
+      : "Conversation practice needs Live AI (top-right).";
+    log.appendChild(hint);
+    return;
+  }
+  for(var i=0;i<state.chat.length;i++){
+    var m = state.chat[i];
+    if(m.role==="user"){
+      var u = el("div","bubble user"); u.textContent = m.text; log.appendChild(u);
+    } else {
+      var d = m.data || {};
+      var b = el("div","bubble bot" + (state.lang.rtl?" rtl":""));
+      b.appendChild(el("div",null, m.text || d.reply || ""));
+      if(d.pronunciation){ var pr=el("div","pr"); pr.textContent="🗣 "+d.pronunciation; b.appendChild(pr); }
+      if(d.english){ var en=el("div","en"); en.textContent=d.english; b.appendChild(en); }
+      var r2 = el("div","row2"); r2.appendChild(speakBtn(m.text || d.reply || "", bcp)); b.appendChild(r2);
+      log.appendChild(b);
+      if(d.correction){ var co=el("div","correction"); co.textContent="✎ "+d.correction; log.appendChild(co); }
+    }
+  }
+  try{ log.scrollTop = log.scrollHeight; }catch(e){}
+}
+function sendChat(seed){
+  if(!aiAvailable()){ renderChat(); return; }
+  var text = "";
+  if(!seed){
+    text = $("chatInput").value;
+    if(!text.trim()){ $("chatInput").focus(); return; }
+    state.chat.push({ role:"user", text:text });
+    $("chatInput").value = "";
+  }
+  renderChat();
+  var log = $("chatLog");
+  var typing = el("div","bubble bot"); typing.appendChild(el("span","spin")); typing.appendChild(document.createTextNode("  …"));
+  log.appendChild(typing); try{ log.scrollTop = log.scrollHeight; }catch(e){}
+  var msgs = state.chat.map(function(m){
+    return { role:m.role, content: m.role==="assistant" ? ((m.data && m.data.reply) || m.text || "") : m.text };
+  });
+  var payload = {
+    mode:"chat", messages:msgs, level:state.level,
+    targetName:state.lang.name, dialect:state.dialect?state.dialect.name:"", dialectNote:state.dialect?state.dialect.note:""
+  };
+  callAI(payload).then(function(r){
+    state.chat.push({ role:"assistant", text:r.reply||"", data:r });
+    renderChat();
+  }).catch(function(){
+    if(state.engine==="local"){ setLive(false); state.engine="offline"; }
+    renderChat();
+    var l = $("chatLog"); var e = el("div","correction"); e.textContent = "Couldn't reach the tutor just now — try again, or enable Live AI."; l.appendChild(e);
+  });
+}
+
 /* ---- SAVED TRANSLATIONS view ---- */
 function renderHist(){
   var list = $("histList"); clear(list);
@@ -1027,6 +1286,8 @@ function init(){
 
   on($("tabTranslate"),"click",function(){ setMode("translate"); });
   on($("tabTeach"),"click",function(){ setMode("teach"); });
+  on($("tabPractice"),"click",function(){ setMode("practice"); });
+  on($("tabChat"),"click",function(){ setMode("chat"); renderChat(); });
 
   on($("srcLang"),"change",function(e){ state.src = e.target.value; updateDstLabel(); });
   on($("swapBtn"),"click",function(){
@@ -1044,6 +1305,23 @@ function init(){
   on($("teachBtn"),"click",doTeach);
   on($("askBtn"),"click",doAsk);
   on($("askText"),"keydown",function(e){ if(e.key==="Enter") doAsk(); });
+
+  // Practice
+  on($("practiceGen"),"click",genPractice);
+
+  // Chat
+  on($("chatSend"),"click",function(){ sendChat(false); });
+  on($("chatInput"),"keydown",function(e){ if(e.key==="Enter") sendChat(false); });
+  on($("chatStart"),"click",function(){ state.chat=[]; sendChat(true); });
+  on($("chatClear"),"click",function(){ state.chat=[]; renderChat(); });
+
+  // Speech input (mic) — translate uses the "from" language; chat uses the target.
+  wireMic($("translateMic"),
+    function(){ return state.reversed ? bcpForLang(state.lang, state.dialect) : bcpForLang(otherLang(), null); },
+    function(t){ var ta=$("srcText"); ta.value = (ta.value ? ta.value+" " : "") + t; });
+  wireMic($("chatMic"),
+    function(){ return bcpForLang(state.lang, state.dialect); },
+    function(t){ var ci=$("chatInput"); ci.value = (ci.value ? ci.value+" " : "") + t; });
 
   // Saved translations panel
   on($("histBtn"),"click",function(){
