@@ -55,6 +55,13 @@
   .logo i{position:absolute;width:3px;height:3px;border-radius:50%;background:var(--ink);top:13px}
   .logo i:nth-child(1){left:9px}.logo i:nth-child(2){left:14px}.logo i:nth-child(3){left:19px}
   .brand b{font-size:17px;letter-spacing:-.01em}
+  .brandtext{display:flex;flex-direction:column;line-height:1.06;min-width:0}
+  .cloudchip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;color:var(--faint);
+    margin-top:1px;cursor:pointer;white-space:nowrap}
+  .cloudchip .dot{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:none}
+  .cloudchip.connected{color:var(--c)} .cloudchip.connected .dot{background:var(--c);box-shadow:0 0 6px var(--c)}
+  .cloudchip.connecting{color:var(--warn)} .cloudchip.connecting .dot{background:var(--warn);animation:pulse 1s infinite}
+  .cloudchip.demo .dot{background:var(--faint)}
   .iconbtn{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;
     color:var(--dim);font-size:18px;flex:none}
   .iconbtn:hover{background:rgba(255,255,255,.06);color:var(--ink)}
@@ -257,7 +264,8 @@
   <!-- ============ SIDEBAR ============ -->
   <aside class="sidebar">
     <div class="side-top">
-      <div class="brand"><div class="logo"><i></i><i></i><i></i></div><b>Ripple</b></div>
+      <div class="brand"><div class="logo"><i></i><i></i><i></i></div>
+        <div class="brandtext"><b>Ripple</b><span class="cloudchip demo" id="cloudChip"><span class="dot"></span>Offline demo</span></div></div>
       <button class="iconbtn" id="btnSearchGlobal" title="Search">🔍</button>
       <button class="iconbtn" id="btnNew" title="New chat">✏️</button>
       <button class="iconbtn me" id="btnSettings" title="You"><span class="avatar sm" id="myAvatar">?</span></button>
@@ -457,6 +465,22 @@
   var FBCONFIG = (typeof RIPPLE_FIREBASE_CONFIG !== 'undefined' && RIPPLE_FIREBASE_CONFIG)
     || (typeof window !== 'undefined' && window.RIPPLE_FIREBASE_CONFIG) || null;
   function cloudAvailable(){ return !!FBCONFIG; }
+  // Reflect connection state in the sidebar chip.
+  function updateCloudStatus(){
+    var el=$('cloudChip'); if(!el) return;
+    var state, label;
+    if(cloud.on){ state='connected'; label='Connected'; }
+    else if(cloud.connecting){ state='connecting'; label='Connecting…'; }
+    else if(cloudAvailable()){ state='demo'; label='Tap to connect'; }
+    else { state='demo'; label='Offline demo'; }
+    el.className='cloudchip '+state;
+    el.innerHTML='<span class="dot"></span>'+label;
+  }
+  function cloudChipClick(){
+    if(cloud.on){ toast('🟢 Connected — messages sync in real time'); return; }
+    if(cloudAvailable()){ if(!cloud.connecting){ toast('Connecting…'); cloudConnect({ interactive:true }); } return; }
+    toast('Add a Firebase config in config.js to message real people (see SETUP.md)');
+  }
   var FB_VER = '9.23.0';
   function loadFirebaseSdk(){
     return new Promise(function(resolve, reject){
@@ -481,14 +505,14 @@
     opts = opts || {};
     if (!cloudAvailable() || cloud.on || cloud.connecting) return;
     if (typeof navigator !== 'undefined' && navigator.onLine === false){ if(opts.interactive) toast('You appear to be offline'); return; }
-    cloud.connecting = true;
+    cloud.connecting = true; updateCloudStatus();
     loadFirebaseSdk().then(function(){
       cloud.app = firebase.apps && firebase.apps.length ? firebase.app() : firebase.initializeApp(FBCONFIG);
       cloud.auth = firebase.auth(cloud.app);
       cloud.db = firebase.firestore(cloud.app);
       return cloud.auth.signInAnonymously().then(function(cred){
         cloud.uid = (cred && cred.user && cred.user.uid) || cloud.auth.currentUser.uid;
-        cloud.on = true; cloud.connecting = false;
+        cloud.on = true; cloud.connecting = false; updateCloudStatus();
         cloud.db.collection('ripple_users').doc(cloud.uid).set({
           name: S.me.name || 'You', avatar: S.me.avatar || '🙂',
           updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -498,7 +522,7 @@
         if (opts.interactive) toast('Connected ✓');
       });
     }).catch(function(err){
-      cloud.connecting = false;
+      cloud.connecting = false; updateCloudStatus();
       if (opts.interactive) toast(err && err.message ? err.message : 'Could not connect');
     });
   }
@@ -1376,6 +1400,7 @@
   function wire(){
     on('btnNew','click', newChatSheet);
     on('btnSettings','click', settingsSheet);
+    on('cloudChip','click', cloudChipClick);
     on('btnSearchGlobal','click', function(){ var i=$('searchInput'); if(i){ i.focus(); } });
     on('btnBack','click', showPlaceholder);
     on('btnChatInfo','click', infoSheet);
@@ -1447,6 +1472,7 @@
   function startUI(){
     applyAccent();
     renderSidebar();
+    updateCloudStatus();
     if(!S.me.name && hasDoc) onboard();
     if(!_tickStarted && typeof setInterval!=='undefined'){ _tickStarted=true; setInterval(tickClock, 5000); }
     // connect to the cloud backend if one is configured (real cross-device chat)
