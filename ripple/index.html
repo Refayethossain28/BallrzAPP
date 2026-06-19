@@ -1059,8 +1059,16 @@
     ta.value=''; replyTo=null;
     var wasScheduled=scheduleAt; scheduleAt=null;
     afterSend();
+    if(c.cloud){
+      // Write scheduled messages to Firestore now (held by scheduledAt>now) so the
+      // server can release + deliver them even if this device goes offline. The
+      // rippleMaintenance function (or this client's tick) clears scheduledAt when due.
+      if(!wasScheduled) m.state='sent';
+      cloudPush(c.id, m);
+      if(wasScheduled) toast('Message scheduled for '+formatClock(wasScheduled));
+      return;
+    }
     if(wasScheduled){ toast('Message scheduled for '+formatClock(wasScheduled)); return; }
-    if(c.cloud){ m.state='sent'; cloudPush(c.id, m); return; }   // real delivery handled by Firestore
     // progress states sent→delivered→read, then auto-reply for the Echo bot
     advanceState(m, 'sent', 300);
     advanceState(m, 'delivered', 900);

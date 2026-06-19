@@ -580,17 +580,24 @@ exports.linguaAI = onCall(
 );
 
 /* ===========================================================================
- * ripplePushOnMessage — Web push for the Ripple messenger (ripple/index.html)
+ * Ripple server-side delivery — push, scheduled dispatch & disappearing sweep
  *
- * Fires when a new message lands in a synced chat and pushes a notification to
- * every OTHER member's registered devices. FCM tokens live in the private
- * `ripple_push/{uid}` collection (owner-only by rules; we read them here with
- * the Admin SDK, which bypasses rules). Dead tokens are pruned automatically.
- * No secrets or external services — just Firebase Cloud Messaging.
+ *  • ripplePushOnMessage  — pushes a web notification the moment a message
+ *    becomes deliverable: on create, OR when a scheduled message is released
+ *    (scheduledAt cleared). Reads recipients' FCM tokens from the private
+ *    `ripple_push/{uid}` collection via the Admin SDK and prunes dead tokens.
+ *  • rippleMaintenance    — a 1-minute cron that (a) releases scheduled messages
+ *    whose time has come even if the author is offline, and (b) hard-deletes
+ *    expired disappearing messages so they're gone server-side, not just hidden.
+ *
+ * No secrets or external services — just Firebase Cloud Messaging + Firestore.
  * ======================================================================== */
-const { onDocumentCreated } = require('firebase-functions/v2/firestore');
+// onDocumentWritten is already required above (see onBookingWrite).
+const { onSchedule } = require('firebase-functions/v2/scheduler');
 const admin = require('firebase-admin');
 if (!admin.apps.length) admin.initializeApp();
+
+const RIPPLE_LINK = 'https://refayethossain28.github.io/BallrzAPP/ripple/';
 
 function ripplePreview(m) {
   if (!m) return 'New message';
@@ -598,80 +605,127 @@ function ripplePreview(m) {
   if (m.type === 'image') return '📷 Photo';
   if (m.type === 'voice') return '🎤 Voice message';
   if (m.type === 'poll') return '📊 ' + ((m.meta && m.meta.question) || 'Poll');
+  if (m.enc) return '🔒 New message'; // end-to-end encrypted: server can't read it
   const t = String(m.text || '').replace(/\s+/g, ' ').trim();
   if (!t) return 'New message';
   return t.length > 120 ? t.slice(0, 117) + '…' : t;
 }
 
-exports.ripplePushOnMessage = onDocumentCreated(
+// Push a message to every member except its sender. Loads tokens, sends, prunes.
+async function sendRipplePush(db, chatId, m) {
+  const chatSnap = await db.collection('ripple_chats').doc(chatId).get();
+  if (!chatSnap.exists) return;
+  const chat = chatSnap.data();
+  const recipients = (chat.members || []).filter((uid) => uid && uid !== m.senderId);
+  if (!recipients.length) return;
+
+  const tokenOwner = {};
+  await Promise.all(recipients.map(async (uid) => {
+    try {
+      const ps = await db.collection('ripple_push').doc(uid).get();
+      const toks = (ps.exists && ps.data().fcmTokens) || [];
+      toks.forEach((t) => { if (t) tokenOwner[t] = uid; });
+    } catch (e) { /* skip */ }
+  }));
+  const tokens = Object.keys(tokenOwner);
+  if (!tokens.length) return;
+
+  const senderName = (m.meta && m.meta.fromName) || 'Someone';
+  const isGroup = chat.type === 'group';
+  const title = isGroup ? (chat.name || 'New message') : senderName;
+  const body = (isGroup ? senderName + ': ' : '') + ripplePreview(m);
+
+  let res;
+  try {
+    res = await admin.messaging().sendEachForMulticast({
+      tokens,
+      notification: { title, body },
+      data: { chatId, url: RIPPLE_LINK },
+      webpush: {
+        fcmOptions: { link: RIPPLE_LINK },
+        notification: { icon: RIPPLE_LINK + 'icon-192.png', badge: RIPPLE_LINK + 'icon-192.png', tag: chatId },
+      },
+    });
+  } catch (err) {
+    logger.error('sendRipplePush', err.message);
+    return;
+  }
+
+  const dead = {};
+  res.responses.forEach((r, i) => {
+    if (r.success) return;
+    const code = r.error && r.error.code;
+    if (code === 'messaging/registration-token-not-registered' ||
+        code === 'messaging/invalid-registration-token' ||
+        code === 'messaging/invalid-argument') {
+      const uid = tokenOwner[tokens[i]];
+      (dead[uid] = dead[uid] || []).push(tokens[i]);
+    }
+  });
+  await Promise.all(Object.keys(dead).map((uid) =>
+    db.collection('ripple_push').doc(uid).update({
+      fcmTokens: admin.firestore.FieldValue.arrayRemove(...dead[uid]),
+    }).catch(() => {})
+  ));
+  logger.info('ripplePush', { chatId, sent: res.successCount, failed: res.failureCount });
+}
+
+const isPendingAt = (m, t) => !!(m && m.scheduledAt && m.scheduledAt > t);
+
+exports.ripplePushOnMessage = onDocumentWritten(
   { document: 'ripple_chats/{chatId}/messages/{messageId}', region: 'us-central1' },
   async (event) => {
-    const snap = event.data;
-    if (!snap) return;
-    const m = snap.data();
-    if (!m || m.type === 'system') return;
-    // Don't notify for messages still waiting to be delivered (scheduled).
-    if (m.scheduledAt && m.scheduledAt > Date.now()) return;
+    const before = event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data.after.exists ? event.data.after.data() : null;
+    if (!after || after.type === 'system') return; // deleted or system → no push
 
-    const chatId = event.params.chatId;
+    const t = Date.now();
+    const becameDeliverable =
+      (!before && !isPendingAt(after, t)) ||                 // freshly created & due
+      (before && isPendingAt(before, t) && !isPendingAt(after, t)); // scheduled → released
+    if (!becameDeliverable) return; // edits, reactions, read receipts, etc.
+
+    await sendRipplePush(admin.firestore(), event.params.chatId, after);
+  }
+);
+
+exports.rippleMaintenance = onSchedule(
+  { schedule: 'every 1 minutes', region: 'us-central1' },
+  async () => {
     const db = admin.firestore();
-    const chatSnap = await db.collection('ripple_chats').doc(chatId).get();
-    if (!chatSnap.exists) return;
-    const chat = chatSnap.data();
-    const recipients = (chat.members || []).filter((uid) => uid && uid !== m.senderId);
-    if (!recipients.length) return;
+    const now = Date.now();
 
-    // Gather each recipient's tokens (token → owning uid, for pruning).
-    const tokenOwner = {};
-    await Promise.all(recipients.map(async (uid) => {
-      try {
-        const ps = await db.collection('ripple_push').doc(uid).get();
-        const toks = (ps.exists && ps.data().fcmTokens) || [];
-        toks.forEach((t) => { if (t) tokenOwner[t] = uid; });
-      } catch (e) { /* skip this recipient */ }
-    }));
-    const tokens = Object.keys(tokenOwner);
-    if (!tokens.length) return;
-
-    const senderName = (m.meta && m.meta.fromName) || 'Someone';
-    const isGroup = chat.type === 'group';
-    const title = isGroup ? (chat.name || 'New message') : senderName;
-    const body = (isGroup ? senderName + ': ' : '') + ripplePreview(m);
-    const link = 'https://refayethossain28.github.io/BallrzAPP/ripple/';
-
-    let res;
+    // (a) Release scheduled messages whose time has come (author may be offline).
+    // Clearing scheduledAt makes them deliverable; the onWritten trigger above
+    // then fires the push.
     try {
-      res = await admin.messaging().sendEachForMulticast({
-        tokens,
-        notification: { title, body },
-        data: { chatId, url: link },
-        webpush: {
-          fcmOptions: { link },
-          notification: { icon: link + 'icon-192.png', badge: link + 'icon-192.png', tag: chatId },
-        },
+      const due = await db.collectionGroup('messages')
+        .where('scheduledAt', '<=', now).limit(450).get();
+      const batch = db.batch();
+      let n = 0;
+      due.forEach((doc) => {
+        const m = doc.data();
+        if (!m.scheduledAt) return;
+        batch.update(doc.ref, { scheduledAt: null, state: 'delivered', ts: now });
+        n++;
       });
-    } catch (err) {
-      logger.error('ripplePushOnMessage send', err.message);
-      return;
-    }
+      if (n) { await batch.commit(); logger.info('rippleMaintenance released', n); }
+    } catch (err) { logger.warn('rippleMaintenance release', err.message); }
 
-    // Prune tokens FCM reports as permanently invalid.
-    const dead = {};
-    res.responses.forEach((r, i) => {
-      if (r.success) return;
-      const code = r.error && r.error.code;
-      if (code === 'messaging/registration-token-not-registered' ||
-          code === 'messaging/invalid-registration-token' ||
-          code === 'messaging/invalid-argument') {
-        const uid = tokenOwner[tokens[i]];
-        (dead[uid] = dead[uid] || []).push(tokens[i]);
-      }
-    });
-    await Promise.all(Object.keys(dead).map((uid) =>
-      db.collection('ripple_push').doc(uid).update({
-        fcmTokens: admin.firestore.FieldValue.arrayRemove(...dead[uid]),
-      }).catch(() => {})
-    ));
-    logger.info('ripplePush', { chatId, sent: res.successCount, failed: res.failureCount });
+    // (b) Hard-delete disappearing messages whose expireAt has passed, so they
+    // truly vanish server-side (clients already hide them locally).
+    try {
+      const gone = await db.collectionGroup('messages')
+        .where('expireAt', '<=', now).limit(450).get();
+      const batch = db.batch();
+      let n = 0;
+      gone.forEach((doc) => {
+        const m = doc.data();
+        if (!m.expireAt) return;
+        batch.delete(doc.ref);
+        n++;
+      });
+      if (n) { await batch.commit(); logger.info('rippleMaintenance swept', n); }
+    } catch (err) { logger.warn('rippleMaintenance sweep', err.message); }
   }
 );
