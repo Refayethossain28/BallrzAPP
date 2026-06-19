@@ -388,6 +388,14 @@ test('groupPulse finds the liveliest hour and ignores system/deleted', () => {
   assert.equal(g.samples, 6, 'system message excluded');
 });
 
+test('previewText masks undecrypted encrypted messages', () => {
+  assert.equal(E.previewText({ type: 'text', enc: { v: 1, iv: 'x', ct: 'y' }, text: '' }), '🔒 Encrypted message');
+  // once decrypted in memory the plaintext shows
+  assert.equal(E.previewText({ type: 'text', enc: { v: 1, iv: 'x', ct: 'y' }, text: 'hello' }), 'hello');
+  // a deleted encrypted message still reads as unsent
+  assert.equal(E.previewText({ enc: { v: 1 }, deleted: true, text: '' }), '🚫 This message was unsent');
+});
+
 /* ---------- demo auto-responder ---------- */
 test('autoReply is deterministic and responsive', () => {
   assert.equal(E.autoReply('hey', { seed: 1 }), E.autoReply('hey', { seed: 1 }));

@@ -331,6 +331,8 @@
   function previewText(msg) {
     if (!msg) return '';
     if (msg.deleted) return '🚫 This message was unsent';
+    // End-to-end encrypted text we haven't decrypted (no key / still working).
+    if (msg.enc && !msg.text && (!msg.type || msg.type === 'text')) return '🔒 Encrypted message';
     switch (msg.type) {
       case 'voice': return '🎤 Voice message' + (msg.meta && msg.meta.dur ? ' · ' + formatDur(msg.meta.dur) : '');
       case 'image': return '📷 Photo';
