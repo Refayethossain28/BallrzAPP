@@ -334,6 +334,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="engine.js"></script>
+<script src="config.js"></script>
 <script>
 (function(){
   'use strict';
@@ -360,6 +361,7 @@
   var editing = null;   // message id being edited
   var menuMsg = null;   // message for open action menu
   var rec = null, recTimer = null, recStart = 0, recChunks = [];
+  var cloud = { on:false, connecting:false, uid:null, app:null, db:null, auth:null, subs:{}, chatsSub:null, _note:{} };
 
   function uid(){ return R.makeId('u', Date.now(), Math.random()); }
   function now(){ return Date.now(); }
@@ -447,16 +449,181 @@
       .then(function(pt){ return JSON.parse(new TextDecoder().decode(pt)); });
   }
 
+  /* ---------- cloud transport (optional Firebase backend; see config.js) ---------- *
+   * When RIPPLE_FIREBASE_CONFIG is set, Ripple signs the user in anonymously and
+   * syncs "cloud" chats over Firestore in real time. Everything here is a no-op
+   * (and never references `firebase`) when no config is present, so the offline
+   * demo — and the headless smoke test — are unaffected. */
+  var FBCONFIG = (typeof RIPPLE_FIREBASE_CONFIG !== 'undefined' && RIPPLE_FIREBASE_CONFIG)
+    || (typeof window !== 'undefined' && window.RIPPLE_FIREBASE_CONFIG) || null;
+  function cloudAvailable(){ return !!FBCONFIG; }
+  var FB_VER = '9.23.0';
+  function loadFirebaseSdk(){
+    return new Promise(function(resolve, reject){
+      if (typeof firebase !== 'undefined' && firebase.firestore){ resolve(); return; }
+      if (typeof document === 'undefined'){ reject(new Error('no dom')); return; }
+      var parts = ['app','auth','firestore'];
+      var i = 0;
+      (function next(){
+        if (i >= parts.length){ resolve(); return; }
+        var s = document.createElement('script');
+        s.src = 'https://www.gstatic.com/firebasejs/'+FB_VER+'/firebase-'+parts[i]+'-compat.js';
+        s.onload = function(){ i++; next(); };
+        s.onerror = function(){ reject(new Error('Failed to load Firebase SDK (offline?)')); };
+        document.head.appendChild(s);
+      })();
+    });
+  }
+  // Firestore docs can't hold `undefined`; produce a clean, serialisable copy.
+  function serializeMsg(m){ return JSON.parse(JSON.stringify(m)); }
+
+  function cloudConnect(opts){
+    opts = opts || {};
+    if (!cloudAvailable() || cloud.on || cloud.connecting) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false){ if(opts.interactive) toast('You appear to be offline'); return; }
+    cloud.connecting = true;
+    loadFirebaseSdk().then(function(){
+      cloud.app = firebase.apps && firebase.apps.length ? firebase.app() : firebase.initializeApp(FBCONFIG);
+      cloud.auth = firebase.auth(cloud.app);
+      cloud.db = firebase.firestore(cloud.app);
+      return cloud.auth.signInAnonymously().then(function(cred){
+        cloud.uid = (cred && cred.user && cred.user.uid) || cloud.auth.currentUser.uid;
+        cloud.on = true; cloud.connecting = false;
+        cloud.db.collection('ripple_users').doc(cloud.uid).set({
+          name: S.me.name || 'You', avatar: S.me.avatar || '🙂',
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge:true }).catch(function(){});
+        subscribeCloudChats();
+        if (opts.join) cloudJoin(opts.join);
+        if (opts.interactive) toast('Connected ✓');
+      });
+    }).catch(function(err){
+      cloud.connecting = false;
+      if (opts.interactive) toast(err && err.message ? err.message : 'Could not connect');
+    });
+  }
+
+  function subscribeCloudChats(){
+    if (cloud.chatsSub) return;
+    cloud.chatsSub = cloud.db.collection('ripple_chats')
+      .where('members', 'array-contains', cloud.uid)
+      .onSnapshot(function(snap){
+        snap.forEach(function(doc){ upsertCloudChat(doc.id, doc.data()); });
+        renderSidebar();
+      }, function(){});
+  }
+  function upsertCloudChat(id, data){
+    var c = chat(id);
+    if (!c){
+      c = R.createChat({ id:id, type:data.type||'group', name:data.name||'Chat', avatar:data.avatar||'💬',
+        members:data.members||[], now: data.createdAt ? Date.now() : Date.now() });
+      c.cloud = true; S.chats.push(c);
+    } else {
+      c.cloud = true; c.name = data.name || c.name; c.avatar = data.avatar || c.avatar;
+      c.members = data.members || c.members; if (data.disappearSec != null) c.disappearSec = data.disappearSec;
+    }
+    subscribeCloudMessages(id);
+    persist();
+  }
+  function subscribeCloudMessages(id){
+    if (cloud.subs[id]) return;
+    cloud.subs[id] = cloud.db.collection('ripple_chats').doc(id).collection('messages')
+      .orderBy('ts').onSnapshot(function(snap){
+        var prevStar = {}; (S.msgs[id]||[]).forEach(function(m){ if(m.starred) prevStar[m.id]=true; });
+        var arr = [];
+        snap.forEach(function(doc){ var m=doc.data(); if(prevStar[m.id]) m.starred=true; arr.push(m); });
+        S.msgs[id] = arr;
+        var mine = myId(chat(id));
+        var focused = active===id && hasDoc && !document.hidden;
+        if (focused) markCloudRead(id);
+        if (active===id) renderTimeline();
+        renderSidebar(); persist();
+        // notify once per new incoming message when the chat isn't focused
+        var last = arr[arr.length-1];
+        if (last && last.senderId!==mine && !focused && cloud._note[id]!==last.id && last.readBy.indexOf(mine)===-1){
+          cloud._note[id] = last.id; notify(chat(id), nameOf(last), R.previewText(last));
+        }
+      }, function(){});
+  }
+  // Write a read receipt as a targeted arrayUnion so we never clobber another
+  // member's receipt or reactions (which a full-doc overwrite would risk).
+  function pushRead(chatId, msgId){
+    if(!cloud.on) return;
+    try{ cloud.db.collection('ripple_chats').doc(chatId).collection('messages').doc(msgId)
+      .update({ readBy: firebase.firestore.FieldValue.arrayUnion(cloud.uid) }).catch(function(){}); }catch(e){}
+  }
+  // Write read receipts for everything I can see in a synced chat I'm viewing.
+  function markCloudRead(id){
+    var c=chat(id); if(!c||!c.cloud) return; var mine=cloud.uid;
+    (S.msgs[id]||[]).forEach(function(m){
+      if(m.senderId!==mine && (m.readBy||[]).indexOf(mine)===-1 && !R.isPending(m,now())){
+        m.readBy.push(mine); pushRead(id, m.id);
+      }
+    });
+  }
+
+  function cloudPush(chatId, m){
+    if (!cloud.on) return;
+    var c = chat(chatId); if (!c || !c.cloud) return;
+    try {
+      cloud.db.collection('ripple_chats').doc(chatId).collection('messages').doc(m.id).set(serializeMsg(m));
+      cloud.db.collection('ripple_chats').doc(chatId).set({
+        lastText: R.previewText(m), updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge:true }).catch(function(){});
+    } catch(e){}
+  }
+  function cloudCreateChat(name, avatar, type){
+    var ref = cloud.db.collection('ripple_chats').doc();
+    var data = { type:type||'group', name:name, avatar:avatar||'💬', members:[cloud.uid],
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+    return ref.set(data).then(function(){ upsertCloudChat(ref.id, data); return ref.id; });
+  }
+  function cloudJoin(chatId){
+    if (!cloud.on){ return; }
+    cloud.db.collection('ripple_chats').doc(chatId).update({
+      members: firebase.firestore.FieldValue.arrayUnion(cloud.uid)
+    }).then(function(){ toast('Joined chat ✓'); subscribeCloudMessages(chatId); setTimeout(function(){ openChat(chatId); }, 400); })
+      .catch(function(){ toast('That invite link is invalid or expired'); });
+  }
+  function inviteUrl(chatId){
+    if (typeof location === 'undefined') return chatId;
+    return location.origin + location.pathname + '?join=' + chatId;
+  }
+  function pendingJoin(){
+    if (typeof location === 'undefined' || !location.search) return null;
+    var m = location.search.match(/[?&]join=([^&]+)/);
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+
   /* ---------- helpers ---------- */
   function chat(id){ for(var i=0;i<S.chats.length;i++) if(S.chats[i].id===id) return S.chats[i]; return null; }
   function msgsOf(id){ return S.msgs[id] || (S.msgs[id]=[]); }
   function findMsg(cid, mid){ var a=msgsOf(cid); for(var i=0;i<a.length;i++) if(a[i].id===mid) return a[i]; return null; }
   function meId(){ return S.me.id; }
-  function isMe(sid){ return sid===S.me.id; }
+  function isMe(sid){ return sid===S.me.id || (cloud.uid && sid===cloud.uid); }
+  // The id to stamp on my outgoing messages: my Firebase uid in a synced chat,
+  // otherwise my local id.
+  function myId(c){ return (c && c.cloud && cloud.uid) ? cloud.uid : S.me.id; }
   function displayName(sid){
-    if (sid===S.me.id) return S.me.name || 'You';
+    if (isMe(sid)) return S.me.name || 'You';
     var names={ echo:'Echo', maya:'Maya', leo:'Leo', sara:'Sara' };
     return names[sid] || sid;
+  }
+  // Resolve a sender's name/avatar, preferring what a cloud message carries.
+  function nameOf(mm){
+    if (isMe(mm.senderId)) return S.me.name || 'You';
+    if (mm.meta && mm.meta.fromName) return mm.meta.fromName;
+    return displayName(mm.senderId);
+  }
+  // Build one of my outgoing messages, stamped for cloud delivery when needed.
+  function mkMsg(opts){
+    var c = chat(opts.chatId);
+    opts.senderId = myId(c);
+    if (!opts.readBy) opts.readBy = [opts.senderId];
+    var m = R.createMessage(opts);
+    if (c && c.cloud && cloud.uid){ m.meta = m.meta || {}; m.meta.fromName = S.me.name || 'You'; m.meta.fromAvatar = S.me.avatar || '🙂'; }
+    return m;
   }
   function memberColor(sid){
     var palette=['#39e6b4','#ffb454','#ff6b81','#8b7cff','#37c2ff'];
@@ -510,6 +677,7 @@
   function presence(c){
     if (c.type==='saved') return { txt:'Your private notes', off:true };
     if (c.id==='echo') return { txt:'online · replies instantly', off:false };
+    if (c.cloud) return { txt:'🟢 Connected · '+((c.members&&c.members.length)||1)+' member'+(((c.members&&c.members.length)||1)===1?'':'s'), off:false };
     if (c.type==='group') return { txt:(c.members.length)+' members', off:true };
     return { txt:'last seen recently', off:true };
   }
@@ -527,8 +695,14 @@
     var p = presence(c);
     var st=$('convStatus'); st.textContent=p.txt; st.className='st'+(p.off?' off':'');
     updateReplyBar(); updateSchedBar();
-    // mark read
-    msgsOf(id).forEach(function(mm){ if(mm.senderId!==meId() && mm.readBy.indexOf(meId())===-1 && !R.isPending(mm,now())) mm.readBy.push(meId()); });
+    // mark read (and, in a synced chat, write the receipt back so the sender sees it)
+    var mine=myId(c);
+    msgsOf(id).forEach(function(mm){
+      if(mm.senderId!==mine && mm.readBy.indexOf(mine)===-1 && !R.isPending(mm,now())){
+        mm.readBy.push(mine);
+        if(c.cloud) pushRead(id, mm.id);
+      }
+    });
     applyAccent(c.accent);
     renderTimeline(); renderSidebar(); persist();
     var ta=$('ta'); if(ta){ ta.value=c.draft||''; autosize(ta); }
@@ -577,16 +751,19 @@
     var showWho = grp && prevSender!==mm.senderId;
     var cls='msg '+(out?'out':'in')+(grp?' grp':'');
     var h='<div class="'+cls+'" data-id="'+mm.id+'">';
-    if(showWho) h+='<div class="who" style="color:'+memberColor(mm.senderId)+'">'+esc(displayName(mm.senderId))+'</div>';
+    if(showWho) h+='<div class="who" style="color:'+memberColor(mm.senderId)+'">'+esc(nameOf(mm))+'</div>';
     h+='<div class="bubble">';
     if(mm.starred) h+='<span class="starflag">⭐</span>';
     if(mm.replyTo){ var q=findMsg(active,mm.replyTo); if(q) h+=
-      '<div class="reply-quote"><b>'+esc(displayName(q.senderId))+'</b><span>'+esc(R.previewText(q))+'</span></div>'; }
+      '<div class="reply-quote"><b>'+esc(nameOf(q))+'</b><span>'+esc(R.previewText(q))+'</span></div>'; }
     h += msgBody(mm, c);
     h += '<div class="stamp">';
     if(mm.editedAt) h+='<span class="edited">edited</span>';
     h += R.relativeTime(mm.ts, now()).replace('now','just now');
-    if(out){ var st=mm.state; var tick = st==='read'?'✓✓':(st==='delivered'?'✓✓':(st==='sent'?'✓':'🕓'));
+    if(out){ var st=mm.state;
+      if(c.cloud){ var others=(c.members||[]).filter(function(u){return u!==mm.senderId;});
+        st = (others.length && others.every(function(u){ return (mm.readBy||[]).indexOf(u)!==-1; })) ? 'read' : (mm.scheduledAt?'sending':'delivered'); }
+      var tick = st==='read'?'✓✓':(st==='delivered'?'✓✓':(st==='sent'?'✓':'🕓'));
       h += ' <span class="ticks'+(st==='read'?' read':'')+'">'+tick+'</span>'; }
     h += '</div>';
     h += reactRow(mm);
@@ -652,13 +829,14 @@
     else if(cmd.cmd==='action'){ pushSystem(c, '✳️ '+displayName(meId())+' '+cmd.text); ta.value=''; afterSend(); return; }
     else if(cmd.cmd==='clear'){ S.msgs[active]=[]; ta.value=''; renderTimeline(); renderSidebar(); persist(); return; }
 
-    var m=R.createMessage({ chatId:active, senderId:meId(), text:text, ts:now(), rand:Math.random(),
-      state:'sending', replyTo:replyTo, disappearSec:c.disappearSec, scheduledAt:scheduleAt, readBy:[meId()] });
+    var m=mkMsg({ chatId:active, text:text, ts:now(), rand:Math.random(),
+      state:'sending', replyTo:replyTo, disappearSec:c.disappearSec, scheduledAt:scheduleAt });
     msgsOf(active).push(m);
     ta.value=''; replyTo=null;
     var wasScheduled=scheduleAt; scheduleAt=null;
     afterSend();
     if(wasScheduled){ toast('Message scheduled for '+formatClock(wasScheduled)); return; }
+    if(c.cloud){ m.state='sent'; cloudPush(c.id, m); return; }   // real delivery handled by Firestore
     // progress states sent→delivered→read, then auto-reply for the Echo bot
     advanceState(m, 'sent', 300);
     advanceState(m, 'delivered', 900);
@@ -697,14 +875,14 @@
 
   function sendPoll(cmd){
     var c=chat(active);
-    var m=R.createMessage({ chatId:active, senderId:meId(), ts:now(), rand:Math.random(), type:'poll',
-      state:'sent', readBy:[meId()], disappearSec:c.disappearSec,
+    var m=mkMsg({ chatId:active, ts:now(), rand:Math.random(), type:'poll',
+      state:'sent', disappearSec:c.disappearSec,
       meta:{ question:cmd.question, options:cmd.options, votes:{} } });
-    msgsOf(active).push(m); advanceState(m,'delivered',700);
+    msgsOf(active).push(m); if(c.cloud) cloudPush(c.id, m); else advanceState(m,'delivered',700);
   }
   function vote(mid, opt){
     var m=findMsg(active, mid); if(!m) return;
-    R.votePoll(m, opt, meId()); renderTimeline(); persist();
+    R.votePoll(m, opt, myId(chat(active))); renderTimeline(); persist(); cloudPush(active, m);
   }
   function pushSystem(c, text){
     msgsOf(c.id).push(R.createMessage({ chatId:c.id, senderId:meId(), ts:now(), type:'system', text:text, state:'sent' }));
@@ -718,12 +896,12 @@
   }
   function commitEdit(text){
     var m=findMsg(active,editing); editing=null;
-    if(m&&text){ R.editMessage(m,text,now()); }
+    if(m&&text){ R.editMessage(m,text,now()); cloudPush(active, m); }
     $('ta').value=''; updateCmdHint(''); renderTimeline(); renderSidebar(); persist();
   }
   function unsend(mid){
     var m=findMsg(active,mid); if(!m) return;
-    R.unsendMessage(m, now()); closeMenu(); renderTimeline(); renderSidebar(); persist(); toast('Unsent for everyone');
+    R.unsendMessage(m, now()); closeMenu(); renderTimeline(); renderSidebar(); persist(); cloudPush(active, m); toast('Unsent for everyone');
   }
   function delLocal(mid){
     var a=msgsOf(active); for(var i=0;i<a.length;i++) if(a[i].id===mid){ a.splice(i,1); break; }
@@ -734,7 +912,7 @@
     toast(m.starred?'Starred':'Unstarred');
   }
   function react(mid, emoji){
-    var m=findMsg(active,mid); if(!m) return; R.toggleReaction(m, emoji, meId()); closeMenu(); renderTimeline(); persist();
+    var m=findMsg(active,mid); if(!m) return; R.toggleReaction(m, emoji, myId(chat(active))); closeMenu(); renderTimeline(); persist(); cloudPush(active, m);
   }
   function setReply(mid){
     replyTo=mid; closeMenu(); updateReplyBar(); $('ta').focus();
@@ -839,10 +1017,10 @@
       var reader=new FileReader();
       reader.onload=function(){
         var c=chat(active);
-        var m=R.createMessage({ chatId:active, senderId:meId(), ts:now(), type:'voice', state:'sent', readBy:[meId()],
+        var m=mkMsg({ chatId:active, ts:now(), type:'voice', state:'sent',
           disappearSec:c.disappearSec, meta:{ dur:Math.round(dur), src:reader.result } });
-        msgsOf(active).push(m); advanceState(m,'delivered',700);
-        if(c.id!=='saved') advanceState(m,'read',1500);
+        msgsOf(active).push(m);
+        if(c.cloud) cloudPush(c.id, m); else { advanceState(m,'delivered',700); if(c.id!=='saved') advanceState(m,'read',1500); }
         renderTimeline(); renderSidebar(); persist();
       };
       reader.readAsDataURL(blob);
@@ -860,9 +1038,10 @@
     if(!file) return; var reader=new FileReader();
     reader.onload=function(){
       var c=chat(active);
-      var m=R.createMessage({ chatId:active, senderId:meId(), ts:now(), type:'image', state:'sent', readBy:[meId()],
+      var m=mkMsg({ chatId:active, ts:now(), type:'image', state:'sent',
         disappearSec:c.disappearSec, meta:{ src:reader.result } });
-      msgsOf(active).push(m); advanceState(m,'delivered',700); if(c.id!=='saved') advanceState(m,'read',1600);
+      msgsOf(active).push(m);
+      if(c.cloud) cloudPush(c.id, m); else { advanceState(m,'delivered',700); if(c.id!=='saved') advanceState(m,'read',1600); }
       renderTimeline(); renderSidebar(); persist();
     };
     reader.readAsDataURL(file);
@@ -877,9 +1056,10 @@
         var m=a[i];
         if(m.scheduledAt && m.scheduledAt<=now() && m.state!=='read'){
           m.scheduledAt=null; m.ts=now(); m.state='delivered'; changed=true;
-          if(c.id==='echo') maybeAutoReply(c, m.text);
+          if(c.cloud) cloudPush(c.id, m);
+          else if(c.id==='echo') maybeAutoReply(c, m.text);
         }
-        if(R.isExpired(m, now())){ a.splice(i,1); changed=true; }
+        if(!c.cloud && R.isExpired(m, now())){ a.splice(i,1); changed=true; }
       }
     });
     if(changed){ if(active) renderTimeline(); renderSidebar(); persist(); }
@@ -986,6 +1166,7 @@
     if(S.settings.notify && typeof Notification!=='undefined' && Notification.permission==='default'){
       try{ Notification.requestPermission(); }catch(e){}
     }
+    if(cloud.on){ try{ cloud.db.collection('ripple_users').doc(cloud.uid).set({ name:S.me.name, avatar:S.me.avatar },{merge:true}); }catch(e){} }
     if(wantLock && !S.settings.lock){ enableLock(); return; }
     if(!wantLock && S.settings.lock){ S.settings.lock=false; lockKey=null; }
     S.settings.lock=wantLock?S.settings.lock:false;
@@ -1002,19 +1183,50 @@
   }
 
   function newChatSheet(){
+    var cloudOpt = cloudAvailable()
+      ? '<div class="setrow"><span class="ic">🟢</span><div class="gr"><div class="t">Sync to cloud</div><div class="d">'+
+          (cloud.on?'Real-time chat — share an invite link so real people can join':'Connecting…')+'</div></div>'+
+          '<div class="switch on" id="ncCloud"></div></div>'
+      : '<p class="sub" style="margin-top:-6px">Tip: add a Firebase config in <code>config.js</code> to message real people across devices (see SETUP.md). This demo creates a local, simulated chat.</p>';
     openSheet(
-      '<h2>New chat</h2><p class="sub">Start a direct chat or a group. (In this offline demo, your contacts are simulated — connect a backend to message real people, see SETUP.md.)</p>'+
+      '<h2>New chat</h2><p class="sub">Start a direct chat or a group.</p>'+
       '<div class="field"><label>Name</label><input id="ncName" placeholder="e.g. Alex, or “Book club”"></div>'+
       '<div class="field"><label>Avatar emoji</label><input id="ncAvatar" value="💬" maxlength="2"></div>'+
       '<div class="field"><label>Type</label><select id="ncType"><option value="dm">Direct message</option><option value="group">Group</option></select></div>'+
+      cloudOpt+
       '<button class="btn" id="ncCreate">Create chat</button>'
     );
+    if(cloudAvailable()) on('ncCloud','click', function(){ $('ncCloud').classList.toggle('on'); });
     on('ncCreate','click', function(){
       var name=($('ncName').value||'').trim(); if(!name){ toast('Give it a name'); return; }
-      var c=R.createChat({ id:uid(), type:$('ncType').value, name:name, avatar:($('ncAvatar').value||'💬').trim()||'💬',
-        members:[meId(), uid()], now:now() });
+      var avatar=($('ncAvatar').value||'💬').trim()||'💬', type=$('ncType').value;
+      var wantCloud = cloudAvailable() && $('ncCloud') && $('ncCloud').classList.contains('on');
+      if(wantCloud && !cloud.on){ toast('Still connecting — try again in a moment'); return; }
+      var useCloud = wantCloud && cloud.on;
+      if(useCloud){
+        closeSheet();
+        cloudCreateChat(name, avatar, type).then(function(id){ openChat(id); shareSheet(id); })
+          .catch(function(){ toast('Could not create cloud chat'); });
+        return;
+      }
+      var c=R.createChat({ id:uid(), type:type, name:name, avatar:avatar, members:[meId(), uid()], now:now() });
       S.chats.push(c); closeSheet(); openChat(c.id); persist();
     });
+  }
+
+  function shareSheet(chatId){
+    var url=inviteUrl(chatId);
+    openSheet(
+      '<h2>Invite people 🔗</h2><p class="sub">Anyone who opens this link joins the chat and can message you in real time.</p>'+
+      '<div class="field"><label>Invite link</label><input id="shareUrl" value="'+esc(url)+'" readonly onclick="this.select()"></div>'+
+      '<button class="btn" id="shareCopy">Copy link</button>'+
+      '<button class="btn ghost" id="shareDone" style="margin-top:8px">Done</button>'
+    );
+    on('shareCopy','click', function(){
+      try{ navigator.clipboard.writeText(url); toast('Invite link copied'); }
+      catch(e){ var i=$('shareUrl'); if(i){ i.select(); } toast('Select and copy the link'); }
+    });
+    on('shareDone','click', closeSheet);
   }
 
   function infoSheet(){
@@ -1029,17 +1241,27 @@
       '<div class="setrow"><span class="ic">📌</span><div class="gr"><div class="t">Pin chat</div></div><div class="switch '+(c.pinned?'on':'')+'" id="infPin"></div></div>'+
       '<div class="setrow"><span class="ic">🔕</span><div class="gr"><div class="t">Mute</div></div><div class="switch '+(c.muted?'on':'')+'" id="infMute"></div></div>'+
       '<div class="setrow"><span class="ic">🗄️</span><div class="gr"><div class="t">'+(c.archived?'Unarchive':'Archive')+'</div></div><div class="switch '+(c.archived?'on':'')+'" id="infArch"></div></div>'+
-      '<button class="btn ghost" id="infStarred">⭐ Starred messages</button>'+
-      (c.type!=='saved'?'<button class="btn danger" id="infDelete" style="margin-top:8px">Delete chat</button>':'')
+      (c.cloud?'<button class="btn ghost" id="infShare">🔗 Share invite link</button>':'')+
+      '<button class="btn ghost" id="infStarred" style="margin-top:8px">⭐ Starred messages</button>'+
+      (c.type!=='saved'?'<button class="btn danger" id="infDelete" style="margin-top:8px">'+(c.cloud?'Leave chat':'Delete chat')+'</button>':'')
     );
-    on('infDisappear','change',function(){ c.disappearSec=+$('infDisappear').value; renderTimeline(); renderSidebar(); persist(); });
+    if(c.cloud) on('infShare','click', function(){ closeSheet(); shareSheet(active); });
+    on('infDisappear','change',function(){ c.disappearSec=+$('infDisappear').value;
+      if(c.cloud){ try{ cloud.db.collection('ripple_chats').doc(active).set({disappearSec:c.disappearSec},{merge:true}); }catch(e){} }
+      renderTimeline(); renderSidebar(); persist(); });
     on('infPin','click',function(){ c.pinned=!c.pinned; $('infPin').classList.toggle('on'); renderSidebar(); persist(); });
     on('infMute','click',function(){ c.muted=!c.muted; $('infMute').classList.toggle('on'); renderSidebar(); persist(); });
     on('infArch','click',function(){ c.archived=!c.archived; closeSheet(); active=null; showPlaceholder(); renderSidebar(); persist(); });
     on('infStarred','click', starredSheet);
     on('infDelete','click', function(){
-      if(confirmDialog('Delete this chat and its messages?')){
-        S.chats=S.chats.filter(function(x){return x.id!==active;}); delete S.msgs[active];
+      var isCloud=c.cloud;
+      if(confirmDialog(isCloud?'Leave this chat? You can rejoin from an invite link.':'Delete this chat and its messages?')){
+        var id=active;
+        if(isCloud){
+          try{ cloud.db.collection('ripple_chats').doc(id).update({ members: firebase.firestore.FieldValue.arrayRemove(cloud.uid) }); }catch(e){}
+          if(cloud.subs[id]){ try{ cloud.subs[id](); }catch(e){} delete cloud.subs[id]; }
+        }
+        S.chats=S.chats.filter(function(x){return x.id!==id;}); delete S.msgs[id];
         active=null; closeSheet(); showPlaceholder(); renderSidebar(); persist();
       }
     });
@@ -1145,7 +1367,8 @@
       S.me.name=($('obName').value||'').trim()||'You';
       var sel=$('obPick').querySelector('.sel'); if(sel) S.me.avatar=sel.getAttribute('data-emoji');
       closeSheet(); persist(); renderSidebar(); applyAccent();
-      openChat('echo');
+      if(cloudAvailable()){ var pj=pendingJoin(); cloudConnect({ join:pj }); if(!pj) openChat('echo'); }
+      else openChat('echo');
     });
   }
 
@@ -1226,6 +1449,12 @@
     renderSidebar();
     if(!S.me.name && hasDoc) onboard();
     if(!_tickStarted && typeof setInterval!=='undefined'){ _tickStarted=true; setInterval(tickClock, 5000); }
+    // connect to the cloud backend if one is configured (real cross-device chat)
+    if(cloudAvailable() && S.me.name){
+      var pj=pendingJoin();
+      if(pj) toast('Joining shared chat…');
+      cloudConnect({ join:pj });
+    }
   }
 
   function boot(){

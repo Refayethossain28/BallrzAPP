@@ -94,5 +94,38 @@ service cloud.firestore {
     match /city_interest/{id} { allow create: if true; allow read, update, delete: if isAdmin(); }
     match /waitlist/{id}      { allow create: if true; allow read, update, delete: if isAdmin(); }
     match /invites/{id}       { allow create: if true; allow read, update, delete: if isAdmin(); }
+
+    // ---------------------------------------------------------------------
+    // Ripple — private messenger (ripple/). Anonymous-auth users; each chat is
+    // readable/writable only by its members. Anyone holding an invite link may
+    // add THEMSELVES to a chat's members (that's how "join by link" works), but
+    // cannot read its history until they're a member.
+    // ---------------------------------------------------------------------
+    match /ripple_users/{uid} {
+      allow read:  if signedIn();
+      allow write: if isUser(uid);
+    }
+    match /ripple_chats/{chatId} {
+      function isMember()    { return signedIn() && request.auth.uid in resource.data.members; }
+      function willBeMember(){ return signedIn() && request.auth.uid in request.resource.data.members; }
+
+      allow create: if signedIn() && willBeMember();
+      allow read:   if isMember();
+      // Members can update freely; a non-member may only join (add just
+      // themselves) and may not otherwise touch a chat they can't read.
+      allow update: if isMember() || willBeMember();
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        function chatDoc() { return get(/databases/$(database)/documents/ripple_chats/$(chatId)).data; }
+        function inChat()  { return signedIn() && request.auth.uid in chatDoc().members; }
+        allow read:   if inChat();
+        allow create: if inChat() && request.resource.data.senderId == request.auth.uid;
+        // Updates (edits, unsend, reactions, read receipts, poll votes) are
+        // open to any member of the chat.
+        allow update: if inChat();
+        allow delete: if false;
+      }
+    }
   }
 }
