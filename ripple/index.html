@@ -603,10 +603,14 @@
    *
    * Scope (honest prototype limits): text messages in 2-member chats only —
    * group chats and media payloads are not yet E2E encrypted. */
-  var e2ee = { chatKeys:{}, pubCache:{}, dec:{} };
+  var e2ee = { chatKeys:{}, chatMode:{}, pubCache:{}, dec:{} };
   function e2eeReady(){ return typeof crypto !== 'undefined' && crypto.subtle && typeof TextEncoder !== 'undefined'; }
+  // Capable of E2EE: any cloud chat I'm a member of with ≥2 people. DMs derive a
+  // key directly; groups use a shared per-chat key wrapped for each member.
   function canEncrypt(c){ return e2eeReady() && cloud.on && c && c.cloud && !!S.e2ee &&
-    Array.isArray(c.members) && c.members.length === 2 && c.members.indexOf(cloud.uid) !== -1; }
+    Array.isArray(c.members) && c.members.length >= 2 && c.members.indexOf(cloud.uid) !== -1; }
+  // Whether a usable key is actually in hand (drives the 🔒 indicators).
+  function chatEncrypted(c){ return !!(c && e2ee.chatKeys[c.id]); }
   function _ab2b64(buf){ var b=new Uint8Array(buf), s=''; for(var i=0;i<b.length;i++) s+=String.fromCharCode(b[i]); return btoa(s); }
   function _b642ab(b64){ var s=atob(b64), u=new Uint8Array(s.length); for(var i=0;i<s.length;i++) u[i]=s.charCodeAt(i); return u.buffer; }
   // Generate (once) this device's identity keypair and stash JWKs in state.
@@ -643,13 +647,102 @@
   }
   function e2eeChatKey(c){
     if(!canEncrypt(c)) return Promise.resolve(null);
+    var mode = c.members.length===2 ? 'dm' : 'group';
+    if(e2ee.chatMode[c.id] && e2ee.chatMode[c.id]!==mode){ delete e2ee.chatKeys[c.id]; } // membership category changed
+    e2ee.chatMode[c.id]=mode;
     if(e2ee.chatKeys[c.id]) return Promise.resolve(e2ee.chatKeys[c.id]);
+    var p = mode==='dm' ? e2eeDmKey(c) : e2eeGroupKey(c);
+    return p.then(function(key){ if(key) e2ee.chatKeys[c.id]=key; return key; }).catch(function(){ return null; });
+  }
+  // --- 1:1: derive the shared key directly from both public keys (no storage) ---
+  function e2eeDmKey(c){
     var other=c.members.filter(function(u){ return u!==cloud.uid; })[0];
     if(!other) return Promise.resolve(null);
     return e2eeGetPub(other).then(function(pub){
       if(!pub || !S.e2ee) return null;
       return e2eeDeriveKey(S.e2ee.priv, pub);
-    }).then(function(key){ if(key) e2ee.chatKeys[c.id]=key; return key; }).catch(function(){ return null; });
+    }).catch(function(){ return null; });
+  }
+  // --- group: a shared AES key, wrapped per member with ECDH, in keys/{uid} ---
+  function _keysCol(id){ return cloud.db.collection('ripple_chats').doc(id).collection('keys'); }
+  // Wrap raw key bytes for a recipient: AES-GCM under ECDH(myPriv, theirPub).
+  function e2eeWrapFor(pub, rawBuf){
+    return e2eeDeriveKey(S.e2ee.priv, pub).then(function(wk){
+      var iv=crypto.getRandomValues(new Uint8Array(12));
+      return crypto.subtle.encrypt({ name:'AES-GCM', iv:iv }, wk, rawBuf).then(function(ct){
+        return { v:1, iv:_ab2b64(iv), ct:_ab2b64(ct), by:cloud.uid };
+      });
+    });
+  }
+  function e2eeUnwrap(data){
+    if(!data || !data.by) return Promise.resolve(null);
+    return e2eeGetPub(data.by).then(function(pub){
+      if(!pub) return null;
+      return e2eeDeriveKey(S.e2ee.priv, pub).then(function(wk){
+        return crypto.subtle.decrypt({ name:'AES-GCM', iv:new Uint8Array(_b642ab(data.iv)) }, wk, _b642ab(data.ct));
+      }).then(function(raw){
+        return crypto.subtle.importKey('raw', raw, { name:'AES-GCM' }, true, ['encrypt','decrypt']);
+      });
+    }).catch(function(){ return null; });
+  }
+  function e2eeGroupKey(c){
+    return _keysCol(c.id).doc(cloud.uid).get().then(function(d){
+      if(d.exists) return e2eeUnwrap(d.data());
+      return e2eeEnsureGroupKey(c); // no key for me yet — claim/generate or wait
+    });
+  }
+  // Elect a single key-owner (transaction) who generates the key and wraps it for
+  // everyone. Non-owners return null until the owner has wrapped a copy for them.
+  function e2eeEnsureGroupKey(c){
+    var ref=cloud.db.collection('ripple_chats').doc(c.id);
+    return cloud.db.runTransaction(function(tx){
+      return tx.get(ref).then(function(d){
+        var data=d.data()||{};
+        if(data.keyOwner) return data.keyOwner;
+        tx.update(ref, { keyOwner: cloud.uid });
+        return cloud.uid;
+      });
+    }).then(function(owner){
+      if(owner!==cloud.uid) return null; // someone else owns it; wait for my wrapped copy
+      return crypto.subtle.generateKey({ name:'AES-GCM', length:256 }, true, ['encrypt','decrypt']).then(function(key){
+        return crypto.subtle.exportKey('raw', key).then(function(raw){
+          return e2eeDistributeGroupKey(c, raw).then(function(){ return key; });
+        });
+      });
+    }).catch(function(){ return null; });
+  }
+  // Wrap the raw key for every member that has published a public key.
+  function e2eeDistributeGroupKey(c, rawBuf){
+    return Promise.all(c.members.map(function(uid){
+      return e2eeGetPub(uid).then(function(pub){
+        if(!pub) return null;
+        return e2eeWrapFor(pub, rawBuf).then(function(w){ return _keysCol(c.id).doc(uid).set(w).catch(function(){}); });
+      }).catch(function(){ return null; });
+    }));
+  }
+  // Owner-only: wrap the key for any member still missing a copy (e.g. newcomers).
+  function e2eeReconcileGroup(c){
+    if(!canEncrypt(c) || c.members.length<=2) return;
+    var key=e2ee.chatKeys[c.id]; if(!key) return;
+    cloud.db.collection('ripple_chats').doc(c.id).get().then(function(d){
+      if(!d.exists || d.data().keyOwner!==cloud.uid) return; // only the owner distributes
+      crypto.subtle.exportKey('raw', key).then(function(raw){
+        c.members.forEach(function(uid){
+          _keysCol(c.id).doc(uid).get().then(function(kd){
+            if(kd.exists) return;
+            e2eeGetPub(uid).then(function(pub){ if(pub) e2eeWrapFor(pub, raw).then(function(w){ _keysCol(c.id).doc(uid).set(w).catch(function(){}); }); });
+          });
+        });
+      });
+    }).catch(function(){});
+  }
+  // Warm the key cache (and reconcile if I'm the owner) when a chat opens.
+  function e2eePrepareChat(c){
+    if(!canEncrypt(c)) return;
+    e2eeChatKey(c).then(function(key){
+      if(key && active===c.id){ renderTimeline(); refreshConvStatus(); }
+      if(key && c.members.length>2) e2eeReconcileGroup(c);
+    });
   }
   function e2eeEncrypt(c, text){
     return e2eeChatKey(c).then(function(key){
@@ -712,7 +805,7 @@
         e2eeSetup();
         startPresence();
         subscribeCloudChats();
-        if (opts.join) cloudJoin(opts.join);
+        if (opts.join) cloudJoin(opts.join.id, opts.join.code);
         if (opts.interactive) toast('Connected ✓');
         // Silently refresh the push token if the user already opted in.
         if (pushAvailable() && Notification.permission === 'granted') enablePush(false);
@@ -758,12 +851,14 @@
     if (!c){
       c = R.createChat({ id:id, type:data.type||'group', name:data.name||'Chat', avatar:data.avatar||'💬',
         members:data.members||[], now: data.createdAt ? Date.now() : Date.now() });
-      c.cloud = true; S.chats.push(c);
+      c.cloud = true; if (data.joinCode != null) c.joinCode = data.joinCode;
+      if (data.pinnedIds != null) c.pinnedIds = data.pinnedIds; S.chats.push(c);
     } else {
       c.cloud = true; c.name = data.name || c.name; c.avatar = data.avatar || c.avatar;
       c.members = data.members || c.members; if (data.disappearSec != null) c.disappearSec = data.disappearSec;
       if (data.disappearBeats != null) c.disappearBeats = data.disappearBeats;
       if (data.pinnedIds != null) c.pinnedIds = data.pinnedIds;
+      if (data.joinCode != null) c.joinCode = data.joinCode;
     }
     subscribeCloudMessages(id);
     persist();
@@ -930,25 +1025,35 @@
   function cloudCreateChat(name, avatar, type){
     var ref = cloud.db.collection('ripple_chats').doc();
     var data = { type:type||'group', name:name, avatar:avatar||'💬', members:[cloud.uid],
+      joinCode: makeInviteCode(),   // invite token — required to join (see rules)
+      keyOwner: cloud.uid,          // owns group-E2EE key distribution
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
     return ref.set(data).then(function(){ upsertCloudChat(ref.id, data); return ref.id; });
   }
-  function cloudJoin(chatId){
+  function cloudJoin(chatId, code){
     if (!cloud.on){ return; }
-    cloud.db.collection('ripple_chats').doc(chatId).update({
-      members: firebase.firestore.FieldValue.arrayUnion(cloud.uid)
-    }).then(function(){ toast('Joined chat ✓'); subscribeCloudMessages(chatId); setTimeout(function(){ openChat(chatId); }, 400); })
+    var upd={ members: firebase.firestore.FieldValue.arrayUnion(cloud.uid) };
+    if(code) upd.joinProof=code; // proves possession of the invite token (checked by rules)
+    cloud.db.collection('ripple_chats').doc(chatId).update(upd)
+      .then(function(){ toast('Joined chat ✓'); subscribeCloudMessages(chatId); setTimeout(function(){ openChat(chatId); }, 400); })
       .catch(function(){ toast('That invite link is invalid or expired'); });
+  }
+  function makeInviteCode(){
+    var a=new Uint8Array(9); (crypto&&crypto.getRandomValues)?crypto.getRandomValues(a):a.forEach(function(_,i){a[i]=Math.floor(Math.random()*256);});
+    return _ab2b64(a.buffer).replace(/[+/=]/g,'').slice(0,12);
   }
   function inviteUrl(chatId){
     if (typeof location === 'undefined') return chatId;
-    return location.origin + location.pathname + '?join=' + chatId;
+    var c=chat(chatId), url=location.origin + location.pathname + '?join=' + chatId;
+    if(c && c.joinCode) url += '&k=' + encodeURIComponent(c.joinCode);
+    return url;
   }
   function pendingJoin(){
     if (typeof location === 'undefined' || !location.search) return null;
-    var m = location.search.match(/[?&]join=([^&]+)/);
-    return m ? decodeURIComponent(m[1]) : null;
+    var m = location.search.match(/[?&]join=([^&]+)/); if(!m) return null;
+    var k = location.search.match(/[?&]k=([^&]+)/);
+    return { id: decodeURIComponent(m[1]), code: k ? decodeURIComponent(k[1]) : null };
   }
 
   /* ---------- helpers ---------- */
@@ -1034,9 +1139,9 @@
     if (c.type==='saved') return { txt:'Your private notes', off:true };
     if (c.id==='echo') return { txt:'online · replies instantly', off:false };
     if (c.cloud){ var n=(c.members&&c.members.length)||1;
-      var lock=canEncrypt(c)?' · 🔒':'';
+      var lock=chatEncrypted(c)?' · 🔒':'';
       if(n===2){ var pp=peerPresence(c); if(pp) return { txt:pp.txt+lock, off:pp.off }; }
-      return { txt:'🟢 Connected · '+n+' member'+(n===1?'':'s')+(canEncrypt(c)?' · 🔒 end-to-end':''), off:false }; }
+      return { txt:'🟢 Connected · '+n+' member'+(n===1?'':'s')+(chatEncrypted(c)?' · 🔒 end-to-end':''), off:false }; }
     if (c.type==='group') return { txt:(c.members.length)+' members', off:true };
     return { txt:'last seen recently', off:true };
   }
@@ -1102,7 +1207,7 @@
     active = id; replyTo=null; editing=null; scheduleAt=null; quietDismissedFor=null;
     var et=$('emojiTray'); if(et) et.classList.add('hidden');
     var c = chat(id); if(!c) return;
-    if(c.cloud){ subscribeTyping(id); subscribePresence(c); } else { unsubscribeTyping(); unsubscribePresence(); }
+    if(c.cloud){ subscribeTyping(id); subscribePresence(c); e2eePrepareChat(c); } else { unsubscribeTyping(); unsubscribePresence(); }
     if (hasDoc) document.body.classList.add('show-chat');
     $('placeholder').classList.add('hidden');
     $('convHead').classList.remove('hidden');
@@ -1132,8 +1237,8 @@
     var all = msgsOf(active).filter(function(mm){ return !R.isExpired(mm,now()) && !R.isPending(mm,now()); });
     var groups = R.groupByDay(all, now());
     var html='';
-    if (canEncrypt(c))
-      html += '<div class="sys">🔒 Messages in this chat are end-to-end encrypted. Only you and them can read them.</div>';
+    if (chatEncrypted(c))
+      html += '<div class="sys">🔒 Messages in this chat are end-to-end encrypted. Only members can read them.</div>';
     if (c.disappearBeats)
       html += '<div class="sys">⏱ Beat timer on — new messages vanish after '+c.disappearBeats+' conversation beat'+(c.disappearBeats>1?'s':'')+' (~'+humanDur(disSec(c))+' at the current rhythm).</div>';
     else if (c.disappearSec)

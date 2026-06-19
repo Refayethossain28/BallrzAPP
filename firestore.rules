@@ -116,9 +116,14 @@ service cloud.firestore {
 
       allow create: if signedIn() && willBeMember();
       allow read:   if isMember();
-      // Members can update freely; a non-member may only join (add just
-      // themselves) and may not otherwise touch a chat they can't read.
-      allow update: if isMember() || willBeMember();
+      // Members can update freely. A non-member may only join (add just
+      // themselves) AND, if the chat carries an invite token (joinCode), must
+      // prove possession of it via joinProof — so knowing the chatId alone isn't
+      // enough. Legacy chats without a joinCode stay open for backward compat.
+      allow update: if isMember()
+        || ( willBeMember()
+             && ( !('joinCode' in resource.data)
+                  || request.resource.data.joinProof == resource.data.joinCode ) );
       allow delete: if false;
 
       match /messages/{messageId} {
@@ -139,6 +144,15 @@ service cloud.firestore {
         function inChat()  { return signedIn() && request.auth.uid in chatDoc().members; }
         allow read:  if inChat();
         allow write: if isUser(typerUid) && inChat();
+      }
+
+      // Group E2EE: the shared chat key wrapped per member with ECDH. Each doc
+      // holds ciphertext only; any member may read/write (the elected key-owner
+      // wraps a copy for everyone). The plaintext key never reaches the server.
+      match /keys/{memberUid} {
+        function chatDoc() { return get(/databases/$(database)/documents/ripple_chats/$(chatId)).data; }
+        function inChat()  { return signedIn() && request.auth.uid in chatDoc().members; }
+        allow read, write: if inChat();
       }
     }
   }
