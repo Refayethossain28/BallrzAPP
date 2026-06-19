@@ -21,6 +21,9 @@ const AMADEUS_CLIENT_SECRET = defineSecret('AMADEUS_CLIENT_SECRET');
 // Square — set with: firebase functions:secrets:set SQUARE_ACCESS_TOKEN
 const SQUARE_ACCESS_TOKEN = defineSecret('SQUARE_ACCESS_TOKEN');
 
+// Lingua (language app) — set with: firebase functions:secrets:set ANTHROPIC_API_KEY
+const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
+
 // Test by default (free, limited inventory). For production set AMADEUS_HOST to
 // https://api.amadeus.com via a functions/.env file or --set-env-vars.
 const AMADEUS_HOST = process.env.AMADEUS_HOST || 'https://test.api.amadeus.com';
@@ -348,6 +351,161 @@ exports.onBookingWrite = onDocumentWritten(
       logger.info('booking notification sent', { kind, ref: after.ref || event.params.bookingId });
     } catch (err) {
       logger.error('onBookingWrite', err.message);
+    }
+  }
+);
+
+/* ===========================================================================
+ * linguaAI — hosted Claude proxy for the Lingua language app (lingua/index.html)
+ *
+ * Mirrors lingua/server.mjs but as a callable Cloud Function so the *live* web
+ * link can use Claude without anyone running a local proxy. The browser never
+ * holds the Anthropic key — it calls this function, which forces a structured
+ * tool call for Translate/Teach (deterministic JSON to render) and lets Claude
+ * answer in prose for free-form Ask. If absent or erroring, the client falls
+ * back to its offline starter set, so a partial deploy never breaks the UI.
+ *
+ * Deploy:  firebase functions:secrets:set ANTHROPIC_API_KEY
+ *          firebase deploy --only functions:linguaAI
+ * =========================================================================== */
+const LINGUA_MODEL = process.env.LINGUA_MODEL || 'claude-opus-4-8';
+
+const LINGUA_TRANSLATE_TOOL = {
+  name: 'translation_result',
+  description: 'Return a precise translation with pronunciation and useful learner notes.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      translation:   { type: 'string', description: 'The translated text in the target language/dialect, in its native script.' },
+      pronunciation: { type: 'string', description: 'Romanized pronunciation. Empty if the target already uses Latin script.' },
+      literal:       { type: 'string', description: 'A word-for-word literal gloss when it differs interestingly; otherwise empty.' },
+      register:      { type: 'string', description: "Formality/register note, e.g. 'casual', 'polite/formal', 'spoken only'." },
+      notes:         { type: 'string', description: 'One short note on dialect-specific word choice, gender, or usage. Empty if nothing notable.' },
+    },
+    required: ['translation'],
+  },
+};
+const LINGUA_LESSON_TOOL = {
+  name: 'lesson',
+  description: 'Return a short, level-appropriate, dialect-aware mini lesson on the requested topic.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      title: { type: 'string' },
+      intro: { type: 'string', description: 'One or two sentences of context.' },
+      items: {
+        type: 'array',
+        description: '5–8 example phrases/words for the topic.',
+        items: {
+          type: 'object',
+          properties: {
+            phrase:        { type: 'string', description: 'The phrase in the target language/dialect (native script).' },
+            pronunciation: { type: 'string', description: 'Romanized pronunciation. Empty if Latin script.' },
+            meaning:       { type: 'string', description: 'English meaning / when to use it.' },
+          },
+          required: ['phrase', 'meaning'],
+        },
+      },
+      tip:         { type: 'string', description: 'One practical learning or cultural tip.' },
+      dialectNote: { type: 'string', description: 'How this differs in the requested dialect vs. the standard. Empty if not applicable.' },
+    },
+    required: ['title', 'items'],
+  },
+};
+
+function linguaTargetLabel(p) {
+  return p.dialect ? `${p.targetName} (${p.dialect} dialect)` : p.targetName;
+}
+
+function linguaBuildRequest(p) {
+  if (p.mode === 'translate') {
+    const sys =
+      'You are an expert translator and dialectologist. Translate accurately into the ' +
+      'EXACT requested language and dialect, using the natural phrasing a native speaker of ' +
+      'that specific variety would use (not just the standard form). Use the correct native script. ' +
+      'Provide romanized pronunciation for non-Latin scripts. Be precise and never invent words.';
+    const user =
+      `Translate the following from ${p.sourceName} into ${linguaTargetLabel(p)}.` +
+      (p.dialectNote ? ` Dialect context: ${p.dialectNote}.` : '') +
+      `\n\nText:\n${JSON.stringify(p.text || '')}`;
+    return { sys, user, tools: [LINGUA_TRANSLATE_TOOL], force: 'translation_result' };
+  }
+  if (p.mode === 'teach') {
+    const sys =
+      'You are a patient, accurate language tutor. Produce a short, practical mini-lesson ' +
+      "for the requested topic, tailored to the learner's level and to the SPECIFIC dialect " +
+      'requested (use that variety\'s real vocabulary and pronunciation, not only the standard). ' +
+      'Use correct native script and give romanized pronunciation for non-Latin scripts.';
+    const user =
+      `Teach a ${p.level} learner the topic "${p.topic}" in ${linguaTargetLabel(p)}.` +
+      (p.dialectNote ? ` Dialect context: ${p.dialectNote}.` : '');
+    return { sys, user, tools: [LINGUA_LESSON_TOOL], force: 'lesson' };
+  }
+  const sys =
+    'You are an expert, accurate language teacher. Answer the learner\'s question about the ' +
+    'language/dialect clearly and concisely. Give examples in native script with romanized ' +
+    'pronunciation where helpful. If the question is about a specific dialect, answer for that variety.';
+  const user =
+    `Language: ${linguaTargetLabel(p)}.` +
+    (p.dialectNote ? ` Dialect context: ${p.dialectNote}.` : '') +
+    `\n\nQuestion: ${p.question || ''}`;
+  return { sys, user, tools: null, force: null };
+}
+
+async function linguaCallClaude(p, apiKey) {
+  const { sys, user, tools, force } = linguaBuildRequest(p);
+  const body = {
+    model: LINGUA_MODEL,
+    max_tokens: 1500,
+    system: sys,
+    messages: [{ role: 'user', content: user }],
+  };
+  if (tools) {
+    body.tools = tools;
+    body.tool_choice = { type: 'tool', name: force };
+  }
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`anthropic ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  const blocks = data.content || [];
+  if (tools) {
+    const toolUse = blocks.find((b) => b.type === 'tool_use');
+    if (!toolUse) throw new Error('model returned no structured result');
+    return toolUse.input || {};
+  }
+  const text = blocks.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+  return { answer: text };
+}
+
+exports.linguaAI = onCall(
+  { secrets: [ANTHROPIC_API_KEY], region: 'us-central1' },
+  async (request) => {
+    const p = request.data || {};
+    const mode = p.mode === 'teach' || p.mode === 'ask' ? p.mode : 'translate';
+    // Light input caps to bound cost/abuse on a public callable.
+    if (typeof p.text === 'string' && p.text.length > 4000) {
+      throw new HttpsError('invalid-argument', 'Text too long (max 4000 chars).');
+    }
+    if (typeof p.question === 'string' && p.question.length > 1000) {
+      throw new HttpsError('invalid-argument', 'Question too long (max 1000 chars).');
+    }
+    const apiKey = ANTHROPIC_API_KEY.value();
+    if (!apiKey) throw new HttpsError('failed-precondition', 'ANTHROPIC_API_KEY not configured.');
+    try {
+      const result = await linguaCallClaude({ ...p, mode }, apiKey);
+      return { ok: true, result };
+    } catch (err) {
+      logger.error('linguaAI', err.message);
+      // Return ok:false (not a thrown error) so the client cleanly falls back offline.
+      return { ok: false, error: String(err.message || err) };
     }
   }
 );

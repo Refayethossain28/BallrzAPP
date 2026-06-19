@@ -11,6 +11,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Lingua">
+<!-- Firebase (compat) — only used for the optional hosted "cloud AI" fallback.
+     Loaded from the CDN; if offline or blocked, the app simply stays offline. -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
 <style>
   :root{
     color-scheme: dark;
@@ -119,6 +123,30 @@
   .badge-src{ display:inline-block; font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
     color:var(--muted2); margin-top:10px; }
   .badge-src.ai{ color:var(--teal); }
+  /* audio pronunciation buttons */
+  .spk{ display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; flex:0 0 auto;
+    border-radius:9px; border:1px solid var(--line); background:var(--panel2); color:var(--teal); font-size:15px; cursor:pointer; }
+  .spk:hover{ border-color:var(--teal); }
+  .target-row{ display:flex; align-items:flex-start; gap:10px; }
+  .result.rtl .target-row{ flex-direction:row-reverse; }
+  .target-row .target{ flex:1 1 auto; min-width:0; }
+  .ph-row{ display:flex; align-items:center; gap:8px; }
+  .lesson.rtl .ph-row{ flex-direction:row-reverse; }
+  .ph-row .ph{ flex:1 1 auto; min-width:0; }
+  /* header buttons + saved/history panel */
+  .hdr-btn{ display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-size:12px; font-weight:700;
+    padding:7px 11px; border-radius:999px; border:1px solid var(--line); background:var(--panel); color:var(--muted); white-space:nowrap; }
+  .hdr-btn:hover{ color:var(--ink); border-color:var(--accent); }
+  .hist-item{ border-top:1px solid var(--line); padding:11px 0; }
+  .hist-item:first-child{ border-top:0; padding-top:0; }
+  .hist-dir{ font-size:11px; color:var(--muted2); text-transform:uppercase; letter-spacing:.04em; }
+  .hist-src{ color:var(--muted); font-size:13.5px; margin-top:1px; }
+  .hist-tgt{ font-size:16px; font-weight:600; margin-top:2px; }
+  .hist-pr{ color:var(--teal); font-size:12.5px; margin-top:2px; }
+  .hist-row{ display:flex; align-items:flex-start; gap:8px; }
+  .hist-actions{ margin-left:auto; display:flex; gap:6px; flex:0 0 auto; }
+  .mini{ background:transparent; border:1px solid var(--line); color:var(--muted); border-radius:8px; padding:6px 9px; font:inherit; font-size:12px; cursor:pointer; }
+  .mini:hover{ color:var(--ink); border-color:var(--accent); }
   footer{ color:var(--muted2); font-size:12px; margin-top:26px; text-align:center; }
   footer a{ color:var(--muted); }
   /* live-config modal */
@@ -138,9 +166,12 @@
       <h1>Lingua</h1>
       <p class="sub">Learn &amp; translate any language — including Arabic &amp; Urdu dialects</p>
     </div>
-    <button id="aiPill" class="ai-pill" type="button" title="AI accuracy mode">
-      <span class="dot"></span><span id="aiPillText">AI: offline</span>
-    </button>
+    <div style="margin-left:auto; display:flex; gap:8px; align-items:center">
+      <button id="histBtn" class="hdr-btn" type="button" title="Saved translations">🕘 Saved</button>
+      <button id="aiPill" class="ai-pill" type="button" title="AI accuracy mode" style="margin-left:0">
+        <span class="dot"></span><span id="aiPillText">AI: offline</span>
+      </button>
+    </div>
   </header>
 
   <!-- STEP 1 — pick a language -->
@@ -218,8 +249,17 @@
     </div>
   </section>
 
+  <!-- Saved translations (on-device) -->
+  <section id="historyPanel" class="card hidden">
+    <div class="row" style="justify-content:space-between; align-items:center">
+      <h2 style="margin:0">🕘 Saved translations</h2>
+      <button id="histClear" class="mini" type="button">Clear all</button>
+    </div>
+    <div id="histList" style="margin-top:10px"></div>
+  </section>
+
   <footer>
-    Lingua · part of <a href="../">BallrzAPP prototypes</a> · works offline · enable Live AI for accuracy
+    Lingua · part of <a href="../">BallrzAPP prototypes</a> · works offline · tap 🔊 to listen · enable Live AI for accuracy
   </footer>
 </div>
 
@@ -227,11 +267,13 @@
 <div id="aiModal" class="modal hidden">
   <div class="box">
     <h3>Enable Live AI accuracy</h3>
-    <p>Translations and lessons are powered by Claude through a tiny local proxy so your API key never touches the browser. Start it once:</p>
+    <p>Translations and lessons are powered by Claude so your API key never touches the browser. Two ways to turn it on:</p>
+    <p style="color:#cdd6f5;font-size:13px;margin:0 0 8px"><b>Local proxy</b> — run it once, then open <code>http://localhost:8788</code>:</p>
     <p style="background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:10px;padding:12px;color:#cdd6f5;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.7">
       cd lingua<br>ANTHROPIC_API_KEY=sk-ant-… node server.mjs
     </p>
-    <p>Then open this page from <code>http://localhost:8788</code>. Until then, Lingua runs offline with a built-in starter phrasebook.</p>
+    <p style="color:#cdd6f5;font-size:13px;margin:0 0 4px"><b>Hosted (cloud)</b> — deploy the <code>linguaAI</code> Firebase function once and the live web link gets AI automatically (see <code>lingua/README.md</code>).</p>
+    <p>Until either is connected, Lingua runs offline with a built-in starter phrasebook. Audio (🔊) and saved translations work offline too.</p>
     <div class="row" style="justify-content:flex-end">
       <button class="ghost" id="aiRetry" type="button">Re-check connection</button>
       <button class="btn sec" id="aiClose" type="button">Close</button>
@@ -258,7 +300,9 @@ var LANGS = [
       { id:"lev", name:"Levantine", native:"الشامي", note:"Syria, Lebanon, Jordan & Palestine." },
       { id:"glf", name:"Gulf", native:"الخليجي", note:"Broader Khaleeji across Kuwait, Qatar, Bahrain & the Gulf." },
       { id:"irq", name:"Iraqi", native:"العراقي", note:"Mesopotamian Arabic." },
-      { id:"mor", name:"Maghrebi (Darija)", native:"الدارجة", note:"Morocco, Algeria & Tunisia." }
+      { id:"mor", name:"Maghrebi (Darija)", native:"الدارجة", note:"Morocco, Algeria & Tunisia." },
+      { id:"sdn", name:"Sudanese", native:"السوداني", note:"Sudanese Arabic of the Nile Valley." },
+      { id:"yem", name:"Yemeni", native:"اليمني", note:"Southern Arabian varieties of Yemen." }
     ] },
   { id:"ur", name:"Urdu", native:"اردو", flag:"🇵🇰", rtl:true, d:[
       { id:"std", name:"Standard Urdu", native:"معیاری اردو", note:"The literary & official register taught in schools and used in media." },
@@ -268,12 +312,32 @@ var LANGS = [
       { id:"hyd", name:"Hyderabadi", native:"حیدرآبادی", note:"Hyderabad speech, famous for “nakko / hau / miyan”." },
       { id:"rek", name:"Rekhta", native:"ریختہ", note:"The classical, poetic register of ghazals and Urdu literature." }
     ] },
-  { id:"en", name:"English", native:"English", flag:"🇬🇧" },
-  { id:"es", name:"Spanish", native:"Español", flag:"🇪🇸" },
-  { id:"fr", name:"French", native:"Français", flag:"🇫🇷" },
-  { id:"de", name:"German", native:"Deutsch", flag:"🇩🇪" },
+  { id:"en", name:"English", native:"English", flag:"🇬🇧", d:[
+      { id:"gb", name:"British", native:"British English", note:"Standard UK English (Received Pronunciation / standard spelling)." },
+      { id:"us", name:"American", native:"American English", note:"US spelling and vocabulary." },
+      { id:"au", name:"Australian", native:"Australian English", note:"Australian vocabulary and idiom." },
+      { id:"in", name:"Indian", native:"Indian English", note:"South-Asian English usage and idiom." }
+    ] },
+  { id:"es", name:"Spanish", native:"Español", flag:"🇪🇸", d:[
+      { id:"es", name:"Castilian (Spain)", native:"Español de España", note:"Peninsular Spanish — uses vosotros and ceceo." },
+      { id:"mx", name:"Mexican", native:"Español mexicano", note:"Mexico & much of North/Central America." },
+      { id:"ar", name:"Rioplatense", native:"Español rioplatense", note:"Argentina & Uruguay — voseo and ‘sh’ for ll/y." },
+      { id:"co", name:"Colombian / Andean", native:"Español andino", note:"Colombia & the Andean region — clear, neutral usage." }
+    ] },
+  { id:"fr", name:"French", native:"Français", flag:"🇫🇷", d:[
+      { id:"fr", name:"Metropolitan", native:"Français de France", note:"Standard European French." },
+      { id:"ca", name:"Canadian (Québécois)", native:"Français québécois", note:"Quebec French — distinct vocabulary and pronunciation." }
+    ] },
+  { id:"de", name:"German", native:"Deutsch", flag:"🇩🇪", d:[
+      { id:"de", name:"German (Germany)", native:"Hochdeutsch", note:"Standard High German." },
+      { id:"at", name:"Austrian", native:"Österreichisches Deutsch", note:"Austrian standard German." },
+      { id:"ch", name:"Swiss", native:"Schweizerdeutsch", note:"Swiss standard German (no ß; distinct vocabulary)." }
+    ] },
   { id:"it", name:"Italian", native:"Italiano", flag:"🇮🇹" },
-  { id:"pt", name:"Portuguese", native:"Português", flag:"🇵🇹" },
+  { id:"pt", name:"Portuguese", native:"Português", flag:"🇵🇹", d:[
+      { id:"br", name:"Brazilian", native:"Português brasileiro", note:"Brazil — the most widely spoken Portuguese variety." },
+      { id:"pt", name:"European", native:"Português europeu", note:"Portugal & African Lusophone standard." }
+    ] },
   { id:"nl", name:"Dutch", native:"Nederlands", flag:"🇳🇱" },
   { id:"ru", name:"Russian", native:"Русский", flag:"🇷🇺" },
   { id:"pl", name:"Polish", native:"Polski", flag:"🇵🇱" },
@@ -319,7 +383,10 @@ var LANGS = [
   { id:"ml", name:"Malayalam", native:"മലയാളം", flag:"🇮🇳" },
   { id:"si", name:"Sinhala", native:"සිංහල", flag:"🇱🇰" },
   { id:"ne", name:"Nepali", native:"नेपाली", flag:"🇳🇵" },
-  { id:"zh", name:"Chinese (Mandarin)", native:"中文 / 普通话", flag:"🇨🇳" },
+  { id:"zh", name:"Chinese (Mandarin)", native:"中文 / 普通话", flag:"🇨🇳", d:[
+      { id:"cn", name:"Mainland (Simplified)", native:"简体 / 普通话", note:"Mainland China — simplified characters, Putonghua." },
+      { id:"tw", name:"Taiwan (Traditional)", native:"繁體 / 國語", note:"Taiwan — traditional characters, Guoyu." }
+    ] },
   { id:"yue", name:"Chinese (Cantonese)", native:"廣東話", flag:"🇭🇰" },
   { id:"ja", name:"Japanese", native:"日本語", flag:"🇯🇵" },
   { id:"ko", name:"Korean", native:"한국어", flag:"🇰🇷" },
@@ -387,6 +454,113 @@ function on(node, ev, fn){ if(node && node.addEventListener) node.addEventListen
 function show(node){ if(node) node.classList.remove("hidden"); }
 function hide(node){ if(node) node.classList.add("hidden"); }
 
+/* =========================================================================
+   Audio pronunciation — uses the browser's built-in speech synthesis. Quality
+   depends on the voices installed on the device; the requested BCP-47 tag (and
+   dialect override where the OS has one) gives the best available match.
+   ========================================================================= */
+var BCP = {
+  en:"en-US", es:"es-ES", fr:"fr-FR", de:"de-DE", it:"it-IT", pt:"pt-PT", nl:"nl-NL",
+  ru:"ru-RU", pl:"pl-PL", uk:"uk-UA", cs:"cs-CZ", sk:"sk-SK", ro:"ro-RO", bg:"bg-BG",
+  sr:"sr-RS", hr:"hr-HR", sl:"sl-SI", el:"el-GR", tr:"tr-TR", hu:"hu-HU", fi:"fi-FI",
+  sv:"sv-SE", no:"nb-NO", da:"da-DK", is:"is-IS", et:"et-EE", lv:"lv-LV", lt:"lt-LT",
+  sq:"sq-AL", mk:"mk-MK", ga:"ga-IE", cy:"cy-GB", ca:"ca-ES", eu:"eu-ES", gl:"gl-ES",
+  he:"he-IL", fa:"fa-IR", prs:"fa-AF", ps:"ps-AF", ku:"ku", hi:"hi-IN", bn:"bn-BD",
+  pa:"pa-IN", gu:"gu-IN", mr:"mr-IN", ta:"ta-IN", te:"te-IN", kn:"kn-IN", ml:"ml-IN",
+  si:"si-LK", ne:"ne-NP", zh:"zh-CN", yue:"zh-HK", ja:"ja-JP", ko:"ko-KR", vi:"vi-VN",
+  th:"th-TH", lo:"lo-LA", km:"km-KH", my:"my-MM", id:"id-ID", ms:"ms-MY", tl:"fil-PH",
+  sw:"sw-KE", am:"am-ET", ha:"ha", yo:"yo", ig:"ig", zu:"zu-ZA", xh:"xh", af:"af-ZA",
+  so:"so", hy:"hy-AM", ka:"ka-GE", az:"az-AZ", kk:"kk-KZ", uz:"uz", mn:"mn", eo:"eo",
+  la:"la", ht:"ht", mi:"mi-NZ", haw:"haw", sm:"sm", ar:"ar-SA", ur:"ur-PK"
+};
+var DIALECT_BCP = {
+  "ar:msa":"ar-SA", "ar:egy":"ar-EG", "ar:sau":"ar-SA", "ar:are":"ar-AE", "ar:lev":"ar-LB",
+  "ar:glf":"ar-KW", "ar:irq":"ar-IQ", "ar:mor":"ar-MA", "ar:sdn":"ar-SD", "ar:yem":"ar-YE",
+  "ur:std":"ur-PK", "ur:lah":"ur-PK", "ur:khi":"ur-PK", "ur:dak":"ur-IN", "ur:hyd":"ur-IN", "ur:rek":"ur-PK",
+  "en:gb":"en-GB", "en:us":"en-US", "en:au":"en-AU", "en:in":"en-IN",
+  "es:es":"es-ES", "es:mx":"es-MX", "es:ar":"es-AR", "es:co":"es-CO",
+  "pt:br":"pt-BR", "pt:pt":"pt-PT", "fr:fr":"fr-FR", "fr:ca":"fr-CA",
+  "de:de":"de-DE", "de:at":"de-AT", "de:ch":"de-CH", "zh:cn":"zh-CN", "zh:tw":"zh-TW"
+};
+function bcpForLang(lang, dialect){
+  if(!lang) return "";
+  if(dialect){ var k = lang.id + ":" + dialect.id; if(DIALECT_BCP[k]) return DIALECT_BCP[k]; }
+  return BCP[lang.id] || lang.id;
+}
+function speechOK(){ try{ return typeof window !== "undefined" && !!window.speechSynthesis && typeof SpeechSynthesisUtterance !== "undefined"; }catch(e){ return false; } }
+function speak(text, bcp){
+  try{
+    if(!text || !speechOK()) return;
+    window.speechSynthesis.cancel();
+    var u = new SpeechSynthesisUtterance(text);
+    if(bcp) u.lang = bcp;
+    u.rate = 0.92;
+    var voices = window.speechSynthesis.getVoices ? window.speechSynthesis.getVoices() : [];
+    if(bcp && voices && voices.length){
+      var pre = bcp.toLowerCase(), base = pre.slice(0,2);
+      var pick = null;
+      for(var i=0;i<voices.length;i++){ var vl=(voices[i].lang||"").toLowerCase(); if(vl===pre){ pick=voices[i]; break; } if(!pick && vl.slice(0,2)===base) pick=voices[i]; }
+      if(pick) u.voice = pick;
+    }
+    window.speechSynthesis.speak(u);
+  }catch(e){}
+}
+function speakBtn(text, bcp){
+  var b = el("button","spk"); b.type = "button"; b.title = "Listen"; b.setAttribute("aria-label","Listen"); b.textContent = "🔊";
+  if(!speechOK()){ b.disabled = true; b.style.opacity = "0.45"; b.title = "Audio not supported on this device"; }
+  on(b,"click",function(){ speak(text, bcp); });
+  return b;
+}
+
+/* =========================================================================
+   Saved translations — stored on-device (localStorage). No account, no cloud.
+   ========================================================================= */
+var HIST_KEY = "lingua.history.v1";
+function loadHist(){ try{ return JSON.parse(localStorage.getItem(HIST_KEY) || "[]") || []; }catch(e){ return []; } }
+function saveHist(a){ try{ localStorage.setItem(HIST_KEY, JSON.stringify(a.slice(0,100))); }catch(e){} }
+function addHist(entry){
+  var a = loadHist();
+  a = a.filter(function(x){ return !(x.source===entry.source && x.translation===entry.translation && x.toName===entry.toName); });
+  a.unshift(entry);
+  saveHist(a);
+}
+function delHist(ts){ saveHist(loadHist().filter(function(x){ return x.ts!==ts; })); renderHist(); }
+
+/* =========================================================================
+   Hosted (cloud) AI — optional Firebase callable so the live web link can use
+   Claude without anyone running a local proxy. Deploy the `linguaAI` function
+   (see lingua/README.md) and this lights up automatically. Guarded so the page
+   works fine when Firebase is absent (e.g. offline or the headless smoke test).
+   ========================================================================= */
+var LINGUA_HOSTED_AI = true; // set false to disable the cloud fallback entirely
+var LINGUA_FIREBASE_CONFIG = {
+  apiKey: "AIzaSyAr3OsrEG3yVx-bD3jxc_kSBY7bkCQUPxI",
+  authDomain: "apexvip-1b4a9.firebaseapp.com",
+  projectId: "apexvip-1b4a9",
+  storageBucket: "apexvip-1b4a9.firebasestorage.app",
+  messagingSenderId: "254410067879",
+  appId: "1:254410067879:web:754b71a35182c997f37082"
+};
+var _fbFns = null;
+function hostedReady(){
+  if(!LINGUA_HOSTED_AI) return false;
+  try{
+    if(typeof firebase === "undefined" || !firebase.functions) return false;
+    if(!_fbFns){
+      var app = (firebase.apps && firebase.apps.length) ? firebase.app() : firebase.initializeApp(LINGUA_FIREBASE_CONFIG);
+      _fbFns = firebase.functions(app);
+    }
+    return true;
+  }catch(e){ return false; }
+}
+function callHosted(payload){
+  return _fbFns.httpsCallable("linguaAI")(payload).then(function(res){
+    var d = res && res.data;
+    if(!d || d.ok === false) throw new Error((d && d.error) || "no result");
+    return d.result;
+  });
+}
+
 /* ---- app state ---- */
 var state = {
   lang: null,        // selected LANGS entry
@@ -395,9 +569,12 @@ var state = {
   src: "en",         // the "other" (non-study) language id in the translate pane
   reversed: false,   // false: other → study ; true: study → other
   tgtRtl: false,     // is the active translation target right-to-left?
+  tgtBcp: "",        // BCP-47 tag of the active translation target (for audio)
+  lastFrom: "", lastTo: "", lastSrc: "", // context for saving translations
   topic: "greetings",
   level: "beginner",
-  live: false        // is the AI proxy reachable?
+  engine: "offline", // "local" | "hosted" | "offline"
+  live: false        // is an AI engine reachable?
 };
 
 var TOPICS = [
@@ -426,9 +603,11 @@ function variantName(){
   if(state.dialect) return state.lang.name + " — " + state.dialect.name + " dialect";
   return state.lang.name;
 }
-function phraseKey(){
+/* offline phrasebook entry: prefer the dialect-specific set, else the base language. */
+function bookFor(){
   if(!state.lang) return null;
-  return state.dialect ? (state.lang.id + ":" + state.dialect.id) : state.lang.id;
+  if(state.dialect && PHRASES[state.lang.id + ":" + state.dialect.id]) return PHRASES[state.lang.id + ":" + state.dialect.id];
+  return PHRASES[state.lang.id] || null;
 }
 
 /* POST to the local proxy. Returns parsed JSON or throws. */
@@ -446,16 +625,32 @@ function callProxy(payload){
   });
 }
 
-/* health check: flips Live indicator. Never throws to the caller. */
+/* Route an AI request to whichever engine is available. Local proxy wins (it's
+   the dev path); otherwise the hosted Firebase callable. Throws if neither. */
+function aiAvailable(){ return state.engine === "local" || hostedReady(); }
+function callAI(payload){
+  if(state.engine === "local") return callProxy(payload);
+  return callHosted(payload).then(function(r){
+    // first successful cloud call confirms the hosted engine
+    if(state.engine !== "local"){ state.engine = "hosted"; setLive(true, "cloud"); }
+    return r;
+  });
+}
+
+/* health check: prefer the local proxy; the hosted engine is confirmed lazily on
+   first successful call. Never throws to the caller. */
 function checkLive(){
   return fetch("/health").then(function(r){ return r.ok ? r.json() : null; })
-    .then(function(d){ var ok = !!(d && d.live); setLive(ok); return ok; })
-    .catch(function(){ setLive(false); return false; });
+    .then(function(d){
+      if(d && d.live){ state.engine = "local"; setLive(true, "local"); return true; }
+      state.engine = "offline"; setLive(false); return false;
+    })
+    .catch(function(){ state.engine = "offline"; setLive(false); return false; });
 }
-function setLive(v){
+function setLive(v, kind){
   state.live = v;
   var pill = $("aiPill"), txt = $("aiPillText");
-  if(v){ pill.classList.add("live"); txt.textContent = "AI: live"; }
+  if(v){ pill.classList.add("live"); txt.textContent = (kind === "cloud") ? "AI: cloud" : "AI: live"; }
   else { pill.classList.remove("live"); txt.textContent = "AI: offline"; }
 }
 
@@ -463,7 +658,7 @@ function setLive(v){
 function offlineTranslate(text){
   // The offline starter set only covers English → study-language basics.
   if(state.reversed){ return { _offline:true, _need:true }; }
-  var key = phraseKey(), book = key && PHRASES[key];
+  var book = bookFor();
   var t = (text||"").trim().toLowerCase();
   var map = { "hello":"hello","hi":"hello","hey":"hello","thank you":"thanks","thanks":"thanks",
               "goodbye":"bye","bye":"bye","yes":"yes","no":"no" };
@@ -476,7 +671,7 @@ function offlineTranslate(text){
   return { _offline:true, _need:true };
 }
 function offlineLesson(){
-  var key = phraseKey(), book = key && PHRASES[key];
+  var book = bookFor();
   var items = [];
   if(book){
     var order = ["hello","thanks","bye","yes","no"];
@@ -655,8 +850,10 @@ function doTranslate(){
   var studyName = variantName();
   var fromName = state.reversed ? studyName : (oth ? oth.name : state.src);
   var toName   = state.reversed ? (oth ? oth.name : state.src) : studyName;
-  // RTL of the *target* drives result text direction.
+  // RTL + BCP-47 (for audio) of the *target* drive direction and pronunciation.
   state.tgtRtl = state.reversed ? !!(oth && oth.rtl) : !!state.lang.rtl;
+  state.tgtBcp = state.reversed ? bcpForLang(oth, null) : bcpForLang(state.lang, state.dialect);
+  state.lastFrom = fromName; state.lastTo = toName; state.lastSrc = text;
   var payload = {
     mode:"translate", text:text,
     sourceName: fromName,
@@ -666,9 +863,9 @@ function doTranslate(){
     dialectNote: state.dialect ? state.dialect.note : ""
   };
   var done = function(r, ai){ renderTranslate(out, r, ai); };
-  if(state.live){
-    callProxy(payload).then(function(r){ done(r,true); })
-      .catch(function(){ setLive(false); done(offlineTranslate(text), false); });
+  if(aiAvailable()){
+    callAI(payload).then(function(r){ done(r,true); })
+      .catch(function(){ if(state.engine==="local"){ setLive(false); state.engine="offline"; } done(offlineTranslate(text), false); });
   } else {
     done(offlineTranslate(text), false);
   }
@@ -686,8 +883,11 @@ function renderTranslate(out, r, ai){
   }
   if(r.translation) out.setAttribute("data-translation", r.translation);
   var card = el("div","result" + (state.tgtRtl ? " rtl":""));
-  card.appendChild(el("div","target", r.translation || "—"));
-  if(r.pronunciation) card.appendChild(el("div","pron", "🔊 " + r.pronunciation));
+  var trow = el("div","target-row");
+  trow.appendChild(el("div","target", r.translation || "—"));
+  if(r.translation) trow.appendChild(speakBtn(r.translation, state.tgtBcp));
+  card.appendChild(trow);
+  if(r.pronunciation) card.appendChild(el("div","pron", "🗣 " + r.pronunciation));
   var meta = el("div","meta");
   if(r.literal){ var m1=el("div","m"); m1.innerHTML=""; m1.appendChild(strong("Literal: ")); m1.appendChild(document.createTextNode(r.literal)); meta.appendChild(m1); }
   if(r.register){ var m2=el("div","m"); m2.appendChild(strong("Register: ")); m2.appendChild(document.createTextNode(r.register)); meta.appendChild(m2); }
@@ -695,6 +895,11 @@ function renderTranslate(out, r, ai){
   if(meta.children.length) card.appendChild(meta);
   out.appendChild(card);
   out.appendChild(srcLabel(ai));
+  // save to on-device history
+  if(r.translation){
+    addHist({ ts: Date.now(), fromName: state.lastFrom, toName: state.lastTo, source: state.lastSrc,
+              translation: r.translation, pronunciation: r.pronunciation || "", rtl: state.tgtRtl, bcp: state.tgtBcp });
+  }
 }
 function strong(t){ var s=el("b"); s.textContent=t; return s; }
 
@@ -710,9 +915,9 @@ function doTeach(){
     dialectNote: state.dialect ? state.dialect.note : ""
   };
   var done = function(r, ai){ renderLesson(out, r, ai); };
-  if(state.live){
-    callProxy(payload).then(function(r){ done(r,true); })
-      .catch(function(){ setLive(false); done(offlineLesson(), false); });
+  if(aiAvailable()){
+    callAI(payload).then(function(r){ done(r,true); })
+      .catch(function(){ if(state.engine==="local"){ setLive(false); state.engine="offline"; } done(offlineLesson(), false); });
   } else {
     done(offlineLesson(), false);
   }
@@ -723,12 +928,16 @@ function renderLesson(out, r, ai){
   var h = el("div"); h.style.fontWeight="700"; h.style.fontSize="17px"; h.style.marginBottom="4px"; h.textContent=r.title||"Lesson";
   card.appendChild(h);
   if(r.intro){ var ip=el("div","mn"); ip.style.marginBottom="6px"; ip.textContent=r.intro; card.appendChild(ip); }
+  var lessonBcp = bcpForLang(state.lang, state.dialect);
   var items = r.items || [];
   for(var i=0;i<items.length;i++){
     var it = items[i];
     var box = el("div","item");
-    box.appendChild(el("div","ph", it.phrase||""));
-    if(it.pronunciation) box.appendChild(el("div","pr","🔊 " + it.pronunciation));
+    var prow = el("div","ph-row");
+    prow.appendChild(el("div","ph", it.phrase||""));
+    if(it.phrase) prow.appendChild(speakBtn(it.phrase, lessonBcp));
+    box.appendChild(prow);
+    if(it.pronunciation) box.appendChild(el("div","pr","🗣 " + it.pronunciation));
     if(it.meaning) box.appendChild(el("div","mn", it.meaning));
     card.appendChild(box);
   }
@@ -744,7 +953,7 @@ function doAsk(){
   if(!q.trim()){ $("askText").focus(); return; }
   var out = $("askOut");
   busy(out, "Asking Claude…");
-  if(!state.live){
+  if(!aiAvailable()){
     clear(out);
     var box = el("div","result");
     box.appendChild(el("div","err","Free-form questions need Live AI."));
@@ -758,17 +967,52 @@ function doAsk(){
     dialect: state.dialect ? state.dialect.name : "",
     dialectNote: state.dialect ? state.dialect.note : ""
   };
-  callProxy(payload).then(function(r){
+  callAI(payload).then(function(r){
     clear(out);
     var card = el("div","result");
     var a = el("div","ask-out"); a.textContent = r.answer || "—"; card.appendChild(a);
     out.appendChild(card);
     out.appendChild(srcLabel(true));
   }).catch(function(){
-    setLive(false);
+    if(state.engine==="local"){ setLive(false); state.engine="offline"; }
     clear(out);
-    var c = el("div","result"); c.appendChild(el("div","err","Lost the connection to the AI proxy. Re-check from the top-right pill.")); out.appendChild(c);
+    var c = el("div","result");
+    c.appendChild(el("div","err","Couldn't reach the AI just now."));
+    c.appendChild(el("div","hint","Try again, run the local proxy, or deploy the cloud function (see lingua/README.md)."));
+    out.appendChild(c);
   });
+}
+
+/* ---- SAVED TRANSLATIONS view ---- */
+function renderHist(){
+  var list = $("histList"); clear(list);
+  var a = loadHist();
+  if(!a.length){
+    list.appendChild(el("div","hint","No saved translations yet — every translation you make is saved here automatically, and works offline."));
+    return;
+  }
+  for(var i=0;i<a.length;i++){
+    (function(h){
+      var item = el("div","hist-item");
+      item.appendChild(el("div","hist-dir", (h.fromName||"") + "  →  " + (h.toName||"")));
+      var row = el("div","hist-row");
+      var col = el("div","grow");
+      col.appendChild(el("div","hist-src", h.source||""));
+      var tgt = el("div","hist-tgt"); tgt.textContent = h.translation||"";
+      if(h.rtl){ tgt.style.direction="rtl"; tgt.style.textAlign="right"; }
+      col.appendChild(tgt);
+      if(h.pronunciation) col.appendChild(el("div","hist-pr","🗣 " + h.pronunciation));
+      row.appendChild(col);
+      var actions = el("div","hist-actions");
+      actions.appendChild(speakBtn(h.translation||"", h.bcp||""));
+      var del = el("button","mini"); del.type="button"; del.textContent="Delete";
+      on(del,"click",function(){ delHist(h.ts); });
+      actions.appendChild(del);
+      row.appendChild(actions);
+      item.appendChild(row);
+      list.appendChild(item);
+    })(a[i]);
+  }
 }
 
 /* =========================================================================
@@ -800,6 +1044,14 @@ function init(){
   on($("teachBtn"),"click",doTeach);
   on($("askBtn"),"click",doAsk);
   on($("askText"),"keydown",function(e){ if(e.key==="Enter") doAsk(); });
+
+  // Saved translations panel
+  on($("histBtn"),"click",function(){
+    var p = $("historyPanel");
+    if(p.classList.contains("hidden")){ renderHist(); show(p); try{ p.scrollIntoView({behavior:"smooth"}); }catch(_){} }
+    else { hide(p); }
+  });
+  on($("histClear"),"click",function(){ saveHist([]); renderHist(); });
 
   // AI pill / modal
   on($("aiPill"),"click",function(){ show($("aiModal")); });
