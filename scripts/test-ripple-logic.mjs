@@ -352,6 +352,42 @@ test('echoReplyDelay mirrors cadence within bounds', () => {
   assert.equal(E.echoReplyDelay(null), Math.round(750)); // default 1500*0.5
 });
 
+test('nextPeakTime returns the next future moment at their peak hour', () => {
+  const out = { bestHour: 9 };
+  const t = E.nextPeakTime(out, NOW);
+  assert.ok(t > NOW, 'must be in the future');
+  assert.equal(new Date(t).getHours(), 9, 'lands on the peak hour (local)');
+  assert.ok(t - NOW <= DAY, 'within the next 24h');
+  assert.equal(E.nextPeakTime({ bestHour: -1 }, NOW), null);
+});
+
+/* ---------- group pulse ---------- */
+test('groupPulse ranks who carries the room', () => {
+  const hourOf = ts => new Date(ts).getUTCHours();
+  const base = Date.UTC(2026, 5, 19, 20, 0, 0);
+  const msgs = [];
+  for (let i = 0; i < 10; i++) msgs.push(E.createMessage({ chatId: 'g', senderId: 'maya', text: 'x', ts: base - i * HOUR }));
+  for (let i = 0; i < 3; i++) msgs.push(E.createMessage({ chatId: 'g', senderId: 'leo', text: 'x', ts: base - i * HOUR }));
+  msgs.push(E.createMessage({ chatId: 'g', senderId: 'me', text: 'x', ts: base - HOUR }));
+  const g = E.groupPulse(msgs, 'me', base, { hourOf });
+  assert.equal(g.topSpeaker, 'maya');
+  assert.equal(g.leaders[0].id, 'maya');
+  assert.ok(g.leaders[0].share > 0.5);
+  assert.ok(g.leaders.find(l => l.id === 'me').isMe);
+  // shares sum to ~1
+  assert.ok(Math.abs(g.leaders.reduce((a, l) => a + l.share, 0) - 1) < 1e-9);
+});
+test('groupPulse finds the liveliest hour and ignores system/deleted', () => {
+  const hourOf = ts => new Date(ts).getUTCHours();
+  const base = Date.UTC(2026, 5, 19, 20, 30, 0);
+  const msgs = [];
+  for (let d = 0; d < 6; d++) msgs.push(E.createMessage({ chatId: 'g', senderId: 'leo', text: 'x', ts: base - d * DAY })); // 20:00 UTC
+  msgs.push(E.createMessage({ chatId: 'g', senderId: 'leo', type: 'system', text: 'joined', ts: base }));
+  const g = E.groupPulse(msgs, 'me', base, { hourOf });
+  assert.equal(g.bestHour, 20);
+  assert.equal(g.samples, 6, 'system message excluded');
+});
+
 /* ---------- demo auto-responder ---------- */
 test('autoReply is deterministic and responsive', () => {
   assert.equal(E.autoReply('hey', { seed: 1 }), E.autoReply('hey', { seed: 1 }));

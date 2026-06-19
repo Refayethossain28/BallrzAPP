@@ -659,6 +659,58 @@
     return Math.round(_clamp(base, min, max));
   }
 
+  // The next wall-clock moment that lands in the other person's peak hour — used
+  // to offer "send when they're likely awake" instead of pinging into the void.
+  // Uses local time (the device's), so it respects the sender's clock.
+  function nextPeakTime(outlook, now) {
+    if (!outlook || outlook.bestHour < 0) return null;
+    var d = new Date(now);
+    d.setMinutes(0, 0, 0);
+    d.setHours(outlook.bestHour);
+    var t = d.getTime();
+    if (t <= now + 5 * MINUTE) t += DAY; // already past (or basically now) → tomorrow
+    return t;
+  }
+
+  // Group Pulse — who carries the room and when it's liveliest. Recency-weighted
+  // per-sender share + a combined hour-of-day histogram. Pure & on-device.
+  function groupPulse(messages, meId, now, opts) {
+    opts = opts || {};
+    var hourOf = opts.hourOf || function (ts) { return new Date(ts).getHours(); };
+    var halfLife = opts.halfLifeMs || 21 * DAY;
+    var msgs = (messages || []).filter(function (m) {
+      return m && !m.deleted && m.type !== 'system' && m.ts != null && m.ts <= now &&
+        !(m.scheduledAt && m.scheduledAt > now);
+    });
+    var out = {
+      samples: msgs.length, byHour: [], smoothed: [], bestHour: -1, bestHour12: '',
+      leaders: [], topSpeaker: null, totalWeight: 0
+    };
+    var i;
+    for (i = 0; i < 24; i++) { out.byHour.push(0); out.smoothed.push(0); }
+    if (!msgs.length) return out;
+    var lambda = Math.LN2 / halfLife, by = {};
+    for (i = 0; i < msgs.length; i++) {
+      var w = Math.exp(-lambda * Math.max(0, now - msgs[i].ts));
+      out.byHour[((hourOf(msgs[i].ts) % 24) + 24) % 24] += w;
+      var sid = msgs[i].senderId;
+      by[sid] = (by[sid] || 0) + w;
+      out.totalWeight += w;
+    }
+    var max = 0, best = 0;
+    for (var h = 0; h < 24; h++) {
+      var s = 0.5 * out.byHour[h] + 0.25 * out.byHour[(h + 23) % 24] + 0.25 * out.byHour[(h + 1) % 24];
+      out.smoothed[h] = s;
+      if (s > max) { max = s; best = h; }
+    }
+    out.bestHour = best; out.bestHour12 = _hour12(best);
+    out.leaders = Object.keys(by).map(function (id) {
+      return { id: id, weight: by[id], share: out.totalWeight ? by[id] / out.totalWeight : 0, isMe: id === meId };
+    }).sort(function (a, b) { return b.weight - a.weight; });
+    out.topSpeaker = out.leaders.length ? out.leaders[0].id : null;
+    return out;
+  }
+
   return {
     version: '1.2.0',
     SECOND: SECOND, MINUTE: MINUTE, HOUR: HOUR, DAY: DAY,
@@ -676,6 +728,7 @@
     autoReply: autoReply,
     conversationPulse: conversationPulse, formatPulse: formatPulse,
     beatsToSeconds: beatsToSeconds, niceDuration: niceDuration,
-    replyOutlook: replyOutlook, echoReplyDelay: echoReplyDelay
+    replyOutlook: replyOutlook, echoReplyDelay: echoReplyDelay,
+    nextPeakTime: nextPeakTime, groupPulse: groupPulse
   };
 });
