@@ -1,0 +1,20 @@
+rules_version = '2';
+
+// Firebase Storage rules. Secure-by-default: deny everything except the paths
+// explicitly allowed below.
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Ripple message media (photos / voice notes) live under ripple/<chatId>/…
+    // Any signed-in user may read (download URLs are unguessable and only ever
+    // shared inside a chat the recipient is a member of) and upload reasonably
+    // sized files. Tighten further with a Cloud Function check against chat
+    // membership before a public launch if you need hard isolation.
+    match /ripple/{chatId}/{fileName} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null
+                   && request.resource.size < 12 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*|audio/.*');
+    }
+  }
+}

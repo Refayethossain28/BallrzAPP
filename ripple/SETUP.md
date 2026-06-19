@@ -65,11 +65,24 @@ ripple_chats/{chatId}/messages/{msgId}  → the Message shape from engine.js
 reconcile than replace wholesale (it de-dupes by id, prefers the newest edit,
 lets a delete win, keeps `ts` order — the unit tests pin this).
 
+### Media & typing (already wired)
+
+- **Media → Storage** — in a synced chat, photos and voice notes upload to
+  **Firebase Storage** under `ripple/<chatId>/<msgId>` and only the download URL
+  is stored on the message, so media never hits the 1 MB Firestore doc limit.
+  Deploy the Storage rules alongside Firestore:
+  ```sh
+  firebase deploy --only firestore:rules,storage
+  ```
+  ([`../storage.rules`](../storage.rules) caps uploads at 12 MB and restricts to
+  image/audio; tighten to per-chat membership via a Cloud Function before launch.)
+- **Live typing** — typing state is written to
+  `ripple_chats/<chatId>/typing/<uid>` (throttled, auto-expiring after ~6s) so
+  members see "typing…" in real time. You write only your own doc (enforced in
+  the rules).
+
 ### Production hardening (recommended before opening sign-ups)
 
-- **Media** — photos/voice are inlined as data URLs, which is fine for a demo but
-  bumps the 1 MB Firestore document limit. For real use, upload to Firebase
-  Storage and store only the URL in `meta.src`.
 - **Push** — reuse [`firebase-messaging-sw.js`](../firebase-messaging-sw.js) and a
   Cloud Function that fans out a notification on each new message.
 - **Server-side expiry/scheduling** — move disappearing/scheduled dispatch into a

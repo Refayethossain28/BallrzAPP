@@ -13,7 +13,8 @@
  * To finish enabling real cross-device messaging, two things must be done once
  * in the Firebase console for project apexvip-1b4a9:
  *   1) Authentication → Sign-in method → enable **Anonymous**.
- *   2) Deploy the rules:  firebase deploy --only firestore:rules
+ *   2) Deploy the rules:  firebase deploy --only firestore:rules,storage
+ *      (Storage rules let photos/voice notes upload; see ../storage.rules.)
  *
  * To use a DIFFERENT project instead, replace the object below with that
  * project's web config. Set it back to `null` to return to offline demo mode.

@@ -369,7 +369,7 @@
   var editing = null;   // message id being edited
   var menuMsg = null;   // message for open action menu
   var rec = null, recTimer = null, recStart = 0, recChunks = [];
-  var cloud = { on:false, connecting:false, uid:null, app:null, db:null, auth:null, subs:{}, chatsSub:null, _note:{} };
+  var cloud = { on:false, connecting:false, uid:null, app:null, db:null, auth:null, storage:null, subs:{}, chatsSub:null, _note:{}, typingSub:null, typingFor:null, typingNames:[], _typeAt:0, _typeClear:null };
 
   function uid(){ return R.makeId('u', Date.now(), Math.random()); }
   function now(){ return Date.now(); }
@@ -484,9 +484,9 @@
   var FB_VER = '9.23.0';
   function loadFirebaseSdk(){
     return new Promise(function(resolve, reject){
-      if (typeof firebase !== 'undefined' && firebase.firestore){ resolve(); return; }
+      if (typeof firebase !== 'undefined' && firebase.firestore && firebase.storage){ resolve(); return; }
       if (typeof document === 'undefined'){ reject(new Error('no dom')); return; }
-      var parts = ['app','auth','firestore'];
+      var parts = ['app','auth','firestore','storage'];
       var i = 0;
       (function next(){
         if (i >= parts.length){ resolve(); return; }
@@ -501,6 +501,30 @@
   // Firestore docs can't hold `undefined`; produce a clean, serialisable copy.
   function serializeMsg(m){ return JSON.parse(JSON.stringify(m)); }
 
+  // Upload media to Firebase Storage and resolve to a download URL. Keeps large
+  // photos/voice OUT of the Firestore doc (which has a 1 MB limit). Falls back to
+  // the inline data URL if Storage isn't available.
+  function cloudUploadMedia(chatId, msgId, blob, contentType){
+    return new Promise(function(resolve){
+      if (!cloud.on || !cloud.storage || typeof blob === 'string'){ resolve(null); return; }
+      try {
+        var ext = (contentType && contentType.indexOf('audio')===0) ? 'webm' : 'jpg';
+        var ref = cloud.storage.ref().child('ripple/'+chatId+'/'+msgId+'.'+ext);
+        ref.put(blob, { contentType: contentType }).then(function(snap){
+          return snap.ref.getDownloadURL();
+        }).then(function(url){ resolve(url); }).catch(function(){ resolve(null); });
+      } catch(e){ resolve(null); }
+    });
+  }
+  function dataUrlToBlob(dataUrl){
+    try {
+      var parts = dataUrl.split(','), mime = (parts[0].match(/:(.*?);/)||[])[1] || 'application/octet-stream';
+      var bin = atob(parts[1]), u = new Uint8Array(bin.length);
+      for (var i=0;i<bin.length;i++) u[i] = bin.charCodeAt(i);
+      return new Blob([u], { type: mime });
+    } catch(e){ return null; }
+  }
+
   function cloudConnect(opts){
     opts = opts || {};
     if (!cloudAvailable() || cloud.on || cloud.connecting) return;
@@ -510,6 +534,7 @@
       cloud.app = firebase.apps && firebase.apps.length ? firebase.app() : firebase.initializeApp(FBCONFIG);
       cloud.auth = firebase.auth(cloud.app);
       cloud.db = firebase.firestore(cloud.app);
+      try { if (firebase.storage) cloud.storage = firebase.storage(cloud.app); } catch(e){}
       return cloud.auth.signInAnonymously().then(function(cred){
         cloud.uid = (cred && cred.user && cred.user.uid) || cloud.auth.currentUser.uid;
         cloud.on = true; cloud.connecting = false; updateCloudStatus();
@@ -584,6 +609,53 @@
         m.readBy.push(mine); pushRead(id, m.id);
       }
     });
+  }
+
+  /* ---------- live typing indicator (synced chats) ---------- */
+  var TYPING_TTL = 6000;
+  // Tell the chat I'm typing — throttled to ~1 write / 2.5s, with an auto-clear.
+  function writeTyping(chatId){
+    if(!cloud.on) return; var c=chat(chatId); if(!c||!c.cloud) return;
+    var t=now();
+    if(t-cloud._typeAt > 2500){
+      cloud._typeAt=t;
+      try{ cloud.db.collection('ripple_chats').doc(chatId).collection('typing').doc(cloud.uid)
+        .set({ name:S.me.name||'You', ts:t }).catch(function(){}); }catch(e){}
+    }
+    clearTimeout(cloud._typeClear);
+    cloud._typeClear=setTimeout(function(){ clearTyping(chatId); }, 3500);
+  }
+  function clearTyping(chatId){
+    if(!cloud.on) return; cloud._typeAt=0; clearTimeout(cloud._typeClear);
+    try{ cloud.db.collection('ripple_chats').doc(chatId).collection('typing').doc(cloud.uid).delete().catch(function(){}); }catch(e){}
+  }
+  function subscribeTyping(chatId){
+    unsubscribeTyping();
+    cloud.typingFor=chatId; cloud.typingNames=[];
+    cloud.typingSub=cloud.db.collection('ripple_chats').doc(chatId).collection('typing')
+      .onSnapshot(function(snap){
+        var names=[];
+        snap.forEach(function(doc){ var d=doc.data();
+          if(doc.id!==cloud.uid && d && d.ts && (now()-d.ts)<TYPING_TTL) names.push((d.name||'Someone').split(' ')[0]); });
+        cloud.typingNames=names; refreshConvStatus();
+        clearTimeout(cloud._typingStale);
+        if(names.length) cloud._typingStale=setTimeout(function(){ cloud.typingNames=[]; refreshConvStatus(); }, TYPING_TTL);
+      }, function(){});
+  }
+  function unsubscribeTyping(){
+    if(cloud.typingSub){ try{ cloud.typingSub(); }catch(e){} cloud.typingSub=null; }
+    cloud.typingFor=null; cloud.typingNames=[];
+  }
+  // Repaint the conversation subtitle: live "typing…" wins over static presence.
+  function refreshConvStatus(){
+    if(!active) return; var c=chat(active); if(!c) return; var st=$('convStatus'); if(!st) return;
+    if(c.cloud && cloud.typingFor===active && cloud.typingNames.length){
+      var nm=cloud.typingNames;
+      st.textContent = nm.length===1 ? (c.type==='group'? nm[0]+' is typing…' : 'typing…')
+        : (nm.length===2 ? nm[0]+' and '+nm[1]+' are typing…' : nm.length+' people are typing…');
+      st.className='st'; return;
+    }
+    var p=presence(c); st.textContent=p.txt; st.className='st'+(p.off?' off':'');
   }
 
   function cloudPush(chatId, m){
@@ -707,8 +779,10 @@
   }
 
   function openChat(id){
+    if(cloud.on && cloud.typingFor && cloud.typingFor!==id) clearTyping(cloud.typingFor);
     active = id; replyTo=null; editing=null; scheduleAt=null;
     var c = chat(id); if(!c) return;
+    if(c.cloud) subscribeTyping(id); else unsubscribeTyping();
     if (hasDoc) document.body.classList.add('show-chat');
     $('placeholder').classList.add('hidden');
     $('convHead').classList.remove('hidden');
@@ -870,6 +944,7 @@
 
   function afterSend(){
     var c=chat(active); if(c) c.draft='';
+    if(c && c.cloud) clearTyping(c.id);
     updateReplyBar(); updateSchedBar(); updateCmdHint('');
     autosize($('ta')); renderTimeline(); renderSidebar(); persist();
   }
@@ -1041,10 +1116,11 @@
       var reader=new FileReader();
       reader.onload=function(){
         var c=chat(active);
-        var m=mkMsg({ chatId:active, ts:now(), type:'voice', state:'sent',
+        var m=mkMsg({ chatId:active, ts:now(), type:'voice', state:c.cloud?'sending':'sent',
           disappearSec:c.disappearSec, meta:{ dur:Math.round(dur), src:reader.result } });
         msgsOf(active).push(m);
-        if(c.cloud) cloudPush(c.id, m); else { advanceState(m,'delivered',700); if(c.id!=='saved') advanceState(m,'read',1500); }
+        if(c.cloud) sendCloudMedia(c.id, m, blob, 'audio/webm');
+        else { advanceState(m,'delivered',700); if(c.id!=='saved') advanceState(m,'read',1500); }
         renderTimeline(); renderSidebar(); persist();
       };
       reader.readAsDataURL(blob);
@@ -1062,13 +1138,27 @@
     if(!file) return; var reader=new FileReader();
     reader.onload=function(){
       var c=chat(active);
-      var m=mkMsg({ chatId:active, ts:now(), type:'image', state:'sent',
+      var m=mkMsg({ chatId:active, ts:now(), type:'image', state:c.cloud?'sending':'sent',
         disappearSec:c.disappearSec, meta:{ src:reader.result } });
       msgsOf(active).push(m);
-      if(c.cloud) cloudPush(c.id, m); else { advanceState(m,'delivered',700); if(c.id!=='saved') advanceState(m,'read',1600); }
+      if(c.cloud) sendCloudMedia(c.id, m, file, file.type||'image/jpeg');
+      else { advanceState(m,'delivered',700); if(c.id!=='saved') advanceState(m,'read',1600); }
       renderTimeline(); renderSidebar(); persist();
     };
     reader.readAsDataURL(file);
+  }
+
+  // Upload a media blob to Storage, then publish the message referencing its URL
+  // (instead of the heavy data URL). The local preview keeps the data URL so the
+  // sender sees it instantly; on failure we fall back to pushing the data URL.
+  function sendCloudMedia(chatId, m, blob, contentType){
+    cloudUploadMedia(chatId, m.id, blob, contentType).then(function(url){
+      if(url){ m.meta.src = url; m.meta.storage = true; }
+      m.state = 'sent';
+      cloudPush(chatId, m);
+      if(active===chatId) renderTimeline();
+      persist();
+    });
   }
 
   /* ---------- scheduled + expiry tick ---------- */
@@ -1344,6 +1434,9 @@
     var meta=document.querySelector('meta[name=theme-color]');
   }
   function showPlaceholder(){
+    if(cloud.on && cloud.typingFor) clearTyping(cloud.typingFor);
+    unsubscribeTyping();
+    active=null;
     if(!hasDoc) return;
     document.body.classList.remove('show-chat');
     $('placeholder').classList.remove('hidden');
@@ -1417,6 +1510,7 @@
       ta.addEventListener('input', function(){
         autosize(ta); if(active){ chat(active).draft=ta.value; }
         var v=ta.value;
+        if(active && cloud.on && chat(active) && chat(active).cloud){ if(v) writeTyping(active); else clearTyping(active); }
         if(v && v[0]==='/' && v.indexOf(' ')===-1) updateCmdHint(cmdSuggest(v));
         else if(!editing) updateCmdHint('');
       });
