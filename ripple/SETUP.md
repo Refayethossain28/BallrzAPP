@@ -23,13 +23,19 @@ Pulse also reads two more things from the same timestamps:
 - **Best time to reach** — a recency-weighted hour-of-day model of when the other
   person is usually active (`replyOutlook()`), surfaced on the strip
   (🟢 around now / 🕓 9 PM) and as a 24-hour histogram in the Pulse sheet.
+- **Rhythm-aware quiet hours** — when a 1:1 partner is usually quiet right now, a
+  one-tap bar above the composer offers to hold your message until their next
+  peak hour (`nextPeakTime()`), so you don't ping into the void. It reuses the
+  scheduling pipeline.
 - **Tempo-matching Echo** — the built-in demo bot (`echoReplyDelay()`) replies
   fast when you volley fast and lingers when you slow down, so the rhythm read
   feels alive the moment you start typing.
+- **Group Pulse** — in a group, the Pulse sheet shows the liveliest hour and
+  **who carries the room** (recency-weighted share bars) via `groupPulse()`.
 
 The algorithms live in [`engine.js`](./engine.js) (`conversationPulse`,
-`replyOutlook`, `echoReplyDelay`), covered by unit tests in
-[`../scripts/test-ripple-logic.mjs`](../scripts/test-ripple-logic.mjs).
+`replyOutlook`, `nextPeakTime`, `groupPulse`, `echoReplyDelay`), covered by unit
+tests in [`../scripts/test-ripple-logic.mjs`](../scripts/test-ripple-logic.mjs).
 
 ## 1. What works with zero setup (today)
 
