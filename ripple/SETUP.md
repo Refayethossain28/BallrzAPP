@@ -114,11 +114,22 @@ lets a delete win, keeps `ts` order — the unit tests pin this).
   `ripple_chats/<chatId>/typing/<uid>` (throttled, auto-expiring after ~6s) so
   members see "typing…" in real time. You write only your own doc (enforced in
   the rules).
-- **Push notifications** — `ripplePushOnMessage` (in [`../functions/index.js`](../functions/index.js))
-  fires on each new message and pushes to every other member's devices via FCM.
-  Tokens live in the private `ripple_push/<uid>` collection (owner-only by rules;
-  the function reads them with the Admin SDK). The Ripple service worker doubles
-  as the FCM background worker. To turn it on:
+- **Server-side dispatch** — two functions in [`../functions/index.js`](../functions/index.js)
+  make delivery correct even when the author's device is offline:
+  - `rippleMaintenance` (1-minute cron) **releases scheduled messages** when their
+    time comes and **hard-deletes expired disappearing messages** so they truly
+    vanish server-side, not just hidden on each client.
+  - `ripplePushOnMessage` pushes the moment a message becomes deliverable — on
+    create *or* when a scheduled message is released — so a scheduled send still
+    notifies. (Scheduled messages are now written to Firestore at compose time,
+    held by `scheduledAt > now`, and clients hide them until released.)
+
+  The cron needs the **Cloud Scheduler** API enabled (Firebase enables it on first
+  deploy of a scheduled function).
+- **Push notifications** — `ripplePushOnMessage` pushes to every other member's
+  devices via FCM. Tokens live in the private `ripple_push/<uid>` collection
+  (owner-only by rules; the function reads them with the Admin SDK). The Ripple
+  service worker doubles as the FCM background worker. To turn it on:
   1. Firebase console → Project settings → **Cloud Messaging** → **Web Push
      certificates** → copy the public **Key pair** and paste it as
      `RIPPLE_FCM_VAPID_KEY` in [`config.js`](./config.js).
@@ -131,12 +142,6 @@ lets a delete win, keeps `ts` order — the unit tests pin this).
 
 ### Production hardening (recommended before opening sign-ups)
 
-- **Server-side expiry/scheduling** — move disappearing/scheduled dispatch into a
-  Cloud Function for cross-device correctness when clients are offline.
-- **End-to-end encryption** — generate a per-device key pair, publish public keys
-  on `ripple_users/{uid}`, and encrypt `text`/`meta` before writing so the server
-  only ever sees ciphertext; `renderText`/search operate on decrypted text in
-  memory. (App Lock already encrypts the on-device cache.)
 - **Invite scope** — the rules let anyone holding a link add *themselves* to a
   chat. For closed groups, gate joins behind a Cloud Function or short-lived
   invite tokens instead.
