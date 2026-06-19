@@ -437,6 +437,7 @@
 
 <script src="engine.js"></script>
 <script src="config.js"></script>
+<script src="qr.js"></script>
 <script>
 (function(){
   'use strict';
@@ -820,6 +821,8 @@
         startPresence();
         publishDirectory();
         subscribeInvites();
+        var addH=pendingAdd();
+        if(addH && addH!==R.normalizeHandle(S.me.handle||'')) lookupHandle(addH).then(function(p){ if(p && p.uid!==cloud.uid) startDirectChat(p); });
         subscribeCloudChats();
         if (opts.join) cloudJoin(opts.join.id, opts.join.code);
         if (opts.interactive) toast('Connected ✓');
@@ -1057,6 +1060,32 @@
     return cloud.db.collection('ripple_directory').doc(h).set({
       uid:cloud.uid, handle:h, name:S.me.name||'You', avatar:S.me.avatar||'🙂'
     }).then(function(){ S.me.handle=h; persist(); }).catch(function(){ /* handle taken by someone else */ });
+  }
+  // A scannable/shareable link that adds ME by username.
+  function myAddUrl(){
+    if (typeof location === 'undefined') return '';
+    return location.origin + location.pathname + '?add=' + encodeURIComponent(R.normalizeHandle(S.me.handle||''));
+  }
+  function pendingAdd(){
+    if (typeof location === 'undefined' || !location.search) return null;
+    var m = location.search.match(/[?&]add=([^&]+)/);
+    return m ? R.normalizeHandle(decodeURIComponent(m[1])) : null;
+  }
+  // Show my QR code + username so someone can scan to send me a request.
+  function qrSheet(){
+    if(!S.me.handle){ settingsSheet(); toast('Pick a username first'); return; }
+    var url=myAddUrl(), svg='';
+    if(typeof RippleQR!=='undefined'){ var q=RippleQR.encode(url); if(q) svg=RippleQR.toSVG(q, 5, { dark:'#0a0d18', light:'#ffffff' }); }
+    openSheet(
+      '<h2>Your QR code</h2><p class="sub">Let someone scan this to send you a contact request.</p>'+
+      '<div style="display:flex;justify-content:center;margin:10px 0"><div style="background:#fff;padding:12px;border-radius:14px;max-width:230px">'+
+        (svg||'<p class="sub">QR unavailable.</p>')+'</div></div>'+
+      '<div style="text-align:center;font-weight:700;font-size:18px;margin-bottom:4px">@'+esc(S.me.handle)+'</div>'+
+      '<button class="btn" id="qrCopy">Copy my add-link</button>'+
+      '<button class="btn ghost" id="qrDone" style="margin-top:8px">Done</button>'
+    );
+    on('qrCopy','click', function(){ try{ navigator.clipboard.writeText(url); toast('Add-link copied'); }catch(e){ toast(url); } });
+    on('qrDone','click', closeSheet);
   }
   function lookupHandle(raw){
     var h=R.normalizeHandle(raw); if(!h||!cloud.on) return Promise.resolve(null);
@@ -2026,7 +2055,8 @@
       ? '<div class="field"><label>Add someone by username</label>'+
           '<div style="display:flex;gap:8px"><input id="ncFind" placeholder="their @username" autocapitalize="off" autocomplete="off" style="flex:1">'+
           '<button class="btn" id="ncFindBtn" style="width:auto;margin:0;padding:0 16px">Connect</button></div>'+
-          '<div class="sub" id="ncFindMsg" style="margin-top:6px">'+(S.me.handle?('Your username is <b>@'+esc(S.me.handle)+'</b> — share it so others can add you.'):'Set your own username in Settings so people can add you back.')+'</div></div>'+
+          '<div class="sub" id="ncFindMsg" style="margin-top:6px">'+(S.me.handle?('Your username is <b>@'+esc(S.me.handle)+'</b> — share it so others can add you.'):'Set your own username in Settings so people can add you back.')+'</div>'+
+          (S.me.handle?'<button class="btn ghost" id="ncMyQr" style="margin-top:8px">▦ Show my QR code</button>':'')+'</div>'+
           '<div class="hr-or">or create a chat</div>'
       : '';
     openSheet(
@@ -2049,6 +2079,7 @@
         });
       };
       on('ncFindBtn','click', doFind);
+      if($('ncMyQr')) on('ncMyQr','click', function(){ closeSheet(); qrSheet(); });
       var fi=$('ncFind'); if(fi) fi.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); doFind(); } });
     }
     if(cloudAvailable()) on('ncCloud','click', function(){ $('ncCloud').classList.toggle('on'); });
