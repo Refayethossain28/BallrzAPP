@@ -173,6 +173,9 @@
   .timeline.drop{outline:2px dashed var(--accent);outline-offset:-6px}
   .hr-or{display:flex;align-items:center;gap:10px;color:var(--faint);font-size:12px;margin:14px 0 10px}
   .hr-or::before,.hr-or::after{content:"";flex:1;height:1px;background:var(--line)}
+  .iconbtn.req{position:relative}
+  .reqbadge{position:absolute;top:-2px;right:-2px;min-width:16px;height:16px;border-radius:999px;background:var(--bad);
+    color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 3px}
   /* Pulse sheet: 24-hour "best time to reach" histogram */
   .ohist{display:flex;align-items:flex-end;gap:2px;height:26px;margin:4px 0 2px}
   .ohist .oh{flex:1;border-radius:2px 2px 0 0;background:var(--line);min-width:0}
@@ -348,6 +351,7 @@
       <div class="brand"><div class="logo"><i></i><i></i><i></i></div>
         <div class="brandtext"><b>Ripple</b><span class="cloudchip demo" id="cloudChip"><span class="dot"></span>Offline demo</span></div></div>
       <button class="iconbtn" id="btnSearchGlobal" title="Search">🔍</button>
+      <button class="iconbtn req hidden" id="btnRequests" title="Contact requests">👋<span class="reqbadge" id="reqBadge">0</span></button>
       <button class="iconbtn" id="btnNew" title="New chat">✏️</button>
       <button class="iconbtn me" id="btnSettings" title="You"><span class="avatar sm" id="myAvatar">?</span></button>
     </div>
@@ -465,7 +469,7 @@
   var editing = null;   // message id being edited
   var menuMsg = null;   // message for open action menu
   var rec = null, recTimer = null, recStart = 0, recChunks = [];
-  var cloud = { on:false, connecting:false, uid:null, app:null, db:null, auth:null, storage:null, subs:{}, chatsSub:null, _note:{}, typingSub:null, typingFor:null, typingNames:[], _typeAt:0, _typeClear:null, presence:{}, presenceSub:null, presenceFor:null, hbTimer:null, invitesSub:null, names:{}, avatars:{} };
+  var cloud = { on:false, connecting:false, uid:null, app:null, db:null, auth:null, storage:null, subs:{}, chatsSub:null, _note:{}, typingSub:null, typingFor:null, typingNames:[], _typeAt:0, _typeClear:null, presence:{}, presenceSub:null, presenceFor:null, hbTimer:null, invitesSub:null, names:{}, avatars:{}, requests:[] };
 
   function uid(){ return R.makeId('u', Date.now(), Math.random()); }
   function now(){ return Date.now(); }
@@ -1102,20 +1106,55 @@
       if(c.cloud && c.type==='dm' && Array.isArray(c.members) && c.members.length<=2 && c.members.indexOf(uid)!==-1) return c; }
     return null;
   }
-  // Listen for people adding me — auto-join the chat they created.
+  // Listen for people adding me — surface them as contact requests to accept.
   function subscribeInvites(){
     if(cloud.invitesSub) return;
     cloud.invitesSub=cloud.db.collection('ripple_invites').where('to','==',cloud.uid)
       .onSnapshot(function(snap){
+        cloud.requests=[];
         snap.forEach(function(doc){ var inv=doc.data(); if(!inv||!inv.chatId) return;
           if(inv.from){ cloud.names[inv.from]=inv.fromName||'Someone'; if(inv.fromAvatar) cloud.avatars[inv.from]=inv.fromAvatar; }
-          var p=cloudJoin(inv.chatId, inv.joinCode, { open:false });
-          (p&&p.then?p:Promise.resolve()).then(function(){
-            toast((inv.fromName||'Someone')+' started a chat with you 💬');
-            doc.ref.delete().catch(function(){});
-          });
+          cloud.requests.push({ refId:doc.id, chatId:inv.chatId, code:inv.joinCode, name:inv.fromName||'Someone', avatar:inv.fromAvatar||'🙂', from:inv.from });
         });
+        renderRequestsBadge();
       }, function(){});
+  }
+  function renderRequestsBadge(){
+    var btn=$('btnRequests'); if(!btn) return;
+    var n=(cloud.requests||[]).length;
+    btn.classList.toggle('hidden', n===0);
+    var b=$('reqBadge'); if(b) b.textContent=n>9?'9+':n;
+  }
+  function requestsSheet(){
+    var reqs=cloud.requests||[];
+    if(!reqs.length){ openSheet('<h2>Contact requests</h2><p class="sub">No pending requests right now.</p>'); return; }
+    var rows=reqs.map(function(r){
+      return '<div class="pickrow" data-req="'+r.refId+'"><span class="avatar">'+esc(r.avatar)+'</span>'+
+        '<div class="gr" style="flex:1"><div class="t">'+esc(r.name)+'</div><div class="d" style="font-size:12.5px;color:var(--faint)">wants to connect</div></div>'+
+        '<button class="btn" style="width:auto;margin:0;padding:0 14px" data-acc="'+r.refId+'">Accept</button>'+
+        '<button class="iconbtn" data-dec="'+r.refId+'" title="Decline" style="margin-left:4px">✕</button></div>';
+    }).join('');
+    openSheet('<h2>Contact requests</h2><p class="sub">People who want to start a chat with you.</p><div class="picklist">'+rows+'</div>');
+    Array.prototype.forEach.call(document.querySelectorAll('[data-acc]'), function(el){
+      el.addEventListener('click', function(){ acceptRequest(el.getAttribute('data-acc')); });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-dec]'), function(el){
+      el.addEventListener('click', function(){ declineRequest(el.getAttribute('data-dec')); });
+    });
+  }
+  function _req(refId){ return (cloud.requests||[]).filter(function(r){ return r.refId===refId; })[0]; }
+  function acceptRequest(refId){
+    var r=_req(refId); if(!r) return;
+    var p=cloudJoin(r.chatId, r.code, { open:true });
+    (p&&p.then?p:Promise.resolve()).then(function(){
+      cloud.db.collection('ripple_invites').doc(refId).delete().catch(function(){});
+    });
+    closeSheet();
+  }
+  function declineRequest(refId){
+    cloud.db.collection('ripple_invites').doc(refId).delete().catch(function(){});
+    var el=document.querySelector('[data-req="'+refId+'"]'); if(el) el.remove();
+    if(((cloud.requests||[]).length-1)<=0) closeSheet();
   }
   function cloudJoin(chatId, code, opts){
     if (!cloud.on){ return; }
@@ -2285,6 +2324,7 @@
   /* ---------- wire global events ---------- */
   function wire(){
     on('btnNew','click', newChatSheet);
+    on('btnRequests','click', requestsSheet);
     on('btnSettings','click', settingsSheet);
     on('cloudChip','click', cloudChipClick);
     on('btnSearchGlobal','click', function(){ var i=$('searchInput'); if(i){ i.focus(); } });
