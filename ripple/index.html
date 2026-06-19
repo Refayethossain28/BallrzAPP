@@ -171,6 +171,8 @@
   .jbadge{position:absolute;top:-6px;right:-4px;min-width:18px;height:18px;border-radius:999px;background:var(--accent);
     color:#06121e;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px}
   .timeline.drop{outline:2px dashed var(--accent);outline-offset:-6px}
+  .hr-or{display:flex;align-items:center;gap:10px;color:var(--faint);font-size:12px;margin:14px 0 10px}
+  .hr-or::before,.hr-or::after{content:"";flex:1;height:1px;background:var(--line)}
   /* Pulse sheet: 24-hour "best time to reach" histogram */
   .ohist{display:flex;align-items:flex-end;gap:2px;height:26px;margin:4px 0 2px}
   .ohist .oh{flex:1;border-radius:2px 2px 0 0;background:var(--line);min-width:0}
@@ -463,7 +465,7 @@
   var editing = null;   // message id being edited
   var menuMsg = null;   // message for open action menu
   var rec = null, recTimer = null, recStart = 0, recChunks = [];
-  var cloud = { on:false, connecting:false, uid:null, app:null, db:null, auth:null, storage:null, subs:{}, chatsSub:null, _note:{}, typingSub:null, typingFor:null, typingNames:[], _typeAt:0, _typeClear:null, presence:{}, presenceSub:null, presenceFor:null, hbTimer:null };
+  var cloud = { on:false, connecting:false, uid:null, app:null, db:null, auth:null, storage:null, subs:{}, chatsSub:null, _note:{}, typingSub:null, typingFor:null, typingNames:[], _typeAt:0, _typeClear:null, presence:{}, presenceSub:null, presenceFor:null, hbTimer:null, invitesSub:null, names:{}, avatars:{} };
 
   function uid(){ return R.makeId('u', Date.now(), Math.random()); }
   function now(){ return Date.now(); }
@@ -812,6 +814,8 @@
         }, { merge:true }).catch(function(){});
         e2eeSetup();
         startPresence();
+        publishDirectory();
+        subscribeInvites();
         subscribeCloudChats();
         if (opts.join) cloudJoin(opts.join.id, opts.join.code);
         if (opts.interactive) toast('Connected ✓');
@@ -878,6 +882,7 @@
         var prevStar = {}; (S.msgs[id]||[]).forEach(function(m){ if(m.starred) prevStar[m.id]=true; });
         var arr = [], need = [];
         snap.forEach(function(doc){ var m=doc.data(); if(prevStar[m.id]) m.starred=true;
+          if(m.meta && m.meta.fromName && m.senderId){ cloud.names[m.senderId]=m.meta.fromName; if(m.meta.fromAvatar) cloud.avatars[m.senderId]=m.meta.fromAvatar; }
           if(m.enc){ var ck=m.id+':'+m.enc.iv; if(e2ee.dec[ck]!=null) m.text=e2ee.dec[ck]; else need.push(m); }
           arr.push(m); });
         S.msgs[id] = arr;
@@ -1039,13 +1044,90 @@
       updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
     return ref.set(data).then(function(){ upsertCloudChat(ref.id, data); return ref.id; });
   }
-  function cloudJoin(chatId, code){
+
+  /* ---------- direct connect: username directory + invites ---------- */
+  // Publish my @username so other people can find and message me directly.
+  function publishDirectory(){
+    if(!cloud.on) return Promise.resolve();
+    var h=R.normalizeHandle(S.me.handle||''); if(!h) return Promise.resolve();
+    return cloud.db.collection('ripple_directory').doc(h).set({
+      uid:cloud.uid, handle:h, name:S.me.name||'You', avatar:S.me.avatar||'🙂'
+    }).then(function(){ S.me.handle=h; persist(); }).catch(function(){ /* handle taken by someone else */ });
+  }
+  function lookupHandle(raw){
+    var h=R.normalizeHandle(raw); if(!h||!cloud.on) return Promise.resolve(null);
+    return cloud.db.collection('ripple_directory').doc(h).get()
+      .then(function(d){ return d.exists ? d.data() : null; }).catch(function(){ return null; });
+  }
+  // Start a 1:1 chat with a found user and drop them an invite so the chat
+  // appears in their list automatically — no link to copy/paste.
+  function startDirectChat(person){
+    if(!cloud.on || !person || person.uid===cloud.uid) return;
+    var existing=findDirectChat(person.uid);
+    if(existing){ openChat(existing.id); return; }
+    cloud.names[person.uid]=person.name||('@'+person.handle); if(person.avatar) cloud.avatars[person.uid]=person.avatar;
+    var ref=cloud.db.collection('ripple_chats').doc();
+    var code=makeInviteCode();
+    var data={ type:'dm', name:person.name||('@'+person.handle), avatar:person.avatar||'💬',
+      members:[cloud.uid], joinCode:code, keyOwner:cloud.uid, directUid:person.uid,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+    ref.set(data).then(function(){
+      upsertCloudChat(ref.id, data);
+      // invite the other person — their client auto-joins on receipt
+      cloud.db.collection('ripple_invites').add({
+        to:person.uid, from:cloud.uid, fromName:S.me.name||'You', fromAvatar:S.me.avatar||'🙂',
+        chatId:ref.id, joinCode:code, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      }).catch(function(){});
+      closeSheet(); openChat(ref.id); toast('Chat started with '+(person.name||('@'+person.handle)));
+    }).catch(function(){ toast('Could not start the chat'); });
+  }
+  // A 1:1 cloud chat stores one name, but each side should see the OTHER person.
+  function chatDisplayName(c){
+    if(c && c.cloud && c.type==='dm' && cloud.uid && Array.isArray(c.members) && c.members.length===2){
+      var other=c.members.filter(function(u){ return u!==cloud.uid; })[0];
+      if(other && cloud.names[other]) return cloud.names[other];
+    }
+    return c?c.name:'';
+  }
+  function chatDisplayAvatar(c){
+    if(c && c.cloud && c.type==='dm' && cloud.uid && Array.isArray(c.members) && c.members.length===2){
+      var other=c.members.filter(function(u){ return u!==cloud.uid; })[0];
+      if(other && cloud.avatars[other]) return cloud.avatars[other];
+    }
+    return (c&&c.avatar)||'💬';
+  }
+  function findDirectChat(uid){
+    for(var i=0;i<S.chats.length;i++){ var c=S.chats[i];
+      if(c.cloud && c.type==='dm' && Array.isArray(c.members) && c.members.length<=2 && c.members.indexOf(uid)!==-1) return c; }
+    return null;
+  }
+  // Listen for people adding me — auto-join the chat they created.
+  function subscribeInvites(){
+    if(cloud.invitesSub) return;
+    cloud.invitesSub=cloud.db.collection('ripple_invites').where('to','==',cloud.uid)
+      .onSnapshot(function(snap){
+        snap.forEach(function(doc){ var inv=doc.data(); if(!inv||!inv.chatId) return;
+          if(inv.from){ cloud.names[inv.from]=inv.fromName||'Someone'; if(inv.fromAvatar) cloud.avatars[inv.from]=inv.fromAvatar; }
+          var p=cloudJoin(inv.chatId, inv.joinCode, { open:false });
+          (p&&p.then?p:Promise.resolve()).then(function(){
+            toast((inv.fromName||'Someone')+' started a chat with you 💬');
+            doc.ref.delete().catch(function(){});
+          });
+        });
+      }, function(){});
+  }
+  function cloudJoin(chatId, code, opts){
     if (!cloud.on){ return; }
+    opts = opts || {};
     var upd={ members: firebase.firestore.FieldValue.arrayUnion(cloud.uid) };
     if(code) upd.joinProof=code; // proves possession of the invite token (checked by rules)
-    cloud.db.collection('ripple_chats').doc(chatId).update(upd)
-      .then(function(){ toast('Joined chat ✓'); subscribeCloudMessages(chatId); setTimeout(function(){ openChat(chatId); }, 400); })
-      .catch(function(){ toast('That invite link is invalid or expired'); });
+    return cloud.db.collection('ripple_chats').doc(chatId).update(upd)
+      .then(function(){
+        subscribeCloudMessages(chatId);
+        if(opts.open!==false){ toast('Joined chat ✓'); setTimeout(function(){ openChat(chatId); }, 400); }
+      })
+      .catch(function(){ if(opts.open!==false) toast('That invite link is invalid or expired'); });
   }
   function makeInviteCode(){
     var a=new Uint8Array(9); (crypto&&crypto.getRandomValues)?crypto.getRandomValues(a):a.forEach(function(_,i){a[i]=Math.floor(Math.random()*256);});
@@ -1124,9 +1206,9 @@
       if (c.type==='group' && r.last && r.last.senderId!==meId() && r.last.type!=='system')
         preview = displayName(r.last.senderId).split(' ')[0]+': '+r.preview;
       html += '<div class="row '+(c.id===active?'active':'')+'" data-chat="'+c.id+'">'+
-        '<span class="avatar">'+esc(c.avatar||'💬')+'</span>'+
+        '<span class="avatar">'+esc(chatDisplayAvatar(c))+'</span>'+
         '<div class="meta">'+
-          '<div class="line1"><span class="nm">'+esc(c.name)+'</span>'+
+          '<div class="line1"><span class="nm">'+esc(chatDisplayName(c))+'</span>'+
             '<span class="tm">'+(r.last?R.relativeTime(r.ts,now()):'')+'</span></div>'+
           '<div class="line2">'+
             ((c.disappearSec||c.disappearBeats)?'<span class="mini">⏱</span>':'')+
@@ -1221,8 +1303,8 @@
     $('convHead').classList.remove('hidden');
     $('timeline').classList.remove('hidden');
     $('composer').classList.remove('hidden');
-    $('convAvatar').textContent = c.avatar||'💬';
-    $('convName').textContent = c.name;
+    $('convAvatar').textContent = chatDisplayAvatar(c);
+    $('convName').textContent = chatDisplayName(c);
     var p = presence(c);
     var st=$('convStatus'); st.textContent=p.txt; st.className='st'+(p.off?' off':'');
     updateReplyBar(); updateSchedBar();
@@ -1820,6 +1902,7 @@
         '<div style="flex:1"><div class="field" style="margin:0"><label>Display name</label>'+
           '<input id="setName" value="'+esc(S.me.name)+'" placeholder="Your name"></div></div>'+
       '</div>'+
+      '<div class="field"><label>Username — let people add you directly</label><input id="setHandle" value="'+esc(S.me.handle||'')+'" maxlength="20" placeholder="e.g. alex" autocapitalize="off" autocomplete="off"></div>'+
       '<div class="field"><label>Status</label><input id="setStatus" value="'+esc(S.me.status||'')+'" maxlength="60" placeholder="e.g. 🌴 On vacation · 🎧 Focusing"></div>'+
       '<div class="field"><label>Avatar</label><div class="emojipick" id="avatarPick">'+
         ['🙂','😎','🦊','🐼','🌸','🚀','🎧','🐱','🍀','⚡','🔥','🌙'].map(function(e){
@@ -1867,6 +1950,8 @@
   function saveSettings(){
     S.me.name = ($('setName').value||'').trim() || S.me.name || 'You';
     S.me.status = ($('setStatus').value||'').trim().slice(0,60);
+    var newHandle=R.normalizeHandle($('setHandle').value||'');
+    var handleChanged = newHandle && newHandle!==S.me.handle; S.me.handle=newHandle;
     var sel=$('avatarPick').querySelector('.sel'); if(sel) S.me.avatar=sel.getAttribute('data-emoji');
     var acc=$('accentPick').querySelector('.sel'); if(acc) S.settings.accent=acc.getAttribute('data-acc');
     S.settings.notify=$('swNotify').classList.contains('on');
@@ -1875,7 +1960,8 @@
     if(S.settings.notify && typeof Notification!=='undefined' && Notification.permission==='default'){
       try{ Notification.requestPermission(); }catch(e){}
     }
-    if(cloud.on){ try{ cloud.db.collection('ripple_users').doc(cloud.uid).set({ name:S.me.name, avatar:S.me.avatar, statusText:S.me.status||'' },{merge:true}); }catch(e){} }
+    if(cloud.on){ try{ cloud.db.collection('ripple_users').doc(cloud.uid).set({ name:S.me.name, avatar:S.me.avatar, statusText:S.me.status||'' },{merge:true}); }catch(e){}
+      if(handleChanged) publishDirectory().then(function(){ if(S.me.handle) toast('You can be added as @'+S.me.handle); }); }
     if(wantLock && !S.settings.lock){ enableLock(); return; }
     if(!wantLock && S.settings.lock){ S.settings.lock=false; lockKey=null; }
     S.settings.lock=wantLock?S.settings.lock:false;
@@ -1897,14 +1983,35 @@
           (cloud.on?'Real-time chat — share an invite link so real people can join':'Connecting…')+'</div></div>'+
           '<div class="switch on" id="ncCloud"></div></div>'
       : '<p class="sub" style="margin-top:-6px">Tip: add a Firebase config in <code>config.js</code> to message real people across devices (see SETUP.md). This demo creates a local, simulated chat.</p>';
+    var findBlock = cloud.on
+      ? '<div class="field"><label>Add someone by username</label>'+
+          '<div style="display:flex;gap:8px"><input id="ncFind" placeholder="their @username" autocapitalize="off" autocomplete="off" style="flex:1">'+
+          '<button class="btn" id="ncFindBtn" style="width:auto;margin:0;padding:0 16px">Connect</button></div>'+
+          '<div class="sub" id="ncFindMsg" style="margin-top:6px">'+(S.me.handle?('Your username is <b>@'+esc(S.me.handle)+'</b> — share it so others can add you.'):'Set your own username in Settings so people can add you back.')+'</div></div>'+
+          '<div class="hr-or">or create a chat</div>'
+      : '';
     openSheet(
-      '<h2>New chat</h2><p class="sub">Start a direct chat or a group.</p>'+
+      '<h2>New chat</h2><p class="sub">Connect with someone directly by username, or create a chat.</p>'+
+      findBlock+
       '<div class="field"><label>Name</label><input id="ncName" placeholder="e.g. Alex, or “Book club”"></div>'+
       '<div class="field"><label>Avatar emoji</label><input id="ncAvatar" value="💬" maxlength="2"></div>'+
       '<div class="field"><label>Type</label><select id="ncType"><option value="dm">Direct message</option><option value="group">Group</option></select></div>'+
       cloudOpt+
       '<button class="btn" id="ncCreate">Create chat</button>'
     );
+    if(cloud.on){
+      var doFind=function(){
+        var q=($('ncFind').value||'').trim(); if(!q){ return; }
+        var msg=$('ncFindMsg'); if(msg) msg.innerHTML='Looking up @'+esc(R.normalizeHandle(q))+'…';
+        lookupHandle(q).then(function(person){
+          if(!person){ if(msg) msg.innerHTML='No one found with that username.'; return; }
+          if(person.uid===cloud.uid){ if(msg) msg.innerHTML='That’s you 🙂'; return; }
+          startDirectChat(person);
+        });
+      };
+      on('ncFindBtn','click', doFind);
+      var fi=$('ncFind'); if(fi) fi.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); doFind(); } });
+    }
     if(cloudAvailable()) on('ncCloud','click', function(){ $('ncCloud').classList.toggle('on'); });
     on('ncCreate','click', function(){
       var name=($('ncName').value||'').trim(); if(!name){ toast('Give it a name'); return; }

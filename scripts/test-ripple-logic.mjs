@@ -435,6 +435,14 @@ test('exportChatText renders a readable transcript, skipping pending/system', ()
   assert.ok(!txt.includes('later'), 'pending excluded');
 });
 
+test('normalizeHandle keeps a safe lookup key', () => {
+  assert.equal(E.normalizeHandle('Hey There!'), 'heythere');
+  assert.equal(E.normalizeHandle('@Cool_99'), 'cool_99');
+  assert.equal(E.normalizeHandle('  Mix-Ed.Stuff '), 'mixedstuff');
+  assert.equal(E.normalizeHandle('x'.repeat(40)).length, 20);
+  assert.equal(E.normalizeHandle(null), '');
+});
+
 /* ---------- demo auto-responder ---------- */
 test('autoReply is deterministic and responsive', () => {
   assert.equal(E.autoReply('hey', { seed: 1 }), E.autoReply('hey', { seed: 1 }));
