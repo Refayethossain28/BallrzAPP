@@ -607,8 +607,60 @@
     return Math.max(15, Math.round(ms / SECOND));
   }
 
+  function _hour12(h) {
+    var ap = h < 12 ? 'AM' : 'PM', hh = h % 12; if (hh === 0) hh = 12;
+    return hh + ' ' + ap;
+  }
+  // Reply outlook — when is the OTHER person usually around? Builds a recency-
+  // weighted, hour-of-day histogram of their messages (recent habits count more
+  // via an exponential half-life), smooths it circularly, and reads off their
+  // peak window plus how "live" the current hour is. Pure & on-device.
+  function replyOutlook(messages, meId, now, opts) {
+    opts = opts || {};
+    var hourOf = opts.hourOf || function (ts) { return new Date(ts).getHours(); };
+    var halfLife = opts.halfLifeMs || 14 * DAY;
+    var msgs = (messages || []).filter(function (m) {
+      return m && !m.deleted && m.type !== 'system' && m.senderId !== meId &&
+        m.ts != null && m.ts <= now && !(m.scheduledAt && m.scheduledAt > now);
+    });
+    var out = {
+      samples: msgs.length, byHour: [], smoothed: [], bestHour: -1,
+      bestHour12: '', nowScore: 0, activeNow: false, label: 'Not enough history yet'
+    };
+    var i;
+    for (i = 0; i < 24; i++) { out.byHour.push(0); out.smoothed.push(0); }
+    if (msgs.length < 5) return out;
+    var lambda = Math.LN2 / halfLife;
+    for (i = 0; i < msgs.length; i++) {
+      var w = Math.exp(-lambda * Math.max(0, now - msgs[i].ts));
+      out.byHour[((hourOf(msgs[i].ts) % 24) + 24) % 24] += w;
+    }
+    var max = 0, best = 0;
+    for (var h = 0; h < 24; h++) {
+      var s = 0.5 * out.byHour[h] + 0.25 * out.byHour[(h + 23) % 24] + 0.25 * out.byHour[(h + 1) % 24];
+      out.smoothed[h] = s;
+      if (s > max) { max = s; best = h; }
+    }
+    out.bestHour = best;
+    out.bestHour12 = _hour12(best);
+    var nowH = ((hourOf(now) % 24) + 24) % 24;
+    out.nowScore = max ? clamp01(out.smoothed[nowH] / max) : 0;
+    out.activeNow = out.nowScore >= 0.6;
+    out.label = out.activeNow ? 'usually around now' : 'usually ~' + out.bestHour12;
+    return out;
+  }
+
+  // How long Echo (the demo bot) should wait before replying so it MIRRORS the
+  // human's tempo: fast volleys → snappy replies, leisurely chat → it lingers.
+  function echoReplyDelay(pulse, opts) {
+    opts = opts || {};
+    var min = opts.min || 700, max = opts.max || 6000;
+    var base = (pulse && pulse.cadenceMs ? pulse.cadenceMs : 1500) * 0.5;
+    return Math.round(_clamp(base, min, max));
+  }
+
   return {
-    version: '1.1.0',
+    version: '1.2.0',
     SECOND: SECOND, MINUTE: MINUTE, HOUR: HOUR, DAY: DAY,
     makeId: makeId, createChat: createChat, createMessage: createMessage,
     escapeHtml: escapeHtml, renderText: renderText, extractMentions: extractMentions,
@@ -623,6 +675,7 @@
     formatDur: formatDur, relativeTime: relativeTime, dayLabel: dayLabel, groupByDay: groupByDay,
     autoReply: autoReply,
     conversationPulse: conversationPulse, formatPulse: formatPulse,
-    beatsToSeconds: beatsToSeconds, niceDuration: niceDuration
+    beatsToSeconds: beatsToSeconds, niceDuration: niceDuration,
+    replyOutlook: replyOutlook, echoReplyDelay: echoReplyDelay
   };
 });

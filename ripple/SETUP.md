@@ -16,8 +16,19 @@ conversational beats instead of clock seconds.** Set a chat to disappear "in 1
 beat" and each message lives exactly *one of your volleys* — seconds in a
 rapid-fire chat, a day in a slow burn — because the timer breathes with the two
 people in the conversation rather than an arbitrary wall-clock. Tap the strip to
-see the full read and pick a beat timer. The algorithm is `conversationPulse()`
-in [`engine.js`](./engine.js), covered by unit tests in
+see the full read and pick a beat timer.
+
+Pulse also reads two more things from the same timestamps:
+
+- **Best time to reach** — a recency-weighted hour-of-day model of when the other
+  person is usually active (`replyOutlook()`), surfaced on the strip
+  (🟢 around now / 🕓 9 PM) and as a 24-hour histogram in the Pulse sheet.
+- **Tempo-matching Echo** — the built-in demo bot (`echoReplyDelay()`) replies
+  fast when you volley fast and lingers when you slow down, so the rhythm read
+  feels alive the moment you start typing.
+
+The algorithms live in [`engine.js`](./engine.js) (`conversationPulse`,
+`replyOutlook`, `echoReplyDelay`), covered by unit tests in
 [`../scripts/test-ripple-logic.mjs`](../scripts/test-ripple-logic.mjs).
 
 ## 1. What works with zero setup (today)

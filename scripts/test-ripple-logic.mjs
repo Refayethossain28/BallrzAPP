@@ -319,6 +319,39 @@ test('formatPulse renders a compact rhythm line', () => {
   assert.equal(f.tempo, 'Rapid');
 });
 
+/* ---------- reply outlook (best time to reach) ---------- */
+test('replyOutlook finds the hour they usually reply (recency-weighted)', () => {
+  const hourOf = ts => new Date(ts).getUTCHours();
+  const base = Date.UTC(2026, 5, 19, 21, 0, 0); // now = 21:00 UTC
+  const msgs = [];
+  for (let d = 1; d <= 8; d++) // them, every recent day at 21:00 UTC
+    msgs.push(E.createMessage({ chatId: 'c1', senderId: 'them', text: 'x', ts: base - d * DAY }));
+  // a couple of stale off-peak ones that should be outweighed by recency
+  msgs.push(E.createMessage({ chatId: 'c1', senderId: 'them', text: 'x', ts: Date.UTC(2026, 4, 1, 9, 0, 0) }));
+  const o = E.replyOutlook(msgs, 'me', base, { hourOf });
+  assert.equal(o.bestHour, 21, 'peak hour is 21');
+  assert.equal(o.bestHour12, '9 PM');
+  assert.ok(o.activeNow, 'now (21:00) should read as active');
+  assert.ok(o.nowScore > 0.6);
+});
+test('replyOutlook ignores my own messages and sparse history', () => {
+  const hourOf = ts => new Date(ts).getUTCHours();
+  const mine = [];
+  for (let d = 1; d <= 8; d++) mine.push(E.createMessage({ chatId: 'c1', senderId: 'me', ts: NOW - d * HOUR }));
+  const o = E.replyOutlook(mine, 'me', NOW, { hourOf });
+  assert.equal(o.samples, 0);
+  assert.equal(o.bestHour, -1);
+  assert.equal(o.label, 'Not enough history yet');
+});
+test('echoReplyDelay mirrors cadence within bounds', () => {
+  const fast = E.echoReplyDelay({ cadenceMs: 6 * SECOND });
+  const slow = E.echoReplyDelay({ cadenceMs: 5 * MINUTE });
+  assert.ok(fast >= 700 && fast <= 6000);
+  assert.equal(slow, 6000, 'slow chat clamps to the max');
+  assert.ok(slow >= fast);
+  assert.equal(E.echoReplyDelay(null), Math.round(750)); // default 1500*0.5
+});
+
 /* ---------- demo auto-responder ---------- */
 test('autoReply is deterministic and responsive', () => {
   assert.equal(E.autoReply('hey', { seed: 1 }), E.autoReply('hey', { seed: 1 }));
