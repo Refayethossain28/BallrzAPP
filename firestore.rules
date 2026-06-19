@@ -126,6 +126,15 @@ service cloud.firestore {
         allow update: if inChat();
         allow delete: if false;
       }
+
+      // Ephemeral typing indicators — one doc per member; you write only your
+      // own, any member may read.
+      match /typing/{typerUid} {
+        function chatDoc() { return get(/databases/$(database)/documents/ripple_chats/$(chatId)).data; }
+        function inChat()  { return signedIn() && request.auth.uid in chatDoc().members; }
+        allow read:  if inChat();
+        allow write: if isUser(typerUid) && inChat();
+      }
     }
   }
 }
