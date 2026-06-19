@@ -173,6 +173,25 @@
   .timeline.drop{outline:2px dashed var(--accent);outline-offset:-6px}
   .hr-or{display:flex;align-items:center;gap:10px;color:var(--faint);font-size:12px;margin:14px 0 10px}
   .hr-or::before,.hr-or::after{content:"";flex:1;height:1px;background:var(--line)}
+  .callbtn{font-size:17px}
+  /* call overlay */
+  .call-overlay{position:fixed;inset:0;z-index:90;background:#06080f;display:none;flex-direction:column;align-items:center;justify-content:center}
+  .call-overlay.on{display:flex}
+  .call-remote{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#06080f}
+  .call-local{position:absolute;top:max(16px,env(safe-area-inset-top));right:16px;width:104px;height:148px;object-fit:cover;
+    border-radius:14px;border:2px solid rgba(255,255,255,.25);background:#11151f;z-index:2;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+  .call-info{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;
+    text-shadow:0 2px 10px rgba(0,0,0,.6);padding:20px}
+  .call-info .avatar.lg{width:96px;height:96px;font-size:46px}
+  .call-name{font-size:24px;font-weight:700}
+  .call-state{font-size:15px;color:var(--dim);font-variant-numeric:tabular-nums}
+  .call-controls,.call-incoming{position:absolute;bottom:max(36px,calc(env(safe-area-inset-bottom) + 24px));z-index:3;display:flex;gap:22px}
+  .call-controls.hidden,.call-incoming.hidden{display:none}
+  .call-btn{width:62px;height:62px;border-radius:50%;font-size:24px;border:0;background:rgba(255,255,255,.16);color:#fff;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;backdrop-filter:blur(6px)}
+  .call-btn.off{background:#fff;color:#11151f}
+  .call-btn.end,.call-btn.decline{background:var(--bad)}
+  .call-btn.accept{background:var(--c)}
   .iconbtn.req{position:relative}
   .reqbadge{position:absolute;top:-2px;right:-2px;min-width:16px;height:16px;border-radius:999px;background:var(--bad);
     color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 3px}
@@ -392,6 +411,8 @@
           <div class="st" id="convStatus">online</div>
         </div>
       </div>
+      <button class="iconbtn callbtn hidden" id="btnVoiceCall" title="Voice call">📞</button>
+      <button class="iconbtn callbtn hidden" id="btnVideoCall" title="Video call">📹</button>
       <button class="iconbtn" id="btnChatSearch" title="Search in chat">🔍</button>
       <button class="iconbtn" id="btnChatInfo" title="Chat info">⋮</button>
     </div>
@@ -433,6 +454,26 @@
 
 <!-- overlays -->
 <div class="scrim" id="scrim"><div class="sheet" id="sheet"></div></div>
+
+<!-- voice / video call -->
+<div class="call-overlay" id="callOverlay">
+  <video class="call-remote" id="callRemote" autoplay playsinline></video>
+  <video class="call-local" id="callLocal" autoplay playsinline muted></video>
+  <div class="call-info" id="callInfo">
+    <span class="avatar lg" id="callAvatar">👤</span>
+    <div class="call-name" id="callName">—</div>
+    <div class="call-state" id="callState">Calling…</div>
+  </div>
+  <div class="call-controls" id="callControls">
+    <button class="call-btn" id="callMute" title="Mute">🎙️</button>
+    <button class="call-btn cam hidden" id="callCam" title="Camera">📷</button>
+    <button class="call-btn end" id="callEnd" title="End call">📵</button>
+  </div>
+  <div class="call-incoming hidden" id="callIncoming">
+    <button class="call-btn decline" id="callDecline" title="Decline">📵</button>
+    <button class="call-btn accept" id="callAccept" title="Accept">📞</button>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script src="engine.js"></script>
@@ -470,7 +511,7 @@
   var editing = null;   // message id being edited
   var menuMsg = null;   // message for open action menu
   var rec = null, recTimer = null, recStart = 0, recChunks = [];
-  var cloud = { on:false, connecting:false, uid:null, app:null, db:null, auth:null, storage:null, subs:{}, chatsSub:null, _note:{}, typingSub:null, typingFor:null, typingNames:[], _typeAt:0, _typeClear:null, presence:{}, presenceSub:null, presenceFor:null, hbTimer:null, invitesSub:null, names:{}, avatars:{}, requests:[] };
+  var cloud = { on:false, connecting:false, uid:null, app:null, db:null, auth:null, storage:null, subs:{}, chatsSub:null, _note:{}, typingSub:null, typingFor:null, typingNames:[], _typeAt:0, _typeClear:null, presence:{}, presenceSub:null, presenceFor:null, hbTimer:null, invitesSub:null, names:{}, avatars:{}, requests:[], callsSub:null };
 
   function uid(){ return R.makeId('u', Date.now(), Math.random()); }
   function now(){ return Date.now(); }
@@ -821,6 +862,7 @@
         startPresence();
         publishDirectory();
         subscribeInvites();
+        subscribeCalls();
         var addH=pendingAdd();
         if(addH && addH!==R.normalizeHandle(S.me.handle||'')) lookupHandle(addH).then(function(p){ if(p && p.uid!==cloud.uid) startDirectChat(p); });
         subscribeCloudChats();
@@ -1185,6 +1227,156 @@
     var el=document.querySelector('[data-req="'+refId+'"]'); if(el) el.remove();
     if(((cloud.requests||[]).length-1)<=0) closeSheet();
   }
+
+  /* ===================== Voice & video calling (WebRTC) =====================
+   * Peer-to-peer media; Firestore relays the SDP offer/answer + ICE candidates
+   * (ripple_calls/{id}). Public STUN handles most NATs; a few strict networks
+   * would need a TURN server. 1:1 cloud chats only. */
+  var ICE = { iceServers:[{ urls:'stun:stun.l.google.com:19302' },{ urls:'stun:stun1.l.google.com:19302' }] };
+  var call = { pc:null, ref:null, subs:[], local:null, role:null, video:false, withName:'', withAvatar:'👤', timer:null, startedAt:0, callDoc:null };
+  function callSupported(){ return typeof RTCPeerConnection!=='undefined' && typeof navigator!=='undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia; }
+  function callActive(){ return !!call.pc; }
+  function callPeer(c){ return (c&&c.members||[]).filter(function(u){ return u!==cloud.uid; })[0]; }
+
+  function updateCallButtons(){
+    var c=active&&chat(active);
+    var show = !!(c && c.cloud && c.type==='dm' && Array.isArray(c.members) && c.members.length===2 && cloud.on && callSupported());
+    ['btnVoiceCall','btnVideoCall'].forEach(function(id){ var b=$(id); if(b) b.classList.toggle('hidden', !show); });
+  }
+  function showCallOverlay(on){ var el=$('callOverlay'); if(el) el.classList.toggle('on', !!on); }
+  function setCallState(txt){ var s=$('callState'); if(s) s.textContent=txt; }
+  function startCallTimer(){
+    call.startedAt=now(); clearInterval(call.timer);
+    call.timer=setInterval(function(){ setCallState(R.formatDur(Math.floor((now()-call.startedAt)/1000))); }, 1000);
+  }
+  function attachPc(candCol){
+    call.pc.onicecandidate=function(e){ if(e.candidate){ try{ candCol.add(e.candidate.toJSON()); }catch(_){} } };
+    call.pc.ontrack=function(e){ var v=$('callRemote'); if(v && e.streams[0]){ v.srcObject=e.streams[0]; } };
+    call.pc.onconnectionstatechange=function(){
+      var st=call.pc.connectionState;
+      if(st==='connected'){ setCallState('Connected'); startCallTimer(); }
+      if(st==='failed'||st==='disconnected'||st==='closed'){ endCall(); }
+    };
+  }
+  function getMedia(video){
+    return navigator.mediaDevices.getUserMedia({ audio:true, video:video?{ facingMode:'user' }:false });
+  }
+  // -------- caller --------
+  function startCall(video){
+    if(!cloud.on || callActive()) return;
+    var c=chat(active); if(!c) return; var peer=callPeer(c); if(!peer) return;
+    call.role='caller'; call.video=!!video; call.withName=chatDisplayName(c); call.withAvatar=chatDisplayAvatar(c);
+    openCallUI('Calling…', false);
+    getMedia(video).then(function(stream){
+      call.local=stream; var lv=$('callLocal'); if(lv) lv.srcObject=stream; $('callLocal').classList.toggle('hidden', !video);
+      var ref=cloud.db.collection('ripple_calls').doc();
+      call.ref=ref;
+      call.pc=new RTCPeerConnection(ICE);
+      stream.getTracks().forEach(function(t){ call.pc.addTrack(t, stream); });
+      var callerC=ref.collection('callerCandidates'), calleeC=ref.collection('calleeCandidates');
+      attachPc(callerC);
+      return call.pc.createOffer().then(function(offer){ return call.pc.setLocalDescription(offer).then(function(){ return offer; }); })
+        .then(function(offer){
+          return ref.set({ chatId:c.id, caller:cloud.uid, callerName:S.me.name||'You', callerAvatar:S.me.avatar||'🙂',
+            callee:peer, video:!!video, status:'ringing', offer:{ type:offer.type, sdp:offer.sdp }, ts:now() });
+        }).then(function(){
+          // listen for the answer
+          call.subs.push(ref.onSnapshot(function(d){ var data=d.data(); if(!data) { endCall(); return; }
+            if(data.status==='declined'){ setCallState('Declined'); setTimeout(endCall, 1200); return; }
+            if(data.status==='ended'){ endCall(); return; }
+            if(data.answer && call.pc && !call.pc.currentRemoteDescription){
+              setCallState('Connecting…');
+              call.pc.setRemoteDescription(new RTCSessionDescription(data.answer)).catch(function(){});
+            }
+          }));
+          call.subs.push(calleeC.onSnapshot(function(snap){ snap.docChanges().forEach(function(ch){
+            if(ch.type==='added' && call.pc){ try{ call.pc.addIceCandidate(new RTCIceCandidate(ch.doc.data())); }catch(_){} }
+          }); }));
+        });
+    }).catch(function(err){ toast(err&&err.name==='NotAllowedError'?'Mic/camera blocked':'Could not start call'); endCall(); });
+  }
+  // -------- callee --------
+  function acceptCall(){
+    var inv=call.incoming; if(!inv) return; call.incoming=null;
+    call.role='callee'; call.video=!!inv.video; call.withName=inv.callerName||'Caller'; call.withAvatar=inv.callerAvatar||'👤';
+    $('callIncoming').classList.add('hidden');
+    openCallUI('Connecting…', false);
+    getMedia(inv.video).then(function(stream){
+      call.local=stream; var lv=$('callLocal'); if(lv) lv.srcObject=stream; $('callLocal').classList.toggle('hidden', !inv.video);
+      var ref=cloud.db.collection('ripple_calls').doc(inv.id); call.ref=ref;
+      call.pc=new RTCPeerConnection(ICE);
+      stream.getTracks().forEach(function(t){ call.pc.addTrack(t, stream); });
+      var callerC=ref.collection('callerCandidates'), calleeC=ref.collection('calleeCandidates');
+      attachPc(calleeC);
+      return call.pc.setRemoteDescription(new RTCSessionDescription(inv.offer))
+        .then(function(){ return call.pc.createAnswer(); })
+        .then(function(ans){ return call.pc.setLocalDescription(ans).then(function(){ return ans; }); })
+        .then(function(ans){ return ref.update({ status:'active', answer:{ type:ans.type, sdp:ans.sdp } }); })
+        .then(function(){
+          call.subs.push(callerC.onSnapshot(function(snap){ snap.docChanges().forEach(function(ch){
+            if(ch.type==='added' && call.pc){ try{ call.pc.addIceCandidate(new RTCIceCandidate(ch.doc.data())); }catch(_){} }
+          }); }));
+          call.subs.push(ref.onSnapshot(function(d){ var data=d.data(); if(!data||data.status==='ended'){ endCall(); } }));
+        });
+    }).catch(function(err){ toast(err&&err.name==='NotAllowedError'?'Mic/camera blocked':'Could not answer'); declineCall(); });
+  }
+  function declineCall(){
+    var inv=call.incoming; call.incoming=null; $('callOverlay').classList.remove('on'); $('callIncoming').classList.add('hidden');
+    if(inv){ try{ cloud.db.collection('ripple_calls').doc(inv.id).update({ status:'declined' }); }catch(_){} }
+  }
+  function endCall(){
+    clearInterval(call.timer);
+    call.subs.forEach(function(u){ try{ u(); }catch(_){} }); call.subs=[];
+    if(call.ref){ try{ call.ref.update({ status:'ended' }); }catch(_){}
+      try{ call.ref.collection('callerCandidates').get().then(function(s){ s.forEach(function(d){ d.ref.delete(); }); }); }catch(_){}
+      try{ call.ref.collection('calleeCandidates').get().then(function(s){ s.forEach(function(d){ d.ref.delete(); }); }); }catch(_){}
+      setTimeout(function(){ try{ call.ref.delete(); }catch(_){} call.ref=null; }, 1500);
+    }
+    if(call.pc){ try{ call.pc.close(); }catch(_){} call.pc=null; }
+    if(call.local){ call.local.getTracks().forEach(function(t){ try{ t.stop(); }catch(_){} }); call.local=null; }
+    var r=$('callRemote'); if(r) r.srcObject=null; var l=$('callLocal'); if(l) l.srcObject=null;
+    call.role=null; call.incoming=null;
+    showCallOverlay(false);
+  }
+  function openCallUI(stateTxt, incoming){
+    $('callAvatar').textContent=call.withAvatar||(call.incoming&&call.incoming.callerAvatar)||'👤';
+    $('callName').textContent=call.withName||(call.incoming&&call.incoming.callerName)||'Call';
+    setCallState(stateTxt);
+    $('callCam').classList.toggle('hidden', !call.video);
+    $('callIncoming').classList.toggle('hidden', !incoming);
+    $('callControls').classList.toggle('hidden', incoming);
+    showCallOverlay(true);
+  }
+  function toggleMute(){
+    if(!call.local) return; var on; call.local.getAudioTracks().forEach(function(t){ t.enabled=!t.enabled; on=t.enabled; });
+    var b=$('callMute'); if(b){ b.classList.toggle('off', !on); b.textContent=on?'🎙️':'🔇'; }
+  }
+  function toggleCam(){
+    if(!call.local) return; var on; call.local.getVideoTracks().forEach(function(t){ t.enabled=!t.enabled; on=t.enabled; });
+    var b=$('callCam'); if(b) b.classList.toggle('off', !on);
+    $('callLocal').classList.toggle('hidden', !on);
+  }
+  // incoming-call listener (any chat)
+  function subscribeCalls(){
+    if(cloud.callsSub || !callSupported()) return;
+    cloud.callsSub=cloud.db.collection('ripple_calls').where('callee','==',cloud.uid).where('status','==','ringing')
+      .onSnapshot(function(snap){
+        snap.docChanges().forEach(function(ch){
+          if(ch.type==='added'){
+            if(callActive()||call.incoming) return;
+            var data=ch.doc.data(); call.incoming={ id:ch.doc.id, callerName:data.callerName, callerAvatar:data.callerAvatar, video:data.video, offer:data.offer };
+            call.withName=data.callerName; call.withAvatar=data.callerAvatar||'👤'; call.video=!!data.video;
+            openCallUI((data.video?'Video':'Voice')+' call…', true);
+            try{ if(navigator.vibrate) navigator.vibrate([300,200,300]); }catch(_){}
+          } else if(ch.type==='removed'){
+            // caller hung up before we answered → dismiss the incoming screen
+            if(call.incoming && call.incoming.id===ch.doc.id && !callActive()){
+              call.incoming=null; $('callIncoming').classList.add('hidden'); showCallOverlay(false);
+            }
+          }
+        });
+      }, function(){});
+  }
   function cloudJoin(chatId, code, opts){
     if (!cloud.on){ return; }
     opts = opts || {};
@@ -1366,6 +1558,7 @@
     var et=$('emojiTray'); if(et) et.classList.add('hidden');
     var c = chat(id); if(!c) return;
     if(c.cloud){ subscribeTyping(id); subscribePresence(c); e2eePrepareChat(c); } else { unsubscribeTyping(); unsubscribePresence(); }
+    updateCallButtons();
     if (hasDoc) document.body.classList.add('show-chat');
     $('placeholder').classList.add('hidden');
     $('convHead').classList.remove('hidden');
@@ -2369,6 +2562,13 @@
     });
     on('btnBack','click', showPlaceholder);
     on('btnChatInfo','click', infoSheet);
+    on('btnVoiceCall','click', function(){ startCall(false); });
+    on('btnVideoCall','click', function(){ startCall(true); });
+    on('callEnd','click', endCall);
+    on('callMute','click', toggleMute);
+    on('callCam','click', toggleCam);
+    on('callAccept','click', acceptCall);
+    on('callDecline','click', declineCall);
     on('rhythm','click', pulseSheet);
     on('btnChatSearch','click', function(){ var i=$('searchInput'); if(i) i.focus(); });
     on('btnSend','click', function(){ if(rec){ stopRecord(true); } else send(); });
