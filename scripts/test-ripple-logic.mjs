@@ -396,6 +396,45 @@ test('previewText masks undecrypted encrypted messages', () => {
   assert.equal(E.previewText({ enc: { v: 1 }, deleted: true, text: '' }), '🚫 This message was unsent');
 });
 
+/* ---------- forward + export ---------- */
+test('forwardMessage copies content but resets conversation state', () => {
+  const src = E.createMessage({ chatId: 'a', senderId: 'them', text: 'hello', ts: NOW,
+    reactions: { '👍': ['x'] }, replyTo: 'm9', readBy: ['them', 'me'], starred: true,
+    meta: { fromName: 'Maya' } });
+  const fwd = E.forwardMessage(src, { chatId: 'b', senderId: 'me', now: NOW + 1000 });
+  assert.equal(fwd.chatId, 'b');
+  assert.equal(fwd.senderId, 'me');
+  assert.equal(fwd.text, 'hello');
+  assert.equal(fwd.forwarded, true);
+  assert.equal(fwd.forwardedFrom, 'Maya');
+  deepEq(fwd.reactions, {}, 'reactions dropped');
+  assert.equal(fwd.replyTo, null, 'reply context dropped');
+  deepEq(fwd.readBy, [], 'receipts dropped');
+  assert.equal(fwd.starred, false);
+  assert.notEqual(fwd.id, src.id, 'new id');
+});
+test('forwardMessage deep-copies media meta (no shared reference)', () => {
+  const src = E.createMessage({ chatId: 'a', senderId: 'them', type: 'image', ts: NOW, meta: { src: 'data:...' } });
+  const fwd = E.forwardMessage(src, { chatId: 'b', senderId: 'me', now: NOW });
+  assert.equal(fwd.type, 'image');
+  fwd.meta.src = 'changed';
+  assert.equal(src.meta.src, 'data:...', 'source meta untouched');
+});
+test('exportChatText renders a readable transcript, skipping pending/system', () => {
+  const msgs = [
+    E.createMessage({ chatId: 'c', senderId: 'me', text: 'hi', ts: Date.UTC(2026, 5, 19, 9, 0) }),
+    E.createMessage({ chatId: 'c', senderId: 'them', text: 'yo', ts: Date.UTC(2026, 5, 19, 9, 1) }),
+    E.createMessage({ chatId: 'c', senderId: 'me', type: 'system', text: 'joined', ts: Date.UTC(2026, 5, 19, 9, 2) }),
+    E.createMessage({ chatId: 'c', senderId: 'me', text: 'later', ts: NOW + HOUR, scheduledAt: NOW + HOUR })
+  ];
+  const txt = E.exportChatText({ name: 'Test' }, msgs, { now: NOW, nameOf: (id) => id === 'me' ? 'You' : 'Maya' });
+  assert.ok(txt.startsWith('Chat: Test'));
+  assert.ok(txt.includes('You: hi'));
+  assert.ok(txt.includes('Maya: yo'));
+  assert.ok(!txt.includes('joined'), 'system excluded');
+  assert.ok(!txt.includes('later'), 'pending excluded');
+});
+
 /* ---------- demo auto-responder ---------- */
 test('autoReply is deterministic and responsive', () => {
   assert.equal(E.autoReply('hey', { seed: 1 }), E.autoReply('hey', { seed: 1 }));

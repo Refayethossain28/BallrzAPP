@@ -126,6 +126,22 @@
   .rhz-txt{overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
   .rhz-score{flex:none;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
   @keyframes eq{0%,100%{height:4px}50%{height:13px}}
+  /* pinned-message bar */
+  .pinned-bar{display:flex;align-items:center;gap:10px;padding:7px 16px;cursor:pointer;border-bottom:1px solid var(--line);
+    background:color-mix(in srgb,var(--warn) 9%,transparent)}
+  .pinned-bar .pic{flex:none}
+  .pin-txt{min-width:0;display:flex;flex-direction:column;line-height:1.15}
+  .pin-txt b{font-size:11.5px;color:var(--warn)}
+  .pin-txt span{font-size:12.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* forwarded tag + jump flash */
+  .fwd-tag{font-size:11.5px;color:var(--faint);font-style:italic;margin-bottom:3px}
+  .msg.flash .bubble{animation:flashb 1.2s ease}
+  @keyframes flashb{0%,100%{box-shadow:none}30%{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 55%,transparent)}}
+  /* forward / chat picker list */
+  .picklist{max-height:50vh;overflow-y:auto;margin-top:6px}
+  .pickrow{display:flex;align-items:center;gap:11px;padding:9px 6px;border-radius:11px;cursor:pointer}
+  .pickrow:hover{background:rgba(255,255,255,.05)}
+  .pickrow .gr{min-width:0}.pickrow .gr .t{font-weight:600}
   /* Pulse sheet: 24-hour "best time to reach" histogram */
   .ohist{display:flex;align-items:flex-end;gap:2px;height:26px;margin:4px 0 2px}
   .ohist .oh{flex:1;border-radius:2px 2px 0 0;background:var(--line);min-width:0}
@@ -311,6 +327,7 @@
     <div class="filters" id="filters">
       <button class="chip on" data-filter="all">All</button>
       <button class="chip" data-filter="unread">Unread</button>
+      <button class="chip" data-filter="favorites">★ Favourites</button>
       <button class="chip" data-filter="groups">Groups</button>
       <button class="chip" data-filter="archived">Archived</button>
     </div>
@@ -344,6 +361,7 @@
       <button class="iconbtn" id="btnChatInfo" title="Chat info">⋮</button>
     </div>
     <div class="rhythm hidden" id="rhythm" title="Pulse — this conversation's live rhythm"></div>
+    <div class="pinned-bar hidden" id="pinnedBar"></div>
 
     <div class="timeline hidden" id="timeline"></div>
 
@@ -713,6 +731,7 @@
       c.cloud = true; c.name = data.name || c.name; c.avatar = data.avatar || c.avatar;
       c.members = data.members || c.members; if (data.disappearSec != null) c.disappearSec = data.disappearSec;
       if (data.disappearBeats != null) c.disappearBeats = data.disappearBeats;
+      if (data.pinnedIds != null) c.pinnedIds = data.pinnedIds;
     }
     subscribeCloudMessages(id);
     persist();
@@ -912,6 +931,7 @@
       return !c.archived;
     }), S.msgs, meId(), now());
     if (filter==='unread') rows = rows.filter(function(r){ return r.unread>0; });
+    if (filter==='favorites') rows = rows.filter(function(r){ return r.chat.favorite; });
     if (filter==='groups') rows = rows.filter(function(r){ return r.chat.type==='group'; });
     if (rows.length===0){ list.innerHTML='<div class="empty">No chats here yet.</div>'; return; }
     var html='';
@@ -1068,7 +1088,17 @@
       el.addEventListener('click', function(){ playVoice(el); });
     });
     tl.scrollTop = tl.scrollHeight;
-    renderRhythm();
+    renderRhythm(); renderPinnedBar();
+  }
+  function renderPinnedBar(){
+    var el=$('pinnedBar'); if(!el) return;
+    var c=active&&chat(active);
+    var present=(c?(c.pinnedIds||[]):[]).filter(function(id){ var m=findMsg(active,id); return m && !R.isExpired(m,now()) && !R.isPending(m,now()) && !m.deleted; });
+    if(!c||!present.length){ el.classList.add('hidden'); el.innerHTML=''; return; }
+    var latest=findMsg(active, present[present.length-1]);
+    el.classList.remove('hidden');
+    el.innerHTML='<span class="pic">📌</span><div class="pin-txt"><b>Pinned message'+(present.length>1?' · '+present.length:'')+'</b><span>'+esc(R.previewText(latest))+'</span></div>';
+    el.onclick=function(){ jumpToMsg(latest.id); };
   }
 
   function renderMsg(mm, c, prevSender){
@@ -1084,6 +1114,7 @@
     if(showWho) h+='<div class="who" style="color:'+memberColor(mm.senderId)+'">'+esc(nameOf(mm))+'</div>';
     h+='<div class="bubble">';
     if(mm.starred) h+='<span class="starflag">⭐</span>';
+    if(mm.forwarded) h+='<div class="fwd-tag">↪ Forwarded'+(mm.forwardedFrom?' · '+esc(mm.forwardedFrom):'')+'</div>';
     if(mm.replyTo){ var q=findMsg(active,mm.replyTo); if(q) h+=
       '<div class="reply-quote"><b>'+esc(nameOf(q))+'</b><span>'+esc(R.previewText(q))+'</span></div>'; }
     h += msgBody(mm, c);
@@ -1298,7 +1329,10 @@
     reacts+='</div>';
     var items='';
     items+=mi('reply','↩','Reply');
+    items+=mi('forward','↪','Forward');
     if(m.type==='text') items+=mi('copy','⧉','Copy');
+    var c=chat(active); var pinned=c&&(c.pinnedIds||[]).indexOf(mid)!==-1;
+    items+=mi('pin','📌',pinned?'Unpin':'Pin');
     items+=mi('star',m.starred?'☆':'⭐',m.starred?'Unstar':'Star');
     if(out&&m.type==='text') items+=mi('edit','✏️','Edit');
     if(out) items+=mi('unsend','🚫','Unsend for everyone',true);
@@ -1323,11 +1357,63 @@
   }
   function menuAct(act, mid){
     if(act==='reply') setReply(mid);
+    else if(act==='forward') forwardSheet(mid);
     else if(act==='copy') copyMsg(mid);
+    else if(act==='pin') togglePin(mid);
     else if(act==='star') star(mid);
     else if(act==='edit') startEdit(mid);
     else if(act==='unsend') unsend(mid);
     else if(act==='delete') delLocal(mid);
+  }
+  /* ---------- forward ---------- */
+  function forwardSheet(mid){
+    var m=findMsg(active,mid); if(!m) return; closeMenu();
+    var targets=S.chats.filter(function(c){ return c.id!==active && c.type!=='saved'; });
+    // "Saved messages" is always a handy forward target.
+    var saved=chat('saved'); if(saved) targets.unshift(saved);
+    var rows=targets.map(function(c){
+      return '<div class="pickrow" data-fwd="'+c.id+'"><span class="avatar">'+esc(c.avatar||'💬')+'</span>'+
+        '<div class="gr"><div class="t">'+esc(c.name)+'</div></div></div>'; }).join('');
+    openSheet('<h2>Forward to…</h2><p class="sub">Pick a chat to forward this message.</p>'+
+      '<div class="picklist">'+(rows||'<div class="empty">No other chats yet.</div>')+'</div>');
+    Array.prototype.forEach.call(document.querySelectorAll('[data-fwd]'), function(el){
+      el.addEventListener('click', function(){ doForward(m, el.getAttribute('data-fwd')); });
+    });
+  }
+  function doForward(m, targetId){
+    var tc=chat(targetId); if(!tc){ return; }
+    var fwd=R.forwardMessage(m, { chatId:targetId, senderId:myId(tc), now:now(), rand:Math.random(),
+      forwardedFrom: m.forwardedFrom || (isMe(m.senderId)?(S.me.name||'You'):nameOf(m)), disappearSec:disSec(tc) });
+    if(tc.cloud && fwd.meta && fwd.meta.fromName==null){ fwd.meta.fromName=S.me.name||'You'; fwd.meta.fromAvatar=S.me.avatar||'🙂'; }
+    msgsOf(targetId).push(fwd);
+    if(tc.cloud) cloudSend(tc, fwd); else { advanceState(fwd,'delivered',500); if(targetId!=='saved'&&targetId==='echo') maybeAutoReply(tc, fwd.text); }
+    closeSheet(); persist(); renderSidebar();
+    toast('Forwarded to '+tc.name);
+  }
+  /* ---------- pin message ---------- */
+  function togglePin(mid){
+    var c=chat(active); if(!c) return; closeMenu();
+    c.pinnedIds=c.pinnedIds||[];
+    var i=c.pinnedIds.indexOf(mid);
+    if(i!==-1){ c.pinnedIds.splice(i,1); toast('Unpinned'); }
+    else { c.pinnedIds.push(mid); toast('📌 Pinned'); }
+    if(c.cloud){ try{ cloud.db.collection('ripple_chats').doc(c.id).set({ pinnedIds:c.pinnedIds }, {merge:true}); }catch(e){} }
+    renderTimeline(); persist();
+  }
+  function exportChat(c){
+    var txt=R.exportChatText(c, msgsOf(c.id), { now:now(), nameOf:function(id){ return isMe(id)?(S.me.name||'You'):displayName(id); } });
+    try{
+      var blob=new Blob([txt], { type:'text/plain' });
+      var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+      a.download=(c.name||'chat').replace(/[^a-z0-9]+/ig,'-').toLowerCase()+'.txt';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+      toast('Exported '+c.name);
+    }catch(e){ toast('Export failed'); }
+  }
+  function jumpToMsg(mid){
+    var el=document.querySelector('.msg[data-id="'+mid+'"]');
+    if(el){ el.scrollIntoView({ block:'center', behavior:'smooth' }); el.classList.add('flash'); setTimeout(function(){ el.classList.remove('flash'); }, 1200); }
   }
   function closeMenu(){ var m=$('actionMenu'); if(m) m.classList.remove('on'); menuMsg=null; }
 
@@ -1689,7 +1775,9 @@
       '<div class="setrow"><span class="ic">🔕</span><div class="gr"><div class="t">Mute</div></div><div class="switch '+(c.muted?'on':'')+'" id="infMute"></div></div>'+
       '<div class="setrow"><span class="ic">🗄️</span><div class="gr"><div class="t">'+(c.archived?'Unarchive':'Archive')+'</div></div><div class="switch '+(c.archived?'on':'')+'" id="infArch"></div></div>'+
       (c.cloud?'<button class="btn ghost" id="infShare">🔗 Share invite link</button>':'')+
+      '<div class="setrow"><span class="ic">⭐</span><div class="gr"><div class="t">Favourite</div></div><div class="switch '+(c.favorite?'on':'')+'" id="infFav"></div></div>'+
       '<button class="btn ghost" id="infStarred" style="margin-top:8px">⭐ Starred messages</button>'+
+      '<button class="btn ghost" id="infExport" style="margin-top:8px">⬇️ Export chat (.txt)</button>'+
       (c.type!=='saved'?'<button class="btn danger" id="infDelete" style="margin-top:8px">'+(c.cloud?'Leave chat':'Delete chat')+'</button>':'')
     );
     if(c.cloud) on('infShare','click', function(){ closeSheet(); shareSheet(active); });
@@ -1700,6 +1788,8 @@
       if(c.cloud){ try{ cloud.db.collection('ripple_chats').doc(active).set({disappearSec:c.disappearSec,disappearBeats:c.disappearBeats},{merge:true}); }catch(e){} }
       renderTimeline(); renderRhythm(); renderSidebar(); persist(); });
     on('infPin','click',function(){ c.pinned=!c.pinned; $('infPin').classList.toggle('on'); renderSidebar(); persist(); });
+    on('infFav','click',function(){ c.favorite=!c.favorite; $('infFav').classList.toggle('on'); renderSidebar(); persist(); });
+    on('infExport','click',function(){ exportChat(c); });
     on('infMute','click',function(){ c.muted=!c.muted; $('infMute').classList.toggle('on'); renderSidebar(); persist(); });
     on('infArch','click',function(){ c.archived=!c.archived; closeSheet(); active=null; showPlaceholder(); renderSidebar(); persist(); });
     on('infStarred','click', starredSheet);
@@ -1778,6 +1868,7 @@
     $('placeholder').classList.remove('hidden');
     $('convHead').classList.add('hidden'); $('timeline').classList.add('hidden'); $('composer').classList.add('hidden');
     var rh=$('rhythm'); if(rh){ rh.classList.add('hidden'); rh.innerHTML=''; }
+    var pb=$('pinnedBar'); if(pb){ pb.classList.add('hidden'); pb.innerHTML=''; }
   }
   function humanDur(sec){
     if(sec%604800===0) return (sec/604800)+'w'; if(sec%86400===0) return (sec/86400)+'d';
@@ -1832,6 +1923,14 @@
     on('btnSettings','click', settingsSheet);
     on('cloudChip','click', cloudChipClick);
     on('btnSearchGlobal','click', function(){ var i=$('searchInput'); if(i){ i.focus(); } });
+    var fbar=$('filters');
+    if(fbar) Array.prototype.forEach.call(fbar.querySelectorAll('.chip'), function(b){
+      b.addEventListener('click', function(){
+        filter=b.getAttribute('data-filter');
+        Array.prototype.forEach.call(fbar.querySelectorAll('.chip'), function(x){ x.classList.toggle('on', x===b); });
+        renderSidebar();
+      });
+    });
     on('btnBack','click', showPlaceholder);
     on('btnChatInfo','click', infoSheet);
     on('rhythm','click', pulseSheet);

@@ -62,6 +62,8 @@
       archived: !!opts.archived,
       disappearSec: opts.disappearSec || 0, // 0 = off; else seconds-to-live
       disappearBeats: opts.disappearBeats || 0, // 0 = off; else Pulse beats-to-live
+      pinnedIds: opts.pinnedIds || [],      // message ids pinned in this chat
+      favorite: !!opts.favorite,            // user-flagged favourite chat
       accent: opts.accent || null,          // per-chat theme override
       draft: opts.draft || '',
       createdAt: opts.now || 0
@@ -89,8 +91,42 @@
       expireAt: expireAt,                   // disappearing
       scheduledAt: opts.scheduledAt || null,// if > ts, hold until due
       readBy: opts.readBy || [],
+      forwarded: !!opts.forwarded,          // shown with a "Forwarded" tag
+      forwardedFrom: opts.forwardedFrom || null,
       meta: opts.meta || {}                 // poll/voice/image payloads
     };
+  }
+
+  // Make a fresh copy of a message for another chat (keeps content, drops the
+  // conversation-specific state: reactions, receipts, replies, edits, timers).
+  function forwardMessage(msg, opts) {
+    opts = opts || {};
+    return createMessage({
+      chatId: opts.chatId, senderId: opts.senderId,
+      type: msg.type === 'system' ? 'text' : msg.type,
+      text: msg.text || '', ts: opts.now || 0, rand: opts.rand,
+      state: opts.state || 'sent',
+      disappearSec: opts.disappearSec || 0,
+      forwarded: true,
+      forwardedFrom: opts.forwardedFrom || msg.forwardedFrom || (msg.meta && msg.meta.fromName) || null,
+      meta: msg.meta ? JSON.parse(JSON.stringify(msg.meta)) : {}
+    });
+  }
+
+  // Render a whole conversation to plain text for export/backup.
+  function exportChatText(chat, messages, opts) {
+    opts = opts || {};
+    var nameOf = opts.nameOf || function (id) { return id; };
+    var nowT = opts.now || 0;
+    var out = ['Chat: ' + ((chat && chat.name) || 'Conversation'), ''];
+    (messages || []).filter(function (m) { return m && !isPending(m, nowT) && m.type !== 'system'; })
+      .slice().sort(function (a, b) { return a.ts - b.ts; })
+      .forEach(function (m) {
+        var when = new Date(m.ts).toISOString().replace('T', ' ').slice(0, 16);
+        var body = m.deleted ? '(unsent)' : previewText(m);
+        out.push('[' + when + '] ' + nameOf(m.senderId) + ': ' + body);
+      });
+    return out.join('\n');
   }
 
   /* ---------- rich text: a small, safe markdown → HTML ---------- */
@@ -731,6 +767,7 @@
     conversationPulse: conversationPulse, formatPulse: formatPulse,
     beatsToSeconds: beatsToSeconds, niceDuration: niceDuration,
     replyOutlook: replyOutlook, echoReplyDelay: echoReplyDelay,
-    nextPeakTime: nextPeakTime, groupPulse: groupPulse
+    nextPeakTime: nextPeakTime, groupPulse: groupPulse,
+    forwardMessage: forwardMessage, exportChatText: exportChatText
   };
 });
