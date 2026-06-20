@@ -89,7 +89,17 @@ service cloud.firestore {
     // claim transaction flips status open→claimed and stamps driverId).
     match /open_jobs/{id} {
       allow read:   if isDriver() || isAdmin();
-      allow update: if isDriver() || isAdmin();
+      // A driver may ONLY claim an open job: flip status open→claimed, stamp their
+      // own uid, and leave the dispatch payload (booking + pay) untouched — so a
+      // driver can't reopen a taken job, claim it for someone else, or inflate pay.
+      allow update: if isAdmin()
+        || ( isDriver()
+             && resource.data.status == 'open'
+             && request.resource.data.status == 'claimed'
+             && request.resource.data.driverId == request.auth.uid
+             && request.resource.data.bookingDocId == resource.data.bookingDocId
+             && request.resource.data.bookingRef == resource.data.bookingRef
+             && request.resource.data.pay == resource.data.pay );
       allow create, delete: if isAdmin();
     }
 

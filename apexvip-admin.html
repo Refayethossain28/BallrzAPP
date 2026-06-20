@@ -1452,7 +1452,7 @@ function broadcastDispatch(){
       clientName:booking.client||'',pickup:booking.pickup||'',
       dropoff:booking.dropoff||'',date:booking.date||'',time:booking.time||'',
       vehicle:booking.vehicle||'S-Class',
-      pay:parseInt((booking.price||'0').replace(/[^0-9]/g,'')),
+      pay:Math.round(parseInt((booking.price||'0').replace(/[^0-9]/g,''))*0.8),
       status:'open',driverId:'',
       createdAt:firebase.firestore.FieldValue.serverTimestamp()
     }).catch(()=>{});
@@ -1498,7 +1498,7 @@ function confirmDispatch(driverIdOrName){
         flight:booking.flight||'',notes:booking.notes||booking.specialRequests||'',
         vehicle:driver.model||driver.vehicle||'',
         market:booking.location||booking.market||'london',
-        pay:parseInt((booking.price||'0').replace(/[^0-9]/g,'')),
+        pay:Math.round(parseInt((booking.price||'0').replace(/[^0-9]/g,''))*0.8),
         status:'pending',
         createdAt:firebase.firestore.FieldValue.serverTimestamp()
       }).catch(()=>{});
@@ -1651,7 +1651,15 @@ async function confirmRejectDoc(driverId, type) {
   }catch(e){alert('Error: '+e.message);}
 }
 
+// render() coalesces bursts of state changes into one repaint per animation
+// frame. Use renderNow() when you must read the freshly-rendered DOM immediately.
+let _renderQueued=false;
 function render(){
+  if(_renderQueued) return;
+  _renderQueued=true;
+  requestAnimationFrame(()=>{ _renderQueued=false; renderNow(); });
+}
+function renderNow(){
   renderSidebar();
   const fn=pages[S.screen]||pages.dashboard;
   document.getElementById('main').innerHTML=fn();
@@ -1659,7 +1667,7 @@ function render(){
   if(S.screen==='payouts') setTimeout(loadPayouts, 50);
 }
 
-render();
+renderNow();
 (function(){ if(window.navigator.standalone===true) document.body.classList.add('ios-pwa'); })();
 </script>
 </body>

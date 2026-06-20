@@ -3104,8 +3104,8 @@ home: () => {
   const base = state.booking.price||185;
   const ok = state._promoApplied;
   const disc = ok?Math.round(base*.2):0;
-  const vat = Math.round((base-disc)*.2);
-  const total = base-disc+vat;
+  const total = base-disc;
+  const vat = Math.round(total/6);
   const svcLabel = {airport:'Airport Transfer',hourly:'By the Hour',day:'By the Day',point:'Point to Point'}[state.booking.serviceType]||'Airport Transfer';
   const eta = (state.booking.serviceType==='airport' && typeof ApexCore!=='undefined')
     ? ApexCore.apexETA({baseMinutes:45, tripType:'flight', hour:parseInt(state.booking.time)||10})
@@ -3214,7 +3214,7 @@ home: () => {
       <div class="section-label" style="margin-bottom:16px">Price</div>
       <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:10px"><span style="color:var(--fg-3)">Base fare</span><span>£${base}</span></div>
       ${ok?`<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:10px"><span style="color:#22c55e">Discount 20%</span><span style="color:#22c55e">−£${disc}</span></div>`:''}
-      <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:16px"><span style="color:var(--fg-3)">VAT 20%</span><span>£${vat}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:16px"><span style="color:var(--fg-3)">incl. VAT 20%</span><span>£${vat}</span></div>
       <div class="divider" style="margin-bottom:16px"></div>
       <div style="display:flex;justify-content:space-between;align-items:center">
         <span style="font-size:16px;font-weight:700">Total</span>
@@ -4564,8 +4564,8 @@ profile: () => {
   const t = state._lastTrip || {};
   const base = t.base || t.price || 185;
   const disc = t.discount || 0;
-  const vat = t.vat || Math.round((base-disc)*.2);
-  const total = base - disc + vat;
+  const total = t.price || (base - disc);
+  const vat = t.vat || Math.round(total/6);
   const axc = Math.round(total * 0.05);
   return `
 <div style="height:100dvh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
@@ -4594,7 +4594,7 @@ profile: () => {
       <div class="section-label" style="margin-bottom:14px">Fare breakdown</div>
       <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:10px"><span style="color:var(--fg-3)">Base fare</span><span>£${base}</span></div>
       ${disc?`<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:10px"><span style="color:#22c55e">Discount</span><span style="color:#22c55e">−£${disc}</span></div>`:''}
-      <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:14px"><span style="color:var(--fg-3)">VAT 20%</span><span>£${vat}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:14px"><span style="color:var(--fg-3)">incl. VAT 20%</span><span>£${vat}</span></div>
       <div style="height:1px;background:var(--divider);margin-bottom:14px"></div>
       <div style="display:flex;justify-content:space-between;align-items:center">
         <span style="font-size:16px;font-weight:700">Total paid</span>
@@ -5616,8 +5616,8 @@ async function confirmBooking(overrideRef){
   const ref = overrideRef || state._confirmedRef || ('APX-'+(Math.floor(1000+Math.random()*9000)));
   const base=state.booking.price||185;
   const disc=state._promoApplied?Math.round(base*.2):0;
-  const vat=Math.round((base-disc)*.2);
-  const total=base-disc+vat;
+  const total=base-disc;
+  const vat=Math.round(total/6);
   const svcLabel={airport:'Airport Transfer',hourly:'By the Hour',day:'By the Day'}[state.booking.serviceType]||'Airport Transfer';
   if(FIREBASE_ENABLED&&auth.currentUser){
     try{
@@ -5961,7 +5961,17 @@ function renderAirportPickerPortal(){
     </div>`;
 }
 
+// render() coalesces bursts of state changes into a single repaint per frame:
+// many handlers may call it in one tick, but the DOM is rebuilt only once (on the
+// next animation frame). Use renderNow() when you must read the fresh DOM
+// synchronously right after rendering.
+let _renderQueued=false;
 function render(){
+  if(_renderQueued) return;
+  _renderQueued=true;
+  requestAnimationFrame(()=>{ _renderQueued=false; renderNow(); });
+}
+function renderNow(){
   try{
     document.body.setAttribute('data-screen',state.screen);
     const fn=screens[state.screen];
@@ -5991,7 +6001,7 @@ function render(){
 }
 
 generateMemberNumber();
-render();
+renderNow();
 maybeShowConsent();
 
 // Auto-check flight for upcoming trip with a flight number
