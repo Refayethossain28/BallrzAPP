@@ -151,9 +151,12 @@ compatibility.
 ### Voice & video calls (already wired)
 
 1:1 cloud chats get **📞 voice** and **📹 video** buttons in the conversation
-header. Calls are **peer-to-peer WebRTC**: Firestore (`ripple_calls/<id>`) only
-relays the SDP offer/answer and ICE candidates — the audio/video never touches a
-server. Public Google STUN handles most networks; a strict/corporate NAT would
+header, and you can also call straight from a username lookup (no chat needed).
+Calls are **peer-to-peer WebRTC**: Firestore (`ripple_calls/<id>`) only relays
+the SDP offer/answer and ICE candidates — the audio/video never touches a server.
+The `ripplePushOnCall` Cloud Function sends a **high-urgency push** so the callee
+rings even with the app closed (needs the VAPID key + Functions deployed + the
+callee opted into push; on iOS the app must be added to the Home Screen). Public Google STUN handles most networks; a strict/corporate NAT would
 need a **TURN** server added to the `ICE` config. Incoming calls ring on any
 screen (a listener on `where('callee','==', me)`), with accept/decline, mute,
 camera toggle and a call timer. Rules restrict each call's signaling to its two
