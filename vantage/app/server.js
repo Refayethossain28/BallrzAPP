@@ -7,7 +7,8 @@ import { dirname, join } from "node:path";
 import * as store from "./db.js";
 import { parseInbound, intakeMode } from "./parse.js";
 import { quoteFor } from "./quote.js";
-import { captureForRequest, paymentsMode } from "./payments.js";
+import { captureAndSettle, paymentsMode } from "./payments.js";
+import { getFlightStatus, flightMode } from "./flight.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -22,10 +23,17 @@ const wrap = (fn) => (req, res) =>
     res.status(500).json({ error: e.message });
   });
 
-// Health / mode — shows whether real AI + payments are wired up.
+// Health / mode — shows whether real AI + payments + flight tracking are wired up.
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, intake: intakeMode(), payments: paymentsMode() });
+  res.json({ ok: true, intake: intakeMode(), payments: paymentsMode(), flight: flightMode() });
 });
+
+// Live flight status (real AviationStack when FLIGHT_API_KEY is set, else mock).
+app.get("/api/flight/:number", wrap(async (req, res) => {
+  const status = await getFlightStatus(req.params.number);
+  if (!status) return res.status(404).json({ error: "no flight number" });
+  res.json(status);
+}));
 
 // Parse free text -> structured booking + instant quote (no DB write yet).
 app.post("/api/parse", wrap(async (req, res) => {
@@ -67,24 +75,31 @@ app.post("/api/requests/:id/enroute", wrap((req, res) => {
   res.json(store.setStatus(req.params.id, "in_progress", "driver en route · client SMS sent"));
 }));
 
-// Complete the trip AND capture payment (mock or real Stripe).
+// Complete the trip: capture the fare AND settle the driver (Connect / mock).
 app.post("/api/requests/:id/complete", wrap(async (req, res) => {
   const request = store.getRequest(req.params.id);
   if (!request) return res.status(404).json({ error: "not found" });
 
-  const pay = await captureForRequest(request);
+  const driver = request.assigned_resource_id ? store.getResource(request.assigned_resource_id) : null;
+  const pay = await captureAndSettle(request, driver);
   store.recordPayment({
     request_id: request.id,
     provider: pay.provider,
     provider_ref: pay.provider_ref,
     amount: request.quote_amount,
+    platform_fee: pay.platformFee,
+    driver_share: pay.driverShare,
+    transfer_ref: pay.transfer_ref,
     status: pay.status,
   });
-  if (request.assigned_resource_id) store.setResourceStatus(request.assigned_resource_id, "available");
+  if (driver) store.setResourceStatus(driver.id, "available");
 
+  const settleMsg = pay.driverShare
+    ? ` · driver $${pay.driverShare} ${pay.settled ? "settled" : "pending onboarding"}`
+    : "";
   const updated = store.setStatus(
     request.id, "completed",
-    `completed · payment ${pay.status} via ${pay.provider} · platform fee $${pay.platformFee}`
+    `completed · fare ${pay.status} via ${pay.provider} · platform fee $${pay.platformFee}${settleMsg}`
   );
   res.json({ request: updated, payment: pay });
 }));

@@ -126,7 +126,7 @@ function openReq(id) {
   $("m-body").innerHTML = `
     ${f("Stage", STAGE_LABEL[r.status])}${f("When", p.datetime)}
     ${r.type !== "concierge" ? f("Route", [p.pickup, p.dropoff].filter(Boolean).join(" → ") || p.dropoff) + f("Vehicle", p.vehicle) : f("Venue", p.venue)}
-    ${p.flight ? f("Flight", p.flight + " · on time") : ""}
+    ${p.flight ? `<div class="field"><span>Flight</span><b id="flightline">checking…</b></div>` : ""}
     ${f("Quote", r.quote_amount ? "$" + r.quote_amount : "set fee")}
     <div class="field"><span>Original message</span></div>
     <div class="raw">“${r.raw_inbound_text || ""}”</div>
@@ -143,6 +143,19 @@ function openReq(id) {
     ${r.status === "completed" ? '<div class="note">Completed — payment captured. Phase 1.5 settles the driver payout via Stripe Connect.</div>' : ""}`;
   $("m-body").onclick = (e) => act(e.target.dataset.act, r.id);
   $("modal-bg").style.display = "grid";
+
+  // Live flight status for airport pickups.
+  if (r.type === "airport" && p.flight) {
+    api(`/api/flight/${p.flight}`).then((s) => {
+      const el = document.getElementById("flightline");
+      if (!el) return;
+      const late = s.delayMinutes > 0;
+      el.innerHTML = `<b>${s.flight}</b> · <span style="color:${late ? "var(--amber)" : "var(--green)"}">${s.status}</span>`
+        + (s.gate ? ` · gate ${s.gate}` : "")
+        + (late ? ` · +${s.delayMinutes}m, pickup auto-adjusted` : "")
+        + ` <span style="color:var(--muted)">(${s.source})</span>`;
+    }).catch(() => {});
+  }
 }
 
 async function act(a, id) {
@@ -152,6 +165,9 @@ async function act(a, id) {
     if (a === "assign") {
       const sel = document.getElementById("assignSel");
       await api(`/api/requests/${id}/assign`, { method: "POST", body: JSON.stringify({ resource_id: sel.value }) });
+    } else if (a === "complete") {
+      const { payment: pay } = await api(`/api/requests/${id}/complete`, { method: "POST" });
+      if (pay.driverShare) alert(`Fare captured.\nDriver settled: $${pay.driverShare}\nPlatform fee: $${pay.platformFee}\nOperator net: $${pay.operatorNet}`);
     } else {
       await api(`/api/requests/${id}/${a === "confirm" ? "confirm" : a}`, { method: "POST" });
     }

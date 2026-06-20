@@ -27,7 +27,8 @@ db.exec(`
     name TEXT NOT NULL,
     phone TEXT,
     vehicle TEXT,
-    status TEXT NOT NULL DEFAULT 'available'
+    status TEXT NOT NULL DEFAULT 'available',
+    stripe_account_id TEXT               -- Connect account for driver settlement
   );
 
   CREATE TABLE IF NOT EXISTS requests (
@@ -52,6 +53,9 @@ db.exec(`
     provider TEXT,                      -- 'stripe' | 'mock'
     provider_ref TEXT,                  -- payment_intent id
     amount INTEGER,
+    platform_fee REAL,                  -- Vantage take-rate
+    driver_share INTEGER,               -- settled to the driver (Connect transfer)
+    transfer_ref TEXT,                  -- Connect transfer id
     status TEXT,
     created_at TEXT NOT NULL
   );
@@ -120,13 +124,19 @@ export function assignResource(id, resourceId) {
   return getRequest(id);
 }
 
-export function recordPayment({ request_id, provider, provider_ref, amount, status }) {
+export function recordPayment({ request_id, provider, provider_ref, amount, platform_fee, driver_share, transfer_ref, status }) {
   const id = "PAY" + randomUUID().slice(0, 8);
   db.prepare(`
-    INSERT INTO payments (id, request_id, provider, provider_ref, amount, status, created_at)
-    VALUES (?,?,?,?,?,?,?)
-  `).run(id, request_id, provider, provider_ref || null, amount ?? null, status, now());
+    INSERT INTO payments
+      (id, request_id, provider, provider_ref, amount, platform_fee, driver_share, transfer_ref, status, created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?)
+  `).run(id, request_id, provider, provider_ref || null, amount ?? null,
+        platform_fee ?? null, driver_share ?? null, transfer_ref || null, status, now());
   return id;
+}
+
+export function getResource(id) {
+  return db.prepare(`SELECT * FROM resources WHERE id=?`).get(id) || null;
 }
 
 function hydrate(row) {

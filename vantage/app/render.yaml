@@ -1,0 +1,30 @@
+# Render Blueprint — one-click deploy of the Vantage app.
+# In Render: New → Blueprint → point at this repo. Render reads this file.
+services:
+  - type: web
+    name: vantage
+    runtime: node
+    rootDir: vantage/app
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22.11.0"
+      # Demo mode works with these blank. Set them in the Render dashboard
+      # (mark as secret) to enable the real services:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: FLIGHT_API_KEY
+        sync: false
+      # SQLite lives on disk; attach a persistent disk for durability across deploys.
+      - key: VANTAGE_DB
+        value: /data/vantage.db
+    disk:
+      name: vantage-data
+      mountPath: /data
+      sizeGB: 1

@@ -10,9 +10,11 @@ vantage/app/
   db.js            node:sqlite persistence (polymorphic `requests` table)
   parse.js         AI intake: Claude structured output + heuristic fallback
   quote.js         rate engine (pure functions)
-  payments.js      Stripe capture (+ mock fallback); ~0.5% platform fee
-  test.js          end-to-end lifecycle smoke test
+  payments.js      Stripe capture + Connect driver settlement (+ mock fallback)
+  flight.js        flight tracking: AviationStack + mock fallback
+  test.js          end-to-end lifecycle smoke test (13 checks)
   public/          operator console (index.html + app.js + styles.css)
+  Dockerfile, render.yaml, DEPLOY.md   one-click / container deploy
 ```
 
 ## Run it
@@ -39,9 +41,30 @@ Flip on the real services by setting env vars (see `.env.example`):
 | Env var | Off (default) | On |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | heuristic parser | **real Claude** intake (`claude-opus-4-8`, structured JSON output) |
-| `STRIPE_SECRET_KEY` | mock capture | **real Stripe** PaymentIntent (use a `sk_test_...` key) |
+| `STRIPE_SECRET_KEY` | mock capture + split | **real Stripe** PaymentIntent + Connect transfer (use `sk_test_...`) |
+| `FLIGHT_API_KEY` | mock flight status | **real AviationStack** flight tracking |
 
 `GET /api/health` reports which mode each is in; the console header shows it too.
+
+## Driver settlement (Stripe Connect)
+
+On trip completion the fare is captured **and** the driver's cut is settled. The
+split (`payments.js`): 70% driver share, ~0.5% Vantage platform fee, remainder is
+operator net. With `STRIPE_SECRET_KEY` set and a driver onboarded to Connect
+(`resources.stripe_account_id`), the driver share moves as a real Connect transfer;
+otherwise it's computed and recorded so the lifecycle and audit trail are complete.
+This take-rate is the business model — see `../MODEL.md`.
+
+## Flight tracking
+
+Airport requests show live flight status. The console fetches `/api/flight/:number`
+when you open an airport request; delays auto-adjust the pickup note. Real lookups
+via AviationStack when `FLIGHT_API_KEY` is set, deterministic mock otherwise.
+
+## Deploy
+
+See `DEPLOY.md` — one-click on Render (`render.yaml`), Railway, or any container
+host (`Dockerfile`). Runs in demo mode with no secrets.
 
 ## The AI intake (real Claude)
 

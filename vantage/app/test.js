@@ -45,10 +45,15 @@ try {
   const assigned = await call(`/api/requests/${req.id}/assign`, { method: "POST", body: JSON.stringify({ resource_id: drivers[0].id }) });
   ok(assigned.status === "assigned" && assigned.assigned_resource_id === drivers[0].id, `assigned to ${drivers[0].name}`);
 
+  const flight = await call(`/api/flight/${parsed.flight}`);
+  ok(flight.flight === "DL472" && flight.status, `flight status: ${flight.status} (${flight.source})`);
+
   await call(`/api/requests/${req.id}/enroute`, { method: "POST" });
   const done = await call(`/api/requests/${req.id}/complete`, { method: "POST" });
   ok(done.request.status === "completed", `lifecycle completed`);
-  ok(done.payment.status === "succeeded", `payment captured via ${done.payment.provider} (fee $${done.payment.platformFee})`);
+  ok(done.payment.status === "succeeded", `fare captured via ${done.payment.provider} (fee $${done.payment.platformFee})`);
+  ok(done.payment.driverShare > 0 && done.payment.driverShare < req.quote_amount,
+     `driver settled $${done.payment.driverShare} of $${req.quote_amount} fare (net $${done.payment.operatorNet})`);
 
   const all = await call("/api/requests");
   const persisted = all.find((r) => r.id === req.id);
