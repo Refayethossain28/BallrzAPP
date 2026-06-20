@@ -174,6 +174,8 @@
   .hr-or{display:flex;align-items:center;gap:10px;color:var(--faint);font-size:12px;margin:14px 0 10px}
   .hr-or::before,.hr-or::after{content:"";flex:1;height:1px;background:var(--line)}
   .callbtn{font-size:17px}
+  .findcard{display:flex;align-items:center;gap:9px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 10px}
+  .findcard .t{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* call overlay */
   .call-overlay{position:fixed;inset:0;z-index:90;background:#06080f;display:none;flex-direction:column;align-items:center;justify-content:center}
   .call-overlay.on{display:flex}
@@ -913,6 +915,7 @@
       c = R.createChat({ id:id, type:data.type||'group', name:data.name||'Chat', avatar:data.avatar||'💬',
         members:data.members||[], now: data.createdAt ? Date.now() : Date.now() });
       c.cloud = true; if (data.joinCode != null) c.joinCode = data.joinCode;
+      if (data.directUid != null) c.directUid = data.directUid;
       if (data.pinnedIds != null) c.pinnedIds = data.pinnedIds; S.chats.push(c);
     } else {
       c.cloud = true; c.name = data.name || c.name; c.avatar = data.avatar || c.avatar;
@@ -920,6 +923,7 @@
       if (data.disappearBeats != null) c.disappearBeats = data.disappearBeats;
       if (data.pinnedIds != null) c.pinnedIds = data.pinnedIds;
       if (data.joinCode != null) c.joinCode = data.joinCode;
+      if (data.directUid != null) c.directUid = data.directUid;
     }
     subscribeCloudMessages(id);
     persist();
@@ -1236,11 +1240,11 @@
   var call = { pc:null, ref:null, subs:[], local:null, role:null, video:false, withName:'', withAvatar:'👤', timer:null, startedAt:0, callDoc:null };
   function callSupported(){ return typeof RTCPeerConnection!=='undefined' && typeof navigator!=='undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia; }
   function callActive(){ return !!call.pc; }
-  function callPeer(c){ return (c&&c.members||[]).filter(function(u){ return u!==cloud.uid; })[0]; }
+  function callPeer(c){ return (c&&c.members||[]).filter(function(u){ return u!==cloud.uid; })[0] || (c&&c.directUid) || null; }
 
   function updateCallButtons(){
     var c=active&&chat(active);
-    var show = !!(c && c.cloud && c.type==='dm' && Array.isArray(c.members) && c.members.length===2 && cloud.on && callSupported());
+    var show = !!(c && c.cloud && c.type==='dm' && cloud.on && callSupported() && callPeer(c));
     ['btnVoiceCall','btnVideoCall'].forEach(function(id){ var b=$(id); if(b) b.classList.toggle('hidden', !show); });
   }
   function showCallOverlay(on){ var el=$('callOverlay'); if(el) el.classList.toggle('on', !!on); }
@@ -1262,10 +1266,17 @@
     return navigator.mediaDevices.getUserMedia({ audio:true, video:video?{ facingMode:'user' }:false });
   }
   // -------- caller --------
+  // Call from the open chat (resolves the peer from members / directUid).
   function startCall(video){
-    if(!cloud.on || callActive()) return;
-    var c=chat(active); if(!c) return; var peer=callPeer(c); if(!peer) return;
-    call.role='caller'; call.video=!!video; call.withName=chatDisplayName(c); call.withAvatar=chatDisplayAvatar(c);
+    var c=chat(active); if(!c) return; var peer=callPeer(c);
+    if(!peer){ toast('No one to call here yet'); return; }
+    startCallTo(peer, chatDisplayName(c), chatDisplayAvatar(c), video, c.id);
+  }
+  // Call anyone by uid — needs no chat. (chatId is optional context.)
+  function startCallTo(peerUid, name, avatar, video, chatId){
+    if(!cloud.on || callActive() || !peerUid) return;
+    if(!callSupported()){ toast('Calling not supported on this browser'); return; }
+    call.role='caller'; call.video=!!video; call.withName=name||'Call'; call.withAvatar=avatar||'👤';
     openCallUI('Calling…', false);
     getMedia(video).then(function(stream){
       call.local=stream; var lv=$('callLocal'); if(lv) lv.srcObject=stream; $('callLocal').classList.toggle('hidden', !video);
@@ -1277,8 +1288,8 @@
       attachPc(callerC);
       return call.pc.createOffer().then(function(offer){ return call.pc.setLocalDescription(offer).then(function(){ return offer; }); })
         .then(function(offer){
-          return ref.set({ chatId:c.id, caller:cloud.uid, callerName:S.me.name||'You', callerAvatar:S.me.avatar||'🙂',
-            callee:peer, video:!!video, status:'ringing', offer:{ type:offer.type, sdp:offer.sdp }, ts:now() });
+          return ref.set({ chatId:chatId||null, caller:cloud.uid, callerName:S.me.name||'You', callerAvatar:S.me.avatar||'🙂',
+            callee:peerUid, video:!!video, status:'ringing', offer:{ type:offer.type, sdp:offer.sdp }, ts:now() });
         }).then(function(){
           // listen for the answer
           call.subs.push(ref.onSnapshot(function(d){ var data=d.data(); if(!data) { endCall(); return; }
@@ -2268,7 +2279,16 @@
         lookupHandle(q).then(function(person){
           if(!person){ if(msg) msg.innerHTML='No one found with that username.'; return; }
           if(person.uid===cloud.uid){ if(msg) msg.innerHTML='That’s you 🙂'; return; }
-          startDirectChat(person);
+          // Found them — offer message OR a direct call (no chat needed).
+          if(msg) msg.innerHTML='<div class="findcard"><span class="avatar">'+esc(person.avatar||'🙂')+'</span>'+
+            '<div style="flex:1;min-width:0"><div class="t">'+esc(person.name||('@'+person.handle))+'</div>'+
+            '<div class="d" style="font-size:12px;color:var(--faint)">@'+esc(person.handle)+'</div></div>'+
+            (callSupported()?'<button class="iconbtn" id="findVoice" title="Voice call">📞</button>'+
+            '<button class="iconbtn" id="findVideo" title="Video call">📹</button>':'')+
+            '<button class="btn" id="findMsg" style="width:auto;margin:0;padding:0 12px">Message</button></div>';
+          on('findMsg','click', function(){ startDirectChat(person); });
+          if($('findVoice')) on('findVoice','click', function(){ closeSheet(); startCallTo(person.uid, person.name, person.avatar, false); });
+          if($('findVideo')) on('findVideo','click', function(){ closeSheet(); startCallTo(person.uid, person.name, person.avatar, true); });
         });
       };
       on('ncFindBtn','click', doFind);
