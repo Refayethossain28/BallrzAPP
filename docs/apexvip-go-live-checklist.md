@@ -36,7 +36,7 @@ Items marked **[code done]** ship in the repo; the rest are operator/legal work.
 - [ ] Generate Web Push VAPID key → `APEXVIP_VAPID_KEY` in `firebase.js`.
 - [ ] `firebase functions:secrets:set SENDGRID_API_KEY TWILIO_ACCOUNT_SID TWILIO_AUTH_TOKEN`;
       set `NOTIFY_FROM_EMAIL` / `TWILIO_FROM_NUMBER` in `functions/.env`.
-- [ ] Deploy: `firebase deploy --only functions:onBookingWrite`. SendGrid verified
+- [ ] Deploy: `firebase deploy --only functions:onBookingWrite,functions:onBookingCreated`. SendGrid verified
       sender + Twilio number required; each channel is optional.
 
 ## 5. Reliability & quality  **[code done — PR #51 + this PR]**
@@ -55,7 +55,7 @@ Items marked **[code done]** ship in the repo; the rest are operator/legal work.
 ```sh
 # from repo root
 firebase deploy --only firestore:rules
-firebase deploy --only functions:getHotelRates,functions:processSquarePayment,functions:captureSquarePayment,functions:refundSquarePayment,functions:onBookingWrite
+firebase deploy --only functions:getHotelRates,functions:processSquarePayment,functions:captureSquarePayment,functions:refundSquarePayment,functions:onBookingWrite,functions:onBookingCreated
 ```
 > The other functions (`parseBookingIntent`, …) live in a separate codebase — always
 > scope deploys with `--only` so you never delete what this repo can't see.

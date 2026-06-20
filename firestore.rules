@@ -72,6 +72,15 @@ service cloud.firestore {
       allow create, delete: if isAdmin();
     }
 
+    // Broadcast job pool — the dispatch Cloud Function creates an open_job per
+    // booking; any online driver reads jobs in their market and claims one (the
+    // claim transaction flips status open→claimed and stamps driverId).
+    match /open_jobs/{id} {
+      allow read:   if isDriver() || isAdmin();
+      allow update: if isDriver() || isAdmin();
+      allow create, delete: if isAdmin();
+    }
+
     // Public settings (e.g. pricing) — read-only to clients; admins manage.
     match /settings/{doc} {
       allow read:  if true;

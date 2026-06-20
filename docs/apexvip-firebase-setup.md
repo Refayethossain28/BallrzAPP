@@ -38,7 +38,7 @@ firebase functions:secrets:set SQUARE_ACCESS_TOKEN                        # card
 firebase functions:secrets:set SENDGRID_API_KEY TWILIO_ACCOUNT_SID TWILIO_AUTH_TOKEN  # notifications
 # non-secret config in functions/.env (see functions/.env.example)
 
-firebase deploy --only functions:getHotelRates,functions:processSquarePayment,functions:captureSquarePayment,functions:refundSquarePayment,functions:onBookingWrite
+firebase deploy --only functions:getHotelRates,functions:processSquarePayment,functions:captureSquarePayment,functions:refundSquarePayment,functions:onBookingWrite,functions:onBookingCreated
 ```
 > Scope with `--only` — the project's other functions (`parseBookingIntent`, …) live in a
 > separate codebase; a bare deploy could delete what this repo can't see.

@@ -260,7 +260,9 @@ exports.refundSquarePayment = onCall(
 // All credentials are secrets; if a provider isn't configured it's skipped, so a
 // partial setup never errors. Set the non-secret from-address/number via env.
 
-const { onDocumentWritten } = require('firebase-functions/v2/firestore');
+const { onDocumentWritten, onDocumentCreated } = require('firebase-functions/v2/firestore');
+const admin = require('firebase-admin');
+if (!admin.apps.length) admin.initializeApp();
 
 const SENDGRID_API_KEY   = defineSecret('SENDGRID_API_KEY');
 const TWILIO_ACCOUNT_SID = defineSecret('TWILIO_ACCOUNT_SID');
@@ -592,10 +594,8 @@ exports.linguaAI = onCall(
  *
  * No secrets or external services — just Firebase Cloud Messaging + Firestore.
  * ======================================================================== */
-// onDocumentWritten is already required above (see onBookingWrite).
+// onDocumentWritten + firebase-admin are already required above (see onBookingWrite).
 const { onSchedule } = require('firebase-functions/v2/scheduler');
-const admin = require('firebase-admin');
-if (!admin.apps.length) admin.initializeApp();
 
 const RIPPLE_LINK = 'https://refayethossain28.github.io/BallrzAPP/ripple/';
 
@@ -787,3 +787,46 @@ exports.ripplePushOnCall = onDocumentCreated(
     logger.info('ripplePushOnCall', { callId: event.params.callId, sent: res.successCount });
   }
 );
+
+// ── Dispatch ────────────────────────────────────────────────────────────────
+// Turns a new booking into a driver-visible open_job. The client writes only to
+// `bookings`; the driver app watches `open_jobs` (status:'open', by market) and
+// claims one via a transaction. Without this bridge a booking never reaches a
+// driver. Idempotent: the open_job id == the booking id.
+
+exports.onBookingCreated = onDocumentCreated('bookings/{bookingId}', async (event) => {
+  const snap = event.data;
+  if (!snap) return;
+  const b = snap.data() || {};
+
+  // Only broadcast bookings that still need a driver and have a pickup.
+  if (b.status && !['confirmed', 'pending', 'paid'].includes(b.status)) return;
+  if (!b.pickup) return;
+
+  const openRef = admin.firestore().collection('open_jobs').doc(event.params.bookingId);
+  if ((await openRef.get()).exists) return; // already dispatched
+
+  // Driver pay ≈ 70% of the pre-VAT fare (tune to your commercials).
+  const pay = Math.round((Number(b.baseFare) || Number(b.price) || 95) * 0.7);
+
+  await openRef.set({
+    status: 'open',
+    market: b.location || 'london',
+    bookingDocId: event.params.bookingId,
+    bookingRef: b.ref || '',
+    clientId: b.clientId || '',
+    clientName: b.clientName || 'Client',
+    type: b.serviceType || 'airport',
+    serviceLabel: b.serviceLabel || 'Airport Transfer',
+    pickup: b.pickup || '',
+    dropoff: b.dropoff || b.airport || '',
+    date: b.date || '',
+    time: b.time || 'Now',
+    vehicle: b.vehicle || 'S-Class',
+    flight: b.flight || '',
+    notes: (b.concierge && b.concierge.instructions) || '',
+    pay,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  logger.info('dispatched open_job', { booking: event.params.bookingId, market: b.location || 'london' });
+});
