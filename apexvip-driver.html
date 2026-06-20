@@ -1794,7 +1794,7 @@ async function sendDriverAI(){
   if(inp)inp.style.height='auto';
   S._aiMsgs.push({role:'user',content:text});
   S._aiLoading=true;
-  render();
+  renderNow();
   document.getElementById('ai-bottom')?.scrollIntoView({behavior:'smooth'});
 
   let reply='';
@@ -1820,14 +1820,22 @@ async function sendDriverAI(){
   setTimeout(()=>document.getElementById('ai-bottom')?.scrollIntoView({behavior:'smooth'}),60);
 }
 
+// render() coalesces bursts of state changes into one repaint per animation
+// frame. Use renderNow() when you must read the freshly-rendered DOM immediately.
+let _renderQueued=false;
 function render(){
+  if(_renderQueued) return;
+  _renderQueued=true;
+  requestAnimationFrame(()=>{ _renderQueued=false; renderNow(); });
+}
+function renderNow(){
   document.body.setAttribute('data-screen',S.screen);
   if(S.screen==='axc-wallet'){document.getElementById('app').innerHTML=pages.axcWallet();return;}
   const fn=pages[S.screen]||pages.login;
   document.getElementById('app').innerHTML=fn();
 }
 
-render();
+renderNow();
 
 // ── iOS PWA detection ────────────────────────────────────────────────
 (function(){
