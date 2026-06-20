@@ -1121,7 +1121,7 @@ async function lookupFlight(flightNum){
   let delayed=false,delayMins=0;
   try{
     if(FIREBASE_ENABLED&&fns){
-      const fn=firebase.functions(_fbApp).httpsCallable('checkFlightStatus');
+      const fn=fns.httpsCallable('checkFlightStatus');
       const res=await fn({flight:flightNum.toUpperCase().replace(/\s+/g,'')});
       const d=res.data;
       delayed=d.delayed||false;
@@ -1807,7 +1807,7 @@ async function runApplePay() {
     // Without a registered merchant ID + server endpoint, fall back gracefully
     try {
       if(FIREBASE_ENABLED&&fns){
-        const fn = firebase.functions(_fbApp).httpsCallable('validateApplePayMerchant');
+        const fn = fns.httpsCallable('validateApplePayMerchant');
         const res = await fn({ validationURL: event.validationURL });
         session.completeMerchantValidation(res.data);
       } else {
@@ -1949,10 +1949,13 @@ function shareTrip() {
 }
 
 // ── Client-side chauffeur chat ─────────────────────────────────────────────
-let _chatUnsub = null;
+let _chatUnsub = null, _chatUnsubDoc = null;
 function setupChatListener(docId) {
-  if (!FIREBASE_ENABLED || !docId || _chatUnsub) return;
+  if (!FIREBASE_ENABLED || !docId) return;
+  if (_chatUnsubDoc === docId && _chatUnsub) return; // already listening to this booking
+  if (_chatUnsub) { _chatUnsub(); _chatUnsub = null; } // switching bookings — drop the old listener
   state._chatDocId = docId;
+  _chatUnsubDoc = docId;
   _chatUnsub = db.collection('bookings').doc(docId).collection('messages')
     .orderBy('timestamp','asc').limitToLast(50)
     .onSnapshot(snap => {
@@ -2228,7 +2231,7 @@ function getDemoFlightStatus(flight) {
   const delay = delayed ? (seed % 3 === 0 ? 45 : 25) : 0;
   const base = { flight, terminal: 'T' + ((seed % 5) + 1), gate: String.fromCharCode(65 + seed % 8) + ((seed % 30) + 1), origin: ['New York JFK','Dubai DXB','Paris CDG','Hong Kong HKG','Riyadh RUH'][seed % 5] };
   return delayed
-    ? { ...base, status: 'Delayed', delay, scheduled: '14:30', estimated: `15:${String(30 + delay).padStart(2,'0')}`, adjusted: true }
+    ? { ...base, status: 'Delayed', delay, scheduled: '14:30', estimated: (()=>{const m=14*60+30+delay;return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');})(), adjusted: true }
     : { ...base, status: 'On Time',  delay: 0, scheduled: '14:30', estimated: '14:30', adjusted: false };
 }
 async function checkFlight(flight) {

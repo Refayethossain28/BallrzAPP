@@ -274,7 +274,7 @@ try {
 
 function track(event, props){
   try{
-    const ev={event,ts:Date.now(),...props};
+    const ev={e:event,event,t:Date.now(),ts:Date.now(),...props};
     const key='apexvip_events';
     const arr=JSON.parse(localStorage.getItem(key)||'[]');
     arr.push(ev);
@@ -378,7 +378,7 @@ function driverSendCustom(){
   const msg=inp.value.trim();inp.value='';
   driverSendMsg(msg);
 }
-function go(s){S.screen=s;track('screen_view',{screen:s,src:'driver'});render();window.scrollTo(0,0);}
+function go(s){clearInterval(S._cdTimer);S.screen=s;track('screen_view',{screen:s,src:'driver'});render();window.scrollTo(0,0);}
 
 async function driverLogin(){
   if(!FIREBASE_ENABLED){track('driver_login',{method:'demo',src:'driver'});go('home');return;}
@@ -694,7 +694,7 @@ function goOnline(){
     if(S.online){ startGPSStream(); registerDriverFCM(); }
     else stopGPSStream();
   }
-  if(!S.online){clearTimeout(S._timer);render();return;}
+  if(!S.online){clearTimeout(S._timer);clearInterval(S._cdTimer);S.jobOverlay=false;S._offeredJob=null;render();return;}
   // Coming online — first check the in-memory list from the listener
   if(FIREBASE_ENABLED&&S._openJobs?.length&&!S.jobOverlay&&!S.activeJob){
     S._offeredJob=S._openJobs[0];
@@ -702,7 +702,8 @@ function goOnline(){
   }
   if(FIREBASE_ENABLED){
     // Listener may not have fired yet — do a one-shot query so we never miss a job
-    db.collection('open_jobs').where('status','==','open').get().then(snap=>{
+    const market = S.driverProfile?.market || S.profile?.market || 'london';
+    db.collection('open_jobs').where('status','==','open').where('market','==',market).limit(20).get().then(snap=>{
       if(!S.online||S.jobOverlay||S.activeJob)return;
       const open=snap.docs.map(d=>({_openId:d.id,_broadcast:true,
         bookingDocId:d.data().bookingDocId||'',bookingRef:d.data().bookingRef||'',
@@ -775,7 +776,8 @@ function declineJob(){
 function refreshJobs(){
   if(!FIREBASE_ENABLED)return;
   showToast('Checking for new jobs…','info',2000);
-  db.collection('open_jobs').where('status','==','open').get().then(snap=>{
+  const market = S.driverProfile?.market || S.profile?.market || 'london';
+  db.collection('open_jobs').where('status','==','open').where('market','==',market).limit(20).get().then(snap=>{
     const open=snap.docs.map(d=>({_openId:d.id,_broadcast:true,bookingDocId:d.data().bookingDocId||'',bookingRef:d.data().bookingRef||'',
       type:d.data().type||'airport',client:d.data().clientName||'Client',
       initials:(d.data().clientName||'CL').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2),
