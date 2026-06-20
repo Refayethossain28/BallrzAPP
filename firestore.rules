@@ -10,8 +10,14 @@ service cloud.firestore {
 
     function signedIn()      { return request.auth != null; }
     function isUser(uid)     { return signedIn() && request.auth.uid == uid; }
-    function isAdmin()       { return signedIn() && request.auth.token.admin == true; }
-    function isDriver()      { return signedIn() && request.auth.token.driver == true; }
+    // admin/driver = a custom claim (set by the Admin SDK/seed) OR the `role`
+    // field on the user's profile doc — which is how the apps identify roles.
+    function profileRole() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role : '';
+    }
+    function isAdmin()       { return signedIn() && (request.auth.token.admin  == true || profileRole() == 'admin'); }
+    function isDriver()      { return signedIn() && (request.auth.token.driver == true || profileRole() == 'driver'); }
 
     // User profiles — a user can read/write only their own; admins can read all.
     match /users/{uid} {
@@ -26,7 +32,11 @@ service cloud.firestore {
       allow create: if signedIn() && request.resource.data.clientId == request.auth.uid;
       allow read, update: if isAdmin()
         || (signedIn() && resource.data.clientId == request.auth.uid)
-        || (isDriver() && resource.data.driverId == request.auth.uid);
+        || (isDriver() && resource.data.driverId == request.auth.uid)
+        // A driver may claim a booking that has no driver yet (broadcast dispatch).
+        || (isDriver()
+            && (!('driverId' in resource.data) || resource.data.driverId == '' || resource.data.driverId == null)
+            && request.resource.data.driverId == request.auth.uid);
       allow delete: if isAdmin();
 
       // Chat between the booking's client and driver.
@@ -66,19 +76,12 @@ service cloud.firestore {
       allow write: if isUser(driverId) || isAdmin();
     }
 
-    // Job queue — drivers and admins only.
+    // Job queue — drivers and admins only. A driver creates their own job doc
+    // when they win a broadcast claim.
     match /jobs/{id} {
       allow read, update: if isDriver() || isAdmin();
-      allow create, delete: if isAdmin();
-    }
-
-    // Broadcast job pool — the dispatch Cloud Function creates an open_job per
-    // booking; any online driver reads jobs in their market and claims one (the
-    // claim transaction flips status open→claimed and stamps driverId).
-    match /open_jobs/{id} {
-      allow read:   if isDriver() || isAdmin();
-      allow update: if isDriver() || isAdmin();
-      allow create, delete: if isAdmin();
+      allow create: if isAdmin() || (isDriver() && request.resource.data.driverId == request.auth.uid);
+      allow delete: if isAdmin();
     }
 
     // Public settings (e.g. pricing) — read-only to clients; admins manage.
