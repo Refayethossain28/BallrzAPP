@@ -113,6 +113,41 @@ app.get("/api/drivers/:id/connect/status", wrap(async (req, res) => {
   res.json(await accountStatus(driver));
 }));
 
+/* ---------- client / passenger app ---------- */
+// A passenger books directly; the request lands on the same dispatch board as
+// any other (source 'client'). Same `request` primitive, created by the guest.
+app.post("/api/client/request", wrap(async (req, res) => {
+  const b = req.body || {};
+  if (!b.pickup || !b.dropoff) return res.status(400).json({ error: "pickup and dropoff required" });
+  const type = b.flight ? "airport" : "transfer";
+  const parsed = {
+    type, client: b.client_name || "Guest",
+    datetime: b.when || "ASAP", pickup: b.pickup, dropoff: b.dropoff,
+    flight: (b.flight || "").toUpperCase(), pax: Number(b.pax) || 1,
+    vehicle: b.vehicle || "Any", hours: 0, venue: "", notes: b.notes || "",
+    raw: `Client booking: ${b.pickup} → ${b.dropoff}${b.when ? " · " + b.when : ""}`,
+  };
+  const quote = quoteFor(parsed);
+  const request = await store.createRequest({
+    type, client_name: parsed.client, source: "client", raw: parsed.raw,
+    parsed, quote_amount: quote?.total ?? null, sla_minutes: 25 + Math.floor(Math.random() * 40),
+  });
+  res.status(201).json({ request, quote });
+}));
+
+// Passenger-facing status view (no internal fields/audit).
+app.get("/api/client/request/:id", wrap(async (req, res) => {
+  const r = await store.getRequest(req.params.id);
+  if (!r) return res.status(404).json({ error: "not found" });
+  const driver = r.assigned_resource_id ? await store.getResource(r.assigned_resource_id) : null;
+  const p = r.parsed_payload || {};
+  res.json({
+    id: r.id, status: r.status, type: r.type, quote: r.quote_amount,
+    pickup: p.pickup, dropoff: p.dropoff, when: p.datetime, vehicle: p.vehicle, flight: p.flight,
+    driver: driver ? { name: driver.name, vehicle: driver.vehicle, sharing_location: driver.last_lat != null } : null,
+  });
+}));
+
 if (process.argv[1] && process.argv[1].endsWith("server.js")) {
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => {

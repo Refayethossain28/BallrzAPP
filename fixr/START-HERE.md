@@ -14,14 +14,16 @@ npm install
 npm start            # → http://localhost:3000   (operator console)
 ```
 
-- **Dispatch console:** http://localhost:3000
+Three surfaces, one server + API:
+- **Dispatch console (operator):** http://localhost:3000
 - **Driver app:** http://localhost:3000/driver/?d=d1  (try d1 / d2 / d3)
+- **Client app (passenger):** http://localhost:3000/client/  (book a car, track it)
 
 It runs fully with **no API keys** (heuristic intake, mock payments, mock flight
 status, SQLite). Add keys to go live — see `app/.env.example`.
 
 ```bash
-npm test             # 17-check end-to-end suite (runs without secrets)
+npm test             # 20-check end-to-end suite (runs without secrets)
 ```
 
 ## What's in the box
