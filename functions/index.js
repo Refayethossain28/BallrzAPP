@@ -729,3 +729,61 @@ exports.rippleMaintenance = onSchedule(
     } catch (err) { logger.warn('rippleMaintenance sweep', err.message); }
   }
 );
+
+/* ===========================================================================
+ * ripplePushOnCall — ring the callee on a new incoming WebRTC call, even when
+ * their app is closed. High-urgency web push to the callee's FCM tokens; tapping
+ * it opens Ripple, which picks up the still-ringing call via its live listener.
+ * ======================================================================== */
+exports.ripplePushOnCall = onDocumentCreated(
+  { document: 'ripple_calls/{callId}', region: 'us-central1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const c = snap.data();
+    if (!c || c.status !== 'ringing' || !c.callee) return;
+
+    const db = admin.firestore();
+    let tokens = [];
+    try {
+      const ps = await db.collection('ripple_push').doc(c.callee).get();
+      tokens = (ps.exists && ps.data().fcmTokens) || [];
+    } catch (e) { return; }
+    if (!tokens.length) return;
+
+    const title = c.video ? '📹 Incoming video call' : '📞 Incoming call';
+    const body = (c.callerName || 'Someone') + ' is calling…';
+    let res;
+    try {
+      res = await admin.messaging().sendEachForMulticast({
+        tokens,
+        notification: { title, body },
+        data: { type: 'call', callId: event.params.callId, url: RIPPLE_LINK },
+        webpush: {
+          headers: { Urgency: 'high', TTL: '40' },
+          fcmOptions: { link: RIPPLE_LINK },
+          notification: {
+            icon: RIPPLE_LINK + 'icon-192.png', badge: RIPPLE_LINK + 'icon-192.png',
+            tag: 'call-' + event.params.callId, requireInteraction: true,
+            vibrate: [300, 200, 300, 200, 300],
+          },
+        },
+      });
+    } catch (err) { logger.error('ripplePushOnCall', err.message); return; }
+
+    // prune permanently-invalid tokens
+    const dead = [];
+    res.responses.forEach((r, i) => {
+      if (r.success) return;
+      const code = r.error && r.error.code;
+      if (code === 'messaging/registration-token-not-registered' ||
+          code === 'messaging/invalid-registration-token' ||
+          code === 'messaging/invalid-argument') dead.push(tokens[i]);
+    });
+    if (dead.length) {
+      await db.collection('ripple_push').doc(c.callee)
+        .update({ fcmTokens: admin.firestore.FieldValue.arrayRemove(...dead) }).catch(() => {});
+    }
+    logger.info('ripplePushOnCall', { callId: event.params.callId, sent: res.successCount });
+  }
+);
