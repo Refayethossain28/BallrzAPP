@@ -1,6 +1,6 @@
 // Payments + driver settlement — processor-agnostic (your Stripe, no forced
 // merchant). On trip completion we capture the fare AND settle the driver's
-// cut via Stripe Connect; Vantage keeps a ~0.5% platform fee. That take-rate
+// cut via Stripe Connect; Fixr keeps a ~0.5% platform fee. That take-rate
 // is the business model (see ../MODEL.md).
 //
 // Real Stripe when STRIPE_SECRET_KEY is set; a mock split otherwise, so the
@@ -20,7 +20,7 @@ export function paymentsMode() {
   return process.env.STRIPE_SECRET_KEY ? "stripe" : "mock";
 }
 
-const PLATFORM_FEE_BPS = 50;   // ~0.5% Vantage take-rate
+const PLATFORM_FEE_BPS = 50;   // ~0.5% Fixr take-rate
 const DRIVER_SHARE_PCT = 0.70; // of the fare, settled to the driver
 
 // Compute the money split for a completed fare.
@@ -51,7 +51,7 @@ export async function captureAndSettle(request, driver) {
       currency: "usd",
       capture_method: "automatic",
       metadata: { request_id: request.id, platform_fee: String(split.platformFee) },
-      description: `Vantage ${request.type} — ${request.client_name}`,
+      description: `Fixr ${request.type} — ${request.client_name}`,
     });
 
     // 2. Settle the driver's cut via Connect, if they're onboarded.

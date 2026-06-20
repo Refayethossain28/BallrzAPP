@@ -1,4 +1,4 @@
-# Vantage — start here
+# Fixr — start here
 
 **The operating system for luxury ground transport (with concierge built into the
 data model).** Chauffeur dispatch is the wedge; concierge is the expansion. Workflow-
@@ -9,7 +9,7 @@ This folder is the finished product: founder docs + a working full-stack app.
 ## Run it in 60 seconds
 
 ```bash
-cd vantage/app
+cd fixr/app
 npm install
 npm start            # → http://localhost:3000   (operator console)
 ```
@@ -39,7 +39,7 @@ npm test             # 17-check end-to-end suite (runs without secrets)
 ## The files
 
 ```
-vantage/
+fixr/
   START-HERE.md     ← you are here
   README.md         product overview + phase plan + data model
   GTM.md            how a solo founder lands the first 10 operators

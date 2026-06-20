@@ -1,4 +1,4 @@
-# Vantage — Luxury Ground-Transport & Concierge OS
+# Fixr — Luxury Ground-Transport & Concierge OS
 
 > One request engine. Chauffeur dispatch is the wedge; concierge is the expansion.
 > Workflow-owning, payments-monetized, AI-copilot (human owns the outcome).

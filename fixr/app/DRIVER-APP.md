@@ -1,4 +1,4 @@
-# Vantage Driver app
+# Fixr Driver app
 
 A working **mobile-web driver app (PWA)** lives at `/driver/?d=<driverId>` — served
 by the same Express server, talking to the same REST API as dispatch. It's usable
@@ -39,21 +39,21 @@ can be produced or verified from a server environment. The PWA:
 The fastest path that **reuses everything here**: wrap this PWA in an Expo app and
 add a background-location task.
 
-1. `npx create-expo-app vantage-driver`
+1. `npx create-expo-app fixr-driver`
 2. Render the hosted PWA in a `react-native-webview`, **or** rebuild the (small) UI
    natively against the same endpoints.
 3. Add background GPS with `expo-location`:
    ```js
    import * as Location from "expo-location";
    import * as TaskManager from "expo-task-manager";
-   TaskManager.defineTask("vantage-bg-loc", ({ data }) => {
+   TaskManager.defineTask("fixr-bg-loc", ({ data }) => {
      const { latitude, longitude } = data.locations[0].coords;
      fetch(`${API}/api/driver/${driverId}/location`, {
        method: "POST", headers: { "Content-Type": "application/json" },
        body: JSON.stringify({ lat: latitude, lng: longitude }),
      });
    });
-   await Location.startLocationUpdatesAsync("vantage-bg-loc", { accuracy: Location.Accuracy.High });
+   await Location.startLocationUpdatesAsync("fixr-bg-loc", { accuracy: Location.Accuracy.High });
    ```
 4. `eas build` for TestFlight / Play internal testing.
 

@@ -1,4 +1,4 @@
-# Vantage — Go-To-Market (de-risking the distribution problem)
+# Fixr — Go-To-Market (de-risking the distribution problem)
 
 Distribution is what kills solo SaaS, not engineering. Your unfair advantage is
 that you already know luxury-transport and concierge operators. This plan turns

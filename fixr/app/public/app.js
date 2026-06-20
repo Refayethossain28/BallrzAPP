@@ -1,4 +1,4 @@
-// Vantage operator console — talks to the real REST API in server.js.
+// Fixr operator console — talks to the real REST API in server.js.
 const $ = (id) => document.getElementById(id);
 const api = (p, opts) => fetch(p, { headers: { "Content-Type": "application/json" }, ...opts }).then((r) => {
   if (!r.ok) return r.json().then((e) => Promise.reject(new Error(e.error || r.statusText)));

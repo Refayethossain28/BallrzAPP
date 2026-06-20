@@ -6,7 +6,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-process.env.VANTAGE_DB = join(mkdtempSync(join(tmpdir(), "vantage-")), "t.db");
+process.env.FIXR_DB = join(mkdtempSync(join(tmpdir(), "fixr-")), "t.db");
 process.env.PORT = "0"; // ephemeral port
 
 const { app } = await import("./server.js");

@@ -1,4 +1,4 @@
-// Vantage API + static host. Express, async store (SQLite or Postgres),
+// Fixr API + static host. Express, async store (SQLite or Postgres),
 // real AI intake, payment capture + Connect driver settlement, flight tracking,
 // a driver PWA, and driver Connect self-onboarding. Run: `npm start`.
 
@@ -116,7 +116,7 @@ app.get("/api/drivers/:id/connect/status", wrap(async (req, res) => {
 if (process.argv[1] && process.argv[1].endsWith("server.js")) {
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => {
-    console.log(`Vantage on http://localhost:${PORT}  [db=${store.backendName} intake=${intakeMode()} payments=${paymentsMode()} flight=${flightMode()}]`);
+    console.log(`Fixr on http://localhost:${PORT}  [db=${store.backendName} intake=${intakeMode()} payments=${paymentsMode()} flight=${flightMode()}]`);
   });
 }
 

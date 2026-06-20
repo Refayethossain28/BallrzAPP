@@ -1,4 +1,4 @@
-// Vantage driver PWA — talks to the same REST API as the operator console.
+// Fixr driver PWA — talks to the same REST API as the operator console.
 // Real browser geolocation pings the server; status buttons drive the same
 // lifecycle endpoints dispatch uses.
 const $ = (id) => document.getElementById(id);

@@ -8,7 +8,7 @@ RUN npm install --omit=dev
 COPY . .
 
 ENV PORT=3000
-ENV VANTAGE_DB=/data/vantage.db
+ENV FIXR_DB=/data/fixr.db
 VOLUME ["/data"]
 EXPOSE 3000
 

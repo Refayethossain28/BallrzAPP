@@ -1,11 +1,11 @@
-# Vantage — the real app
+# Fixr — the real app
 
 A working full-stack application (not the prototype). Persistent database, REST
 API, real AI intake, real/mocked payment capture, and the operator console wired
 to it.
 
 ```
-vantage/app/
+fixr/app/
   server.js        Express API + static host
   db.js            store selector (Postgres if DATABASE_URL, else SQLite)
   db-sqlite.js     SQLite backend (node:sqlite) — dev/demo default
@@ -24,7 +24,7 @@ vantage/app/
 ## Run it
 
 ```bash
-cd vantage/app
+cd fixr/app
 npm install
 npm start            # → http://localhost:3000
 ```
@@ -53,7 +53,7 @@ Flip on the real services by setting env vars (see `.env.example`):
 ## Driver settlement (Stripe Connect)
 
 On trip completion the fare is captured **and** the driver's cut is settled. The
-split (`payments.js`): 70% driver share, ~0.5% Vantage platform fee, remainder is
+split (`payments.js`): 70% driver share, ~0.5% Fixr platform fee, remainder is
 operator net. With `STRIPE_SECRET_KEY` set and a driver onboarded to Connect
 (`resources.stripe_account_id`), the driver share moves as a real Connect transfer;
 otherwise it's computed and recorded so the lifecycle and audit trail are complete.

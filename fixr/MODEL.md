@@ -1,4 +1,4 @@
-# Vantage — Unit Economics & 12-Month Model (pressure-tested)
+# Fixr — Unit Economics & 12-Month Model (pressure-tested)
 
 The headline thesis: **payments, not seats, is the business.** Below is the model,
 the assumptions it rests on, and an honest stress-test of each one.
@@ -7,7 +7,7 @@ the assumptions it rests on, and an honest stress-test of each one.
 
 - **Software:** $149 / mo flat per operator. No per-ride rake. (Counter-positions
   Limo Anywhere's forced processing and Moovs' 5% rake.)
-- **Payments:** ~0.5% Vantage take-rate on settled ride volume, **on top of**
+- **Payments:** ~0.5% Fixr take-rate on settled ride volume, **on top of**
   Stripe's ~2.9%+30¢, collected via Connect. The operator still nets more than
   Moovs' 5% rake, and you make money on the money flow.
 

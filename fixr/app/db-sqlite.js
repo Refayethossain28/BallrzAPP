@@ -8,7 +8,7 @@ import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const DB_PATH = process.env.VANTAGE_DB || join(here, "vantage.db");
+const DB_PATH = process.env.FIXR_DB || join(here, "fixr.db");
 const db = new DatabaseSync(DB_PATH);
 const now = () => new Date().toISOString();
 
