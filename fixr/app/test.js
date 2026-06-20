@@ -57,6 +57,17 @@ try {
   const cstatus = await call(`/api/drivers/${drivers[0].id}/connect/status`);
   ok(cstatus.connected, `driver Connect account connected (${cstatus.account_id})`);
 
+  // Client app: a passenger books directly and tracks status.
+  const booking = await call(`/api/client/request`, {
+    method: "POST",
+    body: JSON.stringify({ client_name: "Ms. Park", pickup: "The Mark Hotel", dropoff: "LaGuardia", when: "Fri 5pm", vehicle: "Mercedes S-Class", pax: 2 }),
+  });
+  ok(booking.request?.id && booking.quote?.total > 0, `client booked a ride ($${booking.quote.total})`);
+  const board = await call("/api/requests");
+  ok(board.some((r) => r.id === booking.request.id && r.source === "client"), `client booking lands on dispatch board (source=client)`);
+  const track = await call(`/api/client/request/${booking.request.id}`);
+  ok(track.status === "quoted" && track.dropoff === "LaGuardia", `client can track status (${track.status})`);
+
   const flight = await call(`/api/flight/${parsed.flight}`);
   ok(flight.flight === "DL472" && flight.status, `flight status: ${flight.status} (${flight.source})`);
 
