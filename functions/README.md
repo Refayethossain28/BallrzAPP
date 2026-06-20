@@ -19,7 +19,7 @@ other functions (`parseBookingIntent`, `checkFlightStatus`, …), which live els
 **Always scope the deploy** so you don't touch the others:
 
 ```sh
-firebase deploy --only functions:getHotelRates,functions:processSquarePayment,functions:captureSquarePayment,functions:refundSquarePayment,functions:onBookingWrite
+firebase deploy --only functions:getHotelRates,functions:processSquarePayment,functions:captureSquarePayment,functions:refundSquarePayment,functions:onBookingWrite,functions:onBookingCreated
 ```
 
 A bare `firebase deploy` from here could try to delete functions it doesn't see.
