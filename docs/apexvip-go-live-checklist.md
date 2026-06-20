@@ -3,6 +3,21 @@
 Everything between the current build and a real, paid, UK-operating launch.
 Items marked **[code done]** ship in the repo; the rest are operator/legal work.
 
+> ## ⚠️ Read first — the deployed backend is NOT this repo
+> The live Firebase project (`apexvip-1b4a9`) already runs a **separate, gen-1
+> Cloud Functions codebase** (`assignDriverToBooking`, `parseBookingIntent`,
+> `processSquarePayment`, `sendBookingConfirmation`, …). The functions in this
+> repo's `functions/` are a **parallel gen-2 set** — they are *not* what's live.
+>
+> - **Do NOT run a blanket `firebase deploy --only functions`** — it would delete
+>   the live gen-1 functions this repo can't see. Always scope with `--only
+>   functions:<name>` (and a gen-1↔gen-2 name clash blocks the deploy anyway).
+> - The security/payment hardening below (server-side amount check, auth, payment
+>   ownership, 80% driver pay in `onBookingCreated`) lives in **this repo's**
+>   functions, so it only takes effect once you **consolidate onto one codebase**.
+>   Until then, port the same checks into the deployed gen-1 functions by hand.
+> - **Pre-launch task:** decide on one backend, migrate, and retire the other. Track it in §2.
+
 ## 0. Legal & regulatory (blockers — cannot launch without)
 - [ ] **TfL Private Hire Vehicle (PHV) Operator licence** + licensed drivers & vehicles.
 - [ ] **DBS-checked, vetted drivers**; hire & reward / operator **insurance**.
@@ -10,20 +25,32 @@ Items marked **[code done]** ship in the repo; the rest are operator/legal work.
       ICO reg `ZA…`, TfL licence no., VAT no.). **[draft copy done]**
 - [ ] ICO registration; named **DPO**.
 
-## 1. Auth & security  **[code done — PR #49]**
+## 1. Auth & security  **[code done — PR #49, #100, #104]**
 - [ ] Enable sign-in providers (Email/Password, Google, Apple) in Firebase Console.
 - [ ] **App Check** — register reCAPTCHA v3, set `APEXVIP_RECAPTCHA_KEY` in
       `firebase.js`, enforce on Firestore/Functions.
 - [ ] Add production domain(s) to Authentication → Authorized domains.
-- [ ] Deploy rules: `firebase deploy --only firestore:rules`.
-- [ ] Set `admin` / `driver` custom claims for staff/driver accounts.
+- [ ] Deploy rules: `firebase deploy --only firestore:rules`. Latest rules add
+      role-field admin/driver detection (#100) and constrain `open_jobs` updates
+      to the **claim transition only** (#104 — a driver can't reopen a taken job,
+      claim for someone else, or inflate pay).
+- [ ] Roles are read from the `users/{uid}.role` field (how the apps work); set
+      `admin` / `driver` **custom claims** too if you want them as a backup path.
 
-## 2. Payments  **[client SCA + functions scaffold done — PR #50, this PR]**
+## 2. Payments  **[client SCA + server-side hardening done — PR #50, #104]**
 - [ ] `firebase functions:secrets:set SQUARE_ACCESS_TOKEN`; set `SQUARE_ENV`,
       `SQUARE_LOCATION_ID` in `functions/.env`.
 - [ ] Deploy: `firebase deploy --only functions:processSquarePayment,functions:captureSquarePayment,functions:refundSquarePayment`.
+      ⚠️ **First resolve the backend split (see top):** the deployed
+      `processSquarePayment` is a *different* gen-1 function — port the #104 checks
+      into it, or migrate to this codebase, before relying on them in production.
 - [ ] Swap `SQUARE_APP_ID` / `SQUARE_LOCATION_ID` in `apexvip-client.html` to production.
-- [ ] **Recompute the fare server-side** before charging (don't trust the client amount).
+- [x] **Server-side amount validation** against `settings/pricing` (#104) — rejects
+      tampered/runaway amounts. *Tighten further:* recompute the exact fare from the
+      booking (create the booking first, pass its id, charge its stored price).
+- [x] **Auth required** on all three Square callables; **ownership check** on
+      capture/refund (caller owns the booking or is staff) (#104).
+- [x] **VAT-inclusive pricing** — totals no longer double-charge VAT (#104).
 - [ ] Wire **capture** on trip completion and **refunds** to the cancellation policy.
 - [ ] Migrate Apple/Google Pay to the Square wallet SDK; register Apple merchant ID.
 - [ ] VAT receipts (net/VAT/gross + VAT number).
@@ -39,11 +66,13 @@ Items marked **[code done]** ship in the repo; the rest are operator/legal work.
 - [ ] Deploy: `firebase deploy --only functions:onBookingWrite,functions:onBookingCreated`. SendGrid verified
       sender + Twilio number required; each channel is optional.
 
-## 5. Reliability & quality  **[code done — PR #51 + this PR]**
+## 5. Reliability & quality  **[code done — PR #51, #103, #104]**
 - [ ] Point `reportError()` at Sentry/Crashlytics (DSN).
 - [ ] Uptime monitoring + alerting on the Functions.
 - [ ] **Tests**: `npm test` runs smoke + Omni + ApexVIP core unit tests.
       Extend coverage to booking/payment flows (ideally with Playwright e2e).
+- [x] **Driver pay = 80%** of fare across admin dispatch + `onBookingCreated` (#104).
+- [x] **render() debounced** to one repaint per animation frame in all three apps (#104).
 - [ ] Accessibility: finish the manual WCAG 2.2 AA pass
       (`docs/apexvip-reliability-a11y.md`).
 
