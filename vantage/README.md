@@ -3,15 +3,19 @@
 > One request engine. Chauffeur dispatch is the wedge; concierge is the expansion.
 > Workflow-owning, payments-monetized, AI-copilot (human owns the outcome).
 
-This folder is a **Phase-1 prototype + founder docs**, not the production app.
-Open `index.html` in any browser — it runs fully offline with no API keys and
-demonstrates the core loop you'd screen-share to a design-partner operator:
+This folder has both the **founder docs** and two runnable builds of the same
+core loop:
 
 ```
 inbound (call/text/email) → AI parse → instant quote → dispatch → execute → settle → audit log
 ```
 
-- **Prototype:** `index.html`
+- **`app/`** — the **real full-stack app**: Express + persistent SQLite + REST API +
+  real Claude intake (`claude-opus-4-8` structured output) + Stripe capture +
+  an operator console wired to it. `cd app && npm install && npm start`. Runs with
+  no secrets (heuristic + mock fallbacks); set keys for the real services. See `app/README.md`.
+- **`index.html`** — the original **zero-dependency prototype** (open in a browser,
+  no build) for quick demos and to fix the data model.
 - **Go-to-market / how to land first operators:** `GTM.md`
 - **Unit economics / 12-month model:** `MODEL.md`
 
