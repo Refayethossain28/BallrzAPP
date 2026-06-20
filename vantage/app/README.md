@@ -7,13 +7,17 @@ to it.
 ```
 vantage/app/
   server.js        Express API + static host
-  db.js            node:sqlite persistence (polymorphic `requests` table)
+  db.js            store selector (Postgres if DATABASE_URL, else SQLite)
+  db-sqlite.js     SQLite backend (node:sqlite) — dev/demo default
+  db-postgres.js   Postgres backend (pg) — multi-instance scale
   parse.js         AI intake: Claude structured output + heuristic fallback
   quote.js         rate engine (pure functions)
   payments.js      Stripe capture + Connect driver settlement (+ mock fallback)
+  connect.js       Stripe Connect driver self-onboarding (+ mock fallback)
   flight.js        flight tracking: AviationStack + mock fallback
-  test.js          end-to-end lifecycle smoke test (13 checks)
-  public/          operator console (index.html + app.js + styles.css)
+  test.js          end-to-end smoke test (17 checks; runs on either backend)
+  public/          operator console
+  public/driver/   driver PWA (mobile web) — see DRIVER-APP.md
   Dockerfile, render.yaml, DEPLOY.md   one-click / container deploy
 ```
 
@@ -61,10 +65,30 @@ Airport requests show live flight status. The console fetches `/api/flight/:numb
 when you open an airport request; delays auto-adjust the pickup note. Real lookups
 via AviationStack when `FLIGHT_API_KEY` is set, deterministic mock otherwise.
 
+## Driver app
+
+A working mobile-web **driver PWA** at `/driver/?d=<driverId>`: assigned trips,
+real browser geolocation pinging the server, the trip lifecycle, flight status,
+navigation, and a Connect payout-onboarding banner. Full details and the native /
+background-GPS upgrade path: `DRIVER-APP.md`.
+
+## Database — SQLite or Postgres
+
+`db.js` picks the backend at startup:
+- **No `DATABASE_URL`** → SQLite file (zero-config; dev, demo, single instance).
+- **`DATABASE_URL` set** → Postgres via a connection pool (multi-instance safe).
+
+Both implement the same async interface and pass the same 17-check test:
+```bash
+npm test                                  # SQLite
+DATABASE_URL=postgres://… npm test        # Postgres
+```
+
 ## Deploy
 
 See `DEPLOY.md` — one-click on Render (`render.yaml`), Railway, or any container
-host (`Dockerfile`). Runs in demo mode with no secrets.
+host (`Dockerfile`). Runs in demo mode with no secrets. For scale, attach a managed
+Postgres and set `DATABASE_URL`.
 
 ## The AI intake (real Claude)
 

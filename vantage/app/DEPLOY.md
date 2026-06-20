@@ -41,12 +41,21 @@ For **Fly.io**: `fly launch --dockerfile Dockerfile` (say yes to a volume), then
 `fly deploy`. For **Cloud Run**: `gcloud run deploy --source .` (note: Cloud Run's
 filesystem is ephemeral — point `VANTAGE_DB` at a mounted volume or move to Postgres).
 
+## Scaling to Postgres (multi-instance)
+
+SQLite is one file on one disk — perfect for a single instance. To run multiple
+instances behind a load balancer, point at managed Postgres instead: provision one
+(Render/Railway/Neon/Supabase all have a free tier) and set `DATABASE_URL`. No code
+change — `db.js` switches backends automatically, and the schema is created on boot.
+On Render, add a PostgreSQL instance and set its Internal Database URL as
+`DATABASE_URL` on the web service.
+
 ## Notes
 
 - **Node version:** requires Node ≥ 22.5 (built-in `node:sqlite`). The configs pin it.
-- **Persistence:** SQLite is a file. On hosts with ephemeral disks, attach a volume
-  (the Render/Docker configs here do) or swap `db.js` for Postgres — the schema maps
-  directly.
+- **Persistence:** with SQLite, attach a volume (the Render/Docker configs here do).
+  With `DATABASE_URL` set, persistence and multi-instance are handled by Postgres and
+  you don't need the disk.
 - **Health check:** `GET /api/health` returns `{ ok, intake, payments, flight }`.
 - **Cost:** all three have free tiers sufficient for a design-partner demo.
 

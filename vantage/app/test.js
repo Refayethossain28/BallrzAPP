@@ -24,7 +24,7 @@ const ok = (cond, msg) => { assert.ok(cond, msg); console.log("  ✓", msg); pas
 
 try {
   const h = await call("/api/health");
-  ok(h.ok, `health: intake=${h.intake} payments=${h.payments}`);
+  ok(h.ok, `health: db=${h.db} intake=${h.intake} payments=${h.payments} flight=${h.flight}`);
 
   const { parsed, quote } = await call("/api/parse", {
     method: "POST",
@@ -44,6 +44,18 @@ try {
   await call(`/api/requests/${req.id}/confirm`, { method: "POST" });
   const assigned = await call(`/api/requests/${req.id}/assign`, { method: "POST", body: JSON.stringify({ resource_id: drivers[0].id }) });
   ok(assigned.status === "assigned" && assigned.assigned_resource_id === drivers[0].id, `assigned to ${drivers[0].name}`);
+
+  // Driver app: the assigned driver sees the trip, and can ping location.
+  const drv = await call(`/api/driver/${drivers[0].id}/trips`);
+  ok(drv.trips.some((t) => t.id === req.id), `driver ${drivers[0].name} sees the assigned trip`);
+  const ping = await call(`/api/driver/${drivers[0].id}/location`, { method: "POST", body: JSON.stringify({ lat: 40.71, lng: -74.0 }) });
+  ok(ping.ok, `driver location ping accepted`);
+
+  // Stripe Connect self-onboarding (mock when no key).
+  const onboard = await call(`/api/drivers/${drivers[0].id}/connect/onboard`, { method: "POST" });
+  ok(onboard.accountId && onboard.url, `onboarding link created (${onboard.provider})`);
+  const cstatus = await call(`/api/drivers/${drivers[0].id}/connect/status`);
+  ok(cstatus.connected, `driver Connect account connected (${cstatus.account_id})`);
 
   const flight = await call(`/api/flight/${parsed.flight}`);
   ok(flight.flight === "DL472" && flight.status, `flight status: ${flight.status} (${flight.source})`);

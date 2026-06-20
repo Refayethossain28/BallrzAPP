@@ -92,8 +92,19 @@ function render() {
 
   $("drivers").innerHTML = drivers.map((d) => `
     <div class="driver"><div class="av">${initials(d.name)}</div>
-      <div class="meta"><b>${d.name}</b><span>${d.vehicle || ""}</span></div>
+      <div class="meta"><b>${d.name}</b>
+        <span>${d.vehicle || ""} ·
+          ${d.stripe_account_id ? '<span style="color:var(--green)">payouts ✓</span>'
+            : `<a href="#" data-onboard="${d.id}">set up payouts</a>`}
+          · <a href="./driver/?d=${d.id}" target="_blank">driver app ↗</a></span>
+      </div>
       <span class="pill ${d.status === "available" ? "p-av" : "p-on"}">${d.status === "available" ? "Available" : "On trip"}</span></div>`).join("");
+  $("drivers").querySelectorAll("[data-onboard]").forEach((a) => a.onclick = async (e) => {
+    e.preventDefault();
+    const link = await api(`/api/drivers/${a.dataset.onboard}/connect/onboard`, { method: "POST" });
+    window.open(link.url, "_blank");
+    setTimeout(refresh, 800);
+  });
 
   $("s-open").textContent = requests.filter((r) => r.status !== "completed").length;
   $("s-rev").textContent = "$" + requests.reduce((s, r) => s + (r.quote_amount || 0), 0).toLocaleString();

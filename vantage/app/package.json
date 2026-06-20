@@ -4,16 +4,19 @@
   "private": true,
   "type": "module",
   "description": "Vantage — luxury ground-transport & concierge OS (real full-stack app).",
-  "engines": { "node": ">=22.5" },
+  "engines": {
+    "node": ">=22.5"
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "seed": "node db.js --seed",
+    "seed": "node -e \"import('./db.js').then(m=>m.seedIfEmpty()).then(()=>console.log('seeded'))\"",
     "test": "node test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.69.0",
     "express": "^5.0.0",
+    "pg": "^8.22.0",
     "stripe": "^19.0.0"
   }
 }
