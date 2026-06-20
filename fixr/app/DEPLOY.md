@@ -6,16 +6,23 @@ to turn on the real services. Three good options, easiest first.
 
 ## Option A — Render (one-click blueprint) ★ recommended
 
-`render.yaml` is already in this folder.
+The blueprint lives at the **repo root** (`render.yaml`) and provisions a web
+service **plus a managed Postgres**, wiring `DATABASE_URL` automatically — so it
+deploys production-shaped, not on a throwaway SQLite file.
 
-1. Push this branch to GitHub (done).
-2. Go to **dashboard.render.com → New → Blueprint**, pick this repo/branch.
-3. Render reads `render.yaml`, builds `fixr/app`, and gives you a URL like
-   `https://fixr.onrender.com`.
-4. (Optional) In the service's **Environment** tab, add secrets to go live:
-   `ANTHROPIC_API_KEY`, `STRIPE_SECRET_KEY` (use `sk_test_…`), `FLIGHT_API_KEY`.
+1. Push to GitHub (done — branch `claude/most-needed-app-rxhbcj`).
+2. **dashboard.render.com → New → Blueprint**, pick this repo, and **choose the
+   branch** `claude/most-needed-app-rxhbcj` (the root `render.yaml` lives there).
+3. Render reads `render.yaml`, creates the `fixr-db` Postgres + the `fixr` web
+   service, builds `fixr/app`, and gives you a URL like `https://fixr.onrender.com`.
+4. (Optional) In the **fixr** service → **Environment** tab, add secrets to go fully
+   live: `ANTHROPIC_API_KEY`, `STRIPE_SECRET_KEY` (`sk_test_…`), `FLIGHT_API_KEY`.
 
-The blueprint attaches a 1 GB disk at `/data` so the SQLite DB survives deploys.
+No disk needed — Postgres handles persistence and multi-instance. (Render's free
+Postgres is fine for a design-partner demo; upgrade the DB plan for production.)
+
+> Once this branch is merged to your default branch, a **Deploy to Render** button
+> also works: `https://render.com/deploy?repo=https://github.com/Refayethossain28/BallrzAPP`
 
 ## Option B — Railway
 
@@ -53,10 +60,9 @@ On Render, add a PostgreSQL instance and set its Internal Database URL as
 ## Notes
 
 - **Node version:** requires Node ≥ 22.5 (built-in `node:sqlite`). The configs pin it.
-- **Persistence:** with SQLite, attach a volume (the Render/Docker configs here do).
-  With `DATABASE_URL` set, persistence and multi-instance are handled by Postgres and
-  you don't need the disk.
-- **Health check:** `GET /api/health` returns `{ ok, intake, payments, flight }`.
+- **Persistence:** the Render blueprint uses Postgres (no disk). For the Docker /
+  Fly path, either mount a volume for SQLite or set `DATABASE_URL` to use Postgres.
+- **Health check:** `GET /api/health` returns `{ ok, db, intake, payments, flight }`.
 - **Cost:** all three have free tiers sufficient for a design-partner demo.
 
 ## What I can't do from here
