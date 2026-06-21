@@ -43,9 +43,9 @@ const cameraDepth = 1 / Math.tan((FOV / 2) * Math.PI / 180);
 
 // Difficulty presets — name, top speed, curve multiplier, AI pace, laps, timer
 const DIFFS = [
-  { name:'THREE-SEVEN SPEEDWAY',  laps: 8, maxSpeed: 12000, curveMul: 0.7, aiSpeed: 0.80, startTime: 50, lapBonus: 26 },
-  { name:'DINOSAUR CANYON',       laps: 4, maxSpeed: 13500, curveMul: 1.05, aiSpeed: 0.90, startTime: 60, lapBonus: 34 },
-  { name:'SEA-SIDE STREET GALAXY',laps: 8, maxSpeed: 15000, curveMul: 1.35, aiSpeed: 0.98, startTime: 70, lapBonus: 30 },
+  { name:'THREE-SEVEN SPEEDWAY',  laps: 8, maxSpeed: 12000, curveMul: 0.7, aiSpeed: 0.72, startTime: 50, lapBonus: 26 },
+  { name:'DINOSAUR CANYON',       laps: 4, maxSpeed: 13500, curveMul: 1.05, aiSpeed: 0.82, startTime: 60, lapBonus: 34 },
+  { name:'SEA-SIDE STREET GALAXY',laps: 8, maxSpeed: 15000, curveMul: 1.35, aiSpeed: 0.90, startTime: 70, lapBonus: 30 },
 ];
 
 // Road colours — Daytona's grey asphalt with white kerbs, alpine green verges
@@ -385,13 +385,13 @@ function update(dt) {
   if (G.speed > 0) {
     for (const car of G.cars) {
       const d = loopDelta(car.z, G.position);
-      if (d > 0 && d < SEG_LEN*1.4 && Math.abs(G.playerX - car.offset) < 0.9) {
-        G.speed = car.speed * 0.85;
-        // nudge to the open side, but gently and clamped so a near head-on
-        // tap bumps you aside rather than catapulting you off the track
+      if (d > 0 && d < SEG_LEN*1.0 && Math.abs(G.playerX - car.offset) < 0.82) {
+        // bump-and-go: keep most of your momentum and get nudged toward the
+        // open side so you can power around rather than getting stopped dead
+        G.speed *= 0.9;
         const side = (G.playerX >= car.offset) ? 1 : -1;
-        G.playerX = Math.max(-1.0, Math.min(1.0, G.playerX + side * 0.18));
-        G.shake = 10; G.skid = 0.3; beep(90,0.12,'sawtooth',0.18);
+        G.playerX = Math.max(-1.1, Math.min(1.1, G.playerX + side * 0.22));
+        G.shake = 8; G.skid = 0.22; beep(90,0.10,'sawtooth',0.16);
       }
     }
   }

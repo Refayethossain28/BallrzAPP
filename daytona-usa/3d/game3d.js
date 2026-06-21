@@ -28,9 +28,9 @@ const DIV = 1400;                 // spline samples (road resolution)
 const FPS = 60, STEP = 1/FPS;
 
 const DIFFS = [
-  { name:'THREE-SEVEN SPEEDWAY',  laps:8, maxSpeed:105, curveMul:0.8, aiSpeed:0.82, startTime:55, lapBonus:24, seed:1, theme:0 },
-  { name:'DINOSAUR CANYON',       laps:4, maxSpeed:120, curveMul:1.0, aiSpeed:0.90, startTime:62, lapBonus:34, seed:7, theme:1 },
-  { name:'SEA-SIDE STREET GALAXY',laps:8, maxSpeed:135, curveMul:1.2, aiSpeed:0.97, startTime:70, lapBonus:30, seed:3, theme:2 },
+  { name:'THREE-SEVEN SPEEDWAY',  laps:8, maxSpeed:108, curveMul:0.8, aiSpeed:0.72, startTime:55, lapBonus:24, seed:1, theme:0 },
+  { name:'DINOSAUR CANYON',       laps:4, maxSpeed:122, curveMul:1.0, aiSpeed:0.82, startTime:62, lapBonus:34, seed:7, theme:1 },
+  { name:'SEA-SIDE STREET GALAXY',laps:8, maxSpeed:136, curveMul:1.2, aiSpeed:0.90, startTime:70, lapBonus:30, seed:3, theme:2 },
 ];
 // per-course environment themes (colours, props, set-pieces)
 const THEMES = [
@@ -100,11 +100,31 @@ function buildSky(th){
   const geo=new THREE.SphereGeometry(1200,32,16);
   const mat=new THREE.MeshBasicMaterial({map:makeSkyTexture(th), side:THREE.BackSide, fog:false, depthWrite:false});
   sky=new THREE.Mesh(geo,mat); scene.add(sky);
+  // environment map so PBR car paint reflects the sky
+  if (renderer){
+    const pm = new THREE.PMREMGenerator(renderer);
+    const eq = makeSkyTexture(th); eq.mapping = THREE.EquirectangularReflectionMapping;
+    const rt = pm.fromEquirectangular(eq);
+    if (scene.environment) scene.environment.dispose();
+    scene.environment = rt.texture;
+    eq.dispose(); pm.dispose();
+  }
 }
 
+let sun = null;
+const MOBILE = (typeof window!=='undefined') &&
+  (('ontouchstart' in window) || (window.matchMedia && matchMedia('(pointer:coarse)').matches));
+
 function initThree() {
-  renderer = new THREE.WebGLRenderer({ canvas:glCanvas, antialias:true });
-  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  renderer = new THREE.WebGLRenderer({ canvas:glCanvas, antialias:!MOBILE, powerPreference:'high-performance' });
+  renderer.setPixelRatio(Math.min(MOBILE?1.5:2, window.devicePixelRatio || 1));
+  // cinematic colour + soft shadows
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x6fb7ff);
   scene.fog = new THREE.Fog(0xbfe2ff, 320, 900);
@@ -112,11 +132,19 @@ function initThree() {
   camera = new THREE.PerspectiveCamera(62, 1, 0.5, 3000);
   buildSky();
 
-  scene.add(new THREE.HemisphereLight(0xeaf4ff, 0x5a8a4a, 1.25));
-  scene.add(new THREE.AmbientLight(0xffffff, 0.45));
-  const sun = new THREE.DirectionalLight(0xfff3d0, 1.15);
-  sun.position.set(120, 220, 60);
-  scene.add(sun);
+  scene.add(new THREE.HemisphereLight(0xeaf4ff, 0x5a8a4a, 1.0));
+  scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+  sun = new THREE.DirectionalLight(0xfff3d0, 2.0);
+  sun.position.set(60, 120, 30);
+  sun.castShadow = true;
+  const SM = MOBILE ? 1024 : 2048;
+  sun.shadow.mapSize.set(SM, SM);
+  sun.shadow.camera.near = 1; sun.shadow.camera.far = 320;
+  const S = 70;
+  sun.shadow.camera.left = -S; sun.shadow.camera.right = S;
+  sun.shadow.camera.top = S; sun.shadow.camera.bottom = -S;
+  sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.6;
+  scene.add(sun); scene.add(sun.target);   // target follows the player each frame
 
   resize();
   window.addEventListener('resize', resize);
@@ -231,7 +259,7 @@ function buildRoadMesh() {
     const tex=makeAsphaltTexture(th);
     tex.wrapS=THREE.ClampToEdgeWrapping; tex.wrapT=THREE.RepeatWrapping; tex.anisotropy=maxAniso;
     const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({map:tex}));
-    scene.add(mesh); roadParts.push(mesh);
+    mesh.receiveShadow=true; scene.add(mesh); roadParts.push(mesh);
   }
 
   // ---------- grass verges (tiled texture) ----------
@@ -255,7 +283,7 @@ function buildRoadMesh() {
     const tex=makeGroundTexture(th);
     tex.wrapS=THREE.RepeatWrapping; tex.wrapT=THREE.RepeatWrapping; tex.anisotropy=maxAniso;
     const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({map:tex, side:THREE.DoubleSide}));
-    scene.add(mesh); roadParts.push(mesh);
+    mesh.receiveShadow=true; scene.add(mesh); roadParts.push(mesh);
   }
 
   // ---------- trim: kerbs + guardrails + checker (vertex colours) ----------
@@ -302,7 +330,7 @@ function buildRoadMesh() {
     geo.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
     geo.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3));
     const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({vertexColors:true, side:THREE.DoubleSide}));
-    scene.add(mesh); roadParts.push(mesh);
+    mesh.receiveShadow=true; scene.add(mesh); roadParts.push(mesh);
   }
 }
 
@@ -472,6 +500,7 @@ function buildScenery(rng) {
     sceneryGroup.add(bd);
   }
 
+  if (!MOBILE) sceneryGroup.traverse(o=>{ if (o.isMesh) o.castShadow = true; });
   scene.add(sceneryGroup);
 }
 // A simple brontosaurus silhouette for Dinosaur Canyon
@@ -527,7 +556,10 @@ function buildMinimap() {
 function buildCarMesh(bodyColor, isHornet, number) {
   number = number==null ? 41 : number;
   const g = new THREE.Group();
-  const mat = c => new THREE.MeshLambertMaterial({color:c});
+  // glossy PBR car paint (reflects the sky env map); matte for rubber/plastic
+  const paint = c => new THREE.MeshStandardMaterial({color:c, metalness:0.55, roughness:0.32});
+  const matte = c => new THREE.MeshStandardMaterial({color:c, metalness:0.0, roughness:0.85});
+  const mat = paint;
   const roof = isHornet ? 0x2056cf : shadeHex(bodyColor,-40);
   // low wide chassis
   const body = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.62, 4.9), mat(bodyColor));
@@ -543,7 +575,7 @@ function buildCarMesh(bodyColor, isHornet, number) {
   // greenhouse: low cabin set back, with angled pillars
   const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.1,0.56,2.0), mat(roof));
   cabin.position.set(0,1.18,-0.35); g.add(cabin);
-  const glass = mat(0x0e1a30);
+  const glass = new THREE.MeshStandardMaterial({color:0x0e1a30, metalness:0.4, roughness:0.06});
   const ws = new THREE.Mesh(new THREE.BoxGeometry(1.9,0.62,0.12), glass);   // windshield
   ws.position.set(0,1.2,0.72); ws.rotation.x=0.5; g.add(ws);
   const rw = new THREE.Mesh(new THREE.BoxGeometry(1.9,0.6,0.12), glass);    // rear window
@@ -556,15 +588,15 @@ function buildCarMesh(bodyColor, isHornet, number) {
   const upL = new THREE.Mesh(new THREE.BoxGeometry(0.14,0.5,0.4), mat(0x1a1a1a)); upL.position.set(-1.05,1.05,-2.4); g.add(upL);
   const upR = upL.clone(); upR.position.x=1.05; g.add(upR);
   // fat tyres at the corners
-  const tyre = new THREE.CylinderGeometry(0.6,0.6,0.55,14), tyreMat = mat(0x0b0b0b);
-  const rimMat = mat(0xbfc4cc);
+  const tyre = new THREE.CylinderGeometry(0.6,0.6,0.55,14), tyreMat = matte(0x0b0b0b);
+  const rimMat = new THREE.MeshStandardMaterial({color:0xc4c9d2, metalness:0.95, roughness:0.22});
   for (const [wx,wz] of [[-1.3,1.5],[1.3,1.5],[-1.3,-1.6],[1.3,-1.6]]){
     const w = new THREE.Mesh(tyre, tyreMat); w.rotation.z=Math.PI/2; w.position.set(wx,0.6,wz); g.add(w);
     const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.26,0.26,0.57,8), rimMat);
     rim.rotation.z=Math.PI/2; rim.position.set(wx,0.6,wz); g.add(rim);
   }
   // headlights
-  const hl = mat(0xfff6c8);
+  const hl = new THREE.MeshStandardMaterial({color:0xfff6c8, emissive:0xfff0b0, emissiveIntensity:0.7, roughness:0.4});
   for (const sx of [-0.7,0.7]){ const l=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.3,0.1),hl); l.position.set(sx,0.7,2.46); g.add(l); }
   // racing number on roof + doors
   const numTex = makeTextTexture(String(number));
@@ -575,6 +607,8 @@ function buildCarMesh(bodyColor, isHornet, number) {
     const dr = new THREE.Mesh(new THREE.PlaneGeometry(1.2,1.0), new THREE.MeshBasicMaterial({map:roundel, transparent:true}));
     dr.position.set(sx,0.7,-0.2); dr.rotation.y = sx<0?-Math.PI/2:Math.PI/2; g.add(dr);
   }
+  // solid parts cast & receive shadows; transparent number decals don't cast
+  g.traverse(o=>{ if (o.isMesh){ o.receiveShadow = true; o.castShadow = !(o.material && o.material.transparent); } });
   return g;
 }
 function shadeHex(hex, amt){
@@ -702,6 +736,7 @@ function resetCars(){
     };
     G.cars.push(car);
     const mesh = buildCarMesh(car.color, false, num);
+    if (MOBILE) mesh.traverse(o=>{ if(o.isMesh) o.castShadow=false; });   // perf: rivals don't cast on mobile
     scene.add(mesh); rivalMeshes.push(mesh);
   }
 }
@@ -761,8 +796,9 @@ function update(dt){
   const steerAuth = Math.min(1, Math.abs(G.speed)/(G.maxSpeed*0.22) + 0.30);
   let steer = dt * 2.6 * steerAuth;
   if (offRoad) steer *= 2.4;                          // easy to wrestle back onto the track
-  if (keys.left)  G.playerX -= steer;
-  if (keys.right) G.playerX += steer;
+  // Verified empirically: +playerX renders to screen-LEFT, so RIGHT decreases it.
+  if (keys.left)  G.playerX += steer;
+  if (keys.right) G.playerX -= steer;
   G.playerX -= dt * sp*sp * f.curv * 40 * G.curveMul; // centrifugal (eases when off the throttle)
   // smoothed visual steer for car turn-in / body roll (right key = +1)
   const steerInput = (keys.right?1:0) - (keys.left?1:0);
@@ -788,11 +824,13 @@ function update(dt){
   if (G.speed>0){
     for (const car of G.cars){
       const d=loopDelta(car.dist,G.dist);
-      if (d>0 && d<segLen*14 && Math.abs(G.playerX-car.offset)<0.9){
-        G.speed=car.speed*0.85;
+      if (d>0 && d<segLen*8 && Math.abs(G.playerX-car.offset)<0.82){
+        // bump-and-go: keep most of your momentum and get nudged toward the
+        // open side so you can power around rather than getting stopped dead
+        G.speed *= 0.9;
         const side=(G.playerX>=car.offset)?1:-1;
-        G.playerX=Math.max(-1.0,Math.min(1.0,G.playerX+side*0.18));
-        G.shake=0.8; G.skid=0.3; beep(90,0.12,'sawtooth',0.18);
+        G.playerX=Math.max(-1.1,Math.min(1.1,G.playerX+side*0.22));
+        G.shake=0.6; G.skid=0.22; beep(90,0.10,'sawtooth',0.16);
       }
     }
   }
@@ -834,12 +872,19 @@ function flashBanner(t){ const b=document.getElementById('banner'); b.textConten
 // ---------------------------------------------------------------------------
 const _camPos=new THREE.Vector3(), _look=new THREE.Vector3(), _fwd=new THREE.Vector3(), _tmp=new THREE.Vector3();
 const _camUp=new THREE.Vector3(0,1,0);
+const _sunOff=new THREE.Vector3(55, 120, 35);   // fixed sun direction relative to the player
 function render(){
   // place player + rivals
   placeCar(playerCar, G.dist, G.playerX, 0);
-  const lean = G.steerVis || 0;                    // visible turn-in + body roll
-  playerCar.rotateY(-lean * 0.16);
-  playerCar.rotateZ(-lean * 0.07);
+  const lean = G.steerVis || 0;                    // nose turns toward the steer direction
+  playerCar.rotateY(lean * 0.18);
+  playerCar.rotateZ(-lean * 0.06);
+  // keep the sun's shadow frustum centred on the player
+  if (sun){
+    sun.target.position.copy(playerCar.position);
+    sun.position.copy(playerCar.position).add(_sunOff);
+    sun.target.updateMatrixWorld();
+  }
   for (let i=0;i<G.cars.length;i++) placeCar(rivalMeshes[i], G.cars[i].dist, G.cars[i].offset, 0);
 
   // chase / hood camera — lifts along the banked surface normal so it rolls
