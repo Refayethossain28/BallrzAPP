@@ -1,8 +1,11 @@
 # Lingua — learn & translate any language (and its dialects)
 
 A single-file, offline-first **PWA** for learning and translating any of 90+
-languages. Pick a language and you get two modes:
+languages. Pick a language and you get:
 
+- **📚 Learn** — a structured course: ordered units (greetings → numbers →
+  travel → …) with on-device progress tracking. Open a unit for a lesson, then
+  jump straight into practice or chat for it. Tick units off as you go.
 - **🔁 Translate** — type text in any language and translate it into the one
   you're studying (and back, via the swap arrow). Results show the native
   script, romanized pronunciation, a literal gloss, register, and dialect notes.
@@ -32,6 +35,19 @@ languages. Pick a language and you get two modes:
 Each is treated as a distinct variety with its own phrasing and notes.
 
 ## Launching it
+
+### Option 0 — Open it and paste your Anthropic key (quickest; works on the live link)
+
+Open the app (locally or the hosted link), tap the **AI** pill (top-right), and
+paste your `sk-ant-…` key. It's stored **only in your browser** (localStorage)
+and sent **directly** to `api.anthropic.com` using Anthropic's official
+`anthropic-dangerous-direct-browser-access` header — no proxy, no deploy. The
+pill flips to **AI: your key** and everything (Translate, Teach, Practice, Chat,
+Learn) uses real Claude.
+
+> ⚠️ Bring-your-own-key sends the key from the browser. Great for your own
+> device; on a shared/public machine use the local proxy or hosted function
+> instead. Get a key at <https://console.anthropic.com> → API Keys.
 
 ### Option 1 — Open it directly (offline mode)
 
@@ -120,8 +136,9 @@ pill flips to **AI: cloud** on the first successful call. Notes:
 - The callable caps input length to bound cost on a public endpoint. For heavier
   protection, enable Firebase **App Check** on the function.
 
-**Engine priority:** local proxy (`/health` live) → hosted `linguaAI` → offline
-starter set. Every answer is labelled so you always know which produced it.
+**Engine priority:** local proxy (`/health` live) → your own key (BYOK) → hosted
+`linguaAI` → offline starter set. Every answer is labelled so you always know
+which produced it.
 
 ### Install as an app (PWA)
 
