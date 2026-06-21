@@ -636,6 +636,151 @@ exports.linguaAI = onCall(
 );
 
 /* ===========================================================================
+ * parseBookingIntent — ApexAI concierge brain (apexvip-client.html + driver app)
+ *
+ * The client's ApexAI chat and the driver assistant call this. It uses Claude to
+ * turn a free-text request ("collect me from Mayfair tomorrow at 9 for Heathrow
+ * T5, BA247") into the exact structured intent the client already consumes —
+ * `{intent, reply, serviceType, pickup, dropoff, airport, flight, date, time, …}`
+ * — by forcing a single structured tool call. If this function is absent or
+ * errors, the client falls back to its on-device `_parseIntentLocal` parser, so a
+ * partial deploy never breaks the chat. Mirrors linguaAI's raw-fetch style; the
+ * browser never holds the Anthropic key.
+ *
+ * Note: hotel discovery is resolved on-device before this is called, so we focus
+ * on rides, quotes, modifications, recurring trips, flight updates and chat.
+ * =========================================================================== */
+const APEXAI_MODEL = process.env.APEXAI_MODEL || 'claude-opus-4-8';
+
+const APEXAI_INTENT_TOOL = {
+  name: 'booking_intent',
+  description: 'Return the structured booking intent parsed from the guest\'s message, plus a warm concierge reply.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      reply:       { type: 'string', description: 'A short, warm reply in the voice of a luxury London chauffeur concierge. Confirm what you understood, or ask for the one missing detail. Never invent a booking that was not requested.' },
+      intent:      { type: 'string', enum: ['book', 'quote', 'modify', 'recurring', 'flight_update', 'suggest', 'chat'], description: 'The guest\'s primary intent.' },
+      serviceType: { type: 'string', enum: ['airport', 'hourly', 'day', 'point'], description: 'airport = airport transfer; hourly = by the hour; day = full-day chauffeur; point = point-to-point A→B.' },
+      pickup:      { type: 'string', description: 'Pickup address/area exactly as the guest gave it. Empty if not stated.' },
+      dropoff:     { type: 'string', description: 'Destination (non-airport). Empty if not stated.' },
+      airport:     { type: 'string', description: 'Airport + terminal if relevant, e.g. "Heathrow T5", "Gatwick North", "London City Airport". Empty otherwise.' },
+      flight:      { type: 'string', description: 'Flight number in uppercase with no space, e.g. "BA247". Empty if none.' },
+      date:        { type: 'string', description: 'Travel date resolved to ISO YYYY-MM-DD using the provided current date. Empty if not stated.' },
+      time:        { type: 'string', description: 'Pickup time as "HH:MM" (24h) or "3pm". Empty if not stated.' },
+      vehicle:     { type: 'string', description: 'Requested vehicle if named, e.g. "Mercedes S-Class", "V-Class". Empty otherwise.' },
+      passengers:  { type: 'integer', description: 'Passenger count if stated, else 0.' },
+      suggestedPickupTime: { type: 'string', description: 'If a flight/airport is involved, a sensible pickup time accounting for travel + check-in, as "HH:MM". Empty otherwise.' },
+      stops: {
+        type: 'array',
+        description: 'For multi-stop / day itineraries, the ordered stops. Empty for simple trips.',
+        items: { type: 'object', properties: { name: { type: 'string' }, address: { type: 'string' } }, required: ['name'] },
+      },
+      paPassenger: {
+        type: 'object',
+        description: 'Set only if the guest is booking on behalf of someone else (a personal-assistant booking).',
+        properties: { name: { type: 'string' }, notes: { type: 'string' } },
+      },
+      suggestions:  { type: 'array', description: 'For intent "suggest": 2–4 curated experience or destination ideas.', items: { type: 'string' } },
+      modifyBookingRef: { type: 'string', description: 'For intent "modify": the booking reference (e.g. "APX-1234") to change.' },
+      modifyFields: {
+        type: 'object',
+        description: 'For intent "modify": only the fields to change.',
+        properties: { date: { type: 'string' }, time: { type: 'string' }, pickup: { type: 'string' }, dropoff: { type: 'string' } },
+      },
+      recurringPattern: { type: 'string', description: 'For intent "recurring": a short human description of the cadence, e.g. "every weekday 07:30".' },
+      priceEstimate:    { type: 'number', description: 'For intent "quote": a rough £ estimate if you can infer one, else 0.' },
+    },
+    required: ['reply', 'intent'],
+  },
+};
+
+async function apexCallClaude({ message, history, trips, now, mode, context }, apiKey) {
+  const today = (typeof now === 'string' && now) || new Date().toISOString();
+
+  if (mode === 'driver') {
+    const sys =
+      'You are ApexAI, the in-app assistant for an ApexVIP chauffeur driver. Be concise, ' +
+      'practical and supportive — help with their jobs, earnings, schedule, going on/offline, ' +
+      'navigation tips and app questions. Plain text only, a few sentences at most.' +
+      (context ? ` Driver context: ${JSON.stringify(context).slice(0, 600)}.` : '');
+    const body = {
+      model: APEXAI_MODEL,
+      max_tokens: 400,
+      system: sys,
+      messages: [{ role: 'user', content: String(message || '').slice(0, 1000) }],
+    };
+    const data = await anthropicMessages(body, apiKey);
+    const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+    return { reply: text || 'How can I help with your next job?' };
+  }
+
+  const sys =
+    'You are ApexAI, the concierge brain for ApexVIP — a discreet luxury chauffeur service in London. ' +
+    `The current date/time is ${today} (Europe/London). ` +
+    'Parse the guest\'s message into a booking intent and call the booking_intent tool. ' +
+    'Resolve relative dates ("tomorrow", "Friday") to ISO YYYY-MM-DD from the current date. ' +
+    'Airports map to a terminal label (e.g. "Heathrow T5"). Flight numbers are uppercase, no space (e.g. "BA247"). ' +
+    'Choose serviceType: airport for airport transfers, hourly for by-the-hour, day for full-day hire, point for a ' +
+    'simple A→B journey. Only fill fields the guest actually stated — never invent an address, time or destination. ' +
+    'Keep "reply" warm, brief and in the voice of a five-star chauffeur concierge.';
+
+  const turns = (Array.isArray(history) ? history : [])
+    .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+    .slice(-8)
+    .map((m) => ({ role: m.role, content: m.content }));
+  if (Array.isArray(trips) && trips.length) {
+    turns.unshift({ role: 'user', content: `(For context, my recent/upcoming trips: ${JSON.stringify(trips).slice(0, 1200)})` });
+    turns.push({ role: 'assistant', content: 'Noted — I have your trips for reference.' });
+  }
+  turns.push({ role: 'user', content: String(message || '').slice(0, 1000) });
+
+  const data = await anthropicMessages({
+    model: APEXAI_MODEL,
+    max_tokens: 1024,
+    system: sys,
+    messages: turns,
+    tools: [APEXAI_INTENT_TOOL],
+    tool_choice: { type: 'tool', name: 'booking_intent' },
+  }, apiKey);
+
+  const toolUse = (data.content || []).find((b) => b.type === 'tool_use');
+  if (!toolUse) throw new Error('model returned no structured result');
+  return toolUse.input || {};
+}
+
+async function anthropicMessages(body, apiKey) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`anthropic ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+exports.parseBookingIntent = onCall(
+  { secrets: [ANTHROPIC_API_KEY], region: 'us-central1' },
+  async (request) => {
+    const p = request.data || {};
+    if (typeof p.message !== 'string' || !p.message.trim()) {
+      throw new HttpsError('invalid-argument', 'message is required');
+    }
+    if (p.message.length > 1000) throw new HttpsError('invalid-argument', 'message too long (max 1000 chars)');
+    const apiKey = ANTHROPIC_API_KEY.value();
+    if (!apiKey) throw new HttpsError('failed-precondition', 'ANTHROPIC_API_KEY not configured.');
+    try {
+      // Returned object IS the callable result, so the client reads it directly as
+      // `res.data.intent`, `res.data.reply`, … (matches _parseIntentLocal's shape).
+      return await apexCallClaude(p, apiKey);
+    } catch (err) {
+      logger.error('parseBookingIntent', err.message);
+      // Throw so the client cleanly falls back to its on-device parser.
+      throw new HttpsError('unavailable', String(err.message || err));
+    }
+  }
+);
+
+/* ===========================================================================
  * Ripple server-side delivery — push, scheduled dispatch & disappearing sweep
  *
  *  • ripplePushOnMessage  — pushes a web notification the moment a message

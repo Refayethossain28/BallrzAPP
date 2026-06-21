@@ -59,6 +59,13 @@ Items marked **[code done]** ship in the repo; the rest are operator/legal work.
 - [ ] `firebase functions:secrets:set AMADEUS_CLIENT_ID AMADEUS_CLIENT_SECRET`.
 - [ ] Deploy `getHotelRates`; confirm licensing to display partner rates.
 
+## 3a. ApexAI concierge  **[Claude-backed `parseBookingIntent` done — PR pending]**
+- [ ] `firebase functions:secrets:set ANTHROPIC_API_KEY` (shared with `linguaAI`).
+- [ ] Deploy `parseBookingIntent` — ⚠️ **resolve the backend split first** (a gen-1
+      `parseBookingIntent` is already live; decide replace vs. port). Forces a
+      structured `booking_intent` tool call (model `claude-opus-4-8`); the client
+      falls back to its on-device parser if absent, so a partial deploy is safe.
+
 ## 4. Notifications  **[booking email/SMS function done]**
 - [ ] Generate Web Push VAPID key → `APEXVIP_VAPID_KEY` in `firebase.js`.
 - [ ] `firebase functions:secrets:set SENDGRID_API_KEY TWILIO_ACCOUNT_SID TWILIO_AUTH_TOKEN`;
@@ -84,7 +91,8 @@ Items marked **[code done]** ship in the repo; the rest are operator/legal work.
 ```sh
 # from repo root
 firebase deploy --only firestore:rules
-firebase deploy --only functions:getHotelRates,functions:processSquarePayment,functions:captureSquarePayment,functions:refundSquarePayment,functions:onBookingWrite,functions:onBookingCreated
+firebase deploy --only functions:getHotelRates,functions:processSquarePayment,functions:captureSquarePayment,functions:refundSquarePayment,functions:onBookingWrite,functions:onBookingCreated,functions:parseBookingIntent
 ```
-> The other functions (`parseBookingIntent`, …) live in a separate codebase — always
-> scope deploys with `--only` so you never delete what this repo can't see.
+> ⚠️ A **gen-1** `parseBookingIntent` is already live in a separate codebase (see §0).
+> Always scope deploys with `--only` so you never delete what this repo can't see,
+> and resolve the gen-1↔gen-2 split before deploying the repo's `parseBookingIntent`.
