@@ -92,9 +92,34 @@ needed — they must re-upload and be re-approved.
 > A future hardening could also check `compliance.compliant` inside the claim
 > rule/transaction.
 
+## Vehicles (`vehicles/{id}`)
+
+Per-vehicle records, one doc per vehicle, **admin-managed** (a driver may read
+their own; only an admin writes — same self-approval guard as the compliance
+verdict). Managed from the admin Drivers → driver modal.
+
+```jsonc
+{ "driverId": "<uid>", "reg": "LB12 ABC", "type": "S-Class",
+  "motExpiry": "2027-03-01", "taxExpiry": "2026-11-30", "active": true,
+  "createdAt": <serverTimestamp> }
+```
+
+A driver counts as compliant only if they also have **≥1 active vehicle with both
+MOT and road tax in date**. Vehicle expiry feeds the same chip/gate as the
+credentials, and an expired MOT/tax flips `compliant` to false (recomputed daily).
+
+## Expiry reminders (`remindExpiringDocs`)
+
+A daily scheduled function (08:00 Europe/London, in the `apexvip` codebase) that:
+- emails the **driver** + the **ops inbox** (`OPS_EMAIL`) at 30 / 14 / 7 / 3 / 1
+  days before any credential or vehicle MOT/road-tax expiry, on the day, and
+  weekly once expired (via SendGrid — same `sendEmail` as booking notifications);
+- **recomputes `compliance.compliant`** each day so an expired credential or
+  MOT/tax takes the driver off-duty within 24h without any admin action.
+
+Deploy with the rest of the ApexVIP backend: `firebase deploy --only functions:apexvip:remindExpiringDocs`.
+
 ## Not yet modelled (future)
-- Per-**vehicle** records (multiple vehicles per driver, MOT, road tax) — today
-  vehicle docs (V5C) hang off the driver.
-- Automated expiry reminders (a scheduled function emailing drivers/admin N days
-  before `expiresAt`).
 - An immutable audit trail of approvals (currently last-write-wins on the verdict).
+- Which specific vehicle a booking is assigned to (today dispatch carries a
+  vehicle *class*, not a `vehicleId`).

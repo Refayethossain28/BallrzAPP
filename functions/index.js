@@ -329,6 +329,7 @@ exports.refundSquarePayment = onCall(
 // partial setup never errors. Set the non-secret from-address/number via env.
 
 const { onDocumentWritten, onDocumentCreated } = require('firebase-functions/v2/firestore');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
 
 const SENDGRID_API_KEY   = defineSecret('SENDGRID_API_KEY');
 const TWILIO_ACCOUNT_SID = defineSecret('TWILIO_ACCOUNT_SID');
@@ -337,6 +338,7 @@ const TWILIO_AUTH_TOKEN  = defineSecret('TWILIO_AUTH_TOKEN');
 const NOTIFY_FROM_EMAIL = process.env.NOTIFY_FROM_EMAIL || 'concierge@apexvip.com';
 const NOTIFY_FROM_NAME  = process.env.NOTIFY_FROM_NAME  || 'ApexVIP';
 const TWILIO_FROM_NUMBER = process.env.TWILIO_FROM_NUMBER || '';
+const OPS_EMAIL = process.env.OPS_EMAIL || NOTIFY_FROM_EMAIL; // fleet/compliance inbox
 
 async function sendEmail(to, subject, text) {
   const key = SENDGRID_API_KEY.value();
@@ -802,3 +804,91 @@ exports.onBookingCreated = onDocumentCreated('bookings/{bookingId}', async (even
   });
   logger.info('dispatched open_job', { booking: event.params.bookingId, market: b.location || 'london' });
 });
+
+/* ===========================================================================
+ * remindExpiringDocs — daily compliance watchdog
+ *
+ * Scans every driver's approved documents (drivers/{id}.compliance.docs) and their
+ * vehicles (vehicles where driverId == id) for expiry. Emails the driver + the ops
+ * inbox at 30/14/7/3/1 days out, on the day, and weekly once expired. Also
+ * recomputes drivers/{id}.compliance.compliant each day so an expired credential
+ * or MOT/road-tax auto-flips the driver out of service within 24h (the apps gate
+ * Go-Online + dispatch on that flag). See docs/apexvip-driver-compliance.md.
+ * =========================================================================== */
+const COMPLIANCE_EXPIRY_DOCS = ['licence', 'pco', 'insurance', 'dbs', 'badge']; // v5c has no expiry
+const COMPLIANCE_ALL_DOCS = ['licence', 'pco', 'insurance', 'dbs', 'v5c', 'badge'];
+const REMIND_DAYS = new Set([30, 14, 7, 3, 1, 0]);
+
+function daysUntil(iso) {
+  if (!iso || typeof iso !== 'string') return null;
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (isNaN(d)) return null;
+  const now = new Date(); now.setUTCHours(0, 0, 0, 0);
+  return Math.round((d - now) / 86400000);
+}
+// True when today is a reminder milestone for this many days-left.
+const shouldRemind = (dl) => dl != null && (REMIND_DAYS.has(dl) || (dl < 0 && dl % 7 === 0));
+
+exports.remindExpiringDocs = onSchedule(
+  { schedule: '0 8 * * *', timeZone: 'Europe/London', secrets: [SENDGRID_API_KEY], region: 'us-central1' },
+  async () => {
+    const db = admin.firestore();
+    const drivers = await db.collection('drivers').get();
+    let emailed = 0, recomputed = 0;
+
+    for (const snap of drivers.docs) {
+      const d = snap.data() || {};
+      const verdict = (d.compliance && d.compliance.docs) || {};
+      const items = []; // {label, dl}
+
+      // Credential documents.
+      let docsOk = COMPLIANCE_ALL_DOCS.every((k) => verdict[k] && verdict[k].approved);
+      for (const k of COMPLIANCE_EXPIRY_DOCS) {
+        const a = verdict[k];
+        if (!a || !a.approved) continue;
+        const dl = daysUntil(a.expiresAt);
+        if (dl == null || dl < 0) docsOk = false;
+        if (shouldRemind(dl)) items.push({ label: k.toUpperCase(), dl });
+      }
+
+      // Vehicles — at least one active vehicle with MOT + road tax in date.
+      const vehicles = await db.collection('vehicles').where('driverId', '==', snap.id).get();
+      let vehicleOk = false;
+      vehicles.forEach((v) => {
+        const x = v.data() || {};
+        if (x.active === false) return;
+        const mot = daysUntil(x.motExpiry), tax = daysUntil(x.taxExpiry);
+        if (mot != null && mot >= 0 && tax != null && tax >= 0) vehicleOk = true;
+        const reg = x.reg || 'vehicle';
+        if (shouldRemind(mot)) items.push({ label: `${reg} MOT`, dl: mot });
+        if (shouldRemind(tax)) items.push({ label: `${reg} road tax`, dl: tax });
+      });
+
+      const compliant = docsOk && vehicleOk;
+      // Keep the authoritative flag fresh (drives the Go-Online / dispatch gate).
+      if (d.compliance && d.compliance.compliant !== compliant) {
+        await snap.ref.set({ compliance: { compliant } }, { merge: true }).catch(() => {});
+        recomputed++;
+      }
+
+      if (items.length) {
+        const lines = items
+          .sort((a, b) => a.dl - b.dl)
+          .map((i) => `• ${i.label}: ${i.dl < 0 ? `EXPIRED ${-i.dl} day(s) ago` : i.dl === 0 ? 'expires today' : `expires in ${i.dl} day(s)`}`)
+          .join('\n');
+        const driverEmail = d.email || '';
+        const subject = 'ApexVIP — action needed: documents expiring';
+        const body = `Some of your ApexVIP credentials need attention:\n\n${lines}\n\n` +
+          `Please upload renewals in the driver app (Profile → Documents). Expired items take you off-duty until re-approved.`;
+        try {
+          await Promise.all([
+            driverEmail ? sendEmail(driverEmail, subject, body) : Promise.resolve(),
+            sendEmail(OPS_EMAIL, `Compliance: ${d.name || snap.id}`, `${d.name || snap.id}\n\n${lines}`),
+          ]);
+          emailed++;
+        } catch (err) { logger.error('remindExpiringDocs email', err.message); }
+      }
+    }
+    logger.info('remindExpiringDocs', { drivers: drivers.size, emailed, recomputed });
+  }
+);
