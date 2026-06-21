@@ -42,9 +42,12 @@ Items marked **[code done]** ship in the repo; the rest are operator/legal work.
 - [x] **Self-elevation closed** — rules block a user changing their own `role`, and
       a driver writing their own `compliance` verdict (only admins approve docs).
 - [ ] **Driver compliance** (`docs/apexvip-driver-compliance.md`): every driver's
-      licence/PCO/insurance/DBS/V5C/badge **approved + in-date** in the admin
-      Drivers screen before they go live. Enforced in-app (Go Online + manual
-      assign are blocked for non-compliant drivers) once rules are deployed.
+      licence/PCO/insurance/DBS/V5C/badge **approved + in-date**, plus an active
+      **vehicle** with MOT + road tax in date, in the admin Drivers screen before
+      they go live. Enforced in-app (Go Online + manual assign blocked for
+      non-compliant drivers) once rules are deployed.
+- [ ] Deploy the daily reminder: `firebase deploy --only functions:apexvip:remindExpiringDocs`
+      (emails driver + `OPS_EMAIL` before expiry; auto-flips lapsed drivers off-duty).
 
 ## 2. Payments  **[client SCA + server-side hardening done — PR #50, #104]**
 - [ ] `firebase functions:secrets:set SQUARE_ACCESS_TOKEN`; set `SQUARE_ENV`,

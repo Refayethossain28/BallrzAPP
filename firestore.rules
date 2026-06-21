@@ -86,6 +86,14 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Vehicles — one doc per vehicle, owned by a driver. Verified MOT / road-tax /
+    // type are compliance-relevant, so (like the driver compliance verdict) only an
+    // admin writes them; a driver may read their own.
+    match /vehicles/{vehicleId} {
+      allow read:  if isAdmin() || (isDriver() && resource.data.driverId == request.auth.uid);
+      allow write: if isAdmin();
+    }
+
     // Job queue — drivers and admins only. A driver creates their own job doc
     // when they win a broadcast claim.
     match /jobs/{id} {

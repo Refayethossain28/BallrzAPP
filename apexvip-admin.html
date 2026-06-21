@@ -384,10 +384,16 @@ async function updateBookingStatus(id,status){
 }
 
 let _adminListenersStarted = false;
+let VEHICLES=[];
+function driverVehicles(id){return VEHICLES.filter(v=>v.driverId===id);}
 function startAdminListeners(){
   if(!FIREBASE_ENABLED||_adminListenersStarted)return;
   _adminListenersStarted = true;
   loadDispatchMode();
+  db.collection('vehicles').onSnapshot(snap=>{
+    VEHICLES=snap.docs.map(d=>({id:d.id,...d.data()}));
+    if(!['login'].includes(S.screen))render();
+  },e=>console.warn('Vehicles:',e.code));
   db.collection('bookings').orderBy('createdAt','desc').onSnapshot(snap=>{
     BOOKINGS=snap.docs.map(d=>{
       const x=d.data();
@@ -1413,7 +1419,18 @@ function computeCompliance(d){
       else if(a.expiresAt<=soon)expiring.push(t.label);
     }
   });
-  const ok=missing.length===0&&expired.length===0;
+  // Vehicle: needs ≥1 active vehicle with MOT + road tax both in date.
+  const vs=driverVehicles(d&&(d.id||d.uid));
+  let vehicleOk=false;
+  if(!vs.length){ missing.push('No vehicle on file'); }
+  vs.forEach(v=>{
+    if(v.active===false)return;
+    const mot=v.motExpiry,tax=v.taxExpiry,reg=v.reg||'Vehicle';
+    if(mot&&mot>=today&&tax&&tax>=today)vehicleOk=true;
+    if(mot&&mot<today)expired.push(reg+' MOT'); else if(mot&&mot<=soon)expiring.push(reg+' MOT'); else if(!mot)missing.push(reg+' MOT date');
+    if(tax&&tax<today)expired.push(reg+' road tax'); else if(tax&&tax<=soon)expiring.push(reg+' road tax'); else if(!tax)missing.push(reg+' road tax date');
+  });
+  const ok=missing.length===0&&expired.length===0&&vehicleOk;
   return {ok,missing,expired,expiring};
 }
 function complianceChip(d){
@@ -1474,11 +1491,70 @@ function showDriver(id){const d=DRIVERS.find(x=>x.id===id);if(!d)return;
     </div>
     <div class="section-label" style="margin-bottom:8px">Compliance review</div>
     ${compRows}
-    <div style="display:flex;gap:8px;margin-top:14px">
+    <div style="display:flex;gap:8px;margin:14px 0 18px">
       <button class="btn btn-gold btn-sm" onclick="saveCompliance('${d.id}')">Save Compliance</button>
+    </div>
+    <div class="section-label" style="margin-bottom:8px">Vehicles</div>
+    ${vehicleRows(d.id)}
+    <div style="background:var(--surface-b);border:1px dashed var(--border);border-radius:10px;padding:11px 12px;margin-bottom:12px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+        <input type="text" id="nv_reg" placeholder="Reg (LB12 ABC)" style="flex:1;min-width:110px;font-size:12px"/>
+        <select id="nv_type" style="flex:1;min-width:110px;font-size:12px"><option>S-Class</option><option>V-Class</option><option>EQS</option><option>Other</option></select>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <input type="date" id="nv_mot" title="MOT expiry" style="flex:1;min-width:110px;font-size:12px"/>
+        <input type="date" id="nv_tax" title="Road tax expiry" style="flex:1;min-width:110px;font-size:12px"/>
+        <button class="btn btn-glass btn-sm" onclick="addVehicle('${d.id}')">+ Add Vehicle</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px">
       <button class="btn btn-glass btn-sm" onclick="closeModal()">Close</button>
     </div>
   </div>`);}
+
+// Vehicle rows for the driver modal — admin edits MOT/road-tax + active flag.
+function vehicleRows(driverId){
+  const today=new Date().toISOString().slice(0,10);
+  const vs=driverVehicles(driverId);
+  if(!vs.length)return `<div style="font-size:12px;color:var(--fg-subtle);margin-bottom:10px">No vehicle on file — add one below (a driver needs an active, in-date vehicle to be compliant).</div>`;
+  return vs.map(v=>{
+    const motBad=!v.motExpiry||v.motExpiry<today, taxBad=!v.taxExpiry||v.taxExpiry<today;
+    return `<div style="background:var(--surface-b);border:1px solid var(--border);border-radius:10px;padding:11px 12px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <div style="flex:1"><span style="font-size:13px;font-weight:700">${v.reg||'—'}</span> <span style="font-size:12px;color:var(--fg-subtle)">${v.type||''}</span></div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="veh_active_${v.id}" ${v.active===false?'':'checked'}/> Active</label>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <label style="font-size:10px;color:${motBad?'#ef4444':'var(--fg-subtle)'}">MOT<input type="date" id="veh_mot_${v.id}" value="${v.motExpiry||''}" style="display:block;font-size:12px"/></label>
+        <label style="font-size:10px;color:${taxBad?'#ef4444':'var(--fg-subtle)'}">Road tax<input type="date" id="veh_tax_${v.id}" value="${v.taxExpiry||''}" style="display:block;font-size:12px"/></label>
+        <button class="btn btn-glass btn-sm" style="margin-left:auto" onclick="saveVehicle('${v.id}','${driverId}')">Save</button>
+        <button class="btn btn-glass btn-sm" onclick="removeVehicle('${v.id}','${driverId}')">Remove</button>
+      </div>
+    </div>`;}).join('');
+}
+async function addVehicle(driverId){
+  const reg=(document.getElementById('nv_reg')?.value||'').trim().toUpperCase();
+  const type=document.getElementById('nv_type')?.value||'S-Class';
+  const motExpiry=document.getElementById('nv_mot')?.value||'';
+  const taxExpiry=document.getElementById('nv_tax')?.value||'';
+  if(!reg){alert('Registration is required');return;}
+  if(!FIREBASE_ENABLED)return;
+  try{
+    await db.collection('vehicles').add({driverId,reg,type,motExpiry,taxExpiry,active:true,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+    setTimeout(()=>showDriver(driverId),350); // let the snapshot refresh VEHICLES
+  }catch(e){alert('Could not add vehicle: '+(e.message||e.code));}
+}
+async function saveVehicle(id,driverId){
+  if(!FIREBASE_ENABLED)return;
+  const motExpiry=document.getElementById('veh_mot_'+id)?.value||'';
+  const taxExpiry=document.getElementById('veh_tax_'+id)?.value||'';
+  const active=document.getElementById('veh_active_'+id)?.checked!==false;
+  try{ await db.collection('vehicles').doc(id).set({motExpiry,taxExpiry,active},{merge:true}); setTimeout(()=>showDriver(driverId),350);}catch(e){alert('Save failed: '+(e.message||e.code));}
+}
+async function removeVehicle(id,driverId){
+  if(!FIREBASE_ENABLED||!confirm('Remove this vehicle?'))return;
+  try{ await db.collection('vehicles').doc(id).delete(); setTimeout(()=>showDriver(driverId),350);}catch(e){alert('Remove failed: '+(e.message||e.code));}
+}
 
 function showClient(id){const c=CLIENTS.find(x=>x.id===id);if(!c)return;
   openModal(`<div>

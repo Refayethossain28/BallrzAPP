@@ -701,7 +701,12 @@ function driverComplianceState(){
     if(!a.approved){missing.push(t.label);return;}
     if(t.expiry&&(!a.expiresAt||a.expiresAt<today))expired.push(t.label);
   });
-  return {ok:missing.length===0&&expired.length===0,missing,expired};
+  const docsOk=missing.length===0&&expired.length===0;
+  // The admin-written `compliant` flag also factors vehicle MOT/road-tax (kept
+  // fresh daily). If docs look fine but the flag is false, the vehicle is the gap.
+  const storedOk=!(S._compliance&&S._compliance.compliant===false);
+  if(docsOk&&!storedOk)missing.push('vehicle MOT/road tax');
+  return {ok:docsOk&&storedOk,missing,expired};
 }
 
 function goOnline(){
