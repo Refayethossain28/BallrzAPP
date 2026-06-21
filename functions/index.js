@@ -13,6 +13,18 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
+const Anthropic = require('@anthropic-ai/sdk');
+
+// Anthropic client, memoized per warm instance (keyed by the resolved secret).
+// Powers linguaAI (Lingua app) and parseBookingIntent (ApexAI concierge).
+let _anthropic = null, _anthropicKey = null;
+function anthropicClient(apiKey) {
+  if (!_anthropic || _anthropicKey !== apiKey) {
+    _anthropic = new Anthropic({ apiKey });
+    _anthropicKey = apiKey;
+  }
+  return _anthropic;
+}
 
 // Secrets — set once with: firebase functions:secrets:set AMADEUS_CLIENT_ID
 const AMADEUS_CLIENT_ID = defineSecret('AMADEUS_CLIENT_ID');
@@ -585,17 +597,7 @@ async function linguaCallClaude(p, apiKey) {
     body.tools = tools;
     body.tool_choice = { type: 'tool', name: force };
   }
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`anthropic ${res.status}: ${await res.text()}`);
-  const data = await res.json();
+  const data = await anthropicClient(apiKey).messages.create(body);
   const blocks = data.content || [];
   if (tools) {
     const toolUse = blocks.find((b) => b.type === 'tool_use');
@@ -749,13 +751,7 @@ async function apexCallClaude({ message, history, trips, now, mode, context }, a
 }
 
 async function anthropicMessages(body, apiKey) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`anthropic ${res.status}: ${await res.text()}`);
-  return res.json();
+  return anthropicClient(apiKey).messages.create(body);
 }
 
 exports.parseBookingIntent = onCall(

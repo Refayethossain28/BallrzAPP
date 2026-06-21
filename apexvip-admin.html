@@ -1442,14 +1442,19 @@ function openDispatch(ref){
   render();
 }
 
-// Offer a booking to every online driver — first to accept claims it
+// Offer a booking to every online driver — first to accept claims it.
+// Writes open_jobs/{bookingDocId} (stable id, so it can't double-broadcast and
+// it matches the onBookingCreated dispatch function) and stamps `market` so the
+// job shows up in the driver app's open_jobs.where('market','==',…) query.
 function broadcastDispatch(){
   const booking=BOOKINGS.find(b=>b.id===S._dispatchRef||b.ref===S._dispatchRef);
   if(booking){booking.status='offered';booking.driver='📢 Broadcast…';}
   if(FIREBASE_ENABLED&&booking?.docId){
-    db.collection('open_jobs').add({
+    db.collection('open_jobs').doc(booking.docId).set({
       bookingDocId:booking.docId,bookingRef:booking.ref||booking.id,
-      clientName:booking.client||'',pickup:booking.pickup||'',
+      market:booking.location||booking.market||'london',
+      clientId:booking.clientId||'',clientName:booking.client||'',
+      pickup:booking.pickup||'',
       dropoff:booking.dropoff||'',date:booking.date||'',time:booking.time||'',
       vehicle:booking.vehicle||'S-Class',
       pay:Math.round(parseInt((booking.price||'0').replace(/[^0-9]/g,''))*0.8),
