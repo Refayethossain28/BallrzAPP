@@ -81,8 +81,8 @@
   .chip[aria-selected=true]{ color:#0b0e17; background:linear-gradient(135deg,var(--accent),var(--accent2)); border-color:transparent; font-weight:700; }
   .chip.dia[aria-selected=true]{ background:linear-gradient(135deg,var(--teal),var(--accent)); }
 
-  .tabs{ display:flex; gap:4px; background:rgba(0,0,0,.25); padding:5px; border-radius:13px; border:1px solid var(--line); }
-  .tab{ flex:1; cursor:pointer; font:inherit; font-weight:700; font-size:13px; padding:9px 6px; border-radius:9px;
+  .tabs{ display:flex; gap:4px; background:rgba(0,0,0,.25); padding:5px; border-radius:13px; border:1px solid var(--line); overflow-x:auto; }
+  .tab{ flex:1 0 auto; cursor:pointer; font:inherit; font-weight:700; font-size:13px; padding:9px 10px; border-radius:9px;
     border:0; background:transparent; color:var(--muted); white-space:nowrap; }
   .tab[aria-selected=true]{ background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#0b0e17; }
 
@@ -166,6 +166,19 @@
   .bubble.bot.rtl .row2{ flex-direction:row-reverse; }
   .correction{ align-self:flex-start; max-width:90%; font-size:12.5px; color:var(--warn);
     background:rgba(255,207,110,.08); border:1px solid rgba(255,207,110,.3); border-radius:10px; padding:7px 10px; }
+  /* learn (course path) */
+  .learn-head{ display:flex; align-items:center; gap:10px; margin:2px 0 10px; }
+  .bar{ height:8px; border-radius:999px; background:rgba(255,255,255,.08); overflow:hidden; flex:1; }
+  .bar > i{ display:block; height:100%; background:linear-gradient(90deg,var(--accent),var(--teal)); }
+  .unit{ display:flex; align-items:center; gap:12px; padding:12px; border:1px solid var(--line); border-radius:12px;
+    background:var(--panel2); margin-top:8px; cursor:pointer; color:inherit; width:100%; text-align:left; font:inherit; }
+  .unit:hover{ border-color:var(--accent); }
+  .unit .ix{ width:30px; height:30px; flex:0 0 auto; border-radius:50%; display:grid; place-items:center; font-size:13px; font-weight:700;
+    background:rgba(255,255,255,.06); color:var(--muted); border:1px solid var(--line); }
+  .unit.done .ix{ background:linear-gradient(135deg,var(--accent),var(--teal)); color:#0b0e17; border-color:transparent; }
+  .unit .ut{ font-weight:600; font-size:15px; }
+  .unit .us{ font-size:12px; color:var(--muted2); }
+  .unit .chev{ margin-left:auto; color:var(--muted2); }
   footer{ color:var(--muted2); font-size:12px; margin-top:26px; text-align:center; }
   footer a{ color:var(--muted); }
   /* live-config modal */
@@ -220,14 +233,20 @@
 
     <!-- mode tabs -->
     <div class="tabs" style="margin-top:16px" role="tablist">
+      <button class="tab" id="tabLearn" role="tab" aria-selected="false" type="button">📚 Learn</button>
       <button class="tab" id="tabTranslate" role="tab" aria-selected="true" type="button">🔁 Translate</button>
       <button class="tab" id="tabTeach" role="tab" aria-selected="false" type="button">🎓 Teach</button>
       <button class="tab" id="tabPractice" role="tab" aria-selected="false" type="button">🃏 Practice</button>
       <button class="tab" id="tabChat" role="tab" aria-selected="false" type="button">💬 Chat</button>
     </div>
 
+    <!-- LEARN pane (structured course) -->
+    <div id="paneLearn" class="hidden" style="margin-top:16px">
+      <div id="learnArea"></div>
+    </div>
+
     <!-- TRANSLATE pane -->
-    <div id="paneTranslate" style="margin-top:16px">
+    <div id="paneTranslate" class="hidden" style="margin-top:16px">
       <label class="fld" id="dirLabel">Translate from … to …</label>
       <div class="row" id="dirRow" style="margin-bottom:12px">
         <div class="grow" id="colOther"><select id="srcLang"></select></div>
@@ -315,7 +334,18 @@
 <div id="aiModal" class="modal hidden">
   <div class="box">
     <h3>Enable Live AI accuracy</h3>
-    <p>Translations and lessons are powered by Claude so your API key never touches the browser. Two ways to turn it on:</p>
+    <p>Powered by Claude. Quickest way — paste your own Anthropic key (it’s stored only in this browser and sent directly to Anthropic):</p>
+    <div class="row" style="margin-bottom:6px">
+      <div class="grow"><input id="byokInput" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false"></div>
+      <button class="btn" id="byokSave" type="button">Save</button>
+    </div>
+    <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:12px">
+      <span class="hint" id="byokStatus" style="margin:0">No key saved.</span>
+      <button class="mini" id="byokClear" type="button">Remove key</button>
+    </div>
+    <p style="color:#ffcf6e;font-size:12px;margin:0 0 14px;background:rgba(255,207,110,.08);border:1px solid rgba(255,207,110,.3);border-radius:10px;padding:9px 11px">
+      ⚠️ Your key stays on this device (localStorage) and is sent straight to Anthropic. Don’t do this on a shared/public computer — for that, use the local proxy or hosted function below.
+    </p>
     <p style="color:#cdd6f5;font-size:13px;margin:0 0 8px"><b>Local proxy</b> — run it once, then open <code>http://localhost:8788</code>:</p>
     <p style="background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:10px;padding:12px;color:#cdd6f5;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.7">
       cd lingua<br>ANTHROPIC_API_KEY=sk-ant-… node server.mjs
@@ -632,6 +662,92 @@ function callHosted(payload){
   });
 }
 
+/* =========================================================================
+   Bring-Your-Own-Key (BYOK) — link the app directly to YOUR Anthropic key.
+   The key is stored only in this browser (localStorage) and sent straight to
+   api.anthropic.com using Anthropic's official direct-browser-access header.
+   This makes the live web link work with no proxy and no deploy. It's a
+   convenience for personal use — on a shared device, prefer the local proxy or
+   the hosted function instead.
+   ========================================================================= */
+var BYOK_KEY = "lingua.anthropicKey.v1";
+function getKey(){ try{ return localStorage.getItem(BYOK_KEY) || ""; }catch(e){ return ""; } }
+function setKey(k){ try{ if(k){ localStorage.setItem(BYOK_KEY, k); } else { localStorage.removeItem(BYOK_KEY); } }catch(e){} }
+function byokReady(){ return !!getKey(); }
+
+/* Same prompts/tools as server.mjs, built client-side for the direct call. */
+var T_TRANSLATE = { name:"translation_result", description:"Return a precise translation with pronunciation and useful learner notes.",
+  input_schema:{ type:"object", properties:{
+    translation:{type:"string"}, pronunciation:{type:"string"}, literal:{type:"string"}, register:{type:"string"}, notes:{type:"string"} },
+    required:["translation"] } };
+var T_LESSON = { name:"lesson", description:"Return a short, level-appropriate, dialect-aware mini lesson.",
+  input_schema:{ type:"object", properties:{
+    title:{type:"string"}, intro:{type:"string"},
+    items:{ type:"array", items:{ type:"object", properties:{ phrase:{type:"string"}, pronunciation:{type:"string"}, meaning:{type:"string"} }, required:["phrase","meaning"] } },
+    tip:{type:"string"}, dialectNote:{type:"string"} }, required:["title","items"] } };
+var T_PRACTICE = { name:"practice_set", description:"Return vocabulary/phrase cards for flashcards and quiz.",
+  input_schema:{ type:"object", properties:{
+    items:{ type:"array", items:{ type:"object", properties:{ front:{type:"string"}, back:{type:"string"}, pronunciation:{type:"string"} }, required:["front","back"] } } },
+    required:["items"] } };
+var T_CHAT = { name:"tutor_reply", description:"Reply as a friendly native-speaker tutor and gently correct the learner.",
+  input_schema:{ type:"object", properties:{
+    reply:{type:"string"}, pronunciation:{type:"string"}, english:{type:"string"}, correction:{type:"string"} }, required:["reply"] } };
+function tLabel(p){ return p.dialect ? (p.targetName + " (" + p.dialect + " dialect)") : p.targetName; }
+function buildAnthropicBody(p){
+  var sys, messages, tools = null, force = null;
+  if(p.mode==="translate"){
+    sys = "You are an expert translator and dialectologist. Translate accurately into the EXACT requested language and dialect, using the natural phrasing a native speaker of that specific variety would use. Use the correct native script. Provide romanized pronunciation for non-Latin scripts. Be precise and never invent words.";
+    messages = [{ role:"user", content:"Translate the following from " + p.sourceName + " into " + tLabel(p) + "." + (p.dialectNote?(" Dialect context: "+p.dialectNote+"."):"") + "\n\nText:\n" + JSON.stringify(p.text||"") }];
+    tools = [T_TRANSLATE]; force = "translation_result";
+  } else if(p.mode==="teach"){
+    sys = "You are a patient, accurate language tutor. Produce a short, practical mini-lesson for the requested topic, tailored to the learner's level and to the SPECIFIC dialect requested. Use correct native script and give romanized pronunciation for non-Latin scripts.";
+    messages = [{ role:"user", content:"Teach a " + p.level + " learner the topic \"" + p.topic + "\" in " + tLabel(p) + "." + (p.dialectNote?(" Dialect context: "+p.dialectNote+"."):"") }];
+    tools = [T_LESSON]; force = "lesson";
+  } else if(p.mode==="practice"){
+    sys = "You are a language tutor building flashcards. Produce genuinely useful, correct items for the SPECIFIC dialect requested, with native script and romanized pronunciation for non-Latin scripts. Vary the items; keep them appropriate to the learner's level.";
+    messages = [{ role:"user", content:"Create a practice set of about " + (p.count||10) + " items on \"" + p.topic + "\" for a " + p.level + " learner of " + tLabel(p) + "." + (p.dialectNote?(" Dialect context: "+p.dialectNote+"."):"") }];
+    tools = [T_PRACTICE]; force = "practice_set";
+  } else if(p.mode==="chat"){
+    sys = "You are a warm, encouraging native-speaker conversation partner and tutor for a " + (p.level||"beginner") + " learner of " + tLabel(p) + "." + (p.dialectNote?(" Dialect context: "+p.dialectNote+"."):"") + " Stay in character as a friendly local. Reply in the target dialect's natural everyday speech, kept short and simple for the learner's level. Always provide romanized pronunciation and a brief English gloss. If the learner's last message has a mistake, add a short kind correction; otherwise leave it empty. Keep the conversation going with a simple question.";
+    var hist = (p.messages||[]).filter(function(m){ return m && (m.role==="user"||m.role==="assistant") && typeof m.content==="string"; }).map(function(m){ return { role:m.role, content:m.content }; });
+    if(!hist.length) hist.push({ role:"user", content:"(Start the conversation with a friendly greeting and a simple question.)" });
+    messages = hist; tools = [T_CHAT]; force = "tutor_reply";
+  } else {
+    sys = "You are an expert, accurate language teacher. Answer the learner's question about the language/dialect clearly and concisely. Give examples in native script with romanized pronunciation where helpful. If the question is about a specific dialect, answer for that variety.";
+    messages = [{ role:"user", content:"Language: " + tLabel(p) + "." + (p.dialectNote?(" Dialect context: "+p.dialectNote+"."):"") + "\n\nQuestion: " + (p.question||"") }];
+  }
+  var body = { model:"claude-opus-4-8", max_tokens:1500, system:sys, messages:messages };
+  if(tools){ body.tools = tools; body.tool_choice = { type:"tool", name:force }; }
+  return body;
+}
+function callByok(payload){
+  var key = getKey();
+  if(!key) return Promise.reject(new Error("no key"));
+  var body = buildAnthropicBody(payload);
+  return fetch("https://api.anthropic.com/v1/messages", {
+    method:"POST",
+    headers:{
+      "content-type":"application/json",
+      "x-api-key":key,
+      "anthropic-version":"2023-06-01",
+      "anthropic-dangerous-direct-browser-access":"true"
+    },
+    body: JSON.stringify(body)
+  }).then(function(res){
+    if(!res.ok) return res.text().then(function(t){ throw new Error("anthropic " + res.status + ": " + t); });
+    return res.json();
+  }).then(function(data){
+    var blocks = data.content || [];
+    if(body.tools){
+      var tu = blocks.filter(function(x){ return x.type==="tool_use"; })[0];
+      if(!tu) throw new Error("no structured result");
+      return tu.input || {};
+    }
+    var text = blocks.filter(function(x){ return x.type==="text"; }).map(function(x){ return x.text; }).join("\n").trim();
+    return { answer:text };
+  });
+}
+
 /* ---- app state ---- */
 var state = {
   lang: null,        // selected LANGS entry
@@ -698,32 +814,39 @@ function callProxy(payload){
   });
 }
 
-/* Route an AI request to whichever engine is available. Local proxy wins (it's
-   the dev path); otherwise the hosted Firebase callable. Throws if neither. */
-function aiAvailable(){ return state.engine === "local" || hostedReady(); }
+/* Route an AI request to whichever engine is available. Priority: local proxy
+   (dev) → your own key (BYOK) → hosted Firebase callable. Throws if none. */
+function aiAvailable(){ return state.engine === "local" || byokReady() || hostedReady(); }
 function callAI(payload){
   if(state.engine === "local") return callProxy(payload);
+  if(byokReady()) return callByok(payload).then(function(r){
+    if(state.engine !== "local"){ state.engine = "byok"; setLive(true, "key"); }
+    return r;
+  });
   return callHosted(payload).then(function(r){
-    // first successful cloud call confirms the hosted engine
     if(state.engine !== "local"){ state.engine = "hosted"; setLive(true, "cloud"); }
     return r;
   });
 }
 
-/* health check: prefer the local proxy; the hosted engine is confirmed lazily on
-   first successful call. Never throws to the caller. */
+/* health check: prefer the local proxy, then your own key; the hosted engine is
+   confirmed lazily on first successful call. Never throws to the caller. */
 function checkLive(){
   return fetch("/health").then(function(r){ return r.ok ? r.json() : null; })
     .then(function(d){
       if(d && d.live){ state.engine = "local"; setLive(true, "local"); return true; }
+      if(byokReady()){ state.engine = "byok"; setLive(true, "key"); return true; }
       state.engine = "offline"; setLive(false); return false;
     })
-    .catch(function(){ state.engine = "offline"; setLive(false); return false; });
+    .catch(function(){
+      if(byokReady()){ state.engine = "byok"; setLive(true, "key"); return true; }
+      state.engine = "offline"; setLive(false); return false;
+    });
 }
 function setLive(v, kind){
   state.live = v;
   var pill = $("aiPill"), txt = $("aiPillText");
-  if(v){ pill.classList.add("live"); txt.textContent = (kind === "cloud") ? "AI: cloud" : "AI: live"; }
+  if(v){ pill.classList.add("live"); txt.textContent = kind === "cloud" ? "AI: cloud" : (kind === "key" ? "AI: your key" : "AI: live"); }
   else { pill.classList.remove("live"); txt.textContent = "AI: offline"; }
 }
 
@@ -822,7 +945,7 @@ function selectLanguage(L){
   buildSrcOptions();
   updateDstLabel();
   clear($("translateOut")); clear($("teachOut")); clear($("askOut"));
-  clear($("practiceArea")); clear($("chatLog"));
+  clear($("practiceArea")); clear($("chatLog")); clear($("learnArea"));
   $("chatInput").placeholder = "Chat in " + L.name + " or English…";
   // default to translate mode
   setMode("translate");
@@ -869,8 +992,8 @@ function updateDstLabel(){
   $("srcText").placeholder = "Type or paste " + from + " text to translate…";
 }
 
-var MODE_TAB = { translate:"tabTranslate", teach:"tabTeach", practice:"tabPractice", chat:"tabChat" };
-var MODE_PANE = { translate:"paneTranslate", teach:"paneTeach", practice:"panePractice", chat:"paneChat" };
+var MODE_TAB = { learn:"tabLearn", translate:"tabTranslate", teach:"tabTeach", practice:"tabPractice", chat:"tabChat" };
+var MODE_PANE = { learn:"paneLearn", translate:"paneTranslate", teach:"paneTeach", practice:"panePractice", chat:"paneChat" };
 function setMode(m){
   state.mode = m;
   for(var k in MODE_TAB){
@@ -1242,6 +1365,81 @@ function sendChat(seed){
   });
 }
 
+/* =========================================================================
+   LEARN — a structured course path with on-device progress. Ties the lessons,
+   practice and chat together into ordered units you can work through.
+   ========================================================================= */
+var PROG_KEY = "lingua.progress.v1";
+function loadProg(){ try{ return JSON.parse(localStorage.getItem(PROG_KEY) || "{}") || {}; }catch(e){ return {}; } }
+function saveProg(p){ try{ localStorage.setItem(PROG_KEY, JSON.stringify(p)); }catch(e){} }
+function progKey(){ return state.lang ? (state.dialect ? state.lang.id + ":" + state.dialect.id : state.lang.id) : ""; }
+function isDone(topicId){ var p = loadProg()[progKey()] || {}; return !!p[topicId]; }
+function setDone(topicId, v){ var all = loadProg(), k = progKey(), p = all[k] || {}; if(v) p[topicId] = true; else delete p[topicId]; all[k] = p; saveProg(all); }
+function syncTopicChips(){
+  var wrap = $("topicChips"); if(!wrap) return; var k = wrap.children;
+  for(var i=0;i<k.length && i<TOPICS.length;i++){ k[i].setAttribute("aria-selected", TOPICS[i].id===state.topic ? "true":"false"); }
+}
+function renderLearn(){
+  var area = $("learnArea"); clear(area);
+  var done = 0;
+  for(var i=0;i<TOPICS.length;i++){ if(isDone(TOPICS[i].id)) done++; }
+  var pct = Math.round(done / TOPICS.length * 100);
+  var title = el("div"); title.style.fontWeight="700"; title.style.fontSize="17px"; title.textContent = "Learn " + variantName(); area.appendChild(title);
+  var sub = el("div","mn"); sub.style.margin="2px 0 6px"; sub.textContent = "A guided path — " + done + " of " + TOPICS.length + " units complete."; area.appendChild(sub);
+  var hr = el("div","learn-head"); var bar = el("div","bar"); var fill = el("i"); fill.style.width = pct + "%"; bar.appendChild(fill); hr.appendChild(bar);
+  var lvl = el("span","hint"); lvl.style.margin="0"; lvl.textContent = state.level + " · change in Teach"; hr.appendChild(lvl);
+  area.appendChild(hr);
+  for(var j=0;j<TOPICS.length;j++){
+    (function(t, n){
+      var d = isDone(t.id);
+      var u = el("button","unit" + (d?" done":"")); u.type = "button";
+      var ix = el("span","ix"); ix.textContent = d ? "✓" : String(n+1); u.appendChild(ix);
+      var box = el("span");
+      var ut = el("span","ut", t.label); ut.style.display="block";
+      var us = el("span","us", d ? "Completed · tap to revisit" : "Tap to start this unit"); us.style.display="block";
+      box.appendChild(ut); box.appendChild(us); u.appendChild(box);
+      u.appendChild(el("span","chev","›"));
+      on(u,"click",function(){ learnOpen(t); });
+      area.appendChild(u);
+    })(TOPICS[j], j);
+  }
+}
+function learnOpen(t){
+  state.topic = t.id; syncTopicChips();
+  var area = $("learnArea"); busy(area, "Preparing your “" + t.label + "” unit…");
+  var payload = {
+    mode:"teach", topic:t.label, level:state.level,
+    targetName:state.lang.name, targetNative:state.lang.native,
+    dialect:state.dialect?state.dialect.name:"", dialectNote:state.dialect?state.dialect.note:""
+  };
+  var render = function(r, ai){ renderLearnUnit(t, r, ai); };
+  if(aiAvailable()){
+    callAI(payload).then(function(r){ render(r, true); })
+      .catch(function(){ if(state.engine==="local"){ setLive(false); state.engine="offline"; } render(offlineLesson(), false); });
+  } else { render(offlineLesson(), false); }
+}
+function renderLearnUnit(t, r, ai){
+  var area = $("learnArea"); clear(area);
+  var back = el("button","mini"); back.type="button"; back.textContent="← Back to path"; on(back,"click",renderLearn); area.appendChild(back);
+  var holder = el("div"); holder.style.marginTop="10px"; area.appendChild(holder);
+  renderLesson(holder, r, ai);
+  var row = el("div","row wrap"); row.style.marginTop="12px";
+  var prac = el("button","btn"); prac.type="button"; prac.textContent="🃏 Practice this"; on(prac,"click",function(){ setMode("practice"); genPractice(); }); row.appendChild(prac);
+  var chat = el("button","btn sec"); chat.type="button"; chat.textContent="💬 Practice in chat"; on(chat,"click",function(){ setMode("chat"); renderChat(); }); row.appendChild(chat);
+  var dn = isDone(t.id);
+  var mc = el("button", dn ? "btn sec" : "btn"); mc.type="button"; mc.textContent = dn ? "✓ Completed (undo)" : "✓ Mark complete";
+  on(mc,"click",function(){ setDone(t.id, !isDone(t.id)); renderLearn(); });
+  row.appendChild(mc);
+  area.appendChild(row);
+}
+
+function refreshKeyStatus(){
+  var s = $("byokStatus"); if(!s) return;
+  var k = getKey();
+  if(k){ s.textContent = "Key saved on this device (…" + k.slice(-4) + "). The app is linked to your Anthropic key."; s.style.color = "var(--teal)"; }
+  else { s.textContent = "No key saved."; s.style.color = "var(--muted2)"; }
+}
+
 /* ---- SAVED TRANSLATIONS view ---- */
 function renderHist(){
   var list = $("histList"); clear(list);
@@ -1284,6 +1482,7 @@ function init(){
   on($("langSearch"),"input",function(e){ buildLangGrid(e.target.value); });
   on($("changeLang"),"click",function(){ show($("picker")); hide($("workspace")); try{window.scrollTo(0,0);}catch(_){} });
 
+  on($("tabLearn"),"click",function(){ setMode("learn"); renderLearn(); });
   on($("tabTranslate"),"click",function(){ setMode("translate"); });
   on($("tabTeach"),"click",function(){ setMode("teach"); });
   on($("tabPractice"),"click",function(){ setMode("practice"); });
@@ -1332,9 +1531,18 @@ function init(){
   on($("histClear"),"click",function(){ saveHist([]); renderHist(); });
 
   // AI pill / modal
-  on($("aiPill"),"click",function(){ show($("aiModal")); });
+  on($("aiPill"),"click",function(){ refreshKeyStatus(); show($("aiModal")); });
   on($("aiClose"),"click",function(){ hide($("aiModal")); });
   on($("aiRetry"),"click",function(){ checkLive().then(function(ok){ if(ok) hide($("aiModal")); }); });
+
+  // BYOK key controls
+  on($("byokSave"),"click",function(){
+    var v = ($("byokInput").value || "").trim();
+    if(!v){ $("byokInput").focus(); return; }
+    setKey(v); $("byokInput").value = "";
+    checkLive(); refreshKeyStatus();
+  });
+  on($("byokClear"),"click",function(){ setKey(""); checkLive(); refreshKeyStatus(); });
 
   // detect the proxy (no-op offline)
   checkLive();
