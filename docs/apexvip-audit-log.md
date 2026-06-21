@@ -13,6 +13,7 @@ ApexVIP admin (**Audit Log** screen).
 ## What's recorded
 | `action` | Logged when |
 |---|---|
+| `booking_create` | an operator creates a booking via Quick Intake |
 | `dispatch_broadcast` | a booking is broadcast to drivers |
 | `dispatch_assign` | a booking is manually assigned to a driver |
 | `compliance_update` | a driver's documents are reviewed/saved |

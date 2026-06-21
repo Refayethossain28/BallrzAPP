@@ -620,6 +620,7 @@ bookings:()=>{const f=S.bFilter;const list=f==='all'?BOOKINGS:BOOKINGS.filter(b=
         <button onclick="setDispatchMode('manual')" style="padding:7px 12px;border-radius:8px;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;background:${S.dispatchMode==='manual'?'var(--gold)':'transparent'};color:${S.dispatchMode==='manual'?'#000':'var(--fg-dim)'}">Manual dispatch</button>
         <button onclick="setDispatchMode('broadcast')" style="padding:7px 12px;border-radius:8px;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;background:${S.dispatchMode==='broadcast'?'var(--gold)':'transparent'};color:${S.dispatchMode==='broadcast'?'#000':'var(--fg-dim)'}">📢 Instant broadcast</button>
       </div>
+      <button class="btn btn-glass btn-sm" onclick="openModal(quickIntakeForm())" style="margin-right:8px">⚡ Quick Intake</button>
       <button class="btn btn-gold btn-sm" onclick="openModal(newBookingForm())">+ New Booking</button>
     </div>
   </div>
@@ -1583,6 +1584,74 @@ function showClient(id){const c=CLIENTS.find(x=>x.id===id);if(!c)return;
     </div>
   </div>`);}
 
+// Operator quick-intake — paste a phone/SMS/email booking, ApexAI parses it into
+// fields, operator reviews + creates. Reuses the parseBookingIntent Cloud Function.
+function quickIntakeForm(){
+  const fld=(id,label,type,ph)=>`<div style="flex:1;min-width:130px"><label style="font-size:10px;color:var(--fg-subtle);display:block;margin-bottom:4px;letter-spacing:.5px">${label}</label><input id="${id}" type="${type||'text'}" placeholder="${ph||''}" style="width:100%"/></div>`;
+  return`<div>
+  <div style="font-size:17px;font-weight:700;margin-bottom:6px">⚡ Quick Intake</div>
+  <div style="font-size:12px;color:var(--fg-subtle);margin-bottom:12px">Paste an inbound message (call notes, SMS, email). ApexAI fills the booking — review and create.</div>
+  <textarea id="qi-text" placeholder="e.g. Hi, need a car from 14 Park Lane Mayfair to Heathrow T5 tomorrow 9am for BA247, 2 passengers" style="width:100%;min-height:88px;background:var(--surface-b);border:1px solid var(--border);border-radius:10px;color:var(--fg);padding:11px;font:inherit;resize:vertical"></textarea>
+  <button id="qi-parse-btn" class="btn btn-gold btn-sm" style="margin:10px 0" onclick="quickIntakeParse()">Parse with ApexAI</button>
+  <div id="qi-hint" style="font-size:12px;color:var(--gold);margin-bottom:12px;min-height:16px"></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+    ${fld('qi_client','Client','text','Name')}
+    ${fld('qi_pickup','Pickup','text','Address')}
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+    ${fld('qi_dropoff','Dropoff','text','Destination')}
+    ${fld('qi_airport','Airport','text','e.g. Heathrow T5')}
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+    ${fld('qi_date','Date','date')}
+    ${fld('qi_time','Time','text','HH:MM')}
+    ${fld('qi_flight','Flight','text','BA247')}
+    <div style="flex:1;min-width:130px"><label style="font-size:10px;color:var(--fg-subtle);display:block;margin-bottom:4px;letter-spacing:.5px">VEHICLE</label><select id="qi_vehicle" style="width:100%"><option>S-Class</option><option>V-Class</option></select></div>
+  </div>
+  <div style="display:flex;gap:8px;margin-top:6px">
+    <button class="btn btn-gold" style="flex:1" onclick="quickIntakeCreate()">Create Booking</button>
+    <button class="btn btn-glass" onclick="closeModal()">Cancel</button>
+  </div>
+</div>`;}
+
+async function quickIntakeParse(){
+  const text=(document.getElementById('qi-text')?.value||'').trim();
+  if(!text){alert('Paste the booking message first');return;}
+  const btn=document.getElementById('qi-parse-btn'); if(btn){btn.textContent='Parsing…';btn.disabled=true;}
+  let d={};
+  try{ if(fns) d=(await fns.httpsCallable('parseBookingIntent')({message:text.slice(0,1000),now:new Date().toISOString()})).data||{}; }
+  catch(e){ const h=document.getElementById('qi-hint'); if(h)h.textContent='⚠️ ApexAI unavailable — fill the fields manually.'; }
+  if(btn){btn.textContent='Parse with ApexAI';btn.disabled=false;}
+  const set=(id,v)=>{const el=document.getElementById(id); if(el&&v) el.value=v;};
+  set('qi_pickup',d.pickup); set('qi_dropoff',d.dropoff); set('qi_airport',d.airport);
+  set('qi_date',d.date); set('qi_time',d.time||d.suggestedPickupTime); set('qi_flight',d.flight);
+  if(d.paPassenger&&d.paPassenger.name) set('qi_client',d.paPassenger.name);
+  if(d.vehicle){const sel=document.getElementById('qi_vehicle'); if(sel) sel.value=/v-?class|van|sprinter|mpv/i.test(d.vehicle)?'V-Class':'S-Class';}
+  const hint=document.getElementById('qi-hint'); if(hint&&!hint.textContent) hint.textContent=d.reply?('✦ '+d.reply):'✦ Parsed — review and create.';
+}
+
+async function quickIntakeCreate(){
+  if(!FIREBASE_ENABLED){closeModal();return;}
+  const v=id=>(document.getElementById(id)?.value||'').trim();
+  if(!v('qi_pickup')&&!v('qi_airport')){alert('A pickup or airport is required');return;}
+  const ref='APX-'+(Math.floor(1000+Math.random()*9000));
+  const vehicle=v('qi_vehicle')||'S-Class';
+  const airport=v('qi_airport'), flight=v('qi_flight');
+  try{
+    await db.collection('bookings').add({
+      ref, clientName:v('qi_client'), pickup:v('qi_pickup'),
+      dropoff:v('qi_dropoff'), airport, flight,
+      date:v('qi_date'), time:v('qi_time'),
+      vehicle, serviceType:(airport||flight)?'airport':'point',
+      status:'confirmed', price:vehicle==='V-Class'?225:185,
+      location:'london', source:'operator_intake',
+      createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+    logAudit('booking_create', ref, 'quick intake · '+(v('qi_pickup')||airport||''));
+  }catch(e){alert('Create failed: '+(e.message||e.code));return;}
+  closeModal(); render();
+}
+
 function newBookingForm(){return`<div>
   <div style="font-size:17px;font-weight:700;margin-bottom:20px">New Booking</div>
   ${[['Client Name','text','e.g. Sarah Mitchell'],['Pickup Address','text','14 Park Lane, Mayfair'],['Dropoff / Airport','text','Heathrow Terminal 5'],['Date','date',''],['Time','time',''],['Flight Number (optional)','text','e.g. BA0247']].map(([l,t,p])=>`<div style="margin-bottom:12px"><label style="font-size:11px;color:var(--fg-subtle);display:block;margin-bottom:5px;letter-spacing:.5px">${l.toUpperCase()}</label><input type="${t}" placeholder="${p}" style="width:100%"/></div>`).join('')}
@@ -1754,7 +1823,7 @@ function logAudit(action, target, detail){
     });
   }catch(e){ console.warn('audit',e.code); }
 }
-const AUDIT_LABEL={dispatch_broadcast:'📢 Broadcast',dispatch_assign:'🚗 Assigned',compliance_update:'🛡 Compliance',vehicle_add:'➕ Vehicle',vehicle_update:'🔧 Vehicle',vehicle_remove:'🗑 Vehicle',payout:'💸 Payout',payout_approve:'✅ Payout req',payout_reject:'❌ Payout req',pricing_update:'£ Pricing'};
+const AUDIT_LABEL={booking_create:'⚡ Booking',dispatch_broadcast:'📢 Broadcast',dispatch_assign:'🚗 Assigned',compliance_update:'🛡 Compliance',vehicle_add:'➕ Vehicle',vehicle_update:'🔧 Vehicle',vehicle_remove:'🗑 Vehicle',payout:'💸 Payout',payout_approve:'✅ Payout req',payout_reject:'❌ Payout req',pricing_update:'£ Pricing'};
 function loadAudit(){
   const el=document.getElementById('audit-list');
   if(!el) return;
