@@ -34,7 +34,7 @@ against the stub and decide:
 | `applyReferralCode` | **Working** (credits both parties, blocks self/double) | Credit amount, anti-abuse rules, collection names. |
 | `sendChauffeurMessage` | **Working** (writes `bookings/{id}/messages`) | Subcollection path + field names the chat listeners read; any push/notify side-effect. |
 | `submitTripRating` | **Working** (writes booking + driver aggregate) | Where ratings live; how the driver average is computed. |
-| `checkFlightStatus` | **Stub** — needs a flight-data provider | Which API/key the live one uses; map its response to `{delayed,delayMins,origin,…}`. |
+| `checkFlightStatus` | **Live** — AviationStack via `FLIGHT_API_KEY` | If the live one uses a different provider, confirm the response mapping matches `{delayed,delayMins,origin,…}`. |
 | `validateApplePayMerchant` | **Stub** — needs Apple merchant cert/key | Apple merchant id + certificate handling; the POST to `validationURL`. |
 
 Then follow the §7 cut-over (delete the gen-1 function, deploy the repo one,

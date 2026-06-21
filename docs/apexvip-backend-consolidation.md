@@ -28,27 +28,26 @@ each lives today:
 | `submitTripRating`         | ✅       | ✅ | **Stub working** (booking + driver-average). Reconcile where ratings live. |
 | `generateReferralCode`     | ✅       | ✅ | **Stub working** (per-user code on `users/{uid}`). Reconcile code format. |
 | `applyReferralCode`        | ✅       | ✅ | **Stub working** (credits both, blocks self/double). Reconcile amount + anti-abuse. |
-| `checkFlightStatus`        | ✅\*     | ✅ | \*Stub — needs a flight-data provider (`FLIGHT_API_KEY`). Returns neutral until wired. |
+| `checkFlightStatus`        | ✅       | ✅ | **Live** via AviationStack (`FLIGHT_API_KEY`); neutral fallback if the key is unset. |
 | `validateApplePayMerchant` | ✅\*     | ✅ | \*Stub — needs Apple merchant cert/key. Throws until provisioned. |
 | **Trigger** `onBookingWrite`   | ✅   | ?  | Booking email/SMS. Repo gen-2. |
 | **Trigger** `onBookingCreated` | ✅   | ?  | Dispatch → `open_jobs`. Repo gen-2. Overlaps with live `assignDriverToBooking`. |
 
 Repo-only extras not called by the apps: `captureSquarePayment`,
-`refundSquarePayment` (payment scaffold), and `linguaAI` + `ripple*` — those
-belong to **other apps** (Lingua, Ripple) and should move to their own codebases
-(see §6), not ship with ApexVIP.
+`refundSquarePayment` (payment scaffold). `linguaAI` + `ripple*` (Lingua, Ripple)
+have been **moved out** to their own `side-apps` codebase (§6 — done).
 
 Live-only extras (no app caller, keep if used operationally): `assignDriverToBooking`,
 `sendBookingConfirmation`, `onbookingstatuschange`, `notifyDriverAssigned`,
 `hotelCancellation`, `whatsappWebhook`.
 
-**Status:** all 9 callables now have repo source — `getHotelRates`,
-`processSquarePayment`, `parseBookingIntent` are real, and the other six landed as
-**v2 `onCall` stubs** (`CONSOLIDATION STUB` in `functions/index.js`): referral /
-chat / rating are working Firestore implementations; flight-status and Apple-Pay
-need an external provider/cert. The remaining work is to **recover the live
-source** (`functions/recovered/`), reconcile each stub against it, then cut over
-(§3 → §7). ⚠️ Do not deploy a stub over its working gen-1 twin before reconciling.
+**Status:** all 9 callables now have repo source. `getHotelRates`,
+`processSquarePayment`, `parseBookingIntent` and `checkFlightStatus` (live via
+AviationStack) are real; referral / chat / rating are working Firestore
+implementations; only `validateApplePayMerchant` remains a stub (needs the Apple
+merchant cert/key). The remaining work is to **recover the live source**
+(`functions/recovered/`), reconcile each against it, then cut over (§3 → §7).
+⚠️ Do not deploy over a working gen-1 twin before reconciling.
 
 ---
 
@@ -147,13 +146,22 @@ driver app's `open_jobs.where('market',…)` query.
 
 ---
 
-## 6. Step 4 — Split out the non-ApexVIP functions
+## 6. Step 4 — Split out the non-ApexVIP functions  ✅ done
 
 `linguaAI`, `ripplePushOnMessage`, `rippleMaintenance`, `ripplePushOnCall` serve
-the **Lingua** and **Ripple** apps. They're only in `functions/index.js` because
-of an earlier merge. Move them to their own Firebase codebase(s) /
-`firebase.json` `codebase` entries so an ApexVIP deploy never touches them and
-vice-versa. This also shrinks ApexVIP's cold-start surface.
+the **Lingua** and **Ripple** apps and were only in `functions/index.js` because
+of an earlier merge. They now live in their **own codebase**, `functions-side/`,
+registered in `firebase.json` as the `side-apps` codebase. `functions/` is the
+`apexvip` codebase. Deploy them independently:
+
+```sh
+firebase deploy --only functions:apexvip       # ApexVIP backend
+firebase deploy --only functions:side-apps      # Lingua + Ripple
+```
+
+So an ApexVIP deploy never touches Lingua/Ripple and vice-versa, and each has a
+smaller cold-start surface. (`@anthropic-ai/sdk` + the `anthropicClient` helper are
+duplicated into `functions-side/` for `linguaAI`.)
 
 ---
 
