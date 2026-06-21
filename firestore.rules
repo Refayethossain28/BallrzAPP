@@ -134,6 +134,14 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Audit log — append-only record of staff actions (dispatch, compliance,
+    // vehicles, payouts…). Staff create; admins read; nobody edits or deletes.
+    match /audit_log/{id} {
+      allow read:   if isAdmin();
+      allow create: if isAdmin() || isDriver();
+      allow update, delete: if false;
+    }
+
     // Analytics — write-only telemetry (no client reads); admins read.
     match /analytics/{id} {
       allow create: if signedIn();
