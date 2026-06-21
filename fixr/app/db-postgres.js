@@ -91,6 +91,11 @@ export async function assignResource(id, resourceId) {
   await appendAudit(id, `assigned to ${r.name} · driver app notified`);
   return getRequest(id);
 }
+export async function setQuote(id, amount) {
+  await q(`UPDATE requests SET quote_amount=$1 WHERE id=$2`, [amount, id]);
+  await appendAudit(id, `service fee set to $${amount}`);
+  return getRequest(id);
+}
 export async function recordPayment(p) {
   const id = "PAY" + randomUUID().slice(0, 8);
   await q(`INSERT INTO payments

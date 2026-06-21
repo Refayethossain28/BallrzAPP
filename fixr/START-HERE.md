@@ -17,7 +17,7 @@ npm start            # → http://localhost:3000   (operator console)
 Three surfaces, one server + API:
 - **Dispatch console (operator):** http://localhost:3000
 - **Driver app:** http://localhost:3000/driver/?d=d1  (try d1 / d2 / d3)
-- **Client app (passenger):** http://localhost:3000/client/  (book a car, track it)
+- **Client app (passenger):** http://localhost:3000/client/  (book a ride OR a concierge request, track it)
 
 It runs fully with **no API keys** (heuristic intake, mock payments, mock flight
 status, SQLite). Add keys to go live — see `app/.env.example`.

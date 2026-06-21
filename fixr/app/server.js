@@ -135,6 +135,34 @@ app.post("/api/client/request", wrap(async (req, res) => {
   res.status(201).json({ request, quote });
 }));
 
+// A passenger requests a concierge service (dining, tickets, jet, anything) —
+// same `request` primitive, type 'concierge'. Priced by the operator as a fee.
+app.post("/api/client/concierge", wrap(async (req, res) => {
+  const b = req.body || {};
+  if (!b.request) return res.status(400).json({ error: "describe your request" });
+  const parsed = {
+    type: "concierge", client: b.client_name || "Guest",
+    datetime: b.when || "—", pickup: "", dropoff: "", flight: "",
+    pax: Number(b.pax) || 1, vehicle: "Any", hours: 0,
+    venue: b.venue || "", notes: b.request,
+    raw: `Concierge: ${b.request}${b.when ? " · " + b.when : ""}`,
+  };
+  const request = await store.createRequest({
+    type: "concierge", client_name: parsed.client, source: "client",
+    raw: parsed.raw, parsed, quote_amount: null, sla_minutes: null,
+  });
+  res.status(201).json({ request });
+}));
+
+// Operator sets the service fee on a request (used for concierge / custom quotes).
+app.post("/api/requests/:id/fee", wrap(async (req, res) => {
+  const amount = Math.round(Number(req.body.amount));
+  if (!(amount > 0)) return res.status(400).json({ error: "amount must be a positive number" });
+  const r = await store.getRequest(req.params.id);
+  if (!r) return res.status(404).json({ error: "not found" });
+  res.json(await store.setQuote(req.params.id, amount));
+}));
+
 // Passenger-facing status view (no internal fields/audit).
 app.get("/api/client/request/:id", wrap(async (req, res) => {
   const r = await store.getRequest(req.params.id);
@@ -144,6 +172,7 @@ app.get("/api/client/request/:id", wrap(async (req, res) => {
   res.json({
     id: r.id, status: r.status, type: r.type, quote: r.quote_amount,
     pickup: p.pickup, dropoff: p.dropoff, when: p.datetime, vehicle: p.vehicle, flight: p.flight,
+    request: p.notes || "", venue: p.venue || "",
     driver: driver ? { name: driver.name, vehicle: driver.vehicle, sharing_location: driver.last_lat != null } : null,
   });
 }));

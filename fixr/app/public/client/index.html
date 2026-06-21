@@ -17,8 +17,11 @@
   h1{font-size:17px;margin:0;letter-spacing:.5px} header small{display:block;color:var(--muted);font-size:11px}
   main{padding:16px}
   label{display:block;font-size:12px;color:var(--muted);margin:12px 0 4px;text-transform:uppercase;letter-spacing:.4px}
-  input,select{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:13px;font:inherit}
-  input:focus,select:focus{outline:none;border-color:var(--gold)}
+  input,select,textarea{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:13px;font:inherit;resize:vertical}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold)}
+  .tabs{display:flex;gap:8px;margin-bottom:8px}
+  .tab{flex:1;width:auto;margin:0;padding:11px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);border-radius:10px;font-weight:600}
+  .tab.on{background:var(--panel);border-color:var(--gold);color:var(--gold2)}
   .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   button{font:inherit;font-weight:700;border:none;border-radius:12px;padding:15px;width:100%;cursor:pointer;margin-top:18px}
   .btn{background:linear-gradient(135deg,var(--gold2),var(--gold));color:#0b0d12}
@@ -46,6 +49,21 @@
 <header><div class="logo">F</div><div><h1>FIXR</h1><small>Private car, on call</small></div></header>
 <main>
   <div id="book">
+    <div class="tabs">
+      <button class="tab on" id="tab-ride">Book a ride</button>
+      <button class="tab" id="tab-conc">Concierge</button>
+    </div>
+
+    <div id="conc-form" style="display:none">
+      <label>What can we arrange?</label>
+      <textarea id="c-request" rows="3" placeholder="Dinner for 4 at Carbone Friday 8pm, quiet booth — or tickets, a jet, a yacht day…"></textarea>
+      <label>When</label><input id="c-when" placeholder="Fri 8:00 PM" />
+      <label>Your name</label><input id="c-name" placeholder="Mr. Alvarez" />
+      <button class="btn" id="conc-btn">Send request</button>
+      <div style="color:var(--muted);font-size:12px;margin-top:8px">Your concierge will confirm details and a fee.</div>
+    </div>
+
+    <div id="ride-form">
     <label>Pickup</label><input id="pickup" placeholder="The Peninsula, 700 5th Ave" />
     <label>Drop-off</label><input id="dropoff" placeholder="JFK Airport — Terminal 4" />
     <div class="two">
@@ -63,20 +81,22 @@
     <button class="btn" id="quote-btn">Get quote</button>
     <div class="quote" id="quote"></div>
     <button class="btn" id="book-btn" style="display:none">Confirm booking</button>
+    </div><!-- /ride-form -->
+
     <div class="err" id="err"></div>
     <div class="trips" id="trips"></div>
   </div>
 
   <div class="track" id="track">
     <div class="card">
-      <div class="status">Your ride</div>
+      <div class="status" id="t-kind">Your ride</div>
       <div class="statusbig" id="t-status">—</div>
       <div class="steps" id="t-steps"></div>
-      <div class="line2"><span>From</span><b id="t-from"></b></div>
-      <div class="line2"><span>To</span><b id="t-to"></b></div>
+      <div class="line2" id="row-from"><span id="lbl-from">From</span><b id="t-from"></b></div>
+      <div class="line2" id="row-to"><span>To</span><b id="t-to"></b></div>
       <div class="line2"><span>When</span><b id="t-when"></b></div>
-      <div class="line2"><span>Vehicle</span><b id="t-vehicle"></b></div>
-      <div class="line2"><span>Fare</span><b class="pay" id="t-fare"></b></div>
+      <div class="line2" id="row-vehicle"><span>Vehicle</span><b id="t-vehicle"></b></div>
+      <div class="line2"><span id="lbl-fare">Fare</span><b class="pay" id="t-fare"></b></div>
       <div class="driver" id="t-driver" style="display:none"></div>
     </div>
     <button class="btn-ghost" id="back-btn">← Book another</button>

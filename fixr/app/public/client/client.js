@@ -43,6 +43,31 @@ $("book-btn").onclick = async () => {
   } catch (e) { $("err").textContent = e.message; }
 };
 
+// Mode tabs: ride vs concierge.
+$("tab-ride").onclick = () => setMode("ride");
+$("tab-conc").onclick = () => setMode("conc");
+function setMode(m) {
+  $("err").textContent = "";
+  $("tab-ride").classList.toggle("on", m === "ride");
+  $("tab-conc").classList.toggle("on", m === "conc");
+  $("ride-form").style.display = m === "ride" ? "block" : "none";
+  $("conc-form").style.display = m === "conc" ? "block" : "none";
+}
+
+$("conc-btn").onclick = async () => {
+  $("err").textContent = "";
+  const request = $("c-request").value.trim();
+  if (!request) return ($("err").textContent = "Tell us what you'd like arranged.");
+  try {
+    const { request: r } = await api("/api/client/concierge", {
+      method: "POST",
+      body: JSON.stringify({ request, when: $("c-when").value.trim(), client_name: $("c-name").value.trim() }),
+    });
+    saveTrip(r.id);
+    openTracking(r.id);
+  } catch (e) { $("err").textContent = e.message; }
+};
+
 $("back-btn").onclick = () => { clearInterval(pollTimer); show("book"); renderTrips(); };
 
 async function openTracking(id) {
@@ -55,12 +80,19 @@ async function openTracking(id) {
 async function refreshTrack(id) {
   try {
     const t = await api(`/api/client/request/${id}`);
+    const concierge = t.type === "concierge";
     $("t-status").textContent = LABEL[t.status] || t.status;
     const idx = STEPS.indexOf(t.status);
     $("t-steps").innerHTML = STEPS.map((_, i) => `<div class="step ${i <= idx ? "on" : ""}"></div>`).join("");
-    $("t-from").textContent = t.pickup; $("t-to").textContent = t.dropoff;
+    $("t-kind").textContent = concierge ? "Your request" : "Your ride";
+    $("row-to").style.display = concierge ? "none" : "flex";
+    $("row-vehicle").style.display = concierge ? "none" : "flex";
+    $("lbl-from").textContent = concierge ? "Request" : "From";
+    $("t-from").textContent = concierge ? (t.request || t.venue) : t.pickup;
+    $("t-to").textContent = t.dropoff;
     $("t-when").textContent = t.when; $("t-vehicle").textContent = t.vehicle;
-    $("t-fare").textContent = t.quote ? "$" + t.quote : "—";
+    $("lbl-fare").textContent = concierge ? "Service fee" : "Fare";
+    $("t-fare").textContent = t.quote ? "$" + t.quote : (concierge ? "pending" : "—");
     const d = $("t-driver");
     if (t.driver) {
       d.style.display = "flex";
@@ -85,8 +117,10 @@ async function renderTrips() {
   const ids = JSON.parse(localStorage.getItem("fixr_trips") || "[]");
   if (!ids.length) { $("trips").innerHTML = ""; return; }
   const rows = await Promise.all(ids.map((id) => api(`/api/client/request/${id}`).catch(() => null)));
-  $("trips").innerHTML = `<h3>Your trips</h3>` + rows.filter(Boolean).map((t) =>
-    `<div class="trip" data-id="${t.id}"><span>${t.pickup} → ${t.dropoff}</span><span>${LABEL[t.status] || t.status}</span></div>`).join("");
+  $("trips").innerHTML = `<h3>Your trips</h3>` + rows.filter(Boolean).map((t) => {
+    const label = t.type === "concierge" ? (t.request || t.venue || "Concierge") : `${t.pickup} → ${t.dropoff}`;
+    return `<div class="trip" data-id="${t.id}"><span>${label}</span><span>${LABEL[t.status] || t.status}</span></div>`;
+  }).join("");
   $("trips").querySelectorAll("[data-id]").forEach((el) => (el.onclick = () => openTracking(el.dataset.id)));
 }
 

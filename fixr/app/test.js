@@ -68,6 +68,17 @@ try {
   const track = await call(`/api/client/request/${booking.request.id}`);
   ok(track.status === "quoted" && track.dropoff === "LaGuardia", `client can track status (${track.status})`);
 
+  // Concierge: a passenger requests a non-transport service; operator sets a fee.
+  const conc = await call(`/api/client/concierge`, {
+    method: "POST",
+    body: JSON.stringify({ client_name: "Mr. Alvarez", request: "Table for 4 at Carbone Friday 8pm, quiet booth", when: "Fri 8pm" }),
+  });
+  ok(conc.request?.type === "concierge" && conc.request.quote_amount == null, `concierge request created (no auto-quote)`);
+  const priced = await call(`/api/requests/${conc.request.id}/fee`, { method: "POST", body: JSON.stringify({ amount: 250 }) });
+  ok(priced.quote_amount === 250, `operator set concierge service fee ($${priced.quote_amount})`);
+  const ctrack = await call(`/api/client/request/${conc.request.id}`);
+  ok(ctrack.type === "concierge" && ctrack.request.includes("Carbone"), `passenger tracks concierge request`);
+
   const flight = await call(`/api/flight/${parsed.flight}`);
   ok(flight.flight === "DL472" && flight.status, `flight status: ${flight.status} (${flight.source})`);
 
