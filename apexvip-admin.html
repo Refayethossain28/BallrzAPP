@@ -287,6 +287,7 @@ const NAVITEMS=[
   {id:'corporate',icon:'🏢',label:'Corporate'},
   {id:'map',icon:'<svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>',label:'Live Map'},
   {id:'payouts',icon:'💸',label:'Payouts'},
+  {id:'audit',icon:'🛡',label:'Audit Log'},
   {id:'waitlist',icon:'✦',label:'Waitlist'},
   {id:'city-interest',icon:'🌍',label:'City Interest'},
 ];
@@ -1164,6 +1165,12 @@ map: () => `<div class="screen" style="padding:0;height:calc(100vh - 60px);posit
   </div>
 </div>`,
 
+audit: () => `<div class="screen">
+  <div class="section-header"><div class="section-title">Audit Log</div></div>
+  <div style="font-size:12px;color:var(--fg-subtle);margin:-6px 0 14px">Append-only record of staff actions — dispatch, compliance, vehicles and payouts. Cannot be edited or deleted.</div>
+  <div id="audit-list"><div style="text-align:center;padding:40px;color:var(--fg-4);font-size:13px">Loading…</div></div>
+</div>`,
+
 payouts: () => `<div class="screen">
   <div class="section-header"><div class="section-title">Driver Earnings</div></div>
   <div style="font-size:12px;color:var(--fg-subtle);margin:-6px 0 14px">80% of each completed trip, owed per driver. "Pay out" settles the full balance via Stripe Connect.</div>
@@ -1458,7 +1465,8 @@ async function saveCompliance(id){
     if(!approved&&note)entry.note=note;
     docs[t.key]=entry;
   });
-  const compliant=computeCompliance({compliance:{docs}}).ok;
+  // Compute with the driver's id so vehicle MOT/road-tax is factored in too.
+  const compliant=computeCompliance({id,compliance:{docs}}).ok;
   if(!FIREBASE_ENABLED){closeModal();return;}
   try{
     await db.collection('drivers').doc(id).set({compliance:{
@@ -1466,6 +1474,7 @@ async function saveCompliance(id){
       reviewedBy:(auth.currentUser&&auth.currentUser.uid)||'admin',
       reviewedAt:firebase.firestore.FieldValue.serverTimestamp()
     }},{merge:true});
+    logAudit('compliance_update', d.name||id, compliant?'marked compliant':'not compliant');
     closeModal();
   }catch(e){alert('Could not save compliance: '+(e.message||e.code));}
 }
@@ -1546,6 +1555,7 @@ async function addVehicle(driverId){
   if(!FIREBASE_ENABLED)return;
   try{
     await db.collection('vehicles').add({driverId,reg,type,motExpiry,taxExpiry,active:true,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+    logAudit('vehicle_add', reg, type);
     setTimeout(()=>showDriver(driverId),350); // let the snapshot refresh VEHICLES
   }catch(e){alert('Could not add vehicle: '+(e.message||e.code));}
 }
@@ -1554,11 +1564,11 @@ async function saveVehicle(id,driverId){
   const motExpiry=document.getElementById('veh_mot_'+id)?.value||'';
   const taxExpiry=document.getElementById('veh_tax_'+id)?.value||'';
   const active=document.getElementById('veh_active_'+id)?.checked!==false;
-  try{ await db.collection('vehicles').doc(id).set({motExpiry,taxExpiry,active},{merge:true}); setTimeout(()=>showDriver(driverId),350);}catch(e){alert('Save failed: '+(e.message||e.code));}
+  try{ await db.collection('vehicles').doc(id).set({motExpiry,taxExpiry,active},{merge:true}); logAudit('vehicle_update', id, 'MOT '+(motExpiry||'—')+' · tax '+(taxExpiry||'—')); setTimeout(()=>showDriver(driverId),350);}catch(e){alert('Save failed: '+(e.message||e.code));}
 }
 async function removeVehicle(id,driverId){
   if(!FIREBASE_ENABLED||!confirm('Remove this vehicle?'))return;
-  try{ await db.collection('vehicles').doc(id).delete(); setTimeout(()=>showDriver(driverId),350);}catch(e){alert('Remove failed: '+(e.message||e.code));}
+  try{ await db.collection('vehicles').doc(id).delete(); logAudit('vehicle_remove', id, ''); setTimeout(()=>showDriver(driverId),350);}catch(e){alert('Remove failed: '+(e.message||e.code));}
 }
 
 function showClient(id){const c=CLIENTS.find(x=>x.id===id);if(!c)return;
@@ -1623,6 +1633,7 @@ function broadcastDispatch(){
       createdAt:firebase.firestore.FieldValue.serverTimestamp()
     }).catch(()=>{});
     db.collection('bookings').doc(booking.docId).update({status:'offered'}).catch(()=>{});
+    logAudit('dispatch_broadcast', booking.ref||booking.id, (booking.pickup||'')+' · driver pay £'+Math.round(parseInt((booking.price||'0').replace(/[^0-9]/g,''))*0.8));
   }
   S._dispatchOpen=false;
   render();
@@ -1662,6 +1673,7 @@ function confirmDispatch(driverIdOrName){
       status:'accepted',
       assignedAt:firebase.firestore.FieldValue.serverTimestamp()
     }).catch(()=>{});
+    logAudit('dispatch_assign', booking.ref||booking.id, 'to '+driver.name);
     if(driver.uid){
       db.collection('jobs').add({
         driverId:driver.uid,bookingRef:booking.ref||booking.id,
@@ -1730,6 +1742,38 @@ function initAdminMap() {
   }
 }
 
+// Append-only audit trail of staff actions.
+function logAudit(action, target, detail){
+  if(!FIREBASE_ENABLED) return;
+  try{
+    db.collection('audit_log').add({
+      ts: firebase.firestore.FieldValue.serverTimestamp(),
+      actorUid: (auth.currentUser&&auth.currentUser.uid)||'admin',
+      actorName: (auth.currentUser&&(auth.currentUser.displayName||auth.currentUser.email))||'Admin',
+      action, target: String(target||''), detail: String(detail||'')
+    });
+  }catch(e){ console.warn('audit',e.code); }
+}
+const AUDIT_LABEL={dispatch_broadcast:'📢 Broadcast',dispatch_assign:'🚗 Assigned',compliance_update:'🛡 Compliance',vehicle_add:'➕ Vehicle',vehicle_update:'🔧 Vehicle',vehicle_remove:'🗑 Vehicle',payout:'💸 Payout',payout_approve:'✅ Payout req',payout_reject:'❌ Payout req',pricing_update:'£ Pricing'};
+function loadAudit(){
+  const el=document.getElementById('audit-list');
+  if(!el) return;
+  if(!FIREBASE_ENABLED){ el.innerHTML='<div style="text-align:center;padding:40px;color:var(--fg-4);font-size:13px">No audit entries (demo mode)</div>'; return; }
+  db.collection('audit_log').orderBy('ts','desc').limit(100).get().then(snap=>{
+    if(snap.empty){ el.innerHTML='<div style="text-align:center;padding:40px;color:var(--fg-4);font-size:13px">No actions recorded yet</div>'; return; }
+    el.innerHTML=snap.docs.map(d=>{
+      const r=d.data(); const when=r.ts&&r.ts.toDate?r.ts.toDate().toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'—';
+      return `<div class="card" style="padding:12px 16px;margin-bottom:8px;display:flex;align-items:center;gap:14px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:700">${AUDIT_LABEL[r.action]||r.action} ${r.target?`· <span style="color:var(--gold)">${r.target}</span>`:''}</div>
+          <div style="font-size:12px;color:var(--fg-3)">${r.detail||''}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0"><div style="font-size:12px;color:var(--fg-dim)">${r.actorName||'—'}</div><div style="font-size:11px;color:var(--fg-4)">${when}</div></div>
+      </div>`;
+    }).join('');
+  }).catch(()=>{ el.innerHTML='<div style="color:#ef4444;padding:20px">Could not load audit log</div>'; });
+}
+
 // Driver earnings owed (driver_payouts ledger) — grouped per driver, settled via
 // the payoutDriver Cloud Function (Stripe Connect transfer).
 function loadDriverBalances() {
@@ -1757,6 +1801,7 @@ async function payoutDriverNow(driverId) {
   if (!confirm('Pay out this driver\'s full owed balance now?')) return;
   try {
     const r = await fns.httpsCallable('payoutDriver')({ driverId });
+    logAudit('payout', driverId, `${r.data.currency||'GBP'} ${r.data.paid||0} · ${r.data.count||0} trip(s)${r.data.mock?' (mock)':''}`);
     alert(`Paid ${r.data.currency||'GBP'} ${r.data.paid||0} across ${r.data.count||0} trip(s)${r.data.mock?' (mock — no Stripe key set)':''}.`);
     loadDriverBalances();
   } catch (e) { alert('Payout failed: ' + (e.message || e.code)); }
@@ -1791,10 +1836,10 @@ function loadPayouts() {
 }
 
 function approvePayoutReq(id) {
-  db.collection('payout_requests').doc(id).update({status:'approved',approvedAt:firebase.firestore.FieldValue.serverTimestamp()}).then(loadPayouts).catch(()=>{});
+  db.collection('payout_requests').doc(id).update({status:'approved',approvedAt:firebase.firestore.FieldValue.serverTimestamp()}).then(()=>{logAudit('payout_approve',id,'');loadPayouts();}).catch(()=>{});
 }
 function rejectPayoutReq(id) {
-  db.collection('payout_requests').doc(id).update({status:'rejected',rejectedAt:firebase.firestore.FieldValue.serverTimestamp()}).then(loadPayouts).catch(()=>{});
+  db.collection('payout_requests').doc(id).update({status:'rejected',rejectedAt:firebase.firestore.FieldValue.serverTimestamp()}).then(()=>{logAudit('payout_reject',id,'');loadPayouts();}).catch(()=>{});
 }
 
 async function loadPricingAdmin(){
@@ -1816,6 +1861,7 @@ async function savePricingAdmin(){
   try{
     await db.collection('settings').doc('pricing').set(data,{merge:true});
     S._pricing={...S._pricing,...data};
+    logAudit('pricing_update','settings/pricing','tariff updated');
     if(btn){btn.textContent='✓ Saved';setTimeout(()=>{btn.textContent='Save Changes';btn.disabled=false;},2000);}
   }catch(e){
     alert('Save failed: '+(e.message||e.code));
@@ -1874,6 +1920,7 @@ function renderNow(){
   document.getElementById('main').innerHTML=fn();
   if(S.screen==='map') setTimeout(initAdminMap, 50);
   if(S.screen==='payouts') setTimeout(loadPayouts, 50);
+  if(S.screen==='audit') setTimeout(loadAudit, 50);
 }
 
 renderNow();

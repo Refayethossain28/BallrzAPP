@@ -1026,6 +1026,13 @@ exports.payoutDriver = onCall(
     const batch = db.batch();
     owed.docs.forEach((x) => batch.set(x.ref, { status: 'paid', paidAt: admin.firestore.FieldValue.serverTimestamp(), transferId }, { merge: true }));
     await batch.commit();
+    // Append-only audit entry (server-side, can't be tampered with client-side).
+    await db.collection('audit_log').add({
+      ts: admin.firestore.FieldValue.serverTimestamp(),
+      actorUid: request.auth.uid, actorName: 'Admin (server)',
+      action: 'payout', target: driverId,
+      detail: `${currency.toUpperCase()} ${total} · ${owed.size} trip(s)${stripe ? ' · ' + transferId : ' · mock'}`,
+    }).catch(() => {});
     return { paid: total, count: owed.size, currency: currency.toUpperCase(), transferId, mock: !stripe };
   }
 );
