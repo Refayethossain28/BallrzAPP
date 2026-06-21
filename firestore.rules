@@ -74,16 +74,23 @@ service cloud.firestore {
 
     // Drivers — anyone signed in may read live status (for trip tracking).
     // A driver writes only their own record (status, profile, document uploads),
-    // but may NOT write the `compliance` verdict — only an admin approves
-    // documents / sets the compliant flag. This is the self-approval guard.
+    // but may NOT write the `compliance` verdict or the `payout` account state —
+    // only admins / Cloud Functions set those. This is the self-approval guard.
     match /drivers/{driverId} {
       allow read:   if signedIn();
       allow create: if isAdmin()
-        || (isUser(driverId) && !('compliance' in request.resource.data));
+        || (isUser(driverId) && !request.resource.data.keys().hasAny(['compliance', 'payout']));
       allow update: if isAdmin()
         || (isUser(driverId)
-            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['compliance']));
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['compliance', 'payout']));
       allow delete: if isAdmin();
+    }
+
+    // Driver payout ledger — earnings owed per completed trip. Written by Cloud
+    // Functions (Admin SDK) + admins; a driver may read their own entries.
+    match /driver_payouts/{id} {
+      allow read:  if isAdmin() || (isDriver() && resource.data.driverId == request.auth.uid);
+      allow write: if isAdmin();
     }
 
     // Vehicles — one doc per vehicle, owned by a driver. Verified MOT / road-tax /

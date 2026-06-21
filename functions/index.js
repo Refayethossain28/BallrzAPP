@@ -36,6 +36,23 @@ const SQUARE_ACCESS_TOKEN = defineSecret('SQUARE_ACCESS_TOKEN');
 // Lingua (language app) — set with: firebase functions:secrets:set ANTHROPIC_API_KEY
 const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
 
+// Stripe Connect — driver payouts. Set with: firebase functions:secrets:set STRIPE_SECRET_KEY
+const STRIPE_SECRET_KEY = defineSecret('STRIPE_SECRET_KEY');
+// Where Stripe returns the driver after onboarding (their app).
+const PAYOUT_RETURN_URL = process.env.PAYOUT_RETURN_URL || 'https://refayethossain28.github.io/BallrzAPP/apexvip-driver.html';
+// Lazy Stripe client (null when no key → callers fall back to a mock flow).
+let _stripe = null, _stripeKey = null;
+function stripeClient() {
+  const k = STRIPE_SECRET_KEY.value();
+  if (!k) return null;
+  if (!_stripe || _stripeKey !== k) { _stripe = require('stripe')(k); _stripeKey = k; }
+  return _stripe;
+}
+async function isAdminUid(uid) {
+  try { const u = await require('firebase-admin').firestore().doc(`users/${uid}`).get(); return u.exists && (u.data() || {}).role === 'admin'; }
+  catch (_) { return false; }
+}
+
 // Test by default (free, limited inventory). For production set AMADEUS_HOST to
 // https://api.amadeus.com via a functions/.env file or --set-env-vars.
 const AMADEUS_HOST = process.env.AMADEUS_HOST || 'https://test.api.amadeus.com';
@@ -411,6 +428,22 @@ exports.onBookingWrite = onDocumentWritten(
     const after  = event.data && event.data.after  && event.data.after.exists  ? event.data.after.data()  : null;
     const kind = bookingEvent(before, after);
     if (!kind) return;
+    // On completion, record the driver's 80% earning to the payout ledger
+    // (idempotent — one entry per booking). Settled later via payoutDriver.
+    if (kind === 'completed' && after && after.driverId) {
+      try {
+        const amount = Math.round((Number(after.baseFare) || Number(after.price) || 0) * 0.8);
+        if (amount > 0) {
+          await admin.firestore().collection('driver_payouts').doc(event.params.bookingId).set({
+            driverId: after.driverId,
+            bookingRef: after.ref || event.params.bookingId,
+            amount, currency: after.currency || 'GBP',
+            status: 'owed',
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          }, { merge: true });
+        }
+      } catch (err) { logger.error('payout ledger', err.message); }
+    }
     const msg = bookingMessage(kind, after);
     if (!msg) return;
     const [subject, text] = msg;
@@ -890,5 +923,109 @@ exports.remindExpiringDocs = onSchedule(
       }
     }
     logger.info('remindExpiringDocs', { drivers: drivers.size, emailed, recomputed });
+  }
+);
+
+/* ===========================================================================
+ * Driver payouts — Stripe Connect Express (ported from fixr/app/connect.js)
+ *
+ * ApexVIP collects fares via Square; this is the *payout* rail to drivers. A
+ * driver self-onboards a Stripe Express connected account (KYC + bank details);
+ * completed trips accrue 80% to a per-driver ledger (driver_payouts, written by
+ * onBookingWrite); an admin settles a driver's balance with payoutDriver.
+ *
+ * Funding note: a Stripe transfer draws the platform's Stripe balance. Because
+ * fares are taken in Square, fund the Stripe balance (top-up / payout schedule)
+ * or move charges to Stripe before relying on automatic transfers. With no
+ * STRIPE_SECRET_KEY set, all three run in a mock mode so the flow is testable.
+ * See docs/apexvip-driver-payouts.md.
+ * =========================================================================== */
+
+// Driver starts (or resumes) payout onboarding — returns a hosted Stripe link.
+exports.createDriverPayoutAccount = onCall(
+  { secrets: [STRIPE_SECRET_KEY], region: 'us-central1' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+    const uid = request.auth.uid;
+    const dref = admin.firestore().doc(`drivers/${uid}`);
+    const d = (await dref.get()).data() || {};
+    const stripe = stripeClient();
+    if (!stripe) {
+      const accountId = (d.payout && d.payout.accountId) || ('acct_mock_' + uid.slice(0, 10));
+      await dref.set({ payout: { provider: 'stripe', accountId, status: 'active', payoutsEnabled: true, mock: true } }, { merge: true });
+      return { url: `${PAYOUT_RETURN_URL}?payout=mock`, accountId, mock: true };
+    }
+    let accountId = d.payout && d.payout.accountId;
+    if (!accountId) {
+      const acct = await stripe.accounts.create({
+        type: 'express', business_type: 'individual',
+        capabilities: { transfers: { requested: true } },
+        metadata: { driverId: uid, name: d.name || '' },
+      });
+      accountId = acct.id;
+      await dref.set({ payout: { provider: 'stripe', accountId, status: 'onboarding' } }, { merge: true });
+    }
+    const link = await stripe.accountLinks.create({
+      account: accountId,
+      refresh_url: `${PAYOUT_RETURN_URL}?payout=refresh`,
+      return_url: `${PAYOUT_RETURN_URL}?payout=done`,
+      type: 'account_onboarding',
+    });
+    return { url: link.url, accountId };
+  }
+);
+
+// Driver / app polls onboarding status; mirrors it onto drivers/{uid}.payout.
+exports.getDriverPayoutStatus = onCall(
+  { secrets: [STRIPE_SECRET_KEY], region: 'us-central1' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+    const uid = request.auth.uid;
+    const dref = admin.firestore().doc(`drivers/${uid}`);
+    const d = (await dref.get()).data() || {};
+    const accountId = d.payout && d.payout.accountId;
+    if (!accountId) return { onboarded: false, payoutsEnabled: false };
+    const stripe = stripeClient();
+    if (!stripe) return { onboarded: true, payoutsEnabled: true, mock: true };
+    const acct = await stripe.accounts.retrieve(accountId);
+    const payoutsEnabled = !!(acct.details_submitted && acct.payouts_enabled);
+    const status = payoutsEnabled ? 'active' : (acct.details_submitted ? 'restricted' : 'onboarding');
+    await dref.set({ payout: { status, detailsSubmitted: !!acct.details_submitted, payoutsEnabled } }, { merge: true });
+    return { onboarded: !!acct.details_submitted, payoutsEnabled };
+  }
+);
+
+// Admin settles a driver's owed balance: one Stripe transfer + mark entries paid.
+exports.payoutDriver = onCall(
+  { secrets: [STRIPE_SECRET_KEY], region: 'us-central1' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+    if (!(await isAdminUid(request.auth.uid))) throw new HttpsError('permission-denied', 'Admin only');
+    const driverId = String((request.data || {}).driverId || '');
+    if (!driverId) throw new HttpsError('invalid-argument', 'driverId is required');
+    const db = admin.firestore();
+    const owed = await db.collection('driver_payouts').where('driverId', '==', driverId).where('status', '==', 'owed').get();
+    if (owed.empty) return { paid: 0, count: 0 };
+    const currency = (owed.docs[0].data().currency || 'GBP').toLowerCase();
+    const total = owed.docs.reduce((s, x) => s + (Number(x.data().amount) || 0), 0);
+    const d = (await db.doc(`drivers/${driverId}`).get()).data() || {};
+    const accountId = d.payout && d.payout.accountId;
+    const stripe = stripeClient();
+    let transferId = null;
+    if (stripe) {
+      if (!accountId || !(d.payout && d.payout.payoutsEnabled)) {
+        throw new HttpsError('failed-precondition', 'Driver has not completed payout onboarding');
+      }
+      try {
+        const tr = await stripe.transfers.create({ amount: total * 100, currency, destination: accountId, metadata: { driverId } });
+        transferId = tr.id;
+      } catch (err) {
+        throw new HttpsError('failed-precondition', 'Stripe transfer failed: ' + err.message);
+      }
+    }
+    const batch = db.batch();
+    owed.docs.forEach((x) => batch.set(x.ref, { status: 'paid', paidAt: admin.firestore.FieldValue.serverTimestamp(), transferId }, { merge: true }));
+    await batch.commit();
+    return { paid: total, count: owed.size, currency: currency.toUpperCase(), transferId, mock: !stripe };
   }
 );
