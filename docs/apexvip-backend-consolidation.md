@@ -97,6 +97,11 @@ For each recovered callable:
 4. Add a unit test where logic is pure (referral codes, intent parsing fallbacks),
    following `scripts/test-apexvip-*.mjs`.
 
+> **Claude calls now use the official `@anthropic-ai/sdk`.** `linguaAI` and
+> `parseBookingIntent` go through a memoized `anthropicClient(apiKey)` (one client
+> per warm instance) instead of raw `fetch` — port any recovered LLM-backed
+> function to the same helper. Square/Amadeus stay on `fetch` (no SDK needed).
+
 ### ApexAI / `parseBookingIntent` — **done in this repo**
 ApexAI now has a Claude-backed `parseBookingIntent` in `functions/index.js`: it
 mirrors `linguaAI` (model `claude-opus-4-8`, `ANTHROPIC_API_KEY` secret,
@@ -118,16 +123,22 @@ Two functions both want to turn a new booking into driver work:
 - **repo** `onBookingCreated` → writes `open_jobs/{bookingId}` (status `open`,
   `market`, 80% `pay`)
 
-Running both = double dispatch. Decide **one** owner:
+Running both = double dispatch. We've chosen **`onBookingCreated`** as the single
+owner — it's in git, market-aware, idempotent on booking id, and matches the
+driver app's `open_jobs.where('market',…)` query.
 
-- **Keep `onBookingCreated`** (recommended — it's in git, market-aware, idempotent
-  on booking id, and matches the driver app's `open_jobs.where('market',…)` query).
-  Then **delete** `assignDriverToBooking`, and fix the admin app's manual
-  `broadcastDispatch` to write `open_jobs` with **`doc(bookingId)`** (not a random
-  id) and include the **`market`** field, so admin-broadcast jobs show up in the
-  driver query too. *(This is the change held back from #104.)*
-- Or keep `assignDriverToBooking` and retire `onBookingCreated` — but then port the
-  market + 80%-pay logic into it.
+- [x] **Admin manual broadcast fixed** — `broadcastDispatch` now writes
+  `open_jobs/{bookingDocId}` (stable id, not a random one) and stamps `market`
+  (+`clientId`), so admin-broadcast jobs appear in the driver query and can't
+  double-broadcast. *(This was the change held back from #104.)*
+- [ ] **Operational (live backend):** delete/retire `assignDriverToBooking` so it
+  doesn't also dispatch. The two repo writers (`onBookingCreated` + admin
+  `broadcastDispatch`) now both target the stable `open_jobs/{bookingId}` doc, so
+  they coalesce rather than duplicate; whether the gen-1 `assignDriverToBooking`
+  uses the same id is unknown — confirm from its recovered source before relying
+  on coalescing across both backends.
+- Alternative (not taken): keep `assignDriverToBooking` and retire
+  `onBookingCreated` — but then the market + 80%-pay logic must be ported into it.
 
 ---
 
