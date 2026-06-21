@@ -14,5 +14,5 @@ export const {
   seedIfEmpty,
   listResources, getResource, setResourceStatus, setResourceConnect, setResourceLocation,
   createRequest, getRequest, listRequests, listRequestsForDriver,
-  appendAudit, setStatus, assignResource, recordPayment,
+  appendAudit, setStatus, assignResource, setQuote, recordPayment,
 } = backend;

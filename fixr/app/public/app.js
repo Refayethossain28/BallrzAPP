@@ -141,6 +141,11 @@ function openReq(id) {
     ${f("Quote", r.quote_amount ? "$" + r.quote_amount : "set fee")}
     <div class="field"><span>Original message</span></div>
     <div class="raw">“${r.raw_inbound_text || ""}”</div>
+    ${!r.quote_amount && r.status !== "completed"
+      ? `<div style="margin-top:14px"><span style="color:var(--muted);font-size:12px">Set service fee ($)</span>
+         <div style="display:flex;gap:8px;margin-top:5px">
+           <input id="feeInput" type="number" min="1" placeholder="e.g. 250" style="flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:9px" />
+           <button class="btn-gold" style="flex:0 0 auto;width:auto;margin:0" data-act="fee">Set</button></div></div>` : ""}
     ${(r.status === "confirmed" || r.status === "quoted") && avail.length
       ? `<div style="margin-top:14px"><span style="color:var(--muted);font-size:12px">Assign resource</span>
          <select id="assignSel">${avail.map((d) => `<option value="${d.id}">${d.name} — ${d.vehicle}</option>`).join("")}</select></div>` : ""}
@@ -173,7 +178,11 @@ async function act(a, id) {
   if (!a) return;
   if (a === "close") return closeModal();
   try {
-    if (a === "assign") {
+    if (a === "fee") {
+      const amt = Number(document.getElementById("feeInput").value);
+      if (!(amt > 0)) return alert("Enter a fee amount");
+      await api(`/api/requests/${id}/fee`, { method: "POST", body: JSON.stringify({ amount: amt }) });
+    } else if (a === "assign") {
       const sel = document.getElementById("assignSel");
       await api(`/api/requests/${id}/assign`, { method: "POST", body: JSON.stringify({ resource_id: sel.value }) });
     } else if (a === "complete") {
