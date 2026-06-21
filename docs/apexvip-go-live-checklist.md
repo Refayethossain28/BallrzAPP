@@ -3,6 +3,9 @@
 Everything between the current build and a real, paid, UK-operating launch.
 Items marked **[code done]** ship in the repo; the rest are operator/legal work.
 
+> For the **ordered sequence + exact commands** to execute a launch, see
+> `apexvip-launch-runbook.md`. This file is the *what*; the runbook is the *when*.
+
 > ## ⚠️ Read first — the deployed backend is NOT this repo
 > The live Firebase project (`apexvip-1b4a9`) already runs a **separate, gen-1
 > Cloud Functions codebase** (`assignDriverToBooking`, `parseBookingIntent`,
