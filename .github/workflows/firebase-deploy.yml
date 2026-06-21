@@ -7,6 +7,10 @@ name: Deploy Firebase (rules • storage • functions)
 #   → Generate new private key). Give that service account the "Editor" role in
 #   Google Cloud IAM so it can deploy rules and functions.
 #
+# This also deploys the "side-apps" codebase (Lingua's linguaAI + Ripple), which
+# reuses the SAME project-level ANTHROPIC_API_KEY secret as the ApexVIP functions
+# — so once that secret exists, Lingua's hosted AI goes live with no extra key.
+#
 # Until the secret is set, the job skips cleanly (stays green) with a notice.
 
 on:
@@ -18,6 +22,7 @@ on:
       - "firestore.indexes.json"
       - "firebase.json"
       - "functions/**"
+      - "functions-side/**"
       - ".github/workflows/firebase-deploy.yml"
   workflow_dispatch:
 
@@ -56,6 +61,7 @@ jobs:
         run: |
           npm install -g firebase-tools
           npm --prefix functions install
+          npm --prefix functions-side install
 
       # Rules are the critical part — this step must succeed.
       - name: Deploy Firestore + Storage rules
@@ -66,13 +72,25 @@ jobs:
           firebase deploy --only firestore:rules,storage \
             --project apexvip-1b4a9 --non-interactive --force
 
-      # Indexes + functions are a bonus — don't fail the run if IAM perms or the
-      # Cloud Functions APIs aren't fully set up yet.
-      - name: Deploy indexes + functions (best effort)
+      # Indexes + the ApexVIP functions codebase — a bonus; don't fail the run if
+      # IAM perms or the Cloud Functions APIs aren't fully set up yet.
+      - name: Deploy indexes + ApexVIP functions (best effort)
         if: steps.gate.outputs.ok == 'true'
         continue-on-error: true
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
         run: |
-          firebase deploy --only firestore:indexes,functions \
+          firebase deploy --only firestore:indexes,functions:apexvip \
+            --project apexvip-1b4a9 --non-interactive --force
+
+      # Side-apps codebase = Lingua (linguaAI) + Ripple. Deployed on its own so a
+      # problem in the ApexVIP codebase can't block Lingua's hosted AI from going
+      # live. Uses the shared ANTHROPIC_API_KEY secret already on the project.
+      - name: Deploy side-apps functions — Lingua linguaAI (best effort)
+        if: steps.gate.outputs.ok == 'true'
+        continue-on-error: true
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          firebase deploy --only functions:side-apps \
             --project apexvip-1b4a9 --non-interactive --force
