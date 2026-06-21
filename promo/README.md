@@ -13,3 +13,6 @@ footage (intro clip + feature clip) with the shimmering **ApexVIP** wordmark,
 
 Landscape and square are centre-crops of the vertical master (real footage edge-to-edge; upscaled from the 720-wide source, so slightly softer). Branding is burned in
 (unlike the in-app splash, where the wordmark is live CSS over `splash-advert.mp4`).
+
+## TikTok / Reels cut
+`apexvip-tiktok.mp4` — 9:16 at TikTok-native **1080×1920**, scored, branding re-composited crisply at full res and kept clear of TikTok's caption/action-icon safe zones. ~23s.
