@@ -413,7 +413,7 @@ function mapJob(doc){
 function setupDriverListeners(uid){
   // Live driver document statuses
   db.collection('drivers').doc(uid).onSnapshot(snap=>{
-    if(snap.exists) S._driverDocs = snap.data().documents || {};
+    if(snap.exists){ S._driverDocs = snap.data().documents || {}; S._compliance = snap.data().compliance || null; }
     const el = document.getElementById('docs-list');
     if(el) renderDocsList();
   });
@@ -684,7 +684,38 @@ async function registerDriverFCM(){
   }catch(e){ console.warn('Driver FCM registration failed:', e.message); }
 }
 
+// Required credentials + whether each tracks expiry (mirror of the admin model).
+const COMPLIANCE_DOCS=[
+  {key:'licence',label:"Driver's Licence",expiry:true},{key:'pco',label:'PCO Licence',expiry:true},
+  {key:'insurance',label:'Insurance',expiry:true},{key:'dbs',label:'DBS Check',expiry:true},
+  {key:'v5c',label:'Vehicle V5C',expiry:false},{key:'badge',label:'PCO Badge',expiry:true},
+];
+// Read-side compliance check from the admin verdict (S._compliance). Expired docs
+// flip the driver back to non-compliant automatically.
+function driverComplianceState(){
+  const verdict=(S._compliance&&S._compliance.docs)||{};
+  const today=new Date().toISOString().slice(0,10);
+  const missing=[],expired=[];
+  COMPLIANCE_DOCS.forEach(t=>{
+    const a=verdict[t.key]||{};
+    if(!a.approved){missing.push(t.label);return;}
+    if(t.expiry&&(!a.expiresAt||a.expiresAt<today))expired.push(t.label);
+  });
+  return {ok:missing.length===0&&expired.length===0,missing,expired};
+}
+
 function goOnline(){
+  // Compliance gate — a driver can only go online once an admin has approved
+  // their documents and none have expired. (Enforced only against the live
+  // backend; demo mode is unaffected.)
+  if(!S.online && FIREBASE_ENABLED){
+    const c=driverComplianceState();
+    if(!c.ok){
+      const why=[...c.missing.map(m=>'missing '+m),...c.expired.map(m=>'expired '+m)].join(', ');
+      showToast('Not yet cleared to drive — '+why+'. Upload in Profile → Documents; ApexVIP will review.','error');
+      return;
+    }
+  }
   S.online=!S.online;
   haptic(S.online?'success':'medium');
   showToast(S.online?'You are now online — accepting jobs':'You are now offline','info');

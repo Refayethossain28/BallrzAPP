@@ -20,10 +20,13 @@ service cloud.firestore {
     function isDriver()      { return signedIn() && (request.auth.token.driver == true || profileRole() == 'driver'); }
 
     // User profiles — a user can read/write only their own; admins can read all.
+    // A user may NOT promote their own role (e.g. to admin/driver) — only an admin
+    // can change role; a self-update must leave role as 'client' (or unset).
     match /users/{uid} {
       allow read:   if isUser(uid) || isAdmin();
       allow create: if isUser(uid);
-      allow update: if isUser(uid) || isAdmin();
+      allow update: if isAdmin()
+        || (isUser(uid) && request.resource.data.get('role', 'client') == 'client');
       allow delete: if isAdmin();
     }
 
@@ -69,11 +72,18 @@ service cloud.firestore {
       allow read, write: if isUser(uid);
     }
 
-    // Drivers — anyone signed in may read live status (for trip tracking);
-    // a driver writes only their own record; admins manage all.
+    // Drivers — anyone signed in may read live status (for trip tracking).
+    // A driver writes only their own record (status, profile, document uploads),
+    // but may NOT write the `compliance` verdict — only an admin approves
+    // documents / sets the compliant flag. This is the self-approval guard.
     match /drivers/{driverId} {
-      allow read:  if signedIn();
-      allow write: if isUser(driverId) || isAdmin();
+      allow read:   if signedIn();
+      allow create: if isAdmin()
+        || (isUser(driverId) && !('compliance' in request.resource.data));
+      allow update: if isAdmin()
+        || (isUser(driverId)
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['compliance']));
+      allow delete: if isAdmin();
     }
 
     // Job queue — drivers and admins only. A driver creates their own job doc
