@@ -413,7 +413,7 @@ function mapJob(doc){
 function setupDriverListeners(uid){
   // Live driver document statuses
   db.collection('drivers').doc(uid).onSnapshot(snap=>{
-    if(snap.exists){ S._driverDocs = snap.data().documents || {}; S._compliance = snap.data().compliance || null; }
+    if(snap.exists){ S._driverDocs = snap.data().documents || {}; S._compliance = snap.data().compliance || null; S._payout = snap.data().payout || null; }
     const el = document.getElementById('docs-list');
     if(el) renderDocsList();
   });
@@ -629,6 +629,20 @@ function renderDocsList(){
       ${S._docProgress?.[d.key]!=null?`<div style="margin-top:10px;height:3px;background:var(--surface-b);border-radius:2px"><div style="height:3px;background:var(--gold);border-radius:2px;width:${S._docProgress[d.key]}%;transition:width .2s"></div></div>`:''}
     </div>`;
   }).join('');
+}
+
+// Start (or resume) Stripe Connect payout onboarding, opening the hosted link.
+async function setupPayouts(){
+  if(!FIREBASE_ENABLED||!fns){ showToast('Payouts are available in the live app.','info'); return; }
+  if(S._payout&&S._payout.payoutsEnabled){ showToast('Payouts are already set up — you\'re good to get paid.','success'); return; }
+  showToast('Opening secure payout setup…','info');
+  try{
+    const r=await fns.httpsCallable('createDriverPayoutAccount')({});
+    const url=r.data&&r.data.url;
+    if(url) window.open(url,'_blank','noopener');
+    // Refresh status shortly after they return.
+    setTimeout(()=>{ fns.httpsCallable('getDriverPayoutStatus')({}).catch(()=>{}); }, 1500);
+  }catch(e){ showToast('Could not start payout setup: '+(e.message||e.code||''),'error'); }
 }
 
 async function doUploadDoc(type, input){
@@ -1413,7 +1427,7 @@ profile:()=>`<div class="screen">
     <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="rgba(200,169,126,.4)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
   </div>
   <div class="card" style="margin-bottom:12px">
-    ${[{icon:'📄',l:'Documents',a:"go('documents')"},{icon:'🏦',l:'Bank Details',a:''},{icon:'📅',l:'Availability Schedule',a:''},{icon:'⭐',l:'Ratings & Reviews',a:''}].map((r,i,a)=>`<div class="menu-row" onclick="${r.a}">
+    ${[{icon:'📄',l:'Documents',a:"go('documents')"},{icon:'🏦',l:(S._payout&&S._payout.payoutsEnabled?'Payouts · active':'Set up payouts'),a:"setupPayouts()"},{icon:'📅',l:'Availability Schedule',a:''},{icon:'⭐',l:'Ratings & Reviews',a:''}].map((r,i,a)=>`<div class="menu-row" onclick="${r.a}">
       <div style="display:flex;align-items:center;gap:12px"><span style="font-size:18px">${r.icon}</span><span style="font-size:15px">${r.l}</span></div>
       <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
     </div>`).join('')}

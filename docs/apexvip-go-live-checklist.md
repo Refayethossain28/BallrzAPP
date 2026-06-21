@@ -64,6 +64,10 @@ Items marked **[code done]** ship in the repo; the rest are operator/legal work.
       capture/refund (caller owns the booking or is staff) (#104).
 - [x] **VAT-inclusive pricing** — totals no longer double-charge VAT (#104).
 - [ ] Wire **capture** on trip completion and **refunds** to the cancellation policy.
+- [ ] **Driver payouts** (`docs/apexvip-driver-payouts.md`): `firebase functions:secrets:set
+      STRIPE_SECRET_KEY`, enable Stripe **Connect**, deploy the payout callables.
+      ⚠️ Decide funding (top-up the Stripe balance, or move charges to Stripe) — fares
+      are taken in Square, so a live transfer needs a funded Stripe balance.
 - [ ] Migrate Apple/Google Pay to the Square wallet SDK; register Apple merchant ID.
 - [ ] VAT receipts (net/VAT/gross + VAT number).
 
