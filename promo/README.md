@@ -11,5 +11,5 @@ footage (intro clip + feature clip) with the shimmering **ApexVIP** wordmark,
 | `apexvip-promo-landscape.mp4` | 16:9 | 1280×720  | YouTube / web hero / email |
 | `apexvip-promo-square.mp4`    | 1:1  | 1080×1080 | Instagram / LinkedIn feed |
 
-Landscape uses a blurred pillarbox; square is a centre crop. Branding is burned in
+Landscape and square are centre-crops of the vertical master (real footage edge-to-edge; upscaled from the 720-wide source, so slightly softer). Branding is burned in
 (unlike the in-app splash, where the wordmark is live CSS over `splash-advert.mp4`).
