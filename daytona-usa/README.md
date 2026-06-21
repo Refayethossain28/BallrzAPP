@@ -18,10 +18,15 @@ A browser-based arcade racing game inspired by SEGA's **Daytona USA**
   - *Dinosaur Canyon* — desert, rock spires, a roadside brontosaurus, a tunnel
   - *Sea-Side Street Galaxy* — palms and an ocean plane
 
-  It uses **real-time soft shadows**, **PBR car paint that reflects the sky**
-  (environment-mapped), and **filmic (ACES) tone mapping** for a richer image;
-  graphics detail auto-scales down on phones. Three.js is vendored locally
-  (`3d/vendor/`), so it needs no network.
+  It uses a post-processing pipeline (**bloom**, **FXAA**, **filmic ACES tone
+  mapping**, a subtle **vignette**), **real-time soft shadows**, and **clearcoat
+  PBR car paint that reflects the sky** (environment-mapped). Graphics detail
+  auto-scales down on phones (lighter bloom, no FXAA, simpler paint, smaller
+  shadows). Three.js + the post-processing addons are vendored locally
+  (`3d/vendor/`, resolved via an import map), so it needs no network.
+
+  > Note: this is a *web/mobile* racer — it pushes fidelity within a browser's
+  > limits, not literal console-grade graphics.
 
 ![type: arcade racer](https://img.shields.io/badge/genre-arcade%20racer-ff3b3b)
 

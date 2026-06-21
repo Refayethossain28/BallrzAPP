@@ -9,7 +9,13 @@
  * Three.js is vendored locally (./vendor/three.module.js) so the game needs no
  * network connection and runs straight from the file system.
  * ========================================================================== */
-import * as THREE from './vendor/three.module.js';
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 
 // ---------------------------------------------------------------------------
 // DOM
@@ -71,10 +77,20 @@ const G = {
 // ---------------------------------------------------------------------------
 // Three.js core
 // ---------------------------------------------------------------------------
-let renderer, scene, camera, sky;
+let renderer, scene, camera, sky, composer, bloomPass, fxaaPass;
 let frames = [];      // [{pos:Vector3, tan:Vector3, right:Vector3, curv:Number}]
 let playerCar, rivalMeshes = [];
 const UP = new THREE.Vector3(0,1,0);
+
+// subtle cinematic vignette (applied to the final image)
+const VignetteShader = {
+  uniforms: { tDiffuse:{value:null}, strength:{value:0.42} },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+  fragmentShader: 'uniform sampler2D tDiffuse; uniform float strength; varying vec2 vUv;'+
+    'void main(){ vec4 c=texture2D(tDiffuse,vUv); vec2 d=vUv-0.5; float dd=dot(d,d);'+
+    ' float vig=1.0 - strength*smoothstep(0.10,0.50,dd);'+
+    ' gl_FragColor=vec4(c.rgb*vig, c.a); }'
+};
 
 // Painted sky: vertical gradient + a glowing sun + soft clouds, on a big dome
 function makeSkyTexture(th){
@@ -120,7 +136,7 @@ function initThree() {
   renderer.setPixelRatio(Math.min(MOBILE?1.5:2, window.devicePixelRatio || 1));
   // cinematic colour + soft shadows
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;  // applied by OutputPass in the composer
   renderer.toneMappingExposure = 1.05;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -145,6 +161,15 @@ function initThree() {
   sun.shadow.camera.top = S; sun.shadow.camera.bottom = -S;
   sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.6;
   scene.add(sun); scene.add(sun.target);   // target follows the player each frame
+
+  // --- post-processing: bloom -> filmic output -> FXAA -> vignette ---
+  composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  bloomPass = new UnrealBloomPass(new THREE.Vector2(1,1), MOBILE?0.35:0.5, 0.4, 0.9);
+  composer.addPass(bloomPass);
+  composer.addPass(new OutputPass());             // ACES tonemap + sRGB
+  if (!MOBILE){ fxaaPass = new ShaderPass(FXAAShader); composer.addPass(fxaaPass); }
+  composer.addPass(new ShaderPass(VignetteShader));
 
   resize();
   window.addEventListener('resize', resize);
@@ -556,8 +581,10 @@ function buildMinimap() {
 function buildCarMesh(bodyColor, isHornet, number) {
   number = number==null ? 41 : number;
   const g = new THREE.Group();
-  // glossy PBR car paint (reflects the sky env map); matte for rubber/plastic
-  const paint = c => new THREE.MeshStandardMaterial({color:c, metalness:0.55, roughness:0.32});
+  // glossy PBR car paint (reflects the sky env map); clearcoat on desktop
+  const paint = c => MOBILE
+    ? new THREE.MeshStandardMaterial({color:c, metalness:0.5, roughness:0.34, envMapIntensity:1.0})
+    : new THREE.MeshPhysicalMaterial({color:c, metalness:0.45, roughness:0.3, clearcoat:1.0, clearcoatRoughness:0.12, envMapIntensity:1.15});
   const matte = c => new THREE.MeshStandardMaterial({color:c, metalness:0.0, roughness:0.85});
   const mat = paint;
   const roof = isHornet ? 0x2056cf : shadeHex(bodyColor,-40);
@@ -910,7 +937,7 @@ function render(){
   const targetFov = 62 + Math.min(1,Math.abs(G.speed)/G.maxSpeed)*10;
   camera.fov += (targetFov - camera.fov)*0.08; camera.updateProjectionMatrix();
 
-  renderer.render(scene, camera);
+  composer.render();
 
   if (G.bannerTimer>0){ G.bannerTimer-=STEP; if(G.bannerTimer<=0) document.getElementById('banner').classList.add('hidden'); }
   drawHUD2D(); drawTextHUD();
@@ -1092,10 +1119,14 @@ window.__togglePause = togglePause;   // for the on-screen pause button
 // ---------------------------------------------------------------------------
 function resize(){
   const w=window.innerWidth, h=window.innerHeight;
-  renderer.setSize(w,h,false);
+  const pr=Math.min(MOBILE?1.5:2, window.devicePixelRatio||1);
+  renderer.setPixelRatio(pr); renderer.setSize(w,h,false);
   camera.aspect=w/h; camera.updateProjectionMatrix();
-  const dpr=Math.min(2,window.devicePixelRatio||1);
-  hud2d.width=Math.round(w*dpr); hud2d.height=Math.round(h*dpr);
+  if (composer){
+    composer.setPixelRatio(pr); composer.setSize(w,h);
+    if (fxaaPass){ const r=fxaaPass.material.uniforms.resolution.value; r.set(1/(w*pr), 1/(h*pr)); }
+  }
+  hud2d.width=Math.round(w*pr); hud2d.height=Math.round(h*pr);
   hud2d.style.width=w+'px'; hud2d.style.height=h+'px';
 }
 let last=performance.now(), acc=0;
