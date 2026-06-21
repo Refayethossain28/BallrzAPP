@@ -777,6 +777,172 @@ exports.parseBookingIntent = onCall(
 );
 
 /* ===========================================================================
+ * App-facing callables — CONSOLIDATION STUBS
+ *
+ * v2 ports of the gen-1 functions the apps call that had no source in this repo.
+ * The referral / chat / rating ones are working Firestore implementations; the
+ * flight-status and Apple-Pay ones need an external provider/cert and are honest
+ * stubs (TODO). ⚠️ A gen-1 version of each is currently LIVE — reconcile against
+ * the recovered source (functions/recovered/README.md) before deploying any of
+ * these, or you'll regress live behaviour. All enforce auth + input validation.
+ * =========================================================================== */
+const FLIGHT_API_KEY = defineSecret('FLIGHT_API_KEY');
+const APPLE_PAY_CERT = defineSecret('APPLE_PAY_MERCHANT_CERT'); // PEM cert
+const APPLE_PAY_KEY  = defineSecret('APPLE_PAY_MERCHANT_KEY');  // PEM private key
+
+// Resolve a booking by its short ref ("APX-1234") OR its Firestore doc id.
+async function resolveBooking(refOrId) {
+  const db = admin.firestore();
+  if (refOrId) {
+    const byId = await db.collection('bookings').doc(String(refOrId)).get();
+    if (byId.exists) return byId;
+    const q = await db.collection('bookings').where('ref', '==', String(refOrId)).limit(1).get();
+    if (!q.empty) return q.docs[0];
+  }
+  return null;
+}
+
+async function isStaff(uid) {
+  try {
+    const u = await admin.firestore().doc(`users/${uid}`).get();
+    const role = u.exists && (u.data() || {}).role;
+    return role === 'admin' || role === 'driver';
+  } catch (_) { return false; }
+}
+
+// generateReferralCode — returns the caller's stable referral code, minting one
+// on first use and persisting it to their profile.
+exports.generateReferralCode = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const uid = request.auth.uid;
+  const ref = admin.firestore().doc(`users/${uid}`);
+  const snap = await ref.get();
+  const existing = snap.exists && (snap.data() || {}).referralCode;
+  if (existing) return { code: existing };
+  // Deterministic, human-friendly code derived from the uid.
+  const code = 'APX-' + uid.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toUpperCase().padEnd(6, 'X');
+  await ref.set({ referralCode: code }, { merge: true });
+  return { code };
+});
+
+// applyReferralCode — credits both the new user and the referrer once. Blocks
+// self-referral and double-application.
+exports.applyReferralCode = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const uid = request.auth.uid;
+  const code = String((request.data || {}).code || '').trim().toUpperCase();
+  if (!code) throw new HttpsError('invalid-argument', 'code is required');
+  const db = admin.firestore();
+  const me = db.doc(`users/${uid}`);
+  const meSnap = await me.get();
+  if (meSnap.exists && (meSnap.data() || {}).referredBy) {
+    throw new HttpsError('failed-precondition', 'A referral code has already been applied.');
+  }
+  const q = await db.collection('users').where('referralCode', '==', code).limit(1).get();
+  if (q.empty) throw new HttpsError('not-found', 'That referral code is not valid.');
+  const referrer = q.docs[0];
+  if (referrer.id === uid) throw new HttpsError('failed-precondition', 'You cannot use your own code.');
+  const CREDIT = 50;
+  const inc = admin.firestore.FieldValue.increment(CREDIT);
+  await Promise.all([
+    me.set({ referredBy: referrer.id, apexBalance: inc }, { merge: true }),
+    referrer.ref.set({ apexBalance: inc }, { merge: true }),
+  ]);
+  return { message: `Referral applied — you and your friend each earned ${CREDIT} APEX.`, creditsAwarded: CREDIT };
+});
+
+// sendChauffeurMessage — append a chat message to the booking thread. Only the
+// booking's client, its driver, or staff may post.
+exports.sendChauffeurMessage = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const uid = request.auth.uid;
+  const d = request.data || {};
+  const text = String(d.message || '').trim();
+  if (!d.bookingRef || !text) throw new HttpsError('invalid-argument', 'bookingRef and message are required');
+  if (text.length > 2000) throw new HttpsError('invalid-argument', 'message too long');
+  const booking = await resolveBooking(d.bookingRef);
+  if (!booking) throw new HttpsError('not-found', 'Booking not found');
+  const b = booking.data() || {};
+  if (b.clientId !== uid && b.driverId !== uid && !(await isStaff(uid))) {
+    throw new HttpsError('permission-denied', 'Not your booking');
+  }
+  await booking.ref.collection('messages').add({
+    senderId: uid,
+    fromRole: ['client', 'driver', 'concierge'].includes(d.fromRole) ? d.fromRole : 'client',
+    text,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return { ok: true };
+});
+
+// submitTripRating — record the guest's rating on the booking and roll it into
+// the driver's running average.
+exports.submitTripRating = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const uid = request.auth.uid;
+  const d = request.data || {};
+  const rating = Math.round(Number(d.rating));
+  if (!(rating >= 1 && rating <= 5)) throw new HttpsError('invalid-argument', 'rating must be 1–5');
+  const booking = await resolveBooking(d.bookingRef);
+  if (!booking) throw new HttpsError('not-found', 'Booking not found');
+  const b = booking.data() || {};
+  if (b.clientId !== uid && !(await isStaff(uid))) throw new HttpsError('permission-denied', 'Not your booking');
+  const comment = String(d.comment || '').slice(0, 1000);
+  await booking.ref.set({ rating, ratingComment: comment, ratedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+  const driverId = d.driverId || b.driverId;
+  if (driverId) {
+    // Maintain a simple running mean: ratingSum / ratingCount.
+    await admin.firestore().runTransaction(async (tx) => {
+      const dRef = admin.firestore().doc(`drivers/${driverId}`);
+      const dSnap = await tx.get(dRef);
+      const cur = dSnap.exists ? (dSnap.data() || {}) : {};
+      const count = (Number(cur.ratingCount) || 0) + 1;
+      const sum = (Number(cur.ratingSum) || 0) + rating;
+      tx.set(dRef, { ratingCount: count, ratingSum: sum, rating: Math.round((sum / count) * 10) / 10 }, { merge: true });
+    });
+  }
+  return { ok: true };
+});
+
+// checkFlightStatus — STUB. Needs a flight-data provider (AviationStack / FlightAware
+// / AeroDataBox). With FLIGHT_API_KEY unset it returns a safe "on-time/unknown"
+// shape so the client falls back to its demo data. Public (no auth) — read-only,
+// no secret leaves the server. TODO: wire the live provider from the recovered source.
+exports.checkFlightStatus = onCall({ secrets: [FLIGHT_API_KEY], region: 'us-central1' }, async (request) => {
+  const flight = String((request.data || {}).flight || '').toUpperCase().replace(/\s+/g, '');
+  if (!/^[A-Z0-9]{3,8}$/.test(flight)) throw new HttpsError('invalid-argument', 'invalid flight number');
+  const key = FLIGHT_API_KEY.value();
+  if (!key) {
+    // No provider configured yet — neutral result; client uses its own demo fallback.
+    return { flight, delayed: false, delayMins: 0, available: false };
+  }
+  // TODO: call the provider with `key`, then map its response to:
+  // { delayed, delayMins, origin, originCity, originIata, terminal, belt, scheduled, estimated, duration }
+  throw new HttpsError('unimplemented', 'Flight provider not yet wired — see functions/recovered/README.md');
+});
+
+// validateApplePayMerchant — STUB. Apple Pay on the web requires POSTing to the
+// session's validationURL with the merchant identity certificate. That cert/key
+// must be provisioned (APPLE_PAY_MERCHANT_CERT / _KEY) before this can run.
+// The client aborts the Apple Pay sheet on failure, so throwing here is safe.
+exports.validateApplePayMerchant = onCall(
+  { secrets: [APPLE_PAY_CERT, APPLE_PAY_KEY], region: 'us-central1' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+    const url = String((request.data || {}).validationURL || '');
+    if (!/^https:\/\/[a-z0-9.-]*apple\.com\//i.test(url)) {
+      throw new HttpsError('invalid-argument', 'invalid validationURL');
+    }
+    if (!APPLE_PAY_CERT.value() || !APPLE_PAY_KEY.value()) {
+      throw new HttpsError('failed-precondition', 'Apple Pay merchant certificate not configured.');
+    }
+    // TODO: mutual-TLS POST to `url` with the merchant cert/key and return Apple's
+    // merchant session JSON verbatim (the client passes it to completeMerchantValidation).
+    throw new HttpsError('unimplemented', 'Apple Pay merchant validation not yet wired — see functions/recovered/README.md');
+  }
+);
+
+/* ===========================================================================
  * Ripple server-side delivery — push, scheduled dispatch & disappearing sweep
  *
  *  • ripplePushOnMessage  — pushes a web notification the moment a message

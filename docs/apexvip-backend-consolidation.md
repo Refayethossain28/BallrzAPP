@@ -24,12 +24,12 @@ each lives today:
 | `getHotelRates`            | ✅       | ✅ | Amadeus proxy. Repo version is canonical. |
 | `processSquarePayment`     | ✅\*     | ✅ | \*Repo version is **hardened** (#104): auth, amount check, ownership. Live one is **not** — port or replace. |
 | `parseBookingIntent`       | ✅\*\*   | ✅ | **This is ApexAI.** \*\*Now a **Claude-backed gen-2** function in this repo (forces a structured `booking_intent` tool call, `ANTHROPIC_API_KEY` secret). The *live* gen-1 one is separate — reconcile/replace on cutover. |
-| `checkFlightStatus`        | ❌       | ✅ | Source only live. |
-| `sendChauffeurMessage`     | ❌       | ✅ | Source only live. |
-| `submitTripRating`         | ❌       | ✅ | Source only live. |
-| `generateReferralCode`     | ❌       | ✅ | Source only live. |
-| `applyReferralCode`        | ❌       | ✅ | Source only live. |
-| `validateApplePayMerchant` | ❌       | ✅ | Source only live. |
+| `sendChauffeurMessage`     | ✅       | ✅ | **Stub working** (writes `bookings/{id}/messages`). Reconcile field names + any push side-effect. |
+| `submitTripRating`         | ✅       | ✅ | **Stub working** (booking + driver-average). Reconcile where ratings live. |
+| `generateReferralCode`     | ✅       | ✅ | **Stub working** (per-user code on `users/{uid}`). Reconcile code format. |
+| `applyReferralCode`        | ✅       | ✅ | **Stub working** (credits both, blocks self/double). Reconcile amount + anti-abuse. |
+| `checkFlightStatus`        | ✅\*     | ✅ | \*Stub — needs a flight-data provider (`FLIGHT_API_KEY`). Returns neutral until wired. |
+| `validateApplePayMerchant` | ✅\*     | ✅ | \*Stub — needs Apple merchant cert/key. Throws until provisioned. |
 | **Trigger** `onBookingWrite`   | ✅   | ?  | Booking email/SMS. Repo gen-2. |
 | **Trigger** `onBookingCreated` | ✅   | ?  | Dispatch → `open_jobs`. Repo gen-2. Overlaps with live `assignDriverToBooking`. |
 
@@ -42,8 +42,13 @@ Live-only extras (no app caller, keep if used operationally): `assignDriverToBoo
 `sendBookingConfirmation`, `onbookingstatuschange`, `notifyDriverAssigned`,
 `hotelCancellation`, `whatsappWebhook`.
 
-**The crux:** 7 of the 9 callables the apps depend on exist **only** in the live
-backend with no source in git. Step 1 is to recover that source.
+**Status:** all 9 callables now have repo source — `getHotelRates`,
+`processSquarePayment`, `parseBookingIntent` are real, and the other six landed as
+**v2 `onCall` stubs** (`CONSOLIDATION STUB` in `functions/index.js`): referral /
+chat / rating are working Firestore implementations; flight-status and Apple-Pay
+need an external provider/cert. The remaining work is to **recover the live
+source** (`functions/recovered/`), reconcile each stub against it, then cut over
+(§3 → §7). ⚠️ Do not deploy a stub over its working gen-1 twin before reconciling.
 
 ---
 
