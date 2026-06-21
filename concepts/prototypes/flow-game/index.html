@@ -70,8 +70,8 @@
   /* CRT: scanlines + vignette over the play */
   #stage::after{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;
     background:
-      repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 1px, transparent 1px 3px),
-      radial-gradient(120% 90% at 50% 50%, transparent 52%, rgba(0,0,0,.55))}
+      repeating-linear-gradient(0deg, rgba(0,0,0,.09) 0 1px, transparent 1px 3px),
+      radial-gradient(120% 90% at 50% 50%, transparent 54%, rgba(0,0,0,.5))}
 
   /* full-SCREEN overlays (menu / pause / handoff / result / over) */
   .screen{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;
@@ -588,6 +588,8 @@ function resize(){
   if(had && targets.length){ const sx=nW/W, sy=nH/H; for(const t of targets){ t.x*=sx; t.y*=sy; } }
   W=nW; H=nH; DPR=dpr;
   cv.width=W*DPR; cv.height=H*DPR; ctx.setTransform(DPR,0,0,DPR,0,0);
+  if(!bloomCv){ bloomCv=document.createElement('canvas'); bloomCtx=bloomCv.getContext('2d'); }
+  bloomCv.width=Math.max(1,Math.round(cv.width*0.5)); bloomCv.height=Math.max(1,Math.round(cv.height*0.5));
   initBg();                                    // rescale the background particle field
   if(!had && live()) spawnRound();             // first real size after play began
 }
@@ -817,7 +819,7 @@ function drawSpark(){
 function hexA(hex,a){ const n=parseInt(hex.slice(1),16); return 'rgba('+((n>>16)&255)+','+((n>>8)&255)+','+(n&255)+','+a+')'; }
 
 /* drifting particle + nebula field behind the play */
-let bgP=[], stars=[], beatPulse=0, dispScore=0;
+let bgP=[], stars=[], beatPulse=0, dispScore=0, bloomCv=null, bloomCtx=null;
 function initBg(){
   const cols=['#3ae1ff','#9a7bff','#ff63b6','#ffffff'];
   const n=Math.max(10, Math.round(W*H/26000));
@@ -871,6 +873,11 @@ function drawComboGlow(){
   ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
 }
 
+function shade(hex,f){           // f>0 lighten toward white, f<0 darken toward black
+  const n=parseInt(hex.slice(1),16); let r=(n>>16)&255,g=(n>>8)&255,b=n&255;
+  if(f>=0){ r+=(255-r)*f; g+=(255-g)*f; b+=(255-b)*f; } else { r*=1+f; g*=1+f; b*=1+f; }
+  return 'rgb('+(r|0)+','+(g|0)+','+(b|0)+')';
+}
 function drawTargets(dt, advance){
   const now=performance.now();
   const ref = (state==='paused') ? pausedAt : now;
@@ -886,23 +893,33 @@ function drawTargets(dt, advance){
     const c1=1.70158, ease = grow>=1 ? 1 : 1 + (c1+1)*Math.pow(grow-1,3) + c1*Math.pow(grow-1,2);
     const R = Math.max(1, t.r * ease * (1 + 0.035*Math.sin(now/260 + (t.x+t.y)*0.01)));
     const ring = t.decoy ? '#ff5d6c' : skin().ring;
-    // soft radial core
-    const fg=ctx.createRadialGradient(t.x,t.y,R*0.1,t.x,t.y,R);
-    fg.addColorStop(0, hexA(ring, t.decoy?0.32:0.40)); fg.addColorStop(1, hexA(ring,0));
-    ctx.fillStyle=fg; ctx.beginPath(); ctx.arc(t.x,t.y,R,0,7); ctx.fill();
-    // glowing ring
-    ctx.save(); ctx.shadowColor=ring; ctx.shadowBlur=t.decoy?14:18;
-    ctx.lineWidth=3.5; ctx.strokeStyle=ring;
+    const base = t.decoy ? '#ff5d6c' : ring;
+    const lx=t.x - R*0.30, ly=t.y - R*0.32;          // virtual light, upper-left
+    // soft contact shadow on the floor
+    ctx.save(); ctx.globalAlpha=0.30; ctx.fillStyle='#000';
+    ctx.beginPath(); ctx.ellipse(t.x, t.y+R*0.98, R*0.82, R*0.30, 0, 0, 7); ctx.fill(); ctx.restore();
+    // glossy sphere body (lit from upper-left)
+    const sg=ctx.createRadialGradient(lx,ly,R*0.08, t.x,t.y,R*1.05);
+    sg.addColorStop(0, shade(base,0.7)); sg.addColorStop(0.45, base); sg.addColorStop(1, shade(base,-0.64));
+    ctx.fillStyle=sg; ctx.beginPath(); ctx.arc(t.x,t.y,R,0,7); ctx.fill();
+    // glowing rim outline
+    ctx.save(); ctx.shadowColor=base; ctx.shadowBlur=t.decoy?16:20;
+    ctx.lineWidth=2.4; ctx.strokeStyle=shade(base,0.4);
     ctx.beginPath(); ctx.arc(t.x,t.y,R,0,7); ctx.stroke(); ctx.restore();
+    // specular highlight
+    const sp=ctx.createRadialGradient(lx,ly,0, lx,ly,R*0.62);
+    sp.addColorStop(0,'rgba(255,255,255,0.92)'); sp.addColorStop(0.45,'rgba(255,255,255,0.12)'); sp.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=sp; ctx.beginPath(); ctx.arc(lx,ly,R*0.6,0,7); ctx.fill();
     if(t.decoy){
-      const q=R*0.4; ctx.lineWidth=3.5; ctx.strokeStyle='#ff9aa2';
+      const q=R*0.4; ctx.save(); ctx.lineWidth=4; ctx.lineCap='round';
+      ctx.shadowColor='#ff2740'; ctx.shadowBlur=12; ctx.strokeStyle='#ffffff';
       ctx.beginPath(); ctx.moveTo(t.x-q,t.y-q); ctx.lineTo(t.x+q,t.y+q);
-      ctx.moveTo(t.x+q,t.y-q); ctx.lineTo(t.x-q,t.y+q); ctx.stroke();
+      ctx.moveTo(t.x+q,t.y-q); ctx.lineTo(t.x-q,t.y+q); ctx.stroke(); ctx.restore();
     } else {
       // life ring shifts green -> amber -> red as time runs out
       const lc = remain>0.5 ? '#36f0a6' : remain>0.25 ? '#ffd166' : '#ff5d6c';
-      ctx.save(); ctx.shadowColor=lc; ctx.shadowBlur=10; ctx.lineWidth=3.5; ctx.strokeStyle=lc;
-      ctx.beginPath(); ctx.arc(t.x,t.y,R*0.56,-Math.PI/2,-Math.PI/2+remain*Math.PI*2,false); ctx.stroke();
+      ctx.save(); ctx.shadowColor=lc; ctx.shadowBlur=12; ctx.lineWidth=3.5; ctx.lineCap='round'; ctx.strokeStyle=lc;
+      ctx.beginPath(); ctx.arc(t.x,t.y,R*0.74,-Math.PI/2,-Math.PI/2+remain*Math.PI*2,false); ctx.stroke();
       ctx.restore();
     }
   }
@@ -1008,6 +1025,24 @@ function drawDemo(now){
   demoCtx.fillStyle='#ff6b6b';demoCtx.fillText('AVOID', dx, dy-R-8);
 }
 
+/* HDR-ish bloom: downsample the frame, blur it, add it back (lighter) so every
+ * bright neon edge blooms — the single biggest "next-gen" lift on a 2D canvas. */
+function applyBloom(){
+  if(!bloomCtx || !cv.width) return;
+  const bw=bloomCv.width, bh=bloomCv.height;
+  bloomCtx.setTransform(1,0,0,1,0,0);
+  bloomCtx.clearRect(0,0,bw,bh);
+  bloomCtx.drawImage(cv,0,0,bw,bh);
+  ctx.save();
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.globalCompositeOperation='lighter';
+  ctx.globalAlpha=0.5;
+  try{ ctx.filter='blur('+Math.max(2,Math.round(cv.width*0.013))+'px)'; }catch(_){}
+  ctx.drawImage(bloomCv,0,0,cv.width,cv.height);
+  ctx.restore();
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+
 /* ---------- input ---------- */
 function hit(px,py){
   if(!live()) return;
@@ -1060,7 +1095,8 @@ function frame(now){
   else if(state==='paused'){ drawTargets(0, false); drawScore(pausedAt); }
   else if(state==='idle'){ drawDemo(now); }
   if(fx.length) drawFx(state==='paused' ? 0 : dt);   // sparkles finish over any state
-  if(flash){                                          // arcade screen-flash
+  applyBloom();                                       // HDR bloom over the whole scene
+  if(flash){                                          // screen-flash (over bloom)
     ctx.globalAlpha=Math.max(0,flash.a); ctx.fillStyle=flash.color; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1;
     flash.a -= (state==='paused'?0:dt)*3.2; if(flash.a<=0) flash=null;
   }
