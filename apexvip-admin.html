@@ -407,7 +407,7 @@ function startAdminListeners(){
           color:x.color||'#C8A97E',rating:x.rating||4.8,status:x.status||'offline',
           vehicle:x.vehicle||'S-Class',model:x.model||x.vehicle||'S-Class',
           reg:x.reg||x.plate||'',trips:x.trips||0,earnings:'£'+(x.earnings||0),
-          documents:x.documents||{}};
+          documents:x.documents||{},compliance:x.compliance||null};
       });
       if(!['login'].includes(S.screen))render();
     }
@@ -689,7 +689,7 @@ drivers:()=>{const f=S.dFilter;const list=f==='all'?DRIVERS:DRIVERS.filter(d=>d.
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
         ${av(d.initials,d.color,46)}<div style="flex:1"><div style="font-size:15px;font-weight:700">${d.name}</div><div style="font-size:12px;color:var(--gold);margin-top:2px">★ ${d.rating}</div></div>${badge(d.status)}
       </div>
-      <div style="font-size:12px;color:var(--fg-subtle);margin-bottom:12px">${d.vehicle}</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:12px;color:var(--fg-subtle)">${d.vehicle}</span>${complianceChip(d)}</div>
       <div style="display:flex;justify-content:space-between;font-size:13px">
         <div><div class="section-label" style="margin-bottom:2px">Trips</div><div style="font-weight:700">${d.trips}</div></div>
         <div style="text-align:right"><div class="section-label" style="margin-bottom:2px">This Month</div><div style="font-weight:700;color:var(--gold)">${d.earnings}</div></div>
@@ -1386,17 +1386,97 @@ function adminCancelBooking(docId,id){
   }
 }
 
+// ── Driver compliance ─────────────────────────────────────────────────────
+// Required credentials + whether each tracks an expiry date. The driver uploads
+// evidence (drivers/{id}.documents); an ADMIN approves it here, writing the
+// authoritative verdict to drivers/{id}.compliance. See docs/apexvip-driver-compliance.md
+const COMPLIANCE_DOCS=[
+  {key:'licence',  label:"Driver's Licence",        expiry:true},
+  {key:'pco',      label:'PCO Licence',             expiry:true},
+  {key:'insurance',label:'Insurance Certificate',   expiry:true},
+  {key:'dbs',      label:'DBS Check',               expiry:true},
+  {key:'v5c',      label:'Vehicle Registration (V5C)',expiry:false},
+  {key:'badge',    label:'PCO Badge',               expiry:true},
+];
+// Compute live compliance from the admin verdict + expiry (expired docs flip the
+// driver back to not-compliant automatically, no admin action needed).
+function computeCompliance(d){
+  const verdict=(d&&d.compliance&&d.compliance.docs)||{};
+  const today=new Date().toISOString().slice(0,10);
+  const soon=new Date(Date.now()+30*864e5).toISOString().slice(0,10);
+  const missing=[],expired=[],expiring=[];
+  COMPLIANCE_DOCS.forEach(t=>{
+    const a=verdict[t.key]||{};
+    if(!a.approved){missing.push(t.label);return;}
+    if(t.expiry){
+      if(!a.expiresAt||a.expiresAt<today)expired.push(t.label);
+      else if(a.expiresAt<=soon)expiring.push(t.label);
+    }
+  });
+  const ok=missing.length===0&&expired.length===0;
+  return {ok,missing,expired,expiring};
+}
+function complianceChip(d){
+  const c=computeCompliance(d);
+  if(c.ok&&!c.expiring.length)return '<span class="tag tag-green">✅ Compliant</span>';
+  if(c.ok&&c.expiring.length)return '<span class="tag tag-amber">⚠️ Expiring soon</span>';
+  if(c.expired.length)return '<span class="tag tag-red">⛔ Expired</span>';
+  return '<span class="tag tag-amber">⛔ Action needed</span>';
+}
+// Persist the whole verdict from the review form in one write (avoids races) and
+// recompute the compliant flag.
+async function saveCompliance(id){
+  const d=DRIVERS.find(x=>x.id===id);if(!d){closeModal();return;}
+  const docs={};
+  COMPLIANCE_DOCS.forEach(t=>{
+    const approved=document.getElementById('cmp_ok_'+t.key)?.checked||false;
+    const entry={approved};
+    if(t.expiry){const e=document.getElementById('cmp_exp_'+t.key)?.value||'';if(e)entry.expiresAt=e;}
+    const note=document.getElementById('cmp_note_'+t.key)?.value||'';
+    if(!approved&&note)entry.note=note;
+    docs[t.key]=entry;
+  });
+  const compliant=computeCompliance({compliance:{docs}}).ok;
+  if(!FIREBASE_ENABLED){closeModal();return;}
+  try{
+    await db.collection('drivers').doc(id).set({compliance:{
+      docs,compliant,
+      reviewedBy:(auth.currentUser&&auth.currentUser.uid)||'admin',
+      reviewedAt:firebase.firestore.FieldValue.serverTimestamp()
+    }},{merge:true});
+    closeModal();
+  }catch(e){alert('Could not save compliance: '+(e.message||e.code));}
+}
+
 function showDriver(id){const d=DRIVERS.find(x=>x.id===id);if(!d)return;
+  const verdict=(d.compliance&&d.compliance.docs)||{};const ev=d.documents||{};
+  const compRows=COMPLIANCE_DOCS.map(t=>{
+    const a=verdict[t.key]||{};const up=ev[t.key]||{};
+    return `<div style="background:var(--surface-b);border:1px solid var(--border);border-radius:10px;padding:11px 12px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600">${t.label}</div>
+          <div style="font-size:11px;color:var(--fg-subtle)">${up.url?`<a href="${up.url}" target="_blank" style="color:var(--gold)">View upload</a> · ${up.uploadedAt||''}`:'No upload yet'}</div>
+        </div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;white-space:nowrap"><input type="checkbox" id="cmp_ok_${t.key}" ${a.approved?'checked':''}/> Approved</label>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        ${t.expiry?`<input type="date" id="cmp_exp_${t.key}" value="${a.expiresAt||''}" style="flex:1;font-size:12px" title="Expiry date"/>`:''}
+        <input type="text" id="cmp_note_${t.key}" placeholder="Reject note (optional)" value="${(a.note||'').replace(/"/g,'&quot;')}" style="flex:2;font-size:12px"/>
+      </div>
+    </div>`;}).join('');
   openModal(`<div>
-    <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px">
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
       ${av(d.initials,d.color,52)}<div><div style="font-size:18px;font-weight:700">${d.name}</div><div style="color:var(--gold);margin-top:4px">★ ${d.rating} &nbsp; ${badge(d.status)}</div></div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px">
-      ${[['Vehicle',d.vehicle],['Total Trips',d.trips],['This Month',d.earnings],['Member Since','Jan 2023']].map(([l,v])=>`<div style="background:var(--surface-b);border-radius:10px;padding:12px;border:1px solid var(--border)"><div style="font-size:10px;color:var(--fg-subtle);margin-bottom:3px;letter-spacing:.5px">${l.toUpperCase()}</div><div style="font-size:15px;font-weight:600">${v}</div></div>`).join('')}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+      ${[['Vehicle',d.vehicle],['Total Trips',d.trips],['This Month',d.earnings],['Compliance',complianceChip(d)]].map(([l,v])=>`<div style="background:var(--surface-b);border-radius:10px;padding:12px;border:1px solid var(--border)"><div style="font-size:10px;color:var(--fg-subtle);margin-bottom:3px;letter-spacing:.5px">${l.toUpperCase()}</div><div style="font-size:14px;font-weight:600">${v}</div></div>`).join('')}
     </div>
-    <div style="display:flex;gap:8px">
-      <button class="btn btn-gold btn-sm" onclick="closeModal()">Assign Job</button>
-      <button class="btn btn-glass btn-sm" onclick="closeModal()">Edit Profile</button>
+    <div class="section-label" style="margin-bottom:8px">Compliance review</div>
+    ${compRows}
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn btn-gold btn-sm" onclick="saveCompliance('${d.id}')">Save Compliance</button>
+      <button class="btn btn-glass btn-sm" onclick="closeModal()">Close</button>
     </div>
   </div>`);}
 
@@ -1470,6 +1550,16 @@ function broadcastDispatch(){
 function confirmDispatch(driverIdOrName){
   const driver=DRIVERS.find(d=>d.id===driverIdOrName||d.name===driverIdOrName);
   if(!driver){S._dispatchOpen=false;render();return;}
+  // Compliance gate — never assign a job to a driver whose documents aren't
+  // approved & in-date.
+  if(FIREBASE_ENABLED){
+    const c=computeCompliance(driver);
+    if(!c.ok){
+      const why=[...c.missing.map(m=>'missing '+m),...c.expired.map(m=>'expired '+m)].join(', ');
+      alert(`${driver.name} is not compliant — ${why}. Approve their documents (open the driver) before assigning.`);
+      return;
+    }
+  }
   // Update booking in local state
   const booking=BOOKINGS.find(b=>b.id===S._dispatchRef||b.ref===S._dispatchRef);
   if(booking){
