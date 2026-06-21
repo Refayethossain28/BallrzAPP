@@ -23,7 +23,7 @@ each lives today:
 |----------------------------|:--------:|:-------------:|-------|
 | `getHotelRates`            | ✅       | ✅ | Amadeus proxy. Repo version is canonical. |
 | `processSquarePayment`     | ✅\*     | ✅ | \*Repo version is **hardened** (#104): auth, amount check, ownership. Live one is **not** — port or replace. |
-| `parseBookingIntent`       | ❌       | ✅ | **This is ApexAI.** Source only in the live backend. |
+| `parseBookingIntent`       | ✅\*\*   | ✅ | **This is ApexAI.** \*\*Now a **Claude-backed gen-2** function in this repo (forces a structured `booking_intent` tool call, `ANTHROPIC_API_KEY` secret). The *live* gen-1 one is separate — reconcile/replace on cutover. |
 | `checkFlightStatus`        | ❌       | ✅ | Source only live. |
 | `sendChauffeurMessage`     | ❌       | ✅ | Source only live. |
 | `submitTripRating`         | ❌       | ✅ | Source only live. |
@@ -97,15 +97,16 @@ For each recovered callable:
 4. Add a unit test where logic is pure (referral codes, intent parsing fallbacks),
    following `scripts/test-apexvip-*.mjs`.
 
-### ApexAI / `parseBookingIntent`
-ApexAI in **this repo** does *not* call Anthropic — it calls `parseBookingIntent`
-and falls back to a local rule-based parser (`_parseIntentLocal`). Whether the
-*live* `parseBookingIntent` is LLM-backed is only knowable from the recovered
-source. If you want ApexAI to genuinely use Claude, this is where to wire it:
-mirror `linguaAI` (model `claude-opus-4-8`, `ANTHROPIC_API_KEY` secret,
-`api.anthropic.com/v1/messages`), force a structured tool-call so the client keeps
-getting deterministic `{intent, …}` JSON, and keep `_parseIntentLocal` as the
-offline fallback.
+### ApexAI / `parseBookingIntent` — **done in this repo**
+ApexAI now has a Claude-backed `parseBookingIntent` in `functions/index.js`: it
+mirrors `linguaAI` (model `claude-opus-4-8`, `ANTHROPIC_API_KEY` secret,
+`api.anthropic.com/v1/messages`) and **forces a structured `booking_intent` tool
+call** so the client keeps receiving deterministic `{intent, reply, serviceType,
+pickup, …}` JSON — the same shape `_parseIntentLocal` produces, which stays as the
+offline fallback. Driver-mode calls (`mode:'driver'`) return a plain `{reply}`.
+On cutover, decide whether this replaces the *live* gen-1 `parseBookingIntent` or
+the live one is ported here; set the `ANTHROPIC_API_KEY` secret before deploying
+(`firebase functions:secrets:set ANTHROPIC_API_KEY`).
 
 ---
 
