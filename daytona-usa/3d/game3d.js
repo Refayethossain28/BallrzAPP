@@ -68,12 +68,12 @@ const THEMES = [
 ];
 // player vehicles
 const VEHICLES = [
-  { name:'MERCEDES V-CLASS', kind:'van',   color:0x30353d,
+  { name:'MERCEDES V-CLASS', kind:'van',   color:0x0c0d0f,
     speedMul:0.90, accelMul:0.82, steerMul:0.78, gripMul:0.80, brakeMul:0.82, rollMul:1.7,
-    desc:'Luxury MPV — heavy & planted: gentle steering & brakes, lower grip, leans in turns.' },
-  { name:'MERCEDES S-CLASS', kind:'sedan', color:0x171b20,
+    desc:'Luxury MPV in black — heavy & planted: gentle steering & brakes, lower grip, leans in turns.' },
+  { name:'MERCEDES S-CLASS', kind:'sedan', color:0x0c0d0f,
     speedMul:1.10, accelMul:1.16, steerMul:1.24, gripMul:1.20, brakeMul:1.15, rollMul:0.7,
-    desc:'Flagship saloon — fast & agile: sharp steering, strong brakes, high grip.' },
+    desc:'Flagship saloon in black — fast & agile: sharp steering, strong brakes, high grip.' },
 ];
 const LIVERIES = [0xe23b3b,0x2f6cff,0x22c55e,0xf59e0b,0xa855f7,0x06b6d4,
                   0xec4899,0xfacc15,0xfb7185,0x4ade80,0x38bdf8,0xfb923c,0xffffff];
@@ -723,8 +723,8 @@ function buildMinimap() {
 // Shared vehicle materials + player vehicle models (Mercedes V-Class / S-Class)
 // ---------------------------------------------------------------------------
 function paintMat(c){ return MOBILE
-  ? new THREE.MeshStandardMaterial({color:c, metalness:0.6, roughness:0.24, envMapIntensity:1.5})
-  : new THREE.MeshPhysicalMaterial({color:c, metalness:0.55, roughness:0.2, clearcoat:1.0, clearcoatRoughness:0.04, envMapIntensity:1.7}); }
+  ? new THREE.MeshStandardMaterial({color:c, metalness:0.15, roughness:0.34, envMapIntensity:0.9})
+  : new THREE.MeshPhysicalMaterial({color:c, metalness:0.1, roughness:0.34, clearcoat:1.0, clearcoatRoughness:0.07, envMapIntensity:1.0}); }
 function matteMat(c){ return new THREE.MeshStandardMaterial({color:c, metalness:0, roughness:0.85}); }
 function glassMat(){ return new THREE.MeshPhysicalMaterial({color:0x0b1626, metalness:0.0, roughness:0.04, clearcoat:1.0, clearcoatRoughness:0.04, envMapIntensity:1.6, transmission:0.0}); }
 function chromeMat(){ return new THREE.MeshStandardMaterial({color:0xc4c9d2, metalness:0.95, roughness:0.22}); }
