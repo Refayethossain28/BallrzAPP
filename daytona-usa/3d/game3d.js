@@ -33,6 +33,7 @@ const ROAD_W = 9;                 // road half-width (world units)
 const RUMBLE_W = 1.6;
 const DIV = 1400;                 // spline samples (road resolution)
 const FPS = 60, STEP = 1/FPS;
+const ROLL_TOTAL = 6.0;           // rolling-start intro length (seconds)
 
 const CIRCUITS = [
   { name:'DAYTONA', laps:8, maxSpeed:118, curveMul:0.85, aiSpeed:0.74, startTime:60, lapBonus:26, seed:1,  theme:0 },
@@ -1115,11 +1116,20 @@ function updateCars(dt){
 // Update
 // ---------------------------------------------------------------------------
 function update(dt){
-  if (G.state==='countdown'){
-    G.countdown-=dt;
-    const n=Math.ceil(G.countdown); const el=document.getElementById('countdown');
-    if (G.countdown<=0){ G.state='racing'; el.classList.add('hidden'); beep(880,0.4,'square',0.2); }
-    else { el.textContent=n; if(el.dataset.last!=n){el.dataset.last=n; beep(440,0.15,'square',0.15);} }
+  if (G.state==='rolling'){
+    G.rollTime -= dt;
+    // the whole field rolls forward in formation; player drifts to its lane
+    G.speed = approach(G.speed, G.maxSpeed*0.34, G.maxSpeed*0.25*dt);
+    G.dist += G.speed*dt; while (G.dist>=G.L) G.dist-=G.L;
+    G.playerX = approach(G.playerX, 0, dt*0.5);
+    updateCars(dt);
+    const cd=document.getElementById('countdown');
+    if (G.rollTime <= 3){
+      document.getElementById('banner').classList.add('hidden');
+      const n=Math.ceil(G.rollTime);
+      if (n>0){ cd.classList.remove('hidden'); cd.textContent=n; if(cd.dataset.last!=n){cd.dataset.last=n; beep(440,0.15,'square',0.15);} }
+    }
+    if (G.rollTime <= 0){ cd.classList.add('hidden'); G.state='racing'; flashBanner('GREEN!'); beep(900,0.45,'square',0.22); }
     return;
   }
   if (G.state!=='racing') return;
@@ -1203,7 +1213,15 @@ function onLapComplete(){
   }
   beep(660,0.25,'square',0.15);
 }
-function flashBanner(t){ const b=document.getElementById('banner'); b.textContent=t; b.classList.remove('hidden'); G.bannerTimer=1.4; }
+function flashBanner(t){ const b=document.getElementById('banner'); b.classList.remove('intro'); b.innerHTML=t; b.classList.remove('hidden'); G.bannerTimer=1.4; }
+function showIntroBanner(html){ const b=document.getElementById('banner'); b.innerHTML=html; b.classList.add('intro'); b.classList.remove('hidden'); G.bannerTimer=0; }
+function speak(text){
+  try{
+    if (!('speechSynthesis' in window)) return;
+    const u=new SpeechSynthesisUtterance(text); u.rate=0.92; u.pitch=0.85; u.volume=1;
+    window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);
+  }catch(e){}
+}
 
 // ---------------------------------------------------------------------------
 // Render
@@ -1236,6 +1254,21 @@ function render(){
   // car visibly slides across the track when you steer — proper steering feel.
   const f = frameAt(G.dist);
   _fwd.copy(f.tan);
+  if (G.state==='rolling'){
+    // cinematic broadcast sweep: orbits from a front/side angle round to behind
+    worldPos(G.dist, G.playerX, _tmp);
+    const p = 1 - Math.max(0,G.rollTime)/ROLL_TOTAL;            // 0..1
+    const e = p<0.5 ? 2*p*p : 1-Math.pow(-2*p+2,2)/2;          // ease in-out
+    const az = (1-e)*2.3, dist = 15 - e*4, hgt = 7.5 - e*2.9;
+    const back = _fwd.clone(); back.y=0; back.normalize().multiplyScalar(-1).applyAxisAngle(UP, az);
+    _camPos.copy(_tmp).addScaledVector(back, dist); _camPos.y += hgt;
+    _look.copy(_tmp).addScaledVector(_fwd, 4); _look.y += 1.0;
+    camera.up.set(0,1,0); _camUp.set(0,1,0);
+    camera.position.lerp(_camPos, 0.12);
+    camera.lookAt(_look);
+    if (sky) sky.position.copy(camera.position);
+    camera.fov += (60 - camera.fov)*0.06; camera.updateProjectionMatrix();
+  } else {
   const camLat = (G.camMode===0) ? G.playerX*0.28 : G.playerX;
   worldPos(G.dist, camLat, _tmp);
   if (G.camMode===0){
@@ -1252,6 +1285,7 @@ function render(){
   if (sky) sky.position.copy(camera.position);        // sky stays around us
   const targetFov = 62 + Math.min(1,Math.abs(G.speed)/G.maxSpeed)*10;
   camera.fov += (targetFov - camera.fov)*0.08; camera.updateProjectionMatrix();
+  }
 
   if (G.retro) renderer.render(scene, camera); else composer.render();
 
@@ -1447,15 +1481,21 @@ function startRace(){
   G.dist=0; G.playerX=0; G.speed=0; G.lap=1; G.lapTime=0; G.lastLapTime=0; G.bestLapTime=Infinity;
   G.totalTime=0; G.place=FIELD; G.shake=0; G.skid=0; G.reversedLine=false;
 
-  // snap camera behind the grid immediately
+  // --- Daytona-style ROLLING START ---
+  G.speed = G.maxSpeed*0.28;        // the field is already rolling
   placeCar(playerCar,0,0,0);
+  // start the cinematic camera ahead-and-to-the-side, looking back at the pack
   const f=frameAt(0); worldPos(0,0,_tmp);
-  camera.position.copy(_tmp).addScaledVector(f.tan,-11).add(new THREE.Vector3(0,4.6,0));
+  const back0=f.tan.clone().multiplyScalar(-1); back0.y=0; back0.normalize().applyAxisAngle(UP,2.3);
+  camera.up.set(0,1,0);
+  camera.position.copy(_tmp).addScaledVector(back0,15).add(new THREE.Vector3(0,7.5,0));
   camera.lookAt(_tmp);
 
   document.getElementById('overlay').classList.add('hidden');
-  const cd=document.getElementById('countdown'); cd.classList.remove('hidden'); cd.textContent='3'; cd.dataset.last='3';
-  G.countdown=3.0; G.state='countdown'; beep(440,0.15,'square',0.15);
+  showIntroBanner('GENTLEMEN,<br>START YOUR ENGINES!');
+  speak('Gentlemen, start your engines!');
+  const cd=document.getElementById('countdown'); cd.classList.add('hidden'); cd.dataset.last='';
+  G.rollTime=ROLL_TOTAL; G.state='rolling';
 }
 function finishRace(completed){
   G.state='finished';
