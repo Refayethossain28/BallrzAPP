@@ -36,7 +36,7 @@ const STEP         = 1 / FPS;
 
 const CENTRIFUGAL  = 0.32;
 const OFFROAD_DECEL= 0.55;
-const FIELD        = 40;       // 40-car field, like the arcade
+const FIELD        = 11;       // you + 10 rival competitors
 const OPPONENTS    = FIELD - 1;
 
 const cameraDepth = 1 / Math.tan((FOV / 2) * Math.PI / 180);

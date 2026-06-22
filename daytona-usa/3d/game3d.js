@@ -27,7 +27,7 @@ const hctx = hud2d.getContext('2d');
 // ---------------------------------------------------------------------------
 // Tunables
 // ---------------------------------------------------------------------------
-const FIELD = 40, OPPONENTS = FIELD - 1;
+const FIELD = 11, OPPONENTS = FIELD - 1;   // you + 10 rival competitors
 const ROAD_W = 9;                 // road half-width (world units)
 const RUMBLE_W = 1.6;
 const DIV = 1400;                 // spline samples (road resolution)
