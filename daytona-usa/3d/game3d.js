@@ -68,8 +68,12 @@ const THEMES = [
 ];
 // player vehicles
 const VEHICLES = [
-  { name:'MERCEDES V-CLASS', kind:'van',   color:0x30353d, speedMul:0.95, accelMul:0.92, desc:'Luxury MPV — heavier & planted, very stable.' },
-  { name:'MERCEDES S-CLASS', kind:'sedan', color:0x171b20, speedMul:1.07, accelMul:1.10, desc:'Flagship saloon — faster & more agile.' },
+  { name:'MERCEDES V-CLASS', kind:'van',   color:0x30353d,
+    speedMul:0.90, accelMul:0.82, steerMul:0.78, gripMul:0.80, brakeMul:0.82, rollMul:1.7,
+    desc:'Luxury MPV — heavy & planted: gentle steering & brakes, lower grip, leans in turns.' },
+  { name:'MERCEDES S-CLASS', kind:'sedan', color:0x171b20,
+    speedMul:1.10, accelMul:1.16, steerMul:1.24, gripMul:1.20, brakeMul:1.15, rollMul:0.7,
+    desc:'Flagship saloon — fast & agile: sharp steering, strong brakes, high grip.' },
 ];
 const LIVERIES = [0xe23b3b,0x2f6cff,0x22c55e,0xf59e0b,0xa855f7,0x06b6d4,
                   0xec4899,0xfacc15,0xfb7185,0x4ade80,0x38bdf8,0xfb923c,0xffffff];
@@ -82,7 +86,7 @@ const G = {
   L:0,                // track length
   dist:0,             // player distance along track
   playerX:0,          // lateral offset -1..1
-  speed:0, maxSpeed:105, curveMul:0.8, aiSpeedMul:0.82, accelMul:1,
+  speed:0, maxSpeed:105, curveMul:0.8, aiSpeedMul:0.82, accelMul:1, steerMul:1, gripMul:1, brakeMul:1, rollMul:1,
   totalLaps:8, lap:1, lapTime:0, lastLapTime:0, bestLapTime:Infinity,
   totalTime:0, timeLeft:55, lapBonus:24,
   cars:[], place:FIELD, countdown:0, bannerTimer:0, shake:0, skid:0,
@@ -616,40 +620,53 @@ function makeWindowTexture(glassy){
   }
   const t=new THREE.CanvasTexture(cv); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.colorSpace=THREE.SRGBColorSpace; return t;
 }
-// London — Elizabeth Tower (Big Ben) + the London Eye
+// London — a towering Elizabeth Tower (Big Ben) + a big London Eye, near the start
 function addBigBen(group, frames){
-  const f=frames[Math.floor(DIV*0.3)];
+  const f=frames[Math.floor(DIV*0.04)];
   const g=new THREE.Group();
-  const stone=new THREE.MeshStandardMaterial({color:0xb9a06a, roughness:0.85});
-  const shaft=new THREE.Mesh(new THREE.BoxGeometry(8,52,8), stone); shaft.position.y=26; g.add(shaft);
-  const cm=new THREE.MeshStandardMaterial({color:0xf2ead0, emissive:0x2a2618, emissiveIntensity:0.4, roughness:0.6});
-  for (const [dx,dz] of [[4.1,0],[-4.1,0],[0,4.1],[0,-4.1]]){
-    const c=new THREE.Mesh(new THREE.CircleGeometry(2.4,18), cm);
-    c.position.set(dx,44,dz); c.rotation.y = dx!==0 ? (dx>0?Math.PI/2:-Math.PI/2) : (dz>0?0:Math.PI); g.add(c);
+  const stone=new THREE.MeshStandardMaterial({color:0xc2a974, roughness:0.85});
+  const trim =new THREE.MeshStandardMaterial({color:0x9c8550, roughness:0.85});
+  const baseB=new THREE.Mesh(new THREE.BoxGeometry(17,14,17), trim); baseB.position.y=7; g.add(baseB);
+  const shaft=new THREE.Mesh(new THREE.BoxGeometry(13,86,13), stone); shaft.position.y=57; g.add(shaft);
+  for (const sx of [-6.7,6.7]) for (const sz of [-6.7,6.7]){
+    const p=new THREE.Mesh(new THREE.BoxGeometry(1.6,86,1.6), trim); p.position.set(sx,57,sz); g.add(p);
   }
-  const belfry=new THREE.Mesh(new THREE.BoxGeometry(9,8,9), new THREE.MeshStandardMaterial({color:0x9c8550, roughness:0.8})); belfry.position.y=56; g.add(belfry);
-  const spire=new THREE.Mesh(new THREE.ConeGeometry(5.6,14,4), new THREE.MeshStandardMaterial({color:0x3f6b4a, roughness:0.6})); spire.position.y=67; spire.rotation.y=Math.PI/4; g.add(spire);
-  if(!MOBILE) g.traverse(o=>{ if(o.isMesh) o.castShadow=true; });
-  g.position.copy(f.pos).addScaledVector(f.right, 52).setY(0); group.add(g);
+  const cm=new THREE.MeshStandardMaterial({color:0xfff4d4, emissive:0x6a5a28, emissiveIntensity:0.9, roughness:0.5});
+  for (const [dx,dz,ry] of [[6.8,0,Math.PI/2],[-6.8,0,-Math.PI/2],[0,6.8,0],[0,-6.8,Math.PI]]){
+    const c=new THREE.Mesh(new THREE.CircleGeometry(3.7,22), cm); c.position.set(dx,92,dz); c.rotation.y=ry; g.add(c);
+  }
+  const belfry=new THREE.Mesh(new THREE.BoxGeometry(15,14,15), trim); belfry.position.y=107; g.add(belfry);
+  const spire=new THREE.Mesh(new THREE.ConeGeometry(9,28,4), new THREE.MeshStandardMaterial({color:0x3f6b4a, roughness:0.6})); spire.position.y=128; spire.rotation.y=Math.PI/4; g.add(spire);
+  g.position.copy(f.pos).addScaledVector(f.right, 40).setY(0);
+  g.rotation.y=Math.atan2(f.tan.x, f.tan.z); group.add(g);
 
-  const f2=frames[Math.floor(DIV*0.62)], eye=new THREE.Group();
-  const rimMat=new THREE.MeshStandardMaterial({color:0xdfe6ec, metalness:0.5, roughness:0.4});
-  eye.add(new THREE.Mesh(new THREE.TorusGeometry(22,0.8,8,40), rimMat));
-  for (let k=0;k<12;k++){ const a=k/12*Math.PI; const sp=new THREE.Mesh(new THREE.BoxGeometry(0.4,44,0.4), rimMat); sp.rotation.z=a; eye.add(sp); }
-  for (let k=0;k<16;k++){ const a=k/16*6.28; const cap=new THREE.Mesh(new THREE.BoxGeometry(2,1.4,2), new THREE.MeshStandardMaterial({color:0x88c8f0, metalness:0.3, roughness:0.3})); cap.position.set(Math.cos(a)*22, Math.sin(a)*22, 0); eye.add(cap); }
-  eye.position.copy(f2.pos).addScaledVector(f2.right, 58).setY(24);
+  const f2=frames[Math.floor(DIV*0.12)], eye=new THREE.Group();
+  const rimMat=new THREE.MeshStandardMaterial({color:0xe6edf3, metalness:0.5, roughness:0.4});
+  eye.add(new THREE.Mesh(new THREE.TorusGeometry(34,1.3,8,48), rimMat));
+  eye.add(new THREE.Mesh(new THREE.TorusGeometry(32.5,0.5,6,48), rimMat));
+  for (let k=0;k<12;k++){ const a=k/12*Math.PI; const sp=new THREE.Mesh(new THREE.BoxGeometry(0.5,68,0.5), rimMat); sp.rotation.z=a; eye.add(sp); }
+  for (let k=0;k<22;k++){ const a=k/22*6.28; const cap=new THREE.Mesh(new THREE.BoxGeometry(2.8,1.9,2.8), new THREE.MeshStandardMaterial({color:0x9fd4f5, metalness:0.3, roughness:0.3, emissive:0x16384f, emissiveIntensity:0.4})); cap.position.set(Math.cos(a)*34, Math.sin(a)*34, 0); eye.add(cap); }
+  const leg=new THREE.Mesh(new THREE.BoxGeometry(1.6,46,1.6), rimMat); leg.position.set(5,-20,6); leg.rotation.x=0.3; eye.add(leg);
+  const leg2=leg.clone(); leg2.position.x=-5; eye.add(leg2);
+  eye.position.copy(f2.pos).addScaledVector(f2.right, 54).setY(40);
   eye.rotation.y=Math.atan2(f2.tan.x, f2.tan.z); group.add(eye);
 }
-// Dubai — a Burj Khalifa-style tapering spire
+// Dubai — a Burj Khalifa-style spire that towers over the whole circuit
 function addBurj(group, frames){
-  const f=frames[Math.floor(DIV*0.35)], g=new THREE.Group();
-  const mat=new THREE.MeshStandardMaterial({color:0xcfe0ee, metalness:0.6, roughness:0.25, map:makeWindowTexture(true)});
-  mat.map.repeat.set(3,12);
-  let y=0, w=22;
-  for (let k=0;k<7;k++){ const h=30; const seg=new THREE.Mesh(new THREE.BoxGeometry(w,h,w), mat); seg.position.y=y+h/2; seg.rotation.y=k*0.13; g.add(seg); y+=h; w*=0.82; }
-  const spire=new THREE.Mesh(new THREE.CylinderGeometry(0.4,2.2,46,8), new THREE.MeshStandardMaterial({color:0xe6edf3, metalness:0.7, roughness:0.3})); spire.position.y=y+23; g.add(spire);
-  if(!MOBILE) g.traverse(o=>{ if(o.isMesh) o.castShadow=true; });
-  g.position.copy(f.pos).addScaledVector(f.right, 95).setY(0); group.add(g);
+  const f=frames[Math.floor(DIV*0.05)], g=new THREE.Group();
+  const mat=new THREE.MeshStandardMaterial({color:0xd6e6f2, metalness:0.65, roughness:0.2, map:makeWindowTexture(true)});
+  mat.map.repeat.set(3,16);
+  let y=0, w=36;
+  for (let k=0;k<9;k++){ const h=36; const seg=new THREE.Mesh(new THREE.BoxGeometry(w,h,w), mat); seg.position.y=y+h/2; seg.rotation.y=k*0.14; g.add(seg); y+=h; w*=0.85; }
+  const spire=new THREE.Mesh(new THREE.CylinderGeometry(0.6,3.2,110,8), new THREE.MeshStandardMaterial({color:0xeef3f8, metalness:0.7, roughness:0.25})); spire.position.y=y+55; g.add(spire);
+  g.position.copy(f.pos).addScaledVector(f.right, 78).setY(0); group.add(g);
+  // a couple of supporting towers for a skyline cluster
+  for (const [u,off,h,col] of [[0.03,-62,150,0xbcd6ea],[0.08,86,180,0xa9c6dd]]){
+    const ff=frames[Math.floor(DIV*u)];
+    const t=new THREE.Mesh(new THREE.BoxGeometry(26,h,26), new THREE.MeshStandardMaterial({color:col, metalness:0.55, roughness:0.25, map:makeWindowTexture(true)}));
+    t.material.map.repeat.set(2,10);
+    t.position.copy(ff.pos).addScaledVector(ff.right, off).setY(h/2); group.add(t);
+  }
 }
 function makeCrowdTexture(){
   const cv=document.createElement('canvas'); cv.width=256; cv.height=96; const x=cv.getContext('2d');
@@ -992,19 +1009,20 @@ function update(dt){
 
   // --- steering: responsive, keeps authority at low speed, and much easier on grass ---
   const steerAuth = Math.min(1, Math.abs(G.speed)/(G.maxSpeed*0.22) + 0.30);
-  let steer = dt * 2.6 * steerAuth;
+  let steer = dt * 2.6 * steerAuth * (G.steerMul||1);  // vehicle steering response
   if (offRoad) steer *= 2.4;                          // easy to wrestle back onto the track
   // Verified empirically: +playerX renders to screen-LEFT, so RIGHT decreases it.
   if (keys.left)  G.playerX += steer;
   if (keys.right) G.playerX -= steer;
-  G.playerX -= dt * sp*sp * f.curv * 40 * G.curveMul; // centrifugal (eases when off the throttle)
+  // centrifugal: lower-grip cars (the van) slide wider through curves
+  G.playerX -= dt * sp*sp * f.curv * 40 * G.curveMul / (G.gripMul||1);
   // smoothed visual steer for car turn-in / body roll (right key = +1)
   const steerInput = (keys.right?1:0) - (keys.left?1:0);
   G.steerVis = approach(G.steerVis||0, steerInput, dt*5);
 
   // --- throttle / brake: punchy launch that eases near top speed, strong brakes ---
   const accel = (G.maxSpeed/3.0) * (1 - sp*0.5) * (G.accelMul||1);
-  const brakePow = G.maxSpeed/1.8;
+  const brakePow = (G.maxSpeed/1.8) * (G.brakeMul||1);
   const coast = G.maxSpeed/6.5;
   if (keys.gas && !keys.reverse) G.speed += Math.max(0, accel) * dt;
   else if (keys.reverse) G.speed = approach(G.speed, -G.maxSpeed*0.30, brakePow*dt);
@@ -1076,7 +1094,7 @@ function render(){
   placeCar(playerCar, G.dist, G.playerX, 0);
   const lean = G.steerVis || 0;                    // nose turns toward the steer direction
   playerCar.rotateY(lean * 0.18);
-  playerCar.rotateZ(-lean * 0.06);
+  playerCar.rotateZ(-lean * 0.06 * (G.rollMul||1)); // the van leans more in corners
   // keep the sun's shadow frustum centred on the player
   if (sun){
     sun.target.position.copy(playerCar.position);
@@ -1279,7 +1297,8 @@ function startRace(){
   initAudio(); if (AC&&AC.state==='suspended') AC.resume();
   if (window.GameMusic){ window.GameMusic.start(); window.GameMusic.setMode('race'); window.GameMusic.duck(false); }
   const c=CIRCUITS[G.circuit], v=VEHICLES[G.vehicle];
-  G.maxSpeed=c.maxSpeed*v.speedMul; G.curveMul=c.curveMul; G.aiSpeedMul=c.aiSpeed; G.accelMul=v.accelMul;
+  G.maxSpeed=c.maxSpeed*v.speedMul; G.curveMul=c.curveMul; G.aiSpeedMul=c.aiSpeed;
+  G.accelMul=v.accelMul; G.steerMul=v.steerMul; G.gripMul=v.gripMul; G.brakeMul=v.brakeMul; G.rollMul=v.rollMul;
   G.totalLaps=c.laps; G.timeLeft=c.startTime; G.lapBonus=c.lapBonus;
   document.getElementById('trackName').textContent=c.name+' • '+v.name.replace('MERCEDES ','');
 
