@@ -33,7 +33,7 @@ const ROAD_W = 9;                 // road half-width (world units)
 const RUMBLE_W = 1.6;
 const DIV = 1400;                 // spline samples (road resolution)
 const FPS = 60, STEP = 1/FPS;
-const ROLL_TOTAL = 6.0;           // rolling-start intro length (seconds)
+const ROLL_TOTAL = 7.0;           // rolling-start intro length (seconds)
 
 const CIRCUITS = [
   { name:'DAYTONA', laps:8, maxSpeed:118, curveMul:0.85, aiSpeed:0.74, startTime:60, lapBonus:26, seed:1,  theme:0 },
@@ -1040,11 +1040,30 @@ function initAudio(){
 }
 function updateEngine(){
   if(!AC) return;
+  const t=AC.currentTime;
+  if (G.state==='rolling'){
+    // engines blip & rev on the formation lap
+    const rev=Math.abs(Math.sin(t*5.0)*Math.sin(t*1.7));
+    engOsc.frequency.setTargetAtTime(85+rev*300, t, 0.04);
+    engFilter.frequency.setTargetAtTime(650+rev*2300, t, 0.04);
+    engGain.gain.setTargetAtTime(0.07, t, 0.1);
+    if (window.GameMusic) window.GameMusic.setIntensity(0.35);
+    return;
+  }
   const r=Math.abs(G.speed)/G.maxSpeed;
-  engOsc.frequency.setTargetAtTime(60+r*220+(G.skid>0?40:0), AC.currentTime,0.05);
-  engFilter.frequency.setTargetAtTime(500+r*2500, AC.currentTime,0.05);
-  engGain.gain.setTargetAtTime(G.state==='racing'?0.04+r*0.10:0, AC.currentTime,0.1);
+  engOsc.frequency.setTargetAtTime(60+r*220+(G.skid>0?40:0), t,0.05);
+  engFilter.frequency.setTargetAtTime(500+r*2500, t,0.05);
+  engGain.gain.setTargetAtTime(G.state==='racing'?0.04+r*0.10:0, t,0.1);
   if (window.GameMusic) window.GameMusic.setIntensity(G.state==='racing'?r:0);
+}
+// a hard rev (engine launch) — used when the green flag drops
+function revBlip(){
+  if(!AC) return;
+  const o=AC.createOscillator(), g=AC.createGain(), f=AC.createBiquadFilter();
+  o.type='sawtooth'; o.frequency.setValueAtTime(90, AC.currentTime); o.frequency.exponentialRampToValueAtTime(340, AC.currentTime+0.28);
+  f.type='lowpass'; f.frequency.value=2000;
+  g.gain.setValueAtTime(0.22, AC.currentTime); g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime+0.55);
+  o.connect(f).connect(g).connect(AC.destination); o.start(); o.stop(AC.currentTime+0.6);
 }
 function beep(f,d,t,v){
   if(!AC) return;
@@ -1123,13 +1142,17 @@ function update(dt){
     G.dist += G.speed*dt; while (G.dist>=G.L) G.dist-=G.L;
     G.playerX = approach(G.playerX, 0, dt*0.5);
     updateCars(dt);
-    const cd=document.getElementById('countdown');
-    if (G.rollTime <= 3){
-      document.getElementById('banner').classList.add('hidden');
+    const cd=document.getElementById('countdown'), b=document.getElementById('banner');
+    if (G.rollTime > ROLL_TOTAL-1.9){              // "DAAAYTONAAA!" flourish
+      if (b.dataset.phase!=='daytona'){ b.dataset.phase='daytona'; showIntroBanner('DAAAYTONAAA!'); }
+    } else if (G.rollTime > 3){                    // "GENTLEMEN, START YOUR ENGINES!"
+      if (b.dataset.phase!=='engines'){ b.dataset.phase='engines'; showIntroBanner('GENTLEMEN,<br>START YOUR ENGINES!'); }
+    } else {                                       // 3-2-1 countdown
+      if (b.dataset.phase!=='count'){ b.dataset.phase='count'; b.classList.add('hidden'); }
       const n=Math.ceil(G.rollTime);
       if (n>0){ cd.classList.remove('hidden'); cd.textContent=n; if(cd.dataset.last!=n){cd.dataset.last=n; beep(440,0.15,'square',0.15);} }
     }
-    if (G.rollTime <= 0){ cd.classList.add('hidden'); G.state='racing'; flashBanner('GREEN!'); beep(900,0.45,'square',0.22); }
+    if (G.rollTime <= 0){ cd.classList.add('hidden'); G.state='racing'; flashBanner('GREEN!'); beep(900,0.45,'square',0.22); revBlip(); }
     return;
   }
   if (G.state!=='racing') return;
@@ -1215,11 +1238,13 @@ function onLapComplete(){
 }
 function flashBanner(t){ const b=document.getElementById('banner'); b.classList.remove('intro'); b.innerHTML=t; b.classList.remove('hidden'); G.bannerTimer=1.4; }
 function showIntroBanner(html){ const b=document.getElementById('banner'); b.innerHTML=html; b.classList.add('intro'); b.classList.remove('hidden'); G.bannerTimer=0; }
-function speak(text){
+function speak(text, opts){
+  opts=opts||{};
   try{
     if (!('speechSynthesis' in window)) return;
-    const u=new SpeechSynthesisUtterance(text); u.rate=0.92; u.pitch=0.85; u.volume=1;
-    window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);
+    const u=new SpeechSynthesisUtterance(text);
+    u.rate=opts.rate!=null?opts.rate:0.92; u.pitch=opts.pitch!=null?opts.pitch:0.85; u.volume=1;
+    window.speechSynthesis.speak(u);   // queued; caller cancels first if needed
   }catch(e){}
 }
 
@@ -1259,15 +1284,17 @@ function render(){
     worldPos(G.dist, G.playerX, _tmp);
     const p = 1 - Math.max(0,G.rollTime)/ROLL_TOTAL;            // 0..1
     const e = p<0.5 ? 2*p*p : 1-Math.pow(-2*p+2,2)/2;          // ease in-out
-    const az = (1-e)*2.3, dist = 15 - e*4, hgt = 7.5 - e*2.9;
+    // orbit from a low front/side angle round to behind, craning up then settling
+    const az = (1-e)*2.6, dist = 17 - e*6;
+    const hgt = 4.6 + (1-e)*3.0 + Math.sin(p*Math.PI)*3.2;     // crane bump mid-sweep
     const back = _fwd.clone(); back.y=0; back.normalize().multiplyScalar(-1).applyAxisAngle(UP, az);
     _camPos.copy(_tmp).addScaledVector(back, dist); _camPos.y += hgt;
     _look.copy(_tmp).addScaledVector(_fwd, 4); _look.y += 1.0;
     camera.up.set(0,1,0); _camUp.set(0,1,0);
-    camera.position.lerp(_camPos, 0.12);
+    camera.position.lerp(_camPos, 0.1);
     camera.lookAt(_look);
     if (sky) sky.position.copy(camera.position);
-    camera.fov += (60 - camera.fov)*0.06; camera.updateProjectionMatrix();
+    camera.fov += ((58 + (1-e)*6) - camera.fov)*0.06; camera.updateProjectionMatrix();
   } else {
   const camLat = (G.camMode===0) ? G.playerX*0.28 : G.playerX;
   worldPos(G.dist, camLat, _tmp);
@@ -1492,8 +1519,10 @@ function startRace(){
   camera.lookAt(_tmp);
 
   document.getElementById('overlay').classList.add('hidden');
-  showIntroBanner('GENTLEMEN,<br>START YOUR ENGINES!');
-  speak('Gentlemen, start your engines!');
+  const b=document.getElementById('banner'); b.dataset.phase='daytona'; showIntroBanner('DAAAYTONAAA!');
+  try{ window.speechSynthesis && window.speechSynthesis.cancel(); }catch(e){}
+  speak('Daytona!', {rate:0.62, pitch:0.55});                 // the iconic shout
+  speak('Gentlemen, start your engines!', {rate:0.9, pitch:0.8});
   const cd=document.getElementById('countdown'); cd.classList.add('hidden'); cd.dataset.last='';
   G.rollTime=ROLL_TOTAL; G.state='rolling';
 }
