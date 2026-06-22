@@ -201,7 +201,15 @@
   </div>
 </div>
 
-<script src="music.js"></script>
-<script src="game.js"></script>
+<script>
+  // Cache-bust gameplay code so a reload always gets the latest build.
+  (function(){
+    var v = Date.now();
+    var m = document.createElement('script'); m.src = 'music.js?v=' + v;
+    m.onload = function(){ var g = document.createElement('script'); g.src = 'game.js?v=' + v; document.body.appendChild(g); };
+    m.onerror = m.onload;
+    document.body.appendChild(m);
+  })();
+</script>
 </body>
 </html>
