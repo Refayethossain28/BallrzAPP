@@ -537,12 +537,47 @@ function buildScenery(rng) {
       }
     }
   }
+  // ---- landmark set-pieces ----
+  // Each hero landmark sits right at the trackside at a spaced point around the
+  // lap, large, so it looms into view as you approach and sweeps past close —
+  // unmistakable rather than a speck on the horizon. Tower Bridge / the Dubai
+  // Frame span the road as gateways you drive through.
+  const LANDMARKS = th.landmark==='london' ? [
+    {fn:addBigBen,    frac:0.09, side:-1, scale:1.5},
+    {fn:addLondonEye, frac:0.28, side: 1, scale:1.3},
+    {fn:addGherkin,   frac:0.47, side:-1, scale:1.4},
+    {fn:addShard,     frac:0.66, side: 1, scale:1.3},
+    {fn:addTowerBridge, frac:0.86, side:0, scale:1.0, gate:true},
+  ] : th.landmark==='dubai' ? [
+    {fn:addBurj,       frac:0.12, side:-1, scale:1.4},
+    {fn:addBurjAlArab, frac:0.52, side: 1, scale:1.35},
+    {fn:addDubaiFrame, frac:0.80, side:0, scale:1.0, gate:true},
+  ] : [];
+  // Gates span the road, so they only read as a gateway on a straight. Snap each
+  // gate to the straightest stretch of track (lowest summed curvature over a
+  // window) that isn't already taken by another landmark.
+  const taken=[];
+  for (const L of LANDMARKS){
+    if (!L.gate){ taken.push(Math.floor(DIV*L.frac)); continue; }
+    let best=Math.floor(DIV*L.frac), bestScore=Infinity;
+    for (let i=0;i<DIV;i+=4){
+      if (taken.some(t=>{let d=Math.abs(i-t);d=Math.min(d,DIV-d);return d<90;})) continue;
+      let s=0; for (let k=-30;k<=30;k++) s+=Math.abs(frames[(i+k+DIV)%DIV].curv);
+      if (s<bestScore){ bestScore=s; best=i; }
+    }
+    L.frac=best/DIV; taken.push(best);
+  }
+  // frame indices to keep clear of generic buildings so nothing blocks a landmark
+  const keepout = LANDMARKS.map(L=>Math.floor(DIV*L.frac));
+  const nearLM = (i)=> keepout.some(k=>{ let d=Math.abs(i-k); d=Math.min(d,DIV-d); return d < 70; });
+
   // ---- mid-distance buildings lining urban circuits ----
   if (th.buildings){
     const winTex = makeWindowTexture(th.landmark==='dubai');
-    for (let i=0;i<DIV;i+=24){
-      const side=(i%48===0)?1:-1, f=frames[i];
-      const h=24 + rng()*(th.landmark==='dubai'?90:46), w=12+rng()*12;
+    for (let i=0;i<DIV;i+=36){
+      if (nearLM(i)) continue;                 // leave a gap around each landmark
+      const side=(i%72===0)?1:-1, f=frames[i];
+      const h=20 + rng()*(th.landmark==='dubai'?70:34), w=12+rng()*12;
       const col = th.landmark==='dubai' ? 0xbcd0e2 : [0x8a6248,0x96704e,0x6f5e54][(rng()*3)|0];
       const mat=new THREE.MeshStandardMaterial({color:col, roughness:0.7, metalness:th.landmark==='dubai'?0.45:0.05, map:winTex.clone()});
       mat.map.repeat.set(Math.max(1,w/8), Math.max(2,h/10));
@@ -551,9 +586,7 @@ function buildScenery(rng) {
       sceneryGroup.add(b);
     }
   }
-  // ---- landmark set-pieces ----
-  if (th.landmark==='london'){ addBigBen(sceneryGroup, frames); addTowerBridge(sceneryGroup, frames); addShard(sceneryGroup, frames); addGherkin(sceneryGroup, frames); }
-  if (th.landmark==='dubai'){ addBurj(sceneryGroup, frames); addBurjAlArab(sceneryGroup, frames); addDubaiFrame(sceneryGroup, frames); }
+  for (const L of LANDMARKS) L.fn(sceneryGroup, frames, L);
   // ---- sea-side water plane ----
   if (th.water){
     const water=new THREE.Mesh(new THREE.PlaneGeometry(3600,3600),
@@ -666,6 +699,18 @@ function makeWindowTexture(glassy){
 // London — a towering Elizabeth Tower (Big Ben) + a big London Eye, near the start
 // ---- recognisable (still stylised, copyright-free) landmarks ----
 function lmBox(mat,w,h,d,x,y,z){ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat); m.position.set(x||0,y||0,z||0); return m; }
+// Drop a finished landmark group right at the trackside for the given spec
+// ({frac,side,scale}); faceY lets flat pieces (the Eye, the sail) turn to face
+// the road. Returns the road frame it was anchored to.
+function placeLandmark(group, g, frames, spec, faceY, lift){
+  const f=frames[((Math.floor(DIV*spec.frac))%DIV+DIV)%DIV];
+  const off=(ROAD_W+RUMBLE_W)+26;
+  g.position.copy(f.pos).addScaledVector(f.right, spec.side*off).setY((lift||0)*(spec.scale||1));
+  g.rotation.y=Math.atan2(f.tan.x,f.tan.z) + (faceY||0);
+  g.scale.setScalar(spec.scale||1);
+  group.add(g);
+  return f;
+}
 function makeClockFace(){
   const cv=document.createElement('canvas'); cv.width=cv.height=64; const x=cv.getContext('2d');
   x.fillStyle='#f6efd6'; x.beginPath(); x.arc(32,32,30,0,6.28); x.fill();
@@ -683,11 +728,11 @@ function makeLatticeTexture(){
   const t=new THREE.CanvasTexture(cv); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.colorSpace=THREE.SRGBColorSpace; return t;
 }
 // London — the Elizabeth Tower (Big Ben): slender Gothic clock tower
-function addBigBen(group, frames){
-  const f=frames[Math.floor(DIV*0.04)], g=new THREE.Group();
-  const stone=new THREE.MeshStandardMaterial({color:0xc9b486, roughness:0.85});
-  const trim =new THREE.MeshStandardMaterial({color:0xab9059, roughness:0.85});
-  const copper=new THREE.MeshStandardMaterial({color:0x4f8a6a, roughness:0.55, metalness:0.2});
+function addBigBen(group, frames, spec){
+  const g=new THREE.Group();
+  const stone=new THREE.MeshStandardMaterial({color:0xa9883f, roughness:0.85});
+  const trim =new THREE.MeshStandardMaterial({color:0x806223, roughness:0.85});
+  const copper=new THREE.MeshStandardMaterial({color:0x3f7d5c, roughness:0.55, metalness:0.2});
   g.add(lmBox(stone,15,16,15,0,8,0));
   g.add(lmBox(stone,12,92,12,0,62,0));
   for (const sx of [-6.2,6.2]) for (const sz of [-6.2,6.2]) g.add(lmBox(trim,1.4,92,1.4,sx,62,sz));
@@ -704,12 +749,11 @@ function addBigBen(group, frames){
   for (const cx of [-1,1]) for (const cz of [-1,1]){ const pin=new THREE.Mesh(new THREE.ConeGeometry(1.6,16,6), copper); pin.position.set(cx*6.4,131,cz*6.4); g.add(pin); }
   const spire=new THREE.Mesh(new THREE.ConeGeometry(8,32,8), copper); spire.position.y=140; g.add(spire);
   const finial=new THREE.Mesh(new THREE.SphereGeometry(1.4,8,8), trim); finial.position.y=158; g.add(finial);
-  g.position.copy(f.pos).addScaledVector(f.right,40).setY(0); g.rotation.y=Math.atan2(f.tan.x,f.tan.z); group.add(g);
-  addLondonEye(group, frames);
+  placeLandmark(group, g, frames, spec);
 }
-function addLondonEye(group, frames){
-  const f=frames[Math.floor(DIV*0.12)], eye=new THREE.Group();
-  const rim=new THREE.MeshStandardMaterial({color:0xeef3f8, metalness:0.5, roughness:0.4});
+function addLondonEye(group, frames, spec){
+  const eye=new THREE.Group();
+  const rim=new THREE.MeshStandardMaterial({color:0xb6c2cb, metalness:0.5, roughness:0.4});
   const R=38;
   eye.add(new THREE.Mesh(new THREE.TorusGeometry(R,1.3,8,60), rim));
   eye.add(new THREE.Mesh(new THREE.TorusGeometry(R-2,0.5,6,60), rim));
@@ -719,12 +763,11 @@ function addLondonEye(group, frames){
   for (let k=0;k<28;k++){ const a=k/28*6.28; eye.add(lmBox(pod,3,2,3,Math.cos(a)*R,Math.sin(a)*R,0)); }
   // A-frame support legs
   for (const sx of [-1,1]){ const leg=lmBox(rim,1.8,R+12,1.8,sx*9,-(R+12)/2+2,7); leg.rotation.x=0.32; eye.add(leg); }
-  eye.position.copy(f.pos).addScaledVector(f.right,56).setY(R+4);
-  eye.rotation.y=Math.atan2(f.tan.x,f.tan.z); group.add(eye);
+  placeLandmark(group, eye, frames, spec, Math.PI/2, R+4);   // wheel faces the track
 }
 // London — Tower Bridge: twin Victorian-Gothic towers + high walkways + chains
-function addTowerBridge(group, frames){
-  const f=frames[Math.floor(DIV*0.55)], g=new THREE.Group();
+function addTowerBridge(group, frames, spec){
+  const f=frames[Math.floor(DIV*(spec?spec.frac:0.55))], g=new THREE.Group();
   const stone=new THREE.MeshStandardMaterial({color:0xcdbf9f, roughness:0.8});
   const blue =new THREE.MeshStandardMaterial({color:0x4a86c0, roughness:0.5, metalness:0.35});
   const hw = ROAD_W+RUMBLE_W+5;
@@ -747,29 +790,29 @@ function addTowerBridge(group, frames){
   g.position.copy(f.pos); g.rotation.y=Math.atan2(f.tan.x,f.tan.z); group.add(g);
 }
 // London — The Shard: tapering glass pyramid with a fractured open top
-function addShard(group, frames){
-  const f=frames[Math.floor(DIV*0.8)], g=new THREE.Group();
-  const glass=new THREE.MeshPhysicalMaterial({color:0xb4cad9, metalness:0.25, roughness:0.1, clearcoat:0.7, clearcoatRoughness:0.08});
+function addShard(group, frames, spec){
+  const g=new THREE.Group();
+  const glass=new THREE.MeshPhysicalMaterial({color:0x55738a, metalness:0.4, roughness:0.12, clearcoat:0.7, clearcoatRoughness:0.08});
   const h=270;
   const body=new THREE.Mesh(new THREE.CylinderGeometry(2,22,h,8), glass); body.position.y=h/2; body.rotation.y=Math.PI/8; g.add(body);
   // fractured shards: 8 thin glass blades poking past the apex at angles
   for (let k=0;k<8;k++){ const a=k/8*6.28; const sp=new THREE.Mesh(new THREE.ConeGeometry(1.3,40,3), glass); sp.position.set(Math.cos(a)*2.5,h+8+(k%3)*5,Math.sin(a)*2.5); sp.rotation.z=Math.cos(a)*0.16; sp.rotation.x=Math.sin(a)*0.16; g.add(sp); }
-  g.position.copy(f.pos).addScaledVector(f.right,58).setY(0); group.add(g);
+  placeLandmark(group, g, frames, spec);
 }
 // London — 30 St Mary Axe (the Gherkin): bullet shape with the diagonal lattice
-function addGherkin(group, frames){
-  const f=frames[Math.floor(DIV*0.38)], g=new THREE.Group();
-  const glass=new THREE.MeshPhysicalMaterial({color:0x8fb39a, metalness:0.3, roughness:0.2, clearcoat:0.5, map:makeLatticeTexture()});
+function addGherkin(group, frames, spec){
+  const g=new THREE.Group();
+  const glass=new THREE.MeshPhysicalMaterial({color:0x4f876a, metalness:0.35, roughness:0.22, clearcoat:0.5, map:makeLatticeTexture()});
   glass.map.repeat.set(8,10);
   const pts=[];
   for (let i=0;i<=16;i++){ const t=i/16; const yy=t*140; const rr=Math.sin(t*Math.PI*0.96+0.1)*16+1.5; pts.push(new THREE.Vector2(Math.max(0.4,rr), yy)); }
   g.add(new THREE.Mesh(new THREE.LatheGeometry(pts,24), glass));
   const tip=new THREE.Mesh(new THREE.SphereGeometry(2.4,12,8), new THREE.MeshStandardMaterial({color:0xcfe0d6, metalness:0.4, roughness:0.1})); tip.position.y=141; g.add(tip);
-  g.position.copy(f.pos).addScaledVector(f.right,-52).setY(0); group.add(g);
+  placeLandmark(group, g, frames, spec);
 }
 // Dubai — Burj Khalifa: Y-plan with spiralling stepped setbacks + tall spire
-function addBurj(group, frames){
-  const f=frames[Math.floor(DIV*0.05)], g=new THREE.Group();
+function addBurj(group, frames, spec){
+  const g=new THREE.Group();
   const glass=new THREE.MeshStandardMaterial({color:0xcfe2f2, metalness:0.6, roughness:0.16, map:makeWindowTexture(true)});
   glass.map.repeat.set(2,6);
   let y=0; const tiers=15;
@@ -784,16 +827,16 @@ function addBurj(group, frames){
   }
   const core=new THREE.Mesh(new THREE.CylinderGeometry(3.5,7,34,12), glass); core.position.y=y+17; g.add(core); y+=34;
   const spire=new THREE.Mesh(new THREE.CylinderGeometry(0.5,3,150,8), new THREE.MeshStandardMaterial({color:0xeef3f8, metalness:0.7, roughness:0.2})); spire.position.y=y+75; g.add(spire);
-  g.position.copy(f.pos).addScaledVector(f.right,82).setY(0); group.add(g);
-  for (const [u,off,h,col] of [[0.03,-66,150,0xbcd6ea],[0.08,92,190,0xa9c6dd]]){
-    const ff=frames[Math.floor(DIV*u)];
-    const tw=new THREE.Mesh(new THREE.BoxGeometry(26,h,26), new THREE.MeshStandardMaterial({color:col, metalness:0.55, roughness:0.22, map:makeWindowTexture(true)}));
-    tw.material.map.repeat.set(2,10); tw.position.copy(ff.pos).addScaledVector(ff.right,off).setY(h/2); group.add(tw);
+  // a couple of slimmer satellite towers so it reads as a downtown cluster
+  for (const [dx,dz,h,col] of [[-58,18,150,0xbcd6ea],[64,-26,200,0xa9c6dd]]){
+    const tw=new THREE.Mesh(new THREE.BoxGeometry(24,h,24), new THREE.MeshStandardMaterial({color:col, metalness:0.55, roughness:0.22, map:makeWindowTexture(true)}));
+    tw.material.map.repeat.set(2,10); tw.position.set(dx,h/2,dz); g.add(tw);
   }
+  placeLandmark(group, g, frames, spec);
 }
 // Dubai — Burj Al Arab: the billowing sail hotel with mast & helipad
-function addBurjAlArab(group, frames){
-  const f=frames[Math.floor(DIV*0.62)], g=new THREE.Group();
+function addBurjAlArab(group, frames, spec){
+  const g=new THREE.Group();
   const white=new THREE.MeshStandardMaterial({color:0xeef3f7, roughness:0.45, metalness:0.15, side:THREE.DoubleSide});
   const steel=new THREE.MeshStandardMaterial({color:0xcdd6dd, metalness:0.6, roughness:0.4});
   const h=210;
@@ -807,11 +850,11 @@ function addBurjAlArab(group, frames){
   // cantilevered helipad disc near the top
   const heli=new THREE.Mesh(new THREE.CylinderGeometry(9,9,1.4,18), white); heli.position.set(-2,h-12,16); g.add(heli);
   const mast2=new THREE.Mesh(new THREE.CylinderGeometry(0.6,0.6,18,6), steel); mast2.position.set(-16,h+9,0); g.add(mast2);
-  g.position.copy(f.pos).addScaledVector(f.right,84).setY(0); g.rotation.y=Math.atan2(f.tan.x,f.tan.z); group.add(g);
+  placeLandmark(group, g, frames, spec, Math.PI/2);   // sail broadside to the track
 }
 // Dubai — the Dubai Frame: two towers joined by a top sky-bridge (open frame)
-function addDubaiFrame(group, frames){
-  const f=frames[Math.floor(DIV*0.26)], g=new THREE.Group();
+function addDubaiFrame(group, frames, spec){
+  const f=frames[Math.floor(DIV*(spec?spec.frac:0.26))], g=new THREE.Group();
   const gold=new THREE.MeshStandardMaterial({color:0xd4af37, metalness:0.85, roughness:0.3, map:makeWindowTexture(false)});
   gold.map.repeat.set(2,10);
   const W=66, H=150, tw=13, td=9;
