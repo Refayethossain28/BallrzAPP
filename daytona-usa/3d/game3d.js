@@ -35,10 +35,20 @@ const DIV = 1400;                 // spline samples (road resolution)
 const FPS = 60, STEP = 1/FPS;
 const ROLL_TOTAL = 7.0;           // rolling-start intro length (seconds)
 
+// hand-authored closed-loop circuit layouts [x,y,z] (stylised, recognisable
+// street circuits — not GPS-accurate satellite traces)
+const LONDON_LAYOUT = [
+  [-200,0,-150],[-60,5,-205],[120,2,-195],[215,0,-95],
+  [228,6,45],[150,3,155],[10,7,205],[-140,2,180],[-228,5,45],[-215,0,-70],
+];
+const DUBAI_LAYOUT = [
+  [-310,0,-55],[-235,4,-150],[-90,6,-188],[85,3,-182],[235,0,-130],
+  [315,6,-15],[298,8,85],[205,4,158],[60,7,182],[-100,2,168],[-235,6,80],[-325,3,-5],
+];
 const CIRCUITS = [
   { name:'DAYTONA', laps:8, maxSpeed:118, curveMul:0.85, aiSpeed:0.74, startTime:60, lapBonus:26, seed:1,  theme:0 },
-  { name:'LONDON',  laps:6, maxSpeed:120, curveMul:1.05, aiSpeed:0.78, startTime:60, lapBonus:30, seed:11, theme:3 },
-  { name:'DUBAI',   laps:6, maxSpeed:132, curveMul:1.1,  aiSpeed:0.82, startTime:64, lapBonus:30, seed:23, theme:4 },
+  { name:'LONDON',  laps:6, maxSpeed:120, curveMul:1.0,  aiSpeed:0.78, startTime:62, lapBonus:30, seed:11, theme:3, layout:LONDON_LAYOUT },
+  { name:'DUBAI',   laps:6, maxSpeed:132, curveMul:1.0,  aiSpeed:0.82, startTime:66, lapBonus:30, seed:23, theme:4, layout:DUBAI_LAYOUT },
 ];
 // per-circuit environment themes (colours, props, set-pieces)
 const THEMES = [
@@ -237,16 +247,20 @@ function buildTrack(diff) {
   // push fog back on city circuits so the skyline / landmarks stay visible
   scene.fog.near = 360; scene.fog.far = (G.theme.skyline==='city') ? 1600 : 900;
   buildSky(G.theme);
-  // ---- control points: an organic closed circuit with hills ----
+  // ---- control points: a hand-authored real-circuit layout, or an organic one ----
   const rng = mulberry32(diff.seed * 2654435761);
-  const NCP = 14;
-  const cps = [];
-  for (let i=0;i<NCP;i++){
-    const ang = (i/NCP)*Math.PI*2;
-    const r = 200 + Math.sin(ang*2 + diff.seed)*60*diff.curveMul
-                  + Math.sin(ang*3)*34*diff.curveMul + (rng()-0.5)*30;
-    const y = Math.sin(ang*2)*9 + Math.sin(ang*3+1)*6 + (rng()-0.5)*4;
-    cps.push(new THREE.Vector3(Math.cos(ang)*r, y, Math.sin(ang)*r));
+  let cps = [];
+  if (diff.layout){
+    cps = diff.layout.map(p=>new THREE.Vector3(p[0],p[1],p[2]));
+  } else {
+    const NCP = 14;
+    for (let i=0;i<NCP;i++){
+      const ang = (i/NCP)*Math.PI*2;
+      const r = 200 + Math.sin(ang*2 + diff.seed)*60*diff.curveMul
+                    + Math.sin(ang*3)*34*diff.curveMul + (rng()-0.5)*30;
+      const y = Math.sin(ang*2)*9 + Math.sin(ang*3+1)*6 + (rng()-0.5)*4;
+      cps.push(new THREE.Vector3(Math.cos(ang)*r, y, Math.sin(ang)*r));
+    }
   }
   const curve = new THREE.CatmullRomCurve3(cps, true, 'catmullrom', 0.5);
   G.L = curve.getLength();
@@ -538,8 +552,8 @@ function buildScenery(rng) {
     }
   }
   // ---- landmark set-pieces ----
-  if (th.landmark==='london') addBigBen(sceneryGroup, frames);
-  if (th.landmark==='dubai') addBurj(sceneryGroup, frames);
+  if (th.landmark==='london'){ addBigBen(sceneryGroup, frames); addTowerBridge(sceneryGroup, frames); addShard(sceneryGroup, frames); addGherkin(sceneryGroup, frames); }
+  if (th.landmark==='dubai'){ addBurj(sceneryGroup, frames); addBurjAlArab(sceneryGroup, frames); addDubaiFrame(sceneryGroup, frames); }
   // ---- sea-side water plane ----
   if (th.water){
     const water=new THREE.Mesh(new THREE.PlaneGeometry(3600,3600),
@@ -696,6 +710,70 @@ function addBurj(group, frames){
     t.material.map.repeat.set(2,10);
     t.position.copy(ff.pos).addScaledVector(ff.right, off).setY(h/2); group.add(t);
   }
+}
+// London — Tower Bridge: a gateway with twin Gothic towers + high walkways
+function addTowerBridge(group, frames){
+  const f=frames[Math.floor(DIV*0.55)];
+  const g=new THREE.Group();
+  const stone=new THREE.MeshStandardMaterial({color:0xc3b79c, roughness:0.8});
+  const blue =new THREE.MeshStandardMaterial({color:0x3f74ab, roughness:0.5, metalness:0.35});
+  const halfW = ROAD_W+RUMBLE_W+5;
+  for (const sx of [-1,1]){
+    const base=new THREE.Mesh(new THREE.BoxGeometry(9,44,9), stone); base.position.set(sx*halfW,22,0); g.add(base);
+    const roof=new THREE.Mesh(new THREE.ConeGeometry(6.6,18,4), blue); roof.position.set(sx*halfW,53,0); roof.rotation.y=Math.PI/4; g.add(roof);
+    for (const cx of [-1,1]) for (const cz of [-1,1]){ const tr=new THREE.Mesh(new THREE.ConeGeometry(1.8,9,8), blue); tr.position.set(sx*halfW+cx*4,49,cz*4); g.add(tr); }
+  }
+  for (const yy of [33,39]){ const w=new THREE.Mesh(new THREE.BoxGeometry(halfW*2,1.4,3.2), blue); w.position.set(0,yy,0); g.add(w); }
+  // suspension cables (thin angled bars from towers down to the road sides)
+  for (const sx of [-1,1]) for (const dz of [-1,1]){
+    const c=new THREE.Mesh(new THREE.BoxGeometry(0.4,0.4,halfW*0.9), blue);
+    c.position.set(sx*halfW*0.5, 14, dz*halfW*0.7); c.rotation.x=dz*0.5; g.add(c);
+  }
+  g.position.copy(f.pos); g.rotation.y=Math.atan2(f.tan.x,f.tan.z); group.add(g);
+}
+// London — The Shard: a tapering 4-sided glass spire
+function addShard(group, frames){
+  const f=frames[Math.floor(DIV*0.8)], g=new THREE.Group();
+  const glass=new THREE.MeshPhysicalMaterial({color:0xa9c0d4, metalness:0.3, roughness:0.12, clearcoat:0.6, clearcoatRoughness:0.1});
+  const h=250;
+  const body=new THREE.Mesh(new THREE.CylinderGeometry(2.5,24,h,4), glass); body.position.y=h/2; body.rotation.y=Math.PI/4; g.add(body);
+  for (let k=0;k<4;k++){ const sp=new THREE.Mesh(new THREE.ConeGeometry(1.4,34,3), glass); sp.position.set((k-1.5)*2.2,h+12,0); g.add(sp); }
+  g.position.copy(f.pos).addScaledVector(f.right, 58).setY(0); group.add(g);
+}
+// London — 30 St Mary Axe (the Gherkin): a bullet-shaped glass tower
+function addGherkin(group, frames){
+  const f=frames[Math.floor(DIV*0.38)], g=new THREE.Group();
+  const glass=new THREE.MeshPhysicalMaterial({color:0x82a06f, metalness:0.35, roughness:0.18, clearcoat:0.5});
+  const pts=[];
+  for (let i=0;i<=14;i++){ const t=i/14; const yy=t*130; const rr=Math.sin(t*Math.PI*0.94+0.12)*15+1.5; pts.push(new THREE.Vector2(Math.max(0.4,rr), yy)); }
+  g.add(new THREE.Mesh(new THREE.LatheGeometry(pts,18), glass));
+  const tip=new THREE.Mesh(new THREE.ConeGeometry(2,8,10), glass); tip.position.y=131; g.add(tip);
+  g.position.copy(f.pos).addScaledVector(f.right, -52).setY(0); group.add(g);
+}
+// Dubai — Burj Al Arab: the sail-shaped hotel
+function addBurjAlArab(group, frames){
+  const f=frames[Math.floor(DIV*0.62)], g=new THREE.Group();
+  const white=new THREE.MeshStandardMaterial({color:0xeef3f7, roughness:0.4, metalness:0.2, side:THREE.DoubleSide});
+  const h=200;
+  const mast=new THREE.Mesh(new THREE.CylinderGeometry(1.8,3.2,h,8), white); mast.position.set(-15,h/2,0); g.add(mast);
+  // two billowing sail panels
+  const sailShape=new THREE.Shape(); sailShape.moveTo(0,0); sailShape.lineTo(0,h); sailShape.quadraticCurveTo(34,h*0.55,33,0); sailShape.lineTo(0,0);
+  const sailGeo=new THREE.ShapeGeometry(sailShape);
+  for (const sgn of [1,-1]){ const s=new THREE.Mesh(sailGeo, white); s.position.set(-15,0,0); s.rotation.y=sgn*0.5; g.add(s); }
+  const top=new THREE.Mesh(new THREE.BoxGeometry(10,2,10), new THREE.MeshStandardMaterial({color:0xd4af37, metalness:0.7, roughness:0.3})); top.position.set(2,h-6,0); g.add(top);
+  g.position.copy(f.pos).addScaledVector(f.right, 82).setY(0); g.rotation.y=Math.atan2(f.tan.x,f.tan.z); group.add(g);
+}
+// Dubai — the Dubai Frame: a giant golden rectangular frame
+function addDubaiFrame(group, frames){
+  const f=frames[Math.floor(DIV*0.26)], g=new THREE.Group();
+  const gold=new THREE.MeshStandardMaterial({color:0xd4af37, metalness:0.85, roughness:0.3, map:makeWindowTexture(true)});
+  gold.map.repeat.set(1,8);
+  const W=64, H=150, t=11;
+  const l=new THREE.Mesh(new THREE.BoxGeometry(t,H,t), gold); l.position.set(-W/2,H/2,0); g.add(l);
+  const r=l.clone(); r.position.x=W/2; g.add(r);
+  const top=new THREE.Mesh(new THREE.BoxGeometry(W+t,t,t), new THREE.MeshStandardMaterial({color:0xd4af37, metalness:0.85, roughness:0.3})); top.position.set(0,H,0); g.add(top);
+  const bot=new THREE.Mesh(new THREE.BoxGeometry(W+t,t*0.8,t), new THREE.MeshStandardMaterial({color:0xc59a2e, metalness:0.8, roughness:0.35})); bot.position.set(0,5,0); g.add(bot);
+  g.position.copy(f.pos).addScaledVector(f.right, 72).setY(0); g.rotation.y=Math.atan2(f.tan.x,f.tan.z); group.add(g);
 }
 function makeCrowdTexture(){
   const cv=document.createElement('canvas'); cv.width=256; cv.height=96; const x=cv.getContext('2d');
