@@ -750,37 +750,67 @@ function addLights(g,y,zf,zr){
     const b=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.18,0.08),tl); b.position.set(sx,y,zr); g.add(b);
   }
 }
+// alloy wheel: tyre + chrome dish + 5 spokes + hub
 function addWheels(g,tx,tz,r){
-  const tyre=new THREE.CylinderGeometry(r,r,0.5,16), tm=matteMat(0x0b0b0b), rm=chromeMat();
+  const tyre=new THREE.CylinderGeometry(r,r,0.46,20), tm=matteMat(0x0b0b0b);
+  const dish=new THREE.CylinderGeometry(r*0.66,r*0.66,0.5,20), rm=chromeMat();
+  const hub=new THREE.CylinderGeometry(r*0.16,r*0.16,0.52,10), hm=matteMat(0x33373d);
   for (const [wx,wz] of [[-tx,tz],[tx,tz],[-tx,-tz],[tx,-tz]]){
     const w=new THREE.Mesh(tyre,tm); w.rotation.z=Math.PI/2; w.position.set(wx,r,wz); g.add(w);
-    const rim=new THREE.Mesh(new THREE.CylinderGeometry(r*0.55,r*0.55,0.52,10),rm); rim.rotation.z=Math.PI/2; rim.position.set(wx,r,wz); g.add(rim);
+    const d=new THREE.Mesh(dish,rm); d.rotation.z=Math.PI/2; d.position.set(wx,r,wz); g.add(d);
+    for (let k=0;k<5;k++){ const sp=new THREE.Mesh(new THREE.BoxGeometry(0.52,r*0.9,0.08),rm); sp.position.set(wx,r,wz); sp.rotation.x=k*Math.PI*2/5; g.add(sp); }
+    const h=new THREE.Mesh(hub,hm); h.rotation.z=Math.PI/2; h.position.set(wx,r,wz); g.add(h);
   }
 }
+function addMirrors(g,x,y,z,mat){
+  for (const sx of [-x,x]){
+    const arm=new THREE.Mesh(new THREE.BoxGeometry(0.34,0.12,0.12), mat); arm.position.set(sx*0.92,y,z); g.add(arm);
+    const cap=new THREE.Mesh(new THREE.BoxGeometry(0.18,0.26,0.34), mat); cap.position.set(sx,y+0.02,z-0.04); g.add(cap);
+  }
+}
+// build a beveled, car-shaped body by extruding a side profile (front = +x)
+function extrudeCar(profile, width, bevel, mat){
+  const s=new THREE.Shape();
+  s.moveTo(profile[0][0],profile[0][1]);
+  for (let i=1;i<profile.length;i++) s.lineTo(profile[i][0],profile[i][1]);
+  s.closePath();
+  const geo=new THREE.ExtrudeGeometry(s,{depth:width, bevelEnabled:bevel>0, bevelThickness:bevel, bevelSize:bevel, bevelSegments:2, steps:1, curveSegments:4});
+  geo.translate(0,0,-width/2);
+  const m=new THREE.Mesh(geo, mat); m.rotation.y=-Math.PI/2;  // length(+x) -> +z forward
+  return m;
+}
+// side profiles (front = +x, up = +y)
+const SED_LOWER=[[2.58,0.5],[2.62,0.92],[2.42,1.08],[1.4,1.14],[0.55,1.16],[-1.65,1.16],[-2.3,1.1],[-2.58,0.98],[-2.6,0.5],[-2.4,0.34],[2.4,0.34]];
+const SED_GLASS=[[0.58,1.16],[0.34,1.58],[-1.05,1.62],[-1.6,1.32],[-1.62,1.16]];
+const SED_ROOF =[[0.36,1.55],[-1.05,1.59],[-1.12,1.69],[0.3,1.65]];
+const VAN_LOWER=[[2.64,0.54],[2.68,1.05],[2.5,1.3],[2.05,1.32],[-2.64,1.32],[-2.66,0.54],[-2.46,0.36],[2.46,0.36]];
+const VAN_GLASS=[[2.05,1.32],[1.86,2.02],[-2.42,2.1],[-2.54,1.32]];
+const VAN_ROOF =[[1.86,1.98],[-2.42,2.06],[-2.48,2.26],[1.8,2.18]];
+
 // kind: 'van' (V-Class) or 'sedan' (S-Class). Front faces +z.
 function buildVehicleMesh(kind, color){
   const g=new THREE.Group();
+  const body=paintMat(color), glass=glassMat(), dark=matteMat(0x121417), chrome=chromeMat();
   if (kind==='van'){
-    const body=new THREE.Mesh(new THREE.BoxGeometry(2.6,1.45,5.6), paintMat(color)); body.position.y=1.2; g.add(body);
-    const skirt=new THREE.Mesh(new THREE.BoxGeometry(2.64,0.5,5.64), matteMat(0x111316)); skirt.position.y=0.6; g.add(skirt);
-    const win=new THREE.Mesh(new THREE.BoxGeometry(2.52,0.72,4.3), glassMat()); win.position.set(0,1.7,-0.1); g.add(win);
-    const roof=new THREE.Mesh(new THREE.BoxGeometry(2.5,0.2,5.0), paintMat(color)); roof.position.set(0,2.0,-0.2); g.add(roof);
-    const ws=new THREE.Mesh(new THREE.BoxGeometry(2.42,0.95,0.2), glassMat()); ws.position.set(0,1.7,2.45); ws.rotation.x=0.32; g.add(ws);
-    const grille=new THREE.Mesh(new THREE.BoxGeometry(2.2,0.62,0.16), matteMat(0x0a0a0a)); grille.position.set(0,1.02,2.82); g.add(grille);
-    const cs=new THREE.Mesh(new THREE.BoxGeometry(2.3,0.07,0.05), chromeMat()); cs.position.set(0,1.3,2.85); g.add(cs);
-    addEmblem(g,0,1.04,2.92,0.42); addLights(g,1.05,2.84,-2.84); addWheels(g,1.36,1.95,0.62);
+    const W=2.42;
+    g.add(extrudeCar(VAN_LOWER, W, 0.1, body));
+    g.add(extrudeCar(VAN_GLASS, W-0.16, 0.04, glass));
+    g.add(extrudeCar(VAN_ROOF,  W-0.06, 0.05, body));
+    const sill=new THREE.Mesh(new THREE.BoxGeometry(W+0.02,0.34,5.0), dark); sill.position.set(0,0.5,-0.1); g.add(sill);
+    const grille=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.5,0.12), dark); grille.position.set(0,0.95,2.66); g.add(grille);
+    const cs=new THREE.Mesh(new THREE.BoxGeometry(2.0,0.08,0.06), chrome); cs.position.set(0,1.22,2.7); g.add(cs);
+    addEmblem(g,0,1.0,2.74,0.4); addLights(g,1.02,2.66,-2.64);
+    addMirrors(g,1.34,1.55,1.9,body); addWheels(g,1.34,1.95,0.62);
   } else {
-    const body=new THREE.Mesh(new THREE.BoxGeometry(2.4,0.86,5.5), paintMat(color)); body.position.y=0.8; g.add(body);
-    const hood=new THREE.Mesh(new THREE.BoxGeometry(2.32,0.34,1.9), paintMat(color)); hood.position.set(0,1.04,1.95); g.add(hood);
-    const trunk=new THREE.Mesh(new THREE.BoxGeometry(2.32,0.4,1.2), paintMat(color)); trunk.position.set(0,1.04,-2.2); g.add(trunk);
-    const cabin=new THREE.Mesh(new THREE.BoxGeometry(2.16,0.6,2.7), paintMat(color)); cabin.position.set(0,1.42,-0.2); g.add(cabin);
-    const gl=new THREE.Mesh(new THREE.BoxGeometry(2.18,0.5,2.5), glassMat()); gl.position.set(0,1.45,-0.2); g.add(gl);
-    const ws=new THREE.Mesh(new THREE.BoxGeometry(2.05,0.62,0.16), glassMat()); ws.position.set(0,1.4,1.12); ws.rotation.x=0.6; g.add(ws);
-    const rw=new THREE.Mesh(new THREE.BoxGeometry(2.05,0.56,0.16), glassMat()); rw.position.set(0,1.4,-1.5); rw.rotation.x=-0.6; g.add(rw);
-    const roof=new THREE.Mesh(new THREE.BoxGeometry(2.02,0.14,2.0), paintMat(color)); roof.position.set(0,1.73,-0.25); g.add(roof);
-    const grille=new THREE.Mesh(new THREE.BoxGeometry(1.95,0.46,0.16), matteMat(0x07080a)); grille.position.set(0,0.92,2.78); g.add(grille);
-    const cs=new THREE.Mesh(new THREE.BoxGeometry(2.05,0.08,0.05), chromeMat()); cs.position.set(0,1.16,2.82); g.add(cs);
-    addEmblem(g,0,0.96,2.88,0.34); addLights(g,0.96,2.8,-2.78); addWheels(g,1.26,1.85,0.58);
+    const W=2.3;
+    g.add(extrudeCar(SED_LOWER, W, 0.1, body));
+    g.add(extrudeCar(SED_GLASS, W-0.16, 0.04, glass));
+    g.add(extrudeCar(SED_ROOF,  W-0.06, 0.05, body));
+    const sill=new THREE.Mesh(new THREE.BoxGeometry(W+0.02,0.22,4.6), dark); sill.position.set(0,0.46,0); g.add(sill);
+    const grille=new THREE.Mesh(new THREE.BoxGeometry(1.7,0.4,0.12), dark); grille.position.set(0,0.85,2.56); g.add(grille);
+    const cs=new THREE.Mesh(new THREE.BoxGeometry(1.85,0.07,0.06), chrome); cs.position.set(0,1.06,2.6); g.add(cs);
+    addEmblem(g,0,0.88,2.62,0.32); addLights(g,0.92,2.56,-2.56);
+    addMirrors(g,1.24,1.2,1.0,body); addWheels(g,1.26,1.78,0.56);
   }
   applyShadows(g);
   return g;
@@ -973,7 +1003,9 @@ function resetCars(){
       color:LIVERIES[i%LIVERIES.length], lap:1, progress:0, jitter:Math.random()*6.28,
     };
     G.cars.push(car);
-    const mesh = buildCarMesh(car.color, false, num);
+    // rivals are realistic saloons/vans in varied colours (same models as the player)
+    const mesh = buildVehicleMesh(i%4===0 ? 'van' : 'sedan', car.color);
+    void num;
     if (MOBILE) mesh.traverse(o=>{ if(o.isMesh) o.castShadow=false; });   // perf: rivals don't cast on mobile
     scene.add(mesh); rivalMeshes.push(mesh);
   }
