@@ -65,6 +65,11 @@
   #stage::before{content:"";position:absolute;left:0;right:0;height:20%;z-index:3;pointer-events:none;
     background:linear-gradient(180deg,transparent,rgba(160,200,255,.08),transparent);animation:scansweep 4.5s linear infinite}
   @keyframes scansweep{0%{top:-20%}100%{top:100%}}
+  /* cinematic film grain */
+  #grain{position:absolute;inset:-60%;z-index:4;pointer-events:none;opacity:.05;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size:180px 180px;animation:grain .5s steps(2) infinite}
+  @keyframes grain{0%{transform:translate(0,0)}50%{transform:translate(-4%,3%)}100%{transform:translate(3%,-2%)}}
   canvas#game{display:block;width:100%;height:100%;position:relative;z-index:1}
   canvas#game.shake{animation:shake .4s cubic-bezier(.36,.07,.19,.97)}
   /* CRT: scanlines + vignette over the play */
@@ -213,7 +218,7 @@
   @keyframes blink{50%{opacity:0}}
   @media (prefers-reduced-motion: reduce){
     .hero::before,.hero::after,.hero-title,.cta.big::after,body::before,.press-start,
-    #stage,#stage::before{animation:none}
+    #stage,#stage::before,#grain{animation:none}
   }
 </style>
 </head>
@@ -241,6 +246,7 @@
 
   <div id="stage">
     <canvas id="game"></canvas>
+    <div id="grain"></div>
     <button id="pauseBtn" aria-label="Pause">⏸</button>
 
     <!-- start / how-to -->
@@ -588,8 +594,10 @@ function resize(){
   if(had && targets.length){ const sx=nW/W, sy=nH/H; for(const t of targets){ t.x*=sx; t.y*=sy; } }
   W=nW; H=nH; DPR=dpr;
   cv.width=W*DPR; cv.height=H*DPR; ctx.setTransform(DPR,0,0,DPR,0,0);
-  if(!bloomCv){ bloomCv=document.createElement('canvas'); bloomCtx=bloomCv.getContext('2d'); }
+  if(!bloomCv){ bloomCv=document.createElement('canvas'); bloomCtx=bloomCv.getContext('2d');
+                caCv=document.createElement('canvas'); caCtx=caCv.getContext('2d'); }
   bloomCv.width=Math.max(1,Math.round(cv.width*0.5)); bloomCv.height=Math.max(1,Math.round(cv.height*0.5));
+  caCv.width=bloomCv.width; caCv.height=bloomCv.height;
   initBg();                                    // rescale the background particle field
   if(!had && live()) spawnRound();             // first real size after play began
 }
@@ -819,7 +827,9 @@ function drawSpark(){
 function hexA(hex,a){ const n=parseInt(hex.slice(1),16); return 'rgba('+((n>>16)&255)+','+((n>>8)&255)+','+(n&255)+','+a+')'; }
 
 /* drifting particle + nebula field behind the play */
-let bgP=[], stars=[], beatPulse=0, dispScore=0, bloomCv=null, bloomCtx=null;
+let bgP=[], stars=[], beatPulse=0, dispScore=0, bloomCv=null, bloomCtx=null, caCv=null, caCtx=null;
+let caUntil=0, caMag=0;
+function impactCA(s){ caUntil=performance.now()+130; caMag=s; }   // chromatic-aberration kick on a hit
 function initBg(){
   const cols=['#3ae1ff','#9a7bff','#ff63b6','#ffffff'];
   const n=Math.max(10, Math.round(W*H/26000));
@@ -894,6 +904,16 @@ function drawTargets(dt, advance){
     const R = Math.max(1, t.r * ease * (1 + 0.035*Math.sin(now/260 + (t.x+t.y)*0.01)));
     const ring = t.decoy ? '#ff5d6c' : skin().ring;
     const base = t.decoy ? '#ff5d6c' : ring;
+    // motion-blur trail: a smear behind a fast-moving orb (length & opacity ∝ speed)
+    if(advance){
+      const sp=Math.hypot(t.vx,t.vy);
+      if(sp>34){
+        ctx.save(); ctx.globalAlpha=Math.min(0.4, sp/600); ctx.strokeStyle=base;
+        ctx.lineWidth=R*1.5; ctx.lineCap='round';
+        ctx.beginPath(); ctx.moveTo(t.x - t.vx*0.05, t.y - t.vy*0.05); ctx.lineTo(t.x, t.y); ctx.stroke();
+        ctx.restore();
+      }
+    }
     const lx=t.x - R*0.30, ly=t.y - R*0.32;          // virtual light, upper-left
     // soft contact shadow on the floor
     ctx.save(); ctx.globalAlpha=0.30; ctx.fillStyle='#000';
@@ -1043,6 +1063,37 @@ function applyBloom(){
   ctx.setTransform(DPR,0,0,DPR,0,0);
 }
 
+/* Depth of field: replace the backdrop with a blurred copy of itself, so the
+ * background sits softly behind the sharp foreground orbs. Call right after the
+ * background is drawn (and before any foreground). */
+function blurBackdrop(){
+  if(!bloomCtx || !cv.width) return;
+  const bw=bloomCv.width, bh=bloomCv.height;
+  bloomCtx.setTransform(1,0,0,1,0,0); bloomCtx.clearRect(0,0,bw,bh);
+  bloomCtx.drawImage(cv,0,0,bw,bh);
+  ctx.save(); ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,cv.width,cv.height);
+  try{ ctx.filter='blur('+Math.max(1,Math.round(cv.width*0.006))+'px)'; }catch(_){}
+  ctx.drawImage(bloomCv,0,0,cv.width,cv.height);
+  ctx.restore(); ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+
+/* Chromatic aberration: briefly after an impact, add red/blue channel-split
+ * ghosts of the frame, offset apart. Reuses bloomCv (the current frame copy). */
+function applyCA(){
+  const now=performance.now(); if(now>caUntil || !caCtx || !cv.width) return;
+  const k=(caUntil-now)/130, dx=Math.max(1, cv.width*0.012*caMag*k);
+  ctx.save(); ctx.setTransform(1,0,0,1,0,0); ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=0.3*k;
+  const splat=(tint,ox)=>{
+    caCtx.setTransform(1,0,0,1,0,0); caCtx.globalCompositeOperation='source-over'; caCtx.globalAlpha=1;
+    caCtx.clearRect(0,0,caCv.width,caCv.height); caCtx.drawImage(bloomCv,0,0);
+    caCtx.globalCompositeOperation='multiply'; caCtx.fillStyle=tint; caCtx.fillRect(0,0,caCv.width,caCv.height);
+    caCtx.globalCompositeOperation='source-over';
+    ctx.drawImage(caCv, ox,0, cv.width,cv.height);
+  };
+  splat('#ff1414', dx); splat('#1414ff', -dx);
+  ctx.restore(); ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+
 /* ---------- input ---------- */
 function hit(px,py){
   if(!live()) return;
@@ -1052,15 +1103,15 @@ function hit(px,py){
     if(state==='playing' && score>best){ best=score; localStorage.setItem('flow.best',best); renderCosmetics(); }
     spawnSparkle(bonus.x,bonus.y,bonus.type.color,22,160);
     floatText(bonus.x,bonus.y-bonus.r-6,'+'+pts,bonus.type.color);
-    doFlash(bonus.type.color,0.14);
+    doFlash(bonus.type.color,0.14); impactCA(0.7);
     bonusSound(); refreshHud(); bonus=null;
     return;
   }
   for(const t of targets){
     if((px-t.x)**2+(py-t.y)**2 <= (t.r+6)**2){
-      if(t.decoy){ buzz(); doFlash('#ff5d6c',0.18); vibe([0,60,40,90]); }   // tapped a red cross → buzz the phone
+      if(t.decoy){ buzz(); doFlash('#ff5d6c',0.18); vibe([0,60,40,90]); impactCA(1.0); }   // red cross → buzz + big split
       else { ting(); spawnSparkle(t.x,t.y,skin().ring);
-             floatText(t.x,t.y-t.r-8,'+'+comboMult(),skin().ring); doFlash('#ffffff',0.10); }
+             floatText(t.x,t.y-t.r-8,'+'+comboMult(),skin().ring); doFlash('#ffffff',0.10); impactCA(0.5); }
       endRound(!t.decoy); return;
     }
   }
@@ -1082,6 +1133,7 @@ function frame(now){
   resize();                       // keep canvas synced to a possibly-late/animated box
   ctx.clearRect(0,0,W,H);
   drawBg(state==='paused' ? 0 : dt);   // warp starfield + nebula behind everything
+  blurBackdrop();                      // depth-of-field: soften the backdrop
   if(state==='countdown'){
     const e=(now-cdStart)/700, idx=Math.floor(e);
     if(idx!==lastCdIdx && idx<=3){ lastCdIdx=idx; vibe(10); beep(idx>=3 ? 1320 : 660+idx*120); }
@@ -1090,12 +1142,13 @@ function frame(now){
     requestAnimationFrame(frame); return;
   }
   if(state==='match' && now>matchEndsAt){ endMatchTurn(); requestAnimationFrame(frame); return; }
-  if((state==='playing'||state==='match') && now>roundEnds){ if(livesMode) miss(); endRound(false); }
+  if((state==='playing'||state==='match') && now>roundEnds){ if(livesMode){ miss(); impactCA(0.9); } endRound(false); }
   if(live()){ drawTargets(dt, true); drawComboGlow(); drawScore(now); }
   else if(state==='paused'){ drawTargets(0, false); drawScore(pausedAt); }
   else if(state==='idle'){ drawDemo(now); }
   if(fx.length) drawFx(state==='paused' ? 0 : dt);   // sparkles finish over any state
   applyBloom();                                       // HDR bloom over the whole scene
+  applyCA();                                          // chromatic aberration after an impact
   if(flash){                                          // screen-flash (over bloom)
     ctx.globalAlpha=Math.max(0,flash.a); ctx.fillStyle=flash.color; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1;
     flash.a -= (state==='paused'?0:dt)*3.2; if(flash.a<=0) flash=null;
