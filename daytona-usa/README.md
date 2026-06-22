@@ -26,6 +26,12 @@ A browser-based arcade racing game inspired by SEGA's **Daytona USA**
   shadows). Three.js + the post-processing addons are vendored locally
   (`3d/vendor/`, resolved via an import map), so it needs no network.
 
+  A **GRAPHICS toggle** on the title screen switches between two looks:
+  - **PS1 Retro** (default) — authentic low internal resolution with chunky
+    pixels, vertex "wobble" jitter, nearest-neighbour blocky textures, flat
+    untextured lighting, no shadows/bloom
+  - **Modern** — the full pipeline above (shadows, bloom, reflections, AA)
+
   > Note: this is a *web/mobile* racer — it pushes fidelity within a browser's
   > limits, not literal console-grade graphics.
 

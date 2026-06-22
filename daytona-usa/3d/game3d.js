@@ -90,7 +90,7 @@ const G = {
   totalLaps:8, lap:1, lapTime:0, lastLapTime:0, bestLapTime:Infinity,
   totalTime:0, timeLeft:55, lapBonus:24,
   cars:[], place:FIELD, countdown:0, bannerTimer:0, shake:0, skid:0,
-  reversedLine:false, camMode:0, theme:null,
+  reversedLine:false, camMode:0, theme:null, retro:true,
 };
 
 // ---------------------------------------------------------------------------
@@ -140,15 +140,38 @@ function buildSky(th){
     const pm = new THREE.PMREMGenerator(renderer);
     const eq = makeSkyTexture(th); eq.mapping = THREE.EquirectangularReflectionMapping;
     const rt = pm.fromEquirectangular(eq);
-    if (scene.environment) scene.environment.dispose();
-    scene.environment = rt.texture;
+    if (envTexture) envTexture.dispose();
+    envTexture = rt.texture;
+    scene.environment = G.retro ? null : envTexture;
     eq.dispose(); pm.dispose();
   }
 }
 
-let sun = null;
+let sun = null, envTexture = null;
 const MOBILE = (typeof window!=='undefined') &&
   (('ontouchstart' in window) || (window.matchMedia && matchMedia('(pointer:coarse)').matches));
+
+// ---- PS1 retro mode: low-res render, vertex "wobble", blocky textures ----
+const PS1_SNAP = 'vec4 _p=gl_Position; _p.xyz/=_p.w;'+
+  ' _p.xy=floor(_p.xy*vec2(160.0,120.0))/vec2(160.0,120.0); _p.xyz*=_p.w; gl_Position=_p;';
+function retroizeMaterial(m){
+  if (!m || m.__ps1) return;
+  m.__ps1 = true;
+  m.onBeforeCompile = (sh)=>{ sh.vertexShader = sh.vertexShader.replace(
+    '#include <project_vertex>', '#include <project_vertex>\n'+PS1_SNAP); };
+  if (m.map){ m.map.magFilter=THREE.NearestFilter; m.map.minFilter=THREE.NearestFilter; m.map.generateMipmaps=false; m.map.needsUpdate=true; }
+  if ('envMapIntensity' in m) m.envMapIntensity = 0;
+  m.needsUpdate = true;
+}
+function retroizeScene(){ scene.traverse(o=>{ if(o.isMesh){ const mm=Array.isArray(o.material)?o.material:[o.material]; mm.forEach(retroizeMaterial); } }); }
+function applyGraphicsMode(){
+  const retro = G.retro;
+  renderer.shadowMap.enabled = !retro;
+  renderer.toneMapping = retro ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping;
+  scene.environment = retro ? null : envTexture;
+  if (retro) retroizeScene();
+  resize();
+}
 
 function initThree() {
   renderer = new THREE.WebGLRenderer({ canvas:glCanvas, antialias:!MOBILE, powerPreference:'high-performance' });
@@ -1126,7 +1149,7 @@ function render(){
   const targetFov = 62 + Math.min(1,Math.abs(G.speed)/G.maxSpeed)*10;
   camera.fov += (targetFov - camera.fov)*0.08; camera.updateProjectionMatrix();
 
-  composer.render();
+  if (G.retro) renderer.render(scene, camera); else composer.render();
 
   if (G.bannerTimer>0){ G.bannerTimer-=STEP; if(G.bannerTimer<=0) document.getElementById('banner').classList.add('hidden'); }
   drawHUD2D(); drawTextHUD();
@@ -1229,9 +1252,18 @@ function menuHTML(){
         <b>C</b><span>Change camera</span><b>P</b><span>Pause</span>
       </div>
       <button class="btn" id="startBtn">START ▶</button>
+      <div style="height:10px"></div>
+      <button class="btn ghost" id="gfxBtn">GRAPHICS: ${G.retro?'PS1 RETRO':'MODERN'}</button>
     </div>
     <div class="credit">Fan-made, non-commercial. Mercedes-Benz marks belong to their owner. •
       <a href="../index.html" style="color:#9fe">2D version</a></div>`;
+}
+function previewRebuild(){
+  buildTrack(CIRCUITS[G.circuit]);
+  if (playerCar){ scene.remove(playerCar); disposeTree(playerCar); }
+  playerCar=buildVehicleMesh(VEHICLES[G.vehicle].kind, VEHICLES[G.vehicle].color);
+  scene.add(playerCar); placeCar(playerCar,0,0,0);
+  applyGraphicsMode();
 }
 function vehicleHTML(){
   return `
@@ -1271,6 +1303,7 @@ function showMenu(){
   if(window.GameMusic){window.GameMusic.setMode('menu');window.GameMusic.duck(false);}
   const el=overlayEl(); el.innerHTML=menuHTML(); el.classList.remove('hidden');
   document.getElementById('startBtn').onclick=showVehicleSelect;
+  document.getElementById('gfxBtn').onclick=()=>{ G.retro=!G.retro; previewRebuild(); showMenu(); beep(440,0.08,'square',0.1); };
 }
 function showVehicleSelect(){
   G.state='menu'; initAudio();
@@ -1306,6 +1339,7 @@ function startRace(){
   if (playerCar){ scene.remove(playerCar); disposeTree(playerCar); }
   playerCar=buildVehicleMesh(v.kind, v.color); scene.add(playerCar);
   resetCars();
+  applyGraphicsMode();
   G.dist=0; G.playerX=0; G.speed=0; G.lap=1; G.lapTime=0; G.lastLapTime=0; G.bestLapTime=Infinity;
   G.totalTime=0; G.place=FIELD; G.shake=0; G.skid=0; G.reversedLine=false;
 
@@ -1366,14 +1400,21 @@ window.__togglePause = togglePause;   // for the on-screen pause button
 // ---------------------------------------------------------------------------
 function resize(){
   const w=window.innerWidth, h=window.innerHeight;
-  const pr=Math.min(MOBILE?1.5:2, window.devicePixelRatio||1);
-  renderer.setPixelRatio(pr); renderer.setSize(w,h,false);
   camera.aspect=w/h; camera.updateProjectionMatrix();
-  if (composer){
-    composer.setPixelRatio(pr); composer.setSize(w,h);
-    if (fxaaPass){ const r=fxaaPass.material.uniforms.resolution.value; r.set(1/(w*pr), 1/(h*pr)); }
+  if (G.retro){
+    // render at a low internal resolution; CSS upscales it with chunky pixels
+    const lowH = 240, lowW = Math.max(1, Math.round(lowH * w/h));
+    renderer.setPixelRatio(1); renderer.setSize(lowW, lowH, false);
+  } else {
+    const pr=Math.min(MOBILE?1.5:2, window.devicePixelRatio||1);
+    renderer.setPixelRatio(pr); renderer.setSize(w,h,false);
+    if (composer){
+      composer.setPixelRatio(pr); composer.setSize(w,h);
+      if (fxaaPass){ const r=fxaaPass.material.uniforms.resolution.value; r.set(1/(w*pr), 1/(h*pr)); }
+    }
   }
-  hud2d.width=Math.round(w*pr); hud2d.height=Math.round(h*pr);
+  const hpr=Math.min(2, window.devicePixelRatio||1);
+  hud2d.width=Math.round(w*hpr); hud2d.height=Math.round(h*hpr);
   hud2d.style.width=w+'px'; hud2d.style.height=h+'px';
 }
 let last=performance.now(), acc=0;
@@ -1393,9 +1434,10 @@ try {
   // build a default track so the menu has a world behind it
   buildTrack(CIRCUITS[0]);
   playerCar=buildVehicleMesh(VEHICLES[G.vehicle].kind, VEHICLES[G.vehicle].color); scene.add(playerCar); placeCar(playerCar,0,0,0);
+  applyGraphicsMode();
   const f=frameAt(0); worldPos(0,0,_tmp);
   camera.position.copy(_tmp).addScaledVector(f.tan,-11).add(new THREE.Vector3(0,5,0)); camera.lookAt(_tmp);
-  wireMenu();
+  showMenu();
   const pb=document.getElementById('pauseBtn'); if(pb) pb.onclick=togglePause;
   requestAnimationFrame(frame);
 } catch (e) {
