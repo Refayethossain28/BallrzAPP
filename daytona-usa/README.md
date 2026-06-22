@@ -12,11 +12,12 @@ A browser-based arcade racing game inspired by SEGA's **Daytona USA**
   corners**, hills, **textured asphalt** (lane markings baked in) and grass,
   **red/white guardrails**, **packed grandstands**, DAYTONA billboards, the 777
   start gantry, a **painted sky with sun and clouds**, a chase/hood camera that
-  rolls with the banking, and **speed lines**. Three **themed courses** with
-  their own palettes and set-pieces:
-  - *Three-Seven Speedway* — alpine, pines, snow-capped peaks, a tunnel
-  - *Dinosaur Canyon* — desert, rock spires, a roadside brontosaurus, a tunnel
-  - *Sea-Side Street Galaxy* — palms and an ocean plane
+  rolls with the banking, and **speed lines**. A **vehicle select** (Mercedes
+  **V-Class** van vs **S-Class** saloon, with different speed/handling) then a
+  **circuit select** with three themed tracks:
+  - *Daytona* — banked alpine speedway, pines, snow-capped peaks, a tunnel
+  - *London* — overcast city, brick skyline, Big Ben & the London Eye
+  - *Dubai* — desert metropolis, glass towers and a Burj-style spire, palms
 
   It uses a post-processing pipeline (**bloom**, **FXAA**, **filmic ACES tone
   mapping**, a subtle **vignette**), **real-time soft shadows**, and **clearcoat
