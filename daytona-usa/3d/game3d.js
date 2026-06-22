@@ -90,7 +90,7 @@ const G = {
   totalLaps:8, lap:1, lapTime:0, lastLapTime:0, bestLapTime:Infinity,
   totalTime:0, timeLeft:55, lapBonus:24,
   cars:[], place:FIELD, countdown:0, bannerTimer:0, shake:0, skid:0,
-  reversedLine:false, camMode:0, theme:null, retro:true,
+  reversedLine:false, camMode:0, theme:null, retro:false,
 };
 
 // ---------------------------------------------------------------------------
@@ -723,10 +723,10 @@ function buildMinimap() {
 // Shared vehicle materials + player vehicle models (Mercedes V-Class / S-Class)
 // ---------------------------------------------------------------------------
 function paintMat(c){ return MOBILE
-  ? new THREE.MeshStandardMaterial({color:c, metalness:0.5, roughness:0.34, envMapIntensity:1.0})
-  : new THREE.MeshPhysicalMaterial({color:c, metalness:0.45, roughness:0.3, clearcoat:1.0, clearcoatRoughness:0.12, envMapIntensity:1.15}); }
+  ? new THREE.MeshStandardMaterial({color:c, metalness:0.6, roughness:0.24, envMapIntensity:1.5})
+  : new THREE.MeshPhysicalMaterial({color:c, metalness:0.55, roughness:0.2, clearcoat:1.0, clearcoatRoughness:0.04, envMapIntensity:1.7}); }
 function matteMat(c){ return new THREE.MeshStandardMaterial({color:c, metalness:0, roughness:0.85}); }
-function glassMat(){ return new THREE.MeshStandardMaterial({color:0x0e1a30, metalness:0.4, roughness:0.06}); }
+function glassMat(){ return new THREE.MeshPhysicalMaterial({color:0x0b1626, metalness:0.0, roughness:0.04, clearcoat:1.0, clearcoatRoughness:0.04, envMapIntensity:1.6, transmission:0.0}); }
 function chromeMat(){ return new THREE.MeshStandardMaterial({color:0xc4c9d2, metalness:0.95, roughness:0.22}); }
 function applyShadows(g){ g.traverse(o=>{ if(o.isMesh){ o.receiveShadow=true; o.castShadow=!(o.material&&o.material.transparent); } }); }
 
@@ -743,12 +743,29 @@ function addEmblem(g,x,y,z,r){
   m.position.set(x,y,z); g.add(m);
 }
 function addLights(g,y,zf,zr){
-  const hl=new THREE.MeshStandardMaterial({color:0xfff6c8, emissive:0xfff0b0, emissiveIntensity:0.8, roughness:0.4});
-  const tl=new THREE.MeshStandardMaterial({color:0xff2a2a, emissive:0xcc1010, emissiveIntensity:0.6, roughness:0.5});
-  for (const sx of [-0.8,0.8]){
-    const a=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.2,0.08),hl); a.position.set(sx,y,zf); g.add(a);
-    const b=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.18,0.08),tl); b.position.set(sx,y,zr); g.add(b);
+  const hl=new THREE.MeshStandardMaterial({color:0xfff6c8, emissive:0xfff0b0, emissiveIntensity:1.0, roughness:0.3});
+  g.userData.brakeMats = g.userData.brakeMats || [];
+  for (const sx of [-0.82,0.82]){
+    const a=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.2,0.08),hl); a.position.set(sx,y,zf); g.add(a);
+    // each tail lamp gets its own material so the player's can flare under braking
+    const tl=new THREE.MeshStandardMaterial({color:0xff2a2a, emissive:0xdd1212, emissiveIntensity:0.8, roughness:0.45});
+    const b=new THREE.Mesh(new THREE.BoxGeometry(0.62,0.2,0.08),tl); b.position.set(sx,y,zr); g.add(b);
+    g.userData.brakeMats.push(tl);
   }
+}
+// license plates, chrome trim, handles, exhausts, amber indicators
+function addDetails(g, W, frontZ, rearZ, beltY, lowY, cabLen){
+  const chrome=chromeMat();
+  const plate=new THREE.MeshStandardMaterial({color:0xeef0f2, roughness:0.5});
+  const amber=new THREE.MeshStandardMaterial({color:0xff9a1f, emissive:0xc25500, emissiveIntensity:0.6, roughness:0.5});
+  const fp=new THREE.Mesh(new THREE.BoxGeometry(0.92,0.26,0.05), plate); fp.position.set(0,lowY,frontZ+0.02); g.add(fp);
+  const rp=fp.clone(); rp.position.set(0,lowY,-rearZ-0.02); g.add(rp);
+  const belt=new THREE.Mesh(new THREE.BoxGeometry(W+0.03,0.05,cabLen), chrome); belt.position.set(0,beltY,-0.1); g.add(belt);
+  for (const sx of [-1,1]) for (const dz of [0.45,-0.55]){
+    const h=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.05,0.24), chrome); h.position.set(sx*(W/2+0.02), beltY-0.16, dz); g.add(h);
+  }
+  for (const sx of [-0.62,0.62]){ const e=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,0.22,12), chrome); e.rotation.x=Math.PI/2; e.position.set(sx,lowY-0.12,-rearZ-0.04); g.add(e); }
+  for (const sx of [-1.02,1.02]){ const ind=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.12,0.06), amber); ind.position.set(sx,lowY+0.12,frontZ); g.add(ind); }
 }
 // alloy wheel: tyre + chrome dish + 5 spokes + hub
 function addWheels(g,tx,tz,r){
@@ -768,13 +785,15 @@ function addMirrors(g,x,y,z,mat){
     const cap=new THREE.Mesh(new THREE.BoxGeometry(0.18,0.26,0.34), mat); cap.position.set(sx,y+0.02,z-0.04); g.add(cap);
   }
 }
-// build a beveled, car-shaped body by extruding a side profile (front = +x)
+// build a smooth, beveled, car-shaped body by extruding a spline side profile.
+// `sharp` indices stay as straight corners (e.g. the flat underside).
 function extrudeCar(profile, width, bevel, mat){
   const s=new THREE.Shape();
   s.moveTo(profile[0][0],profile[0][1]);
-  for (let i=1;i<profile.length;i++) s.lineTo(profile[i][0],profile[i][1]);
+  const pts=profile.slice(1).map(p=>new THREE.Vector2(p[0],p[1]));
+  s.splineThru(pts);                 // smooth Catmull-Rom outline -> rounded panels
   s.closePath();
-  const geo=new THREE.ExtrudeGeometry(s,{depth:width, bevelEnabled:bevel>0, bevelThickness:bevel, bevelSize:bevel, bevelSegments:2, steps:1, curveSegments:4});
+  const geo=new THREE.ExtrudeGeometry(s,{depth:width, bevelEnabled:bevel>0, bevelThickness:bevel, bevelSize:bevel, bevelSegments:3, steps:1, curveSegments:10});
   geo.translate(0,0,-width/2);
   const m=new THREE.Mesh(geo, mat); m.rotation.y=-Math.PI/2;  // length(+x) -> +z forward
   return m;
@@ -801,6 +820,7 @@ function buildVehicleMesh(kind, color){
     const cs=new THREE.Mesh(new THREE.BoxGeometry(2.0,0.08,0.06), chrome); cs.position.set(0,1.22,2.7); g.add(cs);
     addEmblem(g,0,1.0,2.74,0.4); addLights(g,1.02,2.66,-2.64);
     addMirrors(g,1.34,1.55,1.9,body); addWheels(g,1.34,1.95,0.62);
+    addDetails(g, W, 2.66, 2.64, 1.32, 0.62, 4.8);
   } else {
     const W=2.3;
     g.add(extrudeCar(SED_LOWER, W, 0.1, body));
@@ -811,6 +831,7 @@ function buildVehicleMesh(kind, color){
     const cs=new THREE.Mesh(new THREE.BoxGeometry(1.85,0.07,0.06), chrome); cs.position.set(0,1.06,2.6); g.add(cs);
     addEmblem(g,0,0.88,2.62,0.32); addLights(g,0.92,2.56,-2.56);
     addMirrors(g,1.24,1.2,1.0,body); addWheels(g,1.26,1.78,0.56);
+    addDetails(g, W, 2.56, 2.56, 1.16, 0.6, 4.4);
   }
   applyShadows(g);
   return g;
@@ -1150,6 +1171,11 @@ function render(){
   const lean = G.steerVis || 0;                    // nose turns toward the steer direction
   playerCar.rotateY(lean * 0.18);
   playerCar.rotateZ(-lean * 0.06 * (G.rollMul||1)); // the van leans more in corners
+  // brake lights flare when braking / reversing
+  if (playerCar.userData.brakeMats){
+    const on = G.state==='racing' && (keys.brake || keys.reverse);
+    for (const mt of playerCar.userData.brakeMats) mt.emissiveIntensity = on ? 2.6 : 0.8;
+  }
   // keep the sun's shadow frustum centred on the player
   if (sun){
     sun.target.position.copy(playerCar.position);
