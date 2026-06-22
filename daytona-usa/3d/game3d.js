@@ -16,6 +16,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // ---------------------------------------------------------------------------
 // DOM
@@ -74,6 +75,10 @@ const VEHICLES = [
   { name:'MERCEDES S-CLASS', kind:'sedan', color:0x0c0d0f,
     speedMul:1.10, accelMul:1.16, steerMul:1.24, gripMul:1.20, brakeMul:1.15, rollMul:0.7,
     desc:'Flagship saloon in black — fast & agile: sharp steering, strong brakes, high grip.' },
+  { name:'SHOWCASE (glTF)', kind:'model', model:'./vendor/models/ToyCar.glb', targetLen:4.7, rotY:0,
+    hide:/fabric/i, bodyMat:/toycar/i, color:0x121212,
+    speedMul:1.05, accelMul:1.05, steerMul:1.1, gripMul:1.05, brakeMul:1.05, rollMul:1.0,
+    desc:'A real CC0 3D model (Khronos ToyCar) loaded via glTF — demonstrates the model pipeline.' },
 ];
 const LIVERIES = [0xe23b3b,0x2f6cff,0x22c55e,0xf59e0b,0xa855f7,0x06b6d4,
                   0xec4899,0xfacc15,0xfb7185,0x4ade80,0x38bdf8,0xfb923c,0xffffff];
@@ -767,6 +772,12 @@ function addDetails(g, W, frontZ, rearZ, beltY, lowY, cabLen){
   for (const sx of [-0.62,0.62]){ const e=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,0.22,12), chrome); e.rotation.x=Math.PI/2; e.position.set(sx,lowY-0.12,-rearZ-0.04); g.add(e); }
   for (const sx of [-1.02,1.02]){ const ind=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.12,0.06), amber); ind.position.set(sx,lowY+0.12,frontZ); g.add(ind); }
 }
+// chrome-surround grille with vertical slats (Mercedes-style)
+function addGrille(g, w, y, z){
+  const surround=new THREE.Mesh(new THREE.BoxGeometry(w+0.14,0.6,0.08), chromeMat()); surround.position.set(0,y,z-0.03); g.add(surround);
+  const panel=new THREE.Mesh(new THREE.BoxGeometry(w,0.46,0.06), matteMat(0x09090b)); panel.position.set(0,y,z); g.add(panel);
+  for (let i=0;i<7;i++){ const sl=new THREE.Mesh(new THREE.BoxGeometry(0.045,0.44,0.09), chromeMat()); sl.position.set((i/6-0.5)*w*0.86, y, z+0.01); g.add(sl); }
+}
 // alloy wheel: tyre + chrome dish + 5 spokes + hub
 function addWheels(g,tx,tz,r){
   const tyre=new THREE.CylinderGeometry(r,r,0.46,20), tm=matteMat(0x0b0b0b);
@@ -816,8 +827,7 @@ function buildVehicleMesh(kind, color){
     g.add(extrudeCar(VAN_GLASS, W-0.16, 0.04, glass));
     g.add(extrudeCar(VAN_ROOF,  W-0.06, 0.05, body));
     const sill=new THREE.Mesh(new THREE.BoxGeometry(W+0.02,0.34,5.0), dark); sill.position.set(0,0.5,-0.1); g.add(sill);
-    const grille=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.5,0.12), dark); grille.position.set(0,0.95,2.66); g.add(grille);
-    const cs=new THREE.Mesh(new THREE.BoxGeometry(2.0,0.08,0.06), chrome); cs.position.set(0,1.22,2.7); g.add(cs);
+    addGrille(g,1.95,0.98,2.66);
     addEmblem(g,0,1.0,2.74,0.4); addLights(g,1.02,2.66,-2.64);
     addMirrors(g,1.34,1.55,1.9,body); addWheels(g,1.34,1.95,0.62);
     addDetails(g, W, 2.66, 2.64, 1.32, 0.62, 4.8);
@@ -827,15 +837,51 @@ function buildVehicleMesh(kind, color){
     g.add(extrudeCar(SED_GLASS, W-0.16, 0.04, glass));
     g.add(extrudeCar(SED_ROOF,  W-0.06, 0.05, body));
     const sill=new THREE.Mesh(new THREE.BoxGeometry(W+0.02,0.22,4.6), dark); sill.position.set(0,0.46,0); g.add(sill);
-    const grille=new THREE.Mesh(new THREE.BoxGeometry(1.7,0.4,0.12), dark); grille.position.set(0,0.85,2.56); g.add(grille);
-    const cs=new THREE.Mesh(new THREE.BoxGeometry(1.85,0.07,0.06), chrome); cs.position.set(0,1.06,2.6); g.add(cs);
-    addEmblem(g,0,0.88,2.62,0.32); addLights(g,0.92,2.56,-2.56);
+    addGrille(g,1.7,0.86,2.56);
+    addEmblem(g,0,0.86,2.62,0.34); addLights(g,0.92,2.56,-2.56);
     addMirrors(g,1.24,1.2,1.0,body); addWheels(g,1.26,1.78,0.56);
     addDetails(g, W, 2.56, 2.56, 1.16, 0.6, 4.4);
   }
   applyShadows(g);
   return g;
 }
+
+// ---- real glTF model loading (e.g. the CC0 Khronos ToyCar) ----
+let _gltfLoader=null; const _modelCache={};
+function loadVehicleModel(group, v){
+  const place=(scene)=>{
+    const model=scene.clone(true);
+    // drop unwanted nodes (e.g. the ToyCar's red display cloth)
+    if (v.hide){ const rm=[]; model.traverse(o=>{ if(o.name && v.hide.test(o.name)) rm.push(o); }); rm.forEach(o=>o.parent && o.parent.remove(o)); }
+    // tint the body material (e.g. make the toy car black)
+    if (v.bodyMat){ model.traverse(o=>{ if(o.isMesh && o.material){
+      const ms=Array.isArray(o.material)?o.material:[o.material];
+      const nm=ms.map(mt=>{ if(mt.name && v.bodyMat.test(mt.name)){ const c=mt.clone(); c.color=new THREE.Color(v.color||0x111111); c.map=null; return c; } return mt; });
+      o.material = nm.length===1?nm[0]:nm;
+    } }); }
+    model.rotation.y = v.rotY||0;
+    model.updateMatrixWorld(true);
+    let box=new THREE.Box3().setFromObject(model); const size=new THREE.Vector3(); box.getSize(size);
+    const s=(v.targetLen||4.6)/Math.max(size.x,size.z,0.001); model.scale.setScalar(s);
+    model.updateMatrixWorld(true);
+    box=new THREE.Box3().setFromObject(model); const ctr=new THREE.Vector3(); box.getCenter(ctr);
+    model.position.set(-ctr.x, -box.min.y, -ctr.z);
+    model.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } });
+    group.add(model);
+    if (G.retro) retroizeScene();
+  };
+  if (_modelCache[v.model]){ place(_modelCache[v.model]); return; }
+  if (!_gltfLoader) _gltfLoader=new GLTFLoader();
+  _gltfLoader.load(v.model, gltf=>{ _modelCache[v.model]=gltf.scene; place(gltf.scene); },
+    undefined, err=>console.warn('glTF model failed to load', err));
+}
+// returns the player's car group (procedural Mercedes, or a loaded glTF model)
+function buildPlayerVehicle(v){
+  if (v.kind==='model'){ const g=new THREE.Group(); g.userData.isModel=true; loadVehicleModel(g, v); return g; }
+  return buildVehicleMesh(v.kind, v.color);
+}
+// model clones share cached geometry/materials, so don't dispose those
+function removePlayerCar(){ if (playerCar){ scene.remove(playerCar); if(!playerCar.userData.isModel) disposeTree(playerCar); playerCar=null; } }
 
 // ---------------------------------------------------------------------------
 // Car meshes
@@ -1294,7 +1340,7 @@ function drawTextHUD(){
 const overlayEl = () => document.getElementById('overlay');
 const CIRCUIT_DESC = ['Banked alpine speedway','Overcast city streets','Desert metropolis'];
 const CIRCUIT_ICON = ['🏁','🎡','🌇'];
-const VEHICLE_ICON = ['🚐','🚗'];
+const VEHICLE_ICON = ['🚐','🚗','🏎️'];
 
 function menuHTML(){
   return `
@@ -1318,8 +1364,8 @@ function menuHTML(){
 }
 function previewRebuild(){
   buildTrack(CIRCUITS[G.circuit]);
-  if (playerCar){ scene.remove(playerCar); disposeTree(playerCar); }
-  playerCar=buildVehicleMesh(VEHICLES[G.vehicle].kind, VEHICLES[G.vehicle].color);
+  removePlayerCar();
+  playerCar=buildPlayerVehicle(VEHICLES[G.vehicle]);
   scene.add(playerCar); placeCar(playerCar,0,0,0);
   applyGraphicsMode();
 }
@@ -1394,8 +1440,8 @@ function startRace(){
   document.getElementById('trackName').textContent=c.name+' • '+v.name.replace('MERCEDES ','');
 
   buildTrack(c);
-  if (playerCar){ scene.remove(playerCar); disposeTree(playerCar); }
-  playerCar=buildVehicleMesh(v.kind, v.color); scene.add(playerCar);
+  removePlayerCar();
+  playerCar=buildPlayerVehicle(v); scene.add(playerCar);
   resetCars();
   applyGraphicsMode();
   G.dist=0; G.playerX=0; G.speed=0; G.lap=1; G.lapTime=0; G.lastLapTime=0; G.bestLapTime=Infinity;
@@ -1491,7 +1537,7 @@ try {
   initThree();
   // build a default track so the menu has a world behind it
   buildTrack(CIRCUITS[0]);
-  playerCar=buildVehicleMesh(VEHICLES[G.vehicle].kind, VEHICLES[G.vehicle].color); scene.add(playerCar); placeCar(playerCar,0,0,0);
+  playerCar=buildPlayerVehicle(VEHICLES[G.vehicle]); scene.add(playerCar); placeCar(playerCar,0,0,0);
   applyGraphicsMode();
   const f=frameAt(0); worldPos(0,0,_tmp);
   camera.position.copy(_tmp).addScaledVector(f.tan,-11).add(new THREE.Vector3(0,5,0)); camera.lookAt(_tmp);
