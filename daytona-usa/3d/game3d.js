@@ -1236,7 +1236,7 @@ window.addEventListener('keydown', e=>{
   if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space'].includes(e.code)) e.preventDefault();
   if (e.code==='KeyP'||e.code==='Escape'){ if(!e.repeat) togglePause(); return; }
   if (e.code==='KeyC'){ if(!e.repeat) G.camMode=(G.camMode+1)%2; return; }
-  if (e.code==='KeyM'){ if(!e.repeat){ if(window.GameMusic) window.GameMusic.toggleMute(); setTrackMuted(!trackMuted); } return; }
+  if (e.code==='KeyM'){ if(!e.repeat){ if(window.GameMusic) window.GameMusic.toggleMute(); setRaceMusicMuted(!musicMuted); } return; }
   bindKey(e.code,true);
   if (G.state==='menu' && (e.code==='Enter'||e.code==='Space')) startRace();
 });
@@ -1476,17 +1476,36 @@ function speak(text, opts){
   }catch(e){}
 }
 // ---- race soundtrack (user-supplied recording, looped) ----
-const TRACK_VOL = 0.85;
-let track=null, trackMuted=false;
-function initTrack(){
-  if (track) return;
-  try{ track=new Audio('./audio/soundtrack.mp3'); track.preload='auto'; track.loop=true; track.crossOrigin='anonymous'; }catch(e){ track=null; }
+// The intro plays once; when it ends, the soundtrack is stitched on and loops.
+const INTRO_VOL = 0.95, LOOP_VOL = 0.85;
+let introEl=null, loopEl=null, musicMuted=false, musicPhase='none';
+function initRaceMusic(){
+  if (introEl) return;
+  try{
+    introEl=new Audio('./audio/intro.mp3');      introEl.preload='auto';
+    loopEl =new Audio('./audio/soundtrack.mp3'); loopEl.preload='auto'; loopEl.loop=true;
+    introEl.addEventListener('ended', ()=>{      // stitch the looping soundtrack on
+      if (musicPhase!=='intro') return;
+      musicPhase='loop';
+      if (G.state==='racing'||G.state==='rolling'||G.state==='paused'){
+        try{ loopEl.currentTime=0; loopEl.volume=musicMuted?0:LOOP_VOL; loopEl.play().catch(()=>{}); }catch(e){}
+      }
+    });
+  }catch(e){ introEl=null; }
 }
-function playTrack(){ initTrack(); if(!track) return; try{ track.currentTime=0; track.volume=trackMuted?0:TRACK_VOL; track.play().catch(()=>{}); }catch(e){} }
-function pauseTrack(){ if(track){ try{ track.pause(); }catch(e){} } }
-function resumeTrack(){ if(track && G.state==='racing'){ try{ track.play().catch(()=>{}); }catch(e){} } }
-function stopTrack(){ if(track){ try{ track.pause(); track.currentTime=0; }catch(e){} } }
-function setTrackMuted(m){ trackMuted=m; if(track) track.volume = m?0:TRACK_VOL; }
+function startRaceMusic(){
+  initRaceMusic(); if(!introEl) return;
+  musicPhase='intro';
+  try{ loopEl.pause(); loopEl.currentTime=0; introEl.currentTime=0; introEl.volume=musicMuted?0:INTRO_VOL; introEl.play().catch(()=>{}); }catch(e){}
+  // prime the loop element inside this tap so it may start on 'ended' (iOS blocks
+  // audio that doesn't begin in a user gesture)
+  try{ loopEl.muted=true; const p=loopEl.play(); if(p&&p.then) p.then(()=>{ loopEl.pause(); loopEl.currentTime=0; loopEl.muted=false; }).catch(()=>{ loopEl.muted=false; }); }catch(e){}
+}
+function curMusicEl(){ return musicPhase==='loop' ? loopEl : (musicPhase==='intro' ? introEl : null); }
+function pauseRaceMusic(){ try{ introEl&&introEl.pause(); }catch(e){} try{ loopEl&&loopEl.pause(); }catch(e){} }
+function resumeRaceMusic(){ if(G.state!=='racing') return; const el=curMusicEl(); if(el){ try{ el.play().catch(()=>{}); }catch(e){} } }
+function stopRaceMusic(){ musicPhase='none'; try{ introEl&&(introEl.pause(),introEl.currentTime=0); }catch(e){} try{ loopEl&&(loopEl.pause(),loopEl.currentTime=0); }catch(e){} }
+function setRaceMusicMuted(m){ musicMuted=m; if(introEl) introEl.volume=m?0:INTRO_VOL; if(loopEl) loopEl.volume=m?0:LOOP_VOL; }
 
 // ---------------------------------------------------------------------------
 // Render
@@ -1714,7 +1733,7 @@ function circuitHTML(){
 }
 function showMenu(){
   G.state='menu';
-  stopTrack();
+  stopRaceMusic();
   if(window.GameMusic){window.GameMusic.start();window.GameMusic.setMode('menu');window.GameMusic.duck(false);}
   const el=overlayEl(); el.innerHTML=menuHTML(); el.classList.remove('hidden');
   document.getElementById('startBtn').onclick=showVehicleSelect;
@@ -1747,7 +1766,7 @@ function startRace(){
   if (window.GameMusic) window.GameMusic.stop();
   // start the looping soundtrack now, inside this tap, so it plays through the
   // rolling start and the race (iOS only allows audio to begin in a user gesture)
-  playTrack();
+  startRaceMusic();
   const c=CIRCUITS[G.circuit], v=VEHICLES[G.vehicle];
   G.maxSpeed=c.maxSpeed*v.speedMul; G.curveMul=c.curveMul; G.aiSpeedMul=c.aiSpeed;
   G.accelMul=v.accelMul; G.steerMul=v.steerMul; G.gripMul=v.gripMul; G.brakeMul=v.brakeMul; G.rollMul=v.rollMul;
@@ -1780,7 +1799,7 @@ function startRace(){
 }
 function finishRace(completed){
   G.state='finished';
-  stopTrack();
+  stopRaceMusic();
   if (window.GameMusic) window.GameMusic.setMode('menu');
   const place=G.place, win=completed&&place===1;
   const ord=place+(['th','st','nd','rd'][(place%100>>3^1)&&place%10]||'th');
@@ -1807,17 +1826,17 @@ function finishRace(completed){
 function togglePause(){
   if (G.state==='racing'){
     G.state='paused';
-    pauseTrack();
+    pauseRaceMusic();
     const el=document.getElementById('overlay');
     el.innerHTML=`<h1 class="title">PAUSED</h1><div class="menu-card">
       <button class="btn" id="resumeBtn">RESUME ▶</button><div style="height:10px"></div>
       <button class="btn ghost" id="restartBtn">RESTART RACE ↻</button><div style="height:10px"></div>
       <button class="btn ghost" id="quitBtn">EXIT TO MENU ✕</button></div>`;
     el.classList.remove('hidden');
-    document.getElementById('resumeBtn').onclick=()=>{el.classList.add('hidden');G.state='racing';resumeTrack();};
+    document.getElementById('resumeBtn').onclick=()=>{el.classList.add('hidden');G.state='racing';resumeRaceMusic();};
     document.getElementById('restartBtn').onclick=()=>startRace();
-    document.getElementById('quitBtn').onclick=()=>{stopTrack();showMenu();};
-  } else if (G.state==='paused'){ document.getElementById('overlay').classList.add('hidden'); G.state='racing'; resumeTrack(); }
+    document.getElementById('quitBtn').onclick=()=>{stopRaceMusic();showMenu();};
+  } else if (G.state==='paused'){ document.getElementById('overlay').classList.add('hidden'); G.state='racing'; resumeRaceMusic(); }
 }
 window.__togglePause = togglePause;   // for the on-screen pause button
 
