@@ -577,10 +577,15 @@ function buildScenery(rng) {
   // recognisable London/Dubai skyline looms over the whole circuit and is visible
   // across the infield from almost anywhere on the track. ----
   const towers = LANDMARKS.filter(L=>!L.gate);
+  // ground height at an infield point ≈ the height of the nearest road frame, so
+  // towers rest on the terrain instead of being pinned at y=0 (and sinking where
+  // the track climbs a hill)
+  const groundYAt=(x,z)=>{ let best=Infinity, by=0; for(let i=0;i<DIV;i+=4){ const p=frames[i].pos; const d=(p.x-x)*(p.x-x)+(p.z-z)*(p.z-z); if(d<best){ best=d; by=p.y; } } return by; };
   towers.forEach((L,idx)=>{
     const a = idx/towers.length*Math.PI*2 + 0.5;
     const R = 60 + (idx%2)*34;
-    L.world = { x: cen.x+Math.cos(a)*R, z: cen.z+Math.sin(a)*R };
+    const x = cen.x+Math.cos(a)*R, z = cen.z+Math.sin(a)*R;
+    L.world = { x, z, y: groundYAt(x,z) };
     L.faceAng = Math.atan2(L.world.x-cen.x, L.world.z-cen.z);   // face outward from centre
   });
   // frame indices to keep clear of generic buildings so nothing blocks a gate
@@ -727,7 +732,7 @@ function placeLandmark(group, g, frames, spec, faceY, lift){
   const f=frames[((Math.floor(DIV*spec.frac))%DIV+DIV)%DIV];
   if (spec.world){
     // infield skyline placement: an explicit world spot, turned to face the centre of the loop
-    g.position.set(spec.world.x, (lift||0)*(spec.scale||1), spec.world.z);
+    g.position.set(spec.world.x, (spec.world.y||0) + (lift||0)*(spec.scale||1), spec.world.z);
     g.rotation.y = (spec.faceAng||0) + (faceY||0);
   } else {
     const off=(ROAD_W+RUMBLE_W)+18;
