@@ -583,11 +583,14 @@ function buildScenery(rng) {
   const sA=straightestIn(Math.floor(DIV*0.04), Math.floor(DIV*0.20));   // start straight
   const sB=straightestIn(Math.floor(DIV*0.54), Math.floor(DIV*0.70));   // far straight
   gates.forEach(L=>{ L.frac=sA/DIV; });
-  const slots=[ {c:sA,d:-46,side:-1}, {c:sA,d: 46,side: 1}, {c:sB,d:-46,side:-1}, {c:sB,d: 46,side: 1} ];
+  // alternate towers between the two straights (and the two kerbs) so they always
+  // split across both, however many there are
+  const straightCtr=[sA,sB];
   towers.forEach((L,idx)=>{
-    const sl=slots[idx%slots.length];
-    L.frac = (((sl.c+sl.d)%DIV)+DIV)%DIV / DIV;
-    L.side = sl.side;
+    const c = straightCtr[idx % 2];                 // even -> start straight, odd -> far straight
+    const before = Math.floor(idx/2) % 2 === 0;     // alternate before/after the centre
+    L.frac = (((c + (before?-46:46))%DIV)+DIV)%DIV / DIV;
+    L.side = before ? -1 : 1;
     L.off  = (L.fn===addLondonEye || L.fn===addBurjAlArab) ? 30 : 18;
   });
   // frame indices to keep generic buildings clear of, so nothing blocks a landmark
