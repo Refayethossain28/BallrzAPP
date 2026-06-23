@@ -34,7 +34,7 @@ const RUMBLE_W = 1.6;
 const DIV = 1400;                 // spline samples (road resolution)
 const FPS = 60, STEP = 1/FPS;
 const ROLL_TOTAL = 7.0;           // rolling-start intro length (seconds)
-const BUILD = 'BUILD 18 — landmarks on every circuit';   // bump every push; shown on the menu to confirm you loaded the latest code
+const BUILD = 'BUILD 19 — London Eye sits on the ground';   // bump every push; shown on the menu to confirm you loaded the latest code
 
 // hand-authored closed-loop circuit layouts [x,y,z] (stylised, recognisable
 // street circuits — not GPS-accurate satellite traces)
@@ -860,7 +860,7 @@ function addLondonEye(group, frames, spec){
   for (let k=0;k<28;k++){ const a=k/28*6.28; eye.add(lmBox(pod,3,2,3,Math.cos(a)*R,Math.sin(a)*R,0)); }
   // A-frame support legs
   for (const sx of [-1,1]){ const leg=lmBox(rim,1.8,R+12,1.8,sx*9,-(R+12)/2+2,7); leg.rotation.x=0.32; eye.add(leg); }
-  placeLandmark(group, eye, frames, spec, Math.PI/2, R+4);   // wheel faces the track
+  placeLandmark(group, eye, frames, spec, Math.PI/2, R+10);   // wheel faces the track; lift clears the A-frame legs (which reach -(R+10)) so it stands on the ground
 }
 // London — Tower Bridge: twin Victorian-Gothic towers + high walkways + chains
 function addTowerBridge(group, frames, spec){
