@@ -34,7 +34,7 @@ const RUMBLE_W = 1.6;
 const DIV = 1400;                 // spline samples (road resolution)
 const FPS = 60, STEP = 1/FPS;
 const ROLL_TOTAL = 7.0;           // rolling-start intro length (seconds)
-const BUILD = 'BUILD 15 — landmark skyline all around';   // bump every push; shown on the menu to confirm you loaded the latest code
+const BUILD = 'BUILD 16 — soundtrack picker (Daytona / Heat)';   // bump every push; shown on the menu to confirm you loaded the latest code
 
 // hand-authored closed-loop circuit layouts [x,y,z] (stylised, recognisable
 // street circuits — not GPS-accurate satellite traces)
@@ -108,7 +108,7 @@ const LIVERIES = [0xe23b3b,0x2f6cff,0x22c55e,0xf59e0b,0xa855f7,0x06b6d4,
 // Game state
 // ---------------------------------------------------------------------------
 const G = {
-  state:'menu', diff:0, vehicle:1, circuit:0,
+  state:'menu', diff:0, vehicle:1, circuit:0, soundtrack:'daytona',
   L:0,                // track length
   dist:0,             // player distance along track
   playerX:0,          // lateral offset -1..1
@@ -1517,16 +1517,21 @@ function speak(text, opts){
     window.speechSynthesis.speak(u);   // queued; caller cancels first if needed
   }catch(e){}
 }
-// ---- race soundtrack (user-supplied recording, looped) ----
-// The intro plays once; when it ends, the soundtrack is stitched on and loops.
+// ---- race soundtrack (user-supplied recordings, looped) ----
+// The intro plays once; when it ends, the loop is stitched on. The player picks
+// which soundtrack (Daytona / Heat) on the soundtrack screen.
 const INTRO_VOL = 0.95, LOOP_VOL = 0.85;
+const SOUNDTRACKS = {
+  daytona: { name:'DAYTONA', intro:'./audio/intro.mp3',      loop:'./audio/soundtrack.mp3' },
+  heat:    { name:'HEAT',    intro:'./audio/heat-intro.mp3', loop:'./audio/heat-soundtrack.mp3' },
+};
 let introEl=null, loopEl=null, musicMuted=false, musicPhase='none';
 function initRaceMusic(){
   if (introEl) return;
   try{
-    introEl=new Audio('./audio/intro.mp3');      introEl.preload='auto';
-    loopEl =new Audio('./audio/soundtrack.mp3'); loopEl.preload='auto'; loopEl.loop=true;
-    introEl.addEventListener('ended', ()=>{      // stitch the looping soundtrack on
+    introEl=new Audio(); introEl.preload='auto';
+    loopEl =new Audio(); loopEl.preload='auto'; loopEl.loop=true;
+    introEl.addEventListener('ended', ()=>{      // stitch the loop on
       if (musicPhase!=='intro') return;
       musicPhase='loop';
       if (G.state==='racing'||G.state==='rolling'||G.state==='paused'){
@@ -1537,6 +1542,9 @@ function initRaceMusic(){
 }
 function startRaceMusic(){
   initRaceMusic(); if(!introEl) return;
+  const t = SOUNDTRACKS[G.soundtrack] || SOUNDTRACKS.daytona;
+  if (!introEl.src.endsWith(t.intro.slice(1))) introEl.src = t.intro;   // swap files if the choice changed
+  if (!loopEl.src.endsWith(t.loop.slice(1)))   loopEl.src  = t.loop;
   musicPhase='intro';
   try{ loopEl.pause(); loopEl.currentTime=0; introEl.currentTime=0; introEl.volume=musicMuted?0:INTRO_VOL; introEl.play().catch(()=>{}); }catch(e){}
   // prime the loop element inside this tap so it may start on 'ended' (iOS blocks
@@ -1791,7 +1799,37 @@ function showCircuitSelect(){
     previewRebuild();                     // rebuild the backdrop to match the picked circuit
   });
   document.getElementById('backBtn').onclick=showVehicleSelect;
-  document.getElementById('startBtn2').onclick=startRace;
+  document.getElementById('startBtn2').onclick=showSoundtrackSelect;
+}
+function soundtrackHTML(){
+  const opt=(key,desc)=>`
+    <button class="selcard ${G.soundtrack===key?'sel':''}" data-snd="${key}">
+      <div class="cardicon">🎵</div>
+      <div class="cardname">${SOUNDTRACKS[key].name}</div>
+      <div class="carddesc">${desc}</div>
+    </button>`;
+  return `
+    <h1 class="title">SELECT <span class="red">SOUNDTRACK</span></h1>
+    <div class="menu-card">
+      <div class="cards">
+        ${opt('daytona','The original — big arcade theme')}
+        ${opt('heat','Heat — driving synth groove')}
+      </div>
+      <div class="navrow">
+        <button class="btn ghost" id="backBtn">◀ BACK</button>
+        <button class="btn" id="goBtn">GREEN FLAG ▶</button>
+      </div>
+    </div>`;
+}
+function showSoundtrackSelect(){
+  G.state='menu';
+  const el=overlayEl(); el.innerHTML=soundtrackHTML(); el.classList.remove('hidden');
+  el.querySelectorAll('[data-snd]').forEach(b=>b.onclick=()=>{
+    G.soundtrack=b.dataset.snd;
+    el.querySelectorAll('[data-snd]').forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); beep(560,0.08,'square',0.1);
+  });
+  document.getElementById('backBtn').onclick=showCircuitSelect;
+  document.getElementById('goBtn').onclick=startRace;
 }
 function wireMenu(){ const s=document.getElementById('startBtn'); if(s) s.onclick=showVehicleSelect; }
 function startRace(){
