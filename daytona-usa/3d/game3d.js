@@ -34,7 +34,7 @@ const RUMBLE_W = 1.6;
 const DIV = 1400;                 // spline samples (road resolution)
 const FPS = 60, STEP = 1/FPS;
 const ROLL_TOTAL = 7.0;           // rolling-start intro length (seconds)
-const BUILD = 'BUILD 14 — same camera as the race';   // bump every push; shown on the menu to confirm you loaded the latest code
+const BUILD = 'BUILD 15 — landmark skyline all around';   // bump every push; shown on the menu to confirm you loaded the latest code
 
 // hand-authored closed-loop circuit layouts [x,y,z] (stylised, recognisable
 // street circuits — not GPS-accurate satellite traces)
@@ -526,7 +526,7 @@ function buildScenery(rng) {
     sceneryGroup.add(p);
   }
   if (th.skyline==='city'){
-    // ---- distant city skyline ring (towers with lit windows) ----
+    // ---- distant city skyline ring (generic towers with lit windows) ----
     const winTex = makeWindowTexture(th.landmark==='dubai');
     for (let i=0;i<46;i++){
       const ang=(i/46)*Math.PI*2;
@@ -539,6 +539,19 @@ function buildScenery(rng) {
       const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,w), mat);
       b.position.set(Math.cos(ang)*r, h/2-40, Math.sin(ang)*r); sceneryGroup.add(b);
     }
+    // ---- recognizable landmarks dotted around that ring, so the London / Dubai
+    // skyline is identifiable on the horizon from anywhere on the lap (not only on
+    // the two straights where you pass them up close) ----
+    const heroes = th.landmark==='london'
+        ? [addBigBen, addShard, addGherkin, addLondonEye, addBigBen, addShard, addGherkin, addLondonEye]
+        : th.landmark==='dubai'
+        ? [addBurj, addBurjAlArab, addBurj, addBurjAlArab, addBurj, addBurjAlArab] : [];
+    heroes.forEach((fn,i)=>{
+      const ang = (i/heroes.length)*Math.PI*2 + 0.35;
+      const r = 520 + ((i*53)%140);
+      const x = Math.cos(ang)*r, z = Math.sin(ang)*r;
+      fn(sceneryGroup, frames, { world:{x,z,y:0}, scale:3.0, faceAng: Math.atan2(-x,-z) });
+    });
   } else {
     // ---- distant mountain / canyon-wall ring ----
     const mtnMat = new THREE.MeshLambertMaterial({color:th.mountain, flatShading:true});
