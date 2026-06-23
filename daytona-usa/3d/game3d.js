@@ -1236,7 +1236,7 @@ window.addEventListener('keydown', e=>{
   if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space'].includes(e.code)) e.preventDefault();
   if (e.code==='KeyP'||e.code==='Escape'){ if(!e.repeat) togglePause(); return; }
   if (e.code==='KeyC'){ if(!e.repeat) G.camMode=(G.camMode+1)%2; return; }
-  if (e.code==='KeyM'){ if(!e.repeat){ if(window.GameMusic) window.GameMusic.toggleMute(); setRollMuted(!rollMuted); } return; }
+  if (e.code==='KeyM'){ if(!e.repeat){ if(window.GameMusic) window.GameMusic.toggleMute(); setRollMuted(!rollMuted); setTrackMuted(!trackMuted); } return; }
   bindKey(e.code,true);
   if (G.state==='menu' && (e.code==='Enter'||e.code==='Space')) startRace();
 });
@@ -1381,7 +1381,7 @@ function update(dt){
       if (n>0){ cd.classList.remove('hidden'); cd.textContent=n; if(cd.dataset.last!=n){cd.dataset.last=n; beep(440,0.15,'square',0.15);} }
     }
     if (G.rollTime <= 0){ cd.classList.add('hidden'); G.state='racing'; flashBanner('GREEN!'); beep(900,0.45,'square',0.22); revBlip();
-      fadeRollSnd(); if (window.GameMusic) window.GameMusic.duck(false); }   // hand off to race music
+      fadeRollSnd(); playTrack(); }   // hand off to the looping race soundtrack
     return;
   }
   if (G.state!=='racing') return;
@@ -1498,6 +1498,18 @@ function fadeRollSnd(){
   }, 60);
 }
 function setRollMuted(m){ rollMuted=m; if (rollSnd && !rollFade) rollSnd.volume = m?0:ROLL_VOL; }
+// ---- race soundtrack (user-supplied recording, looped) ----
+const TRACK_VOL = 0.85;
+let track=null, trackMuted=false;
+function initTrack(){
+  if (track) return;
+  try{ track=new Audio('./audio/soundtrack.mp3'); track.preload='auto'; track.loop=true; track.crossOrigin='anonymous'; }catch(e){ track=null; }
+}
+function playTrack(){ initTrack(); if(!track) return; try{ track.currentTime=0; track.volume=trackMuted?0:TRACK_VOL; track.play().catch(()=>{}); }catch(e){} }
+function pauseTrack(){ if(track){ try{ track.pause(); }catch(e){} } }
+function resumeTrack(){ if(track && G.state==='racing'){ try{ track.play().catch(()=>{}); }catch(e){} } }
+function stopTrack(){ if(track){ try{ track.pause(); track.currentTime=0; }catch(e){} } }
+function setTrackMuted(m){ trackMuted=m; if(track) track.volume = m?0:TRACK_VOL; }
 
 // ---------------------------------------------------------------------------
 // Render
@@ -1725,7 +1737,8 @@ function circuitHTML(){
 }
 function showMenu(){
   G.state='menu';
-  if(window.GameMusic){window.GameMusic.setMode('menu');window.GameMusic.duck(false);}
+  stopTrack();
+  if(window.GameMusic){window.GameMusic.start();window.GameMusic.setMode('menu');window.GameMusic.duck(false);}
   const el=overlayEl(); el.innerHTML=menuHTML(); el.classList.remove('hidden');
   document.getElementById('startBtn').onclick=showVehicleSelect;
   document.getElementById('gfxBtn').onclick=()=>{ G.retro=!G.retro; previewRebuild(); showMenu(); beep(440,0.08,'square',0.1); };
@@ -1753,7 +1766,12 @@ function showCircuitSelect(){
 function wireMenu(){ const s=document.getElementById('startBtn'); if(s) s.onclick=showVehicleSelect; }
 function startRace(){
   initAudio(); if (AC&&AC.state==='suspended') AC.resume();
-  if (window.GameMusic){ window.GameMusic.start(); window.GameMusic.setMode('race'); window.GameMusic.duck(false); }
+  // race uses the user-supplied looping soundtrack instead of the procedural music
+  if (window.GameMusic) window.GameMusic.stop();
+  // "unlock" the soundtrack element inside this tap so it can start at the green
+  // flag later (iOS blocks audio that doesn't begin in a user gesture)
+  initTrack();
+  if (track){ try{ track.muted=true; const p=track.play(); if(p&&p.then) p.then(()=>{ track.pause(); track.currentTime=0; track.muted=false; }).catch(()=>{ track.muted=false; }); }catch(e){} }
   const c=CIRCUITS[G.circuit], v=VEHICLES[G.vehicle];
   G.maxSpeed=c.maxSpeed*v.speedMul; G.curveMul=c.curveMul; G.aiSpeedMul=c.aiSpeed;
   G.accelMul=v.accelMul; G.steerMul=v.steerMul; G.gripMul=v.gripMul; G.brakeMul=v.brakeMul; G.rollMul=v.rollMul;
@@ -1790,7 +1808,7 @@ function startRace(){
 }
 function finishRace(completed){
   G.state='finished';
-  stopRollSnd();
+  stopRollSnd(); stopTrack();
   if (window.GameMusic) window.GameMusic.setMode('menu');
   const place=G.place, win=completed&&place===1;
   const ord=place+(['th','st','nd','rd'][(place%100>>3^1)&&place%10]||'th');
@@ -1817,17 +1835,17 @@ function finishRace(completed){
 function togglePause(){
   if (G.state==='racing'){
     G.state='paused';
-    if (window.GameMusic) window.GameMusic.duck(true);
+    pauseTrack();
     const el=document.getElementById('overlay');
     el.innerHTML=`<h1 class="title">PAUSED</h1><div class="menu-card">
       <button class="btn" id="resumeBtn">RESUME ▶</button><div style="height:10px"></div>
       <button class="btn ghost" id="restartBtn">RESTART RACE ↻</button><div style="height:10px"></div>
       <button class="btn ghost" id="quitBtn">EXIT TO MENU ✕</button></div>`;
     el.classList.remove('hidden');
-    document.getElementById('resumeBtn').onclick=()=>{el.classList.add('hidden');G.state='racing';if(window.GameMusic)window.GameMusic.duck(false);};
+    document.getElementById('resumeBtn').onclick=()=>{el.classList.add('hidden');G.state='racing';resumeTrack();};
     document.getElementById('restartBtn').onclick=()=>startRace();
-    document.getElementById('quitBtn').onclick=()=>showMenu();
-  } else if (G.state==='paused'){ document.getElementById('overlay').classList.add('hidden'); G.state='racing'; if(window.GameMusic)window.GameMusic.duck(false); }
+    document.getElementById('quitBtn').onclick=()=>{stopRollSnd();stopTrack();showMenu();};
+  } else if (G.state==='paused'){ document.getElementById('overlay').classList.add('hidden'); G.state='racing'; resumeTrack(); }
 }
 window.__togglePause = togglePause;   // for the on-screen pause button
 
