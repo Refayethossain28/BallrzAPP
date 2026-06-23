@@ -550,47 +550,42 @@ function buildScenery(rng) {
   // Each hero landmark sits right at the trackside at a spaced point around the
   // lap, large, so it looms into view as you approach and sweeps past close —
   // unmistakable rather than a speck on the horizon. Tower Bridge / the Dubai
-  // Frame span the road as gateways you drive through.
-  // Towers form an infield skyline cluster (visible across the whole circuit);
-  // gates span the road on a straight so you drive through them.
+  // Towers stand just off the road on the outside of the loop so each looms ahead
+  // as you drive up to it; the gate spans the road on a straight to drive through.
   const LANDMARKS = th.landmark==='london' ? [
-    {fn:addBigBen,    scale:2.8},
-    {fn:addLondonEye, scale:2.4},
-    {fn:addGherkin,   scale:2.7},
-    {fn:addShard,     scale:2.6},
+    {fn:addBigBen,    scale:1.9},
+    {fn:addLondonEye, scale:1.7},
+    {fn:addGherkin,   scale:1.9},
+    {fn:addShard,     scale:1.9},
     {fn:addTowerBridge, side:0, scale:1.0, gate:true},
   ] : th.landmark==='dubai' ? [
-    {fn:addBurj,       scale:2.4},
-    {fn:addBurjAlArab, scale:2.6},
+    {fn:addBurj,       scale:1.9},
+    {fn:addBurjAlArab, scale:1.8},
     {fn:addDubaiFrame, side:0, scale:1.0, gate:true},
   ] : [];
   const cen=new THREE.Vector3(); for (const fr of frames) cen.add(fr.pos); cen.multiplyScalar(1/frames.length); cen.y=0;
-  // gates go on the straightest, well-separated stretch of road
+  // Rank the straightest, well-separated stretches of road. Landmarks go on these
+  // so each one looms dead ahead as you come down the straight toward it (on a
+  // loop the forward camera only ever points along the road, never at the infield).
   const straightness=(i)=>{ let s=0; for(let k=-45;k<=45;k++) s+=Math.abs(frames[(i+k+DIV)%DIV].curv); return s; };
   const cand=[]; for(let i=0;i<DIV;i+=6) cand.push([i,straightness(i)]);
   cand.sort((a,b)=>a[1]-b[1]);
-  const gates = LANDMARKS.filter(L=>L.gate); const gchosen=[];
-  for(const [i] of cand){
-    if(gchosen.every(c=>{let d=Math.abs(i-c);d=Math.min(d,DIV-d);return d>200;})){ gchosen.push(i); if(gchosen.length>=gates.length) break; }
-  }
-  gates.forEach((L,idx)=>{ L.frac=(gchosen[idx]??0)/DIV; });
-  // ---- skyline cluster: enormous towers in the centre of the loop so a
-  // recognisable London/Dubai skyline looms over the whole circuit and is visible
-  // across the infield from almost anywhere on the track. ----
+  const gates  = LANDMARKS.filter(L=>L.gate);
   const towers = LANDMARKS.filter(L=>!L.gate);
-  // ground height at an infield point ≈ the height of the nearest road frame, so
-  // towers rest on the terrain instead of being pinned at y=0 (and sinking where
-  // the track climbs a hill)
-  const groundYAt=(x,z)=>{ let best=Infinity, by=0; for(let i=0;i<DIV;i+=4){ const p=frames[i].pos; const d=(p.x-x)*(p.x-x)+(p.z-z)*(p.z-z); if(d<best){ best=d; by=p.y; } } return by; };
+  // Tower Bridge spans the road on the straightest stretch.
+  gates.forEach(L=>{ L.frac=cand[0][0]/DIV; });
+  // Spread the towers evenly around the lap, each standing just OUTSIDE the loop
+  // (away from the centre) so they line the circuit against the sky.
   towers.forEach((L,idx)=>{
-    const a = idx/towers.length*Math.PI*2 + 0.5;
-    const R = 60 + (idx%2)*34;
-    const x = cen.x+Math.cos(a)*R, z = cen.z+Math.sin(a)*R;
-    L.world = { x, z, y: groundYAt(x,z) };
-    L.faceAng = Math.atan2(L.world.x-cen.x, L.world.z-cen.z);   // face outward from centre
+    const frac=(idx+0.5)/towers.length;
+    const f=frames[Math.floor(frac*DIV)%DIV];
+    const outward=(f.pos.x-cen.x)*f.right.x + (f.pos.z-cen.z)*f.right.z;
+    L.frac = frac;
+    L.side = outward>=0 ? 1 : -1;          // outside of the loop
+    L.off  = 26;
   });
-  // frame indices to keep clear of generic buildings so nothing blocks a gate
-  const keepout = gates.map(L=>Math.floor(DIV*L.frac));
+  // frame indices to keep generic buildings clear of, so nothing blocks a landmark
+  const keepout = LANDMARKS.map(L=>Math.floor(DIV*L.frac));
   const nearLM = (i)=> keepout.some(k=>{ let d=Math.abs(i-k); d=Math.min(d,DIV-d); return d < 70; });
 
   // ---- flat base ground so the bare centre of the loop (past the verges) has
@@ -748,7 +743,7 @@ function placeLandmark(group, g, frames, spec, faceY, lift){
     g.position.set(spec.world.x, (spec.world.y||0) + (lift||0)*(spec.scale||1), spec.world.z);
     g.rotation.y = (spec.faceAng||0) + (faceY||0);
   } else {
-    const off=(ROAD_W+RUMBLE_W)+18;
+    const off=(ROAD_W+RUMBLE_W)+(spec.off!=null?spec.off:18);
     g.position.copy(f.pos).addScaledVector(f.right, spec.side*off).setY((lift||0)*(spec.scale||1));
     g.rotation.y=Math.atan2(f.tan.x,f.tan.z) + (faceY||0);
   }
