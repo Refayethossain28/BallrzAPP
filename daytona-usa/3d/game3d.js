@@ -34,6 +34,7 @@ const RUMBLE_W = 1.6;
 const DIV = 1400;                 // spline samples (road resolution)
 const FPS = 60, STEP = 1/FPS;
 const ROLL_TOTAL = 7.0;           // rolling-start intro length (seconds)
+const BUILD = 'BUILD 12 — stadium, mid-straight start';   // bump every push; shown on the menu to confirm you loaded the latest code
 
 // hand-authored closed-loop circuit layouts [x,y,z] (stylised, recognisable
 // street circuits — not GPS-accurate satellite traces)
@@ -1704,6 +1705,7 @@ function menuHTML(){
   return `
     <h1 class="title">DAYTONA <span class="red">USA</span></h1>
     <div class="subtitle">3D POLYGON EDITION</div>
+    <div style="margin:6px auto;display:inline-block;background:#15c24a;color:#04210e;font-weight:800;font-size:15px;padding:6px 14px;border-radius:8px;letter-spacing:.5px">${BUILD}</div>
     <div class="menu-card">
       <h2>MERCEDES CIRCUIT RACING</h2>
       <p style="font-size:13px;opacity:.85;margin:0 0 16px;line-height:1.4">
