@@ -34,7 +34,7 @@ const RUMBLE_W = 1.6;
 const DIV = 1400;                 // spline samples (road resolution)
 const FPS = 60, STEP = 1/FPS;
 const ROLL_TOTAL = 7.0;           // rolling-start intro length (seconds)
-const BUILD = 'BUILD 17 — ground under the whole track';   // bump every push; shown on the menu to confirm you loaded the latest code
+const BUILD = 'BUILD 18 — landmarks on every circuit';   // bump every push; shown on the menu to confirm you loaded the latest code
 
 // hand-authored closed-loop circuit layouts [x,y,z] (stylised, recognisable
 // street circuits — not GPS-accurate satellite traces)
@@ -64,7 +64,7 @@ const CIRCUITS = [
 const THEMES = [
   { // 0 Daytona — alpine speedway
     asphalt:0x83878d, grass:0x4a9c54, grass2:0x3f8f49, mountain:0x8a9099, snow:true,
-    prop:'pine', water:false, dino:false, tunnel:true, skyline:'mountain', landmark:null, buildings:false,
+    prop:'pine', water:false, dino:false, tunnel:true, skyline:'mountain', landmark:'usa', buildings:false,
     skyTop:'#1f6fd6', skyMid:'#5aa6f0', skyHorizon:'#dff0ff', fog:0xbfe2ff,
   },
   { // 1 dinosaur canyon (kept for variety)
@@ -539,19 +539,6 @@ function buildScenery(rng) {
       const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,w), mat);
       b.position.set(Math.cos(ang)*r, h/2-40, Math.sin(ang)*r); sceneryGroup.add(b);
     }
-    // ---- recognizable landmarks dotted around that ring, so the London / Dubai
-    // skyline is identifiable on the horizon from anywhere on the lap (not only on
-    // the two straights where you pass them up close) ----
-    const heroes = th.landmark==='london'
-        ? [addBigBen, addShard, addGherkin, addLondonEye, addBigBen, addShard, addGherkin, addLondonEye]
-        : th.landmark==='dubai'
-        ? [addBurj, addBurjAlArab, addBurj, addBurjAlArab, addBurj, addBurjAlArab] : [];
-    heroes.forEach((fn,i)=>{
-      const ang = (i/heroes.length)*Math.PI*2 + 0.35;
-      const r = 520 + ((i*53)%140);
-      const x = Math.cos(ang)*r, z = Math.sin(ang)*r;
-      fn(sceneryGroup, frames, { world:{x,z,y:0}, scale:3.0, faceAng: Math.atan2(-x,-z) });
-    });
   } else {
     // ---- distant mountain / canyon-wall ring ----
     const mtnMat = new THREE.MeshLambertMaterial({color:th.mountain, flatShading:true});
@@ -567,6 +554,23 @@ function buildScenery(rng) {
         cap.position.set(Math.cos(ang)*r, h-40-h*0.17, Math.sin(ang)*r); sceneryGroup.add(cap);
       }
     }
+  }
+  // ---- recognizable landmarks dotted around the horizon ring on EVERY circuit,
+  // so an identifiable skyline is visible from anywhere on the lap ----
+  {
+    const heroes = th.landmark==='london'
+        ? [addBigBen, addShard, addGherkin, addLondonEye, addBigBen, addShard, addGherkin, addLondonEye]
+      : th.landmark==='dubai'
+        ? [addBurj, addBurjAlArab, addBurj, addBurjAlArab, addBurj, addBurjAlArab]
+      : th.landmark==='usa'
+        ? [addStatueOfLiberty, addGoldenGate, addStatueOfLiberty, addGoldenGate, addStatueOfLiberty, addGoldenGate] : [];
+    const baseR = th.skyline==='city' ? 520 : 600;        // sit just inside the mountain ring on alpine tracks
+    heroes.forEach((fn,i)=>{
+      const ang = (i/heroes.length)*Math.PI*2 + 0.35;
+      const r = baseR + ((i*53)%140);
+      const x = Math.cos(ang)*r, z = Math.sin(ang)*r;
+      fn(sceneryGroup, frames, { world:{x,z,y:0}, scale:3.6, faceAng: Math.atan2(-x,-z) });
+    });
   }
   // ---- landmark set-pieces ----
   // Each hero landmark sits right at the trackside at a spaced point around the
@@ -965,6 +969,47 @@ function addDubaiFrame(group, frames, spec){
   g.add(lmBox(new THREE.MeshStandardMaterial({color:0xc9a233, metalness:0.85, roughness:0.32}), W+tw,12,td+1, 0,H-6,0)); // sky-bridge deck
   for (const sx of [-1,1]) g.add(lmBox(gold,tw+2,8,td+2,sx*W/2,4,0)); // bases
   g.position.copy(f.pos).addScaledVector(f.right,72).setY(0); g.rotation.y=Math.atan2(f.tan.x,f.tan.z); group.add(g);
+}
+// USA — the Statue of Liberty: verdigris figure with torch and spiked crown on a stone pedestal
+function addStatueOfLiberty(group, frames, spec){
+  const g=new THREE.Group();
+  const stone =new THREE.MeshStandardMaterial({color:0x9a8f7a, roughness:0.9});
+  const copper=new THREE.MeshStandardMaterial({color:0x53b095, roughness:0.6, metalness:0.2});   // verdigris green
+  const flame =new THREE.MeshStandardMaterial({color:0xffd24a, emissive:0xffae00, emissiveIntensity:0.6, roughness:0.4});
+  g.add(lmBox(stone,34,20,34,0,10,0));                       // pedestal base
+  g.add(lmBox(stone,24,28,24,0,34,0));                       // pedestal column
+  g.add(lmBox(stone,17,10,17,0,53,0));                       // plinth
+  const body=new THREE.Mesh(new THREE.CylinderGeometry(5.5,10,42,12), copper); body.position.y=80; g.add(body);
+  const head=new THREE.Mesh(new THREE.SphereGeometry(4.4,12,12), copper); head.position.y=106; g.add(head);
+  for(let k=0;k<7;k++){ const a=k/7*6.28; const sp=new THREE.Mesh(new THREE.ConeGeometry(0.9,8,4),copper);
+    sp.position.set(Math.cos(a)*5.4,112,Math.sin(a)*5.4); sp.rotation.z=-Math.cos(a)*0.6; sp.rotation.x=Math.sin(a)*0.6; g.add(sp); }
+  const arm=new THREE.Mesh(new THREE.CylinderGeometry(1.7,2.2,28,8),copper); arm.position.set(9,104,0); arm.rotation.z=-0.5; g.add(arm);
+  const cup=new THREE.Mesh(new THREE.CylinderGeometry(3.4,2.2,4,12),copper); cup.position.set(17,117,0); g.add(cup);
+  const fl=new THREE.Mesh(new THREE.ConeGeometry(2.8,9,10),flame); fl.position.set(17,124,0); g.add(fl);
+  const tablet=lmBox(stone,5.5,10,2.5,-8,78,3.5); tablet.rotation.z=0.32; g.add(tablet);   // tablet in left arm
+  placeLandmark(group, g, frames, spec);
+}
+// USA — the Golden Gate Bridge: twin international-orange towers with suspension cables
+function addGoldenGate(group, frames, spec){
+  const g=new THREE.Group();
+  const orange=new THREE.MeshStandardMaterial({color:0xc1502e, roughness:0.55, metalness:0.25});
+  const deckM =new THREE.MeshStandardMaterial({color:0x8f3f22, roughness:0.7});
+  const span=130, towerH=95, deckY=30, cableTop=84;
+  g.add(lmBox(deckM, span+60, 3.5, 11, 0, deckY, 0));        // road deck
+  for (const sx of [-1,1]){
+    g.add(lmBox(orange, 7.5, towerH, 7.5, sx*span/2, towerH/2, 0));   // tower
+    for (const yy of [54,76,90]) g.add(lmBox(orange, 9, 4, 10, sx*span/2, yy, 0)); // cross-braces
+    g.add(lmBox(orange, 11, 8, 12, sx*span/2, 4, 0));        // pier
+  }
+  for (const sz of [-4,4]){                                   // two main suspension cables (parabolic sag)
+    let prev=null;
+    for (let i=0;i<=12;i++){ const t=i/12, x=(t-0.5)*span, y=deckY + (cableTop-deckY)*Math.pow(2*t-1,2);
+      if (prev){ const mx=(x+prev.x)/2,my=(y+prev.y)/2, dx=x-prev.x, dy=y-prev.y, len=Math.hypot(dx,dy);
+        const c=lmBox(orange,len,0.7,0.7,mx,my,sz); c.rotation.z=Math.atan2(dy,dx); g.add(c); }
+      prev={x,y};
+    }
+  }
+  placeLandmark(group, g, frames, spec);
 }
 function makeCrowdTexture(){
   const cv=document.createElement('canvas'); cv.width=256; cv.height=96; const x=cv.getContext('2d');
