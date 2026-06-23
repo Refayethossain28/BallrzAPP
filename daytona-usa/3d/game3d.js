@@ -1387,8 +1387,10 @@ function updateCars(dt){
 function update(dt){
   if (G.state==='rolling'){
     G.rollTime -= dt;
-    // the whole field rolls forward in formation; player drifts to its lane
-    G.speed = approach(G.speed, G.maxSpeed*0.34, G.maxSpeed*0.25*dt);
+    // the whole field idles slowly forward in formation, so the green flag drops
+    // while we're still on the start straight (among the landmarks), not out on a
+    // far curve
+    G.speed = approach(G.speed, G.maxSpeed*0.12, G.maxSpeed*0.2*dt);
     G.dist += G.speed*dt; while (G.dist>=G.L) G.dist-=G.L;
     G.playerX = approach(G.playerX, 0, dt*0.5);
     updateCars(dt);
@@ -1811,7 +1813,7 @@ function startRace(){
   G.totalTime=0; G.place=FIELD; G.shake=0; G.skid=0; G.reversedLine=false;
 
   // --- Daytona-style ROLLING START ---
-  G.speed = G.maxSpeed*0.28;        // the field is already rolling
+  G.speed = G.maxSpeed*0.10;        // the field idles slowly up to the line
   placeCar(playerCar,0,0,0);
   // start the cinematic camera ahead-and-to-the-side, looking back at the pack
   const f=frameAt(0); worldPos(0,0,_tmp);
