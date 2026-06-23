@@ -573,22 +573,20 @@ function buildScenery(rng) {
   // so each one looms dead ahead as you come down the straight toward it (on a
   // loop the forward camera only ever points along the road, never at the infield).
   const straightness=(i)=>{ let s=0; for(let k=-45;k<=45;k++) s+=Math.abs(frames[(i+k+DIV)%DIV].curv); return s; };
-  const cand=[]; for(let i=0;i<DIV;i+=6) cand.push([i,straightness(i)]);
-  cand.sort((a,b)=>a[1]-b[1]);
+  const straightestIn=(lo,hi)=>{ let best=lo,bs=Infinity; for(let i=lo;i<=hi;i++){ const s=straightness(i); if(s<bs){bs=s;best=i;} } return best; };
   const gates  = LANDMARKS.filter(L=>L.gate);
   const towers = LANDMARKS.filter(L=>!L.gate);
-  // Find the two long straights (well-separated lowest-curvature centres).
-  const straights=[];
-  for(const [i] of cand){ if(straights.every(c=>{let d=Math.abs(i-c);d=Math.min(d,DIV-d);return d>DIV*0.3;})){ straights.push(i); if(straights.length>=2) break; } }
-  while(straights.length<2) straights.push((straights[0]+Math.floor(DIV/2))%DIV);
-  straights.sort((a,b)=>a-b);
-  // Tower Bridge spans the first straight; the towers line both straights at the
-  // kerb, so driving down a straight you bear straight down a row of landmarks.
-  gates.forEach(L=>{ L.frac=straights[0]/DIV; });
-  const slots=[ {s:0,d: 70,side:-1}, {s:0,d:-70,side: 1}, {s:1,d: 70,side:-1}, {s:1,d:-70,side: 1} ];
+  // The stadium has two opposite straights: one just past the start line and one
+  // on the far side. Find the straightest point within each region explicitly so
+  // the landmarks split across BOTH straights (auto-detection kept clustering them
+  // on one). Tower Bridge spans the start straight; towers line both kerbs.
+  const sA=straightestIn(Math.floor(DIV*0.04), Math.floor(DIV*0.20));   // start straight
+  const sB=straightestIn(Math.floor(DIV*0.54), Math.floor(DIV*0.70));   // far straight
+  gates.forEach(L=>{ L.frac=sA/DIV; });
+  const slots=[ {c:sA,d:-46,side:-1}, {c:sA,d: 46,side: 1}, {c:sB,d:-46,side:-1}, {c:sB,d: 46,side: 1} ];
   towers.forEach((L,idx)=>{
     const sl=slots[idx%slots.length];
-    L.frac = (((straights[sl.s]+sl.d)%DIV)+DIV)%DIV / DIV;
+    L.frac = (((sl.c+sl.d)%DIV)+DIV)%DIV / DIV;
     L.side = sl.side;
     L.off  = (L.fn===addLondonEye || L.fn===addBurjAlArab) ? 30 : 18;
   });
