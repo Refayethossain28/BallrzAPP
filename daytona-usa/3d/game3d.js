@@ -37,13 +37,14 @@ const ROLL_TOTAL = 7.0;           // rolling-start intro length (seconds)
 
 // hand-authored closed-loop circuit layouts [x,y,z] (stylised, recognisable
 // street circuits — not GPS-accurate satellite traces)
+// flat circuits (y=0) so the road, infield and skyline all sit on one level
 const LONDON_LAYOUT = [
-  [-200,0,-150],[-60,5,-205],[120,2,-195],[215,0,-95],
-  [228,6,45],[150,3,155],[10,7,205],[-140,2,180],[-228,5,45],[-215,0,-70],
+  [-200,0,-150],[-60,0,-205],[120,0,-195],[215,0,-95],
+  [228,0,45],[150,0,155],[10,0,205],[-140,0,180],[-228,0,45],[-215,0,-70],
 ];
 const DUBAI_LAYOUT = [
-  [-310,0,-55],[-235,4,-150],[-90,6,-188],[85,3,-182],[235,0,-130],
-  [315,6,-15],[298,8,85],[205,4,158],[60,7,182],[-100,2,168],[-235,6,80],[-325,3,-5],
+  [-310,0,-55],[-235,0,-150],[-90,0,-188],[85,0,-182],[235,0,-130],
+  [315,0,-15],[298,0,85],[205,0,158],[60,0,182],[-100,0,168],[-235,0,80],[-325,0,-5],
 ];
 const CIRCUITS = [
   { name:'DAYTONA', laps:8, maxSpeed:118, curveMul:0.85, aiSpeed:0.74, startTime:60, lapBonus:26, seed:1,  theme:0 },
@@ -591,6 +592,18 @@ function buildScenery(rng) {
   // frame indices to keep clear of generic buildings so nothing blocks a gate
   const keepout = gates.map(L=>Math.floor(DIV*L.frac));
   const nearLM = (i)=> keepout.some(k=>{ let d=Math.abs(i-k); d=Math.min(d,DIV-d); return d < 70; });
+
+  // ---- flat base ground so the bare centre of the loop (past the verges) has
+  // real grass for the skyline cluster to stand on, at road level ----
+  if (th.buildings){
+    let minx=1e9,maxx=-1e9,minz=1e9,maxz=-1e9;
+    for(const fr of frames){ const p=fr.pos; if(p.x<minx)minx=p.x; if(p.x>maxx)maxx=p.x; if(p.z<minz)minz=p.z; if(p.z>maxz)maxz=p.z; }
+    const bw=(maxx-minx)+800, bh=(maxz-minz)+800;
+    const btex=makeGroundTexture(th); btex.wrapS=btex.wrapT=THREE.RepeatWrapping; btex.repeat.set(bw/14,bh/14); btex.anisotropy=renderer.capabilities.getMaxAnisotropy();
+    const base=new THREE.Mesh(new THREE.PlaneGeometry(bw,bh), new THREE.MeshLambertMaterial({map:btex}));
+    base.rotation.x=-Math.PI/2; base.position.set((minx+maxx)/2,-0.2,(minz+maxz)/2); base.receiveShadow=true;
+    sceneryGroup.add(base);
+  }
 
   // ---- mid-distance buildings lining urban circuits ----
   // Always placed on the OUTSIDE of the loop (away from the centre) so the
