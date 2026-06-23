@@ -69,7 +69,7 @@ const THEMES = [
   },
   { // 3 London — overcast city
     asphalt:0x6f7378, grass:0x4f7d46, grass2:0x447439, mountain:0x9aa6b2, snow:false,
-    prop:'tree', water:false, dino:false, tunnel:false, skyline:'city', landmark:'london', buildings:true,
+    prop:'tree', water:false, dino:false, tunnel:false, skyline:'city', landmark:'london', buildings:true, overcast:true,
     skyTop:'#5f6c7b', skyMid:'#7c8b99', skyHorizon:'#97a4ae', fog:0x9aa6b0,
   },
   { // 4 Dubai — desert metropolis
@@ -134,14 +134,16 @@ function makeSkyTexture(th){
   const g=x.createLinearGradient(0,0,0,512);
   g.addColorStop(0,th.skyTop); g.addColorStop(0.55,th.skyMid); g.addColorStop(0.8,th.skyHorizon); g.addColorStop(1,th.skyHorizon);
   x.fillStyle=g; x.fillRect(0,0,1024,512);
-  // sun with halo
-  const sx=300, sy=120;
-  const hal=x.createRadialGradient(sx,sy,8,sx,sy,150);
-  hal.addColorStop(0,'rgba(255,250,210,0.95)'); hal.addColorStop(0.3,'rgba(255,245,190,0.4)'); hal.addColorStop(1,'rgba(255,245,190,0)');
-  x.fillStyle=hal; x.fillRect(sx-160,sy-160,320,320);
-  x.fillStyle='#fffbe0'; x.beginPath(); x.arc(sx,sy,46,0,6.28); x.fill();
-  // clouds
-  x.fillStyle='rgba(255,255,255,0.9)';
+  if (!th.overcast){
+    // sun with halo (clear-sky themes only)
+    const sx=300, sy=120;
+    const hal=x.createRadialGradient(sx,sy,8,sx,sy,150);
+    hal.addColorStop(0,'rgba(255,250,210,0.95)'); hal.addColorStop(0.3,'rgba(255,245,190,0.4)'); hal.addColorStop(1,'rgba(255,245,190,0)');
+    x.fillStyle=hal; x.fillRect(sx-160,sy-160,320,320);
+    x.fillStyle='#fffbe0'; x.beginPath(); x.arc(sx,sy,46,0,6.28); x.fill();
+  }
+  // clouds — soft grey on overcast days so they don't bloom over the skyline
+  x.fillStyle = th.overcast ? 'rgba(150,160,170,0.5)' : 'rgba(255,255,255,0.9)';
   function cloud(cx,cy,s){ for(let k=0;k<6;k++){ const a=k/6*6.28; x.beginPath(); x.ellipse(cx+Math.cos(a)*s*1.2,cy+Math.sin(a)*s*0.4,s*(0.8+Math.random()*0.5),s*0.55,0,0,6.28); x.fill(); } }
   for (let i=0;i<7;i++) cloud(120+Math.random()*900, 150+Math.random()*180, 22+Math.random()*26);
   const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace; return t;
@@ -223,7 +225,7 @@ function initThree() {
   // --- post-processing: bloom -> filmic output -> FXAA -> vignette ---
   composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
-  bloomPass = new UnrealBloomPass(new THREE.Vector2(1,1), MOBILE?0.28:0.4, 0.4, 0.95);
+  bloomPass = new UnrealBloomPass(new THREE.Vector2(1,1), MOBILE?0.22:0.32, 0.4, 0.96);
   composer.addPass(bloomPass);
   composer.addPass(new OutputPass());             // ACES tonemap + sRGB
   if (!MOBILE){ fxaaPass = new ShaderPass(FXAAShader); composer.addPass(fxaaPass); }
@@ -244,8 +246,9 @@ function buildTrack(diff) {
   G.theme = THEMES[diff.theme || 0];
   scene.background.set(G.theme.skyHorizon);
   scene.fog.color.setHex(G.theme.fog);
-  // push fog back on city circuits so the skyline / landmarks stay visible
-  scene.fog.near = 360; scene.fog.far = (G.theme.skyline==='city') ? 1600 : 900;
+  // push fog well back on city circuits so the landmarks read from a distance
+  scene.fog.near = (G.theme.skyline==='city') ? 600 : 360;
+  scene.fog.far  = (G.theme.skyline==='city') ? 3200 : 900;
   buildSky(G.theme);
   // ---- control points: a hand-authored real-circuit layout, or an organic one ----
   const rng = mulberry32(diff.seed * 2654435761);
@@ -289,9 +292,14 @@ function buildTrack(diff) {
     sm[i] = s/(WIN*2+1);
   }
   const BANK_K = 42, MAXB = 0.62;     // up to ~35° of banking on the hardest turns (Daytona-style)
+  const FLAT = 120;                   // frames each side of the start/finish to flatten
   for (let i=0;i<DIV;i++){
     const f = frames[i];
     f.bank = Math.max(-MAXB, Math.min(MAXB, sm[i]*BANK_K*G.curveMul));
+    // Flatten the banking smoothly through the start/finish line so the field
+    // sits level for the rolling start instead of tipped over on a banked curve.
+    const di = Math.min(i, DIV-i);
+    if (di < FLAT) f.bank *= 0.5 - 0.5*Math.cos(Math.PI*di/FLAT);
     f.right = f.flatRight.clone().applyAxisAngle(f.tan, f.bank);
     f.up = new THREE.Vector3().crossVectors(f.tan, f.right).normalize();
   }
@@ -542,47 +550,60 @@ function buildScenery(rng) {
   // lap, large, so it looms into view as you approach and sweeps past close —
   // unmistakable rather than a speck on the horizon. Tower Bridge / the Dubai
   // Frame span the road as gateways you drive through.
+  // Towers form an infield skyline cluster (visible across the whole circuit);
+  // gates span the road on a straight so you drive through them.
   const LANDMARKS = th.landmark==='london' ? [
-    {fn:addBigBen,    frac:0.09, side:-1, scale:1.5},
-    {fn:addLondonEye, frac:0.28, side: 1, scale:1.3},
-    {fn:addGherkin,   frac:0.47, side:-1, scale:1.4},
-    {fn:addShard,     frac:0.66, side: 1, scale:1.3},
-    {fn:addTowerBridge, frac:0.86, side:0, scale:1.0, gate:true},
+    {fn:addBigBen,    scale:2.8},
+    {fn:addLondonEye, scale:2.4},
+    {fn:addGherkin,   scale:2.7},
+    {fn:addShard,     scale:2.6},
+    {fn:addTowerBridge, side:0, scale:1.0, gate:true},
   ] : th.landmark==='dubai' ? [
-    {fn:addBurj,       frac:0.12, side:-1, scale:1.4},
-    {fn:addBurjAlArab, frac:0.52, side: 1, scale:1.35},
-    {fn:addDubaiFrame, frac:0.80, side:0, scale:1.0, gate:true},
+    {fn:addBurj,       scale:2.4},
+    {fn:addBurjAlArab, scale:2.6},
+    {fn:addDubaiFrame, side:0, scale:1.0, gate:true},
   ] : [];
-  // Gates span the road, so they only read as a gateway on a straight. Snap each
-  // gate to the straightest stretch of track (lowest summed curvature over a
-  // window) that isn't already taken by another landmark.
-  const taken=[];
-  for (const L of LANDMARKS){
-    if (!L.gate){ taken.push(Math.floor(DIV*L.frac)); continue; }
-    let best=Math.floor(DIV*L.frac), bestScore=Infinity;
-    for (let i=0;i<DIV;i+=4){
-      if (taken.some(t=>{let d=Math.abs(i-t);d=Math.min(d,DIV-d);return d<90;})) continue;
-      let s=0; for (let k=-30;k<=30;k++) s+=Math.abs(frames[(i+k+DIV)%DIV].curv);
-      if (s<bestScore){ bestScore=s; best=i; }
-    }
-    L.frac=best/DIV; taken.push(best);
+  const cen=new THREE.Vector3(); for (const fr of frames) cen.add(fr.pos); cen.multiplyScalar(1/frames.length); cen.y=0;
+  // gates go on the straightest, well-separated stretch of road
+  const straightness=(i)=>{ let s=0; for(let k=-45;k<=45;k++) s+=Math.abs(frames[(i+k+DIV)%DIV].curv); return s; };
+  const cand=[]; for(let i=0;i<DIV;i+=6) cand.push([i,straightness(i)]);
+  cand.sort((a,b)=>a[1]-b[1]);
+  const gates = LANDMARKS.filter(L=>L.gate); const gchosen=[];
+  for(const [i] of cand){
+    if(gchosen.every(c=>{let d=Math.abs(i-c);d=Math.min(d,DIV-d);return d>200;})){ gchosen.push(i); if(gchosen.length>=gates.length) break; }
   }
-  // frame indices to keep clear of generic buildings so nothing blocks a landmark
-  const keepout = LANDMARKS.map(L=>Math.floor(DIV*L.frac));
+  gates.forEach((L,idx)=>{ L.frac=(gchosen[idx]??0)/DIV; });
+  // ---- skyline cluster: enormous towers in the centre of the loop so a
+  // recognisable London/Dubai skyline looms over the whole circuit and is visible
+  // across the infield from almost anywhere on the track. ----
+  const towers = LANDMARKS.filter(L=>!L.gate);
+  towers.forEach((L,idx)=>{
+    const a = idx/towers.length*Math.PI*2 + 0.5;
+    const R = 60 + (idx%2)*34;
+    L.world = { x: cen.x+Math.cos(a)*R, z: cen.z+Math.sin(a)*R };
+    L.faceAng = Math.atan2(L.world.x-cen.x, L.world.z-cen.z);   // face outward from centre
+  });
+  // frame indices to keep clear of generic buildings so nothing blocks a gate
+  const keepout = gates.map(L=>Math.floor(DIV*L.frac));
   const nearLM = (i)=> keepout.some(k=>{ let d=Math.abs(i-k); d=Math.min(d,DIV-d); return d < 70; });
 
   // ---- mid-distance buildings lining urban circuits ----
+  // Always placed on the OUTSIDE of the loop (away from the centre) so the
+  // infield stays clear and the skyline cluster is visible across the track.
   if (th.buildings){
     const winTex = makeWindowTexture(th.landmark==='dubai');
-    for (let i=0;i<DIV;i+=36){
-      if (nearLM(i)) continue;                 // leave a gap around each landmark
-      const side=(i%72===0)?1:-1, f=frames[i];
+    const _v=new THREE.Vector3();
+    for (let i=0;i<DIV;i+=30){
+      if (nearLM(i)) continue;                 // leave a gap around each gate
+      const f=frames[i];
+      _v.copy(f.pos).sub(cen);
+      const side = (_v.dot(f.right) >= 0) ? 1 : -1;     // outward side
       const h=20 + rng()*(th.landmark==='dubai'?70:34), w=12+rng()*12;
       const col = th.landmark==='dubai' ? 0xbcd0e2 : [0x8a6248,0x96704e,0x6f5e54][(rng()*3)|0];
       const mat=new THREE.MeshStandardMaterial({color:col, roughness:0.7, metalness:th.landmark==='dubai'?0.45:0.05, map:winTex.clone()});
       mat.map.repeat.set(Math.max(1,w/8), Math.max(2,h/10));
       const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,w), mat);
-      b.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+26+rng()*40)); b.position.y += h/2-2;
+      b.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+22+rng()*40)); b.position.y += h/2-2;
       sceneryGroup.add(b);
     }
   }
@@ -704,9 +725,15 @@ function lmBox(mat,w,h,d,x,y,z){ const m=new THREE.Mesh(new THREE.BoxGeometry(w,
 // the road. Returns the road frame it was anchored to.
 function placeLandmark(group, g, frames, spec, faceY, lift){
   const f=frames[((Math.floor(DIV*spec.frac))%DIV+DIV)%DIV];
-  const off=(ROAD_W+RUMBLE_W)+26;
-  g.position.copy(f.pos).addScaledVector(f.right, spec.side*off).setY((lift||0)*(spec.scale||1));
-  g.rotation.y=Math.atan2(f.tan.x,f.tan.z) + (faceY||0);
+  if (spec.world){
+    // infield skyline placement: an explicit world spot, turned to face the centre of the loop
+    g.position.set(spec.world.x, (lift||0)*(spec.scale||1), spec.world.z);
+    g.rotation.y = (spec.faceAng||0) + (faceY||0);
+  } else {
+    const off=(ROAD_W+RUMBLE_W)+18;
+    g.position.copy(f.pos).addScaledVector(f.right, spec.side*off).setY((lift||0)*(spec.scale||1));
+    g.rotation.y=Math.atan2(f.tan.x,f.tan.z) + (faceY||0);
+  }
   g.scale.setScalar(spec.scale||1);
   group.add(g);
   return f;
@@ -1511,7 +1538,16 @@ function render(){
   _camUp.lerp(f.up, 0.1); camera.up.copy(_camUp);     // roll with the bank
   camera.lookAt(_look);
   if (sky) sky.position.copy(camera.position);        // sky stays around us
-  const targetFov = 62 + Math.min(1,Math.abs(G.speed)/G.maxSpeed)*10;
+  let targetFov = 62 + Math.min(1,Math.abs(G.speed)/G.maxSpeed)*10;
+  // On a tall (portrait) phone the horizontal view is very narrow, which hides
+  // roadside scenery and landmarks. Enforce a minimum horizontal FOV so the
+  // sides stay visible; this only kicks in when the screen is portrait.
+  const asp = camera.aspect || 1;
+  if (asp < 1){
+    const minH = 58*Math.PI/180;
+    const vForMinH = 2*Math.atan(Math.tan(minH/2)/asp)*180/Math.PI;
+    targetFov = Math.min(98, Math.max(targetFov, vForMinH));
+  }
   camera.fov += (targetFov - camera.fov)*0.08; camera.updateProjectionMatrix();
   }
 
