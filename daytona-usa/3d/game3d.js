@@ -34,7 +34,7 @@ const RUMBLE_W = 1.6;
 const DIV = 1400;                 // spline samples (road resolution)
 const FPS = 60, STEP = 1/FPS;
 const ROLL_TOTAL = 7.0;           // rolling-start intro length (seconds)
-const BUILD = 'BUILD 16 — soundtrack picker (Daytona / Heat)';   // bump every push; shown on the menu to confirm you loaded the latest code
+const BUILD = 'BUILD 17 — ground under the whole track';   // bump every push; shown on the menu to confirm you loaded the latest code
 
 // hand-authored closed-loop circuit layouts [x,y,z] (stylised, recognisable
 // street circuits — not GPS-accurate satellite traces)
@@ -614,15 +614,16 @@ function buildScenery(rng) {
   const keepout = LANDMARKS.map(L=>Math.floor(DIV*L.frac));
   const nearLM = (i)=> keepout.some(k=>{ let d=Math.abs(i-k); d=Math.min(d,DIV-d); return d < 70; });
 
-  // ---- flat base ground so the bare centre of the loop (past the verges) has
-  // real grass for the skyline cluster to stand on, at road level ----
-  if (th.buildings){
-    let minx=1e9,maxx=-1e9,minz=1e9,maxz=-1e9;
-    for(const fr of frames){ const p=fr.pos; if(p.x<minx)minx=p.x; if(p.x>maxx)maxx=p.x; if(p.z<minz)minz=p.z; if(p.z>maxz)maxz=p.z; }
-    const bw=(maxx-minx)+800, bh=(maxz-minz)+800;
+  // ---- large base ground under EVERY track, so there is never open sky beside
+  // the road (the grass verge is only a narrow ribbon; without this the road +
+  // verge looked like a strip floating in the air above the distant scenery) ----
+  {
+    let minx=1e9,maxx=-1e9,minz=1e9,maxz=-1e9,miny=1e9;
+    for(const fr of frames){ const p=fr.pos; if(p.x<minx)minx=p.x; if(p.x>maxx)maxx=p.x; if(p.z<minz)minz=p.z; if(p.z>maxz)maxz=p.z; if(p.y<miny)miny=p.y; }
+    const bw=(maxx-minx)+2600, bh=(maxz-minz)+2600;       // reaches well past the distant mountain/skyline ring
     const btex=makeGroundTexture(th); btex.wrapS=btex.wrapT=THREE.RepeatWrapping; btex.repeat.set(bw/14,bh/14); btex.anisotropy=renderer.capabilities.getMaxAnisotropy();
     const base=new THREE.Mesh(new THREE.PlaneGeometry(bw,bh), new THREE.MeshLambertMaterial({map:btex}));
-    base.rotation.x=-Math.PI/2; base.position.set((minx+maxx)/2,-0.2,(minz+maxz)/2); base.receiveShadow=true;
+    base.rotation.x=-Math.PI/2; base.position.set((minx+maxx)/2, miny-2.5, (minz+maxz)/2); base.receiveShadow=true;
     sceneryGroup.add(base);
   }
 
