@@ -1719,6 +1719,10 @@ function previewRebuild(){
   playerCar=buildPlayerVehicle(VEHICLES[G.vehicle]);
   scene.add(playerCar); placeCar(playerCar,0,0,0);
   applyGraphicsMode();
+  // sit the menu camera at the new track's start line so the backdrop matches
+  const f=frameAt(0); worldPos(0,0,_tmp);
+  camera.up.set(0,1,0);
+  camera.position.copy(_tmp).addScaledVector(f.tan,-11).add(new THREE.Vector3(0,5,0)); camera.lookAt(_tmp);
 }
 function vehicleHTML(){
   return `
@@ -1773,10 +1777,12 @@ function showVehicleSelect(){
 }
 function showCircuitSelect(){
   G.state='menu';
+  previewRebuild();                       // show the currently-selected circuit behind the menu
   const el=overlayEl(); el.innerHTML=circuitHTML(); el.classList.remove('hidden');
   el.querySelectorAll('[data-cir]').forEach(b=>b.onclick=()=>{
     G.circuit=parseInt(b.dataset.cir,10);
     el.querySelectorAll('[data-cir]').forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); beep(520,0.08,'square',0.1);
+    previewRebuild();                     // rebuild the backdrop to match the picked circuit
   });
   document.getElementById('backBtn').onclick=showVehicleSelect;
   document.getElementById('startBtn2').onclick=startRace;
