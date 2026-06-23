@@ -37,19 +37,22 @@ const ROLL_TOTAL = 7.0;           // rolling-start intro length (seconds)
 
 // hand-authored closed-loop circuit layouts [x,y,z] (stylised, recognisable
 // street circuits — not GPS-accurate satellite traces)
-// flat stadium circuits (y=0): two long straights joined by end curves, so the
-// landmarks can line each straight and be driven at head-on.
+// flat stadium circuits (y=0): two long straights joined by end curves. The
+// start/finish (first point) sits in the MIDDLE of the bottom straight so the
+// rolling start and green flag are clearly on the straight, among the landmarks.
 const LONDON_LAYOUT = [
-  [-200,0,-180],[-67,0,-180],[67,0,-180],[200,0,-180],   // bottom straight
-  [262,0,-92],[284,0,0],[262,0,92],                       // right curve
-  [200,0,180],[67,0,180],[-67,0,180],[-200,0,180],        // top straight
-  [-262,0,92],[-284,0,0],[-262,0,-92],                    // left curve
+  [0,0,-180],[105,0,-180],[210,0,-180],                   // start (mid-straight) -> bottom-right
+  [272,0,-95],[292,0,0],[272,0,95],                       // right curve
+  [210,0,180],[105,0,180],[-105,0,180],[-210,0,180],      // top straight
+  [-272,0,95],[-292,0,0],[-272,0,-95],                    // left curve
+  [-210,0,-180],                                          // bottom-left -> back to start
 ];
 const DUBAI_LAYOUT = [
-  [-250,0,-205],[-83,0,-205],[83,0,-205],[250,0,-205],    // bottom straight
-  [325,0,-105],[350,0,0],[325,0,105],                     // right curve
+  [0,0,-205],[125,0,-205],[250,0,-205],                   // start (mid-straight) -> bottom-right
+  [330,0,-105],[352,0,0],[330,0,105],                     // right curve
   [250,0,205],[83,0,205],[-83,0,205],[-250,0,205],        // top straight
-  [-325,0,105],[-350,0,0],[-325,0,-105],                  // left curve
+  [-330,0,105],[-352,0,0],[-330,0,-105],                  // left curve
+  [-250,0,-205],                                          // bottom-left -> back to start
 ];
 const CIRCUITS = [
   { name:'DAYTONA', laps:8, maxSpeed:118, curveMul:0.85, aiSpeed:0.74, startTime:60, lapBonus:26, seed:1,  theme:0 },
