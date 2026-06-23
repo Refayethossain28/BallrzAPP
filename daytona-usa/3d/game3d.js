@@ -553,14 +553,14 @@ function buildScenery(rng) {
   // Towers stand just off the road on the outside of the loop so each looms ahead
   // as you drive up to it; the gate spans the road on a straight to drive through.
   const LANDMARKS = th.landmark==='london' ? [
-    {fn:addBigBen,    scale:1.9},
-    {fn:addLondonEye, scale:1.7},
-    {fn:addGherkin,   scale:1.9},
-    {fn:addShard,     scale:1.9},
+    {fn:addBigBen,    scale:2.2},
+    {fn:addLondonEye, scale:2.0},
+    {fn:addGherkin,   scale:2.2},
+    {fn:addShard,     scale:2.2},
     {fn:addTowerBridge, side:0, scale:1.0, gate:true},
   ] : th.landmark==='dubai' ? [
-    {fn:addBurj,       scale:1.9},
-    {fn:addBurjAlArab, scale:1.8},
+    {fn:addBurj,       scale:2.2},
+    {fn:addBurjAlArab, scale:2.1},
     {fn:addDubaiFrame, side:0, scale:1.0, gate:true},
   ] : [];
   const cen=new THREE.Vector3(); for (const fr of frames) cen.add(fr.pos); cen.multiplyScalar(1/frames.length); cen.y=0;
@@ -574,15 +574,19 @@ function buildScenery(rng) {
   const towers = LANDMARKS.filter(L=>!L.gate);
   // Tower Bridge spans the road on the straightest stretch.
   gates.forEach(L=>{ L.frac=cand[0][0]/DIV; });
-  // Spread the towers evenly around the lap, each standing just OUTSIDE the loop
-  // (away from the centre) so they line the circuit against the sky.
+  // Stand each tower at the OUTSIDE of a sharp corner: as you brake into the turn
+  // you are driving straight at it before you turn away, so it fills the view.
+  const corner=(i)=>{ let s=0; for(let k=-14;k<=14;k++) s+=Math.abs(frames[(i+k+DIV)%DIV].curv); return s; };
+  const peaks=[]; for(let i=0;i<DIV;i+=4) peaks.push([i,corner(i)]);
+  peaks.sort((a,b)=>b[1]-a[1]);                 // sharpest corners first
+  const spots=[];
+  for(const [i] of peaks){ if(spots.every(c=>{let d=Math.abs(i-c);d=Math.min(d,DIV-d);return d>DIV*0.12;})){ spots.push(i); if(spots.length>=towers.length) break; } }
   towers.forEach((L,idx)=>{
-    const frac=(idx+0.5)/towers.length;
-    const f=frames[Math.floor(frac*DIV)%DIV];
+    const i=spots[idx%spots.length], f=frames[i];
     const outward=(f.pos.x-cen.x)*f.right.x + (f.pos.z-cen.z)*f.right.z;
-    L.frac = frac;
-    L.side = outward>=0 ? 1 : -1;          // outside of the loop
-    L.off  = 26;
+    L.frac = i/DIV;
+    L.side = outward>=0 ? 1 : -1;               // outside of the corner
+    L.off  = 22;
   });
   // frame indices to keep generic buildings clear of, so nothing blocks a landmark
   const keepout = LANDMARKS.map(L=>Math.floor(DIV*L.frac));
@@ -606,8 +610,8 @@ function buildScenery(rng) {
   if (th.buildings){
     const winTex = makeWindowTexture(th.landmark==='dubai');
     const _v=new THREE.Vector3();
-    for (let i=0;i<DIV;i+=30){
-      if (nearLM(i)) continue;                 // leave a gap around each gate
+    for (let i=0;i<DIV;i+=44){
+      if (nearLM(i)) continue;                 // leave a gap around each landmark
       const f=frames[i];
       _v.copy(f.pos).sub(cen);
       const side = (_v.dot(f.right) >= 0) ? 1 : -1;     // outward side
@@ -616,7 +620,8 @@ function buildScenery(rng) {
       const mat=new THREE.MeshStandardMaterial({color:col, roughness:0.7, metalness:th.landmark==='dubai'?0.45:0.05, map:winTex.clone()});
       mat.map.repeat.set(Math.max(1,w/8), Math.max(2,h/10));
       const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,w), mat);
-      b.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+22+rng()*40)); b.position.y += h/2-2;
+      // sit them well back so the roadside landmarks stand out in front of them
+      b.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+90+rng()*70)); b.position.y += h/2-2;
       sceneryGroup.add(b);
     }
   }
