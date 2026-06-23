@@ -1236,7 +1236,7 @@ window.addEventListener('keydown', e=>{
   if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space'].includes(e.code)) e.preventDefault();
   if (e.code==='KeyP'||e.code==='Escape'){ if(!e.repeat) togglePause(); return; }
   if (e.code==='KeyC'){ if(!e.repeat) G.camMode=(G.camMode+1)%2; return; }
-  if (e.code==='KeyM'){ if(!e.repeat && window.GameMusic) window.GameMusic.toggleMute(); return; }
+  if (e.code==='KeyM'){ if(!e.repeat){ if(window.GameMusic) window.GameMusic.toggleMute(); setRollMuted(!rollMuted); } return; }
   bindKey(e.code,true);
   if (G.state==='menu' && (e.code==='Enter'||e.code==='Space')) startRace();
 });
@@ -1380,7 +1380,8 @@ function update(dt){
       const n=Math.ceil(G.rollTime);
       if (n>0){ cd.classList.remove('hidden'); cd.textContent=n; if(cd.dataset.last!=n){cd.dataset.last=n; beep(440,0.15,'square',0.15);} }
     }
-    if (G.rollTime <= 0){ cd.classList.add('hidden'); G.state='racing'; flashBanner('GREEN!'); beep(900,0.45,'square',0.22); revBlip(); }
+    if (G.rollTime <= 0){ cd.classList.add('hidden'); G.state='racing'; flashBanner('GREEN!'); beep(900,0.45,'square',0.22); revBlip();
+      fadeRollSnd(); if (window.GameMusic) window.GameMusic.duck(false); }   // hand off to race music
     return;
   }
   if (G.state!=='racing') return;
@@ -1475,6 +1476,28 @@ function speak(text, opts){
     window.speechSynthesis.speak(u);   // queued; caller cancels first if needed
   }catch(e){}
 }
+// ---- rolling-start theme (user-supplied Daytona recording) ----
+const ROLL_VOL = 0.95;
+let rollSnd=null, rollMuted=false, rollFade=null;
+function initRollSnd(){
+  if (rollSnd) return;
+  try{ rollSnd=new Audio('./audio/rolling-start.mp3'); rollSnd.preload='auto'; rollSnd.crossOrigin='anonymous'; }catch(e){ rollSnd=null; }
+}
+function playRollSnd(){
+  initRollSnd(); if (!rollSnd) return;
+  if (rollFade){ clearInterval(rollFade); rollFade=null; }
+  try{ rollSnd.pause(); rollSnd.currentTime=0; rollSnd.volume=rollMuted?0:ROLL_VOL; rollSnd.play().catch(()=>{}); }catch(e){}
+}
+function stopRollSnd(){ if (!rollSnd) return; if (rollFade){ clearInterval(rollFade); rollFade=null; } try{ rollSnd.pause(); rollSnd.currentTime=0; }catch(e){} }
+function fadeRollSnd(){
+  if (!rollSnd) return; if (rollFade) return;
+  rollFade=setInterval(()=>{
+    if (!rollSnd){ clearInterval(rollFade); rollFade=null; return; }
+    rollSnd.volume=Math.max(0, rollSnd.volume-0.06);
+    if (rollSnd.volume<=0.001){ try{ rollSnd.pause(); rollSnd.currentTime=0; }catch(e){} clearInterval(rollFade); rollFade=null; }
+  }, 60);
+}
+function setRollMuted(m){ rollMuted=m; if (rollSnd && !rollFade) rollSnd.volume = m?0:ROLL_VOL; }
 
 // ---------------------------------------------------------------------------
 // Render
@@ -1757,14 +1780,17 @@ function startRace(){
 
   document.getElementById('overlay').classList.add('hidden');
   const b=document.getElementById('banner'); b.dataset.phase='daytona'; showIntroBanner('DAAAYTONAAA!');
+  // play the user-supplied Daytona theme over the rolling start; duck the
+  // procedural race music underneath it until the green flag
   try{ window.speechSynthesis && window.speechSynthesis.cancel(); }catch(e){}
-  speak('Daytona!', {rate:0.62, pitch:0.55});                 // the iconic shout
-  speak('Gentlemen, start your engines!', {rate:0.9, pitch:0.8});
+  if (window.GameMusic) window.GameMusic.duck(true);
+  playRollSnd();
   const cd=document.getElementById('countdown'); cd.classList.add('hidden'); cd.dataset.last='';
   G.rollTime=ROLL_TOTAL; G.state='rolling';
 }
 function finishRace(completed){
   G.state='finished';
+  stopRollSnd();
   if (window.GameMusic) window.GameMusic.setMode('menu');
   const place=G.place, win=completed&&place===1;
   const ord=place+(['th','st','nd','rd'][(place%100>>3^1)&&place%10]||'th');
