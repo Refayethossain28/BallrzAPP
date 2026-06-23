@@ -1236,7 +1236,7 @@ window.addEventListener('keydown', e=>{
   if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space'].includes(e.code)) e.preventDefault();
   if (e.code==='KeyP'||e.code==='Escape'){ if(!e.repeat) togglePause(); return; }
   if (e.code==='KeyC'){ if(!e.repeat) G.camMode=(G.camMode+1)%2; return; }
-  if (e.code==='KeyM'){ if(!e.repeat){ if(window.GameMusic) window.GameMusic.toggleMute(); setRollMuted(!rollMuted); setTrackMuted(!trackMuted); } return; }
+  if (e.code==='KeyM'){ if(!e.repeat){ if(window.GameMusic) window.GameMusic.toggleMute(); setTrackMuted(!trackMuted); } return; }
   bindKey(e.code,true);
   if (G.state==='menu' && (e.code==='Enter'||e.code==='Space')) startRace();
 });
@@ -1380,8 +1380,7 @@ function update(dt){
       const n=Math.ceil(G.rollTime);
       if (n>0){ cd.classList.remove('hidden'); cd.textContent=n; if(cd.dataset.last!=n){cd.dataset.last=n; beep(440,0.15,'square',0.15);} }
     }
-    if (G.rollTime <= 0){ cd.classList.add('hidden'); G.state='racing'; flashBanner('GREEN!'); beep(900,0.45,'square',0.22); revBlip();
-      fadeRollSnd(); playTrack(); }   // hand off to the looping race soundtrack
+    if (G.rollTime <= 0){ cd.classList.add('hidden'); G.state='racing'; flashBanner('GREEN!'); beep(900,0.45,'square',0.22); revBlip(); }
     return;
   }
   if (G.state!=='racing') return;
@@ -1476,28 +1475,6 @@ function speak(text, opts){
     window.speechSynthesis.speak(u);   // queued; caller cancels first if needed
   }catch(e){}
 }
-// ---- rolling-start theme (user-supplied Daytona recording) ----
-const ROLL_VOL = 0.95;
-let rollSnd=null, rollMuted=false, rollFade=null;
-function initRollSnd(){
-  if (rollSnd) return;
-  try{ rollSnd=new Audio('./audio/rolling-start.mp3'); rollSnd.preload='auto'; rollSnd.crossOrigin='anonymous'; }catch(e){ rollSnd=null; }
-}
-function playRollSnd(){
-  initRollSnd(); if (!rollSnd) return;
-  if (rollFade){ clearInterval(rollFade); rollFade=null; }
-  try{ rollSnd.pause(); rollSnd.currentTime=0; rollSnd.volume=rollMuted?0:ROLL_VOL; rollSnd.play().catch(()=>{}); }catch(e){}
-}
-function stopRollSnd(){ if (!rollSnd) return; if (rollFade){ clearInterval(rollFade); rollFade=null; } try{ rollSnd.pause(); rollSnd.currentTime=0; }catch(e){} }
-function fadeRollSnd(){
-  if (!rollSnd) return; if (rollFade) return;
-  rollFade=setInterval(()=>{
-    if (!rollSnd){ clearInterval(rollFade); rollFade=null; return; }
-    rollSnd.volume=Math.max(0, rollSnd.volume-0.06);
-    if (rollSnd.volume<=0.001){ try{ rollSnd.pause(); rollSnd.currentTime=0; }catch(e){} clearInterval(rollFade); rollFade=null; }
-  }, 60);
-}
-function setRollMuted(m){ rollMuted=m; if (rollSnd && !rollFade) rollSnd.volume = m?0:ROLL_VOL; }
 // ---- race soundtrack (user-supplied recording, looped) ----
 const TRACK_VOL = 0.85;
 let track=null, trackMuted=false;
@@ -1768,10 +1745,9 @@ function startRace(){
   initAudio(); if (AC&&AC.state==='suspended') AC.resume();
   // race uses the user-supplied looping soundtrack instead of the procedural music
   if (window.GameMusic) window.GameMusic.stop();
-  // "unlock" the soundtrack element inside this tap so it can start at the green
-  // flag later (iOS blocks audio that doesn't begin in a user gesture)
-  initTrack();
-  if (track){ try{ track.muted=true; const p=track.play(); if(p&&p.then) p.then(()=>{ track.pause(); track.currentTime=0; track.muted=false; }).catch(()=>{ track.muted=false; }); }catch(e){} }
+  // start the looping soundtrack now, inside this tap, so it plays through the
+  // rolling start and the race (iOS only allows audio to begin in a user gesture)
+  playTrack();
   const c=CIRCUITS[G.circuit], v=VEHICLES[G.vehicle];
   G.maxSpeed=c.maxSpeed*v.speedMul; G.curveMul=c.curveMul; G.aiSpeedMul=c.aiSpeed;
   G.accelMul=v.accelMul; G.steerMul=v.steerMul; G.gripMul=v.gripMul; G.brakeMul=v.brakeMul; G.rollMul=v.rollMul;
@@ -1798,17 +1774,13 @@ function startRace(){
 
   document.getElementById('overlay').classList.add('hidden');
   const b=document.getElementById('banner'); b.dataset.phase='daytona'; showIntroBanner('DAAAYTONAAA!');
-  // play the user-supplied Daytona theme over the rolling start; duck the
-  // procedural race music underneath it until the green flag
   try{ window.speechSynthesis && window.speechSynthesis.cancel(); }catch(e){}
-  if (window.GameMusic) window.GameMusic.duck(true);
-  playRollSnd();
   const cd=document.getElementById('countdown'); cd.classList.add('hidden'); cd.dataset.last='';
   G.rollTime=ROLL_TOTAL; G.state='rolling';
 }
 function finishRace(completed){
   G.state='finished';
-  stopRollSnd(); stopTrack();
+  stopTrack();
   if (window.GameMusic) window.GameMusic.setMode('menu');
   const place=G.place, win=completed&&place===1;
   const ord=place+(['th','st','nd','rd'][(place%100>>3^1)&&place%10]||'th');
@@ -1844,7 +1816,7 @@ function togglePause(){
     el.classList.remove('hidden');
     document.getElementById('resumeBtn').onclick=()=>{el.classList.add('hidden');G.state='racing';resumeTrack();};
     document.getElementById('restartBtn').onclick=()=>startRace();
-    document.getElementById('quitBtn').onclick=()=>{stopRollSnd();stopTrack();showMenu();};
+    document.getElementById('quitBtn').onclick=()=>{stopTrack();showMenu();};
   } else if (G.state==='paused'){ document.getElementById('overlay').classList.add('hidden'); G.state='racing'; resumeTrack(); }
 }
 window.__togglePause = togglePause;   // for the on-screen pause button
