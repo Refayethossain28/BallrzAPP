@@ -70,12 +70,12 @@ const THEMES = [
   { // 3 London — overcast city
     asphalt:0x6f7378, grass:0x4f7d46, grass2:0x447439, mountain:0x9aa6b2, snow:false,
     prop:'tree', water:false, dino:false, tunnel:false, skyline:'city', landmark:'london', buildings:true,
-    skyTop:'#8190a0', skyMid:'#a6b6c4', skyHorizon:'#ccd6de', fog:0xc6d0d8,
+    skyTop:'#5f6c7b', skyMid:'#7c8b99', skyHorizon:'#97a4ae', fog:0x9aa6b0,
   },
   { // 4 Dubai — desert metropolis
     asphalt:0x8a8e94, grass:0xcdb47e, grass2:0xbfa666, mountain:0xd8c79a, snow:false,
     prop:'palm', water:false, dino:false, tunnel:false, skyline:'city', landmark:'dubai', buildings:true,
-    skyTop:'#1f7fd6', skyMid:'#67b6ef', skyHorizon:'#ecd9a8', fog:0xe9d9b0,
+    skyTop:'#1670c4', skyMid:'#5aa8e4', skyHorizon:'#d8c088', fog:0xd2bd8a,
   },
 ];
 // player vehicles
@@ -195,7 +195,7 @@ function initThree() {
   // cinematic colour + soft shadows
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;  // applied by OutputPass in the composer
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMappingExposure = 0.98;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -223,7 +223,7 @@ function initThree() {
   // --- post-processing: bloom -> filmic output -> FXAA -> vignette ---
   composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
-  bloomPass = new UnrealBloomPass(new THREE.Vector2(1,1), MOBILE?0.35:0.5, 0.4, 0.9);
+  bloomPass = new UnrealBloomPass(new THREE.Vector2(1,1), MOBILE?0.28:0.4, 0.4, 0.95);
   composer.addPass(bloomPass);
   composer.addPass(new OutputPass());             // ACES tonemap + sRGB
   if (!MOBILE){ fxaaPass = new ShaderPass(FXAAShader); composer.addPass(fxaaPass); }
@@ -712,12 +712,19 @@ function placeLandmark(group, g, frames, spec, faceY, lift){
   return f;
 }
 function makeClockFace(){
-  const cv=document.createElement('canvas'); cv.width=cv.height=64; const x=cv.getContext('2d');
-  x.fillStyle='#f6efd6'; x.beginPath(); x.arc(32,32,30,0,6.28); x.fill();
-  x.strokeStyle='#3a2f1a'; x.lineWidth=3; x.beginPath(); x.arc(32,32,30,0,6.28); x.stroke();
-  x.fillStyle='#3a2f1a'; for(let i=0;i<12;i++){ const a=i/12*6.28; x.fillRect(32+Math.cos(a)*25-1.5,32+Math.sin(a)*25-1.5,3,3); }
-  x.strokeStyle='#1a140a'; x.lineWidth=3; x.beginPath(); x.moveTo(32,32); x.lineTo(32+Math.cos(-2.1)*15,32+Math.sin(-2.1)*15); x.stroke();
-  x.lineWidth=2; x.beginPath(); x.moveTo(32,32); x.lineTo(32+Math.cos(-1.0)*22,32+Math.sin(-1.0)*22); x.stroke();
+  const cv=document.createElement('canvas'); cv.width=cv.height=128; const x=cv.getContext('2d');
+  x.fillStyle='#f3ead0'; x.beginPath(); x.arc(64,64,62,0,6.28); x.fill();        // cream dial
+  x.lineWidth=7; x.strokeStyle='#caa64a'; x.beginPath(); x.arc(64,64,60,0,6.28); x.stroke(); // gold rim
+  x.lineWidth=4; x.strokeStyle='#2a2113'; x.beginPath(); x.arc(64,64,52,0,6.28); x.stroke();
+  // hour marks
+  x.fillStyle='#241c10'; for(let i=0;i<12;i++){ const a=i/12*6.28; const r1=46,r2=i%3===0?36:42;
+    x.lineWidth=i%3===0?5:3; x.strokeStyle='#241c10'; x.beginPath();
+    x.moveTo(64+Math.cos(a)*r1,64+Math.sin(a)*r1); x.lineTo(64+Math.cos(a)*r2,64+Math.sin(a)*r2); x.stroke(); }
+  // hands at ~10:10 (classic)
+  x.strokeStyle='#15100a'; x.lineCap='round';
+  x.lineWidth=6; x.beginPath(); x.moveTo(64,64); x.lineTo(64+Math.cos(-2.35)*28,64+Math.sin(-2.35)*28); x.stroke(); // hour
+  x.lineWidth=4; x.beginPath(); x.moveTo(64,64); x.lineTo(64+Math.cos(-0.7)*42,64+Math.sin(-0.7)*42); x.stroke();  // minute
+  x.fillStyle='#15100a'; x.beginPath(); x.arc(64,64,4,0,6.28); x.fill();
   const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace; return t;
 }
 function makeLatticeTexture(){
@@ -730,25 +737,43 @@ function makeLatticeTexture(){
 // London — the Elizabeth Tower (Big Ben): slender Gothic clock tower
 function addBigBen(group, frames, spec){
   const g=new THREE.Group();
-  const stone=new THREE.MeshStandardMaterial({color:0xa9883f, roughness:0.85});
-  const trim =new THREE.MeshStandardMaterial({color:0x806223, roughness:0.85});
-  const copper=new THREE.MeshStandardMaterial({color:0x3f7d5c, roughness:0.55, metalness:0.2});
-  g.add(lmBox(stone,15,16,15,0,8,0));
-  g.add(lmBox(stone,12,92,12,0,62,0));
-  for (const sx of [-6.2,6.2]) for (const sz of [-6.2,6.2]) g.add(lmBox(trim,1.4,92,1.4,sx,62,sz));
-  g.add(lmBox(stone,13.6,14,13.6,0,104,0));                         // clock stage
+  const stone=new THREE.MeshStandardMaterial({color:0xb59442, roughness:0.85});
+  const dark =new THREE.MeshStandardMaterial({color:0x6b531f, roughness:0.85});
+  const louvre=new THREE.MeshStandardMaterial({color:0x241c10, roughness:0.9});
+  const copper=new THREE.MeshStandardMaterial({color:0x2f8f63, roughness:0.5, metalness:0.25});  // patina-green cast iron
+  const gold  =new THREE.MeshStandardMaterial({color:0xd9b64a, roughness:0.35, metalness:0.6});
+  const W=15;                                       // tower is square in plan
+  g.add(lmBox(stone,W+3,16,W+3,0,8,0));             // plinth
+  g.add(lmBox(stone,W,104,W,0,68,0));               // main shaft
+  // vertical Gothic pilasters at the corners + horizontal string courses
+  for (const sx of [-1,1]) for (const sz of [-1,1]) g.add(lmBox(dark,1.8,104,1.8,sx*(W/2),68,sz*(W/2)));
+  for (const yy of [40,72,100]) g.add(lmBox(dark,W+0.6,2.2,W+0.6,0,yy,0));
+  // tall lancet windows down each face
+  for (const [ax,az] of [[1,0],[-1,0],[0,1],[0,-1]])
+    for (const yy of [30,56,84]) g.add(lmBox(louvre, ax?0.4:5, 14, az?0.4:5, ax*(W/2+0.1), yy, az*(W/2+0.1)));
+  // ---- clock stage: four big illuminated dials in ornate stone surrounds ----
+  g.add(lmBox(stone,W+2,20,W+2,0,132,0));
   const clockTex=makeClockFace();
-  for (const [dx,dz,ry] of [[6.9,0,Math.PI/2],[-6.9,0,-Math.PI/2],[0,6.9,0],[0,-6.9,Math.PI]]){
-    const c=new THREE.Mesh(new THREE.CircleGeometry(4.2,24), new THREE.MeshStandardMaterial({map:clockTex, emissive:0x6a5524, emissiveIntensity:0.6}));
-    c.position.set(dx,104,dz); c.rotation.y=ry; g.add(c);
+  for (const [dx,dz,ry] of [[W/2+1.2,0,-Math.PI/2],[-(W/2+1.2),0,Math.PI/2],[0,W/2+1.2,0],[0,-(W/2+1.2),Math.PI]]){
+    g.add(lmBox(stone,dx?0.8:11,11,dz?0.8:11,dx*0.5,132,dz*0.5)); // raised surround behind the dial
+    const c=new THREE.Mesh(new THREE.CircleGeometry(4.7,28), new THREE.MeshStandardMaterial({map:clockTex, emissive:0xfff1c0, emissiveIntensity:0.5}));
+    c.position.set(dx,132,dz); c.rotation.y=ry; g.add(c);
   }
-  g.add(lmBox(trim,13.8,12,13.8,0,118,0));                          // belfry
-  for (const [dx,dz,ry] of [[6.95,0,Math.PI/2],[-6.95,0,-Math.PI/2],[0,6.95,0],[0,-6.95,0]]){
-    const o=lmBox(new THREE.MeshStandardMaterial({color:0x2a2418}),8,8,0.4,dx,118,dz); o.rotation.y=ry; g.add(o);
+  // ---- belfry: arched louvre openings where the bells hang ----
+  g.add(lmBox(stone,W+1,16,W+1,0,150,0));
+  for (const [ax,az] of [[1,0],[-1,0],[0,1],[0,-1]]) g.add(lmBox(louvre, ax?0.4:9, 12, az?0.4:9, ax*(W/2+0.6), 150, az*(W/2+0.6)));
+  g.add(lmBox(dark,W+2,2.5,W+2,0,159,0));            // cornice
+  // ---- ornate cast-iron spire: gabled base, steep pyramid, corner pinnacles, gold finial ----
+  for (const [ax,az,ry] of [[1,0,Math.PI/2],[-1,0,Math.PI/2],[0,1,0],[0,-1,0]]){        // four triangular gables
+    const gab=new THREE.Mesh(new THREE.ConeGeometry(5.5,9,3), copper); gab.position.set(ax*5.5,166,az*5.5); gab.rotation.y=ry; g.add(gab);
   }
-  for (const cx of [-1,1]) for (const cz of [-1,1]){ const pin=new THREE.Mesh(new THREE.ConeGeometry(1.6,16,6), copper); pin.position.set(cx*6.4,131,cz*6.4); g.add(pin); }
-  const spire=new THREE.Mesh(new THREE.ConeGeometry(8,32,8), copper); spire.position.y=140; g.add(spire);
-  const finial=new THREE.Mesh(new THREE.SphereGeometry(1.4,8,8), trim); finial.position.y=158; g.add(finial);
+  for (const cx of [-1,1]) for (const cz of [-1,1]){                                    // corner pinnacles
+    const pin=new THREE.Mesh(new THREE.ConeGeometry(2,18,8), copper); pin.position.set(cx*7,170,cz*7); g.add(pin);
+    const ball=new THREE.Mesh(new THREE.SphereGeometry(1,8,8), gold); ball.position.set(cx*7,180,cz*7); g.add(ball);
+  }
+  const spire=new THREE.Mesh(new THREE.ConeGeometry(8.5,40,8), copper); spire.position.y=182; g.add(spire);
+  const fin=new THREE.Mesh(new THREE.SphereGeometry(1.8,10,10), gold); fin.position.y=204; g.add(fin);
+  const crs=new THREE.Mesh(new THREE.ConeGeometry(0.8,7,6), gold); crs.position.y=210; g.add(crs);
   placeLandmark(group, g, frames, spec);
 }
 function addLondonEye(group, frames, spec){
@@ -792,11 +817,18 @@ function addTowerBridge(group, frames, spec){
 // London — The Shard: tapering glass pyramid with a fractured open top
 function addShard(group, frames, spec){
   const g=new THREE.Group();
-  const glass=new THREE.MeshPhysicalMaterial({color:0x55738a, metalness:0.4, roughness:0.12, clearcoat:0.7, clearcoatRoughness:0.08});
-  const h=270;
-  const body=new THREE.Mesh(new THREE.CylinderGeometry(2,22,h,8), glass); body.position.y=h/2; body.rotation.y=Math.PI/8; g.add(body);
-  // fractured shards: 8 thin glass blades poking past the apex at angles
-  for (let k=0;k<8;k++){ const a=k/8*6.28; const sp=new THREE.Mesh(new THREE.ConeGeometry(1.3,40,3), glass); sp.position.set(Math.cos(a)*2.5,h+8+(k%3)*5,Math.sin(a)*2.5); sp.rotation.z=Math.cos(a)*0.16; sp.rotation.x=Math.sin(a)*0.16; g.add(sp); }
+  const wtex=makeWindowTexture(false); wtex.repeat.set(3,16);
+  const glass=new THREE.MeshPhysicalMaterial({color:0x46606f, metalness:0.45, roughness:0.16, clearcoat:0.6, clearcoatRoughness:0.1, map:wtex});
+  const edge =new THREE.MeshStandardMaterial({color:0x20303a, roughness:0.5, metalness:0.4});
+  const h=270, S=8;
+  const body=new THREE.Mesh(new THREE.CylinderGeometry(1.5,21,h,S), glass); body.position.y=h/2; body.rotation.y=Math.PI/8; g.add(body);
+  // thin mullion ribs up each facet edge so it reads as faceted glass, not a smooth cone
+  for (let k=0;k<S;k++){ const a=k/S*6.28+Math.PI/8; const rr=11;
+    const rib=lmBox(edge,0.5,h,0.5, Math.cos(a)*rr,h/2,Math.sin(a)*rr); rib.rotation.y=-a; rib.rotation.x=0; g.add(rib);
+  }
+  // fractured shards: thin glass blades splaying past the apex at angles (the open top)
+  for (let k=0;k<S;k++){ const a=k/S*6.28; const sp=new THREE.Mesh(new THREE.ConeGeometry(1.1,46,3), glass);
+    sp.position.set(Math.cos(a)*3.2,h+10+(k%3)*7,Math.sin(a)*3.2); sp.rotation.z=Math.cos(a)*0.2; sp.rotation.x=Math.sin(a)*0.2; g.add(sp); }
   placeLandmark(group, g, frames, spec);
 }
 // London — 30 St Mary Axe (the Gherkin): bullet shape with the diagonal lattice
@@ -827,9 +859,9 @@ function addBurj(group, frames, spec){
   }
   const core=new THREE.Mesh(new THREE.CylinderGeometry(3.5,7,34,12), glass); core.position.y=y+17; g.add(core); y+=34;
   const spire=new THREE.Mesh(new THREE.CylinderGeometry(0.5,3,150,8), new THREE.MeshStandardMaterial({color:0xeef3f8, metalness:0.7, roughness:0.2})); spire.position.y=y+75; g.add(spire);
-  // a couple of slimmer satellite towers so it reads as a downtown cluster
-  for (const [dx,dz,h,col] of [[-58,18,150,0xbcd6ea],[64,-26,200,0xa9c6dd]]){
-    const tw=new THREE.Mesh(new THREE.BoxGeometry(24,h,24), new THREE.MeshStandardMaterial({color:col, metalness:0.55, roughness:0.22, map:makeWindowTexture(true)}));
+  // a couple of slimmer, much shorter satellite towers so the Burj clearly dominates
+  for (const [dx,dz,h,col] of [[-62,22,110,0xbcd6ea],[70,-30,140,0xa9c6dd]]){
+    const tw=new THREE.Mesh(new THREE.BoxGeometry(22,h,22), new THREE.MeshStandardMaterial({color:col, metalness:0.55, roughness:0.22, map:makeWindowTexture(true)}));
     tw.material.map.repeat.set(2,10); tw.position.set(dx,h/2,dz); g.add(tw);
   }
   placeLandmark(group, g, frames, spec);
@@ -839,17 +871,20 @@ function addBurjAlArab(group, frames, spec){
   const g=new THREE.Group();
   const white=new THREE.MeshStandardMaterial({color:0xeef3f7, roughness:0.45, metalness:0.15, side:THREE.DoubleSide});
   const steel=new THREE.MeshStandardMaterial({color:0xcdd6dd, metalness:0.6, roughness:0.4});
-  const h=210;
-  // exoskeleton mast (leading edge) with X cross-bracing
-  const mast=new THREE.Mesh(new THREE.CylinderGeometry(2,3.4,h,8), steel); mast.position.set(-16,h/2,0); g.add(mast);
-  for (let k=0;k<7;k++){ const yy=12+k*(h-24)/7; for (const s of [1,-1]){ const br=lmBox(steel,0.7,(h/7)*1.3,0.7,-16+s*2,yy,0); br.rotation.x=s*0.6; g.add(br); } }
-  // two billowing sail membranes (concave), meeting at the mast
-  const sail=new THREE.Shape(); sail.moveTo(0,0); sail.lineTo(0,h); sail.quadraticCurveTo(40,h*0.5,30,0); sail.lineTo(0,0);
+  const h=230;
+  // exoskeleton mast (the leading edge) curving to a point, with X cross-bracing
+  const mast=new THREE.Mesh(new THREE.CylinderGeometry(1.6,4,h,8), steel); mast.position.set(-22,h/2,0); g.add(mast);
+  for (let k=0;k<8;k++){ const yy=12+k*(h-24)/8; for (const s of [1,-1]){ const br=lmBox(steel,0.8,(h/8)*1.35,0.8,-22+s*2,yy,0); br.rotation.x=s*0.6; g.add(br); } }
+  // the two billowing white sail membranes (the hull), bowing out from the mast
+  const sail=new THREE.Shape(); sail.moveTo(0,0); sail.lineTo(0,h); sail.quadraticCurveTo(58,h*0.46,44,0); sail.lineTo(0,0);
   const sailGeo=new THREE.ShapeGeometry(sail);
-  for (const sgn of [1,-1]){ const s=new THREE.Mesh(sailGeo,white); s.position.set(-16,0,0); s.rotation.y=sgn*0.42; g.add(s); }
+  for (const sgn of [1,-1]){ const s=new THREE.Mesh(sailGeo,white); s.position.set(-22,0,0); s.rotation.y=sgn*0.5; g.add(s); }
+  // a solid mid spine so it isn't see-through edge-on
+  g.add(lmBox(white,2,h,3,-21,h/2,0));
   // cantilevered helipad disc near the top
-  const heli=new THREE.Mesh(new THREE.CylinderGeometry(9,9,1.4,18), white); heli.position.set(-2,h-12,16); g.add(heli);
-  const mast2=new THREE.Mesh(new THREE.CylinderGeometry(0.6,0.6,18,6), steel); mast2.position.set(-16,h+9,0); g.add(mast2);
+  const heli=new THREE.Mesh(new THREE.CylinderGeometry(11,11,1.6,20), white); heli.position.set(-4,h-14,20); g.add(heli);
+  const hpost=new THREE.Mesh(new THREE.CylinderGeometry(2,2,16,8), steel); hpost.position.set(-12,h-22,12); g.add(hpost);
+  const mast2=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,22,6), steel); mast2.position.set(-22,h+11,0); g.add(mast2);
   placeLandmark(group, g, frames, spec, Math.PI/2);   // sail broadside to the track
 }
 // Dubai — the Dubai Frame: two towers joined by a top sky-bridge (open frame)
