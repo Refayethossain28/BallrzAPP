@@ -558,14 +558,14 @@ function buildScenery(rng) {
   // Towers stand just off the road on the outside of the loop so each looms ahead
   // as you drive up to it; the gate spans the road on a straight to drive through.
   const LANDMARKS = th.landmark==='london' ? [
-    {fn:addBigBen,    scale:1.9},
-    {fn:addLondonEye, scale:1.8},
-    {fn:addGherkin,   scale:1.9},
-    {fn:addShard,     scale:1.9},
+    {fn:addBigBen,    scale:2.1},
+    {fn:addLondonEye, scale:1.9},
+    {fn:addGherkin,   scale:2.1},
+    {fn:addShard,     scale:2.1},
     {fn:addTowerBridge, side:0, scale:1.0, gate:true},
   ] : th.landmark==='dubai' ? [
-    {fn:addBurj,       scale:1.9},
-    {fn:addBurjAlArab, scale:1.9},
+    {fn:addBurj,       scale:2.1},
+    {fn:addBurjAlArab, scale:2.0},
     {fn:addDubaiFrame, side:0, scale:1.0, gate:true},
   ] : [];
   const cen=new THREE.Vector3(); for (const fr of frames) cen.add(fr.pos); cen.multiplyScalar(1/frames.length); cen.y=0;
@@ -1561,21 +1561,22 @@ function render(){
   const f = frameAt(G.dist);
   _fwd.copy(f.tan);
   if (G.state==='rolling'){
-    // cinematic broadcast sweep: orbits from a front/side angle round to behind
+    // clean elevated chase: keep the field clearly on the road and upright, with a
+    // gentle high-to-low crane so it still feels cinematic. World-up so banking
+    // never flips or tips the view.
     worldPos(G.dist, G.playerX, _tmp);
     const p = 1 - Math.max(0,G.rollTime)/ROLL_TOTAL;            // 0..1
     const e = p<0.5 ? 2*p*p : 1-Math.pow(-2*p+2,2)/2;          // ease in-out
-    // orbit from a low front/side angle round to behind, craning up then settling
-    const az = (1-e)*2.6, dist = 17 - e*6;
-    const hgt = 4.6 + (1-e)*3.0 + Math.sin(p*Math.PI)*3.2;     // crane bump mid-sweep
+    const az = (1-e)*0.8;                                       // a slight swing from the side to behind
+    const hgt = 10 - e*3.5;                                     // crane down as the lights approach
     const back = _fwd.clone(); back.y=0; back.normalize().multiplyScalar(-1).applyAxisAngle(UP, az);
-    _camPos.copy(_tmp).addScaledVector(back, dist); _camPos.y += hgt;
-    _look.copy(_tmp).addScaledVector(_fwd, 4); _look.y += 1.0;
+    _camPos.copy(_tmp).addScaledVector(back, 17); _camPos.y += hgt;
+    _look.copy(_tmp).addScaledVector(_fwd, 9); _look.y += 1.5;
     camera.up.set(0,1,0); _camUp.set(0,1,0);
-    camera.position.lerp(_camPos, 0.1);
+    camera.position.lerp(_camPos, 0.12);
     camera.lookAt(_look);
     if (sky) sky.position.copy(camera.position);
-    camera.fov += ((58 + (1-e)*6) - camera.fov)*0.06; camera.updateProjectionMatrix();
+    camera.fov += (60 - camera.fov)*0.06; camera.updateProjectionMatrix();
   } else {
   const camLat = (G.camMode===0) ? G.playerX*0.28 : G.playerX;
   worldPos(G.dist, camLat, _tmp);
