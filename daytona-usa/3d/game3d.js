@@ -34,7 +34,7 @@ const RUMBLE_W = 1.6;
 const DIV = 1400;                 // spline samples (road resolution)
 const FPS = 60, STEP = 1/FPS;
 const ROLL_TOTAL = 7.0;           // rolling-start intro length (seconds)
-const BUILD = 'BUILD 12 — stadium, mid-straight start';   // bump every push; shown on the menu to confirm you loaded the latest code
+const BUILD = 'BUILD 13 — rolling cam on the road';   // bump every push; shown on the menu to confirm you loaded the latest code
 
 // hand-authored closed-loop circuit layouts [x,y,z] (stylised, recognisable
 // street circuits — not GPS-accurate satellite traces)
@@ -1574,10 +1574,13 @@ function render(){
     worldPos(G.dist, G.playerX, _tmp);
     const p = 1 - Math.max(0,G.rollTime)/ROLL_TOTAL;            // 0..1
     const e = p<0.5 ? 2*p*p : 1-Math.pow(-2*p+2,2)/2;          // ease in-out
-    const az = (1-e)*0.8;                                       // a slight swing from the side to behind
-    const hgt = 10 - e*3.5;                                     // crane down as the lights approach
+    // keep the camera essentially straight behind the car (over the asphalt). A
+    // larger swing puts it out over the infield grass, which made the car look
+    // like it was sitting on the grass during the formation lap.
+    const az = (1-e)*0.12;                                      // very slight swing, stays on the road
+    const hgt = 9 - e*3;                                        // crane down as the lights approach
     const back = _fwd.clone(); back.y=0; back.normalize().multiplyScalar(-1).applyAxisAngle(UP, az);
-    _camPos.copy(_tmp).addScaledVector(back, 17); _camPos.y += hgt;
+    _camPos.copy(_tmp).addScaledVector(back, 16); _camPos.y += hgt;
     _look.copy(_tmp).addScaledVector(_fwd, 9); _look.y += 1.5;
     camera.up.set(0,1,0); _camUp.set(0,1,0);
     camera.position.lerp(_camPos, 0.12);
