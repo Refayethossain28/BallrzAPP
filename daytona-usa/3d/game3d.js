@@ -37,14 +37,19 @@ const ROLL_TOTAL = 7.0;           // rolling-start intro length (seconds)
 
 // hand-authored closed-loop circuit layouts [x,y,z] (stylised, recognisable
 // street circuits — not GPS-accurate satellite traces)
-// flat circuits (y=0) so the road, infield and skyline all sit on one level
+// flat stadium circuits (y=0): two long straights joined by end curves, so the
+// landmarks can line each straight and be driven at head-on.
 const LONDON_LAYOUT = [
-  [-200,0,-150],[-60,0,-205],[120,0,-195],[215,0,-95],
-  [228,0,45],[150,0,155],[10,0,205],[-140,0,180],[-228,0,45],[-215,0,-70],
+  [-200,0,-180],[-67,0,-180],[67,0,-180],[200,0,-180],   // bottom straight
+  [262,0,-92],[284,0,0],[262,0,92],                       // right curve
+  [200,0,180],[67,0,180],[-67,0,180],[-200,0,180],        // top straight
+  [-262,0,92],[-284,0,0],[-262,0,-92],                    // left curve
 ];
 const DUBAI_LAYOUT = [
-  [-310,0,-55],[-235,0,-150],[-90,0,-188],[85,0,-182],[235,0,-130],
-  [315,0,-15],[298,0,85],[205,0,158],[60,0,182],[-100,0,168],[-235,0,80],[-325,0,-5],
+  [-250,0,-205],[-83,0,-205],[83,0,-205],[250,0,-205],    // bottom straight
+  [325,0,-105],[350,0,0],[325,0,105],                     // right curve
+  [250,0,205],[83,0,205],[-83,0,205],[-250,0,205],        // top straight
+  [-325,0,105],[-350,0,0],[-325,0,-105],                  // left curve
 ];
 const CIRCUITS = [
   { name:'DAYTONA', laps:8, maxSpeed:118, curveMul:0.85, aiSpeed:0.74, startTime:60, lapBonus:26, seed:1,  theme:0 },
@@ -553,14 +558,14 @@ function buildScenery(rng) {
   // Towers stand just off the road on the outside of the loop so each looms ahead
   // as you drive up to it; the gate spans the road on a straight to drive through.
   const LANDMARKS = th.landmark==='london' ? [
-    {fn:addBigBen,    scale:2.2},
-    {fn:addLondonEye, scale:2.0},
-    {fn:addGherkin,   scale:2.2},
-    {fn:addShard,     scale:2.2},
+    {fn:addBigBen,    scale:1.9},
+    {fn:addLondonEye, scale:1.8},
+    {fn:addGherkin,   scale:1.9},
+    {fn:addShard,     scale:1.9},
     {fn:addTowerBridge, side:0, scale:1.0, gate:true},
   ] : th.landmark==='dubai' ? [
-    {fn:addBurj,       scale:2.2},
-    {fn:addBurjAlArab, scale:2.1},
+    {fn:addBurj,       scale:1.9},
+    {fn:addBurjAlArab, scale:1.9},
     {fn:addDubaiFrame, side:0, scale:1.0, gate:true},
   ] : [];
   const cen=new THREE.Vector3(); for (const fr of frames) cen.add(fr.pos); cen.multiplyScalar(1/frames.length); cen.y=0;
@@ -572,21 +577,20 @@ function buildScenery(rng) {
   cand.sort((a,b)=>a[1]-b[1]);
   const gates  = LANDMARKS.filter(L=>L.gate);
   const towers = LANDMARKS.filter(L=>!L.gate);
-  // Tower Bridge spans the road on the straightest stretch.
-  gates.forEach(L=>{ L.frac=cand[0][0]/DIV; });
-  // Stand each tower at the OUTSIDE of a sharp corner: as you brake into the turn
-  // you are driving straight at it before you turn away, so it fills the view.
-  const corner=(i)=>{ let s=0; for(let k=-14;k<=14;k++) s+=Math.abs(frames[(i+k+DIV)%DIV].curv); return s; };
-  const peaks=[]; for(let i=0;i<DIV;i+=4) peaks.push([i,corner(i)]);
-  peaks.sort((a,b)=>b[1]-a[1]);                 // sharpest corners first
-  const spots=[];
-  for(const [i] of peaks){ if(spots.every(c=>{let d=Math.abs(i-c);d=Math.min(d,DIV-d);return d>DIV*0.12;})){ spots.push(i); if(spots.length>=towers.length) break; } }
+  // Find the two long straights (well-separated lowest-curvature centres).
+  const straights=[];
+  for(const [i] of cand){ if(straights.every(c=>{let d=Math.abs(i-c);d=Math.min(d,DIV-d);return d>DIV*0.3;})){ straights.push(i); if(straights.length>=2) break; } }
+  while(straights.length<2) straights.push((straights[0]+Math.floor(DIV/2))%DIV);
+  straights.sort((a,b)=>a-b);
+  // Tower Bridge spans the first straight; the towers line both straights at the
+  // kerb, so driving down a straight you bear straight down a row of landmarks.
+  gates.forEach(L=>{ L.frac=straights[0]/DIV; });
+  const slots=[ {s:0,d: 70,side:-1}, {s:0,d:-70,side: 1}, {s:1,d: 70,side:-1}, {s:1,d:-70,side: 1} ];
   towers.forEach((L,idx)=>{
-    const i=spots[idx%spots.length], f=frames[i];
-    const outward=(f.pos.x-cen.x)*f.right.x + (f.pos.z-cen.z)*f.right.z;
-    L.frac = i/DIV;
-    L.side = outward>=0 ? 1 : -1;               // outside of the corner
-    L.off  = 22;
+    const sl=slots[idx%slots.length];
+    L.frac = (((straights[sl.s]+sl.d)%DIV)+DIV)%DIV / DIV;
+    L.side = sl.side;
+    L.off  = (L.fn===addLondonEye || L.fn===addBurjAlArab) ? 30 : 18;
   });
   // frame indices to keep generic buildings clear of, so nothing blocks a landmark
   const keepout = LANDMARKS.map(L=>Math.floor(DIV*L.frac));
