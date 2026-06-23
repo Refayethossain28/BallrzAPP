@@ -34,7 +34,7 @@ const RUMBLE_W = 1.6;
 const DIV = 1400;                 // spline samples (road resolution)
 const FPS = 60, STEP = 1/FPS;
 const ROLL_TOTAL = 7.0;           // rolling-start intro length (seconds)
-const BUILD = 'BUILD 13 — rolling cam on the road';   // bump every push; shown on the menu to confirm you loaded the latest code
+const BUILD = 'BUILD 14 — same camera as the race';   // bump every push; shown on the menu to confirm you loaded the latest code
 
 // hand-authored closed-loop circuit layouts [x,y,z] (stylised, recognisable
 // street circuits — not GPS-accurate satellite traces)
@@ -1567,27 +1567,8 @@ function render(){
   // car visibly slides across the track when you steer — proper steering feel.
   const f = frameAt(G.dist);
   _fwd.copy(f.tan);
-  if (G.state==='rolling'){
-    // clean elevated chase: keep the field clearly on the road and upright, with a
-    // gentle high-to-low crane so it still feels cinematic. World-up so banking
-    // never flips or tips the view.
-    worldPos(G.dist, G.playerX, _tmp);
-    const p = 1 - Math.max(0,G.rollTime)/ROLL_TOTAL;            // 0..1
-    const e = p<0.5 ? 2*p*p : 1-Math.pow(-2*p+2,2)/2;          // ease in-out
-    // keep the camera essentially straight behind the car (over the asphalt). A
-    // larger swing puts it out over the infield grass, which made the car look
-    // like it was sitting on the grass during the formation lap.
-    const az = (1-e)*0.12;                                      // very slight swing, stays on the road
-    const hgt = 9 - e*3;                                        // crane down as the lights approach
-    const back = _fwd.clone(); back.y=0; back.normalize().multiplyScalar(-1).applyAxisAngle(UP, az);
-    _camPos.copy(_tmp).addScaledVector(back, 16); _camPos.y += hgt;
-    _look.copy(_tmp).addScaledVector(_fwd, 9); _look.y += 1.5;
-    camera.up.set(0,1,0); _camUp.set(0,1,0);
-    camera.position.lerp(_camPos, 0.12);
-    camera.lookAt(_look);
-    if (sky) sky.position.copy(camera.position);
-    camera.fov += (60 - camera.fov)*0.06; camera.updateProjectionMatrix();
-  } else {
+  // ONE camera for both the rolling start and the race — the chase cam — so the
+  // rolling start can never look different from the race (no special cinematic).
   const camLat = (G.camMode===0) ? G.playerX*0.28 : G.playerX;
   worldPos(G.dist, camLat, _tmp);
   if (G.camMode===0){
@@ -1598,7 +1579,7 @@ function render(){
     _look.copy(_tmp).addScaledVector(_fwd,14).addScaledVector(f.up,1.0);
   }
   if (G.shake>0){ _camPos.x+=(Math.random()-0.5)*G.shake; _camPos.y+=(Math.random()-0.5)*G.shake; }
-  camera.position.lerp(_camPos, 0.25);
+  camera.position.lerp(_camPos, G.state==='rolling'?0.5:0.25);
   _camUp.lerp(f.up, 0.1); camera.up.copy(_camUp);     // roll with the bank
   camera.lookAt(_look);
   if (sky) sky.position.copy(camera.position);        // sky stays around us
@@ -1613,7 +1594,7 @@ function render(){
     targetFov = Math.min(98, Math.max(targetFov, vForMinH));
   }
   camera.fov += (targetFov - camera.fov)*0.08; camera.updateProjectionMatrix();
-  }
+
 
   if (G.retro) renderer.render(scene, camera); else composer.render();
 
@@ -1824,12 +1805,12 @@ function startRace(){
   // --- Daytona-style ROLLING START ---
   G.speed = G.maxSpeed*0.10;        // the field idles slowly up to the line
   placeCar(playerCar,0,0,0);
-  // start the cinematic camera ahead-and-to-the-side, looking back at the pack
+  // start the chase camera straight behind the car, on the road (matches racing)
   const f=frameAt(0); worldPos(0,0,_tmp);
-  const back0=f.tan.clone().multiplyScalar(-1); back0.y=0; back0.normalize().applyAxisAngle(UP,2.3);
+  const back0=f.tan.clone().multiplyScalar(-1); back0.y=0; back0.normalize();
   camera.up.set(0,1,0);
-  camera.position.copy(_tmp).addScaledVector(back0,15).add(new THREE.Vector3(0,7.5,0));
-  camera.lookAt(_tmp);
+  camera.position.copy(_tmp).addScaledVector(back0,11).add(new THREE.Vector3(0,4.6,0));
+  camera.lookAt(_tmp.x+f.tan.x*12, _tmp.y+1.2, _tmp.z+f.tan.z*12);
 
   document.getElementById('overlay').classList.add('hidden');
   const b=document.getElementById('banner'); b.dataset.phase='daytona'; showIntroBanner('DAAAYTONAAA!');
