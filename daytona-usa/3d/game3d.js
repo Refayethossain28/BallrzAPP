@@ -34,7 +34,7 @@ const RUMBLE_W = 1.6;
 const DIV = 1400;                 // spline samples (road resolution)
 const FPS = 60, STEP = 1/FPS;
 const ROLL_TOTAL = 7.0;           // rolling-start intro length (seconds)
-const BUILD = 'BUILD 19 — London Eye sits on the ground';   // bump every push; shown on the menu to confirm you loaded the latest code
+const BUILD = 'BUILD 20 — landmarks closer, no longer fogged out';   // bump every push; shown on the menu to confirm you loaded the latest code
 
 // hand-authored closed-loop circuit layouts [x,y,z] (stylised, recognisable
 // street circuits — not GPS-accurate satellite traces)
@@ -257,8 +257,8 @@ function buildTrack(diff) {
   scene.background.set(G.theme.skyHorizon);
   scene.fog.color.setHex(G.theme.fog);
   // push fog well back on city circuits so the landmarks read from a distance
-  scene.fog.near = (G.theme.skyline==='city') ? 600 : 360;
-  scene.fog.far  = (G.theme.skyline==='city') ? 3200 : 900;
+  scene.fog.near = (G.theme.skyline==='city') ? 600 : 520;
+  scene.fog.far  = (G.theme.skyline==='city') ? 3200 : 1700;   // far enough that the landmark ring is never fogged out
   buildSky(G.theme);
   // ---- control points: a hand-authored real-circuit layout, or an organic one ----
   const rng = mulberry32(diff.seed * 2654435761);
@@ -564,12 +564,12 @@ function buildScenery(rng) {
         ? [addBurj, addBurjAlArab, addBurj, addBurjAlArab, addBurj, addBurjAlArab]
       : th.landmark==='usa'
         ? [addStatueOfLiberty, addGoldenGate, addStatueOfLiberty, addGoldenGate, addStatueOfLiberty, addGoldenGate] : [];
-    const baseR = th.skyline==='city' ? 520 : 600;        // sit just inside the mountain ring on alpine tracks
+    const baseR = th.skyline==='city' ? 440 : 380;        // close enough to read clearly and stay inside the fog
     heroes.forEach((fn,i)=>{
       const ang = (i/heroes.length)*Math.PI*2 + 0.35;
-      const r = baseR + ((i*53)%140);
+      const r = baseR + ((i*53)%120);
       const x = Math.cos(ang)*r, z = Math.sin(ang)*r;
-      fn(sceneryGroup, frames, { world:{x,z,y:0}, scale:3.6, faceAng: Math.atan2(-x,-z) });
+      fn(sceneryGroup, frames, { world:{x,z,y:0}, scale:4.5, faceAng: Math.atan2(-x,-z) });
     });
   }
   // ---- landmark set-pieces ----
