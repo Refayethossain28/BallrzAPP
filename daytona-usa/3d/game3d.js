@@ -34,7 +34,7 @@ const RUMBLE_W = 1.6;
 const DIV = 1400;                 // spline samples (road resolution)
 const FPS = 60, STEP = 1/FPS;
 const ROLL_TOTAL = 7.0;           // rolling-start intro length (seconds)
-const BUILD = 'BUILD 21 — trackside landmarks, blue sky';   // bump every push; shown on the menu to confirm you loaded the latest code
+const BUILD = 'BUILD 22 — dense kerbside landmarks';   // bump every push; shown on the menu to confirm you loaded the latest code
 
 // hand-authored closed-loop circuit layouts [x,y,z] (stylised, recognisable
 // street circuits — not GPS-accurate satellite traces)
@@ -305,7 +305,7 @@ function buildTrack(diff) {
     let s=0; for (let k=-WIN;k<=WIN;k++) s += frames[(i+k+DIV)%DIV].curv;
     sm[i] = s/(WIN*2+1);
   }
-  const BANK_K = 42, MAXB = 0.40;     // gentler banking so the camera stays level and the sky is visible
+  const BANK_K = 42, MAXB = 0.22;     // gentle banking so verges don't wall up and hide trackside landmarks
   const FLAT = 120;                   // frames each side of the start/finish to flatten
   for (let i=0;i<DIV;i++){
     const f = frames[i];
@@ -378,7 +378,7 @@ function buildRoadMesh() {
     const pos=[],uv=[],nor=[];
     const ia=new V3,oa=new V3,ib=new V3,ob=new V3;
     const push=(p,u,v,n)=>{ pos.push(p.x,p.y,p.z); uv.push(u,v); nor.push(n.x,n.y,n.z); };
-    const GW=ROAD_W*16, GTILE=14;   // wide grass apron so the track is grounded without a huge plane filling the sky
+    const GW=ROAD_W*9, GTILE=14;   // grass apron — wide enough to ground the track, not so wide it walls up on banked curves and hides the landmarks
     for (const sgn of [-1,1]) for (let i=0;i<DIV;i++){
       const a=frames[i], b=frames[(i+1)%DIV];
       const li=sgn*(ROAD_W+RUMBLE_W), lo=sgn*GW;
@@ -563,20 +563,18 @@ function buildScenery(rng) {
   // evenly around the lap and standing just off the road, so you pass a big,
   // identifiable landmark up close several times every lap ----
   {
-    const heroes = th.landmark==='london'
-        ? [addBigBen, addLondonEye, addGherkin, addShard, addBigBen, addLondonEye, addGherkin, addShard]
-      : th.landmark==='dubai'
-        ? [addBurj, addBurjAlArab, addBurj, addBurjAlArab, addBurj, addBurjAlArab]
-      : th.landmark==='usa'
-        ? [addStatueOfLiberty, addGoldenGate, addStatueOfLiberty, addGoldenGate, addStatueOfLiberty, addGoldenGate] : [];
+    const L4=[addBigBen, addLondonEye, addGherkin, addShard];
+    const heroes = th.landmark==='london' ? [...L4,...L4,...L4,...L4]                       // 16 around the lap
+      : th.landmark==='dubai' ? Array.from({length:12},(_,i)=>[addBurj,addBurjAlArab][i%2])
+      : th.landmark==='usa'   ? Array.from({length:12},(_,i)=>[addStatueOfLiberty,addGoldenGate][i%2]) : [];
     const cen2=new THREE.Vector3(); for(const fr of frames) cen2.add(fr.pos); cen2.multiplyScalar(1/frames.length);
     heroes.forEach((fn,i)=>{
       const fi=Math.floor(((i+0.5)/heroes.length)*DIV)%DIV, f=frames[fi];
       const outward=(f.pos.x-cen2.x)*f.right.x + (f.pos.z-cen2.z)*f.right.z;
       const side = outward>=0 ? 1 : -1;                      // outside of the loop, against the sky
-      const off=(ROAD_W+RUMBLE_W)+58;
+      const off=(ROAD_W+RUMBLE_W)+22;                        // right at the kerb, in front of the verge, so you pass it close
       const x=f.pos.x + f.right.x*side*off, z=f.pos.z + f.right.z*side*off;
-      fn(sceneryGroup, frames, { world:{x,z,y:f.pos.y}, scale:2.2, faceAng: Math.atan2(f.tan.x,f.tan.z) });
+      fn(sceneryGroup, frames, { world:{x,z,y:f.pos.y}, scale:1.9, faceAng: Math.atan2(f.tan.x,f.tan.z) });
     });
   }
   // ---- landmark set-pieces ----
