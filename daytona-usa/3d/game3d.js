@@ -34,7 +34,7 @@ const RUMBLE_W = 1.6;
 const DIV = 1400;                 // spline samples (road resolution)
 const FPS = 60, STEP = 1/FPS;
 const ROLL_TOTAL = 7.0;           // rolling-start intro length (seconds)
-const BUILD = 'BUILD 20 — landmarks closer, no longer fogged out';   // bump every push; shown on the menu to confirm you loaded the latest code
+const BUILD = 'BUILD 21 — trackside landmarks, blue sky';   // bump every push; shown on the menu to confirm you loaded the latest code
 
 // hand-authored closed-loop circuit layouts [x,y,z] (stylised, recognisable
 // street circuits — not GPS-accurate satellite traces)
@@ -160,7 +160,7 @@ function makeSkyTexture(th){
 }
 function buildSky(th){
   if (sky){ scene.remove(sky); sky.geometry.dispose(); sky.material.map.dispose(); sky.material.dispose(); }
-  const geo=new THREE.SphereGeometry(1200,32,16);
+  const geo=new THREE.SphereGeometry(3000,32,16);   // bigger than the ground plane so the ground never spills over the sky
   const mat=new THREE.MeshBasicMaterial({map:makeSkyTexture(th), side:THREE.BackSide, fog:false, depthWrite:false});
   sky=new THREE.Mesh(geo,mat); scene.add(sky);
   // environment map so PBR car paint reflects the sky
@@ -215,7 +215,7 @@ function initThree() {
   scene.background = new THREE.Color(0x6fb7ff);
   scene.fog = new THREE.Fog(0xbfe2ff, 320, 900);
 
-  camera = new THREE.PerspectiveCamera(62, 1, 0.5, 3000);
+  camera = new THREE.PerspectiveCamera(62, 1, 0.5, 4000);
   buildSky();
 
   scene.add(new THREE.HemisphereLight(0xeaf4ff, 0x5a8a4a, 1.0));
@@ -257,8 +257,12 @@ function buildTrack(diff) {
   scene.background.set(G.theme.skyHorizon);
   scene.fog.color.setHex(G.theme.fog);
   // push fog well back on city circuits so the landmarks read from a distance
-  scene.fog.near = (G.theme.skyline==='city') ? 600 : 520;
-  scene.fog.far  = (G.theme.skyline==='city') ? 3200 : 1700;   // far enough that the landmark ring is never fogged out
+  // light distance haze: the near track + trackside landmarks stay crisp, but the
+  // distant ground fades to the sky colour at the horizon (without this the green
+  // ground fills the whole view and reads as a "green sky"). Match the fog colour
+  // to the sky horizon so the ground melts into the sky with no hard edge.
+  scene.fog.color.set(G.theme.skyHorizon);
+  scene.fog.near = 380; scene.fog.far = 1250;
   buildSky(G.theme);
   // ---- control points: a hand-authored real-circuit layout, or an organic one ----
   const rng = mulberry32(diff.seed * 2654435761);
@@ -271,7 +275,7 @@ function buildTrack(diff) {
       const ang = (i/NCP)*Math.PI*2;
       const r = 200 + Math.sin(ang*2 + diff.seed)*60*diff.curveMul
                     + Math.sin(ang*3)*34*diff.curveMul + (rng()-0.5)*30;
-      const y = Math.sin(ang*2)*9 + Math.sin(ang*3+1)*6 + (rng()-0.5)*4;
+      const y = Math.sin(ang*2)*3 + (rng()-0.5)*2;   // gentle undulation only, so the sky stays visible
       cps.push(new THREE.Vector3(Math.cos(ang)*r, y, Math.sin(ang)*r));
     }
   }
@@ -301,7 +305,7 @@ function buildTrack(diff) {
     let s=0; for (let k=-WIN;k<=WIN;k++) s += frames[(i+k+DIV)%DIV].curv;
     sm[i] = s/(WIN*2+1);
   }
-  const BANK_K = 42, MAXB = 0.62;     // up to ~35° of banking on the hardest turns (Daytona-style)
+  const BANK_K = 42, MAXB = 0.40;     // gentler banking so the camera stays level and the sky is visible
   const FLAT = 120;                   // frames each side of the start/finish to flatten
   for (let i=0;i<DIV;i++){
     const f = frames[i];
@@ -374,7 +378,7 @@ function buildRoadMesh() {
     const pos=[],uv=[],nor=[];
     const ia=new V3,oa=new V3,ib=new V3,ob=new V3;
     const push=(p,u,v,n)=>{ pos.push(p.x,p.y,p.z); uv.push(u,v); nor.push(n.x,n.y,n.z); };
-    const GW=ROAD_W*6, GTILE=14;
+    const GW=ROAD_W*16, GTILE=14;   // wide grass apron so the track is grounded without a huge plane filling the sky
     for (const sgn of [-1,1]) for (let i=0;i<DIV;i++){
       const a=frames[i], b=frames[(i+1)%DIV];
       const li=sgn*(ROAD_W+RUMBLE_W), lo=sgn*GW;
@@ -555,21 +559,24 @@ function buildScenery(rng) {
       }
     }
   }
-  // ---- recognizable landmarks dotted around the horizon ring on EVERY circuit,
-  // so an identifiable skyline is visible from anywhere on the lap ----
+  // ---- recognizable landmarks lining the TRACKSIDE on every circuit, spaced
+  // evenly around the lap and standing just off the road, so you pass a big,
+  // identifiable landmark up close several times every lap ----
   {
     const heroes = th.landmark==='london'
-        ? [addBigBen, addShard, addGherkin, addLondonEye, addBigBen, addShard, addGherkin, addLondonEye]
+        ? [addBigBen, addLondonEye, addGherkin, addShard, addBigBen, addLondonEye, addGherkin, addShard]
       : th.landmark==='dubai'
         ? [addBurj, addBurjAlArab, addBurj, addBurjAlArab, addBurj, addBurjAlArab]
       : th.landmark==='usa'
         ? [addStatueOfLiberty, addGoldenGate, addStatueOfLiberty, addGoldenGate, addStatueOfLiberty, addGoldenGate] : [];
-    const baseR = th.skyline==='city' ? 440 : 380;        // close enough to read clearly and stay inside the fog
+    const cen2=new THREE.Vector3(); for(const fr of frames) cen2.add(fr.pos); cen2.multiplyScalar(1/frames.length);
     heroes.forEach((fn,i)=>{
-      const ang = (i/heroes.length)*Math.PI*2 + 0.35;
-      const r = baseR + ((i*53)%120);
-      const x = Math.cos(ang)*r, z = Math.sin(ang)*r;
-      fn(sceneryGroup, frames, { world:{x,z,y:0}, scale:4.5, faceAng: Math.atan2(-x,-z) });
+      const fi=Math.floor(((i+0.5)/heroes.length)*DIV)%DIV, f=frames[fi];
+      const outward=(f.pos.x-cen2.x)*f.right.x + (f.pos.z-cen2.z)*f.right.z;
+      const side = outward>=0 ? 1 : -1;                      // outside of the loop, against the sky
+      const off=(ROAD_W+RUMBLE_W)+58;
+      const x=f.pos.x + f.right.x*side*off, z=f.pos.z + f.right.z*side*off;
+      fn(sceneryGroup, frames, { world:{x,z,y:f.pos.y}, scale:2.2, faceAng: Math.atan2(f.tan.x,f.tan.z) });
     });
   }
   // ---- landmark set-pieces ----
@@ -618,18 +625,8 @@ function buildScenery(rng) {
   const keepout = LANDMARKS.map(L=>Math.floor(DIV*L.frac));
   const nearLM = (i)=> keepout.some(k=>{ let d=Math.abs(i-k); d=Math.min(d,DIV-d); return d < 70; });
 
-  // ---- large base ground under EVERY track, so there is never open sky beside
-  // the road (the grass verge is only a narrow ribbon; without this the road +
-  // verge looked like a strip floating in the air above the distant scenery) ----
-  {
-    let minx=1e9,maxx=-1e9,minz=1e9,maxz=-1e9,miny=1e9;
-    for(const fr of frames){ const p=fr.pos; if(p.x<minx)minx=p.x; if(p.x>maxx)maxx=p.x; if(p.z<minz)minz=p.z; if(p.z>maxz)maxz=p.z; if(p.y<miny)miny=p.y; }
-    const bw=(maxx-minx)+2600, bh=(maxz-minz)+2600;       // reaches well past the distant mountain/skyline ring
-    const btex=makeGroundTexture(th); btex.wrapS=btex.wrapT=THREE.RepeatWrapping; btex.repeat.set(bw/14,bh/14); btex.anisotropy=renderer.capabilities.getMaxAnisotropy();
-    const base=new THREE.Mesh(new THREE.PlaneGeometry(bw,bh), new THREE.MeshLambertMaterial({map:btex}));
-    base.rotation.x=-Math.PI/2; base.position.set((minx+maxx)/2, miny-2.5, (minz+maxz)/2); base.receiveShadow=true;
-    sceneryGroup.add(base);
-  }
+  // (no huge ground plane — it filled the down-angled view with green and read as
+  // a green sky; the wide grass verge above keeps the track grounded instead)
 
   // ---- mid-distance buildings lining urban circuits ----
   // Always placed on the OUTSIDE of the loop (away from the centre) so the
@@ -1639,8 +1636,8 @@ function render(){
   const camLat = (G.camMode===0) ? G.playerX*0.28 : G.playerX;
   worldPos(G.dist, camLat, _tmp);
   if (G.camMode===0){
-    _camPos.copy(_tmp).addScaledVector(_fwd,-11).addScaledVector(f.up,4.6);
-    _look.copy(_tmp).addScaledVector(_fwd,12).addScaledVector(f.up,1.2);
+    _camPos.copy(_tmp).addScaledVector(_fwd,-11).addScaledVector(f.up,5.2);
+    _look.copy(_tmp).addScaledVector(_fwd,16).addScaledVector(f.up,4.6);   // look more level so plenty of sky shows above the road
   } else {
     _camPos.copy(_tmp).addScaledVector(_fwd,0.2).addScaledVector(f.up,2.2);
     _look.copy(_tmp).addScaledVector(_fwd,14).addScaledVector(f.up,1.0);
