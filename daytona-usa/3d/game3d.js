@@ -34,7 +34,7 @@ const RUMBLE_W = 1.6;
 const DIV = 1400;                 // spline samples (road resolution)
 const FPS = 60, STEP = 1/FPS;
 const ROLL_TOTAL = 7.0;           // rolling-start intro length (seconds)
-const BUILD = 'BUILD 29 — landmarks sit on the ground (banking fix)';   // bump every push; shown on the menu to confirm you loaded the latest code
+const BUILD = 'BUILD 30 — Tower Bridge: no stray piers, clear gateway';   // bump every push; shown on the menu to confirm you loaded the latest code
 
 // hand-authored closed-loop circuit layouts [x,y,z] (stylised, recognisable
 // street circuits — not GPS-accurate satellite traces)
@@ -583,7 +583,18 @@ function buildScenery(rng) {
     return { fn, fi, side: outward>=0 ? 1 : -1 };
   });
   const CLEAR=26;                                          // frames of clear verge each side of a landmark
-  const heroNear=(i,side)=> heroSlots.some(h=>{ if(h.side!==side) return false; let d=Math.abs(i-h.fi); d=Math.min(d,DIV-d); return d<CLEAR; });
+  // the gate (Tower Bridge / Dubai frame) spans the road on the straightest early
+  // stretch — clear props on BOTH sides around it so trees don't crowd the towers
+  let gateFi=-1;
+  if (th.landmark==='london' || th.landmark==='dubai'){
+    let bs=Infinity;
+    for (let i=Math.floor(DIV*0.04);i<=Math.floor(DIV*0.20);i++){
+      let s=0; for(let k=-45;k<=45;k++) s+=Math.abs(frames[(i+k+DIV)%DIV].curv);
+      if (s<bs){ bs=s; gateFi=i; }
+    }
+  }
+  const gateNear=(i)=>{ if(gateFi<0) return false; let d=Math.abs(i-gateFi); d=Math.min(d,DIV-d); return d<30; };
+  const heroNear=(i,side)=> gateNear(i) || heroSlots.some(h=>{ if(h.side!==side) return false; let d=Math.abs(i-h.fi); d=Math.min(d,DIV-d); return d<CLEAR; });
 
   // ---- line the verges with big props so the trackside always reads as
   //      tree/rock-lined as you drive. iOS Safari drops the whole scenery group
@@ -961,10 +972,14 @@ function addTowerBridge(group, frames, spec){
   }
   for (const yy of [44,49]) g.add(lmBox(blue,hw*2,1.6,3.4,0,yy,0));   // upper walkways
   for (const xx of [-3.2,3.2]) g.add(lmBox(blue,0.8,6,3.4,xx*hw*0,46.5, xx)); // walkway sides
-  // suspension chains: catenary bars from tower tops out to anchor piers
-  for (const sx of [-1,1]){
-    for (const seg of [0,1,2]){ const c=lmBox(blue,0.6,0.6,hw*0.7, sx*(hw + seg*hw*0.62), 24-seg*7, 0); c.rotation.x=0.0; c.rotation.z=sx*(0.5-seg*0.12); g.add(c); }
-    g.add(lmBox(stone,5,10,8, sx*(hw+hw*1.5), 5, 0));               // anchor pier
+  // suspension chains strung BETWEEN the two towers, over the roadway — the iconic
+  // Tower Bridge silhouette. (No external anchor piers: those put stray stone blocks
+  // way out on the grass verge, which read as a random slab beside the track.)
+  for (const dz of [-5.5,5.5]){                                     // a chain plane front & back
+    for (const seg of [-1,0,1]){
+      const sag=(1-Math.abs(seg))*6;                                // dips toward mid-span
+      g.add(lmBox(blue, hw*0.95, 0.7, 0.7, seg*(hw*0.63), 38-sag, dz));
+    }
   }
   g.position.copy(f.pos); g.rotation.y=Math.atan2(f.tan.x,f.tan.z); g.scale.setScalar((spec&&spec.scale)||1); group.add(g);
 }
