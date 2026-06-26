@@ -34,7 +34,7 @@ const RUMBLE_W = 1.6;
 const DIV = 1400;                 // spline samples (road resolution)
 const FPS = 60, STEP = 1/FPS;
 const ROLL_TOTAL = 7.0;           // rolling-start intro length (seconds)
-const BUILD = 'BUILD 22 — dense kerbside landmarks';   // bump every push; shown on the menu to confirm you loaded the latest code
+const BUILD = 'BUILD 23 — textured landmarks';   // bump every push; shown on the menu to confirm you loaded the latest code
 
 // hand-authored closed-loop circuit layouts [x,y,z] (stylised, recognisable
 // street circuits — not GPS-accurate satellite traces)
@@ -470,8 +470,42 @@ function makeGroundTexture(th){
   for (let i=0;i<500;i++){ x.fillStyle=`rgba(0,0,0,${Math.random()*0.08})`; x.fillRect(Math.random()*128,Math.random()*128,1,2); }
   const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace; return t;
 }
+// ---- procedural DETAIL maps (grayscale, ~white so the material colour is kept;
+// the darker grain/lines read as surface texture on the otherwise flat polygons) ----
+const _detailCache={};
+function makeDetailTex(kind){
+  if (_detailCache[kind]) return _detailCache[kind];
+  const S=128, cv=document.createElement('canvas'); cv.width=cv.height=S; const x=cv.getContext('2d');
+  x.fillStyle='#f2f2f2'; x.fillRect(0,0,S,S);
+  const grain=(n,a)=>{ for(let i=0;i<n;i++){ const v=Math.random()<0.5?0:255; x.fillStyle=`rgba(${v},${v},${v},${Math.random()*a})`; x.fillRect(Math.random()*S,Math.random()*S,1.6,1.6);} };
+  if (kind==='stone'){
+    grain(2200,0.10);
+    x.strokeStyle='rgba(0,0,0,0.28)'; x.lineWidth=1.4;
+    const rows=8, ch=S/rows;
+    for(let r=0;r<=rows;r++){ const y=r*ch; x.beginPath(); x.moveTo(0,y); x.lineTo(S,y); x.stroke();
+      const cols=6, cw=S/cols, off=(r%2)?cw/2:0;
+      for(let c=0;c<=cols;c++){ const vx=c*cw+off; x.beginPath(); x.moveTo(vx,y); x.lineTo(vx,y+ch); x.stroke(); } }
+  } else if (kind==='metal'){
+    for(let i=0;i<S;i+=2){ x.fillStyle=`rgba(0,0,0,${Math.random()*0.08})`; x.fillRect(i,0,1,S); }   // vertical brushed streaks
+    grain(900,0.06);
+  } else if (kind==='glass'){
+    x.strokeStyle='rgba(0,0,0,0.22)'; x.lineWidth=1;
+    for(let i=0;i<=S;i+=16){ x.beginPath(); x.moveTo(i,0); x.lineTo(i,S); x.stroke(); x.beginPath(); x.moveTo(0,i); x.lineTo(S,i); x.stroke(); }  // mullion grid
+    for(let r=0;r<8;r++)for(let c=0;c<8;c++){ if(Math.random()<0.3){ x.fillStyle=`rgba(255,255,255,${Math.random()*0.18})`; x.fillRect(c*16+1,r*16+1,14,14);} }
+  } else {
+    grain(1600,0.09);
+  }
+  const t=new THREE.CanvasTexture(cv); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.colorSpace=THREE.SRGBColorSpace;
+  _detailCache[kind]=t; return t;
+}
+// MeshStandardMaterial with a detail map baked in (keeps the colour, adds texture)
+function txMat(opts, kind, rep){
+  const m=new THREE.MeshStandardMaterial(opts);
+  m.map=makeDetailTex(kind||'rough').clone(); m.map.wrapS=m.map.wrapT=THREE.RepeatWrapping;
+  if (rep) m.map.repeat.set(rep,rep); m.map.needsUpdate=true;
+  return m;
+}
 
-// Theme-aware scenery: course-specific props, set-pieces, a tunnel and the gantry
 function buildScenery(rng) {
   if (sceneryGroup){ scene.remove(sceneryGroup); disposeTree(sceneryGroup); }
   sceneryGroup = new THREE.Group();
@@ -545,7 +579,7 @@ function buildScenery(rng) {
     }
   } else {
     // ---- distant mountain / canyon-wall ring ----
-    const mtnMat = new THREE.MeshLambertMaterial({color:th.mountain, flatShading:true});
+    const mtnMat = new THREE.MeshLambertMaterial({color:th.mountain, flatShading:true, map:makeDetailTex('rough')});
     const snowMat = new THREE.MeshLambertMaterial({color:0xeef3f7, flatShading:true});
     for (let i=0;i<26;i++){
       const ang=(i/26)*Math.PI*2;
@@ -804,11 +838,11 @@ function makeLatticeTexture(){
 // London — the Elizabeth Tower (Big Ben): slender Gothic clock tower
 function addBigBen(group, frames, spec){
   const g=new THREE.Group();
-  const stone=new THREE.MeshStandardMaterial({color:0xb59442, roughness:0.85});
-  const dark =new THREE.MeshStandardMaterial({color:0x6b531f, roughness:0.85});
+  const stone=txMat({color:0xb59442, roughness:0.85},'stone',3);
+  const dark =txMat({color:0x6b531f, roughness:0.85},'stone',2);
   const louvre=new THREE.MeshStandardMaterial({color:0x241c10, roughness:0.9});
-  const copper=new THREE.MeshStandardMaterial({color:0x2f8f63, roughness:0.5, metalness:0.25});  // patina-green cast iron
-  const gold  =new THREE.MeshStandardMaterial({color:0xd9b64a, roughness:0.35, metalness:0.6});
+  const copper=txMat({color:0x2f8f63, roughness:0.5, metalness:0.25},'metal',2);  // patina-green cast iron
+  const gold  =txMat({color:0xd9b64a, roughness:0.35, metalness:0.6},'metal',2);
   const W=15;                                       // tower is square in plan
   g.add(lmBox(stone,W+3,16,W+3,0,8,0));             // plinth
   g.add(lmBox(stone,W,104,W,0,68,0));               // main shaft
@@ -860,8 +894,8 @@ function addLondonEye(group, frames, spec){
 // London — Tower Bridge: twin Victorian-Gothic towers + high walkways + chains
 function addTowerBridge(group, frames, spec){
   const f=frames[Math.floor(DIV*(spec?spec.frac:0.55))], g=new THREE.Group();
-  const stone=new THREE.MeshStandardMaterial({color:0xcdbf9f, roughness:0.8});
-  const blue =new THREE.MeshStandardMaterial({color:0x4a86c0, roughness:0.5, metalness:0.35});
+  const stone=txMat({color:0xcdbf9f, roughness:0.8},'stone',3);
+  const blue =txMat({color:0x4a86c0, roughness:0.5, metalness:0.35},'metal',2);
   const hw = ROAD_W+RUMBLE_W+5;
   for (const sx of [-1,1]){
     g.add(lmBox(stone,11,16,12,sx*hw,8,0));                          // river pier
@@ -936,8 +970,8 @@ function addBurj(group, frames, spec){
 // Dubai — Burj Al Arab: the billowing sail hotel with mast & helipad
 function addBurjAlArab(group, frames, spec){
   const g=new THREE.Group();
-  const white=new THREE.MeshStandardMaterial({color:0xeef3f7, roughness:0.45, metalness:0.15, side:THREE.DoubleSide});
-  const steel=new THREE.MeshStandardMaterial({color:0xcdd6dd, metalness:0.6, roughness:0.4});
+  const white=txMat({color:0xeef3f7, roughness:0.45, metalness:0.15, side:THREE.DoubleSide},'glass',3);
+  const steel=txMat({color:0xcdd6dd, metalness:0.6, roughness:0.4},'metal',2);
   const h=230;
   // exoskeleton mast (the leading edge) curving to a point, with X cross-bracing
   const mast=new THREE.Mesh(new THREE.CylinderGeometry(1.6,4,h,8), steel); mast.position.set(-22,h/2,0); g.add(mast);
@@ -968,8 +1002,8 @@ function addDubaiFrame(group, frames, spec){
 // USA — the Statue of Liberty: verdigris figure with torch and spiked crown on a stone pedestal
 function addStatueOfLiberty(group, frames, spec){
   const g=new THREE.Group();
-  const stone =new THREE.MeshStandardMaterial({color:0x9a8f7a, roughness:0.9});
-  const copper=new THREE.MeshStandardMaterial({color:0x53b095, roughness:0.6, metalness:0.2});   // verdigris green
+  const stone =txMat({color:0x9a8f7a, roughness:0.9},'stone',3);
+  const copper=txMat({color:0x53b095, roughness:0.6, metalness:0.2},'metal',2);   // verdigris green
   const flame =new THREE.MeshStandardMaterial({color:0xffd24a, emissive:0xffae00, emissiveIntensity:0.6, roughness:0.4});
   g.add(lmBox(stone,34,20,34,0,10,0));                       // pedestal base
   g.add(lmBox(stone,24,28,24,0,34,0));                       // pedestal column
@@ -987,8 +1021,8 @@ function addStatueOfLiberty(group, frames, spec){
 // USA — the Golden Gate Bridge: twin international-orange towers with suspension cables
 function addGoldenGate(group, frames, spec){
   const g=new THREE.Group();
-  const orange=new THREE.MeshStandardMaterial({color:0xc1502e, roughness:0.55, metalness:0.25});
-  const deckM =new THREE.MeshStandardMaterial({color:0x8f3f22, roughness:0.7});
+  const orange=txMat({color:0xc1502e, roughness:0.55, metalness:0.25},'metal',2);
+  const deckM =txMat({color:0x8f3f22, roughness:0.7},'metal',3);
   const span=130, towerH=95, deckY=30, cableTop=84;
   g.add(lmBox(deckM, span+60, 3.5, 11, 0, deckY, 0));        // road deck
   for (const sx of [-1,1]){
