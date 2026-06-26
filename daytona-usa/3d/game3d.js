@@ -34,7 +34,7 @@ const RUMBLE_W = 1.6;
 const DIV = 1400;                 // spline samples (road resolution)
 const FPS = 60, STEP = 1/FPS;
 const ROLL_TOTAL = 7.0;           // rolling-start intro length (seconds)
-const BUILD = 'BUILD 26 — scenery diagnostics + resilient build';   // bump every push; shown on the menu to confirm you loaded the latest code
+const BUILD = 'BUILD 28 — landmarks unoccluded, London Eye braced';   // bump every push; shown on the menu to confirm you loaded the latest code
 
 // hand-authored closed-loop circuit layouts [x,y,z] (stylised, recognisable
 // street circuits — not GPS-accurate satellite traces)
@@ -567,16 +567,33 @@ function buildScenery(rng) {
   }
   const makeProp = th.prop==='rock' ? rock : th.prop==='palm' ? palm : th.prop==='tree' ? tree : pine;
 
+  // ---- work out where the hero landmarks stand FIRST, so the verge props can
+  //      leave a clear gap in front of each one (a tree right in front of a
+  //      landmark hides its base and makes it read as floating / wrong) ----
+  const L4=[addBigBen, addLondonEye, addGherkin, addShard];
+  const REP = MOBILE ? 3 : 4;                                                             // 12 heroes on mobile, 16 on desktop
+  const N12 = MOBILE ? 8 : 12;
+  const heroFns = th.landmark==='london' ? Array.from({length:REP}).flatMap(()=>L4)
+    : th.landmark==='dubai' ? Array.from({length:N12},(_,i)=>[addBurj,addBurjAlArab][i%2])
+    : th.landmark==='usa'   ? Array.from({length:N12},(_,i)=>[addStatueOfLiberty,addGoldenGate][i%2]) : [];
+  const heroCen=new THREE.Vector3(); for(const fr of frames) heroCen.add(fr.pos); heroCen.multiplyScalar(1/frames.length);
+  const heroSlots = heroFns.map((fn,i)=>{
+    const fi=Math.floor(((i+0.5)/heroFns.length)*DIV)%DIV, f=frames[fi];
+    const outward=(f.pos.x-heroCen.x)*f.right.x + (f.pos.z-heroCen.z)*f.right.z;
+    return { fn, fi, side: outward>=0 ? 1 : -1 };
+  });
+  const CLEAR=26;                                          // frames of clear verge each side of a landmark
+  const heroNear=(i,side)=> heroSlots.some(h=>{ if(h.side!==side) return false; let d=Math.abs(i-h.fi); d=Math.min(d,DIV-d); return d<CLEAR; });
+
   // ---- line the verges with big props so the trackside always reads as
   //      tree/rock-lined as you drive. iOS Safari drops the whole scenery group
   //      when there are too many draw calls, so MOBILE gets far fewer (but still
   //      big & frequent) props: one side per step, no second rank. ----
-  const PROP_STEP = MOBILE ? 14 : 6;
-  let propN = 0;
+  const PROP_STEP = MOBILE ? 18 : 6;                      // mobile: ~155 props, both verges evenly lined
   for (let i=0;i<DIV;i+=PROP_STEP){
     const f=frames[i];
-    const sides = MOBILE ? [ (propN++ % 2) ? 1 : -1 ] : [-1,1];
-    for (const side of sides){
+    for (const side of [-1,1]){                           // BOTH sides on every platform so no verge looks empty
+      if (heroNear(i,side)) continue;                     // leave a clear window in front of each landmark
       const p=makeProp(3.4 + rng()*2.4);                 // big — towers over the kerb, clearly visible from the car
       p.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+2+rng()*6));
       sceneryGroup.add(p);
@@ -622,17 +639,8 @@ function buildScenery(rng) {
   // evenly around the lap and standing just off the road, so you pass a big,
   // identifiable landmark up close several times every lap ----
   {
-    const L4=[addBigBen, addLondonEye, addGherkin, addShard];
-    const REP = MOBILE ? 2 : 4;                                                             // fewer hero copies on mobile (draw-call budget)
-    const N12 = MOBILE ? 6 : 12;
-    const heroes = th.landmark==='london' ? Array.from({length:REP}).flatMap(()=>L4)        // 8 on mobile, 16 on desktop
-      : th.landmark==='dubai' ? Array.from({length:N12},(_,i)=>[addBurj,addBurjAlArab][i%2])
-      : th.landmark==='usa'   ? Array.from({length:N12},(_,i)=>[addStatueOfLiberty,addGoldenGate][i%2]) : [];
-    const cen2=new THREE.Vector3(); for(const fr of frames) cen2.add(fr.pos); cen2.multiplyScalar(1/frames.length);
-    heroes.forEach((fn,i)=>{
-      const fi=Math.floor(((i+0.5)/heroes.length)*DIV)%DIV, f=frames[fi];
-      const outward=(f.pos.x-cen2.x)*f.right.x + (f.pos.z-cen2.z)*f.right.z;
-      const side = outward>=0 ? 1 : -1;                      // outside of the loop, against the sky
+    heroSlots.forEach(({fn,fi,side})=>{
+      const f=frames[fi];
       const off=(ROAD_W+RUMBLE_W)+16;                        // right at the kerb, so you pass it close
       const x=f.pos.x + f.right.x*side*off, z=f.pos.z + f.right.z*side*off;
       try { fn(sceneryGroup, frames, { world:{x,z,y:f.pos.y}, scale:2.7, faceAng: Math.atan2(f.tan.x,f.tan.z) }); }
@@ -919,9 +927,14 @@ function addLondonEye(group, frames, spec){
   const hub=new THREE.Mesh(new THREE.CylinderGeometry(3.5,3.5,5,14), rim); hub.rotation.x=Math.PI/2; eye.add(hub);
   const pod=new THREE.MeshStandardMaterial({color:0x9fd4f5, metalness:0.3, roughness:0.25, emissive:0x16384f, emissiveIntensity:0.45});
   for (let k=0;k<28;k++){ const a=k/28*6.28; eye.add(lmBox(pod,3,2,3,Math.cos(a)*R,Math.sin(a)*R,0)); }
-  // A-frame support legs
-  for (const sx of [-1,1]){ const leg=lmBox(rim,1.8,R+12,1.8,sx*9,-(R+12)/2+2,7); leg.rotation.x=0.32; eye.add(leg); }
-  placeLandmark(group, eye, frames, spec, Math.PI/2, R+10);   // wheel faces the track; lift clears the A-frame legs (which reach -(R+10)) so it stands on the ground
+  // A-frame support legs — splayed BOTH forward (+z) and back (-z) so the wheel
+  // always reads as firmly braced on the ground from any viewing angle
+  for (const sx of [-1,1]) for (const sz of [1,-1]){
+    const leg=lmBox(rim,1.8,R+12,1.8,sx*9,-(R+12)/2+2,sz*7); leg.rotation.x=sz*0.32; eye.add(leg);
+  }
+  // a short cross-brace and ground beam to anchor the foot
+  eye.add(lmBox(rim,22,1.6,16,0,-(R+10),0));
+  placeLandmark(group, eye, frames, spec, Math.PI/2, R+10);   // lift clears the A-frame legs (which reach -(R+10)) so it stands on the ground
 }
 // London — Tower Bridge: twin Victorian-Gothic towers + high walkways + chains
 function addTowerBridge(group, frames, spec){
