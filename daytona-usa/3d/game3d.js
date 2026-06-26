@@ -34,7 +34,7 @@ const RUMBLE_W = 1.6;
 const DIV = 1400;                 // spline samples (road resolution)
 const FPS = 60, STEP = 1/FPS;
 const ROLL_TOTAL = 7.0;           // rolling-start intro length (seconds)
-const BUILD = 'BUILD 23 — textured landmarks';   // bump every push; shown on the menu to confirm you loaded the latest code
+const BUILD = 'BUILD 24 — drive-through Tower Bridge + textures & FX';   // bump every push; shown on the menu to confirm you loaded the latest code
 
 // hand-authored closed-loop circuit layouts [x,y,z] (stylised, recognisable
 // street circuits — not GPS-accurate satellite traces)
@@ -511,9 +511,9 @@ function buildScenery(rng) {
   sceneryGroup = new THREE.Group();
   const th = G.theme;
 
-  // ---- prop factories ----
-  const pineTrunk = new THREE.MeshLambertMaterial({color:0x5b4226});
-  const pineLeaf  = new THREE.MeshLambertMaterial({color:0x1f6b2e});
+  // ---- prop factories ---- (detail maps give foliage/bark/rock surface texture)
+  const pineTrunk = new THREE.MeshLambertMaterial({color:0x5b4226, map:makeDetailTex('metal')});
+  const pineLeaf  = new THREE.MeshLambertMaterial({color:0x1f6b2e, map:makeDetailTex('rough')});
   function pine(scale){
     const g = new THREE.Group();
     const t = new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.4,2,6), pineTrunk); t.position.y=1; g.add(t);
@@ -523,8 +523,8 @@ function buildScenery(rng) {
     }
     g.scale.setScalar(scale); return g;
   }
-  const rockMat = new THREE.MeshLambertMaterial({color:0xb5793f, flatShading:true});
-  const rockMat2= new THREE.MeshLambertMaterial({color:0x9c6534, flatShading:true});
+  const rockMat = new THREE.MeshLambertMaterial({color:0xb5793f, flatShading:true, map:makeDetailTex('rough')});
+  const rockMat2= new THREE.MeshLambertMaterial({color:0x9c6534, flatShading:true, map:makeDetailTex('stone')});
   function rock(scale){
     const g=new THREE.Group();
     const h=3+rng()*4;
@@ -546,8 +546,8 @@ function buildScenery(rng) {
     }
     g.scale.setScalar(scale); return g;
   }
-  const treeTrunk=new THREE.MeshLambertMaterial({color:0x6b4a2b});
-  const treeLeaf =new THREE.MeshLambertMaterial({color:0x2f7d3a, flatShading:true});
+  const treeTrunk=new THREE.MeshLambertMaterial({color:0x6b4a2b, map:makeDetailTex('metal')});
+  const treeLeaf =new THREE.MeshLambertMaterial({color:0x2f7d3a, flatShading:true, map:makeDetailTex('rough')});
   function tree(scale){
     const g=new THREE.Group();
     const t=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.45,2.4,6), treeTrunk); t.position.y=1.2; g.add(t);
@@ -622,7 +622,7 @@ function buildScenery(rng) {
     {fn:addLondonEye, scale:1.9},
     {fn:addGherkin,   scale:2.1},
     {fn:addShard,     scale:2.1},
-    {fn:addTowerBridge, side:0, scale:1.0, gate:true},
+    {fn:addTowerBridge, side:0, scale:1.5, gate:true},
   ] : th.landmark==='dubai' ? [
     {fn:addBurj,       scale:2.1},
     {fn:addBurjAlArab, scale:2.0},
@@ -642,7 +642,11 @@ function buildScenery(rng) {
   // on one). Tower Bridge spans the start straight; towers line both kerbs.
   const sA=straightestIn(Math.floor(DIV*0.04), Math.floor(DIV*0.20));   // start straight
   const sB=straightestIn(Math.floor(DIV*0.54), Math.floor(DIV*0.70));   // far straight
-  gates.forEach(L=>{ L.frac=sA/DIV; });
+  // Tower Bridge / the gate straddles the genuinely straightest point of the start
+  // straight (sA) so you see it dead ahead coming down the straight and drive cleanly
+  // through it — putting it on a curved stretch hid the span off to the side.
+  const gateF = sA;
+  gates.forEach(L=>{ L.frac=gateF/DIV; });
   // alternate towers between the two straights (and the two kerbs) so they always
   // split across both, however many there are
   const straightCtr=[sA,sB];
@@ -913,7 +917,7 @@ function addTowerBridge(group, frames, spec){
     for (const seg of [0,1,2]){ const c=lmBox(blue,0.6,0.6,hw*0.7, sx*(hw + seg*hw*0.62), 24-seg*7, 0); c.rotation.x=0.0; c.rotation.z=sx*(0.5-seg*0.12); g.add(c); }
     g.add(lmBox(stone,5,10,8, sx*(hw+hw*1.5), 5, 0));               // anchor pier
   }
-  g.position.copy(f.pos); g.rotation.y=Math.atan2(f.tan.x,f.tan.z); group.add(g);
+  g.position.copy(f.pos); g.rotation.y=Math.atan2(f.tan.x,f.tan.z); g.scale.setScalar((spec&&spec.scale)||1); group.add(g);
 }
 // London — The Shard: tapering glass pyramid with a fractured open top
 function addShard(group, frames, spec){
@@ -997,7 +1001,7 @@ function addDubaiFrame(group, frames, spec){
   for (const sx of [-1,1]) g.add(lmBox(gold,tw,H,td,sx*W/2,H/2,0));   // the two legs
   g.add(lmBox(new THREE.MeshStandardMaterial({color:0xc9a233, metalness:0.85, roughness:0.32}), W+tw,12,td+1, 0,H-6,0)); // sky-bridge deck
   for (const sx of [-1,1]) g.add(lmBox(gold,tw+2,8,td+2,sx*W/2,4,0)); // bases
-  g.position.copy(f.pos).addScaledVector(f.right,72).setY(0); g.rotation.y=Math.atan2(f.tan.x,f.tan.z); group.add(g);
+  g.position.copy(f.pos).addScaledVector(f.right,72).setY(0); g.rotation.y=Math.atan2(f.tan.x,f.tan.z); g.scale.setScalar((spec&&spec.scale)||1); group.add(g);
 }
 // USA — the Statue of Liberty: verdigris figure with torch and spiked crown on a stone pedestal
 function addStatueOfLiberty(group, frames, spec){
@@ -1638,6 +1642,31 @@ function setRaceMusicMuted(m){ musicMuted=m; if(introEl) introEl.volume=m?0:INTR
 const _camPos=new THREE.Vector3(), _look=new THREE.Vector3(), _fwd=new THREE.Vector3(), _tmp=new THREE.Vector3();
 const _camUp=new THREE.Vector3(0,1,0);
 const _sunOff=new THREE.Vector3(55, 120, 35);   // fixed sun direction relative to the player
+// ---- tyre-smoke effect: a pool of soft sprite puffs spawned behind the car when it skids ----
+let _smoke=null;
+function makeSmokeTexture(){
+  const cv=document.createElement('canvas'); cv.width=cv.height=64; const x=cv.getContext('2d');
+  const g=x.createRadialGradient(32,32,2,32,32,30); g.addColorStop(0,'rgba(255,255,255,0.9)'); g.addColorStop(0.5,'rgba(235,235,235,0.4)'); g.addColorStop(1,'rgba(220,220,220,0)');
+  x.fillStyle=g; x.fillRect(0,0,64,64); const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace; return t;
+}
+function initSmoke(){
+  if (_smoke) return;
+  const tex=makeSmokeTexture(); _smoke=[];
+  for (let i=0;i<48;i++){ const s=new THREE.Sprite(new THREE.SpriteMaterial({map:tex, transparent:true, depthWrite:false, opacity:0})); s.visible=false; s.userData={life:0}; scene.add(s); _smoke.push(s); }
+}
+const _puff=new THREE.Vector3();
+function spawnSmoke(p, vx, vz){
+  for (const s of _smoke){ if (s.userData.life<=0){ s.position.copy(p); s.position.x+=(Math.random()-0.5)*2; s.position.z+=(Math.random()-0.5)*2;
+    s.userData.life=1; s.userData.vx=vx*0.3+(Math.random()-0.5)*2.5; s.userData.vz=vz*0.3+(Math.random()-0.5)*2.5; s.userData.vy=2.5+Math.random()*2;
+    s.scale.setScalar(2.5); s.material.opacity=0.55; s.visible=true; return; } }
+}
+function updateSmoke(){
+  if (!_smoke) return; const dt=1/60;
+  for (const s of _smoke){ const u=s.userData; if (u.life>0){ u.life-=dt*0.9;
+    s.position.x+=u.vx*dt; s.position.z+=u.vz*dt; s.position.y+=u.vy*dt;
+    s.scale.setScalar(2.5+(1-u.life)*9); s.material.opacity=Math.max(0,u.life*0.5);
+    if (u.life<=0){ s.visible=false; s.material.opacity=0; } } }
+}
 function render(){
   // place player + rivals
   placeCar(playerCar, G.dist, G.playerX, 0);
@@ -1656,6 +1685,16 @@ function render(){
     sun.target.updateMatrixWorld();
   }
   for (let i=0;i<G.cars.length;i++) placeCar(rivalMeshes[i], G.cars[i].dist, G.cars[i].offset, 0);
+
+  // tyre smoke — puff out behind the rear wheels whenever the car is sliding
+  initSmoke();
+  if (G.state==='racing' && G.skid>0.05){
+    _puff.copy(playerCar.position);
+    const ft=frameAt(G.dist);
+    _puff.addScaledVector(ft.tan,-2.4);                 // behind the car
+    spawnSmoke(_puff, -ft.tan.x*G.speed*0.4, -ft.tan.z*G.speed*0.4);
+  }
+  updateSmoke();
 
   // chase / hood camera — lifts along the banked surface normal so it rolls
   // through the banking, and the FOV opens up a touch with speed.
