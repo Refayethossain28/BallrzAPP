@@ -34,7 +34,7 @@ const RUMBLE_W = 1.6;
 const DIV = 1400;                 // spline samples (road resolution)
 const FPS = 60, STEP = 1/FPS;
 const ROLL_TOTAL = 7.0;           // rolling-start intro length (seconds)
-const BUILD = 'BUILD 24 — drive-through Tower Bridge + textures & FX';   // bump every push; shown on the menu to confirm you loaded the latest code
+const BUILD = 'BUILD 25 — dense trees, crisp landmarks, no haze';   // bump every push; shown on the menu to confirm you loaded the latest code
 
 // hand-authored closed-loop circuit layouts [x,y,z] (stylised, recognisable
 // street circuits — not GPS-accurate satellite traces)
@@ -262,7 +262,8 @@ function buildTrack(diff) {
   // ground fills the whole view and reads as a "green sky"). Match the fog colour
   // to the sky horizon so the ground melts into the sky with no hard edge.
   scene.fog.color.set(G.theme.skyHorizon);
-  scene.fog.near = 380; scene.fog.far = 1250;
+  // keep haze far away so landmarks and roadside scenery stay crisp the whole way in
+  scene.fog.near = 1100; scene.fog.far = 3200;
   buildSky(G.theme);
   // ---- control points: a hand-authored real-circuit layout, or an organic one ----
   const rng = mulberry32(diff.seed * 2654435761);
@@ -512,8 +513,8 @@ function buildScenery(rng) {
   const th = G.theme;
 
   // ---- prop factories ---- (detail maps give foliage/bark/rock surface texture)
-  const pineTrunk = new THREE.MeshLambertMaterial({color:0x5b4226, map:makeDetailTex('metal')});
-  const pineLeaf  = new THREE.MeshLambertMaterial({color:0x1f6b2e, map:makeDetailTex('rough')});
+  const pineTrunk = new THREE.MeshLambertMaterial({color:0x6b4a2b, map:makeDetailTex('metal')});
+  const pineLeaf  = new THREE.MeshLambertMaterial({color:0x36a84e, map:makeDetailTex('rough')});
   function pine(scale){
     const g = new THREE.Group();
     const t = new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.4,2,6), pineTrunk); t.position.y=1; g.add(t);
@@ -546,8 +547,8 @@ function buildScenery(rng) {
     }
     g.scale.setScalar(scale); return g;
   }
-  const treeTrunk=new THREE.MeshLambertMaterial({color:0x6b4a2b, map:makeDetailTex('metal')});
-  const treeLeaf =new THREE.MeshLambertMaterial({color:0x2f7d3a, flatShading:true, map:makeDetailTex('rough')});
+  const treeTrunk=new THREE.MeshLambertMaterial({color:0x7a5532, map:makeDetailTex('metal')});
+  const treeLeaf =new THREE.MeshLambertMaterial({color:0x46c45f, flatShading:true, map:makeDetailTex('rough')});
   function tree(scale){
     const g=new THREE.Group();
     const t=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.45,2.4,6), treeTrunk); t.position.y=1.2; g.add(t);
@@ -556,12 +557,21 @@ function buildScenery(rng) {
   }
   const makeProp = th.prop==='rock' ? rock : th.prop==='palm' ? palm : th.prop==='tree' ? tree : pine;
 
-  // ---- line the verges with the course's props ----
-  for (let i=0;i<DIV;i+=10){
-    const side=(i%20===0)?1:-1, f=frames[i];
-    const p=makeProp(1.2 + rng()*1.3);
-    p.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+6+rng()*16));
-    sceneryGroup.add(p);
+  // ---- line BOTH verges with big, densely-spaced props so the trackside always
+  //      reads as lined with trees/rocks as you drive (not sparse specks) ----
+  for (let i=0;i<DIV;i+=6){
+    const f=frames[i];
+    for (const side of [-1,1]){
+      const p=makeProp(3.4 + rng()*2.4);                 // big — towers over the kerb, clearly visible from the car
+      p.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+2+rng()*6));
+      sceneryGroup.add(p);
+      // a second rank set further back to give the verge depth
+      if (rng()<0.7){
+        const p2=makeProp(2.2 + rng()*2.0);
+        p2.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+16+rng()*16));
+        sceneryGroup.add(p2);
+      }
+    }
   }
   if (th.skyline==='city'){
     // ---- distant city skyline ring (generic towers with lit windows) ----
@@ -606,9 +616,9 @@ function buildScenery(rng) {
       const fi=Math.floor(((i+0.5)/heroes.length)*DIV)%DIV, f=frames[fi];
       const outward=(f.pos.x-cen2.x)*f.right.x + (f.pos.z-cen2.z)*f.right.z;
       const side = outward>=0 ? 1 : -1;                      // outside of the loop, against the sky
-      const off=(ROAD_W+RUMBLE_W)+22;                        // right at the kerb, in front of the verge, so you pass it close
+      const off=(ROAD_W+RUMBLE_W)+16;                        // right at the kerb, so you pass it close
       const x=f.pos.x + f.right.x*side*off, z=f.pos.z + f.right.z*side*off;
-      fn(sceneryGroup, frames, { world:{x,z,y:f.pos.y}, scale:1.9, faceAng: Math.atan2(f.tan.x,f.tan.z) });
+      fn(sceneryGroup, frames, { world:{x,z,y:f.pos.y}, scale:2.7, faceAng: Math.atan2(f.tan.x,f.tan.z) });
     });
   }
   // ---- landmark set-pieces ----
@@ -1957,7 +1967,7 @@ function startRace(){
   G.maxSpeed=c.maxSpeed*v.speedMul; G.curveMul=c.curveMul; G.aiSpeedMul=c.aiSpeed;
   G.accelMul=v.accelMul; G.steerMul=v.steerMul; G.gripMul=v.gripMul; G.brakeMul=v.brakeMul; G.rollMul=v.rollMul;
   G.totalLaps=c.laps; G.timeLeft=c.startTime; G.lapBonus=c.lapBonus;
-  document.getElementById('trackName').textContent=c.name+' • '+v.name.replace('MERCEDES ','');
+  document.getElementById('trackName').textContent=c.name+' • '+v.name.replace('MERCEDES ','')+' • '+BUILD.split('—')[0].trim();
 
   buildTrack(c);
   removePlayerCar();
