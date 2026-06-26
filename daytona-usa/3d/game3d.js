@@ -34,7 +34,7 @@ const RUMBLE_W = 1.6;
 const DIV = 1400;                 // spline samples (road resolution)
 const FPS = 60, STEP = 1/FPS;
 const ROLL_TOTAL = 7.0;           // rolling-start intro length (seconds)
-const BUILD = 'BUILD 28 — landmarks unoccluded, London Eye braced';   // bump every push; shown on the menu to confirm you loaded the latest code
+const BUILD = 'BUILD 29 — landmarks sit on the ground (banking fix)';   // bump every push; shown on the menu to confirm you loaded the latest code
 
 // hand-authored closed-loop circuit layouts [x,y,z] (stylised, recognisable
 // street circuits — not GPS-accurate satellite traces)
@@ -642,8 +642,13 @@ function buildScenery(rng) {
     heroSlots.forEach(({fn,fi,side})=>{
       const f=frames[fi];
       const off=(ROAD_W+RUMBLE_W)+16;                        // right at the kerb, so you pass it close
-      const x=f.pos.x + f.right.x*side*off, z=f.pos.z + f.right.z*side*off;
-      try { fn(sceneryGroup, frames, { world:{x,z,y:f.pos.y}, scale:2.7, faceAng: Math.atan2(f.tan.x,f.tan.z) }); }
+      // follow the BANKED verge surface (same as the grass mesh: pos + right*lat),
+      // not the flat centreline height — otherwise the base sinks below the raised
+      // outside of a banked curve and the landmark looks buried.
+      const x=f.pos.x + f.right.x*side*off,
+            y=f.pos.y + f.right.y*side*off,
+            z=f.pos.z + f.right.z*side*off;
+      try { fn(sceneryGroup, frames, { world:{x,y,z}, scale:2.7, faceAng: Math.atan2(f.tan.x,f.tan.z) }); }
       catch(e){ _scnInfo='HERO-ERR:'+(e&&e.message?e.message.slice(0,50):e); }
     });
   }
@@ -845,7 +850,10 @@ function placeLandmark(group, g, frames, spec, faceY, lift){
     g.rotation.y = (spec.faceAng||0) + (faceY||0);
   } else {
     const off=(ROAD_W+RUMBLE_W)+(spec.off!=null?spec.off:18);
-    g.position.copy(f.pos).addScaledVector(f.right, spec.side*off).setY((lift||0)*(spec.scale||1));
+    // sit on the banked verge surface (keep the computed surface Y), then add lift —
+    // do NOT setY() to just the lift, which would bury it on raised/banked ground.
+    g.position.copy(f.pos).addScaledVector(f.right, spec.side*off);
+    g.position.y += (lift||0)*(spec.scale||1);
     g.rotation.y=Math.atan2(f.tan.x,f.tan.z) + (faceY||0);
   }
   g.scale.setScalar(spec.scale||1);
