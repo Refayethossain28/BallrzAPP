@@ -34,7 +34,7 @@ const RUMBLE_W = 1.6;
 const DIV = 1400;                 // spline samples (road resolution)
 const FPS = 60, STEP = 1/FPS;
 const ROLL_TOTAL = 7.0;           // rolling-start intro length (seconds)
-const BUILD = 'BUILD 25 — dense trees, crisp landmarks, no haze';   // bump every push; shown on the menu to confirm you loaded the latest code
+const BUILD = 'BUILD 26 — scenery diagnostics + resilient build';   // bump every push; shown on the menu to confirm you loaded the latest code
 
 // hand-authored closed-loop circuit layouts [x,y,z] (stylised, recognisable
 // street circuits — not GPS-accurate satellite traces)
@@ -251,6 +251,7 @@ function initThree() {
 function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 
 let sceneryGroup=null, miniPath=[];
+let _scnInfo='';   // device diagnostic: scenery child count / error, shown in the HUD
 
 function buildTrack(diff) {
   G.theme = THEMES[diff.theme || 0];
@@ -320,7 +321,16 @@ function buildTrack(diff) {
   }
 
   buildRoadMesh();
-  buildScenery(rng);
+  _scnInfo = '';                       // per-item errors (set inside buildScenery) accumulate here
+  try {
+    buildScenery(rng);
+  } catch (e) {
+    _scnInfo = 'SCN-ERR:' + (e && e.message ? e.message.slice(0,60) : e) + ' ' + _scnInfo;
+    if (sceneryGroup && !sceneryGroup.parent) scene.add(sceneryGroup);   // show whatever built before the throw
+  }
+  // prepend the live child-count + attachment state so the HUD always reports it
+  _scnInfo = 'scn:' + (sceneryGroup ? sceneryGroup.children.length : 'null')
+           + (sceneryGroup && sceneryGroup.parent ? '✓' : '✗DETACHED') + ' ' + _scnInfo;
   buildMinimap();
 }
 
@@ -557,16 +567,20 @@ function buildScenery(rng) {
   }
   const makeProp = th.prop==='rock' ? rock : th.prop==='palm' ? palm : th.prop==='tree' ? tree : pine;
 
-  // ---- line BOTH verges with big, densely-spaced props so the trackside always
-  //      reads as lined with trees/rocks as you drive (not sparse specks) ----
-  for (let i=0;i<DIV;i+=6){
+  // ---- line the verges with big props so the trackside always reads as
+  //      tree/rock-lined as you drive. iOS Safari drops the whole scenery group
+  //      when there are too many draw calls, so MOBILE gets far fewer (but still
+  //      big & frequent) props: one side per step, no second rank. ----
+  const PROP_STEP = MOBILE ? 14 : 6;
+  let propN = 0;
+  for (let i=0;i<DIV;i+=PROP_STEP){
     const f=frames[i];
-    for (const side of [-1,1]){
+    const sides = MOBILE ? [ (propN++ % 2) ? 1 : -1 ] : [-1,1];
+    for (const side of sides){
       const p=makeProp(3.4 + rng()*2.4);                 // big — towers over the kerb, clearly visible from the car
       p.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+2+rng()*6));
       sceneryGroup.add(p);
-      // a second rank set further back to give the verge depth
-      if (rng()<0.7){
+      if (!MOBILE && rng()<0.7){                          // second rank for depth on desktop only
         const p2=makeProp(2.2 + rng()*2.0);
         p2.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+16+rng()*16));
         sceneryGroup.add(p2);
@@ -576,8 +590,9 @@ function buildScenery(rng) {
   if (th.skyline==='city'){
     // ---- distant city skyline ring (generic towers with lit windows) ----
     const winTex = makeWindowTexture(th.landmark==='dubai');
-    for (let i=0;i<46;i++){
-      const ang=(i/46)*Math.PI*2;
+    const RING = MOBILE ? 22 : 46;
+    for (let i=0;i<RING;i++){
+      const ang=(i/RING)*Math.PI*2;
       const r=560 + (mulberry32(i+99)())*260;
       const h=70 + (mulberry32(i+5)())*(th.landmark==='dubai'?260:140);
       const w=24 + (mulberry32(i+13)())*26;
@@ -608,9 +623,11 @@ function buildScenery(rng) {
   // identifiable landmark up close several times every lap ----
   {
     const L4=[addBigBen, addLondonEye, addGherkin, addShard];
-    const heroes = th.landmark==='london' ? [...L4,...L4,...L4,...L4]                       // 16 around the lap
-      : th.landmark==='dubai' ? Array.from({length:12},(_,i)=>[addBurj,addBurjAlArab][i%2])
-      : th.landmark==='usa'   ? Array.from({length:12},(_,i)=>[addStatueOfLiberty,addGoldenGate][i%2]) : [];
+    const REP = MOBILE ? 2 : 4;                                                             // fewer hero copies on mobile (draw-call budget)
+    const N12 = MOBILE ? 6 : 12;
+    const heroes = th.landmark==='london' ? Array.from({length:REP}).flatMap(()=>L4)        // 8 on mobile, 16 on desktop
+      : th.landmark==='dubai' ? Array.from({length:N12},(_,i)=>[addBurj,addBurjAlArab][i%2])
+      : th.landmark==='usa'   ? Array.from({length:N12},(_,i)=>[addStatueOfLiberty,addGoldenGate][i%2]) : [];
     const cen2=new THREE.Vector3(); for(const fr of frames) cen2.add(fr.pos); cen2.multiplyScalar(1/frames.length);
     heroes.forEach((fn,i)=>{
       const fi=Math.floor(((i+0.5)/heroes.length)*DIV)%DIV, f=frames[fi];
@@ -618,7 +635,8 @@ function buildScenery(rng) {
       const side = outward>=0 ? 1 : -1;                      // outside of the loop, against the sky
       const off=(ROAD_W+RUMBLE_W)+16;                        // right at the kerb, so you pass it close
       const x=f.pos.x + f.right.x*side*off, z=f.pos.z + f.right.z*side*off;
-      fn(sceneryGroup, frames, { world:{x,z,y:f.pos.y}, scale:2.7, faceAng: Math.atan2(f.tan.x,f.tan.z) });
+      try { fn(sceneryGroup, frames, { world:{x,z,y:f.pos.y}, scale:2.7, faceAng: Math.atan2(f.tan.x,f.tan.z) }); }
+      catch(e){ _scnInfo='HERO-ERR:'+(e&&e.message?e.message.slice(0,50):e); }
     });
   }
   // ---- landmark set-pieces ----
@@ -680,7 +698,7 @@ function buildScenery(rng) {
   if (th.buildings){
     const winTex = makeWindowTexture(th.landmark==='dubai');
     const _v=new THREE.Vector3();
-    for (let i=0;i<DIV;i+=44){
+    for (let i=0;i<DIV;i+=(MOBILE?88:44)){
       if (nearLM(i)) continue;                 // leave a gap around each landmark
       const f=frames[i];
       _v.copy(f.pos).sub(cen);
@@ -695,7 +713,7 @@ function buildScenery(rng) {
       sceneryGroup.add(b);
     }
   }
-  for (const L of LANDMARKS) L.fn(sceneryGroup, frames, L);
+  for (const L of LANDMARKS){ try { L.fn(sceneryGroup, frames, L); } catch(e){ _scnInfo='LM-ERR:'+(e&&e.message?e.message.slice(0,50):e); } }
   // ---- sea-side water plane ----
   if (th.water){
     const water=new THREE.Mesh(new THREE.PlaneGeometry(3600,3600),
@@ -1967,7 +1985,7 @@ function startRace(){
   G.maxSpeed=c.maxSpeed*v.speedMul; G.curveMul=c.curveMul; G.aiSpeedMul=c.aiSpeed;
   G.accelMul=v.accelMul; G.steerMul=v.steerMul; G.gripMul=v.gripMul; G.brakeMul=v.brakeMul; G.rollMul=v.rollMul;
   G.totalLaps=c.laps; G.timeLeft=c.startTime; G.lapBonus=c.lapBonus;
-  document.getElementById('trackName').textContent=c.name+' • '+v.name.replace('MERCEDES ','')+' • '+BUILD.split('—')[0].trim();
+  document.getElementById('trackName').textContent=c.name+' • '+BUILD.split('—')[0].trim()+' • '+_scnInfo;
 
   buildTrack(c);
   removePlayerCar();
