@@ -34,7 +34,7 @@ const RUMBLE_W = 1.6;
 const DIV = 1400;                 // spline samples (road resolution)
 const FPS = 60, STEP = 1/FPS;
 const ROLL_TOTAL = 7.0;           // rolling-start intro length (seconds)
-const BUILD = 'BUILD 30 — Tower Bridge: no stray piers, clear gateway';   // bump every push; shown on the menu to confirm you loaded the latest code
+const BUILD = 'BUILD 31 — fix iOS black screen (no bloom + ctx recovery)';   // bump every push; shown on the menu to confirm you loaded the latest code
 
 // hand-authored closed-loop circuit layouts [x,y,z] (stylised, recognisable
 // street circuits — not GPS-accurate satellite traces)
@@ -203,7 +203,12 @@ function applyGraphicsMode(){
 
 function initThree() {
   renderer = new THREE.WebGLRenderer({ canvas:glCanvas, antialias:!MOBILE, powerPreference:'high-performance' });
-  renderer.setPixelRatio(Math.min(MOBILE?1.5:2, window.devicePixelRatio || 1));
+  renderer.setPixelRatio(Math.min(MOBILE?1.25:2, window.devicePixelRatio || 1));
+  // recover from a lost GPU context (iOS Safari drops it under sustained load).
+  // preventDefault() on 'lost' is REQUIRED or the browser never restores it —
+  // without this the whole 3D view stays black while the HUD keeps running.
+  glCanvas.addEventListener('webglcontextlost', (e)=>{ e.preventDefault(); _ctxLost=true; }, false);
+  glCanvas.addEventListener('webglcontextrestored', ()=>{ _ctxLost=false; renderer.shadowMap.needsUpdate=true; resize(); }, false);
   // cinematic colour + soft shadows
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;  // applied by OutputPass in the composer
@@ -1731,6 +1736,17 @@ function updateSmoke(){
     s.scale.setScalar(2.5+(1-u.life)*9); s.material.opacity=Math.max(0,u.life*0.5);
     if (u.life<=0){ s.visible=false; s.material.opacity=0; } } }
 }
+// Present the frame. On mobile we render the scene DIRECTLY (no EffectComposer):
+// the UnrealBloom pass re-renders the scene through several full-res blur targets
+// every frame, and on iOS Safari that sustained GPU load eventually crashes the
+// GL context (whole 3D view goes black while the HUD keeps running). Direct render
+// keeps ACES tonemapping + sRGB (set on the renderer) — we only drop bloom/vignette.
+let _ctxLost = false;
+function present(){
+  if (_ctxLost) return;
+  if (G.retro || MOBILE) renderer.render(scene, camera);
+  else composer.render();
+}
 function render(){
   // place player + rivals
   placeCar(playerCar, G.dist, G.playerX, 0);
@@ -1795,7 +1811,7 @@ function render(){
   camera.fov += (targetFov - camera.fov)*0.08; camera.updateProjectionMatrix();
 
 
-  if (G.retro) renderer.render(scene, camera); else composer.render();
+  present();
 
   if (G.bannerTimer>0){ G.bannerTimer-=STEP; if(G.bannerTimer<=0) document.getElementById('banner').classList.add('hidden'); }
   drawHUD2D(); drawTextHUD();
@@ -2101,9 +2117,9 @@ function resize(){
     const lowH = 240, lowW = Math.max(1, Math.round(lowH * w/h));
     renderer.setPixelRatio(1); renderer.setSize(lowW, lowH, false);
   } else {
-    const pr=Math.min(MOBILE?1.5:2, window.devicePixelRatio||1);
+    const pr=Math.min(MOBILE?1.25:2, window.devicePixelRatio||1);
     renderer.setPixelRatio(pr); renderer.setSize(w,h,false);
-    if (composer){
+    if (composer && !MOBILE){     // mobile renders directly (no bloom) — don't size its render targets
       composer.setPixelRatio(pr); composer.setSize(w,h);
       if (fxaaPass){ const r=fxaaPass.material.uniforms.resolution.value; r.set(1/(w*pr), 1/(h*pr)); }
     }
