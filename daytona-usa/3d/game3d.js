@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R28 — horizon skyline';
+const BUILD = 'BUILD R29 — dash gauges + bonnet';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -1368,18 +1368,22 @@ function render(){
     for (const m of playerCar.userData.brakeMats) m.emissiveIntensity = on?2.6:0.8;
   }
   if (sun){ sun.target.position.copy(playerCar.position); sun.position.copy(playerCar.position).add(_sunOff); sun.target.updateMatrixWorld(); }
-  // in first-person views the chassis is hidden so the roof/pillars don't fill the screen
+  // cockpit hides the chassis; dash & chase show the car (dash shows its bonnet)
   const firstPerson = (G.view==='cockpit' || G.view==='dash');
-  playerCar.visible = !firstPerson;
+  playerCar.visible = (G.view!=='cockpit');
 
   const f = frameAt(G.dist);
   if (firstPerson){
-    // first-person: eye at the driver's seat, looking down the track, leaning into corners
     worldPos(G.dist, G.offset, _tmp);
-    const eyeY = _tmp.y + (G.view==='dash' ? 1.62 : 1.5);   // dash view sits a touch higher
-    _camPos.copy(_tmp).addScaledVector(f.tan, 0.4); _camPos.y = eyeY;
+    let eyeFwd, eyeY, lookDrop;
+    if (G.view==='dash'){            // hood cam: above & behind the bonnet, looking down over it
+      eyeFwd = 1.35; eyeY = _tmp.y + 1.78; lookDrop = 2.4;
+    } else {                         // cockpit: eye in the cabin
+      eyeFwd = 0.4;  eyeY = _tmp.y + 1.5;  lookDrop = 0.4;
+    }
+    _camPos.copy(_tmp).addScaledVector(f.tan, eyeFwd); _camPos.y = eyeY;
     _look.copy(_tmp).addScaledVector(f.tan, 22).addScaledVector(f.right, G.steerVis*3.2);
-    _look.y = eyeY - (G.view==='dash' ? 0.7 : 0.4);          // dash looks slightly more down over the bonnet
+    _look.y = eyeY - lookDrop;
     if (finite(_camPos) && finite(_look)){
       camera.position.copy(_camPos);
       if (G.shake>0.02){ const s=G.shake*0.6; camera.position.y += (Math.random()-0.5)*s; camera.position.x += (Math.random()-0.5)*s; }
@@ -1454,27 +1458,67 @@ function drawGrade(W,H,sp){
   hctx.fillStyle=vg; hctx.fillRect(0,0,W,H);
 }
 
-// in-car dashboard + steering wheel that turns with the player's steering
-function drawDashboard(W,H){
-  const steer = G.steerVis;
+// a single round instrument dial (tacho / speedo) on the dashboard
+function drawDial(cx,cy,r,frac,opt){
+  opt=opt||{}; frac=Math.max(0,Math.min(1,frac));
+  const a0=Math.PI*0.80, a1=Math.PI*2.20;   // ~252° sweep
+  hctx.fillStyle='#0b0d11'; hctx.beginPath(); hctx.arc(cx,cy,r*1.16,0,6.28); hctx.fill();
+  hctx.lineWidth=r*0.07; hctx.strokeStyle='#474d59'; hctx.beginPath(); hctx.arc(cx,cy,r*1.11,0,6.28); hctx.stroke();
+  const fg=hctx.createRadialGradient(cx,cy-r*0.35,r*0.1,cx,cy,r);
+  fg.addColorStop(0,'#1c2029'); fg.addColorStop(1,'#0d0f13');
+  hctx.fillStyle=fg; hctx.beginPath(); hctx.arc(cx,cy,r,0,6.28); hctx.fill();
+  const N=opt.ticks||10;
+  for (let i=0;i<=N;i++){ const t=i/N, a=lerp(a0,a1,t), c=Math.cos(a), s=Math.sin(a);
+    const red=opt.redFrom!=null && t>=opt.redFrom, lit=t<=frac;
+    hctx.strokeStyle = red ? (lit?'#ff5757':'#5b2a30') : (lit?'#eaf1fa':'#586070');
+    hctx.lineWidth = (i%(opt.major||1)===0)? r*0.07 : r*0.04;
+    hctx.beginPath(); hctx.moveTo(cx+c*r*0.78, cy+s*r*0.78); hctx.lineTo(cx+c*r*0.96, cy+s*r*0.96); hctx.stroke();
+  }
+  // needle
+  const na=lerp(a0,a1,frac);
+  hctx.strokeStyle='#ff6a3d'; hctx.lineWidth=r*0.06; hctx.lineCap='round';
+  hctx.beginPath(); hctx.moveTo(cx-Math.cos(na)*r*0.12, cy-Math.sin(na)*r*0.12); hctx.lineTo(cx+Math.cos(na)*r*0.84, cy+Math.sin(na)*r*0.84); hctx.stroke();
+  hctx.fillStyle='#ff6a3d'; hctx.beginPath(); hctx.arc(cx,cy,r*0.1,0,6.28); hctx.fill();
+  hctx.textAlign='center';
+  if (opt.value!=null){ hctx.fillStyle='#2bd451'; hctx.font=`900 ${Math.round(r*0.5)}px Arial`; hctx.textBaseline='middle'; hctx.fillText(opt.value, cx, cy+r*0.42); }
+  if (opt.label){ hctx.fillStyle='#aeb6c2'; hctx.font=`bold ${Math.round(r*0.2)}px Arial`; hctx.textBaseline='middle'; hctx.fillText(opt.label, cx, cy+r*0.74); }
+}
+// in-car dashboard: instrument binnacle (tacho + speedo + shift light) and a turning wheel
+function drawDashboard(W,H,sp){
+  const steer=G.steerVis, kmh=Math.round(Math.abs(G.speed)*2.4);
   // A-pillars (cabin frame)
   hctx.fillStyle='rgba(10,11,16,0.92)';
   hctx.beginPath(); hctx.moveTo(0,0); hctx.lineTo(W*0.18,0); hctx.lineTo(0,H*0.40); hctx.closePath(); hctx.fill();
   hctx.beginPath(); hctx.moveTo(W,0); hctx.lineTo(W*0.82,0); hctx.lineTo(W,H*0.40); hctx.closePath(); hctx.fill();
   // dashboard panel — a curved cowl humped up toward the driver binnacle
-  const dashTop=H*0.70;
+  const dashTop=H*0.72;   // shorter dash so the car bonnet shows above it
   hctx.save();
   hctx.beginPath();
-  hctx.moveTo(0,H); hctx.lineTo(0,dashTop+H*0.05);
-  hctx.quadraticCurveTo(W*0.5, dashTop-H*0.06, W, dashTop+H*0.05);
+  hctx.moveTo(0,H); hctx.lineTo(0,dashTop+H*0.06);
+  hctx.quadraticCurveTo(W*0.5, dashTop-H*0.07, W, dashTop+H*0.06);
   hctx.lineTo(W,H); hctx.closePath();
-  const dg=hctx.createLinearGradient(0,dashTop-H*0.06,0,H);
-  dg.addColorStop(0,'#23262e'); dg.addColorStop(0.25,'#15171d'); dg.addColorStop(1,'#070809');
+  const dg=hctx.createLinearGradient(0,dashTop-H*0.07,0,H);
+  dg.addColorStop(0,'#262a32'); dg.addColorStop(0.22,'#161920'); dg.addColorStop(1,'#070809');
   hctx.fillStyle=dg; hctx.fill();
-  hctx.lineWidth=Math.max(2,H*0.004); hctx.strokeStyle='rgba(120,130,150,0.25)'; hctx.stroke();
+  hctx.lineWidth=Math.max(2,H*0.004); hctx.strokeStyle='rgba(130,140,160,0.28)'; hctx.stroke();
   hctx.restore();
+  // instrument binnacle housing
+  hctx.fillStyle='rgba(5,6,9,0.92)';
+  roundRect(W*0.15, dashTop-H*0.02, W*0.70, H*0.20, H*0.02); hctx.fill();
+  // gauges: tacho (left) + speedo (right)
+  const gy=dashTop+H*0.07, gr=Math.min(W,H)*0.092;
+  drawDial(W*0.345, gy, gr, sp, {ticks:10, major:1, redFrom:0.8, label:'RPM'});
+  drawDial(W*0.655, gy, gr, Math.min(1,kmh/340), {ticks:8, major:2, value:kmh, label:'KM/H'});
+  // shift light between the gauges — flares as the revs hit the redline
+  const shift = sp>0.86;
+  hctx.fillStyle = shift ? '#ff2a2a' : '#3a1414';
+  hctx.beginPath(); hctx.arc(W*0.5, gy-gr*0.5, gr*0.16, 0, 6.28); hctx.fill();
+  if (shift){ hctx.fillStyle='rgba(255,60,60,0.35)'; hctx.beginPath(); hctx.arc(W*0.5, gy-gr*0.5, gr*0.34, 0, 6.28); hctx.fill(); }
+  // gear-ish badge under the shift light
+  hctx.fillStyle='#cdd4de'; hctx.font=`900 ${Math.round(gr*0.34)}px Arial`; hctx.textAlign='center'; hctx.textBaseline='middle';
+  hctx.fillText('GT', W*0.5, gy+gr*0.25);
   // steering wheel (hub below the screen so only the upper rim shows; rotates with steer)
-  const cx=W*0.5, cy=H*1.06, R=W*0.43;
+  const cx=W*0.5, cy=H*1.14, R=W*0.42;
   hctx.save();
   hctx.translate(cx,cy); hctx.rotate(steer*0.7);
   hctx.lineCap='round';
@@ -1491,6 +1535,7 @@ function drawDashboard(W,H){
   hctx.fillStyle='#e9e9ee'; hctx.fillRect(-R*0.05,-R-R*0.06,R*0.10,R*0.12);   // top-centre rim marker
   hctx.restore();
 }
+function roundRect(x,y,w,h,r){ hctx.beginPath(); hctx.moveTo(x+r,y); hctx.arcTo(x+w,y,x+w,y+h,r); hctx.arcTo(x+w,y+h,x,y+h,r); hctx.arcTo(x,y+h,x,y,r); hctx.arcTo(x,y,x+w,y,r); hctx.closePath(); }
 
 function drawHUD(){
   const W=hud2d.width, H=hud2d.height;
@@ -1512,7 +1557,7 @@ function drawHUD(){
     hctx.beginPath(); hctx.moveTo(0,0); hctx.lineTo(W*0.16,0); hctx.lineTo(0,H*0.34); hctx.closePath(); hctx.fill();
     hctx.beginPath(); hctx.moveTo(W,0); hctx.lineTo(W*0.84,0); hctx.lineTo(W,H*0.34); hctx.closePath(); hctx.fill();
   } else if (G.view==='dash'){
-    drawDashboard(W,H);
+    drawDashboard(W,H,sp);
   }
 
   // speed lines streaking from the vanishing point at high speed
@@ -1525,7 +1570,8 @@ function drawHUD(){
     }
   }
 
-  // rev gauge
+  // rev gauge + speed (top-centre) — hidden in dash view, which has its own dials
+  if (G.view!=='dash'){
   const gx=W/2, gy=H*0.235, gr=Math.min(W,H)*0.085;
   const a0=Math.PI*1.18, a1=Math.PI*1.82, ticks=10;
   hctx.lineWidth=Math.max(5,gr*0.18); hctx.lineCap='round';
@@ -1547,6 +1593,7 @@ function drawHUD(){
   hctx.fillText(kmh, gx, gy+gr*0.7);
   hctx.fillStyle='#fff'; hctx.font=`bold ${Math.round(gr*0.2)}px Arial`;
   hctx.fillText('KM/H', gx, gy+gr*1.0);
+  }
 
   // minimap (top-right)
   if (miniBounds){
