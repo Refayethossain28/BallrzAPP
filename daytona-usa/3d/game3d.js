@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R36 — native resolution';
+const BUILD = 'BUILD R37 — hi-res textures';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -394,7 +394,7 @@ function buildRoadMesh(){
     // dark so the road can never wash out to a blue tint under the sky light.
     // DoubleSide: on some track windings the asphalt normals face down, which would
     // back-face-cull the single-sided road and show the sky THROUGH it (a "blue road").
-    const tex=surfTex(0x9a9a9a, 0x5a5a5a, 96, 192, 320); tex.repeat.set(3, 1);
+    const tex=surfTex(0x9a9a9a, 0x5a5a5a, 256, 512, 900); tex.repeat.set(5, 1);
     const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({map:tex, color:0x595c61, side:THREE.DoubleSide}));
     mesh.receiveShadow=!MOBILE; scene.add(mesh); roadParts.push(mesh);
   }
@@ -414,7 +414,7 @@ function buildRoadMesh(){
     geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
     geo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
     geo.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3));
-    const tex=surfTex(th.grass, th.grass2, 96, 96, 900); tex.repeat.set(2, 1);
+    const tex=surfTex(th.grass, th.grass2, 256, 256, 2600); tex.repeat.set(3, 1);
     const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({map:tex, side:THREE.DoubleSide}));
     mesh.receiveShadow=!MOBILE; scene.add(mesh); roadParts.push(mesh);
   }
@@ -490,14 +490,14 @@ function paintMat(c, hero){
   if (hero){
     const m=new THREE.MeshPhysicalMaterial({color:c, metalness:0.55, roughness:0.34, clearcoat:1.0, clearcoatRoughness:0.05, envMap:envTex, envMapIntensity:1.7});
     m.clearcoatNormalMap=flakeNormalTex(); m.clearcoatNormalScale=new THREE.Vector2(0.16,0.16);
-    m.roughnessMap=detailClone('rough',4);   // visible metallic-flake clusters in the sheen
+    m.roughnessMap=detailClone('rough',6);   // visible metallic-flake clusters in the sheen
     return m;
   }
   const m=new THREE.MeshStandardMaterial({color:c, metalness:0.42, roughness:0.34, envMap:envTex, envMapIntensity:1.25});
-  m.roughnessMap=detailClone('rough',4);
+  m.roughnessMap=detailClone('rough',6);
   return m;
 }
-function matteMat(c){ const m=new THREE.MeshStandardMaterial({color:c, metalness:0, roughness:0.85}); m.map=detailClone('rough',2); return m; }
+function matteMat(c){ const m=new THREE.MeshStandardMaterial({color:c, metalness:0, roughness:0.85}); m.map=detailClone('rough',3); return m; }
 function glassMat(){ return new THREE.MeshStandardMaterial({color:0x0b1626, metalness:0.5, roughness:0.06, envMap:envTex, envMapIntensity:1.6}); }
 function chromeMat(){ const m=new THREE.MeshStandardMaterial({color:0xc4c9d2, metalness:0.95, roughness:0.2, envMap:envTex, envMapIntensity:1.4}); m.roughnessMap=makeDetailTex('metal'); return m; }
 function shadeHex(hex, amt){ const r=Math.max(0,Math.min(255,(hex>>16&255)+amt)), g=Math.max(0,Math.min(255,(hex>>8&255)+amt)), b=Math.max(0,Math.min(255,(hex&255)+amt)); return (r<<16)|(g<<8)|b; }
@@ -763,37 +763,39 @@ function disposeTree(obj){ obj.traverse(o=>{ if(o.geometry)o.geometry.dispose();
 const _detailCache={};
 function makeDetailTex(kind){
   if (_detailCache[kind]) return _detailCache[kind];
-  const S=128, cv=document.createElement('canvas'); cv.width=cv.height=S; const x=cv.getContext('2d');
+  const S=256, cv=document.createElement('canvas'); cv.width=cv.height=S; const x=cv.getContext('2d');   // higher-res texture tile
   x.fillStyle='#e9e9e9'; x.fillRect(0,0,S,S);
-  const grain=(n,a,sz)=>{ for(let i=0;i<n;i++){ const v=Math.random()<0.5?30:235; x.fillStyle=`rgba(${v},${v},${v},${Math.random()*a})`; x.fillRect(Math.random()*S,Math.random()*S,sz||1.8,sz||1.8);} };
+  const grain=(n,a,sz)=>{ for(let i=0;i<n;i++){ const v=Math.random()<0.5?30:235; x.fillStyle=`rgba(${v},${v},${v},${Math.random()*a})`; x.fillRect(Math.random()*S,Math.random()*S,sz||2.2,sz||2.2);} };
   if (kind==='stone'){
     // brick courses with per-brick tone + bold dark mortar
-    const rows=7, ch=S/rows, cols=5, cw=S/cols;
+    const rows=12, ch=S/rows, cols=8, cw=S/cols;
     for(let r=0;r<rows;r++){ const off=(r%2)?cw/2:0;
       for(let c=-1;c<=cols;c++){ const g=150+Math.random()*80|0; x.fillStyle=`rgb(${g},${g-8},${g-16})`; x.fillRect(c*cw+off+1.5, r*ch+1.5, cw-3, ch-3); } }
-    grain(1600,0.16,1.6);
-    x.strokeStyle='rgba(20,20,20,0.55)'; x.lineWidth=2.4;
+    grain(5200,0.16,2.0);
+    x.strokeStyle='rgba(20,20,20,0.55)'; x.lineWidth=3.0;
     for(let r=0;r<=rows;r++){ const y=r*ch; x.beginPath(); x.moveTo(0,y); x.lineTo(S,y); x.stroke();
       const off=(r%2)?cw/2:0; for(let c=0;c<=cols;c++){ const vx=c*cw+off; x.beginPath(); x.moveTo(vx,y); x.lineTo(vx,y+ch); x.stroke(); } }
   } else if (kind==='metal'){
     // bold brushed streaks + panel seams + rivets
     for(let i=0;i<S;i++){ x.fillStyle=`rgba(0,0,0,${Math.random()*0.22})`; x.fillRect(0,i,S,1);
                           x.fillStyle=`rgba(255,255,255,${Math.random()*0.12})`; x.fillRect(0,i,S,0.6); }
-    x.strokeStyle='rgba(0,0,0,0.5)'; x.lineWidth=2.2;
-    for(const sx of [S*0.33,S*0.66]){ x.beginPath(); x.moveTo(sx,0); x.lineTo(sx,S); x.stroke(); }
-    x.fillStyle='rgba(40,40,40,0.6)'; for(let i=0;i<26;i++){ x.beginPath(); x.arc(Math.random()*S,Math.random()*S,1.4,0,6.28); x.fill(); }
-    grain(500,0.12,1.4);
+    x.strokeStyle='rgba(0,0,0,0.5)'; x.lineWidth=3.0;
+    for(const sx of [S*0.25,S*0.5,S*0.75]){ x.beginPath(); x.moveTo(sx,0); x.lineTo(sx,S); x.stroke(); }
+    x.fillStyle='rgba(40,40,40,0.6)'; for(let i=0;i<120;i++){ x.beginPath(); x.arc(Math.random()*S,Math.random()*S,2.0,0,6.28); x.fill(); }
+    grain(1500,0.12,1.8);
   } else if (kind==='glass'){
-    x.strokeStyle='rgba(0,0,0,0.4)'; x.lineWidth=1.6;
-    for(let i=0;i<=S;i+=16){ x.beginPath(); x.moveTo(i,0); x.lineTo(i,S); x.stroke(); x.beginPath(); x.moveTo(0,i); x.lineTo(S,i); x.stroke(); }
-    for(let r=0;r<8;r++)for(let c=0;c<8;c++){ if(Math.random()<0.4){ x.fillStyle=`rgba(255,255,255,${0.12+Math.random()*0.3})`; x.fillRect(c*16+2,r*16+2,12,12);} }
+    const step=S/16;
+    x.strokeStyle='rgba(0,0,0,0.4)'; x.lineWidth=2.0;
+    for(let i=0;i<=S;i+=step){ x.beginPath(); x.moveTo(i,0); x.lineTo(i,S); x.stroke(); x.beginPath(); x.moveTo(0,i); x.lineTo(S,i); x.stroke(); }
+    const n=Math.round(S/step);
+    for(let r=0;r<n;r++)for(let c=0;c<n;c++){ if(Math.random()<0.4){ x.fillStyle=`rgba(255,255,255,${0.12+Math.random()*0.3})`; x.fillRect(c*step+2,r*step+2,step-4,step-4);} }
   } else {
     // 'rough' — bold mottled organic patches (foliage / concrete)
-    for(let i=0;i<260;i++){ const v=Math.random()<0.5?60:225; x.globalAlpha=0.10+Math.random()*0.22; x.fillStyle=`rgb(${v},${v},${v})`; x.beginPath(); x.arc(Math.random()*S,Math.random()*S,2+Math.random()*7,0,6.28); x.fill(); }
-    x.globalAlpha=1; grain(1800,0.20,2.0);
+    for(let i=0;i<820;i++){ const v=Math.random()<0.5?60:225; x.globalAlpha=0.10+Math.random()*0.22; x.fillStyle=`rgb(${v},${v},${v})`; x.beginPath(); x.arc(Math.random()*S,Math.random()*S,2+Math.random()*9,0,6.28); x.fill(); }
+    x.globalAlpha=1; grain(5600,0.20,2.4);
   }
   const t=new THREE.CanvasTexture(cv); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.colorSpace=THREE.SRGBColorSpace;
-  t.anisotropy=_maxAniso;
+  t.anisotropy=_maxAniso; t.generateMipmaps=true;
   _detailCache[kind]=t; return t;
 }
 function txMat(opts, kind, rep){
@@ -1215,7 +1217,7 @@ function buildScenery(){
     const side=(new THREE.Vector3().copy(f.pos).sub(standCen).dot(f.right)>=0)?1:-1;   // outward side
     const stand=new THREE.Group();
     const W=MOBILE?78:96, H=24;   // longer grandstands
-    const baseMat=new THREE.MeshLambertMaterial({color:0x9aa3b2, map:makeDetailTex('stone').clone()}); baseMat.map.repeat.set(6,3);
+    const baseMat=new THREE.MeshLambertMaterial({color:0x9aa3b2, map:makeDetailTex('stone').clone()}); baseMat.map.repeat.set(10,5); baseMat.map.wrapS=baseMat.map.wrapT=THREE.RepeatWrapping;
     const baseM=new THREE.Mesh(new THREE.BoxGeometry(W,H,12), baseMat); baseM.position.y=H/2; stand.add(baseM);
     const segW=(W-2)/NSEG, tierH=H*0.24;
     const colBase=waveIdx;                          // columns of THIS stand
