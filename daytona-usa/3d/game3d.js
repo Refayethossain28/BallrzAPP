@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R7 — Daytona stock cars + grey road';
+const BUILD = 'BUILD R8 — car-to-car collisions';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -912,6 +912,32 @@ function updateRivals(dt){
     r.dist += r.speed * dt;
     if (r.dist >= trackLen){ r.dist -= trackLen; r.lap++; }
   }
+  // rivals can't drive through each other
+  for (let i=0;i<rivals.length;i++) for (let j=i+1;j<rivals.length;j++) collideCars(rivals[i], rivals[j]);
+}
+
+// ---- car-to-car collision: cars are (dist, offset); when two overlap, shove them
+//      apart laterally and trade a little speed (a Daytona-style bump). a/b each
+//      need {dist, offset, speed}. ----
+const CAR_LEN=4.7, CAR_WID=2.3;
+function collideCars(a, b){
+  let dd = a.dist - b.dist;
+  if (dd >  trackLen*0.5) dd -= trackLen;
+  if (dd < -trackLen*0.5) dd += trackLen;
+  if (Math.abs(dd) >= CAR_LEN) return;
+  const doff = a.offset - b.offset;
+  if (Math.abs(doff) >= CAR_WID) return;
+  // push apart laterally (smoothly resolves over a few frames)
+  const overlap = CAR_WID - Math.abs(doff);
+  const dir = Math.abs(doff) < 0.05 ? (dd>=0 ? 1 : -1) : Math.sign(doff);
+  a.offset += dir * overlap * 0.45;
+  b.offset -= dir * overlap * 0.45;
+  // longitudinal bump: trailing car slows, leading car gets nudged forward
+  const trailing = dd < 0 ? a : b, leading = dd < 0 ? b : a;
+  if (trailing.speed > leading.speed){
+    const c = (trailing.speed - leading.speed) * 0.5;
+    trailing.speed -= c; leading.speed += c * 0.6;
+  }
 }
 function placeRivals(){ for (const r of rivals) placeCar(r.mesh, r.dist, r.offset); }
 function computePosition(){
@@ -989,8 +1015,12 @@ function racingUpdate(dt){
   if (G.dist >= trackLen){ G.dist -= trackLen; onLapComplete(); }
   if (G.dist < 0) G.dist += trackLen;
 
-  // rivals + timing
+  // rivals + collisions (player can't drive through other cars)
   updateRivals(dt);
+  for (const r of rivals) collideCars(G, r);
+  if (G.offset >  lim) G.offset =  lim;
+  if (G.offset < -lim) G.offset = -lim;
+
   G.totalTime += dt;
   G.timeLeft  -= dt;
   if (G.timeLeft <= 0){ G.timeLeft = 0; finishRace(false); return; }
