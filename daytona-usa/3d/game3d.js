@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R11 — animated world (wheels, Eye, flag)';
+const BUILD = 'BUILD R12 — full animation (sway, lights, crowd, textures)';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -93,6 +93,10 @@ let playerCar = null;
 let _ctxLost = false;
 let _spinners = [];          // ambient rotating polygons (e.g. the London Eye)
 let _flags = [];             // waving flag strips
+let _sway = [];              // gently swaying props (trees)
+let _pulse = [];             // pulsing emissive lights (clock faces, pods, windows)
+let _scroll = [];            // scrolling textures (city windows shimmer)
+let _crowd = [];             // shimmering grandstand crowds
 let _adt = 1/60;             // last frame delta, for animation
 let _animClock = 0;          // global animation time
 
@@ -801,7 +805,7 @@ function addGoldenGate(group, frames, spec){
 function buildScenery(){
   if (sceneryGroup){ scene.remove(sceneryGroup); disposeTree(sceneryGroup); }
   sceneryGroup = new THREE.Group();
-  _spinners = []; _flags = [];
+  _spinners = []; _flags = []; _sway = []; _pulse = []; _scroll = []; _crowd = [];
   _scnInfo='';
   const th = G.theme;
   const rng = mulberry32((G.circuit.seed||1) * 40503);
@@ -841,10 +845,12 @@ function buildScenery(){
 
   // verge props (mobile-budgeted, both verges)
   const PROP_STEP = MOBILE ? 22 : 6;
+  const sways = th.prop!=='rock';   // trees/palms sway; rocks don't
   for (let i=0;i<DIV;i+=PROP_STEP){ const f=frames[i];
     for (const side of [-1,1]){ if (heroNear(i,side)) continue;
       const p=makeProp(3.4+rng()*2.4); p.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+2+rng()*6)); sceneryGroup.add(p);
-      if (!MOBILE && rng()<0.7){ const p2=makeProp(2.2+rng()*2.0); p2.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+16+rng()*16)); sceneryGroup.add(p2); }
+      if (sways) _sway.push({obj:p, ph:rng()*6.28, amp:0.03+rng()*0.03});
+      if (!MOBILE && rng()<0.7){ const p2=makeProp(2.2+rng()*2.0); p2.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+16+rng()*16)); sceneryGroup.add(p2); if (sways) _sway.push({obj:p2, ph:rng()*6.28, amp:0.03+rng()*0.03}); }
     }
   }
 
@@ -853,7 +859,8 @@ function buildScenery(){
     const winTex=makeWindowTexture(th.landmark==='dubai'); const RING=MOBILE?22:46;
     for (let i=0;i<RING;i++){ const ang=(i/RING)*Math.PI*2; const r=560+(mulberry32(i+99)())*260; const h=70+(mulberry32(i+5)())*(th.landmark==='dubai'?260:140); const w=24+(mulberry32(i+13)())*26;
       const col=th.landmark==='dubai'?0x9fb6cc:[0x8a6a52,0x9c7a52,0x70615a,0x86756b][i%4];
-      const mat=new THREE.MeshStandardMaterial({color:col, roughness:0.7, metalness:th.landmark==='dubai'?0.4:0.05, map:winTex.clone()}); mat.map.repeat.set(Math.max(1,w/12),Math.max(2,h/12));
+      const mat=new THREE.MeshStandardMaterial({color:col, roughness:0.7, metalness:th.landmark==='dubai'?0.4:0.05, map:winTex.clone(), emissive:0xffd98a, emissiveMap:winTex.clone(), emissiveIntensity:0.18}); mat.map.repeat.set(Math.max(1,w/12),Math.max(2,h/12)); mat.emissiveMap.repeat.copy(mat.map.repeat);
+      _scroll.push({tex:mat.emissiveMap, v:0.012});   // windows shimmer (animated texture)
       const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,w),mat); b.position.set(Math.cos(ang)*r,h/2-40,Math.sin(ang)*r); sceneryGroup.add(b); }
   } else {
     const mtnMat=new THREE.MeshLambertMaterial({color:th.mountain, flatShading:true, map:makeDetailTex('rough')});
@@ -889,7 +896,8 @@ function buildScenery(){
     const winTex=makeWindowTexture(th.landmark==='dubai'); const _v=new THREE.Vector3();
     for (let i=0;i<DIV;i+=(MOBILE?88:44)){ if(nearLM(i)) continue; const f=frames[i]; _v.copy(f.pos).sub(cen); const side=(_v.dot(f.right)>=0)?1:-1;
       const h=20+rng()*(th.landmark==='dubai'?70:34), w=12+rng()*12; const col=th.landmark==='dubai'?0xbcd0e2:[0x8a6248,0x96704e,0x6f5e54][(rng()*3)|0];
-      const mat=new THREE.MeshStandardMaterial({color:col, roughness:0.7, metalness:th.landmark==='dubai'?0.45:0.05, map:winTex.clone()}); mat.map.repeat.set(Math.max(1,w/8),Math.max(2,h/10));
+      const mat=new THREE.MeshStandardMaterial({color:col, roughness:0.7, metalness:th.landmark==='dubai'?0.45:0.05, map:winTex.clone(), emissive:0xffd98a, emissiveMap:winTex.clone(), emissiveIntensity:0.16}); mat.map.repeat.set(Math.max(1,w/8),Math.max(2,h/10)); mat.emissiveMap.repeat.copy(mat.map.repeat);
+      _scroll.push({tex:mat.emissiveMap, v:0.01});
       const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,w),mat); b.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+90+rng()*70)); b.position.y+=h/2-2; sceneryGroup.add(b); }
   }
 
@@ -919,10 +927,16 @@ function buildScenery(){
   const crowdTex=makeCrowdTexture();
   for (let s=0;s<4;s++){ const idx=(8+s*7)%DIV, f=frames[idx]; const stand=new THREE.Group();
     const base=new THREE.Mesh(new THREE.BoxGeometry(26,9,8), new THREE.MeshLambertMaterial({color:0x9aa3b2})); base.position.y=4.5; stand.add(base);
-    const seats=new THREE.Mesh(new THREE.PlaneGeometry(25,8.4), new THREE.MeshBasicMaterial({map:crowdTex})); seats.position.set(0,5.4,4.05); seats.rotation.x=-0.32; stand.add(seats);
+    const ct=crowdTex.clone(); ct.needsUpdate=true;
+    const seats=new THREE.Mesh(new THREE.PlaneGeometry(25,8.4), new THREE.MeshBasicMaterial({map:ct})); seats.position.set(0,5.4,4.05); seats.rotation.x=-0.32; stand.add(seats);
+    _crowd.push({tex:ct, ph:s*1.7});   // shimmer to suggest a moving crowd
     const roof=new THREE.Mesh(new THREE.BoxGeometry(27,0.6,9), new THREE.MeshLambertMaterial({color:0xd6262b})); roof.position.y=9.4; stand.add(roof);
     stand.position.copy(f.pos).addScaledVector(f.right, ROAD_W+RUMBLE_W+15); stand.lookAt(f.pos.clone().addScaledVector(f.right,1).setY(stand.position.y)); sceneryGroup.add(stand); }
 
+  // collect every emissive landmark/building material so its light can pulse
+  { const seen=new Set();
+    sceneryGroup.traverse(o=>{ if(!o.isMesh) return; const ms=Array.isArray(o.material)?o.material:[o.material];
+      for (const m of ms){ if (m && m.emissive && m.emissiveIntensity>0.01 && !seen.has(m)){ seen.add(m); _pulse.push({mat:m, base:m.emissiveIntensity, ph:seen.size*0.9}); } } }); }
   if (!MOBILE) sceneryGroup.traverse(o=>{ if(o.isMesh) o.castShadow=true; });
   scene.add(sceneryGroup);
   _scnInfo = 'scn:' + sceneryGroup.children.length + (sceneryGroup.parent?'✓':'✗') + (_scnInfo?(' '+_scnInfo):'');
@@ -1155,14 +1169,25 @@ function spinWheels(car, speed){
   for (const w of ws) w.rotation.x -= roll;
 }
 function animateWorld(){
-  _animClock += _adt;
+  const t=_animClock += _adt;
+  // spinning wheels
   spinWheels(playerCar, G.speed);
   for (const r of rivals) spinWheels(r.mesh, r.speed);
+  // turning London Eye etc.
   for (const s of _spinners) s.obj.rotation.z += s.rate * _adt;
+  // waving flag
   for (const fl of _flags) for (const s of fl.segs){
-    s.mesh.position.z = Math.sin(_animClock*5 + s.t*6) * 0.6 * s.t;
-    s.mesh.rotation.y = Math.sin(_animClock*5 + s.t*6) * 0.5 * s.t;
+    s.mesh.position.z = Math.sin(t*5 + s.t*6) * 0.6 * s.t;
+    s.mesh.rotation.y = Math.sin(t*5 + s.t*6) * 0.5 * s.t;
   }
+  // swaying trees
+  for (const s of _sway) s.obj.rotation.z = Math.sin(t*1.5 + s.ph) * s.amp;
+  // pulsing landmark / window lights
+  for (const p of _pulse) p.mat.emissiveIntensity = p.base * (0.6 + 0.4*Math.sin(t*1.8 + p.ph));
+  // animated (scrolling) window textures
+  for (const sc of _scroll) sc.tex.offset.y += sc.v * _adt;
+  // shimmering crowd
+  for (const c of _crowd){ c.tex.offset.x = Math.sin(t*9 + c.ph)*0.012; c.tex.offset.y = Math.cos(t*8 + c.ph)*0.012; }
 }
 
 function render(){
