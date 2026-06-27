@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R3 — complete rewrite';
+const BUILD = 'BUILD R4 — modern car models';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -152,6 +152,27 @@ function buildSky(){
   scene.add(sky);
   scene.background = new THREE.Color(th.skyHorizon);
   scene.fog.color.set(th.skyHorizon);
+}
+
+// environment map for glossy paint/chrome/glass reflections (the "modern" look)
+let envTex=null;
+function buildEnv(){
+  try {
+    const th=G.theme;
+    const cv=document.createElement('canvas'); cv.width=128; cv.height=64; const x=cv.getContext('2d');
+    const grad=x.createLinearGradient(0,0,0,64);
+    grad.addColorStop(0, th.skyTop); grad.addColorStop(0.45, th.skyMid); grad.addColorStop(0.6, th.skyHorizon);
+    grad.addColorStop(0.62, '#3b4a39'); grad.addColorStop(1, '#26301f');
+    x.fillStyle=grad; x.fillRect(0,0,128,64);
+    const sg=x.createRadialGradient(96,16,2,96,16,28); sg.addColorStop(0,'rgba(255,250,230,0.95)'); sg.addColorStop(1,'rgba(255,250,230,0)');
+    x.fillStyle=sg; x.fillRect(66,0,60,38);
+    const eq=new THREE.CanvasTexture(cv); eq.mapping=THREE.EquirectangularReflectionMapping; eq.colorSpace=THREE.SRGBColorSpace;
+    const pmrem=new THREE.PMREMGenerator(renderer);
+    const rt=pmrem.fromEquirectangular(eq);
+    if (envTex) envTex.dispose();
+    envTex=rt.texture; scene.environment=envTex;
+    eq.dispose(); pmrem.dispose();
+  } catch(e){ /* reflections optional */ }
 }
 
 // ----------------------------------------------------------------------------
@@ -332,38 +353,93 @@ function buildRoadMesh(){
 // ----------------------------------------------------------------------------
 //  Car
 // ----------------------------------------------------------------------------
-function buildCar(vehicle){
-  const g = new THREE.Group();
-  const van = vehicle.kind==='van';
-  const L = van?4.9:4.6, W=2.0, H=van?1.9:1.25;
-  const bodyMat = new THREE.MeshStandardMaterial({ color:vehicle.color, metalness:0.5, roughness:0.35 });
-  const glassMat = new THREE.MeshStandardMaterial({ color:0x223044, metalness:0.4, roughness:0.1 });
-  const brakeMat = new THREE.MeshStandardMaterial({ color:0x330000, emissive:0xff1500, emissiveIntensity:0.8 });
+// ---- car materials ----
+function paintMat(c){ return MOBILE
+  ? new THREE.MeshStandardMaterial({color:c, metalness:0.35, roughness:0.32, envMapIntensity:1.1})
+  : new THREE.MeshPhysicalMaterial({color:c, metalness:0.25, roughness:0.3, clearcoat:1.0, clearcoatRoughness:0.08, envMapIntensity:1.2}); }
+function matteMat(c){ return new THREE.MeshStandardMaterial({color:c, metalness:0, roughness:0.85}); }
+function glassMat(){ return new THREE.MeshStandardMaterial({color:0x0b1626, metalness:0.5, roughness:0.06, envMapIntensity:1.6}); }
+function chromeMat(){ return new THREE.MeshStandardMaterial({color:0xc4c9d2, metalness:0.95, roughness:0.2, envMapIntensity:1.4}); }
+function shadeHex(hex, amt){ const r=Math.max(0,Math.min(255,(hex>>16&255)+amt)), g=Math.max(0,Math.min(255,(hex>>8&255)+amt)), b=Math.max(0,Math.min(255,(hex&255)+amt)); return (r<<16)|(g<<8)|b; }
+let _emblemTex=null;
+function emblemTex(){ if(_emblemTex)return _emblemTex; const cv=document.createElement('canvas'); cv.width=cv.height=64; const x=cv.getContext('2d');
+  x.strokeStyle='#e8edf2'; x.lineWidth=5; x.beginPath(); x.arc(32,32,25,0,6.28); x.stroke(); x.lineWidth=4;
+  for(let k=0;k<3;k++){ const a=-Math.PI/2+k*2*Math.PI/3; x.beginPath(); x.moveTo(32,32); x.lineTo(32+Math.cos(a)*23,32+Math.sin(a)*23); x.stroke(); }
+  _emblemTex=new THREE.CanvasTexture(cv); return _emblemTex; }
 
-  // body (built facing +Z = forward)
-  const body=new THREE.Mesh(new THREE.BoxGeometry(W, H*0.62, L), bodyMat); body.position.y=H*0.42; g.add(body);
-  // cabin
-  const cabH=van?H*0.7:H*0.5, cabL=van?L*0.62:L*0.42;
-  const cab=new THREE.Mesh(new THREE.BoxGeometry(W*0.92, cabH, cabL), bodyMat);
-  cab.position.set(0, H*0.62+cabH*0.5-0.05, van?-0.1:-0.25); g.add(cab);
-  // windscreen
-  const ws=new THREE.Mesh(new THREE.BoxGeometry(W*0.84, cabH*0.7, 0.1), glassMat);
-  ws.position.set(0, H*0.62+cabH*0.55, (van?-0.1:-0.25)+cabL*0.5); g.add(ws);
-  // wheels
-  const wheelMat=new THREE.MeshStandardMaterial({color:0x111114, roughness:0.8});
-  const wheelGeo=new THREE.CylinderGeometry(0.5,0.5,0.4,14); wheelGeo.rotateZ(Math.PI/2);
-  const wb=L*0.32, tw=W*0.5+0.05;
-  for (const sx of [-1,1]) for (const sz of [-1,1]){
-    const w=new THREE.Mesh(wheelGeo, wheelMat); w.position.set(sx*tw, 0.5, sz*wb); g.add(w);
+// extrude a smooth car-shaped body from a side profile (front=+x, up=+y) -> faces +z
+function extrudeCar(profile, width, bevel, mat){
+  const s=new THREE.Shape(); s.moveTo(profile[0][0],profile[0][1]);
+  s.splineThru(profile.slice(1).map(p=>new THREE.Vector2(p[0],p[1]))); s.closePath();
+  const geo=new THREE.ExtrudeGeometry(s,{depth:width, bevelEnabled:bevel>0, bevelThickness:bevel, bevelSize:bevel, bevelSegments:2, steps:1, curveSegments:8});
+  geo.translate(0,0,-width/2);
+  const m=new THREE.Mesh(geo, mat); m.rotation.y=-Math.PI/2; return m;
+}
+const SED_LOWER=[[2.58,0.5],[2.62,0.92],[2.42,1.08],[1.4,1.14],[0.55,1.16],[-1.65,1.16],[-2.3,1.1],[-2.58,0.98],[-2.6,0.5],[-2.4,0.34],[2.4,0.34]];
+const SED_GLASS=[[0.58,1.16],[0.34,1.58],[-1.05,1.62],[-1.6,1.32],[-1.62,1.16]];
+const SED_ROOF =[[0.36,1.55],[-1.05,1.59],[-1.12,1.69],[0.3,1.65]];
+const VAN_LOWER=[[2.64,0.54],[2.68,1.05],[2.5,1.3],[2.05,1.32],[-2.64,1.32],[-2.66,0.54],[-2.46,0.36],[2.46,0.36]];
+const VAN_GLASS=[[2.05,1.32],[1.86,2.02],[-2.42,2.1],[-2.54,1.32]];
+const VAN_ROOF =[[1.86,1.98],[-2.42,2.06],[-2.48,2.26],[1.8,2.18]];
+
+function addGrille(g,w,y,z,lite){
+  g.add(lmBox(matteMat(0x09090b), w,0.46,0.06, 0,y,z));
+  if (lite) return;
+  g.add(lmBox(chromeMat(), w+0.14,0.6,0.08, 0,y,z-0.03));
+  for (let i=0;i<5;i++) g.add(lmBox(chromeMat(), 0.05,0.44,0.09, (i/4-0.5)*w*0.86, y, z+0.01));
+}
+function addLights(g,y,zf,zr){
+  const hl=new THREE.MeshStandardMaterial({color:0xfff6c8, emissive:0xfff0b0, emissiveIntensity:0.9, roughness:0.3});
+  g.userData.brakeMats=g.userData.brakeMats||[];
+  for (const sx of [-0.82,0.82]){
+    g.add(lmBox(hl, 0.5,0.2,0.08, sx,y,zf));
+    const tl=new THREE.MeshStandardMaterial({color:0xff2a2a, emissive:0xdd1212, emissiveIntensity:0.8, roughness:0.45});
+    g.add(lmBox(tl, 0.62,0.2,0.08, sx,y,-zr)); g.userData.brakeMats.push(tl);
   }
-  // brake lights (rear = -Z)
-  const brakeMats=[];
-  for (const sx of [-1,1]){
-    const bl=new THREE.Mesh(new THREE.BoxGeometry(0.4,0.25,0.08), brakeMat.clone());
-    bl.position.set(sx*W*0.34, H*0.45, -L*0.5-0.02); g.add(bl); brakeMats.push(bl.material);
+}
+function addWheels(g,tx,tz,r,lite){
+  const tyre=new THREE.CylinderGeometry(r,r,0.46,lite?10:16); tyre.rotateZ(Math.PI/2);
+  const tm=matteMat(0x0b0b0b);
+  const rim=new THREE.CylinderGeometry(r*0.62,r*0.62,0.5,lite?8:14); rim.rotateZ(Math.PI/2);
+  const rm=chromeMat();
+  const hub=new THREE.CylinderGeometry(r*0.18,r*0.18,0.52,8); hub.rotateZ(Math.PI/2); const hm=matteMat(0x2a2e34);
+  for (const [wx,wz] of [[-tx,tz],[tx,tz],[-tx,-tz],[tx,-tz]]){
+    const w=new THREE.Mesh(tyre,tm); w.position.set(wx,r,wz); g.add(w);
+    if (!lite){ const d=new THREE.Mesh(rim,rm); d.position.set(wx,r,wz); g.add(d); const h=new THREE.Mesh(hub,hm); h.position.set(wx,r,wz); g.add(h); }
   }
-  g.userData.brakeMats = brakeMats;
-  g.traverse(o=>{ if(o.isMesh && !MOBILE){ o.castShadow=true; } });
+}
+function addMirrors(g,x,y,z,mat){ for (const sx of [-x,x]){ g.add(lmBox(mat, 0.18,0.16,0.26, sx,y,z)); } }
+function addDetails(g, W, frontZ, rearZ, beltY, lowY){
+  const chrome=chromeMat(), plate=new THREE.MeshStandardMaterial({color:0xeef0f2, roughness:0.5});
+  const amber=new THREE.MeshStandardMaterial({color:0xff9a1f, emissive:0xc25500, emissiveIntensity:0.6, roughness:0.5});
+  g.add(lmBox(plate, 0.92,0.26,0.05, 0,lowY,frontZ+0.02));
+  g.add(lmBox(plate, 0.92,0.26,0.05, 0,lowY,-rearZ-0.02));
+  g.add(lmBox(chrome, W+0.03,0.05,4.4, 0,beltY,-0.1));            // belt-line chrome
+  for (const sx of [-1.02,1.02]) g.add(lmBox(amber, 0.2,0.12,0.06, sx,lowY+0.12,frontZ));
+}
+
+// kind: 'van' (V-Class) or 'sedan' (S-Class). Front faces +z. lite = rivals (fewer parts).
+function buildCar(vehicle, lite){
+  const g=new THREE.Group();
+  const body=paintMat(vehicle.color), glass=glassMat(), dark=matteMat(0x121417);
+  if (vehicle.kind==='van'){
+    const W=2.42;
+    g.add(extrudeCar(VAN_LOWER, W, 0.1, body));
+    g.add(extrudeCar(VAN_GLASS, W-0.16, 0.04, glass));
+    g.add(extrudeCar(VAN_ROOF,  W-0.06, 0.05, body));
+    g.add(lmBox(dark, W+0.02,0.34,5.0, 0,0.5,-0.1));
+    addGrille(g,1.95,0.98,2.66,lite); addLights(g,1.02,2.66,2.64); addWheels(g,1.34,1.95,0.62,lite);
+    if (!lite){ g.add(lmBox(new THREE.MeshBasicMaterial({map:emblemTex(),transparent:true}),0.5,0.5,0.02,0,1.0,2.74)); addMirrors(g,1.34,1.55,1.9,body); addDetails(g,W,2.66,2.64,1.32,0.62); }
+  } else {
+    const W=2.3;
+    g.add(extrudeCar(SED_LOWER, W, 0.1, body));
+    g.add(extrudeCar(SED_GLASS, W-0.16, 0.04, glass));
+    g.add(extrudeCar(SED_ROOF,  W-0.06, 0.05, body));
+    g.add(lmBox(dark, W+0.02,0.22,4.6, 0,0.46,0));
+    addGrille(g,1.7,0.86,2.56,lite); addLights(g,0.92,2.56,2.56); addWheels(g,1.26,1.78,0.56,lite);
+    if (!lite){ g.add(lmBox(new THREE.MeshBasicMaterial({map:emblemTex(),transparent:true}),0.4,0.4,0.02,0,0.86,2.62)); addMirrors(g,1.24,1.2,1.0,body); addDetails(g,W,2.56,2.56,1.16,0.6); }
+  }
+  if (!MOBILE) g.traverse(o=>{ if(o.isMesh){ o.castShadow=true; } });
   return g;
 }
 
@@ -644,7 +720,8 @@ function buildScenery(){
   function rock(s){ const g=new THREE.Group(); const h=3+rng()*4; const m=new THREE.Mesh(new THREE.ConeGeometry(2.2+rng()*1.5,h,5), rng()<0.5?rockMat:rockMat2); m.position.y=h/2; m.rotation.y=rng()*6.28; g.add(m); const m2=new THREE.Mesh(new THREE.DodecahedronGeometry(1.4+rng()),rockMat2); m2.position.set(1.5,0.8,0.5); g.add(m2); g.scale.setScalar(s); return g; }
   const palmTrunk=new THREE.MeshLambertMaterial({color:0x8a6a3a});
   const palmLeaf =new THREE.MeshLambertMaterial({color:0x2f9c4a, side:THREE.DoubleSide});
-  function palm(s){ const g=new THREE.Group(); const t=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.34,5,7),palmTrunk); t.position.y=2.5; t.rotation.z=0.12; g.add(t); for(let k=0;k<7;k++){ const fr=new THREE.Mesh(new THREE.ConeGeometry(0.5,3.4,4),palmLeaf); const piv=new THREE.Group(); piv.add(fr); piv.rotation.y=k/7*6.28; fr.position.set(1.6,5,0); fr.rotation.set(0,0,-0.5); g.add(piv);} g.scale.setScalar(s); return g; }
+  const NFROND = MOBILE ? 5 : 7;
+  function palm(s){ const g=new THREE.Group(); const t=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.34,5,7),palmTrunk); t.position.y=2.5; t.rotation.z=0.12; g.add(t); for(let k=0;k<NFROND;k++){ const fr=new THREE.Mesh(new THREE.ConeGeometry(0.5,3.4,4),palmLeaf); const piv=new THREE.Group(); piv.add(fr); piv.rotation.y=k/NFROND*6.28; fr.position.set(1.6,5,0); fr.rotation.set(0,0,-0.5); g.add(piv);} g.scale.setScalar(s); return g; }
   const treeTrunk=new THREE.MeshLambertMaterial({color:0x7a5532, map:makeDetailTex('metal')});
   const treeLeaf =new THREE.MeshLambertMaterial({color:0x46c45f, flatShading:true, map:makeDetailTex('rough')});
   function tree(s){ const g=new THREE.Group(); const tk=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.45,2.4,6),treeTrunk); tk.position.y=1.2; g.add(tk); const c=new THREE.Mesh(new THREE.IcosahedronGeometry(2.4,0),treeLeaf); c.position.y=4; c.scale.y=1.1; g.add(c); g.scale.setScalar(s); return g; }
@@ -668,7 +745,7 @@ function buildScenery(){
   const heroNear=(i,side)=> gateNear(i) || heroSlots.some(h=>{ if(h.side!==side)return false; let d=Math.abs(i-h.fi); d=Math.min(d,DIV-d); return d<26; });
 
   // verge props (mobile-budgeted, both verges)
-  const PROP_STEP = MOBILE ? 18 : 6;
+  const PROP_STEP = MOBILE ? 22 : 6;
   for (let i=0;i<DIV;i+=PROP_STEP){ const f=frames[i];
     for (const side of [-1,1]){ if (heroNear(i,side)) continue;
       const p=makeProp(3.4+rng()*2.4); p.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+2+rng()*6)); sceneryGroup.add(p);
@@ -752,7 +829,7 @@ function buildRivals(n){
   const aiTop = G.circuit.maxSpeed * G.circuit.aiSpeed * 0.42;
   for (let i=0;i<n;i++){
     const liv = LIVERIES[i % LIVERIES.length];
-    const mesh = buildCar({ kind: i%2?'sedan':'van', color: liv });
+    const mesh = buildCar({ kind: i%2?'sedan':'van', color: liv }, true);   // lite detail for rivals
     scene.add(mesh);
     const lane = ((i%4)-1.5) * 2.6;                 // spread across the road
     rivals.push({
@@ -1065,6 +1142,7 @@ function bindInput(){
 function startRace(){
   buildTrack(G.circuit);
   buildSky();
+  buildEnv();
   buildRoadMesh();
   buildMinimap();
   try { buildScenery(); } catch(e){ _scnInfo='SCN-ERR:'+(e&&e.message||e); if(sceneryGroup&&!sceneryGroup.parent) scene.add(sceneryGroup); }
