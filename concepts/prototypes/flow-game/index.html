@@ -232,6 +232,8 @@
      through its <label> fires a light system haptic on iOS 17.4+. -->
 <input type="checkbox" id="haptswitch" switch tabindex="-1" aria-hidden="true">
 <label for="haptswitch" id="haptlabel" aria-hidden="true"></label>
+<!-- looping soundtrack (real audio, extracted from the supplied recording) -->
+<audio id="bgm" src="soundtrack.aac" loop preload="auto" playsinline></audio>
 <!-- intro splash -->
 <div id="splash">
   <div class="splogo-wrap"><div class="splogo">FLOW</div></div>
@@ -520,6 +522,7 @@ function ensureAudio(){
 function setMuted(m){
   muted=m; localStorage.setItem('flow.muted', m?'1':'0');
   if(master) master.gain.value = m?0:0.7;
+  if(bgm) bgm.muted = m;
   muteBtn.textContent = m?'🔇':'🔊';
 }
 /* 8-bit "blip" — stepped square arpeggio, classic arcade pop */
@@ -594,8 +597,22 @@ function musicTick(){
     nextStepTime += STEP; stepIx=(stepIx+1)%16;
   }
 }
-function startMusic(){ ensureAudio(); if(!actx || musicOn) return; musicOn=true; stepIx=0; nextStepTime=actx.currentTime+0.06; schedTimer=setInterval(musicTick,25); }
-function stopMusic(){ musicOn=false; if(schedTimer){ clearInterval(schedTimer); schedTimer=null; } }
+/* synth fallback (used only if the real soundtrack can't play) */
+function startSynth(){ ensureAudio(); if(!actx || musicOn) return; musicOn=true; stepIx=0; nextStepTime=actx.currentTime+0.06; schedTimer=setInterval(musicTick,25); }
+function stopSynth(){ musicOn=false; if(schedTimer){ clearInterval(schedTimer); schedTimer=null; } }
+/* the looping soundtrack (real audio file), with the synth as a fallback */
+const bgm = document.getElementById('bgm');
+function startMusic(){
+  ensureAudio();
+  if(bgm){
+    bgm.muted = muted; bgm.volume = 0.85;
+    const pr = bgm.play();
+    if(pr && pr.catch) pr.catch(()=>startSynth());   // blocked/failed → synth
+    return;
+  }
+  startSynth();
+}
+function stopMusic(){ if(bgm){ try{ bgm.pause(); }catch(_){} } stopSynth(); }
 
 let W=0,H=0,DPR=1;
 function resize(){

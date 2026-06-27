@@ -4,9 +4,9 @@
  *   updates appear "stuck".)
  * - Static assets (icons, manifest): cache-first.
  * Bump CACHE to invalidate everything. */
-const CACHE = 'flow-v3';
+const CACHE = 'flow-v4';
 const ASSETS = ['./', './index.html', './manifest.json', './icon.svg',
-                './icon-180.png', './icon-192.png', './icon-512.png'];
+                './icon-180.png', './icon-192.png', './icon-512.png', './soundtrack.aac'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
