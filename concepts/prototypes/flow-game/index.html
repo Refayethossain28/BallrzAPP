@@ -231,8 +231,6 @@
      through its <label> fires a light system haptic on iOS 17.4+. -->
 <input type="checkbox" id="haptswitch" switch tabindex="-1" aria-hidden="true">
 <label for="haptswitch" id="haptlabel" aria-hidden="true"></label>
-<!-- looping soundtrack (real audio, extracted from the supplied recording) -->
-<audio id="bgm" src="soundtrack.aac" loop preload="auto" playsinline></audio>
 <!-- intro splash -->
 <div id="splash">
   <div class="splogo-wrap"><div class="splogo">FLOW</div></div>
@@ -510,21 +508,18 @@ function setFx(hi){
 
 /* ---------- audio: ting/buzz SFX + a synth techno loop (Web Audio, no assets) ---------- */
 let actx=null, master=null, noiseBuf=null;
-let analyser=null, freqData=null, mediaWired=false;     // audio-reactive visuals
+let analyser=null, freqData=null;                       // audio-reactive visuals
+let musicGain=null, musicSrc=null, musicBuf=null, musicWant=false, musicLoading=false, musicAt=0, musicStart=0;
 let muted = (localStorage.getItem('flow.muted')==='1');
-/* Tap the soundtrack with an AnalyserNode so the visuals react to the real music.
- * The element is also wired straight to the destination, so audio always plays
- * even if the analyser path misbehaves. */
-function wireAnalyser(){
-  if(mediaWired || !actx || !bgm) return; mediaWired=true;
-  try{
-    const src=actx.createMediaElementSource(bgm);
-    src.connect(actx.destination);
-    try{
-      analyser=actx.createAnalyser(); analyser.fftSize=512; analyser.smoothingTimeConstant=0.72;
-      freqData=new Uint8Array(analyser.frequencyBinCount); src.connect(analyser);
-    }catch(_){ analyser=null; }
-  }catch(_){ /* element keeps playing on its own */ }
+/* Play the soundtrack THROUGH Web Audio (bufferSource -> gain -> analyser -> out)
+ * so the AnalyserNode reliably sees the signal. Routing an <audio> element through
+ * Web Audio reads silent on iOS Safari, which is why the border wasn't dancing. */
+function musicGraph(){
+  if(musicGain || !actx) return;
+  musicGain=actx.createGain(); musicGain.gain.value = muted?0:0.85;
+  analyser=actx.createAnalyser(); analyser.fftSize=512; analyser.smoothingTimeConstant=0.72;
+  freqData=new Uint8Array(analyser.frequencyBinCount);
+  musicGain.connect(analyser); analyser.connect(actx.destination);
 }
 function ensureAudio(){
   if(actx){ if(actx.state==='suspended') actx.resume(); return; }
@@ -536,7 +531,7 @@ function ensureAudio(){
 function setMuted(m){
   muted=m; localStorage.setItem('flow.muted', m?'1':'0');
   if(master) master.gain.value = m?0:0.7;
-  if(bgm) bgm.muted = m;
+  if(musicGain) musicGain.gain.value = m?0:0.85;
   muteBtn.textContent = m?'🔇':'🔊';
 }
 /* 8-bit "blip" — stepped square arpeggio, classic arcade pop */
@@ -614,19 +609,36 @@ function musicTick(){
 /* synth fallback (used only if the real soundtrack can't play) */
 function startSynth(){ ensureAudio(); if(!actx || musicOn) return; musicOn=true; stepIx=0; nextStepTime=actx.currentTime+0.06; schedTimer=setInterval(musicTick,25); }
 function stopSynth(){ musicOn=false; if(schedTimer){ clearInterval(schedTimer); schedTimer=null; } }
-/* the looping soundtrack (real audio file), with the synth as a fallback */
-const bgm = document.getElementById('bgm');
-function startMusic(){
-  ensureAudio(); wireAnalyser();
-  if(bgm){
-    bgm.muted = muted; bgm.volume = 0.85;
-    const pr = bgm.play();
-    if(pr && pr.catch) pr.catch(()=>startSynth());   // blocked/failed → synth
-    return;
-  }
-  startSynth();
+/* the looping soundtrack: decoded once, played via Web Audio so it's analysable */
+function loadMusic(){
+  if(musicBuf || musicLoading || !actx) return; musicLoading=true;
+  fetch('soundtrack.aac').then(r=>r.arrayBuffer()).then(ab=>{
+    actx.decodeAudioData(ab, buf=>{ musicBuf=buf; musicLoading=false; if(musicWant) playBuffer(); },
+                              ()=>{ musicLoading=false; if(musicWant) startSynth(); });   // decode failed → synth
+  }).catch(()=>{ musicLoading=false; if(musicWant) startSynth(); });
 }
-function stopMusic(){ if(bgm){ try{ bgm.pause(); }catch(_){} } stopSynth(); }
+function playBuffer(){
+  if(!musicBuf || musicSrc || !musicGain) return;
+  musicSrc=actx.createBufferSource(); musicSrc.buffer=musicBuf; musicSrc.loop=true;
+  musicSrc.connect(musicGain);
+  const off = musicAt % musicBuf.duration;
+  musicSrc.start(0, off); musicStart = actx.currentTime - off;
+}
+function startMusic(){
+  ensureAudio(); if(!actx) return;
+  if(actx.state==='suspended') actx.resume();
+  musicGraph(); musicWant=true;
+  if(musicBuf) playBuffer(); else loadMusic();
+}
+function stopMusic(){
+  musicWant=false;
+  if(musicSrc){
+    if(musicBuf) musicAt = (actx.currentTime - musicStart) % musicBuf.duration;   // remember position
+    try{ musicSrc.stop(); }catch(_){} try{ musicSrc.disconnect(); }catch(_){}
+    musicSrc=null;
+  }
+  stopSynth();
+}
 
 let W=0,H=0,DPR=1;
 function resize(){
@@ -1256,7 +1268,7 @@ function frame(now){
   // beat pulse: react to the real soundtrack's bass when we can analyse it,
   // otherwise fall back to an implied 126 BPM clock.
   let audioLive=false;
-  if(analyser && freqData && !muted && bgm && !bgm.paused){
+  if(analyser && freqData && !muted && musicSrc){
     analyser.getByteFrequencyData(freqData);
     let s=0; for(let i=1;i<10;i++) s+=freqData[i]; s/=(9*255);          // bass energy 0..1
     beatPulse=Math.max(beatPulse*0.86, Math.min(1, s*1.7)); audioLive=true;
