@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R4 — modern car models';
+const BUILD = 'BUILD R5 — faster cars';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -826,7 +826,7 @@ function buildScenery(){
 function buildRivals(n){
   for (const r of rivals){ scene.remove(r.mesh); }
   rivals = [];
-  const aiTop = G.circuit.maxSpeed * G.circuit.aiSpeed * 0.42;
+  const aiTop = G.circuit.maxSpeed * G.circuit.aiSpeed * 0.58;
   for (let i=0;i<n;i++){
     const liv = LIVERIES[i % LIVERIES.length];
     const mesh = buildCar({ kind: i%2?'sedan':'van', color: liv }, true);   // lite detail for rivals
@@ -898,7 +898,7 @@ function racingUpdate(dt){
   const onGrass = Math.abs(G.offset) > ROAD_W + RUMBLE_W;
 
   // longitudinal
-  if (keys.gas)        G.speed += 62 * v.accelMul * dt;
+  if (keys.gas)        G.speed += 84 * v.accelMul * dt;
   else                 G.speed -= 22 * dt;                 // coast
   if (keys.brake)      G.speed -= 95 * v.brakeMul * dt;
   G.speed -= G.speed * 0.012;                              // drag
@@ -1018,7 +1018,7 @@ function render(){
   }
   if (sky) sky.position.copy(camera.position);
 
-  let targetFov = 62 + speedFracFov()*10;
+  let targetFov = 62 + speedFracFov()*16;   // FOV opens with speed for more sense of rush
   const asp = camera.aspect||1;
   if (asp < 1){
     const minH = 58*Math.PI/180;
@@ -1149,7 +1149,7 @@ function startRace(){
   if (playerCar){ scene.remove(playerCar); }
   playerCar = buildCar(G.vehicle); scene.add(playerCar);
   buildRivals(MOBILE ? 7 : 9);
-  G.maxSpeed = G.circuit.maxSpeed * G.vehicle.speedMul * 0.42;   // tuned to feel
+  G.maxSpeed = G.circuit.maxSpeed * G.vehicle.speedMul * 0.58;   // tuned to feel
   G.dist=0; G.offset=0; G.speed=0; G.lap=1; G.steerVis=0;
   G.timeLeft=G.circuit.startTime; G.totalTime=0; G.rollT=0; G.cdNum=-1; G.green=false;
   G.started=true; G.state='rolling';
