@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R29 — dash gauges + bonnet';
+const BUILD = 'BUILD R30 — ultra graphics';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -107,6 +107,8 @@ let _smokeT = 0;             // emit throttle
 let _callout = null;         // big arcade callout text {text,color,t}
 let _lastPos = 99;           // for overtake detection
 let _lastOvertakeT = -9;     // overtake-callout cooldown clock
+let _clouds = [];            // drifting sky cloud billboards
+let _grainCanvas = null;     // pre-rendered film-grain tile
 
 const keys = { gas:false, brake:false, left:false, right:false };
 
@@ -202,6 +204,37 @@ function buildSunGlow(){
   _sunSprite.position.copy(sun.position).normalize().multiplyScalar(3100);
   _sunSprite.renderOrder=1;
   sky.add(_sunSprite);
+  buildClouds();
+}
+
+// soft volumetric-ish cloud billboards drifting across the sky
+let _cloudTex=null;
+function makeCloudTexture(){
+  if (_cloudTex) return _cloudTex;
+  const cv=document.createElement('canvas'); cv.width=256; cv.height=128; const x=cv.getContext('2d');
+  for (let i=0;i<14;i++){ const cx=40+Math.random()*176, cy=60+Math.random()*45, r=24+Math.random()*42;
+    const g=x.createRadialGradient(cx,cy,0,cx,cy,r); g.addColorStop(0,'rgba(255,255,255,0.9)'); g.addColorStop(0.6,'rgba(248,250,255,0.4)'); g.addColorStop(1,'rgba(248,250,255,0)');
+    x.fillStyle=g; x.beginPath(); x.arc(cx,cy,r,0,6.28); x.fill(); }
+  _cloudTex=new THREE.CanvasTexture(cv); _cloudTex.colorSpace=THREE.SRGBColorSpace; return _cloudTex;
+}
+function buildClouds(){
+  _clouds=[];
+  const tex=makeCloudTexture();
+  const N=MOBILE?5:8;
+  for (let i=0;i<N;i++){
+    const m=new THREE.MeshBasicMaterial({map:tex, transparent:true, opacity:0.7, depthWrite:false, fog:false});
+    const sz=600+(mulberry32(i*7+3)())*700;
+    const mesh=new THREE.Mesh(new THREE.PlaneGeometry(sz,sz*0.5), m);
+    const ang=(i/N)*Math.PI*2 + mulberry32(i+1)()*0.6, rad=2400+mulberry32(i+9)()*500, hy=700+mulberry32(i+4)()*900;
+    mesh.userData={ang, rad, hy, spin:0.006+mulberry32(i+2)()*0.01};
+    sky.add(mesh); _clouds.push(mesh);
+  }
+}
+function updateClouds(){
+  for (const c of _clouds){ const u=c.userData; u.ang += u.spin*_adt;
+    c.position.set(Math.cos(u.ang)*u.rad, u.hy, Math.sin(u.ang)*u.rad);
+    if (camera) c.quaternion.copy(camera.quaternion);
+  }
 }
 
 // environment map for glossy paint/chrome/glass reflections (the "modern" look)
@@ -586,10 +619,26 @@ function buildCar(vehicle, lite){
   addCarDetails(g, W, L, lite, liv);
   // racing wheels tucked under the fenders
   addWheels(g, W/2-0.04, L*0.3, 0.55, lite);
+  // additive red glow behind the taillights (blooms under braking)
+  const glowMat=new THREE.MeshBasicMaterial({map:glowTex(0xff2a1a), transparent:true, opacity:0.0, depthWrite:false, blending:THREE.AdditiveBlending, fog:false});
+  g.userData.tailGlow=[];
+  for (const sx of [-0.82,0.82]){ const q=new THREE.Mesh(new THREE.PlaneGeometry(1.5,1.1), glowMat.clone()); q.position.set(sx,0.82,-L*0.5-0.2); q.rotation.y=Math.PI; q.userData.noShadow=true; g.add(q); g.userData.tailGlow.push(q); }
+  // soft contact shadow under the car (grounds it — esp. on mobile where there are no real shadows)
+  if (MOBILE){ const sh=new THREE.Mesh(new THREE.PlaneGeometry(W*1.7,L*1.15), new THREE.MeshBasicMaterial({map:blobTex(), transparent:true, opacity:0.5, depthWrite:false, fog:false}));
+    sh.rotation.x=-Math.PI/2; sh.position.y=0.04; g.add(sh); }
   g.scale.setScalar(CAR_SCALE);   // bigger cars (wheels sit at y=0 so it stays grounded)
-  if (!MOBILE) g.traverse(o=>{ if(o.isMesh){ o.castShadow=true; } });
+  if (!MOBILE) g.traverse(o=>{ if(o.isMesh && !o.userData.noShadow){ o.castShadow=true; } });
   return g;
 }
+// cached soft radial textures for glows + contact shadow
+let _blobTex=null, _glowCache={};
+function blobTex(){ if(_blobTex) return _blobTex; const cv=document.createElement('canvas'); cv.width=cv.height=128; const x=cv.getContext('2d');
+  const g=x.createRadialGradient(64,64,4,64,64,62); g.addColorStop(0,'rgba(0,0,0,0.6)'); g.addColorStop(0.6,'rgba(0,0,0,0.32)'); g.addColorStop(1,'rgba(0,0,0,0)');
+  x.fillStyle=g; x.fillRect(0,0,128,128); _blobTex=new THREE.CanvasTexture(cv); return _blobTex; }
+function glowTex(hex){ if(_glowCache[hex]) return _glowCache[hex]; const r=(hex>>16&255),g=(hex>>8&255),b=(hex&255);
+  const cv=document.createElement('canvas'); cv.width=cv.height=128; const x=cv.getContext('2d');
+  const gr=x.createRadialGradient(64,64,2,64,64,62); gr.addColorStop(0,`rgba(${r},${g},${b},1)`); gr.addColorStop(0.4,`rgba(${r},${g},${b},0.5)`); gr.addColorStop(1,`rgba(${r},${g},${b},0)`);
+  x.fillStyle=gr; x.fillRect(0,0,128,128); const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace; _glowCache[hex]=t; return t; }
 
 // orient a mesh so local +Z = tangent, local +Y = surface up
 const _xA=new THREE.Vector3(), _yA=new THREE.Vector3(), _zA=new THREE.Vector3(), _basis=new THREE.Matrix4(), _carPos=new THREE.Vector3();
@@ -1366,6 +1415,7 @@ function render(){
   if (playerCar.userData.brakeMats){
     const on = G.state==='racing' && (keys.brake || G.speed<0);
     for (const m of playerCar.userData.brakeMats) m.emissiveIntensity = on?2.6:0.8;
+    if (playerCar.userData.tailGlow) for (const q of playerCar.userData.tailGlow){ q.material.opacity = on?0.95:0.32; q.scale.setScalar(on?1.3:1); }
   }
   if (sun){ sun.target.position.copy(playerCar.position); sun.position.copy(playerCar.position).add(_sunOff); sun.target.updateMatrixWorld(); }
   // cockpit hides the chassis; dash & chase show the car (dash shows its bonnet)
@@ -1376,8 +1426,8 @@ function render(){
   if (firstPerson){
     worldPos(G.dist, G.offset, _tmp);
     let eyeFwd, eyeY, lookDrop;
-    if (G.view==='dash'){            // hood cam: above & behind the bonnet, looking down over it
-      eyeFwd = 1.35; eyeY = _tmp.y + 1.78; lookDrop = 2.4;
+    if (G.view==='dash'){            // hood cam: nearer the nose so only a short bonnet shows
+      eyeFwd = 2.15; eyeY = _tmp.y + 1.74; lookDrop = 1.9;
     } else {                         // cockpit: eye in the cabin
       eyeFwd = 0.4;  eyeY = _tmp.y + 1.5;  lookDrop = 0.4;
     }
@@ -1407,6 +1457,7 @@ function render(){
   }
   if (sky) sky.position.copy(camera.position);
   if (_sunSprite) _sunSprite.quaternion.copy(camera.quaternion);   // keep the sun facing the camera
+  updateClouds();
 
   let targetFov = 62 + speedFracFov()*16;   // FOV opens with speed for more sense of rush
   const asp = camera.aspect||1;
@@ -1449,13 +1500,52 @@ function drawGrade(W,H,sp){
   hctx.fillStyle=wash; hctx.fillRect(0,0,W,H);
   // vignette — tightens & darkens with speed for a sense of rush
   const cx=W*0.5, cy=H*0.52;
-  const inner=Math.min(W,H)*(0.34 - sp*0.10);
+  const inner=Math.min(W,H)*(0.33 - sp*0.10);
   const outer=Math.max(W,H)*0.78;
   const vg=hctx.createRadialGradient(cx,cy,inner, cx,cy,outer);
   vg.addColorStop(0,'rgba(0,0,8,0)');
-  vg.addColorStop(0.65,'rgba(0,0,8,0)');
-  vg.addColorStop(1,`rgba(0,0,10,${0.34+sp*0.16})`);
+  vg.addColorStop(0.62,'rgba(0,0,8,0)');
+  vg.addColorStop(1,`rgba(0,0,10,${0.38+sp*0.18})`);
   hctx.fillStyle=vg; hctx.fillRect(0,0,W,H);
+}
+// pre-rendered film-grain tile
+function getGrain(){
+  if (_grainCanvas) return _grainCanvas;
+  const c=document.createElement('canvas'); c.width=c.height=128; const x=c.getContext('2d');
+  const img=x.createImageData(128,128);
+  for (let i=0;i<img.data.length;i+=4){ const v=110+(Math.random()*145|0); img.data[i]=img.data[i+1]=img.data[i+2]=v; img.data[i+3]=255; }
+  x.putImageData(img,0,0); _grainCanvas=c; return c;
+}
+function drawGrain(W,H){
+  const g=getGrain(); hctx.save(); hctx.globalAlpha=0.04;
+  const ox=(Math.random()*128)|0, oy=(Math.random()*128)|0;
+  for (let y=-oy;y<H;y+=128) for (let x=-ox;x<W;x+=128) hctx.drawImage(g,x,y);
+  hctx.restore();
+}
+// projected sun position → a real anamorphic lens flare (additive ghosts + streak)
+const SUN_DIR = new THREE.Vector3(60,120,30).normalize();
+const _fv = new THREE.Vector3();
+function drawLensFlare(W,H){
+  if (!camera) return;
+  _fv.copy(SUN_DIR).multiplyScalar(3000).add(camera.position).project(camera);
+  if (_fv.z>1) return;                                   // sun behind the camera
+  const sx=(_fv.x*0.5+0.5)*W, sy=(-_fv.y*0.5+0.5)*H;
+  if (sx<-W*0.4||sx>W*1.4||sy<-H*0.4||sy>H*1.4) return;
+  const dx=W*0.5-sx, dy=H*0.5-sy;
+  const vis=Math.max(0, 1 - Math.hypot(dx,dy)/Math.hypot(W,H)*1.5);
+  if (vis<=0.02) return;
+  hctx.save(); hctx.globalCompositeOperation='lighter';
+  const core=Math.min(W,H)*0.24;
+  let g=hctx.createRadialGradient(sx,sy,0,sx,sy,core);
+  g.addColorStop(0,`rgba(255,252,235,${0.55*vis})`); g.addColorStop(0.3,`rgba(255,236,185,${0.22*vis})`); g.addColorStop(1,'rgba(255,230,170,0)');
+  hctx.fillStyle=g; hctx.beginPath(); hctx.arc(sx,sy,core,0,6.28); hctx.fill();
+  const ghosts=[[0.3,0.05,'255,220,180'],[0.55,0.09,'170,255,225'],[0.85,0.05,'205,205,255'],[1.2,0.12,'255,205,165'],[1.55,0.07,'180,225,255'],[1.9,0.04,'255,240,210']];
+  for (const [t,sz,col] of ghosts){ const gx=sx+dx*2*t, gy=sy+dy*2*t, r=Math.min(W,H)*sz;
+    const gg=hctx.createRadialGradient(gx,gy,0,gx,gy,r);
+    gg.addColorStop(0,`rgba(${col},${0.2*vis})`); gg.addColorStop(0.7,`rgba(${col},${0.04*vis})`); gg.addColorStop(1,`rgba(${col},0)`);
+    hctx.fillStyle=gg; hctx.beginPath(); hctx.arc(gx,gy,r,0,6.28); hctx.fill(); }
+  hctx.fillStyle=`rgba(255,244,210,${0.08*vis})`; hctx.fillRect(0, sy-1.5, W, 3);   // anamorphic streak
+  hctx.restore();
 }
 
 // a single round instrument dial (tacho / speedo) on the dashboard
@@ -1546,6 +1636,8 @@ function drawHUD(){
   // cinematic grade over the 3D (the HUD canvas sits on top of the GL canvas):
   // a speed-reactive vignette + a faint warm sky wash / cool road wash.
   drawGrade(W,H,sp);
+  drawLensFlare(W,H);          // sun lens flare (when the sun is on screen)
+  drawGrain(W,H);              // subtle film grain
 
   // cockpit framing — A-pillars + dashboard lip so first-person reads as "in the car"
   if (G.view==='cockpit'){
