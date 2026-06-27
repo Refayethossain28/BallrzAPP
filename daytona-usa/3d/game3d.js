@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R33 — textured everywhere';
+const BUILD = 'BUILD R34 — bolder textures';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -347,9 +347,15 @@ function clearRoad(){ for (const m of roadParts){ scene.remove(m); m.geometry.di
 function darken(hex, f){ const r=Math.round((hex>>16&255)*f), g=Math.round((hex>>8&255)*f), b=Math.round((hex&255)*f); return (r<<16)|(g<<8)|b; }
 function surfTex(hexA, hexB, w, h, speck){
   const cv=document.createElement('canvas'); cv.width=w; cv.height=h; const x=cv.getContext('2d');
-  x.fillStyle='#'+hexA.toString(16).padStart(6,'0'); x.fillRect(0,0,w,h);
-  x.fillStyle='#'+hexB.toString(16).padStart(6,'0');
-  for (let i=0;i<speck;i++){ x.globalAlpha=0.4+Math.random()*0.4; x.fillRect(Math.random()*w, Math.random()*h, 1+Math.random()*2, 1+Math.random()*2); }
+  const hx=v=>'#'+(v>>>0).toString(16).padStart(6,'0').slice(-6);
+  x.fillStyle=hx(hexA); x.fillRect(0,0,w,h);
+  const dk=shadeHex(hexA,-58), lt=shadeHex(hexA,42);
+  // bold mottled patches for clearly visible variation
+  for (let i=0;i<speck/3;i++){ x.globalAlpha=0.22+Math.random()*0.30; x.fillStyle=hx(Math.random()<0.5?dk:lt);
+    const r=2.5+Math.random()*6; x.beginPath(); x.arc(Math.random()*w,Math.random()*h,r,0,6.28); x.fill(); }
+  // high-contrast aggregate specks
+  for (let i=0;i<speck;i++){ x.globalAlpha=0.55+Math.random()*0.45; x.fillStyle=hx(Math.random()<0.5?dk:hexB);
+    const s=1+Math.random()*3; x.fillRect(Math.random()*w, Math.random()*h, s, s); }
   x.globalAlpha=1;
   const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping;
   return t;
@@ -382,7 +388,7 @@ function buildRoadMesh(){
     // dark so the road can never wash out to a blue tint under the sky light.
     // DoubleSide: on some track windings the asphalt normals face down, which would
     // back-face-cull the single-sided road and show the sky THROUGH it (a "blue road").
-    const tex=surfTex(0x9a9a9a, 0x6e6e6e, 64, 128, 120); tex.repeat.set(1, 1);
+    const tex=surfTex(0x9a9a9a, 0x5a5a5a, 96, 192, 320); tex.repeat.set(3, 1);
     const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({map:tex, color:0x595c61, side:THREE.DoubleSide}));
     mesh.receiveShadow=!MOBILE; scene.add(mesh); roadParts.push(mesh);
   }
@@ -402,7 +408,7 @@ function buildRoadMesh(){
     geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
     geo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
     geo.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3));
-    const tex=surfTex(th.grass, th.grass2, 64, 64, 500);
+    const tex=surfTex(th.grass, th.grass2, 96, 96, 900); tex.repeat.set(2, 1);
     const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({map:tex, side:THREE.DoubleSide}));
     mesh.receiveShadow=!MOBILE; scene.add(mesh); roadParts.push(mesh);
   }
@@ -471,19 +477,21 @@ function flakeNormalTex(){
   x.putImageData(img,0,0);
   _flakeTex=new THREE.CanvasTexture(cv); _flakeTex.wrapS=_flakeTex.wrapT=THREE.RepeatWrapping; _flakeTex.repeat.set(5,5); return _flakeTex;
 }
+// a repeating clone of a cached detail tile (so a panel shows several tiles)
+function detailClone(kind, rep){ const t=makeDetailTex(kind).clone(); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(rep,rep); t.needsUpdate=true; return t; }
 // hero = the player's car gets full clearcoat PBR + flake; rivals get a cheaper metallic.
 function paintMat(c, hero){
   if (hero){
-    const m=new THREE.MeshPhysicalMaterial({color:c, metalness:0.55, roughness:0.32, clearcoat:1.0, clearcoatRoughness:0.045, envMap:envTex, envMapIntensity:1.7});
-    m.clearcoatNormalMap=flakeNormalTex(); m.clearcoatNormalScale=new THREE.Vector2(0.10,0.10);
-    m.roughnessMap=makeDetailTex('metal');   // micro-surface texture in the paint reflections
+    const m=new THREE.MeshPhysicalMaterial({color:c, metalness:0.55, roughness:0.34, clearcoat:1.0, clearcoatRoughness:0.05, envMap:envTex, envMapIntensity:1.7});
+    m.clearcoatNormalMap=flakeNormalTex(); m.clearcoatNormalScale=new THREE.Vector2(0.16,0.16);
+    m.roughnessMap=detailClone('rough',4);   // visible metallic-flake clusters in the sheen
     return m;
   }
-  const m=new THREE.MeshStandardMaterial({color:c, metalness:0.42, roughness:0.3, envMap:envTex, envMapIntensity:1.25});
-  m.roughnessMap=makeDetailTex('metal');   // micro-surface texture in the paint reflections
+  const m=new THREE.MeshStandardMaterial({color:c, metalness:0.42, roughness:0.34, envMap:envTex, envMapIntensity:1.25});
+  m.roughnessMap=detailClone('rough',4);
   return m;
 }
-function matteMat(c){ const m=new THREE.MeshStandardMaterial({color:c, metalness:0, roughness:0.85}); m.map=makeDetailTex('rough'); return m; }
+function matteMat(c){ const m=new THREE.MeshStandardMaterial({color:c, metalness:0, roughness:0.85}); m.map=detailClone('rough',2); return m; }
 function glassMat(){ return new THREE.MeshStandardMaterial({color:0x0b1626, metalness:0.5, roughness:0.06, envMap:envTex, envMapIntensity:1.6}); }
 function chromeMat(){ const m=new THREE.MeshStandardMaterial({color:0xc4c9d2, metalness:0.95, roughness:0.2, envMap:envTex, envMapIntensity:1.4}); m.roughnessMap=makeDetailTex('metal'); return m; }
 function shadeHex(hex, amt){ const r=Math.max(0,Math.min(255,(hex>>16&255)+amt)), g=Math.max(0,Math.min(255,(hex>>8&255)+amt)), b=Math.max(0,Math.min(255,(hex&255)+amt)); return (r<<16)|(g<<8)|b; }
@@ -750,21 +758,34 @@ const _detailCache={};
 function makeDetailTex(kind){
   if (_detailCache[kind]) return _detailCache[kind];
   const S=128, cv=document.createElement('canvas'); cv.width=cv.height=S; const x=cv.getContext('2d');
-  x.fillStyle='#f2f2f2'; x.fillRect(0,0,S,S);
-  const grain=(n,a)=>{ for(let i=0;i<n;i++){ const v=Math.random()<0.5?0:255; x.fillStyle=`rgba(${v},${v},${v},${Math.random()*a})`; x.fillRect(Math.random()*S,Math.random()*S,1.6,1.6);} };
+  x.fillStyle='#e9e9e9'; x.fillRect(0,0,S,S);
+  const grain=(n,a,sz)=>{ for(let i=0;i<n;i++){ const v=Math.random()<0.5?30:235; x.fillStyle=`rgba(${v},${v},${v},${Math.random()*a})`; x.fillRect(Math.random()*S,Math.random()*S,sz||1.8,sz||1.8);} };
   if (kind==='stone'){
-    grain(2200,0.10); x.strokeStyle='rgba(0,0,0,0.28)'; x.lineWidth=1.4;
-    const rows=8, ch=S/rows;
+    // brick courses with per-brick tone + bold dark mortar
+    const rows=7, ch=S/rows, cols=5, cw=S/cols;
+    for(let r=0;r<rows;r++){ const off=(r%2)?cw/2:0;
+      for(let c=-1;c<=cols;c++){ const g=150+Math.random()*80|0; x.fillStyle=`rgb(${g},${g-8},${g-16})`; x.fillRect(c*cw+off+1.5, r*ch+1.5, cw-3, ch-3); } }
+    grain(1600,0.16,1.6);
+    x.strokeStyle='rgba(20,20,20,0.55)'; x.lineWidth=2.4;
     for(let r=0;r<=rows;r++){ const y=r*ch; x.beginPath(); x.moveTo(0,y); x.lineTo(S,y); x.stroke();
-      const cols=6, cw=S/cols, off=(r%2)?cw/2:0;
-      for(let c=0;c<=cols;c++){ const vx=c*cw+off; x.beginPath(); x.moveTo(vx,y); x.lineTo(vx,y+ch); x.stroke(); } }
+      const off=(r%2)?cw/2:0; for(let c=0;c<=cols;c++){ const vx=c*cw+off; x.beginPath(); x.moveTo(vx,y); x.lineTo(vx,y+ch); x.stroke(); } }
   } else if (kind==='metal'){
-    for(let i=0;i<S;i+=2){ x.fillStyle=`rgba(0,0,0,${Math.random()*0.08})`; x.fillRect(i,0,1,S); } grain(900,0.06);
+    // bold brushed streaks + panel seams + rivets
+    for(let i=0;i<S;i++){ x.fillStyle=`rgba(0,0,0,${Math.random()*0.22})`; x.fillRect(0,i,S,1);
+                          x.fillStyle=`rgba(255,255,255,${Math.random()*0.12})`; x.fillRect(0,i,S,0.6); }
+    x.strokeStyle='rgba(0,0,0,0.5)'; x.lineWidth=2.2;
+    for(const sx of [S*0.33,S*0.66]){ x.beginPath(); x.moveTo(sx,0); x.lineTo(sx,S); x.stroke(); }
+    x.fillStyle='rgba(40,40,40,0.6)'; for(let i=0;i<26;i++){ x.beginPath(); x.arc(Math.random()*S,Math.random()*S,1.4,0,6.28); x.fill(); }
+    grain(500,0.12,1.4);
   } else if (kind==='glass'){
-    x.strokeStyle='rgba(0,0,0,0.22)'; x.lineWidth=1;
+    x.strokeStyle='rgba(0,0,0,0.4)'; x.lineWidth=1.6;
     for(let i=0;i<=S;i+=16){ x.beginPath(); x.moveTo(i,0); x.lineTo(i,S); x.stroke(); x.beginPath(); x.moveTo(0,i); x.lineTo(S,i); x.stroke(); }
-    for(let r=0;r<8;r++)for(let c=0;c<8;c++){ if(Math.random()<0.3){ x.fillStyle=`rgba(255,255,255,${Math.random()*0.18})`; x.fillRect(c*16+1,r*16+1,14,14);} }
-  } else { grain(1600,0.09); }
+    for(let r=0;r<8;r++)for(let c=0;c<8;c++){ if(Math.random()<0.4){ x.fillStyle=`rgba(255,255,255,${0.12+Math.random()*0.3})`; x.fillRect(c*16+2,r*16+2,12,12);} }
+  } else {
+    // 'rough' — bold mottled organic patches (foliage / concrete)
+    for(let i=0;i<260;i++){ const v=Math.random()<0.5?60:225; x.globalAlpha=0.10+Math.random()*0.22; x.fillStyle=`rgb(${v},${v},${v})`; x.beginPath(); x.arc(Math.random()*S,Math.random()*S,2+Math.random()*7,0,6.28); x.fill(); }
+    x.globalAlpha=1; grain(1800,0.20,2.0);
+  }
   const t=new THREE.CanvasTexture(cv); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.colorSpace=THREE.SRGBColorSpace;
   _detailCache[kind]=t; return t;
 }
