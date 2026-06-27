@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R13 — livelier sway, flashy windows, crowd wave';
+const BUILD = 'BUILD R14 — taller grandstands around the lap';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -924,19 +924,32 @@ function buildScenery(){
   }
   gantry.position.copy(f0.pos); gantry.lookAt(f0.pos.clone().add(f0.tan)); sceneryGroup.add(gantry);
 
-  // grandstands on the start straight (outer side)
+  // ---- TALL grandstands distributed around the lap (outer side), close to the track ----
   const crowdTex=makeCrowdTexture();
-  const NSTAND=4, NSEG=8, segW=25/NSEG;
-  for (let s=0;s<NSTAND;s++){ const idx=(8+s*7)%DIV, f=frames[idx]; const stand=new THREE.Group();
-    const base=new THREE.Mesh(new THREE.BoxGeometry(26,9,8), new THREE.MeshLambertMaterial({color:0x9aa3b2})); base.position.y=4.5; stand.add(base);
-    // crowd built as segments so a "wave" can travel across it
+  const NSEG=8;
+  const standFracs = MOBILE ? [0.008,0.028, 0.25, 0.50, 0.75]
+                            : [0.006,0.022,0.038, 0.25, 0.49,0.51,0.53, 0.75];
+  const standCen=new THREE.Vector3(); for(const fr of frames) standCen.add(fr.pos); standCen.multiplyScalar(1/frames.length);
+  const standPostMat=new THREE.MeshLambertMaterial({color:0xb9c0c7});
+  let waveIdx=0;
+  for (const fr of standFracs){
+    const idx=Math.floor(fr*DIV)%DIV, f=frames[idx];
+    const side=(new THREE.Vector3().copy(f.pos).sub(standCen).dot(f.right)>=0)?1:-1;   // outward side
+    const stand=new THREE.Group();
+    const W=32, H=15;
+    const baseM=new THREE.Mesh(new THREE.BoxGeometry(W,H,9), new THREE.MeshLambertMaterial({color:0x9aa3b2})); baseM.position.y=H/2; stand.add(baseM);
+    const segW=(W-2)/NSEG;
     for (let k=0;k<NSEG;k++){
-      const seg=new THREE.Mesh(new THREE.PlaneGeometry(segW-0.1,8.4), new THREE.MeshBasicMaterial({map:crowdTex}));
-      seg.position.set(-12.5+segW*(k+0.5), 5.4, 4.05); seg.rotation.x=-0.32; stand.add(seg);
-      _wave.push({mesh:seg, baseY:5.4, k:s*NSEG+k});       // index along the whole grandstand row
+      const seg=new THREE.Mesh(new THREE.PlaneGeometry(segW-0.1, H-3), new THREE.MeshBasicMaterial({map:crowdTex}));
+      seg.position.set(-(W-2)/2+segW*(k+0.5), H*0.58, 4.7); seg.rotation.x=-0.34; stand.add(seg);
+      _wave.push({mesh:seg, baseY:H*0.58, k:waveIdx++});           // running index so the wave travels stand-to-stand
     }
-    const roof=new THREE.Mesh(new THREE.BoxGeometry(27,0.6,9), new THREE.MeshLambertMaterial({color:0xd6262b})); roof.position.y=9.4; stand.add(roof);
-    stand.position.copy(f.pos).addScaledVector(f.right, ROAD_W+RUMBLE_W+15); stand.lookAt(f.pos.clone().addScaledVector(f.right,1).setY(stand.position.y)); sceneryGroup.add(stand); }
+    const roof=new THREE.Mesh(new THREE.BoxGeometry(W+1.5,0.8,10), new THREE.MeshLambertMaterial({color:0xd6262b})); roof.position.y=H+0.6; stand.add(roof);
+    for (const sx of [-1,1]){ const post=new THREE.Mesh(new THREE.CylinderGeometry(0.45,0.45,H,6), standPostMat); post.position.set(sx*(W/2-1), H/2, 5.2); stand.add(post); }
+    stand.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+8));   // closer to the track
+    stand.lookAt(f.pos.clone().addScaledVector(f.right, side).setY(stand.position.y));
+    sceneryGroup.add(stand);
+  }
 
   // collect every other emissive landmark material so its light can pulse gently
   // (buildings were already tagged above with a flashier pulse — skip them)
