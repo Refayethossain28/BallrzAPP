@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R37 — hi-res textures';
+const BUILD = 'BUILD R38 — bump-mapped surfaces';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -366,6 +366,20 @@ function surfTex(hexA, hexB, w, h, speck){
   t.anisotropy=_maxAniso;
   return t;
 }
+// detailed asphalt: aggregate + repair patches + oil stains + jagged cracks
+// (used as both the colour map AND the bump map, so cracks recess and grit raises)
+function makeAsphaltTex(w,h){
+  const cv=document.createElement('canvas'); cv.width=w; cv.height=h; const x=cv.getContext('2d');
+  x.fillStyle='#808288'; x.fillRect(0,0,w,h);
+  for (let i=0;i<w*h/10;i++){ const v=Math.random()<0.5?55:175; x.globalAlpha=0.35+Math.random()*0.5; x.fillStyle=`rgb(${v},${v},${v})`; const s=1+Math.random()*2.6; x.fillRect(Math.random()*w,Math.random()*h,s,s); }
+  for (let i=0;i<7;i++){ const g=80+Math.random()*70|0; x.globalAlpha=0.22; x.fillStyle=`rgb(${g},${g},${g})`; x.fillRect(Math.random()*w,Math.random()*h,24+Math.random()*70,24+Math.random()*50); }
+  for (let i=0;i<12;i++){ x.globalAlpha=0.12+Math.random()*0.2; x.fillStyle='#1d1d1f'; x.beginPath(); x.arc(Math.random()*w,Math.random()*h,8+Math.random()*22,0,6.28); x.fill(); }
+  x.globalAlpha=0.6; x.strokeStyle='#141416'; x.lineWidth=1.6; x.lineCap='round';
+  for (let i=0;i<16;i++){ let px=Math.random()*w, py=Math.random()*h; x.beginPath(); x.moveTo(px,py);
+    for (let s=0;s<7;s++){ px+=(Math.random()-0.5)*48; py+=(Math.random()-0.5)*48; x.lineTo(px,py); } x.stroke(); }
+  x.globalAlpha=1;
+  const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; t.anisotropy=_maxAniso; return t;
+}
 
 function buildRoadMesh(){
   clearRoad();
@@ -394,8 +408,8 @@ function buildRoadMesh(){
     // dark so the road can never wash out to a blue tint under the sky light.
     // DoubleSide: on some track windings the asphalt normals face down, which would
     // back-face-cull the single-sided road and show the sky THROUGH it (a "blue road").
-    const tex=surfTex(0x9a9a9a, 0x5a5a5a, 256, 512, 900); tex.repeat.set(5, 1);
-    const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({map:tex, color:0x595c61, side:THREE.DoubleSide}));
+    const tex=makeAsphaltTex(256, 512); tex.repeat.set(5, 1);
+    const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({map:tex, color:0x595c61, side:THREE.DoubleSide, bumpMap:tex, bumpScale:0.6}));
     mesh.receiveShadow=!MOBILE; scene.add(mesh); roadParts.push(mesh);
   }
   // grass verge (defines the ground surface used to ground scenery)
@@ -415,7 +429,7 @@ function buildRoadMesh(){
     geo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
     geo.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3));
     const tex=surfTex(th.grass, th.grass2, 256, 256, 2600); tex.repeat.set(3, 1);
-    const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({map:tex, side:THREE.DoubleSide}));
+    const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({map:tex, side:THREE.DoubleSide, bumpMap:tex, bumpScale:0.3}));
     mesh.receiveShadow=!MOBILE; scene.add(mesh); roadParts.push(mesh);
   }
   // kerbs + start/finish checker (vertex colours)
@@ -497,7 +511,7 @@ function paintMat(c, hero){
   m.roughnessMap=detailClone('rough',6);
   return m;
 }
-function matteMat(c){ const m=new THREE.MeshStandardMaterial({color:c, metalness:0, roughness:0.85}); m.map=detailClone('rough',3); return m; }
+function matteMat(c){ const m=new THREE.MeshStandardMaterial({color:c, metalness:0, roughness:0.85}); const t=detailClone('rough',3); m.map=t; m.bumpMap=t; m.bumpScale=0.25; return m; }
 function glassMat(){ return new THREE.MeshStandardMaterial({color:0x0b1626, metalness:0.5, roughness:0.06, envMap:envTex, envMapIntensity:1.6}); }
 function chromeMat(){ const m=new THREE.MeshStandardMaterial({color:0xc4c9d2, metalness:0.95, roughness:0.2, envMap:envTex, envMapIntensity:1.4}); m.roughnessMap=makeDetailTex('metal'); return m; }
 function shadeHex(hex, amt){ const r=Math.max(0,Math.min(255,(hex>>16&255)+amt)), g=Math.max(0,Math.min(255,(hex>>8&255)+amt)), b=Math.max(0,Math.min(255,(hex&255)+amt)); return (r<<16)|(g<<8)|b; }
@@ -802,6 +816,7 @@ function txMat(opts, kind, rep){
   const m=new THREE.MeshStandardMaterial(opts);
   m.map=makeDetailTex(kind||'rough').clone(); m.map.wrapS=m.map.wrapT=THREE.RepeatWrapping;
   if (rep) m.map.repeat.set(rep,rep); m.map.needsUpdate=true;
+  m.bumpMap=m.map; m.bumpScale=(kind==='stone')?0.8:0.4;   // real surface relief
   return m;
 }
 function makeWindowTexture(glassy){
@@ -1217,7 +1232,7 @@ function buildScenery(){
     const side=(new THREE.Vector3().copy(f.pos).sub(standCen).dot(f.right)>=0)?1:-1;   // outward side
     const stand=new THREE.Group();
     const W=MOBILE?78:96, H=24;   // longer grandstands
-    const baseMat=new THREE.MeshLambertMaterial({color:0x9aa3b2, map:makeDetailTex('stone').clone()}); baseMat.map.repeat.set(10,5); baseMat.map.wrapS=baseMat.map.wrapT=THREE.RepeatWrapping;
+    const baseMat=new THREE.MeshLambertMaterial({color:0x9aa3b2, map:makeDetailTex('stone').clone()}); baseMat.map.repeat.set(10,5); baseMat.map.wrapS=baseMat.map.wrapT=THREE.RepeatWrapping; baseMat.bumpMap=baseMat.map; baseMat.bumpScale=0.9;
     const baseM=new THREE.Mesh(new THREE.BoxGeometry(W,H,12), baseMat); baseM.position.y=H/2; stand.add(baseM);
     const segW=(W-2)/NSEG, tierH=H*0.24;
     const colBase=waveIdx;                          // columns of THIS stand
