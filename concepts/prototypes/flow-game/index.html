@@ -511,7 +511,22 @@ function setFx(hi){
 
 /* ---------- audio: ting/buzz SFX + a synth techno loop (Web Audio, no assets) ---------- */
 let actx=null, master=null, noiseBuf=null;
+let analyser=null, freqData=null, mediaWired=false;     // audio-reactive visuals
 let muted = (localStorage.getItem('flow.muted')==='1');
+/* Tap the soundtrack with an AnalyserNode so the visuals react to the real music.
+ * The element is also wired straight to the destination, so audio always plays
+ * even if the analyser path misbehaves. */
+function wireAnalyser(){
+  if(mediaWired || !actx || !bgm) return; mediaWired=true;
+  try{
+    const src=actx.createMediaElementSource(bgm);
+    src.connect(actx.destination);
+    try{
+      analyser=actx.createAnalyser(); analyser.fftSize=512; analyser.smoothingTimeConstant=0.72;
+      freqData=new Uint8Array(analyser.frequencyBinCount); src.connect(analyser);
+    }catch(_){ analyser=null; }
+  }catch(_){ /* element keeps playing on its own */ }
+}
 function ensureAudio(){
   if(actx){ if(actx.state==='suspended') actx.resume(); return; }
   const AC = window.AudioContext || window.webkitAudioContext;
@@ -603,7 +618,7 @@ function stopSynth(){ musicOn=false; if(schedTimer){ clearInterval(schedTimer); 
 /* the looping soundtrack (real audio file), with the synth as a fallback */
 const bgm = document.getElementById('bgm');
 function startMusic(){
-  ensureAudio();
+  ensureAudio(); wireAnalyser();
   if(bgm){
     bgm.muted = muted; bgm.volume = 0.85;
     const pr = bgm.play();
@@ -940,6 +955,19 @@ function drawComboGlow(){
   g.addColorStop(0,'rgba(255,209,102,0)'); g.addColorStop(1,'rgba(255,209,102,'+a+')');
   ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
 }
+/* live music spectrum along the bottom edge (additive neon bars) */
+function drawSpectrum(){
+  if(!freqData) return;
+  const n=52, bw=W/n;
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  for(let i=0;i<n;i++){
+    const v=freqData[2+i*2]/255, h=v*v*72;
+    if(h<1) continue;
+    ctx.fillStyle='hsla('+(190+i/n*140)+',92%,62%,0.5)';
+    ctx.fillRect(i*bw+0.7, H-h, bw-1.4, h);
+  }
+  ctx.restore();
+}
 
 function shade(hex,f){           // f>0 lighten toward white, f<0 darken toward black
   const n=parseInt(hex.slice(1),16); let r=(n>>16)&255,g=(n>>8)&255,b=n&255;
@@ -1143,7 +1171,7 @@ function applyBloom(){
   ctx.save();
   ctx.setTransform(1,0,0,1,0,0);
   ctx.globalCompositeOperation='lighter';
-  ctx.globalAlpha=0.5;
+  ctx.globalAlpha=0.42+0.32*beatPulse;        // bloom pumps with the music
   try{ ctx.filter='blur('+Math.max(2,Math.round(cv.width*0.013))+'px)'; }catch(_){}
   ctx.drawImage(bloomCv,0,0,cv.width,cv.height);
   ctx.restore();
@@ -1221,7 +1249,16 @@ pauseBtn.addEventListener('pointerdown', e=>e.stopPropagation());  // don't coun
 let last=performance.now();
 function frame(now){
   let dt=(now-last)/1000; last=now; if(dt>0.05) dt=0.05;
-  const beatLen=60000/126; beatPulse=Math.pow(1-((now%beatLen)/beatLen),2.2);   // 126 BPM throb
+  // beat pulse: react to the real soundtrack's bass when we can analyse it,
+  // otherwise fall back to an implied 126 BPM clock.
+  let audioLive=false;
+  if(analyser && freqData && !muted && bgm && !bgm.paused){
+    analyser.getByteFrequencyData(freqData);
+    let s=0; for(let i=1;i<10;i++) s+=freqData[i]; s/=(9*255);          // bass energy 0..1
+    beatPulse=Math.max(beatPulse*0.86, Math.min(1, s*1.7)); audioLive=true;
+  } else {
+    const beatLen=60000/126; beatPulse=Math.pow(1-((now%beatLen)/beatLen),2.2);
+  }
   dispScore += (score-dispScore)*Math.min(1,dt*12);                              // arcade score roll-up
   if(Math.abs(score-dispScore)<0.5) dispScore=score;
   resize();                       // keep canvas synced to a possibly-late/animated box
@@ -1237,7 +1274,7 @@ function frame(now){
   }
   if(state==='match' && now>matchEndsAt){ endMatchTurn(); requestAnimationFrame(frame); return; }
   if((state==='playing'||state==='match') && now>roundEnds){ if(livesMode){ miss(); impactCA(0.9); } endRound(false); }
-  if(live()){ drawTargets(dt, true); drawComboGlow(); drawScore(now); }
+  if(live()){ drawTargets(dt, true); drawComboGlow(); if(audioLive) drawSpectrum(); drawScore(now); }
   else if(state==='paused'){ drawTargets(0, false); drawScore(pausedAt); }
   else if(state==='idle'){ drawDemo(now); }
   if(fx.length) drawFx(state==='paused' ? 0 : dt);   // sparkles finish over any state
