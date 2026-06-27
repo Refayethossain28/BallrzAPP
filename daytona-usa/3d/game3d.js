@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R42 — Apple Music';
+const BUILD = 'BUILD R43 — attract mode';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -1414,6 +1414,7 @@ function computePosition(){
 // ----------------------------------------------------------------------------
 function update(dt){
   if (G.state==='menu' || G.state==='finished') return;
+  if (G.state==='attract'){ attractUpdate(dt); return; }
   if (G.state==='replay'){ replayUpdate(dt); return; }
   if (G.state==='rolling'){ rollingUpdate(dt); return; }
   if (G.state==='paused') return;
@@ -1695,7 +1696,7 @@ function render(){
   }
   if (sun){ sun.target.position.copy(playerCar.position); sun.position.copy(playerCar.position).add(_sunOff); sun.target.updateMatrixWorld(); }
   // cockpit hides the chassis; dash & chase show the car (dash shows its bonnet)
-  const cinematic = (G.state==='replay' && G.view==='cinematic');
+  const cinematic = ((G.state==='replay' || G.state==='attract') && G.view==='cinematic');
   const firstPerson = (G.view==='cockpit' || G.view==='dash');
   playerCar.visible = !(G.view==='cockpit' || (cinematic && _cine.shot==='onboard'));
 
@@ -1932,6 +1933,7 @@ function drawHUD(){
   if (!G.night && !G.rain) drawLensFlare(W,H);   // sun lens flare (clear day only)
   if (G.rain) drawRain(W,H);                      // falling rain streaks
   drawGrain(W,H);              // subtle film grain
+  if (G.state==='attract') return;                // attract demo: cinematic only, no gameplay HUD
 
   // cockpit framing — A-pillars + dashboard lip so first-person reads as "in the car"
   if (G.view==='cockpit'){
@@ -2077,6 +2079,8 @@ function bindInput(){
 //  Race start (full menu flow lands in M4 — for now START drives immediately)
 // ----------------------------------------------------------------------------
 function startRace(){
+  clearTimeout(_idleTimer); _onTitle=false;
+  const pb=document.getElementById('pauseBtn'); if(pb) pb.style.display='';   // restore (attract hid it)
   buildTrack(G.circuit);
   buildSky();
   buildEnv();
@@ -2331,9 +2335,61 @@ const WX_ITEMS  = [{key:'clear',icon:'⛅',name:'CLEAR',desc:'Dry track, full gr
 
 function overlayEl(){ return document.getElementById('overlay'); }
 function showOverlay(html){
+  clearTimeout(_idleTimer); _onTitle=false;                                          // leaving the title disarms attract
   const o=overlayEl(); o.innerHTML=html; o.classList.remove('hidden');
   const hud=document.getElementById('hud'); if(hud) hud.style.visibility='hidden';   // no stale HUD behind menus
   const vb=document.getElementById('viewBtn'); if(vb) vb.classList.add('hidden');     // no view toggle in menus
+}
+
+// ---- attract mode: after 5s idle on the title, run a cinematic AI demo lap ----
+let _idleTimer=null, _onTitle=false, _attractSnd=0;
+function armIdle(){ clearTimeout(_idleTimer); _idleTimer=setTimeout(()=>{ if(_onTitle && G.state==='menu') startAttract(); }, 5000); }
+function userActivity(){ if (G.state==='attract'){ endAttract(); } else if (_onTitle){ armIdle(); } }
+function startAttract(){
+  clearTimeout(_idleTimer);
+  // randomise the showcase: circuit, car, time-of-day, weather; cycle soundtrack
+  G.circuit = CIRCUITS[(Math.random()*CIRCUITS.length)|0];
+  G.vehicle = VEHICLES[(Math.random()*VEHICLES.length)|0];
+  G.night = Math.random()<0.5; G.rain = Math.random()<0.4;
+  const snds=['daytona','heat']; G.soundtrack = snds[_attractSnd++ % snds.length]; G.applePlaylist=null;
+  try {
+    buildTrack(G.circuit); buildSky(); buildEnv(); buildRoadMesh(); buildMinimap();
+    try{ buildScenery(); }catch(e){}
+    if (playerCar) scene.remove(playerCar);
+    playerCar = buildCar(G.vehicle); scene.add(playerCar);
+    buildRivals(MOBILE ? 7 : 9);
+    G.maxSpeed = G.circuit.maxSpeed * G.vehicle.speedMul * 0.58;
+    G.dist=0; G.offset=0; G.speed=G.maxSpeed*0.55; G.lap=1; G.steerVis=0; G.attractLap=0;
+    initSmoke(); resetSmoke();
+    placeCar(playerCar,G.dist,G.offset); placeRivals();
+    G.started=true; G.view='cinematic'; cineReset(); G.state='attract';
+    hideOverlay();
+    const hud=document.getElementById('hud'); if(hud) hud.style.visibility='hidden';
+    ['viewBtn','pauseBtn'].forEach(id=>{ const e=document.getElementById(id); if(e){ if(id==='viewBtn')e.classList.add('hidden'); else e.style.display='none'; }});
+    const t=document.getElementById('touch'); if(t) t.style.display='none';
+    showBanner('DAYTONA <span class="red">USA</span><br><span style="font-size:0.46em;letter-spacing:2px">▶ TAP TO PLAY</span>', 0, true);
+    startRaceMusic();
+  } catch(e){ endAttract(); }
+}
+function attractUpdate(dt){
+  const f=frameAt(G.dist), maxSpeed=G.maxSpeed;
+  const fi=((Math.floor((G.dist/trackLen)*DIV))%DIV+DIV)%DIV;
+  let curveAhead=0; for(let k=8;k<=70;k+=12) curveAhead=Math.max(curveAhead, Math.abs(frames[(fi+k)%DIV].curv));
+  const target = maxSpeed*(0.95 - Math.min(0.45, curveAhead*16));
+  G.speed += (target - G.speed)*1.3*dt;
+  const laneTarget = Math.max(-ROAD_W*0.6, Math.min(ROAD_W*0.6, -f.curv*170));   // hug the inside of corners
+  G.offset += (laneTarget - G.offset)*1.0*dt;
+  G.steerVis += ((laneTarget-G.offset>0?0.4:-0.4) - G.steerVis)*0.08;
+  G.dist += G.speed*dt;
+  if (G.dist >= trackLen){ G.dist -= trackLen; if((++G.attractLap)>=1){ endAttract(); return; } }
+  updateRivals(dt);
+  if (_smokeGroup) driftSmoke(f, Math.min(1,G.speed/maxSpeed), 0, false);
+  if (window.GameMusic && window.GameMusic.setIntensity) window.GameMusic.setIntensity(Math.min(1,G.speed/maxSpeed));
+}
+function endAttract(){
+  hideBanner();
+  const pb=document.getElementById('pauseBtn'); if(pb) pb.style.display='';
+  showMenu();
 }
 
 function showMenu(){
@@ -2353,6 +2409,7 @@ function showMenu(){
     <div class="credit">Fan-made, non-commercial.</div>`);
   document.getElementById('startBtn').onclick = ()=>{ try{ensureAudio();}catch(e){} G.champ=null; showVehicleSelect(); };
   document.getElementById('gpBtn').onclick    = ()=>{ try{ensureAudio();}catch(e){} champStart(); showVehicleSelect(); };
+  _onTitle=true; armIdle();                       // start the inactivity countdown to attract mode
 }
 
 function cardRow(items, selIdx, dataAttr){
@@ -2530,6 +2587,8 @@ function boot(){
   bindInput();
   const pb=document.getElementById('pauseBtn'); if(pb) pb.onclick=togglePause;
   const vb=document.getElementById('viewBtn'); if(vb) vb.onclick=toggleView;
+  // any input resets the idle timer on the title, or drops out of the attract demo
+  ['pointerdown','keydown','touchstart'].forEach(ev=>window.addEventListener(ev, userActivity, {passive:true}));
   showMenu();
   requestAnimationFrame(frame);
 }
