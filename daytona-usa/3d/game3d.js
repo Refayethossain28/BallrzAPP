@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R19 — bigger cars';
+const BUILD = 'BUILD R20 — engine sound';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -1397,6 +1397,7 @@ function startRace(){
   showBanner('GENTLEMEN,<br>START YOUR ENGINES!', 0, true);
   showTouch();
   startRaceMusic();
+  initEngine();
 }
 
 // ---- race soundtrack: the chosen soundtrack (intro once -> loop) ----
@@ -1418,6 +1419,44 @@ function stopRaceMusic(){
   _raceAudio = { intro:null, loop:null };
 }
 function pauseRaceMusic(p){ for (const k of ['intro','loop']){ const a=_raceAudio[k]; if(a){ try{ p?a.pause():(a.src&&a.play().catch(()=>{})); }catch(e){} } } }
+
+// ---- procedural engine sound (Web Audio): layered oscillators driven by RPM ----
+// Sits UNDER the MP3 race music. Two slightly-detuned saws + a square sub for body,
+// shaped by a lowpass that opens with revs, plus a touch of idle wobble.
+let _eng = null;
+function initEngine(){
+  if (_eng) return;
+  try {
+    const AC = new (window.AudioContext||window.webkitAudioContext)();
+    const master = AC.createGain(); master.gain.value = 0;          // silent until racing
+    const filter = AC.createBiquadFilter(); filter.type='lowpass';
+    filter.frequency.value = 400; filter.Q.value = 7;
+    filter.connect(master); master.connect(AC.destination);
+    const mk = (type, detune)=>{ const o=AC.createOscillator(); o.type=type; o.detune.value=detune;
+      o.frequency.value=60; const g=AC.createGain(); o.connect(g); g.connect(filter); o.start(); return {o,g}; };
+    const sawA = mk('sawtooth',  -7); sawA.g.gain.value = 0.55;
+    const sawB = mk('sawtooth', +11); sawB.g.gain.value = 0.55;
+    const sub  = mk('square',     0); sub.g.gain.value  = 0.32;     // half-frequency body
+    _eng = { AC, master, filter, sawA, sawB, sub };
+  } catch(e){ _eng = null; }   // audio is optional; never break the game
+}
+function updateEngine(){
+  if (!_eng) return;
+  const AC=_eng.AC, t=AC.currentTime;
+  const racing = (G.state==='racing' || G.state==='rolling');
+  const sp = Math.min(1, Math.abs(G.speed)/(G.maxSpeed||1));
+  const onGas = !!(keys && keys.gas);
+  // RPM: idle floor + speed, with a little extra lift on the throttle
+  const rpm  = 0.12 + sp*0.84 + (onGas?0.06:0);
+  const base = 46 + rpm*168;                       // fundamental in Hz
+  const wob  = racing && sp<0.05 ? Math.sin(t*9)*1.4 : 0;   // idle lope
+  _eng.sawA.o.frequency.setTargetAtTime(base+wob,     t, 0.05);
+  _eng.sawB.o.frequency.setTargetAtTime(base+wob,     t, 0.05);
+  _eng.sub.o.frequency.setTargetAtTime((base+wob)*0.5, t, 0.05);
+  _eng.filter.frequency.setTargetAtTime(340 + rpm*2600 + (onGas?420:0), t, 0.06);
+  const vol = racing ? (0.045 + sp*0.085 + (onGas?0.02:0)) : 0;
+  _eng.master.gain.setTargetAtTime(vol, t, 0.08);
+}
 
 function showEndScreen(win){
   const o=document.getElementById('overlay'); if(!o) return;
@@ -1550,6 +1589,7 @@ function frame(now){
   let dt=(now-last)/1000; if(dt>0.1)dt=0.1; last=now; acc+=dt;
   _adt = dt;
   while (acc>=STEP){ update(STEP); acc-=STEP; }
+  updateEngine();
   if (scene && camera) render();
   requestAnimationFrame(frame);
 }
