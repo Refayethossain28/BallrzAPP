@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R35 — higher resolution';
+const BUILD = 'BUILD R36 — native resolution';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -135,9 +135,11 @@ function initThree(){
   hud2d    = document.getElementById('hud2d');
   hctx     = hud2d.getContext('2d');
 
-  renderer = new THREE.WebGLRenderer({ canvas:glCanvas, antialias:true, powerPreference:'high-performance' });
-  // render at (close to) the device's native pixel density for a crisp, high-res image
-  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio||1));
+  // Mobile: skip MSAA — at full 3x density the supersampling antialiases edges
+  // for free, and MSAA buffers at that resolution risk GPU memory / context loss.
+  renderer = new THREE.WebGLRenderer({ canvas:glCanvas, antialias:!MOBILE, powerPreference:'high-performance' });
+  // render at the device's native pixel density (capped at 3x) for max sharpness
+  renderer.setPixelRatio(Math.min(3, window.devicePixelRatio||1));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.98;
@@ -2154,9 +2156,9 @@ function showTouch(){ const t=document.getElementById('touch'); if(t && MOBILE) 
 function resize(){
   const w=window.innerWidth, h=window.innerHeight;
   camera.aspect=w/h; camera.updateProjectionMatrix();
-  const pr=Math.min(2, window.devicePixelRatio||1);
+  const pr=Math.min(3, window.devicePixelRatio||1);
   renderer.setPixelRatio(pr); renderer.setSize(w,h,false);
-  const hpr=Math.min(2, window.devicePixelRatio||1);
+  const hpr=Math.min(3, window.devicePixelRatio||1);
   hud2d.width=Math.round(w*hpr); hud2d.height=Math.round(h*hpr);
   hud2d.style.width=w+'px'; hud2d.style.height=h+'px';
 }
