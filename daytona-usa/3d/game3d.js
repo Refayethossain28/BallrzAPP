@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R8 — car-to-car collisions';
+const BUILD = 'BUILD R9 — smoother cars + impact slowdown';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -461,42 +461,45 @@ function makeSponsorTex(text, accent){
 }
 function decal(tex, w, h){ return new THREE.Mesh(new THREE.PlaneGeometry(w,h), new THREE.MeshBasicMaterial({map:tex, transparent:true})); }
 
-// A Daytona-style NASCAR stock car. liv = {body, hood, roof, num, sponsor}. Front faces +z.
+// smooth low stock-car body side profile (front=+x, up=+y) — rounded nose & tail
+const STOCK_BODY=[[2.46,0.40],[2.54,0.74],[2.30,0.96],[1.5,1.02],[0.7,1.04],[-1.45,1.04],[-2.25,0.96],[-2.5,0.66],[-2.48,0.40],[-2.26,0.28],[2.26,0.28]];
+// A Daytona-style NASCAR stock car with a smooth curved body. Front faces +z.
 function buildCar(vehicle, lite){
   const liv = vehicle.livery || RIVAL_LIVERIES[0];
   const g=new THREE.Group();
   const main=paintMat(liv.body), accent=paintMat(liv.hood), roofM=paintMat(liv.roof!=null?liv.roof:liv.hood);
-  const trim=paintMat(0xffffff), glass=glassMat(), dark=matteMat(0x141414);
-  const L=4.9, W=2.12;
-  // white lower (rockers + bumpers) running the full length
-  g.add(lmBox(trim, W+0.06, 0.44, L, 0, 0.44, 0));
-  // main body sides
-  g.add(lmBox(main, W+0.10, 0.52, L*0.99, 0, 0.84, 0));
-  // hood (accent) on the front deck + a flat nose
-  g.add(lmBox(accent, W-0.04, 0.16, L*0.32, 0, 1.04, L*0.28));
-  g.add(lmBox(accent, W-0.02, 0.30, 0.4, 0, 0.86, L*0.49));
-  // front splitter (white)
-  g.add(lmBox(trim, W+0.14, 0.14, 0.4, 0, 0.5, L*0.5));
-  // cabin / roof (roof colour), set back
-  g.add(lmBox(roofM, W-0.44, 0.5, L*0.4, 0, 1.34, -L*0.05));
+  const white=paintMat(0xffffff), glass=glassMat(), dark=matteMat(0x16181c);
+  const L=4.9, W=2.16;
+  // ---- smooth curved main body (sharper bevel = defined NASCAR panels, not bulbous) ----
+  g.add(extrudeCar(STOCK_BODY, W, 0.07, main));
+  // white lower band (rockers) + front splitter + rear bumper, slightly proud
+  g.add(lmBox(white, W+0.12, 0.2, L*0.9, 0, 0.38, 0));
+  g.add(lmBox(white, W+0.16, 0.16, 0.45, 0, 0.44, L*0.49));
+  g.add(lmBox(white, W+0.12, 0.18, 0.4, 0, 0.42, -L*0.49));
+  // blue HOOD — a big flat panel sitting clearly on the front deck (the key livery zone)
+  const hood=lmBox(accent, W-0.06, 0.09, 1.9, 0, 1.05, L*0.22); hood.rotation.x=-0.05; g.add(hood);
+  g.add(lmBox(accent, 0.7, 0.1, 0.7, 0, 1.12, L*0.12));   // centre cowl/scoop
+  // ---- greenhouse: a tapered (chamfered) cabin so the roof isn't a plain box ----
+  const cabLow=lmBox(roofM, W-0.36, 0.34, L*0.4, 0, 1.27, -L*0.05); g.add(cabLow);
+  const cabTop=lmBox(roofM, W-0.62, 0.18, L*0.34, 0, 1.5, -L*0.06); g.add(cabTop);   // narrower roof = chamfer
   // roof number roundel (faces up)
-  const rn=decal(makeNumberTex(liv.num), 1.25, 1.25); rn.rotation.x=-Math.PI/2; rn.rotation.z=Math.PI; rn.position.set(0,1.60,-L*0.05); g.add(rn);
+  const rn=decal(makeNumberTex(liv.num), 1.2, 1.2); rn.rotation.x=-Math.PI/2; rn.rotation.z=Math.PI; rn.position.set(0,1.60,-L*0.06); g.add(rn);
   // glasshouse
-  const ws=lmBox(glass, W-0.5, 0.42, 0.1, 0, 1.2, L*0.16); ws.rotation.x=0.55; g.add(ws);
-  const rw=lmBox(glass, W-0.5, 0.4, 0.1, 0, 1.2, -L*0.26); rw.rotation.x=-0.55; g.add(rw);
-  for (const sx of [-1,1]) g.add(lmBox(glass, 0.08, 0.36, L*0.32, sx*(W/2-0.22), 1.3, -L*0.05));
-  // rear spoiler
-  g.add(lmBox(main, W+0.02, 0.08, 0.5, 0, 1.36, -L*0.47));
-  for (const sx of [-1,1]) g.add(lmBox(dark, 0.1, 0.34, 0.4, sx*W*0.42, 1.16, -L*0.45));
+  const ws=lmBox(glass, W-0.5, 0.44, 0.07, 0, 1.18, L*0.14); ws.rotation.x=0.62; g.add(ws);
+  const rw=lmBox(glass, W-0.5, 0.42, 0.07, 0, 1.18, -L*0.26); rw.rotation.x=-0.62; g.add(rw);
+  for (const sx of [-1,1]) g.add(lmBox(glass, 0.07, 0.32, L*0.3, sx*(W/2-0.22), 1.3, -L*0.06));
+  // rear wing on uprights
+  g.add(lmBox(main, W+0.02, 0.07, 0.46, 0, 1.45, -L*0.47));
+  for (const sx of [-1,1]) g.add(lmBox(dark, 0.09, 0.4, 0.38, sx*W*0.42, 1.2, -L*0.45));
   // door number + sponsor decals (skip on lite rivals)
   if (!lite) for (const sx of [-1,1]){
-    const dn=decal(makeNumberTex(liv.num), 0.95, 0.95); dn.position.set(sx*(W/2+0.07), 0.95, 0.45); dn.rotation.y=sx>0?-Math.PI/2:Math.PI/2; g.add(dn);
-    const sp=decal(makeSponsorTex(liv.sponsor||'DAYTONA', liv.hood), 1.6,0.5); sp.position.set(sx*(W/2+0.07), 0.78, -0.65); sp.rotation.y=sx>0?-Math.PI/2:Math.PI/2; g.add(sp);
+    const dn=decal(makeNumberTex(liv.num), 0.92, 0.92); dn.position.set(sx*(W/2+0.04), 0.86, 0.42); dn.rotation.y=sx>0?-Math.PI/2:Math.PI/2; g.add(dn);
+    const sp=decal(makeSponsorTex(liv.sponsor||'DAYTONA', liv.hood), 1.55,0.5); sp.position.set(sx*(W/2+0.04), 0.68, -0.7); sp.rotation.y=sx>0?-Math.PI/2:Math.PI/2; g.add(sp);
   }
   // sticker headlights + taillights (taillights flare under braking)
-  addLights(g, 0.92, L*0.5, L*0.5);
-  // racing wheels
-  addWheels(g, W/2+0.0, L*0.31, 0.56, lite);
+  addLights(g, 0.82, L*0.5, L*0.5);
+  // racing wheels tucked under the fenders
+  addWheels(g, W/2-0.04, L*0.3, 0.55, lite);
   if (!MOBILE) g.traverse(o=>{ if(o.isMesh){ o.castShadow=true; } });
   return g;
 }
@@ -924,20 +927,21 @@ function collideCars(a, b){
   let dd = a.dist - b.dist;
   if (dd >  trackLen*0.5) dd -= trackLen;
   if (dd < -trackLen*0.5) dd += trackLen;
-  if (Math.abs(dd) >= CAR_LEN) return;
+  if (Math.abs(dd) >= CAR_LEN) return false;
   const doff = a.offset - b.offset;
-  if (Math.abs(doff) >= CAR_WID) return;
+  if (Math.abs(doff) >= CAR_WID) return false;
   // push apart laterally (smoothly resolves over a few frames)
   const overlap = CAR_WID - Math.abs(doff);
   const dir = Math.abs(doff) < 0.05 ? (dd>=0 ? 1 : -1) : Math.sign(doff);
   a.offset += dir * overlap * 0.45;
   b.offset -= dir * overlap * 0.45;
-  // longitudinal bump: trailing car slows, leading car gets nudged forward
+  // longitudinal bump: trailing car slows hard, leading car gets nudged forward
   const trailing = dd < 0 ? a : b, leading = dd < 0 ? b : a;
   if (trailing.speed > leading.speed){
-    const c = (trailing.speed - leading.speed) * 0.5;
-    trailing.speed -= c; leading.speed += c * 0.6;
+    const c = (trailing.speed - leading.speed) * 0.7;
+    trailing.speed -= c; leading.speed += c * 0.4;
   }
+  return true;
 }
 function placeRivals(){ for (const r of rivals) placeCar(r.mesh, r.dist, r.offset); }
 function computePosition(){
@@ -1015,11 +1019,14 @@ function racingUpdate(dt){
   if (G.dist >= trackLen){ G.dist -= trackLen; onLapComplete(); }
   if (G.dist < 0) G.dist += trackLen;
 
-  // rivals + collisions (player can't drive through other cars)
+  // rivals + collisions (player can't drive through other cars; hitting one costs speed)
   updateRivals(dt);
-  for (const r of rivals) collideCars(G, r);
+  let hit=false;
+  for (const r of rivals){ if (collideCars(G, r)) hit=true; }
+  if (hit){ G.speed *= 0.9; G.shake = Math.min(0.7, (G.shake||0) + 0.35); }
   if (G.offset >  lim) G.offset =  lim;
   if (G.offset < -lim) G.offset = -lim;
+  G.shake = (G.shake||0) * (1 - 6*dt);   // decay the impact jolt
 
   G.totalTime += dt;
   G.timeLeft  -= dt;
@@ -1101,6 +1108,7 @@ function render(){
   _look.copy(_tmp).addScaledVector(f.tan, 16);   _look.y += 4.4;
   if (finite(_camPos) && finite(_look)){
     camera.position.lerp(_camPos, 0.25);
+    if (G.shake>0.02){ const s=G.shake; camera.position.x+=(Math.random()-0.5)*s; camera.position.y+=(Math.random()-0.5)*s; }
     camera.up.set(0,1,0);
     camera.lookAt(_look);
   }
