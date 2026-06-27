@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R21 — longer stands, real fans';
+const BUILD = 'BUILD R22 — detailed cars';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -461,6 +461,35 @@ function addWheels(g,tx,tz,r,lite){
   }
 }
 function addMirrors(g,x,y,z,mat){ for (const sx of [-x,x]){ g.add(lmBox(mat, 0.18,0.16,0.26, sx,y,z)); } }
+// Extra stock-car detailing. Lite cars (rivals) get just a grille + mirrors so
+// they read right next to the player; the full set is reserved for the hero car.
+function addCarDetails(g, W, L, lite, liv){
+  const chrome=chromeMat(), dark=matteMat(0x111317);
+  const steel=new THREE.MeshStandardMaterial({color:0xb8bcc4, metalness:0.9, roughness:0.3, envMap:envTex, envMapIntensity:1.2});
+  // front grille set into the nose + chrome headlight rings
+  addGrille(g, W*0.6, 0.66, L*0.5+0.01, lite);
+  for (const sx of [-0.82,0.82]) g.add(lmBox(chrome, 0.6,0.3,0.04, sx,0.82,L*0.5+0.005));
+  // side mirrors at the A-pillars
+  addMirrors(g, W/2-0.02, 1.18, 0.55, dark);
+  if (lite) return;                                   // ---- hero-car richness below ----
+  // front splitter blade + a red tow hook poking out of the nose
+  g.add(lmBox(dark, W+0.22, 0.05, 0.5, 0, 0.3, L*0.5+0.15));
+  g.add(lmBox(new THREE.MeshStandardMaterial({color:0xd23b2a, roughness:0.6}), 0.16,0.1,0.12, 0,0.52,L*0.5+0.09));
+  // side exhaust pipes running along each rocker
+  const pg=new THREE.CylinderGeometry(0.09,0.09,1.7,10); pg.rotateX(Math.PI/2);
+  for (const sx of [-1,1]){ const p=new THREE.Mesh(pg, steel); p.position.set(sx*(W/2+0.05), 0.34, -0.35); g.add(p); }
+  // chrome hood pins + cowl vents on the hood deck
+  for (const sx of [-0.78,0.78]) g.add(lmBox(chrome, 0.1,0.05,0.1, sx,1.11,2.0));
+  for (const sx of [-0.3,0.3])   g.add(lmBox(dark,   0.16,0.04,0.5, sx,1.11,L*0.05));
+  // driver-window safety net (left side)
+  g.add(lmBox(new THREE.MeshStandardMaterial({color:0x0a0a0a, roughness:0.95}), 0.05,0.34,0.66, -(W/2-0.2),1.3,0.05));
+  // roof flaps + a thin antenna
+  for (const dz of [0.0,-0.5]) g.add(lmBox(dark, W-0.72,0.03,0.3, 0,1.61,dz-L*0.06));
+  const ant=new THREE.Mesh(new THREE.CylinderGeometry(0.015,0.015,0.5,6), dark); ant.position.set(W*0.28,1.85,-L*0.1); g.add(ant);
+  // windshield sun-visor sponsor band (raked to match the screen)
+  const band=decal(makeSponsorTex(liv.sponsor||'DAYTONA', liv.body), 1.3,0.2);
+  band.position.set(0,1.4,0.5); band.rotation.x=0.62; g.add(band);
+}
 function addDetails(g, W, frontZ, rearZ, beltY, lowY){
   const chrome=chromeMat(), plate=new THREE.MeshStandardMaterial({color:0xeef0f2, roughness:0.5});
   const amber=new THREE.MeshStandardMaterial({color:0xff9a1f, emissive:0xc25500, emissiveIntensity:0.6, roughness:0.5});
@@ -528,6 +557,8 @@ function buildCar(vehicle, lite){
   }
   // sticker headlights + taillights (taillights flare under braking)
   addLights(g, 0.82, L*0.5, L*0.5);
+  // grille / mirrors / exhausts / hood pins / window net / antenna …
+  addCarDetails(g, W, L, lite, liv);
   // racing wheels tucked under the fenders
   addWheels(g, W/2-0.04, L*0.3, 0.55, lite);
   g.scale.setScalar(CAR_SCALE);   // bigger cars (wheels sit at y=0 so it stays grounded)
