@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R26 — dashboard view';
+const BUILD = 'BUILD R27 — next-level graphics';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -136,7 +136,7 @@ function initThree(){
   renderer.setPixelRatio(Math.min(MOBILE?1.25:2, window.devicePixelRatio||1));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.9;
+  renderer.toneMappingExposure = 0.98;
   renderer.shadowMap.enabled = !MOBILE;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -151,9 +151,9 @@ function initThree(){
 
   camera = new THREE.PerspectiveCamera(62, 1, 0.5, 5000);
 
-  scene.add(new THREE.HemisphereLight(0xd7dde4, 0x4a6a3a, 0.5));   // softer, less-blue sky light so flat surfaces aren't washed blue
-  scene.add(new THREE.AmbientLight(0xffffff, 0.32));
-  sun = new THREE.DirectionalLight(0xfff3d0, 1.6);
+  scene.add(new THREE.HemisphereLight(0xdfe6ee, 0x49663b, 0.58));   // softer, less-blue sky light so flat surfaces aren't washed blue
+  scene.add(new THREE.AmbientLight(0xffffff, 0.30));
+  sun = new THREE.DirectionalLight(0xfff0c4, 2.0);                  // warmer, stronger key light
   sun.position.set(60,120,30);
   sun.castShadow = !MOBILE;
   if (sun.castShadow){
@@ -183,6 +183,25 @@ function buildSky(){
   scene.add(sky);
   scene.background = new THREE.Color(th.skyHorizon);
   scene.fog.color.set(th.skyHorizon);
+  buildSunGlow();
+}
+
+// a bright sun disc with an additive glow halo — fake "bloom" that is iOS-safe
+// (no post-processing). Lives on the sky sphere so it sits at infinity.
+let _sunSprite=null;
+function buildSunGlow(){
+  if (_sunSprite){ _sunSprite.geometry.dispose(); _sunSprite.material.map.dispose(); _sunSprite.material.dispose(); _sunSprite=null; }
+  const cv=document.createElement('canvas'); cv.width=cv.height=128; const x=cv.getContext('2d');
+  const g=x.createRadialGradient(64,64,2,64,64,64);
+  g.addColorStop(0,'rgba(255,252,242,1)'); g.addColorStop(0.16,'rgba(255,246,212,0.95)');
+  g.addColorStop(0.42,'rgba(255,226,150,0.35)'); g.addColorStop(0.7,'rgba(255,210,140,0.10)'); g.addColorStop(1,'rgba(255,210,140,0)');
+  x.fillStyle=g; x.fillRect(0,0,128,128);
+  const tex=new THREE.CanvasTexture(cv); tex.colorSpace=THREE.SRGBColorSpace;
+  const m=new THREE.MeshBasicMaterial({map:tex, transparent:true, depthWrite:false, fog:false, blending:THREE.AdditiveBlending});
+  _sunSprite=new THREE.Mesh(new THREE.PlaneGeometry(820,820), m);
+  _sunSprite.position.copy(sun.position).normalize().multiplyScalar(3100);
+  _sunSprite.renderOrder=1;
+  sky.add(_sunSprite);
 }
 
 // environment map for glossy paint/chrome/glass reflections (the "modern" look)
@@ -410,8 +429,8 @@ function buildRoadMesh(){
 // ----------------------------------------------------------------------------
 // ---- car materials ----
 function paintMat(c){ return MOBILE
-  ? new THREE.MeshStandardMaterial({color:c, metalness:0.35, roughness:0.32, envMap:envTex, envMapIntensity:1.1})
-  : new THREE.MeshPhysicalMaterial({color:c, metalness:0.25, roughness:0.3, clearcoat:1.0, clearcoatRoughness:0.08, envMap:envTex, envMapIntensity:1.2}); }
+  ? new THREE.MeshStandardMaterial({color:c, metalness:0.38, roughness:0.28, envMap:envTex, envMapIntensity:1.35})
+  : new THREE.MeshPhysicalMaterial({color:c, metalness:0.28, roughness:0.26, clearcoat:1.0, clearcoatRoughness:0.06, envMap:envTex, envMapIntensity:1.5}); }
 function matteMat(c){ return new THREE.MeshStandardMaterial({color:c, metalness:0, roughness:0.85}); }
 function glassMat(){ return new THREE.MeshStandardMaterial({color:0x0b1626, metalness:0.5, roughness:0.06, envMap:envTex, envMapIntensity:1.6}); }
 function chromeMat(){ return new THREE.MeshStandardMaterial({color:0xc4c9d2, metalness:0.95, roughness:0.2, envMap:envTex, envMapIntensity:1.4}); }
@@ -1342,6 +1361,7 @@ function render(){
     }
   }
   if (sky) sky.position.copy(camera.position);
+  if (_sunSprite) _sunSprite.quaternion.copy(camera.quaternion);   // keep the sun facing the camera
 
   let targetFov = 62 + speedFracFov()*16;   // FOV opens with speed for more sense of rush
   const asp = camera.aspect||1;
@@ -1373,6 +1393,25 @@ function miniXY(p, x, y, s){
   return [ x + 6 + nx*(s-12), y + 6 + ny*(s-12) ];
 }
 function lerp(a,b,t){ return a+(b-a)*t; }
+
+// cinematic colour grade + vignette, drawn on the HUD canvas (over the 3D scene)
+function drawGrade(W,H,sp){
+  // warm light wash up top, gentle cool wash along the bottom — filmic depth
+  const wash=hctx.createLinearGradient(0,0,0,H);
+  wash.addColorStop(0.0,'rgba(255,224,170,0.10)');
+  wash.addColorStop(0.42,'rgba(255,255,255,0.0)');
+  wash.addColorStop(1.0,'rgba(20,40,80,0.12)');
+  hctx.fillStyle=wash; hctx.fillRect(0,0,W,H);
+  // vignette — tightens & darkens with speed for a sense of rush
+  const cx=W*0.5, cy=H*0.52;
+  const inner=Math.min(W,H)*(0.34 - sp*0.10);
+  const outer=Math.max(W,H)*0.78;
+  const vg=hctx.createRadialGradient(cx,cy,inner, cx,cy,outer);
+  vg.addColorStop(0,'rgba(0,0,8,0)');
+  vg.addColorStop(0.65,'rgba(0,0,8,0)');
+  vg.addColorStop(1,`rgba(0,0,10,${0.34+sp*0.16})`);
+  hctx.fillStyle=vg; hctx.fillRect(0,0,W,H);
+}
 
 // in-car dashboard + steering wheel that turns with the player's steering
 function drawDashboard(W,H){
@@ -1417,6 +1456,10 @@ function drawHUD(){
   hctx.clearRect(0,0,W,H);
   if (!G.started) return;
   const sp = Math.min(1, Math.abs(G.speed)/(G.maxSpeed||1));
+
+  // cinematic grade over the 3D (the HUD canvas sits on top of the GL canvas):
+  // a speed-reactive vignette + a faint warm sky wash / cool road wash.
+  drawGrade(W,H,sp);
 
   // cockpit framing — A-pillars + dashboard lip so first-person reads as "in the car"
   if (G.view==='cockpit'){
