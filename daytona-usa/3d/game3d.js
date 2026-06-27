@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R32 — ultra-real car';
+const BUILD = 'BUILD R33 — textured everywhere';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -476,13 +476,16 @@ function paintMat(c, hero){
   if (hero){
     const m=new THREE.MeshPhysicalMaterial({color:c, metalness:0.55, roughness:0.32, clearcoat:1.0, clearcoatRoughness:0.045, envMap:envTex, envMapIntensity:1.7});
     m.clearcoatNormalMap=flakeNormalTex(); m.clearcoatNormalScale=new THREE.Vector2(0.10,0.10);
+    m.roughnessMap=makeDetailTex('metal');   // micro-surface texture in the paint reflections
     return m;
   }
-  return new THREE.MeshStandardMaterial({color:c, metalness:0.42, roughness:0.3, envMap:envTex, envMapIntensity:1.25});
+  const m=new THREE.MeshStandardMaterial({color:c, metalness:0.42, roughness:0.3, envMap:envTex, envMapIntensity:1.25});
+  m.roughnessMap=makeDetailTex('metal');   // micro-surface texture in the paint reflections
+  return m;
 }
-function matteMat(c){ return new THREE.MeshStandardMaterial({color:c, metalness:0, roughness:0.85}); }
+function matteMat(c){ const m=new THREE.MeshStandardMaterial({color:c, metalness:0, roughness:0.85}); m.map=makeDetailTex('rough'); return m; }
 function glassMat(){ return new THREE.MeshStandardMaterial({color:0x0b1626, metalness:0.5, roughness:0.06, envMap:envTex, envMapIntensity:1.6}); }
-function chromeMat(){ return new THREE.MeshStandardMaterial({color:0xc4c9d2, metalness:0.95, roughness:0.2, envMap:envTex, envMapIntensity:1.4}); }
+function chromeMat(){ const m=new THREE.MeshStandardMaterial({color:0xc4c9d2, metalness:0.95, roughness:0.2, envMap:envTex, envMapIntensity:1.4}); m.roughnessMap=makeDetailTex('metal'); return m; }
 function shadeHex(hex, amt){ const r=Math.max(0,Math.min(255,(hex>>16&255)+amt)), g=Math.max(0,Math.min(255,(hex>>8&255)+amt)), b=Math.max(0,Math.min(255,(hex&255)+amt)); return (r<<16)|(g<<8)|b; }
 let _emblemTex=null;
 function emblemTex(){ if(_emblemTex)return _emblemTex; const cv=document.createElement('canvas'); cv.width=cv.height=64; const x=cv.getContext('2d');
@@ -1063,8 +1066,8 @@ function buildScenery(){
   const rockMat=new THREE.MeshLambertMaterial({color:0xb5793f, flatShading:true, map:makeDetailTex('rough')});
   const rockMat2=new THREE.MeshLambertMaterial({color:0x9c6534, flatShading:true, map:makeDetailTex('stone')});
   function rock(s){ const g=new THREE.Group(); const h=3+rng()*4; const m=new THREE.Mesh(new THREE.ConeGeometry(2.2+rng()*1.5,h,5), rng()<0.5?rockMat:rockMat2); m.position.y=h/2; m.rotation.y=rng()*6.28; g.add(m); const m2=new THREE.Mesh(new THREE.DodecahedronGeometry(1.4+rng()),rockMat2); m2.position.set(1.5,0.8,0.5); g.add(m2); g.scale.setScalar(s); return g; }
-  const palmTrunk=new THREE.MeshLambertMaterial({color:0x8a6a3a});
-  const palmLeaf =new THREE.MeshLambertMaterial({color:0x2f9c4a, side:THREE.DoubleSide});
+  const palmTrunk=new THREE.MeshLambertMaterial({color:0x8a6a3a, map:makeDetailTex('metal')});
+  const palmLeaf =new THREE.MeshLambertMaterial({color:0x2f9c4a, side:THREE.DoubleSide, map:makeDetailTex('rough')});
   const NFROND = MOBILE ? 5 : 7;
   function palm(s){ const g=new THREE.Group(); const t=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.34,5,7),palmTrunk); t.position.y=2.5; t.rotation.z=0.12; g.add(t); for(let k=0;k<NFROND;k++){ const fr=new THREE.Mesh(new THREE.ConeGeometry(0.5,3.4,4),palmLeaf); const piv=new THREE.Group(); piv.add(fr); piv.rotation.y=k/NFROND*6.28; fr.position.set(1.6,5,0); fr.rotation.set(0,0,-0.5); g.add(piv);} g.scale.setScalar(s); return g; }
   const treeTrunk=new THREE.MeshLambertMaterial({color:0x7a5532, map:makeDetailTex('metal')});
@@ -1151,10 +1154,10 @@ function buildScenery(){
 
   // start/finish gantry
   const f0=frames[2], gantry=new THREE.Group();
-  const postMat=new THREE.MeshLambertMaterial({color:0xb9c0c7}), postGeo=new THREE.CylinderGeometry(0.5,0.5,16,8);
+  const postMat=new THREE.MeshLambertMaterial({color:0xb9c0c7, map:makeDetailTex('metal')}), postGeo=new THREE.CylinderGeometry(0.5,0.5,16,8);
   const lp=new THREE.Mesh(postGeo,postMat); lp.position.set(-ROAD_W-2,8,0); gantry.add(lp);
   const rp=new THREE.Mesh(postGeo,postMat); rp.position.set(ROAD_W+2,8,0); gantry.add(rp);
-  const beam=new THREE.Mesh(new THREE.BoxGeometry((ROAD_W+2)*2,3,1.5), new THREE.MeshLambertMaterial({color:0xc1272d})); beam.position.set(0,15.5,0); gantry.add(beam);
+  const beam=new THREE.Mesh(new THREE.BoxGeometry((ROAD_W+2)*2,3,1.5), new THREE.MeshLambertMaterial({color:0xc1272d, map:makeDetailTex('metal')})); beam.position.set(0,15.5,0); gantry.add(beam);
   const board=new THREE.Mesh(new THREE.BoxGeometry(8,3,0.5), new THREE.MeshBasicMaterial({map:makeSignTexture('DAYTONA','#c1272d')})); board.position.set(0,12,0.9); gantry.add(board);
   // a waving checkered flag on the right post (segmented so it ripples)
   {
@@ -1177,14 +1180,15 @@ function buildScenery(){
   const standFracs = MOBILE ? [0.008,0.028, 0.25, 0.50, 0.75]
                             : [0.006,0.022,0.038, 0.25, 0.49,0.51,0.53, 0.75];
   const standCen=new THREE.Vector3(); for(const fr of frames) standCen.add(fr.pos); standCen.multiplyScalar(1/frames.length);
-  const standPostMat=new THREE.MeshLambertMaterial({color:0xb9c0c7});
+  const standPostMat=new THREE.MeshLambertMaterial({color:0xb9c0c7, map:makeDetailTex('metal')});
   let waveIdx=0;
   for (const fr of standFracs){
     const idx=Math.floor(fr*DIV)%DIV, f=frames[idx];
     const side=(new THREE.Vector3().copy(f.pos).sub(standCen).dot(f.right)>=0)?1:-1;   // outward side
     const stand=new THREE.Group();
     const W=MOBILE?78:96, H=24;   // longer grandstands
-    const baseM=new THREE.Mesh(new THREE.BoxGeometry(W,H,12), new THREE.MeshLambertMaterial({color:0x9aa3b2})); baseM.position.y=H/2; stand.add(baseM);
+    const baseMat=new THREE.MeshLambertMaterial({color:0x9aa3b2, map:makeDetailTex('stone').clone()}); baseMat.map.repeat.set(6,3);
+    const baseM=new THREE.Mesh(new THREE.BoxGeometry(W,H,12), baseMat); baseM.position.y=H/2; stand.add(baseM);
     const segW=(W-2)/NSEG, tierH=H*0.24;
     const colBase=waveIdx;                          // columns of THIS stand
     for (let row=0;row<NROW;row++){
@@ -1196,7 +1200,7 @@ function buildScenery(){
       }
     }
     waveIdx = colBase + NSEG;                       // next stand continues the wave
-    const roof=new THREE.Mesh(new THREE.BoxGeometry(W+2,1,13), new THREE.MeshLambertMaterial({color:0xd6262b})); roof.position.y=H+0.9; stand.add(roof);
+    const roof=new THREE.Mesh(new THREE.BoxGeometry(W+2,1,13), new THREE.MeshLambertMaterial({color:0xd6262b, map:makeDetailTex('metal')})); roof.position.y=H+0.9; stand.add(roof);
     for (const sx of [-1,1]){ const post=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,H,6), standPostMat); post.position.set(sx*(W/2-1), H/2, 6.5); stand.add(post); }
     stand.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+8));   // close to the track
     stand.lookAt(f.pos.clone().addScaledVector(f.right, side).setY(stand.position.y));
