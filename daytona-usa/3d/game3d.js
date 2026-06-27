@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R14 — taller grandstands around the lap';
+const BUILD = 'BUILD R15 — bigger stands, more rows, bigger wave';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -924,9 +924,9 @@ function buildScenery(){
   }
   gantry.position.copy(f0.pos); gantry.lookAt(f0.pos.clone().add(f0.tan)); sceneryGroup.add(gantry);
 
-  // ---- TALL grandstands distributed around the lap (outer side), close to the track ----
+  // ---- BIG multi-row grandstands distributed around the lap (outer side, close in) ----
   const crowdTex=makeCrowdTexture();
-  const NSEG=8;
+  const NSEG=8, NROW=MOBILE?2:3;
   const standFracs = MOBILE ? [0.008,0.028, 0.25, 0.50, 0.75]
                             : [0.006,0.022,0.038, 0.25, 0.49,0.51,0.53, 0.75];
   const standCen=new THREE.Vector3(); for(const fr of frames) standCen.add(fr.pos); standCen.multiplyScalar(1/frames.length);
@@ -936,17 +936,22 @@ function buildScenery(){
     const idx=Math.floor(fr*DIV)%DIV, f=frames[idx];
     const side=(new THREE.Vector3().copy(f.pos).sub(standCen).dot(f.right)>=0)?1:-1;   // outward side
     const stand=new THREE.Group();
-    const W=32, H=15;
-    const baseM=new THREE.Mesh(new THREE.BoxGeometry(W,H,9), new THREE.MeshLambertMaterial({color:0x9aa3b2})); baseM.position.y=H/2; stand.add(baseM);
-    const segW=(W-2)/NSEG;
-    for (let k=0;k<NSEG;k++){
-      const seg=new THREE.Mesh(new THREE.PlaneGeometry(segW-0.1, H-3), new THREE.MeshBasicMaterial({map:crowdTex}));
-      seg.position.set(-(W-2)/2+segW*(k+0.5), H*0.58, 4.7); seg.rotation.x=-0.34; stand.add(seg);
-      _wave.push({mesh:seg, baseY:H*0.58, k:waveIdx++});           // running index so the wave travels stand-to-stand
+    const W=44, H=24;
+    const baseM=new THREE.Mesh(new THREE.BoxGeometry(W,H,12), new THREE.MeshLambertMaterial({color:0x9aa3b2})); baseM.position.y=H/2; stand.add(baseM);
+    const segW=(W-2)/NSEG, tierH=H*0.24;
+    const colBase=waveIdx;                          // columns of THIS stand
+    for (let row=0;row<NROW;row++){
+      const ry=H*(0.30+row*0.24);
+      for (let k=0;k<NSEG;k++){
+        const seg=new THREE.Mesh(new THREE.PlaneGeometry(segW-0.1, tierH), new THREE.MeshBasicMaterial({map:crowdTex}));
+        seg.position.set(-(W-2)/2+segW*(k+0.5), ry, 6.2 - row*0.8); seg.rotation.x=-0.34; stand.add(seg);
+        _wave.push({mesh:seg, baseY:ry, k:colBase+k});   // a whole column rises together
+      }
     }
-    const roof=new THREE.Mesh(new THREE.BoxGeometry(W+1.5,0.8,10), new THREE.MeshLambertMaterial({color:0xd6262b})); roof.position.y=H+0.6; stand.add(roof);
-    for (const sx of [-1,1]){ const post=new THREE.Mesh(new THREE.CylinderGeometry(0.45,0.45,H,6), standPostMat); post.position.set(sx*(W/2-1), H/2, 5.2); stand.add(post); }
-    stand.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+8));   // closer to the track
+    waveIdx = colBase + NSEG;                       // next stand continues the wave
+    const roof=new THREE.Mesh(new THREE.BoxGeometry(W+2,1,13), new THREE.MeshLambertMaterial({color:0xd6262b})); roof.position.y=H+0.9; stand.add(roof);
+    for (const sx of [-1,1]){ const post=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,H,6), standPostMat); post.position.set(sx*(W/2-1), H/2, 6.5); stand.add(post); }
+    stand.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+8));   // close to the track
     stand.lookAt(f.pos.clone().addScaledVector(f.right, side).setY(stand.position.y));
     sceneryGroup.add(stand);
   }
@@ -1208,8 +1213,8 @@ function animateWorld(){
   }
   // animated (scrolling) window textures
   for (const sc of _scroll) sc.tex.offset.y += sc.v * _adt;
-  // grandstand crowd "wave" — a hump of standing fans travels along the stands
-  for (const wv of _wave){ const rise=Math.max(0, Math.sin(t*2.4 - wv.k*0.6)); wv.mesh.position.y = wv.baseY + rise*1.6; }
+  // grandstand crowd "wave" — a big hump of standing fans sweeps along the stands
+  for (const wv of _wave){ const rise=Math.pow(Math.max(0, Math.sin(t*2.4 - wv.k*0.55)), 0.6); wv.mesh.position.y = wv.baseY + rise*4.0; }
 }
 
 function render(){
