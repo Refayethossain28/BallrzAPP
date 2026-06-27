@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R9 — smoother cars + impact slowdown';
+const BUILD = 'BUILD R10 — road markings + smarter AI';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -352,6 +352,23 @@ function buildRoadMesh(){
     };
     ribbon(-ROAD_W-RUMBLE_W,-ROAD_W,0.02, i=>Math.floor(i/4)%2?c.setHex(0xd03a32):c.setHex(0xe9e9ee));
     ribbon( ROAD_W,ROAD_W+RUMBLE_W,0.02, i=>Math.floor(i/4)%2?c.setHex(0xd03a32):c.setHex(0xe9e9ee));
+    // ---- lane markings ----
+    // solid white edge lines just inside each kerb
+    ribbon(ROAD_W-0.6, ROAD_W-0.3, 0.03, ()=>c.setHex(0xeaeaea));
+    ribbon(-(ROAD_W-0.3), -(ROAD_W-0.6), 0.03, ()=>c.setHex(0xeaeaea));
+    // dashed centre + lane lines (7 frames on / 7 off, per-frame so they follow curves)
+    const dashed=(lat,hw)=>{
+      for (let i=0;i<DIV;i++){
+        if (Math.floor(i/7)%2) continue;
+        const a=frames[i], b=frames[(i+1)%DIV];
+        pt(ia,a,lat-hw,0.03); pt(oa,a,lat+hw,0.03); pt(ib,b,lat-hw,0.03); pt(ob,b,lat+hw,0.03);
+        c.setHex(0xe6e6e6);
+        vert(ia,a.up); vert(ib,b.up); vert(ob,b.up); vert(ia,a.up); vert(ob,b.up); vert(oa,a.up);
+      }
+    };
+    dashed(0, 0.18);              // centre line
+    dashed(ROAD_W*0.5, 0.15);     // right lane line
+    dashed(-ROAD_W*0.5, 0.15);    // left lane line
     // start/finish checker across the road at frames 0..2
     const NB=10;
     for (let i=0;i<3;i++){
@@ -887,7 +904,7 @@ function buildScenery(){
 function buildRivals(n){
   for (const r of rivals){ scene.remove(r.mesh); }
   rivals = [];
-  const aiTop = G.circuit.maxSpeed * G.circuit.aiSpeed * 0.58;
+  const aiTop = G.circuit.maxSpeed * G.circuit.aiSpeed * 0.64;   // competitive straight-line pace
   for (let i=0;i<n;i++){
     const liv = RIVAL_LIVERIES[i % RIVAL_LIVERIES.length];
     const mesh = buildCar({ livery: liv }, true);   // lite detail for rivals
@@ -906,12 +923,28 @@ const LIVERIES = [0xe23b3b,0x2f6cff,0x22c55e,0xf59e0b,0xa855f7,0x06b6d4,0xec4899
 function updateRivals(dt){
   const playerProg = (G.lap-1)*trackLen + G.dist;
   for (const r of rivals){
-    let target = r.baseSpeed;
+    const fi = ((Math.floor((r.dist/trackLen)*DIV))%DIV+DIV)%DIV;
+    // --- corner-aware speed: ease off for the sharpest curvature just ahead ---
+    let curveAhead=0;
+    for (let k=8;k<=70;k+=12) curveAhead=Math.max(curveAhead, Math.abs(frames[(fi+k)%DIV].curv));
+    const cornerFactor = 1 - Math.min(0.42, curveAhead*16);
+    let target = r.baseSpeed * cornerFactor;
+    // --- rubber-band so the field stays a real race around the player ---
     const gap = (r.lap*trackLen + r.dist) - playerProg;   // +ve = ahead of player
-    if (gap >  140) target *= 0.95;                       // rubber-band so the pack stays close
-    if (gap < -140) target *= 1.06;
-    r.speed += (target - r.speed) * 1.2 * dt;
-    r.offset += (r.lane - r.offset) * 2.0 * dt;
+    if (gap > 150) target *= 0.92;                        // leaders don't run away from the player
+    else if (gap < 0) target *= 1 + Math.min(0.34, -gap/430);  // the further back, the harder they chase
+    r.speed += (target - r.speed) * 1.6 * dt;
+    // --- racing line: hug the inside of the upcoming corner ---
+    const curv = frames[fi].curv;
+    let targetOff = -Math.sign(curv) * Math.min(1, Math.abs(curv)*55) * 4.5 + r.lane*0.35;
+    // --- overtaking: if a car sits just ahead in my lane, pull to the clearer side ---
+    for (const o of rivals){
+      if (o===r) continue;
+      let dd=o.dist-r.dist; if(dd>trackLen*0.5)dd-=trackLen; if(dd<-trackLen*0.5)dd+=trackLen;
+      if (dd>1.5 && dd<13 && Math.abs(o.offset-r.offset)<2.6) targetOff += (r.offset>=o.offset?1:-1)*3.2;
+    }
+    targetOff = Math.max(-ROAD_W+1.2, Math.min(ROAD_W-1.2, targetOff));
+    r.offset += (targetOff - r.offset) * 2.4 * dt;
     r.dist += r.speed * dt;
     if (r.dist >= trackLen){ r.dist -= trackLen; r.lap++; }
   }
