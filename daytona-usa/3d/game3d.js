@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R31 — Dubai gate fix';
+const BUILD = 'BUILD R32 — ultra-real car';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -461,9 +461,25 @@ function buildRoadMesh(){
 //  Car
 // ----------------------------------------------------------------------------
 // ---- car materials ----
-function paintMat(c){ return MOBILE
-  ? new THREE.MeshStandardMaterial({color:c, metalness:0.38, roughness:0.28, envMap:envTex, envMapIntensity:1.35})
-  : new THREE.MeshPhysicalMaterial({color:c, metalness:0.28, roughness:0.26, clearcoat:1.0, clearcoatRoughness:0.06, envMap:envTex, envMapIntensity:1.5}); }
+// subtle metallic-flake / orange-peel normal so the clearcoat sparkles
+let _flakeTex=null;
+function flakeNormalTex(){
+  if (_flakeTex) return _flakeTex;
+  const cv=document.createElement('canvas'); cv.width=cv.height=128; const x=cv.getContext('2d');
+  const img=x.createImageData(128,128);
+  for (let i=0;i<img.data.length;i+=4){ img.data[i]=128+(Math.random()*40-20); img.data[i+1]=128+(Math.random()*40-20); img.data[i+2]=255; img.data[i+3]=255; }
+  x.putImageData(img,0,0);
+  _flakeTex=new THREE.CanvasTexture(cv); _flakeTex.wrapS=_flakeTex.wrapT=THREE.RepeatWrapping; _flakeTex.repeat.set(5,5); return _flakeTex;
+}
+// hero = the player's car gets full clearcoat PBR + flake; rivals get a cheaper metallic.
+function paintMat(c, hero){
+  if (hero){
+    const m=new THREE.MeshPhysicalMaterial({color:c, metalness:0.55, roughness:0.32, clearcoat:1.0, clearcoatRoughness:0.045, envMap:envTex, envMapIntensity:1.7});
+    m.clearcoatNormalMap=flakeNormalTex(); m.clearcoatNormalScale=new THREE.Vector2(0.10,0.10);
+    return m;
+  }
+  return new THREE.MeshStandardMaterial({color:c, metalness:0.42, roughness:0.3, envMap:envTex, envMapIntensity:1.25});
+}
 function matteMat(c){ return new THREE.MeshStandardMaterial({color:c, metalness:0, roughness:0.85}); }
 function glassMat(){ return new THREE.MeshStandardMaterial({color:0x0b1626, metalness:0.5, roughness:0.06, envMap:envTex, envMapIntensity:1.6}); }
 function chromeMat(){ return new THREE.MeshStandardMaterial({color:0xc4c9d2, metalness:0.95, roughness:0.2, envMap:envTex, envMapIntensity:1.4}); }
@@ -478,7 +494,7 @@ function emblemTex(){ if(_emblemTex)return _emblemTex; const cv=document.createE
 function extrudeCar(profile, width, bevel, mat){
   const s=new THREE.Shape(); s.moveTo(profile[0][0],profile[0][1]);
   s.splineThru(profile.slice(1).map(p=>new THREE.Vector2(p[0],p[1]))); s.closePath();
-  const geo=new THREE.ExtrudeGeometry(s,{depth:width, bevelEnabled:bevel>0, bevelThickness:bevel, bevelSize:bevel, bevelSegments:2, steps:1, curveSegments:8});
+  const geo=new THREE.ExtrudeGeometry(s,{depth:width, bevelEnabled:bevel>0, bevelThickness:bevel, bevelSize:bevel, bevelSegments:3, steps:1, curveSegments:MOBILE?12:18});
   geo.translate(0,0,-width/2);
   const m=new THREE.Mesh(geo, mat); m.rotation.y=-Math.PI/2; return m;
 }
@@ -495,26 +511,69 @@ function addGrille(g,w,y,z,lite){
   g.add(lmBox(chromeMat(), w+0.14,0.6,0.08, 0,y,z-0.03));
   for (let i=0;i<5;i++) g.add(lmBox(chromeMat(), 0.05,0.44,0.09, (i/4-0.5)*w*0.86, y, z+0.01));
 }
-function addLights(g,y,zf,zr){
-  const hl=new THREE.MeshStandardMaterial({color:0xfff6c8, emissive:0xfff0b0, emissiveIntensity:0.9, roughness:0.3});
+function addLights(g,y,zf,zr,lite){
   g.userData.brakeMats=g.userData.brakeMats||[];
+  const hl=new THREE.MeshStandardMaterial({color:0xfff7d6, emissive:0xfff0b0, emissiveIntensity:1.1, roughness:0.22});
+  if (lite){   // rivals: simple emissive blocks
+    for (const sx of [-0.82,0.82]){
+      g.add(lmBox(hl, 0.5,0.2,0.08, sx,y,zf));
+      const tl=new THREE.MeshStandardMaterial({color:0xff2a2a, emissive:0xdd1212, emissiveIntensity:0.8, roughness:0.45});
+      g.add(lmBox(tl, 0.62,0.2,0.08, sx,y,-zr)); g.userData.brakeMats.push(tl);
+    }
+    return;
+  }
+  const housing=chromeMat();
+  const lens=new THREE.MeshPhysicalMaterial({color:0xffffff, metalness:0, roughness:0.04, clearcoat:1, envMap:envTex, envMapIntensity:1.6, transparent:true, opacity:0.45});
   for (const sx of [-0.82,0.82]){
-    g.add(lmBox(hl, 0.5,0.2,0.08, sx,y,zf));
-    const tl=new THREE.MeshStandardMaterial({color:0xff2a2a, emissive:0xdd1212, emissiveIntensity:0.8, roughness:0.45});
-    g.add(lmBox(tl, 0.62,0.2,0.08, sx,y,-zr)); g.userData.brakeMats.push(tl);
+    // headlight: chrome reflector housing + bright projector + clear glass lens
+    g.add(lmBox(housing, 0.62,0.32,0.05, sx,y,zf-0.02));
+    g.add(lmBox(hl, 0.46,0.2,0.05, sx,y,zf+0.005));
+    const cap=lmBox(lens, 0.58,0.3,0.05, sx,y,zf+0.03); cap.userData.noShadow=true; g.add(cap);
+    // taillight: dark housing + segmented red LED bar (flares on brake)
+    g.add(lmBox(matteMat(0x180606), 0.74,0.28,0.05, sx,y,-zr-0.005));
+    const tl=new THREE.MeshStandardMaterial({color:0xff3024, emissive:0xe01410, emissiveIntensity:0.8, roughness:0.4});
+    for (let i=0;i<3;i++) g.add(lmBox(tl, 0.19,0.18,0.07, sx+(i-1)*0.22, y, -zr));
+    g.userData.brakeMats.push(tl);
   }
 }
+// a realistic multi-spoke alloy wheel face drawn on a canvas (machined silver + lug nuts)
+let _wheelTex=null;
+function makeWheelTexture(){
+  if (_wheelTex) return _wheelTex;
+  const S=160, cv=document.createElement('canvas'); cv.width=cv.height=S; const x=cv.getContext('2d'); const c=S/2;
+  x.fillStyle='#0b0b0c'; x.beginPath(); x.arc(c,c,c,0,6.28); x.fill();                 // tyre
+  x.fillStyle='#16191e'; x.beginPath(); x.arc(c,c,c*0.74,0,6.28); x.fill();            // rim well (dark)
+  const g=x.createRadialGradient(c,c*0.7,4,c,c,c*0.7); g.addColorStop(0,'#e3e8ee'); g.addColorStop(0.6,'#aab1bb'); g.addColorStop(1,'#787f89');
+  for (let k=0;k<5;k++){ x.save(); x.translate(c,c); x.rotate(k/5*6.28 - Math.PI/2); x.fillStyle=g;
+    x.beginPath(); x.moveTo(-6,16); x.lineTo(6,16); x.lineTo(11,c*0.66); x.lineTo(-11,c*0.66); x.closePath(); x.fill(); x.restore(); }   // 5 spokes
+  x.strokeStyle='#cfd5dd'; x.lineWidth=S*0.03; x.beginPath(); x.arc(c,c,c*0.72,0,6.28); x.stroke();   // polished outer lip
+  const hg=x.createRadialGradient(c,c*0.9,2,c,c,18); hg.addColorStop(0,'#d7dce3'); hg.addColorStop(1,'#9aa0a9');
+  x.fillStyle=hg; x.beginPath(); x.arc(c,c,18,0,6.28); x.fill();                       // centre cap
+  x.fillStyle='#33373e'; for (let k=0;k<5;k++){ const a=k/5*6.28; x.beginPath(); x.arc(c+Math.cos(a)*11,c+Math.sin(a)*11,2.6,0,6.28); x.fill(); }   // lug nuts
+  x.fillStyle='#202329'; x.beginPath(); x.arc(c,c,5,0,6.28); x.fill();
+  _wheelTex=new THREE.CanvasTexture(cv); _wheelTex.colorSpace=THREE.SRGBColorSpace; return _wheelTex;
+}
 function addWheels(g,tx,tz,r,lite){
-  const tyre=new THREE.CylinderGeometry(r,r,0.46,lite?10:16); tyre.rotateZ(Math.PI/2);
-  const tm=matteMat(0x0b0b0b);
-  const rim=new THREE.CylinderGeometry(r*0.62,r*0.62,0.5,lite?8:14); rim.rotateZ(Math.PI/2);
+  const tyre=new THREE.CylinderGeometry(r,r,0.52,lite?10:22); tyre.rotateZ(Math.PI/2);
+  const tm=new THREE.MeshStandardMaterial({color:0x0c0c0e, roughness:0.85, metalness:0.0});
+  const simpleRim = lite ? new THREE.CylinderGeometry(r*0.62,r*0.62,0.54,8).rotateZ(Math.PI/2) : null;
   const rm=chromeMat();
-  const hub=new THREE.CylinderGeometry(r*0.18,r*0.18,0.52,8); hub.rotateZ(Math.PI/2); const hm=matteMat(0x2a2e34);
+  const wheelTex = lite?null:makeWheelTexture();
+  const discGeo  = lite?null:new THREE.CircleGeometry(r*0.99, 30);
+  const brakeGeo = lite?null:new THREE.CylinderGeometry(r*0.58,r*0.58,0.5,18).rotateZ(Math.PI/2);
+  const brakeMat = lite?null:new THREE.MeshStandardMaterial({color:0x8b9099, metalness:0.7, roughness:0.45});
   g.userData.wheels = [];
   for (const [wx,wz] of [[-tx,tz],[tx,tz],[-tx,-tz],[tx,-tz]]){
     const wg=new THREE.Group(); wg.position.set(wx,r,wz);   // a spinnable hub group per corner
-    const w=new THREE.Mesh(tyre,tm); wg.add(w);
-    if (!lite){ const d=new THREE.Mesh(rim,rm); wg.add(d); const h=new THREE.Mesh(hub,hm); wg.add(h); }
+    wg.add(new THREE.Mesh(tyre,tm));
+    if (!lite){
+      wg.add(new THREE.Mesh(brakeGeo, brakeMat));
+      const out = wx>0?1:-1;
+      const disc=new THREE.Mesh(discGeo, new THREE.MeshStandardMaterial({map:wheelTex, metalness:0.65, roughness:0.4, envMap:envTex, envMapIntensity:1.0}));
+      disc.position.x=out*0.27; disc.rotation.y=out*Math.PI/2; disc.userData.noShadow=true; wg.add(disc);
+    } else {
+      wg.add(new THREE.Mesh(simpleRim, rm));
+    }
     g.add(wg); g.userData.wheels.push(wg);
   }
 }
@@ -547,6 +606,22 @@ function addCarDetails(g, W, L, lite, liv){
   // windshield sun-visor sponsor band (raked to match the screen)
   const band=decal(makeSponsorTex(liv.sponsor||'DAYTONA', liv.body), 1.3,0.2);
   band.position.set(0,1.4,0.5); band.rotation.x=0.62; g.add(band);
+  // ---- fine realism touches: panel shut-lines, chrome trim, door handles, wipers ----
+  const seam=new THREE.MeshStandardMaterial({color:0x05060a, roughness:0.9});
+  // hood & trunk shut-lines (thin recessed grooves across the deck)
+  g.add(lmBox(seam, W-0.1,0.02,0.025, 0,1.10,L*0.22+0.96));
+  g.add(lmBox(seam, W-0.1,0.02,0.025, 0,1.06,-L*0.34));
+  // door shut-lines + a slim chrome door handle on each side
+  for (const sx of [-1,1]){ const xe=sx*(W/2+0.005);
+    g.add(lmBox(seam, 0.022,0.5,1.4, xe,0.78,0.0));                 // door cut
+    g.add(lmBox(seam, 0.022,0.42,0.02, xe,0.78,0.7));              // front edge
+    g.add(lmBox(chrome, 0.03,0.05,0.22, xe,1.0,-0.2));             // door handle
+  }
+  // chrome trim around the glasshouse (windscreen header + side rails)
+  g.add(lmBox(chrome, W-0.42,0.04,0.05, 0,1.42,L*0.14+0.02));      // windscreen top trim
+  for (const sx of [-1,1]) g.add(lmBox(chrome, 0.04,0.04,L*0.34, sx*(W/2-0.2),1.46,-L*0.06));
+  // twin windscreen wipers
+  for (const sx of [-0.4,0.1]) g.add(lmBox(seam, 0.025,0.03,0.5, sx, 1.06, L*0.14+0.06));
 }
 function addDetails(g, W, frontZ, rearZ, beltY, lowY){
   const chrome=chromeMat(), plate=new THREE.MeshStandardMaterial({color:0xeef0f2, roughness:0.5});
@@ -584,8 +659,9 @@ const STOCK_BODY=[[2.46,0.40],[2.54,0.74],[2.30,0.96],[1.5,1.02],[0.7,1.04],[-1.
 function buildCar(vehicle, lite){
   const liv = vehicle.livery || RIVAL_LIVERIES[0];
   const g=new THREE.Group();
-  const main=paintMat(liv.body), accent=paintMat(liv.hood), roofM=paintMat(liv.roof!=null?liv.roof:liv.hood);
-  const white=paintMat(0xffffff), glass=glassMat(), dark=matteMat(0x16181c);
+  const hero=!lite;
+  const main=paintMat(liv.body,hero), accent=paintMat(liv.hood,hero), roofM=paintMat(liv.roof!=null?liv.roof:liv.hood,hero);
+  const white=paintMat(0xffffff,hero), glass=glassMat(), dark=matteMat(0x16181c);
   const L=4.9, W=2.16;
   // ---- smooth curved main body (sharper bevel = defined NASCAR panels, not bulbous) ----
   g.add(extrudeCar(STOCK_BODY, W, 0.07, main));
@@ -614,7 +690,7 @@ function buildCar(vehicle, lite){
     const sp=decal(makeSponsorTex(liv.sponsor||'DAYTONA', liv.hood), 1.55,0.5); sp.position.set(sx*(W/2+0.04), 0.68, -0.7); sp.rotation.y=sx>0?-Math.PI/2:Math.PI/2; g.add(sp);
   }
   // sticker headlights + taillights (taillights flare under braking)
-  addLights(g, 0.82, L*0.5, L*0.5);
+  addLights(g, 0.82, L*0.5, L*0.5, lite);
   // grille / mirrors / exhausts / hood pins / window net / antenna …
   addCarDetails(g, W, L, lite, liv);
   // racing wheels tucked under the fenders
