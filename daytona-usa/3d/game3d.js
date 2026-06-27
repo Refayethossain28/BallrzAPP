@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R15 — bigger stands, more rows, bigger wave';
+const BUILD = 'BUILD R16 — soundtrack prelude';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -1397,8 +1397,10 @@ function startRace(){
   startRaceMusic();
 }
 
-// ---- race soundtrack: the user-supplied recordings (intro once -> loop) ----
-let _raceAudio = { intro:null, loop:null };
+// ---- race soundtrack: a shared PRELUDE plays first, then the chosen
+//      soundtrack (intro once -> loop). ----
+const PRELUDE = './audio/prelude.mp3';
+let _raceAudio = { pre:null, intro:null, loop:null };
 function startRaceMusic(){
   stopRaceMusic();
   if (window.GameMusic && window.GameMusic.stop){ try{ window.GameMusic.stop(); }catch(e){} }   // silence procedural menu music
@@ -1407,15 +1409,18 @@ function startRaceMusic(){
     const intro = new Audio(st.intro); intro.volume=0.75;
     const loop  = new Audio(st.loop);  loop.loop=true; loop.volume=0.75;
     intro.addEventListener('ended', ()=>{ try{ loop.currentTime=0; loop.play().catch(()=>{}); }catch(e){} });
-    intro.play().catch(()=>{ try{ loop.play().catch(()=>{}); }catch(e){} });   // if intro blocked, go straight to loop
-    _raceAudio = { intro, loop };
+    const pre = new Audio(PRELUDE); pre.volume=0.82;
+    pre.addEventListener('ended', ()=>{ try{ intro.currentTime=0; intro.play().catch(()=>{}); }catch(e){} });
+    _raceAudio = { pre, intro, loop };
+    // prelude -> intro -> loop; fall through gracefully if any stage is blocked
+    pre.play().catch(()=>{ intro.play().catch(()=>{ loop.play().catch(()=>{}); }); });
   } catch(e){ /* audio optional */ }
 }
 function stopRaceMusic(){
-  for (const k of ['intro','loop']){ const a=_raceAudio[k]; if(a){ try{ a.pause(); a.src=''; }catch(e){} } }
-  _raceAudio = { intro:null, loop:null };
+  for (const k of ['pre','intro','loop']){ const a=_raceAudio[k]; if(a){ try{ a.pause(); a.src=''; }catch(e){} } }
+  _raceAudio = { pre:null, intro:null, loop:null };
 }
-function pauseRaceMusic(p){ for (const k of ['intro','loop']){ const a=_raceAudio[k]; if(a){ try{ p?a.pause():(a.src&&a.play().catch(()=>{})); }catch(e){} } } }
+function pauseRaceMusic(p){ for (const k of ['pre','intro','loop']){ const a=_raceAudio[k]; if(a){ try{ p?a.pause():(a.src&&a.play().catch(()=>{})); }catch(e){} } } }
 
 function showEndScreen(win){
   const o=document.getElementById('overlay'); if(!o) return;
