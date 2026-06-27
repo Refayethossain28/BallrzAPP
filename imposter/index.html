@@ -135,6 +135,29 @@
   .role-sub{font-size:14px;color:var(--mut);max-width:300px}
   .catpill{font-size:12.5px;font-weight:700;color:var(--mut);background:var(--panel2);border:1px solid var(--line);
            border-radius:999px;padding:6px 12px}
+  .rolepill{font-size:14px;font-weight:750;color:var(--ink);background:rgba(124,139,255,.16);
+            border:1px solid rgba(124,139,255,.4);border-radius:999px;padding:7px 14px}
+  /* champion + confetti */
+  #confetti{position:fixed;inset:0;pointer-events:none;z-index:60}
+  .trophy{font-size:84px;filter:drop-shadow(0 10px 30px rgba(255,207,92,.55));animation:pop .6s cubic-bezier(.2,1.4,.4,1)}
+  @keyframes pop{0%{transform:scale(.3);opacity:0}100%{transform:scale(1);opacity:1}}
+  .champ-name{font-size:38px;font-weight:850;letter-spacing:-.02em;
+    background:linear-gradient(135deg,var(--amber),#ff9f5c);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .mvpcard{display:flex;gap:12px;align-items:center;background:var(--panel2);border:1px solid var(--line);
+           border-radius:14px;padding:12px 14px;text-align:left}
+  .mvpcard .mvb{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.1em;font-weight:800}
+  /* stats */
+  .stat{display:flex;align-items:center;gap:12px;background:var(--panel2);border:1px solid var(--line);
+        border-radius:13px;padding:11px 13px}
+  .stat .nm{font-weight:750;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stat .mini{display:flex;gap:13px}
+  .stat .mini b{display:block;font-size:15px;font-weight:800;font-variant-numeric:tabular-nums}
+  .stat .mini span{font-size:10px;color:var(--mut2);text-transform:uppercase;letter-spacing:.05em}
+  .ta{width:100%;min-height:120px;background:var(--panel2);border:1px solid var(--line);border-radius:13px;
+      padding:12px 14px;color:var(--ink);font-size:15px;outline:none;resize:vertical;font-family:inherit}
+  .ta:focus{border-color:var(--brand)}
+  .aibadge{display:inline-flex;gap:5px;align-items:center;font-size:11px;font-weight:800;color:#0a0d17;
+           background:linear-gradient(135deg,var(--teal),#5cc8ff);border-radius:999px;padding:3px 9px;letter-spacing:.03em}
   .pdot{display:flex;gap:7px;justify-content:center;margin-top:2px}
   .pdot i{width:8px;height:8px;border-radius:50%;background:var(--line2)}
   .pdot i.on{background:var(--brand)} .pdot i.done{background:var(--teal)}
@@ -246,27 +269,48 @@
     <div class="card">
       <h2>Game</h2>
       <div class="opt">
-        <div class="lbl"><b>Category</b><span id="catCount"></span></div>
-        <div class="chips" id="cats"></div>
+        <div class="lbl"><b>Mode</b><span id="gtHint">share a secret word</span></div>
+        <div class="seg" id="gameTypeSeg">
+          <button data-gt="word" class="on">🔤 Word</button>
+          <button data-gt="location">📍 Locations</button>
+        </div>
       </div>
+
+      <!-- WORD: category + decoy -->
+      <div id="wordWrap">
+        <div class="opt">
+          <div class="lbl"><b>Category</b><span id="catCount"></span></div>
+          <div class="chips" id="cats"></div>
+        </div>
+        <div class="opt">
+          <div class="lbl"><b>Imposter knows…</b></div>
+          <div class="seg" id="modeSeg">
+            <button data-mode="classic" class="on">Nothing</button>
+            <button data-mode="decoy">A decoy word</button>
+          </div>
+          <p class="hint" id="modeHint" style="margin:8px 0 0">The imposter is told they're the imposter and must bluff with no word.</p>
+        </div>
+      </div>
+
+      <!-- LOCATION: spyfall picker -->
+      <div id="locWrap" style="display:none">
+        <div class="opt">
+          <div class="lbl"><b>Location pool</b><span id="locCount"></span></div>
+          <div class="chips" id="locs"></div>
+        </div>
+        <p class="hint" style="margin:6px 0 0">Everyone gets the location and a secret role to play. The <b>spy</b> gets neither — and has to figure out where they are.</p>
+      </div>
+
       <div class="opt">
         <div class="lbl"><b>Imposters</b><span id="impMax"></span></div>
         <div class="step">
           <button id="impMinus" aria-label="Fewer imposters">－</button>
-          <div class="val"><span id="impVal">1</span><small>among the crew</small></div>
+          <div class="val"><span id="impVal">1</span><small id="impCaption">among the crew</small></div>
           <button id="impPlus" aria-label="More imposters">＋</button>
         </div>
       </div>
       <div class="opt">
-        <div class="lbl"><b>Imposter knows…</b></div>
-        <div class="seg" id="modeSeg">
-          <button data-mode="classic" class="on">Nothing</button>
-          <button data-mode="decoy">A decoy word</button>
-        </div>
-        <p class="hint" id="modeHint" style="margin:8px 0 0">The imposter is told they're the imposter and must bluff with no word.</p>
-      </div>
-      <div class="opt">
-        <div class="lbl"><b>Discussion timer</b><span id="timerLbl"></span></div>
+        <div class="lbl"><b>Discussion timer</b></div>
         <div class="seg" id="timerSeg">
           <button data-sec="0">Off</button>
           <button data-sec="60">1m</button>
@@ -274,9 +318,29 @@
           <button data-sec="180">3m</button>
         </div>
       </div>
+      <div class="opt">
+        <div class="lbl"><b>Play to</b><span>match length</span></div>
+        <div class="seg" id="targetSeg">
+          <button data-t="0" class="on">Endless</button>
+          <button data-t="5">5 pts</button>
+          <button data-t="10">10 pts</button>
+          <button data-t="15">15 pts</button>
+        </div>
+      </div>
+      <div class="opt">
+        <div class="lbl"><b>Two clue rounds</b><span>twice round before the vote</span></div>
+        <div class="seg" id="roundsSeg">
+          <button data-r="0" class="on">One</button>
+          <button data-r="1">Two</button>
+        </div>
+      </div>
     </div>
 
     <button class="btn" id="startBtn">Start round →</button>
+    <div class="row" style="margin-top:2px">
+      <button class="btn sec sm" id="statsBtn">📊 Stats</button>
+      <button class="btn sec sm" id="customBtn">✏️ Custom pack</button>
+    </div>
     <div class="foot">No account · works offline · everything stays on this device</div>
   </section>
 
@@ -294,6 +358,7 @@
           <div class="face-b" id="faceB">
             <div class="role-tag" id="roleTag">CREW</div>
             <div class="secret" id="secretWord">—</div>
+            <div class="rolepill" id="rolePill" style="display:none"></div>
             <div class="role-sub" id="roleSub"></div>
             <div class="catpill" id="revealCat"></div>
           </div>
@@ -307,8 +372,8 @@
   <!-- ============ CLUE ORDER ============ -->
   <section class="screen" id="s-order">
     <div class="card">
-      <h2>Give your clues 🗣️</h2>
-      <p class="hint">Going in this order, each player says <b>one word</b> that hints at the secret — clever enough to prove you know it, subtle enough not to hand it to the imposter. Then talk it out.</p>
+      <h2 id="orderTitle">Give your clues 🗣️</h2>
+      <p class="hint" id="orderHint">Going in this order, each player says <b>one word</b> that hints at the secret — clever enough to prove you know it, subtle enough not to hand it to the imposter. Then talk it out.</p>
       <div class="ol" id="orderList"></div>
     </div>
     <div class="startwho" style="text-align:center" id="orderCat"></div>
@@ -352,9 +417,9 @@
   <!-- ============ IMPOSTER LAST CHANCE ============ -->
   <section class="screen" id="s-guess">
     <div class="center">
-      <div class="role-tag imp">UNMASKED</div>
+      <div class="role-tag imp" id="guessTag">UNMASKED</div>
       <div class="bigname" id="guessName">Player</div>
-      <p class="role-sub">You're the imposter — and you're caught. One shot to <b>steal the round</b>: name the crew's secret word.</p>
+      <p class="role-sub" id="guessLead">You're the imposter — and you're caught. One shot to <b>steal the round</b>: name the crew's secret word.</p>
       <div class="addrow" style="margin-top:6px">
         <input id="guessInput" placeholder="The secret word is…" autocomplete="off" autocapitalize="off" enterkeyhint="done" style="text-align:center">
       </div>
@@ -392,6 +457,34 @@
     <button class="btn sec sm" id="newGame">End game · back to lobby</button>
   </section>
 
+  <!-- ============ CHAMPION ============ -->
+  <section class="screen" id="s-champion">
+    <div class="center">
+      <div class="trophy">🏆</div>
+      <div class="verdict crew" style="color:var(--amber)">Match winner</div>
+      <div class="champ-name" id="champName">Player</div>
+      <div class="card" style="text-align:left">
+        <div class="mvpcard" id="mvpCard"></div>
+        <div class="sb" id="champBoard" style="margin-top:10px"></div>
+      </div>
+      <div class="row">
+        <button class="btn sec" id="champShare">Share result</button>
+        <button class="btn" id="champNew">New match →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ STATS ============ -->
+  <section class="screen" id="s-stats">
+    <div class="card">
+      <h2>Player stats</h2>
+      <p class="hint" id="statsSub">Tracked on this device across every game.</p>
+      <div class="sb" id="statsList"></div>
+    </div>
+    <button class="btn sec" id="statsBack">← Back</button>
+    <button class="btn sec sm" id="statsReset">Reset all stats</button>
+  </section>
+
   <div class="foot" id="globalFoot" style="margin-top:auto">
     <span class="pill">🟢 <span id="installState">Add to Home Screen to play offline</span></span>
   </div>
@@ -413,8 +506,13 @@
     </ol>
     <h3>Scoring</h3>
     <p>Crew catch the imposter: <b>+1 each</b>. Imposter evades or you mis-accuse: <b>+2 imposter</b>. Caught imposter names the word: <b>+3 imposter</b> (steal).</p>
+    <h3>Two ways to play</h3>
+    <p><b>🔤 Word</b> — everyone shares one secret word; the imposter has none (or a <b>decoy</b>: a different word from the same category, so they may not even know they're wrong).</p>
+    <p><b>📍 Locations</b> — everyone gets the same place <i>and</i> a character role to act out; the <b>spy</b> gets neither and has to deduce where they are. Caught? The spy can still steal it by naming the location.</p>
+    <h3>Match play</h3>
+    <p>Set <b>Play to</b> a target and the first to reach it takes the crown, with a champion screen, MVP and confetti. Turn on <b>Two clue rounds</b> for a longer read on everyone. Build your own <b>Custom</b> category, or flip on <b>Live AI</b> to have Claude generate one from any theme.</p>
     <h3>Tips</h3>
-    <p>A clue too obvious helps the imposter blend. Too obscure and your own team suspects you. Live in the middle. In <b>decoy</b> mode the imposter holds a <i>different</i> word from the same category — they may not even know they're wrong.</p>
+    <p>A clue too obvious helps the imposter blend. Too obscure and your own team suspects you. Live in the middle.</p>
   </div>
 </div>
 
@@ -428,12 +526,41 @@
     <div class="settingrow"><div><b>Haptics</b><br><span class="kbd">Vibrate on reveal &amp; vote (supported phones)</span></div><div class="sw on" id="swHaptic"><i></i></div></div>
     <div class="settingrow"><div><b>Hold to reveal</b><br><span class="kbd">Must press &amp; hold the card to peek</span></div><div class="sw" id="swHold"><i></i></div></div>
     <div class="settingrow"><div><b>Category hint to imposter</b><br><span class="kbd">Show the imposter the category on their card</span></div><div class="sw on" id="swCat"><i></i></div></div>
+    <div class="settingrow"><div><b>Live AI categories</b> <span class="aibadge">✦ AI</span><br><span class="kbd">Generate fresh packs with Claude (needs the local proxy)</span></div><div class="sw" id="swAi"><i></i></div></div>
     <h3>About</h3>
     <p>A zero-build, offline-first party game. No account, no servers — every card, vote and score lives only on this device. Part of the BallrzAPP prototypes.</p>
+    <p class="kbd" id="aiNote" style="display:none">Live AI runs through a zero-dependency proxy that keeps your key server-side — <code>ANTHROPIC_API_KEY=sk-ant-… node imposter/server.mjs</code>, then open it from <code>http://localhost:8790</code>.</p>
     <button class="btn sec sm" id="resetScores" style="margin-top:6px">Reset scoreboard</button>
   </div>
 </div>
 
+<!-- Custom pack editor sheet -->
+<div class="sheet" id="customSheet">
+  <div class="scrim" data-close></div>
+  <div class="body">
+    <div class="grab"></div>
+    <h3>Custom category</h3>
+    <p>Make your own word pack — inside jokes, your friend group, a TV show. One word or short phrase per line (10+ is best).</p>
+    <div class="addrow" style="margin:10px 0">
+      <input id="packName" placeholder="Pack name (e.g. Our Group Chat)" maxlength="24" autocomplete="off">
+    </div>
+    <textarea class="ta" id="packWords" placeholder="Pizza&#10;Beach&#10;Taylor Swift&#10;…"></textarea>
+    <div id="aiRow" style="margin-top:10px;display:none">
+      <div class="addrow">
+        <input id="aiPrompt" placeholder="✦ Describe a theme — “90s cartoons”, “football clubs”…" autocomplete="off">
+        <button class="addbtn" id="aiGo" aria-label="Generate" style="width:auto;padding:0 14px;font-size:14px;font-weight:700">Make</button>
+      </div>
+      <p class="kbd" id="aiStatus" style="margin:6px 2px 0;min-height:14px"></p>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn sec" id="packDelete" style="display:none">Delete</button>
+      <button class="btn" id="packSave">Save &amp; use</button>
+    </div>
+    <div id="customList" style="margin-top:14px"></div>
+  </div>
+</div>
+
+<canvas id="confetti" style="display:none"></canvas>
 <div class="toast" id="toast"></div>
 
 <script src="engine.js"></script>
@@ -456,9 +583,11 @@
   const LS='imposter.v1';
   const defaults={
     players:['Alex','Sam','Jordan','Riley'],
-    packKey:'food', imposters:1, mode:'classic', timer:120,
-    sound:true, haptic:true, hold:false, catHint:true,
-    totals:{}, names:{}, round:0
+    gameType:'word', packKey:'food', locationKey:'mixed', imposters:1, mode:'classic',
+    timer:120, target:0, twoRounds:false,
+    sound:true, haptic:true, hold:false, catHint:true, ai:false,
+    customPacks:{}, activeCustom:null,
+    totals:{}, names:{}, round:0, stats:{}
   };
   let S = load();
   function load(){ try{ const o=JSON.parse(localStorage.getItem(LS)); return Object.assign({}, defaults, o||{}); }catch(e){ return Object.assign({}, defaults); } }
@@ -536,19 +665,62 @@
   $('#addBtn').addEventListener('click',()=>{ addPlayer($('#nameInput').value); $('#nameInput').value=''; $('#nameInput').focus(); });
   $('#nameInput').addEventListener('keydown',e=>{ if(e.key==='Enter'){ addPlayer($('#nameInput').value); $('#nameInput').value=''; }});
 
-  /* categories */
+  /* game type (word / location) */
+  function renderGameType(){
+    $$('#gameTypeSeg button').forEach(b=>b.classList.toggle('on', b.dataset.gt===S.gameType));
+    const loc = S.gameType==='location';
+    $('#wordWrap').style.display = loc?'none':'';
+    $('#locWrap').style.display = loc?'':'none';
+    $('#gtHint').textContent = loc?'find the location':'share a secret word';
+    $('#impCaption').textContent = loc?'spies at the table':'among the crew';
+    $('#startBtn').textContent = 'Start round →';
+  }
+  $$('#gameTypeSeg button').forEach(b=>b.addEventListener('click',()=>{ S.gameType=b.dataset.gt; click(); renderGameType(); save(); }));
+
+  /* word categories (built-in + custom) */
+  function activePackLabel(){
+    if(S.activeCustom && S.customPacks[S.activeCustom]) return S.customPacks[S.activeCustom].name;
+    if(S.packKey==='mixed') return 'Mixed';
+    return E.WORD_PACKS[S.packKey] ? E.WORD_PACKS[S.packKey].name : 'Mixed';
+  }
   function renderCats(){
     const wrap=$('#cats'); wrap.innerHTML='';
-    const mk=(key,emoji,label)=>{
-      const c=document.createElement('button'); c.className='chip'+(S.packKey===key?' on':'');
+    const mk=(key,emoji,label,isCustom)=>{
+      const on = isCustom ? S.activeCustom===key : (!S.activeCustom && S.packKey===key);
+      const c=document.createElement('button'); c.className='chip'+(on?' on':'');
       c.innerHTML=`<span>${emoji}</span>${label}`;
-      c.addEventListener('click',()=>{ S.packKey=key; click(); renderCats(); save(); });
+      c.addEventListener('click',()=>{
+        if(isCustom){ S.activeCustom=key; } else { S.packKey=key; S.activeCustom=null; }
+        click(); renderCats(); save();
+      });
       wrap.appendChild(c);
     };
     mk('mixed','🎲','Mixed');
     E.PACK_KEYS.forEach(k=> mk(k, E.WORD_PACKS[k].emoji, E.WORD_PACKS[k].name));
-    const total = S.packKey==='mixed' ? E.resolveWordList('mixed').length : (E.WORD_PACKS[S.packKey]?E.WORD_PACKS[S.packKey].words.length:0);
+    Object.keys(S.customPacks||{}).forEach(k=> mk(k, S.customPacks[k].ai?'✦':'⭐', S.customPacks[k].name, true));
+    // "make one" shortcut chip
+    const add=document.createElement('button'); add.className='chip'; add.style.borderStyle='dashed';
+    add.innerHTML='<span>＋</span>New'; add.addEventListener('click',()=>{ click(); openCustom(); });
+    wrap.appendChild(add);
+
+    let total;
+    if(S.activeCustom && S.customPacks[S.activeCustom]) total=S.customPacks[S.activeCustom].words.length;
+    else total = S.packKey==='mixed' ? E.resolveWordList('mixed').length : (E.WORD_PACKS[S.packKey]?E.WORD_PACKS[S.packKey].words.length:0);
     $('#catCount').textContent = total+' words';
+  }
+
+  /* locations */
+  function renderLocs(){
+    const wrap=$('#locs'); wrap.innerHTML='';
+    const mk=(key,emoji,label)=>{
+      const c=document.createElement('button'); c.className='chip'+(S.locationKey===key?' on':'');
+      c.innerHTML=`<span>${emoji}</span>${label}`;
+      c.addEventListener('click',()=>{ S.locationKey=key; click(); renderLocs(); save(); });
+      wrap.appendChild(c);
+    };
+    mk('mixed','🎲','All');
+    E.LOCATION_KEYS.forEach(k=> mk(k, E.LOCATIONS[k].emoji, E.LOCATIONS[k].name));
+    $('#locCount').textContent = (S.locationKey==='mixed'?E.LOCATION_KEYS.length+' places':'1 place');
   }
 
   /* imposters stepper */
@@ -578,6 +750,12 @@
   function renderTimerSeg(){ $$('#timerSeg button').forEach(b=>b.classList.toggle('on', +b.dataset.sec===S.timer)); }
   $$('#timerSeg button').forEach(b=>b.addEventListener('click',()=>{ S.timer=+b.dataset.sec; click(); renderTimerSeg(); save(); }));
 
+  /* match length + two clue rounds */
+  function renderTargetSeg(){ $$('#targetSeg button').forEach(b=>b.classList.toggle('on', +b.dataset.t===(S.target||0))); }
+  $$('#targetSeg button').forEach(b=>b.addEventListener('click',()=>{ S.target=+b.dataset.t; click(); renderTargetSeg(); save(); }));
+  function renderRoundsSeg(){ $$('#roundsSeg button').forEach(b=>b.classList.toggle('on', (b.dataset.r==='1')===!!S.twoRounds)); }
+  $$('#roundsSeg button').forEach(b=>b.addEventListener('click',()=>{ S.twoRounds=b.dataset.r==='1'; click(); renderRoundsSeg(); save(); }));
+
   /* =================================================================
      ROUND STATE
   ================================================================== */
@@ -588,13 +766,18 @@
   let votes=[];         // accusation votes (single accusation here)
   let pendingGuess=null;
 
+  let clueRound=1;      // 1 or 2 (two-clue-rounds option)
   $('#startBtn').addEventListener('click',()=>{
+    const custom = S.activeCustom && S.customPacks[S.activeCustom] ? S.customPacks[S.activeCustom].words : null;
     try{
-      round = E.dealRound({ players, imposterCount:S.imposters, packKey:S.packKey, mode:S.mode, rng });
+      round = E.dealRound({
+        players, imposterCount:S.imposters, gameType:S.gameType,
+        packKey:S.packKey, mode:S.mode, custom, locationKey:S.locationKey, rng,
+      });
     }catch(e){ toast(e.message); return; }
     // reveal in seating order (players array), each peeks their own card
     revealOrder = players.map(p=> round.assignments.find(a=>a.id===p.id));
-    revealIdx=0; revealed=false;
+    revealIdx=0; revealed=false; clueRound=1;
     click();
     startReveal();
   });
@@ -626,25 +809,41 @@
     if(revealed) return;
     const a=revealOrder[revealIdx];
     const faceB=$('#faceB');
+    const isLoc = round.gameType==='location';
+    const pill=$('#rolePill');
+    pill.style.display='none';
     if(a.isImposter){
       faceB.className='face-b imp';
-      $('#roleTag').textContent='IMPOSTER'; $('#roleTag').className='role-tag imp';
-      if(round.mode==='decoy'){
+      $('#roleTag').textContent = isLoc?'THE SPY':'IMPOSTER'; $('#roleTag').className='role-tag imp';
+      if(isLoc){
+        $('#secretWord').textContent="You're the Spy"; $('#secretWord').className='secret sm';
+        $('#roleSub').textContent="You don't know the location. Blend in, work out where you are, and don't get caught.";
+        $('#revealCat').textContent = S.catHint ? ('Pool: '+(S.locationKey==='mixed'?'Any place':round.secret)) : '';
+        $('#revealCat').style.display = (S.catHint && S.locationKey==='mixed') ? '' : 'none';
+      }else if(round.mode==='decoy'){
         $('#secretWord').textContent=a.word; $('#secretWord').className='secret';
         $('#roleSub').innerHTML="You're the imposter. This word might be wrong — blend in.";
+        $('#revealCat').textContent = S.catHint ? ('Category: '+round.category) : '';
+        $('#revealCat').style.display = S.catHint ? '' : 'none';
       }else{
         $('#secretWord').textContent="You're the Imposter"; $('#secretWord').className='secret sm';
         $('#roleSub').textContent="You don't know the word. Bluff a clue and survive the vote.";
+        $('#revealCat').textContent = S.catHint ? ('Category: '+round.category) : '';
+        $('#revealCat').style.display = S.catHint ? '' : 'none';
       }
-      $('#revealCat').textContent = S.catHint ? ('Category: '+round.category) : '';
-      $('#revealCat').style.display = S.catHint ? '' : 'none';
       buzz([12,40,12]);
     }else{
       faceB.className='face-b crew';
-      $('#roleTag').textContent='CREW'; $('#roleTag').className='role-tag crew';
-      $('#secretWord').textContent=a.word; $('#secretWord').className='secret';
-      $('#roleSub').textContent='Give a one-word clue that proves you know it — without giving it away.';
-      $('#revealCat').textContent='Category: '+round.category; $('#revealCat').style.display='';
+      $('#roleTag').textContent = isLoc?'LOCATION':'CREW'; $('#roleTag').className='role-tag crew';
+      $('#secretWord').textContent=a.word; $('#secretWord').className='secret'+(a.word.length>11?' sm':'');
+      if(isLoc){
+        pill.textContent='🎭 You are the '+a.roleName; pill.style.display='';
+        $('#roleSub').textContent='Drop a clue that shows you know this place — without naming it. Smoke out the spy.';
+        $('#revealCat').textContent=round.emoji+' '+round.category; $('#revealCat').style.display='';
+      }else{
+        $('#roleSub').textContent='Give a one-word clue that proves you know it — without giving it away.';
+        $('#revealCat').textContent='Category: '+round.category; $('#revealCat').style.display='';
+      }
       buzz(18);
     }
     $('#flip').classList.add('face');
@@ -679,8 +878,14 @@
   ================================================================== */
   function startOrder(){
     show('s-order');
+    const two = S.twoRounds;
+    $('#orderTitle').textContent = two ? `Clue round ${clueRound} of 2 🗣️` : 'Give your clues 🗣️';
+    const noun = round.gameType==='location' ? 'the place' : 'the secret';
+    $('#orderHint').innerHTML = `Going in this order, each player says <b>one word</b> that hints at ${noun} — clever enough to prove you know it, subtle enough not to hand it to the ${round.gameType==='location'?'spy':'imposter'}. Then talk it out.`;
     const list=$('#orderList'); list.innerHTML='';
-    round.order.forEach((id,i)=>{
+    // round 2 reverses the order so the opener doesn't always go first
+    const ord = (two && clueRound===2) ? round.order.slice().reverse() : round.order;
+    ord.forEach((id,i)=>{
       const p=players.find(pp=>pp.id===id);
       const idx=players.findIndex(pp=>pp.id===id);
       const row=document.createElement('div'); row.className='oitem'+(i===0?' first':'');
@@ -689,10 +894,16 @@
       const nm=document.createElement('div'); nm.style.flex='1'; nm.textContent=p.name + (i===0?'  · starts':'');
       row.append(num,av,nm); list.appendChild(row);
     });
-    $('#orderCat').innerHTML = `Category: <b style="color:var(--ink)">${round.category}</b> · ${round.assignments.length} players`;
+    const catLbl = round.gameType==='location' ? `${round.emoji} Location game` : `Category: ${round.category}`;
+    $('#orderCat').innerHTML = `<b style="color:var(--ink)">${catLbl}</b> · ${round.assignments.length} players`;
+    $('#toTimer').textContent = (two && clueRound===1) ? 'Next clue round →' : "Everyone's given a clue →";
     buzz(14);
   }
-  $('#toTimer').addEventListener('click',()=>{ click(); if(S.timer>0) startTimer(); else startVote(); });
+  $('#toTimer').addEventListener('click',()=>{
+    click();
+    if(S.twoRounds && clueRound===1){ clueRound=2; startOrder(); return; }
+    if(S.timer>0) startTimer(); else startVote();
+  });
   $('#skipTimer').addEventListener('click',()=>{ click(); startVote(); });
 
   /* =================================================================
@@ -758,6 +969,12 @@
       // unmasked — give them the steal chance
       pendingGuess=a;
       show('s-guess');
+      const isLoc=round.gameType==='location';
+      $('#guessTag').textContent = isLoc?'SPY CAUGHT':'UNMASKED';
+      $('#guessLead').innerHTML = isLoc
+        ? "You're the spy — and you're caught. One shot to <b>steal the round</b>: name the location."
+        : "You're the imposter — and you're caught. One shot to <b>steal the round</b>: name the crew's secret word.";
+      $('#guessInput').placeholder = isLoc?'The location is…':'The secret word is…';
       $('#guessName').textContent=a.name;
       $('#guessName').style.color=pcolor(players.findIndex(p=>p.id===a.id));
       $('#guessInput').value=''; setTimeout(()=>$('#guessInput').focus(),200);
@@ -777,8 +994,9 @@
   function finishRound(eliminatedId, guessedWord){
     const res = E.resolveRound({ assignments:round.assignments, eliminatedId, guessedWord, secret:round.secret });
     lastRes=res;
-    // apply scores
+    // apply scores + per-player stats
     S.totals = E.applyScores(S.totals||{}, res.scores);
+    S.stats = E.applyRoundStats(S.stats||{}, round.assignments, res);
     players.forEach(p=>{ S.names[p.id]=p.name; });
     S.round=(S.round||0)+1;
     save();
@@ -786,21 +1004,27 @@
   }
   function showResult(res, eliminatedId){
     show('s-result');
+    const isLoc=round.gameType==='location';
     const crewWin = res.outcome==='crew';
-    $('#verdict').textContent = crewWin ? 'Crew win' : 'Imposter wins';
+    $('#verdict').textContent = crewWin ? (isLoc?'Spy caught':'Crew win') : (isLoc?'Spy wins':'Imposter wins');
     $('#verdict').className='verdict '+(crewWin?'crew':'imp');
-    $('#bigVerdict').textContent = res.stolen ? 'Stolen at the buzzer.' : (crewWin?'Imposter unmasked!':'The imposter got away.');
+    $('#bigVerdict').textContent = res.stolen ? 'Stolen at the buzzer.'
+      : (crewWin ? (isLoc?'The spy is exposed!':'Imposter unmasked!') : (isLoc?'The spy slips away.':'The imposter got away.'));
 
     const imps=round.assignments.filter(a=>a.isImposter);
     const impNames=imps.map(a=>a.name).join(', ');
     const body=$('#resultBody');
     let html='';
-    html += `<div style="margin-bottom:10px">The secret word was <b style="color:var(--teal);font-size:18px">${esc(round.secret)}</b>`;
-    if(round.mode==='decoy' && round.decoy) html += ` &nbsp;·&nbsp; decoy <b style="color:var(--rose)">${esc(round.decoy)}</b>`;
-    html += `</div>`;
-    html += `<div style="margin-bottom:6px">${imps.length>1?'Imposters were':'The imposter was'} <b style="color:var(--rose)">${esc(impNames)}</b>.</div>`;
+    if(isLoc){
+      html += `<div style="margin-bottom:10px">The location was <b style="color:var(--teal);font-size:18px">${round.emoji} ${esc(round.secret)}</b></div>`;
+      html += `<div style="margin-bottom:6px">${imps.length>1?'The spies were':'The spy was'} <b style="color:var(--rose)">${esc(impNames)}</b>.</div>`;
+    }else{
+      html += `<div style="margin-bottom:10px">The secret word was <b style="color:var(--teal);font-size:18px">${esc(round.secret)}</b>`;
+      if(round.mode==='decoy' && round.decoy) html += ` &nbsp;·&nbsp; decoy <b style="color:var(--rose)">${esc(round.decoy)}</b>`;
+      html += `</div>`;
+      html += `<div style="margin-bottom:6px">${imps.length>1?'Imposters were':'The imposter was'} <b style="color:var(--rose)">${esc(impNames)}</b>.</div>`;
+    }
     html += `<div style="color:var(--mut)">${esc(res.summary)}</div>`;
-    // score deltas
     const gains=Object.keys(res.scores).filter(id=>res.scores[id]>0);
     if(gains.length){
       html += `<div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:7px">`;
@@ -812,11 +1036,70 @@
 
     if(crewWin){ winChime(); buzz([15,40,15,40,15]); } else { loseChime(); buzz(120); }
     renderScoreboard();
+
+    // match end?
+    const st = E.standings(players, S.totals, S.target);
+    const nextBtn=$('#nextRound');
+    if(S.target && st.matchWon){ nextBtn.textContent='See the champion 🏆'; nextBtn.onclick=showChampion; }
+    else { nextBtn.textContent='Next round →'; nextBtn.onclick=nextRound; }
   }
   const esc=(s)=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
   $('#toScores').addEventListener('click',()=>{ click(); show('s-scores'); });
-  $('#nextRound').addEventListener('click',nextRound);
+  // #nextRound's handler is (re)assigned per result in showResult() — next round vs. champion.
+
+  /* =================================================================
+     CHAMPION (match end) + confetti
+  ================================================================== */
+  function showChampion(){
+    const st = E.standings(players, S.totals, S.target);
+    show('s-champion');
+    $('#champName').textContent = st.champion ? st.champion.name : '—';
+    // MVP card (best win-rate among players with the most imposter survivals, fallback to top scorer)
+    const mvp = st.mvp;
+    $('#mvpCard').innerHTML = mvp
+      ? `<div class="pav" style="background:${pcolor(players.findIndex(p=>p.id===mvp.id))};width:40px;height:40px">${initials(mvp.name)}</div>
+         <div><div class="mvb">🏅 Top scorer</div><div style="font-weight:800;font-size:17px">${esc(mvp.name)} · ${mvp.points} pts</div></div>` : '';
+    const board=$('#champBoard'); board.innerHTML='';
+    st.rows.forEach((r)=>{
+      const row=document.createElement('div'); row.className='sbrow'+(r.rank===1?' lead':'');
+      const rk=document.createElement('div'); rk.className='rank'; rk.textContent=r.rank===1?'👑':r.rank;
+      const av=document.createElement('div'); av.className='pav'; av.style.background=pcolor(players.findIndex(p=>p.id===r.id)); av.textContent=initials(r.name);
+      const nm=document.createElement('div'); nm.className='nm'; nm.textContent=r.name;
+      const pts=document.createElement('div'); pts.className='pts'; pts.innerHTML=r.points+' <small>pts</small>';
+      row.append(rk,av,nm,pts); board.appendChild(row);
+    });
+    winChime(); buzz([20,60,20,60,40]); confettiBurst();
+  }
+  $('#champNew').addEventListener('click',()=>{ click(); S.totals={}; S.round=0; save(); show('s-lobby'); renderPlayers(); toast('Fresh match — scores reset.'); });
+  $('#champShare').addEventListener('click',shareResult);
+
+  /* confetti — lightweight canvas burst, no libs */
+  let confT=null;
+  function confettiBurst(){
+    const cv=$('#confetti'); cv.style.display='block';
+    const ctx=cv.getContext('2d'); const W=cv.width=innerWidth, H=cv.height=innerHeight;
+    const cols=['#7c8bff','#34e7c0','#ff6b8b','#ffcf5c','#8b7cff','#46e0a0'];
+    const N=140, parts=[];
+    for(let i=0;i<N;i++) parts.push({x:W/2+(Math.random()-.5)*120, y:H*0.32, vx:(Math.random()-.5)*9, vy:Math.random()*-13-4,
+      g:0.32+Math.random()*0.12, s:5+Math.random()*7, c:cols[i%cols.length], r:Math.random()*6, vr:(Math.random()-.5)*0.4});
+    let t=0; clearInterval(confT);
+    confT=setInterval(()=>{
+      ctx.clearRect(0,0,W,H); t++;
+      parts.forEach(p=>{ p.vy+=p.g; p.x+=p.vx; p.y+=p.vy; p.r+=p.vr;
+        ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.r); ctx.fillStyle=p.c; ctx.fillRect(-p.s/2,-p.s/2,p.s,p.s*0.6); ctx.restore(); });
+      if(t>150){ clearInterval(confT); ctx.clearRect(0,0,W,H); cv.style.display='none'; }
+    },1000/60);
+  }
+
+  function shareResult(){
+    const st=E.standings(players, S.totals, S.target);
+    const lines = st.rows.map(r=>`${r.rank}. ${r.name} — ${r.points}`).join('\n');
+    const text = `🕵️ Imposter — match result\n🏆 ${st.champion?st.champion.name:'—'} wins!\n\n${lines}\n\nPlay: https://refayethossain28.github.io/BallrzAPP/imposter/`;
+    if(navigator.share){ navigator.share({title:'Imposter', text}).catch(()=>{}); }
+    else { try{ navigator.clipboard.writeText(text); toast('Result copied to clipboard'); }catch(e){ toast('Copy not supported'); } }
+    click();
+  }
 
   /* =================================================================
      SCOREBOARD
@@ -836,7 +1119,10 @@
     });
     $('#scoreSub').textContent = `${S.round} round${S.round===1?'':'s'} played · pass & play, keep going.`;
   }
-  $('#playAgain').addEventListener('click',nextRound);
+  $('#playAgain').addEventListener('click',()=>{
+    const st=E.standings(players, S.totals, S.target);
+    if(S.target && st.matchWon){ click(); showChampion(); } else nextRound();
+  });
   $('#newGame').addEventListener('click',()=>{ click(); show('s-lobby'); renderPlayers(); });
   function nextRound(){ click(); show('s-lobby'); renderPlayers(); toast('New round — same crew. Deal again!'); }
 
@@ -849,23 +1135,125 @@
   $('#setBtn').addEventListener('click',()=>{ click(); syncSwitches(); openSheet('setSheet'); });
   $$('[data-close]').forEach(el=>el.addEventListener('click',closeSheets));
 
-  function bindSwitch(elId, key){
+  function bindSwitch(elId, key, after){
     const el=$('#'+elId);
-    el.addEventListener('click',()=>{ S[key]=!S[key]; el.classList.toggle('on',S[key]); click(); save(); if(key==='sound'&&S.sound) tone(660,0.08); });
+    el.addEventListener('click',()=>{ S[key]=!S[key]; el.classList.toggle('on',S[key]); click(); save(); if(key==='sound'&&S.sound) tone(660,0.08); if(after) after(); });
   }
   function syncSwitches(){
     $('#swSound').classList.toggle('on',S.sound);
     $('#swHaptic').classList.toggle('on',S.haptic);
     $('#swHold').classList.toggle('on',S.hold);
     $('#swCat').classList.toggle('on',S.catHint);
+    $('#swAi').classList.toggle('on',S.ai);
+    $('#aiNote').style.display = S.ai?'':'none';
   }
   bindSwitch('swSound','sound'); bindSwitch('swHaptic','haptic'); bindSwitch('swHold','hold'); bindSwitch('swCat','catHint');
+  bindSwitch('swAi','ai',()=>{ $('#aiNote').style.display=S.ai?'':'none'; $('#aiRow').style.display=S.ai?'':'none'; });
   $('#resetScores').addEventListener('click',()=>{ S.totals={}; S.round=0; save(); renderScoreboard(); toast('Scoreboard cleared'); buzz(20); });
+
+  /* =================================================================
+     STATS
+  ================================================================== */
+  function pct(x){ return x==null?'—':Math.round(x*100)+'%'; }
+  function openStats(){
+    show('s-stats');
+    const list=$('#statsList'); list.innerHTML='';
+    const rows = players.map((p,i)=>({p,i,st:S.stats[p.id]})).filter(r=>r.st&&r.st.rounds);
+    // include any historical names not currently seated
+    Object.keys(S.stats||{}).forEach(id=>{ if(!players.find(p=>p.id===id) && S.stats[id].rounds){ rows.push({p:{id,name:S.names[id]||'Player'}, i: rows.length, st:S.stats[id]}); }});
+    rows.sort((a,b)=> (E.winRate(b.st)||0)-(E.winRate(a.st)||0) || b.st.rounds-a.st.rounds);
+    if(!rows.length){ list.innerHTML='<p class="hint" style="margin:0">No games yet. Play a round and your stats land here — win rate, how often you draw imposter, catches and steals.</p>'; }
+    rows.forEach(({p,st})=>{
+      const idx=players.findIndex(pp=>pp.id===p.id);
+      const row=document.createElement('div'); row.className='stat';
+      row.innerHTML=`<div class="pav" style="background:${pcolor(idx<0?(p.name.charCodeAt(0)||0):idx)};width:34px;height:34px">${initials(p.name)}</div>
+        <div class="nm">${esc(p.name)}<div class="kbd" style="font-weight:600">${st.rounds} rounds · spy ${st.asImposter}× · ${st.steals} steals</div></div>
+        <div class="mini">
+          <div><b style="color:var(--green)">${pct(E.winRate(st))}</b><span>win</span></div>
+          <div><b>${st.asImposter?Math.round((st.caught/st.asImposter)*100)+'%':'—'}</b><span>caught</span></div>
+        </div>`;
+      list.appendChild(row);
+    });
+    $('#statsSub').textContent = `${rows.length} player${rows.length===1?'':'s'} · tracked on this device across every game.`;
+  }
+  $('#statsBtn').addEventListener('click',()=>{ click(); openStats(); });
+  $('#statsBack').addEventListener('click',()=>{ click(); show('s-lobby'); renderPlayers(); });
+  $('#statsReset').addEventListener('click',()=>{ S.stats={}; save(); openStats(); toast('Stats cleared'); buzz(20); });
+
+  /* =================================================================
+     CUSTOM PACKS  (+ optional AI generation)
+  ================================================================== */
+  let editingKey=null;
+  function parseWords(text){
+    return Array.from(new Set(String(text||'').split(/[\n,]/).map(s=>s.trim()).filter(Boolean))).slice(0,80);
+  }
+  function openCustom(key){
+    editingKey = key||null;
+    const pk = key && S.customPacks[key];
+    $('#packName').value = pk?pk.name:'';
+    $('#packWords').value = pk?pk.words.join('\n'):'';
+    $('#packDelete').style.display = pk?'':'none';
+    $('#aiRow').style.display = S.ai?'':'none';
+    $('#aiStatus').textContent='';
+    renderCustomList();
+    openSheet('customSheet');
+  }
+  function renderCustomList(){
+    const wrap=$('#customList'); wrap.innerHTML='';
+    const keys=Object.keys(S.customPacks||{});
+    if(!keys.length){ return; }
+    const h=document.createElement('div'); h.className='lead'; h.style.margin='4px 0 8px'; h.textContent='Your packs'; wrap.appendChild(h);
+    keys.forEach(k=>{
+      const pk=S.customPacks[k];
+      const row=document.createElement('div'); row.className='prow';
+      row.innerHTML=`<div class="pav" style="background:${pcolor(k.charCodeAt(0))}">${pk.ai?'✦':'⭐'}</div><div style="flex:1"><b>${esc(pk.name)}</b> <span class="kbd">${pk.words.length} words</span></div>`;
+      const ed=document.createElement('button'); ed.className='x'; ed.textContent='✎'; ed.onclick=()=>openCustom(k);
+      row.appendChild(ed); wrap.appendChild(row);
+    });
+  }
+  $('#packSave').addEventListener('click',()=>{
+    const name=($('#packName').value||'').trim()||'My pack';
+    const words=parseWords($('#packWords').value);
+    if(words.length<3){ toast('Add at least 3 words'); return; }
+    const key = editingKey || ('c'+Date.now().toString(36));
+    S.customPacks[key]={ name, words, ai: editingKey?S.customPacks[editingKey].ai:false };
+    S.activeCustom=key; S.gameType='word'; save();
+    click(); buzz(18); closeSheets(); renderGameType(); renderCats();
+    toast(`“${name}” ready — ${words.length} words`);
+  });
+  $('#packDelete').addEventListener('click',()=>{
+    if(editingKey){ delete S.customPacks[editingKey]; if(S.activeCustom===editingKey) S.activeCustom=null; save(); }
+    click(); buzz(20); closeSheets(); renderCats();
+  });
+  async function aiGenerate(){
+    const prompt=($('#aiPrompt').value||'').trim();
+    if(!prompt){ toast('Describe a theme first'); return; }
+    const status=$('#aiStatus'); status.textContent='✦ Asking Claude…';
+    try{
+      const r=await fetch('/imposter-ai',{method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({prompt, count:24})});
+      if(!r.ok) throw new Error('proxy '+r.status);
+      const data=await r.json();
+      const words=parseWords((data.words||[]).join('\n'));
+      if(words.length<3) throw new Error('too few words');
+      if(!$('#packName').value.trim()) $('#packName').value = data.name || prompt;
+      $('#packWords').value = words.join('\n');
+      editingKey=editingKey||null;
+      status.textContent=`✦ ${words.length} words generated — tweak & save.`;
+      buzz(16);
+    }catch(e){
+      status.textContent='Couldn’t reach the AI proxy. Start it with: node imposter/server.mjs';
+    }
+  }
+  $('#aiGo').addEventListener('click',aiGenerate);
+  $('#aiPrompt').addEventListener('keydown',e=>{ if(e.key==='Enter') aiGenerate(); });
+  $('#customBtn').addEventListener('click',()=>{ click(); openCustom(); });
 
   /* =================================================================
      INIT
   ================================================================== */
-  renderPlayers(); renderCats(); renderMode(); renderTimerSeg(); syncImpMax();
+  renderPlayers(); renderGameType(); renderCats(); renderLocs(); renderMode();
+  renderTimerSeg(); renderTargetSeg(); renderRoundsSeg(); syncImpMax();
 
   // PWA install + offline state
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }

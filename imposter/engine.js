@@ -85,10 +85,52 @@ const WORD_PACKS = {
     'Werewolf', 'Sorcerer', 'Griffin', 'Troll', 'Pegasus', 'Banshee', 'Kraken',
     'Genie', 'Centaur', 'Gargoyle', 'Wraith', 'Elf', 'Ogre', 'Fairy', 'Minotaur',
     'Zombie', 'Witch', 'Knight', 'Cyclops', 'Hydra', 'Ghost', 'Yeti', 'Imp' ] },
+  brands: { name: 'Brands', emoji: '🛍️', words: [
+    'Nike', 'Apple', 'Lego', 'Ferrari', 'Gucci', 'Netflix', 'Spotify', 'Adidas',
+    'Rolex', 'Tesla', 'Pixar', 'Amazon', 'Disney', 'Samsung', 'Nintendo', 'Chanel',
+    'Pepsi', 'Ikea', 'Heinz', 'Google', 'Lacoste', 'Puma', 'Oreo', 'Nutella',
+    'Toyota', 'Lamborghini', 'Sony', 'Uber', 'Airbnb', 'Starbucks' ] },
+  emotions: { name: 'Feelings', emoji: '😶‍🌫️', words: [
+    'Jealousy', 'Nostalgia', 'Boredom', 'Euphoria', 'Dread', 'Relief', 'Awe',
+    'Guilt', 'Pride', 'Envy', 'Curiosity', 'Loneliness', 'Excitement', 'Panic',
+    'Serenity', 'Frustration', 'Hope', 'Embarrassment', 'Gratitude', 'Suspicion',
+    'Confusion', 'Contentment', 'Anticipation', 'Regret', 'Wonder', 'Anxiety',
+    'Joy', 'Grief', 'Courage', 'Surprise' ] },
+  mythic: { name: 'World Wonders', emoji: '🏛️', words: [
+    'Colosseum', 'Stonehenge', 'Pyramids', 'Taj Mahal', 'Acropolis', 'Petra',
+    'Machu Picchu', 'Eiffel Tower', 'Big Ben', 'Sphinx', 'Kremlin', 'Alhambra',
+    'Pantheon', 'Sagrada', 'Versailles', 'Vatican', 'Louvre', 'Colossus',
+    'Angkor', 'Parthenon', 'Pompeii', 'Atlantis', 'Babylon', 'Camelot' ] },
 };
 
 /* Pack key list, in a stable display order. */
 const PACK_KEYS = Object.keys(WORD_PACKS);
+
+/* ------------------------------------------------------------------ *
+ *  Locations (Spyfall-style mode). Everyone at the table is dealt the
+ *  same location plus a unique character role to play; the spy gets no
+ *  location and has to deduce it from the conversation. Each location
+ *  ships enough roles to cover a full table.
+ * ------------------------------------------------------------------ */
+const LOCATIONS = {
+  casino: { name: 'Casino', emoji: '🎰', roles: ['Dealer', 'High Roller', 'Bartender', 'Security Guard', 'Cocktail Waitress', 'Pit Boss', 'Card Counter', 'Tourist', 'Cashier', 'Magician'] },
+  airplane: { name: 'Airplane', emoji: '✈️', roles: ['Pilot', 'Flight Attendant', 'First-Class Passenger', 'Air Marshal', 'Nervous Flyer', 'Toddler', 'Co-Pilot', 'Tired Businessman', 'Honeymooner', 'Snoring Passenger'] },
+  hospital: { name: 'Hospital', emoji: '🏥', roles: ['Surgeon', 'Nurse', 'Patient', 'Paramedic', 'Receptionist', 'Anesthetist', 'Intern', 'Worried Relative', 'Therapist', 'Cleaner'] },
+  beach: { name: 'Beach', emoji: '🏖️', roles: ['Lifeguard', 'Surfer', 'Ice-Cream Vendor', 'Sunbather', 'Sandcastle Kid', 'Beach Photographer', 'Fisherman', 'Volleyball Player', 'Tourist', 'Snorkeler'] },
+  school: { name: 'School', emoji: '🏫', roles: ['Teacher', 'Principal', 'Student', 'Janitor', 'Cafeteria Cook', 'Librarian', 'Coach', 'New Kid', 'Hall Monitor', 'Substitute'] },
+  spaceStation: { name: 'Space Station', emoji: '🛰️', roles: ['Commander', 'Engineer', 'Scientist', 'Medic', 'Rookie Astronaut', 'Robot', 'Pilot', 'Botanist', 'Mission Control', 'Alien Stowaway'] },
+  pirateShip: { name: 'Pirate Ship', emoji: '🏴‍☠️', roles: ['Captain', 'First Mate', 'Cabin Boy', 'Cook', 'Lookout', 'Gunner', 'Prisoner', 'Navigator', 'Stowaway', 'Parrot Keeper'] },
+  movieSet: { name: 'Movie Set', emoji: '🎬', roles: ['Director', 'Lead Actor', 'Stunt Double', 'Makeup Artist', 'Cameraman', 'Extra', 'Producer', 'Sound Engineer', 'Caterer', 'Screenwriter'] },
+  restaurant: { name: 'Restaurant', emoji: '🍽️', roles: ['Head Chef', 'Waiter', 'Food Critic', 'Sommelier', 'Dishwasher', 'Host', 'Birthday Guest', 'Picky Eater', 'Busboy', 'Manager'] },
+  museum: { name: 'Museum', emoji: '🏛️', roles: ['Curator', 'Tour Guide', 'Security Guard', 'Art Thief', 'School Group', 'Restorer', 'Donor', 'Photographer', 'Cleaner', 'Lost Tourist'] },
+  ski: { name: 'Ski Resort', emoji: '🎿', roles: ['Ski Instructor', 'Snowboarder', 'Lift Operator', 'Hot-Cocoa Vendor', 'Beginner', 'Rescue Patrol', 'Lodge Receptionist', 'Photographer', 'Ice Sculptor', 'Tourist'] },
+  bank: { name: 'Bank', emoji: '🏦', roles: ['Teller', 'Manager', 'Customer', 'Security Guard', 'Robber', 'Loan Officer', 'Janitor', 'Armored-Truck Driver', 'Intern', 'Inspector'] },
+  circus: { name: 'Circus', emoji: '🎪', roles: ['Ringmaster', 'Acrobat', 'Clown', 'Lion Tamer', 'Juggler', 'Ticket Seller', 'Trapeze Artist', 'Strongman', 'Magician', 'Popcorn Vendor'] },
+  hauntedHouse: { name: 'Haunted House', emoji: '👻', roles: ['Ghost', 'Caretaker', 'Ghost Hunter', 'Lost Tourist', 'Medium', 'Skeptic', 'Butler', 'Vampire', 'Trapped Guest', 'Tour Guide'] },
+  subway: { name: 'Subway', emoji: '🚇', roles: ['Driver', 'Commuter', 'Busker', 'Ticket Inspector', 'Pickpocket', 'Tourist', 'Sleeping Passenger', 'Station Cleaner', 'Lost Child', 'Rush-Hour Worker'] },
+  weddingHall: { name: 'Wedding', emoji: '💒', roles: ['Bride', 'Groom', 'Best Man', 'Wedding Planner', 'Photographer', 'DJ', 'Flower Girl', 'Caterer', 'Officiant', 'Awkward Ex'] },
+};
+const LOCATION_KEYS = Object.keys(LOCATIONS);
 
 /* ------------------------------------------------------------------ *
  *  RNG. mulberry32 — a tiny deterministic PRNG so a seed reproduces a
@@ -149,38 +191,71 @@ function resolveWordList(packKey, custom) {
  * ------------------------------------------------------------------ */
 
 /* Modes:
+ * Game types:
+ *   'word'     — everyone shares one secret word (see modes below).
+ *   'location' — Spyfall-style: everyone shares a location AND gets a unique
+ *                character role to play; the imposter ("the spy") gets neither
+ *                and must deduce the location. The location name is the secret
+ *                the spy can name to steal, so the rest of the pipeline is shared.
+ *
+ * Word modes:
  *   'classic' — imposter is told they're the imposter, gets no word.
  *   'decoy'   — imposter gets a *different* word from the same pack, so they
  *               can bluff a plausible clue without knowing they're adrift.
  *
  *   `players` : array of { id, name }
- *   returns   : { secret, decoy, category, packKey, mode, order, assignments }
- *     assignments: [{ id, name, role:'crew'|'imposter', word|null, isImposter }]
+ *   returns   : { gameType, secret, decoy, category, emoji, packKey, mode, order, assignments }
+ *     assignments: [{ id, name, role:'crew'|'imposter', word|null, roleName?, isImposter }]
  *     order: array of player ids = clue-giving order, starting player first.
  */
 function dealRound(opts) {
   const {
-    players, imposterCount = 1, packKey = 'food', mode = 'classic',
-    custom = null, rng = Math.random,
+    players, imposterCount = 1, gameType = 'word', packKey = 'food', mode = 'classic',
+    custom = null, locationKey = 'mixed', rng = Math.random,
   } = opts;
 
   if (!players || players.length < 3) throw new Error('Need at least 3 players');
   const imps = Math.max(1, Math.min(imposterCount, maxImposters(players.length)));
 
+  // Who the imposters are (shared across game types).
+  const ids = players.map((p) => p.id);
+  const imposterIds = new Set(shuffle(ids, rng).slice(0, imps));
+  const order = shuffle(ids, rng); // fresh shuffle so the same person doesn't always open
+
+  if (gameType === 'location') {
+    const loc = locationKey === 'mixed'
+      ? LOCATIONS[pick(rng, LOCATION_KEYS)]
+      : (LOCATIONS[locationKey] || LOCATIONS[pick(rng, LOCATION_KEYS)]);
+    const secret = loc.name;
+    const roles = shuffle(loc.roles, rng);
+    let r = 0;
+    const assignments = players.map((p) => {
+      const isImposter = imposterIds.has(p.id);
+      const roleName = isImposter ? 'The Spy' : roles[r++ % roles.length];
+      return {
+        id: p.id, name: p.name,
+        role: isImposter ? 'imposter' : 'crew', isImposter,
+        word: isImposter ? null : secret,
+        roleName,
+      };
+    });
+    return {
+      gameType: 'location', secret, decoy: null, category: 'Location',
+      emoji: loc.emoji, locationName: loc.name, packKey: locationKey, mode: 'classic',
+      order, assignments,
+    };
+  }
+
+  // --- word game ---
   const words = resolveWordList(packKey, custom);
   if (words.length < 2) throw new Error('Word list too small');
 
   const secret = pick(rng, words);
-  // Decoy is any *other* word from the same list.
   let decoy = null;
   if (mode === 'decoy') {
     const others = words.filter((w) => w !== secret);
     decoy = others.length ? pick(rng, others) : secret;
   }
-
-  // Choose who the imposters are.
-  const ids = players.map((p) => p.id);
-  const imposterIds = new Set(shuffle(ids, rng).slice(0, imps));
 
   const assignments = players.map((p) => {
     const isImposter = imposterIds.has(p.id);
@@ -193,14 +268,12 @@ function dealRound(opts) {
     };
   });
 
-  // Clue order: a fresh shuffle so the same person doesn't always open.
-  const order = shuffle(ids, rng);
-
   const category = packKey === 'mixed'
     ? 'Mixed'
     : (custom ? 'Custom' : (WORD_PACKS[packKey] ? WORD_PACKS[packKey].name : packKey));
+  const emoji = (custom || packKey === 'mixed') ? '🎲' : (WORD_PACKS[packKey] ? WORD_PACKS[packKey].emoji : '🎲');
 
-  return { secret, decoy, category, packKey, mode, order, assignments };
+  return { gameType: 'word', secret, decoy, category, emoji, packKey, mode, order, assignments };
 }
 
 /* ------------------------------------------------------------------ *
@@ -288,13 +361,71 @@ function applyScores(totals, deltas) {
 }
 
 /* ------------------------------------------------------------------ *
+ *  Match standings — rank players, flag the leader, and decide whether
+ *  the match is won (someone has reached the target score, with a clear
+ *  single leader). `players` is [{id,name}], totals is id->points.
+ * ------------------------------------------------------------------ */
+function standings(players, totals, target) {
+  const rows = players.map((p) => ({ id: p.id, name: p.name, points: (totals && totals[p.id]) || 0 }));
+  rows.sort((a, b) => b.points - a.points || a.name.localeCompare(b.name));
+  rows.forEach((r, i) => { r.rank = i + 1; });
+  const top = rows.length ? rows[0].points : 0;
+  const leaders = rows.filter((r) => r.points === top && top > 0);
+  const reached = !!target && top >= target;
+  const won = reached && leaders.length === 1;
+  return {
+    rows,
+    leader: leaders.length === 1 ? leaders[0] : null,
+    mvp: rows.length && top > 0 ? rows[0] : null,
+    topScore: top,
+    matchWon: won,
+    champion: won ? leaders[0] : null,
+    tiedAtTop: reached && leaders.length > 1, // reached target but needs a decider
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ *  Per-player stats. Fold one resolved round into a running stats map
+ *  (id -> { rounds, asImposter, caught, steals, wins }). "win" = you were
+ *  on the side that won the round (crew won and you're crew, or imposters
+ *  won and you're an imposter). Pure — feed it dealRound()+resolveRound().
+ * ------------------------------------------------------------------ */
+function blankStat() { return { rounds: 0, asImposter: 0, caught: 0, steals: 0, wins: 0 }; }
+
+function applyRoundStats(stats, assignments, res) {
+  const out = Object.assign({}, stats);
+  const impWon = res.outcome === 'imposter';
+  for (const a of assignments) {
+    const s = Object.assign(blankStat(), out[a.id]);
+    s.rounds += 1;
+    if (a.isImposter) {
+      s.asImposter += 1;
+      if (res.caughtImposter) s.caught += 1;     // an imposter was unmasked this round
+      if (res.stolen) s.steals += 1;             // and stole it back
+      if (impWon) s.wins += 1;
+    } else if (!impWon) {
+      s.wins += 1;                               // crew member on a crew win
+    }
+    out[a.id] = s;
+  }
+  return out;
+}
+
+/* Derived headline rate for a single player's stat row (0..1, or null if n/a). */
+function winRate(stat) {
+  if (!stat || !stat.rounds) return null;
+  return stat.wins / stat.rounds;
+}
+
+/* ------------------------------------------------------------------ *
  *  Exports — works under Node (vm/CommonJS) and as a browser global.
  * ------------------------------------------------------------------ */
 const API = {
-  WORD_PACKS, PACK_KEYS, SCORE,
+  WORD_PACKS, PACK_KEYS, LOCATIONS, LOCATION_KEYS, SCORE,
   mulberry32, shuffle, pick, randInt,
   suggestImposters, maxImposters, resolveWordList,
   dealRound, tallyVotes, resolveRound, applyScores,
+  standings, applyRoundStats, blankStat, winRate,
 };
 
 if (typeof module !== 'undefined' && module.exports) module.exports = API;
