@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R34 — bolder textures';
+const BUILD = 'BUILD R35 — higher resolution';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -109,6 +109,7 @@ let _lastPos = 99;           // for overtake detection
 let _lastOvertakeT = -9;     // overtake-callout cooldown clock
 let _clouds = [];            // drifting sky cloud billboards
 let _grainCanvas = null;     // pre-rendered film-grain tile
+let _maxAniso = 8;           // max texture anisotropy (set from renderer caps)
 
 const keys = { gas:false, brake:false, left:false, right:false };
 
@@ -134,13 +135,15 @@ function initThree(){
   hud2d    = document.getElementById('hud2d');
   hctx     = hud2d.getContext('2d');
 
-  renderer = new THREE.WebGLRenderer({ canvas:glCanvas, antialias:!MOBILE, powerPreference:'high-performance' });
-  renderer.setPixelRatio(Math.min(MOBILE?1.25:2, window.devicePixelRatio||1));
+  renderer = new THREE.WebGLRenderer({ canvas:glCanvas, antialias:true, powerPreference:'high-performance' });
+  // render at (close to) the device's native pixel density for a crisp, high-res image
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio||1));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.98;
   renderer.shadowMap.enabled = !MOBILE;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  _maxAniso = renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 8;
 
   // Recover from a lost GPU context (iOS Safari can drop it). preventDefault on
   // 'lost' is REQUIRED or the browser never restores it (permanent black screen).
@@ -358,6 +361,7 @@ function surfTex(hexA, hexB, w, h, speck){
     const s=1+Math.random()*3; x.fillRect(Math.random()*w, Math.random()*h, s, s); }
   x.globalAlpha=1;
   const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping;
+  t.anisotropy=_maxAniso;
   return t;
 }
 
@@ -787,6 +791,7 @@ function makeDetailTex(kind){
     x.globalAlpha=1; grain(1800,0.20,2.0);
   }
   const t=new THREE.CanvasTexture(cv); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.colorSpace=THREE.SRGBColorSpace;
+  t.anisotropy=_maxAniso;
   _detailCache[kind]=t; return t;
 }
 function txMat(opts, kind, rep){
@@ -2149,7 +2154,7 @@ function showTouch(){ const t=document.getElementById('touch'); if(t && MOBILE) 
 function resize(){
   const w=window.innerWidth, h=window.innerHeight;
   camera.aspect=w/h; camera.updateProjectionMatrix();
-  const pr=Math.min(MOBILE?1.25:2, window.devicePixelRatio||1);
+  const pr=Math.min(2, window.devicePixelRatio||1);
   renderer.setPixelRatio(pr); renderer.setSize(w,h,false);
   const hpr=Math.min(2, window.devicePixelRatio||1);
   hud2d.width=Math.round(w*hpr); hud2d.height=Math.round(h*hpr);
