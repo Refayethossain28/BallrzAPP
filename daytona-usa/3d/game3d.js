@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R5 — faster cars';
+const BUILD = 'BUILD R7 — Daytona stock cars + grey road';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -49,12 +49,27 @@ const THEMES = [
     skyTop:'#1670c4', skyMid:'#5aa8e4', skyHorizon:'#d8c088', fog:0xd2bd8a },
 ];
 const VEHICLES = [
-  { name:'MERCEDES V-CLASS', kind:'van',   color:0x0c0d0f,
-    speedMul:0.90, accelMul:0.82, steerMul:0.78, gripMul:0.80, brakeMul:0.82, rollMul:1.7,
-    desc:'Luxury MPV in black — heavy & planted: gentle steering, lower grip, leans in turns.' },
-  { name:'MERCEDES S-CLASS', kind:'sedan', color:0x0c0d0f,
-    speedMul:1.10, accelMul:1.16, steerMul:1.24, gripMul:1.20, brakeMul:1.15, rollMul:0.7,
-    desc:'Flagship saloon in black — fast & agile: sharp steering, strong brakes, high grip.' },
+  { name:'HORNET', kind:'stock', color:0xd6262b,
+    livery:{ body:0xd6262b, hood:0x1f5fd6, roof:0x1f5fd6, num:41, sponsor:'HORNET' },
+    speedMul:1.00, accelMul:0.98, steerMul:0.96, gripMul:1.0, brakeMul:0.96, rollMul:1.05,
+    desc:'The classic blue & red stock car — balanced and iconic.' },
+  { name:'PHANTOM', kind:'stock', color:0x14181c,
+    livery:{ body:0x14181c, hood:0xe23b3b, roof:0xe23b3b, num:7, sponsor:'PHANTOM' },
+    speedMul:1.12, accelMul:1.16, steerMul:1.2, gripMul:1.18, brakeMul:1.12, rollMul:0.85,
+    desc:'A darker, faster machine — sharp steering and strong grip.' },
+];
+// stock-car liveries for the AI field (varied colours + race numbers)
+const RIVAL_LIVERIES = [
+  { body:0xffffff, hood:0xd6262b, roof:0xd6262b, num:18, sponsor:'PAGODA' },
+  { body:0x0b6b2f, hood:0x22c55e, roof:0xffffff, num:5,  sponsor:'GECKO'  },
+  { body:0x1a1a1a, hood:0xf59e0b, roof:0xf59e0b, num:22, sponsor:'BLAZE'  },
+  { body:0xffffff, hood:0x2f6cff, roof:0x2f6cff, num:9,  sponsor:'WAVE'   },
+  { body:0x2a0f3a, hood:0xa855f7, roof:0xffffff, num:3,  sponsor:'NOVA'   },
+  { body:0xffffff, hood:0x06b6d4, roof:0x06b6d4, num:11, sponsor:'AQUA'   },
+  { body:0x1a1a1a, hood:0xec4899, roof:0xffffff, num:27, sponsor:'FLASH'  },
+  { body:0xd6262b, hood:0xfacc15, roof:0xffffff, num:88, sponsor:'BOLT'   },
+  { body:0x166534, hood:0x4ade80, roof:0xffffff, num:14, sponsor:'VIPER'  },
+  { body:0x0c4a6e, hood:0x38bdf8, roof:0xffffff, num:6,  sponsor:'STORM'  },
 ];
 
 // ----------------------------------------------------------------------------
@@ -105,7 +120,7 @@ function initThree(){
   renderer.setPixelRatio(Math.min(MOBILE?1.25:2, window.devicePixelRatio||1));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;
+  renderer.toneMappingExposure = 0.9;
   renderer.shadowMap.enabled = !MOBILE;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -120,9 +135,9 @@ function initThree(){
 
   camera = new THREE.PerspectiveCamera(62, 1, 0.5, 5000);
 
-  scene.add(new THREE.HemisphereLight(0xeaf4ff, 0x5a8a4a, 1.0));
-  scene.add(new THREE.AmbientLight(0xffffff, 0.35));
-  sun = new THREE.DirectionalLight(0xfff3d0, 2.0);
+  scene.add(new THREE.HemisphereLight(0xd7dde4, 0x4a6a3a, 0.5));   // softer, less-blue sky light so flat surfaces aren't washed blue
+  scene.add(new THREE.AmbientLight(0xffffff, 0.32));
+  sun = new THREE.DirectionalLight(0xfff3d0, 1.6);
   sun.position.set(60,120,30);
   sun.castShadow = !MOBILE;
   if (sun.castShadow){
@@ -170,7 +185,10 @@ function buildEnv(){
     const pmrem=new THREE.PMREMGenerator(renderer);
     const rt=pmrem.fromEquirectangular(eq);
     if (envTex) envTex.dispose();
-    envTex=rt.texture; scene.environment=envTex;
+    // NOTE: do NOT set scene.environment — modern three.js would reflect it on the
+    // road's Lambert material too, turning the asphalt sky-blue. Apply envTex only
+    // to the car paint/chrome/glass materials below.
+    envTex=rt.texture;
     eq.dispose(); pmrem.dispose();
   } catch(e){ /* reflections optional */ }
 }
@@ -292,8 +310,12 @@ function buildRoadMesh(){
     geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
     geo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
     geo.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3));
-    const tex=surfTex(th.asphalt, darken(th.asphalt,0.7), 64, 128, 70); tex.repeat.set(1, 1);
-    const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({map:tex}));
+    // Neutral dark-grey asphalt. The material COLOUR (not just the map) is set
+    // dark so the road can never wash out to a blue tint under the sky light.
+    // DoubleSide: on some track windings the asphalt normals face down, which would
+    // back-face-cull the single-sided road and show the sky THROUGH it (a "blue road").
+    const tex=surfTex(0x9a9a9a, 0x6e6e6e, 64, 128, 120); tex.repeat.set(1, 1);
+    const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({map:tex, color:0x595c61, side:THREE.DoubleSide}));
     mesh.receiveShadow=!MOBILE; scene.add(mesh); roadParts.push(mesh);
   }
   // grass verge (defines the ground surface used to ground scenery)
@@ -355,11 +377,11 @@ function buildRoadMesh(){
 // ----------------------------------------------------------------------------
 // ---- car materials ----
 function paintMat(c){ return MOBILE
-  ? new THREE.MeshStandardMaterial({color:c, metalness:0.35, roughness:0.32, envMapIntensity:1.1})
-  : new THREE.MeshPhysicalMaterial({color:c, metalness:0.25, roughness:0.3, clearcoat:1.0, clearcoatRoughness:0.08, envMapIntensity:1.2}); }
+  ? new THREE.MeshStandardMaterial({color:c, metalness:0.35, roughness:0.32, envMap:envTex, envMapIntensity:1.1})
+  : new THREE.MeshPhysicalMaterial({color:c, metalness:0.25, roughness:0.3, clearcoat:1.0, clearcoatRoughness:0.08, envMap:envTex, envMapIntensity:1.2}); }
 function matteMat(c){ return new THREE.MeshStandardMaterial({color:c, metalness:0, roughness:0.85}); }
-function glassMat(){ return new THREE.MeshStandardMaterial({color:0x0b1626, metalness:0.5, roughness:0.06, envMapIntensity:1.6}); }
-function chromeMat(){ return new THREE.MeshStandardMaterial({color:0xc4c9d2, metalness:0.95, roughness:0.2, envMapIntensity:1.4}); }
+function glassMat(){ return new THREE.MeshStandardMaterial({color:0x0b1626, metalness:0.5, roughness:0.06, envMap:envTex, envMapIntensity:1.6}); }
+function chromeMat(){ return new THREE.MeshStandardMaterial({color:0xc4c9d2, metalness:0.95, roughness:0.2, envMap:envTex, envMapIntensity:1.4}); }
 function shadeHex(hex, amt){ const r=Math.max(0,Math.min(255,(hex>>16&255)+amt)), g=Math.max(0,Math.min(255,(hex>>8&255)+amt)), b=Math.max(0,Math.min(255,(hex&255)+amt)); return (r<<16)|(g<<8)|b; }
 let _emblemTex=null;
 function emblemTex(){ if(_emblemTex)return _emblemTex; const cv=document.createElement('canvas'); cv.width=cv.height=64; const x=cv.getContext('2d');
@@ -418,27 +440,63 @@ function addDetails(g, W, frontZ, rearZ, beltY, lowY){
   for (const sx of [-1.02,1.02]) g.add(lmBox(amber, 0.2,0.12,0.06, sx,lowY+0.12,frontZ));
 }
 
-// kind: 'van' (V-Class) or 'sedan' (S-Class). Front faces +z. lite = rivals (fewer parts).
+// ---- racing-number roundel + sponsor decal textures (Daytona stock-car style) ----
+const _numCache={};
+function makeNumberTex(num){
+  if (_numCache[num]) return _numCache[num];
+  const cv=document.createElement('canvas'); cv.width=cv.height=128; const x=cv.getContext('2d');
+  x.clearRect(0,0,128,128);
+  x.fillStyle='#ffffff'; x.beginPath(); x.arc(64,64,58,0,6.28); x.fill();
+  x.lineWidth=8; x.strokeStyle='#111418'; x.beginPath(); x.arc(64,64,58,0,6.28); x.stroke();
+  x.fillStyle='#111418'; x.font='900 86px Arial'; x.textAlign='center'; x.textBaseline='middle'; x.fillText(String(num),64,72);
+  const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace; _numCache[num]=t; return t;
+}
+function makeSponsorTex(text, accent){
+  const cv=document.createElement('canvas'); cv.width=256; cv.height=80; const x=cv.getContext('2d');
+  x.clearRect(0,0,256,80);
+  x.font='italic 900 50px Arial'; x.textAlign='center'; x.textBaseline='middle';
+  x.lineWidth=8; x.strokeStyle='#ffffff'; x.strokeText(text,128,42);
+  x.fillStyle='#'+(accent>>>0).toString(16).padStart(6,'0').slice(-6); x.fillText(text,128,42);
+  const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace; return t;
+}
+function decal(tex, w, h){ return new THREE.Mesh(new THREE.PlaneGeometry(w,h), new THREE.MeshBasicMaterial({map:tex, transparent:true})); }
+
+// A Daytona-style NASCAR stock car. liv = {body, hood, roof, num, sponsor}. Front faces +z.
 function buildCar(vehicle, lite){
+  const liv = vehicle.livery || RIVAL_LIVERIES[0];
   const g=new THREE.Group();
-  const body=paintMat(vehicle.color), glass=glassMat(), dark=matteMat(0x121417);
-  if (vehicle.kind==='van'){
-    const W=2.42;
-    g.add(extrudeCar(VAN_LOWER, W, 0.1, body));
-    g.add(extrudeCar(VAN_GLASS, W-0.16, 0.04, glass));
-    g.add(extrudeCar(VAN_ROOF,  W-0.06, 0.05, body));
-    g.add(lmBox(dark, W+0.02,0.34,5.0, 0,0.5,-0.1));
-    addGrille(g,1.95,0.98,2.66,lite); addLights(g,1.02,2.66,2.64); addWheels(g,1.34,1.95,0.62,lite);
-    if (!lite){ g.add(lmBox(new THREE.MeshBasicMaterial({map:emblemTex(),transparent:true}),0.5,0.5,0.02,0,1.0,2.74)); addMirrors(g,1.34,1.55,1.9,body); addDetails(g,W,2.66,2.64,1.32,0.62); }
-  } else {
-    const W=2.3;
-    g.add(extrudeCar(SED_LOWER, W, 0.1, body));
-    g.add(extrudeCar(SED_GLASS, W-0.16, 0.04, glass));
-    g.add(extrudeCar(SED_ROOF,  W-0.06, 0.05, body));
-    g.add(lmBox(dark, W+0.02,0.22,4.6, 0,0.46,0));
-    addGrille(g,1.7,0.86,2.56,lite); addLights(g,0.92,2.56,2.56); addWheels(g,1.26,1.78,0.56,lite);
-    if (!lite){ g.add(lmBox(new THREE.MeshBasicMaterial({map:emblemTex(),transparent:true}),0.4,0.4,0.02,0,0.86,2.62)); addMirrors(g,1.24,1.2,1.0,body); addDetails(g,W,2.56,2.56,1.16,0.6); }
+  const main=paintMat(liv.body), accent=paintMat(liv.hood), roofM=paintMat(liv.roof!=null?liv.roof:liv.hood);
+  const trim=paintMat(0xffffff), glass=glassMat(), dark=matteMat(0x141414);
+  const L=4.9, W=2.12;
+  // white lower (rockers + bumpers) running the full length
+  g.add(lmBox(trim, W+0.06, 0.44, L, 0, 0.44, 0));
+  // main body sides
+  g.add(lmBox(main, W+0.10, 0.52, L*0.99, 0, 0.84, 0));
+  // hood (accent) on the front deck + a flat nose
+  g.add(lmBox(accent, W-0.04, 0.16, L*0.32, 0, 1.04, L*0.28));
+  g.add(lmBox(accent, W-0.02, 0.30, 0.4, 0, 0.86, L*0.49));
+  // front splitter (white)
+  g.add(lmBox(trim, W+0.14, 0.14, 0.4, 0, 0.5, L*0.5));
+  // cabin / roof (roof colour), set back
+  g.add(lmBox(roofM, W-0.44, 0.5, L*0.4, 0, 1.34, -L*0.05));
+  // roof number roundel (faces up)
+  const rn=decal(makeNumberTex(liv.num), 1.25, 1.25); rn.rotation.x=-Math.PI/2; rn.rotation.z=Math.PI; rn.position.set(0,1.60,-L*0.05); g.add(rn);
+  // glasshouse
+  const ws=lmBox(glass, W-0.5, 0.42, 0.1, 0, 1.2, L*0.16); ws.rotation.x=0.55; g.add(ws);
+  const rw=lmBox(glass, W-0.5, 0.4, 0.1, 0, 1.2, -L*0.26); rw.rotation.x=-0.55; g.add(rw);
+  for (const sx of [-1,1]) g.add(lmBox(glass, 0.08, 0.36, L*0.32, sx*(W/2-0.22), 1.3, -L*0.05));
+  // rear spoiler
+  g.add(lmBox(main, W+0.02, 0.08, 0.5, 0, 1.36, -L*0.47));
+  for (const sx of [-1,1]) g.add(lmBox(dark, 0.1, 0.34, 0.4, sx*W*0.42, 1.16, -L*0.45));
+  // door number + sponsor decals (skip on lite rivals)
+  if (!lite) for (const sx of [-1,1]){
+    const dn=decal(makeNumberTex(liv.num), 0.95, 0.95); dn.position.set(sx*(W/2+0.07), 0.95, 0.45); dn.rotation.y=sx>0?-Math.PI/2:Math.PI/2; g.add(dn);
+    const sp=decal(makeSponsorTex(liv.sponsor||'DAYTONA', liv.hood), 1.6,0.5); sp.position.set(sx*(W/2+0.07), 0.78, -0.65); sp.rotation.y=sx>0?-Math.PI/2:Math.PI/2; g.add(sp);
   }
+  // sticker headlights + taillights (taillights flare under braking)
+  addLights(g, 0.92, L*0.5, L*0.5);
+  // racing wheels
+  addWheels(g, W/2+0.0, L*0.31, 0.56, lite);
   if (!MOBILE) g.traverse(o=>{ if(o.isMesh){ o.castShadow=true; } });
   return g;
 }
@@ -828,8 +886,8 @@ function buildRivals(n){
   rivals = [];
   const aiTop = G.circuit.maxSpeed * G.circuit.aiSpeed * 0.58;
   for (let i=0;i<n;i++){
-    const liv = LIVERIES[i % LIVERIES.length];
-    const mesh = buildCar({ kind: i%2?'sedan':'van', color: liv }, true);   // lite detail for rivals
+    const liv = RIVAL_LIVERIES[i % RIVAL_LIVERIES.length];
+    const mesh = buildCar({ livery: liv }, true);   // lite detail for rivals
     scene.add(mesh);
     const lane = ((i%4)-1.5) * 2.6;                 // spread across the road
     rivals.push({
@@ -1210,9 +1268,9 @@ const SOUNDTRACKS = {
   daytona: { name:'DAYTONA', icon:'🏁', desc:'The original — big arcade theme', intro:'./audio/intro.mp3',      loop:'./audio/soundtrack.mp3' },
   heat:    { name:'HEAT',    icon:'🌆', desc:'Driving synth groove',           intro:'./audio/heat-intro.mp3', loop:'./audio/heat-soundtrack.mp3' },
 };
-const VEH_ICON = ['🚐','🚗'];
+const VEH_ICON = ['🏎️','🏁'];
 const CIR_ICON = ['🏔️','🎡','🌆'];
-let selVeh=1, selCir=1, selSnd='daytona';
+let selVeh=0, selCir=1, selSnd='daytona';
 
 function overlayEl(){ return document.getElementById('overlay'); }
 function showOverlay(html){
