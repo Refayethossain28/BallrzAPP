@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R30 — ultra graphics';
+const BUILD = 'BUILD R31 — Dubai gate fix';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -935,13 +935,14 @@ function addDubaiFrame(group, frames, spec){
   const f=frames[((Math.floor(DIV*(spec?spec.frac:0.26)))%DIV+DIV)%DIV], g=new THREE.Group();
   const gold=new THREE.MeshStandardMaterial({color:0xd4af37, metalness:0.85, roughness:0.3, map:makeWindowTexture(false)});
   gold.map.repeat.set(2,10);
-  const W=66, H=150, tw=13, td=9;
-  for (const sx of [-1,1]) g.add(lmBox(gold,tw,H,td,sx*W/2,H/2,0));
-  g.add(lmBox(new THREE.MeshStandardMaterial({color:0xc9a233, metalness:0.85, roughness:0.32}), W+tw,12,td+1, 0,H-6,0));
-  for (const sx of [-1,1]) g.add(lmBox(gold,tw+2,8,td+2,sx*W/2,4,0));
-  // sit on the banked verge to one side (grounded)
-  const off=(ROAD_W+RUMBLE_W)+20;
-  g.position.copy(f.pos).addScaledVector(f.right, off); g.rotation.y=Math.atan2(f.tan.x,f.tan.z); g.scale.setScalar((spec&&spec.scale)||1); group.add(g);
+  // a drive-through gate STRADDLING the road: legs sit clear of the kerb on each side
+  const half = ROAD_W+RUMBLE_W+12;    // tower centre offset from the road centreline (legs well clear)
+  const H=150, tw=13, td=9;
+  for (const sx of [-1,1]) g.add(lmBox(gold,tw,H,td,sx*half,H/2,0));
+  g.add(lmBox(new THREE.MeshStandardMaterial({color:0xc9a233, metalness:0.85, roughness:0.32}), half*2+tw,12,td+1, 0,H-6,0));
+  for (const sx of [-1,1]) g.add(lmBox(gold,tw+2,8,td+2,sx*half,4,0));
+  // centred on the track centreline so the player drives through the opening
+  g.position.copy(f.pos); g.rotation.y=Math.atan2(f.tan.x,f.tan.z); g.scale.setScalar((spec&&spec.scale)||1); group.add(g);
 }
 // ---- USA landmarks ----
 function addStatueOfLiberty(group, frames, spec){
