@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R10 — road markings + smarter AI';
+const BUILD = 'BUILD R11 — animated world (wheels, Eye, flag)';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -91,6 +91,10 @@ let glCanvas, hud2d, hctx;
 let frames = [], trackLen = 0;
 let playerCar = null;
 let _ctxLost = false;
+let _spinners = [];          // ambient rotating polygons (e.g. the London Eye)
+let _flags = [];             // waving flag strips
+let _adt = 1/60;             // last frame delta, for animation
+let _animClock = 0;          // global animation time
 
 const keys = { gas:false, brake:false, left:false, right:false };
 
@@ -442,9 +446,12 @@ function addWheels(g,tx,tz,r,lite){
   const rim=new THREE.CylinderGeometry(r*0.62,r*0.62,0.5,lite?8:14); rim.rotateZ(Math.PI/2);
   const rm=chromeMat();
   const hub=new THREE.CylinderGeometry(r*0.18,r*0.18,0.52,8); hub.rotateZ(Math.PI/2); const hm=matteMat(0x2a2e34);
+  g.userData.wheels = [];
   for (const [wx,wz] of [[-tx,tz],[tx,tz],[-tx,-tz],[tx,-tz]]){
-    const w=new THREE.Mesh(tyre,tm); w.position.set(wx,r,wz); g.add(w);
-    if (!lite){ const d=new THREE.Mesh(rim,rm); d.position.set(wx,r,wz); g.add(d); const h=new THREE.Mesh(hub,hm); h.position.set(wx,r,wz); g.add(h); }
+    const wg=new THREE.Group(); wg.position.set(wx,r,wz);   // a spinnable hub group per corner
+    const w=new THREE.Mesh(tyre,tm); wg.add(w);
+    if (!lite){ const d=new THREE.Mesh(rim,rm); wg.add(d); const h=new THREE.Mesh(hub,hm); wg.add(h); }
+    g.add(wg); g.userData.wheels.push(wg);
   }
 }
 function addMirrors(g,x,y,z,mat){ for (const sx of [-x,x]){ g.add(lmBox(mat, 0.18,0.16,0.26, sx,y,z)); } }
@@ -609,6 +616,11 @@ function makeCrowdTexture(){
   for (let r=0;r<7;r++) for (let cc=0;cc<40;cc++){ x.fillStyle=`hsl(${Math.random()*360},70%,${45+Math.random()*30}%)`; x.fillRect(cc*6+(r%2)*3, r*13+3, 4, 7); }
   const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace; return t;
 }
+function makeCheckerTex(){
+  const cv=document.createElement('canvas'); cv.width=cv.height=64; const x=cv.getContext('2d');
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){ x.fillStyle=((r+c)%2)?'#16181c':'#f4f4f4'; x.fillRect(c*8,r*8,8,8); }
+  const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace; return t;
+}
 function makeSignTexture(text, bg){
   const cv=document.createElement('canvas'); cv.width=512; cv.height=192; const x=cv.getContext('2d');
   x.fillStyle=bg; x.fillRect(0,0,512,192);
@@ -669,15 +681,19 @@ function addLondonEye(group, frames, spec){
   const eye=new THREE.Group();
   const rim=new THREE.MeshStandardMaterial({color:0xb6c2cb, metalness:0.5, roughness:0.4});
   const R=38;
-  eye.add(new THREE.Mesh(new THREE.TorusGeometry(R,1.3,8,60), rim));
-  eye.add(new THREE.Mesh(new THREE.TorusGeometry(R-2,0.5,6,60), rim));
-  for (let k=0;k<18;k++){ const a=k/18*Math.PI; const sp=lmBox(rim,0.35,R*2,0.35,0,0,0); sp.rotation.z=a; eye.add(sp); }
-  const hub=new THREE.Mesh(new THREE.CylinderGeometry(3.5,3.5,5,14), rim); hub.rotation.x=Math.PI/2; eye.add(hub);
+  // the rotating wheel (rim, spokes, pods) goes in its own sub-group so it can turn
+  const wheel=new THREE.Group();
+  wheel.add(new THREE.Mesh(new THREE.TorusGeometry(R,1.3,8,60), rim));
+  wheel.add(new THREE.Mesh(new THREE.TorusGeometry(R-2,0.5,6,60), rim));
+  for (let k=0;k<18;k++){ const a=k/18*Math.PI; const sp=lmBox(rim,0.35,R*2,0.35,0,0,0); sp.rotation.z=a; wheel.add(sp); }
   const pod=new THREE.MeshStandardMaterial({color:0x9fd4f5, metalness:0.3, roughness:0.25, emissive:0x16384f, emissiveIntensity:0.45});
-  for (let k=0;k<28;k++){ const a=k/28*6.28; eye.add(lmBox(pod,3,2,3,Math.cos(a)*R,Math.sin(a)*R,0)); }
+  for (let k=0;k<28;k++){ const a=k/28*6.28; wheel.add(lmBox(pod,3,2,3,Math.cos(a)*R,Math.sin(a)*R,0)); }
+  eye.add(wheel);
+  const hub=new THREE.Mesh(new THREE.CylinderGeometry(3.5,3.5,5,14), rim); hub.rotation.x=Math.PI/2; eye.add(hub);
   for (const sx of [-1,1]) for (const sz of [1,-1]){ const leg=lmBox(rim,1.8,R+12,1.8,sx*9,-(R+12)/2+2,sz*7); leg.rotation.x=sz*0.32; eye.add(leg); }
   eye.add(lmBox(rim,22,1.6,16,0,-(R+10),0));
   placeLandmark(group, eye, frames, spec, Math.PI/2, R+10);
+  _spinners.push({ obj:wheel, rate:0.16 });   // slow Ferris-wheel turn
 }
 function addTowerBridge(group, frames, spec){
   const f=frames[((Math.floor(DIV*(spec?spec.frac:0.55)))%DIV+DIV)%DIV], g=new THREE.Group();
@@ -785,6 +801,7 @@ function addGoldenGate(group, frames, spec){
 function buildScenery(){
   if (sceneryGroup){ scene.remove(sceneryGroup); disposeTree(sceneryGroup); }
   sceneryGroup = new THREE.Group();
+  _spinners = []; _flags = [];
   _scnInfo='';
   const th = G.theme;
   const rng = mulberry32((G.circuit.seed||1) * 40503);
@@ -883,6 +900,19 @@ function buildScenery(){
   const rp=new THREE.Mesh(postGeo,postMat); rp.position.set(ROAD_W+2,8,0); gantry.add(rp);
   const beam=new THREE.Mesh(new THREE.BoxGeometry((ROAD_W+2)*2,3,1.5), new THREE.MeshLambertMaterial({color:0xc1272d})); beam.position.set(0,15.5,0); gantry.add(beam);
   const board=new THREE.Mesh(new THREE.BoxGeometry(8,3,0.5), new THREE.MeshBasicMaterial({map:makeSignTexture('DAYTONA','#c1272d')})); board.position.set(0,12,0.9); gantry.add(board);
+  // a waving checkered flag on the right post (segmented so it ripples)
+  {
+    const flagTex=makeCheckerTex();
+    const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,6,6), new THREE.MeshLambertMaterial({color:0xe6e6e6})); pole.position.set(ROAD_W+2, 18, 0); gantry.add(pole);
+    const NS=7, segW=0.85, segs=[];
+    for (let i=0;i<NS;i++){
+      const m=flagTex.clone(); m.repeat.set(1/NS,1); m.offset.set(i/NS,0);
+      const s=new THREE.Mesh(new THREE.PlaneGeometry(segW,2.4), new THREE.MeshBasicMaterial({map:m, side:THREE.DoubleSide}));
+      const px=ROAD_W+2+0.4+i*segW; s.position.set(px, 19.8, 0); gantry.add(s);
+      segs.push({mesh:s, t:(i+1)/NS});
+    }
+    _flags.push({segs});
+  }
   gantry.position.copy(f0.pos); gantry.lookAt(f0.pos.clone().add(f0.tan)); sceneryGroup.add(gantry);
 
   // grandstands on the start straight (outer side)
@@ -1118,11 +1148,29 @@ function present(){
   renderer.render(scene, camera);
 }
 
+// ---- world animation: spinning wheels, the turning London Eye, the waving flag ----
+function spinWheels(car, speed){
+  const ws = car && car.userData.wheels; if (!ws) return;
+  const roll = (speed/0.55) * _adt;
+  for (const w of ws) w.rotation.x -= roll;
+}
+function animateWorld(){
+  _animClock += _adt;
+  spinWheels(playerCar, G.speed);
+  for (const r of rivals) spinWheels(r.mesh, r.speed);
+  for (const s of _spinners) s.obj.rotation.z += s.rate * _adt;
+  for (const fl of _flags) for (const s of fl.segs){
+    s.mesh.position.z = Math.sin(_animClock*5 + s.t*6) * 0.6 * s.t;
+    s.mesh.rotation.y = Math.sin(_animClock*5 + s.t*6) * 0.5 * s.t;
+  }
+}
+
 function render(){
   if (!G.started || !frames.length){ present(); return; }
 
   placeCar(playerCar, G.dist, G.offset);
   placeRivals();
+  animateWorld();
   // visual lean
   playerCar.rotateY(G.steerVis * 0.16);
   playerCar.rotateZ(-G.steerVis * 0.05 * (G.vehicle.rollMul||1));
@@ -1446,6 +1494,7 @@ function resize(){
 let last=performance.now(), acc=0;
 function frame(now){
   let dt=(now-last)/1000; if(dt>0.1)dt=0.1; last=now; acc+=dt;
+  _adt = dt;
   while (acc>=STEP){ update(STEP); acc-=STEP; }
   if (scene && camera) render();
   requestAnimationFrame(frame);
