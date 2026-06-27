@@ -60,8 +60,7 @@
     border:1px solid var(--line);
     background:linear-gradient(180deg,rgba(58,225,255,.06),transparent 30%),
       radial-gradient(120% 90% at 50% -10%,#161d33 0%,#0a0d1a 70%);
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.06), 0 20px 50px -22px rgba(0,0,0,.85), 0 0 60px -22px rgba(96,150,255,.4);
-    animation:stageglow 2.2s ease-in-out infinite}
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06), 0 20px 50px -22px rgba(0,0,0,.85), 0 0 60px -22px rgba(96,150,255,.4)}
   @keyframes stageglow{
     0%,100%{box-shadow:inset 0 1px 0 rgba(255,255,255,.06), 0 20px 50px -22px rgba(0,0,0,.85), 0 0 46px -24px rgba(58,225,255,.55)}
     50%{box-shadow:inset 0 1px 0 rgba(255,255,255,.06), 0 20px 50px -22px rgba(0,0,0,.85), 0 0 78px -16px rgba(154,123,255,.8)}}
@@ -955,17 +954,22 @@ function drawComboGlow(){
   g.addColorStop(0,'rgba(255,209,102,0)'); g.addColorStop(1,'rgba(255,209,102,'+a+')');
   ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
 }
-/* live music spectrum along the bottom edge (additive neon bars) */
-function drawSpectrum(){
-  if(!freqData) return;
-  const n=52, bw=W/n;
-  ctx.save(); ctx.globalCompositeOperation='lighter';
-  for(let i=0;i<n;i++){
-    const v=freqData[2+i*2]/255, h=v*v*72;
-    if(h<1) continue;
-    ctx.fillStyle='hsla('+(190+i/n*140)+',92%,62%,0.5)';
-    ctx.fillRect(i*bw+0.7, H-h, bw-1.4, h);
-  }
+/* play-area border that flashes to the beat (beatPulse is audio-driven) */
+function drawBorderFlash(){
+  const p=beatPulse, inset=2.5, rad=20, x=inset, y=inset, w=W-2*inset, h=H-2*inset;
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  ctx.lineWidth=2+8*p;
+  ctx.strokeStyle='rgba(150,205,255,'+(0.12+0.7*p)+')';
+  ctx.shadowColor='#5cc8ff'; ctx.shadowBlur=8+34*p;
+  ctx.beginPath();
+  ctx.moveTo(x+rad,y);
+  ctx.arcTo(x+w,y,   x+w,y+h, rad);
+  ctx.arcTo(x+w,y+h, x,  y+h, rad);
+  ctx.arcTo(x,  y+h, x,  y,   rad);
+  ctx.arcTo(x,  y,   x+w,y,   rad);
+  ctx.closePath();
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -1274,10 +1278,11 @@ function frame(now){
   }
   if(state==='match' && now>matchEndsAt){ endMatchTurn(); requestAnimationFrame(frame); return; }
   if((state==='playing'||state==='match') && now>roundEnds){ if(livesMode){ miss(); impactCA(0.9); } endRound(false); }
-  if(live()){ drawTargets(dt, true); drawComboGlow(); if(audioLive) drawSpectrum(); drawScore(now); }
+  if(live()){ drawTargets(dt, true); drawComboGlow(); drawScore(now); }
   else if(state==='paused'){ drawTargets(0, false); drawScore(pausedAt); }
   else if(state==='idle'){ drawDemo(now); }
   if(fx.length) drawFx(state==='paused' ? 0 : dt);   // sparkles finish over any state
+  if(state!=='idle') drawBorderFlash();              // play-area border flashes to the beat
   applyBloom();                                       // HDR bloom over the whole scene
   applyCA();                                          // chromatic aberration after an impact
   if(flash){                                          // screen-flash (over bloom)
