@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R25 — cockpit view';
+const BUILD = 'BUILD R26 — dashboard view';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -1308,16 +1308,18 @@ function render(){
     for (const m of playerCar.userData.brakeMats) m.emissiveIntensity = on?2.6:0.8;
   }
   if (sun){ sun.target.position.copy(playerCar.position); sun.position.copy(playerCar.position).add(_sunOff); sun.target.updateMatrixWorld(); }
-  // in cockpit view the chassis is hidden so the roof/pillars don't fill the screen
-  playerCar.visible = (G.view !== 'cockpit');
+  // in first-person views the chassis is hidden so the roof/pillars don't fill the screen
+  const firstPerson = (G.view==='cockpit' || G.view==='dash');
+  playerCar.visible = !firstPerson;
 
   const f = frameAt(G.dist);
-  if (G.view === 'cockpit'){
+  if (firstPerson){
     // first-person: eye at the driver's seat, looking down the track, leaning into corners
     worldPos(G.dist, G.offset, _tmp);
-    const eyeY = _tmp.y + 1.5;
+    const eyeY = _tmp.y + (G.view==='dash' ? 1.62 : 1.5);   // dash view sits a touch higher
     _camPos.copy(_tmp).addScaledVector(f.tan, 0.4); _camPos.y = eyeY;
-    _look.copy(_tmp).addScaledVector(f.tan, 22).addScaledVector(f.right, G.steerVis*3.2); _look.y = eyeY - 0.4;
+    _look.copy(_tmp).addScaledVector(f.tan, 22).addScaledVector(f.right, G.steerVis*3.2);
+    _look.y = eyeY - (G.view==='dash' ? 0.7 : 0.4);          // dash looks slightly more down over the bonnet
     if (finite(_camPos) && finite(_look)){
       camera.position.copy(_camPos);
       if (G.shake>0.02){ const s=G.shake*0.6; camera.position.y += (Math.random()-0.5)*s; camera.position.x += (Math.random()-0.5)*s; }
@@ -1372,6 +1374,44 @@ function miniXY(p, x, y, s){
 }
 function lerp(a,b,t){ return a+(b-a)*t; }
 
+// in-car dashboard + steering wheel that turns with the player's steering
+function drawDashboard(W,H){
+  const steer = G.steerVis;
+  // A-pillars (cabin frame)
+  hctx.fillStyle='rgba(10,11,16,0.92)';
+  hctx.beginPath(); hctx.moveTo(0,0); hctx.lineTo(W*0.18,0); hctx.lineTo(0,H*0.40); hctx.closePath(); hctx.fill();
+  hctx.beginPath(); hctx.moveTo(W,0); hctx.lineTo(W*0.82,0); hctx.lineTo(W,H*0.40); hctx.closePath(); hctx.fill();
+  // dashboard panel — a curved cowl humped up toward the driver binnacle
+  const dashTop=H*0.70;
+  hctx.save();
+  hctx.beginPath();
+  hctx.moveTo(0,H); hctx.lineTo(0,dashTop+H*0.05);
+  hctx.quadraticCurveTo(W*0.5, dashTop-H*0.06, W, dashTop+H*0.05);
+  hctx.lineTo(W,H); hctx.closePath();
+  const dg=hctx.createLinearGradient(0,dashTop-H*0.06,0,H);
+  dg.addColorStop(0,'#23262e'); dg.addColorStop(0.25,'#15171d'); dg.addColorStop(1,'#070809');
+  hctx.fillStyle=dg; hctx.fill();
+  hctx.lineWidth=Math.max(2,H*0.004); hctx.strokeStyle='rgba(120,130,150,0.25)'; hctx.stroke();
+  hctx.restore();
+  // steering wheel (hub below the screen so only the upper rim shows; rotates with steer)
+  const cx=W*0.5, cy=H*1.06, R=W*0.43;
+  hctx.save();
+  hctx.translate(cx,cy); hctx.rotate(steer*0.7);
+  hctx.lineCap='round';
+  hctx.lineWidth=Math.max(6,R*0.12); hctx.strokeStyle='#0c0d11';
+  hctx.beginPath(); hctx.arc(0,0,R,0,Math.PI*2); hctx.stroke();
+  hctx.lineWidth=Math.max(3,R*0.05); hctx.strokeStyle='#2a2d36';
+  hctx.beginPath(); hctx.arc(0,0,R,0,Math.PI*2); hctx.stroke();
+  hctx.strokeStyle='#191b22'; hctx.lineWidth=R*0.16; hctx.lineCap='butt';
+  for (const a of [-Math.PI/2, Math.PI/6, Math.PI*5/6]){
+    hctx.beginPath(); hctx.moveTo(0,0); hctx.lineTo(Math.cos(a)*R*0.92, Math.sin(a)*R*0.92); hctx.stroke();
+  }
+  hctx.fillStyle='#23262e'; hctx.beginPath(); hctx.arc(0,0,R*0.22,0,Math.PI*2); hctx.fill();
+  hctx.fillStyle='#d6262b'; hctx.beginPath(); hctx.arc(0,0,R*0.09,0,Math.PI*2); hctx.fill();
+  hctx.fillStyle='#e9e9ee'; hctx.fillRect(-R*0.05,-R-R*0.06,R*0.10,R*0.12);   // top-centre rim marker
+  hctx.restore();
+}
+
 function drawHUD(){
   const W=hud2d.width, H=hud2d.height;
   hctx.clearRect(0,0,W,H);
@@ -1387,6 +1427,8 @@ function drawHUD(){
     hctx.fillStyle='rgba(10,11,16,0.9)';
     hctx.beginPath(); hctx.moveTo(0,0); hctx.lineTo(W*0.16,0); hctx.lineTo(0,H*0.34); hctx.closePath(); hctx.fill();
     hctx.beginPath(); hctx.moveTo(W,0); hctx.lineTo(W*0.84,0); hctx.lineTo(W,H*0.34); hctx.closePath(); hctx.fill();
+  } else if (G.view==='dash'){
+    drawDashboard(W,H);
   }
 
   // speed lines streaking from the vanishing point at high speed
@@ -1808,12 +1850,14 @@ function togglePause(){
 }
 window.__togglePause = togglePause;
 
+const VIEW_ORDER = ['chase','cockpit','dash'];
+const VIEW_LABEL = { chase:'👁 CHASE VIEW', cockpit:'👁 COCKPIT VIEW', dash:'👁 DASHBOARD VIEW' };
 function updateViewBtn(){
   const b=document.getElementById('viewBtn'); if(!b) return;
-  b.innerHTML = G.view==='cockpit' ? '👁 COCKPIT VIEW' : '👁 CHASE VIEW';
+  b.innerHTML = VIEW_LABEL[G.view] || VIEW_LABEL.chase;
 }
 function setView(v){ G.view=v; updateViewBtn(); }
-function toggleView(){ setView(G.view==='cockpit' ? 'chase' : 'cockpit'); }
+function toggleView(){ const i=VIEW_ORDER.indexOf(G.view); setView(VIEW_ORDER[(i+1)%VIEW_ORDER.length]); }
 window.__toggleView = toggleView;
 
 function boot(){
