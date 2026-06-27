@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R41 — cinematic replay + shadows';
+const BUILD = 'BUILD R42 — Apple Music';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -2116,9 +2116,15 @@ function startRace(){
 
 // ---- race soundtrack: the chosen soundtrack (intro once -> loop) ----
 let _raceAudio = { intro:null, loop:null };
+function appleActive(){ return G.soundtrack==='applemusic' && window.AppleMusic && window.AppleMusic.authorized; }
 function startRaceMusic(){
   stopRaceMusic();
   if (window.GameMusic && window.GameMusic.stop){ try{ window.GameMusic.stop(); }catch(e){} }   // silence procedural menu music
+  if (appleActive()){   // stream the player's own Apple Music instead of a built-in track
+    if (G.applePlaylist) window.AppleMusic.playPlaylist(G.applePlaylist);
+    else window.AppleMusic.resume();
+    return;
+  }
   const st = SOUNDTRACKS[G.soundtrack] || SOUNDTRACKS.daytona;
   try {
     const intro = new Audio(st.intro); intro.volume=0.75;
@@ -2132,7 +2138,10 @@ function stopRaceMusic(){
   for (const k of ['intro','loop']){ const a=_raceAudio[k]; if(a){ try{ a.pause(); a.src=''; }catch(e){} } }
   _raceAudio = { intro:null, loop:null };
 }
-function pauseRaceMusic(p){ for (const k of ['intro','loop']){ const a=_raceAudio[k]; if(a){ try{ p?a.pause():(a.src&&a.play().catch(()=>{})); }catch(e){} } } }
+function pauseRaceMusic(p){
+  if (appleActive()){ try{ p?window.AppleMusic.pause():window.AppleMusic.resume(); }catch(e){} }
+  for (const k of ['intro','loop']){ const a=_raceAudio[k]; if(a){ try{ p?a.pause():(a.src&&a.play().catch(()=>{})); }catch(e){} } }
+}
 
 // ---- procedural engine sound (Web Audio): layered oscillators driven by RPM ----
 // Sits UNDER the MP3 race music. Two slightly-detuned saws + a square sub for body,
@@ -2309,7 +2318,9 @@ function showEndScreen(win){
 const SOUNDTRACKS = {
   daytona: { name:'DAYTONA', icon:'🏁', desc:'The original — big arcade theme', intro:'./audio/intro.mp3',      loop:'./audio/soundtrack.mp3' },
   heat:    { name:'HEAT',    icon:'🌆', desc:'Driving synth groove',           intro:'./audio/heat-intro.mp3', loop:'./audio/heat-soundtrack.mp3' },
+  applemusic:{ name:'APPLE MUSIC', icon:'🍎', desc:'Stream from your library', apple:true },
 };
+let selApplePlaylist=null, selApplePlaylistName='';
 const VEH_ICON = ['🏎️','🏁','⚡','🛞','🗡️'];
 const CIR_ICON = ['🏔️','🎡','🌆','🏜️'];
 let selVeh=0, selCir=1, selSnd='daytona', selTod='day', selWx='clear';
@@ -2328,6 +2339,7 @@ function showOverlay(html){
 function showMenu(){
   G.state='menu'; G.started=false;
   stopRaceMusic();
+  if (window.AppleMusic && window.AppleMusic.isPlaying()) window.AppleMusic.pause();   // hush the user's music in menus
   if (window.GameMusic){ try{ window.GameMusic.start && window.GameMusic.start(); window.GameMusic.setMode && window.GameMusic.setMode('menu'); }catch(e){} }
   showOverlay(`<h1 class="title">DAYTONA <span class="red">USA</span></h1>
     <div class="subtitle">3D POLYGON EDITION</div>
@@ -2394,16 +2406,62 @@ function showSoundtrackSelect(){
       <button class="btn ghost" id="backBtn">◀ BACK</button>
       <button class="btn" id="goBtn">GREEN FLAG ▶</button>
     </div></div>`);
-  wireCards('data-snd', i=>{ selSnd=keys[i]; showSoundtrackSelect(); });
+  wireCards('data-snd', i=>{ selSnd=keys[i]; if (selSnd==='applemusic') showAppleMusic(); else showSoundtrackSelect(); });
   wireCards('data-tod', i=>{ selTod=TOD_ITEMS[i].key; showSoundtrackSelect(); });
   wireCards('data-wx',  i=>{ selWx=WX_ITEMS[i].key; showSoundtrackSelect(); });
   document.getElementById('backBtn').onclick = G.champ ? showVehicleSelect : showCircuitSelect;
   document.getElementById('goBtn').onclick=()=>{
-    G.vehicle=VEHICLES[selVeh]; G.soundtrack=selSnd;
+    G.vehicle=VEHICLES[selVeh]; G.soundtrack=selSnd; G.applePlaylist=selApplePlaylist;
     G.circuit = G.champ ? CIRCUITS[G.champ.order[G.champ.round]] : CIRCUITS[selCir];
     G.night=(selTod==='night'); G.rain=(selWx==='rain');
     startRace();
   };
+}
+
+// ---- Apple Music connect / playlist picker ----
+function showAppleMusic(){
+  const AM = window.AppleMusic;
+  let body;
+  if (!AM){
+    body = `<p style="font-size:13px">Apple Music support didn't load.</p>`;
+  } else if (!AM.hasToken()){
+    body = `<p style="font-size:13px;line-height:1.4">To play your own Apple Music you need a <b>MusicKit developer token</b> (a JWT from your Apple Developer account). It's saved only on this device.</p>
+      <textarea id="amTok" rows="3" placeholder="Paste developer token (eyJ...)" style="width:92%;border-radius:8px;padding:8px;font-size:12px;font-family:monospace"></textarea>
+      <div style="height:8px"></div><button class="btn" id="amSave">SAVE TOKEN</button>
+      <p style="font-size:11px;opacity:.7;margin-top:10px">Get one at developer.apple.com → Certificates, IDs &amp; Profiles → Keys → enable MusicKit → then generate a signed JWT (ES256).</p>`;
+  } else if (!AM.authorized){
+    body = `<p style="font-size:13px">Sign in with your Apple Music subscription to play your library.</p>
+      <button class="btn" id="amConnect">CONNECT APPLE MUSIC</button>
+      <div style="height:8px"></div><button class="btn ghost" id="amClear" style="font-size:12px">Change token</button>`;
+  } else {
+    body = `<p style="font-size:13px;color:#2bd451">✓ Connected. Pick a playlist:</p><div id="amList" style="max-height:38vh;overflow:auto">Loading your playlists…</div>`;
+  }
+  showOverlay(`<h1 class="title">🍎 APPLE <span class="red">MUSIC</span></h1>
+    <div class="menu-card">${body}
+      <div style="height:12px"></div>
+      <button class="btn ghost" id="amBack">◀ BACK</button>
+    </div>`);
+  const onc=(id,fn)=>{ const e=document.getElementById(id); if(e) e.onclick=fn; };
+  onc('amBack', showSoundtrackSelect);
+  onc('amSave', ()=>{ const t=document.getElementById('amTok').value; if(t&&t.trim().length>20){ AM.setDevToken(t); } showAppleMusic(); });
+  onc('amClear', ()=>{ AM.setDevToken(''); showAppleMusic(); });
+  onc('amConnect', async ()=>{
+    const btn=document.getElementById('amConnect'); if(btn) btn.textContent='CONNECTING…';
+    const res = await AM.connect();
+    if (res.ok) showAppleMusic();
+    else { if(btn) btn.textContent='CONNECT APPLE MUSIC'; alert(res.reason==='nosdk'?'Apple Music SDK not loaded — check your connection.':res.reason==='notoken'?'Developer token is missing or invalid.':'Apple Music sign-in was cancelled.'); }
+  });
+  if (AM && AM.authorized){
+    AM.playlists().then(list=>{
+      const el=document.getElementById('amList'); if(!el) return;
+      if (!list.length){ el.innerHTML='<p style="font-size:12px;opacity:.8">No library playlists found. Add some in Apple Music, or pick again.</p>'; return; }
+      el.innerHTML = list.map(p=>`<button class="btn ghost amPL" data-amid="${p.id}" data-amname="${(p.name||'').replace(/"/g,'&quot;')}" style="display:block;width:100%;text-align:left;margin:4px 0;font-size:13px">▶ ${p.name}</button>`).join('');
+      el.querySelectorAll('.amPL').forEach(b=>{ b.onclick=()=>{
+        selSnd='applemusic'; selApplePlaylist=b.getAttribute('data-amid'); selApplePlaylistName=b.getAttribute('data-amname');
+        showSoundtrackSelect();
+      };});
+    });
+  }
 }
 
 function wireCards(attr, cb){
