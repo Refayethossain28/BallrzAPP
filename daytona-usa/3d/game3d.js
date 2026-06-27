@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R18 — clip opens Daytona (seamless, no double)';
+const BUILD = 'BUILD R19 — bigger cars';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -80,6 +80,7 @@ const RUMBLE_W = 1.6;          // kerb width
 const GRASS_W  = ROAD_W * 8;   // grass apron half-extent
 const DIV      = 1400;         // track frame samples
 const STEP     = 1/60;         // fixed physics timestep
+const CAR_SCALE = 1.35;        // overall car size
 const UP       = new THREE.Vector3(0,1,0);
 
 const MOBILE = (typeof navigator!=='undefined') &&
@@ -529,6 +530,7 @@ function buildCar(vehicle, lite){
   addLights(g, 0.82, L*0.5, L*0.5);
   // racing wheels tucked under the fenders
   addWheels(g, W/2-0.04, L*0.3, 0.55, lite);
+  g.scale.setScalar(CAR_SCALE);   // bigger cars (wheels sit at y=0 so it stays grounded)
   if (!MOBILE) g.traverse(o=>{ if(o.isMesh){ o.castShadow=true; } });
   return g;
 }
@@ -1023,7 +1025,7 @@ function updateRivals(dt){
 // ---- car-to-car collision: cars are (dist, offset); when two overlap, shove them
 //      apart laterally and trade a little speed (a Daytona-style bump). a/b each
 //      need {dist, offset, speed}. ----
-const CAR_LEN=4.7, CAR_WID=2.3;
+const CAR_LEN=4.7*CAR_SCALE, CAR_WID=2.3*CAR_SCALE;   // collision size tracks the visual size
 function collideCars(a, b){
   let dd = a.dist - b.dist;
   if (dd >  trackLen*0.5) dd -= trackLen;
