@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R40 — GP, rain, canyon, replay';
+const BUILD = 'BUILD R41 — cinematic replay + shadows';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -175,7 +175,7 @@ function initThree(){
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.98;
-  renderer.shadowMap.enabled = !MOBILE;
+  renderer.shadowMap.enabled = true;                 // real-time shadows on mobile too (pushed)
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   _maxAniso = renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 8;
 
@@ -195,11 +195,12 @@ function initThree(){
   ambLight = new THREE.AmbientLight(0xffffff, 0.30); scene.add(ambLight);
   sun = new THREE.DirectionalLight(0xfff0c4, 2.0);                  // warmer, stronger key light
   sun.position.set(60,120,30);
-  sun.castShadow = !MOBILE;
-  if (sun.castShadow){
-    sun.shadow.mapSize.set(2048,2048);
-    sun.shadow.camera.near=1; sun.shadow.camera.far=320;
-    const S=70; sun.shadow.camera.left=-S; sun.shadow.camera.right=S; sun.shadow.camera.top=S; sun.shadow.camera.bottom=-S;
+  sun.castShadow = true;
+  {
+    const SM = MOBILE?1536:2048;                     // a touch smaller on mobile for memory
+    sun.shadow.mapSize.set(SM,SM);
+    sun.shadow.camera.near=1; sun.shadow.camera.far=340;
+    const S=MOBILE?58:70; sun.shadow.camera.left=-S; sun.shadow.camera.right=S; sun.shadow.camera.top=S; sun.shadow.camera.bottom=-S;
     sun.shadow.bias=-0.0006; sun.shadow.normalBias=0.6;
   }
   scene.add(sun); scene.add(sun.target);
@@ -469,7 +470,7 @@ function buildRoadMesh(){
     // back-face-cull the single-sided road and show the sky THROUGH it (a "blue road").
     const tex=makeAsphaltTex(256, 512); tex.repeat.set(5, 1);
     const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({map:tex, color:G.rain?0x3b424b:0x595c61, side:THREE.DoubleSide, bumpMap:tex, bumpScale:G.rain?0.3:0.6}));
-    mesh.receiveShadow=!MOBILE; scene.add(mesh); roadParts.push(mesh);
+    mesh.receiveShadow=true; scene.add(mesh); roadParts.push(mesh);
   }
   // grass verge (defines the ground surface used to ground scenery)
   {
@@ -489,7 +490,7 @@ function buildRoadMesh(){
     geo.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3));
     const tex=surfTex(th.grass, th.grass2, 256, 256, 2600); tex.repeat.set(3, 1);
     const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({map:tex, side:THREE.DoubleSide, bumpMap:tex, bumpScale:0.3}));
-    mesh.receiveShadow=!MOBILE; scene.add(mesh); roadParts.push(mesh);
+    mesh.receiveShadow=true; scene.add(mesh); roadParts.push(mesh);
   }
   // kerbs + start/finish checker (vertex colours)
   {
@@ -538,7 +539,7 @@ function buildRoadMesh(){
     geo.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
     geo.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3));
     const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({vertexColors:true, side:THREE.DoubleSide}));
-    mesh.receiveShadow=!MOBILE; scene.add(mesh); roadParts.push(mesh);
+    mesh.receiveShadow=true; scene.add(mesh); roadParts.push(mesh);
   }
 }
 
@@ -789,11 +790,12 @@ function buildCar(vehicle, lite){
   const glowMat=new THREE.MeshBasicMaterial({map:glowTex(0xff2a1a), transparent:true, opacity:0.0, depthWrite:false, blending:THREE.AdditiveBlending, fog:false});
   g.userData.tailGlow=[];
   for (const sx of [-0.82,0.82]){ const q=new THREE.Mesh(new THREE.PlaneGeometry(1.5,1.1), glowMat.clone()); q.position.set(sx,0.82,-L*0.5-0.2); q.rotation.y=Math.PI; q.userData.noShadow=true; g.add(q); g.userData.tailGlow.push(q); }
-  // soft contact shadow under the car (grounds it — esp. on mobile where there are no real shadows)
-  if (MOBILE){ const sh=new THREE.Mesh(new THREE.PlaneGeometry(W*1.7,L*1.15), new THREE.MeshBasicMaterial({map:blobTex(), transparent:true, opacity:0.5, depthWrite:false, fog:false}));
-    sh.rotation.x=-Math.PI/2; sh.position.y=0.04; g.add(sh); }
+  // a faint contact patch under the car — grounds distant cars that fall outside
+  // the (tight) real-time shadow frustum; subtle so it doesn't double the shadow.
+  { const sh=new THREE.Mesh(new THREE.PlaneGeometry(W*1.7,L*1.1), new THREE.MeshBasicMaterial({map:blobTex(), transparent:true, opacity:0.28, depthWrite:false, fog:false}));
+    sh.rotation.x=-Math.PI/2; sh.position.y=0.04; sh.userData.noShadow=true; sh.renderOrder=-1; g.add(sh); }
   g.scale.setScalar(CAR_SCALE);   // bigger cars (wheels sit at y=0 so it stays grounded)
-  if (!MOBILE) g.traverse(o=>{ if(o.isMesh && !o.userData.noShadow){ o.castShadow=true; } });
+  g.traverse(o=>{ if(o.isMesh && !o.userData.noShadow){ o.castShadow=true; } });
   return g;
 }
 // cached soft radial textures for glows + contact shadow
@@ -1316,7 +1318,7 @@ function buildScenery(){
   { const seen=new Set(_pulse.map(p=>p.mat));
     sceneryGroup.traverse(o=>{ if(!o.isMesh) return; const ms=Array.isArray(o.material)?o.material:[o.material];
       for (const m of ms){ if (m && m.emissive && m.emissiveIntensity>0.01 && !seen.has(m)){ seen.add(m); _pulse.push({mat:m, base:m.emissiveIntensity, ph:seen.size*0.9, sp:1.8}); } } }); }
-  if (!MOBILE) sceneryGroup.traverse(o=>{ if(o.isMesh) o.castShadow=true; });
+  sceneryGroup.traverse(o=>{ if(!o.isMesh || o.userData.noShadow) return; const m=o.material; const tr=Array.isArray(m)?m.some(x=>x&&x.transparent):(m&&m.transparent); if(!tr) o.castShadow=true; });
   scene.add(sceneryGroup);
   _scnInfo = 'scn:' + sceneryGroup.children.length + (sceneryGroup.parent?'✓':'✗') + (_scnInfo?(' '+_scnInfo):'');
 }
@@ -1539,14 +1541,15 @@ function replayUpdate(dt){
 function startReplay(){
   if (!_replay.length) return;
   G.state='replay'; _repT=0; keys.gas=keys.brake=keys.left=keys.right=keys.boost=false;
-  hideOverlay();
+  G.view='cinematic'; cineReset();                      // start in TV-style auto camera
+  hideOverlay(); updateViewBtn();
   const pb=document.getElementById('pauseBtn'); if(pb) pb.textContent='✕ EXIT REPLAY';
   const t=document.getElementById('touch'); if(t) t.style.display='none';
   const vb=document.getElementById('viewBtn'); if(vb) vb.classList.remove('hidden');
   showBanner('▶ REPLAY', 0);
 }
 function exitReplay(){
-  G.state='finished'; hideBanner();
+  G.state='finished'; hideBanner(); G.view='chase';
   const pb=document.getElementById('pauseBtn'); if(pb) pb.textContent='❚❚ PAUSE';
   showEndScreen(G.lastWin);
 }
@@ -1607,6 +1610,37 @@ const _camPos=new THREE.Vector3(), _look=new THREE.Vector3(), _tmp=new THREE.Vec
 const _sunOff=new THREE.Vector3(55,120,35);
 function finite(v){ return Number.isFinite(v.x)&&Number.isFinite(v.y)&&Number.isFinite(v.z); }
 
+// ---- cinematic replay director: cuts between TV-style shots automatically ----
+let _cine = { shot:null, t:0, dur:0, side:1, anchor:new THREE.Vector3() };
+const _cineCam=new THREE.Vector3(), _cineLook=new THREE.Vector3(), _cv=new THREE.Vector3();
+const CINE_TYPES=['trackside','heli','low','flyby','onboard','trackside','chopper'];
+function cineReset(){ _cine.shot=null; _cine.t=0; _cine.dur=0; }
+function cineCut(){
+  let s; do{ s=CINE_TYPES[(Math.random()*CINE_TYPES.length)|0]; } while(s===_cine.shot);
+  _cine.shot=s; _cine.t=0; _cine.dur=2.6+Math.random()*2.8; _cine.side=Math.random()<0.5?1:-1;
+  const f=frameAt(G.dist); worldPos(G.dist,G.offset,_cv);
+  if (s==='trackside') _cine.anchor.copy(_cv).addScaledVector(f.right,_cine.side*(ROAD_W+14+Math.random()*22)).addScaledVector(f.tan, 22+Math.random()*32).setY(_cv.y+4+Math.random()*6);
+  else if (s==='flyby') _cine.anchor.copy(_cv).addScaledVector(f.right,_cine.side*(5+Math.random()*6)).addScaledVector(f.tan, 48+Math.random()*28).setY(_cv.y+2+Math.random()*2.5);
+}
+function cineCamera(f){
+  _cine.t += _adt;
+  if (!_cine.shot || _cine.t>=_cine.dur) cineCut();
+  worldPos(G.dist,G.offset,_cv);
+  const s=_cine.shot;
+  _cineLook.copy(_cv); _cineLook.y+=1.2;
+  let snap=false;
+  if (s==='heli'){ _cineCam.copy(_cv).addScaledVector(f.tan,-12).setY(_cv.y+28); }
+  else if (s==='chopper'){ _cineCam.copy(_cv).addScaledVector(f.tan,18).addScaledVector(f.right,_cine.side*10).setY(_cv.y+16); }
+  else if (s==='low'){ _cineCam.copy(_cv).addScaledVector(f.tan,-7).addScaledVector(f.right,_cine.side*2.5).setY(_cv.y+0.8); _cineLook.copy(_cv).addScaledVector(f.tan,18).setY(_cv.y+1.4); }
+  else if (s==='onboard'){ _cineCam.copy(_cv).addScaledVector(f.tan,0.4).setY(_cv.y+1.55); _cineLook.copy(_cv).addScaledVector(f.tan,22).addScaledVector(f.right,G.steerVis*3).setY(_cv.y+1.1); }
+  else { _cineCam.copy(_cine.anchor); snap=true; }       // trackside / flyby = locked-off camera
+  if (snap && _cineCam.distanceTo(_cv)>155) _cine.t=_cine.dur;   // car ran out of frame -> cut next frame
+  if (finite(_cineCam) && finite(_cineLook)){
+    if (snap) camera.position.copy(_cineCam); else camera.position.lerp(_cineCam, 0.18);
+    camera.up.set(0,1,0); camera.lookAt(_cineLook);
+  }
+}
+
 function present(){
   if (_ctxLost) return;
   renderer.render(scene, camera);
@@ -1661,11 +1695,14 @@ function render(){
   }
   if (sun){ sun.target.position.copy(playerCar.position); sun.position.copy(playerCar.position).add(_sunOff); sun.target.updateMatrixWorld(); }
   // cockpit hides the chassis; dash & chase show the car (dash shows its bonnet)
+  const cinematic = (G.state==='replay' && G.view==='cinematic');
   const firstPerson = (G.view==='cockpit' || G.view==='dash');
-  playerCar.visible = (G.view!=='cockpit');
+  playerCar.visible = !(G.view==='cockpit' || (cinematic && _cine.shot==='onboard'));
 
   const f = frameAt(G.dist);
-  if (firstPerson){
+  if (cinematic){
+    cineCamera(f);
+  } else if (firstPerson){
     worldPos(G.dist, G.offset, _tmp);
     let eyeFwd, eyeY, lookDrop;
     if (G.view==='dash'){            // hood cam: nearer the nose so only a short bonnet shows
@@ -2055,6 +2092,7 @@ function startRace(){
   G.boost=1; G.boostActive=false; G.lapStart=0; G.bestLap=bestLapFor(); G.recordSet=false;   // nitro full + load best lap
   _replay=[]; _recT=0;                                  // fresh replay recording
   keys.gas=keys.brake=keys.left=keys.right=keys.boost=false;
+  if (G.view==='cinematic') G.view='chase';
   G.started=true; G.state='rolling';
   _callout=null; _lastPos=1+rivals.length; _lastOvertakeT=-9;   // reset arcade callout state
   initSmoke(); resetSmoke();                          // tyre-smoke pool ready & cleared
@@ -2415,13 +2453,17 @@ function togglePause(){
 window.__togglePause = togglePause;
 
 const VIEW_ORDER = ['chase','cockpit','dash'];
-const VIEW_LABEL = { chase:'👁 CHASE VIEW', cockpit:'👁 COCKPIT VIEW', dash:'👁 DASHBOARD VIEW' };
+const REPLAY_VIEW_ORDER = ['cinematic','chase','cockpit','dash'];
+const VIEW_LABEL = { chase:'👁 CHASE VIEW', cockpit:'👁 COCKPIT VIEW', dash:'👁 DASHBOARD VIEW', cinematic:'🎬 CINEMATIC' };
 function updateViewBtn(){
   const b=document.getElementById('viewBtn'); if(!b) return;
   b.innerHTML = VIEW_LABEL[G.view] || VIEW_LABEL.chase;
 }
 function setView(v){ G.view=v; updateViewBtn(); }
-function toggleView(){ const i=VIEW_ORDER.indexOf(G.view); setView(VIEW_ORDER[(i+1)%VIEW_ORDER.length]); }
+function toggleView(){
+  const order = (G.state==='replay') ? REPLAY_VIEW_ORDER : VIEW_ORDER;
+  const i=order.indexOf(G.view); setView(order[(i+1)%order.length]);
+}
 window.__toggleView = toggleView;
 
 function boot(){
