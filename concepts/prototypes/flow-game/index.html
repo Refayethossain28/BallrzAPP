@@ -51,6 +51,10 @@
     background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 11px;backdrop-filter:blur(8px)}
   #muteBtn{appearance:none;color:var(--ink);background:var(--panel);border:1px solid var(--line);
     border-radius:50%;width:34px;height:34px;font-size:14px;cursor:pointer;line-height:1;backdrop-filter:blur(8px)}
+  #fxBtn{appearance:none;color:var(--muted);background:var(--panel);border:1px solid var(--line);
+    border-radius:999px;height:34px;padding:0 11px;font:700 10px/1 var(--mono);letter-spacing:1px;cursor:pointer;backdrop-filter:blur(8px)}
+  body.lowfx #grain{display:none}
+  body.lowfx #stage,body.lowfx #stage::before{animation:none}
 
   #stage{position:relative;flex:1;margin:0 12px;border-radius:22px;overflow:hidden;touch-action:none;
     border:1px solid var(--line);
@@ -199,6 +203,7 @@
   .ic-tap{background:rgba(58,225,255,.16);box-shadow:inset 0 0 0 1px rgba(58,225,255,.45)}
   .ic-avoid{background:rgba(255,93,108,.16);box-shadow:inset 0 0 0 1px rgba(255,93,108,.45)}
   .ic-bonus{background:rgba(255,209,102,.16);box-shadow:inset 0 0 0 1px rgba(255,209,102,.45)}
+  .ic-pow{background:rgba(154,123,255,.16);box-shadow:inset 0 0 0 1px rgba(154,123,255,.45);color:#b9a3ff}
 
   .menu-cta{display:flex;flex-direction:column;gap:10px;width:min(330px,94%)}
   .cta.big{display:flex;flex-direction:column;align-items:center;gap:1px;padding:13px;border-radius:16px;
@@ -239,6 +244,7 @@
   <header>
     <h1>FLOW<span class="sub">adaptive arcade</span></h1>
     <div style="display:flex;align-items:center;gap:10px">
+      <button id="fxBtn" aria-label="Graphics quality">FX·HI</button>
       <button id="muteBtn" aria-label="Mute sound">🔊</button>
       <span class="chip" id="seedLabel">seed —</span>
     </div>
@@ -260,6 +266,7 @@
         <div class="rule"><span class="ic ic-tap">👆</span><span>Pop the glowing circle before it fades</span></div>
         <div class="rule"><span class="ic ic-avoid">⛔</span><span>Dodge the red <b style="color:var(--bad)">✕</b> decoys</span></div>
         <div class="rule"><span class="ic ic-bonus">⭐</span><span>Grab bonus drops for extra points</span></div>
+        <div class="rule"><span class="ic ic-pow">◆</span><span>Catch power-ups: <b style="color:#7ee0ff">❄ slow</b> · <b style="color:#ffd166">✦ 2×</b> · <b style="color:var(--vs)">⛨ shield</b></span></div>
       </div>
 
       <canvas id="demoC" class="demo"></canvas>
@@ -492,6 +499,13 @@ const demoCv   = document.getElementById('demoC');
 const demoCtx  = demoCv.getContext('2d');
 const pauseBtn = document.getElementById('pauseBtn');
 const muteBtn  = document.getElementById('muteBtn');
+const fxBtn    = document.getElementById('fxBtn');
+let fxHigh = (localStorage.getItem('flow.fx')!=='lo');   // graphics quality (High = full post-FX)
+function setFx(hi){
+  fxHigh=hi; localStorage.setItem('flow.fx', hi?'hi':'lo');
+  document.body.classList.toggle('lowfx', !hi);
+  if(fxBtn) fxBtn.textContent = hi ? 'FX·HI' : 'FX·LO';
+}
 
 /* ---------- audio: ting/buzz SFX + a synth techno loop (Web Audio, no assets) ---------- */
 let actx=null, master=null, noiseBuf=null;
@@ -635,6 +649,15 @@ let matchMode=false, matchPlayer=1, matchEndsAt=0, matchRound=0, p1Score=0, p2Sc
 
 /* ---------- bonuses + sparkle particles ---------- */
 let bonus=null, fx=[], flash=null;
+/* power-ups (1-player): a tappable orb that grants a timed/charged effect */
+let pup=null, slowUntil=0, dblUntil=0, shield=false;
+const POWERS=[
+  {id:'slow',  icon:'❄',  label:'SLOW-MO', color:'#7ee0ff', w:4, dur:4500},
+  {id:'2x',    icon:'✦',  label:'DOUBLE',  color:'#ffd166', w:4, dur:6000},
+  {id:'shield',icon:'⛨',  label:'SHIELD',  color:'#9a7bff', w:3, dur:0},
+];
+function pickPower(){ const t=POWERS.reduce((s,p)=>s+p.w,0); let r=rng()*t; for(const p of POWERS){ if((r-=p.w)<0) return p; } return POWERS[0]; }
+const slowActive=()=>performance.now()<slowUntil, dblActive=()=>performance.now()<dblUntil;
 function pad(n,w){ n=String(Math.max(0,Math.floor(n))); return '0'.repeat(Math.max(0,w-n.length))+n; }
 function doFlash(color,a){ flash={color, a}; }                 // brief full-screen colour pop
 function callout(txt,color){ fx.push({callout:txt, color, life:0, max:1.0}); }  // big "COMBO x3!" burst
@@ -752,14 +775,30 @@ function spawnRound(){
     bonus={ type:b, r:br, x:br+rng()*(W-2*br), y:br+rng()*(H-2*br),
             vx:Math.cos(a)*bsp, vy:Math.sin(a)*bsp, pulse:rng()*6, born:performance.now() };
   }
+  // power-up: 1-player only (the rng draw is skipped in a 2P match, so the duel
+  // stays bit-identical), and only when no bonus took this round.
+  pup = null;
+  if(!matchMode && !bonus && rng() < 0.16){
+    const p=pickPower(), a=rng()*Math.PI*2, psp=30+rng()*45, pr=22;
+    pup={ type:p, r:pr, x:pr+rng()*(W-2*pr), y:pr+rng()*(H-2*pr),
+          vx:Math.cos(a)*psp, vy:Math.sin(a)*psp, pulse:rng()*6, born:performance.now() };
+  }
   roundStart = performance.now(); roundEnds = roundStart + level.lifeMs;
   refreshHud();
+}
+function activatePower(p){
+  const now=performance.now();
+  if(p.id==='slow') slowUntil=now+p.dur;
+  else if(p.id==='2x') dblUntil=now+p.dur;
+  else if(p.id==='shield') shield=true;
+  callout(p.label, p.color); impactCA(0.8);
 }
 function endRound(won){
   if(state==='playing') updateSkill(level, won);
   if(won){
-    const gain=comboMult(); score += gain; streak++; vibe(12);
-    if(comboMult()>gain) callout('COMBO x'+comboMult()+'!', '#ffd166');   // multiplier just leveled up
+    const m0=comboMult(); streak++; const m=comboMult();         // multiplier before/after this hit
+    score += m0 * (dblActive()?2:1); vibe(12);
+    if(m>m0) callout('COMBO x'+m+'!', '#ffd166');                // multiplier just leveled up
     // reward a long clean streak with a life back (capped)
     if(livesMode && streak>0 && streak%10===0 && lives<LIFE_CAP){
       lives++; floatText(W/2, 42, '+1 ♥', '#ff8fa0'); beep(990); callout('EXTRA LIFE', '#ff8fa0');
@@ -773,7 +812,9 @@ function endRound(won){
     if(state==='playing') drawSpark();
     if(livesMode){
       const now=performance.now();
-      if(now >= graceUntil){                 // brief immunity prevents a cascade double-hit
+      if(shield){                            // power-up absorbs the hit
+        shield=false; callout('BLOCKED', '#9a7bff'); doFlash('#9a7bff',0.18); shakeStage();
+      } else if(now >= graceUntil){          // brief immunity prevents a cascade double-hit
         lives--; graceUntil=now+800; shakeStage(); vibe(60); doFlash('#ff5d6c',0.22);
         if(lives<=0){ refreshHud(); gameOver(); return; }
       }
@@ -892,6 +933,8 @@ function drawTargets(dt, advance){
   const now=performance.now();
   const ref = (state==='paused') ? pausedAt : now;
   const remain = Math.max(0,(roundEnds-ref)/level.lifeMs);
+  const ts = slowActive() ? 0.42 : 1;          // ❄ slow-mo power-up
+  if(advance) dt*=ts;
   for(const t of targets){
     if(advance){
       t.x+=t.vx*dt; t.y+=t.vy*dt;
@@ -961,6 +1004,27 @@ function drawTargets(dt, advance){
     ctx.font=(R*1.1)+'px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText(bonus.type.icon,0,1); ctx.restore(); ctx.textBaseline='alphabetic';
   }
+  // power-up — pulsing aura, rotating diamond frame, upright glyph
+  if(pup){
+    if(advance){
+      pup.x+=pup.vx*dt; pup.y+=pup.vy*dt;
+      if(pup.x<pup.r||pup.x>W-pup.r){pup.vx*=-1;pup.x=Math.max(pup.r,Math.min(W-pup.r,pup.x));}
+      if(pup.y<pup.r||pup.y>H-pup.r){pup.vy*=-1;pup.y=Math.max(pup.r,Math.min(H-pup.r,pup.y));}
+    }
+    const grow=pup.born?Math.min(1,(now-pup.born)/220):1;
+    const R=pup.r*grow*(1+0.10*Math.sin(now/110+pup.pulse)), col=pup.type.color;
+    const ag=ctx.createRadialGradient(pup.x,pup.y,0,pup.x,pup.y,R*1.35);
+    ag.addColorStop(0,hexA(col,0.5)); ag.addColorStop(1,hexA(col,0));
+    ctx.fillStyle=ag; ctx.beginPath(); ctx.arc(pup.x,pup.y,R*1.35,0,7); ctx.fill();
+    ctx.save(); ctx.translate(pup.x,pup.y); ctx.rotate(now/700+pup.pulse);
+    ctx.shadowColor=col; ctx.shadowBlur=22; ctx.lineWidth=3; ctx.strokeStyle=col;
+    ctx.beginPath();
+    for(let i=0;i<4;i++){ const a=i/4*Math.PI*2, x=Math.cos(a)*R*1.1, y=Math.sin(a)*R*1.1; i?ctx.lineTo(x,y):ctx.moveTo(x,y); }
+    ctx.closePath(); ctx.stroke(); ctx.restore();
+    ctx.save(); ctx.shadowColor=col; ctx.shadowBlur=10; ctx.fillStyle='#fff';
+    ctx.font='900 '+(R*1.05)+'px "Courier New", system-ui, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(pup.type.icon, pup.x, pup.y+1); ctx.restore(); ctx.textBaseline='alphabetic';
+  }
 }
 /* arcade cabinet HUD: blocky monospace, leading zeros, glowing */
 function arcText(align,x,y,txt,color,px){
@@ -985,6 +1049,12 @@ function drawScore(ref){
     if(livesMode) arcText('center', W/2, 16, '♥'.repeat(Math.max(0,lives)) || '–', '#ff5d6c', 14);
     const m=comboMult();
     if(m>1) arcText('center', W/2, 42, 'x'+m, '#ffd166', 20+6*beatPulse);   // throbs on the beat
+    // active power-ups: chips along the bottom edge
+    const act=[];
+    if(slowActive()) act.push(['❄ '+Math.ceil((slowUntil-ref)/1000)+'s','#7ee0ff']);
+    if(dblActive())  act.push(['✦ 2× '+Math.ceil((dblUntil-ref)/1000)+'s','#ffd166']);
+    if(shield)       act.push(['⛨ SHIELD','#9a7bff']);
+    act.forEach((a,i)=> arcText('left', 12, H-12-i*18, a[0], a[1], 12));
   }
 }
 function drawCountdown(e){
@@ -1048,7 +1118,7 @@ function drawDemo(now){
 /* HDR-ish bloom: downsample the frame, blur it, add it back (lighter) so every
  * bright neon edge blooms — the single biggest "next-gen" lift on a 2D canvas. */
 function applyBloom(){
-  if(!bloomCtx || !cv.width) return;
+  if(!fxHigh || !bloomCtx || !cv.width) return;
   const bw=bloomCv.width, bh=bloomCv.height;
   bloomCtx.setTransform(1,0,0,1,0,0);
   bloomCtx.clearRect(0,0,bw,bh);
@@ -1067,7 +1137,7 @@ function applyBloom(){
  * background sits softly behind the sharp foreground orbs. Call right after the
  * background is drawn (and before any foreground). */
 function blurBackdrop(){
-  if(!bloomCtx || !cv.width) return;
+  if(!fxHigh || !bloomCtx || !cv.width) return;
   const bw=bloomCv.width, bh=bloomCv.height;
   bloomCtx.setTransform(1,0,0,1,0,0); bloomCtx.clearRect(0,0,bw,bh);
   bloomCtx.drawImage(cv,0,0,bw,bh);
@@ -1080,6 +1150,7 @@ function blurBackdrop(){
 /* Chromatic aberration: briefly after an impact, add red/blue channel-split
  * ghosts of the frame, offset apart. Reuses bloomCv (the current frame copy). */
 function applyCA(){
+  if(!fxHigh) return;
   const now=performance.now(); if(now>caUntil || !caCtx || !cv.width) return;
   const k=(caUntil-now)/130, dx=Math.max(1, cv.width*0.012*caMag*k);
   ctx.save(); ctx.setTransform(1,0,0,1,0,0); ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=0.3*k;
@@ -1097,7 +1168,13 @@ function applyCA(){
 /* ---------- input ---------- */
 function hit(px,py){
   if(!live()) return;
-  // bonus first — grabbing it scores extra but does not end the round
+  // power-up first — grabbing it activates a timed/charged effect, round continues
+  if(pup && (px-pup.x)**2+(py-pup.y)**2 <= (pup.r+8)**2){
+    spawnSparkle(pup.x,pup.y,pup.type.color,26,200);
+    bonusSound(); activatePower(pup.type); pup=null; refreshHud();
+    return;
+  }
+  // bonus next — grabbing it scores extra but does not end the round
   if(bonus && (px-bonus.x)**2+(py-bonus.y)**2 <= (bonus.r+8)**2){
     const pts=bonus.type.pts; score+=pts;
     if(state==='playing' && score>best){ best=score; localStorage.setItem('flow.best',best); renderCosmetics(); }
@@ -1160,7 +1237,7 @@ function frame(now){
 function start1P(seed, m){
   matchMode=false; SEED=seed; mode=m; setSeedLabel(); rng=makeRng(SEED);
   player.skill=0.45; player.rounds=0; player.passHistory=[]; score=0; streak=0; lastIdx=-1; dispScore=0;
-  bonus=null; fx=[];
+  bonus=null; fx=[]; pup=null; slowUntil=0; dblUntil=0; shield=false;
   livesMode = (m!=='free'); lives=MAXLIVES; graceUntil=0;   // Daily/shared = lives; Free play = endless zen
   showScreen(null); drawSpark(); startMusic();
   beginCountdown();
@@ -1235,6 +1312,7 @@ document.getElementById('okBtn').onclick       = toMenu;   // 2P: acknowledge re
 document.getElementById('againBtn').onclick    = ()=>{ showScreen(null); start1P(SEED, mode); };
 document.getElementById('overMenuBtn').onclick = toMenu;
 muteBtn.onclick = ()=> setMuted(!muted);
+fxBtn.onclick   = ()=> setFx(!fxHigh);
 
 /* tiny DOM helper: a div with the given class string */
 function el(cls){ const d=document.createElement('div'); d.className=cls; return d; }
@@ -1268,6 +1346,7 @@ renderCosmetics();
 refreshHud();
 refreshMenuStats();
 muteBtn.textContent = muted ? '🔇' : '🔊';
+setFx(fxHigh);
 showScreen('overlay');
 updateChrome();
 resize();
