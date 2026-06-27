@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R22 — detailed cars';
+const BUILD = 'BUILD R23 — wider road';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -75,7 +75,7 @@ const RIVAL_LIVERIES = [
 // ----------------------------------------------------------------------------
 //  Constants & globals
 // ----------------------------------------------------------------------------
-const ROAD_W   = 9;            // road half-width
+const ROAD_W   = 13;           // road half-width (wider track)
 const RUMBLE_W = 1.6;          // kerb width
 const GRASS_W  = ROAD_W * 8;   // grass apron half-extent
 const DIV      = 1400;         // track frame samples
@@ -1032,7 +1032,7 @@ function buildRivals(n){
     const liv = RIVAL_LIVERIES[i % RIVAL_LIVERIES.length];
     const mesh = buildCar({ livery: liv }, true);   // lite detail for rivals
     scene.add(mesh);
-    const lane = ((i%4)-1.5) * 2.6;                 // spread across the road
+    const lane = ((i%4)-1.5) * 3.4;                 // spread across the wider road
     rivals.push({
       mesh, lane, offset: lane,
       dist: (i+1)*7,                                // staggered ahead of the player on the grid
