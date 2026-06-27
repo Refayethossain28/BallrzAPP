@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R17 — prelude removed (single soundtrack)';
+const BUILD = 'BUILD R18 — clip opens Daytona (seamless, no double)';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
