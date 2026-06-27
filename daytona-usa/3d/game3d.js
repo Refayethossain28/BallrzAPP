@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R27 — next-level graphics';
+const BUILD = 'BUILD R28 — horizon skyline';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -654,6 +654,45 @@ function makeWindowTexture(glassy){
     x.fillRect(c*8+1, r*8+1, 6, 5); }
   const t=new THREE.CanvasTexture(cv); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.colorSpace=THREE.SRGBColorSpace; return t;
 }
+// a dense city-skyline silhouette strip (two layers for depth + lit windows)
+function makeSkylineTexture(th){
+  const W=2048, H=512; const cv=document.createElement('canvas'); cv.width=W; cv.height=H; const x=cv.getContext('2d');
+  x.clearRect(0,0,W,H);
+  const dubai = th && th.landmark==='dubai';
+  const rng = mulberry32(((th&&th.landmark)||'city').length*131 + 7);
+  const backCol  = dubai ? '#8295ac' : '#5b6678';
+  const frontCol = dubai ? '#45566c' : '#343c4a';
+  const winRGB   = dubai ? '255,228,158' : '255,212,150';
+  // back layer — hazier, shorter
+  x.globalAlpha=0.7; x.fillStyle=backCol;
+  for (let bx=0; bx<W; ){ const bw=40+rng()*90, bh=H*(0.30+rng()*0.32); x.fillRect(bx, H-bh, bw-4, bh); bx+=bw; }
+  x.globalAlpha=1;
+  // front layer — darker, taller, with occasional spires
+  x.fillStyle=frontCol; const fronts=[];
+  for (let bx=0; bx<W; ){ const bw=48+rng()*120, bh=H*(0.42+rng()*0.5), fy=H-bh, fw=bw-5;
+    x.fillRect(bx, fy, fw, bh); fronts.push([bx,fy,fw]);
+    if (rng()<0.16){ x.fillRect(bx+fw/2-2, fy-30-rng()*44, 4, 46); }   // antenna / spire
+    bx+=bw; }
+  // lit windows on the front buildings
+  for (const [fx,fy,fw] of fronts){
+    for (let wy=fy+9; wy<H-6; wy+=12) for (let wx=fx+5; wx<fx+fw-5; wx+=10){
+      if (rng()<0.45) continue;
+      x.fillStyle=`rgba(${winRGB},${(0.3+rng()*0.55).toFixed(2)})`; x.fillRect(wx,wy,5,7);
+    }
+  }
+  const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace; t.wrapS=THREE.RepeatWrapping; return t;
+}
+// a continuous skyline ringing the circuit on the horizon, behind the near scenery
+function buildSkylineBackdrop(cen, th){
+  const tex=makeSkylineTexture(th); tex.repeat.set(3,1);
+  const R=1100, Hc=460;
+  const geo=new THREE.CylinderGeometry(R,R,Hc,64,1,true);
+  const mat=new THREE.MeshBasicMaterial({map:tex, transparent:true, side:THREE.BackSide, fog:true, depthWrite:false});
+  const ring=new THREE.Mesh(geo,mat);
+  ring.position.set(cen.x, Hc*0.5 - 80, cen.z);   // base sinks below the horizon
+  ring.renderOrder = -1;                            // draw behind the near world
+  sceneryGroup.add(ring);
+}
 function makeClockFace(){
   const cv=document.createElement('canvas'); cv.width=cv.height=128; const x=cv.getContext('2d');
   x.fillStyle='#f3ead0'; x.beginPath(); x.arc(64,64,62,0,6.28); x.fill();
@@ -950,6 +989,8 @@ function buildScenery(){
       const m=new THREE.Mesh(new THREE.ConeGeometry(h*0.9,h,5),mtnMat); m.position.set(Math.cos(ang)*r,h/2-40,Math.sin(ang)*r); sceneryGroup.add(m);
       if (th.snow){ const cap=new THREE.Mesh(new THREE.ConeGeometry(h*0.32,h*0.34,5),snowMat); cap.position.set(Math.cos(ang)*r,h-40-h*0.17,Math.sin(ang)*r); sceneryGroup.add(cap); } }
   }
+  // a bold continuous city skyline on the horizon, ringing the whole circuit
+  try{ buildSkylineBackdrop(cen, th); }catch(e){ _scnInfo='SKYLINE-ERR:'+(e&&e.message||e); }
 
   // hero landmarks — grounded on the banked verge surface, and offset by each
   // landmark's BASE FOOTPRINT so its near edge always clears the kerb by a fixed
