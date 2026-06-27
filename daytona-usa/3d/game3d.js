@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R20 — engine sound';
+const BUILD = 'BUILD R21 — longer stands, real fans';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -618,10 +618,32 @@ function makeLatticeTexture(){
   const t=new THREE.CanvasTexture(cv); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.colorSpace=THREE.SRGBColorSpace; return t;
 }
 function makeCrowdTexture(){
-  const cv=document.createElement('canvas'); cv.width=256; cv.height=96; const x=cv.getContext('2d');
-  x.fillStyle='#41474f'; x.fillRect(0,0,256,96);
-  for (let r=0;r<7;r++) for (let cc=0;cc<40;cc++){ x.fillStyle=`hsl(${Math.random()*360},70%,${45+Math.random()*30}%)`; x.fillRect(cc*6+(r%2)*3, r*13+3, 4, 7); }
-  const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace; return t;
+  // Tiered bleacher packed with little spectators: each fan = a coloured torso
+  // with a skin-tone head, arranged in staggered rows on shaded concrete steps.
+  const cv=document.createElement('canvas'); cv.width=512; cv.height=192; const x=cv.getContext('2d');
+  const ROWS=11, perRow=46, stepH=192/ROWS;
+  const skins=['#f2c9a0','#e6b48c','#d59a6f','#b9774d','#8a5a36','#6b4528','#f7d7b5'];
+  for (let r=0;r<ROWS;r++){
+    const yTop=(ROWS-1-r)*stepH;                          // row 0 = front/bottom
+    // concrete step: darker at the back, a lighter seat lip at the front
+    const shade=28+r*4;
+    x.fillStyle=`rgb(${shade+8},${shade+10},${shade+14})`; x.fillRect(0,yTop,512,stepH);
+    x.fillStyle=`rgba(0,0,0,0.28)`; x.fillRect(0,yTop,512,Math.max(1,stepH*0.30));   // seat shadow
+    const figH=stepH*1.05, headR=figH*0.20, bodyW=512/perRow*0.74;
+    for (let c=0;c<perRow;c++){
+      if (Math.random()<0.06) continue;                   // a few empty seats
+      const cx=(c+0.5)*(512/perRow) + (r%2)*(512/perRow*0.5);
+      const fy=yTop+stepH-figH*0.92;
+      // torso (shirt)
+      x.fillStyle=`hsl(${Math.floor(Math.random()*360)},${55+Math.random()*30|0}%,${42+Math.random()*30|0}%)`;
+      x.fillRect(cx-bodyW/2, fy+headR*1.4, bodyW, figH-headR*1.4);
+      // head (skin)
+      x.fillStyle=skins[Math.random()*skins.length|0];
+      x.beginPath(); x.arc(cx, fy+headR, headR, 0, Math.PI*2); x.fill();
+    }
+  }
+  const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace;
+  t.anisotropy=4; return t;
 }
 function makeCheckerTex(){
   const cv=document.createElement('canvas'); cv.width=cv.height=64; const x=cv.getContext('2d');
@@ -928,7 +950,7 @@ function buildScenery(){
 
   // ---- BIG multi-row grandstands distributed around the lap (outer side, close in) ----
   const crowdTex=makeCrowdTexture();
-  const NSEG=8, NROW=MOBILE?2:3;
+  const NSEG=MOBILE?10:15, NROW=MOBILE?2:3;
   const standFracs = MOBILE ? [0.008,0.028, 0.25, 0.50, 0.75]
                             : [0.006,0.022,0.038, 0.25, 0.49,0.51,0.53, 0.75];
   const standCen=new THREE.Vector3(); for(const fr of frames) standCen.add(fr.pos); standCen.multiplyScalar(1/frames.length);
@@ -938,7 +960,7 @@ function buildScenery(){
     const idx=Math.floor(fr*DIV)%DIV, f=frames[idx];
     const side=(new THREE.Vector3().copy(f.pos).sub(standCen).dot(f.right)>=0)?1:-1;   // outward side
     const stand=new THREE.Group();
-    const W=44, H=24;
+    const W=MOBILE?78:96, H=24;   // longer grandstands
     const baseM=new THREE.Mesh(new THREE.BoxGeometry(W,H,12), new THREE.MeshLambertMaterial({color:0x9aa3b2})); baseM.position.y=H/2; stand.add(baseM);
     const segW=(W-2)/NSEG, tierH=H*0.24;
     const colBase=waveIdx;                          // columns of THIS stand
