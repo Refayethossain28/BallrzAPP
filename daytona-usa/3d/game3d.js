@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R38 — bump-mapped surfaces';
+const BUILD = 'BUILD R39 — cars, nitro, records, night';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -57,6 +57,18 @@ const VEHICLES = [
     livery:{ body:0x14181c, hood:0xe23b3b, roof:0xe23b3b, num:7, sponsor:'PHANTOM' },
     speedMul:1.12, accelMul:1.16, steerMul:1.2, gripMul:1.18, brakeMul:1.12, rollMul:0.85,
     desc:'A darker, faster machine — sharp steering and strong grip.' },
+  { name:'VOLT', kind:'stock', color:0x06b6d4,
+    livery:{ body:0x06b6d4, hood:0x0a3d4a, roof:0xffffff, num:21, sponsor:'VOLT' },
+    speedMul:1.06, accelMul:1.30, steerMul:1.14, gripMul:1.10, brakeMul:1.18, rollMul:0.95,
+    desc:'Electric launch — explosive acceleration and braking.' },
+  { name:'TITAN', kind:'stock', color:0xf59e0b,
+    livery:{ body:0xf59e0b, hood:0x1a1a1a, roof:0x1a1a1a, num:55, sponsor:'TITAN' },
+    speedMul:1.20, accelMul:0.92, steerMul:0.84, gripMul:0.92, brakeMul:0.9, rollMul:1.2,
+    desc:'A heavy muscle bruiser — huge top speed, lazy in the bends.' },
+  { name:'SABRE', kind:'stock', color:0x9333ea,
+    livery:{ body:0x9333ea, hood:0xfacc15, roof:0xfacc15, num:88, sponsor:'SABRE' },
+    speedMul:1.14, accelMul:1.12, steerMul:1.1, gripMul:1.14, brakeMul:1.08, rollMul:0.92,
+    desc:'A sleek GT all-rounder — quick everywhere, no weakness.' },
 ];
 // stock-car liveries for the AI field (varied colours + race numbers)
 const RIVAL_LIVERIES = [
@@ -87,7 +99,7 @@ const MOBILE = (typeof navigator!=='undefined') &&
   (/iPhone|iPad|iPod|Android|Mobi/i.test(navigator.userAgent) ||
    ((navigator.maxTouchPoints||0) > 1 && Math.min(window.innerWidth,window.innerHeight) < 820));
 
-let renderer, scene, camera, sun, sky;
+let renderer, scene, camera, sun, sky, hemiLight, ambLight;
 let glCanvas, hud2d, hctx;
 let frames = [], trackLen = 0;
 let playerCar = null;
@@ -111,7 +123,7 @@ let _clouds = [];            // drifting sky cloud billboards
 let _grainCanvas = null;     // pre-rendered film-grain tile
 let _maxAniso = 8;           // max texture anisotropy (set from renderer caps)
 
-const keys = { gas:false, brake:false, left:false, right:false };
+const keys = { gas:false, brake:false, left:false, right:false, boost:false };
 
 const G = {
   state: 'menu',          // menu | rolling | racing | finished
@@ -124,8 +136,17 @@ const G = {
   // race timing / scoring
   timeLeft: 0, totalTime: 0, rollT: 0, cdNum: -1, green: false,
   banner: 0,
+  boost: 1, boostActive: false,           // nitro meter (0..1) and whether it's firing
+  lapStart: 0, bestLap: 0, night: false,  // lap timing + best-lap record + day/night
 };
 let rivals = [];
+
+// ---- persistent best-lap records (localStorage; safe in private mode) ----
+let _records = {};
+function loadRecords(){ try{ _records = JSON.parse(localStorage.getItem('daytona3d_records')||'{}')||{}; }catch(e){ _records={}; } }
+function recordKey(){ return (G.circuit&&G.circuit.name||'?'); }
+function bestLapFor(){ return _records[recordKey()] || 0; }
+function saveBestLap(t){ try{ _records[recordKey()]=t; localStorage.setItem('daytona3d_records', JSON.stringify(_records)); }catch(e){} }
 
 // ----------------------------------------------------------------------------
 //  Boot
@@ -158,8 +179,9 @@ function initThree(){
 
   camera = new THREE.PerspectiveCamera(62, 1, 0.5, 5000);
 
-  scene.add(new THREE.HemisphereLight(0xdfe6ee, 0x49663b, 0.58));   // softer, less-blue sky light so flat surfaces aren't washed blue
-  scene.add(new THREE.AmbientLight(0xffffff, 0.30));
+  hemiLight = new THREE.HemisphereLight(0xdfe6ee, 0x49663b, 0.58);   // softer, less-blue sky light so flat surfaces aren't washed blue
+  scene.add(hemiLight);
+  ambLight = new THREE.AmbientLight(0xffffff, 0.30); scene.add(ambLight);
   sun = new THREE.DirectionalLight(0xfff0c4, 2.0);                  // warmer, stronger key light
   sun.position.set(60,120,30);
   sun.castShadow = !MOBILE;
@@ -179,18 +201,39 @@ function initThree(){
 function buildSky(){
   if (sky){ scene.remove(sky); sky.geometry.dispose(); sky.material.dispose(); }
   const th = G.theme || THEMES[3];
+  // night swaps in a dark starless-blue gradient; day uses the theme's sky
+  const top   = G.night ? '#04050d' : th.skyTop;
+  const mid   = G.night ? '#0a1226' : th.skyMid;
+  const horiz = G.night ? '#162038' : th.skyHorizon;
   const cv = document.createElement('canvas'); cv.width=16; cv.height=256;
   const x = cv.getContext('2d');
   const g = x.createLinearGradient(0,0,0,256);
-  g.addColorStop(0, th.skyTop); g.addColorStop(0.55, th.skyMid); g.addColorStop(1, th.skyHorizon);
+  g.addColorStop(0, top); g.addColorStop(0.55, mid); g.addColorStop(1, horiz);
   x.fillStyle=g; x.fillRect(0,0,16,256);
+  if (G.night){ x.fillStyle='#fff'; for(let i=0;i<60;i++){ x.globalAlpha=0.3+Math.random()*0.6; x.fillRect((Math.random()*16)|0,(Math.random()*150)|0,1,1);} x.globalAlpha=1; }
   const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
   const mat = new THREE.MeshBasicMaterial({ map:tex, side:THREE.BackSide, fog:false, depthWrite:false });
   sky = new THREE.Mesh(new THREE.SphereGeometry(3500, 16, 12), mat);
   scene.add(sky);
-  scene.background = new THREE.Color(th.skyHorizon);
-  scene.fog.color.set(th.skyHorizon);
+  scene.background = new THREE.Color(horiz);
+  scene.fog.color.set(horiz);
+  applyTimeOfDay();
   buildSunGlow();
+}
+// adjust the key/fill lights + exposure for day vs night
+function applyTimeOfDay(){
+  if (!sun) return;
+  if (G.night){
+    sun.color.setHex(0x9fb4e0); sun.intensity=0.5;
+    if (hemiLight){ hemiLight.intensity=0.28; hemiLight.color.setHex(0x6072a0); hemiLight.groundColor.setHex(0x161c2a); }
+    if (ambLight) ambLight.intensity=0.22;
+    renderer.toneMappingExposure=1.12;
+  } else {
+    sun.color.setHex(0xfff0c4); sun.intensity=2.0;
+    if (hemiLight){ hemiLight.intensity=0.58; hemiLight.color.setHex(0xdfe6ee); hemiLight.groundColor.setHex(0x49663b); }
+    if (ambLight) ambLight.intensity=0.30;
+    renderer.toneMappingExposure=0.98;
+  }
 }
 
 // a bright sun disc with an additive glow halo — fake "bloom" that is iOS-safe
@@ -200,12 +243,17 @@ function buildSunGlow(){
   if (_sunSprite){ _sunSprite.geometry.dispose(); _sunSprite.material.map.dispose(); _sunSprite.material.dispose(); _sunSprite=null; }
   const cv=document.createElement('canvas'); cv.width=cv.height=128; const x=cv.getContext('2d');
   const g=x.createRadialGradient(64,64,2,64,64,64);
-  g.addColorStop(0,'rgba(255,252,242,1)'); g.addColorStop(0.16,'rgba(255,246,212,0.95)');
-  g.addColorStop(0.42,'rgba(255,226,150,0.35)'); g.addColorStop(0.7,'rgba(255,210,140,0.10)'); g.addColorStop(1,'rgba(255,210,140,0)');
+  if (G.night){   // a cool, tight moon glow
+    g.addColorStop(0,'rgba(232,240,255,0.95)'); g.addColorStop(0.18,'rgba(200,215,245,0.6)');
+    g.addColorStop(0.45,'rgba(150,170,220,0.16)'); g.addColorStop(1,'rgba(150,170,220,0)');
+  } else {
+    g.addColorStop(0,'rgba(255,252,242,1)'); g.addColorStop(0.16,'rgba(255,246,212,0.95)');
+    g.addColorStop(0.42,'rgba(255,226,150,0.35)'); g.addColorStop(0.7,'rgba(255,210,140,0.10)'); g.addColorStop(1,'rgba(255,210,140,0)');
+  }
   x.fillStyle=g; x.fillRect(0,0,128,128);
   const tex=new THREE.CanvasTexture(cv); tex.colorSpace=THREE.SRGBColorSpace;
   const m=new THREE.MeshBasicMaterial({map:tex, transparent:true, depthWrite:false, fog:false, blending:THREE.AdditiveBlending});
-  _sunSprite=new THREE.Mesh(new THREE.PlaneGeometry(820,820), m);
+  _sunSprite=new THREE.Mesh(new THREE.PlaneGeometry(G.night?420:820, G.night?420:820), m);
   _sunSprite.position.copy(sun.position).normalize().multiplyScalar(3100);
   _sunSprite.renderOrder=1;
   sky.add(_sunSprite);
@@ -1389,9 +1437,16 @@ function racingUpdate(dt){
   if (keys.brake)      G.speed -= 95 * v.brakeMul * dt;
   G.speed -= G.speed * 0.012;                              // drag
   if (onGrass)         G.speed -= G.speed * 0.05;          // grass scrub
-  const topNow = onGrass ? maxSpeed*0.5 : maxSpeed;
+  // ---- nitro boost: a held surge that drains the meter, refilling when idle ----
+  G.boostActive = false;
+  if (keys.boost && G.boost>0.02 && G.speed > maxSpeed*0.08){
+    G.boostActive = true; G.speed += 150*dt; G.boost = Math.max(0, G.boost - dt*0.5);
+  } else {
+    G.boost = Math.min(1, G.boost + dt*(keys.gas?0.10:0.16));
+  }
+  const topNow = G.boostActive ? maxSpeed*1.28 : (onGrass ? maxSpeed*0.5 : maxSpeed);
   if (G.speed > topNow) G.speed += (topNow - G.speed)*0.1;
-  G.speed = Math.max(-maxSpeed*0.28, Math.min(maxSpeed, G.speed));
+  G.speed = Math.max(-maxSpeed*0.28, Math.min(maxSpeed*1.3, G.speed));
 
   // steering -> lateral offset (only meaningful when moving)
   const steer = (keys.right?1:0) - (keys.left?1:0);
@@ -1404,6 +1459,7 @@ function racingUpdate(dt){
   G.offset += f.curv * speedFrac * 11 * dt;
   // arcade tyre smoke when sliding / cornering hard / on the grass
   if (_smokeGroup) driftSmoke(f, speedFrac, steer, onGrass);
+  if (G.boostActive && _smokeGroup) emitBoostFlame(f);
   // the grass always nudges you back toward the road, so the car can never get
   // stranded/pinned far out in the verge (arcade forgiveness).
   if (Math.abs(G.offset) > ROAD_W){
@@ -1445,6 +1501,14 @@ function racingUpdate(dt){
 }
 
 function onLapComplete(){
+  // lap timing + persistent best-lap record
+  const lapTime = G.totalTime - G.lapStart; G.lapStart = G.totalTime;
+  if (lapTime > 1){
+    if (G.bestLap > 0 && lapTime < G.bestLap){
+      G.bestLap = lapTime; saveBestLap(lapTime); G.recordSet = true;
+      arcadeCallout('NEW LAP RECORD!', '#ffd400', [_NOTE.C6,_NOTE.E5,_NOTE.G5,_NOTE.C6]);
+    } else if (G.bestLap === 0){ G.bestLap = lapTime; saveBestLap(lapTime); }   // first time on this track
+  }
   if (G.lap >= G.circuit.laps){ finishRace(true); return; }   // crossed the line on the final lap
   G.lap++;
   G.timeLeft += G.circuit.lapBonus;                            // checkpoint time-extension
@@ -1541,7 +1605,7 @@ function render(){
   if (playerCar.userData.brakeMats){
     const on = G.state==='racing' && (keys.brake || G.speed<0);
     for (const m of playerCar.userData.brakeMats) m.emissiveIntensity = on?2.6:0.8;
-    if (playerCar.userData.tailGlow) for (const q of playerCar.userData.tailGlow){ q.material.opacity = on?0.95:0.32; q.scale.setScalar(on?1.3:1); }
+    if (playerCar.userData.tailGlow) for (const q of playerCar.userData.tailGlow){ q.material.opacity = on?0.95:(G.night?0.55:0.32); q.scale.setScalar(on?1.3:1); }
   }
   if (sun){ sun.target.position.copy(playerCar.position); sun.position.copy(playerCar.position).add(_sunOff); sun.target.updateMatrixWorld(); }
   // cockpit hides the chassis; dash & chase show the car (dash shows its bonnet)
@@ -1585,7 +1649,7 @@ function render(){
   if (_sunSprite) _sunSprite.quaternion.copy(camera.quaternion);   // keep the sun facing the camera
   updateClouds();
 
-  let targetFov = 62 + speedFracFov()*16;   // FOV opens with speed for more sense of rush
+  let targetFov = 62 + speedFracFov()*16 + (G.boostActive?12:0);   // FOV opens with speed (and punches on nitro)
   const asp = camera.aspect||1;
   if (asp < 1){
     const minH = 58*Math.PI/180;
@@ -1618,20 +1682,21 @@ function lerp(a,b,t){ return a+(b-a)*t; }
 
 // cinematic colour grade + vignette, drawn on the HUD canvas (over the 3D scene)
 function drawGrade(W,H,sp){
-  // warm light wash up top, gentle cool wash along the bottom — filmic depth
+  // warm light wash up top (cooler at night), gentle cool wash along the bottom
   const wash=hctx.createLinearGradient(0,0,0,H);
-  wash.addColorStop(0.0,'rgba(255,224,170,0.10)');
+  wash.addColorStop(0.0, G.night?'rgba(60,90,170,0.12)':'rgba(255,224,170,0.10)');
   wash.addColorStop(0.42,'rgba(255,255,255,0.0)');
-  wash.addColorStop(1.0,'rgba(20,40,80,0.12)');
+  wash.addColorStop(1.0, G.night?'rgba(4,6,20,0.30)':'rgba(20,40,80,0.12)');
   hctx.fillStyle=wash; hctx.fillRect(0,0,W,H);
-  // vignette — tightens & darkens with speed for a sense of rush
+  // vignette — tightens & darkens with speed for a sense of rush (darker at night)
   const cx=W*0.5, cy=H*0.52;
   const inner=Math.min(W,H)*(0.33 - sp*0.10);
   const outer=Math.max(W,H)*0.78;
+  const base=G.night?0.5:0.38;
   const vg=hctx.createRadialGradient(cx,cy,inner, cx,cy,outer);
   vg.addColorStop(0,'rgba(0,0,8,0)');
   vg.addColorStop(0.62,'rgba(0,0,8,0)');
-  vg.addColorStop(1,`rgba(0,0,10,${0.38+sp*0.18})`);
+  vg.addColorStop(1,`rgba(0,0,10,${base+sp*0.18})`);
   hctx.fillStyle=vg; hctx.fillRect(0,0,W,H);
 }
 // pre-rendered film-grain tile
@@ -1762,7 +1827,7 @@ function drawHUD(){
   // cinematic grade over the 3D (the HUD canvas sits on top of the GL canvas):
   // a speed-reactive vignette + a faint warm sky wash / cool road wash.
   drawGrade(W,H,sp);
-  drawLensFlare(W,H);          // sun lens flare (when the sun is on screen)
+  if (!G.night) drawLensFlare(W,H);   // sun lens flare (day only)
   drawGrain(W,H);              // subtle film grain
 
   // cockpit framing — A-pillars + dashboard lip so first-person reads as "in the car"
@@ -1831,6 +1896,23 @@ function drawHUD(){
     hctx.fillText('TRAFFIC', mx+s/2, my+s+2);
   }
 
+  // ---- nitro meter (centre, under the timer) ----
+  {
+    const bw=W*0.30, bh=Math.max(7,H*0.013), bx=W*0.5-bw/2, by=H*0.118;
+    hctx.fillStyle='rgba(0,0,0,0.45)'; roundRect(bx-2,by-2,bw+4,bh+4,bh*0.6); hctx.fill();
+    const full=G.boost>=0.999, fw=bw*Math.max(0,Math.min(1,G.boost));
+    const gr=hctx.createLinearGradient(bx,0,bx+bw,0); gr.addColorStop(0,'#ff7a1a'); gr.addColorStop(1, full?'#ffe14a':'#ffb02a');
+    hctx.fillStyle=gr; roundRect(bx,by,fw,bh,bh*0.5); hctx.fill();
+    if (G.boostActive){ hctx.fillStyle='rgba(255,230,120,0.5)'; roundRect(bx,by,fw,bh,bh*0.5); hctx.fill(); }
+    hctx.fillStyle = full?'#ffe14a':'#cfd6df'; hctx.font=`900 ${Math.max(8,W*0.02)}px Arial`; hctx.textAlign='center'; hctx.textBaseline='bottom';
+    hctx.fillText('NITRO', W*0.5, by-3);
+  }
+  // ---- best lap record (top-left, under the lap clock) ----
+  if (G.bestLap>0){
+    hctx.fillStyle='#ffd400'; hctx.font=`bold ${Math.max(9,W*0.022)}px Arial`; hctx.textAlign='left'; hctx.textBaseline='top';
+    hctx.fillText('BEST '+fmtTime(G.bestLap), W*0.035, H*0.108);
+  }
+
   // ---- big arcade callout (GO! / OVERTAKE! / FINAL LAP! / FINISH!) ----
   if (_callout){
     _callout.t += _adt;
@@ -1867,6 +1949,7 @@ function bindInput(){
     else if (e.key==='ArrowDown'||e.key==='s'||e.key==='S') set('brake',true);
     else if (e.key==='ArrowLeft'||e.key==='a'||e.key==='A') set('left',true);
     else if (e.key==='ArrowRight'||e.key==='d'||e.key==='D') set('right',true);
+    else if (e.key==='Shift'||e.key===' '||e.code==='Space') set('boost',true);
     else if (e.key==='c'||e.key==='C') toggleView();
   });
   window.addEventListener('keyup', e=>{
@@ -1874,6 +1957,7 @@ function bindInput(){
     else if (e.key==='ArrowDown'||e.key==='s'||e.key==='S') set('brake',false);
     else if (e.key==='ArrowLeft'||e.key==='a'||e.key==='A') set('left',false);
     else if (e.key==='ArrowRight'||e.key==='d'||e.key==='D') set('right',false);
+    else if (e.key==='Shift'||e.key===' '||e.code==='Space') set('boost',false);
   });
   // touch buttons
   const hook=(id,k)=>{
@@ -1883,7 +1967,7 @@ function bindInput(){
     el.addEventListener('pointerdown',on); el.addEventListener('pointerup',off);
     el.addEventListener('pointercancel',off); el.addEventListener('pointerleave',off);
   };
-  hook('tgas','gas'); hook('tbrake','brake'); hook('tleft','left'); hook('tright','right');
+  hook('tgas','gas'); hook('tbrake','brake'); hook('tleft','left'); hook('tright','right'); hook('tboost','boost');
 }
 
 // ----------------------------------------------------------------------------
@@ -1902,6 +1986,7 @@ function startRace(){
   G.maxSpeed = G.circuit.maxSpeed * G.vehicle.speedMul * 0.58;   // tuned to feel
   G.dist=0; G.offset=0; G.speed=0; G.lap=1; G.steerVis=0;
   G.timeLeft=G.circuit.startTime; G.totalTime=0; G.rollT=0; G.cdNum=-1; G.green=false;
+  G.boost=1; G.boostActive=false; G.lapStart=0; G.bestLap=bestLapFor(); G.recordSet=false;   // nitro full + load best lap
   G.started=true; G.state='rolling';
   _callout=null; _lastPos=1+rivals.length; _lastOvertakeT=-9;   // reset arcade callout state
   initSmoke(); resetSmoke();                          // tyre-smoke pool ready & cleared
@@ -2052,14 +2137,28 @@ function driftSmoke(f, speedFrac, steer, onGrass){
               onGrass?0x9a7b4f:0xeef0f3);
   }
 }
+let _flameT=0;
+// orange exhaust flame puffs out the back while the nitro is firing
+function emitBoostFlame(f){
+  _flameT -= _adt; if (_flameT>0) return;
+  _flameT = 0.025;
+  worldPos(G.dist, G.offset, _smPos);
+  const back=2.6*CAR_SCALE;
+  for (const sx of [-0.45,0.45])
+    emitSmoke(_smPos.x - f.tan.x*back + f.right.x*sx, _smPos.y+0.55, _smPos.z - f.tan.z*back + f.right.z*sx, Math.random()<0.5?0xff7a1a:0xffd23a);
+}
 
 function showEndScreen(win){
   const o=document.getElementById('overlay'); if(!o) return;
   const pos=computePosition(), total=1+rivals.length;
+  const bl = G.bestLap>0 ? fmtTime(G.bestLap) : '—';
+  const rec = G.recordSet ? `<div style="color:#ffd400;font-weight:900;margin-top:6px">🏆 NEW LAP RECORD!</div>` : '';
   o.innerHTML = `<h1 class="title">${win?'<span class="red">FINISH</span>':'TIME UP'}</h1>
     <div class="menu-card">
       <h2>${win?'RACE COMPLETE':'OUT OF TIME'}</h2>
-      <p style="font-size:15px">${G.circuit.name} — Position ${pos}/${total}<br>Total time ${fmtTime(G.totalTime)}</p>
+      <p style="font-size:15px">${G.circuit.name} — Position ${pos}/${total}<br>Total time ${fmtTime(G.totalTime)}<br>Best lap ${bl}</p>
+      ${rec}
+      <div style="height:6px"></div>
       <button class="btn" id="againBtn">RACE AGAIN ▶</button>
       <div style="height:10px"></div>
       <button class="btn ghost" id="menuBtn">MENU ✕</button>
@@ -2075,9 +2174,11 @@ const SOUNDTRACKS = {
   daytona: { name:'DAYTONA', icon:'🏁', desc:'The original — big arcade theme', intro:'./audio/intro.mp3',      loop:'./audio/soundtrack.mp3' },
   heat:    { name:'HEAT',    icon:'🌆', desc:'Driving synth groove',           intro:'./audio/heat-intro.mp3', loop:'./audio/heat-soundtrack.mp3' },
 };
-const VEH_ICON = ['🏎️','🏁'];
+const VEH_ICON = ['🏎️','🏁','⚡','🛞','🗡️'];
 const CIR_ICON = ['🏔️','🎡','🌆'];
-let selVeh=0, selCir=1, selSnd='daytona';
+let selVeh=0, selCir=1, selSnd='daytona', selTod='day';
+const TOD_ITEMS = [{key:'day',icon:'☀️',name:'DAY',desc:'Bright daylight racing'},
+                   {key:'night',icon:'🌙',name:'NIGHT',desc:'Neon-lit night with stars'}];
 
 function overlayEl(){ return document.getElementById('overlay'); }
 function showOverlay(html){
@@ -2140,16 +2241,20 @@ function showSoundtrackSelect(){
   const keys=Object.keys(SOUNDTRACKS);
   const items = keys.map(k=>({icon:SOUNDTRACKS[k].icon, name:SOUNDTRACKS[k].name, desc:SOUNDTRACKS[k].desc}));
   const selIdx = keys.indexOf(selSnd);
+  const todIdx = TOD_ITEMS.findIndex(t=>t.key===selTod);
   showOverlay(`<h1 class="title">SELECT <span class="red">SOUNDTRACK</span></h1>
     ${cardRow(items, selIdx, 'data-snd')}
+    <div class="subtitle" style="margin:4px 0 6px">TIME OF DAY</div>
+    ${cardRow(TOD_ITEMS, todIdx, 'data-tod')}
     <div class="menu-card"><div class="navrow">
       <button class="btn ghost" id="backBtn">◀ BACK</button>
       <button class="btn" id="goBtn">GREEN FLAG ▶</button>
     </div></div>`);
   wireCards('data-snd', i=>{ selSnd=keys[i]; showSoundtrackSelect(); });
+  wireCards('data-tod', i=>{ selTod=TOD_ITEMS[i].key; showSoundtrackSelect(); });
   document.getElementById('backBtn').onclick=showCircuitSelect;
   document.getElementById('goBtn').onclick=()=>{
-    G.vehicle=VEHICLES[selVeh]; G.circuit=CIRCUITS[selCir]; G.soundtrack=selSnd;
+    G.vehicle=VEHICLES[selVeh]; G.circuit=CIRCUITS[selCir]; G.soundtrack=selSnd; G.night=(selTod==='night');
     startRace();
   };
 }
@@ -2210,6 +2315,7 @@ function toggleView(){ const i=VIEW_ORDER.indexOf(G.view); setView(VIEW_ORDER[(i
 window.__toggleView = toggleView;
 
 function boot(){
+  loadRecords();
   initThree();
   bindInput();
   const pb=document.getElementById('pauseBtn'); if(pb) pb.onclick=togglePause;
