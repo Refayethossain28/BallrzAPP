@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R39 — cars, nitro, records, night';
+const BUILD = 'BUILD R40 — GP, rain, canyon, replay';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -30,16 +30,25 @@ const DUBAI_LAYOUT = [
   [-330,0,105],[-352,0,0],[-330,0,-105],
   [-250,0,-205],
 ];
+const CANYON_LAYOUT = [
+  [0,0,-230],[150,0,-250],[290,0,-170],[340,0,-40],
+  [300,0,90],[200,0,170],[70,0,150],[-40,0,210],
+  [-180,0,250],[-310,0,150],[-350,0,0],[-300,0,-140],[-170,0,-250],
+];
 const CIRCUITS = [
   { name:'DAYTONA', laps:8, maxSpeed:118, curveMul:0.85, aiSpeed:0.74, startTime:60, lapBonus:26, seed:1,  theme:0 },
   { name:'LONDON',  laps:6, maxSpeed:120, curveMul:1.0,  aiSpeed:0.78, startTime:62, lapBonus:30, seed:11, theme:3, layout:LONDON_LAYOUT },
   { name:'DUBAI',   laps:6, maxSpeed:132, curveMul:1.0,  aiSpeed:0.82, startTime:66, lapBonus:30, seed:23, theme:4, layout:DUBAI_LAYOUT },
+  { name:'CANYON',  laps:6, maxSpeed:128, curveMul:1.05, aiSpeed:0.80, startTime:64, lapBonus:30, seed:37, theme:1, layout:CANYON_LAYOUT },
 ];
 const THEMES = [
   { asphalt:0x83878d, grass:0x4a9c54, grass2:0x3f8f49, mountain:0x8a9099, snow:true,
     prop:'pine', skyline:'mountain', landmark:'usa', buildings:false,
     skyTop:'#1f6fd6', skyMid:'#5aa6f0', skyHorizon:'#dff0ff', fog:0xbfe2ff },
-  {},
+  // [1] CANYON — warm desert sunset, red-rock mountains, palms
+  { asphalt:0x8a7d72, grass:0xcaa46a, grass2:0xb8945c, mountain:0xb5683f, snow:false,
+    prop:'palm', skyline:'mountain', landmark:'usa', buildings:false,
+    skyTop:'#c4521f', skyMid:'#e89a4f', skyHorizon:'#f6cf95', fog:0xe6bd84 },
   {},
   { asphalt:0x6f7378, grass:0x4f7d46, grass2:0x447439, mountain:0x9aa6b2, snow:false,
     prop:'tree', skyline:'city', landmark:'london', buildings:true, overcast:true,
@@ -138,6 +147,8 @@ const G = {
   banner: 0,
   boost: 1, boostActive: false,           // nitro meter (0..1) and whether it's firing
   lapStart: 0, bestLap: 0, night: false,  // lap timing + best-lap record + day/night
+  rain: false, lastWin: false,            // weather + remembered race result (for replay)
+  champ: null, recordSet: false,          // championship session (null = single race)
 };
 let rivals = [];
 
@@ -457,7 +468,7 @@ function buildRoadMesh(){
     // DoubleSide: on some track windings the asphalt normals face down, which would
     // back-face-cull the single-sided road and show the sky THROUGH it (a "blue road").
     const tex=makeAsphaltTex(256, 512); tex.repeat.set(5, 1);
-    const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({map:tex, color:0x595c61, side:THREE.DoubleSide, bumpMap:tex, bumpScale:0.6}));
+    const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({map:tex, color:G.rain?0x3b424b:0x595c61, side:THREE.DoubleSide, bumpMap:tex, bumpScale:G.rain?0.3:0.6}));
     mesh.receiveShadow=!MOBILE; scene.add(mesh); roadParts.push(mesh);
   }
   // grass verge (defines the ground surface used to ground scenery)
@@ -1323,7 +1334,7 @@ function buildRivals(n){
     scene.add(mesh);
     const lane = ((i%4)-1.5) * 3.4;                 // spread across the wider road
     rivals.push({
-      mesh, lane, offset: lane,
+      mesh, lane, offset: lane, name: liv.sponsor || ('CAR '+(liv.num||i)),
       dist: (i+1)*7,                                // staggered ahead of the player on the grid
       lap: 0,
       baseSpeed: aiTop * (0.95 + 0.08*((i*0.37)%1)),
@@ -1401,7 +1412,9 @@ function computePosition(){
 // ----------------------------------------------------------------------------
 function update(dt){
   if (G.state==='menu' || G.state==='finished') return;
+  if (G.state==='replay'){ replayUpdate(dt); return; }
   if (G.state==='rolling'){ rollingUpdate(dt); return; }
+  if (G.state==='paused') return;
   racingUpdate(dt);
 }
 
@@ -1452,7 +1465,7 @@ function racingUpdate(dt){
   const steer = (keys.right?1:0) - (keys.left?1:0);
   G.steerVis += (steer - G.steerVis) * 0.2;
   const speedFrac = Math.min(1, Math.abs(G.speed)/maxSpeed);
-  const grip = v.gripMul * (onGrass?0.7:1);
+  const grip = v.gripMul * (onGrass?0.7:1) * (G.rain?0.82:1);
   G.offset += steer * 16 * v.steerMul * grip * dt * (0.35 + 0.65*speedFrac) * Math.sign(G.speed||1);
   // gentle centrifugal drift on curves
   const f = frameAt(G.dist);
@@ -1497,7 +1510,45 @@ function racingUpdate(dt){
   if (G.timeLeft <= 0){ G.timeLeft = 0; finishRace(false); return; }
 
   if (window.GameMusic && window.GameMusic.setIntensity) window.GameMusic.setIntensity(speedFrac);
+  // record the race for instant replay (throttled to ~20 Hz)
+  _recT += dt;
+  if (_recT >= 0.05){ _recT = 0; recordReplay(); }
   updateRaceHUDText();
+}
+
+// ---- instant replay: record the whole race, then play it back ----
+let _replay=[], _recT=0, _repT=0;
+function recordReplay(){
+  _replay.push({ d:G.dist, o:G.offset, sv:G.steerVis, sp:G.speed, lap:G.lap,
+                 br:keys.brake?1:0, r:rivals.map(r=>[r.dist,r.offset]) });
+  if (_replay.length > 8000) _replay.shift();
+}
+function lerpDist(a,b,f){ let d=b-a; if(d>trackLen/2)d-=trackLen; else if(d<-trackLen/2)d+=trackLen; let r=a+d*f; if(r<0)r+=trackLen; if(r>=trackLen)r-=trackLen; return r; }
+function replayUpdate(dt){
+  if (!_replay.length){ exitReplay(); return; }
+  _repT += dt;
+  let fi=_repT/0.05, i0=Math.floor(fi);
+  if (i0 >= _replay.length-1){ _repT=0; i0=0; fi=0; }   // loop the replay
+  const a=_replay[i0], b=_replay[Math.min(i0+1,_replay.length-1)], f=fi-i0;
+  G.dist=lerpDist(a.d,b.d,f); G.offset=a.o+(b.o-a.o)*f; G.steerVis=a.sv+(b.sv-a.sv)*f;
+  G.speed=a.sp; G.lap=a.lap; keys.brake=!!a.br; G.boostActive=false;
+  for (let k=0;k<rivals.length && k<a.r.length;k++){
+    rivals[k].dist=lerpDist(a.r[k][0],b.r[k][0],f); rivals[k].offset=a.r[k][1]+(b.r[k][1]-a.r[k][1])*f;
+  }
+}
+function startReplay(){
+  if (!_replay.length) return;
+  G.state='replay'; _repT=0; keys.gas=keys.brake=keys.left=keys.right=keys.boost=false;
+  hideOverlay();
+  const pb=document.getElementById('pauseBtn'); if(pb) pb.textContent='✕ EXIT REPLAY';
+  const t=document.getElementById('touch'); if(t) t.style.display='none';
+  const vb=document.getElementById('viewBtn'); if(vb) vb.classList.remove('hidden');
+  showBanner('▶ REPLAY', 0);
+}
+function exitReplay(){
+  G.state='finished'; hideBanner();
+  const pb=document.getElementById('pauseBtn'); if(pb) pb.textContent='❚❚ PAUSE';
+  showEndScreen(G.lastWin);
 }
 
 function onLapComplete(){
@@ -1521,9 +1572,10 @@ function onLapComplete(){
 }
 
 function finishRace(win){
-  G.state='finished';
+  G.state='finished'; G.lastWin=win;
   if (win) arcadeCallout('FINISH!', '#ffd400', [_NOTE.C5,_NOTE.E5,_NOTE.G5,_NOTE.C6,_NOTE.G5,_NOTE.C6]);
   showBanner(win?'FINISH!':"TIME UP", 0);
+  if (G.champ) try{ champScore(); }catch(e){}  // tally championship points for this round
   showEndScreen(win);
   stopRaceMusic();
   if (window.GameMusic){ try{ window.GameMusic.start && window.GameMusic.start(); window.GameMusic.setMode && window.GameMusic.setMode('menu'); }catch(e){} }
@@ -1698,6 +1750,19 @@ function drawGrade(W,H,sp){
   vg.addColorStop(0.62,'rgba(0,0,8,0)');
   vg.addColorStop(1,`rgba(0,0,10,${base+sp*0.18})`);
   hctx.fillStyle=vg; hctx.fillRect(0,0,W,H);
+  if (G.rain){ hctx.fillStyle='rgba(42,54,76,0.24)'; hctx.fillRect(0,0,W,H); }   // grey storm wash
+}
+// animated falling rain streaks (deterministic set, scrolls with the clock)
+let _rainDrops=null;
+function drawRain(W,H){
+  if (!_rainDrops || _rainDrops.W!==W){ const list=[]; for(let i=0;i<110;i++) list.push({x:Math.random(), len:0.04+Math.random()*0.06, sp:0.9+Math.random()*0.8, ph:Math.random()}); _rainDrops={W,list}; }
+  const t=_animClock;
+  hctx.save(); hctx.strokeStyle='rgba(195,212,238,0.5)'; hctx.lineWidth=Math.max(1,W*0.0018); hctx.lineCap='round';
+  for (const d of _rainDrops.list){
+    const yy=((t*d.sp + d.ph)%1.2)-0.1, px=d.x*W, py=yy*H;
+    hctx.beginPath(); hctx.moveTo(px,py); hctx.lineTo(px - W*0.018, py + d.len*H); hctx.stroke();
+  }
+  hctx.restore();
 }
 // pre-rendered film-grain tile
 function getGrain(){
@@ -1827,7 +1892,8 @@ function drawHUD(){
   // cinematic grade over the 3D (the HUD canvas sits on top of the GL canvas):
   // a speed-reactive vignette + a faint warm sky wash / cool road wash.
   drawGrade(W,H,sp);
-  if (!G.night) drawLensFlare(W,H);   // sun lens flare (day only)
+  if (!G.night && !G.rain) drawLensFlare(W,H);   // sun lens flare (clear day only)
+  if (G.rain) drawRain(W,H);                      // falling rain streaks
   drawGrain(W,H);              // subtle film grain
 
   // cockpit framing — A-pillars + dashboard lip so first-person reads as "in the car"
@@ -1987,6 +2053,8 @@ function startRace(){
   G.dist=0; G.offset=0; G.speed=0; G.lap=1; G.steerVis=0;
   G.timeLeft=G.circuit.startTime; G.totalTime=0; G.rollT=0; G.cdNum=-1; G.green=false;
   G.boost=1; G.boostActive=false; G.lapStart=0; G.bestLap=bestLapFor(); G.recordSet=false;   // nitro full + load best lap
+  _replay=[]; _recT=0;                                  // fresh replay recording
+  keys.gas=keys.brake=keys.left=keys.right=keys.boost=false;
   G.started=true; G.state='rolling';
   _callout=null; _lastPos=1+rivals.length; _lastOvertakeT=-9;   // reset arcade callout state
   initSmoke(); resetSmoke();                          // tyre-smoke pool ready & cleared
@@ -2148,24 +2216,54 @@ function emitBoostFlame(f){
     emitSmoke(_smPos.x - f.tan.x*back + f.right.x*sx, _smPos.y+0.55, _smPos.z - f.tan.z*back + f.right.z*sx, Math.random()<0.5?0xff7a1a:0xffd23a);
 }
 
+// ---- championship (Grand Prix across all circuits, points by finish position) ----
+function champStart(){ G.champ = { round:0, order:[0,1,2,3], points:[], names:[] }; }
+function champScore(){
+  const c=G.champ, N=1+rivals.length, PTS=[10,8,6,5,4,3,2,1];
+  if (!c.points.length){ c.points=new Array(N).fill(0); c.names=['YOU'].concat(rivals.map(r=>r.name||'AI')); }
+  const ent=[{i:0, prog:(G.lap-1)*trackLen+G.dist}];
+  rivals.forEach((r,k)=>ent.push({i:k+1, prog:r.lap*trackLen+r.dist}));
+  ent.sort((a,b)=>b.prog-a.prog);
+  ent.forEach((e,p)=>{ c.points[e.i]+=(PTS[p]||0); });
+}
+function champNextRound(){
+  G.champ.round++;
+  if (G.champ.round < G.champ.order.length){ G.circuit = CIRCUITS[G.champ.order[G.champ.round]]; startRace(); }
+  else showMenu();
+}
+
 function showEndScreen(win){
   const o=document.getElementById('overlay'); if(!o) return;
   const pos=computePosition(), total=1+rivals.length;
   const bl = G.bestLap>0 ? fmtTime(G.bestLap) : '—';
   const rec = G.recordSet ? `<div style="color:#ffd400;font-weight:900;margin-top:6px">🏆 NEW LAP RECORD!</div>` : '';
+  let champHtml='', champBtn='';
+  if (G.champ){
+    const c=G.champ, last = c.round >= c.order.length-1;
+    const ord=c.points.map((p,i)=>({i,p,name:c.names[i]||'AI'})).sort((a,b)=>b.p-a.p);
+    const rows=ord.slice(0,8).map((e,k)=>`<div style="display:flex;justify-content:space-between;${e.i===0?'color:#2bd451;font-weight:900':''}"><span>${k+1}. ${e.name}</span><span>${e.p}</span></div>`).join('');
+    champHtml = `<div style="text-align:left;font-size:13px;max-width:260px;margin:8px auto 4px"><b>GRAND PRIX — Round ${c.round+1}/${c.order.length}</b>${rows}</div>`;
+    if (last) champHtml += `<div style="color:#ffd400;font-weight:900;margin-top:4px">🏆 CHAMPION: ${ord[0].name}</div>`;
+    else champBtn = `<button class="btn" id="nextRaceBtn">NEXT RACE ▶</button><div style="height:8px"></div>`;
+  }
   o.innerHTML = `<h1 class="title">${win?'<span class="red">FINISH</span>':'TIME UP'}</h1>
     <div class="menu-card">
       <h2>${win?'RACE COMPLETE':'OUT OF TIME'}</h2>
-      <p style="font-size:15px">${G.circuit.name} — Position ${pos}/${total}<br>Total time ${fmtTime(G.totalTime)}<br>Best lap ${bl}</p>
-      ${rec}
-      <div style="height:6px"></div>
-      <button class="btn" id="againBtn">RACE AGAIN ▶</button>
-      <div style="height:10px"></div>
+      <p style="font-size:14px">${G.circuit.name} — Position ${pos}/${total}<br>Total ${fmtTime(G.totalTime)} · Best lap ${bl}</p>
+      ${rec}${champHtml}
+      <div style="height:8px"></div>
+      ${champBtn}
+      ${_replay.length?'<button class="btn ghost" id="replayBtn">▶ WATCH REPLAY</button><div style="height:8px"></div>':''}
+      <button class="btn ghost" id="againBtn">RACE AGAIN ▶</button>
+      <div style="height:8px"></div>
       <button class="btn ghost" id="menuBtn">MENU ✕</button>
     </div>`;
   o.classList.remove('hidden');
-  document.getElementById('againBtn').onclick = ()=>startRace();
-  document.getElementById('menuBtn').onclick  = ()=>showMenu();
+  const onc=(id,fn)=>{ const e=document.getElementById(id); if(e) e.onclick=fn; };
+  onc('nextRaceBtn', champNextRound);
+  onc('replayBtn', startReplay);
+  onc('againBtn', ()=>startRace());
+  onc('menuBtn', ()=>{ G.champ=null; showMenu(); });
 }
 // ----------------------------------------------------------------------------
 //  Menu flow: title -> vehicle -> circuit -> soundtrack -> race
@@ -2175,10 +2273,12 @@ const SOUNDTRACKS = {
   heat:    { name:'HEAT',    icon:'🌆', desc:'Driving synth groove',           intro:'./audio/heat-intro.mp3', loop:'./audio/heat-soundtrack.mp3' },
 };
 const VEH_ICON = ['🏎️','🏁','⚡','🛞','🗡️'];
-const CIR_ICON = ['🏔️','🎡','🌆'];
-let selVeh=0, selCir=1, selSnd='daytona', selTod='day';
+const CIR_ICON = ['🏔️','🎡','🌆','🏜️'];
+let selVeh=0, selCir=1, selSnd='daytona', selTod='day', selWx='clear';
 const TOD_ITEMS = [{key:'day',icon:'☀️',name:'DAY',desc:'Bright daylight racing'},
                    {key:'night',icon:'🌙',name:'NIGHT',desc:'Neon-lit night with stars'}];
+const WX_ITEMS  = [{key:'clear',icon:'⛅',name:'CLEAR',desc:'Dry track, full grip'},
+                   {key:'rain', icon:'🌧️',name:'RAIN', desc:'Wet, slippery & moody'}];
 
 function overlayEl(){ return document.getElementById('overlay'); }
 function showOverlay(html){
@@ -2195,11 +2295,14 @@ function showMenu(){
     <div class="subtitle">3D POLYGON EDITION</div>
     <div class="menu-card">
       <h2>MERCEDES CIRCUIT RACING</h2>
-      <p style="font-size:13px;opacity:.85;margin:0 0 16px">Pick your car, circuit & soundtrack. ${BUILD}</p>
-      <button class="btn" id="startBtn">START ▶</button>
+      <p style="font-size:13px;opacity:.85;margin:0 0 14px">Pick your car, circuit, time, weather & soundtrack. ${BUILD}</p>
+      <button class="btn" id="startBtn">SINGLE RACE ▶</button>
+      <div style="height:8px"></div>
+      <button class="btn ghost" id="gpBtn">🏆 GRAND PRIX</button>
     </div>
     <div class="credit">Fan-made, non-commercial.</div>`);
-  document.getElementById('startBtn').onclick = ()=>{ try{ensureAudio();}catch(e){} showVehicleSelect(); };
+  document.getElementById('startBtn').onclick = ()=>{ try{ensureAudio();}catch(e){} G.champ=null; showVehicleSelect(); };
+  document.getElementById('gpBtn').onclick    = ()=>{ try{ensureAudio();}catch(e){} champStart(); showVehicleSelect(); };
 }
 
 function cardRow(items, selIdx, dataAttr){
@@ -2221,7 +2324,7 @@ function showVehicleSelect(){
     </div></div>`);
   wireCards('data-veh', i=>{ selVeh=i; showVehicleSelect(); });
   document.getElementById('backBtn').onclick=showMenu;
-  document.getElementById('nextBtn').onclick=showCircuitSelect;
+  document.getElementById('nextBtn').onclick = G.champ ? showSoundtrackSelect : showCircuitSelect;   // GP skips circuit pick
 }
 
 function showCircuitSelect(){
@@ -2242,19 +2345,25 @@ function showSoundtrackSelect(){
   const items = keys.map(k=>({icon:SOUNDTRACKS[k].icon, name:SOUNDTRACKS[k].name, desc:SOUNDTRACKS[k].desc}));
   const selIdx = keys.indexOf(selSnd);
   const todIdx = TOD_ITEMS.findIndex(t=>t.key===selTod);
+  const wxIdx  = WX_ITEMS.findIndex(t=>t.key===selWx);
   showOverlay(`<h1 class="title">SELECT <span class="red">SOUNDTRACK</span></h1>
     ${cardRow(items, selIdx, 'data-snd')}
-    <div class="subtitle" style="margin:4px 0 6px">TIME OF DAY</div>
+    <div class="subtitle" style="margin:4px 0 4px">TIME OF DAY</div>
     ${cardRow(TOD_ITEMS, todIdx, 'data-tod')}
+    <div class="subtitle" style="margin:4px 0 4px">WEATHER</div>
+    ${cardRow(WX_ITEMS, wxIdx, 'data-wx')}
     <div class="menu-card"><div class="navrow">
       <button class="btn ghost" id="backBtn">◀ BACK</button>
       <button class="btn" id="goBtn">GREEN FLAG ▶</button>
     </div></div>`);
   wireCards('data-snd', i=>{ selSnd=keys[i]; showSoundtrackSelect(); });
   wireCards('data-tod', i=>{ selTod=TOD_ITEMS[i].key; showSoundtrackSelect(); });
-  document.getElementById('backBtn').onclick=showCircuitSelect;
+  wireCards('data-wx',  i=>{ selWx=WX_ITEMS[i].key; showSoundtrackSelect(); });
+  document.getElementById('backBtn').onclick = G.champ ? showVehicleSelect : showCircuitSelect;
   document.getElementById('goBtn').onclick=()=>{
-    G.vehicle=VEHICLES[selVeh]; G.circuit=CIRCUITS[selCir]; G.soundtrack=selSnd; G.night=(selTod==='night');
+    G.vehicle=VEHICLES[selVeh]; G.soundtrack=selSnd;
+    G.circuit = G.champ ? CIRCUITS[G.champ.order[G.champ.round]] : CIRCUITS[selCir];
+    G.night=(selTod==='night'); G.rain=(selWx==='rain');
     startRace();
   };
 }
@@ -2299,6 +2408,7 @@ function frame(now){
 //  Boot
 // ----------------------------------------------------------------------------
 function togglePause(){
+  if (G.state==='replay'){ exitReplay(); return; }
   if (G.state==='racing'){ G.state='paused'; pauseRaceMusic(true); showBanner('PAUSED', 0); }
   else if (G.state==='paused'){ G.state='racing'; pauseRaceMusic(false); hideBanner(); }
 }
