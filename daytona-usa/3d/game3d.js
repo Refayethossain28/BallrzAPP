@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R2 — rewrite + rich scenery';
+const BUILD = 'BUILD R3 — complete rewrite';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -878,7 +878,8 @@ function finishRace(win){
   G.state='finished';
   showBanner(win?'FINISH!':"TIME UP", 0);
   showEndScreen(win);
-  if (window.GameMusic && window.GameMusic.setMode){ try{ window.GameMusic.setMode('menu'); }catch(e){} }
+  stopRaceMusic();
+  if (window.GameMusic){ try{ window.GameMusic.start && window.GameMusic.start(); window.GameMusic.setMode && window.GameMusic.setMode('menu'); }catch(e){} }
 }
 
 // ---- HUD text + banner/countdown helpers ----
@@ -1081,12 +1082,33 @@ function startRace(){
   camera.position.copy(_tmp).addScaledVector(f.tan,-11); camera.position.y+=5.2;
   camera.up.set(0,1,0); camera.lookAt(_tmp.clone().addScaledVector(f.tan,16).setY(_tmp.y+4.4));
   // HUD text
-  setText('trackName', G.circuit.name+' • '+BUILD.split('—')[0].trim()+' • '+_scnInfo);
+  setText('trackName', G.circuit.name+' • '+BUILD.split('—')[0].trim());
   updateRaceHUDText();
   hideOverlay();
   showBanner('GENTLEMEN,<br>START YOUR ENGINES!', 0, true);
   showTouch();
+  startRaceMusic();
 }
+
+// ---- race soundtrack: the user-supplied recordings (intro once -> loop) ----
+let _raceAudio = { intro:null, loop:null };
+function startRaceMusic(){
+  stopRaceMusic();
+  if (window.GameMusic && window.GameMusic.stop){ try{ window.GameMusic.stop(); }catch(e){} }   // silence procedural menu music
+  const st = SOUNDTRACKS[G.soundtrack] || SOUNDTRACKS.daytona;
+  try {
+    const intro = new Audio(st.intro); intro.volume=0.75;
+    const loop  = new Audio(st.loop);  loop.loop=true; loop.volume=0.75;
+    intro.addEventListener('ended', ()=>{ try{ loop.currentTime=0; loop.play().catch(()=>{}); }catch(e){} });
+    intro.play().catch(()=>{ try{ loop.play().catch(()=>{}); }catch(e){} });   // if intro blocked, go straight to loop
+    _raceAudio = { intro, loop };
+  } catch(e){ /* audio optional */ }
+}
+function stopRaceMusic(){
+  for (const k of ['intro','loop']){ const a=_raceAudio[k]; if(a){ try{ a.pause(); a.src=''; }catch(e){} } }
+  _raceAudio = { intro:null, loop:null };
+}
+function pauseRaceMusic(p){ for (const k of ['intro','loop']){ const a=_raceAudio[k]; if(a){ try{ p?a.pause():(a.src&&a.play().catch(()=>{})); }catch(e){} } } }
 
 function showEndScreen(win){
   const o=document.getElementById('overlay'); if(!o) return;
@@ -1122,7 +1144,8 @@ function showOverlay(html){
 
 function showMenu(){
   G.state='menu'; G.started=false;
-  if (window.GameMusic && window.GameMusic.setMode){ try{ window.GameMusic.setMode('menu'); }catch(e){} }
+  stopRaceMusic();
+  if (window.GameMusic){ try{ window.GameMusic.start && window.GameMusic.start(); window.GameMusic.setMode && window.GameMusic.setMode('menu'); }catch(e){} }
   showOverlay(`<h1 class="title">DAYTONA <span class="red">USA</span></h1>
     <div class="subtitle">3D POLYGON EDITION</div>
     <div class="menu-card">
@@ -1224,20 +1247,18 @@ function frame(now){
 // ----------------------------------------------------------------------------
 //  Boot
 // ----------------------------------------------------------------------------
+function togglePause(){
+  if (G.state==='racing'){ G.state='paused'; pauseRaceMusic(true); showBanner('PAUSED', 0); }
+  else if (G.state==='paused'){ G.state='racing'; pauseRaceMusic(false); hideBanner(); }
+}
+window.__togglePause = togglePause;
+
 function boot(){
   initThree();
   bindInput();
+  const pb=document.getElementById('pauseBtn'); if(pb) pb.onclick=togglePause;
   showMenu();
   requestAnimationFrame(frame);
-  // dev diagnostic (removed before final ship)
-  window.__dbg = ()=>({
-    off:+G.offset.toFixed(1), dist:+G.dist.toFixed(0), speed:+G.speed.toFixed(1), lap:G.lap,
-    camFinite: Number.isFinite(camera.position.x)&&Number.isFinite(camera.position.y)&&Number.isFinite(camera.position.z),
-    state:G.state, timeLeft:+G.timeLeft.toFixed(1), pos:G.started?computePosition():0, rivals:rivals.length,
-  });
-  window.__forceTime = (t)=>{ G.timeLeft=t; };   // dev hook
-  window.__startCircuit = (i)=>{ G.circuit=CIRCUITS[i]; startRace(); };   // dev hook (removed at ship)
-  window.__scene=scene; window.__camera=camera; window.__THREE=THREE;     // dev probe
 }
 function ensureAudio(){
   if (window.GameMusic && !window.__audioStarted){
