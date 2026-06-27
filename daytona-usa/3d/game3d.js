@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R23 — wider road';
+const BUILD = 'BUILD R24 — arcade vibes';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -101,6 +101,12 @@ let _crowd = [];             // shimmering grandstand crowds
 let _wave = [];              // grandstand crowd "wave" segments
 let _adt = 1/60;             // last frame delta, for animation
 let _animClock = 0;          // global animation time
+let _smoke = [];             // arcade tyre-smoke puff pool
+let _smokeGroup = null;
+let _smokeT = 0;             // emit throttle
+let _callout = null;         // big arcade callout text {text,color,t}
+let _lastPos = 99;           // for overtake detection
+let _lastOvertakeT = -9;     // overtake-callout cooldown clock
 
 const keys = { gas:false, brake:false, left:false, right:false };
 
@@ -1134,6 +1140,7 @@ function rollingUpdate(dt){
 function beginRacing(){
   G.state='racing';
   setTimeout(hideCountdown, 650);
+  arcadeCallout('GO!', '#2bd451', [_NOTE.C5,_NOTE.E5,_NOTE.G5,_NOTE.C6]);
   if (window.GameMusic && window.GameMusic.setMode){ try{ window.GameMusic.setMode('race'); }catch(e){} }
 }
 
@@ -1160,6 +1167,8 @@ function racingUpdate(dt){
   // gentle centrifugal drift on curves
   const f = frameAt(G.dist);
   G.offset += f.curv * speedFrac * 11 * dt;
+  // arcade tyre smoke when sliding / cornering hard / on the grass
+  if (_smokeGroup) driftSmoke(f, speedFrac, steer, onGrass);
   // the grass always nudges you back toward the road, so the car can never get
   // stranded/pinned far out in the verge (arcade forgiveness).
   if (Math.abs(G.offset) > ROAD_W){
@@ -1179,7 +1188,15 @@ function racingUpdate(dt){
   updateRivals(dt);
   let hit=false;
   for (const r of rivals){ if (collideCars(G, r)) hit=true; }
-  if (hit){ G.speed *= 0.9; G.shake = Math.min(0.7, (G.shake||0) + 0.35); }
+  if (hit){ G.speed *= 0.9; G.shake = Math.min(0.7, (G.shake||0) + 0.35);
+            emitSmoke(playerCar.position.x, playerCar.position.y+0.6, playerCar.position.z, 0xffe08a); }
+  // arcade overtake callout when the player gains a place (with a cooldown)
+  const pos = computePosition();
+  if (pos < _lastPos && _animClock - _lastOvertakeT > 1.4){
+    arcadeCallout(pos===1?'TAKE THE LEAD!':'OVERTAKE!', pos===1?'#ffd400':'#3fd4ff', [_NOTE.G5,_NOTE.C6]);
+    _lastOvertakeT = _animClock;
+  }
+  _lastPos = pos;
   if (G.offset >  lim) G.offset =  lim;
   if (G.offset < -lim) G.offset = -lim;
   G.shake = (G.shake||0) * (1 - 6*dt);   // decay the impact jolt
@@ -1197,13 +1214,16 @@ function onLapComplete(){
   G.lap++;
   G.timeLeft += G.circuit.lapBonus;                            // checkpoint time-extension
   showBanner('CHECKPOINT  +'+G.circuit.lapBonus, 1300);
-  if (G.lap === G.circuit.laps && window.GameMusic && window.GameMusic.setFinalLap){
-    try{ window.GameMusic.setFinalLap(true); }catch(e){}
+  arcadeStinger([_NOTE.C5,_NOTE.G5,_NOTE.C6],'square');        // checkpoint chime
+  if (G.lap === G.circuit.laps){
+    arcadeCallout('FINAL LAP!', '#ff4d4d', [_NOTE.C6,_NOTE.A5,_NOTE.C6]);
+    if (window.GameMusic && window.GameMusic.setFinalLap){ try{ window.GameMusic.setFinalLap(true); }catch(e){} }
   }
 }
 
 function finishRace(win){
   G.state='finished';
+  if (win) arcadeCallout('FINISH!', '#ffd400', [_NOTE.C5,_NOTE.E5,_NOTE.G5,_NOTE.C6,_NOTE.G5,_NOTE.C6]);
   showBanner(win?'FINISH!':"TIME UP", 0);
   showEndScreen(win);
   stopRaceMusic();
@@ -1270,6 +1290,8 @@ function animateWorld(){
   for (const sc of _scroll) sc.tex.offset.y += sc.v * _adt;
   // grandstand crowd "wave" — a big hump of standing fans sweeps along the stands
   for (const wv of _wave){ const rise=Math.pow(Math.max(0, Math.sin(t*2.4 - wv.k*0.55)), 0.6); wv.mesh.position.y = wv.baseY + rise*4.0; }
+  // arcade tyre-smoke puffs
+  updateSmoke();
 }
 
 function render(){
@@ -1389,6 +1411,30 @@ function drawHUD(){
     hctx.fillStyle='#fff'; hctx.font=`bold ${Math.max(8,W*0.018)}px Arial`; hctx.textAlign='center'; hctx.textBaseline='top';
     hctx.fillText('TRAFFIC', mx+s/2, my+s+2);
   }
+
+  // ---- big arcade callout (GO! / OVERTAKE! / FINAL LAP! / FINISH!) ----
+  if (_callout){
+    _callout.t += _adt;
+    const T=_callout.t, LIFE=1.5;
+    if (T>=LIFE){ _callout=null; }
+    else {
+      const pop  = T<0.2 ? T/0.2 : 1;                 // springy scale-in
+      const fade = T>LIFE-0.4 ? (LIFE-T)/0.4 : 1;     // fade-out
+      const fs = Math.round(Math.min(W,H)*0.12)*(0.55+0.45*pop);
+      hctx.save();
+      hctx.globalAlpha = Math.max(0,Math.min(1,fade));
+      hctx.translate(W*0.5, H*0.4);
+      hctx.rotate(Math.sin(T*16)*0.025);              // arcade wobble
+      hctx.textAlign='center'; hctx.textBaseline='middle';
+      hctx.font=`900 ${fs}px Arial Black, Arial`;
+      hctx.lineWidth=fs*0.16; hctx.lineJoin='round'; hctx.strokeStyle='#0a0a12';
+      hctx.strokeText(_callout.text,0,0);
+      hctx.shadowColor=_callout.color; hctx.shadowBlur=fs*0.4;
+      hctx.fillStyle=_callout.color;
+      hctx.fillText(_callout.text,0,0);
+      hctx.restore();
+    }
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -1437,6 +1483,8 @@ function startRace(){
   G.dist=0; G.offset=0; G.speed=0; G.lap=1; G.steerVis=0;
   G.timeLeft=G.circuit.startTime; G.totalTime=0; G.rollT=0; G.cdNum=-1; G.green=false;
   G.started=true; G.state='rolling';
+  _callout=null; _lastPos=1+rivals.length; _lastOvertakeT=-9;   // reset arcade callout state
+  initSmoke(); resetSmoke();                          // tyre-smoke pool ready & cleared
   placeCar(playerCar, G.dist, G.offset);
   placeRivals();
   // snap camera behind the car immediately (world-up)
@@ -1509,6 +1557,78 @@ function updateEngine(){
   _eng.filter.frequency.setTargetAtTime(340 + rpm*2600 + (onGas?420:0), t, 0.06);
   const vol = racing ? (0.045 + sp*0.085 + (onGas?0.02:0)) : 0;
   _eng.master.gain.setTargetAtTime(vol, t, 0.08);
+}
+
+// ---- arcade audio stingers: short synth fanfares for big moments ----
+function arcadeStinger(notes, type){
+  const AC = _eng && _eng.AC; if (!AC) return;
+  const t0 = AC.currentTime;
+  notes.forEach((f,i)=>{
+    const o=AC.createOscillator(); o.type=type||'square'; o.frequency.value=f;
+    const g=AC.createGain(); const st=t0+i*0.09;
+    g.gain.setValueAtTime(0.0001, st); g.gain.exponentialRampToValueAtTime(0.12, st+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, st+0.28);
+    o.connect(g); g.connect(AC.destination); o.start(st); o.stop(st+0.3);
+  });
+}
+
+// ---- big arcade callout text (DAYTONA-style "OVERTAKE!", "FINAL LAP!", "GO!") ----
+const _NOTE = {C5:523,E5:659,G5:784,C6:1047,A5:880,F5:698,D5:587};
+function arcadeCallout(text, color, notes){
+  _callout = { text, color: color||'#ffd400', t: 0 };
+  if (notes) arcadeStinger(notes, 'square');
+}
+
+// ---- arcade tyre-smoke puffs: a recycled pool of camera-facing quads ----
+function initSmoke(){
+  if (_smokeGroup){ if(!_smokeGroup.parent && scene) scene.add(_smokeGroup); return; }
+  _smokeGroup = new THREE.Group(); _smoke = [];
+  const N = MOBILE ? 12 : 22;
+  const geo = new THREE.PlaneGeometry(1,1);
+  for (let i=0;i<N;i++){
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:0, depthWrite:false}));
+    m.visible=false; _smokeGroup.add(m); _smoke.push({mesh:m, life:0});
+  }
+  scene.add(_smokeGroup);
+}
+function emitSmoke(x,y,z, tint){
+  let p=null, oldest=1e9;
+  for (const s of _smoke){ if(s.life<=0){ p=s; break; } if(s.life<oldest){oldest=s.life; p=s;} }
+  if (!p) return;
+  p.life = 1; p.mesh.visible=true; p.mesh.position.set(x,y,z);
+  p.mesh.material.color.setHex(tint!=null?tint:0xeef0f3);
+  p.mesh.scale.setScalar(0.6 + Math.abs((x*7)%0.6));   // varied start size (no Math.random)
+}
+function updateSmoke(){
+  if (!_smoke.length) return;
+  for (const s of _smoke){
+    if (s.life<=0) continue;
+    s.life -= _adt*1.7;
+    if (s.life<=0){ s.mesh.visible=false; continue; }
+    const m=s.mesh;
+    m.scale.setScalar(m.scale.x + _adt*5.5);            // billow outward
+    m.position.y += _adt*1.6;                           // drift up
+    m.material.opacity = Math.min(0.5, s.life*0.6);
+    if (camera) m.quaternion.copy(camera.quaternion);   // billboard to camera
+  }
+}
+function resetSmoke(){ for (const s of _smoke){ s.life=0; s.mesh.visible=false; } _smokeT=0; }
+const _smPos=new THREE.Vector3();
+// kick up tyre smoke (on tarmac) / dust (on grass) when sliding or cornering hard
+function driftSmoke(f, speedFrac, steer, onGrass){
+  const hard = onGrass ? speedFrac>0.22
+                       : ((steer!==0 && speedFrac>0.55) || Math.abs(f.curv)*speedFrac>0.05);
+  if (!hard) return;
+  _smokeT -= _adt; if (_smokeT>0) return;
+  _smokeT = 0.045;
+  worldPos(G.dist, G.offset, _smPos);
+  const back = 2.3*CAR_SCALE, sideD = 1.1*CAR_SCALE;
+  for (const sx of [-1,1]){
+    emitSmoke(_smPos.x - f.tan.x*back + f.right.x*sx*sideD,
+              _smPos.y + 0.4,
+              _smPos.z - f.tan.z*back + f.right.z*sx*sideD,
+              onGrass?0x9a7b4f:0xeef0f3);
+  }
 }
 
 function showEndScreen(win){
