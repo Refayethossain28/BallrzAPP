@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R24 — arcade vibes';
+const BUILD = 'BUILD R25 — cockpit view';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -117,7 +117,7 @@ const G = {
   vehicle: VEHICLES[1],
   theme: THEMES[3],
   dist: 0, offset: 0, speed: 0, steerVis: 0,
-  lap: 1, maxSpeed: 120,
+  lap: 1, maxSpeed: 120, view: 'chase',   // chase | cockpit
   // race timing / scoring
   timeLeft: 0, totalTime: 0, rollT: 0, cdNum: -1, green: false,
   banner: 0,
@@ -1308,19 +1308,36 @@ function render(){
     for (const m of playerCar.userData.brakeMats) m.emissiveIntensity = on?2.6:0.8;
   }
   if (sun){ sun.target.position.copy(playerCar.position); sun.position.copy(playerCar.position).add(_sunOff); sun.target.updateMatrixWorld(); }
+  // in cockpit view the chassis is hidden so the roof/pillars don't fill the screen
+  playerCar.visible = (G.view !== 'cockpit');
 
-  // chase camera — behind + above the car, ALWAYS world-up (never inverts/rolls
-  // badly), finiteness-guarded. Height uses world up so the camera is always above.
   const f = frameAt(G.dist);
-  const camLat = G.offset * 0.30;
-  worldPos(G.dist, camLat, _tmp);
-  _camPos.copy(_tmp).addScaledVector(f.tan,-11); _camPos.y += 5.2;
-  _look.copy(_tmp).addScaledVector(f.tan, 16);   _look.y += 4.4;
-  if (finite(_camPos) && finite(_look)){
-    camera.position.lerp(_camPos, 0.25);
-    if (G.shake>0.02){ const s=G.shake; camera.position.x+=(Math.random()-0.5)*s; camera.position.y+=(Math.random()-0.5)*s; }
-    camera.up.set(0,1,0);
-    camera.lookAt(_look);
+  if (G.view === 'cockpit'){
+    // first-person: eye at the driver's seat, looking down the track, leaning into corners
+    worldPos(G.dist, G.offset, _tmp);
+    const eyeY = _tmp.y + 1.5;
+    _camPos.copy(_tmp).addScaledVector(f.tan, 0.4); _camPos.y = eyeY;
+    _look.copy(_tmp).addScaledVector(f.tan, 22).addScaledVector(f.right, G.steerVis*3.2); _look.y = eyeY - 0.4;
+    if (finite(_camPos) && finite(_look)){
+      camera.position.copy(_camPos);
+      if (G.shake>0.02){ const s=G.shake*0.6; camera.position.y += (Math.random()-0.5)*s; camera.position.x += (Math.random()-0.5)*s; }
+      camera.up.set(0,1,0);
+      camera.lookAt(_look);
+      camera.rotateZ(-G.steerVis*0.05);   // subtle body roll
+    }
+  } else {
+    // chase camera — behind + above the car, ALWAYS world-up (never inverts/rolls
+    // badly), finiteness-guarded. Height uses world up so the camera is always above.
+    const camLat = G.offset * 0.30;
+    worldPos(G.dist, camLat, _tmp);
+    _camPos.copy(_tmp).addScaledVector(f.tan,-11); _camPos.y += 5.2;
+    _look.copy(_tmp).addScaledVector(f.tan, 16);   _look.y += 4.4;
+    if (finite(_camPos) && finite(_look)){
+      camera.position.lerp(_camPos, 0.25);
+      if (G.shake>0.02){ const s=G.shake; camera.position.x+=(Math.random()-0.5)*s; camera.position.y+=(Math.random()-0.5)*s; }
+      camera.up.set(0,1,0);
+      camera.lookAt(_look);
+    }
   }
   if (sky) sky.position.copy(camera.position);
 
@@ -1360,6 +1377,17 @@ function drawHUD(){
   hctx.clearRect(0,0,W,H);
   if (!G.started) return;
   const sp = Math.min(1, Math.abs(G.speed)/(G.maxSpeed||1));
+
+  // cockpit framing — A-pillars + dashboard lip so first-person reads as "in the car"
+  if (G.view==='cockpit'){
+    const dashH=H*0.13;
+    const grad=hctx.createLinearGradient(0,H-dashH,0,H);
+    grad.addColorStop(0,'rgba(8,9,14,0)'); grad.addColorStop(0.5,'rgba(8,9,14,0.82)'); grad.addColorStop(1,'rgba(8,9,14,0.97)');
+    hctx.fillStyle=grad; hctx.fillRect(0,H-dashH,W,dashH);
+    hctx.fillStyle='rgba(10,11,16,0.9)';
+    hctx.beginPath(); hctx.moveTo(0,0); hctx.lineTo(W*0.16,0); hctx.lineTo(0,H*0.34); hctx.closePath(); hctx.fill();
+    hctx.beginPath(); hctx.moveTo(W,0); hctx.lineTo(W*0.84,0); hctx.lineTo(W,H*0.34); hctx.closePath(); hctx.fill();
+  }
 
   // speed lines streaking from the vanishing point at high speed
   if (G.state==='racing' && sp>0.5){
@@ -1448,6 +1476,7 @@ function bindInput(){
     else if (e.key==='ArrowDown'||e.key==='s'||e.key==='S') set('brake',true);
     else if (e.key==='ArrowLeft'||e.key==='a'||e.key==='A') set('left',true);
     else if (e.key==='ArrowRight'||e.key==='d'||e.key==='D') set('right',true);
+    else if (e.key==='c'||e.key==='C') toggleView();
   });
   window.addEventListener('keyup', e=>{
     if (e.key==='ArrowUp'||e.key==='w'||e.key==='W') set('gas',false);
@@ -1495,6 +1524,8 @@ function startRace(){
   setText('trackName', G.circuit.name+' • '+BUILD.split('—')[0].trim());
   updateRaceHUDText();
   hideOverlay();
+  updateViewBtn();
+  const vb=document.getElementById('viewBtn'); if(vb) vb.classList.remove('hidden');
   showBanner('GENTLEMEN,<br>START YOUR ENGINES!', 0, true);
   showTouch();
   startRaceMusic();
@@ -1661,6 +1692,7 @@ function overlayEl(){ return document.getElementById('overlay'); }
 function showOverlay(html){
   const o=overlayEl(); o.innerHTML=html; o.classList.remove('hidden');
   const hud=document.getElementById('hud'); if(hud) hud.style.visibility='hidden';   // no stale HUD behind menus
+  const vb=document.getElementById('viewBtn'); if(vb) vb.classList.add('hidden');     // no view toggle in menus
 }
 
 function showMenu(){
@@ -1776,10 +1808,19 @@ function togglePause(){
 }
 window.__togglePause = togglePause;
 
+function updateViewBtn(){
+  const b=document.getElementById('viewBtn'); if(!b) return;
+  b.innerHTML = G.view==='cockpit' ? '👁 COCKPIT VIEW' : '👁 CHASE VIEW';
+}
+function setView(v){ G.view=v; updateViewBtn(); }
+function toggleView(){ setView(G.view==='cockpit' ? 'chase' : 'cockpit'); }
+window.__toggleView = toggleView;
+
 function boot(){
   initThree();
   bindInput();
   const pb=document.getElementById('pauseBtn'); if(pb) pb.onclick=togglePause;
+  const vb=document.getElementById('viewBtn'); if(vb) vb.onclick=toggleView;
   showMenu();
   requestAnimationFrame(frame);
 }
