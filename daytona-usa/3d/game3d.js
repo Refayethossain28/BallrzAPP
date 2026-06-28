@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R55 — Mac maxed';
+const BUILD = 'BUILD R56 — Mac maxed II (SSAA)';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -238,8 +238,13 @@ function initThree(){
   } else {
     renderer = new THREE.WebGLRenderer({ canvas:glCanvas, antialias:!MOBILE, powerPreference:'high-performance' });
   }
-  // render at the device's native pixel density (capped at 3x) for max sharpness
-  renderer.setPixelRatio(Math.min(3, window.devicePixelRatio||1));
+  // render at the device's native pixel density (capped at 3x) for max sharpness.
+  // Desktop "max" tier supersamples 1.5x above native (capped at 3x) — true SSAA,
+  // the single biggest image-quality win: razor-clean edges + crisp distant textures.
+  {
+    const dpr = window.devicePixelRatio||1;
+    renderer.setPixelRatio(MOBILE ? Math.min(3, dpr) : Math.min(3, dpr*1.5));
+  }
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.98;
@@ -266,7 +271,7 @@ function initThree(){
   sun.position.set(60,120,30);
   sun.castShadow = true;
   {
-    const SM = MOBILE?1536:4096;                     // crisp 4K shadows on the desktop tier
+    const SM = MOBILE?1536:6144;                     // ultra-crisp 6K shadows on the desktop tier
     sun.shadow.mapSize.set(SM,SM);
     sun.shadow.camera.near=1; sun.shadow.camera.far=340;
     const S=MOBILE?58:70; sun.shadow.camera.left=-S; sun.shadow.camera.right=S; sun.shadow.camera.top=S; sun.shadow.camera.bottom=-S;
@@ -375,7 +380,7 @@ function updateClouds(){
 let envTex=null;
 function buildEnv(){
   try {
-    const th=G.theme, W=_HI?512:256, H=_HI?256:128;
+    const th=G.theme, W=_HI?1024:256, H=_HI?512:128;
     const cv=document.createElement('canvas'); cv.width=W; cv.height=H; const x=cv.getContext('2d');
     const sky = x.createLinearGradient(0,0,0,H);
     if (G.night){ sky.addColorStop(0,'#04060f'); sky.addColorStop(0.45,'#0a1226'); sky.addColorStop(0.6,'#172238'); }
@@ -556,7 +561,7 @@ function buildRoadMesh(){
     // dark so the road can never wash out to a blue tint under the sky light.
     // DoubleSide: on some track windings the asphalt normals face down, which would
     // back-face-cull the single-sided road and show the sky THROUGH it (a "blue road").
-    const tex=makeAsphaltTex(_MATHIRES?512:256, _MATHIRES?1024:512); tex.repeat.set(5, 1);
+    const tex=makeAsphaltTex(_HI?1024:256, _HI?2048:512); tex.repeat.set(5, 1);
     const rmat=new THREE.MeshLambertMaterial({map:tex, color:G.rain?0x3b424b:0x595c61, side:THREE.DoubleSide});
     if (_MATNORMAL){ try{ const n=heightToNormal(_asphaltCanvas, G.rain?2:4); n.repeat.set(5,1); rmat.normalMap=n; rmat.normalScale=new THREE.Vector2(G.rain?0.4:0.9,G.rain?0.4:0.9); }catch(e){ rmat.bumpMap=tex; rmat.bumpScale=0.6; } }
     else { rmat.bumpMap=tex; rmat.bumpScale=G.rain?0.3:0.6; }
@@ -579,7 +584,7 @@ function buildRoadMesh(){
     geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
     geo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
     geo.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3));
-    const gs=_MATHIRES?512:256; const tex=surfTex(th.grass, th.grass2, gs, gs, _MATHIRES?5200:2600); tex.repeat.set(3, 1);
+    const gs=_HI?1024:256; const tex=surfTex(th.grass, th.grass2, gs, gs, _HI?9000:2600); tex.repeat.set(3, 1);
     const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({map:tex, side:THREE.DoubleSide, bumpMap:tex, bumpScale:0.3}));
     mesh.receiveShadow=true; scene.add(mesh); roadParts.push(mesh);
   }
@@ -1098,7 +1103,7 @@ function makeCrowdTexture(){
     }
   }
   const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace;
-  t.anisotropy=4; return t;
+  t.anisotropy=_maxAniso; return t;
 }
 function makeCheckerTex(){
   const cv=document.createElement('canvas'); cv.width=cv.height=64; const x=cv.getContext('2d');
