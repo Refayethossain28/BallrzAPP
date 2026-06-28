@@ -14,8 +14,8 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage
 import { db, storage } from './firebase';
 import {
   newDealRecord, recomputeStage,
-  type ComplianceDoc, type ComplianceDocType, type DealParty, type DealRecord,
-  type DealViewing, type EpcRating, type ListingSummary, type TenancyAgreement,
+  type ComplianceCheck, type ComplianceDoc, type ComplianceDocType, type DealParty,
+  type DealRecord, type DealViewing, type EpcRating, type ListingSummary, type TenancyAgreement,
 } from '@rentmatch/shared';
 
 export type Role = 'renter' | 'landlord';

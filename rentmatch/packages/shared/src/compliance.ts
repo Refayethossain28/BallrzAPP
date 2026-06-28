@@ -174,3 +174,132 @@ export function evaluateSigningCompliance(
   const canSign = checks.filter((c) => c.blocking).every((c) => c.ok);
   return { checks, canSign };
 }
+
+/* ------------------------------------------------------------------ *
+ * Portfolio compliance — the standalone landlord dashboard.
+ *
+ * Unlike the listing/signing gates above (which answer "may this one
+ * action proceed?"), these functions answer "is my whole portfolio
+ * legal, and what's about to lapse?" — the value that makes the
+ * subscription worth paying for, independent of any live deal.
+ * ------------------------------------------------------------------ */
+
+/** Human label for each document type, shared by every surface. */
+export const DOC_LABELS: Record<ComplianceDocType, string> = {
+  epc: 'Energy Performance Certificate (EPC)',
+  'gas-safety': 'Gas Safety Record (CP12)',
+  eicr: 'Electrical safety report (EICR)',
+  'how-to-rent': '"How to Rent" guide',
+  'right-to-rent': 'Right to Rent check',
+  'deposit-protection': 'Deposit protection',
+};
+
+/**
+ * The compliance documents a *let* property must keep in date. EPC and EICR
+ * are always required; a gas certificate only where there's a gas supply.
+ * (How to Rent / Right to Rent / deposit protection are per-tenancy, handled
+ * by the signing gate, not the standing portfolio view.)
+ */
+export function requiredDocTypes(opts: { hasGasSupply: boolean }): ComplianceDocType[] {
+  return ['epc', 'eicr', ...(opts.hasGasSupply ? (['gas-safety'] as const) : [])];
+}
+
+/** A single property as the portfolio view needs to see it. */
+export interface PortfolioProperty {
+  id: string;
+  /** Display label, e.g. the address. */
+  label: string;
+  hasGasSupply: boolean;
+  docs: ComplianceDoc[];
+}
+
+/** Overall risk band for one property, worst-document-wins. */
+export type ComplianceRisk = 'compliant' | 'attention' | 'breach';
+
+export interface DocItem {
+  type: ComplianceDocType;
+  label: string;
+  status: DocStatus;
+  expiresAt?: number;
+}
+
+export interface PropertyComplianceSummary {
+  id: string;
+  label: string;
+  risk: ComplianceRisk;
+  docs: DocItem[];
+}
+
+export interface UpcomingExpiry {
+  propertyId: string;
+  propertyLabel: string;
+  type: ComplianceDocType;
+  label: string;
+  /** Present for expiring docs; absent for already-expired-but-undated edge cases. */
+  expiresAt?: number;
+  status: Extract<DocStatus, 'expiring' | 'expired'>;
+}
+
+export interface PortfolioSummary {
+  properties: PropertyComplianceSummary[];
+  counts: { total: number; compliant: number; attention: number; breach: number };
+  /** Expired first, then soonest-expiring — the action list for the landlord. */
+  upcoming: UpcomingExpiry[];
+}
+
+/** A missing or expired required doc is a legal breach; an expiring one needs attention. */
+function riskOfStatus(status: DocStatus): ComplianceRisk {
+  if (status === 'missing' || status === 'expired') return 'breach';
+  if (status === 'expiring') return 'attention';
+  return 'compliant';
+}
+
+const RISK_RANK: Record<ComplianceRisk, number> = { compliant: 0, attention: 1, breach: 2 };
+
+/** Per-property compliance status across its required documents. */
+export function summarisePropertyCompliance(
+  property: PortfolioProperty,
+  now: number = Date.now(),
+): PropertyComplianceSummary {
+  const docs: DocItem[] = requiredDocTypes(property).map((type) => {
+    const doc = property.docs.find((d) => d.type === type);
+    const status = docStatus(doc, now);
+    return { type, label: DOC_LABELS[type], status, expiresAt: doc?.expiresAt };
+  });
+  const risk = docs.reduce<ComplianceRisk>(
+    (worst, d) => (RISK_RANK[riskOfStatus(d.status)] > RISK_RANK[worst] ? riskOfStatus(d.status) : worst),
+    'compliant',
+  );
+  return { id: property.id, label: property.label, risk, docs };
+}
+
+/** Roll a landlord's whole portfolio into a dashboard summary + action list. */
+export function summarisePortfolio(
+  properties: PortfolioProperty[],
+  now: number = Date.now(),
+): PortfolioSummary {
+  const summaries = properties.map((p) => summarisePropertyCompliance(p, now));
+
+  const counts = { total: summaries.length, compliant: 0, attention: 0, breach: 0 };
+  for (const s of summaries) counts[s.risk] += 1;
+
+  const upcoming: UpcomingExpiry[] = [];
+  for (const s of summaries) {
+    for (const d of s.docs) {
+      if (d.status === 'expiring' || d.status === 'expired') {
+        upcoming.push({
+          propertyId: s.id,
+          propertyLabel: s.label,
+          type: d.type,
+          label: d.label,
+          expiresAt: d.expiresAt,
+          status: d.status,
+        });
+      }
+    }
+  }
+  // Expired (no/oldest expiry) first, then soonest-expiring.
+  upcoming.sort((a, b) => (a.expiresAt ?? 0) - (b.expiresAt ?? 0));
+
+  return { properties: summaries, counts, upcoming };
+}

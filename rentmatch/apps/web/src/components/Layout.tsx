@@ -21,6 +21,7 @@ export default function Layout() {
         ]
       : [
           { to: '/landlord', ic: '🏠', label: 'Listings', end: true },
+          { to: '/landlord/compliance', ic: '🛡️', label: 'Compliance', end: false },
           { to: '/chats', ic: '💬', label: 'Enquiries', end: false },
           { to: '/account', ic: '👤', label: 'Account', end: false },
         ];
