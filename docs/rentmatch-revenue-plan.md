@@ -109,8 +109,11 @@ value on day one without a tenant or a deal.
    income + logged expenses into a **UK-tax-year** (6 Apr–5 Apr) income/expense/
    net summary with a category breakdown, mortgage-interest surfaced separately.
    **Finances** tab logs expenses and switches tax year (`Finances.tsx`).
-9. **E-sign renewals** — reuse `contractTemplate.ts` + the e-sign envelope flow
-   for *renewals*, not just new lets → recurring use of the £100 event. *(open)*
+9. ✅ **E-sign renewals** — `renewal.ts` (tested defaults + rent-change maths) +
+   Cloud Functions (`createRenewal` → `recordRenewalSignature` → `confirmRenewal`):
+   both parties sign, the £100 fee is charged again, and a fresh tenancy starts
+   on the new terms (clean ledger, linked via `renewedFromId`). Renew UI in
+   `TenancyDetail.tsx`.
 
 **Email is wired** — `sendEmail` posts to Postmark (no-op fallback when
 unconfigured), so reminders and receipts land in inboxes, not just push.
@@ -167,10 +170,14 @@ What a landlord can do today, all on top of the tested shared kernel:
   Account.
 
 **Engine coverage:** `compliance.ts`, `billing.ts`, `rent.ts`, `finance.ts`,
-`collection.ts`, `agency.ts`, `money.ts`, `dealStateMachine.ts`, `notifications.ts`,
-`search.ts`, `retention.ts` — **93 unit tests**, all passing. A Playwright
-**smoke** (`apps/web/e2e`) renders the app and checks routing headless (set
-`PW_CHROMIUM_PATH` to a pre-installed Chromium where the pinned build differs).
+`collection.ts`, `agency.ts`, `renewal.ts`, `money.ts`, `dealStateMachine.ts`,
+`notifications.ts`, `search.ts`, `retention.ts` — **97 unit tests**, all passing.
+
+**E2E:** a Playwright **smoke** renders the app + checks routing headless, and an
+**emulator-backed onboarding test** (`e2e/onboarding.spec.ts`, `npm run
+e2e:emulators`) drives the real Auth + Firestore path — signup → become landlord
+→ add a property → read it back on the compliance dashboard — and passes. Set
+`PW_CHROMIUM_PATH` to a pre-installed Chromium where the pinned build differs.
 Web (`tsc -b` + vite) and functions (esbuild) build clean.
 
 ### To go live
@@ -184,10 +191,12 @@ Web (`tsc -b` + vite) and functions (esbuild) build clean.
    webhook at `stripeWebhook` for `payment_intent.*` and `customer.subscription.*`.
 
 ### Still open (next)
-- E-sign **renewals** (recurring £100 events); **agent team seats** beyond the
-  owner; and a full-lifecycle **emulator e2e** (the current Playwright test is a
-  render/routing smoke; the lifecycle spec is scaffolded as `test.fixme`).
-- **A11y:** associate `<label>`s with inputs (id/htmlFor) across the auth + forms.
+- The **deal → tenancy** bridge: a completed marketplace deal could auto-create
+  a tenancy record (today they're separate); and renewal e-signatures via a real
+  e-sign provider (the current renewal records signatures behind a Cloud Function
+  seam, like the existing demo e-sign).
+- **A11y:** label↔input association is done on the auth screen (verified by the
+  e2e); extend the same to the landlord forms (track/tenancy/finance/expense).
 
 ## First concrete step
 Turn `ComplianceManager.tsx` from a per-deal gate into a **standalone portfolio

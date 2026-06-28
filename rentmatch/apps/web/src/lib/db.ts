@@ -17,7 +17,8 @@ import {
   type ComplianceCheck, type ComplianceDoc, type ComplianceDocType, type DealParty,
   type DealRecord, type DealViewing, type DirectDebitMandate, type EpcRating,
   type ExpenseCategory, type ExpenseEntry, type FinanceEntry, type ListingSummary,
-  type RentCollection, type RentPayment, type Subscription, type Tenancy, type TenancyAgreement,
+  type RentCollection, type RentPayment, type RenewalStatus, type RenewalTerms,
+  type Subscription, type Tenancy, type TenancyAgreement,
 } from '@rentmatch/shared';
 
 export type Role = 'renter' | 'landlord';
@@ -439,6 +440,13 @@ export interface TenancyRecord extends Tenancy {
   /** Direct Debit mandate + auto-collection records (managed by Cloud Functions). */
   mandate?: DirectDebitMandate;
   collections: RentCollection[];
+  /** A renewal in flight (terms + signature/fee state), managed by Cloud Functions. */
+  pendingRenewal?: {
+    terms: RenewalTerms;
+    status: RenewalStatus;
+    signed: { landlord: boolean; tenant: boolean };
+    feePence: number;
+  };
   createdAt: number;
 }
 
@@ -474,6 +482,7 @@ function mapTenancy(id: string, d: Record<string, unknown>): TenancyRecord {
     totalPaidPence: Number(d.totalPaidPence ?? 0),
     mandate: (d.mandate as DirectDebitMandate | undefined) ?? undefined,
     collections: Array.isArray(d.collections) ? (d.collections as RentCollection[]) : [],
+    pendingRenewal: (d.pendingRenewal as TenancyRecord['pendingRenewal']) ?? undefined,
     createdAt: toMillis(d.createdAt),
   };
 }
@@ -604,25 +613,37 @@ export interface Agency {
   ownerId: string;
   name: string;
   memberIds: string[];
+  memberEmails: Record<string, string>;
   clientLandlordIds: string[];
 }
 
 const agenciesCol = collection(db, 'agencies');
+
+function mapAgency(id: string, d: Record<string, unknown>): Agency {
+  return {
+    id,
+    ownerId: String(d.ownerId ?? ''),
+    name: String(d.name ?? 'Agency'),
+    memberIds: Array.isArray(d.memberIds) ? (d.memberIds as string[]) : [],
+    memberEmails: (d.memberEmails as Record<string, string>) ?? {},
+    clientLandlordIds: Array.isArray(d.clientLandlordIds) ? (d.clientLandlordIds as string[]) : [],
+  };
+}
 
 /** The agency this user owns (if any), looked up via their profile. */
 export async function fetchOwnedAgency(uid: string): Promise<Agency | null> {
   const ownedId = (await getDoc(doc(usersCol, uid))).data()?.ownedAgencyId as string | undefined;
   if (!ownedId) return null;
   const snap = await getDoc(doc(agenciesCol, ownedId));
-  if (!snap.exists()) return null;
-  const d = snap.data();
-  return {
-    id: snap.id,
-    ownerId: String(d.ownerId ?? ''),
-    name: String(d.name ?? 'Agency'),
-    memberIds: Array.isArray(d.memberIds) ? (d.memberIds as string[]) : [],
-    clientLandlordIds: Array.isArray(d.clientLandlordIds) ? (d.clientLandlordIds as string[]) : [],
-  };
+  return snap.exists() ? mapAgency(snap.id, snap.data()) : null;
+}
+
+/** The agency this user belongs to — owned, or one they're a member of. */
+export async function fetchAgencyForUser(uid: string): Promise<Agency | null> {
+  const owned = await fetchOwnedAgency(uid);
+  if (owned) return owned;
+  const snap = await getDocs(query(agenciesCol, where('memberIds', 'array-contains', uid)));
+  return snap.empty ? null : mapAgency(snap.docs[0].id, snap.docs[0].data());
 }
 
 /** The agencyId this landlord has connected to (if any). */

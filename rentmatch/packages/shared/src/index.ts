@@ -13,3 +13,4 @@ export * from './rent.ts';
 export * from './finance.ts';
 export * from './collection.ts';
 export * from './agency.ts';
+export * from './renewal.ts';

@@ -33,6 +33,8 @@ export default defineConfig({
       VITE_FIREBASE_STORAGE_BUCKET: 'demo-rentmatch.appspot.com',
       VITE_FIREBASE_MESSAGING_SENDER_ID: '0',
       VITE_FIREBASE_APP_ID: 'demo-app-id',
+      // Set by `npm run e2e:emulators`; routes the client at the local emulators.
+      VITE_USE_EMULATORS: process.env.VITE_USE_EMULATORS ?? '',
     },
   },
 });

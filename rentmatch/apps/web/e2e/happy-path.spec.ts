@@ -13,7 +13,7 @@ test('sign-in screen renders and can switch to sign-up', async ({ page }) => {
   await expect(page.getByText('Apex', { exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Create one' }).click();
   await expect(page.getByRole('button', { name: 'Create account' })).toBeVisible();
-  await expect(page.getByPlaceholder('Tom Baxter')).toBeVisible(); // name field shows in sign-up mode
+  await expect(page.getByLabel('Full name')).toBeVisible(); // label↔input association (a11y)
 });
 
 /**

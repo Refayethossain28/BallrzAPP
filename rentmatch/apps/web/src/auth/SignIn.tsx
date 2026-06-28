@@ -34,17 +34,17 @@ export default function SignIn() {
       <form onSubmit={submit}>
         {mode === 'up' && (
           <div className="field">
-            <label>Full name</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} required placeholder="Tom Baxter" />
+            <label htmlFor="auth-name">Full name</label>
+            <input id="auth-name" value={name} onChange={(e) => setName(e.target.value)} required placeholder="Tom Baxter" />
           </div>
         )}
         <div className="field">
-          <label>Email</label>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@example.co.uk" />
+          <label htmlFor="auth-email">Email</label>
+          <input id="auth-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@example.co.uk" />
         </div>
         <div className="field">
-          <label>Password</label>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} placeholder="••••••••" />
+          <label htmlFor="auth-password">Password</label>
+          <input id="auth-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} placeholder="••••••••" />
         </div>
         {error && <p className="error">{error}</p>}
         <button className="cta" type="submit" disabled={busy}>

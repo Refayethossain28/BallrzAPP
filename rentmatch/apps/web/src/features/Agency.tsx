@@ -1,11 +1,15 @@
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
-  rollupAgency, summarisePortfolio, buildRentLedger, formatGBP,
+  rollupAgency, summarisePortfolio, buildRentLedger, formatGBP, AGENT_INCLUDED_SEATS,
   type AgencyClientSnapshot, type PortfolioProperty,
 } from '@rentmatch/shared';
 import { useAuth } from '../auth/AuthProvider';
-import { fetchOwnedAgency, fetchClientPortfolio, type Listing, type TenancyRecord } from '../lib/db';
+import {
+  fetchAgencyForUser, fetchClientPortfolio, type Agency as AgencyType, type Listing, type TenancyRecord,
+} from '../lib/db';
+import { addAgencyMember, removeAgencyMember } from '../lib/functions';
 
 const toPortfolio = (l: Listing): PortfolioProperty => ({
   id: l.id,
@@ -23,8 +27,8 @@ export default function Agency() {
   const navigate = useNavigate();
 
   const { data: agency, isLoading } = useQuery({
-    queryKey: ['agency', user?.uid],
-    queryFn: () => fetchOwnedAgency(user!.uid),
+    queryKey: ['agency-view', user?.uid],
+    queryFn: () => fetchAgencyForUser(user!.uid),
     enabled: !!user,
   });
 
@@ -61,6 +65,7 @@ export default function Agency() {
   }
 
   const rollup = rollupAgency(snapshots);
+  const isOwner = agency.ownerId === user?.uid;
 
   return (
     <>
@@ -105,6 +110,59 @@ export default function Agency() {
           </div>
         </div></div>
       ))}
+
+      <Team agency={agency} isOwner={isOwner} />
+    </>
+  );
+}
+
+/** Agency teammates; the owner can add (by email, seat-limited) and remove. */
+function Team({ agency, isOwner }: { agency: AgencyType; isOwner: boolean }) {
+  const queryClient = useQueryClient();
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['agency-view'] });
+
+  async function add() {
+    setBusy(true); setError('');
+    try { await addAgencyMember({ email: email.trim().toLowerCase() }); setEmail(''); refresh(); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Could not add teammate.'); }
+    finally { setBusy(false); }
+  }
+  async function remove(uid: string) {
+    setBusy(true); setError('');
+    try { await removeAgencyMember({ memberUid: uid }); refresh(); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Could not remove teammate.'); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <>
+      <div className="section-t">Team · {agency.memberIds.length}/{AGENT_INCLUDED_SEATS} seats</div>
+      <div className="card"><div className="body">
+        {agency.memberIds.map((uid) => (
+          <div key={uid} className="row center" style={{ justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid var(--line)' }}>
+            <span style={{ fontSize: 13.5, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {agency.memberEmails[uid] ?? uid}{uid === agency.ownerId ? ' · owner' : ''}
+            </span>
+            {isOwner && uid !== agency.ownerId && (
+              <button className="back" style={{ width: 28, height: 28, fontSize: 14 }} disabled={busy} onClick={() => remove(uid)}>×</button>
+            )}
+          </div>
+        ))}
+      </div></div>
+      {isOwner && (
+        <>
+          <div className="field"><label htmlFor="team-email">Add a teammate by email</label>
+            <input id="team-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="agent@youragency.co.uk" /></div>
+          <button className="cta ghost" disabled={busy || !email} onClick={add}>
+            {busy ? 'Working…' : 'Add teammate'}
+          </button>
+        </>
+      )}
+      {error && <p className="error">{error}</p>}
     </>
   );
 }

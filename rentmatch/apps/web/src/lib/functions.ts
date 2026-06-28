@@ -84,3 +84,25 @@ export const connectToAgency = httpsCallable<{ agencyId: string }, { ok: boolean
 
 /** Landlord disconnects from their agency. */
 export const disconnectFromAgency = httpsCallable<void, { ok: boolean }>(functions, 'disconnectFromAgency');
+
+/** Agency owner adds a teammate by email (seat-enforced). */
+export const addAgencyMember = httpsCallable<{ email: string }, { ok: boolean }>(functions, 'addAgencyMember');
+
+/** Agency owner removes a teammate. */
+export const removeAgencyMember = httpsCallable<{ memberUid: string }, { ok: boolean }>(functions, 'removeAgencyMember');
+
+/** Landlord proposes a tenancy renewal (new term + rent). */
+export const createRenewal = httpsCallable<
+  { tenancyId: string; startDate: number; termMonths: number; monthlyRentPence: number },
+  { ok: boolean }
+>(functions, 'createRenewal');
+
+/** Record a renewal signature (landlord or tenant). */
+export const recordRenewalSignature = httpsCallable<
+  { tenancyId: string; party: 'landlord' | 'tenant' }, { status: string }
+>(functions, 'recordRenewalSignature');
+
+/** Complete a signed renewal: charge the £100 fee and start the new term. */
+export const confirmRenewal = httpsCallable<{ tenancyId: string }, { newTenancyId: string }>(
+  functions, 'confirmRenewal',
+);

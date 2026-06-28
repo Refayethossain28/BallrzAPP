@@ -19,7 +19,7 @@ import {
   buildTenancyAgreement, evaluateListingCompliance, evaluateSigningCompliance, recomputeStage,
   tenancyDepositCapPence, buildNotification, buildComplianceReminder, dueComplianceReminders,
   buildRentReminder, dueRentReminders, formatGBP,
-  dueCollections, coveredPeriods,
+  dueCollections, coveredPeriods, withinSeatAllowance,
   isStale, withinLegalRetention, REDACTED, PLATFORM_FEE_PENCE, PLANS,
   type ComplianceDoc, type DealRecord, type EpcRating, type Party, type PlanId,
   type SubscriptionStatus, type Tenancy, type RentCollection,
@@ -907,10 +907,12 @@ export const createAgency = onCall(async (req: CallableRequest<{ name: string }>
   const existing = (await db.doc(`users/${uid}`).get()).data()?.ownedAgencyId as string | undefined;
   if (existing) return { agencyId: existing };
 
+  const ownerEmail = (req.auth?.token.email as string | undefined) ?? '';
   const ref = await db.collection('agencies').add({
     ownerId: uid,
     name,
     memberIds: [uid],
+    memberEmails: { [uid]: ownerEmail },
     clientLandlordIds: [],
     createdAt: FieldValue.serverTimestamp(),
   });
@@ -938,6 +940,55 @@ export const connectToAgency = onCall(async (req: CallableRequest<{ agencyId: st
   return { ok: true, agencyName: String(agencySnap.data()?.name ?? 'agency') };
 });
 
+/**
+ * Agency owner adds a teammate by email (must already have an account). Enforces
+ * the plan's seat allowance, so growing the team is gated on the agent plan.
+ */
+export const addAgencyMember = onCall(async (req: CallableRequest<{ email: string }>) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
+  const email = (req.data?.email ?? '').trim().toLowerCase();
+  if (!email) throw new HttpsError('invalid-argument', 'An email is required.');
+
+  const agencyId = (await db.doc(`users/${uid}`).get()).data()?.ownedAgencyId as string | undefined;
+  if (!agencyId) throw new HttpsError('failed-precondition', 'Create an agency first.');
+  const agencyRef = db.doc(`agencies/${agencyId}`);
+  const agency = (await agencyRef.get()).data() ?? {};
+  const memberIds = (agency.memberIds ?? []) as string[];
+
+  if (!withinSeatAllowance(memberIds.length + 1)) {
+    throw new HttpsError('failed-precondition', 'Seat limit reached for your plan — upgrade to add more teammates.');
+  }
+
+  const found = await db.collection('users').where('email', '==', email).limit(1).get();
+  if (found.empty) throw new HttpsError('not-found', 'No Apex account with that email.');
+  const memberUid = found.docs[0].id;
+  if (memberIds.includes(memberUid)) return { ok: true };
+
+  await agencyRef.update({
+    memberIds: FieldValue.arrayUnion(memberUid),
+    [`memberEmails.${memberUid}`]: email,
+  });
+  return { ok: true };
+});
+
+/** Agency owner removes a teammate (cannot remove themselves). */
+export const removeAgencyMember = onCall(async (req: CallableRequest<{ memberUid: string }>) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
+  const memberUid = req.data?.memberUid;
+  if (!memberUid) throw new HttpsError('invalid-argument', 'memberUid is required.');
+  if (memberUid === uid) throw new HttpsError('failed-precondition', 'You cannot remove yourself.');
+
+  const agencyId = (await db.doc(`users/${uid}`).get()).data()?.ownedAgencyId as string | undefined;
+  if (!agencyId) throw new HttpsError('failed-precondition', 'Create an agency first.');
+  await db.doc(`agencies/${agencyId}`).update({
+    memberIds: FieldValue.arrayRemove(memberUid),
+    [`memberEmails.${memberUid}`]: FieldValue.delete(),
+  });
+  return { ok: true };
+});
+
 /** A landlord disconnects their portfolio from their agency. */
 export const disconnectFromAgency = onCall(async (req: CallableRequest) => {
   const uid = req.auth?.uid;
@@ -947,6 +998,128 @@ export const disconnectFromAgency = onCall(async (req: CallableRequest) => {
   await db.doc(`users/${uid}`).update({ agencyId: FieldValue.delete() });
   await db.doc(`agencies/${agencyId}`).update({ clientLandlordIds: FieldValue.arrayRemove(uid) });
   return { ok: true };
+});
+
+/* ---- M11: tenancy renewals (recurring £100 execution fee) ---- */
+
+interface RenewalTermsInput {
+  tenancyId: string;
+  startDate: number;
+  termMonths: number;
+  monthlyRentPence: number;
+}
+
+/** Landlord proposes a renewal: new term + rent, awaiting both signatures. */
+export const createRenewal = onCall(async (req: CallableRequest<RenewalTermsInput>) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
+  const { tenancyId, startDate, termMonths, monthlyRentPence } = req.data ?? ({} as RenewalTermsInput);
+  if (!tenancyId || !startDate || !termMonths || !monthlyRentPence) {
+    throw new HttpsError('invalid-argument', 'Renewal terms are incomplete.');
+  }
+
+  const ref = db.doc(`tenancies/${tenancyId}`);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Tenancy not found.');
+  if (snap.data()!.landlordId !== uid) throw new HttpsError('permission-denied', 'Not your tenancy.');
+
+  await ref.update({
+    pendingRenewal: {
+      terms: { startDate, termMonths, monthlyRentPence },
+      status: 'awaiting-signature',
+      signed: { landlord: false, tenant: false },
+      feePence: PLATFORM_FEE_PENCE,
+    },
+  });
+  // An e-sign envelope to both parties would be opened here (same seam as `openSigning`).
+  return { ok: true };
+});
+
+/** Record a renewal signature (stands in for the e-sign provider webhook). */
+export const recordRenewalSignature = onCall(
+  async (req: CallableRequest<{ tenancyId: string; party: 'landlord' | 'tenant' }>) => {
+    const uid = req.auth?.uid;
+    if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
+    const { tenancyId, party } = req.data ?? ({} as { tenancyId: string; party: 'landlord' | 'tenant' });
+    if (!tenancyId || (party !== 'landlord' && party !== 'tenant')) {
+      throw new HttpsError('invalid-argument', 'tenancyId and party are required.');
+    }
+    const ref = db.doc(`tenancies/${tenancyId}`);
+    const snap = await ref.get();
+    if (!snap.exists) throw new HttpsError('not-found', 'Tenancy not found.');
+    if (snap.data()!.landlordId !== uid) throw new HttpsError('permission-denied', 'Not your tenancy.');
+    const renewal = snap.data()!.pendingRenewal;
+    if (!renewal) throw new HttpsError('failed-precondition', 'No renewal in progress.');
+
+    const signed = { ...renewal.signed, [party]: true };
+    const status = signed.landlord && signed.tenant ? 'signed' : 'awaiting-signature';
+    await ref.update({ 'pendingRenewal.signed': signed, 'pendingRenewal.status': status });
+    return { status };
+  },
+);
+
+/**
+ * Complete a signed renewal: charge the landlord's £100 fee, then end the old
+ * term and create a fresh tenancy on the new terms (clean ledger, linked back
+ * via renewedFromId). The new tenancy carries the tenant and property across.
+ */
+export const confirmRenewal = onCall(async (req: CallableRequest<{ tenancyId: string }>) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
+  const tenancyId = req.data?.tenancyId;
+  if (!tenancyId) throw new HttpsError('invalid-argument', 'tenancyId is required.');
+
+  const ref = db.doc(`tenancies/${tenancyId}`);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Tenancy not found.');
+  const t = snap.data()!;
+  if (t.landlordId !== uid) throw new HttpsError('permission-denied', 'Not your tenancy.');
+  const renewal = t.pendingRenewal;
+  if (!renewal || renewal.status !== 'signed') {
+    throw new HttpsError('failed-precondition', 'Both parties must sign the renewal first.');
+  }
+
+  // Charge the £100 platform fee on the landlord's saved card, off-session.
+  const email = (req.auth?.token.email as string | undefined) ?? '';
+  const customerId = await getOrCreateCustomer(uid, email);
+  const cards = await stripe.paymentMethods.list({ customer: customerId, type: 'card' });
+  if (cards.data.length === 0) throw new HttpsError('failed-precondition', 'Add a card before renewing.');
+  const intent = await stripe.paymentIntents.create(
+    {
+      amount: PLATFORM_FEE_PENCE,
+      currency: 'gbp',
+      customer: customerId,
+      payment_method: cards.data[0].id,
+      off_session: true,
+      confirm: true,
+      description: `Apex tenancy renewal — ${tenancyId}`,
+      metadata: { tenancyId, kind: 'renewal' },
+    },
+    { idempotencyKey: `renewal_${tenancyId}_${renewal.terms.startDate}` },
+  );
+  if (intent.status !== 'succeeded') throw new HttpsError('failed-precondition', `Payment ${intent.status}.`);
+
+  // Fresh tenancy on the new terms; old one ends, linked both ways.
+  const newRef = await db.collection('tenancies').add({
+    landlordId: t.landlordId,
+    listingId: t.listingId ?? '',
+    propertyLabel: t.propertyLabel ?? '',
+    tenantName: t.tenantName ?? '',
+    monthlyRentPence: renewal.terms.monthlyRentPence,
+    startDate: new Date(renewal.terms.startDate),
+    termMonths: renewal.terms.termMonths,
+    status: 'active',
+    totalPaidPence: 0,
+    collections: [],
+    renewedFromId: tenancyId,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  await ref.update({
+    status: 'ended',
+    renewedToId: newRef.id,
+    pendingRenewal: FieldValue.delete(),
+  });
+  return { newTenancyId: newRef.id };
 });
 
 /* ---- M7: GDPR data erasure + retention ---- */

@@ -3,10 +3,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   buildRentLedger, buildRentStatementCsv, formatGBP, isMandateActive, mandateLabel,
+  renewalDefaults, rentChangePct,
   type RentStatus, type CollectionStatus,
 } from '@rentmatch/shared';
 import { fetchTenancy, fetchPayments, addRentPayment, type TenancyRecord } from '../lib/db';
-import { createDirectDebitSetup } from '../lib/functions';
+import {
+  createDirectDebitSetup, createRenewal, recordRenewalSignature, confirmRenewal,
+} from '../lib/functions';
 import { formatDate } from '../components/ui';
 
 const STATUS_BANNER: Record<RentStatus, { cls: string; border: string; bg: string; text: string }> = {
@@ -107,6 +110,8 @@ export default function TenancyDetail() {
 
       <RentCollection tenancy={tenancy} />
 
+      {tenancy.status === 'active' && <Renewal tenancy={tenancy} />}
+
       <div className="section-t">Record a payment</div>
       <form onSubmit={logPayment}>
         <div className="two">
@@ -157,6 +162,108 @@ export default function TenancyDetail() {
       <button className="cta ghost" style={{ marginTop: 14 }} onClick={downloadStatement}>
         ⬇ Download rent statement (CSV)
       </button>
+    </>
+  );
+}
+
+function isoDate(ms: number) {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/** Renew a tenancy: propose terms → both sign → £100 fee → fresh term. */
+function Renewal({ tenancy }: { tenancy: TenancyRecord }) {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const renewal = tenancy.pendingRenewal;
+  const defaults = renewalDefaults(tenancy);
+
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['tenancy', tenancy.id] });
+
+  async function run(fn: () => Promise<unknown>) {
+    setBusy(true); setError('');
+    try { await fn(); refresh(); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Something went wrong.'); }
+    finally { setBusy(false); }
+  }
+
+  async function propose(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    const monthlyRentPence = Math.round(Number(f.get('rent') ?? 0) * 100);
+    const termMonths = Number(f.get('term') ?? 12);
+    const startDate = new Date(String(f.get('start') ?? '')).getTime();
+    if (!monthlyRentPence || !termMonths || !startDate) { setError('Fill in all renewal terms.'); return; }
+    await run(async () => { await createRenewal({ tenancyId: tenancy.id, startDate, termMonths, monthlyRentPence }); setOpen(false); });
+  }
+
+  async function complete() {
+    setBusy(true); setError('');
+    try {
+      const { data } = await confirmRenewal({ tenancyId: tenancy.id });
+      queryClient.invalidateQueries({ queryKey: ['tenancies'] });
+      navigate(`/landlord/rent/${data.newTenancyId}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not complete the renewal.');
+    } finally { setBusy(false); }
+  }
+
+  // In-flight renewal — show signature + completion controls.
+  if (renewal) {
+    const change = rentChangePct(tenancy.monthlyRentPence, renewal.terms.monthlyRentPence);
+    return (
+      <>
+        <div className="section-t">Renewal</div>
+        <div className="card"><div className="body">
+          <Row k="New rent" v={`${formatGBP(renewal.terms.monthlyRentPence)}${change ? ` (${change > 0 ? '+' : ''}${change.toFixed(1)}%)` : ''}`} />
+          <Row k="New term" v={`${renewal.terms.termMonths} months from ${formatDate(renewal.terms.startDate)}`} />
+          <Row k="Landlord signature" v={renewal.signed.landlord ? '✓ Signed' : 'Pending'} />
+          <Row k="Tenant signature" v={renewal.signed.tenant ? '✓ Signed' : 'Pending'} />
+        </div></div>
+        {renewal.status !== 'signed' ? (
+          <div className="row" style={{ gap: 8 }}>
+            {!renewal.signed.landlord && (
+              <button className="cta ghost" disabled={busy} onClick={() => run(() => recordRenewalSignature({ tenancyId: tenancy.id, party: 'landlord' }))}>Sign as landlord</button>
+            )}
+            {!renewal.signed.tenant && (
+              <button className="cta ghost" disabled={busy} onClick={() => run(() => recordRenewalSignature({ tenancyId: tenancy.id, party: 'tenant' }))}>Mark tenant signed</button>
+            )}
+          </div>
+        ) : (
+          <button className="cta" disabled={busy} onClick={complete}>
+            {busy ? 'Completing…' : `Charge ${formatGBP(renewal.feePence)} & start new term`}
+          </button>
+        )}
+        {error && <p className="error">{error}</p>}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className="section-t">Renewal</div>
+      {!open ? (
+        <button className="cta ghost" onClick={() => setOpen(true)}>↻ Renew this tenancy</button>
+      ) : (
+        <form onSubmit={propose}>
+          <div className="two">
+            <div className="field"><label>New rent (£)</label>
+              <input name="rent" type="number" min={0} step="0.01" defaultValue={(defaults.monthlyRentPence / 100).toString()} /></div>
+            <div className="field"><label>Term (months)</label>
+              <input name="term" type="number" min={1} defaultValue={defaults.termMonths} /></div>
+          </div>
+          <div className="field"><label>New term starts</label>
+            <input name="start" type="date" defaultValue={isoDate(defaults.startDate)} /></div>
+          {error && <p className="error">{error}</p>}
+          <div className="row" style={{ gap: 8 }}>
+            <button className="cta" type="submit" disabled={busy}>{busy ? 'Sending…' : 'Propose renewal'}</button>
+            <button className="cta ghost" type="button" onClick={() => setOpen(false)}>Cancel</button>
+          </div>
+        </form>
+      )}
+      {error && !open && <p className="error">{error}</p>}
     </>
   );
 }
