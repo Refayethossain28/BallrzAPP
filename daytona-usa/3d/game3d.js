@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R53 — twinkle, spray, drift, time-trial';
+const BUILD = 'BUILD R54 — max desktop tier';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -110,11 +110,12 @@ const MOBILE = (typeof navigator!=='undefined') &&
 
 let renderer, scene, camera, sun, sky, hemiLight, ambLight;
 let _GPU=false, _post=null;   // WebGPU renderer + its post-processing (bloom) pipeline
-// Granular WebGPU-only material switches, re-enabled one group at a time so a
-// blank render can be isolated. PAINT (iridescence + env) and EMIS (emissive
-// bloom) are device-safe PBR/value tweaks; HIRES (512px tiles) and NORMAL
-// (normal maps on Lambert — the prime blank suspect) stay off pending testing.
+// Granular WebGPU-only material switches (kept off — WebGPU node materials
+// choke on them). The same upgrades DO work in classic WebGL, so the desktop
+// "max" tier (_HI) enables them there. _MAT* = "on for desktop OR (a working)
+// WebGPU group". Set in initThree once the renderer/device is known.
 let _GPU_PAINT=false, _GPU_EMIS=false, _GPU_HIRES=false, _GPU_NORMAL=false;
+let _HI=false, _MATFX=false, _MATHIRES=false, _MATNORMAL=false, _MATEMIS=false;
 let glCanvas, hud2d, hctx;
 let frames = [], trackLen = 0;
 let playerCar = null;
@@ -228,6 +229,8 @@ function initThree(){
   // (anisotropy needs geometry tangents the extruded body lacks; normal maps on
   // Lambert don't compile). WebGPU keeps the proven materials + the bloom pass.
   _GPU_PAINT=false; _GPU_EMIS=false; _GPU_HIRES=false; _GPU_NORMAL=false;
+  _HI = !MOBILE;   // desktop/Mac "max" tier — these material upgrades are WebGL-safe
+  _MATFX=_HI||_GPU_PAINT; _MATHIRES=_HI||_GPU_HIRES; _MATNORMAL=_HI||_GPU_NORMAL; _MATEMIS=_HI||_GPU_EMIS;
   // Mobile: skip MSAA — at full 3x density the supersampling antialiases edges
   // for free, and MSAA buffers at that resolution risk GPU memory / context loss.
   if (_GPU){
@@ -263,7 +266,7 @@ function initThree(){
   sun.position.set(60,120,30);
   sun.castShadow = true;
   {
-    const SM = MOBILE?1536:2048;                     // a touch smaller on mobile for memory
+    const SM = MOBILE?1536:4096;                     // crisp 4K shadows on the desktop tier
     sun.shadow.mapSize.set(SM,SM);
     sun.shadow.camera.near=1; sun.shadow.camera.far=340;
     const S=MOBILE?58:70; sun.shadow.camera.left=-S; sun.shadow.camera.right=S; sun.shadow.camera.top=S; sun.shadow.camera.bottom=-S;
@@ -524,7 +527,7 @@ function makeAsphaltTex(w,h){
 }
 let _asphaltCanvas=null;
 // WebGPU: crank emissive (lit windows / neon) so the bloom pass has lush sources
-function boostBloomEmissive(){ if(!_GPU_EMIS) return; for (const p of _pulse){ p.base*=2.4; if(p.mat) p.mat.emissiveIntensity=p.base; } }
+function boostBloomEmissive(){ if(!_MATEMIS) return; for (const p of _pulse){ p.base*=2.4; if(p.mat) p.mat.emissiveIntensity=p.base; } }
 
 function buildRoadMesh(){
   clearRoad();
@@ -553,9 +556,9 @@ function buildRoadMesh(){
     // dark so the road can never wash out to a blue tint under the sky light.
     // DoubleSide: on some track windings the asphalt normals face down, which would
     // back-face-cull the single-sided road and show the sky THROUGH it (a "blue road").
-    const tex=makeAsphaltTex(_GPU_HIRES?512:256, _GPU_HIRES?1024:512); tex.repeat.set(5, 1);
+    const tex=makeAsphaltTex(_MATHIRES?512:256, _MATHIRES?1024:512); tex.repeat.set(5, 1);
     const rmat=new THREE.MeshLambertMaterial({map:tex, color:G.rain?0x3b424b:0x595c61, side:THREE.DoubleSide});
-    if (_GPU_NORMAL){ try{ const n=heightToNormal(_asphaltCanvas, G.rain?2:4); n.repeat.set(5,1); rmat.normalMap=n; rmat.normalScale=new THREE.Vector2(G.rain?0.4:0.9,G.rain?0.4:0.9); }catch(e){ rmat.bumpMap=tex; rmat.bumpScale=0.6; } }
+    if (_MATNORMAL){ try{ const n=heightToNormal(_asphaltCanvas, G.rain?2:4); n.repeat.set(5,1); rmat.normalMap=n; rmat.normalScale=new THREE.Vector2(G.rain?0.4:0.9,G.rain?0.4:0.9); }catch(e){ rmat.bumpMap=tex; rmat.bumpScale=0.6; } }
     else { rmat.bumpMap=tex; rmat.bumpScale=G.rain?0.3:0.6; }
     const mesh=new THREE.Mesh(geo, rmat);
     mesh.receiveShadow=true; scene.add(mesh); roadParts.push(mesh);
@@ -576,7 +579,7 @@ function buildRoadMesh(){
     geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
     geo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
     geo.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3));
-    const gs=_GPU_HIRES?512:256; const tex=surfTex(th.grass, th.grass2, gs, gs, _GPU_HIRES?5200:2600); tex.repeat.set(3, 1);
+    const gs=_MATHIRES?512:256; const tex=surfTex(th.grass, th.grass2, gs, gs, _MATHIRES?5200:2600); tex.repeat.set(3, 1);
     const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({map:tex, side:THREE.DoubleSide, bumpMap:tex, bumpScale:0.3}));
     mesh.receiveShadow=true; scene.add(mesh); roadParts.push(mesh);
   }
@@ -650,20 +653,20 @@ function detailClone(kind, rep){ const t=makeDetailTex(kind).clone(); t.wrapS=t.
 // hero = the player's car gets full clearcoat PBR + flake; rivals get a cheaper metallic.
 function paintMat(c, hero){
   if (hero){
-    const m=new THREE.MeshPhysicalMaterial({color:c, metalness:0.55, roughness:0.34, clearcoat:1.0, clearcoatRoughness:0.05, envMap:envTex, envMapIntensity:_GPU_PAINT?2.2:1.7});
+    const m=new THREE.MeshPhysicalMaterial({color:c, metalness:0.55, roughness:0.34, clearcoat:1.0, clearcoatRoughness:0.05, envMap:envTex, envMapIntensity:_MATFX?2.2:1.7});
     m.clearcoatNormalMap=flakeNormalTex(); m.clearcoatNormalScale=new THREE.Vector2(0.16,0.16);
     m.roughnessMap=detailClone('rough',6);   // visible metallic-flake clusters in the sheen
-    if (_GPU_PAINT){ try{ m.iridescence=0.25; m.iridescenceIOR=1.3; m.anisotropy=0.4; m.anisotropyRotation=Math.PI*0.25; m.clearcoatRoughness=0.03; }catch(e){} }   // ultra-real paint on WebGPU
+    if (_MATFX){ try{ m.iridescence=0.22; m.iridescenceIOR=1.3; m.clearcoatRoughness=0.03; }catch(e){} }   // ultra-real paint on WebGPU
     return m;
   }
-  const m=new THREE.MeshStandardMaterial({color:c, metalness:0.42, roughness:0.34, envMap:envTex, envMapIntensity:_GPU_PAINT?1.6:1.25});
+  const m=new THREE.MeshStandardMaterial({color:c, metalness:0.42, roughness:0.34, envMap:envTex, envMapIntensity:_MATFX?1.6:1.25});
   m.roughnessMap=detailClone('rough',6);
   return m;
 }
 function matteMat(c){ const m=new THREE.MeshStandardMaterial({color:c, metalness:0, roughness:0.85}); const t=detailClone('rough',3); m.map=t;
-  if (_GPU_NORMAL){ const n=detailNormal('rough',3); if(n){ m.normalMap=n; m.normalScale=new THREE.Vector2(0.6,0.6); } else { m.bumpMap=t; m.bumpScale=0.25; } }
+  if (_MATNORMAL){ const n=detailNormal('rough',3); if(n){ m.normalMap=n; m.normalScale=new THREE.Vector2(0.6,0.6); } else { m.bumpMap=t; m.bumpScale=0.25; } }
   else { m.bumpMap=t; m.bumpScale=0.25; } return m; }
-function glassMat(){ return new THREE.MeshStandardMaterial({color:0x070d18, metalness:0.7, roughness:0.04, envMap:envTex, envMapIntensity:_GPU_PAINT?2.4:1.8}); }
+function glassMat(){ return new THREE.MeshStandardMaterial({color:0x070d18, metalness:0.7, roughness:0.04, envMap:envTex, envMapIntensity:_MATFX?2.4:1.8}); }
 function chromeMat(){ const m=new THREE.MeshStandardMaterial({color:0xc4c9d2, metalness:0.95, roughness:0.2, envMap:envTex, envMapIntensity:1.4}); m.roughnessMap=makeDetailTex('metal'); return m; }
 function shadeHex(hex, amt){ const r=Math.max(0,Math.min(255,(hex>>16&255)+amt)), g=Math.max(0,Math.min(255,(hex>>8&255)+amt)), b=Math.max(0,Math.min(255,(hex&255)+amt)); return (r<<16)|(g<<8)|b; }
 let _emblemTex=null;
@@ -768,7 +771,7 @@ function makeCarbonTex(){ if(_carbonTex) return _carbonTex; const S=64, cv=docum
   for(let r=0;r<S;r+=8) for(let c=0;c<S;c+=8){ const dk=((r/8+c/8)%2)===0; x.fillStyle=dk?'#23262c':'#0e0f12';
     x.fillRect(c,r,7,4); x.fillStyle=dk?'#0e0f12':'#23262c'; x.fillRect(c,r+4,7,4); }
   const t=new THREE.CanvasTexture(cv); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(6,3); t.colorSpace=THREE.SRGBColorSpace; t.anisotropy=_maxAniso; _carbonTex=t; return t; }
-function carbonMat(){ return new THREE.MeshStandardMaterial({color:0xffffff, map:makeCarbonTex(), metalness:0.5, roughness:0.42, envMap:envTex, envMapIntensity:_GPU_PAINT?1.4:1.0}); }
+function carbonMat(){ return new THREE.MeshStandardMaterial({color:0xffffff, map:makeCarbonTex(), metalness:0.5, roughness:0.42, envMap:envTex, envMapIntensity:_MATFX?1.4:1.0}); }
 // Extra stock-car detailing. Lite cars (rivals) get just a grille + mirrors so
 // they read right next to the player; the full set is reserved for the hero car.
 function addCarDetails(g, W, L, lite, liv){
@@ -938,7 +941,7 @@ function disposeTree(obj){ obj.traverse(o=>{ if(o.geometry)o.geometry.dispose();
 const _detailCache={};
 function makeDetailTex(kind){
   if (_detailCache[kind]) return _detailCache[kind];
-  const S=_GPU_HIRES?512:256, cv=document.createElement('canvas'); cv.width=cv.height=S; const x=cv.getContext('2d');   // hi-res tile on WebGPU
+  const S=_MATHIRES?512:256, cv=document.createElement('canvas'); cv.width=cv.height=S; const x=cv.getContext('2d');   // hi-res tile on WebGPU
   x.fillStyle='#e9e9e9'; x.fillRect(0,0,S,S);
   const grain=(n,a,sz)=>{ for(let i=0;i<n;i++){ const v=Math.random()<0.5?30:235; x.fillStyle=`rgba(${v},${v},${v},${Math.random()*a})`; x.fillRect(Math.random()*S,Math.random()*S,sz||2.2,sz||2.2);} };
   if (kind==='stone'){
@@ -998,7 +1001,7 @@ function txMat(opts, kind, rep){
   const k=kind||'rough';
   m.map=makeDetailTex(k).clone(); m.map.wrapS=m.map.wrapT=THREE.RepeatWrapping;
   if (rep) m.map.repeat.set(rep,rep); m.map.needsUpdate=true;
-  if (_GPU_NORMAL){ const n=detailNormal(k, rep); if(n){ m.normalMap=n; m.normalScale=new THREE.Vector2(1.0,1.0); } }   // WebGPU: real normal mapping
+  if (_MATNORMAL){ const n=detailNormal(k, rep); if(n){ m.normalMap=n; m.normalScale=new THREE.Vector2(1.0,1.0); } }   // WebGPU: real normal mapping
   else { m.bumpMap=m.map; m.bumpScale=(k==='stone')?0.8:0.4; }
   return m;
 }
@@ -1321,7 +1324,7 @@ function buildScenery(){
   const heroNear=(i,side)=> gateNear(i) || heroSlots.some(h=>{ if(h.side!==side)return false; let d=Math.abs(i-h.fi); d=Math.min(d,DIV-d); return d<26; });
 
   // verge props (mobile-budgeted, both verges)
-  const PROP_STEP = MOBILE ? 18 : 6;   // denser trees/props
+  const PROP_STEP = MOBILE ? 18 : 4;   // denser trees/props (very dense on desktop)
   const sways = th.prop!=='rock';   // trees/palms sway; rocks don't
   for (let i=0;i<DIV;i+=PROP_STEP){ const f=frames[i];
     for (const side of [-1,1]){ if (heroNear(i,side)) continue;
@@ -1333,7 +1336,7 @@ function buildScenery(){
 
   // distant skyline ring (city) or mountains
   if (th.skyline==='city'){
-    const winTex=makeWindowTexture(th.landmark==='dubai'); const RING=MOBILE?30:46;
+    const winTex=makeWindowTexture(th.landmark==='dubai'); const RING=MOBILE?30:64;
     for (let i=0;i<RING;i++){ const ang=(i/RING)*Math.PI*2; const r=560+(mulberry32(i+99)())*260; const h=70+(mulberry32(i+5)())*(th.landmark==='dubai'?260:140); const w=24+(mulberry32(i+13)())*26;
       const col=th.landmark==='dubai'?0x9fb6cc:[0x8a6a52,0x9c7a52,0x70615a,0x86756b][i%4];
       const mat=new THREE.MeshStandardMaterial({color:col, roughness:0.7, metalness:th.landmark==='dubai'?0.4:0.05, map:winTex.clone(), emissive:0xffe39a, emissiveMap:winTex.clone(), emissiveIntensity:0.4}); mat.map.repeat.set(Math.max(1,w/12),Math.max(2,h/12)); mat.emissiveMap.repeat.copy(mat.map.repeat);
@@ -1373,7 +1376,7 @@ function buildScenery(){
     const keepout = heroSlots.map(h=>h.fi).concat(gateFi>=0?[gateFi]:[]);
     const nearLM = i=>keepout.some(k=>{ let d=Math.abs(i-k); d=Math.min(d,DIV-d); return d<70; });
     const winTex=makeWindowTexture(th.landmark==='dubai'); const _v=new THREE.Vector3();
-    for (let i=0;i<DIV;i+=(MOBILE?70:44)){ if(nearLM(i)) continue; const f=frames[i]; _v.copy(f.pos).sub(cen); const side=(_v.dot(f.right)>=0)?1:-1;
+    for (let i=0;i<DIV;i+=(MOBILE?70:30)){ if(nearLM(i)) continue; const f=frames[i]; _v.copy(f.pos).sub(cen); const side=(_v.dot(f.right)>=0)?1:-1;
       const h=20+rng()*(th.landmark==='dubai'?70:34), w=12+rng()*12; const col=th.landmark==='dubai'?0xbcd0e2:[0x8a6248,0x96704e,0x6f5e54][(rng()*3)|0];
       const mat=new THREE.MeshStandardMaterial({color:col, roughness:0.7, metalness:th.landmark==='dubai'?0.45:0.05, map:winTex.clone(), emissive:0xffe39a, emissiveMap:winTex.clone(), emissiveIntensity:0.38}); mat.map.repeat.set(Math.max(1,w/8),Math.max(2,h/10)); mat.emissiveMap.repeat.copy(mat.map.repeat);
       _pulse.push({mat, base:0.58, ph:i*0.7, sp:2.6, flash:true}); _scroll.push({tex:mat.emissiveMap, v:0.016});
@@ -1404,7 +1407,7 @@ function buildScenery(){
 
   // ---- BIG multi-row grandstands distributed around the lap (outer side, close in) ----
   const crowdTex=makeCrowdTexture();
-  const NSEG=MOBILE?12:15, NROW=MOBILE?3:3;
+  const NSEG=MOBILE?12:18, NROW=MOBILE?3:4;
   const standFracs = MOBILE ? [0.008,0.028, 0.25, 0.40, 0.50, 0.62, 0.75]
                             : [0.006,0.022,0.038, 0.25, 0.49,0.51,0.53, 0.75];
   const standCen=new THREE.Vector3(); for(const fr of frames) standCen.add(fr.pos); standCen.multiplyScalar(1/frames.length);
