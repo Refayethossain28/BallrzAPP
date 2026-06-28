@@ -74,6 +74,7 @@
     background-size:180px 180px;animation:grain .5s steps(2) infinite}
   @keyframes grain{0%{transform:translate(0,0)}50%{transform:translate(-4%,3%)}100%{transform:translate(3%,-2%)}}
   canvas#game{display:block;width:100%;height:100%;position:relative;z-index:1}
+  #gpufx{position:absolute;inset:0;z-index:1;width:100%;height:100%;pointer-events:none;display:none}
   canvas#game.shake{animation:shake .4s cubic-bezier(.36,.07,.19,.97)}
   /* CRT: scanlines + vignette over the play */
   #stage::after{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;
@@ -251,6 +252,7 @@
 
   <div id="stage">
     <canvas id="game"></canvas>
+    <canvas id="gpufx"></canvas>
     <div id="grain"></div>
     <button id="pauseBtn" aria-label="Pause">⏸</button>
 
@@ -494,16 +496,19 @@ function selectMatchLevel(){
 const stage    = document.getElementById('stage');
 const cv       = document.getElementById('game');
 const ctx      = cv.getContext('2d');
+const gcv      = document.getElementById('gpufx');   // WebGPU post-processing output canvas
 const demoCv   = document.getElementById('demoC');
 const demoCtx  = demoCv.getContext('2d');
 const pauseBtn = document.getElementById('pauseBtn');
 const muteBtn  = document.getElementById('muteBtn');
 const fxBtn    = document.getElementById('fxBtn');
 let fxHigh = (localStorage.getItem('flow.fx')!=='lo');   // graphics quality (High = full post-FX)
+let gpu=null, gpuTried=false;                            // WebGPU enhancer (null unless it inits)
+function fxLabel(){ return !fxHigh ? 'FX·LO' : (gpu ? 'FX·GPU' : 'FX·HI'); }
 function setFx(hi){
   fxHigh=hi; localStorage.setItem('flow.fx', hi?'hi':'lo');
   document.body.classList.toggle('lowfx', !hi);
-  if(fxBtn) fxBtn.textContent = hi ? 'FX·HI' : 'FX·LO';
+  if(fxBtn) fxBtn.textContent = fxLabel();
 }
 
 /* ---------- audio: ting/buzz SFX + a synth techno loop (Web Audio, no assets) ---------- */
@@ -1226,6 +1231,108 @@ function applyCA(){
   ctx.restore(); ctx.setTransform(DPR,0,0,DPR,0,0);
 }
 
+/* ================================================================== *
+ *  WebGPU post-processing (optional enhancer).
+ *  Takes the finished 2D scene from `cv`, uploads it as a texture, and runs a
+ *  single fragment-shader pass — multi-tap bloom + chromatic aberration +
+ *  colour grade + vignette + grain, beat-reactive — onto the overlay canvas
+ *  `gcv`. Fully gated: any failure (no WebGPU, bad device, draw error) nulls
+ *  `gpu` and the renderer falls back to the Canvas2D post-FX below.
+ * ================================================================== */
+const GPU_WGSL = `
+struct U { res: vec2f, time: f32, beat: f32 };
+@group(0) @binding(0) var samp: sampler;
+@group(0) @binding(1) var tex: texture_2d<f32>;
+@group(0) @binding(2) var<uniform> u: U;
+@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
+  var p = array<vec2f,3>(vec2f(-1.0,-1.0), vec2f(3.0,-1.0), vec2f(-1.0,3.0));
+  return vec4f(p[i], 0.0, 1.0);
+}
+@fragment fn fs(@builtin(position) frag: vec4f) -> @location(0) vec4f {
+  let uv = frag.xy / u.res;
+  let c = uv - vec2f(0.5, 0.5);
+  let texel = vec2f(1.0,1.0) / u.res;
+  // chromatic aberration (stronger toward edges and on the beat)
+  let off = c * (0.0016 + 0.004 * u.beat);
+  var col = vec3f(
+    textureSample(tex, samp, uv + off).r,
+    textureSample(tex, samp, uv).g,
+    textureSample(tex, samp, uv - off).b
+  );
+  // radial multi-tap bloom on bright areas
+  var bloom = vec3f(0.0);
+  let R = 2.5 + 3.5 * u.beat;
+  for (var k: i32 = 0; k < 12; k = k + 1) {
+    let a = f32(k) * 0.5236;
+    let d = vec2f(cos(a), sin(a));
+    let s1 = textureSample(tex, samp, uv + d * texel * R).rgb;
+    let s2 = textureSample(tex, samp, uv + d * texel * R * 2.2).rgb;
+    bloom = bloom + smoothstep(vec3f(0.45), vec3f(1.0), s1) * 0.6
+                  + smoothstep(vec3f(0.6),  vec3f(1.0), s2) * 0.4;
+  }
+  col = col + (bloom / 12.0) * (0.85 + 0.7 * u.beat);
+  // grade: gentle contrast + saturation
+  col = (col - 0.5) * 1.07 + 0.5;
+  let l = dot(col, vec3f(0.299, 0.587, 0.114));
+  col = mix(vec3f(l), col, 1.14);
+  // vignette
+  col = col * (0.55 + 0.45 * smoothstep(0.95, 0.32, length(c)));
+  // film grain
+  let n = fract(sin(dot(uv * u.res, vec2f(12.9898, 78.233)) + u.time) * 43758.5453);
+  col = col + (n - 0.5) * 0.028;
+  return vec4f(clamp(col, vec3f(0.0), vec3f(1.0)), 1.0);
+}`;
+async function initGPU(){
+  if(gpuTried) return; gpuTried=true;
+  if(typeof navigator==='undefined' || !navigator.gpu || !gcv) return;
+  try{
+    const adapter = await navigator.gpu.requestAdapter(); if(!adapter) return;
+    const device  = await adapter.requestDevice();
+    const gctx = gcv.getContext('webgpu'); if(!gctx) return;
+    const format = navigator.gpu.getPreferredCanvasFormat();
+    gctx.configure({ device, format, alphaMode:'opaque' });
+    const mod = device.createShaderModule({ code: GPU_WGSL });
+    const pipeline = device.createRenderPipeline({
+      layout:'auto',
+      vertex:{ module:mod, entryPoint:'vs' },
+      fragment:{ module:mod, entryPoint:'fs', targets:[{ format }] },
+      primitive:{ topology:'triangle-list' }
+    });
+    const sampler = device.createSampler({ magFilter:'linear', minFilter:'linear' });
+    const uni = device.createBuffer({ size:16, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST });
+    gpu = { device, gctx, format, pipeline, sampler, uni, tex:null, bind:null, w:0, h:0 };
+    if(device.lost && device.lost.then) device.lost.then(()=>{ gpu=null; if(fxBtn) fxBtn.textContent=fxLabel(); if(gcv) gcv.style.display='none'; });
+    if(fxBtn) fxBtn.textContent=fxLabel();          // surface "FX·GPU" once it's live
+  }catch(_){ gpu=null; }
+}
+function gpuSize(){
+  const { device, sampler, uni, pipeline } = gpu;
+  gcv.width=cv.width; gcv.height=cv.height;
+  if(gpu.tex) try{ gpu.tex.destroy(); }catch(_){}
+  gpu.tex = device.createTexture({ size:[cv.width, cv.height], format:'rgba8unorm',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
+  gpu.bind = device.createBindGroup({ layout:pipeline.getBindGroupLayout(0), entries:[
+    { binding:0, resource:sampler },
+    { binding:1, resource:gpu.tex.createView() },
+    { binding:2, resource:{ buffer:uni } } ] });
+  gpu.w=cv.width; gpu.h=cv.height;
+}
+function gpuPost(){
+  if(!gpu || !cv.width) return false;
+  try{
+    const { device, gctx, pipeline, uni } = gpu;
+    if(gpu.w!==cv.width || gpu.h!==cv.height) gpuSize();
+    device.queue.copyExternalImageToTexture({ source:cv, flipY:false }, { texture:gpu.tex }, [cv.width, cv.height]);
+    device.queue.writeBuffer(uni, 0, new Float32Array([cv.width, cv.height, performance.now()/1000, beatPulse]));
+    const enc = device.createCommandEncoder();
+    const pass = enc.beginRenderPass({ colorAttachments:[{ view:gctx.getCurrentTexture().createView(),
+      clearValue:{r:0,g:0,b:0,a:1}, loadOp:'clear', storeOp:'store' }] });
+    pass.setPipeline(pipeline); pass.setBindGroup(0, gpu.bind); pass.draw(3); pass.end();
+    device.queue.submit([enc.finish()]);
+    return true;
+  }catch(_){ gpu=null; if(fxBtn) fxBtn.textContent=fxLabel(); return false; }
+}
+
 /* ---------- input ---------- */
 function hit(px,py){
   if(!live()) return;
@@ -1295,12 +1402,14 @@ function frame(now){
   else if(state==='idle'){ drawDemo(now); }
   if(fx.length) drawFx(state==='paused' ? 0 : dt);   // sparkles finish over any state
   if(state!=='idle') drawBorderFlash();              // play-area border flashes to the beat
-  applyBloom();                                       // HDR bloom over the whole scene
-  applyCA();                                          // chromatic aberration after an impact
-  if(flash){                                          // screen-flash (over bloom)
+  if(flash){                                          // screen-flash — drawn into the scene
     ctx.globalAlpha=Math.max(0,flash.a); ctx.fillStyle=flash.color; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1;
     flash.a -= (state==='paused'?0:dt)*3.2; if(flash.a<=0) flash=null;
   }
+  let usedGPU=false;
+  if(fxHigh && gpu) usedGPU = gpuPost();              // WebGPU enhancer (auto-falls-back on any error)
+  if(!usedGPU){ applyBloom(); applyCA(); }            // Canvas2D post-FX (also no-ops in low-FX)
+  if(gcv) gcv.style.display = usedGPU ? 'block' : 'none';
   requestAnimationFrame(frame);
 }
 
@@ -1418,6 +1527,7 @@ refreshHud();
 refreshMenuStats();
 muteBtn.textContent = muted ? '🔇' : '🔊';
 setFx(fxHigh);
+try{ initGPU(); }catch(_){}      // async; sets up the WebGPU enhancer if available, else no-op
 showScreen('overlay');
 updateChrome();
 resize();
