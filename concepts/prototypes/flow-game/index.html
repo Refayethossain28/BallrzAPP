@@ -502,13 +502,20 @@ const demoCtx  = demoCv.getContext('2d');
 const pauseBtn = document.getElementById('pauseBtn');
 const muteBtn  = document.getElementById('muteBtn');
 const fxBtn    = document.getElementById('fxBtn');
-let fxHigh = (localStorage.getItem('flow.fx')!=='lo');   // graphics quality (High = full post-FX)
 let gpu=null, gpuTried=false;                            // WebGPU enhancer (null unless it inits)
-function fxLabel(){ return !fxHigh ? 'FX·LO' : (gpu ? 'FX·GPU' : 'FX·HI'); }
-function setFx(hi){
-  fxHigh=hi; localStorage.setItem('flow.fx', hi?'hi':'lo');
-  document.body.classList.toggle('lowfx', !hi);
+let fxMode = localStorage.getItem('flow.fxmode') || 'auto';   // 'auto'(GPU if available) | 'hi' | 'lo'
+let fxHigh = (fxMode!=='lo');                            // post-FX on at all
+function gpuActive(){ return !!gpu && fxMode==='auto'; } // GPU path engaged this frame
+function fxLabel(){ return fxMode==='lo' ? 'FX·LO' : (gpuActive() ? 'FX·GPU' : 'FX·HI'); }
+function applyFx(){
+  fxHigh = (fxMode!=='lo');
+  document.body.classList.toggle('lowfx', fxMode==='lo');
+  if(gcv && !gpuActive()) gcv.style.display='none';
   if(fxBtn) fxBtn.textContent = fxLabel();
+}
+function cycleFx(){      // GPU → HI → LO → … (tap to leave the GPU look if you want)
+  fxMode = fxMode==='auto' ? 'hi' : (fxMode==='hi' ? 'lo' : 'auto');
+  localStorage.setItem('flow.fxmode', fxMode); applyFx();
 }
 
 /* ---------- audio: ting/buzz SFX + a synth techno loop (Web Audio, no assets) ---------- */
@@ -1248,38 +1255,41 @@ struct U { res: vec2f, time: f32, beat: f32 };
   var p = array<vec2f,3>(vec2f(-1.0,-1.0), vec2f(3.0,-1.0), vec2f(-1.0,3.0));
   return vec4f(p[i], 0.0, 1.0);
 }
+// The source 2D canvas is UNPREMULTIPLIED over black, so faint (low-alpha) but
+// saturated pixels must be multiplied by alpha or they read full-bright (that's
+// what washed the background to cyan). Premultiply every sample.
+fn smp(uv: vec2f) -> vec3f { let t = textureSample(tex, samp, uv); return t.rgb * t.a; }
 @fragment fn fs(@builtin(position) frag: vec4f) -> @location(0) vec4f {
   let uv = frag.xy / u.res;
   let c = uv - vec2f(0.5, 0.5);
   let texel = vec2f(1.0,1.0) / u.res;
-  // chromatic aberration (stronger toward edges and on the beat)
-  let off = c * (0.0016 + 0.004 * u.beat);
-  var col = vec3f(
-    textureSample(tex, samp, uv + off).r,
-    textureSample(tex, samp, uv).g,
-    textureSample(tex, samp, uv - off).b
-  );
-  // radial multi-tap bloom on bright areas
+  // chromatic aberration (toward edges, more on the beat)
+  let off = c * (0.0013 + 0.0028 * u.beat);
+  let sa = textureSample(tex, samp, uv + off);
+  let sb = textureSample(tex, samp, uv);
+  let sc = textureSample(tex, samp, uv - off);
+  var col = vec3f(sa.r*sa.a, sb.g*sb.a, sc.b*sc.a);
+  // radial multi-tap bloom on genuinely bright pixels only
   var bloom = vec3f(0.0);
-  let R = 2.5 + 3.5 * u.beat;
-  for (var k: i32 = 0; k < 12; k = k + 1) {
-    let a = f32(k) * 0.5236;
+  let R = 2.5 + 2.5 * u.beat;
+  for (var k: i32 = 0; k < 10; k = k + 1) {
+    let a = f32(k) * 0.6283;
     let d = vec2f(cos(a), sin(a));
-    let s1 = textureSample(tex, samp, uv + d * texel * R).rgb;
-    let s2 = textureSample(tex, samp, uv + d * texel * R * 2.2).rgb;
-    bloom = bloom + smoothstep(vec3f(0.45), vec3f(1.0), s1) * 0.6
-                  + smoothstep(vec3f(0.6),  vec3f(1.0), s2) * 0.4;
+    let s1 = smp(uv + d * texel * R);
+    let s2 = smp(uv + d * texel * R * 2.2);
+    bloom = bloom + smoothstep(vec3f(0.62), vec3f(1.0), s1) * 0.55
+                  + smoothstep(vec3f(0.72), vec3f(1.0), s2) * 0.45;
   }
-  col = col + (bloom / 12.0) * (0.85 + 0.7 * u.beat);
-  // grade: gentle contrast + saturation
-  col = (col - 0.5) * 1.07 + 0.5;
+  col = col + (bloom / 10.0) * (0.5 + 0.5 * u.beat);
+  // gentle grade
   let l = dot(col, vec3f(0.299, 0.587, 0.114));
-  col = mix(vec3f(l), col, 1.14);
+  col = mix(vec3f(l), col, 1.08);
+  col = (col - 0.5) * 1.04 + 0.5;
   // vignette
-  col = col * (0.55 + 0.45 * smoothstep(0.95, 0.32, length(c)));
+  col = col * (0.62 + 0.38 * smoothstep(0.95, 0.4, length(c)));
   // film grain
   let n = fract(sin(dot(uv * u.res, vec2f(12.9898, 78.233)) + u.time) * 43758.5453);
-  col = col + (n - 0.5) * 0.028;
+  col = col + (n - 0.5) * 0.022;
   return vec4f(clamp(col, vec3f(0.0), vec3f(1.0)), 1.0);
 }`;
 async function initGPU(){
@@ -1407,7 +1417,7 @@ function frame(now){
     flash.a -= (state==='paused'?0:dt)*3.2; if(flash.a<=0) flash=null;
   }
   let usedGPU=false;
-  if(fxHigh && gpu) usedGPU = gpuPost();              // WebGPU enhancer (auto-falls-back on any error)
+  if(gpuActive()) usedGPU = gpuPost();                // WebGPU enhancer (auto-falls-back on any error)
   if(!usedGPU){ applyBloom(); applyCA(); }            // Canvas2D post-FX (also no-ops in low-FX)
   if(gcv) gcv.style.display = usedGPU ? 'block' : 'none';
   requestAnimationFrame(frame);
@@ -1492,7 +1502,7 @@ document.getElementById('okBtn').onclick       = toMenu;   // 2P: acknowledge re
 document.getElementById('againBtn').onclick    = ()=>{ showScreen(null); start1P(SEED, mode); };
 document.getElementById('overMenuBtn').onclick = toMenu;
 muteBtn.onclick = ()=> setMuted(!muted);
-fxBtn.onclick   = ()=> setFx(!fxHigh);
+fxBtn.onclick   = ()=> cycleFx();
 
 /* tiny DOM helper: a div with the given class string */
 function el(cls){ const d=document.createElement('div'); d.className=cls; return d; }
@@ -1526,7 +1536,7 @@ renderCosmetics();
 refreshHud();
 refreshMenuStats();
 muteBtn.textContent = muted ? '🔇' : '🔊';
-setFx(fxHigh);
+applyFx();
 try{ initGPU(); }catch(_){}      // async; sets up the WebGPU enhancer if available, else no-op
 showScreen('overlay');
 updateChrome();
