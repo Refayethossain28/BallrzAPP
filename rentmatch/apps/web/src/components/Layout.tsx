@@ -24,6 +24,7 @@ export default function Layout() {
           { to: '/landlord/compliance', ic: '🛡️', label: 'Compliance', end: false },
           { to: '/landlord/rent', ic: '💷', label: 'Rent', end: false },
           { to: '/landlord/finances', ic: '📊', label: 'Finances', end: false },
+          { to: '/chats', ic: '💬', label: 'Deals', end: false },
           { to: '/account', ic: '👤', label: 'Account', end: false },
         ];
 
