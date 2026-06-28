@@ -60,17 +60,28 @@ ARR — and that's a tiny slice of ~2.6M UK landlords.
 ### Phase 1 — "Compliance autopilot" (the wedge that gets the first £)
 Ship a standalone value prop that needs *no second party*, so a landlord gets
 value on day one without a tenant or a deal.
-1. **Portfolio dashboard** — every property with a RAG status per compliance doc,
-   driven by the existing `docStatus()`. One screen that answers "am I legal?"
+1. ✅ **Portfolio dashboard** — every property with a RAG status per compliance
+   doc, driven by `docStatus()` / `summarisePortfolio()`. Answers "am I legal?"
+   in one screen. *(`ComplianceDashboard.tsx`, shipped.)*
 2. **Document vault** — upload EPC, gas cert, EICR, deposit protection, How-to-Rent
-   receipt; store expiry dates.
-3. **Expiry reminders** — Cloud Function cron → email/push at 60/30/7 days before
-   any doc expires. (`notifications.ts` + FCM already present.) **This single
-   feature is the reason they keep paying.**
-4. **Stripe subscription billing** — swap the one-off PaymentIntent for a
-   Stripe `Subscription` (the SetupIntent/card-on-file plumbing is already there).
+   receipt; store expiry dates. *(Upload + expiry exist via `uploadComplianceDoc`;
+   the standalone vault UI is the remaining slice.)*
+3. ✅ **Expiry reminders** — daily Cloud Function cron (`sendComplianceReminders`)
+   → push + email at 60/30/7 days and on lapse. Pure, idempotent
+   `dueComplianceReminders()` decides what's due; keys stored on the listing so a
+   milestone never re-sends and a renewal restarts the cycle. **This is the
+   feature that makes them keep paying.**
+4. ✅ **Stripe subscription billing** — Free / Landlord (£99) / Agent (£49+£6/unit)
+   plans (`billing.ts`), Checkout + billing-portal Cloud Functions, webhook
+   mirrors subscription state onto the user, Account screen subscribes/manages.
+   *(The one-off £100 fee is kept as an add-on, not replaced.)*
 
 > Phase 1 alone is a sellable product. Don't wait for the rest.
+>
+> **Remaining Phase-1 gaps:** the standalone document-vault UI (#2), and a way to
+> add a *track-only* property without going through the advertise-a-listing flow
+> (today a "property" is a listing; the reminder cron already covers `draft`
+> ones, but the add-property UX is still listing-shaped).
 
 ### Phase 2 — Tenancy lifecycle (the recurring transactional layer)
 5. **Tenancy records** — link tenants to properties, track start/end, rent,

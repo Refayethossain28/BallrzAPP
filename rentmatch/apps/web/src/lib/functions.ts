@@ -1,5 +1,5 @@
 import { getFunctions, httpsCallable, connectFunctionsEmulator } from 'firebase/functions';
-import type { ComplianceCheck } from '@rentmatch/shared';
+import type { ComplianceCheck, PlanId } from '@rentmatch/shared';
 import { app } from './firebase';
 
 export const functions = getFunctions(app);
@@ -54,4 +54,16 @@ export const registerPushToken = httpsCallable<{ token: string }, { ok: boolean 
 export const requestDataErasure = httpsCallable<void, { ok: boolean }>(
   functions,
   'requestDataErasure',
+);
+
+/** Start a Stripe Checkout session for a recurring subscription; returns a redirect URL. */
+export const createBillingCheckoutSession = httpsCallable<{ plan: PlanId; units?: number }, { url: string | null }>(
+  functions,
+  'createBillingCheckoutSession',
+);
+
+/** Open the Stripe billing portal to manage or cancel the subscription. */
+export const createBillingPortalSession = httpsCallable<void, { url: string }>(
+  functions,
+  'createBillingPortalSession',
 );

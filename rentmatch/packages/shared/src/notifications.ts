@@ -47,3 +47,31 @@ export function buildNotification(type: DealEventType, ctx: NotificationContext)
       return { title: 'Tenancy completed 🎉', body: `The tenancy for ${ctx.listingLabel} is now in force.` };
   }
 }
+
+export interface ComplianceReminderContext {
+  /** Short label for the property, e.g. "Hackney, London". */
+  propertyLabel: string;
+  /** Document label, e.g. "Gas Safety Record (CP12)". */
+  docLabel: string;
+  /** Whole days until expiry; ≤ 0 once the document has lapsed. */
+  daysToExpiry: number;
+}
+
+/**
+ * Copy for a compliance-expiry reminder. Kept here (not in `compliance.ts`) so
+ * every channel renders identical wording, and takes primitives so it stays
+ * free of any compliance-module import.
+ */
+export function buildComplianceReminder(ctx: ComplianceReminderContext): Notification {
+  if (ctx.daysToExpiry <= 0) {
+    return {
+      title: `Action needed: ${ctx.docLabel} expired`,
+      body: `The ${ctx.docLabel} for ${ctx.propertyLabel} has expired. Renew it to keep the property legally lettable.`,
+    };
+  }
+  const days = `${ctx.daysToExpiry} day${ctx.daysToExpiry === 1 ? '' : 's'}`;
+  return {
+    title: `${ctx.docLabel} expires in ${days}`,
+    body: `Renew the ${ctx.docLabel} for ${ctx.propertyLabel} before it lapses to avoid a fine or a blocked Section 21.`,
+  };
+}

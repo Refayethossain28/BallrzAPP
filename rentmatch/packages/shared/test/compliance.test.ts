@@ -8,6 +8,7 @@ import {
   requiredDocTypes,
   summarisePropertyCompliance,
   summarisePortfolio,
+  dueComplianceReminders,
   type PropertyComplianceInput,
   type PortfolioProperty,
 } from '../src/compliance.ts';
@@ -202,4 +203,71 @@ test('portfolio summary counts by risk and lists expired-then-soonest expiries',
   // 'bad' also has a missing gas-safety (no expiry → 0) which sorts first.
   assert.equal(summary.upcoming[0].propertyId, 'bad');
   assert.ok(summary.upcoming.some((u) => u.propertyId === 'soon' && u.status === 'expiring'));
+});
+
+/* ---- compliance reminders ---- */
+
+function propWithGasExpiry(expiresAt: number): PortfolioProperty {
+  return {
+    id: 'r1',
+    label: '14 Mapledene Road',
+    hasGasSupply: true,
+    docs: [
+      { type: 'epc', expiresAt: Date.now() + 1000 * DAY },
+      { type: 'eicr', expiresAt: Date.now() + 1000 * DAY },
+      { type: 'gas-safety', expiresAt },
+    ],
+  };
+}
+
+test('no reminder fires while a doc is more than 60 days from expiry', () => {
+  const now = Date.now();
+  assert.deepEqual(dueComplianceReminders(propWithGasExpiry(now + 90 * DAY), [], now), []);
+});
+
+test('a doc within 30 days fires the 30-day reminder once', () => {
+  const now = Date.now();
+  const due = dueComplianceReminders(propWithGasExpiry(now + 20 * DAY), [], now);
+  assert.equal(due.length, 1);
+  assert.equal(due[0].type, 'gas-safety');
+  assert.equal(due[0].threshold, 30);
+  // Already-sent key suppresses a repeat on the next daily run.
+  assert.deepEqual(dueComplianceReminders(propWithGasExpiry(now + 20 * DAY), [due[0].key], now), []);
+});
+
+test('crossing into a more urgent bucket fires a fresh reminder', () => {
+  const now = Date.now();
+  const expiresAt = now + 5 * DAY; // now in the 7-day bucket
+  const sent30 = dueComplianceReminders(propWithGasExpiry(now + 20 * DAY), [], now)[0].key;
+  const due = dueComplianceReminders(propWithGasExpiry(expiresAt), [sent30], now);
+  assert.equal(due.length, 1);
+  assert.equal(due[0].threshold, 7);
+});
+
+test('an expired doc fires the expired reminder with non-positive days', () => {
+  const now = Date.now();
+  const due = dueComplianceReminders(propWithGasExpiry(now - 2 * DAY), [], now);
+  assert.equal(due.length, 1);
+  assert.equal(due[0].threshold, 'expired');
+  assert.ok(due[0].daysToExpiry <= 0);
+});
+
+test('renewing a doc (new expiry) starts a fresh reminder cycle', () => {
+  const now = Date.now();
+  const oldKey = dueComplianceReminders(propWithGasExpiry(now + 20 * DAY), [], now)[0].key;
+  // Renewed to a year out, then back into a window later — old key must not suppress it.
+  const due = dueComplianceReminders(propWithGasExpiry(now + 6 * DAY), [oldKey], now);
+  assert.equal(due.length, 1);
+  assert.notEqual(due[0].key, oldKey);
+});
+
+test('missing or non-expiring docs are not nagged by reminders', () => {
+  const now = Date.now();
+  const p: PortfolioProperty = {
+    id: 'r2',
+    label: 'No-expiry House',
+    hasGasSupply: false,
+    docs: [{ type: 'epc' }], // EPC present but undated; EICR missing
+  };
+  assert.deepEqual(dueComplianceReminders(p, [], now), []);
 });

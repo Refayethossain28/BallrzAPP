@@ -303,3 +303,81 @@ export function summarisePortfolio(
 
   return { properties: summaries, counts, upcoming };
 }
+
+/* ------------------------------------------------------------------ *
+ * Compliance reminders — the recurring nudge that makes the tool worth
+ * keeping: tell the landlord *before* a certificate lapses, not after.
+ * Pure and idempotent so a daily cron can drive it without re-sending.
+ * ------------------------------------------------------------------ */
+
+/** Days-before-expiry at which the landlord is nudged. */
+export const REMINDER_THRESHOLD_DAYS = [60, 30, 7] as const;
+
+/** Which milestone a reminder represents. `'expired'` fires on/after the lapse. */
+export type ReminderThreshold = (typeof REMINDER_THRESHOLD_DAYS)[number] | 'expired';
+
+export interface ComplianceReminder {
+  type: ComplianceDocType;
+  label: string;
+  threshold: ReminderThreshold;
+  /** Whole days until expiry; ≤ 0 once expired. */
+  daysToExpiry: number;
+  expiresAt: number;
+  /**
+   * Stable idempotency key. Includes `expiresAt`, so renewing a document
+   * (new expiry date) starts a fresh reminder cycle automatically.
+   */
+  key: string;
+}
+
+const DAY_MS = 86_400_000;
+
+function reminderKey(type: ComplianceDocType, threshold: ReminderThreshold, expiresAt: number): string {
+  return `${type}:${threshold}:${expiresAt}`;
+}
+
+/**
+ * The single most-urgent reminder bucket a document currently sits in, or null
+ * if it's more than the widest threshold away. A document is only ever in one
+ * bucket, and time moves it through 60 → 30 → 7 → expired, so firing the
+ * current bucket once (tracked via `key`) gives exactly one nudge per milestone.
+ */
+function currentThreshold(remainingMs: number): ReminderThreshold | null {
+  if (remainingMs <= 0) return 'expired';
+  const days = remainingMs / DAY_MS;
+  for (const d of [...REMINDER_THRESHOLD_DAYS].sort((a, b) => a - b)) {
+    if (days <= d) return d;
+  }
+  return null;
+}
+
+/**
+ * Reminders *due now* for one property, excluding any whose key is already in
+ * `sentKeys`. Missing or non-expiring documents are surfaced by the dashboard,
+ * not nagged here — reminders are strictly about an upcoming or past lapse.
+ */
+export function dueComplianceReminders(
+  property: PortfolioProperty,
+  sentKeys: readonly string[] = [],
+  now: number = Date.now(),
+): ComplianceReminder[] {
+  const sent = new Set(sentKeys);
+  const out: ComplianceReminder[] = [];
+  for (const type of requiredDocTypes(property)) {
+    const doc = property.docs.find((d) => d.type === type);
+    if (!doc || doc.expiresAt == null) continue;
+    const threshold = currentThreshold(doc.expiresAt - now);
+    if (threshold == null) continue;
+    const key = reminderKey(type, threshold, doc.expiresAt);
+    if (sent.has(key)) continue;
+    out.push({
+      type,
+      label: DOC_LABELS[type],
+      threshold,
+      daysToExpiry: Math.round((doc.expiresAt - now) / DAY_MS),
+      expiresAt: doc.expiresAt,
+      key,
+    });
+  }
+  return out;
+}

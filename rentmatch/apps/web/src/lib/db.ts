@@ -15,7 +15,8 @@ import { db, storage } from './firebase';
 import {
   newDealRecord, recomputeStage,
   type ComplianceCheck, type ComplianceDoc, type ComplianceDocType, type DealParty,
-  type DealRecord, type DealViewing, type EpcRating, type ListingSummary, type TenancyAgreement,
+  type DealRecord, type DealViewing, type EpcRating, type ListingSummary, type Subscription,
+  type TenancyAgreement,
 } from '@rentmatch/shared';
 
 export type Role = 'renter' | 'landlord';
@@ -66,6 +67,12 @@ export async function ensureUserProfile(
 
 export async function setActiveRole(uid: string, role: Role): Promise<void> {
   await updateDoc(doc(usersCol, uid), { activeRole: role });
+}
+
+/** The landlord's subscription as mirrored from Stripe by the billing webhook. */
+export async function fetchSubscription(uid: string): Promise<Subscription | null> {
+  const snap = await getDoc(doc(usersCol, uid));
+  return (snap.data()?.subscription as Subscription | undefined) ?? null;
 }
 
 /* ---- listings ---- */

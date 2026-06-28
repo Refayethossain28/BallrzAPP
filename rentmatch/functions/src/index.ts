@@ -17,8 +17,10 @@ import { getMessaging } from 'firebase-admin/messaging';
 import Stripe from 'stripe';
 import {
   buildTenancyAgreement, evaluateListingCompliance, evaluateSigningCompliance, recomputeStage,
-  tenancyDepositCapPence, buildNotification, isStale, withinLegalRetention, REDACTED, PLATFORM_FEE_PENCE,
-  type ComplianceDoc, type DealRecord, type EpcRating, type Party,
+  tenancyDepositCapPence, buildNotification, buildComplianceReminder, dueComplianceReminders,
+  isStale, withinLegalRetention, REDACTED, PLATFORM_FEE_PENCE, PLANS,
+  type ComplianceDoc, type DealRecord, type EpcRating, type Party, type PlanId,
+  type SubscriptionStatus,
 } from '@rentmatch/shared';
 
 initializeApp();
@@ -368,10 +370,18 @@ export const stripeWebhook = onRequest(async (req, res) => {
     res.status(400).send('Webhook signature verification failed.');
     return;
   }
-  if (event.type === 'payment_intent.succeeded') {
-    const pi = event.data.object as Stripe.PaymentIntent;
-    const dealId = pi.metadata?.dealId;
-    if (dealId) await completeDeal(dealId, pi.id);
+  switch (event.type) {
+    case 'payment_intent.succeeded': {
+      const pi = event.data.object as Stripe.PaymentIntent;
+      const dealId = pi.metadata?.dealId;
+      if (dealId) await completeDeal(dealId, pi.id);
+      break;
+    }
+    case 'customer.subscription.created':
+    case 'customer.subscription.updated':
+    case 'customer.subscription.deleted':
+      await writeSubscription(event.data.object as Stripe.Subscription);
+      break;
   }
   res.json({ received: true });
 });
@@ -458,6 +468,149 @@ export const onDealMessageCreated = onDocumentCreated('deals/{dealId}/messages/{
     // best-effort; an email fallback (e.g. Postmark/SendGrid) would go here.
   }
 });
+
+/**
+ * Daily compliance-expiry reminders — the recurring value of the subscription.
+ * Scans every tracked property, asks the shared kernel which certificate
+ * reminders are *due* (60/30/7 days out, then on expiry), and nudges the
+ * landlord by push + email. Idempotency keys are stored back on the listing so
+ * a daily run never re-sends the same milestone; renewing a document (new
+ * expiry) starts a fresh cycle automatically.
+ */
+export const sendComplianceReminders = onSchedule('every 24 hours', async () => {
+  const now = Date.now();
+  // Every property the landlord tracks, not only advertised ones — compliance
+  // tracking is the standalone value, so a never-listed (draft) property that's
+  // purely being monitored must still get its expiry nudges.
+  const snap = await db.collection('listings').where('status', 'in', ['draft', 'live', 'let']).get();
+
+  for (const docSnap of snap.docs) {
+    const l = docSnap.data();
+    const property = {
+      id: docSnap.id,
+      label: [l.street, l.city].filter(Boolean).join(', ') || String(l.title ?? 'your property'),
+      hasGasSupply: Boolean(l.hasGasSupply),
+      docs: (Array.isArray(l.complianceDocs) ? l.complianceDocs : []) as ComplianceDoc[],
+    };
+    const sentKeys = (Array.isArray(l.complianceRemindersSent) ? l.complianceRemindersSent : []) as string[];
+    const due = dueComplianceReminders(property, sentKeys, now);
+    if (due.length === 0) continue;
+
+    const landlordId = String(l.landlordId ?? '');
+    const userData = (await db.doc(`users/${landlordId}`).get()).data() ?? {};
+    const tokens = (userData.pushTokens ?? []) as string[];
+    const email = String(userData.email ?? '');
+
+    for (const r of due) {
+      const note = buildComplianceReminder({
+        propertyLabel: property.label,
+        docLabel: r.label,
+        daysToExpiry: r.daysToExpiry,
+      });
+      if (tokens.length > 0) {
+        try {
+          await getMessaging().sendEachForMulticast({
+            tokens,
+            notification: { title: note.title, body: note.body },
+            data: { listingId: docSnap.id, type: 'compliance-reminder' },
+          });
+        } catch {
+          // best-effort push; the email below is the durable channel.
+        }
+      }
+      await sendEmail(email, note.title, note.body);
+    }
+
+    // Record every fired milestone so the next run is a no-op for them.
+    await docSnap.ref.update({ complianceRemindersSent: FieldValue.arrayUnion(...due.map((r) => r.key)) });
+  }
+});
+
+/* ---- M8: recurring subscription billing (Stripe Subscriptions) ---- */
+
+/** Map a Stripe price id (from env) to a plan. Unconfigured plans are rejected. */
+function priceIdForPlan(plan: PlanId): string {
+  const ids: Record<PlanId, string | undefined> = {
+    free: undefined,
+    landlord: process.env.STRIPE_PRICE_LANDLORD,
+    agent: process.env.STRIPE_PRICE_AGENT,
+  };
+  const id = ids[plan];
+  if (!id) throw new HttpsError('failed-precondition', `No Stripe price configured for the ${plan} plan.`);
+  return id;
+}
+
+const APP_URL = (process.env.APP_URL ?? 'http://localhost:5173').replace(/\/$/, '');
+
+/**
+ * Start a Stripe Checkout session for a recurring subscription. Returns a hosted
+ * URL the client redirects to — no card UI to build, and Stripe handles SCA. The
+ * plan is stamped on the subscription metadata so the webhook can mirror state
+ * back without a separate customer→plan lookup.
+ */
+export const createBillingCheckoutSession = onCall(
+  async (req: CallableRequest<{ plan: PlanId; units?: number }>) => {
+    const uid = req.auth?.uid;
+    if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
+    const plan = req.data?.plan;
+    if (plan !== 'landlord' && plan !== 'agent') {
+      throw new HttpsError('invalid-argument', 'Choose a paid plan (landlord or agent).');
+    }
+    const email = (req.auth?.token.email as string | undefined) ?? '';
+    const customerId = await getOrCreateCustomer(uid, email);
+
+    const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
+      { price: priceIdForPlan(plan), quantity: 1 },
+    ];
+    // Agent is metered per unit; attach the per-unit price if one is configured.
+    const unitPrice = process.env.STRIPE_PRICE_AGENT_UNIT;
+    const units = Math.max(0, Math.floor(req.data?.units ?? 0) - PLANS[plan].includedUnits);
+    if (plan === 'agent' && unitPrice && units > 0) {
+      lineItems.push({ price: unitPrice, quantity: units });
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      customer: customerId,
+      line_items: lineItems,
+      success_url: `${APP_URL}/account?billing=success`,
+      cancel_url: `${APP_URL}/account?billing=cancelled`,
+      subscription_data: { metadata: { landlordId: uid, plan } },
+    });
+    return { url: session.url };
+  },
+);
+
+/** Open the Stripe billing portal so a landlord can manage/cancel their plan. */
+export const createBillingPortalSession = onCall(async (req: CallableRequest) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
+  const customerId = (await db.doc(`users/${uid}`).get()).data()?.stripeCustomerId as string | undefined;
+  if (!customerId) throw new HttpsError('failed-precondition', 'No billing account yet — subscribe first.');
+  const session = await stripe.billingPortal.sessions.create({
+    customer: customerId,
+    return_url: `${APP_URL}/account`,
+  });
+  return { url: session.url };
+});
+
+/** Mirror a Stripe subscription onto the landlord's user doc (source of entitlements). */
+async function writeSubscription(sub: Stripe.Subscription): Promise<void> {
+  const landlordId = sub.metadata?.landlordId;
+  if (!landlordId) return;
+  const plan = (sub.metadata?.plan as PlanId | undefined) ?? 'landlord';
+  await db.doc(`users/${landlordId}`).set(
+    {
+      subscription: {
+        plan,
+        status: sub.status as SubscriptionStatus,
+        stripeSubscriptionId: sub.id,
+        currentPeriodEnd: sub.current_period_end * 1000,
+      },
+    },
+    { merge: true },
+  );
+}
 
 /* ---- M7: GDPR data erasure + retention ---- */
 
