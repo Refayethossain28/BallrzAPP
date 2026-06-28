@@ -97,5 +97,18 @@ service cloud.firestore {
       allow read: if isSignedIn() && uid() == resource.data.landlordId;
       allow write: if false;
     }
+
+    // Tenancies are the landlord's own rent bookkeeping (not a server-
+    // authoritative money flow like deals), so the owning landlord has full
+    // CRUD over their tenancies and the payments recorded against them.
+    match /tenancies/{tenancyId} {
+      allow read, update, delete: if isSignedIn() && resource.data.landlordId == uid();
+      allow create: if isSignedIn() && request.resource.data.landlordId == uid();
+
+      match /payments/{paymentId} {
+        allow read, write: if isSignedIn() &&
+          get(/databases/$(database)/documents/tenancies/$(tenancyId)).data.landlordId == uid();
+      }
+    }
   }
 }

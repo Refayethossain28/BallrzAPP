@@ -7,7 +7,7 @@
  */
 import {
   collection, doc, getDoc, getDocs, query, where, addDoc, setDoc, updateDoc,
-  serverTimestamp, Timestamp, onSnapshot, orderBy, or,
+  serverTimestamp, Timestamp, onSnapshot, orderBy, or, increment,
   type Unsubscribe,
 } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -15,8 +15,8 @@ import { db, storage } from './firebase';
 import {
   newDealRecord, recomputeStage,
   type ComplianceCheck, type ComplianceDoc, type ComplianceDocType, type DealParty,
-  type DealRecord, type DealViewing, type EpcRating, type ListingSummary, type Subscription,
-  type TenancyAgreement,
+  type DealRecord, type DealViewing, type EpcRating, type ListingSummary, type RentPayment,
+  type Subscription, type Tenancy, type TenancyAgreement,
 } from '@rentmatch/shared';
 
 export type Role = 'renter' | 'landlord';
@@ -420,4 +420,107 @@ export async function fetchContract(dealId: string): Promise<Contract | null> {
     compliance: (d.compliance as ComplianceCheck[]) ?? [],
     feePence: Number(d.feePence ?? 0),
   };
+}
+
+/* ---- tenancies & rent ledger (Phase 2) ---- */
+
+/** A landlord's tenancy record — the inputs the shared rent engine needs, plus display. */
+export interface TenancyRecord extends Tenancy {
+  id: string;
+  landlordId: string;
+  listingId: string;
+  propertyLabel: string;
+  tenantName: string;
+  status: 'active' | 'ended';
+  /** Running total of rent received — kept on the doc so list views can show
+   *  arrears without an N+1 fetch of every payment. */
+  totalPaidPence: number;
+  createdAt: number;
+}
+
+export interface PaymentRecord extends RentPayment {
+  id: string;
+  method?: string;
+  note?: string;
+}
+
+export interface NewTenancyInput {
+  landlordId: string;
+  listingId: string;
+  propertyLabel: string;
+  tenantName: string;
+  monthlyRentPence: number;
+  startDate: number;
+  termMonths: number;
+}
+
+const tenanciesCol = collection(db, 'tenancies');
+
+function mapTenancy(id: string, d: Record<string, unknown>): TenancyRecord {
+  return {
+    id,
+    landlordId: String(d.landlordId ?? ''),
+    listingId: String(d.listingId ?? ''),
+    propertyLabel: String(d.propertyLabel ?? ''),
+    tenantName: String(d.tenantName ?? ''),
+    monthlyRentPence: Number(d.monthlyRentPence ?? 0),
+    startDate: toMillis(d.startDate),
+    termMonths: Number(d.termMonths ?? 12),
+    status: (d.status ?? 'active') as TenancyRecord['status'],
+    totalPaidPence: Number(d.totalPaidPence ?? 0),
+    createdAt: toMillis(d.createdAt),
+  };
+}
+
+export async function createTenancy(input: NewTenancyInput): Promise<{ id: string }> {
+  const ref = await addDoc(tenanciesCol, {
+    ...input,
+    status: 'active',
+    totalPaidPence: 0,
+    createdAt: serverTimestamp(),
+  });
+  return { id: ref.id };
+}
+
+export async function fetchLandlordTenancies(landlordId: string): Promise<TenancyRecord[]> {
+  const snap = await getDocs(query(tenanciesCol, where('landlordId', '==', landlordId)));
+  return snap.docs.map((d) => mapTenancy(d.id, d.data())).sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export async function fetchTenancy(id: string): Promise<TenancyRecord | null> {
+  const snap = await getDoc(doc(tenanciesCol, id));
+  return snap.exists() ? mapTenancy(snap.id, snap.data()) : null;
+}
+
+export async function fetchPayments(tenancyId: string): Promise<PaymentRecord[]> {
+  const snap = await getDocs(query(collection(tenanciesCol, tenancyId, 'payments'), orderBy('date', 'desc')));
+  return snap.docs.map((p) => {
+    const d = p.data();
+    return {
+      id: p.id,
+      amountPence: Number(d.amountPence ?? 0),
+      date: toMillis(d.date),
+      method: d.method ? String(d.method) : undefined,
+      note: d.note ? String(d.note) : undefined,
+    };
+  });
+}
+
+export async function addRentPayment(
+  tenancyId: string,
+  payment: { amountPence: number; date: number; method?: string; note?: string },
+): Promise<void> {
+  await addDoc(collection(tenanciesCol, tenancyId, 'payments'), {
+    amountPence: payment.amountPence,
+    date: Timestamp.fromMillis(payment.date),
+    ...(payment.method ? { method: payment.method } : {}),
+    ...(payment.note ? { note: payment.note } : {}),
+    createdAt: serverTimestamp(),
+  });
+  // Keep the denormalised running total in step so list views stay cheap.
+  await updateDoc(doc(tenanciesCol, tenancyId), { totalPaidPence: increment(payment.amountPence) });
+}
+
+export async function endTenancy(id: string): Promise<void> {
+  await updateDoc(doc(tenanciesCol, id), { status: 'ended' });
 }

@@ -9,3 +9,4 @@ export * from './deal.ts';
 export * from './notifications.ts';
 export * from './retention.ts';
 export * from './billing.ts';
+export * from './rent.ts';

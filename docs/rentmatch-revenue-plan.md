@@ -88,12 +88,18 @@ value on day one without a tenant or a deal.
 > set their IDs in env.
 
 ### Phase 2 — Tenancy lifecycle (the recurring transactional layer)
-5. **Tenancy records** — link tenants to properties, track start/end, rent,
-   deposit (validated against existing `tenancyDepositCapPence`).
-6. **Rent ledger** — log rent due/received per tenancy, arrears flag, statement
-   export. (Pure logic, fits the `packages/shared` pattern; unit-testable.)
+5. ✅ **Tenancy records + rent ledger** — `rent.ts` is a pure, unit-tested engine
+   (`buildRentLedger`: monthly schedule, owed-to-date, arrears/credit, next due).
+   A **Rent** tab lists tenancies with auto-flagged arrears (`Rent.tsx`), a form
+   adds a tenancy against any property (`NewTenancy.tsx`), and the detail screen
+   shows the ledger + records payments (`TenancyDetail.tsx`). A denormalised
+   `totalPaidPence` keeps the list cheap. Landlord-scoped Firestore rules.
+6. **Statement export** — PDF/CSV rent statement per tenancy (remaining slice).
 7. **E-sign renewals** — reuse `contractTemplate.ts` + the e-sign envelope flow
    for *renewals*, not just new lets → recurring use of the £100 event.
+
+**Email is now wired** — `sendEmail` posts to Postmark (no-op fallback when
+unconfigured), so reminders and receipts land in inboxes, not just push.
 
 ### Phase 3 — Agent tier & rent collection (expansion revenue)
 8. **Open Banking rent collection** (GoCardless/TrueLayer) — take rent via Direct

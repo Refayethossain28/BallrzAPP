@@ -27,14 +27,42 @@ initializeApp();
 const db = getFirestore();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? '');
 
-/** Provider-agnostic transactional email. Swap the body for Postmark/SendGrid. */
+/**
+ * Transactional email via Postmark's REST API (no SDK — a single fetch). Falls
+ * back to a logged no-op when unconfigured, so local/dev and tests run without
+ * credentials. Set EMAIL_API_KEY (Postmark Server Token) and EMAIL_FROM (a
+ * verified sender) to send for real; failures are swallowed so email never
+ * blocks the action that triggered it.
+ */
 async function sendEmail(to: string, subject: string, text: string): Promise<void> {
-  if (!process.env.EMAIL_API_KEY || !to) {
+  const token = process.env.EMAIL_API_KEY;
+  const from = process.env.EMAIL_FROM;
+  if (!token || !from || !to) {
     console.log(`[email:noop] "${subject}" -> ${to || '(no address)'}`);
     return;
   }
-  // TODO: POST to the transactional email provider using EMAIL_API_KEY.
-  void text;
+  try {
+    const res = await fetch('https://api.postmarkapp.com/email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-Postmark-Server-Token': token,
+      },
+      body: JSON.stringify({
+        From: from,
+        To: to,
+        Subject: subject,
+        TextBody: text,
+        MessageStream: process.env.EMAIL_STREAM ?? 'outbound',
+      }),
+    });
+    if (!res.ok) {
+      console.error(`[email] Postmark ${res.status}: ${await res.text()}`);
+    }
+  } catch (err) {
+    console.error('[email] send failed', err);
+  }
 }
 
 type StoredDeal = DealRecord & {
