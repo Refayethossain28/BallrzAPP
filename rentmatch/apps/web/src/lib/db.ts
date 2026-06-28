@@ -39,6 +39,8 @@ export interface Listing extends ListingSummary {
   smokeAlarmsPerStorey: boolean;
   coAlarmsWhereRequired: boolean;
   complianceDocs: ComplianceDoc[];
+  /** Added purely to monitor compliance — never advertised on the marketplace. */
+  trackingOnly: boolean;
 }
 
 const listingsCol = collection(db, 'listings');
@@ -107,6 +109,7 @@ function mapListing(id: string, data: Record<string, unknown>): Listing {
     smokeAlarmsPerStorey: Boolean(data.smokeAlarmsPerStorey),
     coAlarmsWhereRequired: Boolean(data.coAlarmsWhereRequired),
     complianceDocs: Array.isArray(data.complianceDocs) ? (data.complianceDocs as ComplianceDoc[]) : [],
+    trackingOnly: Boolean(data.trackingOnly),
   };
 }
 
@@ -163,6 +166,45 @@ export async function createListing(input: NewListingInput): Promise<{ id: strin
   return { id: ref.id };
 }
 
+export interface TrackedPropertyInput {
+  landlordId: string;
+  street: string;
+  area: string;
+  city: string;
+  postcode: string;
+  type: string;
+  epcRating: EpcRating;
+  hasGasSupply: boolean;
+  smokeAlarmsPerStorey: boolean;
+  coAlarmsWhereRequired: boolean;
+}
+
+/**
+ * Create a property the landlord only wants to *monitor* for compliance — no
+ * rent, no advert. It's a `draft` listing flagged `trackingOnly`, so it never
+ * surfaces in renter search but still flows through the compliance dashboard
+ * and the reminder cron. The landlord can advertise it later by adding the
+ * letting fields and publishing.
+ */
+export async function createTrackedProperty(input: TrackedPropertyInput): Promise<{ id: string }> {
+  const ref = await addDoc(listingsCol, {
+    ...input,
+    title: [input.street, input.city].filter(Boolean).join(', '),
+    desc: '',
+    beds: 0,
+    baths: 1,
+    rentPence: 0,
+    furnished: 'Unfurnished',
+    status: 'draft',
+    trackingOnly: true,
+    complianceDocs: [] as ComplianceDoc[],
+    features: [],
+    availableFrom: Timestamp.fromMillis(Date.now()),
+    createdAt: serverTimestamp(),
+  });
+  return { id: ref.id };
+}
+
 /** Default validity windows for each compliance document type. */
 const DOC_VALIDITY_MS: Partial<Record<ComplianceDocType, number>> = {
   'gas-safety': 365 * 86_400_000, // annual
@@ -179,19 +221,22 @@ export async function uploadComplianceDoc(
   listing: Listing,
   type: ComplianceDocType,
   file: File,
+  issuedAt: number = Date.now(),
 ): Promise<void> {
   const path = `compliance/${listing.landlordId}/${listing.id}/${type}.pdf`;
   const r = storageRef(storage, path);
   await uploadBytes(r, file);
   const fileRef = await getDownloadURL(r);
-  const now = Date.now();
-  const expiresAt = DOC_VALIDITY_MS[type] != null ? now + DOC_VALIDITY_MS[type]! : undefined;
+  // Expiry is computed from the certificate's issue date, so a backdated cert
+  // (e.g. a gas check done 8 months ago) gets the right lapse date — and its
+  // renewal reminders — rather than assuming it was issued today.
+  const expiresAt = DOC_VALIDITY_MS[type] != null ? issuedAt + DOC_VALIDITY_MS[type]! : undefined;
 
   const snap = await getDoc(doc(listingsCol, listing.id));
   const current = (snap.data()?.complianceDocs ?? []) as ComplianceDoc[];
   const next: ComplianceDoc[] = [
     ...current.filter((d) => d.type !== type),
-    { type, issuedAt: now, ...(expiresAt ? { expiresAt } : {}), reference: fileRef },
+    { type, issuedAt, ...(expiresAt ? { expiresAt } : {}), reference: fileRef },
   ];
   await updateDoc(doc(listingsCol, listing.id), { complianceDocs: next });
 }

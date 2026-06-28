@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   summarisePortfolio,
   type ComplianceRisk,
@@ -20,6 +20,7 @@ import { formatDate } from '../components/ui';
  */
 export default function ComplianceDashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { data: listings = [], isLoading } = useQuery({
     queryKey: ['listings', 'landlord', user?.uid],
     queryFn: () => fetchLandlordListings(user!.uid),
@@ -32,6 +33,10 @@ export default function ComplianceDashboard() {
     <>
       <h2 className="title">Compliance</h2>
       <p className="sub">Every property's certificates in one place — so a lapse never costs you a fine or a Section 21.</p>
+
+      <button className="cta" style={{ marginBottom: 16 }} onClick={() => navigate('/landlord/track')}>
+        ＋ Add a property to track
+      </button>
 
       {isLoading && <p className="sub">Loading…</p>}
 
@@ -58,7 +63,7 @@ export default function ComplianceDashboard() {
 
           <div className="section-t">Your properties</div>
           {summary.properties.map((p) => (
-            <Link key={p.id} to={`/listing/${p.id}`} className="card" style={{ display: 'block', color: 'inherit' }}>
+            <Link key={p.id} to={`/landlord/property/${p.id}`} className="card" style={{ display: 'block', color: 'inherit' }}>
               <div className="body">
                 <div className="row center" style={{ justifyContent: 'space-between', marginBottom: 8 }}>
                   <b style={{ fontSize: 15 }}>{p.label}</b>

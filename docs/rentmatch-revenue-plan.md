@@ -63,9 +63,9 @@ value on day one without a tenant or a deal.
 1. ✅ **Portfolio dashboard** — every property with a RAG status per compliance
    doc, driven by `docStatus()` / `summarisePortfolio()`. Answers "am I legal?"
    in one screen. *(`ComplianceDashboard.tsx`, shipped.)*
-2. **Document vault** — upload EPC, gas cert, EICR, deposit protection, How-to-Rent
-   receipt; store expiry dates. *(Upload + expiry exist via `uploadComplianceDoc`;
-   the standalone vault UI is the remaining slice.)*
+2. ✅ **Document vault** — per-property screen (`DocumentVault.tsx`) to upload,
+   view and renew each certificate, capturing the **issue date** so expiry (and
+   the reminder cron) is accurate even for backdated/renewed docs.
 3. ✅ **Expiry reminders** — daily Cloud Function cron (`sendComplianceReminders`)
    → push + email at 60/30/7 days and on lapse. Pure, idempotent
    `dueComplianceReminders()` decides what's due; keys stored on the listing so a
@@ -76,12 +76,16 @@ value on day one without a tenant or a deal.
    mirrors subscription state onto the user, Account screen subscribes/manages.
    *(The one-off £100 fee is kept as an add-on, not replaced.)*
 
-> Phase 1 alone is a sellable product. Don't wait for the rest.
->
-> **Remaining Phase-1 gaps:** the standalone document-vault UI (#2), and a way to
-> add a *track-only* property without going through the advertise-a-listing flow
-> (today a "property" is a listing; the reminder cron already covers `draft`
-> ones, but the add-property UX is still listing-shaped).
+5. ✅ **Track-only onboarding** — `TrackProperty.tsx` adds a property purely to
+   monitor (address + EPC + declarations, no rent/advert), flagged `trackingOnly`
+   so it flows through the dashboard and reminder cron but never appears in renter
+   search or the advert view. The dashboard's "Add a property to track" CTA and
+   per-property cards now route through this + the vault.
+
+> Phase 1 alone is a sellable product — and it now stands on its own: a landlord
+> can onboard, add properties, upload certificates and get reminders **without
+> ever touching the marketplace**. To take payment, create the Stripe Prices and
+> set their IDs in env.
 
 ### Phase 2 — Tenancy lifecycle (the recurring transactional layer)
 5. **Tenancy records** — link tenants to properties, track start/end, rent,

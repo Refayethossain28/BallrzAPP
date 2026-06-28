@@ -7,6 +7,8 @@ import Browse from './features/Browse';
 import ListingDetail from './features/ListingDetail';
 import MyListings from './features/MyListings';
 import ComplianceDashboard from './features/ComplianceDashboard';
+import TrackProperty from './features/TrackProperty';
+import DocumentVault from './features/DocumentVault';
 import NewProperty from './features/NewProperty';
 import Account from './features/Account';
 import Chats from './features/Chats';
@@ -31,6 +33,8 @@ function Gate() {
         <Route path="/listing/:id" element={<ListingDetail />} />
         <Route path="/landlord" element={<MyListings />} />
         <Route path="/landlord/compliance" element={<ComplianceDashboard />} />
+        <Route path="/landlord/track" element={<TrackProperty />} />
+        <Route path="/landlord/property/:id" element={<DocumentVault />} />
         <Route path="/landlord/new" element={<NewProperty />} />
         <Route path="/chats" element={<Chats />} />
         <Route path="/deal/:id" element={<DealRoom />} />
