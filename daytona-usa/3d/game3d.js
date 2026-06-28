@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R49 — WebGPU bloom-only fix';
+const BUILD = 'BUILD R50 — WebGPU white-screen fix';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -110,6 +110,8 @@ const MOBILE = (typeof navigator!=='undefined') &&
 
 let renderer, scene, camera, sun, sky, hemiLight, ambLight;
 let _GPU=false, _post=null;   // WebGPU renderer + its post-processing (bloom) pipeline
+let _GPUTEX=false;            // experimental WebGPU-only material upgrades (normal maps, hi-res,
+                             // iridescence). OFF until each is device-verified — they blanked the render.
 let glCanvas, hud2d, hctx;
 let frames = [], trackLen = 0;
 let playerCar = null;
@@ -515,7 +517,7 @@ function makeAsphaltTex(w,h){
 }
 let _asphaltCanvas=null;
 // WebGPU: crank emissive (lit windows / neon) so the bloom pass has lush sources
-function boostBloomEmissive(){ if(!_GPU) return; for (const p of _pulse){ p.base*=2.4; if(p.mat) p.mat.emissiveIntensity=p.base; } }
+function boostBloomEmissive(){ if(!_GPUTEX) return; for (const p of _pulse){ p.base*=2.4; if(p.mat) p.mat.emissiveIntensity=p.base; } }
 
 function buildRoadMesh(){
   clearRoad();
@@ -544,9 +546,9 @@ function buildRoadMesh(){
     // dark so the road can never wash out to a blue tint under the sky light.
     // DoubleSide: on some track windings the asphalt normals face down, which would
     // back-face-cull the single-sided road and show the sky THROUGH it (a "blue road").
-    const tex=makeAsphaltTex(_GPU?512:256, _GPU?1024:512); tex.repeat.set(5, 1);
+    const tex=makeAsphaltTex(_GPUTEX?512:256, _GPUTEX?1024:512); tex.repeat.set(5, 1);
     const rmat=new THREE.MeshLambertMaterial({map:tex, color:G.rain?0x3b424b:0x595c61, side:THREE.DoubleSide});
-    if (_GPU){ try{ const n=heightToNormal(_asphaltCanvas, G.rain?2:4); n.repeat.set(5,1); rmat.normalMap=n; rmat.normalScale=new THREE.Vector2(G.rain?0.4:0.9,G.rain?0.4:0.9); }catch(e){ rmat.bumpMap=tex; rmat.bumpScale=0.6; } }
+    if (_GPUTEX){ try{ const n=heightToNormal(_asphaltCanvas, G.rain?2:4); n.repeat.set(5,1); rmat.normalMap=n; rmat.normalScale=new THREE.Vector2(G.rain?0.4:0.9,G.rain?0.4:0.9); }catch(e){ rmat.bumpMap=tex; rmat.bumpScale=0.6; } }
     else { rmat.bumpMap=tex; rmat.bumpScale=G.rain?0.3:0.6; }
     const mesh=new THREE.Mesh(geo, rmat);
     mesh.receiveShadow=true; scene.add(mesh); roadParts.push(mesh);
@@ -567,7 +569,7 @@ function buildRoadMesh(){
     geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
     geo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
     geo.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3));
-    const gs=_GPU?512:256; const tex=surfTex(th.grass, th.grass2, gs, gs, _GPU?5200:2600); tex.repeat.set(3, 1);
+    const gs=_GPUTEX?512:256; const tex=surfTex(th.grass, th.grass2, gs, gs, _GPUTEX?5200:2600); tex.repeat.set(3, 1);
     const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({map:tex, side:THREE.DoubleSide, bumpMap:tex, bumpScale:0.3}));
     mesh.receiveShadow=true; scene.add(mesh); roadParts.push(mesh);
   }
@@ -641,20 +643,20 @@ function detailClone(kind, rep){ const t=makeDetailTex(kind).clone(); t.wrapS=t.
 // hero = the player's car gets full clearcoat PBR + flake; rivals get a cheaper metallic.
 function paintMat(c, hero){
   if (hero){
-    const m=new THREE.MeshPhysicalMaterial({color:c, metalness:0.55, roughness:0.34, clearcoat:1.0, clearcoatRoughness:0.05, envMap:envTex, envMapIntensity:_GPU?2.2:1.7});
+    const m=new THREE.MeshPhysicalMaterial({color:c, metalness:0.55, roughness:0.34, clearcoat:1.0, clearcoatRoughness:0.05, envMap:envTex, envMapIntensity:_GPUTEX?2.2:1.7});
     m.clearcoatNormalMap=flakeNormalTex(); m.clearcoatNormalScale=new THREE.Vector2(0.16,0.16);
     m.roughnessMap=detailClone('rough',6);   // visible metallic-flake clusters in the sheen
-    if (_GPU){ try{ m.iridescence=0.25; m.iridescenceIOR=1.3; m.anisotropy=0.4; m.anisotropyRotation=Math.PI*0.25; m.clearcoatRoughness=0.03; }catch(e){} }   // ultra-real paint on WebGPU
+    if (_GPUTEX){ try{ m.iridescence=0.25; m.iridescenceIOR=1.3; m.anisotropy=0.4; m.anisotropyRotation=Math.PI*0.25; m.clearcoatRoughness=0.03; }catch(e){} }   // ultra-real paint on WebGPU
     return m;
   }
-  const m=new THREE.MeshStandardMaterial({color:c, metalness:0.42, roughness:0.34, envMap:envTex, envMapIntensity:_GPU?1.6:1.25});
+  const m=new THREE.MeshStandardMaterial({color:c, metalness:0.42, roughness:0.34, envMap:envTex, envMapIntensity:_GPUTEX?1.6:1.25});
   m.roughnessMap=detailClone('rough',6);
   return m;
 }
 function matteMat(c){ const m=new THREE.MeshStandardMaterial({color:c, metalness:0, roughness:0.85}); const t=detailClone('rough',3); m.map=t;
-  if (_GPU){ const n=detailNormal('rough',3); if(n){ m.normalMap=n; m.normalScale=new THREE.Vector2(0.6,0.6); } else { m.bumpMap=t; m.bumpScale=0.25; } }
+  if (_GPUTEX){ const n=detailNormal('rough',3); if(n){ m.normalMap=n; m.normalScale=new THREE.Vector2(0.6,0.6); } else { m.bumpMap=t; m.bumpScale=0.25; } }
   else { m.bumpMap=t; m.bumpScale=0.25; } return m; }
-function glassMat(){ return new THREE.MeshStandardMaterial({color:0x070d18, metalness:0.7, roughness:0.04, envMap:envTex, envMapIntensity:_GPU?2.4:1.8}); }
+function glassMat(){ return new THREE.MeshStandardMaterial({color:0x070d18, metalness:0.7, roughness:0.04, envMap:envTex, envMapIntensity:_GPUTEX?2.4:1.8}); }
 function chromeMat(){ const m=new THREE.MeshStandardMaterial({color:0xc4c9d2, metalness:0.95, roughness:0.2, envMap:envTex, envMapIntensity:1.4}); m.roughnessMap=makeDetailTex('metal'); return m; }
 function shadeHex(hex, amt){ const r=Math.max(0,Math.min(255,(hex>>16&255)+amt)), g=Math.max(0,Math.min(255,(hex>>8&255)+amt)), b=Math.max(0,Math.min(255,(hex&255)+amt)); return (r<<16)|(g<<8)|b; }
 let _emblemTex=null;
@@ -759,7 +761,7 @@ function makeCarbonTex(){ if(_carbonTex) return _carbonTex; const S=64, cv=docum
   for(let r=0;r<S;r+=8) for(let c=0;c<S;c+=8){ const dk=((r/8+c/8)%2)===0; x.fillStyle=dk?'#23262c':'#0e0f12';
     x.fillRect(c,r,7,4); x.fillStyle=dk?'#0e0f12':'#23262c'; x.fillRect(c,r+4,7,4); }
   const t=new THREE.CanvasTexture(cv); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(6,3); t.colorSpace=THREE.SRGBColorSpace; t.anisotropy=_maxAniso; _carbonTex=t; return t; }
-function carbonMat(){ return new THREE.MeshStandardMaterial({color:0xffffff, map:makeCarbonTex(), metalness:0.5, roughness:0.42, envMap:envTex, envMapIntensity:_GPU?1.4:1.0}); }
+function carbonMat(){ return new THREE.MeshStandardMaterial({color:0xffffff, map:makeCarbonTex(), metalness:0.5, roughness:0.42, envMap:envTex, envMapIntensity:_GPUTEX?1.4:1.0}); }
 // Extra stock-car detailing. Lite cars (rivals) get just a grille + mirrors so
 // they read right next to the player; the full set is reserved for the hero car.
 function addCarDetails(g, W, L, lite, liv){
@@ -929,7 +931,7 @@ function disposeTree(obj){ obj.traverse(o=>{ if(o.geometry)o.geometry.dispose();
 const _detailCache={};
 function makeDetailTex(kind){
   if (_detailCache[kind]) return _detailCache[kind];
-  const S=_GPU?512:256, cv=document.createElement('canvas'); cv.width=cv.height=S; const x=cv.getContext('2d');   // hi-res tile on WebGPU
+  const S=_GPUTEX?512:256, cv=document.createElement('canvas'); cv.width=cv.height=S; const x=cv.getContext('2d');   // hi-res tile on WebGPU
   x.fillStyle='#e9e9e9'; x.fillRect(0,0,S,S);
   const grain=(n,a,sz)=>{ for(let i=0;i<n;i++){ const v=Math.random()<0.5?30:235; x.fillStyle=`rgba(${v},${v},${v},${Math.random()*a})`; x.fillRect(Math.random()*S,Math.random()*S,sz||2.2,sz||2.2);} };
   if (kind==='stone'){
@@ -989,7 +991,7 @@ function txMat(opts, kind, rep){
   const k=kind||'rough';
   m.map=makeDetailTex(k).clone(); m.map.wrapS=m.map.wrapT=THREE.RepeatWrapping;
   if (rep) m.map.repeat.set(rep,rep); m.map.needsUpdate=true;
-  if (_GPU){ const n=detailNormal(k, rep); if(n){ m.normalMap=n; m.normalScale=new THREE.Vector2(1.0,1.0); } }   // WebGPU: real normal mapping
+  if (_GPUTEX){ const n=detailNormal(k, rep); if(n){ m.normalMap=n; m.normalScale=new THREE.Vector2(1.0,1.0); } }   // WebGPU: real normal mapping
   else { m.bumpMap=m.map; m.bumpScale=(k==='stone')?0.8:0.4; }
   return m;
 }
