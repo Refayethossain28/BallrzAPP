@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R51 — WebGPU paint + bloom emissive';
+const BUILD = 'BUILD R52 — WebGPU stable (bloom)';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -224,7 +224,10 @@ function initThree(){
   // WebGPURenderer; everything else (scene/materials) is identical. Falls back to
   // the proven WebGLRenderer when the WebGPU build isn't loaded.
   _GPU = (typeof THREE.WebGPURenderer === 'function');
-  _GPU_PAINT = _GPU; _GPU_EMIS = _GPU;   // device-safe WebGPU material upgrades on; HIRES/NORMAL stay off
+  // All WebGPU-only material experiments OFF — they blank this device's WebGPU
+  // (anisotropy needs geometry tangents the extruded body lacks; normal maps on
+  // Lambert don't compile). WebGPU keeps the proven materials + the bloom pass.
+  _GPU_PAINT=false; _GPU_EMIS=false; _GPU_HIRES=false; _GPU_NORMAL=false;
   // Mobile: skip MSAA — at full 3x density the supersampling antialiases edges
   // for free, and MSAA buffers at that resolution risk GPU memory / context loss.
   if (_GPU){
