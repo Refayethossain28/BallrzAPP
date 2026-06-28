@@ -13,6 +13,48 @@ test.skip(process.env.VITE_USE_EMULATORS !== '1', 'requires the Firebase emulato
 
 const PDF = { name: 'cert.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n%cert\n') };
 
+type Page = import('@playwright/test').Page;
+
+/** Switch to the landlord role and wait for it to take effect (it persists
+ *  asynchronously; navigating before it lands leaves the deal room treating the
+ *  user as a renter, since the party is derived from the active role). */
+async function becomeLandlord(page: Page) {
+  await page.getByRole('button', { name: 'Landlord' }).click();
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible({ timeout: 15_000 });
+}
+
+/** Open a deal as the landlord party. The deal room derives the party from the
+ *  active role, so confirm the landlord role actually applied (force it if not). */
+async function openDealAsLandlord(page: Page, dealId: string) {
+  await page.goto(`/deal/${dealId}`);
+  const landlordNav = page.getByRole('link', { name: /Compliance/ });
+  if (!(await landlordNav.isVisible().catch(() => false))) {
+    await becomeLandlord(page);
+    await page.goto(`/deal/${dealId}`);
+  }
+  await expect(landlordNav).toBeVisible({ timeout: 15_000 });
+}
+
+/** Advertise a property, upload its certificates and publish it live. */
+async function advertiseAndPublish(page: Page, opts: { title: string; street: string; area: string; city: string; postcode: string }) {
+  await page.goto('/landlord/new');
+  await page.getByPlaceholder('Bright 2-bed flat near the park').fill(opts.title);
+  await page.getByPlaceholder('14 Mapledene Road').fill(opts.street);
+  await page.getByPlaceholder('Hackney').fill(opts.area);
+  await page.getByPlaceholder('London').fill(opts.city);
+  await page.getByPlaceholder('E8 3JN').fill(opts.postcode);
+  await page.getByRole('button', { name: /Create listing/ }).click();
+  await expect(page.getByText('Compliance & publishing')).toBeVisible();
+  const inputs = page.locator('input[type=file]');
+  const n = await inputs.count();
+  for (let i = 0; i < n; i++) {
+    await inputs.nth(i).setInputFiles(PDF);
+    await expect(page.getByText('Valid')).toHaveCount(i + 1);
+  }
+  await page.getByRole('button', { name: 'Publish listing' }).click();
+  await expect(page.getByText(/live and searchable/i)).toBeVisible({ timeout: 15_000 });
+}
+
 async function signUp(page: import('@playwright/test').Page, email: string) {
   await page.goto('/');
   await page.getByRole('link', { name: 'Create one' }).click();
@@ -30,7 +72,7 @@ test('landlord advertises, uploads certificates and publishes a live listing', a
   await signUp(page, `landlord+${stamp}@example.com`);
 
   // Become a landlord and advertise.
-  await page.getByRole('button', { name: 'Landlord' }).click();
+  await becomeLandlord(page);
   await page.goto('/landlord/new');
   await page.getByPlaceholder('Bright 2-bed flat near the park').fill('Bright 2-bed flat');
   await page.getByPlaceholder('14 Mapledene Road').fill('14 Mapledene Road');
@@ -62,7 +104,7 @@ test('a renter finds a live listing and starts an enquiry', async ({ browser }) 
   const landlord = await browser.newContext();
   const lp = await landlord.newPage();
   await signUp(lp, `ll+${stamp}@example.com`);
-  await lp.getByRole('button', { name: 'Landlord' }).click();
+  await becomeLandlord(lp);
   await lp.goto('/landlord/new');
   await lp.getByPlaceholder('Bright 2-bed flat near the park').fill('Sunny studio');
   await lp.getByPlaceholder('14 Mapledene Road').fill('1 Test Street');
@@ -89,6 +131,77 @@ test('a renter finds a live listing and starts an enquiry', async ({ browser }) 
   await rp.getByRole('button', { name: /Enquire/ }).click();
   // Lands in the deal room with the opening enquiry message.
   await expect(rp.getByText(/still available/i)).toBeVisible({ timeout: 15_000 });
+
+  await landlord.close();
+  await renter.close();
+});
+
+test('a deal runs to completion and auto-creates a tenancy', async ({ browser, request }) => {
+  const stamp = Date.now();
+
+  // Landlord publishes a listing.
+  const landlord = await browser.newContext();
+  const lp = await landlord.newPage();
+  await signUp(lp, `ll3+${stamp}@example.com`);
+  await becomeLandlord(lp);
+  await advertiseAndPublish(lp, { title: 'Garden flat', street: '7 Park Road', area: 'Peckham', city: 'London', postcode: 'SE15 5AA' });
+
+  // Renter enquires.
+  const renter = await browser.newContext();
+  const rp = await renter.newPage();
+  await signUp(rp, `rt3+${stamp}@example.com`);
+  await expect(rp.getByText('Peckham').first()).toBeVisible({ timeout: 15_000 });
+  await rp.getByText('Peckham').first().click();
+  await rp.getByRole('button', { name: /Enquire/ }).click();
+  await expect(rp).toHaveURL(/\/deal\//, { timeout: 15_000 });
+  const dealId = rp.url().split('/deal/')[1].split('/')[0];
+
+  // Renter proposes a viewing first…
+  await rp.getByRole('button', { name: /Request a viewing/ }).click();
+  await rp.locator('input[type=datetime-local]').fill('2027-06-01T12:00');
+  await rp.getByRole('button', { name: 'Send proposal' }).click();
+  await expect(rp.getByText(/awaiting confirmation/i)).toBeVisible({ timeout: 15_000 });
+
+  // …then the landlord opens the deal (as landlord) and confirms it.
+  await openDealAsLandlord(lp, dealId);
+  await lp.getByRole('button', { name: 'Confirm viewing' }).click({ timeout: 15_000 });
+
+  // Both agree to proceed. The renter agrees first; we wait for that to reach the
+  // landlord before they agree, so the two writes don't clobber one another (the
+  // agreement is a read-modify-write on the same field).
+  await rp.getByRole('button', { name: /Agree to proceed/ }).click({ timeout: 15_000 });
+  await expect(rp.getByRole('button', { name: /awaiting the other party/ })).toBeVisible({ timeout: 15_000 });
+  await expect(lp.getByText('agreed to proceed to a tenancy')).toBeVisible({ timeout: 15_000 });
+  await lp.getByRole('button', { name: /Agree to proceed/ }).click({ timeout: 15_000 });
+
+  // Landlord drafts the agreement (→ contract view) and sends for e-signature.
+  await lp.getByRole('button', { name: /Draft the tenancy agreement/ }).click({ timeout: 15_000 });
+  await lp.getByRole('button', { name: /Send for e-signature/ }).click({ timeout: 15_000 });
+
+  // Both parties sign.
+  await rp.goto(`/deal/${dealId}/contract`);
+  await rp.getByRole('button', { name: /Sign as/ }).click({ timeout: 15_000 });
+  await expect(rp.getByText(/You've signed/i)).toBeVisible({ timeout: 15_000 });
+  await lp.getByRole('button', { name: /Sign as/ }).click({ timeout: 15_000 });
+  // Wait until both signatures are committed (landlord sees the fee prompt).
+  await expect(lp.getByText(/Both parties have signed/i)).toBeVisible({ timeout: 15_000 });
+
+  // The £100 fee is collected via Stripe Elements (untestable in-emulator), so
+  // call the callable directly with the landlord's token + the Stripe fake.
+  const token = await lp.evaluate(() =>
+    (window as unknown as { __getIdToken: () => Promise<string | null> }).__getIdToken());
+  const res = await request.post(
+    'http://127.0.0.1:5001/demo-rentmatch/us-central1/chargePlatformFee',
+    { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, data: { data: { dealId } } },
+  );
+  expect(res.ok()).toBeTruthy();
+
+  // The deal is now in force…
+  await expect(lp.getByText(/in force/i)).toBeVisible({ timeout: 15_000 });
+
+  // …and the deal→tenancy bridge created a tenancy (visible on the Rent tab).
+  await lp.goto('/landlord/rent');
+  await expect(lp.getByText('Test User')).toBeVisible({ timeout: 15_000 });
 
   await landlord.close();
   await renter.close();

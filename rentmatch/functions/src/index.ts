@@ -28,7 +28,30 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 
 initializeApp();
 const db = getFirestore();
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? '');
+// Compliance checks and agreements carry optional fields (e.g. `detail`) that are
+// `undefined` when not set; Firestore rejects undefined values unless told to skip
+// them. Without this, drafting a contract (which persists the checks) fails.
+db.settings({ ignoreUndefinedProperties: true });
+
+/**
+ * A deterministic in-memory Stripe stand-in for the emulator e2e (gated by
+ * STRIPE_FAKE — never set in production). It implements only the methods the
+ * fee/subscription paths call, returning successful, fixed responses so the
+ * £100-completion flow can be driven end-to-end without live Stripe keys or the
+ * card-entry iframe. Real Stripe is used whenever STRIPE_FAKE is unset.
+ */
+function fakeStripe(): Stripe {
+  const ok = <T>(v: T) => Promise.resolve(v);
+  return {
+    customers: { create: () => ok({ id: 'cus_fake' }) },
+    setupIntents: { create: () => ok({ client_secret: 'seti_fake_secret' }) },
+    paymentMethods: { list: () => ok({ data: [{ id: 'pm_fake' }] }) },
+    paymentIntents: { create: () => ok({ id: 'pi_fake', status: 'succeeded' }) },
+  } as unknown as Stripe;
+}
+
+const stripe: Stripe =
+  process.env.STRIPE_FAKE === '1' ? fakeStripe() : new Stripe(process.env.STRIPE_SECRET_KEY ?? '');
 
 /**
  * Transactional email via Postmark's REST API (no SDK — a single fetch). Falls

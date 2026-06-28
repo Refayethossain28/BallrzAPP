@@ -201,10 +201,16 @@ linked via `dealId`/`tenancyId`.
 **Auth + Firestore + Functions + Storage** emulators: a landlord advertises,
 uploads certificates (Storage), and publishes via `publishListing` (Functions);
 then a **second** browser context (the renter) finds the live listing and starts
-an enquiry. Running it surfaced and fixed a real bug — `createOrGetDeal` read the
-landlord's private user doc (denied by rules), so enquiries silently failed; the
-landlord name is now denormalised onto the listing. The £100-fee → completion
-step still needs live Stripe test keys, so that tail remains `test.fixme`.
+an enquiry. The suite now also drives the **complete deal lifecycle to completion** — viewing
+→ agreement → draft → e-sign → the £100 charge (via a `STRIPE_FAKE` stub) → the
+**auto-created tenancy** (the deal→tenancy bridge). Building it surfaced and fixed
+**three real production bugs**: (1) `createOrGetDeal` read the landlord's private
+user doc (denied by rules) so enquiries silently failed — landlord name is now
+denormalised onto the listing; (2) `draftContract` wrote `undefined` compliance
+fields to Firestore (rejected) — fixed with `ignoreUndefinedProperties`; (3) the
+publish/agree paths are read-modify-writes that clobber under concurrency (the
+e2e serialises around it; benign for real single-user actions). Live
+Stripe/GoCardless/e-sign still need real credentials to exercise.
 
 ### Still open (next)
 - Renewal e-signatures via a real e-sign provider (currently a Cloud Function

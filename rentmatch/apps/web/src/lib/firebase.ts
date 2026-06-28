@@ -35,4 +35,8 @@ if (import.meta.env.VITE_USE_EMULATORS === '1') {
   connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
   connectFirestoreEmulator(db, 'localhost', 8080);
   connectStorageEmulator(storage, 'localhost', 9199);
+  // Test-only hook: lets the emulator e2e fetch the signed-in user's ID token to
+  // call callable functions directly (e.g. the Stripe-Elements-gated fee step).
+  (window as unknown as { __getIdToken?: () => Promise<string | null> }).__getIdToken =
+    () => (auth.currentUser ? auth.currentUser.getIdToken() : Promise.resolve(null));
 }
