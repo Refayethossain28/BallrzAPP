@@ -26,6 +26,7 @@ export default function NewProperty() {
     const f = new FormData(e.currentTarget);
     const input: NewListingInput = {
       landlordId: user.uid,
+      landlordName: user.displayName ?? 'Landlord',
       title: String(f.get('title') ?? '').trim(),
       street: String(f.get('street') ?? '').trim(),
       area: String(f.get('area') ?? '').trim(),

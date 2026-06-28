@@ -304,15 +304,49 @@ async function completeDeal(dealId: string, paymentIntentId: string): Promise<vo
     text: 'The £100 platform fee was paid. The tenancy is fully executed and in force. 🎉',
     ts: FieldValue.serverTimestamp(),
   });
-  const deal = (await dealRef.get()).data() as StoredDeal | undefined;
-  if (deal) {
-    const landlordEmail = String((await db.doc(`users/${deal.landlordId}`).get()).data()?.email ?? '');
+  const dealData = (await dealRef.get()).data() as (StoredDeal & Record<string, unknown>) | undefined;
+  if (dealData) {
+    const landlordEmail = String((await db.doc(`users/${dealData.landlordId}`).get()).data()?.email ?? '');
     await sendEmail(
       landlordEmail,
       'RentMatch — your £100 platform fee receipt',
       `The tenancy is now in force. A one-off £100 platform fee was charged (payment ${paymentIntentId}).`,
     );
+    await createTenancyFromDeal(dealId, dealData);
   }
+}
+
+/**
+ * Deal → tenancy bridge. When a marketplace let completes, spin up a tenancy
+ * record from the signed agreement so the new let flows straight into rent
+ * tracking, arrears, reminders and renewals. Idempotent: a deal that already
+ * has a `tenancyId` is left alone.
+ */
+async function createTenancyFromDeal(dealId: string, deal: StoredDeal & Record<string, unknown>): Promise<void> {
+  if (deal.tenancyId) return;
+  const agreement = (await db.doc(`contracts/${dealId}`).get()).data()?.agreement as
+    | { startDate?: number; termMonths?: number; monthlyRentPence?: number }
+    | undefined;
+
+  const propertyLabel = [deal.listingArea, deal.listingCity].filter(Boolean).join(', ')
+    || String(deal.listingCity ?? 'Property');
+  const startDate = agreement?.startDate ?? Date.now() + 14 * 86_400_000;
+
+  const tenancyRef = await db.collection('tenancies').add({
+    landlordId: deal.landlordId,
+    listingId: deal.listingId,
+    propertyLabel,
+    tenantName: deal.renterName,
+    monthlyRentPence: agreement?.monthlyRentPence ?? Number(deal.rentPence ?? 0),
+    startDate: new Date(startDate),
+    termMonths: agreement?.termMonths ?? 12,
+    status: 'active',
+    totalPaidPence: 0,
+    collections: [],
+    dealId,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  await db.doc(`deals/${dealId}`).update({ tenancyId: tenancyRef.id });
 }
 
 /** Save a landlord card for the off-session fee charge (Stripe SetupIntent). */

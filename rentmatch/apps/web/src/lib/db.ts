@@ -37,6 +37,9 @@ export interface Listing extends ListingSummary {
   desc: string;
   features: string[];
   landlordId: string;
+  /** Denormalised so renters can show/credit the landlord without reading their
+   *  (private) user doc — Firestore rules forbid cross-user reads. */
+  landlordName: string;
   hasGasSupply: boolean;
   smokeAlarmsPerStorey: boolean;
   coAlarmsWhereRequired: boolean;
@@ -107,6 +110,7 @@ function mapListing(id: string, data: Record<string, unknown>): Listing {
     desc: String(data.desc ?? ''),
     features: Array.isArray(data.features) ? (data.features as string[]) : [],
     landlordId: String(data.landlordId ?? ''),
+    landlordName: String(data.landlordName ?? 'Landlord'),
     hasGasSupply: Boolean(data.hasGasSupply),
     smokeAlarmsPerStorey: Boolean(data.smokeAlarmsPerStorey),
     coAlarmsWhereRequired: Boolean(data.coAlarmsWhereRequired),
@@ -134,6 +138,7 @@ export async function fetchLandlordListings(landlordId: string): Promise<Listing
 
 export interface NewListingInput {
   landlordId: string;
+  landlordName: string;
   title: string;
   street: string;
   area: string;
@@ -170,6 +175,7 @@ export async function createListing(input: NewListingInput): Promise<{ id: strin
 
 export interface TrackedPropertyInput {
   landlordId: string;
+  landlordName: string;
   street: string;
   area: string;
   city: string;
@@ -305,8 +311,9 @@ export async function createOrGetDeal(
   );
   if (!existing.empty) return existing.docs[0].id;
 
-  const landlordSnap = await getDoc(doc(usersCol, listing.landlordId));
-  const landlordName = landlordSnap.exists() ? String(landlordSnap.data().displayName ?? 'Landlord') : 'Landlord';
+  // Use the listing's denormalised landlord name — a renter cannot read the
+  // landlord's (private) user doc under the security rules.
+  const landlordName = listing.landlordName || 'Landlord';
 
   const ref = await addDoc(dealsCol, {
     ...newDealRecord(),

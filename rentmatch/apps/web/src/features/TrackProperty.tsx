@@ -29,6 +29,7 @@ export default function TrackProperty() {
     const f = new FormData(e.currentTarget);
     mutation.mutate({
       landlordId: user.uid,
+      landlordName: user.displayName ?? 'Landlord',
       street: String(f.get('street') ?? '').trim(),
       area: String(f.get('area') ?? '').trim(),
       city: String(f.get('city') ?? '').trim(),

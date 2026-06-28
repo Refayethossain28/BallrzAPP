@@ -190,11 +190,26 @@ Web (`tsc -b` + vite) and functions (esbuild) build clean.
 4. `firebase deploy` (hosting + functions + Firestore rules), then point a Stripe
    webhook at `stripeWebhook` for `payment_intent.*` and `customer.subscription.*`.
 
+### Deal → tenancy bridge ✅
+When a marketplace let completes (`completeDeal`), a tenancy record is now
+auto-created from the signed agreement (`createTenancyFromDeal`), so the new let
+flows straight into rent tracking, arrears, reminders and renewals — idempotent,
+linked via `dealId`/`tenancyId`.
+
+### E2E (emulator-backed) ✅
+`e2e/deal-lifecycle.spec.ts` drives the marketplace through the real
+**Auth + Firestore + Functions + Storage** emulators: a landlord advertises,
+uploads certificates (Storage), and publishes via `publishListing` (Functions);
+then a **second** browser context (the renter) finds the live listing and starts
+an enquiry. Running it surfaced and fixed a real bug — `createOrGetDeal` read the
+landlord's private user doc (denied by rules), so enquiries silently failed; the
+landlord name is now denormalised onto the listing. The £100-fee → completion
+step still needs live Stripe test keys, so that tail remains `test.fixme`.
+
 ### Still open (next)
-- The **deal → tenancy** bridge: a completed marketplace deal could auto-create
-  a tenancy record (today they're separate); and renewal e-signatures via a real
-  e-sign provider (the current renewal records signatures behind a Cloud Function
-  seam, like the existing demo e-sign).
+- Renewal e-signatures via a real e-sign provider (currently a Cloud Function
+  seam, like the existing demo e-sign); the £100-completion tail of the
+  lifecycle e2e once Stripe test keys are available.
 - **A11y:** label↔input association is done on the auth screen (verified by the
   e2e); extend the same to the landlord forms (track/tenancy/finance/expense).
 

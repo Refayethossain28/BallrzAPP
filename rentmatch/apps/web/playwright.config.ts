@@ -13,6 +13,9 @@ const chromiumPath = process.env.PW_CHROMIUM_PATH;
 export default defineConfig({
   testDir: './e2e',
   timeout: 30_000,
+  // The emulator-backed tests share one Firestore instance — run serially.
+  workers: 1,
+  fullyParallel: false,
   use: {
     baseURL: 'http://localhost:5173',
     headless: true,
