@@ -1,15 +1,26 @@
 {
   "name": "apexvip-functions",
-  "description": "ApexVIP Cloud Functions — getHotelRates (Amadeus live hotel rates)",
+  "description": "ApexVIP Cloud Functions — TypeScript (getHotelRates, Square/Stripe payments, ApexAI, dispatch, compliance).",
   "private": true,
-  "main": "index.js",
+  "main": "lib/index.js",
   "engines": {
     "node": "20"
+  },
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --format=cjs --target=node20 --outfile=lib/index.js --external:firebase-functions --external:firebase-admin --external:@anthropic-ai/sdk --external:stripe",
+    "typecheck": "tsc --noEmit",
+    "serve": "npm run build && firebase emulators:start --only functions",
+    "deploy": "npm run build && firebase deploy --only functions:apexvip"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
     "firebase-admin": "^12.1.0",
     "firebase-functions": "^5.0.1",
     "stripe": "^17.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "esbuild": "^0.21.0",
+    "typescript": "^5.4.0"
   }
 }

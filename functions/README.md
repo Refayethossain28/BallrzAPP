@@ -12,6 +12,25 @@ Functions in this codebase:
 All hold their provider secret server-side so the browser never sees it. See
 [`docs/apexvip-payments.md`](../docs/apexvip-payments.md) for the payment flow.
 
+## TypeScript
+
+This codebase is **TypeScript** (mirrors `rentmatch/functions`). Source lives in
+[`src/`](./src); the Firestore document shapes the apps and backend must agree on
+are in [`src/types.ts`](./src/types.ts) — the single place to read/correct the
+field names called out in
+[`docs/apexvip-backend-consolidation.md`](../docs/apexvip-backend-consolidation.md).
+
+```sh
+cd functions
+npm install
+npm run typecheck   # tsc --noEmit — catches Firestore field/typo bugs before deploy
+npm run build       # esbuild src/index.ts → lib/index.js (the deployed artifact)
+```
+
+`lib/` is the build output (git-ignored). `firebase deploy` runs `npm run build`
+first via the `predeploy` hook in `firebase.json`, so the compiled `lib/index.js`
+is always fresh. `main` points at `lib/index.js`.
+
 ## ⚠️ Deploy ONLY these functions
 
 This repo is a **separate functions codebase** (`apexvip-hotels`) from the project's
