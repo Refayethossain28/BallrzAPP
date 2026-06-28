@@ -24,15 +24,21 @@ async function becomeLandlord(page: Page) {
 }
 
 /** Open a deal as the landlord party. The deal room derives the party from the
- *  active role, so confirm the landlord role actually applied (force it if not). */
+ *  active role, so confirm the landlord role applied (force it if not). Uses a
+ *  retrying check — not a one-shot isVisible — so a slow page load doesn't
+ *  wrongly trigger the role switch (which is a no-op when already a landlord). */
 async function openDealAsLandlord(page: Page, dealId: string) {
   await page.goto(`/deal/${dealId}`);
   const landlordNav = page.getByRole('link', { name: /Compliance/ });
-  if (!(await landlordNav.isVisible().catch(() => false))) {
+  try {
+    await expect(landlordNav).toBeVisible({ timeout: 5_000 });
+    return; // already in landlord role
+  } catch {
+    // Role didn't apply — switch (navigates to Home), then reopen the deal.
     await becomeLandlord(page);
     await page.goto(`/deal/${dealId}`);
+    await expect(landlordNav).toBeVisible({ timeout: 15_000 });
   }
-  await expect(landlordNav).toBeVisible({ timeout: 15_000 });
 }
 
 /** Advertise a property, upload its certificates and publish it live. */
