@@ -75,3 +75,28 @@ export function buildComplianceReminder(ctx: ComplianceReminderContext): Notific
     body: `Renew the ${ctx.docLabel} for ${ctx.propertyLabel} before it lapses to avoid a fine or a blocked Section 21.`,
   };
 }
+
+export interface RentReminderContext {
+  tenantName: string;
+  propertyLabel: string;
+  /** "overdue" ⇒ arrears owed; "due-soon" ⇒ the upcoming charge. */
+  kind: 'due-soon' | 'overdue';
+  /** Formatted amount, e.g. "£1,200". */
+  amount: string;
+  /** Formatted due date for due-soon reminders. */
+  dueDate?: string;
+}
+
+/** Copy for a landlord-facing rent reminder (upcoming or overdue). */
+export function buildRentReminder(ctx: RentReminderContext): Notification {
+  if (ctx.kind === 'overdue') {
+    return {
+      title: `Rent overdue — ${ctx.tenantName}`,
+      body: `${ctx.amount} of rent is outstanding for ${ctx.propertyLabel}.`,
+    };
+  }
+  return {
+    title: `Rent due soon — ${ctx.tenantName}`,
+    body: `${ctx.amount} is due${ctx.dueDate ? ` on ${ctx.dueDate}` : ''} for ${ctx.propertyLabel}.`,
+  };
+}

@@ -1,5 +1,11 @@
 # Apex / RentMatch — from marketplace to recurring revenue
 
+> **Status (build):** Phase 1 (compliance autopilot + subscriptions) and the core
+> of Phase 2 (rent ledger + landlord finances) are **built and tested** — see the
+> "Shipped product" section at the foot of this doc. What remains is go-live
+> config (Stripe Prices, Postmark creds, deploy) plus the optional extras flagged
+> inline.
+
 > Reframe: stop selling "a lettings marketplace" (one-off £100 per tenancy,
 > chicken-and-egg supply problem, you only get paid when a *new* let completes).
 > Start selling **the tool a small UK landlord or letting agent runs every
@@ -94,11 +100,19 @@ value on day one without a tenant or a deal.
    adds a tenancy against any property (`NewTenancy.tsx`), and the detail screen
    shows the ledger + records payments (`TenancyDetail.tsx`). A denormalised
    `totalPaidPence` keeps the list cheap. Landlord-scoped Firestore rules.
-6. **Statement export** — PDF/CSV rent statement per tenancy (remaining slice).
-7. **E-sign renewals** — reuse `contractTemplate.ts` + the e-sign envelope flow
-   for *renewals*, not just new lets → recurring use of the £100 event.
+6. ✅ **Rent reminders** — daily `sendRentReminders` cron nudges the landlord on
+   rent due-soon (3 days out) and arrears, via the same ledger engine and the
+   idempotent-key pattern (`dueRentReminders`).
+7. ✅ **Statement export** — one-click CSV rent statement per tenancy
+   (`buildRentStatementCsv`, downloaded from `TenancyDetail.tsx`).
+8. ✅ **Landlord finances (Self Assessment / MTD)** — `finance.ts` rolls rent
+   income + logged expenses into a **UK-tax-year** (6 Apr–5 Apr) income/expense/
+   net summary with a category breakdown, mortgage-interest surfaced separately.
+   **Finances** tab logs expenses and switches tax year (`Finances.tsx`).
+9. **E-sign renewals** — reuse `contractTemplate.ts` + the e-sign envelope flow
+   for *renewals*, not just new lets → recurring use of the £100 event. *(open)*
 
-**Email is now wired** — `sendEmail` posts to Postmark (no-op fallback when
+**Email is wired** — `sendEmail` posts to Postmark (no-op fallback when
 unconfigured), so reminders and receipts land in inboxes, not just push.
 
 ### Phase 3 — Agent tier & rent collection (expansion revenue)
@@ -116,6 +130,43 @@ unconfigured), so reminders and receipts land in inboxes, not just push.
 - **Regulation drift.** UK rules change (Renters' Rights Bill, MEES tightening to
   EPC C). That's a *moat*, not a risk, if you keep the rules current — it's
   exactly what a spreadsheet can't do.
+
+## Shipped product
+
+What a landlord can do today, all on top of the tested shared kernel:
+
+- **Home** (`Home.tsx`) — one-glance overview: property count, certificates to
+  action, active tenancies, arrears, this-tax-year income/expenses/net, and deep
+  links into every area.
+- **Compliance** — track-only onboarding (`TrackProperty.tsx`), per-property
+  document vault with issue-date-accurate expiry (`DocumentVault.tsx`), a
+  portfolio RAG dashboard (`ComplianceDashboard.tsx`), and a **daily reminder
+  cron** (push + email) at 60/30/7 days and on lapse.
+- **Rent** — tenancies with auto-flagged arrears (`Rent.tsx`), a rent ledger with
+  schedule + payment recording (`TenancyDetail.tsx`), **CSV statement export**,
+  and a **daily rent-reminder cron** (due-soon + overdue).
+- **Finances** — UK-tax-year income/expense/net with category breakdown and
+  expense logging (`Finances.tsx`) — built for Self Assessment / MTD.
+- **Billing** — Free / Landlord (£99) / Agent (£49 + £6/unit) Stripe subscriptions
+  with Checkout + billing portal (`billing.ts`, Account screen); the £100
+  per-completion fee remains as an add-on.
+
+**Engine coverage:** `compliance.ts`, `billing.ts`, `rent.ts`, `finance.ts`,
+`money.ts`, `dealStateMachine.ts`, `notifications.ts`, `search.ts`, `retention.ts`
+— **82 unit tests**, all passing. Web (`tsc -b` + vite) and functions (esbuild)
+build clean.
+
+### To go live
+1. Create the three Stripe **Prices** and set `STRIPE_PRICE_LANDLORD` /
+   `STRIPE_PRICE_AGENT` / `STRIPE_PRICE_AGENT_UNIT` + `APP_URL`.
+2. Set Postmark `EMAIL_API_KEY` + `EMAIL_FROM` for real email.
+3. `firebase deploy` (hosting + functions + Firestore rules), then point a Stripe
+   webhook at `stripeWebhook` for `payment_intent.*` and `customer.subscription.*`.
+
+### Still open (next)
+- E-sign **renewals** (recurring £100 events); **Open-Banking rent collection**
+  (GoCardless/TrueLayer) and the **agent multi-landlord** seats (Phase 3);
+  an emulator **e2e** test for the new compliance/rent/finance flows.
 
 ## First concrete step
 Turn `ComplianceManager.tsx` from a per-deal gate into a **standalone portfolio

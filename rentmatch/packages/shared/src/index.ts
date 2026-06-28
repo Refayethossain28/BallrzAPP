@@ -10,3 +10,4 @@ export * from './notifications.ts';
 export * from './retention.ts';
 export * from './billing.ts';
 export * from './rent.ts';
+export * from './finance.ts';

@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  addMonths, rentSchedule, buildRentLedger, daysUntilDue, type Tenancy,
+  addMonths, rentSchedule, buildRentLedger, daysUntilDue,
+  dueRentReminders, buildRentStatementCsv, type Tenancy,
 } from '../src/rent.ts';
 
 const DAY = 86_400_000;
@@ -75,4 +76,62 @@ test('exactly settled to date reads as paid', () => {
 test('daysUntilDue is positive before and negative after', () => {
   assert.equal(daysUntilDue(start, start - 3 * DAY), 3);
   assert.equal(daysUntilDue(start, start + 2 * DAY), -2);
+});
+
+/* ---- rent reminders ---- */
+
+test('a due-soon reminder fires within the window and is idempotent', () => {
+  const asOf = Date.UTC(2026, 0, 13); // 2 days before the 15 Jan charge
+  const due = dueRentReminders(tenancy, 0, [], asOf);
+  const soon = due.find((r) => r.kind === 'due-soon');
+  assert.ok(soon, 'expected a due-soon reminder');
+  assert.equal(soon!.amountPence, 120_000);
+  // Same key suppresses a repeat next day.
+  assert.deepEqual(dueRentReminders(tenancy, 0, [soon!.key], asOf).filter((r) => r.kind === 'due-soon'), []);
+});
+
+test('no due-soon reminder outside the window', () => {
+  const asOf = Date.UTC(2026, 0, 1); // 14 days before
+  assert.deepEqual(dueRentReminders(tenancy, 0, [], asOf).filter((r) => r.kind === 'due-soon'), []);
+});
+
+test('an overdue reminder fires once per newly-missed month', () => {
+  const jan = dueRentReminders(tenancy, 0, [], Date.UTC(2026, 0, 20));
+  const r1 = jan.find((r) => r.kind === 'overdue');
+  assert.ok(r1);
+  assert.equal(r1!.amountPence, 120_000);
+  // Same month, already sent → no repeat.
+  assert.deepEqual(
+    dueRentReminders(tenancy, 0, [r1!.key], Date.UTC(2026, 0, 25)).filter((r) => r.kind === 'overdue'),
+    [],
+  );
+  // A second month falls due unpaid → a fresh overdue reminder (different key).
+  const feb = dueRentReminders(tenancy, 0, [r1!.key], Date.UTC(2026, 1, 20));
+  const r2 = feb.find((r) => r.kind === 'overdue');
+  assert.ok(r2);
+  assert.notEqual(r2!.key, r1!.key);
+  assert.equal(r2!.amountPence, 240_000);
+});
+
+test('a fully-paid tenancy raises no reminders', () => {
+  const asOf = Date.UTC(2026, 0, 20);
+  assert.deepEqual(dueRentReminders(tenancy, 120_000, [], asOf), []);
+});
+
+/* ---- statement CSV ---- */
+
+test('rent statement CSV lists charges, payments and a closing balance', () => {
+  const asOf = Date.UTC(2026, 1, 20); // Jan + Feb due
+  const csv = buildRentStatementCsv(
+    { ...tenancy, tenantName: 'Tom', propertyLabel: '14 Mapledene Road' },
+    [{ date: Date.UTC(2026, 0, 16), amountPence: 120_000 }],
+    asOf,
+  );
+  const lines = csv.split('\n');
+  assert.equal(lines[0], 'Date,Description,Charge (£),Payment (£)');
+  assert.ok(csv.includes('Rent due (2026-01)'));
+  assert.ok(csv.includes('Payment received'));
+  assert.ok(csv.includes('Total charged to date,2400.00')); // Jan + Feb due
+  assert.ok(csv.includes('Total received,,1200.00'));
+  assert.ok(csv.includes('Arrears outstanding,1200.00'));
 });

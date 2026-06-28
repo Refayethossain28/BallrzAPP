@@ -6,7 +6,7 @@
  * listings via `searchListings`; this moves behind an index/Algolia later.
  */
 import {
-  collection, doc, getDoc, getDocs, query, where, addDoc, setDoc, updateDoc,
+  collection, doc, getDoc, getDocs, query, where, addDoc, setDoc, updateDoc, deleteDoc,
   serverTimestamp, Timestamp, onSnapshot, orderBy, or, increment,
   type Unsubscribe,
 } from 'firebase/firestore';
@@ -15,7 +15,8 @@ import { db, storage } from './firebase';
 import {
   newDealRecord, recomputeStage,
   type ComplianceCheck, type ComplianceDoc, type ComplianceDocType, type DealParty,
-  type DealRecord, type DealViewing, type EpcRating, type ListingSummary, type RentPayment,
+  type DealRecord, type DealViewing, type EpcRating, type ExpenseCategory, type ExpenseEntry,
+  type FinanceEntry, type ListingSummary, type RentPayment,
   type Subscription, type Tenancy, type TenancyAgreement,
 } from '@rentmatch/shared';
 
@@ -523,4 +524,70 @@ export async function addRentPayment(
 
 export async function endTenancy(id: string): Promise<void> {
   await updateDoc(doc(tenanciesCol, id), { status: 'ended' });
+}
+
+/** Every rent payment across a landlord's tenancies, as finance income entries. */
+export async function fetchLandlordRentPayments(landlordId: string): Promise<FinanceEntry[]> {
+  const tenancies = await fetchLandlordTenancies(landlordId);
+  const perTenancy = await Promise.all(tenancies.map((t) => fetchPayments(t.id)));
+  return perTenancy.flat().map((p) => ({ date: p.date, amountPence: p.amountPence }));
+}
+
+/* ---- expenses & finances (Phase 2 — Self Assessment / MTD) ---- */
+
+export interface ExpenseRecord extends ExpenseEntry {
+  id: string;
+  landlordId: string;
+  listingId?: string;
+  propertyLabel?: string;
+  note?: string;
+}
+
+export interface NewExpenseInput {
+  landlordId: string;
+  listingId?: string;
+  propertyLabel?: string;
+  date: number;
+  amountPence: number;
+  category: ExpenseCategory;
+  note?: string;
+}
+
+const expensesCol = collection(db, 'expenses');
+
+export async function createExpense(input: NewExpenseInput): Promise<{ id: string }> {
+  const ref = await addDoc(expensesCol, {
+    landlordId: input.landlordId,
+    date: Timestamp.fromMillis(input.date),
+    amountPence: input.amountPence,
+    category: input.category,
+    ...(input.listingId ? { listingId: input.listingId } : {}),
+    ...(input.propertyLabel ? { propertyLabel: input.propertyLabel } : {}),
+    ...(input.note ? { note: input.note } : {}),
+    createdAt: serverTimestamp(),
+  });
+  return { id: ref.id };
+}
+
+export async function fetchLandlordExpenses(landlordId: string): Promise<ExpenseRecord[]> {
+  const snap = await getDocs(query(expensesCol, where('landlordId', '==', landlordId)));
+  return snap.docs
+    .map((d) => {
+      const x = d.data();
+      return {
+        id: d.id,
+        landlordId,
+        date: toMillis(x.date),
+        amountPence: Number(x.amountPence ?? 0),
+        category: (x.category ?? 'other') as ExpenseCategory,
+        listingId: x.listingId ? String(x.listingId) : undefined,
+        propertyLabel: x.propertyLabel ? String(x.propertyLabel) : undefined,
+        note: x.note ? String(x.note) : undefined,
+      };
+    })
+    .sort((a, b) => b.date - a.date);
+}
+
+export async function deleteExpense(id: string): Promise<void> {
+  await deleteDoc(doc(expensesCol, id));
 }

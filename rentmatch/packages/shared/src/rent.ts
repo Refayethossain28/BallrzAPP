@@ -131,3 +131,94 @@ export function buildRentLedger(
 export function daysUntilDue(nextDueDate: number, asOf: number = Date.now()): number {
   return Math.round((nextDueDate - asOf) / DAY);
 }
+
+/* ---- rent reminders (drives the daily cron, mirrors the compliance pattern) ---- */
+
+/** Nudge the landlord this many days before a rent payment falls due. */
+export const RENT_DUE_SOON_DAYS = 3;
+
+export type RentReminderKind = 'due-soon' | 'overdue';
+
+export interface RentReminder {
+  kind: RentReminderKind;
+  /** Pence relevant to the nudge: the upcoming charge, or the arrears owed. */
+  amountPence: number;
+  /** Present for due-soon reminders. */
+  dueDate?: number;
+  /** Stable idempotency key so a daily run never repeats a milestone. */
+  key: string;
+}
+
+/**
+ * Rent reminders *due now* for a tenancy, given the keys already sent. Built
+ * from the same ledger as everything else, using the denormalised `totalPaid`
+ * so the cron needs no per-payment fetch. Overdue is keyed by how many charges
+ * have fallen due, so each newly-missed month nudges exactly once; due-soon is
+ * keyed by the upcoming period.
+ */
+export function dueRentReminders(
+  tenancy: Tenancy,
+  totalPaidPence: number,
+  sentKeys: readonly string[] = [],
+  now: number = Date.now(),
+): RentReminder[] {
+  const sent = new Set(sentKeys);
+  const ledger = buildRentLedger(tenancy, [{ date: 0, amountPence: totalPaidPence }], now);
+  const out: RentReminder[] = [];
+
+  if (ledger.arrearsPence > 0) {
+    const key = `overdue:${ledger.dueToDate.length}`;
+    if (!sent.has(key)) out.push({ kind: 'overdue', amountPence: ledger.arrearsPence, key });
+  }
+
+  if (ledger.nextDueDate != null) {
+    const days = daysUntilDue(ledger.nextDueDate, now);
+    if (days >= 0 && days <= RENT_DUE_SOON_DAYS) {
+      const key = `due:${periodLabel(ledger.nextDueDate)}`;
+      if (!sent.has(key)) out.push({ kind: 'due-soon', amountPence: tenancy.monthlyRentPence, dueDate: ledger.nextDueDate, key });
+    }
+  }
+
+  return out;
+}
+
+/* ---- statement export ---- */
+
+const csvCell = (v: string | number): string => {
+  const s = String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+
+/** ISO date (UTC, YYYY-MM-DD) for stable, spreadsheet-friendly statement rows. */
+function isoDate(epoch: number): string {
+  return new Date(epoch).toISOString().slice(0, 10);
+}
+
+/**
+ * A rent statement as CSV — the schedule of charges and the payments received,
+ * with a closing balance. Deterministic (UTC dates), so it's testable and an
+ * accountant gets the same file every time.
+ */
+export function buildRentStatementCsv(
+  tenancy: Tenancy & { tenantName?: string; propertyLabel?: string },
+  payments: RentPayment[],
+  asOf: number = Date.now(),
+): string {
+  const ledger = buildRentLedger(tenancy, payments, asOf);
+  const rows: (string | number)[][] = [['Date', 'Description', 'Charge (£)', 'Payment (£)']];
+
+  const gbp = (pence: number) => (pence / 100).toFixed(2);
+
+  for (const c of ledger.dueToDate) {
+    rows.push([isoDate(c.dueDate), `Rent due (${c.period})`, gbp(c.amountPence), '']);
+  }
+  for (const p of [...payments].sort((a, b) => a.date - b.date)) {
+    rows.push([isoDate(p.date), 'Payment received', '', gbp(p.amountPence)]);
+  }
+  rows.push([]);
+  rows.push(['', 'Total charged to date', gbp(ledger.totalDuePence), '']);
+  rows.push(['', 'Total received', '', gbp(ledger.totalPaidPence)]);
+  rows.push(['', ledger.arrearsPence > 0 ? 'Arrears outstanding' : 'Balance in credit', gbp(Math.abs(ledger.balancePence)), '']);
+
+  return rows.map((r) => r.map(csvCell).join(',')).join('\n');
+}

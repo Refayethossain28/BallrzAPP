@@ -18,9 +18,10 @@ import Stripe from 'stripe';
 import {
   buildTenancyAgreement, evaluateListingCompliance, evaluateSigningCompliance, recomputeStage,
   tenancyDepositCapPence, buildNotification, buildComplianceReminder, dueComplianceReminders,
+  buildRentReminder, dueRentReminders, formatGBP,
   isStale, withinLegalRetention, REDACTED, PLATFORM_FEE_PENCE, PLANS,
   type ComplianceDoc, type DealRecord, type EpcRating, type Party, type PlanId,
-  type SubscriptionStatus,
+  type SubscriptionStatus, type Tenancy,
 } from '@rentmatch/shared';
 
 initializeApp();
@@ -551,6 +552,64 @@ export const sendComplianceReminders = onSchedule('every 24 hours', async () => 
 
     // Record every fired milestone so the next run is a no-op for them.
     await docSnap.ref.update({ complianceRemindersSent: FieldValue.arrayUnion(...due.map((r) => r.key)) });
+  }
+});
+
+/**
+ * Daily rent reminders — nudges the landlord when rent is due soon or has fallen
+ * into arrears, using the same ledger engine as the app. Reads the denormalised
+ * `totalPaidPence` on the tenancy, so no per-payment fetch; idempotency keys are
+ * stored on the tenancy so due-soon fires once per period and overdue once per
+ * newly-missed month.
+ */
+export const sendRentReminders = onSchedule('every 24 hours', async () => {
+  const now = Date.now();
+  const snap = await db.collection('tenancies').where('status', '==', 'active').get();
+
+  for (const docSnap of snap.docs) {
+    const t = docSnap.data();
+    const tenancy: Tenancy = {
+      startDate: t.startDate?.toMillis?.() ?? Number(t.startDate ?? 0),
+      monthlyRentPence: Number(t.monthlyRentPence ?? 0),
+      termMonths: Number(t.termMonths ?? 12),
+    };
+    const totalPaid = Number(t.totalPaidPence ?? 0);
+    const sentKeys = (Array.isArray(t.rentRemindersSent) ? t.rentRemindersSent : []) as string[];
+    const due = dueRentReminders(tenancy, totalPaid, sentKeys, now);
+    if (due.length === 0) continue;
+
+    const landlordId = String(t.landlordId ?? '');
+    const userData = (await db.doc(`users/${landlordId}`).get()).data() ?? {};
+    const tokens = (userData.pushTokens ?? []) as string[];
+    const email = String(userData.email ?? '');
+    const tenantName = String(t.tenantName ?? 'your tenant');
+    const propertyLabel = String(t.propertyLabel ?? 'your property');
+
+    for (const r of due) {
+      const note = buildRentReminder({
+        tenantName,
+        propertyLabel,
+        kind: r.kind,
+        amount: formatGBP(r.amountPence),
+        dueDate: r.dueDate != null
+          ? new Date(r.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+          : undefined,
+      });
+      if (tokens.length > 0) {
+        try {
+          await getMessaging().sendEachForMulticast({
+            tokens,
+            notification: { title: note.title, body: note.body },
+            data: { tenancyId: docSnap.id, type: 'rent-reminder' },
+          });
+        } catch {
+          // best-effort push; email is the durable channel.
+        }
+      }
+      await sendEmail(email, note.title, note.body);
+    }
+
+    await docSnap.ref.update({ rentRemindersSent: FieldValue.arrayUnion(...due.map((r) => r.key)) });
   }
 });
 

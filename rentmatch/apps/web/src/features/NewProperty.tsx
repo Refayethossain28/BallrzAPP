@@ -48,7 +48,7 @@ export default function NewProperty() {
   return (
     <>
       <div className="row center" style={{ gap: 10, margin: '2px 0 12px' }}>
-        <div className="back" onClick={() => navigate('/landlord')}>‹</div>
+        <div className="back" onClick={() => navigate('/landlord/listings')}>‹</div>
         <b style={{ fontSize: 18 }}>Advertise a property</b>
       </div>
 

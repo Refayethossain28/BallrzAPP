@@ -110,5 +110,11 @@ service cloud.firestore {
           get(/databases/$(database)/documents/tenancies/$(tenancyId)).data.landlordId == uid();
       }
     }
+
+    // Expenses are the landlord's own financial records — owner-scoped CRUD.
+    match /expenses/{expenseId} {
+      allow read, update, delete: if isSignedIn() && resource.data.landlordId == uid();
+      allow create: if isSignedIn() && request.resource.data.landlordId == uid();
+    }
   }
 }

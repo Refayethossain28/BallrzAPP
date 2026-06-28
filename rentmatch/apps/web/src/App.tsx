@@ -5,6 +5,7 @@ import SignIn from './auth/SignIn';
 import Layout from './components/Layout';
 import Browse from './features/Browse';
 import ListingDetail from './features/ListingDetail';
+import Home from './features/Home';
 import MyListings from './features/MyListings';
 import ComplianceDashboard from './features/ComplianceDashboard';
 import TrackProperty from './features/TrackProperty';
@@ -12,6 +13,7 @@ import DocumentVault from './features/DocumentVault';
 import Rent from './features/Rent';
 import NewTenancy from './features/NewTenancy';
 import TenancyDetail from './features/TenancyDetail';
+import Finances from './features/Finances';
 import NewProperty from './features/NewProperty';
 import Account from './features/Account';
 import Chats from './features/Chats';
@@ -34,13 +36,15 @@ function Gate() {
       <Route element={<Layout />}>
         <Route path="/" element={<Browse />} />
         <Route path="/listing/:id" element={<ListingDetail />} />
-        <Route path="/landlord" element={<MyListings />} />
+        <Route path="/landlord" element={<Home />} />
+        <Route path="/landlord/listings" element={<MyListings />} />
         <Route path="/landlord/compliance" element={<ComplianceDashboard />} />
         <Route path="/landlord/track" element={<TrackProperty />} />
         <Route path="/landlord/property/:id" element={<DocumentVault />} />
         <Route path="/landlord/rent" element={<Rent />} />
         <Route path="/landlord/rent/new" element={<NewTenancy />} />
         <Route path="/landlord/rent/:id" element={<TenancyDetail />} />
+        <Route path="/landlord/finances" element={<Finances />} />
         <Route path="/landlord/new" element={<NewProperty />} />
         <Route path="/chats" element={<Chats />} />
         <Route path="/deal/:id" element={<DealRoom />} />

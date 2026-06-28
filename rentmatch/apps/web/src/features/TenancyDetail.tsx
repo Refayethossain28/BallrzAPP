@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
-import { buildRentLedger, formatGBP, type RentStatus } from '@rentmatch/shared';
+import { buildRentLedger, buildRentStatementCsv, formatGBP, type RentStatus } from '@rentmatch/shared';
 import { fetchTenancy, fetchPayments, addRentPayment } from '../lib/db';
 import { formatDate } from '../components/ui';
 
@@ -31,6 +31,18 @@ export default function TenancyDetail() {
 
   const ledger = buildRentLedger(tenancy, payments);
   const banner = STATUS_BANNER[ledger.status];
+
+  function downloadStatement() {
+    if (!tenancy) return;
+    const csv = buildRentStatementCsv({ ...tenancy }, payments);
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `rent-statement-${tenancy.tenantName.replace(/\s+/g, '-').toLowerCase()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   async function logPayment(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -135,6 +147,10 @@ export default function TenancyDetail() {
           );
         })}
       </div></div>
+
+      <button className="cta ghost" style={{ marginTop: 14 }} onClick={downloadStatement}>
+        ⬇ Download rent statement (CSV)
+      </button>
     </>
   );
 }
