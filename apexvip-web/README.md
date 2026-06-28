@@ -26,15 +26,31 @@ ready. They keep running exactly as today.
   The backend and the browser share **one** set of request/response types. It's
   imported type-only, so none of it ships to the browser.
 
+- **`src/concierge/`** — the first screen migrated out of `apexvip-client.html`:
+  the **ApexAI concierge brain**, now typed and unit-tested.
+  - `intent.ts` — a faithful port of the on-device `_parseIntentLocal` parser
+    (rides, airports, flights, times, dates, multi-stop, hotel discovery), made
+    pure by injecting its context instead of reaching page globals.
+  - `concierge.ts` — `resolveConcierge(...)`: hotel discovery stays local, else
+    the typed Cloud Function (Claude), else the local parser as an offline
+    fallback so the chat never goes dark.
+  - `intent.test.ts` — 15 tests (`npm test`). The page keeps its UI; only the
+    deterministic logic graduated to TS.
+
 ## Commands
 
 ```sh
 cd apexvip-web
 npm install
 npm run typecheck   # tsc --noEmit
+npm test            # node --test — the concierge engine (15 tests)
 npm run dev         # Vite dev server
 npm run build       # typecheck + production bundle → dist/
 ```
+
+The repo's SessionStart hook runs the `functions` and `apexvip-web` typechecks
+plus these tests, so a broken contract or type error surfaces at session start
+rather than at deploy.
 
 ## How config is wired
 
@@ -45,7 +61,13 @@ this build can adopt the existing hosting/config without re-plumbing.
 ## Migration path
 
 1. **Now:** new frontend code calls `apex.<fn>(…)` and gets end-to-end types.
-2. **Incremental:** lift one screen at a time out of the giant HTML files into
-   `src/` components; each becomes type-checked and unit-testable.
-3. **Capacitor unchanged:** the iOS wrappers (`mobile/`) bundle web output the
-   same way — point them at `dist/` instead of the raw HTML when a screen moves.
+   The concierge brain (`src/concierge/`) is the first screen lifted across.
+2. **Incremental:** continue lifting one screen at a time out of the giant HTML
+   files into `src/`; each becomes type-checked and unit-testable. The next
+   natural candidates are the payment flow (`processSquarePayment`) and the
+   driver payout screens — both already covered by the contract.
+3. **Capacitor — when the app is fully migrated:** the iOS wrappers (`mobile/`)
+   bundle web output the same way. Point `mobile/build-www.mjs` at this package's
+   `dist/` **only once the whole app lives here** — doing it now would ship just
+   the migrated screen and drop the rest. Until then, the wrappers keep bundling
+   the existing `apexvip-client.html` / `apexvip-driver.html` unchanged.

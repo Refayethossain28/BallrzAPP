@@ -8,7 +8,8 @@
  */
 
 import { initializeApp, type FirebaseOptions } from 'firebase/app';
-import { makeApexClient, type ApexClient } from './apexClient.js';
+import { makeApexClient, type ApexClient } from './apexClient.ts';
+import { resolveConcierge } from './concierge/concierge.ts';
 import type { ApexCallableName } from '@apexvip/contract';
 
 declare global {
@@ -40,13 +41,16 @@ if (cfg && cfg.apiKey && cfg.apiKey !== 'YOUR_API_KEY') {
   const app = initializeApp(cfg);
   const apex: ApexClient = makeApexClient(app);
 
-  // Example of a fully-typed call. `data` is checked against the contract, and
-  // `reply`/`intent` below are known fields on the result — no `any` in sight.
+  // The concierge engine: tries the typed backend, falls back to the on-device
+  // parser if it's unavailable so the chat never goes dark. `data` is checked
+  // against the contract, and `reply` is a known field on the result.
   async function askConcierge(message: string): Promise<string> {
-    const out = await apex.parseBookingIntent({ message, now: new Date().toISOString() });
+    const out = await resolveConcierge(
+      { message, now: new Date().toISOString() },
+      { backend: apex },
+    );
     return out.reply ?? '';
-    // e.g. `out.notAField` here would fail to compile, and
-    // `apex.parseBookingIntent({ msg: message })` would too (wrong key).
+    // e.g. `apex.parseBookingIntent({ msg: message })` would fail to compile (wrong key).
   }
 
   // Expose for manual poking in the console during development.
