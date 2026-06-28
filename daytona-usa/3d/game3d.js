@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R54 — max desktop tier';
+const BUILD = 'BUILD R55 — Mac maxed';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -375,7 +375,7 @@ function updateClouds(){
 let envTex=null;
 function buildEnv(){
   try {
-    const th=G.theme, W=256, H=128;
+    const th=G.theme, W=_HI?512:256, H=_HI?256:128;
     const cv=document.createElement('canvas'); cv.width=W; cv.height=H; const x=cv.getContext('2d');
     const sky = x.createLinearGradient(0,0,0,H);
     if (G.night){ sky.addColorStop(0,'#04060f'); sky.addColorStop(0.45,'#0a1226'); sky.addColorStop(0.6,'#172238'); }
@@ -656,7 +656,8 @@ function paintMat(c, hero){
     const m=new THREE.MeshPhysicalMaterial({color:c, metalness:0.55, roughness:0.34, clearcoat:1.0, clearcoatRoughness:0.05, envMap:envTex, envMapIntensity:_MATFX?2.2:1.7});
     m.clearcoatNormalMap=flakeNormalTex(); m.clearcoatNormalScale=new THREE.Vector2(0.16,0.16);
     m.roughnessMap=detailClone('rough',6);   // visible metallic-flake clusters in the sheen
-    if (_MATFX){ try{ m.iridescence=0.22; m.iridescenceIOR=1.3; m.clearcoatRoughness=0.03; }catch(e){} }   // ultra-real paint on WebGPU
+    if (_MATFX){ try{ m.iridescence=0.22; m.iridescenceIOR=1.3; m.clearcoatRoughness=0.03;
+      if (_HI){ m.anisotropy=0.5; m.anisotropyRotation=Math.PI*0.25; } }catch(e){} }   // ultra-real anisotropic flake (desktop)
     return m;
   }
   const m=new THREE.MeshStandardMaterial({color:c, metalness:0.42, roughness:0.34, envMap:envTex, envMapIntensity:_MATFX?1.6:1.25});
@@ -679,7 +680,7 @@ function emblemTex(){ if(_emblemTex)return _emblemTex; const cv=document.createE
 function extrudeCar(profile, width, bevel, mat){
   const s=new THREE.Shape(); s.moveTo(profile[0][0],profile[0][1]);
   s.splineThru(profile.slice(1).map(p=>new THREE.Vector2(p[0],p[1]))); s.closePath();
-  const geo=new THREE.ExtrudeGeometry(s,{depth:width, bevelEnabled:bevel>0, bevelThickness:bevel, bevelSize:bevel, bevelSegments:3, steps:1, curveSegments:MOBILE?12:18});
+  const geo=new THREE.ExtrudeGeometry(s,{depth:width, bevelEnabled:bevel>0, bevelThickness:bevel, bevelSize:bevel, bevelSegments:_HI?4:3, steps:1, curveSegments:MOBILE?12:(_HI?28:18)});
   geo.translate(0,0,-width/2);
   const m=new THREE.Mesh(geo, mat); m.rotation.y=-Math.PI/2; return m;
 }
@@ -739,13 +740,13 @@ function makeWheelTexture(){
   _wheelTex=new THREE.CanvasTexture(cv); _wheelTex.colorSpace=THREE.SRGBColorSpace; return _wheelTex;
 }
 function addWheels(g,tx,tz,r,lite){
-  const tyre=new THREE.CylinderGeometry(r,r,0.52,lite?10:22); tyre.rotateZ(Math.PI/2);
+  const tyre=new THREE.CylinderGeometry(r,r,0.52,lite?10:(_HI?40:22)); tyre.rotateZ(Math.PI/2);
   const tm=new THREE.MeshStandardMaterial({color:0x0c0c0e, roughness:0.85, metalness:0.0});
   const simpleRim = lite ? new THREE.CylinderGeometry(r*0.62,r*0.62,0.54,8).rotateZ(Math.PI/2) : null;
   const rm=chromeMat();
   const wheelTex = lite?null:makeWheelTexture();
-  const discGeo  = lite?null:new THREE.CircleGeometry(r*0.99, 30);
-  const brakeGeo = lite?null:new THREE.CylinderGeometry(r*0.58,r*0.58,0.5,18).rotateZ(Math.PI/2);
+  const discGeo  = lite?null:new THREE.CircleGeometry(r*0.99, _HI?48:30);
+  const brakeGeo = lite?null:new THREE.CylinderGeometry(r*0.58,r*0.58,0.5,_HI?30:18).rotateZ(Math.PI/2);
   const brakeMat = lite?null:new THREE.MeshStandardMaterial({color:0x6a7078, metalness:0.8, roughness:0.4, emissive:0xff2a00, emissiveIntensity:0});
   if (brakeMat) g.userData.brakeDisc=brakeMat;   // glows red-hot under heavy braking
   g.userData.wheels = [];
@@ -1324,7 +1325,7 @@ function buildScenery(){
   const heroNear=(i,side)=> gateNear(i) || heroSlots.some(h=>{ if(h.side!==side)return false; let d=Math.abs(i-h.fi); d=Math.min(d,DIV-d); return d<26; });
 
   // verge props (mobile-budgeted, both verges)
-  const PROP_STEP = MOBILE ? 18 : 4;   // denser trees/props (very dense on desktop)
+  const PROP_STEP = MOBILE ? 18 : 3;   // denser trees/props (max on desktop)
   const sways = th.prop!=='rock';   // trees/palms sway; rocks don't
   for (let i=0;i<DIV;i+=PROP_STEP){ const f=frames[i];
     for (const side of [-1,1]){ if (heroNear(i,side)) continue;
@@ -1336,7 +1337,7 @@ function buildScenery(){
 
   // distant skyline ring (city) or mountains
   if (th.skyline==='city'){
-    const winTex=makeWindowTexture(th.landmark==='dubai'); const RING=MOBILE?30:64;
+    const winTex=makeWindowTexture(th.landmark==='dubai'); const RING=MOBILE?30:84;
     for (let i=0;i<RING;i++){ const ang=(i/RING)*Math.PI*2; const r=560+(mulberry32(i+99)())*260; const h=70+(mulberry32(i+5)())*(th.landmark==='dubai'?260:140); const w=24+(mulberry32(i+13)())*26;
       const col=th.landmark==='dubai'?0x9fb6cc:[0x8a6a52,0x9c7a52,0x70615a,0x86756b][i%4];
       const mat=new THREE.MeshStandardMaterial({color:col, roughness:0.7, metalness:th.landmark==='dubai'?0.4:0.05, map:winTex.clone(), emissive:0xffe39a, emissiveMap:winTex.clone(), emissiveIntensity:0.4}); mat.map.repeat.set(Math.max(1,w/12),Math.max(2,h/12)); mat.emissiveMap.repeat.copy(mat.map.repeat);
@@ -1376,7 +1377,7 @@ function buildScenery(){
     const keepout = heroSlots.map(h=>h.fi).concat(gateFi>=0?[gateFi]:[]);
     const nearLM = i=>keepout.some(k=>{ let d=Math.abs(i-k); d=Math.min(d,DIV-d); return d<70; });
     const winTex=makeWindowTexture(th.landmark==='dubai'); const _v=new THREE.Vector3();
-    for (let i=0;i<DIV;i+=(MOBILE?70:30)){ if(nearLM(i)) continue; const f=frames[i]; _v.copy(f.pos).sub(cen); const side=(_v.dot(f.right)>=0)?1:-1;
+    for (let i=0;i<DIV;i+=(MOBILE?70:22)){ if(nearLM(i)) continue; const f=frames[i]; _v.copy(f.pos).sub(cen); const side=(_v.dot(f.right)>=0)?1:-1;
       const h=20+rng()*(th.landmark==='dubai'?70:34), w=12+rng()*12; const col=th.landmark==='dubai'?0xbcd0e2:[0x8a6248,0x96704e,0x6f5e54][(rng()*3)|0];
       const mat=new THREE.MeshStandardMaterial({color:col, roughness:0.7, metalness:th.landmark==='dubai'?0.45:0.05, map:winTex.clone(), emissive:0xffe39a, emissiveMap:winTex.clone(), emissiveIntensity:0.38}); mat.map.repeat.set(Math.max(1,w/8),Math.max(2,h/10)); mat.emissiveMap.repeat.copy(mat.map.repeat);
       _pulse.push({mat, base:0.58, ph:i*0.7, sp:2.6, flash:true}); _scroll.push({tex:mat.emissiveMap, v:0.016});
@@ -1409,7 +1410,7 @@ function buildScenery(){
   const crowdTex=makeCrowdTexture();
   const NSEG=MOBILE?12:18, NROW=MOBILE?3:4;
   const standFracs = MOBILE ? [0.008,0.028, 0.25, 0.40, 0.50, 0.62, 0.75]
-                            : [0.006,0.022,0.038, 0.25, 0.49,0.51,0.53, 0.75];
+                            : [0.006,0.022,0.038, 0.13,0.25,0.37, 0.49,0.51,0.53, 0.63,0.75,0.87];
   const standCen=new THREE.Vector3(); for(const fr of frames) standCen.add(fr.pos); standCen.multiplyScalar(1/frames.length);
   const standPostMat=new THREE.MeshLambertMaterial({color:0xb9c0c7, map:makeDetailTex('metal')});
   let waveIdx=0;
