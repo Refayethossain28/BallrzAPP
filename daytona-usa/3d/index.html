@@ -2,8 +2,17 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <title>DAYTONA USA — 3D Polygon Edition</title>
+<!-- PWA: installable + offline + native-feeling on the home screen -->
+<link rel="manifest" href="./manifest.webmanifest" />
+<meta name="theme-color" content="#05060a" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Daytona USA" />
+<link rel="apple-touch-icon" href="./icon.svg" />
+<link rel="icon" href="./icon.svg" />
 <style>
   :root { --neon:#ff3b3b; --blue:#1f6dff; --yellow:#ffd400; }
   *{box-sizing:border-box;}
@@ -201,6 +210,8 @@
   await load('../music.js?v=' + v);
   await load('./applemusic.js?v=' + v);
   await import('./game3d.js?v=' + v);
+  // register the service worker (installable + offline); harmless if unsupported
+  if ('serviceWorker' in navigator) { try { navigator.serviceWorker.register('./sw.js'); } catch(e){} }
 </script>
 <noscript><div style="padding:40px">This game needs JavaScript and WebGL.</div></noscript>
 </body>

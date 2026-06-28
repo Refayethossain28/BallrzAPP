@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R43 — attract mode';
+const BUILD = 'BUILD R44 — ghosts, drift, gamepad, PWA';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -158,6 +158,53 @@ function loadRecords(){ try{ _records = JSON.parse(localStorage.getItem('daytona
 function recordKey(){ return (G.circuit&&G.circuit.name||'?'); }
 function bestLapFor(){ return _records[recordKey()] || 0; }
 function saveBestLap(t){ try{ _records[recordKey()]=t; localStorage.setItem('daytona3d_records', JSON.stringify(_records)); }catch(e){} }
+
+// ---- driver profile: persistent credits + stats, and live drift score ----
+let _profile={credits:0, races:0, wins:0};
+let _sessionScore=0, _driftActive=0, _driftCombo=1;
+function loadProfile(){ try{ _profile=Object.assign({credits:0,races:0,wins:0}, JSON.parse(localStorage.getItem('daytona3d_profile')||'{}')); }catch(e){} }
+function saveProfile(){ try{ localStorage.setItem('daytona3d_profile', JSON.stringify(_profile)); }catch(e){} }
+
+// ---- ghost of your best lap, per circuit (a flat list of [t, dist, offset]) ----
+let _ghosts={}, ghostCar=null, _ghost=null, _lapTrace=[], _ghostDelta=null;
+function loadGhosts(){ try{ _ghosts=JSON.parse(localStorage.getItem('daytona3d_ghosts')||'{}')||{}; }catch(e){ _ghosts={}; } }
+function ghostFor(){ const g=_ghosts[recordKey()]; return (g&&g.length>1)?g:null; }
+function saveGhost(trace){ try{ _ghosts[recordKey()]=trace; localStorage.setItem('daytona3d_ghosts', JSON.stringify(_ghosts)); }catch(e){} }
+// look up the ghost's {d,o} at lap-time lt (samples are sorted by t)
+function ghostAt(lt){
+  const g=_ghost; let lo=0, hi=g.length-1;
+  if (lt<=g[0][0]) return {d:g[0][1], o:g[0][2]};
+  if (lt>=g[hi][0]) return {d:g[hi][1], o:g[hi][2]};
+  while (hi-lo>1){ const m=(lo+hi)>>1; if (g[m][0]<=lt) lo=m; else hi=m; }
+  const a=g[lo], b=g[hi], f=(lt-a[0])/((b[0]-a[0])||1);
+  let dd=b[1]-a[1]; if(dd<-trackLen/2)dd+=trackLen; else if(dd>trackLen/2)dd-=trackLen;
+  let d=a[1]+dd*f; if(d<0)d+=trackLen; if(d>=trackLen)d-=trackLen;
+  return { d, o:a[2]+(b[2]-a[2])*f };
+}
+// the ghost's lap-time when it was at the player's current dist (for the +/- delta)
+function ghostTimeAtDist(dist){
+  const g=_ghost; for (let i=1;i<g.length;i++){ const a=g[i-1], b=g[i];
+    let lo=a[1], hi=b[1]; if (hi<lo-trackLen/2) hi+=trackLen;        // unwrap a single step
+    let dq=dist; if (dq<lo-trackLen/2) dq+=trackLen;
+    if (dq>=lo && dq<=hi){ const f=(dq-lo)/((hi-lo)||1); return a[0]+(b[0]-a[0])*f; }
+  }
+  return null;
+}
+function makeGhost(g){   // make a built car translucent + ghostly cyan
+  g.traverse(o=>{ if(!o.isMesh) return; o.castShadow=false;
+    const ms=Array.isArray(o.material)?o.material:[o.material];
+    for (const m of ms){ if(!m) continue; m.transparent=true; m.opacity=0.30; m.depthWrite=false;
+      if (m.emissive){ m.emissive.setHex(0x1aa3c8); m.emissiveIntensity=0.6; } }
+  });
+}
+function placeGhost(){
+  if (!ghostCar) return;
+  if (!_ghost || (G.state!=='racing' && G.state!=='rolling')){ ghostCar.visible=false; _ghostDelta=null; return; }
+  ghostCar.visible=true;
+  const lt=Math.max(0, G.totalTime-G.lapStart);
+  const gp=ghostAt(lt); placeCar(ghostCar, gp.d, gp.o);
+  const gt=ghostTimeAtDist(G.dist); _ghostDelta = (gt==null)?null:(lt-gt);   // +ve = behind your ghost
+}
 
 // ----------------------------------------------------------------------------
 //  Boot
@@ -1473,6 +1520,10 @@ function racingUpdate(dt){
   // gentle centrifugal drift on curves
   const f = frameAt(G.dist);
   G.offset += f.curv * speedFrac * 11 * dt;
+  // ---- drift scoring: hold a fast line through corners to build a combo ----
+  const driftNow = speedFrac>0.62 && !onGrass && (steer!==0 || Math.abs(f.curv)>0.02);
+  if (driftNow){ _driftActive+=dt; _driftCombo=Math.min(6, 1+((_driftActive*0.85)|0)); _sessionScore += speedFrac*55*_driftCombo*dt; }
+  else { _driftActive=0; _driftCombo=1; }
   // arcade tyre smoke when sliding / cornering hard / on the grass
   if (_smokeGroup) driftSmoke(f, speedFrac, steer, onGrass);
   if (G.boostActive && _smokeGroup) emitBoostFlame(f);
@@ -1495,7 +1546,7 @@ function racingUpdate(dt){
   updateRivals(dt);
   let hit=false;
   for (const r of rivals){ if (collideCars(G, r)) hit=true; }
-  if (hit){ G.speed *= 0.9; G.shake = Math.min(0.7, (G.shake||0) + 0.35);
+  if (hit){ G.speed *= 0.9; G.shake = Math.min(0.7, (G.shake||0) + 0.35); haptic(40);
             emitSmoke(playerCar.position.x, playerCar.position.y+0.6, playerCar.position.z, 0xffe08a); }
   // arcade overtake callout when the player gains a place (with a cooldown)
   const pos = computePosition();
@@ -1513,9 +1564,11 @@ function racingUpdate(dt){
   if (G.timeLeft <= 0){ G.timeLeft = 0; finishRace(false); return; }
 
   if (window.GameMusic && window.GameMusic.setIntensity) window.GameMusic.setIntensity(speedFrac);
-  // record the race for instant replay (throttled to ~20 Hz)
+  // record the race for instant replay + the current lap's ghost trace (~20 Hz)
   _recT += dt;
-  if (_recT >= 0.05){ _recT = 0; recordReplay(); }
+  if (_recT >= 0.05){ _recT = 0; recordReplay();
+    if (_lapTrace.length<3000) _lapTrace.push([ +(G.totalTime-G.lapStart).toFixed(2), +G.dist.toFixed(1), +G.offset.toFixed(2) ]);
+  }
   updateRaceHUDText();
 }
 
@@ -1561,9 +1614,11 @@ function onLapComplete(){
   if (lapTime > 1){
     if (G.bestLap > 0 && lapTime < G.bestLap){
       G.bestLap = lapTime; saveBestLap(lapTime); G.recordSet = true;
+      _ghost = _lapTrace.slice(); saveGhost(_ghost);                     // beat your ghost -> it becomes the new ghost
       arcadeCallout('NEW LAP RECORD!', '#ffd400', [_NOTE.C6,_NOTE.E5,_NOTE.G5,_NOTE.C6]);
-    } else if (G.bestLap === 0){ G.bestLap = lapTime; saveBestLap(lapTime); }   // first time on this track
+    } else if (G.bestLap === 0){ G.bestLap = lapTime; saveBestLap(lapTime); _ghost=_lapTrace.slice(); saveGhost(_ghost); }   // first lap on this track
   }
+  _lapTrace = [];                                                        // start tracing the next lap fresh
   if (G.lap >= G.circuit.laps){ finishRace(true); return; }   // crossed the line on the final lap
   G.lap++;
   G.timeLeft += G.circuit.lapBonus;                            // checkpoint time-extension
@@ -1577,6 +1632,11 @@ function onLapComplete(){
 
 function finishRace(win){
   G.state='finished'; G.lastWin=win;
+  haptic([60,40,120]);
+  // career: bank credits from finish position + drift score
+  const posBonus=[0,300,220,160,130,110,90,70,50,40,30][computePosition()]||20;
+  G.earned = Math.round(_sessionScore/40) + posBonus;
+  _profile.races++; if (win) _profile.wins++; _profile.credits += G.earned; saveProfile();
   if (win) arcadeCallout('FINISH!', '#ffd400', [_NOTE.C5,_NOTE.E5,_NOTE.G5,_NOTE.C6,_NOTE.G5,_NOTE.C6]);
   showBanner(win?'FINISH!':"TIME UP", 0);
   if (G.champ) try{ champScore(); }catch(e){}  // tally championship points for this round
@@ -1685,6 +1745,7 @@ function render(){
 
   placeCar(playerCar, G.dist, G.offset);
   placeRivals();
+  placeGhost();
   animateWorld();
   // visual lean
   playerCar.rotateY(G.steerVis * 0.16);
@@ -2017,6 +2078,23 @@ function drawHUD(){
     hctx.fillStyle='#ffd400'; hctx.font=`bold ${Math.max(9,W*0.022)}px Arial`; hctx.textAlign='left'; hctx.textBaseline='top';
     hctx.fillText('BEST '+fmtTime(G.bestLap), W*0.035, H*0.108);
   }
+  // ---- ghost delta: are you ahead of or behind your best-lap ghost? ----
+  if (G.state==='racing' && _ghost && _ghostDelta!=null){
+    const d=_ghostDelta, ahead=d<0;
+    hctx.fillStyle = ahead ? '#2bd451' : '#ff5a5a';
+    hctx.font=`900 ${Math.max(10,W*0.026)}px Arial`; hctx.textAlign='left'; hctx.textBaseline='top';
+    hctx.fillText('👻 '+(ahead?'-':'+')+Math.abs(d).toFixed(1)+'s', W*0.035, H*0.135);
+  }
+  // ---- drift score + live combo ----
+  if (G.state==='racing'){
+    hctx.fillStyle='#ffd400'; hctx.font=`900 ${Math.max(11,W*0.03)}px Arial`; hctx.textAlign='right'; hctx.textBaseline='top';
+    hctx.fillText('◆ '+Math.round(_sessionScore).toLocaleString(), W-W*0.035, H*0.255);
+    if (_driftActive>0.25){
+      const pulse=0.7+0.3*Math.sin(_animClock*14);
+      hctx.fillStyle=`rgba(255,150,40,${pulse})`; hctx.font=`900 ${Math.max(13,W*0.04)}px Arial Black, Arial`; hctx.textAlign='center'; hctx.textBaseline='middle';
+      hctx.fillText('DRIFT  x'+_driftCombo, W*0.5, H*0.66);
+    }
+  }
 
   // ---- big arcade callout (GO! / OVERTAKE! / FINAL LAP! / FINISH!) ----
   if (_callout){
@@ -2075,6 +2153,31 @@ function bindInput(){
   hook('tgas','gas'); hook('tbrake','brake'); hook('tleft','left'); hook('tright','right'); hook('tboost','boost');
 }
 
+// ---- gamepad support (polled each frame; standard mapping) ----
+let _padOn=false;
+function pollGamepad(){
+  if (!navigator.getGamepads) return;
+  let gp=null; const list=navigator.getGamepads(); for (const g of list){ if(g){ gp=g; break; } }
+  if (!gp){ _padOn=false; return; }
+  const b=gp.buttons, ax=gp.axes;
+  const pressed=i=>b[i]&&(b[i].pressed||b[i].value>0.4);
+  const lx=ax[0]||0;
+  const padLeft  = lx<-0.35 || pressed(14);
+  const padRight = lx> 0.35 || pressed(15);
+  const padGas   = pressed(7) || pressed(0);          // RT or A
+  const padBrake = pressed(6) || pressed(1);          // LT or B
+  const padBoost = pressed(2) || pressed(5);          // X or RB
+  const active = padLeft||padRight||padGas||padBrake||padBoost;
+  if (active && G.state==='attract'){ endAttract(); return; }
+  if (active && _onTitle){ armIdle(); }
+  if (G.state==='racing'){
+    keys.left=padLeft; keys.right=padRight; keys.gas=keys.gas||padGas; keys.brake=keys.brake||padBrake; keys.boost=keys.boost||padBoost;
+  }
+  _padOn = active;
+}
+// ---- haptics (Android & Capacitor; no-op on iOS Safari, harmless) ----
+function haptic(ms){ try{ if (navigator.vibrate) navigator.vibrate(ms); }catch(e){} }
+
 // ----------------------------------------------------------------------------
 //  Race start (full menu flow lands in M4 — for now START drives immediately)
 // ----------------------------------------------------------------------------
@@ -2089,12 +2192,17 @@ function startRace(){
   try { buildScenery(); } catch(e){ _scnInfo='SCN-ERR:'+(e&&e.message||e); if(sceneryGroup&&!sceneryGroup.parent) scene.add(sceneryGroup); }
   if (playerCar){ scene.remove(playerCar); }
   playerCar = buildCar(G.vehicle); scene.add(playerCar);
+  // ghost of your best lap on this circuit
+  if (ghostCar){ scene.remove(ghostCar); ghostCar=null; }
+  _ghost = ghostFor(); _lapTrace=[]; _ghostDelta=null;
+  ghostCar = buildCar(G.vehicle); makeGhost(ghostCar); scene.add(ghostCar); ghostCar.visible=!!_ghost;
   buildRivals(MOBILE ? 7 : 9);
   G.maxSpeed = G.circuit.maxSpeed * G.vehicle.speedMul * 0.58;   // tuned to feel
   G.dist=0; G.offset=0; G.speed=0; G.lap=1; G.steerVis=0;
   G.timeLeft=G.circuit.startTime; G.totalTime=0; G.rollT=0; G.cdNum=-1; G.green=false;
   G.boost=1; G.boostActive=false; G.lapStart=0; G.bestLap=bestLapFor(); G.recordSet=false;   // nitro full + load best lap
   _replay=[]; _recT=0;                                  // fresh replay recording
+  _sessionScore=0; _driftActive=0; _driftCombo=1;       // fresh drift score
   keys.gas=keys.brake=keys.left=keys.right=keys.boost=false;
   if (G.view==='cinematic') G.view='chase';
   G.started=true; G.state='rolling';
@@ -2301,6 +2409,7 @@ function showEndScreen(win){
     <div class="menu-card">
       <h2>${win?'RACE COMPLETE':'OUT OF TIME'}</h2>
       <p style="font-size:14px">${G.circuit.name} — Position ${pos}/${total}<br>Total ${fmtTime(G.totalTime)} · Best lap ${bl}</p>
+      <p style="font-size:13px;color:#ffae3a;margin:2px 0">Drift score ${Math.round(_sessionScore).toLocaleString()} &nbsp; <span style="color:#ffd400">+◆${(G.earned||0).toLocaleString()} CR</span></p>
       ${rec}${champHtml}
       <div style="height:8px"></div>
       ${champBtn}
@@ -2399,6 +2508,7 @@ function showMenu(){
   if (window.GameMusic){ try{ window.GameMusic.start && window.GameMusic.start(); window.GameMusic.setMode && window.GameMusic.setMode('menu'); }catch(e){} }
   showOverlay(`<h1 class="title">DAYTONA <span class="red">USA</span></h1>
     <div class="subtitle">3D POLYGON EDITION</div>
+    <div class="subtitle" style="margin:2px 0 10px;color:#ffd400;font-size:14px">◆ ${_profile.credits.toLocaleString()} CR &nbsp;·&nbsp; ${_profile.races} races &nbsp;·&nbsp; ${_profile.wins} wins</div>
     <div class="menu-card">
       <h2>MERCEDES CIRCUIT RACING</h2>
       <p style="font-size:13px;opacity:.85;margin:0 0 14px">Pick your car, circuit, time, weather & soundtrack. ${BUILD}</p>
@@ -2551,6 +2661,7 @@ let last=performance.now(), acc=0;
 function frame(now){
   let dt=(now-last)/1000; if(dt>0.1)dt=0.1; last=now; acc+=dt;
   _adt = dt;
+  pollGamepad();
   while (acc>=STEP){ update(STEP); acc-=STEP; }
   updateEngine();
   if (scene && camera) render();
@@ -2582,7 +2693,7 @@ function toggleView(){
 window.__toggleView = toggleView;
 
 function boot(){
-  loadRecords();
+  loadRecords(); loadGhosts(); loadProfile();
   initThree();
   bindInput();
   const pb=document.getElementById('pauseBtn'); if(pb) pb.onclick=togglePause;
