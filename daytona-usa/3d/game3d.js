@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R56 — Mac maxed II (SSAA)';
+const BUILD = 'BUILD R57 — modern dash wheel';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -2083,22 +2083,47 @@ function drawDashboard(W,H,sp){
   // gear-ish badge under the shift light
   hctx.fillStyle='#cdd4de'; hctx.font=`900 ${Math.round(gr*0.34)}px Arial`; hctx.textAlign='center'; hctx.textBaseline='middle';
   hctx.fillText('GT', W*0.5, gy+gr*0.25);
-  // steering wheel (hub below the screen so only the upper rim shows; rotates with steer)
-  const cx=W*0.5, cy=H*1.14, R=W*0.42;
+  // steering wheel — compact, modern flat-bottom (D-cut) racing wheel.
+  // Smaller than a full circle and the hub stays on-screen so it reads as a
+  // contemporary sports/EV wheel rather than a big classic ring.
+  const cx=W*0.5, cy=H*0.97, R=Math.min(W,H)*0.205;
   hctx.save();
-  hctx.translate(cx,cy); hctx.rotate(steer*0.7);
-  hctx.lineCap='round';
-  hctx.lineWidth=Math.max(6,R*0.12); hctx.strokeStyle='#0c0d11';
-  hctx.beginPath(); hctx.arc(0,0,R,0,Math.PI*2); hctx.stroke();
-  hctx.lineWidth=Math.max(3,R*0.05); hctx.strokeStyle='#2a2d36';
-  hctx.beginPath(); hctx.arc(0,0,R,0,Math.PI*2); hctx.stroke();
-  hctx.strokeStyle='#191b22'; hctx.lineWidth=R*0.16; hctx.lineCap='butt';
-  for (const a of [-Math.PI/2, Math.PI/6, Math.PI*5/6]){
-    hctx.beginPath(); hctx.moveTo(0,0); hctx.lineTo(Math.cos(a)*R*0.92, Math.sin(a)*R*0.92); hctx.stroke();
+  hctx.translate(cx,cy); hctx.rotate(steer*0.55);
+  hctx.lineCap='round'; hctx.lineJoin='round';
+  // D-shaped rim outline (flat bottom)
+  const flatY=R*0.66, fx=Math.sqrt(Math.max(0,R*R-flatY*flatY));
+  const aL=Math.atan2(flatY,-fx), aR=Math.atan2(flatY,fx);
+  const rimPath=()=>{ hctx.beginPath(); hctx.moveTo(-fx,flatY); hctx.arc(0,0,R,aL,aR,false); hctx.closePath(); };
+  // outer rim: dark base then a thin brushed-metal highlight on the inner edge
+  rimPath(); hctx.lineWidth=Math.max(7,R*0.20); hctx.strokeStyle='#0a0b0f'; hctx.stroke();
+  const rg=hctx.createLinearGradient(0,-R,0,flatY);
+  rg.addColorStop(0,'#3a3f4a'); rg.addColorStop(0.5,'#202329'); rg.addColorStop(1,'#101216');
+  rimPath(); hctx.lineWidth=Math.max(4,R*0.12); hctx.strokeStyle=rg; hctx.stroke();
+  rimPath(); hctx.lineWidth=Math.max(1.5,R*0.02); hctx.strokeStyle='rgba(150,165,190,0.30)'; hctx.stroke();
+  // thumb grips at ~10 and 2 o'clock (modern moulded bulges)
+  hctx.fillStyle='#15171d';
+  for (const s of [-1,1]){
+    const a=-Math.PI/2 + s*0.7;
+    hctx.beginPath(); hctx.ellipse(Math.cos(a)*R, Math.sin(a)*R, R*0.12, R*0.18, a, 0, Math.PI*2); hctx.fill();
   }
-  hctx.fillStyle='#23262e'; hctx.beginPath(); hctx.arc(0,0,R*0.22,0,Math.PI*2); hctx.fill();
-  hctx.fillStyle='#d6262b'; hctx.beginPath(); hctx.arc(0,0,R*0.09,0,Math.PI*2); hctx.fill();
-  hctx.fillStyle='#e9e9ee'; hctx.fillRect(-R*0.05,-R-R*0.06,R*0.10,R*0.12);   // top-centre rim marker
+  // spokes: two horizontal (3 & 9, swept slightly down) + a single bottom stem
+  hctx.strokeStyle='#1b1e25'; hctx.lineCap='butt';
+  hctx.lineWidth=R*0.30;
+  for (const s of [-1,1]){ hctx.beginPath(); hctx.moveTo(0,R*0.04); hctx.lineTo(s*R*0.86, R*0.30); hctx.stroke(); }
+  hctx.lineWidth=R*0.26; hctx.beginPath(); hctx.moveTo(0,R*0.10); hctx.lineTo(0,flatY); hctx.stroke();
+  // central boss — rounded square housing with a red badge and trim ring
+  hctx.fillStyle='#1c1f26'; roundRect(-R*0.34,-R*0.30,R*0.68,R*0.62,R*0.14); hctx.fill();
+  hctx.lineWidth=Math.max(1.5,R*0.025); hctx.strokeStyle='rgba(150,165,190,0.35)';
+  roundRect(-R*0.34,-R*0.30,R*0.68,R*0.62,R*0.14); hctx.stroke();
+  // multifunction buttons on the spokes (silver pills)
+  hctx.fillStyle='#cfd5df';
+  for (const s of [-1,1]){ roundRect(s*R*0.50-R*0.10, R*0.16, R*0.20, R*0.10, R*0.05); hctx.fill(); }
+  // brand badge
+  hctx.fillStyle='#d6262b'; hctx.beginPath(); hctx.arc(0,0,R*0.13,0,Math.PI*2); hctx.fill();
+  hctx.fillStyle='#0c0d11'; hctx.font=`900 ${Math.round(R*0.16)}px Arial`; hctx.textAlign='center'; hctx.textBaseline='middle';
+  hctx.fillText('GT', 0, R*0.01);
+  // 12 o'clock centre marker (motorsport stripe)
+  hctx.fillStyle='#d6262b'; roundRect(-R*0.045,-R-R*0.05, R*0.09, R*0.16, R*0.02); hctx.fill();
   hctx.restore();
 }
 function roundRect(x,y,w,h,r){ hctx.beginPath(); hctx.moveTo(x+r,y); hctx.arcTo(x+w,y,x+w,y+h,r); hctx.arcTo(x+w,y+h,x,y+h,r); hctx.arcTo(x,y+h,x,y,r); hctx.arcTo(x,y,x+w,y,r); hctx.closePath(); }
