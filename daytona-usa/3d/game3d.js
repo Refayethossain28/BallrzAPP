@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R57 — modern dash wheel';
+const BUILD = 'BUILD R58 — RHD cockpit + windscreen';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -2049,44 +2049,123 @@ function drawDial(cx,cy,r,frac,opt){
   if (opt.value!=null){ hctx.fillStyle='#2bd451'; hctx.font=`900 ${Math.round(r*0.5)}px Arial`; hctx.textBaseline='middle'; hctx.fillText(opt.value, cx, cy+r*0.42); }
   if (opt.label){ hctx.fillStyle='#aeb6c2'; hctx.font=`bold ${Math.round(r*0.2)}px Arial`; hctx.textBaseline='middle'; hctx.fillText(opt.label, cx, cy+r*0.74); }
 }
-// in-car dashboard: instrument binnacle (tacho + speedo + shift light) and a turning wheel
+// in-car dashboard: full right-hand-drive cockpit — windscreen, instrument
+// binnacle (tacho + speedo + shift light), centre console + vents, and the wheel.
 function drawDashboard(W,H,sp){
   const steer=G.steerVis, kmh=Math.round(Math.abs(G.speed)*2.4);
-  // A-pillars (cabin frame)
-  hctx.fillStyle='rgba(10,11,16,0.92)';
-  hctx.beginPath(); hctx.moveTo(0,0); hctx.lineTo(W*0.18,0); hctx.lineTo(0,H*0.40); hctx.closePath(); hctx.fill();
-  hctx.beginPath(); hctx.moveTo(W,0); hctx.lineTo(W*0.82,0); hctx.lineTo(W,H*0.40); hctx.closePath(); hctx.fill();
-  // dashboard panel — a curved cowl humped up toward the driver binnacle
-  const dashTop=H*0.72;   // shorter dash so the car bonnet shows above it
+  const Min=Math.min(W,H);
+
+  // ============================ WINDSCREEN ============================
+  // roof header bar across the very top
+  hctx.fillStyle='#0a0b10'; hctx.fillRect(0,0,W,H*0.05);
+  hctx.fillStyle='rgba(150,160,180,0.10)'; hctx.fillRect(0,H*0.05-Math.max(1,H*0.003),W,Math.max(1,H*0.003));
+  // tinted graduated sun-strip just under the header (windscreen shade band)
+  let sb=hctx.createLinearGradient(0,H*0.05,0,H*0.17);
+  sb.addColorStop(0,'rgba(22,34,62,0.55)'); sb.addColorStop(1,'rgba(22,34,62,0)');
+  hctx.fillStyle=sb; hctx.fillRect(0,H*0.05,W,H*0.12);
+  // A-pillars (thick, angled) framing the glass
+  hctx.fillStyle='rgba(9,10,15,0.96)';
+  hctx.beginPath(); hctx.moveTo(0,H*0.05); hctx.lineTo(W*0.17,H*0.05); hctx.lineTo(0,H*0.55); hctx.closePath(); hctx.fill();
+  hctx.beginPath(); hctx.moveTo(W,H*0.05); hctx.lineTo(W*0.83,H*0.05); hctx.lineTo(W,H*0.55); hctx.closePath(); hctx.fill();
+  // faint glass reflection sheen sweeping across the upper screen
+  let gs=hctx.createLinearGradient(0,0,W*0.9,H*0.5);
+  gs.addColorStop(0,'rgba(200,218,240,0)'); gs.addColorStop(0.55,'rgba(200,218,240,0.05)');
+  gs.addColorStop(0.66,'rgba(200,218,240,0.11)'); gs.addColorStop(0.76,'rgba(200,218,240,0)');
+  hctx.fillStyle=gs; hctx.fillRect(0,H*0.05,W,H*0.45);
+  // rear-view mirror hanging from the header, centred
+  hctx.save(); hctx.translate(W*0.5,H*0.05);
+  hctx.fillStyle='#0a0b0f'; hctx.fillRect(-W*0.006,0,W*0.012,H*0.022);          // stalk
+  hctx.fillStyle='#15171e'; roundRect(-W*0.095,H*0.018,W*0.19,H*0.044,H*0.012); hctx.fill();
+  let mg=hctx.createLinearGradient(0,H*0.02,0,H*0.06); mg.addColorStop(0,'#26405e'); mg.addColorStop(1,'#0b121d');
+  hctx.fillStyle=mg; roundRect(-W*0.084,H*0.024,W*0.168,H*0.032,H*0.008); hctx.fill();
+  hctx.restore();
+
+  // ============================ DASHBOARD ============================
+  const dashTop=H*0.70;   // cowl top — leaves the road / bonnet visible above
+  // wiper blades parked low across the bottom of the glass (just above the cowl)
+  hctx.strokeStyle='rgba(16,18,24,0.85)'; hctx.lineWidth=Math.max(2,H*0.0045); hctx.lineCap='round';
+  hctx.beginPath(); hctx.moveTo(W*0.20,dashTop+H*0.01); hctx.lineTo(W*0.50,dashTop-H*0.14); hctx.stroke();
+  hctx.beginPath(); hctx.moveTo(W*0.55,dashTop+H*0.01); hctx.lineTo(W*0.80,dashTop-H*0.12); hctx.stroke();
+  // padded cowl, humped toward the driver (right) binnacle
   hctx.save();
   hctx.beginPath();
   hctx.moveTo(0,H); hctx.lineTo(0,dashTop+H*0.06);
-  hctx.quadraticCurveTo(W*0.5, dashTop-H*0.07, W, dashTop+H*0.06);
+  hctx.quadraticCurveTo(W*0.32, dashTop+H*0.02, W*0.62, dashTop+H*0.015);
+  hctx.quadraticCurveTo(W*0.80, dashTop-H*0.055, W, dashTop+H*0.02);
   hctx.lineTo(W,H); hctx.closePath();
-  const dg=hctx.createLinearGradient(0,dashTop-H*0.07,0,H);
-  dg.addColorStop(0,'#262a32'); dg.addColorStop(0.22,'#161920'); dg.addColorStop(1,'#070809');
+  const dg=hctx.createLinearGradient(0,dashTop-H*0.06,0,H);
+  dg.addColorStop(0,'#2a2e37'); dg.addColorStop(0.18,'#171a21'); dg.addColorStop(1,'#070809');
   hctx.fillStyle=dg; hctx.fill();
-  hctx.lineWidth=Math.max(2,H*0.004); hctx.strokeStyle='rgba(130,140,160,0.28)'; hctx.stroke();
+  // contrast-stitch seam along the cowl crest
+  hctx.lineWidth=Math.max(1.4,H*0.0022); hctx.strokeStyle='rgba(168,134,96,0.55)'; hctx.setLineDash([6,5]);
+  hctx.stroke(); hctx.setLineDash([]);
   hctx.restore();
-  // instrument binnacle housing
-  hctx.fillStyle='rgba(5,6,9,0.92)';
-  roundRect(W*0.15, dashTop-H*0.02, W*0.70, H*0.20, H*0.02); hctx.fill();
-  // gauges: tacho (left) + speedo (right)
-  const gy=dashTop+H*0.07, gr=Math.min(W,H)*0.092;
-  drawDial(W*0.345, gy, gr, sp, {ticks:10, major:1, redFrom:0.8, label:'RPM'});
-  drawDial(W*0.655, gy, gr, Math.min(1,kmh/340), {ticks:8, major:2, value:kmh, label:'KM/H'});
+  // brushed trim accent strip spanning the dash face
+  let tg=hctx.createLinearGradient(0,0,W,0);
+  tg.addColorStop(0,'#3a3f49'); tg.addColorStop(0.5,'#6b7280'); tg.addColorStop(1,'#2c313a');
+  hctx.fillStyle=tg; hctx.fillRect(W*0.04,dashTop+H*0.075,W*0.92,Math.max(2,H*0.006));
+
+  // air vent helper (rounded housing + horizontal louvres)
+  const vent=(x,y,w,h)=>{
+    hctx.fillStyle='#0c0e12'; roundRect(x,y,w,h,h*0.28); hctx.fill();
+    hctx.lineWidth=Math.max(1,h*0.06); hctx.strokeStyle='rgba(120,132,150,0.4)'; roundRect(x,y,w,h,h*0.28); hctx.stroke();
+    hctx.strokeStyle='rgba(95,105,120,0.6)'; hctx.lineWidth=Math.max(1,h*0.05);
+    for (let i=1;i<5;i++){ const yy=y+h*i/5; hctx.beginPath(); hctx.moveTo(x+w*0.1,yy); hctx.lineTo(x+w*0.9,yy); hctx.stroke(); }
+  };
+  vent(W*0.05, dashTop+H*0.10, W*0.16, H*0.06);          // far-left (passenger) vent
+  vent(W*0.41, dashTop+H*0.135, W*0.16, H*0.055);        // centre vent
+
+  // centre-console infotainment / nav screen (passenger-centre)
+  const sx=W*0.235, sy=dashTop+H*0.10, sw=W*0.30, sh=H*0.115;
+  hctx.fillStyle='#04060a'; roundRect(sx,sy,sw,sh,H*0.012); hctx.fill();
+  hctx.lineWidth=Math.max(1.5,H*0.003); hctx.strokeStyle='rgba(120,138,165,0.45)'; roundRect(sx,sy,sw,sh,H*0.012); hctx.stroke();
+  hctx.save(); roundRect(sx,sy,sw,sh,H*0.012); hctx.clip();
+  // faux sat-nav route line
+  hctx.strokeStyle='rgba(40,210,170,0.85)'; hctx.lineWidth=Math.max(2,H*0.004); hctx.lineCap='round';
+  hctx.beginPath(); hctx.moveTo(sx+sw*0.18,sy+sh*0.92); hctx.lineTo(sx+sw*0.34,sy+sh*0.52);
+  hctx.lineTo(sx+sw*0.52,sy+sh*0.58); hctx.lineTo(sx+sw*0.66,sy+sh*0.2); hctx.lineTo(sx+sw*0.86,sy+sh*0.26); hctx.stroke();
+  hctx.fillStyle='rgba(40,210,170,0.9)'; hctx.beginPath(); hctx.arc(sx+sw*0.18,sy+sh*0.92,Math.max(2,H*0.005),0,6.28); hctx.fill();
+  // header + readouts
+  hctx.textAlign='left'; hctx.textBaseline='alphabetic';
+  hctx.fillStyle='#8fb0c8'; hctx.font=`700 ${Math.round(sh*0.18)}px Arial`;
+  hctx.fillText((G.circuit&&G.circuit.name||'CIRCUIT').toUpperCase(), sx+sw*0.06, sy+sh*0.26);
+  hctx.fillStyle='#e9eef5'; hctx.font=`900 ${Math.round(sh*0.34)}px Arial`;
+  hctx.fillText(kmh+' ', sx+sw*0.06, sy+sh*0.66);
+  hctx.fillStyle='#8fb0c8'; hctx.font=`700 ${Math.round(sh*0.15)}px Arial`;
+  hctx.fillText('KM/H', sx+sw*0.06, sy+sh*0.82);
+  hctx.textAlign='right';
+  hctx.fillStyle='#ffd24a'; hctx.font=`900 ${Math.round(sh*0.2)}px Arial`;
+  hctx.fillText('LAP '+Math.min(G.lap,(G.circuit&&G.circuit.laps)||G.lap)+'/'+((G.circuit&&G.circuit.laps)||'-'), sx+sw*0.94, sy+sh*0.84);
+  hctx.restore();
+  hctx.textAlign='center'; hctx.textBaseline='middle';
+
+  // centre-console gear selector knob (between the seats)
+  hctx.fillStyle='#101216'; roundRect(W*0.40, H*0.92, W*0.16, H*0.07, H*0.014); hctx.fill();
+  hctx.fillStyle='#1c2029'; hctx.beginPath(); hctx.arc(W*0.48, H*0.955, Min*0.028, 0, 6.28); hctx.fill();
+  hctx.fillStyle='#cdd4de'; hctx.font=`900 ${Math.round(Min*0.03)}px Arial`;
+  hctx.fillText('D', W*0.48, H*0.955);
+
+  // ===================== DRIVER BINNACLE (right, RHD) =====================
+  const bx=W*0.72;                                       // driver sits on the right
+  hctx.fillStyle='rgba(5,6,9,0.94)';
+  roundRect(bx-W*0.205, dashTop-H*0.015, W*0.41, H*0.165, H*0.022); hctx.fill();
+  hctx.lineWidth=Math.max(1.5,H*0.003); hctx.strokeStyle='rgba(120,132,150,0.3)';
+  roundRect(bx-W*0.205, dashTop-H*0.015, W*0.41, H*0.165, H*0.022); hctx.stroke();
+  const gy=dashTop+H*0.055, gr=Min*0.078;
+  drawDial(bx-W*0.092, gy, gr, sp, {ticks:10, major:1, redFrom:0.8, label:'RPM'});
+  drawDial(bx+W*0.092, gy, gr, Math.min(1,kmh/340), {ticks:8, major:2, value:kmh, label:'KM/H'});
   // shift light between the gauges — flares as the revs hit the redline
   const shift = sp>0.86;
   hctx.fillStyle = shift ? '#ff2a2a' : '#3a1414';
-  hctx.beginPath(); hctx.arc(W*0.5, gy-gr*0.5, gr*0.16, 0, 6.28); hctx.fill();
-  if (shift){ hctx.fillStyle='rgba(255,60,60,0.35)'; hctx.beginPath(); hctx.arc(W*0.5, gy-gr*0.5, gr*0.34, 0, 6.28); hctx.fill(); }
-  // gear-ish badge under the shift light
-  hctx.fillStyle='#cdd4de'; hctx.font=`900 ${Math.round(gr*0.34)}px Arial`; hctx.textAlign='center'; hctx.textBaseline='middle';
-  hctx.fillText('GT', W*0.5, gy+gr*0.25);
-  // steering wheel — compact, modern flat-bottom (D-cut) racing wheel.
-  // Smaller than a full circle and the hub stays on-screen so it reads as a
-  // contemporary sports/EV wheel rather than a big classic ring.
-  const cx=W*0.5, cy=H*0.97, R=Math.min(W,H)*0.205;
+  hctx.beginPath(); hctx.arc(bx, gy-gr*0.62, gr*0.16, 0, 6.28); hctx.fill();
+  if (shift){ hctx.fillStyle='rgba(255,60,60,0.35)'; hctx.beginPath(); hctx.arc(bx, gy-gr*0.62, gr*0.34, 0, 6.28); hctx.fill(); }
+  // gear badge under the shift light
+  hctx.fillStyle='#cdd4de'; hctx.font=`900 ${Math.round(gr*0.32)}px Arial`; hctx.textAlign='center'; hctx.textBaseline='middle';
+  hctx.fillText('GT', bx, gy+gr*0.35);
+
+  // ===================== STEERING WHEEL (right, RHD) =====================
+  // modern flat-bottom (D-cut) racing wheel — a bit bigger, on the right.
+  const cx=bx, cy=H*1.0, R=Min*0.235;
   hctx.save();
   hctx.translate(cx,cy); hctx.rotate(steer*0.55);
   hctx.lineCap='round'; hctx.lineJoin='round';
