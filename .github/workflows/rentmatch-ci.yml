@@ -1,0 +1,100 @@
+name: RentMatch CI
+
+# Unit tests + builds + the emulator-backed e2e for the rentmatch app on every
+# push/PR that touches it. A separate, secret-gated job smoke-tests the live
+# payment rails in TEST mode (skips cleanly when the keys aren't set).
+
+on:
+  push:
+    paths:
+      - "rentmatch/**"
+      - ".github/workflows/rentmatch-ci.yml"
+  pull_request:
+    paths:
+      - "rentmatch/**"
+      - ".github/workflows/rentmatch-ci.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rentmatch
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up Java (for the Firestore emulator)
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Install workspace dependencies
+        run: npm install
+
+      - name: Unit tests (shared kernel)
+        run: npm test
+
+      - name: Build web + functions
+        run: |
+          npm --workspace apps/web run build
+          npm --prefix functions run build
+
+      - name: Install Playwright Chromium
+        working-directory: rentmatch/apps/web
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E on the Firebase Emulator Suite
+        run: npm run e2e:emulators
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: rentmatch/apps/web/playwright-report
+          if-no-files-found: ignore
+          retention-days: 7
+
+  staging-smoke:
+    # Validates the real Stripe/GoCardless integrations against TEST credentials.
+    # Idle (green) until the secrets are added.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rentmatch
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for payment test secrets
+        id: gate
+        env:
+          STRIPE: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+          GC: ${{ secrets.GOCARDLESS_ACCESS_TOKEN }}
+        run: |
+          if [ -n "$STRIPE" ] || [ -n "$GC" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Staging smoke idle::Add STRIPE_TEST_SECRET_KEY and/or GOCARDLESS_ACCESS_TOKEN repo secrets to run the live (test-mode) payment smoke."
+          fi
+
+      - name: Set up Node
+        if: steps.gate.outputs.ok == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Live payment-rail smoke (test mode)
+        if: steps.gate.outputs.ok == 'true'
+        env:
+          STRIPE_TEST_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+          GOCARDLESS_ACCESS_TOKEN: ${{ secrets.GOCARDLESS_ACCESS_TOKEN }}
+          GOCARDLESS_ENV: sandbox
+        run: npm run smoke:staging
