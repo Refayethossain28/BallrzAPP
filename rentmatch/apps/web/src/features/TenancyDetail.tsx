@@ -1,8 +1,12 @@
 import { useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
-import { buildRentLedger, buildRentStatementCsv, formatGBP, type RentStatus } from '@rentmatch/shared';
-import { fetchTenancy, fetchPayments, addRentPayment } from '../lib/db';
+import {
+  buildRentLedger, buildRentStatementCsv, formatGBP, isMandateActive, mandateLabel,
+  type RentStatus, type CollectionStatus,
+} from '@rentmatch/shared';
+import { fetchTenancy, fetchPayments, addRentPayment, type TenancyRecord } from '../lib/db';
+import { createDirectDebitSetup } from '../lib/functions';
 import { formatDate } from '../components/ui';
 
 const STATUS_BANNER: Record<RentStatus, { cls: string; border: string; bg: string; text: string }> = {
@@ -101,6 +105,8 @@ export default function TenancyDetail() {
         {ledger.nextDueDate && <Row k="Next rent due" v={formatDate(ledger.nextDueDate)} />}
       </div></div>
 
+      <RentCollection tenancy={tenancy} />
+
       <div className="section-t">Record a payment</div>
       <form onSubmit={logPayment}>
         <div className="two">
@@ -151,6 +157,77 @@ export default function TenancyDetail() {
       <button className="cta ghost" style={{ marginTop: 14 }} onClick={downloadStatement}>
         ⬇ Download rent statement (CSV)
       </button>
+    </>
+  );
+}
+
+const COLLECTION_PILL: Record<CollectionStatus, { cls: string; text: string }> = {
+  scheduled: { cls: 'warn', text: 'Scheduled' },
+  submitted: { cls: 'warn', text: 'Submitted' },
+  confirmed: { cls: 'good', text: 'Collected' },
+  failed: { cls: 'bad', text: 'Failed' },
+};
+
+/** Direct Debit setup + auto-collection status for a tenancy. */
+function RentCollection({ tenancy }: { tenancy: TenancyRecord }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const active = isMandateActive(tenancy.mandate);
+
+  async function setup() {
+    setBusy(true);
+    setError('');
+    try {
+      const { data } = await createDirectDebitSetup({ tenancyId: tenancy.id });
+      if (data.url) window.location.assign(data.url);
+      else setError('Could not start Direct Debit setup.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not start Direct Debit setup.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const collections = [...tenancy.collections].sort((a, b) => b.chargeDate - a.chargeDate);
+
+  return (
+    <>
+      <div className="section-t">Rent collection</div>
+      <div className="card"><div className="body">
+        <div className="row center" style={{ justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 14 }}>{mandateLabel(tenancy.mandate)}</span>
+          <span className={`pill ${active ? 'good' : tenancy.mandate?.status === 'pending' ? 'warn' : ''}`}>
+            {active ? 'Active' : tenancy.mandate?.status === 'pending' ? 'Pending' : 'Off'}
+          </span>
+        </div>
+        {active
+          ? <p className="faint" style={{ fontSize: 11.5, margin: '8px 0 0' }}>Rent is collected automatically by Direct Debit a few days before each due date.</p>
+          : <p className="faint" style={{ fontSize: 11.5, margin: '8px 0 0' }}>Set up a Direct Debit to collect rent automatically and end the chasing.</p>}
+      </div></div>
+
+      {!active && (
+        <button className="cta ghost" disabled={busy} onClick={setup}>
+          {busy ? 'Starting…' : tenancy.mandate?.status === 'pending' ? 'Continue Direct Debit setup' : 'Set up Direct Debit'}
+        </button>
+      )}
+      {error && <p className="error">{error}</p>}
+
+      {collections.length > 0 && (
+        <div className="card" style={{ marginTop: 10 }}><div className="body">
+          {collections.map((c) => {
+            const pill = COLLECTION_PILL[c.status];
+            return (
+              <div key={`${c.period}:${c.paymentId ?? ''}`} className="row center" style={{ justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid var(--line)' }}>
+                <div>
+                  <div style={{ fontSize: 13.5 }}>{formatGBP(c.amountPence)}</div>
+                  <div className="faint" style={{ fontSize: 11.5 }}>{c.period} · {formatDate(c.chargeDate)}</div>
+                </div>
+                <span className={`pill ${pill.cls}`}>{pill.text}</span>
+              </div>
+            );
+          })}
+        </div></div>
+      )}
     </>
   );
 }

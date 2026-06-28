@@ -19,10 +19,12 @@ import {
   buildTenancyAgreement, evaluateListingCompliance, evaluateSigningCompliance, recomputeStage,
   tenancyDepositCapPence, buildNotification, buildComplianceReminder, dueComplianceReminders,
   buildRentReminder, dueRentReminders, formatGBP,
+  dueCollections, coveredPeriods,
   isStale, withinLegalRetention, REDACTED, PLATFORM_FEE_PENCE, PLANS,
   type ComplianceDoc, type DealRecord, type EpcRating, type Party, type PlanId,
-  type SubscriptionStatus, type Tenancy,
+  type SubscriptionStatus, type Tenancy, type RentCollection,
 } from '@rentmatch/shared';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
 initializeApp();
 const db = getFirestore();
@@ -613,6 +615,201 @@ export const sendRentReminders = onSchedule('every 24 hours', async () => {
   }
 });
 
+/* ---- M9: automated rent collection via Direct Debit (GoCardless) ---- */
+
+const GC_BASE =
+  process.env.GOCARDLESS_ENV === 'live' ? 'https://api.gocardless.com' : 'https://api-sandbox.gocardless.com';
+
+/** Minimal GoCardless REST call (no SDK). Throws if unconfigured or non-2xx. */
+async function gcFetch(path: string, method: 'GET' | 'POST', body?: unknown): Promise<any> {
+  const token = process.env.GOCARDLESS_ACCESS_TOKEN;
+  if (!token) throw new HttpsError('failed-precondition', 'Direct Debit is not configured.');
+  const res = await fetch(`${GC_BASE}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'GoCardless-Version': '2015-07-06',
+      'Content-Type': 'application/json',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    console.error(`[gocardless] ${method} ${path} → ${res.status}: ${await res.text()}`);
+    throw new HttpsError('internal', 'Direct Debit provider error.');
+  }
+  return res.json();
+}
+
+/**
+ * Begin Direct Debit setup for a tenancy. Creates a GoCardless billing-request
+ * flow (mandate authorisation) tagged with the tenancyId, marks the mandate
+ * pending, and returns the hosted authorisation URL for the client to redirect
+ * to. The mandate goes `active` later via the webhook.
+ */
+export const createDirectDebitSetup = onCall(async (req: CallableRequest<{ tenancyId: string }>) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
+  const tenancyId = req.data?.tenancyId;
+  if (!tenancyId) throw new HttpsError('invalid-argument', 'tenancyId is required.');
+
+  const ref = db.doc(`tenancies/${tenancyId}`);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Tenancy not found.');
+  if (snap.data()!.landlordId !== uid) throw new HttpsError('permission-denied', 'Not your tenancy.');
+
+  const br = await gcFetch('/billing_requests', 'POST', {
+    billing_requests: { mandate_request: { currency: 'GBP', metadata: { tenancyId } } },
+  });
+  const flow = await gcFetch('/billing_request_flows', 'POST', {
+    billing_request_flows: {
+      redirect_uri: `${APP_URL}/landlord/rent/${tenancyId}`,
+      exit_uri: `${APP_URL}/landlord/rent/${tenancyId}`,
+      links: { billing_request: br.billing_requests.id },
+    },
+  });
+
+  await ref.update({ mandate: { status: 'pending', provider: 'gocardless' } });
+  return { url: flow.billing_request_flows.authorisation_url as string };
+});
+
+/** Record a confirmed rent collection as a payment (mirrors the app's addRentPayment). */
+async function recordCollectedPayment(tenancyId: string, amountPence: number, when: number): Promise<void> {
+  await db.collection(`tenancies/${tenancyId}/payments`).add({
+    amountPence,
+    date: new Date(when),
+    method: 'Direct Debit',
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  await db.doc(`tenancies/${tenancyId}`).update({ totalPaidPence: FieldValue.increment(amountPence) });
+}
+
+/** Set a single collection's status on the tenancy's collections array. */
+async function updateCollectionStatus(
+  tenancyId: string,
+  match: { paymentId?: string; period?: string },
+  status: RentCollection['status'],
+): Promise<RentCollection | null> {
+  const ref = db.doc(`tenancies/${tenancyId}`);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) return null;
+    const collections = (snap.data()!.collections ?? []) as RentCollection[];
+    const idx = collections.findIndex((c) =>
+      match.paymentId ? c.paymentId === match.paymentId : c.period === match.period,
+    );
+    if (idx < 0) return null;
+    const updated = { ...collections[idx], status };
+    collections[idx] = updated;
+    tx.update(ref, { collections });
+    return updated;
+  });
+}
+
+/**
+ * GoCardless webhook — durable source of truth for mandate and payment state.
+ * Verifies the HMAC signature, then: activates the mandate on its tenancy, and
+ * on a confirmed payment marks the collection paid and records the rent payment
+ * (idempotency comes from the collection status guard).
+ */
+export const gocardlessWebhook = onRequest(async (req, res) => {
+  const secret = process.env.GOCARDLESS_WEBHOOK_SECRET ?? '';
+  const signature = String(req.headers['webhook-signature'] ?? '');
+  const expected = createHmac('sha256', secret).update(req.rawBody).digest('hex');
+  const ok =
+    signature.length === expected.length &&
+    timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+  if (!ok) {
+    res.status(498).send('Invalid signature.');
+    return;
+  }
+
+  const events = (req.body?.events ?? []) as any[];
+  for (const ev of events) {
+    try {
+      if (ev.resource_type === 'mandates') {
+        const mandateId = ev.links?.mandate;
+        if (!mandateId) continue;
+        const mandate = await gcFetch(`/mandates/${mandateId}`, 'GET');
+        const tenancyId = mandate.mandates?.metadata?.tenancyId;
+        if (!tenancyId) continue;
+        const status = ev.action === 'active' || ev.action === 'reinstated' ? 'active'
+          : ev.action === 'cancelled' || ev.action === 'expired' ? 'cancelled'
+          : ev.action === 'failed' ? 'failed' : 'pending';
+        await db.doc(`tenancies/${tenancyId}`).update({
+          mandate: { status, provider: 'gocardless', mandateId },
+        });
+      } else if (ev.resource_type === 'payments') {
+        const paymentId = ev.links?.payment;
+        if (!paymentId) continue;
+        const payment = await gcFetch(`/payments/${paymentId}`, 'GET');
+        const tenancyId = payment.payments?.metadata?.tenancyId;
+        if (!tenancyId) continue;
+        if (ev.action === 'confirmed' || ev.action === 'paid_out') {
+          const updated = await updateCollectionStatus(tenancyId, { paymentId }, 'confirmed');
+          if (updated) await recordCollectedPayment(tenancyId, updated.amountPence, updated.chargeDate);
+        } else if (ev.action === 'failed' || ev.action === 'cancelled' || ev.action === 'charged_back') {
+          await updateCollectionStatus(tenancyId, { paymentId }, 'failed');
+        }
+      }
+    } catch (err) {
+      console.error('[gocardless:webhook] event failed', err);
+    }
+  }
+  res.json({ received: true });
+});
+
+/**
+ * Daily auto-collection: for every tenancy with an active mandate, initiate a
+ * Direct Debit for each rent charge entering its lead window that isn't already
+ * covered. The shared engine decides what's due; each created payment is tagged
+ * with its period so the webhook can reconcile it. No-op when GoCardless isn't
+ * configured.
+ */
+export const collectDueRent = onSchedule('every 24 hours', async () => {
+  if (!process.env.GOCARDLESS_ACCESS_TOKEN) return;
+  const now = Date.now();
+  const snap = await db.collection('tenancies').where('status', '==', 'active').get();
+
+  for (const docSnap of snap.docs) {
+    const t = docSnap.data();
+    if (t.mandate?.status !== 'active' || !t.mandate?.mandateId) continue;
+    const tenancy: Tenancy = {
+      startDate: t.startDate?.toMillis?.() ?? Number(t.startDate ?? 0),
+      monthlyRentPence: Number(t.monthlyRentPence ?? 0),
+      termMonths: Number(t.termMonths ?? 12),
+    };
+    const existing = (t.collections ?? []) as RentCollection[];
+    const due = dueCollections(tenancy, coveredPeriods(existing), now);
+    if (due.length === 0) continue;
+
+    const created: RentCollection[] = [];
+    for (const c of due) {
+      try {
+        const res = await gcFetch('/payments', 'POST', {
+          payments: {
+            amount: c.amountPence,
+            currency: 'GBP',
+            links: { mandate: t.mandate.mandateId },
+            metadata: { tenancyId: docSnap.id, period: c.period },
+          },
+        });
+        created.push({
+          period: c.period,
+          amountPence: c.amountPence,
+          status: 'submitted',
+          chargeDate: c.chargeDate,
+          paymentId: res.payments?.id,
+        });
+      } catch (err) {
+        console.error(`[gocardless] failed to create payment for ${docSnap.id} ${c.period}`, err);
+      }
+    }
+    if (created.length > 0) {
+      await docSnap.ref.update({ collections: FieldValue.arrayUnion(...created) });
+    }
+  }
+});
+
 /* ---- M8: recurring subscription billing (Stripe Subscriptions) ---- */
 
 /** Map a Stripe price id (from env) to a plan. Unconfigured plans are rejected. */
@@ -698,6 +895,59 @@ async function writeSubscription(sub: Stripe.Subscription): Promise<void> {
     { merge: true },
   );
 }
+
+/* ---- M10: agent tier — agencies & consent-based client linking ---- */
+
+/** An agent creates their agency; they become its owner and first member. */
+export const createAgency = onCall(async (req: CallableRequest<{ name: string }>) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
+  const name = (req.data?.name ?? '').trim() || 'My agency';
+
+  const existing = (await db.doc(`users/${uid}`).get()).data()?.ownedAgencyId as string | undefined;
+  if (existing) return { agencyId: existing };
+
+  const ref = await db.collection('agencies').add({
+    ownerId: uid,
+    name,
+    memberIds: [uid],
+    clientLandlordIds: [],
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  await db.doc(`users/${uid}`).set({ ownedAgencyId: ref.id }, { merge: true });
+  return { agencyId: ref.id };
+});
+
+/**
+ * A landlord connects their own portfolio to an agency (consent-based: the
+ * landlord acts on their own data). Records the link on the landlord's user doc
+ * and adds them to the agency's client list, so the agency's members can read
+ * their properties, tenancies and expenses (enforced in firestore.rules).
+ */
+export const connectToAgency = onCall(async (req: CallableRequest<{ agencyId: string }>) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
+  const agencyId = req.data?.agencyId;
+  if (!agencyId) throw new HttpsError('invalid-argument', 'An agency code is required.');
+
+  const agencySnap = await db.doc(`agencies/${agencyId}`).get();
+  if (!agencySnap.exists) throw new HttpsError('not-found', 'No agency with that code.');
+
+  await db.doc(`users/${uid}`).set({ agencyId }, { merge: true });
+  await db.doc(`agencies/${agencyId}`).update({ clientLandlordIds: FieldValue.arrayUnion(uid) });
+  return { ok: true, agencyName: String(agencySnap.data()?.name ?? 'agency') };
+});
+
+/** A landlord disconnects their portfolio from their agency. */
+export const disconnectFromAgency = onCall(async (req: CallableRequest) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
+  const agencyId = (await db.doc(`users/${uid}`).get()).data()?.agencyId as string | undefined;
+  if (!agencyId) return { ok: true };
+  await db.doc(`users/${uid}`).update({ agencyId: FieldValue.delete() });
+  await db.doc(`agencies/${agencyId}`).update({ clientLandlordIds: FieldValue.arrayRemove(uid) });
+  return { ok: true };
+});
 
 /* ---- M7: GDPR data erasure + retention ---- */
 

@@ -67,3 +67,20 @@ export const createBillingPortalSession = httpsCallable<void, { url: string }>(
   functions,
   'createBillingPortalSession',
 );
+
+/** Start GoCardless Direct Debit setup for a tenancy; returns a hosted auth URL. */
+export const createDirectDebitSetup = httpsCallable<{ tenancyId: string }, { url: string }>(
+  functions,
+  'createDirectDebitSetup',
+);
+
+/** Agent creates their agency (idempotent); returns its id (the share code). */
+export const createAgency = httpsCallable<{ name: string }, { agencyId: string }>(functions, 'createAgency');
+
+/** Landlord connects their own portfolio to an agency by code. */
+export const connectToAgency = httpsCallable<{ agencyId: string }, { ok: boolean; agencyName: string }>(
+  functions, 'connectToAgency',
+);
+
+/** Landlord disconnects from their agency. */
+export const disconnectFromAgency = httpsCallable<void, { ok: boolean }>(functions, 'disconnectFromAgency');

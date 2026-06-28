@@ -15,9 +15,9 @@ import { db, storage } from './firebase';
 import {
   newDealRecord, recomputeStage,
   type ComplianceCheck, type ComplianceDoc, type ComplianceDocType, type DealParty,
-  type DealRecord, type DealViewing, type EpcRating, type ExpenseCategory, type ExpenseEntry,
-  type FinanceEntry, type ListingSummary, type RentPayment,
-  type Subscription, type Tenancy, type TenancyAgreement,
+  type DealRecord, type DealViewing, type DirectDebitMandate, type EpcRating,
+  type ExpenseCategory, type ExpenseEntry, type FinanceEntry, type ListingSummary,
+  type RentCollection, type RentPayment, type Subscription, type Tenancy, type TenancyAgreement,
 } from '@rentmatch/shared';
 
 export type Role = 'renter' | 'landlord';
@@ -436,6 +436,9 @@ export interface TenancyRecord extends Tenancy {
   /** Running total of rent received — kept on the doc so list views can show
    *  arrears without an N+1 fetch of every payment. */
   totalPaidPence: number;
+  /** Direct Debit mandate + auto-collection records (managed by Cloud Functions). */
+  mandate?: DirectDebitMandate;
+  collections: RentCollection[];
   createdAt: number;
 }
 
@@ -469,6 +472,8 @@ function mapTenancy(id: string, d: Record<string, unknown>): TenancyRecord {
     termMonths: Number(d.termMonths ?? 12),
     status: (d.status ?? 'active') as TenancyRecord['status'],
     totalPaidPence: Number(d.totalPaidPence ?? 0),
+    mandate: (d.mandate as DirectDebitMandate | undefined) ?? undefined,
+    collections: Array.isArray(d.collections) ? (d.collections as RentCollection[]) : [],
     createdAt: toMillis(d.createdAt),
   };
 }
@@ -590,4 +595,59 @@ export async function fetchLandlordExpenses(landlordId: string): Promise<Expense
 
 export async function deleteExpense(id: string): Promise<void> {
   await deleteDoc(doc(expensesCol, id));
+}
+
+/* ---- agencies (agent tier) ---- */
+
+export interface Agency {
+  id: string;
+  ownerId: string;
+  name: string;
+  memberIds: string[];
+  clientLandlordIds: string[];
+}
+
+const agenciesCol = collection(db, 'agencies');
+
+/** The agency this user owns (if any), looked up via their profile. */
+export async function fetchOwnedAgency(uid: string): Promise<Agency | null> {
+  const ownedId = (await getDoc(doc(usersCol, uid))).data()?.ownedAgencyId as string | undefined;
+  if (!ownedId) return null;
+  const snap = await getDoc(doc(agenciesCol, ownedId));
+  if (!snap.exists()) return null;
+  const d = snap.data();
+  return {
+    id: snap.id,
+    ownerId: String(d.ownerId ?? ''),
+    name: String(d.name ?? 'Agency'),
+    memberIds: Array.isArray(d.memberIds) ? (d.memberIds as string[]) : [],
+    clientLandlordIds: Array.isArray(d.clientLandlordIds) ? (d.clientLandlordIds as string[]) : [],
+  };
+}
+
+/** The agencyId this landlord has connected to (if any). */
+export async function fetchConnectedAgencyId(uid: string): Promise<string | null> {
+  return ((await getDoc(doc(usersCol, uid))).data()?.agencyId as string | undefined) ?? null;
+}
+
+export interface ClientPortfolio {
+  landlordId: string;
+  landlordName: string;
+  listings: Listing[];
+  tenancies: TenancyRecord[];
+}
+
+/** Fetch one client landlord's portfolio (agency members are permitted to read it). */
+export async function fetchClientPortfolio(landlordId: string): Promise<ClientPortfolio> {
+  const [profile, listings, tenancies] = await Promise.all([
+    getDoc(doc(usersCol, landlordId)),
+    fetchLandlordListings(landlordId),
+    fetchLandlordTenancies(landlordId),
+  ]);
+  return {
+    landlordId,
+    landlordName: String(profile.data()?.displayName ?? 'Landlord'),
+    listings,
+    tenancies,
+  };
 }

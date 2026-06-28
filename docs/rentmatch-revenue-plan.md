@@ -116,9 +116,18 @@ value on day one without a tenant or a deal.
 unconfigured), so reminders and receipts land in inboxes, not just push.
 
 ### Phase 3 — Agent tier & rent collection (expansion revenue)
-8. **Open Banking rent collection** (GoCardless/TrueLayer) — take rent via Direct
-   Debit, auto-reconcile against the ledger. Optional small % or flat fee.
-9. **Multi-landlord/agent seats**, branded tenant-facing comms.
+8. ✅ **Open-Banking rent collection** (GoCardless) — tested reconciliation engine
+   (`collection.ts`: mandate state + `dueCollections`, idempotent, never
+   double-charges), GoCardless-shaped Cloud Functions (`createDirectDebitSetup`,
+   `gocardlessWebhook`, daily `collectDueRent` cron), and a per-tenancy Direct
+   Debit setup + collection-status UI. Confirmed collections flow back into the
+   ledger as payments. Real REST calls, gated on credentials (no-op without).
+9. ✅ **Agent tier / multi-landlord** — tested rollup engine (`agency.ts`), an
+   **Agency** dashboard aggregating each connected client's compliance + arrears,
+   and a **consent-based** link model: a landlord opts in with an agency code;
+   Firestore rules grant agency members read access via the landlord's own user
+   doc (no per-document stamping). Functions: `createAgency`, `connectToAgency`,
+   `disconnectFromAgency`.
 
 ## What would kill this (be honest)
 - **"Landlords won't pay for software."** Some won't — that's why Phase 1 leads
@@ -151,22 +160,34 @@ What a landlord can do today, all on top of the tested shared kernel:
   with Checkout + billing portal (`billing.ts`, Account screen); the £100
   per-completion fee remains as an add-on.
 
+- **Rent collection** — per-tenancy **Direct Debit** setup and auto-collection
+  status (`TenancyDetail.tsx`); collected payments reconcile into the ledger.
+- **Agency** — agent book-of-business dashboard (`Agency.tsx`): connected clients'
+  compliance + arrears rolled up, worst-first; landlords connect by code in
+  Account.
+
 **Engine coverage:** `compliance.ts`, `billing.ts`, `rent.ts`, `finance.ts`,
-`money.ts`, `dealStateMachine.ts`, `notifications.ts`, `search.ts`, `retention.ts`
-— **82 unit tests**, all passing. Web (`tsc -b` + vite) and functions (esbuild)
-build clean.
+`collection.ts`, `agency.ts`, `money.ts`, `dealStateMachine.ts`, `notifications.ts`,
+`search.ts`, `retention.ts` — **93 unit tests**, all passing. A Playwright
+**smoke** (`apps/web/e2e`) renders the app and checks routing headless (set
+`PW_CHROMIUM_PATH` to a pre-installed Chromium where the pinned build differs).
+Web (`tsc -b` + vite) and functions (esbuild) build clean.
 
 ### To go live
 1. Create the three Stripe **Prices** and set `STRIPE_PRICE_LANDLORD` /
    `STRIPE_PRICE_AGENT` / `STRIPE_PRICE_AGENT_UNIT` + `APP_URL`.
 2. Set Postmark `EMAIL_API_KEY` + `EMAIL_FROM` for real email.
-3. `firebase deploy` (hosting + functions + Firestore rules), then point a Stripe
+3. Set GoCardless `GOCARDLESS_ACCESS_TOKEN` + `GOCARDLESS_WEBHOOK_SECRET` (+ `ENV`)
+   to enable Direct Debit collection; point a GoCardless webhook at
+   `gocardlessWebhook`.
+4. `firebase deploy` (hosting + functions + Firestore rules), then point a Stripe
    webhook at `stripeWebhook` for `payment_intent.*` and `customer.subscription.*`.
 
 ### Still open (next)
-- E-sign **renewals** (recurring £100 events); **Open-Banking rent collection**
-  (GoCardless/TrueLayer) and the **agent multi-landlord** seats (Phase 3);
-  an emulator **e2e** test for the new compliance/rent/finance flows.
+- E-sign **renewals** (recurring £100 events); **agent team seats** beyond the
+  owner; and a full-lifecycle **emulator e2e** (the current Playwright test is a
+  render/routing smoke; the lifecycle spec is scaffolded as `test.fixme`).
+- **A11y:** associate `<label>`s with inputs (id/htmlFor) across the auth + forms.
 
 ## First concrete step
 Turn `ComplianceManager.tsx` from a per-deal gate into a **standalone portfolio

@@ -11,3 +11,5 @@ export * from './retention.ts';
 export * from './billing.ts';
 export * from './rent.ts';
 export * from './finance.ts';
+export * from './collection.ts';
+export * from './agency.ts';

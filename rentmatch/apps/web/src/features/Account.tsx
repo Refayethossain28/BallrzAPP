@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import {
   PLANS, PAID_PLAN_IDS, effectivePlan, isSubscriptionActive, formatGBP,
   type PlanId,
@@ -8,8 +9,9 @@ import { useAuth } from '../auth/AuthProvider';
 import { registerForPush } from '../lib/push';
 import {
   requestDataErasure, createBillingCheckoutSession, createBillingPortalSession,
+  createAgency, connectToAgency, disconnectFromAgency,
 } from '../lib/functions';
-import { fetchSubscription } from '../lib/db';
+import { fetchSubscription, fetchOwnedAgency, fetchConnectedAgencyId } from '../lib/db';
 
 export default function Account() {
   const { profile, signOutUser } = useAuth();
@@ -55,6 +57,7 @@ export default function Account() {
       </p>
 
       {profile.activeRole === 'landlord' && <Billing uid={profile.uid} />}
+      {profile.activeRole === 'landlord' && <AgencySection uid={profile.uid} />}
 
       <div className="notice" style={{ marginTop: 16 }}>
         On top of your plan, Apex charges landlords a one-off <b>£100</b> fee when a tenancy agreement is
@@ -146,6 +149,64 @@ function Billing({ uid }: { uid: string }) {
       <p className="faint" style={{ fontSize: 11, margin: '8px 0 0' }}>
         Compliance tracking is free for one property. Paid plans add more properties, tenancy e-signing and the document vault.
       </p>
+    </>
+  );
+}
+
+/** Agent: create/open an agency. Landlord: connect to one by code. */
+function AgencySection({ uid }: { uid: string }) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [code, setCode] = useState('');
+
+  const { data: owned } = useQuery({ queryKey: ['agency', uid], queryFn: () => fetchOwnedAgency(uid) });
+  const { data: connectedTo } = useQuery({ queryKey: ['connected-agency', uid], queryFn: () => fetchConnectedAgencyId(uid) });
+
+  function refresh() {
+    queryClient.invalidateQueries({ queryKey: ['agency', uid] });
+    queryClient.invalidateQueries({ queryKey: ['connected-agency', uid] });
+  }
+
+  async function run(fn: () => Promise<unknown>) {
+    setBusy(true);
+    setError('');
+    try { await fn(); refresh(); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Something went wrong.'); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <>
+      <div className="section-t">Agency</div>
+      {owned ? (
+        <>
+          <button className="cta ghost" onClick={() => navigate('/landlord/agency')}>🏢 Open “{owned.name}” ({owned.clientLandlordIds.length} clients)</button>
+          <p className="faint" style={{ fontSize: 11, margin: '8px 0 0' }}>Share your agency code from the agency screen so landlords can connect.</p>
+        </>
+      ) : connectedTo ? (
+        <>
+          <div className="card"><div className="body"><span style={{ fontSize: 13.5 }}>Your portfolio is connected to an agency.</span></div></div>
+          <button className="cta ghost" disabled={busy} onClick={() => run(() => disconnectFromAgency())}>
+            {busy ? 'Working…' : 'Disconnect from agency'}
+          </button>
+        </>
+      ) : (
+        <>
+          <button className="cta ghost" style={{ marginBottom: 10 }} disabled={busy}
+            onClick={() => run(() => createAgency({ name: 'My agency' }))}>
+            {busy ? 'Working…' : 'Create an agency (for letting agents)'}
+          </button>
+          <div className="field"><label>Or connect to an agency by code</label>
+            <input value={code} onChange={(e) => setCode(e.target.value.trim())} placeholder="Agency code" /></div>
+          <button className="cta ghost" disabled={busy || !code}
+            onClick={() => run(() => connectToAgency({ agencyId: code }))}>
+            {busy ? 'Connecting…' : 'Connect my portfolio'}
+          </button>
+        </>
+      )}
+      {error && <p className="error">{error}</p>}
     </>
   );
 }
