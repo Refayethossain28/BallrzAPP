@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R47 — WebGPU textures maxed';
+const BUILD = 'BUILD R48 — ultra-real cars + WebGPU FX';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -363,24 +363,39 @@ function updateClouds(){
 let envTex=null;
 function buildEnv(){
   try {
-    const th=G.theme;
-    const cv=document.createElement('canvas'); cv.width=128; cv.height=64; const x=cv.getContext('2d');
-    const grad=x.createLinearGradient(0,0,0,64);
-    grad.addColorStop(0, th.skyTop); grad.addColorStop(0.45, th.skyMid); grad.addColorStop(0.6, th.skyHorizon);
-    grad.addColorStop(0.62, '#3b4a39'); grad.addColorStop(1, '#26301f');
-    x.fillStyle=grad; x.fillRect(0,0,128,64);
-    const sg=x.createRadialGradient(96,16,2,96,16,28); sg.addColorStop(0,'rgba(255,250,230,0.95)'); sg.addColorStop(1,'rgba(255,250,230,0)');
-    x.fillStyle=sg; x.fillRect(66,0,60,38);
+    const th=G.theme, W=256, H=128;
+    const cv=document.createElement('canvas'); cv.width=W; cv.height=H; const x=cv.getContext('2d');
+    const sky = x.createLinearGradient(0,0,0,H);
+    if (G.night){ sky.addColorStop(0,'#04060f'); sky.addColorStop(0.45,'#0a1226'); sky.addColorStop(0.6,'#172238'); }
+    else { sky.addColorStop(0, th.skyTop); sky.addColorStop(0.45, th.skyMid); sky.addColorStop(0.6, th.skyHorizon); }
+    x.fillStyle=sky; x.fillRect(0,0,W,H*0.62);
+    // horizon haze band
+    const hz=x.createLinearGradient(0,H*0.5,0,H*0.66); hz.addColorStop(0,'rgba(255,255,255,0)'); hz.addColorStop(1, G.night?'rgba(120,140,190,0.25)':'rgba(255,250,235,0.45)');
+    x.fillStyle=hz; x.fillRect(0,H*0.5,W,H*0.16);
+    // sun (day) or moon + stars (night)
+    if (G.night){
+      x.fillStyle='#fff'; for(let i=0;i<70;i++){ x.globalAlpha=0.3+Math.random()*0.6; x.fillRect((Math.random()*W)|0,(Math.random()*H*0.55)|0,1,1);} x.globalAlpha=1;
+      const mg=x.createRadialGradient(W*0.74,H*0.2,1,W*0.74,H*0.2,22); mg.addColorStop(0,'rgba(225,235,255,1)'); mg.addColorStop(1,'rgba(180,200,240,0)');
+      x.fillStyle=mg; x.beginPath(); x.arc(W*0.74,H*0.2,22,0,6.28); x.fill();
+      // distant city window glints for reflections
+      x.fillStyle='rgba(255,210,140,0.9)'; for(let i=0;i<60;i++){ if(Math.random()<0.5) x.fillRect((Math.random()*W)|0, H*0.5+(Math.random()*H*0.1)|0, 1,1); }
+    } else {
+      const sg=x.createRadialGradient(W*0.74,H*0.22,2,W*0.74,H*0.22,40); sg.addColorStop(0,'rgba(255,252,238,1)'); sg.addColorStop(0.3,'rgba(255,246,210,0.7)'); sg.addColorStop(1,'rgba(255,246,210,0)');
+      x.fillStyle=sg; x.fillRect(W*0.74-44,0,88,80);
+    }
+    // reflective ground with subtle streaks (gives the paint a road reflection)
+    const gnd=x.createLinearGradient(0,H*0.62,0,H); gnd.addColorStop(0, G.night?'#0c0f16':'#3b4a39'); gnd.addColorStop(1, G.night?'#05060a':'#222a1c');
+    x.fillStyle=gnd; x.fillRect(0,H*0.62,W,H*0.38);
+    x.globalAlpha=0.10; x.fillStyle='#fff'; for(let i=0;i<40;i++){ x.fillRect(Math.random()*W, H*0.62+Math.random()*H*0.36, 6+Math.random()*20, 1); } x.globalAlpha=1;
     const eq=new THREE.CanvasTexture(cv); eq.mapping=THREE.EquirectangularReflectionMapping; eq.colorSpace=THREE.SRGBColorSpace;
     const pmrem=new THREE.PMREMGenerator(renderer);
     const rt=pmrem.fromEquirectangular(eq);
     if (envTex) envTex.dispose();
-    // NOTE: do NOT set scene.environment — modern three.js would reflect it on the
-    // road's Lambert material too, turning the asphalt sky-blue. Apply envTex only
-    // to the car paint/chrome/glass materials below.
+    // NOTE: do NOT set scene.environment — that would reflect on the road's Lambert
+    // material too (sky-blue asphalt). envTex is applied only to car paint/chrome/glass.
     envTex=rt.texture;
     eq.dispose(); pmrem.dispose();
-  } catch(e){ /* reflections optional */ }
+  } catch(e){ /* reflections optional (PMREM may be unavailable on some backends) */ }
 }
 
 // ----------------------------------------------------------------------------
@@ -626,19 +641,20 @@ function detailClone(kind, rep){ const t=makeDetailTex(kind).clone(); t.wrapS=t.
 // hero = the player's car gets full clearcoat PBR + flake; rivals get a cheaper metallic.
 function paintMat(c, hero){
   if (hero){
-    const m=new THREE.MeshPhysicalMaterial({color:c, metalness:0.55, roughness:0.34, clearcoat:1.0, clearcoatRoughness:0.05, envMap:envTex, envMapIntensity:1.7});
+    const m=new THREE.MeshPhysicalMaterial({color:c, metalness:0.55, roughness:0.34, clearcoat:1.0, clearcoatRoughness:0.05, envMap:envTex, envMapIntensity:_GPU?2.2:1.7});
     m.clearcoatNormalMap=flakeNormalTex(); m.clearcoatNormalScale=new THREE.Vector2(0.16,0.16);
     m.roughnessMap=detailClone('rough',6);   // visible metallic-flake clusters in the sheen
+    if (_GPU){ try{ m.iridescence=0.25; m.iridescenceIOR=1.3; m.anisotropy=0.4; m.anisotropyRotation=Math.PI*0.25; m.clearcoatRoughness=0.03; }catch(e){} }   // ultra-real paint on WebGPU
     return m;
   }
-  const m=new THREE.MeshStandardMaterial({color:c, metalness:0.42, roughness:0.34, envMap:envTex, envMapIntensity:1.25});
+  const m=new THREE.MeshStandardMaterial({color:c, metalness:0.42, roughness:0.34, envMap:envTex, envMapIntensity:_GPU?1.6:1.25});
   m.roughnessMap=detailClone('rough',6);
   return m;
 }
 function matteMat(c){ const m=new THREE.MeshStandardMaterial({color:c, metalness:0, roughness:0.85}); const t=detailClone('rough',3); m.map=t;
   if (_GPU){ const n=detailNormal('rough',3); if(n){ m.normalMap=n; m.normalScale=new THREE.Vector2(0.6,0.6); } else { m.bumpMap=t; m.bumpScale=0.25; } }
   else { m.bumpMap=t; m.bumpScale=0.25; } return m; }
-function glassMat(){ return new THREE.MeshStandardMaterial({color:0x0b1626, metalness:0.5, roughness:0.06, envMap:envTex, envMapIntensity:1.6}); }
+function glassMat(){ return new THREE.MeshStandardMaterial({color:0x070d18, metalness:0.7, roughness:0.04, envMap:envTex, envMapIntensity:_GPU?2.4:1.8}); }
 function chromeMat(){ const m=new THREE.MeshStandardMaterial({color:0xc4c9d2, metalness:0.95, roughness:0.2, envMap:envTex, envMapIntensity:1.4}); m.roughnessMap=makeDetailTex('metal'); return m; }
 function shadeHex(hex, amt){ const r=Math.max(0,Math.min(255,(hex>>16&255)+amt)), g=Math.max(0,Math.min(255,(hex>>8&255)+amt)), b=Math.max(0,Math.min(255,(hex&255)+amt)); return (r<<16)|(g<<8)|b; }
 let _emblemTex=null;
@@ -718,7 +734,8 @@ function addWheels(g,tx,tz,r,lite){
   const wheelTex = lite?null:makeWheelTexture();
   const discGeo  = lite?null:new THREE.CircleGeometry(r*0.99, 30);
   const brakeGeo = lite?null:new THREE.CylinderGeometry(r*0.58,r*0.58,0.5,18).rotateZ(Math.PI/2);
-  const brakeMat = lite?null:new THREE.MeshStandardMaterial({color:0x8b9099, metalness:0.7, roughness:0.45});
+  const brakeMat = lite?null:new THREE.MeshStandardMaterial({color:0x6a7078, metalness:0.8, roughness:0.4, emissive:0xff2a00, emissiveIntensity:0});
+  if (brakeMat) g.userData.brakeDisc=brakeMat;   // glows red-hot under heavy braking
   g.userData.wheels = [];
   for (const [wx,wz] of [[-tx,tz],[tx,tz],[-tx,-tz],[tx,-tz]]){
     const wg=new THREE.Group(); wg.position.set(wx,r,wz);   // a spinnable hub group per corner
@@ -735,6 +752,14 @@ function addWheels(g,tx,tz,r,lite){
   }
 }
 function addMirrors(g,x,y,z,mat){ for (const sx of [-x,x]){ g.add(lmBox(mat, 0.18,0.16,0.26, sx,y,z)); } }
+// woven carbon-fibre for aero parts (splitter / wing / diffuser)
+let _carbonTex=null;
+function makeCarbonTex(){ if(_carbonTex) return _carbonTex; const S=64, cv=document.createElement('canvas'); cv.width=cv.height=S; const x=cv.getContext('2d');
+  x.fillStyle='#141518'; x.fillRect(0,0,S,S);
+  for(let r=0;r<S;r+=8) for(let c=0;c<S;c+=8){ const dk=((r/8+c/8)%2)===0; x.fillStyle=dk?'#23262c':'#0e0f12';
+    x.fillRect(c,r,7,4); x.fillStyle=dk?'#0e0f12':'#23262c'; x.fillRect(c,r+4,7,4); }
+  const t=new THREE.CanvasTexture(cv); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(6,3); t.colorSpace=THREE.SRGBColorSpace; t.anisotropy=_maxAniso; _carbonTex=t; return t; }
+function carbonMat(){ return new THREE.MeshStandardMaterial({color:0xffffff, map:makeCarbonTex(), metalness:0.5, roughness:0.42, envMap:envTex, envMapIntensity:_GPU?1.4:1.0}); }
 // Extra stock-car detailing. Lite cars (rivals) get just a grille + mirrors so
 // they read right next to the player; the full set is reserved for the hero car.
 function addCarDetails(g, W, L, lite, liv){
@@ -746,8 +771,8 @@ function addCarDetails(g, W, L, lite, liv){
   // side mirrors at the A-pillars
   addMirrors(g, W/2-0.02, 1.18, 0.55, dark);
   if (lite) return;                                   // ---- hero-car richness below ----
-  // front splitter blade + a red tow hook poking out of the nose
-  g.add(lmBox(dark, W+0.22, 0.05, 0.5, 0, 0.3, L*0.5+0.15));
+  // carbon-fibre front splitter blade + a red tow hook poking out of the nose
+  g.add(lmBox(carbonMat(), W+0.22, 0.05, 0.5, 0, 0.3, L*0.5+0.15));
   g.add(lmBox(new THREE.MeshStandardMaterial({color:0xd23b2a, roughness:0.6}), 0.16,0.1,0.12, 0,0.52,L*0.5+0.09));
   // side exhaust pipes running along each rocker
   const pg=new THREE.CylinderGeometry(0.09,0.09,1.7,10); pg.rotateX(Math.PI/2);
@@ -1773,12 +1798,30 @@ async function setupWebGPU(){
     console.log('[WebGPU] ambient occlusion active');
   } catch(e){ console.warn('[WebGPU] AO skipped', e); out = color; }
 
+  // --- screen-space reflections (real wet-road / bodywork mirroring) ---
+  try {
+    const M = await import('three/addons/tsl/display/SSRNode.js');
+    const ssrFn = M.ssr || M.default;
+    const refl = ssrFn(color, scenePass.getTextureNode('depth'), scenePass.getTextureNode('normal'), scenePass.getTextureNode('metalness'), camera);
+    out = out.add(refl.mul(G.rain?0.5:0.28));
+    console.log('[WebGPU] SSR active');
+  } catch(e){ console.warn('[WebGPU] SSR skipped', e); }
+
   // --- bloom (the headline WebGPU win) ---
   try {
     const { bloom } = await import('three/addons/tsl/display/BloomNode.js');
     out = out.add(bloom(color, 0.9, 0.5, 0.15));        // strength, radius, threshold
     console.log('[WebGPU] bloom active');
   } catch(e){ console.warn('[WebGPU] bloom skipped', e); }
+
+  // --- subtle depth of field (focus on the car, soften the far distance) ---
+  try {
+    const M = await import('three/addons/tsl/display/DepthOfFieldNode.js');
+    const dofFn = M.dof || M.depthOfField || M.default;
+    const viewZ = scenePass.getViewZNode ? scenePass.getViewZNode() : scenePass.getTextureNode('depth');
+    out = dofFn(out, viewZ, tsl.uniform ? tsl.uniform(14) : 14, tsl.uniform ? tsl.uniform(0.18) : 0.18, tsl.uniform ? tsl.uniform(1.6) : 1.6);
+    console.log('[WebGPU] depth of field active');
+  } catch(e){ console.warn('[WebGPU] DoF skipped', e); }
 
   // --- FXAA anti-aliasing on the composite ---
   try {
@@ -1842,6 +1885,10 @@ function render(){
     const on = G.state==='racing' && (keys.brake || G.speed<0);
     for (const m of playerCar.userData.brakeMats) m.emissiveIntensity = on?2.6:0.8;
     if (playerCar.userData.tailGlow) for (const q of playerCar.userData.tailGlow){ q.material.opacity = on?0.95:(G.night?0.55:0.32); q.scale.setScalar(on?1.3:1); }
+    // brake discs glow red-hot when braking hard at speed, cooling off afterwards
+    const bd=playerCar.userData.brakeDisc;
+    if (bd){ const heat = (keys.brake && Math.abs(G.speed)>(G.maxSpeed||1)*0.3) ? 1 : 0;
+      bd.emissiveIntensity += ((heat?1.6:0) - bd.emissiveIntensity) * Math.min(1, _adt*(heat?6:1.5)); }
   }
   if (sun){ sun.target.position.copy(playerCar.position); sun.position.copy(playerCar.position).add(_sunOff); sun.target.updateMatrixWorld(); }
   // cockpit hides the chassis; dash & chase show the car (dash shows its bonnet)
