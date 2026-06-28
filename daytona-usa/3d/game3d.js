@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R52 — WebGPU stable (bloom)';
+const BUILD = 'BUILD R53 — twinkle, spray, drift, time-trial';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -167,7 +167,7 @@ function saveBestLap(t){ try{ _records[recordKey()]=t; localStorage.setItem('day
 
 // ---- driver profile: persistent credits + stats, and live drift score ----
 let _profile={credits:0, races:0, wins:0};
-let _sessionScore=0, _driftActive=0, _driftCombo=1;
+let _sessionScore=0, _driftActive=0, _driftCombo=1, _driftRun=0;
 function loadProfile(){ try{ _profile=Object.assign({credits:0,races:0,wins:0}, JSON.parse(localStorage.getItem('daytona3d_profile')||'{}')); }catch(e){} }
 function saveProfile(){ try{ localStorage.setItem('daytona3d_profile', JSON.stringify(_profile)); }catch(e){} }
 
@@ -1321,7 +1321,7 @@ function buildScenery(){
   const heroNear=(i,side)=> gateNear(i) || heroSlots.some(h=>{ if(h.side!==side)return false; let d=Math.abs(i-h.fi); d=Math.min(d,DIV-d); return d<26; });
 
   // verge props (mobile-budgeted, both verges)
-  const PROP_STEP = MOBILE ? 22 : 6;
+  const PROP_STEP = MOBILE ? 18 : 6;   // denser trees/props
   const sways = th.prop!=='rock';   // trees/palms sway; rocks don't
   for (let i=0;i<DIV;i+=PROP_STEP){ const f=frames[i];
     for (const side of [-1,1]){ if (heroNear(i,side)) continue;
@@ -1333,11 +1333,11 @@ function buildScenery(){
 
   // distant skyline ring (city) or mountains
   if (th.skyline==='city'){
-    const winTex=makeWindowTexture(th.landmark==='dubai'); const RING=MOBILE?22:46;
+    const winTex=makeWindowTexture(th.landmark==='dubai'); const RING=MOBILE?30:46;
     for (let i=0;i<RING;i++){ const ang=(i/RING)*Math.PI*2; const r=560+(mulberry32(i+99)())*260; const h=70+(mulberry32(i+5)())*(th.landmark==='dubai'?260:140); const w=24+(mulberry32(i+13)())*26;
       const col=th.landmark==='dubai'?0x9fb6cc:[0x8a6a52,0x9c7a52,0x70615a,0x86756b][i%4];
       const mat=new THREE.MeshStandardMaterial({color:col, roughness:0.7, metalness:th.landmark==='dubai'?0.4:0.05, map:winTex.clone(), emissive:0xffe39a, emissiveMap:winTex.clone(), emissiveIntensity:0.4}); mat.map.repeat.set(Math.max(1,w/12),Math.max(2,h/12)); mat.emissiveMap.repeat.copy(mat.map.repeat);
-      _pulse.push({mat, base:0.42, ph:i*1.3, sp:3.2, flash:true}); _scroll.push({tex:mat.emissiveMap, v:0.02});   // flashy windows + shimmer
+      _pulse.push({mat, base:0.62, ph:i*1.3, sp:3.2, flash:true}); _scroll.push({tex:mat.emissiveMap, v:0.02});   // brighter twinkly neon windows
       const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,w),mat); b.position.set(Math.cos(ang)*r,h/2-40,Math.sin(ang)*r); sceneryGroup.add(b); }
   } else {
     const mtnMat=new THREE.MeshLambertMaterial({color:th.mountain, flatShading:true, map:makeDetailTex('rough')});
@@ -1373,10 +1373,10 @@ function buildScenery(){
     const keepout = heroSlots.map(h=>h.fi).concat(gateFi>=0?[gateFi]:[]);
     const nearLM = i=>keepout.some(k=>{ let d=Math.abs(i-k); d=Math.min(d,DIV-d); return d<70; });
     const winTex=makeWindowTexture(th.landmark==='dubai'); const _v=new THREE.Vector3();
-    for (let i=0;i<DIV;i+=(MOBILE?88:44)){ if(nearLM(i)) continue; const f=frames[i]; _v.copy(f.pos).sub(cen); const side=(_v.dot(f.right)>=0)?1:-1;
+    for (let i=0;i<DIV;i+=(MOBILE?70:44)){ if(nearLM(i)) continue; const f=frames[i]; _v.copy(f.pos).sub(cen); const side=(_v.dot(f.right)>=0)?1:-1;
       const h=20+rng()*(th.landmark==='dubai'?70:34), w=12+rng()*12; const col=th.landmark==='dubai'?0xbcd0e2:[0x8a6248,0x96704e,0x6f5e54][(rng()*3)|0];
       const mat=new THREE.MeshStandardMaterial({color:col, roughness:0.7, metalness:th.landmark==='dubai'?0.45:0.05, map:winTex.clone(), emissive:0xffe39a, emissiveMap:winTex.clone(), emissiveIntensity:0.38}); mat.map.repeat.set(Math.max(1,w/8),Math.max(2,h/10)); mat.emissiveMap.repeat.copy(mat.map.repeat);
-      _pulse.push({mat, base:0.4, ph:i*0.7, sp:2.6, flash:true}); _scroll.push({tex:mat.emissiveMap, v:0.016});
+      _pulse.push({mat, base:0.58, ph:i*0.7, sp:2.6, flash:true}); _scroll.push({tex:mat.emissiveMap, v:0.016});
       const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,w),mat); b.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+90+rng()*70)); b.position.y+=h/2-2; sceneryGroup.add(b); }
   }
 
@@ -1404,8 +1404,8 @@ function buildScenery(){
 
   // ---- BIG multi-row grandstands distributed around the lap (outer side, close in) ----
   const crowdTex=makeCrowdTexture();
-  const NSEG=MOBILE?10:15, NROW=MOBILE?2:3;
-  const standFracs = MOBILE ? [0.008,0.028, 0.25, 0.50, 0.75]
+  const NSEG=MOBILE?12:15, NROW=MOBILE?3:3;
+  const standFracs = MOBILE ? [0.008,0.028, 0.25, 0.40, 0.50, 0.62, 0.75]
                             : [0.006,0.022,0.038, 0.25, 0.49,0.51,0.53, 0.75];
   const standCen=new THREE.Vector3(); for(const fr of frames) standCen.add(fr.pos); standCen.multiplyScalar(1/frames.length);
   const standPostMat=new THREE.MeshLambertMaterial({color:0xb9c0c7, map:makeDetailTex('metal')});
@@ -1597,11 +1597,16 @@ function racingUpdate(dt){
   G.offset += f.curv * speedFrac * 11 * dt;
   // ---- drift scoring: hold a fast line through corners to build a combo ----
   const driftNow = speedFrac>0.62 && !onGrass && (steer!==0 || Math.abs(f.curv)>0.02);
-  if (driftNow){ _driftActive+=dt; _driftCombo=Math.min(6, 1+((_driftActive*0.85)|0)); _sessionScore += speedFrac*55*_driftCombo*dt; }
-  else { _driftActive=0; _driftCombo=1; }
+  if (driftNow){ const gain=speedFrac*55*_driftCombo*dt; _driftActive+=dt; _driftCombo=Math.min(6, 1+((_driftActive*0.85)|0)); _sessionScore+=gain; _driftRun+=gain; }
+  else {
+    if (_driftRun>250){ const cols=['#ffd400','#ffae3a','#ff7a3a','#ff4dd2','#7affd4','#ffffff'];
+      arcadeCallout('DRIFT +'+Math.round(_driftRun)+(_driftCombo>2?'  x'+_driftCombo:''), cols[Math.min(5,_driftCombo-1)], [_NOTE.G5,_NOTE.C6]); }
+    _driftRun=0; _driftActive=0; _driftCombo=1;
+  }
   // arcade tyre smoke when sliding / cornering hard / on the grass
   if (_smokeGroup) driftSmoke(f, speedFrac, steer, onGrass);
   if (G.boostActive && _smokeGroup) emitBoostFlame(f);
+  if (G.rain && _smokeGroup && speedFrac>0.28) emitRainSpray(f, speedFrac);   // wheel spray in the wet
   // the grass always nudges you back toward the road, so the car can never get
   // stranded/pinned far out in the verge (arcade forgiveness).
   if (Math.abs(G.offset) > ROAD_W){
@@ -1824,10 +1829,16 @@ function animateWorld(){
   }
   // swaying trees (livelier)
   for (const s of _sway) s.obj.rotation.z = Math.sin(t*2.2 + s.ph) * s.amp;
-  // pulsing lights — windows flash brightly, landmark glows breathe gently
+  // pulsing lights — windows now TWINKLE (slow breathe + sharp random sparkle),
+  // landmark glows breathe gently
   for (const p of _pulse){
     const w = Math.sin(t*(p.sp||1.8) + p.ph);
-    p.mat.emissiveIntensity = p.flash ? p.base*(0.2 + 1.0*(0.5+0.5*w)) : p.base*(0.6 + 0.4*w);
+    if (p.flash){
+      const sparkle = Math.pow(Math.max(0, Math.sin(t*5.3 + p.ph*2.7)), 8);   // occasional bright pops
+      p.mat.emissiveIntensity = p.base*(0.28 + 0.8*(0.5+0.5*w) + 0.7*sparkle);
+    } else {
+      p.mat.emissiveIntensity = p.base*(0.6 + 0.4*w);
+    }
   }
   // animated (scrolling) window textures
   for (const sc of _scroll) sc.tex.offset.y += sc.v * _adt;
@@ -2298,13 +2309,13 @@ function startRace(){
   if (ghostCar){ scene.remove(ghostCar); ghostCar=null; }
   _ghost = ghostFor(); _lapTrace=[]; _ghostDelta=null;
   ghostCar = buildCar(G.vehicle); makeGhost(ghostCar); scene.add(ghostCar); ghostCar.visible=!!_ghost;
-  buildRivals(MOBILE ? 7 : 9);
+  buildRivals(G.timeTrial ? 0 : (MOBILE ? 7 : 9));   // time trial = solo vs your ghost
   G.maxSpeed = G.circuit.maxSpeed * G.vehicle.speedMul * 0.58;   // tuned to feel
   G.dist=0; G.offset=0; G.speed=0; G.lap=1; G.steerVis=0;
-  G.timeLeft=G.circuit.startTime; G.totalTime=0; G.rollT=0; G.cdNum=-1; G.green=false;
+  G.timeLeft=G.timeTrial ? G.circuit.startTime*3 : G.circuit.startTime; G.totalTime=0; G.rollT=0; G.cdNum=-1; G.green=false;
   G.boost=1; G.boostActive=false; G.lapStart=0; G.bestLap=bestLapFor(); G.recordSet=false;   // nitro full + load best lap
   _replay=[]; _recT=0;                                  // fresh replay recording
-  _sessionScore=0; _driftActive=0; _driftCombo=1;       // fresh drift score
+  _sessionScore=0; _driftActive=0; _driftCombo=1; _driftRun=0;   // fresh drift score
   keys.gas=keys.brake=keys.left=keys.right=keys.boost=false;
   if (G.view==='cinematic') G.view='chase';
   G.started=true; G.state='rolling';
@@ -2476,6 +2487,17 @@ function emitBoostFlame(f){
   for (const sx of [-0.45,0.45])
     emitSmoke(_smPos.x - f.tan.x*back + f.right.x*sx, _smPos.y+0.55, _smPos.z - f.tan.z*back + f.right.z*sx, Math.random()<0.5?0xff7a1a:0xffd23a);
 }
+let _sprayT=0;
+// fine misty spray kicked up off the wheels on a wet track
+function emitRainSpray(f, speedFrac){
+  _sprayT -= _adt; if (_sprayT>0) return;
+  _sprayT = 0.05 - speedFrac*0.03;
+  worldPos(G.dist, G.offset, _smPos);
+  const back=2.4*CAR_SCALE, sideD=1.1*CAR_SCALE;
+  for (const sx of [-1,1])
+    emitSmoke(_smPos.x - f.tan.x*back + f.right.x*sx*sideD, _smPos.y+0.35,
+              _smPos.z - f.tan.z*back + f.right.z*sx*sideD, 0xbcc6d2);   // grey wet mist
+}
 
 // ---- championship (Grand Prix across all circuits, points by finish position) ----
 function champStart(){ G.champ = { round:0, order:[0,1,2,3], points:[], names:[] }; }
@@ -2616,11 +2638,14 @@ function showMenu(){
       <p style="font-size:13px;opacity:.85;margin:0 0 14px">Pick your car, circuit, time, weather & soundtrack. ${BUILD}</p>
       <button class="btn" id="startBtn">SINGLE RACE ▶</button>
       <div style="height:8px"></div>
+      <button class="btn ghost" id="ttBtn">⏱ TIME TRIAL</button>
+      <div style="height:8px"></div>
       <button class="btn ghost" id="gpBtn">🏆 GRAND PRIX</button>
     </div>
     <div class="credit">Fan-made, non-commercial.</div>`);
-  document.getElementById('startBtn').onclick = ()=>{ try{ensureAudio();}catch(e){} G.champ=null; showVehicleSelect(); };
-  document.getElementById('gpBtn').onclick    = ()=>{ try{ensureAudio();}catch(e){} champStart(); showVehicleSelect(); };
+  document.getElementById('startBtn').onclick = ()=>{ try{ensureAudio();}catch(e){} G.champ=null; G.timeTrial=false; showVehicleSelect(); };
+  document.getElementById('ttBtn').onclick    = ()=>{ try{ensureAudio();}catch(e){} G.champ=null; G.timeTrial=true; showVehicleSelect(); };
+  document.getElementById('gpBtn').onclick    = ()=>{ try{ensureAudio();}catch(e){} G.timeTrial=false; champStart(); showVehicleSelect(); };
   _onTitle=true; armIdle();                       // start the inactivity countdown to attract mode
 }
 
