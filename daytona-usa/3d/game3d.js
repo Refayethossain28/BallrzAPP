@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R44 — ghosts, drift, gamepad, PWA';
+const BUILD = 'BUILD R45 — WebGPU (experimental)';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -109,6 +109,7 @@ const MOBILE = (typeof navigator!=='undefined') &&
    ((navigator.maxTouchPoints||0) > 1 && Math.min(window.innerWidth,window.innerHeight) < 820));
 
 let renderer, scene, camera, sun, sky, hemiLight, ambLight;
+let _GPU=false, _post=null;   // WebGPU renderer + its post-processing (bloom) pipeline
 let glCanvas, hud2d, hctx;
 let frames = [], trackLen = 0;
 let playerCar = null;
@@ -214,9 +215,17 @@ function initThree(){
   hud2d    = document.getElementById('hud2d');
   hctx     = hud2d.getContext('2d');
 
+  // EXPERIMENTAL WebGPU path (opt-in via ?webgpu=1): the WebGPU build exposes
+  // WebGPURenderer; everything else (scene/materials) is identical. Falls back to
+  // the proven WebGLRenderer when the WebGPU build isn't loaded.
+  _GPU = (typeof THREE.WebGPURenderer === 'function');
   // Mobile: skip MSAA — at full 3x density the supersampling antialiases edges
   // for free, and MSAA buffers at that resolution risk GPU memory / context loss.
-  renderer = new THREE.WebGLRenderer({ canvas:glCanvas, antialias:!MOBILE, powerPreference:'high-performance' });
+  if (_GPU){
+    renderer = new THREE.WebGPURenderer({ canvas:glCanvas, antialias:!MOBILE });
+  } else {
+    renderer = new THREE.WebGLRenderer({ canvas:glCanvas, antialias:!MOBILE, powerPreference:'high-performance' });
+  }
   // render at the device's native pixel density (capped at 3x) for max sharpness
   renderer.setPixelRatio(Math.min(3, window.devicePixelRatio||1));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -224,7 +233,8 @@ function initThree(){
   renderer.toneMappingExposure = 0.98;
   renderer.shadowMap.enabled = true;                 // real-time shadows on mobile too (pushed)
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  _maxAniso = renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 8;
+  _maxAniso = (renderer.capabilities && renderer.capabilities.getMaxAnisotropy) ? renderer.capabilities.getMaxAnisotropy() : 8;
+  if (_GPU){ try{ setupWebGPU(); }catch(e){ console.warn('WebGPU post-fx setup failed', e); } }
 
   // Recover from a lost GPU context (iOS Safari can drop it). preventDefault on
   // 'lost' is REQUIRED or the browser never restores it (permanent black screen).
@@ -1704,7 +1714,24 @@ function cineCamera(f){
 
 function present(){
   if (_ctxLost) return;
-  renderer.render(scene, camera);
+  if (_GPU){ if (_post) _post.renderAsync(); else renderer.renderAsync(scene, camera); }
+  else renderer.render(scene, camera);
+}
+// EXPERIMENTAL: build the WebGPU post-processing chain (bloom). TSL nodes are
+// loaded lazily so the WebGL build never touches them. Failure is non-fatal.
+async function setupWebGPU(){
+  await renderer.init();
+  try {
+    const tsl = await import('three/tsl');
+    const { bloom } = await import('three/addons/tsl/display/BloomNode.js');
+    const scenePass = tsl.pass(scene, camera);
+    const color = scenePass.getTextureNode();
+    const bl = bloom(color, 0.65, 0.30, 0.25);          // strength, radius, threshold
+    const post = new THREE.PostProcessing(renderer);
+    post.outputNode = color.add(bl);
+    _post = post;
+    console.log('[WebGPU] bloom post-processing active');
+  } catch(e){ console.warn('[WebGPU] post-fx unavailable, rendering without bloom', e); }
 }
 
 // ---- world animation: spinning wheels, the turning London Eye, the waving flag ----

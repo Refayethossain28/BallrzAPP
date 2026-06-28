@@ -196,11 +196,25 @@
 <script src="https://js-cdn.music.apple.com/musickit/v3/musickit.js" async></script>
 <!-- Optional: pre-set your MusicKit developer token here instead of pasting it in-game:
      <script>window.APPLE_MUSIC_DEV_TOKEN = 'eyJ...';</script> -->
-<script type="importmap">
-{ "imports": {
-    "three": "./vendor/three.module.js",
-    "three/addons/": "./vendor/addons/"
-} }
+<!-- Renderer selection. Default = the proven vendored WebGL build. Opt into the
+     EXPERIMENTAL WebGPU build (real bloom etc.) with ?webgpu=1 on a WebGPU device
+     (iOS 17.4+ / desktop Chrome). The WebGPU build also has its own WebGL2 fallback. -->
+<script>
+  (function(){
+    var wantGPU = /[?&]webgpu=1/.test(location.search) && !!navigator.gpu;
+    var V='0.170.0', cdn='https://cdn.jsdelivr.net/npm/three@'+V;
+    var map = wantGPU ? { imports:{
+        "three": cdn+'/build/three.webgpu.js',
+        "three/tsl": cdn+'/build/three.tsl.js',
+        "three/addons/": cdn+'/examples/jsm/'
+      } } : { imports:{
+        "three": "./vendor/three.module.js",
+        "three/addons/": "./vendor/addons/"
+      } };
+    var s=document.createElement('script'); s.type='importmap'; s.textContent=JSON.stringify(map);
+    document.currentScript.after(s);
+    window.__WEBGPU_REQUESTED = wantGPU;
+  })();
 </script>
 <script type="module">
   // Cache-bust the gameplay code so a reload always gets the latest build
@@ -209,7 +223,14 @@
   const load = src => new Promise(res => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = res; document.head.appendChild(s); });
   await load('../music.js?v=' + v);
   await load('./applemusic.js?v=' + v);
-  await import('./game3d.js?v=' + v);
+  try {
+    await import('./game3d.js?v=' + v);
+  } catch (e) {
+    // If the experimental WebGPU build (loaded from CDN) failed, self-heal back
+    // to the proven WebGL renderer by reloading without the ?webgpu flag.
+    if (window.__WEBGPU_REQUESTED) { location.replace(location.pathname); }
+    else { throw e; }
+  }
   // register the service worker (installable + offline); harmless if unsupported
   if ('serviceWorker' in navigator) { try { navigator.serviceWorker.register('./sw.js'); } catch(e){} }
 </script>
