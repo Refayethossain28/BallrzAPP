@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R45 — WebGPU (experimental)';
+const BUILD = 'BUILD R46 — WebGPU maxed (experimental)';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -1717,21 +1717,51 @@ function present(){
   if (_GPU){ if (_post) _post.renderAsync(); else renderer.renderAsync(scene, camera); }
   else renderer.render(scene, camera);
 }
-// EXPERIMENTAL: build the WebGPU post-processing chain (bloom). TSL nodes are
-// loaded lazily so the WebGL build never touches them. Failure is non-fatal.
+// EXPERIMENTAL: build a maxed WebGPU post-processing chain. Each effect is
+// independently guarded, so whatever the device supports renders and one
+// failing effect never kills the rest (bloom always survives). The HUD-canvas
+// cinematic grade/vignette/flare/rain still apply on top in both renderers.
 async function setupWebGPU(){
   await renderer.init();
+  // crank renderer-level quality now that we're on WebGPU
+  try { if (sun && sun.shadow){ const SM=MOBILE?2048:4096; sun.shadow.mapSize.set(SM,SM); if (sun.shadow.map){ sun.shadow.map.dispose(); sun.shadow.map=null; } } } catch(e){}
+  let tsl; try { tsl = await import('three/tsl'); } catch(e){ console.warn('[WebGPU] TSL unavailable; no post-fx', e); return; }
+  let scenePass, color, out;
+  try { scenePass = tsl.pass(scene, camera); color = scenePass.getTextureNode(); out = color; }
+  catch(e){ console.warn('[WebGPU] scene pass failed', e); return; }
+
+  // --- ambient occlusion (needs an MRT pass for normals+depth) ---
   try {
-    const tsl = await import('three/tsl');
+    const M = await import('three/addons/tsl/display/GTAONode.js');
+    const aoFn = M.ao || M.gtao || M.default;
+    const { mrt, output, transformedNormalView, metalness } = tsl;
+    scenePass.setMRT(mrt({ output, normal: transformedNormalView, metalness }));
+    color = scenePass.getTextureNode('output');
+    const aoNode = aoFn(scenePass.getTextureNode('depth'), scenePass.getTextureNode('normal'), camera);
+    out = color.mul(aoNode);
+    console.log('[WebGPU] ambient occlusion active');
+  } catch(e){ console.warn('[WebGPU] AO skipped', e); out = color; }
+
+  // --- bloom (the headline WebGPU win) ---
+  try {
     const { bloom } = await import('three/addons/tsl/display/BloomNode.js');
-    const scenePass = tsl.pass(scene, camera);
-    const color = scenePass.getTextureNode();
-    const bl = bloom(color, 0.65, 0.30, 0.25);          // strength, radius, threshold
+    out = out.add(bloom(color, 0.9, 0.5, 0.15));        // strength, radius, threshold
+    console.log('[WebGPU] bloom active');
+  } catch(e){ console.warn('[WebGPU] bloom skipped', e); }
+
+  // --- FXAA anti-aliasing on the composite ---
+  try {
+    const { fxaa } = await import('three/addons/tsl/display/FXAANode.js');
+    out = fxaa(out);
+    console.log('[WebGPU] FXAA active');
+  } catch(e){ console.warn('[WebGPU] FXAA skipped', e); }
+
+  try {
     const post = new THREE.PostProcessing(renderer);
-    post.outputNode = color.add(bl);
+    post.outputNode = out;
     _post = post;
-    console.log('[WebGPU] bloom post-processing active');
-  } catch(e){ console.warn('[WebGPU] post-fx unavailable, rendering without bloom', e); }
+    console.log('[WebGPU] post-processing chain built');
+  } catch(e){ console.warn('[WebGPU] PostProcessing build failed; plain render', e); _post=null; }
 }
 
 // ---- world animation: spinning wheels, the turning London Eye, the waving flag ----
