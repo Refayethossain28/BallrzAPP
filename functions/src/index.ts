@@ -1,5 +1,5 @@
 /**
- * ApexVIP Cloud Functions — getHotelRates
+ * ApexVIP Cloud Functions — getHotelRates and the rest of the ApexVIP backend.
  *
  * Live hotel pricing for the client app (`apexvip-client.html`). The browser must
  * never hold the Amadeus secret, so the client calls this callable function, which
@@ -8,17 +8,45 @@
  * silently falls back to its local estimate — so a partial deploy never breaks the UI.
  *
  * Firebase Functions v2 (2nd gen). Node 20 provides a global `fetch`.
+ *
+ * TypeScript: source lives in `src/`, builds to `lib/index.js` (esbuild). The
+ * Firestore document shapes are in `./types.ts`; cast a snapshot's `.data()` to
+ * one of them at the read boundary. Behaviour is identical to the prior index.js —
+ * this port only adds types.
  */
 
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
-const { defineSecret } = require('firebase-functions/params');
-const logger = require('firebase-functions/logger');
-const Anthropic = require('@anthropic-ai/sdk');
+import { onCall, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
+import { onDocumentWritten, onDocumentCreated } from 'firebase-functions/v2/firestore';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
+import { defineSecret } from 'firebase-functions/params';
+import * as logger from 'firebase-functions/logger';
+import Anthropic from '@anthropic-ai/sdk';
+import Stripe from 'stripe';
+import * as admin from 'firebase-admin';
+
+import type {
+  Booking,
+  Driver,
+  DriverPayout,
+  GetHotelRatesInput,
+  ParseBookingInput,
+  Pricing,
+  ProcessSquarePaymentInput,
+  RefundSquarePaymentInput,
+  User,
+  Vehicle,
+} from './types.js';
+
+/** Normalize an unknown thrown value to a message string for logging. */
+function errMessage(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
 
 // Anthropic client, memoized per warm instance (keyed by the resolved secret).
 // Powers parseBookingIntent (ApexAI concierge).
-let _anthropic = null, _anthropicKey = null;
-function anthropicClient(apiKey) {
+let _anthropic: Anthropic | null = null;
+let _anthropicKey: string | null = null;
+function anthropicClient(apiKey: string): Anthropic {
   if (!_anthropic || _anthropicKey !== apiKey) {
     _anthropic = new Anthropic({ apiKey });
     _anthropicKey = apiKey;
@@ -41,15 +69,16 @@ const STRIPE_SECRET_KEY = defineSecret('STRIPE_SECRET_KEY');
 // Where Stripe returns the driver after onboarding (their app).
 const PAYOUT_RETURN_URL = process.env.PAYOUT_RETURN_URL || 'https://refayethossain28.github.io/BallrzAPP/apexvip-driver.html';
 // Lazy Stripe client (null when no key → callers fall back to a mock flow).
-let _stripe = null, _stripeKey = null;
-function stripeClient() {
+let _stripe: Stripe | null = null;
+let _stripeKey: string | null = null;
+function stripeClient(): Stripe | null {
   const k = STRIPE_SECRET_KEY.value();
   if (!k) return null;
-  if (!_stripe || _stripeKey !== k) { _stripe = require('stripe')(k); _stripeKey = k; }
+  if (!_stripe || _stripeKey !== k) { _stripe = new Stripe(k); _stripeKey = k; }
   return _stripe;
 }
-async function isAdminUid(uid) {
-  try { const u = await require('firebase-admin').firestore().doc(`users/${uid}`).get(); return u.exists && (u.data() || {}).role === 'admin'; }
+async function isAdminUid(uid: string): Promise<boolean> {
+  try { const u = await admin.firestore().doc(`users/${uid}`).get(); return u.exists && (u.data() as User | undefined)?.role === 'admin'; }
   catch (_) { return false; }
 }
 
@@ -58,9 +87,9 @@ async function isAdminUid(uid) {
 const AMADEUS_HOST = process.env.AMADEUS_HOST || 'https://test.api.amadeus.com';
 
 // In-memory OAuth2 token cache (per warm instance)
-let _token = null; // { value, expiresAt }
+let _token: { value: string; expiresAt: number } | null = null;
 
-async function getToken(clientId, clientSecret) {
+async function getToken(clientId: string, clientSecret: string): Promise<string> {
   if (_token && _token.expiresAt > Date.now() + 60_000) return _token.value;
   const res = await fetch(`${AMADEUS_HOST}/v1/security/oauth2/token`, {
     method: 'POST',
@@ -72,7 +101,7 @@ async function getToken(clientId, clientSecret) {
     }),
   });
   if (!res.ok) throw new Error(`Amadeus auth failed: ${res.status}`);
-  const data = await res.json();
+  const data = await res.json() as { access_token: string; expires_in?: number };
   _token = {
     value: data.access_token,
     expiresAt: Date.now() + (data.expires_in || 1799) * 1000,
@@ -80,17 +109,17 @@ async function getToken(clientId, clientSecret) {
   return _token.value;
 }
 
-function isoPlusDays(dateStr, days) {
+function isoPlusDays(dateStr: string, days: number): string {
   const d = new Date(`${dateStr}T12:00:00`);
   d.setDate(d.getDate() + days);
   return d.toISOString().slice(0, 10);
 }
 
-const round5 = (x) => Math.round(x / 5) * 5;
+const round5 = (x: number): number => Math.round(x / 5) * 5;
 
-exports.getHotelRates = onCall(
+export const getHotelRates = onCall(
   { secrets: [AMADEUS_CLIENT_ID, AMADEUS_CLIENT_SECRET], region: 'us-central1' },
-  async (request) => {
+  async (request: CallableRequest<GetHotelRatesInput>) => {
     const { name, lat, lng, checkIn, nights = 1, guests = 2, currency = 'GBP' } =
       request.data || {};
 
@@ -102,7 +131,7 @@ exports.getHotelRates = onCall(
     const adults = Math.max(1, Math.min(9, Number(guests) || 2));
     const checkOut = isoPlusDays(checkIn, nightCount);
 
-    let token;
+    let token: string;
     try {
       token = await getToken(AMADEUS_CLIENT_ID.value(), AMADEUS_CLIENT_SECRET.value());
     } catch (err) {
@@ -115,12 +144,12 @@ exports.getHotelRates = onCall(
     const geoUrl =
       `${AMADEUS_HOST}/v1/reference-data/locations/hotels/by-geocode` +
       `?latitude=${lat}&longitude=${lng}&radius=1&radiusUnit=KM&hotelSource=ALL`;
-    let hotelIds = [];
+    let hotelIds: string[] = [];
     try {
       const geoRes = await fetch(geoUrl, { headers: auth });
       if (geoRes.ok) {
-        const geo = await geoRes.json();
-        hotelIds = (geo.data || []).slice(0, 8).map((h) => h.hotelId).filter(Boolean);
+        const geo = await geoRes.json() as { data?: Array<{ hotelId?: string }> };
+        hotelIds = (geo.data || []).slice(0, 8).map((h) => h.hotelId).filter(Boolean) as string[];
       } else {
         logger.warn(`geocode ${geoRes.status} for ${name}`);
       }
@@ -136,14 +165,14 @@ exports.getHotelRates = onCall(
       `&checkInDate=${checkIn}&checkOutDate=${checkOut}` +
       `&adults=${adults}&roomQuantity=1&currency=${currency}&bestRateOnly=true`;
 
-    let offers = [];
+    let offers: number[] = [];
     try {
       const offRes = await fetch(offUrl, { headers: auth });
       if (offRes.ok) {
-        const off = await offRes.json();
+        const off = await offRes.json() as { data?: Array<{ offers?: Array<{ price?: { total?: string } }> }> };
         for (const entry of off.data || []) {
           for (const o of entry.offers || []) {
-            const total = parseFloat(o.price && o.price.total);
+            const total = parseFloat((o.price && o.price.total) as string);
             if (!Number.isNaN(total)) offers.push(total);
           }
         }
@@ -189,20 +218,26 @@ const SQUARE_API_VERSION = '2024-10-17';
 
 // firebase-admin — initialized once at module load so every function (payments,
 // notifications, dispatch) can reach Firestore/Auth. Guarded against double-init.
-const admin = require('firebase-admin');
 if (!admin.apps.length) admin.initializeApp();
+
+// A Square REST error carries the HTTP status + structured error list.
+interface SquareErrorDetail { detail?: string; code?: string }
+class SquareError extends Error {
+  squareStatus?: number;
+  squareErrors?: SquareErrorDetail[];
+}
 
 // Plausible-fare bounds derived from settings/pricing. We can't always recompute
 // the exact fare here (point-to-point fares depend on live route data the client
 // holds), so we read the operator's pricing and reject any charge that falls
 // outside a sane floor/ceiling — defeating amount tampering and runaway charges.
-async function fareBounds() {
-  let p = {};
+async function fareBounds(): Promise<{ floor: number; ceiling: number }> {
+  let p: Pricing = {};
   try {
     const snap = await admin.firestore().doc('settings/pricing').get();
-    if (snap.exists) p = snap.data() || {};
+    if (snap.exists) p = (snap.data() as Pricing) || {};
   } catch (_) { /* settings unreadable → fall back to defaults below */ }
-  const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
+  const num = (v: unknown, d: number): number => (Number.isFinite(Number(v)) ? Number(v) : d);
   const minFare = Math.min(num(p.min_fare_s, 38), num(p.min_fare_v, 50));
   const dayV    = num(p.day_v, 550);
   const hourlyV = num(p.hourly_v_rate, 75);
@@ -216,22 +251,22 @@ async function fareBounds() {
 
 // Confirm the caller owns (or is staff for) the booking tied to a Square payment.
 // Used by capture/refund, which act on money already authorized against a booking.
-async function assertPaymentOwnership(uid, paymentId) {
+async function assertPaymentOwnership(uid: string, paymentId: string): Promise<void> {
   const db = admin.firestore();
   // Staff (admin/driver) may capture/refund any booking.
   try {
     const u = await db.doc(`users/${uid}`).get();
-    const role = u.exists && (u.data() || {}).role;
+    const role = u.exists && (u.data() as User | undefined)?.role;
     if (role === 'admin' || role === 'driver') return;
   } catch (_) { /* fall through to ownership check */ }
   const q = await db.collection('bookings').where('squarePaymentId', '==', paymentId).limit(1).get();
   if (q.empty) throw new HttpsError('not-found', 'No booking matches this payment');
-  if ((q.docs[0].data() || {}).clientId !== uid) {
+  if ((q.docs[0].data() as Booking).clientId !== uid) {
     throw new HttpsError('permission-denied', 'You do not own this payment');
   }
 }
 
-async function squareFetch(path, body, token) {
+async function squareFetch(path: string, body: unknown, token: string): Promise<any> {
   const res = await fetch(`${SQUARE_HOST}/v2${path}`, {
     method: 'POST',
     headers: {
@@ -241,24 +276,24 @@ async function squareFetch(path, body, token) {
     },
     body: JSON.stringify(body),
   });
-  const data = await res.json().catch(() => ({}));
+  const data = await res.json().catch(() => ({})) as { errors?: SquareErrorDetail[] } & Record<string, any>;
   if (!res.ok) {
-    const msg = (data.errors && data.errors.map(e => e.detail || e.code).join('; ')) || `Square ${res.status}`;
-    const err = new Error(msg); err.squareStatus = res.status; err.squareErrors = data.errors; throw err;
+    const msg = (data.errors && data.errors.map((e) => e.detail || e.code).join('; ')) || `Square ${res.status}`;
+    const err = new SquareError(msg); err.squareStatus = res.status; err.squareErrors = data.errors; throw err;
   }
   return data;
 }
 
-function toMinorUnits(amount) {
+function toMinorUnits(amount: unknown): number {
   const n = Math.round(Number(amount) * 100);
   if (!Number.isFinite(n) || n <= 0) throw new HttpsError('invalid-argument', 'Invalid amount');
   return n;
 }
 
 // Authorize (pre-auth) a payment. Capture later with captureSquarePayment.
-exports.processSquarePayment = onCall(
+export const processSquarePayment = onCall(
   { secrets: [SQUARE_ACCESS_TOKEN], region: 'us-central1' },
-  async (request) => {
+  async (request: CallableRequest<ProcessSquarePaymentInput>) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in to pay');
     const d = request.data || {};
     if (!d.sourceId || !d.idempotencyKey) {
@@ -288,16 +323,17 @@ exports.processSquarePayment = onCall(
       const p = out.payment || {};
       return { paymentId: p.id, status: p.status, receiptUrl: p.receipt_url || null };
     } catch (err) {
-      logger.error('processSquarePayment', err.message, err.squareErrors || '');
-      throw new HttpsError(err.squareStatus === 402 ? 'failed-precondition' : 'unavailable', err.message);
+      const se = err as SquareError;
+      logger.error('processSquarePayment', se.message, se.squareErrors || '');
+      throw new HttpsError(se.squareStatus === 402 ? 'failed-precondition' : 'unavailable', se.message);
     }
   }
 );
 
 // Capture a previously authorized payment when the trip completes.
-exports.captureSquarePayment = onCall(
+export const captureSquarePayment = onCall(
   { secrets: [SQUARE_ACCESS_TOKEN], region: 'us-central1' },
-  async (request) => {
+  async (request: CallableRequest<{ paymentId?: string }>) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
     const paymentId = request.data && request.data.paymentId;
     if (!paymentId) throw new HttpsError('invalid-argument', 'paymentId is required');
@@ -306,16 +342,16 @@ exports.captureSquarePayment = onCall(
       const out = await squareFetch(`/payments/${encodeURIComponent(paymentId)}/complete`, {}, SQUARE_ACCESS_TOKEN.value());
       return { paymentId, status: (out.payment && out.payment.status) || 'COMPLETED' };
     } catch (err) {
-      logger.error('captureSquarePayment', err.message);
-      throw new HttpsError('unavailable', err.message);
+      logger.error('captureSquarePayment', errMessage(err));
+      throw new HttpsError('unavailable', errMessage(err));
     }
   }
 );
 
 // Refund a captured payment (full or partial) per the cancellation policy.
-exports.refundSquarePayment = onCall(
+export const refundSquarePayment = onCall(
   { secrets: [SQUARE_ACCESS_TOKEN], region: 'us-central1' },
-  async (request) => {
+  async (request: CallableRequest<RefundSquarePaymentInput>) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
     const d = request.data || {};
     if (!d.paymentId || !d.idempotencyKey) {
@@ -333,8 +369,8 @@ exports.refundSquarePayment = onCall(
       const r = out.refund || {};
       return { refundId: r.id, status: r.status };
     } catch (err) {
-      logger.error('refundSquarePayment', err.message);
-      throw new HttpsError('unavailable', err.message);
+      logger.error('refundSquarePayment', errMessage(err));
+      throw new HttpsError('unavailable', errMessage(err));
     }
   }
 );
@@ -345,9 +381,6 @@ exports.refundSquarePayment = onCall(
 // All credentials are secrets; if a provider isn't configured it's skipped, so a
 // partial setup never errors. Set the non-secret from-address/number via env.
 
-const { onDocumentWritten, onDocumentCreated } = require('firebase-functions/v2/firestore');
-const { onSchedule } = require('firebase-functions/v2/scheduler');
-
 const SENDGRID_API_KEY   = defineSecret('SENDGRID_API_KEY');
 const TWILIO_ACCOUNT_SID = defineSecret('TWILIO_ACCOUNT_SID');
 const TWILIO_AUTH_TOKEN  = defineSecret('TWILIO_AUTH_TOKEN');
@@ -357,7 +390,7 @@ const NOTIFY_FROM_NAME  = process.env.NOTIFY_FROM_NAME  || 'ApexVIP';
 const TWILIO_FROM_NUMBER = process.env.TWILIO_FROM_NUMBER || '';
 const OPS_EMAIL = process.env.OPS_EMAIL || NOTIFY_FROM_EMAIL; // fleet/compliance inbox
 
-async function sendEmail(to, subject, text) {
+async function sendEmail(to: string, subject: string, text: string): Promise<void> {
   const key = SENDGRID_API_KEY.value();
   if (!key || !to) return;
   const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
@@ -373,7 +406,7 @@ async function sendEmail(to, subject, text) {
   if (!res.ok) logger.warn('SendGrid', res.status, await res.text().catch(() => ''));
 }
 
-async function sendSms(to, body) {
+async function sendSms(to: string, body: string): Promise<void> {
   const sid = TWILIO_ACCOUNT_SID.value(), tok = TWILIO_AUTH_TOKEN.value();
   if (!sid || !tok || !TWILIO_FROM_NUMBER || !to) return;
   const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
@@ -388,7 +421,7 @@ async function sendSms(to, body) {
 }
 
 // Decide which lifecycle message (if any) this write represents.
-function bookingEvent(before, after) {
+function bookingEvent(before: Booking | null, after: Booking | null): string | null {
   if (!after) return null;                                   // deleted
   if (!before) return 'received';                            // newly created
   if (before.status !== after.status) {
@@ -406,11 +439,11 @@ function bookingEvent(before, after) {
   return null;
 }
 
-function bookingMessage(event, b) {
+function bookingMessage(event: string, b: Booking): [string, string] | null {
   const ref = b.ref || b.bookingRef || '';
   const route = [b.pickup, b.dropoff || b.airport].filter(Boolean).join(' → ');
   const when = [b.date, b.time].filter(Boolean).join(' ');
-  const M = {
+  const M: Record<string, [string, string]> = {
     received:        ['We\'ve received your booking', `Thank you — we've received your ApexVIP booking ${ref}. ${route}${when ? ' · ' + when : ''}. We'll confirm your chauffeur shortly.`],
     confirmed:       ['Your booking is confirmed', `Your ApexVIP journey ${ref} is confirmed. ${route}${when ? ' · ' + when : ''}.`],
     driver_assigned: ['Your chauffeur is assigned', `${b.driverName || 'Your chauffeur'} will be looking after you for booking ${ref}${b.vehicle ? ' in a ' + b.vehicle : ''}.`],
@@ -421,11 +454,11 @@ function bookingMessage(event, b) {
   return M[event] || null;
 }
 
-exports.onBookingWrite = onDocumentWritten(
+export const onBookingWrite = onDocumentWritten(
   { document: 'bookings/{bookingId}', secrets: [SENDGRID_API_KEY, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN], region: 'us-central1' },
   async (event) => {
-    const before = event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
-    const after  = event.data && event.data.after  && event.data.after.exists  ? event.data.after.data()  : null;
+    const before = event.data && event.data.before && event.data.before.exists ? event.data.before.data() as Booking : null;
+    const after  = event.data && event.data.after  && event.data.after.exists  ? event.data.after.data()  as Booking : null;
     const kind = bookingEvent(before, after);
     if (!kind) return;
     // On completion, record the driver's 80% earning to the payout ledger
@@ -434,26 +467,28 @@ exports.onBookingWrite = onDocumentWritten(
       try {
         const amount = Math.round((Number(after.baseFare) || Number(after.price) || 0) * 0.8);
         if (amount > 0) {
-          await admin.firestore().collection('driver_payouts').doc(event.params.bookingId).set({
+          const entry: DriverPayout = {
             driverId: after.driverId,
             bookingRef: after.ref || event.params.bookingId,
             amount, currency: after.currency || 'GBP',
             status: 'owed',
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          }, { merge: true });
+          };
+          await admin.firestore().collection('driver_payouts').doc(event.params.bookingId).set(entry, { merge: true });
         }
-      } catch (err) { logger.error('payout ledger', err.message); }
+      } catch (err) { logger.error('payout ledger', errMessage(err)); }
     }
-    const msg = bookingMessage(kind, after);
+    const msg = bookingMessage(kind, after as Booking);
     if (!msg) return;
     const [subject, text] = msg;
-    const email = after.clientEmail || after.email || '';
-    const phone = after.clientPhone || after.phone || '';
+    const a = after as Booking;
+    const email = a.clientEmail || a.email || '';
+    const phone = a.clientPhone || a.phone || '';
     try {
       await Promise.all([ sendEmail(email, subject, text), sendSms(phone, `ApexVIP: ${text}`) ]);
-      logger.info('booking notification sent', { kind, ref: after.ref || event.params.bookingId });
+      logger.info('booking notification sent', { kind, ref: a.ref || event.params.bookingId });
     } catch (err) {
-      logger.error('onBookingWrite', err.message);
+      logger.error('onBookingWrite', errMessage(err));
     }
   }
 );
@@ -476,7 +511,7 @@ exports.onBookingWrite = onDocumentWritten(
  * =========================================================================== */
 const APEXAI_MODEL = process.env.APEXAI_MODEL || 'claude-opus-4-8';
 
-const APEXAI_INTENT_TOOL = {
+const APEXAI_INTENT_TOOL: Anthropic.Tool = {
   name: 'booking_intent',
   description: 'Return the structured booking intent parsed from the guest\'s message, plus a warm concierge reply.',
   input_schema: {
@@ -518,7 +553,8 @@ const APEXAI_INTENT_TOOL = {
   },
 };
 
-async function apexCallClaude({ message, history, trips, now, mode, context }, apiKey) {
+async function apexCallClaude(p: ParseBookingInput, apiKey: string): Promise<Record<string, unknown>> {
+  const { message, history, trips, now, mode, context } = p;
   const today = (typeof now === 'string' && now) || new Date().toISOString();
 
   if (mode === 'driver') {
@@ -527,14 +563,14 @@ async function apexCallClaude({ message, history, trips, now, mode, context }, a
       'practical and supportive — help with their jobs, earnings, schedule, going on/offline, ' +
       'navigation tips and app questions. Plain text only, a few sentences at most.' +
       (context ? ` Driver context: ${JSON.stringify(context).slice(0, 600)}.` : '');
-    const body = {
+    const body: Anthropic.MessageCreateParamsNonStreaming = {
       model: APEXAI_MODEL,
       max_tokens: 400,
       system: sys,
       messages: [{ role: 'user', content: String(message || '').slice(0, 1000) }],
     };
     const data = await anthropicMessages(body, apiKey);
-    const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+    const text = data.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('\n').trim();
     return { reply: text || 'How can I help with your next job?' };
   }
 
@@ -548,10 +584,10 @@ async function apexCallClaude({ message, history, trips, now, mode, context }, a
     'simple A→B journey. Only fill fields the guest actually stated — never invent an address, time or destination. ' +
     'Keep "reply" warm, brief and in the voice of a five-star chauffeur concierge.';
 
-  const turns = (Array.isArray(history) ? history : [])
+  const turns: Anthropic.MessageParam[] = (Array.isArray(history) ? history : [])
     .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
     .slice(-8)
-    .map((m) => ({ role: m.role, content: m.content }));
+    .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content as string }));
   if (Array.isArray(trips) && trips.length) {
     turns.unshift({ role: 'user', content: `(For context, my recent/upcoming trips: ${JSON.stringify(trips).slice(0, 1200)})` });
     turns.push({ role: 'assistant', content: 'Noted — I have your trips for reference.' });
@@ -567,18 +603,18 @@ async function apexCallClaude({ message, history, trips, now, mode, context }, a
     tool_choice: { type: 'tool', name: 'booking_intent' },
   }, apiKey);
 
-  const toolUse = (data.content || []).find((b) => b.type === 'tool_use');
+  const toolUse = data.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
   if (!toolUse) throw new Error('model returned no structured result');
-  return toolUse.input || {};
+  return (toolUse.input || {}) as Record<string, unknown>;
 }
 
-async function anthropicMessages(body, apiKey) {
+async function anthropicMessages(body: Anthropic.MessageCreateParamsNonStreaming, apiKey: string): Promise<Anthropic.Message> {
   return anthropicClient(apiKey).messages.create(body);
 }
 
-exports.parseBookingIntent = onCall(
+export const parseBookingIntent = onCall(
   { secrets: [ANTHROPIC_API_KEY], region: 'us-central1' },
-  async (request) => {
+  async (request: CallableRequest<ParseBookingInput>) => {
     const p = request.data || {};
     if (typeof p.message !== 'string' || !p.message.trim()) {
       throw new HttpsError('invalid-argument', 'message is required');
@@ -591,9 +627,9 @@ exports.parseBookingIntent = onCall(
       // `res.data.intent`, `res.data.reply`, … (matches _parseIntentLocal's shape).
       return await apexCallClaude(p, apiKey);
     } catch (err) {
-      logger.error('parseBookingIntent', err.message);
+      logger.error('parseBookingIntent', errMessage(err));
       // Throw so the client cleanly falls back to its on-device parser.
-      throw new HttpsError('unavailable', String(err.message || err));
+      throw new HttpsError('unavailable', errMessage(err));
     }
   }
 );
@@ -613,7 +649,7 @@ const APPLE_PAY_CERT = defineSecret('APPLE_PAY_MERCHANT_CERT'); // PEM cert
 const APPLE_PAY_KEY  = defineSecret('APPLE_PAY_MERCHANT_KEY');  // PEM private key
 
 // Resolve a booking by its short ref ("APX-1234") OR its Firestore doc id.
-async function resolveBooking(refOrId) {
+async function resolveBooking(refOrId: string | undefined): Promise<FirebaseFirestore.DocumentSnapshot | null> {
   const db = admin.firestore();
   if (refOrId) {
     const byId = await db.collection('bookings').doc(String(refOrId)).get();
@@ -624,22 +660,22 @@ async function resolveBooking(refOrId) {
   return null;
 }
 
-async function isStaff(uid) {
+async function isStaff(uid: string): Promise<boolean> {
   try {
     const u = await admin.firestore().doc(`users/${uid}`).get();
-    const role = u.exists && (u.data() || {}).role;
+    const role = u.exists && (u.data() as User | undefined)?.role;
     return role === 'admin' || role === 'driver';
   } catch (_) { return false; }
 }
 
 // generateReferralCode — returns the caller's stable referral code, minting one
 // on first use and persisting it to their profile.
-exports.generateReferralCode = onCall({ region: 'us-central1' }, async (request) => {
+export const generateReferralCode = onCall({ region: 'us-central1' }, async (request: CallableRequest) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
   const uid = request.auth.uid;
   const ref = admin.firestore().doc(`users/${uid}`);
   const snap = await ref.get();
-  const existing = snap.exists && (snap.data() || {}).referralCode;
+  const existing = snap.exists && (snap.data() as User | undefined)?.referralCode;
   if (existing) return { code: existing };
   // Deterministic, human-friendly code derived from the uid.
   const code = 'APX-' + uid.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toUpperCase().padEnd(6, 'X');
@@ -649,7 +685,7 @@ exports.generateReferralCode = onCall({ region: 'us-central1' }, async (request)
 
 // applyReferralCode — credits both the new user and the referrer once. Blocks
 // self-referral and double-application.
-exports.applyReferralCode = onCall({ region: 'us-central1' }, async (request) => {
+export const applyReferralCode = onCall({ region: 'us-central1' }, async (request: CallableRequest<{ code?: string }>) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
   const uid = request.auth.uid;
   const code = String((request.data || {}).code || '').trim().toUpperCase();
@@ -657,7 +693,7 @@ exports.applyReferralCode = onCall({ region: 'us-central1' }, async (request) =>
   const db = admin.firestore();
   const me = db.doc(`users/${uid}`);
   const meSnap = await me.get();
-  if (meSnap.exists && (meSnap.data() || {}).referredBy) {
+  if (meSnap.exists && (meSnap.data() as User | undefined)?.referredBy) {
     throw new HttpsError('failed-precondition', 'A referral code has already been applied.');
   }
   const q = await db.collection('users').where('referralCode', '==', code).limit(1).get();
@@ -675,7 +711,7 @@ exports.applyReferralCode = onCall({ region: 'us-central1' }, async (request) =>
 
 // sendChauffeurMessage — append a chat message to the booking thread. Only the
 // booking's client, its driver, or staff may post.
-exports.sendChauffeurMessage = onCall({ region: 'us-central1' }, async (request) => {
+export const sendChauffeurMessage = onCall({ region: 'us-central1' }, async (request: CallableRequest<{ bookingRef?: string; message?: string; fromRole?: string }>) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
   const uid = request.auth.uid;
   const d = request.data || {};
@@ -684,13 +720,13 @@ exports.sendChauffeurMessage = onCall({ region: 'us-central1' }, async (request)
   if (text.length > 2000) throw new HttpsError('invalid-argument', 'message too long');
   const booking = await resolveBooking(d.bookingRef);
   if (!booking) throw new HttpsError('not-found', 'Booking not found');
-  const b = booking.data() || {};
+  const b = (booking.data() as Booking) || {};
   if (b.clientId !== uid && b.driverId !== uid && !(await isStaff(uid))) {
     throw new HttpsError('permission-denied', 'Not your booking');
   }
   await booking.ref.collection('messages').add({
     senderId: uid,
-    fromRole: ['client', 'driver', 'concierge'].includes(d.fromRole) ? d.fromRole : 'client',
+    fromRole: ['client', 'driver', 'concierge'].includes(d.fromRole as string) ? d.fromRole : 'client',
     text,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
@@ -699,7 +735,7 @@ exports.sendChauffeurMessage = onCall({ region: 'us-central1' }, async (request)
 
 // submitTripRating — record the guest's rating on the booking and roll it into
 // the driver's running average.
-exports.submitTripRating = onCall({ region: 'us-central1' }, async (request) => {
+export const submitTripRating = onCall({ region: 'us-central1' }, async (request: CallableRequest<{ rating?: number; bookingRef?: string; comment?: string; driverId?: string }>) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
   const uid = request.auth.uid;
   const d = request.data || {};
@@ -707,7 +743,7 @@ exports.submitTripRating = onCall({ region: 'us-central1' }, async (request) => 
   if (!(rating >= 1 && rating <= 5)) throw new HttpsError('invalid-argument', 'rating must be 1–5');
   const booking = await resolveBooking(d.bookingRef);
   if (!booking) throw new HttpsError('not-found', 'Booking not found');
-  const b = booking.data() || {};
+  const b = (booking.data() as Booking) || {};
   if (b.clientId !== uid && !(await isStaff(uid))) throw new HttpsError('permission-denied', 'Not your booking');
   const comment = String(d.comment || '').slice(0, 1000);
   await booking.ref.set({ rating, ratingComment: comment, ratedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
@@ -717,7 +753,7 @@ exports.submitTripRating = onCall({ region: 'us-central1' }, async (request) => 
     await admin.firestore().runTransaction(async (tx) => {
       const dRef = admin.firestore().doc(`drivers/${driverId}`);
       const dSnap = await tx.get(dRef);
-      const cur = dSnap.exists ? (dSnap.data() || {}) : {};
+      const cur = dSnap.exists ? (dSnap.data() as Driver) : {} as Driver;
       const count = (Number(cur.ratingCount) || 0) + 1;
       const sum = (Number(cur.ratingSum) || 0) + rating;
       tx.set(dRef, { ratingCount: count, ratingSum: sum, rating: Math.round((sum / count) * 10) / 10 }, { merge: true });
@@ -730,8 +766,8 @@ exports.submitTripRating = onCall({ region: 'us-central1' }, async (request) => 
 // changing this one function + FLIGHT_API_KEY). With the key unset it returns a
 // neutral shape so the client falls back to its demo data. Public (no auth) —
 // read-only and the provider key never leaves the server.
-const flightHHMM = (iso) => (typeof iso === 'string' && iso.length >= 16 ? iso.slice(11, 16) : '');
-exports.checkFlightStatus = onCall({ secrets: [FLIGHT_API_KEY], region: 'us-central1' }, async (request) => {
+const flightHHMM = (iso: unknown): string => (typeof iso === 'string' && iso.length >= 16 ? iso.slice(11, 16) : '');
+export const checkFlightStatus = onCall({ secrets: [FLIGHT_API_KEY], region: 'us-central1' }, async (request: CallableRequest<{ flight?: string }>) => {
   const flight = String((request.data || {}).flight || '').toUpperCase().replace(/\s+/g, '');
   if (!/^[A-Z0-9]{3,8}$/.test(flight)) throw new HttpsError('invalid-argument', 'invalid flight number');
   const key = FLIGHT_API_KEY.value();
@@ -739,17 +775,17 @@ exports.checkFlightStatus = onCall({ secrets: [FLIGHT_API_KEY], region: 'us-cent
     // No provider configured yet — neutral result; client uses its own demo fallback.
     return { flight, delayed: false, delayMins: 0, available: false };
   }
-  let f;
+  let f: any;
   try {
     const url = `https://api.aviationstack.com/v1/flights?access_key=${encodeURIComponent(key)}` +
       `&flight_iata=${encodeURIComponent(flight)}&limit=1`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`aviationstack ${res.status}`);
-    const data = await res.json();
+    const data = await res.json() as { error?: { message?: string }; data?: any[] };
     if (data && data.error) throw new Error(data.error.message || 'provider error');
     f = (data.data || [])[0];
   } catch (err) {
-    logger.warn('checkFlightStatus', err.message);
+    logger.warn('checkFlightStatus', errMessage(err));
     // Soft-fail to neutral so the client falls back rather than erroring the UI.
     return { flight, delayed: false, delayMins: 0, available: false };
   }
@@ -777,9 +813,9 @@ exports.checkFlightStatus = onCall({ secrets: [FLIGHT_API_KEY], region: 'us-cent
 // session's validationURL with the merchant identity certificate. That cert/key
 // must be provisioned (APPLE_PAY_MERCHANT_CERT / _KEY) before this can run.
 // The client aborts the Apple Pay sheet on failure, so throwing here is safe.
-exports.validateApplePayMerchant = onCall(
+export const validateApplePayMerchant = onCall(
   { secrets: [APPLE_PAY_CERT, APPLE_PAY_KEY], region: 'us-central1' },
-  async (request) => {
+  async (request: CallableRequest<{ validationURL?: string }>) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
     const url = String((request.data || {}).validationURL || '');
     if (!/^https:\/\/[a-z0-9.-]*apple\.com\//i.test(url)) {
@@ -801,10 +837,10 @@ exports.validateApplePayMerchant = onCall(
 // claims one via a transaction. Without this bridge a booking never reaches a
 // driver. Idempotent: the open_job id == the booking id.
 
-exports.onBookingCreated = onDocumentCreated('bookings/{bookingId}', async (event) => {
+export const onBookingCreated = onDocumentCreated('bookings/{bookingId}', async (event) => {
   const snap = event.data;
   if (!snap) return;
-  const b = snap.data() || {};
+  const b = (snap.data() as Booking) || {};
 
   // Only broadcast bookings that still need a driver and have a pickup.
   if (b.status && !['confirmed', 'pending', 'paid'].includes(b.status)) return;
@@ -852,17 +888,17 @@ const COMPLIANCE_EXPIRY_DOCS = ['licence', 'pco', 'insurance', 'dbs', 'badge']; 
 const COMPLIANCE_ALL_DOCS = ['licence', 'pco', 'insurance', 'dbs', 'v5c', 'badge'];
 const REMIND_DAYS = new Set([30, 14, 7, 3, 1, 0]);
 
-function daysUntil(iso) {
+function daysUntil(iso: string | undefined): number | null {
   if (!iso || typeof iso !== 'string') return null;
   const d = new Date(`${iso}T00:00:00Z`);
-  if (isNaN(d)) return null;
+  if (Number.isNaN(d.getTime())) return null;
   const now = new Date(); now.setUTCHours(0, 0, 0, 0);
-  return Math.round((d - now) / 86400000);
+  return Math.round((d.getTime() - now.getTime()) / 86400000);
 }
 // True when today is a reminder milestone for this many days-left.
-const shouldRemind = (dl) => dl != null && (REMIND_DAYS.has(dl) || (dl < 0 && dl % 7 === 0));
+const shouldRemind = (dl: number | null): boolean => dl != null && (REMIND_DAYS.has(dl) || (dl < 0 && dl % 7 === 0));
 
-exports.remindExpiringDocs = onSchedule(
+export const remindExpiringDocs = onSchedule(
   { schedule: '0 8 * * *', timeZone: 'Europe/London', secrets: [SENDGRID_API_KEY], region: 'us-central1' },
   async () => {
     const db = admin.firestore();
@@ -870,9 +906,9 @@ exports.remindExpiringDocs = onSchedule(
     let emailed = 0, recomputed = 0;
 
     for (const snap of drivers.docs) {
-      const d = snap.data() || {};
+      const d = (snap.data() as Driver) || {};
       const verdict = (d.compliance && d.compliance.docs) || {};
-      const items = []; // {label, dl}
+      const items: Array<{ label: string; dl: number }> = []; // {label, dl}
 
       // Credential documents.
       let docsOk = COMPLIANCE_ALL_DOCS.every((k) => verdict[k] && verdict[k].approved);
@@ -881,20 +917,20 @@ exports.remindExpiringDocs = onSchedule(
         if (!a || !a.approved) continue;
         const dl = daysUntil(a.expiresAt);
         if (dl == null || dl < 0) docsOk = false;
-        if (shouldRemind(dl)) items.push({ label: k.toUpperCase(), dl });
+        if (shouldRemind(dl)) items.push({ label: k.toUpperCase(), dl: dl as number });
       }
 
       // Vehicles — at least one active vehicle with MOT + road tax in date.
       const vehicles = await db.collection('vehicles').where('driverId', '==', snap.id).get();
       let vehicleOk = false;
       vehicles.forEach((v) => {
-        const x = v.data() || {};
+        const x = (v.data() as Vehicle) || {};
         if (x.active === false) return;
         const mot = daysUntil(x.motExpiry), tax = daysUntil(x.taxExpiry);
         if (mot != null && mot >= 0 && tax != null && tax >= 0) vehicleOk = true;
         const reg = x.reg || 'vehicle';
-        if (shouldRemind(mot)) items.push({ label: `${reg} MOT`, dl: mot });
-        if (shouldRemind(tax)) items.push({ label: `${reg} road tax`, dl: tax });
+        if (shouldRemind(mot)) items.push({ label: `${reg} MOT`, dl: mot as number });
+        if (shouldRemind(tax)) items.push({ label: `${reg} road tax`, dl: tax as number });
       });
 
       const compliant = docsOk && vehicleOk;
@@ -919,7 +955,7 @@ exports.remindExpiringDocs = onSchedule(
             sendEmail(OPS_EMAIL, `Compliance: ${d.name || snap.id}`, `${d.name || snap.id}\n\n${lines}`),
           ]);
           emailed++;
-        } catch (err) { logger.error('remindExpiringDocs email', err.message); }
+        } catch (err) { logger.error('remindExpiringDocs email', errMessage(err)); }
       }
     }
     logger.info('remindExpiringDocs', { drivers: drivers.size, emailed, recomputed });
@@ -942,13 +978,13 @@ exports.remindExpiringDocs = onSchedule(
  * =========================================================================== */
 
 // Driver starts (or resumes) payout onboarding — returns a hosted Stripe link.
-exports.createDriverPayoutAccount = onCall(
+export const createDriverPayoutAccount = onCall(
   { secrets: [STRIPE_SECRET_KEY], region: 'us-central1' },
-  async (request) => {
+  async (request: CallableRequest) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
     const uid = request.auth.uid;
     const dref = admin.firestore().doc(`drivers/${uid}`);
-    const d = (await dref.get()).data() || {};
+    const d = ((await dref.get()).data() as Driver) || {};
     const stripe = stripeClient();
     if (!stripe) {
       const accountId = (d.payout && d.payout.accountId) || ('acct_mock_' + uid.slice(0, 10));
@@ -976,13 +1012,13 @@ exports.createDriverPayoutAccount = onCall(
 );
 
 // Driver / app polls onboarding status; mirrors it onto drivers/{uid}.payout.
-exports.getDriverPayoutStatus = onCall(
+export const getDriverPayoutStatus = onCall(
   { secrets: [STRIPE_SECRET_KEY], region: 'us-central1' },
-  async (request) => {
+  async (request: CallableRequest) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
     const uid = request.auth.uid;
     const dref = admin.firestore().doc(`drivers/${uid}`);
-    const d = (await dref.get()).data() || {};
+    const d = ((await dref.get()).data() as Driver) || {};
     const accountId = d.payout && d.payout.accountId;
     if (!accountId) return { onboarded: false, payoutsEnabled: false };
     const stripe = stripeClient();
@@ -996,9 +1032,9 @@ exports.getDriverPayoutStatus = onCall(
 );
 
 // Admin settles a driver's owed balance: one Stripe transfer + mark entries paid.
-exports.payoutDriver = onCall(
+export const payoutDriver = onCall(
   { secrets: [STRIPE_SECRET_KEY], region: 'us-central1' },
-  async (request) => {
+  async (request: CallableRequest<{ driverId?: string }>) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
     if (!(await isAdminUid(request.auth.uid))) throw new HttpsError('permission-denied', 'Admin only');
     const driverId = String((request.data || {}).driverId || '');
@@ -1006,12 +1042,12 @@ exports.payoutDriver = onCall(
     const db = admin.firestore();
     const owed = await db.collection('driver_payouts').where('driverId', '==', driverId).where('status', '==', 'owed').get();
     if (owed.empty) return { paid: 0, count: 0 };
-    const currency = (owed.docs[0].data().currency || 'GBP').toLowerCase();
-    const total = owed.docs.reduce((s, x) => s + (Number(x.data().amount) || 0), 0);
-    const d = (await db.doc(`drivers/${driverId}`).get()).data() || {};
+    const currency = ((owed.docs[0].data() as DriverPayout).currency || 'GBP').toLowerCase();
+    const total = owed.docs.reduce((s, x) => s + (Number((x.data() as DriverPayout).amount) || 0), 0);
+    const d = ((await db.doc(`drivers/${driverId}`).get()).data() as Driver) || {};
     const accountId = d.payout && d.payout.accountId;
     const stripe = stripeClient();
-    let transferId = null;
+    let transferId: string | null = null;
     if (stripe) {
       if (!accountId || !(d.payout && d.payout.payoutsEnabled)) {
         throw new HttpsError('failed-precondition', 'Driver has not completed payout onboarding');
@@ -1020,7 +1056,7 @@ exports.payoutDriver = onCall(
         const tr = await stripe.transfers.create({ amount: total * 100, currency, destination: accountId, metadata: { driverId } });
         transferId = tr.id;
       } catch (err) {
-        throw new HttpsError('failed-precondition', 'Stripe transfer failed: ' + err.message);
+        throw new HttpsError('failed-precondition', 'Stripe transfer failed: ' + errMessage(err));
       }
     }
     const batch = db.batch();
