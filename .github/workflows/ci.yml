@@ -1,0 +1,70 @@
+name: CI
+
+# Real CI: typecheck + tests on every push and PR, so a change that breaks the
+# money math, the callable contract, or the booking→driver dispatch loop fails
+# the check instead of merging green. (Replaces the old placeholder that only
+# echoed "Hello, world!".)
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  # Fast gate: typechecks + unit tests + the prototype smoke test.
+  test:
+    runs-on: ubuntu-latest
+    env:
+      # apexvip-web depends on playwright; Chromium isn't needed for unit tests.
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22" # node --test --experimental-strip-types needs 22+
+
+      - name: Root — prototype smoke + pure-logic tests
+        run: |
+          npm install --no-audit --no-fund
+          npm test
+
+      - name: Backend (functions) — typecheck + tests
+        run: |
+          npm --prefix functions install --no-audit --no-fund
+          npm --prefix functions run typecheck
+          npm --prefix functions test
+
+      - name: Frontend (apexvip-web) — typecheck + tests
+        run: |
+          npm --prefix apexvip-web install --no-audit --no-fund
+          npm --prefix apexvip-web run typecheck
+          npm --prefix apexvip-web test
+
+      - name: Engine bundle stays in sync with source
+        run: |
+          npm --prefix apexvip-web run build:engine
+          git diff --exit-code apexvip-engine.js \
+            || (echo "::error::apexvip-engine.js is stale — run 'npm run build:engine' and commit." && exit 1)
+
+  # Integration gate: the booking → dispatch → driver-claim loop, against the
+  # real Firebase emulator (needs Java + firebase-tools).
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install firebase-tools + function deps
+        run: |
+          npm install -g firebase-tools
+          npm --prefix functions install --no-audit --no-fund
+          npm --prefix functions-side install --no-audit --no-fund
+      - name: Emulator test — booking dispatches to a driver
+        run: npm --prefix functions run test:emulator
