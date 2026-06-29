@@ -37,6 +37,16 @@ ready. They keep running exactly as today.
   - `intent.test.ts` — 15 tests (`npm test`). The page keeps its UI; only the
     deterministic logic graduated to TS.
 
+- **`src/payments/`** — the **Square checkout flow**, the second screen migrated.
+  - `pricing.ts` — `quoteFare(base, promo)`: the VAT-inclusive base/discount/
+    total/VAT math from `confirmBooking`, now pure.
+  - `checkout.ts` — `runCheckout(...)`: tokenize → SCA (non-fatal) → typed
+    `processSquarePayment` → store the token in `pending_payments` on backend
+    error → demo mode offline. The Square SDK and Firestore are injected, so
+    there's no DOM/SDK coupling.
+  - `pricing.test.ts` + `checkout.test.ts` — 9 tests covering the rounding and
+    every checkout branch (card error, SCA failure, backend failure, offline).
+
 ## Commands
 
 ```sh
@@ -63,9 +73,10 @@ this build can adopt the existing hosting/config without re-plumbing.
 1. **Now:** new frontend code calls `apex.<fn>(…)` and gets end-to-end types.
    The concierge brain (`src/concierge/`) is the first screen lifted across.
 2. **Incremental:** continue lifting one screen at a time out of the giant HTML
-   files into `src/`; each becomes type-checked and unit-testable. The next
-   natural candidates are the payment flow (`processSquarePayment`) and the
-   driver payout screens — both already covered by the contract.
+   files into `src/`; each becomes type-checked and unit-testable. Done so far:
+   the concierge brain (`src/concierge/`) and the Square checkout flow
+   (`src/payments/`). The next natural candidate is the driver payout screens —
+   already covered by the contract.
 3. **Capacitor — when the app is fully migrated:** the iOS wrappers (`mobile/`)
    bundle web output the same way. Point `mobile/build-www.mjs` at this package's
    `dist/` **only once the whole app lives here** — doing it now would ship just
