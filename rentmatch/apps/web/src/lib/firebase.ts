@@ -4,13 +4,17 @@ import { getAuth, connectAuthEmulator } from 'firebase/auth';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 import { getStorage, connectStorageEmulator } from 'firebase/storage';
 
+// Defaults point at the shared `apexvip-1b4a9` Firebase project (same one the
+// other apps in this repo use). These are public client identifiers, not
+// secrets — safe to commit. Override per-environment via VITE_FIREBASE_* (e.g.
+// the e2e injects a demo project + the emulators).
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY ?? 'AIzaSyAr3OsrEG3yVx-bD3jxc_kSBY7bkCQUPxI',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ?? 'apexvip-1b4a9.firebaseapp.com',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID ?? 'apexvip-1b4a9',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ?? 'apexvip-1b4a9.firebasestorage.app',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID ?? '254410067879',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID ?? '1:254410067879:web:754b71a35182c997f37082',
 };
 
 export const app = initializeApp(firebaseConfig);
