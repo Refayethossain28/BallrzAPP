@@ -31,6 +31,8 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
 <script src="firebase.js"></script>
 <script src="apexvip-core.js"></script>
+<!-- Shared pure logic (payout aggregation, …) — unit-tested in apexvip-web. -->
+<script src="apexvip-engine.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html{height:-webkit-fill-available}
@@ -1849,9 +1851,10 @@ function loadDriverBalances() {
   const el = document.getElementById('driver-balances');
   if (!el || !FIREBASE_ENABLED) return;
   db.collection('driver_payouts').where('status','==','owed').limit(500).get().then(snap => {
-    const by = {};
-    snap.forEach(d => { const x = d.data(); const k = x.driverId; if(!k) return; (by[k] = by[k] || {amount:0,count:0,currency:x.currency||'GBP'}); by[k].amount += Number(x.amount)||0; by[k].count++; });
-    const ids = Object.keys(by);
+    // Owed-balance aggregation — shared, unit-tested engine.
+    const balances = ApexEngine.aggregateOwedBalances(snap.docs.map(d => d.data()));
+    const by = {}; balances.forEach(b => { by[b.driverId] = b; });
+    const ids = balances.map(b => b.driverId);
     if (!ids.length) { el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--fg-4);font-size:13px">No balances owed</div>'; return; }
     el.innerHTML = ids.map(id => {
       const b = by[id]; const drv = DRIVERS.find(d=>d.id===id); const nm = drv?drv.name:id.slice(0,8);
@@ -1871,7 +1874,7 @@ async function payoutDriverNow(driverId) {
   try {
     const r = await fns.httpsCallable('payoutDriver')({ driverId });
     logAudit('payout', driverId, `${r.data.currency||'GBP'} ${r.data.paid||0} · ${r.data.count||0} trip(s)${r.data.mock?' (mock)':''}`);
-    alert(`Paid ${r.data.currency||'GBP'} ${r.data.paid||0} across ${r.data.count||0} trip(s)${r.data.mock?' (mock — no Stripe key set)':''}.`);
+    alert(ApexEngine.formatSettlement(r.data));
     loadDriverBalances();
   } catch (e) { alert('Payout failed: ' + (e.message || e.code)); }
 }

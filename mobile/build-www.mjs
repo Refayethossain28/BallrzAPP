@@ -33,7 +33,7 @@ const cp = (src, dest = src) => {
 // App shell → index.html
 cp(`apexvip-${app}.html`, 'index.html');
 // Shared engine, config, and service worker
-['apexvip-core.js', 'apexvip-lib.js', 'firebase.js', 'firebase-messaging-sw.js'].forEach((f) => cp(f));
+['apexvip-core.js', 'apexvip-lib.js', 'apexvip-engine.js', 'firebase.js', 'firebase-messaging-sw.js'].forEach((f) => cp(f));
 // Manifests
 ['manifest.json', `manifest-${app}.json`].forEach((f) => cp(f));
 // Icons + splash video (best-effort)

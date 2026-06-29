@@ -56,13 +56,43 @@ ready. They keep running exactly as today.
     status refresh), with the window-open and timer injected.
   - `ledger.test.ts` + `onboarding.test.ts` — 11 tests.
 
+- **`src/referrals/`** + **`src/trips/`** — the remaining client callables, each
+  with its backend-mirrored validation/normalization plus a typed wrapper:
+  referral codes (`referrals.ts`), trip rating (`trips/rating.ts`), chauffeur
+  chat (`trips/chat.ts`), and flight status with the on-device demo fallback
+  (`trips/flight.ts`). 28 tests across the four.
+
+## The shared engine (`apexvip-engine.js`)
+
+The **pure** logic — concierge parser, fare math, payout aggregation, and the
+referral/rating/chat/flight helpers — is re-exported from `src/engine.ts` and
+built into a committed UMD bundle at the repo root, `apexvip-engine.js`, via:
+
+```sh
+npm run build:engine    # vite --config vite.engine.config.ts → ../apexvip-engine.js
+```
+
+It exposes `window.ApexEngine` (no Firebase, no DOM — verified). The single-file
+HTML apps load it and call into it, so there's **one** implementation of this
+logic — the one these tests cover. Rebuild it whenever a pure module changes.
+
+### Closing the loop — the HTML apps consume it
+
+- `apexvip-client.html` loads `apexvip-engine.js`; its `_parseIntentLocal` (≈160
+  lines) is now a thin delegator to `ApexEngine.parseIntentLocal(msg, ctx)`, and
+  its fare math calls `ApexEngine.quoteFare`.
+- `apexvip-admin.html` uses `ApexEngine.aggregateOwedBalances` /
+  `formatSettlement` for the payout list.
+- `mobile/build-www.mjs` copies `apexvip-engine.js` into the Capacitor `www/`, so
+  the iOS wrappers ship it too.
+
 ## Commands
 
 ```sh
 cd apexvip-web
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # node --test — the concierge engine (15 tests)
+npm test            # node --test — all engine modules (63 tests)
 npm run dev         # Vite dev server
 npm run build       # typecheck + production bundle → dist/
 ```
@@ -81,15 +111,15 @@ this build can adopt the existing hosting/config without re-plumbing.
 
 1. **Now:** new frontend code calls `apex.<fn>(…)` and gets end-to-end types.
    The concierge brain (`src/concierge/`) is the first screen lifted across.
-2. **Incremental:** continue lifting one screen at a time out of the giant HTML
-   files into `src/`; each becomes type-checked and unit-testable. Done so far:
-   the concierge brain (`src/concierge/`), the Square checkout flow
-   (`src/payments/`), and the driver payout flow (`src/payouts/`). Remaining
-   client callables to wrap a screen around: referrals (`generateReferralCode` /
-   `applyReferralCode`), trip rating (`submitTripRating`), chauffeur chat
-   (`sendChauffeurMessage`), and flight status (`checkFlightStatus`).
-3. **Capacitor — when the app is fully migrated:** the iOS wrappers (`mobile/`)
+2. **Done:** every client callable now has a typed, tested module — concierge
+   (`src/concierge/`), checkout (`src/payments/`), payouts (`src/payouts/`),
+   referrals (`src/referrals/`) and trips (`src/trips/`). Their pure logic is
+   wired back into the HTML apps via `apexvip-engine.js`, so the apps consume one
+   tested implementation instead of duplicating it.
+3. **Next — lift the UI:** move screens (markup + rendering) into `src/`
+   components consuming the typed client directly.
+4. **Capacitor — when the app is fully migrated:** the iOS wrappers (`mobile/`)
    bundle web output the same way. Point `mobile/build-www.mjs` at this package's
    `dist/` **only once the whole app lives here** — doing it now would ship just
-   the migrated screen and drop the rest. Until then, the wrappers keep bundling
-   the existing `apexvip-client.html` / `apexvip-driver.html` unchanged.
+   the migrated screens and drop the rest. (It already copies `apexvip-engine.js`
+   so today's wrappers keep working.)
