@@ -20,9 +20,15 @@ import { onDocumentWritten, onDocumentCreated } from 'firebase-functions/v2/fire
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { defineSecret } from 'firebase-functions/params';
 import * as logger from 'firebase-functions/logger';
+import * as https from 'node:https';
 import Anthropic from '@anthropic-ai/sdk';
 import Stripe from 'stripe';
 import * as admin from 'firebase-admin';
+
+import {
+  round5, isoPlusDays, computeFareBounds, driverEarning, dispatchPay,
+  bookingEvent, bookingMessage, daysUntil, shouldRemind, flightHHMM,
+} from './logic.js';
 
 import type {
   Booking,
@@ -108,14 +114,6 @@ async function getToken(clientId: string, clientSecret: string): Promise<string>
   };
   return _token.value;
 }
-
-function isoPlusDays(dateStr: string, days: number): string {
-  const d = new Date(`${dateStr}T12:00:00`);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
-const round5 = (x: number): number => Math.round(x / 5) * 5;
 
 export const getHotelRates = onCall(
   { secrets: [AMADEUS_CLIENT_ID, AMADEUS_CLIENT_SECRET], region: 'us-central1' },
@@ -237,16 +235,7 @@ async function fareBounds(): Promise<{ floor: number; ceiling: number }> {
     const snap = await admin.firestore().doc('settings/pricing').get();
     if (snap.exists) p = (snap.data() as Pricing) || {};
   } catch (_) { /* settings unreadable → fall back to defaults below */ }
-  const num = (v: unknown, d: number): number => (Number.isFinite(Number(v)) ? Number(v) : d);
-  const minFare = Math.min(num(p.min_fare_s, 38), num(p.min_fare_v, 50));
-  const dayV    = num(p.day_v, 550);
-  const hourlyV = num(p.hourly_v_rate, 75);
-  const peak    = 1 + num(p.peak_surcharge_pct, 15) / 100;
-  // Ceiling: the most expensive realistic single booking — a full day or a long
-  // hourly hire at peak, plus generous headroom for multi-day/multi-stop trips.
-  const ceiling = Math.max(dayV, hourlyV * 12) * peak * 3 + 500;
-  const floor   = Math.max(5, Math.floor(minFare * 0.5));
-  return { floor, ceiling };
+  return computeFareBounds(p);
 }
 
 // Confirm the caller owns (or is staff for) the booking tied to a Square payment.
@@ -420,40 +409,6 @@ async function sendSms(to: string, body: string): Promise<void> {
   if (!res.ok) logger.warn('Twilio', res.status, await res.text().catch(() => ''));
 }
 
-// Decide which lifecycle message (if any) this write represents.
-function bookingEvent(before: Booking | null, after: Booking | null): string | null {
-  if (!after) return null;                                   // deleted
-  if (!before) return 'received';                            // newly created
-  if (before.status !== after.status) {
-    switch (after.status) {
-      case 'confirmed':       return 'confirmed';
-      case 'driver_assigned': return 'driver_assigned';
-      case 'en_route':
-      case 'arriving':        return 'en_route';
-      case 'completed':       return 'completed';
-      case 'cancelled':       return 'cancelled';
-      default: return null;
-    }
-  }
-  if (!before.driverName && after.driverName) return 'driver_assigned';
-  return null;
-}
-
-function bookingMessage(event: string, b: Booking): [string, string] | null {
-  const ref = b.ref || b.bookingRef || '';
-  const route = [b.pickup, b.dropoff || b.airport].filter(Boolean).join(' → ');
-  const when = [b.date, b.time].filter(Boolean).join(' ');
-  const M: Record<string, [string, string]> = {
-    received:        ['We\'ve received your booking', `Thank you — we've received your ApexVIP booking ${ref}. ${route}${when ? ' · ' + when : ''}. We'll confirm your chauffeur shortly.`],
-    confirmed:       ['Your booking is confirmed', `Your ApexVIP journey ${ref} is confirmed. ${route}${when ? ' · ' + when : ''}.`],
-    driver_assigned: ['Your chauffeur is assigned', `${b.driverName || 'Your chauffeur'} will be looking after you for booking ${ref}${b.vehicle ? ' in a ' + b.vehicle : ''}.`],
-    en_route:        ['Your chauffeur is on the way', `Your ApexVIP chauffeur is en route for booking ${ref}. ${route}.`],
-    completed:       ['Thank you for travelling with ApexVIP', `Your journey ${ref} is complete. A receipt is available in the app. We hope to welcome you again soon.`],
-    cancelled:       ['Your booking has been cancelled', `Your ApexVIP booking ${ref} has been cancelled. Any eligible refund will follow per our cancellation policy.`],
-  };
-  return M[event] || null;
-}
-
 export const onBookingWrite = onDocumentWritten(
   { document: 'bookings/{bookingId}', secrets: [SENDGRID_API_KEY, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN], region: 'us-central1' },
   async (event) => {
@@ -465,7 +420,7 @@ export const onBookingWrite = onDocumentWritten(
     // (idempotent — one entry per booking). Settled later via payoutDriver.
     if (kind === 'completed' && after && after.driverId) {
       try {
-        const amount = Math.round((Number(after.baseFare) || Number(after.price) || 0) * 0.8);
+        const amount = driverEarning(after);
         if (amount > 0) {
           const entry: DriverPayout = {
             driverId: after.driverId,
@@ -635,18 +590,66 @@ export const parseBookingIntent = onCall(
 );
 
 /* ===========================================================================
- * App-facing callables — CONSOLIDATION STUBS
+ * App-facing callables — consolidated from gen-1
  *
  * v2 ports of the gen-1 functions the apps call that had no source in this repo.
- * The referral / chat / rating ones are working Firestore implementations; the
- * flight-status and Apple-Pay ones need an external provider/cert and are honest
- * stubs (TODO). ⚠️ A gen-1 version of each is currently LIVE — reconcile against
- * the recovered source (functions/recovered/README.md) before deploying any of
- * these, or you'll regress live behaviour. All enforce auth + input validation.
+ * All are now implemented: referral / chat / rating are Firestore-backed,
+ * checkFlightStatus is live via AviationStack, and validateApplePayMerchant does
+ * the real mutual-TLS handshake (it only needs the merchant cert provisioned).
+ * ⚠️ A gen-1 version of each may still be LIVE — reconcile against the recovered
+ * source (functions/recovered/README.md) before deploying, or you'll regress live
+ * behaviour. All enforce auth + input validation.
  * =========================================================================== */
 const FLIGHT_API_KEY = defineSecret('FLIGHT_API_KEY');
 const APPLE_PAY_CERT = defineSecret('APPLE_PAY_MERCHANT_CERT'); // PEM cert
 const APPLE_PAY_KEY  = defineSecret('APPLE_PAY_MERCHANT_KEY');  // PEM private key
+
+// Non-secret Apple Pay identity (set via functions/.env). The merchant id +
+// the domain the Apple Pay sheet runs on are sent in the validation request.
+const APPLE_PAY_MERCHANT_ID = process.env.APPLE_PAY_MERCHANT_ID || '';
+const APPLE_PAY_DISPLAY_NAME = process.env.APPLE_PAY_DISPLAY_NAME || 'ApexVIP';
+const APPLE_PAY_DOMAIN = process.env.APPLE_PAY_DOMAIN || 'refayethossain28.github.io';
+
+// Mutual-TLS POST to Apple's validationURL with the merchant identity cert/key.
+// Returns Apple's merchant-session JSON verbatim (the client hands it to
+// completeMerchantValidation). The caller has already verified the URL is Apple's.
+function appleMerchantSession(validationURL: string, cert: string, key: string): Promise<unknown> {
+  const u = new URL(validationURL);
+  const payload = JSON.stringify({
+    merchantIdentifier: APPLE_PAY_MERCHANT_ID,
+    displayName: APPLE_PAY_DISPLAY_NAME,
+    initiative: 'web',
+    initiativeContext: APPLE_PAY_DOMAIN,
+  });
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: u.hostname,
+        port: 443,
+        path: u.pathname + u.search,
+        method: 'POST',
+        cert,
+        key,
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+      },
+      (res) => {
+        let body = '';
+        res.on('data', (c) => { body += c; });
+        res.on('end', () => {
+          if (!res.statusCode || res.statusCode >= 400) {
+            reject(new Error(`Apple ${res.statusCode}: ${body.slice(0, 300)}`));
+            return;
+          }
+          try { resolve(JSON.parse(body)); }
+          catch { reject(new Error('Apple returned a non-JSON merchant session')); }
+        });
+      },
+    );
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
+}
 
 // Resolve a booking by its short ref ("APX-1234") OR its Firestore doc id.
 async function resolveBooking(refOrId: string | undefined): Promise<FirebaseFirestore.DocumentSnapshot | null> {
@@ -766,7 +769,6 @@ export const submitTripRating = onCall({ region: 'us-central1' }, async (request
 // changing this one function + FLIGHT_API_KEY). With the key unset it returns a
 // neutral shape so the client falls back to its demo data. Public (no auth) —
 // read-only and the provider key never leaves the server.
-const flightHHMM = (iso: unknown): string => (typeof iso === 'string' && iso.length >= 16 ? iso.slice(11, 16) : '');
 export const checkFlightStatus = onCall({ secrets: [FLIGHT_API_KEY], region: 'us-central1' }, async (request: CallableRequest<{ flight?: string }>) => {
   const flight = String((request.data || {}).flight || '').toUpperCase().replace(/\s+/g, '');
   if (!/^[A-Z0-9]{3,8}$/.test(flight)) throw new HttpsError('invalid-argument', 'invalid flight number');
@@ -809,24 +811,36 @@ export const checkFlightStatus = onCall({ secrets: [FLIGHT_API_KEY], region: 'us
   };
 });
 
-// validateApplePayMerchant — STUB. Apple Pay on the web requires POSTing to the
-// session's validationURL with the merchant identity certificate. That cert/key
-// must be provisioned (APPLE_PAY_MERCHANT_CERT / _KEY) before this can run.
-// The client aborts the Apple Pay sheet on failure, so throwing here is safe.
+// validateApplePayMerchant — performs Apple Pay merchant validation server-side.
+// The browser can't hold the merchant identity cert, so it sends Apple's
+// validationURL here; we mutual-TLS POST to it with the cert/key and return the
+// merchant session. Requires APPLE_PAY_MERCHANT_CERT / _KEY (PEM secrets) and the
+// APPLE_PAY_MERCHANT_ID env; until those are provisioned it fails closed with a
+// clear message and the client falls back to the card form.
 export const validateApplePayMerchant = onCall(
   { secrets: [APPLE_PAY_CERT, APPLE_PAY_KEY], region: 'us-central1' },
   async (request: CallableRequest<{ validationURL?: string }>) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
     const url = String((request.data || {}).validationURL || '');
+    // SSRF guard: only ever POST the merchant cert to an Apple host.
     if (!/^https:\/\/[a-z0-9.-]*apple\.com\//i.test(url)) {
       throw new HttpsError('invalid-argument', 'invalid validationURL');
     }
-    if (!APPLE_PAY_CERT.value() || !APPLE_PAY_KEY.value()) {
+    const cert = APPLE_PAY_CERT.value();
+    const key = APPLE_PAY_KEY.value();
+    if (!cert || !key) {
       throw new HttpsError('failed-precondition', 'Apple Pay merchant certificate not configured.');
     }
-    // TODO: mutual-TLS POST to `url` with the merchant cert/key and return Apple's
-    // merchant session JSON verbatim (the client passes it to completeMerchantValidation).
-    throw new HttpsError('unimplemented', 'Apple Pay merchant validation not yet wired — see functions/recovered/README.md');
+    if (!APPLE_PAY_MERCHANT_ID) {
+      throw new HttpsError('failed-precondition', 'APPLE_PAY_MERCHANT_ID is not set.');
+    }
+    try {
+      // Returned verbatim to the client → session.completeMerchantValidation(...).
+      return await appleMerchantSession(url, cert, key);
+    } catch (err) {
+      logger.error('validateApplePayMerchant', errMessage(err));
+      throw new HttpsError('unavailable', 'Apple Pay merchant validation failed');
+    }
   }
 );
 
@@ -850,7 +864,7 @@ export const onBookingCreated = onDocumentCreated('bookings/{bookingId}', async 
   if ((await openRef.get()).exists) return; // already dispatched
 
   // Driver pay = 80% of the fare (matches the rate quoted in the driver/admin UI).
-  const pay = Math.round((Number(b.baseFare) || Number(b.price) || 95) * 0.8);
+  const pay = dispatchPay(b);
 
   await openRef.set({
     status: 'open',
@@ -886,17 +900,6 @@ export const onBookingCreated = onDocumentCreated('bookings/{bookingId}', async 
  * =========================================================================== */
 const COMPLIANCE_EXPIRY_DOCS = ['licence', 'pco', 'insurance', 'dbs', 'badge']; // v5c has no expiry
 const COMPLIANCE_ALL_DOCS = ['licence', 'pco', 'insurance', 'dbs', 'v5c', 'badge'];
-const REMIND_DAYS = new Set([30, 14, 7, 3, 1, 0]);
-
-function daysUntil(iso: string | undefined): number | null {
-  if (!iso || typeof iso !== 'string') return null;
-  const d = new Date(`${iso}T00:00:00Z`);
-  if (Number.isNaN(d.getTime())) return null;
-  const now = new Date(); now.setUTCHours(0, 0, 0, 0);
-  return Math.round((d.getTime() - now.getTime()) / 86400000);
-}
-// True when today is a reminder milestone for this many days-left.
-const shouldRemind = (dl: number | null): boolean => dl != null && (REMIND_DAYS.has(dl) || (dl < 0 && dl % 7 === 0));
 
 export const remindExpiringDocs = onSchedule(
   { schedule: '0 8 * * *', timeZone: 'Europe/London', secrets: [SENDGRID_API_KEY], region: 'us-central1' },

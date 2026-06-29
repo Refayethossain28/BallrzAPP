@@ -36,9 +36,11 @@ for dir in functions apexvip-web; do
   fi
 done
 
-# Run the typed concierge engine tests (the migrated ApexAI brain).
-echo "── apexvip-web tests ──"
-( cd apexvip-web && npm test --silent ) || echo "⚠️  apexvip-web tests reported failures (see above)"
+# Run the unit tests for both TypeScript packages.
+for dir in functions apexvip-web; do
+  echo "── tests: $dir ──"
+  ( cd "$dir" && npm test --silent ) || echo "⚠️  $dir tests reported failures (see above)"
+done
 
 # Smoke-test the prototypes. Don't fail the hook on a red test — just surface it,
 # so the session still starts and the agent can see/fix the breakage.

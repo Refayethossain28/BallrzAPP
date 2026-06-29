@@ -24,8 +24,30 @@ field names called out in
 cd functions
 npm install
 npm run typecheck   # tsc --noEmit — catches Firestore field/typo bugs before deploy
+npm test            # node --test — pure backend logic (src/logic.ts, 12 tests)
 npm run build       # esbuild src/index.ts → lib/index.js (the deployed artifact)
 ```
+
+The deterministic logic (fare bounds, the 80% split, booking-lifecycle messaging,
+compliance expiry) lives in [`src/logic.ts`](./src/logic.ts) so it's unit-tested
+without Firebase; `src/index.ts` imports it.
+
+## Apple Pay
+
+`validateApplePayMerchant` performs the real server-side merchant handshake
+(mutual-TLS POST to Apple's validation URL). To enable it:
+
+```sh
+firebase functions:secrets:set APPLE_PAY_MERCHANT_CERT   # PEM merchant identity cert
+firebase functions:secrets:set APPLE_PAY_MERCHANT_KEY    # PEM private key
+# Non-secret (functions/.env):
+#   APPLE_PAY_MERCHANT_ID=merchant.com.apexvip
+#   APPLE_PAY_DOMAIN=your-served-domain   APPLE_PAY_DISPLAY_NAME=ApexVIP
+```
+
+Until the cert + merchant id are set it fails closed with a clear message and the
+client falls back to the card form (an SSRF guard ensures the cert is only ever
+sent to an `apple.com` host).
 
 `lib/` is the build output (git-ignored). `firebase deploy` runs `npm run build`
 first via the `predeploy` hook in `firebase.json`, so the compiled `lib/index.js`
