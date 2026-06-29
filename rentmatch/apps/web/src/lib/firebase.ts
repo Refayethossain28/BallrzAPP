@@ -32,7 +32,12 @@ if (appCheckSiteKey && import.meta.env.VITE_USE_EMULATORS !== '1') {
 export const auth = getAuth(app);
 // Named Firestore database, isolated from the other apps sharing this project.
 export const db = getFirestore(app, 'rentmatch');
-export const storage = getStorage(app);
+// Dedicated Storage bucket, so rentmatch's compliance docs don't share the
+// other apps' default bucket. Override via VITE_FIREBASE_STORAGE_BUCKET.
+export const storage = getStorage(
+  app,
+  `gs://${import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ?? 'apexvip-1b4a9-rentmatch'}`,
+);
 
 // Point at the local Firebase Emulator Suite when developing.
 // Set VITE_USE_EMULATORS=1 in .env.local and run `npm run emulators`.

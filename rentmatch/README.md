@@ -62,25 +62,32 @@ apps in this repo use). To avoid clobbering those apps, rentmatch is isolated:
   'rentmatch')`; functions use the Admin equivalent; `firebase.json` declares it.
 - **Cloud Functions** live in their own **`rentmatch` codebase**, so deploys
   never delete the other apps' functions.
+- **Storage** uses a dedicated bucket **`apexvip-1b4a9-rentmatch`** (the client
+  calls `getStorage(app, 'gs://…')`); rules deploy only to that bucket.
+- **Hosting** deploys to its own site **`rentmatch-apex`** → `https://rentmatch-apex.web.app`,
+  not the project's default site.
 
-One-time: create the database — `npm run db:create` (Firestore → `rentmatch`,
-`eur3`). Then deploy **scoped** so nothing else on the project is touched:
+One-time setup (each is its own isolated resource — nothing else on the project
+is touched):
 
 ```sh
-npm run deploy   # firebase deploy --only "firestore,functions"
+npm run db:create       # Firestore database 'rentmatch' (eur3)
+npm run bucket:create   # Storage bucket 'apexvip-1b4a9-rentmatch' (needs gcloud)
+npm run site:create     # Hosting site 'rentmatch-apex'
 ```
 
-Then point Stripe / GoCardless webhooks at `stripeWebhook` / `gocardlessWebhook`,
-and fill credentials per [`docs/rentmatch-revenue-plan.md`](../docs/rentmatch-revenue-plan.md)
-("To go live").
+Then deploy everything, scoped:
 
-**Still shared / not yet isolated:** Storage (compliance-doc uploads) and Hosting
-use the project's default bucket/site, so they're left out of the scoped deploy —
-deploying them would overwrite the other apps' rules/site. Give rentmatch a
-dedicated Storage bucket and a separate Hosting site (target) before enabling
-those, or the doc-upload + a Firebase-hosted URL won't work. Everything else
-(auth, the whole data layer, functions, the £100 flow) works on the shared
-project as-is.
+```sh
+npm run deploy   # firebase deploy --only "firestore,functions,storage,hosting"
+```
+
+Auth is project-level (shared, which is fine — same user pool). After deploy,
+point Stripe / GoCardless webhooks at `stripeWebhook` / `gocardlessWebhook`, and
+fill credentials per [`docs/rentmatch-revenue-plan.md`](../docs/rentmatch-revenue-plan.md)
+("To go live"). The site IDs/bucket name are globally unique — if `rentmatch-apex`
+or the bucket name is taken, pick another and update `firebase.json` +
+`firebase.ts` + the create scripts to match.
 
 ## Status
 
