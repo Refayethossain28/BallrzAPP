@@ -34,12 +34,14 @@ without Firebase; `src/index.ts` imports it.
 
 ### Emulator integration test — booking → driver dispatch
 
-`npm run test:emulator` proves the dispatch path end-to-end against the Firebase
+`npm run test:emulator` runs the whole booking→driver loop against the Firebase
 emulator: it writes a booking, lets the real `onBookingCreated` trigger fire, and
 asserts an `open_jobs/{bookingId}` doc appears (status `open`, correct market,
-80% pay) — the exact document the driver app subscribes to. Also checks dispatch
-is idempotent. Requires the emulator tooling (not a project dep, so it's opt-in,
-not run by the session hook):
+80% pay) — the exact document the driver app subscribes to — then checks dispatch
+is idempotent and **replays the driver app's claim transaction with two drivers
+racing**, asserting exactly one wins, the booking flips to `accepted` with that
+driver, and a driver-side `jobs` doc is created. Requires the emulator tooling
+(not a project dep, so it's opt-in, not run by the session hook):
 
 ```sh
 npm i -g firebase-tools     # needs Java for the Firestore emulator
