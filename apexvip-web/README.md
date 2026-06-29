@@ -116,8 +116,22 @@ this build can adopt the existing hosting/config without re-plumbing.
    referrals (`src/referrals/`) and trips (`src/trips/`). Their pure logic is
    wired back into the HTML apps via `apexvip-engine.js`, so the apps consume one
    tested implementation instead of duplicating it.
-3. **Next — lift the UI:** move screens (markup + rendering) into `src/`
-   components consuming the typed client directly.
+3. **Lifting the UI (in progress):** the first screen is lifted — the ApexAI
+   concierge chat (`src/concierge/ConciergeChat.ts` + `concierge.css`). It owns
+   its markup/styling/events and talks to the migrated brain (`resolveConcierge`);
+   runs offline via the parser, routes through Claude when a `backend` is passed.
+   `src/main.ts` mounts it as the page. Two wins over the inline original:
+   render-path type safety, and XSS-safe `textContent` rendering (the source
+   interpolated user text into `innerHTML`). Verified in a real browser:
+
+   ```sh
+   npm run build && npm run preview &     # serve the build
+   PW_CHROMIUM=/opt/pw-browsers/chromium-1194/chrome-linux/chrome \
+     BASE_URL=http://localhost:4173 npm run test:e2e
+   ```
+
+   `e2e/concierge.e2e.mjs` loads the page in Chromium, sends a request, and
+   asserts the typed reply + parsed "understood" summary render.
 4. **Capacitor — when the app is fully migrated:** the iOS wrappers (`mobile/`)
    bundle web output the same way. Point `mobile/build-www.mjs` at this package's
    `dist/` **only once the whole app lives here** — doing it now would ship just

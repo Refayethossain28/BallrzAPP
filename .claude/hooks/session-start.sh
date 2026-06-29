@@ -12,6 +12,10 @@ fi
 
 cd "$CLAUDE_PROJECT_DIR"
 
+# apexvip-web has playwright (for the e2e test); Chromium is already on the box,
+# so never let npm postinstall fetch browsers — keeps session start fast.
+export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+
 # Install Node deps for any package that has them (idempotent; container state is
 # cached after the hook, so a plain install is fine). The ApexVIP backend
 # (functions) and frontend (apexvip-web) are TypeScript and need their toolchains
