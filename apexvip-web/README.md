@@ -47,6 +47,15 @@ ready. They keep running exactly as today.
   - `pricing.test.ts` + `checkout.test.ts` — 9 tests covering the rounding and
     every checkout branch (card error, SCA failure, backend failure, offline).
 
+- **`src/payouts/`** — the **driver payout flow** (Stripe Connect), third screen.
+  - `ledger.ts` — `aggregateOwedBalances(...)`: groups the `driver_payouts`
+    ledger per driver (sum owed, count trips) for the admin "Pay out" list, plus
+    `formatSettlement(...)` for the `payoutDriver` result.
+  - `onboarding.ts` — `startPayoutOnboarding(...)`: the driver `setupPayouts`
+    decision logic (demo / already-active / create-and-open link / schedule
+    status refresh), with the window-open and timer injected.
+  - `ledger.test.ts` + `onboarding.test.ts` — 11 tests.
+
 ## Commands
 
 ```sh
@@ -74,9 +83,11 @@ this build can adopt the existing hosting/config without re-plumbing.
    The concierge brain (`src/concierge/`) is the first screen lifted across.
 2. **Incremental:** continue lifting one screen at a time out of the giant HTML
    files into `src/`; each becomes type-checked and unit-testable. Done so far:
-   the concierge brain (`src/concierge/`) and the Square checkout flow
-   (`src/payments/`). The next natural candidate is the driver payout screens —
-   already covered by the contract.
+   the concierge brain (`src/concierge/`), the Square checkout flow
+   (`src/payments/`), and the driver payout flow (`src/payouts/`). Remaining
+   client callables to wrap a screen around: referrals (`generateReferralCode` /
+   `applyReferralCode`), trip rating (`submitTripRating`), chauffeur chat
+   (`sendChauffeurMessage`), and flight status (`checkFlightStatus`).
 3. **Capacitor — when the app is fully migrated:** the iOS wrappers (`mobile/`)
    bundle web output the same way. Point `mobile/build-www.mjs` at this package's
    `dist/` **only once the whole app lives here** — doing it now would ship just
