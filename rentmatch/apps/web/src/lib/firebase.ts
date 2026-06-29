@@ -30,7 +30,8 @@ if (appCheckSiteKey && import.meta.env.VITE_USE_EMULATORS !== '1') {
 }
 
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+// Named Firestore database, isolated from the other apps sharing this project.
+export const db = getFirestore(app, 'rentmatch');
 export const storage = getStorage(app);
 
 // Point at the local Firebase Emulator Suite when developing.

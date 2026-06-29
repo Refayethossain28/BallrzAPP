@@ -26,8 +26,9 @@ import {
 } from '@rentmatch/shared';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-initializeApp();
-const db = getFirestore();
+const adminApp = initializeApp();
+// Named Firestore database, isolated from the other apps sharing this project.
+const db = getFirestore(adminApp, 'rentmatch');
 // Compliance checks and agreements carry optional fields (e.g. `detail`) that are
 // `undefined` when not set; Firestore rejects undefined values unless told to skip
 // them. Without this, drafting a contract (which persists the checks) fails.

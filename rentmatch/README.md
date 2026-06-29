@@ -53,11 +53,34 @@ Notes:
 - If the pre-installed Chromium build differs from the pinned `@playwright/test`,
   set `PW_CHROMIUM_PATH=/path/to/chromium`.
 
-### Deploy
-Fill the credentials in [`docs/rentmatch-revenue-plan.md`](../docs/rentmatch-revenue-plan.md)
-("To go live"), then `npm run deploy` (`firebase deploy` — hosting + functions +
-Firestore rules). Point Stripe and GoCardless webhooks at `stripeWebhook` /
-`gocardlessWebhook`.
+### Firebase project (shared, non-destructive)
+The client points at the shared **`apexvip-1b4a9`** project (the one the other
+apps in this repo use). To avoid clobbering those apps, rentmatch is isolated:
+
+- **Firestore** runs in its own named database **`rentmatch`** (separate rules +
+  data from the default database). The client uses `getFirestore(app,
+  'rentmatch')`; functions use the Admin equivalent; `firebase.json` declares it.
+- **Cloud Functions** live in their own **`rentmatch` codebase**, so deploys
+  never delete the other apps' functions.
+
+One-time: create the database — `npm run db:create` (Firestore → `rentmatch`,
+`eur3`). Then deploy **scoped** so nothing else on the project is touched:
+
+```sh
+npm run deploy   # firebase deploy --only "firestore,functions"
+```
+
+Then point Stripe / GoCardless webhooks at `stripeWebhook` / `gocardlessWebhook`,
+and fill credentials per [`docs/rentmatch-revenue-plan.md`](../docs/rentmatch-revenue-plan.md)
+("To go live").
+
+**Still shared / not yet isolated:** Storage (compliance-doc uploads) and Hosting
+use the project's default bucket/site, so they're left out of the scoped deploy —
+deploying them would overwrite the other apps' rules/site. Give rentmatch a
+dedicated Storage bucket and a separate Hosting site (target) before enabling
+those, or the doc-upload + a Firebase-hosted URL won't work. Everything else
+(auth, the whole data layer, functions, the £100 flow) works on the shared
+project as-is.
 
 ## Status
 
