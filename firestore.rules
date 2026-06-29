@@ -24,7 +24,11 @@ service cloud.firestore {
     // can change role; a self-update must leave role as 'client' (or unset).
     match /users/{uid} {
       allow read:   if isUser(uid) || isAdmin();
-      allow create: if isUser(uid);
+      // A user may create only their OWN profile, and only as a 'client' — they
+      // can't self-promote to admin/driver on create (isAdmin trusts the role
+      // field, so an unguarded create would be a privilege-escalation hole).
+      allow create: if isUser(uid)
+        && request.resource.data.get('role', 'client') == 'client';
       allow update: if isAdmin()
         || (isUser(uid) && request.resource.data.get('role', 'client') == 'client');
       allow delete: if isAdmin();
