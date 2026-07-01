@@ -93,7 +93,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: llm-from-scratch/web/model.json
-          key: llm-model-${{ hashFiles('llm-from-scratch/**.py', 'llm-from-scratch/requirements.txt') }}
+          # Include the committed model.json in the key so that when we commit a
+          # freshly-trained model, the key changes → no stale cached copy is
+          # restored over it. (The committed weights are the source of truth now.)
+          key: llm-model-${{ hashFiles('llm-from-scratch/web/model.json', 'llm-from-scratch/**.py', 'llm-from-scratch/requirements.txt') }}
 
       - name: Train and export the browser LLM (manual run, on cache miss)
         if: github.event_name == 'workflow_dispatch' && steps.llm-cache.outputs.cache-hit != 'true'
