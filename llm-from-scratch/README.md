@@ -190,9 +190,16 @@ ANTHROPIC_API_KEY=sk-ant-... node server.mjs   # then open http://localhost:8789
 ```
 
 Flip on **⚡ Live AI (Fable 5)** in the header and hit **Ask Fable 5**. Without a
-key (or on the hosted GitHub Pages build, which has no proxy) the toggle stays
-disabled and the on-device model is used. Override the model with
-`LLM_LIVE_MODEL=claude-fable-5` (or any current Claude id).
+key the toggle stays disabled and the on-device model is used. Override the model
+with `LLM_LIVE_MODEL=claude-fable-5` (or any current Claude id).
+
+**Make Live AI work on the hosted page too:** deploy `server.mjs` publicly (it's a
+zero-dependency Node app with a `package.json` `start` script) and paste its URL
+into the app via the **“connect Fable 5 proxy”** link under the Generate button —
+the URL is saved on-device, nothing is committed. Step-by-step Render instructions
+(and an important cost/abuse note — a public key-bearing proxy is inherently
+abusable) are in [`DEPLOY.md`](./DEPLOY.md). The proxy adds CORS origin
+allow-listing, a per-IP rate limit, and a `max_tokens` cap as deterrents.
 
 ## What to expect
 
