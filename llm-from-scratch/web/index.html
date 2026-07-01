@@ -49,7 +49,19 @@
     }
     button.ghost { background: transparent; color: var(--amber); border: 1px solid #3a3320; font-weight: 600; }
     button:disabled { opacity: .5; cursor: default; }
-    .actions { display: flex; gap: 10px; align-items: center; }
+    .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    /* Live AI toggle */
+    .switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #c7cdda; cursor: pointer; user-select: none; }
+    .switch input { position: absolute; opacity: 0; pointer-events: none; }
+    .track { width: 40px; height: 22px; border-radius: 999px; background: #2a3043; border: 1px solid #3a4155; position: relative; transition: background .15s; flex: none; }
+    .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #8b93a7; transition: transform .15s, background .15s; }
+    .switch input:checked + .track { background: #6e5bff; border-color: #8a7bff; }
+    .switch input:checked + .track::after { transform: translateX(18px); background: #fff; }
+    .switch.disabled { opacity: .45; cursor: not-allowed; }
+    .switch b { color: #b3a9ff; font-weight: 700; }
+    body.live { --amber: #8a7bff; }
+    body.live button#go { background: linear-gradient(135deg, #6e5bff, #a78bff); color: #fff; }
+    .gen.live { color: #b9adff; }
     pre {
       white-space: pre-wrap; word-break: break-word; background: var(--bg);
       border: 1px solid var(--line); border-radius: 8px; padding: 14px; min-height: 130px;
@@ -89,12 +101,12 @@
 
     <div class="card">
       <label for="prompt">Prompt — give it a few words to continue</label>
-      <textarea id="prompt">The game</textarea>
+      <textarea id="prompt">ROMEO:</textarea>
       <div class="chips" id="chips"></div>
       <div class="row">
         <div class="ctrl">
-          <label>Length: <span id="ntok" class="val">200</span> tokens</label>
-          <input id="tokens" type="range" min="20" max="500" step="10" value="200" />
+          <label>Length: <span id="ntok" class="val">150</span> tokens</label>
+          <input id="tokens" type="range" min="20" max="500" step="10" value="150" />
         </div>
         <div class="ctrl">
           <label>Temperature: <span id="tval" class="val">0.8</span></label>
@@ -109,6 +121,11 @@
         <div class="actions">
           <button id="go" disabled>Generate</button>
           <button id="stop" class="ghost" style="display:none">Stop</button>
+          <label class="switch disabled" id="liveWrap" title="Run the app with the local proxy to enable this.">
+            <input type="checkbox" id="live" disabled />
+            <span class="track"></span>
+            <span>⚡ Live AI <b>(Fable 5)</b></span>
+          </label>
           <button id="install" class="ghost">Install app</button>
         </div>
       </div>
@@ -120,9 +137,11 @@
     </div>
 
     <footer>
-      This is a tiny, educational model on a tiny corpus — it learns the language's spacing, common words
-      and letter statistics, so it reads like fluent nonsense. The point is that it's genuinely
-      <em>yours</em>: hand-built, and running with no network. Source &amp; training code in
+      <b>Two engines.</b> The default is your hand-built GPT — trained from scratch, running with no
+      network, genuinely yours (small, so it reads more like a stylistic echo than a smart assistant).
+      Flip on <b>⚡ Live AI</b> to route the same prompt to real frontier <b>Fable&nbsp;5</b> and compare.
+      Live AI needs the local proxy — <code>ANTHROPIC_API_KEY=sk-ant-… node server.mjs</code> — and keeps
+      your key server-side; it isn't available on the hosted GitHub Pages build. Source &amp; training code in
       <a href="https://github.com/refayethossain28/BallrzAPP/tree/main/llm-from-scratch">llm-from-scratch/</a>.
     </footer>
   </div>
@@ -140,8 +159,8 @@
       s.addEventListener("input", () => { l.textContent = s.value; });
     }
 
-    // Quick-start prompt chips.
-    ["The game", "Shooting is", "Defense is where", "Every great player", "The court does not care"]
+    // Quick-start prompt chips (the model is trained on Shakespeare).
+    ["ROMEO:", "To be, or", "My lord,", "What news", "O, speak again"]
       .forEach((p) => {
         const b = document.createElement("button");
         b.className = "chip"; b.textContent = p;
@@ -189,42 +208,75 @@
       stopBtn.style.display = on ? "" : "none";
     }
 
-    stopBtn.addEventListener("click", () => { cancel = true; });
+    // ── Live AI (Fable 5) toggle: probe the local proxy; enable if reachable ──
+    const liveBox = $("live"), liveWrap = $("liveWrap");
+    let liveModel = "Fable 5", liveAbort = null;
+    (async function probeLive() {
+      try {
+        const r = await fetch("health", { cache: "no-store" });
+        const j = await r.json();
+        if (j && j.ok && j.live) {
+          if (j.model) liveModel = j.model;
+          liveBox.disabled = false;
+          liveWrap.classList.remove("disabled");
+          liveWrap.title = `Route the prompt to real ${liveModel} instead of the on-device model.`;
+        } else {
+          liveWrap.title = "Proxy is running but no ANTHROPIC_API_KEY is set.";
+        }
+      } catch { /* no proxy (e.g. GitHub Pages) — toggle stays disabled */ }
+    })();
 
-    goBtn.addEventListener("click", () => {
-      if (!model || running) return;
-      cancel = false; setRunning(true);
-      const prompt = $("prompt").value;
-      const nTokens = +$("tokens").value;
-      const opts = { temperature: +$("temp").value, topK: +$("topk").value };
+    liveBox.addEventListener("change", () => {
+      document.body.classList.toggle("live", liveBox.checked);
+      goBtn.textContent = liveBox.checked ? "Ask Fable 5" : "Generate";
+    });
+
+    stopBtn.addEventListener("click", () => {
+      cancel = true;
+      if (liveAbort) { try { liveAbort.abort(); } catch {} }
+    });
+
+    // Shared output scaffold: prints the prompt, returns the span new text lands in.
+    function beginOutput(prompt, live) {
       outEl.innerHTML = "";
       outEl.appendChild(document.createTextNode(prompt));
       const genSpan = document.createElement("span");
-      genSpan.className = "gen";
+      genSpan.className = "gen" + (live ? " live" : "");
       outEl.appendChild(genSpan);
       const cursor = document.createElement("span");
       cursor.className = "cursor"; cursor.textContent = "▍";
       outEl.appendChild(cursor);
-      statusEl.textContent = "Generating…";
+      return { genSpan, cursor };
+    }
+    function finish(cursor, note) { cursor.remove(); statusEl.textContent = note; setRunning(false); }
 
-      // Run incrementally so the UI can paint each token as it arrives.
+    goBtn.addEventListener("click", () => {
+      if (running) return;
+      const prompt = $("prompt").value;
+      if (liveBox.checked && !liveBox.disabled) return runLive(prompt);
+      if (!model) return;
+      runLocal(prompt);
+    });
+
+    // On-device: sample token by token from the from-scratch GPT.
+    function runLocal(prompt) {
+      cancel = false; setRunning(true);
+      const nTokens = +$("tokens").value;
+      const opts = { temperature: +$("temp").value, topK: +$("topk").value };
+      const { genSpan, cursor } = beginOutput(prompt, false);
+      statusEl.textContent = "Generating on-device…";
       let ids = model.tokenizer.encode(prompt);
       if (ids.length === 0) ids = [model.tokenizer.stoi["\n"] || 0];
       let n = 0;
       const t0 = performance.now();
-      function finish(note) {
-        cursor.remove();
-        statusEl.textContent = note;
-        setRunning(false);
-      }
       function step() {
         if (cancel) {
           const dt = (performance.now() - t0) / 1000;
-          return finish(`Stopped — ${n} tokens in ${dt.toFixed(1)}s.`);
+          return finish(cursor, `Stopped — ${n} tokens in ${dt.toFixed(1)}s.`);
         }
         if (n >= nTokens) {
           const dt = (performance.now() - t0) / 1000;
-          return finish(`Done — ${nTokens} tokens in ${dt.toFixed(1)}s (${(nTokens / dt).toFixed(0)} tok/s).`);
+          return finish(cursor, `Done — ${nTokens} tokens in ${dt.toFixed(1)}s (${(nTokens / dt).toFixed(0)} tok/s).`);
         }
         const logits = model.logitsForLast(ids);
         const next = sampleFrom(logits, opts.temperature, opts.topK);
@@ -234,7 +286,50 @@
         setTimeout(step, 0);
       }
       step();
-    });
+    }
+
+    // Live AI: stream a completion from real Fable 5 via the local proxy.
+    async function runLive(prompt) {
+      cancel = false; setRunning(true);
+      const { genSpan, cursor } = beginOutput(prompt, true);
+      statusEl.textContent = `Asking ${liveModel}…`;
+      liveAbort = new AbortController();
+      const t0 = performance.now();
+      try {
+        const res = await fetch("ai", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            prompt,
+            temperature: +$("temp").value,
+            maxTokens: +$("tokens").value,
+          }),
+          signal: liveAbort.signal,
+        });
+        if (!res.ok || !res.body) {
+          let msg = "request failed (" + res.status + ")";
+          try { const j = await res.json(); if (j && j.error) msg = j.error; } catch {}
+          throw new Error(msg);
+        }
+        const reader = res.body.getReader();
+        const dec = new TextDecoder();
+        let chars = 0;
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          const text = dec.decode(value, { stream: true });
+          genSpan.textContent += text; chars += text.length;
+          outEl.scrollTop = outEl.scrollHeight;
+        }
+        const dt = (performance.now() - t0) / 1000;
+        finish(cursor, `Done — ${liveModel} streamed ${chars} chars in ${dt.toFixed(1)}s.`);
+      } catch (e) {
+        if (e && e.name === "AbortError") finish(cursor, "Stopped.");
+        else finish(cursor, "Live AI error: " + (e.message || e));
+      } finally {
+        liveAbort = null;
+      }
+    }
 
     // Mirror of the sampler in gpt.js, exposed here for incremental UI updates.
     function sampleFrom(logits, temperature, topK) {

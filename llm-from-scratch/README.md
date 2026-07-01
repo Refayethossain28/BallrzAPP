@@ -164,16 +164,50 @@ commit the updated `web/model.json` (regenerate the icons with
 Install it from the browser (Chromium: "Install app"; iOS Safari: Share → Add to
 Home Screen) for a full-screen, offline launch.
 
+The shipped `web/model.json` is a subword (BPE) model trained on the ~1 MB tiny
+Shakespeare corpus, which reads noticeably better than a character model on the
+toy corpus. Rebuild it with:
+
+```bash
+python fetch_data.py shakespeare
+python train.py --data data/shakespeare.txt --tokenizer bpe --vocab_size 512 \
+    --n_layer 5 --n_head 8 --n_embd 160 --block_size 96 --batch_size 12 \
+    --steps 1600 --lr 4e-4 --out ckpt-shakespeare.npz
+python export_web.py --ckpt ckpt-shakespeare.npz --out web/model.json
+```
+
+### ⚡ Live AI — put your model next to real Fable 5
+
+The from-scratch model is genuinely yours, but it's tiny, so it reads more like a
+stylistic echo than a smart assistant. `server.mjs` adds an optional **"Live AI"**
+toggle: it serves the same page and routes the prompt box to **real frontier
+Claude — Fable 5 by default** — streaming the reply back token by token so you can
+compare the two engines side by side. The API key stays server-side (the browser
+never sees it); zero dependencies (Node 18+ built-ins only).
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... node server.mjs   # then open http://localhost:8789
+```
+
+Flip on **⚡ Live AI (Fable 5)** in the header and hit **Ask Fable 5**. Without a
+key (or on the hosted GitHub Pages build, which has no proxy) the toggle stays
+disabled and the on-device model is used. Override the model with
+`LLM_LIVE_MODEL=claude-fable-5` (or any current Claude id).
+
 ## What to expect
 
-This is an educational implementation: pure NumPy on CPU, a tiny corpus, a tiny
-model. It will produce text that *looks* like the training data's language
-(spacing, common words, letter statistics) but won't be coherent — that takes
-orders of magnitude more data, parameters, and compute. The point is that every
-mechanism a real LLM uses is here and visible, with nothing hidden behind a
-framework.
+This is an educational implementation: pure NumPy on CPU, a ~1 MB corpus, a ~1.7M
+parameter model. With BPE it produces text with real words, Shakespearean cadence
+and line structure — but it won't be *coherent*, and it is not an assistant. That
+gap is not a bug to fix here: a frontier model like Fable 5 has on the order of
+hundreds of billions of parameters trained on trillions of tokens — five to six
+orders of magnitude more data, parameters and compute. No CPU-trained,
+browser-shippable model gets close. If you want that level of quality in this app,
+that's exactly what the **⚡ Live AI (Fable 5)** toggle is for. The point of the
+from-scratch model is that every mechanism a real LLM uses is here and visible,
+with nothing hidden behind a framework — and it's genuinely yours.
 
-To scale it up the levers are the same ones the big labs pull: more data, a
-bigger model (`--n_layer`, `--n_embd`), a longer context (`--block_size`), and
-more steps — eventually swapping the char tokenizer for byte-pair encoding and
-NumPy for a GPU array library.
+To scale the from-scratch model up, the levers are the same ones the big labs
+pull: more data, a bigger model (`--n_layer`, `--n_embd`), a longer context
+(`--block_size`), more steps — and eventually swapping NumPy for a GPU array
+library.
