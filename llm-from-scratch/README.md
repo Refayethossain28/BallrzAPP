@@ -193,13 +193,15 @@ Flip on **⚡ Live AI (Fable 5)** in the header and hit **Ask Fable 5**. Without
 key the toggle stays disabled and the on-device model is used. Override the model
 with `LLM_LIVE_MODEL=claude-fable-5` (or any current Claude id).
 
-**Make Live AI work on the hosted page too:** deploy `server.mjs` publicly (it's a
-zero-dependency Node app with a `package.json` `start` script) and paste its URL
-into the app via the **“connect Fable 5 proxy”** link under the Generate button —
-the URL is saved on-device, nothing is committed. Step-by-step Render instructions
-(and an important cost/abuse note — a public key-bearing proxy is inherently
-abusable) are in [`DEPLOY.md`](./DEPLOY.md). The proxy adds CORS origin
-allow-listing, a per-IP rate limit, and a `max_tokens` cap as deterrents.
+**On the hosted GitHub Pages page**, Live AI works through a server-side proxy so
+the browser never holds a key. The repo ships that proxy as a Firebase function
+(`llmLive` in [`../functions-side/index.js`](../functions-side/index.js)) which
+auto-deploys with the backend and reuses the project's existing `ANTHROPIC_API_KEY`
+— the app points at it by default, so the toggle lights up with no setup once the
+backend is deployed. Prefer your own host (Render/Fly/VPS)? Deploy `server.mjs` and
+paste its URL via **“connect Fable 5 proxy”** (that overrides the default). Full
+steps and an important **cost/abuse note** (a public key-bearing proxy is inherently
+abusable — set an Anthropic spend limit) are in [`DEPLOY.md`](./DEPLOY.md).
 
 ## What to expect
 
