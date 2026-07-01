@@ -146,8 +146,23 @@ python export_web.py --inline         # writes web/llm.html
 
 The page has a prompt box, temperature / top-k / length sliders, and streams the
 generated text token by token. Because the model is small, it runs at hundreds
-of tokens per second on a laptop. The same `web/index.html` can be deployed to
-GitHub Pages (like the trading app already in this repo).
+of tokens per second on a laptop.
+
+### "My Own AI Model" — the installable PWA
+
+`web/` is a full **installable PWA**: an app manifest, offline service worker,
+and app icons ship alongside the page, so once loaded the model runs with no
+network at all — the weights are cached on-device. A trained `web/model.json` is
+committed to the repo so the deployed page works with **zero setup**, and it is
+published to GitHub Pages next to the other prototypes:
+
+- **Live:** https://refayethossain28.github.io/BallrzAPP/llm/
+
+To refresh the deployed model after training, re-run `python export_web.py` and
+commit the updated `web/model.json` (regenerate the icons with
+`node scripts/gen-llm-icons.mjs` from the repo root if you change the motif).
+Install it from the browser (Chromium: "Install app"; iOS Safari: Share → Add to
+Home Screen) for a full-screen, offline launch.
 
 ## What to expect
 

@@ -2,55 +2,98 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>LLM from scratch — in the browser</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>My Own AI Model — a GPT built from scratch, running in your browser</title>
+  <meta name="description" content="Your own GPT-style language model, built from scratch in NumPy and running entirely in your browser. No server, no API, no cloud — the weights ship with the page and every token is generated on your device." />
+  <meta name="theme-color" content="#0b0e14" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icon-180.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="My AI Model" />
   <style>
-    :root { color-scheme: dark; }
+    :root { color-scheme: dark; --amber: #f5a524; --bg: #0b0e14; --panel: #131722; --line: #232838; --muted: #8b93a7; }
     * { box-sizing: border-box; }
     body {
-      margin: 0; min-height: 100vh; background: #0b0e14; color: #e6e6e6;
+      margin: 0; min-height: 100dvh; background: var(--bg); color: #e6e6e6;
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      display: flex; justify-content: center; padding: 24px;
+      display: flex; justify-content: center;
+      padding: max(24px, env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom));
     }
-    .wrap { width: 100%; max-width: 760px; }
-    h1 { font-size: 20px; margin: 0 0 4px; }
-    .sub { color: #8b93a7; font-size: 13px; margin-bottom: 20px; }
-    .card { background: #131722; border: 1px solid #232838; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
-    label { display: block; font-size: 12px; color: #8b93a7; margin-bottom: 6px; }
+    .wrap { width: 100%; max-width: 780px; }
+    header { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+    header img { width: 46px; height: 46px; border-radius: 12px; flex: none; }
+    h1 { font-size: 21px; margin: 0; line-height: 1.15; }
+    .sub { color: var(--muted); font-size: 13px; margin: 6px 0 18px; line-height: 1.5; }
+    .sub code { color: #8ab4ff; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
     textarea {
-      width: 100%; min-height: 70px; resize: vertical; background: #0b0e14; color: #e6e6e6;
-      border: 1px solid #2a3043; border-radius: 8px; padding: 10px; font-size: 14px; font-family: inherit;
+      width: 100%; min-height: 70px; resize: vertical; background: var(--bg); color: #e6e6e6;
+      border: 1px solid #2a3043; border-radius: 8px; padding: 10px; font-size: 15px; font-family: inherit;
     }
-    .row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; margin-top: 12px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .chip {
+      background: #0b0e14; border: 1px solid #2a3043; color: #c7cdda; border-radius: 999px;
+      padding: 5px 12px; font-size: 12.5px; cursor: pointer;
+    }
+    .chip:hover { border-color: var(--amber); color: #fff; }
+    .row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; margin-top: 14px; }
     .ctrl { flex: 1; min-width: 120px; }
-    input[type=range] { width: 100%; }
+    input[type=range] { width: 100%; accent-color: var(--amber); }
     .val { color: #e6e6e6; font-size: 12px; }
     button {
-      background: #f5a524; color: #1a1300; border: 0; border-radius: 8px;
-      padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer;
+      background: var(--amber); color: #1a1300; border: 0; border-radius: 8px;
+      padding: 10px 20px; font-size: 14px; font-weight: 700; cursor: pointer;
     }
+    button.ghost { background: transparent; color: var(--amber); border: 1px solid #3a3320; font-weight: 600; }
     button:disabled { opacity: .5; cursor: default; }
+    .actions { display: flex; gap: 10px; align-items: center; }
     pre {
-      white-space: pre-wrap; word-break: break-word; background: #0b0e14;
-      border: 1px solid #232838; border-radius: 8px; padding: 14px; min-height: 120px;
-      font-size: 14px; line-height: 1.5; margin: 0;
+      white-space: pre-wrap; word-break: break-word; background: var(--bg);
+      border: 1px solid var(--line); border-radius: 8px; padding: 14px; min-height: 130px;
+      font-size: 15px; line-height: 1.55; margin: 0;
     }
-    .gen { color: #f5a524; }
-    .status { font-size: 12px; color: #8b93a7; margin-top: 8px; }
-    code { color: #8ab4ff; }
+    .gen { color: var(--amber); }
+    .cursor { color: var(--amber); animation: blink 1s steps(2) infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+    .status { font-size: 12px; color: var(--muted); margin-top: 10px; }
+    .status code { color: #8ab4ff; }
+    footer { color: #667; font-size: 12px; margin-top: 6px; line-height: 1.6; }
+    footer a { color: #8ab4ff; }
+    #install { display: none; }
+    .badges { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
+    .badge { font-size: 11.5px; color: #b7c0d6; background: #10151f; border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; }
+    .badge b { color: var(--amber); font-weight: 700; }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <h1>LLM from scratch — running in your browser</h1>
-    <div class="sub">A tiny GPT, trained in NumPy and exported to run entirely in JavaScript. No server, no API.</div>
+    <header>
+      <img src="icon.svg" alt="" />
+      <div>
+        <h1>My Own AI Model</h1>
+        <div class="sub" style="margin:2px 0 0">A GPT built from scratch — running entirely in your browser.</div>
+      </div>
+    </header>
+    <div class="sub">
+      Every mechanism a real large language model uses is here and nothing is hidden behind a framework:
+      a hand-written <b>autograd engine</b>, a <b>transformer</b> with causal self-attention, an <b>Adam</b>
+      trainer — all in pure NumPy. It was trained offline, its weights baked into this page, and the
+      forward pass re-implemented in JavaScript. <b>No server, no API, no cloud</b> — every token below is
+      generated on your device.
+    </div>
+
+    <div class="badges" id="badges"></div>
 
     <div class="card">
-      <label for="prompt">Prompt</label>
+      <label for="prompt">Prompt — give it a few words to continue</label>
       <textarea id="prompt">The game</textarea>
+      <div class="chips" id="chips"></div>
       <div class="row">
         <div class="ctrl">
-          <label>Tokens to generate: <span id="ntok" class="val">200</span></label>
+          <label>Length: <span id="ntok" class="val">200</span> tokens</label>
           <input id="tokens" type="range" min="20" max="500" step="10" value="200" />
         </div>
         <div class="ctrl">
@@ -61,7 +104,13 @@
           <label>Top-k: <span id="kval" class="val">20</span></label>
           <input id="topk" type="range" min="1" max="60" step="1" value="20" />
         </div>
-        <button id="go" disabled>Generate</button>
+      </div>
+      <div class="row">
+        <div class="actions">
+          <button id="go" disabled>Generate</button>
+          <button id="stop" class="ghost" style="display:none">Stop</button>
+          <button id="install" class="ghost">Install app</button>
+        </div>
       </div>
       <div id="status" class="status">Loading model…</div>
     </div>
@@ -69,20 +118,36 @@
     <div class="card">
       <pre id="out"></pre>
     </div>
+
+    <footer>
+      This is a tiny, educational model on a tiny corpus — it learns the language's spacing, common words
+      and letter statistics, so it reads like fluent nonsense. The point is that it's genuinely
+      <em>yours</em>: hand-built, and running with no network. Source &amp; training code in
+      <a href="https://github.com/refayethossain28/BallrzAPP/tree/main/llm-from-scratch">llm-from-scratch/</a>.
+    </footer>
   </div>
 
   <!--INLINE_MODEL-->
   <script src="gpt.js"></script>
   <script>
     const $ = (id) => document.getElementById(id);
-    const statusEl = $("status"), outEl = $("out"), goBtn = $("go");
-    let model = null;
+    const statusEl = $("status"), outEl = $("out"), goBtn = $("go"), stopBtn = $("stop");
+    let model = null, running = false, cancel = false;
 
     bind("tokens", "ntok"); bind("temp", "tval"); bind("topk", "kval");
     function bind(slider, label) {
       const s = $(slider), l = $(label);
       s.addEventListener("input", () => { l.textContent = s.value; });
     }
+
+    // Quick-start prompt chips.
+    ["The game", "Shooting is", "Defense is where", "Every great player", "The court does not care"]
+      .forEach((p) => {
+        const b = document.createElement("button");
+        b.className = "chip"; b.textContent = p;
+        b.addEventListener("click", () => { $("prompt").value = p; });
+        $("chips").appendChild(b);
+      });
 
     async function loadSpec() {
       // Prefer an inlined model (standalone llm.html); otherwise fetch model.json.
@@ -98,18 +163,37 @@
         const spec = await loadSpec();
         model = new GPTLib.Model(spec);
         const c = spec.config;
-        statusEl.innerHTML = `Ready — ${c.n_layer} layers, ${c.n_embd} dim, ` +
-          `vocab ${c.vocab_size}, context ${c.block_size}, ` +
-          `tokenizer <code>${spec.tokenizer.type}</code>.`;
+        const nParams = Object.values(spec.weights)
+          .reduce((s, w) => s + w.shape.reduce((a, b) => a * b, 1), 0);
+        $("badges").innerHTML =
+          badge(`${(nParams / 1000).toFixed(0)}K <b>parameters</b>`) +
+          badge(`${c.n_layer} <b>layers</b>`) +
+          badge(`${c.n_embd}-dim`) +
+          badge(`${c.n_head} heads`) +
+          badge(`vocab ${c.vocab_size}`) +
+          badge(`ctx ${c.block_size}`) +
+          badge(`${spec.tokenizer.type} tokenizer`) +
+          badge(`100% <b>on-device</b>`);
+        statusEl.innerHTML = "Ready — the model is loaded and runs entirely in this tab.";
         goBtn.disabled = false;
       } catch (e) {
         statusEl.textContent = "Error: " + e.message;
       }
     })();
 
+    function badge(html) { return `<span class="badge">${html}</span>`; }
+
+    function setRunning(on) {
+      running = on;
+      goBtn.style.display = on ? "none" : "";
+      stopBtn.style.display = on ? "" : "none";
+    }
+
+    stopBtn.addEventListener("click", () => { cancel = true; });
+
     goBtn.addEventListener("click", () => {
-      if (!model) return;
-      goBtn.disabled = true;
+      if (!model || running) return;
+      cancel = false; setRunning(true);
       const prompt = $("prompt").value;
       const nTokens = +$("tokens").value;
       const opts = { temperature: +$("temp").value, topK: +$("topk").value };
@@ -118,6 +202,9 @@
       const genSpan = document.createElement("span");
       genSpan.className = "gen";
       outEl.appendChild(genSpan);
+      const cursor = document.createElement("span");
+      cursor.className = "cursor"; cursor.textContent = "▍";
+      outEl.appendChild(cursor);
       statusEl.textContent = "Generating…";
 
       // Run incrementally so the UI can paint each token as it arrives.
@@ -125,13 +212,19 @@
       if (ids.length === 0) ids = [model.tokenizer.stoi["\n"] || 0];
       let n = 0;
       const t0 = performance.now();
+      function finish(note) {
+        cursor.remove();
+        statusEl.textContent = note;
+        setRunning(false);
+      }
       function step() {
+        if (cancel) {
+          const dt = (performance.now() - t0) / 1000;
+          return finish(`Stopped — ${n} tokens in ${dt.toFixed(1)}s.`);
+        }
         if (n >= nTokens) {
           const dt = (performance.now() - t0) / 1000;
-          statusEl.textContent = `Done — ${nTokens} tokens in ${dt.toFixed(1)}s ` +
-            `(${(nTokens / dt).toFixed(0)} tok/s).`;
-          goBtn.disabled = false;
-          return;
+          return finish(`Done — ${nTokens} tokens in ${dt.toFixed(1)}s (${(nTokens / dt).toFixed(0)} tok/s).`);
         }
         const logits = model.logitsForLast(ids);
         const next = sampleFrom(logits, opts.temperature, opts.topK);
@@ -159,6 +252,25 @@
       let r = Math.random() * sum;
       for (let i = 0; i < n; i++) { r -= z[i]; if (r <= 0) return i; }
       return n - 1;
+    }
+
+    // Install-to-home-screen (Chromium). Safari uses Share → Add to Home Screen.
+    let deferredPrompt = null;
+    const installBtn = $("install");
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault(); deferredPrompt = e; installBtn.style.display = "";
+    });
+    installBtn.addEventListener("click", async () => {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      await deferredPrompt.userChoice;
+      deferredPrompt = null; installBtn.style.display = "none";
+    });
+
+    // Register the offline service worker (not on file://, and not when inlined).
+    if ("serviceWorker" in navigator && location.protocol.startsWith("http") &&
+        !document.getElementById("inline-model")) {
+      window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
     }
   </script>
 </body>

@@ -113,9 +113,15 @@ jobs:
         run: |
           if [ -f llm-from-scratch/web/model.json ]; then
             mkdir -p _site/llm
-            cp llm-from-scratch/web/index.html _site/llm/index.html
-            cp llm-from-scratch/web/gpt.js     _site/llm/gpt.js
-            cp llm-from-scratch/web/model.json _site/llm/model.json
+            # The full installable PWA: page, JS engine, weights, plus the
+            # manifest / offline service worker / icons so install + offline work.
+            cp llm-from-scratch/web/index.html    _site/llm/index.html
+            cp llm-from-scratch/web/gpt.js        _site/llm/gpt.js
+            cp llm-from-scratch/web/model.json    _site/llm/model.json
+            cp llm-from-scratch/web/manifest.json _site/llm/manifest.json 2>/dev/null || true
+            cp llm-from-scratch/web/sw.js         _site/llm/sw.js          2>/dev/null || true
+            cp llm-from-scratch/web/icon.svg      _site/llm/icon.svg       2>/dev/null || true
+            cp llm-from-scratch/web/icon-*.png    _site/llm/               2>/dev/null || true
             echo "LLM demo included."
           else
             echo "No trained model yet — skipping /llm (run this workflow manually to build it)."
