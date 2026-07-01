@@ -9,6 +9,7 @@ Saves a checkpoint to `ckpt.npz` that `sample.py` loads to generate text.
 from __future__ import annotations
 
 import argparse
+import math
 import time
 
 import numpy as np
@@ -50,6 +51,10 @@ def parse_args():
     p.add_argument("--n_head", type=int, default=4)
     p.add_argument("--n_embd", type=int, default=128)
     p.add_argument("--lr", type=float, default=3e-4)
+    p.add_argument("--warmup", type=int, default=-1,
+                   help="linear warmup steps (-1 = auto: max(50, steps//20))")
+    p.add_argument("--min_lr_ratio", type=float, default=0.1,
+                   help="cosine-decay the LR down to this fraction of --lr")
     p.add_argument("--weight_decay", type=float, default=0.01)
     p.add_argument("--grad_clip", type=float, default=1.0)
     p.add_argument("--eval_every", type=int, default=200)
@@ -89,8 +94,32 @@ def main():
 
     opt = Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
+    # LR schedule: linear warmup then cosine decay to min_lr_ratio * lr. A fixed
+    # LR tends to overshoot and drift back up late in training; warmup+cosine
+    # keeps it descending and reaching a better final loss.
+    warmup = args.warmup if args.warmup >= 0 else max(50, args.steps // 20)
+    min_lr = args.lr * args.min_lr_ratio
+
+    def lr_at(step):
+        if step < warmup:
+            return args.lr * (step + 1) / max(1, warmup)
+        prog = (step - warmup) / max(1, args.steps - warmup)
+        return min_lr + 0.5 * (args.lr - min_lr) * (1 + math.cos(math.pi * min(1.0, prog)))
+
+    def save():
+        np.savez(
+            args.out,
+            params=np.array(model.state(), dtype=object),
+            config=np.array([config.to_dict()], dtype=object),
+            tokenizer=np.array([tok.to_json()], dtype=object),
+        )
+
+    # Keep the BEST-val checkpoint, not merely the last one, so a late-training
+    # wobble can never ship a worse model than we already had.
+    best_val = float("inf")
     t0 = time.time()
     for step in range(1, args.steps + 1):
+        opt.lr = lr_at(step)
         x, y = get_batch(train_data, args.block_size, args.batch_size, rng)
         _, loss = model.forward(x, y)
 
@@ -99,20 +128,18 @@ def main():
         clip_grad_norm(model.parameters(), args.grad_clip)
         opt.step()
 
-        if step % args.eval_every == 0 or step == 1:
+        if step % args.eval_every == 0 or step == 1 or step == args.steps:
             val = estimate_loss(model, val_data, args.block_size, args.batch_size, rng)
             dt = time.time() - t0
+            star = ""
+            if val < best_val:
+                best_val = val
+                save()
+                star = "  <- best, saved"
             print(f"step {step:5d} | train loss {float(loss.data):.4f} | "
-                  f"val loss {val:.4f} | {dt:.1f}s")
+                  f"val loss {val:.4f} | lr {opt.lr:.2e} | {dt:.1f}s{star}")
 
-    # Save checkpoint: parameters + config + tokenizer.
-    np.savez(
-        args.out,
-        params=np.array(model.state(), dtype=object),
-        config=np.array([config.to_dict()], dtype=object),
-        tokenizer=np.array([tok.to_json()], dtype=object),
-    )
-    print(f"saved checkpoint to {args.out}")
+    print(f"saved best checkpoint (val {best_val:.4f}) to {args.out}")
 
     # Show a quick sample so you can eyeball that it learned something.
     start = np.array([[tok.stoi.get("\n", 0)]])
