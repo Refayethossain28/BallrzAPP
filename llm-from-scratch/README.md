@@ -156,7 +156,7 @@ network at all — the weights are cached on-device. A trained `web/model.json` 
 committed to the repo so the deployed page works with **zero setup**, and it is
 published to GitHub Pages next to the other prototypes:
 
-- **Live:** https://refayethossain28.github.io/BallrzAPP/llm-from-scratch/web/
+- **Live:** https://refayethossain28.github.io/BallrzAPP/llm/
 
 To refresh the deployed model after training, re-run `python export_web.py` and
 commit the updated `web/model.json` (regenerate the icons with
