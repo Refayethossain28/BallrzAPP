@@ -242,6 +242,93 @@ exports.linguaAI = onCall(
 );
 
 /* ===========================================================================
+ * llmLive — hosted Fable 5 proxy for the "My Own AI Model" app
+ *   (llm-from-scratch/web/index.html)
+ *
+ * The app ships a from-scratch GPT that runs in the browser; this HTTPS function
+ * powers its optional "⚡ Live AI (Fable 5)" toggle so the *hosted* page can
+ * stream real frontier Claude without anyone running a local proxy. Mirrors
+ * llm-from-scratch/server.mjs but as a Cloud Function, reusing the SAME
+ * project-level ANTHROPIC_API_KEY secret as linguaAI. The browser never holds
+ * the key; if this is absent/erroring the client falls back to the on-device model.
+ *
+ *   GET  (…/llmLive/health) → { ok, live, model }
+ *   POST (…/llmLive/ai)     → text/plain stream of the completion
+ *
+ * Deployed with the side-apps codebase (CI does this on push to main).
+ * =========================================================================== */
+const { onRequest } = require('firebase-functions/v2/https');
+
+const LLM_LIVE_MODEL = process.env.LLM_LIVE_MODEL || 'claude-fable-5';
+const LLM_MAX_TOKENS = Number(process.env.LLM_MAX_TOKENS || 512);
+const LLM_SYSTEM =
+  "You are a brilliant, helpful AI assistant. Answer the user's prompt directly " +
+  'and well. If the prompt is an unfinished piece of text, continue it naturally ' +
+  'in the same voice. Be concise unless asked for depth.';
+// Browsers on these origins may call the function; others get a non-matching
+// ACAO so their requests are blocked (a deterrent — non-browser clients ignore
+// CORS). Override with the ALLOW_ORIGINS env var (comma-separated, or "*").
+const LLM_ALLOW_ORIGINS = (process.env.ALLOW_ORIGINS ||
+  'https://refayethossain28.github.io,http://localhost:8789,http://localhost:8000')
+  .split(',').map((s) => s.trim()).filter(Boolean);
+function llmAllowOrigin(origin) {
+  if (LLM_ALLOW_ORIGINS.includes('*')) return '*';
+  if (origin && LLM_ALLOW_ORIGINS.includes(origin)) return origin;
+  return LLM_ALLOW_ORIGINS[0] || '*';
+}
+function llmSetCors(req, res) {
+  res.set('Access-Control-Allow-Origin', llmAllowOrigin(req.headers.origin));
+  res.set('Vary', 'Origin');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'content-type');
+  res.set('Access-Control-Max-Age', '86400');
+}
+
+exports.llmLive = onRequest(
+  { secrets: [ANTHROPIC_API_KEY], region: 'us-central1', cors: false },
+  async (req, res) => {
+    llmSetCors(req, res);
+    if (req.method === 'OPTIONS') { res.status(204).end(); return; }
+
+    const apiKey = ANTHROPIC_API_KEY.value();
+    if (req.method === 'GET') {                     // health probe
+      res.set('content-type', 'application/json');
+      res.status(200).send(JSON.stringify({ ok: true, live: !!apiKey, model: LLM_LIVE_MODEL }));
+      return;
+    }
+    if (req.method !== 'POST') { res.status(404).send('not found'); return; }
+    if (!apiKey) { res.status(502).json({ ok: false, error: 'ANTHROPIC_API_KEY not configured' }); return; }
+
+    const p = (req.body && typeof req.body === 'object') ? req.body : {};
+    const prompt = String(p.prompt || '').slice(0, 8000) || 'Hello!';
+    const temperature = Math.max(0, Math.min(1, Number(p.temperature) || 0.8));
+    const maxTokens = Math.max(16, Math.min(LLM_MAX_TOKENS, (p.maxTokens | 0) || LLM_MAX_TOKENS));
+
+    try {
+      res.set('content-type', 'text/plain; charset=utf-8');
+      res.set('cache-control', 'no-cache');
+      const stream = anthropicClient(apiKey).messages.stream({
+        model: LLM_LIVE_MODEL,
+        max_tokens: maxTokens,
+        temperature,
+        system: LLM_SYSTEM,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      for await (const ev of stream) {
+        if (ev.type === 'content_block_delta' && ev.delta && ev.delta.type === 'text_delta') {
+          res.write(ev.delta.text);
+        }
+      }
+      res.end();
+    } catch (err) {
+      logger.error('llmLive', err.message);
+      if (res.headersSent) res.end();
+      else res.status(502).json({ ok: false, error: String(err.message || err) });
+    }
+  }
+);
+
+/* ===========================================================================
  * Ripple server-side delivery — push, scheduled dispatch & disappearing sweep
  *
  *  • ripplePushOnMessage  — pushes a web notification the moment a message
