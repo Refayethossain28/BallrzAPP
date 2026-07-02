@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R59 — amazing graphics pack';
+const BUILD = 'BUILD R60 — maximum: sunset·slipstream·skids·confetti';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -153,7 +153,7 @@ const G = {
   timeLeft: 0, totalTime: 0, rollT: 0, cdNum: -1, green: false,
   banner: 0,
   boost: 1, boostActive: false,           // nitro meter (0..1) and whether it's firing
-  lapStart: 0, bestLap: 0, night: false,  // lap timing + best-lap record + day/night
+  lapStart: 0, bestLap: 0, night: false, sunset: false,  // lap timing + best-lap record + time of day
   rain: false, lastWin: false,            // weather + remembered race result (for replay)
   champ: null, recordSet: false,          // championship session (null = single race)
 };
@@ -169,6 +169,8 @@ function saveBestLap(t){ try{ _records[recordKey()]=t; localStorage.setItem('day
 // ---- driver profile: persistent credits + stats, and live drift score ----
 let _profile={credits:0, races:0, wins:0};
 let _sessionScore=0, _driftActive=0, _driftCombo=1, _driftRun=0;
+let _draftT=0, _draftCalled=false;   // slipstream draft timer + one-shot callout
+let _skidGroup=null, _skids=[], _skidIdx=0, _lastSkidDist=-9;   // persistent tyre-mark pool
 function loadProfile(){ try{ _profile=Object.assign({credits:0,races:0,wins:0}, JSON.parse(localStorage.getItem('daytona3d_profile')||'{}')); }catch(e){} }
 function saveProfile(){ try{ localStorage.setItem('daytona3d_profile', JSON.stringify(_profile)); }catch(e){} }
 
@@ -287,10 +289,10 @@ function initThree(){
 function buildSky(){
   if (sky){ scene.remove(sky); sky.geometry.dispose(); sky.material.dispose(); }
   const th = G.theme || THEMES[3];
-  // night swaps in a dark starless-blue gradient; day uses the theme's sky
-  const top   = G.night ? '#04050d' : th.skyTop;
-  const mid   = G.night ? '#0a1226' : th.skyMid;
-  const horiz = G.night ? '#162038' : th.skyHorizon;
+  // night: dark starry blue · sunset: golden-hour gradient · day: the theme's sky
+  const top   = G.night ? '#04050d' : (G.sunset ? '#232a5c' : th.skyTop);
+  const mid   = G.night ? '#0a1226' : (G.sunset ? '#c65a5e' : th.skyMid);
+  const horiz = G.night ? '#162038' : (G.sunset ? '#ffce8a' : th.skyHorizon);
   const cv = document.createElement('canvas'); cv.width=16; cv.height=256;
   const x = cv.getContext('2d');
   const g = x.createLinearGradient(0,0,0,256);
@@ -311,11 +313,21 @@ function applyTimeOfDay(){
   if (!sun) return;
   if (G.night){
     sun.color.setHex(0x9fb4e0); sun.intensity=0.5;
+    _sunOff.set(55,120,35);
     if (hemiLight){ hemiLight.intensity=0.28; hemiLight.color.setHex(0x6072a0); hemiLight.groundColor.setHex(0x161c2a); }
     if (ambLight) ambLight.intensity=0.22;
     renderer.toneMappingExposure=1.12;
+  } else if (G.sunset){
+    // golden hour: low, warm-orange key light with a pink/violet sky fill.
+    // The sun offset drops near the horizon so everything throws long shadows.
+    sun.color.setHex(0xffa050); sun.intensity=1.75;
+    _sunOff.set(150,42,60);
+    if (hemiLight){ hemiLight.intensity=0.42; hemiLight.color.setHex(0xe8909a); hemiLight.groundColor.setHex(0x4a3a32); }
+    if (ambLight) ambLight.intensity=0.26;
+    renderer.toneMappingExposure=1.04;
   } else {
     sun.color.setHex(0xfff0c4); sun.intensity=2.0;
+    _sunOff.set(55,120,35);
     if (hemiLight){ hemiLight.intensity=0.58; hemiLight.color.setHex(0xdfe6ee); hemiLight.groundColor.setHex(0x49663b); }
     if (ambLight) ambLight.intensity=0.30;
     renderer.toneMappingExposure=0.98;
@@ -332,6 +344,9 @@ function buildSunGlow(){
   if (G.night){   // a cool, tight moon glow
     g.addColorStop(0,'rgba(232,240,255,0.95)'); g.addColorStop(0.18,'rgba(200,215,245,0.6)');
     g.addColorStop(0.45,'rgba(150,170,220,0.16)'); g.addColorStop(1,'rgba(150,170,220,0)');
+  } else if (G.sunset){   // a huge molten-orange setting sun
+    g.addColorStop(0,'rgba(255,238,205,1)'); g.addColorStop(0.14,'rgba(255,190,110,0.95)');
+    g.addColorStop(0.4,'rgba(255,130,70,0.4)'); g.addColorStop(0.7,'rgba(255,100,80,0.12)'); g.addColorStop(1,'rgba(255,100,80,0)');
   } else {
     g.addColorStop(0,'rgba(255,252,242,1)'); g.addColorStop(0.16,'rgba(255,246,212,0.95)');
     g.addColorStop(0.42,'rgba(255,226,150,0.35)'); g.addColorStop(0.7,'rgba(255,210,140,0.10)'); g.addColorStop(1,'rgba(255,210,140,0)');
@@ -339,8 +354,11 @@ function buildSunGlow(){
   x.fillStyle=g; x.fillRect(0,0,128,128);
   const tex=new THREE.CanvasTexture(cv); tex.colorSpace=THREE.SRGBColorSpace;
   const m=new THREE.MeshBasicMaterial({map:tex, transparent:true, depthWrite:false, fog:false, blending:THREE.AdditiveBlending});
-  _sunSprite=new THREE.Mesh(new THREE.PlaneGeometry(G.night?420:820, G.night?420:820), m);
-  _sunSprite.position.copy(sun.position).normalize().multiplyScalar(3100);
+  const sd=G.night?420:(G.sunset?1150:820);
+  _sunSprite=new THREE.Mesh(new THREE.PlaneGeometry(sd,sd), m);
+  _sunSprite.position.copy(sun.position).normalize();
+  if (G.sunset) _sunSprite.position.y=0.10;               // setting sun hugs the horizon
+  _sunSprite.position.normalize().multiplyScalar(3100);
   _sunSprite.renderOrder=1;
   sky.add(_sunSprite);
   buildClouds();
@@ -384,6 +402,7 @@ function buildEnv(){
     const cv=document.createElement('canvas'); cv.width=W; cv.height=H; const x=cv.getContext('2d');
     const sky = x.createLinearGradient(0,0,0,H);
     if (G.night){ sky.addColorStop(0,'#04060f'); sky.addColorStop(0.45,'#0a1226'); sky.addColorStop(0.6,'#172238'); }
+    else if (G.sunset){ sky.addColorStop(0,'#232a5c'); sky.addColorStop(0.45,'#c65a5e'); sky.addColorStop(0.6,'#ffce8a'); }
     else { sky.addColorStop(0, th.skyTop); sky.addColorStop(0.45, th.skyMid); sky.addColorStop(0.6, th.skyHorizon); }
     x.fillStyle=sky; x.fillRect(0,0,W,H*0.62);
     // horizon haze band
@@ -396,12 +415,16 @@ function buildEnv(){
       x.fillStyle=mg; x.beginPath(); x.arc(W*0.74,H*0.2,22,0,6.28); x.fill();
       // distant city window glints for reflections
       x.fillStyle='rgba(255,210,140,0.9)'; for(let i=0;i<60;i++){ if(Math.random()<0.5) x.fillRect((Math.random()*W)|0, H*0.5+(Math.random()*H*0.1)|0, 1,1); }
+    } else if (G.sunset){
+      // huge low sun sitting on the horizon line for molten paint reflections
+      const sg=x.createRadialGradient(W*0.74,H*0.56,2,W*0.74,H*0.56,64); sg.addColorStop(0,'rgba(255,232,190,1)'); sg.addColorStop(0.3,'rgba(255,170,90,0.8)'); sg.addColorStop(1,'rgba(255,140,80,0)');
+      x.fillStyle=sg; x.fillRect(W*0.74-70,H*0.44,140,H*0.24);
     } else {
       const sg=x.createRadialGradient(W*0.74,H*0.22,2,W*0.74,H*0.22,40); sg.addColorStop(0,'rgba(255,252,238,1)'); sg.addColorStop(0.3,'rgba(255,246,210,0.7)'); sg.addColorStop(1,'rgba(255,246,210,0)');
       x.fillStyle=sg; x.fillRect(W*0.74-44,0,88,80);
     }
     // reflective ground with subtle streaks (gives the paint a road reflection)
-    const gnd=x.createLinearGradient(0,H*0.62,0,H); gnd.addColorStop(0, G.night?'#0c0f16':'#3b4a39'); gnd.addColorStop(1, G.night?'#05060a':'#222a1c');
+    const gnd=x.createLinearGradient(0,H*0.62,0,H); gnd.addColorStop(0, G.night?'#0c0f16':(G.sunset?'#43322a':'#3b4a39')); gnd.addColorStop(1, G.night?'#05060a':(G.sunset?'#1c1410':'#222a1c'));
     x.fillStyle=gnd; x.fillRect(0,H*0.62,W,H*0.38);
     x.globalAlpha=0.10; x.fillStyle='#fff'; for(let i=0;i<40;i++){ x.fillRect(Math.random()*W, H*0.62+Math.random()*H*0.36, 6+Math.random()*20, 1); } x.globalAlpha=1;
     const eq=new THREE.CanvasTexture(cv); eq.mapping=THREE.EquirectangularReflectionMapping; eq.colorSpace=THREE.SRGBColorSpace;
@@ -1635,7 +1658,20 @@ function racingUpdate(dt){
   } else {
     G.boost = Math.min(1, G.boost + dt*(keys.gas?0.10:0.16));
   }
-  const topNow = G.boostActive ? maxSpeed*1.28 : (onGrass ? maxSpeed*0.5 : maxSpeed);
+  // ---- slipstream: tuck in close behind a rival at speed for a draft tow ----
+  let draft=false;
+  if (G.speed > maxSpeed*0.55 && !onGrass){
+    for (const r of rivals){
+      const gap=(r.dist - G.dist + trackLen) % trackLen;   // distance to the car ahead
+      if (gap>3 && gap<26 && Math.abs(r.offset - G.offset)<3.2){ draft=true; break; }
+    }
+  }
+  if (draft){
+    _draftT+=dt;
+    G.speed += 34*dt*Math.min(1,_draftT);                  // the tow builds as you sit in it
+    if (_draftT>0.9 && !_draftCalled){ _draftCalled=true; arcadeCallout('SLIPSTREAM!', '#7ad7ff', [_NOTE.E5,_NOTE.G5]); }
+  } else { _draftT=0; _draftCalled=false; }
+  const topNow = (G.boostActive ? maxSpeed*1.28 : (onGrass ? maxSpeed*0.5 : maxSpeed)) * (draft?1.07:1);
   if (G.speed > topNow) G.speed += (topNow - G.speed)*0.1;
   G.speed = Math.max(-maxSpeed*0.28, Math.min(maxSpeed*1.3, G.speed));
 
@@ -1656,6 +1692,8 @@ function racingUpdate(dt){
       arcadeCallout('DRIFT +'+Math.round(_driftRun)+(_driftCombo>2?'  x'+_driftCombo:''), cols[Math.min(5,_driftCombo-1)], [_NOTE.G5,_NOTE.C6]); }
     _driftRun=0; _driftActive=0; _driftCombo=1;
   }
+  // persistent rubber laid through drifts — a recycled pool of dark strips
+  if (driftNow && Math.abs(G.dist-_lastSkidDist)>1.7){ laySkidMarks(f); _lastSkidDist=G.dist; }
   // arcade tyre smoke when sliding / cornering hard / on the grass
   if (_smokeGroup) driftSmoke(f, speedFrac, steer, onGrass);
   if (G.boostActive && _smokeGroup) emitBoostFlame(f);
@@ -1763,6 +1801,32 @@ function onLapComplete(){
   }
 }
 
+// ---- 2D confetti shower over the HUD when the player wins ----
+let _confetti=null, _confT=0;
+function startConfetti(){
+  _confetti=[]; _confT=0;
+  const cols=['#ffd400','#ff4d6d','#4dd2ff','#7bff6b','#ff9d3a','#e07bff'];
+  for (let i=0;i<150;i++) _confetti.push({
+    x:Math.random(), y:-Math.random()*0.5, vx:(Math.random()-0.5)*0.07,
+    vy:0.14+Math.random()*0.22, rot:Math.random()*6.28, vr:(Math.random()-0.5)*7,
+    s:0.006+Math.random()*0.008, c:cols[i%cols.length] });
+}
+function drawConfetti(W,H){
+  if (!_confetti) return;
+  _confT+=_adt; if (_confT>8){ _confetti=null; return; }
+  const fade=Math.max(0, Math.min(1, 8-_confT));
+  for (const p of _confetti){
+    p.x+=p.vx*_adt; p.y+=p.vy*_adt; p.rot+=p.vr*_adt;
+    const px=p.x*W, py=p.y*H; if (py>H+20||py<-H*0.6) continue;
+    hctx.save(); hctx.translate(px,py); hctx.rotate(p.rot);
+    hctx.globalAlpha=fade; hctx.fillStyle=p.c;
+    const w=p.s*H, h=p.s*H*1.6*(0.35+0.65*Math.abs(Math.sin(p.rot*2)));  // tumbling flutter
+    hctx.fillRect(-w/2,-h/2,w,h);
+    hctx.restore();
+  }
+  hctx.globalAlpha=1;
+}
+
 function finishRace(win){
   G.state='finished'; G.lastWin=win;
   haptic([60,40,120]);
@@ -1771,6 +1835,7 @@ function finishRace(win){
   G.earned = Math.round(_sessionScore/40) + posBonus;
   _profile.races++; if (win) _profile.wins++; _profile.credits += G.earned; saveProfile();
   if (win) arcadeCallout('FINISH!', '#ffd400', [_NOTE.C5,_NOTE.E5,_NOTE.G5,_NOTE.C6,_NOTE.G5,_NOTE.C6]);
+  if (win) startConfetti();                       // celebration shower over the finish
   showBanner(win?'FINISH!':"TIME UP", 0);
   if (G.champ) try{ champScore(); }catch(e){}  // tally championship points for this round
   showEndScreen(win);
@@ -2294,6 +2359,7 @@ function drawHUD(){
   if (!G.night && !G.rain) drawLensFlare(W,H);   // sun lens flare (clear day only)
   if (G.rain) drawRain(W,H);                      // falling rain streaks
   drawGrain(W,H);              // subtle film grain
+  drawConfetti(W,H);           // victory shower (active only after a win)
   if (G.state==='attract') return;                // attract demo: cinematic only, no gameplay HUD
 
   // cockpit framing — A-pillars + dashboard lip so first-person reads as "in the car"
@@ -2509,6 +2575,7 @@ function startRace(){
   G.started=true; G.state='rolling';
   _callout=null; _lastPos=1+rivals.length; _lastOvertakeT=-9;   // reset arcade callout state
   initSmoke(); resetSmoke();                          // tyre-smoke pool ready & cleared
+  ensureSkids(); resetSkids();                        // fresh rubber for a fresh race
   placeCar(playerCar, G.dist, G.offset);
   placeRivals();
   // snap camera behind the car immediately (world-up)
@@ -2648,6 +2715,31 @@ function updateSmoke(){
   }
 }
 function resetSmoke(){ for (const s of _smoke){ s.life=0; s.mesh.visible=false; } _smokeT=0; }
+// ---- persistent skid marks: a recycled pool of dark strips laid at the rear
+//      wheels while drifting. They stay on the track (oldest reused first). ----
+const _skBasis=new THREE.Matrix4(), _skPos=new THREE.Vector3();
+function ensureSkids(){
+  if (_skidGroup){ if(!_skidGroup.parent && scene) scene.add(_skidGroup); return; }
+  _skidGroup=new THREE.Group(); _skids=[];
+  const N=MOBILE?90:260;
+  const geo=new THREE.PlaneGeometry(0.34,2.4);
+  const mat=new THREE.MeshBasicMaterial({color:0x0b0b0d, transparent:true, opacity:0.30, depthWrite:false, side:THREE.DoubleSide, fog:true});
+  for (let i=0;i<N;i++){ const m=new THREE.Mesh(geo,mat); m.visible=false; m.userData.noShadow=true; _skidGroup.add(m); _skids.push(m); }
+  scene.add(_skidGroup);
+}
+function resetSkids(){ for (const s of _skids) s.visible=false; _skidIdx=0; _lastSkidDist=-9; }
+function laySkidMarks(f){
+  if (!_skids.length) return;
+  const sideD=1.1*CAR_SCALE;
+  for (const sx of [-1,1]){
+    const m=_skids[_skidIdx]; _skidIdx=(_skidIdx+1)%_skids.length;
+    worldPos((G.dist-2.0*CAR_SCALE+trackLen)%trackLen, G.offset+sx*sideD, _skPos);
+    m.position.copy(_skPos); m.position.y+=0.07;
+    _skBasis.makeBasis(f.right, f.tan, f.up);           // plane lies in the road surface
+    m.quaternion.setFromRotationMatrix(_skBasis);
+    m.visible=true;
+  }
+}
 const _smPos=new THREE.Vector3();
 // kick up tyre smoke (on tarmac) / dust (on grass) when sliding or cornering hard
 function driftSmoke(f, speedFrac, steer, onGrass){
@@ -2750,7 +2842,8 @@ const VEH_ICON = ['🏎️','🏁','⚡','🛞','🗡️'];
 const CIR_ICON = ['🏔️','🎡','🌆','🏜️'];
 let selVeh=0, selCir=1, selSnd='daytona', selTod='day', selWx='clear';
 const TOD_ITEMS = [{key:'day',icon:'☀️',name:'DAY',desc:'Bright daylight racing'},
-                   {key:'night',icon:'🌙',name:'NIGHT',desc:'Neon-lit night with stars'}];
+                   {key:'night',icon:'🌙',name:'NIGHT',desc:'Neon-lit night with stars'},
+                   {key:'sunset',icon:'🌇',name:'SUNSET',desc:'Golden hour, long shadows'}];
 const WX_ITEMS  = [{key:'clear',icon:'⛅',name:'CLEAR',desc:'Dry track, full grip'},
                    {key:'rain', icon:'🌧️',name:'RAIN', desc:'Wet, slippery & moody'}];
 
@@ -2771,7 +2864,8 @@ function startAttract(){
   // randomise the showcase: circuit, car, time-of-day, weather; cycle soundtrack
   G.circuit = CIRCUITS[(Math.random()*CIRCUITS.length)|0];
   G.vehicle = VEHICLES[(Math.random()*VEHICLES.length)|0];
-  G.night = Math.random()<0.5; G.rain = Math.random()<0.4;
+  const todRoll=Math.random(); G.night = todRoll<0.34; G.sunset = !G.night && todRoll<0.62;
+  G.rain = Math.random()<0.4;
   const snds=['daytona','heat']; G.soundtrack = snds[_attractSnd++ % snds.length]; G.applePlaylist=null;
   try {
     buildTrack(G.circuit); buildSky(); buildEnv(); buildRoadMesh(); buildMinimap();
@@ -2782,6 +2876,7 @@ function startAttract(){
     G.maxSpeed = G.circuit.maxSpeed * G.vehicle.speedMul * 0.58;
     G.dist=0; G.offset=0; G.speed=G.maxSpeed*0.55; G.lap=1; G.steerVis=0; G.attractLap=0;
     initSmoke(); resetSmoke();
+    ensureSkids(); resetSkids();
     placeCar(playerCar,G.dist,G.offset); placeRivals();
     G.started=true; G.view='cinematic'; cineReset(); G.state='attract';
     hideOverlay();
@@ -2895,7 +2990,7 @@ function showSoundtrackSelect(){
   document.getElementById('goBtn').onclick=()=>{
     G.vehicle=VEHICLES[selVeh]; G.soundtrack=selSnd; G.applePlaylist=selApplePlaylist;
     G.circuit = G.champ ? CIRCUITS[G.champ.order[G.champ.round]] : CIRCUITS[selCir];
-    G.night=(selTod==='night'); G.rain=(selWx==='rain');
+    G.night=(selTod==='night'); G.sunset=(selTod==='sunset'); G.rain=(selWx==='rain');
     startRace();
   };
 }
