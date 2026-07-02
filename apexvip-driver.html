@@ -284,20 +284,8 @@ function track(event, props){
   }catch(e){}
 }
 
-let JOBS=[
-  {id:'J1',type:'airport',client:'Sarah M.',initials:'SM',service:'Airport Transfer',pickup:'Mayfair W1K',dropoff:'Heathrow Terminal 5',time:'In 45 min',totalFare:95,pay:76,flight:'BA0247',notes:'1 passenger, 2 bags',vehicle:'S-Class'},
-  {id:'J2',type:'hourly',client:'Robert C.',initials:'RC',service:'By the Hour (4hrs)',pickup:'Canary Wharf E14',dropoff:'Various',time:'Tomorrow 10:00',totalFare:260,pay:208,notes:'Business meetings, multiple stops',vehicle:'S-Class'},
-  {id:'J3',type:'airport',client:'Emma W.',initials:'EW',service:'Airport Transfer',pickup:'Knightsbridge SW1',dropoff:'Gatwick North Terminal',time:'Today 16:30',totalFare:195,pay:156,flight:'EZY1234',notes:'2 passengers, 4 bags',vehicle:'S-Class'},
-  {id:'J4',type:'day',client:'Oliver T.',initials:'OT',service:'By the Day',pickup:'Belgravia SW1X',dropoff:'Various',time:'08:00',totalFare:540,pay:432,notes:'Full day personal driver service',vehicle:'S-Class',concierge:{itinerary:[{time:'08:00',place:'Belgravia SW1X',note:'Collect client'},{time:'09:30',place:'Mayfair Members Club',note:'Drop off for meeting'},{time:'12:00',place:'Nobu Mayfair',note:'Lunch reservation'},{time:'14:30',place:'Savile Row',note:'Tailoring appointment'}],errands:[{text:'Pick up dry cleaning from Jeeves & Son, Pont St',done:false},{text:'Collect watch from Patek Philippe, Bond St',done:false}],requirements:['still-water','champagne','silence','luggage'],instructions:'Client prefers no conversation unless initiated. Always open and close the door. Keep cabin at 21°C.',commsPref:'on-request'}},
-];
-const HISTORY=[
-  {id:'H1',service:'Airport Transfer',pickup:'Heathrow T5',dropoff:'Mayfair',date:'Today',duration:'55 min',totalFare:95,pay:76,rating:5},
-  {id:'H2',service:'By the Hour (2hr)',pickup:'Mayfair',dropoff:'Mayfair',date:'Today',duration:'2hr',totalFare:130,pay:104,rating:5},
-  {id:'H3',service:'Airport Transfer',pickup:'Knightsbridge',dropoff:'Heathrow T3',date:'Yesterday',duration:'50 min',totalFare:185,pay:148,rating:4},
-  {id:'H4',service:'Airport Transfer',pickup:'Chelsea',dropoff:'Stansted',date:'Yesterday',duration:'65 min',totalFare:195,pay:156,rating:5},
-  {id:'H5',service:'Airport Transfer',pickup:'Belgravia',dropoff:'City Airport',date:'Monday',duration:'40 min',totalFare:125,pay:100,rating:5},
-];
-const WEEK_DATA=[144,192,0,248,336,304,152];
+let JOBS=[]; // real broadcast jobs only (live from open_jobs)
+const HISTORY=[]; // legacy demo list (kept empty; history renders from live data)
 const WEEK_LABELS=['Mon','Tue','Wed','Thu','Fri','Sat','Today'];
 
 function getClientPreferences(clientId, structuredPrefs) {
@@ -332,13 +320,8 @@ let S={
   screen:'login',
   theme: localStorage.getItem('apexvip_driver_theme')||'dark',
   profile:{name:'Driver',initials:'DR',vehicle:'',model:'',reg:'',rating:4.9,trips:0},
-  apexcoin: 142.00,
-  _axcHistory:[
-    {desc:'Airport Transfer · Heathrow',type:'earn',amount:1.90,date:'Today'},
-    {desc:'By the Hour · 4hrs',type:'earn',amount:5.20,date:'Yesterday'},
-    {desc:'Milestone bonus — 200 trips',type:'earn',amount:50.00,date:'Last week'},
-    {desc:'Airport Transfer · Gatwick',type:'earn',amount:3.90,date:'Last week'},
-  ],
+  apexcoin: 0,
+  _axcHistory:[], // earned in-session from real completed trips
   online:false,
   jobOverlay:false,
   countdown:30,
@@ -602,10 +585,7 @@ const DOC_TYPES = [
   {key:'badge',     label:'PCO Badge',                hint:'TfL driver badge photo'},
 ];
 
-const DRIVER_DEMO_FLIGHTS = [
-  {flight:'BA0247',from:'New York JFK',city:'New York',iata:'JFK',terminal:'T4',belt:'7',dep:'09:30',arr:'14:18',arrOrig:'14:45',duration:'7h 15m',status:'early',statusLabel:'EXPECTED AT 14:18',updated:'14:09',client:'Sarah M.',pickup:'Mayfair W1K',bookingRef:'APX-7821'},
-  {flight:'EZY1234',from:'Edinburgh EDI',city:'Edinburgh',iata:'EDI',terminal:'T1',belt:'4',dep:'11:00',arr:'12:25',arrOrig:'12:25',duration:'1h 25m',status:'on-time',statusLabel:'ON TIME',updated:'12:10',client:'Emma W.',pickup:'Knightsbridge SW1',bookingRef:'APX-7843'},
-];
+const DRIVER_DEMO_FLIGHTS = []; // flights derive from the active job's real flight number
 
 function renderDocsList(){
   const el = document.getElementById('docs-list');
@@ -720,13 +700,17 @@ async function saveAvailability(){
 // ledger (for the Earnings screen). Equality-only queries — no index needed.
 function loadDriverFeedback(){
   if(!FIREBASE_ENABLED||!_driverId) return;
-  db.collection('bookings').where('driverId','==',_driverId).where('status','==','completed').limit(100).get().then(snap=>{
-    S._myRatedTrips=snap.docs.map(d=>d.data()).filter(b=>b.rating).map(b=>({
-      rating:Number(b.rating)||0,
+  db.collection('bookings').where('driverId','==',_driverId).where('status','==','completed').limit(200).get().then(snap=>{
+    const rows=snap.docs.map(d=>({_id:d.id,...d.data()}));
+    S._myCompleted=rows.map(b=>({
+      ref:b.ref||b._id, service:b.serviceLabel||'Trip',
       route:[b.pickup,b.dropoff||b.airport].filter(Boolean).join(' → '),
-      date:b.date||'', comment:b.ratingComment||''
+      pickup:b.pickup||'', dropoff:b.dropoff||b.airport||'',
+      date:b.date||'', price:Number(b.price)||0,
+      rating:Number(b.rating)||0, comment:b.ratingComment||''
     }));
-    if(S.screen==='ratings')render();
+    S._myRatedTrips=S._myCompleted.filter(b=>b.rating);
+    if(['ratings','history'].includes(S.screen))render();
   }).catch(()=>{});
   db.collection('driver_payouts').where('driverId','==',_driverId).limit(100).get().then(snap=>{
     const rows=snap.docs.map(d=>d.data());
@@ -864,8 +848,6 @@ function goOnline(){
     }).catch(()=>{});
     render();
   } else {
-    // Demo mode — simulate a job offer after 3 s
-    S._timer=setTimeout(()=>{S._offeredJob=JOBS[0];S.jobOverlay=true;S.countdown=30;startCountdown();render();},3000);
     render();
   }
 }
@@ -885,7 +867,8 @@ function startCountdown(){
 async function acceptJob(){
   haptic('success');
   clearInterval(S._cdTimer);
-  const offered=S._offeredJob||JOBS[0];
+  const offered=S._offeredJob;
+  if(!offered){S.jobOverlay=false;render();return;}
   // Broadcast job: race against other drivers — transaction decides the winner
   if(FIREBASE_ENABLED&&offered?._broadcast){
     const won=await claimBroadcastJob(offered);
@@ -1231,7 +1214,9 @@ home:()=>{
 },
 
 active:()=>{
-  const j=S.activeJob||JOBS[0];
+  const j=S.activeJob;
+  if(!j) return`<div class="screen"><div class="back-row"><button class="back-btn" onclick="go('home')">‹ Home</button></div>
+    <div style="text-align:center;padding:70px 20px;color:var(--fg-subtle)"><div style="font-size:32px;margin-bottom:12px">🚗</div><div style="font-size:15px;font-weight:600">No active trip</div><div style="font-size:13px;color:var(--fg-ghost);margin-top:6px">Accept a job to start a trip.</div></div>${nav()}</div>`;
   const steps=[{l:'Confirmed'},{l:'En Route'},{l:'Arrived'},{l:'Onboard'},{l:'Complete'}];
   const btnLabels={2:'I Have Arrived',3:'Passenger Onboard',4:'Complete Trip',5:'Done'};
   return`<div class="screen">
@@ -1389,14 +1374,14 @@ active:()=>{
 
 jobs:()=>{
   const t=S.jobsTab;
-  const liveJobs=FIREBASE_ENABLED&&S._openJobs?.length?S._openJobs:JOBS.slice(0,2);
+  const liveJobs=(FIREBASE_ENABLED&&S._openJobs)||[];
   return`<div class="screen">
     <div class="top-bar">
       <div style="font-size:22px;font-weight:700">Jobs</div>
       ${FIREBASE_ENABLED?`<button onclick="refreshJobs()" style="background:transparent;border:1px solid var(--border);border-radius:20px;padding:7px 14px;color:var(--fg-dim);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">↺ Refresh</button>`:''}
     </div>
     <div style="display:flex;gap:8px;margin-bottom:18px">
-      ${['available','upcoming'].map(s=>`<button onclick="S.jobsTab='${s}';render()" style="padding:8px 18px;border-radius:20px;font-size:13px;font-weight:600;border:1px solid ${t===s?'#C8A97E':'var(--border)'};background:${t===s?'rgba(200,169,126,.12)':'transparent'};color:${t===s?'#C8A97E':'var(--fg-dim)'};cursor:pointer">${s==='available'?`Available (${liveJobs.length})`:'Upcoming (1)'}</button>`).join('')}
+      ${['available','upcoming'].map(s=>`<button onclick="S.jobsTab='${s}';render()" style="padding:8px 18px;border-radius:20px;font-size:13px;font-weight:600;border:1px solid ${t===s?'#C8A97E':'var(--border)'};background:${t===s?'rgba(200,169,126,.12)':'transparent'};color:${t===s?'#C8A97E':'var(--fg-dim)'};cursor:pointer">${s==='available'?`Available (${liveJobs.length})`:`Upcoming (${S.activeJob?1:0})`}</button>`).join('')}
     </div>
     ${t==='available'?(!liveJobs.length?`<div style="text-align:center;padding:48px 20px;color:var(--fg-subtle)">
       <div style="font-size:32px;margin-bottom:12px">🔍</div>
@@ -1412,50 +1397,64 @@ jobs:()=>{
       <div style="font-size:12px;color:var(--fg-subtle);margin-bottom:14px">${j.time} · ${j.vehicle}${j.notes?` · ${j.notes}`:''}</div>
       <button class="btn btn-green" style="padding:12px" onclick="${j._broadcast?`claimAndActivate('${j._openId}')`:`S.activeJob=JOBS.find(x=>x.id==='${j.id}');S.tripStep=2;go('active')`}">Accept Job</button>
     </div>`).join('')):''}
-    ${t==='upcoming'?`<div class="card">
+    ${t==='upcoming'?(S.activeJob?`<div class="card" onclick="go('active')" style="cursor:pointer">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
-        ${jobTag('airport')}<span class="tag tag-green">Confirmed</span>
+        ${jobTag(S.activeJob.type||'airport')}<span class="tag tag-green">In progress</span>
       </div>
-      <div style="font-size:15px;font-weight:600;margin-bottom:4px">City Airport</div>
-      <div style="font-size:13px;color:var(--fg-dim);margin-bottom:10px">→ Chelsea SW3</div>
-      <div style="font-size:12px;color:var(--fg-subtle);margin-bottom:4px">Tomorrow · 08:15 · S-Class · 1 passenger</div>
-      <div style="font-size:24px;font-weight:800;color:#C8A97E;margin-top:10px">£125</div>
-    </div>`:''}
+      <div style="font-size:15px;font-weight:600;margin-bottom:4px">${S.activeJob.pickup||''}</div>
+      <div style="font-size:13px;color:var(--fg-dim);margin-bottom:10px">→ ${S.activeJob.dropoff||''}</div>
+      <div style="font-size:24px;font-weight:800;color:#C8A97E;margin-top:10px">£${S.activeJob.pay||''}</div>
+    </div>`:`<div style="text-align:center;padding:48px 20px;color:var(--fg-subtle)"><div style="font-size:32px;margin-bottom:12px">📅</div><div style="font-size:15px;font-weight:600">No upcoming trips</div></div>`):''}
     ${nav()}
   </div>`;
 },
 
 earnings:()=>{
   const t=S.earnTab;
-  const data={today:{total:'£192',trips:2,breakdown:[['Airport Transfers (1)','£76'],['By the Hour (1)','£104'],['Tips','£12']]},week:{total:'£1,376',trips:11,breakdown:[['Airport Transfers (8)','£1,024'],['Hourly (2)','£312'],['Tips','£40']]},month:{total:'£5,472',trips:42,breakdown:[['Airport Transfers (30)','£4,224'],['Hourly (8)','£1,088'],['Tips','£160']]}};
-  const d=data[t];
+  const led=(S._payoutLedger||[]).filter(x=>x.createdAt&&x.createdAt.toDate);
+  const now=new Date();
+  const sameDay=d=>d.toDateString()===now.toDateString();
+  const inDays=(d,n)=>(now-d)<n*86400000;
+  const pick={today:x=>sameDay(x.createdAt.toDate()),week:x=>inDays(x.createdAt.toDate(),7),month:x=>inDays(x.createdAt.toDate(),31)}[t];
+  const rows=led.filter(pick);
+  const total=rows.reduce((a,x)=>a+(Number(x.amount)||0),0);
+  // Daily bars for the last 7 days (Mon-style labels, today last)
+  const bars=[];const labels=[];
+  for(let i=6;i>=0;i--){
+    const d=new Date(now);d.setDate(now.getDate()-i);
+    const sum=led.filter(x=>x.createdAt.toDate().toDateString()===d.toDateString()).reduce((a,x)=>a+(Number(x.amount)||0),0);
+    bars.push(sum);labels.push(i===0?'Today':d.toLocaleDateString('en-GB',{weekday:'short'}));
+  }
+  const maxBar=Math.max(1,...bars);
   return`<div class="screen">
     <div class="top-bar"><div style="font-size:22px;font-weight:700">Earnings</div></div>
     <div style="display:flex;gap:8px;margin-bottom:22px">
-      ${['today','week','month'].map(s=>`<button onclick="S.earnTab='${s}';render()" style="padding:8px 18px;border-radius:20px;font-size:13px;font-weight:600;border:1px solid ${t===s?'#C8A97E':'var(--border)'};background:${t===s?'rgba(200,169,126,.12)':'transparent'};color:${t===s?'#C8A97E':'var(--fg-dim)'};cursor:pointer">${s.charAt(0).toUpperCase()+s.slice(1)}</button>`).join('')}
+      ${['today','week','month'].map(sx=>`<button onclick="S.earnTab='${sx}';render()" style="padding:8px 18px;border-radius:20px;font-size:13px;font-weight:600;border:1px solid ${t===sx?'#C8A97E':'var(--border)'};background:${t===sx?'rgba(200,169,126,.12)':'transparent'};color:${t===sx?'#C8A97E':'var(--fg-dim)'};cursor:pointer">${sx.charAt(0).toUpperCase()+sx.slice(1)}</button>`).join('')}
     </div>
     <div style="text-align:center;padding:16px 0 24px">
       <div style="font-size:13px;color:var(--fg-dim);margin-bottom:4px">${t==='today'?"Today's Earnings":t==='week'?'This Week':'This Month'}</div>
-      <div style="font-size:48px;font-weight:800;color:#C8A97E">${d.total}</div>
-      <div style="font-size:13px;color:var(--fg-subtle);margin-top:4px">${d.trips} trips completed</div>
+      <div style="font-size:48px;font-weight:800;color:#C8A97E">£${total.toLocaleString()}</div>
+      <div style="font-size:13px;color:var(--fg-subtle);margin-top:4px">${rows.length} trip${rows.length===1?'':'s'} completed</div>
     </div>
     <div class="card" style="margin-bottom:12px">
       <div class="section-label" style="margin-bottom:14px">Breakdown</div>
-      ${d.breakdown.map(([l,v])=>`<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--divider);font-size:14px"><span style="color:var(--fg-dim)">${l}</span><span style="font-weight:600">${v}</span></div>`).join('')}
+      ${rows.length?rows.slice(0,10).map(x=>`<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--divider);font-size:14px"><span style="color:var(--fg-dim)">${x.bookingRef||'Trip'} · ${x.createdAt.toDate().toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}</span><span style="font-weight:600">£${x.amount||0}</span></div>`).join(''):`<div style="text-align:center;padding:18px;color:var(--fg-subtle);font-size:13px">No earnings ${t==='today'?'today yet':'in this period yet'} — completed trips appear here.</div>`}
     </div>
-    ${t==='week'?`<div class="card" style="margin-bottom:12px">
+    ${t==='week'&&led.length?`<div class="card" style="margin-bottom:12px">
       <div class="section-label" style="margin-bottom:14px">Daily</div>
       <div class="bar-row">
-        ${WEEK_DATA.map((v,i)=>`<div class="bar-col">
-          <div class="bar-fill" style="height:${v===0?4:Math.round((v/420)*60)+8}px;opacity:${v===0?.2:.75}"></div>
-          <div style="font-size:9px;color:var(--fg-subtle)">${WEEK_LABELS[i]}</div>
+        ${bars.map((v,i)=>`<div class="bar-col">
+          <div class="bar" style="height:${Math.round(v/maxBar*72)+4}px;background:${labels[i]==='Today'?'#C8A97E':'rgba(200,169,126,.35)'}"></div>
+          <div style="font-size:9px;color:var(--fg-subtle);margin-top:5px">${labels[i]}</div>
         </div>`).join('')}
       </div>
-      <div style="display:flex;justify-content:space-between;margin-top:4px">${WEEK_DATA.map(v=>`<div style="flex:1;text-align:center;font-size:9px;color:var(--fg-ghost)">${v?'£'+v:''}</div>`).join('')}</div>
+      <div style="display:flex;justify-content:space-between;margin-top:4px">${bars.map(v=>`<div style="flex:1;text-align:center;font-size:9px;color:var(--fg-ghost)">${v?'£'+v:''}</div>`).join('')}</div>
     </div>`:''}
     <div class="card">
       <div class="section-label" style="margin-bottom:14px">Payout Details</div>
-      ${[['Payment Schedule','Weekly — Mondays'],['Next Payout','Monday 2 June'],['Bank Account','Lloyds ••••1234']].map(([l,v],i)=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:9px 0;border-bottom:${i<2?'1px solid var(--divider)':'none'}"><span style="color:var(--fg-dim)">${l}</span><span style="color:${i===1?'#C8A97E':'var(--fg)'};font-weight:${i===1?700:400}">${v}</span></div>`).join('')}
+      ${(()=>{const owed=(S._payoutLedger||[]).filter(x=>x.status==='owed').reduce((a,x)=>a+(Number(x.amount)||0),0);
+        const st=S._payout&&S._payout.payoutsEnabled?'Connected — payouts active':(S._payout&&S._payout.accountId?'Onboarding in progress':'Not set up — see Profile');
+        return [['Balance owed','£'+owed],['Payout account',st]].map(([l,v],i)=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:9px 0;border-bottom:${i<1?'1px solid var(--divider)':'none'}"><span style="color:var(--fg-dim)">${l}</span><span style="color:${i===0?'#C8A97E':'var(--fg)'};font-weight:${i===0?700:400}">${v}</span></div>`).join('');})()}
     </div>
     ${(()=>{const led=S._payoutLedger||[];if(!led.length)return'';
       const owed=led.filter(x=>x.status==='owed').reduce((s,x)=>s+(Number(x.amount)||0),0);
@@ -1503,22 +1502,25 @@ earnings:()=>{
 
 history:()=>{
   const t=S.histTab;
+  const led=S._payoutLedger||[];
+  const payByRef={};led.forEach(x=>{if(x.bookingRef)payByRef[x.bookingRef]=Number(x.amount)||0;});
+  const trips=S._myCompleted||[];
+  const totalEarned=led.reduce((a,x)=>a+(Number(x.amount)||0),0);
+  const rated=trips.filter(x=>x.rating);
+  const avg=rated.length?(rated.reduce((a,x)=>a+x.rating,0)/rated.length).toFixed(1):'—';
   return`<div class="screen">
     <div class="top-bar"><div style="font-size:22px;font-weight:700">Trip History</div></div>
     <div class="card" style="margin-bottom:18px">
       <div style="display:flex;justify-content:space-between">
-        ${[['247','Total Trips'],['£14,736','Total Earned'],['4.9','Avg Rating']].map(([v,l])=>`<div style="text-align:center"><div style="font-size:22px;font-weight:800;color:#C8A97E">${v}</div><div style="font-size:11px;color:var(--fg-subtle);margin-top:3px">${l}</div></div>`).join('')}
+        ${[[String(trips.length),'Total Trips'],['£'+totalEarned.toLocaleString(),'Total Earned'],[avg,'Avg Rating']].map(([v,l])=>`<div style="text-align:center"><div style="font-size:22px;font-weight:800;color:#C8A97E">${v}</div><div style="font-size:11px;color:var(--fg-subtle);margin-top:3px">${l}</div></div>`).join('')}
       </div>
     </div>
-    <div style="display:flex;gap:8px;margin-bottom:18px">
-      ${['week','month','all'].map(s=>`<button onclick="S.histTab='${s}';render()" style="padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;border:1px solid ${t===s?'#C8A97E':'var(--border)'};background:${t===s?'rgba(200,169,126,.12)':'transparent'};color:${t===s?'#C8A97E':'var(--fg-dim)'};cursor:pointer">${s==='all'?'All Time':s.charAt(0).toUpperCase()+s.slice(1)}</button>`).join('')}
-    </div>
-    ${HISTORY.map(h=>`<div class="card">
+    ${trips.length?trips.map(h=>`<div class="card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
-        <div><div style="font-size:14px;font-weight:600">${h.pickup} → ${h.dropoff}</div><div style="font-size:12px;color:var(--fg-dim);margin-top:3px">${h.service} · ${h.date} · ${h.duration}</div></div>
-        <div style="text-align:right"><div style="font-size:18px;font-weight:800;color:#C8A97E">£${h.pay}</div><div style="font-size:13px;color:#C8A97E;margin-top:2px">${stars(h.rating)}</div></div>
+        <div><div style="font-size:14px;font-weight:600">${h.route||h.service}</div><div style="font-size:12px;color:var(--fg-dim);margin-top:3px">${h.service}${h.date?' · '+h.date:''}</div></div>
+        <div style="text-align:right"><div style="font-size:18px;font-weight:800;color:#C8A97E">${payByRef[h.ref]!=null?'£'+payByRef[h.ref]:(h.price?'£'+h.price:'—')}</div><div style="font-size:13px;color:#C8A97E;margin-top:2px">${h.rating?stars(Math.round(h.rating)):''}</div></div>
       </div>
-    </div>`).join('')}
+    </div>`).join(''):`<div style="text-align:center;padding:48px 20px;color:var(--fg-subtle)"><div style="font-size:32px;margin-bottom:12px">🕐</div><div style="font-size:15px;font-weight:600">No trips yet</div><div style="font-size:13px;color:var(--fg-ghost);margin-top:6px">Completed trips will appear here.</div></div>`}
     ${nav()}
   </div>`;
 },
@@ -1533,7 +1535,7 @@ profile:()=>`<div class="screen">
     <div style="font-size:22px;font-weight:700">${S.profile.name}</div>
     <div style="display:flex;justify-content:center;align-items:center;gap:6px;margin-top:6px;color:#C8A97E">
       <svg width="14" height="14" fill="#C8A97E" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-      <span style="font-size:16px;font-weight:700">${S.profile.rating.toFixed(1)}</span>
+      <span style="font-size:16px;font-weight:700">${S.profile.trips?S.profile.rating.toFixed(1):'New'}</span>
       <span style="color:var(--fg-subtle);font-size:14px">· ${S.profile.trips||0} trips</span>
     </div>
   </div>
@@ -1714,11 +1716,8 @@ availability:()=>{
 },
 
 ratings:()=>{
-  const live = S._myRatedTrips || [];
-  const demo = HISTORY.map(h=>({rating:h.rating,route:`${h.pickup} → ${h.dropoff}`,date:h.date,comment:''}));
-  const list = live.length ? live : demo;
-  const rated = list.filter(x=>x.rating);
-  const avg = rated.length ? (rated.reduce((s,x)=>s+x.rating,0)/rated.length) : S.profile.rating;
+  const rated = (S._myRatedTrips||[]).filter(x=>x.rating);
+  const avg = rated.length ? (rated.reduce((s,x)=>s+x.rating,0)/rated.length) : 0;
   const dist = [5,4,3,2,1].map(n=>({n,c:rated.filter(x=>Math.round(x.rating)===n).length}));
   const maxC = Math.max(1,...dist.map(d=>d.c));
   return `<div class="screen">
@@ -1727,9 +1726,9 @@ ratings:()=>{
       <div style="font-size:22px;font-weight:700">Ratings & Reviews</div><div style="width:20px"></div>
     </div>
     <div style="text-align:center;padding:10px 0 20px">
-      <div style="font-size:52px;font-weight:800;color:#C8A97E;line-height:1">${avg.toFixed(1)}</div>
-      <div style="font-size:20px;color:#C8A97E;margin:6px 0 2px">${stars(Math.round(avg))}</div>
-      <div style="font-size:13px;color:var(--fg-subtle)">${rated.length||S.profile.trips||0} rated trips</div>
+      <div style="font-size:52px;font-weight:800;color:#C8A97E;line-height:1">${rated.length?avg.toFixed(1):'—'}</div>
+      <div style="font-size:20px;color:#C8A97E;margin:6px 0 2px">${rated.length?stars(Math.round(avg)):'☆☆☆☆☆'}</div>
+      <div style="font-size:13px;color:var(--fg-subtle)">${rated.length} rated trip${rated.length===1?'':'s'}</div>
     </div>
     <div class="card" style="margin-bottom:12px">
       ${dist.map(({n,c})=>`<div style="display:flex;align-items:center;gap:10px;padding:4px 0">
@@ -1830,6 +1829,7 @@ apexai:()=>{
     </div>
   </div>
   <div style="flex:1;overflow-y:auto;padding:0 22px calc(env(safe-area-inset-bottom)+90px)">
+    ${DRIVER_DEMO_FLIGHTS.length?'':`<div style="text-align:center;padding:60px 20px;color:var(--fg-subtle)"><div style="font-size:32px;margin-bottom:12px">✈️</div><div style="font-size:15px;font-weight:600">No tracked flights</div><div style="font-size:13px;color:var(--fg-ghost);margin-top:6px">Flights from your airport jobs will appear here.</div></div>`}
     ${DRIVER_DEMO_FLIGHTS.map(f=>{
       const early=f.status==='early',delayed=f.status==='delayed';
       const arrColor=early?'#4ade80':delayed?'#f87171':'var(--fg)';
@@ -2007,9 +2007,10 @@ function _driverAILocal(msg){
     return "For flight delays, the app tracks the flight automatically and adjusts your pickup window. If you receive a delay notification: stay at the designated meeting point, update the client via the in-app message, and wait up to 60 min from actual landing at no extra charge. After 60 min, standard waiting rates apply.";
   // Earnings
   if(/earn|money|pay|income|week|today/i.test(m)){
-    const hist=HISTORY||[];
-    const today=hist.filter(h=>h.date==='Today');
-    const todayTotal=today.reduce((a,h)=>a+(h.pay||0),0);
+    const led=S._payoutLedger||[];
+    const dayKey=new Date().toDateString();
+    const today=led.filter(x=>x.createdAt?.toDate&&x.createdAt.toDate().toDateString()===dayKey);
+    const todayTotal=today.reduce((a,x)=>a+(Number(x.amount)||0),0);
     return todayTotal>0
       ? `Today you've completed ${today.length} trip${today.length!==1?'s':''} totalling £${todayTotal}. Check the Earnings tab for a full breakdown by week and month. Your current ApexCoin balance is ${S.apexcoin.toFixed(2)} AXC.`
       : "Open the Earnings tab for a full breakdown. Your ApexCoin balance is "+S.apexcoin.toFixed(2)+" AXC. Coins are earned at 2% of each fare and can be redeemed for fuel vouchers and vehicle servicing.";
