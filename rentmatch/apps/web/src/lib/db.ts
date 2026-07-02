@@ -7,7 +7,7 @@
  */
 import {
   collection, doc, getDoc, getDocs, query, where, addDoc, setDoc, updateDoc, deleteDoc,
-  serverTimestamp, Timestamp, onSnapshot, orderBy, or, increment,
+  serverTimestamp, Timestamp, onSnapshot, orderBy, or, increment, runTransaction,
   type Unsubscribe,
 } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -240,13 +240,18 @@ export async function uploadComplianceDoc(
   // renewal reminders — rather than assuming it was issued today.
   const expiresAt = DOC_VALIDITY_MS[type] != null ? issuedAt + DOC_VALIDITY_MS[type]! : undefined;
 
-  const snap = await getDoc(doc(listingsCol, listing.id));
-  const current = (snap.data()?.complianceDocs ?? []) as ComplianceDoc[];
-  const next: ComplianceDoc[] = [
-    ...current.filter((d) => d.type !== type),
-    { type, issuedAt, ...(expiresAt ? { expiresAt } : {}), reference: fileRef },
-  ];
-  await updateDoc(doc(listingsCol, listing.id), { complianceDocs: next });
+  // Transactional read-modify-write: uploading two certificates in quick
+  // succession must not clobber each other's entry in the array.
+  const listingRef = doc(listingsCol, listing.id);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(listingRef);
+    const current = (snap.data()?.complianceDocs ?? []) as ComplianceDoc[];
+    const next: ComplianceDoc[] = [
+      ...current.filter((d) => d.type !== type),
+      { type, issuedAt, ...(expiresAt ? { expiresAt } : {}), reference: fileRef },
+    ];
+    tx.update(listingRef, { complianceDocs: next });
+  });
 }
 
 /* ---- deals, messaging & viewings (M2) ---- */
@@ -371,33 +376,43 @@ async function addSystemMessage(dealId: string, text: string): Promise<void> {
   await addDoc(collection(dealsCol, dealId, 'messages'), { senderId: 'system', senderRole: 'system', text, ts: serverTimestamp() });
 }
 
-/** Re-derive and persist the stage from the deal's facts, then nudge updatedAt. */
-async function syncStage(deal: Deal, patch: Partial<DealRecord>): Promise<void> {
-  const next: DealRecord = { ...deal, ...patch };
-  await updateDoc(doc(dealsCol, deal.id), {
-    ...patch,
-    stage: recomputeStage(next),
-    updatedAt: serverTimestamp(),
+/**
+ * Apply a change to a deal transactionally: read the current record, compute the
+ * patch from it, re-derive the stage, and write — all inside one transaction so
+ * concurrent writes (e.g. both parties agreeing at once) can't clobber each
+ * other via a stale local snapshot. Returns the resulting record.
+ */
+async function updateDealTx(
+  dealId: string,
+  apply: (rec: Deal) => Partial<DealRecord>,
+): Promise<Deal | null> {
+  return runTransaction(db, async (tx) => {
+    const ref = doc(dealsCol, dealId);
+    const snap = await tx.get(ref);
+    if (!snap.exists()) return null;
+    const current = mapDeal(snap.id, snap.data());
+    const patch = apply(current);
+    const next: Deal = { ...current, ...patch };
+    tx.update(ref, { ...patch, stage: recomputeStage(next), updatedAt: serverTimestamp() });
+    return next;
   });
 }
 
 export async function proposeViewing(deal: Deal, by: DealParty, ts: number): Promise<void> {
-  await syncStage(deal, { viewing: { ts, status: 'proposed', proposedBy: by } });
+  await updateDealTx(deal.id, () => ({ viewing: { ts, status: 'proposed', proposedBy: by } }));
   await addSystemMessage(deal.id, `${by === 'renter' ? deal.renterName : deal.landlordName} proposed a viewing for ${new Date(ts).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.`);
 }
 
 export async function confirmViewing(deal: Deal): Promise<void> {
-  if (!deal.viewing) return;
-  await syncStage(deal, { viewing: { ...deal.viewing, status: 'confirmed' } });
+  await updateDealTx(deal.id, (rec) => (rec.viewing ? { viewing: { ...rec.viewing, status: 'confirmed' } } : {}));
   await addSystemMessage(deal.id, 'Viewing confirmed. ✅');
 }
 
 export async function agreeToProceed(deal: Deal, party: DealParty): Promise<void> {
-  const agreed = { ...deal.agreed, [party]: true };
-  await syncStage(deal, { agreed });
+  const next = await updateDealTx(deal.id, (rec) => ({ agreed: { ...rec.agreed, [party]: true } }));
   const name = party === 'renter' ? deal.renterName : deal.landlordName;
   await addSystemMessage(deal.id, `${name} agreed to proceed to a tenancy.`);
-  if (agreed.renter && agreed.landlord) {
+  if (next?.agreed.renter && next?.agreed.landlord) {
     await addSystemMessage(deal.id, 'Both parties have agreed terms. The landlord can now draft the tenancy agreement.');
   }
 }

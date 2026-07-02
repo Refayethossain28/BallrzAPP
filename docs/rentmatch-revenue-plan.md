@@ -208,9 +208,10 @@ an enquiry. The suite now also drives the **complete deal lifecycle to completio
 user doc (denied by rules) so enquiries silently failed — landlord name is now
 denormalised onto the listing; (2) `draftContract` wrote `undefined` compliance
 fields to Firestore (rejected) — fixed with `ignoreUndefinedProperties`; (3) the
-publish/agree paths are read-modify-writes that clobber under concurrency (the
-e2e serialises around it; benign for real single-user actions). Live
-Stripe/GoCardless/e-sign still need real credentials to exercise.
+agree-to-proceed and compliance-upload paths were read-modify-writes that could
+clobber under concurrency — **now fixed properly** by moving them into Firestore
+transactions (read fresh → patch → write), so simultaneous writes can't lose
+each other. Live Stripe/GoCardless/e-sign still need real credentials to exercise.
 
 ### Still open (next)
 - Renewal e-signatures via a real e-sign provider (currently a Cloud Function
