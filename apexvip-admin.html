@@ -395,6 +395,11 @@ function startAdminListeners(){
   if(!FIREBASE_ENABLED||_adminListenersStarted)return;
   _adminListenersStarted = true;
   loadDispatchMode();
+  // Business model (commission vs subscription) — live so every admin sees switches.
+  db.collection('settings').doc('business').onSnapshot(doc=>{
+    if(doc.exists) S._business={...(S._business||{}),...doc.data()};
+    if(['settings','payouts'].includes(S.screen))render();
+  },()=>{});
   db.collection('vehicles').onSnapshot(snap=>{
     VEHICLES=snap.docs.map(d=>({id:d.id,...d.data()}));
     if(!['login'].includes(S.screen))render();
@@ -1186,7 +1191,7 @@ audit: () => `<div class="screen">
 
 payouts: () => `<div class="screen">
   <div class="section-header"><div class="section-title">Driver Earnings</div></div>
-  <div style="font-size:12px;color:var(--fg-subtle);margin:-6px 0 14px">80% of each completed trip, owed per driver. "Pay out" settles the full balance via Stripe Connect.</div>
+  <div style="font-size:12px;color:var(--fg-subtle);margin:-6px 0 14px">${(()=>{const b=S._business||{};const pct=b.model==='subscription'?Math.min(50,Math.max(0,Math.round(b.commissionPct??20))):20;return (100-pct)+'% of each completed trip, owed per driver ('+(b.model==='subscription'?'subscription model — commission '+pct+'%':'commission model')+'). "Pay out" settles the full balance via Stripe Connect.';})()}</div>
   <div id="driver-balances"><div style="text-align:center;padding:24px;color:var(--fg-4);font-size:13px">Loading…</div></div>
   <div class="section-header" style="margin-top:24px"><div class="section-title">Payout Requests</div></div>
   <div id="payouts-list"><div style="text-align:center;padding:40px;color:var(--fg-4);font-size:13px">Loading…</div></div>
@@ -1312,8 +1317,34 @@ documents:()=>{
 </div>`;
 },
 
-settings:()=>`<div class="screen">
+settings:()=>{
+  const biz=S._business||{model:'commission',commissionPct:20,clientMonthlyFee:49,driverMonthlyFee:99,trialDays:30};
+  const isSub=biz.model==='subscription';
+  const bizField=(id,label,val,suffix)=>`<div style="flex:1;min-width:120px"><label style="font-size:11px;color:var(--fg-subtle);display:block;margin-bottom:4px;letter-spacing:.5px">${label}</label><div style="display:flex;align-items:center;gap:6px"><input id="${id}" type="number" min="0" value="${val}" style="width:100%"/><span style="font-size:12px;color:var(--fg-subtle);white-space:nowrap">${suffix}</span></div></div>`;
+  return`<div class="screen">
   <div class="section-header"><div class="section-title">Settings</div></div>
+  <div class="card" style="margin-bottom:20px;border-color:rgba(200,169,126,.25)">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px">
+      <div style="font-size:14px;font-weight:600">Business Model</div>
+      <div style="display:flex;background:var(--surface-c);border-radius:10px;padding:3px;border:1px solid var(--border)">
+        <button onclick="setBusinessModel('commission')" style="padding:7px 14px;border-radius:8px;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;background:${!isSub?'var(--gold)':'transparent'};color:${!isSub?'#000':'var(--fg-dim)'}">% Commission</button>
+        <button onclick="setBusinessModel('subscription')" style="padding:7px 14px;border-radius:8px;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;background:${isSub?'var(--gold)':'transparent'};color:${isSub?'#000':'var(--fg-dim)'}">✦ Subscription</button>
+      </div>
+    </div>
+    ${!isSub?`
+    <div style="font-size:13px;color:var(--fg-3);line-height:1.65">The app is <b>free to join</b> for clients and drivers. ApexVIP keeps a fixed <b style="color:var(--gold)">20% commission</b> on every fare; drivers keep 80%. Switch to Subscription to charge membership fees instead and set your own commission.</div>
+    `:`
+    <div style="font-size:13px;color:var(--fg-3);line-height:1.65;margin-bottom:16px">Clients and drivers pay a <b>monthly membership</b>. New members get a <b style="color:var(--gold)">free trial</b>, and you control the per-trip commission — set it to 0 for a pure-subscription model.</div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+      ${bizField('biz_client_fee','CLIENT FEE',biz.clientMonthlyFee??49,'£/mo')}
+      ${bizField('biz_driver_fee','DRIVER FEE',biz.driverMonthlyFee??99,'£/mo')}
+      ${bizField('biz_trial','FREE TRIAL',biz.trialDays??30,'days')}
+      ${bizField('biz_commission','COMMISSION',biz.commissionPct??20,'% per trip')}
+    </div>
+    <div style="font-size:12px;color:var(--fg-subtle);line-height:1.6;margin-bottom:12px">Drivers keep <b style="color:var(--gold)">${100-(biz.commissionPct??20)}%</b> of each fare. New clients and drivers automatically start a ${biz.trialDays??30}-day free trial; after it ends they're prompted to subscribe.</div>
+    <button class="btn btn-gold btn-sm" onclick="saveBusinessModel()">Save Subscription Settings</button>
+    `}
+  </div>
   <div style="display:flex;gap:20px;flex-wrap:wrap">
     <div style="flex:1;min-width:280px">
       <div class="card" style="margin-bottom:16px">
@@ -1341,7 +1372,7 @@ settings:()=>`<div class="screen">
       </div>
     </div>
   </div>
-</div>`,
+</div>`;},
 
 flights: () => `
 <div>
@@ -1835,7 +1866,7 @@ function logAudit(action, target, detail){
     });
   }catch(e){ console.warn('audit',e.code); }
 }
-const AUDIT_LABEL={booking_create:'⚡ Booking',dispatch_broadcast:'📢 Broadcast',dispatch_assign:'🚗 Assigned',compliance_update:'🛡 Compliance',vehicle_add:'➕ Vehicle',vehicle_update:'🔧 Vehicle',vehicle_remove:'🗑 Vehicle',payout:'💸 Payout',payout_approve:'✅ Payout req',payout_reject:'❌ Payout req',pricing_update:'£ Pricing'};
+const AUDIT_LABEL={business_model_update:'✦ Biz model',booking_create:'⚡ Booking',dispatch_broadcast:'📢 Broadcast',dispatch_assign:'🚗 Assigned',compliance_update:'🛡 Compliance',vehicle_add:'➕ Vehicle',vehicle_update:'🔧 Vehicle',vehicle_remove:'🗑 Vehicle',payout:'💸 Payout',payout_approve:'✅ Payout req',payout_reject:'❌ Payout req',pricing_update:'£ Pricing'};
 function loadAudit(){
   const el=document.getElementById('audit-list');
   if(!el) return;
@@ -1858,6 +1889,33 @@ function loadAudit(){
       </div>`;
     }).join('');
   }).catch(()=>{ el.innerHTML='<div style="color:#ef4444;padding:20px">Could not load audit log</div>'; });
+}
+
+// ── Business model (commission vs subscription) ──────────────────────────
+function setBusinessModel(model){
+  S._business={...(S._business||{commissionPct:20,clientMonthlyFee:49,driverMonthlyFee:99,trialDays:30}),model};
+  if(FIREBASE_ENABLED){
+    db.collection('settings').doc('business').set({model,updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true})
+      .then(()=>logAudit('business_model_update','settings/business','switched to '+model)).catch(()=>{});
+  }
+  render();
+}
+function saveBusinessModel(){
+  const num=(id,def)=>{const v=parseFloat(document.getElementById(id)?.value);return Number.isFinite(v)&&v>=0?v:def;};
+  const data={
+    model:'subscription',
+    clientMonthlyFee:num('biz_client_fee',49),
+    driverMonthlyFee:num('biz_driver_fee',99),
+    trialDays:Math.round(num('biz_trial',30)),
+    commissionPct:Math.min(50,Math.round(num('biz_commission',20))),
+    updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+  };
+  S._business={...(S._business||{}),...data};
+  if(!FIREBASE_ENABLED){alert('Demo mode — not saved');render();return;}
+  db.collection('settings').doc('business').set(data,{merge:true}).then(()=>{
+    logAudit('business_model_update','settings/business',`commission ${data.commissionPct}% · client £${data.clientMonthlyFee}/mo · driver £${data.driverMonthlyFee}/mo · trial ${data.trialDays}d`);
+    alert('Subscription settings saved.');render();
+  }).catch(e=>alert('Save failed: '+(e.message||e.code)));
 }
 
 // Export the currently loaded audit rows as CSV (for inspections/records).

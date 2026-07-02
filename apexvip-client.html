@@ -733,6 +733,77 @@ if (FIREBASE_ENABLED) {
   }).catch(() => {});
 }
 
+// ── Business model (commission vs subscription) ────────────────────────────
+// settings/business is admin-controlled. In subscription mode, clients pay a
+// monthly membership (new members get a free trial); commission mode = free app.
+let BUSINESS = { model: 'commission', clientMonthlyFee: 49, driverMonthlyFee: 99, trialDays: 30, commissionPct: 20 };
+if (FIREBASE_ENABLED) {
+  db.collection('settings').doc('business').onSnapshot(d => {
+    if (d.exists) Object.assign(BUSINESS, d.data());
+    if (['home','profile'].includes(state.screen)) render();
+  }, () => {});
+}
+
+// Ensure a subscriptions/{uid} doc exists (starts the free trial on first sight).
+async function ensureSubscription() {
+  if (!FIREBASE_ENABLED || !auth.currentUser || BUSINESS.model !== 'subscription') return;
+  try {
+    const ref = db.collection('subscriptions').doc(auth.currentUser.uid);
+    const doc = await ref.get();
+    if (doc.exists) { state._sub = doc.data(); return; }
+    const trialEndsAt = new Date(Date.now() + (BUSINESS.trialDays || 30) * 86400000);
+    const sub = { role: 'client', status: 'trial', startedAt: firebase.firestore.FieldValue.serverTimestamp(), trialEndsAt };
+    await ref.set(sub);
+    state._sub = { ...sub, trialEndsAt };
+  } catch (e) { /* non-fatal */ }
+}
+
+// Current subscription state: off (commission mode) / trial / active / expired.
+function subState() {
+  if (BUSINESS.model !== 'subscription') return { mode: 'off' };
+  const s = state._sub;
+  if (!s) return { mode: 'trial', daysLeft: BUSINESS.trialDays || 30 };
+  if (s.status === 'active') return { mode: 'active' };
+  const ends = s.trialEndsAt && s.trialEndsAt.toDate ? s.trialEndsAt.toDate() : new Date(s.trialEndsAt);
+  const daysLeft = Math.ceil((ends - Date.now()) / 86400000);
+  return daysLeft > 0 ? { mode: 'trial', daysLeft } : { mode: 'expired' };
+}
+
+// Global membership sheet — rendered on every screen so the booking gate can
+// summon it from anywhere.
+function subscribeSheet() {
+  if (!state._subOpen) return '';
+  const fee = BUSINESS.clientMonthlyFee || 49;
+  return `
+<div style="position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:600;display:flex;align-items:flex-end;justify-content:center" onclick="state._subOpen=false;render()">
+  <div style="background:var(--bg);border-radius:24px 24px 0 0;border:1px solid var(--border);width:100%;max-width:480px;padding:28px;animation:slideUp .25s ease" onclick="event.stopPropagation()">
+    <div style="text-align:center;margin-bottom:18px">
+      <div class="diamond-text" style="font-size:26px;font-weight:300;letter-spacing:2px;font-family:var(--font-serif);display:inline-block">ApexVIP Membership</div>
+      <div style="font-size:34px;font-weight:800;color:var(--gold);margin-top:10px">£${fee}<span style="font-size:14px;font-weight:600;color:var(--fg-3)">/month</span></div>
+    </div>
+    ${['Unlimited bookings, chauffeur & concierge','ApexAI personal concierge','Flight-aware pickups & live tracking','Cancel anytime'].map(f=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;font-size:14px;color:var(--fg-2)"><span style="color:var(--gold)">✓</span>${f}</div>`).join('')}
+    <button onclick="subscribeNow()" class="btn btn-gold" style="width:100%;padding:15px;margin-top:16px;margin-bottom:10px">Start membership</button>
+    <button onclick="state._subOpen=false;render()" class="btn btn-glass" style="width:100%;padding:14px">Not now</button>
+  </div>
+</div>`;
+}
+
+// Activate membership. NOTE: prototype billing — production wires this to a
+// recurring payment (e.g. Square subscriptions) before charging real cards.
+async function subscribeNow() {
+  if (!FIREBASE_ENABLED || !auth.currentUser) { state._subOpen = false; render(); return; }
+  try {
+    await db.collection('subscriptions').doc(auth.currentUser.uid).set({
+      role: 'client', status: 'active', plan: 'client-monthly',
+      price: BUSINESS.clientMonthlyFee || 49,
+      activatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+    state._sub = { ...(state._sub || {}), status: 'active' };
+    track('subscription_activated', { role: 'client', src: 'client' });
+  } catch (e) { /* keep sheet closed either way */ }
+  state._subOpen = false; render();
+}
+
 // ── Pricing engine ─────────────────────────────────────────────────────────
 function calcFare(distKm, durationMin, cls, booking) {
   cls = cls || 's';
@@ -2364,6 +2435,17 @@ home: () => {
         <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:var(--gold)">Verify your email</div><div style="font-size:12px;color:var(--fg-3);margin-top:1px">Confirm ${auth.currentUser.email} to secure your account.</div></div>
         <button onclick="resendVerification()" style="background:var(--gold);border:none;border-radius:10px;color:#0c0b09;font-size:12px;font-weight:800;padding:8px 12px;cursor:pointer;font-family:inherit;flex-shrink:0">Resend</button>
       </div>`:''}
+      ${(()=>{const ss=subState();if(ss.mode==='off'||ss.mode==='active')return'';
+        if(ss.mode==='trial')return`<div style="display:flex;align-items:center;gap:12px;background:rgba(200,169,126,.08);border:1px solid rgba(200,169,126,.2);border-radius:16px;padding:13px 16px;margin-bottom:14px">
+          <div style="font-size:20px">✦</div>
+          <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:var(--gold)">Free trial — ${ss.daysLeft} day${ss.daysLeft===1?'':'s'} left</div><div style="font-size:12px;color:var(--fg-3);margin-top:1px">Then £${BUSINESS.clientMonthlyFee||49}/month for unlimited access.</div></div>
+          <button onclick="state._subOpen=true;render()" style="background:var(--gold);border:none;border-radius:10px;color:#0c0b09;font-size:12px;font-weight:800;padding:8px 12px;cursor:pointer;font-family:inherit;flex-shrink:0">Subscribe</button>
+        </div>`;
+        return`<div style="display:flex;align-items:center;gap:12px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);border-radius:16px;padding:13px 16px;margin-bottom:14px">
+          <div style="font-size:20px">✦</div>
+          <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:#ef4444">Your trial has ended</div><div style="font-size:12px;color:var(--fg-3);margin-top:1px">Subscribe to keep booking with ApexVIP.</div></div>
+          <button onclick="state._subOpen=true;render()" style="background:var(--gold);border:none;border-radius:10px;color:#0c0b09;font-size:12px;font-weight:800;padding:8px 12px;cursor:pointer;font-family:inherit;flex-shrink:0">Subscribe</button>
+        </div>`;})()}
       <!-- ApexAI — hero button at the top -->
       <button onclick="go('concierge-chat')" style="width:100%;display:flex;align-items:center;gap:16px;padding:16px 20px;margin-bottom:16px;background:linear-gradient(135deg,rgba(200,169,126,.11) 0%,rgba(200,169,126,.04) 100%);border:1px solid rgba(200,169,126,.28);border-radius:22px;cursor:pointer;font-family:inherit;transition:transform .15s var(--ease-spring)">
         <div style="width:40px;height:40px;border-radius:14px;background:rgba(200,169,126,.14);border:1px solid rgba(200,169,126,.28);display:flex;align-items:center;justify-content:center;flex-shrink:0">
@@ -5514,6 +5596,8 @@ async function runSquarePayment(){
 }
 
 async function confirmBooking(overrideRef){
+  // Subscription gate — after the free trial ends, booking requires membership.
+  if (subState().mode === 'expired') { state._subOpen = true; render(); return; }
   const ref = overrideRef || state._confirmedRef || ('APX-'+(Math.floor(1000+Math.random()*9000)));
   const base=state.booking.price||185;
   // Fare math (discount + VAT-inclusive total) — shared, unit-tested engine.
@@ -5647,6 +5731,7 @@ if(FIREBASE_ENABLED){
         const p=doc.exists?doc.data():{};
         state.user={uid:user.uid,name:p.name||user.displayName||user.email.split('@')[0],email:user.email};
       }catch(e){state.user={uid:user.uid,name:user.displayName||user.email.split('@')[0],email:user.email};}
+      ensureSubscription();
       if(_unsub)_unsub();
       _unsub=db.collection('bookings').where('clientId','==',user.uid)
         .onSnapshot(snap=>{
@@ -5876,7 +5961,7 @@ function renderNow(){
   try{
     document.body.setAttribute('data-screen',state.screen);
     const fn=screens[state.screen];
-    app.innerHTML=fn?fn():`<div style="padding:40px;text-align:center;color:var(--fg-4)">Screen not found</div>`;
+    app.innerHTML=(fn?fn():`<div style="padding:40px;text-align:center;color:var(--fg-4)">Screen not found</div>`)+subscribeSheet();
     renderAirportPickerPortal();
     if(state.screen==='home') setTimeout(initMap,60);
     if(state.screen==='payment') setTimeout(initSquare,60);

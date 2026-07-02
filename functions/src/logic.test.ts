@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import {
   round5, isoPlusDays, computeFareBounds, driverEarning, dispatchPay,
   bookingEvent, bookingMessage, daysUntil, shouldRemind, flightHHMM,
+  normalizeCommissionPct,
 } from './logic.ts';
 
 test('round5 rounds to the nearest £5', () => {
@@ -42,6 +43,16 @@ test('driverEarning is 80%, baseFare preferred over price', () => {
 test('dispatchPay is 80% with a £95 default base', () => {
   assert.equal(dispatchPay({}), 76);
   assert.equal(dispatchPay({ baseFare: 200 }), 160);
+});
+
+test('subscription-model commission is adjustable and clamped to 0–50', () => {
+  assert.equal(driverEarning({ baseFare: 100 }, 10), 90);   // admin sets 10%
+  assert.equal(driverEarning({ baseFare: 100 }, 0), 100);   // pure subscription, 0% cut
+  assert.equal(driverEarning({ baseFare: 100 }, 99), 50);   // clamped at 50
+  assert.equal(driverEarning({ baseFare: 100 }, -5), 100);  // clamped at 0
+  assert.equal(driverEarning({ baseFare: 100 }, NaN), 80);  // junk → default 20%
+  assert.equal(dispatchPay({ baseFare: 200 }, 10), 180);
+  assert.equal(normalizeCommissionPct(undefined), 20);
 });
 
 test('bookingEvent: create / delete / status transitions', () => {

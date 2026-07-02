@@ -138,6 +138,16 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Subscriptions — one doc per user (client or driver) when the platform runs
+    // in subscription mode. A user manages only their own; admins see all.
+    // NOTE (launch): self-service 'active' writes are the prototype's mock
+    // billing — move activation server-side once a real billing rail is wired.
+    match /subscriptions/{uid} {
+      allow read:           if isUser(uid) || isAdmin();
+      allow create, update: if isAdmin() || isUser(uid);
+      allow delete:         if isAdmin();
+    }
+
     // Audit log — append-only record of staff actions (dispatch, compliance,
     // vehicles, payouts…). Staff create; admins read; nobody edits or deletes.
     match /audit_log/{id} {
