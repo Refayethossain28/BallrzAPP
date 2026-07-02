@@ -10,6 +10,85 @@ This is the real, structured application. The single-file
 reference. The full architecture is in
 [`docs/rentmatch-foundation.md`](../docs/rentmatch-foundation.md).
 
+> **The marketplace is now the front door of a landlord operations product** —
+> compliance autopilot, rent ledger + arrears, UK-tax-year finances, Direct Debit
+> collection, an agent tier, tenancy renewals, and recurring subscriptions. See
+> [`docs/rentmatch-revenue-plan.md`](../docs/rentmatch-revenue-plan.md) for the
+> full feature inventory and the go-live checklist. The milestone log below
+> covers the original marketplace core.
+
+## Quickstart (for developers)
+
+Prerequisites: **Node ≥ 22**, Java (for the Firestore emulator), and the
+[Firebase CLI](https://firebase.google.com/docs/cli) (`npm i -g firebase-tools`,
+or use `npx firebase-tools`).
+
+```sh
+npm install                         # installs all workspaces (web, functions, shared)
+cp .env.example .env.local          # web config; also copy to functions/.env for server keys
+
+# Unit tests — the shared domain kernel (pure, no emulator needed)
+npm test                            # 97 tests
+
+# Run the app locally against the Firebase Emulator Suite
+npm run emulators                   # terminal 1: auth, firestore, functions, storage
+VITE_USE_EMULATORS=1 npm run dev:web   # terminal 2: Vite dev server → http://localhost:5173
+
+# Build
+npm --workspace apps/web run build  # tsc -b && vite build
+npm --prefix functions run build    # esbuild bundle
+
+# End-to-end (Playwright)
+cd apps/web
+npm run e2e                         # headless render/routing smoke (no emulator)
+npm run e2e:emulators               # full flows on the emulator suite: onboarding,
+                                    # advertise→publish, enquiry, and the complete
+                                    # deal lifecycle → £100 → auto-created tenancy
+```
+
+Notes:
+- `e2e:emulators` builds the functions, boots auth/firestore/functions/storage,
+  and runs Playwright with `VITE_USE_EMULATORS=1`. It uses a `STRIPE_FAKE` stub so
+  the £100 completion runs without live Stripe keys.
+- If the pre-installed Chromium build differs from the pinned `@playwright/test`,
+  set `PW_CHROMIUM_PATH=/path/to/chromium`.
+
+### Firebase project (shared, non-destructive)
+The client points at the shared **`apexvip-1b4a9`** project (the one the other
+apps in this repo use). To avoid clobbering those apps, rentmatch is isolated:
+
+- **Firestore** runs in its own named database **`rentmatch`** (separate rules +
+  data from the default database). The client uses `getFirestore(app,
+  'rentmatch')`; functions use the Admin equivalent; `firebase.json` declares it.
+- **Cloud Functions** live in their own **`rentmatch` codebase**, so deploys
+  never delete the other apps' functions.
+- **Storage** uses a dedicated bucket **`apexvip-1b4a9-rentmatch`** (the client
+  calls `getStorage(app, 'gs://…')`); rules deploy only to that bucket.
+- **Hosting** deploys to its own site **`rentmatch-apex`** → `https://rentmatch-apex.web.app`,
+  not the project's default site.
+
+One-time setup (each is its own isolated resource — nothing else on the project
+is touched):
+
+```sh
+npm run db:create       # Firestore database 'rentmatch' (eur3)
+npm run bucket:create   # Storage bucket 'apexvip-1b4a9-rentmatch' (needs gcloud)
+npm run site:create     # Hosting site 'rentmatch-apex'
+```
+
+Then deploy everything, scoped:
+
+```sh
+npm run deploy   # firebase deploy --only "firestore,functions,storage,hosting"
+```
+
+Auth is project-level (shared, which is fine — same user pool). After deploy,
+point Stripe / GoCardless webhooks at `stripeWebhook` / `gocardlessWebhook`, and
+fill credentials per [`docs/rentmatch-revenue-plan.md`](../docs/rentmatch-revenue-plan.md)
+("To go live"). The site IDs/bucket name are globally unique — if `rentmatch-apex`
+or the bucket name is taken, pick another and update `firebase.json` +
+`firebase.ts` + the create scripts to match.
+
 ## Status
 
 **M0 — foundation ✅**
@@ -109,11 +188,19 @@ credential wiring and the items in [`LAUNCH.md`](./LAUNCH.md) (real e-sign
 provider, email provider, App Check enforcement, deposit-scheme API, CI).
 
 ### Verification status
-The shared kernel (deal state machine incl. the both-signed-**and**-fee-paid
-completion guard, compliance, money, search, contract) is unit-tested — 37
-tests, `npm test`. The web app and Cloud Functions are written against the
-Firebase + Stripe + e-sign SDKs but require `npm install`, the Firebase Emulator
-Suite and live test keys to run; they have **not** been executed in CI here.
+The shared domain kernel is unit-tested — **97 tests** (`npm test`): deal state
+machine, compliance + portfolio reminders, money, search, contract, billing,
+rent ledger + reminders + statements, finances, Direct Debit reconciliation,
+agency rollup, and renewals.
+
+The web app + Cloud Functions are exercised **end-to-end against the Firebase
+Emulator Suite** (`npm run e2e:emulators`): onboarding, advertise→upload→publish
+(Functions + Storage), a two-party enquiry, and the **complete deal lifecycle to
+completion** — viewing, agreement, draft, e-sign, the £100 charge (via a Stripe
+stub), and the auto-created tenancy. Running these surfaced and fixed three real
+bugs (renter enquiry blocked by a cross-user read; a `draftContract` undefined
+write; a publish/agree read-modify-write race). The live Stripe/GoCardless/e-sign
+integrations still need real credentials to exercise.
 
 > Server-authoritativeness: contract/signature/payment now flow through Cloud
 > Functions (M3 starts this). M1's listing compliance gate and M2's enquiry/

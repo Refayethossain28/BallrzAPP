@@ -8,11 +8,13 @@ import { photoGradient } from '../components/ui';
 export default function MyListings() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { data: listings = [], isLoading } = useQuery({
+  const { data: all = [], isLoading } = useQuery({
     queryKey: ['listings', 'landlord', user?.uid],
     queryFn: () => fetchLandlordListings(user!.uid),
     enabled: !!user,
   });
+  // Track-only properties live on the Compliance tab, not the advert view.
+  const listings = all.filter((l) => !l.trackingOnly);
 
   return (
     <>

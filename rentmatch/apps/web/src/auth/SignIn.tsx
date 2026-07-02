@@ -1,7 +1,9 @@
 import { useState, type FormEvent } from 'react';
 import { useAuth } from './AuthProvider';
 
-export default function SignIn() {
+/** Auth form. `embedded` drops the page chrome (logo/tagline/full-height
+ *  wrapper) so the landing page can inline it as a section. */
+export default function SignIn({ embedded = false }: { embedded?: boolean }) {
   const { signIn, signUp } = useAuth();
   const [mode, setMode] = useState<'in' | 'up'>('in');
   const [name, setName] = useState('');
@@ -25,26 +27,30 @@ export default function SignIn() {
   }
 
   return (
-    <div className="centerpage">
-      <div className="logo" style={{ fontSize: 24, marginBottom: 6 }}>
-        <span className="mk">⌂</span> <b>Apex</b>
-      </div>
-      <p className="sub">UK lettings — advertise, find, message, sign.</p>
+    <div className={embedded ? undefined : 'centerpage'}>
+      {!embedded && (
+        <>
+          <div className="logo" style={{ fontSize: 24, marginBottom: 6 }}>
+            <span className="mk">⌂</span> <b>Apex</b>
+          </div>
+          <p className="sub">UK lettings — advertise, find, message, sign.</p>
+        </>
+      )}
 
       <form onSubmit={submit}>
         {mode === 'up' && (
           <div className="field">
-            <label>Full name</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} required placeholder="Tom Baxter" />
+            <label htmlFor="auth-name">Full name</label>
+            <input id="auth-name" value={name} onChange={(e) => setName(e.target.value)} required placeholder="Tom Baxter" />
           </div>
         )}
         <div className="field">
-          <label>Email</label>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@example.co.uk" />
+          <label htmlFor="auth-email">Email</label>
+          <input id="auth-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@example.co.uk" />
         </div>
         <div className="field">
-          <label>Password</label>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} placeholder="••••••••" />
+          <label htmlFor="auth-password">Password</label>
+          <input id="auth-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} placeholder="••••••••" />
         </div>
         {error && <p className="error">{error}</p>}
         <button className="cta" type="submit" disabled={busy}>

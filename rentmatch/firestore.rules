@@ -17,6 +17,19 @@ service cloud.firestore {
       return uid() == deal.renterId || uid() == deal.landlordId;
     }
 
+    // Agent-tier access: a landlord may connect their portfolio to an agency (it
+    // sets `agencyId` on their own user doc). Members of that agency may then
+    // read the landlord's data. Resolved via the landlord's user doc, so no
+    // per-document stamping is needed.
+    function landlordAgency(landlordId) {
+      return get(/databases/$(database)/documents/users/$(landlordId)).data.get('agencyId', '');
+    }
+    function isAgencyMemberFor(landlordId) {
+      return isSignedIn()
+        && landlordAgency(landlordId) != ''
+        && uid() in get(/databases/$(database)/documents/agencies/$(landlordAgency(landlordId))).data.memberIds;
+    }
+
     // Users can read/write only their own profile.
     match /users/{userId} {
       allow read, write: if isSignedIn() && uid() == userId;
@@ -45,6 +58,14 @@ service cloud.firestore {
       allow update: if isSignedIn() && resource.data.landlordId == uid()
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'landlordId']);
       allow delete: if isSignedIn() && resource.data.landlordId == uid();
+    }
+
+    // Agencies: members read; the owner manages it. Client-list changes go
+    // through Cloud Functions (connectToAgency/disconnectFromAgency).
+    match /agencies/{agencyId} {
+      allow read: if isSignedIn() && uid() in resource.data.memberIds;
+      allow create: if isSignedIn() && request.resource.data.ownerId == uid();
+      allow update, delete: if isSignedIn() && resource.data.ownerId == uid();
     }
 
     // Deals: a renter may open one; both participants may read it.
@@ -96,6 +117,30 @@ service cloud.firestore {
     match /payments/{paymentId} {
       allow read: if isSignedIn() && uid() == resource.data.landlordId;
       allow write: if false;
+    }
+
+    // Tenancies are the landlord's own rent bookkeeping (not a server-
+    // authoritative money flow like deals), so the owning landlord has full
+    // CRUD over their tenancies and the payments recorded against them.
+    match /tenancies/{tenancyId} {
+      allow read: if isSignedIn() && (resource.data.landlordId == uid() || isAgencyMemberFor(resource.data.landlordId));
+      allow update, delete: if isSignedIn() && resource.data.landlordId == uid();
+      allow create: if isSignedIn() && request.resource.data.landlordId == uid();
+
+      match /payments/{paymentId} {
+        allow read: if isSignedIn() &&
+          (get(/databases/$(database)/documents/tenancies/$(tenancyId)).data.landlordId == uid()
+           || isAgencyMemberFor(get(/databases/$(database)/documents/tenancies/$(tenancyId)).data.landlordId));
+        allow write: if isSignedIn() &&
+          get(/databases/$(database)/documents/tenancies/$(tenancyId)).data.landlordId == uid();
+      }
+    }
+
+    // Expenses are the landlord's own financial records — owner CRUD, agency read.
+    match /expenses/{expenseId} {
+      allow read: if isSignedIn() && (resource.data.landlordId == uid() || isAgencyMemberFor(resource.data.landlordId));
+      allow update, delete: if isSignedIn() && resource.data.landlordId == uid();
+      allow create: if isSignedIn() && request.resource.data.landlordId == uid();
     }
   }
 }

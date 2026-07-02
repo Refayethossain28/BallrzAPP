@@ -50,11 +50,11 @@ function matches(listing: ListingSummary, filter: ListingFilter): boolean {
   return true;
 }
 
-export function filterListings(listings: ListingSummary[], filter: ListingFilter): ListingSummary[] {
+export function filterListings<T extends ListingSummary>(listings: T[], filter: ListingFilter): T[] {
   return listings.filter((l) => matches(l, filter));
 }
 
-export function sortListings(listings: ListingSummary[], sort: ListingSort): ListingSummary[] {
+export function sortListings<T extends ListingSummary>(listings: T[], sort: ListingSort): T[] {
   const copy = listings.slice();
   switch (sort) {
     case 'price-asc':
@@ -73,11 +73,11 @@ export function sortListings(listings: ListingSummary[], sort: ListingSort): Lis
  * The browse query: only live listings, filtered then sorted. `let`/`draft`
  * listings never appear in renter search results.
  */
-export function searchListings(
-  listings: ListingSummary[],
+export function searchListings<T extends ListingSummary>(
+  listings: T[],
   filter: ListingFilter = {},
   sort: ListingSort = 'newest',
-): ListingSummary[] {
+): T[] {
   const live = listings.filter((l) => l.status === 'live');
   return sortListings(filterListings(live, filter), sort);
 }

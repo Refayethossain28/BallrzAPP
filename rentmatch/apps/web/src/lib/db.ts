@@ -6,16 +6,19 @@
  * listings via `searchListings`; this moves behind an index/Algolia later.
  */
 import {
-  collection, doc, getDoc, getDocs, query, where, addDoc, setDoc, updateDoc,
-  serverTimestamp, Timestamp, onSnapshot, orderBy, or,
+  collection, doc, getDoc, getDocs, query, where, addDoc, setDoc, updateDoc, deleteDoc,
+  serverTimestamp, Timestamp, onSnapshot, orderBy, or, increment, runTransaction,
   type Unsubscribe,
 } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from './firebase';
 import {
   newDealRecord, recomputeStage,
-  type ComplianceDoc, type ComplianceDocType, type DealParty, type DealRecord,
-  type DealViewing, type EpcRating, type ListingSummary, type TenancyAgreement,
+  type ComplianceCheck, type ComplianceDoc, type ComplianceDocType, type DealParty,
+  type DealRecord, type DealViewing, type DirectDebitMandate, type EpcRating,
+  type ExpenseCategory, type ExpenseEntry, type FinanceEntry, type ListingSummary,
+  type RentCollection, type RentPayment, type RenewalStatus, type RenewalTerms,
+  type Subscription, type Tenancy, type TenancyAgreement,
 } from '@rentmatch/shared';
 
 export type Role = 'renter' | 'landlord';
@@ -34,10 +37,15 @@ export interface Listing extends ListingSummary {
   desc: string;
   features: string[];
   landlordId: string;
+  /** Denormalised so renters can show/credit the landlord without reading their
+   *  (private) user doc — Firestore rules forbid cross-user reads. */
+  landlordName: string;
   hasGasSupply: boolean;
   smokeAlarmsPerStorey: boolean;
   coAlarmsWhereRequired: boolean;
   complianceDocs: ComplianceDoc[];
+  /** Added purely to monitor compliance — never advertised on the marketplace. */
+  trackingOnly: boolean;
 }
 
 const listingsCol = collection(db, 'listings');
@@ -68,6 +76,12 @@ export async function setActiveRole(uid: string, role: Role): Promise<void> {
   await updateDoc(doc(usersCol, uid), { activeRole: role });
 }
 
+/** The landlord's subscription as mirrored from Stripe by the billing webhook. */
+export async function fetchSubscription(uid: string): Promise<Subscription | null> {
+  const snap = await getDoc(doc(usersCol, uid));
+  return (snap.data()?.subscription as Subscription | undefined) ?? null;
+}
+
 /* ---- listings ---- */
 
 function toMillis(value: unknown): number {
@@ -96,10 +110,12 @@ function mapListing(id: string, data: Record<string, unknown>): Listing {
     desc: String(data.desc ?? ''),
     features: Array.isArray(data.features) ? (data.features as string[]) : [],
     landlordId: String(data.landlordId ?? ''),
+    landlordName: String(data.landlordName ?? 'Landlord'),
     hasGasSupply: Boolean(data.hasGasSupply),
     smokeAlarmsPerStorey: Boolean(data.smokeAlarmsPerStorey),
     coAlarmsWhereRequired: Boolean(data.coAlarmsWhereRequired),
     complianceDocs: Array.isArray(data.complianceDocs) ? (data.complianceDocs as ComplianceDoc[]) : [],
+    trackingOnly: Boolean(data.trackingOnly),
   };
 }
 
@@ -122,6 +138,7 @@ export async function fetchLandlordListings(landlordId: string): Promise<Listing
 
 export interface NewListingInput {
   landlordId: string;
+  landlordName: string;
   title: string;
   street: string;
   area: string;
@@ -156,6 +173,46 @@ export async function createListing(input: NewListingInput): Promise<{ id: strin
   return { id: ref.id };
 }
 
+export interface TrackedPropertyInput {
+  landlordId: string;
+  landlordName: string;
+  street: string;
+  area: string;
+  city: string;
+  postcode: string;
+  type: string;
+  epcRating: EpcRating;
+  hasGasSupply: boolean;
+  smokeAlarmsPerStorey: boolean;
+  coAlarmsWhereRequired: boolean;
+}
+
+/**
+ * Create a property the landlord only wants to *monitor* for compliance — no
+ * rent, no advert. It's a `draft` listing flagged `trackingOnly`, so it never
+ * surfaces in renter search but still flows through the compliance dashboard
+ * and the reminder cron. The landlord can advertise it later by adding the
+ * letting fields and publishing.
+ */
+export async function createTrackedProperty(input: TrackedPropertyInput): Promise<{ id: string }> {
+  const ref = await addDoc(listingsCol, {
+    ...input,
+    title: [input.street, input.city].filter(Boolean).join(', '),
+    desc: '',
+    beds: 0,
+    baths: 1,
+    rentPence: 0,
+    furnished: 'Unfurnished',
+    status: 'draft',
+    trackingOnly: true,
+    complianceDocs: [] as ComplianceDoc[],
+    features: [],
+    availableFrom: Timestamp.fromMillis(Date.now()),
+    createdAt: serverTimestamp(),
+  });
+  return { id: ref.id };
+}
+
 /** Default validity windows for each compliance document type. */
 const DOC_VALIDITY_MS: Partial<Record<ComplianceDocType, number>> = {
   'gas-safety': 365 * 86_400_000, // annual
@@ -172,21 +229,29 @@ export async function uploadComplianceDoc(
   listing: Listing,
   type: ComplianceDocType,
   file: File,
+  issuedAt: number = Date.now(),
 ): Promise<void> {
   const path = `compliance/${listing.landlordId}/${listing.id}/${type}.pdf`;
   const r = storageRef(storage, path);
   await uploadBytes(r, file);
   const fileRef = await getDownloadURL(r);
-  const now = Date.now();
-  const expiresAt = DOC_VALIDITY_MS[type] != null ? now + DOC_VALIDITY_MS[type]! : undefined;
+  // Expiry is computed from the certificate's issue date, so a backdated cert
+  // (e.g. a gas check done 8 months ago) gets the right lapse date — and its
+  // renewal reminders — rather than assuming it was issued today.
+  const expiresAt = DOC_VALIDITY_MS[type] != null ? issuedAt + DOC_VALIDITY_MS[type]! : undefined;
 
-  const snap = await getDoc(doc(listingsCol, listing.id));
-  const current = (snap.data()?.complianceDocs ?? []) as ComplianceDoc[];
-  const next: ComplianceDoc[] = [
-    ...current.filter((d) => d.type !== type),
-    { type, issuedAt: now, ...(expiresAt ? { expiresAt } : {}), reference: fileRef },
-  ];
-  await updateDoc(doc(listingsCol, listing.id), { complianceDocs: next });
+  // Transactional read-modify-write: uploading two certificates in quick
+  // succession must not clobber each other's entry in the array.
+  const listingRef = doc(listingsCol, listing.id);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(listingRef);
+    const current = (snap.data()?.complianceDocs ?? []) as ComplianceDoc[];
+    const next: ComplianceDoc[] = [
+      ...current.filter((d) => d.type !== type),
+      { type, issuedAt, ...(expiresAt ? { expiresAt } : {}), reference: fileRef },
+    ];
+    tx.update(listingRef, { complianceDocs: next });
+  });
 }
 
 /* ---- deals, messaging & viewings (M2) ---- */
@@ -251,8 +316,9 @@ export async function createOrGetDeal(
   );
   if (!existing.empty) return existing.docs[0].id;
 
-  const landlordSnap = await getDoc(doc(usersCol, listing.landlordId));
-  const landlordName = landlordSnap.exists() ? String(landlordSnap.data().displayName ?? 'Landlord') : 'Landlord';
+  // Use the listing's denormalised landlord name — a renter cannot read the
+  // landlord's (private) user doc under the security rules.
+  const landlordName = listing.landlordName || 'Landlord';
 
   const ref = await addDoc(dealsCol, {
     ...newDealRecord(),
@@ -310,33 +376,43 @@ async function addSystemMessage(dealId: string, text: string): Promise<void> {
   await addDoc(collection(dealsCol, dealId, 'messages'), { senderId: 'system', senderRole: 'system', text, ts: serverTimestamp() });
 }
 
-/** Re-derive and persist the stage from the deal's facts, then nudge updatedAt. */
-async function syncStage(deal: Deal, patch: Partial<DealRecord>): Promise<void> {
-  const next: DealRecord = { ...deal, ...patch };
-  await updateDoc(doc(dealsCol, deal.id), {
-    ...patch,
-    stage: recomputeStage(next),
-    updatedAt: serverTimestamp(),
+/**
+ * Apply a change to a deal transactionally: read the current record, compute the
+ * patch from it, re-derive the stage, and write — all inside one transaction so
+ * concurrent writes (e.g. both parties agreeing at once) can't clobber each
+ * other via a stale local snapshot. Returns the resulting record.
+ */
+async function updateDealTx(
+  dealId: string,
+  apply: (rec: Deal) => Partial<DealRecord>,
+): Promise<Deal | null> {
+  return runTransaction(db, async (tx) => {
+    const ref = doc(dealsCol, dealId);
+    const snap = await tx.get(ref);
+    if (!snap.exists()) return null;
+    const current = mapDeal(snap.id, snap.data());
+    const patch = apply(current);
+    const next: Deal = { ...current, ...patch };
+    tx.update(ref, { ...patch, stage: recomputeStage(next), updatedAt: serverTimestamp() });
+    return next;
   });
 }
 
 export async function proposeViewing(deal: Deal, by: DealParty, ts: number): Promise<void> {
-  await syncStage(deal, { viewing: { ts, status: 'proposed', proposedBy: by } });
+  await updateDealTx(deal.id, () => ({ viewing: { ts, status: 'proposed', proposedBy: by } }));
   await addSystemMessage(deal.id, `${by === 'renter' ? deal.renterName : deal.landlordName} proposed a viewing for ${new Date(ts).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.`);
 }
 
 export async function confirmViewing(deal: Deal): Promise<void> {
-  if (!deal.viewing) return;
-  await syncStage(deal, { viewing: { ...deal.viewing, status: 'confirmed' } });
+  await updateDealTx(deal.id, (rec) => (rec.viewing ? { viewing: { ...rec.viewing, status: 'confirmed' } } : {}));
   await addSystemMessage(deal.id, 'Viewing confirmed. ✅');
 }
 
 export async function agreeToProceed(deal: Deal, party: DealParty): Promise<void> {
-  const agreed = { ...deal.agreed, [party]: true };
-  await syncStage(deal, { agreed });
+  const next = await updateDealTx(deal.id, (rec) => ({ agreed: { ...rec.agreed, [party]: true } }));
   const name = party === 'renter' ? deal.renterName : deal.landlordName;
   await addSystemMessage(deal.id, `${name} agreed to proceed to a tenancy.`);
-  if (agreed.renter && agreed.landlord) {
+  if (next?.agreed.renter && next?.agreed.landlord) {
     await addSystemMessage(deal.id, 'Both parties have agreed terms. The landlord can now draft the tenancy agreement.');
   }
 }
@@ -367,5 +443,254 @@ export async function fetchContract(dealId: string): Promise<Contract | null> {
     agreement: d.agreement as TenancyAgreement,
     compliance: (d.compliance as ComplianceCheck[]) ?? [],
     feePence: Number(d.feePence ?? 0),
+  };
+}
+
+/* ---- tenancies & rent ledger (Phase 2) ---- */
+
+/** A landlord's tenancy record — the inputs the shared rent engine needs, plus display. */
+export interface TenancyRecord extends Tenancy {
+  id: string;
+  landlordId: string;
+  listingId: string;
+  propertyLabel: string;
+  tenantName: string;
+  status: 'active' | 'ended';
+  /** Running total of rent received — kept on the doc so list views can show
+   *  arrears without an N+1 fetch of every payment. */
+  totalPaidPence: number;
+  /** Direct Debit mandate + auto-collection records (managed by Cloud Functions). */
+  mandate?: DirectDebitMandate;
+  collections: RentCollection[];
+  /** A renewal in flight (terms + signature/fee state), managed by Cloud Functions. */
+  pendingRenewal?: {
+    terms: RenewalTerms;
+    status: RenewalStatus;
+    signed: { landlord: boolean; tenant: boolean };
+    feePence: number;
+  };
+  createdAt: number;
+}
+
+export interface PaymentRecord extends RentPayment {
+  id: string;
+  method?: string;
+  note?: string;
+}
+
+export interface NewTenancyInput {
+  landlordId: string;
+  listingId: string;
+  propertyLabel: string;
+  tenantName: string;
+  monthlyRentPence: number;
+  startDate: number;
+  termMonths: number;
+}
+
+const tenanciesCol = collection(db, 'tenancies');
+
+function mapTenancy(id: string, d: Record<string, unknown>): TenancyRecord {
+  return {
+    id,
+    landlordId: String(d.landlordId ?? ''),
+    listingId: String(d.listingId ?? ''),
+    propertyLabel: String(d.propertyLabel ?? ''),
+    tenantName: String(d.tenantName ?? ''),
+    monthlyRentPence: Number(d.monthlyRentPence ?? 0),
+    startDate: toMillis(d.startDate),
+    termMonths: Number(d.termMonths ?? 12),
+    status: (d.status ?? 'active') as TenancyRecord['status'],
+    totalPaidPence: Number(d.totalPaidPence ?? 0),
+    mandate: (d.mandate as DirectDebitMandate | undefined) ?? undefined,
+    collections: Array.isArray(d.collections) ? (d.collections as RentCollection[]) : [],
+    pendingRenewal: (d.pendingRenewal as TenancyRecord['pendingRenewal']) ?? undefined,
+    createdAt: toMillis(d.createdAt),
+  };
+}
+
+export async function createTenancy(input: NewTenancyInput): Promise<{ id: string }> {
+  const ref = await addDoc(tenanciesCol, {
+    ...input,
+    status: 'active',
+    totalPaidPence: 0,
+    createdAt: serverTimestamp(),
+  });
+  return { id: ref.id };
+}
+
+export async function fetchLandlordTenancies(landlordId: string): Promise<TenancyRecord[]> {
+  const snap = await getDocs(query(tenanciesCol, where('landlordId', '==', landlordId)));
+  return snap.docs.map((d) => mapTenancy(d.id, d.data())).sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export async function fetchTenancy(id: string): Promise<TenancyRecord | null> {
+  const snap = await getDoc(doc(tenanciesCol, id));
+  return snap.exists() ? mapTenancy(snap.id, snap.data()) : null;
+}
+
+export async function fetchPayments(tenancyId: string): Promise<PaymentRecord[]> {
+  const snap = await getDocs(query(collection(tenanciesCol, tenancyId, 'payments'), orderBy('date', 'desc')));
+  return snap.docs.map((p) => {
+    const d = p.data();
+    return {
+      id: p.id,
+      amountPence: Number(d.amountPence ?? 0),
+      date: toMillis(d.date),
+      method: d.method ? String(d.method) : undefined,
+      note: d.note ? String(d.note) : undefined,
+    };
+  });
+}
+
+export async function addRentPayment(
+  tenancyId: string,
+  payment: { amountPence: number; date: number; method?: string; note?: string },
+): Promise<void> {
+  await addDoc(collection(tenanciesCol, tenancyId, 'payments'), {
+    amountPence: payment.amountPence,
+    date: Timestamp.fromMillis(payment.date),
+    ...(payment.method ? { method: payment.method } : {}),
+    ...(payment.note ? { note: payment.note } : {}),
+    createdAt: serverTimestamp(),
+  });
+  // Keep the denormalised running total in step so list views stay cheap.
+  await updateDoc(doc(tenanciesCol, tenancyId), { totalPaidPence: increment(payment.amountPence) });
+}
+
+export async function endTenancy(id: string): Promise<void> {
+  await updateDoc(doc(tenanciesCol, id), { status: 'ended' });
+}
+
+/** Every rent payment across a landlord's tenancies, as finance income entries. */
+export async function fetchLandlordRentPayments(landlordId: string): Promise<FinanceEntry[]> {
+  const tenancies = await fetchLandlordTenancies(landlordId);
+  const perTenancy = await Promise.all(tenancies.map((t) => fetchPayments(t.id)));
+  return perTenancy.flat().map((p) => ({ date: p.date, amountPence: p.amountPence }));
+}
+
+/* ---- expenses & finances (Phase 2 — Self Assessment / MTD) ---- */
+
+export interface ExpenseRecord extends ExpenseEntry {
+  id: string;
+  landlordId: string;
+  listingId?: string;
+  propertyLabel?: string;
+  note?: string;
+}
+
+export interface NewExpenseInput {
+  landlordId: string;
+  listingId?: string;
+  propertyLabel?: string;
+  date: number;
+  amountPence: number;
+  category: ExpenseCategory;
+  note?: string;
+}
+
+const expensesCol = collection(db, 'expenses');
+
+export async function createExpense(input: NewExpenseInput): Promise<{ id: string }> {
+  const ref = await addDoc(expensesCol, {
+    landlordId: input.landlordId,
+    date: Timestamp.fromMillis(input.date),
+    amountPence: input.amountPence,
+    category: input.category,
+    ...(input.listingId ? { listingId: input.listingId } : {}),
+    ...(input.propertyLabel ? { propertyLabel: input.propertyLabel } : {}),
+    ...(input.note ? { note: input.note } : {}),
+    createdAt: serverTimestamp(),
+  });
+  return { id: ref.id };
+}
+
+export async function fetchLandlordExpenses(landlordId: string): Promise<ExpenseRecord[]> {
+  const snap = await getDocs(query(expensesCol, where('landlordId', '==', landlordId)));
+  return snap.docs
+    .map((d) => {
+      const x = d.data();
+      return {
+        id: d.id,
+        landlordId,
+        date: toMillis(x.date),
+        amountPence: Number(x.amountPence ?? 0),
+        category: (x.category ?? 'other') as ExpenseCategory,
+        listingId: x.listingId ? String(x.listingId) : undefined,
+        propertyLabel: x.propertyLabel ? String(x.propertyLabel) : undefined,
+        note: x.note ? String(x.note) : undefined,
+      };
+    })
+    .sort((a, b) => b.date - a.date);
+}
+
+export async function deleteExpense(id: string): Promise<void> {
+  await deleteDoc(doc(expensesCol, id));
+}
+
+/* ---- agencies (agent tier) ---- */
+
+export interface Agency {
+  id: string;
+  ownerId: string;
+  name: string;
+  memberIds: string[];
+  memberEmails: Record<string, string>;
+  clientLandlordIds: string[];
+}
+
+const agenciesCol = collection(db, 'agencies');
+
+function mapAgency(id: string, d: Record<string, unknown>): Agency {
+  return {
+    id,
+    ownerId: String(d.ownerId ?? ''),
+    name: String(d.name ?? 'Agency'),
+    memberIds: Array.isArray(d.memberIds) ? (d.memberIds as string[]) : [],
+    memberEmails: (d.memberEmails as Record<string, string>) ?? {},
+    clientLandlordIds: Array.isArray(d.clientLandlordIds) ? (d.clientLandlordIds as string[]) : [],
+  };
+}
+
+/** The agency this user owns (if any), looked up via their profile. */
+export async function fetchOwnedAgency(uid: string): Promise<Agency | null> {
+  const ownedId = (await getDoc(doc(usersCol, uid))).data()?.ownedAgencyId as string | undefined;
+  if (!ownedId) return null;
+  const snap = await getDoc(doc(agenciesCol, ownedId));
+  return snap.exists() ? mapAgency(snap.id, snap.data()) : null;
+}
+
+/** The agency this user belongs to — owned, or one they're a member of. */
+export async function fetchAgencyForUser(uid: string): Promise<Agency | null> {
+  const owned = await fetchOwnedAgency(uid);
+  if (owned) return owned;
+  const snap = await getDocs(query(agenciesCol, where('memberIds', 'array-contains', uid)));
+  return snap.empty ? null : mapAgency(snap.docs[0].id, snap.docs[0].data());
+}
+
+/** The agencyId this landlord has connected to (if any). */
+export async function fetchConnectedAgencyId(uid: string): Promise<string | null> {
+  return ((await getDoc(doc(usersCol, uid))).data()?.agencyId as string | undefined) ?? null;
+}
+
+export interface ClientPortfolio {
+  landlordId: string;
+  landlordName: string;
+  listings: Listing[];
+  tenancies: TenancyRecord[];
+}
+
+/** Fetch one client landlord's portfolio (agency members are permitted to read it). */
+export async function fetchClientPortfolio(landlordId: string): Promise<ClientPortfolio> {
+  const [profile, listings, tenancies] = await Promise.all([
+    getDoc(doc(usersCol, landlordId)),
+    fetchLandlordListings(landlordId),
+    fetchLandlordTenancies(landlordId),
+  ]);
+  return {
+    landlordId,
+    landlordName: String(profile.data()?.displayName ?? 'Landlord'),
+    listings,
+    tenancies,
   };
 }

@@ -20,8 +20,11 @@ export default function Layout() {
           { to: '/account', ic: '👤', label: 'Account', end: false },
         ]
       : [
-          { to: '/landlord', ic: '🏠', label: 'Listings', end: true },
-          { to: '/chats', ic: '💬', label: 'Enquiries', end: false },
+          { to: '/landlord', ic: '⌂', label: 'Home', end: true },
+          { to: '/landlord/compliance', ic: '🛡️', label: 'Compliance', end: false },
+          { to: '/landlord/rent', ic: '💷', label: 'Rent', end: false },
+          { to: '/landlord/finances', ic: '📊', label: 'Finances', end: false },
+          { to: '/chats', ic: '💬', label: 'Deals', end: false },
           { to: '/account', ic: '👤', label: 'Account', end: false },
         ];
 

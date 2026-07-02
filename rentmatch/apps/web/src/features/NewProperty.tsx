@@ -26,6 +26,7 @@ export default function NewProperty() {
     const f = new FormData(e.currentTarget);
     const input: NewListingInput = {
       landlordId: user.uid,
+      landlordName: user.displayName ?? 'Landlord',
       title: String(f.get('title') ?? '').trim(),
       street: String(f.get('street') ?? '').trim(),
       area: String(f.get('area') ?? '').trim(),
@@ -48,37 +49,37 @@ export default function NewProperty() {
   return (
     <>
       <div className="row center" style={{ gap: 10, margin: '2px 0 12px' }}>
-        <div className="back" onClick={() => navigate('/landlord')}>‹</div>
+        <button type="button" className="back" aria-label="Back" onClick={() => navigate('/landlord/listings')}>‹</button>
         <b style={{ fontSize: 18 }}>Advertise a property</b>
       </div>
 
       <form onSubmit={submit}>
-        <div className="field"><label>Headline</label>
-          <input name="title" required placeholder="Bright 2-bed flat near the park" /></div>
-        <div className="field"><label>Street address</label>
-          <input name="street" required placeholder="14 Mapledene Road" /></div>
+        <div className="field"><label htmlFor="np-title">Headline</label>
+          <input id="np-title" name="title" required placeholder="Bright 2-bed flat near the park" /></div>
+        <div className="field"><label htmlFor="np-street">Street address</label>
+          <input id="np-street" name="street" required placeholder="14 Mapledene Road" /></div>
         <div className="two">
-          <div className="field"><label>Area</label><input name="area" required placeholder="Hackney" /></div>
-          <div className="field"><label>City</label><input name="city" required placeholder="London" /></div>
+          <div className="field"><label htmlFor="np-area">Area</label><input id="np-area" name="area" required placeholder="Hackney" /></div>
+          <div className="field"><label htmlFor="np-city">City</label><input id="np-city" name="city" required placeholder="London" /></div>
         </div>
         <div className="two">
-          <div className="field"><label>Postcode</label><input name="postcode" required placeholder="E8 3JN" /></div>
-          <div className="field"><label>Type</label>
-            <select name="type"><option>Flat</option><option>House</option><option>Studio</option><option>Maisonette</option><option>Room</option></select></div>
+          <div className="field"><label htmlFor="np-postcode">Postcode</label><input id="np-postcode" name="postcode" required placeholder="E8 3JN" /></div>
+          <div className="field"><label htmlFor="np-type">Type</label>
+            <select id="np-type" name="type"><option>Flat</option><option>House</option><option>Studio</option><option>Maisonette</option><option>Room</option></select></div>
         </div>
         <div className="two">
-          <div className="field"><label>Bedrooms</label><input name="beds" type="number" defaultValue={2} min={0} /></div>
-          <div className="field"><label>Bathrooms</label><input name="baths" type="number" defaultValue={1} min={1} /></div>
+          <div className="field"><label htmlFor="np-beds">Bedrooms</label><input id="np-beds" name="beds" type="number" defaultValue={2} min={0} /></div>
+          <div className="field"><label htmlFor="np-baths">Bathrooms</label><input id="np-baths" name="baths" type="number" defaultValue={1} min={1} /></div>
         </div>
         <div className="two">
-          <div className="field"><label>Rent (£ / month)</label><input name="rent" type="number" required defaultValue={1500} /></div>
-          <div className="field"><label>EPC rating</label>
-            <select name="epc" defaultValue="C"><option>A</option><option>B</option><option>C</option><option>D</option><option>E</option><option>F</option><option>G</option></select></div>
+          <div className="field"><label htmlFor="np-rent">Rent (£ / month)</label><input id="np-rent" name="rent" type="number" required defaultValue={1500} /></div>
+          <div className="field"><label htmlFor="np-epc">EPC rating</label>
+            <select id="np-epc" name="epc" defaultValue="C"><option>A</option><option>B</option><option>C</option><option>D</option><option>E</option><option>F</option><option>G</option></select></div>
         </div>
-        <div className="field"><label>Furnishing</label>
-          <select name="furnished"><option>Furnished</option><option>Unfurnished</option><option>Part-furnished</option></select></div>
-        <div className="field"><label>Description</label>
-          <textarea name="desc" placeholder="What makes this home special…" /></div>
+        <div className="field"><label htmlFor="np-furnished">Furnishing</label>
+          <select id="np-furnished" name="furnished"><option>Furnished</option><option>Unfurnished</option><option>Part-furnished</option></select></div>
+        <div className="field"><label htmlFor="np-desc">Description</label>
+          <textarea id="np-desc" name="desc" placeholder="What makes this home special…" /></div>
 
         <div className="section-t">Compliance declarations</div>
         <div className="card"><div className="body">

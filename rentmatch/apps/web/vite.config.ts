@@ -8,9 +8,9 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'Apex — UK lettings',
+        name: 'Apex — the UK landlord OS',
         short_name: 'Apex',
-        description: 'Landlords advertise property, renters find a home.',
+        description: 'Compliance autopilot, rent tracking and tax-ready finances for UK landlords.',
         start_url: '/',
         display: 'standalone',
         background_color: '#0b0f1a',

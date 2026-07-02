@@ -1,5 +1,5 @@
 import { getFunctions, httpsCallable, connectFunctionsEmulator } from 'firebase/functions';
-import type { ComplianceCheck } from '@rentmatch/shared';
+import type { ComplianceCheck, PlanId } from '@rentmatch/shared';
 import { app } from './firebase';
 
 export const functions = getFunctions(app);
@@ -54,4 +54,55 @@ export const registerPushToken = httpsCallable<{ token: string }, { ok: boolean 
 export const requestDataErasure = httpsCallable<void, { ok: boolean }>(
   functions,
   'requestDataErasure',
+);
+
+/** Start a Stripe Checkout session for a recurring subscription; returns a redirect URL. */
+export const createBillingCheckoutSession = httpsCallable<{ plan: PlanId; units?: number }, { url: string | null }>(
+  functions,
+  'createBillingCheckoutSession',
+);
+
+/** Open the Stripe billing portal to manage or cancel the subscription. */
+export const createBillingPortalSession = httpsCallable<void, { url: string }>(
+  functions,
+  'createBillingPortalSession',
+);
+
+/** Start GoCardless Direct Debit setup for a tenancy; returns a hosted auth URL. */
+export const createDirectDebitSetup = httpsCallable<{ tenancyId: string }, { url: string }>(
+  functions,
+  'createDirectDebitSetup',
+);
+
+/** Agent creates their agency (idempotent); returns its id (the share code). */
+export const createAgency = httpsCallable<{ name: string }, { agencyId: string }>(functions, 'createAgency');
+
+/** Landlord connects their own portfolio to an agency by code. */
+export const connectToAgency = httpsCallable<{ agencyId: string }, { ok: boolean; agencyName: string }>(
+  functions, 'connectToAgency',
+);
+
+/** Landlord disconnects from their agency. */
+export const disconnectFromAgency = httpsCallable<void, { ok: boolean }>(functions, 'disconnectFromAgency');
+
+/** Agency owner adds a teammate by email (seat-enforced). */
+export const addAgencyMember = httpsCallable<{ email: string }, { ok: boolean }>(functions, 'addAgencyMember');
+
+/** Agency owner removes a teammate. */
+export const removeAgencyMember = httpsCallable<{ memberUid: string }, { ok: boolean }>(functions, 'removeAgencyMember');
+
+/** Landlord proposes a tenancy renewal (new term + rent). */
+export const createRenewal = httpsCallable<
+  { tenancyId: string; startDate: number; termMonths: number; monthlyRentPence: number },
+  { ok: boolean }
+>(functions, 'createRenewal');
+
+/** Record a renewal signature (landlord or tenant). */
+export const recordRenewalSignature = httpsCallable<
+  { tenancyId: string; party: 'landlord' | 'tenant' }, { status: string }
+>(functions, 'recordRenewalSignature');
+
+/** Complete a signed renewal: charge the £100 fee and start the new term. */
+export const confirmRenewal = httpsCallable<{ tenancyId: string }, { newTenancyId: string }>(
+  functions, 'confirmRenewal',
 );
