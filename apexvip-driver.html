@@ -411,9 +411,10 @@ function mapJob(doc){
 }
 
 function setupDriverListeners(uid){
+  loadDriverFeedback();
   // Live driver document statuses
   db.collection('drivers').doc(uid).onSnapshot(snap=>{
-    if(snap.exists){ S._driverDocs = snap.data().documents || {}; S._compliance = snap.data().compliance || null; S._payout = snap.data().payout || null; }
+    if(snap.exists){ S._driverDocs = snap.data().documents || {}; S._compliance = snap.data().compliance || null; S._payout = snap.data().payout || null; S._availability = snap.data().availability || S._availability || null; }
     const el = document.getElementById('docs-list');
     if(el) renderDocsList();
   });
@@ -643,6 +644,46 @@ async function setupPayouts(){
     // Refresh status shortly after they return.
     setTimeout(()=>{ fns.httpsCallable('getDriverPayoutStatus')({}).catch(()=>{}); }, 1500);
   }catch(e){ showToast('Could not start payout setup: '+(e.message||e.code||''),'error'); }
+}
+
+// Save the weekly availability schedule to the driver's record.
+async function saveAvailability(){
+  const days=['mon','tue','wed','thu','fri','sat','sun'];
+  const av={};
+  days.forEach(d=>{
+    av[d]={
+      on: !!document.getElementById('av_on_'+d)?.checked,
+      from: document.getElementById('av_from_'+d)?.value||'07:00',
+      to: document.getElementById('av_to_'+d)?.value||'19:00'
+    };
+  });
+  S._availability=av;
+  if(FIREBASE_ENABLED&&_driverId){
+    try{ await db.collection('drivers').doc(_driverId).set({availability:av},{merge:true}); }
+    catch(e){ showToast('Could not save: '+(e.message||e.code),'error'); return; }
+  }
+  showToast('Availability saved','success');
+  go('profile');
+}
+
+// Load this driver's client-rated trips (for the Ratings screen) and payout
+// ledger (for the Earnings screen). Equality-only queries — no index needed.
+function loadDriverFeedback(){
+  if(!FIREBASE_ENABLED||!_driverId) return;
+  db.collection('bookings').where('driverId','==',_driverId).where('status','==','completed').limit(100).get().then(snap=>{
+    S._myRatedTrips=snap.docs.map(d=>d.data()).filter(b=>b.rating).map(b=>({
+      rating:Number(b.rating)||0,
+      route:[b.pickup,b.dropoff||b.airport].filter(Boolean).join(' → '),
+      date:b.date||'', comment:b.ratingComment||''
+    }));
+    if(S.screen==='ratings')render();
+  }).catch(()=>{});
+  db.collection('driver_payouts').where('driverId','==',_driverId).limit(100).get().then(snap=>{
+    const rows=snap.docs.map(d=>d.data());
+    rows.sort((a,b)=>(b.createdAt?.toMillis?.()||0)-(a.createdAt?.toMillis?.()||0));
+    S._payoutLedger=rows;
+    if(S.screen==='earnings')render();
+  }).catch(()=>{});
 }
 
 async function doUploadDoc(type, input){
@@ -1348,6 +1389,19 @@ earnings:()=>{
       <div class="section-label" style="margin-bottom:14px">Payout Details</div>
       ${[['Payment Schedule','Weekly — Mondays'],['Next Payout','Monday 2 June'],['Bank Account','Lloyds ••••1234']].map(([l,v],i)=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:9px 0;border-bottom:${i<2?'1px solid var(--divider)':'none'}"><span style="color:var(--fg-dim)">${l}</span><span style="color:${i===1?'#C8A97E':'var(--fg)'};font-weight:${i===1?700:400}">${v}</span></div>`).join('')}
     </div>
+    ${(()=>{const led=S._payoutLedger||[];if(!led.length)return'';
+      const owed=led.filter(x=>x.status==='owed').reduce((s,x)=>s+(Number(x.amount)||0),0);
+      return`<div class="card" style="margin-top:12px">
+      <div class="section-label" style="margin-bottom:14px">Payout History</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:12px;border-bottom:1px solid var(--divider);margin-bottom:6px">
+        <span style="font-size:13px;color:var(--fg-dim)">Balance owed</span>
+        <span style="font-size:20px;font-weight:800;color:#C8A97E">£${owed}</span>
+      </div>
+      ${led.slice(0,15).map(x=>`<div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:9px 0;border-bottom:1px solid var(--divider)">
+        <div><div style="font-weight:600">${x.bookingRef||'Trip'}</div><div style="font-size:11px;color:var(--fg-subtle)">${x.createdAt?.toDate?x.createdAt.toDate().toLocaleDateString('en-GB',{day:'2-digit',month:'short'}):''}</div></div>
+        <div style="text-align:right"><div style="font-weight:700">£${x.amount||0}</div><div style="font-size:11px;color:${x.status==='paid'?'#22c55e':'#e3b341'}">${x.status==='paid'?'✓ Paid':'Owed'}</div></div>
+      </div>`).join('')}
+    </div>`;})()}
     <div class="card" style="margin-top:12px">
       <div class="section-label" style="margin-bottom:14px">ApexCoin</div>
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
@@ -1427,7 +1481,7 @@ profile:()=>`<div class="screen">
     <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="rgba(200,169,126,.4)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
   </div>
   <div class="card" style="margin-bottom:12px">
-    ${[{icon:'📄',l:'Documents',a:"go('documents')"},{icon:'🏦',l:(S._payout&&S._payout.payoutsEnabled?'Payouts · active':'Set up payouts'),a:"setupPayouts()"},{icon:'📅',l:'Availability Schedule',a:''},{icon:'⭐',l:'Ratings & Reviews',a:''}].map((r,i,a)=>`<div class="menu-row" onclick="${r.a}">
+    ${[{icon:'📄',l:'Documents',a:"go('documents')"},{icon:'🏦',l:(S._payout&&S._payout.payoutsEnabled?'Payouts · active':'Set up payouts'),a:"setupPayouts()"},{icon:'📅',l:'Availability Schedule',a:"go('availability')"},{icon:'⭐',l:'Ratings & Reviews',a:"go('ratings')"}].map((r,i,a)=>`<div class="menu-row" onclick="${r.a}">
       <div style="display:flex;align-items:center;gap:12px"><span style="font-size:18px">${r.icon}</span><span style="font-size:15px">${r.l}</span></div>
       <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
     </div>`).join('')}
@@ -1558,6 +1612,74 @@ documents:()=>{
     </div>
     <button class="btn btn-gold" style="width:100%;max-width:280px" onclick="go('home')">Back to Home</button>
     <div style="height:20px"></div>
+  </div>`;
+},
+
+availability:()=>{
+  const av = S._availability || {};
+  const days = ['mon','tue','wed','thu','fri','sat','sun'];
+  const labels = {mon:'Monday',tue:'Tuesday',wed:'Wednesday',thu:'Thursday',fri:'Friday',sat:'Saturday',sun:'Sunday'};
+  const hours = Array.from({length:24},(_,h)=>`${String(h).padStart(2,'0')}:00`);
+  return `<div class="screen">
+    <div class="top-bar">
+      <button onclick="go('profile')" style="background:none;border:none;color:var(--fg);cursor:pointer;padding:0;display:flex;align-items:center"><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg></button>
+      <div style="font-size:22px;font-weight:700">Availability</div><div style="width:20px"></div>
+    </div>
+    <div style="font-size:13px;color:var(--fg-dim);line-height:1.6;margin-bottom:18px">Set the days and hours you plan to drive. Dispatch uses this to prioritise who sees new jobs first — you can still go online any time.</div>
+    ${days.map(d=>{
+      const day = av[d] || {on:['mon','tue','wed','thu','fri'].includes(d),from:'07:00',to:'19:00'};
+      return `<div class="card" style="margin-bottom:10px;display:flex;align-items:center;gap:12px;padding:14px 16px">
+        <label style="display:flex;align-items:center;gap:10px;flex:1;cursor:pointer">
+          <input type="checkbox" id="av_on_${d}" ${day.on?'checked':''} onchange="document.getElementById('av_hours_${d}').style.opacity=this.checked?'1':'.3'"/>
+          <span style="font-size:15px;font-weight:600">${labels[d]}</span>
+        </label>
+        <div id="av_hours_${d}" style="display:flex;align-items:center;gap:6px;opacity:${day.on?'1':'.3'}">
+          <select id="av_from_${d}" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--fg);padding:6px 8px;font-size:13px;font-family:inherit">${hours.map(h=>`<option ${h===day.from?'selected':''}>${h}</option>`).join('')}</select>
+          <span style="color:var(--fg-subtle);font-size:12px">–</span>
+          <select id="av_to_${d}" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--fg);padding:6px 8px;font-size:13px;font-family:inherit">${hours.map(h=>`<option ${h===day.to?'selected':''}>${h}</option>`).join('')}</select>
+        </div>
+      </div>`;
+    }).join('')}
+    <button class="btn btn-gold" style="width:100%;margin-top:8px" onclick="saveAvailability()">Save Schedule</button>
+    <div style="height:110px"></div>
+  </div>`;
+},
+
+ratings:()=>{
+  const live = S._myRatedTrips || [];
+  const demo = HISTORY.map(h=>({rating:h.rating,route:`${h.pickup} → ${h.dropoff}`,date:h.date,comment:''}));
+  const list = live.length ? live : demo;
+  const rated = list.filter(x=>x.rating);
+  const avg = rated.length ? (rated.reduce((s,x)=>s+x.rating,0)/rated.length) : S.profile.rating;
+  const dist = [5,4,3,2,1].map(n=>({n,c:rated.filter(x=>Math.round(x.rating)===n).length}));
+  const maxC = Math.max(1,...dist.map(d=>d.c));
+  return `<div class="screen">
+    <div class="top-bar">
+      <button onclick="go('profile')" style="background:none;border:none;color:var(--fg);cursor:pointer;padding:0;display:flex;align-items:center"><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg></button>
+      <div style="font-size:22px;font-weight:700">Ratings & Reviews</div><div style="width:20px"></div>
+    </div>
+    <div style="text-align:center;padding:10px 0 20px">
+      <div style="font-size:52px;font-weight:800;color:#C8A97E;line-height:1">${avg.toFixed(1)}</div>
+      <div style="font-size:20px;color:#C8A97E;margin:6px 0 2px">${stars(Math.round(avg))}</div>
+      <div style="font-size:13px;color:var(--fg-subtle)">${rated.length||S.profile.trips||0} rated trips</div>
+    </div>
+    <div class="card" style="margin-bottom:12px">
+      ${dist.map(({n,c})=>`<div style="display:flex;align-items:center;gap:10px;padding:4px 0">
+        <span style="font-size:12px;color:var(--fg-dim);width:26px">${n} ★</span>
+        <div style="flex:1;height:7px;background:var(--surface-c);border-radius:4px;overflow:hidden"><div style="width:${Math.round(c/maxC*100)}%;height:100%;background:#C8A97E;border-radius:4px"></div></div>
+        <span style="font-size:12px;color:var(--fg-subtle);width:20px;text-align:right">${c}</span>
+      </div>`).join('')}
+    </div>
+    <div class="section-label" style="margin-bottom:10px">Recent reviews</div>
+    ${rated.slice(0,20).map(x=>`<div class="card" style="margin-bottom:10px;padding:14px 16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <span style="color:#C8A97E;font-size:14px">${stars(Math.round(x.rating))}</span>
+        <span style="font-size:12px;color:var(--fg-subtle)">${x.date||''}</span>
+      </div>
+      <div style="font-size:13px;color:var(--fg-dim)">${x.route||''}</div>
+      ${x.comment?`<div style="font-size:13px;color:var(--fg);margin-top:8px;line-height:1.5;font-style:italic">“${x.comment}”</div>`:''}
+    </div>`).join('')||'<div style="text-align:center;padding:30px;color:var(--fg-subtle);font-size:13px">No reviews yet — they appear after clients rate completed trips.</div>'}
+    <div style="height:110px"></div>
   </div>`;
 },
 

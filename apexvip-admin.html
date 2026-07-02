@@ -1169,8 +1169,18 @@ map: () => `<div class="screen" style="padding:0;height:calc(100vh - 60px);posit
 </div>`,
 
 audit: () => `<div class="screen">
-  <div class="section-header"><div class="section-title">Audit Log</div></div>
+  <div class="section-header"><div class="section-title">Audit Log</div>
+    <button class="btn btn-glass btn-sm" onclick="exportAuditCsv()">⬇ Export CSV</button>
+  </div>
   <div style="font-size:12px;color:var(--fg-subtle);margin:-6px 0 14px">Append-only record of staff actions — dispatch, compliance, vehicles and payouts. Cannot be edited or deleted.</div>
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+    <label style="font-size:11px;color:var(--fg-subtle);letter-spacing:.5px">FROM</label>
+    <input type="date" id="audit-from" value="${S._auditFrom||''}" style="font-size:12px"/>
+    <label style="font-size:11px;color:var(--fg-subtle);letter-spacing:.5px">TO</label>
+    <input type="date" id="audit-to" value="${S._auditTo||''}" style="font-size:12px"/>
+    <button class="btn btn-glass btn-sm" onclick="S._auditFrom=document.getElementById('audit-from').value;S._auditTo=document.getElementById('audit-to').value;loadAudit()">Apply</button>
+    <button class="btn btn-glass btn-sm" onclick="S._auditFrom='';S._auditTo='';render();setTimeout(loadAudit,50)">Clear</button>
+  </div>
   <div id="audit-list"><div style="text-align:center;padding:40px;color:var(--fg-4);font-size:13px">Loading…</div></div>
 </div>`,
 
@@ -1830,8 +1840,13 @@ function loadAudit(){
   const el=document.getElementById('audit-list');
   if(!el) return;
   if(!FIREBASE_ENABLED){ el.innerHTML='<div style="text-align:center;padding:40px;color:var(--fg-4);font-size:13px">No audit entries (demo mode)</div>'; return; }
-  db.collection('audit_log').orderBy('ts','desc').limit(100).get().then(snap=>{
-    if(snap.empty){ el.innerHTML='<div style="text-align:center;padding:40px;color:var(--fg-4);font-size:13px">No actions recorded yet</div>'; return; }
+  let q=db.collection('audit_log');
+  // Range filter + orderBy on the same field (ts) — no composite index needed.
+  if(S._auditFrom) q=q.where('ts','>=',new Date(S._auditFrom+'T00:00:00'));
+  if(S._auditTo)   q=q.where('ts','<=',new Date(S._auditTo+'T23:59:59'));
+  q.orderBy('ts','desc').limit(S._auditFrom||S._auditTo?500:100).get().then(snap=>{
+    S._auditRows=snap.docs.map(d=>d.data());
+    if(snap.empty){ el.innerHTML='<div style="text-align:center;padding:40px;color:var(--fg-4);font-size:13px">No actions recorded'+(S._auditFrom||S._auditTo?' in this range':' yet')+'</div>'; return; }
     el.innerHTML=snap.docs.map(d=>{
       const r=d.data(); const when=r.ts&&r.ts.toDate?r.ts.toDate().toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'—';
       return `<div class="card" style="padding:12px 16px;margin-bottom:8px;display:flex;align-items:center;gap:14px">
@@ -1843,6 +1858,22 @@ function loadAudit(){
       </div>`;
     }).join('');
   }).catch(()=>{ el.innerHTML='<div style="color:#ef4444;padding:20px">Could not load audit log</div>'; });
+}
+
+// Export the currently loaded audit rows as CSV (for inspections/records).
+function exportAuditCsv(){
+  const rows=S._auditRows||[];
+  if(!rows.length){ alert('Nothing to export — load some entries first.'); return; }
+  const esc=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const csv=['timestamp,actor,action,target,detail']
+    .concat(rows.map(r=>[
+      r.ts&&r.ts.toDate?r.ts.toDate().toISOString():'',
+      r.actorName||r.actorUid||'', r.action||'', r.target||'', r.detail||''
+    ].map(esc).join(','))).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download='apexvip-audit-'+new Date().toISOString().slice(0,10)+'.csv';
+  a.click(); URL.revokeObjectURL(a.href);
 }
 
 // Driver earnings owed (driver_payouts ledger) — grouped per driver, settled via

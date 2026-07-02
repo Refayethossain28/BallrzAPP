@@ -33,4 +33,6 @@ Admin → **Audit Log**: the latest 100 actions, newest first, with actor + time
 
 ## Future
 - Server-side entries for the driver-side claim and go-online events.
-- Export (CSV) and date-range filtering for inspections.
+
+*(CSV export and date-range filtering shipped — see the Audit Log screen's
+FROM/TO filter and "Export CSV" button.)*

@@ -1900,6 +1900,27 @@ async function cancelBooking(bookingId, docId) {
   go('trips');
 }
 
+// ── Trip rating ───────────────────────────────────────────────────────────
+// Writes the client's rating onto their booking; the driver app aggregates it.
+async function submitTripRating() {
+  const t = state._rateTrip;
+  if (!t) { state._rateOpen = false; render(); return; }
+  const rating = state._rateStars || 5;
+  const comment = (document.getElementById('rate-comment')?.value || '').trim().slice(0, 500);
+  if (FIREBASE_ENABLED && t.docId) {
+    try {
+      await db.collection('bookings').doc(t.docId).update({
+        rating, ratingComment: comment, ratedAt: firebase.firestore.FieldValue.serverTimestamp(), ratedBy: 'client'
+      });
+    } catch (e) { /* keep the local update so the UI reflects intent */ }
+  }
+  const local = TRIPS.find(x => x.id === t.id);
+  if (local) local.myRating = rating;
+  state._rateOpen = false; state._rateComment = '';
+  track && track('trip_rated', { rating, src: 'client' });
+  render();
+}
+
 // ── ETA Countdown ─────────────────────────────────────────────────────────
 let _etaTimer = null;
 function startEtaCountdown() {
@@ -3345,6 +3366,8 @@ trips: () => {
         <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px">
           <span style="color:var(--fg-3)">${t.vehicle}</span>
           <div style="display:flex;align-items:center;gap:8px">
+            ${t.status==='completed'&&!t.myRating?`<button onclick="event.stopPropagation();state._rateTrip=TRIPS.find(x=>x.id==='${t.id}');state._rateStars=5;state._rateOpen=true;render()" style="background:var(--gold-3,rgba(200,169,126,.12));border:1px solid var(--gold-2,rgba(200,169,126,.3));color:var(--gold,#C8A97E);padding:6px 12px;border-radius:10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">★ Rate</button>`:''}
+            ${t.status==='completed'&&t.myRating?`<span style="color:var(--gold,#C8A97E);font-size:12px;letter-spacing:1px">${'★'.repeat(Math.round(t.myRating))}</span>`:''}
             ${t.status==='completed'?`<button onclick="event.stopPropagation();state._lastTrip=TRIPS.find(x=>x.id==='${t.id}');go('receipt')" style="background:var(--surface-2);border:1px solid var(--border);color:var(--fg);padding:6px 12px;border-radius:10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Receipt</button>`:''}
             ${t.status!=='completed'&&t.status!=='cancelled'?`<button onclick="event.stopPropagation();state._cancelRef='${t.id}';state._cancelDocId='${t._docId||''}';state._cancelOpen=true;render()" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);color:#ef4444;padding:6px 12px;border-radius:10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Cancel</button>`:''}
             <span style="font-weight:800;color:#ffffff">${t.price}</span>
@@ -3371,6 +3394,19 @@ trips: () => {
     </div>
     <button onclick="cancelBooking(state._cancelRef, state._cancelDocId)" class="btn" style="width:100%;padding:14px;background:#ef4444;border:none;border-radius:14px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:10px;font-family:inherit">Confirm cancellation</button>
     <button onclick="state._cancelOpen=false;render()" class="btn btn-glass" style="width:100%;padding:14px">Keep booking</button>
+  </div>
+</div>` : ''}
+  ${state._rateOpen ? `
+<div style="position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:500;display:flex;align-items:flex-end;justify-content:center" onclick="state._rateOpen=false;render()">
+  <div style="background:var(--bg);border-radius:24px 24px 0 0;border:1px solid var(--border);width:100%;max-width:480px;padding:28px;animation:slideUp .25s ease" onclick="event.stopPropagation()">
+    <div style="font-size:18px;font-weight:700;margin-bottom:4px">How was your journey?</div>
+    <div style="font-size:13px;color:var(--fg-3);margin-bottom:18px">${state._rateTrip?state._rateTrip.pickup+' → '+state._rateTrip.dropoff:''}${state._rateTrip&&state._rateTrip.driver&&state._rateTrip.driver!=='TBA'?' · with '+state._rateTrip.driver:''}</div>
+    <div style="display:flex;justify-content:center;gap:10px;margin-bottom:20px">
+      ${[1,2,3,4,5].map(n=>`<span onclick="state._rateStars=${n};render()" style="font-size:38px;cursor:pointer;color:${n<=(state._rateStars||5)?'var(--gold,#C8A97E)':'var(--fg-6,rgba(255,255,255,.15))'};transition:color .15s">★</span>`).join('')}
+    </div>
+    <textarea id="rate-comment" placeholder="Add a comment for your chauffeur (optional)" style="width:100%;min-height:70px;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;color:var(--fg);font-size:14px;font-family:inherit;outline:none;resize:vertical;margin-bottom:16px">${state._rateComment||''}</textarea>
+    <button onclick="submitTripRating()" class="btn btn-gold" style="width:100%;padding:14px;margin-bottom:10px">Submit rating</button>
+    <button onclick="state._rateOpen=false;render()" class="btn btn-glass" style="width:100%;padding:14px">Not now</button>
   </div>
 </div>` : ''}
   ${bottomNav('trips')}
@@ -5629,6 +5665,7 @@ if(FIREBASE_ENABLED){
               date:d.date||'',time:d.time||'',vehicle:d.vehicle||'Mercedes S-Class',
               status:dispStatus,rawStatus:raw,price:'£'+(d.price||0),
               driver:d.driverName||'TBA',driverId:d.driverId||null,rating:d.driverRating||4.9,
+              myRating:d.rating||null,
               plate:d.driverPlate||'',flight:d.flight||''
             });
           });
