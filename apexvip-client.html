@@ -1092,19 +1092,13 @@ let state = {
 })();
 
 document.body.classList.toggle('light', state.theme === 'light');
-let TRIPS = [
-  {id:'APX-4821',service:'Airport Transfer',pickup:'Heathrow Terminal 5',dropoff:'Mayfair, London W1',date:'29 May 2026',time:'14:30',vehicle:'Mercedes S-Class',status:'upcoming',price:'£185',driver:'James H.',rating:4.9,plate:'LX73 ABC',flight:'BA0247'},
-  {id:'APX-4788',service:'Airport Transfer',pickup:'Mayfair, London W1',dropoff:'Gatwick North Terminal',date:'24 May 2026',time:'06:15',vehicle:'Mercedes V-Class',status:'completed',price:'£225',driver:'Michael T.',rating:4.8,plate:'LX72 DEF'},
-  {id:'APX-4751',service:'By the Hour',pickup:'Knightsbridge',dropoff:'—',date:'18 May 2026',time:'10:00',vehicle:'Mercedes S-Class',status:'completed',price:'£260',driver:'David K.',rating:4.7,plate:'LX71 GHI'},
-];
+// Real bookings only — populated live from Firestore for the signed-in client.
+let TRIPS = [];
 
-const NOTIFS = [
-  {id:1,icon:'🚗',title:'Driver Assigned',body:"James Harrison will be your chauffeur for tomorrow's trip.",time:'2h ago',read:false},
-  {id:2,icon:'✅',title:'Booking Confirmed',body:'Your Airport Transfer on 29 May is confirmed. Ref: APX-4821',time:'2h ago',read:false},
-  {id:3,icon:'⭐',title:'Exclusive Offer',body:'Enjoy 20% off your next booking with code APEX20.',time:'1d ago',read:true},
-];
+const NOTIFS = []; // populated in-session from real booking events only
 
-const RECENT = ['Heathrow Terminal 5','Mayfair, London W1','Gatwick North Terminal','Canary Wharf E14'];
+// Recent places — derived from the client's real trips (no seeds).
+function recentPlaces(){return [...new Set(TRIPS.flatMap(t=>[t.dropoff,t.pickup]).filter(x=>x&&x!=='—'))].slice(0,4);}
 
 const POIS = [
   // London — Hotels
@@ -2168,19 +2162,11 @@ function generateMemberNumber() {
 }
 
 // ── Feature 2: Flight tracking ─────────────────────────────────────────────
-const DEMO_TRACKED_FLIGHTS = [
-  {flight:'BA0247',from:'New York JFK',city:'New York',iata:'JFK',terminal:'T4',belt:'7',dep:'09:30',arr:'14:18',arrOrig:'14:45',duration:'7h 15m',status:'early',statusLabel:'EXPECTED AT 14:18',updated:'14:09'},
-  {flight:'EK006',from:'Dubai DXB',city:'Dubai',iata:'DXB',terminal:'T3',belt:'12',dep:'08:00',arr:'13:55',arrOrig:'13:55',duration:'7h 55m',status:'on-time',statusLabel:'ON TIME',updated:'13:40'},
-  {flight:'QR002',from:'Doha DOH',city:'Doha',iata:'DOH',terminal:'T4',belt:'--',dep:'06:45',arr:'12:30',arrOrig:'12:00',duration:'7h 15m',status:'delayed',statusLabel:'DELAYED — NEW ARR 12:30',updated:'12:01'},
-];
+const DEMO_TRACKED_FLIGHTS = []; // real tracked flights only (added by the user)
+// No fabricated statuses — when the live flight API is unreachable we say so.
 function getDemoFlightStatus(flight) {
-  const seed = flight.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-  const delayed = seed % 4 === 0;
-  const delay = delayed ? (seed % 3 === 0 ? 45 : 25) : 0;
-  const base = { flight, terminal: 'T' + ((seed % 5) + 1), gate: String.fromCharCode(65 + seed % 8) + ((seed % 30) + 1), origin: ['New York JFK','Dubai DXB','Paris CDG','Hong Kong HKG','Riyadh RUH'][seed % 5] };
-  return delayed
-    ? { ...base, status: 'Delayed', delay, scheduled: '14:30', estimated: (()=>{const m=14*60+30+delay;return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');})(), adjusted: true }
-    : { ...base, status: 'On Time',  delay: 0, scheduled: '14:30', estimated: '14:30', adjusted: false };
+  return { flight, terminal: '—', gate: '—', origin: '—',
+    status: 'Status unavailable', delay: 0, scheduled: '—', estimated: '—', adjusted: false, unavailable: true };
 }
 async function checkFlight(flight) {
   if (!flight || state._flightChecking) return;
@@ -2227,7 +2213,7 @@ async function addTrackedFlight() {
     const demo = DEMO_TRACKED_FLIGHTS.find(f=>f.flight===num);
     entry = demo || {
       flight: num, from: 'Unknown origin', city: 'Unknown', iata: num.slice(2,5)||'???',
-      terminal: 'T1', belt: '--', dep: '--:--', arr: '--:--', arrOrig: '--:--',
+      terminal: '--', belt: '--', dep: '--:--', arr: '--:--', arrOrig: '--:--',
       duration: '--', status: 'on-time', statusLabel: 'TRACKING', updated: new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})
     };
   }
@@ -2331,9 +2317,7 @@ login: () => {
       New here? <span style="color:#ffffff;cursor:pointer;font-weight:600" onclick="go('register')">Create account</span>
     </div>
   </div>
-  ${!FIREBASE_ENABLED?`<div style="margin-bottom:40px;padding:14px 18px;background:var(--surface);border-radius:14px;border:1px solid var(--border);font-size:12px;color:var(--fg-4);text-align:center;line-height:1.7">
-    Demo mode<br/>client@apexvip.com · password
-  </div>`:''}
+
 </div>`;
 },
 
@@ -2617,8 +2601,8 @@ home: () => {
         <input id="ri_do" placeholder="Dropoff or airport" style="font-size:15px" value="${state.booking.dropoff||''}"/>
       </div>
     </div>
-    <div class="section-label" style="margin-bottom:14px">Recent</div>
-    ${RECENT.map(r=>`
+    ${recentPlaces().length?`<div class="section-label" style="margin-bottom:14px">Recent</div>`:''}
+    ${recentPlaces().map(r=>`
     <div onclick="$('ri_do').value='${r}'" style="display:flex;align-items:center;gap:14px;padding:13px 0;border-bottom:1px solid var(--divider);cursor:pointer">
       <div style="width:36px;height:36px;border-radius:12px;background:var(--surface);display:flex;align-items:center;justify-content:center;flex-shrink:0">
         <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.3)" stroke-width="2"><circle cx="12" cy="10" r="3"/><path stroke-linecap="round" d="M12 21.7C17.3 17 20 13 20 10a8 8 0 10-16 0c0 3 2.7 6.9 8 11.7z"/></svg>
@@ -3497,6 +3481,7 @@ trips: () => {
 
 'trip-detail': () => {
   const t = state.selectedTrip||TRIPS[0];
+  if(!t) return `<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px"><div style="color:var(--fg-3);font-size:14px">No trip selected</div><button class="btn btn-glass" style="max-width:200px" onclick="go('trips')">Back to trips</button></div>`;
   const cancelled = state._tripCancelled===t.id;
   const confirming = state._tripConfirming===t.id;
   const tagCls = cancelled?'tag-red':t.status==='upcoming'?'tag-gold':'tag-gray';
@@ -3815,6 +3800,7 @@ notifications: () => `
     <button onclick="state._allRead=true;render()" style="background:none;border:none;color:#ffffff;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Mark all read</button>
   </div>
   <div style="padding:0 22px;flex:1">
+    ${NOTIFS.length?'':`<div style="text-align:center;padding:60px 20px;color:var(--fg-3)"><div style="font-size:34px;margin-bottom:12px">🔔</div><div style="font-size:15px;font-weight:600;margin-bottom:6px">No notifications</div><div style="font-size:13px;color:var(--fg-4)">Booking updates will appear here.</div></div>`}
     ${NOTIFS.map(n=>{
       const read = state._allRead||n.read;
       return `<div style="display:flex;gap:14px;padding:16px 0;border-bottom:1px solid var(--divider);opacity:${read?.5:1}">
@@ -4792,12 +4778,12 @@ profile: () => {
 
 'year-review': () => {
   const year = new Date().getFullYear() - 1;
-  const journeys = TRIPS.length + 3;
+  const journeys = TRIPS.length;
   const cities = 2;
   const distance = Math.round(journeys * 14.7);
   const saved = (journeys * 0.21 * 14.7).toFixed(1);
   const tier = apexTier(state.apexBalance);
-  const fav = TRIPS[0]?.dropoff || 'Mayfair';
+  const fav = TRIPS[0]?.dropoff || '—';
   return `
 <div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:fadeIn .4s ease">
   <div class="back-row">
@@ -5281,9 +5267,8 @@ async function doLogin(){
   const btn=document.querySelector('[onclick="doLogin()"]');
   if(btn){btn.disabled=true;btn.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="animation:spin .7s linear infinite"><path d="M12 2a10 10 0 0 1 10 10"/></svg>';}
   if(!FIREBASE_ENABLED){
-    await new Promise(r=>setTimeout(r,800));
-    if(e==='client@apexvip.com'&&p==='password'){state.user={name:'Alexandra Stone',email:e};state._loginErr=null;track('user_login',{method:'demo',src:'client'});haptic('success');loginTransition();}
-    else{state._loginErr='Invalid email or password.';haptic('error');render();}
+    // Real accounts only — sign-in requires the live backend.
+    state._loginErr='Sign-in requires a connection. Please try again online.';haptic('error');render();
     return;
   }
   if(!e||!p){state._loginErr='Please enter your email and password.';haptic('error');render();return;}
