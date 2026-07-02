@@ -20,7 +20,11 @@ def parse_args():
     p.add_argument("--prompt", default="\n")
     p.add_argument("--tokens", type=int, default=400)
     p.add_argument("--temperature", type=float, default=0.8)
-    p.add_argument("--top_k", type=int, default=20)
+    p.add_argument("--top_k", type=int, default=40)
+    p.add_argument("--top_p", type=float, default=0.92,
+                   help="nucleus sampling: keep the smallest set of tokens with cumulative prob >= top_p")
+    p.add_argument("--repetition_penalty", type=float, default=1.3,
+                   help=">1 discourages repeating tokens already in the context")
     p.add_argument("--seed", type=int, default=None)
     return p.parse_args()
 
@@ -42,6 +46,8 @@ def main():
         max_new_tokens=args.tokens,
         temperature=args.temperature,
         top_k=args.top_k,
+        top_p=args.top_p,
+        repetition_penalty=args.repetition_penalty,
         rng=rng,
     )
     print(tok.decode(out[0]))

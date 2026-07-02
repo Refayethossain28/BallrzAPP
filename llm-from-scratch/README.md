@@ -144,9 +144,13 @@ python -m http.server -d web 8000     # then visit http://localhost:8000
 python export_web.py --inline         # writes web/llm.html
 ```
 
-The page has a prompt box, temperature / top-k / length sliders, and streams the
-generated text token by token. Because the model is small, it runs at hundreds
-of tokens per second on a laptop.
+The page has a prompt box, sliders (length, temperature, top-k, **top-p /
+nucleus**, and a **repetition penalty**), and streams the generated text token by
+token. The repetition penalty and nucleus sampling matter a lot at this scale —
+without them a small model tends to collapse into `the the the` loops; with them
+the output stays varied and keeps its line/speaker structure. The same decoding
+(top-k + top-p + repetition penalty) is implemented in Python too — see
+`sample.py --top_p --repetition_penalty` and `GPT.generate(...)`.
 
 ### "My Own AI Model" — the installable PWA
 
