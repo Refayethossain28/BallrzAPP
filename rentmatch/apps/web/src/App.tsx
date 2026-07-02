@@ -1,7 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from './auth/AuthProvider';
-import SignIn from './auth/SignIn';
+import Landing from './features/Landing';
 import Layout from './components/Layout';
 import Browse from './features/Browse';
 import ListingDetail from './features/ListingDetail';
@@ -32,7 +32,7 @@ function Gate() {
   if (loading) {
     return <div className="centerpage"><p className="sub" style={{ textAlign: 'center' }}>Loading Apex…</p></div>;
   }
-  if (!user) return <SignIn />;
+  if (!user) return <Landing />;
 
   return (
     <Routes>
