@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R58 — RHD cockpit + windscreen';
+const BUILD = 'BUILD R59 — amazing graphics pack';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -562,7 +562,12 @@ function buildRoadMesh(){
     // DoubleSide: on some track windings the asphalt normals face down, which would
     // back-face-cull the single-sided road and show the sky THROUGH it (a "blue road").
     const tex=makeAsphaltTex(_HI?1024:256, _HI?2048:512); tex.repeat.set(5, 1);
-    const rmat=new THREE.MeshLambertMaterial({map:tex, color:G.rain?0x3b424b:0x595c61, side:THREE.DoubleSide});
+    // In the rain the asphalt turns into a glossy mirror: a Standard material with
+    // the sky environment map and near-zero roughness so the wet surface reflects
+    // the sky / sunset / neon. Dry stays Lambert (cheap, matte).
+    const rmat = G.rain
+      ? new THREE.MeshStandardMaterial({map:tex, color:0x33383f, side:THREE.DoubleSide, metalness:0.14, roughness:0.16, envMap:envTex, envMapIntensity:G.night?1.8:1.35})
+      : new THREE.MeshLambertMaterial({map:tex, color:0x595c61, side:THREE.DoubleSide});
     if (_MATNORMAL){ try{ const n=heightToNormal(_asphaltCanvas, G.rain?2:4); n.repeat.set(5,1); rmat.normalMap=n; rmat.normalScale=new THREE.Vector2(G.rain?0.4:0.9,G.rain?0.4:0.9); }catch(e){ rmat.bumpMap=tex; rmat.bumpScale=0.6; } }
     else { rmat.bumpMap=tex; rmat.bumpScale=G.rain?0.3:0.6; }
     const mesh=new THREE.Mesh(geo, rmat);
@@ -636,6 +641,35 @@ function buildRoadMesh(){
     geo.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3));
     const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({vertexColors:true, side:THREE.DoubleSide}));
     mesh.receiveShadow=true; scene.add(mesh); roadParts.push(mesh);
+  }
+  // night: sodium lampposts lining the verge — emissive head, an additive glow
+  // cross, and (desktop) a warm light pool on the tarmac. Individual meshes so
+  // clearRoad() can dispose them; materials shared per build.
+  if (G.night){
+    const nLamp = MOBILE?12:28;
+    const poleMat=new THREE.MeshLambertMaterial({color:0x1a1d24});
+    const headMat=new THREE.MeshStandardMaterial({color:0xffd9a0, emissive:0xffb85c, emissiveIntensity:2.6, roughness:0.5});
+    const glowM=new THREE.MeshBasicMaterial({map:glowTex(0xffc987), transparent:true, opacity:0.75, depthWrite:false, blending:THREE.AdditiveBlending, fog:false, side:THREE.DoubleSide});
+    const poolM=new THREE.MeshBasicMaterial({map:glowTex(0xffc37a), transparent:true, opacity:0.16, depthWrite:false, blending:THREE.AdditiveBlending, fog:false});
+    const poleGeo=new THREE.CylinderGeometry(0.09,0.13,7.4,6);
+    const headGeo=new THREE.BoxGeometry(1.15,0.24,0.42);
+    const glowGeo=new THREE.PlaneGeometry(2.6,2.6);
+    const poolGeo=new THREE.PlaneGeometry(11,8);
+    const add=m=>{ m.userData.noShadow=true; scene.add(m); roadParts.push(m); };
+    for (let k=0;k<nLamp;k++){
+      const f=frames[Math.floor(k/nLamp*frames.length)%frames.length];
+      const side=(k%2===0)?1:-1, lat=side*(ROAD_W+RUMBLE_W+1.6);
+      const bx=f.pos.x+f.right.x*lat, by=f.pos.y, bz=f.pos.z+f.right.z*lat;
+      const pole=new THREE.Mesh(poleGeo,poleMat); pole.position.set(bx,by+3.7,bz); add(pole);
+      // head cantilevered back over the road
+      const hx=bx-f.right.x*side*1.1, hz=bz-f.right.z*side*1.1;
+      const head=new THREE.Mesh(headGeo,headMat); head.position.set(hx,by+7.3,hz);
+      head.lookAt(hx+f.tan.x,by+7.3,hz+f.tan.z); add(head);
+      for (const ry of [0,Math.PI/2]){ const q=new THREE.Mesh(glowGeo,glowM);
+        q.position.set(hx,by+7.2,hz); q.rotation.y=ry+Math.atan2(f.tan.x,f.tan.z); add(q); }
+      if (!MOBILE){ const p=new THREE.Mesh(poolGeo,poolM);
+        p.position.set(hx,by+0.09,hz); p.rotation.x=-Math.PI/2; p.rotation.z=Math.atan2(f.tan.x,f.tan.z); add(p); }
+    }
   }
 }
 
@@ -903,6 +937,16 @@ function buildCar(vehicle, lite){
   // the (tight) real-time shadow frustum; subtle so it doesn't double the shadow.
   { const sh=new THREE.Mesh(new THREE.PlaneGeometry(W*1.7,L*1.1), new THREE.MeshBasicMaterial({map:blobTex(), transparent:true, opacity:0.28, depthWrite:false, fog:false}));
     sh.rotation.x=-Math.PI/2; sh.position.y=0.04; sh.userData.noShadow=true; sh.renderOrder=-1; g.add(sh); }
+  // night lights: warm headlight glow quads + an additive light pool thrown onto
+  // the road ahead. Built for every car but hidden by day (toggled per frame).
+  { const hg=new THREE.MeshBasicMaterial({map:glowTex(0xfff0c2), transparent:true, opacity:0.85, depthWrite:false, blending:THREE.AdditiveBlending, fog:false});
+    g.userData.headGlow=[];
+    for (const sx of [-0.82,0.82]){ const q=new THREE.Mesh(new THREE.PlaneGeometry(1.3,1.0), hg.clone());
+      q.position.set(sx,0.82,L*0.5+0.18); q.userData.noShadow=true; q.visible=false; g.add(q); g.userData.headGlow.push(q); }
+    const pool=new THREE.Mesh(new THREE.PlaneGeometry(W*2.7, L*3.1),
+      new THREE.MeshBasicMaterial({map:glowTex(0xffe9b8), transparent:true, opacity:0.22, depthWrite:false, blending:THREE.AdditiveBlending, fog:false}));
+    pool.rotation.x=-Math.PI/2; pool.position.set(0,0.12,L*0.5+L*1.4);
+    pool.userData.noShadow=true; pool.visible=false; g.add(pool); g.userData.lightPool=pool; }
   g.scale.setScalar(CAR_SCALE);   // bigger cars (wheels sit at y=0 so it stays grounded)
   g.traverse(o=>{ if(o.isMesh && !o.userData.noShadow){ o.castShadow=true; } });
   return g;
@@ -1857,6 +1901,26 @@ function animateWorld(){
   updateSmoke();
 }
 
+// show/hide the cars' headlight glows + road light-pools with day/night, and
+// give the player a real (shadowless, cheap) headlight SpotLight on desktop.
+function updateNightLights(){
+  const cars=[playerCar]; for (const r of rivals) if (r.mesh) cars.push(r.mesh);
+  for (const c of cars){
+    if (!c || !c.userData) continue;
+    if (c.userData.headGlow) for (const q of c.userData.headGlow) q.visible=!!G.night;
+    if (c.userData.lightPool) c.userData.lightPool.visible=!!G.night;
+  }
+  if (_HI && playerCar && playerCar.userData){
+    let sp=playerCar.userData.spot;
+    if (G.night && !sp){
+      sp=new THREE.SpotLight(0xfff1cf, 2.6, 110, 0.52, 0.5, 1.1);
+      sp.position.set(0,1.15,2.0); sp.target.position.set(0,-0.5,34);
+      playerCar.add(sp); playerCar.add(sp.target); playerCar.userData.spot=sp;
+    }
+    if (sp) sp.visible=!!G.night;
+  }
+}
+
 function render(){
   if (!G.started || !frames.length){ present(); return; }
 
@@ -1864,6 +1928,7 @@ function render(){
   placeRivals();
   placeGhost();
   animateWorld();
+  updateNightLights();
   // visual lean
   playerCar.rotateY(G.steerVis * 0.16);
   playerCar.rotateZ(-G.steerVis * 0.05 * (G.vehicle.rollMul||1));
@@ -2015,6 +2080,16 @@ function drawLensFlare(W,H){
   let g=hctx.createRadialGradient(sx,sy,0,sx,sy,core);
   g.addColorStop(0,`rgba(255,252,235,${0.55*vis})`); g.addColorStop(0.3,`rgba(255,236,185,${0.22*vis})`); g.addColorStop(1,'rgba(255,230,170,0)');
   hctx.fillStyle=g; hctx.beginPath(); hctx.arc(sx,sy,core,0,6.28); hctx.fill();
+  // crepuscular god-ray shafts, slowly wheeling around the sun
+  { const rot=(performance.now()%120000)/120000*Math.PI*2;
+    hctx.save(); hctx.translate(sx,sy); hctx.rotate(rot);
+    hctx.fillStyle=`rgba(255,246,210,${0.055*vis})`;
+    for (let i=0;i<9;i++){ const a=i/9*Math.PI*2, len=core*(2.1+((i*37)%5)*0.30), hw=0.028+((i*13)%3)*0.012;
+      hctx.beginPath(); hctx.moveTo(0,0);
+      hctx.lineTo(Math.cos(a-hw)*len, Math.sin(a-hw)*len);
+      hctx.lineTo(Math.cos(a+hw)*len, Math.sin(a+hw)*len);
+      hctx.closePath(); hctx.fill(); }
+    hctx.restore(); }
   const ghosts=[[0.3,0.05,'255,220,180'],[0.55,0.09,'170,255,225'],[0.85,0.05,'205,205,255'],[1.2,0.12,'255,205,165'],[1.55,0.07,'180,225,255'],[1.9,0.04,'255,240,210']];
   for (const [t,sz,col] of ghosts){ const gx=sx+dx*2*t, gy=sy+dy*2*t, r=Math.min(W,H)*sz;
     const gg=hctx.createRadialGradient(gx,gy,0,gx,gy,r);
