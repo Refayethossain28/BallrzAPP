@@ -76,19 +76,43 @@ class GPT(Module):
         return logits, loss
 
     # --- inference ------------------------------------------------------------
-    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None, rng=None):
-        """Autoregressively sample `max_new_tokens` tokens. idx: (1, T) int array."""
+    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None,
+                 top_p=1.0, repetition_penalty=1.0, rng=None):
+        """Autoregressively sample `max_new_tokens` tokens. idx: (1, T) int array.
+
+        top_k / top_p (nucleus) restrict the candidate set; repetition_penalty
+        (>1) discourages re-picking tokens already in the context, which stops a
+        small model from collapsing into loops. Kept in sync with web/gpt.js.
+        """
         rng = rng or np.random.default_rng()
         idx = np.asarray(idx)
         for _ in range(max_new_tokens):
             idx_cond = idx[:, -self.config.block_size:]
             logits, _ = self.forward(idx_cond)
-            logits = logits.data[:, -1, :] / max(temperature, 1e-6)  # (1, V)
+            logits = logits.data[:, -1, :].astype(np.float64)  # (1, V)
+
+            if repetition_penalty and repetition_penalty != 1.0:
+                for tok in np.unique(idx_cond[0]):
+                    if logits[0, tok] > 0:
+                        logits[0, tok] /= repetition_penalty
+                    else:
+                        logits[0, tok] *= repetition_penalty
+
+            logits = logits / max(temperature, 1e-6)
             if top_k is not None:
                 k = min(top_k, logits.shape[-1])
                 kth = np.sort(logits, axis=-1)[:, -k][:, None]
                 logits = np.where(logits < kth, -np.inf, logits)
             probs = _softmax_np(logits)
+
+            if top_p and top_p < 1.0:
+                order = np.argsort(probs[0])[::-1]
+                cum = np.cumsum(probs[0][order])
+                keep = order[:max(1, int(np.searchsorted(cum, top_p) + 1))]
+                mask = np.zeros_like(probs[0]); mask[keep] = 1.0
+                probs = (probs * mask)
+                probs = probs / probs.sum(axis=-1, keepdims=True)
+
             next_id = rng.choice(probs.shape[-1], p=probs[0])
             idx = np.concatenate([idx, [[next_id]]], axis=1)
         return idx
