@@ -55,6 +55,47 @@ const stripe: Stripe =
   process.env.STRIPE_FAKE === '1' ? fakeStripe() : new Stripe(process.env.STRIPE_SECRET_KEY ?? '');
 
 /**
+ * Shared options for every callable. App Check enforcement is opt-in via env so
+ * production can turn it on (after registering the web app with reCAPTCHA v3)
+ * without a code change, while the emulators and e2e keep working without it.
+ */
+const callableOpts = { enforceAppCheck: process.env.ENFORCE_APP_CHECK === '1' };
+
+/* ---- callable input validation — reject junk before it touches Firestore ---- */
+
+function reqString(v: unknown, name: string, maxLen = 256): string {
+  if (typeof v !== 'string' || v.trim().length === 0 || v.length > maxLen) {
+    throw new HttpsError('invalid-argument', `A valid ${name} is required.`);
+  }
+  return v.trim();
+}
+
+/** Positive integer pence, capped (default £1m/mo) — no floats, no negatives. */
+function reqPence(v: unknown, name: string, max = 100_000_000): number {
+  if (typeof v !== 'number' || !Number.isInteger(v) || v <= 0 || v > max) {
+    throw new HttpsError('invalid-argument', `${name} must be a positive whole-pence amount.`);
+  }
+  return v;
+}
+
+function reqInt(v: unknown, name: string, min: number, max: number): number {
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < min || v > max) {
+    throw new HttpsError('invalid-argument', `${name} must be between ${min} and ${max}.`);
+  }
+  return v;
+}
+
+/** An epoch-ms timestamp within a sane window (2000–2100). */
+function reqEpoch(v: unknown, name: string): number {
+  const min = Date.UTC(2000, 0, 1);
+  const max = Date.UTC(2100, 0, 1);
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < min || v > max) {
+    throw new HttpsError('invalid-argument', `${name} must be a valid date.`);
+  }
+  return v;
+}
+
+/**
  * Transactional email via Postmark's REST API (no SDK — a single fetch). Falls
  * back to a logged no-op when unconfigured, so local/dev and tests run without
  * credentials. Set EMAIL_API_KEY (Postmark Server Token) and EMAIL_FROM (a
@@ -104,7 +145,7 @@ interface DraftRequest {
   dealId: string;
 }
 
-export const draftContract = onCall(async (req: CallableRequest<DraftRequest>) => {
+export const draftContract = onCall(callableOpts, async (req: CallableRequest<DraftRequest>) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
   const dealId = req.data?.dealId;
@@ -200,7 +241,7 @@ export const draftContract = onCall(async (req: CallableRequest<DraftRequest>) =
  * envelope for both signers; here we record the envelope and advance the deal
  * to `signing`. The provider's hosted signing + webhook replace `recordSignature`.
  */
-export const openSigning = onCall(async (req: CallableRequest<DraftRequest>) => {
+export const openSigning = onCall(callableOpts, async (req: CallableRequest<DraftRequest>) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
   const dealId = req.data?.dealId;
@@ -241,7 +282,7 @@ export const openSigning = onCall(async (req: CallableRequest<DraftRequest>) => 
  * deal stays at `signing` even once both have signed — completion waits on the
  * £100 fee (M5), exactly as the shared completion guard requires.
  */
-export const recordSignature = onCall(async (req: CallableRequest<DraftRequest>) => {
+export const recordSignature = onCall(callableOpts, async (req: CallableRequest<DraftRequest>) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
   const dealId = req.data?.dealId;
@@ -374,7 +415,7 @@ async function createTenancyFromDeal(dealId: string, deal: StoredDeal & Record<s
 }
 
 /** Save a landlord card for the off-session fee charge (Stripe SetupIntent). */
-export const createSetupIntent = onCall(async (req: CallableRequest) => {
+export const createSetupIntent = onCall(callableOpts, async (req: CallableRequest) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
   const email = (req.auth?.token.email as string | undefined) ?? '';
@@ -393,7 +434,7 @@ export const createSetupIntent = onCall(async (req: CallableRequest) => {
  * idempotency key of the dealId so retries never double-bill. On success the
  * deal completes immediately; the Stripe webhook reconciles durably.
  */
-export const chargePlatformFee = onCall(async (req: CallableRequest<DraftRequest>) => {
+export const chargePlatformFee = onCall(callableOpts, async (req: CallableRequest<DraftRequest>) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
   const dealId = req.data?.dealId;
@@ -487,7 +528,7 @@ interface PublishRequest {
  * `live`; otherwise it stays `draft`. Clients can edit a listing but can't set
  * its status (Firestore rules), so this is the single way a listing goes live.
  */
-export const publishListing = onCall(async (req: CallableRequest<PublishRequest>) => {
+export const publishListing = onCall(callableOpts, async (req: CallableRequest<PublishRequest>) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
   const listingId = req.data?.listingId;
@@ -515,11 +556,10 @@ export const publishListing = onCall(async (req: CallableRequest<PublishRequest>
 });
 
 /** Store a Web Push (FCM) token for the signed-in user. */
-export const registerPushToken = onCall(async (req: CallableRequest<{ token: string }>) => {
+export const registerPushToken = onCall(callableOpts, async (req: CallableRequest<{ token: string }>) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
-  const token = req.data?.token;
-  if (!token) throw new HttpsError('invalid-argument', 'token is required.');
+  const token = reqString(req.data?.token, 'token', 4096);
   await db.doc(`users/${uid}`).set({ pushTokens: FieldValue.arrayUnion(token) }, { merge: true });
   return { ok: true };
 });
@@ -704,7 +744,7 @@ async function gcFetch(path: string, method: 'GET' | 'POST', body?: unknown): Pr
  * pending, and returns the hosted authorisation URL for the client to redirect
  * to. The mandate goes `active` later via the webhook.
  */
-export const createDirectDebitSetup = onCall(async (req: CallableRequest<{ tenancyId: string }>) => {
+export const createDirectDebitSetup = onCall(callableOpts, async (req: CallableRequest<{ tenancyId: string }>) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
   const tenancyId = req.data?.tenancyId;
@@ -924,7 +964,7 @@ export const createBillingCheckoutSession = onCall(
 );
 
 /** Open the Stripe billing portal so a landlord can manage/cancel their plan. */
-export const createBillingPortalSession = onCall(async (req: CallableRequest) => {
+export const createBillingPortalSession = onCall(callableOpts, async (req: CallableRequest) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
   const customerId = (await db.doc(`users/${uid}`).get()).data()?.stripeCustomerId as string | undefined;
@@ -957,10 +997,10 @@ async function writeSubscription(sub: Stripe.Subscription): Promise<void> {
 /* ---- M10: agent tier — agencies & consent-based client linking ---- */
 
 /** An agent creates their agency; they become its owner and first member. */
-export const createAgency = onCall(async (req: CallableRequest<{ name: string }>) => {
+export const createAgency = onCall(callableOpts, async (req: CallableRequest<{ name: string }>) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
-  const name = (req.data?.name ?? '').trim() || 'My agency';
+  const name = ((req.data?.name ?? '') as string).trim().slice(0, 80) || 'My agency';
 
   const existing = (await db.doc(`users/${uid}`).get()).data()?.ownedAgencyId as string | undefined;
   if (existing) return { agencyId: existing };
@@ -984,11 +1024,10 @@ export const createAgency = onCall(async (req: CallableRequest<{ name: string }>
  * and adds them to the agency's client list, so the agency's members can read
  * their properties, tenancies and expenses (enforced in firestore.rules).
  */
-export const connectToAgency = onCall(async (req: CallableRequest<{ agencyId: string }>) => {
+export const connectToAgency = onCall(callableOpts, async (req: CallableRequest<{ agencyId: string }>) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
-  const agencyId = req.data?.agencyId;
-  if (!agencyId) throw new HttpsError('invalid-argument', 'An agency code is required.');
+  const agencyId = reqString(req.data?.agencyId, 'agency code', 128);
 
   const agencySnap = await db.doc(`agencies/${agencyId}`).get();
   if (!agencySnap.exists) throw new HttpsError('not-found', 'No agency with that code.');
@@ -1002,11 +1041,13 @@ export const connectToAgency = onCall(async (req: CallableRequest<{ agencyId: st
  * Agency owner adds a teammate by email (must already have an account). Enforces
  * the plan's seat allowance, so growing the team is gated on the agent plan.
  */
-export const addAgencyMember = onCall(async (req: CallableRequest<{ email: string }>) => {
+export const addAgencyMember = onCall(callableOpts, async (req: CallableRequest<{ email: string }>) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
-  const email = (req.data?.email ?? '').trim().toLowerCase();
-  if (!email) throw new HttpsError('invalid-argument', 'An email is required.');
+  const email = reqString(req.data?.email, 'email', 320).toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    throw new HttpsError('invalid-argument', 'A valid email is required.');
+  }
 
   const agencyId = (await db.doc(`users/${uid}`).get()).data()?.ownedAgencyId as string | undefined;
   if (!agencyId) throw new HttpsError('failed-precondition', 'Create an agency first.');
@@ -1031,7 +1072,7 @@ export const addAgencyMember = onCall(async (req: CallableRequest<{ email: strin
 });
 
 /** Agency owner removes a teammate (cannot remove themselves). */
-export const removeAgencyMember = onCall(async (req: CallableRequest<{ memberUid: string }>) => {
+export const removeAgencyMember = onCall(callableOpts, async (req: CallableRequest<{ memberUid: string }>) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
   const memberUid = req.data?.memberUid;
@@ -1048,7 +1089,7 @@ export const removeAgencyMember = onCall(async (req: CallableRequest<{ memberUid
 });
 
 /** A landlord disconnects their portfolio from their agency. */
-export const disconnectFromAgency = onCall(async (req: CallableRequest) => {
+export const disconnectFromAgency = onCall(callableOpts, async (req: CallableRequest) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
   const agencyId = (await db.doc(`users/${uid}`).get()).data()?.agencyId as string | undefined;
@@ -1068,13 +1109,13 @@ interface RenewalTermsInput {
 }
 
 /** Landlord proposes a renewal: new term + rent, awaiting both signatures. */
-export const createRenewal = onCall(async (req: CallableRequest<RenewalTermsInput>) => {
+export const createRenewal = onCall(callableOpts, async (req: CallableRequest<RenewalTermsInput>) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
-  const { tenancyId, startDate, termMonths, monthlyRentPence } = req.data ?? ({} as RenewalTermsInput);
-  if (!tenancyId || !startDate || !termMonths || !monthlyRentPence) {
-    throw new HttpsError('invalid-argument', 'Renewal terms are incomplete.');
-  }
+  const tenancyId = reqString(req.data?.tenancyId, 'tenancyId', 128);
+  const startDate = reqEpoch(req.data?.startDate, 'start date');
+  const termMonths = reqInt(req.data?.termMonths, 'term', 1, 120);
+  const monthlyRentPence = reqPence(req.data?.monthlyRentPence, 'rent');
 
   const ref = db.doc(`tenancies/${tenancyId}`);
   const snap = await ref.get();
@@ -1121,7 +1162,7 @@ export const recordRenewalSignature = onCall(
  * term and create a fresh tenancy on the new terms (clean ledger, linked back
  * via renewedFromId). The new tenancy carries the tenant and property across.
  */
-export const confirmRenewal = onCall(async (req: CallableRequest<{ tenancyId: string }>) => {
+export const confirmRenewal = onCall(callableOpts, async (req: CallableRequest<{ tenancyId: string }>) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
   const tenancyId = req.data?.tenancyId;
@@ -1188,7 +1229,7 @@ export const confirmRenewal = onCall(async (req: CallableRequest<{ tenancyId: st
  * tenancies still within their legal retention period, where the record must be
  * kept (lawful basis: legal obligation / legitimate interest).
  */
-export const requestDataErasure = onCall(async (req: CallableRequest) => {
+export const requestDataErasure = onCall(callableOpts, async (req: CallableRequest) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
 

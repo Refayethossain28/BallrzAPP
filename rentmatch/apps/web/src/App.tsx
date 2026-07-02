@@ -20,9 +20,11 @@ import Account from './features/Account';
 import Chats from './features/Chats';
 import DealRoom from './features/DealRoom';
 import ContractView from './features/ContractView';
+import ErrorBoundary from './components/ErrorBoundary';
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false } },
+  // retry transient failures a couple of times before surfacing an error state.
+  defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false, retry: 2 } },
 });
 
 function Gate() {
@@ -60,6 +62,7 @@ function Gate() {
 
 export default function App() {
   return (
+    <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <BrowserRouter>
@@ -67,5 +70,6 @@ export default function App() {
         </BrowserRouter>
       </AuthProvider>
     </QueryClientProvider>
+    </ErrorBoundary>
   );
 }

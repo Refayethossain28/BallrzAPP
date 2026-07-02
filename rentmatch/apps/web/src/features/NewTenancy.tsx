@@ -51,7 +51,7 @@ export default function NewTenancy() {
   return (
     <>
       <div className="row center" style={{ gap: 10, margin: '2px 0 12px' }}>
-        <div className="back" onClick={() => navigate('/landlord/rent')}>‹</div>
+        <button type="button" className="back" aria-label="Back" onClick={() => navigate('/landlord/rent')}>‹</button>
         <b style={{ fontSize: 18 }}>Add a tenancy</b>
       </div>
 
@@ -59,21 +59,21 @@ export default function NewTenancy() {
         <div className="empty"><div className="big">🏠</div>Add a property first, then create a tenancy against it.</div>
       ) : (
         <form onSubmit={submit}>
-          <div className="field"><label>Property</label>
-            <select name="property" required defaultValue="">
+          <div className="field"><label htmlFor="nt-property">Property</label>
+            <select id="nt-property" name="property" required defaultValue="">
               <option value="" disabled>Select a property…</option>
               {properties.map((p) => <option key={p.id} value={p.id}>{propertyLabel(p)}</option>)}
             </select></div>
-          <div className="field"><label>Tenant name</label>
-            <input name="tenant" required placeholder="Tom Baxter" /></div>
+          <div className="field"><label htmlFor="nt-tenant">Tenant name</label>
+            <input id="nt-tenant" name="tenant" required placeholder="Tom Baxter" /></div>
           <div className="two">
-            <div className="field"><label>Monthly rent (£)</label>
-              <input name="rent" type="number" min={0} step="0.01" required defaultValue={1500} /></div>
-            <div className="field"><label>Term (months)</label>
-              <input name="term" type="number" min={1} defaultValue={12} required /></div>
+            <div className="field"><label htmlFor="nt-rent">Monthly rent (£)</label>
+              <input id="nt-rent" name="rent" type="number" min={0} step="0.01" required defaultValue={1500} /></div>
+            <div className="field"><label htmlFor="nt-term">Term (months)</label>
+              <input id="nt-term" name="term" type="number" min={1} defaultValue={12} required /></div>
           </div>
-          <div className="field"><label>First rent due date</label>
-            <input name="start" type="date" required /></div>
+          <div className="field"><label htmlFor="nt-start">First rent due date</label>
+            <input id="nt-start" name="start" type="date" required /></div>
 
           {(error || mutation.isError) && <p className="error">{error || 'Could not save — please try again.'}</p>}
           <button className="cta" type="submit" disabled={mutation.isPending}>

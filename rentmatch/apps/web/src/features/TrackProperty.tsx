@@ -45,25 +45,25 @@ export default function TrackProperty() {
   return (
     <>
       <div className="row center" style={{ gap: 10, margin: '2px 0 12px' }}>
-        <div className="back" onClick={() => navigate('/landlord/compliance')}>‹</div>
+        <button type="button" className="back" aria-label="Back" onClick={() => navigate('/landlord/compliance')}>‹</button>
         <b style={{ fontSize: 18 }}>Add a property to track</b>
       </div>
       <p className="sub">Just the address and a few details — we'll track its certificates and remind you before any lapse. No advert, no rent details needed.</p>
 
       <form onSubmit={submit}>
-        <div className="field"><label>Street address</label>
-          <input name="street" required placeholder="14 Mapledene Road" /></div>
+        <div className="field"><label htmlFor="tp-street">Street address</label>
+          <input id="tp-street" name="street" required placeholder="14 Mapledene Road" /></div>
         <div className="two">
-          <div className="field"><label>Area</label><input name="area" required placeholder="Hackney" /></div>
-          <div className="field"><label>City</label><input name="city" required placeholder="London" /></div>
+          <div className="field"><label htmlFor="tp-area">Area</label><input id="tp-area" name="area" required placeholder="Hackney" /></div>
+          <div className="field"><label htmlFor="tp-city">City</label><input id="tp-city" name="city" required placeholder="London" /></div>
         </div>
         <div className="two">
-          <div className="field"><label>Postcode</label><input name="postcode" required placeholder="E8 3JN" /></div>
-          <div className="field"><label>Type</label>
-            <select name="type"><option>Flat</option><option>House</option><option>Studio</option><option>Maisonette</option><option>Room</option></select></div>
+          <div className="field"><label htmlFor="tp-postcode">Postcode</label><input id="tp-postcode" name="postcode" required placeholder="E8 3JN" /></div>
+          <div className="field"><label htmlFor="tp-type">Type</label>
+            <select id="tp-type" name="type"><option>Flat</option><option>House</option><option>Studio</option><option>Maisonette</option><option>Room</option></select></div>
         </div>
-        <div className="field"><label>EPC rating</label>
-          <select name="epc" defaultValue="C"><option>A</option><option>B</option><option>C</option><option>D</option><option>E</option><option>F</option><option>G</option></select></div>
+        <div className="field"><label htmlFor="tp-epc">EPC rating</label>
+          <select id="tp-epc" name="epc" defaultValue="C"><option>A</option><option>B</option><option>C</option><option>D</option><option>E</option><option>F</option><option>G</option></select></div>
 
         <div className="section-t">Compliance declarations</div>
         <div className="card"><div className="body">

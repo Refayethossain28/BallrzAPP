@@ -56,7 +56,7 @@ export default function Agency() {
     return (
       <>
         <div className="row center" style={{ gap: 10, margin: '2px 0 12px' }}>
-          <div className="back" onClick={() => navigate('/account')}>‹</div>
+          <button type="button" className="back" aria-label="Back" onClick={() => navigate('/account')}>‹</button>
           <b style={{ fontSize: 18 }}>Agency</b>
         </div>
         <div className="empty"><div className="big">🏢</div>Create an agency from your Account to manage client landlords.</div>
@@ -70,7 +70,7 @@ export default function Agency() {
   return (
     <>
       <div className="row center" style={{ gap: 10, margin: '2px 0 12px' }}>
-        <div className="back" onClick={() => navigate('/account')}>‹</div>
+        <button type="button" className="back" aria-label="Back" onClick={() => navigate('/account')}>‹</button>
         <b style={{ fontSize: 18 }}>{agency.name}</b>
       </div>
 
@@ -148,7 +148,7 @@ function Team({ agency, isOwner }: { agency: AgencyType; isOwner: boolean }) {
               {agency.memberEmails[uid] ?? uid}{uid === agency.ownerId ? ' · owner' : ''}
             </span>
             {isOwner && uid !== agency.ownerId && (
-              <button className="back" style={{ width: 28, height: 28, fontSize: 14 }} disabled={busy} onClick={() => remove(uid)}>×</button>
+              <button type="button" className="back" aria-label="Remove teammate" style={{ width: 28, height: 28, fontSize: 14 }} disabled={busy} onClick={() => remove(uid)}>×</button>
             )}
           </div>
         ))}

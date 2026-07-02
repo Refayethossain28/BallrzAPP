@@ -38,7 +38,7 @@ export default function DealRoom() {
   return (
     <>
       <div className="row center" style={{ gap: 10, margin: '2px 0 12px' }}>
-        <div className="back" onClick={() => navigate('/chats')}>‹</div>
+        <button type="button" className="back" aria-label="Back" onClick={() => navigate('/chats')}>‹</button>
         <div style={{ width: 40, height: 40, borderRadius: 10, background: photoGradient(deal.listingId) }} />
         <div style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 700 }}>{otherName}</div>
@@ -140,8 +140,8 @@ function Actions({ deal, me }: { deal: Deal; me: DealParty }) {
       )}
       {showSlot && (
         <form onSubmit={propose} style={{ marginBottom: 10 }}>
-          <div className="field"><label>Date &amp; time</label>
-            <input type="datetime-local" value={slot} onChange={(e) => setSlot(e.target.value)} required /></div>
+          <div className="field"><label htmlFor="viewing-slot">Date &amp; time</label>
+            <input id="viewing-slot" type="datetime-local" value={slot} onChange={(e) => setSlot(e.target.value)} required /></div>
           <div className="row">
             <button className="cta" type="submit" style={{ flex: 1 }}>Send proposal</button>
             <button className="cta ghost" type="button" style={{ flex: 1 }} onClick={() => setShowSlot(false)}>Cancel</button>

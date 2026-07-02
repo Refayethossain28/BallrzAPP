@@ -77,8 +77,8 @@ export default function Finances() {
       <p className="sub">Rent income and expenses by UK tax year — ready for Self Assessment.</p>
 
       <div className="field">
-        <label>Tax year</label>
-        <select value={startYear} onChange={(e) => setYear(Number(e.target.value))}>
+        <label htmlFor="fin-year">Tax year</label>
+        <select id="fin-year" value={startYear} onChange={(e) => setYear(Number(e.target.value))}>
           {years.map((y) => <option key={y} value={y}>{taxYearLabel(y)}</option>)}
         </select>
       </div>
@@ -113,17 +113,17 @@ export default function Finances() {
       <div className="section-t">Log an expense</div>
       <form onSubmit={submit}>
         <div className="two">
-          <div className="field"><label>Amount (£)</label>
-            <input name="amount" type="number" min={0} step="0.01" placeholder="120.00" /></div>
-          <div className="field"><label>Date</label>
-            <input name="date" type="date" defaultValue={todayISO()} max={todayISO()} /></div>
+          <div className="field"><label htmlFor="fin-amount">Amount (£)</label>
+            <input id="fin-amount" name="amount" type="number" min={0} step="0.01" placeholder="120.00" /></div>
+          <div className="field"><label htmlFor="fin-date">Date</label>
+            <input id="fin-date" name="date" type="date" defaultValue={todayISO()} max={todayISO()} /></div>
         </div>
-        <div className="field"><label>Category</label>
-          <select name="category" defaultValue="repairs-maintenance">
+        <div className="field"><label htmlFor="fin-category">Category</label>
+          <select id="fin-category" name="category" defaultValue="repairs-maintenance">
             {EXPENSE_CATEGORIES.map((c) => <option key={c} value={c}>{EXPENSE_CATEGORY_LABELS[c]}</option>)}
           </select></div>
-        <div className="field"><label>Note (optional)</label>
-          <input name="note" placeholder="Boiler service — British Gas" /></div>
+        <div className="field"><label htmlFor="fin-note">Note (optional)</label>
+          <input id="fin-note" name="note" placeholder="Boiler service — British Gas" /></div>
         {error && <p className="error">{error}</p>}
         <button className="cta" type="submit" disabled={addExpense.isPending}>
           {addExpense.isPending ? 'Saving…' : 'Add expense'}
@@ -143,7 +143,7 @@ export default function Finances() {
                 <span className="row center" style={{ gap: 10 }}>
                   <b>{formatGBP(x.amountPence)}</b>
                   <button className="back" style={{ width: 28, height: 28, fontSize: 14 }}
-                    title="Delete" onClick={() => removeExpense.mutate(x.id)}>×</button>
+                    title="Delete" aria-label="Delete expense" onClick={() => removeExpense.mutate(x.id)}>×</button>
                 </span>
               </div>
             ))}

@@ -35,7 +35,7 @@ export default function ListingDetail() {
   return (
     <>
       <div className="row center" style={{ gap: 10, margin: '2px 0 12px' }}>
-        <div className="back" onClick={() => navigate(-1)}>‹</div>
+        <button type="button" className="back" aria-label="Back" onClick={() => navigate(-1)}>‹</button>
         <b>{l.type} in {l.area}</b>
       </div>
 

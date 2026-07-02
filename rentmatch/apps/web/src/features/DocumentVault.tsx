@@ -32,7 +32,7 @@ export default function DocumentVault() {
   return (
     <>
       <div className="row center" style={{ gap: 10, margin: '2px 0 12px' }}>
-        <div className="back" onClick={() => navigate('/landlord/compliance')}>‹</div>
+        <button type="button" className="back" aria-label="Back" onClick={() => navigate('/landlord/compliance')}>‹</button>
         <b style={{ fontSize: 17, minWidth: 0 }}>{label}</b>
       </div>
 
@@ -126,8 +126,8 @@ function DocCard({ listing, type, doc }: { listing: Listing; type: ComplianceDoc
 
       <div className="row center" style={{ gap: 8 }}>
         <div className="field" style={{ margin: 0, flex: 1 }}>
-          <label style={{ fontSize: 11 }}>Issue date</label>
-          <input type="date" value={issued} max={todayISO()} onChange={(e) => setIssued(e.target.value)} />
+          <label style={{ fontSize: 11 }} htmlFor={`dv-issued-${type}`}>Issue date</label>
+          <input id={`dv-issued-${type}`} type="date" value={issued} max={todayISO()} onChange={(e) => setIssued(e.target.value)} />
         </div>
         <button className="cta ghost sm" style={{ width: 'auto', padding: '9px 14px', alignSelf: 'flex-end' }}
           disabled={busy} onClick={() => fileInput.current?.click()}>

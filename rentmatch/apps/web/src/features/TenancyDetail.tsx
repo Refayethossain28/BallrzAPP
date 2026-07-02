@@ -85,7 +85,7 @@ export default function TenancyDetail() {
   return (
     <>
       <div className="row center" style={{ gap: 10, margin: '2px 0 12px' }}>
-        <div className="back" onClick={() => navigate('/landlord/rent')}>‹</div>
+        <button type="button" className="back" aria-label="Back" onClick={() => navigate('/landlord/rent')}>‹</button>
         <b style={{ fontSize: 17, minWidth: 0 }}>{tenancy.tenantName}</b>
       </div>
       <div className="faint" style={{ fontSize: 12.5, marginBottom: 10 }}>{tenancy.propertyLabel}</div>
@@ -115,13 +115,13 @@ export default function TenancyDetail() {
       <div className="section-t">Record a payment</div>
       <form onSubmit={logPayment}>
         <div className="two">
-          <div className="field"><label>Amount (£)</label>
-            <input name="amount" type="number" min={0} step="0.01" defaultValue={(tenancy.monthlyRentPence / 100).toString()} /></div>
-          <div className="field"><label>Date received</label>
-            <input name="date" type="date" defaultValue={todayISO()} max={todayISO()} /></div>
+          <div className="field"><label htmlFor="pay-amount">Amount (£)</label>
+            <input id="pay-amount" name="amount" type="number" min={0} step="0.01" defaultValue={(tenancy.monthlyRentPence / 100).toString()} /></div>
+          <div className="field"><label htmlFor="pay-date">Date received</label>
+            <input id="pay-date" name="date" type="date" defaultValue={todayISO()} max={todayISO()} /></div>
         </div>
-        <div className="field"><label>Method (optional)</label>
-          <select name="method" defaultValue=""><option value="">—</option><option>Bank transfer</option><option>Standing order</option><option>Cash</option><option>Card</option></select></div>
+        <div className="field"><label htmlFor="pay-method">Method (optional)</label>
+          <select id="pay-method" name="method" defaultValue=""><option value="">—</option><option>Bank transfer</option><option>Standing order</option><option>Cash</option><option>Card</option></select></div>
         {error && <p className="error">{error}</p>}
         <button className="cta" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Add payment'}</button>
       </form>
@@ -249,13 +249,13 @@ function Renewal({ tenancy }: { tenancy: TenancyRecord }) {
       ) : (
         <form onSubmit={propose}>
           <div className="two">
-            <div className="field"><label>New rent (£)</label>
-              <input name="rent" type="number" min={0} step="0.01" defaultValue={(defaults.monthlyRentPence / 100).toString()} /></div>
-            <div className="field"><label>Term (months)</label>
-              <input name="term" type="number" min={1} defaultValue={defaults.termMonths} /></div>
+            <div className="field"><label htmlFor="rn-rent">New rent (£)</label>
+              <input id="rn-rent" name="rent" type="number" min={0} step="0.01" defaultValue={(defaults.monthlyRentPence / 100).toString()} /></div>
+            <div className="field"><label htmlFor="rn-term">Term (months)</label>
+              <input id="rn-term" name="term" type="number" min={1} defaultValue={defaults.termMonths} /></div>
           </div>
-          <div className="field"><label>New term starts</label>
-            <input name="start" type="date" defaultValue={isoDate(defaults.startDate)} /></div>
+          <div className="field"><label htmlFor="rn-start">New term starts</label>
+            <input id="rn-start" name="start" type="date" defaultValue={isoDate(defaults.startDate)} /></div>
           {error && <p className="error">{error}</p>}
           <div className="row" style={{ gap: 8 }}>
             <button className="cta" type="submit" disabled={busy}>{busy ? 'Sending…' : 'Propose renewal'}</button>
