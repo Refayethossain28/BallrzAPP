@@ -28,7 +28,27 @@ import * as admin from 'firebase-admin';
 import {
   round5, isoPlusDays, computeFareBounds, driverEarning, dispatchPay,
   bookingEvent, bookingMessage, daysUntil, shouldRemind, flightHHMM,
+  normalizeCommissionPct,
 } from './logic.js';
+
+/**
+ * Business model (settings/business): 'commission' (default — platform keeps a
+ * fixed 20% of each fare) or 'subscription' (clients + drivers pay a monthly
+ * fee; the admin sets the per-trip commission, which can be 0). Cached briefly
+ * per warm instance so booking-triggered functions don't re-read every event.
+ */
+let _bizCache: { commissionPct: number; at: number } | null = null;
+async function platformCommissionPct(): Promise<number> {
+  if (_bizCache && Date.now() - _bizCache.at < 60_000) return _bizCache.commissionPct;
+  let pct = 20;
+  try {
+    const doc = await admin.firestore().doc('settings/business').get();
+    const d = doc.exists ? (doc.data() as { model?: string; commissionPct?: number }) : {};
+    pct = d.model === 'subscription' ? normalizeCommissionPct(d.commissionPct) : 20;
+  } catch { /* default to the commission model's 20% */ }
+  _bizCache = { commissionPct: pct, at: Date.now() };
+  return pct;
+}
 
 import type {
   Booking,
@@ -416,11 +436,12 @@ export const onBookingWrite = onDocumentWritten(
     const after  = event.data && event.data.after  && event.data.after.exists  ? event.data.after.data()  as Booking : null;
     const kind = bookingEvent(before, after);
     if (!kind) return;
-    // On completion, record the driver's 80% earning to the payout ledger
+    // On completion, record the driver's earning to the payout ledger
     // (idempotent — one entry per booking). Settled later via payoutDriver.
+    // Share = 80% under the commission model, admin-set under subscription.
     if (kind === 'completed' && after && after.driverId) {
       try {
-        const amount = driverEarning(after);
+        const amount = driverEarning(after, await platformCommissionPct());
         if (amount > 0) {
           const entry: DriverPayout = {
             driverId: after.driverId,
@@ -863,8 +884,9 @@ export const onBookingCreated = onDocumentCreated('bookings/{bookingId}', async 
   const openRef = admin.firestore().collection('open_jobs').doc(event.params.bookingId);
   if ((await openRef.get()).exists) return; // already dispatched
 
-  // Driver pay = 80% of the fare (matches the rate quoted in the driver/admin UI).
-  const pay = dispatchPay(b);
+  // Driver pay: 80% of the fare under the commission model, or the admin-set
+  // split under the subscription model (matches the driver/admin UI quote).
+  const pay = dispatchPay(b, await platformCommissionPct());
 
   await openRef.set({
     status: 'open',

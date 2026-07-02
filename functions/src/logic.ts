@@ -33,14 +33,27 @@ export function computeFareBounds(p: Pricing): { floor: number; ceiling: number 
   return { floor, ceiling };
 }
 
-/** Driver's 80% earning for a completed trip (payout ledger). */
-export function driverEarning(b: Booking): number {
-  return Math.round((Number(b.baseFare) || Number(b.price) || 0) * 0.8);
+/** Clamp a platform commission percentage to a sane 0–50 range (default 20). */
+export function normalizeCommissionPct(pct: unknown): number {
+  const n = Number(pct);
+  if (!Number.isFinite(n)) return 20;
+  return Math.min(50, Math.max(0, Math.round(n)));
 }
 
-/** Driver pay shown on a dispatched open_job (80%, default £95 base). */
-export function dispatchPay(b: Booking): number {
-  return Math.round((Number(b.baseFare) || Number(b.price) || 95) * 0.8);
+/**
+ * Driver's earning for a completed trip (payout ledger). Defaults to the
+ * commission model's fixed 20% platform cut (driver keeps 80%); under the
+ * subscription model the admin-set commission is passed in instead.
+ */
+export function driverEarning(b: Booking, commissionPct = 20): number {
+  const keep = (100 - normalizeCommissionPct(commissionPct)) / 100;
+  return Math.round((Number(b.baseFare) || Number(b.price) || 0) * keep);
+}
+
+/** Driver pay shown on a dispatched open_job (same split, default £95 base). */
+export function dispatchPay(b: Booking, commissionPct = 20): number {
+  const keep = (100 - normalizeCommissionPct(commissionPct)) / 100;
+  return Math.round((Number(b.baseFare) || Number(b.price) || 95) * keep);
 }
 
 /** Which lifecycle message (if any) a booking write represents. */
