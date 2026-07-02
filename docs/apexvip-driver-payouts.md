@@ -67,4 +67,5 @@ can fail with *insufficient funds* — that error is surfaced to the admin.
 ## Not yet modelled
 - Automatic payout on completion (today an admin clicks Pay out) — easy to switch
   to a scheduled batch once funding (above) is settled.
-- Per-trip payout receipts to drivers; payout history view in the driver app.
+- Per-trip payout receipts to drivers. *(The payout history view shipped — the
+  driver Earnings screen now shows the owed balance and per-trip ledger.)*
