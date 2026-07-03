@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R60 — maximum: sunset·slipstream·skids·confetti';
+const BUILD = 'BUILD R61 — WebGPU white-screen watchdog';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -254,6 +254,24 @@ function initThree(){
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   _maxAniso = (renderer.capabilities && renderer.capabilities.getMaxAnisotropy) ? renderer.capabilities.getMaxAnisotropy() : 8;
   if (_GPU){ try{ setupWebGPU(); }catch(e){ console.warn('WebGPU post-fx setup failed', e); } }
+  // WebGPU blank-frame watchdog: some browsers (macOS Safari) expose WebGPU and
+  // initialise cleanly, yet silently present a solid WHITE frame — the import
+  // self-heal never fires because nothing threw. So a few seconds in we read the
+  // canvas back: the sky gradient should never be uniform. A uniform BRIGHT frame
+  // means the renderer is broken → reload without the flag onto proven WebGL.
+  // (Uniform DARK is left alone: an unsupported drawImage reads back as blank
+  // black, and we must not kick working setups off WebGPU.)
+  if (_GPU && window.__WEBGPU_REQUESTED){
+    const checkBlank=()=>{ try{
+      const w=48,h=48, cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+      const x=cv.getContext('2d'); x.drawImage(glCanvas,0,0,w,h);
+      const d=x.getImageData(0,0,w,h).data;
+      let mn=255,mx=0;
+      for (let i=0;i<d.length;i+=4){ const l=(d[i]+d[i+1]+d[i+2])/3; if(l<mn)mn=l; if(l>mx)mx=l; }
+      if (mx-mn<6 && mn>200){ console.warn('WebGPU presented a blank white frame — falling back to WebGL'); location.replace(location.pathname); }
+    }catch(e){} };
+    setTimeout(checkBlank, 5000); setTimeout(checkBlank, 12000);
+  }
 
   // Recover from a lost GPU context (iOS Safari can drop it). preventDefault on
   // 'lost' is REQUIRED or the browser never restores it (permanent black screen).
