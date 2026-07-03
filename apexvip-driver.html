@@ -382,15 +382,18 @@ async function driverLogin(){
   }
 }
 
+// Escape client-controlled strings before they enter innerHTML templates.
+function esc(x){return String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
 function mapJob(doc){
   const j={id:doc.id,...doc.data()};
-  return {id:j.id,bookingRef:j.bookingRef||'',bookingDocId:j.bookingDocId||'',type:j.type||'airport',
-    client:j.clientName||'Client',
-    initials:(j.clientName||'CL').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2),
-    service:j.serviceLabel||'Airport Transfer',pickup:j.pickup||'',
-    dropoff:j.dropoff||j.airport||'',time:j.time||'Now',
-    pay:j.pay||j.price||95,flight:j.flight||'',notes:j.notes||'',
-    vehicle:j.vehicle||'S-Class',status:j.status||'pending'};
+  return {id:j.id,bookingRef:esc(j.bookingRef||''),bookingDocId:j.bookingDocId||'',type:j.type||'airport',
+    client:esc(j.clientName||'Client'),
+    initials:esc((j.clientName||'CL').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2)),
+    service:esc(j.serviceLabel||'Airport Transfer'),pickup:esc(j.pickup||''),
+    dropoff:esc(j.dropoff||j.airport||''),time:esc(j.time||'Now'),
+    pay:Number(j.pay||j.price)||95,flight:esc(j.flight||''),notes:esc(j.notes||''),
+    vehicle:esc(j.vehicle||'S-Class'),status:j.status||'pending'};
 }
 
 function setupDriverListeners(uid){
@@ -703,11 +706,11 @@ function loadDriverFeedback(){
   db.collection('bookings').where('driverId','==',_driverId).where('status','==','completed').limit(200).get().then(snap=>{
     const rows=snap.docs.map(d=>({_id:d.id,...d.data()}));
     S._myCompleted=rows.map(b=>({
-      ref:b.ref||b._id, service:b.serviceLabel||'Trip',
-      route:[b.pickup,b.dropoff||b.airport].filter(Boolean).join(' → '),
-      pickup:b.pickup||'', dropoff:b.dropoff||b.airport||'',
-      date:b.date||'', price:Number(b.price)||0,
-      rating:Number(b.rating)||0, comment:b.ratingComment||''
+      ref:esc(b.ref||b._id), service:esc(b.serviceLabel||'Trip'),
+      route:esc([b.pickup,b.dropoff||b.airport].filter(Boolean).join(' → ')),
+      pickup:esc(b.pickup||''), dropoff:esc(b.dropoff||b.airport||''),
+      date:esc(b.date||''), price:Number(b.price)||0,
+      rating:Number(b.rating)||0, comment:esc(b.ratingComment||'')
     }));
     S._myRatedTrips=S._myCompleted.filter(b=>b.rating);
     if(['ratings','history'].includes(S.screen))render();
@@ -1438,7 +1441,7 @@ earnings:()=>{
     </div>
     <div class="card" style="margin-bottom:12px">
       <div class="section-label" style="margin-bottom:14px">Breakdown</div>
-      ${rows.length?rows.slice(0,10).map(x=>`<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--divider);font-size:14px"><span style="color:var(--fg-dim)">${x.bookingRef||'Trip'} · ${x.createdAt.toDate().toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}</span><span style="font-weight:600">£${x.amount||0}</span></div>`).join(''):`<div style="text-align:center;padding:18px;color:var(--fg-subtle);font-size:13px">No earnings ${t==='today'?'today yet':'in this period yet'} — completed trips appear here.</div>`}
+      ${rows.length?rows.slice(0,10).map(x=>`<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--divider);font-size:14px"><span style="color:var(--fg-dim)">${esc(x.bookingRef||'Trip')} · ${x.createdAt.toDate().toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}</span><span style="font-weight:600">£${x.amount||0}</span></div>`).join(''):`<div style="text-align:center;padding:18px;color:var(--fg-subtle);font-size:13px">No earnings ${t==='today'?'today yet':'in this period yet'} — completed trips appear here.</div>`}
     </div>
     ${t==='week'&&led.length?`<div class="card" style="margin-bottom:12px">
       <div class="section-label" style="margin-bottom:14px">Daily</div>
@@ -1465,7 +1468,7 @@ earnings:()=>{
         <span style="font-size:20px;font-weight:800;color:#C8A97E">£${owed}</span>
       </div>
       ${led.slice(0,15).map(x=>`<div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:9px 0;border-bottom:1px solid var(--divider)">
-        <div><div style="font-weight:600">${x.bookingRef||'Trip'}</div><div style="font-size:11px;color:var(--fg-subtle)">${x.createdAt?.toDate?x.createdAt.toDate().toLocaleDateString('en-GB',{day:'2-digit',month:'short'}):''}</div></div>
+        <div><div style="font-weight:600">${esc(x.bookingRef||'Trip')}</div><div style="font-size:11px;color:var(--fg-subtle)">${x.createdAt?.toDate?x.createdAt.toDate().toLocaleDateString('en-GB',{day:'2-digit',month:'short'}):''}</div></div>
         <div style="text-align:right"><div style="font-weight:700">£${x.amount||0}</div><div style="font-size:11px;color:${x.status==='paid'?'#22c55e':'#e3b341'}">${x.status==='paid'?'✓ Paid':'Owed'}</div></div>
       </div>`).join('')}
     </div>`;})()}
@@ -1789,7 +1792,7 @@ apexai:()=>{
     <div style="margin-bottom:14px;display:flex;${m.role==='user'?'justify-content:flex-end':'justify-content:flex-start'}">
       ${m.role==='assistant'?`<div style="width:28px;height:28px;border-radius:10px;background:linear-gradient(135deg,rgba(212,168,67,.2),rgba(212,168,67,.06));border:1px solid rgba(212,168,67,.25);display:flex;align-items:center;justify-content:center;font-size:13px;margin-right:8px;flex-shrink:0;margin-top:2px">✦</div>`:''}
       <div style="max-width:78%;padding:11px 14px;border-radius:${m.role==='user'?'18px 18px 4px 18px':'18px 18px 18px 4px'};background:${m.role==='user'?'var(--gold)':'var(--surface)'};color:${m.role==='user'?'#0c0b09':'var(--fg)'};font-size:14px;line-height:1.55;border:${m.role==='user'?'none':'1px solid var(--border)'}">
-        ${m.content.replace(/\n/g,'<br>')}
+        ${esc(m.content).replace(/\n/g,'<br>')}
       </div>
     </div>`).join('')}
     ${S._aiLoading?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
