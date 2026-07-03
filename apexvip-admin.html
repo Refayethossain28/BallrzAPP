@@ -33,6 +33,7 @@
 <script src="apexvip-core.js"></script>
 <!-- Shared pure logic (payout aggregation, …) — unit-tested in apexvip-web. -->
 <script src="apexvip-engine.js"></script>
+<script src="concierge/engine.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html{height:-webkit-fill-available}
@@ -255,6 +256,7 @@ function revenue7(){
 const NAVITEMS=[
   {id:'dashboard',icon:'⊞',label:'Dashboard'},
   {id:'bookings',icon:'📋',label:'Bookings'},
+  {id:'concierge',icon:'🛎',label:'Concierge'},
   {id:'drivers',icon:'🚗',label:'Drivers'},
   {id:'documents',icon:'📄',label:'Documents'},
   {id:'clients',icon:'👤',label:'Clients'},
@@ -288,6 +290,8 @@ function track(event, props){
 
 let S={screen:'login',bFilter:'all',dFilter:'all',cFilter:'all',theme:localStorage.getItem('apexvip_admin_theme')||'dark',_dispatchOpen:false,_dispatchRef:null,_discreteDispatch:false,dispatchMode:localStorage.getItem('apexvip_dispatch_mode')||'broadcast',_pricing:null};
 let _adminMap = null, _adminMarkers = {};
+// Concierge desk mirrors (velvet_* collections) + the all-apps analytics feed.
+let VREQS=[],VMEMBERS=[],CLOUD_EVENTS=null;
 
 // Dispatch mode: 'manual' (admin assigns) or 'broadcast' (new bookings are
 // offered to every online driver instantly — first to accept wins)
@@ -408,6 +412,58 @@ function startAdminListeners(){
     CLIENTS=all;
     if(!['login'].includes(S.screen))render();
   },e=>console.warn('Users:',e.code));
+  // Concierge desk — the concierge app's members and requests mirror here live,
+  // so this console IS the desk (reply, progress, send options).
+  db.collection('velvet_requests').onSnapshot(snap=>{
+    VREQS=snap.docs.map(d=>({docId:d.id,...d.data()}));
+    if(!['login'].includes(S.screen))render();
+  },e=>console.warn('Concierge requests:',e.code));
+  db.collection('velvet_members').onSnapshot(snap=>{
+    VMEMBERS=snap.docs.map(d=>({uid:d.id,...d.data()}));
+    if(!['login'].includes(S.screen))render();
+  },e=>console.warn('Concierge members:',e.code));
+  // All-apps analytics: every app's track() mirrors into this collection, so
+  // the Analytics screen aggregates client + driver + admin + concierge.
+  db.collection('analytics').orderBy('t','desc').limit(4000).onSnapshot(snap=>{
+    CLOUD_EVENTS=snap.docs.map(d=>d.data());
+    if(S.screen==='analytics'||S.screen==='concierge')render();
+  },e=>console.warn('Analytics:',e.code));
+}
+
+/* ── Concierge desk operations ─────────────────────────────────────────── */
+function vcReq(docId){return VREQS.find(r=>r.docId===docId);}
+function vcMember(uid){return VMEMBERS.find(m=>m.uid===uid)||{};}
+function vcTier(r){const m=vcMember(r.ownerUid);return (m.sub&&m.sub.tierId)||'silver';}
+
+// Advance a request along the lifecycle (engine-validated). 'options' also
+// attaches the three priced options; the member picks + confirms in their app.
+function vcAdvance(docId,to){
+  const V=window.Velvet, r=vcReq(docId);
+  if(!V||!r||!FIREBASE_ENABLED)return;
+  if(!V.canTransition(r.status,to)){showToast('Not allowed from '+r.status);return;}
+  const now=Date.now();
+  const m=vcMember(r.ownerUid);
+  const patch={status:to,updatedAt:now};
+  if(to==='triaged'&&r.firstResponseAt==null)patch.firstResponseAt=now;
+  if(to==='completed')patch.completedAt=now;
+  if(to==='options')patch.options=V.proposeOptions(r);
+  patch.messages=(r.messages||[]).concat([{from:'desk',text:V.deskLine(r,to,m.memberName||''),at:now}]);
+  db.collection('velvet_requests').doc(docId).update(patch)
+    .then(()=>{track('concierge_desk_advanced',{to,category:r.category,src:'admin'});showToast('Request → '+(V.STATUS_LABEL[to]||to));})
+    .catch(e=>showToast('Update failed: '+e.message));
+}
+
+function vcReply(docId){
+  const r=vcReq(docId);
+  if(!r||!FIREBASE_ENABLED)return;
+  const text=prompt('Reply to the member as the Concierge desk:');
+  if(!text||!text.trim())return;
+  const now=Date.now();
+  db.collection('velvet_requests').doc(docId).update({
+    messages:(r.messages||[]).concat([{from:'desk',text:text.trim(),at:now}]),
+    updatedAt:now,
+  }).then(()=>{track('concierge_desk_reply',{category:r.category,src:'admin'});showToast('Sent to the member');})
+    .catch(e=>showToast('Send failed: '+e.message));
 }
 
 function badge(s){
@@ -814,8 +870,97 @@ pricing:()=>{
   </div>
 </div>`;},
 
+concierge:()=>{
+  const V=window.Velvet;
+  if(!V)return '<div class="screen"><div class="card">concierge/engine.js failed to load.</div></div>';
+  const now=Date.now();
+  const RANK={silver:1,gold:2,black:3};
+  const TIERTAG={silver:'tag-gray',gold:'tag-gold',black:'tag-blue'};
+  const open=VREQS.filter(r=>!['completed','cancelled'].includes(r.status));
+  const queue=V.queueOrder(open.map(r=>({request:r,tierRank:RANK[vcTier(r)]||1})),now).map(e=>e.request);
+  const live=VMEMBERS.filter(m=>m.sub&&m.sub.status!=='canceled');
+  const mrr=live.reduce((s,m)=>s+((V.TIERS[(m.sub&&m.sub.tierId)||'silver']||{}).pricePence||0),0);
+  const breached=open.filter(r=>V.slaState(r.submittedAt,vcTier(r),now,r.firstResponseAt)==='breached').length;
+  const needsDesk=open.filter(r=>['submitted','triaged','sourcing'].includes(r.status)).length;
+  const confirmedRev=VREQS.filter(r=>r.chosenOption).reduce((s,r)=>s+(r.chosenOption.pricePence||0),0);
+  const slaBadge=st=>({met:'tag-green Met',ok:'tag-blue OK',warning:'tag-amber Due',breached:'tag-red Breached'})[st]||'tag-gray —';
+  const ago=t=>{const m=Math.round((now-t)/60000);return m<60?m+'m':m<1440?Math.round(m/60)+'h':Math.round(m/1440)+'d';};
+  const nextActions=r=>({
+    submitted:[['triaged','Triage']],
+    triaged:[['sourcing','Start sourcing']],
+    sourcing:[['options','Send options']],
+    options:[],
+    confirmed:[['completed','Complete']],
+  })[r.status]||[];
+  let html='<div class="screen">';
+  html+='<div class="section-header"><div><div class="section-title">Concierge desk</div><div style="color:var(--fg-dim);font-size:13px;margin-top:2px">The ApexVIP Concierge app, staffed from this console — replies and status changes reach the member live.</div></div></div>';
+  html+='<div class="stagger" style="display:flex;gap:14px;margin-bottom:24px;flex-wrap:wrap">';
+  const kpi=(l,v,c,sub)=>'<div class="stat-card"><div class="section-label" style="margin-bottom:8px">'+l+'</div><div style="font-size:26px;font-weight:800;color:'+(c||'var(--fg)')+'">'+v+'</div>'+(sub?'<div style="font-size:11px;color:var(--fg-ghost);margin-top:4px">'+sub+'</div>':'')+'</div>';
+  html+=kpi('Open requests',open.length,'var(--gold)',needsDesk+' need the desk');
+  html+=kpi('SLA breached',breached,breached?'var(--red,#e06767)':'var(--green,#58c98a)','first-response SLA');
+  html+=kpi('Members',VMEMBERS.length,'var(--fg)',live.length+' live');
+  html+=kpi('Concierge MRR',V.fmtGBP(mrr),'var(--gold)','live memberships');
+  html+=kpi('Confirmed spend',V.fmtGBP(confirmedRev),'var(--fg)','via request options');
+  html+='</div>';
+  // queue
+  html+='<div class="card" style="margin-bottom:24px"><div class="section-label" style="margin-bottom:12px">Request queue — tier first, then patience</div>';
+  if(!queue.length){
+    html+='<div style="color:var(--fg-subtle);font-size:13px;padding:18px 0;text-align:center">No open requests. New ones appear here the moment a member submits'+(FIREBASE_ENABLED?'.':' (connect Firebase to go live).')+'</div>';
+  }else{
+    html+='<table style="width:100%;border-collapse:collapse;font-size:13px">';
+    html+='<tr style="color:var(--fg-subtle);text-align:left"><th style="padding:8px 10px">Member</th><th style="padding:8px 10px">Request</th><th style="padding:8px 10px">Tier</th><th style="padding:8px 10px">Status</th><th style="padding:8px 10px">SLA</th><th style="padding:8px 10px">Waiting</th><th style="padding:8px 10px">Desk actions</th></tr>';
+    queue.forEach(r=>{
+      const t=vcTier(r), m=vcMember(r.ownerUid);
+      const sla=V.slaState(r.submittedAt,t,now,r.firstResponseAt);
+      const sb=slaBadge(sla).split(' ');
+      const cat=(V.CATEGORIES.find(c=>c.id===r.category)||{}).emoji||'';
+      const acts=nextActions(r).map(([to,label])=>'<button class="btn btn-glass btn-sm" onclick="vcAdvance(\''+r.docId+'\',\''+to+'\')">'+label+'</button>').join(' ');
+      const wait=r.status==='options'?'<span style="color:var(--fg-ghost)">with member</span>':(acts||'');
+      html+='<tr style="border-top:1px solid var(--border)">'
+        +'<td style="padding:10px">'+(m.memberName||'—')+'</td>'
+        +'<td style="padding:10px;max-width:280px">'+cat+' '+String(r.title||'').replace(/</g,'&lt;')+'<div style="color:var(--fg-ghost);font-size:11px">'+(r.messages?r.messages.length:0)+' messages</div></td>'
+        +'<td style="padding:10px"><span class="tag '+(TIERTAG[t]||'tag-gray')+'">'+t.toUpperCase()+'</span></td>'
+        +'<td style="padding:10px">'+(V.STATUS_LABEL[r.status]||r.status)+'</td>'
+        +'<td style="padding:10px"><span class="tag '+sb[0]+'">'+sb.slice(1).join(' ')+'</span></td>'
+        +'<td style="padding:10px">'+ago(r.submittedAt||now)+'</td>'
+        +'<td style="padding:10px;white-space:nowrap">'+wait+' <button class="btn btn-glass btn-sm" onclick="vcReply(\''+r.docId+'\')">Reply</button></td>'
+        +'</tr>';
+    });
+    html+='</table>';
+  }
+  html+='</div>';
+  // members roster
+  html+='<div class="card"><div class="section-label" style="margin-bottom:12px">Members</div>';
+  if(!VMEMBERS.length){
+    html+='<div style="color:var(--fg-subtle);font-size:13px;padding:18px 0;text-align:center">No concierge members yet.</div>';
+  }else{
+    html+='<table style="width:100%;border-collapse:collapse;font-size:13px">';
+    html+='<tr style="color:var(--fg-subtle);text-align:left"><th style="padding:8px 10px">Member</th><th style="padding:8px 10px">Tier</th><th style="padding:8px 10px">Status</th><th style="padding:8px 10px">Billing</th><th style="padding:8px 10px">Points</th><th style="padding:8px 10px">Period ends</th><th style="padding:8px 10px">Requests</th></tr>';
+    VMEMBERS.slice().sort((a,b)=>(RANK[(b.sub||{}).tierId]||0)-(RANK[(a.sub||{}).tierId]||0)).forEach(m=>{
+      const t=(m.sub&&m.sub.tierId)||'—';
+      const n=VREQS.filter(r=>r.ownerUid===m.uid).length;
+      html+='<tr style="border-top:1px solid var(--border)">'
+        +'<td style="padding:10px">'+(m.memberName||m.uid.slice(0,8))+'</td>'
+        +'<td style="padding:10px"><span class="tag '+(TIERTAG[t]||'tag-gray')+'">'+String(t).toUpperCase()+'</span></td>'
+        +'<td style="padding:10px">'+((m.sub&&m.sub.status)||'—')+(m.sub&&m.sub.cancelAtPeriodEnd?' · ending':'')+'</td>'
+        +'<td style="padding:10px">'+(m.billing||'local')+'</td>'
+        +'<td style="padding:10px">'+(m.points||0)+'</td>'
+        +'<td style="padding:10px">'+(m.sub&&m.sub.periodEnd?new Date(m.sub.periodEnd).toLocaleDateString('en-GB',{day:'numeric',month:'short'}):'—')+'</td>'
+        +'<td style="padding:10px">'+n+'</td>'
+        +'</tr>';
+    });
+    html+='</table>';
+  }
+  html+='</div></div>';
+  return html;
+},
+
 analytics:()=>{
-  const raw=JSON.parse(localStorage.getItem('apexvip_events')||'[]');
+  // All-apps collection point: when Firebase is on, the shared `analytics`
+  // collection (fed by track() in the client, driver, admin and concierge
+  // apps) is the source of truth; this browser's local log is the fallback.
+  const localEvents=JSON.parse(localStorage.getItem('apexvip_events')||'[]');
+  const raw=(FIREBASE_ENABLED&&CLOUD_EVENTS&&CLOUD_EVENTS.length)?CLOUD_EVENTS:localEvents;
 
   // ── Core datasets ──
   const bookings=raw.filter(e=>e.e==='booking_confirmed');
@@ -906,7 +1051,7 @@ analytics:()=>{
 
   const noData=raw.length===0;
   let html='<div class="screen">';
-  html+='<div class="section-header"><div class="section-title">Business Intelligence</div>';
+  html+='<div class="section-header"><div><div class="section-title">Business Intelligence</div><div style="color:var(--fg-dim);font-size:13px;margin-top:2px">'+((FIREBASE_ENABLED&&CLOUD_EVENTS&&CLOUD_EVENTS.length)?'Live from all apps — client, driver, admin & concierge (cloud)':'This device only — connect Firebase to collect every app')+'</div></div>';
   html+='<div style="display:flex;gap:8px"><button class="btn btn-glass btn-sm" onclick="render()">↺ Refresh</button><button class="btn btn-glass btn-sm" onclick="if(confirm(\'Clear all data?\'))localStorage.removeItem(\'apexvip_events\'),render()">Clear</button></div></div>';
 
   if(noData){
@@ -915,6 +1060,25 @@ analytics:()=>{
     html+='<div style="font-size:20px;font-weight:700;margin-bottom:10px">No data yet</div>';
     html+='<div style="font-size:13px;color:var(--fg-subtle);line-height:1.7">Open the client or driver app and complete some actions.<br/>All interactions are tracked automatically and shown here in real time.</div></div>';
   } else {
+    // ── Across the apps ──
+    const bySrc={};raw.forEach(e=>{const k=e.src||'client';bySrc[k]=(bySrc[k]||0)+1;});
+    const SRC_META={client:['📱','Client app'],driver:['🚗','Driver app'],admin:['🖥','Admin console'],concierge:['🛎','Concierge']};
+    html+='<div class="section-label" style="margin:6px 0 12px">Across the apps</div><div class="stagger" style="display:flex;gap:14px;margin-bottom:24px;flex-wrap:wrap">';
+    Object.keys(SRC_META).forEach(k=>{const[ic,label]=SRC_META[k];html+=kpi(ic+' '+label,(bySrc[k]||0).toLocaleString(),'var(--fg)','events collected');});
+    html+='</div>';
+    // ── Concierge programme ──
+    const vReqs=raw.filter(e=>e.e==='concierge_request_created');
+    const vConf=raw.filter(e=>e.e==='concierge_option_confirmed');
+    const vTrials=raw.filter(e=>e.e==='membership_trial_started');
+    const vRev=vConf.reduce((s,e)=>s+(e.price||0),0);
+    if(vReqs.length||vConf.length||vTrials.length){
+      html+='<div class="section-label" style="margin:6px 0 12px">Concierge programme</div><div class="stagger" style="display:flex;gap:14px;margin-bottom:24px;flex-wrap:wrap">';
+      html+=kpi('Memberships started',vTrials.length,'var(--gold)','7-day trials');
+      html+=kpi('Requests',vReqs.length,'var(--fg)','across 8 desks');
+      html+=kpi('Options confirmed',vConf.length,'var(--fg)',vReqs.length?Math.round(vConf.length/vReqs.length*100)+'% of requests':'');
+      html+=kpi('Concierge revenue','£'+vRev.toLocaleString(),'var(--gold)','confirmed options');
+      html+='</div>';
+    }
 
   // ── 1. Revenue Intelligence ──────────────────────────────────────────────
   html+='<div class="section-label" style="margin:0 0 12px">Revenue Intelligence</div>';

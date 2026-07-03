@@ -50,6 +50,8 @@
     startCheckout: startCheckout,
     openPortal: openPortal,
     askDesk: askDesk,
+    track: track,
+    dispatchChauffeur: dispatchChauffeur,
   };
   if (typeof window !== 'undefined') window.VelvetCloud = cloud;
 
@@ -208,6 +210,63 @@
   /** Returns {url} for the Stripe Billing Portal, or {mock:true}. */
   function openPortal() {
     return callFn('createVelvetPortal', { returnUrl: hereUrl() });
+  }
+
+  /* ---- analytics — the shared ApexVIP pipeline ---- */
+  /** Same contract as track() in the client/driver/admin apps: append to the
+   *  apexvip_events localStorage log and, when the cloud is up and the user is
+   *  signed in, mirror to the shared Firestore `analytics` collection that the
+   *  admin app aggregates. Fire-and-forget; never throws. */
+  function track(event, props) {
+    try {
+      var ev = Object.assign({ e: event, event: event, t: Date.now(), ts: Date.now(), src: 'concierge' }, props || {});
+      var key = 'apexvip_events';
+      var arr = JSON.parse(localStorage.getItem(key) || '[]');
+      arr.push(ev);
+      if (arr.length > 2000) arr.splice(0, arr.length - 2000);
+      localStorage.setItem(key, JSON.stringify(arr));
+      if (db && cloud.user) db.collection('analytics').add(ev).catch(function () {});
+    } catch (e) {}
+  }
+
+  /* ---- chauffeur hand-off — into the ApexVIP dispatch pipeline ---- */
+  /** A confirmed chauffeur request becomes a real ApexVIP booking (same shape
+   *  the client app writes), so the existing onBookingCreated Cloud Function
+   *  broadcasts it to the driver app and it appears in the admin's Bookings.
+   *  Resolves the booking ref; rejects when the cloud isn't available. */
+  function dispatchChauffeur(request, option, memberName) {
+    if (!db || !cloud.user) return Promise.reject(new Error('Cloud is not available'));
+    var pounds = Math.round((option.pricePence || 0) / 100);
+    var ref = 'APX-C' + String(Math.floor(1000 + Math.random() * 9000));
+    return db.collection('bookings').add({
+      ref: ref,
+      clientId: cloud.user.uid,
+      clientName: memberName || 'Concierge member',
+      clientEmail: cloud.user.email || '',
+      serviceType: 'point',
+      serviceLabel: 'Concierge chauffeur — ' + (option.name || ''),
+      pickup: request.title || '',
+      dropoff: request.details || '',
+      airport: '', flight: '', date: '', time: '',
+      vehicle: option.name || 'Chauffeur',
+      vehicleId: '',
+      price: pounds,
+      baseFare: pounds,
+      discount: 0,
+      vat: Math.round(pounds / 6),
+      promoApplied: false,
+      status: 'confirmed',
+      squarePaymentId: null,
+      paymentStatus: 'pending',
+      driverName: '', driverRating: null, driverPlate: '',
+      location: 'london',
+      concierge: { source: 'concierge-app', requestId: request.id, option: option.name || '' },
+      paMode: false, paPassenger: null,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    }).then(function () {
+      track('booking_confirmed', { price: pounds, service: 'point', vehicle: option.name || 'Chauffeur', user: memberName || 'Concierge member' });
+      return ref;
+    });
   }
 
   /* ---- ApexAI — the live desk brain ---- */
