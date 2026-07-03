@@ -12,8 +12,9 @@ import {
 } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from './firebase';
+import { track } from './analytics';
 import {
-  newDealRecord, recomputeStage,
+  newDealRecord, recomputeStage, postcodeDistrict,
   type ComplianceCheck, type ComplianceDoc, type ComplianceDocType, type DealParty,
   type DealRecord, type DealViewing, type DirectDebitMandate, type EpcRating,
   type ExpenseCategory, type ExpenseEntry, type FinanceEntry, type ListingSummary,
@@ -252,6 +253,7 @@ export async function uploadComplianceDoc(
     ];
     tx.update(listingRef, { complianceDocs: next });
   });
+  track({ type: 'compliance_doc_uploaded', docType: type, district: postcodeDistrict(listing.postcode) });
 }
 
 /* ---- deals, messaging & viewings (M2) ---- */
@@ -335,6 +337,7 @@ export async function createOrGetDeal(
   });
   await sendMessage(ref.id, renter.uid, 'renter', "Hi, I'm interested in this property — is it still available?");
   await addSystemMessage(ref.id, 'Enquiry started. Say hello and arrange a viewing.');
+  track({ type: 'enquiry_started', district: postcodeDistrict(listing.postcode), beds: listing.beds });
   return ref.id;
 }
 
@@ -406,6 +409,7 @@ export async function proposeViewing(deal: Deal, by: DealParty, ts: number): Pro
 export async function confirmViewing(deal: Deal): Promise<void> {
   await updateDealTx(deal.id, (rec) => (rec.viewing ? { viewing: { ...rec.viewing, status: 'confirmed' } } : {}));
   await addSystemMessage(deal.id, 'Viewing confirmed. ✅');
+  track({ type: 'viewing_confirmed' });
 }
 
 export async function agreeToProceed(deal: Deal, party: DealParty): Promise<void> {
@@ -462,6 +466,8 @@ export interface TenancyRecord extends Tenancy {
   /** Direct Debit mandate + auto-collection records (managed by Cloud Functions). */
   mandate?: DirectDebitMandate;
   collections: RentCollection[];
+  /** Coarse geography (postcode district) for market analytics. */
+  district?: string;
   /** A renewal in flight (terms + signature/fee state), managed by Cloud Functions. */
   pendingRenewal?: {
     terms: RenewalTerms;
@@ -486,6 +492,10 @@ export interface NewTenancyInput {
   monthlyRentPence: number;
   startDate: number;
   termMonths: number;
+  /** Coarse market fields (postcode district + beds) for the tenancy record
+   *  and its pseudonymous analytics event. */
+  district?: string;
+  beds?: number;
 }
 
 const tenanciesCol = collection(db, 'tenancies');
@@ -504,17 +514,26 @@ function mapTenancy(id: string, d: Record<string, unknown>): TenancyRecord {
     totalPaidPence: Number(d.totalPaidPence ?? 0),
     mandate: (d.mandate as DirectDebitMandate | undefined) ?? undefined,
     collections: Array.isArray(d.collections) ? (d.collections as RentCollection[]) : [],
+    district: d.district ? String(d.district) : undefined,
     pendingRenewal: (d.pendingRenewal as TenancyRecord['pendingRenewal']) ?? undefined,
     createdAt: toMillis(d.createdAt),
   };
 }
 
 export async function createTenancy(input: NewTenancyInput): Promise<{ id: string }> {
+  const { beds, ...record } = input;
   const ref = await addDoc(tenanciesCol, {
-    ...input,
+    ...record,
     status: 'active',
     totalPaidPence: 0,
     createdAt: serverTimestamp(),
+  });
+  track({
+    type: 'tenancy_created',
+    district: input.district,
+    beds,
+    rentPence: input.monthlyRentPence,
+    termMonths: input.termMonths,
   });
   return { id: ref.id };
 }
@@ -545,7 +564,7 @@ export async function fetchPayments(tenancyId: string): Promise<PaymentRecord[]>
 
 export async function addRentPayment(
   tenancyId: string,
-  payment: { amountPence: number; date: number; method?: string; note?: string },
+  payment: { amountPence: number; date: number; method?: string; note?: string; district?: string },
 ): Promise<void> {
   await addDoc(collection(tenanciesCol, tenancyId, 'payments'), {
     amountPence: payment.amountPence,
@@ -556,6 +575,7 @@ export async function addRentPayment(
   });
   // Keep the denormalised running total in step so list views stay cheap.
   await updateDoc(doc(tenanciesCol, tenancyId), { totalPaidPence: increment(payment.amountPence) });
+  track({ type: 'rent_payment_recorded', district: payment.district });
 }
 
 export async function endTenancy(id: string): Promise<void> {

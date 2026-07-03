@@ -142,5 +142,18 @@ service cloud.firestore {
       allow update, delete: if isSignedIn() && resource.data.landlordId == uid();
       allow create: if isSignedIn() && request.resource.data.landlordId == uid();
     }
+
+    // Pseudonymous analytics: signed-in users may append events attributed to
+    // themselves; events are never readable or mutable from clients (the daily
+    // aggregation cron reads them under the Admin SDK). Published aggregates
+    // are k-anonymised, server-written, and readable by signed-in users.
+    match /analyticsEvents/{eventId} {
+      allow create: if isSignedIn() && request.resource.data.actorId == uid();
+      allow read, update, delete: if false;
+    }
+    match /marketStats/{docId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
   }
 }

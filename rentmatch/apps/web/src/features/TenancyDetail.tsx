@@ -68,6 +68,7 @@ export default function TenancyDetail() {
         amountPence,
         date: new Date(dateStr).getTime(),
         method: String(f.get('method') ?? '') || undefined,
+        district: tenancy?.district,
       });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['payments', id] }),

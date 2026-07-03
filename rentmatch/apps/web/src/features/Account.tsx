@@ -70,6 +70,9 @@ export default function Account() {
       </button>
       <p className="faint" style={{ fontSize: 11, margin: '8px 0 16px' }}>
         UK GDPR right to erasure. Completed tenancy records are kept where the law requires.
+        Apex also records pseudonymous usage analytics — no names, emails or full addresses,
+        postcode district only — and publishes only aggregated market statistics with a
+        minimum group size of five. Erasing your data deletes your analytics events too.
       </p>
 
       <button className="cta ghost" onClick={signOutUser}>Sign out</button>

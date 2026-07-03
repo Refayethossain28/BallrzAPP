@@ -21,8 +21,9 @@ import {
   buildRentReminder, dueRentReminders, formatGBP,
   dueCollections, coveredPeriods, withinSeatAllowance,
   isStale, withinLegalRetention, REDACTED, PLATFORM_FEE_PENCE, PLANS,
-  type ComplianceDoc, type DealRecord, type EpcRating, type Party, type PlanId,
-  type SubscriptionStatus, type Tenancy, type RentCollection,
+  aggregateMarketStats, aggregateDistrictOps, postcodeDistrict, rentChangePct,
+  type AnalyticsEvent, type ComplianceDoc, type DealRecord, type EpcRating, type Party,
+  type PlanId, type SubscriptionStatus, type Tenancy, type RentCollection,
 } from '@rentmatch/shared';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
@@ -93,6 +94,18 @@ function reqEpoch(v: unknown, name: string): number {
     throw new HttpsError('invalid-argument', `${name} must be a valid date.`);
   }
   return v;
+}
+
+/**
+ * Best-effort pseudonymous analytics event (see the shared analytics module
+ * for the taxonomy and privacy constraints). Never allowed to fail a caller.
+ */
+async function recordEvent(event: Omit<AnalyticsEvent, 'ts'>): Promise<void> {
+  try {
+    await db.collection('analyticsEvents').add({ ...event, ts: Date.now() });
+  } catch (err) {
+    console.error('[analytics] event write failed', err);
+  }
 }
 
 /**
@@ -396,22 +409,37 @@ async function createTenancyFromDeal(dealId: string, deal: StoredDeal & Record<s
   const propertyLabel = [deal.listingArea, deal.listingCity].filter(Boolean).join(', ')
     || String(deal.listingCity ?? 'Property');
   const startDate = agreement?.startDate ?? Date.now() + 14 * 86_400_000;
+  const rentPence = agreement?.monthlyRentPence ?? Number(deal.rentPence ?? 0);
+
+  const listing = (await db.doc(`listings/${deal.listingId}`).get()).data() ?? {};
+  const district = postcodeDistrict(String(listing.postcode ?? '')) || undefined;
 
   const tenancyRef = await db.collection('tenancies').add({
     landlordId: deal.landlordId,
     listingId: deal.listingId,
     propertyLabel,
     tenantName: deal.renterName,
-    monthlyRentPence: agreement?.monthlyRentPence ?? Number(deal.rentPence ?? 0),
+    monthlyRentPence: rentPence,
     startDate: new Date(startDate),
     termMonths: agreement?.termMonths ?? 12,
     status: 'active',
     totalPaidPence: 0,
     collections: [],
     dealId,
+    district,
     createdAt: FieldValue.serverTimestamp(),
   });
   await db.doc(`deals/${dealId}`).update({ tenancyId: tenancyRef.id });
+
+  const enquiredAt = (deal.createdAt as { toMillis?: () => number } | undefined)?.toMillis?.();
+  await recordEvent({
+    type: 'let_agreed',
+    actorId: String(deal.landlordId ?? ''),
+    district,
+    beds: Number(listing.beds ?? 0),
+    rentPence,
+    ...(enquiredAt ? { timeToLetMs: Date.now() - enquiredAt } : {}),
+  });
 }
 
 /** Save a landlord card for the off-session fee charge (Stripe SetupIntent). */
@@ -507,7 +535,16 @@ export const stripeWebhook = onRequest(async (req, res) => {
       if (dealId) await completeDeal(dealId, pi.id);
       break;
     }
-    case 'customer.subscription.created':
+    case 'customer.subscription.created': {
+      const sub = event.data.object as Stripe.Subscription;
+      await writeSubscription(sub);
+      await recordEvent({
+        type: 'subscription_started',
+        actorId: sub.metadata?.landlordId,
+        plan: sub.metadata?.plan,
+      });
+      break;
+    }
     case 'customer.subscription.updated':
     case 'customer.subscription.deleted':
       await writeSubscription(event.data.object as Stripe.Subscription);
@@ -552,6 +589,15 @@ export const publishListing = onCall(callableOpts, async (req: CallableRequest<P
 
   const status = canGoLive ? 'live' : 'draft';
   await ref.update({ status, complianceCheckedAt: FieldValue.serverTimestamp() });
+  if (canGoLive) {
+    await recordEvent({
+      type: 'listing_published',
+      actorId: uid,
+      district: postcodeDistrict(String(listing.postcode ?? '')) || undefined,
+      beds: Number(listing.beds ?? 0),
+      rentPence: Number(listing.rentPence ?? 0),
+    });
+  }
   return { status, checks };
 });
 
@@ -651,6 +697,15 @@ export const sendComplianceReminders = onSchedule('every 24 hours', async () => 
     }
 
     // Record every fired milestone so the next run is a no-op for them.
+    for (const r of due) {
+      if (r.threshold === 'expired') {
+        await recordEvent({
+          type: 'compliance_lapsed',
+          district: postcodeDistrict(String(l.postcode ?? '')) || undefined,
+          docType: r.type,
+        });
+      }
+    }
     await docSnap.ref.update({ complianceRemindersSent: FieldValue.arrayUnion(...due.map((r) => r.key)) });
   }
 });
@@ -709,6 +764,11 @@ export const sendRentReminders = onSchedule('every 24 hours', async () => {
       await sendEmail(email, note.title, note.body);
     }
 
+    for (const r of due) {
+      if (r.kind === 'overdue') {
+        await recordEvent({ type: 'arrears_flagged', district: t.district ? String(t.district) : undefined });
+      }
+    }
     await docSnap.ref.update({ rentRemindersSent: FieldValue.arrayUnion(...due.map((r) => r.key)) });
   }
 });
@@ -836,6 +896,7 @@ export const gocardlessWebhook = onRequest(async (req, res) => {
         await db.doc(`tenancies/${tenancyId}`).update({
           mandate: { status, provider: 'gocardless', mandateId },
         });
+        if (status === 'active') await recordEvent({ type: 'dd_mandate_active' });
       } else if (ev.resource_type === 'payments') {
         const paymentId = ev.links?.payment;
         if (!paymentId) continue;
@@ -1211,12 +1272,21 @@ export const confirmRenewal = onCall(callableOpts, async (req: CallableRequest<{
     totalPaidPence: 0,
     collections: [],
     renewedFromId: tenancyId,
+    district: t.district,
     createdAt: FieldValue.serverTimestamp(),
   });
   await ref.update({
     status: 'ended',
     renewedToId: newRef.id,
     pendingRenewal: FieldValue.delete(),
+  });
+  await recordEvent({
+    type: 'tenancy_renewed',
+    actorId: uid,
+    district: t.district ? String(t.district) : undefined,
+    rentPence: renewal.terms.monthlyRentPence,
+    termMonths: renewal.terms.termMonths,
+    rentChangePct: rentChangePct(Number(t.monthlyRentPence ?? 0), renewal.terms.monthlyRentPence),
   });
   return { newTenancyId: newRef.id };
 });
@@ -1238,6 +1308,13 @@ export const requestDataErasure = onCall(callableOpts, async (req: CallableReque
     { merge: true },
   );
 
+  // Analytics events are pseudonymous but keyed by uid — erase those too.
+  for (;;) {
+    const batch = await db.collection('analyticsEvents').where('actorId', '==', uid).limit(400).get();
+    if (batch.empty) break;
+    await Promise.all(batch.docs.map((d) => d.ref.delete()));
+  }
+
   const now = Date.now();
   const redactName = async (field: 'renterName' | 'landlordName', idField: 'renterId' | 'landlordId') => {
     const snap = await db.collection('deals').where(idField, '==', uid).get();
@@ -1251,6 +1328,26 @@ export const requestDataErasure = onCall(callableOpts, async (req: CallableReque
   await redactName('renterName', 'renterId');
   await redactName('landlordName', 'landlordId');
   return { ok: true };
+});
+
+/**
+ * Daily market-analytics rollup. Reads the last 180 days of pseudonymous
+ * events, aggregates them with the shared k-anonymised aggregator, and
+ * publishes a single atomic snapshot (marketStats/latest): rent order
+ * statistics per (district, beds), median time-to-let, and district
+ * arrears/compliance rates. No personal data leaves the events collection.
+ */
+export const aggregateAnalytics = onSchedule('every 24 hours', async () => {
+  const since = Date.now() - 180 * 86_400_000;
+  const snap = await db.collection('analyticsEvents').where('ts', '>=', since).get();
+  const events = snap.docs.map((d) => d.data() as AnalyticsEvent);
+  await db.doc('marketStats/latest').set({
+    updatedAt: FieldValue.serverTimestamp(),
+    windowDays: 180,
+    eventsObserved: events.length,
+    stats: aggregateMarketStats(events),
+    ops: aggregateDistrictOps(events),
+  });
 });
 
 /** Daily retention sweep: purge stale drafts and abandoned enquiries. */

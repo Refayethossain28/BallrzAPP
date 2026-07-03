@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { postcodeDistrict } from '@rentmatch/shared';
 import { useAuth } from '../auth/AuthProvider';
 import { createTenancy, fetchLandlordListings, type NewTenancyInput, type Listing } from '../lib/db';
 
@@ -45,6 +46,8 @@ export default function NewTenancy() {
       monthlyRentPence: Math.round(Number(f.get('rent') ?? 0) * 100),
       startDate: new Date(startStr).getTime(),
       termMonths: Number(f.get('term') ?? 12),
+      district: postcodeDistrict(property.postcode) || undefined,
+      beds: property.beds,
     });
   }
 
