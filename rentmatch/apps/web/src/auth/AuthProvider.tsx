@@ -32,10 +32,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(u);
       if (u) {
         try {
-          setProfile(await ensureUserProfile(u.uid, u.email ?? '', u.displayName ?? 'Member'));
+          // Race against a timeout: when the backend is unreachable (offline,
+          // or a demo build whose database doesn't exist yet) the Firestore
+          // client retries forever rather than rejecting — without the race the
+          // app would sit on "Loading Apex…" indefinitely.
+          const profile = await Promise.race([
+            ensureUserProfile(u.uid, u.email ?? '', u.displayName ?? 'Member'),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('profile load timed out')), 6_000)),
+          ]);
+          setProfile(profile);
         } catch (err) {
-          // Backend unreachable (offline, or a demo build with no database) —
-          // fall back to a local profile so the app renders instead of hanging.
+          // Fall back to a local profile so the app renders instead of hanging.
           console.error('[apex] profile load failed', err);
           setProfile({
             uid: u.uid,
