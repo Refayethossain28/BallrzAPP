@@ -546,6 +546,35 @@ async function apexCallClaude(p: ParseBookingInput, apiKey: string): Promise<Rec
     return { reply: text || 'How can I help with your next job?' };
   }
 
+  if (mode === 'velvet') {
+    // Velvet (concierge/) — the all-in-one VIP concierge desk. Free-text chat
+    // inside one request thread; the desk (not the model) issues options,
+    // prices and confirmations, so the persona must never invent them.
+    const sys =
+      'You are ApexAI, the live assistant on the Velvet desk — ApexVIP\'s all-in-one VIP concierge ' +
+      '(travel, dining, events & tickets, chauffeur, personal shopping, home & errands, wellness, gifting). ' +
+      `The current date/time is ${today} (Europe/London). ` +
+      'You are chatting inside a single concierge request thread. Be warm, discreet and brief — 2–4 sentences, ' +
+      'in the voice of a five-star concierge. Answer questions, refine the brief, and offer concrete, tasteful ' +
+      'ideas for the request at hand. For chauffeur or ride needs, capture the details and say the desk will ' +
+      'arrange the car with ApexVIP. Never invent confirmed bookings, availability or prices — priced options ' +
+      'and confirmations only ever come from the desk itself. Plain text only.' +
+      (context ? ` The request brief: ${JSON.stringify(context).slice(0, 800)}.` : '');
+    const turns: Anthropic.MessageParam[] = (Array.isArray(history) ? history : [])
+      .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+      .slice(-8)
+      .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content as string }));
+    turns.push({ role: 'user', content: String(message || '').slice(0, 1000) });
+    const data = await anthropicMessages({
+      model: APEXAI_MODEL,
+      max_tokens: 500,
+      system: sys,
+      messages: turns,
+    }, apiKey);
+    const text = data.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('\n').trim();
+    return { reply: text || 'Of course — leave it with me.' };
+  }
+
   const sys =
     'You are ApexAI, the concierge brain for ApexVIP — a discreet luxury chauffeur service in London. ' +
     `The current date/time is ${today} (Europe/London). ` +

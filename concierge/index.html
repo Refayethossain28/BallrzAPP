@@ -891,7 +891,7 @@
     for (var m = 0; m < r.messages.length; m++) {
       var msg = r.messages[m];
       h += '<div class="msg ' + (msg.from === 'desk' ? 'desk' : 'me') + '">' +
-        (msg.from === 'desk' ? '<span class="who">' + esc(DESK_NAME) + '</span>' : '') +
+        (msg.from === 'desk' ? '<span class="who">' + esc(msg.ai ? 'ApexAI ✦ Velvet desk' : DESK_NAME) + '</span>' : '') +
         esc(msg.text) + '<time>' + fmtTime(msg.at) + '</time></div>';
     }
     h += '</div>';
@@ -952,17 +952,52 @@
     var input = $('chatInput');
     var text = (input.value || '').trim();
     if (!text) return;
-    var now = Date.now();
-    state.requests[i].messages.push({ from: 'me', text: text, at: now });
-    // the desk acknowledges after a beat
-    var reply = 'Noted — I’ve added that to the brief. Leave it with me.';
-    setTimeout(function () {
+    state.requests[i].messages.push({ from: 'me', text: text, at: Date.now() });
+    save(); render();
+    deskRespond(id, text);
+  }
+
+  /** The desk answers a chat message: ApexAI (the same concierge brain the
+   *  ApexVIP client uses, in its Velvet persona) when the cloud is reachable,
+   *  the scripted acknowledgement otherwise — exactly one reply either way. */
+  function deskRespond(id, memberText) {
+    var canned = 'Noted — I’ve added that to the brief. Leave it with me.';
+    var replied = false;
+    function post(reply, viaAI) {
+      if (replied) return;
+      replied = true;
       var j = findReq(id);
       if (j < 0) return;
-      state.requests[j].messages.push({ from: 'desk', text: reply, at: Date.now() });
+      state.requests[j].messages.push({ from: 'desk', text: reply, at: Date.now(), ai: viaAI || undefined });
       save(); render();
-    }, 1400);
-    save(); render();
+    }
+    var canAsk = !!(C && C.enabled() && C.askDesk);
+    // scripted beat when there's no cloud; a generous ceiling when ApexAI is thinking
+    var fallback = setTimeout(function () { post(canned); }, canAsk ? 12000 : 1400);
+    if (!canAsk) return;
+    var i = findReq(id);
+    var r = i >= 0 ? state.requests[i] : null;
+    var history = (r ? r.messages : []).slice(-8).map(function (m) {
+      return { role: m.from === 'me' ? 'user' : 'assistant', content: m.text };
+    });
+    history.pop(); // the member's newest line goes in `message`, not history
+    C.askDesk({
+      message: memberText,
+      history: history,
+      now: new Date().toISOString(),
+      context: !r ? { app: 'velvet' } : {
+        app: 'velvet', category: r.category, title: r.title, details: r.details,
+        status: r.status, budget: r.budget,
+        options: r.options ? r.options.map(function (o) { return o.name + ' (' + V.fmtGBP(o.pricePence) + ')'; }) : undefined,
+        chosen: r.chosenOption ? r.chosenOption.name : undefined,
+      },
+    }).then(function (res) {
+      clearTimeout(fallback);
+      post(res && res.reply ? String(res.reply) : canned, true);
+    }).catch(function () {
+      clearTimeout(fallback);
+      setTimeout(function () { post(canned); }, 500);
+    });
   }
 
   function confirmOption(id, idx) {
