@@ -1,6 +1,6 @@
-# Velvet — cloud setup (accounts, sync, real Stripe billing)
+# ApexVIP Concierge — cloud setup (accounts, sync, real Stripe billing)
 
-Velvet works fully offline with zero setup — membership, billing simulation and
+The app (branded **ApexVIP**; internal codename `velvet`) works fully offline with zero setup — membership, billing simulation and
 the concierge desk all run on-device. This guide turns on the optional cloud:
 **real accounts**, **cross-device sync over Firestore**, and **real subscription
 payments through Stripe Billing**.
@@ -11,7 +11,7 @@ deployed without Stripe keys → server-granted mock trials; keys set → real m
 
 ## 1. Firebase (accounts + sync)
 
-Velvet reuses the `apexvip-1b4a9` project already configured in
+The app reuses the `apexvip-1b4a9` project already configured in
 [`config.js`](./config.js) and keeps its data in separate `velvet_*` collections
 (it never touches the ApexVIP data). To use a different project, paste that
 project's web config into `config.js`.
@@ -40,7 +40,7 @@ or an ops tool — the member sees it in their thread in real time.
 
 ## 2. Cloud Functions (billing backend)
 
-The Velvet backend lives in [`../functions/src/velvet.ts`](../functions/src/velvet.ts)
+The concierge backend lives in [`../functions/src/velvet.ts`](../functions/src/velvet.ts)
 and deploys with the rest of the ApexVIP functions:
 
 ```sh
@@ -59,9 +59,9 @@ With **no Stripe key set**, `createVelvetCheckout` runs in **mock mode**: the
 server itself writes a trial into the member doc (`billing: 'stripe-mock'`), so
 the whole loop is exercisable before Stripe is connected.
 
-**ApexAI on the desk**: Velvet's request chat is answered live by **ApexAI** —
+**ApexAI on the desk**: the concierge request chat is answered live by **ApexAI** —
 the same `parseBookingIntent` function that powers the ApexVIP client's
-assistant, in a dedicated Velvet concierge persona (`mode: 'velvet'`). It needs
+assistant, in a dedicated concierge persona (`mode: 'velvet'`). It needs
 the `ANTHROPIC_API_KEY` secret (already used by ApexVIP):
 
 ```sh
@@ -111,7 +111,7 @@ Checkout (card `4242 4242 4242 4242` in test mode). From that moment:
 
 - Swap `sk_test_…` for the live key and re-point the webhook at live mode.
 - Enable **App Check** on the Firebase project (the ApexVIP setup doc covers it).
-- Restrict the Billing Portal configuration to the three Velvet prices so a
+- Restrict the Billing Portal configuration to the three concierge prices so a
   member can't switch onto an unrelated product.
 - The demo's on-device billing remains available to signed-out users by design;
   gate the paywall behind sign-in if you want cloud-only membership.

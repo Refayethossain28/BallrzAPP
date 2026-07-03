@@ -64,7 +64,7 @@ async function findOrCreatePrice(stripe: Stripe, tierId: string): Promise<string
   if (existing.data.length) return existing.data[0].id;
   const t = VELVET_TIERS[tierId];
   const product = await stripe.products.create({
-    name: `Velvet ${t.name} membership`,
+    name: `ApexVIP ${t.name} membership`,
     metadata: { app: 'velvet', tier: tierId },
   });
   const price = await stripe.prices.create({
@@ -215,7 +215,7 @@ async function recordInvoice(inv: Stripe.Invoice): Promise<void> {
       at: (inv.status_transitions && inv.status_transitions.paid_at ? inv.status_transitions.paid_at : inv.created) * 1000,
       periodStart: line && line.period ? line.period.start * 1000 : null,
       periodEnd: line && line.period ? line.period.end * 1000 : null,
-      description: `Velvet ${VELVET_TIERS[tierId].name} membership`,
+      description: `ApexVIP ${VELVET_TIERS[tierId].name} membership`,
       stripeInvoiceId: inv.id,
       hostedInvoiceUrl: inv.hosted_invoice_url || null,
     });
