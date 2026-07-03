@@ -59,6 +59,19 @@ With **no Stripe key set**, `createVelvetCheckout` runs in **mock mode**: the
 server itself writes a trial into the member doc (`billing: 'stripe-mock'`), so
 the whole loop is exercisable before Stripe is connected.
 
+**ApexAI on the desk**: Velvet's request chat is answered live by **ApexAI** —
+the same `parseBookingIntent` function that powers the ApexVIP client's
+assistant, in a dedicated Velvet concierge persona (`mode: 'velvet'`). It needs
+the `ANTHROPIC_API_KEY` secret (already used by ApexVIP):
+
+```sh
+firebase functions:secrets:set ANTHROPIC_API_KEY
+```
+
+If the function is unreachable or the key is unset, the chat falls back to the
+scripted desk acknowledgement — nothing breaks. ApexAI never issues options,
+prices or confirmations; those still come only from the desk lifecycle.
+
 ## 3. Stripe (real money)
 
 1. Set the secrets:

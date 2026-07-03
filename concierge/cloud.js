@@ -49,6 +49,7 @@
     push: schedulePush,
     startCheckout: startCheckout,
     openPortal: openPortal,
+    askDesk: askDesk,
   };
   if (typeof window !== 'undefined') window.VelvetCloud = cloud;
 
@@ -207,5 +208,14 @@
   /** Returns {url} for the Stripe Billing Portal, or {mock:true}. */
   function openPortal() {
     return callFn('createVelvetPortal', { returnUrl: hereUrl() });
+  }
+
+  /* ---- ApexAI — the live desk brain ---- */
+  /** Ask ApexAI (the same parseBookingIntent function the ApexVIP client uses,
+   *  in its Velvet persona). payload: {message, history, now, context}.
+   *  Resolves {reply}; rejects when the cloud/function is unavailable — the
+   *  app then falls back to the scripted desk. */
+  function askDesk(payload) {
+    return callFn('parseBookingIntent', Object.assign({ mode: 'velvet' }, payload || {}));
   }
 })();
