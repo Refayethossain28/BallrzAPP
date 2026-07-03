@@ -71,6 +71,15 @@ jobs:
           mkdir -p _site/ripple
           cp -r ripple/. _site/ripple/ 2>/dev/null || true
 
+          # Velvet (concierge/) — the subscription VIP concierge PWA (app,
+          # engine, cloud config, SW, icons) — plus the other standalone PWAs
+          # the landing page links to, which were missing from this allowlist
+          # and 404ed: Cusp, Omni, Imposter, Lingua.
+          for app in concierge cusp omni imposter lingua; do
+            mkdir -p "_site/$app"
+            cp -r "$app/." "_site/$app/" 2>/dev/null || true
+          done
+
           # Fixr — luxury ground-transport + concierge prototype (static demo).
           # The full Fixr app is a Node server; deploy it to Render (fixr/app/DEPLOY.md).
           mkdir -p _site/fixr
