@@ -248,6 +248,57 @@ test('points: £1 = 1pt × tier multiplier; status levels climb', () => {
   assert.equal(E.pointsToNext(99999), null);
 });
 
+/* ---- cloud sync merge ---- */
+
+test('mergeRequests: later updatedAt wins per id; more messages breaks ties; union sorted', () => {
+  const stale = req({ id: 'a', status: 'submitted', updatedAt: NOW, messages: [1] });
+  const fresh = req({ id: 'a', status: 'options', updatedAt: NOW + MIN, messages: [1, 2, 3] });
+  const localOnly = req({ id: 'b', submittedAt: NOW - MIN });
+  const remoteOnly = req({ id: 'c', submittedAt: NOW + MIN });
+  const out = E.mergeRequests([stale, localOnly], [fresh, remoteOnly]);
+  assert.deepEqual([...out.map(r => r.id)], ['b', 'a', 'c'], 'union, ordered by submittedAt');
+  assert.equal(out.find(r => r.id === 'a').status, 'options');
+  // tie on updatedAt → the copy with more messages (a desk reply) wins
+  const tied = E.mergeRequests(
+    [req({ id: 'a', updatedAt: NOW, messages: [1] })],
+    [req({ id: 'a', updatedAt: NOW, messages: [1, 2] })]);
+  assert.equal(tied[0].messages.length, 2);
+});
+
+test('mergeInvoices: de-duplicates identical charges, keeps both renewals, oldest first', () => {
+  const i1 = { at: NOW, tierId: 'gold', amountPence: 19900 };
+  const i2 = { at: NOW + 30 * DAY, tierId: 'gold', amountPence: 19900 };
+  const out = E.mergeInvoices([i2, i1], [i1]);
+  assert.equal(out.length, 2);
+  assert.ok(out[0].at < out[1].at);
+});
+
+test('mergeStates: the Stripe-billed server copy owns the subscription', () => {
+  const local = { memberName: 'Rafa', memberSince: NOW, billing: 'local',
+    sub: { tierId: 'black', status: 'active', periodStart: NOW + 5 * DAY, periodEnd: NOW + 35 * DAY },
+    invoices: [], requests: [], points: 900, spentPence: 0 };
+  const remote = { memberName: '', memberSince: NOW - DAY, billing: 'stripe',
+    sub: { tierId: 'silver', status: 'trialing', periodStart: NOW, periodEnd: NOW + 7 * DAY },
+    invoices: [], requests: [], points: 100, spentPence: 0 };
+  const m = E.mergeStates(local, remote);
+  assert.equal(m.sub.tierId, 'silver', 'local simulation must not override webhook truth');
+  assert.equal(m.billing, 'stripe');
+  assert.equal(m.points, 900, 'points only ever grow — max wins');
+  assert.equal(m.memberName, 'Rafa');
+  assert.equal(m.memberSince, NOW - DAY);
+});
+
+test('mergeStates: on local billing the further-advanced period wins; null sides pass through', () => {
+  const behind = { billing: 'local', sub: { tierId: 'gold', periodStart: NOW, periodEnd: NOW + 7 * DAY },
+    invoices: [], requests: [], points: 0, spentPence: 0, memberName: 'R', memberSince: NOW };
+  const ahead = { billing: 'local', sub: { tierId: 'gold', periodStart: NOW + 7 * DAY, periodEnd: NOW + 37 * DAY },
+    invoices: [], requests: [], points: 0, spentPence: 0, memberName: 'R', memberSince: NOW };
+  assert.equal(E.mergeStates(behind, ahead).sub.periodStart, NOW + 7 * DAY);
+  assert.equal(E.mergeStates(ahead, behind).sub.periodStart, NOW + 7 * DAY, 'symmetric');
+  assert.equal(E.mergeStates(behind, null), behind);
+  assert.equal(E.mergeStates(null, ahead), ahead);
+});
+
 /* ---- money formatting ---- */
 
 test('fmtGBP: pence-exact, thousands separators, no Intl', () => {

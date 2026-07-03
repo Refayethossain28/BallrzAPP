@@ -245,6 +245,7 @@
     <div class="plans" id="planList"></div>
     <button class="cta" id="startBtn">Start 7-day free trial</button>
     <p class="fine">Free for 7 days, then billed monthly. Cancel anytime — your membership runs to the end of the period. Demo: billing is simulated on-device; no card, no account, no cloud.</p>
+    <button id="paywallSignIn" class="hide" style="display:block;margin:14px auto 0;color:var(--gold2);font-size:12.5px;text-decoration:underline">Already a member? Sign in</button>
   </div>
 </div>
 
@@ -272,12 +273,21 @@
 <div id="toast"></div>
 
 <script src="engine.js"></script>
+<script src="config.js"></script>
+<script src="cloud.js"></script>
 <script>
 (function () {
   'use strict';
   var V = window.Velvet;
+  var C = window.VelvetCloud || null;   // optional cloud layer (cloud.js)
   var KEY = 'velvet.v1';
   var DESK_NAME = 'Alexandra · Velvet desk';
+
+  /** True once the Stripe webhook owns the subscription — the local billing
+   *  simulation must then stand down (no simulated renewals, no local plan ops). */
+  function cloudBilled() {
+    return !!(state && (state.billing === 'stripe' || state.billing === 'stripe-mock'));
+  }
 
   /* ---------------- state ---------------- */
   var state = null;      // null → paywall
@@ -290,7 +300,10 @@
     try { state = JSON.parse(localStorage.getItem(KEY) || 'null'); }
     catch (e) { state = null; }
   }
-  function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+    if (C && C.user && state) C.push(state);
+  }
 
   function uid() {
     return 'v' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
@@ -327,6 +340,8 @@
   /* ---------------- billing / clock roll-forward ---------------- */
   function rollForward() {
     if (!state || !state.sub) return;
+    if (cloudBilled()) return;          // Stripe (or its mock) owns renewals
+
     var now = Date.now();
     var res = V.advance(state.sub, now);
     if (res.invoices.length) {
@@ -778,6 +793,35 @@
   }
 
   /* ---------------- CLUB (membership) ---------------- */
+  function accountCardHTML() {
+    if (!C || !C.enabled()) return '';
+    var h = '<div class="card"><h3>Account &amp; sync</h3>';
+    if (C.user) {
+      var who = C.user.isAnonymous ? 'Guest member' : (C.user.email || 'Member');
+      h += '<div style="display:flex;align-items:center;gap:10px"><span style="flex:1;min-width:0"><b style="font-size:14px">' + esc(who) + '</b><br>' +
+        '<span style="font-size:11.5px;color:var(--sub)">' +
+        (C.status === 'on' ? '● Live sync on — your membership follows you across devices' : 'Connecting…') +
+        '</span></span><button class="btn ghost" id="signOutBtn">Sign out</button></div>';
+      if (!cloudBilled()) {
+        h += '<div style="margin-top:12px"><button class="btn primary" id="stripeBtn" style="width:100%">Activate real billing — Stripe checkout</button>' +
+          '<p class="fine" style="margin-top:8px">Billing is currently simulated on-device. Stripe takes over your ' +
+          esc(V.tier(state.sub.tierId).name) + ' membership with the same 7-day free trial.</p></div>';
+      } else if (state.billing === 'stripe') {
+        h += '<div style="margin-top:12px"><button class="btn" id="portalBtn" style="width:100%">Manage billing — Stripe portal</button></div>';
+      } else {
+        h += '<p class="fine" style="margin-top:10px">Server-granted trial (mock billing — no Stripe key configured on the backend yet).</p>';
+      }
+    } else if (C.status === 'loading' || C.status === 'idle') {
+      h += '<p style="color:var(--sub);font-size:12.5px">Connecting to Velvet cloud…</p>';
+    } else if (C.status === 'error') {
+      h += '<p style="color:var(--sub);font-size:12.5px">Cloud unreachable — running in offline demo mode. Everything stays on this device.</p>';
+    } else {
+      h += '<p style="color:var(--sub);font-size:12.5px;margin-bottom:10px">You’re in offline demo mode. Sign in to sync your membership and requests across devices — and to enable real billing.</p>' +
+        '<button class="btn primary" id="signInBtn" style="width:100%">Sign in / create account</button>';
+    }
+    return h + '</div>';
+  }
+
   function clubHTML() {
     var t = V.tier(state.sub.tierId);
     var lvl = V.statusFor(state.points);
@@ -802,6 +846,8 @@
       (q.cap == null ? 'Unlimited requests' : q.left + ' request' + (q.left === 1 ? '' : 's') + ' left this period') + '</span></div>' +
       '</div>';
 
+    h += accountCardHTML();
+
     // status / points
     h += '<div class="card"><h3>Velvet status</h3>' +
       '<div style="display:flex;align-items:baseline"><b class="serif" style="font-size:19px;color:var(--champagne)">' + esc(lvl.name) +
@@ -816,7 +862,12 @@
     }
     h += '</div>';
 
-    // change plan
+    // change plan — local simulation only; on real billing Stripe's portal owns it
+    if (cloudBilled()) {
+      h += '<div class="card"><h3>Change plan</h3><p style="color:var(--sub);font-size:12.5px">Your plan is managed by Stripe' +
+        (state.billing === 'stripe' ? ' — use “Manage billing” above to upgrade, downgrade or cancel.' : ' (mock mode).') + '</p></div>';
+      return h + billingHistoryHTML();
+    }
     h += '<div class="card"><h3>Change plan</h3>';
     for (var i = 0; i < V.TIER_ORDER.length; i++) {
       var pt = V.TIERS[V.TIER_ORDER[i]];
@@ -837,8 +888,19 @@
     }
     h += '</div>';
 
-    // billing history
-    h += '<div class="card"><h3>Billing</h3>';
+    // cancel / resume (local billing only — Stripe's portal owns it otherwise)
+    h += billingHistoryHTML();
+    if (state.sub.cancelAtPeriodEnd) {
+      h += '<button class="btn primary" id="resumeBtn" style="width:100%;padding:14px">Resume membership</button>';
+    } else {
+      h += '<button class="btn danger" id="cancelBtn" style="width:100%;padding:14px">Cancel membership</button>';
+    }
+    h += '<p class="fine">Billing is simulated on-device until you activate real billing above (Stripe Billing via the Cloud Functions in functions/src/velvet.ts — see concierge/SETUP.md).</p>';
+    return h;
+  }
+
+  function billingHistoryHTML() {
+    var h = '<div class="card"><h3>Billing</h3>';
     if (!state.invoices.length) {
       h += '<p style="color:var(--dim);font-size:12.5px">No charges yet — you’re on your free trial.</p>';
     } else {
@@ -848,16 +910,7 @@
           '<span class="a">' + V.fmtGBP(inv.amountPence) + '</span></div>';
       }
     }
-    h += '</div>';
-
-    // cancel / resume
-    if (state.sub.cancelAtPeriodEnd) {
-      h += '<button class="btn primary" id="resumeBtn" style="width:100%;padding:14px">Resume membership</button>';
-    } else {
-      h += '<button class="btn danger" id="cancelBtn" style="width:100%;padding:14px">Cancel membership</button>';
-    }
-    h += '<p class="fine">Demo build — billing is simulated on-device. Wire Stripe Billing for production (see docs/apexvip-payments.md for the pattern used across this repo).</p>';
-    return h;
+    return h + '</div>';
   }
 
   function switchPlan(newTierId) {
@@ -906,6 +959,69 @@
     );
   }
 
+  /* ---------------- cloud: account & billing ---------------- */
+  function authErrMsg(e) {
+    var m = String((e && e.message) || e || 'Sign-in failed');
+    return m.replace(/^Firebase:\s*/, '').replace(/\s*\(auth\/[\w-]+\)\.?$/, '');
+  }
+
+  function authSheet() {
+    if (!C) return;
+    sheet(
+      '<h2 class="serif">Velvet account</h2>' +
+      '<p class="sub">Sync your membership, requests and points across devices — and unlock real billing.</p>' +
+      '<div class="field"><label for="authEmail">Email</label><input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com"></div>' +
+      '<div class="field"><label for="authPass">Password (8+ characters)</label><input id="authPass" type="password" autocomplete="current-password" placeholder="••••••••"></div>' +
+      '<button class="btn primary" data-act="signin">Sign in</button>' +
+      '<button class="btn" data-act="signup">Create account</button>' +
+      '<button class="btn ghost" data-act="guest">Continue as guest</button>',
+      function (act, vals) {
+        var email = (vals.authEmail || '').trim(), pass = vals.authPass || '';
+        var p = act === 'guest' ? C.signInGuest()
+              : act === 'signin' ? C.signIn(email, pass)
+              : act === 'signup' ? C.signUp(email, pass) : null;
+        if (!p) return;
+        p.then(function () { toast('Signed in — your membership now syncs'); })
+         .catch(function (e) { toast(authErrMsg(e)); });
+      }
+    );
+  }
+
+  function activateStripe() {
+    if (!C || !state || !state.sub) return;
+    toast('Opening secure Stripe checkout…');
+    C.startCheckout(state.sub.tierId).then(function (r) {
+      if (r && r.url) { location.href = r.url; return; }
+      if (r && r.mock) toast('Server granted your trial (mock mode — no Stripe key set yet)');
+    }).catch(function () {
+      toast('Billing server unavailable — staying on simulated billing');
+    });
+  }
+
+  function openStripePortal() {
+    if (!C) return;
+    C.openPortal().then(function (r) {
+      if (r && r.url) { location.href = r.url; return; }
+      toast('Billing portal unavailable (mock mode)');
+    }).catch(function (e) { toast(authErrMsg(e)); });
+  }
+
+  /** Reconcile a cloud snapshot with local state via the pure engine merge. */
+  function onRemoteState(remote) {
+    if (!remote) return;
+    if (!state) {
+      // fresh device, existing member → adopt the cloud copy wholesale
+      if (remote.sub) { state = remote; save(); render(); }
+      return;
+    }
+    var merged = V.mergeStates(state, remote);
+    if (JSON.stringify(merged) !== JSON.stringify(state)) {
+      state = merged;
+      save();
+      render();
+    }
+  }
+
   /* ---------------- bottom sheet ---------------- */
   function sheet(innerHTML, onAct) {
     var wrap = $('sheet');
@@ -917,8 +1033,11 @@
     for (var i = 0; i < btns.length; i++) {
       btns[i].addEventListener('click', function () {
         var act = this.getAttribute('data-act');
+        // capture any form values before the sheet is torn down
+        var vals = {}, inputs = wrap.querySelectorAll('input,select,textarea');
+        for (var j = 0; j < inputs.length; j++) if (inputs[j].id) vals[inputs[j].id] = inputs[j].value;
         close();
-        if (onAct) onAct(act);
+        if (onAct) onAct(act, vals);
       });
     }
   }
@@ -974,6 +1093,17 @@
       save(); render();
       toast('Welcome back — renews ' + fmtDate(state.sub.periodEnd));
     });
+    var signInBtn = $('signInBtn');
+    if (signInBtn) signInBtn.addEventListener('click', authSheet);
+    var signOutBtn = $('signOutBtn');
+    if (signOutBtn) signOutBtn.addEventListener('click', function () {
+      C.signOut().then(function () { toast('Signed out — this device keeps its local copy'); render(); })
+        .catch(function (e) { toast(authErrMsg(e)); });
+    });
+    var stripeBtn = $('stripeBtn');
+    if (stripeBtn) stripeBtn.addEventListener('click', activateStripe);
+    var portalBtn = $('portalBtn');
+    if (portalBtn) portalBtn.addEventListener('click', openStripePortal);
   }
 
   /* ---------------- boot ---------------- */
@@ -988,11 +1118,22 @@
     });
   }
   $('startBtn').addEventListener('click', startMembership);
+  $('paywallSignIn').addEventListener('click', authSheet);
 
   load();
   rollForward();
   render();
   setInterval(tick, 1000);
+
+  // Optional cloud: accounts, cross-device sync, real Stripe billing.
+  if (C && C.enabled()) {
+    $('paywallSignIn').classList.remove('hide');
+    C.init({
+      onAuth: function () { render(); },
+      onStatus: function () { if (tab === 'club') render(); },
+      onRemote: onRemoteState,
+    });
+  }
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(function () {});

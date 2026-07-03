@@ -22,8 +22,12 @@ import { defineSecret } from 'firebase-functions/params';
 import * as logger from 'firebase-functions/logger';
 import * as https from 'node:https';
 import Anthropic from '@anthropic-ai/sdk';
-import Stripe from 'stripe';
 import * as admin from 'firebase-admin';
+
+import { STRIPE_SECRET_KEY, stripeClient } from './stripe.js';
+// Velvet — the subscription VIP concierge (concierge/): Stripe Billing
+// checkout + portal + webhook. Deployed alongside the ApexVIP functions.
+export { createVelvetCheckout, createVelvetPortal, velvetStripeWebhook } from './velvet.js';
 
 import {
   round5, isoPlusDays, computeFareBounds, driverEarning, dispatchPay,
@@ -90,19 +94,11 @@ const SQUARE_ACCESS_TOKEN = defineSecret('SQUARE_ACCESS_TOKEN');
 // Lingua (language app) — set with: firebase functions:secrets:set ANTHROPIC_API_KEY
 const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
 
-// Stripe Connect — driver payouts. Set with: firebase functions:secrets:set STRIPE_SECRET_KEY
-const STRIPE_SECRET_KEY = defineSecret('STRIPE_SECRET_KEY');
+// Stripe Connect — driver payouts. The secret + lazy client are shared with the
+// Velvet membership billing and live in ./stripe.ts (a secret param may only be
+// defined once per name).
 // Where Stripe returns the driver after onboarding (their app).
 const PAYOUT_RETURN_URL = process.env.PAYOUT_RETURN_URL || 'https://refayethossain28.github.io/BallrzAPP/apexvip-driver.html';
-// Lazy Stripe client (null when no key → callers fall back to a mock flow).
-let _stripe: Stripe | null = null;
-let _stripeKey: string | null = null;
-function stripeClient(): Stripe | null {
-  const k = STRIPE_SECRET_KEY.value();
-  if (!k) return null;
-  if (!_stripe || _stripeKey !== k) { _stripe = new Stripe(k); _stripeKey = k; }
-  return _stripe;
-}
 async function isAdminUid(uid: string): Promise<boolean> {
   try { const u = await admin.firestore().doc(`users/${uid}`).get(); return u.exists && (u.data() as User | undefined)?.role === 'admin'; }
   catch (_) { return false; }

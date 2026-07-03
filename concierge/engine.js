@@ -447,6 +447,84 @@
   }
 
   /* ------------------------------------------------------------------ *
+   *  Cloud sync merge — pure, deterministic conflict resolution         *
+   * ------------------------------------------------------------------ *
+   * Velvet is local-first; when a signed-in member syncs, the same state
+   * may have advanced on two devices (or the desk may have progressed a
+   * request server-side). These helpers decide, without a clock or any
+   * I/O, which copy of each piece wins — so sync is testable and a bad
+   * network can never corrupt entitlements.                             */
+
+  /** Per request id: the copy with the later updatedAt wins (more messages
+   *  breaks a tie — desk replies bump the thread without a status change).
+   *  Result is ordered by submittedAt so both devices render identically. */
+  function mergeRequests(a, b) {
+    var byId = {}, order = [];
+    function take(list) {
+      for (var i = 0; i < (list || []).length; i++) {
+        var r = list[i];
+        if (!r || !r.id) continue;
+        var prev = byId[r.id];
+        if (!prev) { byId[r.id] = r; order.push(r.id); continue; }
+        var pu = prev.updatedAt || prev.submittedAt || 0;
+        var ru = r.updatedAt || r.submittedAt || 0;
+        var pm = (prev.messages || []).length, rm = (r.messages || []).length;
+        if (ru > pu || (ru === pu && rm > pm)) byId[r.id] = r;
+      }
+    }
+    take(a); take(b);
+    var out = [];
+    for (var j = 0; j < order.length; j++) out.push(byId[order[j]]);
+    out.sort(function (x, y) { return (x.submittedAt || 0) - (y.submittedAt || 0); });
+    return out;
+  }
+
+  /** Union of invoices, de-duplicated by (at, tierId, amount), oldest first. */
+  function mergeInvoices(a, b) {
+    var seen = {}, out = [];
+    function take(list) {
+      for (var i = 0; i < (list || []).length; i++) {
+        var v = list[i];
+        var k = v.at + ':' + v.tierId + ':' + v.amountPence;
+        if (seen[k]) continue;
+        seen[k] = true; out.push(v);
+      }
+    }
+    take(a); take(b);
+    out.sort(function (x, y) { return x.at - y.at; });
+    return out;
+  }
+
+  /**
+   * Merge a whole member state with its cloud copy. Entitlement rule: when the
+   * remote copy is on real billing ('stripe' / 'stripe-mock'), the server owns
+   * the subscription — the Stripe webhook wrote it and the local simulation
+   * must never override it. On local billing both sides simulate, and since
+   * advance() only ever moves periods forward, the later periodStart wins.
+   * Points/spend only ever grow, so max() is safe on both.
+   */
+  function mergeStates(local, remote) {
+    if (!remote) return local;
+    if (!local) return remote;
+    var serverBilled = remote.billing === 'stripe' || remote.billing === 'stripe-mock';
+    var sub;
+    if (serverBilled) sub = remote.sub;
+    else if (!local.sub) sub = remote.sub;
+    else if (!remote.sub) sub = local.sub;
+    else sub = (remote.sub.periodStart || 0) > (local.sub.periodStart || 0) ? remote.sub : local.sub;
+    return {
+      memberName: local.memberName || remote.memberName || 'Member',
+      memberSince: Math.min(local.memberSince || Infinity, remote.memberSince || Infinity),
+      billing: serverBilled ? remote.billing : (local.billing || 'local'),
+      sub: sub,
+      invoices: mergeInvoices(local.invoices, remote.invoices),
+      requests: mergeRequests(local.requests, remote.requests),
+      points: Math.max(local.points || 0, remote.points || 0),
+      spentPence: Math.max(local.spentPence || 0, remote.spentPence || 0),
+    };
+  }
+
+  /* ------------------------------------------------------------------ *
    *  Money formatting — no Intl, deterministic everywhere               *
    * ------------------------------------------------------------------ */
   function fmtGBP(pence) {
@@ -473,5 +551,6 @@
     hash: hash, deskDelays: deskDelays, proposeOptions: proposeOptions, deskLine: deskLine,
     STATUS_LEVELS: STATUS_LEVELS, pointsEarned: pointsEarned, statusFor: statusFor,
     pointsToNext: pointsToNext, fmtGBP: fmtGBP,
+    mergeRequests: mergeRequests, mergeInvoices: mergeInvoices, mergeStates: mergeStates,
   };
 });

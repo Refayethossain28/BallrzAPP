@@ -174,6 +174,56 @@ service cloud.firestore {
     match /invites/{id}       { allow create: if true; allow read, update, delete: if isAdmin(); }
 
     // ---------------------------------------------------------------------
+    // Velvet — the subscription VIP concierge (concierge/). Data is scoped in
+    // velvet_* collections so it never touches the ApexVIP model. A member owns
+    // their own docs; admins are the concierge desk (they read every request
+    // and reply/progress them from the console or an ops tool).
+    // ---------------------------------------------------------------------
+
+    // Member profile + membership mirror. The member may update their profile
+    // and (in local/demo billing) their simulated subscription — but once real
+    // billing is on, the Stripe webhook (Admin SDK, bypasses rules) owns `sub`:
+    // a client write may never CHANGE billing away from 'stripe' or touch the
+    // Stripe linkage fields, so a member cannot self-grant a paid tier.
+    match /velvet_members/{uid} {
+      function billingLocked() {
+        return resource != null && resource.data.get('billing', 'local') == 'stripe';
+      }
+      function keepsStripeTruth() {
+        return request.resource.data.get('billing', 'local') == 'stripe'
+          && request.resource.data.get('sub', {}) == resource.data.get('sub', {})
+          && request.resource.data.get('stripeCustomerId', '') == resource.data.get('stripeCustomerId', '')
+          && request.resource.data.get('stripeSubscriptionId', '') == resource.data.get('stripeSubscriptionId', '');
+      }
+      allow read:   if isUser(uid) || isAdmin();
+      allow create: if isUser(uid) && request.resource.data.get('billing', 'local') != 'stripe';
+      allow update: if isAdmin()
+        || (isUser(uid) && (!billingLocked() || keepsStripeTruth()));
+      allow delete: if isAdmin();
+
+      // Invoices are written by the Stripe webhook / renewal logic. In demo
+      // (local-billing) mode the member may record their own simulated ones.
+      match /invoices/{invoiceId} {
+        allow read:   if isUser(uid) || isAdmin();
+        allow create: if isUser(uid)
+          && get(/databases/$(database)/documents/velvet_members/$(uid)).data.get('billing', 'local') != 'stripe';
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    // Concierge requests — owned by the member; the desk (admin) works them.
+    // The lifecycle state machine is enforced in the app/engine; rules enforce
+    // ownership and that a member can't reassign a request to someone else.
+    match /velvet_requests/{requestId} {
+      allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
+      allow read:   if isAdmin() || (signedIn() && resource.data.ownerUid == request.auth.uid);
+      allow update: if isAdmin()
+        || (signedIn() && resource.data.ownerUid == request.auth.uid
+            && request.resource.data.get('ownerUid', resource.data.ownerUid) == resource.data.ownerUid);
+      allow delete: if isAdmin();
+    }
+
+    // ---------------------------------------------------------------------
     // Ripple — private messenger (ripple/). Anonymous-auth users; each chat is
     // readable/writable only by its members. Anyone holding an invite link may
     // add THEMSELVES to a chat's members (that's how "join by link" works), but
