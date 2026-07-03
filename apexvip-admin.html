@@ -380,10 +380,10 @@ function startAdminListeners(){
     BOOKINGS=snap.docs.map(d=>{
       const x=d.data();
       const priceStr=x.currency==='AED'?(x.price?'AED '+x.price:'AED 685'):(x.price?'£'+x.price:(x.priceStr||'£185'));
-      return{id:d.id,docId:d.id,client:x.clientName||'—',pickup:x.pickup||'',dropoff:x.dropoff||'',
-        date:x.date||'',time:x.time||'',vehicle:x.vehicle||'S-Class',
-        driver:x.driverName||x.driver||'—',driverId:x.driverId||'',status:x.status||'pending',
-        price:priceStr,ref:x.ref||d.id,location:x.location||'',currency:x.currency||'GBP',
+      return{id:d.id,docId:d.id,client:esc(x.clientName||'—'),pickup:esc(x.pickup||''),dropoff:esc(x.dropoff||''),
+        date:esc(x.date||''),time:esc(x.time||''),vehicle:esc(x.vehicle||'S-Class'),
+        driver:esc(x.driverName||x.driver||'—'),driverId:x.driverId||'',status:x.status||'pending',
+        price:esc(priceStr),ref:esc(x.ref||d.id),location:esc(x.location||''),currency:x.currency||'GBP',
         _created:x.createdAt&&x.createdAt.toDate?x.createdAt.toDate():null};
     });
     if(!['login'].includes(S.screen))render();
@@ -392,10 +392,10 @@ function startAdminListeners(){
     {
       DRIVERS=snap.docs.filter(d=>d.data().role!=='admin').map(d=>{
         const x=d.data();
-        return{id:d.id,uid:d.id,name:x.name||'',initials:(x.name||'??').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2),
-          color:x.color||'#C8A97E',rating:x.rating||4.8,status:x.status||'offline',
-          vehicle:x.vehicle||'S-Class',model:x.model||x.vehicle||'S-Class',
-          reg:x.reg||x.plate||'',trips:x.trips||0,earnings:'£'+(x.earnings||0),
+        return{id:d.id,uid:d.id,name:esc(x.name||''),initials:esc((x.name||'??').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2)),
+          color:x.color||'#C8A97E',rating:Number(x.rating)||4.8,status:x.status||'offline',
+          vehicle:esc(x.vehicle||'S-Class'),model:esc(x.model||x.vehicle||'S-Class'),
+          reg:esc(x.reg||x.plate||''),trips:x.trips||0,earnings:'£'+(Number(x.earnings)||0),
           documents:x.documents||{},compliance:x.compliance||null};
       });
       if(!['login'].includes(S.screen))render();
@@ -404,9 +404,9 @@ function startAdminListeners(){
   db.collection('users').onSnapshot(snap=>{
     const all=snap.docs.map(d=>{
       const x=d.data();
-      return{id:d.id,name:x.name||x.displayName||'—',email:x.email||'',phone:x.phone||'—',
-        bookings:x.bookings||0,spent:'£'+(x.spent||0),
-        tier:x.tier||'standard',joined:x.joined||x.createdAt?.toDate?.().toLocaleDateString('en-GB',{month:'short',year:'numeric'})||'—',
+      return{id:d.id,name:esc(x.name||x.displayName||'—'),email:esc(x.email||''),phone:esc(x.phone||'—'),
+        bookings:x.bookings||0,spent:'£'+(Number(x.spent)||0),
+        tier:esc(x.tier||'standard'),joined:esc(x.joined||x.createdAt?.toDate?.().toLocaleDateString('en-GB',{month:'short',year:'numeric'})||'—'),
         role:x.role||'client'};
     });
     CLIENTS=all;
@@ -465,6 +465,9 @@ function vcReply(docId){
   }).then(()=>{track('concierge_desk_reply',{category:r.category,src:'admin'});showToast('Sent to the member');})
     .catch(e=>showToast('Send failed: '+e.message));
 }
+
+// Escape user/driver-controlled strings before they enter innerHTML templates.
+function esc(x){return String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
 function badge(s){
   const m={
@@ -1996,10 +1999,10 @@ function loadAudit(){
       const r=d.data(); const when=r.ts&&r.ts.toDate?r.ts.toDate().toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'—';
       return `<div class="card" style="padding:12px 16px;margin-bottom:8px;display:flex;align-items:center;gap:14px">
         <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:700">${AUDIT_LABEL[r.action]||r.action} ${r.target?`· <span style="color:var(--gold)">${r.target}</span>`:''}</div>
-          <div style="font-size:12px;color:var(--fg-3)">${r.detail||''}</div>
+          <div style="font-size:13px;font-weight:700">${AUDIT_LABEL[r.action]||esc(r.action)} ${r.target?`· <span style="color:var(--gold)">${esc(r.target)}</span>`:''}</div>
+          <div style="font-size:12px;color:var(--fg-3)">${esc(r.detail||'')}</div>
         </div>
-        <div style="text-align:right;flex-shrink:0"><div style="font-size:12px;color:var(--fg-dim)">${r.actorName||'—'}</div><div style="font-size:11px;color:var(--fg-4)">${when}</div></div>
+        <div style="text-align:right;flex-shrink:0"><div style="font-size:12px;color:var(--fg-dim)">${esc(r.actorName||'—')}</div><div style="font-size:11px;color:var(--fg-4)">${when}</div></div>
       </div>`;
     }).join('');
   }).catch(()=>{ el.innerHTML='<div style="color:#ef4444;padding:20px">Could not load audit log</div>'; });
@@ -2096,9 +2099,9 @@ function loadPayouts() {
       const r = doc.data(); const id = doc.id;
       return `<div class="card" style="padding:18px 20px;margin-bottom:10px;display:flex;align-items:center;gap:14px">
         <div style="flex:1">
-          <div style="font-size:14px;font-weight:700;margin-bottom:3px">${r.driverName||'Driver'}</div>
-          <div style="font-size:12px;color:var(--fg-3)">£${r.amount||0} · ${r.bankName||''} ${r.accountNumber||''}</div>
-          <div style="font-size:11px;color:var(--fg-4);margin-top:2px">${r.sortCode||''}</div>
+          <div style="font-size:14px;font-weight:700;margin-bottom:3px">${esc(r.driverName||'Driver')}</div>
+          <div style="font-size:12px;color:var(--fg-3)">£${Number(r.amount)||0} · ${esc(r.bankName||'')} ${esc(r.accountNumber||'')}</div>
+          <div style="font-size:11px;color:var(--fg-4);margin-top:2px">${esc(r.sortCode||'')}</div>
         </div>
         ${r.status==='pending'?`
         <div style="display:flex;gap:8px">

@@ -70,3 +70,20 @@ jobs:
         run: npm --prefix functions run test:emulator
       - name: Security rules tests
         run: npm --prefix functions run test:rules
+
+  # UI gate: the real prototype pages driven in Chromium — the client booking
+  # flow end-to-end (guest → hourly → vehicle → summary fare → payment screen),
+  # an XSS-escaping canary, and zero-page-error loads for driver + admin.
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install apexvip-web deps + Chromium
+        run: |
+          npm --prefix apexvip-web install --no-audit --no-fund
+          npx --prefix apexvip-web playwright install --with-deps chromium
+      - name: Booking-flow e2e
+        run: npm --prefix apexvip-web run test:e2e:booking

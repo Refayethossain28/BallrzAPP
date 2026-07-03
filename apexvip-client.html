@@ -1092,6 +1092,9 @@ let state = {
 })();
 
 document.body.classList.toggle('light', state.theme === 'light');
+// Escape user/driver-controlled strings before they enter innerHTML templates.
+function esc(x){return String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
 // Real bookings only — populated live from Firestore for the signed-in client.
 let TRIPS = [];
 
@@ -1892,7 +1895,7 @@ function setupChatListener(docId) {
 function chatBubble(m) {
   const isMe = m.fromRole === 'client';
   return `<div style="display:flex;justify-content:${isMe?'flex-end':'flex-start'};margin-bottom:8px">
-    <div style="max-width:75%;background:${isMe?'linear-gradient(135deg,#C8A97E,#8B6020)':'var(--surface-2)'};border-radius:${isMe?'18px 18px 4px 18px':'18px 18px 18px 4px'};padding:10px 14px;font-size:13px;color:${isMe?'#000':'var(--fg)'}">${m.message||''}</div>
+    <div style="max-width:75%;background:${isMe?'linear-gradient(135deg,#C8A97E,#8B6020)':'var(--surface-2)'};border-radius:${isMe?'18px 18px 4px 18px':'18px 18px 18px 4px'};padding:10px 14px;font-size:13px;color:${isMe?'#000':'var(--fg)'}">${esc(m.message||'')}</div>
   </div>`;
 }
 
@@ -5754,13 +5757,13 @@ if(FIREBASE_ENABLED){
             // 'completed' and 'cancelled' stay as-is
             const dispStatus=['completed','cancelled'].includes(raw)?raw:'upcoming';
             TRIPS.push({
-              id:d.ref||d._docId,docId:d._docId,service:d.serviceLabel||'Airport Transfer',
-              pickup:d.pickup||'',dropoff:d.airport||d.dropoff||'',
-              date:d.date||'',time:d.time||'',vehicle:d.vehicle||'Mercedes S-Class',
-              status:dispStatus,rawStatus:raw,price:'£'+(d.price||0),
-              driver:d.driverName||'TBA',driverId:d.driverId||null,rating:d.driverRating||4.9,
+              id:esc(d.ref||d._docId),docId:d._docId,service:esc(d.serviceLabel||'Airport Transfer'),
+              pickup:esc(d.pickup||''),dropoff:esc(d.airport||d.dropoff||''),
+              date:esc(d.date||''),time:esc(d.time||''),vehicle:esc(d.vehicle||'Mercedes S-Class'),
+              status:dispStatus,rawStatus:raw,price:'£'+(Number(d.price)||0),
+              driver:esc(d.driverName||'TBA'),driverId:d.driverId||null,rating:Number(d.driverRating)||4.9,
               myRating:d.rating||null,
-              plate:d.driverPlate||'',flight:d.flight||''
+              plate:esc(d.driverPlate||''),flight:esc(d.flight||'')
             });
           });
           if(['home','trips'].includes(state.screen))render();
@@ -5785,11 +5788,11 @@ if(FIREBASE_ENABLED){
               state._activeBooking.ref=d.ref||_bDocId;
               state._activeBooking.status=d.status;
               state._activeBooking.driverId=d.driverId||null;
-              state._activeBooking.driverName=d.driverName||null;
-              state._activeBooking.driverPlate=d.driverPlate||'';
-              state._activeBooking.vehicle=d.vehicle||'';
+              state._activeBooking.driverName=d.driverName?esc(d.driverName):null;
+              state._activeBooking.driverPlate=esc(d.driverPlate||'');
+              state._activeBooking.vehicle=esc(d.vehicle||'');
               if(d.status==='completed'&&state.screen==='active-trip'){
-                state._lastTrip={ref:d.ref,pickup:d.pickup,dropoff:d.dropoff||d.airport,base:d.baseFare||d.price,discount:d.discount||0,vat:d.vat||0,price:d.price};
+                state._lastTrip={ref:esc(d.ref),pickup:esc(d.pickup),dropoff:esc(d.dropoff||d.airport),base:d.baseFare||d.price,discount:d.discount||0,vat:d.vat||0,price:d.price};
                 go('receipt');
               } else if(state.screen==='active-trip'||state.screen==='booking-confirmed')render();
             }
