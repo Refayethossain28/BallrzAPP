@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ApexVIP Ops — concierge desk</title>
+<meta name="description" content="The ApexVIP Concierge desk in your pocket: live request queue, SLA tracking, replies and lifecycle actions. Admin accounts only.">
+<meta name="theme-color" content="#0a0805">
+<link rel="manifest" href="ops-manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ApexVIP Ops">
+<style>
+  :root {
+    --bg: #0a0805; --card: #17120b; --card2: #1f180e;
+    --line: rgba(212,175,55,0.20); --line2: rgba(255,246,220,0.07);
+    --gold: #d4af37; --gold2: #f0d98c; --champagne: #e8d9a0;
+    --ink: #f5efe0; --sub: #b0a486; --dim: #6e6552;
+    --good: #58c98a; --warn: #e6b34d; --bad: #e06767; --blue: #7ba7e8;
+    --foil: linear-gradient(115deg, #8a6d1d 0%, #d4af37 25%, #f7e7ae 50%, #d4af37 75%, #8a6d1d 100%);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 14.5px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased; overscroll-behavior-y: none;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(60% 42% at 22% -6%, rgba(212,175,55,0.12), transparent 70%),
+      linear-gradient(180deg, #0c0a06, #090704 60%, #070503);
+  }
+  .serif { font-family: Didot, "Palatino Linotype", Palatino, Georgia, serif; }
+  button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+  input, textarea {
+    font: inherit; color: var(--ink); background: rgba(255,246,220,0.035);
+    border: 1px solid var(--line2); border-radius: 12px; padding: 12px 14px; width: 100%;
+  }
+  input:focus, textarea:focus { outline: none; border-color: rgba(212,175,55,0.55); }
+  ::placeholder { color: var(--dim); }
+  .hide { display: none !important; }
+  .shell { max-width: 480px; margin: 0 auto; min-height: 100%; }
+  main { padding: 14px 14px calc(86px + env(safe-area-inset-bottom)); }
+  header.bar {
+    position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px;
+    padding: calc(12px + env(safe-area-inset-top)) 16px 10px;
+    background: linear-gradient(rgba(10,8,5,0.94) 60%, rgba(10,8,5,0));
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  }
+  .wordmark {
+    font-size: 18px; letter-spacing: 4px; text-transform: uppercase;
+    background: var(--foil); -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .wordmark small { display: block; font-size: 9px; letter-spacing: 2.4px; -webkit-text-fill-color: var(--sub); }
+  .hdrbtn { margin-left: auto; font-size: 12px; color: var(--sub); border: 1px solid var(--line2); border-radius: 99px; padding: 6px 12px; }
+  .card {
+    background: linear-gradient(165deg, rgba(255,246,220,0.03), rgba(255,246,220,0.006) 60%), var(--card);
+    border: 1px solid var(--line2); border-radius: 16px; padding: 15px; margin-bottom: 12px;
+    box-shadow: inset 0 1px 0 rgba(255,246,220,0.045), 0 6px 22px rgba(0,0,0,0.3);
+  }
+  .card h3 {
+    font-size: 10.5px; letter-spacing: 2px; text-transform: uppercase; color: var(--sub);
+    font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;
+  }
+  .card h3::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, var(--line2), transparent); }
+  .btn {
+    border: 1px solid var(--line); border-radius: 11px; padding: 9px 13px; font-weight: 600;
+    font-size: 12.5px; color: var(--gold2);
+    background: linear-gradient(160deg, rgba(212,175,55,0.12), rgba(212,175,55,0.03));
+  }
+  .btn.primary { background: var(--foil); color: #1b1503; border: none; font-weight: 800; }
+  .btn.ghost { color: var(--sub); border-color: var(--line2); background: none; }
+  .btn:active { transform: translateY(1px); }
+  .pill { font-size: 9.5px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; border-radius: 99px; padding: 4px 9px; white-space: nowrap; }
+  .pill.gold { color: #1b1503; background: var(--foil); }
+  .pill.soft { color: var(--champagne); background: rgba(212,175,55,0.12); border: 1px solid var(--line); }
+  .pill.grey { color: var(--sub); background: rgba(255,246,220,0.05); border: 1px solid var(--line2); }
+  .pill.green { color: #0d2417; background: var(--good); }
+  .pill.red { color: #2a0d0d; background: var(--bad); }
+  .pill.amber { color: #2a2005; background: var(--warn); }
+  .pill.blue { color: #0d1a2a; background: var(--blue); }
+  h2.section { font-size: 20px; margin: 4px 0 12px; font-weight: 500; }
+  .kgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .kpi { border: 1px solid var(--line2); border-radius: 14px; padding: 12px 13px; background: var(--card); }
+  .kpi b { display: block; font-size: 21px; color: var(--gold2); font-weight: 800; }
+  .kpi span { font-size: 10.5px; color: var(--sub); letter-spacing: 0.6px; text-transform: uppercase; }
+  .req { width: 100%; text-align: left; border: 1px solid var(--line2); background: var(--card); border-radius: 14px; padding: 13px; margin-bottom: 9px; }
+  .req:active { border-color: rgba(212,175,55,0.5); }
+  .req .r1 { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+  .req .r1 b { flex: 1; min-width: 0; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .req .r2 { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 11px; color: var(--sub); }
+  .empty { text-align: center; color: var(--dim); padding: 36px 18px; font-size: 13px; line-height: 1.7; }
+  .empty .e { font-size: 30px; display: block; margin-bottom: 10px; }
+  nav.tabs {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
+    background: rgba(10,8,5,0.9); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border-top: 1px solid rgba(212,175,55,0.14); padding-bottom: env(safe-area-inset-bottom);
+  }
+  nav.tabs .row { max-width: 480px; margin: 0 auto; display: flex; }
+  nav.tabs button { flex: 1; padding: 10px 0 9px; color: var(--dim); font-size: 10px; letter-spacing: 0.8px; text-transform: uppercase; }
+  nav.tabs button .i { display: block; font-size: 18px; margin-bottom: 2px; }
+  nav.tabs button.on { color: var(--gold2); }
+  .overlay { position: fixed; inset: 0; z-index: 30; background: var(--bg); overflow-y: auto; }
+  .overlay .inner { max-width: 480px; margin: 0 auto; padding: calc(10px + env(safe-area-inset-top)) 14px 150px; }
+  .ovbar { display: flex; align-items: center; gap: 10px; padding: 6px 0 12px; }
+  .ovbar .back { font-size: 19px; color: var(--gold2); width: 36px; height: 36px; flex: none; border: 1px solid var(--line2); border-radius: 50%; }
+  .ovbar h2 { font-size: 16px; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chat { display: grid; gap: 9px; margin: 12px 0; }
+  .msg { max-width: 88%; padding: 10px 13px; border-radius: 14px; font-size: 13.2px; line-height: 1.45; }
+  .msg.member { background: var(--card2); border: 1px solid var(--line2); border-bottom-left-radius: 5px; justify-self: start; }
+  .msg.desk { background: linear-gradient(165deg, rgba(212,175,55,0.20), rgba(212,175,55,0.09)); border: 1px solid var(--line); border-bottom-right-radius: 5px; justify-self: end; }
+  .msg .who { display: block; font-size: 9px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--gold2); margin-bottom: 3px; }
+  .msg time { display: block; font-size: 9.5px; color: var(--dim); margin-top: 4px; text-align: right; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+  .composer {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 31;
+    background: linear-gradient(transparent, rgba(10,8,5,0.92) 38%);
+    padding: 20px 14px calc(14px + env(safe-area-inset-bottom));
+  }
+  .composer .row { max-width: 480px; margin: 0 auto; display: flex; gap: 8px; }
+  .composer input { flex: 1; border-radius: 99px; background: rgba(23,18,11,0.94); }
+  .composer .send { width: 45px; height: 45px; border-radius: 50%; background: var(--foil); color: #1b1503; font-size: 17px; font-weight: 800; flex: none; }
+  #toast {
+    position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom));
+    transform: translateX(-50%); background: rgba(31,24,14,0.94); border: 1px solid var(--line);
+    color: var(--ink); padding: 11px 18px; border-radius: 99px; font-size: 12.5px; z-index: 60;
+    opacity: 0; pointer-events: none; transition: opacity .25s; max-width: 88vw; text-align: center;
+  }
+  #toast.show { opacity: 1; }
+  .login { padding: calc(48px + env(safe-area-inset-top)) 24px 40px; text-align: center; }
+  .login .mark { font-size: 30px; letter-spacing: 7px; text-transform: uppercase;
+    background: var(--foil); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .login .sub { color: var(--sub); font-size: 13px; margin: 10px auto 26px; max-width: 34ch; }
+  .login .field { margin-bottom: 12px; text-align: left; }
+  .login label { display: block; font-size: 10.5px; color: var(--sub); letter-spacing: 1.4px; text-transform: uppercase; margin-bottom: 6px; }
+  .fine { color: var(--dim); font-size: 11px; margin-top: 14px; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<!-- login -->
+<div id="login" class="shell hide">
+  <div class="login">
+    <div class="mark serif">ApexVIP Ops</div>
+    <p class="sub">The concierge desk in your pocket. Sign in with an <b>admin</b> account to work the queue.</p>
+    <div class="field"><label for="opsEmail">Email</label><input id="opsEmail" type="email" autocomplete="email" placeholder="you@apexvip.com"></div>
+    <div class="field"><label for="opsPass">Password</label><input id="opsPass" type="password" autocomplete="current-password" placeholder="••••••••"></div>
+    <button class="btn primary" id="opsSignIn" style="width:100%;padding:14px;margin-top:6px">Sign in to the desk</button>
+    <p class="fine" id="loginNote"></p>
+  </div>
+</div>
+
+<!-- app -->
+<div id="app" class="shell hide">
+  <header class="bar">
+    <div class="wordmark serif">ApexVIP<small>Ops · concierge desk</small></div>
+    <button class="hdrbtn" id="opsSignOut">Sign out</button>
+  </header>
+  <main id="view"></main>
+  <nav class="tabs">
+    <div class="row">
+      <button data-tab="queue"><span class="i">☰</span>Queue</button>
+      <button data-tab="members"><span class="i">✦</span>Members</button>
+      <button data-tab="pulse"><span class="i">◈</span>Pulse</button>
+    </div>
+  </nav>
+</div>
+
+<div id="detail" class="overlay hide"></div>
+<div id="toast"></div>
+
+<script src="engine.js"></script>
+<script src="config.js"></script>
+<script>
+(function () {
+  'use strict';
+  var V = window.Velvet;
+  var cfg = (typeof window !== 'undefined' && window.VELVET_FIREBASE_CONFIG) || null;
+  var FB_VER = '9.23.0';
+  var RANK = { silver: 1, gold: 2, black: 3 };
+  var TIERPILL = { silver: 'grey', gold: 'gold', black: 'blue' };
+  var SLAPILL = { met: ['green', 'SLA met'], ok: ['soft', 'SLA ok'], warning: ['amber', 'SLA due'], breached: ['red', 'SLA breached'] };
+
+  var auth = null, db = null;
+  var user = null, isAdmin = false;
+  var REQS = [], MEMBERS = [];
+  var tab = 'queue', openId = null;
+  var unsubs = [];
+
+  /* ---------- helpers ---------- */
+  function $(id) { return document.getElementById(id); }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function toast(msg) {
+    var t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { t.classList.remove('show'); }, 2600);
+  }
+  function ago(ts) {
+    var m = Math.max(0, Math.round((Date.now() - ts) / 60000));
+    return m < 60 ? m + 'm' : m < 1440 ? Math.round(m / 60) + 'h' : Math.round(m / 1440) + 'd';
+  }
+  function fmtTime(ts) {
+    var d = new Date(ts), h = d.getHours(), m = d.getMinutes();
+    return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+  }
+  function memberOf(uid) {
+    for (var i = 0; i < MEMBERS.length; i++) if (MEMBERS[i].uid === uid) return MEMBERS[i];
+    return {};
+  }
+  function tierOf(r) { var m = memberOf(r.ownerUid); return (m.sub && m.sub.tierId) || 'silver'; }
+  function reqBy(docId) {
+    for (var i = 0; i < REQS.length; i++) if (REQS[i].docId === docId) return REQS[i];
+    return null;
+  }
+  function track(event, props) {
+    try {
+      var ev = Object.assign({ e: event, event: event, t: Date.now(), ts: Date.now(), src: 'ops' }, props || {});
+      if (db && user) db.collection('analytics').add(ev).catch(function () {});
+    } catch (e) {}
+  }
+
+  /* ---------- firebase ---------- */
+  function loadSdk(cb) {
+    if (typeof firebase !== 'undefined' && firebase.auth && firebase.firestore) { cb(true); return; }
+    var parts = ['app', 'auth', 'firestore'], i = 0;
+    (function next() {
+      if (i >= parts.length) { cb(true); return; }
+      var s = document.createElement('script');
+      s.src = 'https://www.gstatic.com/firebasejs/' + FB_VER + '/firebase-' + parts[i] + '-compat.js';
+      s.async = false;
+      s.onload = function () { i++; next(); };
+      s.onerror = function () { cb(false); };
+      (document.head || document.documentElement).appendChild(s);
+    })();
+  }
+
+  function boot() {
+    if (!cfg) { showLogin('No Firebase config — see concierge/SETUP.md.'); return; }
+    loadSdk(function (ok) {
+      if (!ok) { showLogin('Cloud unreachable — check your connection and reload.'); return; }
+      try {
+        var app = firebase.apps && firebase.apps.length ? firebase.app() : firebase.initializeApp(cfg);
+        auth = firebase.auth(app);
+        db = firebase.firestore(app);
+      } catch (e) { showLogin('Firebase failed to start: ' + e.message); return; }
+      auth.onAuthStateChanged(function (u) {
+        detach();
+        user = u ? { uid: u.uid, email: u.email || '' } : null;
+        isAdmin = false;
+        if (!u) { showLogin(''); return; }
+        // the desk is admin-only: check the user profile role (same rule the
+        // security rules use), then attach the live mirrors
+        db.collection('users').doc(u.uid).get().then(function (snap) {
+          var role = (snap.exists && snap.data().role) || '';
+          if (role !== 'admin') {
+            showLogin('Signed in as ' + (u.email || u.uid) + ', but this account is not an admin. Ask the owner to set role: "admin" on your profile.');
+            return;
+          }
+          isAdmin = true;
+          attach();
+          showApp();
+        }).catch(function (e) {
+          showLogin('Could not verify your role: ' + e.message);
+        });
+      });
+    });
+  }
+
+  function detach() {
+    for (var i = 0; i < unsubs.length; i++) try { unsubs[i](); } catch (e) {}
+    unsubs = []; REQS = []; MEMBERS = [];
+  }
+
+  function attach() {
+    unsubs.push(db.collection('velvet_requests').onSnapshot(function (q) {
+      var out = [];
+      q.forEach(function (d) { out.push(Object.assign({ docId: d.id }, d.data())); });
+      REQS = out;
+      render();
+    }, function (e) { toast('Requests: ' + e.code); }));
+    unsubs.push(db.collection('velvet_members').onSnapshot(function (q) {
+      var out = [];
+      q.forEach(function (d) { out.push(Object.assign({ uid: d.id }, d.data())); });
+      MEMBERS = out;
+      render();
+    }, function (e) { toast('Members: ' + e.code); }));
+  }
+
+  /* ---------- desk operations (engine-validated, same as the admin console) ---------- */
+  var NEXT_ACTIONS = {
+    submitted: [['triaged', 'Triage']],
+    triaged: [['sourcing', 'Start sourcing']],
+    sourcing: [['options', 'Send options']],
+    options: [],
+    confirmed: [['completed', 'Complete']],
+  };
+
+  function advance(docId, to) {
+    var r = reqBy(docId);
+    if (!r || !db) return;
+    if (!V.canTransition(r.status, to)) { toast('Not allowed from ' + r.status); return; }
+    var now = Date.now();
+    var m = memberOf(r.ownerUid);
+    var patch = { status: to, updatedAt: now };
+    if (to === 'triaged' && r.firstResponseAt == null) patch.firstResponseAt = now;
+    if (to === 'completed') patch.completedAt = now;
+    if (to === 'options') patch.options = V.proposeOptions(r);
+    patch.messages = (r.messages || []).concat([{ from: 'desk', text: V.deskLine(r, to, m.memberName || ''), at: now }]);
+    db.collection('velvet_requests').doc(docId).update(patch)
+      .then(function () { track('concierge_desk_advanced', { to: to, category: r.category }); toast('→ ' + (V.STATUS_LABEL[to] || to)); })
+      .catch(function (e) { toast('Failed: ' + e.message); });
+  }
+
+  function sendReply(docId) {
+    var r = reqBy(docId);
+    var input = $('opsChat');
+    if (!r || !db || !input) return;
+    var text = (input.value || '').trim();
+    if (!text) return;
+    input.value = '';
+    var now = Date.now();
+    db.collection('velvet_requests').doc(docId).update({
+      messages: (r.messages || []).concat([{ from: 'desk', text: text, at: now }]),
+      updatedAt: now,
+    }).then(function () { track('concierge_desk_reply', { category: r.category }); })
+      .catch(function (e) { toast('Send failed: ' + e.message); });
+  }
+
+  /* ---------- views ---------- */
+  function showLogin(note) {
+    $('login').classList.remove('hide');
+    $('app').classList.add('hide');
+    $('detail').classList.add('hide');
+    $('loginNote').textContent = note || '';
+  }
+  function showApp() {
+    $('login').classList.add('hide');
+    $('app').classList.remove('hide');
+    render();
+  }
+
+  function slaOf(r) {
+    return V.slaState(r.submittedAt, tierOf(r), Date.now(), r.firstResponseAt);
+  }
+  function openReqs() {
+    return REQS.filter(function (r) { return r.status !== 'completed' && r.status !== 'cancelled'; });
+  }
+  function orderedQueue() {
+    var now = Date.now();
+    return V.queueOrder(openReqs().map(function (r) {
+      return { request: r, tierRank: RANK[tierOf(r)] || 1 };
+    }), now).map(function (e) { return e.request; });
+  }
+
+  function reqCardHTML(r) {
+    var t = tierOf(r), m = memberOf(r.ownerUid);
+    var cat = '';
+    try { cat = V.category(r.category).emoji; } catch (e) {}
+    var sla = SLAPILL[slaOf(r)] || ['grey', '—'];
+    return '<button class="req" data-open="' + r.docId + '">' +
+      '<div class="r1"><b>' + cat + ' ' + esc(r.title) + '</b>' +
+      '<span class="pill ' + (TIERPILL[t] || 'grey') + '">' + t + '</span></div>' +
+      '<div class="r2"><span>' + esc(m.memberName || '—') + '</span><span>·</span>' +
+      '<span>' + esc(V.STATUS_LABEL[r.status] || r.status) + '</span><span>·</span>' +
+      '<span class="pill ' + sla[0] + '">' + sla[1] + '</span>' +
+      '<span style="margin-left:auto">' + ago(r.submittedAt || Date.now()) + '</span></div></button>';
+  }
+
+  function queueHTML() {
+    var q = orderedQueue();
+    var needs = q.filter(function (r) { return NEXT_ACTIONS[r.status] && NEXT_ACTIONS[r.status].length; });
+    var h = '<h2 class="section serif">Desk queue</h2>';
+    if (!q.length) {
+      return h + '<div class="empty"><span class="e">🕊️</span>All clear — no open requests.<br>New ones appear here the moment a member asks.</div>';
+    }
+    h += '<p style="color:var(--sub);font-size:12px;margin:-6px 0 12px">' + q.length + ' open · ' + needs.length + ' need the desk · tier first, then patience</p>';
+    h += q.map(reqCardHTML).join('');
+    var done = REQS.filter(function (r) { return r.status === 'completed' || r.status === 'cancelled'; });
+    if (done.length) {
+      h += '<div class="card" style="margin-top:14px"><h3>Recently closed</h3>' +
+        done.sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); }).slice(0, 5).map(reqCardHTML).join('') + '</div>';
+    }
+    return h;
+  }
+
+  function membersHTML() {
+    var h = '<h2 class="section serif">Members</h2>';
+    if (!MEMBERS.length) return h + '<div class="empty"><span class="e">✦</span>No members yet.</div>';
+    var sorted = MEMBERS.slice().sort(function (a, b) {
+      return (RANK[(b.sub || {}).tierId] || 0) - (RANK[(a.sub || {}).tierId] || 0);
+    });
+    sorted.forEach(function (m) {
+      var t = (m.sub && m.sub.tierId) || '—';
+      var n = REQS.filter(function (r) { return r.ownerUid === m.uid; }).length;
+      var status = (m.sub && m.sub.status) || '—';
+      h += '<div class="card" style="padding:13px"><div style="display:flex;align-items:center;gap:8px">' +
+        '<b style="flex:1;font-size:14px">' + esc(m.memberName || m.uid.slice(0, 8)) + '</b>' +
+        '<span class="pill ' + (TIERPILL[t] || 'grey') + '">' + esc(String(t)) + '</span></div>' +
+        '<div style="display:flex;gap:12px;margin-top:7px;font-size:11.5px;color:var(--sub);flex-wrap:wrap">' +
+        '<span>' + esc(status) + (m.sub && m.sub.cancelAtPeriodEnd ? ' · ending' : '') + '</span>' +
+        '<span>' + (m.points || 0) + ' pts</span>' +
+        '<span>' + esc(m.billing || 'local') + '</span>' +
+        '<span>' + n + ' request' + (n === 1 ? '' : 's') + '</span></div></div>';
+    });
+    return h;
+  }
+
+  function pulseHTML() {
+    var open = openReqs();
+    var live = MEMBERS.filter(function (m) { return m.sub && m.sub.status !== 'canceled'; });
+    var mrr = 0;
+    live.forEach(function (m) {
+      var t = V.TIERS[(m.sub && m.sub.tierId) || 'silver'];
+      if (t) mrr += t.pricePence;
+    });
+    var breached = open.filter(function (r) { return slaOf(r) === 'breached'; }).length;
+    var needs = open.filter(function (r) { return ['submitted', 'triaged', 'sourcing'].indexOf(r.status) >= 0; }).length;
+    var spend = 0;
+    REQS.forEach(function (r) { if (r.chosenOption) spend += r.chosenOption.pricePence || 0; });
+    function k(v, l) { return '<div class="kpi"><b>' + v + '</b><span>' + l + '</span></div>'; }
+    return '<h2 class="section serif">Pulse</h2><div class="kgrid">' +
+      k(open.length, 'Open requests') +
+      k(needs, 'Need the desk') +
+      k(breached, 'SLA breached') +
+      k(MEMBERS.length + ' <span style="font-size:12px;color:var(--sub)">(' + live.length + ' live)</span>', 'Members') +
+      k(V.fmtGBP(mrr), 'Concierge MRR') +
+      k(V.fmtGBP(spend), 'Confirmed spend') +
+      '</div><p class="fine" style="text-align:center">Live from velvet_members / velvet_requests · signed in as ' + esc(user ? user.email : '') + '</p>';
+  }
+
+  function render() {
+    if (!isAdmin) return;
+    var navBtns = document.querySelectorAll('nav.tabs button');
+    for (var i = 0; i < navBtns.length; i++) {
+      navBtns[i].classList.toggle('on', navBtns[i].getAttribute('data-tab') === tab);
+    }
+    var view = $('view');
+    view.innerHTML = tab === 'queue' ? queueHTML() : tab === 'members' ? membersHTML() : pulseHTML();
+    var opens = view.querySelectorAll('[data-open]');
+    for (var j = 0; j < opens.length; j++) {
+      opens[j].addEventListener('click', function () {
+        openId = this.getAttribute('data-open');
+        renderDetail();
+      });
+    }
+    renderDetail();
+  }
+
+  function renderDetail() {
+    var box = $('detail');
+    if (!openId) { box.classList.add('hide'); box.innerHTML = ''; return; }
+    var r = reqBy(openId);
+    if (!r) { openId = null; box.classList.add('hide'); return; }
+    var m = memberOf(r.ownerUid);
+    var t = tierOf(r);
+    var cat = '';
+    try { cat = V.category(r.category).emoji + ' ' + V.category(r.category).name; } catch (e) {}
+    var sla = SLAPILL[slaOf(r)] || ['grey', '—'];
+
+    var h = '<div class="inner"><div class="ovbar"><button class="back" id="opsBack">‹</button>' +
+      '<h2 class="serif">' + esc(r.title) + '</h2>' +
+      '<span class="pill ' + (TIERPILL[t] || 'grey') + '">' + t + '</span></div>';
+
+    h += '<div class="card" style="padding:12px"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--sub)">' +
+      '<span>' + cat + '</span><span>·</span><span>' + esc(m.memberName || '—') + '</span><span>·</span>' +
+      '<span class="pill soft">' + esc(V.STATUS_LABEL[r.status] || r.status) + '</span>' +
+      '<span class="pill ' + sla[0] + '">' + sla[1] + '</span></div>' +
+      (r.details ? '<p style="margin-top:9px;font-size:12.5px;color:var(--sub)">' + esc(r.details) + '</p>' : '') + '</div>';
+
+    var acts = (NEXT_ACTIONS[r.status] || []).map(function (a) {
+      return '<button class="btn primary" data-adv="' + a[0] + '">' + a[1] + '</button>';
+    }).join('');
+    if (r.status === 'options') acts = '<span class="pill grey" style="align-self:center">Waiting on the member to choose</span>';
+    if (acts) h += '<div class="actions">' + acts + '</div>';
+
+    if (r.options && r.status !== 'completed') {
+      h += '<div class="card" style="padding:12px"><h3>Options sent</h3>' + r.options.map(function (o) {
+        var chosen = r.chosenOption && r.chosenOption.id === o.id;
+        return '<div style="display:flex;gap:8px;align-items:baseline;padding:6px 0;border-top:1px solid var(--line2);font-size:12.5px">' +
+          '<span style="flex:1">' + (chosen ? '✓ ' : '') + esc(o.name) + '</span>' +
+          '<b style="color:var(--gold2)">' + V.fmtGBP(o.pricePence) + '</b></div>';
+      }).join('') + '</div>';
+    }
+
+    h += '<div class="chat">';
+    (r.messages || []).forEach(function (msg) {
+      h += '<div class="msg ' + (msg.from === 'desk' ? 'desk' : 'member') + '">' +
+        '<span class="who">' + (msg.from === 'desk' ? (msg.ai ? 'ApexAI ✦ desk' : 'Desk') : esc(m.memberName || 'Member')) + '</span>' +
+        esc(msg.text) + '<time>' + fmtTime(msg.at) + '</time></div>';
+    });
+    h += '</div></div>';
+
+    var live = r.status !== 'completed' && r.status !== 'cancelled';
+    if (live) {
+      h += '<div class="composer"><div class="row"><input id="opsChat" placeholder="Reply as the desk…" maxlength="400">' +
+        '<button class="send" id="opsSend">↑</button></div></div>';
+    }
+
+    box.innerHTML = h;
+    box.classList.remove('hide');
+    // follow the thread as it grows
+    var last = renderDetail._last || {};
+    if (last.id === r.docId && (r.messages || []).length > (last.n || 0)) box.scrollTop = box.scrollHeight;
+    renderDetail._last = { id: r.docId, n: (r.messages || []).length };
+
+    $('opsBack').addEventListener('click', function () { openId = null; renderDetail(); });
+    var send = $('opsSend');
+    if (send) send.addEventListener('click', function () { sendReply(r.docId); });
+    var input = $('opsChat');
+    if (input) input.addEventListener('keydown', function (e) { if (e.key === 'Enter') sendReply(r.docId); });
+    var advs = box.querySelectorAll('[data-adv]');
+    for (var k = 0; k < advs.length; k++) {
+      advs[k].addEventListener('click', function () { advance(r.docId, this.getAttribute('data-adv')); });
+    }
+  }
+
+  /* ---------- wiring ---------- */
+  var navBtns = document.querySelectorAll('nav.tabs button');
+  for (var n = 0; n < navBtns.length; n++) {
+    navBtns[n].addEventListener('click', function () {
+      tab = this.getAttribute('data-tab');
+      openId = null;
+      window.scrollTo(0, 0);
+      render();
+    });
+  }
+  $('opsSignIn').addEventListener('click', function () {
+    if (!auth) { toast('Cloud not ready yet'); return; }
+    var email = ($('opsEmail').value || '').trim(), pass = $('opsPass').value || '';
+    if (!email || !pass) { toast('Enter your email and password'); return; }
+    auth.signInWithEmailAndPassword(email, pass).catch(function (e) {
+      toast(String(e.message || 'Sign-in failed').replace(/^Firebase:\s*/, ''));
+    });
+  });
+  $('opsSignOut').addEventListener('click', function () {
+    if (auth) auth.signOut().catch(function () {});
+  });
+
+  // Test/demo seam: render the UI with local data (used by the repo's headless
+  // checks). Rendering only — every write still goes through Firestore rules.
+  window.__opsSeed = function (reqs, members) {
+    REQS = reqs || []; MEMBERS = members || []; isAdmin = true;
+    user = user || { uid: 'seed', email: 'seed@test' };
+    showApp();
+  };
+
+  showLogin('Connecting…');
+  boot();
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  }
+})();
+</script>
+</body>
+</html>
