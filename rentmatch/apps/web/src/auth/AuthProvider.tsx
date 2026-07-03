@@ -31,7 +31,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
-        setProfile(await ensureUserProfile(u.uid, u.email ?? '', u.displayName ?? 'Member'));
+        try {
+          setProfile(await ensureUserProfile(u.uid, u.email ?? '', u.displayName ?? 'Member'));
+        } catch (err) {
+          // Backend unreachable (offline, or a demo build with no database) —
+          // fall back to a local profile so the app renders instead of hanging.
+          console.error('[apex] profile load failed', err);
+          setProfile({
+            uid: u.uid,
+            email: u.email ?? '',
+            displayName: u.displayName ?? 'Member',
+            roles: { renter: true, landlord: true },
+            activeRole: 'renter',
+          });
+        }
       } else {
         setProfile(null);
       }
@@ -55,8 +68,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function switchRole(role: Role) {
     if (!user) return;
-    await persistRole(user.uid, role);
+    // Optimistic: flip locally first so the UI responds even if the persist
+    // fails (offline / demo build); the write is best-effort.
     setProfile((p) => (p ? { ...p, activeRole: role } : p));
+    try {
+      await persistRole(user.uid, role);
+    } catch (err) {
+      console.error('[apex] role persist failed', err);
+    }
   }
 
   return (

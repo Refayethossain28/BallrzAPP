@@ -78,6 +78,25 @@ jobs:
 
           echo "Assembled _site:"; ls -1 _site | head -40
 
+      # ── Apex landlord OS — static build of the real app ─────────────────────
+      # Served at /BallrzAPP/apex/. The landing page and UI are fully browsable;
+      # signing in and data flows light up once the Firebase backend is deployed
+      # (one-time commands in rentmatch/README.md). Reloading a deep link 404s
+      # (no SPA rewrites on Pages) — start from /apex/.
+      - name: Set up Node (Apex demo)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build Apex demo
+        run: |
+          set -e
+          cd rentmatch
+          npm install
+          npm --workspace apps/web run build -- --base=/BallrzAPP/apex/
+          mkdir -p ../_site/apex
+          cp -r apps/web/dist/. ../_site/apex/
+
       # ── Browser LLM demo (optional, cached) ─────────────────────────────────
       # Restore a previously-trained model. Only (re)train on a manual run or
       # when the LLM sources change — keeps ordinary ApexVIP deploys quick.
