@@ -22,7 +22,9 @@ import {
   dueCollections, coveredPeriods, withinSeatAllowance,
   isStale, withinLegalRetention, REDACTED, PLATFORM_FEE_PENCE, PLANS,
   aggregateMarketStats, aggregateDistrictOps, postcodeDistrict, rentChangePct,
+  normalizeExternalListing, dedupeExternalListings, externalListingExpired,
   type AnalyticsEvent, type ComplianceDoc, type DealRecord, type EpcRating, type Party,
+  type ExternalFeedItem, type ExternalListing,
   type PlanId, type SubscriptionStatus, type Tenancy, type RentCollection,
 } from '@rentmatch/shared';
 import { createHmac, timingSafeEqual } from 'node:crypto';
@@ -1348,6 +1350,73 @@ export const aggregateAnalytics = onSchedule('every 24 hours', async () => {
     stats: aggregateMarketStats(events),
     ops: aggregateDistrictOps(events),
   });
+});
+
+/**
+ * Daily external-listings ingestion — the "homes from across the web" feed.
+ *
+ * Sources are pure configuration: EXTERNAL_FEEDS is a JSON array of
+ * `{ "source": "OpenLet", "url": "https://…" }` entries, each URL returning
+ * the generic feed contract (`ExternalFeedItem[]`, bare or under `listings`)
+ * documented in the shared kernel. That is how licensed providers and partner
+ * agencies plug in — the big portals offer no public API and prohibit
+ * scraping, so aggregation is feed-based by design (and by law).
+ *
+ * Every row is validated/normalised by the kernel (junk is dropped, not fixed
+ * up), syndication dupes collapse to one card, ingestion upserts by
+ * deterministic id, and anything unseen by every feed for the TTL is removed —
+ * dead listings never linger in front of renters.
+ */
+export const syncExternalListings = onSchedule('every 24 hours', async () => {
+  let feeds: Array<{ source: string; url: string }> = [];
+  try {
+    feeds = JSON.parse(process.env.EXTERNAL_FEEDS ?? '[]');
+  } catch {
+    console.error('[external] EXTERNAL_FEEDS is not valid JSON — skipping sync');
+    return;
+  }
+  if (!Array.isArray(feeds) || feeds.length === 0) {
+    console.log('[external:noop] no feeds configured (set EXTERNAL_FEEDS to ingest)');
+    return;
+  }
+
+  const MAX_ITEMS_PER_FEED = 500;
+  const collected: ExternalListing[] = [];
+  for (const feed of feeds) {
+    if (!feed?.source || !feed?.url) continue;
+    try {
+      const res = await fetch(feed.url, { headers: { Accept: 'application/json' } });
+      if (!res.ok) {
+        console.error(`[external] ${feed.source}: HTTP ${res.status}`);
+        continue;
+      }
+      const body = await res.json() as ExternalFeedItem[] | { listings?: ExternalFeedItem[] };
+      const items = (Array.isArray(body) ? body : body?.listings ?? []).slice(0, MAX_ITEMS_PER_FEED);
+      let kept = 0;
+      for (const item of items) {
+        const normalized = normalizeExternalListing(item, feed.source);
+        if (normalized) { collected.push(normalized); kept += 1; }
+      }
+      console.log(`[external] ${feed.source}: ${kept}/${items.length} rows accepted`);
+    } catch (err) {
+      console.error(`[external] ${feed.source}: fetch failed`, err);
+    }
+  }
+
+  const now = Date.now();
+  const fresh = dedupeExternalListings(collected);
+  for (const listing of fresh) {
+    await db.doc(`externalListings/${listing.id}`).set({ ...listing, lastSeenMs: now });
+  }
+
+  // Sweep out listings no feed has mentioned for the TTL — they've been let.
+  const all = await db.collection('externalListings').get();
+  let removed = 0;
+  for (const d of all.docs) {
+    const lastSeen = Number(d.data().lastSeenMs ?? 0);
+    if (externalListingExpired(lastSeen, now)) { await d.ref.delete(); removed += 1; }
+  }
+  console.log(`[external] upserted ${fresh.length}, removed ${removed} stale`);
 });
 
 /** Daily retention sweep: purge stale drafts and abandoned enquiries. */
