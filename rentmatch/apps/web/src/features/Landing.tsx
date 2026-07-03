@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { PLANS, formatGBP, type PlanId } from '@rentmatch/shared';
 import SignIn from '../auth/SignIn';
 
@@ -25,6 +26,9 @@ export default function Landing() {
         <a className="cta" style={{ display: 'block', textAlign: 'center', marginTop: 8 }} href="#get-started">
           Get started — free for one property
         </a>
+        <Link className="cta ghost" style={{ display: 'block', textAlign: 'center', marginTop: 10 }} to="/browse">
+          🔎 Browse homes to rent — no account needed
+        </Link>
       </section>
 
       <section>

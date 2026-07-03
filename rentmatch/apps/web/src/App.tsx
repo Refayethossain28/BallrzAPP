@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Link, Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from './auth/AuthProvider';
 import Landing from './features/Landing';
@@ -27,12 +27,39 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false, retry: 2 } },
 });
 
+/** Minimal chrome for the signed-out marketplace pages. */
+function PublicShell() {
+  return (
+    <div className="landing" style={{ paddingBottom: 40 }}>
+      <header className="row center" style={{ justifyContent: 'space-between', padding: '18px 0 10px' }}>
+        <Link to="/" className="logo" style={{ fontSize: 20 }}><span className="mk">⌂</span> <b>Apex</b></Link>
+        <Link className="cta ghost sm" style={{ width: 'auto', padding: '9px 16px' }} to="/">Sign in</Link>
+      </header>
+      <Outlet />
+    </div>
+  );
+}
+
 function Gate() {
   const { user, loading } = useAuth();
   if (loading) {
     return <div className="centerpage"><p className="sub" style={{ textAlign: 'center' }}>Loading Apex…</p></div>;
   }
-  if (!user) return <Landing />;
+  if (!user) {
+    // Public, signed-out surface: the landing page plus a browsable marketplace.
+    // Live listings are world-readable by design (Firestore rules); enquiring
+    // requires an account, so ListingDetail gates that action on sign-in.
+    return (
+      <Routes>
+        <Route path="/" element={<Landing />} />
+        <Route element={<PublicShell />}>
+          <Route path="/browse" element={<Browse />} />
+          <Route path="/listing/:id" element={<ListingDetail />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    );
+  }
 
   return (
     <Routes>

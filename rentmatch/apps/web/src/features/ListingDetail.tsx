@@ -89,6 +89,15 @@ export default function ListingDetail() {
             Enquiries from renters appear in your Enquiries tab.
           </p>
         </>
+      ) : !user ? (
+        <>
+          <button className="cta" disabled={l.status !== 'live'} onClick={() => navigate('/')}>
+            {l.status !== 'live' ? 'This property has been let' : 'Sign in to enquire'}
+          </button>
+          <p className="faint" style={{ textAlign: 'center', fontSize: 11, marginTop: 10 }}>
+            Create a free account to message the landlord and arrange a viewing.
+          </p>
+        </>
       ) : (
         <>
           <button className="cta" disabled={l.status !== 'live' || busy} onClick={enquire}>

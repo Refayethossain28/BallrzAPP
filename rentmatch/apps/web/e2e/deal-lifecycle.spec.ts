@@ -128,6 +128,16 @@ test('a renter finds a live listing and starts an enquiry', async ({ browser }) 
   await lp.getByRole('button', { name: 'Publish listing' }).click();
   await expect(lp.getByText(/live and searchable/i)).toBeVisible({ timeout: 15_000 });
 
+  // Anonymous visitor (no account) can browse to the listing, but enquiring is
+  // gated on sign-in — the public marketplace surface.
+  const anon = await browser.newContext();
+  const ap = await anon.newPage();
+  await ap.goto('/browse');
+  await expect(ap.getByText('Shoreditch').first()).toBeVisible({ timeout: 15_000 });
+  await ap.getByText('Shoreditch').first().click();
+  await expect(ap.getByRole('button', { name: 'Sign in to enquire' })).toBeVisible({ timeout: 15_000 });
+  await anon.close();
+
   // Renter (separate context) finds it and enquires.
   const renter = await browser.newContext();
   const rp = await renter.newPage();
