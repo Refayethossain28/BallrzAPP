@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Velvet — your VIP concierge</title>
+<meta name="description" content="The all-in-one VIP concierge, as a membership. Travel, dining, events, chauffeur, shopping, home, wellness and gifting — one subscription, everything handled.">
+<meta name="theme-color" content="#0c0a08">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Velvet">
+<style>
+  :root {
+    --bg: #0c0a08; --bg2: #14110d; --card: #191510; --card2: #211b14;
+    --line: rgba(212,175,55,0.16); --line2: rgba(255,255,255,0.07);
+    --gold: #d4af37; --gold2: #f0d98c; --champagne: #e8d9a0;
+    --ink: #f2ecdd; --sub: #a89c82; --dim: #6e6552;
+    --good: #58c98a; --warn: #e6b34d; --bad: #e06767;
+    --r: 16px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased; overscroll-behavior-y: none;
+  }
+  .serif { font-family: "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif; letter-spacing: 0.2px; }
+  button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+  input, textarea, select {
+    font: inherit; color: var(--ink); background: var(--bg2);
+    border: 1px solid var(--line2); border-radius: 12px; padding: 12px 14px; width: 100%;
+  }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--gold); }
+  ::placeholder { color: var(--dim); }
+  .hide { display: none !important; }
+
+  /* ---------- shells ---------- */
+  .shell { max-width: 480px; margin: 0 auto; min-height: 100%; position: relative; }
+  main { padding: 16px 16px calc(86px + env(safe-area-inset-bottom)); }
+  header.bar {
+    position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px;
+    padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
+    background: linear-gradient(var(--bg) 78%, transparent); backdrop-filter: blur(8px);
+  }
+  .wordmark { font-size: 21px; color: var(--gold2); letter-spacing: 3px; text-transform: uppercase; }
+  .wordmark small { color: var(--sub); letter-spacing: 1px; font-size: 10px; display:block; text-transform:none; }
+  .tierchip {
+    margin-left: auto; font-size: 11px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase;
+    padding: 5px 11px; border-radius: 99px; border: 1px solid var(--line); color: var(--gold2);
+    background: rgba(212,175,55,0.08);
+  }
+
+  /* ---------- paywall ---------- */
+  .pay { padding: calc(28px + env(safe-area-inset-top)) 22px 40px; }
+  .pay .mark { font-size: 34px; color: var(--gold2); letter-spacing: 6px; text-transform: uppercase; text-align: center; }
+  .pay .rule { width: 54px; height: 1px; margin: 14px auto; background: linear-gradient(90deg, transparent, var(--gold), transparent); }
+  .pay h1 { font-size: 27px; font-weight: 600; text-align: center; line-height: 1.25; margin: 6px 0 10px; }
+  .pay .lede { color: var(--sub); text-align: center; font-size: 14.5px; margin-bottom: 20px; }
+  .svcrow { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; margin-bottom: 26px; }
+  .svcrow span { font-size: 12px; color: var(--champagne); border: 1px solid var(--line); border-radius: 99px; padding: 5px 11px; background: rgba(212,175,55,0.05); }
+  .namefield { margin-bottom: 18px; }
+  .namefield label { font-size: 12px; color: var(--sub); display: block; margin-bottom: 6px; letter-spacing: 0.6px; }
+  .plans { display: grid; gap: 12px; }
+  .plan {
+    text-align: left; border: 1px solid var(--line2); border-radius: var(--r);
+    padding: 16px; background: var(--card); position: relative; transition: border-color .15s, transform .1s;
+  }
+  .plan.sel { border-color: var(--gold); background: linear-gradient(160deg, rgba(212,175,55,0.12), rgba(212,175,55,0.03) 55%), var(--card); }
+  .plan:active { transform: scale(0.99); }
+  .plan .top { display: flex; align-items: baseline; gap: 10px; }
+  .plan .nm { font-size: 19px; color: var(--gold2); }
+  .plan .tag { font-size: 12px; color: var(--sub); font-style: italic; }
+  .plan .px { margin-left: auto; font-size: 17px; font-weight: 700; }
+  .plan .px small { color: var(--sub); font-weight: 400; font-size: 11.5px; }
+  .plan ul { list-style: none; margin-top: 10px; display: grid; gap: 4px; }
+  .plan li { font-size: 12.5px; color: var(--sub); padding-left: 16px; position: relative; }
+  .plan li::before { content: "✦"; position: absolute; left: 0; color: var(--gold); font-size: 9px; top: 3px; }
+  .plan .pop { position: absolute; top: -9px; right: 14px; font-size: 10px; font-weight: 800; letter-spacing: 1.2px; background: var(--gold); color: #1b1503; border-radius: 99px; padding: 3px 10px; text-transform: uppercase; }
+  .cta {
+    display: block; width: 100%; margin-top: 20px; padding: 15px; border-radius: 14px;
+    background: linear-gradient(135deg, var(--gold2), var(--gold) 60%, #b28e22);
+    color: #1b1503; font-weight: 800; font-size: 15.5px; letter-spacing: 0.4px;
+    box-shadow: 0 10px 26px rgba(212,175,55,0.25);
+  }
+  .cta:active { transform: translateY(1px); }
+  .fine { text-align: center; color: var(--dim); font-size: 11.5px; margin-top: 12px; }
+
+  /* ---------- shared cards ---------- */
+  .card { background: var(--card); border: 1px solid var(--line2); border-radius: var(--r); padding: 16px; margin-bottom: 14px; }
+  .card h3 { font-size: 12px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--sub); font-weight: 700; margin-bottom: 10px; }
+  .btn { border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-weight: 600; font-size: 13.5px; color: var(--gold2); background: rgba(212,175,55,0.07); }
+  .btn.primary { background: linear-gradient(135deg, var(--gold2), var(--gold) 60%, #b28e22); color: #1b1503; border: none; font-weight: 800; }
+  .btn.ghost { color: var(--sub); border-color: var(--line2); background: none; }
+  .btn.danger { color: var(--bad); border-color: rgba(224,103,103,0.35); background: rgba(224,103,103,0.06); }
+  .btn:active { transform: translateY(1px); }
+  .btn[disabled] { opacity: 0.45; pointer-events: none; }
+
+  /* ---------- membership card ---------- */
+  .mcard {
+    border-radius: 18px; padding: 18px; margin-bottom: 16px; position: relative; overflow: hidden;
+    border: 1px solid var(--line);
+    background: radial-gradient(120% 160% at 0% 0%, rgba(212,175,55,0.22), transparent 55%),
+                linear-gradient(150deg, #23180a, #0f0c07 70%);
+    box-shadow: 0 14px 34px rgba(0,0,0,0.45);
+  }
+  .mcard.black { background: radial-gradient(120% 160% at 0% 0%, rgba(255,255,255,0.10), transparent 55%), linear-gradient(150deg, #16161a, #050506 70%); }
+  .mcard.silver { background: radial-gradient(120% 160% at 0% 0%, rgba(200,205,215,0.16), transparent 55%), linear-gradient(150deg, #191b20, #0b0c0e 70%); }
+  .mcard::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,0.06) 45%, transparent 60%);
+  }
+  .mcard .row1 { display: flex; align-items: center; }
+  .mcard .mono { font-size: 15px; letter-spacing: 3px; color: var(--gold2); text-transform: uppercase; }
+  .mcard .lvl { margin-left: auto; font-size: 11px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--champagne); border: 1px solid var(--line); padding: 4px 10px; border-radius: 99px; }
+  .mcard .who { margin-top: 26px; font-size: 19px; }
+  .mcard .meta { display: flex; gap: 18px; margin-top: 12px; font-size: 11.5px; color: var(--sub); }
+  .mcard .meta b { display: block; color: var(--ink); font-size: 13.5px; font-weight: 600; }
+
+  .quota { display: flex; align-items: center; gap: 12px; }
+  .quota .bar { flex: 1; height: 6px; border-radius: 99px; background: var(--bg2); overflow: hidden; }
+  .quota .bar i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--gold), var(--gold2)); }
+  .quota .n { font-size: 12.5px; color: var(--sub); white-space: nowrap; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .svc { border: 1px solid var(--line2); background: var(--card); border-radius: 14px; padding: 13px 12px; text-align: left; }
+  .svc:active { border-color: var(--gold); }
+  .svc .e { font-size: 21px; }
+  .svc b { display: block; font-size: 13.5px; margin-top: 5px; }
+  .svc span { font-size: 11px; color: var(--sub); }
+
+  /* ---------- requests ---------- */
+  .req { display: flex; gap: 12px; align-items: center; padding: 13px 14px; border: 1px solid var(--line2); background: var(--card); border-radius: 14px; margin-bottom: 10px; text-align: left; width: 100%; }
+  .req .e { font-size: 20px; }
+  .req .t { flex: 1; min-width: 0; }
+  .req .t b { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .req .t span { font-size: 11.5px; color: var(--sub); }
+  .pill { font-size: 10.5px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; border-radius: 99px; padding: 4px 9px; white-space: nowrap; }
+  .pill.gold { color: #1b1503; background: var(--gold); }
+  .pill.soft { color: var(--champagne); background: rgba(212,175,55,0.12); border: 1px solid var(--line); }
+  .pill.grey { color: var(--sub); background: var(--bg2); border: 1px solid var(--line2); }
+  .pill.green { color: #0d2417; background: var(--good); }
+  .pill.red { color: #2a0d0d; background: var(--bad); }
+
+  .empty { text-align: center; color: var(--dim); padding: 34px 20px; font-size: 13.5px; }
+  .empty .e { font-size: 30px; display: block; margin-bottom: 8px; }
+
+  /* ---------- detail overlay ---------- */
+  .overlay { position: fixed; inset: 0; z-index: 30; background: var(--bg); overflow-y: auto; }
+  .overlay .inner { max-width: 480px; margin: 0 auto; padding: calc(10px + env(safe-area-inset-top)) 16px 120px; }
+  .ovbar { display: flex; align-items: center; gap: 10px; padding: 6px 0 14px; }
+  .ovbar .back { font-size: 22px; color: var(--gold2); padding: 4px 10px 4px 0; }
+  .ovbar h2 { font-size: 17px; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .steps { display: flex; gap: 4px; margin: 4px 0 14px; }
+  .steps i { flex: 1; height: 4px; border-radius: 99px; background: var(--bg2); }
+  .steps i.on { background: linear-gradient(90deg, var(--gold), var(--gold2)); }
+  .slab { font-size: 12px; color: var(--sub); margin-bottom: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+  .chat { display: grid; gap: 9px; margin-bottom: 14px; }
+  .msg { max-width: 86%; padding: 10px 13px; border-radius: 15px; font-size: 13.8px; line-height: 1.45; }
+  .msg.desk { background: var(--card2); border: 1px solid var(--line2); border-bottom-left-radius: 5px; justify-self: start; }
+  .msg.me { background: rgba(212,175,55,0.16); border: 1px solid var(--line); border-bottom-right-radius: 5px; justify-self: end; }
+  .msg .who { display: block; font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--gold2); margin-bottom: 3px; }
+  .msg time { display: block; font-size: 10px; color: var(--dim); margin-top: 4px; text-align: right; }
+
+  .opt { border: 1px solid var(--line2); border-radius: 14px; padding: 14px; background: var(--card); margin-bottom: 10px; width: 100%; text-align: left; }
+  .opt.sel, .opt:active { border-color: var(--gold); }
+  .opt .r1 { display: flex; align-items: baseline; gap: 10px; }
+  .opt .r1 b { font-size: 14.5px; }
+  .opt .r1 .px { margin-left: auto; color: var(--gold2); font-weight: 700; }
+  .opt p { font-size: 12.5px; color: var(--sub); margin-top: 4px; }
+  .composer { position: fixed; bottom: 0; left: 0; right: 0; z-index: 31; background: linear-gradient(transparent, var(--bg) 30%); padding: 18px 16px calc(14px + env(safe-area-inset-bottom)); }
+  .composer .row { max-width: 480px; margin: 0 auto; display: flex; gap: 8px; }
+  .composer input { flex: 1; border-radius: 99px; }
+  .composer .send { width: 46px; height: 46px; border-radius: 50%; background: var(--gold); color: #1b1503; font-size: 18px; font-weight: 800; flex: none; }
+
+  /* ---------- forms ---------- */
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; color: var(--sub); margin-bottom: 6px; letter-spacing: 0.6px; }
+  textarea { min-height: 92px; resize: vertical; }
+
+  /* ---------- club ---------- */
+  .planrow { display: flex; align-items: center; gap: 12px; padding: 13px 0; border-bottom: 1px solid var(--line2); }
+  .planrow:last-child { border-bottom: none; }
+  .planrow .t { flex: 1; }
+  .planrow .t b { display: block; font-size: 14.5px; color: var(--gold2); }
+  .planrow .t span { font-size: 11.5px; color: var(--sub); }
+  .inv { display: flex; align-items: baseline; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line2); font-size: 13px; }
+  .inv:last-child { border-bottom: none; }
+  .inv .d { color: var(--sub); font-size: 11.5px; }
+  .inv .a { margin-left: auto; font-weight: 700; color: var(--champagne); }
+  .progress { height: 6px; border-radius: 99px; background: var(--bg2); overflow: hidden; margin: 8px 0 6px; }
+  .progress i { display: block; height: 100%; background: linear-gradient(90deg, var(--gold), var(--gold2)); border-radius: 99px; }
+
+  /* ---------- tab bar ---------- */
+  nav.tabs {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
+    background: rgba(12,10,8,0.92); backdrop-filter: blur(14px);
+    border-top: 1px solid var(--line2); padding-bottom: env(safe-area-inset-bottom);
+  }
+  nav.tabs .row { max-width: 480px; margin: 0 auto; display: flex; }
+  nav.tabs button { flex: 1; padding: 10px 0 9px; color: var(--dim); font-size: 10.5px; letter-spacing: 0.4px; }
+  nav.tabs button .i { display: block; font-size: 19px; margin-bottom: 2px; }
+  nav.tabs button.on { color: var(--gold2); }
+  nav.tabs .newbtn .i {
+    width: 40px; height: 40px; margin: -14px auto 2px; border-radius: 50%; line-height: 40px;
+    background: linear-gradient(135deg, var(--gold2), var(--gold)); color: #1b1503;
+    box-shadow: 0 8px 20px rgba(212,175,55,0.35);
+  }
+
+  /* ---------- sheet & toast ---------- */
+  .sheetwrap { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,0.6); display: flex; align-items: flex-end; }
+  .sheet { width: 100%; max-width: 480px; margin: 0 auto; background: var(--bg2); border-radius: 22px 22px 0 0; border: 1px solid var(--line2); border-bottom: none; padding: 20px 18px calc(24px + env(safe-area-inset-bottom)); }
+  .sheet h2 { font-size: 18px; margin-bottom: 6px; }
+  .sheet .sub { color: var(--sub); font-size: 13px; margin-bottom: 16px; }
+  .sheet .btn { width: 100%; padding: 14px; margin-top: 10px; font-size: 14.5px; }
+  #toast {
+    position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(8px);
+    background: var(--card2); border: 1px solid var(--line); color: var(--ink);
+    padding: 11px 18px; border-radius: 99px; font-size: 13px; z-index: 60;
+    opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; max-width: 88vw; text-align: center;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  h2.section { font-size: 20px; margin: 4px 0 14px; }
+  .subhead { font-size: 12px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--sub); font-weight: 700; margin: 18px 0 10px; }
+</style>
+</head>
+<body>
+
+<!-- ============ PAYWALL / ONBOARDING ============ -->
+<div id="paywall" class="shell hide">
+  <div class="pay">
+    <div class="mark serif">Velvet</div>
+    <div class="rule"></div>
+    <h1 class="serif">One membership.<br>Everything handled.</h1>
+    <p class="lede">Your own concierge desk for travel, dining, events, chauffeurs, shopping, home, wellness and gifting — on call, every day.</p>
+    <div class="svcrow" id="svcRow"></div>
+    <div class="namefield">
+      <label for="nameInput">What should your concierge call you?</label>
+      <input id="nameInput" placeholder="Your name" maxlength="30" autocomplete="off">
+    </div>
+    <div class="plans" id="planList"></div>
+    <button class="cta" id="startBtn">Start 7-day free trial</button>
+    <p class="fine">Free for 7 days, then billed monthly. Cancel anytime — your membership runs to the end of the period. Demo: billing is simulated on-device; no card, no account, no cloud.</p>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="app" class="shell hide">
+  <header class="bar">
+    <div class="wordmark serif">Velvet<small id="hdrSub"></small></div>
+    <span class="tierchip" id="hdrTier"></span>
+  </header>
+  <main id="view"></main>
+  <nav class="tabs">
+    <div class="row">
+      <button data-tab="home"><span class="i">◈</span>Home</button>
+      <button data-tab="requests"><span class="i">☰</span>Requests</button>
+      <button data-tab="new" class="newbtn"><span class="i">+</span>New</button>
+      <button data-tab="club"><span class="i">✦</span>Club</button>
+    </div>
+  </nav>
+</div>
+
+<!-- request detail overlay -->
+<div id="detail" class="overlay hide"></div>
+<!-- bottom sheet -->
+<div id="sheet" class="sheetwrap hide"></div>
+<div id="toast"></div>
+
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+  var V = window.Velvet;
+  var KEY = 'velvet.v1';
+  var DESK_NAME = 'Alexandra · Velvet desk';
+
+  /* ---------------- state ---------------- */
+  var state = null;      // null → paywall
+  var tab = 'home';
+  var openRequestId = null;
+  var newDraftCategory = null;
+  var selectedPlan = 'gold';
+
+  function load() {
+    try { state = JSON.parse(localStorage.getItem(KEY) || 'null'); }
+    catch (e) { state = null; }
+  }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+
+  function uid() {
+    return 'v' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+  }
+
+  /* ---------------- tiny dom helpers ---------------- */
+  function $(id) { return document.getElementById(id); }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function toast(msg) {
+    var t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { t.classList.remove('show'); }, 2600);
+  }
+  function fmtDate(ts) {
+    var d = new Date(ts);
+    var M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return d.getDate() + ' ' + M[d.getMonth()] + ' ' + d.getFullYear();
+  }
+  function fmtTime(ts) {
+    var d = new Date(ts), h = d.getHours(), m = d.getMinutes();
+    return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+  }
+  function greeting() {
+    var h = new Date().getHours();
+    return h < 5 ? 'Good evening' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+  }
+
+  /* ---------------- billing / clock roll-forward ---------------- */
+  function rollForward() {
+    if (!state || !state.sub) return;
+    var now = Date.now();
+    var res = V.advance(state.sub, now);
+    if (res.invoices.length) {
+      state.sub = res.sub;
+      for (var i = 0; i < res.invoices.length; i++) {
+        state.invoices.push(res.invoices[i]);
+        state.points += V.pointsEarned(res.invoices[i].amountPence, res.invoices[i].tierId);
+      }
+      save();
+      toast('Membership renewed — ' + V.fmtGBP(res.invoices[res.invoices.length - 1].amountPence));
+    } else if (res.sub.status !== state.sub.status) {
+      state.sub = res.sub;
+      save();
+    }
+  }
+
+  /* ---------------- desk simulation tick ---------------- */
+  function tick() {
+    if (!state) return;
+    rollForward();
+    var now = Date.now(), changed = false;
+    for (var i = 0; i < state.requests.length; i++) {
+      var r = state.requests[i];
+      var sc = r.schedule || {};
+      var order = ['triaged', 'sourcing', 'options'];
+      for (var j = 0; j < order.length; j++) {
+        var st = order[j];
+        if (sc[st] && now >= sc[st] && V.canTransition(r.status, st)) {
+          r = V.transition(r, st, sc[st]);
+          if (st === 'options') r.options = V.proposeOptions(r);
+          r.messages.push({ from: 'desk', text: V.deskLine(r, st, state.memberName), at: sc[st] });
+          state.requests[i] = r;
+          changed = true;
+        }
+      }
+      if (sc.completed && now >= sc.completed && V.canTransition(r.status, 'completed')) {
+        r = V.transition(r, 'completed', sc.completed);
+        r.messages.push({ from: 'desk', text: V.deskLine(r, 'completed', state.memberName), at: sc.completed });
+        state.requests[i] = r;
+        changed = true;
+      }
+    }
+    if (changed) { save(); render(); }
+  }
+
+  /* ---------------- paywall ---------------- */
+  function renderPaywall() {
+    $('paywall').classList.remove('hide');
+    $('app').classList.add('hide');
+    var row = '';
+    for (var i = 0; i < V.CATEGORIES.length; i++) {
+      row += '<span>' + V.CATEGORIES[i].emoji + ' ' + esc(V.CATEGORIES[i].name) + '</span>';
+    }
+    $('svcRow').innerHTML = row;
+    var html = '';
+    for (var j = 0; j < V.TIER_ORDER.length; j++) {
+      var t = V.TIERS[V.TIER_ORDER[j]];
+      html += '<button class="plan' + (t.id === selectedPlan ? ' sel' : '') + '" data-plan="' + t.id + '">' +
+        (t.id === 'gold' ? '<span class="pop">Most popular</span>' : '') +
+        '<div class="top"><span class="nm serif">' + esc(t.name) + '</span>' +
+        '<span class="tag">' + esc(t.tagline) + '</span>' +
+        '<span class="px">' + V.fmtGBP(t.pricePence) + '<small>/mo</small></span></div>' +
+        '<ul><li>' + t.perks.map(esc).join('</li><li>') + '</li></ul></button>';
+    }
+    $('planList').innerHTML = html;
+    var btns = $('planList').querySelectorAll('.plan');
+    for (var k = 0; k < btns.length; k++) {
+      btns[k].addEventListener('click', function () {
+        selectedPlan = this.getAttribute('data-plan');
+        renderPaywall();
+      });
+    }
+  }
+
+  function startMembership() {
+    var name = ($('nameInput').value || '').trim() || (state && state.memberName) || 'Member';
+    var now = Date.now();
+    var prior = state || {};   // rejoining keeps history, points and status
+    state = {
+      memberName: name,
+      memberSince: prior.memberSince || now,
+      sub: V.startSubscription(selectedPlan, now),
+      invoices: prior.invoices || [],
+      requests: prior.requests || [],
+      points: prior.points || 0,
+      spentPence: prior.spentPence || 0,
+    };
+    save();
+    toast('Welcome to Velvet, ' + name + ' — your trial has begun');
+    window.scrollTo(0, 0);
+    render();
+  }
+
+  /* ---------------- app chrome ---------------- */
+  function render() {
+    if (!state || !V.isLive(state.sub)) {
+      if (state && !V.isLive(state.sub)) {
+        // lapsed membership: keep history, show paywall to rejoin
+        $('startBtn').textContent = 'Rejoin Velvet — 7-day free trial';
+      }
+      renderPaywall();
+      return;
+    }
+    $('paywall').classList.add('hide');
+    $('app').classList.remove('hide');
+    var t = V.tier(state.sub.tierId);
+    $('hdrTier').textContent = t.name;
+    $('hdrSub').textContent = 'VIP concierge';
+    var navBtns = document.querySelectorAll('nav.tabs button');
+    for (var i = 0; i < navBtns.length; i++) {
+      navBtns[i].classList.toggle('on', navBtns[i].getAttribute('data-tab') === tab);
+    }
+    var view = $('view');
+    if (tab === 'home') view.innerHTML = homeHTML();
+    else if (tab === 'requests') view.innerHTML = requestsHTML();
+    else if (tab === 'new') view.innerHTML = newHTML();
+    else view.innerHTML = clubHTML();
+    bindView();
+    renderDetail();
+  }
+
+  /* ---------------- HOME ---------------- */
+  function quotaInfo() {
+    var used = V.usedInPeriod(state.requests, state.sub.periodStart, state.sub.periodEnd);
+    var left = V.remainingQuota(state.sub.tierId, used);
+    return { used: used, left: left, cap: V.tier(state.sub.tierId).requestsPerMonth };
+  }
+
+  function homeHTML() {
+    var t = V.tier(state.sub.tierId);
+    var q = quotaInfo();
+    var lvl = V.statusFor(state.points);
+    var active = state.requests.filter(function (r) {
+      return r.status !== 'completed' && r.status !== 'cancelled';
+    });
+    var h = '<h2 class="section serif">' + greeting() + ', ' + esc(state.memberName) + '</h2>';
+
+    h += '<div class="mcard ' + t.id + '"><div class="row1"><span class="mono serif">Velvet ' + esc(t.name) + '</span>' +
+      '<span class="lvl">' + esc(lvl.name) + ' · ' + state.points + ' pts</span></div>' +
+      '<div class="who serif">' + esc(state.memberName) + '</div>' +
+      '<div class="meta"><span>Member since<b>' + fmtDate(state.memberSince) + '</b></span>' +
+      '<span>' + (state.sub.status === 'trialing' ? 'Trial ends' : (state.sub.cancelAtPeriodEnd ? 'Ends' : 'Renews')) +
+      '<b>' + fmtDate(state.sub.periodEnd) + '</b></span>' +
+      '<span>Response<b>' + slaLabel(t) + '</b></span></div></div>';
+
+    if (state.sub.status === 'trialing') {
+      h += '<div class="card"><div class="quota"><span class="n">✨ Free trial — <b>' +
+        V.trialDaysLeft(state.sub, Date.now()) + ' day' + (V.trialDaysLeft(state.sub, Date.now()) === 1 ? '' : 's') +
+        '</b> left, then ' + V.fmtGBP(t.pricePence) + '/mo</span></div></div>';
+    }
+
+    h += '<div class="card"><h3>This period</h3><div class="quota"><div class="bar"><i style="width:' +
+      (q.cap == null ? 100 : Math.min(100, (q.used / q.cap) * 100)) + '%"></i></div>' +
+      '<span class="n">' + (q.cap == null ? q.used + ' used · unlimited' : q.used + ' of ' + q.cap + ' requests used') + '</span></div></div>';
+
+    h += '<div class="subhead">What can we handle?</div><div class="grid2">';
+    for (var i = 0; i < V.CATEGORIES.length; i++) {
+      var c = V.CATEGORIES[i];
+      h += '<button class="svc" data-cat="' + c.id + '"><span class="e">' + c.emoji + '</span><b>' +
+        esc(c.name) + '</b><span>' + esc(c.blurb) + '</span></button>';
+    }
+    h += '</div>';
+
+    if (active.length) {
+      h += '<div class="subhead">In progress</div>' + active.map(reqRowHTML).join('');
+    }
+    return h;
+  }
+
+  function slaLabel(t) {
+    return t.slaMinutes >= 60 ? (t.slaMinutes / 60) + ' h' : t.slaMinutes + ' min';
+  }
+
+  /* ---------------- REQUESTS ---------------- */
+  function statusPill(r) {
+    var cls = r.status === 'completed' ? 'green' : r.status === 'cancelled' ? 'grey' :
+              r.status === 'options' ? 'gold' : 'soft';
+    return '<span class="pill ' + cls + '">' + esc(V.STATUS_LABEL[r.status]) + '</span>';
+  }
+
+  function reqRowHTML(r) {
+    var c = V.category(r.category);
+    return '<button class="req" data-open="' + r.id + '"><span class="e">' + c.emoji + '</span>' +
+      '<span class="t"><b>' + esc(r.title) + '</b><span>' + esc(c.name) + ' · ' + fmtDate(r.submittedAt) + '</span></span>' +
+      statusPill(r) + '</button>';
+  }
+
+  function requestsHTML() {
+    var open = [], past = [];
+    for (var i = state.requests.length - 1; i >= 0; i--) {
+      var r = state.requests[i];
+      (r.status === 'completed' || r.status === 'cancelled' ? past : open).push(r);
+    }
+    var h = '<h2 class="section serif">Your requests</h2>';
+    if (!open.length && !past.length) {
+      h += '<div class="empty"><span class="e">🕊️</span>Nothing on your plate.<br>Ask us for anything — that’s what we’re for.</div>';
+      return h;
+    }
+    if (open.length) h += '<div class="subhead">Open</div>' + open.map(reqRowHTML).join('');
+    if (past.length) h += '<div class="subhead">History</div>' + past.map(reqRowHTML).join('');
+    return h;
+  }
+
+  /* ---------------- NEW REQUEST ---------------- */
+  function newHTML() {
+    var q = quotaInfo();
+    var h = '<h2 class="section serif">New request</h2>';
+    if (!V.canSubmit(state.sub.tierId, q.used)) {
+      h += '<div class="card"><h3>Monthly allowance used</h3>' +
+        '<p style="color:var(--sub);font-size:13.5px">You’ve used all ' + q.cap +
+        ' requests this period. Upgrade for more — Gold has 20/month, Black is unlimited.</p>' +
+        '<div style="margin-top:12px"><button class="btn primary" data-goto="club">See plans</button></div></div>';
+      return h;
+    }
+    if (!newDraftCategory) {
+      h += '<p style="color:var(--sub);font-size:13.5px;margin-bottom:14px">Pick a desk — a concierge will take it from there.</p><div class="grid2">';
+      for (var i = 0; i < V.CATEGORIES.length; i++) {
+        var c = V.CATEGORIES[i];
+        h += '<button class="svc" data-newcat="' + c.id + '"><span class="e">' + c.emoji + '</span><b>' +
+          esc(c.name) + '</b><span>' + esc(c.blurb) + '</span></button>';
+      }
+      h += '</div>';
+      if (q.cap != null) h += '<p class="fine" style="margin-top:16px">' + q.left + ' of ' + q.cap + ' requests left this period</p>';
+      return h;
+    }
+    var cat = V.category(newDraftCategory);
+    h += '<div class="card"><h3>' + cat.emoji + ' ' + esc(cat.name) + ' desk</h3>' +
+      '<div class="field"><label for="reqTitle">What do you need?</label>' +
+      '<input id="reqTitle" maxlength="80" placeholder="' + esc(placeholderFor(cat.id)) + '"></div>' +
+      '<div class="field"><label for="reqDetails">Details — dates, people, tastes, anything useful</label>' +
+      '<textarea id="reqDetails" maxlength="600" placeholder="The more we know, the better it lands."></textarea></div>' +
+      '<div class="field"><label for="reqBudget">Budget feel</label><select id="reqBudget">' +
+      '<option value="smart">Smart — great value done well</option>' +
+      '<option value="premium" selected>Premium — make it special</option>' +
+      '<option value="no-limit">No limit — the best there is</option></select></div>' +
+      '<div style="display:flex;gap:10px;margin-top:6px">' +
+      '<button class="btn ghost" id="backCat">Back</button>' +
+      '<button class="btn primary" id="submitReq" style="flex:1">Send to my concierge</button></div></div>';
+    return h;
+  }
+
+  function placeholderFor(catId) {
+    return {
+      travel: 'Long weekend in Rome, early September…',
+      dining: 'Table for 4, Saturday, somewhere impossible…',
+      events: '2 tickets to the sold-out show on Friday…',
+      chauffeur: 'Car to Heathrow, Tuesday 6am…',
+      shopping: 'That sold-out watch, in steel…',
+      home: 'Plumber this week + weekly florist…',
+      wellness: 'A proper reset weekend for two…',
+      gifting: 'Anniversary gift — she loves ceramics…',
+    }[catId] || 'Tell us what you need…';
+  }
+
+  function submitRequest() {
+    var title = ($('reqTitle').value || '').trim();
+    if (!title) { toast('Give your concierge a one-line brief first'); return; }
+    var q = quotaInfo();
+    if (!V.canSubmit(state.sub.tierId, q.used)) { toast('Monthly allowance used — upgrade for more'); return; }
+    var now = Date.now();
+    var delays = V.deskDelays(state.sub.tierId);
+    var r = {
+      id: uid(),
+      title: title,
+      details: ($('reqDetails').value || '').trim(),
+      budget: $('reqBudget').value,
+      category: newDraftCategory,
+      status: 'submitted',
+      submittedAt: now, updatedAt: now,
+      firstResponseAt: null, completedAt: null,
+      chosenOption: null, options: null,
+      messages: [{ from: 'desk', text: V.deskLine({ id: 'x', title: title, category: newDraftCategory, status: 'submitted' }, 'submitted', state.memberName), at: now }],
+      schedule: { triaged: now + delays.triaged, sourcing: now + delays.sourcing, options: now + delays.options },
+    };
+    state.requests.push(r);
+    save();
+    newDraftCategory = null;
+    tab = 'requests';
+    openRequestId = r.id;
+    render();
+    toast('With your concierge — first response within ' + slaLabel(V.tier(state.sub.tierId)));
+  }
+
+  /* ---------------- REQUEST DETAIL ---------------- */
+  function findReq(id) {
+    for (var i = 0; i < state.requests.length; i++) if (state.requests[i].id === id) return i;
+    return -1;
+  }
+
+  function renderDetail() {
+    var box = $('detail');
+    if (!openRequestId || !state) { box.classList.add('hide'); box.innerHTML = ''; return; }
+    var i = findReq(openRequestId);
+    if (i < 0) { openRequestId = null; box.classList.add('hide'); return; }
+    var r = state.requests[i];
+    var c = V.category(r.category);
+    var flowIdx = V.FLOW.indexOf(r.status);
+    var t = V.tier(state.sub.tierId);
+
+    var h = '<div class="inner"><div class="ovbar"><button class="back" id="dBack">‹</button>' +
+      '<h2 class="serif">' + c.emoji + ' ' + esc(r.title) + '</h2>' + statusPill(r) + '</div>';
+
+    // progress steps
+    h += '<div class="steps">';
+    for (var s = 0; s < V.FLOW.length; s++) {
+      h += '<i class="' + (r.status !== 'cancelled' && flowIdx >= s ? 'on' : '') + '"></i>';
+    }
+    h += '</div>';
+
+    // SLA line
+    var sla = V.slaState(r.submittedAt, state.sub.tierId, Date.now(), r.firstResponseAt);
+    var slaTxt = { met: '✓ First response inside your ' + slaLabel(t) + ' SLA',
+                   ok: 'First response due within ' + slaLabel(t),
+                   warning: '⏳ Response due imminently', breached: '⚠️ SLA missed — escalated' }[sla];
+    h += '<div class="slab"><span class="pill grey">' + esc(V.STATUS_LABEL[r.status]) + '</span><span>' + esc(slaTxt) + '</span></div>';
+
+    if (r.details) h += '<div class="card" style="font-size:13px;color:var(--sub)">' + esc(r.details) + '</div>';
+
+    // chat
+    h += '<div class="chat">';
+    for (var m = 0; m < r.messages.length; m++) {
+      var msg = r.messages[m];
+      h += '<div class="msg ' + (msg.from === 'desk' ? 'desk' : 'me') + '">' +
+        (msg.from === 'desk' ? '<span class="who">' + esc(DESK_NAME) + '</span>' : '') +
+        esc(msg.text) + '<time>' + fmtTime(msg.at) + '</time></div>';
+    }
+    h += '</div>';
+
+    // options
+    if (r.status === 'options' && r.options) {
+      h += '<div class="subhead">Your options — tap to confirm</div>';
+      for (var o = 0; o < r.options.length; o++) {
+        var opt = r.options[o];
+        h += '<button class="opt" data-opt="' + o + '"><span class="r1"><b>' + esc(opt.name) +
+          '</b><span class="px">' + V.fmtGBP(opt.pricePence) + '</span></span><p>' + esc(opt.detail) + '</p></button>';
+      }
+    }
+    if (r.status === 'confirmed' && r.chosenOption) {
+      h += '<div class="card"><h3>Confirmed</h3><div class="opt sel" style="margin:0"><span class="r1"><b>' +
+        esc(r.chosenOption.name) + '</b><span class="px">' + V.fmtGBP(r.chosenOption.pricePence) + '</span></span><p>' +
+        esc(r.chosenOption.detail) + '</p></div></div>';
+    }
+    if (V.canTransition(r.status, 'cancelled')) {
+      h += '<div style="margin-top:14px"><button class="btn danger" id="dCancel" style="width:100%">Cancel this request</button></div>';
+    }
+    h += '</div>';
+
+    // composer for live threads
+    var live = r.status !== 'completed' && r.status !== 'cancelled';
+    if (live) {
+      h += '<div class="composer"><div class="row"><input id="chatInput" placeholder="Message your concierge…" maxlength="300">' +
+        '<button class="send" id="chatSend">↑</button></div></div>';
+    }
+
+    box.innerHTML = h;
+    box.classList.remove('hide');
+
+    // fresh request → top; new messages in the same thread → follow the chat
+    var last = renderDetail._last || {};
+    if (last.id !== r.id) box.scrollTop = 0;
+    else if (r.messages.length > last.n) box.scrollTop = box.scrollHeight;
+    renderDetail._last = { id: r.id, n: r.messages.length };
+
+    $('dBack').addEventListener('click', function () { openRequestId = null; renderDetail(); });
+    var cancelBtn = $('dCancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', function () { confirmCancelRequest(r.id); });
+    var send = $('chatSend');
+    if (send) send.addEventListener('click', function () { sendChat(r.id); });
+    var input = $('chatInput');
+    if (input) input.addEventListener('keydown', function (e) { if (e.key === 'Enter') sendChat(r.id); });
+    var opts = box.querySelectorAll('[data-opt]');
+    for (var k = 0; k < opts.length; k++) {
+      opts[k].addEventListener('click', function () {
+        confirmOption(r.id, parseInt(this.getAttribute('data-opt'), 10));
+      });
+    }
+  }
+
+  function sendChat(id) {
+    var i = findReq(id);
+    if (i < 0) return;
+    var input = $('chatInput');
+    var text = (input.value || '').trim();
+    if (!text) return;
+    var now = Date.now();
+    state.requests[i].messages.push({ from: 'me', text: text, at: now });
+    // the desk acknowledges after a beat
+    var reply = 'Noted — I’ve added that to the brief. Leave it with me.';
+    setTimeout(function () {
+      var j = findReq(id);
+      if (j < 0) return;
+      state.requests[j].messages.push({ from: 'desk', text: reply, at: Date.now() });
+      save(); render();
+    }, 1400);
+    save(); render();
+  }
+
+  function confirmOption(id, idx) {
+    var i = findReq(id);
+    if (i < 0) return;
+    var r = state.requests[i];
+    if (r.status !== 'options' || !r.options || !r.options[idx]) return;
+    var opt = r.options[idx];
+    sheet(
+      '<h2 class="serif">Confirm “' + esc(opt.name) + '”?</h2>' +
+      '<p class="sub">' + esc(opt.detail) + '</p>' +
+      '<div class="inv"><span>Total, billed to your membership</span><span class="a">' + V.fmtGBP(opt.pricePence) + '</span></div>' +
+      '<div class="inv"><span>Velvet points earned (' + V.tier(state.sub.tierId).pointsMultiplier + '×)</span><span class="a">+' +
+        V.pointsEarned(opt.pricePence, state.sub.tierId) + ' pts</span></div>' +
+      '<button class="btn primary" data-act="yes">Confirm — ' + V.fmtGBP(opt.pricePence) + '</button>' +
+      '<button class="btn ghost" data-act="no">Not yet</button>',
+      function (act) {
+        if (act !== 'yes') return;
+        var j = findReq(id);
+        if (j < 0) return;
+        var now = Date.now();
+        var rr = state.requests[j];
+        rr = V.transition(rr, 'confirmed', now);
+        rr.chosenOption = opt;
+        rr.messages.push({ from: 'desk', text: V.deskLine(rr, 'confirmed', state.memberName), at: now });
+        rr.schedule = Object.assign({}, rr.schedule, { completed: now + 30000 });
+        state.requests[j] = rr;
+        state.spentPence += opt.pricePence;
+        state.points += V.pointsEarned(opt.pricePence, state.sub.tierId);
+        save(); render();
+        toast('Confirmed — +' + V.pointsEarned(opt.pricePence, state.sub.tierId) + ' points');
+      }
+    );
+  }
+
+  function confirmCancelRequest(id) {
+    sheet(
+      '<h2 class="serif">Cancel this request?</h2>' +
+      '<p class="sub">Any holds are released and the request goes back into your monthly allowance.</p>' +
+      '<button class="btn danger" data-act="yes">Yes, cancel it</button>' +
+      '<button class="btn ghost" data-act="no">Keep it open</button>',
+      function (act) {
+        if (act !== 'yes') return;
+        var i = findReq(id);
+        if (i < 0) return;
+        var now = Date.now();
+        var r = V.transition(state.requests[i], 'cancelled', now);
+        r.messages.push({ from: 'desk', text: V.deskLine(r, 'cancelled', state.memberName), at: now });
+        state.requests[i] = r;
+        save(); render();
+        toast('Cancelled — request returned to your allowance');
+      }
+    );
+  }
+
+  /* ---------------- CLUB (membership) ---------------- */
+  function clubHTML() {
+    var t = V.tier(state.sub.tierId);
+    var lvl = V.statusFor(state.points);
+    var next = V.pointsToNext(state.points);
+    var q = quotaInfo();
+    var now = Date.now();
+
+    var h = '<h2 class="section serif">Membership</h2>';
+
+    h += '<div class="card"><h3>Your plan</h3>' +
+      '<div style="display:flex;align-items:baseline;gap:10px"><span class="serif" style="font-size:22px;color:var(--gold2)">Velvet ' +
+      esc(t.name) + '</span><span style="margin-left:auto;font-weight:700">' + V.fmtGBP(t.pricePence) + '<small style="color:var(--sub)">/mo</small></span></div>' +
+      '<p style="color:var(--sub);font-size:12.5px;margin-top:6px">' +
+      (state.sub.status === 'trialing'
+        ? 'Free trial — first charge of ' + V.fmtGBP(t.pricePence) + ' on ' + fmtDate(state.sub.periodEnd)
+        : state.sub.cancelAtPeriodEnd
+          ? 'Cancellation scheduled — membership ends ' + fmtDate(state.sub.periodEnd)
+          : 'Renews ' + fmtDate(state.sub.periodEnd) + ' for ' + V.fmtGBP(V.tier(state.sub.pendingTierId || state.sub.tierId).pricePence)) +
+      (state.sub.pendingTierId ? ' · moving to ' + esc(V.tier(state.sub.pendingTierId).name) + ' at renewal' : '') + '</p>' +
+      '<div class="quota" style="margin-top:10px"><div class="bar"><i style="width:' +
+      (q.cap == null ? 100 : Math.min(100, (q.used / q.cap) * 100)) + '%"></i></div><span class="n">' +
+      (q.cap == null ? 'Unlimited requests' : q.left + ' request' + (q.left === 1 ? '' : 's') + ' left this period') + '</span></div>' +
+      '</div>';
+
+    // status / points
+    h += '<div class="card"><h3>Velvet status</h3>' +
+      '<div style="display:flex;align-items:baseline"><b class="serif" style="font-size:19px;color:var(--champagne)">' + esc(lvl.name) +
+      '</b><span style="margin-left:auto;font-size:13px;color:var(--sub)">' + state.points + ' pts · lifetime spend ' + V.fmtGBP(state.spentPence) + '</span></div>';
+    if (next != null) {
+      var lo = lvl.min;
+      var pct = Math.min(100, ((state.points - lo) / Math.max(1, (state.points + next) - lo)) * 100);
+      h += '<div class="progress"><i style="width:' + pct + '%"></i></div>' +
+        '<p style="font-size:11.5px;color:var(--dim)">' + next + ' points to ' + esc(V.statusFor(state.points + next).name) + '</p>';
+    } else {
+      h += '<p style="font-size:11.5px;color:var(--dim);margin-top:6px">Top status — enjoy it.</p>';
+    }
+    h += '</div>';
+
+    // change plan
+    h += '<div class="card"><h3>Change plan</h3>';
+    for (var i = 0; i < V.TIER_ORDER.length; i++) {
+      var pt = V.TIERS[V.TIER_ORDER[i]];
+      var cur = pt.id === state.sub.tierId;
+      var pending = pt.id === state.sub.pendingTierId;
+      var label;
+      if (cur) label = '<span class="pill soft">Current</span>';
+      else if (pending) label = '<span class="pill grey">At renewal</span>';
+      else if (pt.rank > t.rank) {
+        var pr = state.sub.status === 'trialing' ? 0 : V.prorationPence(state.sub.tierId, pt.id, state.sub, now);
+        label = '<button class="btn" data-switch="' + pt.id + '">Upgrade' + (pr > 0 ? ' · ' + V.fmtGBP(pr) : '') + '</button>';
+      } else {
+        label = '<button class="btn ghost" data-switch="' + pt.id + '">Downgrade</button>';
+      }
+      h += '<div class="planrow"><span class="t"><b>' + esc(pt.name) + '</b><span>' + V.fmtGBP(pt.pricePence) + '/mo · ' +
+        (pt.requestsPerMonth == null ? 'unlimited' : pt.requestsPerMonth + ' requests') + ' · ' + slaLabel(pt) + ' response</span></span>' +
+        label + '</div>';
+    }
+    h += '</div>';
+
+    // billing history
+    h += '<div class="card"><h3>Billing</h3>';
+    if (!state.invoices.length) {
+      h += '<p style="color:var(--dim);font-size:12.5px">No charges yet — you’re on your free trial.</p>';
+    } else {
+      for (var b = state.invoices.length - 1; b >= 0; b--) {
+        var inv = state.invoices[b];
+        h += '<div class="inv"><span>' + esc(inv.description) + '<br><span class="d">' + fmtDate(inv.at) + '</span></span>' +
+          '<span class="a">' + V.fmtGBP(inv.amountPence) + '</span></div>';
+      }
+    }
+    h += '</div>';
+
+    // cancel / resume
+    if (state.sub.cancelAtPeriodEnd) {
+      h += '<button class="btn primary" id="resumeBtn" style="width:100%;padding:14px">Resume membership</button>';
+    } else {
+      h += '<button class="btn danger" id="cancelBtn" style="width:100%;padding:14px">Cancel membership</button>';
+    }
+    h += '<p class="fine">Demo build — billing is simulated on-device. Wire Stripe Billing for production (see docs/apexvip-payments.md for the pattern used across this repo).</p>';
+    return h;
+  }
+
+  function switchPlan(newTierId) {
+    var to = V.tier(newTierId);
+    var from = V.tier(state.sub.tierId);
+    var now = Date.now();
+    var up = to.rank > from.rank;
+    var pr = (up && state.sub.status !== 'trialing') ? V.prorationPence(state.sub.tierId, newTierId, state.sub, now) : 0;
+    sheet(
+      '<h2 class="serif">' + (up ? 'Upgrade to' : 'Move to') + ' ' + esc(to.name) + '?</h2>' +
+      '<p class="sub">' + (up
+        ? (pr > 0
+            ? 'Effective immediately. You pay the prorated difference for the rest of this period — ' + V.fmtGBP(pr) + ' now — then ' + V.fmtGBP(to.pricePence) + '/mo.'
+            : 'Effective immediately. Your first charge at trial end becomes ' + V.fmtGBP(to.pricePence) + '/mo.')
+        : 'You keep ' + esc(from.name) + ' benefits until ' + fmtDate(state.sub.periodEnd) + ', then move to ' + esc(to.name) + ' at ' + V.fmtGBP(to.pricePence) + '/mo.') + '</p>' +
+      '<button class="btn primary" data-act="yes">' + (up ? 'Upgrade now' + (pr > 0 ? ' — ' + V.fmtGBP(pr) : '') : 'Schedule downgrade') + '</button>' +
+      '<button class="btn ghost" data-act="no">Keep ' + esc(from.name) + '</button>',
+      function (act) {
+        if (act !== 'yes') return;
+        var res = V.changeTier(state.sub, newTierId, Date.now());
+        state.sub = res.sub;
+        if (res.invoice) {
+          state.invoices.push(res.invoice);
+          state.points += V.pointsEarned(res.invoice.amountPence, res.invoice.tierId);
+        }
+        save(); render();
+        toast(up ? 'Welcome to Velvet ' + to.name : to.name + ' scheduled for renewal');
+      }
+    );
+  }
+
+  function confirmCancelMembership() {
+    var t = V.tier(state.sub.tierId);
+    sheet(
+      '<h2 class="serif">Cancel your membership?</h2>' +
+      '<p class="sub">No further charges. You keep full ' + esc(t.name) + ' access until ' +
+      fmtDate(state.sub.periodEnd) + ', then your membership ends. You can resume any time before then.</p>' +
+      '<button class="btn danger" data-act="yes">Cancel at period end</button>' +
+      '<button class="btn ghost" data-act="no">Keep my membership</button>',
+      function (act) {
+        if (act !== 'yes') return;
+        state.sub = V.cancel(state.sub);
+        save(); render();
+        toast('Cancelled — access until ' + fmtDate(state.sub.periodEnd));
+      }
+    );
+  }
+
+  /* ---------------- bottom sheet ---------------- */
+  function sheet(innerHTML, onAct) {
+    var wrap = $('sheet');
+    wrap.innerHTML = '<div class="sheet">' + innerHTML + '</div>';
+    wrap.classList.remove('hide');
+    function close() { wrap.classList.add('hide'); wrap.innerHTML = ''; }
+    wrap.addEventListener('click', function (e) { if (e.target === wrap) close(); });
+    var btns = wrap.querySelectorAll('[data-act]');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].addEventListener('click', function () {
+        var act = this.getAttribute('data-act');
+        close();
+        if (onAct) onAct(act);
+      });
+    }
+  }
+
+  /* ---------------- view event wiring ---------------- */
+  function bindView() {
+    var view = $('view');
+    var opens = view.querySelectorAll('[data-open]');
+    for (var i = 0; i < opens.length; i++) {
+      opens[i].addEventListener('click', function () {
+        openRequestId = this.getAttribute('data-open');
+        renderDetail();
+      });
+    }
+    var cats = view.querySelectorAll('[data-cat]');
+    for (var j = 0; j < cats.length; j++) {
+      cats[j].addEventListener('click', function () {
+        newDraftCategory = this.getAttribute('data-cat');
+        tab = 'new';
+        render();
+      });
+    }
+    var newcats = view.querySelectorAll('[data-newcat]');
+    for (var k = 0; k < newcats.length; k++) {
+      newcats[k].addEventListener('click', function () {
+        newDraftCategory = this.getAttribute('data-newcat');
+        render();
+      });
+    }
+    var gotos = view.querySelectorAll('[data-goto]');
+    for (var g = 0; g < gotos.length; g++) {
+      gotos[g].addEventListener('click', function () {
+        tab = this.getAttribute('data-goto');
+        window.scrollTo(0, 0);
+        render();
+      });
+    }
+    var switches = view.querySelectorAll('[data-switch]');
+    for (var s = 0; s < switches.length; s++) {
+      switches[s].addEventListener('click', function () {
+        switchPlan(this.getAttribute('data-switch'));
+      });
+    }
+    var back = $('backCat');
+    if (back) back.addEventListener('click', function () { newDraftCategory = null; render(); });
+    var submit = $('submitReq');
+    if (submit) submit.addEventListener('click', submitRequest);
+    var cancelBtn = $('cancelBtn');
+    if (cancelBtn) cancelBtn.addEventListener('click', confirmCancelMembership);
+    var resumeBtn = $('resumeBtn');
+    if (resumeBtn) resumeBtn.addEventListener('click', function () {
+      state.sub = V.resume(state.sub);
+      save(); render();
+      toast('Welcome back — renews ' + fmtDate(state.sub.periodEnd));
+    });
+  }
+
+  /* ---------------- boot ---------------- */
+  var navBtns = document.querySelectorAll('nav.tabs button');
+  for (var n = 0; n < navBtns.length; n++) {
+    navBtns[n].addEventListener('click', function () {
+      tab = this.getAttribute('data-tab');
+      if (tab === 'new') newDraftCategory = null;
+      openRequestId = null;
+      window.scrollTo(0, 0);
+      render();
+    });
+  }
+  $('startBtn').addEventListener('click', startMembership);
+
+  load();
+  rollForward();
+  render();
+  setInterval(tick, 1000);
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  }
+})();
+</script>
+</body>
+</html>
