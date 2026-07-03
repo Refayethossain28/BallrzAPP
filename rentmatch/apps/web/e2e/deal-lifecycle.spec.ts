@@ -103,8 +103,36 @@ test('landlord advertises, uploads certificates and publishes a live listing', a
   await expect(page.getByText(/live and searchable/i)).toBeVisible({ timeout: 15_000 });
 });
 
-test('a renter finds a live listing and starts an enquiry', async ({ browser }) => {
+/** Seed one aggregated external listing straight into the Firestore emulator
+ *  (Bearer owner bypasses rules, standing in for the ingestion cron's Admin
+ *  SDK writes — clients can never write this collection). */
+async function seedExternalListing(request: import('@playwright/test').APIRequestContext) {
+  const res = await request.post(
+    'http://127.0.0.1:8080/v1/projects/demo-rentmatch/databases/rentmatch/documents/externalListings?documentId=openlet:e2e-1',
+    {
+      headers: { Authorization: 'Bearer owner', 'Content-Type': 'application/json' },
+      data: {
+        fields: {
+          id: { stringValue: 'openlet:e2e-1' },
+          source: { stringValue: 'OpenLet' },
+          url: { stringValue: 'https://example.com/p/e2e-1' },
+          title: { stringValue: 'Canalside 2-bed maisonette' },
+          area: { stringValue: 'Islington' },
+          city: { stringValue: 'London' },
+          district: { stringValue: 'N1' },
+          beds: { integerValue: '2' },
+          rentPence: { integerValue: '210000' },
+          lastSeenMs: { integerValue: `${Date.now()}` },
+        },
+      },
+    },
+  );
+  expect(res.ok()).toBeTruthy();
+}
+
+test('a renter finds a live listing and starts an enquiry', async ({ browser, request }) => {
   const stamp = Date.now();
+  await seedExternalListing(request);
 
   // Landlord publishes a listing (own context).
   const landlord = await browser.newContext();
@@ -134,6 +162,11 @@ test('a renter finds a live listing and starts an enquiry', async ({ browser }) 
   const ap = await anon.newPage();
   await ap.goto('/browse');
   await expect(ap.getByText('Shoreditch').first()).toBeVisible({ timeout: 15_000 });
+  // The aggregated section renders the seeded external listing, badged with
+  // its source and linking out to the source site.
+  await expect(ap.getByText('More homes from across the web')).toBeVisible({ timeout: 15_000 });
+  const externalCard = ap.getByRole('link', { name: /Canalside 2-bed maisonette/ });
+  await expect(externalCard).toHaveAttribute('href', 'https://example.com/p/e2e-1');
   await ap.getByText('Shoreditch').first().click();
   await expect(ap.getByRole('button', { name: 'Sign in to enquire' })).toBeVisible({ timeout: 15_000 });
   await anon.close();

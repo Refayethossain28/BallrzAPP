@@ -29,7 +29,8 @@ export type AnalyticsEventType =
   | 'compliance_lapsed'
   | 'dd_mandate_active'
   | 'subscription_started'
-  | 'statement_exported';
+  | 'statement_exported'
+  | 'external_listing_click'; // demand signal: renter followed an aggregated listing out
 
 /** One pseudonymous event. Only coarse, non-identifying fields. */
 export interface AnalyticsEvent {

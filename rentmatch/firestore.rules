@@ -155,5 +155,13 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow write: if false;
     }
+
+    // Aggregated listings from licensed external feeds: part of the public
+    // marketplace (world-readable, like live listings); written only by the
+    // daily ingestion cron under the Admin SDK.
+    match /externalListings/{listingId} {
+      allow read: if true;
+      allow write: if false;
+    }
   }
 }

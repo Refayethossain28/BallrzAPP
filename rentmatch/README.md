@@ -82,6 +82,39 @@ Then deploy everything, scoped:
 npm run deploy   # firebase deploy --only "firestore,functions,storage,hosting"
 ```
 
+### External listing feeds (homes from across the web)
+
+Browse can also show **aggregated stock from other sites** alongside Apex's own
+listings. The UK portals (Rightmove, Zoopla, OnTheMarket) publish no public API
+and prohibit scraping, so — like every legitimate aggregator — Apex ingests
+**licensed feeds**: set `EXTERNAL_FEEDS` on the functions runtime to a JSON
+array of sources and the daily `syncExternalListings` cron does the rest
+(validate → de-dup → upsert → expire after 14 days unseen).
+
+```jsonc
+EXTERNAL_FEEDS='[{"source":"OpenLet","url":"https://provider.example.com/feed.json"}]'
+```
+
+Each URL must return the generic contract (`ExternalFeedItem[]`, bare or under
+a `listings` key) defined in `packages/shared/src/externalListings.ts`:
+
+```jsonc
+{ "listings": [{
+  "id": "p-101",                         // stable within the source
+  "url": "https://…/p/101",              // canonical page (https only)
+  "title": "Bright 2-bed flat",
+  "area": "Hackney", "city": "London", "postcode": "E8 3JN",
+  "beds": 2, "baths": 1,                 // beds: 0 = studio
+  "rentPcm": 1850,                       // pounds pcm (or exact "rentPence")
+  "furnished": "Furnished", "propertyType": "Flat",
+  "availableFrom": "2026-08-01", "imageUrl": "https://…"
+}]}
+```
+
+Malformed rows are dropped (never "fixed up"), cross-source syndication dupes
+collapse to one card, and external cards link out to the source site — renters
+enquire there, while Apex-native listings keep the in-app enquiry flow.
+
 Auth is project-level (shared, which is fine — same user pool). After deploy,
 point Stripe / GoCardless webhooks at `stripeWebhook` / `gocardlessWebhook`, and
 fill credentials per [`docs/rentmatch-revenue-plan.md`](../docs/rentmatch-revenue-plan.md)

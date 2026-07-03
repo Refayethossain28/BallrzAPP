@@ -168,6 +168,12 @@ What a landlord can do today, all on top of the tested shared kernel:
 - **Agency** — agent book-of-business dashboard (`Agency.tsx`): connected clients'
   compliance + arrears rolled up, worst-first; landlords connect by code in
   Account.
+- **Aggregated marketplace** — Browse shows Apex-native listings plus **homes
+  from across the web** ingested from licensed external feeds
+  (`externalListings.ts` kernel + daily `syncExternalListings` cron:
+  validate → de-dup → upsert → 14-day expiry). External cards are
+  source-badged and link out; the portals prohibit scraping, so sources are
+  feed-based by design — configure `EXTERNAL_FEEDS` to plug providers in.
 
 **Engine coverage:** `compliance.ts`, `billing.ts`, `rent.ts`, `finance.ts`,
 `collection.ts`, `agency.ts`, `renewal.ts`, `money.ts`, `dealStateMachine.ts`,

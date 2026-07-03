@@ -17,7 +17,7 @@ import {
   newDealRecord, recomputeStage, postcodeDistrict,
   type ComplianceCheck, type ComplianceDoc, type ComplianceDocType, type DealParty,
   type DealRecord, type DealViewing, type DirectDebitMandate, type EpcRating,
-  type ExpenseCategory, type ExpenseEntry, type FinanceEntry, type ListingSummary,
+  type ExpenseCategory, type ExpenseEntry, type ExternalListing, type FinanceEntry, type ListingSummary,
   type RentCollection, type RentPayment, type RenewalStatus, type RenewalTerms,
   type Subscription, type Tenancy, type TenancyAgreement,
 } from '@rentmatch/shared';
@@ -123,6 +123,19 @@ function mapListing(id: string, data: Record<string, unknown>): Listing {
 export async function fetchLiveListings(): Promise<Listing[]> {
   const snap = await getDocs(query(listingsCol, where('status', '==', 'live')));
   return snap.docs.map((d) => mapListing(d.id, d.data()));
+}
+
+/* ---- external listings (aggregated from licensed feeds by the sync cron) ---- */
+
+export async function fetchExternalListings(): Promise<ExternalListing[]> {
+  const snap = await getDocs(collection(db, 'externalListings'));
+  return snap.docs.map((d) => d.data() as ExternalListing);
+}
+
+/** Demand signal for the market-analytics pipeline: a renter followed an
+ *  aggregated listing out to its source site. Fire-and-forget like all events. */
+export function trackExternalListingClick(l: ExternalListing): void {
+  track({ type: 'external_listing_click', district: l.district || undefined, beds: l.beds, rentPence: l.rentPence });
 }
 
 export async function fetchListing(id: string): Promise<Listing | null> {

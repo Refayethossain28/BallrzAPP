@@ -2,9 +2,11 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
-  searchListings, listedCities, formatGBP, type ListingFilter, type ListingSort,
+  searchListings, listedCities, searchExternalListings, formatGBP,
+  type ExternalListing, type ListingFilter, type ListingSort,
 } from '@rentmatch/shared';
-import { fetchLiveListings, type Listing } from '../lib/db';
+import { fetchLiveListings, trackExternalListingClick, type Listing } from '../lib/db';
+import { fetchExternalForBrowse } from '../lib/demoExternal';
 import { photoGradient, formatDate } from '../components/ui';
 
 export default function Browse() {
@@ -12,13 +14,22 @@ export default function Browse() {
     queryKey: ['listings', 'live'],
     queryFn: fetchLiveListings,
   });
+  // Aggregated stock from licensed external feeds — supplementary, so it
+  // renders when available and the page works identically without it.
+  const { data: external } = useQuery({
+    queryKey: ['listings', 'external'],
+    queryFn: fetchExternalForBrowse,
+  });
 
   const [city, setCity] = useState('');
   const [minBeds, setMinBeds] = useState('');
   const [maxRent, setMaxRent] = useState('');
   const [sort, setSort] = useState<ListingSort>('newest');
 
-  const cities = useMemo(() => listedCities(listings), [listings]);
+  const cities = useMemo(
+    () => [...new Set([...listedCities(listings), ...(external?.listings ?? []).map((l) => l.city)])].sort(),
+    [listings, external],
+  );
   const results = useMemo(() => {
     const filter: ListingFilter = {
       city: city || undefined,
@@ -27,6 +38,11 @@ export default function Browse() {
     };
     return searchListings(listings, filter, sort);
   }, [listings, city, minBeds, maxRent, sort]);
+  const externalResults = useMemo(() => searchExternalListings(external?.listings ?? [], {
+    city: city || undefined,
+    minBeds: minBeds === '' ? undefined : Number(minBeds),
+    maxRentPence: maxRent === '' ? undefined : Number(maxRent) * 100,
+  }), [external, city, minBeds, maxRent]);
 
   return (
     <>
@@ -57,11 +73,53 @@ export default function Browse() {
         </select>
       </div>
 
-      {!isLoading && results.length === 0 && (
+      {!isLoading && results.length === 0 && externalResults.length === 0 && (
         <div className="empty"><div className="big">🏚️</div>No matches — try widening your filters.</div>
       )}
       {results.map((l) => <ListingCard key={l.id} listing={l} />)}
+
+      {externalResults.length > 0 && (
+        <>
+          <div className="section-t" style={{ marginTop: results.length ? 18 : 0 }}>
+            More homes from across the web
+          </div>
+          <p className="faint" style={{ fontSize: 11, margin: '0 0 10px' }}>
+            {external?.sample && <b>Example data (demo) · </b>}
+            Aggregated from partner sites and licensed feeds — tap through to enquire on the source site.
+          </p>
+          {externalResults.map((l) => <ExternalCard key={l.id} listing={l} />)}
+        </>
+      )}
     </>
+  );
+}
+
+function ExternalCard({ listing: l }: { listing: ExternalListing }) {
+  return (
+    <a href={l.url} target="_blank" rel="noopener noreferrer" className="card"
+      style={{ display: 'block', color: 'inherit' }} onClick={() => trackExternalListingClick(l)}>
+      <div className="photo" style={{ background: photoGradient(l.id), height: 90 }}>
+        <div className="tags">
+          <span className="tag">🌐 {l.source}</span>
+          {l.propertyType && <span className="tag">{l.propertyType}</span>}
+          {l.furnished && <span className="tag">{l.furnished}</span>}
+        </div>
+      </div>
+      <div className="body">
+        <div className="row center" style={{ justifyContent: 'space-between' }}>
+          <div>
+            <div className="price">{formatGBP(l.rentPence)}<small> /month</small></div>
+            <div className="addr">{l.title}</div>
+            <div className="addr">{[l.area, l.city].filter(Boolean).join(', ')}{l.district ? ` · ${l.district}` : ''}</div>
+          </div>
+        </div>
+        <div className="specs">
+          <span>🛏 <b>{l.beds === 0 ? 'Studio' : l.beds}</b></span>
+          {l.baths != null && <span>🛁 <b>{l.baths}</b></span>}
+          <span style={{ marginLeft: 'auto' }}>View on {l.source} ↗</span>
+        </div>
+      </div>
+    </a>
   );
 }
 
