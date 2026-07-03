@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Velvet — your VIP concierge</title>
+<title>ApexVIP — your VIP concierge</title>
 <meta name="description" content="The all-in-one VIP concierge, as a membership. Travel, dining, events, chauffeur, shopping, home, wellness and gifting — one subscription, everything handled.">
 <meta name="theme-color" content="#0c0a08">
 <link rel="manifest" href="manifest.json">
@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Velvet">
+<meta name="apple-mobile-web-app-title" content="ApexVIP">
 <style>
   /* ═══════════════════ Velvet design system ═══════════════════
      Deep-black lacquer + champagne gold. Every surface is layered:
@@ -224,7 +224,7 @@
   }
   /* huge watermark V, embossed */
   .mcard::before {
-    content: "V"; position: absolute; right: -6px; bottom: -34px; pointer-events: none;
+    content: "A"; position: absolute; right: -6px; bottom: -34px; pointer-events: none;
     font-family: Didot, "Palatino Linotype", Georgia, serif; font-size: 150px; line-height: 1;
     color: rgba(247,231,174,0.055); text-shadow: 0 1px 0 rgba(0,0,0,0.5);
   }
@@ -456,7 +456,7 @@
 <!-- ============ PAYWALL / ONBOARDING ============ -->
 <div id="paywall" class="shell hide">
   <div class="pay">
-    <div class="mark serif">Velvet</div>
+    <div class="mark serif">ApexVIP</div>
     <div class="rule"></div>
     <h1 class="serif">One membership.<br>Everything handled.</h1>
     <p class="lede">Your own concierge desk for travel, dining, events, chauffeurs, shopping, home, wellness and gifting — on call, every day.</p>
@@ -475,7 +475,7 @@
 <!-- ============ APP ============ -->
 <div id="app" class="shell hide">
   <header class="bar">
-    <div class="wordmark serif">Velvet<small id="hdrSub"></small></div>
+    <div class="wordmark serif">ApexVIP<small id="hdrSub"></small></div>
     <span class="tierchip" id="hdrTier"></span>
   </header>
   <main id="view"></main>
@@ -504,7 +504,7 @@
   var V = window.Velvet;
   var C = window.VelvetCloud || null;   // optional cloud layer (cloud.js)
   var KEY = 'velvet.v1';
-  var DESK_NAME = 'Alexandra · Velvet desk';
+  var DESK_NAME = 'Alexandra · Concierge desk';
 
   /** True once the Stripe webhook owns the subscription — the local billing
    *  simulation must then stand down (no simulated renewals, no local plan ops). */
@@ -653,7 +653,7 @@
       spentPence: prior.spentPence || 0,
     };
     save();
-    toast('Welcome to Velvet, ' + name + ' — your trial has begun');
+    toast('Welcome to ApexVIP, ' + name + ' — your trial has begun');
     window.scrollTo(0, 0);
     render();
   }
@@ -663,7 +663,7 @@
     if (!state || !V.isLive(state.sub)) {
       if (state && !V.isLive(state.sub)) {
         // lapsed membership: keep history, show paywall to rejoin
-        $('startBtn').textContent = 'Rejoin Velvet — 7-day free trial';
+        $('startBtn').textContent = 'Rejoin ApexVIP — 7-day free trial';
       }
       renderPaywall();
       return;
@@ -705,7 +705,7 @@
     });
     var h = '<h2 class="section serif">' + greeting() + ', ' + esc(state.memberName) + '</h2>';
 
-    h += '<div class="mcard ' + t.id + '"><div class="row1"><span class="mono serif">Velvet ' + esc(t.name) + '</span>' +
+    h += '<div class="mcard ' + t.id + '"><div class="row1"><span class="mono serif">ApexVIP ' + esc(t.name) + '</span>' +
       '<span class="lvl">' + esc(lvl.name) + ' · ' + state.points + ' pts</span></div>' +
       '<div class="who serif">' + esc(state.memberName) + '</div>' +
       '<div class="meta"><span>Member since<b>' + fmtDate(state.memberSince) + '</b></span>' +
@@ -891,7 +891,7 @@
     for (var m = 0; m < r.messages.length; m++) {
       var msg = r.messages[m];
       h += '<div class="msg ' + (msg.from === 'desk' ? 'desk' : 'me') + '">' +
-        (msg.from === 'desk' ? '<span class="who">' + esc(msg.ai ? 'ApexAI ✦ Velvet desk' : DESK_NAME) + '</span>' : '') +
+        (msg.from === 'desk' ? '<span class="who">' + esc(msg.ai ? 'ApexAI ✦ Concierge desk' : DESK_NAME) + '</span>' : '') +
         esc(msg.text) + '<time>' + fmtTime(msg.at) + '</time></div>';
     }
     h += '</div>';
@@ -1010,7 +1010,7 @@
       '<h2 class="serif">Confirm “' + esc(opt.name) + '”?</h2>' +
       '<p class="sub">' + esc(opt.detail) + '</p>' +
       '<div class="inv"><span>Total, billed to your membership</span><span class="a">' + V.fmtGBP(opt.pricePence) + '</span></div>' +
-      '<div class="inv"><span>Velvet points earned (' + V.tier(state.sub.tierId).pointsMultiplier + '×)</span><span class="a">+' +
+      '<div class="inv"><span>ApexVIP points earned (' + V.tier(state.sub.tierId).pointsMultiplier + '×)</span><span class="a">+' +
         V.pointsEarned(opt.pricePence, state.sub.tierId) + ' pts</span></div>' +
       '<button class="btn primary" data-act="yes">Confirm — ' + V.fmtGBP(opt.pricePence) + '</button>' +
       '<button class="btn ghost" data-act="no">Not yet</button>',
@@ -1073,7 +1073,7 @@
         h += '<p class="fine" style="margin-top:10px">Server-granted trial (mock billing — no Stripe key configured on the backend yet).</p>';
       }
     } else if (C.status === 'loading' || C.status === 'idle') {
-      h += '<p style="color:var(--sub);font-size:12.5px">Connecting to Velvet cloud…</p>';
+      h += '<p style="color:var(--sub);font-size:12.5px">Connecting to the ApexVIP cloud…</p>';
     } else if (C.status === 'error') {
       h += '<p style="color:var(--sub);font-size:12.5px">Cloud unreachable — running in offline demo mode. Everything stays on this device.</p>';
     } else {
@@ -1093,7 +1093,7 @@
     var h = '<h2 class="section serif">Membership</h2>';
 
     h += '<div class="card"><h3>Your plan</h3>' +
-      '<div style="display:flex;align-items:baseline;gap:10px"><span class="serif" style="font-size:22px;color:var(--gold2)">Velvet ' +
+      '<div style="display:flex;align-items:baseline;gap:10px"><span class="serif" style="font-size:22px;color:var(--gold2)">ApexVIP ' +
       esc(t.name) + '</span><span style="margin-left:auto;font-weight:700">' + V.fmtGBP(t.pricePence) + '<small style="color:var(--sub)">/mo</small></span></div>' +
       '<p style="color:var(--sub);font-size:12.5px;margin-top:6px">' +
       (state.sub.status === 'trialing'
@@ -1110,7 +1110,7 @@
     h += accountCardHTML();
 
     // status / points
-    h += '<div class="card"><h3>Velvet status</h3>' +
+    h += '<div class="card"><h3>ApexVIP status</h3>' +
       '<div style="display:flex;align-items:baseline"><b class="serif" style="font-size:19px;color:var(--champagne)">' + esc(lvl.name) +
       '</b><span style="margin-left:auto;font-size:13px;color:var(--sub)">' + state.points + ' pts · lifetime spend ' + V.fmtGBP(state.spentPence) + '</span></div>';
     if (next != null) {
@@ -1198,7 +1198,7 @@
           state.points += V.pointsEarned(res.invoice.amountPence, res.invoice.tierId);
         }
         save(); render();
-        toast(up ? 'Welcome to Velvet ' + to.name : to.name + ' scheduled for renewal');
+        toast(up ? 'Welcome to ApexVIP ' + to.name : to.name + ' scheduled for renewal');
       }
     );
   }
@@ -1229,7 +1229,7 @@
   function authSheet() {
     if (!C) return;
     sheet(
-      '<h2 class="serif">Velvet account</h2>' +
+      '<h2 class="serif">ApexVIP account</h2>' +
       '<p class="sub">Sync your membership, requests and points across devices — and unlock real billing.</p>' +
       '<div class="field"><label for="authEmail">Email</label><input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com"></div>' +
       '<div class="field"><label for="authPass">Password (8+ characters)</label><input id="authPass" type="password" autocomplete="current-password" placeholder="••••••••"></div>' +
