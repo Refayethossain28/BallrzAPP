@@ -5,14 +5,14 @@ import {
   searchListings, listedCities, searchExternalListings, formatGBP,
   type ExternalListing, type ListingFilter, type ListingSort,
 } from '@rentmatch/shared';
-import { fetchLiveListings, trackExternalListingClick, type Listing } from '../lib/db';
+import { fetchLiveListingsForBrowse, trackExternalListingClick, type Listing } from '../lib/db';
 import { fetchExternalForBrowse } from '../lib/demoExternal';
 import { photoGradient, formatDate } from '../components/ui';
 
 export default function Browse() {
   const { data: listings = [], isLoading } = useQuery({
     queryKey: ['listings', 'live'],
-    queryFn: fetchLiveListings,
+    queryFn: fetchLiveListingsForBrowse,
   });
   // Aggregated stock from licensed external feeds — supplementary, so it
   // renders when available and the page works identically without it.
