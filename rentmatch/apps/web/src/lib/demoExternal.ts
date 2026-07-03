@@ -27,12 +27,18 @@ export interface ExternalFeedResult {
   sample: boolean;
 }
 
+/** Reject slow reads: with no backend the Firestore SDK retries forever
+ *  rather than failing, so a deadline is the only way to reach the fallback. */
+const deadline = <T>(p: Promise<T>, ms: number): Promise<T> => Promise.race([
+  p, new Promise<T>((_, reject) => setTimeout(() => reject(new Error('firestore deadline')), ms)),
+]);
+
 /** External stock for Browse: the real aggregated collection, or — only in
- *  the demo build — bundled samples when the backend is absent/empty. */
+ *  the demo build — bundled samples when the backend is absent/empty/silent. */
 export async function fetchExternalForBrowse(): Promise<ExternalFeedResult> {
   const demo = import.meta.env.VITE_DEMO_SAMPLES === '1';
   try {
-    const listings = await fetchExternalListings();
+    const listings = await deadline(fetchExternalListings(), 6_000);
     if (listings.length > 0 || !demo) return { listings, sample: false };
   } catch (err) {
     if (!demo) throw err;

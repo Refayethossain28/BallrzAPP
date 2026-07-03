@@ -120,9 +120,23 @@ function mapListing(id: string, data: Record<string, unknown>): Listing {
   };
 }
 
+/** Resolve with a fallback when Firestore can't answer in time. When the
+ *  backend is unreachable (e.g. the static demo, which has none) the SDK
+ *  retries forever instead of rejecting, which would pin Browse on
+ *  "Loading…" — the same failure mode as the auth-profile hang, same fix. */
+function withTimeout<T>(p: Promise<T>, fallback: T, ms = 6_000): Promise<T> {
+  return Promise.race([p, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))]);
+}
+
 export async function fetchLiveListings(): Promise<Listing[]> {
   const snap = await getDocs(query(listingsCol, where('status', '==', 'live')));
   return snap.docs.map((d) => mapListing(d.id, d.data()));
+}
+
+/** Browse's query: live listings, or an empty result when the backend can't
+ *  answer in time — an empty marketplace beats an eternal spinner. */
+export function fetchLiveListingsForBrowse(): Promise<Listing[]> {
+  return withTimeout(fetchLiveListings(), []);
 }
 
 /* ---- external listings (aggregated from licensed feeds by the sync cron) ---- */
