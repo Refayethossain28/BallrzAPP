@@ -653,6 +653,7 @@
       spentPence: prior.spentPence || 0,
     };
     save();
+    if (C && C.track) C.track('membership_trial_started', { tier: selectedPlan });
     toast('Welcome to ApexVIP, ' + name + ' — your trial has begun');
     window.scrollTo(0, 0);
     render();
@@ -844,6 +845,7 @@
     };
     state.requests.push(r);
     save();
+    if (C && C.track) C.track('concierge_request_created', { category: r.category, budget: r.budget, tier: state.sub.tierId });
     newDraftCategory = null;
     tab = 'requests';
     openRequestId = r.id;
@@ -1028,6 +1030,27 @@
         state.spentPence += opt.pricePence;
         state.points += V.pointsEarned(opt.pricePence, state.sub.tierId);
         save(); render();
+        if (C && C.track) C.track('concierge_option_confirmed', {
+          category: rr.category, option: opt.name,
+          pricePence: opt.pricePence, price: Math.round(opt.pricePence / 100),
+          tier: state.sub.tierId, user: state.memberName,
+        });
+        // A confirmed chauffeur request becomes a real ApexVIP booking, so the
+        // driver app's dispatch pipeline and the admin's Bookings pick it up.
+        if (rr.category === 'chauffeur' && C && C.user && C.dispatchChauffeur) {
+          C.dispatchChauffeur(rr, opt, state.memberName).then(function (bookingRef) {
+            var k = findReq(id);
+            if (k < 0) return;
+            state.requests[k].messages.push({
+              from: 'desk',
+              text: 'Your chauffeur is being arranged now — booking ' + bookingRef +
+                    ' has gone to our driver network. Follow your driver live in the ApexVIP app.',
+              at: Date.now(),
+            });
+            state.requests[k].updatedAt = Date.now();
+            save(); render();
+          }).catch(function () {});
+        }
         toast('Confirmed — +' + V.pointsEarned(opt.pricePence, state.sub.tierId) + ' points');
       }
     );
@@ -1048,6 +1071,7 @@
         r.messages.push({ from: 'desk', text: V.deskLine(r, 'cancelled', state.memberName), at: now });
         state.requests[i] = r;
         save(); render();
+        if (C && C.track) C.track('concierge_request_cancelled', { category: r.category });
         toast('Cancelled — request returned to your allowance');
       }
     );
@@ -1198,6 +1222,7 @@
           state.points += V.pointsEarned(res.invoice.amountPence, res.invoice.tierId);
         }
         save(); render();
+        if (C && C.track) C.track('membership_plan_changed', { from: from.id, to: to.id, upgrade: up });
         toast(up ? 'Welcome to ApexVIP ' + to.name : to.name + ' scheduled for renewal');
       }
     );
@@ -1215,6 +1240,7 @@
         if (act !== 'yes') return;
         state.sub = V.cancel(state.sub);
         save(); render();
+        if (C && C.track) C.track('membership_cancelled', { tier: state.sub.tierId });
         toast('Cancelled — access until ' + fmtDate(state.sub.periodEnd));
       }
     );
