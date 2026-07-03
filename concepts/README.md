@@ -1,6 +1,6 @@
 # App Concepts
 
-Two concrete concepts for an app aiming at global, durable popularity. Each
+Concrete concepts for an app aiming at global, durable popularity. Each
 doc contains a **product spec** (the "what" and "why") and an **architecture
 sketch** (the "how"). They are deliberately different bets:
 
@@ -8,8 +8,9 @@ sketch** (the "how"). They are deliberately different bets:
 |---|---------|-----|------|------|
 | 1 | [AI Life Concierge](./01-ai-life-concierge.md) | Messaging is an involuntary daily need; bolt a capable AI agent onto it | The agent layer + privacy stance | Distribution vs. WhatsApp/iMessage incumbents |
 | 2 | [AI Infinite Game](./02-ai-infinite-game.md) | Fastest path to scale: zero network, zero trust, infinite content | Personalized generation pipeline | Retention; games churn |
+| 3 | [Helm — the app that opens itself](./03-helm-the-app-that-opens-itself.md) | Every app is reactive; the ultimate app is **proactive** — it decides what matters and acts | Accumulated on-device context + earned interrupt trust | Getting muted: two wrong interrupts and it's dead |
 
-## Why these two
+## Why these bets
 
 The biggest apps ever (WhatsApp, TikTok, WeChat, Instagram) share three
 traits:
@@ -25,6 +26,14 @@ Concept 1 rides an existing involuntary need (messaging) and adds a moat that
 only became possible recently (agents that actually *do* things). Concept 2
 trades defensibility for raw speed-to-scale — games need no network and no
 trust, so they spread fastest, but retain worst.
+
+Concept 3 is the "ultimate app" answer: it drops the network-effect trait and
+doubles down on the other two — the involuntary need is *"don't drop
+anything"*, and the moat is accumulated personal context that makes leaving
+feel like amnesia. It deliberately synthesizes the organs already prototyped
+in this repo: [Cusp](../cusp/)'s salience engine, [ApexVIP
+Concierge](../concierge/)'s execution lifecycle, and the per-action consent
+seam from Concept 1.
 
 ## Runnable prototypes
 

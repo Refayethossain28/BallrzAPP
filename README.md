@@ -34,6 +34,7 @@ native-feeling launch:
 |---|---------|------|-----------|
 | 1 | AI Life Concierge | [`concepts/01-ai-life-concierge.md`](./concepts/01-ai-life-concierge.md) | [web](./concepts/prototypes/concierge-split/) · [native iOS slice](./concepts/concept-1-concierge/) |
 | 2 | AI Infinite Game | [`concepts/02-ai-infinite-game.md`](./concepts/02-ai-infinite-game.md) | [web](./concepts/prototypes/flow-game/) |
+| 3 | Helm — the app that opens itself | [`concepts/03-helm-the-app-that-opens-itself.md`](./concepts/03-helm-the-app-that-opens-itself.md) | — (spec; builds on [Cusp](./cusp/) + [Concierge](./concierge/)) |
 
 See the [concepts index](./concepts/README.md) for the full reasoning, build
 order, and what would kill each idea.
