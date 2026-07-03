@@ -4,7 +4,13 @@ import { Elements, CardElement, useStripe, useElements } from '@stripe/react-str
 import { formatGBP, PLATFORM_FEE_PENCE } from '@rentmatch/shared';
 import { createSetupIntent, chargePlatformFee } from '../lib/functions';
 
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ?? '');
+// Lazy: Stripe.js only loads when the payment panel actually mounts (not at app
+// boot), and a blocked load resolves to null instead of an unhandled rejection.
+let stripePromise: ReturnType<typeof loadStripe> | null = null;
+function getStripe() {
+  stripePromise ??= loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ?? '').catch(() => null);
+  return stripePromise;
+}
 
 /**
  * The £100 landlord fee. Two steps: save a card (Stripe SetupIntent +
@@ -13,7 +19,7 @@ const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ?? 
  */
 export default function PaymentPanel({ dealId }: { dealId: string }) {
   return (
-    <Elements stripe={stripePromise}>
+    <Elements stripe={getStripe()}>
       <Inner dealId={dealId} />
     </Elements>
   );

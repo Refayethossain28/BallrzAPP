@@ -65,7 +65,9 @@ export default function App() {
     <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <BrowserRouter>
+        {/* basename follows Vite's base so the app also works when served
+            from a subpath (e.g. the GitHub Pages demo at /BallrzAPP/apex/). */}
+        <BrowserRouter basename={import.meta.env.BASE_URL}>
           <Gate />
         </BrowserRouter>
       </AuthProvider>
