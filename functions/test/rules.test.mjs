@@ -103,3 +103,27 @@ test('audit log is append-only (no edits or deletes, even by admin)', async () =
   await seed((db) => setDoc(doc(db, 'audit_log/e3'), { action: 'payout' }));
   await assertFails(updateDoc(doc(admin(), 'audit_log/e3'), { action: 'tampered' }));   // no edits
 });
+
+// ── ApexCoin: balances and the ledger are functions-write-only ──────────────
+test('a user cannot mint or move their own apexBalance', async () => {
+  await seed((db) => setDoc(doc(db, 'users/u2'), { name: 'U', role: 'client', apexBalance: 40 }));
+  await assertFails(updateDoc(doc(client('u2'), 'users/u2'), { apexBalance: 999999 }));      // mint
+  await assertFails(setDoc(doc(client('u3'), 'users/u3'), { name: 'X', apexBalance: 500 })); // mint on create
+  await assertSucceeds(updateDoc(doc(client('u2'), 'users/u2'), { name: 'New Name' }));      // profile edits still fine
+  await assertSucceeds(updateDoc(doc(admin(), 'users/u2'), { apexBalance: 0 }));             // admin may correct
+});
+
+test('a driver cannot mint their own AXC wallet', async () => {
+  await seed((db) => setDoc(doc(db, 'drivers/d9'), { name: 'D', apexcoin: 2.5 }));
+  await assertFails(updateDoc(doc(driver('d9'), 'drivers/d9'), { apexcoin: 9999 }));
+  await assertSucceeds(updateDoc(doc(driver('d9'), 'drivers/d9'), { status: 'online' }));
+  await assertSucceeds(updateDoc(doc(admin(), 'drivers/d9'), { apexcoin: 0 }));
+});
+
+test('coin ledger: per-user readable, never client-writable', async () => {
+  await seed((db) => setDoc(doc(db, 'coin_ledger/e1'), { uid: 'u1', type: 'earn', amount: 9 }));
+  await assertSucceeds(getDoc(doc(client('u1'), 'coin_ledger/e1')));
+  await assertFails(getDoc(doc(client('u2'), 'coin_ledger/e1')));                 // not your row
+  await assertFails(setDoc(doc(client('u1'), 'coin_ledger/forged'), { uid: 'u1', type: 'earn', amount: 9999 }));
+  await assertFails(updateDoc(doc(admin(), 'coin_ledger/e1'), { amount: 1 }));    // append-only, even for admins
+});

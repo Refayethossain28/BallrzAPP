@@ -40,3 +40,10 @@ test('guards: requires clientId and a pickup or airport', () => {
   assert.throws(() => buildBookingPayload({ ...BASE, booking: { serviceType: 'airport' } }));
   assert.ok(buildBookingPayload({ ...BASE, booking: { serviceType: 'airport', airport: 'Heathrow T5' } }));
 });
+
+test('apexRedeemed rides along as a whole, non-negative coin count', () => {
+  assert.equal(buildBookingPayload(BASE).apexRedeemed, 0);
+  assert.equal(buildBookingPayload({ ...BASE, apexRedeemed: 60 }).apexRedeemed, 60);
+  assert.equal(buildBookingPayload({ ...BASE, apexRedeemed: 42.9 }).apexRedeemed, 42);
+  assert.equal(buildBookingPayload({ ...BASE, apexRedeemed: -5 }).apexRedeemed, 0);
+});

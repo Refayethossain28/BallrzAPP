@@ -84,8 +84,13 @@ logic — the one these tests cover. Rebuild it whenever a pure module changes.
   lines) is now a thin delegator to `ApexEngine.parseIntentLocal(msg, ctx)`, its
   fare math calls `ApexEngine.quoteFare`, and the APEX loyalty wallet (tiers,
   earn-on-booking, pay-with-ApexCoin at checkout) runs on the `src/coin/` maths.
+  When Firebase is live the wallet is **server-authoritative** (the backend's
+  coin ledger — see `functions/README.md` — feeds the balance/transactions via
+  snapshots; redemption goes through the transactional `redeemApexCoins`
+  callable); offline/demo keeps the local engine wallet.
 - `apexvip-driver.html` earns/redeems its AXC wallet through the same coin
-  module (guarded in a browser by `e2e/coin.e2e.mjs`).
+  module (guarded in a browser by `e2e/coin.e2e.mjs`), with the identical
+  live/demo split (`redeemDriverCoins` cashes out onto the payout rail).
 - `apexvip-admin.html` uses `ApexEngine.aggregateOwedBalances` /
   `formatSettlement` for the payout list, and `ApexEngine.coinSupply` for the
   ApexCoin issued/redeemed/circulating stats.
@@ -98,7 +103,7 @@ logic — the one these tests cover. Rebuild it whenever a pure module changes.
 cd apexvip-web
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # node --test — all engine modules (100 tests)
+npm test            # node --test — all engine modules (101 tests)
 npm run dev         # Vite dev server
 npm run build       # typecheck + production bundle → dist/
 ```

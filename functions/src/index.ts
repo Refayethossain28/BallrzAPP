@@ -32,7 +32,8 @@ export { createVelvetCheckout, createVelvetPortal, velvetStripeWebhook } from '.
 import {
   round5, isoPlusDays, computeFareBounds, driverEarning, dispatchPay,
   bookingEvent, bookingMessage, daysUntil, shouldRemind, flightHHMM,
-  normalizeCommissionPct,
+  normalizeCommissionPct, clientCoinsEarned, driverCoinsEarned,
+  clampCoinRedemption, round2,
 } from './logic.js';
 
 /**
@@ -56,6 +57,7 @@ async function platformCommissionPct(): Promise<number> {
 
 import type {
   Booking,
+  CoinLedgerEntry,
   Driver,
   DriverPayout,
   GetHotelRatesInput,
@@ -447,6 +449,18 @@ export const onBookingWrite = onDocumentWritten(
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
           };
           await admin.firestore().collection('driver_payouts').doc(event.params.bookingId).set(entry, { merge: true });
+          // ApexCoin: the driver earns 2% of their pay. The deterministic ledger
+          // id makes this idempotent — create() throws if the trip already paid out
+          // coins (onDocumentWritten can fire more than once).
+          const axc = driverCoinsEarned(amount);
+          if (axc > 0) {
+            await creditCoins({
+              ledgerId: `driverearn_${event.params.bookingId}`,
+              balanceRef: admin.firestore().doc(`drivers/${after.driverId}`),
+              balanceField: 'apexcoin',
+              entry: { uid: after.driverId, role: 'driver', type: 'earn', amount: axc, reason: after.serviceLabel || 'Trip', ref: after.ref || event.params.bookingId },
+            });
+          }
         }
       } catch (err) { logger.error('payout ledger', errMessage(err)); }
     }
@@ -751,9 +765,15 @@ export const applyReferralCode = onCall({ region: 'us-central1' }, async (reques
   if (referrer.id === uid) throw new HttpsError('failed-precondition', 'You cannot use your own code.');
   const CREDIT = 50;
   const inc = admin.firestore.FieldValue.increment(CREDIT);
+  const at = admin.firestore.FieldValue.serverTimestamp();
+  const ledger = db.collection('coin_ledger');
   await Promise.all([
     me.set({ referredBy: referrer.id, apexBalance: inc }, { merge: true }),
     referrer.ref.set({ apexBalance: inc }, { merge: true }),
+    // Ledger rows so the bonus shows in both users' live transaction feeds.
+    // Deterministic ids; double-application is already blocked via referredBy.
+    ledger.doc(`referral_${uid}`).set({ uid, role: 'client', type: 'earn', amount: CREDIT, reason: 'Referral bonus', at }),
+    ledger.doc(`referral_${uid}_referrer`).set({ uid: referrer.id, role: 'client', type: 'earn', amount: CREDIT, reason: 'Referral bonus', at }),
   ]);
   return { message: `Referral applied — you and your friend each earned ${CREDIT} APEX.`, creditsAwarded: CREDIT };
 });
@@ -1122,3 +1142,145 @@ export const payoutDriver = onCall(
     return { paid: total, count: owed.size, currency: currency.toUpperCase(), transferId, mock: !stripe };
   }
 );
+
+/* ===========================================================================
+ * ApexCoin — the server-authoritative loyalty ledger
+ *
+ * Balances live where only the Admin SDK can write them (firestore.rules
+ * blocks self-writes): clients on users/{uid}.apexBalance, drivers on
+ * drivers/{uid}.apexcoin. Every movement is a row in the append-only
+ * `coin_ledger`; booking-triggered awards use DETERMINISTIC ledger ids +
+ * create(), so a re-fired trigger can never double-award.
+ *
+ * Earn:   awardBookingCoins (client, 5% of the cash portion) and the
+ *         completed-trip branch of onBookingWrite (driver, 2% of their pay).
+ * Redeem: redeemApexCoins (client pays with coins at checkout, transactional,
+ *         clamped to their balance) and redeemDriverCoins (driver cashes out;
+ *         the £ lands in driver_payouts as 'owed', settled by payoutDriver).
+ *
+ * The apps preview the same maths from the shared engine (src/coin/coin.ts —
+ * mirrored in ./logic.ts) but the ledger here is the source of truth.
+ * =========================================================================== */
+
+/** Ledger ids embed user-supplied refs — keep them within Firestore doc-id rules. */
+function coinLedgerId(...parts: string[]): string {
+  return parts.join('_').replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 500);
+}
+
+/**
+ * Atomically append a ledger row and move the balance. `delta` defaults to
+ * +amount (an earn); redemptions pass a negative delta. Returns false if the
+ * deterministic ledger row already exists (already credited — a no-op).
+ */
+async function creditCoins(opts: {
+  ledgerId: string;
+  balanceRef: FirebaseFirestore.DocumentReference;
+  balanceField: string;
+  entry: Omit<CoinLedgerEntry, 'at'>;
+  delta?: number;
+}): Promise<boolean> {
+  const db = admin.firestore();
+  const ledgerRef = db.collection('coin_ledger').doc(opts.ledgerId);
+  try {
+    await db.runTransaction(async (tx) => {
+      const existing = await tx.get(ledgerRef);
+      if (existing.exists) throw new Error('coin-ledger-exists');
+      tx.set(ledgerRef, { ...opts.entry, at: admin.firestore.FieldValue.serverTimestamp() });
+      tx.set(opts.balanceRef, { [opts.balanceField]: admin.firestore.FieldValue.increment(opts.delta ?? opts.entry.amount) }, { merge: true });
+    });
+    return true;
+  } catch (err) {
+    if (errMessage(err) === 'coin-ledger-exists') return false;
+    throw err;
+  }
+}
+
+// Client earn: 5% of the cash portion of every confirmed booking. Runs on the
+// same document event as dispatch (onBookingCreated) but is deliberately its
+// own trigger so a dispatch early-return can never skip the award.
+export const awardBookingCoins = onDocumentCreated('bookings/{bookingId}', async (event) => {
+  const snap = event.data;
+  if (!snap) return;
+  const b = (snap.data() as Booking) || {};
+  if (!b.clientId) return;
+  if (b.status && !['confirmed', 'pending', 'paid'].includes(b.status)) return;
+  const fare = Number(b.price) || 0;
+  if (fare <= 0) return;
+  try {
+    // The cash portion = fare minus any coins redeemed against this booking.
+    // The redemption callable wrote its ledger row BEFORE the booking doc, so
+    // reading it here is not a race.
+    const redeemRow = await admin.firestore()
+      .doc(`coin_ledger/${coinLedgerId('redeem', b.clientId, b.ref || event.params.bookingId)}`).get();
+    const redeemed = redeemRow.exists ? Number((redeemRow.data() as CoinLedgerEntry).amount) || 0 : 0;
+    const earn = clientCoinsEarned(fare - redeemed);
+    if (earn <= 0) return;
+    const credited = await creditCoins({
+      ledgerId: coinLedgerId('earn', event.params.bookingId),
+      balanceRef: admin.firestore().doc(`users/${b.clientId}`),
+      balanceField: 'apexBalance',
+      entry: { uid: b.clientId, role: 'client', type: 'earn', amount: earn, reason: 'Trip booking', ref: b.ref || event.params.bookingId },
+    });
+    if (credited) logger.info('awardBookingCoins', { booking: event.params.bookingId, earn, redeemed });
+  } catch (err) { logger.error('awardBookingCoins', errMessage(err)); }
+});
+
+// Client redemption — "pay with ApexCoin" at checkout. Transactional: the
+// balance can never go negative, and the deterministic ledger id makes a
+// retried call return the original result instead of double-deducting.
+export const redeemApexCoins = onCall({ region: 'us-central1' }, async (request: CallableRequest<{ amount?: number; bookingRef?: string }>) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const uid = request.auth.uid;
+  const d = request.data || {};
+  const requested = Math.floor(Number(d.amount));
+  const bookingRef = String(d.bookingRef || '').trim();
+  if (!Number.isFinite(requested) || requested <= 0 || requested > 100000) {
+    throw new HttpsError('invalid-argument', 'amount must be a positive number of coins');
+  }
+  if (!bookingRef) throw new HttpsError('invalid-argument', 'bookingRef is required');
+  const db = admin.firestore();
+  const ledgerRef = db.doc(`coin_ledger/${coinLedgerId('redeem', uid, bookingRef)}`);
+  const userRef = db.doc(`users/${uid}`);
+  return db.runTransaction(async (tx) => {
+    const [prior, userSnap] = await Promise.all([tx.get(ledgerRef), tx.get(userRef)]);
+    const balance = Math.max(0, Number((userSnap.data() as User | undefined)?.apexBalance) || 0);
+    if (prior.exists) {
+      // Idempotent retry — the coins for this booking were already applied.
+      return { redeemed: Number((prior.data() as CoinLedgerEntry).amount) || 0, balance };
+    }
+    const redeemed = clampCoinRedemption(requested, balance);
+    if (redeemed <= 0) return { redeemed: 0, balance };
+    tx.set(ledgerRef, {
+      uid, role: 'client', type: 'redeem', amount: redeemed, reason: 'Trip payment', ref: bookingRef,
+      at: admin.firestore.FieldValue.serverTimestamp(),
+    } satisfies CoinLedgerEntry);
+    tx.set(userRef, { apexBalance: admin.firestore.FieldValue.increment(-redeemed) }, { merge: true });
+    return { redeemed, balance: balance - redeemed };
+  });
+});
+
+// Driver cash-out: zero the AXC wallet and drop the £ into driver_payouts as
+// 'owed' — the SAME rail trip earnings use, so payoutDriver settles it with
+// the next Stripe transfer. No more "the desk will sort it": it's in the ledger.
+export const redeemDriverCoins = onCall({ region: 'us-central1' }, async (request: CallableRequest) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const uid = request.auth.uid;
+  const db = admin.firestore();
+  const driverRef = db.doc(`drivers/${uid}`);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(driverRef);
+    if (!snap.exists) throw new HttpsError('failed-precondition', 'No driver profile');
+    const balance = round2(Math.max(0, Number((snap.data() as Driver).apexcoin) || 0));
+    if (balance <= 0) return { redeemed: 0, balance: 0 };
+    tx.set(driverRef, { apexcoin: 0 }, { merge: true });
+    tx.set(db.collection('coin_ledger').doc(), {
+      uid, role: 'driver', type: 'redeem', amount: balance, reason: 'Cash redemption',
+      at: admin.firestore.FieldValue.serverTimestamp(),
+    } satisfies CoinLedgerEntry);
+    tx.set(db.collection('driver_payouts').doc(), {
+      driverId: uid, bookingRef: 'AXC redemption', amount: balance, currency: 'GBP',
+      status: 'owed', createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    } satisfies DriverPayout);
+    return { redeemed: balance, balance: 0 };
+  });
+});

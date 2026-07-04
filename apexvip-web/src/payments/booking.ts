@@ -35,6 +35,8 @@ export interface BookingPayloadInput {
   booking: BookingDraft;
   /** VAT-inclusive total, base fare, discount and VAT from the fare engine. */
   fare: { total: number; base: number; discount: number; vat: number };
+  /** APEX applied against this fare at checkout (0 when paid fully in cash). */
+  apexRedeemed?: number;
   promoApplied?: boolean;
   squarePaymentId?: string | null;
   paMode?: boolean;
@@ -73,6 +75,7 @@ export function buildBookingPayload(input: BookingPayloadInput): Record<string, 
     baseFare: input.fare.base,
     discount: input.fare.discount,
     vat: input.fare.vat,
+    apexRedeemed: Math.max(0, Math.floor(Number(input.apexRedeemed) || 0)),
     promoApplied: !!input.promoApplied,
     status: 'confirmed',
     squarePaymentId: input.squarePaymentId || null,

@@ -103,6 +103,21 @@ export interface PayoutSettleResult {
 }
 
 /**
+ * redeemApexCoins: the coins actually applied (server-clamped to the caller's
+ * balance — may be less than requested) and the balance after deduction.
+ */
+export interface CoinRedeemResult {
+  redeemed: number;
+  balance: number;
+}
+
+/** redeemDriverCoins: AXC cashed out (1 AXC = £1, lands in driver_payouts as owed). */
+export interface DriverCoinRedeemResult {
+  redeemed: number;
+  balance: number;
+}
+
+/**
  * parseBookingIntent (ApexAI): the structured booking intent, or `{ reply }` in
  * driver mode. The exact fields mirror the client's `_parseIntentLocal` shape;
  * left open here because the model fills a variable subset.
@@ -152,6 +167,8 @@ export interface ApexCallables {
   createDriverPayoutAccount: CallableSpec<void, PayoutAccountResult>;
   getDriverPayoutStatus: CallableSpec<void, PayoutStatusResult>;
   payoutDriver: CallableSpec<{ driverId: string }, PayoutSettleResult>;
+  redeemApexCoins: CallableSpec<{ amount: number; bookingRef: string }, CoinRedeemResult>;
+  redeemDriverCoins: CallableSpec<void, DriverCoinRedeemResult>;
 }
 
 /** Every client-callable function name, as a union. */

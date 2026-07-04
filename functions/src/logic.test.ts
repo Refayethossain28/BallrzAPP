@@ -8,8 +8,34 @@ import assert from 'node:assert/strict';
 import {
   round5, isoPlusDays, computeFareBounds, driverEarning, dispatchPay,
   bookingEvent, bookingMessage, daysUntil, shouldRemind, flightHHMM,
-  normalizeCommissionPct,
+  normalizeCommissionPct, clientCoinsEarned, driverCoinsEarned,
+  clampCoinRedemption, round2,
 } from './logic.ts';
+
+test('ApexCoin earn rates: 5% whole coins for clients, 2% at 2dp for drivers', () => {
+  assert.equal(clientCoinsEarned(185), 9);
+  assert.equal(clientCoinsEarned(190), 10);
+  assert.equal(clientCoinsEarned(0), 0);
+  assert.equal(clientCoinsEarned(-40), 0);
+  assert.equal(driverCoinsEarned(152), 3.04);
+  assert.equal(driverCoinsEarned(95.55), 1.91);
+  assert.equal(driverCoinsEarned(NaN), 0);
+});
+
+test('clampCoinRedemption: whole coins, never beyond the balance, junk-safe', () => {
+  assert.equal(clampCoinRedemption(60, 100), 60);
+  assert.equal(clampCoinRedemption(500, 95), 95);
+  assert.equal(clampCoinRedemption(42.9, 100), 42);
+  assert.equal(clampCoinRedemption(10, 42.75), 10);
+  assert.equal(clampCoinRedemption(-5, 100), 0);
+  assert.equal(clampCoinRedemption('junk', 100), 0);
+  assert.equal(clampCoinRedemption(10, -3), 0);
+});
+
+test('round2 avoids float drift', () => {
+  assert.equal(round2(0.1 + 0.2), 0.3);
+  assert.equal(round2(3.045), 3.05);
+});
 
 test('round5 rounds to the nearest £5', () => {
   assert.equal(round5(12), 10);

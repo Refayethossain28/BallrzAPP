@@ -45,6 +45,9 @@ export interface Booking {
   baseFare?: number;
   price?: number;
   currency?: string;
+  /** APEX applied against this fare at checkout (set by the client for display;
+   *  the authoritative deduction is the coin_ledger redeem row). */
+  apexRedeemed?: number;
 
   pickup?: string;
   dropoff?: string;
@@ -107,11 +110,28 @@ export interface Driver {
   rating?: number;
   ratingCount?: number;
   ratingSum?: number;
+  /** AXC wallet balance — written only by the coin ledger functions. */
+  apexcoin?: number;
   compliance?: {
     compliant?: boolean;
     docs?: Record<string, ComplianceDoc>;
   };
   payout?: DriverPayoutProfile;
+}
+
+/**
+ * coin_ledger/{id} — the append-only ApexCoin ledger, one row per earn/redeem.
+ * Written exclusively by Cloud Functions (deterministic ids make the
+ * booking-triggered awards idempotent); a user may read their own rows.
+ */
+export interface CoinLedgerEntry {
+  uid: string;
+  role: 'client' | 'driver';
+  type: 'earn' | 'redeem';
+  amount: number;
+  reason: string;
+  ref?: string;
+  at?: Stamp;
 }
 
 /** vehicles/{id} */

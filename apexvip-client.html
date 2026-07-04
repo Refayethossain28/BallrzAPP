@@ -5647,6 +5647,26 @@ async function confirmBooking(overrideRef){
   // Fare math (discount + VAT-inclusive total) — shared, unit-tested engine.
   const {discount:disc,total,vat}=ApexEngine.quoteFare(base,!!state._promoApplied);
   const svcLabel={airport:'Airport Transfer',hourly:'By the Hour',day:'By the Day'}[state.booking.serviceType]||'Airport Transfer';
+  // Redeem APEX BEFORE the booking write: the server's earn trigger looks up
+  // the redemption ledger row for this ref to award 5% of the cash portion.
+  // Live wallet → the transactional callable (clamped server-side, idempotent
+  // per booking); offline/demo → the local wallet.
+  let _redeemed=0;
+  if(state._useApexCoin){
+    const _want=ApexEngine.applyCoinRedemption(total,state.apexBalance).redeemed;
+    if(_want>0){
+      if(FIREBASE_ENABLED&&auth.currentUser&&state._coinLive){
+        try{
+          const r=await fns.httpsCallable('redeemApexCoins')({amount:_want,bookingRef:ref});
+          _redeemed=Number(r.data?.redeemed)||0;
+          if(_redeemed>0)track('apex_redeemed',{amount:_redeemed,reason:'Trip payment',src:'client'});
+        }catch(e){reportError(e,'redeem-apex');}
+      }else{
+        _redeemed=spendApex(_want,'Trip payment');
+      }
+    }
+  }
+  state._useApexCoin=false;
   if(FIREBASE_ENABLED&&auth.currentUser){
     try{
       // Payload assembly is shared + unit-tested (payments/booking.ts).
@@ -5656,6 +5676,7 @@ async function confirmBooking(overrideRef){
           clientName: state.user?.name || '', clientEmail: auth.currentUser.email || '',
           booking: state.booking,
           fare: { total, base, discount: disc, vat },
+          apexRedeemed: _redeemed,
           promoApplied: state._promoApplied, squarePaymentId: state._squarePaymentId,
           paMode: state.paMode, paPassenger: state.paPassenger,
         }),
@@ -5669,10 +5690,8 @@ async function confirmBooking(overrideRef){
   }
   state._confirmedRef=ref;state._promoApplied=false;state._squarePaymentId=null;
   pushBookingHistory();
-  // Redeem APEX against the fare (if toggled at checkout), then earn 5% on the
-  // cash portion only — both via the shared, unit-tested engine (src/coin).
-  const _redeemed=state._useApexCoin?spendApex(ApexEngine.applyCoinRedemption(total,state.apexBalance).redeemed,'Trip payment'):0;
-  state._useApexCoin=false;
+  // Earn 5% on the cash portion only (shared engine maths; in live mode the
+  // server awards and earnApex is banner + telemetry only).
   state._lastApexEarned=0; // stale banner guard — earnApex only sets it when coins were earned
   const _axcAmt=ApexEngine.clientCoinsEarned(total-_redeemed);
   earnApex(_axcAmt,'Trip booking');
@@ -5715,9 +5734,12 @@ function _saveApex(){
 }
 function earnApex(amount,reason){
   if(!(amount>0))return;
-  state.apexBalance+=amount;
   state._lastApexEarned=amount;
   track('apex_earned',{amount,reason,src:'client'});
+  // Live wallet: the server awards (booking trigger / referral callable) and
+  // the snapshot updates the balance — this is banner + telemetry only.
+  if(state._coinLive)return;
+  state.apexBalance+=amount;
   state.apexTransactions=ApexEngine.appendCoinTx(state.apexTransactions,{id:Date.now(),amount,reason,type:'earn',ts:new Date().toISOString()});
   _saveApex();
 }
@@ -5848,6 +5870,25 @@ if(FIREBASE_ENABLED){
           },()=>{});
       }
       watchLatestBooking();
+      // ApexCoin — the server-authoritative wallet. users/{uid}.apexBalance and
+      // the coin_ledger rows are written only by Cloud Functions (rules block
+      // self-writes), so once the first snapshot lands the wallet is live and
+      // earnApex/spendApex become display-only; localStorage stays as a cache.
+      if(state._coinUnsub)state._coinUnsub();
+      state._coinUnsub=db.collection('users').doc(user.uid).onSnapshot(snap=>{
+        state._coinLive=true;
+        state.apexBalance=Math.max(0,Number(snap.exists?snap.data().apexBalance:0)||0);
+        try{localStorage.setItem('apex_balance',state.apexBalance);}catch(e){}
+        render();
+      },()=>{});
+      if(state._coinTxUnsub)state._coinTxUnsub();
+      state._coinTxUnsub=db.collection('coin_ledger').where('uid','==',user.uid)
+        .orderBy('at','desc').limit(50)
+        .onSnapshot(snap=>{
+          state.apexTransactions=snap.docs.map(x=>{const r=x.data();return{id:x.id,amount:Number(r.amount)||0,reason:esc(r.reason||'ApexCoin'),type:r.type==='redeem'?'redeem':'earn',ts:r.at?.toDate?.()?.toISOString()||''};});
+          try{localStorage.setItem('apex_txs',JSON.stringify(state.apexTransactions));}catch(e){}
+          render();
+        },()=>{});
       state._loginErr=null;
       // Resume pending screen (e.g. payment gate intercepted before login)
       if(state._pendingScreen){
@@ -5884,6 +5925,9 @@ if(FIREBASE_ENABLED){
     }else{
       state.user=null;
       if(_unsub){_unsub();_unsub=null;}
+      if(state._coinUnsub){state._coinUnsub();state._coinUnsub=null;}
+      if(state._coinTxUnsub){state._coinTxUnsub();state._coinTxUnsub=null;}
+      state._coinLive=false;
       TRIPS.length=0;
       if(!['splash','login','register'].includes(state.screen))go('splash');
     }

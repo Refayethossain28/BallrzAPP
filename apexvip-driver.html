@@ -417,10 +417,25 @@ function setupDriverListeners(uid){
   setTimeout(ensureDriverSubscription, 1500);
   // Live driver document statuses
   db.collection('drivers').doc(uid).onSnapshot(snap=>{
-    if(snap.exists){ S._driverDocs = snap.data().documents || {}; S._compliance = snap.data().compliance || null; S._payout = snap.data().payout || null; S._availability = snap.data().availability || S._availability || null; }
+    if(snap.exists){
+      S._driverDocs = snap.data().documents || {}; S._compliance = snap.data().compliance || null; S._payout = snap.data().payout || null; S._availability = snap.data().availability || S._availability || null;
+      // AXC wallet — server-authoritative (rules block self-writes; only the
+      // coin ledger functions move it). Local earns become display-only.
+      S._axcLive = true;
+      S.apexcoin = Math.max(0, Number(snap.data().apexcoin) || 0);
+      saveAxc();
+      render();
+    }
     const el = document.getElementById('docs-list');
     if(el) renderDocsList();
   });
+  // AXC wallet history — the user's own rows of the append-only coin ledger.
+  db.collection('coin_ledger').where('uid','==',uid).orderBy('at','desc').limit(50)
+    .onSnapshot(snap=>{
+      S._axcHistory=snap.docs.map(x=>{const r=x.data();return{desc:r.reason||'Trip',type:r.type==='redeem'?'redeem':'earn',amount:Number(r.amount)||0,date:r.at?.toDate?.()?.toLocaleDateString('en-GB',{day:'numeric',month:'short'})||''};});
+      saveAxc();
+      render();
+    },()=>{});
   // Load driver profile into state and publish to dispatch list
   db.collection('users').doc(uid).get().then(u=>{
     const p=u.exists?u.data():{};
@@ -1057,9 +1072,12 @@ function _advanceStep(){
       syncBookingStatus(S.activeJob,'completed',{completedAt:firebase.firestore.FieldValue.serverTimestamp()});
     }
     // Award 2% of job value as ApexCoin — rate + rounding via the shared engine.
+    // Live wallet: the server credits it when the booking completes (coin
+    // ledger trigger) and the snapshot updates S.apexcoin; local award is the
+    // offline/demo path only.
     const jobPay=S.activeJob?.pay||0;
     const axcEarned=ApexEngine.driverCoinsEarned(jobPay);
-    if(axcEarned>0){
+    if(axcEarned>0&&!S._axcLive){
       S.apexcoin=ApexEngine.round2(S.apexcoin+axcEarned);
       S._axcHistory=ApexEngine.appendCoinTx(S._axcHistory,{desc:S.activeJob?.service||'Trip',type:'earn',amount:axcEarned,date:new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short'})});
       saveAxc();
@@ -1094,7 +1112,20 @@ function saveAxc(){
 function redeemAxc(){
   const amount=S.apexcoin;
   if(!(amount>0))return;
-  if(!confirm('Redeem '+amount.toFixed(2)+' AXC for £'+amount.toFixed(2)+'? The ApexVIP desk is notified and settles it with your next payout.'))return;
+  if(!confirm('Redeem '+amount.toFixed(2)+' AXC for £'+amount.toFixed(2)+'? It is added to your payout balance and settled with your next payout.'))return;
+  // Live wallet: the transactional callable zeroes the balance and drops the £
+  // into driver_payouts as 'owed' — the same rail trip earnings settle on.
+  if(FIREBASE_ENABLED&&fns&&S._axcLive){
+    fns.httpsCallable('redeemDriverCoins')({}).then(r=>{
+      const red=Number(r.data?.redeemed)||0;
+      if(red>0){
+        track('apex_redeemed',{amount:red,src:'driver'});
+        showToast('£'+red.toFixed(2)+' added to your payout balance');haptic('success');
+      }
+      render();
+    }).catch(e=>{reportError(e,'redeem-axc');showToast('Redemption failed — please try again','error');});
+    return;
+  }
   S.apexcoin=0;
   S._axcHistory=ApexEngine.appendCoinTx(S._axcHistory,{desc:'Cash redemption',type:'redeem',amount,date:new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short'})});
   saveAxc();

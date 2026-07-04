@@ -56,6 +56,41 @@ export function dispatchPay(b: Booking, commissionPct = 20): number {
   return Math.round((Number(b.baseFare) || Number(b.price) || 95) * keep);
 }
 
+/*
+ * ApexCoin — the server-authoritative earn maths. Mirrors the shared engine
+ * module (apexvip-web/src/coin/coin.ts), the same way normalizeCommissionPct
+ * mirrors membership.ts: the browser previews with the engine copy, but the
+ * ledger triggers/callables in index.ts award and deduct with THESE.
+ */
+export const CLIENT_COIN_RATE = 0.05;
+export const DRIVER_COIN_RATE = 0.02;
+
+/** Round to 2 decimals without float drift. */
+export const round2 = (n: number): number => Math.round((Number(n) || 0) * 100) / 100;
+
+/** Whole APEX a client earns on the cash portion of a fare (5%). */
+export function clientCoinsEarned(farePaid: number): number {
+  const n = Number(farePaid);
+  return Number.isFinite(n) && n > 0 ? Math.round(n * CLIENT_COIN_RATE) : 0;
+}
+
+/** AXC (2 dp) a driver earns on a completed job's pay (2%). */
+export function driverCoinsEarned(jobPay: number): number {
+  const n = Number(jobPay);
+  return Number.isFinite(n) && n > 0 ? round2(n * DRIVER_COIN_RATE) : 0;
+}
+
+/**
+ * Clamp a client redemption request: whole coins, never more than the balance,
+ * never negative. The fare cap is applied by the caller (it knows the fare).
+ */
+export function clampCoinRedemption(requested: unknown, balance: unknown): number {
+  const want = Math.floor(Number(requested));
+  const bal = Math.floor(Math.max(0, Number(balance) || 0));
+  if (!Number.isFinite(want) || want <= 0) return 0;
+  return Math.min(want, bal);
+}
+
 /** Which lifecycle message (if any) a booking write represents. */
 export function bookingEvent(before: Booking | null, after: Booking | null): string | null {
   if (!after) return null;                 // deleted
