@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
+<meta name="viewport" id="viewport-meta" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
@@ -59,7 +59,13 @@ body::after{width:480px;height:480px;right:-8%;bottom:-12%;background:radial-gra
   padding-top:env(safe-area-inset-top)}
 body.light .sidebar{background:rgba(240,235,226,.92)}
 .main{margin-left:240px;flex:1;padding:32px;min-height:100vh}
-@media(max-width:768px){.sidebar{transform:translateX(-240px)}.sidebar.open{transform:translateX(0)}.main{margin-left:0;padding:calc(env(safe-area-inset-top) + 64px) 16px 80px}}
+/* Compact (mobile-optimised) layout — applied via the layout toggle, or
+   automatically on small screens until the admin picks a mode. */
+body.compact .sidebar{transform:translateX(-240px)}
+body.compact .sidebar.open{transform:translateX(0)}
+body.compact .main{margin-left:0;padding:calc(env(safe-area-inset-top) + 64px) 16px 80px}
+body.compact .stat-card{min-width:calc(50% - 7px)}
+body.compact table{font-size:12px}
 input,select,textarea{font-size:16px !important}
 
 /* ── Sidebar nav items ── */
@@ -131,7 +137,7 @@ body.light select option{background:#f5f0e8}
 .screen{animation:fadeIn .2s ease}
 .bar{border-radius:4px 4px 0 0;background:var(--gold);opacity:.75;flex:1;transform-origin:bottom;animation:growBar .5s ease both}
 .menu-toggle{display:none;align-items:center;justify-content:center;position:fixed;top:calc(env(safe-area-inset-top) + 12px);left:16px;z-index:120;background:var(--gold);border:none;border-radius:12px;padding:11px;cursor:pointer;color:#000;box-shadow:0 4px 16px rgba(0,0,0,.4)}
-@media(max-width:768px){.menu-toggle{display:flex}}
+body.compact .menu-toggle{display:flex}
 
 /* ── Modal (bottom-sheet on mobile, centred on desktop) ── */
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:200;display:flex;align-items:flex-end;justify-content:center;padding:0;animation:fadeIn .2s ease}
@@ -193,6 +199,7 @@ body.light .sidebar{background:rgba(240,235,226,.6)!important}
   <div style="padding:16px 20px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px">
     <div class="avatar" style="background:linear-gradient(135deg,#C8A97E,#8B6020);width:36px;height:36px;font-size:13px">AD</div>
     <div style="flex:1"><div style="font-size:13px;font-weight:600">Admin</div><div style="font-size:11px;color:var(--fg-subtle)">admin@apexvip.com</div></div>
+    <button onclick="toggleLayout()" title="Switch layout" style="background:var(--surface);border:1px solid var(--border);border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center" id="layout-btn">🖥</button>
     <button onclick="toggleTheme()" style="background:var(--surface);border:1px solid var(--border);border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center" id="theme-btn">☀️</button>
     <button onclick="go('login')" style="background:none;border:none;color:var(--fg-dim);cursor:pointer;font-size:20px;line-height:1">⏻</button>
   </div>
@@ -311,6 +318,34 @@ function loadDispatchMode(){
 }
 
 if(S.theme==='light') document.body.classList.add('light');
+
+// ── Layout: mobile-optimised vs desktop ────────────────────────────────────
+// 'auto' (default) follows screen width; the toggle pins an explicit mode.
+// Desktop mode on a phone widens the viewport to 1280px (the classic
+// "request desktop site" behaviour) and re-enables pinch zoom.
+S.layout = localStorage.getItem('apexvip_admin_layout') || 'auto';
+function effectiveLayout(){
+  return S.layout==='auto' ? (window.innerWidth<=768?'mobile':'desktop') : S.layout;
+}
+function applyLayout(){
+  const mode=effectiveLayout();
+  document.body.classList.toggle('compact', mode==='mobile');
+  const vp=document.getElementById('viewport-meta');
+  if(vp){
+    vp.setAttribute('content', mode==='desktop'
+      ? 'width=1280, user-scalable=yes'
+      : 'width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover');
+  }
+  const btn=document.getElementById('layout-btn');
+  if(btn){ btn.textContent=mode==='mobile'?'📱':'🖥'; btn.title='Layout: '+mode+(S.layout==='auto'?' (auto)':'')+' — tap to switch'; }
+}
+function toggleLayout(){
+  S.layout = effectiveLayout()==='mobile' ? 'desktop' : 'mobile';
+  localStorage.setItem('apexvip_admin_layout', S.layout);
+  applyLayout();
+}
+window.addEventListener('resize', ()=>{ if(S.layout==='auto') applyLayout(); });
+applyLayout();
 
 function toggleTheme(){
   S.theme=S.theme==='light'?'dark':'light';
