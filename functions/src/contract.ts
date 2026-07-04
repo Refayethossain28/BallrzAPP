@@ -138,6 +138,23 @@ export interface CoinDepositResult {
   balance: number;
 }
 
+/** runCoinBonuses: how many users were paid in this month's (idempotent) run. */
+export interface CoinBonusRunResult {
+  month: string;
+  clients: number;
+  drivers: number;
+}
+
+/** coinSupplyStats: public transparency totals from the coin ledger. */
+export interface CoinSupplyStatsResult {
+  issued: number;
+  redeemed: number;
+  circulating: number;
+  onchain: number;
+  chain: { contractAddress?: string; chainId?: number | null; explorerBase?: string };
+  at: string;
+}
+
 /**
  * parseBookingIntent (ApexAI): the structured booking intent, or `{ reply }` in
  * driver mode. The exact fields mirror the client's `_parseIntentLocal` shape;
@@ -193,6 +210,8 @@ export interface ApexCallables {
   linkChainWallet: CallableSpec<{ address: string; signature: string }, LinkWalletResult>;
   withdrawCoinsOnchain: CallableSpec<{ amount: number; address: string; idempotencyKey: string }, CoinWithdrawResult>;
   depositCoinsOnchain: CallableSpec<{ txHash: string }, CoinDepositResult>;
+  runCoinBonuses: CallableSpec<void, CoinBonusRunResult>;
+  coinSupplyStats: CallableSpec<void, CoinSupplyStatsResult>;
 }
 
 /** Every client-callable function name, as a union. */

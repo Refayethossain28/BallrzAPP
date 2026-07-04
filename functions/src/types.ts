@@ -156,6 +156,8 @@ export interface DriverPayout {
   amount: number;
   currency: string;
   status: 'owed' | 'paid';
+  /** 'trip' = a completed booking (counts toward milestones); 'axc' = a coin cash-out. */
+  source?: 'trip' | 'axc';
   createdAt?: Stamp;
   paidAt?: Stamp;
   transferId?: string | null;

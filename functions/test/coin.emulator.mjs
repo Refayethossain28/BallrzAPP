@@ -158,7 +158,71 @@ async function main() {
   check(!!cashout && cashout.amount === 3.2, 'a £3.20 "AXC redemption" row is owed in driver_payouts');
   const dr2 = await call('redeemDriverCoins', 'coin-driver');
   check(dr2.redeemed === 0, `an empty wallet cashes out nothing (got ${dr2.redeemed})`);
+
+  // ── 6. Milestone: the 50th completed trip pays a 25 AXC bonus ─────────────
+  console.log('→ 50th completed trip pays the milestone bonus…');
+  await db.doc('drivers/coin-miler').set({ name: 'Miles Driver', reg: 'AX24 MIL' });
+  const batch = db.batch();
+  for (let i = 1; i <= 49; i++) {
+    batch.set(db.doc(`driver_payouts/mile_${i}`), {
+      driverId: 'coin-miler', bookingRef: `APX-M${i}`, amount: 100, currency: 'GBP',
+      status: 'paid', source: 'trip', createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  }
+  await batch.commit();
+  const bookingM = await db.collection('bookings').add({
+    ref: 'APX-MILE50', status: 'confirmed', clientId: 'coin-client',
+    pickup: 'Chelsea', dropoff: 'Stansted', location: 'london',
+    baseFare: 200, price: 200,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  await bookingM.update({ driverId: 'coin-miler', driverName: 'Miles Driver', status: 'completed' });
+  const milestone = await waitFor(async () => {
+    const s = await db.doc(`coin_ledger/milestone_coin-miler_50`).get();
+    return s.exists ? s.data() : null;
+  });
+  check(!!milestone && milestone.amount === 25, `milestone ledger row pays 25 AXC (got ${milestone && milestone.amount})`);
+  const miler = (await db.doc('drivers/coin-miler').get()).data();
+  // 2% of £160 pay (3.2) + the 25 AXC milestone.
+  check(miler.apexcoin === 28.2, `milestone + trip earn credited together (got ${miler.apexcoin})`);
+  await bookingM.update({ note: 'touched' });
+  await sleep(1500);
+  const milerAgain = (await db.doc('drivers/coin-miler').get()).data();
+  check(milerAgain.apexcoin === 28.2, `re-fired trigger did not re-pay the milestone (got ${milerAgain.apexcoin})`);
+
+  // ── 7. Monthly bonuses: Gold 200 / Platinum 500 / top-rated driver 10 ─────
+  console.log('→ monthly bonus run (admin-triggered, idempotent)…');
+  await db.doc('users/admin-1').set({ role: 'admin', name: 'Admin' });
+  await db.doc('users/gold-member').set({ role: 'client', apexBalance: 2500 });
+  await db.doc('users/plat-member').set({ role: 'client', apexBalance: 6000 });
+  await db.doc('drivers/star-driver').set({ name: 'Star', rating: 4.95, ratingCount: 12 });
+  await db.doc('drivers/newbie-driver').set({ name: 'Newbie', rating: 5, ratingCount: 2 }); // too few rated trips
+  const notAdmin = await call('runCoinBonuses', 'gold-member').catch((e) => ({ error: String(e) }));
+  check(!!notAdmin.error, 'non-admins cannot trigger the bonus run');
+  const run1 = await call('runCoinBonuses', 'admin-1');
+  check(run1.clients >= 2, `bonus run paid the Gold + Platinum members (clients: ${run1.clients})`);
+  check(run1.drivers === 1, `only the qualifying driver got the rating bonus (drivers: ${run1.drivers})`);
+  const goldUser = (await db.doc('users/gold-member').get()).data();
+  const platUser = (await db.doc('users/plat-member').get()).data();
+  const star = (await db.doc('drivers/star-driver').get()).data();
+  const newbie = (await db.doc('drivers/newbie-driver').get()).data();
+  check(goldUser.apexBalance === 2700, `Gold member +200 (got ${goldUser.apexBalance})`);
+  check(platUser.apexBalance === 6500, `Platinum member +500 (got ${platUser.apexBalance})`);
+  check(star.apexcoin === 10, `top-rated driver +10 AXC (got ${star.apexcoin})`);
+  check(!newbie.apexcoin, `driver with too few rated trips got nothing (got ${newbie.apexcoin})`);
+  const run2 = await call('runCoinBonuses', 'admin-1');
+  check(run2.clients === 0 && run2.drivers === 0, `re-running the same month pays nobody twice (got ${run2.clients}/${run2.drivers})`);
+  const goldAgain = (await db.doc('users/gold-member').get()).data();
+  check(goldAgain.apexBalance === 2700, `Gold balance unchanged after the re-run (got ${goldAgain.apexBalance})`);
+
+  // ── 8. Public supply stats come from the ledger ────────────────────────────
+  console.log('→ coinSupplyStats aggregates the ledger…');
+  const stats = await call('coinSupplyStats', 'gold-member'); // public — any (or no) auth
+  check(Number.isFinite(stats.issued) && stats.issued > 0, `issued is a real total (got ${stats.issued})`);
+  check(stats.circulating >= 0 && stats.onchain >= 0, 'circulating/on-chain never negative');
+  check(round2(stats.issued - stats.redeemed - stats.onchain) === stats.circulating, 'figures reconcile: issued − redeemed − onchain = circulating');
 }
+const round2 = (n) => Math.round(n * 100) / 100;
 
 main()
   .then(() => { console.log(failed ? '\nCOIN TEST FAILED' : '\nCOIN TEST PASSED'); process.exit(failed ? 1 : 0); })

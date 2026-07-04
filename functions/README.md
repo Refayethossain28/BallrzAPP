@@ -26,6 +26,12 @@ Functions in this codebase:
   (verify the transfer → credit once → burn). Fails closed until
   `settings/chain` + the `CHAIN_TREASURY_KEY` secret are configured. See
   [`docs/apexvip-apexcoin-onchain.md`](../docs/apexvip-apexcoin-onchain.md).
+- **ApexCoin bonuses + transparency** — `monthlyCoinBonuses` (1st of each
+  month: Gold 200 / Platinum 500 APEX, top-rated drivers 10 AXC) with
+  `runCoinBonuses` as the admin-triggered equivalent (both idempotent per
+  month via deterministic ledger ids); a 25 AXC milestone every 50 completed
+  trips inside `onBookingWrite`; and `coinSupplyStats`, the public
+  ledger-aggregated totals behind `apexcoin.html` and the admin panel.
 
 All hold their provider secret server-side so the browser never sees it. See
 [`docs/apexvip-payments.md`](../docs/apexvip-payments.md) for the payment flow.
@@ -42,7 +48,7 @@ field names called out in
 cd functions
 npm install
 npm run typecheck   # tsc --noEmit — catches Firestore field/typo bugs before deploy
-npm test            # node --test — pure backend logic (src/logic.ts, 16 tests)
+npm test            # node --test — pure backend logic (src/logic.ts, 18 tests)
 npm run build       # esbuild src/index.ts → lib/index.js (the deployed artifact)
 ```
 
@@ -103,7 +109,7 @@ other functions (`parseBookingIntent`, `checkFlightStatus`, …), which live els
 **Always scope the deploy** so you don't touch the others:
 
 ```sh
-firebase deploy --only functions:getHotelRates,functions:processSquarePayment,functions:captureSquarePayment,functions:refundSquarePayment,functions:onBookingWrite,functions:onBookingCreated,functions:awardBookingCoins,functions:redeemApexCoins,functions:redeemDriverCoins,functions:linkChainWallet,functions:withdrawCoinsOnchain,functions:depositCoinsOnchain
+firebase deploy --only functions:getHotelRates,functions:processSquarePayment,functions:captureSquarePayment,functions:refundSquarePayment,functions:onBookingWrite,functions:onBookingCreated,functions:awardBookingCoins,functions:redeemApexCoins,functions:redeemDriverCoins,functions:linkChainWallet,functions:withdrawCoinsOnchain,functions:depositCoinsOnchain,functions:monthlyCoinBonuses,functions:runCoinBonuses,functions:coinSupplyStats
 ```
 
 A bare `firebase deploy` from here could try to delete functions it doesn't see.

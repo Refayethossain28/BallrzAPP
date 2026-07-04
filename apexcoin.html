@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>ApexCoin — live supply</title>
+<!-- ApexCoin transparency page: the loyalty coin's supply, straight from the
+     append-only ledger (coinSupplyStats). The on-chain AXC contract's
+     totalSupply() should always equal the "On ApexChain" figure — that's the
+     bridge invariant anyone can verify on a block explorer. -->
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400&family=Inter:wght@400;600;800&display=swap" rel="stylesheet"/>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
+<script src="firebase.js"></script>
+<style>
+  :root{--bg:#0c0b09;--surface:rgba(255,255,255,.04);--border:rgba(255,255,255,.09);--fg:#f0ece4;--fg-dim:rgba(240,236,228,.55);--fg-subtle:rgba(240,236,228,.35);--gold:#C8A97E}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--fg);font-family:'Inter',-apple-system,sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:48px 22px}
+  .wrap{width:100%;max-width:680px}
+  h1{font-family:'Cormorant Garamond',serif;font-weight:300;font-size:44px;letter-spacing:2px;text-align:center}
+  .sub{color:var(--fg-dim);font-size:13px;text-align:center;margin:8px 0 36px;line-height:1.7}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:22px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:20px 18px;text-align:center}
+  .card .v{font-size:26px;font-weight:800;color:var(--gold)}
+  .card .l{font-size:11px;color:var(--fg-subtle);letter-spacing:1.5px;text-transform:uppercase;margin-top:6px}
+  .note{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px 20px;font-size:13px;color:var(--fg-dim);line-height:1.8}
+  .note b{color:var(--fg)}
+  a{color:var(--gold)}
+  .chain{margin-top:14px;font-size:12px;color:var(--fg-subtle);text-align:center;line-height:1.8;word-break:break-all}
+  .stamp{margin-top:26px;font-size:11px;color:var(--fg-subtle);text-align:center;letter-spacing:1px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ApexCoin</h1>
+  <div class="sub">The ApexVIP loyalty currency · 1 coin = £1 of ApexVIP services<br/>Every figure below is aggregated live from the append-only coin ledger.</div>
+  <div class="cards" id="cards">
+    <div class="card"><div class="v" id="s-issued">—</div><div class="l">Issued</div></div>
+    <div class="card"><div class="v" id="s-redeemed">—</div><div class="l">Redeemed</div></div>
+    <div class="card"><div class="v" id="s-circulating">—</div><div class="l">In Apps</div></div>
+    <div class="card"><div class="v" id="s-onchain">—</div><div class="l">On ApexChain</div></div>
+  </div>
+  <div class="note">
+    <b>How to verify us:</b> coins are minted on-chain (as the AXC ERC-20) only when they leave the ApexVIP apps, and burned when they return — so the token contract's <b>totalSupply()</b> must always equal the “On ApexChain” figure above. Check it yourself on the block explorer below. In-app balances are written exclusively by our backend against the same ledger these totals come from.
+  </div>
+  <div class="chain" id="chain"></div>
+  <div class="stamp" id="stamp">LOADING LIVE FIGURES…</div>
+</div>
+<script>
+(function(){
+  var stamp=document.getElementById('stamp');
+  var configured=typeof APEXVIP_FIREBASE_CONFIG!=='undefined'&&APEXVIP_FIREBASE_CONFIG.apiKey!=='YOUR_API_KEY';
+  if(!configured){stamp.textContent='DEMO BUILD — LIVE FIGURES APPEAR ONCE THE BACKEND IS CONFIGURED';return;}
+  try{
+    var app=firebase.apps.length?firebase.app():firebase.initializeApp(APEXVIP_FIREBASE_CONFIG);
+    firebase.functions(app).httpsCallable('coinSupplyStats')({}).then(function(r){
+      var d=r.data||{};
+      var put=function(id,v){document.getElementById(id).textContent=(Number(v)||0).toLocaleString(undefined,{maximumFractionDigits:2});};
+      put('s-issued',d.issued);put('s-redeemed',d.redeemed);put('s-circulating',d.circulating);put('s-onchain',d.onchain);
+      if(d.chain&&d.chain.contractAddress){
+        document.getElementById('chain').innerHTML='AXC contract: <a href="'+(d.chain.explorerBase?String(d.chain.explorerBase).replace(/tx\/?$/,'address/'):'#')+d.chain.contractAddress+'" target="_blank" rel="noopener">'+d.chain.contractAddress+'</a>'+(d.chain.chainId?' · chain id '+d.chain.chainId:'');
+      }else{
+        document.getElementById('chain').textContent='On-chain bridge: not yet live (testnet deployment pending).';
+      }
+      stamp.textContent='AS OF '+new Date(d.at||Date.now()).toUTCString().toUpperCase();
+    }).catch(function(){stamp.textContent='LIVE FIGURES TEMPORARILY UNAVAILABLE';});
+  }catch(e){stamp.textContent='LIVE FIGURES TEMPORARILY UNAVAILABLE';}
+})();
+</script>
+</body>
+</html>

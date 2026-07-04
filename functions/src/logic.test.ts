@@ -10,6 +10,7 @@ import {
   bookingEvent, bookingMessage, daysUntil, shouldRemind, flightHHMM,
   normalizeCommissionPct, clientCoinsEarned, driverCoinsEarned,
   clampCoinRedemption, round2, coinEarnRates, apexTierForBalance,
+  bonusMonthKey, monthlyBonusForBalance, qualifiesForRatingBonus, milestoneBonusAt,
 } from './logic.ts';
 
 test('ApexCoin earn rates: tiered % for clients, flat % at 2dp for drivers', () => {
@@ -141,4 +142,20 @@ test('flightHHMM extracts HH:MM from an ISO datetime', () => {
   assert.equal(flightHHMM('2026-06-29T07:35:00+00:00'), '07:35');
   assert.equal(flightHHMM(''), '');
   assert.equal(flightHHMM(undefined), '');
+});
+
+test('bonus policy: month key, tier bonuses, rating gate, milestones', () => {
+  assert.equal(bonusMonthKey(new Date('2026-07-04T12:00:00Z')), '2026-07');
+  assert.equal(bonusMonthKey(new Date('2026-01-01T00:30:00Z')), '2026-01');
+  assert.equal(monthlyBonusForBalance(1999), 0);
+  assert.equal(monthlyBonusForBalance(2000), 200);
+  assert.equal(monthlyBonusForBalance(5000), 500);
+  assert.ok(qualifiesForRatingBonus({ rating: 4.9, ratingCount: 5 }));
+  assert.ok(!qualifiesForRatingBonus({ rating: 4.8, ratingCount: 50 }));
+  assert.ok(!qualifiesForRatingBonus({ rating: 5, ratingCount: 4 }));
+  assert.ok(!qualifiesForRatingBonus(null));
+  assert.equal(milestoneBonusAt(50), 25);
+  assert.equal(milestoneBonusAt(100), 25);
+  assert.equal(milestoneBonusAt(49), 0);
+  assert.equal(milestoneBonusAt(0), 0);
 });

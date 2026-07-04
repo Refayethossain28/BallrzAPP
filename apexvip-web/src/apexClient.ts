@@ -68,6 +68,8 @@ const CALLABLE_NAMES: ApexCallableName[] = [
   'linkChainWallet',
   'withdrawCoinsOnchain',
   'depositCoinsOnchain',
+  'runCoinBonuses',
+  'coinSupplyStats',
 ];
 
 /**

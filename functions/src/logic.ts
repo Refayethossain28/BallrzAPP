@@ -125,6 +125,42 @@ export function driverCoinsEarned(jobPay: number, ratePct: number = DEFAULT_DRIV
   return Number.isFinite(n) && n > 0 ? round2(n * (pct / 100)) : 0;
 }
 
+/*
+ * Recurring bonuses — the amounts the apps advertise, paid by the monthly
+ * bonus run + the completed-trip milestone check in index.ts. Idempotency
+ * comes from deterministic coin_ledger ids (one per user per month / per
+ * milestone), so re-runs and trigger re-fires can never double-pay.
+ */
+export const GOLD_MONTHLY_BONUS = 200; // APEX, clients at Gold
+export const PLATINUM_MONTHLY_BONUS = 500; // APEX, clients at Platinum
+export const DRIVER_RATING_BONUS = 10; // AXC/month, rating ≥ 4.9 over ≥ RATING_BONUS_MIN_TRIPS
+export const RATING_BONUS_MIN_RATING = 4.9;
+export const RATING_BONUS_MIN_TRIPS = 5;
+export const DRIVER_MILESTONE_BONUS = 25; // AXC per MILESTONE_EVERY completed trips
+export const MILESTONE_EVERY = 50;
+
+/** 'YYYY-MM' key for one month's bonus run (Europe/London month boundaries). */
+export function bonusMonthKey(now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit' }).format(now);
+  return parts.slice(0, 7); // en-CA formats as YYYY-MM
+}
+
+/** The monthly client bonus a balance's tier earns (0 below Gold). */
+export function monthlyBonusForBalance(balance: unknown): number {
+  const tier = apexTierForBalance(balance);
+  return tier === 'Platinum' ? PLATINUM_MONTHLY_BONUS : tier === 'Gold' ? GOLD_MONTHLY_BONUS : 0;
+}
+
+/** Whether a driver profile qualifies for the monthly top-rated bonus. */
+export function qualifiesForRatingBonus(d: { rating?: number; ratingCount?: number } | null | undefined): boolean {
+  return Number(d?.rating) >= RATING_BONUS_MIN_RATING && Number(d?.ratingCount) >= RATING_BONUS_MIN_TRIPS;
+}
+
+/** The milestone bonus due when a driver's completed-trip count hits `count` (0 if none). */
+export function milestoneBonusAt(count: number): number {
+  return Number.isInteger(count) && count > 0 && count % MILESTONE_EVERY === 0 ? DRIVER_MILESTONE_BONUS : 0;
+}
+
 /**
  * Clamp a client redemption request: whole coins, never more than the balance,
  * never negative. The fare cap is applied by the caller (it knows the fare).

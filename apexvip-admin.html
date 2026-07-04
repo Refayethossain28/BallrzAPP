@@ -1223,12 +1223,16 @@ analytics:()=>{
 },
 
 apexcoin:()=>{
-  // Same source-of-truth rule as the Analytics screen: the shared Firestore
-  // analytics feed when live, this browser's local log otherwise. Aggregation
-  // (client earns + driver earns − redemptions) is the shared, tested engine.
+  // Source of truth, best first: the coin_ledger aggregate (coinSupplyStats,
+  // exact) when live, else the shared analytics feed, else this browser's
+  // local event log — both approximations via the tested engine aggregation.
+  if(FIREBASE_ENABLED&&fns&&!S._coinSupplyReq){
+    S._coinSupplyReq=true;
+    fns.httpsCallable('coinSupplyStats')({}).then(r=>{S._coinSupply=r.data;if(S.screen==='apexcoin')render();}).catch(()=>{});
+  }
   const localEvents=JSON.parse(localStorage.getItem('apexvip_events')||'[]');
   const raw=(FIREBASE_ENABLED&&CLOUD_EVENTS&&CLOUD_EVENTS.length)?CLOUD_EVENTS:localEvents;
-  const supply=ApexEngine.coinSupply(raw);
+  const supply=S._coinSupply||ApexEngine.coinSupply(raw);
   return`<div class="screen">
   <div class="section-header"><div class="section-title">ApexCoin</div></div>
   <div style="display:flex;gap:14px;margin-bottom:24px;flex-wrap:wrap">
@@ -1254,7 +1258,11 @@ apexcoin:()=>{
       ${field('coin_platinum','PLATINUM %',r.tiers.Platinum)}
       ${field('coin_driver','DRIVER %',r.driverPct)}
     </div>
-    <button class="btn btn-gold btn-sm" onclick="saveCoinRates()">Save Earn Rates</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-gold btn-sm" onclick="saveCoinRates()">Save Earn Rates</button>
+      <button class="btn btn-glass btn-sm" onclick="runCoinBonusesNow()">Run Monthly Bonuses</button>
+    </div>
+    <div style="font-size:11px;color:var(--fg-subtle);margin-top:10px;line-height:1.6">Monthly bonuses (Gold 200 / Platinum 500 APEX · top-rated drivers 10 AXC) run automatically on the 1st; the button re-runs this month — idempotent, so nobody is ever paid twice. Drivers also earn 25 AXC per 50 completed trips, automatically.</div>
   </div>`;})()}
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:10px">How ApexCoin works</div>
@@ -2104,6 +2112,18 @@ function saveCoinRates(){
     logAudit('coin_rates_update','settings/coins',`client ${r.tiers.Bronze}/${r.tiers.Silver}/${r.tiers.Gold}/${r.tiers.Platinum}% by tier · driver ${r.driverPct}%`);
     alert('Earn rates saved.');render();
   }).catch(e=>alert('Save failed: '+(e.message||e.code)));
+}
+
+// Run this month's coin bonuses on demand (idempotent server-side).
+function runCoinBonusesNow(){
+  if(!FIREBASE_ENABLED){alert('Demo mode — the bonus run needs the live backend.');return;}
+  if(!confirm('Run this month\'s ApexCoin bonuses now? Already-paid members are skipped automatically.'))return;
+  fns.httpsCallable('runCoinBonuses')({}).then(r=>{
+    const d=r.data||{};
+    logAudit('coin_bonus_run','coin_ledger',`${d.month}: ${d.clients} client + ${d.drivers} driver bonus(es) paid`);
+    S._coinSupply=null;S._coinSupplyReq=false; // refresh the supply cards
+    alert(`Bonus run for ${d.month}: ${d.clients} client and ${d.drivers} driver bonus(es) paid.`);render();
+  }).catch(e=>alert('Bonus run failed: '+(e.message||e.code)));
 }
 
 // ── Error telemetry viewer ─────────────────────────────────────────────────
