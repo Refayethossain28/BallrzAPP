@@ -63,6 +63,16 @@
     max-width: 90vw;
   }
   #toast.show { opacity: 1; }
+  .halvwrap { background: var(--panel); border: 1px solid var(--line); border-radius: 99px; height: 10px; margin-top: 10px; overflow: hidden; }
+  .halvbar { background: linear-gradient(90deg, var(--gold), #ffc857); height: 100%; width: 0; transition: width 0.4s; }
+  .halvcap { color: var(--dim); font-size: 12px; margin-top: 5px; }
+  .rich { display: flex; align-items: baseline; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 9px 14px; }
+  .rich .pct { margin-left: auto; color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .qrbox { margin-top: 10px; text-align: center; }
+  .qrbox svg { border-radius: 8px; max-width: 100%; height: auto; }
+  .qrbox .cap { font-size: 11px; color: var(--dim); margin-top: 4px; }
+  #relayInput { flex: 1; min-width: 160px; }
+  .invite { font-family: var(--mono); font-size: 12px; color: var(--gold); word-break: break-all; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -76,6 +86,8 @@
 </div>
 
 <div class="stats" id="stats"></div>
+<div class="halvwrap"><div class="halvbar" id="halvBar"></div></div>
+<div class="halvcap" id="halvCap"></div>
 
 <h2>Wallets</h2>
 <div class="cards" id="wallets"></div>
@@ -96,18 +108,38 @@
 </form>
 <div class="sub">Transactions wait in the mempool until a miner includes them; the fee goes to that miner.</div>
 
+<h2>Leaderboard</h2>
+<div class="list" id="richlist"></div>
+
 <h2>Mempool <span id="mempoolCount"></span></h2>
 <div class="list" id="mempool"></div>
 
 <h2>Blockchain</h2>
 <div class="list" id="chain"></div>
-<div class="row">
+
+<h2>Network</h2>
+<div class="note">
+  Tabs in this browser sync automatically. To sync with <b>other devices</b>, run a relay
+  (see <a href="https://github.com/Refayethossain28/BallrzAPP/blob/main/coin/DEPLOY.md" style="color:var(--gold)">the 5-minute deploy guide</a>)
+  and paste its URL here — or open the relay's own URL, which serves this app pre-connected.
+  <div class="row">
+    <input id="relayInput" placeholder="https://your-relay.onrender.com" autocomplete="off">
+    <button id="relaySave">Save</button>
+    <button id="relayClear" class="danger">Clear</button>
+  </div>
+  <div class="row" id="inviteRow" style="display:none">
+    Invite link (tap to copy): <span class="invite" id="inviteLink"></span>
+  </div>
+</div>
+
+<div class="row" style="margin-top:18px">
   <button id="resetAll" class="danger">Reset node (wipe chain &amp; wallets)</button>
 </div>
 
 <div id="toast"></div>
 
 <script src="config.js"></script>
+<script src="qr.js"></script>
 <script src="engine.js"></script>
 <script>
 (function () {
@@ -169,7 +201,28 @@
      received is fully re-validated and adopted only if heavier. */
   var NODE_ID = 'n' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
   var CFG = (typeof self !== 'undefined' && self.BALLRZCOIN_CONFIG) || {};
-  var relayUrl = String(CFG.relayUrl || '').replace(/\/+$/, '');
+  var LS_RELAY = 'ballrzcoin.relay.v1';
+
+  function qsParam(name) {
+    try {
+      var m = new RegExp('[?&]' + name + '=([^&]*)').exec(String(location.search || ''));
+      return m ? decodeURIComponent(m[1]) : '';
+    } catch (err) { return ''; }
+  }
+  function pageBase() {
+    try {
+      if (typeof location !== 'undefined' && location.href) return String(location.href).split('?')[0].split('#')[0];
+    } catch (err) { /* sandboxed */ }
+    return 'https://refayethossain28.github.io/BallrzAPP/coin/';
+  }
+
+  // Relay resolution: ?relay= link → saved setting → config.js. An invite link
+  // both joins immediately and remembers the relay for next time.
+  var relayParam = qsParam('relay');
+  if (relayParam) { try { localStorage.setItem(LS_RELAY, relayParam); } catch (err) {} }
+  var savedRelay = '';
+  try { savedRelay = localStorage.getItem(LS_RELAY) || ''; } catch (err) {}
+  var relayUrl = String(relayParam || savedRelay || CFG.relayUrl || '').replace(/\/+$/, '');
   var relaySeq = 0, relayUp = false;
 
   function handleNetMessage(m) {
@@ -211,8 +264,29 @@
   function renderNetStatus() {
     var el = $('netStatus');
     if (!el) return;
-    if (!relayUrl) { el.textContent = ''; return; }
-    el.textContent = relayUp ? '⇄ relay connected — syncing across devices' : '⇄ relay unreachable';
+    if (!relayUrl) { el.textContent = ''; }
+    else el.textContent = relayUp ? '⇄ relay connected — syncing across devices' : '⇄ relay unreachable';
+    var row = $('inviteRow');
+    if (row && row.style) row.style.display = (relayUrl && relayUp) ? '' : 'none';
+    if (relayUrl && relayUp) {
+      $('inviteLink').textContent = pageBase() + '?relay=' + encodeURIComponent(relayUrl);
+    }
+  }
+
+  // Zero-config mode: when this page is served BY the relay itself
+  // (coin/server.mjs also serves the app), adopt the same origin as relay.
+  function tryAutodetect() {
+    if (relayUrl || typeof fetch === 'undefined' || typeof location === 'undefined') return;
+    try { if (!/^https?:$/.test(String(location.protocol))) return; } catch (err) { return; }
+    fetch(location.origin + '/msgs?since=0')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d && typeof d.seq === 'number') {
+          relayUrl = String(location.origin);
+          relayPoll();
+        }
+      })
+      .catch(function () { /* not served by a relay (e.g. GitHub Pages) */ });
   }
 
   function relayPoll() {
@@ -230,6 +304,7 @@
       .then(function () { setTimeout(relayPoll, 2500); });
   }
   if (relayUrl && typeof fetch !== 'undefined') setTimeout(relayPoll, 0);
+  else setTimeout(tryAutodetect, 0);
 
   function toast(msg) {
     var t = $('toast');
@@ -291,23 +366,49 @@
 
   function render() {
     var s = chain.stats();
+    var interval = chain.params.halvingInterval;
+    var toHalving = s.nextHalvingHeight - s.height;
     $('stats').innerHTML = [
       ['#' + s.height, 'block height'],
       [fmt(s.supply), 'mined of ' + fmt(s.maxSupply) + ' ever'],
       [fmt(s.blockReward), 'block reward'],
       ['×' + s.difficulty.toFixed(2), 'difficulty'],
       [s.mempoolSize, 'mempool'],
-      ['#' + s.nextHalvingHeight, 'next halving']
+      [toHalving, 'blocks to halving']
     ].map(function (p) { return '<div class="stat"><b>' + p[0] + '</b><span>' + p[1] + '</span></div>'; }).join('');
 
+    var bar = $('halvBar');
+    if (bar && bar.style) bar.style.width = Math.round(100 * (interval - toHalving) / interval) + '%';
+    $('halvCap').textContent = s.blockReward > 0
+      ? '⏳ ' + toHalving + ' block' + (toHalving === 1 ? '' : 's') + ' until the reward halves to ' +
+        fmt(Math.floor(s.blockReward / 2)) + ' at block #' + s.nextHalvingHeight
+      : '🏁 All ' + fmt(s.maxSupply) + ' have been issued — miners now earn fees only, like Bitcoin in ~2140';
+
     $('wallets').innerHTML = wallets.map(function (w, i) {
+      var qrHtml = '';
+      if (w.qrOpen && typeof CoinQR !== 'undefined') {
+        var payUrl = pageBase() + '?pay=' + w.address;
+        qrHtml = '<div class="qrbox">' +
+          CoinQR.toSVG(CoinQR.encode(payUrl), 4, { dark: '#0b0e14', light: '#ffffff' }) +
+          '<div class="cap">Scan to open BallrzCoin with this wallet as the recipient</div></div>';
+      }
       return '<div class="card">' +
         '<div>' + esc(w.name) + '</div>' +
         '<div class="bal">' + fmt(chain.getBalance(w.address)) + '</div>' +
         '<div class="addr" data-copy="' + esc(w.address) + '" title="Click to copy">' + esc(w.address) + '</div>' +
-        '<div class="row"><button class="primary" data-mine="' + i + '"' + (mining ? ' disabled' : '') + '>⛏ Mine to this wallet</button></div>' +
+        '<div class="row"><button class="primary" data-mine="' + i + '"' + (mining ? ' disabled' : '') + '>⛏ Mine to this wallet</button>' +
+        '<button data-qr="' + i + '">' + (w.qrOpen ? '▦ Hide QR' : '▦ QR') + '</button></div>' +
+        qrHtml +
         '</div>';
     }).join('');
+
+    var rich = chain.richList(5);
+    var medals = ['🥇', '🥈', '🥉', '4.', '5.'];
+    $('richlist').innerHTML = rich.length ? rich.map(function (r, i) {
+      var pct = s.supply ? (100 * r.amount / s.supply).toFixed(1) : '0';
+      return '<div class="rich"><span>' + medals[i] + '</span><span>' + who(r.address) + '</span>' +
+        '<span class="amt">' + fmt(r.amount) + '</span><span class="pct">' + pct + '% of supply</span></div>';
+    }).join('') : '<div class="note">Nobody owns any BLZ yet — mine the first block to claim the top spot.</div>';
 
     $('sendFrom').innerHTML = wallets.map(function (w, i) {
       return '<option value="' + i + '">' + esc(w.name) + ' — ' + fmt(chain.getBalance(w.address)) + '</option>';
@@ -361,6 +462,17 @@
       render();
       return;
     }
+    var qrIdx = t.getAttribute('data-qr');
+    if (qrIdx !== null && qrIdx !== undefined && qrIdx !== '') {
+      wallets[Number(qrIdx)].qrOpen = !wallets[Number(qrIdx)].qrOpen;
+      render();
+      return;
+    }
+    if (t.id === 'inviteLink') {
+      try { navigator.clipboard.writeText(t.textContent); toast('Invite link copied — send it to a friend'); }
+      catch (err) { toast(t.textContent); }
+      return;
+    }
     var copy = t.getAttribute('data-copy');
     if (copy) {
       try { navigator.clipboard.writeText(copy); toast('Address copied'); } catch (err) { toast(copy); }
@@ -395,6 +507,19 @@
     }
   });
 
+  $('relaySave').addEventListener('click', function () {
+    var v = String($('relayInput').value || '').trim().replace(/\/+$/, '');
+    if (!v) { toast('Enter a relay URL first (see the deploy guide)'); return; }
+    try { localStorage.setItem(LS_RELAY, v); } catch (err) {}
+    toast('Relay saved — reconnecting…');
+    try { location.reload(); } catch (err) {}
+  });
+  $('relayClear').addEventListener('click', function () {
+    try { localStorage.removeItem(LS_RELAY); } catch (err) {}
+    toast('Relay cleared — local-only mode');
+    try { location.reload(); } catch (err) {}
+  });
+
   $('resetAll').addEventListener('click', function () {
     if (!confirm('Wipe this node’s blockchain and wallets? (Other tabs keep theirs.)')) return;
     try { localStorage.removeItem(LS_CHAIN); localStorage.removeItem(LS_WALLETS); } catch (err) {}
@@ -409,6 +534,14 @@
     persist();
     render();
   });
+
+  // Deep links: ?pay=ADDRESS prefills the send form (what wallet QRs encode).
+  var payTo = qsParam('pay');
+  if (payTo && Coin.isValidAddress(payTo)) {
+    $('sendTo').value = payTo;
+    toast('Recipient filled in from the link — add an amount and send');
+  }
+  try { if ($('relayInput')) $('relayInput').value = relayUrl; } catch (err) {}
 
   render();
   renderNetStatus();

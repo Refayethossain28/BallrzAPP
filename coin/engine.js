@@ -831,6 +831,15 @@
     return events;
   };
 
+  /** Balances of every address holding coins, richest first. */
+  Blockchain.prototype.richList = function (limit) {
+    var by = {};
+    this.utxo.forEach(function (o) { by[o.address] = (by[o.address] || 0) + o.amount; });
+    var list = Object.keys(by).map(function (a) { return { address: a, amount: by[a] }; });
+    list.sort(function (x, y) { return y.amount - x.amount || (x.address < y.address ? -1 : 1); });
+    return typeof limit === 'number' ? list.slice(0, limit) : list;
+  };
+
   Blockchain.prototype.totalSupply = function () {
     var sum = 0;
     this.utxo.forEach(function (o) { sum += o.amount; });
