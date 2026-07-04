@@ -427,7 +427,7 @@ function startAdminListeners(){
   // the Analytics screen aggregates client + driver + admin + concierge.
   db.collection('analytics').orderBy('t','desc').limit(4000).onSnapshot(snap=>{
     CLOUD_EVENTS=snap.docs.map(d=>d.data());
-    if(S.screen==='analytics'||S.screen==='concierge')render();
+    if(S.screen==='analytics'||S.screen==='concierge'||S.screen==='apexcoin')render();
   },e=>console.warn('Analytics:',e.code));
 }
 
@@ -1218,14 +1218,16 @@ analytics:()=>{
 },
 
 apexcoin:()=>{
-  const raw=JSON.parse(localStorage.getItem('apexvip_events')||'[]');
-  const earned=raw.filter(e=>e.e==='apex_earned').reduce((a,e)=>a+(e.amount||0),0);
-  const redeemed=raw.filter(e=>e.e==='apex_redeemed').reduce((a,e)=>a+(e.amount||0),0);
-  const supply=Math.max(0,earned-redeemed);
+  // Same source-of-truth rule as the Analytics screen: the shared Firestore
+  // analytics feed when live, this browser's local log otherwise. Aggregation
+  // (client earns + driver earns − redemptions) is the shared, tested engine.
+  const localEvents=JSON.parse(localStorage.getItem('apexvip_events')||'[]');
+  const raw=(FIREBASE_ENABLED&&CLOUD_EVENTS&&CLOUD_EVENTS.length)?CLOUD_EVENTS:localEvents;
+  const supply=ApexEngine.coinSupply(raw);
   return`<div class="screen">
   <div class="section-header"><div class="section-title">ApexCoin</div></div>
   <div style="display:flex;gap:14px;margin-bottom:24px;flex-wrap:wrap">
-    ${[['Issued',earned.toFixed(2)+' AXC','earned across all trips','#C8A97E'],['Redeemed',redeemed.toFixed(2)+' AXC','used as payment','#a855f7'],['In Circulation',supply.toFixed(2)+' AXC','issued − redeemed','#22c55e']].map(([l,v,sx,c])=>`<div class="stat-card" style="border-color:rgba(200,169,126,.15);background:rgba(200,169,126,.03)">
+    ${[['Issued',supply.issued.toFixed(2)+' AXC','earned by clients + drivers','#C8A97E'],['Redeemed',supply.redeemed.toFixed(2)+' AXC','against fares or as cash','#a855f7'],['In Circulation',supply.circulating.toFixed(2)+' AXC','issued − redeemed','#22c55e']].map(([l,v,sx,c])=>`<div class="stat-card" style="border-color:rgba(200,169,126,.15);background:rgba(200,169,126,.03)">
       <div class="section-label" style="margin-bottom:10px">${l}</div>
       <div style="font-size:26px;font-weight:800;color:${c}">${v}</div>
       <div style="font-size:12px;color:var(--fg-subtle);margin-top:4px">${sx}</div>
@@ -1233,7 +1235,7 @@ apexcoin:()=>{
   </div>
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:10px">How ApexCoin works</div>
-    <div style="font-size:13px;color:var(--fg-dim);line-height:1.7">Clients earn 5% of each fare in AXC; drivers earn 2% of each completed job. Coins are redeemable against bookings (clients) or as cash/fuel vouchers (drivers). Figures above aggregate real tracked events on this device — per-user balances live in each user's app.</div>
+    <div style="font-size:13px;color:var(--fg-dim);line-height:1.7">Clients earn 5% of each fare in APEX and can part-pay or fully pay for bookings with it (£1 per coin) at checkout. Drivers earn 2% of each completed job in AXC and can redeem it as cash, settled with their next payout. Per-user balances live in each user's app; the figures above aggregate tracked events${FIREBASE_ENABLED?' across all apps':' on this device'}.</div>
   </div>
 </div>`;},
 

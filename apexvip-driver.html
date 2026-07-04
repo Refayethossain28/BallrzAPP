@@ -321,8 +321,9 @@ let S={
   screen:'login',
   theme: localStorage.getItem('apexvip_driver_theme')||'dark',
   profile:{name:'Driver',initials:'DR',vehicle:'',model:'',reg:'',rating:4.9,trips:0},
-  apexcoin: 0,
-  _axcHistory:[], // earned in-session from real completed trips
+  // AXC wallet survives reloads — earned from real completed trips.
+  apexcoin: (()=>{try{const v=parseFloat(localStorage.getItem('apexvip_axc'));return Number.isFinite(v)&&v>0?v:0;}catch(e){return 0;}})(),
+  _axcHistory: (()=>{try{return JSON.parse(localStorage.getItem('apexvip_axc_history'))||[];}catch(e){return [];}})(),
   online:false,
   jobOverlay:false,
   countdown:30,
@@ -1055,10 +1056,14 @@ function _advanceStep(){
       db.collection('jobs').doc(S.activeJob.id).update({status:'completed',completedAt:firebase.firestore.FieldValue.serverTimestamp()}).catch(reportError);
       syncBookingStatus(S.activeJob,'completed',{completedAt:firebase.firestore.FieldValue.serverTimestamp()});
     }
-    // Award 2% of job value as ApexCoin
+    // Award 2% of job value as ApexCoin — rate + rounding via the shared engine.
     const jobPay=S.activeJob?.pay||0;
-    const axcEarned=parseFloat((jobPay*0.02).toFixed(2));
-    if(axcEarned>0){S.apexcoin=parseFloat((S.apexcoin+axcEarned).toFixed(2));S._axcHistory.unshift({desc:S.activeJob?.service||'Trip',type:'earn',amount:axcEarned,date:'Just now'});}
+    const axcEarned=ApexEngine.driverCoinsEarned(jobPay);
+    if(axcEarned>0){
+      S.apexcoin=ApexEngine.round2(S.apexcoin+axcEarned);
+      S._axcHistory=ApexEngine.appendCoinTx(S._axcHistory,{desc:S.activeJob?.service||'Trip',type:'earn',amount:axcEarned,date:new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short'})});
+      saveAxc();
+    }
     track('trip_completed',{pay:jobPay,axc:axcEarned,duration:S.tripTimer,src:'driver'});
     S._lastCompletedJob=S.activeJob;
     S.activeJob=null;go('trip-complete');
@@ -1079,6 +1084,23 @@ function jobTag(type){
   return`<span class="tag ${c}">${r.join(' ')}</span>`;
 }
 function stars(r){return'★'.repeat(r)+'☆'.repeat(5-r);}
+
+function saveAxc(){
+  try{
+    localStorage.setItem('apexvip_axc',String(S.apexcoin));
+    localStorage.setItem('apexvip_axc_history',JSON.stringify(S._axcHistory||[]));
+  }catch(e){}
+}
+function redeemAxc(){
+  const amount=S.apexcoin;
+  if(!(amount>0))return;
+  if(!confirm('Redeem '+amount.toFixed(2)+' AXC for £'+amount.toFixed(2)+'? The ApexVIP desk is notified and settles it with your next payout.'))return;
+  S.apexcoin=0;
+  S._axcHistory=ApexEngine.appendCoinTx(S._axcHistory,{desc:'Cash redemption',type:'redeem',amount,date:new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short'})});
+  saveAxc();
+  track('apex_redeemed',{amount,src:'driver'});
+  render();
+}
 function fmtTime(s){const m=Math.floor(s/60);const sec=s%60;return(m<10?'0'+m:m)+':'+(sec<10?'0'+sec:sec);}
 
 const pages={
@@ -1587,9 +1609,10 @@ axcWallet:()=>`<div class="screen">
   <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--divider)">
     <div style="width:36px;height:36px;border-radius:10px;background:${h.type==='earn'?'rgba(34,197,94,.07)':'rgba(200,169,126,.07)'};display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">${h.type==='earn'?'↑':'↓'}</div>
     <div style="flex:1"><div style="font-size:13px;font-weight:500">${h.desc}</div><div style="font-size:11px;color:var(--fg-subtle);margin-top:1px">${h.date}</div></div>
-    <div style="font-size:14px;font-weight:700;color:${h.type==='earn'?'#22c55e':'var(--fg-dim)'}">+${h.amount.toFixed(2)} AXC</div>
+    <div style="font-size:14px;font-weight:700;color:${h.type==='earn'?'#22c55e':'var(--fg-dim)'}">${h.type==='earn'?'+':'−'}${h.amount.toFixed(2)} AXC</div>
   </div>`).join('')}
-  <button class="btn btn-gold" style="margin-top:20px">Redeem as Cash</button>
+  ${(S._axcHistory||[]).length?'':`<div style="font-size:13px;color:var(--fg-subtle);padding:12px 0">No activity yet — coins land here as you complete trips.</div>`}
+  <button class="btn btn-gold" style="margin-top:20px;${S.apexcoin>0?'':'opacity:.4;cursor:default'}" onclick="redeemAxc()">Redeem as Cash</button>
   <div style="height:20px"></div>
 </div>`,
 
