@@ -85,6 +85,28 @@
   .qrbox .cap { font-size: 11px; color: var(--dim); margin-top: 4px; }
   #relayInput { flex: 1; min-width: 160px; }
   .invite { font-family: var(--mono); font-size: 12px; color: var(--gold); word-break: break-all; cursor: pointer; }
+  .keys { margin-top: 10px; border-top: 1px dashed var(--line); padding-top: 10px; }
+  .keys .pk { font-family: var(--mono); font-size: 11px; word-break: break-all; color: var(--red); cursor: pointer; }
+  .keys .warn { font-size: 11px; color: var(--dim); margin: 6px 0 8px; }
+  #paperWallet {
+    display: none; position: fixed; inset: 0; z-index: 50; overflow: auto;
+    background: #f4f1ea; color: #17130c; padding: 28px 16px;
+  }
+  #paperWallet .sheet { max-width: 640px; margin: 0 auto; background: #fff; border: 2px solid #17130c; border-radius: 14px; overflow: hidden; }
+  #paperWallet .half { padding: 22px 24px; }
+  #paperWallet .half + .half { border-top: 2px dashed #17130c; }
+  #paperWallet h3 { font-size: 13px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 10px; }
+  #paperWallet .mono { font-family: var(--mono); font-size: 12px; word-break: break-all; }
+  #paperWallet .qrp { float: right; margin: 0 0 10px 16px; line-height: 0; }
+  #paperWallet .qrp svg { width: 150px; height: 150px; }
+  #paperWallet .tip { font-size: 12px; color: #5d5647; margin-top: 8px; }
+  #paperWallet .bar { max-width: 640px; margin: 14px auto 0; display: flex; gap: 10px; }
+  #paperWallet .bar button { background: #17130c; color: #fff; border: none; }
+  @media print {
+    body.paper-open > :not(#paperWallet) { display: none !important; }
+    #paperWallet { position: static; background: #fff; padding: 0; }
+    #paperWallet .bar { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -105,6 +127,7 @@
 <div class="cards" id="wallets"></div>
 <div class="row">
   <button id="newWallet">＋ New wallet</button>
+  <button id="importWallet">⬇ Import wallet</button>
   <span class="mining" id="miningStatus"></span>
   <span class="mining" id="netStatus"></span>
 </div>
@@ -148,6 +171,7 @@
   <button id="resetAll" class="danger">Reset node (wipe chain &amp; wallets)</button>
 </div>
 
+<div id="paperWallet"></div>
 <div id="toast"></div>
 
 <script src="config.js"></script>
@@ -404,13 +428,22 @@
           CoinQR.toSVG(CoinQR.encode(payUrl), 4, { dark: '#0b0e14', light: '#ffffff' }) +
           '<div class="cap">Scan to open BallrzCoin with this wallet as the recipient</div></div>';
       }
+      var keysHtml = '';
+      if (w.keysOpen) {
+        keysHtml = '<div class="keys">' +
+          '<div class="pk" data-copy="' + esc(w.privateKey) + '" title="Click to copy">' + esc(w.privateKey) + '</div>' +
+          '<div class="warn">⚠️ This is the private key. Anyone who sees it owns the coins — your balance lives on the blockchain, and this key is the only proof it’s yours.</div>' +
+          '<div class="row"><button data-paper="' + i + '">🖨 Paper wallet</button></div>' +
+          '</div>';
+      }
       return '<div class="card">' +
         '<div>' + esc(w.name) + '</div>' +
         '<div class="bal">' + fmt(chain.getBalance(w.address)) + '</div>' +
         '<div class="addr" data-copy="' + esc(w.address) + '" title="Click to copy">' + esc(w.address) + '</div>' +
         '<div class="row"><button class="primary" data-mine="' + i + '"' + (mining ? ' disabled' : '') + '>⛏ Mine to this wallet</button>' +
-        '<button data-qr="' + i + '">' + (w.qrOpen ? '▦ Hide QR' : '▦ QR') + '</button></div>' +
-        qrHtml +
+        '<button data-qr="' + i + '">' + (w.qrOpen ? '▦ Hide QR' : '▦ QR') + '</button>' +
+        '<button data-keys="' + i + '">' + (w.keysOpen ? '🔑 Hide keys' : '🔑 Keys') + '</button></div>' +
+        qrHtml + keysHtml +
         '</div>';
     }).join('');
 
@@ -480,6 +513,19 @@
       render();
       return;
     }
+    var keysIdx = t.getAttribute('data-keys');
+    if (keysIdx !== null && keysIdx !== undefined && keysIdx !== '') {
+      wallets[Number(keysIdx)].keysOpen = !wallets[Number(keysIdx)].keysOpen;
+      render();
+      return;
+    }
+    var paperIdx = t.getAttribute('data-paper');
+    if (paperIdx !== null && paperIdx !== undefined && paperIdx !== '') {
+      openPaperWallet(wallets[Number(paperIdx)]);
+      return;
+    }
+    if (t.id === 'paperPrint') { try { window.print(); } catch (err) {} return; }
+    if (t.id === 'paperClose') { closePaperWallet(); return; }
     if (t.id === 'inviteLink') {
       try { navigator.clipboard.writeText(t.textContent); toast('Invite link copied — send it to a friend'); }
       catch (err) { toast(t.textContent); }
@@ -489,6 +535,52 @@
     if (copy) {
       try { navigator.clipboard.writeText(copy); toast('Address copied'); } catch (err) { toast(copy); }
     }
+  });
+
+  function openPaperWallet(w) {
+    if (typeof CoinQR === 'undefined') { toast('QR engine not loaded'); return; }
+    var pw = $('paperWallet');
+    pw.innerHTML =
+      '<div class="sheet">' +
+      '<div class="half">' +
+        '<div class="qrp">' + CoinQR.toSVG(CoinQR.encode(w.address), 4, { dark: '#17130c', light: '#ffffff' }) + '</div>' +
+        '<h3>🪙 BallrzCoin (BLZ) — public address</h3>' +
+        '<div class="mono">' + esc(w.address) + '</div>' +
+        '<div class="tip">Share this side freely — people pay you with it. Wallet: “' + esc(w.name) + '”.</div>' +
+      '</div>' +
+      '<div class="half">' +
+        '<div class="qrp">' + CoinQR.toSVG(CoinQR.encode(w.privateKey), 4, { dark: '#17130c', light: '#ffffff' }) + '</div>' +
+        '<h3>🔒 Private key — keep secret</h3>' +
+        '<div class="mono">' + esc(w.privateKey) + '</div>' +
+        '<div class="tip">Whoever reads this side owns the coins. Fold here, store somewhere safe. ' +
+        'To restore on any device: open BallrzCoin → Import wallet → type or scan this key.</div>' +
+      '</div>' +
+      '</div>' +
+      '<div class="bar"><button id="paperPrint">🖨 Print</button><button id="paperClose">Close</button></div>';
+    pw.style.display = 'block';
+    try { document.body.className = 'paper-open'; } catch (err) {}
+  }
+  function closePaperWallet() {
+    $('paperWallet').style.display = 'none';
+    try { document.body.className = ''; } catch (err) {}
+  }
+
+  $('importWallet').addEventListener('click', function () {
+    var key = prompt('Paste the private key (64 hex characters) from a backup or paper wallet:');
+    if (!key) return;
+    key = String(key).trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(key)) { toast('✖ That isn’t a valid key — expected 64 hex characters'); return; }
+    var w;
+    try { w = Coin.walletFromPrivateKey(key); } catch (err) { toast('✖ ' + err.message); return; }
+    var existing = wallets.filter(function (x) { return x.address === w.address; })[0];
+    if (existing) { toast('That wallet is already here: ' + existing.name); return; }
+    var name = prompt('Name this wallet:', 'Restored wallet');
+    if (name === null) return;
+    w.name = (name || 'Restored wallet').slice(0, 24);
+    wallets.push(w);
+    persist();
+    render();
+    toast('✓ Wallet restored — balance: ' + fmt(chain.getBalance(w.address)));
   });
 
   $('newWallet').addEventListener('click', function () {

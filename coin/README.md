@@ -59,6 +59,14 @@ friend scanning it opens the app with your wallet prefilled as the recipient.
 The page also shows a live **leaderboard** (top holders by share of supply) and
 a **halving countdown** toward the 21 BLZ issuance limit.
 
+Wallets can be backed up and restored: **🔑 Keys** reveals a wallet's private
+key, **🖨 Paper wallet** prints a cold-storage card (address QR on one half,
+private-key QR on the other), and **⬇ Import wallet** restores a key on any
+device — the balance follows automatically once the node syncs the chain,
+because coins live on the blockchain and the key is just the proof of
+ownership. (Keys at rest in the browser are still unencrypted — SECURITY.md #1;
+a paper wallet protects against loss, not against someone reading your screen.)
+
 ## Run the tests
 
 ```sh
