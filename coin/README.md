@@ -18,7 +18,7 @@ against published test vectors in [`../scripts/test-coin-logic.mjs`](../scripts/
 | Ledger | UTXO model: coins are unspent outputs; transactions consume them with signed inputs |
 | Blocks | Merkle root over transaction ids; header hashed with double-SHA-256 |
 | Mining | Proof of work against a 256-bit target; difficulty retargets every 10 blocks, clamped to ×4 per step like Bitcoin |
-| Money supply | 50 BLZ subsidy halving every 210 blocks, hard 21,000,000 BLZ cap, fees paid to the miner |
+| Money supply | 0.05 BLZ subsidy halving every 210 blocks — **only 21 BLZ will ever exist**, a million times scarcer than Bitcoin's 21,000,000 — with fees paid to the miner |
 | Consensus | Fork choice by **cumulative work** (`replaceChain`), so independent nodes converge |
 
 Open `index.html` in two browser tabs: each tab is a node with its own copy of the

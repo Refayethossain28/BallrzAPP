@@ -16,7 +16,8 @@
  *   • merkle trees committing every block to its transactions
  *   • proof-of-work mining against a 256-bit target, with Bitcoin-style
  *     difficulty retargeting (clamped ×4 either way each window)
- *   • a halving block-subsidy schedule and a hard supply cap
+ *   • a halving block-subsidy schedule and a hard supply cap — by default
+ *     only 21 BLZ will ever exist, a million times scarcer than Bitcoin
  *   • fork choice by *cumulative work* (not length), so `replaceChain` lets
  *     independent nodes converge — the UI syncs tabs over BroadcastChannel
  *
@@ -44,12 +45,16 @@
    * Monetary constants
    * ==================================================================== */
   var COIN = 100000000;                    // 1 BLZ = 100,000,000 blazes (like satoshis)
-  var MAX_MONEY = 21000000 * COIN;         // hard cap, the famous 21 million
+  var MAX_MONEY = 21000000 * COIN;         // absolute sanity bound on any single output
 
   var DEFAULT_PARAMS = {
     name: 'BallrzCoin',
     ticker: 'BLZ',
-    initialSubsidy: 50 * COIN,             // block reward at height 1, like Bitcoin's 50 BTC
+    // Scarcity is the whole game: Bitcoin caps at 21,000,000 coins; BallrzCoin
+    // caps at 21. The 0.05 BLZ subsidy halving every 210 blocks sums (like
+    // Bitcoin's geometric series) to just under 21 BLZ ever — a million times
+    // scarcer than Bitcoin.
+    initialSubsidy: 5000000,               // 0.05 BLZ block reward at height 1
     halvingInterval: 210,                  // reward halves every N blocks (Bitcoin: 210,000)
     retargetInterval: 10,                  // difficulty adjusts every N blocks (Bitcoin: 2,016)
     targetBlockTimeMs: 15000,              // aim for one block per 15s (Bitcoin: 10 min)
@@ -851,7 +856,8 @@
       target: this.nextTarget(),
       difficulty: difficultyOf(this.nextTarget(), p.genesisTarget),
       supply: this.totalSupply(),
-      maxSupply: MAX_MONEY,
+      maxSupply: p.initialSubsidy * p.halvingInterval * 2, // the halving series' limit
+
       blockReward: this.subsidyAt(tip.height + 1),
       nextHalvingHeight: (Math.floor(tip.height / p.halvingInterval) + 1) * p.halvingInterval,
       mempoolSize: this.mempool.length,

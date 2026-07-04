@@ -70,7 +70,8 @@
 <h1>🪙 BallrzCoin <span class="tick">BLZ</span></h1>
 <div class="sub">
   A toy proof-of-work cryptocurrency built like Bitcoin: secp256k1 wallets, UTXO transactions,
-  merkle trees, mining with difficulty retargeting, halving rewards and a 21M cap.
+  merkle trees, mining with difficulty retargeting and halving rewards — but <b style="color:var(--gold)">only
+  21 BLZ will ever exist</b>, a million times scarcer than Bitcoin's 21,000,000.
   Open this page in a second tab — each tab is a node, and they sync on the heaviest chain.
 </div>
 
@@ -110,8 +111,10 @@
 (function () {
   'use strict';
   var Coin = (typeof self !== 'undefined' ? self : window).BallrzCoin;
-  var LS_CHAIN = 'ballrzcoin.chain.v1';
-  var LS_WALLETS = 'ballrzcoin.wallets.v1';
+  // v2: the 21-BLZ scarcity policy. Old v1 chains (50 BLZ rewards) are left
+  // behind so every node starts fresh under the new monetary rules.
+  var LS_CHAIN = 'ballrzcoin.chain.v2';
+  var LS_WALLETS = 'ballrzcoin.wallets.v2';
   var fmt = Coin.formatAmount;
 
   function $(id) { return document.getElementById(id); }
@@ -160,7 +163,7 @@
   /* ---------- tab-to-tab "network" ---------- */
   var bc = null;
   if (typeof BroadcastChannel !== 'undefined') {
-    bc = new BroadcastChannel('ballrzcoin-net-v1');
+    bc = new BroadcastChannel('ballrzcoin-net-v2');
     bc.onmessage = function (ev) {
       var m = ev.data || {};
       if (m.type === 'hello') {
@@ -240,7 +243,7 @@
     var s = chain.stats();
     $('stats').innerHTML = [
       ['#' + s.height, 'block height'],
-      [fmt(s.supply), 'in circulation'],
+      [fmt(s.supply), 'mined of ' + fmt(s.maxSupply) + ' ever'],
       [fmt(s.blockReward), 'block reward'],
       ['×' + s.difficulty.toFixed(2), 'difficulty'],
       [s.mempoolSize, 'mempool'],

@@ -31,6 +31,7 @@ const TEST_PARAMS = {
   retargetInterval: 5,
   halvingInterval: 4,
   maxBlockTxs: 25,
+  initialSubsidy: 50 * 100000000, // Bitcoin-sized rewards on the test net
 };
 const newChain = (over = {}) => new C.Blockchain({ ...TEST_PARAMS, ...over });
 
@@ -127,6 +128,20 @@ test('amount formatting and parsing', () => {
   assert.equal(C.formatAmount(50 * C.COIN), '50 BLZ');
   assert.throws(() => C.parseAmount('1.123456789'), /bad amount/);
   assert.throws(() => C.parseAmount('nope'), /bad amount/);
+});
+test('default monetary policy: only 21 BLZ will ever exist', () => {
+  const chain = new C.Blockchain(); // real params, not the test net
+  assert.equal(chain.subsidyAt(1), C.parseAmount('0.05'));
+  assert.equal(chain.stats().maxSupply, 21 * C.COIN);
+  // Sum the whole halving series: 0.05 halving every 210 blocks, forever.
+  let total = 0;
+  for (let h = 0; ; h++) {
+    const s = chain.subsidyAt(h * chain.params.halvingInterval);
+    if (s === 0) break;
+    total += s * chain.params.halvingInterval;
+  }
+  assert.ok(total <= 21 * C.COIN, 'issuance never exceeds the cap');
+  assert.ok(total > 20.9 * C.COIN, 'and approaches it, like Bitcoin');
 });
 test('subsidy halves on schedule and eventually hits zero', () => {
   const chain = newChain(); // halvingInterval 4
