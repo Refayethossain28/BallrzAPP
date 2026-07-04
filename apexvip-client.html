@@ -892,6 +892,9 @@ if (typeof ApexEngine === 'undefined') {
   (function(){ const sc=document.createElement('script'); sc.src='apexvip-engine.js?retry='+Date.now(); sc.onload=()=>{ try{render();}catch(_){}} ; document.head.appendChild(sc); })();
 }
 
+const APP_BUILD='2026-07-04.3';
+try{console.info('[apexvip] client build',APP_BUILD);}catch(_){}
+
 const _errSeen = new Set();
 function reportError(err, screen){
   try{
@@ -6011,7 +6014,8 @@ function renderNow(){
         <div style="font-family:var(--font-serif);font-size:22px;font-weight:300">Something went wrong</div>
         <div style="font-size:13px;color:var(--fg-3);max-width:280px;line-height:1.6">We hit an unexpected error. Please try again — your bookings are safe.</div>
         <button class="btn btn-gold" style="max-width:220px" onclick="location.reload()">Reload</button>
-        <div style="font-size:10px;color:var(--fg-4);max-width:300px;word-break:break-word;opacity:.6">${_detail}</div>
+        <div style="font-size:10px;color:var(--fg-4);max-width:300px;word-break:break-word;opacity:.6">${_detail||'(no error message)'}</div>
+        <div style="font-size:9px;color:var(--fg-4);opacity:.45;letter-spacing:1px">build ${typeof APP_BUILD!=='undefined'?APP_BUILD:'pre-diagnostic'}</div>
       </div>`;
     }catch(_){}
   }
