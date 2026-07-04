@@ -343,6 +343,17 @@ test('history and findTransaction trace the ledger', () => {
   assert.equal(found.tx.outputs[0].address, bob.address);
   assert.equal(chain.findTransaction(C.sha256('nope')), null);
 });
+test('richList ranks holders by balance', () => {
+  const chain = newChain();
+  mineTo(chain, alice);                                        // alice 50
+  chain.send(alice, bob.address, 20 * C.COIN, 0, { timestamp: tick() });
+  mineTo(chain, carol);                                        // carol 50, alice 30, bob 20
+  const rich = chain.richList();
+  // Spread into this realm's arrays — vm-sandbox arrays fail cross-realm deepStrictEqual.
+  assert.deepEqual([...rich.map((r) => r.address)], [carol.address, alice.address, bob.address]);
+  assert.deepEqual([...rich.map((r) => r.amount)], [50 * C.COIN, 30 * C.COIN, 20 * C.COIN]);
+  assert.equal(chain.richList(2).length, 2, 'limit respected');
+});
 test('stats reports the shape the UI renders', () => {
   const chain = newChain();
   mineTo(chain, alice);

@@ -75,13 +75,24 @@ jobs:
           mkdir -p _site/ripple
           cp -r ripple/. _site/ripple/ 2>/dev/null || true
 
-          # Velvet (concierge/) — the subscription VIP concierge PWA (app,
-          # engine, cloud config, SW, icons) — plus the other standalone PWAs
-          # the landing page links to, which were missing from this allowlist
-          # and 404ed: Cusp, Omni, Imposter, Lingua, BallrzCoin.
-          for app in concierge cusp omni imposter lingua coin; do
-            mkdir -p "_site/$app"
-            cp -r "$app/." "_site/$app/" 2>/dev/null || true
+          # Publish EVERY top-level folder that ships an index.html, so a new
+          # app can never 404 again. (This used to be a hand-maintained list
+          # that repeatedly went stale — Cusp, Omni, Imposter, Lingua and
+          # BallrzCoin each 404ed on launch.) Skipped: dirs that need a build
+          # or are assembled specially elsewhere in this workflow
+          # (apexvip-web = Vite source; rentmatch → /apex/; llm-from-scratch
+          # → /llm/; fixr = static index only, below), plus anything already
+          # placed into _site (e.g. ripple, copied above).
+          for d in */ ; do
+            d="${d%/}"
+            case "$d" in
+              _site|node_modules|apexvip-web|rentmatch|llm-from-scratch|fixr|concepts|functions|scripts|docs|splashes|trading-app) continue ;;
+            esac
+            if [ ! -f "$d/index.html" ]; then continue; fi
+            if [ -d "_site/$d" ]; then continue; fi
+            mkdir -p "_site/$d"
+            cp -r "$d/." "_site/$d/"
+            echo "auto-published /$d"
           done
 
           # Fixr — luxury ground-transport + concierge prototype (static demo).

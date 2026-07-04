@@ -12,17 +12,34 @@
  * messages, but it cannot forge money — the same trust model as a Bitcoin
  * node behind someone else's network.
  *
+ * It also serves the coin app itself, so deploying this one file to Render/
+ * Railway (see DEPLOY.md) gives you a URL that IS a shared BallrzCoin network:
+ * anyone who opens it gets the app, and the app auto-detects that its own
+ * origin is a relay and connects — zero configuration.
+ *
  * Zero dependencies. Run:            node coin/server.mjs   (PORT=8087)
- * Then point nodes at it:            coin/config.js → relayUrl
  * Deploy anywhere Node runs (Render, Railway, a Raspberry Pi). Use HTTPS in
  * production — a page served over https:// may not call an http:// relay.
  *
  * API (JSON, CORS open):
- *   GET  /            → { ok, name, seq, held }         health/status
+ *   GET  /status      → { ok, name, seq, held }         health
  *   GET  /msgs?since=N→ { seq, msgs: [...] }            messages after N
  *   POST /msg         → { ok, seq }                     body: {type, from, ...}
+ *   GET  /            → the BallrzCoin app (plus its scripts)
  */
 import { createServer } from 'node:http';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const DIR = dirname(fileURLToPath(import.meta.url));
+const STATIC = {
+  '/': ['index.html', 'text/html; charset=utf-8'],
+  '/index.html': ['index.html', 'text/html; charset=utf-8'],
+  '/engine.js': ['engine.js', 'text/javascript; charset=utf-8'],
+  '/config.js': ['config.js', 'text/javascript; charset=utf-8'],
+  '/qr.js': ['qr.js', 'text/javascript; charset=utf-8'],
+};
 
 const PORT = Number(process.env.PORT || 8087);
 const MAX_HELD = 200;            // ring buffer of recent messages
@@ -53,8 +70,19 @@ const server = createServer((req, res) => {
   if (req.method === 'OPTIONS') return json(res, 204, {});
   const url = new URL(req.url, 'http://relay');
 
-  if (req.method === 'GET' && url.pathname === '/') {
+  if (req.method === 'GET' && url.pathname === '/status') {
     return json(res, 200, { ok: true, name: 'ballrzcoin-relay', seq, held: ring.length });
+  }
+
+  if (req.method === 'GET' && STATIC[url.pathname]) {
+    try {
+      const [file, type] = STATIC[url.pathname];
+      const body = readFileSync(join(DIR, file));
+      res.writeHead(200, { 'content-type': type, 'cache-control': 'no-cache' });
+      return res.end(body);
+    } catch {
+      return json(res, 404, { ok: false, error: 'app file missing' });
+    }
   }
 
   if (req.method === 'GET' && url.pathname === '/msgs') {
@@ -86,6 +114,6 @@ const server = createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`🪙 BallrzCoin relay listening on http://localhost:${PORT}`);
-  console.log('   Point coin/config.js relayUrl at this address to join nodes across devices.');
+  console.log(`🪙 BallrzCoin node+relay listening on http://localhost:${PORT}`);
+  console.log('   Open that URL — it serves the coin app already connected to this relay.');
 });

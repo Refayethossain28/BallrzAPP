@@ -39,18 +39,25 @@ currency (spoiler: mostly things that aren't software).
 ## Run a real multi-device network
 
 Tabs in one browser sync automatically. To connect nodes on **different
-devices**, run the zero-dependency relay and point nodes at it:
+devices**, run the zero-dependency relay — which also serves the app itself:
 
 ```sh
-node coin/server.mjs                  # starts the relay on :8087
+node coin/server.mjs                  # open http://localhost:8087 → the app, pre-connected
 ```
 
-then set `relayUrl` in [`config.js`](config.js) (e.g. `'http://localhost:8087'`,
-or an `https://` URL if you deploy `server.mjs` to Render/Railway). The relay
-is deliberately dumb — it forwards messages but can't forge a block or touch a
-key; every node re-validates everything and adopts only the heaviest valid
-chain. A page served over `https://` (like GitHub Pages) can only call an
-`https://` relay.
+Deploy that one file to Render's free tier and you have a shareable network
+URL — the 5-minute walkthrough is in [`DEPLOY.md`](DEPLOY.md). Nodes can also
+join a relay three other ways: an invite link (`?relay=…`, shown in the app's
+Network panel), pasting the URL into the Network panel, or `relayUrl` in
+[`config.js`](config.js). The relay is deliberately dumb — it forwards messages
+but can't forge a block or touch a key; every node re-validates everything and
+adopts only the heaviest valid chain. A page served over `https://` (like
+GitHub Pages) can only call an `https://` relay.
+
+Wallet cards have a **QR button**: it encodes a `?pay=<address>` link, so a
+friend scanning it opens the app with your wallet prefilled as the recipient.
+The page also shows a live **leaderboard** (top holders by share of supply) and
+a **halving countdown** toward the 21 BLZ issuance limit.
 
 ## Run the tests
 
