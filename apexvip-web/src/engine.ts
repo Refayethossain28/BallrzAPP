@@ -22,3 +22,6 @@ export { prepareChauffeurMessage } from './trips/chat.ts';
 export { normalizeFlightNumber, isValidFlightNumber, demoFlightStatus } from './trips/flight.ts';
 export { membershipState, keepPercent, trialEndDate, normalizeCommissionPct } from './membership/membership.ts';
 export { escapeHtml } from './security/escape.ts';
+export { buildBookingPayload, SERVICE_LABELS } from './payments/booking.ts';
+export { summarizeEarnings, dailyEarnings, owedBalance } from './driver/earnings.ts';
+export { errorMessage, errorFingerprint, formatErrorReport, shouldReport } from './telemetry/errors.ts';

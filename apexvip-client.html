@@ -730,7 +730,7 @@ const PRICES = {
 if (FIREBASE_ENABLED) {
   db.collection('settings').doc('pricing').get().then(d => {
     if (d.exists) Object.assign(PRICES, d.data());
-  }).catch(() => {});
+  }).catch(reportError);
 }
 
 // ── Business model (commission vs subscription) ────────────────────────────
@@ -886,17 +886,22 @@ function haptic(style) {
 // ── Reliability: lightweight crash reporting ──────────────────────────────
 // Keeps the last 50 errors on-device and (when available) writes to a Firestore
 // `errors` collection. Swap in Sentry/Crashlytics later via the same entry point.
-function reportError(kind, detail){
+const _errSeen = new Set();
+function reportError(err, screen){
   try{
-    const e={ kind, detail:String(detail||'').slice(0,800), screen:(typeof state!=='undefined'?state.screen:'') , ts:Date.now(), ua:(navigator.userAgent||'').slice(0,140) };
-    const arr=JSON.parse(localStorage.getItem('apexvip_errors')||'[]'); arr.push(e);
+    // Message/stack/fingerprint + session dedupe come from the shared engine
+    // (telemetry/errors.ts); accepts any thrown value or a plain string.
+    const r = ApexEngine.formatErrorReport(err, { app:'client', screen:(typeof screen==='string'&&screen)||(typeof state!=='undefined'?state.screen:'')||'' });
+    console.warn('[apexvip]', r.message);
+    const arr=JSON.parse(localStorage.getItem('apexvip_errors')||'[]'); arr.push({...r, ts:Date.now(), ua:(navigator.userAgent||'').slice(0,140)});
     if(arr.length>50) arr.splice(0,arr.length-50);
     localStorage.setItem('apexvip_errors',JSON.stringify(arr));
-    if(typeof FIREBASE_ENABLED!=='undefined' && FIREBASE_ENABLED && db) db.collection('errors').add(e).catch(()=>{});
+    if(!ApexEngine.shouldReport(r.fingerprint,_errSeen)) return;   // dedupe + hard cap: no error loops
+    if(typeof FIREBASE_ENABLED!=='undefined' && FIREBASE_ENABLED && db) db.collection('errors').add({...r, at:firebase.firestore.FieldValue.serverTimestamp()}).catch(function(){});
   }catch(_){ /* never let the reporter throw */ }
 }
-window.addEventListener('error', ev=>reportError('error', (ev.error&&ev.error.stack)||ev.message));
-window.addEventListener('unhandledrejection', ev=>reportError('promise', (ev.reason&&ev.reason.stack)||ev.reason));
+window.addEventListener('error', ev=>reportError(ev.error||ev.message,'window'));
+window.addEventListener('unhandledrejection', ev=>reportError(ev.reason,'promise'));
 
 // ── Accessibility: make every onclick element keyboard-operable ───────────
 // The app renders many clickable <div>s; after each render, give them button
@@ -938,7 +943,7 @@ function track(event, props){
     if(arr.length>2000) arr.splice(0,arr.length-2000);
     localStorage.setItem(key,JSON.stringify(arr));
     // Off-device analytics only with explicit consent (UK GDPR / PECR)
-    if(FIREBASE_ENABLED && localStorage.getItem('apex_consent')==='all') db.collection('analytics').add(ev).catch(()=>{});
+    if(FIREBASE_ENABLED && localStorage.getItem('apex_consent')==='all') db.collection('analytics').add(ev).catch(reportError);
   }catch(e){}
 }
 
@@ -1666,7 +1671,7 @@ function sendQuickMsg(idx) {
   _appendChatMsg(msg);
   if (FIREBASE_ENABLED && fns && state._confirmedRef) {
     const fn = fns.httpsCallable('sendChauffeurMessage');
-    fn({ bookingRef: state._confirmedRef, message: msg, fromRole: 'client' }).catch(() => {});
+    fn({ bookingRef: state._confirmedRef, message: msg, fromRole: 'client' }).catch(reportError);
   }
 }
 function sendCustomMsg() {
@@ -1677,7 +1682,7 @@ function sendCustomMsg() {
   _appendChatMsg(msg);
   if (FIREBASE_ENABLED && fns && state._confirmedRef) {
     const fn = fns.httpsCallable('sendChauffeurMessage');
-    fn({ bookingRef: state._confirmedRef, message: msg, fromRole: 'client' }).catch(() => {});
+    fn({ bookingRef: state._confirmedRef, message: msg, fromRole: 'client' }).catch(reportError);
   }
 }
 function _appendChatMsg(msg) {
@@ -1698,7 +1703,7 @@ function submitRating(stars) {
   if (FIREBASE_ENABLED && fns && ref) {
     const fn = fns.httpsCallable('submitTripRating');
     const comment = document.getElementById('rating-comment')?.value || '';
-    fn({ bookingRef: ref, rating: stars, comment, driverId: state.selectedTrip?.driverId || null }).catch(() => {});
+    fn({ bookingRef: ref, rating: stars, comment, driverId: state.selectedTrip?.driverId || null }).catch(reportError);
   }
   track('trip_rated', { stars, src: 'client' });
   haptic('success');
@@ -1765,7 +1770,7 @@ async function loadReferralCode() {
 }
 function copyReferralCode() {
   if (!state._referralCode) { loadReferralCode(); return; }
-  navigator.clipboard?.writeText(state._referralCode).catch(() => {});
+  navigator.clipboard?.writeText(state._referralCode).catch(reportError);
   const el = document.querySelector('#referral-code-display button');
   if (el) { el.textContent = 'COPIED!'; setTimeout(() => { el.textContent = 'COPY'; }, 2000); }
   track('referral_code_copied', { src: 'client' });
@@ -1829,8 +1834,8 @@ function deleteAddress(id) {
 function shareReceipt() {
   const t = state._lastTrip || {};
   const text = `ApexVIP Receipt\nRef: ${t.ref||state._confirmedRef||''}\nFrom: ${t.pickup||''} → ${t.dropoff||''}\nTotal: £${t.price||''}`;
-  if (navigator.share) { navigator.share({title:'ApexVIP Receipt',text}).catch(()=>{}); }
-  else { navigator.clipboard?.writeText(text).catch(()=>{}); }
+  if (navigator.share) { navigator.share({title:'ApexVIP Receipt',text}).catch(reportError); }
+  else { navigator.clipboard?.writeText(text).catch(reportError); }
 }
 
 // ── Trip Sharing ──────────────────────────────────────────────────────────
@@ -1845,9 +1850,9 @@ function shareTrackLink() {
     state._trackDriverId || ''
   );
   if(navigator.share){
-    navigator.share({title:'Track my ApexVIP ride',text:`I'm on my way — track my ride in real time`,url}).catch(()=>{});
+    navigator.share({title:'Track my ApexVIP ride',text:`I'm on my way — track my ride in real time`,url}).catch(reportError);
   } else {
-    navigator.clipboard?.writeText(url).catch(()=>{});
+    navigator.clipboard?.writeText(url).catch(reportError);
     showToast('Tracking link copied', 'success');
   }
 }
@@ -1859,9 +1864,9 @@ function shareTrip() {
   const url = buildTrackUrl(ref, dn, dp, did);
   track('trip_shared', { ref, src: 'client' });
   if (navigator.share) {
-    navigator.share({ title: 'Track my ApexVIP ride', text: `I'm in a black Mercedes — track me live`, url }).catch(() => {});
+    navigator.share({ title: 'Track my ApexVIP ride', text: `I'm in a black Mercedes — track me live`, url }).catch(reportError);
   } else {
-    navigator.clipboard?.writeText(url).catch(() => {});
+    navigator.clipboard?.writeText(url).catch(reportError);
     showToast('Ride link copied to clipboard', 'success');
   }
 }
@@ -1918,7 +1923,7 @@ function clientSendMsg() {
     fns.httpsCallable('sendChauffeurMessage')({
       bookingRef: state._activeBooking?.ref || state._chatDocId,
       message: msg, fromRole: 'client'
-    }).catch(() => {});
+    }).catch(reportError);
   }
   // Optimistic local append
   state._chatMessages.push({message: msg, fromRole: 'client', timestamp: {toMillis:()=>Date.now()}});
@@ -1949,11 +1954,11 @@ async function cancelBooking(bookingId, docId) {
       cancelledAt: firebase.firestore.FieldValue.serverTimestamp(),
       cancelReason: reason,
       cancelledBy: 'client'
-    }).catch(() => {});
+    }).catch(reportError);
     // Also cancel any pending/accepted jobs linked to this booking
     db.collection('jobs').where('bookingRef','==',bookingId).limit(1).get()
-      .then(snap => { if(!snap.empty) snap.docs[0].ref.update({status:'cancelled'}).catch(()=>{}); })
-      .catch(() => {});
+      .then(snap => { if(!snap.empty) snap.docs[0].ref.update({status:'cancelled'}).catch(reportError); })
+      .catch(reportError);
   }
   // Update local TRIPS array
   const t = TRIPS.find(x => x.id === bookingId);
@@ -2027,7 +2032,7 @@ function joinWaitlist() {
   const em = document.getElementById('wl-email');
   if (!em || !em.value.trim()) { alert('Please enter your email.'); return; }
   if (FIREBASE_ENABLED) {
-    db.collection('waitlist').add({ email: em.value.trim(), ts: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {});
+    db.collection('waitlist').add({ email: em.value.trim(), ts: firebase.firestore.FieldValue.serverTimestamp() }).catch(reportError);
   }
   state._waitlistJoined = true;
   render();
@@ -2036,7 +2041,7 @@ function joinWaitlist() {
 function savePrefs() {
   localStorage.setItem('apex_prefs', JSON.stringify(state.prefs));
   if (FIREBASE_ENABLED && state.user?.uid) {
-    db.collection('users').doc(state.user.uid).set({ prefs: state.prefs }, { merge: true }).catch(() => {});
+    db.collection('users').doc(state.user.uid).set({ prefs: state.prefs }, { merge: true }).catch(reportError);
   }
   track('prefs_saved', { src: 'client' });
 }
@@ -2049,7 +2054,7 @@ function registerCityInterest(city) {
   state._cityInterest[city] = true;
   localStorage.setItem('apex_city_interest', JSON.stringify(state._cityInterest));
   if (FIREBASE_ENABLED) {
-    db.collection('city_interest').add({ city, email: state.user?.email || '', ts: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {});
+    db.collection('city_interest').add({ city, email: state.user?.email || '', ts: firebase.firestore.FieldValue.serverTimestamp() }).catch(reportError);
   }
   track('city_interest', { city, src: 'client' });
   render();
@@ -2164,7 +2169,7 @@ function generateMemberNumber() {
   state.memberNumber = String(1000 + (Math.floor(Math.random() * 600) + Math.floor(Date.now() % 400)) % 1000);
   localStorage.setItem('apex_member_no', state.memberNumber);
   if (FIREBASE_ENABLED && auth?.currentUser) {
-    db.collection('users').doc(auth.currentUser.uid).set({ memberNumber: state.memberNumber }, { merge: true }).catch(() => {});
+    db.collection('users').doc(auth.currentUser.uid).set({ memberNumber: state.memberNumber }, { merge: true }).catch(reportError);
   }
 }
 
@@ -4838,7 +4843,7 @@ profile: () => {
       <div style="font-size:20px;font-weight:700;margin-bottom:4px">${fav}</div>
       <div style="font-size:13px;color:var(--fg-3)">Your most visited destination</div>
     </div>
-    <button class="btn btn-white" onclick="if(navigator.share){navigator.share({title:'My ApexVIP ${year}',text:'I completed ${journeys} journeys with ApexVIP this year'})}else{navigator.clipboard?.writeText('I completed ${journeys} journeys with ApexVIP this year').catch(()=>{});}">Share my year ✦</button>
+    <button class="btn btn-white" onclick="if(navigator.share){navigator.share({title:'My ApexVIP ${year}',text:'I completed ${journeys} journeys with ApexVIP this year'})}else{navigator.clipboard?.writeText('I completed ${journeys} journeys with ApexVIP this year').catch(reportError);}">Share my year ✦</button>
   </div>
 </div>`;
 },
@@ -4860,7 +4865,7 @@ profile: () => {
     <div style="background:linear-gradient(135deg,rgba(200,169,126,.12),rgba(200,169,126,.04));border:1.5px solid var(--gold);border-radius:22px;padding:28px;text-align:center;margin-bottom:20px">
       <div style="font-size:11px;letter-spacing:3px;color:var(--fg-4);margin-bottom:10px">GIFT CODE</div>
       <div style="font-size:28px;font-weight:800;letter-spacing:5px;color:var(--gold);margin-bottom:16px">${code}</div>
-      <button onclick="navigator.clipboard?.writeText('${code}').catch(()=>{});this.textContent='Copied!';setTimeout(()=>this.textContent='Copy code',2000)" style="background:rgba(200,169,126,.15);border:1px solid rgba(200,169,126,.3);border-radius:10px;padding:9px 20px;font-size:13px;font-weight:700;color:var(--gold);cursor:pointer">Copy code</button>
+      <button onclick="navigator.clipboard?.writeText('${code}').catch(reportError);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy code',2000)" style="background:rgba(200,169,126,.15);border:1px solid rgba(200,169,126,.3);border-radius:10px;padding:9px 20px;font-size:13px;font-weight:700;color:var(--gold);cursor:pointer">Copy code</button>
     </div>
     <button class="btn btn-glass" onclick="if(navigator.share){navigator.share({title:'An ApexVIP gift for you',text:'Use code ${code} for a complimentary ApexVIP journey.',url:'https://apexvip.web.app/apexvip-client.html'})}else{navigator.clipboard?.writeText('Use code ${code} for a complimentary ApexVIP journey.');}">Share this gift →</button>
     ` : `
@@ -5344,7 +5349,7 @@ async function socialSignIn(which){
         await ref.set({ name:u.displayName||'', email:u.email||'', phone:u.phoneNumber||'',
           role:'client', tier:'standard', bookings:0, spent:0,
           joined:new Date().toLocaleDateString('en-GB',{month:'short',year:'numeric'}),
-          createdAt:firebase.firestore.FieldValue.serverTimestamp() }, {merge:true}).catch(()=>{});
+          createdAt:firebase.firestore.FieldValue.serverTimestamp() }, {merge:true}).catch(reportError);
       }
     }
     track('user_login',{method:which,src:'client'}); haptic('success');
@@ -5363,7 +5368,7 @@ async function doRegister(){
   try{
     const cred=await auth.createUserWithEmailAndPassword(state._regEmail,pw);
     await cred.user.updateProfile({displayName:state._regName});
-    cred.user.sendEmailVerification().catch(()=>{}); // verify email (non-blocking)
+    cred.user.sendEmailVerification().catch(reportError); // verify email (non-blocking)
     try{
       await db.collection('users').doc(cred.user.uid).set({
         name:state._regName,email:state._regEmail,phone:state._regPhone||'',
@@ -5587,7 +5592,7 @@ async function runSquarePayment(){
         await db.collection('pending_payments').add({
           sourceId, verificationToken, idempotencyKey, amount:total, currency:'GBP', bookingRef:ref, status:'pending',
           createdAt:firebase.firestore.FieldValue.serverTimestamp()
-        }).catch(()=>{});
+        }).catch(reportError);
         track('payment_token_stored',{ref,total,src:'client'});
       }
     } else {
@@ -5611,30 +5616,23 @@ async function confirmBooking(overrideRef){
   const svcLabel={airport:'Airport Transfer',hourly:'By the Hour',day:'By the Day'}[state.booking.serviceType]||'Airport Transfer';
   if(FIREBASE_ENABLED&&auth.currentUser){
     try{
+      // Payload assembly is shared + unit-tested (payments/booking.ts).
       const _bookingDoc = await db.collection('bookings').add({
-        ref,clientId:auth.currentUser.uid,clientName:state.user?.name||'',
-        clientEmail:auth.currentUser.email||'',
-        serviceType:state.booking.serviceType||'airport',serviceLabel:svcLabel,
-        pickup:state.booking.pickup||'',dropoff:state.booking.dropoff||'',
-        airport:state.booking.airport||'',flight:state.booking.flight||'',
-        date:state.booking.date||'',time:state.booking.time||'',
-        vehicle:state.booking.vehicle||'Mercedes S-Class',vehicleId:state.booking.vehicleId||'',
-        price:total,baseFare:base,discount:disc,vat,
-        promoApplied:state._promoApplied||false,status:'confirmed',
-        squarePaymentId:state._squarePaymentId||null,
-        paymentStatus:state._squarePaymentId?'paid':'pending',
-        driverName:'',driverRating:null,driverPlate:'',
-        location:'london',
-        concierge:state.booking.concierge||null,
-        paMode: state.paMode || false,
-        paPassenger: state.paMode ? state.paPassenger : null,
-        createdAt:firebase.firestore.FieldValue.serverTimestamp()
+        ...ApexEngine.buildBookingPayload({
+          ref, clientId: auth.currentUser.uid,
+          clientName: state.user?.name || '', clientEmail: auth.currentUser.email || '',
+          booking: state.booking,
+          fare: { total, base, discount: disc, vat },
+          promoApplied: state._promoApplied, squarePaymentId: state._squarePaymentId,
+          paMode: state.paMode, paPassenger: state.paPassenger,
+        }),
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
       // open_jobs broadcast is handled exclusively by the onBookingCreated Cloud Function
       // to avoid duplicates. The function checks dispatch mode before broadcasting.
       state._chatDocId = _bookingDoc.id;
       state.booking.id = _bookingDoc.id;
-    }catch(err){console.warn('Booking save:',err.message);}
+    }catch(err){reportError(err,'confirm-booking');}
   }
   state._confirmedRef=ref;state._promoApplied=false;state._squarePaymentId=null;
   pushBookingHistory();
@@ -5820,11 +5818,11 @@ if(FIREBASE_ENABLED){
                 if(token&&auth.currentUser){
                   db.collection('fcm_tokens').doc(auth.currentUser.uid).set({
                     token,updatedAt:firebase.firestore.FieldValue.serverTimestamp()
-                  }).catch(()=>{});
+                  }).catch(reportError);
                 }
-              }).catch(()=>{});
+              }).catch(reportError);
             }catch(e){}
-          }).catch(()=>{});
+          }).catch(reportError);
       }
     }else{
       state.user=null;
@@ -5882,7 +5880,7 @@ function initTrackScreen(){
     };
     // May need anonymous auth for non-logged-in viewers
     if(auth.currentUser){trackFn();}
-    else{auth.signInAnonymously().then(trackFn).catch(()=>{});}
+    else{auth.signInAnonymously().then(trackFn).catch(reportError);}
   } else {
     // Simulation
     const stepLat=(tLat-dLat)/180, stepLng=(tLng-dLng)/180;
@@ -6050,7 +6048,7 @@ setTimeout(() => {
   // FCM token registration later reuses this same registration (idempotent).
   if('serviceWorker' in navigator){
     window.addEventListener('load', ()=>{
-      navigator.serviceWorker.register('firebase-messaging-sw.js').catch(()=>{});
+      navigator.serviceWorker.register('firebase-messaging-sw.js').catch(reportError);
     });
   }
 })();

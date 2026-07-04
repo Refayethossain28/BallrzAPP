@@ -284,7 +284,7 @@ function track(event, props){
     arr.push(ev);
     if(arr.length>2000) arr.splice(0,arr.length-2000);
     localStorage.setItem(key,JSON.stringify(arr));
-    if(FIREBASE_ENABLED) db.collection('analytics').add(ev).catch(()=>{});
+    if(FIREBASE_ENABLED) db.collection('analytics').add(ev).catch(reportError);
   }catch(e){}
 }
 
@@ -298,7 +298,7 @@ let VREQS=[],VMEMBERS=[],CLOUD_EVENTS=null;
 function setDispatchMode(mode){
   S.dispatchMode=mode;
   localStorage.setItem('apexvip_dispatch_mode',mode);
-  if(FIREBASE_ENABLED) db.collection('settings').doc('dispatch').set({mode,updatedAt:firebase.firestore.FieldValue.serverTimestamp()}).catch(()=>{});
+  if(FIREBASE_ENABLED) db.collection('settings').doc('dispatch').set({mode,updatedAt:firebase.firestore.FieldValue.serverTimestamp()}).catch(reportError);
   render();
 }
 
@@ -464,6 +464,17 @@ function vcReply(docId){
     updatedAt:now,
   }).then(()=>{track('concierge_desk_reply',{category:r.category,src:'admin'});showToast('Sent to the member');})
     .catch(e=>showToast('Send failed: '+e.message));
+}
+
+// ── Error telemetry — see telemetry/errors.ts in the shared engine ─────────
+const _errSeen = new Set();
+function reportError(e, screen) {
+  try {
+    const r = ApexEngine.formatErrorReport(e, { app: 'admin', screen: screen || S.screen || '' });
+    console.warn('[apexvip]', r.message);
+    if (!ApexEngine.shouldReport(r.fingerprint, _errSeen)) return;
+    if (FIREBASE_ENABLED) db.collection('errors').add({ ...r, at: firebase.firestore.FieldValue.serverTimestamp() }).catch(function(){});
+  } catch (_) { /* never throw from the reporter */ }
 }
 
 // Escape user/driver-controlled strings before they enter innerHTML templates.
@@ -1345,7 +1356,7 @@ waitlist: () => {
       <div style="font-size:14px;font-weight:600;margin-bottom:14px">Generate Invite Code</div>
       <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
         <div style="flex:1;min-width:200px"><label style="font-size:11px;color:var(--fg-subtle);letter-spacing:.5px;display:block;margin-bottom:5px">EMAIL (OPTIONAL)</label><input id="inv-email" placeholder="recipient@example.com" style="width:100%"/></div>
-        <button onclick="const c='APX'+Math.random().toString(36).slice(2,5).toUpperCase()+Math.floor(10+Math.random()*90);if(FIREBASE_ENABLED){db.collection('invites').doc(c).set({email:document.getElementById('inv-email')?.value||'',created:firebase.firestore.FieldValue.serverTimestamp(),used:false}).catch(()=>{})}alert('Invite code: '+c+' — send this to the recipient.');" class="btn btn-gold" style="white-space:nowrap;flex-shrink:0">Generate Code</button>
+        <button onclick="const c='APX'+Math.random().toString(36).slice(2,5).toUpperCase()+Math.floor(10+Math.random()*90);if(FIREBASE_ENABLED){db.collection('invites').doc(c).set({email:document.getElementById('inv-email')?.value||'',created:firebase.firestore.FieldValue.serverTimestamp(),used:false}).catch(reportError)}alert('Invite code: '+c+' — send this to the recipient.');" class="btn btn-gold" style="white-space:nowrap;flex-shrink:0">Generate Code</button>
       </div>
     </div>
   </div>`;
@@ -1561,8 +1572,8 @@ function adminCancelBooking(docId,id){
   if(bk)bk.status='cancelled';
   render();
   if(FIREBASE_ENABLED&&docId){
-    db.collection('bookings').doc(docId).update({status:'cancelled',cancelledAt:firebase.firestore.FieldValue.serverTimestamp()}).catch(()=>{});
-    db.collection('open_jobs').where('bookingDocId','==',docId).get().then(s=>s.docs.forEach(d=>d.ref.update({status:'cancelled'}).catch(()=>{}))).catch(()=>{});
+    db.collection('bookings').doc(docId).update({status:'cancelled',cancelledAt:firebase.firestore.FieldValue.serverTimestamp()}).catch(reportError);
+    db.collection('open_jobs').where('bookingDocId','==',docId).get().then(s=>s.docs.forEach(d=>d.ref.update({status:'cancelled'}).catch(reportError))).catch(reportError);
   }
 }
 
@@ -1832,7 +1843,7 @@ async function createCorporate(){
   if(!S._corps)S._corps=[];
   S._corps.unshift(newCorp);
   if(FIREBASE_ENABLED){
-    db.collection('corporates').add({...newCorp,createdAt:firebase.firestore.FieldValue.serverTimestamp()}).catch(()=>{});
+    db.collection('corporates').add({...newCorp,createdAt:firebase.firestore.FieldValue.serverTimestamp()}).catch(reportError);
   }
   go('corporate');
 }
@@ -1861,8 +1872,8 @@ function broadcastDispatch(){
       pay:Math.round(parseInt((booking.price||'0').replace(/[^0-9]/g,''))*0.8),
       status:'open',driverId:'',
       createdAt:firebase.firestore.FieldValue.serverTimestamp()
-    }).catch(()=>{});
-    db.collection('bookings').doc(booking.docId).update({status:'offered'}).catch(()=>{});
+    }).catch(reportError);
+    db.collection('bookings').doc(booking.docId).update({status:'offered'}).catch(reportError);
     logAudit('dispatch_broadcast', booking.ref||booking.id, (booking.pickup||'')+' · driver pay £'+Math.round(parseInt((booking.price||'0').replace(/[^0-9]/g,''))*0.8));
   }
   S._dispatchOpen=false;
@@ -1895,14 +1906,14 @@ function confirmDispatch(driverIdOrName){
   if(FIREBASE_ENABLED&&booking?.docId){
     // Manual assignment supersedes any live broadcast offer
     db.collection('open_jobs').where('bookingDocId','==',booking.docId).where('status','==','open').get()
-      .then(snap=>snap.docs.forEach(d=>d.ref.update({status:'cancelled'}).catch(()=>{}))).catch(()=>{});
+      .then(snap=>snap.docs.forEach(d=>d.ref.update({status:'cancelled'}).catch(reportError))).catch(reportError);
     db.collection('bookings').doc(booking.docId).update({
       driverId:driver.uid||driver.id||driver.name,
       driverName:driver.name,
       driverPlate:driver.reg||driver.plate||'',
       status:'accepted',
       assignedAt:firebase.firestore.FieldValue.serverTimestamp()
-    }).catch(()=>{});
+    }).catch(reportError);
     logAudit('dispatch_assign', booking.ref||booking.id, 'to '+driver.name);
     if(driver.uid){
       db.collection('jobs').add({
@@ -1919,7 +1930,7 @@ function confirmDispatch(driverIdOrName){
         pay:Math.round(parseInt((booking.price||'0').replace(/[^0-9]/g,''))*0.8),
         status:'pending',
         createdAt:firebase.firestore.FieldValue.serverTimestamp()
-      }).catch(()=>{});
+      }).catch(reportError);
     }
   }
   S._dispatchOpen=false;
@@ -2014,7 +2025,7 @@ function setBusinessModel(model){
   S._business={...(S._business||{commissionPct:20,clientMonthlyFee:49,driverMonthlyFee:99,trialDays:30}),model};
   if(FIREBASE_ENABLED){
     db.collection('settings').doc('business').set({model,updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true})
-      .then(()=>logAudit('business_model_update','settings/business','switched to '+model)).catch(()=>{});
+      .then(()=>logAudit('business_model_update','settings/business','switched to '+model)).catch(reportError);
   }
   render();
 }
@@ -2115,10 +2126,10 @@ function loadPayouts() {
 }
 
 function approvePayoutReq(id) {
-  db.collection('payout_requests').doc(id).update({status:'approved',approvedAt:firebase.firestore.FieldValue.serverTimestamp()}).then(()=>{logAudit('payout_approve',id,'');loadPayouts();}).catch(()=>{});
+  db.collection('payout_requests').doc(id).update({status:'approved',approvedAt:firebase.firestore.FieldValue.serverTimestamp()}).then(()=>{logAudit('payout_approve',id,'');loadPayouts();}).catch(reportError);
 }
 function rejectPayoutReq(id) {
-  db.collection('payout_requests').doc(id).update({status:'rejected',rejectedAt:firebase.firestore.FieldValue.serverTimestamp()}).then(()=>{logAudit('payout_reject',id,'');loadPayouts();}).catch(()=>{});
+  db.collection('payout_requests').doc(id).update({status:'rejected',rejectedAt:firebase.firestore.FieldValue.serverTimestamp()}).then(()=>{logAudit('payout_reject',id,'');loadPayouts();}).catch(reportError);
 }
 
 async function loadPricingAdmin(){
