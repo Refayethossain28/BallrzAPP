@@ -746,7 +746,7 @@ if (FIREBASE_ENABLED) {
 
 // Ensure a subscriptions/{uid} doc exists (starts the free trial on first sight).
 async function ensureSubscription() {
-  if (!FIREBASE_ENABLED || !auth.currentUser || BUSINESS.model !== 'subscription') return;
+  if (!FIREBASE_ENABLED || !auth.currentUser || BUSINESS.model !== 'subscription' || typeof ApexEngine==='undefined') return;
   try {
     const ref = db.collection('subscriptions').doc(auth.currentUser.uid);
     const doc = await ref.get();
@@ -760,7 +760,7 @@ async function ensureSubscription() {
 
 // Current subscription state — shared, unit-tested state machine
 // (apexvip-web/src/membership/membership.ts); the driver app uses the same one.
-function subState() { return ApexEngine.membershipState(state._sub, BUSINESS); }
+function subState() { return (typeof ApexEngine!=='undefined') ? ApexEngine.membershipState(state._sub, BUSINESS) : { mode:'off' }; }
 
 // Global membership sheet — rendered on every screen so the booking gate can
 // summon it from anywhere.
@@ -886,17 +886,27 @@ function haptic(style) {
 // ── Reliability: lightweight crash reporting ──────────────────────────────
 // Keeps the last 50 errors on-device and (when available) writes to a Firestore
 // `errors` collection. Swap in Sentry/Crashlytics later via the same entry point.
+// If the shared engine failed to load (deploy race, CDN blip), retry once —
+// and everything that uses it degrades gracefully until it arrives.
+if (typeof ApexEngine === 'undefined') {
+  (function(){ const sc=document.createElement('script'); sc.src='apexvip-engine.js?retry='+Date.now(); sc.onload=()=>{ try{render();}catch(_){}} ; document.head.appendChild(sc); })();
+}
+
 const _errSeen = new Set();
 function reportError(err, screen){
   try{
     // Message/stack/fingerprint + session dedupe come from the shared engine
     // (telemetry/errors.ts); accepts any thrown value or a plain string.
-    const r = ApexEngine.formatErrorReport(err, { app:'client', screen:(typeof screen==='string'&&screen)||(typeof state!=='undefined'?state.screen:'')||'' });
+    const scr=(typeof screen==='string'&&screen)||(typeof state!=='undefined'?state.screen:'')||'';
+    const r = (typeof ApexEngine!=='undefined')
+      ? ApexEngine.formatErrorReport(err, { app:'client', screen:scr })
+      : { message:String((err&&err.message)||err||'unknown').slice(0,500), stack:String((err&&err.stack)||'').slice(0,1500), fingerprint:String((err&&err.message)||err||'?').slice(0,60), app:'client', screen:scr };
     console.warn('[apexvip]', r.message);
     const arr=JSON.parse(localStorage.getItem('apexvip_errors')||'[]'); arr.push({...r, ts:Date.now(), ua:(navigator.userAgent||'').slice(0,140)});
     if(arr.length>50) arr.splice(0,arr.length-50);
     localStorage.setItem('apexvip_errors',JSON.stringify(arr));
-    if(!ApexEngine.shouldReport(r.fingerprint,_errSeen)) return;   // dedupe + hard cap: no error loops
+    if(_errSeen.has(r.fingerprint)||_errSeen.size>=20) return;      // dedupe + hard cap: no error loops
+    _errSeen.add(r.fingerprint);
     if(typeof FIREBASE_ENABLED!=='undefined' && FIREBASE_ENABLED && db) db.collection('errors').add({...r, at:firebase.firestore.FieldValue.serverTimestamp()}).catch(function(){});
   }catch(_){ /* never let the reporter throw */ }
 }
@@ -1408,6 +1418,7 @@ function quickSend(text) {
 // Client-side intent parser — delegates to the shared, unit-tested engine
 // (apexvip-engine.js / window.ApexEngine); page state is passed in as context.
 function _parseIntentLocal(msg) {
+  if (typeof ApexEngine==='undefined') return { intent:'chat', reply:"I'm having a connection issue — please try again in a moment." };
   return ApexEngine.parseIntentLocal(msg, {
     prev: state.booking,
     hotel: {
@@ -5612,13 +5623,26 @@ async function confirmBooking(overrideRef){
   const ref = overrideRef || state._confirmedRef || ('APX-'+(Math.floor(1000+Math.random()*9000)));
   const base=state.booking.price||185;
   // Fare math (discount + VAT-inclusive total) — shared, unit-tested engine.
-  const {discount:disc,total,vat}=ApexEngine.quoteFare(base,!!state._promoApplied);
+  // quoteFare fallback mirrors payments/pricing.ts (10% promo, 20% VAT included)
+  const {discount:disc,total,vat}=(typeof ApexEngine!=='undefined')?ApexEngine.quoteFare(base,!!state._promoApplied):(()=>{const d=state._promoApplied?Math.round(base*0.10):0;const t=base-d;return{discount:d,total:t,vat:Math.round(t/6*100)/100};})();
   const svcLabel={airport:'Airport Transfer',hourly:'By the Hour',day:'By the Day'}[state.booking.serviceType]||'Airport Transfer';
   if(FIREBASE_ENABLED&&auth.currentUser){
     try{
-      // Payload assembly is shared + unit-tested (payments/booking.ts).
+      // Payload assembly is shared + unit-tested (payments/booking.ts);
+      // inline fallback keeps booking alive if the engine script failed.
+      const _payloadFor = (typeof ApexEngine!=='undefined') ? ApexEngine.buildBookingPayload : (i)=>({
+        ref:i.ref,clientId:i.clientId,clientName:i.clientName||'',clientEmail:i.clientEmail||'',
+        serviceType:i.booking.serviceType||'airport',serviceLabel:svcLabel,
+        pickup:i.booking.pickup||'',dropoff:i.booking.dropoff||'',airport:i.booking.airport||'',
+        flight:i.booking.flight||'',date:i.booking.date||'',time:i.booking.time||'',
+        vehicle:i.booking.vehicle||'Mercedes S-Class',vehicleId:i.booking.vehicleId||'',
+        price:i.fare.total,baseFare:i.fare.base,discount:i.fare.discount,vat:i.fare.vat,
+        promoApplied:!!i.promoApplied,status:'confirmed',
+        squarePaymentId:i.squarePaymentId||null,paymentStatus:i.squarePaymentId?'paid':'pending',
+        driverName:'',driverRating:null,driverPlate:'',location:'london',
+        concierge:i.booking.concierge||null,paMode:!!i.paMode,paPassenger:i.paMode?(i.paPassenger??null):null});
       const _bookingDoc = await db.collection('bookings').add({
-        ...ApexEngine.buildBookingPayload({
+        ..._payloadFor({
           ref, clientId: auth.currentUser.uid,
           clientName: state.user?.name || '', clientEmail: auth.currentUser.email || '',
           booking: state.booking,
@@ -5979,13 +6003,15 @@ function renderNow(){
     if(state.screen==='concierge') setTimeout(sizeConciergeFrame,0);
     enhanceA11y();
   }catch(err){
-    reportError('render', (err&&err.stack)||err);
+    reportError(err,'render:'+state.screen);
     try{
+      const _detail=String((err&&err.message)||err||'').slice(0,120).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       app.innerHTML=`<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:32px;text-align:center;background:var(--bg)">
         <div style="font-size:40px">⚠️</div>
         <div style="font-family:var(--font-serif);font-size:22px;font-weight:300">Something went wrong</div>
         <div style="font-size:13px;color:var(--fg-3);max-width:280px;line-height:1.6">We hit an unexpected error. Please try again — your bookings are safe.</div>
         <button class="btn btn-gold" style="max-width:220px" onclick="location.reload()">Reload</button>
+        <div style="font-size:10px;color:var(--fg-4);max-width:300px;word-break:break-word;opacity:.6">${_detail}</div>
       </div>`;
     }catch(_){}
   }

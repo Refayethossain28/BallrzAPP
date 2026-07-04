@@ -384,12 +384,19 @@ async function driverLogin(){
 }
 
 // ── Error telemetry — see telemetry/errors.ts in the shared engine ─────────
+// If the shared engine failed to load, retry once with a cache-buster.
+if (typeof ApexEngine === 'undefined') {
+  (function(){ const sc=document.createElement('script'); sc.src='apexvip-engine.js?retry='+Date.now(); sc.onload=()=>{ try{render();}catch(_){}} ; document.head.appendChild(sc); })();
+}
 const _errSeen = new Set();
 function reportError(e, screen) {
   try {
-    const r = ApexEngine.formatErrorReport(e, { app: 'driver', screen: screen || S.screen || '' });
+    const r = (typeof ApexEngine!=='undefined')
+      ? ApexEngine.formatErrorReport(e, { app: 'driver', screen: screen || S.screen || '' })
+      : { message:String((e&&e.message)||e||'unknown').slice(0,500), stack:String((e&&e.stack)||'').slice(0,1500), fingerprint:String((e&&e.message)||e||'?').slice(0,60), app:'driver', screen:screen||S.screen||'' };
     console.warn('[apexvip]', r.message);
-    if (!ApexEngine.shouldReport(r.fingerprint, _errSeen)) return;
+    if (_errSeen.has(r.fingerprint) || _errSeen.size >= 20) return;
+    _errSeen.add(r.fingerprint);
     if (FIREBASE_ENABLED) db.collection('errors').add({ ...r, at: firebase.firestore.FieldValue.serverTimestamp() }).catch(function(){});
   } catch (_) { /* never throw from the reporter */ }
 }
@@ -657,12 +664,12 @@ function watchBusinessModel(){
   },()=>{});
 }
 async function ensureDriverSubscription(){
-  if(!FIREBASE_ENABLED||!_driverId||BUSINESS.model!=='subscription')return;
+  if(!FIREBASE_ENABLED||!_driverId||BUSINESS.model!=='subscription'||typeof ApexEngine==='undefined')return;
   try{
     const ref=db.collection('subscriptions').doc(_driverId);
     const doc=await ref.get();
     if(doc.exists){S._sub=doc.data();return;}
-    const trialEndsAt=ApexEngine.trialEndDate(BUSINESS);
+    const trialEndsAt=ApexEngine.trialEndDate(BUSINESS); // guarded above
     const sub={role:'driver',status:'trial',startedAt:firebase.firestore.FieldValue.serverTimestamp(),trialEndsAt};
     await ref.set(sub);
     S._sub={...sub,trialEndsAt};
@@ -670,7 +677,7 @@ async function ensureDriverSubscription(){
 }
 // Shared, unit-tested state machine (membership/membership.ts) — the client
 // app uses the identical implementation.
-function driverSubState(){return ApexEngine.membershipState(S._sub,BUSINESS);}
+function driverSubState(){return (typeof ApexEngine!=='undefined')?ApexEngine.membershipState(S._sub,BUSINESS):{mode:'off'};}
 // Prototype billing — production wires this to a recurring payment rail.
 async function driverSubscribe(){
   if(!FIREBASE_ENABLED||!_driverId)return;
@@ -1161,7 +1168,7 @@ home:()=>{
         ${(()=>{const ss=driverSubState();if(ss.mode==='off'||ss.mode==='active')return'';
           if(ss.mode==='trial')return`<div style="display:flex;align-items:center;gap:12px;background:rgba(200,169,126,.08);border:1px solid rgba(200,169,126,.2);border-radius:16px;padding:12px 15px;margin-bottom:14px">
             <span style="font-size:18px">✦</span>
-            <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:#C8A97E">Free trial — ${ss.daysLeft} day${ss.daysLeft===1?'':'s'} left</div><div style="font-size:11px;color:var(--fg-dim);margin-top:1px">Then £${BUSINESS.driverMonthlyFee||99}/mo · you keep ${ApexEngine.keepPercent(BUSINESS)}% of every fare</div></div>
+            <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:#C8A97E">Free trial — ${ss.daysLeft} day${ss.daysLeft===1?'':'s'} left</div><div style="font-size:11px;color:var(--fg-dim);margin-top:1px">Then £${BUSINESS.driverMonthlyFee||99}/mo · you keep ${(typeof ApexEngine!=='undefined')?ApexEngine.keepPercent(BUSINESS):80}% of every fare</div></div>
             <button onclick="driverSubscribe()" style="background:#C8A97E;border:none;border-radius:10px;color:#000;font-size:11px;font-weight:800;padding:8px 12px;cursor:pointer;font-family:inherit;flex-shrink:0">Activate</button>
           </div>`;
           return`<div style="display:flex;align-items:center;gap:12px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);border-radius:16px;padding:12px 15px;margin-bottom:14px">
@@ -1423,8 +1430,9 @@ earnings:()=>{
   const t=S.earnTab;
   // Period totals + weekly bars: shared, unit-tested (driver/earnings.ts).
   const led=S._payoutLedger||[];
-  const {total,count,rows}=ApexEngine.summarizeEarnings(led,t);
-  const {bars,labels,max:maxBar}=ApexEngine.dailyEarnings(led);
+  const _E=(typeof ApexEngine!=='undefined')?ApexEngine:null;
+  const {total,count,rows}=_E?_E.summarizeEarnings(led,t):{total:0,count:0,rows:[]};
+  const {bars,labels,max:maxBar}=_E?_E.dailyEarnings(led):{bars:[0,0,0,0,0,0,0],labels:['','','','','','','Today'],max:1};
   return`<div class="screen">
     <div class="top-bar"><div style="font-size:22px;font-weight:700">Earnings</div></div>
     <div style="display:flex;gap:8px;margin-bottom:22px">
@@ -1451,12 +1459,12 @@ earnings:()=>{
     </div>`:''}
     <div class="card">
       <div class="section-label" style="margin-bottom:14px">Payout Details</div>
-      ${(()=>{const owed=ApexEngine.owedBalance(S._payoutLedger);
+      ${(()=>{const owed=(typeof ApexEngine!=='undefined')?ApexEngine.owedBalance(S._payoutLedger):0;
         const st=S._payout&&S._payout.payoutsEnabled?'Connected — payouts active':(S._payout&&S._payout.accountId?'Onboarding in progress':'Not set up — see Profile');
         return [['Balance owed','£'+owed],['Payout account',st]].map(([l,v],i)=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:9px 0;border-bottom:${i<1?'1px solid var(--divider)':'none'}"><span style="color:var(--fg-dim)">${l}</span><span style="color:${i===0?'#C8A97E':'var(--fg)'};font-weight:${i===0?700:400}">${v}</span></div>`).join('');})()}
     </div>
     ${(()=>{const led=S._payoutLedger||[];if(!led.length)return'';
-      const owed=ApexEngine.owedBalance(led);
+      const owed=(typeof ApexEngine!=='undefined')?ApexEngine.owedBalance(led):0;
       return`<div class="card" style="margin-top:12px">
       <div class="section-label" style="margin-bottom:14px">Payout History</div>
       <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:12px;border-bottom:1px solid var(--divider);margin-bottom:6px">
