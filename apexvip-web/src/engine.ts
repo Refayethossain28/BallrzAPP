@@ -20,3 +20,5 @@ export { normalizeReferralCode, demoReferralCode, referralErrorMessage } from '.
 export { isValidRating, clampComment } from './trips/rating.ts';
 export { prepareChauffeurMessage } from './trips/chat.ts';
 export { normalizeFlightNumber, isValidFlightNumber, demoFlightStatus } from './trips/flight.ts';
+export { membershipState, keepPercent, trialEndDate, normalizeCommissionPct } from './membership/membership.ts';
+export { escapeHtml } from './security/escape.ts';

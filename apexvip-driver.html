@@ -23,6 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&display=swap" rel="stylesheet"/>
+<script src="apexvip-engine.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
@@ -383,7 +384,8 @@ async function driverLogin(){
 }
 
 // Escape client-controlled strings before they enter innerHTML templates.
-function esc(x){return String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+// Single tested implementation lives in the shared engine (security/escape.ts).
+const esc=(typeof ApexEngine!=='undefined'&&ApexEngine.escapeHtml)||(x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
 
 function mapJob(doc){
   const j={id:doc.id,...doc.data()};
@@ -649,21 +651,15 @@ async function ensureDriverSubscription(){
     const ref=db.collection('subscriptions').doc(_driverId);
     const doc=await ref.get();
     if(doc.exists){S._sub=doc.data();return;}
-    const trialEndsAt=new Date(Date.now()+(BUSINESS.trialDays||30)*86400000);
+    const trialEndsAt=ApexEngine.trialEndDate(BUSINESS);
     const sub={role:'driver',status:'trial',startedAt:firebase.firestore.FieldValue.serverTimestamp(),trialEndsAt};
     await ref.set(sub);
     S._sub={...sub,trialEndsAt};
   }catch(e){}
 }
-function driverSubState(){
-  if(BUSINESS.model!=='subscription')return{mode:'off'};
-  const s=S._sub;
-  if(!s)return{mode:'trial',daysLeft:BUSINESS.trialDays||30};
-  if(s.status==='active')return{mode:'active'};
-  const ends=s.trialEndsAt&&s.trialEndsAt.toDate?s.trialEndsAt.toDate():new Date(s.trialEndsAt);
-  const daysLeft=Math.ceil((ends-Date.now())/86400000);
-  return daysLeft>0?{mode:'trial',daysLeft}:{mode:'expired'};
-}
+// Shared, unit-tested state machine (membership/membership.ts) — the client
+// app uses the identical implementation.
+function driverSubState(){return ApexEngine.membershipState(S._sub,BUSINESS);}
 // Prototype billing — production wires this to a recurring payment rail.
 async function driverSubscribe(){
   if(!FIREBASE_ENABLED||!_driverId)return;
@@ -1154,7 +1150,7 @@ home:()=>{
         ${(()=>{const ss=driverSubState();if(ss.mode==='off'||ss.mode==='active')return'';
           if(ss.mode==='trial')return`<div style="display:flex;align-items:center;gap:12px;background:rgba(200,169,126,.08);border:1px solid rgba(200,169,126,.2);border-radius:16px;padding:12px 15px;margin-bottom:14px">
             <span style="font-size:18px">✦</span>
-            <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:#C8A97E">Free trial — ${ss.daysLeft} day${ss.daysLeft===1?'':'s'} left</div><div style="font-size:11px;color:var(--fg-dim);margin-top:1px">Then £${BUSINESS.driverMonthlyFee||99}/mo · you keep ${100-Math.min(50,Math.max(0,Math.round(BUSINESS.commissionPct??20)))}% of every fare</div></div>
+            <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:#C8A97E">Free trial — ${ss.daysLeft} day${ss.daysLeft===1?'':'s'} left</div><div style="font-size:11px;color:var(--fg-dim);margin-top:1px">Then £${BUSINESS.driverMonthlyFee||99}/mo · you keep ${ApexEngine.keepPercent(BUSINESS)}% of every fare</div></div>
             <button onclick="driverSubscribe()" style="background:#C8A97E;border:none;border-radius:10px;color:#000;font-size:11px;font-weight:800;padding:8px 12px;cursor:pointer;font-family:inherit;flex-shrink:0">Activate</button>
           </div>`;
           return`<div style="display:flex;align-items:center;gap:12px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);border-radius:16px;padding:12px 15px;margin-bottom:14px">
