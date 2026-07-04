@@ -82,6 +82,7 @@
 <div class="row">
   <button id="newWallet">＋ New wallet</button>
   <span class="mining" id="miningStatus"></span>
+  <span class="mining" id="netStatus"></span>
 </div>
 
 <h2>Send coins</h2>
@@ -106,6 +107,7 @@
 
 <div id="toast"></div>
 
+<script src="config.js"></script>
 <script src="engine.js"></script>
 <script>
 (function () {
@@ -160,26 +162,74 @@
     } catch (err) { /* storage full or unavailable — keep running in memory */ }
   }
 
-  /* ---------- tab-to-tab "network" ---------- */
+  /* ---------- the network ----------
+     Same-browser tabs gossip over BroadcastChannel; different devices meet at
+     an optional relay (coin/server.mjs, URL in coin/config.js). Both paths
+     carry the same messages, and consensus never leaves the node: every chain
+     received is fully re-validated and adopted only if heavier. */
+  var NODE_ID = 'n' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+  var CFG = (typeof self !== 'undefined' && self.BALLRZCOIN_CONFIG) || {};
+  var relayUrl = String(CFG.relayUrl || '').replace(/\/+$/, '');
+  var relaySeq = 0, relayUp = false;
+
+  function handleNetMessage(m) {
+    if (!m || m.from === NODE_ID) return; // our own gossip echoed back
+    if (m.type === 'hello') {
+      netSend({ type: 'chain', blocks: chain.blocks });
+    } else if (m.type === 'chain') {
+      if (chain.replaceChain(m.blocks)) {
+        persist();
+        render();
+        toast('⛓ Synced to a heavier chain from the network (height ' + chain.tip.height + ')');
+      }
+    } else if (m.type === 'tx') {
+      try { chain.submitTransaction(m.tx); persist(); render(); } catch (err) { /* dup or conflict */ }
+    }
+  }
+
   var bc = null;
   if (typeof BroadcastChannel !== 'undefined') {
     bc = new BroadcastChannel('ballrzcoin-net-v2');
-    bc.onmessage = function (ev) {
-      var m = ev.data || {};
-      if (m.type === 'hello') {
-        bc.postMessage({ type: 'chain', blocks: chain.blocks });
-      } else if (m.type === 'chain') {
-        if (chain.replaceChain(m.blocks)) {
-          persist();
-          render();
-          toast('⛓ Synced to a heavier chain from another tab (height ' + chain.tip.height + ')');
-        }
-      } else if (m.type === 'tx') {
-        try { chain.submitTransaction(m.tx); persist(); render(); } catch (err) { /* dup or conflict */ }
-      }
-    };
+    bc.onmessage = function (ev) { handleNetMessage(ev.data); };
   }
-  function announceChain() { if (bc) bc.postMessage({ type: 'chain', blocks: chain.blocks }); }
+
+  function netSend(msg) {
+    msg.from = NODE_ID;
+    if (bc) bc.postMessage(msg);
+    if (relayUrl && typeof fetch !== 'undefined') {
+      try {
+        fetch(relayUrl + '/msg', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(msg)
+        }).catch(function () { /* relay down — tabs still sync */ });
+      } catch (err) { /* offline */ }
+    }
+  }
+  function announceChain() { netSend({ type: 'chain', blocks: chain.blocks }); }
+
+  function renderNetStatus() {
+    var el = $('netStatus');
+    if (!el) return;
+    if (!relayUrl) { el.textContent = ''; return; }
+    el.textContent = relayUp ? '⇄ relay connected — syncing across devices' : '⇄ relay unreachable';
+  }
+
+  function relayPoll() {
+    fetch(relayUrl + '/msgs?since=' + relaySeq)
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d && typeof d.seq === 'number') {
+          relayUp = true;
+          relaySeq = d.seq;
+          (d.msgs || []).forEach(handleNetMessage);
+        }
+        renderNetStatus();
+      })
+      .catch(function () { relayUp = false; renderNetStatus(); })
+      .then(function () { setTimeout(relayPoll, 2500); });
+  }
+  if (relayUrl && typeof fetch !== 'undefined') setTimeout(relayPoll, 0);
 
   function toast(msg) {
     var t = $('toast');
@@ -336,7 +386,7 @@
       var fee = $('sendFee').value.trim() ? Coin.parseAmount($('sendFee').value) : 0;
       var tx = chain.send(from, to, amount, fee);
       persist();
-      if (bc) bc.postMessage({ type: 'tx', tx: tx });
+      netSend({ type: 'tx', tx: tx });
       $('sendTo').value = ''; $('sendAmount').value = '';
       toast('📨 Broadcast: ' + fmt(amount) + ' → ' + short(to) + ' (fee ' + fmt(fee) + ')');
       render();
@@ -361,8 +411,9 @@
   });
 
   render();
+  renderNetStatus();
   persist();
-  if (bc) bc.postMessage({ type: 'hello' }); // ask peers for their chains
+  netSend({ type: 'hello' }); // ask peers for their chains
 })();
 </script>
 </body>
