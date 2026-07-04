@@ -503,12 +503,19 @@ function vcReply(docId){
 }
 
 // ── Error telemetry — see telemetry/errors.ts in the shared engine ─────────
+// If the shared engine failed to load, retry once with a cache-buster.
+if (typeof ApexEngine === 'undefined') {
+  (function(){ const sc=document.createElement('script'); sc.src='apexvip-engine.js?retry='+Date.now(); sc.onload=()=>{ try{render();}catch(_){}} ; document.head.appendChild(sc); })();
+}
 const _errSeen = new Set();
 function reportError(e, screen) {
   try {
-    const r = ApexEngine.formatErrorReport(e, { app: 'admin', screen: screen || S.screen || '' });
+    const r = (typeof ApexEngine!=='undefined')
+      ? ApexEngine.formatErrorReport(e, { app: 'admin', screen: screen || S.screen || '' })
+      : { message:String((e&&e.message)||e||'unknown').slice(0,500), stack:String((e&&e.stack)||'').slice(0,1500), fingerprint:String((e&&e.message)||e||'?').slice(0,60), app:'admin', screen:screen||S.screen||'' };
     console.warn('[apexvip]', r.message);
-    if (!ApexEngine.shouldReport(r.fingerprint, _errSeen)) return;
+    if (_errSeen.has(r.fingerprint) || _errSeen.size >= 20) return;
+    _errSeen.add(r.fingerprint);
     if (FIREBASE_ENABLED) db.collection('errors').add({ ...r, at: firebase.firestore.FieldValue.serverTimestamp() }).catch(function(){});
   } catch (_) { /* never throw from the reporter */ }
 }
@@ -1366,7 +1373,7 @@ audit: () => `<div class="screen">
 
 payouts: () => `<div class="screen">
   <div class="section-header"><div class="section-title">Driver Earnings</div></div>
-  <div style="font-size:12px;color:var(--fg-subtle);margin:-6px 0 14px">${(()=>{const b=S._business||{};const keep=ApexEngine.keepPercent(b);return keep+'% of each completed trip, owed per driver ('+(b.model==='subscription'?'subscription model — commission '+(100-keep)+'%':'commission model')+'). "Pay out" settles the full balance via Stripe Connect.';})()}</div>
+  <div style="font-size:12px;color:var(--fg-subtle);margin:-6px 0 14px">${(()=>{const b=S._business||{};const keep=(typeof ApexEngine!=='undefined')?ApexEngine.keepPercent(b):(b.model==='subscription'?100-Math.min(50,Math.max(0,Math.round(b.commissionPct??20))):80);return keep+'% of each completed trip, owed per driver ('+(b.model==='subscription'?'subscription model — commission '+(100-keep)+'%':'commission model')+'). "Pay out" settles the full balance via Stripe Connect.';})()}</div>
   <div id="driver-balances"><div style="text-align:center;padding:24px;color:var(--fg-4);font-size:13px">Loading…</div></div>
   <div class="section-header" style="margin-top:24px"><div class="section-title">Payout Requests</div></div>
   <div id="payouts-list"><div style="text-align:center;padding:40px;color:var(--fg-4);font-size:13px">Loading…</div></div>
@@ -1516,7 +1523,7 @@ settings:()=>{
       ${bizField('biz_trial','FREE TRIAL',biz.trialDays??30,'days')}
       ${bizField('biz_commission','COMMISSION',biz.commissionPct??20,'% per trip')}
     </div>
-    <div style="font-size:12px;color:var(--fg-subtle);line-height:1.6;margin-bottom:12px">Drivers keep <b style="color:var(--gold)">${ApexEngine.keepPercent({model:'subscription',commissionPct:biz.commissionPct})}%</b> of each fare. New clients and drivers automatically start a ${biz.trialDays??30}-day free trial; after it ends they're prompted to subscribe.</div>
+    <div style="font-size:12px;color:var(--fg-subtle);line-height:1.6;margin-bottom:12px">Drivers keep <b style="color:var(--gold)">${(typeof ApexEngine!=='undefined')?ApexEngine.keepPercent({model:'subscription',commissionPct:biz.commissionPct}):100-Math.min(50,Math.max(0,Math.round(biz.commissionPct??20)))}%</b> of each fare. New clients and drivers automatically start a ${biz.trialDays??30}-day free trial; after it ends they're prompted to subscribe.</div>
     <button class="btn btn-gold btn-sm" onclick="saveBusinessModel()">Save Subscription Settings</button>
     `}
   </div>
@@ -2176,6 +2183,7 @@ function loadDriverBalances() {
   if (!el || !FIREBASE_ENABLED) return;
   db.collection('driver_payouts').where('status','==','owed').limit(500).get().then(snap => {
     // Owed-balance aggregation — shared, unit-tested engine.
+    if (typeof ApexEngine==='undefined') { el.innerHTML='<div style="text-align:center;padding:24px;color:var(--fg-4);font-size:13px">Loading…</div>'; return; }
     const balances = ApexEngine.aggregateOwedBalances(snap.docs.map(d => d.data()));
     const by = {}; balances.forEach(b => { by[b.driverId] = b; });
     const ids = balances.map(b => b.driverId);
@@ -2198,7 +2206,7 @@ async function payoutDriverNow(driverId) {
   try {
     const r = await fns.httpsCallable('payoutDriver')({ driverId });
     logAudit('payout', driverId, `${r.data.currency||'GBP'} ${r.data.paid||0} · ${r.data.count||0} trip(s)${r.data.mock?' (mock)':''}`);
-    alert(ApexEngine.formatSettlement(r.data));
+    alert((typeof ApexEngine!=='undefined')?ApexEngine.formatSettlement(r.data):('Paid '+(r.data.currency||'GBP')+' '+(r.data.paid||0)+' across '+(r.data.count||0)+' trip(s).'));
     loadDriverBalances();
   } catch (e) { alert('Payout failed: ' + (e.message || e.code)); }
 }
