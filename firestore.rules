@@ -24,6 +24,9 @@ service cloud.firestore {
     // can change role; a self-update must leave role as 'client' (or unset).
     // `apexBalance` (the ApexCoin wallet) is money-adjacent and written only by
     // Cloud Functions / admins — a self-write may never mint or move coins.
+    // `chainAddress` is the signature-verified deposit wallet (set only by the
+    // linkChainWallet function) — a self-write could claim someone else's
+    // on-chain deposits.
     match /users/{uid} {
       allow read:   if isUser(uid) || isAdmin();
       // A user may create only their OWN profile, and only as a 'client' — they
@@ -31,11 +34,11 @@ service cloud.firestore {
       // field, so an unguarded create would be a privilege-escalation hole).
       allow create: if isUser(uid)
         && request.resource.data.get('role', 'client') == 'client'
-        && !request.resource.data.keys().hasAny(['apexBalance']);
+        && !request.resource.data.keys().hasAny(['apexBalance', 'chainAddress']);
       allow update: if isAdmin()
         || (isUser(uid)
             && request.resource.data.get('role', 'client') == 'client'
-            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['apexBalance']));
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['apexBalance', 'chainAddress']));
       allow delete: if isAdmin();
     }
 

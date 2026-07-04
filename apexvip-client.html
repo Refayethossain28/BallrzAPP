@@ -3906,7 +3906,7 @@ profile: () => {
         <div style="height:4px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden"><div style="height:100%;border-radius:2px;background:${apexTierColor(p.tier)};width:${p.pct}%;transition:width .6s ease"></div></div>
       </div>`:''})()}${state.apexTransactions.length>0?`<div style="border-top:1px solid rgba(255,255,255,.05);padding-top:12px">
         <div style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-4);margin-bottom:8px">Recent Activity</div>
-        ${state.apexTransactions.slice(0,3).map(tx=>`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;color:var(--fg-3)">${tx.reason}</span><span style="font-size:12px;font-weight:700;color:${tx.type==='redeem'?'var(--fg-3)':apexTierColor(apexTier(state.apexBalance))}">${tx.type==='redeem'?'−':'+'}${tx.amount} APEX</span></div>`).join('')}
+        ${state.apexTransactions.slice(0,3).map(tx=>{const out=tx.type==='redeem'||tx.type==='withdraw';return`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;color:var(--fg-3)">${tx.reason}</span><span style="font-size:12px;font-weight:700;color:${out?'var(--fg-3)':apexTierColor(apexTier(state.apexBalance))}">${out?'−':'+'}${tx.amount} APEX</span></div>`;}).join('')}
       </div>`:`<div style="border-top:1px solid rgba(255,255,255,.05);padding-top:10px;font-size:12px;color:var(--fg-4)">Book a ride to start earning APEX</div>`}
       <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.04);display:flex;gap:14px">
         <span style="font-size:10px;color:var(--fg-4)">◈ 1 APEX / £1</span>
@@ -4780,6 +4780,36 @@ profile: () => {
         ${t.benefits.map(b=>`<div style="display:flex;align-items:flex-start;gap:9px"><svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="${t.color}" stroke-width="2.5" style="flex-shrink:0;margin-top:2px"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg><span style="font-size:13px;color:var(--fg-2);line-height:1.4">${b}</span></div>`).join('')}
       </div>
     </div>`).join('')}
+
+    <div style="background:linear-gradient(135deg,rgba(200,169,126,.08),transparent);border:1px solid rgba(200,169,126,.25);border-radius:20px;padding:20px;margin-top:6px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div style="width:36px;height:36px;border-radius:10px;background:rgba(200,169,126,.12);display:flex;align-items:center;justify-content:center;font-size:16px">⛓</div>
+        <div>
+          <div style="font-size:15px;font-weight:700;color:var(--gold)">ApexCoin on-chain</div>
+          <div style="font-size:11px;color:var(--fg-4)">AXC · ERC-20 · usable anywhere, 1.00 AXC = 1 APEX</div>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--fg-3);line-height:1.6;margin-bottom:14px">Send APEX to any wallet as real AXC tokens — hold, transfer or trade them outside ApexVIP — and deposit them back against bookings at any time.</div>
+      ${state._coinLive?`
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--fg-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${state._chainAddress?`Linked wallet: <span style="color:var(--fg)">${state._chainAddress.slice(0,6)}…${state._chainAddress.slice(-4)}</span>`:'No wallet linked yet'}</div>
+        <button onclick="linkWalletOnchain()" style="flex-shrink:0;padding:8px 14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;color:var(--fg);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">${state._chainAddress?'Re-link':'Link wallet'}</button>
+      </div>
+      <div class="section-label" style="margin-bottom:8px">Send to a wallet</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <input id="axc-withdraw-amt" type="number" min="1" placeholder="APEX" style="width:84px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:11px 12px;color:var(--fg);font-size:14px;outline:none;font-family:inherit"/>
+        <input id="axc-withdraw-addr" placeholder="0x… destination address" value="${state._chainAddress}" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:11px 12px;color:var(--fg);font-size:13px;outline:none;font-family:inherit"/>
+      </div>
+      <button onclick="withdrawApexOnchain()" style="width:100%;padding:12px;background:var(--gold);border:none;border-radius:12px;color:#0c0b09;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:14px">Withdraw as AXC</button>
+      <div class="section-label" style="margin-bottom:8px">Deposit back</div>
+      <div style="font-size:11px;color:var(--fg-4);line-height:1.5;margin-bottom:8px">Send AXC from your linked wallet to the ApexVIP treasury, then paste the transaction hash:</div>
+      <div style="display:flex;gap:8px">
+        <input id="axc-deposit-hash" placeholder="0x… transaction hash" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:11px 12px;color:var(--fg);font-size:13px;outline:none;font-family:inherit"/>
+        <button onclick="depositApexOnchain()" style="flex-shrink:0;padding:11px 16px;background:var(--surface);border:1px solid rgba(200,169,126,.4);border-radius:12px;color:var(--gold);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Claim</button>
+      </div>
+      <div id="axc-chain-msg" style="font-size:12px;margin-top:10px;line-height:1.5"></div>`
+      :`<div style="font-size:12px;color:var(--fg-4);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px">Available when signed in with the live ApexVIP backend — the demo wallet stays on this device.</div>`}
+    </div>
   </div>
 </div>`;
 },
@@ -5757,6 +5787,47 @@ function apexPayQuote(){
   return ApexEngine.applyCoinRedemption(state._payTotal||0,state._useApexCoin?state.apexBalance:0);
 }
 function toggleApexPay(){state._useApexCoin=!state._useApexCoin;render();}
+
+// ── ApexCoin on-chain (AXC ERC-20 bridge — see functions/src/chain.ts) ──────
+function _chainSay(t,ok){const el=document.getElementById('axc-chain-msg');if(el){el.innerHTML=t;el.style.color=ok?'#22c55e':'#ef4444';}}
+async function linkWalletOnchain(){
+  if(!(FIREBASE_ENABLED&&auth.currentUser&&state._coinLive))return;
+  if(!window.ethereum){_chainSay('Linking needs a Web3 wallet (e.g. MetaMask) — it signs a message proving the wallet is yours.',false);return;}
+  try{
+    const accounts=await ethereum.request({method:'eth_requestAccounts'});
+    const address=accounts&&accounts[0];
+    if(!address){_chainSay('No wallet account available.',false);return;}
+    const signature=await ethereum.request({method:'personal_sign',params:['ApexVIP wallet link for user '+auth.currentUser.uid,address]});
+    const r=await fns.httpsCallable('linkChainWallet')({address,signature});
+    state._chainAddress=r.data.address; // the snapshot confirms momentarily
+    track('chain_wallet_linked',{src:'client'});
+    render();
+  }catch(e){_chainSay('Wallet link failed: '+esc(e.message||String(e)),false);}
+}
+async function withdrawApexOnchain(){
+  const amount=Math.floor(Number(document.getElementById('axc-withdraw-amt')?.value));
+  const address=(document.getElementById('axc-withdraw-addr')?.value||'').trim();
+  if(!(amount>0)){_chainSay('Enter how many APEX to send.',false);return;}
+  if(!address){_chainSay('Enter a destination wallet address.',false);return;}
+  _chainSay('Minting on-chain…',true);
+  try{
+    const idempotencyKey=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():String(Date.now());
+    const r=await fns.httpsCallable('withdrawCoinsOnchain')({amount,address,idempotencyKey});
+    track('apex_withdrawn',{amount:r.data.withdrawn,src:'client'});
+    _chainSay('✓ '+r.data.withdrawn+' APEX sent as AXC'+(r.data.explorer?' · <a href="'+r.data.explorer+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">view transaction</a>':''),true);
+  }catch(e){_chainSay('Withdrawal failed: '+esc(e.message||String(e)),false);}
+}
+async function depositApexOnchain(){
+  const txHash=(document.getElementById('axc-deposit-hash')?.value||'').trim();
+  if(!txHash){_chainSay('Paste the transaction hash of your transfer to the treasury.',false);return;}
+  _chainSay('Verifying on-chain…',true);
+  try{
+    const r=await fns.httpsCallable('depositCoinsOnchain')({txHash});
+    if(r.data.alreadyClaimed){_chainSay('That transaction has already been credited.',false);return;}
+    track('apex_deposited',{amount:r.data.deposited,src:'client'});
+    _chainSay('✓ '+r.data.deposited+' APEX credited back to your balance.',true);
+  }catch(e){_chainSay('Deposit failed: '+esc(e.message||String(e)),false);}
+}
 function fmtCard(el){let v=el.value.replace(/\D/g,'').slice(0,16);el.value=v.replace(/(.{4})/g,'$1 ').trim();}
 function fmtExpiry(el){let v=el.value.replace(/\D/g,'').slice(0,4);if(v.length>2)v=v.slice(0,2)+' / '+v.slice(2);el.value=v;}
 function removeCard(id){state.cards=state.cards.filter(c=>c.id!==id);render();}
@@ -5878,6 +5949,7 @@ if(FIREBASE_ENABLED){
       state._coinUnsub=db.collection('users').doc(user.uid).onSnapshot(snap=>{
         state._coinLive=true;
         state.apexBalance=Math.max(0,Number(snap.exists?snap.data().apexBalance:0)||0);
+        state._chainAddress=(snap.exists&&snap.data().chainAddress)||''; // signature-verified by linkChainWallet
         try{localStorage.setItem('apex_balance',state.apexBalance);}catch(e){}
         render();
       },()=>{});

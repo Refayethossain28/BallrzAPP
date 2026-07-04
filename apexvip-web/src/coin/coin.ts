@@ -107,24 +107,33 @@ export interface CoinEventLike {
 export interface CoinSupply {
   issued: number;
   redeemed: number;
+  /** Coins live inside the apps: issued − redeemed − net-withdrawn on-chain. */
   circulating: number;
+  /** Coins outside the apps as the AXC ERC-20: withdrawn − deposited. */
+  onchain: number;
 }
 
 /**
  * Aggregate the coin supply from tracked events: client earns (`apex_earned`),
- * driver earns (the `axc` on `trip_completed`), and redemptions from either
- * app (`apex_redeemed`). Circulating supply never reads below zero.
+ * driver earns (the `axc` on `trip_completed`), redemptions from either app
+ * (`apex_redeemed`), and the on-chain bridge flows (`apex_withdrawn` /
+ * `apex_deposited`). No figure ever reads below zero.
  */
 export function coinSupply(events: CoinEventLike[] | null | undefined): CoinSupply {
   let issued = 0;
   let redeemed = 0;
+  let withdrawn = 0;
+  let deposited = 0;
   for (const ev of events || []) {
     const name = ev?.e || ev?.event;
     if (name === 'apex_earned') issued += Math.max(0, num(ev.amount));
     else if (name === 'trip_completed') issued += Math.max(0, num(ev.axc));
     else if (name === 'apex_redeemed') redeemed += Math.max(0, num(ev.amount));
+    else if (name === 'apex_withdrawn') withdrawn += Math.max(0, num(ev.amount));
+    else if (name === 'apex_deposited') deposited += Math.max(0, num(ev.amount));
   }
   issued = round2(issued);
   redeemed = round2(redeemed);
-  return { issued, redeemed, circulating: Math.max(0, round2(issued - redeemed)) };
+  const onchain = Math.max(0, round2(withdrawn - deposited));
+  return { issued, redeemed, circulating: Math.max(0, round2(issued - redeemed - onchain)), onchain };
 }

@@ -65,6 +65,9 @@ const CALLABLE_NAMES: ApexCallableName[] = [
   'payoutDriver',
   'redeemApexCoins',
   'redeemDriverCoins',
+  'linkChainWallet',
+  'withdrawCoinsOnchain',
+  'depositCoinsOnchain',
 ];
 
 /**

@@ -117,6 +117,27 @@ export interface DriverCoinRedeemResult {
   balance: number;
 }
 
+/** linkChainWallet: the checksummed, signature-verified wallet address. */
+export interface LinkWalletResult {
+  address: string;
+}
+
+/** withdrawCoinsOnchain: coins moved out as minted AXC (idempotent per key). */
+export interface CoinWithdrawResult {
+  withdrawn: number;
+  txHash: string;
+  balance: number;
+  /** Block-explorer link for the mint tx ('' when no explorer configured). */
+  explorer: string;
+}
+
+/** depositCoinsOnchain: coins credited back from a verified on-chain transfer. */
+export interface CoinDepositResult {
+  deposited: number;
+  alreadyClaimed: boolean;
+  balance: number;
+}
+
 /**
  * parseBookingIntent (ApexAI): the structured booking intent, or `{ reply }` in
  * driver mode. The exact fields mirror the client's `_parseIntentLocal` shape;
@@ -169,6 +190,9 @@ export interface ApexCallables {
   payoutDriver: CallableSpec<{ driverId: string }, PayoutSettleResult>;
   redeemApexCoins: CallableSpec<{ amount: number; bookingRef: string }, CoinRedeemResult>;
   redeemDriverCoins: CallableSpec<void, DriverCoinRedeemResult>;
+  linkChainWallet: CallableSpec<{ address: string; signature: string }, LinkWalletResult>;
+  withdrawCoinsOnchain: CallableSpec<{ amount: number; address: string; idempotencyKey: string }, CoinWithdrawResult>;
+  depositCoinsOnchain: CallableSpec<{ txHash: string }, CoinDepositResult>;
 }
 
 /** Every client-callable function name, as a union. */

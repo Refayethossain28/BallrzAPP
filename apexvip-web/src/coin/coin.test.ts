@@ -91,11 +91,22 @@ test('coinSupply: client earns + driver earns − redemptions, floored at zero',
     { e: 'apex_redeemed', amount: 5 },
     { e: 'booking_confirmed', price: 148 }, // unrelated event ignored
   ];
-  assert.deepEqual(coinSupply(events), { issued: 19.04, redeemed: 5, circulating: 14.04 });
+  assert.deepEqual(coinSupply(events), { issued: 19.04, redeemed: 5, circulating: 14.04, onchain: 0 });
 });
 
-test('coinSupply: never reports negative circulation, junk-safe', () => {
-  assert.deepEqual(coinSupply([{ e: 'apex_redeemed', amount: 10 }]), { issued: 0, redeemed: 10, circulating: 0 });
-  assert.deepEqual(coinSupply(null), { issued: 0, redeemed: 0, circulating: 0 });
-  assert.deepEqual(coinSupply([{ e: 'apex_earned', amount: 'junk' }]), { issued: 0, redeemed: 0, circulating: 0 });
+test('coinSupply: bridge flows move coins between in-app and on-chain', () => {
+  const events = [
+    { e: 'apex_earned', amount: 20 },
+    { e: 'apex_withdrawn', amount: 12 },
+    { e: 'apex_deposited', amount: 5 },
+    { e: 'apex_redeemed', amount: 3 },
+  ];
+  // on-chain 12−5=7; in-app 20−3−7=10
+  assert.deepEqual(coinSupply(events), { issued: 20, redeemed: 3, circulating: 10, onchain: 7 });
+});
+
+test('coinSupply: never reports negative figures, junk-safe', () => {
+  assert.deepEqual(coinSupply([{ e: 'apex_redeemed', amount: 10 }]), { issued: 0, redeemed: 10, circulating: 0, onchain: 0 });
+  assert.deepEqual(coinSupply(null), { issued: 0, redeemed: 0, circulating: 0, onchain: 0 });
+  assert.deepEqual(coinSupply([{ e: 'apex_earned', amount: 'junk' }, { e: 'apex_deposited', amount: 4 }]), { issued: 0, redeemed: 0, circulating: 0, onchain: 0 });
 });

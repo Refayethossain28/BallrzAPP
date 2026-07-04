@@ -17,6 +17,13 @@ Functions in this codebase:
   append-only `coin_ledger` are functions-write-only (firestore.rules blocks
   self-writes); deterministic ledger ids make the booking-triggered awards
   idempotent.
+- **ApexCoin on-chain bridge** (`src/chain.ts`) — APEX leaves the app as the
+  AXC ERC-20 (`apexchain/`) and comes back: `linkChainWallet`
+  (signature-verified), `withdrawCoinsOnchain` (deduct → treasury mints,
+  idempotent, compensating refund on chain failure), `depositCoinsOnchain`
+  (verify the transfer → credit once → burn). Fails closed until
+  `settings/chain` + the `CHAIN_TREASURY_KEY` secret are configured. See
+  [`docs/apexvip-apexcoin-onchain.md`](../docs/apexvip-apexcoin-onchain.md).
 
 All hold their provider secret server-side so the browser never sees it. See
 [`docs/apexvip-payments.md`](../docs/apexvip-payments.md) for the payment flow.
@@ -56,6 +63,7 @@ driver, and a driver-side `jobs` doc is created. Requires the emulator tooling
 npm i -g firebase-tools     # needs Java for the Firestore emulator
 npm run test:emulator        # builds, boots firestore+functions, runs test/dispatch.emulator.mjs
 npm run test:emulator:coin   # the ApexCoin lifecycle: earn → clamped/idempotent redeem → driver cash-out
+npm run test:emulator:chain  # the on-chain bridge against a real EVM (boots ganache from apexchain/)
 ```
 
 `npm run test:emulator:coin` walks the whole coin loop against the real
@@ -93,7 +101,7 @@ other functions (`parseBookingIntent`, `checkFlightStatus`, …), which live els
 **Always scope the deploy** so you don't touch the others:
 
 ```sh
-firebase deploy --only functions:getHotelRates,functions:processSquarePayment,functions:captureSquarePayment,functions:refundSquarePayment,functions:onBookingWrite,functions:onBookingCreated,functions:awardBookingCoins,functions:redeemApexCoins,functions:redeemDriverCoins
+firebase deploy --only functions:getHotelRates,functions:processSquarePayment,functions:captureSquarePayment,functions:refundSquarePayment,functions:onBookingWrite,functions:onBookingCreated,functions:awardBookingCoins,functions:redeemApexCoins,functions:redeemDriverCoins,functions:linkChainWallet,functions:withdrawCoinsOnchain,functions:depositCoinsOnchain
 ```
 
 A bare `firebase deploy` from here could try to delete functions it doesn't see.

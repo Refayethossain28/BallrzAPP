@@ -28,6 +28,9 @@ import { STRIPE_SECRET_KEY, stripeClient } from './stripe.js';
 // Velvet — the subscription VIP concierge (concierge/): Stripe Billing
 // checkout + portal + webhook. Deployed alongside the ApexVIP functions.
 export { createVelvetCheckout, createVelvetPortal, velvetStripeWebhook } from './velvet.js';
+// ApexCoin on-chain bridge (apexchain/ApexCoin.sol): withdraw APEX as a real
+// ERC-20, deposit it back. See ./chain.ts.
+export { linkChainWallet, withdrawCoinsOnchain, depositCoinsOnchain } from './chain.js';
 
 import {
   round5, isoPlusDays, computeFareBounds, driverEarning, dispatchPay,

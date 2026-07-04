@@ -127,3 +127,10 @@ test('coin ledger: per-user readable, never client-writable', async () => {
   await assertFails(setDoc(doc(client('u1'), 'coin_ledger/forged'), { uid: 'u1', type: 'earn', amount: 9999 }));
   await assertFails(updateDoc(doc(admin(), 'coin_ledger/e1'), { amount: 1 }));    // append-only, even for admins
 });
+
+test('a user cannot self-link a deposit wallet (chainAddress is functions-only)', async () => {
+  await seed((db) => setDoc(doc(db, 'users/u4'), { name: 'U', role: 'client' }));
+  await assertFails(updateDoc(doc(client('u4'), 'users/u4'), { chainAddress: '0x90F8bf6A479f320ead074411a4B0e7944Ea8c9C1' }));
+  await assertFails(setDoc(doc(client('u5'), 'users/u5'), { name: 'X', chainAddress: '0x90F8bf6A479f320ead074411a4B0e7944Ea8c9C1' }));
+  await assertSucceeds(updateDoc(doc(client('u4'), 'users/u4'), { name: 'Renamed' }));
+});

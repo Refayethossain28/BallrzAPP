@@ -23,6 +23,9 @@ export interface User {
   referralCode?: string;
   referredBy?: string;
   apexBalance?: number;
+  /** Signature-verified external wallet (set only by linkChainWallet) —
+   *  the sole wallet whose on-chain deposits credit this account. */
+  chainAddress?: string;
 }
 
 /** bookings/{bookingId} — the central object the three apps share. */
@@ -127,11 +130,14 @@ export interface Driver {
 export interface CoinLedgerEntry {
   uid: string;
   role: 'client' | 'driver';
-  type: 'earn' | 'redeem';
+  type: 'earn' | 'redeem' | 'withdraw' | 'deposit';
   amount: number;
   reason: string;
   ref?: string;
   at?: Stamp;
+  /** On-chain rows: the mint/deposit transaction hash + confirmation state. */
+  txHash?: string;
+  status?: 'confirmed' | string;
 }
 
 /** vehicles/{id} */
