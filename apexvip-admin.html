@@ -270,6 +270,7 @@ const NAVITEMS=[
   {id:'map',icon:'<svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>',label:'Live Map'},
   {id:'payouts',icon:'💸',label:'Payouts'},
   {id:'audit',icon:'🛡',label:'Audit Log'},
+  {id:'errors',icon:'🐞',label:'Errors'},
   {id:'waitlist',icon:'✦',label:'Waitlist'},
   {id:'city-interest',icon:'🌍',label:'City Interest'},
 ];
@@ -1301,6 +1302,17 @@ map: () => `<div class="screen" style="padding:0;height:calc(100vh - 60px);posit
   </div>
 </div>`,
 
+errors: () => `<div class="screen">
+  <div class="section-header"><div class="section-title">Errors</div>
+    <button class="btn btn-glass btn-sm" onclick="clearErrors()">🗑 Clear all</button>
+  </div>
+  <div style="font-size:12px;color:var(--fg-subtle);margin:-6px 0 14px">Live error telemetry from the client, driver and admin apps — grouped by fingerprint, newest first. Errors land here the moment any app catches one.</div>
+  <div style="display:flex;gap:8px;margin-bottom:14px">
+    ${['all','client','driver','admin'].map(a=>`<button onclick="S._errApp='${a}';loadErrors()" style="padding:7px 14px;border-radius:20px;font-size:12px;font-weight:600;border:1px solid ${(S._errApp||'all')===a?'var(--gold)':'var(--border)'};background:${(S._errApp||'all')===a?'rgba(200,169,126,.12)':'transparent'};color:${(S._errApp||'all')===a?'var(--gold)':'var(--fg-dim)'};cursor:pointer;font-family:inherit;text-transform:capitalize">${a}</button>`).join('')}
+  </div>
+  <div id="errors-list"><div style="text-align:center;padding:40px;color:var(--fg-4);font-size:13px">Loading…</div></div>
+</div>`,
+
 audit: () => `<div class="screen">
   <div class="section-header"><div class="section-title">Audit Log</div>
     <button class="btn btn-glass btn-sm" onclick="exportAuditCsv()">⬇ Export CSV</button>
@@ -2047,6 +2059,65 @@ function saveBusinessModel(){
   }).catch(e=>alert('Save failed: '+(e.message||e.code)));
 }
 
+// ── Error telemetry viewer ─────────────────────────────────────────────────
+function loadErrors(){
+  const el=document.getElementById('errors-list');
+  if(!el) return;
+  if(!FIREBASE_ENABLED){ el.innerHTML='<div style="text-align:center;padding:40px;color:var(--fg-4);font-size:13px">No error reports (demo mode)</div>'; return; }
+  db.collection('errors').limit(300).get().then(snap=>{
+    const when=r=>r.at&&r.at.toDate?r.at.toDate():(r.ts?new Date(r.ts):null);
+    let rows=snap.docs.map(d=>({_id:d.id,...d.data()}));
+    const appF=S._errApp||'all';
+    if(appF!=='all') rows=rows.filter(r=>(r.app||'client')===appF);
+    rows.sort((a,b)=>(when(b)?.getTime()||0)-(when(a)?.getTime()||0));
+    // Group by fingerprint (fall back to the message for legacy rows)
+    const groups={};
+    rows.forEach(r=>{
+      const k=r.fingerprint||r.message||r.detail||'unknown';
+      if(!groups[k])groups[k]={n:0,latest:r,ids:[]};
+      groups[k].n++; groups[k].ids.push(r._id);
+    });
+    const list=Object.values(groups);
+    S._errIds=rows.map(r=>r._id);
+    if(!list.length){ el.innerHTML='<div style="text-align:center;padding:40px;color:var(--fg-4);font-size:13px">🎉 No errors reported'+(appF!=='all'?' from the '+appF+' app':'')+'</div>'; return; }
+    el.innerHTML=list.map(g=>{
+      const r=g.latest; const t=when(r);
+      const app=r.app||'client';
+      const appColor={client:'#3b82f6',driver:'#22c55e',admin:'#a855f7'}[app]||'var(--fg-dim)';
+      return `<div class="card" style="padding:14px 16px;margin-bottom:8px">
+        <div style="display:flex;align-items:flex-start;gap:12px">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap">
+              <span style="font-size:10px;font-weight:800;letter-spacing:1px;color:${appColor};border:1px solid ${appColor}44;border-radius:6px;padding:2px 7px;text-transform:uppercase">${app}</span>
+              ${r.screen?`<span style="font-size:11px;color:var(--fg-subtle)">${esc(r.screen)}</span>`:''}
+              ${g.n>1?`<span style="font-size:10px;font-weight:800;color:#e3b341;background:rgba(227,179,65,.1);border-radius:6px;padding:2px 7px">×${g.n}</span>`:''}
+            </div>
+            <div style="font-size:13px;font-weight:600;word-break:break-word">${esc(r.message||r.detail||'—')}</div>
+            ${r.stack?`<details style="margin-top:6px"><summary style="font-size:11px;color:var(--fg-subtle);cursor:pointer">stack</summary><pre style="font-size:10px;color:var(--fg-dim);white-space:pre-wrap;word-break:break-all;margin:6px 0 0;max-height:140px;overflow:auto">${esc(r.stack)}</pre></details>`:''}
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-size:11px;color:var(--fg-4)">${t?t.toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'—'}</div>
+            <button onclick="dismissError(${JSON.stringify(g.ids).replace(/"/g,'&quot;')})" style="margin-top:8px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);color:#ef4444;padding:5px 10px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Dismiss</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }).catch(e=>{ el.innerHTML='<div style="color:#ef4444;padding:20px">Could not load error reports</div>'; reportError(e,'errors'); });
+}
+function dismissError(ids){
+  if(!FIREBASE_ENABLED) return;
+  const batch=db.batch();
+  (ids||[]).slice(0,400).forEach(id=>batch.delete(db.collection('errors').doc(id)));
+  batch.commit().then(loadErrors).catch(reportError);
+}
+function clearErrors(){
+  if(!FIREBASE_ENABLED||!S._errIds||!S._errIds.length){loadErrors();return;}
+  if(!confirm('Delete all '+S._errIds.length+' loaded error reports?'))return;
+  const batch=db.batch();
+  S._errIds.slice(0,400).forEach(id=>batch.delete(db.collection('errors').doc(id)));
+  batch.commit().then(loadErrors).catch(reportError);
+}
+
 // Export the currently loaded audit rows as CSV (for inspections/records).
 function exportAuditCsv(){
   const rows=S._auditRows||[];
@@ -2211,6 +2282,7 @@ function renderNow(){
   if(S.screen==='map') setTimeout(initAdminMap, 50);
   if(S.screen==='payouts') setTimeout(loadPayouts, 50);
   if(S.screen==='audit') setTimeout(loadAudit, 50);
+  if(S.screen==='errors') setTimeout(loadErrors, 50);
 }
 
 renderNow();
