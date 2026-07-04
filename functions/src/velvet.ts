@@ -23,7 +23,7 @@ import { onCall, onRequest, HttpsError, type CallableRequest } from 'firebase-fu
 import * as logger from 'firebase-functions/logger';
 import * as admin from 'firebase-admin';
 import type Stripe from 'stripe';
-import { STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, stripeClient } from './stripe.js';
+import { STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, stripeClient } from './stripe.ts';
 
 const REGION = 'us-central1';
 const DAY_MS = 86400000;
@@ -41,7 +41,7 @@ function db() { return admin.firestore(); }
 function memberRef(uid: string) { return db().doc(`velvet_members/${uid}`); }
 
 /** Only send members to https (or localhost dev) URLs the client asked for. */
-function safeReturnUrl(u: unknown): string {
+export function safeReturnUrl(u: unknown): string {
   const s = typeof u === 'string' ? u : '';
   return /^https:\/\/[^\s]+$/.test(s) || /^http:\/\/localhost(:\d+)?\//.test(s) ? s : DEFAULT_RETURN;
 }
@@ -154,7 +154,7 @@ export const createVelvetPortal = onCall(
  *  Webhook — Stripe is the source of truth; mirror it into Firestore  *
  * ------------------------------------------------------------------ */
 
-function tierFromSubscription(sub: Stripe.Subscription): string {
+export function tierFromSubscription(sub: Stripe.Subscription): string {
   const metaTier = sub.metadata && sub.metadata.tier;
   if (metaTier && VELVET_TIERS[metaTier]) return metaTier;
   const key = sub.items.data[0] && sub.items.data[0].price && sub.items.data[0].price.lookup_key;
@@ -162,7 +162,7 @@ function tierFromSubscription(sub: Stripe.Subscription): string {
   return m && VELVET_TIERS[m[1]] ? m[1] : 'silver';
 }
 
-function mapStatus(s: Stripe.Subscription.Status): 'trialing' | 'active' | 'canceled' {
+export function mapStatus(s: Stripe.Subscription.Status): 'trialing' | 'active' | 'canceled' {
   if (s === 'trialing') return 'trialing';
   if (s === 'active' || s === 'past_due') return 'active';
   return 'canceled'; // canceled | unpaid | incomplete | incomplete_expired | paused

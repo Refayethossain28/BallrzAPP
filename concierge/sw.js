@@ -2,7 +2,7 @@
  * are network-first (you always get the latest build when online, the cached
  * shell when offline) and static assets are cache-first for speed.
  * Bump CACHE to force a clean reinstall. */
-const CACHE = 'velvet-v6';
+const CACHE = 'velvet-v7';
 const ASSETS = ['./', './index.html', './engine.js', './config.js', './cloud.js',
                 './manifest.json',
                 './ops.html', './ops-manifest.json',

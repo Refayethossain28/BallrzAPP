@@ -259,9 +259,11 @@ test('mergeRequests: later updatedAt wins per id; more messages breaks ties; uni
   assert.deepEqual([...out.map(r => r.id)], ['b', 'a', 'c'], 'union, ordered by submittedAt');
   assert.equal(out.find(r => r.id === 'a').status, 'options');
   // tie on updatedAt → the copy with more messages (a desk reply) wins
+  const m1 = { from: 'desk', text: 'hi', at: NOW };
+  const m2 = { from: 'desk', text: 'update', at: NOW + 1 };
   const tied = E.mergeRequests(
-    [req({ id: 'a', updatedAt: NOW, messages: [1] })],
-    [req({ id: 'a', updatedAt: NOW, messages: [1, 2] })]);
+    [req({ id: 'a', updatedAt: NOW, messages: [m1] })],
+    [req({ id: 'a', updatedAt: NOW, messages: [m1, m2] })]);
   assert.equal(tied[0].messages.length, 2);
 });
 
@@ -297,6 +299,49 @@ test('mergeStates: on local billing the further-advanced period wins; null sides
   assert.equal(E.mergeStates(ahead, behind).sub.periodStart, NOW + 7 * DAY, 'symmetric');
   assert.equal(E.mergeStates(behind, null), behind);
   assert.equal(E.mergeStates(null, ahead), ahead);
+});
+
+/* ---- concurrent chat safety ---- */
+
+test('mergeRequests: concurrent messages on both copies all survive (union)', () => {
+  const base = req({ id: 'a', updatedAt: NOW, messages: [{ from: 'desk', text: 'hello', at: NOW }] });
+  const localCopy = { ...base, messages: [...base.messages, { from: 'me', text: 'member msg', at: NOW + 1 }] };
+  const remoteCopy = { ...base, updatedAt: NOW + 2, status: 'triaged',
+    messages: [...base.messages, { from: 'desk', text: 'desk reply', at: NOW + 2 }] };
+  const merged = E.mergeRequests([localCopy], [remoteCopy])[0];
+  assert.equal(merged.status, 'triaged', 'newer copy still wins the request fields');
+  assert.deepEqual([...merged.messages.map(m => m.text)], ['hello', 'member msg', 'desk reply'],
+    'no message lost, ordered by time');
+  // exact duplicates collapse
+  assert.equal(E.mergeMessages(localCopy.messages, localCopy.messages).length, 2);
+});
+
+/* ---- desk actions ---- */
+
+test('DESK_ACTIONS: every offered action is a legal transition; every status covered', () => {
+  for (const status of [...E.FLOW, 'cancelled']) {
+    assert.ok(status in E.DESK_ACTIONS, status + ' missing from DESK_ACTIONS');
+    for (const [to] of E.DESK_ACTIONS[status]) {
+      assert.ok(E.canTransition(status, to), status + ' → ' + to + ' offered but illegal');
+    }
+  }
+  assert.equal(E.DESK_ACTIONS.options.length, 0, 'options stage waits on the member');
+});
+
+/* ---- backend price parity ---- */
+
+test('VELVET_TIERS in functions/src/velvet.ts matches the engine TIERS', () => {
+  const src = readFileSync(join(ROOT, 'functions', 'src', 'velvet.ts'), 'utf8');
+  const m = /const VELVET_TIERS[^=]*=\s*({[\s\S]*?});/.exec(src);
+  assert.ok(m, 'VELVET_TIERS literal not found in velvet.ts');
+  const serverTiers = new Function('return (' + m[1] + ')')();
+  for (const id of E.TIER_ORDER) {
+    assert.ok(serverTiers[id], 'server missing tier ' + id);
+    assert.equal(serverTiers[id].pricePence, E.TIERS[id].pricePence, id + ' price drifted');
+    assert.equal(serverTiers[id].pointsMultiplier, E.TIERS[id].pointsMultiplier, id + ' multiplier drifted');
+    assert.equal(serverTiers[id].name, E.TIERS[id].name, id + ' name drifted');
+  }
+  assert.deepEqual(Object.keys(serverTiers).sort(), [...E.TIER_ORDER].sort(), 'tier sets differ');
 });
 
 /* ---- money formatting ---- */

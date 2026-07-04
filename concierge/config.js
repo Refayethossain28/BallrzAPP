@@ -40,3 +40,10 @@ if (typeof window !== 'undefined') window.VELVET_FIREBASE_CONFIG = VELVET_FIREBA
 /* Region the Velvet Cloud Functions are deployed to (functions/src/velvet.ts). */
 var VELVET_FUNCTIONS_REGION = 'us-central1';
 if (typeof window !== 'undefined') window.VELVET_FUNCTIONS_REGION = VELVET_FUNCTIONS_REGION;
+
+/* App Check (reCAPTCHA v3) site key — protects the backend from abuse.
+ * Firebase console → App Check → register the web app with reCAPTCHA v3,
+ * paste the site key here and redeploy. Left blank, App Check stays off.
+ * (This is a public site key — safe to commit.) */
+var VELVET_APPCHECK_KEY = '';
+if (typeof window !== 'undefined') window.VELVET_APPCHECK_KEY = VELVET_APPCHECK_KEY;

@@ -30,6 +30,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
 <script src="firebase.js"></script>
+<script src="apexvip-track.js"></script>
 <script src="apexvip-core.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -273,17 +274,11 @@ try {
   }
 } catch(e) { console.warn('Firebase init:', e.message); }
 
-function track(event, props){
-  try{
-    const ev={e:event,event,t:Date.now(),ts:Date.now(),...props};
-    const key='apexvip_events';
-    const arr=JSON.parse(localStorage.getItem(key)||'[]');
-    arr.push(ev);
-    if(arr.length>2000) arr.splice(0,arr.length-2000);
-    localStorage.setItem(key,JSON.stringify(arr));
-    if(FIREBASE_ENABLED) db.collection('analytics').add(ev).catch(reportError);
-  }catch(e){}
-}
+// Shared analytics pipeline — one implementation for every app (apexvip-track.js).
+const track = createApexTrack('driver', {
+  getDb: () => (FIREBASE_ENABLED ? db : null),
+  onError: (e) => reportError(e),
+});
 
 let JOBS=[]; // real broadcast jobs only (live from open_jobs)
 const HISTORY=[]; // legacy demo list (kept empty; history renders from live data)

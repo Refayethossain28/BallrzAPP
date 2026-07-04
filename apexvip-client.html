@@ -43,6 +43,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-check-compat.js"></script>
 <script src="https://web.squarecdn.com/v1/square.js" async></script>
 <script src="firebase.js"></script>
+<script src="apexvip-track.js"></script>
 <script src="apexvip-core.js"></script>
 <script src="apexvip-lib.js"></script>
 <style>
@@ -933,19 +934,13 @@ function addRipple(btn, e) {
   r.addEventListener('animationend', () => r.remove(), {once:true});
 }
 
-function track(event, props){
-  try{
-    // Store both 'e' and 'event' so admin analytics filters work (uses e.e)
-    const ev={e:event,event,ts:Date.now(),t:Date.now(),...props};
-    const key='apexvip_events';
-    const arr=JSON.parse(localStorage.getItem(key)||'[]');
-    arr.push(ev);
-    if(arr.length>2000) arr.splice(0,arr.length-2000);
-    localStorage.setItem(key,JSON.stringify(arr));
-    // Off-device analytics only with explicit consent (UK GDPR / PECR)
-    if(FIREBASE_ENABLED && localStorage.getItem('apex_consent')==='all') db.collection('analytics').add(ev).catch(reportError);
-  }catch(e){}
-}
+// Shared analytics pipeline — one implementation for every app (apexvip-track.js).
+const track = createApexTrack('client', {
+  getDb: () => (FIREBASE_ENABLED ? db : null),
+  // Off-device analytics only with explicit consent (UK GDPR / PECR)
+  canSend: () => localStorage.getItem('apex_consent')==='all',
+  onError: (e) => reportError(e),
+});
 
 // ── Cookie / privacy consent ──────────────────────────────────────────────
 function setCookieConsent(level){ // 'all' | 'essential'

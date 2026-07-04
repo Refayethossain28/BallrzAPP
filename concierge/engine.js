@@ -34,7 +34,7 @@
  * the same answer. UMD so it runs in the browser (window.Velvet) and under
  * Node/vm for tests — same pattern as cusp/engine.js.
  */
-(function (root, factory) {
+(function (/** @type {any} */ root, factory) {
   if (typeof module !== 'undefined' && module.exports) module.exports = factory();
   else root.Velvet = factory();
 })(typeof self !== 'undefined' ? self : this, function () {
@@ -417,6 +417,18 @@
     return f(request, memberName);
   }
 
+  /** The desk-side action menu per status — [to, label] pairs, every one a
+   *  legal canTransition() move. Shared by the admin console and the mobile
+   *  ops app so the two desks can never disagree about what's allowed. */
+  var DESK_ACTIONS = {
+    submitted: [['triaged', 'Triage']],
+    triaged: [['sourcing', 'Start sourcing']],
+    sourcing: [['options', 'Send options']],
+    options: [],                                   // waiting on the member
+    confirmed: [['completed', 'Complete']],
+    completed: [], cancelled: [],
+  };
+
   /* ------------------------------------------------------------------ *
    *  Points & status                                                    *
    * ------------------------------------------------------------------ */
@@ -455,8 +467,30 @@
    * I/O, which copy of each piece wins — so sync is testable and a bad
    * network can never corrupt entitlements.                             */
 
+  /** Union of two message lists, de-duplicated by (at, from, text) and ordered
+   *  by time. This is what makes the sync safe for chat: a request document is
+   *  last-writer-wins as a whole, so a member message and a desk reply written
+   *  in the same instant would otherwise drop one — the union heals it on the
+   *  next merge, whichever side "lost" the array write. */
+  function mergeMessages(a, b) {
+    var seen = {}, out = [];
+    function take(list) {
+      for (var i = 0; i < (list || []).length; i++) {
+        var m = list[i];
+        if (!m) continue;
+        var k = (m.at || 0) + '|' + (m.from || '') + '|' + (m.text || '');
+        if (seen[k]) continue;
+        seen[k] = true; out.push(m);
+      }
+    }
+    take(a); take(b);
+    out.sort(function (x, y) { return (x.at || 0) - (y.at || 0); });
+    return out;
+  }
+
   /** Per request id: the copy with the later updatedAt wins (more messages
-   *  breaks a tie — desk replies bump the thread without a status change).
+   *  breaks a tie — desk replies bump the thread without a status change),
+   *  but the chat thread is always the UNION of both copies' messages.
    *  Result is ordered by submittedAt so both devices render identically. */
   function mergeRequests(a, b) {
     var byId = {}, order = [];
@@ -469,7 +503,11 @@
         var pu = prev.updatedAt || prev.submittedAt || 0;
         var ru = r.updatedAt || r.submittedAt || 0;
         var pm = (prev.messages || []).length, rm = (r.messages || []).length;
-        if (ru > pu || (ru === pu && rm > pm)) byId[r.id] = r;
+        var winner = (ru > pu || (ru === pu && rm > pm)) ? r : prev;
+        var union = mergeMessages(prev.messages, r.messages);
+        byId[r.id] = union.length !== (winner.messages || []).length
+          ? Object.assign({}, winner, { messages: union })
+          : winner;
       }
     }
     take(a); take(b);
@@ -549,8 +587,10 @@
     slaDeadline: slaDeadline, slaState: slaState,
     priorityScore: priorityScore, queueOrder: queueOrder,
     hash: hash, deskDelays: deskDelays, proposeOptions: proposeOptions, deskLine: deskLine,
+    DESK_ACTIONS: DESK_ACTIONS,
     STATUS_LEVELS: STATUS_LEVELS, pointsEarned: pointsEarned, statusFor: statusFor,
     pointsToNext: pointsToNext, fmtGBP: fmtGBP,
-    mergeRequests: mergeRequests, mergeInvoices: mergeInvoices, mergeStates: mergeStates,
+    mergeMessages: mergeMessages, mergeRequests: mergeRequests,
+    mergeInvoices: mergeInvoices, mergeStates: mergeStates,
   };
 });

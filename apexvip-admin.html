@@ -30,6 +30,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
 <script src="firebase.js"></script>
+<script src="apexvip-track.js"></script>
 <script src="apexvip-core.js"></script>
 <!-- Shared pure logic (payout aggregation, …) — unit-tested in apexvip-web. -->
 <script src="apexvip-engine.js"></script>
@@ -277,17 +278,11 @@ const NAVITEMS=[
 
 const ADMIN_DEMO_FLIGHTS = []; // real tracked flights only
 
-function track(event, props){
-  try{
-    const ev={e:event,event,t:Date.now(),ts:Date.now(),...props};
-    const key='apexvip_events';
-    const arr=JSON.parse(localStorage.getItem(key)||'[]');
-    arr.push(ev);
-    if(arr.length>2000) arr.splice(0,arr.length-2000);
-    localStorage.setItem(key,JSON.stringify(arr));
-    if(FIREBASE_ENABLED) db.collection('analytics').add(ev).catch(reportError);
-  }catch(e){}
-}
+// Shared analytics pipeline — one implementation for every app (apexvip-track.js).
+const track = createApexTrack('admin', {
+  getDb: () => (FIREBASE_ENABLED ? db : null),
+  onError: (e) => reportError(e),
+});
 
 let S={screen:'login',bFilter:'all',dFilter:'all',cFilter:'all',theme:localStorage.getItem('apexvip_admin_theme')||'dark',_dispatchOpen:false,_dispatchRef:null,_discreteDispatch:false,dispatchMode:localStorage.getItem('apexvip_dispatch_mode')||'broadcast',_pricing:null};
 let _adminMap = null, _adminMarkers = {};
@@ -901,13 +896,7 @@ concierge:()=>{
   const confirmedRev=VREQS.filter(r=>r.chosenOption).reduce((s,r)=>s+(r.chosenOption.pricePence||0),0);
   const slaBadge=st=>({met:'tag-green Met',ok:'tag-blue OK',warning:'tag-amber Due',breached:'tag-red Breached'})[st]||'tag-gray —';
   const ago=t=>{const m=Math.round((now-t)/60000);return m<60?m+'m':m<1440?Math.round(m/60)+'h':Math.round(m/1440)+'d';};
-  const nextActions=r=>({
-    submitted:[['triaged','Triage']],
-    triaged:[['sourcing','Start sourcing']],
-    sourcing:[['options','Send options']],
-    options:[],
-    confirmed:[['completed','Complete']],
-  })[r.status]||[];
+  const nextActions=r=>V.DESK_ACTIONS[r.status]||[];
   let html='<div class="screen">';
   html+='<div class="section-header"><div><div class="section-title">Concierge desk</div><div style="color:var(--fg-dim);font-size:13px;margin-top:2px">The ApexVIP Concierge app, staffed from this console — replies and status changes reach the member live.</div></div>'
     +'<a class="btn btn-glass btn-sm" href="concierge/ops.html" target="_blank" rel="noopener" style="text-decoration:none">\uD83D\uDCF1 Mobile ops</a></div>';

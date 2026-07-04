@@ -37,59 +37,10 @@ jobs:
         uses: actions/checkout@v4
 
       # ── Always-published static site (fast) ─────────────────────────────────
+      # The allowlist lives in scripts/assemble-site.sh — shared with the CI
+      # `site` job, which link-checks the result on every PR.
       - name: Assemble site
-        run: |
-          set -e
-          mkdir -p _site
-
-          # ApexVIP apps + every PWA asset, at the site root.
-          cp apexvip-client.html apexvip-driver.html apexvip-admin.html _site/ 2>/dev/null || true
-          cp apexvip-core.js apexvip-lib.js firebase.js firebase-messaging-sw.js _site/ 2>/dev/null || true
-          cp manifest*.json _site/ 2>/dev/null || true
-          cp icon-*.png _site/ 2>/dev/null || true
-          cp -r splashes _site/ 2>/dev/null || true
-          # Splash / tour background videos (client, driver and admin apps all
-          # reference these at the site root — without them the splash screen
-          # renders a plain black background).
-          cp splash-advert.mp4 splash-bg.mp4 tour-bg.mp4 _site/ 2>/dev/null || true
-
-          # Landing page + Jekyll opt-out so files starting with _ are served.
-          cp index.html _site/index.html 2>/dev/null || true
-          cp .nojekyll _site/.nojekyll 2>/dev/null || touch _site/.nojekyll
-
-          # RentMatch prototype + its PWA assets (manifest*.json above does not
-          # match rentmatch-manifest.json, so copy them explicitly).
-          cp rentmatch.html _site/ 2>/dev/null || true
-          cp rentmatch-manifest.json rentmatch-sw.js _site/ 2>/dev/null || true
-          cp rentmatch-icon-*.png rentmatch-icon.svg _site/ 2>/dev/null || true
-
-          # Runnable prototypes keep their original paths.
-          mkdir -p _site/concepts
-          cp -r concepts/prototypes _site/concepts/ 2>/dev/null || true
-
-          # FX trading app.
-          mkdir -p _site/trading-app
-          cp trading-app/fx-signal-pro.html _site/trading-app/ 2>/dev/null || true
-
-          # Ripple messenger — full PWA (app, engine, QR encoder, config, SW, icons).
-          mkdir -p _site/ripple
-          cp -r ripple/. _site/ripple/ 2>/dev/null || true
-
-          # Velvet (concierge/) — the subscription VIP concierge PWA (app,
-          # engine, cloud config, SW, icons) — plus the other standalone PWAs
-          # the landing page links to, which were missing from this allowlist
-          # and 404ed: Cusp, Omni, Imposter, Lingua.
-          for app in concierge cusp omni imposter lingua; do
-            mkdir -p "_site/$app"
-            cp -r "$app/." "_site/$app/" 2>/dev/null || true
-          done
-
-          # Fixr — luxury ground-transport + concierge prototype (static demo).
-          # The full Fixr app is a Node server; deploy it to Render (fixr/app/DEPLOY.md).
-          mkdir -p _site/fixr
-          cp fixr/index.html _site/fixr/index.html 2>/dev/null || true
-
-          echo "Assembled _site:"; ls -1 _site | head -40
+        run: bash scripts/assemble-site.sh _site
 
       # ── Apex landlord OS — static build of the real app ─────────────────────
       # Served at /BallrzAPP/apex/. The landing page and UI are fully browsable;

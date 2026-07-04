@@ -52,10 +52,32 @@
     askDesk: askDesk,
     track: track,
     dispatchChauffeur: dispatchChauffeur,
+    reportError: reportError,
   };
   if (typeof window !== 'undefined') window.VelvetCloud = cloud;
 
   function noAuth() { return Promise.reject(new Error('Cloud is not available')); }
+
+  /* ---- crash reporting — same `errors` collection the other apps use ---- */
+  var _errCount = 0;
+  function reportError(where, err) {
+    try {
+      if (!db || _errCount >= 10) return;      // capped so a render loop can't spam
+      _errCount++;
+      db.collection('errors').add({
+        app: 'concierge', where: String(where || ''),
+        message: String((err && err.message) || err || '').slice(0, 500),
+        stack: String((err && err.stack) || '').slice(0, 1500),
+        url: (typeof location !== 'undefined' && location.href) || '',
+        ua: (typeof navigator !== 'undefined' && navigator.userAgent) || '',
+        at: Date.now(),
+      }).catch(function () {});
+    } catch (e) {}
+  }
+  if (typeof window !== 'undefined' && window.addEventListener) {
+    window.addEventListener('error', function (e) { reportError('window', e.error || e.message); });
+    window.addEventListener('unhandledrejection', function (e) { reportError('promise', e.reason); });
+  }
   function setStatus(s) { cloud.status = s; if (H.onStatus) try { H.onStatus(s); } catch (e) {} }
 
   /* ---- lazy compat SDK loader (same pattern as ripple/) ---- */
@@ -67,7 +89,7 @@
     sdkCbs.push(cb);
     if (sdkState === 1) return;
     sdkState = 1;
-    var parts = ['app', 'auth', 'firestore', 'functions'];
+    var parts = ['app', 'auth', 'firestore', 'functions', 'app-check'];
     var i = 0;
     function finish(ok) {
       sdkState = ok ? 2 : 3;
@@ -94,6 +116,13 @@
       if (!ok) { setStatus('error'); return; }
       try {
         var app = firebase.apps && firebase.apps.length ? firebase.app() : firebase.initializeApp(cfg);
+        // App Check (reCAPTCHA v3) — abuse protection for the backend. Off
+        // until a site key is set in config.js; see SETUP.md.
+        try {
+          if (window.VELVET_APPCHECK_KEY && firebase.appCheck) {
+            firebase.appCheck().activate(window.VELVET_APPCHECK_KEY, true);
+          }
+        } catch (e) {}
         auth = firebase.auth(app);
         db = firebase.firestore(app);
         fns = app.functions ? app.functions(region) : null;

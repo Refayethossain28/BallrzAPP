@@ -223,6 +223,22 @@
     for (var i = 0; i < REQS.length; i++) if (REQS[i].docId === docId) return REQS[i];
     return null;
   }
+  var _errCount = 0;
+  function reportError(where, err) {
+    try {
+      if (!db || _errCount >= 10) return;
+      _errCount++;
+      db.collection('errors').add({
+        app: 'ops', where: String(where || ''),
+        message: String((err && err.message) || err || '').slice(0, 500),
+        stack: String((err && err.stack) || '').slice(0, 1500),
+        at: Date.now(),
+      }).catch(function () {});
+    } catch (e) {}
+  }
+  window.addEventListener('error', function (e) { reportError('window', e.error || e.message); });
+  window.addEventListener('unhandledrejection', function (e) { reportError('promise', e.reason); });
+
   function track(event, props) {
     try {
       var ev = Object.assign({ e: event, event: event, t: Date.now(), ts: Date.now(), src: 'ops' }, props || {});
@@ -233,7 +249,7 @@
   /* ---------- firebase ---------- */
   function loadSdk(cb) {
     if (typeof firebase !== 'undefined' && firebase.auth && firebase.firestore) { cb(true); return; }
-    var parts = ['app', 'auth', 'firestore'], i = 0;
+    var parts = ['app', 'auth', 'firestore', 'app-check'], i = 0;
     (function next() {
       if (i >= parts.length) { cb(true); return; }
       var s = document.createElement('script');
@@ -251,6 +267,11 @@
       if (!ok) { showLogin('Cloud unreachable — check your connection and reload.'); return; }
       try {
         var app = firebase.apps && firebase.apps.length ? firebase.app() : firebase.initializeApp(cfg);
+        try {
+          if (window.VELVET_APPCHECK_KEY && firebase.appCheck) {
+            firebase.appCheck().activate(window.VELVET_APPCHECK_KEY, true);
+          }
+        } catch (e) {}
         auth = firebase.auth(app);
         db = firebase.firestore(app);
       } catch (e) { showLogin('Firebase failed to start: ' + e.message); return; }
@@ -298,13 +319,7 @@
   }
 
   /* ---------- desk operations (engine-validated, same as the admin console) ---------- */
-  var NEXT_ACTIONS = {
-    submitted: [['triaged', 'Triage']],
-    triaged: [['sourcing', 'Start sourcing']],
-    sourcing: [['options', 'Send options']],
-    options: [],
-    confirmed: [['completed', 'Complete']],
-  };
+  var NEXT_ACTIONS = V.DESK_ACTIONS;   // shared with the admin console via the engine
 
   function advance(docId, to) {
     var r = reqBy(docId);
