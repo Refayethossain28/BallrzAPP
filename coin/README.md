@@ -56,6 +56,10 @@ GitHub Pages) can only call an `https://` relay.
 
 Wallet cards have a **QR button**: it encodes a `?pay=<address>` link, so a
 friend scanning it opens the app with your wallet prefilled as the recipient.
+The Send form has a **📷 Scan a friend’s QR** button: where the browser supports
+`BarcodeDetector` (Chrome/Android) it opens the camera and reads their address
+in-app; elsewhere (e.g. iOS Safari) it explains that the phone’s own Camera app
+scans the same QR, since it’s a payment link.
 The page also shows a live **leaderboard** (top holders by share of supply) and
 a **halving countdown** toward the 21 BLZ issuance limit.
 
