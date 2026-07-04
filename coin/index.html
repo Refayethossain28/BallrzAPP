@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0e14">
+<title>BallrzCoin — a toy Bitcoin</title>
+<style>
+  :root {
+    --bg: #0b0e14; --panel: #131824; --panel2: #1a2130; --line: #232c3f;
+    --text: #e8edf6; --dim: #8b96ab; --gold: #f7931a; --green: #3fce8b; --red: #ff5d73;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 20px 16px 60px; max-width: 980px; margin: 0 auto;
+  }
+  h1 { font-size: 26px; letter-spacing: -0.3px; }
+  h1 .tick { color: var(--gold); }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--dim); margin: 26px 0 10px; }
+  .sub { color: var(--dim); font-size: 13px; margin-top: 2px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 18px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; }
+  .stat b { display: block; font-size: 17px; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .card .bal { font-size: 22px; font-weight: 700; margin: 4px 0; font-variant-numeric: tabular-nums; }
+  .addr { font-family: var(--mono); font-size: 12px; color: var(--dim); word-break: break-all; cursor: pointer; }
+  .addr:hover { color: var(--gold); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  button {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 10px; padding: 8px 14px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  button:hover { border-color: var(--gold); }
+  button.primary { background: var(--gold); border-color: var(--gold); color: #14100a; font-weight: 700; }
+  button.danger:hover { border-color: var(--red); color: var(--red); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  input, select {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 10px; padding: 8px 12px; font: inherit; font-size: 13px; min-width: 0;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--gold); }
+  form.send { display: grid; grid-template-columns: 1fr 2fr 100px 100px auto; gap: 8px; align-items: center; }
+  @media (max-width: 720px) { form.send { grid-template-columns: 1fr 1fr; } }
+  .list { display: flex; flex-direction: column; gap: 8px; }
+  .block { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; }
+  .block .head { display: flex; gap: 12px; flex-wrap: wrap; align-items: baseline; }
+  .block .h { color: var(--gold); font-weight: 700; }
+  .hash { font-family: var(--mono); font-size: 12px; color: var(--dim); word-break: break-all; }
+  .tx { border-top: 1px dashed var(--line); margin-top: 8px; padding-top: 8px; font-size: 13px; }
+  .amt { color: var(--green); font-variant-numeric: tabular-nums; }
+  .fee { color: var(--dim); font-size: 12px; }
+  .note { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; color: var(--dim); font-size: 13px; }
+  .mining { color: var(--gold); font-family: var(--mono); font-size: 13px; }
+  #toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+    background: var(--panel2); border: 1px solid var(--gold); border-radius: 12px;
+    padding: 10px 18px; font-size: 14px; opacity: 0; transition: opacity 0.25s; pointer-events: none;
+    max-width: 90vw;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<h1>🪙 BallrzCoin <span class="tick">BLZ</span></h1>
+<div class="sub">
+  A toy proof-of-work cryptocurrency built like Bitcoin: secp256k1 wallets, UTXO transactions,
+  merkle trees, mining with difficulty retargeting, halving rewards and a 21M cap.
+  Open this page in a second tab — each tab is a node, and they sync on the heaviest chain.
+</div>
+
+<div class="stats" id="stats"></div>
+
+<h2>Wallets</h2>
+<div class="cards" id="wallets"></div>
+<div class="row">
+  <button id="newWallet">＋ New wallet</button>
+  <span class="mining" id="miningStatus"></span>
+</div>
+
+<h2>Send coins</h2>
+<form class="send" id="sendForm">
+  <select id="sendFrom"></select>
+  <input id="sendTo" placeholder="Recipient address (B…)" list="addrList" autocomplete="off">
+  <datalist id="addrList"></datalist>
+  <input id="sendAmount" placeholder="Amount" inputmode="decimal">
+  <input id="sendFee" placeholder="Fee" inputmode="decimal" value="0.0001">
+  <button class="primary" type="submit">Sign &amp; broadcast</button>
+</form>
+<div class="sub">Transactions wait in the mempool until a miner includes them; the fee goes to that miner.</div>
+
+<h2>Mempool <span id="mempoolCount"></span></h2>
+<div class="list" id="mempool"></div>
+
+<h2>Blockchain</h2>
+<div class="list" id="chain"></div>
+<div class="row">
+  <button id="resetAll" class="danger">Reset node (wipe chain &amp; wallets)</button>
+</div>
+
+<div id="toast"></div>
+
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+  var Coin = (typeof self !== 'undefined' ? self : window).BallrzCoin;
+  var LS_CHAIN = 'ballrzcoin.chain.v1';
+  var LS_WALLETS = 'ballrzcoin.wallets.v1';
+  var fmt = Coin.formatAmount;
+
+  function $(id) { return document.getElementById(id); }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function short(hex, n) { n = n || 10; return hex.slice(0, n) + '…' + hex.slice(-4); }
+
+  /* ---------- node state: restore or bootstrap ---------- */
+  var chain;
+  try {
+    var saved = localStorage.getItem(LS_CHAIN);
+    chain = saved ? Coin.Blockchain.fromJSON(JSON.parse(saved)) : new Coin.Blockchain();
+  } catch (err) {
+    chain = new Coin.Blockchain(); // corrupt or incompatible save — start fresh
+  }
+
+  var wallets = [];
+  try {
+    var savedW = JSON.parse(localStorage.getItem(LS_WALLETS) || '[]');
+    wallets = savedW.map(function (w) {
+      var full = Coin.walletFromPrivateKey(w.privateKey);
+      full.name = w.name;
+      return full;
+    });
+  } catch (err) { wallets = []; }
+  if (!wallets.length) {
+    ['Satoshi', 'You'].forEach(function (name) {
+      var w = Coin.generateWallet();
+      w.name = name;
+      wallets.push(w);
+    });
+  }
+
+  function persist() {
+    try {
+      localStorage.setItem(LS_CHAIN, JSON.stringify(chain.toJSON()));
+      localStorage.setItem(LS_WALLETS, JSON.stringify(wallets.map(function (w) {
+        return { name: w.name, privateKey: w.privateKey };
+      })));
+    } catch (err) { /* storage full or unavailable — keep running in memory */ }
+  }
+
+  /* ---------- tab-to-tab "network" ---------- */
+  var bc = null;
+  if (typeof BroadcastChannel !== 'undefined') {
+    bc = new BroadcastChannel('ballrzcoin-net-v1');
+    bc.onmessage = function (ev) {
+      var m = ev.data || {};
+      if (m.type === 'hello') {
+        bc.postMessage({ type: 'chain', blocks: chain.blocks });
+      } else if (m.type === 'chain') {
+        if (chain.replaceChain(m.blocks)) {
+          persist();
+          render();
+          toast('⛓ Synced to a heavier chain from another tab (height ' + chain.tip.height + ')');
+        }
+      } else if (m.type === 'tx') {
+        try { chain.submitTransaction(m.tx); persist(); render(); } catch (err) { /* dup or conflict */ }
+      }
+    };
+  }
+  function announceChain() { if (bc) bc.postMessage({ type: 'chain', blocks: chain.blocks }); }
+
+  function toast(msg) {
+    var t = $('toast');
+    t.textContent = msg;
+    t.className = 'show';
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { t.className = ''; }, 3200);
+  }
+
+  /* ---------- mining (time-sliced so the page stays alive) ---------- */
+  var mining = null;
+  function startMining(wallet) {
+    if (mining) { toast('Already mining…'); return; }
+    mining = { block: chain.prepareBlock(wallet.address), wallet: wallet, t0: Date.now(), tried: 0 };
+    step();
+    function step() {
+      if (!mining) return;
+      var SLICE = 25000;
+      var found = Coin.mine(mining.block, { startNonce: mining.block.nonce, maxIterations: SLICE });
+      mining.tried += SLICE;
+      if (found) {
+        var block = found;
+        mining = null;
+        try {
+          chain.addBlock(block);
+          persist();
+          announceChain();
+          toast('⛏ Block #' + block.height + ' mined → ' + fmt(coinbaseValue(block)) + ' to ' + esc(wallet.name));
+        } catch (err) {
+          toast('Block orphaned (another node was faster): ' + err.message);
+        }
+        render();
+      } else {
+        renderMiningStatus();
+        setTimeout(step, 0);
+      }
+    }
+  }
+  function coinbaseValue(block) {
+    return block.transactions[0].outputs.reduce(function (s, o) { return s + o.amount; }, 0);
+  }
+  function renderMiningStatus() {
+    var el = $('miningStatus');
+    if (!mining) { el.textContent = ''; return; }
+    var secs = Math.max(0.001, (Date.now() - mining.t0) / 1000);
+    el.textContent = '⛏ mining block #' + mining.block.height + ' — ' +
+      Math.round(mining.tried / secs / 1000) + ' kH/s, nonce ' + mining.block.nonce;
+  }
+
+  /* ---------- rendering ---------- */
+  function walletName(address) {
+    for (var i = 0; i < wallets.length; i++) if (wallets[i].address === address) return wallets[i].name;
+    return null;
+  }
+  function who(address) {
+    var n = walletName(address);
+    return n ? esc(n) : '<span class="hash">' + esc(short(address)) + '</span>';
+  }
+
+  function render() {
+    var s = chain.stats();
+    $('stats').innerHTML = [
+      ['#' + s.height, 'block height'],
+      [fmt(s.supply), 'in circulation'],
+      [fmt(s.blockReward), 'block reward'],
+      ['×' + s.difficulty.toFixed(2), 'difficulty'],
+      [s.mempoolSize, 'mempool'],
+      ['#' + s.nextHalvingHeight, 'next halving']
+    ].map(function (p) { return '<div class="stat"><b>' + p[0] + '</b><span>' + p[1] + '</span></div>'; }).join('');
+
+    $('wallets').innerHTML = wallets.map(function (w, i) {
+      return '<div class="card">' +
+        '<div>' + esc(w.name) + '</div>' +
+        '<div class="bal">' + fmt(chain.getBalance(w.address)) + '</div>' +
+        '<div class="addr" data-copy="' + esc(w.address) + '" title="Click to copy">' + esc(w.address) + '</div>' +
+        '<div class="row"><button class="primary" data-mine="' + i + '"' + (mining ? ' disabled' : '') + '>⛏ Mine to this wallet</button></div>' +
+        '</div>';
+    }).join('');
+
+    $('sendFrom').innerHTML = wallets.map(function (w, i) {
+      return '<option value="' + i + '">' + esc(w.name) + ' — ' + fmt(chain.getBalance(w.address)) + '</option>';
+    }).join('');
+    $('addrList').innerHTML = wallets.map(function (w) {
+      return '<option value="' + esc(w.address) + '">' + esc(w.name) + '</option>';
+    }).join('');
+
+    $('mempoolCount').textContent = chain.mempool.length ? '(' + chain.mempool.length + ' pending)' : '';
+    $('mempool').innerHTML = chain.mempool.length ? chain.mempool.map(function (e) {
+      var tx = e.tx;
+      return '<div class="block">' + tx.outputs.map(function (o) {
+        return who(tx.inputs[0] ? Coin.addressFromPublicKey(tx.inputs[0].pubKey) : '') +
+          ' → ' + who(o.address) + ' <span class="amt">' + fmt(o.amount) + '</span>';
+      }).join('<br>') +
+        ' <span class="fee">fee ' + fmt(e.fee) + '</span>' +
+        '<div class="hash">' + esc(short(tx.id, 16)) + '</div></div>';
+    }).join('') : '<div class="note">No pending transactions — send some coins above.</div>';
+
+    $('chain').innerHTML = chain.blocks.slice().reverse().map(function (b) {
+      var txHtml = b.transactions.map(function (tx) {
+        if (tx.type === 'coinbase') {
+          if (!tx.outputs.length) return '<div class="tx">🌱 genesis — “' + esc(tx.extra) + '”</div>';
+          return '<div class="tx">⛏ coinbase → ' + who(tx.outputs[0].address) +
+            ' <span class="amt">' + fmt(tx.outputs[0].amount) + '</span></div>';
+        }
+        var from = Coin.addressFromPublicKey(tx.inputs[0].pubKey);
+        return '<div class="tx">' + tx.outputs.map(function (o) {
+          return who(from) + ' → ' + who(o.address) + ' <span class="amt">' + fmt(o.amount) + '</span>' +
+            (o.address === from ? ' <span class="fee">(change)</span>' : '');
+        }).join('<br>') + '<div class="hash">' + esc(short(tx.id, 16)) + '</div></div>';
+      }).join('');
+      return '<div class="block"><div class="head">' +
+        '<span class="h">#' + b.height + '</span>' +
+        '<span class="fee">' + new Date(b.timestamp).toLocaleString() + '</span>' +
+        '<span class="fee">nonce ' + b.nonce + '</span>' +
+        '<span class="fee">' + (b.transactions.length - 1) + ' transfer(s)</span>' +
+        '</div><div class="hash">' + esc(b.hash) + '</div>' + txHtml + '</div>';
+    }).join('');
+
+    renderMiningStatus();
+  }
+
+  /* ---------- events ---------- */
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (!t || !t.getAttribute) return;
+    var mineIdx = t.getAttribute('data-mine');
+    if (mineIdx !== null && mineIdx !== undefined && mineIdx !== '') {
+      startMining(wallets[Number(mineIdx)]);
+      render();
+      return;
+    }
+    var copy = t.getAttribute('data-copy');
+    if (copy) {
+      try { navigator.clipboard.writeText(copy); toast('Address copied'); } catch (err) { toast(copy); }
+    }
+  });
+
+  $('newWallet').addEventListener('click', function () {
+    var name = prompt('Wallet name?', 'Wallet ' + (wallets.length + 1));
+    if (name === null) return;
+    var w = Coin.generateWallet();
+    w.name = (name || 'Wallet ' + (wallets.length + 1)).slice(0, 24);
+    wallets.push(w);
+    persist();
+    render();
+  });
+
+  $('sendForm').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    try {
+      var from = wallets[Number($('sendFrom').value)];
+      var to = $('sendTo').value.trim();
+      var amount = Coin.parseAmount($('sendAmount').value);
+      var fee = $('sendFee').value.trim() ? Coin.parseAmount($('sendFee').value) : 0;
+      var tx = chain.send(from, to, amount, fee);
+      persist();
+      if (bc) bc.postMessage({ type: 'tx', tx: tx });
+      $('sendTo').value = ''; $('sendAmount').value = '';
+      toast('📨 Broadcast: ' + fmt(amount) + ' → ' + short(to) + ' (fee ' + fmt(fee) + ')');
+      render();
+    } catch (err) {
+      toast('✖ ' + err.message);
+    }
+  });
+
+  $('resetAll').addEventListener('click', function () {
+    if (!confirm('Wipe this node’s blockchain and wallets? (Other tabs keep theirs.)')) return;
+    try { localStorage.removeItem(LS_CHAIN); localStorage.removeItem(LS_WALLETS); } catch (err) {}
+    chain = new Coin.Blockchain();
+    wallets = [];
+    ['Satoshi', 'You'].forEach(function (name) {
+      var w = Coin.generateWallet();
+      w.name = name;
+      wallets.push(w);
+    });
+    mining = null;
+    persist();
+    render();
+  });
+
+  render();
+  persist();
+  if (bc) bc.postMessage({ type: 'hello' }); // ask peers for their chains
+})();
+</script>
+</body>
+</html>
