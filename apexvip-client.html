@@ -751,23 +751,16 @@ async function ensureSubscription() {
     const ref = db.collection('subscriptions').doc(auth.currentUser.uid);
     const doc = await ref.get();
     if (doc.exists) { state._sub = doc.data(); return; }
-    const trialEndsAt = new Date(Date.now() + (BUSINESS.trialDays || 30) * 86400000);
+    const trialEndsAt = ApexEngine.trialEndDate(BUSINESS);
     const sub = { role: 'client', status: 'trial', startedAt: firebase.firestore.FieldValue.serverTimestamp(), trialEndsAt };
     await ref.set(sub);
     state._sub = { ...sub, trialEndsAt };
   } catch (e) { /* non-fatal */ }
 }
 
-// Current subscription state: off (commission mode) / trial / active / expired.
-function subState() {
-  if (BUSINESS.model !== 'subscription') return { mode: 'off' };
-  const s = state._sub;
-  if (!s) return { mode: 'trial', daysLeft: BUSINESS.trialDays || 30 };
-  if (s.status === 'active') return { mode: 'active' };
-  const ends = s.trialEndsAt && s.trialEndsAt.toDate ? s.trialEndsAt.toDate() : new Date(s.trialEndsAt);
-  const daysLeft = Math.ceil((ends - Date.now()) / 86400000);
-  return daysLeft > 0 ? { mode: 'trial', daysLeft } : { mode: 'expired' };
-}
+// Current subscription state — shared, unit-tested state machine
+// (apexvip-web/src/membership/membership.ts); the driver app uses the same one.
+function subState() { return ApexEngine.membershipState(state._sub, BUSINESS); }
 
 // Global membership sheet — rendered on every screen so the booking gate can
 // summon it from anywhere.
@@ -1093,7 +1086,8 @@ let state = {
 
 document.body.classList.toggle('light', state.theme === 'light');
 // Escape user/driver-controlled strings before they enter innerHTML templates.
-function esc(x){return String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+// Single tested implementation lives in the shared engine (security/escape.ts).
+const esc=(typeof ApexEngine!=='undefined'&&ApexEngine.escapeHtml)||(x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
 
 // Real bookings only — populated live from Firestore for the signed-in client.
 let TRIPS = [];

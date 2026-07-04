@@ -467,7 +467,8 @@ function vcReply(docId){
 }
 
 // Escape user/driver-controlled strings before they enter innerHTML templates.
-function esc(x){return String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+// Single tested implementation lives in the shared engine (security/escape.ts).
+const esc=(typeof ApexEngine!=='undefined'&&ApexEngine.escapeHtml)||(x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
 
 function badge(s){
   const m={
@@ -1307,7 +1308,7 @@ audit: () => `<div class="screen">
 
 payouts: () => `<div class="screen">
   <div class="section-header"><div class="section-title">Driver Earnings</div></div>
-  <div style="font-size:12px;color:var(--fg-subtle);margin:-6px 0 14px">${(()=>{const b=S._business||{};const pct=b.model==='subscription'?Math.min(50,Math.max(0,Math.round(b.commissionPct??20))):20;return (100-pct)+'% of each completed trip, owed per driver ('+(b.model==='subscription'?'subscription model — commission '+pct+'%':'commission model')+'). "Pay out" settles the full balance via Stripe Connect.';})()}</div>
+  <div style="font-size:12px;color:var(--fg-subtle);margin:-6px 0 14px">${(()=>{const b=S._business||{};const keep=ApexEngine.keepPercent(b);return keep+'% of each completed trip, owed per driver ('+(b.model==='subscription'?'subscription model — commission '+(100-keep)+'%':'commission model')+'). "Pay out" settles the full balance via Stripe Connect.';})()}</div>
   <div id="driver-balances"><div style="text-align:center;padding:24px;color:var(--fg-4);font-size:13px">Loading…</div></div>
   <div class="section-header" style="margin-top:24px"><div class="section-title">Payout Requests</div></div>
   <div id="payouts-list"><div style="text-align:center;padding:40px;color:var(--fg-4);font-size:13px">Loading…</div></div>
@@ -1457,7 +1458,7 @@ settings:()=>{
       ${bizField('biz_trial','FREE TRIAL',biz.trialDays??30,'days')}
       ${bizField('biz_commission','COMMISSION',biz.commissionPct??20,'% per trip')}
     </div>
-    <div style="font-size:12px;color:var(--fg-subtle);line-height:1.6;margin-bottom:12px">Drivers keep <b style="color:var(--gold)">${100-(biz.commissionPct??20)}%</b> of each fare. New clients and drivers automatically start a ${biz.trialDays??30}-day free trial; after it ends they're prompted to subscribe.</div>
+    <div style="font-size:12px;color:var(--fg-subtle);line-height:1.6;margin-bottom:12px">Drivers keep <b style="color:var(--gold)">${ApexEngine.keepPercent({model:'subscription',commissionPct:biz.commissionPct})}%</b> of each fare. New clients and drivers automatically start a ${biz.trialDays??30}-day free trial; after it ends they're prompted to subscribe.</div>
     <button class="btn btn-gold btn-sm" onclick="saveBusinessModel()">Save Subscription Settings</button>
     `}
   </div>
