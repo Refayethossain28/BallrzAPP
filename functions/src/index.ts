@@ -36,7 +36,8 @@ import {
   round5, isoPlusDays, computeFareBounds, driverEarning, dispatchPay,
   bookingEvent, bookingMessage, daysUntil, shouldRemind, flightHHMM,
   normalizeCommissionPct, clientCoinsEarned, driverCoinsEarned,
-  clampCoinRedemption, round2,
+  clampCoinRedemption, round2, coinEarnRates, apexTierForBalance,
+  type CoinEarnRates, type CoinRateSettings,
 } from './logic.js';
 
 /**
@@ -56,6 +57,21 @@ async function platformCommissionPct(): Promise<number> {
   } catch { /* default to the commission model's 20% */ }
   _bizCache = { commissionPct: pct, at: Date.now() };
   return pct;
+}
+
+// ApexCoin earn rates (settings/coins, admin-tunable, tiered for clients) —
+// cached briefly per warm instance like the business settings above.
+let _coinRateCache: { rates: CoinEarnRates; at: number } | null = null;
+async function platformCoinRates(): Promise<CoinEarnRates> {
+  if (_coinRateCache && Date.now() - _coinRateCache.at < 60_000) return _coinRateCache.rates;
+  let s: CoinRateSettings | null = null;
+  try {
+    const doc = await admin.firestore().doc('settings/coins').get();
+    if (doc.exists) s = doc.data() as CoinRateSettings;
+  } catch { /* defaults below */ }
+  const rates = coinEarnRates(s);
+  _coinRateCache = { rates, at: Date.now() };
+  return rates;
 }
 
 import type {
@@ -452,10 +468,11 @@ export const onBookingWrite = onDocumentWritten(
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
           };
           await admin.firestore().collection('driver_payouts').doc(event.params.bookingId).set(entry, { merge: true });
-          // ApexCoin: the driver earns 2% of their pay. The deterministic ledger
-          // id makes this idempotent — create() throws if the trip already paid out
-          // coins (onDocumentWritten can fire more than once).
-          const axc = driverCoinsEarned(amount);
+          // ApexCoin: the driver earns a % of their pay (admin-tunable, default
+          // 2%). The deterministic ledger id makes this idempotent — create()
+          // throws if the trip already paid out coins (onDocumentWritten can
+          // fire more than once).
+          const axc = driverCoinsEarned(amount, (await platformCoinRates()).driverPct);
           if (axc > 0) {
             await creditCoins({
               ledgerId: `driverearn_${event.params.bookingId}`,
@@ -1213,18 +1230,23 @@ export const awardBookingCoins = onDocumentCreated('bookings/{bookingId}', async
     // The cash portion = fare minus any coins redeemed against this booking.
     // The redemption callable wrote its ledger row BEFORE the booking doc, so
     // reading it here is not a race.
-    const redeemRow = await admin.firestore()
-      .doc(`coin_ledger/${coinLedgerId('redeem', b.clientId, b.ref || event.params.bookingId)}`).get();
+    const [redeemRow, userSnap, rates] = await Promise.all([
+      admin.firestore().doc(`coin_ledger/${coinLedgerId('redeem', b.clientId, b.ref || event.params.bookingId)}`).get(),
+      admin.firestore().doc(`users/${b.clientId}`).get(),
+      platformCoinRates(),
+    ]);
     const redeemed = redeemRow.exists ? Number((redeemRow.data() as CoinLedgerEntry).amount) || 0 : 0;
-    const earn = clientCoinsEarned(fare - redeemed);
+    // Tiered earn: the client's CURRENT tier picks the % (3/4/5/6 by default).
+    const tier = apexTierForBalance((userSnap.data() as User | undefined)?.apexBalance);
+    const earn = clientCoinsEarned(fare - redeemed, rates.tiers[tier]);
     if (earn <= 0) return;
     const credited = await creditCoins({
       ledgerId: coinLedgerId('earn', event.params.bookingId),
       balanceRef: admin.firestore().doc(`users/${b.clientId}`),
       balanceField: 'apexBalance',
-      entry: { uid: b.clientId, role: 'client', type: 'earn', amount: earn, reason: 'Trip booking', ref: b.ref || event.params.bookingId },
+      entry: { uid: b.clientId, role: 'client', type: 'earn', amount: earn, reason: `Trip booking · ${tier} ${rates.tiers[tier]}%`, ref: b.ref || event.params.bookingId },
     });
-    if (credited) logger.info('awardBookingCoins', { booking: event.params.bookingId, earn, redeemed });
+    if (credited) logger.info('awardBookingCoins', { booking: event.params.bookingId, earn, redeemed, tier });
   } catch (err) { logger.error('awardBookingCoins', errMessage(err)); }
 });
 

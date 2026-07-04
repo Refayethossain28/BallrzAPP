@@ -61,23 +61,68 @@ export function dispatchPay(b: Booking, commissionPct = 20): number {
  * module (apexvip-web/src/coin/coin.ts), the same way normalizeCommissionPct
  * mirrors membership.ts: the browser previews with the engine copy, but the
  * ledger triggers/callables in index.ts award and deduct with THESE.
+ *
+ * Clients earn BY TIER (their balance's tier picks the %); drivers earn a
+ * flat % of pay. All five numbers are admin-tunable via `settings/coins`,
+ * clamped 0–20 with defaults 3/4/5/6 (Bronze→Platinum) and 2 (driver).
  */
-export const CLIENT_COIN_RATE = 0.05;
-export const DRIVER_COIN_RATE = 0.02;
+export type ApexTier = 'Bronze' | 'Silver' | 'Gold' | 'Platinum';
+export const DEFAULT_TIER_EARN_PCT: Record<ApexTier, number> = { Bronze: 3, Silver: 4, Gold: 5, Platinum: 6 };
+export const DEFAULT_DRIVER_EARN_PCT = 2;
 
 /** Round to 2 decimals without float drift. */
 export const round2 = (n: number): number => Math.round((Number(n) || 0) * 100) / 100;
 
-/** Whole APEX a client earns on the cash portion of a fare (5%). */
-export function clientCoinsEarned(farePaid: number): number {
-  const n = Number(farePaid);
-  return Number.isFinite(n) && n > 0 ? Math.round(n * CLIENT_COIN_RATE) : 0;
+/** The tier a coin balance sits in (mirrors the engine's apexTier). */
+export function apexTierForBalance(balance: unknown): ApexTier {
+  const b = Number(balance) || 0;
+  return b >= 5000 ? 'Platinum' : b >= 2000 ? 'Gold' : b >= 500 ? 'Silver' : 'Bronze';
 }
 
-/** AXC (2 dp) a driver earns on a completed job's pay (2%). */
-export function driverCoinsEarned(jobPay: number): number {
+export interface CoinRateSettings {
+  bronzePct?: number;
+  silverPct?: number;
+  goldPct?: number;
+  platinumPct?: number;
+  driverPct?: number;
+}
+
+export interface CoinEarnRates {
+  tiers: Record<ApexTier, number>;
+  driverPct: number;
+}
+
+function normalizeEarnPct(v: unknown, fallback: number): number {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return round2(Math.min(20, Math.max(0, n)));
+}
+
+/** Normalize `settings/coins` into a full rate card (defaults 3/4/5/6 + 2). */
+export function coinEarnRates(s?: CoinRateSettings | null): CoinEarnRates {
+  return {
+    tiers: {
+      Bronze: normalizeEarnPct(s?.bronzePct, DEFAULT_TIER_EARN_PCT.Bronze),
+      Silver: normalizeEarnPct(s?.silverPct, DEFAULT_TIER_EARN_PCT.Silver),
+      Gold: normalizeEarnPct(s?.goldPct, DEFAULT_TIER_EARN_PCT.Gold),
+      Platinum: normalizeEarnPct(s?.platinumPct, DEFAULT_TIER_EARN_PCT.Platinum),
+    },
+    driverPct: normalizeEarnPct(s?.driverPct, DEFAULT_DRIVER_EARN_PCT),
+  };
+}
+
+/** Whole APEX a client earns on the cash portion of a fare at a tier's %. */
+export function clientCoinsEarned(farePaid: number, ratePct: number = DEFAULT_TIER_EARN_PCT.Bronze): number {
+  const n = Number(farePaid);
+  const pct = normalizeEarnPct(ratePct, DEFAULT_TIER_EARN_PCT.Bronze);
+  return Number.isFinite(n) && n > 0 ? Math.round(n * (pct / 100)) : 0;
+}
+
+/** AXC (2 dp) a driver earns on a completed job's pay (default 2%). */
+export function driverCoinsEarned(jobPay: number, ratePct: number = DEFAULT_DRIVER_EARN_PCT): number {
   const n = Number(jobPay);
-  return Number.isFinite(n) && n > 0 ? round2(n * DRIVER_COIN_RATE) : 0;
+  const pct = normalizeEarnPct(ratePct, DEFAULT_DRIVER_EARN_PCT);
+  return Number.isFinite(n) && n > 0 ? round2(n * (pct / 100)) : 0;
 }
 
 /**

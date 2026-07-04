@@ -3,12 +3,13 @@
  *
  * Boots the actual triggers + callables in the Functions emulator and walks the
  * whole coin lifecycle:
- *   1. A confirmed booking awards the client 5% (awardBookingCoins) — once,
- *      even when the trigger fires again (deterministic ledger id).
+ *   1. A confirmed booking awards the client their TIER's % (awardBookingCoins,
+ *      Bronze 3% by default) — once, even when the trigger fires again
+ *      (deterministic ledger id). A Silver balance earns at 4%.
  *   2. redeemApexCoins (called as the signed-in client, over the emulator's
  *      callable HTTP surface) clamps to the balance, deducts transactionally,
  *      and is idempotent per bookingRef.
- *   3. A booking that carried a redemption earns 5% of the CASH portion only.
+ *   3. A booking that carried a redemption earns on the CASH portion only.
  *   4. Completing a trip pays the driver AND credits 2% AXC — once.
  *   5. redeemDriverCoins zeroes the wallet and lands the £ in driver_payouts
  *      as 'owed' — the rail payoutDriver settles.
@@ -74,17 +75,18 @@ async function main() {
     return s.exists ? s.data() : null;
   });
   check(!!earnRow, 'earn ledger row created by the trigger');
-  if (earnRow) check(earnRow.amount === 10, `client earned 5% of £200 = 10 APEX (got ${earnRow.amount})`);
+  if (earnRow) check(earnRow.amount === 6, `client earned Bronze 3% of £200 = 6 APEX (got ${earnRow.amount})`);
+  if (earnRow) check(/Bronze 3%/.test(earnRow.reason), `ledger reason names the tier + rate (got "${earnRow.reason}")`);
   let user = (await db.doc('users/coin-client').get()).data();
-  check(user.apexBalance === 10, `users/{uid}.apexBalance is 10 (got ${user.apexBalance})`);
+  check(user.apexBalance === 6, `users/{uid}.apexBalance is 6 (got ${user.apexBalance})`);
 
   // ── 2. redeemApexCoins: clamped, transactional, idempotent ────────────────
   console.log('→ redeemApexCoins as the signed-in client…');
   const r1 = await call('redeemApexCoins', 'coin-client', { amount: 999, bookingRef: 'APX-COIN2' });
-  check(r1.redeemed === 10, `redemption clamped to the balance: 10 (got ${r1.redeemed})`);
+  check(r1.redeemed === 6, `redemption clamped to the balance: 6 (got ${r1.redeemed})`);
   check(r1.balance === 0, `balance after redemption is 0 (got ${r1.balance})`);
   const r2 = await call('redeemApexCoins', 'coin-client', { amount: 999, bookingRef: 'APX-COIN2' });
-  check(r2.redeemed === 10, `a retried redemption is idempotent (got ${r2.redeemed})`);
+  check(r2.redeemed === 6, `a retried redemption is idempotent (got ${r2.redeemed})`);
   user = (await db.doc('users/coin-client').get()).data();
   check(user.apexBalance === 0, `retry did not double-deduct (balance ${user.apexBalance})`);
 
@@ -93,7 +95,7 @@ async function main() {
   const bookingB = await db.collection('bookings').add({
     ref: 'APX-COIN2', status: 'confirmed', clientId: 'coin-client',
     pickup: 'Soho', dropoff: 'Gatwick', location: 'london',
-    baseFare: 100, price: 100, apexRedeemed: 10,
+    baseFare: 100, price: 100, apexRedeemed: 6,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
   const earnB = await waitFor(async () => {
@@ -101,7 +103,24 @@ async function main() {
     return s.exists ? s.data() : null;
   });
   check(!!earnB, 'second earn ledger row created');
-  if (earnB) check(earnB.amount === 5, `earn is 5% of £(100−10) = 5 (round(4.5)) — got ${earnB.amount}`);
+  if (earnB) check(earnB.amount === 3, `earn is Bronze 3% of the £94 cash portion = 3 (round(2.82)) — got ${earnB.amount}`);
+
+  // ── 3b. A higher tier earns at its own rate ────────────────────────────────
+  console.log('→ a Silver member earns at 4%…');
+  await db.doc('users/coin-silver').set({ role: 'client', apexBalance: 600 }); // Silver tier
+  const bookingC = await db.collection('bookings').add({
+    ref: 'APX-COIN3', status: 'confirmed', clientId: 'coin-silver',
+    pickup: 'Knightsbridge', dropoff: 'Luton', location: 'london',
+    baseFare: 200, price: 200,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  const earnC = await waitFor(async () => {
+    const s = await db.doc(`coin_ledger/earn_${bookingC.id}`).get();
+    return s.exists ? s.data() : null;
+  });
+  check(earnC && earnC.amount === 8, `Silver earned 4% of £200 = 8 APEX (got ${earnC && earnC.amount})`);
+  const silver = (await db.doc('users/coin-silver').get()).data();
+  check(silver.apexBalance === 608, `Silver balance is 608 (got ${silver.apexBalance})`);
 
   // ── 4. Trip completion pays the driver and credits 2% AXC, once ───────────
   console.log('→ completing the trip credits the driver 2% AXC…');

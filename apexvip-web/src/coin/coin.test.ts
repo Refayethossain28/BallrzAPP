@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {
   clientCoinsEarned,
   driverCoinsEarned,
+  coinEarnRates,
+  earnPctForBalance,
   apexTier,
   apexTierColor,
   tierProgress,
@@ -12,19 +14,43 @@ import {
   round2,
 } from './coin.ts';
 
-test('clientCoinsEarned: 5% of the fare, whole coins, junk-safe', () => {
-  assert.equal(clientCoinsEarned(185), 9); // round(9.25)
-  assert.equal(clientCoinsEarned(190), 10); // round(9.5) rounds up
-  assert.equal(clientCoinsEarned(0), 0);
-  assert.equal(clientCoinsEarned(-50), 0);
-  assert.equal(clientCoinsEarned(NaN), 0);
+test('clientCoinsEarned: tier % of the fare, whole coins, junk-safe', () => {
+  assert.equal(clientCoinsEarned(200), 6); // Bronze default 3%
+  assert.equal(clientCoinsEarned(200, 5), 10); // Gold rate
+  assert.equal(clientCoinsEarned(185, 5), 9); // round(9.25)
+  assert.equal(clientCoinsEarned(190, 5), 10); // round(9.5) rounds up
+  assert.equal(clientCoinsEarned(0, 6), 0);
+  assert.equal(clientCoinsEarned(-50, 6), 0);
+  assert.equal(clientCoinsEarned(NaN, 4), 0);
+  assert.equal(clientCoinsEarned(200, NaN), 6); // junk rate → Bronze default
 });
 
-test('driverCoinsEarned: 2% of job pay at 2 dp, junk-safe', () => {
-  assert.equal(driverCoinsEarned(152), 3.04);
+test('driverCoinsEarned: % of job pay at 2 dp, junk-safe', () => {
+  assert.equal(driverCoinsEarned(152), 3.04); // default 2%
   assert.equal(driverCoinsEarned(95.55), 1.91); // 1.911 → 1.91
+  assert.equal(driverCoinsEarned(152, 3), 4.56); // admin-tuned rate
   assert.equal(driverCoinsEarned(-10), 0);
   assert.equal(driverCoinsEarned(undefined as unknown as number), 0);
+});
+
+test('coinEarnRates: defaults 3/4/5/6 + 2, admin overrides clamped to 0–20', () => {
+  assert.deepEqual(coinEarnRates(null), {
+    tiers: { Bronze: 3, Silver: 4, Gold: 5, Platinum: 6 },
+    driverPct: 2,
+  });
+  const tuned = coinEarnRates({ bronzePct: 2.5, platinumPct: 50, driverPct: -3, goldPct: 'junk' as unknown as number });
+  assert.equal(tuned.tiers.Bronze, 2.5);
+  assert.equal(tuned.tiers.Platinum, 20); // clamped ceiling
+  assert.equal(tuned.tiers.Gold, 5); // junk → default
+  assert.equal(tuned.driverPct, 0); // clamped floor
+});
+
+test('earnPctForBalance: the balance\'s tier picks the rate', () => {
+  assert.equal(earnPctForBalance(0), 3);
+  assert.equal(earnPctForBalance(600), 4);
+  assert.equal(earnPctForBalance(2500), 5);
+  assert.equal(earnPctForBalance(9000), 6);
+  assert.equal(earnPctForBalance(600, coinEarnRates({ silverPct: 4.5 })), 4.5);
 });
 
 test('round2 avoids float drift', () => {

@@ -9,17 +9,32 @@ import {
   round5, isoPlusDays, computeFareBounds, driverEarning, dispatchPay,
   bookingEvent, bookingMessage, daysUntil, shouldRemind, flightHHMM,
   normalizeCommissionPct, clientCoinsEarned, driverCoinsEarned,
-  clampCoinRedemption, round2,
+  clampCoinRedemption, round2, coinEarnRates, apexTierForBalance,
 } from './logic.ts';
 
-test('ApexCoin earn rates: 5% whole coins for clients, 2% at 2dp for drivers', () => {
-  assert.equal(clientCoinsEarned(185), 9);
-  assert.equal(clientCoinsEarned(190), 10);
-  assert.equal(clientCoinsEarned(0), 0);
-  assert.equal(clientCoinsEarned(-40), 0);
-  assert.equal(driverCoinsEarned(152), 3.04);
+test('ApexCoin earn rates: tiered % for clients, flat % at 2dp for drivers', () => {
+  assert.equal(clientCoinsEarned(200), 6); // Bronze default 3%
+  assert.equal(clientCoinsEarned(185, 5), 9); // Gold rate
+  assert.equal(clientCoinsEarned(190, 5), 10);
+  assert.equal(clientCoinsEarned(0, 6), 0);
+  assert.equal(clientCoinsEarned(-40, 6), 0);
+  assert.equal(clientCoinsEarned(200, NaN), 6); // junk rate → Bronze default
+  assert.equal(driverCoinsEarned(152), 3.04); // default 2%
   assert.equal(driverCoinsEarned(95.55), 1.91);
+  assert.equal(driverCoinsEarned(152, 3), 4.56);
   assert.equal(driverCoinsEarned(NaN), 0);
+});
+
+test('coinEarnRates + apexTierForBalance mirror the engine', () => {
+  assert.deepEqual(coinEarnRates(null), { tiers: { Bronze: 3, Silver: 4, Gold: 5, Platinum: 6 }, driverPct: 2 });
+  const tuned = coinEarnRates({ silverPct: 4.5, platinumPct: 99, driverPct: 'x' as unknown as number });
+  assert.equal(tuned.tiers.Silver, 4.5);
+  assert.equal(tuned.tiers.Platinum, 20); // clamped
+  assert.equal(tuned.driverPct, 2); // junk → default
+  assert.equal(apexTierForBalance(0), 'Bronze');
+  assert.equal(apexTierForBalance(500), 'Silver');
+  assert.equal(apexTierForBalance(2000), 'Gold');
+  assert.equal(apexTierForBalance(5000), 'Platinum');
 });
 
 test('clampCoinRedemption: whole coins, never beyond the balance, junk-safe', () => {

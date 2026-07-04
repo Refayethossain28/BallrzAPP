@@ -10,7 +10,9 @@ Functions in this codebase:
   (Twilio) the client as a booking moves through its lifecycle, records the
   driver's earning to the payout ledger, and credits their 2% AXC.
 - **ApexCoin ledger** — the server-authoritative loyalty wallet.
-  `awardBookingCoins` credits clients 5% of the cash portion of every booking;
+  `awardBookingCoins` credits clients their tier's % of the cash portion of
+  every booking (3/4/5/6% Bronze→Platinum by default, admin-tunable via
+  `settings/coins`);
   `redeemApexCoins` is the transactional "pay with ApexCoin" at checkout;
   `redeemDriverCoins` cashes a driver's AXC out onto the `driver_payouts` rail.
   Balances (`users/{uid}.apexBalance`, `drivers/{uid}.apexcoin`) and the

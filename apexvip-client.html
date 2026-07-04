@@ -742,6 +742,11 @@ if (FIREBASE_ENABLED) {
     if (d.exists) Object.assign(BUSINESS, d.data());
     if (['home','profile'].includes(state.screen)) render();
   }, () => {});
+  // ApexCoin earn rates — admin-tunable (settings/coins), tiered for clients.
+  db.collection('settings').doc('coins').onSnapshot(d => {
+    state._coinRates = ApexEngine.coinEarnRates(d.exists ? d.data() : null);
+    if (['profile','apex-benefits','booking-confirmed'].includes(state.screen)) render();
+  }, () => {});
 }
 
 // Ensure a subscriptions/{uid} doc exists (starts the free trial on first sight).
@@ -3900,9 +3905,9 @@ profile: () => {
         <div style="background:${apexTierColor(apexTier(state.apexBalance))}22;border:1px solid ${apexTierColor(apexTier(state.apexBalance))}55;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;letter-spacing:.08em;color:${apexTierColor(apexTier(state.apexBalance))}">${apexTier(state.apexBalance).toUpperCase()}</div>
       </div>
       <div style="font-size:32px;font-weight:800;color:${apexTierColor(apexTier(state.apexBalance))};line-height:1;letter-spacing:-.02em">${state.apexBalance.toLocaleString()}</div>
-      <div style="font-size:11px;color:var(--fg-4);margin-top:3px;margin-bottom:14px">APEX balance</div>
+      <div style="font-size:11px;color:var(--fg-4);margin-top:3px;margin-bottom:14px">APEX balance · earning ${ApexEngine.earnPctForBalance(state.apexBalance,state._coinRates)}% on every journey</div>
       ${(()=>{const p=ApexEngine.tierProgress(state.apexBalance);return p.next?`<div style="margin-bottom:14px">
-        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--fg-4);margin-bottom:5px"><span>Progress to ${p.next}</span><span>${state.apexBalance.toLocaleString()} / ${p.target.toLocaleString()}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--fg-4);margin-bottom:5px"><span>Progress to ${p.next} · earn ${(state._coinRates||ApexEngine.coinEarnRates(null)).tiers[p.next]}%</span><span>${state.apexBalance.toLocaleString()} / ${p.target.toLocaleString()}</span></div>
         <div style="height:4px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden"><div style="height:100%;border-radius:2px;background:${apexTierColor(p.tier)};width:${p.pct}%;transition:width .6s ease"></div></div>
       </div>`:''})()}${state.apexTransactions.length>0?`<div style="border-top:1px solid rgba(255,255,255,.05);padding-top:12px">
         <div style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-4);margin-bottom:8px">Recent Activity</div>
@@ -4584,7 +4589,7 @@ profile: () => {
   const disc = t.discount || 0;
   const total = t.price || (base - disc);
   const vat = t.vat || Math.round(total/6);
-  const axc = ApexEngine.clientCoinsEarned(total);
+  const axc = ApexEngine.clientCoinsEarned(total, ApexEngine.earnPctForBalance(state.apexBalance, state._coinRates));
   return `
 <div style="height:100dvh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
   <div class="back-row">
@@ -4751,11 +4756,12 @@ profile: () => {
 
 'apex-benefits': () => {
   const tier = apexTier(state.apexBalance);
+  const rates = state._coinRates || ApexEngine.coinEarnRates(null);
   const TIERS = [
-    { name: 'Bronze', color: '#cd7f32', min: 0, max: 499, benefits: ['Priority booking (30 min dispatch)','Journey history & receipts','APEX points on every ride','Access to all vehicle classes'] },
-    { name: 'Silver', color: '#a8a9ad', min: 500, max: 1999, benefits: ['Everything in Bronze','15% surge price cap','Free cabin water & newspaper','Dedicated phone line (business hours)','Birthday journey credit (£25)'] },
-    { name: 'Gold', color: '#ffffff', min: 2000, max: 4999, benefits: ['Everything in Silver','10-minute guaranteed dispatch','No surge pricing on weekdays','Airport meet & greet included','Monthly APEX bonus (200 pts)','Dedicated account manager'] },
-    { name: 'Platinum', color: '#b9f2ff', min: 5000, max: Infinity, benefits: ['Everything in Gold','Zero surge pricing, always','Guaranteed upgrade when available','24/7 personal concierge line','Complimentary airport transfers (2/month)','500 APEX monthly bonus','Annual year-in-review gift voucher'] },
+    { name: 'Bronze', color: '#cd7f32', min: 0, max: 499, benefits: [`Earn ${rates.tiers.Bronze}% APEX on every journey`,'Priority booking (30 min dispatch)','Journey history & receipts','Access to all vehicle classes'] },
+    { name: 'Silver', color: '#a8a9ad', min: 500, max: 1999, benefits: [`Earn ${rates.tiers.Silver}% APEX on every journey`,'Everything in Bronze','15% surge price cap','Free cabin water & newspaper','Dedicated phone line (business hours)','Birthday journey credit (£25)'] },
+    { name: 'Gold', color: '#ffffff', min: 2000, max: 4999, benefits: [`Earn ${rates.tiers.Gold}% APEX on every journey`,'Everything in Silver','10-minute guaranteed dispatch','No surge pricing on weekdays','Airport meet & greet included','Monthly APEX bonus (200 pts)','Dedicated account manager'] },
+    { name: 'Platinum', color: '#b9f2ff', min: 5000, max: Infinity, benefits: [`Earn ${rates.tiers.Platinum}% APEX on every journey`,'Everything in Gold','Zero surge pricing, always','Guaranteed upgrade when available','24/7 personal concierge line','Complimentary airport transfers (2/month)','500 APEX monthly bonus','Annual year-in-review gift voucher'] },
   ];
   return `
 <div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
@@ -5678,7 +5684,8 @@ async function confirmBooking(overrideRef){
   const {discount:disc,total,vat}=ApexEngine.quoteFare(base,!!state._promoApplied);
   const svcLabel={airport:'Airport Transfer',hourly:'By the Hour',day:'By the Day'}[state.booking.serviceType]||'Airport Transfer';
   // Redeem APEX BEFORE the booking write: the server's earn trigger looks up
-  // the redemption ledger row for this ref to award 5% of the cash portion.
+  // the redemption ledger row for this ref to award the tier's % of the cash
+  // portion.
   // Live wallet → the transactional callable (clamped server-side, idempotent
   // per booking); offline/demo → the local wallet.
   let _redeemed=0;
@@ -5720,10 +5727,10 @@ async function confirmBooking(overrideRef){
   }
   state._confirmedRef=ref;state._promoApplied=false;state._squarePaymentId=null;
   pushBookingHistory();
-  // Earn 5% on the cash portion only (shared engine maths; in live mode the
-  // server awards and earnApex is banner + telemetry only).
+  // Earn the tier's % on the cash portion only (shared engine maths; in live
+  // mode the server awards and earnApex is banner + telemetry only).
   state._lastApexEarned=0; // stale banner guard — earnApex only sets it when coins were earned
-  const _axcAmt=ApexEngine.clientCoinsEarned(total-_redeemed);
+  const _axcAmt=ApexEngine.clientCoinsEarned(total-_redeemed,ApexEngine.earnPctForBalance(state.apexBalance,state._coinRates));
   earnApex(_axcAmt,'Trip booking');
   track('booking_confirmed',{
     service:state.booking.serviceType||'airport',

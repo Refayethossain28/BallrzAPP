@@ -671,7 +671,13 @@ function watchBusinessModel(){
     if(d.exists)Object.assign(BUSINESS,d.data());
     if(['home','profile'].includes(S.screen))render();
   },()=>{});
+  // ApexCoin earn rate (admin-tunable) — drives the wallet copy + demo earn.
+  db.collection('settings').doc('coins').onSnapshot(d=>{
+    S._coinRates=ApexEngine.coinEarnRates(d.exists?d.data():null);
+    if(S.screen==='axc-wallet')render();
+  },()=>{});
 }
+function driverEarnPct(){return (S._coinRates||ApexEngine.coinEarnRates(null)).driverPct;}
 async function ensureDriverSubscription(){
   if(!FIREBASE_ENABLED||!_driverId||BUSINESS.model!=='subscription')return;
   try{
@@ -1076,7 +1082,7 @@ function _advanceStep(){
     // ledger trigger) and the snapshot updates S.apexcoin; local award is the
     // offline/demo path only.
     const jobPay=S.activeJob?.pay||0;
-    const axcEarned=ApexEngine.driverCoinsEarned(jobPay);
+    const axcEarned=ApexEngine.driverCoinsEarned(jobPay,driverEarnPct());
     if(axcEarned>0&&!S._axcLive){
       S.apexcoin=ApexEngine.round2(S.apexcoin+axcEarned);
       S._axcHistory=ApexEngine.appendCoinTx(S._axcHistory,{desc:S.activeJob?.service||'Trip',type:'earn',amount:axcEarned,date:new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short'})});
@@ -1527,7 +1533,7 @@ earnings:()=>{
         <span style="font-size:28px">🪙</span>
         <div style="flex:1"><div style="font-size:11px;color:var(--fg-subtle)">BALANCE</div><div style="font-size:28px;font-weight:800;color:#C8A97E">${S.apexcoin.toFixed(2)} AXC</div><div style="font-size:12px;color:rgba(200,169,126,.6)">≈ £${S.apexcoin.toFixed(2)}</div></div>
       </div>
-      <div style="font-size:12px;color:var(--fg-dim);line-height:1.7">Drivers earn 2% of every completed job in ApexCoin. AXC can be redeemed as cash or used within the ApexVIP ecosystem.</div>
+      <div style="font-size:12px;color:var(--fg-dim);line-height:1.7">Drivers earn ${driverEarnPct()}% of every completed job in ApexCoin. AXC can be redeemed as cash or used within the ApexVIP ecosystem.</div>
     </div>
     <div class="card" style="padding:22px;margin-top:8px;margin-bottom:10px">
       <div class="section-label" style="margin-bottom:14px">Request payout</div>
@@ -1629,7 +1635,7 @@ axcWallet:()=>`<div class="screen">
   </div>
   <div class="card" style="margin-bottom:16px">
     <div class="section-label" style="margin-bottom:14px">How Drivers Earn</div>
-    ${[['2%','Of every completed trip'],['Bonus','High ratings (4.9+)'],['Milestone','Per 50 trips completed'],['Referral','Per driver referred']].map(([v,d])=>`
+    ${[[driverEarnPct()+'%','Of every completed trip'],['Bonus','High ratings (4.9+)'],['Milestone','Per 50 trips completed'],['Referral','Per driver referred']].map(([v,d])=>`
     <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--divider)">
       <div style="min-width:52px;background:rgba(200,169,126,.08);border:1px solid rgba(200,169,126,.15);border-radius:8px;padding:4px 8px;text-align:center;font-size:12px;font-weight:800;color:#C8A97E">${v}</div>
       <div style="font-size:13px;color:var(--fg-muted)">${d}</div>
@@ -2066,7 +2072,7 @@ function _driverAILocal(msg){
     const todayTotal=today.reduce((a,x)=>a+(Number(x.amount)||0),0);
     return todayTotal>0
       ? `Today you've completed ${today.length} trip${today.length!==1?'s':''} totalling £${todayTotal}. Check the Earnings tab for a full breakdown by week and month. Your current ApexCoin balance is ${S.apexcoin.toFixed(2)} AXC.`
-      : "Open the Earnings tab for a full breakdown. Your ApexCoin balance is "+S.apexcoin.toFixed(2)+" AXC. Coins are earned at 2% of each fare and can be redeemed for fuel vouchers and vehicle servicing.";
+      : "Open the Earnings tab for a full breakdown. Your ApexCoin balance is "+S.apexcoin.toFixed(2)+" AXC. Coins are earned at "+driverEarnPct()+"% of each fare and can be redeemed for fuel vouchers and vehicle servicing.";
   }
   // London knowledge
   if(/drop.?off|best.*entrance|entrance/i.test(m))
