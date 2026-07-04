@@ -23,6 +23,9 @@ export interface User {
   referralCode?: string;
   referredBy?: string;
   apexBalance?: number;
+  /** Signature-verified external wallet (set only by linkChainWallet) —
+   *  the sole wallet whose on-chain deposits credit this account. */
+  chainAddress?: string;
 }
 
 /** bookings/{bookingId} — the central object the three apps share. */
@@ -45,6 +48,9 @@ export interface Booking {
   baseFare?: number;
   price?: number;
   currency?: string;
+  /** APEX applied against this fare at checkout (set by the client for display;
+   *  the authoritative deduction is the coin_ledger redeem row). */
+  apexRedeemed?: number;
 
   pickup?: string;
   dropoff?: string;
@@ -107,11 +113,31 @@ export interface Driver {
   rating?: number;
   ratingCount?: number;
   ratingSum?: number;
+  /** AXC wallet balance — written only by the coin ledger functions. */
+  apexcoin?: number;
   compliance?: {
     compliant?: boolean;
     docs?: Record<string, ComplianceDoc>;
   };
   payout?: DriverPayoutProfile;
+}
+
+/**
+ * coin_ledger/{id} — the append-only ApexCoin ledger, one row per earn/redeem.
+ * Written exclusively by Cloud Functions (deterministic ids make the
+ * booking-triggered awards idempotent); a user may read their own rows.
+ */
+export interface CoinLedgerEntry {
+  uid: string;
+  role: 'client' | 'driver';
+  type: 'earn' | 'redeem' | 'withdraw' | 'deposit';
+  amount: number;
+  reason: string;
+  ref?: string;
+  at?: Stamp;
+  /** On-chain rows: the mint/deposit transaction hash + confirmation state. */
+  txHash?: string;
+  status?: 'confirmed' | string;
 }
 
 /** vehicles/{id} */
@@ -130,6 +156,8 @@ export interface DriverPayout {
   amount: number;
   currency: string;
   status: 'owed' | 'paid';
+  /** 'trip' = a completed booking (counts toward milestones); 'axc' = a coin cash-out. */
+  source?: 'trip' | 'axc';
   createdAt?: Stamp;
   paidAt?: Stamp;
   transferId?: string | null;

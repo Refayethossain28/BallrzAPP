@@ -25,3 +25,10 @@ export { escapeHtml } from './security/escape.ts';
 export { buildBookingPayload, SERVICE_LABELS } from './payments/booking.ts';
 export { summarizeEarnings, dailyEarnings, owedBalance } from './driver/earnings.ts';
 export { errorMessage, errorFingerprint, formatErrorReport, shouldReport } from './telemetry/errors.ts';
+export {
+  DEFAULT_TIER_EARN_PCT, DEFAULT_DRIVER_EARN_PCT, TIER_THRESHOLDS,
+  coinEarnRates, earnPctForBalance,
+  clientCoinsEarned, driverCoinsEarned, round2,
+  apexTier, apexTierColor, tierProgress,
+  applyCoinRedemption, appendCoinTx, coinSupply,
+} from './coin/coin.ts';

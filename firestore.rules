@@ -22,15 +22,23 @@ service cloud.firestore {
     // User profiles — a user can read/write only their own; admins can read all.
     // A user may NOT promote their own role (e.g. to admin/driver) — only an admin
     // can change role; a self-update must leave role as 'client' (or unset).
+    // `apexBalance` (the ApexCoin wallet) is money-adjacent and written only by
+    // Cloud Functions / admins — a self-write may never mint or move coins.
+    // `chainAddress` is the signature-verified deposit wallet (set only by the
+    // linkChainWallet function) — a self-write could claim someone else's
+    // on-chain deposits.
     match /users/{uid} {
       allow read:   if isUser(uid) || isAdmin();
       // A user may create only their OWN profile, and only as a 'client' — they
       // can't self-promote to admin/driver on create (isAdmin trusts the role
       // field, so an unguarded create would be a privilege-escalation hole).
       allow create: if isUser(uid)
-        && request.resource.data.get('role', 'client') == 'client';
+        && request.resource.data.get('role', 'client') == 'client'
+        && !request.resource.data.keys().hasAny(['apexBalance', 'chainAddress']);
       allow update: if isAdmin()
-        || (isUser(uid) && request.resource.data.get('role', 'client') == 'client');
+        || (isUser(uid)
+            && request.resource.data.get('role', 'client') == 'client'
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['apexBalance', 'chainAddress']));
       allow delete: if isAdmin();
     }
 
@@ -80,13 +88,14 @@ service cloud.firestore {
     // A driver writes only their own record (status, profile, document uploads),
     // but may NOT write the `compliance` verdict or the `payout` account state —
     // only admins / Cloud Functions set those. This is the self-approval guard.
+    // (`apexcoin` — the AXC wallet — joins compliance/payout as functions-only.)
     match /drivers/{driverId} {
       allow read:   if signedIn();
       allow create: if isAdmin()
-        || (isUser(driverId) && !request.resource.data.keys().hasAny(['compliance', 'payout']));
+        || (isUser(driverId) && !request.resource.data.keys().hasAny(['compliance', 'payout', 'apexcoin']));
       allow update: if isAdmin()
         || (isUser(driverId)
-            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['compliance', 'payout']));
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['compliance', 'payout', 'apexcoin']));
       allow delete: if isAdmin();
     }
 
@@ -95,6 +104,14 @@ service cloud.firestore {
     match /driver_payouts/{id} {
       allow read:  if isAdmin() || (isDriver() && resource.data.driverId == request.auth.uid);
       allow write: if isAdmin();
+    }
+
+    // ApexCoin ledger — the append-only earn/redeem record behind every wallet
+    // balance. Written EXCLUSIVELY by Cloud Functions (Admin SDK); a user reads
+    // their own rows (the apps' live transaction feed), admins read all.
+    match /coin_ledger/{id} {
+      allow read:  if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow write: if false;
     }
 
     // Vehicles — one doc per vehicle, owned by a driver. Verified MOT / road-tax /

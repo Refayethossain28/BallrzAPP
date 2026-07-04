@@ -28,11 +28,18 @@ import { STRIPE_SECRET_KEY, stripeClient } from './stripe.js';
 // Velvet — the subscription VIP concierge (concierge/): Stripe Billing
 // checkout + portal + webhook. Deployed alongside the ApexVIP functions.
 export { createVelvetCheckout, createVelvetPortal, velvetStripeWebhook } from './velvet.js';
+// ApexCoin on-chain bridge (apexchain/ApexCoin.sol): withdraw APEX as a real
+// ERC-20, deposit it back. See ./chain.ts.
+export { linkChainWallet, withdrawCoinsOnchain, depositCoinsOnchain } from './chain.js';
 
 import {
   round5, isoPlusDays, computeFareBounds, driverEarning, dispatchPay,
   bookingEvent, bookingMessage, daysUntil, shouldRemind, flightHHMM,
-  normalizeCommissionPct,
+  normalizeCommissionPct, clientCoinsEarned, driverCoinsEarned,
+  clampCoinRedemption, round2, coinEarnRates, apexTierForBalance,
+  bonusMonthKey, monthlyBonusForBalance, qualifiesForRatingBonus, milestoneBonusAt,
+  DRIVER_RATING_BONUS,
+  type CoinEarnRates, type CoinRateSettings,
 } from './logic.js';
 
 /**
@@ -54,8 +61,24 @@ async function platformCommissionPct(): Promise<number> {
   return pct;
 }
 
+// ApexCoin earn rates (settings/coins, admin-tunable, tiered for clients) —
+// cached briefly per warm instance like the business settings above.
+let _coinRateCache: { rates: CoinEarnRates; at: number } | null = null;
+async function platformCoinRates(): Promise<CoinEarnRates> {
+  if (_coinRateCache && Date.now() - _coinRateCache.at < 60_000) return _coinRateCache.rates;
+  let s: CoinRateSettings | null = null;
+  try {
+    const doc = await admin.firestore().doc('settings/coins').get();
+    if (doc.exists) s = doc.data() as CoinRateSettings;
+  } catch { /* defaults below */ }
+  const rates = coinEarnRates(s);
+  _coinRateCache = { rates, at: Date.now() };
+  return rates;
+}
+
 import type {
   Booking,
+  CoinLedgerEntry,
   Driver,
   DriverPayout,
   GetHotelRatesInput,
@@ -444,9 +467,41 @@ export const onBookingWrite = onDocumentWritten(
             bookingRef: after.ref || event.params.bookingId,
             amount, currency: after.currency || 'GBP',
             status: 'owed',
+            source: 'trip', // distinguishes trips from AXC cash-outs for the milestone count
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
           };
           await admin.firestore().collection('driver_payouts').doc(event.params.bookingId).set(entry, { merge: true });
+          // ApexCoin: the driver earns a % of their pay (admin-tunable, default
+          // 2%). The deterministic ledger id makes this idempotent — create()
+          // throws if the trip already paid out coins (onDocumentWritten can
+          // fire more than once).
+          const axc = driverCoinsEarned(amount, (await platformCoinRates()).driverPct);
+          if (axc > 0) {
+            await creditCoins({
+              ledgerId: `driverearn_${event.params.bookingId}`,
+              balanceRef: admin.firestore().doc(`drivers/${after.driverId}`),
+              balanceField: 'apexcoin',
+              entry: { uid: after.driverId, role: 'driver', type: 'earn', amount: axc, reason: after.serviceLabel || 'Trip', ref: after.ref || event.params.bookingId },
+            });
+          }
+          // Milestone: every 50th completed trip pays a 25 AXC bonus. The count
+          // includes only trip rows (not AXC cash-outs); the deterministic
+          // ledger id `milestone_{uid}_{count}` makes trigger re-fires no-ops.
+          try {
+            const count = (await admin.firestore().collection('driver_payouts')
+              .where('driverId', '==', after.driverId).where('source', '==', 'trip')
+              .count().get()).data().count;
+            const bonus = milestoneBonusAt(count);
+            if (bonus > 0) {
+              await creditCoins({
+                ledgerId: `milestone_${after.driverId}_${count}`,
+                balanceRef: admin.firestore().doc(`drivers/${after.driverId}`),
+                balanceField: 'apexcoin',
+                entry: { uid: after.driverId, role: 'driver', type: 'earn', amount: bonus, reason: `Milestone · ${count} trips` },
+              });
+              logger.info('driver milestone bonus', { driverId: after.driverId, count, bonus });
+            }
+          } catch (err) { logger.error('milestone bonus', errMessage(err)); }
         }
       } catch (err) { logger.error('payout ledger', errMessage(err)); }
     }
@@ -751,9 +806,15 @@ export const applyReferralCode = onCall({ region: 'us-central1' }, async (reques
   if (referrer.id === uid) throw new HttpsError('failed-precondition', 'You cannot use your own code.');
   const CREDIT = 50;
   const inc = admin.firestore.FieldValue.increment(CREDIT);
+  const at = admin.firestore.FieldValue.serverTimestamp();
+  const ledger = db.collection('coin_ledger');
   await Promise.all([
     me.set({ referredBy: referrer.id, apexBalance: inc }, { merge: true }),
     referrer.ref.set({ apexBalance: inc }, { merge: true }),
+    // Ledger rows so the bonus shows in both users' live transaction feeds.
+    // Deterministic ids; double-application is already blocked via referredBy.
+    ledger.doc(`referral_${uid}`).set({ uid, role: 'client', type: 'earn', amount: CREDIT, reason: 'Referral bonus', at }),
+    ledger.doc(`referral_${uid}_referrer`).set({ uid: referrer.id, role: 'client', type: 'earn', amount: CREDIT, reason: 'Referral bonus', at }),
   ]);
   return { message: `Referral applied — you and your friend each earned ${CREDIT} APEX.`, creditsAwarded: CREDIT };
 });
@@ -1122,3 +1183,254 @@ export const payoutDriver = onCall(
     return { paid: total, count: owed.size, currency: currency.toUpperCase(), transferId, mock: !stripe };
   }
 );
+
+/* ===========================================================================
+ * ApexCoin — the server-authoritative loyalty ledger
+ *
+ * Balances live where only the Admin SDK can write them (firestore.rules
+ * blocks self-writes): clients on users/{uid}.apexBalance, drivers on
+ * drivers/{uid}.apexcoin. Every movement is a row in the append-only
+ * `coin_ledger`; booking-triggered awards use DETERMINISTIC ledger ids +
+ * create(), so a re-fired trigger can never double-award.
+ *
+ * Earn:   awardBookingCoins (client, 5% of the cash portion) and the
+ *         completed-trip branch of onBookingWrite (driver, 2% of their pay).
+ * Redeem: redeemApexCoins (client pays with coins at checkout, transactional,
+ *         clamped to their balance) and redeemDriverCoins (driver cashes out;
+ *         the £ lands in driver_payouts as 'owed', settled by payoutDriver).
+ *
+ * The apps preview the same maths from the shared engine (src/coin/coin.ts —
+ * mirrored in ./logic.ts) but the ledger here is the source of truth.
+ * =========================================================================== */
+
+/** Ledger ids embed user-supplied refs — keep them within Firestore doc-id rules. */
+function coinLedgerId(...parts: string[]): string {
+  return parts.join('_').replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 500);
+}
+
+/**
+ * Atomically append a ledger row and move the balance. `delta` defaults to
+ * +amount (an earn); redemptions pass a negative delta. Returns false if the
+ * deterministic ledger row already exists (already credited — a no-op).
+ */
+async function creditCoins(opts: {
+  ledgerId: string;
+  balanceRef: FirebaseFirestore.DocumentReference;
+  balanceField: string;
+  entry: Omit<CoinLedgerEntry, 'at'>;
+  delta?: number;
+}): Promise<boolean> {
+  const db = admin.firestore();
+  const ledgerRef = db.collection('coin_ledger').doc(opts.ledgerId);
+  try {
+    await db.runTransaction(async (tx) => {
+      const existing = await tx.get(ledgerRef);
+      if (existing.exists) throw new Error('coin-ledger-exists');
+      tx.set(ledgerRef, { ...opts.entry, at: admin.firestore.FieldValue.serverTimestamp() });
+      tx.set(opts.balanceRef, { [opts.balanceField]: admin.firestore.FieldValue.increment(opts.delta ?? opts.entry.amount) }, { merge: true });
+    });
+    return true;
+  } catch (err) {
+    if (errMessage(err) === 'coin-ledger-exists') return false;
+    throw err;
+  }
+}
+
+// Client earn: 5% of the cash portion of every confirmed booking. Runs on the
+// same document event as dispatch (onBookingCreated) but is deliberately its
+// own trigger so a dispatch early-return can never skip the award.
+export const awardBookingCoins = onDocumentCreated('bookings/{bookingId}', async (event) => {
+  const snap = event.data;
+  if (!snap) return;
+  const b = (snap.data() as Booking) || {};
+  if (!b.clientId) return;
+  if (b.status && !['confirmed', 'pending', 'paid'].includes(b.status)) return;
+  const fare = Number(b.price) || 0;
+  if (fare <= 0) return;
+  try {
+    // The cash portion = fare minus any coins redeemed against this booking.
+    // The redemption callable wrote its ledger row BEFORE the booking doc, so
+    // reading it here is not a race.
+    const [redeemRow, userSnap, rates] = await Promise.all([
+      admin.firestore().doc(`coin_ledger/${coinLedgerId('redeem', b.clientId, b.ref || event.params.bookingId)}`).get(),
+      admin.firestore().doc(`users/${b.clientId}`).get(),
+      platformCoinRates(),
+    ]);
+    const redeemed = redeemRow.exists ? Number((redeemRow.data() as CoinLedgerEntry).amount) || 0 : 0;
+    // Tiered earn: the client's CURRENT tier picks the % (3/4/5/6 by default).
+    const tier = apexTierForBalance((userSnap.data() as User | undefined)?.apexBalance);
+    const earn = clientCoinsEarned(fare - redeemed, rates.tiers[tier]);
+    if (earn <= 0) return;
+    const credited = await creditCoins({
+      ledgerId: coinLedgerId('earn', event.params.bookingId),
+      balanceRef: admin.firestore().doc(`users/${b.clientId}`),
+      balanceField: 'apexBalance',
+      entry: { uid: b.clientId, role: 'client', type: 'earn', amount: earn, reason: `Trip booking · ${tier} ${rates.tiers[tier]}%`, ref: b.ref || event.params.bookingId },
+    });
+    if (credited) logger.info('awardBookingCoins', { booking: event.params.bookingId, earn, redeemed, tier });
+  } catch (err) { logger.error('awardBookingCoins', errMessage(err)); }
+});
+
+// Client redemption — "pay with ApexCoin" at checkout. Transactional: the
+// balance can never go negative, and the deterministic ledger id makes a
+// retried call return the original result instead of double-deducting.
+export const redeemApexCoins = onCall({ region: 'us-central1' }, async (request: CallableRequest<{ amount?: number; bookingRef?: string }>) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const uid = request.auth.uid;
+  const d = request.data || {};
+  const requested = Math.floor(Number(d.amount));
+  const bookingRef = String(d.bookingRef || '').trim();
+  if (!Number.isFinite(requested) || requested <= 0 || requested > 100000) {
+    throw new HttpsError('invalid-argument', 'amount must be a positive number of coins');
+  }
+  if (!bookingRef) throw new HttpsError('invalid-argument', 'bookingRef is required');
+  const db = admin.firestore();
+  const ledgerRef = db.doc(`coin_ledger/${coinLedgerId('redeem', uid, bookingRef)}`);
+  const userRef = db.doc(`users/${uid}`);
+  return db.runTransaction(async (tx) => {
+    const [prior, userSnap] = await Promise.all([tx.get(ledgerRef), tx.get(userRef)]);
+    const balance = Math.max(0, Number((userSnap.data() as User | undefined)?.apexBalance) || 0);
+    if (prior.exists) {
+      // Idempotent retry — the coins for this booking were already applied.
+      return { redeemed: Number((prior.data() as CoinLedgerEntry).amount) || 0, balance };
+    }
+    const redeemed = clampCoinRedemption(requested, balance);
+    if (redeemed <= 0) return { redeemed: 0, balance };
+    tx.set(ledgerRef, {
+      uid, role: 'client', type: 'redeem', amount: redeemed, reason: 'Trip payment', ref: bookingRef,
+      at: admin.firestore.FieldValue.serverTimestamp(),
+    } satisfies CoinLedgerEntry);
+    tx.set(userRef, { apexBalance: admin.firestore.FieldValue.increment(-redeemed) }, { merge: true });
+    return { redeemed, balance: balance - redeemed };
+  });
+});
+
+// Driver cash-out: zero the AXC wallet and drop the £ into driver_payouts as
+// 'owed' — the SAME rail trip earnings use, so payoutDriver settles it with
+// the next Stripe transfer. No more "the desk will sort it": it's in the ledger.
+export const redeemDriverCoins = onCall({ region: 'us-central1' }, async (request: CallableRequest) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const uid = request.auth.uid;
+  const db = admin.firestore();
+  const driverRef = db.doc(`drivers/${uid}`);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(driverRef);
+    if (!snap.exists) throw new HttpsError('failed-precondition', 'No driver profile');
+    const balance = round2(Math.max(0, Number((snap.data() as Driver).apexcoin) || 0));
+    if (balance <= 0) return { redeemed: 0, balance: 0 };
+    tx.set(driverRef, { apexcoin: 0 }, { merge: true });
+    tx.set(db.collection('coin_ledger').doc(), {
+      uid, role: 'driver', type: 'redeem', amount: balance, reason: 'Cash redemption',
+      at: admin.firestore.FieldValue.serverTimestamp(),
+    } satisfies CoinLedgerEntry);
+    tx.set(db.collection('driver_payouts').doc(), {
+      driverId: uid, bookingRef: 'AXC redemption', amount: balance, currency: 'GBP',
+      status: 'owed', source: 'axc',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    } satisfies DriverPayout);
+    return { redeemed: balance, balance: 0 };
+  });
+});
+
+/* ===========================================================================
+ * ApexCoin recurring bonuses — the amounts the apps advertise, paid for real.
+ *
+ * On the 1st of each month (Europe/London): Gold members get 200 APEX,
+ * Platinum 500, and drivers rated ≥4.9 over ≥5 rated trips get 10 AXC.
+ * One deterministic ledger row per user per month (`monthly_{YYYY-MM}_{uid}` /
+ * `ratingbonus_{YYYY-MM}_{uid}`) makes the run idempotent — re-running a
+ * month is a no-op. `runCoinBonuses` lets an admin trigger the same run on
+ * demand (and is how the emulator test drives it).
+ * =========================================================================== */
+
+async function awardMonthlyCoinBonuses(now: Date): Promise<{ month: string; clients: number; drivers: number }> {
+  const db = admin.firestore();
+  const month = bonusMonthKey(now);
+  let clients = 0;
+  let drivers = 0;
+
+  // Client tier bonuses — everyone at Gold or above (balance ≥ 2000).
+  const gold = await db.collection('users').where('apexBalance', '>=', 2000).get();
+  for (const snap of gold.docs) {
+    const bonus = monthlyBonusForBalance((snap.data() as User).apexBalance);
+    if (bonus <= 0) continue;
+    const tier = apexTierForBalance((snap.data() as User).apexBalance);
+    const credited = await creditCoins({
+      ledgerId: coinLedgerId('monthly', month, snap.id),
+      balanceRef: snap.ref,
+      balanceField: 'apexBalance',
+      entry: { uid: snap.id, role: 'client', type: 'earn', amount: bonus, reason: `${tier} monthly bonus` },
+    }).catch((err) => { logger.error('monthly client bonus', snap.id, errMessage(err)); return false; });
+    if (credited) clients++;
+  }
+
+  // Top-rated driver bonus — rating ≥ 4.9 across ≥ 5 rated trips.
+  const rated = await db.collection('drivers').where('rating', '>=', 4.9).get();
+  for (const snap of rated.docs) {
+    const d = snap.data() as Driver;
+    if (!qualifiesForRatingBonus(d)) continue;
+    const credited = await creditCoins({
+      ledgerId: coinLedgerId('ratingbonus', month, snap.id),
+      balanceRef: snap.ref,
+      balanceField: 'apexcoin',
+      entry: { uid: snap.id, role: 'driver', type: 'earn', amount: DRIVER_RATING_BONUS, reason: 'Top-rated driver bonus' },
+    }).catch((err) => { logger.error('rating bonus', snap.id, errMessage(err)); return false; });
+    if (credited) drivers++;
+  }
+
+  logger.info('awardMonthlyCoinBonuses', { month, clients, drivers });
+  return { month, clients, drivers };
+}
+
+export const monthlyCoinBonuses = onSchedule(
+  { schedule: '0 6 1 * *', timeZone: 'Europe/London', region: 'us-central1' },
+  async () => { await awardMonthlyCoinBonuses(new Date()); },
+);
+
+// Admin-triggered run of the same month's bonuses (idempotent, so safe).
+export const runCoinBonuses = onCall({ region: 'us-central1' }, async (request: CallableRequest) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  if (!(await isAdminUid(request.auth.uid))) throw new HttpsError('permission-denied', 'Admin only');
+  return awardMonthlyCoinBonuses(new Date());
+});
+
+/* ===========================================================================
+ * coinSupplyStats — the public transparency figures.
+ *
+ * Aggregated straight from the append-only coin_ledger (the source of truth,
+ * unlike the apps' device-local event feeds): issued, redeemed, in-app and
+ * on-chain circulation, plus the public chain config so anyone can check
+ * that the AXC contract's totalSupply() equals `onchain`. No auth — it
+ * exposes only totals, no per-user data. Cached per warm instance.
+ * =========================================================================== */
+
+let _supplyCache: { stats: Record<string, unknown>; at: number } | null = null;
+export const coinSupplyStats = onCall({ region: 'us-central1' }, async () => {
+  if (_supplyCache && Date.now() - _supplyCache.at < 300_000) return _supplyCache.stats;
+  const db = admin.firestore();
+  const sumOf = async (type: string): Promise<number> => {
+    const agg = await db.collection('coin_ledger').where('type', '==', type)
+      .aggregate({ total: admin.firestore.AggregateField.sum('amount') }).get();
+    return round2(Number(agg.data().total) || 0);
+  };
+  const [issued, redeemed, withdrawn, deposited] = await Promise.all([
+    sumOf('earn'), sumOf('redeem'), sumOf('withdraw'), sumOf('deposit'),
+  ]);
+  const onchain = Math.max(0, round2(withdrawn - deposited));
+  let chain: Record<string, unknown> = {};
+  try {
+    const snap = await db.doc('settings/chain').get();
+    const s = snap.exists ? (snap.data() as Record<string, unknown>) : {};
+    if (s.enabled && s.contractAddress) {
+      chain = { contractAddress: s.contractAddress, chainId: s.chainId || null, explorerBase: s.explorerBase || '' };
+    }
+  } catch { /* chain info optional */ }
+  const stats = {
+    issued, redeemed, onchain,
+    circulating: Math.max(0, round2(issued - redeemed - onchain)),
+    chain,
+    at: new Date().toISOString(),
+  };
+  _supplyCache = { stats, at: Date.now() };
+  return stats;
+});

@@ -408,6 +408,11 @@ function startAdminListeners(){
     if(doc.exists) S._business={...(S._business||{}),...doc.data()};
     if(['settings','payouts'].includes(S.screen))render();
   },()=>{});
+  // ApexCoin earn rates (tiered clients + driver) — normalized via the engine.
+  db.collection('settings').doc('coins').onSnapshot(doc=>{
+    S._coinRates=ApexEngine.coinEarnRates(doc.exists?doc.data():null);
+    if(S.screen==='apexcoin')render();
+  },()=>{});
   db.collection('vehicles').onSnapshot(snap=>{
     VEHICLES=snap.docs.map(d=>({id:d.id,...d.data()}));
     if(!['login'].includes(S.screen))render();
@@ -462,7 +467,7 @@ function startAdminListeners(){
   // the Analytics screen aggregates client + driver + admin + concierge.
   db.collection('analytics').orderBy('t','desc').limit(4000).onSnapshot(snap=>{
     CLOUD_EVENTS=snap.docs.map(d=>d.data());
-    if(S.screen==='analytics'||S.screen==='concierge')render();
+    if(S.screen==='analytics'||S.screen==='concierge'||S.screen==='apexcoin')render();
   },e=>console.warn('Analytics:',e.code));
 }
 
@@ -1260,22 +1265,50 @@ analytics:()=>{
 },
 
 apexcoin:()=>{
-  const raw=JSON.parse(localStorage.getItem('apexvip_events')||'[]');
-  const earned=raw.filter(e=>e.e==='apex_earned').reduce((a,e)=>a+(e.amount||0),0);
-  const redeemed=raw.filter(e=>e.e==='apex_redeemed').reduce((a,e)=>a+(e.amount||0),0);
-  const supply=Math.max(0,earned-redeemed);
+  // Source of truth, best first: the coin_ledger aggregate (coinSupplyStats,
+  // exact) when live, else the shared analytics feed, else this browser's
+  // local event log — both approximations via the tested engine aggregation.
+  if(FIREBASE_ENABLED&&fns&&!S._coinSupplyReq){
+    S._coinSupplyReq=true;
+    fns.httpsCallable('coinSupplyStats')({}).then(r=>{S._coinSupply=r.data;if(S.screen==='apexcoin')render();}).catch(()=>{});
+  }
+  const localEvents=JSON.parse(localStorage.getItem('apexvip_events')||'[]');
+  const raw=(FIREBASE_ENABLED&&CLOUD_EVENTS&&CLOUD_EVENTS.length)?CLOUD_EVENTS:localEvents;
+  const supply=S._coinSupply||ApexEngine.coinSupply(raw);
   return`<div class="screen">
   <div class="section-header"><div class="section-title">ApexCoin</div></div>
   <div style="display:flex;gap:14px;margin-bottom:24px;flex-wrap:wrap">
-    ${[['Issued',earned.toFixed(2)+' AXC','earned across all trips','#C8A97E'],['Redeemed',redeemed.toFixed(2)+' AXC','used as payment','#a855f7'],['In Circulation',supply.toFixed(2)+' AXC','issued − redeemed','#22c55e']].map(([l,v,sx,c])=>`<div class="stat-card" style="border-color:rgba(200,169,126,.15);background:rgba(200,169,126,.03)">
+    ${[['Issued',supply.issued.toFixed(2)+' AXC','earned by clients + drivers','#C8A97E'],['Redeemed',supply.redeemed.toFixed(2)+' AXC','against fares or as cash','#a855f7'],['In Apps',supply.circulating.toFixed(2)+' AXC','issued − redeemed − on-chain','#22c55e'],['On ApexChain',supply.onchain.toFixed(2)+' AXC','withdrawn as the AXC ERC-20','#3b82f6']].map(([l,v,sx,c])=>`<div class="stat-card" style="border-color:rgba(200,169,126,.15);background:rgba(200,169,126,.03)">
       <div class="section-label" style="margin-bottom:10px">${l}</div>
       <div style="font-size:26px;font-weight:800;color:${c}">${v}</div>
       <div style="font-size:12px;color:var(--fg-subtle);margin-top:4px">${sx}</div>
     </div>`).join('')}
   </div>
+  ${(()=>{
+    const r=S._coinRates||ApexEngine.coinEarnRates(null);
+    const field=(id,label,val)=>`<div style="flex:1;min-width:110px">
+      <div style="font-size:11px;color:var(--fg-subtle);margin-bottom:6px">${label}</div>
+      <input id="${id}" type="number" min="0" max="20" step="0.5" value="${val}" style="width:100%;background:var(--surface-b);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:var(--fg);font-size:14px;outline:none;font-family:inherit"/>
+    </div>`;
+    return`<div class="card" style="margin-bottom:14px">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">Earn rates</div>
+    <div style="font-size:12px;color:var(--fg-dim);line-height:1.6;margin-bottom:14px">Clients earn by tier (their balance's tier picks the %); drivers earn a flat % of their pay. Every coin is a £-for-£ liability against the ~20% platform margin — budget accordingly. Clamped 0–20%.</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+      ${field('coin_bronze','BRONZE %',r.tiers.Bronze)}
+      ${field('coin_silver','SILVER %',r.tiers.Silver)}
+      ${field('coin_gold','GOLD %',r.tiers.Gold)}
+      ${field('coin_platinum','PLATINUM %',r.tiers.Platinum)}
+      ${field('coin_driver','DRIVER %',r.driverPct)}
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-gold btn-sm" onclick="saveCoinRates()">Save Earn Rates</button>
+      <button class="btn btn-glass btn-sm" onclick="runCoinBonusesNow()">Run Monthly Bonuses</button>
+    </div>
+    <div style="font-size:11px;color:var(--fg-subtle);margin-top:10px;line-height:1.6">Monthly bonuses (Gold 200 / Platinum 500 APEX · top-rated drivers 10 AXC) run automatically on the 1st; the button re-runs this month — idempotent, so nobody is ever paid twice. Drivers also earn 25 AXC per 50 completed trips, automatically.</div>
+  </div>`;})()}
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:10px">How ApexCoin works</div>
-    <div style="font-size:13px;color:var(--fg-dim);line-height:1.7">Clients earn 5% of each fare in AXC; drivers earn 2% of each completed job. Coins are redeemable against bookings (clients) or as cash/fuel vouchers (drivers). Figures above aggregate real tracked events on this device — per-user balances live in each user's app.</div>
+    <div style="font-size:13px;color:var(--fg-dim);line-height:1.7">Clients earn APEX by tier on each fare (defaults 3–6%, Bronze→Platinum) and can part-pay or fully pay for bookings with it (£1 per coin) at checkout. Drivers earn a share of each completed job in AXC and can redeem it as cash, settled with their next payout. Coins can also leave for the AXC ERC-20 (usable in any wallet) and deposit back — the on-chain token supply always equals "On ApexChain" above. Per-user balances live in each user's app; the figures aggregate tracked events${FIREBASE_ENABLED?' across all apps':' on this device'}.</div>
   </div>
 </div>`;},
 
@@ -2099,6 +2132,40 @@ function saveBusinessModel(){
     logAudit('business_model_update','settings/business',`commission ${data.commissionPct}% · client £${data.clientMonthlyFee}/mo · driver £${data.driverMonthlyFee}/mo · trial ${data.trialDays}d`);
     alert('Subscription settings saved.');render();
   }).catch(e=>alert('Save failed: '+(e.message||e.code)));
+}
+
+// ApexCoin earn rates — writes settings/coins; the award triggers, the client
+// and the driver app all read it (engine-normalized, clamped 0–20).
+function saveCoinRates(){
+  const num=(id,def)=>{const v=parseFloat(document.getElementById(id)?.value);return Number.isFinite(v)?v:def;};
+  const d=ApexEngine.coinEarnRates(null);
+  const data={
+    bronzePct:num('coin_bronze',d.tiers.Bronze),
+    silverPct:num('coin_silver',d.tiers.Silver),
+    goldPct:num('coin_gold',d.tiers.Gold),
+    platinumPct:num('coin_platinum',d.tiers.Platinum),
+    driverPct:num('coin_driver',d.driverPct),
+    updatedAt:firebase.firestore.FieldValue.serverTimestamp(),
+  };
+  S._coinRates=ApexEngine.coinEarnRates(data);
+  if(!FIREBASE_ENABLED){alert('Demo mode — not saved');render();return;}
+  db.collection('settings').doc('coins').set(data,{merge:true}).then(()=>{
+    const r=S._coinRates;
+    logAudit('coin_rates_update','settings/coins',`client ${r.tiers.Bronze}/${r.tiers.Silver}/${r.tiers.Gold}/${r.tiers.Platinum}% by tier · driver ${r.driverPct}%`);
+    alert('Earn rates saved.');render();
+  }).catch(e=>alert('Save failed: '+(e.message||e.code)));
+}
+
+// Run this month's coin bonuses on demand (idempotent server-side).
+function runCoinBonusesNow(){
+  if(!FIREBASE_ENABLED){alert('Demo mode — the bonus run needs the live backend.');return;}
+  if(!confirm('Run this month\'s ApexCoin bonuses now? Already-paid members are skipped automatically.'))return;
+  fns.httpsCallable('runCoinBonuses')({}).then(r=>{
+    const d=r.data||{};
+    logAudit('coin_bonus_run','coin_ledger',`${d.month}: ${d.clients} client + ${d.drivers} driver bonus(es) paid`);
+    S._coinSupply=null;S._coinSupplyReq=false; // refresh the supply cards
+    alert(`Bonus run for ${d.month}: ${d.clients} client and ${d.drivers} driver bonus(es) paid.`);render();
+  }).catch(e=>alert('Bonus run failed: '+(e.message||e.code)));
 }
 
 // ── Error telemetry viewer ─────────────────────────────────────────────────

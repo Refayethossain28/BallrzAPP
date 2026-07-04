@@ -8,8 +8,50 @@ import assert from 'node:assert/strict';
 import {
   round5, isoPlusDays, computeFareBounds, driverEarning, dispatchPay,
   bookingEvent, bookingMessage, daysUntil, shouldRemind, flightHHMM,
-  normalizeCommissionPct,
+  normalizeCommissionPct, clientCoinsEarned, driverCoinsEarned,
+  clampCoinRedemption, round2, coinEarnRates, apexTierForBalance,
+  bonusMonthKey, monthlyBonusForBalance, qualifiesForRatingBonus, milestoneBonusAt,
 } from './logic.ts';
+
+test('ApexCoin earn rates: tiered % for clients, flat % at 2dp for drivers', () => {
+  assert.equal(clientCoinsEarned(200), 6); // Bronze default 3%
+  assert.equal(clientCoinsEarned(185, 5), 9); // Gold rate
+  assert.equal(clientCoinsEarned(190, 5), 10);
+  assert.equal(clientCoinsEarned(0, 6), 0);
+  assert.equal(clientCoinsEarned(-40, 6), 0);
+  assert.equal(clientCoinsEarned(200, NaN), 6); // junk rate → Bronze default
+  assert.equal(driverCoinsEarned(152), 3.04); // default 2%
+  assert.equal(driverCoinsEarned(95.55), 1.91);
+  assert.equal(driverCoinsEarned(152, 3), 4.56);
+  assert.equal(driverCoinsEarned(NaN), 0);
+});
+
+test('coinEarnRates + apexTierForBalance mirror the engine', () => {
+  assert.deepEqual(coinEarnRates(null), { tiers: { Bronze: 3, Silver: 4, Gold: 5, Platinum: 6 }, driverPct: 2 });
+  const tuned = coinEarnRates({ silverPct: 4.5, platinumPct: 99, driverPct: 'x' as unknown as number });
+  assert.equal(tuned.tiers.Silver, 4.5);
+  assert.equal(tuned.tiers.Platinum, 20); // clamped
+  assert.equal(tuned.driverPct, 2); // junk → default
+  assert.equal(apexTierForBalance(0), 'Bronze');
+  assert.equal(apexTierForBalance(500), 'Silver');
+  assert.equal(apexTierForBalance(2000), 'Gold');
+  assert.equal(apexTierForBalance(5000), 'Platinum');
+});
+
+test('clampCoinRedemption: whole coins, never beyond the balance, junk-safe', () => {
+  assert.equal(clampCoinRedemption(60, 100), 60);
+  assert.equal(clampCoinRedemption(500, 95), 95);
+  assert.equal(clampCoinRedemption(42.9, 100), 42);
+  assert.equal(clampCoinRedemption(10, 42.75), 10);
+  assert.equal(clampCoinRedemption(-5, 100), 0);
+  assert.equal(clampCoinRedemption('junk', 100), 0);
+  assert.equal(clampCoinRedemption(10, -3), 0);
+});
+
+test('round2 avoids float drift', () => {
+  assert.equal(round2(0.1 + 0.2), 0.3);
+  assert.equal(round2(3.045), 3.05);
+});
 
 test('round5 rounds to the nearest £5', () => {
   assert.equal(round5(12), 10);
@@ -100,4 +142,20 @@ test('flightHHMM extracts HH:MM from an ISO datetime', () => {
   assert.equal(flightHHMM('2026-06-29T07:35:00+00:00'), '07:35');
   assert.equal(flightHHMM(''), '');
   assert.equal(flightHHMM(undefined), '');
+});
+
+test('bonus policy: month key, tier bonuses, rating gate, milestones', () => {
+  assert.equal(bonusMonthKey(new Date('2026-07-04T12:00:00Z')), '2026-07');
+  assert.equal(bonusMonthKey(new Date('2026-01-01T00:30:00Z')), '2026-01');
+  assert.equal(monthlyBonusForBalance(1999), 0);
+  assert.equal(monthlyBonusForBalance(2000), 200);
+  assert.equal(monthlyBonusForBalance(5000), 500);
+  assert.ok(qualifiesForRatingBonus({ rating: 4.9, ratingCount: 5 }));
+  assert.ok(!qualifiesForRatingBonus({ rating: 4.8, ratingCount: 50 }));
+  assert.ok(!qualifiesForRatingBonus({ rating: 5, ratingCount: 4 }));
+  assert.ok(!qualifiesForRatingBonus(null));
+  assert.equal(milestoneBonusAt(50), 25);
+  assert.equal(milestoneBonusAt(100), 25);
+  assert.equal(milestoneBonusAt(49), 0);
+  assert.equal(milestoneBonusAt(0), 0);
 });

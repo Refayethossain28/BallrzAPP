@@ -56,6 +56,122 @@ export function dispatchPay(b: Booking, commissionPct = 20): number {
   return Math.round((Number(b.baseFare) || Number(b.price) || 95) * keep);
 }
 
+/*
+ * ApexCoin — the server-authoritative earn maths. Mirrors the shared engine
+ * module (apexvip-web/src/coin/coin.ts), the same way normalizeCommissionPct
+ * mirrors membership.ts: the browser previews with the engine copy, but the
+ * ledger triggers/callables in index.ts award and deduct with THESE.
+ *
+ * Clients earn BY TIER (their balance's tier picks the %); drivers earn a
+ * flat % of pay. All five numbers are admin-tunable via `settings/coins`,
+ * clamped 0–20 with defaults 3/4/5/6 (Bronze→Platinum) and 2 (driver).
+ */
+export type ApexTier = 'Bronze' | 'Silver' | 'Gold' | 'Platinum';
+export const DEFAULT_TIER_EARN_PCT: Record<ApexTier, number> = { Bronze: 3, Silver: 4, Gold: 5, Platinum: 6 };
+export const DEFAULT_DRIVER_EARN_PCT = 2;
+
+/** Round to 2 decimals without float drift. */
+export const round2 = (n: number): number => Math.round((Number(n) || 0) * 100) / 100;
+
+/** The tier a coin balance sits in (mirrors the engine's apexTier). */
+export function apexTierForBalance(balance: unknown): ApexTier {
+  const b = Number(balance) || 0;
+  return b >= 5000 ? 'Platinum' : b >= 2000 ? 'Gold' : b >= 500 ? 'Silver' : 'Bronze';
+}
+
+export interface CoinRateSettings {
+  bronzePct?: number;
+  silverPct?: number;
+  goldPct?: number;
+  platinumPct?: number;
+  driverPct?: number;
+}
+
+export interface CoinEarnRates {
+  tiers: Record<ApexTier, number>;
+  driverPct: number;
+}
+
+function normalizeEarnPct(v: unknown, fallback: number): number {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return round2(Math.min(20, Math.max(0, n)));
+}
+
+/** Normalize `settings/coins` into a full rate card (defaults 3/4/5/6 + 2). */
+export function coinEarnRates(s?: CoinRateSettings | null): CoinEarnRates {
+  return {
+    tiers: {
+      Bronze: normalizeEarnPct(s?.bronzePct, DEFAULT_TIER_EARN_PCT.Bronze),
+      Silver: normalizeEarnPct(s?.silverPct, DEFAULT_TIER_EARN_PCT.Silver),
+      Gold: normalizeEarnPct(s?.goldPct, DEFAULT_TIER_EARN_PCT.Gold),
+      Platinum: normalizeEarnPct(s?.platinumPct, DEFAULT_TIER_EARN_PCT.Platinum),
+    },
+    driverPct: normalizeEarnPct(s?.driverPct, DEFAULT_DRIVER_EARN_PCT),
+  };
+}
+
+/** Whole APEX a client earns on the cash portion of a fare at a tier's %. */
+export function clientCoinsEarned(farePaid: number, ratePct: number = DEFAULT_TIER_EARN_PCT.Bronze): number {
+  const n = Number(farePaid);
+  const pct = normalizeEarnPct(ratePct, DEFAULT_TIER_EARN_PCT.Bronze);
+  return Number.isFinite(n) && n > 0 ? Math.round(n * (pct / 100)) : 0;
+}
+
+/** AXC (2 dp) a driver earns on a completed job's pay (default 2%). */
+export function driverCoinsEarned(jobPay: number, ratePct: number = DEFAULT_DRIVER_EARN_PCT): number {
+  const n = Number(jobPay);
+  const pct = normalizeEarnPct(ratePct, DEFAULT_DRIVER_EARN_PCT);
+  return Number.isFinite(n) && n > 0 ? round2(n * (pct / 100)) : 0;
+}
+
+/*
+ * Recurring bonuses — the amounts the apps advertise, paid by the monthly
+ * bonus run + the completed-trip milestone check in index.ts. Idempotency
+ * comes from deterministic coin_ledger ids (one per user per month / per
+ * milestone), so re-runs and trigger re-fires can never double-pay.
+ */
+export const GOLD_MONTHLY_BONUS = 200; // APEX, clients at Gold
+export const PLATINUM_MONTHLY_BONUS = 500; // APEX, clients at Platinum
+export const DRIVER_RATING_BONUS = 10; // AXC/month, rating ≥ 4.9 over ≥ RATING_BONUS_MIN_TRIPS
+export const RATING_BONUS_MIN_RATING = 4.9;
+export const RATING_BONUS_MIN_TRIPS = 5;
+export const DRIVER_MILESTONE_BONUS = 25; // AXC per MILESTONE_EVERY completed trips
+export const MILESTONE_EVERY = 50;
+
+/** 'YYYY-MM' key for one month's bonus run (Europe/London month boundaries). */
+export function bonusMonthKey(now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit' }).format(now);
+  return parts.slice(0, 7); // en-CA formats as YYYY-MM
+}
+
+/** The monthly client bonus a balance's tier earns (0 below Gold). */
+export function monthlyBonusForBalance(balance: unknown): number {
+  const tier = apexTierForBalance(balance);
+  return tier === 'Platinum' ? PLATINUM_MONTHLY_BONUS : tier === 'Gold' ? GOLD_MONTHLY_BONUS : 0;
+}
+
+/** Whether a driver profile qualifies for the monthly top-rated bonus. */
+export function qualifiesForRatingBonus(d: { rating?: number; ratingCount?: number } | null | undefined): boolean {
+  return Number(d?.rating) >= RATING_BONUS_MIN_RATING && Number(d?.ratingCount) >= RATING_BONUS_MIN_TRIPS;
+}
+
+/** The milestone bonus due when a driver's completed-trip count hits `count` (0 if none). */
+export function milestoneBonusAt(count: number): number {
+  return Number.isInteger(count) && count > 0 && count % MILESTONE_EVERY === 0 ? DRIVER_MILESTONE_BONUS : 0;
+}
+
+/**
+ * Clamp a client redemption request: whole coins, never more than the balance,
+ * never negative. The fare cap is applied by the caller (it knows the fare).
+ */
+export function clampCoinRedemption(requested: unknown, balance: unknown): number {
+  const want = Math.floor(Number(requested));
+  const bal = Math.floor(Math.max(0, Number(balance) || 0));
+  if (!Number.isFinite(want) || want <= 0) return 0;
+  return Math.min(want, bal);
+}
+
 /** Which lifecycle message (if any) a booking write represents. */
 export function bookingEvent(before: Booking | null, after: Booking | null): string | null {
   if (!after) return null;                 // deleted

@@ -321,8 +321,9 @@ let S={
   screen:'login',
   theme: localStorage.getItem('apexvip_driver_theme')||'dark',
   profile:{name:'Driver',initials:'DR',vehicle:'',model:'',reg:'',rating:4.9,trips:0},
-  apexcoin: 0,
-  _axcHistory:[], // earned in-session from real completed trips
+  // AXC wallet survives reloads — earned from real completed trips.
+  apexcoin: (()=>{try{const v=parseFloat(localStorage.getItem('apexvip_axc'));return Number.isFinite(v)&&v>0?v:0;}catch(e){return 0;}})(),
+  _axcHistory: (()=>{try{return JSON.parse(localStorage.getItem('apexvip_axc_history'))||[];}catch(e){return [];}})(),
   online:false,
   jobOverlay:false,
   countdown:30,
@@ -423,10 +424,25 @@ function setupDriverListeners(uid){
   setTimeout(ensureDriverSubscription, 1500);
   // Live driver document statuses
   db.collection('drivers').doc(uid).onSnapshot(snap=>{
-    if(snap.exists){ S._driverDocs = snap.data().documents || {}; S._compliance = snap.data().compliance || null; S._payout = snap.data().payout || null; S._availability = snap.data().availability || S._availability || null; }
+    if(snap.exists){
+      S._driverDocs = snap.data().documents || {}; S._compliance = snap.data().compliance || null; S._payout = snap.data().payout || null; S._availability = snap.data().availability || S._availability || null;
+      // AXC wallet — server-authoritative (rules block self-writes; only the
+      // coin ledger functions move it). Local earns become display-only.
+      S._axcLive = true;
+      S.apexcoin = Math.max(0, Number(snap.data().apexcoin) || 0);
+      saveAxc();
+      render();
+    }
     const el = document.getElementById('docs-list');
     if(el) renderDocsList();
   });
+  // AXC wallet history — the user's own rows of the append-only coin ledger.
+  db.collection('coin_ledger').where('uid','==',uid).orderBy('at','desc').limit(50)
+    .onSnapshot(snap=>{
+      S._axcHistory=snap.docs.map(x=>{const r=x.data();return{desc:r.reason||'Trip',type:r.type==='redeem'?'redeem':'earn',amount:Number(r.amount)||0,date:r.at?.toDate?.()?.toLocaleDateString('en-GB',{day:'numeric',month:'short'})||''};});
+      saveAxc();
+      render();
+    },()=>{});
   // Load driver profile into state and publish to dispatch list
   db.collection('users').doc(uid).get().then(u=>{
     const p=u.exists?u.data():{};
@@ -662,7 +678,13 @@ function watchBusinessModel(){
     if(d.exists)Object.assign(BUSINESS,d.data());
     if(['home','profile'].includes(S.screen))render();
   },()=>{});
+  // ApexCoin earn rate (admin-tunable) — drives the wallet copy + demo earn.
+  db.collection('settings').doc('coins').onSnapshot(d=>{
+    S._coinRates=ApexEngine.coinEarnRates(d.exists?d.data():null);
+    if(S.screen==='axc-wallet')render();
+  },()=>{});
 }
+function driverEarnPct(){return (S._coinRates||ApexEngine.coinEarnRates(null)).driverPct;}
 async function ensureDriverSubscription(){
   if(!FIREBASE_ENABLED||!_driverId||BUSINESS.model!=='subscription'||typeof ApexEngine==='undefined')return;
   try{
@@ -1062,10 +1084,17 @@ function _advanceStep(){
       db.collection('jobs').doc(S.activeJob.id).update({status:'completed',completedAt:firebase.firestore.FieldValue.serverTimestamp()}).catch(reportError);
       syncBookingStatus(S.activeJob,'completed',{completedAt:firebase.firestore.FieldValue.serverTimestamp()});
     }
-    // Award 2% of job value as ApexCoin
+    // Award 2% of job value as ApexCoin — rate + rounding via the shared engine.
+    // Live wallet: the server credits it when the booking completes (coin
+    // ledger trigger) and the snapshot updates S.apexcoin; local award is the
+    // offline/demo path only.
     const jobPay=S.activeJob?.pay||0;
-    const axcEarned=parseFloat((jobPay*0.02).toFixed(2));
-    if(axcEarned>0){S.apexcoin=parseFloat((S.apexcoin+axcEarned).toFixed(2));S._axcHistory.unshift({desc:S.activeJob?.service||'Trip',type:'earn',amount:axcEarned,date:'Just now'});}
+    const axcEarned=ApexEngine.driverCoinsEarned(jobPay,driverEarnPct());
+    if(axcEarned>0&&!S._axcLive){
+      S.apexcoin=ApexEngine.round2(S.apexcoin+axcEarned);
+      S._axcHistory=ApexEngine.appendCoinTx(S._axcHistory,{desc:S.activeJob?.service||'Trip',type:'earn',amount:axcEarned,date:new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short'})});
+      saveAxc();
+    }
     track('trip_completed',{pay:jobPay,axc:axcEarned,duration:S.tripTimer,src:'driver'});
     S._lastCompletedJob=S.activeJob;
     S.activeJob=null;go('trip-complete');
@@ -1086,6 +1115,36 @@ function jobTag(type){
   return`<span class="tag ${c}">${r.join(' ')}</span>`;
 }
 function stars(r){return'★'.repeat(r)+'☆'.repeat(5-r);}
+
+function saveAxc(){
+  try{
+    localStorage.setItem('apexvip_axc',String(S.apexcoin));
+    localStorage.setItem('apexvip_axc_history',JSON.stringify(S._axcHistory||[]));
+  }catch(e){}
+}
+function redeemAxc(){
+  const amount=S.apexcoin;
+  if(!(amount>0))return;
+  if(!confirm('Redeem '+amount.toFixed(2)+' AXC for £'+amount.toFixed(2)+'? It is added to your payout balance and settled with your next payout.'))return;
+  // Live wallet: the transactional callable zeroes the balance and drops the £
+  // into driver_payouts as 'owed' — the same rail trip earnings settle on.
+  if(FIREBASE_ENABLED&&fns&&S._axcLive){
+    fns.httpsCallable('redeemDriverCoins')({}).then(r=>{
+      const red=Number(r.data?.redeemed)||0;
+      if(red>0){
+        track('apex_redeemed',{amount:red,src:'driver'});
+        showToast('£'+red.toFixed(2)+' added to your payout balance');haptic('success');
+      }
+      render();
+    }).catch(e=>{reportError(e,'redeem-axc');showToast('Redemption failed — please try again','error');});
+    return;
+  }
+  S.apexcoin=0;
+  S._axcHistory=ApexEngine.appendCoinTx(S._axcHistory,{desc:'Cash redemption',type:'redeem',amount,date:new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short'})});
+  saveAxc();
+  track('apex_redeemed',{amount,src:'driver'});
+  render();
+}
 function fmtTime(s){const m=Math.floor(s/60);const sec=s%60;return(m<10?'0'+m:m)+':'+(sec<10?'0'+sec:sec);}
 
 const pages={
@@ -1482,7 +1541,7 @@ earnings:()=>{
         <span style="font-size:28px">🪙</span>
         <div style="flex:1"><div style="font-size:11px;color:var(--fg-subtle)">BALANCE</div><div style="font-size:28px;font-weight:800;color:#C8A97E">${S.apexcoin.toFixed(2)} AXC</div><div style="font-size:12px;color:rgba(200,169,126,.6)">≈ £${S.apexcoin.toFixed(2)}</div></div>
       </div>
-      <div style="font-size:12px;color:var(--fg-dim);line-height:1.7">Drivers earn 2% of every completed job in ApexCoin. AXC can be redeemed as cash or used within the ApexVIP ecosystem.</div>
+      <div style="font-size:12px;color:var(--fg-dim);line-height:1.7">Drivers earn ${driverEarnPct()}% of every completed job in ApexCoin. AXC can be redeemed as cash or used within the ApexVIP ecosystem.</div>
     </div>
     <div class="card" style="padding:22px;margin-top:8px;margin-bottom:10px">
       <div class="section-label" style="margin-bottom:14px">Request payout</div>
@@ -1584,7 +1643,7 @@ axcWallet:()=>`<div class="screen">
   </div>
   <div class="card" style="margin-bottom:16px">
     <div class="section-label" style="margin-bottom:14px">How Drivers Earn</div>
-    ${[['2%','Of every completed trip'],['Bonus','High ratings (4.9+)'],['Milestone','Per 50 trips completed'],['Referral','Per driver referred']].map(([v,d])=>`
+    ${[[driverEarnPct()+'%','Of every completed trip'],['10 AXC','Monthly · 4.9+ rating over 5+ rated trips'],['25 AXC','Every 50 trips completed'],['Referral','Per driver referred · coming soon']].map(([v,d])=>`
     <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--divider)">
       <div style="min-width:52px;background:rgba(200,169,126,.08);border:1px solid rgba(200,169,126,.15);border-radius:8px;padding:4px 8px;text-align:center;font-size:12px;font-weight:800;color:#C8A97E">${v}</div>
       <div style="font-size:13px;color:var(--fg-muted)">${d}</div>
@@ -1595,9 +1654,10 @@ axcWallet:()=>`<div class="screen">
   <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--divider)">
     <div style="width:36px;height:36px;border-radius:10px;background:${h.type==='earn'?'rgba(34,197,94,.07)':'rgba(200,169,126,.07)'};display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">${h.type==='earn'?'↑':'↓'}</div>
     <div style="flex:1"><div style="font-size:13px;font-weight:500">${h.desc}</div><div style="font-size:11px;color:var(--fg-subtle);margin-top:1px">${h.date}</div></div>
-    <div style="font-size:14px;font-weight:700;color:${h.type==='earn'?'#22c55e':'var(--fg-dim)'}">+${h.amount.toFixed(2)} AXC</div>
+    <div style="font-size:14px;font-weight:700;color:${h.type==='earn'?'#22c55e':'var(--fg-dim)'}">${h.type==='earn'?'+':'−'}${h.amount.toFixed(2)} AXC</div>
   </div>`).join('')}
-  <button class="btn btn-gold" style="margin-top:20px">Redeem as Cash</button>
+  ${(S._axcHistory||[]).length?'':`<div style="font-size:13px;color:var(--fg-subtle);padding:12px 0">No activity yet — coins land here as you complete trips.</div>`}
+  <button class="btn btn-gold" style="margin-top:20px;${S.apexcoin>0?'':'opacity:.4;cursor:default'}" onclick="redeemAxc()">Redeem as Cash</button>
   <div style="height:20px"></div>
 </div>`,
 
@@ -2020,7 +2080,7 @@ function _driverAILocal(msg){
     const todayTotal=today.reduce((a,x)=>a+(Number(x.amount)||0),0);
     return todayTotal>0
       ? `Today you've completed ${today.length} trip${today.length!==1?'s':''} totalling £${todayTotal}. Check the Earnings tab for a full breakdown by week and month. Your current ApexCoin balance is ${S.apexcoin.toFixed(2)} AXC.`
-      : "Open the Earnings tab for a full breakdown. Your ApexCoin balance is "+S.apexcoin.toFixed(2)+" AXC. Coins are earned at 2% of each fare and can be redeemed for fuel vouchers and vehicle servicing.";
+      : "Open the Earnings tab for a full breakdown. Your ApexCoin balance is "+S.apexcoin.toFixed(2)+" AXC. Coins are earned at "+driverEarnPct()+"% of each fare and can be redeemed for fuel vouchers and vehicle servicing.";
   }
   // London knowledge
   if(/drop.?off|best.*entrance|entrance/i.test(m))

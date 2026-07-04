@@ -742,6 +742,11 @@ if (FIREBASE_ENABLED) {
     if (d.exists) Object.assign(BUSINESS, d.data());
     if (['home','profile'].includes(state.screen)) render();
   }, () => {});
+  // ApexCoin earn rates — admin-tunable (settings/coins), tiered for clients.
+  db.collection('settings').doc('coins').onSnapshot(d => {
+    state._coinRates = ApexEngine.coinEarnRates(d.exists ? d.data() : null);
+    if (['profile','apex-benefits','booking-confirmed'].includes(state.screen)) render();
+  }, () => {});
 }
 
 // Ensure a subscriptions/{uid} doc exists (starts the free trial on first sight).
@@ -1009,7 +1014,7 @@ const app = document.getElementById('app');
 let state = {
   screen: 'splash', user: null, booking: {}, selectedTrip: null,
   theme: localStorage.getItem('apexvip_theme') || 'dark',
-  apexBalance: parseInt(localStorage.getItem('apex_balance')||'0'),
+  apexBalance: Math.max(0, parseInt(localStorage.getItem('apex_balance')||'0', 10) || 0),
   apexTransactions: JSON.parse(localStorage.getItem('apex_txs')||'[]'),
   _lastApexEarned: 0,
   paMode: false,
@@ -1727,11 +1732,13 @@ function submitRating(stars) {
 
 // ── Apple Pay / Google Pay ─────────────────────────────────────────────────
 async function runApplePay() {
+  const _quote = apexPayQuote();
+  if (_quote.redeemed > 0 && _quote.cashDue === 0) { await confirmBooking(); return; } // fully covered by APEX
   if (!window.ApplePaySession || !ApplePaySession.canMakePayments()) {
     alert('Apple Pay is not available on this device. Please use the card form below.');
     return;
   }
-  const total = state._payTotal || 0;
+  const total = _quote.cashDue;
   const request = {
     countryCode: 'GB', currencyCode: 'GBP',
     supportedNetworks: ['visa', 'masterCard', 'amex'],
@@ -1798,13 +1805,13 @@ async function applyReferral() {
       const fn = fns.httpsCallable('applyReferralCode');
       const res = await fn({ code });
       state._referralMsg = '✓ ' + res.data.message;
-      state.apexBalance += res.data.creditsAwarded || 50;
+      earnApex(res.data.creditsAwarded || 50, 'Referral bonus'); // persists + records the transaction
     } catch(e) {
       state._referralMsg = e.message?.includes('already') ? 'You\'ve already used this code.' : e.message?.includes('not-found') ? 'Invalid code — check and try again.' : 'Could not apply code — try again.';
     }
   } else {
     state._referralMsg = '✓ 50 APEX credits added (demo mode)';
-    state.apexBalance += 50;
+    earnApex(50, 'Referral bonus');
   }
   render();
 }
@@ -3236,6 +3243,10 @@ home: () => {
 payment: () => {
   const total = state._payTotal || 0;
   const svc = {airport:'Airport Transfer',hourly:'By the Hour',day:'By the Day'}[state.booking.serviceType]||'Booking';
+  // ApexCoin redemption (1 APEX = £1) — quote from the shared engine.
+  const quote = apexPayQuote();
+  const redeemable = ApexEngine.applyCoinRedemption(total, state.apexBalance).redeemed;
+  const fullyCovered = quote.redeemed>0 && quote.cashDue===0;
   return `
 <div style="height:100dvh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
   <div class="back-row">
@@ -3246,15 +3257,32 @@ payment: () => {
   </div>
 
   <div style="padding:0 22px;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:calc(88px + env(safe-area-inset-bottom,0px))">
-    <div style="background:linear-gradient(135deg,rgba(255,255,255,.12) 0%,rgba(255,255,255,.04) 100%);border:1px solid rgba(255,255,255,.2);border-radius:22px;padding:22px;margin-bottom:28px;display:flex;justify-content:space-between;align-items:flex-end">
+    <div style="background:linear-gradient(135deg,rgba(255,255,255,.12) 0%,rgba(255,255,255,.04) 100%);border:1px solid rgba(255,255,255,.2);border-radius:22px;padding:22px;margin-bottom:${redeemable>0?'12px':'28px'};display:flex;justify-content:space-between;align-items:flex-end">
       <div>
         <div class="section-label" style="margin-bottom:8px">Amount due</div>
-        <div class="tnum" style="font-size:44px;font-weight:800;color:#ffffff;line-height:1">£${total}</div>
-        <div style="font-size:13px;color:var(--fg-3);margin-top:6px">${svc}</div>
+        <div class="tnum" style="font-size:44px;font-weight:800;color:#ffffff;line-height:1">£${quote.cashDue}</div>
+        <div style="font-size:13px;color:var(--fg-3);margin-top:6px">${svc}${quote.redeemed>0?` · <span style="color:var(--gold)">−${quote.redeemed} APEX applied</span>`:''}</div>
       </div>
       <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.35)" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><path stroke-linecap="round" d="M2 10h20"/></svg>
     </div>
 
+    ${redeemable>0?`
+    <div onclick="toggleApexPay()" style="display:flex;align-items:center;gap:12px;background:rgba(200,169,126,.06);border:1px solid rgba(200,169,126,${state._useApexCoin?'.5':'.2'});border-radius:16px;padding:14px 16px;margin-bottom:28px;cursor:pointer">
+      <div style="width:36px;height:36px;border-radius:10px;background:rgba(200,169,126,.12);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">◈</div>
+      <div style="flex:1">
+        <div style="font-size:14px;font-weight:700;color:var(--gold)">Pay with ApexCoin</div>
+        <div style="font-size:12px;color:var(--fg-3);margin-top:2px">Apply ${redeemable} of your ${state.apexBalance.toLocaleString()} APEX (−£${redeemable})</div>
+      </div>
+      <div style="width:44px;height:26px;border-radius:13px;background:${state._useApexCoin?'var(--gold)':'rgba(255,255,255,.12)'};position:relative;transition:background .2s;flex-shrink:0">
+        <div style="position:absolute;top:3px;left:${state._useApexCoin?'21px':'3px'};width:20px;height:20px;border-radius:50%;background:#fff;transition:left .2s"></div>
+      </div>
+    </div>`:''}
+
+    ${fullyCovered?`
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px;margin-bottom:32px;text-align:center">
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px">No card needed</div>
+      <div style="font-size:12px;color:var(--fg-3);line-height:1.6">Your APEX balance covers this journey in full.<br/>Tap confirm below to complete your booking.</div>
+    </div>`:`
     <div style="margin-bottom:16px">
       <div class="section-label" style="margin-bottom:10px">Express Checkout</div>
       <div style="display:flex;gap:8px;margin-bottom:16px">
@@ -3292,12 +3320,12 @@ payment: () => {
     <button onclick="payOnArrival()" style="width:100%;padding:15px;background:transparent;border:1px solid var(--border);border-radius:16px;color:var(--fg-2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:32px">
       <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
       Pay on Arrival
-    </button>
+    </button>`}
   </div>
 
   <div style="height:90px"></div>
   <div style="position:fixed;bottom:0;left:0;right:0;padding:12px 22px calc(env(safe-area-inset-bottom,0px) + 16px);background:var(--bg);border-top:1px solid var(--border);z-index:100">
-    <button id="sq-pay-btn" class="btn btn-gold" onclick="runSquarePayment()">Pay £${total}</button>
+    <button id="sq-pay-btn" class="btn btn-gold" onclick="runSquarePayment()">${fullyCovered?`Confirm · ${quote.redeemed} APEX`:`Pay £${quote.cashDue}`}</button>
   </div>
 </div>`;
 },
@@ -3891,13 +3919,13 @@ profile: () => {
         <div style="background:${apexTierColor(apexTier(state.apexBalance))}22;border:1px solid ${apexTierColor(apexTier(state.apexBalance))}55;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;letter-spacing:.08em;color:${apexTierColor(apexTier(state.apexBalance))}">${apexTier(state.apexBalance).toUpperCase()}</div>
       </div>
       <div style="font-size:32px;font-weight:800;color:${apexTierColor(apexTier(state.apexBalance))};line-height:1;letter-spacing:-.02em">${state.apexBalance.toLocaleString()}</div>
-      <div style="font-size:11px;color:var(--fg-4);margin-top:3px;margin-bottom:14px">APEX balance</div>
-      ${apexTier(state.apexBalance)!=='Platinum'?`<div style="margin-bottom:14px">
-        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--fg-4);margin-bottom:5px"><span>Progress to ${apexTier(state.apexBalance)==='Bronze'?'Silver':apexTier(state.apexBalance)==='Silver'?'Gold':'Platinum'}</span><span>${state.apexBalance.toLocaleString()} / ${apexTier(state.apexBalance)==='Bronze'?'500':apexTier(state.apexBalance)==='Silver'?'2,000':'5,000'}</span></div>
-        <div style="height:4px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden"><div style="height:100%;border-radius:2px;background:${apexTierColor(apexTier(state.apexBalance))};width:${Math.min(100,Math.floor(state.apexBalance/(apexTier(state.apexBalance)==='Bronze'?500:apexTier(state.apexBalance)==='Silver'?2000:5000)*100))}%;transition:width .6s ease"></div></div>
-      </div>`:''}${state.apexTransactions.length>0?`<div style="border-top:1px solid rgba(255,255,255,.05);padding-top:12px">
+      <div style="font-size:11px;color:var(--fg-4);margin-top:3px;margin-bottom:14px">APEX balance · earning ${ApexEngine.earnPctForBalance(state.apexBalance,state._coinRates)}% on every journey</div>
+      ${(()=>{const p=ApexEngine.tierProgress(state.apexBalance);return p.next?`<div style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--fg-4);margin-bottom:5px"><span>Progress to ${p.next} · earn ${(state._coinRates||ApexEngine.coinEarnRates(null)).tiers[p.next]}%</span><span>${state.apexBalance.toLocaleString()} / ${p.target.toLocaleString()}</span></div>
+        <div style="height:4px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden"><div style="height:100%;border-radius:2px;background:${apexTierColor(p.tier)};width:${p.pct}%;transition:width .6s ease"></div></div>
+      </div>`:''})()}${state.apexTransactions.length>0?`<div style="border-top:1px solid rgba(255,255,255,.05);padding-top:12px">
         <div style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-4);margin-bottom:8px">Recent Activity</div>
-        ${state.apexTransactions.slice(0,3).map(tx=>`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;color:var(--fg-3)">${tx.reason}</span><span style="font-size:12px;font-weight:700;color:${apexTierColor(apexTier(state.apexBalance))}"">+${tx.amount} APEX</span></div>`).join('')}
+        ${state.apexTransactions.slice(0,3).map(tx=>{const out=tx.type==='redeem'||tx.type==='withdraw';return`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;color:var(--fg-3)">${tx.reason}</span><span style="font-size:12px;font-weight:700;color:${out?'var(--fg-3)':apexTierColor(apexTier(state.apexBalance))}">${out?'−':'+'}${tx.amount} APEX</span></div>`;}).join('')}
       </div>`:`<div style="border-top:1px solid rgba(255,255,255,.05);padding-top:10px;font-size:12px;color:var(--fg-4)">Book a ride to start earning APEX</div>`}
       <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.04);display:flex;gap:14px">
         <span style="font-size:10px;color:var(--fg-4)">◈ 1 APEX / £1</span>
@@ -4575,7 +4603,7 @@ profile: () => {
   const disc = t.discount || 0;
   const total = t.price || (base - disc);
   const vat = t.vat || Math.round(total/6);
-  const axc = Math.round(total * 0.05);
+  const axc = ApexEngine.clientCoinsEarned(total, ApexEngine.earnPctForBalance(state.apexBalance, state._coinRates));
   return `
 <div style="height:100dvh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
   <div class="back-row">
@@ -4742,11 +4770,12 @@ profile: () => {
 
 'apex-benefits': () => {
   const tier = apexTier(state.apexBalance);
+  const rates = state._coinRates || ApexEngine.coinEarnRates(null);
   const TIERS = [
-    { name: 'Bronze', color: '#cd7f32', min: 0, max: 499, benefits: ['Priority booking (30 min dispatch)','Journey history & receipts','APEX points on every ride','Access to all vehicle classes'] },
-    { name: 'Silver', color: '#a8a9ad', min: 500, max: 1999, benefits: ['Everything in Bronze','15% surge price cap','Free cabin water & newspaper','Dedicated phone line (business hours)','Birthday journey credit (£25)'] },
-    { name: 'Gold', color: '#ffffff', min: 2000, max: 4999, benefits: ['Everything in Silver','10-minute guaranteed dispatch','No surge pricing on weekdays','Airport meet & greet included','Monthly APEX bonus (200 pts)','Dedicated account manager'] },
-    { name: 'Platinum', color: '#b9f2ff', min: 5000, max: Infinity, benefits: ['Everything in Gold','Zero surge pricing, always','Guaranteed upgrade when available','24/7 personal concierge line','Complimentary airport transfers (2/month)','500 APEX monthly bonus','Annual year-in-review gift voucher'] },
+    { name: 'Bronze', color: '#cd7f32', min: 0, max: 499, benefits: [`Earn ${rates.tiers.Bronze}% APEX on every journey`,'Priority booking (30 min dispatch)','Journey history & receipts','Access to all vehicle classes'] },
+    { name: 'Silver', color: '#a8a9ad', min: 500, max: 1999, benefits: [`Earn ${rates.tiers.Silver}% APEX on every journey`,'Everything in Bronze','15% surge price cap','Free cabin water & newspaper','Dedicated phone line (business hours)','Birthday journey credit (£25)'] },
+    { name: 'Gold', color: '#ffffff', min: 2000, max: 4999, benefits: [`Earn ${rates.tiers.Gold}% APEX on every journey`,'Everything in Silver','10-minute guaranteed dispatch','No surge pricing on weekdays','Airport meet & greet included','Monthly APEX bonus (200 pts)','Dedicated account manager'] },
+    { name: 'Platinum', color: '#b9f2ff', min: 5000, max: Infinity, benefits: [`Earn ${rates.tiers.Platinum}% APEX on every journey`,'Everything in Gold','Zero surge pricing, always','Guaranteed upgrade when available','24/7 personal concierge line','Complimentary airport transfers (2/month)','500 APEX monthly bonus','Annual year-in-review gift voucher'] },
   ];
   return `
 <div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
@@ -4771,6 +4800,36 @@ profile: () => {
         ${t.benefits.map(b=>`<div style="display:flex;align-items:flex-start;gap:9px"><svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="${t.color}" stroke-width="2.5" style="flex-shrink:0;margin-top:2px"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg><span style="font-size:13px;color:var(--fg-2);line-height:1.4">${b}</span></div>`).join('')}
       </div>
     </div>`).join('')}
+
+    <div style="background:linear-gradient(135deg,rgba(200,169,126,.08),transparent);border:1px solid rgba(200,169,126,.25);border-radius:20px;padding:20px;margin-top:6px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div style="width:36px;height:36px;border-radius:10px;background:rgba(200,169,126,.12);display:flex;align-items:center;justify-content:center;font-size:16px">⛓</div>
+        <div>
+          <div style="font-size:15px;font-weight:700;color:var(--gold)">ApexCoin on-chain</div>
+          <div style="font-size:11px;color:var(--fg-4)">AXC · ERC-20 · usable anywhere, 1.00 AXC = 1 APEX</div>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--fg-3);line-height:1.6;margin-bottom:14px">Send APEX to any wallet as real AXC tokens — hold, transfer or trade them outside ApexVIP — and deposit them back against bookings at any time.</div>
+      ${state._coinLive?`
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--fg-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${state._chainAddress?`Linked wallet: <span style="color:var(--fg)">${state._chainAddress.slice(0,6)}…${state._chainAddress.slice(-4)}</span>`:'No wallet linked yet'}</div>
+        <button onclick="linkWalletOnchain()" style="flex-shrink:0;padding:8px 14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;color:var(--fg);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">${state._chainAddress?'Re-link':'Link wallet'}</button>
+      </div>
+      <div class="section-label" style="margin-bottom:8px">Send to a wallet</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <input id="axc-withdraw-amt" type="number" min="1" placeholder="APEX" style="width:84px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:11px 12px;color:var(--fg);font-size:14px;outline:none;font-family:inherit"/>
+        <input id="axc-withdraw-addr" placeholder="0x… destination address" value="${state._chainAddress}" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:11px 12px;color:var(--fg);font-size:13px;outline:none;font-family:inherit"/>
+      </div>
+      <button onclick="withdrawApexOnchain()" style="width:100%;padding:12px;background:var(--gold);border:none;border-radius:12px;color:#0c0b09;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:14px">Withdraw as AXC</button>
+      <div class="section-label" style="margin-bottom:8px">Deposit back</div>
+      <div style="font-size:11px;color:var(--fg-4);line-height:1.5;margin-bottom:8px">Send AXC from your linked wallet to the ApexVIP treasury, then paste the transaction hash:</div>
+      <div style="display:flex;gap:8px">
+        <input id="axc-deposit-hash" placeholder="0x… transaction hash" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:11px 12px;color:var(--fg);font-size:13px;outline:none;font-family:inherit"/>
+        <button onclick="depositApexOnchain()" style="flex-shrink:0;padding:11px 16px;background:var(--surface);border:1px solid rgba(200,169,126,.4);border-radius:12px;color:var(--gold);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Claim</button>
+      </div>
+      <div id="axc-chain-msg" style="font-size:12px;margin-top:10px;line-height:1.5"></div>`
+      :`<div style="font-size:12px;color:var(--fg-4);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px">Available when signed in with the live ApexVIP backend — the demo wallet stays on this device.</div>`}
+    </div>
   </div>
 </div>`;
 },
@@ -5563,6 +5622,16 @@ async function runSquarePayment(){
   const btn = document.getElementById('sq-pay-btn');
   const errEl = document.getElementById('sq-error');
   if(errEl) errEl.style.display='none';
+  // APEX covers the whole fare — nothing to charge, no card needed.
+  // The balance is deducted inside confirmBooking.
+  const _quote = apexPayQuote();
+  if(_quote.redeemed>0 && _quote.cashDue===0){
+    if(btn){btn.disabled=true;btn.textContent='Confirming…';}
+    state._squarePaymentId=null;
+    try{ await confirmBooking(); }
+    catch(e){ if(btn){btn.disabled=false;btn.textContent='Confirm booking';} }
+    return;
+  }
   if(!_sqCard){alert('Payment form not ready yet — please wait a moment and try again.');return;}
   if(btn){btn.disabled=true;btn.textContent='Processing…';}
   try{
@@ -5570,11 +5639,11 @@ async function runSquarePayment(){
     if(result.status!=='OK'){
       const msg = result.errors?.map(e=>e.message).join(', ')||'Card error';
       if(errEl){errEl.textContent=msg;errEl.style.display='block';}
-      if(btn){btn.disabled=false;btn.textContent='Pay £'+(state._payTotal||0);}
+      if(btn){btn.disabled=false;btn.textContent='Pay £'+_quote.cashDue;}
       return;
     }
     const sourceId = result.token;
-    const total = state._payTotal||0;
+    const total = _quote.cashDue;
     const ref = 'APX-'+(Math.floor(1000+Math.random()*9000));
     state._confirmedRef = ref;
 
@@ -5616,7 +5685,7 @@ async function runSquarePayment(){
     await confirmBooking(ref);
   }catch(e){
     if(errEl){errEl.textContent='Payment failed: '+e.message;errEl.style.display='block';}
-    if(btn){btn.disabled=false;btn.textContent='Pay £'+(state._payTotal||0);}
+    if(btn){btn.disabled=false;btn.textContent='Pay £'+apexPayQuote().cashDue;}
   }
 }
 
@@ -5629,6 +5698,27 @@ async function confirmBooking(overrideRef){
   // quoteFare fallback mirrors payments/pricing.ts (10% promo, 20% VAT included)
   const {discount:disc,total,vat}=(typeof ApexEngine!=='undefined')?ApexEngine.quoteFare(base,!!state._promoApplied):(()=>{const d=state._promoApplied?Math.round(base*0.10):0;const t=base-d;return{discount:d,total:t,vat:Math.round(t/6*100)/100};})();
   const svcLabel={airport:'Airport Transfer',hourly:'By the Hour',day:'By the Day'}[state.booking.serviceType]||'Airport Transfer';
+  // Redeem APEX BEFORE the booking write: the server's earn trigger looks up
+  // the redemption ledger row for this ref to award the tier's % of the cash
+  // portion.
+  // Live wallet → the transactional callable (clamped server-side, idempotent
+  // per booking); offline/demo → the local wallet.
+  let _redeemed=0;
+  if(state._useApexCoin){
+    const _want=ApexEngine.applyCoinRedemption(total,state.apexBalance).redeemed;
+    if(_want>0){
+      if(FIREBASE_ENABLED&&auth.currentUser&&state._coinLive){
+        try{
+          const r=await fns.httpsCallable('redeemApexCoins')({amount:_want,bookingRef:ref});
+          _redeemed=Number(r.data?.redeemed)||0;
+          if(_redeemed>0)track('apex_redeemed',{amount:_redeemed,reason:'Trip payment',src:'client'});
+        }catch(e){reportError(e,'redeem-apex');}
+      }else{
+        _redeemed=spendApex(_want,'Trip payment');
+      }
+    }
+  }
+  state._useApexCoin=false;
   if(FIREBASE_ENABLED&&auth.currentUser){
     try{
       // Payload assembly is shared + unit-tested (payments/booking.ts);
@@ -5650,6 +5740,7 @@ async function confirmBooking(overrideRef){
           clientName: state.user?.name || '', clientEmail: auth.currentUser.email || '',
           booking: state.booking,
           fare: { total, base, discount: disc, vat },
+          apexRedeemed: _redeemed,
           promoApplied: state._promoApplied, squarePaymentId: state._squarePaymentId,
           paMode: state.paMode, paPassenger: state.paPassenger,
         }),
@@ -5663,15 +5754,18 @@ async function confirmBooking(overrideRef){
   }
   state._confirmedRef=ref;state._promoApplied=false;state._squarePaymentId=null;
   pushBookingHistory();
-  const _axcAmt=Math.round(total*0.05);
+  // Earn the tier's % on the cash portion only (shared engine maths; in live
+  // mode the server awards and earnApex is banner + telemetry only).
+  state._lastApexEarned=0; // stale banner guard — earnApex only sets it when coins were earned
+  const _axcAmt=ApexEngine.clientCoinsEarned(total-_redeemed,ApexEngine.earnPctForBalance(state.apexBalance,state._coinRates));
   earnApex(_axcAmt,'Trip booking');
-  if(state._useApexCoin) track('apex_redeemed',{amount:total,src:'client'});
   track('booking_confirmed',{
     service:state.booking.serviceType||'airport',
     vehicle:state.booking.vehicle||'',
     price:total, base:base, disc:disc, vat,
     apex_earned:_axcAmt,
-    paid_with_apex:!!(state._useApexCoin),
+    apex_redeemed:_redeemed,
+    paid_with_apex:_redeemed>0,
     pickup:state.booking.pickup||'',
     dropoff:state.booking.dropoff||state.booking.airport||'',
     scheduled_date:state.booking.date||'',
@@ -5691,19 +5785,82 @@ function goPayment(total){
     return;
   }
   state._payTotal=total;state._payCardId=state.cards[0]?.id||null;state._addingCard=false;
+  state._useApexCoin=false; // redemption is opt-in per checkout
   track('checkout_started',{total,src:'client'});
   go('payment');
 }
-function apexTier(b){return b>=5000?'Platinum':b>=2000?'Gold':b>=500?'Silver':'Bronze';}
-function apexTierColor(t){return{Bronze:'#cd7f32',Silver:'#a8a9ad',Gold:'#ffffff',Platinum:'#b9f2ff'}[t];}
-function earnApex(amount,reason){
-  state.apexBalance+=amount;
-  state._lastApexEarned=amount;
-  track('apex_earned',{amount,reason,src:'client'});
-  const tx={id:Date.now(),amount,reason,ts:new Date().toISOString()};
-  state.apexTransactions=[tx,...state.apexTransactions].slice(0,50);
+// Tier ladder, earn/redemption maths — shared, unit-tested engine (src/coin).
+function apexTier(b){return ApexEngine.apexTier(b);}
+function apexTierColor(t){return ApexEngine.apexTierColor(t);}
+function _saveApex(){
   localStorage.setItem('apex_balance',state.apexBalance);
   localStorage.setItem('apex_txs',JSON.stringify(state.apexTransactions));
+}
+function earnApex(amount,reason){
+  if(!(amount>0))return;
+  state._lastApexEarned=amount;
+  track('apex_earned',{amount,reason,src:'client'});
+  // Live wallet: the server awards (booking trigger / referral callable) and
+  // the snapshot updates the balance — this is banner + telemetry only.
+  if(state._coinLive)return;
+  state.apexBalance+=amount;
+  state.apexTransactions=ApexEngine.appendCoinTx(state.apexTransactions,{id:Date.now(),amount,reason,type:'earn',ts:new Date().toISOString()});
+  _saveApex();
+}
+function spendApex(amount,reason){
+  const spent=Math.min(Math.max(0,Math.floor(amount)),state.apexBalance);
+  if(!(spent>0))return 0;
+  state.apexBalance-=spent;
+  track('apex_redeemed',{amount:spent,reason,src:'client'});
+  state.apexTransactions=ApexEngine.appendCoinTx(state.apexTransactions,{id:Date.now(),amount:spent,reason,type:'redeem',ts:new Date().toISOString()});
+  _saveApex();
+  return spent;
+}
+// The checkout redemption quote for the current fare (£1 per APEX).
+function apexPayQuote(){
+  return ApexEngine.applyCoinRedemption(state._payTotal||0,state._useApexCoin?state.apexBalance:0);
+}
+function toggleApexPay(){state._useApexCoin=!state._useApexCoin;render();}
+
+// ── ApexCoin on-chain (AXC ERC-20 bridge — see functions/src/chain.ts) ──────
+function _chainSay(t,ok){const el=document.getElementById('axc-chain-msg');if(el){el.innerHTML=t;el.style.color=ok?'#22c55e':'#ef4444';}}
+async function linkWalletOnchain(){
+  if(!(FIREBASE_ENABLED&&auth.currentUser&&state._coinLive))return;
+  if(!window.ethereum){_chainSay('Linking needs a Web3 wallet (e.g. MetaMask) — it signs a message proving the wallet is yours.',false);return;}
+  try{
+    const accounts=await ethereum.request({method:'eth_requestAccounts'});
+    const address=accounts&&accounts[0];
+    if(!address){_chainSay('No wallet account available.',false);return;}
+    const signature=await ethereum.request({method:'personal_sign',params:['ApexVIP wallet link for user '+auth.currentUser.uid,address]});
+    const r=await fns.httpsCallable('linkChainWallet')({address,signature});
+    state._chainAddress=r.data.address; // the snapshot confirms momentarily
+    track('chain_wallet_linked',{src:'client'});
+    render();
+  }catch(e){_chainSay('Wallet link failed: '+esc(e.message||String(e)),false);}
+}
+async function withdrawApexOnchain(){
+  const amount=Math.floor(Number(document.getElementById('axc-withdraw-amt')?.value));
+  const address=(document.getElementById('axc-withdraw-addr')?.value||'').trim();
+  if(!(amount>0)){_chainSay('Enter how many APEX to send.',false);return;}
+  if(!address){_chainSay('Enter a destination wallet address.',false);return;}
+  _chainSay('Minting on-chain…',true);
+  try{
+    const idempotencyKey=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():String(Date.now());
+    const r=await fns.httpsCallable('withdrawCoinsOnchain')({amount,address,idempotencyKey});
+    track('apex_withdrawn',{amount:r.data.withdrawn,src:'client'});
+    _chainSay('✓ '+r.data.withdrawn+' APEX sent as AXC'+(r.data.explorer?' · <a href="'+r.data.explorer+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">view transaction</a>':''),true);
+  }catch(e){_chainSay('Withdrawal failed: '+esc(e.message||String(e)),false);}
+}
+async function depositApexOnchain(){
+  const txHash=(document.getElementById('axc-deposit-hash')?.value||'').trim();
+  if(!txHash){_chainSay('Paste the transaction hash of your transfer to the treasury.',false);return;}
+  _chainSay('Verifying on-chain…',true);
+  try{
+    const r=await fns.httpsCallable('depositCoinsOnchain')({txHash});
+    if(r.data.alreadyClaimed){_chainSay('That transaction has already been credited.',false);return;}
+    track('apex_deposited',{amount:r.data.deposited,src:'client'});
+    _chainSay('✓ '+r.data.deposited+' APEX credited back to your balance.',true);
+  }catch(e){_chainSay('Deposit failed: '+esc(e.message||String(e)),false);}
 }
 function fmtCard(el){let v=el.value.replace(/\D/g,'').slice(0,16);el.value=v.replace(/(.{4})/g,'$1 ').trim();}
 function fmtExpiry(el){let v=el.value.replace(/\D/g,'').slice(0,4);if(v.length>2)v=v.slice(0,2)+' / '+v.slice(2);el.value=v;}
@@ -5818,6 +5975,26 @@ if(FIREBASE_ENABLED){
           },()=>{});
       }
       watchLatestBooking();
+      // ApexCoin — the server-authoritative wallet. users/{uid}.apexBalance and
+      // the coin_ledger rows are written only by Cloud Functions (rules block
+      // self-writes), so once the first snapshot lands the wallet is live and
+      // earnApex/spendApex become display-only; localStorage stays as a cache.
+      if(state._coinUnsub)state._coinUnsub();
+      state._coinUnsub=db.collection('users').doc(user.uid).onSnapshot(snap=>{
+        state._coinLive=true;
+        state.apexBalance=Math.max(0,Number(snap.exists?snap.data().apexBalance:0)||0);
+        state._chainAddress=(snap.exists&&snap.data().chainAddress)||''; // signature-verified by linkChainWallet
+        try{localStorage.setItem('apex_balance',state.apexBalance);}catch(e){}
+        render();
+      },()=>{});
+      if(state._coinTxUnsub)state._coinTxUnsub();
+      state._coinTxUnsub=db.collection('coin_ledger').where('uid','==',user.uid)
+        .orderBy('at','desc').limit(50)
+        .onSnapshot(snap=>{
+          state.apexTransactions=snap.docs.map(x=>{const r=x.data();return{id:x.id,amount:Number(r.amount)||0,reason:esc(r.reason||'ApexCoin'),type:r.type==='redeem'?'redeem':'earn',ts:r.at?.toDate?.()?.toISOString()||''};});
+          try{localStorage.setItem('apex_txs',JSON.stringify(state.apexTransactions));}catch(e){}
+          render();
+        },()=>{});
       state._loginErr=null;
       // Resume pending screen (e.g. payment gate intercepted before login)
       if(state._pendingScreen){
@@ -5854,6 +6031,9 @@ if(FIREBASE_ENABLED){
     }else{
       state.user=null;
       if(_unsub){_unsub();_unsub=null;}
+      if(state._coinUnsub){state._coinUnsub();state._coinUnsub=null;}
+      if(state._coinTxUnsub){state._coinTxUnsub();state._coinTxUnsub=null;}
+      state._coinLive=false;
       TRIPS.length=0;
       if(!['splash','login','register'].includes(state.screen))go('splash');
     }

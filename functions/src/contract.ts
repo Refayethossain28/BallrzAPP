@@ -103,6 +103,59 @@ export interface PayoutSettleResult {
 }
 
 /**
+ * redeemApexCoins: the coins actually applied (server-clamped to the caller's
+ * balance — may be less than requested) and the balance after deduction.
+ */
+export interface CoinRedeemResult {
+  redeemed: number;
+  balance: number;
+}
+
+/** redeemDriverCoins: AXC cashed out (1 AXC = £1, lands in driver_payouts as owed). */
+export interface DriverCoinRedeemResult {
+  redeemed: number;
+  balance: number;
+}
+
+/** linkChainWallet: the checksummed, signature-verified wallet address. */
+export interface LinkWalletResult {
+  address: string;
+}
+
+/** withdrawCoinsOnchain: coins moved out as minted AXC (idempotent per key). */
+export interface CoinWithdrawResult {
+  withdrawn: number;
+  txHash: string;
+  balance: number;
+  /** Block-explorer link for the mint tx ('' when no explorer configured). */
+  explorer: string;
+}
+
+/** depositCoinsOnchain: coins credited back from a verified on-chain transfer. */
+export interface CoinDepositResult {
+  deposited: number;
+  alreadyClaimed: boolean;
+  balance: number;
+}
+
+/** runCoinBonuses: how many users were paid in this month's (idempotent) run. */
+export interface CoinBonusRunResult {
+  month: string;
+  clients: number;
+  drivers: number;
+}
+
+/** coinSupplyStats: public transparency totals from the coin ledger. */
+export interface CoinSupplyStatsResult {
+  issued: number;
+  redeemed: number;
+  circulating: number;
+  onchain: number;
+  chain: { contractAddress?: string; chainId?: number | null; explorerBase?: string };
+  at: string;
+}
+
+/**
  * parseBookingIntent (ApexAI): the structured booking intent, or `{ reply }` in
  * driver mode. The exact fields mirror the client's `_parseIntentLocal` shape;
  * left open here because the model fills a variable subset.
@@ -152,6 +205,13 @@ export interface ApexCallables {
   createDriverPayoutAccount: CallableSpec<void, PayoutAccountResult>;
   getDriverPayoutStatus: CallableSpec<void, PayoutStatusResult>;
   payoutDriver: CallableSpec<{ driverId: string }, PayoutSettleResult>;
+  redeemApexCoins: CallableSpec<{ amount: number; bookingRef: string }, CoinRedeemResult>;
+  redeemDriverCoins: CallableSpec<void, DriverCoinRedeemResult>;
+  linkChainWallet: CallableSpec<{ address: string; signature: string }, LinkWalletResult>;
+  withdrawCoinsOnchain: CallableSpec<{ amount: number; address: string; idempotencyKey: string }, CoinWithdrawResult>;
+  depositCoinsOnchain: CallableSpec<{ txHash: string }, CoinDepositResult>;
+  runCoinBonuses: CallableSpec<void, CoinBonusRunResult>;
+  coinSupplyStats: CallableSpec<void, CoinSupplyStatsResult>;
 }
 
 /** Every client-callable function name, as a union. */
