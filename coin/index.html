@@ -114,6 +114,23 @@
   #scanner .hint { color: var(--dim); font-size: 13px; margin: 12px 0; }
   #scanner .fallback { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; line-height: 1.55; }
   #scanner .fallback b { color: var(--gold); }
+  #tourBtn { border-color: var(--gold); color: var(--gold); }
+  #tourDim { display: none; position: fixed; inset: 0; z-index: 70; background: rgba(4,6,10,0.74); }
+  #tourRing { display: none; position: fixed; z-index: 71; border: 3px solid var(--gold); border-radius: 12px;
+    background: rgba(247,147,26,0.10); box-shadow: 0 0 24px rgba(247,147,26,0.75); pointer-events: none; transition: all 0.3s ease; }
+  #tourCard { display: none; position: fixed; z-index: 72; left: 50%; bottom: 22px; transform: translateX(-50%);
+    width: min(560px, calc(100vw - 24px)); background: var(--panel2); border: 1px solid var(--gold);
+    border-radius: 16px; padding: 18px 20px; box-shadow: 0 12px 50px rgba(0,0,0,0.6); }
+  #tourCard .step { font-size: 11px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--gold); }
+  #tourCard h3 { font-size: 18px; margin: 6px 0 8px; }
+  #tourCard p { color: var(--text); font-size: 14.5px; line-height: 1.55; }
+  #tourCard p b { color: var(--gold); }
+  #tourCard .nav { display: flex; gap: 8px; align-items: center; margin-top: 14px; }
+  #tourCard .nav .spacer { flex: 1; }
+  #tourCard .dots { display: flex; gap: 5px; }
+  #tourCard .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--line); }
+  #tourCard .dot.on { background: var(--gold); }
+  #tourSkip { position: absolute; top: 10px; right: 12px; background: none; border: none; color: var(--dim); font-size: 20px; cursor: pointer; padding: 0; }
 </style>
 </head>
 <body>
@@ -125,6 +142,7 @@
   21 BLZ will ever exist</b>, a million times scarcer than Bitcoin's 21,000,000.
   Open this page in a second tab — each tab is a node, and they sync on the heaviest chain.
 </div>
+<div class="row" style="margin-top:12px"><button id="tourBtn">❓ How it works — take the tour</button></div>
 
 <div class="stats" id="stats"></div>
 <div class="halvwrap"><div class="halvbar" id="halvBar"></div></div>
@@ -179,6 +197,9 @@
   <button id="resetAll" class="danger">Reset node (wipe chain &amp; wallets)</button>
 </div>
 
+<div id="tourDim"></div>
+<div id="tourRing"></div>
+<div id="tourCard"></div>
 <div id="paperWallet"></div>
 <div id="scanner">
   <div class="box">
@@ -716,6 +737,78 @@
 
   $('scanBtn').addEventListener('click', openScanner);
   $('scanClose').addEventListener('click', stopScan);
+
+  /* ---------- guided "How it works" tour ---------- */
+  var TOUR = [
+    { sel: null, title: 'This is a real cryptocurrency', body: 'Not a simulation — every coin here is genuinely mined and every payment cryptographically signed, using the exact building blocks of Bitcoin. In about a minute, you’ll understand how Bitcoin actually works. Tap Next.' },
+    { sel: '#stats', title: 'The blockchain', body: 'A blockchain is just a shared list of <b>blocks</b>, each holding transactions. <b>Block height</b> is how many exist so far. No company stores this — every device keeps its own copy and they agree.' },
+    { sel: '.halvwrap', title: 'Digital scarcity', body: 'Only <b>21 BLZ will ever exist</b>. The mining reward <b>halves</b> every 210 blocks, so new coins slow to a trickle and then stop — scarcity enforced by math, not by a central bank. Bitcoin works exactly this way (its cap is 21 million).' },
+    { sel: '#wallets .card', title: 'A wallet is a pair of keys', body: 'Your <b>address</b> (the B… string) is public — share it to get paid, like an account number. Behind it is a secret <b>private key</b> that proves ownership. Whoever holds the key owns the coins. Tap <b>🔑 Keys</b> later to see yours.' },
+    { sel: '[data-mine="0"]', title: 'Mining = proof of work', body: 'Tapping this makes your device guess <b>hashes</b> — millions of tries — until it finds one starting with enough zeros. That “work” is hard to do but instant to check, and the winner earns the new coins. That’s how coins are fairly created with no issuer.' },
+    { sel: '#stats', title: 'Self-adjusting difficulty', body: 'The <b>difficulty</b> automatically rises as more miners join, so a block is still found roughly every 15 seconds no matter how much power is on the network. Bitcoin does this too (aiming for 10 minutes).' },
+    { sel: '#sendForm', title: 'Payments without a bank', body: 'To pay someone, you <b>sign</b> the transaction with your private key. The network verifies the signature mathematically — no bank, no approval, no permission needed. That’s the whole point.' },
+    { sel: '#mempool', title: 'Confirmation', body: 'A new payment waits here in the <b>mempool</b> until a miner seals it into the next block. Once it’s in a block, it’s <b>confirmed</b> — permanent and irreversible. That pending gap is what everyone waits for when they send crypto.' },
+    { sel: '#richlist', title: 'The ledger is public', body: 'Every balance is derived from the chain itself — there’s no secret database. Anyone can verify who owns what. Openness is a feature: trust comes from math everyone can check, not from a company’s word.' },
+    { sel: '#chain', title: 'Why it can’t be faked', body: 'Each block is stamped with a hash of the one before it. Change any past block and every block after it breaks — so rewriting history means out-mining the entire network. That’s <b>immutability</b>.' },
+    { sel: null, title: 'That’s Bitcoin — you get it now', body: 'Mining, scarcity, keys, signatures, consensus: you just learned the real thing. What separates this toy from Bitcoin isn’t the code — it’s <b>people, electricity, and time</b>. Now go mine block #1, and send a friend the invite link. 🪙' }
+  ];
+  var tourIx = 0;
+
+  function positionTour() {
+    var step = TOUR[tourIx];
+    var ring = $('tourRing');
+    var el = step.sel ? document.querySelector(step.sel) : null;
+    if (el) {
+      var r = el.getBoundingClientRect();
+      ring.style.display = 'block';
+      ring.style.top = (r.top - 6) + 'px';
+      ring.style.left = (r.left - 6) + 'px';
+      ring.style.width = (r.width + 12) + 'px';
+      ring.style.height = (r.height + 12) + 'px';
+    } else {
+      ring.style.display = 'none';
+    }
+  }
+
+  function showTourStep() {
+    var step = TOUR[tourIx];
+    var el = step.sel ? document.querySelector(step.sel) : null;
+    if (el && el.scrollIntoView) { try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (err) { el.scrollIntoView(); } }
+    var dots = TOUR.map(function (_, i) { return '<span class="dot' + (i === tourIx ? ' on' : '') + '"></span>'; }).join('');
+    $('tourCard').innerHTML =
+      '<button id="tourSkip" title="Close">×</button>' +
+      '<div class="step">Step ' + (tourIx + 1) + ' of ' + TOUR.length + '</div>' +
+      '<h3>' + step.title + '</h3><p>' + step.body + '</p>' +
+      '<div class="nav"><div class="dots">' + dots + '</div><div class="spacer"></div>' +
+      (tourIx > 0 ? '<button id="tourBack">Back</button>' : '') +
+      '<button class="primary" id="tourNext">' + (tourIx === TOUR.length - 1 ? 'Finish ⛏' : 'Next') + '</button></div>';
+    // re-measure after the smooth scroll settles
+    setTimeout(positionTour, 60);
+    setTimeout(positionTour, 380);
+  }
+
+  function startTour() {
+    tourIx = 0;
+    $('tourDim').style.display = 'block';
+    $('tourCard').style.display = 'block';
+    showTourStep();
+  }
+  function endTour() {
+    $('tourDim').style.display = 'none';
+    $('tourRing').style.display = 'none';
+    $('tourCard').style.display = 'none';
+  }
+
+  $('tourBtn').addEventListener('click', startTour);
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (!t || !t.id) return;
+    if (t.id === 'tourNext') { if (tourIx === TOUR.length - 1) endTour(); else { tourIx++; showTourStep(); } }
+    else if (t.id === 'tourBack') { if (tourIx > 0) { tourIx--; showTourStep(); } }
+    else if (t.id === 'tourSkip') { endTour(); }
+  });
+  window.addEventListener('resize', function () { if ($('tourDim').style.display === 'block') positionTour(); });
+  window.addEventListener('scroll', function () { if ($('tourDim').style.display === 'block') positionTour(); }, true);
 
   $('resetAll').addEventListener('click', function () {
     if (!confirm('Wipe this node’s blockchain and wallets? (Other tabs keep theirs.)')) return;
