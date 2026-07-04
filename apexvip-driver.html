@@ -281,7 +281,7 @@ function track(event, props){
     arr.push(ev);
     if(arr.length>2000) arr.splice(0,arr.length-2000);
     localStorage.setItem(key,JSON.stringify(arr));
-    if(FIREBASE_ENABLED) db.collection('analytics').add(ev).catch(()=>{});
+    if(FIREBASE_ENABLED) db.collection('analytics').add(ev).catch(reportError);
   }catch(e){}
 }
 
@@ -353,7 +353,7 @@ function toggleTheme(){
 function driverSendMsg(msg){
   const el=document.getElementById('driver-chat-sent');
   if(el){const d=document.createElement('div');d.style.cssText='background:linear-gradient(135deg,#C8A97E,#8B6020);border-radius:18px 18px 4px 18px;padding:12px 16px;font-size:13px;color:#000;font-weight:500;margin-bottom:4px';d.textContent=msg;el.appendChild(d);}
-  if(FIREBASE_ENABLED&&fns&&S.activeJob){const fn=fns.httpsCallable('sendChauffeurMessage');fn({bookingRef:S.activeJob.bookingRef||S.activeJob.id,message:msg,fromRole:'driver'}).catch(()=>{});}
+  if(FIREBASE_ENABLED&&fns&&S.activeJob){const fn=fns.httpsCallable('sendChauffeurMessage');fn({bookingRef:S.activeJob.bookingRef||S.activeJob.id,message:msg,fromRole:'driver'}).catch(reportError);}
   track('driver_chat_sent',{src:'driver'});
 }
 function driverSendCustom(){
@@ -381,6 +381,17 @@ async function driverLogin(){
   }catch(err){
     alert('Invalid credentials');
   }
+}
+
+// ── Error telemetry — see telemetry/errors.ts in the shared engine ─────────
+const _errSeen = new Set();
+function reportError(e, screen) {
+  try {
+    const r = ApexEngine.formatErrorReport(e, { app: 'driver', screen: screen || S.screen || '' });
+    console.warn('[apexvip]', r.message);
+    if (!ApexEngine.shouldReport(r.fingerprint, _errSeen)) return;
+    if (FIREBASE_ENABLED) db.collection('errors').add({ ...r, at: firebase.firestore.FieldValue.serverTimestamp() }).catch(function(){});
+  } catch (_) { /* never throw from the reporter */ }
 }
 
 // Escape client-controlled strings before they enter innerHTML templates.
@@ -427,9 +438,9 @@ function setupDriverListeners(uid){
       name,vehicle:S.profile.model||S.profile.vehicle,
       model:S.profile.model||S.profile.vehicle,
       reg:S.profile.reg,rating:S.profile.rating,role:'driver'
-    },{merge:true}).catch(()=>{});
+    },{merge:true}).catch(reportError);
     render();
-  }).catch(()=>{});
+  }).catch(reportError);
   db.collection('jobs').where('driverId','==',uid).where('status','in',['pending','accepted','en_route','arrived','onboard'])
     .onSnapshot(snap=>{
       // Live jobs from Firestore replace the demo list entirely
@@ -493,7 +504,7 @@ async function claimBroadcastJob(job){
         driverId:_driverId,driverName:p.name||'Driver',
         driverPlate:p.reg||'',status:'accepted',
         assignedAt:firebase.firestore.FieldValue.serverTimestamp()
-      }).catch(()=>{});
+      }).catch(reportError);
     }
     const jobDoc=await db.collection('jobs').add({
       driverId:_driverId,bookingRef:job.bookingRef,bookingDocId:job.bookingDocId,
@@ -518,11 +529,11 @@ function syncBookingStatus(job,status,extra){
   if(!FIREBASE_ENABLED)return;
   const patch={status,...(extra||{})};
   if(job?.bookingDocId){
-    db.collection('bookings').doc(job.bookingDocId).update(patch).catch(()=>{});
+    db.collection('bookings').doc(job.bookingDocId).update(patch).catch(reportError);
   }else if(job?.bookingRef&&_driverId){
     db.collection('bookings').where('ref','==',job.bookingRef).where('driverId','==',_driverId).limit(1).get()
-      .then(snap=>{if(!snap.empty)snap.docs[0].ref.update(patch).catch(()=>{});})
-      .catch(()=>{});
+      .then(snap=>{if(!snap.empty)snap.docs[0].ref.update(patch).catch(reportError);})
+      .catch(reportError);
   }
 }
 
@@ -535,7 +546,7 @@ function _writeLocation(pos){
     lat:pos.coords.latitude,lng:pos.coords.longitude,
     heading:pos.coords.heading||0,speed:pos.coords.speed||0,
     updatedAt:firebase.firestore.FieldValue.serverTimestamp()
-  },{merge:true}).catch(()=>{});
+  },{merge:true}).catch(reportError);
 }
 
 function startGPSStream(){
@@ -630,7 +641,7 @@ async function setupPayouts(){
     const url=r.data&&r.data.url;
     if(url) window.open(url,'_blank','noopener');
     // Refresh status shortly after they return.
-    setTimeout(()=>{ fns.httpsCallable('getDriverPayoutStatus')({}).catch(()=>{}); }, 1500);
+    setTimeout(()=>{ fns.httpsCallable('getDriverPayoutStatus')({}).catch(reportError); }, 1500);
   }catch(e){ showToast('Could not start payout setup: '+(e.message||e.code||''),'error'); }
 }
 
@@ -710,13 +721,13 @@ function loadDriverFeedback(){
     }));
     S._myRatedTrips=S._myCompleted.filter(b=>b.rating);
     if(['ratings','history'].includes(S.screen))render();
-  }).catch(()=>{});
+  }).catch(reportError);
   db.collection('driver_payouts').where('driverId','==',_driverId).limit(100).get().then(snap=>{
     const rows=snap.docs.map(d=>d.data());
     rows.sort((a,b)=>(b.createdAt?.toMillis?.()||0)-(a.createdAt?.toMillis?.()||0));
     S._payoutLedger=rows;
     if(S.screen==='earnings')render();
-  }).catch(()=>{});
+  }).catch(reportError);
 }
 
 async function doUploadDoc(type, input){
@@ -820,7 +831,7 @@ function goOnline(){
   showToast(S.online?'You are now online — accepting jobs':'You are now offline','info');
   const _onTs=Date.now(); track(S.online?'driver_online':'driver_offline',{ts:_onTs,src:'driver'});
   if(FIREBASE_ENABLED&&_driverId){
-    db.collection('drivers').doc(_driverId).set({status:S.online?'online':'offline'},{merge:true}).catch(()=>{});
+    db.collection('drivers').doc(_driverId).set({status:S.online?'online':'offline'},{merge:true}).catch(reportError);
     if(S.online){ startGPSStream(); registerDriverFCM(); }
     else stopGPSStream();
   }
@@ -844,7 +855,7 @@ function goOnline(){
         pay:d.data().pay||95,flight:d.data().flight||'',notes:d.data().notes||'',
         vehicle:d.data().vehicle||'S-Class',status:'pending'}));
       if(open.length){S._openJobs=open;S._offeredJob=open[0];S.jobOverlay=true;S.countdown=30;startCountdown();render();}
-    }).catch(()=>{});
+    }).catch(reportError);
     render();
   } else {
     render();
@@ -877,7 +888,7 @@ async function acceptJob(){
       render();return;
     }
     S.activeJob=won;S.tripStep=2;S.tripTimer=0;
-    if(_driverId) db.collection('drivers').doc(_driverId).set({status:'ontrip'},{merge:true}).catch(()=>{});
+    if(_driverId) db.collection('drivers').doc(_driverId).set({status:'ontrip'},{merge:true}).catch(reportError);
     startGPSStream();
     go('active');return;
   }
@@ -887,9 +898,9 @@ async function acceptJob(){
   S.tripStep=2;
   S.tripTimer=0;
   if(FIREBASE_ENABLED&&S.activeJob?.id){
-    db.collection('jobs').doc(S.activeJob.id).update({status:'accepted'}).catch(()=>{});
+    db.collection('jobs').doc(S.activeJob.id).update({status:'accepted'}).catch(reportError);
     syncBookingStatus(S.activeJob,'accepted');
-    if(_driverId) db.collection('drivers').doc(_driverId).set({status:'ontrip'},{merge:true}).catch(()=>{});
+    if(_driverId) db.collection('drivers').doc(_driverId).set({status:'ontrip'},{merge:true}).catch(reportError);
   }
   startGPSStream();
   go('active');
@@ -931,9 +942,9 @@ async function claimAndActivate(openJobId){
   if(!won){showToast('Job already taken','error');haptic('error');render();return;}
   S.activeJob=won;S.jobOverlay=false;S._offeredJob=null;S.tripStep=2;S.tripTimer=0;
   if(FIREBASE_ENABLED&&won.id){
-    db.collection('jobs').doc(won.id).update({status:'accepted'}).catch(()=>{});
+    db.collection('jobs').doc(won.id).update({status:'accepted'}).catch(reportError);
     syncBookingStatus(won,'accepted');
-    if(_driverId) db.collection('drivers').doc(_driverId).set({status:'ontrip'},{merge:true}).catch(()=>{});
+    if(_driverId) db.collection('drivers').doc(_driverId).set({status:'ontrip'},{merge:true}).catch(reportError);
   }
   startGPSStream();go('active');
 }
@@ -998,7 +1009,7 @@ function handleInteriorPhoto(input){
       if(status)status.innerHTML='<span style="color:#22c55e">✓</span> Photo saved securely';
       // Store URL on the job document immediately
       if(S.activeJob?.id){
-        db.collection('jobs').doc(S.activeJob.id).update({interiorPhotoUrl:url,interiorPhotoAt:firebase.firestore.FieldValue.serverTimestamp()}).catch(()=>{});
+        db.collection('jobs').doc(S.activeJob.id).update({interiorPhotoUrl:url,interiorPhotoAt:firebase.firestore.FieldValue.serverTimestamp()}).catch(reportError);
       }
     }).catch(e=>{
       if(status)status.innerHTML='<span style="color:#f87171">⚠ Upload failed — photo saved locally</span>';
@@ -1029,7 +1040,7 @@ function _advanceStep(){
   if(S.tripStep<5){S.tripStep++;}
   const stepNames={2:'en_route',3:'arrived',4:'onboard',5:'completed'};
   if(FIREBASE_ENABLED&&S.activeJob?.id){
-    db.collection('jobs').doc(S.activeJob.id).update({tripStep:S.tripStep,status:stepNames[S.tripStep]||'active'}).catch(()=>{});
+    db.collection('jobs').doc(S.activeJob.id).update({tripStep:S.tripStep,status:stepNames[S.tripStep]||'active'}).catch(reportError);
     if(S.tripStep<5) syncBookingStatus(S.activeJob,stepNames[S.tripStep]||'active');
   }
   if(S.tripStep===4){
@@ -1039,9 +1050,9 @@ function _advanceStep(){
   if(S.tripStep===5){
     stopGPSStream();
     clearInterval(S._tripTimerInterval);
-    if(FIREBASE_ENABLED&&_driverId) db.collection('drivers').doc(_driverId).set({status:'online'},{merge:true}).catch(()=>{});
+    if(FIREBASE_ENABLED&&_driverId) db.collection('drivers').doc(_driverId).set({status:'online'},{merge:true}).catch(reportError);
     if(FIREBASE_ENABLED&&S.activeJob?.id){
-      db.collection('jobs').doc(S.activeJob.id).update({status:'completed',completedAt:firebase.firestore.FieldValue.serverTimestamp()}).catch(()=>{});
+      db.collection('jobs').doc(S.activeJob.id).update({status:'completed',completedAt:firebase.firestore.FieldValue.serverTimestamp()}).catch(reportError);
       syncBookingStatus(S.activeJob,'completed',{completedAt:firebase.firestore.FieldValue.serverTimestamp()});
     }
     // Award 2% of job value as ApexCoin
@@ -1410,21 +1421,10 @@ jobs:()=>{
 
 earnings:()=>{
   const t=S.earnTab;
-  const led=(S._payoutLedger||[]).filter(x=>x.createdAt&&x.createdAt.toDate);
-  const now=new Date();
-  const sameDay=d=>d.toDateString()===now.toDateString();
-  const inDays=(d,n)=>(now-d)<n*86400000;
-  const pick={today:x=>sameDay(x.createdAt.toDate()),week:x=>inDays(x.createdAt.toDate(),7),month:x=>inDays(x.createdAt.toDate(),31)}[t];
-  const rows=led.filter(pick);
-  const total=rows.reduce((a,x)=>a+(Number(x.amount)||0),0);
-  // Daily bars for the last 7 days (Mon-style labels, today last)
-  const bars=[];const labels=[];
-  for(let i=6;i>=0;i--){
-    const d=new Date(now);d.setDate(now.getDate()-i);
-    const sum=led.filter(x=>x.createdAt.toDate().toDateString()===d.toDateString()).reduce((a,x)=>a+(Number(x.amount)||0),0);
-    bars.push(sum);labels.push(i===0?'Today':d.toLocaleDateString('en-GB',{weekday:'short'}));
-  }
-  const maxBar=Math.max(1,...bars);
+  // Period totals + weekly bars: shared, unit-tested (driver/earnings.ts).
+  const led=S._payoutLedger||[];
+  const {total,count,rows}=ApexEngine.summarizeEarnings(led,t);
+  const {bars,labels,max:maxBar}=ApexEngine.dailyEarnings(led);
   return`<div class="screen">
     <div class="top-bar"><div style="font-size:22px;font-weight:700">Earnings</div></div>
     <div style="display:flex;gap:8px;margin-bottom:22px">
@@ -1433,11 +1433,11 @@ earnings:()=>{
     <div style="text-align:center;padding:16px 0 24px">
       <div style="font-size:13px;color:var(--fg-dim);margin-bottom:4px">${t==='today'?"Today's Earnings":t==='week'?'This Week':'This Month'}</div>
       <div style="font-size:48px;font-weight:800;color:#C8A97E">£${total.toLocaleString()}</div>
-      <div style="font-size:13px;color:var(--fg-subtle);margin-top:4px">${rows.length} trip${rows.length===1?'':'s'} completed</div>
+      <div style="font-size:13px;color:var(--fg-subtle);margin-top:4px">${count} trip${count===1?'':'s'} completed</div>
     </div>
     <div class="card" style="margin-bottom:12px">
       <div class="section-label" style="margin-bottom:14px">Breakdown</div>
-      ${rows.length?rows.slice(0,10).map(x=>`<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--divider);font-size:14px"><span style="color:var(--fg-dim)">${esc(x.bookingRef||'Trip')} · ${x.createdAt.toDate().toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}</span><span style="font-weight:600">£${x.amount||0}</span></div>`).join(''):`<div style="text-align:center;padding:18px;color:var(--fg-subtle);font-size:13px">No earnings ${t==='today'?'today yet':'in this period yet'} — completed trips appear here.</div>`}
+      ${rows.length?rows.slice(0,10).map(x=>`<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--divider);font-size:14px"><span style="color:var(--fg-dim)">${esc(x.ref||'Trip')} · ${x.at.toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}</span><span style="font-weight:600">£${x.amount||0}</span></div>`).join(''):`<div style="text-align:center;padding:18px;color:var(--fg-subtle);font-size:13px">No earnings ${t==='today'?'today yet':'in this period yet'} — completed trips appear here.</div>`}
     </div>
     ${t==='week'&&led.length?`<div class="card" style="margin-bottom:12px">
       <div class="section-label" style="margin-bottom:14px">Daily</div>
@@ -1451,12 +1451,12 @@ earnings:()=>{
     </div>`:''}
     <div class="card">
       <div class="section-label" style="margin-bottom:14px">Payout Details</div>
-      ${(()=>{const owed=(S._payoutLedger||[]).filter(x=>x.status==='owed').reduce((a,x)=>a+(Number(x.amount)||0),0);
+      ${(()=>{const owed=ApexEngine.owedBalance(S._payoutLedger);
         const st=S._payout&&S._payout.payoutsEnabled?'Connected — payouts active':(S._payout&&S._payout.accountId?'Onboarding in progress':'Not set up — see Profile');
         return [['Balance owed','£'+owed],['Payout account',st]].map(([l,v],i)=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:9px 0;border-bottom:${i<1?'1px solid var(--divider)':'none'}"><span style="color:var(--fg-dim)">${l}</span><span style="color:${i===0?'#C8A97E':'var(--fg)'};font-weight:${i===0?700:400}">${v}</span></div>`).join('');})()}
     </div>
     ${(()=>{const led=S._payoutLedger||[];if(!led.length)return'';
-      const owed=led.filter(x=>x.status==='owed').reduce((s,x)=>s+(Number(x.amount)||0),0);
+      const owed=ApexEngine.owedBalance(led);
       return`<div class="card" style="margin-top:12px">
       <div class="section-label" style="margin-bottom:14px">Payout History</div>
       <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:12px;border-bottom:1px solid var(--divider);margin-bottom:6px">
