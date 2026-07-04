@@ -32,7 +32,11 @@ test('hotelRateKey composes the stay key', () => {
 });
 
 test('estimateHotelRate is deterministic for the same stay', () => {
-  assert.deepEqual(Lib.estimateHotelRate(ritz, '2026-07-03', 2, 2), Lib.estimateHotelRate(ritz, '2026-07-03', 2, 2));
+  // fetchedAt is a wall-clock stamp — two calls can straddle a millisecond
+  // boundary (this exact flake failed CI), so compare everything except it.
+  const strip = ({ fetchedAt, ...rest }) => rest;
+  assert.deepEqual(strip(Lib.estimateHotelRate(ritz, '2026-07-03', 2, 2)),
+                   strip(Lib.estimateHotelRate(ritz, '2026-07-03', 2, 2)));
 });
 
 test('estimateHotelRate: weekend >= midweek; rounds to £5; total ≈ nightly×nights', () => {
