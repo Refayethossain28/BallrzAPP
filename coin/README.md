@@ -86,10 +86,18 @@ the barter board adds three safeguards for the "I paid and they ghosted" case:
 - **Pay on delivery** — the simplest of all: just pay *after* you receive the
   favour. No code needed; it's the recommended default among friends.
 
-(A fully trustless version — 2-of-3 multi-signature escrow, where no single
-party can abscond with the funds — is the natural next step and would live in
-the engine itself; the trust-based escrow above covers a friend circle without
-it.)
+- **🔐 Trustless 2-of-3 multisig escrow (engine-level).** For when you don't
+  want to trust even the middleman: coins can be locked into a *multisig
+  address* (`createMultisigAddress([buyer, seller, arbiter], 2)`, addresses
+  start with `M`) that only releases when **2 of the 3 sign**. Normal release =
+  buyer + seller; dispute = arbiter + one party. No single person can abscond
+  with the funds — it's enforced by the blockchain, not by trust. Spending is a
+  three-step ceremony (`buildMultisigSpend` → each party `signMultisig` →
+  `finalizeMultisig`), and the consensus rules reject a single signature, an
+  outsider's signatures, or a forged key set (see the multisig tests in
+  `scripts/test-coin-logic.mjs`). The friendly in-app escrow above uses the
+  simpler trusted-agent flow; this is the protocol primitive underneath for the
+  technically inclined.
 
 Wallets can be backed up and restored: **🔑 Keys** reveals a wallet's private
 key, **🖨 Paper wallet** prints a cold-storage card (address QR on one half,
