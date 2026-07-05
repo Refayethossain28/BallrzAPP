@@ -58,6 +58,15 @@
   input:focus, select:focus { outline: none; border-color: var(--gold); }
   form.send { display: grid; grid-template-columns: 1fr 2fr 100px 100px auto; gap: 8px; align-items: center; }
   @media (max-width: 720px) { form.send { grid-template-columns: 1fr 1fr; } }
+  form.offer { display: grid; grid-template-columns: 1fr 2fr 110px auto; gap: 8px; align-items: center; }
+  form.offer #offerDesc { grid-column: 1 / -1; }
+  @media (max-width: 720px) { form.offer { grid-template-columns: 1fr 1fr; } form.offer #offerTitle, form.offer #offerDesc { grid-column: 1 / -1; } }
+  .offercard { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .offercard .main { flex: 1; min-width: 180px; }
+  .offercard .ttl { font-weight: 650; }
+  .offercard .dsc { color: var(--dim); font-size: 13px; margin-top: 2px; }
+  .offercard .by { color: var(--dim); font-size: 12px; margin-top: 3px; }
+  .offercard .prc { color: var(--gold); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .list { display: flex; flex-direction: column; gap: 8px; }
   .block { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; }
   .block .head { display: flex; gap: 12px; flex-wrap: wrap; align-items: baseline; }
@@ -169,6 +178,17 @@
 <div class="row"><button id="scanBtn" type="button">📷 Scan a friend’s QR</button></div>
 <div class="sub">Transactions wait in the mempool until a miner includes them; the fee goes to that miner.</div>
 
+<h2>Barter — offers board</h2>
+<div class="sub">Post something you’ll do or give for BLZ, and pay others for theirs. Offers travel the network like payments. BLZ is only worth what your group agrees it is — so agree a shared price list (a coffee = 1 BLZ, a lift = 2, a home-cooked meal = 3…).</div>
+<form class="offer" id="offerForm">
+  <select id="offerFrom"></select>
+  <input id="offerTitle" placeholder="What are you offering? e.g. 🎂 Bake a cake" maxlength="80" autocomplete="off">
+  <input id="offerPrice" placeholder="Price in BLZ" inputmode="decimal">
+  <input id="offerDesc" placeholder="Details (optional)" maxlength="240" autocomplete="off">
+  <button class="primary" type="submit">Post offer</button>
+</form>
+<div class="list" id="offers"></div>
+
 <h2>Leaderboard</h2>
 <div class="list" id="richlist"></div>
 
@@ -261,6 +281,12 @@
     });
   }
 
+  // Barter offers — gossiped across the network like transactions, but they
+  // live off-chain (an offer is just a notice, not money). Keyed by offer id.
+  var LS_OFFERS = 'ballrzcoin.offers.v1';
+  var offers = {};
+  try { offers = JSON.parse(localStorage.getItem(LS_OFFERS) || '{}') || {}; } catch (err) { offers = {}; }
+
   function persist() {
     try {
       localStorage.setItem(LS_CHAIN, JSON.stringify(chain.toJSON()));
@@ -268,6 +294,32 @@
         return { name: w.name, privateKey: w.privateKey };
       })));
     } catch (err) { /* storage full or unavailable — keep running in memory */ }
+  }
+  function saveOffers() { try { localStorage.setItem(LS_OFFERS, JSON.stringify(offers)); } catch (err) {} }
+
+  function pruneOffers() {
+    var ids = Object.keys(offers);
+    if (ids.length <= 200) return;
+    ids.sort(function (a, b) { return offers[a].at - offers[b].at; });
+    while (ids.length > 200) { delete offers[ids.shift()]; }
+  }
+  // Validate + store an incoming/typed offer (newest wins). Returns true if it changed.
+  function ingestOffer(o) {
+    if (!o || !o.id || !Coin.isValidAddress(o.address)) return false;
+    if (typeof o.title !== 'string' || !o.title.trim()) return false;
+    if (!(o.price > 0) || !isFinite(o.price)) return false;
+    var ex = offers[o.id];
+    if (ex && ex.at >= o.at) return false;
+    offers[o.id] = {
+      id: String(o.id).slice(0, 60), address: o.address, name: String(o.name || '').slice(0, 24),
+      title: String(o.title).slice(0, 80), desc: String(o.desc || '').slice(0, 240),
+      price: Math.floor(o.price), at: Number(o.at) || 0
+    };
+    pruneOffers();
+    return true;
+  }
+  function announceOffers() {
+    Object.keys(offers).forEach(function (id) { netSend({ type: 'offer', offer: offers[id] }); });
   }
 
   /* ---------- the network ----------
@@ -305,6 +357,7 @@
     if (!m || m.from === NODE_ID) return; // our own gossip echoed back
     if (m.type === 'hello') {
       netSend({ type: 'chain', blocks: chain.blocks });
+      announceOffers();
     } else if (m.type === 'chain') {
       if (chain.replaceChain(m.blocks)) {
         persist();
@@ -313,6 +366,10 @@
       }
     } else if (m.type === 'tx') {
       try { chain.submitTransaction(m.tx); persist(); render(); } catch (err) { /* dup or conflict */ }
+    } else if (m.type === 'offer') {
+      if (ingestOffer(m.offer)) { saveOffers(); renderOffers(); }
+    } else if (m.type === 'offer-remove') {
+      if (offers[m.id]) { delete offers[m.id]; saveOffers(); renderOffers(); }
     }
   }
 
@@ -535,6 +592,33 @@
     }).join('');
 
     renderMiningStatus();
+    renderOffers();
+  }
+
+  function myAddresses() {
+    var set = {};
+    wallets.forEach(function (w) { set[w.address] = true; });
+    return set;
+  }
+
+  function renderOffers() {
+    $('offerFrom').innerHTML = wallets.map(function (w, i) {
+      return '<option value="' + i + '">' + esc(w.name) + '</option>';
+    }).join('');
+    var mine = myAddresses();
+    var list = Object.keys(offers).map(function (id) { return offers[id]; })
+      .sort(function (a, b) { return b.at - a.at; });
+    $('offers').innerHTML = list.length ? list.map(function (o) {
+      var isMine = mine[o.address];
+      var action = isMine
+        ? '<button data-remove-offer="' + esc(o.id) + '">Remove</button>'
+        : '<button class="primary" data-pay-offer="' + esc(o.id) + '">Pay ' + fmt(o.price) + '</button>';
+      return '<div class="offercard"><div class="main">' +
+        '<div class="ttl">' + esc(o.title) + '</div>' +
+        (o.desc ? '<div class="dsc">' + esc(o.desc) + '</div>' : '') +
+        '<div class="by">by ' + who(o.address) + (isMine ? ' (you)' : '') + '</div>' +
+        '</div><span class="prc">' + fmt(o.price) + '</span>' + action + '</div>';
+    }).join('') : '<div class="note">No offers yet — post the first one above (“🚗 Lift into town — 2 BLZ”).</div>';
   }
 
   /* ---------- events ---------- */
@@ -562,6 +646,23 @@
     var paperIdx = t.getAttribute('data-paper');
     if (paperIdx !== null && paperIdx !== undefined && paperIdx !== '') {
       openPaperWallet(wallets[Number(paperIdx)]);
+      return;
+    }
+    var payOffer = t.getAttribute('data-pay-offer');
+    if (payOffer) {
+      var po = offers[payOffer];
+      if (po) {
+        $('sendTo').value = po.address;
+        $('sendAmount').value = fmt(po.price).replace(' ' + chain.stats().ticker, '').replace(' BLZ', '');
+        try { $('sendForm').scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (err) {}
+        try { $('sendAmount').focus(); } catch (err) {}
+        toast('Paying for “' + po.title + '” — review and broadcast, then mine to confirm');
+      }
+      return;
+    }
+    var rmOffer = t.getAttribute('data-remove-offer');
+    if (rmOffer) {
+      if (offers[rmOffer]) { delete offers[rmOffer]; saveOffers(); netSend({ type: 'offer-remove', id: rmOffer }); renderOffers(); toast('Offer removed'); }
       return;
     }
     if (t.id === 'paperPrint') { try { window.print(); } catch (err) {} return; }
@@ -646,6 +747,30 @@
       $('sendTo').value = ''; $('sendAmount').value = '';
       toast('📨 Broadcast: ' + fmt(amount) + ' → ' + short(to) + ' (fee ' + fmt(fee) + ')');
       render();
+    } catch (err) {
+      toast('✖ ' + err.message);
+    }
+  });
+
+  $('offerForm').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    try {
+      var w = wallets[Number($('offerFrom').value)];
+      var title = $('offerTitle').value.trim();
+      var desc = $('offerDesc').value.trim();
+      if (!title) throw new Error('Give your offer a title');
+      var price = Coin.parseAmount($('offerPrice').value);
+      if (!(price > 0)) throw new Error('Set a price in BLZ');
+      var o = {
+        id: w.address.slice(0, 8) + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7),
+        address: w.address, name: w.name, title: title, desc: desc, price: price, at: Date.now()
+      };
+      ingestOffer(o);
+      saveOffers();
+      netSend({ type: 'offer', offer: o });
+      $('offerTitle').value = ''; $('offerDesc').value = ''; $('offerPrice').value = '';
+      renderOffers();
+      toast('📣 Offer posted: ' + title);
     } catch (err) {
       toast('✖ ' + err.message);
     }
@@ -837,6 +962,7 @@
   renderNetStatus();
   persist();
   netSend({ type: 'hello' }); // ask peers for their chains
+  announceOffers();           // share our barter offers with the network
 })();
 </script>
 </body>
