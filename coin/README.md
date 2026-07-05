@@ -72,6 +72,25 @@ agree a shared price list — that social agreement is what turns the coin into 
 working barter currency (like a LETS scheme or a babysitting co-op). Keep it to
 goods and favours, not cash.
 
+**Protection against a no-show seller** — because on-chain payments are final,
+the barter board adds three safeguards for the "I paid and they ghosted" case:
+
+- **Deals & reputation.** Paying an offer opens a *deal* with a lifecycle
+  (funded → confirm received → complete). Confirming delivery permanently adds a
+  ✓ to the seller's public reputation, shown on every offer they post. Deals and
+  reputation gossip over the network so the whole circle sees who's reliable.
+- **🛡 Escrow.** Instead of paying the seller directly, pay a mutually-trusted
+  third party; they release the coins to the seller once you confirm delivery,
+  or refund you if it falls through. Trust-based custody — right-sized for a
+  close circle (the agent is a person you both trust, not a smart contract).
+- **Pay on delivery** — the simplest of all: just pay *after* you receive the
+  favour. No code needed; it's the recommended default among friends.
+
+(A fully trustless version — 2-of-3 multi-signature escrow, where no single
+party can abscond with the funds — is the natural next step and would live in
+the engine itself; the trust-based escrow above covers a friend circle without
+it.)
+
 Wallets can be backed up and restored: **🔑 Keys** reveals a wallet's private
 key, **🖨 Paper wallet** prints a cold-storage card (address QR on one half,
 private-key QR on the other), and **⬇ Import wallet** restores a key on any

@@ -67,6 +67,7 @@
   .offercard .dsc { color: var(--dim); font-size: 13px; margin-top: 2px; }
   .offercard .by { color: var(--dim); font-size: 12px; margin-top: 3px; }
   .offercard .prc { color: var(--gold); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .rep { color: var(--green); font-size: 12px; font-weight: 600; }
   details.pricelist { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin-bottom: 10px; }
   details.pricelist summary { cursor: pointer; color: var(--gold); font-size: 13.5px; list-style: none; }
   details.pricelist summary::-webkit-details-marker { display: none; }
@@ -202,6 +203,10 @@
 </form>
 <div class="list" id="offers"></div>
 
+<h2>Deals <span id="dealsCount"></span></h2>
+<div class="sub">A payment plus a promise. <b>Pay</b> pays the seller directly, then you confirm you got it. <b>🛡 Escrow</b> pays a trusted third party who releases to the seller once you confirm — protection if you don’t fully trust them yet. Confirming delivery builds the seller’s ✓ reputation.</div>
+<div class="list" id="deals"></div>
+
 <h2>Leaderboard</h2>
 <div class="list" id="richlist"></div>
 
@@ -335,6 +340,59 @@
     Object.keys(offers).forEach(function (id) { netSend({ type: 'offer', offer: offers[id] }); });
   }
 
+  // Deals — a record layer over payments so a barter has a lifecycle and a
+  // reputation trail. A deal is a notice (like an offer), gossiped and
+  // newest-wins; the actual coin movement is an ordinary signed transaction.
+  // mode 'direct': buyer pays seller, then confirms receipt.
+  // mode 'escrow': buyer pays a trusted agent, who releases to the seller (or
+  //   refunds the buyer). Trust-based custody — right-sized for a close circle.
+  var LS_DEALS = 'ballrzcoin.deals.v1';
+  var deals = {};
+  try { deals = JSON.parse(localStorage.getItem(LS_DEALS) || '{}') || {}; } catch (err) { deals = {}; }
+  function saveDeals() { try { localStorage.setItem(LS_DEALS, JSON.stringify(deals)); } catch (err) {} }
+  function pruneDeals() {
+    var ids = Object.keys(deals);
+    if (ids.length <= 200) return;
+    ids.sort(function (a, b) { return deals[a].at - deals[b].at; });
+    while (ids.length > 200) { delete deals[ids.shift()]; }
+  }
+  function ingestDeal(d) {
+    if (!d || !d.id || !Coin.isValidAddress(d.buyer) || !Coin.isValidAddress(d.seller)) return false;
+    if (!(d.price > 0) || !isFinite(d.price)) return false;
+    if (['funded', 'released', 'refunded'].indexOf(d.status) < 0) return false;
+    var ex = deals[d.id];
+    if (ex && ex.at >= d.at) return false;
+    deals[d.id] = {
+      id: String(d.id).slice(0, 60), offerId: String(d.offerId || '').slice(0, 60),
+      title: String(d.title || '').slice(0, 80), price: Math.floor(d.price),
+      buyer: d.buyer, seller: d.seller, mode: (d.mode === 'escrow' ? 'escrow' : 'direct'),
+      agent: (d.agent && Coin.isValidAddress(d.agent)) ? d.agent : null,
+      status: d.status, buyerConfirmed: !!d.buyerConfirmed, at: Number(d.at) || 0
+    };
+    pruneDeals();
+    return true;
+  }
+  function announceDeals() { Object.keys(deals).forEach(function (id) { netSend({ type: 'deal', deal: deals[id] }); }); }
+  function pushDeal(id) { saveDeals(); netSend({ type: 'deal', deal: deals[id] }); renderDeals(); renderOffers(); }
+  // Reputation: completed (released) deals where this address was the seller.
+  function repCount(addr) {
+    var n = 0;
+    Object.keys(deals).forEach(function (id) { if (deals[id].seller === addr && deals[id].status === 'released') n++; });
+    return n;
+  }
+  function repBadge(addr) {
+    var n = repCount(addr);
+    return n > 0 ? ' <span class="rep">✓ ' + n + ' deal' + (n === 1 ? '' : 's') + '</span>' : '';
+  }
+  // A pending barter action that the next matching payment completes.
+  var pendingAction = null;
+  function prefillSend(toAddr, priceBlazes, note) {
+    $('sendTo').value = toAddr;
+    $('sendAmount').value = fmt(priceBlazes).replace(' BLZ', '');
+    try { $('sendForm').scrollIntoView({ block: 'center', behavior: 'smooth' }); $('sendAmount').focus(); } catch (err) {}
+    if (note) toast(note);
+  }
+
   /* ---------- the network ----------
      Same-browser tabs gossip over BroadcastChannel; different devices meet at
      an optional relay (coin/server.mjs, URL in coin/config.js). Both paths
@@ -371,6 +429,7 @@
     if (m.type === 'hello') {
       netSend({ type: 'chain', blocks: chain.blocks });
       announceOffers();
+      announceDeals();
     } else if (m.type === 'chain') {
       if (chain.replaceChain(m.blocks)) {
         persist();
@@ -383,6 +442,8 @@
       if (ingestOffer(m.offer)) { saveOffers(); renderOffers(); }
     } else if (m.type === 'offer-remove') {
       if (offers[m.id]) { delete offers[m.id]; saveOffers(); renderOffers(); }
+    } else if (m.type === 'deal') {
+      if (ingestDeal(m.deal)) { saveDeals(); renderDeals(); renderOffers(); }
     }
   }
 
@@ -606,6 +667,7 @@
 
     renderMiningStatus();
     renderOffers();
+    renderDeals();
   }
 
   function myAddresses() {
@@ -639,13 +701,43 @@
       var isMine = mine[o.address];
       var action = isMine
         ? '<button data-remove-offer="' + esc(o.id) + '">Remove</button>'
-        : '<button class="primary" data-pay-offer="' + esc(o.id) + '">Pay ' + fmt(o.price) + '</button>';
+        : '<button class="primary" data-pay-offer="' + esc(o.id) + '">Pay ' + fmt(o.price) + '</button>' +
+          '<button data-escrow-offer="' + esc(o.id) + '" title="Pay a trusted third party who releases once you confirm">🛡 Escrow</button>';
       return '<div class="offercard"><div class="main">' +
         '<div class="ttl">' + esc(o.title) + '</div>' +
         (o.desc ? '<div class="dsc">' + esc(o.desc) + '</div>' : '') +
-        '<div class="by">by ' + who(o.address) + (isMine ? ' (you)' : '') + '</div>' +
+        '<div class="by">by ' + who(o.address) + (isMine ? ' (you)' : '') + repBadge(o.address) + '</div>' +
         '</div><span class="prc">' + fmt(o.price) + '</span>' + action + '</div>';
     }).join('') : '<div class="note">No offers yet — post the first one above (“🚗 Lift into town — 2 BLZ”).</div>';
+  }
+
+  function dealStatusLabel(d) {
+    if (d.status === 'released') return '✅ complete';
+    if (d.status === 'refunded') return '↩︎ refunded';
+    if (d.mode === 'escrow') return d.buyerConfirmed ? '🛡 in escrow · buyer confirmed — agent to release' : '🛡 in escrow · awaiting delivery';
+    return '⏳ paid — awaiting confirmation';
+  }
+  function renderDeals() {
+    var mine = myAddresses();
+    var list = Object.keys(deals).map(function (id) { return deals[id]; })
+      .filter(function (d) { return mine[d.buyer] || mine[d.seller] || (d.agent && mine[d.agent]); })
+      .sort(function (a, b) { return b.at - a.at; });
+    var active = list.filter(function (d) { return d.status === 'funded'; }).length;
+    $('dealsCount').textContent = active ? '(' + active + ' active)' : '';
+    $('deals').innerHTML = list.length ? list.map(function (d) {
+      var role = mine[d.buyer] ? 'buyer' : (mine[d.seller] ? 'seller' : 'agent');
+      var actions = '';
+      if (d.status === 'funded') {
+        if (role === 'buyer' && d.mode === 'direct') actions = '<button class="primary" data-deal-release="' + esc(d.id) + '">✓ Confirm received</button>';
+        else if (role === 'buyer' && d.mode === 'escrow' && !d.buyerConfirmed) actions = '<button class="primary" data-deal-confirm="' + esc(d.id) + '">✓ Confirm received</button>';
+        else if (role === 'agent') actions = '<button class="primary" data-deal-escrow-release="' + esc(d.id) + '">Release to seller</button><button data-deal-escrow-refund="' + esc(d.id) + '">Refund buyer</button>';
+      }
+      return '<div class="offercard"><div class="main">' +
+        '<div class="ttl">' + esc(d.title || 'Barter') + ' <span class="prc">' + fmt(d.price) + '</span></div>' +
+        '<div class="by">' + who(d.buyer) + ' → ' + who(d.seller) + (d.mode === 'escrow' ? ' · 🛡 via ' + who(d.agent) : '') + '</div>' +
+        '<div class="by">' + dealStatusLabel(d) + ' · you’re the <b>' + role + '</b></div>' +
+        '</div>' + actions + '</div>';
+    }).join('') : '<div class="note">No deals yet. Pay for an offer (Pay or 🛡 Escrow) to start one — confirming delivery builds the seller’s ✓ reputation.</div>';
   }
 
   /* ---------- events ---------- */
@@ -679,12 +771,47 @@
     if (payOffer) {
       var po = offers[payOffer];
       if (po) {
-        $('sendTo').value = po.address;
-        $('sendAmount').value = fmt(po.price).replace(' ' + chain.stats().ticker, '').replace(' BLZ', '');
-        try { $('sendForm').scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (err) {}
-        try { $('sendAmount').focus(); } catch (err) {}
-        toast('Paying for “' + po.title + '” — review and broadcast, then mine to confirm');
+        pendingAction = { kind: 'fund', mode: 'direct', offerId: po.id, title: po.title, price: po.price, seller: po.address, agent: null, payTo: po.address };
+        prefillSend(po.address, po.price, 'Paying “' + po.title + '” directly — broadcast, then mine to confirm');
       }
+      return;
+    }
+    var escOffer = t.getAttribute('data-escrow-offer');
+    if (escOffer) {
+      var eo = offers[escOffer];
+      if (eo) {
+        var agent = prompt('🛡 Escrow — paste the address of someone you BOTH trust to hold the ' + fmt(eo.price) + ' and release it to the seller once you confirm delivery:');
+        if (!agent) return;
+        agent = String(agent).trim();
+        if (!Coin.isValidAddress(agent)) { toast('✖ That isn’t a valid address'); return; }
+        if (agent === eo.address) { toast('✖ The escrow agent can’t be the seller'); return; }
+        pendingAction = { kind: 'fund', mode: 'escrow', offerId: eo.id, title: eo.title, price: eo.price, seller: eo.address, agent: agent, payTo: agent };
+        prefillSend(agent, eo.price, 'Paying into escrow — the agent releases to the seller once you confirm');
+      }
+      return;
+    }
+    var dRelease = t.getAttribute('data-deal-release');
+    if (dRelease) {
+      var dr = deals[dRelease];
+      if (dr && dr.status === 'funded') { dr.status = 'released'; dr.at = Date.now(); pushDeal(dRelease); toast('✓ Confirmed received — the seller’s reputation grew'); }
+      return;
+    }
+    var dConfirm = t.getAttribute('data-deal-confirm');
+    if (dConfirm) {
+      var dc = deals[dConfirm];
+      if (dc && dc.status === 'funded') { dc.buyerConfirmed = true; dc.at = Date.now(); pushDeal(dConfirm); toast('✓ Confirmed — the agent can now release the escrow'); }
+      return;
+    }
+    var dEscRel = t.getAttribute('data-deal-escrow-release');
+    if (dEscRel) {
+      var der = deals[dEscRel];
+      if (der) { pendingAction = { kind: 'settle', dealId: dEscRel, newStatus: 'released', payTo: der.seller }; prefillSend(der.seller, der.price, 'Releasing escrow to the seller — broadcast, then mine to confirm'); }
+      return;
+    }
+    var dEscRef = t.getAttribute('data-deal-escrow-refund');
+    if (dEscRef) {
+      var def = deals[dEscRef];
+      if (def) { pendingAction = { kind: 'settle', dealId: dEscRef, newStatus: 'refunded', payTo: def.buyer }; prefillSend(def.buyer, def.price, 'Refunding the buyer — broadcast, then mine to confirm'); }
       return;
     }
     var rmOffer = t.getAttribute('data-remove-offer');
@@ -781,6 +908,23 @@
       netSend({ type: 'tx', tx: tx });
       $('sendTo').value = ''; $('sendAmount').value = '';
       toast('📨 Broadcast: ' + fmt(amount) + ' → ' + short(to) + ' (fee ' + fmt(fee) + ')');
+
+      // Complete a pending barter action if this payment matches it.
+      if (pendingAction && pendingAction.payTo === to) {
+        if (pendingAction.kind === 'fund') {
+          var pa = pendingAction;
+          var deal = {
+            id: from.address.slice(0, 8) + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7),
+            offerId: pa.offerId, title: pa.title, price: pa.price, buyer: from.address, seller: pa.seller,
+            mode: pa.mode, agent: pa.agent, status: 'funded', buyerConfirmed: false, at: Date.now()
+          };
+          if (ingestDeal(deal)) pushDeal(deal.id);
+        } else if (pendingAction.kind === 'settle') {
+          var d = deals[pendingAction.dealId];
+          if (d) { d.status = pendingAction.newStatus; d.at = Date.now(); pushDeal(d.id); }
+        }
+        pendingAction = null;
+      }
       render();
     } catch (err) {
       toast('✖ ' + err.message);
@@ -999,6 +1143,7 @@
   persist();
   netSend({ type: 'hello' }); // ask peers for their chains
   announceOffers();           // share our barter offers with the network
+  announceDeals();            // share our deal records so reputation converges
 })();
 </script>
 </body>
