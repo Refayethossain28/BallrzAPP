@@ -19,83 +19,145 @@
 <meta name="twitter:image" content="https://refayethossain28.github.io/BallrzAPP/coin/share-card.png">
 <style>
   :root {
-    --bg: #0b0e14; --panel: #131824; --panel2: #1a2130; --line: #232c3f;
-    --text: #e8edf6; --dim: #8b96ab; --gold: #f7931a; --green: #3fce8b; --red: #ff5d73;
+    --bg: #07070b;
+    --panel: linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.018));
+    --panel2: rgba(255,255,255,0.045); --line: rgba(212,175,90,0.18);
+    --text: #f3efe4; --dim: #9a9aab; --gold: #f4c257; --gold-hi: #ffe6a3; --gold-deep: #b8801f;
+    --green: #59e0a4; --red: #ff6b7f;
+    --goldgrad: linear-gradient(135deg, #ffe6a3 0%, #f4c257 42%, #c8871a 100%);
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+    color-scheme: dark;
   }
   * { box-sizing: border-box; margin: 0; }
   body {
-    background: var(--bg); color: var(--text);
-    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    padding: 20px 16px 60px; max-width: 980px; margin: 0 auto;
+    color: var(--text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 26px 16px 70px; max-width: 980px; margin: 0 auto; position: relative; min-height: 100vh;
+    background:
+      radial-gradient(720px 460px at 12% -6%, rgba(244,194,87,0.16), transparent 62%),
+      radial-gradient(680px 520px at 108% 4%, rgba(244,194,87,0.09), transparent 58%),
+      radial-gradient(900px 700px at 50% 118%, rgba(244,194,87,0.06), transparent 60%),
+      #07070b;
+    -webkit-font-smoothing: antialiased;
   }
-  h1 { font-size: 26px; letter-spacing: -0.3px; }
-  h1 .tick { color: var(--gold); }
-  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--dim); margin: 26px 0 10px; }
-  .sub { color: var(--dim); font-size: 13px; margin-top: 2px; }
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 18px; }
-  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; }
-  .stat b { display: block; font-size: 17px; font-variant-numeric: tabular-nums; }
-  .stat span { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 12px; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
-  .card .bal { font-size: 22px; font-weight: 700; margin: 4px 0; font-variant-numeric: tabular-nums; }
-  .addr { font-family: var(--mono); font-size: 12px; color: var(--dim); word-break: break-all; cursor: pointer; }
+  /* fine gold film-grain for a material, jewel-like surface */
+  body::before {
+    content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: 0.04;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 180px;
+  }
+  ::selection { background: rgba(244,194,87,0.28); color: #fff; }
+  h1 {
+    font-family: var(--serif); font-size: clamp(30px, 7vw, 44px); font-weight: 600; letter-spacing: 0.2px;
+  }
+  h1 .tick {
+    background: var(--goldgrad); -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 18px rgba(244,194,87,0.35));
+  }
+  h2 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 2.4px; color: var(--gold);
+    margin: 30px 0 12px; display: flex; align-items: center; gap: 12px; font-weight: 600;
+  }
+  h2::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(212,175,90,0.35), transparent); }
+  .sub { color: var(--dim); font-size: 13px; margin-top: 4px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-top: 22px; }
+  .stat {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 13px 16px; position: relative; overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06);
+  }
+  .stat::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,230,163,0.5), transparent); }
+  .stat b { display: block; font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 0.2px; }
+  .stat span { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: 1.4px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 18px 18px; position: relative; overflow: hidden;
+    box-shadow: 0 16px 44px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06);
+  }
+  .card::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,230,163,0.55), transparent); }
+  .card .bal {
+    font-family: var(--serif); font-size: 30px; font-weight: 600; margin: 6px 0; font-variant-numeric: tabular-nums;
+    background: var(--goldgrad); -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .addr { font-family: var(--mono); font-size: 12px; color: var(--dim); word-break: break-all; cursor: pointer; transition: color 0.2s; }
   .addr:hover { color: var(--gold); }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  .row { display: flex; gap: 9px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
   button {
     background: var(--panel2); color: var(--text); border: 1px solid var(--line);
-    border-radius: 10px; padding: 8px 14px; font: inherit; font-size: 13px; cursor: pointer;
+    border-radius: 11px; padding: 9px 15px; font: inherit; font-size: 13px; font-weight: 550; cursor: pointer;
+    transition: transform 0.14s ease, border-color 0.2s, box-shadow 0.2s, background 0.2s;
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
   }
-  button:hover { border-color: var(--gold); }
-  button.primary { background: var(--gold); border-color: var(--gold); color: #14100a; font-weight: 700; }
-  button.danger:hover { border-color: var(--red); color: var(--red); }
-  button:disabled { opacity: 0.45; cursor: default; }
+  button:hover { border-color: var(--gold); box-shadow: 0 0 0 1px rgba(244,194,87,0.25), 0 6px 18px rgba(0,0,0,0.3); transform: translateY(-1px); }
+  button.primary {
+    background: var(--goldgrad); border: none; color: #1a1204; font-weight: 800; letter-spacing: 0.2px;
+    box-shadow: 0 6px 20px rgba(244,194,87,0.28), inset 0 1px 0 rgba(255,255,255,0.4);
+  }
+  button.primary:hover { box-shadow: 0 10px 30px rgba(244,194,87,0.45), inset 0 1px 0 rgba(255,255,255,0.5); transform: translateY(-1px); }
+  button.danger:hover { border-color: var(--red); color: var(--red); box-shadow: 0 0 0 1px rgba(255,107,127,0.3); }
+  button:disabled { opacity: 0.4; cursor: default; transform: none; box-shadow: none; }
   input, select {
     background: var(--panel2); color: var(--text); border: 1px solid var(--line);
-    border-radius: 10px; padding: 8px 12px; font: inherit; font-size: 13px; min-width: 0;
+    border-radius: 11px; padding: 10px 13px; font: inherit; font-size: 13px; min-width: 0;
+    transition: border-color 0.2s, box-shadow 0.2s;
   }
-  input:focus, select:focus { outline: none; border-color: var(--gold); }
+  input::placeholder { color: rgba(154,154,171,0.7); }
+  input:focus, select:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px rgba(244,194,87,0.14); }
   form.send { display: grid; grid-template-columns: 1fr 2fr 100px 100px auto; gap: 8px; align-items: center; }
   @media (max-width: 720px) { form.send { grid-template-columns: 1fr 1fr; } }
   form.offer { display: grid; grid-template-columns: 1fr 2fr 110px auto; gap: 8px; align-items: center; }
   form.offer #offerDesc { grid-column: 1 / -1; }
   @media (max-width: 720px) { form.offer { grid-template-columns: 1fr 1fr; } form.offer #offerTitle, form.offer #offerDesc { grid-column: 1 / -1; } }
-  .offercard { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .offercard, .block, .note, details.pricelist {
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+    box-shadow: 0 12px 34px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+  .offercard { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   .offercard .main { flex: 1; min-width: 180px; }
-  .offercard .ttl { font-weight: 650; }
+  .offercard .ttl { font-weight: 650; font-size: 15px; }
   .offercard .dsc { color: var(--dim); font-size: 13px; margin-top: 2px; }
-  .offercard .by { color: var(--dim); font-size: 12px; margin-top: 3px; }
-  .offercard .prc { color: var(--gold); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .offercard .by { color: var(--dim); font-size: 12px; margin-top: 4px; }
+  .offercard .prc { background: var(--goldgrad); -webkit-background-clip: text; background-clip: text; color: transparent; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .rep { color: var(--green); font-size: 12px; font-weight: 600; }
-  details.pricelist { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin-bottom: 10px; }
-  details.pricelist summary { cursor: pointer; color: var(--gold); font-size: 13.5px; list-style: none; }
+  details.pricelist { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; margin-bottom: 12px; }
+  details.pricelist summary { cursor: pointer; color: var(--gold); font-size: 13.5px; list-style: none; font-weight: 600; letter-spacing: 0.2px; }
   details.pricelist summary::-webkit-details-marker { display: none; }
-  details.pricelist .chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
-  details.pricelist .chip { background: var(--panel2); border: 1px solid var(--line); border-radius: 99px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
-  details.pricelist .chip:hover { border-color: var(--gold); }
+  details.pricelist .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  details.pricelist .chip { background: var(--panel2); border: 1px solid var(--line); border-radius: 99px; padding: 7px 13px; font-size: 13px; cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s; }
+  details.pricelist .chip:hover { border-color: var(--gold); box-shadow: 0 0 0 1px rgba(244,194,87,0.25); }
   details.pricelist .chip b { color: var(--gold); font-variant-numeric: tabular-nums; }
-  details.pricelist .agree { color: var(--dim); font-size: 12px; margin-top: 10px; }
-  .list { display: flex; flex-direction: column; gap: 8px; }
-  .block { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; }
+  details.pricelist .agree { color: var(--dim); font-size: 12px; margin-top: 12px; }
+  .list { display: flex; flex-direction: column; gap: 10px; }
+  .block { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 12px 16px; }
   .block .head { display: flex; gap: 12px; flex-wrap: wrap; align-items: baseline; }
-  .block .h { color: var(--gold); font-weight: 700; }
+  .block .h { background: var(--goldgrad); -webkit-background-clip: text; background-clip: text; color: transparent; font-weight: 800; font-size: 15px; }
   .hash { font-family: var(--mono); font-size: 12px; color: var(--dim); word-break: break-all; }
   .tx { border-top: 1px dashed var(--line); margin-top: 8px; padding-top: 8px; font-size: 13px; }
   .amt { color: var(--green); font-variant-numeric: tabular-nums; }
   .fee { color: var(--dim); font-size: 12px; }
-  .note { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; color: var(--dim); font-size: 13px; }
-  .mining { color: var(--gold); font-family: var(--mono); font-size: 13px; }
+  .note { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; color: var(--dim); font-size: 13px; }
+  .mining { color: var(--gold); font-family: var(--mono); font-size: 12.5px; letter-spacing: 0.2px; }
   #toast {
-    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
-    background: var(--panel2); border: 1px solid var(--gold); border-radius: 12px;
-    padding: 10px 18px; font-size: 14px; opacity: 0; transition: opacity 0.25s; pointer-events: none;
-    max-width: 90vw;
+    position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
+    background: linear-gradient(180deg, rgba(30,26,16,0.96), rgba(20,17,10,0.96)); border: 1px solid var(--gold); border-radius: 14px;
+    padding: 12px 20px; font-size: 14px; opacity: 0; transition: opacity 0.25s; pointer-events: none;
+    max-width: 90vw; box-shadow: 0 14px 40px rgba(0,0,0,0.5), 0 0 30px rgba(244,194,87,0.25);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
   }
   #toast.show { opacity: 1; }
-  .halvwrap { background: var(--panel); border: 1px solid var(--line); border-radius: 99px; height: 10px; margin-top: 10px; overflow: hidden; }
-  .halvbar { background: linear-gradient(90deg, var(--gold), #ffc857); height: 100%; width: 0; transition: width 0.4s; }
-  .halvcap { color: var(--dim); font-size: 12px; margin-top: 5px; }
+  .brandrow { display: flex; align-items: center; gap: 16px; }
+  .coinmedal {
+    width: 54px; height: 54px; border-radius: 50%; flex: none;
+    background: radial-gradient(circle at 34% 28%, #ffe6a3, #f4c257 52%, #b8801f 100%);
+    display: grid; place-items: center; font-family: var(--serif); font-weight: 700; font-size: 29px; color: #3a2600;
+    box-shadow: 0 0 46px rgba(244,194,87,0.5), inset 0 -4px 12px rgba(120,70,0,0.45), inset 0 3px 9px rgba(255,255,255,0.6);
+  }
+  .halvwrap { background: rgba(0,0,0,0.35); border: 1px solid var(--line); border-radius: 99px; height: 11px; margin-top: 14px; overflow: hidden; box-shadow: inset 0 1px 3px rgba(0,0,0,0.5); }
+  .halvbar { background: linear-gradient(90deg, var(--gold-deep), var(--gold) 55%, var(--gold-hi)); height: 100%; width: 0; transition: width 0.5s ease; position: relative; box-shadow: 0 0 16px rgba(244,194,87,0.55); }
+  .halvbar::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent); transform: translateX(-100%); animation: shimmer 2.8s infinite; }
+  @keyframes shimmer { to { transform: translateX(320%); } }
+  @media (prefers-reduced-motion: reduce) { .halvbar::after { animation: none; } }
+  .halvcap { color: var(--dim); font-size: 12px; margin-top: 7px; }
   .rich { display: flex; align-items: baseline; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 9px 14px; }
   .rich .pct { margin-left: auto; color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
   .qrbox { margin-top: 10px; text-align: center; }
@@ -125,46 +187,123 @@
     #paperWallet { position: static; background: #fff; padding: 0; }
     #paperWallet .bar { display: none; }
   }
-  #scanner { display: none; position: fixed; inset: 0; z-index: 60; background: rgba(6,8,12,0.96); padding: 20px 16px; overflow: auto; }
+  #scanner { display: none; position: fixed; inset: 0; z-index: 60; background: radial-gradient(circle at 50% 30%, rgba(20,16,8,0.97), rgba(5,6,9,0.98)); padding: 22px 16px; overflow: auto; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
   #scanner .box { max-width: 460px; margin: 0 auto; }
-  #scanner video { width: 100%; border-radius: 14px; background: #000; aspect-ratio: 1; object-fit: cover; }
-  #scanner h3 { margin-bottom: 12px; }
+  #scanner video { width: 100%; border-radius: 16px; background: #000; aspect-ratio: 1; object-fit: cover; box-shadow: 0 0 0 1px var(--line), 0 0 40px rgba(244,194,87,0.25); }
+  #scanner h3 { margin-bottom: 12px; font-family: var(--serif); font-size: 22px; }
   #scanner .hint { color: var(--dim); font-size: 13px; margin: 12px 0; }
-  #scanner .fallback { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; line-height: 1.55; }
+  #scanner .fallback { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 15px 17px; line-height: 1.55; }
   #scanner .fallback b { color: var(--gold); }
   #tourBtn { border-color: var(--gold); color: var(--gold); }
-  #tourDim { display: none; position: fixed; inset: 0; z-index: 70; background: rgba(4,6,10,0.74); }
-  #tourRing { display: none; position: fixed; z-index: 71; border: 3px solid var(--gold); border-radius: 12px;
-    background: rgba(247,147,26,0.10); box-shadow: 0 0 24px rgba(247,147,26,0.75); pointer-events: none; transition: all 0.3s ease; }
+  #tourDim { display: none; position: fixed; inset: 0; z-index: 70; background: radial-gradient(circle at 50% 40%, rgba(8,7,4,0.72), rgba(4,5,8,0.82)); }
+  #tourRing { display: none; position: fixed; z-index: 71; border: 2px solid var(--gold); border-radius: 14px;
+    background: rgba(244,194,87,0.10); box-shadow: 0 0 0 1px rgba(255,230,163,0.4), 0 0 34px rgba(244,194,87,0.7); pointer-events: none; transition: all 0.32s cubic-bezier(0.16,1,0.3,1); }
   #tourCard { display: none; position: fixed; z-index: 72; left: 50%; bottom: 22px; transform: translateX(-50%);
-    width: min(560px, calc(100vw - 24px)); background: var(--panel2); border: 1px solid var(--gold);
-    border-radius: 16px; padding: 18px 20px; box-shadow: 0 12px 50px rgba(0,0,0,0.6); }
-  #tourCard .step { font-size: 11px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--gold); }
-  #tourCard h3 { font-size: 18px; margin: 6px 0 8px; }
+    width: min(560px, calc(100vw - 24px)); background: linear-gradient(180deg, rgba(30,26,18,0.96), rgba(18,16,11,0.97)); border: 1px solid var(--gold);
+    border-radius: 18px; padding: 20px 22px; box-shadow: 0 20px 60px rgba(0,0,0,0.65), 0 0 40px rgba(244,194,87,0.18); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+  #tourCard .step { font-size: 11px; text-transform: uppercase; letter-spacing: 1.8px; color: var(--gold); font-weight: 600; }
+  #tourCard h3 { font-family: var(--serif); font-size: 21px; margin: 6px 0 8px; }
   #tourCard p { color: var(--text); font-size: 14.5px; line-height: 1.55; }
-  #tourCard p b { color: var(--gold); }
-  #tourCard .nav { display: flex; gap: 8px; align-items: center; margin-top: 14px; }
+  #tourCard p b { color: var(--gold-hi); }
+  #tourCard .nav { display: flex; gap: 8px; align-items: center; margin-top: 16px; }
   #tourCard .nav .spacer { flex: 1; }
   #tourCard .dots { display: flex; gap: 5px; }
-  #tourCard .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--line); }
-  #tourCard .dot.on { background: var(--gold); }
-  #tourSkip { position: absolute; top: 10px; right: 12px; background: none; border: none; color: var(--dim); font-size: 20px; cursor: pointer; padding: 0; }
+  #tourCard .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--line); transition: background 0.2s; }
+  #tourCard .dot.on { background: var(--gold); box-shadow: 0 0 8px rgba(244,194,87,0.7); }
+  #tourSkip { position: absolute; top: 12px; right: 14px; background: none; border: none; color: var(--dim); font-size: 20px; cursor: pointer; padding: 0; }
+  /* ── challenge banner ── */
+  #challenge:not(:empty) {
+    margin-top: 16px; padding: 14px 18px; border-radius: 16px; border: 1px solid var(--gold);
+    background: linear-gradient(135deg, rgba(244,194,87,0.14), rgba(244,194,87,0.03));
+    box-shadow: 0 0 34px rgba(244,194,87,0.14), inset 0 1px 0 rgba(255,255,255,0.08);
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  }
+  #challenge .ct { font-family: var(--serif); font-size: 18px; }
+  #challenge .cd { color: var(--dim); font-size: 13px; }
+  #challenge .cn { margin-left: auto; font-weight: 800; font-size: 20px; background: var(--goldgrad); -webkit-background-clip: text; background-clip: text; color: transparent; white-space: nowrap; }
+  /* ── achievements ── */
+  .badges { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+  .badge {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 12px; text-align: center;
+    opacity: 0.4; filter: grayscale(0.7); transition: all 0.25s; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  }
+  .badge.on { opacity: 1; filter: none; border-color: var(--gold); box-shadow: 0 0 0 1px rgba(244,194,87,0.25), 0 10px 26px rgba(0,0,0,0.3); }
+  .badge .bi { font-size: 26px; }
+  .badge .bt { font-size: 12px; font-weight: 650; margin-top: 5px; }
+  .badge .bd { font-size: 10.5px; color: var(--dim); margin-top: 2px; line-height: 1.35; }
+  /* ── celebration + confetti ── */
+  #fx { position: fixed; inset: 0; z-index: 118; pointer-events: none; }
+  #celebrate { position: fixed; inset: 0; z-index: 119; display: none; place-items: center; pointer-events: none; }
+  #celebrate.show { display: grid; }
+  #celebrate .cbox { text-align: center; animation: cpop 0.5s cubic-bezier(0.16,1,0.3,1) both; }
+  #celebrate .cbig { font-family: var(--serif); font-size: clamp(30px, 8vw, 46px); font-weight: 700; background: var(--goldgrad); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 4px 24px rgba(244,194,87,0.5)); }
+  #celebrate .csub { color: var(--text); font-size: 16px; margin-top: 6px; }
+  @keyframes cpop { from { opacity: 0; transform: scale(0.7) translateY(10px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { #celebrate .cbox { animation: none; } }
+  /* ── collectible card modal ── */
+  #cardModal { display: none; position: fixed; inset: 0; z-index: 119; background: rgba(4,5,8,0.93); place-items: center; padding: 22px; overflow: auto; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+  #cardModal.show { display: grid; }
+  #cardModal .cmwrap { max-width: 400px; width: 100%; text-align: center; }
+  #cardImg { width: 100%; border-radius: 20px; box-shadow: 0 24px 70px rgba(0,0,0,0.6), 0 0 46px rgba(244,194,87,0.22); }
+  #cardModal .cmbar { display: flex; gap: 10px; justify-content: center; margin-top: 16px; }
+  #cardModal .cmhint { color: var(--dim); font-size: 12px; margin-top: 12px; }
+  /* ── animated splash ── */
+  #splash { position: fixed; inset: 0; z-index: 120; display: grid; place-items: center;
+    background: radial-gradient(circle at 50% 38%, #17130a 0%, #0a0906 45%, #050506 100%);
+    animation: splashOut 0.6s ease 1.9s forwards; }
+  #splash.gone { animation: splashOut 0.35s ease forwards; }
+  @keyframes splashOut { to { opacity: 0; visibility: hidden; } }
+  #splash .inner { text-align: center; animation: splashIn 0.8s cubic-bezier(0.16,1,0.3,1) both; }
+  #splash .coinmedal { width: 116px; height: 116px; font-size: 62px; margin: 0 auto 24px; animation: coinPulse 2.4s ease-in-out infinite; }
+  @keyframes coinPulse {
+    0%, 100% { box-shadow: 0 0 46px rgba(244,194,87,0.5), inset 0 -4px 12px rgba(120,70,0,0.45), inset 0 3px 9px rgba(255,255,255,0.6); }
+    50% { box-shadow: 0 0 92px rgba(244,194,87,0.85), inset 0 -4px 12px rgba(120,70,0,0.45), inset 0 3px 9px rgba(255,255,255,0.7); }
+  }
+  #splash .sname { font-family: var(--serif); font-size: clamp(30px, 8vw, 40px); font-weight: 600; }
+  #splash .sname span { background: var(--goldgrad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  #splash .stag { color: var(--dim); text-transform: uppercase; letter-spacing: 4px; font-size: 11px; margin-top: 12px; }
+  @keyframes splashIn { from { opacity: 0; transform: translateY(14px) scale(0.94); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    #splash { animation: splashOut 0.3s ease 0.8s forwards; }
+    #splash .coinmedal { animation: none; } #splash .inner { animation: none; }
+  }
 </style>
 </head>
 <body>
 
-<h1>🪙 BallrzCoin <span class="tick">BLZ</span></h1>
+<div id="splash" onclick="this.classList.add('gone')">
+  <div class="inner">
+    <div class="coinmedal">B</div>
+    <div class="sname">BallrzCoin <span>BLZ</span></div>
+    <div class="stag">Only 21 will ever exist</div>
+  </div>
+</div>
+<script>setTimeout(function(){var s=document.getElementById('splash');if(s)s.classList.add('gone');},2400);</script>
+
+<div class="brandrow">
+  <div class="coinmedal">B</div>
+  <h1>BallrzCoin <span class="tick">BLZ</span></h1>
+</div>
 <div class="sub">
   A toy proof-of-work cryptocurrency built like Bitcoin: secp256k1 wallets, UTXO transactions,
   merkle trees, mining with difficulty retargeting and halving rewards — but <b style="color:var(--gold)">only
   21 BLZ will ever exist</b>, a million times scarcer than Bitcoin's 21,000,000.
   Open this page in a second tab — each tab is a node, and they sync on the heaviest chain.
 </div>
-<div class="row" style="margin-top:12px"><button id="tourBtn">❓ How it works — take the tour</button></div>
+<div class="row" style="margin-top:12px">
+  <button id="tourBtn">❓ How it works — take the tour</button>
+  <button id="cardBtn">🖼 My collectible card</button>
+  <button id="shareBtn">📣 Share</button>
+</div>
+
+<div id="challenge"></div>
 
 <div class="stats" id="stats"></div>
 <div class="halvwrap"><div class="halvbar" id="halvBar"></div></div>
 <div class="halvcap" id="halvCap"></div>
+
+<h2>Achievements <span id="achCount" class="rep"></span></h2>
+<div class="badges" id="badges"></div>
 
 <h2>Wallets</h2>
 <div class="cards" id="wallets"></div>
@@ -250,6 +389,13 @@
     <div class="row" style="margin-top:14px"><button id="scanClose">Close</button></div>
   </div>
 </div>
+<canvas id="fx"></canvas>
+<div id="celebrate"><div class="cbox"><div class="cbig" id="cbig"></div><div class="csub" id="csub"></div></div></div>
+<div id="cardModal"><div class="cmwrap">
+  <img id="cardImg" alt="Your BallrzCoin collectible card">
+  <div class="cmbar"><button class="primary" id="cardShare">Share / Save</button><button id="cardClose">Close</button></div>
+  <div class="cmhint">On a phone you can also long-press the card to save it.</div>
+</div></div>
 <div id="toast"></div>
 
 <script src="config.js"></script>
@@ -577,6 +723,101 @@
     toast._t = setTimeout(function () { t.className = ''; }, 3200);
   }
 
+  /* ---------- delight: confetti + celebration ---------- */
+  var reduceMotion = false;
+  try { reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (err) {}
+  function confettiBurst() {
+    var c = $('fx'); if (!c || !c.getContext || reduceMotion) return;
+    var ctx = c.getContext('2d'); c.width = window.innerWidth; c.height = window.innerHeight;
+    var cols = ['#ffe6a3', '#f4c257', '#c8871a', '#fff3d0'], parts = [];
+    for (var i = 0; i < 110; i++) parts.push({
+      x: c.width / 2, y: c.height * 0.34, vx: (Math.random() - 0.5) * 13, vy: Math.random() * -11 - 3,
+      g: 0.3, r: Math.random() * 5 + 2.5, col: cols[i % 4], rot: Math.random() * 6, vr: (Math.random() - 0.5) * 0.5, life: 1
+    });
+    function frame() {
+      ctx.clearRect(0, 0, c.width, c.height); var alive = false;
+      parts.forEach(function (p) {
+        p.vy += p.g; p.x += p.vx; p.y += p.vy; p.rot += p.vr; p.life -= 0.011;
+        if (p.life > 0 && p.y < c.height + 30) {
+          alive = true; ctx.save(); ctx.globalAlpha = Math.max(0, p.life);
+          ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillStyle = p.col;
+          ctx.beginPath(); ctx.ellipse(0, 0, p.r, p.r * 0.62, 0, 0, 7); ctx.fill(); ctx.restore();
+        }
+      });
+      if (alive) requestAnimationFrame(frame); else ctx.clearRect(0, 0, c.width, c.height);
+    }
+    requestAnimationFrame(frame);
+  }
+  function celebrate(big, sub) {
+    confettiBurst();
+    $('cbig').textContent = big; $('csub').textContent = sub || '';
+    var el = $('celebrate'); el.className = 'show';
+    clearTimeout(celebrate._t);
+    celebrate._t = setTimeout(function () { el.className = ''; }, 1900);
+  }
+
+  /* ---------- achievements ---------- */
+  var LS_ACH = 'ballrzcoin.ach.v1';
+  var unlocked = {};
+  try { unlocked = JSON.parse(localStorage.getItem(LS_ACH) || '{}') || {}; } catch (err) { unlocked = {}; }
+  var ACHIEVEMENTS = [
+    { id: 'mine', icon: '⛏', title: 'First strike', desc: 'Mine your first block', test: function (m) { return m.mined > 0; } },
+    { id: 'coin', icon: '🪙', title: 'A whole coin', desc: 'Hold 1 BLZ across your wallets', test: function (m) { return m.balance >= COIN_UNIT; } },
+    { id: 'send', icon: '💸', title: 'First payment', desc: 'Send coins to someone', test: function (m) { return m.sent; } },
+    { id: 'offer', icon: '🏷️', title: 'Open for business', desc: 'Post a barter offer', test: function (m) { return m.posted; } },
+    { id: 'deal', icon: '🤝', title: 'Fair trade', desc: 'Complete a barter deal', test: function (m) { return m.dealsDone > 0; } },
+    { id: 'vault', icon: '🔐', title: 'Trust no one', desc: 'Use a 2-of-3 vault', test: function (m) { return m.vault; } },
+    { id: 'backup', icon: '📜', title: 'Safe keeping', desc: 'Make a paper wallet', test: function (m) { return m.backed; } },
+    { id: 'net', icon: '🌐', title: 'Networked', desc: 'Connect to the shared network', test: function (m) { return m.networked; } },
+    { id: 'top', icon: '👑', title: 'Top of the pile', desc: 'Reach #1 on the leaderboard', test: function (m) { return m.top; } },
+    { id: 'whale', icon: '🐋', title: 'Coin baron', desc: 'Hold 5 BLZ at once', test: function (m) { return m.balance >= 5 * COIN_UNIT; } }
+  ];
+  var COIN_UNIT = Coin.COIN;
+  var paperMade = false; // set when a paper wallet is opened
+  function achMetrics() {
+    var mineAddrs = myAddresses();
+    var mined = 0, balance = 0, sent = false, top = false;
+    chain.blocks.forEach(function (b) {
+      var cb = b.transactions[0];
+      if (cb && cb.outputs[0] && mineAddrs[cb.outputs[0].address]) mined++;
+      b.transactions.forEach(function (tx) {
+        if (tx.type === 'transfer' && tx.inputs[0] && !tx.inputs[0].redeem) {
+          try { if (mineAddrs[Coin.addressFromPublicKey(tx.inputs[0].pubKey)]) sent = true; } catch (e) {}
+        }
+      });
+    });
+    wallets.forEach(function (w) { balance += chain.getBalance(w.address); });
+    var rich = chain.richList(1);
+    if (rich[0] && mineAddrs[rich[0].address]) top = true;
+    var dealsDone = 0, vault = false;
+    Object.keys(deals).forEach(function (id) {
+      var d = deals[id];
+      if (d.status === 'released' && (mineAddrs[d.buyer] || mineAddrs[d.seller])) dealsDone++;
+      if (d.escrowType === 'multisig' && (mineAddrs[d.buyer] || mineAddrs[d.seller] || myPartyPubs(d).length)) vault = true;
+    });
+    var posted = Object.keys(offers).some(function (id) { return mineAddrs[offers[id].address]; });
+    return { mined: mined, balance: balance, sent: sent, top: top, dealsDone: dealsDone, vault: vault, posted: posted, backed: paperMade, networked: relayUp };
+  }
+  function evaluateAchievements() {
+    var m = achMetrics(), newly = [];
+    ACHIEVEMENTS.forEach(function (a) { if (!unlocked[a.id] && a.test(m)) { unlocked[a.id] = Date.now(); newly.push(a); } });
+    if (newly.length) { try { localStorage.setItem(LS_ACH, JSON.stringify(unlocked)); } catch (e) {} }
+    renderAchievements();
+    if (newly.length) {
+      var a = newly[0];
+      if ($('celebrate').className === 'show') toast(a.icon + ' Achievement unlocked: ' + a.title);
+      else celebrate(a.icon + ' Achievement!', a.title + ' — ' + a.desc);
+    }
+  }
+  function renderAchievements() {
+    var got = ACHIEVEMENTS.filter(function (a) { return unlocked[a.id]; }).length;
+    $('achCount').textContent = got + ' / ' + ACHIEVEMENTS.length;
+    $('badges').innerHTML = ACHIEVEMENTS.map(function (a) {
+      return '<div class="badge' + (unlocked[a.id] ? ' on' : '') + '"><div class="bi">' + a.icon + '</div>' +
+        '<div class="bt">' + esc(a.title) + '</div><div class="bd">' + esc(a.desc) + '</div></div>';
+    }).join('');
+  }
+
   /* ---------- mining (time-sliced so the page stays alive) ---------- */
   var mining = null;
   function startMining(wallet) {
@@ -595,7 +836,7 @@
           chain.addBlock(block);
           persist();
           announceChain();
-          toast('⛏ Block #' + block.height + ' mined → ' + fmt(coinbaseValue(block)) + ' to ' + esc(wallet.name));
+          celebrate('⚡ You struck a coin!', 'Block #' + block.height + ' — ' + fmt(coinbaseValue(block)) + ' to ' + wallet.name);
         } catch (err) {
           toast('Block orphaned (another node was faster): ' + err.message);
         }
@@ -735,12 +976,26 @@
     renderMiningStatus();
     renderOffers();
     renderDeals();
+    renderChallenge();
+    evaluateAchievements();
   }
 
   function myAddresses() {
     var set = {};
     wallets.forEach(function (w) { set[w.address] = true; });
     return set;
+  }
+
+  // A live "why play now" hook: half of all coins are only mineable in era one.
+  function renderChallenge() {
+    var el = $('challenge'); if (!el) return;
+    var s = chain.stats(), interval = chain.params.halvingInterval;
+    if (s.height < interval) {
+      var left = interval - s.height;
+      el.innerHTML = '<div><div class="ct">⚡ The Era-One Race</div>' +
+        '<div class="cd">Half of all 21 BLZ can only be mined in the first ' + interval + ' blocks — then the reward halves, forever. Mine now, before your friends do.</div></div>' +
+        '<div class="cn">' + left + ' left</div>';
+    } else { el.innerHTML = ''; }
   }
 
   // A starting-point price list a group can adopt or adapt. Prices are in BLZ.
@@ -1049,6 +1304,7 @@
       '<div class="bar"><button id="paperPrint">🖨 Print</button><button id="paperClose">Close</button></div>';
     pw.style.display = 'block';
     try { document.body.className = 'paper-open'; } catch (err) {}
+    paperMade = true; evaluateAchievements();
   }
   function closePaperWallet() {
     $('paperWallet').style.display = 'none';
@@ -1229,6 +1485,138 @@
 
   $('scanBtn').addEventListener('click', openScanner);
   $('scanClose').addEventListener('click', stopScan);
+
+  $('shareBtn').addEventListener('click', function () {
+    var url = pageBase();
+    var text = 'I’m mining BallrzCoin — a real cryptocurrency where only 21 coins will ever exist. Come mine one in your browser (it’s free and kind of addictive):';
+    if (navigator.share) {
+      navigator.share({ title: 'BallrzCoin (BLZ)', text: text, url: url }).catch(function () {});
+    } else {
+      try { navigator.clipboard.writeText(text + ' ' + url); toast('📣 Share text copied — paste it to a friend'); }
+      catch (err) { toast(url); }
+    }
+  });
+
+  /* ---------- shareable collectible card (canvas → image) ---------- */
+  function roundRectPath(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  function drawCardStats(ctx, cx, y) {
+    var mine = myAddresses(), balance = 0, mined = 0;
+    wallets.forEach(function (w) { balance += chain.getBalance(w.address); });
+    chain.blocks.forEach(function (b) { var cb = b.transactions[0]; if (cb && cb.outputs[0] && mine[cb.outputs[0].address]) mined++; });
+    var full = chain.richList(), rank = 0;
+    for (var i = 0; i < full.length; i++) { if (mine[full[i].address]) { rank = i + 1; break; } }
+    var badges = ACHIEVEMENTS.filter(function (a) { return unlocked[a.id]; }).length;
+    var cells = [
+      ['RANK', rank ? '#' + rank + (rank === 1 ? ' ★' : '') : '—'],
+      ['MINED', String(mined)],
+      ['BADGES', badges + '/' + ACHIEVEMENTS.length]
+    ];
+    var pw = 260, gap = 24, totalW = pw * 3 + gap * 2, sx = cx - totalW / 2;
+    cells.forEach(function (c, i) {
+      var x = sx + i * (pw + gap);
+      ctx.fillStyle = 'rgba(255,255,255,0.045)'; ctx.strokeStyle = 'rgba(212,175,90,0.28)'; ctx.lineWidth = 1.5;
+      roundRectPath(ctx, x, y, pw, 130, 20); ctx.fill(); ctx.stroke();
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#9a9aab'; ctx.font = '600 26px -apple-system, Helvetica, Arial, sans-serif'; ctx.fillText(c[0], x + pw / 2, y + 44);
+      ctx.fillStyle = '#f4c257'; ctx.font = '700 52px Georgia, "Times New Roman", serif'; ctx.fillText(c[1], x + pw / 2, y + 100);
+    });
+  }
+  function drawCardQR(ctx, url, x, y, size) {
+    if (typeof CoinQR === 'undefined') return;
+    try {
+      var qr = CoinQR.encode(url), n = qr.size, quiet = 2, total = n + quiet * 2, cell = size / total;
+      ctx.fillStyle = '#fff'; roundRectPath(ctx, x - 8, y - 8, size + 16, size + 16, 12); ctx.fill();
+      ctx.fillStyle = '#0a0906';
+      for (var r = 0; r < n; r++) for (var c = 0; c < n; c++) if (qr.modules[r][c]) ctx.fillRect(x + (c + quiet) * cell, y + (r + quiet) * cell, cell + 0.6, cell + 0.6);
+    } catch (err) {}
+  }
+  function makeCollectibleCanvas() {
+    var W = 1080, H = 1350, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    var ctx = cv.getContext('2d'), cx = W / 2;
+    ctx.fillStyle = '#08080c'; ctx.fillRect(0, 0, W, H);
+    var g1 = ctx.createRadialGradient(W * 0.2, H * 0.02, 0, W * 0.2, H * 0.02, 760);
+    g1.addColorStop(0, 'rgba(244,194,87,0.20)'); g1.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g1; ctx.fillRect(0, 0, W, H);
+    var g2 = ctx.createRadialGradient(W * 0.88, H * 1.0, 0, W * 0.88, H * 1.0, 820);
+    g2.addColorStop(0, 'rgba(244,194,87,0.13)'); g2.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g2; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = 'rgba(212,175,90,0.5)'; ctx.lineWidth = 2.5; roundRectPath(ctx, 30, 30, W - 60, H - 60, 34); ctx.stroke();
+
+    var gold = ctx.createLinearGradient(0, 0, W, 0);
+    gold.addColorStop(0, '#ffe6a3'); gold.addColorStop(0.5, '#f4c257'); gold.addColorStop(1, '#c8871a');
+
+    // medallion
+    var my = 250, rad = 88;
+    var cg = ctx.createRadialGradient(cx - 26, my - 30, 12, cx, my, rad);
+    cg.addColorStop(0, '#ffe6a3'); cg.addColorStop(0.55, '#f4c257'); cg.addColorStop(1, '#b8801f');
+    ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(cx, my, rad, 0, 7); ctx.fill();
+    ctx.fillStyle = '#3a2600'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '700 92px Georgia, "Times New Roman", serif'; ctx.fillText('B', cx, my + 6);
+    ctx.textBaseline = 'alphabetic';
+
+    // wordmark
+    ctx.font = '600 60px Georgia, "Times New Roman", serif';
+    var t1 = 'BallrzCoin ', t2 = 'BLZ', w1 = ctx.measureText(t1).width, w2 = ctx.measureText(t2).width, sx = cx - (w1 + w2) / 2;
+    ctx.textAlign = 'left'; ctx.fillStyle = '#f3efe4'; ctx.fillText(t1, sx, 430);
+    ctx.fillStyle = gold; ctx.fillText(t2, sx + w1, 430); ctx.textAlign = 'center';
+
+    // balance headline
+    var balNum = fmt(0).replace(' BLZ', ''); // placeholder
+    var mine = myAddresses(), balance = 0; wallets.forEach(function (w) { balance += chain.getBalance(w.address); });
+    balNum = fmt(balance).replace(' BLZ', '');
+    ctx.fillStyle = gold; ctx.font = '700 150px Georgia, "Times New Roman", serif';
+    var bt = balNum, btl = ' BLZ'; var bw = ctx.measureText(bt).width;
+    ctx.font = '700 64px Georgia, serif'; var lw = ctx.measureText(btl).width;
+    var bstart = cx - (bw + lw) / 2;
+    ctx.textAlign = 'left'; ctx.font = '700 150px Georgia, serif'; ctx.fillText(bt, bstart, 640);
+    ctx.font = '700 64px Georgia, serif'; ctx.fillText(btl, bstart + bw, 640); ctx.textAlign = 'center';
+    ctx.fillStyle = '#9a9aab'; ctx.font = '500 34px -apple-system, Helvetica, Arial, sans-serif';
+    ctx.fillText('of only 21 BLZ that will ever exist', cx, 700);
+
+    drawCardStats(ctx, cx, 780);
+
+    // tagline
+    ctx.fillStyle = '#f3efe4'; ctx.font = 'italic 500 42px Georgia, "Times New Roman", serif';
+    ctx.fillText('“I built my own Bitcoin —', cx, 1010);
+    ctx.fillText('and only 21 coins will ever exist.”', cx, 1066);
+
+    // QR + url
+    drawCardQR(ctx, pageBase(), cx - 80, 1120, 160);
+    ctx.fillStyle = '#f4c257'; ctx.font = '600 30px -apple-system, Helvetica, Arial, sans-serif';
+    ctx.fillText('refayethossain28.github.io/BallrzAPP/coin', cx, 1330);
+    return cv;
+  }
+  function openCard() {
+    try {
+      var cv = makeCollectibleCanvas();
+      $('cardImg').src = cv.toDataURL('image/png');
+      $('cardModal')._canvas = cv;
+      $('cardModal').className = 'show';
+    } catch (err) { toast('✖ Couldn’t make the card: ' + err.message); }
+  }
+  $('cardBtn').addEventListener('click', openCard);
+  $('cardClose').addEventListener('click', function () { $('cardModal').className = ''; });
+  $('cardShare').addEventListener('click', function () {
+    var cv = $('cardModal')._canvas; if (!cv) return;
+    var text = 'I minted a BallrzCoin — a real cryptocurrency where only 21 coins will ever exist. Mine one: ' + pageBase();
+    if (cv.toBlob) {
+      cv.toBlob(function (blob) {
+        var file = null;
+        try { file = new File([blob], 'ballrzcoin-card.png', { type: 'image/png' }); } catch (e) {}
+        if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+          navigator.share({ files: [file], text: text }).catch(function () {});
+        } else {
+          try {
+            var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'ballrzcoin-card.png';
+            document.body.appendChild(a); a.click(); a.remove();
+            toast('🖼 Card saved — post it anywhere');
+          } catch (e2) { toast('Long-press the card to save it'); }
+        }
+      }, 'image/png');
+    }
+  });
 
   /* ---------- guided "How it works" tour ---------- */
   var TOUR = [
