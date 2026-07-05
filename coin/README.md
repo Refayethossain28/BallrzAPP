@@ -70,7 +70,9 @@ transactions (they live off-chain — an offer is a notice, not money), and a
 sign and mine to confirm as usual. BLZ is only worth what your circle agrees, so
 agree a shared price list — that social agreement is what turns the coin into a
 working barter currency (like a LETS scheme or a babysitting co-op). Keep it to
-goods and favours, not cash.
+goods and favours, not cash. [`CIRCLE.md`](CIRCLE.md) is a week-by-week
+playbook for bootstrapping BLZ into a currency a group of ~10 friends actually
+uses — the honest version of "making the coin valuable."
 
 **Protection against a no-show seller** — because on-chain payments are final,
 the barter board adds three safeguards for the "I paid and they ghosted" case:
