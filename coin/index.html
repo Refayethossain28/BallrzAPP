@@ -105,9 +105,18 @@
   input:focus, select:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px rgba(244,194,87,0.14); }
   form.send { display: grid; grid-template-columns: 1fr 2fr 100px 100px auto; gap: 8px; align-items: center; }
   @media (max-width: 720px) { form.send { grid-template-columns: 1fr 1fr; } }
-  form.offer { display: grid; grid-template-columns: 1fr 2fr 110px auto; gap: 8px; align-items: center; }
-  form.offer #offerDesc { grid-column: 1 / -1; }
-  @media (max-width: 720px) { form.offer { grid-template-columns: 1fr 1fr; } form.offer #offerTitle, form.offer #offerDesc { grid-column: 1 / -1; } }
+  form.offer { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+  form.offer #offerFrom, form.offer #offerTitle, form.offer #offerDesc, form.offer #offerHint, form.offer button { grid-column: 1 / -1; }
+  form.offer #offerHint { font-size: 12px; color: var(--gold); min-height: 0; }
+  form.offer #offerHint:empty { display: none; }
+  .timebank { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 12px 16px; margin: 10px 0; }
+  .timebank .tbrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .timebank .tblabel { font-weight: 650; }
+  .timebank .tbval { font-variant-numeric: tabular-nums; }
+  .timebank .tbval b { background: var(--goldgrad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .timebank #timeAnchor { width: 62px; text-align: center; }
+  .timebank #timeAnchorH { color: var(--gold); }
+  .offercard .prc .tm { display: block; font-size: 12px; color: var(--dim); -webkit-text-fill-color: var(--dim); font-weight: 600; }
   .offercard, .block, .note, details.pricelist {
     -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
     box-shadow: 0 12px 34px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.05);
@@ -327,17 +336,30 @@
 <div class="sub">Transactions wait in the mempool until a miner includes them; the fee goes to that miner.</div>
 
 <h2>Barter — offers board</h2>
-<div class="sub">Post something you’ll do or give for BLZ, and pay others for theirs. Offers travel the network like payments. BLZ is only worth what your group agrees it is — so agree a shared price list. <a href="guide.html" style="color:var(--gold)">📖 How to run barter with friends →</a></div>
+<div class="sub">BLZ is a <b>time bank</b>: it buys <b>favours and time</b>, never cash. Post something you’ll do or give, and pay others for theirs. Offers travel the network like payments. <a href="guide.html" style="color:var(--gold)">📖 How to run barter with friends →</a></div>
+<div class="timebank" id="timeBank">
+  <div class="tbrow">
+    <span class="tblabel">⏳ The group’s time rate</span>
+    <span class="tbval"><b>1 BLZ</b> = <input id="timeAnchor" inputmode="numeric" value="60"> min (<span id="timeAnchorH"></span>)</span>
+  </div>
+  <div class="agree">Everyone in your circle should set the <b>same</b> rate — that shared agreement is what gives BLZ its worth. Anchoring to time (not pounds) keeps it a favours co-op, not an investment. Pick a rate that fits your group: fewer minutes-per-BLZ stretches the 21-coin supply across more hours of favours.</div>
+</div>
 <details class="pricelist" id="priceList">
-  <summary>💡 Suggested price list — tap any to start an offer</summary>
+  <summary>💡 Suggested rates — tap any to start an offer</summary>
   <div class="chips" id="priceChips"></div>
-  <div class="agree">These are just a starting point. Screenshot this and let your group agree its own rates — that shared agreement is what gives BLZ its worth.</div>
+  <div class="agree">Prices are the <b>hours of effort</b> a favour takes. A starting point — screenshot it and let your group agree its own rates.</div>
 </details>
 <form class="offer" id="offerForm">
   <select id="offerFrom"></select>
   <input id="offerTitle" placeholder="What are you offering? e.g. 🎂 Bake a cake" maxlength="80" autocomplete="off">
-  <input id="offerPrice" placeholder="Price in BLZ" inputmode="decimal">
+  <input id="offerPrice" placeholder="Price" inputmode="decimal">
+  <select id="offerUnit" title="Price this favour in time or in coins">
+    <option value="hours">hours</option>
+    <option value="minutes">minutes</option>
+    <option value="blz">BLZ</option>
+  </select>
   <input id="offerDesc" placeholder="Details (optional)" maxlength="240" autocomplete="off">
+  <div class="offerhint" id="offerHint"></div>
   <button class="primary" type="submit">Post offer</button>
 </form>
 <div class="list" id="offers"></div>
@@ -998,18 +1020,55 @@
     } else { el.innerHTML = ''; }
   }
 
-  // A starting-point price list a group can adopt or adapt. Prices are in BLZ.
+  // BLZ is a time bank: coins buy time and favours, never cash. The group agrees
+  // one shared rate — how many minutes of a favour a single BLZ is worth. Anchoring
+  // value to time (not pounds) is what keeps this a co-op rather than an investment.
+  // The rate is a local, group-agreed setting (everyone should pick the same number).
+  var LS_TIME = 'ballrzcoin.timeanchor.v1';
+  var minutesPerBLZ = 60;
+  try { var _tv = parseInt(localStorage.getItem(LS_TIME), 10); if (_tv > 0) minutesPerBLZ = _tv; } catch (err) {}
+
+  // Render a BLZ amount (in base units) as the time it's worth: "1h 30m", "45m".
+  function fmtTime(baseUnits) {
+    var mins = (Number(baseUnits) / COIN_UNIT) * minutesPerBLZ;
+    if (!(mins > 0)) return '0m';
+    var h = Math.floor(mins / 60), m = Math.round(mins - h * 60);
+    if (m === 60) { h += 1; m = 0; }
+    return (h ? h + 'h' : '') + (h && m ? ' ' : '') + (m || !h ? m + 'm' : '');
+  }
+  // Convert an amount of time (in minutes) into BLZ base units at the current rate.
+  function minutesToBase(mins) { return Math.round((mins / minutesPerBLZ) * COIN_UNIT); }
+
+  // Suggested rates, expressed as the HOURS of effort a favour takes — the natural
+  // way to price in a time bank. Converted to BLZ live via the group's rate.
   var SUGGESTED_PRICES = [
-    ['☕ Coffee or a drink', 1], ['🚗 Lift into town', 2], ['🍳 Home-cooked meal', 3],
-    ['🧹 An hour of help', 2], ['🐕 Walk the dog', 1], ['🌱 Water the plants', 1],
-    ['🎂 Bake a cake', 3], ['🛒 Grocery run', 2], ['💻 Fix a tech problem', 3],
-    ['✂️ A haircut', 4], ['👶 Babysit an evening', 5], ['📦 Help you move (half day)', 8]
+    ['☕ Grab you a coffee', 0.25], ['🌱 Water the plants', 0.25], ['🐕 Walk the dog', 0.5],
+    ['🚗 Lift into town', 0.5], ['🛒 Grocery run', 0.75], ['✂️ A haircut', 0.75],
+    ['🧹 An hour of help', 1], ['💻 Fix a tech problem', 1], ['🍳 Home-cooked meal', 1.5],
+    ['🎂 Bake a cake', 2], ['👶 Babysit an evening', 3], ['📦 Help you move (half day)', 4]
   ];
   function renderPriceList() {
     $('priceChips').innerHTML = SUGGESTED_PRICES.map(function (p) {
-      return '<span class="chip" data-suggest-title="' + esc(p[0]) + '" data-suggest-price="' + p[1] + '">' +
-        esc(p[0]) + ' <b>' + p[1] + ' BLZ</b></span>';
+      var hours = p[1], base = minutesToBase(hours * 60);
+      return '<span class="chip" data-suggest-title="' + esc(p[0]) + '" data-suggest-hours="' + hours + '">' +
+        esc(p[0]) + ' <b>' + fmtTime(base) + '</b> · ' + fmt(base) + '</span>';
     }).join('');
+  }
+
+  // The time-bank rate control: reflect the current rate and its hour-equivalent.
+  function renderTimeBank() {
+    var el = $('timeAnchor'); if (!el) return;
+    if (document.activeElement !== el) el.value = minutesPerBLZ;
+    var h = minutesPerBLZ / 60;
+    var label = h === 1 ? '1 hour' : (Number.isInteger(h) ? h + ' hours' : minutesPerBLZ + ' min');
+    var hEl = $('timeAnchorH'); if (hEl) hEl.textContent = label;
+  }
+  function setTimeAnchor(mins) {
+    mins = Math.round(mins);
+    if (!(mins > 0)) return;
+    minutesPerBLZ = Math.min(mins, 100000);
+    try { localStorage.setItem(LS_TIME, String(minutesPerBLZ)); } catch (err) {}
+    renderTimeBank(); renderPriceList(); renderOffers(); updateOfferHint();
   }
 
   function renderOffers() {
@@ -1023,15 +1082,15 @@
       var isMine = mine[o.address];
       var action = isMine
         ? '<button data-remove-offer="' + esc(o.id) + '">Remove</button>'
-        : '<button class="primary" data-pay-offer="' + esc(o.id) + '">Pay ' + fmt(o.price) + '</button>' +
+        : '<button class="primary" data-pay-offer="' + esc(o.id) + '">Pay ' + fmtTime(o.price) + '</button>' +
           '<button data-escrow-offer="' + esc(o.id) + '" title="Pay a trusted third party who releases once you confirm">🛡 Trusted</button>' +
           '<button data-vault-offer="' + esc(o.id) + '" title="Lock funds in a 2-of-3 vault only you, the seller and an arbiter can open">🔐 Vault</button>';
       return '<div class="offercard"><div class="main">' +
         '<div class="ttl">' + esc(o.title) + '</div>' +
         (o.desc ? '<div class="dsc">' + esc(o.desc) + '</div>' : '') +
         '<div class="by">by ' + who(o.address) + (isMine ? ' (you)' : '') + repBadge(o.address) + '</div>' +
-        '</div><span class="prc">' + fmt(o.price) + '</span>' + action + '</div>';
-    }).join('') : '<div class="note">No offers yet — post the first one above (“🚗 Lift into town — 2 BLZ”).</div>';
+        '</div><span class="prc">' + fmtTime(o.price) + '<span class="tm">' + fmt(o.price) + '</span></span>' + action + '</div>';
+    }).join('') : '<div class="note">No offers yet — post the first one above (“🚗 Lift into town — 30m”).</div>';
   }
 
   function sigCount(deal) { return deal.proposal && deal.proposal.sigs ? Object.keys(deal.proposal.sigs).length : 0; }
@@ -1264,7 +1323,9 @@
     var suggestEl = t.getAttribute('data-suggest-title') ? t : (t.parentNode && t.parentNode.getAttribute && t.parentNode.getAttribute('data-suggest-title') ? t.parentNode : null);
     if (suggestEl) {
       $('offerTitle').value = suggestEl.getAttribute('data-suggest-title');
-      $('offerPrice').value = suggestEl.getAttribute('data-suggest-price');
+      $('offerPrice').value = suggestEl.getAttribute('data-suggest-hours');
+      $('offerUnit').value = 'hours';
+      updateOfferHint();
       try { $('offerTitle').scrollIntoView({ block: 'center', behavior: 'smooth' }); $('offerTitle').focus(); } catch (err) {}
       toast('Filled in — tweak it and Post offer');
       return;
@@ -1375,6 +1436,33 @@
     }
   });
 
+  // Read the offer price the user typed and convert to BLZ base units, honouring
+  // the chosen unit (hours / minutes at the group's time rate, or raw BLZ).
+  function readOfferBase() {
+    var raw = $('offerPrice').value.trim();
+    if (!raw) return 0;
+    var unit = $('offerUnit').value;
+    if (unit === 'blz') return Coin.parseAmount(raw);
+    var n = parseFloat(raw);
+    if (!(n > 0)) return 0;
+    return minutesToBase(unit === 'hours' ? n * 60 : n);
+  }
+  // Live "= 30m" / "= 0.50000000 BLZ" hint under the offer price field.
+  function updateOfferHint() {
+    var el = $('offerHint'); if (!el) return;
+    var base = 0; try { base = readOfferBase(); } catch (e) { base = 0; }
+    if (!(base > 0)) { el.textContent = ''; return; }
+    el.textContent = $('offerUnit').value === 'blz'
+      ? '= ' + fmtTime(base) + ' of favours'
+      : '= ' + fmt(base) + '  ·  at 1 BLZ = ' + minutesPerBLZ + ' min';
+  }
+  $('offerPrice').addEventListener('input', updateOfferHint);
+  $('offerUnit').addEventListener('change', updateOfferHint);
+  $('timeAnchor').addEventListener('input', function () {
+    var v = parseInt(this.value, 10);
+    if (v > 0) setTimeAnchor(v);
+  });
+
   $('offerForm').addEventListener('submit', function (ev) {
     ev.preventDefault();
     try {
@@ -1382,8 +1470,8 @@
       var title = $('offerTitle').value.trim();
       var desc = $('offerDesc').value.trim();
       if (!title) throw new Error('Give your offer a title');
-      var price = Coin.parseAmount($('offerPrice').value);
-      if (!(price > 0)) throw new Error('Set a price in BLZ');
+      var price = readOfferBase();
+      if (!(price > 0)) throw new Error('Set a price — in hours, minutes or BLZ');
       var o = {
         id: w.address.slice(0, 8) + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7),
         address: w.address, name: w.name, title: title, desc: desc, price: price, pubKey: w.publicKey, at: Date.now()
@@ -1392,8 +1480,9 @@
       saveOffers();
       netSend({ type: 'offer', offer: o });
       $('offerTitle').value = ''; $('offerDesc').value = ''; $('offerPrice').value = '';
+      updateOfferHint();
       renderOffers();
-      toast('📣 Offer posted: ' + title);
+      toast('📣 Offer posted: ' + title + ' (' + fmtTime(o.price) + ')');
     } catch (err) {
       toast('✖ ' + err.message);
     }
@@ -1714,6 +1803,7 @@
   try { if ($('relayInput')) $('relayInput').value = relayUrl; } catch (err) {}
 
   render();
+  renderTimeBank();
   renderPriceList();
   renderNetStatus();
   persist();

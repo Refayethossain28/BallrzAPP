@@ -63,14 +63,19 @@ scans the same QR, since it’s a payment link.
 The page also shows a live **leaderboard** (top holders by share of supply) and
 a **halving countdown** toward the 21 BLZ issuance limit.
 
-**Barter — offers board:** post something you'll do or give for BLZ (“🎂 Bake a
-cake — 2 BLZ”) and pay others for theirs. Offers gossip across the network like
-transactions (they live off-chain — an offer is a notice, not money), and a
-**Pay** button prefills the send form with the poster's address and price; you
-sign and mine to confirm as usual. BLZ is only worth what your circle agrees, so
-agree a shared price list — that social agreement is what turns the coin into a
-working barter currency (like a LETS scheme or a babysitting co-op). Keep it to
-goods and favours, not cash. [`CIRCLE.md`](CIRCLE.md) is a week-by-week
+**Barter — offers board (a time bank):** BLZ buys **time and favours, never
+cash**. Post something you'll do or give (“🎂 Bake a cake”) priced in **hours or
+minutes**, and pay others for theirs. The offers board is a
+[time bank](https://en.wikipedia.org/wiki/Time-based_currency): a single
+group-agreed rate (**1 BLZ = _n_ minutes**, editable in the ⏳ time-rate box)
+converts every offer between time and coins, so prices read “30m · 0.5 BLZ” and
+you can post in whichever unit feels natural. Anchoring value to *time* rather
+than pounds is what keeps this a favours co-op, not an investment. Offers gossip
+across the network like transactions (they live off-chain — an offer is a
+notice, not money), and a **Pay** button prefills the send form with the
+poster's address and price; you sign and mine to confirm as usual. Everyone in
+your circle should set the *same* rate — that shared agreement is what turns the
+coin into a working barter currency (like a LETS scheme or a babysitting co-op). [`CIRCLE.md`](CIRCLE.md) is a week-by-week
 playbook for bootstrapping BLZ into a currency a group of ~10 friends actually
 uses — the honest version of "making the coin valuable."
 
