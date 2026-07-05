@@ -16,16 +16,18 @@
  *   • merkle trees committing every block to its transactions
  *   • proof-of-work mining against a 256-bit target, with Bitcoin-style
  *     difficulty retargeting (clamped ×4 either way each window)
- *   • a halving block-subsidy schedule and a hard supply cap — by default
- *     only 21 BLZ will ever exist, a million times scarcer than Bitcoin
+ *   • a halving block-subsidy schedule and a hard supply cap — 21,000,000,000
+ *     BLZ, fixed forever and enforced by consensus, sized for a worldwide
+ *     community that trades it for time and services
  *   • fork choice by *cumulative work* (not length), so `replaceChain` lets
  *     independent nodes converge — the UI syncs tabs over BroadcastChannel
  *
- * Simplifications vs. real Bitcoin (this is a teaching prototype, not money):
- * no script language (outputs pay a public-key hash directly), no coinbase
- * maturity delay, JSON serialisation instead of the wire format, hash160 is
- * double-SHA-256 truncated to 20 bytes (no RIPEMD-160), and networking is
- * left to the caller (same-origin tabs sync in index.html).
+ * Where BallrzCoin's implementation differs from Bitcoin's — documented in the
+ * open with severities in SECURITY.md: no script language (outputs pay a
+ * public-key hash directly), no coinbase maturity delay, JSON serialisation
+ * instead of the wire format, hash160 is double-SHA-256 truncated to 20 bytes
+ * (no RIPEMD-160), and networking is left to the caller (same-origin tabs sync
+ * in index.html, cross-device nodes meet at the relay in server.mjs).
  *
  * Everything is deterministic: no clock reads except where a timestamp is
  * passed in, no randomness except wallet generation (which accepts injected
@@ -44,18 +46,24 @@
   /* ======================================================================
    * Monetary constants
    * ==================================================================== */
-  var COIN = 100000000;                    // 1 BLZ = 100,000,000 blazes (like satoshis)
-  var MAX_MONEY = 21000000 * COIN;         // absolute sanity bound on any single output
+  var COIN = 100000;                       // 1 BLZ = 100,000 blazes (5 decimal places)
+  var DECIMALS = 5;                        // COIN === 10 ** DECIMALS
+  // 21,000,000,000 BLZ is the hard cap and the per-output sanity bound. In base
+  // units that is 2.1e15 — the same magnitude as Bitcoin's 2.1e15 satoshis, and
+  // comfortably below 2^53, so every balance and sum stays an exact integer.
+  var MAX_MONEY = 21000000000 * COIN;
 
   var DEFAULT_PARAMS = {
     name: 'BallrzCoin',
     ticker: 'BLZ',
-    // Scarcity is the whole game: Bitcoin caps at 21,000,000 coins; BallrzCoin
-    // caps at 21. The 0.05 BLZ subsidy halving every 210 blocks sums (like
-    // Bitcoin's geometric series) to just under 21 BLZ ever — a million times
-    // scarcer than Bitcoin.
-    initialSubsidy: 5000000,               // 0.05 BLZ block reward at height 1
-    halvingInterval: 210,                  // reward halves every N blocks (Bitcoin: 210,000)
+    // A fixed, un-inflatable supply is the bedrock of sound money. BallrzCoin
+    // issues 21,000,000,000 BLZ and never one more — a ceiling sized for a
+    // worldwide community of savers and traders, enforced by consensus rather
+    // than by any central bank. Like Bitcoin, coins enter circulation through a
+    // halving block subsidy: 50,000 BLZ at height 1, halving every 210,000
+    // blocks, whose geometric series sums to the 21-billion cap.
+    initialSubsidy: 50000 * 100000,        // 50,000 BLZ block reward at height 1
+    halvingInterval: 210000,               // reward halves every N blocks (Bitcoin: 210,000)
     retargetInterval: 10,                  // difficulty adjusts every N blocks (Bitcoin: 2,016)
     targetBlockTimeMs: 15000,              // aim for one block per 15s (Bitcoin: 10 min)
     genesisTarget: '000' + repeatChar('f', 61), // proof-of-work limit: 12 leading zero bits
@@ -1054,15 +1062,15 @@
   }
 
   function parseAmount(str) {
-    var m = /^\s*(\d+)(?:\.(\d{1,8}))?\s*$/.exec(String(str));
+    var m = new RegExp('^\\s*(\\d+)(?:\\.(\\d{1,' + DECIMALS + '}))?\\s*$').exec(String(str));
     if (!m) throw new Error('bad amount');
-    return Number(m[1]) * COIN + Number((m[2] || '').padEnd(8, '0') || 0);
+    return Number(m[1]) * COIN + Number((m[2] || '').padEnd(DECIMALS, '0') || 0);
   }
 
   /* ====================================================================== */
   return {
-    version: '1.1.0',
-    COIN: COIN, MAX_MONEY: MAX_MONEY, DEFAULT_PARAMS: DEFAULT_PARAMS,
+    version: '2.0.0',
+    COIN: COIN, DECIMALS: DECIMALS, MAX_MONEY: MAX_MONEY, DEFAULT_PARAMS: DEFAULT_PARAMS,
     ADDRESS_VERSION: ADDRESS_VERSION, MULTISIG_VERSION: MULTISIG_VERSION,
     // bytes & hashing
     bytesToHex: bytesToHex, hexToBytes: hexToBytes, utf8ToBytes: utf8ToBytes,

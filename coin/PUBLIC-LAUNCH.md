@@ -1,9 +1,10 @@
 # Launching BallrzCoin to the public
 
-A playbook for sharing BallrzCoin widely — honestly, as the fun educational toy
-it is. The pitch that works is the true one: *"I built a real Bitcoin from raw
-bytes; mine one in your browser; only 21 will ever exist."* Curiosity and
-respect, not hype.
+A playbook for sharing BallrzCoin widely — honestly, as the real community
+currency for time and favours it is. The pitch that works is the true one: *"I
+built a real Bitcoin from raw bytes and turned it into a currency for time and
+favours; mine one in your browser; the supply is hard-capped at 21 billion,
+fixed forever."* Curiosity and respect, not hype.
 
 ## The golden rule of this launch
 
@@ -48,14 +49,17 @@ private barter circles.
 > cumulative work. 32 unit tests against published vectors.
 >
 > It runs entirely in the browser — mine real blocks, send signed transactions,
-> watch two tabs converge on the heaviest chain like two nodes. I made it the
-> scarcest asset I could: only 21 BLZ will ever exist (vs Bitcoin's 21M). There's
-> an interactive "how it works" tour, paper-wallet cold storage, and a barter
-> board so a group can trade favours with it.
+> watch two tabs converge on the heaviest chain like two nodes. The supply is
+> hard-capped at 21 billion BLZ, fixed forever and enforced by consensus — a
+> permanent, un-inflatable ceiling sized for a worldwide community. There's an
+> interactive "how it works" tour, paper-wallet cold storage, and a barter board
+> so a group can actually trade favours and time with it.
 >
-> It's a teaching toy on purpose — no ICO, no price, no token sale, nothing to
-> buy. The code was never the hard part of Bitcoin; the people, power and time
-> are. Building it taught me that in my bones.
+> It's a real community currency for time and favours, not an investment — no
+> ICO, no price, no token sale, nothing to buy; you earn it by mining or doing
+> favours and spend it on favours. The code was never the hard part of money;
+> the community that agrees to accept it is. Building it taught me that in my
+> bones.
 >
 > Link: https://refayethossain28.github.io/BallrzAPP/coin/
 
@@ -63,37 +67,40 @@ private barter circles.
 questions — that's the audience.)*
 
 ### Reddit
-**r/InternetIsBeautiful** (best fit — they love self-contained web toys):
-> **A working Bitcoin-style cryptocurrency you can mine in your browser — only 21 coins will ever exist**
+**r/InternetIsBeautiful** (best fit — they love self-contained web apps):
+> **A working Bitcoin-style community currency you can mine in your browser — supply hard-capped at 21 billion, fixed forever**
 >
 > Built from scratch (real SHA-256, secp256k1 signatures, proof-of-work,
 > halving rewards). Mine a block, send a coin, open a second tab and watch them
-> sync like two nodes. It's a teaching toy — no price, nothing to buy — but
-> every mechanism is the real thing. There's a 60-second "how it works" tour.
-> [link]
+> sync like two nodes. It's a real currency for time and favours — no price,
+> nothing to buy — that a community earns and spends on favours; every mechanism
+> is the real thing. There's a 60-second "how it works" tour. [link]
 
 **r/webdev / r/programming** (lead with the build):
 > **I built a full proof-of-work blockchain from raw bytes, zero dependencies, runs in the browser**
 >
 > secp256k1 ECDSA with RFC 6979, UTXO model, merkle trees, difficulty
 > retargeting, cumulative-work fork choice, 32 tests against published vectors.
-> Two tabs behave as two nodes. Writeup + live demo: [link]. Honest toy — no
-> token, no sale.
+> Two tabs behave as two nodes. It's a real community currency for time and
+> favours. Writeup + live demo: [link]. Honest and non-hype — no token sale, no
+> price, nothing to buy.
 
 *(Read each subreddit's rules first; r/cryptocurrency will likely remove it —
 skip it, it's the wrong crowd anyway.)*
 
 ### Product Hunt
-- **Tagline:** Mine a real Bitcoin-style coin in your browser — only 21 exist.
+- **Tagline:** Mine a real Bitcoin-style community currency in your browser — 21 billion hard cap, fixed forever.
 - **Description:** BallrzCoin is a complete proof-of-work cryptocurrency built
   from scratch and running in your browser: real mining, secp256k1 signatures,
-  halving rewards, a barter board, paper wallets and an interactive tour. A
-  teaching toy, not an investment — no ICO, no price, no token. Just the purest
-  way to *understand* how Bitcoin works: by using one.
+  halving rewards, a barter board, paper wallets and an interactive tour. A real
+  community currency for time and favours, not an investment — no ICO, no price,
+  no token. You earn it and spend it on favours, and the supply is hard-capped
+  at 21 billion, fixed forever.
 
 ### X / Twitter (thread)
-> 1/ I built a Bitcoin from scratch to understand it — and you can mine it in
-> your browser right now. Only 21 coins will ever exist. 🧵
+> 1/ I built a Bitcoin from scratch to understand it — then turned it into a
+> real community currency for time and favours. You can mine it in your browser
+> right now. Supply hard-capped at 21 billion, fixed forever. 🧵
 >
 > 2/ It's the real machinery: SHA-256, secp256k1 signatures, proof-of-work
 > mining, halving rewards, a UTXO ledger, fork choice by cumulative work. 32
@@ -101,28 +108,35 @@ skip it, it's the wrong crowd anyway.)*
 >
 > 3/ Open two tabs → they behave like two nodes converging on the heaviest
 > chain. There's a 60-sec tour that teaches mining, wallets and consensus as you
-> click.
+> click. Earn BLZ by mining or doing favours; spend it on favours with your
+> people.
 >
-> 4/ It's a toy on purpose. No ICO, no price, nothing to buy. The code was never
-> the hard part of Bitcoin — the people, the power and the 15 years of trust
-> are. Building it made that obvious.
+> 4/ It's a real currency, not an investment. No ICO, no price, nothing to buy.
+> The value is favours and goods, not cash — it comes from a community agreeing
+> to accept it, like a time bank. The code was never the hard part of money;
+> that community is. Building it made that obvious.
 >
 > 5/ Mine one 👉 https://refayethossain28.github.io/BallrzAPP/coin/
 
 ## Handling the replies you'll get
 
-- **"Is this a scam / can I buy it?"** → "Nope — it's a teaching toy, there's
-  nothing to buy and it has no price. Just mine and play." (Answer this fast and
-  plainly; it builds trust.)
-- **"What's the point if it's worthless?"** → "To understand Bitcoin by
-  building it. Best crypto education there is."
+- **"Is this a scam / can I buy it?"** → "Nope — it's a community currency for
+  time and favours, not an investment. There's nothing to buy and it has no
+  price; you earn it and spend it on favours." (Answer this fast and plainly; it
+  builds trust.)
+- **"What's the point if it has no cash value?"** → "It's a currency for time
+  and favours — like a time bank. Its worth is the favours a community will
+  trade for it, not cash. And you get to understand Bitcoin by using the real
+  thing."
 - **"Can I run a node?"** → point them at `coin/DEPLOY.md` (the relay) and
   `coin/server.mjs`.
 - **Someone finds a bug** → great, that's the point; the repo's open.
 
 ## What "success" looks like
 
-Traffic, stars, comments, people saying "oh, *now* I get proof-of-work." That's
-the whole prize — attention and credibility for you as a builder. If a recruiter
-or client notices, that's the real-world upside, and it's a much shorter road
-than trying to make a toy coin valuable (which no launch can do).
+Traffic, stars, comments, people saying "oh, *now* I get proof-of-work" — and a
+few friends actually earning and spending BLZ on favours. That's the whole prize
+— attention and credibility for you as a builder, and a small circle putting the
+currency to real use. If a recruiter or client notices, that's the real-world
+upside, and it's a much shorter road than chasing a cash price (which no launch
+can conjure and which BLZ never claims to have).

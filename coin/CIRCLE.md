@@ -18,29 +18,24 @@ for. Keep it favours-for-favours and it stays legal, friendly, and actually fun.
 
 Bitcoin's value came from **millions of strangers** agreeing to accept it — a
 network effect that took 15 years. You can't shortcut that. But you *can*
-recreate its core mechanic at small scale: a fixed money supply (21 BLZ), plus
-a group that agrees what it's worth. Ten friends who honour BLZ is a real
-economy. It's small, but it's genuine — and it's yours.
+recreate its core mechanic at small scale: a fixed money supply, plus a group
+that agrees what it's worth. Ten friends who honour BLZ is a real economy. It's
+small, but it's genuine — and it's yours.
 
 Think of BLZ as **shared IOUs with a scoreboard.** The blockchain just makes the
 scoreboard impossible to fudge.
 
 ---
 
-## Before you start: set the supply so it's usable
+## The supply is already set for you
 
-The default cap is **21 BLZ total** — beautiful for scarcity, but too coarse if
-10 people need to trade weekly. Two easy fixes:
-
-- **Divisibility does most of the work.** Like Bitcoin, BLZ divides to 8 decimal
-  places, so 21 coins is really 2.1 *billion* spendable units. A haircut can
-  cost 0.05 BLZ. You almost certainly don't need to change anything.
-- **If you want rounder numbers,** you can raise the cap before launch by
-  editing `initialSubsidy` / cap in `config.js` (e.g. a 21,000-BLZ supply makes
-  "2 BLZ for a cake" feel natural). Do this *once, before anyone mines*, and
-  tell everyone — changing it later splits the chain.
-
-Pick one and lock it. Scarcity only means something if the number never moves.
+BLZ is hard-capped at **21,000,000,000 BLZ, fixed forever** — sized so the same
+currency works for ten friends today and a worldwide community later, and
+divisible to 5 decimal places so a coffee can cost a fraction of a coin. You
+don't need to change anything: a small group just uses a small slice of the
+supply, priced in time (see the ⏳ time-rate control in the app — 1 BLZ = one
+hour of a favour, by default). Scarcity here isn't about the number being small;
+it's that the ceiling **never moves**, which is exactly what makes it sound.
 
 ---
 

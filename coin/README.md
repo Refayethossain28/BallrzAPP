@@ -1,9 +1,10 @@
-# BallrzCoin (BLZ) — a toy cryptocurrency built like Bitcoin
+# BallrzCoin (BLZ) — a currency for time and favours, built like Bitcoin
 
 A complete proof-of-work cryptocurrency implemented from raw bytes up, with **zero
 dependencies**: the crypto, the ledger and the consensus rules all live in
 [`engine.js`](engine.js), and [`index.html`](index.html) is a single-file node UI
-(wallets, miner, mempool, block explorer).
+(wallets, miner, mempool, block explorer). It's designed to be used — a community
+**time bank** you earn by mining and spend on time and favours, never cash.
 
 ## What's real about it
 
@@ -18,23 +19,26 @@ against published test vectors in [`../scripts/test-coin-logic.mjs`](../scripts/
 | Ledger | UTXO model: coins are unspent outputs; transactions consume them with signed inputs |
 | Blocks | Merkle root over transaction ids; header hashed with double-SHA-256 |
 | Mining | Proof of work against a 256-bit target; difficulty retargets every 10 blocks, clamped to ×4 per step like Bitcoin |
-| Money supply | 0.05 BLZ subsidy halving every 210 blocks — **only 21 BLZ will ever exist**, a million times scarcer than Bitcoin's 21,000,000 — with fees paid to the miner |
+| Money supply | 50,000 BLZ subsidy halving every 210,000 blocks — **21,000,000,000 BLZ will ever exist**, hard-capped and fixed forever, sized for a worldwide community — with fees paid to the miner |
 | Consensus | Fork choice by **cumulative work** (`replaceChain`), so independent nodes converge |
 
 Open `index.html` in two browser tabs: each tab is a node with its own copy of the
 chain, syncing blocks and transactions over `BroadcastChannel`. Mine in one tab and
 watch the other adopt the heavier chain.
 
-## What's simplified
+## Known limitations — read before you trust it with value
 
-This is a teaching prototype, **not money**. Relative to real Bitcoin: no Script
-language (outputs pay a pubkey hash directly), no coinbase maturity delay, JSON
-instead of the wire format, double-SHA-256-truncated instead of RIPEMD-160 for
-address hashing, browser-grade key storage (localStorage), and the network is a
-polling relay rather than true p2p gossip. The full honest list — with
-severities, as a real auditor would write them — is in [`SECURITY.md`](SECURITY.md),
-and [`ROADMAP.md`](ROADMAP.md) explains what separates this from a real
-currency (spoiler: mostly things that aren't software).
+BallrzCoin is real, but it is **early**, and honesty about its limits matters more
+now that people trade real time and services for it. Where it currently differs
+from Bitcoin's battle-hardened implementation: no Script language (outputs pay a
+pubkey hash directly), no coinbase maturity delay, JSON instead of the wire
+format, double-SHA-256-truncated instead of RIPEMD-160 for address hashing,
+**browser-grade key storage (localStorage — keys are not yet encrypted at rest)**,
+and the network is a polling relay rather than true p2p gossip. The full list —
+with severities, as a real auditor would write them, and none of them hidden — is
+in [`SECURITY.md`](SECURITY.md), and [`ROADMAP.md`](ROADMAP.md) lays out the path
+from here to a hardened currency. Treat these as the risk disclosures any serious
+currency owes its users, not as fine print.
 
 ## Run a real multi-device network
 
@@ -61,7 +65,7 @@ The Send form has a **📷 Scan a friend’s QR** button: where the browser supp
 in-app; elsewhere (e.g. iOS Safari) it explains that the phone’s own Camera app
 scans the same QR, since it’s a payment link.
 The page also shows a live **leaderboard** (top holders by share of supply) and
-a **halving countdown** toward the 21 BLZ issuance limit.
+a **halving countdown** toward the 21-billion-BLZ issuance limit.
 
 **Barter — offers board (a time bank):** BLZ buys **time and favours, never
 cash**. Post something you'll do or give (“🎂 Bake a cake”) priced in **hours or
@@ -124,5 +128,5 @@ a paper wallet protects against loss, not against someone reading your screen.)
 ## Run the tests
 
 ```sh
-npm run test:coin        # 31 tests: crypto vectors, consensus rules, fork choice
+npm run test:coin        # 39 tests: crypto vectors, consensus rules, fork choice, multisig
 ```

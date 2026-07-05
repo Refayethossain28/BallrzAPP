@@ -1,9 +1,10 @@
 # BallrzCoin promo kit
 
 Shareable material for showing off the coin. The pitch is the honest one — it's
-also the strongest one: *a real Bitcoin-style blockchain, radically scarce, and
-proudly a toy.* No investment language, ever: BLZ has no price and is not for
-sale — that's a feature, and it keeps you on the right side of the law.
+also the strongest one: *a real Bitcoin-style blockchain and a real community
+currency for time and favours, with a supply hard-capped forever.* No investment
+language, ever: BLZ has no price and is not for sale — that's a feature, and it
+keeps you on the right side of the law.
 
 ## Assets
 
@@ -18,16 +19,20 @@ the app.
 ## Captions — copy, paste, post
 
 **Short (texts, group chats):**
-> I built my own cryptocurrency. Real mining, real cryptography, same rules as
-> Bitcoin — except only **21 coins will ever exist**. Mine one in your browser:
+> I built my own community currency for time and favours. Real mining, real
+> cryptography, same rules as Bitcoin — with a supply **hard-capped at 21
+> billion BLZ, fixed forever**. Earn it by mining or doing favours, spend it on
+> favours. Mine one in your browser:
 > https://refayethossain28.github.io/BallrzAPP/coin/
 
 **Medium (Instagram/WhatsApp status):**
-> Everyone talks about Bitcoin. I built one. ⛏
+> Everyone talks about Bitcoin. I built a real currency you can actually use with
+> your people. ⛏
 > BallrzCoin runs the real thing — proof-of-work mining, halving rewards,
-> Bitcoin's own secp256k1 cryptography — with one twist: Bitcoin caps at
-> 21,000,000 coins. Mine caps at **21**.
-> No ICO. No price. No promises. Just proof-of-work.
+> Bitcoin's own secp256k1 cryptography — as a community currency for time and
+> favours. The supply is **hard-capped at 21 billion BLZ, fixed forever** and
+> enforced by consensus: a permanent ceiling sized for a worldwide community.
+> No ICO. No price. No promises. Earn it, spend it on favours.
 > Mine yours in the browser 👉 refayethossain28.github.io/BallrzAPP/coin
 
 **Long (X/LinkedIn, builder angle):**
@@ -36,16 +41,19 @@ the app.
 > UTXO ledger, merkle trees, difficulty retargeting, halving block rewards and
 > fork choice by cumulative work — zero dependencies, 32 unit tests against
 > published vectors.
-> Then I made it the scarcest asset ever minted: only 21 BLZ will ever exist.
-> You can mine it in your browser right now, and two tabs behave like two
-> nodes converging on the heaviest chain.
-> It's a toy on purpose — no ICO, no price, no promises — and building it
-> taught me more than a hundred articles ever did.
+> Then I turned it into a real community currency for time and favours: the
+> supply is hard-capped at 21 billion BLZ, fixed forever and enforced by
+> consensus — a permanent, un-inflatable ceiling sized for a worldwide
+> community. You can mine it in your browser right now, and two tabs behave like
+> two nodes converging on the heaviest chain.
+> It's a real currency, not an investment — no ICO, no price, no promises,
+> nothing to buy; you earn it and spend it on favours. Building it taught me
+> more than a hundred articles ever did.
 > ⛏ https://refayethossain28.github.io/BallrzAPP/coin/
 
 **One-liner for the bio/footer:**
-> Creator of BallrzCoin — the world's scarcest cryptocurrency (21 coins, no
-> price, proudly a toy).
+> Creator of BallrzCoin — a community currency for time and favours (21 billion
+> hard cap, no price, not for sale).
 
 ## Regenerating the cards
 
