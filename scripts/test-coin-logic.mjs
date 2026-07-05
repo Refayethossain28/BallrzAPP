@@ -366,6 +366,118 @@ test('stats reports the shape the UI renders', () => {
   assert.ok(s.difficulty >= 1);
 });
 
+/* ---------- 2-of-3 multisig escrow ---------- */
+const escrowRedeem = { pubkeys: [alice.publicKey, bob.publicKey, carol.publicKey], m: 2 };
+const escrowAddr = C.createMultisigAddress(escrowRedeem.pubkeys, escrowRedeem.m);
+
+test('multisig addresses: distinct, order-independent, start with M, validated', () => {
+  assert.equal(escrowAddr[0], 'M', escrowAddr);
+  assert.equal(C.addressType(escrowAddr), 'multisig');
+  assert.equal(C.addressType(alice.address), 'p2pkh');
+  assert.ok(C.isValidAddress(escrowAddr));
+  // key order doesn't change the address; the key SET does
+  assert.equal(C.createMultisigAddress([carol.publicKey, alice.publicKey, bob.publicKey], 2), escrowAddr);
+  assert.notEqual(C.createMultisigAddress(escrowRedeem.pubkeys, 3), escrowAddr, 'different m → different address');
+  assert.throws(() => C.createMultisigAddress([alice.publicKey, alice.publicKey], 2), /duplicate/);
+  assert.throws(() => C.createMultisigAddress([alice.publicKey, bob.publicKey], 3), /1\.\.n/);
+});
+
+test('funds can be locked into escrow and spent with 2 of 3 signatures', () => {
+  const chain = newChain();
+  mineTo(chain, alice);                                    // alice: 50
+  // buyer (alice) funds the escrow
+  chain.send(alice, escrowAddr, 10 * C.COIN, 0, { timestamp: tick() });
+  mineTo(chain, carol);
+  assert.equal(chain.getBalance(escrowAddr), 10 * C.COIN, 'escrow holds the coins');
+  assert.equal(chain.getBalance(bob.address), 0);
+
+  // release to the seller (bob): buyer + arbiter sign (2 of 3)
+  const utxos = chain.spendableUtxos(escrowAddr);
+  let spend = C.buildMultisigSpend({ utxos, redeem: escrowRedeem, to: bob.address, amount: 10 * C.COIN, fee: 0, changeAddress: escrowAddr, timestamp: tick() });
+  C.signMultisig(spend, alice.privateKey);
+  C.signMultisig(spend, carol.privateKey);
+  C.finalizeMultisig(spend);
+  chain.submitTransaction(spend);
+  mineTo(chain, alice);
+  assert.equal(chain.getBalance(bob.address), 10 * C.COIN, 'seller paid from escrow');
+  assert.equal(chain.getBalance(escrowAddr), 0, 'escrow emptied');
+});
+
+test('escrow refund path: a different 2 of 3 also unlocks it', () => {
+  const chain = newChain();
+  mineTo(chain, alice);
+  chain.send(alice, escrowAddr, 8 * C.COIN, 0, { timestamp: tick() });
+  mineTo(chain, carol);
+  // refund the buyer (alice): seller (bob) + arbiter (carol) sign
+  const spend = C.buildMultisigSpend({ utxos: chain.spendableUtxos(escrowAddr), redeem: escrowRedeem, to: alice.address, amount: 8 * C.COIN, fee: 0, changeAddress: escrowAddr, timestamp: tick() });
+  C.signMultisig(spend, bob.privateKey);
+  C.signMultisig(spend, carol.privateKey);
+  C.finalizeMultisig(spend);
+  chain.submitTransaction(spend);
+  mineTo(chain, alice);
+  assert.equal(chain.getBalance(escrowAddr), 0);
+  // alice got 8 back (plus she still had her earlier mining rewards/change)
+  assert.ok(chain.getBalance(alice.address) >= 8 * C.COIN);
+});
+
+test('a single signature cannot drain a 2-of-3 escrow', () => {
+  const chain = newChain();
+  mineTo(chain, alice);
+  chain.send(alice, escrowAddr, 5 * C.COIN, 0, { timestamp: tick() });
+  mineTo(chain, carol);
+  const spend = C.buildMultisigSpend({ utxos: chain.spendableUtxos(escrowAddr), redeem: escrowRedeem, to: carol.address, amount: 5 * C.COIN, fee: 0, changeAddress: escrowAddr, timestamp: tick() });
+  C.signMultisig(spend, carol.privateKey);            // only ONE signer
+  assert.throws(() => C.finalizeMultisig(spend), /not enough signatures/);
+  // and even if forced through with one sig, the network rejects it
+  spend.inputs.forEach((i) => { i.signatures = [C.sign(C.sighash(spend), carol.privateKey)]; delete i._signers; });
+  spend.id = C.txIdOf(spend);
+  assert.throws(() => chain.submitTransaction(spend), /needs exactly 2 signatures/);
+});
+
+test('an outsider’s signatures cannot unlock the escrow', () => {
+  const chain = newChain();
+  mineTo(chain, alice);
+  chain.send(alice, escrowAddr, 5 * C.COIN, 0, { timestamp: tick() });
+  mineTo(chain, carol);
+  const dave = C.walletFromPrivateKey('00000000000000000000000000000000000000000000000000000000000000aa');
+  const eve = C.walletFromPrivateKey('00000000000000000000000000000000000000000000000000000000000000bb');
+  const spend = C.buildMultisigSpend({ utxos: chain.spendableUtxos(escrowAddr), redeem: escrowRedeem, to: dave.address, amount: 5 * C.COIN, fee: 0, changeAddress: escrowAddr, timestamp: tick() });
+  // two signatures, but from people NOT in the escrow key set
+  const h = C.sighash(spend);
+  spend.inputs.forEach((i) => { i.signatures = [C.sign(h, dave.privateKey), C.sign(h, eve.privateKey)]; delete i._signers; });
+  spend.id = C.txIdOf(spend);
+  assert.throws(() => chain.submitTransaction(spend), /invalid or out-of-order multisig|insufficient valid/);
+});
+
+test('lying about the redeem set (to match a different address) is rejected', () => {
+  const chain = newChain();
+  mineTo(chain, alice);
+  chain.send(alice, escrowAddr, 5 * C.COIN, 0, { timestamp: tick() });
+  mineTo(chain, carol);
+  const spend = C.buildMultisigSpend({ utxos: chain.spendableUtxos(escrowAddr), redeem: escrowRedeem, to: bob.address, amount: 5 * C.COIN, fee: 0, changeAddress: escrowAddr, timestamp: tick() });
+  C.signMultisig(spend, alice.privateKey); C.signMultisig(spend, bob.privateKey);
+  C.finalizeMultisig(spend);
+  // tamper: swap in a redeem that doesn't hash to the funded address
+  spend.inputs.forEach((i) => { i.redeem = { pubkeys: [alice.publicKey, bob.publicKey], m: 2 }; });
+  spend.id = C.txIdOf(spend);
+  assert.throws(() => chain.submitTransaction(spend), /redeem does not match/);
+});
+
+test('multisig transactions survive JSON serialisation and re-validation', () => {
+  const chain = newChain();
+  mineTo(chain, alice);
+  chain.send(alice, escrowAddr, 6 * C.COIN, 0, { timestamp: tick() });
+  mineTo(chain, carol);
+  const spend = C.buildMultisigSpend({ utxos: chain.spendableUtxos(escrowAddr), redeem: escrowRedeem, to: bob.address, amount: 6 * C.COIN, fee: 0, changeAddress: escrowAddr, timestamp: tick() });
+  C.signMultisig(spend, alice.privateKey); C.signMultisig(spend, carol.privateKey);
+  C.finalizeMultisig(spend);
+  chain.submitTransaction(spend);
+  mineTo(chain, bob);
+  const restored = C.Blockchain.fromJSON(JSON.parse(JSON.stringify(chain.toJSON())));
+  assert.equal(restored.tip.hash, chain.tip.hash, 'a chain containing a multisig spend re-validates from genesis');
+  assert.equal(restored.getBalance(bob.address), chain.getBalance(bob.address));
+});
+
 /* ---------- runner ---------- */
 for (const [name, fn] of tests) {
   try {

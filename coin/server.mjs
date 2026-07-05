@@ -44,7 +44,7 @@ const STATIC = {
 const PORT = Number(process.env.PORT || 8087);
 const MAX_HELD = 200;            // ring buffer of recent messages
 const MAX_BODY = 5 * 1024 * 1024; // a whole toy chain fits comfortably
-const TYPES = new Set(['hello', 'chain', 'tx', 'offer', 'offer-remove']);
+const TYPES = new Set(['hello', 'chain', 'tx', 'offer', 'offer-remove', 'deal', 'id']);
 
 let seq = 0;
 const ring = []; // [{ seq, msg }]

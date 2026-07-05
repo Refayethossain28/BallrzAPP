@@ -67,6 +67,7 @@
   .offercard .dsc { color: var(--dim); font-size: 13px; margin-top: 2px; }
   .offercard .by { color: var(--dim); font-size: 12px; margin-top: 3px; }
   .offercard .prc { color: var(--gold); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .rep { color: var(--green); font-size: 12px; font-weight: 600; }
   details.pricelist { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin-bottom: 10px; }
   details.pricelist summary { cursor: pointer; color: var(--gold); font-size: 13.5px; list-style: none; }
   details.pricelist summary::-webkit-details-marker { display: none; }
@@ -187,7 +188,7 @@
 <div class="sub">Transactions wait in the mempool until a miner includes them; the fee goes to that miner.</div>
 
 <h2>Barter — offers board</h2>
-<div class="sub">Post something you’ll do or give for BLZ, and pay others for theirs. Offers travel the network like payments. BLZ is only worth what your group agrees it is — so agree a shared price list.</div>
+<div class="sub">Post something you’ll do or give for BLZ, and pay others for theirs. Offers travel the network like payments. BLZ is only worth what your group agrees it is — so agree a shared price list. <a href="guide.html" style="color:var(--gold)">📖 How to run barter with friends →</a></div>
 <details class="pricelist" id="priceList">
   <summary>💡 Suggested price list — tap any to start an offer</summary>
   <div class="chips" id="priceChips"></div>
@@ -201,6 +202,10 @@
   <button class="primary" type="submit">Post offer</button>
 </form>
 <div class="list" id="offers"></div>
+
+<h2>Deals <span id="dealsCount"></span></h2>
+<div class="sub">A payment plus a promise. <b>Pay</b> pays the seller directly, then you confirm you got it. <b>🛡 Escrow</b> pays a trusted third party who releases to the seller once you confirm — protection if you don’t fully trust them yet. Confirming delivery builds the seller’s ✓ reputation.</div>
+<div class="list" id="deals"></div>
 
 <h2>Leaderboard</h2>
 <div class="list" id="richlist"></div>
@@ -317,22 +322,128 @@
     while (ids.length > 200) { delete offers[ids.shift()]; }
   }
   // Validate + store an incoming/typed offer (newest wins). Returns true if it changed.
+  // Directory of public keys, keyed by address. Multisig escrow needs the
+  // actual pubkey of every party (not just their address), so we remember the
+  // pubkey of anyone who posts an offer or announces an identity.
+  var LS_DIR = 'ballrzcoin.dir.v1';
+  var directory = {};
+  try { directory = JSON.parse(localStorage.getItem(LS_DIR) || '{}') || {}; } catch (err) { directory = {}; }
+  function saveDir() { try { localStorage.setItem(LS_DIR, JSON.stringify(directory)); } catch (err) {} }
+  function registerIdentity(address, pubKey, name) {
+    if (!pubKey || !Coin.isValidAddress(address)) return false;
+    if (Coin.addressFromPublicKey(pubKey) !== address) return false; // pubkey must match address
+    var ex = directory[address];
+    if (ex && ex.pubKey === pubKey && (!name || ex.name === name)) return false;
+    directory[address] = { pubKey: pubKey, name: String(name || (ex && ex.name) || '').slice(0, 24) };
+    saveDir();
+    return true;
+  }
+  function knownPubKey(address) { return directory[address] && directory[address].pubKey; }
+  // Resolve a typed name/address to a known address (one whose pubkey we hold).
+  function resolveContact(q) {
+    q = String(q || '').trim();
+    if (!q) return null;
+    if (Coin.isValidAddress(q) && knownPubKey(q)) return q;
+    var ql = q.toLowerCase();
+    var hits = Object.keys(directory).filter(function (a) { return (directory[a].name || '').toLowerCase() === ql; });
+    return hits.length === 1 ? hits[0] : null;
+  }
+  function announceIdentities() {
+    wallets.forEach(function (w) { netSend({ type: 'id', address: w.address, pubKey: w.publicKey, name: w.name }); });
+  }
+
   function ingestOffer(o) {
     if (!o || !o.id || !Coin.isValidAddress(o.address)) return false;
     if (typeof o.title !== 'string' || !o.title.trim()) return false;
     if (!(o.price > 0) || !isFinite(o.price)) return false;
     var ex = offers[o.id];
     if (ex && ex.at >= o.at) return false;
+    if (o.pubKey) registerIdentity(o.address, o.pubKey, o.name); // learn the poster's key
     offers[o.id] = {
       id: String(o.id).slice(0, 60), address: o.address, name: String(o.name || '').slice(0, 24),
       title: String(o.title).slice(0, 80), desc: String(o.desc || '').slice(0, 240),
-      price: Math.floor(o.price), at: Number(o.at) || 0
+      price: Math.floor(o.price), pubKey: (o.pubKey && knownPubKey(o.address) === o.pubKey) ? o.pubKey : (knownPubKey(o.address) || null),
+      at: Number(o.at) || 0
     };
     pruneOffers();
     return true;
   }
   function announceOffers() {
     Object.keys(offers).forEach(function (id) { netSend({ type: 'offer', offer: offers[id] }); });
+  }
+
+  // Deals — a record layer over payments so a barter has a lifecycle and a
+  // reputation trail. A deal is a notice (like an offer), gossiped and
+  // newest-wins; the actual coin movement is an ordinary signed transaction.
+  // mode 'direct': buyer pays seller, then confirms receipt.
+  // mode 'escrow': buyer pays a trusted agent, who releases to the seller (or
+  //   refunds the buyer). Trust-based custody — right-sized for a close circle.
+  var LS_DEALS = 'ballrzcoin.deals.v1';
+  var deals = {};
+  try { deals = JSON.parse(localStorage.getItem(LS_DEALS) || '{}') || {}; } catch (err) { deals = {}; }
+  function saveDeals() { try { localStorage.setItem(LS_DEALS, JSON.stringify(deals)); } catch (err) {} }
+  function pruneDeals() {
+    var ids = Object.keys(deals);
+    if (ids.length <= 200) return;
+    ids.sort(function (a, b) { return deals[a].at - deals[b].at; });
+    while (ids.length > 200) { delete deals[ids.shift()]; }
+  }
+  // sanitise a co-signing proposal so a peer can't slip in junk we'd act on.
+  function cleanProposal(p) {
+    if (!p || (p.purpose !== 'release' && p.purpose !== 'refund')) return null;
+    if (!Array.isArray(p.inputs) || !Array.isArray(p.outputs)) return null;
+    var sigs = {};
+    if (p.sigs && typeof p.sigs === 'object') Object.keys(p.sigs).forEach(function (k) {
+      if (/^0[23][0-9a-f]{64}$/.test(k) && /^[0-9a-f]{128}$/.test(String(p.sigs[k]))) sigs[k] = p.sigs[k];
+    });
+    return {
+      purpose: p.purpose,
+      inputs: p.inputs.map(function (i) { return { txId: String(i.txId), outIndex: Number(i.outIndex) }; }),
+      outputs: p.outputs.map(function (o) { return { address: String(o.address), amount: Math.floor(o.amount) }; }),
+      timestamp: Number(p.timestamp) || 0, sigs: sigs
+    };
+  }
+  function ingestDeal(d) {
+    if (!d || !d.id || !Coin.isValidAddress(d.buyer) || !Coin.isValidAddress(d.seller)) return false;
+    if (!(d.price > 0) || !isFinite(d.price)) return false;
+    if (['funded', 'released', 'refunded'].indexOf(d.status) < 0) return false;
+    var ex = deals[d.id];
+    if (ex && ex.at >= d.at) return false;
+    var isMs = d.escrowType === 'multisig' && d.redeem && Array.isArray(d.redeem.pubkeys) && d.msAddr;
+    deals[d.id] = {
+      id: String(d.id).slice(0, 60), offerId: String(d.offerId || '').slice(0, 60),
+      title: String(d.title || '').slice(0, 80), price: Math.floor(d.price),
+      buyer: d.buyer, seller: d.seller, mode: (d.mode === 'escrow' ? 'escrow' : 'direct'),
+      agent: (d.agent && Coin.isValidAddress(d.agent)) ? d.agent : null,
+      escrowType: isMs ? 'multisig' : (d.mode === 'escrow' ? 'trusted' : null),
+      redeem: isMs ? { pubkeys: d.redeem.pubkeys.slice(0, 15), m: Math.floor(d.redeem.m) } : null,
+      msAddr: isMs ? d.msAddr : null,
+      arbiter: (d.arbiter && Coin.isValidAddress(d.arbiter)) ? d.arbiter : null,
+      proposal: isMs ? cleanProposal(d.proposal) : null,
+      status: d.status, buyerConfirmed: !!d.buyerConfirmed, at: Number(d.at) || 0
+    };
+    pruneDeals();
+    return true;
+  }
+  function announceDeals() { Object.keys(deals).forEach(function (id) { netSend({ type: 'deal', deal: deals[id] }); }); }
+  function pushDeal(id) { saveDeals(); netSend({ type: 'deal', deal: deals[id] }); renderDeals(); renderOffers(); }
+  // Reputation: completed (released) deals where this address was the seller.
+  function repCount(addr) {
+    var n = 0;
+    Object.keys(deals).forEach(function (id) { if (deals[id].seller === addr && deals[id].status === 'released') n++; });
+    return n;
+  }
+  function repBadge(addr) {
+    var n = repCount(addr);
+    return n > 0 ? ' <span class="rep">✓ ' + n + ' deal' + (n === 1 ? '' : 's') + '</span>' : '';
+  }
+  // A pending barter action that the next matching payment completes.
+  var pendingAction = null;
+  function prefillSend(toAddr, priceBlazes, note) {
+    $('sendTo').value = toAddr;
+    $('sendAmount').value = fmt(priceBlazes).replace(' BLZ', '');
+    try { $('sendForm').scrollIntoView({ block: 'center', behavior: 'smooth' }); $('sendAmount').focus(); } catch (err) {}
+    if (note) toast(note);
   }
 
   /* ---------- the network ----------
@@ -371,6 +482,8 @@
     if (m.type === 'hello') {
       netSend({ type: 'chain', blocks: chain.blocks });
       announceOffers();
+      announceDeals();
+      announceIdentities();
     } else if (m.type === 'chain') {
       if (chain.replaceChain(m.blocks)) {
         persist();
@@ -383,6 +496,10 @@
       if (ingestOffer(m.offer)) { saveOffers(); renderOffers(); }
     } else if (m.type === 'offer-remove') {
       if (offers[m.id]) { delete offers[m.id]; saveOffers(); renderOffers(); }
+    } else if (m.type === 'deal') {
+      if (ingestDeal(m.deal)) { saveDeals(); renderDeals(); renderOffers(); }
+    } else if (m.type === 'id') {
+      if (registerIdentity(m.address, m.pubKey, m.name)) renderDeals();
     }
   }
 
@@ -509,6 +626,17 @@
     var n = walletName(address);
     return n ? esc(n) : '<span class="hash">' + esc(short(address)) + '</span>';
   }
+  // Sender address of a transfer input — a pubkey for p2pkh, or the vault
+  // (multisig) address for a multisig input, which has no single pubkey.
+  function fromAddr(inp) {
+    if (!inp) return '';
+    if (inp.redeem) { try { return Coin.createMultisigAddress(inp.redeem.pubkeys, inp.redeem.m); } catch (err) { return ''; } }
+    try { return Coin.addressFromPublicKey(inp.pubKey); } catch (err) { return ''; }
+  }
+  function whoFrom(inp) {
+    if (inp && inp.redeem) return '🔐 vault';
+    return who(fromAddr(inp));
+  }
 
   function render() {
     var s = chain.stats();
@@ -576,7 +704,7 @@
     $('mempool').innerHTML = chain.mempool.length ? chain.mempool.map(function (e) {
       var tx = e.tx;
       return '<div class="block">' + tx.outputs.map(function (o) {
-        return who(tx.inputs[0] ? Coin.addressFromPublicKey(tx.inputs[0].pubKey) : '') +
+        return whoFrom(tx.inputs[0]) +
           ' → ' + who(o.address) + ' <span class="amt">' + fmt(o.amount) + '</span>';
       }).join('<br>') +
         ' <span class="fee">fee ' + fmt(e.fee) + '</span>' +
@@ -590,11 +718,11 @@
           return '<div class="tx">⛏ coinbase → ' + who(tx.outputs[0].address) +
             ' <span class="amt">' + fmt(tx.outputs[0].amount) + '</span></div>';
         }
-        var from = Coin.addressFromPublicKey(tx.inputs[0].pubKey);
-        return '<div class="tx">' + tx.outputs.map(function (o) {
-          return who(from) + ' → ' + who(o.address) + ' <span class="amt">' + fmt(o.amount) + '</span>' +
+        var from = fromAddr(tx.inputs[0]);
+        return '<div class="tx">' + whoFrom(tx.inputs[0]) + ' → ' + tx.outputs.map(function (o) {
+          return who(o.address) + ' <span class="amt">' + fmt(o.amount) + '</span>' +
             (o.address === from ? ' <span class="fee">(change)</span>' : '');
-        }).join('<br>') + '<div class="hash">' + esc(short(tx.id, 16)) + '</div></div>';
+        }).join(' · ') + '<div class="hash">' + esc(short(tx.id, 16)) + '</div></div>';
       }).join('');
       return '<div class="block"><div class="head">' +
         '<span class="h">#' + b.height + '</span>' +
@@ -606,6 +734,7 @@
 
     renderMiningStatus();
     renderOffers();
+    renderDeals();
   }
 
   function myAddresses() {
@@ -639,13 +768,128 @@
       var isMine = mine[o.address];
       var action = isMine
         ? '<button data-remove-offer="' + esc(o.id) + '">Remove</button>'
-        : '<button class="primary" data-pay-offer="' + esc(o.id) + '">Pay ' + fmt(o.price) + '</button>';
+        : '<button class="primary" data-pay-offer="' + esc(o.id) + '">Pay ' + fmt(o.price) + '</button>' +
+          '<button data-escrow-offer="' + esc(o.id) + '" title="Pay a trusted third party who releases once you confirm">🛡 Trusted</button>' +
+          '<button data-vault-offer="' + esc(o.id) + '" title="Lock funds in a 2-of-3 vault only you, the seller and an arbiter can open">🔐 Vault</button>';
       return '<div class="offercard"><div class="main">' +
         '<div class="ttl">' + esc(o.title) + '</div>' +
         (o.desc ? '<div class="dsc">' + esc(o.desc) + '</div>' : '') +
-        '<div class="by">by ' + who(o.address) + (isMine ? ' (you)' : '') + '</div>' +
+        '<div class="by">by ' + who(o.address) + (isMine ? ' (you)' : '') + repBadge(o.address) + '</div>' +
         '</div><span class="prc">' + fmt(o.price) + '</span>' + action + '</div>';
     }).join('') : '<div class="note">No offers yet — post the first one above (“🚗 Lift into town — 2 BLZ”).</div>';
+  }
+
+  function sigCount(deal) { return deal.proposal && deal.proposal.sigs ? Object.keys(deal.proposal.sigs).length : 0; }
+  function dealStatusLabel(d) {
+    if (d.status === 'released') return '✅ complete';
+    if (d.status === 'refunded') return '↩︎ refunded';
+    if (d.escrowType === 'multisig') {
+      if (d.proposal) return '🔐 vault · ' + (d.proposal.purpose === 'refund' ? 'refund' : 'release') + ' proposed — ' + sigCount(d) + ' of ' + d.redeem.m + ' signatures';
+      return '🔐 in a 2-of-' + d.redeem.pubkeys.length + ' vault · awaiting delivery';
+    }
+    if (d.mode === 'escrow') return d.buyerConfirmed ? '🛡 in escrow · buyer confirmed — agent to release' : '🛡 in escrow · awaiting delivery';
+    return '⏳ paid — awaiting confirmation';
+  }
+  // Which of my wallets are signers on this vault, and whether I've signed the proposal.
+  function myPartyPubs(d) {
+    if (!d.redeem) return [];
+    return wallets.filter(function (w) { return d.redeem.pubkeys.indexOf(w.publicKey) >= 0; });
+  }
+  function iSigned(d) {
+    if (!d.proposal) return false;
+    return myPartyPubs(d).some(function (w) { return d.proposal.sigs[w.publicKey]; });
+  }
+  function renderDeals() {
+    var mine = myAddresses();
+    var list = Object.keys(deals).map(function (id) { return deals[id]; })
+      .filter(function (d) { return mine[d.buyer] || mine[d.seller] || (d.agent && mine[d.agent]) || myPartyPubs(d).length; })
+      .sort(function (a, b) { return b.at - a.at; });
+    var active = list.filter(function (d) { return d.status === 'funded'; }).length;
+    $('dealsCount').textContent = active ? '(' + active + ' active)' : '';
+    $('deals').innerHTML = list.length ? list.map(function (d) {
+      var role = mine[d.buyer] ? 'buyer' : (mine[d.seller] ? 'seller' : (d.agent && mine[d.agent] ? 'agent' : 'arbiter'));
+      var actions = '';
+      if (d.status === 'funded') {
+        if (d.escrowType === 'multisig') {
+          if (!d.proposal) {
+            actions = '<button class="primary" data-vault-propose-release="' + esc(d.id) + '">Propose release → seller</button>' +
+              '<button data-vault-propose-refund="' + esc(d.id) + '">Propose refund → buyer</button>';
+          } else if (!iSigned(d) && myPartyPubs(d).length) {
+            actions = '<button class="primary" data-vault-approve="' + esc(d.id) + '">✓ Co-sign &amp; broadcast (' + (sigCount(d) + 1) + '/' + d.redeem.m + ')</button>' +
+              '<button data-vault-cancel="' + esc(d.id) + '">Cancel proposal</button>';
+          } else if (myPartyPubs(d).length) {
+            actions = '<button data-vault-cancel="' + esc(d.id) + '">Cancel proposal</button>';
+          }
+        } else if (role === 'buyer' && d.mode === 'direct') actions = '<button class="primary" data-deal-release="' + esc(d.id) + '">✓ Confirm received</button>';
+        else if (role === 'buyer' && d.mode === 'escrow' && !d.buyerConfirmed) actions = '<button class="primary" data-deal-confirm="' + esc(d.id) + '">✓ Confirm received</button>';
+        else if (role === 'agent') actions = '<button class="primary" data-deal-escrow-release="' + esc(d.id) + '">Release to seller</button><button data-deal-escrow-refund="' + esc(d.id) + '">Refund buyer</button>';
+      }
+      var via = d.escrowType === 'multisig' ? ' · 🔐 arbiter ' + who(d.arbiter) : (d.mode === 'escrow' ? ' · 🛡 via ' + who(d.agent) : '');
+      return '<div class="offercard"><div class="main">' +
+        '<div class="ttl">' + esc(d.title || 'Barter') + ' <span class="prc">' + fmt(d.price) + '</span></div>' +
+        '<div class="by">' + who(d.buyer) + ' → ' + who(d.seller) + via + '</div>' +
+        '<div class="by">' + dealStatusLabel(d) + ' · you’re the <b>' + role + '</b></div>' +
+        '</div>' + actions + '</div>';
+    }).join('') : '<div class="note">No deals yet. Pay for an offer (Pay, 🛡 Trusted or 🔐 Vault) to start one — confirming delivery builds the seller’s ✓ reputation.</div>';
+  }
+
+  /* ---------- multisig (vault) ceremony ---------- */
+  function proposalToTx(d) {
+    return {
+      type: 'transfer',
+      inputs: d.proposal.inputs.map(function (io) {
+        return { txId: io.txId, outIndex: io.outIndex, redeem: { pubkeys: d.redeem.pubkeys.slice(), m: d.redeem.m }, signatures: [] };
+      }),
+      outputs: d.proposal.outputs.map(function (o) { return { address: o.address, amount: o.amount }; }),
+      timestamp: d.proposal.timestamp
+    };
+  }
+  function signVault(d) {
+    var tx = proposalToTx(d);
+    var h = Coin.sighash(tx);
+    myPartyPubs(d).forEach(function (w) {
+      if (!d.proposal.sigs[w.publicKey]) d.proposal.sigs[w.publicKey] = Coin.sign(h, w.privateKey);
+    });
+  }
+  function proposeVault(d, purpose) {
+    var to = purpose === 'release' ? d.seller : d.buyer;
+    var utxos = chain.spendableUtxos(d.msAddr);
+    var picked = [], sum = 0;
+    for (var i = 0; i < utxos.length && sum < d.price; i++) { picked.push(utxos[i]); sum += utxos[i].amount; }
+    if (sum < d.price) { toast('✖ The vault isn’t funded yet — mine the funding block first'); return; }
+    var outputs = [{ address: to, amount: d.price }];
+    if (sum > d.price) outputs.push({ address: d.msAddr, amount: sum - d.price }); // change stays in the vault
+    d.proposal = {
+      purpose: purpose, timestamp: Date.now(),
+      inputs: picked.map(function (u) { return { txId: u.txId, outIndex: u.outIndex }; }),
+      outputs: outputs, sigs: {}
+    };
+    signVault(d);
+    finalizeOrGossip(d, purpose + ' proposed');
+  }
+  function approveVault(d) { signVault(d); finalizeOrGossip(d, 'Signed'); }
+  // Broadcast once we hold m signatures; otherwise gossip the partial proposal on.
+  function finalizeOrGossip(d, what) {
+    if (sigCount(d) < d.redeem.m) {
+      d.at = Date.now(); pushDeal(d.id);
+      toast('🔐 ' + what + ' — needs ' + (d.redeem.m - sigCount(d)) + ' more signature(s) from a co-signer');
+      return;
+    }
+    var tx = proposalToTx(d);
+    tx.inputs.forEach(function (inp) {
+      inp._signers = {};
+      Object.keys(d.proposal.sigs).forEach(function (pk) { inp._signers[pk] = d.proposal.sigs[pk]; });
+    });
+    try {
+      Coin.finalizeMultisig(tx);
+      chain.submitTransaction(tx);
+      netSend({ type: 'tx', tx: tx });
+      d.status = d.proposal.purpose === 'release' ? 'released' : 'refunded';
+      d.proposal = null; d.at = Date.now();
+      persist(); pushDeal(d.id);
+      toast('🔓 Vault ' + (d.status === 'released' ? 'released to the seller' : 'refunded') + ' — mine a block to confirm');
+      render();
+    } catch (err) { toast('✖ ' + err.message); }
   }
 
   /* ---------- events ---------- */
@@ -679,12 +923,82 @@
     if (payOffer) {
       var po = offers[payOffer];
       if (po) {
-        $('sendTo').value = po.address;
-        $('sendAmount').value = fmt(po.price).replace(' ' + chain.stats().ticker, '').replace(' BLZ', '');
-        try { $('sendForm').scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (err) {}
-        try { $('sendAmount').focus(); } catch (err) {}
-        toast('Paying for “' + po.title + '” — review and broadcast, then mine to confirm');
+        pendingAction = { kind: 'fund', mode: 'direct', offerId: po.id, title: po.title, price: po.price, seller: po.address, agent: null, payTo: po.address };
+        prefillSend(po.address, po.price, 'Paying “' + po.title + '” directly — broadcast, then mine to confirm');
       }
+      return;
+    }
+    var escOffer = t.getAttribute('data-escrow-offer');
+    if (escOffer) {
+      var eo = offers[escOffer];
+      if (eo) {
+        var agent = prompt('🛡 Escrow — paste the address of someone you BOTH trust to hold the ' + fmt(eo.price) + ' and release it to the seller once you confirm delivery:');
+        if (!agent) return;
+        agent = String(agent).trim();
+        if (!Coin.isValidAddress(agent)) { toast('✖ That isn’t a valid address'); return; }
+        if (agent === eo.address) { toast('✖ The escrow agent can’t be the seller'); return; }
+        pendingAction = { kind: 'fund', mode: 'escrow', escrowType: 'trusted', offerId: eo.id, title: eo.title, price: eo.price, seller: eo.address, agent: agent, payTo: agent };
+        prefillSend(agent, eo.price, 'Paying into escrow — the agent releases to the seller once you confirm');
+      }
+      return;
+    }
+    var vaultOffer = t.getAttribute('data-vault-offer');
+    if (vaultOffer) {
+      var vo = offers[vaultOffer];
+      if (vo) {
+        var sellerPub = vo.pubKey || knownPubKey(vo.address);
+        if (!sellerPub) { toast('✖ The seller hasn’t shared a public key yet — ask them to re-post their offer, then try again'); return; }
+        var bIdx = prompt('🔐 Vault — pay from which of your wallets?\n' + wallets.map(function (w, i) { return i + ' = ' + w.name; }).join('\n'), '0');
+        if (bIdx === null) return;
+        var buyer = wallets[Number(bIdx)];
+        if (!buyer) { toast('✖ No such wallet'); return; }
+        var aq = prompt('Choose an arbiter — a neutral third party who can break a tie in a dispute. Type their name or address (they must have used BallrzCoin so their key is known):');
+        if (aq === null) return;
+        var arbiter = resolveContact(aq);
+        if (!arbiter) { toast('✖ Don’t know that person’s key. Ask them to post an offer (or send you a coin) first, then retry'); return; }
+        if (arbiter === buyer.address || arbiter === vo.address) { toast('✖ The arbiter must be a third party (not the buyer or seller)'); return; }
+        var redeem = { pubkeys: [buyer.publicKey, sellerPub, knownPubKey(arbiter)], m: 2 };
+        var msAddr;
+        try { msAddr = Coin.createMultisigAddress(redeem.pubkeys, redeem.m); } catch (err) { toast('✖ ' + err.message); return; }
+        pendingAction = {
+          kind: 'fund', mode: 'escrow', escrowType: 'multisig', offerId: vo.id, title: vo.title, price: vo.price,
+          buyer: buyer.address, seller: vo.address, arbiter: arbiter, redeem: redeem, msAddr: msAddr, agent: null, payTo: msAddr
+        };
+        try { $('sendFrom').value = String(Number(bIdx)); } catch (err) {}
+        prefillSend(msAddr, vo.price, 'Funding a 2-of-3 vault — broadcast from ' + buyer.name + ', then mine to confirm');
+      }
+      return;
+    }
+    var vpr = t.getAttribute('data-vault-propose-release');
+    if (vpr) { var vd1 = deals[vpr]; if (vd1) proposeVault(vd1, 'release'); return; }
+    var vpf = t.getAttribute('data-vault-propose-refund');
+    if (vpf) { var vd2 = deals[vpf]; if (vd2) proposeVault(vd2, 'refund'); return; }
+    var vap = t.getAttribute('data-vault-approve');
+    if (vap) { var vd3 = deals[vap]; if (vd3) approveVault(vd3); return; }
+    var vcn = t.getAttribute('data-vault-cancel');
+    if (vcn) { var vd4 = deals[vcn]; if (vd4) { vd4.proposal = null; vd4.at = Date.now(); pushDeal(vcn); toast('Proposal cancelled'); } return; }
+    var dRelease = t.getAttribute('data-deal-release');
+    if (dRelease) {
+      var dr = deals[dRelease];
+      if (dr && dr.status === 'funded') { dr.status = 'released'; dr.at = Date.now(); pushDeal(dRelease); toast('✓ Confirmed received — the seller’s reputation grew'); }
+      return;
+    }
+    var dConfirm = t.getAttribute('data-deal-confirm');
+    if (dConfirm) {
+      var dc = deals[dConfirm];
+      if (dc && dc.status === 'funded') { dc.buyerConfirmed = true; dc.at = Date.now(); pushDeal(dConfirm); toast('✓ Confirmed — the agent can now release the escrow'); }
+      return;
+    }
+    var dEscRel = t.getAttribute('data-deal-escrow-release');
+    if (dEscRel) {
+      var der = deals[dEscRel];
+      if (der) { pendingAction = { kind: 'settle', dealId: dEscRel, newStatus: 'released', payTo: der.seller }; prefillSend(der.seller, der.price, 'Releasing escrow to the seller — broadcast, then mine to confirm'); }
+      return;
+    }
+    var dEscRef = t.getAttribute('data-deal-escrow-refund');
+    if (dEscRef) {
+      var def = deals[dEscRef];
+      if (def) { pendingAction = { kind: 'settle', dealId: dEscRef, newStatus: 'refunded', payTo: def.buyer }; prefillSend(def.buyer, def.price, 'Refunding the buyer — broadcast, then mine to confirm'); }
       return;
     }
     var rmOffer = t.getAttribute('data-remove-offer');
@@ -781,6 +1095,24 @@
       netSend({ type: 'tx', tx: tx });
       $('sendTo').value = ''; $('sendAmount').value = '';
       toast('📨 Broadcast: ' + fmt(amount) + ' → ' + short(to) + ' (fee ' + fmt(fee) + ')');
+
+      // Complete a pending barter action if this payment matches it.
+      if (pendingAction && pendingAction.payTo === to) {
+        if (pendingAction.kind === 'fund') {
+          var pa = pendingAction;
+          var deal = {
+            id: from.address.slice(0, 8) + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7),
+            offerId: pa.offerId, title: pa.title, price: pa.price, buyer: from.address, seller: pa.seller,
+            mode: pa.mode, agent: pa.agent, status: 'funded', buyerConfirmed: false, at: Date.now(),
+            escrowType: pa.escrowType || null, redeem: pa.redeem || null, msAddr: pa.msAddr || null, arbiter: pa.arbiter || null
+          };
+          if (ingestDeal(deal)) pushDeal(deal.id);
+        } else if (pendingAction.kind === 'settle') {
+          var d = deals[pendingAction.dealId];
+          if (d) { d.status = pendingAction.newStatus; d.at = Date.now(); pushDeal(d.id); }
+        }
+        pendingAction = null;
+      }
       render();
     } catch (err) {
       toast('✖ ' + err.message);
@@ -798,7 +1130,7 @@
       if (!(price > 0)) throw new Error('Set a price in BLZ');
       var o = {
         id: w.address.slice(0, 8) + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7),
-        address: w.address, name: w.name, title: title, desc: desc, price: price, at: Date.now()
+        address: w.address, name: w.name, title: title, desc: desc, price: price, pubKey: w.publicKey, at: Date.now()
       };
       ingestOffer(o);
       saveOffers();
@@ -999,6 +1331,8 @@
   persist();
   netSend({ type: 'hello' }); // ask peers for their chains
   announceOffers();           // share our barter offers with the network
+  announceDeals();            // share our deal records so reputation converges
+  announceIdentities();       // publish our public keys so peers can build multisig vaults
 })();
 </script>
 </body>

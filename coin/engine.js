@@ -342,7 +342,8 @@
    * base58check addresses
    * ==================================================================== */
   var B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-  var ADDRESS_VERSION = 0x19; // 25 → addresses start with 'B'
+  var ADDRESS_VERSION = 0x19;   // 25 → pay-to-pubkey-hash addresses start with 'B'
+  var MULTISIG_VERSION = 0x32;  // 50 → multisig (escrow) addresses start with 'M'
 
   function base58Encode(bytes) {
     var n = ZERO, i;
@@ -393,10 +394,46 @@
     return base58Check(ADDRESS_VERSION, h160);
   }
 
+  function isPubKey(p) { return typeof p === 'string' && /^0[23][0-9a-f]{64}$/.test(p); }
+
+  /**
+   * An m-of-n multisig (escrow) address. Funds sent here can only be spent when
+   * m of the n listed public keys sign — the trustless version of escrow: with
+   * a 2-of-3 of {buyer, seller, arbiter}, no single party can run off with the
+   * money. The address commits to a hash of the sorted keys + m (P2SH-style),
+   * so the spender must reveal the exact key set to unlock it.
+   */
+  function multisigRedeemHash(pubkeys, m) {
+    if (!Array.isArray(pubkeys) || pubkeys.length < 1 || pubkeys.length > 15) throw new Error('multisig needs 1–15 public keys');
+    if (!Number.isInteger(m) || m < 1 || m > pubkeys.length) throw new Error('m must be an integer in 1..n');
+    var seen = {};
+    pubkeys.forEach(function (p) {
+      if (!isPubKey(p)) throw new Error('bad public key in multisig');
+      if (seen[p]) throw new Error('duplicate public key in multisig');
+      seen[p] = true;
+    });
+    var descriptor = m + ':' + pubkeys.slice().sort().join(','); // canonical: sorted keys
+    return sha256dBytes(utf8ToBytes(descriptor)).slice(0, 20);
+  }
+
+  function createMultisigAddress(pubkeys, m) {
+    return base58Check(MULTISIG_VERSION, multisigRedeemHash(pubkeys, m));
+  }
+
+  function addressVersion(addr) {
+    try { return base58CheckDecode(addr).version; } catch (err) { return -1; }
+  }
+  function addressType(addr) {
+    var v = addressVersion(addr);
+    if (v === ADDRESS_VERSION) return 'p2pkh';
+    if (v === MULTISIG_VERSION) return 'multisig';
+    return null;
+  }
+
   function isValidAddress(addr) {
     try {
       var d = base58CheckDecode(addr);
-      return d.version === ADDRESS_VERSION && d.payload.length === 20;
+      return (d.version === ADDRESS_VERSION || d.version === MULTISIG_VERSION) && d.payload.length === 20;
     } catch (err) {
       return false;
     }
@@ -434,6 +471,15 @@
   /* ======================================================================
    * Transactions — UTXO model
    * ==================================================================== */
+  // Canonical serialization of one input, carrying whichever auth it uses:
+  // a single pubKey+signature (p2pkh) or a redeem set + m signatures (multisig).
+  function serInput(i) {
+    if (i.redeem) {
+      return { txId: i.txId, outIndex: i.outIndex, redeem: { pubkeys: i.redeem.pubkeys, m: i.redeem.m }, signatures: i.signatures || [] };
+    }
+    return { txId: i.txId, outIndex: i.outIndex, pubKey: i.pubKey, signature: i.signature };
+  }
+
   function txSerialize(tx) {
     if (tx.type === 'coinbase') {
       return JSON.stringify({
@@ -443,7 +489,7 @@
     }
     return JSON.stringify({
       type: 'transfer',
-      inputs: tx.inputs.map(function (i) { return { txId: i.txId, outIndex: i.outIndex, pubKey: i.pubKey, signature: i.signature }; }),
+      inputs: tx.inputs.map(serInput),
       outputs: tx.outputs.map(function (o) { return { address: o.address, amount: o.amount }; }),
       timestamp: tx.timestamp
     });
@@ -505,6 +551,71 @@
   }
 
   /**
+   * Spend from a multisig (escrow) output. Because it needs m signatures,
+   * possibly from different people/devices, this is a three-step ceremony:
+   *   1) buildMultisigSpend(...)  → an unsigned transaction
+   *   2) signMultisig(tx, priv)   → each party adds their signature
+   *   3) finalizeMultisig(tx)     → assemble m sigs in canonical order + id
+   * `utxos` are the multisig outputs ({txId, outIndex, address, amount}).
+   */
+  function buildMultisigSpend(opts) {
+    var redeem = opts.redeem, amount = opts.amount, fee = opts.fee || 0;
+    var msAddr = createMultisigAddress(redeem.pubkeys, redeem.m); // validates redeem
+    if (!Number.isInteger(amount) || amount <= 0) throw new Error('amount must be a positive integer of blazes');
+    if (!Number.isInteger(fee) || fee < 0) throw new Error('fee must be a non-negative integer');
+    if (!isValidAddress(opts.to)) throw new Error('invalid destination address');
+    if (!isValidAddress(opts.changeAddress)) throw new Error('invalid change address');
+
+    var need = amount + fee, total = 0, picked = [];
+    for (var i = 0; i < opts.utxos.length && total < need; i++) {
+      if (opts.utxos[i].address && opts.utxos[i].address !== msAddr) continue;
+      picked.push(opts.utxos[i]);
+      total += opts.utxos[i].amount;
+    }
+    if (total < need) throw new Error('insufficient funds in escrow: have ' + total + ', need ' + need);
+
+    var outputs = [{ address: opts.to, amount: amount }];
+    var change = total - need;
+    if (change > 0) outputs.push({ address: opts.changeAddress, amount: change });
+
+    return {
+      type: 'transfer',
+      inputs: picked.map(function (u) {
+        return { txId: u.txId, outIndex: u.outIndex, redeem: { pubkeys: redeem.pubkeys.slice(), m: redeem.m }, signatures: [], _signers: {} };
+      }),
+      outputs: outputs,
+      timestamp: Math.floor(opts.timestamp !== undefined ? opts.timestamp : Date.now())
+    };
+  }
+
+  function signMultisig(tx, privHex) {
+    var pub = getPublicKey(privHex);
+    var h = sighash(tx);
+    tx.inputs.forEach(function (inp) {
+      if (!inp.redeem || inp.redeem.pubkeys.indexOf(pub) < 0) return; // not a signer here
+      if (!inp._signers) inp._signers = {};
+      if (!inp._signers[pub]) inp._signers[pub] = sign(h, privHex);
+    });
+    return tx;
+  }
+
+  function finalizeMultisig(tx) {
+    tx.inputs.forEach(function (inp) {
+      if (!inp.redeem) return;
+      var sorted = inp.redeem.pubkeys.slice().sort(); // canonical order
+      var sigs = [];
+      for (var i = 0; i < sorted.length && sigs.length < inp.redeem.m; i++) {
+        if (inp._signers && inp._signers[sorted[i]]) sigs.push(inp._signers[sorted[i]]);
+      }
+      if (sigs.length < inp.redeem.m) throw new Error('not enough signatures: have ' + sigs.length + ', need ' + inp.redeem.m);
+      inp.signatures = sigs;
+      delete inp._signers;
+    });
+    tx.id = txIdOf(tx);
+    return tx;
+  }
+
+  /**
    * Full transfer validation against a UTXO resolver (key "txId:outIndex" →
    * {address, amount} | undefined). Throws on any violation; returns {fee}.
    */
@@ -521,8 +632,27 @@
       seen[key] = true;
       var utxo = resolveUtxo(key);
       if (!utxo) throw new Error('input not in UTXO set (missing or already spent): ' + key);
-      if (addressFromPublicKey(inp.pubKey) !== utxo.address) throw new Error('public key does not own output ' + key);
-      if (!verify(h, inp.signature, inp.pubKey)) throw new Error('invalid signature on input ' + key);
+      if (addressType(utxo.address) === 'multisig') {
+        if (!inp.redeem || !Array.isArray(inp.redeem.pubkeys) || !Array.isArray(inp.signatures)) throw new Error('malformed multisig input ' + key);
+        var msAddr;
+        try { msAddr = createMultisigAddress(inp.redeem.pubkeys, inp.redeem.m); }
+        catch (err) { throw new Error('invalid multisig redeem on ' + key + ': ' + err.message); }
+        if (msAddr !== utxo.address) throw new Error('redeem does not match multisig output ' + key);
+        if (inp.signatures.length !== inp.redeem.m) throw new Error('multisig input ' + key + ' needs exactly ' + inp.redeem.m + ' signatures');
+        var sorted = inp.redeem.pubkeys.slice().sort(), pi = 0, matched = 0;
+        for (var s = 0; s < inp.signatures.length; s++) {
+          var ok = false;
+          while (pi < sorted.length) {
+            if (verify(h, inp.signatures[s], sorted[pi])) { ok = true; pi++; matched++; break; }
+            pi++;
+          }
+          if (!ok) throw new Error('invalid or out-of-order multisig signature on ' + key);
+        }
+        if (matched !== inp.redeem.m) throw new Error('insufficient valid multisig signatures on ' + key);
+      } else {
+        if (addressFromPublicKey(inp.pubKey) !== utxo.address) throw new Error('public key does not own output ' + key);
+        if (!verify(h, inp.signature, inp.pubKey)) throw new Error('invalid signature on input ' + key);
+      }
       inSum += utxo.amount;
     }
     for (i = 0; i < tx.outputs.length; i++) { checkOutput(tx.outputs[i]); outSum += tx.outputs[i].amount; }
@@ -931,8 +1061,9 @@
 
   /* ====================================================================== */
   return {
-    version: '1.0.0',
-    COIN: COIN, MAX_MONEY: MAX_MONEY, DEFAULT_PARAMS: DEFAULT_PARAMS, ADDRESS_VERSION: ADDRESS_VERSION,
+    version: '1.1.0',
+    COIN: COIN, MAX_MONEY: MAX_MONEY, DEFAULT_PARAMS: DEFAULT_PARAMS,
+    ADDRESS_VERSION: ADDRESS_VERSION, MULTISIG_VERSION: MULTISIG_VERSION,
     // bytes & hashing
     bytesToHex: bytesToHex, hexToBytes: hexToBytes, utf8ToBytes: utf8ToBytes,
     sha256: sha256Hex, sha256d: sha256dHex, hmacSha256: hmacSha256Hex,
@@ -944,9 +1075,11 @@
     // wallets & addresses
     generateWallet: generateWallet, walletFromPrivateKey: walletFromPrivateKey,
     addressFromPublicKey: addressFromPublicKey, isValidAddress: isValidAddress,
+    addressType: addressType, createMultisigAddress: createMultisigAddress,
     // transactions
     txSerialize: txSerialize, txIdOf: txIdOf, sighash: sighash,
     createCoinbase: createCoinbase, buildTransaction: buildTransaction,
+    buildMultisigSpend: buildMultisigSpend, signMultisig: signMultisig, finalizeMultisig: finalizeMultisig,
     verifyTransaction: verifyTransaction,
     // blocks & proof of work
     merkleRoot: merkleRoot, blockHashOf: blockHashOf, meetsTarget: meetsTarget,
