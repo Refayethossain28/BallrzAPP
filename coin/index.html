@@ -4,18 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0e14">
-<title>BallrzCoin — a toy Bitcoin</title>
-<meta name="description" content="Only 21 coins will ever exist. A real proof-of-work cryptocurrency built like Bitcoin from raw bytes up — mine it in your browser. No ICO, no price, no promises.">
+<title>BallrzCoin (BLZ) — a currency for time and favours</title>
+<meta name="description" content="A real proof-of-work cryptocurrency, built like Bitcoin from raw bytes up, that a community trades for time and favours. 21 billion BLZ, fixed forever. Mine it in your browser. No ICO, no price, no speculation.">
 <meta property="og:type" content="website">
-<meta property="og:title" content="BallrzCoin (BLZ) — only 21 coins will ever exist">
-<meta property="og:description" content="A real proof-of-work cryptocurrency built like Bitcoin from raw bytes up. Mine it in your browser — right now. No ICO, no price, no promises. Just proof-of-work.">
+<meta property="og:title" content="BallrzCoin (BLZ) — a currency for time and favours">
+<meta property="og:description" content="A real proof-of-work cryptocurrency built like Bitcoin from raw bytes up — a community time bank you earn by mining and spend on favours. 21 billion BLZ, fixed forever. No ICO, no price, no speculation.">
 <meta property="og:url" content="https://refayethossain28.github.io/BallrzAPP/coin/">
 <meta property="og:image" content="https://refayethossain28.github.io/BallrzAPP/coin/share-card.png">
 <meta property="og:image:width" content="2400">
 <meta property="og:image:height" content="1260">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="BallrzCoin (BLZ) — only 21 coins will ever exist">
-<meta name="twitter:description" content="A real proof-of-work cryptocurrency built like Bitcoin from raw bytes up. Mine it in your browser. No ICO, no price, no promises.">
+<meta name="twitter:title" content="BallrzCoin (BLZ) — a currency for time and favours">
+<meta name="twitter:description" content="A real proof-of-work cryptocurrency built like Bitcoin from raw bytes up — a community time bank. 21 billion BLZ, fixed forever. Mine it in your browser. No ICO, no price, no speculation.">
 <meta name="twitter:image" content="https://refayethossain28.github.io/BallrzAPP/coin/share-card.png">
 <style>
   :root {
@@ -105,9 +105,18 @@
   input:focus, select:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px rgba(244,194,87,0.14); }
   form.send { display: grid; grid-template-columns: 1fr 2fr 100px 100px auto; gap: 8px; align-items: center; }
   @media (max-width: 720px) { form.send { grid-template-columns: 1fr 1fr; } }
-  form.offer { display: grid; grid-template-columns: 1fr 2fr 110px auto; gap: 8px; align-items: center; }
-  form.offer #offerDesc { grid-column: 1 / -1; }
-  @media (max-width: 720px) { form.offer { grid-template-columns: 1fr 1fr; } form.offer #offerTitle, form.offer #offerDesc { grid-column: 1 / -1; } }
+  form.offer { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+  form.offer #offerFrom, form.offer #offerTitle, form.offer #offerDesc, form.offer #offerHint, form.offer button { grid-column: 1 / -1; }
+  form.offer #offerHint { font-size: 12px; color: var(--gold); min-height: 0; }
+  form.offer #offerHint:empty { display: none; }
+  .timebank { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 12px 16px; margin: 10px 0; }
+  .timebank .tbrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .timebank .tblabel { font-weight: 650; }
+  .timebank .tbval { font-variant-numeric: tabular-nums; }
+  .timebank .tbval b { background: var(--goldgrad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .timebank #timeAnchor { width: 62px; text-align: center; }
+  .timebank #timeAnchorH { color: var(--gold); }
+  .offercard .prc .tm { display: block; font-size: 12px; color: var(--dim); -webkit-text-fill-color: var(--dim); font-weight: 600; }
   .offercard, .block, .note, details.pricelist {
     -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
     box-shadow: 0 12px 34px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.05);
@@ -275,7 +284,7 @@
   <div class="inner">
     <div class="coinmedal">B</div>
     <div class="sname">BallrzCoin <span>BLZ</span></div>
-    <div class="stag">Only 21 will ever exist</div>
+    <div class="stag">A currency for time & favours · 21 billion, fixed forever</div>
   </div>
 </div>
 <script>setTimeout(function(){var s=document.getElementById('splash');if(s)s.classList.add('gone');},2400);</script>
@@ -285,9 +294,10 @@
   <h1>BallrzCoin <span class="tick">BLZ</span></h1>
 </div>
 <div class="sub">
-  A toy proof-of-work cryptocurrency built like Bitcoin: secp256k1 wallets, UTXO transactions,
-  merkle trees, mining with difficulty retargeting and halving rewards — but <b style="color:var(--gold)">only
-  21 BLZ will ever exist</b>, a million times scarcer than Bitcoin's 21,000,000.
+  A real proof-of-work cryptocurrency built like Bitcoin: secp256k1 wallets, UTXO transactions,
+  merkle trees, mining with difficulty retargeting and halving rewards — a community currency you
+  earn by mining and spend on time and favours. <b style="color:var(--gold)">21 billion BLZ will
+  ever exist</b>, hard-capped and fixed forever.
   Open this page in a second tab — each tab is a node, and they sync on the heaviest chain.
 </div>
 <div class="row" style="margin-top:12px">
@@ -327,17 +337,30 @@
 <div class="sub">Transactions wait in the mempool until a miner includes them; the fee goes to that miner.</div>
 
 <h2>Barter — offers board</h2>
-<div class="sub">Post something you’ll do or give for BLZ, and pay others for theirs. Offers travel the network like payments. BLZ is only worth what your group agrees it is — so agree a shared price list. <a href="guide.html" style="color:var(--gold)">📖 How to run barter with friends →</a></div>
+<div class="sub">BLZ is a <b>time bank</b>: it buys <b>favours and time</b>, never cash. Post something you’ll do or give, and pay others for theirs. Offers travel the network like payments. <a href="guide.html" style="color:var(--gold)">📖 How to run barter with friends →</a></div>
+<div class="timebank" id="timeBank">
+  <div class="tbrow">
+    <span class="tblabel">⏳ The group’s time rate</span>
+    <span class="tbval"><b>1 BLZ</b> = <input id="timeAnchor" inputmode="numeric" value="60"> min (<span id="timeAnchorH"></span>)</span>
+  </div>
+  <div class="agree">Everyone in your circle should set the <b>same</b> rate — that shared agreement is what gives BLZ its worth. Anchoring to time (not pounds) keeps it a favours co-op, not an investment. Pick a rate that fits your group: fewer minutes-per-BLZ stretches the 21-coin supply across more hours of favours.</div>
+</div>
 <details class="pricelist" id="priceList">
-  <summary>💡 Suggested price list — tap any to start an offer</summary>
+  <summary>💡 Suggested rates — tap any to start an offer</summary>
   <div class="chips" id="priceChips"></div>
-  <div class="agree">These are just a starting point. Screenshot this and let your group agree its own rates — that shared agreement is what gives BLZ its worth.</div>
+  <div class="agree">Prices are the <b>hours of effort</b> a favour takes. A starting point — screenshot it and let your group agree its own rates.</div>
 </details>
 <form class="offer" id="offerForm">
   <select id="offerFrom"></select>
   <input id="offerTitle" placeholder="What are you offering? e.g. 🎂 Bake a cake" maxlength="80" autocomplete="off">
-  <input id="offerPrice" placeholder="Price in BLZ" inputmode="decimal">
+  <input id="offerPrice" placeholder="Price" inputmode="decimal">
+  <select id="offerUnit" title="Price this favour in time or in coins">
+    <option value="hours">hours</option>
+    <option value="minutes">minutes</option>
+    <option value="blz">BLZ</option>
+  </select>
   <input id="offerDesc" placeholder="Details (optional)" maxlength="240" autocomplete="off">
+  <div class="offerhint" id="offerHint"></div>
   <button class="primary" type="submit">Post offer</button>
 </form>
 <div class="list" id="offers"></div>
@@ -993,23 +1016,60 @@
     if (s.height < interval) {
       var left = interval - s.height;
       el.innerHTML = '<div><div class="ct">⚡ The Era-One Race</div>' +
-        '<div class="cd">Half of all 21 BLZ can only be mined in the first ' + interval + ' blocks — then the reward halves, forever. Mine now, before your friends do.</div></div>' +
+        '<div class="cd">Half of all 21 billion BLZ can only be mined in the first ' + interval + ' blocks — then the reward halves, forever. Mine now, before your friends do.</div></div>' +
         '<div class="cn">' + left + ' left</div>';
     } else { el.innerHTML = ''; }
   }
 
-  // A starting-point price list a group can adopt or adapt. Prices are in BLZ.
+  // BLZ is a time bank: coins buy time and favours, never cash. The group agrees
+  // one shared rate — how many minutes of a favour a single BLZ is worth. Anchoring
+  // value to time (not pounds) is what keeps this a co-op rather than an investment.
+  // The rate is a local, group-agreed setting (everyone should pick the same number).
+  var LS_TIME = 'ballrzcoin.timeanchor.v1';
+  var minutesPerBLZ = 60;
+  try { var _tv = parseInt(localStorage.getItem(LS_TIME), 10); if (_tv > 0) minutesPerBLZ = _tv; } catch (err) {}
+
+  // Render a BLZ amount (in base units) as the time it's worth: "1h 30m", "45m".
+  function fmtTime(baseUnits) {
+    var mins = (Number(baseUnits) / COIN_UNIT) * minutesPerBLZ;
+    if (!(mins > 0)) return '0m';
+    var h = Math.floor(mins / 60), m = Math.round(mins - h * 60);
+    if (m === 60) { h += 1; m = 0; }
+    return (h ? h + 'h' : '') + (h && m ? ' ' : '') + (m || !h ? m + 'm' : '');
+  }
+  // Convert an amount of time (in minutes) into BLZ base units at the current rate.
+  function minutesToBase(mins) { return Math.round((mins / minutesPerBLZ) * COIN_UNIT); }
+
+  // Suggested rates, expressed as the HOURS of effort a favour takes — the natural
+  // way to price in a time bank. Converted to BLZ live via the group's rate.
   var SUGGESTED_PRICES = [
-    ['☕ Coffee or a drink', 1], ['🚗 Lift into town', 2], ['🍳 Home-cooked meal', 3],
-    ['🧹 An hour of help', 2], ['🐕 Walk the dog', 1], ['🌱 Water the plants', 1],
-    ['🎂 Bake a cake', 3], ['🛒 Grocery run', 2], ['💻 Fix a tech problem', 3],
-    ['✂️ A haircut', 4], ['👶 Babysit an evening', 5], ['📦 Help you move (half day)', 8]
+    ['☕ Grab you a coffee', 0.25], ['🌱 Water the plants', 0.25], ['🐕 Walk the dog', 0.5],
+    ['🚗 Lift into town', 0.5], ['🛒 Grocery run', 0.75], ['✂️ A haircut', 0.75],
+    ['🧹 An hour of help', 1], ['💻 Fix a tech problem', 1], ['🍳 Home-cooked meal', 1.5],
+    ['🎂 Bake a cake', 2], ['👶 Babysit an evening', 3], ['📦 Help you move (half day)', 4]
   ];
   function renderPriceList() {
     $('priceChips').innerHTML = SUGGESTED_PRICES.map(function (p) {
-      return '<span class="chip" data-suggest-title="' + esc(p[0]) + '" data-suggest-price="' + p[1] + '">' +
-        esc(p[0]) + ' <b>' + p[1] + ' BLZ</b></span>';
+      var hours = p[1], base = minutesToBase(hours * 60);
+      return '<span class="chip" data-suggest-title="' + esc(p[0]) + '" data-suggest-hours="' + hours + '">' +
+        esc(p[0]) + ' <b>' + fmtTime(base) + '</b> · ' + fmt(base) + '</span>';
     }).join('');
+  }
+
+  // The time-bank rate control: reflect the current rate and its hour-equivalent.
+  function renderTimeBank() {
+    var el = $('timeAnchor'); if (!el) return;
+    if (document.activeElement !== el) el.value = minutesPerBLZ;
+    var h = minutesPerBLZ / 60;
+    var label = h === 1 ? '1 hour' : (Number.isInteger(h) ? h + ' hours' : minutesPerBLZ + ' min');
+    var hEl = $('timeAnchorH'); if (hEl) hEl.textContent = label;
+  }
+  function setTimeAnchor(mins) {
+    mins = Math.round(mins);
+    if (!(mins > 0)) return;
+    minutesPerBLZ = Math.min(mins, 100000);
+    try { localStorage.setItem(LS_TIME, String(minutesPerBLZ)); } catch (err) {}
+    renderTimeBank(); renderPriceList(); renderOffers(); updateOfferHint();
   }
 
   function renderOffers() {
@@ -1023,15 +1083,15 @@
       var isMine = mine[o.address];
       var action = isMine
         ? '<button data-remove-offer="' + esc(o.id) + '">Remove</button>'
-        : '<button class="primary" data-pay-offer="' + esc(o.id) + '">Pay ' + fmt(o.price) + '</button>' +
+        : '<button class="primary" data-pay-offer="' + esc(o.id) + '">Pay ' + fmtTime(o.price) + '</button>' +
           '<button data-escrow-offer="' + esc(o.id) + '" title="Pay a trusted third party who releases once you confirm">🛡 Trusted</button>' +
           '<button data-vault-offer="' + esc(o.id) + '" title="Lock funds in a 2-of-3 vault only you, the seller and an arbiter can open">🔐 Vault</button>';
       return '<div class="offercard"><div class="main">' +
         '<div class="ttl">' + esc(o.title) + '</div>' +
         (o.desc ? '<div class="dsc">' + esc(o.desc) + '</div>' : '') +
         '<div class="by">by ' + who(o.address) + (isMine ? ' (you)' : '') + repBadge(o.address) + '</div>' +
-        '</div><span class="prc">' + fmt(o.price) + '</span>' + action + '</div>';
-    }).join('') : '<div class="note">No offers yet — post the first one above (“🚗 Lift into town — 2 BLZ”).</div>';
+        '</div><span class="prc">' + fmtTime(o.price) + '<span class="tm">' + fmt(o.price) + '</span></span>' + action + '</div>';
+    }).join('') : '<div class="note">No offers yet — post the first one above (“🚗 Lift into town — 30m”).</div>';
   }
 
   function sigCount(deal) { return deal.proposal && deal.proposal.sigs ? Object.keys(deal.proposal.sigs).length : 0; }
@@ -1264,7 +1324,9 @@
     var suggestEl = t.getAttribute('data-suggest-title') ? t : (t.parentNode && t.parentNode.getAttribute && t.parentNode.getAttribute('data-suggest-title') ? t.parentNode : null);
     if (suggestEl) {
       $('offerTitle').value = suggestEl.getAttribute('data-suggest-title');
-      $('offerPrice').value = suggestEl.getAttribute('data-suggest-price');
+      $('offerPrice').value = suggestEl.getAttribute('data-suggest-hours');
+      $('offerUnit').value = 'hours';
+      updateOfferHint();
       try { $('offerTitle').scrollIntoView({ block: 'center', behavior: 'smooth' }); $('offerTitle').focus(); } catch (err) {}
       toast('Filled in — tweak it and Post offer');
       return;
@@ -1375,6 +1437,33 @@
     }
   });
 
+  // Read the offer price the user typed and convert to BLZ base units, honouring
+  // the chosen unit (hours / minutes at the group's time rate, or raw BLZ).
+  function readOfferBase() {
+    var raw = $('offerPrice').value.trim();
+    if (!raw) return 0;
+    var unit = $('offerUnit').value;
+    if (unit === 'blz') return Coin.parseAmount(raw);
+    var n = parseFloat(raw);
+    if (!(n > 0)) return 0;
+    return minutesToBase(unit === 'hours' ? n * 60 : n);
+  }
+  // Live "= 30m" / "= 0.50000000 BLZ" hint under the offer price field.
+  function updateOfferHint() {
+    var el = $('offerHint'); if (!el) return;
+    var base = 0; try { base = readOfferBase(); } catch (e) { base = 0; }
+    if (!(base > 0)) { el.textContent = ''; return; }
+    el.textContent = $('offerUnit').value === 'blz'
+      ? '= ' + fmtTime(base) + ' of favours'
+      : '= ' + fmt(base) + '  ·  at 1 BLZ = ' + minutesPerBLZ + ' min';
+  }
+  $('offerPrice').addEventListener('input', updateOfferHint);
+  $('offerUnit').addEventListener('change', updateOfferHint);
+  $('timeAnchor').addEventListener('input', function () {
+    var v = parseInt(this.value, 10);
+    if (v > 0) setTimeAnchor(v);
+  });
+
   $('offerForm').addEventListener('submit', function (ev) {
     ev.preventDefault();
     try {
@@ -1382,8 +1471,8 @@
       var title = $('offerTitle').value.trim();
       var desc = $('offerDesc').value.trim();
       if (!title) throw new Error('Give your offer a title');
-      var price = Coin.parseAmount($('offerPrice').value);
-      if (!(price > 0)) throw new Error('Set a price in BLZ');
+      var price = readOfferBase();
+      if (!(price > 0)) throw new Error('Set a price — in hours, minutes or BLZ');
       var o = {
         id: w.address.slice(0, 8) + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7),
         address: w.address, name: w.name, title: title, desc: desc, price: price, pubKey: w.publicKey, at: Date.now()
@@ -1392,8 +1481,9 @@
       saveOffers();
       netSend({ type: 'offer', offer: o });
       $('offerTitle').value = ''; $('offerDesc').value = ''; $('offerPrice').value = '';
+      updateOfferHint();
       renderOffers();
-      toast('📣 Offer posted: ' + title);
+      toast('📣 Offer posted: ' + title + ' (' + fmtTime(o.price) + ')');
     } catch (err) {
       toast('✖ ' + err.message);
     }
@@ -1488,7 +1578,7 @@
 
   $('shareBtn').addEventListener('click', function () {
     var url = pageBase();
-    var text = 'I’m mining BallrzCoin — a real cryptocurrency where only 21 coins will ever exist. Come mine one in your browser (it’s free and kind of addictive):';
+    var text = 'I’m mining BallrzCoin — a real community currency for time and favours, capped at 21 billion forever. Come mine some in your browser (it’s free and kind of addictive):';
     if (navigator.share) {
       navigator.share({ title: 'BallrzCoin (BLZ)', text: text, url: url }).catch(function () {});
     } else {
@@ -1573,14 +1663,14 @@
     ctx.textAlign = 'left'; ctx.font = '700 150px Georgia, serif'; ctx.fillText(bt, bstart, 640);
     ctx.font = '700 64px Georgia, serif'; ctx.fillText(btl, bstart + bw, 640); ctx.textAlign = 'center';
     ctx.fillStyle = '#9a9aab'; ctx.font = '500 34px -apple-system, Helvetica, Arial, sans-serif';
-    ctx.fillText('of only 21 BLZ that will ever exist', cx, 700);
+    ctx.fillText('of 21 billion BLZ — fixed forever', cx, 700);
 
     drawCardStats(ctx, cx, 780);
 
     // tagline
     ctx.fillStyle = '#f3efe4'; ctx.font = 'italic 500 42px Georgia, "Times New Roman", serif';
-    ctx.fillText('“I built my own Bitcoin —', cx, 1010);
-    ctx.fillText('and only 21 coins will ever exist.”', cx, 1066);
+    ctx.fillText('“My own currency for time —', cx, 1010);
+    ctx.fillText('21 billion BLZ, fixed forever.”', cx, 1066);
 
     // QR + url
     drawCardQR(ctx, pageBase(), cx - 80, 1120, 160);
@@ -1600,7 +1690,7 @@
   $('cardClose').addEventListener('click', function () { $('cardModal').className = ''; });
   $('cardShare').addEventListener('click', function () {
     var cv = $('cardModal')._canvas; if (!cv) return;
-    var text = 'I minted a BallrzCoin — a real cryptocurrency where only 21 coins will ever exist. Mine one: ' + pageBase();
+    var text = 'I minted a BallrzCoin — a real community currency for time and favours, capped at 21 billion forever. Mine some: ' + pageBase();
     if (cv.toBlob) {
       cv.toBlob(function (blob) {
         var file = null;
@@ -1622,7 +1712,7 @@
   var TOUR = [
     { sel: null, title: 'This is a real cryptocurrency', body: 'Not a simulation — every coin here is genuinely mined and every payment cryptographically signed, using the exact building blocks of Bitcoin. In about a minute, you’ll understand how Bitcoin actually works. Tap Next.' },
     { sel: '#stats', title: 'The blockchain', body: 'A blockchain is just a shared list of <b>blocks</b>, each holding transactions. <b>Block height</b> is how many exist so far. No company stores this — every device keeps its own copy and they agree.' },
-    { sel: '.halvwrap', title: 'Digital scarcity', body: 'Only <b>21 BLZ will ever exist</b>. The mining reward <b>halves</b> every 210 blocks, so new coins slow to a trickle and then stop — scarcity enforced by math, not by a central bank. Bitcoin works exactly this way (its cap is 21 million).' },
+    { sel: '.halvwrap', title: 'Digital scarcity', body: '<b>21 billion BLZ will ever exist</b> — hard-capped and fixed forever, sized for a worldwide community. The mining reward <b>halves</b> every 210,000 blocks, so new coins slow to a trickle and then stop — scarcity enforced by math, not by a central bank. Bitcoin works exactly this way (its cap is 21 million); a fixed, un-inflatable ceiling is what makes money sound.' },
     { sel: '#wallets .card', title: 'A wallet is a pair of keys', body: 'Your <b>address</b> (the B… string) is public — share it to get paid, like an account number. Behind it is a secret <b>private key</b> that proves ownership. Whoever holds the key owns the coins. Tap <b>🔑 Keys</b> later to see yours.' },
     { sel: '[data-mine="0"]', title: 'Mining = proof of work', body: 'Tapping this makes your device guess <b>hashes</b> — millions of tries — until it finds one starting with enough zeros. That “work” is hard to do but instant to check, and the winner earns the new coins. That’s how coins are fairly created with no issuer.' },
     { sel: '#stats', title: 'Self-adjusting difficulty', body: 'The <b>difficulty</b> automatically rises as more miners join, so a block is still found roughly every 15 seconds no matter how much power is on the network. Bitcoin does this too (aiming for 10 minutes).' },
@@ -1630,7 +1720,7 @@
     { sel: '#mempool', title: 'Confirmation', body: 'A new payment waits here in the <b>mempool</b> until a miner seals it into the next block. Once it’s in a block, it’s <b>confirmed</b> — permanent and irreversible. That pending gap is what everyone waits for when they send crypto.' },
     { sel: '#richlist', title: 'The ledger is public', body: 'Every balance is derived from the chain itself — there’s no secret database. Anyone can verify who owns what. Openness is a feature: trust comes from math everyone can check, not from a company’s word.' },
     { sel: '#chain', title: 'Why it can’t be faked', body: 'Each block is stamped with a hash of the one before it. Change any past block and every block after it breaks — so rewriting history means out-mining the entire network. That’s <b>immutability</b>.' },
-    { sel: null, title: 'That’s Bitcoin — you get it now', body: 'Mining, scarcity, keys, signatures, consensus: you just learned the real thing. What separates this toy from Bitcoin isn’t the code — it’s <b>people, electricity, and time</b>. Now go mine block #1, and send a friend the invite link. 🪙' }
+    { sel: null, title: 'You’re running a real currency', body: 'Mining, scarcity, keys, signatures, consensus — it’s all real and all here. What separates BallrzCoin from Bitcoin isn’t the code — it’s <b>people, electricity, and time</b>: a currency is worth what a community agrees to accept it for. Now go mine block #1, and send a friend the invite link. 🪙' }
   ];
   var tourIx = 0;
 
@@ -1714,6 +1804,7 @@
   try { if ($('relayInput')) $('relayInput').value = relayUrl; } catch (err) {}
 
   render();
+  renderTimeBank();
   renderPriceList();
   renderNetStatus();
   persist();

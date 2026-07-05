@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * BallrzCoin relay — cross-device networking for the toy blockchain.
+ * BallrzCoin relay — cross-device networking for the blockchain.
  *
  * Real Bitcoin nodes gossip blocks and transactions peer-to-peer. Browsers
  * can't accept inbound connections, so (like most browser "p2p" systems) the
@@ -43,7 +43,7 @@ const STATIC = {
 
 const PORT = Number(process.env.PORT || 8087);
 const MAX_HELD = 200;            // ring buffer of recent messages
-const MAX_BODY = 5 * 1024 * 1024; // a whole toy chain fits comfortably
+const MAX_BODY = 5 * 1024 * 1024; // a whole chain fits comfortably
 const TYPES = new Set(['hello', 'chain', 'tx', 'offer', 'offer-remove', 'deal', 'id']);
 
 let seq = 0;

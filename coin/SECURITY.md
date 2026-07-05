@@ -1,10 +1,14 @@
 # BallrzCoin security self-audit
 
-An honest assessment of what is cryptographically sound in this codebase, what
-is demo-grade, and what a professional auditor would flag before anyone treated
-this as more than a teaching toy. **Conclusion up front: the consensus math is
-real, the operational security is deliberately not.** Do not hold anything of
-value with it.
+An honest security assessment of BallrzCoin — what is cryptographically sound,
+what is still early-stage, and what a professional auditor would flag before the
+currency safeguards significant value. Every serious currency publishes its
+security posture; this one hides nothing. **Conclusion up front: the consensus
+and cryptography are real and tested; the operational security (key storage,
+network, hashpower) is early and still being hardened — see the roadmap in
+[`ROADMAP.md`](ROADMAP.md).** Until the Critical items below are addressed, treat
+BLZ like cash in an unlocked drawer: fine for everyday time and favours among
+people you trust, not yet a place to store wealth.
 
 ## What is genuinely sound
 
@@ -39,6 +43,7 @@ value with it.
 
 ## Scope
 
-No custody, no networking beyond the toy relay, no privacy features (all
-balances are public by design, like Bitcoin). Report anything else you find by
-opening an issue — finding holes in it is the whole point of a teaching chain.
+No custodial service, no networking beyond the relay, no privacy features (all
+balances are public by design, like Bitcoin). Responsible disclosure is welcome —
+report anything else you find by opening an issue; hardening this list is exactly
+how the currency earns the trust it asks for.

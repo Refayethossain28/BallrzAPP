@@ -31,7 +31,8 @@ That's it — the server has zero dependencies, so there is nothing to build.
 ## Good to know
 
 - **Free tier sleeps.** After ~15 idle minutes Render suspends the service; the
-  next visitor waits ~30–60 seconds while it wakes. Fine for a toy network.
+  next visitor waits ~30–60 seconds while it wakes. Fine for a small community
+  network.
 - **The relay holds no power.** It passes messages but can't mint coins, forge
   blocks or read keys — every phone re-validates everything (see
   [`SECURITY.md`](SECURITY.md) for what it *could* do: censor or delay).
