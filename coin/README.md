@@ -63,6 +63,15 @@ scans the same QR, since it’s a payment link.
 The page also shows a live **leaderboard** (top holders by share of supply) and
 a **halving countdown** toward the 21 BLZ issuance limit.
 
+**Barter — offers board:** post something you'll do or give for BLZ (“🎂 Bake a
+cake — 2 BLZ”) and pay others for theirs. Offers gossip across the network like
+transactions (they live off-chain — an offer is a notice, not money), and a
+**Pay** button prefills the send form with the poster's address and price; you
+sign and mine to confirm as usual. BLZ is only worth what your circle agrees, so
+agree a shared price list — that social agreement is what turns the coin into a
+working barter currency (like a LETS scheme or a babysitting co-op). Keep it to
+goods and favours, not cash.
+
 Wallets can be backed up and restored: **🔑 Keys** reveals a wallet's private
 key, **🖨 Paper wallet** prints a cold-storage card (address QR on one half,
 private-key QR on the other), and **⬇ Import wallet** restores a key on any
