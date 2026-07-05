@@ -86,18 +86,25 @@ the barter board adds three safeguards for the "I paid and they ghosted" case:
 - **Pay on delivery** — the simplest of all: just pay *after* you receive the
   favour. No code needed; it's the recommended default among friends.
 
-- **🔐 Trustless 2-of-3 multisig escrow (engine-level).** For when you don't
-  want to trust even the middleman: coins can be locked into a *multisig
-  address* (`createMultisigAddress([buyer, seller, arbiter], 2)`, addresses
-  start with `M`) that only releases when **2 of the 3 sign**. Normal release =
-  buyer + seller; dispute = arbiter + one party. No single person can abscond
-  with the funds — it's enforced by the blockchain, not by trust. Spending is a
-  three-step ceremony (`buildMultisigSpend` → each party `signMultisig` →
-  `finalizeMultisig`), and the consensus rules reject a single signature, an
-  outsider's signatures, or a forged key set (see the multisig tests in
-  `scripts/test-coin-logic.mjs`). The friendly in-app escrow above uses the
-  simpler trusted-agent flow; this is the protocol primitive underneath for the
-  technically inclined.
+- **🔐 Trustless 2-of-3 multisig vault (in-app + engine).** For when you don't
+  want to trust even the middleman: pick **🔐 Vault** on an offer and the funds
+  lock into a *multisig address* (`createMultisigAddress([buyer, seller,
+  arbiter], 2)`, addresses start with `M`) that only releases when **2 of the 3
+  sign**. Normal release = buyer + seller; dispute = arbiter + one party. No
+  single person can abscond with the funds — it's enforced by the blockchain,
+  not by trust. In the app it's a **propose → co-sign** ceremony: any party
+  proposes a release-to-seller or refund-to-buyer, and a second party co-signs
+  to complete it (signatures gossip across devices, so the two signers can be on
+  two phones). Under the hood it's `buildMultisigSpend` → each party
+  `signMultisig` → `finalizeMultisig`, and the consensus rules reject a single
+  signature, an outsider's signatures, or a forged key set (see the multisig
+  tests in `scripts/test-coin-logic.mjs`). Multisig needs everyone's *public
+  key*, so offers now carry the poster's key and nodes gossip a small identity
+  directory; the arbiter must be someone who has used the app (so their key is
+  known).
+
+So a buyer chooses per payment: **Pay** (trust the seller), **🛡 Trusted**
+(trust a middleman), or **🔐 Vault** (trust no one — math holds the coins).
 
 Wallets can be backed up and restored: **🔑 Keys** reveals a wallet's private
 key, **🖨 Paper wallet** prints a cold-storage card (address QR on one half,
