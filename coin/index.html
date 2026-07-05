@@ -67,6 +67,14 @@
   .offercard .dsc { color: var(--dim); font-size: 13px; margin-top: 2px; }
   .offercard .by { color: var(--dim); font-size: 12px; margin-top: 3px; }
   .offercard .prc { color: var(--gold); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  details.pricelist { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin-bottom: 10px; }
+  details.pricelist summary { cursor: pointer; color: var(--gold); font-size: 13.5px; list-style: none; }
+  details.pricelist summary::-webkit-details-marker { display: none; }
+  details.pricelist .chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+  details.pricelist .chip { background: var(--panel2); border: 1px solid var(--line); border-radius: 99px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+  details.pricelist .chip:hover { border-color: var(--gold); }
+  details.pricelist .chip b { color: var(--gold); font-variant-numeric: tabular-nums; }
+  details.pricelist .agree { color: var(--dim); font-size: 12px; margin-top: 10px; }
   .list { display: flex; flex-direction: column; gap: 8px; }
   .block { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; }
   .block .head { display: flex; gap: 12px; flex-wrap: wrap; align-items: baseline; }
@@ -179,7 +187,12 @@
 <div class="sub">Transactions wait in the mempool until a miner includes them; the fee goes to that miner.</div>
 
 <h2>Barter — offers board</h2>
-<div class="sub">Post something you’ll do or give for BLZ, and pay others for theirs. Offers travel the network like payments. BLZ is only worth what your group agrees it is — so agree a shared price list (a coffee = 1 BLZ, a lift = 2, a home-cooked meal = 3…).</div>
+<div class="sub">Post something you’ll do or give for BLZ, and pay others for theirs. Offers travel the network like payments. BLZ is only worth what your group agrees it is — so agree a shared price list.</div>
+<details class="pricelist" id="priceList">
+  <summary>💡 Suggested price list — tap any to start an offer</summary>
+  <div class="chips" id="priceChips"></div>
+  <div class="agree">These are just a starting point. Screenshot this and let your group agree its own rates — that shared agreement is what gives BLZ its worth.</div>
+</details>
 <form class="offer" id="offerForm">
   <select id="offerFrom"></select>
   <input id="offerTitle" placeholder="What are you offering? e.g. 🎂 Bake a cake" maxlength="80" autocomplete="off">
@@ -601,6 +614,20 @@
     return set;
   }
 
+  // A starting-point price list a group can adopt or adapt. Prices are in BLZ.
+  var SUGGESTED_PRICES = [
+    ['☕ Coffee or a drink', 1], ['🚗 Lift into town', 2], ['🍳 Home-cooked meal', 3],
+    ['🧹 An hour of help', 2], ['🐕 Walk the dog', 1], ['🌱 Water the plants', 1],
+    ['🎂 Bake a cake', 3], ['🛒 Grocery run', 2], ['💻 Fix a tech problem', 3],
+    ['✂️ A haircut', 4], ['👶 Babysit an evening', 5], ['📦 Help you move (half day)', 8]
+  ];
+  function renderPriceList() {
+    $('priceChips').innerHTML = SUGGESTED_PRICES.map(function (p) {
+      return '<span class="chip" data-suggest-title="' + esc(p[0]) + '" data-suggest-price="' + p[1] + '">' +
+        esc(p[0]) + ' <b>' + p[1] + ' BLZ</b></span>';
+    }).join('');
+  }
+
   function renderOffers() {
     $('offerFrom').innerHTML = wallets.map(function (w, i) {
       return '<option value="' + i + '">' + esc(w.name) + '</option>';
@@ -663,6 +690,14 @@
     var rmOffer = t.getAttribute('data-remove-offer');
     if (rmOffer) {
       if (offers[rmOffer]) { delete offers[rmOffer]; saveOffers(); netSend({ type: 'offer-remove', id: rmOffer }); renderOffers(); toast('Offer removed'); }
+      return;
+    }
+    var suggestEl = t.getAttribute('data-suggest-title') ? t : (t.parentNode && t.parentNode.getAttribute && t.parentNode.getAttribute('data-suggest-title') ? t.parentNode : null);
+    if (suggestEl) {
+      $('offerTitle').value = suggestEl.getAttribute('data-suggest-title');
+      $('offerPrice').value = suggestEl.getAttribute('data-suggest-price');
+      try { $('offerTitle').scrollIntoView({ block: 'center', behavior: 'smooth' }); $('offerTitle').focus(); } catch (err) {}
+      toast('Filled in — tweak it and Post offer');
       return;
     }
     if (t.id === 'paperPrint') { try { window.print(); } catch (err) {} return; }
@@ -959,6 +994,7 @@
   try { if ($('relayInput')) $('relayInput').value = relayUrl; } catch (err) {}
 
   render();
+  renderPriceList();
   renderNetStatus();
   persist();
   netSend({ type: 'hello' }); // ask peers for their chains
