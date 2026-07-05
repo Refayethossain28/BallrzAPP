@@ -240,6 +240,13 @@
   #celebrate .csub { color: var(--text); font-size: 16px; margin-top: 6px; }
   @keyframes cpop { from { opacity: 0; transform: scale(0.7) translateY(10px); } to { opacity: 1; transform: none; } }
   @media (prefers-reduced-motion: reduce) { #celebrate .cbox { animation: none; } }
+  /* ── collectible card modal ── */
+  #cardModal { display: none; position: fixed; inset: 0; z-index: 119; background: rgba(4,5,8,0.93); place-items: center; padding: 22px; overflow: auto; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+  #cardModal.show { display: grid; }
+  #cardModal .cmwrap { max-width: 400px; width: 100%; text-align: center; }
+  #cardImg { width: 100%; border-radius: 20px; box-shadow: 0 24px 70px rgba(0,0,0,0.6), 0 0 46px rgba(244,194,87,0.22); }
+  #cardModal .cmbar { display: flex; gap: 10px; justify-content: center; margin-top: 16px; }
+  #cardModal .cmhint { color: var(--dim); font-size: 12px; margin-top: 12px; }
   /* ── animated splash ── */
   #splash { position: fixed; inset: 0; z-index: 120; display: grid; place-items: center;
     background: radial-gradient(circle at 50% 38%, #17130a 0%, #0a0906 45%, #050506 100%);
@@ -285,6 +292,7 @@
 </div>
 <div class="row" style="margin-top:12px">
   <button id="tourBtn">❓ How it works — take the tour</button>
+  <button id="cardBtn">🖼 My collectible card</button>
   <button id="shareBtn">📣 Share</button>
 </div>
 
@@ -383,6 +391,11 @@
 </div>
 <canvas id="fx"></canvas>
 <div id="celebrate"><div class="cbox"><div class="cbig" id="cbig"></div><div class="csub" id="csub"></div></div></div>
+<div id="cardModal"><div class="cmwrap">
+  <img id="cardImg" alt="Your BallrzCoin collectible card">
+  <div class="cmbar"><button class="primary" id="cardShare">Share / Save</button><button id="cardClose">Close</button></div>
+  <div class="cmhint">On a phone you can also long-press the card to save it.</div>
+</div></div>
 <div id="toast"></div>
 
 <script src="config.js"></script>
@@ -1481,6 +1494,127 @@
     } else {
       try { navigator.clipboard.writeText(text + ' ' + url); toast('📣 Share text copied — paste it to a friend'); }
       catch (err) { toast(url); }
+    }
+  });
+
+  /* ---------- shareable collectible card (canvas → image) ---------- */
+  function roundRectPath(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  function drawCardStats(ctx, cx, y) {
+    var mine = myAddresses(), balance = 0, mined = 0;
+    wallets.forEach(function (w) { balance += chain.getBalance(w.address); });
+    chain.blocks.forEach(function (b) { var cb = b.transactions[0]; if (cb && cb.outputs[0] && mine[cb.outputs[0].address]) mined++; });
+    var full = chain.richList(), rank = 0;
+    for (var i = 0; i < full.length; i++) { if (mine[full[i].address]) { rank = i + 1; break; } }
+    var badges = ACHIEVEMENTS.filter(function (a) { return unlocked[a.id]; }).length;
+    var cells = [
+      ['RANK', rank ? '#' + rank + (rank === 1 ? ' ★' : '') : '—'],
+      ['MINED', String(mined)],
+      ['BADGES', badges + '/' + ACHIEVEMENTS.length]
+    ];
+    var pw = 260, gap = 24, totalW = pw * 3 + gap * 2, sx = cx - totalW / 2;
+    cells.forEach(function (c, i) {
+      var x = sx + i * (pw + gap);
+      ctx.fillStyle = 'rgba(255,255,255,0.045)'; ctx.strokeStyle = 'rgba(212,175,90,0.28)'; ctx.lineWidth = 1.5;
+      roundRectPath(ctx, x, y, pw, 130, 20); ctx.fill(); ctx.stroke();
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#9a9aab'; ctx.font = '600 26px -apple-system, Helvetica, Arial, sans-serif'; ctx.fillText(c[0], x + pw / 2, y + 44);
+      ctx.fillStyle = '#f4c257'; ctx.font = '700 52px Georgia, "Times New Roman", serif'; ctx.fillText(c[1], x + pw / 2, y + 100);
+    });
+  }
+  function drawCardQR(ctx, url, x, y, size) {
+    if (typeof CoinQR === 'undefined') return;
+    try {
+      var qr = CoinQR.encode(url), n = qr.size, quiet = 2, total = n + quiet * 2, cell = size / total;
+      ctx.fillStyle = '#fff'; roundRectPath(ctx, x - 8, y - 8, size + 16, size + 16, 12); ctx.fill();
+      ctx.fillStyle = '#0a0906';
+      for (var r = 0; r < n; r++) for (var c = 0; c < n; c++) if (qr.modules[r][c]) ctx.fillRect(x + (c + quiet) * cell, y + (r + quiet) * cell, cell + 0.6, cell + 0.6);
+    } catch (err) {}
+  }
+  function makeCollectibleCanvas() {
+    var W = 1080, H = 1350, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    var ctx = cv.getContext('2d'), cx = W / 2;
+    ctx.fillStyle = '#08080c'; ctx.fillRect(0, 0, W, H);
+    var g1 = ctx.createRadialGradient(W * 0.2, H * 0.02, 0, W * 0.2, H * 0.02, 760);
+    g1.addColorStop(0, 'rgba(244,194,87,0.20)'); g1.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g1; ctx.fillRect(0, 0, W, H);
+    var g2 = ctx.createRadialGradient(W * 0.88, H * 1.0, 0, W * 0.88, H * 1.0, 820);
+    g2.addColorStop(0, 'rgba(244,194,87,0.13)'); g2.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g2; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = 'rgba(212,175,90,0.5)'; ctx.lineWidth = 2.5; roundRectPath(ctx, 30, 30, W - 60, H - 60, 34); ctx.stroke();
+
+    var gold = ctx.createLinearGradient(0, 0, W, 0);
+    gold.addColorStop(0, '#ffe6a3'); gold.addColorStop(0.5, '#f4c257'); gold.addColorStop(1, '#c8871a');
+
+    // medallion
+    var my = 250, rad = 88;
+    var cg = ctx.createRadialGradient(cx - 26, my - 30, 12, cx, my, rad);
+    cg.addColorStop(0, '#ffe6a3'); cg.addColorStop(0.55, '#f4c257'); cg.addColorStop(1, '#b8801f');
+    ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(cx, my, rad, 0, 7); ctx.fill();
+    ctx.fillStyle = '#3a2600'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '700 92px Georgia, "Times New Roman", serif'; ctx.fillText('B', cx, my + 6);
+    ctx.textBaseline = 'alphabetic';
+
+    // wordmark
+    ctx.font = '600 60px Georgia, "Times New Roman", serif';
+    var t1 = 'BallrzCoin ', t2 = 'BLZ', w1 = ctx.measureText(t1).width, w2 = ctx.measureText(t2).width, sx = cx - (w1 + w2) / 2;
+    ctx.textAlign = 'left'; ctx.fillStyle = '#f3efe4'; ctx.fillText(t1, sx, 430);
+    ctx.fillStyle = gold; ctx.fillText(t2, sx + w1, 430); ctx.textAlign = 'center';
+
+    // balance headline
+    var balNum = fmt(0).replace(' BLZ', ''); // placeholder
+    var mine = myAddresses(), balance = 0; wallets.forEach(function (w) { balance += chain.getBalance(w.address); });
+    balNum = fmt(balance).replace(' BLZ', '');
+    ctx.fillStyle = gold; ctx.font = '700 150px Georgia, "Times New Roman", serif';
+    var bt = balNum, btl = ' BLZ'; var bw = ctx.measureText(bt).width;
+    ctx.font = '700 64px Georgia, serif'; var lw = ctx.measureText(btl).width;
+    var bstart = cx - (bw + lw) / 2;
+    ctx.textAlign = 'left'; ctx.font = '700 150px Georgia, serif'; ctx.fillText(bt, bstart, 640);
+    ctx.font = '700 64px Georgia, serif'; ctx.fillText(btl, bstart + bw, 640); ctx.textAlign = 'center';
+    ctx.fillStyle = '#9a9aab'; ctx.font = '500 34px -apple-system, Helvetica, Arial, sans-serif';
+    ctx.fillText('of only 21 BLZ that will ever exist', cx, 700);
+
+    drawCardStats(ctx, cx, 780);
+
+    // tagline
+    ctx.fillStyle = '#f3efe4'; ctx.font = 'italic 500 42px Georgia, "Times New Roman", serif';
+    ctx.fillText('“I built my own Bitcoin —', cx, 1010);
+    ctx.fillText('and only 21 coins will ever exist.”', cx, 1066);
+
+    // QR + url
+    drawCardQR(ctx, pageBase(), cx - 80, 1120, 160);
+    ctx.fillStyle = '#f4c257'; ctx.font = '600 30px -apple-system, Helvetica, Arial, sans-serif';
+    ctx.fillText('refayethossain28.github.io/BallrzAPP/coin', cx, 1330);
+    return cv;
+  }
+  function openCard() {
+    try {
+      var cv = makeCollectibleCanvas();
+      $('cardImg').src = cv.toDataURL('image/png');
+      $('cardModal')._canvas = cv;
+      $('cardModal').className = 'show';
+    } catch (err) { toast('✖ Couldn’t make the card: ' + err.message); }
+  }
+  $('cardBtn').addEventListener('click', openCard);
+  $('cardClose').addEventListener('click', function () { $('cardModal').className = ''; });
+  $('cardShare').addEventListener('click', function () {
+    var cv = $('cardModal')._canvas; if (!cv) return;
+    var text = 'I minted a BallrzCoin — a real cryptocurrency where only 21 coins will ever exist. Mine one: ' + pageBase();
+    if (cv.toBlob) {
+      cv.toBlob(function (blob) {
+        var file = null;
+        try { file = new File([blob], 'ballrzcoin-card.png', { type: 'image/png' }); } catch (e) {}
+        if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+          navigator.share({ files: [file], text: text }).catch(function () {});
+        } else {
+          try {
+            var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'ballrzcoin-card.png';
+            document.body.appendChild(a); a.click(); a.remove();
+            toast('🖼 Card saved — post it anywhere');
+          } catch (e2) { toast('Long-press the card to save it'); }
+        }
+      }, 'image/png');
     }
   });
 
