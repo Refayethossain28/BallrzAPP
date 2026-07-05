@@ -211,6 +211,35 @@
   #tourCard .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--line); transition: background 0.2s; }
   #tourCard .dot.on { background: var(--gold); box-shadow: 0 0 8px rgba(244,194,87,0.7); }
   #tourSkip { position: absolute; top: 12px; right: 14px; background: none; border: none; color: var(--dim); font-size: 20px; cursor: pointer; padding: 0; }
+  /* ── challenge banner ── */
+  #challenge:not(:empty) {
+    margin-top: 16px; padding: 14px 18px; border-radius: 16px; border: 1px solid var(--gold);
+    background: linear-gradient(135deg, rgba(244,194,87,0.14), rgba(244,194,87,0.03));
+    box-shadow: 0 0 34px rgba(244,194,87,0.14), inset 0 1px 0 rgba(255,255,255,0.08);
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  }
+  #challenge .ct { font-family: var(--serif); font-size: 18px; }
+  #challenge .cd { color: var(--dim); font-size: 13px; }
+  #challenge .cn { margin-left: auto; font-weight: 800; font-size: 20px; background: var(--goldgrad); -webkit-background-clip: text; background-clip: text; color: transparent; white-space: nowrap; }
+  /* ── achievements ── */
+  .badges { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+  .badge {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 12px; text-align: center;
+    opacity: 0.4; filter: grayscale(0.7); transition: all 0.25s; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  }
+  .badge.on { opacity: 1; filter: none; border-color: var(--gold); box-shadow: 0 0 0 1px rgba(244,194,87,0.25), 0 10px 26px rgba(0,0,0,0.3); }
+  .badge .bi { font-size: 26px; }
+  .badge .bt { font-size: 12px; font-weight: 650; margin-top: 5px; }
+  .badge .bd { font-size: 10.5px; color: var(--dim); margin-top: 2px; line-height: 1.35; }
+  /* ── celebration + confetti ── */
+  #fx { position: fixed; inset: 0; z-index: 118; pointer-events: none; }
+  #celebrate { position: fixed; inset: 0; z-index: 119; display: none; place-items: center; pointer-events: none; }
+  #celebrate.show { display: grid; }
+  #celebrate .cbox { text-align: center; animation: cpop 0.5s cubic-bezier(0.16,1,0.3,1) both; }
+  #celebrate .cbig { font-family: var(--serif); font-size: clamp(30px, 8vw, 46px); font-weight: 700; background: var(--goldgrad); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 4px 24px rgba(244,194,87,0.5)); }
+  #celebrate .csub { color: var(--text); font-size: 16px; margin-top: 6px; }
+  @keyframes cpop { from { opacity: 0; transform: scale(0.7) translateY(10px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { #celebrate .cbox { animation: none; } }
   /* ── animated splash ── */
   #splash { position: fixed; inset: 0; z-index: 120; display: grid; place-items: center;
     background: radial-gradient(circle at 50% 38%, #17130a 0%, #0a0906 45%, #050506 100%);
@@ -254,11 +283,19 @@
   21 BLZ will ever exist</b>, a million times scarcer than Bitcoin's 21,000,000.
   Open this page in a second tab — each tab is a node, and they sync on the heaviest chain.
 </div>
-<div class="row" style="margin-top:12px"><button id="tourBtn">❓ How it works — take the tour</button></div>
+<div class="row" style="margin-top:12px">
+  <button id="tourBtn">❓ How it works — take the tour</button>
+  <button id="shareBtn">📣 Share</button>
+</div>
+
+<div id="challenge"></div>
 
 <div class="stats" id="stats"></div>
 <div class="halvwrap"><div class="halvbar" id="halvBar"></div></div>
 <div class="halvcap" id="halvCap"></div>
+
+<h2>Achievements <span id="achCount" class="rep"></span></h2>
+<div class="badges" id="badges"></div>
 
 <h2>Wallets</h2>
 <div class="cards" id="wallets"></div>
@@ -344,6 +381,8 @@
     <div class="row" style="margin-top:14px"><button id="scanClose">Close</button></div>
   </div>
 </div>
+<canvas id="fx"></canvas>
+<div id="celebrate"><div class="cbox"><div class="cbig" id="cbig"></div><div class="csub" id="csub"></div></div></div>
 <div id="toast"></div>
 
 <script src="config.js"></script>
@@ -671,6 +710,101 @@
     toast._t = setTimeout(function () { t.className = ''; }, 3200);
   }
 
+  /* ---------- delight: confetti + celebration ---------- */
+  var reduceMotion = false;
+  try { reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (err) {}
+  function confettiBurst() {
+    var c = $('fx'); if (!c || !c.getContext || reduceMotion) return;
+    var ctx = c.getContext('2d'); c.width = window.innerWidth; c.height = window.innerHeight;
+    var cols = ['#ffe6a3', '#f4c257', '#c8871a', '#fff3d0'], parts = [];
+    for (var i = 0; i < 110; i++) parts.push({
+      x: c.width / 2, y: c.height * 0.34, vx: (Math.random() - 0.5) * 13, vy: Math.random() * -11 - 3,
+      g: 0.3, r: Math.random() * 5 + 2.5, col: cols[i % 4], rot: Math.random() * 6, vr: (Math.random() - 0.5) * 0.5, life: 1
+    });
+    function frame() {
+      ctx.clearRect(0, 0, c.width, c.height); var alive = false;
+      parts.forEach(function (p) {
+        p.vy += p.g; p.x += p.vx; p.y += p.vy; p.rot += p.vr; p.life -= 0.011;
+        if (p.life > 0 && p.y < c.height + 30) {
+          alive = true; ctx.save(); ctx.globalAlpha = Math.max(0, p.life);
+          ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillStyle = p.col;
+          ctx.beginPath(); ctx.ellipse(0, 0, p.r, p.r * 0.62, 0, 0, 7); ctx.fill(); ctx.restore();
+        }
+      });
+      if (alive) requestAnimationFrame(frame); else ctx.clearRect(0, 0, c.width, c.height);
+    }
+    requestAnimationFrame(frame);
+  }
+  function celebrate(big, sub) {
+    confettiBurst();
+    $('cbig').textContent = big; $('csub').textContent = sub || '';
+    var el = $('celebrate'); el.className = 'show';
+    clearTimeout(celebrate._t);
+    celebrate._t = setTimeout(function () { el.className = ''; }, 1900);
+  }
+
+  /* ---------- achievements ---------- */
+  var LS_ACH = 'ballrzcoin.ach.v1';
+  var unlocked = {};
+  try { unlocked = JSON.parse(localStorage.getItem(LS_ACH) || '{}') || {}; } catch (err) { unlocked = {}; }
+  var ACHIEVEMENTS = [
+    { id: 'mine', icon: '⛏', title: 'First strike', desc: 'Mine your first block', test: function (m) { return m.mined > 0; } },
+    { id: 'coin', icon: '🪙', title: 'A whole coin', desc: 'Hold 1 BLZ across your wallets', test: function (m) { return m.balance >= COIN_UNIT; } },
+    { id: 'send', icon: '💸', title: 'First payment', desc: 'Send coins to someone', test: function (m) { return m.sent; } },
+    { id: 'offer', icon: '🏷️', title: 'Open for business', desc: 'Post a barter offer', test: function (m) { return m.posted; } },
+    { id: 'deal', icon: '🤝', title: 'Fair trade', desc: 'Complete a barter deal', test: function (m) { return m.dealsDone > 0; } },
+    { id: 'vault', icon: '🔐', title: 'Trust no one', desc: 'Use a 2-of-3 vault', test: function (m) { return m.vault; } },
+    { id: 'backup', icon: '📜', title: 'Safe keeping', desc: 'Make a paper wallet', test: function (m) { return m.backed; } },
+    { id: 'net', icon: '🌐', title: 'Networked', desc: 'Connect to the shared network', test: function (m) { return m.networked; } },
+    { id: 'top', icon: '👑', title: 'Top of the pile', desc: 'Reach #1 on the leaderboard', test: function (m) { return m.top; } },
+    { id: 'whale', icon: '🐋', title: 'Coin baron', desc: 'Hold 5 BLZ at once', test: function (m) { return m.balance >= 5 * COIN_UNIT; } }
+  ];
+  var COIN_UNIT = Coin.COIN;
+  var paperMade = false; // set when a paper wallet is opened
+  function achMetrics() {
+    var mineAddrs = myAddresses();
+    var mined = 0, balance = 0, sent = false, top = false;
+    chain.blocks.forEach(function (b) {
+      var cb = b.transactions[0];
+      if (cb && cb.outputs[0] && mineAddrs[cb.outputs[0].address]) mined++;
+      b.transactions.forEach(function (tx) {
+        if (tx.type === 'transfer' && tx.inputs[0] && !tx.inputs[0].redeem) {
+          try { if (mineAddrs[Coin.addressFromPublicKey(tx.inputs[0].pubKey)]) sent = true; } catch (e) {}
+        }
+      });
+    });
+    wallets.forEach(function (w) { balance += chain.getBalance(w.address); });
+    var rich = chain.richList(1);
+    if (rich[0] && mineAddrs[rich[0].address]) top = true;
+    var dealsDone = 0, vault = false;
+    Object.keys(deals).forEach(function (id) {
+      var d = deals[id];
+      if (d.status === 'released' && (mineAddrs[d.buyer] || mineAddrs[d.seller])) dealsDone++;
+      if (d.escrowType === 'multisig' && (mineAddrs[d.buyer] || mineAddrs[d.seller] || myPartyPubs(d).length)) vault = true;
+    });
+    var posted = Object.keys(offers).some(function (id) { return mineAddrs[offers[id].address]; });
+    return { mined: mined, balance: balance, sent: sent, top: top, dealsDone: dealsDone, vault: vault, posted: posted, backed: paperMade, networked: relayUp };
+  }
+  function evaluateAchievements() {
+    var m = achMetrics(), newly = [];
+    ACHIEVEMENTS.forEach(function (a) { if (!unlocked[a.id] && a.test(m)) { unlocked[a.id] = Date.now(); newly.push(a); } });
+    if (newly.length) { try { localStorage.setItem(LS_ACH, JSON.stringify(unlocked)); } catch (e) {} }
+    renderAchievements();
+    if (newly.length) {
+      var a = newly[0];
+      if ($('celebrate').className === 'show') toast(a.icon + ' Achievement unlocked: ' + a.title);
+      else celebrate(a.icon + ' Achievement!', a.title + ' — ' + a.desc);
+    }
+  }
+  function renderAchievements() {
+    var got = ACHIEVEMENTS.filter(function (a) { return unlocked[a.id]; }).length;
+    $('achCount').textContent = got + ' / ' + ACHIEVEMENTS.length;
+    $('badges').innerHTML = ACHIEVEMENTS.map(function (a) {
+      return '<div class="badge' + (unlocked[a.id] ? ' on' : '') + '"><div class="bi">' + a.icon + '</div>' +
+        '<div class="bt">' + esc(a.title) + '</div><div class="bd">' + esc(a.desc) + '</div></div>';
+    }).join('');
+  }
+
   /* ---------- mining (time-sliced so the page stays alive) ---------- */
   var mining = null;
   function startMining(wallet) {
@@ -689,7 +823,7 @@
           chain.addBlock(block);
           persist();
           announceChain();
-          toast('⛏ Block #' + block.height + ' mined → ' + fmt(coinbaseValue(block)) + ' to ' + esc(wallet.name));
+          celebrate('⚡ You struck a coin!', 'Block #' + block.height + ' — ' + fmt(coinbaseValue(block)) + ' to ' + wallet.name);
         } catch (err) {
           toast('Block orphaned (another node was faster): ' + err.message);
         }
@@ -829,12 +963,26 @@
     renderMiningStatus();
     renderOffers();
     renderDeals();
+    renderChallenge();
+    evaluateAchievements();
   }
 
   function myAddresses() {
     var set = {};
     wallets.forEach(function (w) { set[w.address] = true; });
     return set;
+  }
+
+  // A live "why play now" hook: half of all coins are only mineable in era one.
+  function renderChallenge() {
+    var el = $('challenge'); if (!el) return;
+    var s = chain.stats(), interval = chain.params.halvingInterval;
+    if (s.height < interval) {
+      var left = interval - s.height;
+      el.innerHTML = '<div><div class="ct">⚡ The Era-One Race</div>' +
+        '<div class="cd">Half of all 21 BLZ can only be mined in the first ' + interval + ' blocks — then the reward halves, forever. Mine now, before your friends do.</div></div>' +
+        '<div class="cn">' + left + ' left</div>';
+    } else { el.innerHTML = ''; }
   }
 
   // A starting-point price list a group can adopt or adapt. Prices are in BLZ.
@@ -1143,6 +1291,7 @@
       '<div class="bar"><button id="paperPrint">🖨 Print</button><button id="paperClose">Close</button></div>';
     pw.style.display = 'block';
     try { document.body.className = 'paper-open'; } catch (err) {}
+    paperMade = true; evaluateAchievements();
   }
   function closePaperWallet() {
     $('paperWallet').style.display = 'none';
@@ -1323,6 +1472,17 @@
 
   $('scanBtn').addEventListener('click', openScanner);
   $('scanClose').addEventListener('click', stopScan);
+
+  $('shareBtn').addEventListener('click', function () {
+    var url = pageBase();
+    var text = 'I’m mining BallrzCoin — a real cryptocurrency where only 21 coins will ever exist. Come mine one in your browser (it’s free and kind of addictive):';
+    if (navigator.share) {
+      navigator.share({ title: 'BallrzCoin (BLZ)', text: text, url: url }).catch(function () {});
+    } else {
+      try { navigator.clipboard.writeText(text + ' ' + url); toast('📣 Share text copied — paste it to a friend'); }
+      catch (err) { toast(url); }
+    }
+  });
 
   /* ---------- guided "How it works" tour ---------- */
   var TOUR = [
