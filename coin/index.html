@@ -144,6 +144,9 @@
   .crow { display: flex; gap: 8px; }
   .crow .chatin { flex: 1; min-width: 0; }
   .chint { font-size: 11px; color: var(--dim); margin-top: 6px; }
+  .climit { font-size: 12px; color: var(--dim); }
+  .climit input { width: 46px; text-align: center; padding: 2px 4px; font-size: 12px; }
+  .climit input.on { color: var(--gold); border-color: rgba(231,182,75,0.5); }
   details.pricelist { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; margin-bottom: 12px; }
   details.pricelist summary { cursor: pointer; color: var(--gold); font-size: 13.5px; list-style: none; font-weight: 600; letter-spacing: 0.2px; }
   details.pricelist summary::-webkit-details-marker { display: none; }
@@ -838,9 +841,29 @@
   try { credits = JSON.parse(localStorage.getItem(LS_CREDITS) || '{}') || {}; } catch (e) { credits = {}; }
   function saveCredits() { try { localStorage.setItem(LS_CREDITS, JSON.stringify(credits)); } catch (e) {} }
   var LS_CREDLIMIT = 'ballrzcoin.credlimit.v1';
-  var mcLimitHours = 10;
+  var mcLimitHours = 10;                                   // group default (hours)
   try { var _cl = parseFloat(localStorage.getItem(LS_CREDLIMIT)); if (_cl > 0) mcLimitHours = _cl; } catch (e) {}
-  function creditLimitBase() { return minutesToBase(mcLimitHours * 60); }
+  // Per-person overrides: address → hours. Shared as a whole map, newest wins.
+  var LS_CREDLIMITS = 'ballrzcoin.credlimits.v1';
+  var credLimits = {}, credLimitsAt = 0;
+  try { var _o = JSON.parse(localStorage.getItem(LS_CREDLIMITS) || '{}') || {}; credLimits = _o.map || {}; credLimitsAt = _o.at || 0; } catch (e) {}
+  function saveCredLimits() { try { localStorage.setItem(LS_CREDLIMITS, JSON.stringify({ map: credLimits, at: credLimitsAt })); } catch (e) {} }
+  function limitHoursFor(addr) { return (credLimits[addr] != null) ? credLimits[addr] : mcLimitHours; }
+  function limitBaseFor(addr) { return minutesToBase(limitHoursFor(addr) * 60); }
+  function creditLimitBase() { return minutesToBase(mcLimitHours * 60); } // legacy default
+  function setCredLimit(addr, hours) {
+    if (hours == null || hours === '' || parseFloat(hours) === mcLimitHours) delete credLimits[addr];
+    else credLimits[addr] = Math.max(0, parseFloat(hours) || 0);
+    credLimitsAt = Date.now(); saveCredLimits();
+    netSend({ type: 'limits', limits: credLimits, at: credLimitsAt });
+    renderMutual();
+  }
+  function ingestLimits(map, at) {
+    if (!map || typeof map !== 'object' || !(at > credLimitsAt)) return false;
+    var clean = {}; Object.keys(map).forEach(function (a) { if (Coin.isValidAddress(a) && map[a] >= 0) clean[a] = Math.min(100000, +map[a]); });
+    credLimits = clean; credLimitsAt = at; saveCredLimits(); return true;
+  }
+  function announceLimits() { if (credLimitsAt > 0) netSend({ type: 'limits', limits: credLimits, at: credLimitsAt }); }
   function creditList() { return Object.keys(credits).map(function (id) { return credits[id]; }); }
   function ingestCredit(tx) {
     if (!tx || !tx.id || !Mutual || !Mutual.verifyCredit(tx) || credits[tx.id]) return false;
@@ -1007,6 +1030,7 @@
       announceDeals();
       announceIdentities();
       announceCredits();
+      announceLimits();
       announceChat();
     } else if (m.type === 'chain') {
       if (chain.replaceChain(m.blocks)) {
@@ -1027,6 +1051,8 @@
         saveCredits(); renderMutual();
         var mineC = myAddresses(); if (m.credit && mineC[m.credit.to]) notif('🤝 Credit received', fmtTime(m.credit.amount) + ' from ' + who(m.credit.from));
       }
+    } else if (m.type === 'limits') {
+      if (ingestLimits(m.limits, m.at)) renderMutual();
     } else if (m.type === 'chat') {
       if (ingestChat(m.chat)) {
         saveChat(); renderDeals(); renderThreads();
@@ -1581,7 +1607,7 @@
     if (!Mutual || !$('mcBalances')) return;
     if ($('mcFrom')) $('mcFrom').innerHTML = wallets.map(function (w, i) { return '<option value="' + i + '">' + esc(w.name) + '</option>'; }).join('');
     if ($('mcLimit') && document.activeElement !== $('mcLimit')) $('mcLimit').value = mcLimitHours;
-    var res = Mutual.applyLedger(creditList(), creditLimitBase());
+    var res = Mutual.applyLedger(creditList(), function (a) { return limitBaseFor(a); });
     var bal = res.balances;
     wallets.forEach(function (w) { if (!(w.address in bal)) bal[w.address] = 0; }); // show my own even at zero
     var mine = myAddresses();
@@ -1590,9 +1616,12 @@
       var col = r.v === 0 ? 'var(--dim)' : (r.v > 0 ? 'var(--green)' : '#ff8f8f');
       var state = r.v > 0 ? (t('mc_owed') || 'the group owes them') : r.v === 0 ? (t('mc_even') || 'even') : (t('mc_owes') || 'they owe the group');
       var sign = r.v > 0 ? '+' : (r.v < 0 ? '−' : '');
+      var custom = credLimits[r.addr] != null;
+      var limEd = '<span class="climit" title="' + (t('mc_limit_of') || 'Credit limit for this person (hours)') + '">' +
+        (t('mc_cap') || 'limit') + ' <input data-credlimit="' + esc(r.addr) + '" inputmode="numeric" value="' + limitHoursFor(r.addr) + '"' + (custom ? ' class="on"' : '') + '>h</span>';
       return '<div class="offercard" style="padding:10px 14px"><div class="main">' +
         '<span class="ttl">' + who(r.addr) + (mine[r.addr] ? ' (you)' : '') + '</span>' +
-        '<div class="by">' + state + '</div></div>' +
+        '<div class="by">' + state + ' · ' + limEd + '</div></div>' +
         '<span style="font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;color:' + col + '">' + sign + fmtTime(Math.abs(r.v)) +
         '<span class="tm" style="-webkit-text-fill-color:var(--dim)">' + sign + fmt(Math.abs(r.v)) + '</span></span></div>';
     }).join('') : '<div class="note">' + (t('mc_empty') || 'No mutual-credit activity yet. Give someone credit for a favour to start — balances appear here, always summing to zero.') + '</div>';
@@ -2217,7 +2246,7 @@
       var amount = unit === 'blz' ? Coin.parseAmount(raw) : minutesToBase(parseFloat(raw) * (unit === 'hours' ? 60 : 1));
       if (!(amount > 0)) throw new Error('Enter a valid amount');
       var myBal = (Mutual.applyLedger(creditList(), Infinity).balances[w.address]) || 0;
-      if (myBal - amount < -creditLimitBase()) throw new Error('That would put you past the ' + mcLimitHours + 'h credit limit — earn some credit back first.');
+      if (myBal - amount < -limitBaseFor(w.address)) throw new Error('That would put you past your ' + limitHoursFor(w.address) + 'h credit limit — earn some credit back first.');
       var tx = Mutual.signCredit({ privKey: w.privateKey, to: to, amount: amount, at: Date.now(), nonce: Math.random().toString(36).slice(2), memo: $('mcMemo').value.trim() });
       ingestCredit(tx); saveCredits(); netSend({ type: 'credit', credit: tx });
       $('mcTo').value = ''; $('mcAmount').value = ''; $('mcMemo').value = '';
@@ -2228,6 +2257,11 @@
   if ($('mcLimit')) $('mcLimit').addEventListener('input', function () {
     var v = parseFloat(this.value);
     if (v > 0) { mcLimitHours = v; try { localStorage.setItem(LS_CREDLIMIT, String(v)); } catch (e) {} renderMutual(); }
+  });
+  // Per-person credit-limit editor (change to commit + share with the group).
+  document.addEventListener('change', function (ev) {
+    var addr = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-credlimit');
+    if (addr) setCredLimit(addr, ev.target.value);
   });
 
   // Mine a block synchronously (the demo target is tiny) — used by gifting so a
@@ -2875,6 +2909,7 @@
   announceDeals();            // share our deal records so reputation converges
   announceIdentities();       // publish our public keys so peers can build multisig vaults
   announceCredits();          // share our mutual-credit transfers so ledgers converge
+  announceLimits();           // share the per-person credit limits (newest wins)
   announceChat();             // share chat messages so threads converge
   decryptAll();               // unseal any encrypted DMs we already hold
 })();

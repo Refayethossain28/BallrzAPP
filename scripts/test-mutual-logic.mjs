@@ -81,6 +81,17 @@ test('credit limit bounds how far negative an account can go', () => {
   assert.equal(M.netSum(res.balances), 0);
 });
 
+test('per-person credit limits via a limitFor(address) function', () => {
+  // alice may go to -1, bob to -5. Each tries to spend 3.
+  const limits = { [alice.address]: 1 * COIN, [bob.address]: 5 * COIN };
+  const limitFor = (addr) => (addr in limits ? limits[addr] : 2 * COIN);
+  const res = M.applyLedger([pay(alice, carol, 3 * COIN), pay(bob, carol, 3 * COIN)], limitFor);
+  // alice's -3 breaks her -1 limit → rejected; bob's -3 is within -5 → applied
+  assert.equal(res.balances[alice.address] || 0, 0, 'alice blocked by her tight limit');
+  assert.equal(res.balances[bob.address], -3 * COIN, 'bob allowed under his higher limit');
+  assert.equal(res.balances[carol.address], 3 * COIN);
+  assert.equal(M.netSum(res.balances), 0);
+});
 test('duplicate transfers are counted once; order is deterministic', () => {
   const tx = pay(alice, bob, 4 * COIN);
   const { balances, applied } = M.applyLedger([tx, tx, { ...tx }], Infinity);
