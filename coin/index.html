@@ -481,6 +481,15 @@
   <input id="dmInput" placeholder="Message…" maxlength="1000" autocomplete="off">
   <button class="primary" type="submit" data-i18n="dm_send">Send</button>
 </form>
+<details class="pricelist" id="rippleWrap">
+  <summary data-i18n="rip_summary">🔗 Link the Ripple messenger (for richer chats: groups, voice notes, disappearing messages)</summary>
+  <div class="row" style="margin-top:8px">
+    <input id="rippleHandle" placeholder="Your Ripple username (optional)" maxlength="24" autocomplete="off">
+    <button id="rippleSave" type="button" data-i18n="rip_save">Save</button>
+    <a href="../ripple/" target="_blank" rel="noopener" style="color:var(--gold);align-self:center" data-i18n="rip_open">Open Ripple ↗</a>
+  </div>
+  <div class="agree" data-i18n="rip_help">Share your Ripple username here and it travels with your identity, so contacts get a “message on Ripple” link. BallrzCoin chat is end-to-end encrypted for 1:1; Ripple adds groups and more if you want them.</div>
+</details>
 <div class="list" id="threads"></div>
 
 <h2><span data-i18n="h_mutual">Mutual credit</span> <span class="rep">beta</span></h2>
@@ -792,16 +801,18 @@
   var directory = {};
   try { directory = JSON.parse(localStorage.getItem(LS_DIR) || '{}') || {}; } catch (err) { directory = {}; }
   function saveDir() { try { localStorage.setItem(LS_DIR, JSON.stringify(directory)); } catch (err) {} }
-  function registerIdentity(address, pubKey, name) {
+  function registerIdentity(address, pubKey, name, ripple) {
     if (!pubKey || !Coin.isValidAddress(address)) return false;
     if (Coin.addressFromPublicKey(pubKey) !== address) return false; // pubkey must match address
     var ex = directory[address];
-    if (ex && ex.pubKey === pubKey && (!name || ex.name === name)) return false;
-    directory[address] = { pubKey: pubKey, name: String(name || (ex && ex.name) || '').slice(0, 24) };
+    var rip = ripple != null ? String(ripple).replace(/[^a-z0-9_]/gi, '').slice(0, 24) : (ex && ex.ripple) || '';
+    if (ex && ex.pubKey === pubKey && (!name || ex.name === name) && ex.ripple === rip) return false;
+    directory[address] = { pubKey: pubKey, name: String(name || (ex && ex.name) || '').slice(0, 24), ripple: rip };
     saveDir();
     return true;
   }
   function knownPubKey(address) { return directory[address] && directory[address].pubKey; }
+  function knownRipple(address) { return directory[address] && directory[address].ripple; }
   // Resolve a typed name/address to a known address (one whose pubkey we hold).
   function resolveContact(q) {
     q = String(q || '').trim();
@@ -811,8 +822,11 @@
     var hits = Object.keys(directory).filter(function (a) { return (directory[a].name || '').toLowerCase() === ql; });
     return hits.length === 1 ? hits[0] : null;
   }
+  var LS_RIPPLE = 'ballrzcoin.ripple.v1';
+  var myRipple = '';
+  try { myRipple = localStorage.getItem(LS_RIPPLE) || ''; } catch (e) {}
   function announceIdentities() {
-    wallets.forEach(function (w) { netSend({ type: 'id', address: w.address, pubKey: w.publicKey, name: w.name }); });
+    wallets.forEach(function (w) { netSend({ type: 'id', address: w.address, pubKey: w.publicKey, name: w.name, ripple: myRipple }); });
   }
 
   // ---- Mutual credit: a net-zero signed-IOU ledger that runs alongside the
@@ -1027,7 +1041,7 @@
         }
       }
     } else if (m.type === 'id') {
-      if (registerIdentity(m.address, m.pubKey, m.name)) renderDeals();
+      if (registerIdentity(m.address, m.pubKey, m.name, m.ripple)) { renderDeals(); renderThreads(); }
     }
   }
 
@@ -1741,10 +1755,12 @@
           '<button class="primary" data-dm-send="' + esc(other) + '" data-dm-thread="' + esc(tid) + '">' + (t('chat_send') || 'Send') + '</button></div>' +
           '<div class="chint">🔒 ' + (t('dm_e2e') || 'End-to-end encrypted — only you two can read this.') + '</div></div>';
       }
+      var rip = knownRipple(other);
+      var ripLink = rip ? '<a href="../ripple/?add=' + encodeURIComponent(rip) + '" target="_blank" rel="noopener" title="Message on Ripple" style="color:var(--gold);align-self:center;margin-right:8px">💬 Ripple ↗</a>' : '';
       return '<div class="offercard"><div class="main">' +
         '<div class="ttl">' + who(other) + '</div>' +
         '<div class="by">' + esc((mine[last.from] ? (t('chat_you') || 'You') + ': ' : '') + chatText(last)).slice(0, 60) + '</div>' +
-        '</div><button data-thread-toggle="' + esc(tid) + '">' + (open ? '▾' : '💬') + '</button>' + body + '</div>';
+        '</div>' + ripLink + '<button data-thread-toggle="' + esc(tid) + '">' + (open ? '▾' : '💬') + '</button>' + body + '</div>';
     }).join('') : '<div class="note">' + (t('dm_empty') || 'No messages yet. Message a contact above — it’s end-to-end encrypted.') + '</div>';
   }
   function myDealWallet(d) {
@@ -2176,6 +2192,14 @@
     ev.preventDefault();
     sendDM($('dmTo').value, $('dmInput').value);
     $('dmInput').value = ''; $('dmTo').value = '';
+  });
+  if ($('rippleHandle')) $('rippleHandle').value = myRipple;
+  if ($('rippleSave')) $('rippleSave').addEventListener('click', function () {
+    myRipple = String($('rippleHandle').value || '').replace(/[^a-z0-9_]/gi, '').slice(0, 24);
+    try { localStorage.setItem(LS_RIPPLE, myRipple); } catch (e) {}
+    $('rippleHandle').value = myRipple;
+    announceIdentities();  // republish my identity with the handle
+    toast(myRipple ? '🔗 Ripple username shared with your contacts' : 'Ripple username cleared');
   });
 
   // Mutual-credit: give credit for a favour (a signed IOU that nets to zero).
