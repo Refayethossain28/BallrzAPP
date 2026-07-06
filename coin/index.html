@@ -472,6 +472,17 @@
 <div class="sub">A payment plus a promise. <b>Pay</b> pays the seller directly, then you confirm you got it. <b>🛡 Escrow</b> pays a trusted third party who releases to the seller once you confirm — protection if you don’t fully trust them yet. Confirming delivery builds the seller’s ✓ reputation. Tap <b>💬</b> on any deal to <b>chat</b> with the other party — arrange the details, and keep a signed record if there’s ever a dispute.</div>
 <div class="list" id="deals"></div>
 
+<h2><span data-i18n="h_messages">💬 Messages</span> <span class="rep">🔒 end-to-end</span></h2>
+<div class="sub" data-i18n="dm_intro">Private 1:1 chat with your contacts, <b>end-to-end encrypted</b> with your wallet keys — only you and they can read it, not even the relay. You can message anyone who has used the app (so their key is known).</div>
+<form class="send" id="dmForm">
+  <select id="dmFrom" title="Message as which wallet"></select>
+  <input id="dmTo" placeholder="Message whom? (address B… or a known name)" list="contactList" autocomplete="off">
+  <datalist id="contactList"></datalist>
+  <input id="dmInput" placeholder="Message…" maxlength="1000" autocomplete="off">
+  <button class="primary" type="submit" data-i18n="dm_send">Send</button>
+</form>
+<div class="list" id="threads"></div>
+
 <h2><span data-i18n="h_mutual">Mutual credit</span> <span class="rep">beta</span></h2>
 <div class="sub" data-i18n="mc_intro">The other way to run a community currency: <b>no mining, no fixed supply</b>. Everyone starts at zero; paying someone moves you negative and them positive, so all balances always sum to zero. “Money” appears the moment a favour is done. A shared <b>credit limit</b> caps how far below zero anyone can go — an interest-free overdraft you extend each other.</div>
 <div class="timebank" id="mcPanel">
@@ -1004,10 +1015,15 @@
       }
     } else if (m.type === 'chat') {
       if (ingestChat(m.chat)) {
-        saveChat(); renderDeals();
-        var cm = m.chat, d = deals[cm.dealId], mineCh = myAddresses();
-        if (d && !mineCh[cm.from] && (mineCh[d.buyer] || mineCh[d.seller] || (d.agent && mineCh[d.agent]) || myPartyPubs(d).length) && !notifiedChat[cm.id]) {
-          notifiedChat[cm.id] = 1; notif('💬 ' + (cm.name || who(cm.from)), cm.text);
+        saveChat(); renderDeals(); renderThreads();
+        var cm = chat[m.chat.id] || m.chat, mineCh = myAddresses();
+        if (cm && !mineCh[cm.from] && !notifiedChat[cm.id]) {
+          if (isDm(cm.dealId)) {
+            if (mineCh[cm.to]) { notifiedChat[cm.id] = 1; notif('💬 ' + (cm.name || who(cm.from)), '🔒 ' + (t('dm_new') || 'New encrypted message')); }
+          } else {
+            var d = deals[cm.dealId];
+            if (d && (mineCh[d.buyer] || mineCh[d.seller] || (d.agent && mineCh[d.agent]) || myPartyPubs(d).length)) { notifiedChat[cm.id] = 1; notif('💬 ' + (cm.name || who(cm.from)), cm.text); }
+          }
         }
       }
     } else if (m.type === 'id') {
@@ -1347,6 +1363,7 @@
     renderMutual();
     renderHelpers();
     renderDeals();
+    renderThreads();
     renderChallenge();
     evaluateAchievements();
   }
@@ -1598,23 +1615,138 @@
   function saveChat() { try { localStorage.setItem(LS_CHAT, JSON.stringify(chat)); } catch (e) {} }
   var chatOpen = {}, chatDraft = {}, notifiedChat = {};
   var SEP = String.fromCharCode(1);
-  function chatCanonical(m) { return [m.dealId, m.from, m.at, m.nonce, m.text].join(SEP); }
+  // A chat message carries either plaintext `text` (deal coordination, multi-party)
+  // or an end-to-end encrypted `enc:{iv,ct}` payload (direct 1:1 messages). Both are
+  // SIGNED over the same canonical form so authorship is always verifiable.
+  function chatBody(m) { return m.enc ? ('E' + m.enc.iv + '.' + m.enc.ct) : ('P' + (m.text || '')); }
+  function chatCanonical(m) { return [m.dealId, m.from, m.to || '', m.at, m.nonce, chatBody(m)].join(SEP); }
   function chatVerify(m) {
     if (!m || !m.id || !m.dealId || !Coin.isValidAddress(m.from)) return false;
-    if (typeof m.text !== 'string' || !m.text.trim() || m.text.length > 500) return false;
+    var hasBody = (m.enc && m.enc.iv && m.enc.ct) || (typeof m.text === 'string' && m.text.trim());
+    if (!hasBody) return false;
+    if (typeof m.text === 'string' && m.text.length > 2000) return false;
+    if (m.to && !Coin.isValidAddress(m.to)) return false;
     if (!m.pubKey || Coin.addressFromPublicKey(m.pubKey) !== m.from) return false;
     try { return Coin.verify(Coin.sha256(chatCanonical(m)), m.sig, m.pubKey); } catch (e) { return false; }
   }
   function ingestChat(m) {
     if (!chatVerify(m) || chat[m.id]) return false;
-    chat[m.id] = { id: m.id, dealId: String(m.dealId).slice(0, 60), from: m.from, name: String(m.name || '').slice(0, 24), text: String(m.text).slice(0, 500), at: Number(m.at) || 0, nonce: String(m.nonce), pubKey: m.pubKey, sig: m.sig };
-    if (m.pubKey) registerIdentity(m.from, m.pubKey, m.name);
+    var rec = { id: m.id, dealId: String(m.dealId).slice(0, 90), from: m.from, to: (m.to && Coin.isValidAddress(m.to)) ? m.to : '', name: String(m.name || '').slice(0, 24), at: Number(m.at) || 0, nonce: String(m.nonce), pubKey: m.pubKey, sig: m.sig };
+    if (m.enc) rec.enc = { iv: String(m.enc.iv).slice(0, 40), ct: String(m.enc.ct).slice(0, 4000) };
+    else rec.text = String(m.text).slice(0, 2000);
+    chat[m.id] = rec;
+    if (m.pubKey) registerIdentity(m.from, m.pubKey, null);
     var ids = Object.keys(chat);
     if (ids.length > 1000) { ids.sort(function (a, b) { return chat[a].at - chat[b].at; }); while (ids.length > 1000) delete chat[ids.shift()]; }
+    maybeDecrypt(rec);
     return true;
   }
   function chatFor(dealId) { return Object.keys(chat).map(function (id) { return chat[id]; }).filter(function (m) { return m.dealId === dealId; }).sort(function (a, b) { return a.at - b.at; }); }
+  function chatText(m) { return m.enc ? (m._plain !== undefined ? m._plain : '🔒 …') : m.text; }
   function announceChat() { Object.keys(chat).forEach(function (id) { netSend({ type: 'chat', chat: chat[id] }); }); }
+
+  // ---- End-to-end encryption for direct messages: an AES-GCM key derived from
+  // the ECDH secret between the two wallets, so only sender and recipient can
+  // read them — not the relay, not anyone else. ----
+  function e2eKeyBytes(myPriv, otherPub) {
+    var secretHex = Coin.ecdh(myPriv, otherPub);               // 32-byte shared x-coord
+    var keyHex = Coin.sha256(Coin.hexToBytes(secretHex));       // hash it into an AES key
+    return Coin.hexToBytes(keyHex);
+  }
+  function importAes(keyBytes) { return crypto.subtle.importKey('raw', new Uint8Array(keyBytes), 'AES-GCM', false, ['encrypt', 'decrypt']); }
+  function e2eEncrypt(myPriv, otherPub, plaintext) {
+    var iv = crypto.getRandomValues(new Uint8Array(12));
+    return importAes(e2eKeyBytes(myPriv, otherPub)).then(function (k) {
+      return crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, k, new TextEncoder().encode(plaintext));
+    }).then(function (ct) { return { iv: b64(iv), ct: b64(new Uint8Array(ct)) }; });
+  }
+  function e2eDecrypt(myPriv, otherPub, enc) {
+    return importAes(e2eKeyBytes(myPriv, otherPub)).then(function (k) {
+      return crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(enc.iv) }, k, unb64(enc.ct));
+    }).then(function (pt) { return new TextDecoder().decode(pt); });
+  }
+  // Decrypt an encrypted message addressed to (or sent by) me, caching the
+  // plaintext on the record and re-rendering when it lands.
+  function maybeDecrypt(rec) {
+    if (!rec.enc || rec._plain !== undefined) return;
+    if (!canEncrypt) { rec._plain = '🔒 (encrypted — not supported in this browser)'; return; }
+    var mine = myAddresses();
+    var myAddr = mine[rec.to] ? rec.to : (mine[rec.from] ? rec.from : null);
+    if (!myAddr) return;                                        // not addressed to me — leave sealed
+    var myW = wallets.filter(function (w) { return w.address === myAddr; })[0]; if (!myW) return;
+    var otherPub = (rec.from === myAddr) ? knownPubKey(rec.to) : rec.pubKey; // counterparty's key
+    if (!otherPub) { rec._plain = '🔒 (no key on file for the other party yet)'; return; }
+    e2eDecrypt(myW.privateKey, otherPub, rec.enc)
+      .then(function (pt) { rec._plain = pt; if (typeof renderThreads === 'function') renderThreads(); renderDeals(); })
+      .catch(function () { rec._plain = '🔒 (could not decrypt)'; });
+  }
+  function decryptAll() { Object.keys(chat).forEach(function (id) { maybeDecrypt(chat[id]); }); }
+
+  // Direct-message threads: a stable id from the sorted pair of addresses.
+  function dmThread(a, b) { return 'dm:' + [a, b].sort().join(':'); }
+  function isDm(threadId) { return String(threadId).indexOf('dm:') === 0; }
+  function dmResolve(q) { q = String(q || '').trim(); if (Coin.isValidAddress(q)) return q; return resolveContact(q); }
+  function knownContacts() {
+    var mine = myAddresses();
+    return Object.keys(directory).filter(function (a) { return !mine[a] && directory[a].pubKey; });
+  }
+  var threadOpen = {};
+  function sendDM(toAddr, text, wallet) {
+    toAddr = dmResolve(toAddr); text = String(text || '').trim();
+    if (!toAddr || !text) return;
+    var w = wallet || wallets[Number(($('dmFrom') || {}).value || 0)] || wallets[0];
+    if (!w) return;
+    if (toAddr === w.address) { toast('You can’t message yourself'); return; }
+    var pub = knownPubKey(toAddr);
+    if (!pub) { toast('You can only message contacts who’ve used the app (their key must be known). Ask them to open BallrzCoin once, then send you a message or an offer.'); return; }
+    if (!canEncrypt) { toast('Encrypted chat needs a secure context (https)'); return; }
+    e2eEncrypt(w.privateKey, pub, text).then(function (enc) {
+      var thread = dmThread(w.address, toAddr);
+      var m = { dealId: thread, from: w.address, to: toAddr, name: w.name, at: Date.now(), nonce: Math.random().toString(36).slice(2), pubKey: w.publicKey, enc: enc };
+      m.sig = Coin.sign(Coin.sha256(chatCanonical(m)), w.privateKey);
+      m.id = Coin.sha256d(chatCanonical(m) + SEP + m.sig);
+      ingestChat(m); saveChat(); netSend({ type: 'chat', chat: m });
+      threadOpen[thread] = true; chatDraft[thread] = '';
+      renderThreads();
+    }).catch(function () { toast('✖ Could not encrypt message'); });
+  }
+  function renderThreads() {
+    if (!$('threads')) return;
+    if ($('dmFrom')) $('dmFrom').innerHTML = wallets.map(function (w, i) { return '<option value="' + i + '">' + esc(w.name) + '</option>'; }).join('');
+    if ($('contactList')) $('contactList').innerHTML = knownContacts().map(function (a) { return '<option value="' + esc(directory[a].name || a) + '">' + esc(short(a, 10)) + '</option>'; }).join('');
+    var mine = myAddresses(), threads = {};
+    Object.keys(chat).forEach(function (id) {
+      var m = chat[id]; if (!isDm(m.dealId) || !(mine[m.from] || mine[m.to])) return;
+      (threads[m.dealId] = threads[m.dealId] || []).push(m);
+    });
+    var tids = Object.keys(threads).sort(function (a, b) {
+      var la = threads[a].reduce(function (x, m) { return Math.max(x, m.at); }, 0);
+      var lb = threads[b].reduce(function (x, m) { return Math.max(x, m.at); }, 0);
+      return lb - la;
+    });
+    $('threads').innerHTML = tids.length ? tids.map(function (tid) {
+      var msgs = threads[tid].slice().sort(function (a, b) { return a.at - b.at; });
+      var parts = tid.slice(3).split(':'); var other = mine[parts[0]] ? parts[1] : parts[0];
+      var last = msgs[msgs.length - 1];
+      var open = threadOpen[tid];
+      var body = '';
+      if (open) {
+        var lines = msgs.map(function (m) {
+          var meMsg = mine[m.from];
+          return '<div class="cmsg' + (meMsg ? ' me' : '') + '"><span class="cwho">' + (meMsg ? (t('chat_you') || 'You') : esc(m.name || who(m.from))) + '</span>' +
+            esc(chatText(m)) + '<span class="ctime">' + new Date(m.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</span></div>';
+        }).join('');
+        body = '<div class="chatwrap" style="border-top:0;margin-top:8px"><div class="cthread">' + lines + '</div>' +
+          '<div class="crow"><input class="chatin" data-dm-input="' + esc(tid) + '" placeholder="' + (t('chat_ph') || 'Message…') + '" value="' + esc(chatDraft[tid] || '') + '" maxlength="1000" autocomplete="off">' +
+          '<button class="primary" data-dm-send="' + esc(other) + '" data-dm-thread="' + esc(tid) + '">' + (t('chat_send') || 'Send') + '</button></div>' +
+          '<div class="chint">🔒 ' + (t('dm_e2e') || 'End-to-end encrypted — only you two can read this.') + '</div></div>';
+      }
+      return '<div class="offercard"><div class="main">' +
+        '<div class="ttl">' + who(other) + '</div>' +
+        '<div class="by">' + esc((mine[last.from] ? (t('chat_you') || 'You') + ': ' : '') + chatText(last)).slice(0, 60) + '</div>' +
+        '</div><button data-thread-toggle="' + esc(tid) + '">' + (open ? '▾' : '💬') + '</button>' + body + '</div>';
+    }).join('') : '<div class="note">' + (t('dm_empty') || 'No messages yet. Message a contact above — it’s end-to-end encrypted.') + '</div>';
+  }
   function myDealWallet(d) {
     var set = {}; [d.buyer, d.seller, d.agent, d.arbiter].forEach(function (a) { if (a) set[a] = 1; });
     for (var i = 0; i < wallets.length; i++) if (set[wallets[i].address]) return wallets[i];
@@ -1750,6 +1882,10 @@
     if (chatToggle) { chatOpen[chatToggle] = !chatOpen[chatToggle]; renderDeals(); return; }
     var chatSend = t.getAttribute('data-chat-send');
     if (chatSend) { sendChat(chatSend); return; }
+    var threadToggle = t.getAttribute('data-thread-toggle');
+    if (threadToggle) { threadOpen[threadToggle] = !threadOpen[threadToggle]; renderThreads(); return; }
+    var dmSend = t.getAttribute('data-dm-send');
+    if (dmSend) { var tid = t.getAttribute('data-dm-thread'); var inp = document.querySelector('[data-dm-input="' + tid + '"]'); sendDM(dmSend, inp ? inp.value : chatDraft[tid]); return; }
     var mineIdx = t.getAttribute('data-mine');
     if (mineIdx !== null && mineIdx !== undefined && mineIdx !== '') {
       startMining(wallets[Number(mineIdx)]);
@@ -2024,13 +2160,22 @@
   // Per-deal chat inputs: remember the draft (so an incoming message mid-typing
   // doesn't wipe it) and send on Enter.
   document.addEventListener('input', function (ev) {
-    var id = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-chat-input');
-    if (id) chatDraft[id] = ev.target.value;
+    var el = ev.target; if (!el || !el.getAttribute) return;
+    var id = el.getAttribute('data-chat-input'); if (id) chatDraft[id] = el.value;
+    var dm = el.getAttribute('data-dm-input'); if (dm) chatDraft[dm] = el.value;
   });
   document.addEventListener('keydown', function (ev) {
     if (ev.key !== 'Enter') return;
-    var id = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-chat-input');
-    if (id) { ev.preventDefault(); sendChat(id); }
+    var el = ev.target; if (!el || !el.getAttribute) return;
+    var id = el.getAttribute('data-chat-input'); if (id) { ev.preventDefault(); sendChat(id); return; }
+    var dmTid = el.getAttribute('data-dm-input');
+    if (dmTid) { ev.preventDefault(); var parts = dmTid.slice(3).split(':'); var mineA = myAddresses(); var other = mineA[parts[0]] ? parts[1] : parts[0]; sendDM(other, el.value); return; }
+    if (el.id === 'dmInput') { ev.preventDefault(); $('dmForm').requestSubmit ? $('dmForm').requestSubmit() : sendDM($('dmTo').value, el.value); }
+  });
+  if ($('dmForm')) $('dmForm').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    sendDM($('dmTo').value, $('dmInput').value);
+    $('dmInput').value = ''; $('dmTo').value = '';
   });
 
   // Mutual-credit: give credit for a favour (a signed IOU that nets to zero).
@@ -2706,7 +2851,8 @@
   announceDeals();            // share our deal records so reputation converges
   announceIdentities();       // publish our public keys so peers can build multisig vaults
   announceCredits();          // share our mutual-credit transfers so ledgers converge
-  announceChat();             // share deal-chat messages so threads converge
+  announceChat();             // share chat messages so threads converge
+  decryptAll();               // unseal any encrypted DMs we already hold
 })();
 </script>
 </body>
