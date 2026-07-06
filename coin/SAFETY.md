@@ -106,6 +106,31 @@ The fingerprint changes with every genuine release, so there is no single
 permanent number — it's a way to spot *unexpected* changes and to confirm you
 and the people you trade with are running identical code.
 
+### Current release fingerprint
+
+> **`8b5e-874e-a9a1-ef29`**
+>
+> Full SHA-256: `8b5e874ea9a1ef29f2947f6ab7e99230a6d80fa8a744ee77eb0ac79fb76a81d2`
+
+This is the fingerprint for the **current published version** of BallrzCoin. Open
+**🔒 Key security → Code fingerprint** in the app and check the short value
+matches the one above. If it does, you're running the genuine, unmodified code.
+If it doesn't — and you know you're on the current release — stop and don't enter
+your keys.
+
+This block is updated whenever a new version ships (the app's code changes, so
+its fingerprint changes too). It's published here in the project's source, on a
+channel separate from wherever you run the app, so a tampered copy of the app
+can't fake it. You can regenerate it yourself from a checkout with:
+
+```
+cd coin && node -e 'const{readFileSync}=require("fs"),{createHash}=require("crypto");
+const f=["index.html","engine.js","mutual.js","config.js","qr.js","wordlist.js","i18n.js"];
+const j=f.map(n=>n+"\n"+readFileSync(n,"utf8")).join("\n");
+const h=createHash("sha256").update(Buffer.from(j,"utf8")).digest("hex");
+console.log(h.slice(0,4)+"-"+h.slice(4,8)+"-"+h.slice(8,12)+"-"+h.slice(12,16));'
+```
+
 ---
 
 ## What the app can and can't protect you from
