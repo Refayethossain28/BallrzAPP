@@ -405,15 +405,25 @@
     <option value="minutes">minutes</option>
     <option value="blz">BLZ</option>
   </select>
+  <select id="offerCat" title="Category"></select>
+  <input id="offerCircle" placeholder="Circle / group (optional)" maxlength="24" autocomplete="off">
   <input id="offerDesc" placeholder="Details (optional)" maxlength="240" autocomplete="off">
   <div class="offerhint" id="offerHint"></div>
   <button class="primary" type="submit">Post offer</button>
 </form>
+<div class="row" id="offerFilters">
+  <input id="offerSearch" placeholder="🔎 Search offers, people, circles…" autocomplete="off" style="flex:1;min-width:160px">
+  <select id="offerFilter"></select>
+</div>
 <div class="list" id="offers"></div>
 
 <h2>Deals <span id="dealsCount"></span></h2>
 <div class="sub">A payment plus a promise. <b>Pay</b> pays the seller directly, then you confirm you got it. <b>🛡 Escrow</b> pays a trusted third party who releases to the seller once you confirm — protection if you don’t fully trust them yet. Confirming delivery builds the seller’s ✓ reputation.</div>
 <div class="list" id="deals"></div>
+
+<h2>Top helpers <span id="helpersHint" class="rep"></span></h2>
+<div class="sub">Who’s done the most favours — ranked by completed deals. Reputation you earn by showing up.</div>
+<div class="list" id="helpers"></div>
 
 <h2>Leaderboard</h2>
 <div class="list" id="richlist"></div>
@@ -720,6 +730,7 @@
     offers[o.id] = {
       id: String(o.id).slice(0, 60), address: o.address, name: String(o.name || '').slice(0, 24),
       title: String(o.title).slice(0, 80), desc: String(o.desc || '').slice(0, 240),
+      category: String(o.category || '').slice(0, 24), circle: String(o.circle || '').slice(0, 24),
       price: Math.floor(o.price), pubKey: (o.pubKey && knownPubKey(o.address) === o.pubKey) ? o.pubKey : (knownPubKey(o.address) || null),
       at: Number(o.at) || 0
     };
@@ -1210,6 +1221,7 @@
 
     renderMiningStatus();
     renderOffers();
+    renderHelpers();
     renderDeals();
     renderChallenge();
     evaluateAchievements();
@@ -1344,13 +1356,33 @@
     renderTimeBank(); renderPriceList(); renderOffers(); updateOfferHint();
   }
 
+  // Offer categories — a fixed set so the filter stays tidy across the network.
+  var OFFER_CATS = ['🍽 Food', '🚗 Transport', '🧰 Help', '🏠 Home', '📚 Learning', '💻 Tech', '🎨 Creative', '🐾 Pets', '✨ Other'];
+  function renderOfferControls() {
+    if ($('offerCat') && !$('offerCat').options.length) {
+      $('offerCat').innerHTML = OFFER_CATS.map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join('');
+    }
+    if ($('offerFilter') && !$('offerFilter').options.length) {
+      $('offerFilter').innerHTML = '<option value="">All categories</option>' +
+        OFFER_CATS.map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join('');
+    }
+  }
+  function offerMatches(o, q, cat) {
+    if (cat && o.category !== cat) return false;
+    if (!q) return true;
+    var hay = (o.title + ' ' + (o.desc || '') + ' ' + (o.name || '') + ' ' + (o.category || '') + ' ' + (o.circle || '')).toLowerCase();
+    return hay.indexOf(q) >= 0;
+  }
   function renderOffers() {
+    renderOfferControls();
     $('offerFrom').innerHTML = wallets.map(function (w, i) {
       return '<option value="' + i + '">' + esc(w.name) + '</option>';
     }).join('');
     var mine = myAddresses();
-    var list = Object.keys(offers).map(function (id) { return offers[id]; })
-      .sort(function (a, b) { return b.at - a.at; });
+    var q = ($('offerSearch') ? $('offerSearch').value : '').trim().toLowerCase();
+    var cat = $('offerFilter') ? $('offerFilter').value : '';
+    var all = Object.keys(offers).map(function (id) { return offers[id]; }).sort(function (a, b) { return b.at - a.at; });
+    var list = all.filter(function (o) { return offerMatches(o, q, cat); });
     $('offers').innerHTML = list.length ? list.map(function (o) {
       var isMine = mine[o.address];
       var action = isMine
@@ -1358,12 +1390,34 @@
         : '<button class="primary" data-pay-offer="' + esc(o.id) + '">Pay ' + fmtTime(o.price) + '</button>' +
           '<button data-escrow-offer="' + esc(o.id) + '" title="Pay a trusted third party who releases once you confirm">🛡 Trusted</button>' +
           '<button data-vault-offer="' + esc(o.id) + '" title="Lock funds in a 2-of-3 vault only you, the seller and an arbiter can open">🔐 Vault</button>';
+      var tags = (o.category ? '<span class="rep" style="color:var(--dim)">' + esc(o.category) + '</span> ' : '') +
+        (o.circle ? '<span class="rep" style="color:var(--gold)">◇ ' + esc(o.circle) + '</span>' : '');
       return '<div class="offercard"><div class="main">' +
         '<div class="ttl">' + esc(o.title) + '</div>' +
         (o.desc ? '<div class="dsc">' + esc(o.desc) + '</div>' : '') +
-        '<div class="by">by ' + who(o.address) + (isMine ? ' (you)' : '') + repBadge(o.address) + '</div>' +
+        '<div class="by">by ' + who(o.address) + (isMine ? ' (you)' : '') + repBadge(o.address) + (tags ? ' · ' + tags : '') + '</div>' +
         '</div><span class="prc">' + fmtTime(o.price) + '<span class="tm">' + fmt(o.price) + '</span></span>' + action + '</div>';
-    }).join('') : '<div class="note">No offers yet — post the first one above (“🚗 Lift into town — 30m”).</div>';
+    }).join('') : '<div class="note">' + (all.length ? 'No offers match your search.' : 'No offers yet — post the first one above (“🚗 Lift into town — 30m”).') + '</div>';
+  }
+
+  // Top helpers — community reputation leaderboard by completed (released) deals.
+  function renderHelpers() {
+    var el = $('helpers'); if (!el) return;
+    var tally = {};
+    Object.keys(deals).forEach(function (id) {
+      var d = deals[id];
+      if (d.status === 'released' && d.seller) tally[d.seller] = (tally[d.seller] || 0) + 1;
+    });
+    var ranked = Object.keys(tally).map(function (a) { return { addr: a, n: tally[a] }; })
+      .sort(function (a, b) { return b.n - a.n; }).slice(0, 10);
+    var mine = myAddresses();
+    el.innerHTML = ranked.length ? ranked.map(function (r, i) {
+      var medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1) + '.';
+      return '<div class="offercard" style="padding:10px 14px">' +
+        '<div class="main"><span class="ttl">' + medal + ' ' + who(r.addr) + (mine[r.addr] ? ' (you)' : '') + '</span></div>' +
+        '<span class="rep">✓ ' + r.n + ' favour' + (r.n === 1 ? '' : 's') + ' done</span></div>';
+    }).join('') : '<div class="note">No completed favours yet — confirm a delivered deal to put someone on the board.</div>';
+    if ($('helpersHint')) $('helpersHint').textContent = ranked.length ? '' : '';
   }
 
   function sigCount(deal) { return deal.proposal && deal.proposal.sigs ? Object.keys(deal.proposal.sigs).length : 0; }
@@ -1751,6 +1805,8 @@
     selectedBlockHeight = Number(this.value);
     showSelectedBlock();
   });
+  if ($('offerSearch')) $('offerSearch').addEventListener('input', renderOffers);
+  if ($('offerFilter')) $('offerFilter').addEventListener('change', renderOffers);
 
   // Payment requests / invoices: build a "?pay=…&amt=…&for=…" link + QR that
   // anyone can open to have the send form pre-filled with your address, the
@@ -1838,12 +1894,14 @@
       if (!(price > 0)) throw new Error('Set a price — in hours, minutes or BLZ');
       var o = {
         id: w.address.slice(0, 8) + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7),
-        address: w.address, name: w.name, title: title, desc: desc, price: price, pubKey: w.publicKey, at: Date.now()
+        address: w.address, name: w.name, title: title, desc: desc, price: price, pubKey: w.publicKey,
+        category: $('offerCat') ? $('offerCat').value : '', circle: $('offerCircle') ? $('offerCircle').value.trim() : '',
+        at: Date.now()
       };
       ingestOffer(o);
       saveOffers();
       netSend({ type: 'offer', offer: o });
-      $('offerTitle').value = ''; $('offerDesc').value = ''; $('offerPrice').value = '';
+      $('offerTitle').value = ''; $('offerDesc').value = ''; $('offerPrice').value = ''; $('offerCircle').value = '';
       updateOfferHint();
       renderOffers();
       toast('📣 Offer posted: ' + title + ' (' + fmtTime(o.price) + ')');
