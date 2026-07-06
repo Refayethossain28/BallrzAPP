@@ -43,7 +43,7 @@ compares to banks and cash).
 - **Real crypto from scratch, zero dependencies:** SHA-256 (FIPS 180-4), ECDSA on
   secp256k1 with RFC 6979 deterministic signatures, a UTXO ledger, merkle trees,
   proof-of-work mining with difficulty retargeting, halving rewards, fork choice
-  by cumulative work. **47 unit tests** against published vectors (41 chain + 6
+  by cumulative work. **49 unit tests** against published vectors (42 chain + 7
   mutual-credit).
 - **A currency for time and favours (a time bank):** price favours in hours; a
   barter board with categories, search and circles; a "Top helpers" reputation
@@ -57,6 +57,15 @@ compares to banks and cash).
   point-of-sale "charge" screen, incoming-payment notifications, and a
   **🎁 invite flow that hands a newcomer a starting balance** so they're never
   stuck at zero.
+- **You can't lose your coins by accident:** one-tap **encrypted backup file**
+  (and restore) of every wallet, a persistent nudge until you've backed up (it
+  turns urgent once you actually hold BLZ), and guard rails that stop you wiping
+  unbacked wallets. Losing access is the #1 way people lose crypto — this app
+  actively fights it.
+- **Verify you're on the real app:** a live **code fingerprint** hashes the exact
+  code your browser loaded, and the matching value is published in `SAFETY.md`.
+  If they don't match, you're not on the genuine app — a real defence against
+  lookalike/phishing copies, and an unusually honest thing to ship.
 - **Global from day one:** the UI runs in **9 languages** (including Arabic RTL).
 - **Runs a real network:** deploy one file (`server.mjs`) and multiple devices
   sync; multiple relays with failover so it's not one point of failure.
@@ -66,6 +75,9 @@ compares to banks and cash).
 - [ ] Open the Pages link on **your own phone** fresh — mine a block, send a
       coin, take the tour, and **install it to your home screen**. Make sure it
       feels good cold.
+- [ ] **Save a backup and test-restore it** once yourself, so you can speak to it
+      confidently — and confirm the **code fingerprint** in-app matches the value
+      in `SAFETY.md` (that value: `8b5e-874e-a9a1-ef29` for the current release).
 - [ ] Confirm the link **unfurls** a preview card when pasted into a chat (OG
       tags + share card are wired into the page).
 - [ ] Have a **5-second screen recording** ready (mine-a-block, or the
@@ -82,7 +94,7 @@ compares to banks and cash).
 > dependencies: SHA-256 from the FIPS spec, ECDSA on secp256k1 (Bitcoin's curve)
 > with RFC 6979 signatures, a UTXO ledger, merkle trees, proof-of-work mining
 > with difficulty retargeting, halving rewards, and fork choice by cumulative
-> work. 47 unit tests against published vectors.
+> work. 49 unit tests against published vectors.
 >
 > Then I turned it into something usable: a currency for **time and favours**.
 > One coin ≈ an hour of a favour; there's a barter board, a point-of-sale
@@ -118,7 +130,7 @@ questions — that's the audience.)*
 > **I built a full proof-of-work blockchain from raw bytes, zero dependencies, runs in the browser**
 >
 > secp256k1 ECDSA with RFC 6979, UTXO model, merkle trees, difficulty
-> retargeting, cumulative-work fork choice, 47 tests against published vectors.
+> retargeting, cumulative-work fork choice, 49 tests against published vectors.
 > Two tabs behave as two nodes. It's wired into a real community currency for
 > time and favours (installable PWA, mutual-credit mode, 9 languages). Writeup +
 > live demo: [link]. Honest and non-hype — no token sale, no price, nothing to
@@ -143,7 +155,7 @@ skip it, it's the wrong crowd anyway.)*
 > your home screen. No bank, no fees, nothing to buy. 🧵
 >
 > 2/ It's the real machinery: SHA-256, secp256k1 signatures, proof-of-work
-> mining, halving rewards, a UTXO ledger, fork choice by cumulative work. 47
+> mining, halving rewards, a UTXO ledger, fork choice by cumulative work. 49
 > tests against published crypto vectors. Zero dependencies.
 >
 > 3/ But the point is *use*: price favours in hours, pay with a QR at a stall,
@@ -174,8 +186,16 @@ skip it, it's the wrong crowd anyway.)*
   fixed-supply money you mine; mutual credit is net-zero IOUs with a shared
   credit limit. Pick whichever fits your group."
 - **"Can I run a node?"** → point them at `coin/DEPLOY.md` and `coin/server.mjs`.
+- **"What if I lose my coins / lose my phone?"** → "There's a one-tap encrypted
+  backup file and a 33-word recovery phrase — restore on any device. The app
+  nags you until you've backed up. Just like cash, though: whoever holds the key
+  holds the coins, so keep your backup safe." Point them at `SAFETY.md`.
+- **"How do I know the site isn't fake / hacked?"** → "Open 🔒 Key security → Code
+  fingerprint and check it matches the value published in `SAFETY.md`. If it
+  doesn't, you're not on the real app." (Shipping this at all earns trust.)
 - **Someone finds a bug** → great, that's the point; the repo's open. Security
-  posture is documented honestly in `SECURITY.md`.
+  posture is documented honestly in `SECURITY.md`, and the safety guide for
+  users is `SAFETY.md`.
 
 ## What "success" looks like
 
