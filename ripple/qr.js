@@ -32,8 +32,8 @@
     for (var d = 0; d < ecLen; d++) {
       var ng = new Array(gen.length + 1).fill(0);
       for (var i = 0; i < gen.length; i++) {
-        ng[i] ^= gmul(gen[i], EXP[d]);
-        ng[i + 1] ^= gen[i];
+        ng[i] ^= gen[i];                         // x · term      (keep degree order)
+        ng[i + 1] ^= gmul(gen[i], EXP[d]);       // α^d · term    (constant multiply)
       }
       gen = ng;
     }
@@ -308,5 +308,5 @@
     return s;
   }
 
-  return { encode: encode, toSVG: toSVG };
+  return { encode: encode, toSVG: toSVG, rsEncode: rsEncode };
 });
