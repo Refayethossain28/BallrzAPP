@@ -258,6 +258,12 @@
   /* ── collectible card modal ── */
   #cardModal { display: none; position: fixed; inset: 0; z-index: 119; background: rgba(4,5,8,0.93); place-items: center; padding: 22px; overflow: auto; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
   #cardModal.show { display: grid; }
+  #lockModal { display: none; position: fixed; inset: 0; z-index: 130; background: radial-gradient(circle at 50% 32%, rgba(20,16,8,0.97), rgba(5,6,9,0.99)); place-items: center; padding: 24px; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+  #lockModal.show { display: grid; }
+  #lockModal .lm { max-width: 360px; width: 100%; text-align: center; }
+  #lockModal .coinmedal { width: 84px; height: 84px; font-size: 44px; margin: 0 auto 18px; }
+  #lockModal input { width: 100%; margin: 14px 0 6px; text-align: center; font-size: 16px; }
+  #lockErr { color: #ff9d9d; font-size: 13px; min-height: 18px; }
   #cardModal .cmwrap { max-width: 400px; width: 100%; text-align: center; }
   #cardImg { width: 100%; border-radius: 20px; box-shadow: 0 24px 70px rgba(0,0,0,0.6), 0 0 46px rgba(244,194,87,0.22); }
   #cardModal .cmbar { display: flex; gap: 10px; justify-content: center; margin-top: 16px; }
@@ -295,6 +301,17 @@
 </div>
 <script>setTimeout(function(){var s=document.getElementById('splash');if(s)s.classList.add('gone');},2400);</script>
 
+<div id="lockModal">
+  <div class="lm">
+    <div class="coinmedal">B</div>
+    <div class="sname">BallrzCoin locked</div>
+    <div class="sub" style="margin:6px 0 0">Enter your passphrase to unlock your wallets.</div>
+    <input id="lockPass" type="password" placeholder="Passphrase" autocomplete="current-password">
+    <div id="lockErr"></div>
+    <button class="primary" id="lockUnlock" style="width:100%">🔓 Unlock</button>
+  </div>
+</div>
+
 <div class="brandrow">
   <div class="coinmedal">B</div>
   <h1>BallrzCoin <span class="tick">BLZ</span></h1>
@@ -329,6 +346,17 @@
   <button id="importWallet">⬇ Import wallet</button>
   <span class="mining" id="miningStatus"></span>
   <span class="mining" id="netStatus"></span>
+</div>
+<div class="timebank" id="securityPanel" style="display:none">
+  <div class="tbrow">
+    <span class="tblabel">🔒 Key security <span id="lockState" class="rep"></span></span>
+    <span>
+      <button id="setPassBtn">Protect keys with a passphrase</button>
+      <button id="changePassBtn" style="display:none">Change passphrase</button>
+      <button id="removePassBtn" class="danger" style="display:none">Remove passphrase</button>
+    </span>
+  </div>
+  <div class="agree">Encrypts your private keys at rest (AES-GCM) so they aren’t readable from browser storage. You’ll unlock with your passphrase each time you open the app. <b>There is no recovery if you forget it</b> — keep a paper wallet or recovery phrase as backup.</div>
 </div>
 
 <h2>Send coins</h2>
@@ -460,22 +488,135 @@
     chain = new Coin.Blockchain(); // corrupt or incompatible save — start fresh
   }
 
-  var wallets = [];
-  try {
-    var savedW = JSON.parse(localStorage.getItem(LS_WALLETS) || '[]');
-    wallets = savedW.map(function (w) {
+  // Key-at-rest encryption (opt-in). When a passphrase is set, wallets are stored
+  // AES-GCM-encrypted under LS_WALLETS_ENC and the plaintext copy is removed; the
+  // app then starts "locked" until the passphrase decrypts them for the session.
+  var LS_WALLETS_ENC = 'ballrzcoin.wallets.enc.v1';
+  var sessionPass = null;   // held in memory only while unlocked
+  var locked = false;
+  var canEncrypt = !!(window.crypto && window.crypto.subtle);
+
+  function loadWalletRecords(records) {
+    wallets = records.map(function (w) {
       var full = Coin.walletFromPrivateKey(w.privateKey);
       full.name = w.name;
       return full;
     });
+  }
+
+  var wallets = [];
+  try {
+    var plainW = localStorage.getItem(LS_WALLETS);
+    if (plainW) {
+      loadWalletRecords(JSON.parse(plainW));
+    } else if (localStorage.getItem(LS_WALLETS_ENC)) {
+      locked = true; // encrypted at rest — must unlock before wallets appear
+    }
   } catch (err) { wallets = []; }
-  if (!wallets.length) {
+  if (!wallets.length && !locked) {
     ['Satoshi', 'You'].forEach(function (name) {
       var w = Coin.generateWallet();
       w.name = name;
       wallets.push(w);
     });
   }
+
+  // --- WebCrypto helpers: PBKDF2 → AES-GCM, all base64 in a small JSON blob. ---
+  function b64(bytes) { var s = ''; for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]); return btoa(s); }
+  function unb64(str) { var bin = atob(str), a = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return a; }
+  function deriveAes(pass, salt) {
+    return crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveKey'])
+      .then(function (base) {
+        return crypto.subtle.deriveKey(
+          { name: 'PBKDF2', salt: salt, iterations: 210000, hash: 'SHA-256' },
+          base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+      });
+  }
+  function encryptWallets(pass, plaintext) {
+    var salt = crypto.getRandomValues(new Uint8Array(16));
+    var iv = crypto.getRandomValues(new Uint8Array(12));
+    return deriveAes(pass, salt).then(function (key) {
+      return crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, new TextEncoder().encode(plaintext));
+    }).then(function (ct) {
+      return JSON.stringify({ v: 1, salt: b64(salt), iv: b64(iv), ct: b64(new Uint8Array(ct)) });
+    });
+  }
+  function decryptWallets(pass, blobStr) {
+    var blob = JSON.parse(blobStr);
+    return deriveAes(pass, unb64(blob.salt)).then(function (key) {
+      return crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(blob.iv) }, key, unb64(blob.ct));
+    }).then(function (pt) { return new TextDecoder().decode(pt); });
+  }
+
+  function walletRecords() {
+    return wallets.map(function (w) { return { name: w.name, privateKey: w.privateKey }; });
+  }
+  // Persist wallets, encrypted if a passphrase is set. Never writes while locked
+  // (wallets is empty then — writing would destroy the encrypted copy).
+  function saveWalletsNow() {
+    if (locked) return;
+    var plain = JSON.stringify(walletRecords());
+    if (sessionPass && canEncrypt) {
+      encryptWallets(sessionPass, plain).then(function (blob) {
+        try { localStorage.setItem(LS_WALLETS_ENC, blob); localStorage.removeItem(LS_WALLETS); } catch (e) {}
+      });
+    } else {
+      try { localStorage.setItem(LS_WALLETS, plain); localStorage.removeItem(LS_WALLETS_ENC); } catch (e) {}
+    }
+  }
+
+  function renderSecurity() {
+    var panel = $('securityPanel'); if (!panel) return;
+    if (!canEncrypt) { panel.style.display = 'none'; return; } // needs a secure context
+    panel.style.display = '';
+    var on = !!sessionPass;
+    $('lockState').textContent = on ? '· 🔒 encrypted' : '· 🔓 not protected';
+    $('setPassBtn').style.display = on ? 'none' : '';
+    $('changePassBtn').style.display = on ? '' : 'none';
+    $('removePassBtn').style.display = on ? '' : 'none';
+  }
+  function askNewPass() {
+    var p1 = prompt('Choose a passphrase to encrypt your keys.\n\n⚠ There is NO recovery if you forget it — keep a paper wallet or recovery phrase as backup.');
+    if (p1 === null) return null;
+    if (p1.length < 6) { toast('✖ Use at least 6 characters'); return null; }
+    if (prompt('Re-enter the passphrase to confirm:') !== p1) { toast('✖ Passphrases didn’t match'); return null; }
+    return p1;
+  }
+  $('setPassBtn').addEventListener('click', function () {
+    var p = askNewPass(); if (p === null) return;
+    sessionPass = p; saveWalletsNow(); renderSecurity();
+    toast('🔒 Keys encrypted — you’ll unlock with this passphrase next time.');
+  });
+  $('changePassBtn').addEventListener('click', function () {
+    var p = askNewPass(); if (p === null) return;
+    sessionPass = p; saveWalletsNow(); toast('🔒 Passphrase changed.');
+  });
+  $('removePassBtn').addEventListener('click', function () {
+    if (!confirm('Remove the passphrase and store keys unencrypted again?')) return;
+    sessionPass = null; saveWalletsNow(); renderSecurity();
+    toast('🔓 Passphrase removed — keys are no longer encrypted at rest.');
+  });
+
+  function showLock() {
+    var m = $('lockModal'); if (!m) return;
+    m.classList.add('show');
+    setTimeout(function () { try { $('lockPass').focus(); } catch (e) {} }, 120);
+  }
+  function tryUnlock() {
+    var pass = $('lockPass').value; if (!pass) return;
+    $('lockErr').textContent = '';
+    var blob = localStorage.getItem(LS_WALLETS_ENC);
+    decryptWallets(pass, blob).then(function (plain) {
+      loadWalletRecords(JSON.parse(plain));
+      sessionPass = pass; locked = false;
+      $('lockPass').value = '';
+      $('lockModal').classList.remove('show');
+      render(); renderSecurity();
+      toast('🔓 Unlocked');
+    }).catch(function () { $('lockErr').textContent = 'Wrong passphrase — try again.'; });
+  }
+  $('lockUnlock').addEventListener('click', tryUnlock);
+  $('lockPass').addEventListener('keydown', function (e) { if (e.key === 'Enter') tryUnlock(); });
 
   // Barter offers — gossiped across the network like transactions, but they
   // live off-chain (an offer is just a notice, not money). Keyed by offer id.
@@ -486,10 +627,8 @@
   function persist() {
     try {
       localStorage.setItem(LS_CHAIN, JSON.stringify(chain.toJSON()));
-      localStorage.setItem(LS_WALLETS, JSON.stringify(wallets.map(function (w) {
-        return { name: w.name, privateKey: w.privateKey };
-      })));
     } catch (err) { /* storage full or unavailable — keep running in memory */ }
+    saveWalletsNow();
   }
   function saveOffers() { try { localStorage.setItem(LS_OFFERS, JSON.stringify(offers)); } catch (err) {} }
 
@@ -1898,6 +2037,8 @@
   renderTimeBank();
   renderPriceList();
   renderNetStatus();
+  renderSecurity();
+  if (locked) showLock();     // encrypted at rest — ask for the passphrase before anything else
   persist();
   netSend({ type: 'hello' }); // ask peers for their chains
   announceOffers();           // share our barter offers with the network
