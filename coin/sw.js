@@ -8,8 +8,8 @@
  *     cross-origin request) is passed straight through, never cached.
  * Bump CACHE to force every client onto a fresh shell.
  */
-var CACHE = 'ballrzcoin-v2';
-var SHELL = ['./', './index.html', './engine.js', './config.js', './qr.js', './wordlist.js',
+var CACHE = 'ballrzcoin-v3';
+var SHELL = ['./', './index.html', './engine.js', './config.js', './qr.js', './wordlist.js', './i18n.js',
   './icon-192.png', './icon-512.png', './manifest.webmanifest'];
 
 self.addEventListener('install', function (e) {
