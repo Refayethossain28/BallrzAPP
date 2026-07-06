@@ -431,11 +431,14 @@
   Tabs in this browser sync automatically. To sync with <b>other devices</b>, run a relay
   (see <a href="https://github.com/Refayethossain28/BallrzAPP/blob/main/coin/DEPLOY.md" style="color:var(--gold)">the 5-minute deploy guide</a>)
   and paste its URL here — or open the relay's own URL, which serves this app pre-connected.
+  <b>Add more than one for resilience</b>: the app broadcasts to and polls every relay, so if one
+  sleeps or fails the network keeps running.
   <div class="row">
     <input id="relayInput" placeholder="https://your-relay.onrender.com" autocomplete="off">
-    <button id="relaySave">Save</button>
-    <button id="relayClear" class="danger">Clear</button>
+    <button id="relaySave">Add relay</button>
+    <button id="relayClear" class="danger">Clear all</button>
   </div>
+  <div id="relayList"></div>
   <div class="row" id="inviteRow" style="display:none">
     Invite link (tap to copy): <span class="invite" id="inviteLink"></span>
   </div>
@@ -823,14 +826,34 @@
     return 'https://refayethossain28.github.io/BallrzAPP/coin/';
   }
 
-  // Relay resolution: ?relay= link → saved setting → config.js. An invite link
-  // both joins immediately and remembers the relay for next time.
+  // Relays: a POOL, not a single server. The app broadcasts to and polls every
+  // relay it knows, so one sleeping or failing doesn't take the network down.
+  // Sources: ?relay= link(s) → saved list → legacy single setting → config.js.
+  var LS_RELAYS = 'ballrzcoin.relays.v1';
+  function normUrl(u) { return String(u || '').trim().replace(/\/+$/, ''); }
+  function loadRelayUrls() {
+    var urls = [];
+    try { urls = JSON.parse(localStorage.getItem(LS_RELAYS) || '[]') || []; } catch (e) {}
+    try { var old = localStorage.getItem(LS_RELAY); if (old) urls.push(old); } catch (e) {}
+    if (CFG.relayUrl) urls.push(CFG.relayUrl);
+    var seen = {}, out = [];
+    urls.map(normUrl).forEach(function (u) { if (u && !seen[u]) { seen[u] = 1; out.push(u); } });
+    return out;
+  }
+  var relays = loadRelayUrls().map(function (u) { return { url: u, seq: 0, up: false }; });
+  function persistRelays() {
+    try { localStorage.setItem(LS_RELAYS, JSON.stringify(relays.map(function (r) { return r.url; }))); } catch (e) {}
+  }
+  function addRelay(u) {
+    u = normUrl(u); if (!u) return false;
+    if (relays.some(function (r) { return r.url === u; })) return false;
+    relays.push({ url: u, seq: 0, up: false }); persistRelays(); return true;
+  }
+  function removeRelay(u) { relays = relays.filter(function (r) { return r.url !== u; }); persistRelays(); }
+  function anyUp() { return relays.some(function (r) { return r.up; }); }
+
   var relayParam = qsParam('relay');
-  if (relayParam) { try { localStorage.setItem(LS_RELAY, relayParam); } catch (err) {} }
-  var savedRelay = '';
-  try { savedRelay = localStorage.getItem(LS_RELAY) || ''; } catch (err) {}
-  var relayUrl = String(relayParam || savedRelay || CFG.relayUrl || '').replace(/\/+$/, '');
-  var relaySeq = 0, relayUp = false;
+  if (relayParam) addRelay(relayParam); // an invite link joins immediately and is remembered
 
   function handleNetMessage(m) {
     if (!m || m.from === NODE_ID) return; // our own gossip echoed back
@@ -867,62 +890,73 @@
   function netSend(msg) {
     msg.from = NODE_ID;
     if (bc) bc.postMessage(msg);
-    if (relayUrl && typeof fetch !== 'undefined') {
+    if (typeof fetch === 'undefined') return;
+    relays.forEach(function (r) {
       try {
-        fetch(relayUrl + '/msg', {
+        fetch(r.url + '/msg', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(msg)
-        }).catch(function () { /* relay down — tabs still sync */ });
+        }).catch(function () { /* this relay down — others (and tabs) still carry it */ });
       } catch (err) { /* offline */ }
-    }
+    });
   }
   function announceChain() { netSend({ type: 'chain', blocks: chain.blocks }); }
 
+  function renderRelayList() {
+    var el = $('relayList'); if (!el) return;
+    el.innerHTML = relays.map(function (r) {
+      return '<div class="offercard" style="padding:8px 12px;margin-top:8px">' +
+        '<div class="main" style="min-width:120px"><span class="mono" style="font-size:12px;word-break:break-all">' + esc(r.url) + '</span></div>' +
+        '<span class="rep">' + (r.up ? '● connected' : '○ unreachable') + '</span>' +
+        '<button data-relay-remove="' + esc(r.url) + '">Remove</button></div>';
+    }).join('');
+  }
   function renderNetStatus() {
     var el = $('netStatus');
-    if (!el) return;
-    if (!relayUrl) { el.textContent = ''; }
-    else el.textContent = relayUp ? '⇄ relay connected — syncing across devices' : '⇄ relay unreachable';
-    var row = $('inviteRow');
-    if (row && row.style) row.style.display = (relayUrl && relayUp) ? '' : 'none';
-    if (relayUrl && relayUp) {
-      $('inviteLink').textContent = pageBase() + '?relay=' + encodeURIComponent(relayUrl);
+    if (el) {
+      var up = relays.filter(function (r) { return r.up; }).length;
+      if (!relays.length) el.textContent = '';
+      else el.textContent = up ? ('⇄ ' + up + '/' + relays.length + ' relay' + (relays.length > 1 ? 's' : '') + ' connected — syncing across devices')
+                               : ('⇄ relay' + (relays.length > 1 ? 's' : '') + ' unreachable');
     }
+    var row = $('inviteRow');
+    if (row && row.style) row.style.display = anyUp() ? '' : 'none';
+    if (anyUp()) {
+      var first = relays.filter(function (r) { return r.up; })[0];
+      $('inviteLink').textContent = pageBase() + '?relay=' + encodeURIComponent(first.url);
+    }
+    renderRelayList();
   }
 
-  // Zero-config mode: when this page is served BY the relay itself
-  // (coin/server.mjs also serves the app), adopt the same origin as relay.
+  // Zero-config mode: when this page is served BY a relay itself
+  // (coin/server.mjs also serves the app), adopt the same origin as a relay.
   function tryAutodetect() {
-    if (relayUrl || typeof fetch === 'undefined' || typeof location === 'undefined') return;
+    if (typeof fetch === 'undefined' || typeof location === 'undefined') return;
     try { if (!/^https?:$/.test(String(location.protocol))) return; } catch (err) { return; }
-    fetch(location.origin + '/msgs?since=0')
+    var origin = String(location.origin);
+    if (relays.some(function (r) { return r.url === origin; })) return;
+    fetch(origin + '/msgs?since=0')
       .then(function (r) { return r.json(); })
-      .then(function (d) {
-        if (d && typeof d.seq === 'number') {
-          relayUrl = String(location.origin);
-          relayPoll();
-        }
-      })
+      .then(function (d) { if (d && typeof d.seq === 'number' && addRelay(origin)) { renderNetStatus(); netSend({ type: 'hello' }); } })
       .catch(function () { /* not served by a relay (e.g. GitHub Pages) */ });
   }
 
   function relayPoll() {
-    fetch(relayUrl + '/msgs?since=' + relaySeq)
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        if (d && typeof d.seq === 'number') {
-          relayUp = true;
-          relaySeq = d.seq;
-          (d.msgs || []).forEach(handleNetMessage);
-        }
-        renderNetStatus();
-      })
-      .catch(function () { relayUp = false; renderNetStatus(); })
-      .then(function () { setTimeout(relayPoll, 2500); });
+    if (typeof fetch !== 'undefined') {
+      relays.forEach(function (r) {
+        fetch(r.url + '/msgs?since=' + r.seq)
+          .then(function (res) { return res.json(); })
+          .then(function (d) {
+            if (d && typeof d.seq === 'number') { r.up = true; r.seq = d.seq; (d.msgs || []).forEach(handleNetMessage); }
+            renderNetStatus();
+          })
+          .catch(function () { r.up = false; renderNetStatus(); });
+      });
+    }
+    setTimeout(relayPoll, 2500);
   }
-  if (relayUrl && typeof fetch !== 'undefined') setTimeout(relayPoll, 0);
-  else setTimeout(tryAutodetect, 0);
+  if (typeof fetch !== 'undefined') { setTimeout(relayPoll, 0); setTimeout(tryAutodetect, 0); }
 
   function toast(msg) {
     var t = $('toast');
@@ -1005,7 +1039,7 @@
       if (d.escrowType === 'multisig' && (mineAddrs[d.buyer] || mineAddrs[d.seller] || myPartyPubs(d).length)) vault = true;
     });
     var posted = Object.keys(offers).some(function (id) { return mineAddrs[offers[id].address]; });
-    return { mined: mined, balance: balance, sent: sent, top: top, dealsDone: dealsDone, vault: vault, posted: posted, backed: paperMade, networked: relayUp };
+    return { mined: mined, balance: balance, sent: sent, top: top, dealsDone: dealsDone, vault: vault, posted: posted, backed: paperMade, networked: anyUp() };
   }
   function evaluateAchievements() {
     var m = achMetrics(), newly = [];
@@ -1582,6 +1616,8 @@
       catch (err) { toast(t.textContent); }
       return;
     }
+    var relayRm = t.getAttribute('data-relay-remove');
+    if (relayRm) { removeRelay(relayRm); renderNetStatus(); toast('Relay removed'); return; }
     var copy = t.getAttribute('data-copy');
     if (copy) {
       try { navigator.clipboard.writeText(copy); toast('Address copied'); } catch (err) { toast(copy); }
@@ -1817,16 +1853,20 @@
   });
 
   $('relaySave').addEventListener('click', function () {
-    var v = String($('relayInput').value || '').trim().replace(/\/+$/, '');
+    var v = normUrl($('relayInput').value);
     if (!v) { toast('Enter a relay URL first (see the deploy guide)'); return; }
-    try { localStorage.setItem(LS_RELAY, v); } catch (err) {}
-    toast('Relay saved — reconnecting…');
-    try { location.reload(); } catch (err) {}
+    if (addRelay(v)) {
+      $('relayInput').value = '';
+      toast('✓ Relay added — connecting…');
+      netSend({ type: 'hello' }); // pull chain/offers from the new relay
+      renderNetStatus();
+    } else { toast('That relay is already in your list'); }
   });
   $('relayClear').addEventListener('click', function () {
+    relays = []; persistRelays();
     try { localStorage.removeItem(LS_RELAY); } catch (err) {}
-    toast('Relay cleared — local-only mode');
-    try { location.reload(); } catch (err) {}
+    toast('All relays removed — local-only mode');
+    renderNetStatus();
   });
 
   // Pull a BLZ address out of whatever a QR holds: a bare address, or one of
@@ -2133,8 +2173,6 @@
                : 'Recipient filled in from the link — add an amount and send');
     try { $('sendForm').scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (err) {}
   }
-  try { if ($('relayInput')) $('relayInput').value = relayUrl; } catch (err) {}
-
   render();
   renderTimeBank();
   renderPriceList();
