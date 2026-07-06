@@ -8,9 +8,9 @@
  *     cross-origin request) is passed straight through, never cached.
  * Bump CACHE to force every client onto a fresh shell.
  */
-var CACHE = 'ballrzcoin-v4';
+var CACHE = 'ballrzcoin-v5';
 var SHELL = ['./', './index.html', './engine.js', './mutual.js', './config.js', './qr.js', './wordlist.js', './i18n.js',
-  './icon-192.png', './icon-512.png', './manifest.webmanifest'];
+  './SAFETY.md', './icon-192.png', './icon-512.png', './manifest.webmanifest'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) {
@@ -29,7 +29,7 @@ function isShellRequest(req, url) {
   if (url.origin !== self.location.origin) return false;
   // Never touch the relay endpoints.
   if (/\/(msgs?|status)(\?|$)/.test(url.pathname)) return false;
-  return /\.(html|js|css|png|webmanifest|svg)$/.test(url.pathname) || url.pathname.endsWith('/');
+  return /\.(html|js|css|png|webmanifest|svg|md)$/.test(url.pathname) || url.pathname.endsWith('/');
 }
 
 self.addEventListener('fetch', function (e) {

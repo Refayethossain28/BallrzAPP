@@ -325,6 +325,17 @@
     #splash { animation: splashOut 0.3s ease 0.8s forwards; }
     #splash .coinmedal { animation: none; } #splash .inner { animation: none; }
   }
+  /* ── backup / secure-your-wallet banner ── */
+  #backupBanner { margin: 14px 0; border-radius: 14px; padding: 16px 18px;
+    border: 1px solid rgba(244,194,87,0.4); background: linear-gradient(180deg, rgba(244,194,87,0.12), rgba(244,194,87,0.04)); }
+  #backupBanner.urgent { border-color: rgba(255,120,90,0.65); background: linear-gradient(180deg, rgba(255,120,90,0.16), rgba(255,120,90,0.05)); animation: bnPulse 2.6s ease-in-out infinite; }
+  @keyframes bnPulse { 0%,100% { box-shadow: 0 0 0 rgba(255,120,90,0); } 50% { box-shadow: 0 0 26px rgba(255,120,90,0.28); } }
+  #backupBanner .bnttl { font-family: var(--serif); font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+  #backupBanner .bntxt { color: var(--dim); font-size: 13px; line-height: 1.5; }
+  #backupBanner .bnrow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  #backupBanner .bndismiss { background: transparent; border: 1px solid var(--line); color: var(--dim); }
+  .fp { font-family: var(--mono); font-size: 12px; letter-spacing: 0.5px; }
+  .fp.ok { color: #8fe38f; } .fp.wait { color: var(--dim); }
 </style>
 </head>
 <body>
@@ -421,6 +432,7 @@
 <div class="badges" id="badges"></div>
 
 <h2 data-i18n="h_wallets">Wallets</h2>
+<div id="backupBanner" style="display:none"></div>
 <div class="cards" id="wallets"></div>
 <div class="row">
   <button id="newWallet" data-i18n="b_newwallet">＋ New wallet</button>
@@ -431,6 +443,7 @@
   <span class="mining" id="netStatus"></span>
 </div>
 <div id="inviteOut"></div>
+<input type="file" id="restoreFile" accept=".blzwallet,application/json,.json" style="display:none">
 <div class="timebank" id="securityPanel" style="display:none">
   <div class="tbrow">
     <span class="tblabel"><span data-i18n="sec_keys">🔒 Key security</span> <span id="lockState" class="rep"></span></span>
@@ -440,7 +453,20 @@
       <button id="removePassBtn" class="danger" style="display:none">Remove passphrase</button>
     </span>
   </div>
-  <div class="agree">Encrypts your private keys at rest (AES-GCM) so they aren’t readable from browser storage. You’ll unlock with your passphrase each time you open the app. <b>There is no recovery if you forget it</b> — keep a paper wallet or recovery phrase as backup.</div>
+  <div class="agree">Encrypts your private keys at rest (AES-GCM) so they aren’t readable from browser storage. You’ll unlock with your passphrase each time you open the app. <b>There is no recovery if you forget it</b> — keep a paper wallet, recovery phrase or backup file as your safety net.</div>
+  <div class="tbrow" style="margin-top:12px">
+    <span class="tblabel">💾 Backup <span id="backupState" class="rep"></span></span>
+    <span>
+      <button id="backupBtn" class="primary">Back up all wallets</button>
+      <button id="restoreBtn">Restore from file</button>
+    </span>
+  </div>
+  <div class="agree">Downloads one encrypted <b>.blzwallet</b> file holding every wallet key on this device — email it to yourself or keep it on a USB stick. If this browser is ever cleared or the device is lost, <b>Restore from file</b> brings every coin back. Open it any time with your backup passphrase.</div>
+  <div class="tbrow" style="margin-top:12px">
+    <span class="tblabel">🔎 Code fingerprint <span id="fpVal" class="fp wait">checking…</span></span>
+    <span><a id="fpVerify" href="SAFETY.md#verify" target="_blank" rel="noopener">How to verify ›</a></span>
+  </div>
+  <div class="agree">A fingerprint of the exact code your browser loaded. Everyone running the same version sees the same value — compare yours with a friend, or with the figure announced for the current release on the <a href="https://github.com/Refayethossain28/BallrzAPP/blob/main/coin/SAFETY.md" target="_blank" rel="noopener">project page</a>. If it changes when you didn’t update, or differs from everyone else’s, the site may have been tampered with — don’t type your keys. <a href="SAFETY.md" target="_blank" rel="noopener">Read the safety guide ›</a></div>
 </div>
 
 <h2 data-i18n="h_send">Send coins</h2>
@@ -770,6 +796,8 @@
     $('setPassBtn').style.display = on ? 'none' : '';
     $('changePassBtn').style.display = on ? '' : 'none';
     $('removePassBtn').style.display = on ? '' : 'none';
+    var bs = $('backupState');
+    if (bs) bs.textContent = backedUp ? '· ✓ backed up' : '· ⚠ no backup yet';
   }
   function askNewPass() {
     var p1 = prompt('Choose a passphrase to encrypt your keys.\n\n⚠ There is NO recovery if you forget it — keep a paper wallet or recovery phrase as backup.');
@@ -788,10 +816,152 @@
     sessionPass = p; saveWalletsNow(); toast('🔒 Passphrase changed.');
   });
   $('removePassBtn').addEventListener('click', function () {
-    if (!confirm('Remove the passphrase and store keys unencrypted again?')) return;
+    var bal = totalBalance();
+    var msg = 'Remove the passphrase and store keys unencrypted again?';
+    if (bal > 0 && !backedUp) msg += '\n\n⚠ You hold ' + fmt(bal) + ' and have no saved backup. Anyone with access to this browser could then read your keys. Consider backing up first.';
+    if (!confirm(msg)) return;
     sessionPass = null; saveWalletsNow(); renderSecurity();
     toast('🔓 Passphrase removed — keys are no longer encrypted at rest.');
   });
+
+  /* ---------- backup: encrypted file + loss-prevention nagging ----------
+   * The single biggest way to lose coins in a browser wallet is a cleared
+   * browser or a lost device with no backup. These tools make a portable,
+   * encrypted copy of every key, and nag until the user has one. */
+  var LS_BACKEDUP = 'ballrzcoin.backedup.v1';
+  var backedUp = false;
+  try { backedUp = localStorage.getItem(LS_BACKEDUP) === '1'; } catch (e) {}
+  var bannerDismissed = false;
+
+  function markBackedUp() {
+    backedUp = true;
+    try { localStorage.setItem(LS_BACKEDUP, '1'); } catch (e) {}
+    renderBackupBanner();
+    renderSecurity();
+  }
+  function totalBalance() {
+    var sum = 0;
+    for (var i = 0; i < wallets.length; i++) sum += chain.getBalance(wallets[i].address);
+    return sum;
+  }
+
+  // Download every wallet key, AES-GCM encrypted under a passphrase, as one file.
+  function downloadBackup() {
+    if (!canEncrypt) { toast('✖ Backup needs a secure (https) context'); return; }
+    if (!wallets.length) { toast('No wallets to back up'); return; }
+    var pass = prompt('Choose a passphrase to encrypt this backup file.\n\nYou’ll type it again to restore. Keep it somewhere you won’t lose — the file can’t be opened without it.');
+    if (pass === null) return;
+    if (pass.length < 6) { toast('✖ Use at least 6 characters'); return; }
+    if (prompt('Re-enter the backup passphrase:') !== pass) { toast('✖ Passphrases didn’t match'); return; }
+    var payload = JSON.stringify({ app: 'ballrzcoin', kind: 'wallet-backup', v: 1, wallets: walletRecords() });
+    encryptWallets(pass, payload).then(function (blob) {
+      var wrapped = JSON.stringify({ app: 'ballrzcoin', kind: 'wallet-backup', v: 1, enc: JSON.parse(blob) });
+      var name = 'ballrzcoin-' + wallets.length + 'wallet' + (wallets.length === 1 ? '' : 's') + '-backup.blzwallet';
+      try {
+        var a = document.createElement('a');
+        var href = URL.createObjectURL(new Blob([wrapped], { type: 'application/json' }));
+        a.href = href; a.download = name;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { try { URL.revokeObjectURL(href); } catch (e) {} }, 4000);
+        markBackedUp();
+        toast('💾 Backup saved: ' + name + ' — store it somewhere safe.');
+      } catch (e) { toast('✖ Could not save the file'); }
+    }).catch(function () { toast('✖ Backup failed'); });
+  }
+
+  function restoreBackupText(text) {
+    var outer;
+    try { outer = JSON.parse(text); } catch (e) { toast('✖ Not a BallrzCoin backup file'); return; }
+    var encBlob = outer && outer.enc ? JSON.stringify(outer.enc) : null;
+    if (!encBlob) { toast('✖ Not a BallrzCoin backup file'); return; }
+    var pass = prompt('Enter the passphrase for this backup file:');
+    if (pass === null) return;
+    decryptWallets(pass, encBlob).then(function (plain) {
+      var data = JSON.parse(plain);
+      var recs = (data && data.wallets) || [];
+      var added = 0;
+      recs.forEach(function (r) {
+        if (!/^[0-9a-f]{64}$/.test(r.privateKey || '')) return;
+        var w = Coin.walletFromPrivateKey(r.privateKey);
+        if (wallets.some(function (x) { return x.address === w.address; })) return;
+        w.name = String(r.name || 'Restored wallet').slice(0, 24);
+        wallets.push(w); added++;
+      });
+      persist(); render();
+      markBackedUp();
+      toast(added ? ('✓ Restored ' + added + ' wallet' + (added === 1 ? '' : 's')) : 'Those wallets were already here');
+    }).catch(function () { toast('✖ Wrong passphrase, or the file is damaged'); });
+  }
+
+  (function () {
+    var b = $('backupBtn'), r = $('restoreBtn'), f = $('restoreFile');
+    if (b) b.addEventListener('click', downloadBackup);
+    if (r && f) r.addEventListener('click', function () { f.click(); });
+    if (f) f.addEventListener('change', function () {
+      var file = f.files && f.files[0]; if (!file) return;
+      var rd = new FileReader();
+      rd.onload = function () { restoreBackupText(String(rd.result || '')); f.value = ''; };
+      rd.onerror = function () { toast('✖ Could not read the file'); f.value = ''; };
+      rd.readAsText(file);
+    });
+  })();
+
+  // The loss-prevention nag: shown until the user has a recorded backup, and
+  // loud once real balance is at stake.
+  function renderBackupBanner() {
+    var el = $('backupBanner'); if (!el) return;
+    if (backedUp || bannerDismissed || locked) { el.style.display = 'none'; return; }
+    var bal = totalBalance();
+    var urgent = bal > 0;
+    el.className = urgent ? 'urgent' : '';
+    var body = urgent
+      ? 'You hold <b>' + fmt(bal) + '</b>, but this device is the only place your keys exist. Clear this browser, lose the phone, or move to a new device and <b>the coins are gone for good</b> — there is no bank and no reset. Save a backup now.'
+      : 'Your wallet lives only in this browser. Before you earn or receive BLZ, save a backup so you can never be locked out of your own coins.';
+    el.innerHTML =
+      '<div class="bnttl">🛡 Back up your wallet</div>' +
+      '<div class="bntxt">' + body + '</div>' +
+      '<div class="bnrow">' +
+        (canEncrypt ? '<button class="primary" data-backup-now>💾 Save a backup file</button>' : '') +
+        '<button data-show-phrase>📜 Show recovery phrase</button>' +
+        (canEncrypt && !sessionPass ? '<button data-set-pass>🔒 Add a passphrase</button>' : '') +
+        '<button class="bndismiss" data-ack-backup>I’ve written it down</button>' +
+      '</div>';
+    el.style.display = 'block';
+  }
+  $('backupBanner').addEventListener('click', function (ev) {
+    var t = ev.target; if (!t || !t.getAttribute) return;
+    if (t.hasAttribute('data-backup-now')) downloadBackup();
+    else if (t.hasAttribute('data-show-phrase')) {
+      if (wallets[0]) {
+        wallets[0].keysOpen = true; wallets[0].phraseOpen = true; render();
+        try { $('wallets').scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (e) {}
+        toast('Write these 33 words on paper, in order — then tap “I’ve written it down”.');
+      }
+    } else if (t.hasAttribute('data-set-pass')) { $('setPassBtn').click(); }
+    else if (t.hasAttribute('data-ack-backup')) {
+      if (confirm('Have you written down your 33-word recovery phrase (or saved a backup file) and stored it somewhere safe?\n\nThat backup is the ONLY way to recover your coins if this device is ever lost or cleared.')) markBackedUp();
+    }
+  });
+
+  // Runtime integrity fingerprint: hash the exact code the browser loaded, so a
+  // tampered host can be spotted by comparing against the published fingerprint.
+  function computeFingerprint() {
+    var el = $('fpVal'); if (!el) return;
+    if (!(window.crypto && window.crypto.subtle && window.fetch)) { el.textContent = 'unavailable'; el.className = 'fp wait'; return; }
+    var files = ['index.html', 'engine.js', 'mutual.js', 'config.js', 'qr.js', 'wordlist.js', 'i18n.js'];
+    Promise.all(files.map(function (f) {
+      return fetch(f, { cache: 'no-store' }).then(function (r) { return r.ok ? r.text() : ''; }).catch(function () { return ''; });
+    })).then(function (texts) {
+      var joined = files.map(function (f, i) { return f + '\n' + texts[i]; }).join('\n');
+      return crypto.subtle.digest('SHA-256', new TextEncoder().encode(joined));
+    }).then(function (buf) {
+      var b = new Uint8Array(buf), hex = '';
+      for (var i = 0; i < b.length; i++) hex += ('0' + b[i].toString(16)).slice(-2);
+      // Grouped short form is easy to read aloud / compare by eye.
+      var shortFp = hex.slice(0, 4) + '-' + hex.slice(4, 8) + '-' + hex.slice(8, 12) + '-' + hex.slice(12, 16);
+      el.textContent = shortFp; el.className = 'fp ok'; el.title = 'Full SHA-256: ' + hex;
+    }).catch(function () { el.textContent = 'unavailable'; el.className = 'fp wait'; });
+  }
 
   function showLock() {
     var m = $('lockModal'); if (!m) return;
@@ -1449,6 +1619,7 @@
     renderDeals();
     renderThreads();
     renderChallenge();
+    renderBackupBanner();
     evaluateAchievements();
   }
 
@@ -2199,7 +2370,7 @@
       toast('Filled in — tweak it and Post offer');
       return;
     }
-    if (t.id === 'paperPrint') { try { window.print(); } catch (err) {} return; }
+    if (t.id === 'paperPrint') { try { window.print(); markBackedUp(); } catch (err) {} return; }
     if (t.id === 'paperClose') { closePaperWallet(); return; }
     if (t.id === 'inviteLink') {
       try { navigator.clipboard.writeText(t.textContent); toast('Invite link copied — send it to a friend'); }
@@ -3038,8 +3209,12 @@
   window.addEventListener('scroll', function () { if ($('tourDim').style.display === 'block') positionTour(); }, true);
 
   $('resetAll').addEventListener('click', function () {
-    if (!confirm('Wipe this node’s blockchain and wallets? (Other tabs keep theirs.)')) return;
-    try { localStorage.removeItem(LS_CHAIN); localStorage.removeItem(LS_WALLETS); } catch (err) {}
+    var bal = totalBalance();
+    if (bal > 0 && !backedUp) {
+      if (!confirm('⚠ STOP — you hold ' + fmt(bal) + ' and have NO saved backup.\n\nWiping this node deletes these wallet keys permanently. Without a recovery phrase or backup file, the coins are gone for good.\n\nBack up first? Press Cancel to go back and save a backup.')) return;
+      if (prompt('This will permanently delete unsaved wallets. Type DELETE to confirm you understand the coins cannot be recovered:') !== 'DELETE') { toast('Cancelled — nothing was deleted'); return; }
+    } else if (!confirm('Wipe this node’s blockchain and wallets? (Other tabs keep theirs.)')) return;
+    try { localStorage.removeItem(LS_CHAIN); localStorage.removeItem(LS_WALLETS); localStorage.removeItem(LS_WALLETS_ENC); } catch (err) {}
     chain = new Coin.Blockchain();
     wallets = [];
     ['Satoshi', 'You'].forEach(function (name) {
@@ -3048,8 +3223,11 @@
       wallets.push(w);
     });
     mining = null;
+    sessionPass = null; locked = false;
+    backedUp = false; try { localStorage.removeItem(LS_BACKEDUP); } catch (err) {}
     persist();
     render();
+    renderSecurity();
   });
 
   // Deep links: ?pay=ADDRESS (optionally &amt=BLZ&for=MEMO) prefills the send
@@ -3089,6 +3267,8 @@
   renderPriceList();
   renderNetStatus();
   renderSecurity();
+  renderBackupBanner();
+  computeFingerprint();
   if (locked) showLock();     // encrypted at rest — ask for the passphrase before anything else
   persist();
   netSend({ type: 'hello' }); // ask peers for their chains
