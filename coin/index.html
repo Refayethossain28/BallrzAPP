@@ -326,6 +326,7 @@
 <div class="row" style="margin-top:12px">
   <select id="langSel" title="Language" aria-label="Language"></select>
   <button id="installBtn" class="primary" style="display:none" data-i18n="b_install">📲 Install app</button>
+  <button id="notifyBtn">🔔 Notify me</button>
   <button id="tourBtn" data-i18n="b_tour">❓ How it works — take the tour</button>
   <button id="cardBtn" data-i18n="b_card">🖼 My collectible card</button>
   <button id="shareBtn" data-i18n="b_share">📣 Share</button>
@@ -888,13 +889,13 @@
         toast('⛓ Synced to a heavier chain from the network (height ' + chain.tip.height + ')');
       }
     } else if (m.type === 'tx') {
-      try { chain.submitTransaction(m.tx); persist(); render(); } catch (err) { /* dup or conflict */ }
+      try { chain.submitTransaction(m.tx); persist(); render(); notifyIncomingTx(m.tx); } catch (err) { /* dup or conflict */ }
     } else if (m.type === 'offer') {
       if (ingestOffer(m.offer)) { saveOffers(); renderOffers(); }
     } else if (m.type === 'offer-remove') {
       if (offers[m.id]) { delete offers[m.id]; saveOffers(); renderOffers(); }
     } else if (m.type === 'deal') {
-      if (ingestDeal(m.deal)) { saveDeals(); renderDeals(); renderOffers(); }
+      if (ingestDeal(m.deal)) { saveDeals(); renderDeals(); renderOffers(); notifyDeal(m.deal); }
     } else if (m.type === 'id') {
       if (registerIdentity(m.address, m.pubKey, m.name)) renderDeals();
     }
@@ -1880,6 +1881,44 @@
       toast('🎁 Invite created — send it to your friend');
     } catch (err) { toast('✖ ' + err.message); }
   });
+
+  // Notifications — alert you when you're paid or someone buys your offer, even
+  // while the app sits in a background tab. (True push with the app fully closed
+  // needs a push server; this fires while a node of yours is running.)
+  var notifiedTx = {}, notifiedDeal = {};
+  function notifSupported() { return typeof Notification !== 'undefined'; }
+  function notif(title, body) {
+    if (!notifSupported() || Notification.permission !== 'granted') return;
+    try { new Notification(title, { body: body, icon: 'icon-192.png', badge: 'icon-192.png', tag: 'ballrzcoin' }); } catch (e) {}
+  }
+  function notifyIncomingTx(tx) {
+    if (!tx || !tx.id || notifiedTx[tx.id]) return;
+    var mineA = myAddresses();
+    var fromMe = (tx.inputs || []).some(function (inp) { var a = fromAddr(inp); return a && mineA[a]; });
+    if (fromMe) return;                       // my own spend / change
+    var toMe = 0;
+    (tx.outputs || []).forEach(function (o) { if (mineA[o.address]) toMe += o.amount; });
+    if (toMe > 0) { notifiedTx[tx.id] = 1; notif('💰 Payment received', fmt(toMe) + ' — ' + fmtTime(toMe) + ' of value incoming'); }
+  }
+  function notifyDeal(d) {
+    if (!d || !d.id) return;
+    var key = d.id + ':' + d.status, mineA = myAddresses();
+    if (notifiedDeal[key]) return;
+    if (mineA[d.seller] && d.status === 'funded') { notifiedDeal[key] = 1; notif('🤝 Someone paid for your offer', 'A buyer funded a deal — deliver, then they confirm to build your reputation.'); }
+  }
+  function refreshNotifyBtn() {
+    var b = $('notifyBtn'); if (!b) return;
+    b.style.display = (!notifSupported() || Notification.permission === 'granted') ? 'none' : '';
+  }
+  if ($('notifyBtn')) $('notifyBtn').addEventListener('click', function () {
+    if (!notifSupported()) { toast('This browser doesn’t support notifications'); return; }
+    Notification.requestPermission().then(function (p) {
+      if (p === 'granted') { toast('🔔 Notifications on — you’ll be alerted when you’re paid'); notif('BallrzCoin', 'Notifications enabled ✓'); }
+      else toast('Notifications not enabled');
+      refreshNotifyBtn();
+    });
+  });
+  refreshNotifyBtn();
 
   // Multi-language UI: translate tagged elements ([data-i18n] textContent,
   // [data-i18n-ph] placeholder) from the strings table, remember the choice, and
