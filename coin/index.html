@@ -290,6 +290,17 @@
   #posStatus { font-size: 16px; margin: 10px 0; color: var(--dim); }
   #posStatus.paid { color: var(--green); font-weight: 800; font-size: 22px; }
   #posClose { position: absolute; top: 16px; right: 18px; }
+  #circleModal { display: none; position: fixed; inset: 0; z-index: 126; background: radial-gradient(circle at 50% 25%, rgba(20,16,8,0.98), rgba(4,5,9,0.99)); place-items: center; padding: 22px; overflow: auto; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+  #circleModal.show { display: grid; }
+  #circleModal .cw { max-width: 400px; width: 100%; text-align: center; }
+  #circleModal .coinmedal { width: 68px; height: 68px; font-size: 36px; margin: 0 auto 12px; }
+  #circleModal h3 { font: 700 24px var(--serif); }
+  #circleModal .wzl { display: block; text-align: left; margin: 12px 0 0; font-size: 13px; color: var(--dim); }
+  #circleModal .wzl input { width: 100%; margin-top: 4px; font-size: 16px; }
+  #circleModal .wzc { display: flex; align-items: center; gap: 8px; margin: 14px 0 4px; text-align: left; font-size: 14px; }
+  #circleModal .gmembers { justify-content: flex-start; }
+  #circleClose { position: absolute; top: 16px; right: 18px; }
+  #wzResult { margin-top: 12px; text-align: left; }
   #cardModal .cmwrap { max-width: 400px; width: 100%; text-align: center; }
   #cardImg { width: 100%; border-radius: 20px; box-shadow: 0 24px 70px rgba(0,0,0,0.6), 0 0 46px rgba(244,194,87,0.22); }
   #cardModal .cmbar { display: flex; gap: 10px; justify-content: center; margin-top: 16px; }
@@ -338,6 +349,22 @@
   </div>
 </div>
 
+<div id="circleModal">
+  <button id="circleClose">✕ Close</button>
+  <div class="cw">
+    <div class="coinmedal">B</div>
+    <h3 data-i18n="wz_title">✨ Start a circle</h3>
+    <div class="sub" data-i18n="wz_intro">Set up a favours currency for your group in one go: name it, agree the time rate and credit limit, and (optionally) spin up a private group chat.</div>
+    <label class="wzl"><span data-i18n="wz_name">Circle name</span><input id="wzName" placeholder="e.g. Elm Street" maxlength="24" autocomplete="off"></label>
+    <label class="wzl"><span data-i18n="wz_rate">1 BLZ = … minutes of a favour</span><input id="wzRate" inputmode="numeric" value="60"></label>
+    <label class="wzl"><span data-i18n="wz_limit">Default credit limit (hours)</span><input id="wzLimit" inputmode="numeric" value="10"></label>
+    <label class="wzc"><input type="checkbox" id="wzGroup" checked> <span data-i18n="wz_group">Create a private group chat for the circle</span></label>
+    <div class="gmembers" id="wzMembers"></div>
+    <button class="primary" id="wzApply" style="width:100%;margin-top:6px" data-i18n="wz_create">Create circle</button>
+    <div id="wzResult"></div>
+  </div>
+</div>
+
 <div id="posModal">
   <button id="posClose">✕ Close</button>
   <div class="pm">
@@ -374,6 +401,7 @@
 <div class="row" style="margin-top:12px">
   <select id="langSel" title="Language" aria-label="Language"></select>
   <button id="installBtn" class="primary" style="display:none" data-i18n="b_install">📲 Install app</button>
+  <button id="circleBtn" data-i18n="wz_start">✨ Start a circle</button>
   <button id="notifyBtn" data-i18n="b_notify">🔔 Notify me</button>
   <button id="tourBtn" data-i18n="b_tour">❓ How it works — take the tour</button>
   <button id="cardBtn" data-i18n="b_card">🖼 My collectible card</button>
@@ -2347,6 +2375,39 @@
     if (!members.length) { toast('Pick at least one contact to add'); return; }
     var g = createGroup(name, members);
     if (g) { $('grpName').value = ''; toast('👥 Group “' + g.name + '” created'); }
+  });
+
+  // Start-a-circle wizard: set circle name + time rate + credit limit in one go,
+  // optionally spin up a private group chat, then point at the invite flow.
+  function openCircleWizard() {
+    $('wzName').value = myCircle || '';
+    $('wzRate').value = minutesPerBLZ;
+    $('wzLimit').value = mcLimitHours;
+    var cs = knownContacts();
+    $('wzMembers').innerHTML = cs.length ? cs.map(function (a) { return '<label class="gm"><input type="checkbox" data-wz-member="' + esc(a) + '"> ' + esc(directory[a].name || short(a, 8)) + '</label>'; }).join('')
+      : '<span class="sub">' + (t('wz_nofriends') || 'Invite friends first (🎁), then you can add them to a group.') + '</span>';
+    $('wzResult').innerHTML = '';
+    $('circleModal').classList.add('show');
+  }
+  if ($('circleBtn')) $('circleBtn').addEventListener('click', openCircleWizard);
+  if ($('circleClose')) $('circleClose').addEventListener('click', function () { $('circleModal').classList.remove('show'); });
+  if ($('wzApply')) $('wzApply').addEventListener('click', function () {
+    var name = $('wzName').value.trim();
+    if (!name) { toast('Give your circle a name'); return; }
+    setMyCircle(name);
+    var rate = parseFloat($('wzRate').value); if (rate > 0 && typeof setTimeAnchor === 'function') setTimeAnchor(rate);
+    var lim = parseFloat($('wzLimit').value); if (lim >= 0) { mcLimitHours = lim; try { localStorage.setItem(LS_CREDLIMIT, String(lim)); } catch (e) {} renderMutual(); }
+    var made = '';
+    if ($('wzGroup').checked) {
+      var members = [].slice.call(document.querySelectorAll('[data-wz-member]:checked')).map(function (c) { return c.getAttribute('data-wz-member'); });
+      if (members.length) { var g = createGroup(name, members); if (g) made = ' · 👥 “' + esc(g.name) + '”'; }
+    }
+    $('wzResult').innerHTML = '<div class="note">✅ <b>' + esc(name) + '</b> ' + (t('wz_ready') || 'is set up') + made + '.<br>' +
+      (t('wz_next') || 'Next: tap 🎁 Invite a friend to bring people in (they arrive with a starting balance), agree your price list, and start trading favours.') +
+      ' <span class="sub">(' + minutesPerBLZ + ' min = 1 BLZ · ' + mcLimitHours + 'h ' + (t('mc_cap') || 'limit') + ')</span></div>' +
+      '<button class="primary" id="wzInvite" style="width:100%;margin-top:8px">🎁 ' + (t('wz_invite') || 'Invite a friend now') + '</button>';
+    $('wzInvite').addEventListener('click', function () { $('circleModal').classList.remove('show'); $('inviteBtn').click(); });
+    toast('✨ ' + name);
   });
   if ($('rippleHandle')) $('rippleHandle').value = myRipple;
   if ($('rippleSave')) $('rippleSave').addEventListener('click', function () {
