@@ -147,6 +147,8 @@
   .climit { font-size: 12px; color: var(--dim); }
   .climit input { width: 46px; text-align: center; padding: 2px 4px; font-size: 12px; }
   .climit input.on { color: var(--gold); border-color: rgba(231,182,75,0.5); }
+  .gmembers { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .gmembers .gm { display: inline-flex; align-items: center; gap: 5px; background: var(--panel2); border: 1px solid var(--line); border-radius: 99px; padding: 5px 11px; font-size: 13px; cursor: pointer; }
   details.pricelist { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; margin-bottom: 12px; }
   details.pricelist summary { cursor: pointer; color: var(--gold); font-size: 13.5px; list-style: none; font-weight: 600; letter-spacing: 0.2px; }
   details.pricelist summary::-webkit-details-marker { display: none; }
@@ -492,6 +494,14 @@
     <a href="../ripple/" target="_blank" rel="noopener" style="color:var(--gold);align-self:center" data-i18n="rip_open">Open Ripple ↗</a>
   </div>
   <div class="agree" data-i18n="rip_help">Share your Ripple username here and it travels with your identity, so contacts get a “message on Ripple” link. BallrzCoin chat is end-to-end encrypted for 1:1; Ripple adds groups and more if you want them.</div>
+</details>
+<details class="pricelist" id="grpWrap">
+  <summary data-i18n="grp_summary">👥 New group chat — end-to-end encrypted to every member</summary>
+  <div class="row" style="margin-top:8px">
+    <input id="grpName" placeholder="Group name" maxlength="40" autocomplete="off">
+    <button class="primary" id="grpCreate" type="button" data-i18n="grp_create">Create group</button>
+  </div>
+  <div class="gmembers" id="grpMembers"></div>
 </details>
 <div class="list" id="threads"></div>
 
@@ -1031,6 +1041,7 @@
       announceIdentities();
       announceCredits();
       announceLimits();
+      announceGroups();
       announceChat();
     } else if (m.type === 'chain') {
       if (chain.replaceChain(m.blocks)) {
@@ -1060,12 +1071,17 @@
         if (cm && !mineCh[cm.from] && !notifiedChat[cm.id]) {
           if (isDm(cm.dealId)) {
             if (mineCh[cm.to]) { notifiedChat[cm.id] = 1; notif('💬 ' + (cm.name || who(cm.from)), '🔒 ' + (t('dm_new') || 'New encrypted message')); }
+          } else if (isGrp(cm.dealId)) {
+            var g = groups[cm.dealId.slice(4)];
+            if (cm.gkeys && Object.keys(cm.gkeys).some(function (a) { return mineCh[a]; })) { notifiedChat[cm.id] = 1; notif('👥 ' + (g ? g.name : 'Group'), (cm.name || who(cm.from)) + ': 🔒 ' + (t('dm_new') || 'New encrypted message')); }
           } else {
             var d = deals[cm.dealId];
             if (d && (mineCh[d.buyer] || mineCh[d.seller] || (d.agent && mineCh[d.agent]) || myPartyPubs(d).length)) { notifiedChat[cm.id] = 1; notif('💬 ' + (cm.name || who(cm.from)), cm.text); }
           }
         }
       }
+    } else if (m.type === 'group') {
+      if (ingestGroup(m.group)) renderThreads();
     } else if (m.type === 'id') {
       if (registerIdentity(m.address, m.pubKey, m.name, m.ripple)) { renderDeals(); renderThreads(); }
     }
@@ -1661,11 +1677,16 @@
   // A chat message carries either plaintext `text` (deal coordination, multi-party)
   // or an end-to-end encrypted `enc:{iv,ct}` payload (direct 1:1 messages). Both are
   // SIGNED over the same canonical form so authorship is always verifiable.
-  function chatBody(m) { return m.enc ? ('E' + m.enc.iv + '.' + m.enc.ct) : ('P' + (m.text || '')); }
+  function gkeysStr(m) { return Object.keys(m.gkeys).sort().map(function (a) { return a + ':' + m.gkeys[a].iv + ':' + m.gkeys[a].ct; }).join(','); }
+  function chatBody(m) {
+    if (m.genc && m.gkeys) return 'G' + m.genc.iv + '.' + m.genc.ct + '.' + gkeysStr(m);
+    if (m.enc) return 'E' + m.enc.iv + '.' + m.enc.ct;
+    return 'P' + (m.text || '');
+  }
   function chatCanonical(m) { return [m.dealId, m.from, m.to || '', m.at, m.nonce, chatBody(m)].join(SEP); }
   function chatVerify(m) {
     if (!m || !m.id || !m.dealId || !Coin.isValidAddress(m.from)) return false;
-    var hasBody = (m.enc && m.enc.iv && m.enc.ct) || (typeof m.text === 'string' && m.text.trim());
+    var hasBody = (m.genc && m.genc.iv && m.genc.ct && m.gkeys) || (m.enc && m.enc.iv && m.enc.ct) || (typeof m.text === 'string' && m.text.trim());
     if (!hasBody) return false;
     if (typeof m.text === 'string' && m.text.length > 2000) return false;
     if (m.to && !Coin.isValidAddress(m.to)) return false;
@@ -1675,7 +1696,10 @@
   function ingestChat(m) {
     if (!chatVerify(m) || chat[m.id]) return false;
     var rec = { id: m.id, dealId: String(m.dealId).slice(0, 90), from: m.from, to: (m.to && Coin.isValidAddress(m.to)) ? m.to : '', name: String(m.name || '').slice(0, 24), at: Number(m.at) || 0, nonce: String(m.nonce), pubKey: m.pubKey, sig: m.sig };
-    if (m.enc) rec.enc = { iv: String(m.enc.iv).slice(0, 40), ct: String(m.enc.ct).slice(0, 4000) };
+    if (m.genc && m.gkeys) {
+      rec.genc = { iv: String(m.genc.iv).slice(0, 40), ct: String(m.genc.ct).slice(0, 4000) };
+      rec.gkeys = {}; Object.keys(m.gkeys).slice(0, 60).forEach(function (a) { if (Coin.isValidAddress(a) && m.gkeys[a] && m.gkeys[a].ct) rec.gkeys[a] = { iv: String(m.gkeys[a].iv).slice(0, 40), ct: String(m.gkeys[a].ct).slice(0, 200) }; });
+    } else if (m.enc) rec.enc = { iv: String(m.enc.iv).slice(0, 40), ct: String(m.enc.ct).slice(0, 4000) };
     else rec.text = String(m.text).slice(0, 2000);
     chat[m.id] = rec;
     if (m.pubKey) registerIdentity(m.from, m.pubKey, null);
@@ -1685,7 +1709,7 @@
     return true;
   }
   function chatFor(dealId) { return Object.keys(chat).map(function (id) { return chat[id]; }).filter(function (m) { return m.dealId === dealId; }).sort(function (a, b) { return a.at - b.at; }); }
-  function chatText(m) { return m.enc ? (m._plain !== undefined ? m._plain : '🔒 …') : m.text; }
+  function chatText(m) { return (m.enc || m.genc) ? (m._plain !== undefined ? m._plain : '🔒 …') : m.text; }
   function announceChat() { Object.keys(chat).forEach(function (id) { netSend({ type: 'chat', chat: chat[id] }); }); }
 
   // ---- End-to-end encryption for direct messages: an AES-GCM key derived from
@@ -1708,20 +1732,44 @@
       return crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(enc.iv) }, k, unb64(enc.ct));
     }).then(function (pt) { return new TextDecoder().decode(pt); });
   }
-  // Decrypt an encrypted message addressed to (or sent by) me, caching the
-  // plaintext on the record and re-rendering when it lands.
+  // Group encryption: one random message key (MK) encrypts the text; MK is then
+  // wrapped for each member via their ECDH secret. Only members can unwrap it.
+  function e2eWrap(myPriv, otherPub, rawBytes) {
+    var iv = crypto.getRandomValues(new Uint8Array(12));
+    return importAes(e2eKeyBytes(myPriv, otherPub)).then(function (k) { return crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, k, rawBytes); })
+      .then(function (ct) { return { iv: b64(iv), ct: b64(new Uint8Array(ct)) }; });
+  }
+  function e2eUnwrap(myPriv, otherPub, w) {
+    return importAes(e2eKeyBytes(myPriv, otherPub)).then(function (k) { return crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(w.iv) }, k, unb64(w.ct)); })
+      .then(function (pt) { return new Uint8Array(pt); });
+  }
+  function gEncrypt(mk, plaintext) {
+    var iv = crypto.getRandomValues(new Uint8Array(12));
+    return importAes(mk).then(function (k) { return crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, k, new TextEncoder().encode(plaintext)); })
+      .then(function (ct) { return { iv: b64(iv), ct: b64(new Uint8Array(ct)) }; });
+  }
+  function gDecrypt(mk, genc) {
+    return importAes(mk).then(function (k) { return crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(genc.iv) }, k, unb64(genc.ct)); })
+      .then(function (pt) { return new TextDecoder().decode(pt); });
+  }
+  // Decrypt an encrypted message (1:1 or group) meant for me, caching plaintext.
   function maybeDecrypt(rec) {
-    if (!rec.enc || rec._plain !== undefined) return;
+    if (rec._plain !== undefined || (!rec.enc && !rec.genc)) return;
     if (!canEncrypt) { rec._plain = '🔒 (encrypted — not supported in this browser)'; return; }
-    var mine = myAddresses();
+    var mine = myAddresses(), done = function (pt) { rec._plain = pt; if (typeof renderThreads === 'function') renderThreads(); renderDeals(); }, fail = function () { rec._plain = '🔒 (could not decrypt)'; };
+    if (rec.genc && rec.gkeys) {                                // group message
+      var myAddrG = Object.keys(rec.gkeys).filter(function (a) { return mine[a]; })[0];
+      if (!myAddrG) return;                                     // not a member — stays sealed
+      var myWG = wallets.filter(function (w) { return w.address === myAddrG; })[0]; if (!myWG) return;
+      e2eUnwrap(myWG.privateKey, rec.pubKey, rec.gkeys[myAddrG]).then(function (mk) { return gDecrypt(mk, rec.genc); }).then(done).catch(fail);
+      return;
+    }
     var myAddr = mine[rec.to] ? rec.to : (mine[rec.from] ? rec.from : null);
-    if (!myAddr) return;                                        // not addressed to me — leave sealed
+    if (!myAddr) return;
     var myW = wallets.filter(function (w) { return w.address === myAddr; })[0]; if (!myW) return;
-    var otherPub = (rec.from === myAddr) ? knownPubKey(rec.to) : rec.pubKey; // counterparty's key
+    var otherPub = (rec.from === myAddr) ? knownPubKey(rec.to) : rec.pubKey;
     if (!otherPub) { rec._plain = '🔒 (no key on file for the other party yet)'; return; }
-    e2eDecrypt(myW.privateKey, otherPub, rec.enc)
-      .then(function (pt) { rec._plain = pt; if (typeof renderThreads === 'function') renderThreads(); renderDeals(); })
-      .catch(function () { rec._plain = '🔒 (could not decrypt)'; });
+    e2eDecrypt(myW.privateKey, otherPub, rec.enc).then(done).catch(fail);
   }
   function decryptAll() { Object.keys(chat).forEach(function (id) { maybeDecrypt(chat[id]); }); }
 
@@ -1732,6 +1780,57 @@
   function knownContacts() {
     var mine = myAddresses();
     return Object.keys(directory).filter(function (a) { return !mine[a] && directory[a].pubKey; });
+  }
+
+  // ---- Groups: a named set of members. Definitions gossip (newest wins); group
+  // messages are E2E encrypted to every member (multi-recipient envelope). ----
+  var LS_GROUPS = 'ballrzcoin.groups.v1';
+  var groups = {};
+  try { groups = JSON.parse(localStorage.getItem(LS_GROUPS) || '{}') || {}; } catch (e) { groups = {}; }
+  function saveGroups() { try { localStorage.setItem(LS_GROUPS, JSON.stringify(groups)); } catch (e) {} }
+  function grpThread(id) { return 'grp:' + id; }
+  function isGrp(tid) { return String(tid).indexOf('grp:') === 0; }
+  function myGroups() { var mine = myAddresses(); return Object.keys(groups).map(function (id) { return groups[id]; }).filter(function (g) { return g.members.some(function (a) { return mine[a]; }); }); }
+  function ingestGroup(g) {
+    if (!g || !g.id || typeof g.name !== 'string' || !Array.isArray(g.members)) return false;
+    var members = g.members.filter(function (a) { return Coin.isValidAddress(a); });
+    if (members.length < 2) return false;
+    var ex = groups[g.id]; if (ex && ex.at >= (Number(g.at) || 0)) return false;
+    groups[g.id] = { id: String(g.id).slice(0, 60), name: String(g.name).slice(0, 40), members: members.slice(0, 50), creator: g.creator, at: Number(g.at) || 0 };
+    saveGroups(); return true;
+  }
+  function announceGroups() { Object.keys(groups).forEach(function (id) { netSend({ type: 'group', group: groups[id] }); }); }
+  function createGroup(name, memberAddrs, wallet) {
+    var w = wallet || wallets[Number(($('dmFrom') || {}).value || 0)] || wallets[0];
+    var set = {}; set[w.address] = 1;
+    memberAddrs.forEach(function (a) { if (Coin.isValidAddress(a)) set[a] = 1; });
+    if (Object.keys(set).length < 2) { toast('Pick at least one contact to add'); return null; }
+    var g = { id: w.address.slice(0, 6) + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6), name: String(name || 'Group').slice(0, 40), members: Object.keys(set), creator: w.address, at: Date.now() };
+    ingestGroup(g); netSend({ type: 'group', group: g });
+    threadOpen[grpThread(g.id)] = true; renderThreads();
+    return g;
+  }
+  function sendGroup(groupId, text, wallet) {
+    text = String(text || '').trim(); var g = groups[groupId]; if (!g || !text) return;
+    var w = wallet || wallets[Number(($('dmFrom') || {}).value || 0)] || wallets[0];
+    var mine = myAddresses();
+    if (!g.members.some(function (a) { return mine[a]; })) { toast('You’re not in this group'); return; }
+    if (!canEncrypt) { toast('Encrypted chat needs a secure context (https)'); return; }
+    var recips = g.members.filter(function (a) { return a === w.address || knownPubKey(a); });
+    var mk = crypto.getRandomValues(new Uint8Array(32));
+    gEncrypt(mk, text).then(function (genc) {
+      return Promise.all(recips.map(function (a) {
+        var pub = (a === w.address) ? w.publicKey : knownPubKey(a);
+        return e2eWrap(w.privateKey, pub, mk).then(function (wr) { return [a, wr]; });
+      })).then(function (pairs) {
+        var gkeys = {}; pairs.forEach(function (p) { gkeys[p[0]] = p[1]; });
+        var m = { dealId: grpThread(groupId), from: w.address, name: w.name, at: Date.now(), nonce: Math.random().toString(36).slice(2), pubKey: w.publicKey, genc: genc, gkeys: gkeys };
+        m.sig = Coin.sign(Coin.sha256(chatCanonical(m)), w.privateKey);
+        m.id = Coin.sha256d(chatCanonical(m) + SEP + m.sig);
+        ingestChat(m); saveChat(); netSend({ type: 'chat', chat: m });
+        threadOpen[grpThread(groupId)] = true; chatDraft[grpThread(groupId)] = ''; renderThreads();
+      });
+    }).catch(function () { toast('✖ Could not send group message'); });
   }
   var threadOpen = {};
   function sendDM(toAddr, text, wallet) {
@@ -1757,40 +1856,53 @@
     if (!$('threads')) return;
     if ($('dmFrom')) $('dmFrom').innerHTML = wallets.map(function (w, i) { return '<option value="' + i + '">' + esc(w.name) + '</option>'; }).join('');
     if ($('contactList')) $('contactList').innerHTML = knownContacts().map(function (a) { return '<option value="' + esc(directory[a].name || a) + '">' + esc(short(a, 10)) + '</option>'; }).join('');
-    var mine = myAddresses(), threads = {};
+    renderGroupPicker();
+    var mine = myAddresses(), convs = {};
+    function lastAt(arr) { return arr.reduce(function (x, m) { return Math.max(x, m.at); }, 0); }
     Object.keys(chat).forEach(function (id) {
-      var m = chat[id]; if (!isDm(m.dealId) || !(mine[m.from] || mine[m.to])) return;
-      (threads[m.dealId] = threads[m.dealId] || []).push(m);
+      var m = chat[id];
+      if (isDm(m.dealId)) { if (mine[m.from] || mine[m.to]) (convs[m.dealId] = convs[m.dealId] || { kind: 'dm', msgs: [] }).msgs.push(m); }
+      else if (isGrp(m.dealId)) { var gid = m.dealId.slice(4); if (groups[gid] && groups[gid].members.some(function (a) { return mine[a]; })) (convs[m.dealId] = convs[m.dealId] || { kind: 'grp', msgs: [] }).msgs.push(m); }
     });
-    var tids = Object.keys(threads).sort(function (a, b) {
-      var la = threads[a].reduce(function (x, m) { return Math.max(x, m.at); }, 0);
-      var lb = threads[b].reduce(function (x, m) { return Math.max(x, m.at); }, 0);
-      return lb - la;
-    });
+    myGroups().forEach(function (g) { var tid = grpThread(g.id); if (!convs[tid]) convs[tid] = { kind: 'grp', msgs: [] }; });
+    var tids = Object.keys(convs).sort(function (a, b) { return lastAt(convs[b].msgs) - lastAt(convs[a].msgs); });
     $('threads').innerHTML = tids.length ? tids.map(function (tid) {
-      var msgs = threads[tid].slice().sort(function (a, b) { return a.at - b.at; });
-      var parts = tid.slice(3).split(':'); var other = mine[parts[0]] ? parts[1] : parts[0];
-      var last = msgs[msgs.length - 1];
-      var open = threadOpen[tid];
+      var c = convs[tid], msgs = c.msgs.slice().sort(function (a, b) { return a.at - b.at; }), last = msgs[msgs.length - 1], open = threadOpen[tid];
+      var title, sendBtn, headExtra = '';
+      if (c.kind === 'dm') {
+        var parts = tid.slice(3).split(':'), other = mine[parts[0]] ? parts[1] : parts[0];
+        title = who(other);
+        sendBtn = 'data-dm-send="' + esc(other) + '" data-dm-thread="' + esc(tid) + '"';
+        var rip = knownRipple(other);
+        if (rip) headExtra = '<a href="../ripple/?add=' + encodeURIComponent(rip) + '" target="_blank" rel="noopener" style="color:var(--gold);align-self:center;margin-right:8px">💬 Ripple ↗</a>';
+      } else {
+        var g = groups[tid.slice(4)];
+        title = '👥 ' + esc(g ? g.name : 'Group') + ' <span class="rep">' + (g ? g.members.length : 0) + '</span>';
+        sendBtn = 'data-grp-send="' + esc(tid.slice(4)) + '"';
+      }
       var body = '';
       if (open) {
         var lines = msgs.map(function (m) {
           var meMsg = mine[m.from];
           return '<div class="cmsg' + (meMsg ? ' me' : '') + '"><span class="cwho">' + (meMsg ? (t('chat_you') || 'You') : esc(m.name || who(m.from))) + '</span>' +
             esc(chatText(m)) + '<span class="ctime">' + new Date(m.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</span></div>';
-        }).join('');
+        }).join('') || '<div class="cempty">' + (t('chat_empty') || 'No messages yet — say hello.') + '</div>';
         body = '<div class="chatwrap" style="border-top:0;margin-top:8px"><div class="cthread">' + lines + '</div>' +
           '<div class="crow"><input class="chatin" data-dm-input="' + esc(tid) + '" placeholder="' + (t('chat_ph') || 'Message…') + '" value="' + esc(chatDraft[tid] || '') + '" maxlength="1000" autocomplete="off">' +
-          '<button class="primary" data-dm-send="' + esc(other) + '" data-dm-thread="' + esc(tid) + '">' + (t('chat_send') || 'Send') + '</button></div>' +
-          '<div class="chint">🔒 ' + (t('dm_e2e') || 'End-to-end encrypted — only you two can read this.') + '</div></div>';
+          '<button class="primary" ' + sendBtn + '>' + (t('chat_send') || 'Send') + '</button></div>' +
+          '<div class="chint">🔒 ' + (c.kind === 'grp' ? (t('grp_e2e') || 'End-to-end encrypted to every member.') : (t('dm_e2e') || 'End-to-end encrypted — only you two can read this.')) + '</div></div>';
       }
-      var rip = knownRipple(other);
-      var ripLink = rip ? '<a href="../ripple/?add=' + encodeURIComponent(rip) + '" target="_blank" rel="noopener" title="Message on Ripple" style="color:var(--gold);align-self:center;margin-right:8px">💬 Ripple ↗</a>' : '';
-      return '<div class="offercard"><div class="main">' +
-        '<div class="ttl">' + who(other) + '</div>' +
-        '<div class="by">' + esc((mine[last.from] ? (t('chat_you') || 'You') + ': ' : '') + chatText(last)).slice(0, 60) + '</div>' +
-        '</div>' + ripLink + '<button data-thread-toggle="' + esc(tid) + '">' + (open ? '▾' : '💬') + '</button>' + body + '</div>';
+      var preview = last ? esc((mine[last.from] ? (t('chat_you') || 'You') + ': ' : '') + chatText(last)).slice(0, 60) : '';
+      return '<div class="offercard"><div class="main"><div class="ttl">' + title + '</div>' +
+        '<div class="by">' + preview + '</div></div>' + headExtra + '<button data-thread-toggle="' + esc(tid) + '">' + (open ? '▾' : '💬') + '</button>' + body + '</div>';
     }).join('') : '<div class="note">' + (t('dm_empty') || 'No messages yet. Message a contact above — it’s end-to-end encrypted.') + '</div>';
+  }
+  function renderGroupPicker() {
+    var el = $('grpMembers'); if (!el) return;
+    var cs = knownContacts();
+    el.innerHTML = cs.length ? cs.map(function (a) {
+      return '<label class="gm"><input type="checkbox" data-grp-member="' + esc(a) + '"> ' + esc(directory[a].name || short(a, 8)) + '</label>';
+    }).join('') : '<span class="sub">No contacts yet — they appear once someone messages you or posts an offer.</span>';
   }
   function myDealWallet(d) {
     var set = {}; [d.buyer, d.seller, d.agent, d.arbiter].forEach(function (a) { if (a) set[a] = 1; });
@@ -1931,6 +2043,8 @@
     if (threadToggle) { threadOpen[threadToggle] = !threadOpen[threadToggle]; renderThreads(); return; }
     var dmSend = t.getAttribute('data-dm-send');
     if (dmSend) { var tid = t.getAttribute('data-dm-thread'); var inp = document.querySelector('[data-dm-input="' + tid + '"]'); sendDM(dmSend, inp ? inp.value : chatDraft[tid]); return; }
+    var grpSend = t.getAttribute('data-grp-send');
+    if (grpSend) { var gt = grpThread(grpSend); var gi = document.querySelector('[data-dm-input="' + gt + '"]'); sendGroup(grpSend, gi ? gi.value : chatDraft[gt]); return; }
     var mineIdx = t.getAttribute('data-mine');
     if (mineIdx !== null && mineIdx !== undefined && mineIdx !== '') {
       startMining(wallets[Number(mineIdx)]);
@@ -2214,13 +2328,25 @@
     var el = ev.target; if (!el || !el.getAttribute) return;
     var id = el.getAttribute('data-chat-input'); if (id) { ev.preventDefault(); sendChat(id); return; }
     var dmTid = el.getAttribute('data-dm-input');
-    if (dmTid) { ev.preventDefault(); var parts = dmTid.slice(3).split(':'); var mineA = myAddresses(); var other = mineA[parts[0]] ? parts[1] : parts[0]; sendDM(other, el.value); return; }
+    if (dmTid) {
+      ev.preventDefault();
+      if (isGrp(dmTid)) { sendGroup(dmTid.slice(4), el.value); return; }
+      var parts = dmTid.slice(3).split(':'); var mineA = myAddresses(); var other = mineA[parts[0]] ? parts[1] : parts[0]; sendDM(other, el.value); return;
+    }
     if (el.id === 'dmInput') { ev.preventDefault(); $('dmForm').requestSubmit ? $('dmForm').requestSubmit() : sendDM($('dmTo').value, el.value); }
   });
   if ($('dmForm')) $('dmForm').addEventListener('submit', function (ev) {
     ev.preventDefault();
     sendDM($('dmTo').value, $('dmInput').value);
     $('dmInput').value = ''; $('dmTo').value = '';
+  });
+  if ($('grpCreate')) $('grpCreate').addEventListener('click', function () {
+    var name = $('grpName').value.trim();
+    if (!name) { toast('Give the group a name'); return; }
+    var members = [].slice.call(document.querySelectorAll('[data-grp-member]:checked')).map(function (c) { return c.getAttribute('data-grp-member'); });
+    if (!members.length) { toast('Pick at least one contact to add'); return; }
+    var g = createGroup(name, members);
+    if (g) { $('grpName').value = ''; toast('👥 Group “' + g.name + '” created'); }
   });
   if ($('rippleHandle')) $('rippleHandle').value = myRipple;
   if ($('rippleSave')) $('rippleSave').addEventListener('click', function () {
@@ -2910,6 +3036,7 @@
   announceIdentities();       // publish our public keys so peers can build multisig vaults
   announceCredits();          // share our mutual-credit transfers so ledgers converge
   announceLimits();           // share the per-person credit limits (newest wins)
+  announceGroups();           // share group definitions so members can chat
   announceChat();             // share chat messages so threads converge
   decryptAll();               // unseal any encrypted DMs we already hold
 })();
