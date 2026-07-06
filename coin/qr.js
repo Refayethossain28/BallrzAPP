@@ -1,6 +1,10 @@
 /* CoinQR — a tiny, dependency-free QR Code (Model 2) encoder.
- * (Verbatim copy of ripple/qr.js with the global renamed; that encoder is
- * verified bit-for-bit against a reference library by scripts/test-ripple-qr.mjs.)
+ * (Shares its implementation with ripple/qr.js; only the global name differs.)
+ * Correctness is guarded by scripts/test-coin-qr.mjs, which checks the
+ * Reed–Solomon ECC against known QR test vectors AND decodes the rendered
+ * matrix back to the original text — so a code that can't actually be scanned
+ * fails the build. (The earlier structural-only test let a reversed RS
+ * generator polynomial ship undetected: valid-looking, but unscannable.)
  * ============================================================
  * Byte mode, error-correction level L, versions 1–9 (plenty for a short URL).
  * Returns a square matrix of booleans (true = dark module); the caller adds the
@@ -34,8 +38,8 @@
     for (var d = 0; d < ecLen; d++) {
       var ng = new Array(gen.length + 1).fill(0);
       for (var i = 0; i < gen.length; i++) {
-        ng[i] ^= gmul(gen[i], EXP[d]);
-        ng[i + 1] ^= gen[i];
+        ng[i] ^= gen[i];                         // x · term      (keep degree order)
+        ng[i + 1] ^= gmul(gen[i], EXP[d]);       // α^d · term    (constant multiply)
       }
       gen = ng;
     }
@@ -310,5 +314,5 @@
     return s;
   }
 
-  return { encode: encode, toSVG: toSVG };
+  return { encode: encode, toSVG: toSVG, rsEncode: rsEncode };
 });
