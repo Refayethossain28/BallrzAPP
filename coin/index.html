@@ -359,7 +359,7 @@
 <div class="row" style="margin-top:12px">
   <select id="langSel" title="Language" aria-label="Language"></select>
   <button id="installBtn" class="primary" style="display:none" data-i18n="b_install">📲 Install app</button>
-  <button id="notifyBtn">🔔 Notify me</button>
+  <button id="notifyBtn" data-i18n="b_notify">🔔 Notify me</button>
   <button id="tourBtn" data-i18n="b_tour">❓ How it works — take the tour</button>
   <button id="cardBtn" data-i18n="b_card">🖼 My collectible card</button>
   <button id="shareBtn" data-i18n="b_share">📣 Share</button>
@@ -1319,7 +1319,7 @@
       }).join('<br>') +
         ' <span class="fee">fee ' + fmt(e.fee) + '</span>' +
         '<div class="hash">' + esc(short(tx.id, 16)) + '</div></div>';
-    }).join('') : '<div class="note">No pending transactions — send some coins above.</div>';
+    }).join('') : '<div class="note">' + (t('n_mempool_empty') || 'No pending transactions — send some coins above.') + '</div>';
 
     renderChainPicker();
 
@@ -1503,7 +1503,7 @@
         (o.desc ? '<div class="dsc">' + esc(o.desc) + '</div>' : '') +
         '<div class="by">by ' + who(o.address) + (isMine ? ' (you)' : '') + repBadge(o.address) + (tags ? ' · ' + tags : '') + '</div>' +
         '</div><span class="prc">' + fmtTime(o.price) + '<span class="tm">' + fmt(o.price) + '</span></span>' + action + '</div>';
-    }).join('') : '<div class="note">' + (all.length ? 'No offers match your search.' : 'No offers yet — post the first one above (“🚗 Lift into town — 30m”).') + '</div>';
+    }).join('') : '<div class="note">' + (all.length ? (t('n_no_match') || 'No offers match your search.') : (t('n_offers_empty') || 'No offers yet — post the first one above (“🚗 Lift into town — 30m”).')) + '</div>';
   }
 
   // Top helpers — community reputation leaderboard by completed (released) deals.
@@ -1522,7 +1522,7 @@
       return '<div class="offercard" style="padding:10px 14px">' +
         '<div class="main"><span class="ttl">' + medal + ' ' + who(r.addr) + (mine[r.addr] ? ' (you)' : '') + '</span></div>' +
         '<span class="rep">✓ ' + r.n + ' favour' + (r.n === 1 ? '' : 's') + ' done</span></div>';
-    }).join('') : '<div class="note">No completed favours yet — confirm a delivered deal to put someone on the board.</div>';
+    }).join('') : '<div class="note">' + (t('n_helpers_empty') || 'No completed favours yet — confirm a delivered deal to put someone on the board.') + '</div>';
     if ($('helpersHint')) $('helpersHint').textContent = ranked.length ? '' : '';
   }
 
@@ -1599,7 +1599,7 @@
         '<div class="by">' + who(d.buyer) + ' → ' + who(d.seller) + via + '</div>' +
         '<div class="by">' + dealStatusLabel(d) + ' · you’re the <b>' + role + '</b></div>' +
         '</div>' + actions + '</div>';
-    }).join('') : '<div class="note">No deals yet. Pay for an offer (Pay, 🛡 Trusted or 🔐 Vault) to start one — confirming delivery builds the seller’s ✓ reputation.</div>';
+    }).join('') : '<div class="note">' + (t('n_deals_empty') || 'No deals yet. Pay for an offer (Pay, 🛡 Trusted or 🔐 Vault) to start one — confirming delivery builds the seller’s ✓ reputation.') + '</div>';
   }
 
   /* ---------- multisig (vault) ceremony ---------- */
@@ -2129,24 +2129,27 @@
       var nav = String((navigator && navigator.language) || 'en').slice(0, 2).toLowerCase();
       return I18N.strings[nav] ? nav : 'en';
     }
-    function applyLang(l) {
+    function applyLang(l, isChange) {
       if (!I18N.strings[l]) l = 'en';
+      currentLang = l;                        // drives t() for dynamic (JS-built) strings
       var dict = I18N.strings[l], en = I18N.strings.en;
-      var t = document.querySelectorAll('[data-i18n]');
-      for (var i = 0; i < t.length; i++) { var k = t[i].getAttribute('data-i18n'); var v = dict[k] != null ? dict[k] : en[k]; if (v != null) t[i].textContent = v; }
+      var els = document.querySelectorAll('[data-i18n]');
+      for (var i = 0; i < els.length; i++) { var k = els[i].getAttribute('data-i18n'); var v = dict[k] != null ? dict[k] : en[k]; if (v != null) els[i].textContent = v; }
       var p = document.querySelectorAll('[data-i18n-ph]');
       for (var j = 0; j < p.length; j++) { var k2 = p[j].getAttribute('data-i18n-ph'); var v2 = dict[k2] != null ? dict[k2] : en[k2]; if (v2 != null) p[j].setAttribute('placeholder', v2); }
       var rtl = I18N.rtl && I18N.rtl.indexOf(l) >= 0;
       try { document.documentElement.setAttribute('dir', rtl ? 'rtl' : 'ltr'); document.documentElement.setAttribute('lang', l); } catch (e) {}
       try { localStorage.setItem(LS_LANG, l); } catch (e) {}
+      if (isChange) { try { render(); renderTimeBank(); renderPriceList(); renderNetStatus(); } catch (e) {} } // refresh dynamic strings
     }
     var lang = pickLang(), sel = $('langSel');
     if (sel) {
       sel.innerHTML = I18N.langs.map(function (x) {
         return '<option value="' + x.code + '"' + (x.code === lang ? ' selected' : '') + '>' + esc(x.name) + '</option>';
       }).join('');
-      sel.addEventListener('change', function () { applyLang(this.value); });
+      sel.addEventListener('change', function () { applyLang(this.value, true); });
     }
+    currentLang = lang;
     applyLang(lang);
   })();
 
