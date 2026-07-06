@@ -134,6 +134,16 @@
   .offercard .by { color: var(--dim); font-size: 12px; margin-top: 4px; }
   .offercard .prc { background: var(--goldgrad); -webkit-background-clip: text; background-clip: text; color: transparent; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .rep { color: var(--green); font-size: 12px; font-weight: 600; }
+  .chatwrap { flex-basis: 100%; width: 100%; margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
+  .cthread { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+  .cmsg { background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 7px 11px; font-size: 14px; align-self: flex-start; max-width: 85%; }
+  .cmsg.me { align-self: flex-end; background: rgba(231,182,75,0.12); border-color: rgba(231,182,75,0.3); }
+  .cmsg .cwho { font-weight: 700; font-size: 12px; color: var(--gold); margin-right: 6px; }
+  .cmsg .ctime { font-size: 11px; color: var(--dim); margin-left: 6px; }
+  .cempty { color: var(--dim); font-size: 13px; padding: 6px 2px; }
+  .crow { display: flex; gap: 8px; }
+  .crow .chatin { flex: 1; min-width: 0; }
+  .chint { font-size: 11px; color: var(--dim); margin-top: 6px; }
   details.pricelist { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; margin-bottom: 12px; }
   details.pricelist summary { cursor: pointer; color: var(--gold); font-size: 13.5px; list-style: none; font-weight: 600; letter-spacing: 0.2px; }
   details.pricelist summary::-webkit-details-marker { display: none; }
@@ -459,7 +469,7 @@
 <div class="list" id="offers"></div>
 
 <h2><span data-i18n="h_deals">Deals</span> <span id="dealsCount"></span></h2>
-<div class="sub">A payment plus a promise. <b>Pay</b> pays the seller directly, then you confirm you got it. <b>🛡 Escrow</b> pays a trusted third party who releases to the seller once you confirm — protection if you don’t fully trust them yet. Confirming delivery builds the seller’s ✓ reputation.</div>
+<div class="sub">A payment plus a promise. <b>Pay</b> pays the seller directly, then you confirm you got it. <b>🛡 Escrow</b> pays a trusted third party who releases to the seller once you confirm — protection if you don’t fully trust them yet. Confirming delivery builds the seller’s ✓ reputation. Tap <b>💬</b> on any deal to <b>chat</b> with the other party — arrange the details, and keep a signed record if there’s ever a dispute.</div>
 <div class="list" id="deals"></div>
 
 <h2><span data-i18n="h_mutual">Mutual credit</span> <span class="rep">beta</span></h2>
@@ -972,6 +982,7 @@
       announceDeals();
       announceIdentities();
       announceCredits();
+      announceChat();
     } else if (m.type === 'chain') {
       if (chain.replaceChain(m.blocks)) {
         persist();
@@ -990,6 +1001,14 @@
       if (ingestCredit(m.credit)) {
         saveCredits(); renderMutual();
         var mineC = myAddresses(); if (m.credit && mineC[m.credit.to]) notif('🤝 Credit received', fmtTime(m.credit.amount) + ' from ' + who(m.credit.from));
+      }
+    } else if (m.type === 'chat') {
+      if (ingestChat(m.chat)) {
+        saveChat(); renderDeals();
+        var cm = m.chat, d = deals[cm.dealId], mineCh = myAddresses();
+        if (d && !mineCh[cm.from] && (mineCh[d.buyer] || mineCh[d.seller] || (d.agent && mineCh[d.agent]) || myPartyPubs(d).length) && !notifiedChat[cm.id]) {
+          notifiedChat[cm.id] = 1; notif('💬 ' + (cm.name || who(cm.from)), cm.text);
+        }
       }
     } else if (m.type === 'id') {
       if (registerIdentity(m.address, m.pubKey, m.name)) renderDeals();
@@ -1568,6 +1587,54 @@
     if (!d.proposal) return false;
     return myPartyPubs(d).some(function (w) { return d.proposal.sigs[w.publicKey]; });
   }
+  // ---- Per-deal chat: signed messages attached to a barter deal so the buyer,
+  // seller and any arbiter can coordinate the favour and settle disputes right
+  // where the payment lives. Messages gossip like deals; each is SIGNED so
+  // authorship is verifiable (what matters for a dispute) — but not end-to-end
+  // encrypted: the relay can read them, same trust model as offers and deals. ----
+  var LS_CHAT = 'ballrzcoin.chat.v1';
+  var chat = {};
+  try { chat = JSON.parse(localStorage.getItem(LS_CHAT) || '{}') || {}; } catch (e) { chat = {}; }
+  function saveChat() { try { localStorage.setItem(LS_CHAT, JSON.stringify(chat)); } catch (e) {} }
+  var chatOpen = {}, chatDraft = {}, notifiedChat = {};
+  var SEP = String.fromCharCode(1);
+  function chatCanonical(m) { return [m.dealId, m.from, m.at, m.nonce, m.text].join(SEP); }
+  function chatVerify(m) {
+    if (!m || !m.id || !m.dealId || !Coin.isValidAddress(m.from)) return false;
+    if (typeof m.text !== 'string' || !m.text.trim() || m.text.length > 500) return false;
+    if (!m.pubKey || Coin.addressFromPublicKey(m.pubKey) !== m.from) return false;
+    try { return Coin.verify(Coin.sha256(chatCanonical(m)), m.sig, m.pubKey); } catch (e) { return false; }
+  }
+  function ingestChat(m) {
+    if (!chatVerify(m) || chat[m.id]) return false;
+    chat[m.id] = { id: m.id, dealId: String(m.dealId).slice(0, 60), from: m.from, name: String(m.name || '').slice(0, 24), text: String(m.text).slice(0, 500), at: Number(m.at) || 0, nonce: String(m.nonce), pubKey: m.pubKey, sig: m.sig };
+    if (m.pubKey) registerIdentity(m.from, m.pubKey, m.name);
+    var ids = Object.keys(chat);
+    if (ids.length > 1000) { ids.sort(function (a, b) { return chat[a].at - chat[b].at; }); while (ids.length > 1000) delete chat[ids.shift()]; }
+    return true;
+  }
+  function chatFor(dealId) { return Object.keys(chat).map(function (id) { return chat[id]; }).filter(function (m) { return m.dealId === dealId; }).sort(function (a, b) { return a.at - b.at; }); }
+  function announceChat() { Object.keys(chat).forEach(function (id) { netSend({ type: 'chat', chat: chat[id] }); }); }
+  function myDealWallet(d) {
+    var set = {}; [d.buyer, d.seller, d.agent, d.arbiter].forEach(function (a) { if (a) set[a] = 1; });
+    for (var i = 0; i < wallets.length; i++) if (set[wallets[i].address]) return wallets[i];
+    var pp = (typeof myPartyPubs === 'function') ? myPartyPubs(d) : [];
+    return pp.length ? pp[0] : null;
+  }
+  function sendChat(dealId) {
+    var el = document.querySelector('[data-chat-input="' + dealId + '"]');
+    var text = String((el && el.value) || chatDraft[dealId] || '').trim();
+    if (!text) return;
+    var d = deals[dealId]; if (!d) return;
+    var w = myDealWallet(d); if (!w) { toast('Only people in this deal can chat'); return; }
+    var m = { dealId: dealId, from: w.address, name: w.name, at: Date.now(), nonce: Math.random().toString(36).slice(2), pubKey: w.publicKey, text: text };
+    m.sig = Coin.sign(Coin.sha256(chatCanonical(m)), w.privateKey);
+    m.id = Coin.sha256d(chatCanonical(m) + SEP + m.sig);
+    ingestChat(m); saveChat(); netSend({ type: 'chat', chat: m });
+    chatDraft[dealId] = ''; renderDeals();
+    var t2 = document.querySelector('[data-chat-input="' + dealId + '"]'); if (t2) t2.focus();
+  }
+
   function renderDeals() {
     var mine = myAddresses();
     var list = Object.keys(deals).map(function (id) { return deals[id]; })
@@ -1594,11 +1661,25 @@
         else if (role === 'agent') actions = '<button class="primary" data-deal-escrow-release="' + esc(d.id) + '">Release to seller</button><button data-deal-escrow-refund="' + esc(d.id) + '">Refund buyer</button>';
       }
       var via = d.escrowType === 'multisig' ? ' · 🔐 arbiter ' + who(d.arbiter) : (d.mode === 'escrow' ? ' · 🛡 via ' + who(d.agent) : '');
+      var thread = chatFor(d.id);
+      var chatBtn = '<button data-chat-toggle="' + esc(d.id) + '">💬' + (thread.length ? ' ' + thread.length : '') + '</button>';
+      var chatBlock = '';
+      if (chatOpen[d.id]) {
+        var msgs = thread.map(function (m) {
+          var meMsg = mine[m.from];
+          return '<div class="cmsg' + (meMsg ? ' me' : '') + '"><span class="cwho">' + (meMsg ? (t('chat_you') || 'You') : esc(m.name || who(m.from))) + '</span>' +
+            esc(m.text) + '<span class="ctime">' + new Date(m.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</span></div>';
+        }).join('') || '<div class="cempty">' + (t('chat_empty') || 'No messages yet — say hello and arrange the details.') + '</div>';
+        chatBlock = '<div class="chatwrap"><div class="cthread">' + msgs + '</div>' +
+          '<div class="crow"><input class="chatin" data-chat-input="' + esc(d.id) + '" placeholder="' + (t('chat_ph') || 'Message…') + '" value="' + esc(chatDraft[d.id] || '') + '" maxlength="500" autocomplete="off">' +
+          '<button class="primary" data-chat-send="' + esc(d.id) + '">' + (t('chat_send') || 'Send') + '</button></div>' +
+          '<div class="chint">' + (t('chat_hint') || 'Signed, and visible to the relay — coordinate favours, not secrets.') + '</div></div>';
+      }
       return '<div class="offercard"><div class="main">' +
         '<div class="ttl">' + esc(d.title || 'Barter') + ' <span class="prc">' + fmt(d.price) + '</span></div>' +
         '<div class="by">' + who(d.buyer) + ' → ' + who(d.seller) + via + '</div>' +
         '<div class="by">' + dealStatusLabel(d) + ' · you’re the <b>' + role + '</b></div>' +
-        '</div>' + actions + '</div>';
+        '</div>' + actions + chatBtn + chatBlock + '</div>';
     }).join('') : '<div class="note">' + (t('n_deals_empty') || 'No deals yet. Pay for an offer (Pay, 🛡 Trusted or 🔐 Vault) to start one — confirming delivery builds the seller’s ✓ reputation.') + '</div>';
   }
 
@@ -1665,6 +1746,10 @@
   document.addEventListener('click', function (ev) {
     var t = ev.target;
     if (!t || !t.getAttribute) return;
+    var chatToggle = t.getAttribute('data-chat-toggle');
+    if (chatToggle) { chatOpen[chatToggle] = !chatOpen[chatToggle]; renderDeals(); return; }
+    var chatSend = t.getAttribute('data-chat-send');
+    if (chatSend) { sendChat(chatSend); return; }
     var mineIdx = t.getAttribute('data-mine');
     if (mineIdx !== null && mineIdx !== undefined && mineIdx !== '') {
       startMining(wallets[Number(mineIdx)]);
@@ -1935,6 +2020,18 @@
   });
   if ($('offerSearch')) $('offerSearch').addEventListener('input', renderOffers);
   if ($('offerFilter')) $('offerFilter').addEventListener('change', renderOffers);
+
+  // Per-deal chat inputs: remember the draft (so an incoming message mid-typing
+  // doesn't wipe it) and send on Enter.
+  document.addEventListener('input', function (ev) {
+    var id = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-chat-input');
+    if (id) chatDraft[id] = ev.target.value;
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Enter') return;
+    var id = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-chat-input');
+    if (id) { ev.preventDefault(); sendChat(id); }
+  });
 
   // Mutual-credit: give credit for a favour (a signed IOU that nets to zero).
   if ($('mcForm')) $('mcForm').addEventListener('submit', function (ev) {
@@ -2609,6 +2706,7 @@
   announceDeals();            // share our deal records so reputation converges
   announceIdentities();       // publish our public keys so peers can build multisig vaults
   announceCredits();          // share our mutual-credit transfers so ledgers converge
+  announceChat();             // share deal-chat messages so threads converge
 })();
 </script>
 </body>
