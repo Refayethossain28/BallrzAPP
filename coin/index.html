@@ -348,9 +348,12 @@
 <div class="row">
   <button id="newWallet" data-i18n="b_newwallet">＋ New wallet</button>
   <button id="importWallet" data-i18n="b_import">⬇ Import wallet</button>
+  <button id="inviteBtn" class="primary" data-i18n="b_invite">🎁 Invite a friend</button>
+  <button id="posBtn" data-i18n="b_pos">🏪 Charge (point of sale)</button>
   <span class="mining" id="miningStatus"></span>
   <span class="mining" id="netStatus"></span>
 </div>
+<div id="inviteOut"></div>
 <div class="timebank" id="securityPanel" style="display:none">
   <div class="tbrow">
     <span class="tblabel"><span data-i18n="sec_keys">🔒 Key security</span> <span id="lockState" class="rep"></span></span>
@@ -1371,6 +1374,7 @@
       $('offerFilter').innerHTML = '<option value="">All categories</option>' +
         OFFER_CATS.map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join('');
     }
+    if ($('offerCircle') && !$('offerCircle').value && typeof myCircle === 'string' && myCircle) $('offerCircle').value = myCircle;
   }
   function offerMatches(o, q, cat) {
     if (cat && o.category !== cat) return false;
@@ -1812,6 +1816,70 @@
   });
   if ($('offerSearch')) $('offerSearch').addEventListener('input', renderOffers);
   if ($('offerFilter')) $('offerFilter').addEventListener('change', renderOffers);
+
+  // Mine a block synchronously (the demo target is tiny) — used by gifting so a
+  // freshly-funded invite wallet is confirmed and spendable immediately.
+  function mineNow(minerAddr) {
+    var block = chain.prepareBlock(minerAddr);
+    var found = Coin.mine(block, { startNonce: 0, maxIterations: 8000000 });
+    if (!found) throw new Error('mining timed out');
+    chain.addBlock(found);
+    return found;
+  }
+
+  // My circle/group — remembered, prefills the offer "circle" field, and rides
+  // along in invites so a newcomer lands in the same group.
+  var LS_CIRCLE = 'ballrzcoin.circle.v1';
+  var myCircle = '';
+  try { myCircle = localStorage.getItem(LS_CIRCLE) || ''; } catch (e) {}
+  function setMyCircle(c) {
+    myCircle = String(c || '').slice(0, 24);
+    try { localStorage.setItem(LS_CIRCLE, myCircle); } catch (e) {}
+    if ($('offerCircle') && !$('offerCircle').value) $('offerCircle').value = myCircle;
+  }
+
+  // Invite + onboarding: fund a fresh "gift" wallet from yours, confirm it, and
+  // hand your friend a link that drops that funded wallet straight into their
+  // app — so they arrive with a spendable balance instead of an empty one. This
+  // is what breaks a community currency's cold-start problem.
+  $('inviteBtn').addEventListener('click', function () {
+    try {
+      var funder = null;
+      for (var i = 0; i < wallets.length; i++) { if (chain.getBalance(wallets[i].address) > 0) { funder = wallets[i]; break; } }
+      if (!funder) throw new Error('Mine some BLZ first, then you can gift a starting balance.');
+      var raw = prompt('🎁 Invite a friend — how many HOURS of starting balance to gift them?\n(They can spend it on favours right away.)', '2');
+      if (raw === null) return;
+      var hours = parseFloat(raw);
+      if (!(hours > 0)) throw new Error('Enter a number of hours');
+      var amount = minutesToBase(hours * 60);
+      if (chain.getBalance(funder.address) < amount) throw new Error('Not enough BLZ in ' + funder.name + ' for that gift');
+      var circle = prompt('Add them to a circle/group? (optional — e.g. “Elm Street”)', myCircle) || '';
+      if (circle) setMyCircle(circle);
+      var gift = Coin.generateWallet();
+      chain.send(funder, gift.address, amount, 0, { timestamp: chain.tip.timestamp + 1 });
+      mineNow(funder.address);            // confirm the gift so it's spendable
+      persist(); announceChain(); render();
+      var url = pageBase() + '?claim=' + gift.privateKey;
+      if (relays.length) url += '&relay=' + encodeURIComponent(relays[0].url);
+      if (circle) url += '&circle=' + encodeURIComponent(circle);
+      url += '&from=' + encodeURIComponent(funder.name);
+      var warn = relays.length ? '' : '<div class="warn">⚠ Add a relay (Network panel) so your friend’s device can sync and see the gift.</div>';
+      $('inviteOut').innerHTML = '<div class="note" style="margin-top:12px">' +
+        '<div class="ttl" style="font-weight:650">🎁 Invite ready — gifts ' + fmtTime(amount) + ' (' + fmt(amount) + ')' + (circle ? ' · ◇ ' + esc(circle) : '') + '</div>' + warn +
+        '<div class="qrp" style="margin:10px 0">' + CoinQR.toSVG(CoinQR.encode(url), 4, { dark: '#17130c', light: '#ffffff' }) + '</div>' +
+        '<div class="mono" style="word-break:break-all;font-size:12px" data-copy="' + esc(url) + '" title="Click to copy">' + esc(url) + '</div>' +
+        '<div class="row" style="margin-top:8px"><button id="inviteCopy" type="button">📋 Copy invite</button><button id="inviteShare" type="button">📣 Share</button></div>' +
+        '</div>';
+      var share = function () {
+        var text = '🎁 I set you up on BallrzCoin with ' + fmtTime(amount) + ' to start — a community currency for time & favours. Open this to claim it: ' + url;
+        if (navigator.share) navigator.share({ text: text }).catch(function () {});
+        else if (navigator.clipboard) { navigator.clipboard.writeText(url); toast('📋 Invite copied'); }
+      };
+      $('inviteCopy').addEventListener('click', function () { if (navigator.clipboard) { navigator.clipboard.writeText(url); toast('📋 Invite copied'); } });
+      $('inviteShare').addEventListener('click', share);
+      toast('🎁 Invite created — send it to your friend');
+    } catch (err) { toast('✖ ' + err.message); }
+  });
 
   // Multi-language UI: translate tagged elements ([data-i18n] textContent,
   // [data-i18n-ph] placeholder) from the strings table, remember the choice, and
@@ -2271,6 +2339,27 @@
                : 'Recipient filled in from the link — add an amount and send');
     try { $('sendForm').scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (err) {}
   }
+
+  // Onboarding: ?claim=<key> drops a friend's pre-funded gift wallet straight in,
+  // so a newcomer arrives with a spendable balance. The ?relay= in the same link
+  // (handled above) joins them to the network so the gifted coins sync in.
+  var claimKey = qsParam('claim');
+  if (!locked && claimKey && /^[0-9a-f]{64}$/.test(claimKey)) {
+    try {
+      var gw = Coin.walletFromPrivateKey(claimKey);
+      if (!wallets.some(function (w) { return w.address === gw.address; })) {
+        gw.name = 'My BallrzCoin';
+        wallets.unshift(gw);          // make the gift their primary wallet
+        saveWalletsNow();
+      }
+      var circleP = qsParam('circle'); if (circleP) setMyCircle(circleP);
+      var fromP = qsParam('from');
+      setTimeout(function () {
+        toast('🎁 Welcome! ' + (fromP ? fromP + ' ' : 'A friend ') + 'gave you a starting balance — it appears once your node syncs.');
+      }, 1000);
+    } catch (e) { /* bad claim key — ignore */ }
+  }
+
   render();
   renderTimeBank();
   renderPriceList();
