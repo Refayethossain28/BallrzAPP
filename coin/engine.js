@@ -346,6 +346,20 @@
     }
   }
 
+  // ECDH shared secret on secp256k1: my private key × their public key gives the
+  // same point as their private key × my public key, so two parties derive an
+  // identical secret over an open channel. Returns the 32-byte x-coordinate as
+  // hex — HASH it before use as a key (see the app's E2E chat). This lets the
+  // coin's own wallets do end-to-end encryption with no new key system.
+  function ecdh(privHex, pubHex) {
+    var d = BigInt('0x' + privHex);
+    if (d <= ZERO || d >= CURVE_N) throw new Error('private key out of range');
+    var P = decompressPoint(pubHex);
+    var S = pointMul(d, P);
+    if (!S) throw new Error('degenerate ECDH result');
+    return padHex64(S.x);
+  }
+
   /* ======================================================================
    * base58check addresses
    * ==================================================================== */
@@ -1079,7 +1093,7 @@
     base58Encode: base58Encode, base58Decode: base58Decode,
     base58Check: base58Check, base58CheckDecode: base58CheckDecode,
     // elliptic-curve crypto
-    getPublicKey: getPublicKey, sign: sign, verify: verify,
+    getPublicKey: getPublicKey, sign: sign, verify: verify, ecdh: ecdh,
     // wallets & addresses
     generateWallet: generateWallet, walletFromPrivateKey: walletFromPrivateKey,
     addressFromPublicKey: addressFromPublicKey, isValidAddress: isValidAddress,

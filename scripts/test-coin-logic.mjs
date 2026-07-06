@@ -64,6 +64,16 @@ test('recovery phrase round-trips a private key and catches errors', () => {
   // wrong length rejected
   assert.throws(() => phraseToKey('able acid'), /33 words/);
 });
+test('ECDH derives the same shared secret for both parties', () => {
+  const ab = C.ecdh(alice.privateKey, bob.publicKey);
+  const ba = C.ecdh(bob.privateKey, alice.publicKey);
+  assert.equal(ab, ba, 'alice·B == bob·A');
+  assert.match(ab, /^[0-9a-f]{64}$/, '32-byte hex secret');
+  // a different counterparty yields a different secret
+  const ac = C.ecdh(alice.privateKey, carol.publicKey);
+  assert.notEqual(ab, ac);
+  assert.throws(() => C.ecdh(alice.privateKey, 'zz'), /./, 'bad pubkey rejected');
+});
 
 /* Fast test-net parameters: 8 leading zero bits ≈ 256 hashes per block. */
 const GENESIS_TIME = 1000000;

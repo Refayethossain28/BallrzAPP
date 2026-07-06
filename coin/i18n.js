@@ -65,7 +65,17 @@
         chat_ph: "Message…",
         chat_send: "Send",
         chat_hint: "Signed, and visible to the relay — coordinate favours, not secrets.",
-        chat_open: "Chat"
+        chat_open: "Chat",
+        h_messages: "💬 Messages",
+        dm_intro: "Private 1:1 chat with your contacts, end-to-end encrypted with your wallet keys — only you and they can read it, not even the relay. You can message anyone who has used the app (so their key is known).",
+        dm_send: "Send",
+        dm_e2e: "End-to-end encrypted — only you two can read this.",
+        dm_empty: "No messages yet. Message a contact above — it's end-to-end encrypted.",
+        dm_new: "New encrypted message",
+        rip_summary: "🔗 Link the Ripple messenger (for richer chats: groups, voice notes, disappearing messages)",
+        rip_save: "Save",
+        rip_open: "Open Ripple ↗",
+        rip_help: "Share your Ripple username here and it travels with your identity, so contacts get a “message on Ripple” link. BallrzCoin chat is end-to-end encrypted for 1:1; Ripple adds groups and more if you want them."
       },
       es: {
         h_wallets: "Carteras",
@@ -115,7 +125,17 @@
         chat_ph: "Mensaje…",
         chat_send: "Enviar",
         chat_hint: "Firmado y visible para el relé: coordina favores, no secretos.",
-        chat_open: "Chat"
+        chat_open: "Chat",
+        h_messages: "💬 Mensajes",
+        dm_intro: "Chat privado 1:1 con tus contactos, cifrado de extremo a extremo con las claves de tu cartera — solo tú y esa persona pueden leerlo, ni siquiera el relé. Puedes escribir a cualquiera que haya usado la app (así se conoce su clave).",
+        dm_send: "Enviar",
+        dm_e2e: "Cifrado de extremo a extremo — solo vosotros dos podéis leer esto.",
+        dm_empty: "Aún no hay mensajes. Escribe a un contacto de arriba — está cifrado de extremo a extremo.",
+        dm_new: "Nuevo mensaje cifrado",
+        rip_summary: "🔗 Vincula el mensajero Ripple (para chats más completos: grupos, notas de voz, mensajes que desaparecen)",
+        rip_save: "Guardar",
+        rip_open: "Abrir Ripple ↗",
+        rip_help: "Comparte aquí tu nombre de usuario de Ripple y viajará con tu identidad, para que tus contactos reciban un enlace de “mensaje en Ripple”. El chat de BallrzCoin está cifrado de extremo a extremo para 1:1; Ripple añade grupos y más si los quieres."
       },
       fr: {
         h_wallets: "Portefeuilles",
@@ -165,7 +185,17 @@
         chat_ph: "Message…",
         chat_send: "Envoyer",
         chat_hint: "Signé et visible par le relais — coordonnez des services, pas des secrets.",
-        chat_open: "Chat"
+        chat_open: "Chat",
+        h_messages: "💬 Messages",
+        dm_intro: "Chat privé 1:1 avec vos contacts, chiffré de bout en bout avec les clés de votre portefeuille — vous seuls pouvez le lire, pas même le relais. Vous pouvez écrire à quiconque a utilisé l'app (sa clé est donc connue).",
+        dm_send: "Envoyer",
+        dm_e2e: "Chiffré de bout en bout — vous deux seuls pouvez lire ceci.",
+        dm_empty: "Aucun message pour l'instant. Écrivez à un contact ci-dessus — c'est chiffré de bout en bout.",
+        dm_new: "Nouveau message chiffré",
+        rip_summary: "🔗 Reliez la messagerie Ripple (pour des chats plus riches : groupes, notes vocales, messages éphémères)",
+        rip_save: "Enregistrer",
+        rip_open: "Ouvrir Ripple ↗",
+        rip_help: "Partagez ici votre nom d'utilisateur Ripple et il voyage avec votre identité, pour que vos contacts obtiennent un lien « message sur Ripple ». Le chat BallrzCoin est chiffré de bout en bout pour le 1:1 ; Ripple ajoute des groupes et plus si vous le souhaitez."
       },
       pt: {
         h_wallets: "Carteiras",
@@ -215,7 +245,17 @@
         chat_ph: "Mensagem…",
         chat_send: "Enviar",
         chat_hint: "Assinado e visível para o relé — combine favores, não segredos.",
-        chat_open: "Chat"
+        chat_open: "Chat",
+        h_messages: "💬 Mensagens",
+        dm_intro: "Chat privado 1:1 com seus contatos, com criptografia de ponta a ponta usando as chaves da sua carteira — só você e a pessoa podem ler, nem mesmo o relé. Você pode escrever para qualquer um que já tenha usado o app (assim a chave dele é conhecida).",
+        dm_send: "Enviar",
+        dm_e2e: "Criptografado de ponta a ponta — só vocês dois podem ler isto.",
+        dm_empty: "Ainda não há mensagens. Escreva para um contato acima — é criptografado de ponta a ponta.",
+        dm_new: "Nova mensagem criptografada",
+        rip_summary: "🔗 Vincule o mensageiro Ripple (para chats mais completos: grupos, notas de voz, mensagens que desaparecem)",
+        rip_save: "Salvar",
+        rip_open: "Abrir Ripple ↗",
+        rip_help: "Compartilhe aqui seu nome de usuário do Ripple e ele viaja com sua identidade, para que os contatos recebam um link de “mensagem no Ripple”. O chat do BallrzCoin é criptografado de ponta a ponta para 1:1; o Ripple adiciona grupos e mais, se você quiser."
       },
       de: {
         h_wallets: "Wallets",
@@ -265,7 +305,17 @@
         chat_ph: "Nachricht…",
         chat_send: "Senden",
         chat_hint: "Signiert und für das Relay sichtbar – koordiniert Gefallen, keine Geheimnisse.",
-        chat_open: "Chat"
+        chat_open: "Chat",
+        h_messages: "💬 Nachrichten",
+        dm_intro: "Privater 1:1-Chat mit deinen Kontakten, Ende-zu-Ende-verschlüsselt mit deinen Wallet-Schlüsseln — nur du und dein Gegenüber können ihn lesen, nicht einmal das Relay. Du kannst jedem schreiben, der die App genutzt hat (so ist sein Schlüssel bekannt).",
+        dm_send: "Senden",
+        dm_e2e: "Ende-zu-Ende-verschlüsselt — nur ihr beide könnt das lesen.",
+        dm_empty: "Noch keine Nachrichten. Schreibe oben einem Kontakt — es ist Ende-zu-Ende-verschlüsselt.",
+        dm_new: "Neue verschlüsselte Nachricht",
+        rip_summary: "🔗 Verknüpfe den Ripple-Messenger (für reichere Chats: Gruppen, Sprachnachrichten, verschwindende Nachrichten)",
+        rip_save: "Speichern",
+        rip_open: "Ripple öffnen ↗",
+        rip_help: "Teile hier deinen Ripple-Benutzernamen, dann reist er mit deiner Identität, sodass Kontakte einen „Nachricht auf Ripple“-Link erhalten. Der BallrzCoin-Chat ist für 1:1 Ende-zu-Ende-verschlüsselt; Ripple ergänzt Gruppen und mehr, wenn du willst."
       },
       it: {
         h_wallets: "Portafogli",
@@ -315,7 +365,17 @@
         chat_ph: "Messaggio…",
         chat_send: "Invia",
         chat_hint: "Firmato e visibile al relay — coordina favori, non segreti.",
-        chat_open: "Chat"
+        chat_open: "Chat",
+        h_messages: "💬 Messaggi",
+        dm_intro: "Chat privata 1:1 con i tuoi contatti, cifrata end-to-end con le chiavi del tuo portafoglio — solo tu e l'altra persona potete leggerla, nemmeno il relay. Puoi scrivere a chiunque abbia usato l'app (così la sua chiave è nota).",
+        dm_send: "Invia",
+        dm_e2e: "Cifrato end-to-end — solo voi due potete leggere questo.",
+        dm_empty: "Ancora nessun messaggio. Scrivi a un contatto qui sopra — è cifrato end-to-end.",
+        dm_new: "Nuovo messaggio cifrato",
+        rip_summary: "🔗 Collega il messenger Ripple (per chat più ricche: gruppi, note vocali, messaggi che scompaiono)",
+        rip_save: "Salva",
+        rip_open: "Apri Ripple ↗",
+        rip_help: "Condividi qui il tuo nome utente Ripple e viaggerà con la tua identità, così i contatti ricevono un link « messaggio su Ripple ». La chat di BallrzCoin è cifrata end-to-end per l'1:1; Ripple aggiunge gruppi e altro se li vuoi."
       },
       hi: {
         h_wallets: "वॉलेट",
@@ -365,7 +425,17 @@
         chat_ph: "संदेश…",
         chat_send: "भेजें",
         chat_hint: "हस्ताक्षरित, और रिले को दिखता है — एहसान समन्वयित करें, राज़ नहीं।",
-        chat_open: "चैट"
+        chat_open: "चैट",
+        h_messages: "💬 संदेश",
+        dm_intro: "अपने संपर्कों के साथ निजी 1:1 चैट, आपके वॉलेट की कुंजियों से एंड-टू-एंड एन्क्रिप्टेड — केवल आप और वे ही इसे पढ़ सकते हैं, रिले भी नहीं। आप किसी को भी संदेश भेज सकते हैं जिसने ऐप का उपयोग किया है (ताकि उसकी कुंजी ज्ञात हो)।",
+        dm_send: "भेजें",
+        dm_e2e: "एंड-टू-एंड एन्क्रिप्टेड — इसे केवल आप दोनों ही पढ़ सकते हैं।",
+        dm_empty: "अभी तक कोई संदेश नहीं। ऊपर किसी संपर्क को संदेश भेजें — यह एंड-टू-एंड एन्क्रिप्टेड है।",
+        dm_new: "नया एन्क्रिप्टेड संदेश",
+        rip_summary: "🔗 Ripple मैसेंजर लिंक करें (अधिक समृद्ध चैट के लिए: समूह, वॉइस नोट्स, गायब होने वाले संदेश)",
+        rip_save: "सहेजें",
+        rip_open: "Ripple खोलें ↗",
+        rip_help: "अपना Ripple उपयोगकर्ता नाम यहाँ साझा करें और यह आपकी पहचान के साथ चलता है, ताकि संपर्कों को एक “Ripple पर संदेश” लिंक मिले। BallrzCoin चैट 1:1 के लिए एंड-टू-एंड एन्क्रिप्टेड है; यदि आप चाहें तो Ripple समूह और बहुत कुछ जोड़ता है।"
       },
       ar: {
         h_wallets: "المحافظ",
@@ -415,7 +485,17 @@
         chat_ph: "رسالة…",
         chat_send: "إرسال",
         chat_hint: "موقَّعة ومرئية للمُرحِّل — نسّق الخدمات لا الأسرار.",
-        chat_open: "الدردشة"
+        chat_open: "الدردشة",
+        h_messages: "💬 الرسائل",
+        dm_intro: "محادثة خاصة 1:1 مع جهات اتصالك، مشفَّرة من الطرف إلى الطرف بمفاتيح محفظتك — أنت وهم فقط يمكنكما قراءتها، ولا حتى المُرحِّل. يمكنك مراسلة أي شخص استخدم التطبيق (فيكون مفتاحه معروفًا).",
+        dm_send: "إرسال",
+        dm_e2e: "مشفَّر من الطرف إلى الطرف — أنتما فقط يمكنكما قراءة هذا.",
+        dm_empty: "لا رسائل بعد. راسِل جهة اتصال في الأعلى — إنها مشفَّرة من الطرف إلى الطرف.",
+        dm_new: "رسالة مشفَّرة جديدة",
+        rip_summary: "🔗 اربط مِرسال Ripple (لمحادثات أغنى: مجموعات، رسائل صوتية، رسائل تختفي)",
+        rip_save: "حفظ",
+        rip_open: "فتح Ripple ↗",
+        rip_help: "شارك اسم مستخدمك على Ripple هنا فينتقل مع هويتك، فيحصل جهات اتصالك على رابط «راسِل على Ripple». محادثة BallrzCoin مشفَّرة من الطرف إلى الطرف للمحادثات 1:1؛ ويضيف Ripple المجموعات والمزيد إن أردتها."
       },
       zh: {
         h_wallets: "钱包",
@@ -465,7 +545,17 @@
         chat_ph: "消息…",
         chat_send: "发送",
         chat_hint: "已签名，且对中继可见——协调帮忙，而非秘密。",
-        chat_open: "聊天"
+        chat_open: "聊天",
+        h_messages: "💬 消息",
+        dm_intro: "与联系人进行私密的一对一聊天，使用你的钱包密钥进行端到端加密——只有你和对方能读到，连中继也不能。你可以给任何用过本应用的人发消息（这样就知道其密钥）。",
+        dm_send: "发送",
+        dm_e2e: "端到端加密——只有你们两人能读到这条消息。",
+        dm_empty: "还没有消息。给上方的联系人发消息吧——它是端到端加密的。",
+        dm_new: "新的加密消息",
+        rip_summary: "🔗 关联 Ripple 通讯工具（获得更丰富的聊天：群组、语音消息、阅后即焚消息）",
+        rip_save: "保存",
+        rip_open: "打开 Ripple ↗",
+        rip_help: "在此分享你的 Ripple 用户名，它会随你的身份一起传递，让联系人获得一个“在 Ripple 上发消息”的链接。BallrzCoin 聊天为一对一提供端到端加密；如果你需要，Ripple 还可提供群组等更多功能。"
       }
     }
   };
