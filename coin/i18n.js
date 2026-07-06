@@ -59,7 +59,13 @@
         n_no_match: "No offers match your search.",
         n_helpers_empty: "No completed favours yet — confirm a delivered deal to put someone on the board.",
         n_deals_empty: "No deals yet. Pay for an offer to start one — confirming delivery builds the seller's reputation.",
-        n_mempool_empty: "No pending transactions — send some coins above."
+        n_mempool_empty: "No pending transactions — send some coins above.",
+        chat_you: "You",
+        chat_empty: "No messages yet — say hello and arrange the details.",
+        chat_ph: "Message…",
+        chat_send: "Send",
+        chat_hint: "Signed, and visible to the relay — coordinate favours, not secrets.",
+        chat_open: "Chat"
       },
       es: {
         h_wallets: "Carteras",
@@ -103,7 +109,13 @@
         n_no_match: "Ninguna oferta coincide con tu búsqueda.",
         n_helpers_empty: "Aún no hay favores completados: confirma un trato entregado para poner a alguien en el tablón.",
         n_deals_empty: "Aún no hay tratos. Paga una oferta para empezar uno: confirmar la entrega mejora la reputación del vendedor.",
-        n_mempool_empty: "No hay transacciones pendientes: envía algunas monedas arriba."
+        n_mempool_empty: "No hay transacciones pendientes: envía algunas monedas arriba.",
+        chat_you: "Tú",
+        chat_empty: "Aún no hay mensajes: saluda y acuerda los detalles.",
+        chat_ph: "Mensaje…",
+        chat_send: "Enviar",
+        chat_hint: "Firmado y visible para el relé: coordina favores, no secretos.",
+        chat_open: "Chat"
       },
       fr: {
         h_wallets: "Portefeuilles",
@@ -147,7 +159,13 @@
         n_no_match: "Aucune offre ne correspond à votre recherche.",
         n_helpers_empty: "Aucun service rendu pour l'instant — confirmez un échange livré pour placer quelqu'un au tableau.",
         n_deals_empty: "Aucun échange pour l'instant. Payez une offre pour en démarrer un — confirmer la livraison bâtit la réputation du vendeur.",
-        n_mempool_empty: "Aucune transaction en attente — envoyez des pièces ci-dessus."
+        n_mempool_empty: "Aucune transaction en attente — envoyez des pièces ci-dessus.",
+        chat_you: "Vous",
+        chat_empty: "Aucun message pour l'instant — dites bonjour et réglez les détails.",
+        chat_ph: "Message…",
+        chat_send: "Envoyer",
+        chat_hint: "Signé et visible par le relais — coordonnez des services, pas des secrets.",
+        chat_open: "Chat"
       },
       pt: {
         h_wallets: "Carteiras",
@@ -191,7 +209,13 @@
         n_no_match: "Nenhuma oferta corresponde à sua busca.",
         n_helpers_empty: "Ainda não há favores concluídos — confirme um negócio entregue para colocar alguém no quadro.",
         n_deals_empty: "Ainda não há negócios. Pague uma oferta para iniciar um — confirmar a entrega constrói a reputação do vendedor.",
-        n_mempool_empty: "Nenhuma transação pendente — envie algumas moedas acima."
+        n_mempool_empty: "Nenhuma transação pendente — envie algumas moedas acima.",
+        chat_you: "Você",
+        chat_empty: "Ainda não há mensagens — dê um olá e combine os detalhes.",
+        chat_ph: "Mensagem…",
+        chat_send: "Enviar",
+        chat_hint: "Assinado e visível para o relé — combine favores, não segredos.",
+        chat_open: "Chat"
       },
       de: {
         h_wallets: "Wallets",
@@ -235,7 +259,13 @@
         n_no_match: "Keine Angebote passen zu deiner Suche.",
         n_helpers_empty: "Noch keine erledigten Gefallen – bestätige einen gelieferten Deal, um jemanden auf die Tafel zu setzen.",
         n_deals_empty: "Noch keine Deals. Bezahle ein Angebot, um einen zu starten – die Lieferung zu bestätigen stärkt den Ruf des Verkäufers.",
-        n_mempool_empty: "Keine ausstehenden Transaktionen – sende oben ein paar Coins."
+        n_mempool_empty: "Keine ausstehenden Transaktionen – sende oben ein paar Coins.",
+        chat_you: "Du",
+        chat_empty: "Noch keine Nachrichten – sag Hallo und klärt die Details.",
+        chat_ph: "Nachricht…",
+        chat_send: "Senden",
+        chat_hint: "Signiert und für das Relay sichtbar – koordiniert Gefallen, keine Geheimnisse.",
+        chat_open: "Chat"
       },
       it: {
         h_wallets: "Portafogli",
@@ -279,7 +309,13 @@
         n_no_match: "Nessuna offerta corrisponde alla tua ricerca.",
         n_helpers_empty: "Ancora nessun favore completato — conferma un affare consegnato per mettere qualcuno in bacheca.",
         n_deals_empty: "Ancora nessun affare. Paga un'offerta per iniziarne uno — confermare la consegna costruisce la reputazione del venditore.",
-        n_mempool_empty: "Nessuna transazione in sospeso — invia qualche moneta qui sopra."
+        n_mempool_empty: "Nessuna transazione in sospeso — invia qualche moneta qui sopra.",
+        chat_you: "Tu",
+        chat_empty: "Ancora nessun messaggio — saluta e accordati sui dettagli.",
+        chat_ph: "Messaggio…",
+        chat_send: "Invia",
+        chat_hint: "Firmato e visibile al relay — coordina favori, non segreti.",
+        chat_open: "Chat"
       },
       hi: {
         h_wallets: "वॉलेट",
@@ -323,7 +359,13 @@
         n_no_match: "आपकी खोज से कोई ऑफर मेल नहीं खाता।",
         n_helpers_empty: "अभी तक कोई पूरा किया गया काम नहीं — किसी को बोर्ड पर लाने के लिए एक पूरी हुई डील की पुष्टि करें।",
         n_deals_empty: "अभी तक कोई डील नहीं। एक शुरू करने के लिए किसी ऑफर का भुगतान करें — डिलीवरी की पुष्टि विक्रेता की प्रतिष्ठा बनाती है।",
-        n_mempool_empty: "कोई लंबित लेनदेन नहीं — ऊपर कुछ सिक्के भेजें।"
+        n_mempool_empty: "कोई लंबित लेनदेन नहीं — ऊपर कुछ सिक्के भेजें।",
+        chat_you: "आप",
+        chat_empty: "अभी तक कोई संदेश नहीं — नमस्ते कहें और विवरण तय करें।",
+        chat_ph: "संदेश…",
+        chat_send: "भेजें",
+        chat_hint: "हस्ताक्षरित, और रिले को दिखता है — एहसान समन्वयित करें, राज़ नहीं।",
+        chat_open: "चैट"
       },
       ar: {
         h_wallets: "المحافظ",
@@ -367,7 +409,13 @@
         n_no_match: "لا توجد عروض تطابق بحثك.",
         n_helpers_empty: "لا توجد خدمات مكتملة بعد — أكّد صفقة مُسلَّمة لإدراج شخص في اللوحة.",
         n_deals_empty: "لا توجد صفقات بعد. ادفع مقابل عرض لبدء صفقة — تأكيد التسليم يبني سمعة البائع.",
-        n_mempool_empty: "لا توجد معاملات معلّقة — أرسل بعض العملات في الأعلى."
+        n_mempool_empty: "لا توجد معاملات معلّقة — أرسل بعض العملات في الأعلى.",
+        chat_you: "أنت",
+        chat_empty: "لا رسائل بعد — ألقِ التحية ورتّب التفاصيل.",
+        chat_ph: "رسالة…",
+        chat_send: "إرسال",
+        chat_hint: "موقَّعة ومرئية للمُرحِّل — نسّق الخدمات لا الأسرار.",
+        chat_open: "الدردشة"
       },
       zh: {
         h_wallets: "钱包",
@@ -411,7 +459,13 @@
         n_no_match: "没有报价符合你的搜索。",
         n_helpers_empty: "还没有完成的帮忙——确认一笔已交付的交易，让某人登上榜单。",
         n_deals_empty: "还没有交易。为某个报价付款即可开始——确认交付会提升卖家的信誉。",
-        n_mempool_empty: "没有待处理的交易——在上方发送一些代币。"
+        n_mempool_empty: "没有待处理的交易——在上方发送一些代币。",
+        chat_you: "你",
+        chat_empty: "还没有消息——打个招呼，商定细节。",
+        chat_ph: "消息…",
+        chat_send: "发送",
+        chat_hint: "已签名，且对中继可见——协调帮忙，而非秘密。",
+        chat_open: "聊天"
       }
     }
   };
