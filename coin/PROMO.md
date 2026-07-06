@@ -39,7 +39,7 @@ the app.
 > I wanted to understand Bitcoin properly, so I built one from raw bytes up:
 > SHA-256 from the FIPS spec, ECDSA on secp256k1 with RFC 6979 signatures, a
 > UTXO ledger, merkle trees, difficulty retargeting, halving block rewards and
-> fork choice by cumulative work — zero dependencies, 32 unit tests against
+> fork choice by cumulative work — zero dependencies, 47 unit tests against
 > published vectors.
 > Then I turned it into a real community currency for time and favours: the
 > supply is hard-capped at 21 billion BLZ, fixed forever and enforced by
