@@ -462,6 +462,25 @@
 <div class="sub">A payment plus a promise. <b>Pay</b> pays the seller directly, then you confirm you got it. <b>🛡 Escrow</b> pays a trusted third party who releases to the seller once you confirm — protection if you don’t fully trust them yet. Confirming delivery builds the seller’s ✓ reputation.</div>
 <div class="list" id="deals"></div>
 
+<h2><span data-i18n="h_mutual">Mutual credit</span> <span class="rep">beta</span></h2>
+<div class="sub" data-i18n="mc_intro">The other way to run a community currency: <b>no mining, no fixed supply</b>. Everyone starts at zero; paying someone moves you negative and them positive, so all balances always sum to zero. “Money” appears the moment a favour is done. A shared <b>credit limit</b> caps how far below zero anyone can go — an interest-free overdraft you extend each other.</div>
+<div class="timebank" id="mcPanel">
+  <div class="tbrow">
+    <span class="tblabel"><span data-i18n="mc_limit">🤝 Group credit limit</span></span>
+    <span class="tbval"><b><input id="mcLimit" inputmode="numeric" value="10"></b> <span data-i18n="mc_hours">hours of credit</span></span>
+  </div>
+  <div class="agree" data-i18n="mc_limit_help">Everyone should agree the same limit. It’s how much a member can owe the group before they must earn some back — trust, made explicit.</div>
+</div>
+<form class="send" id="mcForm">
+  <select id="mcFrom"></select>
+  <input id="mcTo" placeholder="Pay whom? (address B… or a known name)" list="addrList" autocomplete="off">
+  <input id="mcAmount" placeholder="Amount" inputmode="decimal">
+  <select id="mcUnit"><option value="hours">hours</option><option value="minutes">minutes</option><option value="blz">BLZ</option></select>
+  <input id="mcMemo" placeholder="What for (optional)" maxlength="60" autocomplete="off">
+  <button class="primary" type="submit" data-i18n="mc_send">Give credit</button>
+</form>
+<div class="list" id="mcBalances"></div>
+
 <h2><span data-i18n="h_helpers">Top helpers</span> <span id="helpersHint" class="rep"></span></h2>
 <div class="sub">Who’s done the most favours — ranked by completed deals. Reputation you earn by showing up.</div>
 <div class="list" id="helpers"></div>
@@ -526,6 +545,7 @@
 <script src="config.js"></script>
 <script src="qr.js"></script>
 <script src="engine.js"></script>
+<script src="mutual.js"></script>
 <script src="wordlist.js"></script>
 <script src="i18n.js"></script>
 <script>
@@ -539,6 +559,18 @@
   var fmt = Coin.formatAmount;
 
   function $(id) { return document.getElementById(id); }
+  // i18n lookup for dynamic (JS-generated) strings. Returns null when a key is
+  // missing so callers can supply an English fallback: t('key') || 'English'.
+  var currentLang = 'en';
+  function t(key) {
+    var I = (typeof self !== 'undefined' ? self : window).BallrzI18N;
+    if (I && I.strings) {
+      var d = I.strings[currentLang] || {}, e = I.strings.en || {};
+      if (d[key] != null) return d[key];
+      if (e[key] != null) return e[key];
+    }
+    return null;
+  }
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -762,6 +794,30 @@
     wallets.forEach(function (w) { netSend({ type: 'id', address: w.address, pubKey: w.publicKey, name: w.name }); });
   }
 
+  // ---- Mutual credit: a net-zero signed-IOU ledger that runs alongside the
+  // chain. Credit transfers gossip like offers/deals; every node folds the set
+  // into balances (coin/mutual.js) and enforces the shared credit limit. ----
+  var Mutual = (typeof self !== 'undefined' ? self : window).BallrzMutual;
+  var LS_CREDITS = 'ballrzcoin.credits.v1';
+  var credits = {};
+  try { credits = JSON.parse(localStorage.getItem(LS_CREDITS) || '{}') || {}; } catch (e) { credits = {}; }
+  function saveCredits() { try { localStorage.setItem(LS_CREDITS, JSON.stringify(credits)); } catch (e) {} }
+  var LS_CREDLIMIT = 'ballrzcoin.credlimit.v1';
+  var mcLimitHours = 10;
+  try { var _cl = parseFloat(localStorage.getItem(LS_CREDLIMIT)); if (_cl > 0) mcLimitHours = _cl; } catch (e) {}
+  function creditLimitBase() { return minutesToBase(mcLimitHours * 60); }
+  function creditList() { return Object.keys(credits).map(function (id) { return credits[id]; }); }
+  function ingestCredit(tx) {
+    if (!tx || !tx.id || !Mutual || !Mutual.verifyCredit(tx) || credits[tx.id]) return false;
+    credits[tx.id] = tx;
+    if (tx.pubKey) registerIdentity(tx.from, tx.pubKey, null); // learn the payer so names show
+    var ids = Object.keys(credits);
+    if (ids.length > 500) { ids.sort(function (a, b) { return credits[a].at - credits[b].at; }); while (ids.length > 500) delete credits[ids.shift()]; }
+    return true;
+  }
+  function announceCredits() { creditList().forEach(function (tx) { netSend({ type: 'credit', credit: tx }); }); }
+  function mcResolve(q) { q = String(q || '').trim(); if (Coin.isValidAddress(q)) return q; return resolveContact(q); }
+
   function ingestOffer(o) {
     if (!o || !o.id || !Coin.isValidAddress(o.address)) return false;
     if (typeof o.title !== 'string' || !o.title.trim()) return false;
@@ -915,6 +971,7 @@
       announceOffers();
       announceDeals();
       announceIdentities();
+      announceCredits();
     } else if (m.type === 'chain') {
       if (chain.replaceChain(m.blocks)) {
         persist();
@@ -929,6 +986,11 @@
       if (offers[m.id]) { delete offers[m.id]; saveOffers(); renderOffers(); }
     } else if (m.type === 'deal') {
       if (ingestDeal(m.deal)) { saveDeals(); renderDeals(); renderOffers(); notifyDeal(m.deal); }
+    } else if (m.type === 'credit') {
+      if (ingestCredit(m.credit)) {
+        saveCredits(); renderMutual();
+        var mineC = myAddresses(); if (m.credit && mineC[m.credit.to]) notif('🤝 Credit received', fmtTime(m.credit.amount) + ' from ' + who(m.credit.from));
+      }
     } else if (m.type === 'id') {
       if (registerIdentity(m.address, m.pubKey, m.name)) renderDeals();
     }
@@ -1263,6 +1325,7 @@
 
     renderMiningStatus();
     renderOffers();
+    renderMutual();
     renderHelpers();
     renderDeals();
     renderChallenge();
@@ -1461,6 +1524,28 @@
         '<span class="rep">✓ ' + r.n + ' favour' + (r.n === 1 ? '' : 's') + ' done</span></div>';
     }).join('') : '<div class="note">No completed favours yet — confirm a delivered deal to put someone on the board.</div>';
     if ($('helpersHint')) $('helpersHint').textContent = ranked.length ? '' : '';
+  }
+
+  // Mutual-credit panel: member balances around zero (always summing to zero).
+  function renderMutual() {
+    if (!Mutual || !$('mcBalances')) return;
+    if ($('mcFrom')) $('mcFrom').innerHTML = wallets.map(function (w, i) { return '<option value="' + i + '">' + esc(w.name) + '</option>'; }).join('');
+    if ($('mcLimit') && document.activeElement !== $('mcLimit')) $('mcLimit').value = mcLimitHours;
+    var res = Mutual.applyLedger(creditList(), creditLimitBase());
+    var bal = res.balances;
+    wallets.forEach(function (w) { if (!(w.address in bal)) bal[w.address] = 0; }); // show my own even at zero
+    var mine = myAddresses();
+    var rows = Object.keys(bal).map(function (a) { return { addr: a, v: bal[a] }; }).sort(function (x, y) { return y.v - x.v; });
+    $('mcBalances').innerHTML = rows.length ? rows.map(function (r) {
+      var col = r.v === 0 ? 'var(--dim)' : (r.v > 0 ? 'var(--green)' : '#ff8f8f');
+      var state = r.v > 0 ? (t('mc_owed') || 'the group owes them') : r.v === 0 ? (t('mc_even') || 'even') : (t('mc_owes') || 'they owe the group');
+      var sign = r.v > 0 ? '+' : (r.v < 0 ? '−' : '');
+      return '<div class="offercard" style="padding:10px 14px"><div class="main">' +
+        '<span class="ttl">' + who(r.addr) + (mine[r.addr] ? ' (you)' : '') + '</span>' +
+        '<div class="by">' + state + '</div></div>' +
+        '<span style="font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;color:' + col + '">' + sign + fmtTime(Math.abs(r.v)) +
+        '<span class="tm" style="-webkit-text-fill-color:var(--dim)">' + sign + fmt(Math.abs(r.v)) + '</span></span></div>';
+    }).join('') : '<div class="note">' + (t('mc_empty') || 'No mutual-credit activity yet. Give someone credit for a favour to start — balances appear here, always summing to zero.') + '</div>';
   }
 
   function sigCount(deal) { return deal.proposal && deal.proposal.sigs ? Object.keys(deal.proposal.sigs).length : 0; }
@@ -1850,6 +1935,34 @@
   });
   if ($('offerSearch')) $('offerSearch').addEventListener('input', renderOffers);
   if ($('offerFilter')) $('offerFilter').addEventListener('change', renderOffers);
+
+  // Mutual-credit: give credit for a favour (a signed IOU that nets to zero).
+  if ($('mcForm')) $('mcForm').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    try {
+      if (!Mutual) throw new Error('Mutual-credit module not loaded');
+      var w = wallets[Number($('mcFrom').value)];
+      if (!w) throw new Error('Add a wallet first');
+      var to = mcResolve($('mcTo').value);
+      if (!to) throw new Error('Enter a valid address (B…) or a known contact name');
+      if (to === w.address) throw new Error('You can’t give credit to yourself');
+      var raw = $('mcAmount').value.trim(), unit = $('mcUnit').value;
+      if (!raw) throw new Error('Enter an amount');
+      var amount = unit === 'blz' ? Coin.parseAmount(raw) : minutesToBase(parseFloat(raw) * (unit === 'hours' ? 60 : 1));
+      if (!(amount > 0)) throw new Error('Enter a valid amount');
+      var myBal = (Mutual.applyLedger(creditList(), Infinity).balances[w.address]) || 0;
+      if (myBal - amount < -creditLimitBase()) throw new Error('That would put you past the ' + mcLimitHours + 'h credit limit — earn some credit back first.');
+      var tx = Mutual.signCredit({ privKey: w.privateKey, to: to, amount: amount, at: Date.now(), nonce: Math.random().toString(36).slice(2), memo: $('mcMemo').value.trim() });
+      ingestCredit(tx); saveCredits(); netSend({ type: 'credit', credit: tx });
+      $('mcTo').value = ''; $('mcAmount').value = ''; $('mcMemo').value = '';
+      renderMutual();
+      toast('🤝 Gave ' + fmtTime(amount) + ' of credit to ' + who(to));
+    } catch (err) { toast('✖ ' + err.message); }
+  });
+  if ($('mcLimit')) $('mcLimit').addEventListener('input', function () {
+    var v = parseFloat(this.value);
+    if (v > 0) { mcLimitHours = v; try { localStorage.setItem(LS_CREDLIMIT, String(v)); } catch (e) {} renderMutual(); }
+  });
 
   // Mine a block synchronously (the demo target is tiny) — used by gifting so a
   // freshly-funded invite wallet is confirmed and spendable immediately.
@@ -2492,6 +2605,7 @@
   announceOffers();           // share our barter offers with the network
   announceDeals();            // share our deal records so reputation converges
   announceIdentities();       // publish our public keys so peers can build multisig vaults
+  announceCredits();          // share our mutual-credit transfers so ledgers converge
 })();
 </script>
 </body>

@@ -37,6 +37,7 @@ const STATIC = {
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/index.html': ['index.html', 'text/html; charset=utf-8'],
   '/engine.js': ['engine.js', 'text/javascript; charset=utf-8'],
+  '/mutual.js': ['mutual.js', 'text/javascript; charset=utf-8'],
   '/config.js': ['config.js', 'text/javascript; charset=utf-8'],
   '/qr.js': ['qr.js', 'text/javascript; charset=utf-8'],
   '/why.html': ['why.html', 'text/html; charset=utf-8'],
@@ -54,7 +55,7 @@ const STATIC = {
 const PORT = Number(process.env.PORT || 8087);
 const MAX_HELD = 200;            // ring buffer of recent messages
 const MAX_BODY = 5 * 1024 * 1024; // a whole chain fits comfortably
-const TYPES = new Set(['hello', 'chain', 'tx', 'offer', 'offer-remove', 'deal', 'id']);
+const TYPES = new Set(['hello', 'chain', 'tx', 'offer', 'offer-remove', 'deal', 'id', 'credit']);
 
 let seq = 0;
 const ring = []; // [{ seq, msg }]
