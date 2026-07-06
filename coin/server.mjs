@@ -39,6 +39,16 @@ const STATIC = {
   '/engine.js': ['engine.js', 'text/javascript; charset=utf-8'],
   '/config.js': ['config.js', 'text/javascript; charset=utf-8'],
   '/qr.js': ['qr.js', 'text/javascript; charset=utf-8'],
+  '/why.html': ['why.html', 'text/html; charset=utf-8'],
+  '/guide.html': ['guide.html', 'text/html; charset=utf-8'],
+  '/wordlist.js': ['wordlist.js', 'text/javascript; charset=utf-8'],
+  '/i18n.js': ['i18n.js', 'text/javascript; charset=utf-8'],
+  '/sw.js': ['sw.js', 'text/javascript; charset=utf-8'],
+  '/manifest.webmanifest': ['manifest.webmanifest', 'application/manifest+json; charset=utf-8'],
+  '/icon-192.png': ['icon-192.png', 'image/png'],
+  '/icon-512.png': ['icon-512.png', 'image/png'],
+  '/icon-maskable-512.png': ['icon-maskable-512.png', 'image/png'],
+  '/apple-touch-icon.png': ['apple-touch-icon.png', 'image/png'],
 };
 
 const PORT = Number(process.env.PORT || 8087);

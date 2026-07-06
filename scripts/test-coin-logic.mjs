@@ -20,7 +20,50 @@ vm.createContext(sandbox);
 vm.runInContext(readFileSync(join(ROOT, 'coin', 'engine.js'), 'utf8'), sandbox, { filename: 'coin/engine.js' });
 const C = sandbox.module.exports;
 
+// The recovery-phrase wordlist is loaded the same UMD way; mirror the app's
+// encode/decode here so the scheme (and the wordlist's integrity) is tested.
+const wlBox = { module: { exports: {} } }; wlBox.self = wlBox;
+vm.createContext(wlBox);
+vm.runInContext(readFileSync(join(ROOT, 'coin', 'wordlist.js'), 'utf8'), wlBox, { filename: 'coin/wordlist.js' });
+const WORDS = wlBox.module.exports;
+const WORD_IX = Object.fromEntries(WORDS.map((w, i) => [w, i]));
+const keyToPhrase = (hex) => {
+  const b = C.hexToBytes(hex);
+  const out = [...b].map((x) => WORDS[x]);
+  out.push(WORDS[parseInt(C.sha256(b).slice(0, 2), 16)]);
+  return out.join(' ');
+};
+const phraseToKey = (phrase) => {
+  const words = phrase.trim().toLowerCase().split(/\s+/);
+  if (words.length !== 33) throw new Error('A recovery phrase is 33 words');
+  const bytes = words.slice(0, 32).map((w) => {
+    const v = WORD_IX[w]; if (v === undefined) throw new Error('Not a recovery word: ' + w); return v;
+  });
+  const check = WORD_IX[words[32]];
+  if (parseInt(C.sha256(bytes).slice(0, 2), 16) !== check) throw new Error('Checksum failed');
+  return C.bytesToHex(bytes);
+};
+
 let passed = 0; const tests = []; const test = (n, f) => tests.push([n, f]);
+
+test('recovery wordlist has 256 unique words', () => {
+  assert.equal(WORDS.length, 256);
+  assert.equal(new Set(WORDS).size, 256, 'all words unique');
+  assert.ok(WORDS.every((w) => /^[a-z]{3,6}$/.test(w)), 'all words are 3–6 lowercase letters');
+});
+test('recovery phrase round-trips a private key and catches errors', () => {
+  const key = alice.privateKey;
+  const phrase = keyToPhrase(key);
+  assert.equal(phrase.split(' ').length, 33, '32 data words + 1 checksum');
+  assert.equal(phraseToKey(phrase), key, 'phrase restores the exact key');
+  // a swapped word fails the checksum
+  const w = phrase.split(' ');
+  const j = w[0] === WORDS[0] ? 1 : 0;
+  w[j] = WORDS[(WORD_IX[w[j]] + 1) % 256];
+  assert.throws(() => phraseToKey(w.join(' ')), /Checksum failed/);
+  // wrong length rejected
+  assert.throws(() => phraseToKey('able acid'), /33 words/);
+});
 
 /* Fast test-net parameters: 8 leading zero bits ≈ 256 hashes per block. */
 const GENESIS_TIME = 1000000;

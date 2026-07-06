@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0e14">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BallrzCoin">
 <title>BallrzCoin (BLZ) — a currency for time and favours</title>
 <meta name="description" content="A real proof-of-work cryptocurrency, built like Bitcoin from raw bytes up, that a community trades for time and favours. 21 billion BLZ, fixed forever. Mine it in your browser. No ICO, no price, no speculation.">
 <meta property="og:type" content="website">
@@ -252,6 +258,23 @@
   /* ── collectible card modal ── */
   #cardModal { display: none; position: fixed; inset: 0; z-index: 119; background: rgba(4,5,8,0.93); place-items: center; padding: 22px; overflow: auto; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
   #cardModal.show { display: grid; }
+  #lockModal { display: none; position: fixed; inset: 0; z-index: 130; background: radial-gradient(circle at 50% 32%, rgba(20,16,8,0.97), rgba(5,6,9,0.99)); place-items: center; padding: 24px; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+  #lockModal.show { display: grid; }
+  #lockModal .lm { max-width: 360px; width: 100%; text-align: center; }
+  #lockModal .coinmedal { width: 84px; height: 84px; font-size: 44px; margin: 0 auto 18px; }
+  #lockModal input { width: 100%; margin: 14px 0 6px; text-align: center; font-size: 16px; }
+  #lockErr { color: #ff9d9d; font-size: 13px; min-height: 18px; }
+  #posModal { display: none; position: fixed; inset: 0; z-index: 125; background: radial-gradient(circle at 50% 30%, rgba(20,16,8,0.98), rgba(4,5,9,0.99)); place-items: center; padding: 22px; overflow: auto; }
+  #posModal.show { display: grid; }
+  #posModal .pm { max-width: 380px; width: 100%; text-align: center; }
+  #posModal h3 { font: 700 22px/1.2 var(--serif); margin-bottom: 4px; }
+  #posModal select, #posModal input { width: 100%; margin: 8px 0; font-size: 16px; }
+  #posModal .qbig { background: #fff; border-radius: 16px; padding: 16px; display: inline-block; line-height: 0; margin: 12px 0; }
+  #posModal .qbig svg { width: 260px; height: 260px; }
+  #posAmt { font: 800 34px var(--serif); background: var(--goldgrad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  #posStatus { font-size: 16px; margin: 10px 0; color: var(--dim); }
+  #posStatus.paid { color: var(--green); font-weight: 800; font-size: 22px; }
+  #posClose { position: absolute; top: 16px; right: 18px; }
   #cardModal .cmwrap { max-width: 400px; width: 100%; text-align: center; }
   #cardImg { width: 100%; border-radius: 20px; box-shadow: 0 24px 70px rgba(0,0,0,0.6), 0 0 46px rgba(244,194,87,0.22); }
   #cardModal .cmbar { display: flex; gap: 10px; justify-content: center; margin-top: 16px; }
@@ -289,6 +312,39 @@
 </div>
 <script>setTimeout(function(){var s=document.getElementById('splash');if(s)s.classList.add('gone');},2400);</script>
 
+<div id="lockModal">
+  <div class="lm">
+    <div class="coinmedal">B</div>
+    <div class="sname">BallrzCoin locked</div>
+    <div class="sub" style="margin:6px 0 0">Enter your passphrase to unlock your wallets.</div>
+    <input id="lockPass" type="password" placeholder="Passphrase" autocomplete="current-password">
+    <div id="lockErr"></div>
+    <button class="primary" id="lockUnlock" style="width:100%">🔓 Unlock</button>
+  </div>
+</div>
+
+<div id="posModal">
+  <button id="posClose">✕ Close</button>
+  <div class="pm">
+    <div id="posSetup">
+      <h3>🏪 Charge — point of sale</h3>
+      <div class="sub" style="margin-bottom:8px">Show a payment QR at your stall or counter. When it’s paid, you’ll see it here instantly.</div>
+      <select id="posFrom" title="Which wallet gets paid"></select>
+      <div class="row"><input id="posAmount" placeholder="Amount" inputmode="decimal" style="flex:1">
+        <select id="posUnit"><option value="hours">hours</option><option value="minutes">minutes</option><option value="blz">BLZ</option></select></div>
+      <input id="posMemo" placeholder="What for (optional)" maxlength="60" autocomplete="off">
+      <button class="primary" id="posShow" style="width:100%">Show payment QR</button>
+    </div>
+    <div id="posCharge" style="display:none">
+      <div id="posAmt"></div>
+      <div class="sub" id="posMemoOut"></div>
+      <div class="qbig" id="posQR"></div>
+      <div id="posStatus">⏳ Waiting for payment…</div>
+      <button id="posReset" style="width:100%">＋ New charge</button>
+    </div>
+  </div>
+</div>
+
 <div class="brandrow">
   <div class="coinmedal">B</div>
   <h1>BallrzCoin <span class="tick">BLZ</span></h1>
@@ -301,9 +357,15 @@
   Open this page in a second tab — each tab is a node, and they sync on the heaviest chain.
 </div>
 <div class="row" style="margin-top:12px">
-  <button id="tourBtn">❓ How it works — take the tour</button>
-  <button id="cardBtn">🖼 My collectible card</button>
-  <button id="shareBtn">📣 Share</button>
+  <select id="langSel" title="Language" aria-label="Language"></select>
+  <button id="installBtn" class="primary" style="display:none" data-i18n="b_install">📲 Install app</button>
+  <button id="notifyBtn">🔔 Notify me</button>
+  <button id="tourBtn" data-i18n="b_tour">❓ How it works — take the tour</button>
+  <button id="cardBtn" data-i18n="b_card">🖼 My collectible card</button>
+  <button id="shareBtn" data-i18n="b_share">📣 Share</button>
+</div>
+<div class="row" style="margin-top:6px">
+  <a href="why.html" style="color:var(--gold)">🏦 Why BallrzCoin — an alternative to banks &amp; cash →</a>
 </div>
 
 <div id="challenge"></div>
@@ -312,31 +374,56 @@
 <div class="halvwrap"><div class="halvbar" id="halvBar"></div></div>
 <div class="halvcap" id="halvCap"></div>
 
-<h2>Achievements <span id="achCount" class="rep"></span></h2>
+<h2><span data-i18n="h_achievements">Achievements</span> <span id="achCount" class="rep"></span></h2>
 <div class="badges" id="badges"></div>
 
-<h2>Wallets</h2>
+<h2 data-i18n="h_wallets">Wallets</h2>
 <div class="cards" id="wallets"></div>
 <div class="row">
-  <button id="newWallet">＋ New wallet</button>
-  <button id="importWallet">⬇ Import wallet</button>
+  <button id="newWallet" data-i18n="b_newwallet">＋ New wallet</button>
+  <button id="importWallet" data-i18n="b_import">⬇ Import wallet</button>
+  <button id="inviteBtn" class="primary" data-i18n="b_invite">🎁 Invite a friend</button>
+  <button id="posBtn" data-i18n="b_pos">🏪 Charge (point of sale)</button>
   <span class="mining" id="miningStatus"></span>
   <span class="mining" id="netStatus"></span>
 </div>
+<div id="inviteOut"></div>
+<div class="timebank" id="securityPanel" style="display:none">
+  <div class="tbrow">
+    <span class="tblabel"><span data-i18n="sec_keys">🔒 Key security</span> <span id="lockState" class="rep"></span></span>
+    <span>
+      <button id="setPassBtn">Protect keys with a passphrase</button>
+      <button id="changePassBtn" style="display:none">Change passphrase</button>
+      <button id="removePassBtn" class="danger" style="display:none">Remove passphrase</button>
+    </span>
+  </div>
+  <div class="agree">Encrypts your private keys at rest (AES-GCM) so they aren’t readable from browser storage. You’ll unlock with your passphrase each time you open the app. <b>There is no recovery if you forget it</b> — keep a paper wallet or recovery phrase as backup.</div>
+</div>
 
-<h2>Send coins</h2>
+<h2 data-i18n="h_send">Send coins</h2>
 <form class="send" id="sendForm">
   <select id="sendFrom"></select>
   <input id="sendTo" placeholder="Recipient address (B…)" list="addrList" autocomplete="off">
   <datalist id="addrList"></datalist>
   <input id="sendAmount" placeholder="Amount" inputmode="decimal">
   <input id="sendFee" placeholder="Fee" inputmode="decimal" value="0.0001">
-  <button class="primary" type="submit">Sign &amp; broadcast</button>
+  <button class="primary" type="submit" data-i18n="b_send">Sign &amp; broadcast</button>
 </form>
-<div class="row"><button id="scanBtn" type="button">📷 Scan a friend’s QR</button></div>
+<div class="row"><button id="scanBtn" type="button" data-i18n="b_scan">📷 Scan a friend’s QR</button></div>
 <div class="sub">Transactions wait in the mempool until a miner includes them; the fee goes to that miner.</div>
+<details class="pricelist" id="reqWrap">
+  <summary data-i18n="b_request">🧾 Request a payment — make a link &amp; QR others can pay</summary>
+  <div class="row" style="margin-top:10px">
+    <select id="reqFrom" title="Which of your wallets should be paid"></select>
+    <input id="reqAmount" placeholder="Amount" inputmode="decimal" style="max-width:120px">
+    <select id="reqUnit"><option value="hours">hours</option><option value="minutes">minutes</option><option value="blz">BLZ</option></select>
+    <input id="reqMemo" placeholder="What it’s for (optional)" maxlength="80" autocomplete="off">
+    <button class="primary" id="reqMake" type="button" data-i18n="b_reqmake">Create request</button>
+  </div>
+  <div id="reqOut"></div>
+</details>
 
-<h2>Barter — offers board</h2>
+<h2 data-i18n="h_barter">Barter — offers board</h2>
 <div class="sub">BLZ is a <b>time bank</b>: it buys <b>favours and time</b>, never cash. Post something you’ll do or give, and pay others for theirs. Offers travel the network like payments. <a href="guide.html" style="color:var(--gold)">📖 How to run barter with friends →</a></div>
 <div class="timebank" id="timeBank">
   <div class="tbrow">
@@ -359,35 +446,50 @@
     <option value="minutes">minutes</option>
     <option value="blz">BLZ</option>
   </select>
+  <select id="offerCat" title="Category"></select>
+  <input id="offerCircle" placeholder="Circle / group (optional)" maxlength="24" autocomplete="off">
   <input id="offerDesc" placeholder="Details (optional)" maxlength="240" autocomplete="off">
   <div class="offerhint" id="offerHint"></div>
-  <button class="primary" type="submit">Post offer</button>
+  <button class="primary" type="submit" data-i18n="b_postoffer">Post offer</button>
 </form>
+<div class="row" id="offerFilters">
+  <input id="offerSearch" data-i18n-ph="ph_search" placeholder="🔎 Search offers, people, circles…" autocomplete="off" style="flex:1;min-width:160px">
+  <select id="offerFilter"></select>
+</div>
 <div class="list" id="offers"></div>
 
-<h2>Deals <span id="dealsCount"></span></h2>
+<h2><span data-i18n="h_deals">Deals</span> <span id="dealsCount"></span></h2>
 <div class="sub">A payment plus a promise. <b>Pay</b> pays the seller directly, then you confirm you got it. <b>🛡 Escrow</b> pays a trusted third party who releases to the seller once you confirm — protection if you don’t fully trust them yet. Confirming delivery builds the seller’s ✓ reputation.</div>
 <div class="list" id="deals"></div>
 
-<h2>Leaderboard</h2>
+<h2><span data-i18n="h_helpers">Top helpers</span> <span id="helpersHint" class="rep"></span></h2>
+<div class="sub">Who’s done the most favours — ranked by completed deals. Reputation you earn by showing up.</div>
+<div class="list" id="helpers"></div>
+
+<h2 data-i18n="h_leaderboard">Leaderboard</h2>
 <div class="list" id="richlist"></div>
 
-<h2>Mempool <span id="mempoolCount"></span></h2>
+<h2><span data-i18n="h_mempool">Mempool</span> <span id="mempoolCount"></span></h2>
 <div class="list" id="mempool"></div>
 
-<h2>Blockchain</h2>
+<h2><span data-i18n="h_blockchain">Blockchain</span> <span id="chainCount"></span></h2>
+<div class="sub">Pick a block to inspect it — the whole chain is here, newest first.</div>
+<div class="row"><select id="blockPicker" aria-label="Choose a block to view"></select></div>
 <div class="list" id="chain"></div>
 
-<h2>Network</h2>
+<h2 data-i18n="h_network">Network</h2>
 <div class="note">
   Tabs in this browser sync automatically. To sync with <b>other devices</b>, run a relay
   (see <a href="https://github.com/Refayethossain28/BallrzAPP/blob/main/coin/DEPLOY.md" style="color:var(--gold)">the 5-minute deploy guide</a>)
   and paste its URL here — or open the relay's own URL, which serves this app pre-connected.
+  <b>Add more than one for resilience</b>: the app broadcasts to and polls every relay, so if one
+  sleeps or fails the network keeps running.
   <div class="row">
     <input id="relayInput" placeholder="https://your-relay.onrender.com" autocomplete="off">
-    <button id="relaySave">Save</button>
-    <button id="relayClear" class="danger">Clear</button>
+    <button id="relaySave">Add relay</button>
+    <button id="relayClear" class="danger">Clear all</button>
   </div>
+  <div id="relayList"></div>
   <div class="row" id="inviteRow" style="display:none">
     Invite link (tap to copy): <span class="invite" id="inviteLink"></span>
   </div>
@@ -424,6 +526,8 @@
 <script src="config.js"></script>
 <script src="qr.js"></script>
 <script src="engine.js"></script>
+<script src="wordlist.js"></script>
+<script src="i18n.js"></script>
 <script>
 (function () {
   'use strict';
@@ -451,22 +555,161 @@
     chain = new Coin.Blockchain(); // corrupt or incompatible save — start fresh
   }
 
-  var wallets = [];
-  try {
-    var savedW = JSON.parse(localStorage.getItem(LS_WALLETS) || '[]');
-    wallets = savedW.map(function (w) {
+  // Key-at-rest encryption (opt-in). When a passphrase is set, wallets are stored
+  // AES-GCM-encrypted under LS_WALLETS_ENC and the plaintext copy is removed; the
+  // app then starts "locked" until the passphrase decrypts them for the session.
+  var LS_WALLETS_ENC = 'ballrzcoin.wallets.enc.v1';
+  var sessionPass = null;   // held in memory only while unlocked
+  var locked = false;
+  var canEncrypt = !!(window.crypto && window.crypto.subtle);
+
+  function loadWalletRecords(records) {
+    wallets = records.map(function (w) {
       var full = Coin.walletFromPrivateKey(w.privateKey);
       full.name = w.name;
       return full;
     });
+  }
+
+  var wallets = [];
+  try {
+    var plainW = localStorage.getItem(LS_WALLETS);
+    if (plainW) {
+      loadWalletRecords(JSON.parse(plainW));
+    } else if (localStorage.getItem(LS_WALLETS_ENC)) {
+      locked = true; // encrypted at rest — must unlock before wallets appear
+    }
   } catch (err) { wallets = []; }
-  if (!wallets.length) {
+  if (!wallets.length && !locked) {
     ['Satoshi', 'You'].forEach(function (name) {
       var w = Coin.generateWallet();
       w.name = name;
       wallets.push(w);
     });
   }
+
+  // --- WebCrypto helpers: PBKDF2 → AES-GCM, all base64 in a small JSON blob. ---
+  function b64(bytes) { var s = ''; for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]); return btoa(s); }
+  function unb64(str) { var bin = atob(str), a = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return a; }
+  function deriveAes(pass, salt) {
+    return crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveKey'])
+      .then(function (base) {
+        return crypto.subtle.deriveKey(
+          { name: 'PBKDF2', salt: salt, iterations: 210000, hash: 'SHA-256' },
+          base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+      });
+  }
+  function encryptWallets(pass, plaintext) {
+    var salt = crypto.getRandomValues(new Uint8Array(16));
+    var iv = crypto.getRandomValues(new Uint8Array(12));
+    return deriveAes(pass, salt).then(function (key) {
+      return crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, new TextEncoder().encode(plaintext));
+    }).then(function (ct) {
+      return JSON.stringify({ v: 1, salt: b64(salt), iv: b64(iv), ct: b64(new Uint8Array(ct)) });
+    });
+  }
+  function decryptWallets(pass, blobStr) {
+    var blob = JSON.parse(blobStr);
+    return deriveAes(pass, unb64(blob.salt)).then(function (key) {
+      return crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(blob.iv) }, key, unb64(blob.ct));
+    }).then(function (pt) { return new TextDecoder().decode(pt); });
+  }
+
+  function walletRecords() {
+    return wallets.map(function (w) { return { name: w.name, privateKey: w.privateKey }; });
+  }
+
+  // Recovery phrase: encode a 32-byte private key as 32 words (one per byte) from
+  // the 256-word list, plus a 33rd checksum word (first byte of SHA-256 of the
+  // key) so a mistyped word is caught on import.
+  var WORDS = (typeof self !== 'undefined' ? self : window).BallrzWords || [];
+  var WORD_IX = (function () { var m = {}; for (var i = 0; i < WORDS.length; i++) m[WORDS[i]] = i; return m; })();
+  function keyToPhrase(hexKey) {
+    var bytes = Coin.hexToBytes(hexKey), out = [];
+    for (var i = 0; i < bytes.length; i++) out.push(WORDS[bytes[i]]);
+    out.push(WORDS[parseInt(Coin.sha256(bytes).slice(0, 2), 16)]); // checksum word
+    return out.join(' ');
+  }
+  function phraseToKey(phrase) {
+    var words = String(phrase).trim().toLowerCase().split(/\s+/);
+    if (words.length !== 33) throw new Error('A recovery phrase is 33 words (' + words.length + ' given)');
+    var bytes = [];
+    for (var i = 0; i < 32; i++) {
+      var v = WORD_IX[words[i]];
+      if (v === undefined) throw new Error('Not a recovery word: “' + words[i] + '”');
+      bytes.push(v);
+    }
+    var check = WORD_IX[words[32]];
+    if (check === undefined) throw new Error('Not a recovery word: “' + words[32] + '”');
+    if (parseInt(Coin.sha256(bytes).slice(0, 2), 16) !== check) throw new Error('Checksum failed — a word is wrong or out of order');
+    return Coin.bytesToHex(bytes);
+  }
+  // Persist wallets, encrypted if a passphrase is set. Never writes while locked
+  // (wallets is empty then — writing would destroy the encrypted copy).
+  function saveWalletsNow() {
+    if (locked) return;
+    var plain = JSON.stringify(walletRecords());
+    if (sessionPass && canEncrypt) {
+      encryptWallets(sessionPass, plain).then(function (blob) {
+        try { localStorage.setItem(LS_WALLETS_ENC, blob); localStorage.removeItem(LS_WALLETS); } catch (e) {}
+      });
+    } else {
+      try { localStorage.setItem(LS_WALLETS, plain); localStorage.removeItem(LS_WALLETS_ENC); } catch (e) {}
+    }
+  }
+
+  function renderSecurity() {
+    var panel = $('securityPanel'); if (!panel) return;
+    if (!canEncrypt) { panel.style.display = 'none'; return; } // needs a secure context
+    panel.style.display = '';
+    var on = !!sessionPass;
+    $('lockState').textContent = on ? '· 🔒 encrypted' : '· 🔓 not protected';
+    $('setPassBtn').style.display = on ? 'none' : '';
+    $('changePassBtn').style.display = on ? '' : 'none';
+    $('removePassBtn').style.display = on ? '' : 'none';
+  }
+  function askNewPass() {
+    var p1 = prompt('Choose a passphrase to encrypt your keys.\n\n⚠ There is NO recovery if you forget it — keep a paper wallet or recovery phrase as backup.');
+    if (p1 === null) return null;
+    if (p1.length < 6) { toast('✖ Use at least 6 characters'); return null; }
+    if (prompt('Re-enter the passphrase to confirm:') !== p1) { toast('✖ Passphrases didn’t match'); return null; }
+    return p1;
+  }
+  $('setPassBtn').addEventListener('click', function () {
+    var p = askNewPass(); if (p === null) return;
+    sessionPass = p; saveWalletsNow(); renderSecurity();
+    toast('🔒 Keys encrypted — you’ll unlock with this passphrase next time.');
+  });
+  $('changePassBtn').addEventListener('click', function () {
+    var p = askNewPass(); if (p === null) return;
+    sessionPass = p; saveWalletsNow(); toast('🔒 Passphrase changed.');
+  });
+  $('removePassBtn').addEventListener('click', function () {
+    if (!confirm('Remove the passphrase and store keys unencrypted again?')) return;
+    sessionPass = null; saveWalletsNow(); renderSecurity();
+    toast('🔓 Passphrase removed — keys are no longer encrypted at rest.');
+  });
+
+  function showLock() {
+    var m = $('lockModal'); if (!m) return;
+    m.classList.add('show');
+    setTimeout(function () { try { $('lockPass').focus(); } catch (e) {} }, 120);
+  }
+  function tryUnlock() {
+    var pass = $('lockPass').value; if (!pass) return;
+    $('lockErr').textContent = '';
+    var blob = localStorage.getItem(LS_WALLETS_ENC);
+    decryptWallets(pass, blob).then(function (plain) {
+      loadWalletRecords(JSON.parse(plain));
+      sessionPass = pass; locked = false;
+      $('lockPass').value = '';
+      $('lockModal').classList.remove('show');
+      render(); renderSecurity();
+      toast('🔓 Unlocked');
+    }).catch(function () { $('lockErr').textContent = 'Wrong passphrase — try again.'; });
+  }
+  $('lockUnlock').addEventListener('click', tryUnlock);
+  $('lockPass').addEventListener('keydown', function (e) { if (e.key === 'Enter') tryUnlock(); });
 
   // Barter offers — gossiped across the network like transactions, but they
   // live off-chain (an offer is just a notice, not money). Keyed by offer id.
@@ -477,10 +720,8 @@
   function persist() {
     try {
       localStorage.setItem(LS_CHAIN, JSON.stringify(chain.toJSON()));
-      localStorage.setItem(LS_WALLETS, JSON.stringify(wallets.map(function (w) {
-        return { name: w.name, privateKey: w.privateKey };
-      })));
     } catch (err) { /* storage full or unavailable — keep running in memory */ }
+    saveWalletsNow();
   }
   function saveOffers() { try { localStorage.setItem(LS_OFFERS, JSON.stringify(offers)); } catch (err) {} }
 
@@ -531,6 +772,7 @@
     offers[o.id] = {
       id: String(o.id).slice(0, 60), address: o.address, name: String(o.name || '').slice(0, 24),
       title: String(o.title).slice(0, 80), desc: String(o.desc || '').slice(0, 240),
+      category: String(o.category || '').slice(0, 24), circle: String(o.circle || '').slice(0, 24),
       price: Math.floor(o.price), pubKey: (o.pubKey && knownPubKey(o.address) === o.pubKey) ? o.pubKey : (knownPubKey(o.address) || null),
       at: Number(o.at) || 0
     };
@@ -637,14 +879,34 @@
     return 'https://refayethossain28.github.io/BallrzAPP/coin/';
   }
 
-  // Relay resolution: ?relay= link → saved setting → config.js. An invite link
-  // both joins immediately and remembers the relay for next time.
+  // Relays: a POOL, not a single server. The app broadcasts to and polls every
+  // relay it knows, so one sleeping or failing doesn't take the network down.
+  // Sources: ?relay= link(s) → saved list → legacy single setting → config.js.
+  var LS_RELAYS = 'ballrzcoin.relays.v1';
+  function normUrl(u) { return String(u || '').trim().replace(/\/+$/, ''); }
+  function loadRelayUrls() {
+    var urls = [];
+    try { urls = JSON.parse(localStorage.getItem(LS_RELAYS) || '[]') || []; } catch (e) {}
+    try { var old = localStorage.getItem(LS_RELAY); if (old) urls.push(old); } catch (e) {}
+    if (CFG.relayUrl) urls.push(CFG.relayUrl);
+    var seen = {}, out = [];
+    urls.map(normUrl).forEach(function (u) { if (u && !seen[u]) { seen[u] = 1; out.push(u); } });
+    return out;
+  }
+  var relays = loadRelayUrls().map(function (u) { return { url: u, seq: 0, up: false }; });
+  function persistRelays() {
+    try { localStorage.setItem(LS_RELAYS, JSON.stringify(relays.map(function (r) { return r.url; }))); } catch (e) {}
+  }
+  function addRelay(u) {
+    u = normUrl(u); if (!u) return false;
+    if (relays.some(function (r) { return r.url === u; })) return false;
+    relays.push({ url: u, seq: 0, up: false }); persistRelays(); return true;
+  }
+  function removeRelay(u) { relays = relays.filter(function (r) { return r.url !== u; }); persistRelays(); }
+  function anyUp() { return relays.some(function (r) { return r.up; }); }
+
   var relayParam = qsParam('relay');
-  if (relayParam) { try { localStorage.setItem(LS_RELAY, relayParam); } catch (err) {} }
-  var savedRelay = '';
-  try { savedRelay = localStorage.getItem(LS_RELAY) || ''; } catch (err) {}
-  var relayUrl = String(relayParam || savedRelay || CFG.relayUrl || '').replace(/\/+$/, '');
-  var relaySeq = 0, relayUp = false;
+  if (relayParam) addRelay(relayParam); // an invite link joins immediately and is remembered
 
   function handleNetMessage(m) {
     if (!m || m.from === NODE_ID) return; // our own gossip echoed back
@@ -660,13 +922,13 @@
         toast('⛓ Synced to a heavier chain from the network (height ' + chain.tip.height + ')');
       }
     } else if (m.type === 'tx') {
-      try { chain.submitTransaction(m.tx); persist(); render(); } catch (err) { /* dup or conflict */ }
+      try { chain.submitTransaction(m.tx); persist(); render(); notifyIncomingTx(m.tx); } catch (err) { /* dup or conflict */ }
     } else if (m.type === 'offer') {
       if (ingestOffer(m.offer)) { saveOffers(); renderOffers(); }
     } else if (m.type === 'offer-remove') {
       if (offers[m.id]) { delete offers[m.id]; saveOffers(); renderOffers(); }
     } else if (m.type === 'deal') {
-      if (ingestDeal(m.deal)) { saveDeals(); renderDeals(); renderOffers(); }
+      if (ingestDeal(m.deal)) { saveDeals(); renderDeals(); renderOffers(); notifyDeal(m.deal); }
     } else if (m.type === 'id') {
       if (registerIdentity(m.address, m.pubKey, m.name)) renderDeals();
     }
@@ -681,62 +943,73 @@
   function netSend(msg) {
     msg.from = NODE_ID;
     if (bc) bc.postMessage(msg);
-    if (relayUrl && typeof fetch !== 'undefined') {
+    if (typeof fetch === 'undefined') return;
+    relays.forEach(function (r) {
       try {
-        fetch(relayUrl + '/msg', {
+        fetch(r.url + '/msg', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(msg)
-        }).catch(function () { /* relay down — tabs still sync */ });
+        }).catch(function () { /* this relay down — others (and tabs) still carry it */ });
       } catch (err) { /* offline */ }
-    }
+    });
   }
   function announceChain() { netSend({ type: 'chain', blocks: chain.blocks }); }
 
+  function renderRelayList() {
+    var el = $('relayList'); if (!el) return;
+    el.innerHTML = relays.map(function (r) {
+      return '<div class="offercard" style="padding:8px 12px;margin-top:8px">' +
+        '<div class="main" style="min-width:120px"><span class="mono" style="font-size:12px;word-break:break-all">' + esc(r.url) + '</span></div>' +
+        '<span class="rep">' + (r.up ? '● connected' : '○ unreachable') + '</span>' +
+        '<button data-relay-remove="' + esc(r.url) + '">Remove</button></div>';
+    }).join('');
+  }
   function renderNetStatus() {
     var el = $('netStatus');
-    if (!el) return;
-    if (!relayUrl) { el.textContent = ''; }
-    else el.textContent = relayUp ? '⇄ relay connected — syncing across devices' : '⇄ relay unreachable';
-    var row = $('inviteRow');
-    if (row && row.style) row.style.display = (relayUrl && relayUp) ? '' : 'none';
-    if (relayUrl && relayUp) {
-      $('inviteLink').textContent = pageBase() + '?relay=' + encodeURIComponent(relayUrl);
+    if (el) {
+      var up = relays.filter(function (r) { return r.up; }).length;
+      if (!relays.length) el.textContent = '';
+      else el.textContent = up ? ('⇄ ' + up + '/' + relays.length + ' relay' + (relays.length > 1 ? 's' : '') + ' connected — syncing across devices')
+                               : ('⇄ relay' + (relays.length > 1 ? 's' : '') + ' unreachable');
     }
+    var row = $('inviteRow');
+    if (row && row.style) row.style.display = anyUp() ? '' : 'none';
+    if (anyUp()) {
+      var first = relays.filter(function (r) { return r.up; })[0];
+      $('inviteLink').textContent = pageBase() + '?relay=' + encodeURIComponent(first.url);
+    }
+    renderRelayList();
   }
 
-  // Zero-config mode: when this page is served BY the relay itself
-  // (coin/server.mjs also serves the app), adopt the same origin as relay.
+  // Zero-config mode: when this page is served BY a relay itself
+  // (coin/server.mjs also serves the app), adopt the same origin as a relay.
   function tryAutodetect() {
-    if (relayUrl || typeof fetch === 'undefined' || typeof location === 'undefined') return;
+    if (typeof fetch === 'undefined' || typeof location === 'undefined') return;
     try { if (!/^https?:$/.test(String(location.protocol))) return; } catch (err) { return; }
-    fetch(location.origin + '/msgs?since=0')
+    var origin = String(location.origin);
+    if (relays.some(function (r) { return r.url === origin; })) return;
+    fetch(origin + '/msgs?since=0')
       .then(function (r) { return r.json(); })
-      .then(function (d) {
-        if (d && typeof d.seq === 'number') {
-          relayUrl = String(location.origin);
-          relayPoll();
-        }
-      })
+      .then(function (d) { if (d && typeof d.seq === 'number' && addRelay(origin)) { renderNetStatus(); netSend({ type: 'hello' }); } })
       .catch(function () { /* not served by a relay (e.g. GitHub Pages) */ });
   }
 
   function relayPoll() {
-    fetch(relayUrl + '/msgs?since=' + relaySeq)
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        if (d && typeof d.seq === 'number') {
-          relayUp = true;
-          relaySeq = d.seq;
-          (d.msgs || []).forEach(handleNetMessage);
-        }
-        renderNetStatus();
-      })
-      .catch(function () { relayUp = false; renderNetStatus(); })
-      .then(function () { setTimeout(relayPoll, 2500); });
+    if (typeof fetch !== 'undefined') {
+      relays.forEach(function (r) {
+        fetch(r.url + '/msgs?since=' + r.seq)
+          .then(function (res) { return res.json(); })
+          .then(function (d) {
+            if (d && typeof d.seq === 'number') { r.up = true; r.seq = d.seq; (d.msgs || []).forEach(handleNetMessage); }
+            renderNetStatus();
+          })
+          .catch(function () { r.up = false; renderNetStatus(); });
+      });
+    }
+    setTimeout(relayPoll, 2500);
   }
-  if (relayUrl && typeof fetch !== 'undefined') setTimeout(relayPoll, 0);
-  else setTimeout(tryAutodetect, 0);
+  if (typeof fetch !== 'undefined') { setTimeout(relayPoll, 0); setTimeout(tryAutodetect, 0); }
 
   function toast(msg) {
     var t = $('toast');
@@ -819,7 +1092,7 @@
       if (d.escrowType === 'multisig' && (mineAddrs[d.buyer] || mineAddrs[d.seller] || myPartyPubs(d).length)) vault = true;
     });
     var posted = Object.keys(offers).some(function (id) { return mineAddrs[offers[id].address]; });
-    return { mined: mined, balance: balance, sent: sent, top: top, dealsDone: dealsDone, vault: vault, posted: posted, backed: paperMade, networked: relayUp };
+    return { mined: mined, balance: balance, sent: sent, top: top, dealsDone: dealsDone, vault: vault, posted: posted, backed: paperMade, networked: anyUp() };
   }
   function evaluateAchievements() {
     var m = achMetrics(), newly = [];
@@ -932,10 +1205,18 @@
       }
       var keysHtml = '';
       if (w.keysOpen) {
+        var phraseHtml = '';
+        if (w.phraseOpen) {
+          var phrase = keyToPhrase(w.privateKey);
+          phraseHtml = '<div class="pk" data-copy="' + esc(phrase) + '" title="Click to copy">' + esc(phrase) + '</div>' +
+            '<div class="warn">📜 Your 33-word recovery phrase. Write it down, in order, and keep it safe — these words restore this wallet on any device. Anyone who reads them owns the coins.</div>';
+        }
         keysHtml = '<div class="keys">' +
           '<div class="pk" data-copy="' + esc(w.privateKey) + '" title="Click to copy">' + esc(w.privateKey) + '</div>' +
           '<div class="warn">⚠️ This is the private key. Anyone who sees it owns the coins — your balance lives on the blockchain, and this key is the only proof it’s yours.</div>' +
-          '<div class="row"><button data-paper="' + i + '">🖨 Paper wallet</button></div>' +
+          phraseHtml +
+          '<div class="row"><button data-paper="' + i + '">🖨 Paper wallet</button>' +
+          '<button data-phrase="' + i + '">' + (w.phraseOpen ? 'Hide phrase' : '📜 Recovery phrase') + '</button></div>' +
           '</div>';
       }
       return '<div class="card">' +
@@ -963,6 +1244,9 @@
     $('addrList').innerHTML = wallets.map(function (w) {
       return '<option value="' + esc(w.address) + '">' + esc(w.name) + '</option>';
     }).join('');
+    if ($('reqFrom')) $('reqFrom').innerHTML = wallets.map(function (w, i) {
+      return '<option value="' + i + '">' + esc(w.name) + '</option>';
+    }).join('');
 
     $('mempoolCount').textContent = chain.mempool.length ? '(' + chain.mempool.length + ' pending)' : '';
     $('mempool').innerHTML = chain.mempool.length ? chain.mempool.map(function (e) {
@@ -975,29 +1259,11 @@
         '<div class="hash">' + esc(short(tx.id, 16)) + '</div></div>';
     }).join('') : '<div class="note">No pending transactions — send some coins above.</div>';
 
-    $('chain').innerHTML = chain.blocks.slice().reverse().map(function (b) {
-      var txHtml = b.transactions.map(function (tx) {
-        if (tx.type === 'coinbase') {
-          if (!tx.outputs.length) return '<div class="tx">🌱 genesis — “' + esc(tx.extra) + '”</div>';
-          return '<div class="tx">⛏ coinbase → ' + who(tx.outputs[0].address) +
-            ' <span class="amt">' + fmt(tx.outputs[0].amount) + '</span></div>';
-        }
-        var from = fromAddr(tx.inputs[0]);
-        return '<div class="tx">' + whoFrom(tx.inputs[0]) + ' → ' + tx.outputs.map(function (o) {
-          return who(o.address) + ' <span class="amt">' + fmt(o.amount) + '</span>' +
-            (o.address === from ? ' <span class="fee">(change)</span>' : '');
-        }).join(' · ') + '<div class="hash">' + esc(short(tx.id, 16)) + '</div></div>';
-      }).join('');
-      return '<div class="block"><div class="head">' +
-        '<span class="h">#' + b.height + '</span>' +
-        '<span class="fee">' + new Date(b.timestamp).toLocaleString() + '</span>' +
-        '<span class="fee">nonce ' + b.nonce + '</span>' +
-        '<span class="fee">' + (b.transactions.length - 1) + ' transfer(s)</span>' +
-        '</div><div class="hash">' + esc(b.hash) + '</div>' + txHtml + '</div>';
-    }).join('');
+    renderChainPicker();
 
     renderMiningStatus();
     renderOffers();
+    renderHelpers();
     renderDeals();
     renderChallenge();
     evaluateAchievements();
@@ -1007,6 +1273,66 @@
     var set = {};
     wallets.forEach(function (w) { set[w.address] = true; });
     return set;
+  }
+
+  // Block explorer — the chain is browsed through a dropdown rather than a long
+  // scroll: the picker lists every block (newest first), and the selected one is
+  // rendered below. We follow the tip while you're viewing it, but stay put once
+  // you've navigated to an older block.
+  var selectedBlockHeight = null;
+  var lastRenderedTip = -1;
+
+  function renderBlockCard(b) {
+    var txHtml = b.transactions.map(function (tx) {
+      if (tx.type === 'coinbase') {
+        if (!tx.outputs.length) return '<div class="tx">🌱 genesis — “' + esc(tx.extra) + '”</div>';
+        return '<div class="tx">⛏ coinbase → ' + who(tx.outputs[0].address) +
+          ' <span class="amt">' + fmt(tx.outputs[0].amount) + '</span></div>';
+      }
+      var from = fromAddr(tx.inputs[0]);
+      return '<div class="tx">' + whoFrom(tx.inputs[0]) + ' → ' + tx.outputs.map(function (o) {
+        return who(o.address) + ' <span class="amt">' + fmt(o.amount) + '</span>' +
+          (o.address === from ? ' <span class="fee">(change)</span>' : '');
+      }).join(' · ') + '<div class="hash">' + esc(short(tx.id, 16)) + '</div></div>';
+    }).join('');
+    return '<div class="block"><div class="head">' +
+      '<span class="h">#' + b.height + '</span>' +
+      '<span class="fee">' + new Date(b.timestamp).toLocaleString() + '</span>' +
+      '<span class="fee">nonce ' + b.nonce + '</span>' +
+      '<span class="fee">' + (b.transactions.length - 1) + ' transfer(s)</span>' +
+      '</div><div class="hash">' + esc(b.hash) + '</div>' + txHtml + '</div>';
+  }
+
+  function blockByHeight(h) {
+    var list = chain.blocks;
+    for (var i = 0; i < list.length; i++) if (list[i].height === h) return list[i];
+    return null;
+  }
+
+  function showSelectedBlock() {
+    var b = blockByHeight(selectedBlockHeight);
+    $('chain').innerHTML = b ? renderBlockCard(b) : '';
+  }
+
+  function renderChainPicker() {
+    var blocks = chain.blocks, tipH = chain.tip.height;
+    var exists = blockByHeight(selectedBlockHeight) !== null;
+    // First load, a reorg that dropped our block, or "following the tip": snap to tip.
+    if (selectedBlockHeight === null || !exists || selectedBlockHeight === lastRenderedTip) {
+      selectedBlockHeight = tipH;
+    }
+    lastRenderedTip = tipH;
+
+    $('chainCount').textContent = blocks.length === 1 ? '(genesis only)' : '(' + blocks.length + ' blocks)';
+    $('blockPicker').innerHTML = blocks.slice().reverse().map(function (b) {
+      var what = b.height === 0 ? 'genesis' : (b.transactions.length - 1) + ' transfer(s)';
+      var label = '#' + b.height + (b.height === tipH ? ' · latest' : '') +
+        ' · ' + what + ' · ' + new Date(b.timestamp).toLocaleString();
+      return '<option value="' + b.height + '"' + (b.height === selectedBlockHeight ? ' selected' : '') + '>' +
+        esc(label) + '</option>';
+    }).join('');
+
+    showSelectedBlock();
   }
 
   // A live "why play now" hook: half of all coins are only mineable in era one.
@@ -1072,13 +1398,34 @@
     renderTimeBank(); renderPriceList(); renderOffers(); updateOfferHint();
   }
 
+  // Offer categories — a fixed set so the filter stays tidy across the network.
+  var OFFER_CATS = ['🍽 Food', '🚗 Transport', '🧰 Help', '🏠 Home', '📚 Learning', '💻 Tech', '🎨 Creative', '🐾 Pets', '✨ Other'];
+  function renderOfferControls() {
+    if ($('offerCat') && !$('offerCat').options.length) {
+      $('offerCat').innerHTML = OFFER_CATS.map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join('');
+    }
+    if ($('offerFilter') && !$('offerFilter').options.length) {
+      $('offerFilter').innerHTML = '<option value="">All categories</option>' +
+        OFFER_CATS.map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join('');
+    }
+    if ($('offerCircle') && !$('offerCircle').value && typeof myCircle === 'string' && myCircle) $('offerCircle').value = myCircle;
+  }
+  function offerMatches(o, q, cat) {
+    if (cat && o.category !== cat) return false;
+    if (!q) return true;
+    var hay = (o.title + ' ' + (o.desc || '') + ' ' + (o.name || '') + ' ' + (o.category || '') + ' ' + (o.circle || '')).toLowerCase();
+    return hay.indexOf(q) >= 0;
+  }
   function renderOffers() {
+    renderOfferControls();
     $('offerFrom').innerHTML = wallets.map(function (w, i) {
       return '<option value="' + i + '">' + esc(w.name) + '</option>';
     }).join('');
     var mine = myAddresses();
-    var list = Object.keys(offers).map(function (id) { return offers[id]; })
-      .sort(function (a, b) { return b.at - a.at; });
+    var q = ($('offerSearch') ? $('offerSearch').value : '').trim().toLowerCase();
+    var cat = $('offerFilter') ? $('offerFilter').value : '';
+    var all = Object.keys(offers).map(function (id) { return offers[id]; }).sort(function (a, b) { return b.at - a.at; });
+    var list = all.filter(function (o) { return offerMatches(o, q, cat); });
     $('offers').innerHTML = list.length ? list.map(function (o) {
       var isMine = mine[o.address];
       var action = isMine
@@ -1086,12 +1433,34 @@
         : '<button class="primary" data-pay-offer="' + esc(o.id) + '">Pay ' + fmtTime(o.price) + '</button>' +
           '<button data-escrow-offer="' + esc(o.id) + '" title="Pay a trusted third party who releases once you confirm">🛡 Trusted</button>' +
           '<button data-vault-offer="' + esc(o.id) + '" title="Lock funds in a 2-of-3 vault only you, the seller and an arbiter can open">🔐 Vault</button>';
+      var tags = (o.category ? '<span class="rep" style="color:var(--dim)">' + esc(o.category) + '</span> ' : '') +
+        (o.circle ? '<span class="rep" style="color:var(--gold)">◇ ' + esc(o.circle) + '</span>' : '');
       return '<div class="offercard"><div class="main">' +
         '<div class="ttl">' + esc(o.title) + '</div>' +
         (o.desc ? '<div class="dsc">' + esc(o.desc) + '</div>' : '') +
-        '<div class="by">by ' + who(o.address) + (isMine ? ' (you)' : '') + repBadge(o.address) + '</div>' +
+        '<div class="by">by ' + who(o.address) + (isMine ? ' (you)' : '') + repBadge(o.address) + (tags ? ' · ' + tags : '') + '</div>' +
         '</div><span class="prc">' + fmtTime(o.price) + '<span class="tm">' + fmt(o.price) + '</span></span>' + action + '</div>';
-    }).join('') : '<div class="note">No offers yet — post the first one above (“🚗 Lift into town — 30m”).</div>';
+    }).join('') : '<div class="note">' + (all.length ? 'No offers match your search.' : 'No offers yet — post the first one above (“🚗 Lift into town — 30m”).') + '</div>';
+  }
+
+  // Top helpers — community reputation leaderboard by completed (released) deals.
+  function renderHelpers() {
+    var el = $('helpers'); if (!el) return;
+    var tally = {};
+    Object.keys(deals).forEach(function (id) {
+      var d = deals[id];
+      if (d.status === 'released' && d.seller) tally[d.seller] = (tally[d.seller] || 0) + 1;
+    });
+    var ranked = Object.keys(tally).map(function (a) { return { addr: a, n: tally[a] }; })
+      .sort(function (a, b) { return b.n - a.n; }).slice(0, 10);
+    var mine = myAddresses();
+    el.innerHTML = ranked.length ? ranked.map(function (r, i) {
+      var medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1) + '.';
+      return '<div class="offercard" style="padding:10px 14px">' +
+        '<div class="main"><span class="ttl">' + medal + ' ' + who(r.addr) + (mine[r.addr] ? ' (you)' : '') + '</span></div>' +
+        '<span class="rep">✓ ' + r.n + ' favour' + (r.n === 1 ? '' : 's') + ' done</span></div>';
+    }).join('') : '<div class="note">No completed favours yet — confirm a delivered deal to put someone on the board.</div>';
+    if ($('helpersHint')) $('helpersHint').textContent = ranked.length ? '' : '';
   }
 
   function sigCount(deal) { return deal.proposal && deal.proposal.sigs ? Object.keys(deal.proposal.sigs).length : 0; }
@@ -1229,6 +1598,12 @@
       render();
       return;
     }
+    var phraseIdx = t.getAttribute('data-phrase');
+    if (phraseIdx !== null && phraseIdx !== undefined && phraseIdx !== '') {
+      wallets[Number(phraseIdx)].phraseOpen = !wallets[Number(phraseIdx)].phraseOpen;
+      render();
+      return;
+    }
     var paperIdx = t.getAttribute('data-paper');
     if (paperIdx !== null && paperIdx !== undefined && paperIdx !== '') {
       openPaperWallet(wallets[Number(paperIdx)]);
@@ -1338,6 +1713,8 @@
       catch (err) { toast(t.textContent); }
       return;
     }
+    var relayRm = t.getAttribute('data-relay-remove');
+    if (relayRm) { removeRelay(relayRm); renderNetStatus(); toast('Relay removed'); return; }
     var copy = t.getAttribute('data-copy');
     if (copy) {
       try { navigator.clipboard.writeText(copy); toast('Address copied'); } catch (err) { toast(copy); }
@@ -1374,10 +1751,14 @@
   }
 
   $('importWallet').addEventListener('click', function () {
-    var key = prompt('Paste the private key (64 hex characters) from a backup or paper wallet:');
-    if (!key) return;
-    key = String(key).trim().toLowerCase();
-    if (!/^[0-9a-f]{64}$/.test(key)) { toast('✖ That isn’t a valid key — expected 64 hex characters'); return; }
+    var input = prompt('Paste your 33-word recovery phrase, or a private key (64 hex characters), from a backup or paper wallet:');
+    if (!input) return;
+    var key = String(input).trim().toLowerCase();
+    if (/\s/.test(key)) {                       // looks like a recovery phrase
+      try { key = phraseToKey(key); } catch (err) { toast('✖ ' + err.message); return; }
+    } else if (!/^[0-9a-f]{64}$/.test(key)) {
+      toast('✖ Enter a 33-word recovery phrase or a 64-character key'); return;
+    }
     var w;
     try { w = Coin.walletFromPrivateKey(key); } catch (err) { toast('✖ ' + err.message); return; }
     var existing = wallets.filter(function (x) { return x.address === w.address; })[0];
@@ -1463,6 +1844,273 @@
     var v = parseInt(this.value, 10);
     if (v > 0) setTimeAnchor(v);
   });
+  $('blockPicker').addEventListener('change', function () {
+    selectedBlockHeight = Number(this.value);
+    showSelectedBlock();
+  });
+  if ($('offerSearch')) $('offerSearch').addEventListener('input', renderOffers);
+  if ($('offerFilter')) $('offerFilter').addEventListener('change', renderOffers);
+
+  // Mine a block synchronously (the demo target is tiny) — used by gifting so a
+  // freshly-funded invite wallet is confirmed and spendable immediately.
+  function mineNow(minerAddr) {
+    var block = chain.prepareBlock(minerAddr);
+    var found = Coin.mine(block, { startNonce: 0, maxIterations: 8000000 });
+    if (!found) throw new Error('mining timed out');
+    chain.addBlock(found);
+    return found;
+  }
+
+  // My circle/group — remembered, prefills the offer "circle" field, and rides
+  // along in invites so a newcomer lands in the same group.
+  var LS_CIRCLE = 'ballrzcoin.circle.v1';
+  var myCircle = '';
+  try { myCircle = localStorage.getItem(LS_CIRCLE) || ''; } catch (e) {}
+  function setMyCircle(c) {
+    myCircle = String(c || '').slice(0, 24);
+    try { localStorage.setItem(LS_CIRCLE, myCircle); } catch (e) {}
+    if ($('offerCircle') && !$('offerCircle').value) $('offerCircle').value = myCircle;
+  }
+
+  // Invite + onboarding: fund a fresh "gift" wallet from yours, confirm it, and
+  // hand your friend a link that drops that funded wallet straight into their
+  // app — so they arrive with a spendable balance instead of an empty one. This
+  // is what breaks a community currency's cold-start problem.
+  $('inviteBtn').addEventListener('click', function () {
+    try {
+      var funder = null;
+      for (var i = 0; i < wallets.length; i++) { if (chain.getBalance(wallets[i].address) > 0) { funder = wallets[i]; break; } }
+      if (!funder) throw new Error('Mine some BLZ first, then you can gift a starting balance.');
+      var raw = prompt('🎁 Invite a friend — how many HOURS of starting balance to gift them?\n(They can spend it on favours right away.)', '2');
+      if (raw === null) return;
+      var hours = parseFloat(raw);
+      if (!(hours > 0)) throw new Error('Enter a number of hours');
+      var amount = minutesToBase(hours * 60);
+      if (chain.getBalance(funder.address) < amount) throw new Error('Not enough BLZ in ' + funder.name + ' for that gift');
+      var circle = prompt('Add them to a circle/group? (optional — e.g. “Elm Street”)', myCircle) || '';
+      if (circle) setMyCircle(circle);
+      var gift = Coin.generateWallet();
+      chain.send(funder, gift.address, amount, 0, { timestamp: chain.tip.timestamp + 1 });
+      mineNow(funder.address);            // confirm the gift so it's spendable
+      persist(); announceChain(); render();
+      var url = pageBase() + '?claim=' + gift.privateKey;
+      if (relays.length) url += '&relay=' + encodeURIComponent(relays[0].url);
+      if (circle) url += '&circle=' + encodeURIComponent(circle);
+      url += '&from=' + encodeURIComponent(funder.name);
+      var warn = relays.length ? '' : '<div class="warn">⚠ Add a relay (Network panel) so your friend’s device can sync and see the gift.</div>';
+      $('inviteOut').innerHTML = '<div class="note" style="margin-top:12px">' +
+        '<div class="ttl" style="font-weight:650">🎁 Invite ready — gifts ' + fmtTime(amount) + ' (' + fmt(amount) + ')' + (circle ? ' · ◇ ' + esc(circle) : '') + '</div>' + warn +
+        '<div class="qrp" style="margin:10px 0">' + CoinQR.toSVG(CoinQR.encode(url), 4, { dark: '#17130c', light: '#ffffff' }) + '</div>' +
+        '<div class="mono" style="word-break:break-all;font-size:12px" data-copy="' + esc(url) + '" title="Click to copy">' + esc(url) + '</div>' +
+        '<div class="row" style="margin-top:8px"><button id="inviteCopy" type="button">📋 Copy invite</button><button id="inviteShare" type="button">📣 Share</button></div>' +
+        '</div>';
+      var share = function () {
+        var text = '🎁 I set you up on BallrzCoin with ' + fmtTime(amount) + ' to start — a community currency for time & favours. Open this to claim it: ' + url;
+        if (navigator.share) navigator.share({ text: text }).catch(function () {});
+        else if (navigator.clipboard) { navigator.clipboard.writeText(url); toast('📋 Invite copied'); }
+      };
+      $('inviteCopy').addEventListener('click', function () { if (navigator.clipboard) { navigator.clipboard.writeText(url); toast('📋 Invite copied'); } });
+      $('inviteShare').addEventListener('click', share);
+      toast('🎁 Invite created — send it to your friend');
+    } catch (err) { toast('✖ ' + err.message); }
+  });
+
+  // Notifications — alert you when you're paid or someone buys your offer, even
+  // while the app sits in a background tab. (True push with the app fully closed
+  // needs a push server; this fires while a node of yours is running.)
+  var notifiedTx = {}, notifiedDeal = {};
+  function notifSupported() { return typeof Notification !== 'undefined'; }
+  function notif(title, body) {
+    if (!notifSupported() || Notification.permission !== 'granted') return;
+    try { new Notification(title, { body: body, icon: 'icon-192.png', badge: 'icon-192.png', tag: 'ballrzcoin' }); } catch (e) {}
+  }
+  function notifyIncomingTx(tx) {
+    if (!tx || !tx.id || notifiedTx[tx.id]) return;
+    var mineA = myAddresses();
+    var fromMe = (tx.inputs || []).some(function (inp) { var a = fromAddr(inp); return a && mineA[a]; });
+    if (fromMe) return;                       // my own spend / change
+    var toMe = 0;
+    (tx.outputs || []).forEach(function (o) { if (mineA[o.address]) toMe += o.amount; });
+    if (toMe > 0) { notifiedTx[tx.id] = 1; notif('💰 Payment received', fmt(toMe) + ' — ' + fmtTime(toMe) + ' of value incoming'); }
+  }
+  function notifyDeal(d) {
+    if (!d || !d.id) return;
+    var key = d.id + ':' + d.status, mineA = myAddresses();
+    if (notifiedDeal[key]) return;
+    if (mineA[d.seller] && d.status === 'funded') { notifiedDeal[key] = 1; notif('🤝 Someone paid for your offer', 'A buyer funded a deal — deliver, then they confirm to build your reputation.'); }
+  }
+  function refreshNotifyBtn() {
+    var b = $('notifyBtn'); if (!b) return;
+    b.style.display = (!notifSupported() || Notification.permission === 'granted') ? 'none' : '';
+  }
+  if ($('notifyBtn')) $('notifyBtn').addEventListener('click', function () {
+    if (!notifSupported()) { toast('This browser doesn’t support notifications'); return; }
+    Notification.requestPermission().then(function (p) {
+      if (p === 'granted') { toast('🔔 Notifications on — you’ll be alerted when you’re paid'); notif('BallrzCoin', 'Notifications enabled ✓'); }
+      else toast('Notifications not enabled');
+      refreshNotifyBtn();
+    });
+  });
+  refreshNotifyBtn();
+
+  // Point of sale: pick a wallet + amount, show a big payment QR, and watch the
+  // wallet's balance — the moment it rises by the charged amount, it's Paid.
+  var posWatch = null;
+  function posPopulate() {
+    $('posFrom').innerHTML = wallets.map(function (w, i) { return '<option value="' + i + '">' + esc(w.name) + '</option>'; }).join('');
+  }
+  function posOpen() { posPopulate(); $('posSetup').style.display = ''; $('posCharge').style.display = 'none'; $('posModal').classList.add('show'); }
+  function posCloseFn() { $('posModal').classList.remove('show'); if (posWatch && posWatch.timer) clearInterval(posWatch.timer); posWatch = null; }
+  function posCheck() {
+    if (!posWatch || posWatch.done) return;
+    if (chain.getBalance(posWatch.addr) >= posWatch.target) {
+      var st = $('posStatus'); st.textContent = '✅ Paid! ' + fmtTime(posWatch.amount) + ' received'; st.className = 'paid';
+      try { confettiBurst(); } catch (e) {}
+      notif('✅ Paid', fmt(posWatch.amount) + ' received');
+      posWatch.done = true; clearInterval(posWatch.timer);
+      return;
+    }
+    // Payment seen in the mempool but not yet mined — show it's on the way.
+    var pending = 0;
+    chain.mempool.forEach(function (e) { (e.tx.outputs || []).forEach(function (o) { if (o.address === posWatch.addr) pending += o.amount; }); });
+    var st2 = $('posStatus');
+    if (chain.getBalance(posWatch.addr) + pending >= posWatch.target && !st2.className) {
+      st2.textContent = '💰 Payment received — confirming…';
+    }
+  }
+  if ($('posBtn')) $('posBtn').addEventListener('click', posOpen);
+  if ($('posClose')) $('posClose').addEventListener('click', posCloseFn);
+  if ($('posReset')) $('posReset').addEventListener('click', posOpen);
+  if ($('posShow')) $('posShow').addEventListener('click', function () {
+    try {
+      var w = wallets[Number($('posFrom').value)];
+      if (!w) throw new Error('Add a wallet first');
+      var raw = $('posAmount').value.trim(), unit = $('posUnit').value;
+      if (!raw) throw new Error('Enter an amount');
+      var amount = unit === 'blz' ? Coin.parseAmount(raw) : minutesToBase(parseFloat(raw) * (unit === 'hours' ? 60 : 1));
+      if (!(amount > 0)) throw new Error('Enter a valid amount');
+      var memo = $('posMemo').value.trim();
+      var url = buildRequestLink(w.address, amount, memo);
+      $('posAmt').textContent = fmtTime(amount) + ' · ' + fmt(amount);
+      $('posMemoOut').textContent = memo || '';
+      $('posQR').innerHTML = CoinQR.toSVG(CoinQR.encode(url), 5, { dark: '#17130c', light: '#ffffff' });
+      var st = $('posStatus'); st.textContent = '⏳ Waiting for payment…'; st.className = '';
+      $('posSetup').style.display = 'none'; $('posCharge').style.display = '';
+      if (posWatch && posWatch.timer) clearInterval(posWatch.timer);
+      posWatch = { addr: w.address, amount: amount, target: chain.getBalance(w.address) + amount, done: false };
+      posWatch.timer = setInterval(posCheck, 1200);
+    } catch (err) { toast('✖ ' + err.message); }
+  });
+
+  // Multi-language UI: translate tagged elements ([data-i18n] textContent,
+  // [data-i18n-ph] placeholder) from the strings table, remember the choice, and
+  // flip to RTL for right-to-left languages. Falls back to English for anything
+  // untranslated. (Foundational coverage: headings, primary buttons, key labels.)
+  (function () {
+    var I18N = (typeof self !== 'undefined' ? self : window).BallrzI18N;
+    if (!I18N || !I18N.strings) return;
+    var LS_LANG = 'ballrzcoin.lang.v1';
+    function pickLang() {
+      var saved = ''; try { saved = localStorage.getItem(LS_LANG) || ''; } catch (e) {}
+      if (saved && I18N.strings[saved]) return saved;
+      var nav = String((navigator && navigator.language) || 'en').slice(0, 2).toLowerCase();
+      return I18N.strings[nav] ? nav : 'en';
+    }
+    function applyLang(l) {
+      if (!I18N.strings[l]) l = 'en';
+      var dict = I18N.strings[l], en = I18N.strings.en;
+      var t = document.querySelectorAll('[data-i18n]');
+      for (var i = 0; i < t.length; i++) { var k = t[i].getAttribute('data-i18n'); var v = dict[k] != null ? dict[k] : en[k]; if (v != null) t[i].textContent = v; }
+      var p = document.querySelectorAll('[data-i18n-ph]');
+      for (var j = 0; j < p.length; j++) { var k2 = p[j].getAttribute('data-i18n-ph'); var v2 = dict[k2] != null ? dict[k2] : en[k2]; if (v2 != null) p[j].setAttribute('placeholder', v2); }
+      var rtl = I18N.rtl && I18N.rtl.indexOf(l) >= 0;
+      try { document.documentElement.setAttribute('dir', rtl ? 'rtl' : 'ltr'); document.documentElement.setAttribute('lang', l); } catch (e) {}
+      try { localStorage.setItem(LS_LANG, l); } catch (e) {}
+    }
+    var lang = pickLang(), sel = $('langSel');
+    if (sel) {
+      sel.innerHTML = I18N.langs.map(function (x) {
+        return '<option value="' + x.code + '"' + (x.code === lang ? ' selected' : '') + '>' + esc(x.name) + '</option>';
+      }).join('');
+      sel.addEventListener('change', function () { applyLang(this.value); });
+    }
+    applyLang(lang);
+  })();
+
+  // Payment requests / invoices: build a "?pay=…&amt=…&for=…" link + QR that
+  // anyone can open to have the send form pre-filled with your address, the
+  // amount and a note. The paying side parses those params at load (below).
+  function buildRequestLink(addr, baseAmount, memo) {
+    var url = pageBase() + '?pay=' + encodeURIComponent(addr);
+    if (baseAmount > 0) url += '&amt=' + fmt(baseAmount).replace(' BLZ', '');
+    if (memo) url += '&for=' + encodeURIComponent(memo);
+    return url;
+  }
+  if ($('reqMake')) $('reqMake').addEventListener('click', function () {
+    try {
+      var w = wallets[Number($('reqFrom').value)];
+      if (!w) throw new Error('Add a wallet first');
+      var raw = $('reqAmount').value.trim(), unit = $('reqUnit').value, base = 0;
+      if (raw) base = unit === 'blz' ? Coin.parseAmount(raw)
+        : minutesToBase(parseFloat(raw) * (unit === 'hours' ? 60 : 1));
+      var memo = $('reqMemo').value.trim();
+      var url = buildRequestLink(w.address, base, memo);
+      var label = (base > 0 ? fmtTime(base) + ' · ' + fmt(base) : 'any amount') + (memo ? ' — ' + esc(memo) : '');
+      $('reqOut').innerHTML =
+        '<div class="note" style="margin-top:10px">' +
+          '<div class="ttl" style="font-weight:650">Request: ' + label + '</div>' +
+          '<div class="qrp" style="margin:10px 0">' + CoinQR.toSVG(CoinQR.encode(url), 4, { dark: '#17130c', light: '#ffffff' }) + '</div>' +
+          '<div class="mono" style="word-break:break-all;font-size:12px" data-copy="' + esc(url) + '" title="Click to copy">' + esc(url) + '</div>' +
+          '<div class="row" style="margin-top:8px"><button id="reqCopy" type="button">📋 Copy link</button><button id="reqShare" type="button">📣 Share</button></div>' +
+        '</div>';
+      var doShare = function () {
+        var text = 'Please pay me on BallrzCoin' + (memo ? ' for ' + memo : '') + (base > 0 ? ' (' + fmtTime(base) + ')' : '') + ': ' + url;
+        if (navigator.share) navigator.share({ text: text }).catch(function () {});
+        else if (navigator.clipboard) { navigator.clipboard.writeText(url); toast('📋 Link copied'); }
+      };
+      $('reqCopy').addEventListener('click', function () {
+        if (navigator.clipboard) { navigator.clipboard.writeText(url); toast('📋 Link copied'); }
+      });
+      $('reqShare').addEventListener('click', doShare);
+    } catch (err) { toast('✖ ' + err.message); }
+  });
+
+  // Progressive Web App: register the service worker (offline + installable) and
+  // wire the "📲 Install app" button to the browser's install prompt. Where the
+  // browser doesn't fire beforeinstallprompt (notably iOS Safari) we show a short
+  // Add-to-Home-Screen hint instead, so the app is installable everywhere.
+  (function () {
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js').catch(function () {});
+      });
+    }
+    var deferred = null, btn = $('installBtn');
+    var standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+    window.addEventListener('beforeinstallprompt', function (e) {
+      e.preventDefault(); deferred = e;
+      if (btn && !standalone) btn.style.display = '';
+    });
+    if (btn) btn.addEventListener('click', function () {
+      if (deferred) {
+        deferred.prompt();
+        deferred.userChoice.then(function (c) {
+          if (c && c.outcome === 'accepted') toast('📲 Installing BallrzCoin…');
+          deferred = null; btn.style.display = 'none';
+        });
+      } else {
+        var iOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+        toast(iOS ? '📲 Tap the Share icon, then “Add to Home Screen”.'
+                  : '📲 Use your browser menu → “Install app” / “Add to Home screen”.');
+      }
+    });
+    window.addEventListener('appinstalled', function () {
+      if (btn) btn.style.display = 'none';
+      toast('🎉 BallrzCoin added to your home screen!');
+    });
+    // On iOS (no beforeinstallprompt) still offer the button with a hint.
+    if (btn && !standalone && /iphone|ipad|ipod/i.test(navigator.userAgent)) btn.style.display = '';
+  })();
 
   $('offerForm').addEventListener('submit', function (ev) {
     ev.preventDefault();
@@ -1475,12 +2123,14 @@
       if (!(price > 0)) throw new Error('Set a price — in hours, minutes or BLZ');
       var o = {
         id: w.address.slice(0, 8) + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7),
-        address: w.address, name: w.name, title: title, desc: desc, price: price, pubKey: w.publicKey, at: Date.now()
+        address: w.address, name: w.name, title: title, desc: desc, price: price, pubKey: w.publicKey,
+        category: $('offerCat') ? $('offerCat').value : '', circle: $('offerCircle') ? $('offerCircle').value.trim() : '',
+        at: Date.now()
       };
       ingestOffer(o);
       saveOffers();
       netSend({ type: 'offer', offer: o });
-      $('offerTitle').value = ''; $('offerDesc').value = ''; $('offerPrice').value = '';
+      $('offerTitle').value = ''; $('offerDesc').value = ''; $('offerPrice').value = ''; $('offerCircle').value = '';
       updateOfferHint();
       renderOffers();
       toast('📣 Offer posted: ' + title + ' (' + fmtTime(o.price) + ')');
@@ -1490,16 +2140,20 @@
   });
 
   $('relaySave').addEventListener('click', function () {
-    var v = String($('relayInput').value || '').trim().replace(/\/+$/, '');
+    var v = normUrl($('relayInput').value);
     if (!v) { toast('Enter a relay URL first (see the deploy guide)'); return; }
-    try { localStorage.setItem(LS_RELAY, v); } catch (err) {}
-    toast('Relay saved — reconnecting…');
-    try { location.reload(); } catch (err) {}
+    if (addRelay(v)) {
+      $('relayInput').value = '';
+      toast('✓ Relay added — connecting…');
+      netSend({ type: 'hello' }); // pull chain/offers from the new relay
+      renderNetStatus();
+    } else { toast('That relay is already in your list'); }
   });
   $('relayClear').addEventListener('click', function () {
+    relays = []; persistRelays();
     try { localStorage.removeItem(LS_RELAY); } catch (err) {}
-    toast('Relay cleared — local-only mode');
-    try { location.reload(); } catch (err) {}
+    toast('All relays removed — local-only mode');
+    renderNetStatus();
   });
 
   // Pull a BLZ address out of whatever a QR holds: a bare address, or one of
@@ -1795,18 +2449,44 @@
     render();
   });
 
-  // Deep links: ?pay=ADDRESS prefills the send form (what wallet QRs encode).
+  // Deep links: ?pay=ADDRESS (optionally &amt=BLZ&for=MEMO) prefills the send
+  // form — what wallet QRs and payment-request links encode.
   var payTo = qsParam('pay');
   if (payTo && Coin.isValidAddress(payTo)) {
     $('sendTo').value = payTo;
-    toast('Recipient filled in from the link — add an amount and send');
+    var amt = qsParam('amt'), memo = qsParam('for');
+    if (amt && /^\d+(\.\d{1,5})?$/.test(amt)) $('sendAmount').value = amt;
+    toast(memo ? '🧾 Payment requested for: ' + memo + (amt ? ' (' + amt + ' BLZ)' : '')
+               : 'Recipient filled in from the link — add an amount and send');
+    try { $('sendForm').scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (err) {}
   }
-  try { if ($('relayInput')) $('relayInput').value = relayUrl; } catch (err) {}
+
+  // Onboarding: ?claim=<key> drops a friend's pre-funded gift wallet straight in,
+  // so a newcomer arrives with a spendable balance. The ?relay= in the same link
+  // (handled above) joins them to the network so the gifted coins sync in.
+  var claimKey = qsParam('claim');
+  if (!locked && claimKey && /^[0-9a-f]{64}$/.test(claimKey)) {
+    try {
+      var gw = Coin.walletFromPrivateKey(claimKey);
+      if (!wallets.some(function (w) { return w.address === gw.address; })) {
+        gw.name = 'My BallrzCoin';
+        wallets.unshift(gw);          // make the gift their primary wallet
+        saveWalletsNow();
+      }
+      var circleP = qsParam('circle'); if (circleP) setMyCircle(circleP);
+      var fromP = qsParam('from');
+      setTimeout(function () {
+        toast('🎁 Welcome! ' + (fromP ? fromP + ' ' : 'A friend ') + 'gave you a starting balance — it appears once your node syncs.');
+      }, 1000);
+    } catch (e) { /* bad claim key — ignore */ }
+  }
 
   render();
   renderTimeBank();
   renderPriceList();
   renderNetStatus();
+  renderSecurity();
+  if (locked) showLock();     // encrypted at rest — ask for the passphrase before anything else
   persist();
   netSend({ type: 'hello' }); // ask peers for their chains
   announceOffers();           // share our barter offers with the network
