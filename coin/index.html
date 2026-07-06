@@ -264,6 +264,17 @@
   #lockModal .coinmedal { width: 84px; height: 84px; font-size: 44px; margin: 0 auto 18px; }
   #lockModal input { width: 100%; margin: 14px 0 6px; text-align: center; font-size: 16px; }
   #lockErr { color: #ff9d9d; font-size: 13px; min-height: 18px; }
+  #posModal { display: none; position: fixed; inset: 0; z-index: 125; background: radial-gradient(circle at 50% 30%, rgba(20,16,8,0.98), rgba(4,5,9,0.99)); place-items: center; padding: 22px; overflow: auto; }
+  #posModal.show { display: grid; }
+  #posModal .pm { max-width: 380px; width: 100%; text-align: center; }
+  #posModal h3 { font: 700 22px/1.2 var(--serif); margin-bottom: 4px; }
+  #posModal select, #posModal input { width: 100%; margin: 8px 0; font-size: 16px; }
+  #posModal .qbig { background: #fff; border-radius: 16px; padding: 16px; display: inline-block; line-height: 0; margin: 12px 0; }
+  #posModal .qbig svg { width: 260px; height: 260px; }
+  #posAmt { font: 800 34px var(--serif); background: var(--goldgrad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  #posStatus { font-size: 16px; margin: 10px 0; color: var(--dim); }
+  #posStatus.paid { color: var(--green); font-weight: 800; font-size: 22px; }
+  #posClose { position: absolute; top: 16px; right: 18px; }
   #cardModal .cmwrap { max-width: 400px; width: 100%; text-align: center; }
   #cardImg { width: 100%; border-radius: 20px; box-shadow: 0 24px 70px rgba(0,0,0,0.6), 0 0 46px rgba(244,194,87,0.22); }
   #cardModal .cmbar { display: flex; gap: 10px; justify-content: center; margin-top: 16px; }
@@ -309,6 +320,28 @@
     <input id="lockPass" type="password" placeholder="Passphrase" autocomplete="current-password">
     <div id="lockErr"></div>
     <button class="primary" id="lockUnlock" style="width:100%">🔓 Unlock</button>
+  </div>
+</div>
+
+<div id="posModal">
+  <button id="posClose">✕ Close</button>
+  <div class="pm">
+    <div id="posSetup">
+      <h3>🏪 Charge — point of sale</h3>
+      <div class="sub" style="margin-bottom:8px">Show a payment QR at your stall or counter. When it’s paid, you’ll see it here instantly.</div>
+      <select id="posFrom" title="Which wallet gets paid"></select>
+      <div class="row"><input id="posAmount" placeholder="Amount" inputmode="decimal" style="flex:1">
+        <select id="posUnit"><option value="hours">hours</option><option value="minutes">minutes</option><option value="blz">BLZ</option></select></div>
+      <input id="posMemo" placeholder="What for (optional)" maxlength="60" autocomplete="off">
+      <button class="primary" id="posShow" style="width:100%">Show payment QR</button>
+    </div>
+    <div id="posCharge" style="display:none">
+      <div id="posAmt"></div>
+      <div class="sub" id="posMemoOut"></div>
+      <div class="qbig" id="posQR"></div>
+      <div id="posStatus">⏳ Waiting for payment…</div>
+      <button id="posReset" style="width:100%">＋ New charge</button>
+    </div>
   </div>
 </div>
 
@@ -1919,6 +1952,55 @@
     });
   });
   refreshNotifyBtn();
+
+  // Point of sale: pick a wallet + amount, show a big payment QR, and watch the
+  // wallet's balance — the moment it rises by the charged amount, it's Paid.
+  var posWatch = null;
+  function posPopulate() {
+    $('posFrom').innerHTML = wallets.map(function (w, i) { return '<option value="' + i + '">' + esc(w.name) + '</option>'; }).join('');
+  }
+  function posOpen() { posPopulate(); $('posSetup').style.display = ''; $('posCharge').style.display = 'none'; $('posModal').classList.add('show'); }
+  function posCloseFn() { $('posModal').classList.remove('show'); if (posWatch && posWatch.timer) clearInterval(posWatch.timer); posWatch = null; }
+  function posCheck() {
+    if (!posWatch || posWatch.done) return;
+    if (chain.getBalance(posWatch.addr) >= posWatch.target) {
+      var st = $('posStatus'); st.textContent = '✅ Paid! ' + fmtTime(posWatch.amount) + ' received'; st.className = 'paid';
+      try { confettiBurst(); } catch (e) {}
+      notif('✅ Paid', fmt(posWatch.amount) + ' received');
+      posWatch.done = true; clearInterval(posWatch.timer);
+      return;
+    }
+    // Payment seen in the mempool but not yet mined — show it's on the way.
+    var pending = 0;
+    chain.mempool.forEach(function (e) { (e.tx.outputs || []).forEach(function (o) { if (o.address === posWatch.addr) pending += o.amount; }); });
+    var st2 = $('posStatus');
+    if (chain.getBalance(posWatch.addr) + pending >= posWatch.target && !st2.className) {
+      st2.textContent = '💰 Payment received — confirming…';
+    }
+  }
+  if ($('posBtn')) $('posBtn').addEventListener('click', posOpen);
+  if ($('posClose')) $('posClose').addEventListener('click', posCloseFn);
+  if ($('posReset')) $('posReset').addEventListener('click', posOpen);
+  if ($('posShow')) $('posShow').addEventListener('click', function () {
+    try {
+      var w = wallets[Number($('posFrom').value)];
+      if (!w) throw new Error('Add a wallet first');
+      var raw = $('posAmount').value.trim(), unit = $('posUnit').value;
+      if (!raw) throw new Error('Enter an amount');
+      var amount = unit === 'blz' ? Coin.parseAmount(raw) : minutesToBase(parseFloat(raw) * (unit === 'hours' ? 60 : 1));
+      if (!(amount > 0)) throw new Error('Enter a valid amount');
+      var memo = $('posMemo').value.trim();
+      var url = buildRequestLink(w.address, amount, memo);
+      $('posAmt').textContent = fmtTime(amount) + ' · ' + fmt(amount);
+      $('posMemoOut').textContent = memo || '';
+      $('posQR').innerHTML = CoinQR.toSVG(CoinQR.encode(url), 5, { dark: '#17130c', light: '#ffffff' });
+      var st = $('posStatus'); st.textContent = '⏳ Waiting for payment…'; st.className = '';
+      $('posSetup').style.display = 'none'; $('posCharge').style.display = '';
+      if (posWatch && posWatch.timer) clearInterval(posWatch.timer);
+      posWatch = { addr: w.address, amount: amount, target: chain.getBalance(w.address) + amount, done: false };
+      posWatch.timer = setInterval(posCheck, 1200);
+    } catch (err) { toast('✖ ' + err.message); }
+  });
 
   // Multi-language UI: translate tagged elements ([data-i18n] textContent,
   // [data-i18n-ph] placeholder) from the strings table, remember the choice, and
