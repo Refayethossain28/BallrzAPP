@@ -370,6 +370,17 @@
 </form>
 <div class="row"><button id="scanBtn" type="button">📷 Scan a friend’s QR</button></div>
 <div class="sub">Transactions wait in the mempool until a miner includes them; the fee goes to that miner.</div>
+<details class="pricelist" id="reqWrap">
+  <summary>🧾 Request a payment — make a link &amp; QR others can pay</summary>
+  <div class="row" style="margin-top:10px">
+    <select id="reqFrom" title="Which of your wallets should be paid"></select>
+    <input id="reqAmount" placeholder="Amount" inputmode="decimal" style="max-width:120px">
+    <select id="reqUnit"><option value="hours">hours</option><option value="minutes">minutes</option><option value="blz">BLZ</option></select>
+    <input id="reqMemo" placeholder="What it’s for (optional)" maxlength="80" autocomplete="off">
+    <button class="primary" id="reqMake" type="button">Create request</button>
+  </div>
+  <div id="reqOut"></div>
+</details>
 
 <h2>Barter — offers board</h2>
 <div class="sub">BLZ is a <b>time bank</b>: it buys <b>favours and time</b>, never cash. Post something you’ll do or give, and pay others for theirs. Offers travel the network like payments. <a href="guide.html" style="color:var(--gold)">📖 How to run barter with friends →</a></div>
@@ -1146,6 +1157,9 @@
     $('addrList').innerHTML = wallets.map(function (w) {
       return '<option value="' + esc(w.address) + '">' + esc(w.name) + '</option>';
     }).join('');
+    if ($('reqFrom')) $('reqFrom').innerHTML = wallets.map(function (w, i) {
+      return '<option value="' + i + '">' + esc(w.name) + '</option>';
+    }).join('');
 
     $('mempoolCount').textContent = chain.mempool.length ? '(' + chain.mempool.length + ' pending)' : '';
     $('mempool').innerHTML = chain.mempool.length ? chain.mempool.map(function (e) {
@@ -1702,6 +1716,44 @@
     showSelectedBlock();
   });
 
+  // Payment requests / invoices: build a "?pay=…&amt=…&for=…" link + QR that
+  // anyone can open to have the send form pre-filled with your address, the
+  // amount and a note. The paying side parses those params at load (below).
+  function buildRequestLink(addr, baseAmount, memo) {
+    var url = pageBase() + '?pay=' + encodeURIComponent(addr);
+    if (baseAmount > 0) url += '&amt=' + fmt(baseAmount).replace(' BLZ', '');
+    if (memo) url += '&for=' + encodeURIComponent(memo);
+    return url;
+  }
+  if ($('reqMake')) $('reqMake').addEventListener('click', function () {
+    try {
+      var w = wallets[Number($('reqFrom').value)];
+      if (!w) throw new Error('Add a wallet first');
+      var raw = $('reqAmount').value.trim(), unit = $('reqUnit').value, base = 0;
+      if (raw) base = unit === 'blz' ? Coin.parseAmount(raw)
+        : minutesToBase(parseFloat(raw) * (unit === 'hours' ? 60 : 1));
+      var memo = $('reqMemo').value.trim();
+      var url = buildRequestLink(w.address, base, memo);
+      var label = (base > 0 ? fmtTime(base) + ' · ' + fmt(base) : 'any amount') + (memo ? ' — ' + esc(memo) : '');
+      $('reqOut').innerHTML =
+        '<div class="note" style="margin-top:10px">' +
+          '<div class="ttl" style="font-weight:650">Request: ' + label + '</div>' +
+          '<div class="qrp" style="margin:10px 0">' + CoinQR.toSVG(CoinQR.encode(url), 4, { dark: '#17130c', light: '#ffffff' }) + '</div>' +
+          '<div class="mono" style="word-break:break-all;font-size:12px" data-copy="' + esc(url) + '" title="Click to copy">' + esc(url) + '</div>' +
+          '<div class="row" style="margin-top:8px"><button id="reqCopy" type="button">📋 Copy link</button><button id="reqShare" type="button">📣 Share</button></div>' +
+        '</div>';
+      var doShare = function () {
+        var text = 'Please pay me on BallrzCoin' + (memo ? ' for ' + memo : '') + (base > 0 ? ' (' + fmtTime(base) + ')' : '') + ': ' + url;
+        if (navigator.share) navigator.share({ text: text }).catch(function () {});
+        else if (navigator.clipboard) { navigator.clipboard.writeText(url); toast('📋 Link copied'); }
+      };
+      $('reqCopy').addEventListener('click', function () {
+        if (navigator.clipboard) { navigator.clipboard.writeText(url); toast('📋 Link copied'); }
+      });
+      $('reqShare').addEventListener('click', doShare);
+    } catch (err) { toast('✖ ' + err.message); }
+  });
+
   // Progressive Web App: register the service worker (offline + installable) and
   // wire the "📲 Install app" button to the browser's install prompt. Where the
   // browser doesn't fire beforeinstallprompt (notably iOS Safari) we show a short
@@ -2070,11 +2122,16 @@
     render();
   });
 
-  // Deep links: ?pay=ADDRESS prefills the send form (what wallet QRs encode).
+  // Deep links: ?pay=ADDRESS (optionally &amt=BLZ&for=MEMO) prefills the send
+  // form — what wallet QRs and payment-request links encode.
   var payTo = qsParam('pay');
   if (payTo && Coin.isValidAddress(payTo)) {
     $('sendTo').value = payTo;
-    toast('Recipient filled in from the link — add an amount and send');
+    var amt = qsParam('amt'), memo = qsParam('for');
+    if (amt && /^\d+(\.\d{1,5})?$/.test(amt)) $('sendAmount').value = amt;
+    toast(memo ? '🧾 Payment requested for: ' + memo + (amt ? ' (' + amt + ' BLZ)' : '')
+               : 'Recipient filled in from the link — add an amount and send');
+    try { $('sendForm').scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (err) {}
   }
   try { if ($('relayInput')) $('relayInput').value = relayUrl; } catch (err) {}
 
