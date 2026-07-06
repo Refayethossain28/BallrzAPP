@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0e14">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BallrzCoin">
 <title>BallrzCoin (BLZ) — a currency for time and favours</title>
 <meta name="description" content="A real proof-of-work cryptocurrency, built like Bitcoin from raw bytes up, that a community trades for time and favours. 21 billion BLZ, fixed forever. Mine it in your browser. No ICO, no price, no speculation.">
 <meta property="og:type" content="website">
@@ -301,6 +307,7 @@
   Open this page in a second tab — each tab is a node, and they sync on the heaviest chain.
 </div>
 <div class="row" style="margin-top:12px">
+  <button id="installBtn" class="primary" style="display:none">📲 Install app</button>
   <button id="tourBtn">❓ How it works — take the tour</button>
   <button id="cardBtn">🖼 My collectible card</button>
   <button id="shareBtn">📣 Share</button>
@@ -1510,6 +1517,43 @@
     selectedBlockHeight = Number(this.value);
     showSelectedBlock();
   });
+
+  // Progressive Web App: register the service worker (offline + installable) and
+  // wire the "📲 Install app" button to the browser's install prompt. Where the
+  // browser doesn't fire beforeinstallprompt (notably iOS Safari) we show a short
+  // Add-to-Home-Screen hint instead, so the app is installable everywhere.
+  (function () {
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js').catch(function () {});
+      });
+    }
+    var deferred = null, btn = $('installBtn');
+    var standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+    window.addEventListener('beforeinstallprompt', function (e) {
+      e.preventDefault(); deferred = e;
+      if (btn && !standalone) btn.style.display = '';
+    });
+    if (btn) btn.addEventListener('click', function () {
+      if (deferred) {
+        deferred.prompt();
+        deferred.userChoice.then(function (c) {
+          if (c && c.outcome === 'accepted') toast('📲 Installing BallrzCoin…');
+          deferred = null; btn.style.display = 'none';
+        });
+      } else {
+        var iOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+        toast(iOS ? '📲 Tap the Share icon, then “Add to Home Screen”.'
+                  : '📲 Use your browser menu → “Install app” / “Add to Home screen”.');
+      }
+    });
+    window.addEventListener('appinstalled', function () {
+      if (btn) btn.style.display = 'none';
+      toast('🎉 BallrzCoin added to your home screen!');
+    });
+    // On iOS (no beforeinstallprompt) still offer the button with a hint.
+    if (btn && !standalone && /iphone|ipad|ipod/i.test(navigator.userAgent)) btn.style.display = '';
+  })();
 
   $('offerForm').addEventListener('submit', function (ev) {
     ev.preventDefault();
