@@ -461,6 +461,7 @@
 <script src="config.js"></script>
 <script src="qr.js"></script>
 <script src="engine.js"></script>
+<script src="wordlist.js"></script>
 <script>
 (function () {
   'use strict';
@@ -550,6 +551,32 @@
 
   function walletRecords() {
     return wallets.map(function (w) { return { name: w.name, privateKey: w.privateKey }; });
+  }
+
+  // Recovery phrase: encode a 32-byte private key as 32 words (one per byte) from
+  // the 256-word list, plus a 33rd checksum word (first byte of SHA-256 of the
+  // key) so a mistyped word is caught on import.
+  var WORDS = (typeof self !== 'undefined' ? self : window).BallrzWords || [];
+  var WORD_IX = (function () { var m = {}; for (var i = 0; i < WORDS.length; i++) m[WORDS[i]] = i; return m; })();
+  function keyToPhrase(hexKey) {
+    var bytes = Coin.hexToBytes(hexKey), out = [];
+    for (var i = 0; i < bytes.length; i++) out.push(WORDS[bytes[i]]);
+    out.push(WORDS[parseInt(Coin.sha256(bytes).slice(0, 2), 16)]); // checksum word
+    return out.join(' ');
+  }
+  function phraseToKey(phrase) {
+    var words = String(phrase).trim().toLowerCase().split(/\s+/);
+    if (words.length !== 33) throw new Error('A recovery phrase is 33 words (' + words.length + ' given)');
+    var bytes = [];
+    for (var i = 0; i < 32; i++) {
+      var v = WORD_IX[words[i]];
+      if (v === undefined) throw new Error('Not a recovery word: “' + words[i] + '”');
+      bytes.push(v);
+    }
+    var check = WORD_IX[words[32]];
+    if (check === undefined) throw new Error('Not a recovery word: “' + words[32] + '”');
+    if (parseInt(Coin.sha256(bytes).slice(0, 2), 16) !== check) throw new Error('Checksum failed — a word is wrong or out of order');
+    return Coin.bytesToHex(bytes);
   }
   // Persist wallets, encrypted if a passphrase is set. Never writes while locked
   // (wallets is empty then — writing would destroy the encrypted copy).
@@ -1080,10 +1107,18 @@
       }
       var keysHtml = '';
       if (w.keysOpen) {
+        var phraseHtml = '';
+        if (w.phraseOpen) {
+          var phrase = keyToPhrase(w.privateKey);
+          phraseHtml = '<div class="pk" data-copy="' + esc(phrase) + '" title="Click to copy">' + esc(phrase) + '</div>' +
+            '<div class="warn">📜 Your 33-word recovery phrase. Write it down, in order, and keep it safe — these words restore this wallet on any device. Anyone who reads them owns the coins.</div>';
+        }
         keysHtml = '<div class="keys">' +
           '<div class="pk" data-copy="' + esc(w.privateKey) + '" title="Click to copy">' + esc(w.privateKey) + '</div>' +
           '<div class="warn">⚠️ This is the private key. Anyone who sees it owns the coins — your balance lives on the blockchain, and this key is the only proof it’s yours.</div>' +
-          '<div class="row"><button data-paper="' + i + '">🖨 Paper wallet</button></div>' +
+          phraseHtml +
+          '<div class="row"><button data-paper="' + i + '">🖨 Paper wallet</button>' +
+          '<button data-phrase="' + i + '">' + (w.phraseOpen ? 'Hide phrase' : '📜 Recovery phrase') + '</button></div>' +
           '</div>';
       }
       return '<div class="card">' +
@@ -1418,6 +1453,12 @@
       render();
       return;
     }
+    var phraseIdx = t.getAttribute('data-phrase');
+    if (phraseIdx !== null && phraseIdx !== undefined && phraseIdx !== '') {
+      wallets[Number(phraseIdx)].phraseOpen = !wallets[Number(phraseIdx)].phraseOpen;
+      render();
+      return;
+    }
     var paperIdx = t.getAttribute('data-paper');
     if (paperIdx !== null && paperIdx !== undefined && paperIdx !== '') {
       openPaperWallet(wallets[Number(paperIdx)]);
@@ -1563,10 +1604,14 @@
   }
 
   $('importWallet').addEventListener('click', function () {
-    var key = prompt('Paste the private key (64 hex characters) from a backup or paper wallet:');
-    if (!key) return;
-    key = String(key).trim().toLowerCase();
-    if (!/^[0-9a-f]{64}$/.test(key)) { toast('✖ That isn’t a valid key — expected 64 hex characters'); return; }
+    var input = prompt('Paste your 33-word recovery phrase, or a private key (64 hex characters), from a backup or paper wallet:');
+    if (!input) return;
+    var key = String(input).trim().toLowerCase();
+    if (/\s/.test(key)) {                       // looks like a recovery phrase
+      try { key = phraseToKey(key); } catch (err) { toast('✖ ' + err.message); return; }
+    } else if (!/^[0-9a-f]{64}$/.test(key)) {
+      toast('✖ Enter a 33-word recovery phrase or a 64-character key'); return;
+    }
     var w;
     try { w = Coin.walletFromPrivateKey(key); } catch (err) { toast('✖ ' + err.message); return; }
     var existing = wallets.filter(function (x) { return x.address === w.address; })[0];

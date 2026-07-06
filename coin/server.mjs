@@ -39,6 +39,7 @@ const STATIC = {
   '/engine.js': ['engine.js', 'text/javascript; charset=utf-8'],
   '/config.js': ['config.js', 'text/javascript; charset=utf-8'],
   '/qr.js': ['qr.js', 'text/javascript; charset=utf-8'],
+  '/wordlist.js': ['wordlist.js', 'text/javascript; charset=utf-8'],
   '/sw.js': ['sw.js', 'text/javascript; charset=utf-8'],
   '/manifest.webmanifest': ['manifest.webmanifest', 'application/manifest+json; charset=utf-8'],
   '/icon-192.png': ['icon-192.png', 'image/png'],
