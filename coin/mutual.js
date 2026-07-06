@@ -80,11 +80,17 @@
   }
 
   // Fold a set of transfers into balances. Transfers are de-duplicated by id and
-  // applied in (timestamp, id) order. A transfer that would push the sender past
-  // the credit limit is rejected (not applied), everything else nets to zero.
-  // creditLimit is in base units; pass Infinity for no limit.
+  // applied in (timestamp, id) order. A transfer that would push the SENDER past
+  // their credit limit is rejected (not applied), everything else nets to zero.
+  // `creditLimit` is in base units and may be:
+  //   • a number (a single limit for everyone),
+  //   • null/undefined (no limit), or
+  //   • a function limitFor(address) → base units (per-person limits; return
+  //     Infinity or null for "no limit" on that account).
   function applyLedger(txs, creditLimit) {
-    var limit = (creditLimit === undefined || creditLimit === null) ? Infinity : creditLimit;
+    var limitFor;
+    if (typeof creditLimit === 'function') limitFor = creditLimit;
+    else { var lim = (creditLimit === undefined || creditLimit === null) ? Infinity : creditLimit; limitFor = function () { return lim; }; }
     var seen = {}, list = [];
     (txs || []).forEach(function (tx) {
       if (verifyCredit(tx) && !seen[tx.id]) { seen[tx.id] = 1; list.push(tx); }
@@ -93,6 +99,7 @@
     var balances = {}, applied = [], rejected = [];
     list.forEach(function (tx) {
       var fromBal = balances[tx.from] || 0;
+      var limit = limitFor(tx.from); if (limit == null) limit = Infinity;
       if (fromBal - tx.amount < -limit) { rejected.push(tx); return; }
       balances[tx.from] = fromBal - tx.amount;
       balances[tx.to] = (balances[tx.to] || 0) + tx.amount;
