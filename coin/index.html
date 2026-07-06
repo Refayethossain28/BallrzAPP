@@ -375,7 +375,9 @@
 <h2>Mempool <span id="mempoolCount"></span></h2>
 <div class="list" id="mempool"></div>
 
-<h2>Blockchain</h2>
+<h2>Blockchain <span id="chainCount"></span></h2>
+<div class="sub">Pick a block to inspect it — the whole chain is here, newest first.</div>
+<div class="row"><select id="blockPicker" aria-label="Choose a block to view"></select></div>
 <div class="list" id="chain"></div>
 
 <h2>Network</h2>
@@ -975,26 +977,7 @@
         '<div class="hash">' + esc(short(tx.id, 16)) + '</div></div>';
     }).join('') : '<div class="note">No pending transactions — send some coins above.</div>';
 
-    $('chain').innerHTML = chain.blocks.slice().reverse().map(function (b) {
-      var txHtml = b.transactions.map(function (tx) {
-        if (tx.type === 'coinbase') {
-          if (!tx.outputs.length) return '<div class="tx">🌱 genesis — “' + esc(tx.extra) + '”</div>';
-          return '<div class="tx">⛏ coinbase → ' + who(tx.outputs[0].address) +
-            ' <span class="amt">' + fmt(tx.outputs[0].amount) + '</span></div>';
-        }
-        var from = fromAddr(tx.inputs[0]);
-        return '<div class="tx">' + whoFrom(tx.inputs[0]) + ' → ' + tx.outputs.map(function (o) {
-          return who(o.address) + ' <span class="amt">' + fmt(o.amount) + '</span>' +
-            (o.address === from ? ' <span class="fee">(change)</span>' : '');
-        }).join(' · ') + '<div class="hash">' + esc(short(tx.id, 16)) + '</div></div>';
-      }).join('');
-      return '<div class="block"><div class="head">' +
-        '<span class="h">#' + b.height + '</span>' +
-        '<span class="fee">' + new Date(b.timestamp).toLocaleString() + '</span>' +
-        '<span class="fee">nonce ' + b.nonce + '</span>' +
-        '<span class="fee">' + (b.transactions.length - 1) + ' transfer(s)</span>' +
-        '</div><div class="hash">' + esc(b.hash) + '</div>' + txHtml + '</div>';
-    }).join('');
+    renderChainPicker();
 
     renderMiningStatus();
     renderOffers();
@@ -1007,6 +990,66 @@
     var set = {};
     wallets.forEach(function (w) { set[w.address] = true; });
     return set;
+  }
+
+  // Block explorer — the chain is browsed through a dropdown rather than a long
+  // scroll: the picker lists every block (newest first), and the selected one is
+  // rendered below. We follow the tip while you're viewing it, but stay put once
+  // you've navigated to an older block.
+  var selectedBlockHeight = null;
+  var lastRenderedTip = -1;
+
+  function renderBlockCard(b) {
+    var txHtml = b.transactions.map(function (tx) {
+      if (tx.type === 'coinbase') {
+        if (!tx.outputs.length) return '<div class="tx">🌱 genesis — “' + esc(tx.extra) + '”</div>';
+        return '<div class="tx">⛏ coinbase → ' + who(tx.outputs[0].address) +
+          ' <span class="amt">' + fmt(tx.outputs[0].amount) + '</span></div>';
+      }
+      var from = fromAddr(tx.inputs[0]);
+      return '<div class="tx">' + whoFrom(tx.inputs[0]) + ' → ' + tx.outputs.map(function (o) {
+        return who(o.address) + ' <span class="amt">' + fmt(o.amount) + '</span>' +
+          (o.address === from ? ' <span class="fee">(change)</span>' : '');
+      }).join(' · ') + '<div class="hash">' + esc(short(tx.id, 16)) + '</div></div>';
+    }).join('');
+    return '<div class="block"><div class="head">' +
+      '<span class="h">#' + b.height + '</span>' +
+      '<span class="fee">' + new Date(b.timestamp).toLocaleString() + '</span>' +
+      '<span class="fee">nonce ' + b.nonce + '</span>' +
+      '<span class="fee">' + (b.transactions.length - 1) + ' transfer(s)</span>' +
+      '</div><div class="hash">' + esc(b.hash) + '</div>' + txHtml + '</div>';
+  }
+
+  function blockByHeight(h) {
+    var list = chain.blocks;
+    for (var i = 0; i < list.length; i++) if (list[i].height === h) return list[i];
+    return null;
+  }
+
+  function showSelectedBlock() {
+    var b = blockByHeight(selectedBlockHeight);
+    $('chain').innerHTML = b ? renderBlockCard(b) : '';
+  }
+
+  function renderChainPicker() {
+    var blocks = chain.blocks, tipH = chain.tip.height;
+    var exists = blockByHeight(selectedBlockHeight) !== null;
+    // First load, a reorg that dropped our block, or "following the tip": snap to tip.
+    if (selectedBlockHeight === null || !exists || selectedBlockHeight === lastRenderedTip) {
+      selectedBlockHeight = tipH;
+    }
+    lastRenderedTip = tipH;
+
+    $('chainCount').textContent = blocks.length === 1 ? '(genesis only)' : '(' + blocks.length + ' blocks)';
+    $('blockPicker').innerHTML = blocks.slice().reverse().map(function (b) {
+      var what = b.height === 0 ? 'genesis' : (b.transactions.length - 1) + ' transfer(s)';
+      var label = '#' + b.height + (b.height === tipH ? ' · latest' : '') +
+        ' · ' + what + ' · ' + new Date(b.timestamp).toLocaleString();
+      return '<option value="' + b.height + '"' + (b.height === selectedBlockHeight ? ' selected' : '') + '>' +
+        esc(label) + '</option>';
+    }).join('');
+
+    showSelectedBlock();
   }
 
   // A live "why play now" hook: half of all coins are only mineable in era one.
@@ -1462,6 +1505,10 @@
   $('timeAnchor').addEventListener('input', function () {
     var v = parseInt(this.value, 10);
     if (v > 0) setTimeAnchor(v);
+  });
+  $('blockPicker').addEventListener('change', function () {
+    selectedBlockHeight = Number(this.value);
+    showSelectedBlock();
   });
 
   $('offerForm').addEventListener('submit', function (ev) {
