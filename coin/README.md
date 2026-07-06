@@ -5,6 +5,9 @@ dependencies**: the crypto, the ledger and the consensus rules all live in
 [`engine.js`](engine.js), and [`index.html`](index.html) is a single-file node UI
 (wallets, miner, mempool, block explorer). It's designed to be used — a community
 **time bank** you earn by mining and spend on time and favours, never cash.
+[`why.html`](why.html) makes the case for it as an honest **alternative to banks
+and cash** (what it does, its purpose, and its advantages over the banking
+system).
 
 ## What's real about it
 
