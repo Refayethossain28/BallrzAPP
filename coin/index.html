@@ -11,17 +11,17 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="BallrzCoin">
 <title>BallrzCoin (BLZ) — a currency for time and favours</title>
-<meta name="description" content="A real proof-of-work cryptocurrency, built like Bitcoin from raw bytes up, that a community trades for time and favours. 21 billion BLZ, fixed forever. Mine it in your browser. No ICO, no price, no speculation.">
+<meta name="description" content="A real proof-of-work cryptocurrency, built like Bitcoin from raw bytes up, that a community trades for time and favours. Your wallet holds and spends; a separate miner issues coins. 21 billion BLZ, fixed forever. No ICO, no price, no speculation.">
 <meta property="og:type" content="website">
 <meta property="og:title" content="BallrzCoin (BLZ) — a currency for time and favours">
-<meta property="og:description" content="A real proof-of-work cryptocurrency built like Bitcoin from raw bytes up — a community time bank you earn by mining and spend on favours. 21 billion BLZ, fixed forever. No ICO, no price, no speculation.">
+<meta property="og:description" content="A real proof-of-work cryptocurrency built like Bitcoin from raw bytes up — a community time bank you earn by doing favours and spend on favours. 21 billion BLZ, fixed forever. No ICO, no price, no speculation.">
 <meta property="og:url" content="https://refayethossain28.github.io/BallrzAPP/coin/">
 <meta property="og:image" content="https://refayethossain28.github.io/BallrzAPP/coin/share-card.png">
 <meta property="og:image:width" content="2400">
 <meta property="og:image:height" content="1260">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="BallrzCoin (BLZ) — a currency for time and favours">
-<meta name="twitter:description" content="A real proof-of-work cryptocurrency built like Bitcoin from raw bytes up — a community time bank. 21 billion BLZ, fixed forever. Mine it in your browser. No ICO, no price, no speculation.">
+<meta name="twitter:description" content="A real proof-of-work cryptocurrency built like Bitcoin from raw bytes up — a community time bank. Wallet holds &amp; spends; a separate miner issues coins. 21 billion BLZ, fixed forever. No ICO, no price, no speculation.">
 <meta name="twitter:image" content="https://refayethossain28.github.io/BallrzAPP/coin/share-card.png">
 <style>
   :root {
@@ -404,9 +404,10 @@
 </div>
 <div class="sub">
   A real proof-of-work cryptocurrency built like Bitcoin: secp256k1 wallets, UTXO transactions,
-  merkle trees, mining with difficulty retargeting and halving rewards — a community currency you
-  earn by mining and spend on time and favours. <b style="color:var(--gold)">21 billion BLZ will
-  ever exist</b>, hard-capped and fixed forever.
+  merkle trees, difficulty retargeting and halving rewards — a community currency you
+  earn by doing favours and spend on time and favours. <b style="color:var(--gold)">21 billion BLZ will
+  ever exist</b>, hard-capped and fixed forever. This is your <b>wallet</b> — it holds and spends but
+  can’t mint; issuing coins is a separate <a href="mine.html" style="color:var(--gold)">⛏ miner</a>’s job.
   Open this page in a second tab — each tab is a node, and they sync on the heaviest chain.
 </div>
 <div class="row" style="margin-top:12px">
@@ -439,7 +440,7 @@
   <button id="importWallet" data-i18n="b_import">⬇ Import wallet</button>
   <button id="inviteBtn" class="primary" data-i18n="b_invite">🎁 Invite a friend</button>
   <button id="posBtn" data-i18n="b_pos">🏪 Charge (point of sale)</button>
-  <span class="mining" id="miningStatus"></span>
+  <a class="mining" id="minerLink" href="mine.html" target="_blank" rel="noopener" title="Miners confirm transactions and issue coins — wallets can't">⛏ Run a miner</a>
   <span class="mining" id="netStatus"></span>
 </div>
 <div id="inviteOut"></div>
@@ -1408,7 +1409,7 @@
   var unlocked = {};
   try { unlocked = JSON.parse(localStorage.getItem(LS_ACH) || '{}') || {}; } catch (err) { unlocked = {}; }
   var ACHIEVEMENTS = [
-    { id: 'mine', icon: '⛏', title: 'First strike', desc: 'Mine your first block', test: function (m) { return m.mined > 0; } },
+    { id: 'earn', icon: '🪙', title: 'First coin', desc: 'Receive your first BLZ', test: function (m) { return m.balance > 0; } },
     { id: 'coin', icon: '🪙', title: 'A whole coin', desc: 'Hold 1 BLZ across your wallets', test: function (m) { return m.balance >= COIN_UNIT; } },
     { id: 'send', icon: '💸', title: 'First payment', desc: 'Send coins to someone', test: function (m) { return m.sent; } },
     { id: 'offer', icon: '🏷️', title: 'Open for business', desc: 'Post a barter offer', test: function (m) { return m.posted; } },
@@ -1465,45 +1466,13 @@
     }).join('');
   }
 
-  /* ---------- mining (time-sliced so the page stays alive) ---------- */
-  var mining = null;
-  function startMining(wallet) {
-    if (mining) { toast('Already mining…'); return; }
-    mining = { block: chain.prepareBlock(wallet.address), wallet: wallet, t0: Date.now(), tried: 0 };
-    step();
-    function step() {
-      if (!mining) return;
-      var SLICE = 25000;
-      var found = Coin.mine(mining.block, { startNonce: mining.block.nonce, maxIterations: SLICE });
-      mining.tried += SLICE;
-      if (found) {
-        var block = found;
-        mining = null;
-        try {
-          chain.addBlock(block);
-          persist();
-          announceChain();
-          celebrate('⚡ You struck a coin!', 'Block #' + block.height + ' — ' + fmt(coinbaseValue(block)) + ' to ' + wallet.name);
-        } catch (err) {
-          toast('Block orphaned (another node was faster): ' + err.message);
-        }
-        render();
-      } else {
-        renderMiningStatus();
-        setTimeout(step, 0);
-      }
-    }
-  }
-  function coinbaseValue(block) {
-    return block.transactions[0].outputs.reduce(function (s, o) { return s + o.amount; }, 0);
-  }
-  function renderMiningStatus() {
-    var el = $('miningStatus');
-    if (!mining) { el.textContent = ''; return; }
-    var secs = Math.max(0.001, (Date.now() - mining.t0) / 1000);
-    el.textContent = '⛏ mining block #' + mining.block.height + ' — ' +
-      Math.round(mining.tried / secs / 1000) + ' kH/s, nonce ' + mining.block.nonce;
-  }
+  /* ---------- mining lives in a separate page ----------
+   * A wallet deliberately cannot mint: minting is the miner's job (mine.html),
+   * so the everyday experience is "earn by doing favours and spend", not
+   * "print your own coins". The wallet still SYNCS the chain from the network
+   * (handleNetMessage → replaceChain) and broadcasts transactions; they confirm
+   * when a miner includes them. Mutual-credit favours need no miner at all. */
+  var mining = null; // always null here — kept so old UI guards stay harmless
 
   /* ---------- rendering ---------- */
   function walletName(address) {
@@ -1574,8 +1543,7 @@
         '<div>' + esc(w.name) + '</div>' +
         '<div class="bal">' + fmt(chain.getBalance(w.address)) + '</div>' +
         '<div class="addr" data-copy="' + esc(w.address) + '" title="Click to copy">' + esc(w.address) + '</div>' +
-        '<div class="row"><button class="primary" data-mine="' + i + '"' + (mining ? ' disabled' : '') + '>⛏ Mine to this wallet</button>' +
-        '<button data-qr="' + i + '">' + (w.qrOpen ? '▦ Hide QR' : '▦ QR') + '</button>' +
+        '<div class="row"><button data-qr="' + i + '">' + (w.qrOpen ? '▦ Hide QR' : '▦ QR') + '</button>' +
         '<button data-keys="' + i + '">' + (w.keysOpen ? '🔑 Hide keys' : '🔑 Keys') + '</button></div>' +
         qrHtml + keysHtml +
         '</div>';
@@ -1587,7 +1555,7 @@
       var pct = s.supply ? (100 * r.amount / s.supply).toFixed(1) : '0';
       return '<div class="rich"><span>' + medals[i] + '</span><span>' + who(r.address) + '</span>' +
         '<span class="amt">' + fmt(r.amount) + '</span><span class="pct">' + pct + '% of supply</span></div>';
-    }).join('') : '<div class="note">Nobody owns any BLZ yet — mine the first block to claim the top spot.</div>';
+    }).join('') : '<div class="note">Nobody owns any BLZ yet — earn some by doing a favour, or run a <a href="mine.html" target="_blank" rel="noopener">miner</a> to issue the first coins.</div>';
 
     $('sendFrom').innerHTML = wallets.map(function (w, i) {
       return '<option value="' + i + '">' + esc(w.name) + ' — ' + fmt(chain.getBalance(w.address)) + '</option>';
@@ -1612,7 +1580,6 @@
 
     renderChainPicker();
 
-    renderMiningStatus();
     renderOffers();
     renderMutual();
     renderHelpers();
@@ -1696,7 +1663,7 @@
     if (s.height < interval) {
       var left = interval - s.height;
       el.innerHTML = '<div><div class="ct">⚡ The Era-One Race</div>' +
-        '<div class="cd">Half of all 21 billion BLZ can only be mined in the first ' + interval + ' blocks — then the reward halves, forever. Mine now, before your friends do.</div></div>' +
+        '<div class="cd">Half of all 21 billion BLZ can only be issued in the first ' + interval + ' blocks — then the reward halves, forever. Run a <a href="mine.html" target="_blank" rel="noopener" style="color:inherit">miner</a> early, before your circle does.</div></div>' +
         '<div class="cn">' + left + ' left</div>';
     } else { el.innerHTML = ''; }
   }
@@ -2225,7 +2192,7 @@
       d.status = d.proposal.purpose === 'release' ? 'released' : 'refunded';
       d.proposal = null; d.at = Date.now();
       persist(); pushDeal(d.id);
-      toast('🔓 Vault ' + (d.status === 'released' ? 'released to the seller' : 'refunded') + ' — mine a block to confirm');
+      toast('🔓 Vault ' + (d.status === 'released' ? 'released to the seller' : 'refunded') + ' — a miner will confirm it');
       render();
     } catch (err) { toast('✖ ' + err.message); }
   }
@@ -2244,12 +2211,6 @@
     if (dmSend) { var tid = t.getAttribute('data-dm-thread'); var inp = document.querySelector('[data-dm-input="' + tid + '"]'); sendDM(dmSend, inp ? inp.value : chatDraft[tid]); return; }
     var grpSend = t.getAttribute('data-grp-send');
     if (grpSend) { var gt = grpThread(grpSend); var gi = document.querySelector('[data-dm-input="' + gt + '"]'); sendGroup(grpSend, gi ? gi.value : chatDraft[gt]); return; }
-    var mineIdx = t.getAttribute('data-mine');
-    if (mineIdx !== null && mineIdx !== undefined && mineIdx !== '') {
-      startMining(wallets[Number(mineIdx)]);
-      render();
-      return;
-    }
     var qrIdx = t.getAttribute('data-qr');
     if (qrIdx !== null && qrIdx !== undefined && qrIdx !== '') {
       wallets[Number(qrIdx)].qrOpen = !wallets[Number(qrIdx)].qrOpen;
@@ -2622,16 +2583,6 @@
     if (addr) setCredLimit(addr, ev.target.value);
   });
 
-  // Mine a block synchronously (the demo target is tiny) — used by gifting so a
-  // freshly-funded invite wallet is confirmed and spendable immediately.
-  function mineNow(minerAddr) {
-    var block = chain.prepareBlock(minerAddr);
-    var found = Coin.mine(block, { startNonce: 0, maxIterations: 8000000 });
-    if (!found) throw new Error('mining timed out');
-    chain.addBlock(found);
-    return found;
-  }
-
   // My circle/group — remembered, prefills the offer "circle" field, and rides
   // along in invites so a newcomer lands in the same group.
   var LS_CIRCLE = 'ballrzcoin.circle.v1';
@@ -2643,16 +2594,17 @@
     if ($('offerCircle') && !$('offerCircle').value) $('offerCircle').value = myCircle;
   }
 
-  // Invite + onboarding: fund a fresh "gift" wallet from yours, confirm it, and
-  // hand your friend a link that drops that funded wallet straight into their
-  // app — so they arrive with a spendable balance instead of an empty one. This
-  // is what breaks a community currency's cold-start problem.
+  // Invite + onboarding: fund a fresh "gift" wallet from yours and hand your
+  // friend a link that drops that funded wallet straight into their app — so
+  // they arrive with a starting balance. The gift is broadcast to the mempool
+  // and becomes spendable once a miner (mine.html) includes it; that breaks a
+  // community currency's cold-start problem without the wallet minting.
   $('inviteBtn').addEventListener('click', function () {
     try {
       var funder = null;
       for (var i = 0; i < wallets.length; i++) { if (chain.getBalance(wallets[i].address) > 0) { funder = wallets[i]; break; } }
-      if (!funder) throw new Error('Mine some BLZ first, then you can gift a starting balance.');
-      var raw = prompt('🎁 Invite a friend — how many HOURS of starting balance to gift them?\n(They can spend it on favours right away.)', '2');
+      if (!funder) throw new Error('You need some BLZ first — run a miner (⛏ Run a miner) to issue coins to one of your wallets, or receive some, then you can gift a starting balance.');
+      var raw = prompt('🎁 Invite a friend — how many HOURS of starting balance to gift them?\n(They can spend it on favours once a miner confirms it.)', '2');
       if (raw === null) return;
       var hours = parseFloat(raw);
       if (!(hours > 0)) throw new Error('Enter a number of hours');
@@ -2661,14 +2613,14 @@
       var circle = prompt('Add them to a circle/group? (optional — e.g. “Elm Street”)', myCircle) || '';
       if (circle) setMyCircle(circle);
       var gift = Coin.generateWallet();
-      chain.send(funder, gift.address, amount, 0, { timestamp: chain.tip.timestamp + 1 });
-      mineNow(funder.address);            // confirm the gift so it's spendable
-      persist(); announceChain(); render();
+      var giftTx = chain.send(funder, gift.address, amount, 0);
+      persist(); netSend({ type: 'tx', tx: giftTx }); render();  // a miner confirms it
       var url = pageBase() + '?claim=' + gift.privateKey;
       if (relays.length) url += '&relay=' + encodeURIComponent(relays[0].url);
       if (circle) url += '&circle=' + encodeURIComponent(circle);
       url += '&from=' + encodeURIComponent(funder.name);
-      var warn = relays.length ? '' : '<div class="warn">⚠ Add a relay (Network panel) so your friend’s device can sync and see the gift.</div>';
+      var warn = (relays.length ? '' : '<div class="warn">⚠ Add a relay (Network panel) so your friend’s device can sync and see the gift.</div>') +
+        '<div class="warn">⏳ The gift is pending — it becomes spendable once a <a href="mine.html" target="_blank" rel="noopener">miner</a> confirms it (keep one running for your circle).</div>';
       $('inviteOut').innerHTML = '<div class="note" style="margin-top:12px">' +
         '<div class="ttl" style="font-weight:650">🎁 Invite ready — gifts ' + fmtTime(amount) + ' (' + fmt(amount) + ')' + (circle ? ' · ◇ ' + esc(circle) : '') + '</div>' + warn +
         '<div class="qrp" style="margin:10px 0">' + CoinQR.toSVG(CoinQR.encode(url), 4, { dark: '#17130c', light: '#ffffff' }) + '</div>' +
@@ -3142,7 +3094,7 @@
     { sel: '#stats', title: 'The blockchain', body: 'A blockchain is just a shared list of <b>blocks</b>, each holding transactions. <b>Block height</b> is how many exist so far. No company stores this — every device keeps its own copy and they agree.' },
     { sel: '.halvwrap', title: 'Digital scarcity', body: '<b>21 billion BLZ will ever exist</b> — hard-capped and fixed forever, sized for a worldwide community. The mining reward <b>halves</b> every 210,000 blocks, so new coins slow to a trickle and then stop — scarcity enforced by math, not by a central bank. Bitcoin works exactly this way (its cap is 21 million); a fixed, un-inflatable ceiling is what makes money sound.' },
     { sel: '#wallets .card', title: 'A wallet is a pair of keys', body: 'Your <b>address</b> (the B… string) is public — share it to get paid, like an account number. Behind it is a secret <b>private key</b> that proves ownership. Whoever holds the key owns the coins. Tap <b>🔑 Keys</b> later to see yours.' },
-    { sel: '[data-mine="0"]', title: 'Mining = proof of work', body: 'Tapping this makes your device guess <b>hashes</b> — millions of tries — until it finds one starting with enough zeros. That “work” is hard to do but instant to check, and the winner earns the new coins. That’s how coins are fairly created with no issuer.' },
+    { sel: '#minerLink', title: 'Mining is a separate job', body: 'A wallet holds and spends — it deliberately <b>can’t mint</b>. Issuing coins and confirming payments is <b>proof of work</b>: a miner’s device guesses <b>hashes</b> until one starts with enough zeros — hard to do, instant to check, and the winner earns the new coins. That runs in a separate <b>⛏ miner</b> page so nobody just prints money; keep one running for your circle. (Favours paid with <b>mutual credit</b> need no miner at all.)' },
     { sel: '#stats', title: 'Self-adjusting difficulty', body: 'The <b>difficulty</b> automatically rises as more miners join, so a block is still found roughly every 15 seconds no matter how much power is on the network. Bitcoin does this too (aiming for 10 minutes).' },
     { sel: '#sendForm', title: 'Payments without a bank', body: 'To pay someone, you <b>sign</b> the transaction with your private key. The network verifies the signature mathematically — no bank, no approval, no permission needed. That’s the whole point.' },
     { sel: '#mempool', title: 'Confirmation', body: 'A new payment waits here in the <b>mempool</b> until a miner seals it into the next block. Once it’s in a block, it’s <b>confirmed</b> — permanent and irreversible. That pending gap is what everyone waits for when they send crypto.' },
