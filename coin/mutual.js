@@ -1,5 +1,5 @@
 /**
- * BallrzCoin mutual credit — a LETS-style ledger that runs alongside the
+ * TimeCoin mutual credit — a LETS-style ledger that runs alongside the
  * proof-of-work chain.
  * ====================================================================
  *
@@ -20,9 +20,9 @@
  * mechanism behind LETS schemes, time banks and WIR — now with unforgeable
  * secp256k1 signatures so no one can spend from an account they don't control.
  *
- * This module reuses BallrzCoin's cryptography (same curve, same addresses), so
+ * This module reuses TimeCoin's cryptography (same curve, same addresses), so
  * a wallet works in both systems. Loaded the UMD way; in the browser it reads
- * the global `BallrzCoin`, in the Node test sandbox it reads `self.BallrzCoin`.
+ * the global `BallrzCoin` (kept as the internal namespace), same in the Node sandbox.
  */
 (function (root, factory) {
   if (typeof module !== 'undefined' && module.exports) module.exports = factory();
@@ -33,7 +33,7 @@
   function coin() {
     var g = (typeof self !== 'undefined') ? self : (typeof globalThis !== 'undefined') ? globalThis : this;
     if (g && g.BallrzCoin) return g.BallrzCoin;
-    throw new Error('BallrzCoin engine must be loaded before mutual.js');
+    throw new Error('TimeCoin engine must be loaded before mutual.js');
   }
 
   // Canonical, signature-covered string for a credit transfer. Field order is

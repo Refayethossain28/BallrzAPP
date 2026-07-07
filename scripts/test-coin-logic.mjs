@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Unit tests for coin/engine.js — the BallrzCoin (BLZ) cryptocurrency core:
+ * Unit tests for coin/engine.js — the TimeCoin (TIME) cryptocurrency core:
  * SHA-256/HMAC against published test vectors, secp256k1 ECDSA against the
  * classic RFC 6979 vector, base58check addresses, UTXO transaction rules,
  * merkle trees, proof-of-work mining, difficulty retargeting, halvings and
@@ -84,7 +84,7 @@ const TEST_PARAMS = {
   retargetInterval: 5,
   halvingInterval: 4,
   maxBlockTxs: 25,
-  initialSubsidy: 50 * C.COIN, // 50 BLZ block reward on the test net
+  initialSubsidy: 50 * C.COIN, // 50 TIME block reward on the test net
 };
 const newChain = (over = {}) => new C.Blockchain({ ...TEST_PARAMS, ...over });
 
@@ -128,11 +128,11 @@ test('RFC 6979 deterministic signature matches the known secp256k1 vector', () =
     '2442ce9d2b916064108014783e923ec36b49743e2ffa1c4496f01a512aafd9e5');
 });
 test('sign/verify round-trip; forgeries and tampering rejected', () => {
-  const h = C.sha256('pay bob 5 BLZ');
+  const h = C.sha256('pay bob 5 TIME');
   const sig = C.sign(h, bob.privateKey);
   assert.equal(C.sign(h, bob.privateKey), sig, 'deterministic — same sig twice');
   assert.ok(C.verify(h, sig, bob.publicKey));
-  assert.ok(!C.verify(C.sha256('pay bob 500 BLZ'), sig, bob.publicKey), 'different message');
+  assert.ok(!C.verify(C.sha256('pay bob 500 TIME'), sig, bob.publicKey), 'different message');
   assert.ok(!C.verify(h, sig, alice.publicKey), 'wrong key');
   const flipped = (sig[0] === '0' ? '1' : '0') + sig.slice(1);
   assert.ok(!C.verify(h, flipped, bob.publicKey), 'tampered signature');
@@ -178,17 +178,17 @@ test('amount formatting and parsing', () => {
   assert.equal(C.DECIMALS, 5, 'five decimal places');
   assert.equal(C.parseAmount('1.5'), 1.5 * C.COIN);
   assert.equal(C.parseAmount('0.00001'), 1, 'smallest unit is one base unit');
-  assert.equal(C.formatAmount(C.parseAmount('12.34500')), '12.345 BLZ');
-  assert.equal(C.formatAmount(50 * C.COIN), '50 BLZ');
+  assert.equal(C.formatAmount(C.parseAmount('12.34500')), '12.345 TIME');
+  assert.equal(C.formatAmount(50 * C.COIN), '50 TIME');
   assert.throws(() => C.parseAmount('1.123456'), /bad amount/); // more than 5 decimals
   assert.throws(() => C.parseAmount('nope'), /bad amount/);
 });
-test('default monetary policy: exactly 21,000,000,000 BLZ will ever exist', () => {
+test('default monetary policy: exactly 21,000,000,000 TIME will ever exist', () => {
   const chain = new C.Blockchain(); // real params, not the test net
   const CAP = 21000000000 * C.COIN;
-  assert.equal(chain.subsidyAt(1), 50000 * C.COIN, '50,000 BLZ at height 1');
+  assert.equal(chain.subsidyAt(1), 50000 * C.COIN, '50,000 TIME at height 1');
   assert.equal(chain.stats().maxSupply, CAP);
-  // Sum the whole halving series: 50,000 BLZ halving every 210,000 blocks, forever.
+  // Sum the whole halving series: 50,000 TIME halving every 210,000 blocks, forever.
   let total = 0;
   for (let h = 0; ; h++) {
     const s = chain.subsidyAt(h * chain.params.halvingInterval);
@@ -264,7 +264,7 @@ test('tampering with a signed transaction invalidates it', () => {
 });
 test('mempool double-spends are rejected; balances respect pending txs', () => {
   const chain = newChain();
-  mineTo(chain, alice); // one single 50 BLZ output
+  mineTo(chain, alice); // one single 50 TIME output
   chain.send(alice, bob.address, 30 * C.COIN, 0, { timestamp: tick() });
   assert.throws(() => chain.send(alice, carol.address, 30 * C.COIN, 0, { timestamp: tick() }),
     /insufficient funds/, 'the only UTXO is locked by the pending tx');
@@ -272,7 +272,7 @@ test('mempool double-spends are rejected; balances respect pending txs', () => {
 test('fee-rate ordering: higher-fee transactions are mined first', () => {
   const chain = newChain({ maxBlockTxs: 1 });
   mineTo(chain, alice);
-  mineTo(chain, alice); // two separate 50 BLZ outputs
+  mineTo(chain, alice); // two separate 50 TIME outputs
   const cheap = chain.send(alice, bob.address, 1 * C.COIN, 100, { timestamp: tick() });
   const rich = chain.send(alice, bob.address, 1 * C.COIN, 100000, { timestamp: tick() });
   const block = mineTo(chain, carol);
@@ -414,7 +414,7 @@ test('stats reports the shape the UI renders', () => {
   const chain = newChain();
   mineTo(chain, alice);
   const s = chain.stats();
-  assert.equal(s.ticker, 'BLZ');
+  assert.equal(s.ticker, 'TIME');
   assert.equal(s.height, 1);
   assert.equal(s.supply, 50 * C.COIN);
   assert.equal(s.blockReward, 50 * C.COIN);

@@ -1,6 +1,6 @@
-# Put your BallrzCoin network on the internet (free, ~5 minutes)
+# Put your TimeCoin network on the internet (free, ~5 minutes)
 
-One deploy gives you a URL that **is** a shared BallrzCoin network: anyone who
+One deploy gives you a URL that **is** a shared TimeCoin network: anyone who
 opens it gets the app, already connected to your relay. Phones, laptops,
 friends on the other side of the world — all mining and paying on one chain.
 

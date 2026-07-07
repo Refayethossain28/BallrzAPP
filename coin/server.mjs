@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * BallrzCoin relay — cross-device networking for the blockchain.
+ * TimeCoin relay — cross-device networking for the blockchain.
  *
  * Real Bitcoin nodes gossip blocks and transactions peer-to-peer. Browsers
  * can't accept inbound connections, so (like most browser "p2p" systems) the
@@ -13,7 +13,7 @@
  * node behind someone else's network.
  *
  * It also serves the coin app itself, so deploying this one file to Render/
- * Railway (see DEPLOY.md) gives you a URL that IS a shared BallrzCoin network:
+ * Railway (see DEPLOY.md) gives you a URL that IS a shared TimeCoin network:
  * anyone who opens it gets the app, and the app auto-detects that its own
  * origin is a relay and connects — zero configuration.
  *
@@ -25,7 +25,7 @@
  *   GET  /status      → { ok, name, seq, held }         health
  *   GET  /msgs?since=N→ { seq, msgs: [...] }            messages after N
  *   POST /msg         → { ok, seq }                     body: {type, from, ...}
- *   GET  /            → the BallrzCoin app (plus its scripts)
+ *   GET  /            → the TimeCoin app (plus its scripts)
  */
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
@@ -134,6 +134,6 @@ const server = createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`🪙 BallrzCoin node+relay listening on http://localhost:${PORT}`);
+  console.log(`🪙 TimeCoin node+relay listening on http://localhost:${PORT}`);
   console.log('   Open that URL — it serves the coin app already connected to this relay.');
 });

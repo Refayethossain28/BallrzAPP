@@ -1,9 +1,9 @@
-# Keep your BallrzCoin safe
+# Keep your TimeCoin safe
 
 Plain-English guide to never losing your coins. Read this once — it takes five
 minutes and it is the difference between money you keep and money that vanishes.
 
-BallrzCoin is **real money you control yourself**. That is its strength and its
+TimeCoin is **real money you control yourself**. That is its strength and its
 responsibility: there is no bank, no support desk, and no "forgot password"
 button. Whoever holds the key holds the coins. This page shows you how to make
 sure that is always you.
@@ -58,10 +58,10 @@ saved a backup, and you can stop worrying about losing your coins.
 
 You did the setup, then your phone died. Here's how you get everything back:
 
-- **From your recovery phrase:** open BallrzCoin on the new device → **Import
+- **From your recovery phrase:** open TimeCoin on the new device → **Import
   wallet** → type the 33 words. Your balance reappears once the app syncs with
   the network.
-- **From a backup file:** open BallrzCoin → **🔒 Key security → Restore from
+- **From a backup file:** open TimeCoin → **🔒 Key security → Restore from
   file** → choose your `.blzwallet` file → enter its passphrase. Every wallet in
   the file comes back at once.
 
@@ -89,11 +89,11 @@ for the key that proves they're yours.
 
 ## <a id="verify"></a>Check you're on the real app (integrity)
 
-BallrzCoin runs entirely in your browser, so it's only as trustworthy as the
+TimeCoin runs entirely in your browser, so it's only as trustworthy as the
 page you loaded. A tampered copy on a lookalike site could try to steal keys.
 Two simple checks:
 
-1. **Use the real link.** Only open BallrzCoin from the address you trust —
+1. **Use the real link.** Only open TimeCoin from the address you trust —
    ideally bookmark it. Be wary of links pushed to you out of the blue.
 2. **Compare the code fingerprint.** In the app, **🔒 Key security** shows a
    **Code fingerprint** — a short hash of the exact code your browser loaded.
@@ -108,11 +108,11 @@ and the people you trade with are running identical code.
 
 ### Current release fingerprint
 
-> **`d6c1-e419-0c42-859b`**
+> **`b231-bd60-cf33-63af`**
 >
-> Full SHA-256: `d6c1e4190c42859b74f713a003f60fd8e148132fea0b6e4bccea8c4c6c624818`
+> Full SHA-256: `b231bd60cf3363af48071747e141942634882d6abae6472b9e60e4bd929bd174`
 
-This is the fingerprint for the **current published version** of BallrzCoin. Open
+This is the fingerprint for the **current published version** of TimeCoin. Open
 **🔒 Key security → Code fingerprint** in the app and check the short value
 matches the one above. If it does, you're running the genuine, unmodified code.
 If it doesn't — and you know you're on the current release — stop and don't enter

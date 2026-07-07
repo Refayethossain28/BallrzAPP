@@ -1,4 +1,4 @@
-/* BallrzCoin service worker — makes the app installable and usable offline.
+/* TimeCoin service worker — makes the app installable and usable offline.
  *
  * Strategy is deliberately update-friendly (the app changes often and users have
  * hit stale caches before):
@@ -8,7 +8,7 @@
  *     cross-origin request) is passed straight through, never cached.
  * Bump CACHE to force every client onto a fresh shell.
  */
-var CACHE = 'ballrzcoin-v9';
+var CACHE = 'ballrzcoin-v10';
 var SHELL = ['./', './index.html', './mine.html', './join.html', './engine.js', './mutual.js', './config.js', './qr.js', './wordlist.js', './i18n.js',
   './SAFETY.md', './icon-192.png', './icon-512.png', './manifest.webmanifest',
   './miner.webmanifest', './miner-icon-192.png', './miner-icon-512.png', './miner-icon-180.png'];

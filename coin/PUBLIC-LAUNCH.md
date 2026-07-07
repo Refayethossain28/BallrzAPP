@@ -1,6 +1,6 @@
-# Launching BallrzCoin to the public
+# Launching TimeCoin to the public
 
-A playbook for sharing BallrzCoin widely — honestly, as the real community
+A playbook for sharing TimeCoin widely — honestly, as the real community
 currency for time and favours it is. Two pitches work, and you can lead with
 either depending on the audience:
 
@@ -49,7 +49,7 @@ compares to banks and cash).
   barter board with categories, search and circles; a "Top helpers" reputation
   board.
 - **Two money models in one app:** the mined, hard-capped chain (**21 billion
-  BLZ, fixed forever**) *and* an optional **mutual-credit** ledger (LETS-style:
+  TIME, fixed forever**) *and* an optional **mutual-credit** ledger (LETS-style:
   no mining, everyone starts at zero, balances always sum to zero, capped by a
   shared credit limit).
 - **Real usability:** installable PWA (offline), encrypted keys behind a
@@ -59,7 +59,7 @@ compares to banks and cash).
   stuck at zero.
 - **You can't lose your coins by accident:** one-tap **encrypted backup file**
   (and restore) of every wallet, a persistent nudge until you've backed up (it
-  turns urgent once you actually hold BLZ), and guard rails that stop you wiping
+  turns urgent once you actually hold TIME), and guard rails that stop you wiping
   unbacked wallets. Losing access is the #1 way people lose crypto — this app
   actively fights it.
 - **Verify you're on the real app:** a live **code fingerprint** hashes the exact
@@ -77,7 +77,7 @@ compares to banks and cash).
       feels good cold.
 - [ ] **Save a backup and test-restore it** once yourself, so you can speak to it
       confidently — and confirm the **code fingerprint** in-app matches the value
-      in `SAFETY.md` (that value: `d6c1-e419-0c42-859b` for the current release).
+      in `SAFETY.md` (that value: `b231-bd60-cf33-63af` for the current release).
 - [ ] Confirm the link **unfurls** a preview card when pasted into a chat (OG
       tags + share card are wired into the page).
 - [ ] Have a **5-second screen recording** ready (mine-a-block, or the
@@ -88,7 +88,7 @@ compares to banks and cash).
 ## Ready-to-post copy
 
 ### Hacker News — "Show HN" (builder angle)
-> **Show HN: BallrzCoin – a Bitcoin-style currency for time and favours, built from raw bytes, runs in your browser**
+> **Show HN: TimeCoin – a Bitcoin-style currency for time and favours, built from raw bytes, runs in your browser**
 >
 > I wanted to actually understand Bitcoin, so I built one with zero
 > dependencies: SHA-256 from the FIPS spec, ECDSA on secp256k1 (Bitcoin's curve)
@@ -141,7 +141,7 @@ skip it, it's the wrong crowd anyway.)*
 
 ### Product Hunt
 - **Tagline:** Money for time & favours — mine it in your browser, no bank, no fees.
-- **Description:** BallrzCoin is a complete proof-of-work cryptocurrency built
+- **Description:** TimeCoin is a complete proof-of-work cryptocurrency built
   from scratch, turned into a real community currency for time and favours: a
   barter board, point-of-sale charging, invites that seed a starting balance,
   encrypted keys, an installable app and 9 languages — plus an optional
@@ -200,8 +200,8 @@ skip it, it's the wrong crowd anyway.)*
 ## What "success" looks like
 
 Traffic, stars, comments, people saying "oh, *now* I get proof-of-work" — and a
-few friends actually earning and spending BLZ on favours. That's the whole prize:
+few friends actually earning and spending TIME on favours. That's the whole prize:
 attention and credibility for you as a builder, and a small circle putting the
 currency to real use. If a recruiter or client notices, that's the real-world
 upside, and it's a much shorter road than chasing a cash price (which no launch
-can conjure and which BLZ never claims to have).
+can conjure and which TIME never claims to have).

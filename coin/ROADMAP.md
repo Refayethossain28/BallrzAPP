@@ -1,6 +1,6 @@
 # The road for a real community currency — honestly
 
-BallrzCoin now has the three things software alone can give a cryptocurrency:
+TimeCoin now has the three things software alone can give a cryptocurrency:
 correct consensus code ([`engine.js`](engine.js) + [`mutual.js`](mutual.js), 47 tests), real cross-device
 networking ([`server.mjs`](server.mjs) + [`config.js`](config.js)), and a
 written security audit ([`SECURITY.md`](SECURITY.md)). This document is about
@@ -10,18 +10,18 @@ repo is misled about where a community currency's worth actually comes from.
 ## The blunt truth about value
 
 **Scarcity does not create value; a community agreeing to accept something
-does.** The supply is hard-capped at 21,000,000,000 BLZ (21 billion), fixed
+does.** The supply is hard-capped at 21,000,000,000 TIME (21 billion), fixed
 forever and enforced by consensus — a ceiling sized for a worldwide community,
-not a number you can inflate away. But that cap is not what makes BLZ worth
+not a number you can inflate away. But that cap is not what makes TIME worth
 anything: value comes from people agreeing to accept it for time and favours,
-the way a time bank or LETS scheme works. BLZ has no price and nothing to buy;
+the way a time bank or LETS scheme works. TIME has no price and nothing to buy;
 its worth is measured in the favours and goods a community will trade for it,
 never in cash. Bitcoin's *price* — a very different thing — is the product of
 things no codebase contains:
 
 1. **Security budget** — thousands of independent miners burning real
-   electricity make rewriting Bitcoin's history cost billions. BallrzCoin's
-   history is far cheaper to rewrite (SECURITY.md #3), so a BLZ community has to
+   electricity make rewriting Bitcoin's history cost billions. TimeCoin's
+   history is far cheaper to rewrite (SECURITY.md #3), so a TIME community has to
    be one of people who already trust each other — a barter circle, not a market
    of strangers.
 2. **A community that accepts it** — a currency for time and favours is only as
@@ -48,9 +48,9 @@ things no codebase contains:
 
 ## What this repo will honestly claim
 
-BallrzCoin is a **complete, correct, working currency** for time and favours —
+TimeCoin is a **complete, correct, working currency** for time and favours —
 every rule is real and every attack in the test suite really is rejected. You
-earn BLZ by mining or by doing favours, and you spend it on favours and time
+earn TIME by mining or by doing favours, and you spend it on favours and time
 inside a community that has agreed to accept it, exactly like a time bank or
 LETS scheme. It is not, and will not pretend to be, an investment: there is no
 ICO, no price, no token sale, nothing to buy — the value is favours and goods,

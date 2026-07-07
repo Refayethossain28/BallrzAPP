@@ -1,5 +1,5 @@
 /**
- * BallrzCoin network config.
+ * TimeCoin network config.
  *
  * Leave relayUrl empty and the coin is local-only: tabs in the same browser
  * still sync over BroadcastChannel. To connect nodes across DIFFERENT devices

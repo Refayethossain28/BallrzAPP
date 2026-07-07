@@ -1,9 +1,9 @@
-# BallrzCoin promo kit
+# TimeCoin promo kit
 
 Shareable material for showing off the coin. The pitch is the honest one — it's
 also the strongest one: *a real Bitcoin-style blockchain and a real community
 currency for time and favours, with a supply hard-capped forever.* No investment
-language, ever: BLZ has no price and is not for sale — that's a feature, and it
+language, ever: TIME has no price and is not for sale — that's a feature, and it
 keeps you on the right side of the law.
 
 ## Assets
@@ -21,16 +21,16 @@ the app.
 **Short (texts, group chats):**
 > I built my own community currency for time and favours. Real mining, real
 > cryptography, same rules as Bitcoin — with a supply **hard-capped at 21
-> billion BLZ, fixed forever**. Earn it by mining or doing favours, spend it on
+> billion TIME, fixed forever**. Earn it by mining or doing favours, spend it on
 > favours. Mine one in your browser:
 > https://refayethossain28.github.io/BallrzAPP/coin/
 
 **Medium (Instagram/WhatsApp status):**
 > Everyone talks about Bitcoin. I built a real currency you can actually use with
 > your people. ⛏
-> BallrzCoin runs the real thing — proof-of-work mining, halving rewards,
+> TimeCoin runs the real thing — proof-of-work mining, halving rewards,
 > Bitcoin's own secp256k1 cryptography — as a community currency for time and
-> favours. The supply is **hard-capped at 21 billion BLZ, fixed forever** and
+> favours. The supply is **hard-capped at 21 billion TIME, fixed forever** and
 > enforced by consensus: a permanent ceiling sized for a worldwide community.
 > No ICO. No price. No promises. Earn it, spend it on favours.
 > Mine yours in the browser 👉 refayethossain28.github.io/BallrzAPP/coin
@@ -42,7 +42,7 @@ the app.
 > fork choice by cumulative work — zero dependencies, 47 unit tests against
 > published vectors.
 > Then I turned it into a real community currency for time and favours: the
-> supply is hard-capped at 21 billion BLZ, fixed forever and enforced by
+> supply is hard-capped at 21 billion TIME, fixed forever and enforced by
 > consensus — a permanent, un-inflatable ceiling sized for a worldwide
 > community. You can mine it in your browser right now, and two tabs behave like
 > two nodes converging on the heaviest chain.
@@ -52,7 +52,7 @@ the app.
 > ⛏ https://refayethossain28.github.io/BallrzAPP/coin/
 
 **One-liner for the bio/footer:**
-> Creator of BallrzCoin — a community currency for time and favours (21 billion
+> Creator of TimeCoin — a community currency for time and favours (21 billion
 > hard cap, no price, not for sale).
 
 ## Regenerating the cards
