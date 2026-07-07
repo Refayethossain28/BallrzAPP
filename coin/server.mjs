@@ -50,6 +50,7 @@ const STATIC = {
   '/mutual.js': ['mutual.js', 'text/javascript; charset=utf-8'],
   '/config.js': ['config.js', 'text/javascript; charset=utf-8'],
   '/qr.js': ['qr.js', 'text/javascript; charset=utf-8'],
+  '/reputation.js': ['reputation.js', 'text/javascript; charset=utf-8'],
   '/why.html': ['why.html', 'text/html; charset=utf-8'],
   '/guide.html': ['guide.html', 'text/html; charset=utf-8'],
   '/mine.html': ['mine.html', 'text/html; charset=utf-8'],
@@ -72,7 +73,7 @@ const STATIC = {
 };
 
 const MAX_BODY = 5 * 1024 * 1024;  // hard cap per request (a whole chain fits)
-const TYPES = new Set(['hello', 'chain', 'tx', 'offer', 'offer-remove', 'deal', 'id', 'credit', 'limits', 'chat', 'group']);
+const TYPES = new Set(['hello', 'chain', 'tx', 'offer', 'offer-remove', 'deal', 'id', 'credit', 'limits', 'chat', 'group', 'rep']);
 
 // Build a relay HTTP server (not yet listening). All state lives in this
 // closure so the function is side-effect-free and unit-testable.

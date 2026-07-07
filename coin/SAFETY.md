@@ -108,9 +108,9 @@ and the people you trade with are running identical code.
 
 ### Current release fingerprint
 
-> **`6efe-806d-801a-d853`**
+> **`f620-2cd7-4016-2208`**
 >
-> Full SHA-256: `6efe806d801ad85355701c71514cba3f4836dc9c1fbb35a714d26ba68bd7b0cd`
+> Full SHA-256: `f6202cd7401622082b9a818c20a439a4b64199c85644116435adaf3b58986f4c`
 
 This is the fingerprint for the **current published version** of TimeCoin. Open
 **🔒 Key security → Code fingerprint** in the app and check the short value
@@ -125,7 +125,7 @@ can't fake it. You can regenerate it yourself from a checkout with:
 
 ```
 cd coin && node -e 'const{readFileSync}=require("fs"),{createHash}=require("crypto");
-const f=["index.html","engine.js","mutual.js","config.js","qr.js","wordlist.js","i18n.js"];
+const f=["index.html","engine.js","mutual.js","reputation.js","config.js","qr.js","wordlist.js","i18n.js"];
 const j=f.map(n=>n+"\n"+readFileSync(n,"utf8")).join("\n");
 const h=createHash("sha256").update(Buffer.from(j,"utf8")).digest("hex");
 console.log(h.slice(0,4)+"-"+h.slice(4,8)+"-"+h.slice(8,12)+"-"+h.slice(12,16));'

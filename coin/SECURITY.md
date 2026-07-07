@@ -35,11 +35,12 @@ people you trust, not yet a place to store wealth.
 | 2 | **Wallet entropy is demo-grade.** `generateWallet` mixes `crypto.getRandomValues` with `Math.random` as a fallback; if the CSPRNG were absent, keys would be guessable. | Critical |
 | 3 | **Trivial total hashpower.** Difficulty is tuned for a phone to mine in seconds, so *anyone* can out-mine the whole network and rewrite history (a 51% attack costs one laptop). Bitcoin's security budget is measured in gigawatts. | Critical |
 | 4 | **Non-constant-time BigInt arithmetic.** Point multiplication timing leaks could reveal key bits to a co-resident attacker. Real implementations use constant-time field arithmetic. | High |
-| 5 | **The relay is a central point of censorship.** `server.mjs` can't forge blocks, but it can drop or delay them, and it has no rate-limiting or authentication — one noisy client can flood it. Real networks use many independent peers. | High |
+| 5 | **The relay is a central point of censorship.** `server.mjs` can't forge blocks, but it can drop or delay them. It is now hardened against denial-of-service (per-client token-bucket rate limiting keyed on `x-forwarded-for`, and a message buffer bounded by both count and bytes), but it has no authentication and remains a single point through which one circle's traffic flows. Real networks use many independent peers; the app mitigates this with a multi-relay pool and failover. | High |
 | 6 | **No coinbase maturity.** Freshly mined coins are spendable immediately; on a real network a reorg would invalidate downstream spends (Bitcoin makes miners wait 100 blocks). | Medium |
 | 7 | **`replaceChain` re-validates whole chains.** An attacker can post long junk chains to burn CPU (validation is bounded but repeated). Real nodes validate incrementally with checkpoints. | Medium |
 | 8 | **JSON serialisation.** Canonical enough here (fixed field order), but wire-format ambiguity is a classic source of consensus splits; real chains use strict binary formats. | Medium |
 | 9 | **Address hash is double-SHA-256 truncated to 20 bytes** instead of RIPEMD-160(SHA-256). Fine cryptographically, but non-standard. | Info |
+| 10 | **Portable reputation is signature-sound but not sybil-proof.** A receipt/vouch (`reputation.js`) proves *a key* signed it, and passports are re-verified locally so nothing can be forged or inflated — but one person with many keys can manufacture attestations about themselves. This is inherent to any web-of-trust. The app does **not** paper over it: it counts and shows *distinct authors* and, crucially, *how many of those you already know*, so a stranger's pile of self-issued receipts reads as exactly what it is. | Info |
 
 ## Scope
 

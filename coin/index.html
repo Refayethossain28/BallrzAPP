@@ -584,6 +584,38 @@
 <div class="sub">Who’s done the most favours — ranked by completed deals. Reputation you earn by showing up.</div>
 <div class="list" id="helpers"></div>
 
+<div id="repSection">
+<h2>🎖 Reputation passport</h2>
+<div class="sub">Reputation you can take with you. Every favour you complete and every vouch a friend gives you is a <b>signed</b> note others write about you — anyone, in any circle, can check the signatures themselves without trusting a relay. Carry your passport to a new circle and your standing comes with it.</div>
+<div class="note" id="repMine">Your reputation grows here as people vouch for you and confirm favours you’ve done.</div>
+<div class="row" style="margin-top:10px">
+  <button id="repExport" class="primary">⬇ Export my passport</button>
+  <button id="repCopy">📋 Copy</button>
+</div>
+
+<div class="timebank" style="margin-top:14px">
+  <b>🙏 Vouch for someone</b>
+  <div class="sub">Add your signed word to a contact’s reputation. Only vouch for people you genuinely trust — your name is on it, forever.</div>
+  <div class="row">
+    <input id="vouchTo" placeholder="Vouch for whom? (address B… or a known name)" list="addrList" autocomplete="off">
+    <input id="vouchNote" placeholder="A word on why (optional)" maxlength="140" autocomplete="off">
+    <button class="primary" id="vouchDo">Vouch</button>
+  </div>
+</div>
+
+<div class="timebank" style="margin-top:12px">
+  <b>🔎 Check someone’s passport</b>
+  <div class="sub">Paste a passport, or open a <span class="mono">.blzrep</span> file, and it’s verified right here on your device. You’ll see how many people vouch for them — and, honestly, how many of those you already know (the number that really counts).</div>
+  <div class="row"><textarea id="repImport" placeholder="Paste a passport here…" rows="2" style="width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:9px 12px;font-family:inherit"></textarea></div>
+  <div class="row">
+    <button id="repCheck" class="primary">Verify passport</button>
+    <button id="repFile">Open a file…</button>
+    <input id="repFileInput" type="file" accept=".blzrep,application/json,.json,.txt" style="display:none">
+  </div>
+  <div class="note" id="repResult" style="display:none"></div>
+</div>
+</div>
+
 <h2 data-i18n="h_leaderboard">Leaderboard</h2>
 <div class="list" id="richlist"></div>
 
@@ -645,6 +677,7 @@
 <script src="qr.js"></script>
 <script src="engine.js"></script>
 <script src="mutual.js"></script>
+<script src="reputation.js"></script>
 <script src="wordlist.js"></script>
 <script src="i18n.js"></script>
 <script>
@@ -950,7 +983,7 @@
   function computeFingerprint() {
     var el = $('fpVal'); if (!el) return;
     if (!(window.crypto && window.crypto.subtle && window.fetch)) { el.textContent = 'unavailable'; el.className = 'fp wait'; return; }
-    var files = ['index.html', 'engine.js', 'mutual.js', 'config.js', 'qr.js', 'wordlist.js', 'i18n.js'];
+    var files = ['index.html', 'engine.js', 'mutual.js', 'reputation.js', 'config.js', 'qr.js', 'wordlist.js', 'i18n.js'];
     Promise.all(files.map(function (f) {
       return fetch(f, { cache: 'no-store' }).then(function (r) { return r.ok ? r.text() : ''; }).catch(function () { return ''; });
     })).then(function (texts) {
@@ -985,6 +1018,27 @@
   }
   $('lockUnlock').addEventListener('click', tryUnlock);
   $('lockPass').addEventListener('keydown', function (e) { if (e.key === 'Enter') tryUnlock(); });
+
+  // Reputation passport controls. (Guard on the global, not the `Rep` var — this
+  // block runs before `var Rep` is assigned further down, so `Rep` is still
+  // undefined here; the click handlers themselves run later, once it's set.)
+  if ((typeof self !== 'undefined' ? self : window).BallrzReputation) {
+    if ($('repExport')) $('repExport').addEventListener('click', function () { exportPassport(false); });
+    if ($('repCopy')) $('repCopy').addEventListener('click', function () { exportPassport(true); });
+    if ($('vouchDo')) $('vouchDo').addEventListener('click', doVouch);
+    if ($('repCheck')) $('repCheck').addEventListener('click', function () { verifyPassportText(($('repImport').value || '').trim()); });
+    if ($('repFile') && $('repFileInput')) {
+      $('repFile').addEventListener('click', function () { $('repFileInput').click(); });
+      $('repFileInput').addEventListener('change', function (ev) {
+        var f = ev.target.files && ev.target.files[0]; if (!f) return;
+        var reader = new FileReader();
+        reader.onload = function () { $('repImport').value = String(reader.result || ''); verifyPassportText(String(reader.result || '').trim()); };
+        reader.readAsText(f); ev.target.value = '';
+      });
+    }
+  } else if ($('repSection')) {
+    $('repSection').style.display = 'none';   // module failed to load — hide the panel
+  }
 
   // Barter offers — gossiped across the network like transactions, but they
   // live off-chain (an offer is just a notice, not money). Keyed by offer id.
@@ -1172,6 +1226,147 @@
     var n = repCount(addr);
     return n > 0 ? ' <span class="rep">✓ ' + n + ' deal' + (n === 1 ? '' : 's') + '</span>' : '';
   }
+
+  // ---- Portable reputation: signed receipts & vouches that travel with a
+  // person, so standing earned in one circle is provable in another. Each is a
+  // secp256k1-signed note (coin/reputation.js); they gossip like offers/deals,
+  // AND bundle into an exportable "passport" that any circle can verify offline
+  // — the relay is never trusted, the signatures are re-checked on-device. ----
+  var Rep = (typeof self !== 'undefined' ? self : window).BallrzReputation;
+  var LS_REP = 'ballrzcoin.rep.v1';
+  var reps = {};
+  try { reps = JSON.parse(localStorage.getItem(LS_REP) || '{}') || {}; } catch (e) { reps = {}; }
+  function saveReps() { try { localStorage.setItem(LS_REP, JSON.stringify(reps)); } catch (e) {} }
+  function pruneReps() {
+    var ids = Object.keys(reps);
+    if (ids.length <= 800) return;
+    ids.sort(function (a, b) { return (reps[a].at || 0) - (reps[b].at || 0); });
+    while (ids.length > 800) delete reps[ids.shift()];
+  }
+  function ingestRep(a) {
+    if (!Rep || !a || !a.id || reps[a.id]) return false;
+    if (!Rep.verifyAttestation(a)) return false;
+    reps[a.id] = a; pruneReps(); return true;
+  }
+  function announceReps() { if (Rep) Object.keys(reps).forEach(function (id) { netSend({ type: 'rep', rep: reps[id] }); }); }
+  function pushRep(a) { reps[a.id] = a; saveReps(); netSend({ type: 'rep', rep: a }); renderReputation(); }
+  function repAtts() { return Object.keys(reps).map(function (id) { return reps[id]; }); }
+  // "Known" = someone whose key I hold (a contact) or one of my own wallets —
+  // the honest anti-sybil signal for weighing a stranger's passport.
+  function repKnown(addr) { return !!(directory[addr] || myAddresses()[addr]); }
+  function walletByAddress(addr) {
+    for (var i = 0; i < wallets.length; i++) if (wallets[i].address === addr) return wallets[i];
+    return null;
+  }
+
+  // When a favour completes, the person who RECEIVED it (the buyer) signs a
+  // receipt for the seller — first-person, verifiable anywhere. One per deal.
+  var LS_REP_ISSUED = 'ballrzcoin.rep.issued.v1';
+  var repIssued = {};
+  try { repIssued = JSON.parse(localStorage.getItem(LS_REP_ISSUED) || '{}') || {}; } catch (e) { repIssued = {}; }
+  function saveRepIssued() { try { localStorage.setItem(LS_REP_ISSUED, JSON.stringify(repIssued)); } catch (e) {} }
+  function maybeIssueReceipt(d) {
+    if (!Rep || !d || d.status !== 'released' || !d.seller || d.seller === d.buyer) return;
+    if (repIssued['deal:' + d.id]) return;
+    var buyerW = walletByAddress(d.buyer);
+    if (!buyerW || !buyerW.privateKey) return;   // only the buyer, only when unlocked
+    try {
+      var a = Rep.signReceipt({ privKey: buyerW.privateKey, subject: d.seller,
+        note: d.title || 'a completed favour', value: 0, at: Date.now(), nonce: 'deal:' + d.id });
+      repIssued['deal:' + d.id] = 1; saveRepIssued();
+      pushRep(a);
+    } catch (e) { /* locked or bad state — skip silently */ }
+  }
+
+  // A portable passport for one of MY wallets: my identity + every verified
+  // attestation others have written about me.
+  function myPassport(addr) {
+    var w = walletByAddress(addr) || wallets[0];
+    if (!w) return null;
+    return Rep.buildPassport({ address: w.address, pubKey: w.publicKey, name: w.name }, repAtts());
+  }
+  function repSummaryLine(s) {
+    if (!s || !s.total) return 'No signed reputation yet.';
+    var bits = [];
+    if (s.receipts) bits.push(s.receipts + ' receipt' + (s.receipts === 1 ? '' : 's'));
+    if (s.vouches) bits.push(s.vouches + ' vouch' + (s.vouches === 1 ? '' : 'es'));
+    var people = s.distinctAuthors + ' ' + (s.distinctAuthors === 1 ? 'person' : 'people');
+    var known = s.knownCount ? (' — ' + s.knownCount + ' you know') : '';
+    return bits.join(' + ') + ' from ' + people + known + '.';
+  }
+  function renderReputation() {
+    if (!Rep || !$('repMine')) return;
+    if (!wallets.length) { $('repMine').textContent = 'Unlock or create a wallet to build a reputation.'; return; }
+    // Summarise across ALL my wallets combined (my whole standing on this device).
+    var mine = myAddresses(), atts = repAtts(), lines = [];
+    Object.keys(mine).forEach(function (addr) {
+      var s = Rep.summarize(addr, atts, { known: repKnown });
+      if (s.total) lines.push('<b>' + who(addr) + '</b> — ' + esc(repSummaryLine(s)));
+    });
+    $('repMine').innerHTML = lines.length
+      ? lines.join('<br>')
+      : 'Your reputation grows here as people vouch for you and confirm favours you’ve done. Export a passport any time to carry it to another circle.';
+  }
+  function exportPassport(copy) {
+    if (!Rep) return;
+    if (!wallets.length) { toast('No wallet to export'); return; }
+    var p = myPassport(wallets[0].address);
+    var text = JSON.stringify({ app: 'ballrzcoin', kind: 'passport', passport: p });
+    if (copy) {
+      var done = function () { toast('📋 Passport copied — paste it wherever you like'); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, function () { promptCopy(text); });
+      else promptCopy(text);
+      return;
+    }
+    try {
+      var a = document.createElement('a');
+      var href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+      a.href = href; a.download = 'timecoin-passport.blzrep';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { try { URL.revokeObjectURL(href); } catch (e) {} }, 4000);
+      toast('⬇ Passport saved — ' + (p.attestations.length) + ' signed note' + (p.attestations.length === 1 ? '' : 's'));
+    } catch (e) { promptCopy(text); }
+  }
+  function promptCopy(text) { try { prompt('Copy your passport:', text); } catch (e) {} }
+
+  function doVouch() {
+    if (!Rep) return;
+    if (!wallets.length) { toast('Unlock a wallet to vouch'); return; }
+    var q = ($('vouchTo').value || '').trim();
+    var addr = resolveContact(q) || (Coin.isValidAddress(q) ? q : null);
+    if (!addr) { toast('✖ Enter a known contact’s name or a B… address'); return; }
+    if (myAddresses()[addr]) { toast('✖ You can’t vouch for your own wallet'); return; }
+    var w = wallets[0];
+    try {
+      var a = Rep.signVouch({ privKey: w.privateKey, subject: addr,
+        note: ($('vouchNote').value || '').slice(0, Rep.NOTE_MAX), at: Date.now(),
+        nonce: 'vouch:' + w.address + ':' + addr + ':' + Date.now() });
+      pushRep(a);
+      $('vouchTo').value = ''; $('vouchNote').value = '';
+      toast('✓ Vouched for ' + (walletName(addr) || short(addr)));
+    } catch (e) { toast('✖ ' + e.message); }
+  }
+  function verifyPassportText(text) {
+    var res = $('repResult'); if (!res) return;
+    var obj;
+    try { obj = JSON.parse(text); } catch (e) { res.style.display = ''; res.innerHTML = '✖ That doesn’t look like a passport (not valid JSON).'; return; }
+    var passport = obj && obj.passport ? obj.passport : obj;
+    var s;
+    try { s = Rep.readPassport(passport, { known: repKnown }); }
+    catch (e) { res.style.display = ''; res.innerHTML = '✖ Not a passport: ' + esc(e.message); return; }
+    var id = s.identity, name = id.name ? esc(id.name) : short(id.address);
+    var trust = s.knownCount >= 2 ? '✓ Several people you know vouch for them.'
+      : s.knownCount === 1 ? 'One person you know vouches for them.'
+      : s.distinctAuthors ? 'You don’t yet know any of the people vouching for them — weigh it accordingly.'
+      : 'No verified reputation to show.';
+    res.style.display = '';
+    res.innerHTML = '<b>' + name + '</b> <span class="hash">' + esc(short(id.address)) + '</span><br>' +
+      '✓ ' + s.total + ' verified note' + (s.total === 1 ? '' : 's') +
+      ' (' + s.receipts + ' receipt' + (s.receipts === 1 ? '' : 's') + ', ' + s.vouches + ' vouch' + (s.vouches === 1 ? '' : 'es') + ')' +
+      ' from <b>' + s.distinctAuthors + '</b> distinct ' + (s.distinctAuthors === 1 ? 'person' : 'people') +
+      ', <b>' + s.knownCount + '</b> of whom you know.<br><span class="sub">' + trust + '</span>';
+  }
+
   // A pending barter action that the next matching payment completes.
   var pendingAction = null;
   function prefillSend(toAddr, priceBlazes, note) {
@@ -1243,6 +1438,7 @@
       announceLimits();
       announceGroups();
       announceChat();
+      announceReps();
     } else if (m.type === 'chain') {
       if (chain.replaceChain(m.blocks)) {
         persist();
@@ -1284,6 +1480,8 @@
       if (ingestGroup(m.group)) renderThreads();
     } else if (m.type === 'id') {
       if (registerIdentity(m.address, m.pubKey, m.name, m.ripple)) { renderDeals(); renderThreads(); }
+    } else if (m.type === 'rep') {
+      if (ingestRep(m.rep)) { saveReps(); renderReputation(); }
     }
   }
 
@@ -1585,6 +1783,7 @@
     renderOffers();
     renderMutual();
     renderHelpers();
+    renderReputation();
     renderDeals();
     renderThreads();
     renderChallenge();
@@ -2194,6 +2393,7 @@
       d.status = d.proposal.purpose === 'release' ? 'released' : 'refunded';
       d.proposal = null; d.at = Date.now();
       persist(); pushDeal(d.id);
+      if (d.status === 'released') maybeIssueReceipt(d);
       toast('🔓 Vault ' + (d.status === 'released' ? 'released to the seller' : 'refunded') + ' — a miner will confirm it');
       render();
     } catch (err) { toast('✖ ' + err.message); }
@@ -2313,7 +2513,7 @@
     var dRelease = t.getAttribute('data-deal-release');
     if (dRelease) {
       var dr = deals[dRelease];
-      if (dr && dr.status === 'funded') { dr.status = 'released'; dr.at = Date.now(); pushDeal(dRelease); toast('✓ Confirmed received — the seller’s reputation grew'); }
+      if (dr && dr.status === 'funded') { dr.status = 'released'; dr.at = Date.now(); pushDeal(dRelease); maybeIssueReceipt(dr); toast('✓ Confirmed received — the seller’s reputation grew'); }
       return;
     }
     var dConfirm = t.getAttribute('data-deal-confirm');
@@ -2451,7 +2651,7 @@
           if (ingestDeal(deal)) pushDeal(deal.id);
         } else if (pendingAction.kind === 'settle') {
           var d = deals[pendingAction.dealId];
-          if (d) { d.status = pendingAction.newStatus; d.at = Date.now(); pushDeal(d.id); }
+          if (d) { d.status = pendingAction.newStatus; d.at = Date.now(); pushDeal(d.id); if (d.status === 'released') maybeIssueReceipt(d); }
         }
         pendingAction = null;
       }
@@ -3252,6 +3452,7 @@
   announceLimits();           // share the per-person credit limits (newest wins)
   announceGroups();           // share group definitions so members can chat
   announceChat();             // share chat messages so threads converge
+  announceReps();             // share signed reputation so passports converge in-circle
   decryptAll();               // unseal any encrypted DMs we already hold
 })();
 </script>
