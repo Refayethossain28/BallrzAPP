@@ -51,6 +51,7 @@ const STATIC = {
   '/config.js': ['config.js', 'text/javascript; charset=utf-8'],
   '/qr.js': ['qr.js', 'text/javascript; charset=utf-8'],
   '/reputation.js': ['reputation.js', 'text/javascript; charset=utf-8'],
+  '/bridge.js': ['bridge.js', 'text/javascript; charset=utf-8'],
   '/why.html': ['why.html', 'text/html; charset=utf-8'],
   '/guide.html': ['guide.html', 'text/html; charset=utf-8'],
   '/mine.html': ['mine.html', 'text/html; charset=utf-8'],
