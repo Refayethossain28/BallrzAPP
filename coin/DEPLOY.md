@@ -39,3 +39,29 @@ That's it — the server has zero dependencies, so there is nothing to build.
 - **The chain lives in browsers, not the relay.** The relay keeps only a short
   message buffer; if it restarts, connected nodes simply re-announce their
   chains and everyone reconverges on the heaviest one.
+
+## Keeping it healthy as your circle grows
+
+The relay is hardened for more than a handful of users out of the box — its
+message buffer is bounded by both count and bytes (so memory can't run away),
+and `POST /msg` is rate-limited per client so one flooder can't drown the box.
+Watch it any time at **`https://your-relay.onrender.com/status`** (held
+messages, bytes, connected clients, posts, rate-limited rejections, uptime).
+
+Optional tuning via environment variables (Render → your service → Environment):
+
+- **`SELF_URL`** — set this to your own service URL (e.g.
+  `https://your-relay.onrender.com`). The relay then pings itself every ~10
+  minutes so the free tier doesn't fall asleep between visitors. (This uses your
+  free monthly hours; one service stays comfortably under the limit.)
+- **`RELAY_MAX_HELD`** / **`RELAY_MAX_BYTES`** — how many recent messages / how
+  many bytes to keep buffered (defaults 3000 / 64 MB).
+- **`RELAY_RATE_CAP`** / **`RELAY_RATE_REFILL`** — per-client burst size and
+  refill rate for `POST /msg` (defaults 150 burst, 30/sec). The defaults let a
+  node announce its whole chain and offer list in one go, while still throttling
+  a genuine flood.
+
+When a single free instance isn't enough, the honest next steps are a **paid
+instance** (no sleeping, more memory) and/or **several relays** — the app
+already supports a relay pool with failover, so you can point a circle at more
+than one. Beyond that, scale comes from *many circles*, not one giant relay.
