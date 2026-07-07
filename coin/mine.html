@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0e14">
+<title>BallrzCoin Miner — secure the network &amp; issue coins</title>
+<meta name="description" content="The BallrzCoin miner. Wallets hold and spend; miners do the proof-of-work that confirms transactions and issues new coins. Keep this open to power your circle's network.">
+<style>
+  :root {
+    --bg: #07070b; --panel: rgba(255,255,255,0.045); --line: rgba(212,175,90,0.18);
+    --gold: #f4c257; --goldgrad: linear-gradient(180deg,#f7d98a,#d99f34);
+    --ink: #f4efe4; --dim: #9a927f; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    --serif: Georgia, 'Times New Roman', serif; --green: #8fe38f; --red: #ff8f7a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: radial-gradient(circle at 50% 0%, #14100a 0%, #07070b 60%); color: var(--ink);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; min-height: 100vh; padding: 24px 16px 60px; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  h1 { font-family: var(--serif); font-weight: 600; font-size: clamp(26px,7vw,34px); margin: 6px 0 4px; }
+  h1 span { background: var(--goldgrad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .tag { color: var(--dim); text-transform: uppercase; letter-spacing: 3px; font-size: 11px; margin-bottom: 20px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px 18px; margin: 14px 0; }
+  .lead { color: var(--dim); font-size: 14px; line-height: 1.6; }
+  .lead b { color: var(--ink); }
+  label { display: block; font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; margin: 12px 0 6px; }
+  input { width: 100%; background: rgba(0,0,0,0.35); border: 1px solid var(--line); color: var(--ink);
+    border-radius: 10px; padding: 12px 13px; font-family: var(--mono); font-size: 13px; }
+  input:focus { outline: none; border-color: var(--gold); }
+  .btn { border: none; border-radius: 12px; padding: 14px 18px; font-size: 15px; font-weight: 600; cursor: pointer;
+    background: var(--goldgrad); color: #201700; width: 100%; margin-top: 14px; }
+  .btn.stop { background: #2a2118; color: var(--gold); border: 1px solid var(--line); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+  .stat { background: rgba(0,0,0,0.3); border: 1px solid var(--line); border-radius: 12px; padding: 12px 13px; }
+  .stat b { display: block; font-family: var(--mono); font-size: 19px; color: var(--gold); }
+  .stat span { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.5px; }
+  .status { font-family: var(--mono); font-size: 12.5px; margin-top: 12px; min-height: 18px; }
+  .status.on { color: var(--green); } .status.off { color: var(--dim); } .status.err { color: var(--red); }
+  .log { font-family: var(--mono); font-size: 12px; color: var(--dim); margin-top: 12px; max-height: 160px; overflow-y: auto;
+    background: rgba(0,0,0,0.3); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .log div { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  a { color: var(--gold); }
+  .foot { color: var(--dim); font-size: 12px; margin-top: 22px; line-height: 1.6; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="tag">BallrzCoin</div>
+  <h1>⛏ <span>Miner</span></h1>
+  <div class="card">
+    <div class="lead">
+      In BallrzCoin, <b>wallets hold and spend; miners do the work.</b> This page does the
+      <b>proof-of-work</b> that confirms your circle's transactions and issues new coins — the job a
+      wallet deliberately can't do. Point it at a wallet address, press start, and
+      <b>keep the tab open</b>: while it runs, payments in your circle confirm and the block reward
+      flows to that address. One miner is enough to serve a whole circle sharing a relay.
+    </div>
+    <label for="payout">Payout wallet address (block rewards go here)</label>
+    <input id="payout" placeholder="Paste your B… wallet address from the app" autocomplete="off" spellcheck="false">
+    <label for="relay">Relay URL (the shared network your circle uses)</label>
+    <input id="relay" placeholder="https://your-relay.example.com  (or leave blank for this origin)" autocomplete="off" spellcheck="false">
+    <button class="btn" id="toggle">Start mining</button>
+    <div class="status off" id="status">Idle — set a payout address and press start.</div>
+  </div>
+
+  <div class="grid">
+    <div class="stat"><b id="stHeight">—</b><span>block height</span></div>
+    <div class="stat"><b id="stDiff">—</b><span>difficulty</span></div>
+    <div class="stat"><b id="stMempool">—</b><span>pending tx</span></div>
+    <div class="stat"><b id="stRate">—</b><span>hash rate</span></div>
+    <div class="stat"><b id="stFound">0</b><span>blocks mined (session)</span></div>
+    <div class="stat"><b id="stReward">0</b><span>BLZ earned (session)</span></div>
+  </div>
+
+  <div class="log" id="log"></div>
+  <div class="foot">
+    A miner is infrastructure, not a wallet — it holds no keys and can't spend. Rewards are paid to the
+    address you set above; open that wallet in the <a href="index.html">BallrzCoin app</a> to see and spend them.
+    <br>Favours paid with <b>mutual credit</b> need no miner at all.
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script src="engine.js"></script>
+<script>
+(function () {
+  var Coin = (typeof self !== 'undefined' ? self : window).BallrzCoin;
+  var CFG = (typeof self !== 'undefined' ? self : window).BALLRZCOIN_CONFIG || {};
+  var $ = function (id) { return document.getElementById(id); };
+  var fmt = Coin.formatAmount;
+  var NODE_ID = 'miner-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+  var LS_PAYOUT = 'ballrzcoin.miner.payout.v1';
+  var LS_RELAY = 'ballrzcoin.miner.relay.v1';
+  // The miner keeps a fresh chain and syncs the network's heaviest via gossip.
+  var chain = new Coin.Blockchain();
+  var running = false, found = 0, reward = 0, candidate = null, t0 = 0, tried = 0;
+
+  // ---- relay client (same tiny protocol the wallet uses) ----
+  var relayUrl = '', seq = 0, pollTimer = null;
+  function qs(k) { try { return new URLSearchParams(location.search).get(k); } catch (e) { return null; } }
+  function normalizeRelay(u) { u = String(u || '').trim(); return u ? u.replace(/\/+$/, '') : ''; }
+  function defaultRelay() {
+    if (CFG.relayUrl) return normalizeRelay(CFG.relayUrl);
+    if (qs('relay')) return normalizeRelay(qs('relay'));
+    try { if (location.protocol === 'http:' || location.protocol === 'https:') return location.origin; } catch (e) {}
+    return '';
+  }
+
+  function log(msg) {
+    var el = $('log'); var d = document.createElement('div');
+    d.textContent = msg; el.insertBefore(d, el.firstChild);
+    while (el.childNodes.length > 60) el.removeChild(el.lastChild);
+  }
+  function setStatus(txt, cls) { var el = $('status'); el.textContent = txt; el.className = 'status ' + (cls || 'off'); }
+
+  function send(msg) {
+    msg.from = NODE_ID;
+    if (!relayUrl) return;
+    try {
+      fetch(relayUrl + '/msg', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(msg) }).catch(function () {});
+    } catch (e) {}
+  }
+  function announceChain() { send({ type: 'chain', blocks: chain.blocks }); }
+
+  function handle(m) {
+    if (!m || m.from === NODE_ID) return;
+    if (m.type === 'hello') { announceChain(); }
+    else if (m.type === 'chain') {
+      if (chain.replaceChain(m.blocks)) { candidate = null; log('⛓ synced heavier chain → height ' + chain.tip.height); refreshStats(); }
+    } else if (m.type === 'tx') {
+      try { chain.submitTransaction(m.tx); candidate = null; log('📥 pending tx received — will include it'); refreshStats(); } catch (e) {}
+    }
+  }
+
+  function poll() {
+    if (!relayUrl) return;
+    fetch(relayUrl + '/msgs?since=' + seq, { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d && typeof d.seq === 'number') { seq = d.seq; (d.msgs || []).forEach(handle); if ($('status').className.indexOf('err') >= 0 && running) setStatus('Mining…', 'on'); }
+      })
+      .catch(function () { if (running) setStatus('Relay unreachable — retrying…', 'err'); });
+  }
+
+  var bc = null;
+  if (typeof BroadcastChannel !== 'undefined') {
+    bc = new BroadcastChannel('ballrzcoin-net-v2');
+    bc.onmessage = function (ev) { handle(ev.data); };
+    var _send = send;
+    send = function (msg) { msg.from = NODE_ID; if (bc) bc.postMessage(msg); _send(msg); };
+  }
+
+  function refreshStats() {
+    var s = chain.stats();
+    $('stHeight').textContent = '#' + s.height;
+    $('stDiff').textContent = '×' + s.difficulty.toFixed(2);
+    $('stMempool').textContent = chain.mempool.length;
+    $('stFound').textContent = found;
+    $('stReward').textContent = fmt(reward);
+  }
+
+  // ---- the mining loop (time-sliced so the tab stays responsive) ----
+  function tick() {
+    if (!running) return;
+    var payout = $('payout').value.trim();
+    if (!Coin.isValidAddress(payout)) { setStatus('Enter a valid payout address (B…) to mine.', 'err'); running = false; $('toggle').textContent = 'Start mining'; $('toggle').className = 'btn'; return; }
+    // (re)build the candidate block if stale (new tip or new mempool tx)
+    if (!candidate || candidate.height !== chain.tip.height + 1 || candidate._mp !== chain.mempool.length) {
+      candidate = chain.prepareBlock(payout); candidate._mp = chain.mempool.length; t0 = Date.now(); tried = 0;
+    }
+    var SLICE = 25000;
+    var hit = Coin.mine(candidate, { startNonce: candidate.nonce, maxIterations: SLICE });
+    tried += SLICE;
+    if (hit) {
+      try {
+        chain.addBlock(hit);
+        found++; reward += hit.transactions[0].outputs.reduce(function (a, o) { return a + o.amount; }, 0);
+        announceChain();
+        log('⚡ mined block #' + hit.height + ' — ' + fmt(hit.transactions[0].outputs.reduce(function (a, o) { return a + o.amount; }, 0)) + ' BLZ to ' + payout.slice(0, 8) + '…');
+        candidate = null; refreshStats();
+      } catch (e) { log('block orphaned (a peer was faster)'); candidate = null; }
+    } else {
+      var secs = Math.max(0.001, (Date.now() - t0) / 1000);
+      $('stRate').textContent = Math.round(tried / secs / 1000) + ' kH/s';
+      setStatus('Mining block #' + candidate.height + (chain.mempool.length ? ' — ' + chain.mempool.length + ' tx waiting' : ' — no tx waiting'), 'on');
+    }
+    setTimeout(tick, 0);
+  }
+
+  function start() {
+    var payout = $('payout').value.trim();
+    if (!Coin.isValidAddress(payout)) { setStatus('Paste a valid wallet address (B…) first.', 'err'); return; }
+    try { localStorage.setItem(LS_PAYOUT, payout); } catch (e) {}
+    relayUrl = normalizeRelay($('relay').value) || defaultRelay();
+    try { localStorage.setItem(LS_RELAY, $('relay').value.trim()); } catch (e) {}
+    if (relayUrl) { seq = 0; if (!pollTimer) pollTimer = setInterval(poll, 1500); send({ type: 'hello' }); log('🔌 connecting to relay ' + relayUrl); }
+    else { log('⚠ no relay set — mining locally; same-browser tabs still sync'); }
+    running = true; candidate = null;
+    $('toggle').textContent = 'Stop mining'; $('toggle').className = 'btn stop';
+    setStatus('Mining…', 'on');
+    tick();
+  }
+  function stop() {
+    running = false;
+    $('toggle').textContent = 'Start mining'; $('toggle').className = 'btn';
+    setStatus('Stopped. Transactions won’t confirm again until a miner runs.', 'off');
+  }
+
+  $('toggle').addEventListener('click', function () { running ? stop() : start(); });
+  try { $('payout').value = localStorage.getItem(LS_PAYOUT) || ''; } catch (e) {}
+  try { $('relay').value = localStorage.getItem(LS_RELAY) || ''; } catch (e) {}
+  if (!$('relay').value) { var dr = defaultRelay(); if (dr && !/^https?:\/\/(localhost|127\.)/.test(dr) === false) $('relay').placeholder = dr; }
+  refreshStats();
+  // keep pulling the network's chain even before mining starts, if a relay is known
+  relayUrl = normalizeRelay($('relay').value) || defaultRelay();
+  if (relayUrl) { if (!pollTimer) pollTimer = setInterval(poll, 1500); send({ type: 'hello' }); }
+})();
+</script>
+</body>
+</html>
