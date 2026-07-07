@@ -1,5 +1,5 @@
 /**
- * BallrzCoin (BLZ) — a Bitcoin-style cryptocurrency engine
+ * TimeCoin (TIME) — a Bitcoin-style cryptocurrency engine
  * ========================================================
  *
  * A complete, dependency-free proof-of-work cryptocurrency core, built the way
@@ -17,12 +17,12 @@
  *   • proof-of-work mining against a 256-bit target, with Bitcoin-style
  *     difficulty retargeting (clamped ×4 either way each window)
  *   • a halving block-subsidy schedule and a hard supply cap — 21,000,000,000
- *     BLZ, fixed forever and enforced by consensus, sized for a worldwide
+ *     TIME, fixed forever and enforced by consensus, sized for a worldwide
  *     community that trades it for time and services
  *   • fork choice by *cumulative work* (not length), so `replaceChain` lets
  *     independent nodes converge — the UI syncs tabs over BroadcastChannel
  *
- * Where BallrzCoin's implementation differs from Bitcoin's — documented in the
+ * Where TimeCoin's implementation differs from Bitcoin's — documented in the
  * open with severities in SECURITY.md: no script language (outputs pay a
  * public-key hash directly), no coinbase maturity delay, JSON serialisation
  * instead of the wire format, hash160 is double-SHA-256 truncated to 20 bytes
@@ -46,23 +46,23 @@
   /* ======================================================================
    * Monetary constants
    * ==================================================================== */
-  var COIN = 100000;                       // 1 BLZ = 100,000 blazes (5 decimal places)
+  var COIN = 100000;                       // 1 TIME = 100,000 blazes (5 decimal places)
   var DECIMALS = 5;                        // COIN === 10 ** DECIMALS
-  // 21,000,000,000 BLZ is the hard cap and the per-output sanity bound. In base
+  // 21,000,000,000 TIME is the hard cap and the per-output sanity bound. In base
   // units that is 2.1e15 — the same magnitude as Bitcoin's 2.1e15 satoshis, and
   // comfortably below 2^53, so every balance and sum stays an exact integer.
   var MAX_MONEY = 21000000000 * COIN;
 
   var DEFAULT_PARAMS = {
-    name: 'BallrzCoin',
-    ticker: 'BLZ',
-    // A fixed, un-inflatable supply is the bedrock of sound money. BallrzCoin
-    // issues 21,000,000,000 BLZ and never one more — a ceiling sized for a
+    name: 'TimeCoin',
+    ticker: 'TIME',
+    // A fixed, un-inflatable supply is the bedrock of sound money. TimeCoin
+    // issues 21,000,000,000 TIME and never one more — a ceiling sized for a
     // worldwide community of savers and traders, enforced by consensus rather
     // than by any central bank. Like Bitcoin, coins enter circulation through a
-    // halving block subsidy: 50,000 BLZ at height 1, halving every 210,000
+    // halving block subsidy: 50,000 TIME at height 1, halving every 210,000
     // blocks, whose geometric series sums to the 21-billion cap.
-    initialSubsidy: 50000 * 100000,        // 50,000 BLZ block reward at height 1
+    initialSubsidy: 50000 * 100000,        // 50,000 TIME block reward at height 1
     halvingInterval: 210000,               // reward halves every N blocks (Bitcoin: 210,000)
     retargetInterval: 10,                  // difficulty adjusts every N blocks (Bitcoin: 2,016)
     targetBlockTimeMs: 15000,              // aim for one block per 15s (Bitcoin: 10 min)

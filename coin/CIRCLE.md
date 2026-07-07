@@ -1,13 +1,13 @@
-# Bootstrapping BLZ with your circle — a 10-friend playbook
+# Bootstrapping TIME with your circle — a 10-friend playbook
 
 This is the honest version of "making the coin valuable." You can't manufacture
 a global market, but a small group of people who trust each other **can** turn
-BLZ into a currency they actually use — the same way a babysitting co-op or a
+TIME into a currency they actually use — the same way a babysitting co-op or a
 [LETS scheme](https://en.wikipedia.org/wiki/Local_exchange_trading_system)
 works. Value here isn't speculation; it's a standing agreement among friends
-that BLZ buys real favours.
+that TIME buys real favours.
 
-The whole thing rests on one rule: **no one pays cash for BLZ, ever.** You earn
+The whole thing rests on one rule: **no one pays cash for TIME, ever.** You earn
 it by mining or by doing favours, and you spend it on favours. The moment money
 enters, it stops being a fun co-op and becomes something you'd need a lawyer
 for. Keep it favours-for-favours and it stays legal, friendly, and actually fun.
@@ -19,21 +19,21 @@ for. Keep it favours-for-favours and it stays legal, friendly, and actually fun.
 Bitcoin's value came from **millions of strangers** agreeing to accept it — a
 network effect that took 15 years. You can't shortcut that. But you *can*
 recreate its core mechanic at small scale: a fixed money supply, plus a group
-that agrees what it's worth. Ten friends who honour BLZ is a real economy. It's
+that agrees what it's worth. Ten friends who honour TIME is a real economy. It's
 small, but it's genuine — and it's yours.
 
-Think of BLZ as **shared IOUs with a scoreboard.** The blockchain just makes the
+Think of TIME as **shared IOUs with a scoreboard.** The blockchain just makes the
 scoreboard impossible to fudge.
 
 ---
 
 ## The supply is already set for you
 
-BLZ is hard-capped at **21,000,000,000 BLZ, fixed forever** — sized so the same
+TIME is hard-capped at **21,000,000,000 TIME, fixed forever** — sized so the same
 currency works for ten friends today and a worldwide community later, and
 divisible to 5 decimal places so a coffee can cost a fraction of a coin. You
 don't need to change anything: a small group just uses a small slice of the
-supply, priced in time (see the ⏳ time-rate control in the app — 1 BLZ = one
+supply, priced in time (see the ⏳ time-rate control in the app — 1 TIME = one
 hour of a favour, by default). Scarcity here isn't about the number being small;
 it's that the ceiling **never moves**, which is exactly what makes it sound.
 
@@ -62,12 +62,12 @@ that by *giving it away* and by *committing to accept it first.*
    through the splash, and creates a wallet. Have them hit **🔑 Keys → 🖨 Paper
    wallet** and back it up — lost key = lost coins, forever.
 2. **Airdrop a starter float.** Send each of the 10 friends an equal chunk — say
-   **1 BLZ each** — from your mined coins. Now everyone has something to spend.
+   **1 TIME each** — from your mined coins. Now everyone has something to spend.
    (Collect their addresses via the **QR button** on their wallet card; they can
    scan yours too.)
 3. **You commit first.** As founder, publicly promise one standing offer you'll
-   *always* honour for BLZ — "I'll drive anyone to the airport for 0.5 BLZ,"
-   "I'll fix your bike for 0.2 BLZ." When one person reliably accepts it, it has
+   *always* honour for TIME — "I'll drive anyone to the airport for 0.5 TIME,"
+   "I'll fix your bike for 0.2 TIME." When one person reliably accepts it, it has
    value. Everyone else follows.
 
 ---
@@ -79,14 +79,14 @@ a group chat and agree, together, what things cost. A few anchors to start:
 
 | Favour | Suggested price |
 | --- | --- |
-| Bake a cake | 2 BLZ |
-| Give someone a lift (local) | 0.5 BLZ |
-| An hour of help (moving, IT, tutoring) | 1 BLZ |
-| Lend a tool for a week | 0.1 BLZ |
-| Cook dinner for the group | 3 BLZ |
+| Bake a cake | 2 TIME |
+| Give someone a lift (local) | 0.5 TIME |
+| An hour of help (moving, IT, tutoring) | 1 TIME |
+| Lend a tool for a week | 0.1 TIME |
+| Cook dinner for the group | 3 TIME |
 
 Rules that keep it fair:
-- **Anchor to time, not cash.** "1 BLZ ≈ one hour of a favour" is the healthiest
+- **Anchor to time, not cash.** "1 TIME ≈ one hour of a favour" is the healthiest
   anchor — it stops anyone mentally pricing it in pounds (which is where the
   legal trouble starts).
 - **Post offers in the app.** Everyone uses the **Barter board** so offers
@@ -118,14 +118,14 @@ A currency dies if everyone hoards it. Keep coins moving:
 ## What "value" will actually feel like
 
 You'll know it worked when someone does you a real favour and genuinely wants
-BLZ for it — not because it's worth pounds, but because they know they can spend
+TIME for it — not because it's worth pounds, but because they know they can spend
 it on a lift next week. That moment is the whole thing. It's exactly how money
 started: not decreed by anyone, just a community agreeing that a token settles
 debts. You'll have built a tiny, real one.
 
 ## The lines that keep it legal and fun
 
-- **Never sell BLZ for cash**, and never let anyone in the circle do it either.
+- **Never sell TIME for cash**, and never let anyone in the circle do it either.
   Favours for favours only.
 - **Don't pitch it to strangers as an investment.** It isn't one. It's a game
   and a co-op. Promoting it as something that'll "go up" is the illegal part.

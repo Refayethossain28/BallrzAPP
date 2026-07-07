@@ -1,4 +1,4 @@
-# BallrzCoin (BLZ) — a currency for time and favours, built like Bitcoin
+# TimeCoin (TIME) — a currency for time and favours, built like Bitcoin
 
 A complete proof-of-work cryptocurrency implemented from raw bytes up, with **zero
 dependencies**: the crypto, the ledger and the consensus rules all live in
@@ -22,7 +22,7 @@ against published test vectors in [`../scripts/test-coin-logic.mjs`](../scripts/
 | Ledger | UTXO model: coins are unspent outputs; transactions consume them with signed inputs |
 | Blocks | Merkle root over transaction ids; header hashed with double-SHA-256 |
 | Mining | Proof of work against a 256-bit target; difficulty retargets every 10 blocks, clamped to ×4 per step like Bitcoin |
-| Money supply | 50,000 BLZ subsidy halving every 210,000 blocks — **21,000,000,000 BLZ will ever exist**, hard-capped and fixed forever, sized for a worldwide community — with fees paid to the miner |
+| Money supply | 50,000 TIME subsidy halving every 210,000 blocks — **21,000,000,000 TIME will ever exist**, hard-capped and fixed forever, sized for a worldwide community — with fees paid to the miner |
 | Consensus | Fork choice by **cumulative work** (`replaceChain`), so independent nodes converge |
 
 Open `index.html` in two browser tabs: each tab is a node with its own copy of the
@@ -31,7 +31,7 @@ watch the other adopt the heavier chain.
 
 ## Known limitations — read before you trust it with value
 
-BallrzCoin is real, but it is **early**, and honesty about its limits matters more
+TimeCoin is real, but it is **early**, and honesty about its limits matters more
 now that people trade real time and services for it. Where it currently differs
 from Bitcoin's battle-hardened implementation: no Script language (outputs pay a
 pubkey hash directly), no coinbase maturity delay, JSON instead of the wire
@@ -68,14 +68,14 @@ The Send form has a **📷 Scan a friend’s QR** button: where the browser supp
 in-app; elsewhere (e.g. iOS Safari) it explains that the phone’s own Camera app
 scans the same QR, since it’s a payment link.
 The page also shows a live **leaderboard** (top holders by share of supply) and
-a **halving countdown** toward the 21-billion-BLZ issuance limit.
+a **halving countdown** toward the 21-billion-TIME issuance limit.
 
-**Barter — offers board (a time bank):** BLZ buys **time and favours, never
+**Barter — offers board (a time bank):** TIME buys **time and favours, never
 cash**. Post something you'll do or give (“🎂 Bake a cake”) priced in **hours or
 minutes**, and pay others for theirs. The offers board is a
 [time bank](https://en.wikipedia.org/wiki/Time-based_currency): a single
-group-agreed rate (**1 BLZ = _n_ minutes**, editable in the ⏳ time-rate box)
-converts every offer between time and coins, so prices read “30m · 0.5 BLZ” and
+group-agreed rate (**1 TIME = _n_ minutes**, editable in the ⏳ time-rate box)
+converts every offer between time and coins, so prices read “30m · 0.5 TIME” and
 you can post in whichever unit feels natural. Anchoring value to *time* rather
 than pounds is what keeps this a favours co-op, not an investment. Offers gossip
 across the network like transactions (they live off-chain — an offer is a
@@ -83,7 +83,7 @@ notice, not money), and a **Pay** button prefills the send form with the
 poster's address and price; you sign and mine to confirm as usual. Everyone in
 your circle should set the *same* rate — that shared agreement is what turns the
 coin into a working barter currency (like a LETS scheme or a babysitting co-op). [`CIRCLE.md`](CIRCLE.md) is a week-by-week
-playbook for bootstrapping BLZ into a currency a group of ~10 friends actually
+playbook for bootstrapping TIME into a currency a group of ~10 friends actually
 uses — the honest version of "making the coin valuable."
 
 **Protection against a no-show seller** — because on-chain payments are final,

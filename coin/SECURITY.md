@@ -1,13 +1,13 @@
-# BallrzCoin security self-audit
+# TimeCoin security self-audit
 
-An honest security assessment of BallrzCoin — what is cryptographically sound,
+An honest security assessment of TimeCoin — what is cryptographically sound,
 what is still early-stage, and what a professional auditor would flag before the
 currency safeguards significant value. Every serious currency publishes its
 security posture; this one hides nothing. **Conclusion up front: the consensus
 and cryptography are real and tested; the operational security (key storage,
 network, hashpower) is early and still being hardened — see the roadmap in
 [`ROADMAP.md`](ROADMAP.md).** Until the Critical items below are addressed, treat
-BLZ like cash in an unlocked drawer: fine for everyday time and favours among
+TIME like cash in an unlocked drawer: fine for everyday time and favours among
 people you trust, not yet a place to store wealth.
 
 ## What is genuinely sound
