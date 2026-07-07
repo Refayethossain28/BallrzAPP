@@ -580,6 +580,12 @@
 </form>
 <div class="list" id="mcBalances"></div>
 
+<div id="bridgeSection">
+<h2>🌉 Bridge a favour to another circle</h2>
+<div class="sub">Circles keep their own money — that’s exactly what keeps each one safe and local. But a <b>favour</b> can still travel: if you belong to two circles, you can pass one along. Someone gives you time-credit here; you forward the same amount to someone in your other circle. Each ledger stays net-zero and every credit limit still holds — nothing is minted, you simply carry it across. (Add the other circle’s relay in the <b>Network</b> panel first, so your forward reaches it.)</div>
+<div class="note" id="bridgeInbox">Time-credit you receive appears here — forward any of it to someone in another circle you belong to.</div>
+</div>
+
 <h2><span data-i18n="h_helpers">Top helpers</span> <span id="helpersHint" class="rep"></span></h2>
 <div class="sub">Who’s done the most favours — ranked by completed deals. Reputation you earn by showing up.</div>
 <div class="list" id="helpers"></div>
@@ -678,6 +684,7 @@
 <script src="engine.js"></script>
 <script src="mutual.js"></script>
 <script src="reputation.js"></script>
+<script src="bridge.js"></script>
 <script src="wordlist.js"></script>
 <script src="i18n.js"></script>
 <script>
@@ -983,7 +990,7 @@
   function computeFingerprint() {
     var el = $('fpVal'); if (!el) return;
     if (!(window.crypto && window.crypto.subtle && window.fetch)) { el.textContent = 'unavailable'; el.className = 'fp wait'; return; }
-    var files = ['index.html', 'engine.js', 'mutual.js', 'reputation.js', 'config.js', 'qr.js', 'wordlist.js', 'i18n.js'];
+    var files = ['index.html', 'engine.js', 'mutual.js', 'reputation.js', 'bridge.js', 'config.js', 'qr.js', 'wordlist.js', 'i18n.js'];
     Promise.all(files.map(function (f) {
       return fetch(f, { cache: 'no-store' }).then(function (r) { return r.ok ? r.text() : ''; }).catch(function () { return ''; });
     })).then(function (texts) {
@@ -1038,6 +1045,9 @@
     }
   } else if ($('repSection')) {
     $('repSection').style.display = 'none';   // module failed to load — hide the panel
+  }
+  if (!(typeof self !== 'undefined' ? self : window).BallrzBridge && $('bridgeSection')) {
+    $('bridgeSection').style.display = 'none'; // bridge module absent — hide its panel
   }
 
   // Barter offers — gossiped across the network like transactions, but they
@@ -1367,6 +1377,58 @@
       ', <b>' + s.knownCount + '</b> of whom you know.<br><span class="sub">' + trust + '</span>';
   }
 
+  // ---- Circle bridges: pass a mutual-credit favour from one circle to another
+  // through yourself. A forwarding leg is an ordinary signed credit whose nonce
+  // commits to the incoming one (coin/bridge.js), so the route is verifiable and
+  // net-zero for the bridge — value is carried across, never minted. Only mutual
+  // credit bridges (it's bounded and net-zero); scarce mined TIME stays local. ----
+  var Bridge = (typeof self !== 'undefined' ? self : window).BallrzBridge;
+  // Have I already forwarded this received credit onward?
+  function alreadyBridged(creditId, byAddr) {
+    return creditList().some(function (c) {
+      return Bridge.isBridgeLeg(c) && Bridge.incomingIdOf(c) === creditId && c.from === byAddr;
+    });
+  }
+  function renderBridges() {
+    if (!Bridge || !Mutual || !$('bridgeInbox')) return;
+    var mine = myAddresses();
+    // Credits I received (I'm the payee) that I could still forward onward.
+    var inbox = creditList().filter(function (c) { return mine[c.to] && !alreadyBridged(c.id, c.to); })
+      .sort(function (a, b) { return (b.at || 0) - (a.at || 0); });
+    if (!inbox.length) {
+      $('bridgeInbox').innerHTML = 'Time-credit you receive appears here — forward any of it to someone in another circle you belong to. (You’ll need that circle’s relay added in the <b>Network</b> panel.)';
+      return;
+    }
+    $('bridgeInbox').innerHTML = inbox.slice(0, 12).map(function (c) {
+      var origin = Bridge.isBridgeLeg(c) ? ' <span class="rep" style="color:var(--gold)">↝ bridged in</span>' : '';
+      return '<div class="offercard" style="padding:10px 14px"><div class="main">' +
+        '<span class="ttl">' + fmtTime(c.amount) + ' from ' + who(c.from) + '</span>' +
+        '<div class="by">' + (c.memo ? esc(c.memo) + ' · ' : '') + 'received' + origin + '</div></div>' +
+        '<button data-bridge="' + esc(c.id) + '" title="Forward this favour to someone in another circle">🌉 Bridge onward</button></div>';
+    }).join('');
+  }
+  function bridgeOnward(creditId) {
+    if (!Bridge) return;
+    var c = credits[creditId];
+    if (!c) { toast('That credit is no longer here'); return; }
+    var me = walletByAddress(c.to);
+    if (!me || !me.privateKey) { toast('✖ Unlock the wallet that received this to bridge it'); return; }
+    if (!anyUp()) { toast('✖ Add the other circle’s relay in the Network panel first, so your forward reaches it'); return; }
+    var q = prompt('🌉 Bridge ' + fmtTime(c.amount) + ' onward.\n\nWho in your OTHER circle should receive it? (their address B… or a known name)');
+    if (q === null) return;
+    var payee = resolveContact(q.trim()) || (Coin.isValidAddress(q.trim()) ? q.trim() : null);
+    if (!payee) { toast('✖ Enter a known contact’s name or a B… address'); return; }
+    // The bridge (me) must stay within this circle's credit limit as it goes negative.
+    var myBal = (Mutual.applyLedger(creditList(), Infinity).balances[c.to]) || 0;
+    if (myBal - c.amount < -limitBaseFor(c.to)) { toast('✖ Forwarding this would push you past your ' + limitHoursFor(c.to) + 'h limit in this circle — earn some back first'); return; }
+    try {
+      var legB = Bridge.buildBridgeLeg({ incoming: c, privKey: me.privateKey, payee: payee, at: Date.now(), memo: 'bridged from another circle' });
+      ingestCredit(legB); saveCredits(); netSend({ type: 'credit', credit: legB });
+      renderMutual(); renderBridges();
+      toast('🌉 Bridged ' + fmtTime(c.amount) + ' onward to ' + (walletName(payee) || short(payee)));
+    } catch (err) { toast('✖ ' + err.message); }
+  }
+
   // A pending barter action that the next matching payment completes.
   var pendingAction = null;
   function prefillSend(toAddr, priceBlazes, note) {
@@ -1455,7 +1517,7 @@
       if (ingestDeal(m.deal)) { saveDeals(); renderDeals(); renderOffers(); notifyDeal(m.deal); }
     } else if (m.type === 'credit') {
       if (ingestCredit(m.credit)) {
-        saveCredits(); renderMutual();
+        saveCredits(); renderMutual(); renderBridges();
         var mineC = myAddresses(); if (m.credit && mineC[m.credit.to]) notif('🤝 Credit received', fmtTime(m.credit.amount) + ' from ' + who(m.credit.from));
       }
     } else if (m.type === 'limits') {
@@ -1782,6 +1844,7 @@
 
     renderOffers();
     renderMutual();
+    renderBridges();
     renderHelpers();
     renderReputation();
     renderDeals();
@@ -2502,6 +2565,8 @@
       }
       return;
     }
+    var dBridge = t.getAttribute('data-bridge');
+    if (dBridge) { bridgeOnward(dBridge); return; }
     var vpr = t.getAttribute('data-vault-propose-release');
     if (vpr) { var vd1 = deals[vpr]; if (vd1) proposeVault(vd1, 'release'); return; }
     var vpf = t.getAttribute('data-vault-propose-refund');
