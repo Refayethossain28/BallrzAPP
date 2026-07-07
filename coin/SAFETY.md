@@ -108,9 +108,9 @@ and the people you trade with are running identical code.
 
 ### Current release fingerprint
 
-> **`b85f-841b-9564-3920`**
+> **`d6c1-e419-0c42-859b`**
 >
-> Full SHA-256: `b85f841b956439207a509ea44a9118b6760c4c4c2b789775516cc4a54f09d3f9`
+> Full SHA-256: `d6c1e4190c42859b74f713a003f60fd8e148132fea0b6e4bccea8c4c6c624818`
 
 This is the fingerprint for the **current published version** of BallrzCoin. Open
 **🔒 Key security → Code fingerprint** in the app and check the short value

@@ -1544,7 +1544,8 @@
         '<div class="bal">' + fmt(chain.getBalance(w.address)) + '</div>' +
         '<div class="addr" data-copy="' + esc(w.address) + '" title="Click to copy">' + esc(w.address) + '</div>' +
         '<div class="row"><button data-qr="' + i + '">' + (w.qrOpen ? '▦ Hide QR' : '▦ QR') + '</button>' +
-        '<button data-keys="' + i + '">' + (w.keysOpen ? '🔑 Hide keys' : '🔑 Keys') + '</button></div>' +
+        '<button data-keys="' + i + '">' + (w.keysOpen ? '🔑 Hide keys' : '🔑 Keys') + '</button>' +
+        '<button data-rename="' + i + '">✏ Rename</button></div>' +
         qrHtml + keysHtml +
         '</div>';
     }).join('');
@@ -2221,6 +2222,22 @@
     if (keysIdx !== null && keysIdx !== undefined && keysIdx !== '') {
       wallets[Number(keysIdx)].keysOpen = !wallets[Number(keysIdx)].keysOpen;
       render();
+      return;
+    }
+    var renameIdx = t.getAttribute('data-rename');
+    if (renameIdx !== null && renameIdx !== undefined && renameIdx !== '') {
+      var rw = wallets[Number(renameIdx)];
+      // The name is only a local label — it isn't part of the address, keys or
+      // any transaction, so renaming never touches balances or history.
+      var nn = prompt('Rename this wallet\n(a label on this device — it doesn’t change your address, keys, balance or any transaction):', rw.name);
+      if (nn === null) return;
+      nn = String(nn).trim().slice(0, 24);
+      if (!nn) { toast('✖ Name can’t be empty'); return; }
+      rw.name = nn;
+      persist();
+      netSend({ type: 'id', address: rw.address, pubKey: rw.publicKey, name: rw.name, ripple: myRipple }); // share the new display name
+      render();
+      toast('✏ Renamed to “' + nn + '”');
       return;
     }
     var phraseIdx = t.getAttribute('data-phrase');
