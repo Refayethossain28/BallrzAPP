@@ -74,7 +74,7 @@ const STATIC = {
 };
 
 const MAX_BODY = 5 * 1024 * 1024;  // hard cap per request (a whole chain fits)
-const TYPES = new Set(['hello', 'chain', 'tx', 'offer', 'offer-remove', 'deal', 'id', 'credit', 'limits', 'chat', 'group', 'rep']);
+const TYPES = new Set(['hello', 'chain', 'tx', 'offer', 'offer-remove', 'deal', 'id', 'credit', 'limits', 'chat', 'group', 'rep', 'peer']);
 
 // Build a relay HTTP server (not yet listening). All state lives in this
 // closure so the function is side-effect-free and unit-testable.

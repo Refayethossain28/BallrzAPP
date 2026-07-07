@@ -651,6 +651,17 @@
   </div>
 </div>
 
+<div class="note" id="peersNote" style="margin-top:12px">
+  <b>🧭 Neighbouring circles</b>
+  <div class="sub" style="margin-top:3px">Other circles that connect with this one. Tap <b>Connect</b> to join a neighbour — you’ll see their offers and reputation, and can bridge favours across. Each circle keeps its own money; connecting just federates the social layer.</div>
+  <div id="peerList" style="margin-top:8px"></div>
+  <div class="row" style="margin-top:8px">
+    <input id="peerName" placeholder="Circle name (e.g. Elm Street)" maxlength="24" autocomplete="off">
+    <input id="peerRelay" placeholder="https://their-relay.onrender.com" autocomplete="off">
+    <button id="peerAdd">Add a neighbour</button>
+  </div>
+</div>
+
 <div class="row" style="margin-top:18px">
   <button id="resetAll" class="danger">Reset node (wipe chain &amp; wallets)</button>
 </div>
@@ -1485,6 +1496,84 @@
   }
   function removeRelay(u) { relays = relays.filter(function (r) { return r.url !== u; }); persistRelays(); }
   function anyUp() { return relays.some(function (r) { return r.up; }); }
+  function inPool(url) { return relays.some(function (r) { return r.url === url; }); }
+
+  // ---- Neighbouring circles: a circle can announce which OTHER circles it
+  // connects with (a name + relay). These gossip like everything else; tapping
+  // "Connect" simply adds that relay to the pool, federating its offers,
+  // reputation and bridging. Money never merges — each circle keeps its chain
+  // and ledgers. Purely a discovery hint: nothing is joined without a tap. ----
+  var LS_PEERS = 'ballrzcoin.peers.v1';
+  var peers = {};
+  try { peers = JSON.parse(localStorage.getItem(LS_PEERS) || '{}') || {}; } catch (e) { peers = {}; }
+  function savePeers() { try { localStorage.setItem(LS_PEERS, JSON.stringify(peers)); } catch (e) {} }
+  function validRelayUrl(u) { u = normUrl(u); return /^https?:\/\/[^\s/]+(\/[^\s]*)?$/i.test(u) ? u : null; }
+  function myOrigin() {
+    try { if (typeof location !== 'undefined' && /^https?:$/.test(location.protocol)) return normUrl(location.origin); } catch (e) {}
+    return '';
+  }
+  function ingestPeer(p) {
+    if (!p) return false;
+    var url = validRelayUrl(p.relay); if (!url) return false;
+    var at = Number(p.at) || 0, ex = peers[url];
+    if (ex && ex.at >= at) return false;
+    peers[url] = { name: String(p.name || '').slice(0, 24), relay: url, at: at };
+    var keys = Object.keys(peers);
+    if (keys.length > 100) { keys.sort(function (a, b) { return peers[a].at - peers[b].at; }); while (keys.length > 100) delete peers[keys.shift()]; }
+    return true;
+  }
+  function announcePeers() { Object.keys(peers).forEach(function (url) { netSend({ type: 'peer', peer: peers[url] }); }); }
+  // Announce THIS circle to neighbours so discovery is reciprocal: when I connect
+  // to another circle's relay, its members learn about mine and can connect back.
+  function myPublicRelay() {
+    var o = myOrigin();
+    if (o && inPool(o)) return o;
+    var up = relays.filter(function (r) { return r.up; })[0] || relays[0];
+    return up ? up.url : '';
+  }
+  function announceMyCircleAsPeer() {
+    var url = myPublicRelay(); if (!url) return;
+    netSend({ type: 'peer', peer: { name: (typeof myCircle === 'string' ? myCircle : ''), relay: url, at: Date.now() } });
+  }
+  function addPeer(name, relay) {
+    var url = validRelayUrl(relay);
+    if (!url) { toast('✖ Enter a valid https relay URL (e.g. https://their-relay.onrender.com)'); return false; }
+    if (url === myOrigin()) { toast('That’s this circle’s own relay'); return false; }
+    peers[url] = { name: String(name || '').slice(0, 24), relay: url, at: Date.now() };
+    savePeers(); netSend({ type: 'peer', peer: peers[url] }); renderPeers(); return true;
+  }
+  function renderPeers() {
+    var el = $('peerList'); if (!el) return;
+    var mineOrigin = myOrigin();
+    // "Neighbours" = circles I'm NOT already in (relays already in my pool are
+    // shown in the relay list above, so we don't repeat them here).
+    var list = Object.keys(peers).map(function (u) { return peers[u]; })
+      .filter(function (p) { return p.relay !== mineOrigin && !inPool(p.relay); })
+      .sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || '')); });
+    if (!list.length) {
+      el.innerHTML = '<span class="sub">No neighbouring circles yet. Add one below, or you’ll see any that a circle you join announces.</span>';
+      return;
+    }
+    el.innerHTML = list.map(function (p) {
+      var label = p.name ? esc(p.name) : esc(short(p.relay, 18));
+      return '<div class="offercard" style="padding:8px 12px;margin-top:6px"><div class="main" style="min-width:110px">' +
+        '<span class="ttl">◇ ' + label + '</span>' +
+        '<div class="by"><span class="mono" style="font-size:11px;word-break:break-all">' + esc(p.relay) + '</span></div></div>' +
+        '<button data-peer-connect="' + esc(p.relay) + '">Connect</button>' +
+        '<button data-peer-remove="' + esc(p.relay) + '" title="Forget this neighbour">✕</button></div>';
+    }).join('');
+  }
+  function connectPeer(url) {
+    url = validRelayUrl(url); if (!url) return;
+    if (addRelay(url)) {
+      netSend({ type: 'hello' });            // pull their chain/offers/etc.
+      announceMyCircleAsPeer();               // let them discover us back
+      toast('🔗 Connected to a neighbouring circle');
+    } else {
+      toast('Already connected to that circle');
+    }
+    renderPeers(); renderNetStatus(); render();
+  }
 
   var relayParam = qsParam('relay');
   if (relayParam) addRelay(relayParam); // an invite link joins immediately and is remembered
@@ -1501,6 +1590,8 @@
       announceGroups();
       announceChat();
       announceReps();
+      announcePeers();
+      announceMyCircleAsPeer();
     } else if (m.type === 'chain') {
       if (chain.replaceChain(m.blocks)) {
         persist();
@@ -1544,6 +1635,8 @@
       if (registerIdentity(m.address, m.pubKey, m.name, m.ripple)) { renderDeals(); renderThreads(); }
     } else if (m.type === 'rep') {
       if (ingestRep(m.rep)) { saveReps(); renderReputation(); }
+    } else if (m.type === 'peer') {
+      if (ingestPeer(m.peer)) { savePeers(); renderPeers(); }
     }
   }
 
@@ -1593,6 +1686,7 @@
       $('inviteLink').textContent = pageBase() + '?relay=' + encodeURIComponent(first.url);
     }
     renderRelayList();
+    renderPeers();
   }
 
   // Zero-config mode: when this page is served BY a relay itself
@@ -2623,6 +2717,10 @@
     }
     var relayRm = t.getAttribute('data-relay-remove');
     if (relayRm) { removeRelay(relayRm); renderNetStatus(); toast('Relay removed'); return; }
+    var peerCn = t.getAttribute('data-peer-connect');
+    if (peerCn) { connectPeer(peerCn); return; }
+    var peerRm = t.getAttribute('data-peer-remove');
+    if (peerRm) { delete peers[peerRm]; savePeers(); renderPeers(); toast('Neighbour forgotten'); return; }
     var copy = t.getAttribute('data-copy');
     if (copy) {
       try { navigator.clipboard.writeText(copy); toast('Address copied'); } catch (err) { toast(copy); }
@@ -3161,6 +3259,12 @@
       renderNetStatus();
     } else { toast('That relay is already in your list'); }
   });
+  if ($('peerAdd')) $('peerAdd').addEventListener('click', function () {
+    if (addPeer($('peerName').value.trim(), $('peerRelay').value.trim())) {
+      $('peerName').value = ''; $('peerRelay').value = '';
+      toast('◇ Neighbouring circle added — tap Connect to join it');
+    }
+  });
   $('relayClear').addEventListener('click', function () {
     relays = []; persistRelays();
     try { localStorage.removeItem(LS_RELAY); } catch (err) {}
@@ -3518,6 +3622,9 @@
   announceGroups();           // share group definitions so members can chat
   announceChat();             // share chat messages so threads converge
   announceReps();             // share signed reputation so passports converge in-circle
+  announcePeers();            // share the neighbouring circles we know about
+  announceMyCircleAsPeer();   // announce this circle so neighbours can discover us back
+  renderPeers();
   decryptAll();               // unseal any encrypted DMs we already hold
 })();
 </script>
