@@ -161,12 +161,30 @@
     for (i = 0; i < 8; i++) { M.used[size - 1 - i][8] = true; M.used[8][size - 1 - i] = true; }
     setF(M, size - 8, 8, true); // dark module
   }
+  // Version information (versions ≥ 7 only): an 18-bit BCH code of the version,
+  // placed in two blocks by the top-right and bottom-left finders. Without it a
+  // conformant decoder can't read v7+ codes and data spills into its cells.
+  function versionInfoBits(version) {
+    var rem = version;
+    for (var i = 0; i < 12; i++) rem = (rem << 1) ^ ((rem >>> 11) * 0x1F25);
+    return (version << 12) | rem; // 18 bits
+  }
+  function placeVersionInfo(M, version) {
+    var size = M.size, bits = versionInfoBits(version);
+    for (var i = 0; i < 18; i++) {
+      var bit = ((bits >> i) & 1) === 1;
+      var row = Math.floor(i / 3), col = size - 11 + (i % 3);
+      setF(M, row, col, bit);   // top-right block
+      setF(M, col, row, bit);   // bottom-left block (transpose)
+    }
+  }
   function placeFunctionPatterns(M, version) {
     var size = M.size;
     placeFinder(M, 0, 0); placeFinder(M, 0, size - 7); placeFinder(M, size - 7, 0);
     // timing
     for (var i = 8; i < size - 8; i++) { if (!M.used[6][i]) setF(M, 6, i, i % 2 === 0); if (!M.used[i][6]) setF(M, i, 6, i % 2 === 0); }
     placeAlignment(M, version);
+    if (version >= 7) placeVersionInfo(M, version);
     reserveFormat(M);
   }
 

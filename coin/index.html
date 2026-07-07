@@ -2634,7 +2634,10 @@
       var giftTx = chain.send(funder, gift.address, amount, 0);
       persist(); netSend({ type: 'tx', tx: giftTx }); render();  // a miner confirms it
       var url = pageBase() + '?claim=' + gift.privateKey;
-      if (relays.length) url += '&relay=' + encodeURIComponent(relays[0].url);
+      // Only carry the relay in the link when the app ISN'T already served by it
+      // (an app opened from the relay auto-detects its origin). Skipping the
+      // redundant param keeps the invite URL — and its QR — much shorter.
+      if (relays.length && relays[0].url !== location.origin) url += '&relay=' + encodeURIComponent(relays[0].url);
       if (circle) url += '&circle=' + encodeURIComponent(circle);
       url += '&from=' + encodeURIComponent(funder.name);
       var warn = (relays.length ? '' : '<div class="warn">⚠ Add a relay (Network panel) so your friend’s device can sync and see the gift.</div>') +

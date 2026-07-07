@@ -66,6 +66,22 @@ test('a canonical payment QR renders to the exact (decodable) matrix', () => {
   );
 });
 
+test('a long invite QR (version 8, with version-information block) is decodable', () => {
+  // Versions ≥ 7 need an 18-bit version-information block; without it the whole
+  // code is unscannable (this bit them once — long invite links wouldn't scan).
+  const PAY = 'https://ballrzcoin-jtb2.onrender.com/?claim=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff&relay=https%3A%2F%2Fballrzcoin-jtb2.onrender.com&from=circle';
+  const qr = QR.encode(PAY);
+  assert.equal(qr.version, 8);
+  assert.equal(qr.size, 49);
+  const rows = qr.modules.map((r) => r.map((b) => (b ? 1 : 0)).join('')).join('\n');
+  // Verified to decode back to PAY by the jsQR reference reader.
+  assert.equal(
+    createHash('sha256').update(rows).digest('hex'),
+    '7a84c525a233ba5c9bc17d75c8ef5799e2eade7c1383ba7f07a0c39d54617344',
+    'v7+ encoder output changed — re-verify it still scans, then update this hash',
+  );
+});
+
 test('version selection scales with payload length', () => {
   assert.equal(QR.encode('HI').version, 1);
   assert.ok(QR.encode('x'.repeat(80)).version >= 4, 'longer payloads pick a bigger version');
