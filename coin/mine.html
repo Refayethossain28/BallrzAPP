@@ -6,6 +6,12 @@
 <meta name="theme-color" content="#0b0e14">
 <title>BallrzCoin Miner — secure the network &amp; issue coins</title>
 <meta name="description" content="The BallrzCoin miner. Wallets hold and spend; miners do the proof-of-work that confirms transactions and issues new coins. Keep this open to power your circle's network.">
+<link rel="manifest" href="miner.webmanifest">
+<link rel="icon" type="image/png" href="miner-icon-192.png">
+<link rel="apple-touch-icon" href="miner-icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BLZ Miner">
 <style>
   :root {
     --bg: #07070b; --panel: rgba(255,255,255,0.045); --line: rgba(212,175,90,0.18);
@@ -217,6 +223,13 @@
   relayUrl = normalizeRelay($('relay').value) || defaultRelay();
   if (relayUrl) { if (!pollTimer) pollTimer = setInterval(poll, 1500); send({ type: 'hello' }); }
 })();
+</script>
+<script>
+  // Register the shared service worker so the miner installs as its own app
+  // (its own icon + standalone window via miner.webmanifest) and runs offline.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+  }
 </script>
 </body>
 </html>

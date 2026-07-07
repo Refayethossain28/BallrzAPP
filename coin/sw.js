@@ -10,7 +10,8 @@
  */
 var CACHE = 'ballrzcoin-v7';
 var SHELL = ['./', './index.html', './mine.html', './engine.js', './mutual.js', './config.js', './qr.js', './wordlist.js', './i18n.js',
-  './SAFETY.md', './icon-192.png', './icon-512.png', './manifest.webmanifest'];
+  './SAFETY.md', './icon-192.png', './icon-512.png', './manifest.webmanifest',
+  './miner.webmanifest', './miner-icon-192.png', './miner-icon-512.png', './miner-icon-180.png'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) {
