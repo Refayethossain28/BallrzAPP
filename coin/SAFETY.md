@@ -108,9 +108,9 @@ and the people you trade with are running identical code.
 
 ### Current release fingerprint
 
-> **`cd17-39d9-1f3d-4c95`**
+> **`48a3-1c3b-4130-a7b6`**
 >
-> Full SHA-256: `cd1739d91f3d4c9520b36929152d1ee35ac6b2f35f46c92adda10ce0077eff4b`
+> Full SHA-256: `48a31c3b4130a7b6ed8c252346dfaa32957018bc66aa424b9f365fae0db5886c`
 
 This is the fingerprint for the **current published version** of TimeCoin. Open
 **🔒 Key security → Code fingerprint** in the app and check the short value
