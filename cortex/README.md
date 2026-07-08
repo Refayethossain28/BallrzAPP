@@ -25,8 +25,10 @@ scripts/test-cortex-logic.mjs ← the test suite
 ## The idea in one paragraph
 
 Everyone on the network agrees on **one learning task**: a fixed, seeded
-dataset and a tiny neural network (a 2→H→1 multilayer perceptron with a `tanh`
-hidden layer and a `sigmoid` output). The **genesis block** pins the task and a
+dataset and a neural network — a general feedforward MLP of shape
+`[inputs, …hidden…, 1]` with `tanh` hidden layers and a `sigmoid` output, from a
+25-parameter toy up to arbitrarily deep and wide (see *Choosing the tier*). The
+**genesis block** pins the task and a
 random set of starting weights. To mine the next block you take the tip's
 weights, **train them with gradient descent** until the model's average loss
 drops by at least `minImprovement`, and publish the new weights. Anyone can
@@ -191,25 +193,28 @@ Measured and projected (`FLOPs/block ≈ 6 × params × samples-processed`, run 
 
 ### Choosing the production-cost tier
 
-Because per-block cost is dominated by `O(samples × hidden)` work, a deployment
+Because per-block cost is dominated by `O(samples × params)` work, a deployment
 sets how expensive mining is by choosing a **scale** at genesis
-(`Cortex.makeTask({ scale })`) rather than hand-tuning numbers. These four tiers
-are all genuinely runnable on this 2→H→1 network — measured cost per gradient
-step (`npm run bench:cortex`):
+(`Cortex.makeTask({ scale })`) rather than hand-tuning numbers. Each tier grows
+input dimension, depth, width and dataset size together — measured cost per
+gradient step (`npm run bench:cortex`):
 
-| Scale | Samples | Hidden | Params | µs / step | vs toy | ~cost of a 1,000-step block |
+| Scale | Architecture | Samples | Params | µs / step | vs toy | ~1,000-step block |
 | --- | --- | --- | --- | --- | --- | --- |
-| `toy` (default) | 120 | 6 | 25 | ~220 | 1× | ~0.2 s |
-| `small` | 600 | 16 | 65 | ~2,700 | ~12× | ~2.7 s |
-| `medium` | 3,000 | 48 | 193 | ~36,000 | ~160× | ~36 s |
-| `large` | 12,000 | 128 | 513 | ~372,000 | ~1,670× | ~6 min |
+| `toy` (default) | 2→6→1 | 120 | 25 | ~310 | 1× | ~0.3 s |
+| `small` | 4→16→1 | 500 | 97 | ~2,600 | ~8× | ~2.6 s |
+| `medium` | 6→24→24→1 | 1,500 | 793 | ~25,000 | ~80× | ~25 s |
+| `large` | 8→48→48→1 | 4,000 | 2,833 | ~145,000 | ~470× | ~2.4 min |
 
-Note the honest ceiling: even `large` is a ~500-parameter model, so in raw
-electricity a block still costs a fraction of a cent. Reaching the
-dollars-per-block figures in the projection table above needs a **bigger model
-architecture** than this prototype ships (more inputs/layers) — the presets give
-you a real, measured cost gradient within what the 2→H→1 network can run, and
-the projection shows where a production architecture would land.
+The model is a **general MLP**, so scale isn't capped by the architecture — pass
+your own `{ inputs, layers: [w1, w2, …] }` for any depth/width you like; the cost
+just follows the parameter count. The presets stop at `large` only so the
+benchmark stays runnable in seconds, not because the engine can't go bigger. The
+classification target is always the same 2-D XOR of the first two features (the
+rest are distractors), so every size stays learnable — what changes is purely
+how much compute a block costs. To reach the dollars-per-block rows in the
+projection table above you'd pick a much larger `layers`, which is now just a
+config value, not a code change.
 
 ### So what's the production cost when the coin is mature?
 

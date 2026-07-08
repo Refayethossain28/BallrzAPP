@@ -110,7 +110,7 @@
     for (var px = 0; px < W; px += step) {
       for (var py = 0; py < H; py += step) {
         var x0 = (px / W) * 2 - 1, x1 = 1 - (py / H) * 2;
-        var p = Cortex.predict ? Cortex.predict(task, w, [x0, x1]) : classProb(w, x0, x1);
+        var p = Cortex.predict(task, w, [x0, x1]); // real forward pass through the shared net
         var t = Math.max(0, Math.min(1, p));
         g.fillStyle = 'rgba(' + Math.round(106 + (90 - 106) * t) + ',' + Math.round(169 + (209 - 169) * t) + ',' + Math.round(255 + (168 - 255) * t) + ',0.18)';
         g.fillRect(px, py, step, step);
@@ -123,17 +123,6 @@
       g.fillStyle = task.y[i] === 1 ? '#5ad1a8' : '#6aa9ff';
       g.fill();
     }
-  }
-
-  // Local mirror of the model forward pass, for the visualisation only.
-  function classProb(w, x0, x1) {
-    var Hn = task.hidden, k = 0, s, j, W1 = [], b1 = [], W2 = [];
-    for (j = 0; j < Hn; j++) { W1.push([w[k++], w[k++]]); }
-    for (j = 0; j < Hn; j++) { b1.push(w[k++]); }
-    for (j = 0; j < Hn; j++) { W2.push(w[k++]); }
-    s = w[k];
-    for (j = 0; j < Hn; j++) s += W2[j] * Math.tanh(W1[j][0] * x0 + W1[j][1] * x1 + b1[j]);
-    return 1 / (1 + Math.exp(-s));
   }
 
   // Mine a block from the given private key, optionally carrying transfers.

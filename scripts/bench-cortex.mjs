@@ -86,7 +86,7 @@ console.log(`  per mature block: $${((late.dt / 1000) * CORE_WATTS / 3600 / 1000
 
 // 4. measured scale gradient — the RUNNABLE production-cost tiers -----------
 console.log('SCALE GRADIENT — measured cost per gradient step at each preset tier');
-console.log('  ' + 'scale'.padEnd(9) + 'samples'.padStart(9) + 'hidden'.padStart(8) + 'params'.padStart(8) + 'µs/step'.padStart(10) + 'vs toy'.padStart(9) + '~ms/1k-step block'.padStart(20));
+console.log('  ' + 'scale'.padEnd(9) + 'architecture'.padEnd(18) + 'samples'.padStart(9) + 'params'.padStart(8) + 'µs/step'.padStart(11) + 'vs toy'.padStart(8) + '~1k-step block'.padStart(16));
 const iters = { toy: 2000, small: 500, medium: 60, large: 6 };
 let toyStep = null;
 for (const name of Object.keys(X.SCALES)) {
@@ -95,12 +95,12 @@ for (const name of Object.keys(X.SCALES)) {
   const N = iters[name] || 20;
   const g0 = now(); for (let k = 0; k < N; k++) X.trainStep(st, sw, 0.5); const us = ms(now() - g0) / N * 1000;
   if (toyStep == null) toyStep = us;
-  const blockMs = us * 1000 / 1000; // µs/step × 1000 steps → ms
-  console.log('  ' + name.padEnd(9) + String(st.samples).padStart(9) + String(st.hidden).padStart(8) +
-    String(st.dim).padStart(8) + us.toFixed(1).padStart(10) + (us / toyStep).toFixed(0).concat('x').padStart(9) +
-    (blockMs < 1000 ? blockMs.toFixed(0) + ' ms' : (blockMs / 1000).toFixed(1) + ' s').padStart(20));
+  const blockMs = us; // µs/step × 1000 steps → ms
+  console.log('  ' + name.padEnd(9) + st.arch.join('→').padEnd(18) + String(st.samples).padStart(9) +
+    String(st.dim).padStart(8) + us.toFixed(1).padStart(11) + (us / toyStep).toFixed(0).concat('x').padStart(8) +
+    (blockMs < 1000 ? blockMs.toFixed(0) + ' ms' : (blockMs / 1000).toFixed(1) + ' s').padStart(16));
 }
-console.log('  (these tiers are what cortex/engine.js actually runs; the table below PROJECTS beyond them.)\n');
+console.log('  (these tiers are what cortex/engine.js actually runs — a general [inputs,…,1] MLP.)\n');
 
 console.log('USD PROJECTION to production scale  (illustrative — cost is a design parameter set by the task size)');
 console.log('  FLOPs/block ≈ 6 × params × samples-processed;  time = FLOPs / (100 TFLOP/s);  $ at $1.5/GPU-hr');

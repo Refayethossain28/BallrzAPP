@@ -202,13 +202,23 @@ test('a fork with a doctored middle block is rejected wholesale', () => {
 test('scale presets set the production-cost tier and stay overridable', () => {
   const toy = X.makeTask({ id: 's', scale: 'toy' });
   const small = X.makeTask({ id: 's', scale: 'small' });
+  const medium = X.makeTask({ id: 's', scale: 'medium' });
   const large = X.makeTask({ id: 's', scale: 'large' });
   assert.equal(toy.scale, 'toy');
-  assert.deepEqual([toy.samples, toy.hidden], [120, 6], 'toy matches the default');
+  // (compare primitives, not arrays: engine arrays live in the vm sandbox realm,
+  // so deepStrictEqual against a native literal would mismatch on prototype)
+  assert.equal(toy.inputs, 2);
+  assert.equal(toy.layers.length, 1);
+  assert.equal(toy.layers[0], 6);
+  assert.equal(toy.samples, 120);
+  assert.equal(toy.dim, 25, 'toy is 25 params, same layout as before');
   // each step up genuinely enlarges the model + dataset (=> more cost per step)
-  assert.ok(small.samples > toy.samples && small.hidden > toy.hidden);
-  assert.ok(large.samples > small.samples && large.hidden > small.hidden);
-  assert.equal(large.dim, 4 * large.hidden + 1, 'weight vector tracks the bigger hidden layer');
+  assert.ok(small.dim > toy.dim && small.samples > toy.samples);
+  assert.ok(large.dim > medium.dim && medium.dim > small.dim, 'params grow with scale');
+  assert.ok(large.layers.length >= 2, 'large is a genuinely deeper (multi-hidden-layer) net');
+  // dim always equals the weights implied by the [inputs, ...layers, 1] shape
+  const expectDim = (a) => { let d = 0; for (let i = 0; i < a.arch.length - 1; i++) d += a.arch[i] * a.arch[i + 1] + a.arch[i + 1]; return d; };
+  assert.equal(large.dim, expectDim(large), 'dim matches the general architecture');
   // an unscaled task is the toy tier
   assert.equal(X.makeTask({ id: 's' }).scale, 'toy');
   // explicit options still win over the preset
@@ -216,6 +226,38 @@ test('scale presets set the production-cost tier and stay overridable', () => {
   assert.equal(custom.hidden, 10, 'explicit hidden overrides the preset');
   // an unknown scale is rejected, not silently ignored
   assert.throws(() => X.makeTask({ id: 's', scale: 'galaxy' }), /unknown task scale/);
+});
+
+test('backprop matches a numerical gradient (general multi-layer net)', () => {
+  // A small but multi-layer net so every backprop path (output + two hidden
+  // layers) is exercised. Compare the analytic gradient implied by one
+  // trainStep against a finite-difference estimate of dLoss/dw.
+  const t = X.makeTask({ id: 'grad', inputs: 3, layers: [4, 3], samples: 30, noise: 0 });
+  const w = X.randomWeights(t, 'gc');
+  // trainStep (unlike train) does not quantise its output, so at lr=1 the
+  // analytic gradient is exactly w - trainStep(w) with no rounding noise.
+  const next = X.trainStep(t, w, 1);
+  const eps = 1e-5;
+  let maxRelErr = 0;
+  // check a spread of coordinates across the layers, not just the first few
+  for (let idx = 0; idx < t.dim; idx += Math.max(1, Math.floor(t.dim / 12))) {
+    const analytic = w[idx] - next[idx]; // dLoss/dw at this coordinate
+    const wp = w.slice(); wp[idx] += eps;
+    const wm = w.slice(); wm[idx] -= eps;
+    const numeric = (X.loss(t, wp) - X.loss(t, wm)) / (2 * eps);
+    const denom = Math.max(1e-6, Math.abs(analytic) + Math.abs(numeric));
+    maxRelErr = Math.max(maxRelErr, Math.abs(analytic - numeric) / denom);
+  }
+  assert.ok(maxRelErr < 1e-4, `analytic vs numerical gradient agree (max rel err ${maxRelErr.toExponential(2)})`);
+});
+
+test('a genuinely deep net (two hidden layers) learns the task', () => {
+  const t = X.makeTask({ id: 'deep', inputs: 4, layers: [12, 8], samples: 200 });
+  const w0 = X.randomWeights(t, 'd');
+  const w1 = X.train(t, w0, 2500, 0.5);
+  assert.ok(X.loss(t, w1) < X.loss(t, w0), 'loss falls through the deep net');
+  assert.ok(X.accuracy(t, w1) > 0.8, `deep net clears 80% accuracy (${X.accuracy(t, w1).toFixed(2)})`);
+  assert.equal(t.arch.length, 4, 'input + 2 hidden + output');
 });
 
 test('a larger scale still mines, learns and pays MIND', () => {

@@ -119,22 +119,30 @@
   /* ======================================================================
    * Task-scale presets — the production-cost tier.
    * ----------------------------------------------------------------------
-   * A miner's cost per block is dominated by O(samples × hidden) work per
-   * gradient step, so a deployment picks how expensive mining is by picking a
-   * scale rather than hand-tuning numbers. These are all genuinely RUNNABLE on
-   * this 2->H->1 network (params = 4·hidden + 1); they are not the giant
-   * 1B-parameter models in the README's USD *projection* table — reaching those
-   * needs a bigger architecture than this prototype ships, and the projection
-   * says so. What the presets give you is a real, measurable cost gradient:
-   * each step up multiplies samples × hidden (and thus per-block cost) by ~7-10×.
-   * `scale` sets samples/hidden/minImprovement; any explicit option overrides.
+   * The model is a general feedforward MLP: `inputs` features → any number of
+   * hidden `layers` (tanh) → 1 sigmoid output. A miner's cost per block is
+   * dominated by O(samples × params) work per gradient step, so a deployment
+   * picks how expensive mining is by picking a scale — width, depth, input
+   * dimension and dataset size all grow together — rather than hand-tuning.
+   * The classification target is always the same 2-D XOR of the first two
+   * features (extra inputs are distractors the network must learn to ignore),
+   * so every tier stays learnable no matter how big the model gets. `scale`
+   * sets inputs/layers/samples/minImprovement; any explicit option overrides.
    * ==================================================================== */
   var SCALES = {
-    toy:    { samples: 120,   hidden: 6,   minImprovement: 0.004 },  // instant — the demo/default
-    small:  { samples: 600,   hidden: 16,  minImprovement: 0.003 },
-    medium: { samples: 3000,  hidden: 48,  minImprovement: 0.002 },
-    large:  { samples: 12000, hidden: 128, minImprovement: 0.001 }
+    toy:    { inputs: 2,  layers: [6],           samples: 120,  minImprovement: 0.004 }, // 25 params — demo/default
+    small:  { inputs: 4,  layers: [16],          samples: 500,  minImprovement: 0.003 }, // ~97 params
+    medium: { inputs: 6,  layers: [24, 24],      samples: 1500, minImprovement: 0.002 }, // ~793 params
+    large:  { inputs: 8,  layers: [48, 48],      samples: 4000, minImprovement: 0.0015 } // ~2833 params, 2 hidden layers
   };
+
+  // Full layer sizes [inputs, ...hidden, 1] and the flat weight-vector length.
+  function archOf(inputs, layers) { return [inputs].concat(layers).concat([1]); }
+  function dimOf(arch) {
+    var d = 0;
+    for (var i = 0; i < arch.length - 1; i++) d += arch[i] * arch[i + 1] + arch[i + 1]; // W + b per layer
+    return d;
+  }
 
   /* ======================================================================
    * The shared learning task: a deterministic, non-linearly-separable
@@ -148,34 +156,47 @@
       preset = SCALES[String(opts.scale)];
       if (!preset) throw new Error('unknown task scale: ' + opts.scale + ' (use ' + Object.keys(SCALES).join('/') + ')');
     }
+    // Hidden-layer widths: explicit `layers`, else legacy single `hidden`, else preset.
+    var layers = opts.layers || (opts.hidden ? [opts.hidden] : (preset.layers || [preset.hidden || DEFAULTS.hidden]));
+    var inputs = opts.inputs || preset.inputs || 2;
     var t = {
       id: String(opts.id || 'cortex-genesis-task'),
       scale: opts.scale != null ? String(opts.scale) : 'toy',
+      inputs: inputs,
+      layers: layers.slice(),
+      hidden: layers[0], // kept for backward-compatible readers
       samples: opts.samples || preset.samples || DEFAULTS.samples,
-      hidden: opts.hidden || preset.hidden || DEFAULTS.hidden,
       noise: (opts.noise == null) ? DEFAULTS.noise : opts.noise,
       minImprovement: (opts.minImprovement == null) ? (preset.minImprovement == null ? DEFAULTS.minImprovement : preset.minImprovement) : opts.minImprovement,
       quantum: opts.quantum || DEFAULTS.quantum,
       ticker: String(opts.ticker || DEFAULTS.ticker)
     };
+    t.arch = archOf(t.inputs, t.layers);
+    t.dim = dimOf(t.arch);
     var rng = mulberry32(seedFrom('data:' + t.id));
     var X = [], y = [];
     for (var i = 0; i < t.samples; i++) {
-      var x0 = rng() * 2 - 1, x1 = rng() * 2 - 1;
-      var label = ((x0 > 0) !== (x1 > 0)) ? 1 : 0;       // XOR of the signs
+      var x = new Array(t.inputs);
+      for (var d = 0; d < t.inputs; d++) x[d] = rng() * 2 - 1;
+      var label = ((x[0] > 0) !== (x[1] > 0)) ? 1 : 0;    // 2-D XOR of the first two features
       if (rng() < t.noise) label = 1 - label;             // flip some labels
-      X.push([x0, x1]); y.push(label);
+      X.push(x); y.push(label);
     }
     t.X = X; t.y = y;
-    t.dim = 4 * t.hidden + 1; // W1 (H*2) + b1 (H) + W2 (H) + b2 (1)
     return t;
   }
 
   // A random starting network for the task, seeded so genesis is reproducible.
+  // Weights use Xavier-style scaling (1/sqrt(fan-in)) so deep nets don't start
+  // saturated; biases start at 0.
   function randomWeights(task, seedStr) {
     var rng = mulberry32(seedFrom('init:' + task.id + ':' + (seedStr || '')));
-    var w = new Array(task.dim);
-    for (var i = 0; i < task.dim; i++) w[i] = gaussian(rng) * 0.5;
+    var arch = task.arch, w = [], li;
+    for (li = 0; li < arch.length - 1; li++) {
+      var inN = arch[li], outN = arch[li + 1], scale = 1 / Math.sqrt(inN);
+      for (var o = 0; o < outN; o++) for (var inp = 0; inp < inN; inp++) w.push(gaussian(rng) * scale); // W row-major
+      for (var b = 0; b < outN; b++) w.push(0);                                                          // biases
+    }
     return quantise(w, task.quantum);
   }
 
@@ -186,40 +207,51 @@
   }
 
   /* ======================================================================
-   * The model: 2 -> H -> 1 MLP. Weight vector layout, forward pass, loss,
-   * accuracy and a full-batch gradient-descent trainer.
+   * The model: a general feedforward MLP — [inputs, ...hidden, 1], tanh on
+   * hidden layers, sigmoid output, binary cross-entropy loss. Weight vector
+   * layout, forward pass, loss, accuracy and a full-batch backprop trainer.
+   * The flat weight vector stores, layer by layer, W row-major (out×in) then
+   * the biases — so a 2→6→1 net has the exact same layout as the original.
    * ==================================================================== */
-  function unpack(task, w) {
-    var H = task.hidden, k = 0, i;
-    var W1 = [], b1 = [], W2 = [];
-    for (i = 0; i < H; i++) { W1.push([w[k++], w[k++]]); }
-    for (i = 0; i < H; i++) { b1.push(w[k++]); }
-    for (i = 0; i < H; i++) { W2.push(w[k++]); }
-    var b2 = w[k++];
-    return { W1: W1, b1: b1, W2: W2, b2: b2 };
-  }
   function sigmoid(z) { return 1 / (1 + Math.exp(-z)); }
+
+  // Slice the flat vector into per-layer { W:[out][in], b:[out], act }.
+  function unpack(task, w) {
+    var arch = task.arch, k = 0, layers = [], li, o, inp;
+    for (li = 0; li < arch.length - 1; li++) {
+      var inN = arch[li], outN = arch[li + 1], W = new Array(outN), b = new Array(outN);
+      for (o = 0; o < outN; o++) { var row = new Array(inN); for (inp = 0; inp < inN; inp++) row[inp] = w[k++]; W[o] = row; }
+      for (o = 0; o < outN; o++) b[o] = w[k++];
+      layers.push({ W: W, b: b, inN: inN, outN: outN, act: li === arch.length - 2 ? 'sigmoid' : 'tanh' });
+    }
+    return layers;
+  }
+
+  // Forward pass for one sample; returns the class-1 probability and the
+  // activation of every layer (acts[0] = input, acts[L] = [p]) for backprop.
+  function forwardOne(layers, x) {
+    var acts = [x], a = x, li, o, inp;
+    for (li = 0; li < layers.length; li++) {
+      var L = layers[li], out = new Array(L.outN);
+      for (o = 0; o < L.outN; o++) {
+        var s = L.b[o], row = L.W[o];
+        for (inp = 0; inp < L.inN; inp++) s += row[inp] * a[inp];
+        out[o] = L.act === 'sigmoid' ? sigmoid(s) : Math.tanh(s);
+      }
+      acts.push(out); a = out;
+    }
+    return { p: a[0], acts: acts };
+  }
 
   // The model's probability that point x belongs to class 1 (for visualising
   // the decision boundary, and handy in tests).
-  function predict(task, w, x) { return predictOne(unpack(task, w), x).p; }
-
-  function predictOne(m, x) {
-    var H = m.W2.length, s = m.b2, j;
-    var a1 = new Array(H);
-    for (j = 0; j < H; j++) {
-      var z1 = m.W1[j][0] * x[0] + m.W1[j][1] * x[1] + m.b1[j];
-      a1[j] = Math.tanh(z1);
-      s += m.W2[j] * a1[j];
-    }
-    return { p: sigmoid(s), a1: a1 };
-  }
+  function predict(task, w, x) { return forwardOne(unpack(task, w), x).p; }
 
   // Average binary cross-entropy over the whole dataset (clamped so log is finite).
   function loss(task, w) {
-    var m = unpack(task, w), n = task.samples, sum = 0;
+    var layers = unpack(task, w), n = task.samples, sum = 0;
     for (var i = 0; i < n; i++) {
-      var p = predictOne(m, task.X[i]).p;
+      var p = forwardOne(layers, task.X[i]).p;
       p = Math.min(1 - 1e-12, Math.max(1e-12, p));
       var yi = task.y[i];
       sum += -(yi * Math.log(p) + (1 - yi) * Math.log(1 - p));
@@ -228,35 +260,52 @@
   }
 
   function accuracy(task, w) {
-    var m = unpack(task, w), n = task.samples, ok = 0;
+    var layers = unpack(task, w), n = task.samples, ok = 0;
     for (var i = 0; i < n; i++) {
-      var pred = predictOne(m, task.X[i]).p >= 0.5 ? 1 : 0;
+      var pred = forwardOne(layers, task.X[i]).p >= 0.5 ? 1 : 0;
       if (pred === task.y[i]) ok++;
     }
     return ok / n;
   }
 
-  // One full-batch gradient-descent step; returns a fresh weight vector.
+  // One full-batch gradient-descent step over all layers; returns a fresh
+  // weight vector. Standard backprop: sigmoid+BCE gives dz = p − y at the
+  // output, tanh' = (1 − a²) propagates it back through the hidden layers.
   function trainStep(task, w, lr) {
-    var m = unpack(task, w), H = task.hidden, n = task.samples;
-    var gW1 = [], gb1 = new Array(H), gW2 = new Array(H), gb2 = 0, j;
-    for (j = 0; j < H; j++) { gW1.push([0, 0]); gb1[j] = 0; gW2[j] = 0; }
+    var layers = unpack(task, w), n = task.samples, li, o, inp;
+    var gW = [], gb = []; // zero-initialised gradient accumulators, same shape as W/b
+    for (li = 0; li < layers.length; li++) {
+      var Lz = layers[li], gWl = new Array(Lz.outN), gbl = new Array(Lz.outN);
+      for (o = 0; o < Lz.outN; o++) { gWl[o] = new Array(Lz.inN).fill(0); gbl[o] = 0; }
+      gW.push(gWl); gb.push(gbl);
+    }
     for (var i = 0; i < n; i++) {
-      var x = task.X[i], fwd = predictOne(m, x), dz2 = fwd.p - task.y[i];
-      gb2 += dz2;
-      for (j = 0; j < H; j++) {
-        gW2[j] += dz2 * fwd.a1[j];
-        var dz1 = dz2 * m.W2[j] * (1 - fwd.a1[j] * fwd.a1[j]); // tanh'
-        gW1[j][0] += dz1 * x[0];
-        gW1[j][1] += dz1 * x[1];
-        gb1[j] += dz1;
+      var f = forwardOne(layers, task.X[i]), acts = f.acts;
+      var delta = [acts[layers.length][0] - task.y[i]]; // dL/dz at the sigmoid output
+      for (li = layers.length - 1; li >= 0; li--) {
+        var L = layers[li], aPrev = acts[li];
+        for (o = 0; o < L.outN; o++) {
+          gb[li][o] += delta[o];
+          var grow = gW[li][o];
+          for (inp = 0; inp < L.inN; inp++) grow[inp] += delta[o] * aPrev[inp];
+        }
+        if (li > 0) {
+          var nd = new Array(L.inN);
+          for (inp = 0; inp < L.inN; inp++) {
+            var acc = 0;
+            for (o = 0; o < L.outN; o++) acc += L.W[o][inp] * delta[o];
+            nd[inp] = acc * (1 - aPrev[inp] * aPrev[inp]); // tanh' of the previous layer's output
+          }
+          delta = nd;
+        }
       }
     }
     var out = new Array(task.dim), k = 0;
-    for (j = 0; j < H; j++) { out[k++] = m.W1[j][0] - lr * gW1[j][0] / n; out[k++] = m.W1[j][1] - lr * gW1[j][1] / n; }
-    for (j = 0; j < H; j++) { out[k++] = m.b1[j] - lr * gb1[j] / n; }
-    for (j = 0; j < H; j++) { out[k++] = m.W2[j] - lr * gW2[j] / n; }
-    out[k++] = m.b2 - lr * gb2 / n;
+    for (li = 0; li < layers.length; li++) {
+      var Lo = layers[li];
+      for (o = 0; o < Lo.outN; o++) for (inp = 0; inp < Lo.inN; inp++) out[k++] = Lo.W[o][inp] - lr * gW[li][o][inp] / n;
+      for (o = 0; o < Lo.outN; o++) out[k++] = Lo.b[o] - lr * gb[li][o] / n;
+    }
     return out;
   }
 
