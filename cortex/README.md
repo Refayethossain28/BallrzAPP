@@ -214,6 +214,10 @@ fully-trustless version would draw fresh samples from a live external data feed
 the beacon indexes into, which a fixed embedded dataset fundamentally cannot be.
 (The temporal ordering — beacon fixed *after* commit — is a network-protocol
 assumption; the checkable cryptography is implemented and tested.)
+**[`TRUSTLESS.md`](TRUSTLESS.md)** scopes what a fully trust-*minimised* system
+would take — a forecasting-tournament chain that scores predictions of future
+outcomes — and is honest that trust there is only relocated (to an outcome
+oracle), never removed.
 
 ## Production cost & economics
 
