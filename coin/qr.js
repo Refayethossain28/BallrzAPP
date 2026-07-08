@@ -1,8 +1,14 @@
-/* RippleQR — a tiny, dependency-free QR Code (Model 2) encoder.
+/* CoinQR — a tiny, dependency-free QR Code (Model 2) encoder.
+ * (Shares its implementation with ripple/qr.js; only the global name differs.)
+ * Correctness is guarded by scripts/test-coin-qr.mjs, which checks the
+ * Reed–Solomon ECC against known QR test vectors AND decodes the rendered
+ * matrix back to the original text — so a code that can't actually be scanned
+ * fails the build. (The earlier structural-only test let a reversed RS
+ * generator polynomial ship undetected: valid-looking, but unscannable.)
  * ============================================================
  * Byte mode, error-correction level L, versions 1–9 (plenty for a short URL).
  * Returns a square matrix of booleans (true = dark module); the caller adds the
- * quiet zone and renders. Classic script: exposes `self.RippleQR` (browser) and
+ * quiet zone and renders. Classic script: exposes `self.CoinQR` (browser) and
  * `module.exports` (Node test sandbox). Pure and deterministic.
  *
  * Implements: byte-mode bitstream, Reed–Solomon over GF(256) (prim 0x11d),
@@ -12,7 +18,7 @@
  */
 (function (root, factory) {
   if (typeof module !== 'undefined' && module.exports) module.exports = factory();
-  else root.RippleQR = factory();
+  else root.CoinQR = factory();
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
