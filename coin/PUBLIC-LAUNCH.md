@@ -77,7 +77,7 @@ compares to banks and cash).
       feels good cold.
 - [ ] **Save a backup and test-restore it** once yourself, so you can speak to it
       confidently — and confirm the **code fingerprint** in-app matches the value
-      in `SAFETY.md` (that value: `4557-62ff-8be4-6ce6` for the current release).
+      in `SAFETY.md` (that value: `ea63-0339-895c-2c74` for the current release).
 - [ ] Confirm the link **unfurls** a preview card when pasted into a chat (OG
       tags + share card are wired into the page).
 - [ ] Have a **5-second screen recording** ready (mine-a-block, or the
