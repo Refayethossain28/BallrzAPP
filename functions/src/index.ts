@@ -21,6 +21,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { defineSecret } from 'firebase-functions/params';
 import * as logger from 'firebase-functions/logger';
 import * as https from 'node:https';
+import { createHash } from 'node:crypto';
 import Anthropic from '@anthropic-ai/sdk';
 import * as admin from 'firebase-admin';
 
@@ -258,17 +259,20 @@ async function fareBounds(): Promise<{ floor: number; ceiling: number }> {
 // Used by capture/refund, which act on money already authorized against a booking.
 async function assertPaymentOwnership(uid: string, paymentId: string): Promise<void> {
   const db = admin.firestore();
-  // Staff (admin/driver) may capture/refund any booking.
+  // Admins may capture/refund any booking.
+  let role: unknown;
   try {
     const u = await db.doc(`users/${uid}`).get();
-    const role = u.exists && (u.data() as User | undefined)?.role;
-    if (role === 'admin' || role === 'driver') return;
+    role = u.exists && (u.data() as User | undefined)?.role;
+    if (role === 'admin') return;
   } catch (_) { /* fall through to ownership check */ }
   const q = await db.collection('bookings').where('squarePaymentId', '==', paymentId).limit(1).get();
   if (q.empty) throw new HttpsError('not-found', 'No booking matches this payment');
-  if ((q.docs[0].data() as Booking).clientId !== uid) {
-    throw new HttpsError('permission-denied', 'You do not own this payment');
-  }
+  const b = q.docs[0].data() as Booking;
+  // The owning client, or the booking's OWN assigned driver (not any driver).
+  if (b.clientId === uid) return;
+  if (role === 'driver' && b.driverId && b.driverId === uid) return;
+  throw new HttpsError('permission-denied', 'You do not own this payment');
 }
 
 async function squareFetch(path: string, body: unknown, token: string): Promise<any> {
@@ -446,7 +450,15 @@ export const onBookingWrite = onDocumentWritten(
             status: 'owed',
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
           };
-          await admin.firestore().collection('driver_payouts').doc(event.params.bookingId).set(entry, { merge: true });
+          // Create exactly once. A second 'completed' write (or a paid entry
+          // being replayed) must never resurrect the ledger row and cause a
+          // double payout, so only write when the doc does not already exist.
+          const ref = admin.firestore().collection('driver_payouts').doc(event.params.bookingId);
+          await admin.firestore().runTransaction(async (tx) => {
+            const snap = await tx.get(ref);
+            if (snap.exists) return;
+            tx.set(ref, entry);
+          });
         }
       } catch (err) { logger.error('payout ledger', errMessage(err)); }
     }
@@ -519,7 +531,7 @@ const APEXAI_INTENT_TOOL: Anthropic.Tool = {
         properties: { date: { type: 'string' }, time: { type: 'string' }, pickup: { type: 'string' }, dropoff: { type: 'string' } },
       },
       recurringPattern: { type: 'string', description: 'For intent "recurring": a short human description of the cadence, e.g. "every weekday 07:30".' },
-      priceEstimate:    { type: 'number', description: 'For intent "quote": a rough £ estimate if you can infer one, else 0.' },
+      priceEstimate:    { type: 'number', description: 'For intent "quote": the £ estimate computed from the provided rate card (GUEST CONTEXT rateCard) for the requested service. 0 if no rate card was provided or the service cannot be priced.' },
     },
     required: ['reply', 'intent'],
   },
@@ -575,6 +587,19 @@ async function apexCallClaude(p: ParseBookingInput, apiKey: string): Promise<Rec
     return { reply: text || 'Of course — leave it with me.' };
   }
 
+  // Context engineering — a bounded guest context (saved places, tier, cabin
+  // preferences, live rate card, current location) assembled client-side by
+  // buildConciergeContext. Injected structured so the model resolves "home"/
+  // "the office", quotes from real prices, greets by name and honours prefs.
+  const ctxBlock = (context && typeof context === 'object' && Object.keys(context).length)
+    ? ' GUEST CONTEXT (use it, do not repeat it verbatim): ' + JSON.stringify(context).slice(0, 1400) +
+      ' — Resolve "home"/"the office"/"my usual"/"here" from `saved` and `location`. ' +
+      'For any price question or "quote" intent, compute the estimate ONLY from `rateCard` ' +
+      '(S=S-Class, V=V-Class; airport_* are flat fares, hourly_*_rate are per hour, day_* are full-day, ' +
+      'per_km_* for point-to-point) — never invent a price. Greet by `guest.firstName` when natural, ' +
+      'and quietly honour cabin `prefs`.'
+    : '';
+
   const sys =
     'You are ApexAI, the concierge brain for ApexVIP — a discreet luxury chauffeur service in London. ' +
     `The current date/time is ${today} (Europe/London). ` +
@@ -583,7 +608,8 @@ async function apexCallClaude(p: ParseBookingInput, apiKey: string): Promise<Rec
     'Airports map to a terminal label (e.g. "Heathrow T5"). Flight numbers are uppercase, no space (e.g. "BA247"). ' +
     'Choose serviceType: airport for airport transfers, hourly for by-the-hour, day for full-day hire, point for a ' +
     'simple A→B journey. Only fill fields the guest actually stated — never invent an address, time or destination. ' +
-    'Keep "reply" warm, brief and in the voice of a five-star chauffeur concierge.';
+    'Keep "reply" warm, brief and in the voice of a five-star chauffeur concierge.' +
+    ctxBlock;
 
   const turns: Anthropic.MessageParam[] = (Array.isArray(history) ? history : [])
     .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
@@ -1103,7 +1129,16 @@ export const payoutDriver = onCall(
         throw new HttpsError('failed-precondition', 'Driver has not completed payout onboarding');
       }
       try {
-        const tr = await stripe.transfers.create({ amount: total * 100, currency, destination: accountId, metadata: { driverId } });
+        // Deterministic idempotency key over the exact set of ledger rows being
+        // settled: two concurrent/retried payouts of the same owed entries hit
+        // Stripe's idempotency layer and create at most one transfer.
+        const idempotencyKey = createHash('sha256')
+          .update(driverId + '|' + owed.docs.map((x) => x.id).sort().join(','))
+          .digest('hex');
+        const tr = await stripe.transfers.create(
+          { amount: total * 100, currency, destination: accountId, metadata: { driverId } },
+          { idempotencyKey },
+        );
         transferId = tr.id;
       } catch (err) {
         throw new HttpsError('failed-precondition', 'Stripe transfer failed: ' + errMessage(err));

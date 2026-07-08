@@ -29,21 +29,53 @@ service cloud.firestore {
       // field, so an unguarded create would be a privilege-escalation hole).
       allow create: if isUser(uid)
         && request.resource.data.get('role', 'client') == 'client';
+      // Self-update: can't change role, and can't self-mint referral credits /
+      // loyalty balance (apexBalance/referral fields are Cloud-Function-only).
       allow update: if isAdmin()
-        || (isUser(uid) && request.resource.data.get('role', 'client') == 'client');
+        || (isUser(uid)
+            && request.resource.data.get('role', 'client') == 'client'
+            && !request.resource.data.diff(resource.data).affectedKeys()
+                 .hasAny(['apexBalance', 'referredBy', 'referralCode', 'tier', 'compliance']));
       allow delete: if isAdmin();
     }
 
     // Bookings — owned by the client; the assigned driver and admins may access.
     match /bookings/{bookingId} {
+      // Money + integrity fields NO self-update (client or driver) may change —
+      // the fare drives the server-computed payout, so a writable baseFare is
+      // literal theft. Only the Admin SDK (Cloud Functions) sets these.
+      function bookingFinancials() {
+        return ['baseFare', 'price', 'discount', 'vat', 'promoApplied', 'clientId',
+                'squarePaymentId', 'paymentStatus', 'ref', 'currency'];
+      }
+      function touched() { return request.resource.data.diff(resource.data).affectedKeys(); }
+      // A client may edit only their own booking, and not the financials, the
+      // driver-assignment fields, or their own driver rating.
+      function clientBookingUpdateOk() {
+        return !touched().hasAny(bookingFinancials())
+          && !touched().hasAny(['driverId', 'driverName', 'driverPlate', 'driverRating']);
+      }
+      // A driver may edit an assigned booking's status/assignment only — never
+      // the financials, and never the client's rating of them.
+      function driverBookingUpdateOk() {
+        return !touched().hasAny(bookingFinancials())
+          && !touched().hasAny(['clientName', 'clientEmail', 'rating', 'ratingComment', 'ratedBy', 'driverRating']);
+      }
       allow create: if signedIn() && request.resource.data.clientId == request.auth.uid;
-      allow read, update: if isAdmin()
+      allow read: if isAdmin()
         || (signedIn() && resource.data.clientId == request.auth.uid)
         || (isDriver() && resource.data.driverId == request.auth.uid)
-        // A driver may claim a booking that has no driver yet (broadcast dispatch).
+        || (isDriver()
+            && (!('driverId' in resource.data) || resource.data.driverId == '' || resource.data.driverId == null));
+      allow update: if isAdmin()
+        || (signedIn() && resource.data.clientId == request.auth.uid && clientBookingUpdateOk())
+        || (isDriver() && resource.data.driverId == request.auth.uid && driverBookingUpdateOk())
+        // A driver may claim a booking that has no driver yet (broadcast dispatch)
+        // — stamps themselves as the driver, still barred from the financials.
         || (isDriver()
             && (!('driverId' in resource.data) || resource.data.driverId == '' || resource.data.driverId == null)
-            && request.resource.data.driverId == request.auth.uid);
+            && request.resource.data.driverId == request.auth.uid
+            && driverBookingUpdateOk());
       allow delete: if isAdmin();
 
       // Chat between the booking's client and driver.
@@ -152,7 +184,10 @@ service cloud.firestore {
     // vehicles, payouts…). Staff create; admins read; nobody edits or deletes.
     match /audit_log/{id} {
       allow read:   if isAdmin();
-      allow create: if isAdmin() || isDriver();
+      // Staff may append, but only under their OWN actor id — so a driver can't
+      // forge an entry as an admin. (Server-side entries use the Admin SDK.)
+      allow create: if (isAdmin() || isDriver())
+        && request.resource.data.actorUid == request.auth.uid;
       allow update, delete: if false;
     }
 
@@ -195,10 +230,17 @@ service cloud.firestore {
           && request.resource.data.get('stripeCustomerId', '') == resource.data.get('stripeCustomerId', '')
           && request.resource.data.get('stripeSubscriptionId', '') == resource.data.get('stripeSubscriptionId', '');
       }
+      // Loyalty points are minted only by the invoice/webhook logic (Admin SDK),
+      // never self-awarded — frozen on every self-update, locked billing or not.
+      function keepsPoints() {
+        return request.resource.data.get('points', 0) == resource.data.get('points', 0);
+      }
       allow read:   if isUser(uid) || isAdmin();
-      allow create: if isUser(uid) && request.resource.data.get('billing', 'local') != 'stripe';
+      allow create: if isUser(uid)
+        && request.resource.data.get('billing', 'local') != 'stripe'
+        && request.resource.data.get('points', 0) == 0;
       allow update: if isAdmin()
-        || (isUser(uid) && (!billingLocked() || keepsStripeTruth()));
+        || (isUser(uid) && keepsPoints() && (!billingLocked() || keepsStripeTruth()));
       allow delete: if isAdmin();
 
       // Invoices are written by the Stripe webhook / renewal logic. In demo
