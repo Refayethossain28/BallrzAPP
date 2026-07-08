@@ -451,6 +451,44 @@ footer.site a:hover{color:var(--gold)}
 .tour-text li{display:flex;gap:11px;color:var(--fg-2);font-size:14px}
 .tour-text li::before{content:'✦';color:var(--gold);flex:none}
 
+/* ── Apple-style pinned horizontal scroller ── */
+/* #using drops the lucent overflow:hidden so position:sticky can pin;
+   the glow orbs stay clipped by their own .glow container. */
+#using{overflow:visible}
+.hscroll{margin:64px calc(-1*var(--pad)) 0;position:relative}
+.hscroll-hint{display:flex;align-items:center;gap:12px;padding:0 var(--pad);margin-bottom:26px;color:var(--fg-3);font-size:12px;letter-spacing:.16em;text-transform:uppercase}
+.hscroll-hint i{width:26px;height:1px;background:var(--gold);display:inline-block}
+.hstick{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;scrollbar-width:none}
+.hstick::-webkit-scrollbar{display:none}
+.htrack{display:flex;gap:clamp(18px,3vw,40px);padding:0 var(--pad);width:max-content}
+.hpanel{
+  flex:none;scroll-snap-align:center;width:min(82vw,380px);
+  display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:26px;
+  padding:8px 0 4px;text-align:center;
+}
+.hpanel .cap .n{font-family:var(--serif);font-style:italic;color:var(--gold);font-size:15px;margin-bottom:10px}
+.hpanel .cap h3{font-size:clamp(24px,3vw,34px);line-height:1.08;margin-bottom:10px}
+.hpanel .cap p{color:var(--fg-2);font-size:14px;max-width:34ch;margin:0 auto}
+.hpanel .device{width:min(232px,26vh)}
+.hprogress{display:none}
+/* Pinned mode (desktop, JS-enabled): the section grows tall and the track
+   translates horizontally as you scroll vertically — the row of screens is
+   clipped to the viewport, exactly like Apple's feature walkthroughs. */
+.hscroll.is-pinned{margin-top:0}
+.hscroll.is-pinned .hstick{
+  position:sticky;top:0;height:100vh;height:100svh;overflow:hidden;
+  scroll-snap-type:none;display:flex;flex-direction:column;justify-content:center;
+}
+.hscroll.is-pinned .htrack{padding:0 clamp(48px,9vw,140px);will-change:transform;align-items:center;flex:1}
+.hscroll.is-pinned .hpanel{width:clamp(340px,40vw,460px);justify-content:center;height:100%}
+.hscroll.is-pinned .hpanel .device{width:min(236px,30vh)}
+.hscroll.is-pinned .hprogress{
+  display:block;position:absolute;bottom:clamp(24px,5vh,46px);left:50%;transform:translateX(-50%);
+  width:min(240px,42vw);height:2px;background:var(--border);border-radius:2px;overflow:hidden;
+}
+.hscroll.is-pinned .hprogress b{display:block;height:100%;width:100%;background:linear-gradient(90deg,var(--gold-b),var(--gold-hi));transform-origin:left;transform:scaleX(0)}
+.hscroll.is-pinned .hscroll-hint{position:absolute;top:clamp(30px,7vh,64px);left:0;right:0;justify-content:center;z-index:3;margin:0}
+
 /* Install band */
 .install{margin-top:60px;display:grid;grid-template-columns:repeat(2,1fr);gap:20px}
 .install .plat{padding:28px 30px;border-radius:20px;display:flex;gap:18px;align-items:flex-start}
@@ -804,141 +842,99 @@ footer.site a:hover{color:var(--gold)}
       <div class="plat glass rv rv-d1"><div class="g">🤖</div><div><h4>Step 0 · Android (Chrome)</h4><p>Open ApexVIP, tap the <b>⋮</b> menu, then <b>Install app</b>. It works offline and updates itself.</p></div></div>
     </div>
 
-    <div class="tour">
-      <!-- Step 1 -->
-      <div class="tour-row">
-        <div class="tour-text rv">
-          <div class="tour-step">Step 1</div>
-          <h3>Ask ApexAI</h3>
-          <p>Open the app and just describe your journey. ApexAI understands plain English and does the rest — you never fill in a form unless you want to.</p>
-          <ul>
-            <li>“S-Class to Heathrow T5 tomorrow, by 9am”</li>
-            <li>Airports, flight numbers and “after my meeting” all understood</li>
-            <li>Prefer to tap? Choose your service and route by hand instead</li>
-          </ul>
-        </div>
-        <div class="device rv rv-d1"><div class="screen">
-          <div class="sc-bar">9:41<span class="rt">5G ▰▰▰</span></div>
-          <div class="sc-body">
-            <div><div class="sc-hsub">ApexVIP</div><div class="sc-h">Where to?</div></div>
-            <div class="sc-chips"><span class="sc-chip on">Airport</span><span class="sc-chip">By the hour</span><span class="sc-chip">Point to point</span><span class="sc-chip">Aviation</span><span class="sc-chip">Events</span></div>
-            <div class="sc-card"><div class="r"><span>From</span><b>Home</b></div><div class="r"><span>To</span><b>Heathrow&nbsp;T5</b></div><div class="r"><span>When</span><b>Tomorrow · 07:10</b></div></div>
-            <div class="sc-prompt">S-Class to Heathrow when BA284 lands…<span class="send">↑</span></div>
-          </div>
-        </div></div>
-      </div>
+    <div class="hscroll" id="appScroll">
+      <div class="hstick">
+        <div class="hscroll-hint"><i></i>Scroll to explore<i></i></div>
+        <div class="htrack">
 
-      <!-- Step 2 -->
-      <div class="tour-row rev">
-        <div class="tour-text rv">
-          <div class="tour-step">Step 2</div>
-          <h3>Tailor every detail</h3>
-          <p>Pick your car and add exactly what you need. The fare is fixed on screen before you confirm — inclusive of VAT, with no surge, ever.</p>
-          <ul>
-            <li>Mercedes-Benz S-Class, V-Class, or Rolls-Royce on request</li>
-            <li>Still water, Wi-Fi, child seat, flowers or a carbon offset</li>
-            <li>See the exact price before you commit</li>
-          </ul>
-        </div>
-        <div class="device rv rv-d1"><div class="screen">
-          <div class="sc-bar">9:41<span class="rt">5G ▰▰▰</span></div>
-          <div class="sc-body">
-            <div><div class="sc-hsub">Choose your car</div><div class="sc-h">Mercedes S-Class</div></div>
-            <div class="sc-card"><div class="r"><b>S-Class</b><span>£95 fixed</span></div><div class="r"><span>Up to 3 guests · 2 cases</span></div></div>
-            <div class="sc-hsub" style="margin-top:2px">Add to your ride</div>
-            <div class="sc-amen"><span class="on">Still water</span><span class="on">Wi-Fi</span><span>Child seat</span><span class="on">Flowers</span><span>Carbon offset</span></div>
-            <div class="sc-cta">Confirm · £95 incl. VAT</div>
-          </div>
-        </div></div>
-      </div>
+          <article class="hpanel">
+            <div class="cap"><div class="n">Step 1</div><h3>Ask ApexAI</h3><p>Describe your journey in plain English — airports, flight numbers, even “after my meeting”. It's booked.</p></div>
+            <div class="device"><div class="screen">
+              <div class="sc-bar">9:41<span class="rt">5G ▰▰▰</span></div>
+              <div class="sc-body">
+                <div><div class="sc-hsub">ApexVIP</div><div class="sc-h">Where to?</div></div>
+                <div class="sc-chips"><span class="sc-chip on">Airport</span><span class="sc-chip">By the hour</span><span class="sc-chip">Point to point</span><span class="sc-chip">Aviation</span><span class="sc-chip">Events</span></div>
+                <div class="sc-card"><div class="r"><span>From</span><b>Home</b></div><div class="r"><span>To</span><b>Heathrow&nbsp;T5</b></div><div class="r"><span>When</span><b>Tomorrow · 07:10</b></div></div>
+                <div class="sc-prompt">S-Class to Heathrow when BA284 lands…<span class="send">↑</span></div>
+              </div>
+            </div></div>
+          </article>
 
-      <!-- Step 3 -->
-      <div class="tour-row">
-        <div class="tour-text rv">
-          <div class="tour-step">Step 3</div>
-          <h3>Watch every mile</h3>
-          <p>The moment you book, your chauffeur appears on a live map with their car, plate and rating. Share a live link so whoever's meeting you can follow along too.</p>
-          <ul>
-            <li>Real-time location and precise ETA</li>
-            <li>Chauffeur name, vehicle and registration up front</li>
-            <li>One-tap shareable tracking link</li>
-          </ul>
-        </div>
-        <div class="device rv rv-d1"><div class="screen">
-          <div class="sc-bar">9:41<span class="rt">5G ▰▰▰</span></div>
-          <div class="sc-map">
-            <svg viewBox="0 0 240 380" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-              <rect width="240" height="380" fill="#0c0a08"/>
-              <g stroke="rgba(245,240,232,.06)" stroke-width="6" stroke-linecap="round">
-                <line x1="-10" y1="70" x2="250" y2="118"/><line x1="-10" y1="205" x2="250" y2="252"/>
-                <line x1="42" y1="-10" x2="92" y2="390"/><line x1="172" y1="-10" x2="212" y2="390"/>
-              </g>
-              <g stroke="rgba(245,240,232,.035)" stroke-width="3">
-                <line x1="-10" y1="140" x2="250" y2="180"/><line x1="120" y1="-10" x2="150" y2="390"/>
-              </g>
-              <defs><linearGradient id="rg" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#b8902a"/><stop offset="1" stop-color="#ecd9ae"/></linearGradient></defs>
-              <path d="M55 300 C 90 255, 108 224, 148 172 S 182 104, 192 68" fill="none" stroke="url(#rg)" stroke-width="4" stroke-linecap="round"/>
-              <circle cx="55" cy="300" r="6" fill="none" stroke="#D4AF6E" stroke-width="3"/>
-              <circle cx="192" cy="68" r="7" fill="#D4AF6E"/>
-              <circle cx="120" cy="204" r="11" fill="rgba(212,175,110,.22)"/><circle cx="120" cy="204" r="5" fill="#f5f0e8"/>
-            </svg>
-            <div class="sc-track glass"><div class="av"></div><div><b>James · S-Class</b><small>LR68 AVP · 4.9 ★</small></div><div class="eta">4 min</div></div>
-          </div>
-        </div></div>
-      </div>
+          <article class="hpanel">
+            <div class="cap"><div class="n">Step 2</div><h3>Tailor every detail</h3><p>Choose your car and add water, Wi-Fi, a child seat or flowers. The fixed fare shows before you confirm.</p></div>
+            <div class="device"><div class="screen">
+              <div class="sc-bar">9:41<span class="rt">5G ▰▰▰</span></div>
+              <div class="sc-body">
+                <div><div class="sc-hsub">Choose your car</div><div class="sc-h">Mercedes S-Class</div></div>
+                <div class="sc-card"><div class="r"><b>S-Class</b><span>£95 fixed</span></div><div class="r"><span>Up to 3 guests · 2 cases</span></div></div>
+                <div class="sc-hsub" style="margin-top:2px">Add to your ride</div>
+                <div class="sc-amen"><span class="on">Still water</span><span class="on">Wi-Fi</span><span>Child seat</span><span class="on">Flowers</span><span>Carbon offset</span></div>
+                <div class="sc-cta">Confirm · £95 incl. VAT</div>
+              </div>
+            </div></div>
+          </article>
 
-      <!-- Step 4 -->
-      <div class="tour-row rev">
-        <div class="tour-text rv">
-          <div class="tour-step">Step 4</div>
-          <h3>Talk to your chauffeur</h3>
-          <p>Message directly in the app — a change of door, a quick hello, a special request. No phone numbers exchanged, nothing missed.</p>
-          <ul>
-            <li>Private in-app chat, start to finish</li>
-            <li>Share notes and preferences ahead of pickup</li>
-            <li>Your details stay yours</li>
-          </ul>
-        </div>
-        <div class="device rv rv-d1"><div class="screen">
-          <div class="sc-bar">9:41<span class="rt">5G ▰▰▰</span></div>
-          <div class="sc-body">
-            <div><div class="sc-hsub">Chauffeur · en route</div><div class="sc-h">James</div></div>
-            <div class="sc-chat">
-              <div class="sc-b them">Good morning — two minutes away, black S-Class.</div>
-              <div class="sc-b me">Perfect, I'll be at the main entrance.</div>
-              <div class="sc-b them">I'll wait right there. Water's chilled, cabin at 21°.</div>
-              <div class="sc-b me">You're a legend, thank you.</div>
-            </div>
-            <div class="sc-prompt">Message James…<span class="send">↑</span></div>
-          </div>
-        </div></div>
-      </div>
+          <article class="hpanel">
+            <div class="cap"><div class="n">Step 3</div><h3>Watch every mile</h3><p>Your chauffeur appears on a live map with car, plate and rating — share a link so anyone meeting you can follow too.</p></div>
+            <div class="device"><div class="screen">
+              <div class="sc-bar">9:41<span class="rt">5G ▰▰▰</span></div>
+              <div class="sc-map">
+                <svg viewBox="0 0 240 380" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+                  <rect width="240" height="380" fill="#0c0a08"/>
+                  <g stroke="rgba(245,240,232,.06)" stroke-width="6" stroke-linecap="round">
+                    <line x1="-10" y1="70" x2="250" y2="118"/><line x1="-10" y1="205" x2="250" y2="252"/>
+                    <line x1="42" y1="-10" x2="92" y2="390"/><line x1="172" y1="-10" x2="212" y2="390"/>
+                  </g>
+                  <g stroke="rgba(245,240,232,.035)" stroke-width="3">
+                    <line x1="-10" y1="140" x2="250" y2="180"/><line x1="120" y1="-10" x2="150" y2="390"/>
+                  </g>
+                  <defs><linearGradient id="rg" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#b8902a"/><stop offset="1" stop-color="#ecd9ae"/></linearGradient></defs>
+                  <path d="M55 300 C 90 255, 108 224, 148 172 S 182 104, 192 68" fill="none" stroke="url(#rg)" stroke-width="4" stroke-linecap="round"/>
+                  <circle cx="55" cy="300" r="6" fill="none" stroke="#D4AF6E" stroke-width="3"/>
+                  <circle cx="192" cy="68" r="7" fill="#D4AF6E"/>
+                  <circle cx="120" cy="204" r="11" fill="rgba(212,175,110,.22)"/><circle cx="120" cy="204" r="5" fill="#f5f0e8"/>
+                </svg>
+                <div class="sc-track glass"><div class="av"></div><div><b>James · S-Class</b><small>LR68 AVP · 4.9 ★</small></div><div class="eta">4 min</div></div>
+              </div>
+            </div></div>
+          </article>
 
-      <!-- Step 5 -->
-      <div class="tour-row">
-        <div class="tour-text rv">
-          <div class="tour-step">Step 5</div>
-          <h3>Step out — that's it</h3>
-          <p>No cash, no card at the kerb. Your fixed fare settles automatically, a receipt lands in your trips, points are added, and you can rate the journey in a tap.</p>
-          <ul>
-            <li>Apple Pay, Google Pay, saved card, ApexCoin or on account</li>
-            <li>VAT receipt saved to your trip history</li>
-            <li>ApexVIP points earned on every pound</li>
-          </ul>
+          <article class="hpanel">
+            <div class="cap"><div class="n">Step 4</div><h3>Talk to your chauffeur</h3><p>Message directly in the app — a change of door, a quick hello. No numbers exchanged, nothing missed.</p></div>
+            <div class="device"><div class="screen">
+              <div class="sc-bar">9:41<span class="rt">5G ▰▰▰</span></div>
+              <div class="sc-body">
+                <div><div class="sc-hsub">Chauffeur · en route</div><div class="sc-h">James</div></div>
+                <div class="sc-chat">
+                  <div class="sc-b them">Good morning — two minutes away, black S-Class.</div>
+                  <div class="sc-b me">Perfect, I'll be at the main entrance.</div>
+                  <div class="sc-b them">I'll wait right there. Water's chilled, cabin at 21°.</div>
+                  <div class="sc-b me">You're a legend, thank you.</div>
+                </div>
+                <div class="sc-prompt">Message James…<span class="send">↑</span></div>
+              </div>
+            </div></div>
+          </article>
+
+          <article class="hpanel">
+            <div class="cap"><div class="n">Step 5</div><h3>Step out — that's it</h3><p>Your fixed fare settles automatically, a VAT receipt lands in your trips, points are added — rate the ride in a tap.</p></div>
+            <div class="device"><div class="screen">
+              <div class="sc-bar">9:41<span class="rt">5G ▰▰▰</span></div>
+              <div class="sc-body">
+                <div><div class="sc-hsub">Trip complete</div><div class="sc-h">Home → Heathrow&nbsp;T5</div></div>
+                <div class="sc-row"><span>Fare</span><span>£79.17</span></div>
+                <div class="sc-row"><span>VAT (20%)</span><span>£15.83</span></div>
+                <div class="sc-tot"><span>Total paid</span><b>£95</b></div>
+                <div class="sc-pay"><span class="dot"></span> Apple&nbsp;Pay · Amex •••• 1007</div>
+                <div class="sc-pts">You earned <b>95 ApexVIP points</b></div>
+                <div class="sc-stars">★★★★★</div>
+                <div class="sc-cta">Rate your journey</div>
+              </div>
+            </div></div>
+          </article>
+
         </div>
-        <div class="device rv rv-d1"><div class="screen">
-          <div class="sc-bar">9:41<span class="rt">5G ▰▰▰</span></div>
-          <div class="sc-body">
-            <div><div class="sc-hsub">Trip complete</div><div class="sc-h">Home → Heathrow&nbsp;T5</div></div>
-            <div class="sc-row"><span>Fare</span><span>£79.17</span></div>
-            <div class="sc-row"><span>VAT (20%)</span><span>£15.83</span></div>
-            <div class="sc-tot"><span>Total paid</span><b>£95</b></div>
-            <div class="sc-pay"><span class="dot"></span> Apple&nbsp;Pay · Amex •••• 1007</div>
-            <div class="sc-pts">You earned <b>95 ApexVIP points</b></div>
-            <div class="sc-stars">★★★★★</div>
-            <div class="sc-cta">Rate your journey</div>
-          </div>
-        </div></div>
+        <div class="hprogress"><b></b></div>
       </div>
     </div>
 
@@ -1346,6 +1342,60 @@ footer.site a:hover{color:var(--gold)}
   /* Hero video: skip on reduced motion or data saver */
   const v = document.getElementById('heroVideo');
   if (reduced || navigator.connection?.saveData) { v.removeAttribute('autoplay'); v.pause(); v.remove(); }
+
+  /* ── Apple-style scroll behaviour ────────────────────────────────────
+     A pinned section whose row of app screens scrubs sideways as you
+     scroll down (desktop); native swipe on mobile. Plus a parallax hero. */
+  const scrollFns = [];
+  let scrollQueued = false;
+  const runScroll = () => { for (const f of scrollFns) f(); scrollQueued = false; };
+  addEventListener('scroll', () => { if (!scrollQueued) { scrollQueued = true; requestAnimationFrame(runScroll); } }, { passive: true });
+
+  if (!reduced) {
+    /* Horizontal pinned scroller */
+    const hs = document.getElementById('appScroll');
+    if (hs) {
+      const stick = hs.querySelector('.hstick');
+      const track = hs.querySelector('.htrack');
+      const bar = hs.querySelector('.hprogress b');
+      const wide = matchMedia('(min-width: 821px)');
+      let travel = 0, pinned = false;
+      const update = () => {
+        if (!pinned) return;
+        const rect = hs.getBoundingClientRect();
+        const total = hs.offsetHeight - window.innerHeight;
+        const p = total > 0 ? Math.min(1, Math.max(0, -rect.top / total)) : 0;
+        track.style.transform = 'translate3d(' + (-p * travel).toFixed(2) + 'px,0,0)';
+        if (bar) bar.style.transform = 'scaleX(' + p.toFixed(4) + ')';
+      };
+      const measure = () => {
+        if (!wide.matches) {                       // mobile → native swipe
+          if (pinned) { hs.classList.remove('is-pinned'); hs.style.height = ''; track.style.transform = ''; pinned = false; }
+          return;
+        }
+        if (!pinned) { hs.classList.add('is-pinned'); pinned = true; }
+        travel = Math.max(0, track.scrollWidth - stick.clientWidth);
+        hs.style.height = (window.innerHeight + travel) + 'px';
+        update();
+      };
+      scrollFns.push(update);
+      addEventListener('resize', measure, { passive: true });
+      measure();
+      setTimeout(measure, 400);                    // re-measure after webfonts settle
+    }
+
+    /* Parallax + fade on the hero as it scrolls away */
+    const heroInner = document.querySelector('.hero-inner');
+    if (heroInner) {
+      scrollFns.push(() => {
+        const y = window.scrollY, vh = window.innerHeight;
+        if (y <= vh) {
+          heroInner.style.transform = 'translate3d(0,' + (y * 0.16).toFixed(1) + 'px,0)';
+          heroInner.style.opacity = String(Math.max(0, 1 - y / (vh * 0.9)));
+        }
+      });
+    }
+  }
 })();
 </script>
 
