@@ -87,3 +87,22 @@ jobs:
           npx --prefix apexvip-web playwright install --with-deps chromium
       - name: Booking-flow e2e
         run: npm --prefix apexvip-web run test:e2e:booking
+
+  # TimeCoin gate: drive the real coin/index.html in Chromium against an
+  # in-process relay — locks in the receipt-authorisation rule (no forged
+  # receipts from gossip) and circle money-isolation (a neighbour can't reorg
+  # your chain or rewrite your credit limits). Playwright is CI-only; the app
+  # itself stays zero-dependency.
+  coin-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Chromium (dev-only)
+        run: |
+          npm install --no-save --no-audit --no-fund playwright
+          npx playwright install --with-deps chromium
+      - name: TimeCoin end-to-end regression tests
+        run: node scripts/test-coin-e2e.mjs
