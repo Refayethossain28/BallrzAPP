@@ -526,6 +526,10 @@
 <div class="row" id="offerFilters">
   <input id="offerSearch" data-i18n-ph="ph_search" placeholder="🔎 Search offers, people, circles…" autocomplete="off" style="flex:1;min-width:160px">
   <select id="offerFilter"></select>
+  <select id="offerScope" style="display:none" title="Which circles’ offers to show">
+    <option value="">◇ All circles</option>
+    <option value="mine">◇ My circle only</option>
+  </select>
 </div>
 <div class="list" id="offers"></div>
 
@@ -2089,8 +2093,13 @@
     }
     if ($('offerCircle') && !$('offerCircle').value && typeof myCircle === 'string' && myCircle) $('offerCircle').value = myCircle;
   }
-  function offerMatches(o, q, cat) {
+  // Is this offer's home circle a DIFFERENT circle than mine? (a neighbour's)
+  function offerFromOther(o) {
+    return !!(o.circle && typeof myCircle === 'string' && myCircle && o.circle !== myCircle);
+  }
+  function offerMatches(o, q, cat, scope) {
     if (cat && o.category !== cat) return false;
+    if (scope === 'mine' && offerFromOther(o)) return false; // hide neighbours' offers
     if (!q) return true;
     var hay = (o.title + ' ' + (o.desc || '') + ' ' + (o.name || '') + ' ' + (o.category || '') + ' ' + (o.circle || '')).toLowerCase();
     return hay.indexOf(q) >= 0;
@@ -2103,8 +2112,12 @@
     var mine = myAddresses();
     var q = ($('offerSearch') ? $('offerSearch').value : '').trim().toLowerCase();
     var cat = $('offerFilter') ? $('offerFilter').value : '';
+    var scope = $('offerScope') ? $('offerScope').value : '';
     var all = Object.keys(offers).map(function (id) { return offers[id]; }).sort(function (a, b) { return b.at - a.at; });
-    var list = all.filter(function (o) { return offerMatches(o, q, cat); });
+    // Only surface the "my circle / all circles" toggle once a neighbour's offer
+    // is actually present — single-circle users never see the extra control.
+    if ($('offerScope')) $('offerScope').style.display = all.some(offerFromOther) ? '' : 'none';
+    var list = all.filter(function (o) { return offerMatches(o, q, cat, scope); });
     $('offers').innerHTML = list.length ? list.map(function (o) {
       var isMine = mine[o.address];
       var action = isMine
@@ -2859,6 +2872,7 @@
   });
   if ($('offerSearch')) $('offerSearch').addEventListener('input', renderOffers);
   if ($('offerFilter')) $('offerFilter').addEventListener('change', renderOffers);
+  if ($('offerScope')) $('offerScope').addEventListener('change', renderOffers);
 
   // Per-deal chat inputs: remember the draft (so an incoming message mid-typing
   // doesn't wipe it) and send on Enter.
