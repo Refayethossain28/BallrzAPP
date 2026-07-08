@@ -126,6 +126,34 @@ test('a substituted (non-committed) batch is rejected at reveal', () => {
   assert.equal(res.reason, 'revealed batch does not match its commitment');
 });
 
+test('the beacon selects a batch deterministically and spreads across all of them', () => {
+  const k = 4;
+  assert.equal(H.beaconSelect('blockhash-abc', k), H.beaconSelect('blockhash-abc', k), 'deterministic');
+  const seen = new Set();
+  for (let i = 0; i < 200; i++) seen.add(H.beaconSelect('beacon-' + i, k));
+  assert.equal(seen.size, k, 'every batch index is reachable');
+  assert.ok([...seen].every((x) => x >= 0 && x < k), 'indices in range');
+});
+
+test('beacon-driven reveal scores the beacon-selected batch and rejects any other', () => {
+  const { seal, task, genesis, trained } = scenario(); // 2 sealed batches
+  const beacon = 'future-block-hash-9f3a';
+  const idx = H.beaconSelect(beacon, seal.commitments.length);
+  const chosen = seal.sealed[idx], other = seal.sealed[(idx + 1) % seal.sealed.length];
+  const base = {
+    task, parentWeights: genesis, weights: trained,
+    weightsCommitment: H.commitWeights(trained), beacon, commitments: seal.commitments
+  };
+  const good = H.settleWithBeacon({ ...base, reveal: { salt: chosen.salt, features: chosen.features, labels: chosen.labels } });
+  assert.equal(good.ok, true, good.reason);
+  assert.equal(good.batchIndex, idx, 'used the beacon-selected batch');
+  assert.ok(good.reward > 0 && good.testAccuracy > 0.9, 'genuine generalisation still rewarded');
+  // revealing a different (authentic) batch than the beacon names is rejected
+  const bad = H.settleWithBeacon({ ...base, reveal: { salt: other.salt, features: other.features, labels: other.labels } });
+  assert.equal(bad.ok, false);
+  assert.equal(bad.reason, 'revealed batch does not match its commitment');
+});
+
 // ---- runner ----------------------------------------------------------------
 let failed = 0;
 for (const [name, fn] of tests) {

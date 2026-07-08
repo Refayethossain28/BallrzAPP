@@ -195,6 +195,26 @@ accuracy in the tests); a model that did nothing earns zero.
 > trades some of that for a guarantee the base layer cannot give. Use it where a
 > trusted data provider is acceptable.
 
+#### Beacon-driven reveal — narrowing the trust
+
+`settleWithBeacon()` removes the *revealer's discretion*: the batch to score is
+chosen by `beaconSelect(beacon, k)`, where the **beacon** is an unpredictable
+value fixed only after the miner commits (in a live chain, a future block hash).
+The author can then only reveal the batch the beacon names — revealing any other
+batch, even an authentic one, fails the commitment check — so they cannot
+cherry-pick an easy batch or reorder reveals, and a miner cannot precompute
+against a known challenge.
+
+What the beacon **cannot** do is make this trustless: it selects among data that
+still has to be *withheld* by someone, and a beacon can't conjure unseen data out
+of a public dataset. So it narrows the trust surface — from "trust the revealer's
+ordering **and** honesty **and** that they don't leak/self-train" down to just
+"trust they don't leak or self-train" — without reaching trustlessness. The only
+fully-trustless version would draw fresh samples from a live external data feed
+the beacon indexes into, which a fixed embedded dataset fundamentally cannot be.
+(The temporal ordering — beacon fixed *after* commit — is a network-protocol
+assumption; the checkable cryptography is implemented and tested.)
+
 ## Production cost & economics
 
 A miner's cost is **CPU time spent training** — real compute, hence real

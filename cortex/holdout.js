@@ -130,9 +130,53 @@
 
   function round9(x) { return Math.round(x * 1e9) / 1e9; }
 
+  /* ----------------------------------------------------------------------
+   * Beacon-driven reveal — removing the revealer's discretion.
+   * ----------------------------------------------------------------------
+   * Plain settle() lets the author choose which sealed batch to reveal. A
+   * BEACON — an unpredictable value fixed only AFTER the miner commits, e.g. a
+   * future block hash — takes that choice away: the batch index is derived from
+   * the beacon, so the author can only reveal the batch the beacon names (and
+   * the commitment check forces it to be the authentic one). This removes two
+   * trust needs — cherry-picking an easy batch, and reordering/replaying
+   * reveals — and, because the beacon postdates the commit, stops a miner
+   * precomputing against a known challenge.
+   *
+   * What it does NOT remove: someone still has to WITHHOLD the sealed data and
+   * not leak it or train on it. A beacon cannot conjure unseen data out of a
+   * public dataset, so this narrows the trust surface — it does not reach
+   * trustlessness. Fully trustless generalisation would need a live external
+   * data feed the beacon draws fresh samples from, which a fixed dataset can't
+   * be. The temporal ordering (beacon fixed after commit) is a network-protocol
+   * assumption; the checkable cryptography is here.
+   * ==================================================================== */
+  function beaconSelect(beacon, k) {
+    // 8 hex chars = 32 bits, exact as a JS integer, so the low bits `% k` needs
+    // are preserved (a wider slice overflows 2^53 and biases the result to 0).
+    return (parseInt(coin().sha256('beacon:' + String(beacon)).slice(0, 8), 16) >>> 0) % k;
+  }
+
+  // Like settle(), but the scored batch is chosen by the beacon rather than by
+  // the caller: the reveal must be for commitments[beaconSelect(beacon, k)].
+  // Revealing any other batch — even an authentic one — fails the commitment
+  // check inside settle(). Adds `batchIndex` to the result.
+  function settleWithBeacon(opts) {
+    var k = opts.commitments.length;
+    if (!k) return { ok: false, reason: 'no sealed commitments' };
+    var idx = beaconSelect(opts.beacon, k);
+    var res = settle({
+      task: opts.task, parentWeights: opts.parentWeights, weights: opts.weights,
+      weightsCommitment: opts.weightsCommitment, batchCommitment: opts.commitments[idx],
+      reveal: opts.reveal
+    });
+    res.batchIndex = idx;
+    return res;
+  }
+
   return {
-    version: '1.0.0',
+    version: '1.1.0',
     canonBatch: canonBatch, commit: commit, verifyReveal: verifyReveal,
-    commitWeights: commitWeights, prepareHoldout: prepareHoldout, settle: settle
+    commitWeights: commitWeights, prepareHoldout: prepareHoldout, settle: settle,
+    beaconSelect: beaconSelect, settleWithBeacon: settleWithBeacon
   };
 });
