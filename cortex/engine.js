@@ -54,6 +54,21 @@
 
   var GENESIS_PREV = '0000000000000000000000000000000000000000000000000000000000000000';
 
+  // MIND — the chain's spendable token.
+  // ------------------------------------
+  // One MIND divides into 1,000,000 base units ("synapses"). Mining a block
+  // mints MIND *to the miner in proportion to the learning it contributed* —
+  // exactly REWARD_PER_LOSS base units for every 1.0 of average loss the block
+  // removed. So the reward is earned by teaching the shared model, not by
+  // showing up, and the TOTAL money supply is bounded by the total knowledge
+  // the network can ever create: it can never exceed (genesis loss × REWARD)
+  // and stops growing the moment the model converges. MIND then moves between
+  // wallets as ordinary secp256k1-signed transfers carried inside blocks, with
+  // balances that can never go negative — you cannot spend MIND you have not
+  // earned or been paid.
+  var MIND = 1000000;            // base units ("synapses") in one MIND
+  var REWARD_PER_LOSS = MIND;    // base units minted per 1.0 of average loss removed (1.0 loss → 1 MIND)
+
   var DEFAULTS = {
     ticker: 'MIND',
     samples: 120,        // size of the shared dataset
@@ -62,6 +77,21 @@
     minImprovement: 0.004, // a block must cut average loss by at least this much
     quantum: 1e-6        // weights are rounded to this grid before hashing/scoring
   };
+
+  // Base units minted for lowering the model's average loss from `prevLoss` to
+  // `newLoss`. Always positive for a valid block (it must improve by at least
+  // the task's minImprovement). This is the coinbase reward.
+  function blockReward(prevLoss, newLoss) {
+    return Math.max(0, Math.round((prevLoss - newLoss) * REWARD_PER_LOSS));
+  }
+
+  // Format a base-unit amount as a human MIND string, e.g. 1900000 -> "1.9 MIND".
+  function formatMind(units, ticker) {
+    var sign = units < 0 ? '-' : '', abs = Math.abs(units);
+    var whole = Math.floor(abs / MIND);
+    var frac = String(abs % MIND + MIND).slice(1).replace(/0+$/, '');
+    return sign + whole + (frac ? '.' + frac : '') + ' ' + (ticker || DEFAULTS.ticker);
+  }
 
   /* ======================================================================
    * Deterministic randomness — mulberry32, seeded from a string via SHA-256,
@@ -222,12 +252,82 @@
     return coin().sha256(s);
   }
 
+  /* ----------------------------------------------------------------------
+   * MIND transfers — secp256k1-signed spends carried inside blocks. A block
+   * pays its miner the coinbase reward, then applies its transfers in order;
+   * the ledger (below) rejects any transfer that would overdraw the sender.
+   * -------------------------------------------------------------------- */
+  function txCanonical(tx) { return [tx.from, tx.to, tx.amount, tx.at, tx.nonce].join('|'); }
+  function txId(tx) { return coin().sha256d(txCanonical(tx) + '|' + tx.pubKey + '|' + tx.sig); }
+
+  // Sign a transfer of `amount` base units from the holder of privKey to `to`.
+  // `at`/`nonce` are supplied (deterministic, so the ledger is fully testable);
+  // (from, nonce) may be used only once on the chain, which stops replay.
+  function signTransfer(opts) {
+    var C = coin(), pub = C.getPublicKey(opts.privKey);
+    var tx = {
+      from: C.addressFromPublicKey(pub), to: String(opts.to),
+      amount: Math.floor(opts.amount), at: Number(opts.at || 0),
+      nonce: String(opts.nonce), pubKey: pub
+    };
+    tx.sig = C.sign(C.sha256(txCanonical(tx)), opts.privKey);
+    tx.id = txId(tx);
+    return tx;
+  }
+
+  // A transfer is well-formed iff addresses are valid and distinct, the amount
+  // is a positive integer, the public key matches `from`, and the signature
+  // verifies. (Sufficient balance is a ledger rule, checked when it's applied.)
+  function verifyTransfer(tx) {
+    var C = coin();
+    if (!tx || typeof tx !== 'object') return false;
+    if (!C.isValidAddress(tx.from) || !C.isValidAddress(tx.to) || tx.from === tx.to) return false;
+    if (!Number.isInteger(tx.amount) || tx.amount <= 0) return false;
+    if (!tx.pubKey || C.addressFromPublicKey(tx.pubKey) !== tx.from) return false;
+    try { return C.verify(C.sha256(txCanonical(tx)), tx.sig, tx.pubKey); }
+    catch (e) { return false; }
+  }
+
+  // Commitment to a block's transfers, folded into the block hash so the set of
+  // spends is tamper-evident and signed by the miner along with everything else.
+  function txsRoot(txs) { return coin().sha256((txs || []).map(function (t) { return t.id; }).join('|')); }
+
   // The canonical, signature-covered, hash-linked string for a block. Field
   // order is fixed so every node hashes identical bytes. Excludes `sig`/`hash`.
   function canonical(b) {
-    return [b.index, b.prevHash, b.taskId, b.weightsHash, b.loss.toFixed(9), b.miner, b.pubKey, b.at, b.nonce].join('|');
+    return [b.index, b.prevHash, b.taskId, b.weightsHash, b.loss.toFixed(9),
+            b.reward, b.txsRoot, b.miner, b.pubKey, b.at, b.nonce].join('|');
   }
   function blockHash(b) { return coin().sha256d(canonical(b)); }
+
+  /* ----------------------------------------------------------------------
+   * The MIND ledger — positive balances derived by folding a chain: each
+   * block credits the coinbase reward to its miner, then its transfers move
+   * value between wallets. A transfer that would overdraw the sender, or
+   * reuse a (from, nonce) pair, makes the whole block invalid (as in Bitcoin).
+   * -------------------------------------------------------------------- */
+  function emptyLedger() { return { bal: {}, used: {} }; }
+  function cloneLedger(L) {
+    var out = emptyLedger(), k;
+    for (k in L.bal) if (L.bal.hasOwnProperty(k)) out.bal[k] = L.bal[k];
+    for (k in L.used) if (L.used.hasOwnProperty(k)) out.used[k] = L.used[k];
+    return out;
+  }
+  // Apply one block's economics to ledger `L` in place. Genesis mints nothing.
+  function applyEconomics(L, block) {
+    if (block.index === 0) return { ok: true };
+    L.bal[block.miner] = (L.bal[block.miner] || 0) + block.reward; // coinbase
+    var txs = block.txs || [];
+    for (var i = 0; i < txs.length; i++) {
+      var tx = txs[i], key = tx.from + '|' + tx.nonce;
+      if (L.used[key]) return { ok: false, reason: 'duplicate transfer nonce' };
+      if ((L.bal[tx.from] || 0) < tx.amount) return { ok: false, reason: 'overdraft: spending MIND that is not there' };
+      L.used[key] = 1;
+      L.bal[tx.from] -= tx.amount;
+      L.bal[tx.to] = (L.bal[tx.to] || 0) + tx.amount;
+    }
+    return { ok: true };
+  }
 
   /* ======================================================================
    * The chain.
@@ -248,6 +348,9 @@
       weights: w,
       weightsHash: weightsHash(task, w),
       loss: round9(loss(task, w)),
+      reward: 0,        // genesis mints no MIND
+      txs: [],
+      txsRoot: txsRoot([]),
       miner: '',
       pubKey: '',
       at: Number(opts.at || 0),
@@ -257,6 +360,7 @@
     genesis.hash = blockHash(genesis);
     this.blocks = [genesis];
     this.baselineLoss = genesis.loss;
+    this.ledger = emptyLedger(); // MIND balances, folded as blocks are added
   }
 
   function round9(x) { return Math.round(x * 1e9) / 1e9; }
@@ -269,6 +373,12 @@
   // Total learning on this chain = how far loss has fallen from genesis. This is
   // the "cumulative work" the fork-choice rule maximises.
   Chain.prototype.cumulativeImprovement = function () { return round9(this.baselineLoss - this.tipLoss()); };
+
+  // MIND ledger queries.
+  Chain.prototype.balanceOf = function (addr) { return this.ledger.bal[addr] || 0; };
+  Chain.prototype.totalSupply = function () {
+    var s = 0, b = this.ledger.bal; for (var k in b) if (b.hasOwnProperty(k)) s += b[k]; return s;
+  };
 
   // Train the tip's weights forward into a candidate block signed by `privKey`.
   // Keeps training (in rounds of `steps`) until the loss has dropped by at least
@@ -288,6 +398,7 @@
       if (newLoss <= need) break;
     }
     if (newLoss > need) return null; // couldn't learn enough — chain has converged
+    var txs = (opts.txs || []).slice();
     var block = {
       index: tip.index + 1,
       prevHash: tip.hash,
@@ -295,6 +406,9 @@
       weights: w,
       weightsHash: weightsHash(task, w),
       loss: newLoss,
+      reward: blockReward(tip.loss, newLoss), // MIND earned for this block's learning
+      txs: txs,
+      txsRoot: txsRoot(txs),
       miner: miner,
       pubKey: pub,
       at: Number(opts.at || 0),
@@ -321,6 +435,19 @@
     if (Math.abs(actual - block.loss) > 1e-9) return { ok: false, reason: 'claimed loss is false' };
     // Proof of learning: the model must have genuinely improved by enough.
     if (block.loss > prev.loss - task.minImprovement + 1e-12) return { ok: false, reason: 'insufficient learning' };
+    // Coinbase: the reward must be exactly what this block's learning earns.
+    if (block.reward !== blockReward(prev.loss, block.loss)) return { ok: false, reason: 'wrong block reward' };
+    // Transfers: well-formed set, committed to by txsRoot, no in-block nonce reuse.
+    var txs = block.txs || [];
+    if (!Array.isArray(txs)) return { ok: false, reason: 'bad transfer list' };
+    if (block.txsRoot !== txsRoot(txs)) return { ok: false, reason: 'transfers root mismatch' };
+    var seen = {};
+    for (var t = 0; t < txs.length; t++) {
+      if (!verifyTransfer(txs[t])) return { ok: false, reason: 'invalid transfer' };
+      var nk = txs[t].from + '|' + txs[t].nonce;
+      if (seen[nk]) return { ok: false, reason: 'duplicate transfer in block' };
+      seen[nk] = 1;
+    }
     // Signature: the miner who claims the work must have signed it.
     if (!C.isValidAddress(block.miner)) return { ok: false, reason: 'bad miner address' };
     if (C.addressFromPublicKey(block.pubKey) !== block.miner) return { ok: false, reason: 'pubkey/miner mismatch' };
@@ -333,23 +460,33 @@
   Chain.prototype.addBlock = function (block) {
     var v = this.isValidBlock(block, this.tip());
     if (!v.ok) throw new Error('rejected block: ' + v.reason);
+    var L = cloneLedger(this.ledger);       // apply to a copy, so a bad spend can't corrupt state
+    var e = applyEconomics(L, block);
+    if (!e.ok) throw new Error('rejected block: ' + e.reason);
     this.blocks.push(block);
+    this.ledger = L;
     return true;
   };
 
-  // Validate a whole candidate chain from genesis and return its total learning,
-  // or null if any link is invalid. Used by fork choice.
+  // Validate a whole candidate chain from genesis: returns { improvement, ledger }
+  // (total learning + the resulting MIND balances) or null if any link — the
+  // hash chain, the learning proof, a signature, the coinbase, or a spend — is
+  // invalid. Used by fork choice.
   Chain.prototype.scoreChain = function (blocks) {
     if (!blocks || !blocks.length) return null;
     var g = blocks[0];
     if (g.index !== 0 || g.prevHash !== GENESIS_PREV || g.taskId !== this.task.id) return null;
     if (g.weightsHash !== weightsHash(this.task, g.weights) || g.hash !== blockHash(g)) return null;
     if (Math.abs(round9(loss(this.task, g.weights)) - g.loss) > 1e-9) return null;
+    if (g.reward || (g.txs && g.txs.length) || g.txsRoot !== txsRoot(g.txs || [])) return null; // genesis mints nothing
+    var L = emptyLedger();
     for (var i = 1; i < blocks.length; i++) {
       var v = this.isValidBlock(blocks[i], blocks[i - 1]);
       if (!v.ok) return null;
+      var e = applyEconomics(L, blocks[i]);
+      if (!e.ok) return null;
     }
-    return round9(g.loss - blocks[blocks.length - 1].loss);
+    return { improvement: round9(g.loss - blocks[blocks.length - 1].loss), ledger: L };
   };
 
   // Fork choice: adopt `blocks` iff it is valid, shares our genesis, and has
@@ -357,22 +494,27 @@
   // smartest chain wins). Returns true if we switched.
   Chain.prototype.replaceChain = function (blocks) {
     if (blocks[0] && this.blocks[0] && blocks[0].hash !== this.blocks[0].hash) return false; // different genesis
-    var theirs = this.scoreChain(blocks);
-    if (theirs == null) return false;
-    if (theirs <= this.cumulativeImprovement()) return false;
+    var scored = this.scoreChain(blocks);
+    if (scored == null) return false;
+    if (scored.improvement <= this.cumulativeImprovement()) return false;
     this.blocks = blocks.slice();
+    this.ledger = scored.ledger; // adopt the rival's balances along with its blocks
     return true;
   };
 
   return {
-    version: '1.0.0',
+    version: '1.1.0',
     DEFAULTS: DEFAULTS, GENESIS_PREV: GENESIS_PREV,
+    MIND: MIND, REWARD_PER_LOSS: REWARD_PER_LOSS,
     // task & data
     makeTask: makeTask, randomWeights: randomWeights, quantise: quantise,
     // model
     loss: loss, accuracy: accuracy, predict: predict, train: train, trainStep: trainStep,
     // blocks
     weightsHash: weightsHash, canonical: canonical, blockHash: blockHash,
+    // MIND token
+    blockReward: blockReward, formatMind: formatMind,
+    signTransfer: signTransfer, verifyTransfer: verifyTransfer, txId: txId, txsRoot: txsRoot,
     // chain
     Chain: Chain
   };

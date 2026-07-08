@@ -46,11 +46,14 @@
         <div class="stat"><b id="s-acc">–</b><small>model accuracy</small></div>
         <div class="stat"><b id="s-loss">–</b><small>current loss</small></div>
         <div class="stat"><b id="s-learn">0</b><small>total learning</small></div>
+        <div class="stat"><b id="s-bal">0 MIND</b><small>your wallet</small></div>
+        <div class="stat"><b id="s-supply">0 MIND</b><small>total supply</small></div>
       </div>
-      <button id="mine">⛏️ Mine a block (train the model)</button>
+      <button id="mine">⛏️ Mine a block (train &amp; earn MIND)</button>
+      <button id="send" class="ghost">💸 Send half my MIND to a friend</button>
       <button id="reset" class="ghost">Reset chain</button>
       <div class="blocks" id="blocks"></div>
-      <div class="note">Each block trains from the tip's weights until the loss drops by at least the network's <code>minImprovement</code>. Verifying a block is one forward pass — the loss is recomputed, never trusted. As the model converges, blocks get harder to mine; that's difficulty, straight from the learning curve.</div>
+      <div class="note">Each block trains from the tip's weights until the loss drops by at least the network's <code>minImprovement</code>, and <b>mints MIND to you in proportion to the learning</b> — so the money is earned by teaching the shared model. Verifying a block is one forward pass; the loss (and your reward) is recomputed, never trusted. Total supply is bounded by the knowledge the network can create, and stops growing once the model converges.</div>
     </section>
     <section class="panel">
       <canvas id="view" width="600" height="600"></canvas>
@@ -65,14 +68,16 @@
 (function () {
   'use strict';
   var Cortex = self.BallrzCortex, Coin = self.BallrzCoin;
-  var task, chain, wallet, mining = false;
+  var task, chain, wallet, friend, mining = false;
 
   var $ = function (id) { return document.getElementById(id); };
+  var mind = function (u) { return Cortex.formatMind(u); };
 
   function fresh() {
     task = Cortex.makeTask({ id: 'cortex-live-demo' });
     chain = new Cortex.Chain(task, { genesisSeed: 'demo', at: Date.now() });
     wallet = Coin.generateWallet();
+    friend = Coin.generateWallet();
     render();
   }
 
@@ -81,13 +86,17 @@
     $('s-acc').textContent = (chain.accuracy() * 100).toFixed(1) + '%';
     $('s-loss').textContent = chain.tipLoss().toFixed(4);
     $('s-learn').textContent = chain.cumulativeImprovement().toFixed(4);
+    $('s-bal').textContent = mind(chain.balanceOf(wallet.address));
+    $('s-supply').textContent = mind(chain.totalSupply());
+    $('send').disabled = chain.balanceOf(wallet.address) <= 0;
     var box = $('blocks'); box.innerHTML = '';
     chain.blocks.slice().reverse().forEach(function (b) {
       var row = document.createElement('div'); row.className = 'blk';
-      var who = b.index === 0 ? 'genesis' : (b.miner || '').slice(0, 14) + '…';
+      var who = b.index === 0 ? 'genesis' : (b.miner || '').slice(0, 12) + '…';
+      var right = b.index === 0 ? '—' : '+' + mind(b.reward) + (b.txs && b.txs.length ? ' · ' + b.txs.length + ' tx' : '');
       row.innerHTML = '<span class="h">#' + b.index + '</span>' +
         '<span class="who">' + who + '</span>' +
-        '<span class="loss">loss ' + b.loss.toFixed(4) + '</span>';
+        '<span class="loss">' + right + '</span>';
       box.appendChild(row);
     });
     drawBoundary();
@@ -127,22 +136,41 @@
     return 1 / (1 + Math.exp(-s));
   }
 
-  function mine() {
+  // Mine a block from the given private key, optionally carrying transfers.
+  // Training is heavy, so it runs off a timer to keep the UI responsive.
+  function mineWith(privKey, txs, label) {
     if (mining) return;
-    mining = true; $('mine').disabled = true; $('mine').textContent = 'Training…';
+    mining = true; $('mine').disabled = true; $('send').disabled = true;
+    $('mine').textContent = label || 'Training…';
     setTimeout(function () {
-      var blk = chain.mineBlock({ privKey: wallet.privateKey, steps: 300, at: Date.now(), nonce: 'b' + chain.height() });
+      var blk = chain.mineBlock({ privKey: privKey, steps: 300, at: Date.now(), nonce: 'b' + chain.height(), txs: txs || [] });
       mining = false; $('mine').disabled = false;
       if (!blk) { $('mine').textContent = '✅ Model converged — chain complete'; render(); return; }
       chain.addBlock(blk);
-      $('mine').textContent = '⛏️ Mine a block (train the model)';
+      $('mine').textContent = '⛏️ Mine a block (train & earn MIND)';
       render();
     }, 20);
+  }
+
+  function mine() { mineWith(wallet.privateKey, [], 'Training…'); }
+
+  // Sign a transfer of half your MIND to a fresh "friend" wallet, then mine the
+  // block that settles it (you earn the block's reward too). Demonstrates that
+  // MIND is genuinely spendable, not just a score.
+  function send() {
+    var bal = chain.balanceOf(wallet.address);
+    if (bal <= 0 || mining) return;
+    var tx = Cortex.signTransfer({
+      privKey: wallet.privateKey, to: friend.address,
+      amount: Math.floor(bal / 2), at: Date.now(), nonce: 'pay-' + chain.height()
+    });
+    mineWith(wallet.privateKey, [tx], 'Settling transfer…');
   }
 
   document.addEventListener('DOMContentLoaded', function () {
     fresh();
     $('mine').addEventListener('click', mine);
+    $('send').addEventListener('click', send);
     $('reset').addEventListener('click', fresh);
   });
 })();

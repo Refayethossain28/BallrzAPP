@@ -9,7 +9,9 @@ cryptographic proof that the network now knows a little more than it did before.
 The work is hard to produce and cheap to check (the same asymmetry that makes
 proof-of-work possible), except here the work is *useful*: when the chain
 finishes, the community owns a trained model that everyone helped build and
-anyone can independently verify.
+anyone can independently verify. Miners are paid for that work in **MIND**, a
+spendable token whose entire supply is minted in proportion to how much the
+network actually learned.
 
 ```
 coin/engine.js   ← SHA-256, secp256k1 ECDSA, addresses (reused, unchanged)
@@ -67,6 +69,28 @@ Cortex does not reinvent the crypto — it reuses TimeCoin's
   (`quantum`, default 1e-6) before hashing and scoring, so every node hashes and
   evaluates byte-identical inputs and reaches the same verdict.
 
+## MIND — the spendable token
+
+Learning isn't just scored, it's **paid**. Mining a block mints **MIND** to the
+miner in proportion to the learning it contributed: exactly `REWARD_PER_LOSS`
+base units for every `1.0` of average loss the block removed (one MIND divides
+into 1,000,000 base units, "synapses"). Two consequences fall straight out of
+that rule:
+
+- **You're paid for teaching, not for showing up.** A block that barely moves
+  the model earns barely any MIND; a block that cuts the loss a lot earns a lot.
+- **The money supply is bounded by knowledge.** Total MIND ever minted can't
+  exceed `(genesis loss) × REWARD_PER_LOSS`, and it stops growing the moment the
+  model converges. There's no arbitrary cap to argue about — the cap *is* how
+  much the network can learn.
+
+MIND then moves between wallets as ordinary **secp256k1-signed transfers**
+carried inside blocks. Balances are strictly non-negative — a block containing a
+transfer that would overdraw its sender, or that replays a `(from, nonce)` pair,
+is rejected whole, exactly like an invalid transaction in a Bitcoin block. The
+transfers in a block are committed to by a `txsRoot` folded into the block hash,
+so the miner signs the spends along with the model checkpoint.
+
 ## Using the engine
 
 ```js
@@ -75,22 +99,31 @@ const Cortex = require('./cortex/engine.js'); // needs global BallrzCoin loaded 
 const task  = Cortex.makeTask({ id: 'my-task' });          // shared dataset + model shape
 const chain = new Cortex.Chain(task, { genesisSeed: 'g' }); // genesis checkpoint
 
-// mine: train the tip forward into a signed block
+// mine: train the tip forward into a signed block — miner earns MIND
 const block = chain.mineBlock({ privKey, steps: 400 });
-chain.addBlock(block);                    // verifies, then appends
+chain.addBlock(block);                    // verifies learning + economics, then appends
 
 chain.height();                 // number of blocks mined
 chain.tipLoss();                // the shared model's current loss
 chain.accuracy();               // its accuracy on the task
 chain.cumulativeImprovement();  // total learning = the chain's "weight"
 
-// converge on the smartest chain
+// the MIND token
+chain.balanceOf(addr);          // spendable balance, base units
+chain.totalSupply();            // all MIND minted so far
+Cortex.formatMind(units);       // e.g. 1900000 -> "1.9 MIND"
+
+// spend: sign a transfer, hand it to a miner to include in their next block
+const tx = Cortex.signTransfer({ privKey, to: payeeAddr, amount: 500000, at, nonce: 'n1' });
+chain.addBlock(chain.mineBlock({ privKey: minerKey, steps: 400, txs: [tx] }));
+
+// converge on the smartest chain (balances are rebuilt from the adopted chain)
 chain.replaceChain(rivalBlocks); // adopts it iff it learned strictly more
 ```
 
 `mineBlock` returns `null` once the model has effectively converged and no
 block can clear the `minImprovement` bar — that's the chain reaching its
-natural end.
+natural end, and the point at which MIND issuance stops for good.
 
 ## Demo
 
@@ -107,10 +140,13 @@ npm run test:cortex     # just this prototype
 npm test                # the whole prototype suite (includes Cortex)
 ```
 
-The suite covers dataset/weight determinism, that training actually reduces
-loss and lifts accuracy, block signing and hash-linking, every rejection path
-(false loss, no learning, wrong signer, broken link), and cumulative-learning
-fork choice.
+The suite (20 tests) covers dataset/weight determinism, that training actually
+reduces loss and lifts accuracy, block signing and hash-linking, every learning
+rejection path (false loss, no learning, wrong signer, broken link),
+cumulative-learning fork choice, and the full **MIND token layer**: rewards
+proportional to learning, supply bounded by knowledge, signed transfers that
+conserve value, and every economic rejection path (overdraft, replayed nonce,
+self-minted reward, tampered transfer).
 
 ## Honest limitations
 

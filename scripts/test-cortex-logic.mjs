@@ -132,6 +132,7 @@ test('a block with no real learning is rejected', () => {
   const lazy = {
     index: 1, prevHash: tip.hash, taskId: t.id,
     weights: tip.weights.slice(), weightsHash: tip.weightsHash, loss: tip.loss,
+    reward: 0, txs: [], txsRoot: X.txsRoot([]),
     miner: alice.address, pubKey: alice.publicKey, at: 0, nonce: 'z'
   };
   lazy.sig = C.sign(C.sha256(X.canonical(lazy)), alice.privateKey);
@@ -194,6 +195,106 @@ test('a fork with a doctored middle block is rejected wholesale', () => {
   rogue[2].loss = rogue[2].loss - 0.4; // lie inside the chain
   assert.equal(chain.scoreChain(rogue), null, 'the whole fork is invalid');
   assert.equal(chain.replaceChain(rogue), false, 'and is never adopted');
+});
+
+// ---- MIND token layer ------------------------------------------------------
+
+test('mining mints MIND to the miner in proportion to the learning done', () => {
+  const t = X.makeTask({ id: 'reward' });
+  const chain = new X.Chain(t, { genesisSeed: 'g' });
+  assert.equal(chain.totalSupply(), 0, 'genesis mints nothing');
+  const before = chain.tipLoss();
+  const blk = chain.mineBlock({ privKey: alice.privateKey, steps: 500, nonce: 'r1' });
+  chain.addBlock(blk);
+  const expected = Math.round((before - blk.loss) * X.REWARD_PER_LOSS);
+  assert.equal(blk.reward, expected, 'reward = loss reduced × scale');
+  assert.ok(blk.reward > 0, 'a learning block pays something');
+  assert.equal(chain.balanceOf(alice.address), expected, 'credited to the miner');
+  assert.equal(chain.totalSupply(), expected, 'supply grew by exactly the reward');
+});
+
+test('total MIND supply tracks the total learning on the chain', () => {
+  const t = X.makeTask({ id: 'supply' });
+  const chain = new X.Chain(t, { genesisSeed: 'g' });
+  let i = 0;
+  while (i < 8) { const b = chain.mineBlock({ privKey: alice.privateKey, steps: 300, nonce: 's' + i }); if (!b) break; chain.addBlock(b); i++; }
+  const fromLearning = Math.round(chain.cumulativeImprovement() * X.REWARD_PER_LOSS);
+  // per-block rounding means it's within a base unit or two per block, never runaway
+  assert.ok(Math.abs(chain.totalSupply() - fromLearning) <= chain.height(), 'supply is bounded by knowledge created');
+  assert.equal(chain.totalSupply(), chain.balanceOf(alice.address), 'alice mined it all');
+});
+
+test('a signed transfer moves MIND, conserves supply, and updates balances', () => {
+  const t = X.makeTask({ id: 'spend' });
+  const chain = new X.Chain(t, { genesisSeed: 'g' });
+  chain.addBlock(chain.mineBlock({ privKey: alice.privateKey, steps: 500, nonce: 'm0' }));
+  chain.addBlock(chain.mineBlock({ privKey: alice.privateKey, steps: 500, nonce: 'm1' }));
+  const aliceBal = chain.balanceOf(alice.address);
+  assert.ok(aliceBal > 0, 'alice has earned MIND');
+  const half = Math.floor(aliceBal / 2);
+  const pay = X.signTransfer({ privKey: alice.privateKey, to: bob.address, amount: half, at: 1, nonce: 't1' });
+  const supplyBefore = chain.totalSupply();
+  const blk = chain.mineBlock({ privKey: bob.privateKey, steps: 500, nonce: 'm2', txs: [pay] });
+  chain.addBlock(blk);
+  assert.equal(chain.balanceOf(alice.address), aliceBal - half, 'alice debited');
+  assert.equal(chain.balanceOf(bob.address), half + blk.reward, 'bob got the transfer plus his own reward');
+  assert.equal(chain.totalSupply(), supplyBefore + blk.reward, 'transfers conserve — only the coinbase adds supply');
+});
+
+test('you cannot spend MIND you do not have (overdraft rejected)', () => {
+  const t = X.makeTask({ id: 'overdraft' });
+  const chain = new X.Chain(t, { genesisSeed: 'g' });
+  chain.addBlock(chain.mineBlock({ privKey: alice.privateKey, steps: 500, nonce: 'o0' }));
+  const tooMuch = X.signTransfer({ privKey: alice.privateKey, to: bob.address, amount: chain.balanceOf(alice.address) + 1, at: 1, nonce: 'o1' });
+  const bad = chain.mineBlock({ privKey: bob.privateKey, steps: 500, nonce: 'o2', txs: [tooMuch] });
+  assert.throws(() => chain.addBlock(bad), /overdraft/);
+  assert.equal(chain.height(), 1, 'the bad block never landed');
+});
+
+test('a transfer cannot be replayed with the same nonce', () => {
+  const t = X.makeTask({ id: 'replay' });
+  const chain = new X.Chain(t, { genesisSeed: 'g' });
+  chain.addBlock(chain.mineBlock({ privKey: alice.privateKey, steps: 500, nonce: 'e0' }));
+  const pay = X.signTransfer({ privKey: alice.privateKey, to: bob.address, amount: Math.floor(chain.balanceOf(alice.address) / 4), at: 1, nonce: 'dup' });
+  chain.addBlock(chain.mineBlock({ privKey: bob.privateKey, steps: 500, nonce: 'e1', txs: [pay] }));
+  const again = chain.mineBlock({ privKey: bob.privateKey, steps: 500, nonce: 'e2', txs: [pay] });
+  assert.throws(() => chain.addBlock(again), /duplicate transfer nonce/);
+});
+
+test('a block that mints itself extra MIND is rejected', () => {
+  const t = X.makeTask({ id: 'greedy' });
+  const chain = new X.Chain(t, { genesisSeed: 'g' });
+  const blk = chain.mineBlock({ privKey: alice.privateKey, steps: 500, nonce: 'g1' });
+  const greedy = Object.assign({}, blk, { reward: blk.reward + 5 * X.MIND });
+  greedy.sig = C.sign(C.sha256(X.canonical(greedy)), alice.privateKey);
+  greedy.hash = X.blockHash(greedy);
+  const v = chain.isValidBlock(greedy, chain.tip());
+  assert.equal(v.ok, false);
+  assert.equal(v.reason, 'wrong block reward');
+});
+
+test('tampering with a transferred amount is caught', () => {
+  const t = X.makeTask({ id: 'tamper' });
+  const chain = new X.Chain(t, { genesisSeed: 'g' });
+  chain.addBlock(chain.mineBlock({ privKey: alice.privateKey, steps: 500, nonce: 'p0' }));
+  const pay = X.signTransfer({ privKey: alice.privateKey, to: bob.address, amount: Math.floor(chain.balanceOf(alice.address) / 3), at: 1, nonce: 'x1' });
+  const blk = chain.mineBlock({ privKey: bob.privateKey, steps: 500, nonce: 'p1', txs: [pay] });
+  blk.txs[0] = Object.assign({}, pay, { amount: pay.amount * 2 }); // bump after signing
+  const v = chain.isValidBlock(blk, chain.tip());
+  assert.equal(v.ok, false);
+  assert.ok(['transfers root mismatch', 'invalid transfer'].includes(v.reason), `got: ${v.reason}`);
+});
+
+test('fork choice carries the winning chain\'s MIND balances with it', () => {
+  const t = X.makeTask({ id: 'forkledger' });
+  const nodeA = new X.Chain(t, { genesisSeed: 'g' });
+  nodeA.addBlock(nodeA.mineBlock({ privKey: alice.privateKey, steps: 300, nonce: 'a0' }));
+  const nodeB = new X.Chain(t, { genesisSeed: 'g' });
+  for (let i = 0; i < 5; i++) { const b = nodeB.mineBlock({ privKey: bob.privateKey, steps: 400, nonce: 'b' + i }); if (!b) break; nodeB.addBlock(b); }
+  assert.ok(nodeA.replaceChain(nodeB.blocks), 'A adopts B');
+  assert.equal(nodeA.balanceOf(bob.address), nodeB.balanceOf(bob.address), 'balances rebuilt from the adopted chain');
+  assert.equal(nodeA.balanceOf(alice.address), 0, "A's old reward is gone with its orphaned block");
+  assert.equal(nodeA.totalSupply(), nodeB.totalSupply());
 });
 
 // ---- runner ----------------------------------------------------------------
