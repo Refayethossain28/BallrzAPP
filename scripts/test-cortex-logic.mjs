@@ -197,6 +197,37 @@ test('a fork with a doctored middle block is rejected wholesale', () => {
   assert.equal(chain.replaceChain(rogue), false, 'and is never adopted');
 });
 
+// ---- task-scale presets ----------------------------------------------------
+
+test('scale presets set the production-cost tier and stay overridable', () => {
+  const toy = X.makeTask({ id: 's', scale: 'toy' });
+  const small = X.makeTask({ id: 's', scale: 'small' });
+  const large = X.makeTask({ id: 's', scale: 'large' });
+  assert.equal(toy.scale, 'toy');
+  assert.deepEqual([toy.samples, toy.hidden], [120, 6], 'toy matches the default');
+  // each step up genuinely enlarges the model + dataset (=> more cost per step)
+  assert.ok(small.samples > toy.samples && small.hidden > toy.hidden);
+  assert.ok(large.samples > small.samples && large.hidden > small.hidden);
+  assert.equal(large.dim, 4 * large.hidden + 1, 'weight vector tracks the bigger hidden layer');
+  // an unscaled task is the toy tier
+  assert.equal(X.makeTask({ id: 's' }).scale, 'toy');
+  // explicit options still win over the preset
+  const custom = X.makeTask({ id: 's', scale: 'large', hidden: 10 });
+  assert.equal(custom.hidden, 10, 'explicit hidden overrides the preset');
+  // an unknown scale is rejected, not silently ignored
+  assert.throws(() => X.makeTask({ id: 's', scale: 'galaxy' }), /unknown task scale/);
+});
+
+test('a larger scale still mines, learns and pays MIND', () => {
+  const t = X.makeTask({ id: 'scaled', scale: 'small' });
+  const chain = new X.Chain(t, { genesisSeed: 'g' });
+  const blk = chain.mineBlock({ privKey: alice.privateKey, steps: 300, nonce: 'sc1' });
+  assert.ok(blk, 'a block is mineable at the small scale');
+  chain.addBlock(blk);
+  assert.ok(blk.reward > 0 && chain.balanceOf(alice.address) === blk.reward, 'miner earns MIND');
+  assert.ok(chain.tipLoss() < chain.baselineLoss, 'the bigger model learned');
+});
+
 // ---- MIND token layer ------------------------------------------------------
 
 test('mining mints MIND to the miner in proportion to the learning done', () => {

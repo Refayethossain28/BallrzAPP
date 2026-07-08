@@ -97,6 +97,8 @@ so the miner signs the spends along with the model checkpoint.
 const Cortex = require('./cortex/engine.js'); // needs global BallrzCoin loaded first
 
 const task  = Cortex.makeTask({ id: 'my-task' });          // shared dataset + model shape
+// ...or pick a production-cost tier: 'toy' (default) | 'small' | 'medium' | 'large'
+// const task = Cortex.makeTask({ id: 'my-task', scale: 'medium' });
 const chain = new Cortex.Chain(task, { genesisSeed: 'g' }); // genesis checkpoint
 
 // mine: train the tip forward into a signed block — miner earns MIND
@@ -187,8 +189,31 @@ Measured and projected (`FLOPs/block ≈ 6 × params × samples-processed`, run 
 | Medium model | 10 M | 6 P | ~60 s | ~$0.03 |
 | Large model | 1 B | 60 E | ~167 h | ~$250 |
 
-So the answer to *"what's the production cost when the coin is mature?"* is two
-layered things:
+### Choosing the production-cost tier
+
+Because per-block cost is dominated by `O(samples × hidden)` work, a deployment
+sets how expensive mining is by choosing a **scale** at genesis
+(`Cortex.makeTask({ scale })`) rather than hand-tuning numbers. These four tiers
+are all genuinely runnable on this 2→H→1 network — measured cost per gradient
+step (`npm run bench:cortex`):
+
+| Scale | Samples | Hidden | Params | µs / step | vs toy | ~cost of a 1,000-step block |
+| --- | --- | --- | --- | --- | --- | --- |
+| `toy` (default) | 120 | 6 | 25 | ~220 | 1× | ~0.2 s |
+| `small` | 600 | 16 | 65 | ~2,700 | ~12× | ~2.7 s |
+| `medium` | 3,000 | 48 | 193 | ~36,000 | ~160× | ~36 s |
+| `large` | 12,000 | 128 | 513 | ~372,000 | ~1,670× | ~6 min |
+
+Note the honest ceiling: even `large` is a ~500-parameter model, so in raw
+electricity a block still costs a fraction of a cent. Reaching the
+dollars-per-block figures in the projection table above needs a **bigger model
+architecture** than this prototype ships (more inputs/layers) — the presets give
+you a real, measured cost gradient within what the 2→H→1 network can run, and
+the projection shows where a production architecture would land.
+
+### So what's the production cost when the coin is mature?
+
+This is two layered things:
 
 - **Within one chain**, "mature" means near convergence: cost per block climbs
   ~14× (and cost per MIND ~200×) versus a fresh chain, because the model is

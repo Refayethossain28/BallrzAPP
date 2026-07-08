@@ -117,18 +117,44 @@
   }
 
   /* ======================================================================
+   * Task-scale presets — the production-cost tier.
+   * ----------------------------------------------------------------------
+   * A miner's cost per block is dominated by O(samples × hidden) work per
+   * gradient step, so a deployment picks how expensive mining is by picking a
+   * scale rather than hand-tuning numbers. These are all genuinely RUNNABLE on
+   * this 2->H->1 network (params = 4·hidden + 1); they are not the giant
+   * 1B-parameter models in the README's USD *projection* table — reaching those
+   * needs a bigger architecture than this prototype ships, and the projection
+   * says so. What the presets give you is a real, measurable cost gradient:
+   * each step up multiplies samples × hidden (and thus per-block cost) by ~7-10×.
+   * `scale` sets samples/hidden/minImprovement; any explicit option overrides.
+   * ==================================================================== */
+  var SCALES = {
+    toy:    { samples: 120,   hidden: 6,   minImprovement: 0.004 },  // instant — the demo/default
+    small:  { samples: 600,   hidden: 16,  minImprovement: 0.003 },
+    medium: { samples: 3000,  hidden: 48,  minImprovement: 0.002 },
+    large:  { samples: 12000, hidden: 128, minImprovement: 0.001 }
+  };
+
+  /* ======================================================================
    * The shared learning task: a deterministic, non-linearly-separable
    * dataset (a "noisy XOR" of the two quadrant signs) that a linear model
    * cannot solve — so the hidden layer genuinely has to learn something.
    * ==================================================================== */
   function makeTask(opts) {
     opts = opts || {};
+    var preset = DEFAULTS; // toy-equivalent
+    if (opts.scale != null) {
+      preset = SCALES[String(opts.scale)];
+      if (!preset) throw new Error('unknown task scale: ' + opts.scale + ' (use ' + Object.keys(SCALES).join('/') + ')');
+    }
     var t = {
       id: String(opts.id || 'cortex-genesis-task'),
-      samples: opts.samples || DEFAULTS.samples,
-      hidden: opts.hidden || DEFAULTS.hidden,
+      scale: opts.scale != null ? String(opts.scale) : 'toy',
+      samples: opts.samples || preset.samples || DEFAULTS.samples,
+      hidden: opts.hidden || preset.hidden || DEFAULTS.hidden,
       noise: (opts.noise == null) ? DEFAULTS.noise : opts.noise,
-      minImprovement: (opts.minImprovement == null) ? DEFAULTS.minImprovement : opts.minImprovement,
+      minImprovement: (opts.minImprovement == null) ? (preset.minImprovement == null ? DEFAULTS.minImprovement : preset.minImprovement) : opts.minImprovement,
       quantum: opts.quantum || DEFAULTS.quantum,
       ticker: String(opts.ticker || DEFAULTS.ticker)
     };
@@ -505,7 +531,7 @@
   return {
     version: '1.1.0',
     DEFAULTS: DEFAULTS, GENESIS_PREV: GENESIS_PREV,
-    MIND: MIND, REWARD_PER_LOSS: REWARD_PER_LOSS,
+    MIND: MIND, REWARD_PER_LOSS: REWARD_PER_LOSS, SCALES: SCALES,
     // task & data
     makeTask: makeTask, randomWeights: randomWeights, quantise: quantise,
     // model
