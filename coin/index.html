@@ -657,7 +657,7 @@
 
 <div class="note" id="peersNote" style="margin-top:12px">
   <b>🧭 Neighbouring circles</b>
-  <div class="sub" style="margin-top:3px">Other circles that connect with this one. Tap <b>Connect</b> to join a neighbour — you’ll see their offers and reputation, and can bridge favours across. Each circle keeps its own money; connecting just federates the social layer.</div>
+  <div class="sub" style="margin-top:3px">Other circles that connect with this one. Tap <b>Connect</b> to a neighbour and you’ll see their offers and reputation and can exchange favour-credit with them. Your <b>mined-TIME blockchain stays in your own circle</b> — connecting never merges the coin chains or lets a neighbour touch your coin balance.</div>
   <div id="peerList" style="margin-top:8px"></div>
   <div class="row" style="margin-top:8px">
     <input id="peerName" placeholder="Circle name (e.g. Elm Street)" maxlength="24" autocomplete="off">
@@ -1500,23 +1500,37 @@
   // Sources: ?relay= link(s) → saved list → legacy single setting → config.js.
   var LS_RELAYS = 'ballrzcoin.relays.v1';
   function normUrl(u) { return String(u || '').trim().replace(/\/+$/, ''); }
-  function loadRelayUrls() {
-    var urls = [];
-    try { urls = JSON.parse(localStorage.getItem(LS_RELAYS) || '[]') || []; } catch (e) {}
-    try { var old = localStorage.getItem(LS_RELAY); if (old) urls.push(old); } catch (e) {}
-    if (CFG.relayUrl) urls.push(CFG.relayUrl);
+  // A relay is either a HOME relay (your own circle — full member) or a PEER
+  // relay (a neighbouring circle you connected to for discovery). The
+  // distinction matters for money: the mined-coin blockchain (chain/tx) is NEVER
+  // exchanged with peer relays, so connecting to a neighbour can't reorg your
+  // chain or drain your coin balance. Offers, reputation and favour-credit still
+  // federate across both. Back-compat: the old saved format was a plain array of
+  // url strings (all home); the new format is [{url, peer}].
+  var CHAIN_TYPES = { chain: 1, tx: 1 };   // the mined-coin layer — stays within your own circle
+  function loadRelays() {
+    var raw = [];
+    try { raw = JSON.parse(localStorage.getItem(LS_RELAYS) || '[]') || []; } catch (e) {}
+    var extra = [];
+    try { var old = localStorage.getItem(LS_RELAY); if (old) extra.push(old); } catch (e) {}
+    if (CFG.relayUrl) extra.push(CFG.relayUrl);
     var seen = {}, out = [];
-    urls.map(normUrl).forEach(function (u) { if (u && !seen[u]) { seen[u] = 1; out.push(u); } });
+    raw.concat(extra).forEach(function (e) {
+      var url = normUrl(typeof e === 'string' ? e : (e && e.url));
+      var peer = !!(e && typeof e === 'object' && e.peer);
+      if (url && !seen[url]) { seen[url] = 1; out.push({ url: url, seq: 0, up: false, peer: peer }); }
+    });
     return out;
   }
-  var relays = loadRelayUrls().map(function (u) { return { url: u, seq: 0, up: false }; });
+  var relays = loadRelays();
   function persistRelays() {
-    try { localStorage.setItem(LS_RELAYS, JSON.stringify(relays.map(function (r) { return r.url; }))); } catch (e) {}
+    try { localStorage.setItem(LS_RELAYS, JSON.stringify(relays.map(function (r) { return { url: r.url, peer: !!r.peer }; }))); } catch (e) {}
   }
-  function addRelay(u) {
+  function addRelay(u, isPeer) {
     u = normUrl(u); if (!u) return false;
-    if (relays.some(function (r) { return r.url === u; })) return false;
-    relays.push({ url: u, seq: 0, up: false }); persistRelays(); return true;
+    var ex = relays.filter(function (r) { return r.url === u; })[0];
+    if (ex) { if (!isPeer && ex.peer) { ex.peer = false; persistRelays(); } return false; } // fully joining a neighbour promotes it to home
+    relays.push({ url: u, seq: 0, up: false, peer: !!isPeer }); persistRelays(); return true;
   }
   function removeRelay(u) { relays = relays.filter(function (r) { return r.url !== u; }); persistRelays(); }
   function anyUp() { return relays.some(function (r) { return r.up; }); }
@@ -1589,10 +1603,10 @@
   }
   function connectPeer(url) {
     url = validRelayUrl(url); if (!url) return;
-    if (addRelay(url)) {
-      netSend({ type: 'hello' });            // pull their chain/offers/etc.
+    if (addRelay(url, true)) {                // a PEER relay: shares offers/reputation/favours, never your chain
+      netSend({ type: 'hello' });             // pull their offers/reputation/etc.
       announceMyCircleAsPeer();               // let them discover us back
-      toast('🔗 Connected to a neighbouring circle');
+      toast('🔗 Connected to a neighbouring circle — its offers & reputation, not its coins');
     } else {
       toast('Already connected to that circle');
     }
@@ -1672,9 +1686,11 @@
 
   function netSend(msg) {
     msg.from = NODE_ID;
-    if (bc) bc.postMessage(msg);
+    if (bc) bc.postMessage(msg);              // same-browser tabs are the same node/circle
     if (typeof fetch === 'undefined') return;
+    var chainLayer = CHAIN_TYPES[msg.type];
     relays.forEach(function (r) {
+      if (chainLayer && r.peer) return;        // never push your blockchain into a neighbouring circle
       try {
         fetch(r.url + '/msg', {
           method: 'POST',
@@ -1690,7 +1706,8 @@
     var el = $('relayList'); if (!el) return;
     el.innerHTML = relays.map(function (r) {
       return '<div class="offercard" style="padding:8px 12px;margin-top:8px">' +
-        '<div class="main" style="min-width:120px"><span class="mono" style="font-size:12px;word-break:break-all">' + esc(r.url) + '</span></div>' +
+        '<div class="main" style="min-width:120px"><span class="mono" style="font-size:12px;word-break:break-all">' + esc(r.url) + '</span>' +
+        (r.peer ? '<div class="by">◇ neighbour circle — offers & reputation only, not coins</div>' : '') + '</div>' +
         '<span class="rep">' + (r.up ? '● connected' : '○ unreachable') + '</span>' +
         '<button data-relay-remove="' + esc(r.url) + '">Remove</button></div>';
     }).join('');
@@ -1732,7 +1749,16 @@
         fetch(r.url + '/msgs?since=' + r.seq)
           .then(function (res) { return res.json(); })
           .then(function (d) {
-            if (d && typeof d.seq === 'number') { r.up = true; r.seq = d.seq; (d.msgs || []).forEach(handleNetMessage); }
+            if (d && typeof d.seq === 'number') {
+              r.up = true; r.seq = d.seq;
+              (d.msgs || []).forEach(function (m) {
+                // Never adopt a neighbouring circle's blockchain — a peer relay
+                // can offer offers/reputation/favour-credit, but its chain/tx
+                // are ignored so connecting can't reorg your chain or move coins.
+                if (r.peer && m && CHAIN_TYPES[m.type]) return;
+                handleNetMessage(m);
+              });
+            }
             renderNetStatus();
           })
           .catch(function () { r.up = false; renderNetStatus(); });
