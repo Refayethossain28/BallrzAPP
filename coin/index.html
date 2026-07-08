@@ -1326,17 +1326,26 @@
   var fundedByMe = {};
   try { fundedByMe = JSON.parse(localStorage.getItem(LS_FUNDED) || '{}') || {}; } catch (e) { fundedByMe = {}; }
   function saveFundedByMe() { try { localStorage.setItem(LS_FUNDED, JSON.stringify(fundedByMe)); } catch (e) {} }
-  function markFundedByMe(id) { fundedByMe[id] = 1; saveFundedByMe(); }
-  function maybeIssueReceipt(d) {
-    if (!Rep || !d || d.status !== 'released' || !d.seller || d.seller === d.buyer) return;
-    if (!fundedByMe[d.id]) return;               // only for a deal I genuinely funded
+  // Keep an add-only guard map bounded (insertion order = oldest first) so it
+  // can't grow localStorage without limit over a long-lived wallet.
+  function capMap(m, max) { var ks = Object.keys(m); while (ks.length > max) delete m[ks.shift()]; }
+  function markFundedByMe(id) { fundedByMe[id] = 1; capMap(fundedByMe, 2000); saveFundedByMe(); }
+  // Issue the buyer's receipt for a favour they received. Call this ONLY from the
+  // buyer's own authorising action (confirming delivery / releasing / co-signing
+  // a vault release) — NEVER from a gossiped status change. A gossiped 'released'
+  // is unsigned and attacker-controllable, so auto-issuing on it let a seller who
+  // was genuinely paid force a positive receipt without ever delivering. Requires
+  // that I both funded the deal (fundedByMe) and am acting as its buyer now.
+  function issueBuyerReceipt(d) {
+    if (!Rep || !d || !d.seller || d.seller === d.buyer) return;
+    if (!fundedByMe[d.id]) return;               // provenance: I paid for this deal
     if (repIssued['deal:' + d.id]) return;       // once per deal (persistent guard)
     var buyerW = walletByAddress(d.buyer);
     if (!buyerW || !buyerW.privateKey) return;   // only the buyer, only when unlocked
     try {
       var a = Rep.signReceipt({ privKey: buyerW.privateKey, subject: d.seller,
         note: d.title || 'a completed favour', value: 0, at: Date.now(), nonce: 'deal:' + d.id });
-      repIssued['deal:' + d.id] = 1; saveRepIssued();
+      repIssued['deal:' + d.id] = 1; capMap(repIssued, 2000); saveRepIssued();
       pushRep(a);
     } catch (e) { /* locked or bad state — skip silently */ }
   }
@@ -1607,10 +1616,11 @@
   // Announce THIS circle to neighbours so discovery is reciprocal: when I connect
   // to another circle's relay, its members learn about mine and can connect back.
   function myPublicRelay() {
-    var o = myOrigin();
-    if (o && inPool(o)) return o;
     // Only advertise one of MY OWN circle's (home) relays — never a neighbour's,
     // or I'd be telling others my circle lives at the neighbour's URL.
+    var o = myOrigin();
+    var oEntry = o && relays.filter(function (r) { return r.url === o; })[0];
+    if (oEntry && !oEntry.peer) return o;
     var home = relays.filter(function (r) { return !r.peer; });
     var up = home.filter(function (r) { return r.up; })[0] || home[0];
     return up ? up.url : '';
@@ -1689,14 +1699,11 @@
     } else if (m.type === 'offer-remove') {
       if (offers[m.id]) { delete offers[m.id]; saveOffers(); renderOffers(); }
     } else if (m.type === 'deal') {
-      if (ingestDeal(m.deal)) {
-        saveDeals(); renderDeals(); renderOffers(); notifyDeal(m.deal);
-        // If a deal I bought has reached 'released' (e.g. an escrow agent or a
-        // vault co-signer completed it, not me), issue my buyer's receipt now —
-        // maybeIssueReceipt is a no-op unless I own the buyer wallet and haven't
-        // already. This covers Trusted/Vault deals, not just direct confirms.
-        if (deals[m.deal.id]) maybeIssueReceipt(deals[m.deal.id]);
-      }
+      // NOTE: a receipt is deliberately NOT issued here. An inbound 'deal' is
+      // unsigned and could be a re-gossiped 'released' status for a deal I really
+      // funded — issuing on it would let a paid-but-non-delivering seller forge a
+      // receipt. Receipts come only from my own authorising actions (below).
+      if (ingestDeal(m.deal)) { saveDeals(); renderDeals(); renderOffers(); notifyDeal(m.deal); }
     } else if (m.type === 'credit') {
       if (ingestCredit(m.credit)) {
         saveCredits(); renderMutual(); renderBridges();
@@ -1763,14 +1770,22 @@
     });
     if (sendQ.length) scheduleDrain();
   }
+  // May this message be SENT to a neighbour (peer) relay? Only discovery/social —
+  // never your chain/tx, mutual-credit ledger, credit limits or deal records
+  // (that would let you rewrite a neighbour circle's money/governance, the mirror
+  // of the ingest filter). The one exception is a bridge's forwarding credit,
+  // which must reach the destination circle.
+  function sendToPeer(msg) {
+    if (msg.type === 'credit') return !!(Bridge && Bridge.isBridgeLeg(msg.credit));
+    return !PEER_BLOCK[msg.type];
+  }
   function netSend(msg) {
     msg.from = NODE_ID;
     if (bc) bc.postMessage(msg);              // same-browser tabs are the same node/circle
     if (typeof fetch === 'undefined') return;
-    var chainLayer = CHAIN_TYPES[msg.type];
     var body = JSON.stringify(msg);
     relays.forEach(function (r) {
-      if (chainLayer && r.peer) return;        // never push your blockchain into a neighbouring circle
+      if (r.peer && !sendToPeer(msg)) return; // don't push money/governance to a neighbouring circle
       sendQ.push({ url: r.url, body: body, tries: 0 });
     });
     scheduleDrain();
@@ -2651,6 +2666,9 @@
     myPartyPubs(d).forEach(function (w) {
       if (!d.proposal.sigs[w.publicKey]) d.proposal.sigs[w.publicKey] = Coin.sign(h, w.privateKey);
     });
+    // Me (the buyer) co-signing a RELEASE is my attestation the favour was
+    // delivered — issue the receipt here, regardless of who finalises the vault.
+    if (d.proposal && d.proposal.purpose === 'release') issueBuyerReceipt(d);
   }
   function proposeVault(d, purpose) {
     var to = purpose === 'release' ? d.seller : d.buyer;
@@ -2688,7 +2706,7 @@
       d.status = d.proposal.purpose === 'release' ? 'released' : 'refunded';
       d.proposal = null; d.at = Date.now();
       persist(); pushDeal(d.id);
-      if (d.status === 'released') maybeIssueReceipt(d);
+      // (receipt already issued when I co-signed the release in signVault)
       toast('🔓 Vault ' + (d.status === 'released' ? 'released to the seller' : 'refunded') + ' — a miner will confirm it');
       render();
     } catch (err) { toast('✖ ' + err.message); }
@@ -2810,13 +2828,15 @@
     var dRelease = t.getAttribute('data-deal-release');
     if (dRelease) {
       var dr = deals[dRelease];
-      if (dr && dr.status === 'funded') { dr.status = 'released'; dr.at = Date.now(); pushDeal(dRelease); maybeIssueReceipt(dr); toast('✓ Confirmed received — the seller’s reputation grew'); }
+      if (dr && dr.status === 'funded') { dr.status = 'released'; dr.at = Date.now(); pushDeal(dRelease); issueBuyerReceipt(dr); toast('✓ Confirmed received — the seller’s reputation grew'); }
       return;
     }
     var dConfirm = t.getAttribute('data-deal-confirm');
     if (dConfirm) {
       var dc = deals[dConfirm];
-      if (dc && dc.status === 'funded') { dc.buyerConfirmed = true; dc.at = Date.now(); pushDeal(dConfirm); toast('✓ Confirmed — the agent can now release the escrow'); }
+      // The buyer confirming delivery IS their attestation — issue the receipt
+      // now (the escrow agent's later release is a separate money movement).
+      if (dc && dc.status === 'funded') { dc.buyerConfirmed = true; dc.at = Date.now(); pushDeal(dConfirm); issueBuyerReceipt(dc); toast('✓ Confirmed received — the agent can now release the escrow'); }
       return;
     }
     var dEscRel = t.getAttribute('data-deal-escrow-release');
@@ -2953,7 +2973,7 @@
 
         } else if (pendingAction.kind === 'settle') {
           var d = deals[pendingAction.dealId];
-          if (d) { d.status = pendingAction.newStatus; d.at = Date.now(); pushDeal(d.id); if (d.status === 'released') maybeIssueReceipt(d); }
+          if (d) { d.status = pendingAction.newStatus; d.at = Date.now(); pushDeal(d.id); } // agent settle; buyer's receipt came from their own Confirm
         }
         pendingAction = null;
       }
