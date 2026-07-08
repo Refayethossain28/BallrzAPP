@@ -1,10 +1,12 @@
 # Trustless generalisation — a scoping study
 
-> **Status: phases 1–4 now built** in [`tournament.js`](tournament.js) (offline,
-> on a mock feed + oracle; see the phase table in §6). This document remains the
-> design of record and is deliberately honest about the one place trust cannot
-> be removed, only relocated. Phase 5 (succinct scoring proofs) and any *real*
-> outcome oracle deployment are still design-only.
+> **Status: phases 1–5 now built** — 1–4 in [`tournament.js`](tournament.js),
+> 5 in [`prover.js`](prover.js) (offline, on a mock feed + oracle; see the phase
+> table in §6). This document remains the design of record and is deliberately
+> honest about the one place trust cannot be removed, only relocated, and about
+> phase 5 being *probabilistic* verification-cost reduction, not a succinct
+> zk proof. A *real* decentralised outcome-oracle deployment is still the one
+> remaining trust decision, and is a product choice, not code.
 
 ## 1. Why we need a different system
 
@@ -146,7 +148,7 @@ Each phase is independently useful and testable; stop at any point.
 | **2** | Skill-based scoring rule + staking/slashing | ✅ built (`tournament.js`) | none new |
 | **3** | Pluggable outcome-oracle interface + a reference signed-feed adapter | ✅ built (`tournament.js`) | **the oracle** |
 | **4** | Anti-abuse: entry caps, beacon-sampled scoring, m-of-n committee + optimistic dispute window | ✅ built (`tournament.js`) | committee honest-majority + dispute quorum |
-| **5** (research) | succinct proofs of correct scoring to cut validator cost | design only | — |
+| **5** | cut validator scoring cost: committed transcript + beacon spot-checks + fraud proofs | ✅ built (`prover.js`) — probabilistic, not zk-succinct | — |
 
 Phases 1–4 are implemented and driven end-to-end **offline** by
 `scripts/test-cortex-tournament.mjs` on a deterministic mock feed + oracle: a
@@ -158,8 +160,15 @@ and an **optimistic dispute window** (propose → dispute → finalise, with bon
 means the committee is only invoked when a proposal is challenged, with the wrong
 side's bond slashed to the right side. Trust is thereby reduced to "an honest
 party will dispute a bad proposal, and the committee adjudicates honestly" — but
-still not removed. Phase 5 (succinct scoring proofs) remains open research, and a
-*real* committee/oracle is a deployment decision, not code.
+still not removed. Phase 5 (`prover.js`) then cuts the *cost* of checking a
+score: the scorer commits a per-sample loss transcript in one Merkle root, a
+beacon spot-checks k ≪ M samples, and any single mismatch is a fraud proof — so
+a validator re-runs the model on k samples instead of all M. This is
+*probabilistic* soundness (a reward-relevant lie is caught with high probability;
+`verifyFull` is the exact backstop), NOT a succinct zk proof — that would need
+zk-SNARKs of NN inference, which a from-scratch repo can't honestly claim. A
+*real* committee/oracle deployment is the one remaining trust decision, and is a
+product choice, not code.
 
 ## 7. Recommendation
 

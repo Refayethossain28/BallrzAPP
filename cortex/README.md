@@ -228,6 +228,12 @@ an entry cap, beacon-sampled scoring, an **m-of-n committee oracle**, and an
 committee is only troubled on a challenge and the wrong side is slashed). It runs
 end-to-end offline on a mock feed/oracle; the residual trust is the committee,
 never removed — only reduced to an honest-majority-plus-dispute assumption.
+**Phase 5** ([`prover.js`](prover.js)) cuts the *cost* of checking a score: the
+scorer commits a per-sample loss transcript in one Merkle root, a beacon
+spot-checks k ≪ M samples, and any mismatch is a fraud proof — so a validator
+re-runs the model on k samples, not all M. This is *probabilistic* soundness
+(with an exact `verifyFull` backstop), not a succinct zk proof — a from-scratch
+repo can't honestly claim the latter.
 
 ## Production cost & economics
 
@@ -343,7 +349,8 @@ block.
 ```
 npm run test:cortex             # engine: model, chain, MIND token
 npm run test:cortex-holdout     # commit–reveal generalisation layer
-npm run test:cortex-tournament  # forecasting-tournament chain (TRUSTLESS.md phases 1–3)
+npm run test:cortex-tournament  # forecasting-tournament chain (TRUSTLESS.md phases 1–4)
+npm run test:cortex-prover      # scoring-proof layer (phase 5: spot-check + fraud proofs)
 npm test                        # the whole prototype suite (includes Cortex)
 npm run bench:cortex            # production-cost benchmark (not part of the test gate)
 ```
