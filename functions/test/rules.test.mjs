@@ -103,3 +103,65 @@ test('audit log is append-only (no edits or deletes, even by admin)', async () =
   await seed((db) => setDoc(doc(db, 'audit_log/e3'), { action: 'payout' }));
   await assertFails(updateDoc(doc(admin(), 'audit_log/e3'), { action: 'tampered' }));   // no edits
 });
+
+test('a driver cannot forge an audit entry under another actor id', async () => {
+  // Append is allowed only under your OWN actorUid — so a driver can't frame
+  // an admin (or another driver) by writing their uid as the actor.
+  await assertFails(setDoc(doc(driver('d1'), 'audit_log/f1'), { action: 'payout', actorUid: 'admin-1' }));
+  await assertFails(setDoc(doc(driver('d1'), 'audit_log/f2'), { action: 'payout', actorUid: 'd2' }));
+});
+
+// ── Booking financials are frozen against self-service edits ─────────────────
+test('a client cannot rewrite booking financials or the driver assignment', async () => {
+  await seed((db) => setDoc(doc(db, 'bookings/bf1'),
+    { clientId: 'client-a', baseFare: 185, price: 185, status: 'confirmed' }));
+  // A benign self-edit (e.g. cancelling) is fine…
+  await assertSucceeds(updateDoc(doc(client('client-a'), 'bookings/bf1'), { status: 'cancelled' }));
+  // …but the money fields and the driver assignment are Cloud-Function-only.
+  await assertFails(updateDoc(doc(client('client-a'), 'bookings/bf1'), { baseFare: 1 }));
+  await assertFails(updateDoc(doc(client('client-a'), 'bookings/bf1'), { price: 1 }));
+  await assertFails(updateDoc(doc(client('client-a'), 'bookings/bf1'), { paymentStatus: 'paid' }));
+  await assertFails(updateDoc(doc(client('client-a'), 'bookings/bf1'), { driverId: 'client-a' }));
+});
+
+test('a driver cannot rewrite booking financials or the client rating', async () => {
+  await seed((db) => setDoc(doc(db, 'bookings/bf2'),
+    { clientId: 'client-a', driverId: 'd1', baseFare: 185, price: 185, status: 'accepted' }));
+  // The assigned driver may progress the trip status…
+  await assertSucceeds(updateDoc(doc(driver('d1'), 'bookings/bf2'), { status: 'en_route' }));
+  // …but never the fare, nor the client's rating of them.
+  await assertFails(updateDoc(doc(driver('d1'), 'bookings/bf2'), { price: 9999 }));
+  await assertFails(updateDoc(doc(driver('d1'), 'bookings/bf2'), { driverRating: 5 }));
+});
+
+test('a driver claiming a free booking still cannot set the fare', async () => {
+  await seed((db) => setDoc(doc(db, 'bookings/bf3'),
+    { clientId: 'client-a', driverId: '', baseFare: 185, price: 185, status: 'confirmed' }));
+  // Claiming (stamping self as driver) is allowed…
+  await assertSucceeds(updateDoc(doc(driver('d1'), 'bookings/bf3'), { driverId: 'd1', status: 'accepted' }));
+  // …but not while also inflating the fare.
+  await seed((db) => setDoc(doc(db, 'bookings/bf4'),
+    { clientId: 'client-a', driverId: '', baseFare: 185, price: 185, status: 'confirmed' }));
+  await assertFails(updateDoc(doc(driver('d1'), 'bookings/bf4'), { driverId: 'd1', price: 9999 }));
+});
+
+// ── User profile: loyalty + identity fields are Cloud-Function-only ──────────
+test('a user cannot self-mint loyalty balance, referral credit, or tier', async () => {
+  await seed((db) => setDoc(doc(db, 'users/u2'), { name: 'U', role: 'client', apexBalance: 0 }));
+  await assertSucceeds(updateDoc(doc(client('u2'), 'users/u2'), { name: 'New Name' }));
+  await assertFails(updateDoc(doc(client('u2'), 'users/u2'), { apexBalance: 100000 }));
+  await assertFails(updateDoc(doc(client('u2'), 'users/u2'), { tier: 'Black' }));
+  await assertFails(updateDoc(doc(client('u2'), 'users/u2'), { referralCode: 'FREE' }));
+  await assertFails(updateDoc(doc(client('u2'), 'users/u2'), { referredBy: 'someone' }));
+  // …but an admin (Cloud Function proxy) may.
+  await assertSucceeds(updateDoc(doc(admin(), 'users/u2'), { apexBalance: 500 }));
+});
+
+// ── Velvet: loyalty points are never self-awarded ───────────────────────────
+test('a velvet member cannot self-award loyalty points', async () => {
+  await assertFails(setDoc(doc(client('m1'), 'velvet_members/m1'), { name: 'M', points: 500 }));
+  await assertSucceeds(setDoc(doc(client('m1'), 'velvet_members/m1'), { name: 'M', points: 0 }));
+  await assertSucceeds(updateDoc(doc(client('m1'), 'velvet_members/m1'), { name: 'M2' }));
+  await assertFails(updateDoc(doc(client('m1'), 'velvet_members/m1'), { points: 999 }));
+  await assertSucceeds(updateDoc(doc(admin(), 'velvet_members/m1'), { points: 250 }));
+});

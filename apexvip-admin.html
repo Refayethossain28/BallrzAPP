@@ -254,7 +254,7 @@ function revenue7(){
   const now=new Date(); const vals=[],labels=[];
   for(let i=6;i>=0;i--){
     const d=new Date(now); d.setDate(now.getDate()-i);
-    const sum=BOOKINGS.filter(b=>b.status!=='cancelled'&&b._created&&b._created.toDateString()===d.toDateString())
+    const sum=BOOKINGS.filter(b=>b.status!=='cancelled'&&(b.currency||'GBP')==='GBP'&&b._created&&b._created.toDateString()===d.toDateString())
       .reduce((a,b)=>a+(parseFloat(String(b.price).replace(/[^0-9.]/g,''))||0),0);
     vals.push(Math.round(sum)); labels.push(i===0?'Today':d.toLocaleDateString('en-GB',{weekday:'short'}));
   }
@@ -520,6 +520,8 @@ function reportError(e, screen) {
   } catch (_) { /* never throw from the reporter */ }
 }
 
+// Safe JSON.parse — never throws at render time on corrupt localStorage.
+function safeParse(str,fallback){try{const v=JSON.parse(str);return v==null?fallback:v;}catch(_){return fallback;}}
 // Escape user/driver-controlled strings before they enter innerHTML templates.
 // Single tested implementation lives in the shared engine (security/escape.ts).
 const esc=(typeof ApexEngine!=='undefined'&&ApexEngine.escapeHtml)||(x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
@@ -639,7 +641,7 @@ dashboard:()=>`<div class="screen">
       const priceNum=b=>parseFloat(String(b.price).replace(/[^0-9.]/g,''))||0;
       const todays=BOOKINGS.filter(isToday);
       const active=BOOKINGS.filter(b=>['active','accepted','en_route','arrived','onboard'].includes(b.status));
-      const revToday=Math.round(todays.filter(b=>b.status!=='cancelled').reduce((a,b)=>a+priceNum(b),0));
+      const revToday=Math.round(todays.filter(b=>b.status!=='cancelled'&&(b.currency||'GBP')==='GBP').reduce((a,b)=>a+priceNum(b),0));
       const online=DRIVERS.filter(d=>['online','available','ontrip'].includes(d.status));
       const onTrip=DRIVERS.filter(d=>d.status==='ontrip').length;
       return [["Today's Bookings",String(todays.length),todays.length?'live':'no bookings yet today','#3b82f6','📋'],
@@ -976,8 +978,8 @@ concierge:()=>{
       const acts=nextActions(r).map(([to,label])=>'<button class="btn btn-glass btn-sm" onclick="vcAdvance(\''+r.docId+'\',\''+to+'\')">'+label+'</button>').join(' ');
       const wait=r.status==='options'?'<span style="color:var(--fg-ghost)">with member</span>':(acts||'');
       html+='<tr style="border-top:1px solid var(--border)">'
-        +'<td style="padding:10px">'+(m.memberName||'—')+'</td>'
-        +'<td style="padding:10px;max-width:280px">'+cat+' '+String(r.title||'').replace(/</g,'&lt;')+'<div style="color:var(--fg-ghost);font-size:11px">'+(r.messages?r.messages.length:0)+' messages</div></td>'
+        +'<td style="padding:10px">'+esc(m.memberName||'—')+'</td>'
+        +'<td style="padding:10px;max-width:280px">'+cat+' '+esc(r.title||'')+'<div style="color:var(--fg-ghost);font-size:11px">'+(r.messages?r.messages.length:0)+' messages</div></td>'
         +'<td style="padding:10px"><span class="tag '+(TIERTAG[t]||'tag-gray')+'">'+t.toUpperCase()+'</span></td>'
         +'<td style="padding:10px">'+(V.STATUS_LABEL[r.status]||r.status)+'</td>'
         +'<td style="padding:10px"><span class="tag '+sb[0]+'">'+sb.slice(1).join(' ')+'</span></td>'
@@ -999,7 +1001,7 @@ concierge:()=>{
       const t=(m.sub&&m.sub.tierId)||'—';
       const n=VREQS.filter(r=>r.ownerUid===m.uid).length;
       html+='<tr style="border-top:1px solid var(--border)">'
-        +'<td style="padding:10px">'+(m.memberName||m.uid.slice(0,8))+'</td>'
+        +'<td style="padding:10px">'+esc(m.memberName||m.uid.slice(0,8))+'</td>'
         +'<td style="padding:10px"><span class="tag '+(TIERTAG[t]||'tag-gray')+'">'+String(t).toUpperCase()+'</span></td>'
         +'<td style="padding:10px">'+((m.sub&&m.sub.status)||'—')+(m.sub&&m.sub.cancelAtPeriodEnd?' · ending':'')+'</td>'
         +'<td style="padding:10px">'+(m.billing||'local')+'</td>'
@@ -1018,7 +1020,7 @@ analytics:()=>{
   // All-apps collection point: when Firebase is on, the shared `analytics`
   // collection (fed by track() in the client, driver, admin and concierge
   // apps) is the source of truth; this browser's local log is the fallback.
-  const localEvents=JSON.parse(localStorage.getItem('apexvip_events')||'[]');
+  const localEvents=safeParse(localStorage.getItem('apexvip_events'),[]);
   const raw=(FIREBASE_ENABLED&&CLOUD_EVENTS&&CLOUD_EVENTS.length)?CLOUD_EVENTS:localEvents;
 
   // ── Core datasets ──
@@ -1184,7 +1186,7 @@ analytics:()=>{
     clients.slice(0,8).forEach(function(cl){
       const avg2=cl.count?Math.round(cl.spend/cl.count):0;
       const lastSeen=cl.last?ago(cl.last)+' ago':'—';
-      html+='<tr><td style="font-weight:600">'+cl.name+'</td><td>'+cl.count+'</td><td style="font-weight:700;color:var(--gold)">£'+cl.spend+'</td><td>£'+avg2+'</td><td style="color:var(--fg-ghost);font-size:12px">'+lastSeen+'</td></tr>';
+      html+='<tr><td style="font-weight:600">'+esc(cl.name)+'</td><td>'+cl.count+'</td><td style="font-weight:700;color:var(--gold)">£'+cl.spend+'</td><td>£'+avg2+'</td><td style="color:var(--fg-ghost);font-size:12px">'+lastSeen+'</td></tr>';
     });
     html+='</tbody></table></div></div>';
   }
@@ -1216,7 +1218,7 @@ analytics:()=>{
     topRoutes.forEach(function(r){
       const avg3=r.count?Math.round(r.revenue/r.count):0;
       const pct=maxRoute>0?Math.round(r.count/maxRoute*100):0;
-      html+='<tr><td style="font-weight:500;font-size:13px">'+r.route+'</td>';
+      html+='<tr><td style="font-weight:500;font-size:13px">'+esc(r.route)+'</td>';
       html+='<td><div style="display:flex;align-items:center;gap:8px"><span style="font-weight:700">'+r.count+'</span><div style="flex:1;max-width:80px">'+bar(pct,'#3b82f6',4)+'</div></div></td>';
       html+='<td style="font-weight:700;color:var(--gold)">£'+r.revenue+'</td><td>£'+avg3+'</td></tr>';
     });
@@ -1247,9 +1249,9 @@ analytics:()=>{
   raw.slice().reverse().slice(0,40).forEach(function(e){
     const col=evtColor[e.e]||'var(--fg-dim)';
     const detail=e.price?'£'+e.price:e.amount?(e.amount+' APEX'):e.screen?e.screen:e.service?e.service:e.pay?('£'+e.pay):e.vehicle||'';
-    html+='<tr><td><span style="color:'+col+';font-weight:600;font-size:12px">'+e.e+'</span></td>';
-    html+='<td><span class="tag tag-gray" style="font-size:10px">'+(e.src||'—')+'</span></td>';
-    html+='<td style="color:var(--fg-dim);font-size:12px">'+detail+'</td>';
+    html+='<tr><td><span style="color:'+col+';font-weight:600;font-size:12px">'+esc(e.e)+'</span></td>';
+    html+='<td><span class="tag tag-gray" style="font-size:10px">'+esc(e.src||'—')+'</span></td>';
+    html+='<td style="color:var(--fg-dim);font-size:12px">'+esc(detail)+'</td>';
     html+='<td style="color:var(--fg-ghost);font-size:11px;white-space:nowrap">'+(e.t?ago(e.t)+' ago':'—')+'</td></tr>';
   });
   html+='</tbody></table></div></div>';
@@ -1260,7 +1262,7 @@ analytics:()=>{
 },
 
 apexcoin:()=>{
-  const raw=JSON.parse(localStorage.getItem('apexvip_events')||'[]');
+  const raw=safeParse(localStorage.getItem('apexvip_events'),[]);
   const earned=raw.filter(e=>e.e==='apex_earned').reduce((a,e)=>a+(e.amount||0),0);
   const redeemed=raw.filter(e=>e.e==='apex_redeemed').reduce((a,e)=>a+(e.amount||0),0);
   const supply=Math.max(0,earned-redeemed);
@@ -2205,8 +2207,9 @@ async function payoutDriverNow(driverId) {
   if (!confirm('Pay out this driver\'s full owed balance now?')) return;
   try {
     const r = await fns.httpsCallable('payoutDriver')({ driverId });
-    logAudit('payout', driverId, `${r.data.currency||'GBP'} ${r.data.paid||0} · ${r.data.count||0} trip(s)${r.data.mock?' (mock)':''}`);
-    alert((typeof ApexEngine!=='undefined')?ApexEngine.formatSettlement(r.data):('Paid '+(r.data.currency||'GBP')+' '+(r.data.paid||0)+' across '+(r.data.count||0)+' trip(s).'));
+    const rd = (r && r.data) || {};
+    logAudit('payout', driverId, `${rd.currency||'GBP'} ${rd.paid||0} · ${rd.count||0} trip(s)${rd.mock?' (mock)':''}`);
+    alert((typeof ApexEngine!=='undefined')?ApexEngine.formatSettlement(rd):('Paid '+(rd.currency||'GBP')+' '+(rd.paid||0)+' across '+(rd.count||0)+' trip(s).'));
     loadDriverBalances();
   } catch (e) { alert('Payout failed: ' + (e.message || e.code)); }
 }

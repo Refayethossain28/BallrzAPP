@@ -25,3 +25,4 @@ export { escapeHtml } from './security/escape.ts';
 export { buildBookingPayload, SERVICE_LABELS } from './payments/booking.ts';
 export { summarizeEarnings, dailyEarnings, owedBalance } from './driver/earnings.ts';
 export { errorMessage, errorFingerprint, formatErrorReport, shouldReport } from './telemetry/errors.ts';
+export { buildConciergeContext, firstName } from './concierge/context.ts';
