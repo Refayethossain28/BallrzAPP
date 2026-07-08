@@ -892,7 +892,7 @@ if (typeof ApexEngine === 'undefined') {
   (function(){ const sc=document.createElement('script'); sc.src='apexvip-engine.js?retry='+Date.now(); sc.onload=()=>{ try{render();}catch(_){}} ; document.head.appendChild(sc); })();
 }
 
-const APP_BUILD='2026-07-08.1';
+const APP_BUILD='2026-07-08.2';
 try{console.info('[apexvip] client build',APP_BUILD);}catch(_){}
 
 const _errSeen = new Set();
@@ -1431,6 +1431,9 @@ function _parseIntentLocal(msg) {
       hotelNights: state._hotelNights,
       hotelGuests: state._hotelGuests,
     },
+    // Live rate card — lets the on-device parser answer "how much…" quotes even
+    // when the parseBookingIntent Cloud Function (Claude) is unavailable.
+    rateCard: (typeof PRICES !== 'undefined') ? PRICES : undefined,
     now: new Date(),
   });
 }

@@ -39,6 +39,9 @@ export interface HotelContext {
 export interface ConciergeContext {
   prev?: PriorBooking;
   hotel?: HotelContext;
+  /** The live rate card (client PRICES / settings.pricing) — powers on-device
+   *  quotes so a price is available even when the Cloud Function is down. */
+  rateCard?: Record<string, number>;
   /** Injectable "now" for deterministic date resolution (tests). */
   now?: Date;
 }
@@ -204,6 +207,69 @@ export function parseIntentLocal(msg: string, ctx: ConciergeContext = {}): Local
   const dest = out.airport || out.dropoff;
   const timeStr = out.time ? ` at ${out.time}` : '';
   const dateStr = out.date ? ` on ${new Date(out.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}` : '';
+
+  // ── Quotes — "how much for a V-Class to Heathrow?" ──────────────────────────
+  // Answered on-device from the rate card so a real price is given even when the
+  // Cloud Function (Claude) is unreachable. Keys mirror the client PRICES card.
+  const _quoteSignal = /\b(how much|price|priced|quote|cost|costs|fare|fares|rate|rates|charges?|estimate)\b|£/i;
+  if (_quoteSignal.test(msg)) {
+    const rc = ctx.rateCard || {};
+    const veh = /\bv[\s-]?class\b|\bmercedes\s*v\b|\bmpv\b|people\s*carrier|\b[67][\s-]?seat/i.test(msg) ? 'v' : 's';
+    const vlabel = veh === 'v' ? 'V-Class' : 'S-Class';
+    const has = (k: string): boolean => typeof rc[k] === 'number' && rc[k] > 0;
+    const money = (n: number): string => '£' + Math.round(n);
+    const when = `${dateStr}${timeStr}`;
+    out.intent = 'quote';
+    // Airport fare key by terminal, falling back to the generic airport fare.
+    const a = (out.airport || '').toLowerCase();
+    const apKey =
+      a.includes('heathrow') ? 'heathrow_' + veh :
+      a.includes('gatwick') ? 'gatwick_' + veh :
+      a.includes('stansted') ? 'stansted_' + veh :
+      a.includes('luton') ? 'luton_' + veh :
+      a.includes('city') ? 'city_' + veh : 'airport_' + veh;
+
+    if (out.serviceType === 'airport' || out.airport) {
+      const price = has(apKey) ? rc[apKey] : (has('airport_' + veh) ? rc['airport_' + veh] : null);
+      const where = out.airport || 'the airport';
+      out.reply = price != null
+        ? `A ${vlabel} to ${where} is ${money(price)}, all-inclusive — one fixed fare, no surge, with meet-and-greet and flight tracking${out.flight ? ` for ${out.flight}` : ''} included. Shall I book it${when}?`
+        : `I'd be glad to quote a ${vlabel} to ${where}. Let me confirm the exact fare for you.`;
+      return out;
+    }
+    if (out.serviceType === 'hourly') {
+      const rate = has('hourly_' + veh + '_rate') ? rc['hourly_' + veh + '_rate'] : null;
+      out.reply = rate != null
+        ? `Hourly hire in a ${vlabel} is ${money(rate)} per hour, with a two-hour minimum. Shall I arrange it${when}?`
+        : `Hourly hire in a ${vlabel} — let me confirm the current rate for you.`;
+      return out;
+    }
+    if (out.serviceType === 'day') {
+      const price = has('day_' + veh) ? rc['day_' + veh] : null;
+      out.reply = price != null
+        ? `A full day with a ${vlabel} chauffeur is ${money(price)} — eight hours entirely at your disposal. Shall I book it${when}?`
+        : `A full-day ${vlabel} chauffeur — let me confirm today's rate for you.`;
+      return out;
+    }
+    if (out.pickup && out.dropoff) {
+      const min = has('min_fare_' + veh) ? rc['min_fare_' + veh] : null;
+      const perkm = has('per_km_' + veh) ? rc['per_km_' + veh] : null;
+      out.reply = min != null
+        ? `A ${vlabel} from ${out.pickup} to ${out.dropoff} starts at ${money(min)}${perkm != null ? `, then about £${perkm.toFixed(2)} per km` : ''}. Confirm the route and I'll price it to the penny.`
+        : `A ${vlabel} from ${out.pickup} to ${out.dropoff} — share the route and I'll price it precisely.`;
+      return out;
+    }
+    // Quote intent without enough specifics — offer the headline rates.
+    const bits: string[] = [];
+    if (has('airport_' + veh)) bits.push(`airport transfers from ${money(rc['airport_' + veh])}`);
+    if (has('hourly_' + veh + '_rate')) bits.push(`hourly hire at ${money(rc['hourly_' + veh + '_rate'])} per hour`);
+    if (has('day_' + veh)) bits.push(`a full day at ${money(rc['day_' + veh])}`);
+    out.reply = bits.length
+      ? `For a ${vlabel}: ${bits.join(', ')}. Tell me your route or airport and I'll give you an exact fare.`
+      : `Tell me your pickup, destination or airport and I'll quote a ${vlabel} for you.`;
+    return out;
+  }
+
   if (out.serviceType === 'airport' && dest && out.pickup) {
     out.reply = `Of course. I'll arrange an airport transfer from ${out.pickup} to ${dest}${out.flight ? `, monitoring flight ${out.flight}` : ''}${dateStr}${timeStr}. Please review your booking details and select a vehicle.`;
   } else if (out.serviceType === 'airport' && dest) {
