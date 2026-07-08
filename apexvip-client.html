@@ -1697,10 +1697,7 @@ const CHAT_TEMPLATES = [
 function sendQuickMsg(idx) {
   const msg = CHAT_TEMPLATES[idx];
   _appendChatMsg(msg);
-  if (FIREBASE_ENABLED && fns && state._confirmedRef) {
-    const fn = fns.httpsCallable('sendChauffeurMessage');
-    fn({ bookingRef: state._confirmedRef, message: msg, fromRole: 'client' }).catch(reportError);
-  }
+  _postChatToFirestore(msg);
 }
 function sendCustomMsg() {
   const inp = document.getElementById('chat-custom-inp');
@@ -1708,10 +1705,7 @@ function sendCustomMsg() {
   const msg = inp.value.trim();
   inp.value = '';
   _appendChatMsg(msg);
-  if (FIREBASE_ENABLED && fns && state._confirmedRef) {
-    const fn = fns.httpsCallable('sendChauffeurMessage');
-    fn({ bookingRef: state._confirmedRef, message: msg, fromRole: 'client' }).catch(reportError);
-  }
+  _postChatToFirestore(msg);
 }
 function _appendChatMsg(msg) {
   const el = document.getElementById('chat-sent');
@@ -1722,6 +1716,23 @@ function _appendChatMsg(msg) {
   el.appendChild(div);
   el.scrollTop = el.scrollHeight;
   track('chat_message_sent', { src: 'client' });
+}
+// Write a chat message straight to the booking thread in Firestore. The rules
+// already let the booking's client post here, so the chat works peer-to-peer
+// and never depends on a Cloud Function being deployed. Returns true if it was
+// able to persist (so callers know whether a local echo is still needed).
+function _postChatToFirestore(msg) {
+  const id = state._chatDocId || state._activeBooking?.docId;
+  if (FIREBASE_ENABLED && auth.currentUser && id) {
+    db.collection('bookings').doc(id).collection('messages').add({
+      senderId: auth.currentUser.uid,
+      fromRole: 'client',
+      text: msg,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    }).catch(reportError);
+    return true;
+  }
+  return false;
 }
 
 // ── Post-Trip Ratings ──────────────────────────────────────────────────────
@@ -1944,7 +1955,7 @@ function setupChatListener(docId) {
   state._chatDocId = docId;
   _chatUnsubDoc = docId;
   _chatUnsub = db.collection('bookings').doc(docId).collection('messages')
-    .orderBy('timestamp','asc').limitToLast(50)
+    .orderBy('createdAt','asc').limitToLast(50)
     .onSnapshot(snap => {
       state._chatMessages = snap.docs.map(d => ({...d.data(), _id: d.id}));
       const el = document.getElementById('chat-msgs');
@@ -1952,13 +1963,13 @@ function setupChatListener(docId) {
         el.innerHTML = state._chatMessages.map(m => chatBubble(m)).join('');
         el.scrollTop = el.scrollHeight;
       }
-    }, () => {});
+    }, err => reportError(err, 'chat-listener'));
 }
 
 function chatBubble(m) {
   const isMe = m.fromRole === 'client';
   return `<div style="display:flex;justify-content:${isMe?'flex-end':'flex-start'};margin-bottom:8px">
-    <div style="max-width:75%;background:${isMe?'linear-gradient(135deg,#C8A97E,#8B6020)':'var(--surface-2)'};border-radius:${isMe?'18px 18px 4px 18px':'18px 18px 18px 4px'};padding:10px 14px;font-size:13px;color:${isMe?'#000':'var(--fg)'}">${esc(m.message||'')}</div>
+    <div style="max-width:75%;background:${isMe?'linear-gradient(135deg,#C8A97E,#8B6020)':'var(--surface-2)'};border-radius:${isMe?'18px 18px 4px 18px':'18px 18px 18px 4px'};padding:10px 14px;font-size:13px;color:${isMe?'#000':'var(--fg)'}">${esc(m.text||m.message||'')}</div>
   </div>`;
 }
 
@@ -1983,16 +1994,15 @@ function clientSendMsg() {
   const inp = document.getElementById('client-chat-inp');
   if (!inp || !inp.value.trim()) return;
   const msg = inp.value.trim(); inp.value = '';
-  if (FIREBASE_ENABLED && fns && state._chatDocId) {
-    fns.httpsCallable('sendChauffeurMessage')({
-      bookingRef: state._activeBooking?.ref || state._chatDocId,
-      message: msg, fromRole: 'client'
-    }).catch(reportError);
+  // Persist straight to the booking thread — the live listener re-renders it
+  // (and the driver's app) from Firestore, so the two sides stay in sync.
+  const persisted = _postChatToFirestore(msg);
+  // Optimistic echo only when we couldn't persist (no listener will show it).
+  if (!persisted) {
+    state._chatMessages.push({text: msg, fromRole: 'client', createdAt: {toMillis:()=>Date.now()}});
+    const el = document.getElementById('chat-msgs');
+    if (el) { el.innerHTML = state._chatMessages.map(chatBubble).join(''); el.scrollTop = el.scrollHeight; }
   }
-  // Optimistic local append
-  state._chatMessages.push({message: msg, fromRole: 'client', timestamp: {toMillis:()=>Date.now()}});
-  const el = document.getElementById('chat-msgs');
-  if (el) { el.innerHTML = state._chatMessages.map(chatBubble).join(''); el.scrollTop = el.scrollHeight; }
 }
 
 function quickReply(msg) {
