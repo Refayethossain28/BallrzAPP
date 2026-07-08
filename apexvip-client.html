@@ -1739,10 +1739,24 @@ function _postChatToFirestore(msg) {
 function submitRating(stars) {
   state._tripRating = stars;
   const ref = state._confirmedRef || state.selectedTrip?.id;
+  const docId = state.selectedTrip?.docId || state._chatDocId;
+  const comment = document.getElementById('rating-comment')?.value || '';
+  // Persist the rating straight onto the booking so it's never lost if the
+  // Cloud Function is unreachable (the rules let the owning client write the
+  // rating fields; the function still runs the driver-average rollup when up).
+  const _persistLocally = () => {
+    if (FIREBASE_ENABLED && auth.currentUser && docId) {
+      db.collection('bookings').doc(docId).update({
+        rating: stars, ratingComment: comment,
+        ratedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      }).catch(err => reportError(err, 'submit-rating'));
+    }
+  };
   if (FIREBASE_ENABLED && fns && ref) {
-    const fn = fns.httpsCallable('submitTripRating');
-    const comment = document.getElementById('rating-comment')?.value || '';
-    fn({ bookingRef: ref, rating: stars, comment, driverId: state.selectedTrip?.driverId || null }).catch(reportError);
+    fns.httpsCallable('submitTripRating')({ bookingRef: ref, rating: stars, comment, driverId: state.selectedTrip?.driverId || null })
+      .catch(() => _persistLocally());   // function down — don't drop the rating
+  } else {
+    _persistLocally();
   }
   track('trip_rated', { stars, src: 'client' });
   haptic('success');
