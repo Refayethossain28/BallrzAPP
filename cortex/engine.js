@@ -202,15 +202,21 @@
     if (real) {
       // Real dataset: inputs and sample count come from the data itself.
       if (!real.features || !real.features.length) throw new Error('dataset has no rows');
-      var sd = standardise(real.features);
       t.dataset = real.name || String(opts.dataset || 'custom');
       t.datasetTitle = real.title || t.dataset;
       t.datasetSource = real.source || '';
       t.featureNames = real.featureNames || null;
       t.inputs = real.features[0].length;
       t.samples = real.features.length;
-      t.featureStats = { mean: sd.mean, std: sd.std };
-      t.X = sd.X;
+      if (opts.standardize === false) {
+        // Raw features (used by the tournament, where miners and scorers must
+        // share one un-normalised feature space).
+        t.X = real.features.map(function (r) { return r.slice(); });
+      } else {
+        var sd = standardise(real.features);
+        t.featureStats = { mean: sd.mean, std: sd.std };
+        t.X = sd.X;
+      }
       t.y = real.labels.map(function (v) { return v ? 1 : 0; });
     } else {
       // Synthetic noisy-XOR (the default / demo task).
@@ -645,6 +651,7 @@
     MIND: MIND, REWARD_PER_LOSS: REWARD_PER_LOSS, SCALES: SCALES,
     // task & data
     makeTask: makeTask, randomWeights: randomWeights, quantise: quantise,
+    archOf: archOf, dimOf: dimOf,
     // model
     loss: loss, accuracy: accuracy, predict: predict, train: train, trainStep: trainStep,
     standardizeRows: standardizeRows,

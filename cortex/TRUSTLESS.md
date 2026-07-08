@@ -1,10 +1,10 @@
 # Trustless generalisation — a scoping study
 
-> **Status: design only, not built.** This document scopes what a genuinely
-> trustless generalisation-rewarding Cortex would take. It is deliberately
-> honest about the one place trust cannot be removed, only relocated. Nothing
-> here is implemented; the shipped prototype is the base chain
-> (`engine.js`) + the trust-requiring commit–reveal layer (`holdout.js`).
+> **Status: phases 1–3 now built** in [`tournament.js`](tournament.js) (offline,
+> on a mock feed + oracle; see the phase table in §6). This document remains the
+> design of record and is deliberately honest about the one place trust cannot
+> be removed, only relocated. Phases 4–5 (anti-abuse hardening, succinct scoring
+> proofs) and any *real* outcome oracle are still design-only.
 
 ## 1. Why we need a different system
 
@@ -139,19 +139,23 @@ manipulable outcomes it is not — pick tasks accordingly.
 
 Each phase is independently useful and testable; stop at any point.
 
-| Phase | Deliverable | Rough size | New trust |
+| Phase | Deliverable | Status | New trust |
 | --- | --- | --- | --- |
-| **0** (done) | commit–reveal + beacon on a fixed dataset | shipped | data withholder |
-| **1** | Round state machine + feature commitment, driven by a *mock* feed (deterministic, testable offline) | small–medium | none new (mock) |
-| **2** | Skill-based scoring rule + staking/slashing, reusing `reputation.js` | medium | none new |
-| **3** | Pluggable outcome-oracle interface + a reference adapter (e.g. a signed price feed) | medium | **the oracle** |
-| **4** | Anti-abuse: entry caps, beacon-sampled scoring, dispute window | medium–large | oracle + dispute quorum |
-| **5** (research) | succinct proofs of correct scoring to cut validator cost | large / open | — |
+| **0** | commit–reveal + beacon on a fixed dataset | ✅ shipped (`holdout.js`) | data withholder |
+| **1** | Round state machine + feature commitment, driven by a *mock* feed | ✅ built (`tournament.js`) | none new (mock) |
+| **2** | Skill-based scoring rule + staking/slashing | ✅ built (`tournament.js`) | none new |
+| **3** | Pluggable outcome-oracle interface + a reference signed-feed adapter | ✅ built (`tournament.js`) | **the oracle** |
+| **4** | Anti-abuse: entry caps, beacon-sampled scoring, dispute window | design only | oracle + dispute quorum |
+| **5** (research) | succinct proofs of correct scoring to cut validator cost | design only | — |
 
-Phases 1–2 are buildable **now, fully offline and trustlessly testable** with a
-mock feed — they'd let us demonstrate the tournament mechanics (commit, lock,
-score-on-realised-outcome, skill reward) without taking on oracle trust. Phase 3
-is where real-world trust enters and should be a deliberate decision.
+Phases 1–3 are implemented and driven end-to-end **offline** by
+`scripts/test-cortex-tournament.mjs` on a deterministic mock feed + oracle: a
+model trained on resolved history earns MIND predicting an unseen future round;
+a confidently-wrong model is slashed; noise-level skill lands in a dead zone and
+earns nothing. Phase 3's oracle is a single signing key in the reference
+adapter — the real-world trust — so a production deployment would swap it for a
+decentralised/threshold oracle with a dispute window (phase 4). Phase 5 remains
+open research.
 
 ## 7. Recommendation
 

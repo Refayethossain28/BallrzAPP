@@ -217,7 +217,14 @@ assumption; the checkable cryptography is implemented and tested.)
 **[`TRUSTLESS.md`](TRUSTLESS.md)** scopes what a fully trust-*minimised* system
 would take — a forecasting-tournament chain that scores predictions of future
 outcomes — and is honest that trust there is only relocated (to an outcome
-oracle), never removed.
+oracle), never removed. Its **phases 1–3 are built** in
+[`holdout.js`](holdout.js) + [`tournament.js`](tournament.js): a full
+OPEN→COMMIT→LOCK→REVEAL→RESOLVE→SCORE round machine where miners stake MIND,
+commit a model before the outcome is known, and are rewarded for *predictive
+skill* on a future round revealed by a signed outcome oracle — with noise-level
+skill in a dead zone (luck isn't paid) and anti-skill slashed. It runs
+end-to-end offline on a mock feed/oracle; the only real-world trust is that
+oracle key.
 
 ## Production cost & economics
 
@@ -331,10 +338,11 @@ block.
 ## Tests
 
 ```
-npm run test:cortex          # engine: model, chain, MIND token
-npm run test:cortex-holdout  # commit–reveal generalisation layer
-npm test                     # the whole prototype suite (includes Cortex)
-npm run bench:cortex         # production-cost benchmark (not part of the test gate)
+npm run test:cortex             # engine: model, chain, MIND token
+npm run test:cortex-holdout     # commit–reveal generalisation layer
+npm run test:cortex-tournament  # forecasting-tournament chain (TRUSTLESS.md phases 1–3)
+npm test                        # the whole prototype suite (includes Cortex)
+npm run bench:cortex            # production-cost benchmark (not part of the test gate)
 ```
 
 The suite (20 tests) covers dataset/weight determinism, that training actually
