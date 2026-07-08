@@ -60,6 +60,11 @@ Optional tuning via environment variables (Render → your service → Environme
   refill rate for `POST /msg` (defaults 150 burst, 30/sec). The defaults let a
   node announce its whole chain and offer list in one go, while still throttling
   a genuine flood.
+- **`RELAY_TRUST_PROXIES`** — how many proxies sit in front of the relay, used to
+  find the real client IP in `x-forwarded-for` for rate-limiting (default **1**,
+  correct for Render's single edge proxy). Only the right-most that many hops are
+  trusted, so a client can't spoof the header to dodge the limit. Set **0** if you
+  run the relay with no proxy in front, so it keys on the socket address directly.
 
 When a single free instance isn't enough, the honest next steps are a **paid
 instance** (no sleeping, more memory) and/or **several relays** — the app
