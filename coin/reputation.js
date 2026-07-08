@@ -82,7 +82,11 @@
 
   // An attestation is valid iff: kind known, addresses well-formed and distinct
   // (you can't attest about yourself), the public key matches the author's
-  // address, and the signature verifies over the canonical form.
+  // address, the signature verifies over the canonical form, AND its id is the
+  // real content hash. The last check matters: `id` is not covered by the
+  // signature (canonical() excludes it), and callers de-duplicate by id — so
+  // without pinning id to attId(a), one genuinely-signed note could be cloned
+  // under many fabricated ids to inflate counts or evict others from a store.
   function verifyAttestation(a) {
     var C = coin();
     if (!a || typeof a !== 'object') return false;
@@ -91,8 +95,10 @@
     if (typeof a.note !== 'string' || a.note.length > NOTE_MAX) return false;
     if (!Number.isInteger(a.value) || a.value < 0) return false;
     if (!a.pubKey || C.addressFromPublicKey(a.pubKey) !== a.from) return false;
-    try { return C.verify(C.sha256(canonical(a)), a.sig, a.pubKey); }
-    catch (e) { return false; }
+    try {
+      if (!C.verify(C.sha256(canonical(a)), a.sig, a.pubKey)) return false;
+    } catch (e) { return false; }
+    return typeof a.id === 'string' && a.id === attId(a);   // id must be the content hash
   }
 
   // Bundle the attestations about `subject` into a portable passport. Identity
@@ -153,6 +159,11 @@
   // counted, so a hand-edited passport can't inflate itself.
   function readPassport(passport, opts) {
     if (!passport || !passport.subject || !passport.subject.address) throw new Error('not a passport');
+    // The subject address is self-claimed but must at least be a well-formed
+    // address — a passport "about" a bogus/injection string carries no valid
+    // attestations anyway (verifyAttestation requires a valid subject), so
+    // reject it outright rather than surfacing attacker-controlled text.
+    if (!coin().isValidAddress(passport.subject.address)) throw new Error('passport subject is not a valid address');
     var s = summarize(passport.subject.address, passport.attestations, opts);
     s.identity = { address: passport.subject.address, pubKey: passport.subject.pubKey || '', name: passport.subject.name || '' };
     return s;

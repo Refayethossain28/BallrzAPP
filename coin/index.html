@@ -1278,7 +1278,27 @@
   function repAtts() { return Object.keys(reps).map(function (id) { return reps[id]; }); }
   // "Known" = someone whose key I hold (a contact) or one of my own wallets —
   // the honest anti-sybil signal for weighing a stranger's passport.
-  function repKnown(addr) { return !!(directory[addr] || myAddresses()[addr]); }
+  // People you ACTUALLY know, for weighing a stranger's reputation. This must NOT
+  // be "anyone the relay ever mentioned" (`directory` is filled from every
+  // gossiped id/offer/credit, so that would count a sybil's throwaway wallets) —
+  // it's the addresses you've genuinely transacted a favour with: a mutual-credit
+  // transfer to/from one of your wallets, or a deal where you were the
+  // counterparty. Computed once per render and passed into summarize(), so it's
+  // not recomputed per author.
+  function myContacts() {
+    var set = {}, mine = myAddresses();
+    creditList().forEach(function (c) {
+      if (mine[c.from] && !mine[c.to]) set[c.to] = 1;
+      if (mine[c.to] && !mine[c.from]) set[c.from] = 1;
+    });
+    Object.keys(deals).forEach(function (id) {
+      var d = deals[id];
+      if (mine[d.buyer] && !mine[d.seller]) set[d.seller] = 1;
+      if (mine[d.seller] && !mine[d.buyer]) set[d.buyer] = 1;
+    });
+    return set;
+  }
+  function knownFn() { var c = myContacts(), mine = myAddresses(); return function (addr) { return !!(c[addr] || mine[addr]); }; }
   function walletByAddress(addr) {
     for (var i = 0; i < wallets.length; i++) if (wallets[i].address === addr) return wallets[i];
     return null;
@@ -1323,9 +1343,9 @@
     if (!Rep || !$('repMine')) return;
     if (!wallets.length) { $('repMine').textContent = 'Unlock or create a wallet to build a reputation.'; return; }
     // Summarise across ALL my wallets combined (my whole standing on this device).
-    var mine = myAddresses(), atts = repAtts(), lines = [];
+    var mine = myAddresses(), atts = repAtts(), lines = [], known = knownFn();
     Object.keys(mine).forEach(function (addr) {
-      var s = Rep.summarize(addr, atts, { known: repKnown });
+      var s = Rep.summarize(addr, atts, { known: known });
       if (s.total) lines.push('<b>' + who(addr) + '</b> — ' + esc(repSummaryLine(s)));
     });
     $('repMine').innerHTML = lines.length
@@ -1377,9 +1397,9 @@
     try { obj = JSON.parse(text); } catch (e) { res.style.display = ''; res.innerHTML = '✖ That doesn’t look like a passport (not valid JSON).'; return; }
     var passport = obj && obj.passport ? obj.passport : obj;
     var s;
-    try { s = Rep.readPassport(passport, { known: repKnown }); }
+    try { s = Rep.readPassport(passport, { known: knownFn() }); }
     catch (e) { res.style.display = ''; res.innerHTML = '✖ Not a passport: ' + esc(e.message); return; }
-    var id = s.identity, name = id.name ? esc(id.name) : short(id.address);
+    var id = s.identity, name = id.name ? esc(id.name) : esc(short(id.address));
     var trust = s.knownCount >= 2 ? '✓ Several people you know vouch for them.'
       : s.knownCount === 1 ? 'One person you know vouches for them.'
       : s.distinctAuthors ? 'You don’t yet know any of the people vouching for them — weigh it accordingly.'
