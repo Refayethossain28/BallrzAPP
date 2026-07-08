@@ -1684,21 +1684,43 @@
     bc.onmessage = function (ev) { handleNetMessage(ev.data); };
   }
 
+  // Outbound queue. Announcing a node's whole state (a `hello`, or startup) can
+  // burst well past the relay's per-client rate limit; firing every POST at once
+  // meant the overflow came back 429 and was silently dropped, so a new member
+  // converged on only a partial view. Instead we queue posts and drain them at a
+  // steady pace, RE-QUEUEING with backoff on a 429 so nothing is lost.
+  var sendQ = [];                    // [{ url, body, tries }]
+  var SEND_PER_TICK = 6, SEND_TICK_MS = 120, SEND_MAX_TRIES = 6;
+  var sendTimer = null;
+  function scheduleDrain() { if (!sendTimer && typeof fetch !== 'undefined') sendTimer = setTimeout(drainSend, SEND_TICK_MS); }
+  function drainSend() {
+    sendTimer = null;
+    var batch = sendQ.splice(0, SEND_PER_TICK);
+    batch.forEach(function (item) {
+      try {
+        fetch(item.url + '/msg', { method: 'POST', headers: { 'content-type': 'application/json' }, body: item.body })
+          .then(function (res) {
+            if (res && res.status === 429 && item.tries < SEND_MAX_TRIES) {
+              item.tries++;
+              setTimeout(function () { sendQ.push(item); scheduleDrain(); }, 300 * item.tries); // linear backoff
+            }
+          })
+          .catch(function () { /* this relay is down — others (and tabs) still carry it */ });
+      } catch (err) { /* offline */ }
+    });
+    if (sendQ.length) scheduleDrain();
+  }
   function netSend(msg) {
     msg.from = NODE_ID;
     if (bc) bc.postMessage(msg);              // same-browser tabs are the same node/circle
     if (typeof fetch === 'undefined') return;
     var chainLayer = CHAIN_TYPES[msg.type];
+    var body = JSON.stringify(msg);
     relays.forEach(function (r) {
       if (chainLayer && r.peer) return;        // never push your blockchain into a neighbouring circle
-      try {
-        fetch(r.url + '/msg', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(msg)
-        }).catch(function () { /* this relay down — others (and tabs) still carry it */ });
-      } catch (err) { /* offline */ }
+      sendQ.push({ url: r.url, body: body, tries: 0 });
     });
+    scheduleDrain();
   }
   function announceChain() { netSend({ type: 'chain', blocks: chain.blocks }); }
 
