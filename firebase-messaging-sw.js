@@ -1,7 +1,7 @@
 // ApexVIP Service Worker — Push Notifications + Offline PWA shell
 // Version 3.2
 
-const CACHE_NAME = 'apexvip-v8';
+const CACHE_NAME = 'apexvip-v9';
 const OFFLINE_URLS = [
   '/BallrzAPP/apexvip-client.html',
   '/BallrzAPP/apexvip-driver.html',

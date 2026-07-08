@@ -892,7 +892,7 @@ if (typeof ApexEngine === 'undefined') {
   (function(){ const sc=document.createElement('script'); sc.src='apexvip-engine.js?retry='+Date.now(); sc.onload=()=>{ try{render();}catch(_){}} ; document.head.appendChild(sc); })();
 }
 
-const APP_BUILD='2026-07-04.3';
+const APP_BUILD='2026-07-08.1';
 try{console.info('[apexvip] client build',APP_BUILD);}catch(_){}
 
 const _errSeen = new Set();
@@ -1050,7 +1050,7 @@ let state = {
   _corporateCode: '',
   _corporateRef: '',
   _discoverCity: 'london',
-  _discoverCat: 'all',
+  _discoverCat: 'All',
   _airportPicker: false,
   _cityInterest: JSON.parse(localStorage.getItem('apex_city_interest') || '{}'),
   memberNumber: localStorage.getItem('apex_member_no') || null,
@@ -1459,7 +1459,18 @@ async function sendConciergeMsg() {
           ref:t.id, pickup:t.pickup, dropoff:t.dropoff||'', airport:t.dropoff||'',
           date:t.date, time:t.time, status:t.status, flight:t.flight||''
         }));
-        const res = await fn({ message:msg, history, trips:tripsCtx, now:new Date().toISOString() });
+        // Context engineering: assemble a bounded guest context (saved places,
+        // tier, cabin prefs, live rate card, current location) so ApexAI can
+        // resolve "home"/"the office", quote from real prices and greet by name.
+        const _cx = (typeof ApexEngine!=='undefined' && ApexEngine.buildConciergeContext) ? ApexEngine.buildConciergeContext({
+          name: state.user?.name,
+          tier: (typeof apexTier==='function') ? apexTier(state.apexBalance) : '',
+          savedAddresses: (state.savedAddresses||[]).map(a=>({label:a.label,addr:a.addr})),
+          prefs: state.prefs,
+          rateCard: (typeof PRICES!=='undefined') ? PRICES : null,
+          location: state.booking?.pickup || state._lastKnownLocation || '',
+        }) : undefined;
+        const res = await fn({ message:msg, history, trips:tripsCtx, now:new Date().toISOString(), context:_cx });
         d = res.data;
       } catch(fnErr) {
         await new Promise(r=>setTimeout(r,520));
@@ -1757,9 +1768,45 @@ async function runApplePay() {
     }
   };
   session.onpaymentauthorized = async (event) => {
+    // Hand the Apple Pay token to the server to actually charge it. We must not
+    // report STATUS_SUCCESS until the payment is captured (or at least durably
+    // queued for capture) — otherwise the guest is told they paid while no
+    // charge ever happens.
+    const ref = 'APX-' + (Math.floor(1000 + Math.random() * 9000));
+    const token = event.payment && event.payment.token;
+    const idempotencyKey = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (ref + '-' + total);
+    let ok = false, paymentId = null;
+    try {
+      if (FIREBASE_ENABLED && fns && token) {
+        try {
+          const fn = fns.httpsCallable('processApplePayPayment');
+          const resp = await fn({ token, idempotencyKey, amount: total, currency: 'GBP', bookingRef: ref });
+          paymentId = resp.data && resp.data.paymentId || null;
+          ok = true;
+        } catch (fnErr) {
+          // Server not reachable / not yet processing Apple Pay — durably queue
+          // the token so the charge is captured server-side, never dropped.
+          await db.collection('pending_payments').add({
+            clientId: auth.currentUser?.uid || null,
+            applePayToken: token, idempotencyKey, amount: total, currency: 'GBP',
+            bookingRef: ref, status: 'pending', method: 'apple_pay',
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+          ok = true;
+        }
+      }
+    } catch (e) { reportError(e, 'apple-pay-authorize'); }
+    if (!ok) {
+      session.completePayment(ApplePaySession.STATUS_FAILURE);
+      alert('Apple Pay could not be completed. Please use the card form below.');
+      return;
+    }
     session.completePayment(ApplePaySession.STATUS_SUCCESS);
-    track('apple_pay_used', { total, src: 'client' });
-    await confirmBooking();
+    state._confirmedRef = ref;
+    state._squarePaymentId = paymentId;
+    track('apple_pay_used', { total, paymentId, src: 'client' });
+    await confirmBooking(ref);
+    if (state.screen !== 'booking-confirmed') go('booking-confirmed');
   };
   session.begin();
 }
@@ -5604,6 +5651,7 @@ async function runSquarePayment(){
         track('payment_charged',{ref,total,paymentId,src:'client'});
       }catch(fnErr){
         await db.collection('pending_payments').add({
+          clientId: auth.currentUser?.uid || null,
           sourceId, verificationToken, idempotencyKey, amount:total, currency:'GBP', bookingRef:ref, status:'pending',
           createdAt:firebase.firestore.FieldValue.serverTimestamp()
         }).catch(reportError);
@@ -5626,8 +5674,8 @@ async function confirmBooking(overrideRef){
   const ref = overrideRef || state._confirmedRef || ('APX-'+(Math.floor(1000+Math.random()*9000)));
   const base=state.booking.price||185;
   // Fare math (discount + VAT-inclusive total) — shared, unit-tested engine.
-  // quoteFare fallback mirrors payments/pricing.ts (10% promo, 20% VAT included)
-  const {discount:disc,total,vat}=(typeof ApexEngine!=='undefined')?ApexEngine.quoteFare(base,!!state._promoApplied):(()=>{const d=state._promoApplied?Math.round(base*0.10):0;const t=base-d;return{discount:d,total:t,vat:Math.round(t/6*100)/100};})();
+  // quoteFare fallback mirrors payments/pricing.ts (20% promo, VAT is 1/6 of total)
+  const {discount:disc,total,vat}=(typeof ApexEngine!=='undefined')?ApexEngine.quoteFare(base,!!state._promoApplied):(()=>{const d=state._promoApplied?Math.round(base*0.20):0;const t=base-d;return{discount:d,total:t,vat:Math.round(t/6*100)/100};})();
   const svcLabel={airport:'Airport Transfer',hourly:'By the Hour',day:'By the Day'}[state.booking.serviceType]||'Airport Transfer';
   if(FIREBASE_ENABLED&&auth.currentUser){
     try{
@@ -5760,8 +5808,11 @@ if(FIREBASE_ENABLED){
       try{
         const doc=await db.collection('users').doc(user.uid).get();
         const p=doc.exists?doc.data():{};
-        state.user={uid:user.uid,name:p.name||user.displayName||user.email.split('@')[0],email:user.email};
-      }catch(e){state.user={uid:user.uid,name:user.displayName||user.email.split('@')[0],email:user.email};}
+        // Apple Sign In (and its private-relay flow) returns a null email on
+        // repeat logins — never call .split on it or the whole session crashes.
+        const _emailName=(user.email||'').split('@')[0];
+        state.user={uid:user.uid,name:p.name||user.displayName||_emailName||'Guest',email:user.email||''};
+      }catch(e){const _emailName=(user.email||'').split('@')[0];state.user={uid:user.uid,name:user.displayName||_emailName||'Guest',email:user.email||''};}
       ensureSubscription();
       if(_unsub)_unsub();
       _unsub=db.collection('bookings').where('clientId','==',user.uid)
@@ -5786,7 +5837,7 @@ if(FIREBASE_ENABLED){
             });
           });
           if(['home','trips'].includes(state.screen))render();
-        },()=>{});
+        },err=>reportError(err,'trips-listener'));
       // Watch latest booking for real-time status
       let _statusUnsub=null;
       function watchLatestBooking(){
@@ -5815,7 +5866,7 @@ if(FIREBASE_ENABLED){
                 go('receipt');
               } else if(state.screen==='active-trip'||state.screen==='booking-confirmed')render();
             }
-          },()=>{});
+          },err=>reportError(err,'latest-booking-listener'));
       }
       watchLatestBooking();
       state._loginErr=null;
@@ -6025,11 +6076,15 @@ generateMemberNumber();
 renderNow();
 maybeShowConsent();
 
-// Auto-check flight for upcoming trip with a flight number
-setTimeout(() => {
+// Auto-check flight for an upcoming trip with a flight number. TRIPS is filled
+// asynchronously by the Firestore listener, which can take longer than any
+// single fixed delay — so poll a bounded number of times until it lands.
+(function autoCheckFlight(attempt){
+  if (state._flightStatus) return;
   const t = TRIPS.find(t => t.status === 'upcoming' && t.flight);
-  if (t && !state._flightStatus) checkFlight(t.flight);
-}, 3000);
+  if (t) { checkFlight(t.flight); return; }
+  if (attempt < 10) setTimeout(() => autoCheckFlight(attempt + 1), 2000);
+})(0);
 </script>
 
 <script>

@@ -305,7 +305,7 @@ function getClientPreferences(clientId, structuredPrefs) {
     if (lines.length > 0) return lines;
   }
   // Fallback: check legacy stored prefs
-  const stored = JSON.parse(localStorage.getItem('apexvip_client_prefs_' + (clientId||'demo')) || 'null');
+  const stored = safeParse(localStorage.getItem('apexvip_client_prefs_' + (clientId||'demo')), null);
   if (stored) return stored;
   // Default luxury preferences
   return [
@@ -416,6 +416,20 @@ function mapJob(doc){
     vehicle:esc(j.vehicle||'S-Class'),status:j.status||'pending'};
 }
 
+// Safe JSON.parse — never throws at render time on corrupt localStorage.
+function safeParse(str,fallback){try{const v=JSON.parse(str);return v==null?fallback:v;}catch(_){return fallback;}}
+// Broadcast (open_jobs) mapper — client-controlled fields escaped, mirroring mapJob().
+function mapOpenJob(d){
+  const x=d.data();
+  return {_openId:d.id,_broadcast:true,bookingDocId:x.bookingDocId||'',bookingRef:esc(x.bookingRef||''),
+    type:x.type||'airport',client:esc(x.clientName||'Client'),
+    initials:esc((x.clientName||'CL').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2)),
+    service:esc(x.serviceLabel||'Airport Transfer'),pickup:esc(x.pickup||''),
+    dropoff:esc(x.dropoff||''),time:esc(x.time||'Now'),
+    pay:Number(x.pay)||95,flight:esc(x.flight||''),notes:esc(x.notes||''),
+    vehicle:esc(x.vehicle||'S-Class'),status:'pending'};
+}
+
 function setupDriverListeners(uid){
   loadDriverFeedback();
   watchBusinessModel();
@@ -472,13 +486,7 @@ function setupDriverListeners(uid){
   const market = S.driverProfile?.market || S.profile?.market || 'london';
   db.collection('open_jobs').where('status','==','open').where('market','==',market)
     .onSnapshot(snap=>{
-      const open=snap.docs.map(d=>({_openId:d.id,_broadcast:true,bookingDocId:d.data().bookingDocId||'',bookingRef:d.data().bookingRef||'',
-        type:d.data().type||'airport',client:d.data().clientName||'Client',
-        initials:(d.data().clientName||'CL').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2),
-        service:d.data().serviceLabel||'Airport Transfer',pickup:d.data().pickup||'',
-        dropoff:d.data().dropoff||'',time:d.data().time||'Now',
-        pay:d.data().pay||95,flight:d.data().flight||'',notes:d.data().notes||'',
-        vehicle:d.data().vehicle||'S-Class',status:'pending'}));
+      const open=snap.docs.map(mapOpenJob);
       S._openJobs=open;
       // If the job we're ringing got claimed by another driver, stand down
       if(S.jobOverlay&&S._offeredJob?._broadcast&&!open.find(j=>j._openId===S._offeredJob._openId)){
@@ -853,14 +861,7 @@ function goOnline(){
     const market = S.driverProfile?.market || S.profile?.market || 'london';
     db.collection('open_jobs').where('status','==','open').where('market','==',market).limit(20).get().then(snap=>{
       if(!S.online||S.jobOverlay||S.activeJob)return;
-      const open=snap.docs.map(d=>({_openId:d.id,_broadcast:true,
-        bookingDocId:d.data().bookingDocId||'',bookingRef:d.data().bookingRef||'',
-        type:d.data().type||'airport',client:d.data().clientName||'Client',
-        initials:(d.data().clientName||'CL').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2),
-        service:d.data().serviceLabel||'Airport Transfer',pickup:d.data().pickup||'',
-        dropoff:d.data().dropoff||'',time:d.data().time||'Now',
-        pay:d.data().pay||95,flight:d.data().flight||'',notes:d.data().notes||'',
-        vehicle:d.data().vehicle||'S-Class',status:'pending'}));
+      const open=snap.docs.map(mapOpenJob);
       if(open.length){S._openJobs=open;S._offeredJob=open[0];S.jobOverlay=true;S.countdown=30;startCountdown();render();}
     }).catch(reportError);
     render();
@@ -925,13 +926,7 @@ function refreshJobs(){
   showToast('Checking for new jobs…','info',2000);
   const market = S.driverProfile?.market || S.profile?.market || 'london';
   db.collection('open_jobs').where('status','==','open').where('market','==',market).limit(20).get().then(snap=>{
-    const open=snap.docs.map(d=>({_openId:d.id,_broadcast:true,bookingDocId:d.data().bookingDocId||'',bookingRef:d.data().bookingRef||'',
-      type:d.data().type||'airport',client:d.data().clientName||'Client',
-      initials:(d.data().clientName||'CL').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2),
-      service:d.data().serviceLabel||'Airport Transfer',pickup:d.data().pickup||'',
-      dropoff:d.data().dropoff||'',time:d.data().time||'Now',
-      pay:d.data().pay||95,flight:d.data().flight||'',notes:d.data().notes||'',
-      vehicle:d.data().vehicle||'S-Class',status:'pending'}));
+    const open=snap.docs.map(mapOpenJob);
     S._openJobs=open;
     showToast(open.length?`${open.length} job${open.length!==1?'s':''} available`:'No open jobs right now',open.length?'success':'info');
     if(open.length&&S.online&&!S.jobOverlay&&!S.activeJob){
@@ -1205,7 +1200,7 @@ home:()=>{
         </div>`:''}
 
         <div style="display:flex;gap:8px;margin-bottom:12px">
-          ${[['2','Trips Today'],['£190','Earned'],[`${S.apexcoin.toFixed(0)} AXC`,'ApexCoin']].map(([v,l],i)=>`<div class="card" onclick="${i===2?"go('axc-wallet')":''}" style="flex:1;text-align:center;padding:14px;margin-bottom:0;${i===2?'border-color:rgba(200,169,126,.25);background:rgba(200,169,126,.04);cursor:pointer':''}">
+          ${(()=>{const _E=(typeof ApexEngine!=='undefined')?ApexEngine:null;const day=_E?_E.summarizeEarnings(S._payoutLedger||[],'today'):{total:0,count:0};return [[String(day.count),'Trips Today'],['£'+(day.total||0),'Earned'],[`${S.apexcoin.toFixed(0)} AXC`,'ApexCoin']];})().map(([v,l],i)=>`<div class="card" onclick="${i===2?"go('axc-wallet')":''}" style="flex:1;text-align:center;padding:14px;margin-bottom:0;${i===2?'border-color:rgba(200,169,126,.25);background:rgba(200,169,126,.04);cursor:pointer':''}">
             <div style="font-size:${i===2?16:22}px;font-weight:800;color:#C8A97E">${v}</div>
             <div style="font-size:10px;color:var(--fg-dim);margin-top:3px">${l}</div>
           </div>`).join('')}
@@ -1213,16 +1208,13 @@ home:()=>{
 
         <div class="card">
           <div class="section-label" style="margin-bottom:14px">Today's Schedule</div>
-          <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--divider)">
-            <div style="width:8px;height:8px;border-radius:50%;background:#22c55e;flex-shrink:0"></div>
-            <div style="flex:1"><div style="font-size:14px">Heathrow T5 → Mayfair</div><div style="font-size:12px;color:var(--fg-dim);margin-top:2px">Completed · 14:30</div></div>
-            <div style="color:#C8A97E;font-weight:700">£95</div>
-          </div>
-          <div style="display:flex;align-items:center;gap:12px;padding:10px 0">
-            <div style="width:8px;height:8px;border-radius:3px;background:#C8A97E;flex-shrink:0"></div>
-            <div style="flex:1"><div style="font-size:14px">City Airport → Chelsea</div><div style="font-size:12px;color:var(--fg-dim);margin-top:2px">Tomorrow · 08:15</div></div>
-            <div style="color:#C8A97E;font-weight:700">£125</div>
-          </div>
+          ${(()=>{
+            const items=[];
+            if(S.activeJob) items.push(`<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--divider)"><div style="width:8px;height:8px;border-radius:3px;background:#C8A97E;flex-shrink:0"></div><div style="flex:1"><div style="font-size:14px">${esc(S.activeJob.pickup||'')} → ${esc(S.activeJob.dropoff||'')}</div><div style="font-size:12px;color:var(--fg-dim);margin-top:2px">In progress${S.activeJob.time?' · '+esc(S.activeJob.time):''}</div></div><div style="color:#C8A97E;font-weight:700">£${S.activeJob.pay||''}</div></div>`);
+            const today=(S._myCompleted||[]).filter(t=>t.date && new Date(t.date).toDateString()===new Date().toDateString());
+            today.slice(0,5).forEach(t=>items.push(`<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--divider)"><div style="width:8px;height:8px;border-radius:50%;background:#22c55e;flex-shrink:0"></div><div style="flex:1"><div style="font-size:14px">${esc(t.route||t.service||'Trip')}</div><div style="font-size:12px;color:var(--fg-dim);margin-top:2px">Completed</div></div></div>`));
+            return items.length?items.join(''):`<div style="text-align:center;padding:18px;color:var(--fg-subtle);font-size:13px">No trips yet today — go online to receive jobs.</div>`;
+          })()}
         </div>
       </div>
       ${nav()}
@@ -1787,7 +1779,7 @@ apexai:()=>{
       <div style="font-size:13px;color:var(--fg-dim)">Routes, client tips, London knowledge, earnings — ask anything.</div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
-      ${examples.map(e=>`<div onclick="driverAIQuick('${e.text.replace(/'/g,"\\'")}\")" style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px;cursor:pointer;transition:border-color .15s" ontouchstart="this.style.borderColor='var(--gold)'" ontouchend="this.style.borderColor='var(--border)'">
+      ${examples.map(e=>`<div onclick="driverAIQuick('${e.text.replace(/'/g,"\\'")}')" style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px;cursor:pointer;transition:border-color .15s" ontouchstart="this.style.borderColor='var(--gold)'" ontouchend="this.style.borderColor='var(--border)'">
         <div style="font-size:18px;margin-bottom:6px">${e.icon}</div>
         <div style="font-size:12px;color:var(--fg-2);line-height:1.4">${e.text}</div>
       </div>`).join('')}
