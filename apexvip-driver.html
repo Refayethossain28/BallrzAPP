@@ -351,9 +351,20 @@ function toggleTheme(){
 }
 
 function driverSendMsg(msg){
-  const el=document.getElementById('driver-chat-sent');
-  if(el){const d=document.createElement('div');d.style.cssText='background:linear-gradient(135deg,#C8A97E,#8B6020);border-radius:18px 18px 4px 18px;padding:12px 16px;font-size:13px;color:#000;font-weight:500;margin-bottom:4px';d.textContent=msg;el.appendChild(d);}
-  if(FIREBASE_ENABLED&&fns&&S.activeJob){const fn=fns.httpsCallable('sendChauffeurMessage');fn({bookingRef:S.activeJob.bookingRef||S.activeJob.id,message:msg,fromRole:'driver'}).catch(reportError);}
+  const id=S.activeJob&&S.activeJob.bookingDocId;
+  // Persist straight to the booking thread. The rules let the assigned driver
+  // post, so the message reaches the client (and back) with no dependency on a
+  // Cloud Function being deployed. The live listener re-renders both sides.
+  if(FIREBASE_ENABLED&&auth.currentUser&&id){
+    db.collection('bookings').doc(id).collection('messages').add({
+      senderId:auth.currentUser.uid, fromRole:'driver', text:msg,
+      createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(reportError);
+  }else{
+    // Demo / offline fallback — local echo only (no thread to sync to).
+    const el=document.getElementById('driver-chat-sent');
+    if(el){const d=document.createElement('div');d.style.cssText='align-self:flex-end;background:linear-gradient(135deg,#C8A97E,#8B6020);border-radius:18px 18px 4px 18px;padding:12px 16px;font-size:13px;color:#000;font-weight:500;margin-bottom:4px';d.textContent=msg;el.appendChild(d);}
+  }
   track('driver_chat_sent',{src:'driver'});
 }
 function driverSendCustom(){
@@ -361,6 +372,26 @@ function driverSendCustom(){
   if(!inp||!inp.value.trim())return;
   const msg=inp.value.trim();inp.value='';
   driverSendMsg(msg);
+}
+// Live chat thread — renders both the driver's and the client's messages from
+// Firestore so the driver actually SEES the guest's replies (previously the
+// driver screen only echoed its own outgoing messages).
+let _driverChatUnsub=null,_driverChatDoc=null;
+function _driverChatBubble(m){
+  const isMe=m.fromRole==='driver';
+  return `<div style="display:flex;justify-content:${isMe?'flex-end':'flex-start'};margin-bottom:8px"><div style="max-width:78%;background:${isMe?'linear-gradient(135deg,#C8A97E,#8B6020)':'var(--surface)'};border:1px solid ${isMe?'transparent':'var(--border)'};border-radius:${isMe?'18px 18px 4px 18px':'18px 18px 18px 4px'};padding:11px 15px;font-size:13px;color:${isMe?'#000':'var(--fg)'};font-weight:${isMe?'500':'400'}">${esc(m.text||m.message||'')}</div></div>`;
+}
+function setupDriverChatListener(docId){
+  if(!FIREBASE_ENABLED||!docId)return;
+  if(_driverChatDoc===docId&&_driverChatUnsub)return;
+  if(_driverChatUnsub){_driverChatUnsub();_driverChatUnsub=null;}
+  _driverChatDoc=docId;
+  _driverChatUnsub=db.collection('bookings').doc(docId).collection('messages')
+    .orderBy('createdAt','asc').limitToLast(50)
+    .onSnapshot(snap=>{
+      const el=document.getElementById('driver-chat-sent');
+      if(el){el.innerHTML=snap.docs.map(d=>_driverChatBubble(d.data())).join('');el.scrollTop=el.scrollHeight;}
+    },err=>reportError(err,'driver-chat-listener'));
 }
 function go(s){clearInterval(S._cdTimer);S.screen=s;track('screen_view',{screen:s,src:'driver'});render();window.scrollTo(0,0);}
 
@@ -2073,6 +2104,7 @@ function renderNow(){
   if(S.screen==='axc-wallet'){document.getElementById('app').innerHTML=pages.axcWallet();return;}
   const fn=pages[S.screen]||pages.login;
   document.getElementById('app').innerHTML=fn();
+  if(S.screen==='driver-client-chat') setTimeout(()=>setupDriverChatListener(S.activeJob&&S.activeJob.bookingDocId),0);
 }
 
 renderNow();
