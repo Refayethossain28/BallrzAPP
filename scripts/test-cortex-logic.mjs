@@ -1,0 +1,206 @@
+#!/usr/bin/env node
+/**
+ * Unit tests for cortex/engine.js — the Cortex Proof-of-Learning blockchain:
+ * a deterministic shared dataset + MLP, a full-batch gradient trainer that
+ * measurably reduces loss, hash-linked and secp256k1-signed model checkpoints,
+ * loss-is-recomputed-not-trusted block validation, and cumulative-learning
+ * fork choice. Loaded in a vm sandbox alongside the coin engine (which supplies
+ * the cryptography), repo is type:module. Run: node scripts/test-cortex-logic.mjs
+ */
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const sandbox = { module: { exports: {} } };
+sandbox.self = sandbox;
+vm.createContext(sandbox);
+vm.runInContext(readFileSync(join(ROOT, 'coin', 'engine.js'), 'utf8'), sandbox, { filename: 'coin/engine.js' });
+const C = sandbox.module.exports;
+sandbox.BallrzCoin = C;                 // cortex/engine.js looks it up as self.BallrzCoin
+sandbox.module = { exports: {} };
+vm.runInContext(readFileSync(join(ROOT, 'cortex', 'engine.js'), 'utf8'), sandbox, { filename: 'cortex/engine.js' });
+const X = sandbox.module.exports;
+
+const alice = C.walletFromPrivateKey('0000000000000000000000000000000000000000000000000000000000000001');
+const bob = C.walletFromPrivateKey('0000000000000000000000000000000000000000000000000000000000000002');
+
+let n = 0;
+const tests = [];
+const test = (name, fn) => tests.push([name, fn]);
+
+test('the task is deterministic and non-trivially labelled', () => {
+  const t1 = X.makeTask({ id: 'unit', samples: 80 });
+  const t2 = X.makeTask({ id: 'unit', samples: 80 });
+  assert.deepEqual(t1.X, t2.X, 'same dataset from same id');
+  assert.deepEqual(t1.y, t2.y, 'same labels from same id');
+  assert.equal(t1.X.length, 80);
+  const ones = t1.y.filter((v) => v === 1).length;
+  assert.ok(ones > 15 && ones < 65, `labels are mixed, not degenerate (got ${ones}/80 ones)`);
+  assert.equal(t1.dim, 4 * t1.hidden + 1, 'weight vector length matches the 2->H->1 shape');
+});
+
+test('starting weights are reproducible and quantised to the grid', () => {
+  const t = X.makeTask({ id: 'unit' });
+  const a = X.randomWeights(t, 'seed');
+  const b = X.randomWeights(t, 'seed');
+  assert.deepEqual(a, b, 'same seed -> same weights');
+  assert.equal(a.length, t.dim);
+  a.forEach((w) => assert.ok(Math.abs(Math.round(w / t.quantum) * t.quantum - w) < 1e-12, 'on the quantum grid'));
+  const c = X.randomWeights(t, 'other');
+  assert.notDeepEqual(a, c, 'different seed -> different weights');
+});
+
+test('training reduces loss and lifts accuracy on a nonlinear task', () => {
+  const t = X.makeTask({ id: 'learn' });
+  const w0 = X.randomWeights(t, 'g');
+  const l0 = X.loss(t, w0);
+  const w1 = X.train(t, w0, 1500, 0.5);
+  const l1 = X.loss(t, w1);
+  assert.ok(l1 < l0, `loss falls (${l0.toFixed(3)} -> ${l1.toFixed(3)})`);
+  assert.ok(X.accuracy(t, w1) > 0.8, `accuracy clears 80% (${X.accuracy(t, w1).toFixed(2)})`);
+  // Determinism: the same training run gives byte-identical weights.
+  assert.deepEqual(X.train(t, w0, 1500, 0.5), w1, 'training is deterministic');
+});
+
+test('genesis is a valid, self-consistent block', () => {
+  const t = X.makeTask({ id: 'chain' });
+  const chain = new X.Chain(t, { genesisSeed: 'g' });
+  const g = chain.tip();
+  assert.equal(chain.height(), 0);
+  assert.equal(g.index, 0);
+  assert.equal(g.prevHash, X.GENESIS_PREV);
+  assert.equal(g.hash, X.blockHash(g), 'genesis hash checks out');
+  assert.equal(Math.round(X.loss(t, g.weights) * 1e9) / 1e9, g.loss, 'genesis loss is honest');
+  assert.equal(chain.cumulativeImprovement(), 0, 'nothing learned yet');
+});
+
+test('a mined block is signed, links to its parent, and lowers loss', () => {
+  const t = X.makeTask({ id: 'chain' });
+  const chain = new X.Chain(t, { genesisSeed: 'g' });
+  const before = chain.tipLoss();
+  const blk = chain.mineBlock({ privKey: alice.privateKey, steps: 500, nonce: 'a1' });
+  assert.ok(blk, 'a block was produced');
+  assert.equal(blk.index, 1);
+  assert.equal(blk.prevHash, chain.tip().hash, 'links to genesis');
+  assert.equal(blk.miner, alice.address, 'mined by alice');
+  assert.ok(blk.loss <= before - t.minImprovement + 1e-12, 'meets the minimum learning bar');
+  assert.ok(C.verify(C.sha256(X.canonical(blk)), blk.sig, blk.pubKey), 'signature verifies');
+  assert.ok(chain.addBlock(blk), 'accepted onto the chain');
+  assert.equal(chain.height(), 1);
+  assert.ok(chain.cumulativeImprovement() > 0, 'the chain has now learned something');
+});
+
+test('the chain learns block over block and improves accuracy end to end', () => {
+  const t = X.makeTask({ id: 'e2e' });
+  const chain = new X.Chain(t, { genesisSeed: 'g' });
+  const startAcc = chain.accuracy();
+  let last = chain.tipLoss();
+  for (let i = 0; i < 6; i++) {
+    const blk = chain.mineBlock({ privKey: (i % 2 ? bob : alice).privateKey, steps: 400, nonce: 'n' + i });
+    if (!blk) break;
+    chain.addBlock(blk);
+    assert.ok(blk.loss < last, `block ${i + 1} strictly lowers loss`);
+    last = blk.loss;
+  }
+  assert.ok(chain.height() >= 3, 'several blocks were mineable');
+  assert.ok(chain.accuracy() > startAcc, 'the shared model is measurably smarter');
+});
+
+test('a block lying about its loss is rejected', () => {
+  const t = X.makeTask({ id: 'liar' });
+  const chain = new X.Chain(t, { genesisSeed: 'g' });
+  const blk = chain.mineBlock({ privKey: alice.privateKey, steps: 500, nonce: 'x' });
+  // Forge a lower loss and re-sign so only the loss recomputation catches it.
+  const forged = Object.assign({}, blk, { loss: blk.loss - 0.5 });
+  forged.weightsHash = X.weightsHash(t, forged.weights);
+  forged.sig = C.sign(C.sha256(X.canonical(forged)), alice.privateKey);
+  forged.hash = X.blockHash(forged);
+  const v = chain.isValidBlock(forged, chain.tip());
+  assert.equal(v.ok, false);
+  assert.equal(v.reason, 'claimed loss is false');
+  assert.throws(() => chain.addBlock(forged), /claimed loss is false/);
+});
+
+test('a block with no real learning is rejected', () => {
+  const t = X.makeTask({ id: 'lazy' });
+  const chain = new X.Chain(t, { genesisSeed: 'g' });
+  const tip = chain.tip();
+  // Re-publish the genesis weights (zero improvement), honestly signed.
+  const lazy = {
+    index: 1, prevHash: tip.hash, taskId: t.id,
+    weights: tip.weights.slice(), weightsHash: tip.weightsHash, loss: tip.loss,
+    miner: alice.address, pubKey: alice.publicKey, at: 0, nonce: 'z'
+  };
+  lazy.sig = C.sign(C.sha256(X.canonical(lazy)), alice.privateKey);
+  lazy.hash = X.blockHash(lazy);
+  const v = chain.isValidBlock(lazy, tip);
+  assert.equal(v.ok, false);
+  assert.equal(v.reason, 'insufficient learning');
+});
+
+test("a block signed by the wrong key can't claim someone else's work", () => {
+  const t = X.makeTask({ id: 'forge' });
+  const chain = new X.Chain(t, { genesisSeed: 'g' });
+  const blk = chain.mineBlock({ privKey: alice.privateKey, steps: 500, nonce: 'q' });
+  // Keep alice's signature but claim bob mined it.
+  const tampered = Object.assign({}, blk, { miner: bob.address });
+  tampered.hash = X.blockHash(tampered);
+  const v = chain.isValidBlock(tampered, chain.tip());
+  assert.equal(v.ok, false);
+  assert.ok(v.reason === 'pubkey/miner mismatch' || v.reason === 'bad signature', `got: ${v.reason}`);
+});
+
+test('tampering with the hash link is caught', () => {
+  const t = X.makeTask({ id: 'link' });
+  const chain = new X.Chain(t, { genesisSeed: 'g' });
+  const blk = chain.mineBlock({ privKey: alice.privateKey, steps: 500, nonce: 'l' });
+  const cut = Object.assign({}, blk, { prevHash: X.GENESIS_PREV });
+  const v = chain.isValidBlock(cut, chain.tip());
+  assert.equal(v.ok, false);
+  assert.equal(v.reason, 'does not link to parent');
+});
+
+test('fork choice adopts the chain that has learned more', () => {
+  const t = X.makeTask({ id: 'fork' });
+  // Node A mines two modest blocks.
+  const nodeA = new X.Chain(t, { genesisSeed: 'g' });
+  for (let i = 0; i < 2; i++) nodeA.addBlock(nodeA.mineBlock({ privKey: alice.privateKey, steps: 300, nonce: 'a' + i }));
+  // Node B starts from the SAME genesis and mines further (more total learning).
+  const nodeB = new X.Chain(t, { genesisSeed: 'g' });
+  for (let i = 0; i < 5; i++) {
+    const b = nodeB.mineBlock({ privKey: bob.privateKey, steps: 400, nonce: 'b' + i });
+    if (!b) break;
+    nodeB.addBlock(b);
+  }
+  assert.equal(nodeA.blocks[0].hash, nodeB.blocks[0].hash, 'shared genesis');
+  assert.ok(nodeB.cumulativeImprovement() > nodeA.cumulativeImprovement(), 'B learned more');
+  const switched = nodeA.replaceChain(nodeB.blocks);
+  assert.equal(switched, true, 'A adopts the smarter chain');
+  assert.equal(nodeA.tipLoss(), nodeB.tipLoss());
+  // And it refuses to switch back to the shorter-learning chain.
+  const backAgain = nodeB.replaceChain(nodeA.blocks.slice(0, 2));
+  assert.equal(backAgain, false, 'never trades a smarter chain for a dumber one');
+});
+
+test('a fork with a doctored middle block is rejected wholesale', () => {
+  const t = X.makeTask({ id: 'validate' });
+  const chain = new X.Chain(t, { genesisSeed: 'g' });
+  const good = new X.Chain(t, { genesisSeed: 'g' });
+  for (let i = 0; i < 3; i++) good.addBlock(good.mineBlock({ privKey: alice.privateKey, steps: 400, nonce: 'v' + i }));
+  const rogue = good.blocks.map((b) => Object.assign({}, b));
+  rogue[2].loss = rogue[2].loss - 0.4; // lie inside the chain
+  assert.equal(chain.scoreChain(rogue), null, 'the whole fork is invalid');
+  assert.equal(chain.replaceChain(rogue), false, 'and is never adopted');
+});
+
+// ---- runner ----------------------------------------------------------------
+let failed = 0;
+for (const [name, fn] of tests) {
+  try { fn(); n++; console.log(`ok - ${name}`); }
+  catch (e) { failed++; console.error(`FAIL - ${name}\n    ${e && e.message}`); }
+}
+console.log(`\n${n}/${tests.length} cortex tests passed`);
+if (failed) process.exit(1);
