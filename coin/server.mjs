@@ -29,7 +29,8 @@
  *
  * Run:  node coin/server.mjs   (PORT=8087). Deploy anywhere Node ≥18 runs.
  * Env:  PORT, SELF_URL, RELAY_MAX_HELD, RELAY_MAX_BYTES, RELAY_RATE_CAP,
- *       RELAY_RATE_REFILL.
+ *       RELAY_RATE_REFILL, RELAY_TRUST_PROXIES (front proxies to trust for the
+ *       client IP; Render = 1, set 0 for no proxy).
  *
  * API (JSON, CORS open):
  *   GET  /status      → { ok, name, seq, held, ...metrics }   health
@@ -83,6 +84,10 @@ export function createRelay(opts = {}) {
   const MAX_BYTES = opts.maxBytes ?? Number(process.env.RELAY_MAX_BYTES || 64 * 1024 * 1024);
   const RATE_CAP = opts.rateCapacity ?? Number(process.env.RELAY_RATE_CAP || 150);   // burst tokens per IP
   const RATE_REFILL = opts.rateRefill ?? Number(process.env.RELAY_RATE_REFILL || 30); // tokens/sec refill
+  // How many proxies sit in front of us (Render's edge = 1). Only that many
+  // right-most x-forwarded-for hops are trusted; anything the client prepended
+  // is ignored. Set 0 to ignore the header entirely (no proxy).
+  const TRUST_PROXIES = opts.trustProxies ?? Number(process.env.RELAY_TRUST_PROXIES ?? 1);
   const now = opts.now || (() => Date.now());
 
   let seq = 0;
@@ -119,9 +124,21 @@ export function createRelay(opts = {}) {
   }, 5 * 60 * 1000);
   if (prune.unref) prune.unref();
 
+  // The client's real IP for rate-limiting. x-forwarded-for is
+  // `client, proxy1, proxy2, …` where each hop APPENDS the address it saw, so
+  // only the right-most TRUST_PROXIES entries are trustworthy — the left-most
+  // are whatever the client sent. Taking [0] (as before) let an attacker rotate
+  // a fake left-most value per request to get unlimited fresh token buckets and
+  // grow the buckets map without bound. We take the hop the outermost trusted
+  // proxy observed instead, so the key can't be spoofed.
   function clientIp(req) {
-    const xff = req.headers['x-forwarded-for'];
-    if (xff) return String(xff).split(',')[0].trim();
+    if (TRUST_PROXIES > 0) {
+      const xff = req.headers['x-forwarded-for'];
+      if (xff) {
+        const list = String(xff).split(',').map((s) => s.trim()).filter(Boolean);
+        if (list.length) return list[Math.max(0, list.length - TRUST_PROXIES)];
+      }
+    }
     return (req.socket && req.socket.remoteAddress) || 'unknown';
   }
 

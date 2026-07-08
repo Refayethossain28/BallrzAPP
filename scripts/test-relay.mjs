@@ -85,6 +85,23 @@ test('per-IP rate limiting throttles a flooder but not other clients', async () 
   } finally { await close(); }
 });
 
+test('a spoofed left-most x-forwarded-for cannot mint fresh token buckets', async () => {
+  // TRUST_PROXIES defaults to 1, so only the RIGHT-most hop (the one our proxy
+  // observed) is trusted. A flooder rotating the left-most value must still land
+  // in the same bucket keyed on the real hop.
+  const postXff = (xff, id) =>
+    fetch(base + '/msg', { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': xff }, body: JSON.stringify(tx(id)) });
+  const { base, close } = await boot({ rateCapacity: 3, rateRefill: 0 });
+  try {
+    const codes = [];
+    // same real hop (5.5.5.5), different spoofed left-most each time
+    for (let i = 0; i < 5; i++) codes.push((await postXff('9.9.9.' + i + ', 5.5.5.5', 's' + i)).status);
+    assert.deepEqual(codes, [200, 200, 200, 429, 429], 'spoofing the left-most hop does not reset the limit');
+    // a genuinely different real hop still gets its own bucket
+    assert.equal((await postXff('1.2.3.4, 6.6.6.6', 'other')).status, 200, 'a different real hop is unaffected');
+  } finally { await close(); }
+});
+
 test('refilled tokens let a well-behaved client keep posting', async () => {
   // capacity 1, refill 10/sec (1 token per 100ms): an immediate second post is
   // throttled, but after a wait the refilled token lets it through.
