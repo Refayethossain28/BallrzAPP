@@ -1150,7 +1150,7 @@
   function ingestLimits(map, at) {
     if (!map || typeof map !== 'object' || !(at > credLimitsAt)) return false;
     var clean = {}; Object.keys(map).forEach(function (a) { if (Coin.isValidAddress(a) && map[a] >= 0) clean[a] = Math.min(100000, +map[a]); });
-    credLimits = clean; credLimitsAt = at; saveCredLimits(); return true;
+    credLimits = clean; credLimitsAt = at; saveCredLimits(); repTouch(); return true;
   }
   function announceLimits() { if (credLimitsAt > 0) netSend({ type: 'limits', limits: credLimits, at: credLimitsAt }); }
   function creditList() { return Object.keys(credits).map(function (id) { return credits[id]; }); }
@@ -1160,7 +1160,7 @@
     if (tx.pubKey) registerIdentity(tx.from, tx.pubKey, null); // learn the payer so names show
     var ids = Object.keys(credits);
     if (ids.length > 500) { ids.sort(function (a, b) { return credits[a].at - credits[b].at; }); while (ids.length > 500) delete credits[ids.shift()]; }
-    return true;
+    repTouch(); return true;
   }
   function announceCredits() { creditList().forEach(function (tx) { netSend({ type: 'credit', credit: tx }); }); }
   function mcResolve(q) { q = String(q || '').trim(); if (Coin.isValidAddress(q)) return q; return resolveContact(q); }
@@ -1237,7 +1237,7 @@
       status: d.status, buyerConfirmed: !!d.buyerConfirmed, at: Number(d.at) || 0
     };
     pruneDeals();
-    return true;
+    repTouch(); return true;
   }
   function announceDeals() { Object.keys(deals).forEach(function (id) { netSend({ type: 'deal', deal: deals[id] }); }); }
   function pushDeal(id) { saveDeals(); netSend({ type: 'deal', deal: deals[id] }); renderDeals(); renderOffers(); }
@@ -1261,6 +1261,13 @@
   var LS_REP = 'ballrzcoin.rep.v1';
   var reps = {};
   try { reps = JSON.parse(localStorage.getItem(LS_REP) || '{}') || {}; } catch (e) { reps = {}; }
+  // A monotonic version bumped on every change to the data the reputation panel
+  // depends on (reps, credits, deals, credit limits). The render memo keys on it
+  // so an add-then-evict at a prune cap (which leaves collection SIZES unchanged)
+  // still invalidates the cache — otherwise newly-received reputation could stay
+  // hidden. `repTouch()` is called from each ingest path below.
+  var repDataVer = 0;
+  function repTouch() { repDataVer++; }
   function saveReps() { try { localStorage.setItem(LS_REP, JSON.stringify(reps)); } catch (e) {} }
   function pruneReps() {
     var ids = Object.keys(reps);
@@ -1271,10 +1278,10 @@
   function ingestRep(a) {
     if (!Rep || !a || !a.id || reps[a.id]) return false;
     if (!Rep.verifyAttestation(a)) return false;
-    reps[a.id] = a; pruneReps(); return true;
+    reps[a.id] = a; pruneReps(); repTouch(); return true;
   }
   function announceReps() { if (Rep) Object.keys(reps).forEach(function (id) { netSend({ type: 'rep', rep: reps[id] }); }); }
-  function pushRep(a) { reps[a.id] = a; saveReps(); netSend({ type: 'rep', rep: a }); renderReputation(); }
+  function pushRep(a) { reps[a.id] = a; saveReps(); repTouch(); netSend({ type: 'rep', rep: a }); renderReputation(); }
   function repAtts() { return Object.keys(reps).map(function (id) { return reps[id]; }); }
   // "Known" = someone whose key I hold (a contact) or one of my own wallets —
   // the honest anti-sybil signal for weighing a stranger's passport.
@@ -1310,20 +1317,26 @@
   var repIssued = {};
   try { repIssued = JSON.parse(localStorage.getItem(LS_REP_ISSUED) || '{}') || {}; } catch (e) { repIssued = {}; }
   function saveRepIssued() { try { localStorage.setItem(LS_REP_ISSUED, JSON.stringify(repIssued)); } catch (e) {} }
-  // Keep the "already issued" set bounded: drop entries for deals that no longer
-  // exist (deals are themselves pruned at 200), so this can't grow forever.
-  function pruneRepIssued() {
-    Object.keys(repIssued).forEach(function (k) { if (k.indexOf('deal:') === 0 && !deals[k.slice(5)]) delete repIssued[k]; });
-  }
+  // Deals I actually FUNDED as the buyer (I broadcast the payment). Persisted and
+  // NEVER pruned by deal existence — it's the provenance that authorises a
+  // receipt. Without it, a fabricated `deal` message (buyer = my public address,
+  // status 'released') gossiped to any relay would make my own wallet auto-sign
+  // a genuine receipt for an attacker-chosen seller.
+  var LS_FUNDED = 'ballrzcoin.funded.v1';
+  var fundedByMe = {};
+  try { fundedByMe = JSON.parse(localStorage.getItem(LS_FUNDED) || '{}') || {}; } catch (e) { fundedByMe = {}; }
+  function saveFundedByMe() { try { localStorage.setItem(LS_FUNDED, JSON.stringify(fundedByMe)); } catch (e) {} }
+  function markFundedByMe(id) { fundedByMe[id] = 1; saveFundedByMe(); }
   function maybeIssueReceipt(d) {
     if (!Rep || !d || d.status !== 'released' || !d.seller || d.seller === d.buyer) return;
-    if (repIssued['deal:' + d.id]) return;
+    if (!fundedByMe[d.id]) return;               // only for a deal I genuinely funded
+    if (repIssued['deal:' + d.id]) return;       // once per deal (persistent guard)
     var buyerW = walletByAddress(d.buyer);
     if (!buyerW || !buyerW.privateKey) return;   // only the buyer, only when unlocked
     try {
       var a = Rep.signReceipt({ privKey: buyerW.privateKey, subject: d.seller,
         note: d.title || 'a completed favour', value: 0, at: Date.now(), nonce: 'deal:' + d.id });
-      repIssued['deal:' + d.id] = 1; pruneRepIssued(); saveRepIssued();
+      repIssued['deal:' + d.id] = 1; saveRepIssued();
       pushRep(a);
     } catch (e) { /* locked or bad state — skip silently */ }
   }
@@ -1354,7 +1367,9 @@
   function renderReputation() {
     if (!Rep || !$('repMine')) return;
     if (!wallets.length) { $('repMine').textContent = 'Unlock or create a wallet to build a reputation.'; return; }
-    var sig = Object.keys(reps).length + '|' + Object.keys(credits).length + '|' + Object.keys(deals).length + '|' + wallets.map(function (w) { return w.address; }).join(',');
+    // repDataVer changes on every reps/credits/deals/limits mutation (even an
+    // add-then-evict at a cap), so this catches content changes size alone misses.
+    var sig = repDataVer + '|' + wallets.map(function (w) { return w.address; }).join(',');
     if (repRenderMemo.sig === sig) { $('repMine').innerHTML = repRenderMemo.html; return; }
     // Summarise across ALL my wallets combined (my whole standing on this device).
     var mine = myAddresses(), atts = repAtts(), lines = [], known = knownFn();
@@ -1527,7 +1542,15 @@
   // chain or drain your coin balance. Offers, reputation and favour-credit still
   // federate across both. Back-compat: the old saved format was a plain array of
   // url strings (all home); the new format is [{url, peer}].
-  var CHAIN_TYPES = { chain: 1, tx: 1 };   // the mined-coin layer — stays within your own circle
+  var CHAIN_TYPES = { chain: 1, tx: 1 };   // the mined-coin layer — never SENT to a neighbouring circle
+  // What we refuse to INGEST from a neighbour (peer) relay: the whole money +
+  // governance layer, not just the chain. A neighbour is for discovery — its
+  // offers/reputation/identities are welcome, but it must not be able to fold
+  // its mutual-credit ledger into ours, rewrite our credit limits, or inject
+  // deal records (which drive receipts and the helpers board). Own-circle (home)
+  // relays are unfiltered. Bridges still work: a forwarding credit is SENT to
+  // the destination and accepted there via that circle's own home relay.
+  var PEER_BLOCK = { chain: 1, tx: 1, credit: 1, limits: 1, deal: 1 };
   function loadRelays() {
     var raw = [];
     try { raw = JSON.parse(localStorage.getItem(LS_RELAYS) || '[]') || []; } catch (e) {}
@@ -1586,7 +1609,10 @@
   function myPublicRelay() {
     var o = myOrigin();
     if (o && inPool(o)) return o;
-    var up = relays.filter(function (r) { return r.up; })[0] || relays[0];
+    // Only advertise one of MY OWN circle's (home) relays — never a neighbour's,
+    // or I'd be telling others my circle lives at the neighbour's URL.
+    var home = relays.filter(function (r) { return !r.peer; });
+    var up = home.filter(function (r) { return r.up; })[0] || home[0];
     return up ? up.url : '';
   }
   function announceMyCircleAsPeer() {
@@ -1801,10 +1827,12 @@
             if (d && typeof d.seq === 'number') {
               r.up = true; r.seq = d.seq;
               (d.msgs || []).forEach(function (m) {
-                // Never adopt a neighbouring circle's blockchain — a peer relay
-                // can offer offers/reputation/favour-credit, but its chain/tx
-                // are ignored so connecting can't reorg your chain or move coins.
-                if (r.peer && m && CHAIN_TYPES[m.type]) return;
+                // A neighbour (peer) relay contributes discovery only — offers,
+                // reputation, identities. Its money + governance messages
+                // (chain/tx/credit/limits/deal) are ignored, so connecting can't
+                // reorg your chain, merge its ledger, rewrite your limits or
+                // inject deals. Home relays are unfiltered.
+                if (r.peer && m && PEER_BLOCK[m.type]) return;
                 handleNetMessage(m);
               });
             }
@@ -2921,7 +2949,8 @@
             mode: pa.mode, agent: pa.agent, status: 'funded', buyerConfirmed: false, at: Date.now(),
             escrowType: pa.escrowType || null, redeem: pa.redeem || null, msAddr: pa.msAddr || null, arbiter: pa.arbiter || null
           };
-          if (ingestDeal(deal)) pushDeal(deal.id);
+          if (ingestDeal(deal)) { markFundedByMe(deal.id); pushDeal(deal.id); } // provenance: I paid for this
+
         } else if (pendingAction.kind === 'settle') {
           var d = deals[pendingAction.dealId];
           if (d) { d.status = pendingAction.newStatus; d.at = Date.now(); pushDeal(d.id); if (d.status === 'released') maybeIssueReceipt(d); }
