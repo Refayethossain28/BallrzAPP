@@ -154,6 +154,22 @@ test('a hand-edited passport cannot inflate itself', () => {
   assert.equal(s.total, 1, 'the tampered attestation is dropped on re-verification');
 });
 
+test('cloning one signed note under fresh ids cannot inflate counts', () => {
+  // The id is NOT covered by the signature; callers de-dupe by id. An attacker
+  // takes one genuine receipt and re-emits it with fabricated ids.
+  const real = receipt(alice, subject, 'genuine', 3);
+  const clones = [real, { ...real, id: 'fake-1' }, { ...real, id: 'fake-2' }, { ...real, id: '' }];
+  clones.slice(1).forEach((c) => assert.ok(!R.verifyAttestation(c), 'a re-id\'d clone fails verification'));
+  const s = R.summarize(subject.address, clones);
+  assert.equal(s.total, 1, 'only the note whose id is its real content hash counts');
+  assert.equal(s.value, 3, 'value is not multiplied by the clones');
+});
+
+test('readPassport rejects a passport whose subject address is not valid', () => {
+  const bad = { v: 1, subject: { address: '<img src=x onerror=alert(1)>', pubKey: '', name: '' }, attestations: [] };
+  assert.throws(() => R.readPassport(bad), /not a valid address/);
+});
+
 (async () => {
   for (const [name, fn] of tests) {
     try { await fn(); console.log('  ✓ ' + name); passed++; }
