@@ -96,7 +96,7 @@ function render() {
         <span>${d.vehicle || ""} ·
           ${d.stripe_account_id ? '<span style="color:var(--green)">payouts ✓</span>'
             : `<a href="#" data-onboard="${d.id}">set up payouts</a>`}
-          · <a href="./driver/?d=${d.id}" target="_blank">driver app ↗</a></span>
+          · <a href="/driver/?d=${d.id}" target="_blank">driver app ↗</a></span>
       </div>
       <span class="pill ${d.status === "available" ? "p-av" : "p-on"}">${d.status === "available" ? "Available" : "On trip"}</span></div>`).join("");
   $("drivers").querySelectorAll("[data-onboard]").forEach((a) => a.onclick = async (e) => {

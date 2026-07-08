@@ -26,6 +26,10 @@ const wrap = (fn) => (req, res) =>
   });
 const baseUrl = (req) => `${req.protocol}://${req.get("host")}`;
 
+// Homepage is now the marketing site (public/index.html); the operator console
+// lives at /app/. Keep the old /pitch link working.
+app.get(["/pitch", "/pitch/"], (_req, res) => res.redirect(301, "/"));
+
 /* ---------- status / health ---------- */
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, db: store.backendName, intake: intakeMode(), payments: paymentsMode(), flight: flightMode() });
