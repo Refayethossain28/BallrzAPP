@@ -30,6 +30,8 @@
   .blk .who { color:var(--dim); font-family:ui-monospace,Menlo,monospace; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
   .blk .loss { color:var(--accent); font-variant-numeric:tabular-nums; }
   .note { color:var(--dim); font-size:12.5px; margin-top:10px; }
+  .pick { display:block; font-size:12px; color:var(--dim); margin-bottom:14px; }
+  .pick select { display:block; width:100%; margin-top:6px; padding:10px 12px; font-size:14px; color:var(--ink); background:#0e1420; border:1px solid var(--line); border-radius:10px; }
   code { background:#0e1420; padding:1px 5px; border-radius:5px; font-size:12.5px; }
 </style>
 </head>
@@ -41,6 +43,12 @@
 <main>
   <div class="grid">
     <section class="panel">
+      <label class="pick">Learning task
+        <select id="dataset">
+          <option value="synthetic">Synthetic XOR — 2-D, visualised</option>
+          <option value="banknote">Banknote — real forgery detection, 4-D</option>
+        </select>
+      </label>
       <div class="stats">
         <div class="stat"><b id="s-height">0</b><small>blocks mined</small></div>
         <div class="stat"><b id="s-acc">–</b><small>model accuracy</small></div>
@@ -57,12 +65,13 @@
     </section>
     <section class="panel">
       <canvas id="view" width="600" height="600"></canvas>
-      <div class="note">The shared task: classify a noisy <b>XOR</b> of two coordinates — impossible for a straight line. Dots are the dataset (two classes); the shaded field is the network's live decision boundary. Watch it bend as the chain learns.</div>
+      <div class="note" id="viewnote">The shared task: classify a noisy <b>XOR</b> of two coordinates — impossible for a straight line. Dots are the dataset (two classes); the shaded field is the network's live decision boundary. Watch it bend as the chain learns.</div>
     </section>
   </div>
 </main>
 
 <script src="../coin/engine.js"></script>
+<script src="datasets.js"></script>
 <script src="engine.js"></script>
 <script>
 (function () {
@@ -74,10 +83,19 @@
   var mind = function (u) { return Cortex.formatMind(u); };
 
   function fresh() {
-    task = Cortex.makeTask({ id: 'cortex-live-demo' });
+    var ds = $('dataset') ? $('dataset').value : 'synthetic';
+    if (ds === 'banknote') {
+      task = Cortex.makeTask({ id: 'cortex-banknote', dataset: 'banknote', layers: [16] });
+    } else {
+      task = Cortex.makeTask({ id: 'cortex-live-demo' });
+    }
     chain = new Cortex.Chain(task, { genesisSeed: 'demo', at: Date.now() });
     wallet = Coin.generateWallet();
     friend = Coin.generateWallet();
+    var note = $('viewnote');
+    if (note) note.innerHTML = task.dataset
+      ? 'Real <b>' + task.datasetTitle + '</b>: ' + task.samples + ' banknotes, ' + task.inputs + ' features → genuine/forged. The model is 4-D, so this is a 2-D slice — <b>' + task.featureNames[0] + '</b> vs <b>' + task.featureNames[1] + '</b>, other features held at their mean. Watch accuracy climb as the chain learns real forgery detection.'
+      : 'The shared task: classify a noisy <b>XOR</b> of two coordinates — impossible for a straight line. Dots are the dataset (two classes); the shaded field is the network\'s live decision boundary. Watch it bend as the chain learns.';
     render();
   }
 
@@ -106,23 +124,30 @@
     var cv = $('view'), g = cv.getContext('2d'); if (!g) return;
     var W = cv.width, H = cv.height, step = 12;
     var w = chain.tip().weights;
-    // decision field
+    var R = task.dataset ? 3 : 1;            // axis half-range (z-scores for real data)
+    var toPx = function (v) { return ((v / R + 1) / 2) * W; };
+    var toPy = function (v) { return ((1 - v / R) / 2) * H; };
+    g.clearRect(0, 0, W, H);
+    // decision field: a 2-D slice over features 0 & 1, other features at their mean (0 when standardised)
     for (var px = 0; px < W; px += step) {
       for (var py = 0; py < H; py += step) {
-        var x0 = (px / W) * 2 - 1, x1 = 1 - (py / H) * 2;
-        var p = Cortex.predict(task, w, [x0, x1]); // real forward pass through the shared net
-        var t = Math.max(0, Math.min(1, p));
-        g.fillStyle = 'rgba(' + Math.round(106 + (90 - 106) * t) + ',' + Math.round(169 + (209 - 169) * t) + ',' + Math.round(255 + (168 - 255) * t) + ',0.18)';
+        var pt = new Array(task.inputs); for (var d = 0; d < task.inputs; d++) pt[d] = 0;
+        pt[0] = ((px / W) * 2 - 1) * R; pt[1] = (1 - (py / H) * 2) * R;
+        var p = Cortex.predict(task, w, pt); // real forward pass through the shared net
+        var tt = Math.max(0, Math.min(1, p));
+        g.fillStyle = 'rgba(' + Math.round(106 + (90 - 106) * tt) + ',' + Math.round(169 + (209 - 169) * tt) + ',' + Math.round(255 + (168 - 255) * tt) + ',0.18)';
         g.fillRect(px, py, step, step);
       }
     }
-    // data points
+    // data points (first two features)
+    var rad = task.X.length > 400 ? 2 : 4, alpha = task.X.length > 400 ? 0.6 : 1;
+    g.globalAlpha = alpha;
     for (var i = 0; i < task.X.length; i++) {
-      var cx = ((task.X[i][0] + 1) / 2) * W, cy = ((1 - task.X[i][1]) / 2) * H;
-      g.beginPath(); g.arc(cx, cy, 4, 0, Math.PI * 2);
+      g.beginPath(); g.arc(toPx(task.X[i][0]), toPy(task.X[i][1]), rad, 0, Math.PI * 2);
       g.fillStyle = task.y[i] === 1 ? '#5ad1a8' : '#6aa9ff';
       g.fill();
     }
+    g.globalAlpha = 1;
   }
 
   // Mine a block from the given private key, optionally carrying transfers.
@@ -161,6 +186,7 @@
     $('mine').addEventListener('click', mine);
     $('send').addEventListener('click', send);
     $('reset').addEventListener('click', fresh);
+    $('dataset').addEventListener('change', fresh);
   });
 })();
 </script>

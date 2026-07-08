@@ -98,9 +98,11 @@ so the miner signs the spends along with the model checkpoint.
 ```js
 const Cortex = require('./cortex/engine.js'); // needs global BallrzCoin loaded first
 
-const task  = Cortex.makeTask({ id: 'my-task' });          // shared dataset + model shape
+const task  = Cortex.makeTask({ id: 'my-task' });          // synthetic task + model shape
 // ...or pick a production-cost tier: 'toy' (default) | 'small' | 'medium' | 'large'
 // const task = Cortex.makeTask({ id: 'my-task', scale: 'medium' });
+// ...or train on a real dataset (needs cortex/datasets.js loaded):
+// const task = Cortex.makeTask({ id: 'my-task', dataset: 'banknote', layers: [16] });
 const chain = new Cortex.Chain(task, { genesisSeed: 'g' }); // genesis checkpoint
 
 // mine: train the tip forward into a signed block — miner earns MIND
@@ -128,6 +130,38 @@ chain.replaceChain(rivalBlocks); // adopts it iff it learned strictly more
 `mineBlock` returns `null` once the model has effectively converged and no
 block can clear the `minImprovement` bar — that's the chain reaching its
 natural end, and the point at which MIND issuance stops for good.
+
+## Training on real data
+
+The synthetic XOR is great for a visual demo, but Cortex can mine against a
+**genuine dataset** — then the "useful work" isn't a toy, it's a model the
+community actually wants. `cortex/datasets.js` embeds real data verbatim (it
+**cannot** be fetched at runtime: every validator must recompute the loss on
+byte-identical data, so consensus requires the data to be pinned in the repo):
+
+| Dataset | Rows | Features | Task | Source |
+| --- | --- | --- | --- | --- |
+| `banknote` | 1,372 | 4 | genuine vs forged banknotes, from wavelet features of the photos | [UCI Banknote Authentication](https://archive.ics.uci.edu/dataset/267/banknote+authentication) |
+
+```js
+const task = Cortex.makeTask({ id: 'notes', dataset: 'banknote', layers: [16] });
+// inputs (4) and sample count (1372) come from the data; features are z-score
+// standardised deterministically. Mining then trains a real forgery detector —
+// it clears ~99% accuracy in a few hundred gradient steps.
+```
+
+Two properties make this safe for consensus:
+
+- **Byte-identical & pinned.** The embedded CSV's SHA-256 is checked in the test
+  suite, so any accidental corruption fails the build. Feature standardisation
+  (per-feature mean/variance) is computed from the data itself, so every node
+  derives the same scaled inputs.
+- **Verification is unchanged.** A block still just publishes weights; validators
+  recompute the loss on the fixed real dataset in one forward pass. You can't
+  fake a diagnosis any more than you could fake a loss on the synthetic task.
+
+You can also inject your own data without touching the datasets module —
+`Cortex.makeTask({ data: { name, features: [[…]], labels: [0|1,…] } })`.
 
 ## Production cost & economics
 
@@ -263,7 +297,13 @@ This is a self-contained **prototype**, not a production chain:
   across V8 engines, and weights are quantised, but a fully robust deployment
   would fix the arithmetic (e.g. fixed-point) across all clients.
 - **One task per chain.** The dataset and model are fixed at genesis. A real
-  system would rotate tasks, hold out a private test set to stop overfitting the
-  public data, and cap block size as models grow.
+  system would rotate tasks and cap block size as models grow.
+- **Loss is scored on the full public dataset.** Reward tracks training loss, so
+  on real data a miner is rewarded for *fitting the data it can see* — nothing
+  stops overfitting, and a big enough model could memorise rather than
+  generalise. A production version would hold out a private/rotating test set
+  and reward loss on that, so only genuine generalisation earns MIND. The
+  banknote task is small and cleanly separable enough that this doesn't bite in
+  the demo, but it's the first thing to fix before the learning is worth money.
 - **No networking here.** The engine is the consensus core; peer gossip would
   reuse TimeCoin's relay (`coin/server.mjs`) the way the other layers do.

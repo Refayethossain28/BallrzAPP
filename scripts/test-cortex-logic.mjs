@@ -21,8 +21,16 @@ vm.runInContext(readFileSync(join(ROOT, 'coin', 'engine.js'), 'utf8'), sandbox, 
 const C = sandbox.module.exports;
 sandbox.BallrzCoin = C;                 // cortex/engine.js looks it up as self.BallrzCoin
 sandbox.module = { exports: {} };
+vm.runInContext(readFileSync(join(ROOT, 'cortex', 'datasets.js'), 'utf8'), sandbox, { filename: 'cortex/datasets.js' });
+const DATA = sandbox.module.exports;
+sandbox.BallrzCortexData = DATA;        // engine looks it up as self.BallrzCortexData
+sandbox.module = { exports: {} };
 vm.runInContext(readFileSync(join(ROOT, 'cortex', 'engine.js'), 'utf8'), sandbox, { filename: 'cortex/engine.js' });
 const X = sandbox.module.exports;
+
+// Pinned SHA-256 of the embedded banknote data (canonical row serialisation),
+// so any accidental corruption of cortex/datasets.js fails the build.
+const BANKNOTE_SHA = 'f7b3094521f6446c00850f45302f0cbddd073f6b4b927ac81e6294752d106acf';
 
 const alice = C.walletFromPrivateKey('0000000000000000000000000000000000000000000000000000000000000001');
 const bob = C.walletFromPrivateKey('0000000000000000000000000000000000000000000000000000000000000002');
@@ -195,6 +203,62 @@ test('a fork with a doctored middle block is rejected wholesale', () => {
   rogue[2].loss = rogue[2].loss - 0.4; // lie inside the chain
   assert.equal(chain.scoreChain(rogue), null, 'the whole fork is invalid');
   assert.equal(chain.replaceChain(rogue), false, 'and is never adopted');
+});
+
+// ---- real datasets ---------------------------------------------------------
+
+test('the embedded banknote dataset is genuine and intact (pinned hash)', () => {
+  const bn = DATA.get('banknote');
+  assert.equal(bn.features.length, 1372, '1372 real samples');
+  assert.equal(bn.features[0].length, 4, '4 features');
+  assert.equal(bn.featureNames.join(','), 'variance,skewness,curtosis,entropy');
+  assert.ok(bn.labels.every((v) => v === 0 || v === 1), 'binary labels');
+  assert.equal(bn.labels.filter((v) => v === 1).length, 610, 'known class balance');
+  assert.ok(bn.features.every((r) => r.length === 4 && r.every(Number.isFinite)), 'all rows finite 4-vectors');
+  // integrity: canonical serialisation hashes to the pinned value
+  const canon = bn.features.map((f, i) => f.join(',') + '|' + bn.labels[i]).join(';');
+  assert.equal(C.sha256(canon), BANKNOTE_SHA, 'dataset bytes match the pinned hash');
+  assert.throws(() => DATA.get('nope'), /unknown dataset/);
+});
+
+test('a real-dataset task standardises features and shapes the net to the data', () => {
+  const t = X.makeTask({ id: 'bn', dataset: 'banknote', layers: [16] });
+  assert.equal(t.dataset, 'banknote');
+  assert.equal(t.inputs, 4, 'inputs come from the data');
+  assert.equal(t.samples, 1372);
+  assert.equal(t.arch.length, 3, '4->16->1');
+  // standardised inputs: each feature column is ~zero-mean, ~unit-variance
+  for (let d = 0; d < t.inputs; d++) {
+    let m = 0; for (let i = 0; i < t.samples; i++) m += t.X[i][d];
+    m /= t.samples;
+    let v = 0; for (let i = 0; i < t.samples; i++) { const e = t.X[i][d] - m; v += e * e; }
+    v /= t.samples;
+    assert.ok(Math.abs(m) < 1e-9, `feature ${d} centred (mean ${m.toExponential(1)})`);
+    assert.ok(Math.abs(Math.sqrt(v) - 1) < 1e-9, `feature ${d} unit-scaled`);
+  }
+  assert.ok(t.featureStats && t.featureStats.mean.length === 4, 'stats retained for scoring new points');
+});
+
+test('the network learns real banknote authentication and mining pays for it', () => {
+  const t = X.makeTask({ id: 'bn2', dataset: 'banknote', layers: [16] });
+  const w0 = X.randomWeights(t, 'g');
+  const w1 = X.train(t, w0, 2000, 0.5);
+  assert.ok(X.loss(t, w1) < X.loss(t, w0), 'loss falls on real data');
+  assert.ok(X.accuracy(t, w1) > 0.95, `real-data accuracy clears 95% (${(X.accuracy(t, w1) * 100).toFixed(1)}%)`);
+  const chain = new X.Chain(t, { genesisSeed: 'g' });
+  const blk = chain.mineBlock({ privKey: alice.privateKey, steps: 400, nonce: 'r1' });
+  assert.ok(blk && blk.reward > 0, 'a block mines and pays MIND for learning on real data');
+  chain.addBlock(blk);
+  assert.equal(chain.balanceOf(alice.address), blk.reward);
+});
+
+test('a task accepts an injected dataset directly (no named lookup)', () => {
+  const data = { name: 'xor4', features: [[0, 0, 1, 1], [1, 1, 0, 0], [0, 1, 1, 0], [1, 0, 0, 1]], labels: [0, 0, 1, 1] };
+  const t = X.makeTask({ id: 'inj', data: data, layers: [4] });
+  assert.equal(t.dataset, 'xor4');
+  assert.equal(t.inputs, 4);
+  assert.equal(t.samples, 4);
+  assert.ok(Number.isFinite(X.loss(t, X.randomWeights(t, 'g'))), 'loss computes on injected data');
 });
 
 // ---- task-scale presets ----------------------------------------------------

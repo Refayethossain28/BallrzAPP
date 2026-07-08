@@ -144,10 +144,37 @@
     return d;
   }
 
+  // The embedded real-dataset module (cortex/datasets.js), read as a global the
+  // same UMD way as the coin engine. Only needed when a named dataset is used.
+  function datasetLib() {
+    var g = (typeof self !== 'undefined') ? self : (typeof globalThis !== 'undefined') ? globalThis : this;
+    if (g && g.BallrzCortexData) return g.BallrzCortexData;
+    throw new Error('cortex/datasets.js must be loaded before using a named dataset');
+  }
+
+  // Per-feature z-score standardisation, computed deterministically from the
+  // data itself so every node derives identical scaled inputs. Real features
+  // live on wildly different ranges; without this, training barely moves.
+  function standardise(features) {
+    var n = features.length, dim = features[0].length, mean = new Array(dim).fill(0), std = new Array(dim).fill(0), i, d;
+    for (i = 0; i < n; i++) for (d = 0; d < dim; d++) mean[d] += features[i][d];
+    for (d = 0; d < dim; d++) mean[d] /= n;
+    for (i = 0; i < n; i++) for (d = 0; d < dim; d++) { var e = features[i][d] - mean[d]; std[d] += e * e; }
+    for (d = 0; d < dim; d++) std[d] = Math.sqrt(std[d] / n) || 1; // guard a constant feature
+    var out = new Array(n);
+    for (i = 0; i < n; i++) { var row = new Array(dim); for (d = 0; d < dim; d++) row[d] = (features[i][d] - mean[d]) / std[d]; out[i] = row; }
+    return { X: out, mean: mean, std: std };
+  }
+
   /* ======================================================================
-   * The shared learning task: a deterministic, non-linearly-separable
-   * dataset (a "noisy XOR" of the two quadrant signs) that a linear model
-   * cannot solve — so the hidden layer genuinely has to learn something.
+   * The shared learning task. Two flavours, both fully deterministic:
+   *   • synthetic (default) — a seeded "noisy XOR" of the first two features,
+   *     which a linear model can't solve, so the hidden layer must learn;
+   *   • a real dataset — pass { dataset: 'banknote' } (looked up from the
+   *     embedded, byte-identical cortex/datasets.js) or { data: {features,
+   *     labels} }. Real features are z-score standardised deterministically.
+   * The model shape (inputs/layers) still comes from scale/opts, so you choose
+   * how big — and thus how costly — the network is independently of the data.
    * ==================================================================== */
   function makeTask(opts) {
     opts = opts || {};
@@ -156,33 +183,52 @@
       preset = SCALES[String(opts.scale)];
       if (!preset) throw new Error('unknown task scale: ' + opts.scale + ' (use ' + Object.keys(SCALES).join('/') + ')');
     }
+    // Resolve a real dataset if requested (direct data wins over a named lookup).
+    var real = opts.data ? opts.data : (opts.dataset ? datasetLib().get(String(opts.dataset)) : null);
+
     // Hidden-layer widths: explicit `layers`, else legacy single `hidden`, else preset.
     var layers = opts.layers || (opts.hidden ? [opts.hidden] : (preset.layers || [preset.hidden || DEFAULTS.hidden]));
-    var inputs = opts.inputs || preset.inputs || 2;
     var t = {
       id: String(opts.id || 'cortex-genesis-task'),
       scale: opts.scale != null ? String(opts.scale) : 'toy',
-      inputs: inputs,
       layers: layers.slice(),
       hidden: layers[0], // kept for backward-compatible readers
-      samples: opts.samples || preset.samples || DEFAULTS.samples,
       noise: (opts.noise == null) ? DEFAULTS.noise : opts.noise,
       minImprovement: (opts.minImprovement == null) ? (preset.minImprovement == null ? DEFAULTS.minImprovement : preset.minImprovement) : opts.minImprovement,
       quantum: opts.quantum || DEFAULTS.quantum,
       ticker: String(opts.ticker || DEFAULTS.ticker)
     };
+
+    if (real) {
+      // Real dataset: inputs and sample count come from the data itself.
+      if (!real.features || !real.features.length) throw new Error('dataset has no rows');
+      var sd = standardise(real.features);
+      t.dataset = real.name || String(opts.dataset || 'custom');
+      t.datasetTitle = real.title || t.dataset;
+      t.datasetSource = real.source || '';
+      t.featureNames = real.featureNames || null;
+      t.inputs = real.features[0].length;
+      t.samples = real.features.length;
+      t.featureStats = { mean: sd.mean, std: sd.std };
+      t.X = sd.X;
+      t.y = real.labels.map(function (v) { return v ? 1 : 0; });
+    } else {
+      // Synthetic noisy-XOR (the default / demo task).
+      t.inputs = opts.inputs || preset.inputs || 2;
+      t.samples = opts.samples || preset.samples || DEFAULTS.samples;
+      var rng = mulberry32(seedFrom('data:' + t.id));
+      var X = [], y = [];
+      for (var i = 0; i < t.samples; i++) {
+        var x = new Array(t.inputs);
+        for (var d = 0; d < t.inputs; d++) x[d] = rng() * 2 - 1;
+        var label = ((x[0] > 0) !== (x[1] > 0)) ? 1 : 0;    // 2-D XOR of the first two features
+        if (rng() < t.noise) label = 1 - label;             // flip some labels
+        X.push(x); y.push(label);
+      }
+      t.X = X; t.y = y;
+    }
     t.arch = archOf(t.inputs, t.layers);
     t.dim = dimOf(t.arch);
-    var rng = mulberry32(seedFrom('data:' + t.id));
-    var X = [], y = [];
-    for (var i = 0; i < t.samples; i++) {
-      var x = new Array(t.inputs);
-      for (var d = 0; d < t.inputs; d++) x[d] = rng() * 2 - 1;
-      var label = ((x[0] > 0) !== (x[1] > 0)) ? 1 : 0;    // 2-D XOR of the first two features
-      if (rng() < t.noise) label = 1 - label;             // flip some labels
-      X.push(x); y.push(label);
-    }
-    t.X = X; t.y = y;
     return t;
   }
 
