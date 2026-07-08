@@ -3,66 +3,349 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Fixr — Operator Console</title>
-<link rel="stylesheet" href="./styles.css" />
+<title>Fixr — the operating system for luxury ground transport & concierge</title>
+<meta name="description" content="Fixr runs a luxury chauffeur business end to end: AI booking, dispatch, driver and passenger apps, automatic payments and driver payouts, flight tracking, and concierge — one platform." />
+<meta property="og:title" content="Fixr — luxury ground-transport & concierge OS" />
+<meta property="og:description" content="AI turns a client's text into a booking. One platform runs dispatch, drivers, passengers, payments, and concierge." />
+<style>
+  :root{--bg:#0b0d12;--panel:#13161d;--panel2:#181c25;--line:#262c39;--ink:#e8ecf4;
+    --muted:#8a93a6;--gold:#c8a35b;--gold2:#e3c585;--green:#3ecf8e;--blue:#5b8def;--amber:#e3b341;}
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:1040px;margin:0 auto;padding:0 20px}
+  a{color:var(--gold2)}
+  /* nav */
+  header{border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(11,13,18,.9);backdrop-filter:blur(10px);z-index:20}
+  header .wrap{display:flex;align-items:center;justify-content:space-between;padding:13px 20px}
+  .brand{display:flex;align-items:center;gap:10px}
+  .logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--gold),#7a5e26);display:grid;place-items:center;font-weight:800;color:#0b0d12}
+  .brand b{letter-spacing:.6px}
+  nav{display:flex;gap:20px;align-items:center}
+  nav a{color:var(--muted);text-decoration:none;font-size:14px;font-weight:600}
+  nav a:hover{color:var(--ink)}
+  nav a.btn{background:linear-gradient(135deg,var(--gold2),var(--gold));color:#0b0d12;padding:8px 15px;border-radius:9px}
+  .navlinks{display:flex;gap:20px;align-items:center}
+  @media(max-width:760px){.navlinks a:not(.btn){display:none}}
+  /* buttons */
+  .cta{display:inline-block;background:linear-gradient(135deg,var(--gold2),var(--gold));color:#0b0d12;font-weight:700;text-decoration:none;padding:14px 26px;border-radius:12px}
+  .cta.ghost{background:transparent;border:1px solid var(--line);color:var(--ink)}
+  /* hero */
+  .hero{text-align:center;padding:70px 0 46px}
+  .eyebrow{display:inline-block;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:var(--gold2);border:1px solid var(--line);padding:6px 12px;border-radius:999px;margin-bottom:22px}
+  .hero h1{font-size:clamp(32px,6.4vw,54px);line-height:1.08;margin:0 0 18px;letter-spacing:-.6px}
+  .hero h1 span{background:linear-gradient(135deg,var(--gold2),var(--gold));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .hero p{font-size:19px;color:var(--muted);max-width:640px;margin:0 auto 30px}
+  .ctas{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  .trustbar{display:flex;gap:26px;justify-content:center;flex-wrap:wrap;margin-top:38px;color:var(--muted);font-size:13px}
+  .trustbar b{color:var(--ink)}
+  /* sections */
+  section{padding:52px 0;border-top:1px solid var(--line)}
+  .kicker{font-size:13px;text-transform:uppercase;letter-spacing:1.3px;color:var(--gold2);margin:0 0 8px;text-align:center}
+  h2{font-size:clamp(24px,4vw,32px);margin:0 0 10px;text-align:center;letter-spacing:-.3px}
+  .sub{color:var(--muted);text-align:center;max-width:620px;margin:0 auto 34px}
+  /* app cards */
+  .three{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  @media(max-width:820px){.three{grid-template-columns:1fr}}
+  .appcard{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px}
+  .appcard .ic{font-size:24px}
+  .appcard h3{margin:10px 0 6px;font-size:19px}
+  .appcard p{margin:0 0 12px;color:var(--muted);font-size:14.5px}
+  .appcard ul{margin:0;padding-left:18px;color:var(--muted);font-size:13.5px}
+  .appcard li{margin:3px 0}
+  .appcard .try{display:inline-block;margin-top:14px;font-size:13px;font-weight:700}
+  /* feature grid */
+  .feat{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  @media(max-width:760px){.feat{grid-template-columns:1fr}}
+  .fcard{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;gap:14px}
+  .fcard .ic{font-size:22px;flex:0 0 auto}
+  .fcard h4{margin:0 0 4px;font-size:16px}
+  .fcard p{margin:0;color:var(--muted);font-size:14px}
+  .tag{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.4px;color:var(--green);border:1px solid rgba(62,207,142,.4);border-radius:5px;padding:1px 6px;margin-left:6px;vertical-align:middle}
+  /* how it works */
+  .steps{counter-reset:s;display:grid;gap:12px;max-width:720px;margin:0 auto}
+  .step{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px 16px 58px;position:relative}
+  .step::before{counter-increment:s;content:counter(s);position:absolute;left:16px;top:50%;transform:translateY(-50%);
+    width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--gold2),var(--gold));color:#0b0d12;font-weight:800;display:grid;place-items:center;font-size:14px}
+  .step b{display:block} .step span{color:var(--muted);font-size:14px}
+  /* comparison */
+  .tablewrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:14.5px;min-width:520px}
+  th,td{padding:12px 12px;border-bottom:1px solid var(--line);text-align:left}
+  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+  td.f{color:var(--green);font-weight:600} .rowh{color:var(--ink);font-weight:600}
+  /* calculator */
+  .calc{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:24px;max-width:720px;margin:0 auto}
+  .calc .r{margin:15px 0}
+  .calc label{display:flex;justify-content:space-between;font-size:14px;color:var(--muted);margin-bottom:6px}
+  .calc label b{color:var(--gold2)}
+  input[type=range]{width:100%;accent-color:var(--gold)}
+  .out{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:20px}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:16px;text-align:center}
+  .stat b{display:block;font-size:26px;color:var(--gold2)} .stat span{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+  .breakdown{margin-top:14px;font-size:13px;color:var(--muted)}
+  .breakdown div{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line)}
+  .note{color:var(--muted);font-size:12.5px;margin-top:12px}
+  /* pricing */
+  .price{display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:760px;margin:0 auto}
+  @media(max-width:680px){.price{grid-template-columns:1fr}}
+  .tier{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:24px}
+  .tier.feat2{border-color:var(--gold)}
+  .tier h4{margin:0;font-size:18px}
+  .tier .amt{font-size:32px;font-weight:800;margin:8px 0 2px}
+  .tier .amt small{font-size:15px;color:var(--muted);font-weight:500}
+  .tier ul{margin:14px 0 0;padding-left:18px;color:var(--muted);font-size:14px}
+  /* faq */
+  .faq{max-width:760px;margin:0 auto}
+  details{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:6px 18px;margin-bottom:10px}
+  summary{cursor:pointer;padding:12px 0;font-weight:600;list-style:none}
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:"+";float:right;color:var(--gold2);font-weight:800}
+  details[open] summary::after{content:"–"}
+  details p{margin:0 0 14px;color:var(--muted);font-size:14.5px}
+  /* final + footer */
+  .final{text-align:center;background:linear-gradient(180deg,transparent,rgba(200,163,91,.06))}
+  footer{border-top:1px solid var(--line);padding:26px 0;color:var(--muted);font-size:13px;text-align:center}
+</style>
 </head>
 <body>
-<header>
-  <div class="brand">
-    <div class="logo">F</div>
-    <div><h1>FIXR</h1><small>Luxury ground-transport &amp; concierge OS</small></div>
-  </div>
-  <div class="stat-row">
-    <div class="stat"><b id="s-open">0</b><span>Open</span></div>
-    <div class="stat"><b id="s-rev">$0</b><span>Booked</span></div>
-    <div class="stat"><b id="s-mode">—</b><span>Intake</span></div>
-  </div>
-</header>
 
-<main>
-  <div class="col">
-    <div class="card">
-      <h2>AI Inbound Intake <span class="typetag t-transfer" id="intake-type">—</span></h2>
-      <div class="body">
-        <textarea id="inbound" placeholder="Paste what the client texted / emailed / said…"></textarea>
-        <button class="btn-gold" id="parse-btn">⚡ Parse into a booking</button>
-        <div class="samples" id="samples"></div>
-        <div class="parsed" id="parsed">
-          <div id="fields"></div>
-          <div class="quote" id="quote"></div>
-          <button class="btn-gold" id="confirm-btn">Confirm &amp; send to dispatch →</button>
-          <div class="note">Nothing is auto-dispatched. AI drafts; you own the outcome.</div>
-        </div>
+<header><div class="wrap">
+  <div class="brand"><div class="logo">F</div><b>FIXR</b></div>
+  <nav class="navlinks">
+    <a href="#apps">Apps</a>
+    <a href="#features">Features</a>
+    <a href="#how">How it works</a>
+    <a href="#pricing">Pricing</a>
+    <a class="btn" href="/app/">Open app</a>
+  </nav>
+</div></header>
+
+<div class="wrap">
+
+  <!-- HERO -->
+  <div class="hero">
+    <div class="eyebrow">Luxury ground-transport &amp; concierge OS</div>
+    <h1>Run your entire chauffeur business<br>on <span>one platform</span></h1>
+    <p>A client texts you. AI turns it into a booking. One board runs dispatch, your drivers,
+       your passengers, and payments — and your VIP concierge requests live on the same system.
+       Your brand. Your Stripe. No per-ride rake.</p>
+    <div class="ctas">
+      <a class="cta" href="/app/">Try the live app</a>
+      <a class="cta ghost" href="#calc">Revenue calculator</a>
+    </div>
+    <div class="trustbar">
+      <div>⚡ <b>AI</b> booking intake</div>
+      <div>💳 <b>Stripe</b> payments &amp; payouts</div>
+      <div>✈ <b>Live</b> flight tracking</div>
+      <div>🗄 <b>Real</b> database, real-time board</div>
+    </div>
+  </div>
+
+  <!-- WHAT IS IT -->
+  <section id="what">
+    <p class="kicker">What is Fixr</p>
+    <h2>The software a luxury car service runs on</h2>
+    <p class="sub">Today the industry runs on dated dispatch tools, WhatsApp threads, spreadsheets, and phone
+       calls. Fixr replaces all of it with one modern, AI-powered system that covers the whole job —
+       from the moment a client reaches out to the moment the driver gets paid.</p>
+  </section>
+
+  <!-- THREE APPS -->
+  <section id="apps">
+    <p class="kicker">Three apps, one system</p>
+    <h2>Everyone gets their own view</h2>
+    <p class="sub">Operator, driver, and passenger — all on the same live data and the same booking.</p>
+    <div class="three">
+      <div class="appcard">
+        <div class="ic">🖥️</div>
+        <h3>Operator console</h3>
+        <p>The dispatcher's command center.</p>
+        <ul>
+          <li>AI inbound intake → instant booking</li>
+          <li>Live dispatch board (5 stages)</li>
+          <li>Assign drivers, set fees</li>
+          <li>Full searchable audit trail</li>
+        </ul>
+        <a class="try" href="/app/">Open console →</a>
+      </div>
+      <div class="appcard">
+        <div class="ic">🚘</div>
+        <h3>Driver app</h3>
+        <p>Runs on any phone, installable.</p>
+        <ul>
+          <li>Your assigned trips</li>
+          <li>Live GPS location sharing</li>
+          <li>Flight status for airport runs</li>
+          <li>One-tap start &amp; complete</li>
+          <li>Stripe payout onboarding</li>
+        </ul>
+        <a class="try" href="/driver/?d=d1">Open driver app →</a>
+      </div>
+      <div class="appcard">
+        <div class="ic">🧑‍💼</div>
+        <h3>Passenger app</h3>
+        <p>Your brand, not a third party.</p>
+        <ul>
+          <li>Book a ride with an instant quote</li>
+          <li>Request concierge services</li>
+          <li>Live status &amp; driver tracking</li>
+          <li>Trip history</li>
+        </ul>
+        <a class="try" href="/client/">Open passenger app →</a>
       </div>
     </div>
-    <div class="card">
-      <h2>Drivers / Resources</h2>
-      <div class="body" id="drivers"></div>
+  </section>
+
+  <!-- FEATURES -->
+  <section id="features">
+    <p class="kicker">Everything it does</p>
+    <h2>Features, in full</h2>
+    <p class="sub">Each of these is built and working in the live app — not a mockup.</p>
+    <div class="feat">
+      <div class="fcard"><div class="ic">⚡</div><div><h4>AI booking intake <span class="tag">CLAUDE</span></h4><p>Paste what a client texted, emailed, or said — Fixr extracts the client, route, time, flight, vehicle, and passengers, and drafts a booking with an instant quote.</p></div></div>
+      <div class="fcard"><div class="ic">🗂️</div><div><h4>Live dispatch board</h4><p>Every request flows across Quoted → Confirmed → Assigned → En route → Completed. One glance shows your whole day.</p></div></div>
+      <div class="fcard"><div class="ic">💳</div><div><h4>Payments + driver settlement <span class="tag">STRIPE</span></h4><p>Completing a trip captures the fare and automatically settles the driver's cut via Stripe Connect. You keep a platform fee — no per-ride rake taken from you.</p></div></div>
+      <div class="fcard"><div class="ic">✈️</div><div><h4>Flight tracking</h4><p>Airport pickups show live flight status; delays adjust the pickup automatically, so your driver is never early or late.</p></div></div>
+      <div class="fcard"><div class="ic">🥂</div><div><h4>Concierge requests</h4><p>Dinners, tickets, jets, yacht days — VIP requests run on the same engine as rides, priced as a service fee. Transport is the wedge; concierge is the upsell.</p></div></div>
+      <div class="fcard"><div class="ic">📍</div><div><h4>Driver GPS &amp; tracking</h4><p>Drivers share live location from their phone; passengers see their assigned driver and status in real time.</p></div></div>
+      <div class="fcard"><div class="ic">🧾</div><div><h4>Owned audit trail</h4><p>Every action is timestamped and searchable. Nothing lives in someone's WhatsApp — and nothing leaves when a staff member does.</p></div></div>
+      <div class="fcard"><div class="ic">🏦</div><div><h4>Real infrastructure <span class="tag">POSTGRES</span></h4><p>A real database and REST API under the hood — built to scale from one operator to many, not a throwaway demo.</p></div></div>
     </div>
-  </div>
+  </section>
 
-  <div class="col">
-    <div class="card">
-      <h2>Dispatch Board <span class="muted-h">click a request to manage</span></h2>
-      <div class="body"><div class="lanes" id="lanes"></div></div>
+  <!-- HOW IT WORKS -->
+  <section id="how">
+    <p class="kicker">How it works</p>
+    <h2>From a text to a paid trip</h2>
+    <div class="steps">
+      <div class="step"><b>A client reaches out</b><span>“Need an SUV to JFK Thursday 6am, flight DL472, 2 passengers.”</span></div>
+      <div class="step"><b>AI books it</b><span>Fixr parses the message into a structured booking with an instant quote — no manual typing.</span></div>
+      <div class="step"><b>Dispatch assigns a driver</b><span>Confirm, assign, mark en route — all from one board, fully logged.</span></div>
+      <div class="step"><b>The driver runs it</b><span>Trip appears on their phone with GPS and flight tracking; they start and complete it in one tap.</span></div>
+      <div class="step"><b>Everyone gets paid</b><span>The fare is captured and the driver's share is settled automatically. The passenger tracked it the whole way under your brand.</span></div>
     </div>
-  </div>
+  </section>
 
-  <div class="col">
-    <div class="card">
-      <h2>Request Audit Log</h2>
-      <div class="body audit" id="audit"></div>
+  <!-- WHY DIFFERENT -->
+  <section id="why">
+    <p class="kicker">Why Fixr</p>
+    <h2>Built for operators, not against them</h2>
+    <p class="sub">The incumbents are dated, extractive, or non-existent for the concierge side.</p>
+    <div class="tablewrap"><table>
+      <tr><th>&nbsp;</th><th>Legacy dispatch</th><th>Modern rivals</th><th>Fixr</th></tr>
+      <tr><td class="rowh">Booking</td><td>Type it all by hand</td><td>Type it all by hand</td><td class="f">AI does it from a text</td></tr>
+      <tr><td class="rowh">Payments</td><td>Forced processor, holds</td><td>~5% of every ride</td><td class="f">Your Stripe, no rake</td></tr>
+      <tr><td class="rowh">Driver payout</td><td>Manual</td><td>Manual</td><td class="f">Automatic (Connect)</td></tr>
+      <tr><td class="rowh">Concierge</td><td>None</td><td>None</td><td class="f">Built in</td></tr>
+      <tr><td class="rowh">System of record</td><td>Siloed</td><td>Siloed</td><td class="f">Owned + searchable</td></tr>
+    </table></div>
+  </section>
+
+  <!-- CALCULATOR -->
+  <section id="calc">
+    <p class="kicker">The business</p>
+    <h2>Revenue calculator</h2>
+    <p class="sub">Fixr charges a flat fee plus a small cut of payments processed — so revenue grows with volume, not just seats.</p>
+    <div class="calc">
+      <div class="r"><label>Operators on Fixr <b id="v-ops">45</b></label><input type="range" id="ops" min="1" max="300" value="45" /></div>
+      <div class="r"><label>Avg monthly ride volume / operator <b id="v-vol">$50,000</b></label><input type="range" id="vol" min="5000" max="200000" step="5000" value="50000" /></div>
+      <div class="r"><label>Flat software fee / operator / mo <b id="v-fee">$149</b></label><input type="range" id="fee" min="0" max="500" step="10" value="149" /></div>
+      <div class="r"><label>Payments take-rate <b id="v-rate">0.50%</b></label><input type="range" id="rate" min="0" max="200" step="5" value="50" /></div>
+      <div class="out">
+        <div class="stat"><b id="o-mrr">$0</b><span>Monthly revenue</span></div>
+        <div class="stat"><b id="o-arr">$0</b><span>ARR run-rate</span></div>
+      </div>
+      <div class="breakdown" id="breakdown"></div>
+      <div class="note" id="insight"></div>
+      <div class="note">Illustrative — the take-rate is a platform fee on payments processed through Fixr, on top of Stripe's own fee.</div>
     </div>
-  </div>
-</main>
+  </section>
 
-<div class="modal-bg" id="modal-bg"><div class="modal"><h2 id="m-title">Request</h2><div class="body" id="m-body"></div></div></div>
+  <!-- PRICING -->
+  <section id="pricing">
+    <p class="kicker">Pricing</p>
+    <h2>Flat fee + payments — never a per-ride rake</h2>
+    <div class="price">
+      <div class="tier feat2">
+        <h4>Operator</h4>
+        <div class="amt">$149<small>/mo</small></div>
+        <p style="color:var(--muted);margin:0">+ ~0.5% on payments processed</p>
+        <ul>
+          <li>AI booking intake</li>
+          <li>Dispatch board + audit trail</li>
+          <li>Driver app + passenger app</li>
+          <li>Your Stripe, automatic driver payouts</li>
+          <li>Keep the fare — no rake</li>
+        </ul>
+      </div>
+      <div class="tier">
+        <h4>Concierge tier</h4>
+        <div class="amt">$300+<small>/seat/mo</small></div>
+        <p style="color:var(--muted);margin:0">For firms running VIP lifestyle requests</p>
+        <ul>
+          <li>Everything in Operator</li>
+          <li>Concierge request workflow</li>
+          <li>Vendor rolodex + preferences</li>
+          <li>Priced for $2.5k–4.5k/mo retainers</li>
+        </ul>
+      </div>
+    </div>
+  </section>
 
-<div class="foot" id="foot">
-  Real full-stack app — persistent SQLite, REST API, AI intake, payment capture.
-  Set <code>ANTHROPIC_API_KEY</code> for real LLM parsing and <code>STRIPE_SECRET_KEY</code> for real payments.
+  <!-- FAQ -->
+  <section id="faq">
+    <p class="kicker">Questions</p>
+    <h2>FAQ</h2>
+    <div class="faq">
+      <details><summary>Do I have to change how my clients contact me?</summary><p>No. Clients keep texting, calling, or emailing you. Your dispatcher pastes the message into Fixr and the AI turns it into a booking — you meet clients where they already are.</p></details>
+      <details><summary>Who processes the payments?</summary><p>Your own Stripe account. Fixr never becomes your processor and never takes a per-ride cut of the fare — you keep it. Fixr charges a flat monthly fee plus a small platform fee on payments processed.</p></details>
+      <details><summary>How do drivers get paid?</summary><p>When a trip is completed, the fare is captured and the driver's share is transferred to their connected Stripe account automatically. Drivers onboard for payouts in a couple of taps.</p></details>
+      <details><summary>Is the concierge side real or coming later?</summary><p>Real and live. A passenger can submit a concierge request (dining, tickets, a jet), and the operator prices and fulfills it on the same board as a ride.</p></details>
+      <details><summary>Does the AI need setup?</summary><p>No. It works out of the box. If the AI is ever unavailable, Fixr falls back to a rule-based parser so intake never breaks.</p></details>
+      <details><summary>Can it handle more than one operator / scale?</summary><p>Yes. It runs on a real database (Postgres) and is built to run many operators. Start with one; grow without re-platforming.</p></details>
+    </div>
+  </section>
+
+  <!-- FINAL CTA -->
+  <section class="final">
+    <h2>See it run in 60 seconds</h2>
+    <p class="sub">Paste a real client message and watch it become a booking — then run it through dispatch, the driver app, and payment.</p>
+    <a class="cta" href="/app/">Open the live app →</a>
+  </section>
+
 </div>
 
-<script src="./app.js"></script>
+<footer>
+  Fixr · luxury ground-transport &amp; concierge OS<br>
+  <a href="/app/">Operator app</a> · <a href="/driver/?d=d1">Driver app</a> · <a href="/client/">Passenger app</a>
+</footer>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const money = (n) => "$" + Math.round(n).toLocaleString();
+  function calc(){
+    const ops=+$("ops").value, vol=+$("vol").value, fee=+$("fee").value, rateBps=+$("rate").value;
+    const rate = rateBps/10000;
+    $("v-ops").textContent = ops;
+    $("v-vol").textContent = money(vol);
+    $("v-fee").textContent = money(fee);
+    $("v-rate").textContent = (rateBps/100).toFixed(2)+"%";
+    const softwareMRR = ops*fee, paymentsMRR = ops*vol*rate, totalMRR = softwareMRR+paymentsMRR, perOp = fee+vol*rate;
+    $("o-mrr").textContent = money(totalMRR);
+    $("o-arr").textContent = money(totalMRR*12);
+    $("breakdown").innerHTML =
+      `<div><span>Software (${ops} × ${money(fee)})</span><span>${money(softwareMRR)}/mo</span></div>`+
+      `<div><span>Payments (${ops} × ${money(vol)} × ${(rateBps/100).toFixed(2)}%)</span><span>${money(paymentsMRR)}/mo</span></div>`+
+      `<div><span>Blended per operator</span><span>${money(perOp)}/mo</span></div>`;
+    const mult = softwareMRR>0 ? (totalMRR/softwareMRR) : 0;
+    $("insight").innerHTML = paymentsMRR>0
+      ? `Payments make each operator worth <b style="color:var(--gold2)">${mult.toFixed(1)}×</b> what software alone earns — that's the whole thesis.`
+      : `Turn on a payments take-rate to see revenue grow with operator volume, not just seat count.`;
+  }
+  ["ops","vol","fee","rate"].forEach((id)=>$(id).addEventListener("input",calc));
+  calc();
+</script>
 </body>
 </html>
