@@ -163,6 +163,38 @@ Two properties make this safe for consensus:
 You can also inject your own data without touching the datasets module —
 `Cortex.makeTask({ data: { name, features: [[…]], labels: [0|1,…] } })`.
 
+### Rewarding generalisation, not memorisation (commit–reveal)
+
+The base reward tracks *training* loss — and with a finite, fully-public dataset
+you cannot tell a model that generalised from one that memorised every row
+(any subset of public data is, by definition, data a memoriser has seen).
+Measuring generalisation needs data the miner hasn't seen, which
+`cortex/holdout.js` provides through a **commit–reveal** scheme:
+
+1. **Seal** (once, by the task author) — a slice of data is withheld from the
+   chain and split into test batches; only a *hiding commitment* `H(salt‖batch)`
+   for each is published. `prepareHoldout()` does this deterministically.
+2. **Commit** (by the miner) — train on the public train set, publish
+   `H(weights)` **before** the batch for this height is revealed.
+3. **Reveal** (by the author) — publish the salt + batch; anyone checks it
+   matches the published commitment, then scores the committed model on it.
+   Reward = how much it beats the parent model on that fresh, unseen batch.
+
+`settle()` enforces both bindings: the weights must match the miner's commitment
+(so it can't tune to the batch after seeing it — tested), and the revealed batch
+must match its published commitment (so the author can't swap in an easier one —
+tested). A genuinely trained model earns MIND on data it never saw (>90% held-out
+accuracy in the tests); a model that did nothing earns zero.
+
+> **This layer is not trustless.** It depends on a party who prepares the sealed
+> batches and reveals them honestly, in order, without leaking or training on
+> them — the unavoidable price of measuring generalisation, since anything
+> validators can recompute, miners can see. It also yields only *k* honest
+> blocks (one per sealed batch): fresh test data is a consumable resource. The
+> base chain keeps its "pure math, anyone verifies" property; commit–reveal
+> trades some of that for a guarantee the base layer cannot give. Use it where a
+> trusted data provider is acceptable.
+
 ## Production cost & economics
 
 A miner's cost is **CPU time spent training** — real compute, hence real
@@ -275,9 +307,10 @@ block.
 ## Tests
 
 ```
-npm run test:cortex     # just this prototype
-npm test                # the whole prototype suite (includes Cortex)
-npm run bench:cortex     # production-cost benchmark (not part of the test gate)
+npm run test:cortex          # engine: model, chain, MIND token
+npm run test:cortex-holdout  # commit–reveal generalisation layer
+npm test                     # the whole prototype suite (includes Cortex)
+npm run bench:cortex         # production-cost benchmark (not part of the test gate)
 ```
 
 The suite (20 tests) covers dataset/weight determinism, that training actually
@@ -298,12 +331,14 @@ This is a self-contained **prototype**, not a production chain:
   would fix the arithmetic (e.g. fixed-point) across all clients.
 - **One task per chain.** The dataset and model are fixed at genesis. A real
   system would rotate tasks and cap block size as models grow.
-- **Loss is scored on the full public dataset.** Reward tracks training loss, so
-  on real data a miner is rewarded for *fitting the data it can see* — nothing
-  stops overfitting, and a big enough model could memorise rather than
-  generalise. A production version would hold out a private/rotating test set
-  and reward loss on that, so only genuine generalisation earns MIND. The
-  banknote task is small and cleanly separable enough that this doesn't bite in
-  the demo, but it's the first thing to fix before the learning is worth money.
+- **The base reward is scored on the full public dataset**, so it rewards
+  fitting the visible data — a big enough model could memorise rather than
+  generalise. The **commit–reveal layer** (`cortex/holdout.js`, above) fixes this
+  where a trusted data provider is acceptable: it rewards loss on withheld
+  batches revealed only after weights are committed, so only genuine
+  generalisation earns MIND. It is not trustless (see that section) and yields a
+  finite number of honest blocks; a fully trustless version would need a live
+  fresh-data feed or a beacon-driven reveal, which no finite public dataset can
+  provide.
 - **No networking here.** The engine is the consensus core; peer gossip would
   reuse TimeCoin's relay (`coin/server.mjs`) the way the other layers do.

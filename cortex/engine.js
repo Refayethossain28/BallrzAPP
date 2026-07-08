@@ -293,25 +293,41 @@
   // the decision boundary, and handy in tests).
   function predict(task, w, x) { return forwardOne(unpack(task, w), x).p; }
 
-  // Average binary cross-entropy over the whole dataset (clamped so log is finite).
-  function loss(task, w) {
-    var layers = unpack(task, w), n = task.samples, sum = 0;
+  // Average binary cross-entropy (clamped so log is finite). Scores task.X by
+  // default, or any supplied (Xs, ys) — e.g. a held-out batch for commit–reveal.
+  function loss(task, w, Xs, ys) {
+    Xs = Xs || task.X; ys = ys || task.y;
+    var layers = unpack(task, w), n = Xs.length, sum = 0;
     for (var i = 0; i < n; i++) {
-      var p = forwardOne(layers, task.X[i]).p;
+      var p = forwardOne(layers, Xs[i]).p;
       p = Math.min(1 - 1e-12, Math.max(1e-12, p));
-      var yi = task.y[i];
+      var yi = ys[i];
       sum += -(yi * Math.log(p) + (1 - yi) * Math.log(1 - p));
     }
     return sum / n;
   }
 
-  function accuracy(task, w) {
-    var layers = unpack(task, w), n = task.samples, ok = 0;
+  function accuracy(task, w, Xs, ys) {
+    Xs = Xs || task.X; ys = ys || task.y;
+    var layers = unpack(task, w), n = Xs.length, ok = 0;
     for (var i = 0; i < n; i++) {
-      var pred = forwardOne(layers, task.X[i]).p >= 0.5 ? 1 : 0;
-      if (pred === task.y[i]) ok++;
+      var pred = forwardOne(layers, Xs[i]).p >= 0.5 ? 1 : 0;
+      if (pred === ys[i]) ok++;
     }
     return ok / n;
+  }
+
+  // Standardise raw feature rows with a task's stored (train-set) stats, so a
+  // held-out batch is scored on exactly the scale the model was trained on.
+  // Rows pass through unchanged for a synthetic task (no stats).
+  function standardizeRows(task, rawRows) {
+    if (!task.featureStats) return rawRows.map(function (r) { return r.slice(); });
+    var m = task.featureStats.mean, s = task.featureStats.std;
+    return rawRows.map(function (r) {
+      var out = new Array(r.length);
+      for (var d = 0; d < r.length; d++) out[d] = (r[d] - m[d]) / s[d];
+      return out;
+    });
   }
 
   // One full-batch gradient-descent step over all layers; returns a fresh
@@ -631,6 +647,7 @@
     makeTask: makeTask, randomWeights: randomWeights, quantise: quantise,
     // model
     loss: loss, accuracy: accuracy, predict: predict, train: train, trainStep: trainStep,
+    standardizeRows: standardizeRows,
     // blocks
     weightsHash: weightsHash, canonical: canonical, blockHash: blockHash,
     // MIND token
