@@ -1284,7 +1284,7 @@ function initTrackingMap(){
       const d=doc.data();
       if(!d.lat||!d.lng)return;
       placeOrMoveDriver([d.lat,d.lng]);
-    },()=>{});
+    },err=>reportError(err,'driver-track-listener'));
   } else {
     // Simulation — driver starts near pickup and moves toward client
     let dLat=51.5074+(Math.random()-.5)*.018;
@@ -5981,7 +5981,7 @@ function initTrackScreen(){
         const pos=[d.lat,d.lng];
         dMarker.setLatLng(pos);
         if(!tMap.getBounds().contains(pos))tMap.panTo(pos,{animate:true});
-      },()=>{});
+      },err=>reportError(err,'driver-track-listener2'));
     };
     // May need anonymous auth for non-logged-in viewers
     if(auth.currentUser){trackFn();}

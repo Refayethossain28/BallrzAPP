@@ -510,7 +510,7 @@ function setupDriverListeners(uid){
         if(inProgress){S.activeJob=inProgress;S.tripStep={accepted:2,en_route:2,arrived:3,onboard:4}[inProgress.status]||2;}
       }
       render();
-    },()=>{});
+    },err=>reportError(err,'driver-jobs-listener'));
 
   // Broadcast dispatch: open jobs are offered to every online driver at once.
   // First driver to accept claims it via a transaction.
@@ -530,7 +530,7 @@ function setupDriverListeners(uid){
         S._offeredJob=open[0];
         S.jobOverlay=true;S.countdown=30;startCountdown();render();
       }
-    },()=>{});
+    },err=>reportError(err,'driver-openjobs-listener'));
 }
 
 // First-to-accept claim — the transaction guarantees only one driver wins
