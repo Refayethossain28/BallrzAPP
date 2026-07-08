@@ -179,6 +179,103 @@ test('skill improves as the model sees more history (genuine generalisation)', (
   assert.ok(lots > little, `more history -> more skill on the held-out future round (${little.toFixed(3)} -> ${lots.toFixed(3)})`);
 });
 
+// ---- Phase 4: anti-abuse & governance --------------------------------------
+
+test('phase 4: entry cap rejects entrants once a round is full', () => {
+  const feed = T.mockFeed({ seed: 'cap', inputs: 3, samples: 40 });
+  const tour = T.create({
+    inputs: feed.inputs, layers: [8], oraclePubKey: feed.oracle.publicKey,
+    stake: 1 * MIND, maxEntries: 1, balances: { [alice.address]: 5 * MIND, [bob.address]: 5 * MIND }
+  });
+  T.openRound(tour, { round: 0, features: feed.round(0).features });
+  T.commitEntry(tour, { round: 0, privKey: alice.privateKey, weightsCommitment: 'a' });
+  assert.throws(() => T.commitEntry(tour, { round: 0, privKey: bob.privateKey, weightsCommitment: 'b' }), /round is full/);
+});
+
+test('phase 4: beacon-sampled scoring is deterministic and subsets the samples', () => {
+  const feed = T.mockFeed({ seed: 'samp', inputs: 3, samples: 80, noise: 0.05 });
+  const mk = () => T.create({
+    inputs: feed.inputs, layers: [10], oraclePubKey: feed.oracle.publicKey,
+    stake: 0, scoreSampleSize: 20, balances: { [alice.address]: 0 }
+  });
+  const w = T.trainOnHistory(mk().spec, [30, 31, 32].map((k) => feed.round(k)), { steps: 800, seed: 'a' });
+  const runWith = (beacon) => {
+    const tour = mk(); const r = feed.round(0);
+    const rs = T.openRound(tour, { round: 0, features: r.features });
+    T.commitEntry(tour, { round: 0, privKey: alice.privateKey, weightsCommitment: H.commitWeights(w) });
+    T.lockRound(tour, 0);
+    T.revealEntry(tour, { round: 0, miner: alice.address, weights: w });
+    resolve(tour, feed, rs, 0, r.labels);
+    return T.scoreRound(tour, 0, { beacon });
+  };
+  const a1 = runWith('beacon-X'), a2 = runWith('beacon-X'), b = runWith('beacon-Y');
+  assert.equal(a1.scoredSamples, 20, 'scored on the sampled subset, not all 80');
+  assert.equal(a1.results[0].skill, a2.results[0].skill, 'same beacon -> identical scoring');
+  assert.notEqual(a1.results[0].skill, b.results[0].skill, 'a different beacon samples different rows');
+  // sampling by index count is exact
+  assert.equal(T.beaconSample('z', 80, 20).length, 20);
+  assert.equal(new Set(T.beaconSample('z', 80, 20)).size, 20, 'distinct indices');
+});
+
+test('phase 4: an m-of-n committee oracle needs a threshold of signers', () => {
+  const feed = T.mockFeed({ seed: 'cmte' });
+  const o1 = C.walletFromPrivateKey('00000000000000000000000000000000000000000000000000000000000000c1');
+  const o2 = C.walletFromPrivateKey('00000000000000000000000000000000000000000000000000000000000000c2');
+  const o3 = C.walletFromPrivateKey('00000000000000000000000000000000000000000000000000000000000000c3');
+  const tour = T.create({
+    inputs: feed.inputs, layers: [8], stake: 0,
+    oracleCommittee: [o1.publicKey, o2.publicKey, o3.publicKey], oracleThreshold: 2,
+    balances: {}
+  });
+  const r = feed.round(0);
+  const rs = T.openRound(tour, { round: 0, features: r.features });
+  T.lockRound(tour, 0);
+  const fh = rs.featuresHash;
+  const att = (o) => T.signOutcome(o.privateKey, 0, fh, r.labels);
+  assert.throws(() => T.resolveRound(tour, { round: 0, labels: r.labels, attestations: [att(o1)] }), /threshold committee/);
+  // two distinct members meet the 2-of-3 threshold
+  T.resolveRound(tour, { round: 0, labels: r.labels, attestations: [att(o1), att(o2)] });
+  assert.equal(tour.rounds[0].state, 'RESOLVE');
+  // a non-member's signature doesn't count toward the threshold
+  const tour2 = T.create({ inputs: feed.inputs, layers: [8], stake: 0, oracleCommittee: [o1.publicKey, o2.publicKey, o3.publicKey], oracleThreshold: 2, balances: {} });
+  const r2 = feed.round(1); const rs2 = T.openRound(tour2, { round: 1, features: r2.features }); T.lockRound(tour2, 1);
+  const outsider = T.signOutcome(bob.privateKey, 1, rs2.featuresHash, r2.labels);
+  assert.throws(() => T.resolveRound(tour2, { round: 1, labels: r2.labels, attestations: [att(o1), outsider] }), /threshold committee/);
+});
+
+test('phase 4 (optimistic): an undisputed proposal stands and its bond is refunded', () => {
+  const feed = T.mockFeed({ seed: 'opt1' });
+  const tour = T.create({ inputs: feed.inputs, layers: [8], stake: 0, oraclePubKey: feed.oracle.publicKey, disputeBond: 2 * MIND, balances: { [alice.address]: 5 * MIND } });
+  const r = feed.round(0);
+  T.openRound(tour, { round: 0, features: r.features }); T.lockRound(tour, 0);
+  const before = T.balanceOf(tour, alice.address);
+  T.proposeOutcome(tour, { round: 0, privKey: alice.privateKey, labels: r.labels });
+  assert.equal(T.balanceOf(tour, alice.address), before - 2 * MIND, 'bond escrowed');
+  const rs = T.finalizeOutcome(tour, { round: 0 }); // no dispute
+  assert.equal(rs.resolution, 'undisputed');
+  assert.equal(rs.state, 'RESOLVE');
+  assert.equal(T.balanceOf(tour, alice.address), before, 'bond refunded, committee never needed');
+});
+
+test('phase 4 (optimistic): a false proposal is disputed and the committee slashes it', () => {
+  const feed = T.mockFeed({ seed: 'opt2' });
+  const tour = T.create({ inputs: feed.inputs, layers: [8], stake: 0, oraclePubKey: feed.oracle.publicKey, disputeBond: 2 * MIND, balances: { [alice.address]: 5 * MIND, [bob.address]: 5 * MIND } });
+  const r = feed.round(0);
+  const rs = T.openRound(tour, { round: 0, features: r.features }); T.lockRound(tour, 0);
+  const aBefore = T.balanceOf(tour, alice.address), bBefore = T.balanceOf(tour, bob.address);
+  // Alice proposes a WRONG outcome (all labels flipped); Bob disputes with the truth.
+  T.proposeOutcome(tour, { round: 0, privKey: alice.privateKey, labels: r.labels.map((v) => 1 - v) });
+  T.disputeOutcome(tour, { round: 0, privKey: bob.privateKey, labels: r.labels });
+  // Committee (the oracle) attests the truth; Bob wins, Alice's bond is slashed to Bob.
+  const att = T.signOutcome(feed.oracle.privateKey, 0, rs.featuresHash, r.labels);
+  const fin = T.finalizeOutcome(tour, { round: 0, labels: r.labels, attestations: [att] });
+  assert.equal(fin.resolution, 'disputed');
+  assert.equal(fin.winner, bob.address, 'the honest disputer wins');
+  assert.equal(fin.outcome.join(''), r.labels.join(''), 'the true outcome is recorded');
+  assert.equal(T.balanceOf(tour, bob.address), bBefore + 2 * MIND, 'bob reclaims his bond + alice\'s');
+  assert.equal(T.balanceOf(tour, alice.address), aBefore - 2 * MIND, 'alice is slashed her bond');
+});
+
 // ---- runner ----------------------------------------------------------------
 let failed = 0;
 for (const [name, fn] of tests) {

@@ -1,10 +1,10 @@
 # Trustless generalisation — a scoping study
 
-> **Status: phases 1–3 now built** in [`tournament.js`](tournament.js) (offline,
+> **Status: phases 1–4 now built** in [`tournament.js`](tournament.js) (offline,
 > on a mock feed + oracle; see the phase table in §6). This document remains the
 > design of record and is deliberately honest about the one place trust cannot
-> be removed, only relocated. Phases 4–5 (anti-abuse hardening, succinct scoring
-> proofs) and any *real* outcome oracle are still design-only.
+> be removed, only relocated. Phase 5 (succinct scoring proofs) and any *real*
+> outcome oracle deployment are still design-only.
 
 ## 1. Why we need a different system
 
@@ -145,17 +145,21 @@ Each phase is independently useful and testable; stop at any point.
 | **1** | Round state machine + feature commitment, driven by a *mock* feed | ✅ built (`tournament.js`) | none new (mock) |
 | **2** | Skill-based scoring rule + staking/slashing | ✅ built (`tournament.js`) | none new |
 | **3** | Pluggable outcome-oracle interface + a reference signed-feed adapter | ✅ built (`tournament.js`) | **the oracle** |
-| **4** | Anti-abuse: entry caps, beacon-sampled scoring, dispute window | design only | oracle + dispute quorum |
+| **4** | Anti-abuse: entry caps, beacon-sampled scoring, m-of-n committee + optimistic dispute window | ✅ built (`tournament.js`) | committee honest-majority + dispute quorum |
 | **5** (research) | succinct proofs of correct scoring to cut validator cost | design only | — |
 
-Phases 1–3 are implemented and driven end-to-end **offline** by
+Phases 1–4 are implemented and driven end-to-end **offline** by
 `scripts/test-cortex-tournament.mjs` on a deterministic mock feed + oracle: a
 model trained on resolved history earns MIND predicting an unseen future round;
 a confidently-wrong model is slashed; noise-level skill lands in a dead zone and
-earns nothing. Phase 3's oracle is a single signing key in the reference
-adapter — the real-world trust — so a production deployment would swap it for a
-decentralised/threshold oracle with a dispute window (phase 4). Phase 5 remains
-open research.
+earns nothing. Phase 4 hardens it: an entry cap and beacon-sampled scoring bound
+the per-round work; the single-key oracle generalises to an **m-of-n committee**;
+and an **optimistic dispute window** (propose → dispute → finalise, with bonds)
+means the committee is only invoked when a proposal is challenged, with the wrong
+side's bond slashed to the right side. Trust is thereby reduced to "an honest
+party will dispute a bad proposal, and the committee adjudicates honestly" — but
+still not removed. Phase 5 (succinct scoring proofs) remains open research, and a
+*real* committee/oracle is a deployment decision, not code.
 
 ## 7. Recommendation
 

@@ -217,14 +217,17 @@ assumption; the checkable cryptography is implemented and tested.)
 **[`TRUSTLESS.md`](TRUSTLESS.md)** scopes what a fully trust-*minimised* system
 would take — a forecasting-tournament chain that scores predictions of future
 outcomes — and is honest that trust there is only relocated (to an outcome
-oracle), never removed. Its **phases 1–3 are built** in
+oracle), never removed. Its **phases 1–4 are built** in
 [`holdout.js`](holdout.js) + [`tournament.js`](tournament.js): a full
 OPEN→COMMIT→LOCK→REVEAL→RESOLVE→SCORE round machine where miners stake MIND,
 commit a model before the outcome is known, and are rewarded for *predictive
-skill* on a future round revealed by a signed outcome oracle — with noise-level
-skill in a dead zone (luck isn't paid) and anti-skill slashed. It runs
-end-to-end offline on a mock feed/oracle; the only real-world trust is that
-oracle key.
+skill* on a future round revealed by an outcome oracle — with noise-level skill
+in a dead zone (luck isn't paid) and anti-skill slashed. Phase 4 hardens it with
+an entry cap, beacon-sampled scoring, an **m-of-n committee oracle**, and an
+**optimistic dispute window** (propose → dispute → finalise with bonds, so the
+committee is only troubled on a challenge and the wrong side is slashed). It runs
+end-to-end offline on a mock feed/oracle; the residual trust is the committee,
+never removed — only reduced to an honest-majority-plus-dispute assumption.
 
 ## Production cost & economics
 

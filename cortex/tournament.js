@@ -97,12 +97,18 @@
   }
 
   /* ---- Phase 1+2: the tournament state machine ------------------------- */
-  // config: { inputs, layers, oraclePubKey, stake, slashFraction=0.5,
-  //           rewardScale=REWARD_PER_LOSS, balances={addr:units} }
+  // config: { inputs, layers, stake, slashFraction=0.5, skillThreshold=0.01,
+  //           rewardScale=REWARD_PER_LOSS, balances={addr:units},
+  //   oracle (phase 3/4): oraclePubKey  — single-signer, OR
+  //                       oracleCommittee:[pubKey…] + oracleThreshold:m (m-of-n),
+  //   anti-abuse (phase 4): maxEntries=0 (unlimited), scoreSampleSize=0 (score
+  //                       all), disputeBond=0 }
   function create(config) {
+    var committee = config.oracleCommittee ? config.oracleCommittee.slice() : (config.oraclePubKey ? [config.oraclePubKey] : []);
     return {
       spec: modelSpec(config.inputs, config.layers),
-      oraclePubKey: config.oraclePubKey,
+      oracleCommittee: committee,
+      oracleThreshold: config.oracleThreshold == null ? (committee.length ? 1 : 0) : config.oracleThreshold,
       stake: Math.floor(config.stake || 0),
       slashFraction: config.slashFraction == null ? 0.5 : config.slashFraction,
       // Noise dead-zone: skill within ±skillThreshold of the baseline earns and
@@ -110,10 +116,24 @@
       // not paid and only genuine skill clears the bar.
       skillThreshold: config.skillThreshold == null ? 0.01 : config.skillThreshold,
       rewardScale: config.rewardScale || cortex().REWARD_PER_LOSS,
+      maxEntries: config.maxEntries || 0,            // 0 = unlimited (phase 4 cap)
+      scoreSampleSize: config.scoreSampleSize || 0,  // 0 = score all samples
+      disputeBond: Math.floor(config.disputeBond || 0),
       balances: Object.assign({}, config.balances || {}),
       rounds: {},
       minted: 0, burned: 0
     };
+  }
+
+  // Phase 3/4 oracle: does `attestations` carry ≥ threshold valid, DISTINCT
+  // committee members all attesting `labels` for this round's features?
+  function committeeAgrees(T, featuresHash, labels, attestations) {
+    var seen = {}, count = 0;
+    (attestations || []).forEach(function (att) {
+      if (!att || T.oracleCommittee.indexOf(att.pubKey) < 0 || seen[att.pubKey]) return;
+      if (verifyOutcome(att, att.pubKey, featuresHash, labels)) { seen[att.pubKey] = 1; count++; }
+    });
+    return count >= T.oracleThreshold && T.oracleThreshold > 0;
   }
   function balanceOf(T, addr) { return T.balances[addr] || 0; }
   function roundOf(T, r) { var rs = T.rounds[r]; if (!rs) throw new Error('no such round: ' + r); return rs; }
@@ -135,6 +155,7 @@
     if (rs.state !== 'OPEN') throw new Error('round not open for entries');
     var pub = C.getPublicKey(opts.privKey), miner = C.addressFromPublicKey(pub);
     if (rs.entries[miner]) throw new Error('already entered this round');
+    if (T.maxEntries && rs.order.length >= T.maxEntries) throw new Error('round is full (entry cap reached)');
     if (balanceOf(T, miner) < T.stake) throw new Error('insufficient MIND to stake');
     var wc = String(opts.weightsCommitment);
     var sig = C.sign(C.sha256([opts.round, wc, miner].join('|')), opts.privKey);
@@ -156,13 +177,17 @@
     return e;
   }
 
-  // RESOLVE: bring the realised label on-chain via a verified oracle attestation.
+  // RESOLVE (attested path): bring the realised label on-chain, verified by a
+  // threshold of the oracle committee. Accepts a single `attestation` (1-of-1)
+  // or an `attestations` array (m-of-n). For the optimistic path with disputes,
+  // use proposeOutcome / disputeOutcome / finalizeOutcome instead.
   function resolveRound(T, opts) {
     var rs = roundOf(T, opts.round);
     if (rs.state !== 'LOCK') throw new Error('resolve only after lock');
-    if (!verifyOutcome(opts.attestation, T.oraclePubKey, rs.featuresHash, opts.labels)) throw new Error('outcome attestation invalid');
+    var atts = opts.attestations || (opts.attestation ? [opts.attestation] : []);
+    if (!committeeAgrees(T, rs.featuresHash, opts.labels, atts)) throw new Error('outcome attestation invalid (needs threshold committee agreement)');
     rs.outcome = opts.labels.map(function (v) { return v ? 1 : 0; });
-    rs.attestation = opts.attestation; rs.state = 'RESOLVE';
+    rs.attestations = atts; rs.state = 'RESOLVE';
     return rs;
   }
 
@@ -181,14 +206,24 @@
   //   • never revealed        → forfeit the whole stake (into the pot)
   // The pot (slashed + forfeited MIND) is redistributed to rewarded miners in
   // proportion to skill, or burned if there were none. Deterministic (entry order).
-  function scoreRound(T, r) {
+  function scoreRound(T, r, opts) {
+    opts = opts || {};
     var X = cortex(), rs = roundOf(T, r), thr = T.skillThreshold;
     if (rs.state !== 'RESOLVE') throw new Error('round not resolved');
-    var base = round9(baselineLoss(rs.outcome)), results = [], pot = 0, totalPos = 0, i, m, e;
+    // Phase 4: score every entry on the SAME beacon-selected subset of samples,
+    // cutting validator cost. The beacon (unpredictable at commit) removes any
+    // ability to target which samples get scored. Falls back to all samples.
+    var Xs = rs.features, ys = rs.outcome;
+    if (T.scoreSampleSize && T.scoreSampleSize < rs.features.length && opts.beacon != null) {
+      var pick = beaconSample(opts.beacon, rs.features.length, T.scoreSampleSize);
+      Xs = pick.map(function (i) { return rs.features[i]; });
+      ys = pick.map(function (i) { return rs.outcome[i]; });
+    }
+    var base = round9(baselineLoss(ys)), results = [], pot = 0, totalPos = 0, i, m, e;
     for (i = 0; i < rs.order.length; i++) {
       m = rs.order[i]; e = rs.entries[m];
       if (!e.revealed) { pot += e.stake; results.push({ miner: m, status: 'forfeit', revealed: false, skill: null, reward: 0, returned: 0, slashed: e.stake }); continue; }
-      var entryLoss = round9(X.loss(T.spec, e.weights, rs.features, rs.outcome));
+      var entryLoss = round9(X.loss(T.spec, e.weights, Xs, ys));
       var skill = round9(base - entryLoss);
       if (skill > thr) { totalPos += skill; results.push({ miner: m, status: 'reward', revealed: true, skill: skill, entryLoss: entryLoss, reward: 0, returned: e.stake, slashed: 0 }); }
       else if (skill < -thr) { var slash = Math.round(e.stake * T.slashFraction); pot += slash; results.push({ miner: m, status: 'slash', revealed: true, skill: skill, entryLoss: entryLoss, reward: 0, returned: e.stake - slash, slashed: slash }); }
@@ -209,7 +244,74 @@
     }
     if (potLeft > 0 && totalPos === 0) { T.burned += potLeft; potLeft = 0; } // nobody earned it
     rs.state = 'SCORE'; rs.results = results; rs.baselineLoss = base;
-    return { round: r, baselineLoss: base, results: results, minted: results.reduce(function (s, x) { return s + x.reward + (x.bonus || 0); }, 0) };
+    return { round: r, baselineLoss: base, results: results, scoredSamples: Xs.length, minted: results.reduce(function (s, x) { return s + x.reward + (x.bonus || 0); }, 0) };
+  }
+
+  // Beacon-seeded selection of `k` distinct sample indices out of `n` (partial
+  // Fisher–Yates). Deterministic in the beacon; unpredictable before it exists.
+  function beaconSample(beacon, n, k) {
+    var idx = new Array(n), i, j, tmp; for (i = 0; i < n; i++) idx[i] = i;
+    var rnd = mulberry32('sample:' + String(beacon));
+    var take = Math.min(k, n);
+    for (i = 0; i < take; i++) { j = i + Math.floor(rnd() * (n - i)); tmp = idx[i]; idx[i] = idx[j]; idx[j] = tmp; }
+    return idx.slice(0, take).sort(function (a, b) { return a - b; });
+  }
+
+  /* ---- Phase 4: optimistic resolution with a dispute window ------------
+   * The attested resolveRound() needs the committee every round. The optimistic
+   * path is cheaper and reduces trust further: ANYONE may propose an outcome
+   * with a bond; if no one disputes within the window, it stands (the committee
+   * is never troubled). If someone disputes (also bonded), the committee is the
+   * backstop — its threshold attestation decides the truth, and the wrong side's
+   * bond is slashed to the right side. Trust drops to "an honest party will
+   * dispute a bad proposal, and the committee adjudicates honestly."
+   *   proposeOutcome → (optional) disputeOutcome → finalizeOutcome → SCORE
+   */
+  function proposeOutcome(T, opts) {
+    var C = coin(), rs = roundOf(T, opts.round);
+    if (rs.state !== 'LOCK') throw new Error('propose only after lock');
+    var pub = C.getPublicKey(opts.privKey), who = C.addressFromPublicKey(pub);
+    var bond = Math.floor(opts.bond == null ? T.disputeBond : opts.bond);
+    if (balanceOf(T, who) < bond) throw new Error('insufficient MIND to bond the proposal');
+    T.balances[who] = balanceOf(T, who) - bond;
+    rs.proposal = { who: who, labels: opts.labels.map(function (v) { return v ? 1 : 0; }), labelsHash: labelsHashOf(opts.labels.map(function (v) { return v ? 1 : 0; })), bond: bond };
+    rs.state = 'PROPOSED';
+    return rs.proposal;
+  }
+  function disputeOutcome(T, opts) {
+    var C = coin(), rs = roundOf(T, opts.round);
+    if (rs.state !== 'PROPOSED') throw new Error('nothing to dispute');
+    var lab = opts.labels.map(function (v) { return v ? 1 : 0; });
+    if (labelsHashOf(lab) === rs.proposal.labelsHash) throw new Error('dispute must differ from the proposal');
+    var pub = C.getPublicKey(opts.privKey), who = C.addressFromPublicKey(pub);
+    var bond = Math.floor(opts.bond == null ? T.disputeBond : opts.bond);
+    if (balanceOf(T, who) < bond) throw new Error('insufficient MIND to bond the dispute');
+    T.balances[who] = balanceOf(T, who) - bond;
+    rs.dispute = { who: who, labels: lab, labelsHash: labelsHashOf(lab), bond: bond };
+    rs.state = 'DISPUTED';
+    return rs.dispute;
+  }
+  // Close the window. Undisputed: proposal stands, bond refunded. Disputed:
+  // committee attestation (`labels`+`attestations`) is authoritative; the side
+  // matching it is refunded and paid the loser's bond, the other is slashed.
+  function finalizeOutcome(T, opts) {
+    opts = opts || {};
+    var rs = roundOf(T, opts.round);
+    if (rs.state === 'PROPOSED') {
+      T.balances[rs.proposal.who] = balanceOf(T, rs.proposal.who) + rs.proposal.bond; // refund
+      rs.outcome = rs.proposal.labels; rs.resolution = 'undisputed'; rs.state = 'RESOLVE';
+      return rs;
+    }
+    if (rs.state !== 'DISPUTED') throw new Error('no open proposal to finalize');
+    if (!committeeAgrees(T, rs.featuresHash, opts.labels, opts.attestations)) throw new Error('dispute needs threshold committee agreement to settle');
+    var truth = labelsHashOf(opts.labels.map(function (v) { return v ? 1 : 0; }));
+    var p = rs.proposal, d = rs.dispute, pot = p.bond + d.bond;
+    var winner = (p.labelsHash === truth) ? p.who : (d.labelsHash === truth) ? d.who : null;
+    if (winner) { T.balances[winner] = balanceOf(T, winner) + pot; } // right side takes both bonds
+    else { T.burned += pot; }                                        // neither matched: bonds burned
+    rs.outcome = opts.labels.map(function (v) { return v ? 1 : 0; });
+    rs.resolution = 'disputed'; rs.winner = winner; rs.state = 'RESOLVE';
+    return rs;
   }
 
   /* ---- Phase 1: a mock feed + oracle, for offline end-to-end testing ----
@@ -248,6 +350,9 @@
     openRound: openRound, commitEntry: commitEntry, lockRound: lockRound,
     revealEntry: revealEntry, resolveRound: resolveRound, scoreRound: scoreRound,
     baselineLoss: baselineLoss,
+    // anti-abuse & governance (Phase 4)
+    committeeAgrees: committeeAgrees, beaconSample: beaconSample,
+    proposeOutcome: proposeOutcome, disputeOutcome: disputeOutcome, finalizeOutcome: finalizeOutcome,
     // offline harness (Phase 1)
     mockFeed: mockFeed
   };
