@@ -125,6 +125,81 @@ chain.replaceChain(rivalBlocks); // adopts it iff it learned strictly more
 block can clear the `minImprovement` bar — that's the chain reaching its
 natural end, and the point at which MIND issuance stops for good.
 
+## Production cost & economics
+
+A miner's cost is **CPU time spent training** — real compute, hence real
+electricity. There's no artificial hash target and no ASIC advantage; the cost
+is exactly the work of finding weights that lower the shared model's loss, and
+unlike hash-guessing **none of it is wasted** — every step also improves the
+public model. Reproduce the numbers below with `npm run bench:cortex`.
+
+**Unit costs** (this demo task: 120 samples, 6 hidden units, 25 weights):
+
+| Operation | Cost | Role |
+| --- | --- | --- |
+| One gradient step | ~0.23 ms | the unit of *mining* work |
+| One forward-pass loss check | ~0.33 ms | the *learning-verification* |
+| secp256k1 sign / verify | ~16 / ~30 ms | fixed per-block crypto, same as any signed chain |
+
+**The cost curve — mining gets exponentially dearer as the model matures.**
+Reward is proportional to loss removed, but the *floor* per block is fixed
+(`minImprovement × REWARD_PER_LOSS` = 0.004 MIND). Early blocks clear that floor
+in one cheap round of training; near convergence, each extra 0.004 of loss takes
+thousands of steps:
+
+| Block | Time to mine | Reward | Cost per MIND |
+| --- | --- | --- | --- |
+| #1 (fresh) | ~55 ms | 0.064 MIND | ~850 ms/MIND |
+| #29 (converged) | ~750 ms | 0.004 MIND | ~188,000 ms/MIND |
+
+So earning a MIND at convergence costs **~200× more** than at the start. That
+rising cost *is* the difficulty curve — it comes from diminishing returns on
+learning, not an artificial retarget — and it's why issuance naturally stops:
+marginal cost per MIND climbs toward infinity as the model runs out of things to
+learn.
+
+**The asymmetry** that makes it consensus-grade: a mature block costs
+**~2,300× its own learning-verification** (thousands of gradient steps to
+produce, one forward pass to check).
+
+### What does that cost in USD?
+
+Two honest points first:
+
+1. **MIND has no market price.** There's no exchange, no fiat pair, no trading.
+   Everything below is *production cost* (a cost basis), which in a rational
+   market would floor the price — it does not set one. What a MIND is *worth*
+   would be whatever a community decides, the same way TimeCoin anchors value to
+   time and favours rather than dollars.
+2. **Production cost is a design parameter, not an emergent constant.** You dial
+   it by choosing how big a model and dataset the network commits to at genesis.
+   The prototype's model is 25 weights, so its cost is essentially zero; a
+   serious task costs real money. There is no single number — only a range you
+   choose.
+
+Measured and projected (`FLOPs/block ≈ 6 × params × samples-processed`, run on a
+100 TFLOP/s accelerator at $1.5/GPU-hour):
+
+| Scenario | Params | FLOPs / block | Time / block | **USD / block** |
+| --- | --- | --- | --- | --- |
+| **This prototype** | 25 | ~1.8 M | <1 ms | ~$0 (measured: $5e-7) |
+| Small model | 100 K | 600 G | ~6 ms | ~$0.000003 |
+| Medium model | 10 M | 6 P | ~60 s | ~$0.03 |
+| Large model | 1 B | 60 E | ~167 h | ~$250 |
+
+So the answer to *"what's the production cost when the coin is mature?"* is two
+layered things:
+
+- **Within one chain**, "mature" means near convergence: cost per block climbs
+  ~14× (and cost per MIND ~200×) versus a fresh chain, because the model is
+  running out of learnable signal. In USD that's still whatever the *task scale*
+  above implies — a mature block on the "medium" task costs on the order of a
+  few cents; on the "large" task, a few hundred dollars.
+- **Across deployments**, a "mature" (production-serious) Cortex would pick a
+  large task on purpose, landing in the dollars-to-hundreds-of-dollars-per-block
+  range — which is the point: the cost has to be high enough that the MIND
+  reward is worth competing for, and low enough that the learning is worth doing.
+
 ## Demo
 
 Open `cortex/index.html` in a browser (it loads `../coin/engine.js` then
@@ -138,6 +213,7 @@ block.
 ```
 npm run test:cortex     # just this prototype
 npm test                # the whole prototype suite (includes Cortex)
+npm run bench:cortex     # production-cost benchmark (not part of the test gate)
 ```
 
 The suite (20 tests) covers dataset/weight determinism, that training actually
