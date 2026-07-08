@@ -2112,8 +2112,11 @@
         : '<button class="primary" data-pay-offer="' + esc(o.id) + '">Pay ' + fmtTime(o.price) + '</button>' +
           '<button data-escrow-offer="' + esc(o.id) + '" title="Pay a trusted third party who releases once you confirm">🛡 Trusted</button>' +
           '<button data-vault-offer="' + esc(o.id) + '" title="Lock funds in a 2-of-3 vault only you, the seller and an arbiter can open">🔐 Vault</button>';
+      // An offer whose home circle isn't ours came from a neighbouring circle —
+      // flag it "from …" so it's obvious at a glance where it originated.
+      var fromOther = o.circle && typeof myCircle === 'string' && myCircle && o.circle !== myCircle;
       var tags = (o.category ? '<span class="rep" style="color:var(--dim)">' + esc(o.category) + '</span> ' : '') +
-        (o.circle ? '<span class="rep" style="color:var(--gold)">◇ ' + esc(o.circle) + '</span>' : '');
+        (o.circle ? '<span class="rep" style="color:var(--gold)">◇ ' + (fromOther ? 'from ' : '') + esc(o.circle) + '</span>' : '');
       return '<div class="offercard"><div class="main">' +
         '<div class="ttl">' + esc(o.title) + '</div>' +
         (o.desc ? '<div class="dsc">' + esc(o.desc) + '</div>' : '') +
