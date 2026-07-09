@@ -89,6 +89,12 @@ export function createRelay(opts = {}) {
   // is ignored. Set 0 to ignore the header entirely (no proxy).
   const TRUST_PROXIES = opts.trustProxies ?? Number(process.env.RELAY_TRUST_PROXIES ?? 1);
   const now = opts.now || (() => Date.now());
+  // The relay is generic: another chain (e.g. Cortex) can reuse it by passing
+  // its own message types, static files and root dir. Defaults are TimeCoin's.
+  const TYPESET = opts.types ? (opts.types instanceof Set ? opts.types : new Set(opts.types)) : TYPES;
+  const FILES = opts.staticFiles || STATIC;
+  const ROOTDIR = opts.dir || DIR;
+  const NAME = opts.name || 'timecoin-relay';
 
   let seq = 0;
   let heldBytes = 0;
@@ -160,16 +166,16 @@ export function createRelay(opts = {}) {
 
     if (req.method === 'GET' && url.pathname === '/status') {
       return json(res, 200, {
-        ok: true, name: 'timecoin-relay', seq, held: ring.length,
+        ok: true, name: NAME, seq, held: ring.length,
         heldBytes, maxHeld: MAX_HELD, maxBytes: MAX_BYTES,
         clients: buckets.size, uptimeMs: now() - started, ...metrics,
       });
     }
 
-    if (req.method === 'GET' && STATIC[url.pathname]) {
+    if (req.method === 'GET' && FILES[url.pathname]) {
       try {
-        const [file, type] = STATIC[url.pathname];
-        const body = readFileSync(join(DIR, file));
+        const [file, type] = FILES[url.pathname];
+        const body = readFileSync(join(ROOTDIR, file));
         res.writeHead(200, { 'content-type': type, 'cache-control': 'no-cache' });
         return res.end(body);
       } catch {
@@ -201,7 +207,7 @@ export function createRelay(opts = {}) {
         let msg;
         try { msg = JSON.parse(raw.toString('utf8')); }
         catch { metrics.rejectedBad++; return json(res, 400, { ok: false, error: 'bad json' }); }
-        if (!msg || !TYPES.has(msg.type)) { metrics.rejectedBad++; return json(res, 400, { ok: false, error: 'bad message type' }); }
+        if (!msg || !TYPESET.has(msg.type)) { metrics.rejectedBad++; return json(res, 400, { ok: false, error: 'bad message type' }); }
         metrics.posts++;
         return json(res, 200, { ok: true, seq: push(msg, raw.length) });
       });

@@ -351,6 +351,9 @@ npm run test:cortex             # engine: model, chain, MIND token
 npm run test:cortex-holdout     # commit–reveal generalisation layer
 npm run test:cortex-tournament  # forecasting-tournament chain (TRUSTLESS.md phases 1–4)
 npm run test:cortex-prover      # scoring-proof layer (phase 5: spot-check + fraud proofs)
+npm run test:cortex-net         # gossip/consensus-sync between nodes
+npm run test:cortex-relay       # relay + two nodes converging over real HTTP
+npm run cortex:relay            # run the relay locally (testnet) → http://localhost:8088
 npm test                        # the whole prototype suite (includes Cortex)
 npm run bench:cortex            # production-cost benchmark (not part of the test gate)
 ```
@@ -362,6 +365,19 @@ cumulative-learning fork choice, and the full **MIND token layer**: rewards
 proportional to learning, supply bounded by knowledge, signed transfers that
 conserve value, and every economic rejection path (overdraft, replayed nonce,
 self-minted reward, tampered transfer).
+
+## Networking & deployment
+
+The chain can run as a real multi-node network: [`net.js`](net.js) is a
+transport-agnostic gossip node (broadcast the blocks you mine, ingest peers',
+converge by cumulative-learning fork choice) and [`server.mjs`](server.mjs) is a
+dumb relay (reusing TimeCoin's hardened `coin/server.mjs`) that forwards messages
+and serves the app. `npm run cortex:relay` starts a local network; two nodes
+converging over real HTTP through it is covered by `test:cortex-relay`.
+**[`DEPLOY.md`](DEPLOY.md)** is the deploy guide — and is blunt that this is a
+**testnet only**: fork-safe consensus needs a deterministic (fixed-point)
+forward pass first, because floating-point `tanh`/`exp`/`log` aren't bit-identical
+across machines. That determinism fix is the one true gate to a real-value network.
 
 ## Honest limitations
 
