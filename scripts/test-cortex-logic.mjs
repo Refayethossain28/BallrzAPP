@@ -283,6 +283,22 @@ test('the network learns real phishing detection and mining pays for it', () => 
   assert.ok(blk && blk.reward > 0, 'a block mines and pays MIND for learning to catch scams');
 });
 
+test('the REAL Correlates-of-War dataset is intact (pinned) and genuinely learnable', () => {
+  const w = DATA.get('war');
+  assert.match(w.title, /REAL/);
+  assert.equal(w.features.length, 2324, 'real militarized confrontations');
+  assert.equal(w.features[0].length, 3);
+  assert.equal(w.labels.filter((v) => v === 1).length, 914, 'known lethal count');
+  const canon = w.features.map((f, i) => f.join(',') + '|' + w.labels[i]).join(';');
+  assert.equal(C.sha256(canon), '9d0ba3da1557158bdb638730ba053e9146d4842882ecbb2f0f93942592635895', 'real data matches the pinned hash');
+  // learns a real signal above the majority baseline
+  const t = X.makeTask({ id: 'warlearn', dataset: 'war', layers: [10] });
+  const w1 = X.train(t, X.randomWeights(t, 'g'), 800, 0.5);
+  const acc = X.accuracy(t, w1);
+  const maj = t.y.filter((v) => v === 0).length / t.y.length;
+  assert.ok(acc > Math.max(maj, 1 - maj) + 0.03, `beats baseline on real data (${(acc * 100).toFixed(1)}%)`);
+});
+
 test('the conflict-risk SIMULATION is deterministic, disclosed, and beats baseline (honestly, modestly)', () => {
   const cf = DATA.get('conflict');
   assert.equal(cf.synthetic, true, 'flagged as a simulation, not real data');
