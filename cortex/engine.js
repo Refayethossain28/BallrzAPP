@@ -635,6 +635,11 @@
     var w = tip.weights.slice();
     var steps = opts.steps || 400, lr = opts.lr || 0.5;
     var need = tip.loss - task.minImprovement;
+    // Scheduled tasks: train all the way DOWN TO the schedule floor (or run out
+    // of rounds), so a block collects EVERYTHING the schedule has accrued since
+    // the last one — stopping at the bare minimum would leave released budget
+    // unclaimed and let the chain drift behind the emission curve.
+    var target = task.schedule ? allowed : need;
     var rounds = opts.maxRounds || 40, newLoss = tip.loss;
     var wPrev = w;
     for (var r = 0; r < rounds; r++) {
@@ -642,24 +647,24 @@
       w = train(task, w, steps, lr);
       newLoss = round9(loss(task, w));
       if (opts.onRound) opts.onRound(r + 1, newLoss, need); // progress hook (mining-side only; consensus unaffected)
-      if (newLoss <= need) break;
+      if (newLoss <= target) break;
     }
     if (newLoss > need) return null; // couldn't learn enough — chain has converged
     if (newLoss < allowed) {
-      // Trained PAST the schedule floor — the block would be "ahead of
+      // Trained PAST the schedule floor — as-is the block would be "ahead of
       // schedule" and invalid. Pull back along the trained direction: bisect
-      // the quantised interpolation between wPrev (loss > need, since the loop
-      // breaks on the first round that clears it) and the overshooting w until
-      // the loss lands inside [allowed, need].
+      // the quantised interpolation between wPrev (above the floor) and the
+      // overshooting w, converging on the floor from above so the block keeps
+      // as much of the accrued reward as the weight grid allows.
       var lo = 0, hi = 1, found = null;
-      for (var it = 0; it < 64 && found === null; it++) {
+      for (var it = 0; it < 64; it++) {
         var mid = (lo + hi) / 2, wm = new Array(w.length);
         for (var i2 = 0; i2 < w.length; i2++) wm[i2] = wPrev[i2] + mid * (w[i2] - wPrev[i2]);
         wm = quantise(wm, task.quantum);
         var lm = round9(loss(task, wm));
-        if (lm > need) lo = mid;
-        else if (lm < allowed) hi = mid;
-        else found = { w: wm, loss: lm };
+        if (lm > need) { lo = mid; continue; }        // not enough learning yet — go deeper
+        if (lm < allowed) { hi = mid; continue; }     // past the floor — back off
+        found = { w: wm, loss: lm }; lo = mid;        // valid — keep it, then edge closer to the floor
       }
       if (found === null) return null; // window narrower than the weight grid — accrue more and retry
       w = found.w; newLoss = found.loss;

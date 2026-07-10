@@ -565,10 +565,22 @@ test('the minimum block interval and future-dating are enforced', () => {
     assert.equal(v.ok, false);
     assert.equal(v.reason, 'too soon after previous block');
   }
-  // mineWindow honours the interval gate even when learning has accrued
+  // mineWindow stays closed right after a block: the interval gate holds, and
+  // since the block captured the full accrual, fresh budget must accrue too.
   const gated = chain.mineWindow(at1 + SCHED.minIntervalMs - 500);
-  assert.equal(gated.open, false, 'interval gate holds');
-  assert.ok(gated.waitMs > 0 && gated.waitMs <= SCHED.minIntervalMs, 'and reports the wait');
+  assert.equal(gated.open, false, 'gate holds');
+  assert.ok(gated.waitMs > 0 && Number.isFinite(gated.waitMs), 'and reports a finite wait');
+});
+
+test('a block collects essentially ALL the accrued budget, not just the minimum', () => {
+  const t = schedTask();
+  const chain = new X.Chain(t, { genesisSeed: 'g' });
+  const at = SCHED.startAt + SCHED.halfLifeMs; // half the budget has been released
+  const accrued = chain.tipLoss() - chain.allowedLoss(at);
+  const blk = chain.mineBlock({ privKey: alice.privateKey, steps: 400, at, nonce: 'f0' });
+  assert.ok(blk, 'mines');
+  assert.ok(blk.reward >= 0.95 * accrued * t.rewardPerLoss, `captures the accrual (got ${blk.reward} of ${Math.round(accrued * t.rewardPerLoss)})`);
+  assert.ok(blk.reward <= Math.round(accrued * t.rewardPerLoss) + 1, 'without exceeding it');
 });
 
 test('waiting longer accrues a bigger reward (halving-style emission)', () => {
