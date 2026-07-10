@@ -58,14 +58,17 @@ export function bootNode(opts = {}) {
   const mods = loadModules(opts.root);
   const { X, Net } = mods;
   // Defaults match the browser app (cortex/app.js) so a headless node joins the
-  // SAME chain: "warnet" — the Correlates-of-War conflict-lethality task. An
-  // explicit taskId without a dataset gets the synthetic task (tests / custom nets).
+  // SAME chain: "warnet-v2" — the Correlates-of-War conflict-lethality task on
+  // a deeper [24,24] net (min improvement 0.002 — consensus params, must match
+  // the browser exactly). An explicit taskId without a dataset gets the
+  // synthetic task (tests / custom nets).
   const useMainnet = !opts.taskId;
-  const taskId = opts.taskId || 'cortex-warnet-v1';
+  const taskId = opts.taskId || 'cortex-warnet-v2';
   const genesisSeed = opts.genesisSeed || 'cortex-genesis';
   const dataset = opts.dataset ?? (useMainnet ? 'war' : undefined);
-  const layers = opts.layers ?? (useMainnet ? [12] : undefined);
-  const task = X.makeTask({ id: taskId, ...(dataset ? { dataset } : {}), ...(layers ? { layers } : {}) });
+  const layers = opts.layers ?? (useMainnet ? [24, 24] : undefined);
+  const minImprovement = opts.minImprovement ?? (useMainnet ? 0.002 : undefined);
+  const task = X.makeTask({ id: taskId, ...(dataset ? { dataset } : {}), ...(layers ? { layers } : {}), ...(minImprovement != null ? { minImprovement } : {}) });
   const wallet = resolveWallet(mods, opts);
 
   let chain;

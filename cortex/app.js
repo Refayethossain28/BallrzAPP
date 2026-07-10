@@ -24,9 +24,12 @@
   // LETHAL, from real Correlates of War data (mmb_war, embedded in
   // datasets.js). Mining trains a free, community-owned conflict-lethality
   // model. Changing the task means a NEW chain; older chains (cortex-mainnet,
-  // scamnet) still exist wherever they were stored.
-  var TASK_ID = 'cortex-warnet-v1', GENESIS_SEED = 'cortex-genesis';
-  var TASK_OPTS = { dataset: 'war', layers: [12] };
+  // scamnet, warnet-v1) still exist wherever they were stored.
+  //
+  // v2: a deeper net ([24,24], min improvement 0.002) — benchmarked to ~98
+  // blocks of mining life and ~85% converged accuracy vs v1's 11 blocks / 77%.
+  var TASK_ID = 'cortex-warnet-v2', GENESIS_SEED = 'cortex-genesis';
+  var TASK_OPTS = { dataset: 'war', layers: [24, 24], minImprovement: 0.002 };
   var LS_WALLET = 'cortex.wallet.v1', LS_CHAIN = 'cortex.chain.v1';
 
   function lsGet(k) { try { return root.localStorage ? root.localStorage.getItem(k) : null; } catch (e) { return null; } }
@@ -89,14 +92,46 @@
       };
     };
 
-    // Mine one block (trains — heavy, so deferred); broadcasts it. cb(block|null).
-    app.mine = function (cb) {
-      if (app.mining) return; app.mining = true;
+    // Mine one block; broadcasts it. cb(block|null), onProgress(round, loss).
+    // Training the deeper v2 model is heavy (up to minutes near convergence),
+    // so it runs in a Web Worker — the UI stays live and streams progress.
+    // Fallback (file://, old browsers): main thread, as before.
+    var miner = null;
+    function minerWorker() {
+      if (miner !== null) return miner || null;
+      try { miner = (typeof root.Worker !== 'undefined' && origin.indexOf('http') === 0) ? new root.Worker('miner-worker.js') : false; }
+      catch (e) { miner = false; }
+      return miner || null;
+    }
+    function mineOnMainThread(cb) {
       root.setTimeout(function () {
         var blk = null;
         try { blk = node.mineAndBroadcast({ privKey: wallet.privateKey, steps: opts.steps || 100, at: Date.now(), nonce: 'b' + chain.height() }); } catch (e) { blk = null; }
         app.mining = false; emit(); if (cb) cb(blk);
       }, 20);
+    }
+    app.mine = function (cb, onProgress) {
+      if (app.mining) return; app.mining = true;
+      var w = minerWorker();
+      if (!w) return mineOnMainThread(cb);
+      w.onerror = function () { miner = false; mineOnMainThread(cb); }; // worker broken — fall back this press and onward
+      w.onmessage = function (ev) {
+        var m = ev.data || {};
+        if (m.type === 'progress') { if (onProgress) onProgress(m.round, m.loss); return; }
+        var blk = (m.type === 'done') ? m.block : null;
+        if (blk) {
+          // Same post-mine steps as net.js mineAndBroadcast; addBlock throws if
+          // a rival block landed while we trained (next poll reconciles).
+          try { chain.addBlock(blk); node.mempool = []; node.seen[blk.hash] = 1; send({ type: 'block', from: node.id, block: blk }); }
+          catch (e) { blk = null; }
+        }
+        app.mining = false; emit(); if (cb) cb(blk);
+      };
+      w.postMessage({
+        taskOpts: Object.assign({ id: TASK_ID }, TASK_OPTS), genesisSeed: GENESIS_SEED,
+        blocks: chain.blocks, privKey: wallet.privateKey, steps: opts.steps || 100,
+        at: Date.now(), nonce: 'b' + chain.height(), txs: node.mempool.slice()
+      });
     };
 
     // Submit a signed transfer to the network (confirms when a block includes it).

@@ -578,6 +578,7 @@
     for (var r = 0; r < rounds; r++) {
       w = train(task, w, steps, lr);
       newLoss = round9(loss(task, w));
+      if (opts.onRound) opts.onRound(r + 1, newLoss, need); // progress hook (mining-side only; consensus unaffected)
       if (newLoss <= need) break;
     }
     if (newLoss > need) return null; // couldn't learn enough — chain has converged
