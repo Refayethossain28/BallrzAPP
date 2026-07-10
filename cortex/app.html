@@ -217,11 +217,20 @@
     function render(s) { renderMine(s); renderWallet(s); }
     app.onUpdate(render); render(app.state());
 
+    function fmtWait(ms) {
+      if (ms < 90e3) return Math.ceil(ms / 1e3) + 's';
+      if (ms < 90 * 60e3) return Math.ceil(ms / 60e3) + 'm';
+      if (ms < 36 * 3600e3) return Math.ceil(ms / 3600e3) + 'h';
+      return Math.ceil(ms / 86400e3) + 'd';
+    }
     $('mine').addEventListener('click', function () {
       $('mine').disabled = true; $('mine').textContent = 'Training…';
-      app.mine(function (blk) {
+      app.mine(function (blk, win) {
         $('mine').disabled = false;
-        $('mine').textContent = blk ? '⛏️ Mine a block (train & earn MIND)' : '✅ Model converged — nothing left to mine';
+        if (blk) { $('mine').textContent = '⛏️ Mine a block (train & earn MIND)'; return; }
+        if (win && win.waitMs === Infinity) { $('mine').textContent = '✅ Schedule complete — nothing left to mine'; return; }
+        if (win && win.waitMs > 0) { $('mine').textContent = '⏳ MIND accrues on the 10-year schedule — try in ~' + fmtWait(win.waitMs); return; }
+        $('mine').textContent = '✅ Model converged — nothing left to mine';
       }, function (round, loss) {
         $('mine').textContent = '🧠 Training… round ' + round + ' · loss ' + loss.toFixed(4);
       });

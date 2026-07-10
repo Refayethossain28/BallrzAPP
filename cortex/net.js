@@ -87,6 +87,16 @@
       return blk;
     };
 
+    // Scheduled tasks only: reject blocks dated in the future (beyond clock
+    // drift). This is what stops a miner post-dating `at` to unlock schedule
+    // budget early — the network won't relay or accept a future-dated block
+    // until that time actually arrives (at which point it earned nothing).
+    // Same weak-clock assumption Bitcoin makes; see cortex/SECURITY.md.
+    var MAX_FUTURE_MS = 5 * 60 * 1000;
+    function fromTheFuture(b) {
+      return !!(node.chain.task.schedule && b && Number(b.at) > Date.now() + MAX_FUTURE_MS);
+    }
+
     // Handle one incoming message. Returns a short tag describing what we did.
     node.receive = function (msg) {
       node.stats.rx++;
@@ -97,6 +107,7 @@
           return 'answered:hello';
         case 'chain': {
           // Fork choice: adopt a rival chain iff it has learned strictly more.
+          if (msg.blocks && msg.blocks.length && fromTheFuture(msg.blocks[msg.blocks.length - 1])) return 'rejected:future-timestamp';
           var adopted = false;
           try { adopted = node.chain.replaceChain(msg.blocks); } catch (e) { adopted = false; }
           if (adopted) { node.stats.chainsAdopted++; return 'adopted:chain'; }
@@ -105,6 +116,7 @@
         case 'block': {
           var b = msg.block;
           if (!b || node.seen[b.hash]) return 'ignored:dup';
+          if (fromTheFuture(b)) return 'rejected:future-timestamp';
           // Fast path: the block extends our tip.
           if (b.prevHash === node.chain.tip().hash && b.index === node.chain.tip().index + 1) {
             try {

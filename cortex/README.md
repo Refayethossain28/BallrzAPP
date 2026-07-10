@@ -82,9 +82,19 @@ that rule:
 - **You're paid for teaching, not for showing up.** A block that barely moves
   the model earns barely any MIND; a block that cuts the loss a lot earns a lot.
 - **The money supply is bounded by knowledge.** Total MIND ever minted can't
-  exceed `(genesis loss) × REWARD_PER_LOSS`, and it stops growing the moment the
+  exceed `(genesis loss) × rewardPerLoss`, and it stops growing the moment the
   model converges. There's no arbitrary cap to argue about — the cap *is* how
   much the network can learn.
+
+On top of that, a task can carry an **emission schedule** (the live warnet-v3
+does): a consensus rule `allowedLoss(t)` that releases the model's remaining
+learning over real time with a fixed half-life — a block that learns below the
+schedule at its timestamp is invalid, so **compute cannot drain the supply
+early**. Learning accrues between blocks (whoever mines next collects it), and
+emissions halve every half-life like Bitcoin's: warnet-v3 releases ~50% of its
+960,000-MIND cap in the first 2.3 years and ~95% within 10 years. See
+`makeTask({ schedule })` in `engine.js` and the timestamp caveats in
+`SECURITY.md`.
 
 MIND then moves between wallets as ordinary **secp256k1-signed transfers**
 carried inside blocks. Balances are strictly non-negative — a block containing a

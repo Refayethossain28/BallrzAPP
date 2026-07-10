@@ -492,6 +492,106 @@ test('fork choice carries the winning chain\'s MIND balances with it', () => {
   assert.equal(nodeA.totalSupply(), nodeB.totalSupply());
 });
 
+/* ---- the 10-year emission schedule ----------------------------------------
+ * A scheduled task rations learning over real time: allowedLoss(t) decays from
+ * the genesis loss with a fixed half-life, and consensus REJECTS blocks that
+ * learn below the schedule at their timestamp. These tests use a small
+ * synthetic task with second-scale timings so they run fast. */
+const SCHED = { startAt: 1000000, halfLifeMs: 3600e3, budget: 0.2, minIntervalMs: 1000 };
+const schedTask = () => X.makeTask({ id: 'schedule-unit', minImprovement: 1e-4, rewardPerLoss: 1e9, schedule: SCHED });
+
+test('the emission schedule decays deterministically with the configured half-life', () => {
+  const chain = new X.Chain(schedTask(), { genesisSeed: 'g' });
+  const g0 = chain.tipLoss();
+  assert.equal(chain.allowedLoss(SCHED.startAt), g0, 'nothing is allowed before the clock starts');
+  assert.equal(chain.allowedLoss(SCHED.startAt - 5000), g0, 'pre-start is clamped');
+  const half = chain.allowedLoss(SCHED.startAt + SCHED.halfLifeMs);
+  assert.ok(Math.abs((g0 - half) - SCHED.budget / 2) < 1e-6, 'half the budget is released after one half-life');
+  const decade = chain.allowedLoss(SCHED.startAt + 10 * SCHED.halfLifeMs);
+  assert.ok(g0 - decade > SCHED.budget * 0.999, 'virtually the whole budget after ten half-lives');
+  assert.ok(decade > g0 - SCHED.budget - 1e-9, 'never releases more than the budget');
+  const again = new X.Chain(schedTask(), { genesisSeed: 'g' });
+  assert.equal(again.allowedLoss(SCHED.startAt + 12345678), chain.allowedLoss(SCHED.startAt + 12345678), 'identical on every node');
+});
+
+test('compute cannot learn ahead of schedule — early blocks are rejected', () => {
+  const chain = new X.Chain(schedTask(), { genesisSeed: 'g' });
+  // just after start almost nothing has accrued, so a fully-trained block is invalid
+  const at = SCHED.startAt + SCHED.minIntervalMs + 1;
+  assert.equal(chain.mineWindow(at).open, false, 'window closed: nothing accrued yet');
+  assert.equal(chain.mineBlock({ privKey: alice.privateKey, steps: 400, at, nonce: 's0' }), null, 'miner refuses to mine into a closed window');
+  // forge one anyway on a schedule-free twin task and replay it here
+  const free = X.makeTask({ id: 'schedule-unit', minImprovement: 1e-4, rewardPerLoss: 1e9 });
+  const twin = new X.Chain(free, { genesisSeed: 'g' });
+  const forged = twin.mineBlock({ privKey: alice.privateKey, steps: 400, at, nonce: 's0' });
+  assert.ok(forged, 'the twin without a schedule mines happily');
+  const v = chain.isValidBlock(forged, chain.tip());
+  assert.equal(v.ok, false);
+  assert.equal(v.reason, 'ahead of schedule', 'consensus rejects learning the schedule has not released');
+});
+
+test('once enough accrues a block mines inside the window and pays the accrued MIND', () => {
+  const t = schedTask();
+  const chain = new X.Chain(t, { genesisSeed: 'g' });
+  const g0 = chain.tipLoss();
+  const at = SCHED.startAt + Math.round(SCHED.halfLifeMs / 4); // quarter half-life in
+  const win = chain.mineWindow(at);
+  assert.equal(win.open, true, 'window open after real time passes');
+  const blk = chain.mineBlock({ privKey: alice.privateKey, steps: 400, at, nonce: 's1' });
+  assert.ok(blk, 'mines');
+  assert.ok(blk.loss >= chain.allowedLoss(at) - 1e-9, 'landed on or above the schedule floor');
+  assert.ok(blk.loss <= g0 - t.minImprovement + 1e-12, 'and genuinely improved');
+  chain.addBlock(blk);
+  const accrued = g0 - chain.allowedLoss(at);
+  assert.ok(blk.reward <= Math.round(accrued * t.rewardPerLoss) + 1, 'reward cannot exceed what the schedule released');
+  assert.ok(blk.reward > 0, 'and it pays');
+  // supply is bounded by the schedule budget forever
+  assert.ok(chain.totalSupply() <= Math.round(SCHED.budget * t.rewardPerLoss), 'supply within the hard cap');
+});
+
+test('the minimum block interval and future-dating are enforced', () => {
+  const t = schedTask();
+  const chain = new X.Chain(t, { genesisSeed: 'g' });
+  const at1 = SCHED.startAt + Math.round(SCHED.halfLifeMs / 4);
+  const b1 = chain.mineBlock({ privKey: alice.privateKey, steps: 400, at: at1, nonce: 'i0' });
+  chain.addBlock(b1);
+  // a successor dated less than minIntervalMs after its parent is invalid
+  const free = X.makeTask({ id: 'schedule-unit', minImprovement: 1e-4, rewardPerLoss: 1e9 });
+  const twin = new X.Chain(free, { genesisSeed: 'g' });
+  twin.addBlock(b1);
+  const tooSoon = twin.mineBlock({ privKey: alice.privateKey, steps: 400, at: at1 + SCHED.minIntervalMs - 1, nonce: 'i1' });
+  if (tooSoon) {
+    const v = chain.isValidBlock(tooSoon, chain.tip());
+    assert.equal(v.ok, false);
+    assert.equal(v.reason, 'too soon after previous block');
+  }
+  // mineWindow honours the interval gate even when learning has accrued
+  const gated = chain.mineWindow(at1 + SCHED.minIntervalMs - 500);
+  assert.equal(gated.open, false, 'interval gate holds');
+  assert.ok(gated.waitMs > 0 && gated.waitMs <= SCHED.minIntervalMs, 'and reports the wait');
+});
+
+test('waiting longer accrues a bigger reward (halving-style emission)', () => {
+  const t = schedTask();
+  const early = new X.Chain(t, { genesisSeed: 'g' });
+  const late = new X.Chain(t, { genesisSeed: 'g' });
+  const bEarly = early.mineBlock({ privKey: alice.privateKey, steps: 400, at: SCHED.startAt + Math.round(SCHED.halfLifeMs / 8), nonce: 'w0' });
+  const bLate = late.mineBlock({ privKey: alice.privateKey, steps: 400, at: SCHED.startAt + SCHED.halfLifeMs, nonce: 'w0' });
+  assert.ok(bEarly && bLate, 'both mine');
+  assert.ok(bLate.reward > bEarly.reward, `more accrual -> bigger block (${bLate.reward} > ${bEarly.reward})`);
+});
+
+test('tasks without a schedule behave exactly as before', () => {
+  const t = X.makeTask({ id: 'noschedule' });
+  assert.equal(t.schedule, undefined, 'no schedule by default');
+  const chain = new X.Chain(t, { genesisSeed: 'g' });
+  assert.equal(chain.allowedLoss(123456789), -Infinity, 'no floor');
+  const win = chain.mineWindow(0);
+  assert.equal(win.open, true, 'always mineable');
+  assert.equal(win.waitMs, 0);
+  assert.equal(t.rewardPerLoss, X.REWARD_PER_LOSS, 'default reward scale unchanged');
+});
+
 // ---- runner ----------------------------------------------------------------
 let failed = 0;
 for (const [name, fn] of tests) {

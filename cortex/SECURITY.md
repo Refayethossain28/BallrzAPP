@@ -66,7 +66,25 @@ MIND has no intrinsic value and no market. Like TimeCoin, any value is whatever 
 community agrees to; issuance is bounded by learning, not backed by anything.
 Bootstrapping is social (see `coin/CIRCLE.md`).
 
-## 8. Persistence & availability — LOW
+## 8. Emission-schedule timestamps — MEDIUM
+
+The 10-year schedule (warnet-v3) makes block **timestamps consensus-relevant**:
+`allowedLoss(block.at)` caps how much a block may learn. Two honest weaknesses:
+
+- **Future-dating.** A miner could post-date `at` to unlock budget early. Live
+  nodes reject blocks more than 5 minutes ahead of their local clock
+  (`net.js`), the same loose-clock assumption Bitcoin makes — but a node
+  **replaying an old chain from disk cannot re-check this**, so a future-dated
+  fork built in secret would validate later. Bitcoin's median-time-past +
+  difficulty makes this expensive; here it is only the relay-time check.
+- **Clock skew.** A miner whose clock runs behind simply earns slightly less;
+  more than 5 minutes ahead and peers drop their blocks until real time
+  catches up.
+
+Acceptable for a testnet; a real deployment would need verifiable time
+(median-of-peers time, or an external beacon).
+
+## 9. Persistence & availability — LOW
 
 `node.mjs` persists the chain as a JSON snapshot; a corrupt snapshot is simply
 not adopted (validated via `replaceChain`), but there's no automatic backup,

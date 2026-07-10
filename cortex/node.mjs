@@ -58,17 +58,27 @@ export function bootNode(opts = {}) {
   const mods = loadModules(opts.root);
   const { X, Net } = mods;
   // Defaults match the browser app (cortex/app.js) so a headless node joins the
-  // SAME chain: "warnet-v2" — the Correlates-of-War conflict-lethality task on
-  // a deeper [24,24] net (min improvement 0.002 — consensus params, must match
-  // the browser exactly). An explicit taskId without a dataset gets the
-  // synthetic task (tests / custom nets).
+  // SAME chain: "warnet-v3" — the Correlates-of-War conflict-lethality task on
+  // a deeper [24,24] net with the 10-YEAR EMISSION SCHEDULE. Every field below
+  // is a consensus parameter and must match cortex/app.js exactly. An explicit
+  // taskId without a dataset gets the synthetic task (tests / custom nets).
+  const MAINNET_OPTS = {
+    dataset: 'war', layers: [24, 24],
+    minImprovement: 0.000002,
+    rewardPerLoss: 3000000000000,
+    schedule: { startAt: 1783641600000, halfLifeMs: 72582480000, budget: 0.32, minIntervalMs: 60000 },
+  };
   const useMainnet = !opts.taskId;
-  const taskId = opts.taskId || 'cortex-warnet-v2';
+  const taskId = opts.taskId || 'cortex-warnet-v3';
   const genesisSeed = opts.genesisSeed || 'cortex-genesis';
-  const dataset = opts.dataset ?? (useMainnet ? 'war' : undefined);
-  const layers = opts.layers ?? (useMainnet ? [24, 24] : undefined);
-  const minImprovement = opts.minImprovement ?? (useMainnet ? 0.002 : undefined);
-  const task = X.makeTask({ id: taskId, ...(dataset ? { dataset } : {}), ...(layers ? { layers } : {}), ...(minImprovement != null ? { minImprovement } : {}) });
+  const custom = {
+    ...(opts.dataset ? { dataset: opts.dataset } : {}),
+    ...(opts.layers ? { layers: opts.layers } : {}),
+    ...(opts.minImprovement != null ? { minImprovement: opts.minImprovement } : {}),
+    ...(opts.rewardPerLoss != null ? { rewardPerLoss: opts.rewardPerLoss } : {}),
+    ...(opts.schedule ? { schedule: opts.schedule } : {}),
+  };
+  const task = X.makeTask({ id: taskId, ...(useMainnet ? MAINNET_OPTS : {}), ...custom });
   const wallet = resolveWallet(mods, opts);
 
   let chain;
@@ -90,7 +100,7 @@ export function bootNode(opts = {}) {
     mods, wallet, task, node, transport, save,
     sync: () => { node.hello(); return transport.poll((m) => node.receive(m)); },
     poll: () => transport.poll((m) => node.receive(m)),
-    mine: (o) => { const blk = node.mineAndBroadcast({ privKey: wallet.privateKey, steps: opts.steps || 400, nonce: 'b' + node.chain.height(), ...(o || {}) }); save(); return blk; },
+    mine: (o) => { const blk = node.mineAndBroadcast({ privKey: wallet.privateKey, steps: opts.steps || 400, at: Date.now(), nonce: 'b' + node.chain.height(), ...(o || {}) }); save(); return blk; },
     balance: () => X.formatMind(node.chain.balanceOf(wallet.address)),
   };
 }
@@ -110,7 +120,14 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   h.sync();
   const pt = setInterval(() => h.poll().catch(() => {}), pollMs);
   const mt = setInterval(() => {
-    try { const b = h.mine(); if (b) console.log(`mined #${b.index}  loss ${b.loss.toFixed(4)}  ${h.balance()}`); else console.log('model converged — nothing to mine'); }
+    try {
+      const b = h.mine({ at: Date.now() });
+      if (b) { console.log(`mined #${b.index}  loss ${b.loss.toFixed(4)}  ${h.balance()}`); return; }
+      const win = h.node.chain.mineWindow(Date.now());
+      if (win.waitMs === Infinity) console.log('schedule complete — nothing left to mine');
+      else if (win.waitMs > 0) console.log(`schedule: next block accrues in ~${Math.ceil(win.waitMs / 1000)}s`);
+      else console.log('model converged — nothing to mine');
+    }
     catch (e) { /* a rival block landed first; next poll reconciles */ }
   }, mineMs);
   const stop = () => { clearInterval(pt); clearInterval(mt); h.save(); process.exit(0); };

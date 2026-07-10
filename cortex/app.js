@@ -26,10 +26,27 @@
   // model. Changing the task means a NEW chain; older chains (cortex-mainnet,
   // scamnet, warnet-v1) still exist wherever they were stored.
   //
-  // v2: a deeper net ([24,24], min improvement 0.002) — benchmarked to ~98
-  // blocks of mining life and ~85% converged accuracy vs v1's 11 blocks / 77%.
-  var TASK_ID = 'cortex-warnet-v2', GENESIS_SEED = 'cortex-genesis';
-  var TASK_OPTS = { dataset: 'war', layers: [24, 24], minImprovement: 0.002 };
+  // v3: the deeper [24,24] net + a 10-YEAR EMISSION SCHEDULE. A consensus rule
+  // rations how fast the chain may absorb learning: allowedLoss(t) decays from
+  // the genesis loss (0.6574) toward genesis−budget with a 2.3-year half-life,
+  // and a block that learns below the schedule at its timestamp is INVALID.
+  // Emissions halve every ~2.3 years (like Bitcoin): ~50% of all MIND by year
+  // 2.3, ~95% by year 10 — the ceiling is reached "in about 10 years" no
+  // matter how much compute shows up. Budget 0.32 is under the model's
+  // benchmarked capacity (ΔL≈0.353), so learning can follow the schedule to
+  // the end. Max supply: 0.32 × 3e12 = 960,000 MIND.
+  var TASK_ID = 'cortex-warnet-v3', GENESIS_SEED = 'cortex-genesis';
+  var TASK_OPTS = {
+    dataset: 'war', layers: [24, 24],
+    minImprovement: 0.000002,        // a block needs real — if small — learning
+    rewardPerLoss: 3000000000000,    // 3e12 base units per 1.0 loss removed
+    schedule: {
+      startAt: 1783641600000,        // 2026-07-10T00:00:00Z — fixed for all nodes
+      halfLifeMs: 72582480000,       // 2.3 years
+      budget: 0.32,                  // total loss the schedule will ever release
+      minIntervalMs: 60000           // at most one block per minute
+    }
+  };
   var LS_WALLET = 'cortex.wallet.v1', LS_CHAIN = 'cortex.chain.v1';
 
   function lsGet(k) { try { return root.localStorage ? root.localStorage.getItem(k) : null; } catch (e) { return null; } }
@@ -88,6 +105,7 @@
         balance: chain.balanceOf(wallet.address), supply: chain.totalSupply(),
         learning: chain.cumulativeImprovement(), net: app.net,
         pending: node.mempool.slice(), blocks: chain.blocks.slice(),
+        window: chain.mineWindow(Date.now()), // emission schedule: is a block mineable now?
         fmt: Cortex.formatMind
       };
     };
@@ -107,11 +125,14 @@
       root.setTimeout(function () {
         var blk = null;
         try { blk = node.mineAndBroadcast({ privKey: wallet.privateKey, steps: opts.steps || 100, at: Date.now(), nonce: 'b' + chain.height() }); } catch (e) { blk = null; }
-        app.mining = false; emit(); if (cb) cb(blk);
+        app.mining = false; emit(); if (cb) cb(blk, blk ? null : chain.mineWindow(Date.now()));
       }, 20);
     }
     app.mine = function (cb, onProgress) {
       if (app.mining) return; app.mining = true;
+      // Schedule gate: if nothing has accrued yet, don't even spin up training.
+      var win = chain.mineWindow(Date.now());
+      if (!win.open) { app.mining = false; if (cb) cb(null, win); return; }
       var w = minerWorker();
       if (!w) return mineOnMainThread(cb);
       w.onerror = function () { miner = false; mineOnMainThread(cb); }; // worker broken — fall back this press and onward
@@ -125,7 +146,7 @@
           try { chain.addBlock(blk); node.mempool = []; node.seen[blk.hash] = 1; send({ type: 'block', from: node.id, block: blk }); }
           catch (e) { blk = null; }
         }
-        app.mining = false; emit(); if (cb) cb(blk);
+        app.mining = false; emit(); if (cb) cb(blk, blk ? null : chain.mineWindow(Date.now()));
       };
       w.postMessage({
         taskOpts: Object.assign({ id: TASK_ID }, TASK_OPTS), genesisSeed: GENESIS_SEED,

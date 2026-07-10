@@ -81,8 +81,9 @@
   // Base units minted for lowering the model's average loss from `prevLoss` to
   // `newLoss`. Always positive for a valid block (it must improve by at least
   // the task's minImprovement). This is the coinbase reward.
-  function blockReward(prevLoss, newLoss) {
-    return Math.max(0, Math.round((prevLoss - newLoss) * REWARD_PER_LOSS));
+  function blockReward(task, prevLoss, newLoss) {
+    var scale = (task && task.rewardPerLoss != null) ? task.rewardPerLoss : REWARD_PER_LOSS;
+    return Math.max(0, Math.round((prevLoss - newLoss) * scale));
   }
 
   // Format a base-unit amount as a human MIND string, e.g. 1900000 -> "1.9 MIND".
@@ -228,8 +229,30 @@
       noise: (opts.noise == null) ? DEFAULTS.noise : opts.noise,
       minImprovement: (opts.minImprovement == null) ? (preset.minImprovement == null ? DEFAULTS.minImprovement : preset.minImprovement) : opts.minImprovement,
       quantum: opts.quantum || DEFAULTS.quantum,
+      rewardPerLoss: (opts.rewardPerLoss == null) ? REWARD_PER_LOSS : Number(opts.rewardPerLoss),
       ticker: String(opts.ticker || DEFAULTS.ticker)
     };
+
+    /* Emission schedule (optional, consensus-critical when set): rations how
+     * fast the chain may absorb learning, Bitcoin-style. allowedLoss(t) decays
+     * from the genesis loss toward (genesisLoss − budget) with the given
+     * half-life; a block whose loss undercuts the schedule at its timestamp is
+     * INVALID — no amount of compute can learn ahead of schedule. Emissions
+     * therefore halve every halfLifeMs: ~50% of all MIND in the first
+     * half-life, ~97% after five. Set budget to (at most) the loss the model
+     * can actually shed, and the practical ceiling lands at ≈ 4–5 half-lives. */
+    if (opts.schedule) {
+      var sch = opts.schedule;
+      t.schedule = {
+        startAt: Number(sch.startAt),                 // fixed epoch ms — same constant on every node
+        halfLifeMs: Number(sch.halfLifeMs),           // emission half-life
+        budget: Number(sch.budget),                   // total loss the schedule will ever release
+        minIntervalMs: Number(sch.minIntervalMs == null ? 60000 : sch.minIntervalMs)
+      };
+      if (!(t.schedule.startAt > 0) || !(t.schedule.halfLifeMs > 0) || !(t.schedule.budget > 0)) {
+        throw new Error('schedule needs positive startAt, halfLifeMs and budget');
+      }
+    }
 
     if (real) {
       // Real dataset: inputs and sample count come from the data itself.
@@ -548,6 +571,38 @@
 
   function round9(x) { return Math.round(x * 1e9) / 1e9; }
 
+  // The emission schedule's allowed loss at time `atMs` (consensus when the
+  // task has a schedule): genesisLoss − budget·(1 − 2^(−Δt/halfLife)), built
+  // only from IEEE ops + detExp so every node computes the identical double.
+  Chain.prototype.allowedLoss = function (atMs) {
+    var s = this.task.schedule;
+    if (!s) return -Infinity;
+    var dt = Number(atMs) - s.startAt;
+    if (!(dt > 0)) return this.baselineLoss;
+    var remaining = s.budget * dexp(-(dt / s.halfLifeMs) * LN2); // budget · 2^(−dt/H)
+    return round9(this.baselineLoss - s.budget + remaining);
+  };
+
+  // Can a block be mined at `atMs`? Returns { open, need, allowed, waitMs }:
+  // `need` is the loss a block must reach (tip − minImprovement), `allowed` the
+  // schedule floor, `waitMs` how long until enough learning has accrued.
+  // waitMs === Infinity means the schedule's budget is spent — the ceiling.
+  Chain.prototype.mineWindow = function (atMs) {
+    var tip = this.tip(), s = this.task.schedule;
+    var need = round9(tip.loss - this.task.minImprovement);
+    if (!s) return { open: true, need: need, allowed: -Infinity, waitMs: 0 };
+    var at = Number(atMs);
+    var allowed = this.allowedLoss(at);
+    var prevAt = tip.index === 0 ? s.startAt : tip.at;
+    var gate = prevAt + s.minIntervalMs - at; // min block interval
+    if (allowed <= need) return { open: gate <= 0, need: need, allowed: allowed, waitMs: Math.max(0, gate) };
+    // Not enough accrued yet: when does the schedule reach `need`?
+    var frac = (need - (this.baselineLoss - s.budget)) / s.budget; // remaining fraction then
+    if (!(frac > 0)) return { open: false, need: need, allowed: allowed, waitMs: Infinity }; // budget spent
+    var when = s.startAt + (-s.halfLifeMs * (dln(frac) / LN2));
+    return { open: false, need: need, allowed: allowed, waitMs: Math.max(gate, when - at) };
+  };
+
   Chain.prototype.tip = function () { return this.blocks[this.blocks.length - 1]; };
   Chain.prototype.height = function () { return this.blocks.length - 1; };
   Chain.prototype.tipLoss = function () { return this.tip().loss; };
@@ -571,17 +626,44 @@
     var C = coin(), task = this.task, tip = this.tip();
     var pub = C.getPublicKey(opts.privKey);
     var miner = C.addressFromPublicKey(pub);
+    var at = Number(opts.at || 0);
+    var allowed = -Infinity;
+    if (task.schedule) {
+      if (!this.mineWindow(at).open) return null; // schedule: nothing accrued yet (or interval gate)
+      allowed = this.allowedLoss(at);
+    }
     var w = tip.weights.slice();
     var steps = opts.steps || 400, lr = opts.lr || 0.5;
     var need = tip.loss - task.minImprovement;
     var rounds = opts.maxRounds || 40, newLoss = tip.loss;
+    var wPrev = w;
     for (var r = 0; r < rounds; r++) {
+      wPrev = w;
       w = train(task, w, steps, lr);
       newLoss = round9(loss(task, w));
       if (opts.onRound) opts.onRound(r + 1, newLoss, need); // progress hook (mining-side only; consensus unaffected)
       if (newLoss <= need) break;
     }
     if (newLoss > need) return null; // couldn't learn enough — chain has converged
+    if (newLoss < allowed) {
+      // Trained PAST the schedule floor — the block would be "ahead of
+      // schedule" and invalid. Pull back along the trained direction: bisect
+      // the quantised interpolation between wPrev (loss > need, since the loop
+      // breaks on the first round that clears it) and the overshooting w until
+      // the loss lands inside [allowed, need].
+      var lo = 0, hi = 1, found = null;
+      for (var it = 0; it < 64 && found === null; it++) {
+        var mid = (lo + hi) / 2, wm = new Array(w.length);
+        for (var i2 = 0; i2 < w.length; i2++) wm[i2] = wPrev[i2] + mid * (w[i2] - wPrev[i2]);
+        wm = quantise(wm, task.quantum);
+        var lm = round9(loss(task, wm));
+        if (lm > need) lo = mid;
+        else if (lm < allowed) hi = mid;
+        else found = { w: wm, loss: lm };
+      }
+      if (found === null) return null; // window narrower than the weight grid — accrue more and retry
+      w = found.w; newLoss = found.loss;
+    }
     var txs = (opts.txs || []).slice();
     var block = {
       index: tip.index + 1,
@@ -590,7 +672,7 @@
       weights: w,
       weightsHash: weightsHash(task, w),
       loss: newLoss,
-      reward: blockReward(tip.loss, newLoss), // MIND earned for this block's learning
+      reward: blockReward(task, tip.loss, newLoss), // MIND earned for this block's learning
       txs: txs,
       txsRoot: txsRoot(txs),
       miner: miner,
@@ -619,8 +701,17 @@
     if (Math.abs(actual - block.loss) > 1e-9) return { ok: false, reason: 'claimed loss is false' };
     // Proof of learning: the model must have genuinely improved by enough.
     if (block.loss > prev.loss - task.minImprovement + 1e-12) return { ok: false, reason: 'insufficient learning' };
+    // Emission schedule (when the task has one): a block may not be dated
+    // before the minimum interval after its parent, and may not have learned
+    // below the schedule's allowed loss at its own timestamp — compute cannot
+    // buy MIND faster than the schedule releases it.
+    if (task.schedule) {
+      var prevAt = prev.index === 0 ? task.schedule.startAt : prev.at;
+      if (!(block.at >= prevAt + task.schedule.minIntervalMs)) return { ok: false, reason: 'too soon after previous block' };
+      if (block.loss < this.allowedLoss(block.at) - 1e-9) return { ok: false, reason: 'ahead of schedule' };
+    }
     // Coinbase: the reward must be exactly what this block's learning earns.
-    if (block.reward !== blockReward(prev.loss, block.loss)) return { ok: false, reason: 'wrong block reward' };
+    if (block.reward !== blockReward(task, prev.loss, block.loss)) return { ok: false, reason: 'wrong block reward' };
     // Transfers: well-formed set, committed to by txsRoot, no in-block nonce reuse.
     var txs = block.txs || [];
     if (!Array.isArray(txs)) return { ok: false, reason: 'bad transfer list' };
