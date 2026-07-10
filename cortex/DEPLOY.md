@@ -34,6 +34,30 @@ proof-of-learning chain and gossiping blocks and MIND transfers.
 | Browser auto-connect UI | ⚠ `index.html` is a standalone demo; add `net.js` + a poll loop to make it a live node |
 | Independent security audit | ❌ not done — see `SECURITY.md` |
 
+## The pages (mining & wallet links)
+
+Cortex ships three browser pages, all sharing one wallet + chain (synced live
+between tabs, and across devices when served by a relay):
+
+| Page | What | Path |
+| --- | --- | --- |
+| **Mine** | train the shared net, earn MIND | `/mine.html` |
+| **Wallet** | balance, send/receive, encrypted key backup | `/wallet.html` |
+| Visual demo | the decision-boundary visualisation | `/index.html` |
+
+Where those links resolve:
+
+- **Local (now):** `npm run cortex:relay`, then
+  `http://localhost:8088/mine.html` and `http://localhost:8088/wallet.html`.
+  Open both in two tabs — mine in one, watch the balance update in the other.
+- **GitHub Pages (after this branch merges to `main`):** the site auto-publishes
+  the `cortex/` folder, so
+  `https://refayethossain28.github.io/BallrzAPP/cortex/mine.html` and
+  `…/cortex/wallet.html`. (Static hosting: tabs in one browser sync over
+  BroadcastChannel; for cross-device mining paste a relay URL / serve from one.)
+- **Your deployed relay:** `https://<your-cortex-relay>/mine.html` and
+  `…/wallet.html` — a shared network anyone can open.
+
 ## Run a local testnet (now)
 
 ```sh
