@@ -31,6 +31,7 @@ const STATIC = {
   '/index.html': ['index.html', 'text/html; charset=utf-8'],
   '/mine.html': ['mine.html', 'text/html; charset=utf-8'],
   '/wallet.html': ['wallet.html', 'text/html; charset=utf-8'],
+  '/guide.html': ['guide.html', 'text/html; charset=utf-8'],
   '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
   '/keystore.js': ['keystore.js', 'text/javascript; charset=utf-8'],
   '/sw.js': ['sw.js', 'text/javascript; charset=utf-8'],
