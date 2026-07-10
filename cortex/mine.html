@@ -4,6 +4,12 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Cortex · Mine</title>
+<link rel="manifest" href="mine.webmanifest" />
+<meta name="theme-color" content="#0b0e14" />
+<link rel="apple-touch-icon" href="mine-icon-180.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Cortex Mine" />
 <style>
   :root { color-scheme: dark; --bg:#0b0e14; --panel:#141a24; --line:#232c3b; --ink:#e6edf6; --dim:#8ea1bd; --accent:#5ad1a8; --accent2:#6aa9ff; }
   * { box-sizing: border-box; }
@@ -62,6 +68,13 @@
 (function () {
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
+  // Installable PWA: register the service worker (https/localhost only).
+  try {
+    if (typeof navigator !== 'undefined' && navigator.serviceWorker && /^https?:$/.test(location.protocol)) {
+      navigator.serviceWorker.register('sw.js');
+    }
+  } catch (e) { /* not available (file://, old browser) — the page still works */ }
+
   document.addEventListener('DOMContentLoaded', function () {
     var app = CortexApp.init({ steps: 300 });
     var mind = app.task ? window.BallrzCortex.formatMind : function (u) { return u; };

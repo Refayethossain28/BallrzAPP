@@ -45,6 +45,15 @@ between tabs, and across devices when served by a relay):
 | **Wallet** | balance, send/receive, encrypted key backup | `/wallet.html` |
 | Visual demo | the decision-boundary visualisation | `/index.html` |
 
+**Install them as apps (PWA):** Mine and Wallet are installable — each has its
+own manifest, icon (green net = Miner, blue net = Wallet) and a service worker
+that caches the app shell (never the relay traffic, which must stay live).
+iPhone/iPad: open the page in Safari → Share → **Add to Home Screen**. Android/
+Chrome: menu → **Install app** (or the address-bar install icon). Desktop
+Chrome/Edge: the ⊕ install icon in the address bar. Offline, the app still opens
+with your chain (it lives in localStorage); mining works locally and gossips
+when you're back online.
+
 Where those links resolve:
 
 - **Local (now):** `npm run cortex:relay`, then
