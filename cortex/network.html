@@ -45,8 +45,8 @@
 <main>
 
   <div class="card">
-    <h2>What is this network training? A scam detector.</h2>
-    <p class="dim" style="margin:0">A shared <b>neural network</b> (30 inputs → 16 tanh neurons → 1 output, 513 parameters) learning to answer one question: <b>"is this website a phishing scam — yes or no?"</b> The flash cards are 3,000 real websites from the UCI <i>Phishing Websites</i> research dataset — each described by 30 measurable warning signs (uses a raw IP address, has an @ symbol in the URL, fake HTTPS token, very young domain, …) and labelled scam or legitimate. Every block someone mines makes this detector a little better, and the finished brain belongs to everyone: any app can read the newest block's weights and check a site for free. Honest caveats: this is a research dataset (2012-15 era), scammers evolve, and held-out accuracy for this small model is ~90% — a useful first-line filter, not a guarantee. The full model weights live in every block below — the chain <i>is</i> the detector's training history.</p>
+    <h2>What is this network training? A war-lethality model.</h2>
+    <p class="dim" style="margin:0">A shared neural network learning from <b>real Correlates of War data</b>: 2,324 genuine militarized confrontations between states. Given three signals available before the outcome — was there a <b>mutual military build-up</b>, how many <b>events</b> occurred, and the <b>year</b> — it predicts whether the confrontation <b>turned lethal</b> (any battle deaths) or not. Honest limits: three features and a research-era sample mean ~73% accuracy vs a ~58% baseline — a real, modest signal, not a crystal ball. This is a <i>historical pattern learner</i> ("does a standoff turn deadly?"), <b>not</b> live war prediction and not a market. The weights live in every block below — the chain <i>is</i> the model.</p>
   </div>
 
   <div class="card">
@@ -76,9 +76,9 @@
   </div>
 
   <div class="card">
-    <h2>Ask the robot: scam or safe?</h2>
-    <p class="dim" style="margin:0 0 8px">This is the <b>actual detector from the newest block</b> answering live. Tap the button to show it a real website from the research deck — it sees the site's 30 warning signs and gives its verdict, and we tell you if it was right. (⚠ = a phishing-indicating sign, ? = suspicious, ✓ = a legitimate-looking sign.)</p>
-    <button id="ask-btn" style="appearance:none;border:0;border-radius:10px;padding:12px 16px;font-size:14px;font-weight:600;cursor:pointer;background:var(--accent2);color:#041022;width:100%">🔍 Show the robot a random website</button>
+    <h2>Ask the robot: does this standoff turn deadly?</h2>
+    <p class="dim" style="margin:0 0 8px">This is the <b>actual model from the newest block</b> answering live. Tap the button to show it a real militarized confrontation from the Correlates of War records — it sees the three signals and predicts lethal or not, and we tell you if it was right.</p>
+    <button id="ask-btn" style="appearance:none;border:0;border-radius:10px;padding:12px 16px;font-size:14px;font-weight:600;cursor:pointer;background:var(--accent2);color:#041022;width:100%">🔍 Show the robot a random real confrontation</button>
     <div id="ask-card" style="display:none;background:#0e1420;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:10px;font-size:13px"></div>
     <div id="ask-out" class="dim" style="margin-top:8px; font-size:14px"></div>
     <div id="ask-score" class="dim" style="margin-top:4px; font-size:12px"></div>
@@ -211,36 +211,39 @@
       for (li = 0; li < cols.length; li++) g.fillText(caps[Math.min(li, caps.length - 1)], cols[li][0][0], H - 8);
     }
 
-    /* ---- Ask the robot: show it a real website from the deck ---- */
+    /* ---- Ask the robot: show it a real example from the dataset ---- */
     var lastAsk = null;                       // index into the dataset; persists across re-renders
     var askScore = { right: 0, total: 0 };
-    // The task's inputs are standardised; recover the original -1/0/1 warning signs for display.
+    // Verdict wording per task, so the panel adapts to whatever dataset is live.
+    var LABELS = {
+      war: { yes: '<b style="color:#ff6b81">turned LETHAL</b>', no: '<b class="g">stayed non-lethal</b>', item: 'confrontation', kind: 'this standoff' },
+      phishing: { yes: '<b style="color:#ff6b81">PHISHING SCAM</b>', no: '<b class="g">legitimate</b>', item: 'website', kind: 'this site' },
+      banknote: { yes: '<b style="color:#ff6b81">FORGED</b>', no: '<b class="g">genuine</b>', item: 'banknote', kind: 'this note' },
+      _default: { yes: '<b style="color:#ff6b81">class 1</b>', no: '<b class="g">class 0</b>', item: 'example', kind: 'this example' }
+    };
+    // The task's inputs are standardised; recover the original feature values.
     function rawRow(i) {
       var z = app.task.X[i], st = app.task.featureStats;
       if (!st) return z.slice();
-      return z.map(function (v, d) { return Math.round(v * st.std[d] + st.mean[d]); });
+      return z.map(function (v, d) { return Math.round((v * st.std[d] + st.mean[d]) * 100) / 100; });
     }
-    var SIGN_WORDS = { '-1': '⚠', '0': '?', '1': '✓' };
-    function niceName(n) { return n.replace(/_/g, ' ').replace(/having |Shortining/g, function (m) { return m === 'having ' ? 'has ' : 'shortening'; }); }
+    function niceName(n) { return (n || '').replace(/_/g, ' '); }
+    function labels() { return LABELS[app.task.dataset] || LABELS._default; }
     function answerAsk() {
       if (lastAsk == null) return;
-      var i = lastAsk, raw = rawRow(i);
+      var i = lastAsk, raw = rawRow(i), L = labels();
       var tip = app.chain.blocks[app.chain.height()].weights;
       var p = Cortex.predict(app.task, tip, app.task.X[i]);
-      var verdict = p >= 0.5 ? 1 : 0, conf = Math.round(Math.max(p, 1 - p) * 100);
-      var truth = app.task.y[i];
-      // the card: the site's most notable warning signs, in words
+      var verdict = p >= 0.5 ? 1 : 0, conf = Math.round(Math.max(p, 1 - p) * 100), truth = app.task.y[i];
       var names = app.task.featureNames || [];
-      var interesting = [];
-      for (var d = 0; d < raw.length && interesting.length < 8; d++) if (raw[d] !== 1) interesting.push(d); // lead with non-"safe" signs
-      for (d = 0; d < raw.length && interesting.length < 8; d++) if (raw[d] === 1 && interesting.indexOf(d) < 0) interesting.push(d);
-      var card = '<b>Website #' + i + '</b> from the research deck — its signs:<br/>' + interesting.map(function (d) {
-        return '<span style="display:inline-block;margin:3px 8px 0 0">' + SIGN_WORDS[String(raw[d])] + ' ' + niceName(names[d] || ('feature ' + d)) + '</span>';
+      var shown = raw.slice(0, 10);
+      var card = '<b>' + L.item.charAt(0).toUpperCase() + L.item.slice(1) + ' #' + i + '</b> (real record):<br/>' + shown.map(function (v, d) {
+        return '<span style="display:inline-block;margin:3px 10px 0 0">' + niceName(names[d] || ('feature ' + d)) + ': <b>' + v + '</b></span>';
       }).join('');
       $('ask-card').style.display = 'block';
       $('ask-card').innerHTML = card;
-      var name = function (c) { return c === 1 ? '<b style="color:#ff6b81">PHISHING SCAM</b>' : '<b class="g">legitimate</b>'; };
-      $('ask-out').innerHTML = '🤖 The detector says: ' + name(verdict) + ' (' + conf + '% sure). Truth: ' + name(truth) + ' — ' +
+      var name = function (c) { return c === 1 ? L.yes : L.no; };
+      $('ask-out').innerHTML = '🤖 The model says ' + L.kind + ' ' + name(verdict) + ' (' + conf + '% sure). Truth: ' + name(truth) + ' — ' +
         (verdict === truth ? '<b class="g">✓ correct.</b>' : '<b style="color:#ff6b81">✗ wrong</b> — mine more blocks and try again!');
     }
     (function () {
@@ -248,7 +251,6 @@
       if (btn && btn.addEventListener) btn.addEventListener('click', function () {
         lastAsk = Math.floor(Math.random() * app.task.samples);
         answerAsk();
-        // running score (with the verdict just shown)
         var tip = app.chain.blocks[app.chain.height()].weights;
         var ok = (Cortex.predict(app.task, tip, app.task.X[lastAsk]) >= 0.5 ? 1 : 0) === app.task.y[lastAsk];
         askScore.total++; if (ok) askScore.right++;

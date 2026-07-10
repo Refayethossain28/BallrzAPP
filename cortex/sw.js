@@ -9,7 +9,7 @@
  * mining works locally and gossips when you're back online.
  * Bump CACHE to force clients onto a fresh shell.
  */
-var CACHE = 'cortex-v3';
+var CACHE = 'cortex-v4';
 var SHELL = ['./', './index.html', './mine.html', './wallet.html', './guide.html', './network.html',
   './engine.js', './datasets.js', './net.js', './keystore.js', './app.js',
   './holdout.js', './tournament.js', './prover.js',

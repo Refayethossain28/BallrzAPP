@@ -58,13 +58,13 @@ export function bootNode(opts = {}) {
   const mods = loadModules(opts.root);
   const { X, Net } = mods;
   // Defaults match the browser app (cortex/app.js) so a headless node joins the
-  // SAME chain: "scamnet" — the phishing-detection task. An explicit taskId
-  // without a dataset gets the synthetic task (used by tests / custom nets).
+  // SAME chain: "warnet" — the Correlates-of-War conflict-lethality task. An
+  // explicit taskId without a dataset gets the synthetic task (tests / custom nets).
   const useMainnet = !opts.taskId;
-  const taskId = opts.taskId || 'cortex-scamnet-v1';
+  const taskId = opts.taskId || 'cortex-warnet-v1';
   const genesisSeed = opts.genesisSeed || 'cortex-genesis';
-  const dataset = opts.dataset ?? (useMainnet ? 'phishing' : undefined);
-  const layers = opts.layers ?? (useMainnet ? [16] : undefined);
+  const dataset = opts.dataset ?? (useMainnet ? 'war' : undefined);
+  const layers = opts.layers ?? (useMainnet ? [12] : undefined);
   const task = X.makeTask({ id: taskId, ...(dataset ? { dataset } : {}), ...(layers ? { layers } : {}) });
   const wallet = resolveWallet(mods, opts);
 
