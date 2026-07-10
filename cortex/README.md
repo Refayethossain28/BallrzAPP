@@ -141,7 +141,14 @@ byte-identical data, so consensus requires the data to be pinned in the repo):
 
 | Dataset | Rows | Features | Task | Source |
 | --- | --- | --- | --- | --- |
+| `war` **(live)** | 2,324 | 3 | did a militarized interstate confrontation turn **lethal**? | Correlates of War (`mmb_war`) via Rdatasets/`{stevedata}` |
+| `phishing` | 3,000 | 30 | is a website phishing? | [UCI Phishing Websites](https://archive.ics.uci.edu/dataset/327/phishing+websites) |
 | `banknote` | 1,372 | 4 | genuine vs forged banknotes, from wavelet features of the photos | [UCI Banknote Authentication](https://archive.ics.uci.edu/dataset/267/banknote+authentication) |
+| `conflict` | 2,000 | 8 | armed-conflict risk — a **disclosed simulation**, not real events | generated from published risk factors (see `datasets.js`) |
+
+The live network trains `war`. What is real vs simulated, and how to add real
+conflict **onset** data (UCDP/ACLED) with full hash-pinned integrity via
+`scripts/build-onset-dataset.mjs`, is documented in **[`DATA.md`](DATA.md)**.
 
 ```js
 const task = Cortex.makeTask({ id: 'notes', dataset: 'banknote', layers: [16] });
