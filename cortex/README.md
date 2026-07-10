@@ -354,7 +354,10 @@ npm run test:cortex-prover      # scoring-proof layer (phase 5: spot-check + fra
 npm run test:cortex-net         # gossip/consensus-sync between nodes
 npm run test:cortex-relay       # relay + two nodes converging over real HTTP
 npm run test:cortex-determinism # fork-safety: deterministic math + pinned cross-machine refs
+npm run test:cortex-keystore    # passphrase-encrypted wallet keys
+npm run test:cortex-node        # deployable headless node: mine, gossip, persist, restart
 npm run cortex:relay            # run the relay locally → http://localhost:8088
+npm run cortex:node             # run a headless mining node (set RELAY, DATA, KEYFILE) — see DEPLOY.md
 npm test                        # the whole prototype suite (includes Cortex)
 npm run bench:cortex            # production-cost benchmark (not part of the test gate)
 ```
@@ -380,9 +383,14 @@ fork-safe consensus — is now **fixed**: the forward pass and loss use
 **deterministic software transcendentals built only from IEEE-754 correctly-
 rounded ops** (no `Math.tanh`/`exp`/`log`, which drift across machines), and
 `test:cortex-determinism` pins exact reference doubles every conforming platform
-must reproduce, so honest nodes agree on a block's loss to the bit. It's still a
-**testnet** for the *remaining* reasons (unencrypted keys, no persistence/audit,
-MIND has no value yet), not for consensus arithmetic — see `DEPLOY.md`.
+must reproduce, so honest nodes agree on a block's loss to the bit. The deployment pieces are built too: [`net.js`](net.js) (gossip node),
+[`server.mjs`](server.mjs) (relay), [`node.mjs`](node.mjs) (a headless mining
+node that persists its chain and restarts from disk), and [`keystore.js`](keystore.js)
+(passphrase-encrypted keys, so nothing plaintext hits disk). `npm run cortex:relay`
++ `npm run cortex:node` runs a local network. It is **still a testnet**, and
+[`SECURITY.md`](SECURITY.md) lists exactly why — the honest remaining gates are an
+independent security audit and economic/social bootstrap, not consensus
+arithmetic (that's fixed) or the plumbing (that's built).
 
 ## Honest limitations
 

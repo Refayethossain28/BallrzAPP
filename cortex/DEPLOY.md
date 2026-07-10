@@ -28,41 +28,36 @@ proof-of-learning chain and gossiping blocks and MIND transfers.
 | Relay (dumb message forwarder, serves the app) | ✅ `server.mjs` (reuses the hardened `coin/server.mjs`) |
 | HTTP transport for a node | ✅ `net.js` `httpTransport` |
 | **Deterministic forward pass (fork-safe consensus)** | ✅ `engine.js` det transcendentals + pinned refs (`test:cortex-determinism`) |
-| Persistent on-disk chain storage | ⚠ blocks are JSON; wiring is left to the host |
+| Deployable headless mining node | ✅ `node.mjs` (`npm run cortex:node`) |
+| Persistent on-disk chain storage | ✅ `node.mjs` (JSON snapshot, restored on restart) |
+| Encrypted key at rest | ✅ `keystore.js` (passphrase; no plaintext key on disk) |
 | Browser auto-connect UI | ⚠ `index.html` is a standalone demo; add `net.js` + a poll loop to make it a live node |
+| Independent security audit | ❌ not done — see `SECURITY.md` |
 
 ## Run a local testnet (now)
 
 ```sh
-# start the relay (serves the app + forwards messages)
-npm run cortex:relay            # → http://localhost:8088
+# 1. start the relay (serves the app + forwards messages)
+npm run cortex:relay                         # → http://localhost:8088
+
+# 2. start one or more mining nodes against it (each in its own shell)
+RELAY=http://localhost:8088 DATA=./node1.json TASK_ID=mainnet \
+  KEYFILE=./wallet1.json CORTEX_PASSPHRASE='a strong passphrase' \
+  npm run cortex:node
+
+RELAY=http://localhost:8088 DATA=./node2.json TASK_ID=mainnet \
+  KEYFILE=./wallet2.json CORTEX_PASSPHRASE='another strong passphrase' \
+  npm run cortex:node
 ```
 
-Then run two nodes against it from Node (the mechanism the tests exercise):
+Each node syncs on join, mines Proof-of-Learning blocks, gossips them, persists
+its chain to `DATA` (restored on restart), and stores its key **encrypted** in
+`KEYFILE` (never plaintext). Every node must agree on the **genesis** — same
+`TASK_ID` and `GENESIS_SEED` — or they're on different chains. Env knobs:
+`STEPS`, `MINE_MS`, `POLL_MS`.
 
-```js
-import { readFileSync } from 'node:fs'; import vm from 'node:vm';
-const ROOT = '/path/to/BallrzAPP';
-const box = { module: { exports: {} } }; box.self = box; vm.createContext(box);
-const load = (p, g) => { box.module = { exports: {} };
-  vm.runInContext(readFileSync(ROOT+'/'+p,'utf8'), box, {filename:p});
-  if (g) box[g] = box.module.exports; return box.module.exports; };
-load('coin/engine.js', 'BallrzCoin'); load('cortex/datasets.js', 'BallrzCortexData');
-const X = load('cortex/engine.js', 'BallrzCortex');
-const Net = load('cortex/net.js', 'BallrzCortexNet');
-
-const BASE = 'http://localhost:8088';
-const wallet = box.BallrzCoin.generateWallet();
-const t = Net.httpTransport(BASE, { fetch });
-const node = Net.createNode({ id: 'me', chain: new X.Chain(X.makeTask({ id: 'mainnet' }), { genesisSeed: 'genesis' }), send: (m) => t.send(m) });
-
-setInterval(() => t.poll((m) => node.receive(m)), 1500);        // pull peers' messages
-node.hello();                                                   // sync on join
-node.mineAndBroadcast({ privKey: wallet.privateKey, steps: 400, nonce: 'b' + node.chain.height() });
-```
-
-Every node must build the **same genesis** — same `makeTask({ id })` and
-`genesisSeed` — or they're on different chains.
+For embedding in your own program, `cortex/node.mjs` exports `bootNode(opts)`
+returning `{ node, wallet, mine, poll, sync, save, balance }`.
 
 ## Deploy the relay to the internet (Render free tier, ~5 min)
 
@@ -82,11 +77,16 @@ the relay. `PORT` is set by the host; optional `SELF_URL` keeps a free host awak
    forward pass and loss with deterministic transcendentals (IEEE-754 ops only)
    and a transcendental-free genesis init; `test:cortex-determinism` pins exact
    cross-machine reference values. Nodes now agree to the bit.
-2. **Persistence** — save/restore `node.snapshot()` to disk/localStorage.
-3. **Browser node** — load `net.js` in `index.html` and auto-connect when served
-   by a relay (as the coin app does), so opening the URL makes you a live node.
-4. **Security review + key encryption** before any value (see `coin/SECURITY.md`).
-5. **Bootstrap value** — a currency is only worth something once a circle uses
+2. ~~**Persistence**~~ — ✅ done (`node.mjs` JSON snapshots, restored on restart).
+3. ~~**Key encryption**~~ — ✅ done (`keystore.js`; `node.mjs` stores keys encrypted).
+4. **Browser node** — load `net.js` in `index.html` and auto-connect when served
+   by a relay, so opening the URL makes you a live node (headless `node.mjs`
+   already does this server-side).
+5. **Independent security audit** before any value — the crypto and consensus
+   need human review (see `SECURITY.md`). This is not something code can self-certify.
+6. **Bootstrap value** — a currency is only worth something once a circle uses
    it; `coin/CIRCLE.md` is the playbook.
-6. **Tournament layer** (optional) — needs a real decentralised outcome oracle
+7. **Tournament layer** (optional) — needs a real decentralised outcome oracle
    (`TRUSTLESS.md`), a product decision.
+
+See **`SECURITY.md`** for the full, honest limitation list.

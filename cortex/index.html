@@ -60,6 +60,7 @@
       <button id="mine">⛏️ Mine a block (train &amp; earn MIND)</button>
       <button id="send" class="ghost">💸 Send half my MIND to a friend</button>
       <button id="reset" class="ghost">Reset chain</button>
+      <div class="note" id="netstat">Local only — not connected to a network.</div>
       <div class="blocks" id="blocks"></div>
       <div class="note">Each block trains from the tip's weights until the loss drops by at least the network's <code>minImprovement</code>, and <b>mints MIND to you in proportion to the learning</b> — so the money is earned by teaching the shared model. Verifying a block is one forward pass; the loss (and your reward) is recomputed, never trusted. Total supply is bounded by the knowledge the network can create, and stops growing once the model converges.</div>
     </section>
@@ -73,11 +74,13 @@
 <script src="../coin/engine.js"></script>
 <script src="datasets.js"></script>
 <script src="engine.js"></script>
+<script src="net.js"></script>
 <script>
 (function () {
   'use strict';
-  var Cortex = self.BallrzCortex, Coin = self.BallrzCoin;
+  var Cortex = self.BallrzCortex, Coin = self.BallrzCoin, Net = self.BallrzCortexNet;
   var task, chain, wallet, friend, mining = false;
+  var node = null, transport = null, pollTimer = null; // networking (only when served by a relay)
 
   var $ = function (id) { return document.getElementById(id); };
   var mind = function (u) { return Cortex.formatMind(u); };
@@ -92,6 +95,8 @@
     chain = new Cortex.Chain(task, { genesisSeed: 'demo', at: Date.now() });
     wallet = Coin.generateWallet();
     friend = Coin.generateWallet();
+    // Networking only makes sense on the shared synthetic genesis; banknote is local.
+    if (ds === 'banknote') disconnect(); else attachNode();
     var note = $('viewnote');
     if (note) note.innerHTML = task.dataset
       ? 'Real <b>' + task.datasetTitle + '</b>: ' + task.samples + ' banknotes, ' + task.inputs + ' features → genuine/forged. The model is 4-D, so this is a 2-D slice — <b>' + task.featureNames[0] + '</b> vs <b>' + task.featureNames[1] + '</b>, other features held at their mean. Watch accuracy climb as the chain learns real forgery detection.'
@@ -150,17 +155,46 @@
     g.globalAlpha = 1;
   }
 
+  // --- networking: activate only when the page is served by a Cortex relay ---
+  function setNet(msg) { var el = $('netstat'); if (el) el.textContent = msg; }
+  function disconnect() { if (pollTimer) { try { clearInterval(pollTimer); } catch (e) {} pollTimer = null; } node = null; transport = null; setNet('Local only — this task is not networked.'); }
+  function attachNode() {
+    if (!Net) return;
+    var origin = (self.location && typeof self.location.origin === 'string') ? self.location.origin : '';
+    if (origin.indexOf('http') !== 0) { setNet('Local only — open via a Cortex relay to join a network.'); return; }
+    try {
+      fetch(origin + '/status').then(function (r) { return r.json(); }).then(function (d) {
+        if (!d || d.name !== 'cortex-relay') { setNet('Local only — not served by a Cortex relay.'); return; }
+        transport = Net.httpTransport(origin);
+        node = Net.createNode({ id: wallet.address.slice(0, 10), chain: chain, send: function (m) { transport.send(m); } });
+        node.hello();
+        pollTimer = setInterval(function () { transport.poll(function (m) { node.receive(m); }).then(function () { render(); }).catch(function () {}); }, 2000);
+        setNet('⇄ Connected — mining and MIND transfers are shared across the network.');
+        render();
+      }).catch(function () { setNet('Local only — no relay reachable.'); });
+    } catch (e) { setNet('Local only.'); }
+  }
+
   // Mine a block from the given private key, optionally carrying transfers.
-  // Training is heavy, so it runs off a timer to keep the UI responsive.
+  // Training is heavy, so it runs off a timer to keep the UI responsive. When
+  // connected to a relay, the block (and any transfers) broadcast to the network.
   function mineWith(privKey, txs, label) {
     if (mining) return;
     mining = true; $('mine').disabled = true; $('send').disabled = true;
     $('mine').textContent = label || 'Training…';
     setTimeout(function () {
-      var blk = chain.mineBlock({ privKey: privKey, steps: 300, at: Date.now(), nonce: 'b' + chain.height(), txs: txs || [] });
+      var blk = null;
+      try {
+        if (node) {
+          (txs || []).forEach(function (tx) { node.submitTx(tx); });
+          blk = node.mineAndBroadcast({ privKey: privKey, steps: 300, at: Date.now(), nonce: 'b' + chain.height() });
+        } else {
+          blk = chain.mineBlock({ privKey: privKey, steps: 300, at: Date.now(), nonce: 'b' + chain.height(), txs: txs || [] });
+          if (blk) chain.addBlock(blk);
+        }
+      } catch (e) { blk = null; }
       mining = false; $('mine').disabled = false;
       if (!blk) { $('mine').textContent = '✅ Model converged — chain complete'; render(); return; }
-      chain.addBlock(blk);
       $('mine').textContent = '⛏️ Mine a block (train & earn MIND)';
       render();
     }, 20);
