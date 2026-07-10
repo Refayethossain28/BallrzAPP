@@ -10,7 +10,7 @@
  * Bump CACHE to force clients onto a fresh shell.
  */
 var CACHE = 'cortex-v1';
-var SHELL = ['./', './index.html', './mine.html', './wallet.html', './guide.html',
+var SHELL = ['./', './index.html', './mine.html', './wallet.html', './guide.html', './network.html',
   './engine.js', './datasets.js', './net.js', './keystore.js', './app.js',
   './holdout.js', './tournament.js', './prover.js',
   '../coin/engine.js',
