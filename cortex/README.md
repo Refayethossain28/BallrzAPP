@@ -353,7 +353,8 @@ npm run test:cortex-tournament  # forecasting-tournament chain (TRUSTLESS.md pha
 npm run test:cortex-prover      # scoring-proof layer (phase 5: spot-check + fraud proofs)
 npm run test:cortex-net         # gossip/consensus-sync between nodes
 npm run test:cortex-relay       # relay + two nodes converging over real HTTP
-npm run cortex:relay            # run the relay locally (testnet) → http://localhost:8088
+npm run test:cortex-determinism # fork-safety: deterministic math + pinned cross-machine refs
+npm run cortex:relay            # run the relay locally → http://localhost:8088
 npm test                        # the whole prototype suite (includes Cortex)
 npm run bench:cortex            # production-cost benchmark (not part of the test gate)
 ```
@@ -374,19 +375,26 @@ converge by cumulative-learning fork choice) and [`server.mjs`](server.mjs) is a
 dumb relay (reusing TimeCoin's hardened `coin/server.mjs`) that forwards messages
 and serves the app. `npm run cortex:relay` starts a local network; two nodes
 converging over real HTTP through it is covered by `test:cortex-relay`.
-**[`DEPLOY.md`](DEPLOY.md)** is the deploy guide — and is blunt that this is a
-**testnet only**: fork-safe consensus needs a deterministic (fixed-point)
-forward pass first, because floating-point `tanh`/`exp`/`log` aren't bit-identical
-across machines. That determinism fix is the one true gate to a real-value network.
+**[`DEPLOY.md`](DEPLOY.md)** is the deploy guide. The old headline blocker —
+fork-safe consensus — is now **fixed**: the forward pass and loss use
+**deterministic software transcendentals built only from IEEE-754 correctly-
+rounded ops** (no `Math.tanh`/`exp`/`log`, which drift across machines), and
+`test:cortex-determinism` pins exact reference doubles every conforming platform
+must reproduce, so honest nodes agree on a block's loss to the bit. It's still a
+**testnet** for the *remaining* reasons (unencrypted keys, no persistence/audit,
+MIND has no value yet), not for consensus arithmetic — see `DEPLOY.md`.
 
 ## Honest limitations
 
 This is a self-contained **prototype**, not a production chain:
 
-- **Float determinism.** Verification relies on every node computing the same
-  loss from the same quantised weights. JavaScript doubles are deterministic
-  across V8 engines, and weights are quantised, but a fully robust deployment
-  would fix the arithmetic (e.g. fixed-point) across all clients.
+- **Float determinism — addressed.** Verification relies on every node computing
+  the same loss from the same weights. The consensus path now uses only IEEE-754
+  correctly-rounded ops (`+ − × ÷ √`) plus deterministic software `exp`/`ln`/
+  `tanh`/`sigmoid`, with a transcendental-free genesis init — so results are
+  bit-identical across conforming platforms, pinned in `test:cortex-determinism`.
+  (Training may pick a different route to weights on different hardware, but that
+  is irrelevant: only the recomputed loss decides validity, and that is exact.)
 - **One task per chain.** The dataset and model are fixed at genesis. A real
   system would rotate tasks and cap block size as models grow.
 - **The base reward is scored on the full public dataset**, so it rewards

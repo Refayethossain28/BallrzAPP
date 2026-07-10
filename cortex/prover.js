@@ -45,13 +45,9 @@
 
   function round9(x) { return Math.round(x * 1e9) / 1e9; }
 
-  // Per-sample binary cross-entropy, clamped identically to engine.loss so the
-  // mean of the transcript equals engine.loss exactly.
-  function sampleLoss(spec, w, x, y) {
-    var p = cortex().predict(spec, w, x);
-    p = Math.min(1 - 1e-12, Math.max(1e-12, p));
-    return round9(-(y * Math.log(p) + (1 - y) * Math.log(1 - p)));
-  }
+  // Per-sample binary cross-entropy — delegates to the engine's single source of
+  // truth (deterministic), so the transcript mean equals engine.loss exactly.
+  function sampleLoss(spec, w, x, y) { return round9(cortex().sampleLoss(spec, w, x, y)); }
 
   function leafHash(i, loss) { return coin().sha256(i + '|' + Number(loss).toFixed(9)); }
   function rootOf(leaves) {

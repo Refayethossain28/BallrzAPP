@@ -110,11 +110,43 @@
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
   }
-  // Standard normal via Box–Muller, driven by a mulberry32 stream.
+  // Deterministic approximate standard normal (Irwin–Hall: sum of 12 uniforms
+  // minus 6). Only additions on the integer PRNG stream, so genesis weights are
+  // bit-identical on every machine — unlike Box–Muller's Math.log/cos.
   function gaussian(rng) {
-    var u = 1 - rng(), v = rng();
-    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+    var s = 0; for (var i = 0; i < 12; i++) s += rng(); return s - 6;
   }
+
+  /* ======================================================================
+   * Deterministic transcendentals — the fork-safety layer.
+   * ----------------------------------------------------------------------
+   * IEEE-754 guarantees + − × ÷ √ are correctly rounded, so they give
+   * bit-identical results on every conforming CPU/OS/JS engine. Math.exp/log/
+   * tanh are NOT so guaranteed and can differ in the last ULP across platforms,
+   * which would let two honest nodes disagree on a block's loss and fork the
+   * chain. So the consensus path (forward pass, loss) uses these software
+   * implementations built ONLY from the guaranteed ops. Accuracy vs Math.* is
+   * ~1e-10 (checked in scripts/test-cortex-determinism.mjs); determinism is
+   * exact. Training may be slower, but every node agrees to the bit.
+   * ==================================================================== */
+  var LN2 = 0.6931471805599453;
+  function pow2(k) { var r = 1.0, b = k < 0 ? 0.5 : 2.0, n = k < 0 ? -k : k; while (n-- > 0) r *= b; return r; }
+  function dexp(x) {
+    if (x > 709) x = 709; if (x < -745) x = -745;
+    var k = Math.round(x / LN2), r = x - k * LN2, t = 1, s = 1;   // |r| ≤ LN2/2
+    for (var i = 1; i <= 9; i++) { t *= r / i; s += t; }           // Taylor, deg 9
+    return s * pow2(k);
+  }
+  function dln(x) {
+    if (x <= 0) return -Infinity;
+    var e = 0, m = x;
+    while (m >= 2) { m *= 0.5; e++; } while (m < 1) { m *= 2; e--; } // m ∈ [1,2)
+    var u = (m - 1) / (m + 1), u2 = u * u, term = u, sum = 0;        // ln(m)=2·atanh(u)
+    for (var i = 1; i <= 21; i += 2) { sum += term / i; term *= u2; }
+    return e * LN2 + 2 * sum;
+  }
+  function dtanh(x) { var ax = x < 0 ? -x : x; if (ax > 20) return x < 0 ? -1 : 1; var e = dexp(-2 * ax), r = (1 - e) / (1 + e); return x < 0 ? -r : r; }
+  function dsigmoid(x) { if (x >= 0) return 1 / (1 + dexp(-x)); var e = dexp(x); return e / (1 + e); }
 
   /* ======================================================================
    * Task-scale presets — the production-cost tier.
@@ -265,7 +297,7 @@
    * The flat weight vector stores, layer by layer, W row-major (out×in) then
    * the biases — so a 2→6→1 net has the exact same layout as the original.
    * ==================================================================== */
-  function sigmoid(z) { return 1 / (1 + Math.exp(-z)); }
+  function sigmoid(z) { return dsigmoid(z); } // deterministic
 
   // Slice the flat vector into per-layer { W:[out][in], b:[out], act }.
   function unpack(task, w) {
@@ -288,7 +320,7 @@
       for (o = 0; o < L.outN; o++) {
         var s = L.b[o], row = L.W[o];
         for (inp = 0; inp < L.inN; inp++) s += row[inp] * a[inp];
-        out[o] = L.act === 'sigmoid' ? sigmoid(s) : Math.tanh(s);
+        out[o] = L.act === 'sigmoid' ? dsigmoid(s) : dtanh(s);
       }
       acts.push(out); a = out;
     }
@@ -299,16 +331,24 @@
   // the decision boundary, and handy in tests).
   function predict(task, w, x) { return forwardOne(unpack(task, w), x).p; }
 
-  // Average binary cross-entropy (clamped so log is finite). Scores task.X by
-  // default, or any supplied (Xs, ys) — e.g. a held-out batch for commit–reveal.
+  // Binary cross-entropy of one sample (clamped, deterministic). The single
+  // source of truth for per-sample loss — reused by the prover so its transcript
+  // mean equals this loss exactly.
+  function sampleLoss(task, w, x, y) {
+    var p = forwardOne(unpack(task, w), x).p;
+    p = Math.min(1 - 1e-12, Math.max(1e-12, p));
+    return -(y * dln(p) + (1 - y) * dln(1 - p));
+  }
+
+  // Average binary cross-entropy. Scores task.X by default, or any supplied
+  // (Xs, ys) — e.g. a held-out batch for commit–reveal.
   function loss(task, w, Xs, ys) {
     Xs = Xs || task.X; ys = ys || task.y;
     var layers = unpack(task, w), n = Xs.length, sum = 0;
     for (var i = 0; i < n; i++) {
       var p = forwardOne(layers, Xs[i]).p;
       p = Math.min(1 - 1e-12, Math.max(1e-12, p));
-      var yi = ys[i];
-      sum += -(yi * Math.log(p) + (1 - yi) * Math.log(1 - p));
+      sum += -(ys[i] * dln(p) + (1 - ys[i]) * dln(1 - p));
     }
     return sum / n;
   }
@@ -653,8 +693,10 @@
     makeTask: makeTask, randomWeights: randomWeights, quantise: quantise,
     archOf: archOf, dimOf: dimOf,
     // model
-    loss: loss, accuracy: accuracy, predict: predict, train: train, trainStep: trainStep,
+    loss: loss, sampleLoss: sampleLoss, accuracy: accuracy, predict: predict, train: train, trainStep: trainStep,
     standardizeRows: standardizeRows,
+    // deterministic transcendentals (fork-safety) — exact on every IEEE platform
+    detExp: dexp, detLn: dln, detTanh: dtanh, detSigmoid: dsigmoid,
     // blocks
     weightsHash: weightsHash, canonical: canonical, blockHash: blockHash,
     // MIND token

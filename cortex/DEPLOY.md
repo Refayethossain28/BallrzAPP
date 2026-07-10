@@ -4,18 +4,20 @@ One deploy gives a URL that **is** a shared Cortex network: open it on any
 device and you get the app, already connected to the relay, mining the same
 proof-of-learning chain and gossiping blocks and MIND transfers.
 
-> ## ⚠ TESTNET ONLY — read before deploying with any value
-> Cortex is **not** safe as a real-value network yet. Consensus needs every node
-> to recompute the **identical** loss from identical weights, but the model's
-> forward pass uses floating-point `tanh`/`exp`/`log`, which are **not** promised
-> to be bit-identical across CPUs, OSes, or JS-engine versions. Two honest nodes
-> could therefore disagree on whether a block is valid and the chain would fork.
+> ## ⚠ Still testnet — but the fork-safety gate is now CLOSED
+> The headline consensus blocker is fixed. The forward pass and loss no longer
+> call `Math.tanh`/`exp`/`log` (which aren't bit-identical across machines);
+> they use **deterministic software transcendentals built only from IEEE-754
+> correctly-rounded ops** (`engine.js`), and genesis weights use a
+> transcendental-free init. `scripts/test-cortex-determinism.mjs` pins exact
+> reference doubles that every conforming platform must reproduce, so two honest
+> nodes now agree on a block's loss to the bit — no fork from arithmetic drift.
 >
-> **The gate for a trustworthy network is a deterministic (fixed-point) forward
-> pass** (see `TRUSTLESS.md` and the roadmap below). Until that lands, deploy
-> only as a local/testnet experiment — for playing with the mechanics, not for
-> holding value. Keys also sit unencrypted in the browser (same limitation as
-> `coin/SECURITY.md` #1).
+> It is **still not a real-value network**, but for the *remaining* reasons, not
+> consensus math: keys sit unencrypted in the browser (`coin/SECURITY.md` #1),
+> there's no persistence wiring or security audit yet, and MIND has no value
+> until a circle uses it. Deploy as a testnet you can trust for correctness;
+> don't hold value until the roadmap's remaining items are done.
 
 ## What's built (and what isn't)
 
@@ -25,7 +27,7 @@ proof-of-learning chain and gossiping blocks and MIND transfers.
 | Gossip node: broadcast/ingest blocks & txs, converge | ✅ `net.js` |
 | Relay (dumb message forwarder, serves the app) | ✅ `server.mjs` (reuses the hardened `coin/server.mjs`) |
 | HTTP transport for a node | ✅ `net.js` `httpTransport` |
-| **Deterministic forward pass (fork-safe consensus)** | ❌ **the blocker** |
+| **Deterministic forward pass (fork-safe consensus)** | ✅ `engine.js` det transcendentals + pinned refs (`test:cortex-determinism`) |
 | Persistent on-disk chain storage | ⚠ blocks are JSON; wiring is left to the host |
 | Browser auto-connect UI | ⚠ `index.html` is a standalone demo; add `net.js` + a poll loop to make it a live node |
 
@@ -76,9 +78,10 @@ the relay. `PORT` is set by the host; optional `SELF_URL` keeps a free host awak
 
 ## Roadmap to a *real* (not testnet) network
 
-1. **Deterministic forward pass** — replace float `tanh`/`exp`/`log` + BCE with
-   fixed-point/integer math and defined rounding, so every node agrees bit-for-
-   bit. This is the one true blocker.
+1. ~~**Deterministic forward pass**~~ — ✅ **done.** `engine.js` computes the
+   forward pass and loss with deterministic transcendentals (IEEE-754 ops only)
+   and a transcendental-free genesis init; `test:cortex-determinism` pins exact
+   cross-machine reference values. Nodes now agree to the bit.
 2. **Persistence** — save/restore `node.snapshot()` to disk/localStorage.
 3. **Browser node** — load `net.js` in `index.html` and auto-connect when served
    by a relay (as the coin app does), so opening the URL makes you a live node.

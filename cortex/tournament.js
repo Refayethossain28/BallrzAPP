@@ -193,9 +193,9 @@
 
   // Binary cross-entropy of always predicting the base rate — the skill baseline.
   function baselineLoss(labels) {
-    var n = labels.length, p = 0, i; for (i = 0; i < n; i++) p += labels[i]; p /= n;
+    var ln = cortex().detLn, n = labels.length, p = 0, i; for (i = 0; i < n; i++) p += labels[i]; p /= n;
     p = Math.min(1 - 1e-12, Math.max(1e-12, p));
-    return -(p * Math.log(p) + (1 - p) * Math.log(1 - p));
+    return -(p * ln(p) + (1 - p) * ln(1 - p)); // deterministic log
   }
 
   // SCORE: reward predictive skill on the realised outcome; slash anti-skill.
