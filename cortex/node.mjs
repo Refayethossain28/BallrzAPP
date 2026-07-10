@@ -57,9 +57,15 @@ function resolveWallet({ Coin, Keystore }, opts) {
 export function bootNode(opts = {}) {
   const mods = loadModules(opts.root);
   const { X, Net } = mods;
-  const taskId = opts.taskId || 'cortex-mainnet';
+  // Defaults match the browser app (cortex/app.js) so a headless node joins the
+  // SAME chain: "scamnet" — the phishing-detection task. An explicit taskId
+  // without a dataset gets the synthetic task (used by tests / custom nets).
+  const useMainnet = !opts.taskId;
+  const taskId = opts.taskId || 'cortex-scamnet-v1';
   const genesisSeed = opts.genesisSeed || 'cortex-genesis';
-  const task = X.makeTask({ id: taskId });
+  const dataset = opts.dataset ?? (useMainnet ? 'phishing' : undefined);
+  const layers = opts.layers ?? (useMainnet ? [16] : undefined);
+  const task = X.makeTask({ id: taskId, ...(dataset ? { dataset } : {}), ...(layers ? { layers } : {}) });
   const wallet = resolveWallet(mods, opts);
 
   let chain;

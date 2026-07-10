@@ -261,6 +261,28 @@ test('a task accepts an injected dataset directly (no named lookup)', () => {
   assert.ok(Number.isFinite(X.loss(t, X.randomWeights(t, 'g'))), 'loss computes on injected data');
 });
 
+test('the embedded phishing dataset is intact (pinned hash) and honestly documented', () => {
+  const p = DATA.get('phishing');
+  assert.equal(p.features.length, 3000, '3,000-row deterministic sample');
+  assert.equal(p.features[0].length, 30, '30 UCI features');
+  assert.equal(p.labels.filter((v) => v === 1).length, 1352, 'known class balance (1 = phishing)');
+  assert.ok(p.features.every((r) => r.every((v) => v === -1 || v === 0 || v === 1)), 'ternary features');
+  const canon = p.features.map((f, i) => f.join(',') + '|' + p.labels[i]).join(';');
+  assert.equal(C.sha256(canon), 'c8f26099c9a6b8504a87fb5c47e9027744e63a93d0c17b8a3d6856f655c46b32', 'sample matches the pinned hash');
+});
+
+test('the network learns real phishing detection and mining pays for it', () => {
+  const t = X.makeTask({ id: 'phish', dataset: 'phishing', layers: [16] });
+  assert.equal(t.inputs, 30);
+  const w0 = X.randomWeights(t, 'g');
+  const w1 = X.train(t, w0, 200, 0.5);
+  assert.ok(X.loss(t, w1) < X.loss(t, w0), 'loss falls on real phishing data');
+  assert.ok(X.accuracy(t, w1) > 0.85, `phishing accuracy clears 85% (${(X.accuracy(t, w1) * 100).toFixed(1)}%)`);
+  const chain = new X.Chain(t, { genesisSeed: 'g' });
+  const blk = chain.mineBlock({ privKey: alice.privateKey, steps: 100, nonce: 'p1' });
+  assert.ok(blk && blk.reward > 0, 'a block mines and pays MIND for learning to catch scams');
+});
+
 // ---- task-scale presets ----------------------------------------------------
 
 test('scale presets set the production-cost tier and stay overridable', () => {

@@ -45,8 +45,8 @@
 <main>
 
   <div class="card">
-    <h2>What is this network training?</h2>
-    <p class="dim" style="margin:0">A shared <b>neural network</b> — a 25-parameter multilayer perceptron (2 inputs → 6 tanh neurons → 1 sigmoid output) — being trained to solve a <b>binary classification benchmark</b>: given a point, predict its class, where the true rule is a noisy XOR that no straight line can solve. The model is deliberately a small benchmark: <b>its job is to be the "work" that consensus meters</b> — every block must verifiably make it smarter, and MIND is minted in proportion. The same engine trains real data (the repo ships banknote-forgery detection at ~99% accuracy); this network proves the rails. The full model weights live in every block below — the chain <i>is</i> the model's training history.</p>
+    <h2>What is this network training? A scam detector.</h2>
+    <p class="dim" style="margin:0">A shared <b>neural network</b> (30 inputs → 16 tanh neurons → 1 output, 513 parameters) learning to answer one question: <b>"is this website a phishing scam — yes or no?"</b> The flash cards are 3,000 real websites from the UCI <i>Phishing Websites</i> research dataset — each described by 30 measurable warning signs (uses a raw IP address, has an @ symbol in the URL, fake HTTPS token, very young domain, …) and labelled scam or legitimate. Every block someone mines makes this detector a little better, and the finished brain belongs to everyone: any app can read the newest block's weights and check a site for free. Honest caveats: this is a research dataset (2012-15 era), scammers evolve, and held-out accuracy for this small model is ~90% — a useful first-line filter, not a guarantee. The full model weights live in every block below — the chain <i>is</i> the detector's training history.</p>
   </div>
 
   <div class="card">
@@ -76,10 +76,12 @@
   </div>
 
   <div class="card">
-    <h2>Ask the robot</h2>
-    <p class="dim" style="margin:0 0 8px">This is the <b>actual brain from the newest block</b> answering live. Tap anywhere on the board — the robot guesses which team that spot belongs to, and we tell you if it's right (the true rule: opposite corners are teammates).</p>
-    <div class="chart"><canvas id="c-ask" width="720" height="360" style="cursor:crosshair"></canvas></div>
-    <div id="ask-out" class="dim" style="margin-top:8px; font-size:14px">👆 Tap the board to ask.</div>
+    <h2>Ask the robot: scam or safe?</h2>
+    <p class="dim" style="margin:0 0 8px">This is the <b>actual detector from the newest block</b> answering live. Tap the button to show it a real website from the research deck — it sees the site's 30 warning signs and gives its verdict, and we tell you if it was right. (⚠ = a phishing-indicating sign, ? = suspicious, ✓ = a legitimate-looking sign.)</p>
+    <button id="ask-btn" style="appearance:none;border:0;border-radius:10px;padding:12px 16px;font-size:14px;font-weight:600;cursor:pointer;background:var(--accent2);color:#041022;width:100%">🔍 Show the robot a random website</button>
+    <div id="ask-card" style="display:none;background:#0e1420;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:10px;font-size:13px"></div>
+    <div id="ask-out" class="dim" style="margin-top:8px; font-size:14px"></div>
+    <div id="ask-score" class="dim" style="margin-top:4px; font-size:12px"></div>
   </div>
 
   <div class="card">
@@ -110,7 +112,7 @@
 
   document.addEventListener('DOMContentLoaded', function () {
     var Cortex = window.BallrzCortex;
-    var app = CortexApp.init({ steps: 300 });
+    var app = CortexApp.init({});
     var accCache = {}; // block hash -> accuracy (a forward pass over the dataset; cache it)
 
     function accOf(b) {
@@ -197,10 +199,11 @@
       // nodes on top, with a 2px surface ring so overlaps stay readable
       for (li = 0; li < cols.length; li++) for (var j2 = 0; j2 < cols[li].length; j2++) {
         var p = cols[li][j2];
-        g.fillStyle = '#141a24'; g.beginPath(); g.arc(p[0], p[1], 13, 0, Math.PI * 2); g.fill();
+        var r = Math.min(11, Math.floor((H / (cols[li].length + 1)) * 0.42)); // shrink when a layer is crowded (30 inputs)
+        g.fillStyle = '#141a24'; g.beginPath(); g.arc(p[0], p[1], r + 2, 0, Math.PI * 2); g.fill();
         g.fillStyle = li === cols.length - 1 ? GREEN : '#0e1420';
         g.strokeStyle = GREEN; g.lineWidth = 2;
-        g.beginPath(); g.arc(p[0], p[1], 11, 0, Math.PI * 2); g.fill(); g.stroke();
+        g.beginPath(); g.arc(p[0], p[1], r, 0, Math.PI * 2); g.fill(); g.stroke();
       }
       // layer captions (text in ink, not series color)
       g.fillStyle = DIM; g.font = '11px system-ui'; g.textAlign = 'center';
@@ -208,53 +211,48 @@
       for (li = 0; li < cols.length; li++) g.fillText(caps[Math.min(li, caps.length - 1)], cols[li][0][0], H - 8);
     }
 
-    /* ---- Ask the robot: tap a point, the tip-block brain answers ---- */
-    var lastAsk = null; // [x0, x1] in model space, persists across re-renders
-    function drawAsk(weights) {
-      var cv = $('c-ask'), g = cv.getContext('2d'); if (!g) return;
-      var W = cv.width, H = cv.height, step = 16;
-      var toX = function (v) { return ((v + 1) / 2) * W; }, toY = function (v) { return ((1 - v) / 2) * H; };
-      g.clearRect(0, 0, W, H);
-      // the robot's current view of the world: shaded by which team it thinks owns each spot
-      for (var px = 0; px < W; px += step) {
-        for (var py = 0; py < H; py += step) {
-          var x0 = (px / W) * 2 - 1, x1 = 1 - (py / H) * 2;
-          var p = Cortex.predict(app.task, weights, [x0, x1]);
-          var t = Math.max(0, Math.min(1, p));
-          g.fillStyle = 'rgba(' + Math.round(106 + (90 - 106) * t) + ',' + Math.round(169 + (209 - 169) * t) + ',' + Math.round(255 + (168 - 255) * t) + ',0.20)';
-          g.fillRect(px, py, step, step);
-        }
-      }
-      // axes through the middle (the true rule is about which quadrant you're in)
-      g.strokeStyle = GRID; g.lineWidth = 1;
-      g.beginPath(); g.moveTo(toX(0), 0); g.lineTo(toX(0), H); g.moveTo(0, toY(0)); g.lineTo(W, toY(0)); g.stroke();
-      // the asked point
-      if (lastAsk) {
-        var ax = toX(lastAsk[0]), ay = toY(lastAsk[1]);
-        g.strokeStyle = INK; g.lineWidth = 2;
-        g.beginPath(); g.arc(ax, ay, 10, 0, Math.PI * 2); g.stroke();
-        g.beginPath(); g.moveTo(ax - 15, ay); g.lineTo(ax + 15, ay); g.moveTo(ax, ay - 15); g.lineTo(ax, ay + 15); g.stroke();
-      }
+    /* ---- Ask the robot: show it a real website from the deck ---- */
+    var lastAsk = null;                       // index into the dataset; persists across re-renders
+    var askScore = { right: 0, total: 0 };
+    // The task's inputs are standardised; recover the original -1/0/1 warning signs for display.
+    function rawRow(i) {
+      var z = app.task.X[i], st = app.task.featureStats;
+      if (!st) return z.slice();
+      return z.map(function (v, d) { return Math.round(v * st.std[d] + st.mean[d]); });
     }
+    var SIGN_WORDS = { '-1': '⚠', '0': '?', '1': '✓' };
+    function niceName(n) { return n.replace(/_/g, ' ').replace(/having |Shortining/g, function (m) { return m === 'having ' ? 'has ' : 'shortening'; }); }
     function answerAsk() {
-      if (!lastAsk) return;
+      if (lastAsk == null) return;
+      var i = lastAsk, raw = rawRow(i);
       var tip = app.chain.blocks[app.chain.height()].weights;
-      var p = Cortex.predict(app.task, tip, lastAsk);
-      var robotTeam = p >= 0.5 ? 1 : 0, conf = Math.round(Math.max(p, 1 - p) * 100);
-      var truth = ((lastAsk[0] > 0) !== (lastAsk[1] > 0)) ? 1 : 0;
-      var name = function (c) { return c === 1 ? '<b class="g">GREEN team</b>' : '<b class="b">BLUE team</b>'; };
-      $('ask-out').innerHTML = '🤖 The robot says: ' + name(robotTeam) + ' (' + conf + '% sure). ' +
-        'The true rule says: ' + name(truth) + ' — ' + (robotTeam === truth ? '<b class="g">✓ the robot got it right.</b>' : '<b style="color:#ff6b81">✗ the robot got this one wrong</b> — mine more blocks and ask again!');
+      var p = Cortex.predict(app.task, tip, app.task.X[i]);
+      var verdict = p >= 0.5 ? 1 : 0, conf = Math.round(Math.max(p, 1 - p) * 100);
+      var truth = app.task.y[i];
+      // the card: the site's most notable warning signs, in words
+      var names = app.task.featureNames || [];
+      var interesting = [];
+      for (var d = 0; d < raw.length && interesting.length < 8; d++) if (raw[d] !== 1) interesting.push(d); // lead with non-"safe" signs
+      for (d = 0; d < raw.length && interesting.length < 8; d++) if (raw[d] === 1 && interesting.indexOf(d) < 0) interesting.push(d);
+      var card = '<b>Website #' + i + '</b> from the research deck — its signs:<br/>' + interesting.map(function (d) {
+        return '<span style="display:inline-block;margin:3px 8px 0 0">' + SIGN_WORDS[String(raw[d])] + ' ' + niceName(names[d] || ('feature ' + d)) + '</span>';
+      }).join('');
+      $('ask-card').style.display = 'block';
+      $('ask-card').innerHTML = card;
+      var name = function (c) { return c === 1 ? '<b style="color:#ff6b81">PHISHING SCAM</b>' : '<b class="g">legitimate</b>'; };
+      $('ask-out').innerHTML = '🤖 The detector says: ' + name(verdict) + ' (' + conf + '% sure). Truth: ' + name(truth) + ' — ' +
+        (verdict === truth ? '<b class="g">✓ correct.</b>' : '<b style="color:#ff6b81">✗ wrong</b> — mine more blocks and try again!');
     }
     (function () {
-      var cv = $('c-ask');
-      if (cv && cv.addEventListener) cv.addEventListener('click', function (ev) {
-        var r = cv.getBoundingClientRect();
-        var x0 = ((ev.clientX - r.left) / r.width) * 2 - 1;
-        var x1 = 1 - ((ev.clientY - r.top) / r.height) * 2;
-        lastAsk = [x0, x1];
-        drawAsk(app.chain.blocks[app.chain.height()].weights);
+      var btn = $('ask-btn');
+      if (btn && btn.addEventListener) btn.addEventListener('click', function () {
+        lastAsk = Math.floor(Math.random() * app.task.samples);
         answerAsk();
+        // running score (with the verdict just shown)
+        var tip = app.chain.blocks[app.chain.height()].weights;
+        var ok = (Cortex.predict(app.task, tip, app.task.X[lastAsk]) >= 0.5 ? 1 : 0) === app.task.y[lastAsk];
+        askScore.total++; if (ok) askScore.right++;
+        $('ask-score').textContent = 'Session score: ' + askScore.right + '/' + askScore.total + ' correct.';
       });
     })();
 
@@ -272,8 +270,7 @@
       drawLine('c-acc', 'tip-acc', accs, GREEN, function (v) { return (v * 100).toFixed(1) + '%'; }, [0.4, 1]);
       drawLine('c-loss', 'tip-loss', losses, BLUE, function (v) { return v.toFixed(3); });
       drawModel(s.blocks[s.blocks.length - 1].weights);
-      drawAsk(s.blocks[s.blocks.length - 1].weights);
-      answerAsk(); // the brain may have changed — refresh the verdict for the asked point
+      answerAsk(); // the brain may have changed — refresh the verdict for the shown site
       // leaderboard from the chain's ledger
       var bal = app.chain.ledger.bal, rows = [];
       for (var a in bal) if (bal[a] > 0) rows.push([a, bal[a]]);

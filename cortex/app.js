@@ -19,8 +19,13 @@
   var Cortex = root.BallrzCortex, Coin = root.BallrzCoin, Net = root.BallrzCortexNet, Keystore = root.BallrzCortexKeystore;
 
   // The shared network identity — matches cortex/node.mjs defaults so browser
-  // tabs and headless nodes converge on the same chain.
-  var TASK_ID = 'cortex-mainnet', GENESIS_SEED = 'cortex-genesis';
+  // tabs and headless nodes converge on the same chain. "Scamnet": the shared
+  // model learns real phishing/scam-site detection (UCI Phishing Websites
+  // sample embedded in datasets.js) — mining trains a free, community-owned
+  // scam detector. Changing the task means a NEW chain; the old practice-game
+  // chain (cortex-mainnet) still exists wherever it was stored.
+  var TASK_ID = 'cortex-scamnet-v1', GENESIS_SEED = 'cortex-genesis';
+  var TASK_OPTS = { dataset: 'phishing', layers: [16] };
   var LS_WALLET = 'cortex.wallet.v1', LS_CHAIN = 'cortex.chain.v1';
 
   function lsGet(k) { try { return root.localStorage ? root.localStorage.getItem(k) : null; } catch (e) { return null; } }
@@ -28,7 +33,7 @@
 
   function init(opts) {
     opts = opts || {};
-    var task = Cortex.makeTask({ id: TASK_ID });
+    var task = Cortex.makeTask(Object.assign({ id: TASK_ID }, TASK_OPTS));
 
     // Wallet: load or create, persisted locally.
     var pk = lsGet(LS_WALLET);
@@ -88,7 +93,7 @@
       if (app.mining) return; app.mining = true;
       root.setTimeout(function () {
         var blk = null;
-        try { blk = node.mineAndBroadcast({ privKey: wallet.privateKey, steps: opts.steps || 300, at: Date.now(), nonce: 'b' + chain.height() }); } catch (e) { blk = null; }
+        try { blk = node.mineAndBroadcast({ privKey: wallet.privateKey, steps: opts.steps || 100, at: Date.now(), nonce: 'b' + chain.height() }); } catch (e) { blk = null; }
         app.mining = false; emit(); if (cb) cb(blk);
       }, 20);
     };
