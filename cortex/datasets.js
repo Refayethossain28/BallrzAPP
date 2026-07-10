@@ -4439,9 +4439,62 @@
   };
 
   // Return { name, title, source, featureNames, labelName, features:[[...]], labels:[...] }.
+  /* ----------------------------------------------------------------------
+   * conflict (SIMULATION — read this): a deterministic, disclosed simulation
+   * of armed-conflict risk, NOT real event data. Each row is a hypothetical
+   * "country-period" whose label is generated from the well-established risk
+   * factors in the peer-reviewed conflict-forecasting literature — Fearon &
+   * Laitin (2003), Collier & Hoeffler (2004), Hegre et al., and Uppsala's ViEWS
+   * early-warning system. The generating rule below IS the documentation: risk
+   * rises most with a recent history of conflict (the "conflict trap"), then
+   * with low income, "anocracy" (partial/unstable regimes — highest risk in the
+   * middle, not at either extreme), neighbouring conflict, economic shocks,
+   * youth unemployment, population, and food-price stress, plus real noise
+   * because conflict is genuinely only partly predictable.
+   *
+   * Why simulated: forecasting REAL conflict requires real, carefully-licensed
+   * data (UCDP/PRIO Armed Conflict Dataset, ACLED) and should be done by experts
+   * for humanitarian early warning — never as a gamified live market, which can
+   * be self-fulfilling and manipulated. This task lets the network learn the
+   * SHAPE of conflict risk (which factors matter, and how) honestly and safely.
+   * To forecast reality, swap in a real dataset via makeTask({ data: {...} }).
+   * -------------------------------------------------------------------- */
+  function mulberry32(seedStr) {
+    var s = (parseInt(sha256Of('confseed:' + seedStr).slice(0, 8), 16) >>> 0) || 1;
+    return function () { s = (s + 0x6D2B79F5) | 0; var t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  }
+  function sha256Of(str) {
+    var g = (typeof self !== 'undefined') ? self : (typeof globalThis !== 'undefined') ? globalThis : this;
+    return (g && g.BallrzCoin) ? g.BallrzCoin.sha256(str) : String(str.length); // coin present in all real load paths
+  }
+  function generateConflict() {
+    var rng = mulberry32('conflict-sim-v1'), N = 2000, features = [], labels = [];
+    for (var i = 0; i < N; i++) {
+      var priorConflict = rng() < 0.35 ? 0.5 + rng() * 0.5 : rng() * 0.3; // bimodal: many stable, some with recent history
+      var income = rng(), democracy = rng(), neighbour = rng() < 0.3 ? rng() : rng() * 0.3;
+      var econShock = rng(), youthUnemp = rng(), pop = rng(), foodStress = rng();
+      var anocracy = 1 - Math.abs(democracy - 0.5) * 2; // inverted-U: partial regimes riskiest
+      var logit = -2.2
+        + 3.0 * priorConflict - 1.5 * income + 1.8 * anocracy
+        + 1.2 * neighbour + 1.0 * econShock + 0.8 * youthUnemp + 0.6 * pop + 0.7 * foodStress
+        + (rng() - 0.5) * 1.2; // irreducible noise — conflict is only partly predictable
+      var p = 1 / (1 + Math.exp(-logit));
+      features.push([priorConflict, income, democracy, neighbour, econShock, youthUnemp, pop, foodStress].map(function (v) { return Math.round(v * 1e6) / 1e6; }));
+      labels.push(rng() < p ? 1 : 0);
+    }
+    return {
+      name: 'conflict', title: 'Armed-conflict risk (disclosed SIMULATION — not real events)',
+      source: 'Simulation grounded in Fearon & Laitin 2003; Collier & Hoeffler 2004; Hegre et al.; Uppsala ViEWS. NOT real conflict data.',
+      featureNames: ['prior_conflict', 'income_level', 'democracy_score', 'neighbour_conflict', 'economic_shock', 'youth_unemployment', 'population', 'food_price_stress'],
+      labelName: '1 = conflict, 0 = peace (SIMULATED)', synthetic: true,
+      features: features, labels: labels
+    };
+  }
+
   function get(name) {
+    if (name === 'conflict') return generateConflict();
     var d = DATASETS[name];
-    if (!d) throw new Error('unknown dataset: ' + name + ' (have: ' + Object.keys(DATASETS).join(', ') + ')');
+    if (!d) throw new Error('unknown dataset: ' + name + ' (have: ' + Object.keys(DATASETS).join(', ') + ', conflict)');
     var rows = parseCsv(d.csv), features = [], labels = [];
     for (var i = 0; i < rows.length; i++) {
       var r = rows[i];
@@ -4455,5 +4508,5 @@
     };
   }
 
-  return { version: '1.0.0', list: function () { return Object.keys(DATASETS); }, get: get };
+  return { version: '1.1.0', list: function () { return Object.keys(DATASETS).concat(['conflict']); }, get: get };
 });

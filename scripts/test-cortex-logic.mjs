@@ -283,6 +283,26 @@ test('the network learns real phishing detection and mining pays for it', () => 
   assert.ok(blk && blk.reward > 0, 'a block mines and pays MIND for learning to catch scams');
 });
 
+test('the conflict-risk SIMULATION is deterministic, disclosed, and beats baseline (honestly, modestly)', () => {
+  const cf = DATA.get('conflict');
+  assert.equal(cf.synthetic, true, 'flagged as a simulation, not real data');
+  assert.match(cf.title, /SIMULATION/i);
+  assert.equal(cf.features.length, 2000);
+  assert.equal(cf.features[0].length, 8);
+  // deterministic + pinned (integrity of the generator, since there is no embedded file)
+  const canon = cf.features.map((f, i) => f.join(',') + '|' + cf.labels[i]).join(';');
+  assert.equal(C.sha256(canon), '6a7ef24d1efe6ffb2cc2d7eafcf55721b8bf37a6ffe15e135523f43c19c4fdeb', 'generator output matches pinned hash');
+  // learnable and beats the majority-class baseline — but NOT near-perfect (conflict is noisy)
+  const nTr = 1600;
+  const t = X.makeTask({ id: 'cf', data: { name: 'c', features: cf.features.slice(0, nTr), labels: cf.labels.slice(0, nTr) }, layers: [12] });
+  const w = X.train(t, X.randomWeights(t, 'g'), 1200, 0.5);
+  const teF = cf.features.slice(nTr), teL = cf.labels.slice(nTr), Zte = X.standardizeRows(t, teF);
+  const acc = X.accuracy(t, w, Zte, teL);
+  const maj = teL.filter((v) => v === 0).length / teL.length, base = Math.max(maj, 1 - maj);
+  assert.ok(acc > base + 0.03, `beats majority baseline (${(acc * 100).toFixed(1)}% vs ${(base * 100).toFixed(1)}%)`);
+  assert.ok(acc < 0.9, 'stays honestly imperfect — a sim that "predicts" conflict at 99% would be a lie');
+});
+
 // ---- task-scale presets ----------------------------------------------------
 
 test('scale presets set the production-cost tier and stay overridable', () => {
