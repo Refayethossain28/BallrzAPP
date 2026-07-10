@@ -85,15 +85,34 @@ returning `{ node, wallet, mine, poll, sync, save, balance }`.
 
 ## Deploy the relay to the internet (Render free tier, ~5 min)
 
-Identical to the TimeCoin flow (`coin/DEPLOY.md`), pointed at `cortex`:
+Same flow as TimeCoin (`coin/DEPLOY.md`). One important detail: the Cortex relay
+**reuses `coin/server.mjs` and serves `/coin/engine.js` from the sibling
+folder**, so deploy from the **repo root** (don't isolate to `cortex/`):
 
-1. [dashboard.render.com](https://dashboard.render.com) → **New → Web Service**, pick the **BallrzAPP** repo.
-2. **Root Directory:** `cortex` · **Build Command:** *(empty)* · **Start Command:** `node server.mjs` · **Instance:** Free.
-3. Deploy. Zero dependencies, nothing to build.
+1. Go to [dashboard.render.com](https://dashboard.render.com) and sign in with GitHub.
+2. **New → Web Service**, pick the **BallrzAPP** repository.
+3. Choose the **branch** (a branch works before merging — e.g. this PR's branch).
+4. Fill in exactly:
+   - **Root Directory:** *(leave empty — repo root)*
+   - **Build Command:** *(leave empty — zero dependencies, nothing to build)*
+   - **Start Command:** `node cortex/server.mjs`
+   - **Instance Type:** `Free`
+5. Click **Deploy Web Service** and wait for it to go live.
+6. Optional: in the Environment tab set `SELF_URL=https://<your-service>.onrender.com`
+   so the free instance pings itself and doesn't sleep after 15 idle minutes.
 
-You get a URL like `https://your-cortex.onrender.com` that serves the app and is
-the relay. `PORT` is set by the host; optional `SELF_URL` keeps a free host awake
-(see `coin/server.mjs` for the `RELAY_*` tuning env vars — the relay is shared).
+You get a URL like `https://your-cortex.onrender.com`:
+
+- `…/mine.html` — mining page  ·  `…/wallet.html` — wallet  ·  `…/` — visual demo
+- `…/status` — relay health JSON (check `"name": "cortex-relay"` to confirm it's up)
+
+Anyone who opens those pages is on **your shared network** — browsers auto-detect
+that their origin is a relay and connect. Headless miners join it with
+`RELAY=https://your-cortex.onrender.com npm run cortex:node`. `PORT` is set by
+the host automatically; the `RELAY_*` tuning env vars are documented in
+`coin/server.mjs`. Any other Node ≥18 host (Railway, Fly.io, a VPS with
+`PORT=80 node cortex/server.mjs`) works the same way — just deploy the whole
+repo, not the `cortex/` folder alone.
 
 ## Roadmap to a *real* (not testnet) network
 
