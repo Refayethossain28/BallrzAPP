@@ -2,109 +2,17 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Cortex · Mine</title>
-<link rel="manifest" href="mine.webmanifest" />
+<!-- The Mine and Wallet apps merged into ONE Cortex app (app.html) — they always
+     shared the same wallet, chain and code, so the split was two icons for one
+     thing. This stub keeps old links and previously-installed PWAs working. -->
+<meta http-equiv="refresh" content="0; url=app.html#mine" />
 <meta name="theme-color" content="#0b0e14" />
-<link rel="apple-touch-icon" href="mine-icon-180.png" />
-<meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="Cortex Mine" />
-<style>
-  :root { color-scheme: dark; --bg:#0b0e14; --panel:#141a24; --line:#232c3b; --ink:#e6edf6; --dim:#8ea1bd; --accent:#5ad1a8; --accent2:#6aa9ff; }
-  * { box-sizing: border-box; }
-  body { margin:0; font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased; }
-  header { padding:22px 20px 6px; max-width:720px; margin:0 auto; }
-  h1 { margin:0; font-size:22px; letter-spacing:-.02em; } h1 span { color:var(--accent); }
-  .tag { color:var(--dim); font-size:13px; margin-top:4px; }
-  nav { max-width:720px; margin:6px auto 0; padding:0 20px; font-size:13px; }
-  nav a { color:var(--accent2); text-decoration:none; margin-right:14px; } nav a.here { color:var(--ink); font-weight:600; }
-  main { max-width:720px; margin:0 auto; padding:14px 16px 60px; }
-  .panel { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px; }
-  .stats { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:14px; }
-  .stat { background:#0e1420; border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
-  .stat b { display:block; font-size:19px; font-variant-numeric:tabular-nums; } .stat small { color:var(--dim); font-size:12px; }
-  button { appearance:none; border:0; border-radius:10px; padding:13px 16px; font-size:15px; font-weight:600; cursor:pointer; background:var(--accent); color:#04150f; width:100%; }
-  button:disabled { opacity:.5; cursor:default; }
-  .net { font-size:12.5px; color:var(--dim); margin:10px 0 0; }
-  .net.on { color:var(--accent); }
-  .blocks { margin-top:14px; max-height:320px; overflow:auto; border-top:1px solid var(--line); }
-  .blk { display:flex; gap:10px; align-items:baseline; padding:8px 2px; border-bottom:1px solid var(--line); font-size:13px; }
-  .blk .h { color:var(--accent2); font-variant-numeric:tabular-nums; } .blk .who { color:var(--dim); font-family:ui-monospace,Menlo,monospace; font-size:11px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .blk .loss { color:var(--accent); font-variant-numeric:tabular-nums; }
-  .note { color:var(--dim); font-size:12.5px; margin-top:12px; }
-</style>
+<style>body{margin:0;background:#0b0e14;color:#8ea1bd;font:15px/1.5 -apple-system,sans-serif;display:grid;place-items:center;min-height:100vh}a{color:#5ad1a8}</style>
 </head>
 <body>
-<header>
-  <h1>Cortex <span>·</span> Mine</h1>
-  <div class="tag">Teach the shared <b>war-lethality model</b> (real Correlates of War data) to earn <b>MIND</b>. Each block is a proof the model learned.</div>
-</header>
-<nav><a class="here">⛏️ Mine</a><a href="wallet.html">👛 Wallet</a><a href="network.html">📊 Network</a><a href="guide.html">❓ Guide</a><a href="index.html">📈 Visual demo</a></nav>
-<main>
-  <section class="panel">
-    <div class="stats">
-      <div class="stat"><b id="s-height">0</b><small>blocks</small></div>
-      <div class="stat"><b id="s-acc">–</b><small>model accuracy</small></div>
-      <div class="stat"><b id="s-loss">–</b><small>loss</small></div>
-      <div class="stat"><b id="s-bal">0 MIND</b><small>your balance</small></div>
-      <div class="stat"><b id="s-supply">0 MIND</b><small>total supply</small></div>
-      <div class="stat"><b id="s-learn">0</b><small>total learning</small></div>
-    </div>
-    <button id="mine">⛏️ Mine a block (train &amp; earn MIND)</button>
-    <div class="net" id="net">…</div>
-    <div class="blocks" id="blocks"></div>
-    <div class="note">Reward ∝ the loss your block removes; supply is bounded by how much the model can learn and stops at convergence. Your wallet, balance and sends live on the <a href="wallet.html">Wallet</a> page — same chain, synced live.</div>
-  </section>
-</main>
-
-<script src="../coin/engine.js"></script>
-<script src="datasets.js"></script>
-<script src="engine.js"></script>
-<script src="net.js"></script>
-<script src="keystore.js"></script>
-<script src="app.js"></script>
-<script>
-(function () {
-  'use strict';
-  var $ = function (id) { return document.getElementById(id); };
-  // Installable PWA: register the service worker (https/localhost only).
-  try {
-    if (typeof navigator !== 'undefined' && navigator.serviceWorker && /^https?:$/.test(location.protocol)) {
-      navigator.serviceWorker.register('sw.js');
-    }
-  } catch (e) { /* not available (file://, old browser) — the page still works */ }
-
-  document.addEventListener('DOMContentLoaded', function () {
-    var app = CortexApp.init({});
-    var mind = app.task ? window.BallrzCortex.formatMind : function (u) { return u; };
-    function render(s) {
-      $('s-height').textContent = s.height;
-      $('s-acc').textContent = (s.accuracy * 100).toFixed(1) + '%';
-      $('s-loss').textContent = s.loss.toFixed(4);
-      $('s-bal').textContent = s.fmt(s.balance);
-      $('s-supply').textContent = s.fmt(s.supply);
-      $('s-learn').textContent = s.learning.toFixed(4);
-      var net = $('net'); net.textContent = s.net === 'network' ? '⇄ Connected — mining is shared across the network.' : 'Local only — open via a relay to network (see DEPLOY.md).';
-      net.className = 'net' + (s.net === 'network' ? ' on' : '');
-      var box = $('blocks'); box.innerHTML = '';
-      s.blocks.slice().reverse().forEach(function (b) {
-        var row = document.createElement('div'); row.className = 'blk';
-        row.innerHTML = '<span class="h">#' + b.index + '</span><span class="who">' + (b.index === 0 ? 'genesis' : (b.miner || '').slice(0, 14) + '…') + '</span><span class="loss">' + (b.index === 0 ? '—' : '+' + s.fmt(b.reward)) + '</span>';
-        box.appendChild(row);
-      });
-    }
-    app.onUpdate(render);
-    render(app.state());
-    $('mine').addEventListener('click', function () {
-      $('mine').disabled = true; $('mine').textContent = 'Training…';
-      app.mine(function (blk) {
-        $('mine').disabled = false;
-        $('mine').textContent = blk ? '⛏️ Mine a block (train & earn MIND)' : '✅ Model converged — nothing left to mine';
-      });
-    });
-  });
-})();
-</script>
+<p>Mining now lives in the merged <a href="app.html#mine">Cortex app</a> — taking you there…</p>
+<script>location.replace('app.html#mine');</script>
 </body>
 </html>

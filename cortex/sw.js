@@ -1,4 +1,4 @@
-/* Cortex service worker — makes Mine and Wallet installable and usable offline.
+/* Cortex service worker — makes the app installable and usable offline.
  *
  * Adapted from the TimeCoin worker (coin/sw.js), same update-friendly strategy:
  *   • navigations  → network-first, fall back to the cached page when offline
@@ -9,12 +9,13 @@
  * mining works locally and gossips when you're back online.
  * Bump CACHE to force clients onto a fresh shell.
  */
-var CACHE = 'cortex-v4';
-var SHELL = ['./', './index.html', './mine.html', './wallet.html', './guide.html', './network.html',
+var CACHE = 'cortex-v5';
+var SHELL = ['./', './index.html', './app.html', './mine.html', './wallet.html', './guide.html', './network.html',
   './engine.js', './datasets.js', './net.js', './keystore.js', './app.js',
   './holdout.js', './tournament.js', './prover.js',
   '../coin/engine.js',
-  './mine.webmanifest', './wallet.webmanifest',
+  './cortex.webmanifest', './mine.webmanifest', './wallet.webmanifest',
+  './cortex-icon-192.png', './cortex-icon-512.png', './cortex-icon-maskable-512.png', './cortex-icon-180.png',
   './mine-icon-192.png', './mine-icon-512.png', './mine-icon-maskable-512.png', './mine-icon-180.png',
   './wallet-icon-192.png', './wallet-icon-512.png', './wallet-icon-maskable-512.png', './wallet-icon-180.png'];
 

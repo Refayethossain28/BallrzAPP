@@ -63,7 +63,8 @@ const EDGES = [];
 for (const a of L1) for (const b of L2) EDGES.push([a, b]);
 for (const a of L2) for (const b of L3) EDGES.push([a, b]);
 
-function renderIcon(N, { accent, maskable }) {
+function renderIcon(N, { accent, accent2, maskable }) {
+  const outC = accent2 || accent; // output node/ring can take a second colour
   const rgba = Buffer.alloc(N * N * 4);
   const aa = 1.6 / N;
   const bg = [11, 14, 20];              // #0b0e14
@@ -80,14 +81,15 @@ function renderIcon(N, { accent, maskable }) {
         let e = 0;
         for (const [p, q] of EDGES) e = Math.max(e, smooth(sdSegment(x, y, p[0], p[1], q[0], q[1]) - 0.016, aa));
         if (e > 0) { r = r + (edgeC[0] - r) * e; g = g + (edgeC[1] - g) * e; b = b + (edgeC[2] - b) * e; }
-        // nodes (output node slightly bigger + a ring)
+        // nodes (output node slightly bigger + a ring, optionally in accent2)
         let n = 0;
         for (const [cx, cy] of [...L1, ...L2]) n = Math.max(n, smooth(sdCircle(x, y, cx, cy, 0.055), aa));
-        const out = L3[0];
-        n = Math.max(n, smooth(sdCircle(x, y, out[0], out[1], 0.075), aa));
         if (n > 0) { r = r + (accent[0] - r) * n; g = g + (accent[1] - g) * n; b = b + (accent[2] - b) * n; }
+        const out = L3[0];
+        const no = smooth(sdCircle(x, y, out[0], out[1], 0.075), aa);
+        if (no > 0) { r = r + (outC[0] - r) * no; g = g + (outC[1] - g) * no; b = b + (outC[2] - b) * no; }
         const ring = smooth(Math.abs(sdCircle(x, y, out[0], out[1], 0.115)) - 0.012, aa);
-        if (ring > 0) { r = r + (accent[0] - r) * ring * 0.8; g = g + (accent[1] - g) * ring * 0.8; b = b + (accent[2] - b) * ring * 0.8; }
+        if (ring > 0) { r = r + (outC[0] - r) * ring * 0.8; g = g + (outC[1] - g) * ring * 0.8; b = b + (outC[2] - b) * ring * 0.8; }
       }
       const i = (py * N + px) * 4;
       rgba[i] = Math.round(r); rgba[i + 1] = Math.round(g); rgba[i + 2] = Math.round(b); rgba[i + 3] = Math.round(a);
@@ -99,10 +101,13 @@ function renderIcon(N, { accent, maskable }) {
 const GREEN = [90, 209, 168];   // #5ad1a8 — Miner
 const BLUE = [106, 169, 255];   // #6aa9ff — Wallet
 
-for (const [prefix, accent] of [['mine', GREEN], ['wallet', BLUE]]) {
-  writeFileSync(join(OUT, `${prefix}-icon-192.png`), renderIcon(192, { accent }));
-  writeFileSync(join(OUT, `${prefix}-icon-512.png`), renderIcon(512, { accent }));
-  writeFileSync(join(OUT, `${prefix}-icon-maskable-512.png`), renderIcon(512, { accent, maskable: true }));
-  writeFileSync(join(OUT, `${prefix}-icon-180.png`), renderIcon(180, { accent, maskable: true })); // apple-touch (iOS wants full-bleed)
+// 'cortex' is the merged app: green nodes, blue output — the two former apps
+// literally joined in one mark. The old mine/wallet sets are kept for installs
+// that predate the merge (their icons must not 404).
+for (const [prefix, accent, accent2] of [['cortex', GREEN, BLUE], ['mine', GREEN], ['wallet', BLUE]]) {
+  writeFileSync(join(OUT, `${prefix}-icon-192.png`), renderIcon(192, { accent, accent2 }));
+  writeFileSync(join(OUT, `${prefix}-icon-512.png`), renderIcon(512, { accent, accent2 }));
+  writeFileSync(join(OUT, `${prefix}-icon-maskable-512.png`), renderIcon(512, { accent, accent2, maskable: true }));
+  writeFileSync(join(OUT, `${prefix}-icon-180.png`), renderIcon(180, { accent, accent2, maskable: true })); // apple-touch (iOS wants full-bleed)
   console.log(`wrote cortex/${prefix}-icon-{192,512,maskable-512,180}.png`);
 }

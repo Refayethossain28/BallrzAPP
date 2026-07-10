@@ -36,36 +36,38 @@ proof-of-learning chain and gossiping blocks and MIND transfers.
 
 ## The pages (mining & wallet links)
 
-Cortex ships three browser pages, all sharing one wallet + chain (synced live
-between tabs, and across devices when served by a relay):
+Cortex ships one app plus a dashboard and demo, all sharing one wallet + chain
+(synced live between tabs, and across devices when served by a relay):
 
 | Page | What | Path |
 | --- | --- | --- |
-| **Mine** | train the shared net, earn MIND | `/mine.html` |
-| **Wallet** | balance, send/receive, encrypted key backup | `/wallet.html` |
+| **Cortex app** | Mine + Wallet as tabs: train the net, earn/hold/send MIND | `/app.html` |
+| Network dashboard | the chain, the model, who's teaching it | `/network.html` |
 | Visual demo | the decision-boundary visualisation | `/index.html` |
 
-**Install them as apps (PWA):** Mine and Wallet are installable — each has its
-own manifest, icon (green net = Miner, blue net = Wallet) and a service worker
-that caches the app shell (never the relay traffic, which must stay live).
-iPhone/iPad: open the page in Safari → Share → **Add to Home Screen**. Android/
-Chrome: menu → **Install app** (or the address-bar install icon). Desktop
-Chrome/Edge: the ⊕ install icon in the address bar. Offline, the app still opens
-with your chain (it lives in localStorage); mining works locally and gossips
-when you're back online.
+(`/mine.html` and `/wallet.html` still work — they redirect into the app's tabs,
+so old links and previously-installed PWAs keep working.)
+
+**Install it as an app (PWA):** the Cortex app is installable — one manifest,
+one icon (green net, blue output node) and a service worker that caches the app
+shell (never the relay traffic, which must stay live). iPhone/iPad: open the
+page in Safari → Share → **Add to Home Screen**. Android/Chrome: menu →
+**Install app** (or the address-bar install icon). Desktop Chrome/Edge: the ⊕
+install icon in the address bar. Offline, the app still opens with your chain
+(it lives in localStorage); mining works locally and gossips when you're back
+online.
 
 Where those links resolve:
 
-- **Local (now):** `npm run cortex:relay`, then
-  `http://localhost:8088/mine.html` and `http://localhost:8088/wallet.html`.
-  Open both in two tabs — mine in one, watch the balance update in the other.
+- **Local (now):** `npm run cortex:relay`, then `http://localhost:8088/app.html`.
+  Open two tabs — mine in one, watch the balance update in the other.
 - **GitHub Pages (after this branch merges to `main`):** the site auto-publishes
   the `cortex/` folder, so
-  `https://refayethossain28.github.io/BallrzAPP/cortex/mine.html` and
-  `…/cortex/wallet.html`. (Static hosting: tabs in one browser sync over
-  BroadcastChannel; for cross-device mining paste a relay URL / serve from one.)
-- **Your deployed relay:** `https://<your-cortex-relay>/mine.html` and
-  `…/wallet.html` — a shared network anyone can open.
+  `https://refayethossain28.github.io/BallrzAPP/cortex/app.html`. (Static
+  hosting: tabs in one browser sync over BroadcastChannel; for cross-device
+  mining paste a relay URL / serve from one.)
+- **Your deployed relay:** `https://<your-cortex-relay>/app.html` — a shared
+  network anyone can open.
 
 ## Run a local testnet (now)
 
@@ -112,7 +114,7 @@ folder**, so deploy from the **repo root** (don't isolate to `cortex/`):
 
 You get a URL like `https://your-cortex.onrender.com`:
 
-- `…/mine.html` — mining page  ·  `…/wallet.html` — wallet  ·  `…/` — visual demo
+- `…/app.html` — the Cortex app (Mine + Wallet tabs)  ·  `…/network.html` — dashboard  ·  `…/` — visual demo
 - `…/status` — relay health JSON (check `"name": "cortex-relay"` to confirm it's up)
 
 Anyone who opens those pages is on **your shared network** — browsers auto-detect
