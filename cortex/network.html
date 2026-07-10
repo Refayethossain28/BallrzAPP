@@ -76,6 +76,13 @@
   </div>
 
   <div class="card">
+    <h2>Ask the robot</h2>
+    <p class="dim" style="margin:0 0 8px">This is the <b>actual brain from the newest block</b> answering live. Tap anywhere on the board — the robot guesses which team that spot belongs to, and we tell you if it's right (the true rule: opposite corners are teammates).</p>
+    <div class="chart"><canvas id="c-ask" width="720" height="360" style="cursor:crosshair"></canvas></div>
+    <div id="ask-out" class="dim" style="margin-top:8px; font-size:14px">👆 Tap the board to ask.</div>
+  </div>
+
+  <div class="card">
     <h2>Top miners by MIND</h2>
     <table><thead><tr><th>#</th><th>address</th><th class="r">balance</th></tr></thead><tbody id="lead"></tbody></table>
   </div>
@@ -201,6 +208,56 @@
       for (li = 0; li < cols.length; li++) g.fillText(caps[Math.min(li, caps.length - 1)], cols[li][0][0], H - 8);
     }
 
+    /* ---- Ask the robot: tap a point, the tip-block brain answers ---- */
+    var lastAsk = null; // [x0, x1] in model space, persists across re-renders
+    function drawAsk(weights) {
+      var cv = $('c-ask'), g = cv.getContext('2d'); if (!g) return;
+      var W = cv.width, H = cv.height, step = 16;
+      var toX = function (v) { return ((v + 1) / 2) * W; }, toY = function (v) { return ((1 - v) / 2) * H; };
+      g.clearRect(0, 0, W, H);
+      // the robot's current view of the world: shaded by which team it thinks owns each spot
+      for (var px = 0; px < W; px += step) {
+        for (var py = 0; py < H; py += step) {
+          var x0 = (px / W) * 2 - 1, x1 = 1 - (py / H) * 2;
+          var p = Cortex.predict(app.task, weights, [x0, x1]);
+          var t = Math.max(0, Math.min(1, p));
+          g.fillStyle = 'rgba(' + Math.round(106 + (90 - 106) * t) + ',' + Math.round(169 + (209 - 169) * t) + ',' + Math.round(255 + (168 - 255) * t) + ',0.20)';
+          g.fillRect(px, py, step, step);
+        }
+      }
+      // axes through the middle (the true rule is about which quadrant you're in)
+      g.strokeStyle = GRID; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(toX(0), 0); g.lineTo(toX(0), H); g.moveTo(0, toY(0)); g.lineTo(W, toY(0)); g.stroke();
+      // the asked point
+      if (lastAsk) {
+        var ax = toX(lastAsk[0]), ay = toY(lastAsk[1]);
+        g.strokeStyle = INK; g.lineWidth = 2;
+        g.beginPath(); g.arc(ax, ay, 10, 0, Math.PI * 2); g.stroke();
+        g.beginPath(); g.moveTo(ax - 15, ay); g.lineTo(ax + 15, ay); g.moveTo(ax, ay - 15); g.lineTo(ax, ay + 15); g.stroke();
+      }
+    }
+    function answerAsk() {
+      if (!lastAsk) return;
+      var tip = app.chain.blocks[app.chain.height()].weights;
+      var p = Cortex.predict(app.task, tip, lastAsk);
+      var robotTeam = p >= 0.5 ? 1 : 0, conf = Math.round(Math.max(p, 1 - p) * 100);
+      var truth = ((lastAsk[0] > 0) !== (lastAsk[1] > 0)) ? 1 : 0;
+      var name = function (c) { return c === 1 ? '<b class="g">GREEN team</b>' : '<b class="b">BLUE team</b>'; };
+      $('ask-out').innerHTML = '🤖 The robot says: ' + name(robotTeam) + ' (' + conf + '% sure). ' +
+        'The true rule says: ' + name(truth) + ' — ' + (robotTeam === truth ? '<b class="g">✓ the robot got it right.</b>' : '<b style="color:#ff6b81">✗ the robot got this one wrong</b> — mine more blocks and ask again!');
+    }
+    (function () {
+      var cv = $('c-ask');
+      if (cv && cv.addEventListener) cv.addEventListener('click', function (ev) {
+        var r = cv.getBoundingClientRect();
+        var x0 = ((ev.clientX - r.left) / r.width) * 2 - 1;
+        var x1 = 1 - ((ev.clientY - r.top) / r.height) * 2;
+        lastAsk = [x0, x1];
+        drawAsk(app.chain.blocks[app.chain.height()].weights);
+        answerAsk();
+      });
+    })();
+
     function short(a) { return (a || '').slice(0, 12) + '…' + (a || '').slice(-4); }
 
     function render(s) {
@@ -215,6 +272,8 @@
       drawLine('c-acc', 'tip-acc', accs, GREEN, function (v) { return (v * 100).toFixed(1) + '%'; }, [0.4, 1]);
       drawLine('c-loss', 'tip-loss', losses, BLUE, function (v) { return v.toFixed(3); });
       drawModel(s.blocks[s.blocks.length - 1].weights);
+      drawAsk(s.blocks[s.blocks.length - 1].weights);
+      answerAsk(); // the brain may have changed — refresh the verdict for the asked point
       // leaderboard from the chain's ledger
       var bal = app.chain.ledger.bal, rows = [];
       for (var a in bal) if (bal[a] > 0) rows.push([a, bal[a]]);
