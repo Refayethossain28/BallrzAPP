@@ -19,7 +19,9 @@
  * `self`), so the mined block is byte-identical to a main-thread block.
  */
 /* global importScripts */
-importScripts('../coin/engine.js', 'datasets.js', 'engine.js', 'net.js');
+// vendor/noble-crypto.js first: the audited crypto provider must be registered
+// before coin/engine.js so signing/hashing run on @noble (see AUDIT.md).
+importScripts('vendor/noble-crypto.js', '../coin/engine.js', 'datasets.js', 'engine.js', 'net.js');
 
 self.onmessage = function (ev) {
   var m = ev.data || {};

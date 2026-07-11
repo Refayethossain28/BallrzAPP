@@ -36,6 +36,7 @@ const STATIC = {
   '/network.html': ['network.html', 'text/html; charset=utf-8'],
   '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
   '/miner-worker.js': ['miner-worker.js', 'text/javascript; charset=utf-8'],
+  '/vendor/noble-crypto.js': ['vendor/noble-crypto.js', 'text/javascript; charset=utf-8'],
   '/keystore.js': ['keystore.js', 'text/javascript; charset=utf-8'],
   '/sw.js': ['sw.js', 'text/javascript; charset=utf-8'],
   '/cortex.webmanifest': ['cortex.webmanifest', 'application/manifest+json; charset=utf-8'],

@@ -33,6 +33,7 @@ function loadModules(root = REPO) {
   if (typeof globalThis !== 'undefined' && globalThis.crypto) box.crypto = globalThis.crypto; // for keystore's RNG
   vm.createContext(box);
   const load = (p, g) => { box.module = { exports: {} }; vm.runInContext(readFileSync(join(root, p), 'utf8'), box, { filename: p }); const m = box.module.exports; if (g) box[g] = m; return m; };
+  load('cortex/vendor/noble-crypto.js'); // audited crypto provider — must precede coin/engine.js
   const Coin = load('coin/engine.js', 'BallrzCoin');
   load('cortex/datasets.js', 'BallrzCortexData');
   const X = load('cortex/engine.js', 'BallrzCortex');
