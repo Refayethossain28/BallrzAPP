@@ -52,10 +52,37 @@ test('the relay serves the app and its modules', async () => {
     const idx = await fetch(base + '/');
     assert.equal(idx.status, 200);
     assert.match(await idx.text(), /Cortex/);
-    for (const p of ['/engine.js', '/net.js', '/datasets.js', '/coin/engine.js']) {
+    for (const p of ['/engine.js', '/net.js', '/datasets.js', '/coin/engine.js', '/vendor/noble-crypto.js', '/miner-worker.js']) {
       assert.equal((await fetch(base + p)).status, 200, `${p} served`);
     }
   } finally { await close(); }
+});
+
+test('a node homed on TWO relays bridges them into one network', async () => {
+  const A = await boot(), B = await boot();
+  try {
+    const task = () => X.makeTask({ id: 'bridge' });
+    const mkNode = (id, urls) => {
+      const chain = new X.Chain(task(), { genesisSeed: 'g' });
+      const transports = urls.map((u) => Net.httpTransport(u, { fetch }));
+      const node = Net.createNode({ id, chain, send: (m) => transports.forEach((t) => t.send(m)) });
+      return { node, chain, poll: () => Promise.all(transports.map((t) => t.poll((m) => node.receive(m)).catch(() => 0))) };
+    };
+    const minerA = mkNode('minerA', [A.base]);          // only on relay A
+    const watcherB = mkNode('watcherB', [B.base]);      // only on relay B
+    const bridge = mkNode('bridge', [A.base, B.base]);  // homed on both
+    const blk = minerA.node.mineAndBroadcast({ privKey: alice.privateKey, steps: 300, nonce: 'br0' });
+    assert.ok(blk, 'miner on relay A mines');
+    // gossip: A → bridge (poll A) → re-broadcast to both → watcher (poll B).
+    // The re-broadcast POST is fire-and-forget, so poll until it lands.
+    for (let i = 0; i < 20 && watcherB.chain.height() === 0; i++) {
+      await bridge.poll();
+      await new Promise((r) => setTimeout(r, 50));
+      await watcherB.poll();
+    }
+    assert.equal(watcherB.chain.height(), 1, 'the block crossed relays through the bridge node');
+    assert.equal(watcherB.chain.tip().hash, blk.hash);
+  } finally { await A.close(); await B.close(); }
 });
 
 test('two nodes mine and converge through the real relay over HTTP', async () => {

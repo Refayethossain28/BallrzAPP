@@ -53,6 +53,7 @@
   var LS_RIG = 'cortex.rig.v1';        // the disposable mining signer — miner only
   var LS_PAYTO = 'cortex.payto.v1';    // where the miner sends rewards
   var LS_CHAIN = 'cortex.chain.v1';
+  var LS_RELAYS = 'cortex.relays.v1';  // extra relay URLs (comma-separated) beyond the serving origin
 
   function lsGet(k) { try { return root.localStorage ? root.localStorage.getItem(k) : null; } catch (e) { return null; } }
   function lsSet(k, v) { try { if (root.localStorage) root.localStorage.setItem(k, v); } catch (e) {} }
@@ -72,24 +73,50 @@
     var emit = function () { persist(); for (var i = 0; i < listeners.length; i++) try { listeners[i](app.state()); } catch (e) {} };
 
     var bc = (typeof root.BroadcastChannel !== 'undefined') ? new root.BroadcastChannel('cortex-' + TASK_ID) : null;
-    var relay = null;
-    var send = function (msg) { if (bc) try { bc.postMessage(msg); } catch (e) {} if (relay) relay.send(msg); };
+    // Multi-relay: gossip through EVERY connected relay (the serving origin
+    // plus any saved in localStorage), so no single relay is a chokepoint —
+    // and this client bridges the relays it is homed on.
+    var relays = [];
+    var send = function (msg) {
+      if (bc) try { bc.postMessage(msg); } catch (e) {}
+      for (var i = 0; i < relays.length; i++) try { relays[i].send(msg); } catch (e) {}
+    };
     var node = Net.createNode({ id: 'ui' + String(Math.random()).slice(2, 10), chain: chain, send: send });
     app.node = node;
+    app.relays = 0;
     if (bc) bc.onmessage = function (ev) { node.receive(ev.data); emit(); };
 
     var origin = (root.location && typeof root.location.origin === 'string') ? root.location.origin : '';
-    if (origin.indexOf('http') === 0 && root.fetch) {
+    function connectRelay(url) {
       try {
-        root.fetch(origin + '/status').then(function (r) { return r.json(); }).then(function (d) {
-          if (!d || d.name !== 'cortex-relay') { app.net = 'local'; emit(); return; }
-          relay = Net.httpTransport(origin);
+        root.fetch(url + '/status').then(function (r) { return r.json(); }).then(function (d) {
+          if (!d || d.name !== 'cortex-relay') return;
+          var t = Net.httpTransport(url);
+          relays.push(t);
+          app.net = 'network'; app.relays = relays.length;
           node.hello();
-          root.setInterval(function () { relay.poll(function (m) { node.receive(m); }).then(function () { emit(); }).catch(function () {}); }, 2000);
-          app.net = 'network'; emit();
-        }).catch(function () { app.net = 'local'; emit(); });
-      } catch (e) { app.net = 'local'; }
+          root.setInterval(function () { t.poll(function (m) { node.receive(m); }).then(function () { emit(); }).catch(function () {}); }, 2000);
+          emit();
+        }).catch(function () { emit(); });
+      } catch (e) {}
     }
+    if (root.fetch) {
+      var urls = [];
+      if (origin.indexOf('http') === 0) urls.push(origin);
+      (lsGet(LS_RELAYS) || '').split(',').forEach(function (u) {
+        u = u.trim().replace(/\/+$/, '');
+        if (u.indexOf('http') === 0 && urls.indexOf(u) < 0) urls.push(u);
+      });
+      for (var u = 0; u < urls.length; u++) connectRelay(urls[u]);
+    }
+    // Add a relay at runtime (persisted): app.addRelay('https://other-relay')
+    app.addRelay = function (url) {
+      url = String(url || '').trim().replace(/\/+$/, '');
+      if (url.indexOf('http') !== 0) throw new Error('relay URL must be http(s)');
+      var cur = (lsGet(LS_RELAYS) || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+      if (cur.indexOf(url) < 0) { cur.push(url); lsSet(LS_RELAYS, cur.join(',')); }
+      connectRelay(url);
+    };
 
     app._emit = emit; app._send = send; app._origin = origin;
     return app;
@@ -99,7 +126,7 @@
     return {
       height: app.chain.height(), loss: app.chain.tipLoss(), accuracy: app.chain.accuracy(),
       supply: app.chain.totalSupply(), learning: app.chain.cumulativeImprovement(),
-      net: app.net, pending: app.node.mempool.slice(), blocks: app.chain.blocks.slice(),
+      net: app.net, relays: app.relays, pending: app.node.mempool.slice(), blocks: app.chain.blocks.slice(),
       window: app.chain.mineWindow(app.node.now()), fmt: Cortex.formatMind
     };
   }

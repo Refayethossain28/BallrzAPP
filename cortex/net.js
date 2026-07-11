@@ -202,7 +202,9 @@
     var base = String(baseUrl).replace(/\/$/, ''), cursor = 0;
     return {
       get cursor() { return cursor; },
-      send: function (msg) { return f(base + '/msg', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(msg) }); },
+      // Fire-and-forget: a dead relay must never crash the node (multi-relay
+      // nodes keep gossiping through the relays that are still up).
+      send: function (msg) { return f(base + '/msg', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(msg) }).catch(function () {}); },
       poll: function (onMsg) {
         return f(base + '/msgs?since=' + cursor).then(function (r) { return r.json(); }).then(function (d) {
           cursor = d.seq || cursor;

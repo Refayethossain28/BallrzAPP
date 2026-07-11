@@ -95,7 +95,15 @@ export function bootNode(opts = {}) {
   }
 
   const fetchImpl = opts.fetch || (typeof fetch !== 'undefined' ? fetch : null);
-  const transport = opts.relay ? Net.httpTransport(opts.relay, { fetch: fetchImpl }) : { send() {}, poll() { return Promise.resolve(0); } };
+  // Multi-relay: RELAY may be a comma-separated list. The node gossips through
+  // ALL of them, so no single relay is a chokepoint — and a node homed on two
+  // relays bridges them, merging their networks into one.
+  const relayUrls = (opts.relay ? String(opts.relay).split(',') : []).map((s) => s.trim()).filter(Boolean);
+  const transports = relayUrls.map((r) => Net.httpTransport(r, { fetch: fetchImpl }));
+  const transport = transports.length ? {
+    send: (m) => transports.forEach((t) => { try { t.send(m); } catch (e) {} }),
+    poll: (fn) => Promise.all(transports.map((t) => t.poll(fn).catch(() => 0))).then((cs) => cs.reduce((a, b) => a + (b || 0), 0)),
+  } : { send() {}, poll() { return Promise.resolve(0); } };
   const node = Net.createNode({ id: opts.id || wallet.address.slice(0, 10), chain, send: (m) => transport.send(m) });
 
   const save = () => { if (opts.dataFile) writeFileSync(opts.dataFile, JSON.stringify(node.snapshot())); };

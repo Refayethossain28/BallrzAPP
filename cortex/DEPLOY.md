@@ -128,6 +128,15 @@ the host automatically; the `RELAY_*` tuning env vars are documented in
 `PORT=80 node cortex/server.mjs`) works the same way — just deploy the whole
 repo, not the `cortex/` folder alone.
 
+**Multiple relays (no single chokepoint):** deploy the same service on a second
+host, then home clients on both — `RELAY=https://relay-1,…//relay-2` for a
+headless node, or in the browser console `CortexApp` apps expose
+`app.addRelay('https://relay-2')` (persisted in localStorage). A node homed on
+two relays **bridges** them: blocks arriving on one are re-gossiped to the
+other, so the networks merge and survive either relay dying. Every node still
+validates everything — relays remain dumb forwarders that can only delay or
+censor, never forge.
+
 ## Roadmap to a *real* (not testnet) network
 
 1. ~~**Deterministic forward pass**~~ — ✅ **done.** `engine.js` computes the
