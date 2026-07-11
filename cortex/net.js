@@ -169,6 +169,10 @@
           var tx = msg.tx;
           if (!tx || !tx.id) return 'ignored:tx';
           for (var i = 0; i < node.mempool.length; i++) if (node.mempool[i].id === tx.id) return 'ignored:dup';
+          // Verify BEFORE pooling: a node must not relay or hold junk transfers
+          // (they can't be minted, and pooling them wastes memory / bandwidth).
+          // Balance is a ledger rule checked at mining time (mineBlock filters).
+          if (!cortex().verifyTransfer(tx) || tx.id !== cortex().txId(tx)) return 'rejected:tx';
           node.mempool.push(tx); node.stats.txsPooled++;
           broadcast({ type: 'tx', from: node.id, tx: tx });            // relay onward
           return 'pooled:tx';

@@ -142,6 +142,42 @@ test('a genuinely future-dated block is rejected even after calibration', () => 
   assert.equal(honest.receive({ type: 'block', from: 'cheat', block: blk, now: NOW }), 'rejected:future-timestamp');
 });
 
+/* ---- mempool hardening (adversarial) -------------------------------------- */
+test('a junk transfer is refused at ingress, never pooled or relayed', () => {
+  const bus = makeBus();
+  const a = bus.node('A', freshChain());
+  const junk = { id: 'ab'.repeat(32), from: alice.address, to: bob.address, amount: 5, at: 1, nonce: 'x', pubKey: alice.publicKey, sig: '00'.repeat(64) };
+  const tag = a.receive({ type: 'tx', from: 'X', tx: junk });
+  assert.equal(tag, 'rejected:tx');
+  assert.equal(a.mempool.length, 0, 'not pooled');
+});
+
+test('an unfunded but well-signed transfer cannot stall honest mining', () => {
+  // carol has no MIND; she signs a valid transfer. It pools (signature is
+  // fine) but a miner must still produce a VALID block by dropping it.
+  const carol = C.walletFromPrivateKey('0000000000000000000000000000000000000000000000000000000000000009');
+  const bus = makeBus();
+  const a = bus.node('A', freshChain());
+  const poor = X.signTransfer({ privKey: carol.privateKey, to: bob.address, amount: 1000000, at: 1, nonce: 'p' });
+  assert.equal(a.receive({ type: 'tx', from: 'X', tx: poor }), 'pooled:tx', 'well-formed, so it pools');
+  const blk = a.mineAndBroadcast({ privKey: alice.privateKey, steps: 300, nonce: 'm0' });
+  assert.ok(blk, 'still mines');
+  assert.equal(blk.txs.length, 0, 'the unfunded transfer was filtered out of the block');
+  assert.equal(a.chain.isValidBlock(blk, a.chain.blocks[0]).ok, true, 'and the block is valid');
+});
+
+test('a funded transfer in the mempool IS included and settles', () => {
+  const bus = makeBus();
+  const a = bus.node('A', freshChain());
+  a.chain.addBlock(a.chain.mineBlock({ privKey: alice.privateKey, payTo: alice.address, steps: 300, nonce: 'e0' }));
+  const amt = Math.floor(a.chain.balanceOf(alice.address) / 4);
+  const pay = X.signTransfer({ privKey: alice.privateKey, to: bob.address, amount: amt, at: 2, nonce: 'q' });
+  assert.equal(a.receive({ type: 'tx', from: 'X', tx: pay }), 'pooled:tx');
+  const blk = a.mineAndBroadcast({ privKey: alice.privateKey, payTo: alice.address, steps: 300, nonce: 'e1' });
+  assert.ok(blk && blk.txs.length === 1, 'the funded transfer is included');
+  assert.equal(a.chain.balanceOf(bob.address), amt, 'and settles');
+});
+
 // ---- runner ----------------------------------------------------------------
 let failed = 0;
 for (const [name, fn] of tests) {

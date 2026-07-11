@@ -436,12 +436,25 @@ test('a signed transfer moves MIND, conserves supply, and updates balances', () 
   assert.equal(chain.totalSupply(), supplyBefore + blk.reward, 'transfers conserve — only the coinbase adds supply');
 });
 
+// Forge a block that carries `txs` verbatim, bypassing mineBlock's honest
+// mempool filter — i.e. what a miner running a PATCHED engine could emit. The
+// ledger rules (applyEconomics) must still reject it.
+function forgeBlockWithTxs(chain, signer, txs, nonce) {
+  const clean = chain.mineBlock({ privKey: signer.privateKey, steps: 500, nonce: nonce }); // valid weights/loss/reward
+  const forged = Object.assign({}, clean, { txs: txs, txsRoot: X.txsRoot(txs) });
+  forged.sig = C.sign(C.sha256(X.canonical(forged)), signer.privateKey);
+  forged.hash = X.blockHash(forged);
+  return forged;
+}
+
 test('you cannot spend MIND you do not have (overdraft rejected)', () => {
   const t = X.makeTask({ id: 'overdraft' });
   const chain = new X.Chain(t, { genesisSeed: 'g' });
   chain.addBlock(chain.mineBlock({ privKey: alice.privateKey, steps: 500, nonce: 'o0' }));
   const tooMuch = X.signTransfer({ privKey: alice.privateKey, to: bob.address, amount: chain.balanceOf(alice.address) + 1, at: 1, nonce: 'o1' });
-  const bad = chain.mineBlock({ privKey: bob.privateKey, steps: 500, nonce: 'o2', txs: [tooMuch] });
+  // honest miner drops it; a forged block carrying it must be rejected by the ledger
+  assert.equal(chain.mineBlock({ privKey: bob.privateKey, steps: 500, nonce: 'ok', txs: [tooMuch] }).txs.length, 0, 'honest miner filters the overdraft');
+  const bad = forgeBlockWithTxs(chain, bob, [tooMuch], 'o2');
   assert.throws(() => chain.addBlock(bad), /overdraft/);
   assert.equal(chain.height(), 1, 'the bad block never landed');
 });
@@ -452,7 +465,9 @@ test('a transfer cannot be replayed with the same nonce', () => {
   chain.addBlock(chain.mineBlock({ privKey: alice.privateKey, steps: 500, nonce: 'e0' }));
   const pay = X.signTransfer({ privKey: alice.privateKey, to: bob.address, amount: Math.floor(chain.balanceOf(alice.address) / 4), at: 1, nonce: 'dup' });
   chain.addBlock(chain.mineBlock({ privKey: bob.privateKey, steps: 500, nonce: 'e1', txs: [pay] }));
-  const again = chain.mineBlock({ privKey: bob.privateKey, steps: 500, nonce: 'e2', txs: [pay] });
+  // honest re-mine drops the already-spent nonce; a forged replay must be rejected
+  assert.equal(chain.mineBlock({ privKey: bob.privateKey, steps: 500, nonce: 'okr', txs: [pay] }).txs.length, 0, 'honest miner filters the replay');
+  const again = forgeBlockWithTxs(chain, bob, [pay], 'e2');
   assert.throws(() => chain.addBlock(again), /duplicate transfer nonce/);
 });
 

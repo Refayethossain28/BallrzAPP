@@ -679,7 +679,24 @@
       if (found === null) return null; // window narrower than the weight grid — accrue more and retry
       w = found.w; newLoss = found.loss;
     }
-    var txs = (opts.txs || []).slice();
+    // Fold in transfers — but only those that will actually VALIDATE, applied
+    // in order against this chain's current ledger: well-formed + signed
+    // (verifyTransfer), sufficient balance, and no nonce reuse (in-block or
+    // already spent on-chain). Without this filter a single junk or unfunded
+    // transfer gossiped into the mempool would make every honest miner's next
+    // block invalid — a cheap network-wide mining stall. See cortex/AUDIT.md.
+    var candidate = (opts.txs || []).slice(), txs = [];
+    var bal = {}, kk; for (kk in this.ledger.bal) if (this.ledger.bal.hasOwnProperty(kk)) bal[kk] = this.ledger.bal[kk];
+    var used = {}; for (kk in this.ledger.used) if (this.ledger.used.hasOwnProperty(kk)) used[kk] = 1;
+    bal[miner] = (bal[miner] || 0) + blockReward(task, tip.loss, newLoss); // coinbase is spendable in-block
+    for (var ti = 0; ti < candidate.length; ti++) {
+      var tx = candidate[ti];
+      if (!verifyTransfer(tx)) continue;
+      var nk = tx.from + '|' + tx.nonce;
+      if (used[nk] || (bal[tx.from] || 0) < tx.amount) continue;
+      used[nk] = 1; bal[tx.from] -= tx.amount; bal[tx.to] = (bal[tx.to] || 0) + tx.amount;
+      txs.push(tx);
+    }
     var block = {
       index: tip.index + 1,
       prevHash: tip.hash,
