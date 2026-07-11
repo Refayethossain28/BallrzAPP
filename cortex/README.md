@@ -14,13 +14,21 @@ spendable token whose entire supply is minted in proportion to how much the
 network actually learned.
 
 ```
-coin/engine.js   ← SHA-256, secp256k1 ECDSA, addresses (reused, unchanged)
+cortex/vendor/noble-crypto.js ← AUDITED crypto (@noble); the built-ins fall back to this
+        │
+coin/engine.js   ← SHA-256, secp256k1 ECDSA, addresses (audited-provider aware)
         │
         ▼
 cortex/engine.js ← the Proof-of-Learning chain (this prototype)
-cortex/index.html← a live browser demo: mine blocks, watch the model learn
-scripts/test-cortex-logic.mjs ← the test suite
+cortex/mine.html · wallet.html ← the mining client and the wallet (separate apps)
+cortex/validator.py ← an INDEPENDENT re-implementation that re-validates any chain
+scripts/test-cortex-*.mjs ← the test suites (logic, crypto, net, relay, pyvalidator, …)
 ```
+
+**Deeper docs:** [`WHITEPAPER.md`](WHITEPAPER.md) (the full design),
+[`SECURITY.md`](SECURITY.md) (honest limitations), [`AUDIT.md`](AUDIT.md)
+(threat model + audit-readiness), [`DEPLOY.md`](DEPLOY.md) (run a network),
+[`DATA.md`](DATA.md) (dataset provenance).
 
 ## The idea in one paragraph
 
@@ -353,13 +361,34 @@ This is two layered things:
   range — which is the point: the cost has to be high enough that the MIND
   reward is worth competing for, and low enough that the learning is worth doing.
 
+## Join the network
+
+The live network is `cortex-warnet-v4` — training a war-lethality model on real
+Correlates of War data, on the 10-year emission schedule.
+
+1. **Open the wallet** (`wallet.html`) — it makes your MIND address (your key
+   lives only here).
+2. **Open the mining client** (`mine.html`) — paste your wallet address as the
+   payout (pre-filled if it's the same browser) and press **Mine**. Rewards go
+   to your wallet; the mining device never holds your spending key.
+3. **Run a headless node** (optional, keeps mining without a tab open):
+   `RELAY=https://<relay> PAYTO=<your wallet address> npm run cortex:node`.
+4. **Verify for yourself** — `python3 cortex/validator.py <your node's snapshot>`
+   re-checks the whole chain with a completely independent implementation.
+
+Anyone who opens a relay's pages joins the same network. Run a second relay and
+home clients on both (`app.addRelay(url)`, or `RELAY=a,b`) so there's no single
+chokepoint. What Cortex still needs to become *real* money — an independent
+audit, verifiable time, Sybil resistance, and a community that values the model
+— is spelled out honestly in `WHITEPAPER.md` §9 and `AUDIT.md`.
+
 ## Demo
 
-Open `cortex/index.html` in a browser (it loads `../coin/engine.js` then
-`engine.js`). Press **Mine a block** to train the shared network one block at a
-time and watch the decision boundary bend to fit a noisy XOR — a shape no
-straight line can separate — while loss falls and accuracy climbs block over
-block.
+Open `cortex/index.html` in a browser (it loads `vendor/noble-crypto.js`,
+`../coin/engine.js`, then `engine.js`). Press **Mine a block** to train the
+shared network one block at a time and watch the decision boundary bend to fit a
+noisy XOR — a shape no straight line can separate — while loss falls and accuracy
+climbs block over block.
 
 ## Tests
 

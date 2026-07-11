@@ -16,11 +16,26 @@ every conforming platform must reproduce. A platform whose floating point is
 non-conforming will fail that suite — which is the point; it must not validate
 the chain.
 
-## 1. No security audit — HIGH
+## 1. No independent security audit — HIGH
 
-None of this has had an independent security review. The cryptography reuses
-TimeCoin's from-scratch secp256k1/SHA-256 (itself unaudited, see
-`coin/SECURITY.md`). Do not secure real value on unaudited crypto.
+None of this has had an *independent* security review, and that remains the #1
+gate before real value. What HAS changed:
+
+- **Cryptography is now the audited `@noble` libraries** by default
+  (`vendor/noble-crypto.js` bundles `@noble/secp256k1` + `@noble/hashes`,
+  independently audited and used across the Ethereum ecosystem). The engine's
+  from-scratch secp256k1/SHA-256 is now a *fallback*, proven byte-identical by
+  `scripts/test-cortex-crypto.mjs`. Our ~40-line adapter around `@noble` is not
+  itself audited — reproduce the bundle per `AUDIT.md` §6 rather than trusting
+  the committed bytes.
+- **A self-review pass and audit-readiness dossier exist** (`AUDIT.md`): threat
+  model, consensus invariants, and a fixed finding (mempool-poisoning DoS). A
+  self-review is not an independent audit — it shares the author's blind spots.
+- **A second, independent implementation** (`validator.py`, pure Python, zero
+  shared code) re-validates the chain, so consensus bugs in one engine can't
+  silently become "the rules".
+
+Still: do not secure real value until an independent audit is done.
 
 ## 2. Key storage — MEDIUM (mitigated)
 
