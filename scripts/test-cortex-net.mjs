@@ -92,6 +92,56 @@ test('a block that does not fit triggers a sync request, not a crash', () => {
   assert.equal(a.chain.height(), 0, 'chain untouched');
 });
 
+/* ---- network-adjusted time (median of peers) ------------------------------ */
+test('a node corrects its clock to the median of its peers', () => {
+  const clockAt = (t) => () => t;
+  const me = Net.createNode({ id: 'me', chain: freshChain(), send: () => {}, clock: clockAt(1000000) });
+  assert.equal(me.now(), 1000000, 'no peers: local clock');
+  // three peers whose clocks read +2s, +3s, +120s — median is +3s
+  me.receive({ type: 'hello', from: 'p1', now: 1002000 });
+  me.receive({ type: 'hello', from: 'p2', now: 1003000 });
+  me.receive({ type: 'hello', from: 'p3', now: 1120000 });
+  assert.equal(me.now(), 1003000, 'median offset applied');
+});
+
+test('a sybil majority cannot drag network time beyond the clamp', () => {
+  const me = Net.createNode({ id: 'me', chain: freshChain(), send: () => {}, clock: () => 5000000 });
+  for (let i = 0; i < 9; i++) me.receive({ type: 'hello', from: 'evil' + i, now: 5000000 + 3600e3 }); // all +1 hour
+  assert.equal(me.now(), 5000000, 'median beyond ±10min → fall back to the local clock');
+});
+
+test('future-block rejection runs on network time, not the local clock', () => {
+  // A scheduled task; the receiving node's LOCAL clock is 6 minutes slow, but
+  // its peers are on real time — the block must be accepted, not dropped.
+  const NOW = 1783641600000 + 20 * 60e3; // 20min after the schedule start
+  const st = X.makeTask({ id: 'nettime', minImprovement: 1e-4, schedule: { startAt: 1783641600000, halfLifeMs: 3600e3, budget: 0.2, minIntervalMs: 1000 } });
+  const mk = () => new X.Chain(X.makeTask({ id: 'nettime', minImprovement: 1e-4, schedule: { startAt: 1783641600000, halfLifeMs: 3600e3, budget: 0.2, minIntervalMs: 1000 } }), { genesisSeed: 'g' });
+  const minerChain = mk();
+  const blk = minerChain.mineBlock({ privKey: alice.privateKey, steps: 400, at: NOW, nonce: 't0' });
+  assert.ok(blk, 'miner (on real time) mines');
+  const slow = Net.createNode({ id: 'slow', chain: mk(), send: () => {}, clock: () => NOW - 6 * 60e3 });
+  // without peer calibration the block looks >5min in the future and is dropped
+  assert.equal(slow.receive({ type: 'block', from: 'm', block: blk, now: NOW - 6 * 60e3 }), 'rejected:future-timestamp');
+  // three honest peers on real time calibrate the slow node…
+  slow.receive({ type: 'hello', from: 'h1', now: NOW });
+  slow.receive({ type: 'hello', from: 'h2', now: NOW + 500 });
+  slow.receive({ type: 'hello', from: 'h3', now: NOW - 500 });
+  // …and the same block is now accepted
+  assert.equal(slow.receive({ type: 'block', from: 'm2', block: blk, now: NOW }), 'accepted:block');
+});
+
+test('a genuinely future-dated block is rejected even after calibration', () => {
+  const NOW = 1783641600000 + 40 * 60e3;
+  const mk = () => new X.Chain(X.makeTask({ id: 'nettime2', minImprovement: 1e-4, schedule: { startAt: 1783641600000, halfLifeMs: 3600e3, budget: 0.2, minIntervalMs: 1000 } }), { genesisSeed: 'g' });
+  const cheatChain = mk();
+  const blk = cheatChain.mineBlock({ privKey: alice.privateKey, steps: 400, at: NOW + 30 * 60e3, nonce: 'f0' }); // post-dated +30min to unlock budget early
+  assert.ok(blk, 'cheater can construct the block locally');
+  const honest = Net.createNode({ id: 'h', chain: mk(), send: () => {}, clock: () => NOW });
+  honest.receive({ type: 'hello', from: 'h1', now: NOW });
+  honest.receive({ type: 'hello', from: 'h2', now: NOW });
+  assert.equal(honest.receive({ type: 'block', from: 'cheat', block: blk, now: NOW }), 'rejected:future-timestamp');
+});
+
 // ---- runner ----------------------------------------------------------------
 let failed = 0;
 for (const [name, fn] of tests) {

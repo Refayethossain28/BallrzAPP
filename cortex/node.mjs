@@ -104,7 +104,7 @@ export function bootNode(opts = {}) {
     mods, wallet, task, node, transport, save,
     sync: () => { node.hello(); return transport.poll((m) => node.receive(m)); },
     poll: () => transport.poll((m) => node.receive(m)),
-    mine: (o) => { const blk = node.mineAndBroadcast({ privKey: wallet.privateKey, payTo: opts.payTo, steps: opts.steps || 400, at: Date.now(), nonce: 'b' + node.chain.height(), ...(o || {}) }); save(); return blk; },
+    mine: (o) => { const blk = node.mineAndBroadcast({ privKey: wallet.privateKey, payTo: opts.payTo, steps: opts.steps || 400, nonce: 'b' + node.chain.height(), ...(o || {}) }); save(); return blk; },
     balance: () => X.formatMind(node.chain.balanceOf(wallet.address)),
   };
 }
@@ -128,9 +128,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const pt = setInterval(() => h.poll().catch(() => {}), pollMs);
   const mt = setInterval(() => {
     try {
-      const b = h.mine({ at: Date.now() });
+      const b = h.mine();
       if (b) { console.log(`mined #${b.index}  loss ${b.loss.toFixed(4)}  ${h.balance()}`); return; }
-      const win = h.node.chain.mineWindow(Date.now());
+      const win = h.node.chain.mineWindow(h.node.now());
       if (win.waitMs === Infinity) console.log('schedule complete — nothing left to mine');
       else if (win.waitMs > 0) console.log(`schedule: next block accrues in ~${Math.ceil(win.waitMs / 1000)}s`);
       else console.log('model converged — nothing to mine');

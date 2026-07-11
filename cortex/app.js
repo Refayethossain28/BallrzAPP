@@ -100,7 +100,7 @@
       height: app.chain.height(), loss: app.chain.tipLoss(), accuracy: app.chain.accuracy(),
       supply: app.chain.totalSupply(), learning: app.chain.cumulativeImprovement(),
       net: app.net, pending: app.node.mempool.slice(), blocks: app.chain.blocks.slice(),
-      window: app.chain.mineWindow(Date.now()), fmt: Cortex.formatMind
+      window: app.chain.mineWindow(app.node.now()), fmt: Cortex.formatMind
     };
   }
 
@@ -192,7 +192,7 @@
         catch (e) { blk = null; }
       }
       app.mining = false; app._emit();
-      if (cb) cb(blk, blk ? null : app.chain.mineWindow(Date.now()));
+      if (cb) cb(blk, blk ? null : app.chain.mineWindow(app.node.now()));
     }
     app.mine = function (cb, onProgress) {
       if (app.mining) return;
@@ -200,7 +200,7 @@
       app.mining = true;
       var win = app.chain.mineWindow(Date.now());
       if (!win.open) { app.mining = false; if (cb) cb(null, win); return; }
-      var mineOpts = { privKey: rig.privateKey, payTo: app.payTo, steps: opts.steps || 100, at: Date.now(), nonce: 'b' + app.chain.height(), txs: app.node.mempool.slice() };
+      var mineOpts = { privKey: rig.privateKey, payTo: app.payTo, steps: opts.steps || 100, at: app.node.now(), nonce: 'b' + app.chain.height(), txs: app.node.mempool.slice() };
       var w = minerWorker();
       if (!w) {
         root.setTimeout(function () {

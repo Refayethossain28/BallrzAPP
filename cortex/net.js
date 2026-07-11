@@ -44,9 +44,10 @@
   }
 
   // A node wraps a Chain and a send() sink. Feed it peer messages via receive().
-  //   opts: { chain, send, id, verifyTransfer? }
+  //   opts: { chain, send, id, clock? }
   function createNode(opts) {
     if (!opts || !opts.chain || typeof opts.send !== 'function') throw new Error('createNode needs { chain, send }');
+    var clock = opts.clock || function () { return Date.now(); };
     var node = {
       id: opts.id || 'node',
       chain: opts.chain,
@@ -56,7 +57,36 @@
       stats: { rx: 0, tx: 0, blocksAccepted: 0, chainsAdopted: 0, txsPooled: 0 }
     };
 
-    function broadcast(msg) { node.stats.tx++; node.send(msg); }
+    /* ── network-adjusted time (Bitcoin-style median-of-peers) ──────────────
+     * Every gossip message is stamped with the sender's clock; we keep one
+     * offset per peer and use the MEDIAN to correct our own clock. This is
+     * what the emission schedule's future-block rule runs on, so one node
+     * with a wrong clock follows the network instead of forking off it. The
+     * adjustment is clamped: if the median exceeds MAX_ADJUST_MS the peers
+     * are assumed hostile or broken and we fall back to our local clock —
+     * a sybil majority can therefore shift our time by at most ±10 minutes.
+     */
+    var MAX_ADJUST_MS = 10 * 60 * 1000, MAX_PEER_OFFSETS = 33;
+    var peerOffsets = {}, peerOrder = [];
+    function noteOffset(from, theirNow) {
+      if (typeof theirNow !== 'number' || !isFinite(theirNow) || !from) return;
+      if (!(from in peerOffsets)) {
+        peerOrder.push(from);
+        if (peerOrder.length > MAX_PEER_OFFSETS) delete peerOffsets[peerOrder.shift()];
+      }
+      peerOffsets[from] = theirNow - clock();
+    }
+    node.now = function () {
+      var offs = [];
+      for (var k in peerOffsets) if (peerOffsets.hasOwnProperty(k)) offs.push(peerOffsets[k]);
+      if (!offs.length) return clock();
+      offs.sort(function (a, b) { return a - b; });
+      var med = offs.length % 2 ? offs[(offs.length - 1) / 2] : (offs[offs.length / 2 - 1] + offs[offs.length / 2]) / 2;
+      if (med > MAX_ADJUST_MS || med < -MAX_ADJUST_MS) med = 0; // peers too far out — trust our own clock
+      return clock() + med;
+    };
+
+    function broadcast(msg) { node.stats.tx++; msg.now = clock(); node.send(msg); }
 
     // Announce our whole chain so peers can fork-choice against it.
     node.announce = function () { broadcast({ type: 'chain', from: node.id, blocks: node.chain.blocks }); };
@@ -75,9 +105,12 @@
     // Mine a block (folding in the mempool), append locally, and broadcast it.
     node.mineAndBroadcast = function (mineOpts) {
       mineOpts = mineOpts || {};
+      // Scheduled tasks default the block timestamp to NETWORK time, so a
+      // miner with a skewed clock stamps blocks its peers will accept.
+      var at = mineOpts.at != null ? mineOpts.at : (node.chain.task.schedule ? node.now() : undefined);
       var blk = node.chain.mineBlock({
         privKey: mineOpts.privKey, payTo: mineOpts.payTo, steps: mineOpts.steps, lr: mineOpts.lr,
-        at: mineOpts.at, nonce: mineOpts.nonce, txs: node.mempool.slice()
+        at: at, nonce: mineOpts.nonce, txs: node.mempool.slice()
       });
       if (!blk) return null;                 // model converged — nothing to mine
       node.chain.addBlock(blk);
@@ -91,16 +124,18 @@
     // drift). This is what stops a miner post-dating `at` to unlock schedule
     // budget early — the network won't relay or accept a future-dated block
     // until that time actually arrives (at which point it earned nothing).
-    // Same weak-clock assumption Bitcoin makes; see cortex/SECURITY.md.
+    // Judged against NETWORK-ADJUSTED time (node.now(), median of peers), the
+    // same weak-clock assumption Bitcoin makes; see cortex/SECURITY.md.
     var MAX_FUTURE_MS = 5 * 60 * 1000;
     function fromTheFuture(b) {
-      return !!(node.chain.task.schedule && b && Number(b.at) > Date.now() + MAX_FUTURE_MS);
+      return !!(node.chain.task.schedule && b && Number(b.at) > node.now() + MAX_FUTURE_MS);
     }
 
     // Handle one incoming message. Returns a short tag describing what we did.
     node.receive = function (msg) {
       node.stats.rx++;
       if (!msg || msg.from === node.id) return 'ignored:self';
+      noteOffset(msg.from, msg.now); // every peer message helps calibrate network time
       switch (msg.type) {
         case 'hello':
           node.announce();                    // newcomer — hand them our chain
