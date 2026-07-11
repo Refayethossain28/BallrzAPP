@@ -9,7 +9,8 @@
  * returns the signed block — the page stays live throughout.
  *
  * Protocol (postMessage):
- *   in : { taskOpts, genesisSeed, blocks, privKey, steps, at, nonce, txs }
+ *   in : { taskOpts, genesisSeed, blocks, privKey, payTo, steps, at, nonce, txs }
+ *         (privKey is the disposable RIG key; payTo is the payout wallet address)
  *   out: { type:'progress', round, loss }       — after each training round
  *        { type:'done', block }                 — block, or null if converged
  *        { type:'error', message }
@@ -27,7 +28,7 @@ self.onmessage = function (ev) {
     var task = X.makeTask(m.taskOpts);
     var chain = Net.loadChain(task, m.blocks, { genesisSeed: m.genesisSeed });
     var blk = chain.mineBlock({
-      privKey: m.privKey, steps: m.steps, at: m.at, nonce: m.nonce, txs: m.txs || [],
+      privKey: m.privKey, payTo: m.payTo, steps: m.steps, at: m.at, nonce: m.nonce, txs: m.txs || [],
       onRound: function (round, loss) { self.postMessage({ type: 'progress', round: round, loss: loss }); }
     });
     self.postMessage({ type: 'done', block: blk });

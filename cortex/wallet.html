@@ -2,17 +2,161 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Cortex · Wallet</title>
-<!-- The Mine and Wallet apps merged into ONE Cortex app (app.html) — they always
-     shared the same wallet, chain and code, so the split was two icons for one
-     thing. This stub keeps old links and previously-installed PWAs working. -->
-<meta http-equiv="refresh" content="0; url=app.html#wallet" />
+<link rel="manifest" href="wallet.webmanifest" />
 <meta name="theme-color" content="#0b0e14" />
-<style>body{margin:0;background:#0b0e14;color:#8ea1bd;font:15px/1.5 -apple-system,sans-serif;display:grid;place-items:center;min-height:100vh}a{color:#5ad1a8}</style>
+<link rel="apple-touch-icon" href="wallet-icon-180.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Cortex Wallet" />
+<style>
+  :root { color-scheme: dark; --bg:#0b0e14; --panel:#141a24; --line:#232c3b; --ink:#e6edf6; --dim:#8ea1bd; --accent:#5ad1a8; --accent2:#6aa9ff; --bad:#ff6b81; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased; }
+  header { padding:calc(22px + env(safe-area-inset-top)) 20px 6px; max-width:720px; margin:0 auto; }
+  h1 { margin:0; font-size:22px; letter-spacing:-.02em; } h1 span { color:var(--accent); }
+  .tag { color:var(--dim); font-size:13px; margin-top:4px; }
+  nav { max-width:720px; margin:6px auto 0; padding:0 20px; font-size:13px; }
+  nav a { color:var(--accent2); text-decoration:none; margin-right:14px; } nav a.here { color:var(--ink); font-weight:600; }
+  main { max-width:720px; margin:0 auto; padding:14px 16px 60px; display:grid; gap:16px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px; }
+  .bal { font-size:34px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.02em; }
+  .bal small { display:block; font-size:12px; color:var(--dim); font-weight:400; letter-spacing:0; }
+  label { display:block; font-size:12px; color:var(--dim); margin:12px 0 4px; }
+  input { width:100%; padding:11px 12px; font-size:14px; color:var(--ink); background:#0e1420; border:1px solid var(--line); border-radius:10px; font-family:ui-monospace,Menlo,monospace; }
+  button { appearance:none; border:0; border-radius:10px; padding:12px 16px; font-size:15px; font-weight:600; cursor:pointer; background:var(--accent); color:#04150f; width:100%; margin-top:12px; }
+  button.ghost { background:transparent; color:var(--dim); border:1px solid var(--line); }
+  .addr { font-family:ui-monospace,Menlo,monospace; font-size:12.5px; word-break:break-all; color:var(--accent2); background:#0e1420; border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+  .row { display:flex; gap:8px; } .row button { margin-top:0; }
+  .msg { font-size:13px; margin-top:10px; min-height:18px; } .msg.ok { color:var(--accent); } .msg.err { color:var(--bad); }
+  .tx { display:flex; gap:10px; padding:7px 2px; border-bottom:1px solid var(--line); font-size:12.5px; } .tx .a { flex:1; font-family:ui-monospace,Menlo,monospace; color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tx .amt { font-variant-numeric:tabular-nums; } .tx .in { color:var(--accent); } .tx .out { color:var(--bad); }
+  .note { color:var(--dim); font-size:12.5px; margin-top:10px; } .net { font-size:12.5px; color:var(--dim); } .net.on { color:var(--accent); }
+  h2 { font-size:14px; margin:0 0 4px; }
+</style>
 </head>
 <body>
-<p>Your wallet now lives in the merged <a href="app.html#wallet">Cortex app</a> — taking you there…</p>
-<script>location.replace('app.html#wallet');</script>
+<header>
+  <h1>Cortex <span>·</span> Wallet</h1>
+  <div class="tag">Hold and send <b>MIND</b>. Your spending key lives <b>only here</b> — point the <a href="mine.html" style="color:var(--accent2)">mining client</a> at this wallet's address and rewards arrive without the miner ever touching your key.</div>
+</header>
+<nav><a href="mine.html">⛏️ Mine</a><a class="here">👛 Wallet</a><a href="network.html">📊 Network</a><a href="guide.html">❓ Guide</a><a href="index.html">📈 Visual demo</a></nav>
+<main>
+  <section class="panel">
+    <div class="bal"><span id="bal">0 MIND</span><small>your balance · <span id="net" class="net">…</span></small></div>
+    <label>Your address (share this to receive MIND)</label>
+    <div class="addr" id="addr">…</div>
+    <div class="row"><button class="ghost" id="copy">Copy address</button></div>
+  </section>
+
+  <section class="panel">
+    <h2>Send MIND</h2>
+    <label>To address</label>
+    <input id="to" placeholder="B… recipient address" autocomplete="off" spellcheck="false" />
+    <label>Amount (MIND)</label>
+    <input id="amt" inputmode="decimal" placeholder="0.05" />
+    <button id="send">Send</button>
+    <div class="msg" id="sendmsg"></div>
+    <div class="note">A send is a signed transfer broadcast to the network; it <b>confirms when a miner includes it in a block</b> (mine on the <a href="mine.html">Mine</a> page, or wait for another node). Pending sends show below until then.</div>
+    <div id="pending"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Recent activity</h2>
+    <div id="history"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Back up &amp; restore</h2>
+    <div class="note">Your key is stored in this browser. Export it <b>encrypted</b> with a passphrase to move wallets or keep a backup. (Testnet — see SECURITY.md.)</div>
+    <label>Passphrase (for encrypted backup)</label>
+    <input id="pass" type="password" placeholder="a strong passphrase" />
+    <div class="row"><button class="ghost" id="backup">⬇ Download encrypted key</button><button class="ghost" id="reveal">🔑 Reveal key</button></div>
+    <div class="msg" id="keymsg"></div>
+    <label>Import a private key (replaces this wallet)</label>
+    <input id="import" placeholder="64-hex private key" autocomplete="off" spellcheck="false" />
+    <div class="row"><button class="ghost" id="importbtn">Import</button><button class="ghost" id="reset">Reset chain (keep key)</button></div>
+  </section>
+</main>
+
+<script src="../coin/engine.js"></script>
+<script src="datasets.js"></script>
+<script src="engine.js"></script>
+<script src="net.js"></script>
+<script src="keystore.js"></script>
+<script src="app.js"></script>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  // Installable PWA: register the service worker (https/localhost only).
+  try {
+    if (typeof navigator !== 'undefined' && navigator.serviceWorker && /^https?:$/.test(location.protocol)) {
+      navigator.serviceWorker.register('sw.js');
+    }
+  } catch (e) { /* not available (file://, old browser) — the page still works */ }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var app = CortexApp.init({});
+    var me = app.wallet.address;
+    function short(a) { return (a || '').slice(0, 10) + '…' + (a || '').slice(-6); }
+    function render(s) {
+      $('bal').textContent = s.fmt(s.balance);
+      $('addr').textContent = s.address;
+      var net = $('net'); net.textContent = s.net === 'network' ? '⇄ networked' : 'local only'; net.className = 'net' + (s.net === 'network' ? ' on' : '');
+      // pending (mempool) sends from me
+      var pend = $('pending'); pend.innerHTML = '';
+      s.pending.filter(function (t) { return t.from === me; }).forEach(function (t) {
+        var d = document.createElement('div'); d.className = 'tx';
+        d.innerHTML = '<span class="a">→ ' + short(t.to) + ' (pending)</span><span class="amt out">-' + s.fmt(t.amount) + '</span>';
+        pend.appendChild(d);
+      });
+      // history: coinbase rewards + transfers touching me, newest first
+      var h = $('history'); h.innerHTML = '';
+      var rows = [];
+      s.blocks.forEach(function (b) {
+        if (b.index > 0 && b.miner === me) rows.push({ a: 'mining payout · block #' + b.index, amt: b.reward, cls: 'in' });
+        (b.txs || []).forEach(function (t) {
+          if (t.to === me) rows.push({ a: 'from ' + short(t.from), amt: t.amount, cls: 'in' });
+          if (t.from === me) rows.push({ a: 'to ' + short(t.to), amt: -t.amount, cls: 'out' });
+        });
+      });
+      rows.reverse().slice(0, 40).forEach(function (r) {
+        var d = document.createElement('div'); d.className = 'tx';
+        d.innerHTML = '<span class="a">' + r.a + '</span><span class="amt ' + r.cls + '">' + (r.amt < 0 ? '' : '+') + s.fmt(r.amt) + '</span>';
+        h.appendChild(d);
+      });
+      if (!rows.length) h.innerHTML = '<div class="note">No activity yet — mine a block or receive a transfer.</div>';
+    }
+    app.onUpdate(render); render(app.state());
+
+    $('copy').addEventListener('click', function () { try { navigator.clipboard.writeText(app.wallet.address); $('copy').textContent = 'Copied!'; setTimeout(function () { $('copy').textContent = 'Copy address'; }, 1200); } catch (e) {} });
+    $('send').addEventListener('click', function () {
+      var m = $('sendmsg');
+      app.send($('to').value.trim(), $('amt').value.trim(), function (err) {
+        if (err) { m.className = 'msg err'; m.textContent = '✗ ' + err.message; }
+        else { m.className = 'msg ok'; m.textContent = '✓ Sent — pending until a miner includes it.'; $('to').value = ''; $('amt').value = ''; }
+      });
+    });
+    $('backup').addEventListener('click', function () {
+      var pass = $('pass').value; var m = $('keymsg');
+      if (!pass || pass.length < 6) { m.className = 'msg err'; m.textContent = 'Choose a passphrase of at least 6 characters.'; return; }
+      m.className = 'msg'; m.textContent = 'Encrypting…';
+      setTimeout(function () {
+        try {
+          var box = app.backupKeystore(pass);
+          var blob = new Blob([JSON.stringify(box, null, 2)], { type: 'application/json' });
+          var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'cortex-wallet.json'; a.click();
+          m.className = 'msg ok'; m.textContent = '✓ Encrypted key downloaded (cortex-wallet.json).';
+        } catch (e) { m.className = 'msg err'; m.textContent = '✗ ' + e.message; }
+      }, 20);
+    });
+    $('reveal').addEventListener('click', function () { var m = $('keymsg'); m.className = 'msg'; m.textContent = 'Private key: ' + app.revealKey() + '  (keep it secret)'; });
+    $('importbtn').addEventListener('click', function () { var v = $('import').value.trim(); if (/^[0-9a-fA-F]{64}$/.test(v)) app.importKey(v); else { var m = $('keymsg'); m.className = 'msg err'; m.textContent = 'A private key is 64 hex characters.'; } });
+    $('reset').addEventListener('click', function () { app.reset(); });
+  });
+})();
+</script>
 </body>
 </html>

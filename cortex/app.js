@@ -1,16 +1,24 @@
 /**
- * Cortex browser app layer — shared by mine.html and wallet.html.
- * ================================================================
+ * Cortex browser app layer — the WALLET app, the MINING CLIENT, and the shared
+ * chain plumbing under both.
+ * ============================================================================
  *
- * Gives both pages ONE wallet and ONE chain: persisted in localStorage, synced
- * live between tabs over a BroadcastChannel, and — when the page is served by a
- * Cortex relay — synced across devices through it (cortex/net.js). So you can
- * mine on /mine.html and watch the balance update on /wallet.html, on the same
- * shared genesis a headless cortex/node.mjs also joins.
+ * The two apps are genuinely separate — not two skins over one key:
  *
- * ⚠ Testnet: the wallet key is kept in localStorage (use "Back up key" to export
- *   it ENCRYPTED via keystore.js). See cortex/SECURITY.md.
+ *   • WALLET (initWallet, wallet.html): the ONLY place your spending key
+ *     lives (localStorage; export encrypted via keystore.js). Balance, send,
+ *     receive, backup.
+ *   • MINING CLIENT (initMiner, mine.html): holds NO spending key. It signs
+ *     blocks with a disposable RIG key and pays every reward to a PAYOUT
+ *     address you configure (your wallet's) — the consensus carries the payout
+ *     in the signed block, Bitcoin-coinbase style, so the mining device never
+ *     needs — and cannot leak — the key that owns your MIND.
  *
+ * Both talk to the same chain: persisted in localStorage, synced between tabs
+ * over a BroadcastChannel, and across devices through a relay (cortex/net.js),
+ * on the same shared genesis a headless cortex/node.mjs joins.
+ *
+ * ⚠ Testnet — see cortex/SECURITY.md.
  * Browser-only. Reads globals BallrzCortex, BallrzCoin, BallrzCortexNet,
  * BallrzCortexKeystore. Registers window.CortexApp.
  */
@@ -19,23 +27,17 @@
   var Cortex = root.BallrzCortex, Coin = root.BallrzCoin, Net = root.BallrzCortexNet, Keystore = root.BallrzCortexKeystore;
 
   // The shared network identity — matches cortex/node.mjs defaults so browser
-  // tabs and headless nodes converge on the same chain. "Warnet": the shared
-  // model learns whether a militarized confrontation between states turns
-  // LETHAL, from real Correlates of War data (mmb_war, embedded in
-  // datasets.js). Mining trains a free, community-owned conflict-lethality
-  // model. Changing the task means a NEW chain; older chains (cortex-mainnet,
-  // scamnet, warnet-v1) still exist wherever they were stored.
+  // tabs and headless nodes converge on the same chain. "Warnet": the model
+  // learns whether a militarized confrontation between states turns LETHAL,
+  // from real Correlates of War data (embedded in datasets.js).
   //
-  // v3: the deeper [24,24] net + a 10-YEAR EMISSION SCHEDULE. A consensus rule
-  // rations how fast the chain may absorb learning: allowedLoss(t) decays from
-  // the genesis loss (0.6574) toward genesis−budget with a 2.3-year half-life,
-  // and a block that learns below the schedule at its timestamp is INVALID.
-  // Emissions halve every ~2.3 years (like Bitcoin): ~50% of all MIND by year
-  // 2.3, ~95% by year 10 — the ceiling is reached "in about 10 years" no
-  // matter how much compute shows up. Budget 0.32 is under the model's
-  // benchmarked capacity (ΔL≈0.353), so learning can follow the schedule to
-  // the end. Max supply: 0.32 × 3e12 = 960,000 MIND.
-  var TASK_ID = 'cortex-warnet-v3', GENESIS_SEED = 'cortex-genesis';
+  // v4: same deeper [24,24] net and 10-year emission schedule as v3, plus the
+  // coinbase-payout rule (block.miner is a payout address chosen by the
+  // producer, decoupled from the signing key) that makes the wallet/miner
+  // separation real. A consensus change means a NEW chain; older chains
+  // (…-v1/v2/v3) still exist wherever they were stored. Every field below is
+  // consensus-critical and must match cortex/node.mjs exactly.
+  var TASK_ID = 'cortex-warnet-v4', GENESIS_SEED = 'cortex-genesis';
   var TASK_OPTS = {
     dataset: 'war', layers: [24, 24],
     minImprovement: 0.000002,        // a block needs real — if small — learning
@@ -47,21 +49,17 @@
       minIntervalMs: 60000           // at most one block per minute
     }
   };
-  var LS_WALLET = 'cortex.wallet.v1', LS_CHAIN = 'cortex.chain.v1';
+  var LS_WALLET = 'cortex.wallet.v1';  // the SPENDING key — wallet app only
+  var LS_RIG = 'cortex.rig.v1';        // the disposable mining signer — miner only
+  var LS_PAYTO = 'cortex.payto.v1';    // where the miner sends rewards
+  var LS_CHAIN = 'cortex.chain.v1';
 
   function lsGet(k) { try { return root.localStorage ? root.localStorage.getItem(k) : null; } catch (e) { return null; } }
   function lsSet(k, v) { try { if (root.localStorage) root.localStorage.setItem(k, v); } catch (e) {} }
 
-  function init(opts) {
-    opts = opts || {};
+  /* ── shared plumbing: one chain, synced across tabs and the relay ── */
+  function boot() {
     var task = Cortex.makeTask(Object.assign({ id: TASK_ID }, TASK_OPTS));
-
-    // Wallet: load or create, persisted locally.
-    var pk = lsGet(LS_WALLET);
-    var wallet = pk ? Coin.walletFromPrivateKey(pk) : Coin.generateWallet();
-    if (!pk) lsSet(LS_WALLET, wallet.privateKey);
-
-    // Chain: restore snapshot or start fresh on the shared genesis.
     var chain;
     try {
       var snap = JSON.parse(lsGet(LS_CHAIN) || 'null');
@@ -69,22 +67,17 @@
     } catch (e) { chain = new Cortex.Chain(task, { genesisSeed: GENESIS_SEED }); }
 
     var listeners = [];
-    var app = {
-      task: task, wallet: wallet, chain: chain, node: null, mining: false, net: 'local',
-      onUpdate: function (fn) { listeners.push(fn); },
-    };
+    var app = { task: task, chain: chain, node: null, net: 'local', onUpdate: function (fn) { listeners.push(fn); } };
     function persist() { lsSet(LS_CHAIN, JSON.stringify({ taskId: TASK_ID, blocks: chain.blocks })); }
-    function emit() { persist(); for (var i = 0; i < listeners.length; i++) try { listeners[i](app.state()); } catch (e) {} }
+    var emit = function () { persist(); for (var i = 0; i < listeners.length; i++) try { listeners[i](app.state()); } catch (e) {} };
 
-    // Transport: BroadcastChannel between tabs (+ relay across devices, below).
     var bc = (typeof root.BroadcastChannel !== 'undefined') ? new root.BroadcastChannel('cortex-' + TASK_ID) : null;
     var relay = null;
-    function send(msg) { if (bc) try { bc.postMessage(msg); } catch (e) {} if (relay) relay.send(msg); }
-    var node = Net.createNode({ id: wallet.address.slice(0, 10), chain: chain, send: send });
+    var send = function (msg) { if (bc) try { bc.postMessage(msg); } catch (e) {} if (relay) relay.send(msg); };
+    var node = Net.createNode({ id: 'ui' + String(Math.random()).slice(2, 10), chain: chain, send: send });
     app.node = node;
     if (bc) bc.onmessage = function (ev) { node.receive(ev.data); emit(); };
 
-    // Relay auto-connect when served by one.
     var origin = (root.location && typeof root.location.origin === 'string') ? root.location.origin : '';
     if (origin.indexOf('http') === 0 && root.fetch) {
       try {
@@ -98,72 +91,43 @@
       } catch (e) { app.net = 'local'; }
     }
 
+    app._emit = emit; app._send = send; app._origin = origin;
+    return app;
+  }
+
+  function baseState(app) {
+    return {
+      height: app.chain.height(), loss: app.chain.tipLoss(), accuracy: app.chain.accuracy(),
+      supply: app.chain.totalSupply(), learning: app.chain.cumulativeImprovement(),
+      net: app.net, pending: app.node.mempool.slice(), blocks: app.chain.blocks.slice(),
+      window: app.chain.mineWindow(Date.now()), fmt: Cortex.formatMind
+    };
+  }
+
+  /* ── the WALLET app: the only holder of the spending key ── */
+  function initWallet() {
+    var app = boot();
+    var pk = lsGet(LS_WALLET);
+    var wallet = pk ? Coin.walletFromPrivateKey(pk) : Coin.generateWallet();
+    if (!pk) lsSet(LS_WALLET, wallet.privateKey);
+    app.wallet = wallet;
+
     app.state = function () {
-      return {
-        address: wallet.address, height: chain.height(),
-        loss: chain.tipLoss(), accuracy: chain.accuracy(),
-        balance: chain.balanceOf(wallet.address), supply: chain.totalSupply(),
-        learning: chain.cumulativeImprovement(), net: app.net,
-        pending: node.mempool.slice(), blocks: chain.blocks.slice(),
-        window: chain.mineWindow(Date.now()), // emission schedule: is a block mineable now?
-        fmt: Cortex.formatMind
-      };
+      var s = baseState(app);
+      s.address = wallet.address;
+      s.balance = app.chain.balanceOf(wallet.address);
+      return s;
     };
 
-    // Mine one block; broadcasts it. cb(block|null), onProgress(round, loss).
-    // Training the deeper v2 model is heavy (up to minutes near convergence),
-    // so it runs in a Web Worker — the UI stays live and streams progress.
-    // Fallback (file://, old browsers): main thread, as before.
-    var miner = null;
-    function minerWorker() {
-      if (miner !== null) return miner || null;
-      try { miner = (typeof root.Worker !== 'undefined' && origin.indexOf('http') === 0) ? new root.Worker('miner-worker.js') : false; }
-      catch (e) { miner = false; }
-      return miner || null;
-    }
-    function mineOnMainThread(cb) {
-      root.setTimeout(function () {
-        var blk = null;
-        try { blk = node.mineAndBroadcast({ privKey: wallet.privateKey, steps: opts.steps || 100, at: Date.now(), nonce: 'b' + chain.height() }); } catch (e) { blk = null; }
-        app.mining = false; emit(); if (cb) cb(blk, blk ? null : chain.mineWindow(Date.now()));
-      }, 20);
-    }
-    app.mine = function (cb, onProgress) {
-      if (app.mining) return; app.mining = true;
-      // Schedule gate: if nothing has accrued yet, don't even spin up training.
-      var win = chain.mineWindow(Date.now());
-      if (!win.open) { app.mining = false; if (cb) cb(null, win); return; }
-      var w = minerWorker();
-      if (!w) return mineOnMainThread(cb);
-      w.onerror = function () { miner = false; mineOnMainThread(cb); }; // worker broken — fall back this press and onward
-      w.onmessage = function (ev) {
-        var m = ev.data || {};
-        if (m.type === 'progress') { if (onProgress) onProgress(m.round, m.loss); return; }
-        var blk = (m.type === 'done') ? m.block : null;
-        if (blk) {
-          // Same post-mine steps as net.js mineAndBroadcast; addBlock throws if
-          // a rival block landed while we trained (next poll reconciles).
-          try { chain.addBlock(blk); node.mempool = []; node.seen[blk.hash] = 1; send({ type: 'block', from: node.id, block: blk }); }
-          catch (e) { blk = null; }
-        }
-        app.mining = false; emit(); if (cb) cb(blk, blk ? null : chain.mineWindow(Date.now()));
-      };
-      w.postMessage({
-        taskOpts: Object.assign({ id: TASK_ID }, TASK_OPTS), genesisSeed: GENESIS_SEED,
-        blocks: chain.blocks, privKey: wallet.privateKey, steps: opts.steps || 100,
-        at: Date.now(), nonce: 'b' + chain.height(), txs: node.mempool.slice()
-      });
-    };
-
-    // Submit a signed transfer to the network (confirms when a block includes it).
+    // Submit a signed transfer (confirms when a block includes it).
     app.send = function (to, amountMind, cb) {
       try {
         if (!Coin.isValidAddress(to)) throw new Error('invalid address');
         var units = Math.round(Number(amountMind) * Cortex.MIND);
         if (!(units > 0)) throw new Error('amount must be positive');
-        if (chain.balanceOf(wallet.address) < units) throw new Error('insufficient MIND');
+        if (app.chain.balanceOf(wallet.address) < units) throw new Error('insufficient MIND');
         var tx = Cortex.signTransfer({ privKey: wallet.privateKey, to: to, amount: units, at: Date.now(), nonce: 'pay-' + Date.now() });
-        node.submitTx(tx); emit(); if (cb) cb(null, tx);
+        app.node.submitTx(tx); app._emit(); if (cb) cb(null, tx);
       } catch (e) { if (cb) cb(e); }
     };
 
@@ -172,9 +136,94 @@
     app.revealKey = function () { return wallet.privateKey; };
     app.reset = function () { lsSet(LS_CHAIN, ''); root.location.reload(); };
 
-    emit();
+    app._emit();
     return app;
   }
 
-  root.CortexApp = { init: init, TASK_ID: TASK_ID };
+  /* ── the MINING CLIENT: disposable rig key + a payout address ── */
+  function initMiner(opts) {
+    opts = opts || {};
+    var app = boot();
+    // The rig key only ever signs blocks — it holds no funds, and losing or
+    // leaking it costs nothing (rewards go to the payout address, not to it).
+    var rk = lsGet(LS_RIG);
+    var rig = rk ? Coin.walletFromPrivateKey(rk) : Coin.generateWallet();
+    if (!rk) lsSet(LS_RIG, rig.privateKey);
+    app.rig = rig;
+    app.mining = false;
+
+    // Payout: saved address, else this browser's wallet (if one exists), else
+    // unset — the UI must ask for one before mining.
+    var saved = lsGet(LS_PAYTO);
+    if (!saved) {
+      var wpk = lsGet(LS_WALLET);
+      if (wpk) { try { saved = Coin.walletFromPrivateKey(wpk).address; lsSet(LS_PAYTO, saved); } catch (e) { saved = null; } }
+    }
+    app.payTo = (saved && Coin.isValidAddress(saved)) ? saved : null;
+    app.setPayTo = function (addr) {
+      if (!Coin.isValidAddress(addr)) throw new Error('not a valid MIND address');
+      app.payTo = addr; lsSet(LS_PAYTO, addr); app._emit();
+      return addr;
+    };
+
+    app.state = function () {
+      var s = baseState(app);
+      s.rigAddress = rig.address;
+      s.payTo = app.payTo;
+      s.paidOut = app.payTo ? app.chain.balanceOf(app.payTo) : 0; // what this payout address holds on-chain
+      return s;
+    };
+
+    // Mine one block, paying the reward to the payout address; broadcasts it.
+    // Heavy training runs in a Web Worker so the page stays live (fallback:
+    // main thread). cb(block|null, windowInfo), onProgress(round, loss).
+    var miner = null;
+    function minerWorker() {
+      if (miner !== null) return miner || null;
+      try { miner = (typeof root.Worker !== 'undefined' && app._origin.indexOf('http') === 0) ? new root.Worker('miner-worker.js') : false; }
+      catch (e) { miner = false; }
+      return miner || null;
+    }
+    function afterMine(blk, cb) {
+      if (blk) {
+        // Same post-mine steps as net.js mineAndBroadcast; addBlock throws if
+        // a rival block landed while we trained (next poll reconciles).
+        try { app.chain.addBlock(blk); app.node.mempool = []; app.node.seen[blk.hash] = 1; app._send({ type: 'block', from: app.node.id, block: blk }); }
+        catch (e) { blk = null; }
+      }
+      app.mining = false; app._emit();
+      if (cb) cb(blk, blk ? null : app.chain.mineWindow(Date.now()));
+    }
+    app.mine = function (cb, onProgress) {
+      if (app.mining) return;
+      if (!app.payTo) { if (cb) cb(null, { open: false, waitMs: 0, noPayout: true }); return; }
+      app.mining = true;
+      var win = app.chain.mineWindow(Date.now());
+      if (!win.open) { app.mining = false; if (cb) cb(null, win); return; }
+      var mineOpts = { privKey: rig.privateKey, payTo: app.payTo, steps: opts.steps || 100, at: Date.now(), nonce: 'b' + app.chain.height(), txs: app.node.mempool.slice() };
+      var w = minerWorker();
+      if (!w) {
+        root.setTimeout(function () {
+          var blk = null;
+          try { blk = app.chain.mineBlock(mineOpts); } catch (e) { blk = null; }
+          afterMine(blk, cb);
+        }, 20);
+        return;
+      }
+      w.onerror = function () { miner = false; app.mining = false; app.mine(cb, onProgress); }; // worker broken — retry on main thread
+      w.onmessage = function (ev) {
+        var m = ev.data || {};
+        if (m.type === 'progress') { if (onProgress) onProgress(m.round, m.loss); return; }
+        afterMine((m.type === 'done') ? m.block : null, cb);
+      };
+      w.postMessage(Object.assign({ taskOpts: Object.assign({ id: TASK_ID }, TASK_OPTS), genesisSeed: GENESIS_SEED, blocks: app.chain.blocks }, mineOpts));
+    };
+
+    app._emit();
+    return app;
+  }
+
+  // `init` stays as the wallet-flavoured default (network.html's dashboard
+  // reads the chain through it).
+  root.CortexApp = { init: initWallet, initWallet: initWallet, initMiner: initMiner, TASK_ID: TASK_ID };
 })(typeof self !== 'undefined' ? self : this);

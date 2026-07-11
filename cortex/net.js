@@ -76,7 +76,7 @@
     node.mineAndBroadcast = function (mineOpts) {
       mineOpts = mineOpts || {};
       var blk = node.chain.mineBlock({
-        privKey: mineOpts.privKey, steps: mineOpts.steps, lr: mineOpts.lr,
+        privKey: mineOpts.privKey, payTo: mineOpts.payTo, steps: mineOpts.steps, lr: mineOpts.lr,
         at: mineOpts.at, nonce: mineOpts.nonce, txs: node.mempool.slice()
       });
       if (!blk) return null;                 // model converged — nothing to mine

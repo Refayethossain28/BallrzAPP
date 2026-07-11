@@ -492,6 +492,33 @@ test('fork choice carries the winning chain\'s MIND balances with it', () => {
   assert.equal(nodeA.totalSupply(), nodeB.totalSupply());
 });
 
+/* ---- coinbase payouts: the wallet/miner separation ------------------------- */
+test('a block can pay its reward to an address the signer holds no key for', () => {
+  const t = X.makeTask({ id: 'payout' });
+  const chain = new X.Chain(t, { genesisSeed: 'g' });
+  // alice is the RIG (signs); bob's address is the PAYOUT (cold wallet)
+  const blk = chain.mineBlock({ privKey: alice.privateKey, payTo: bob.address, steps: 500, nonce: 'c0' });
+  assert.ok(blk, 'mines');
+  assert.equal(blk.miner, bob.address, 'coinbase pays the chosen address');
+  assert.equal(C.addressFromPublicKey(blk.pubKey), alice.address, 'but the rig signed it');
+  chain.addBlock(blk);
+  assert.equal(chain.balanceOf(bob.address), blk.reward, 'the wallet got paid');
+  assert.equal(chain.balanceOf(alice.address), 0, 'the rig key holds nothing');
+});
+
+test('a payout cannot be redirected — it is inside the signed block', () => {
+  const t = X.makeTask({ id: 'payout2' });
+  const chain = new X.Chain(t, { genesisSeed: 'g' });
+  const blk = chain.mineBlock({ privKey: alice.privateKey, payTo: bob.address, steps: 500, nonce: 'c1' });
+  const thief = C.generateWallet();
+  const stolen = Object.assign({}, blk, { miner: thief.address });
+  stolen.hash = X.blockHash(stolen);
+  const v = chain.isValidBlock(stolen, chain.tip());
+  assert.equal(v.ok, false);
+  assert.equal(v.reason, 'bad signature', 'redirecting the coinbase breaks the signature');
+  assert.throws(() => chain.mineBlock({ privKey: alice.privateKey, payTo: 'not-an-address', steps: 100, nonce: 'c2' }), /valid address/, 'garbage payTo is refused at mining time');
+});
+
 /* ---- the 10-year emission schedule ----------------------------------------
  * A scheduled task rations learning over real time: allowedLoss(t) decays from
  * the genesis loss with a fixed half-life, and consensus REJECTS blocks that

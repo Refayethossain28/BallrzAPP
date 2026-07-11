@@ -622,10 +622,20 @@
   // Keeps training (in rounds of `steps`) until the loss has dropped by at least
   // the task's minImprovement, up to `maxRounds`. Returns null if it can't beat
   // the tip (the model has effectively converged).
+  //
+  // `opts.payTo` (optional) is the PAYOUT address for the block reward — like a
+  // Bitcoin coinbase, the producer chooses who gets paid. This is what lets a
+  // mining client sign with a disposable rig key while the reward goes straight
+  // to a wallet whose private key the miner never holds. Defaults to the
+  // signing key's own address.
   Chain.prototype.mineBlock = function (opts) {
     var C = coin(), task = this.task, tip = this.tip();
     var pub = C.getPublicKey(opts.privKey);
     var miner = C.addressFromPublicKey(pub);
+    if (opts.payTo != null) {
+      if (!C.isValidAddress(opts.payTo)) throw new Error('payTo is not a valid address');
+      miner = opts.payTo;
+    }
     var at = Number(opts.at || 0);
     var allowed = -Infinity;
     if (task.schedule) {
@@ -728,9 +738,11 @@
       if (seen[nk]) return { ok: false, reason: 'duplicate transfer in block' };
       seen[nk] = 1;
     }
-    // Signature: the miner who claims the work must have signed it.
+    // Signature: the block's PRODUCER signs it (pubKey). `miner` is the payout
+    // address the producer chose — a Bitcoin-style coinbase, so a mining client
+    // can sign with a disposable rig key and pay a wallet it holds no key for.
+    // The payout is inside the signed canonical form: nobody can redirect it.
     if (!C.isValidAddress(block.miner)) return { ok: false, reason: 'bad miner address' };
-    if (C.addressFromPublicKey(block.pubKey) !== block.miner) return { ok: false, reason: 'pubkey/miner mismatch' };
     try {
       if (!C.verify(C.sha256(canonical(block)), block.sig, block.pubKey)) return { ok: false, reason: 'bad signature' };
     } catch (e) { return { ok: false, reason: 'bad signature' }; }

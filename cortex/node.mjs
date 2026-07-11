@@ -13,7 +13,8 @@
  *   node cortex/node.mjs
  *
  * Env: RELAY, DATA, TASK_ID, GENESIS_SEED, STEPS, MINE_MS, POLL_MS, KEYFILE,
- *      CORTEX_PASSPHRASE.
+ *      CORTEX_PASSPHRASE, PAYTO (payout wallet address — the rig then signs
+ *      with a key that holds nothing; rewards go straight to your wallet).
  *
  * ⚠ Testnet: the consensus math is now deterministic (fork-safe), but keys/
  *   persistence here are basic and unaudited — see cortex/SECURITY.md.
@@ -58,10 +59,12 @@ export function bootNode(opts = {}) {
   const mods = loadModules(opts.root);
   const { X, Net } = mods;
   // Defaults match the browser app (cortex/app.js) so a headless node joins the
-  // SAME chain: "warnet-v3" — the Correlates-of-War conflict-lethality task on
-  // a deeper [24,24] net with the 10-YEAR EMISSION SCHEDULE. Every field below
-  // is a consensus parameter and must match cortex/app.js exactly. An explicit
-  // taskId without a dataset gets the synthetic task (tests / custom nets).
+  // SAME chain: "warnet-v4" — the Correlates-of-War conflict-lethality task on
+  // a deeper [24,24] net with the 10-YEAR EMISSION SCHEDULE and Bitcoin-style
+  // coinbase payouts (set PAYTO to mine to a wallet this node holds no key
+  // for). Every field below is a consensus parameter and must match
+  // cortex/app.js exactly. An explicit taskId without a dataset gets the
+  // synthetic task (tests / custom nets).
   const MAINNET_OPTS = {
     dataset: 'war', layers: [24, 24],
     minImprovement: 0.000002,
@@ -69,7 +72,7 @@ export function bootNode(opts = {}) {
     schedule: { startAt: 1783641600000, halfLifeMs: 72582480000, budget: 0.32, minIntervalMs: 60000 },
   };
   const useMainnet = !opts.taskId;
-  const taskId = opts.taskId || 'cortex-warnet-v3';
+  const taskId = opts.taskId || 'cortex-warnet-v4';
   const genesisSeed = opts.genesisSeed || 'cortex-genesis';
   const custom = {
     ...(opts.dataset ? { dataset: opts.dataset } : {}),
@@ -100,7 +103,7 @@ export function bootNode(opts = {}) {
     mods, wallet, task, node, transport, save,
     sync: () => { node.hello(); return transport.poll((m) => node.receive(m)); },
     poll: () => transport.poll((m) => node.receive(m)),
-    mine: (o) => { const blk = node.mineAndBroadcast({ privKey: wallet.privateKey, steps: opts.steps || 400, at: Date.now(), nonce: 'b' + node.chain.height(), ...(o || {}) }); save(); return blk; },
+    mine: (o) => { const blk = node.mineAndBroadcast({ privKey: wallet.privateKey, payTo: opts.payTo, steps: opts.steps || 400, at: Date.now(), nonce: 'b' + node.chain.height(), ...(o || {}) }); save(); return blk; },
     balance: () => X.formatMind(node.chain.balanceOf(wallet.address)),
   };
 }
@@ -111,12 +114,15 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     relay: process.env.RELAY, dataFile: process.env.DATA || './cortex-chain.json',
     taskId: process.env.TASK_ID, genesisSeed: process.env.GENESIS_SEED,
     steps: Number(process.env.STEPS || 400), keyFile: process.env.KEYFILE, passphrase: process.env.CORTEX_PASSPHRASE,
+    payTo: process.env.PAYTO, // payout address — mine to a wallet this node holds NO key for
   };
   if (!opts.relay) { console.error('set RELAY=<relay url> (see cortex/DEPLOY.md)'); process.exit(1); }
   const h = bootNode(opts);
   const pollMs = Number(process.env.POLL_MS || 1500), mineMs = Number(process.env.MINE_MS || 8000);
   console.log(`cortex node ${h.node.id} → ${opts.relay}  (⚠ testnet — cortex/SECURITY.md)`);
-  console.log(`wallet ${h.wallet.address} · height ${h.node.chain.height()} · ${h.balance()}`);
+  console.log(opts.payTo
+    ? `rig key ${h.wallet.address} (holds nothing) · paying rewards to ${opts.payTo} · height ${h.node.chain.height()}`
+    : `wallet ${h.wallet.address} · height ${h.node.chain.height()} · ${h.balance()}  (tip: set PAYTO=<wallet address> to keep keys off this rig)`);
   h.sync();
   const pt = setInterval(() => h.poll().catch(() => {}), pollMs);
   const mt = setInterval(() => {
