@@ -36,7 +36,9 @@ export default function Agency() {
     queryKey: ['agency-clients', agency?.id, agency?.clientLandlordIds.join(',')],
     enabled: !!agency,
     queryFn: async (): Promise<AgencyClientSnapshot[]> => {
-      const portfolios = await Promise.all(agency!.clientLandlordIds.map(fetchClientPortfolio));
+      const portfolios = await Promise.all(
+        agency!.clientLandlordIds.map((id) => fetchClientPortfolio(id, agency!.clientNames[id])),
+      );
       return portfolios.map((p) => {
         const portfolio = summarisePortfolio(p.listings.map(toPortfolio));
         return {

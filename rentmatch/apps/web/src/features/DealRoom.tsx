@@ -23,7 +23,6 @@ export default function DealRoom() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const { profile } = useAuth();
-  const me: DealParty = profile?.activeRole ?? 'renter';
   const { deal, loading } = useDeal(id);
   const messages = useMessages(id);
 
@@ -32,6 +31,12 @@ export default function DealRoom() {
 
   if (loading) return <p className="sub">Loading…</p>;
   if (!deal) return <div className="empty"><div className="big">🤔</div>Conversation not found.</div>;
+
+  // The party MUST come from the deal itself, never the header role toggle: an
+  // account holds both roles, so a renter viewing with activeRole='landlord'
+  // (or after the auth fallback resets it) would otherwise post as — and forge
+  // the agreement of — the wrong side.
+  const me: DealParty = deal.landlordId === profile?.uid ? 'landlord' : 'renter';
 
   const otherName = me === 'renter' ? deal.landlordName : deal.renterName;
 
@@ -105,6 +110,14 @@ function Actions({ deal, me }: { deal: Deal; me: DealParty }) {
   const [slot, setSlot] = useState(defaultSlot());
   const [drafting, setDrafting] = useState(false);
   const [draftError, setDraftError] = useState('');
+  const [actionError, setActionError] = useState('');
+
+  /** Run a deal action, surfacing any failure instead of dropping it. */
+  async function act(fn: () => Promise<unknown>) {
+    setActionError('');
+    try { await fn(); }
+    catch (err) { setActionError(err instanceof Error ? err.message : 'Something went wrong — please try again.'); }
+  }
 
   async function draft() {
     setDrafting(true);
@@ -122,9 +135,9 @@ function Actions({ deal, me }: { deal: Deal; me: DealParty }) {
   async function propose(e: FormEvent) {
     e.preventDefault();
     const ts = new Date(slot).getTime();
-    if (!ts) return;
+    if (!Number.isFinite(ts)) return;
     setShowSlot(false);
-    await proposeViewing(deal, me, ts);
+    await act(() => proposeViewing(deal, me, ts));
   }
 
   const v = deal.viewing;
@@ -152,7 +165,7 @@ function Actions({ deal, me }: { deal: Deal; me: DealParty }) {
         <>
           <div className="notice">Viewing proposed for <b>{fmtDateTime(v.ts)}</b>.</div>
           <div className="row" style={{ marginBottom: 10 }}>
-            <button className="cta" style={{ flex: 1 }} onClick={() => confirmViewing(deal)}>Confirm viewing</button>
+            <button className="cta" style={{ flex: 1 }} onClick={() => act(() => confirmViewing(deal))}>Confirm viewing</button>
             <button className="cta ghost" style={{ flex: 1 }} onClick={() => setShowSlot(true)}>Suggest another</button>
           </div>
         </>
@@ -166,10 +179,11 @@ function Actions({ deal, me }: { deal: Deal; me: DealParty }) {
 
       {/* agree to proceed */}
       {v && v.status === 'confirmed' && !bothAgreed && (
-        <button className="cta" style={{ marginBottom: 10 }} disabled={deal.agreed[me]} onClick={() => agreeToProceed(deal, me)}>
+        <button className="cta" style={{ marginBottom: 10 }} disabled={deal.agreed[me]} onClick={() => act(() => agreeToProceed(deal, me))}>
           {deal.agreed[me] ? "✓ You've agreed — awaiting the other party" : '🤝 Agree to proceed to a tenancy'}
         </button>
       )}
+      {actionError && <p className="error" style={{ marginBottom: 10 }}>{actionError}</p>}
 
       {/* contract drafting (M3) */}
       {bothAgreed && !deal.contractDrafted && me === 'landlord' && (
