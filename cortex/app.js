@@ -27,28 +27,42 @@
   var Cortex = root.BallrzCortex, Coin = root.BallrzCoin, Net = root.BallrzCortexNet, Keystore = root.BallrzCortexKeystore;
 
   // The shared network identity — matches cortex/node.mjs defaults so browser
-  // tabs and headless nodes converge on the same chain. "Warnet": the model
-  // learns whether a militarized confrontation between states turns LETHAL,
-  // from real Correlates of War data (embedded in datasets.js).
+  // tabs and headless nodes converge on the same chain. "Onset": the model
+  // learns which country-years erupt into CIVIL WAR, from the real Fearon &
+  // Laitin (2003) dataset (embedded + hash-pinned in datasets.js).
   //
-  // v4: same deeper [24,24] net and 10-year emission schedule as v3, plus the
-  // coinbase-payout rule (block.miner is a payout address chosen by the
-  // producer, decoupled from the signing key) that makes the wallet/miner
-  // separation real. A consensus change means a NEW chain; older chains
-  // (…-v1/v2/v3) still exist wherever they were stored. Every field below is
-  // consensus-critical and must match cortex/node.mjs exactly.
-  var TASK_ID = 'cortex-warnet-v4', GENESIS_SEED = 'cortex-genesis';
+  // The honest twist: the consensus trains ONLY on years ≤ 1988 (yearMax);
+  // 1989+ is held out, so the dashboard's headline is out-of-sample skill on
+  // a future the model never saw and was never paid to fit. Onsets are rare
+  // (1.65%), so skill is measured against the always-peace baseline and by
+  // risk ranking — never raw accuracy. Keeps the 10-year emission schedule
+  // and the coinbase-payout (wallet/miner separation) rules. Every field
+  // below is consensus-critical and must match cortex/node.mjs and
+  // cortex/validator.py exactly. Older chains (warnet v1–v4, scamnet, the
+  // practice game) still exist wherever they were stored.
+  var TASK_ID = 'cortex-onset-v1', GENESIS_SEED = 'cortex-genesis';
   var TASK_OPTS = {
-    dataset: 'war', layers: [24, 24],
-    minImprovement: 0.000002,        // a block needs real — if small — learning
-    rewardPerLoss: 3000000000000,    // 3e12 base units per 1.0 loss removed
+    dataset: 'onset', yearMax: 1988, layers: [16, 16],
+    outputBiasInit: 'baserate',      // genesis starts AT the base rate — no MIND is paid for learning the constant
+    minImprovement: 0.0000001,       // a block needs real — if small — learning
+    rewardPerLoss: 130000000000000,  // 1.3e14 base units per 1.0 loss removed
     schedule: {
-      startAt: 1783641600000,        // 2026-07-10T00:00:00Z — fixed for all nodes
+      startAt: 1783728000000,        // 2026-07-11T00:00:00Z — fixed for all nodes
       halfLifeMs: 72582480000,       // 2.3 years
-      budget: 0.32,                  // total loss the schedule will ever release
+      budget: 0.0074,                // stops AT the measured generalisation sweet spot (see below)
       minIntervalMs: 60000           // at most one block per minute
     }
   };
+  // Hard cap: budget × rewardPerLoss = 962,000 MIND, ~50% by 2028, ~95% by 2036.
+  //
+  // Why the budget is small and the reward scale big: the genesis output
+  // layer IS the baseline predictor (loss 0.078396 = the always-peace
+  // cross-entropy), so out-of-sample skill starts at exactly 0 and every
+  // block buys DISCRIMINATIVE learning. Measured on the held-out years,
+  // generalisation peaks (+8.7% skill) around train loss ~0.0727 and then
+  // degrades (overfitting). The schedule's asymptote, 0.078396 − 0.0074 =
+  // 0.0710, sits at that sweet spot — the emission schedule doubles as
+  // REGULARIZATION: the network can never be paid to overfit.
   var LS_WALLET = 'cortex.wallet.v1';  // the SPENDING key — wallet app only
   var LS_RIG = 'cortex.rig.v1';        // the disposable mining signer — miner only
   var LS_PAYTO = 'cortex.payto.v1';    // where the miner sends rewards

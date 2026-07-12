@@ -94,12 +94,12 @@ that rule:
   model converges. There's no arbitrary cap to argue about — the cap *is* how
   much the network can learn.
 
-On top of that, a task can carry an **emission schedule** (the live warnet-v3
+On top of that, a task can carry an **emission schedule** (the live network
 does): a consensus rule `allowedLoss(t)` that releases the model's remaining
 learning over real time with a fixed half-life — a block that learns below the
 schedule at its timestamp is invalid, so **compute cannot drain the supply
 early**. Learning accrues between blocks (whoever mines next collects it), and
-emissions halve every half-life like Bitcoin's: warnet-v3 releases ~50% of its
+emissions halve every half-life like Bitcoin's: the live schedule releases ~50% of its
 960,000-MIND cap in the first 2.3 years and ~95% within 10 years. See
 `makeTask({ schedule })` in `engine.js` and the timestamp caveats in
 `SECURITY.md`.
@@ -159,7 +159,8 @@ byte-identical data, so consensus requires the data to be pinned in the repo):
 
 | Dataset | Rows | Features | Task | Source |
 | --- | --- | --- | --- | --- |
-| `war` **(live)** | 2,324 | 3 | did a militarized interstate confrontation turn **lethal**? | Correlates of War (`mmb_war`) via Rdatasets/`{stevedata}` |
+| `onset` **(live)** | 6,125 | 7 (+year) | did a **civil war begin** in this country-year? RARE labels; trained on ≤1988, graded on 1989+ | Fearon & Laitin 2003 via `{juanr}` (fearon.rda) |
+| `war` | 2,324 | 3 | did a militarized interstate confrontation turn **lethal**? | Correlates of War (`mmb_war`) via Rdatasets/`{stevedata}` |
 | `phishing` | 3,000 | 30 | is a website phishing? | [UCI Phishing Websites](https://archive.ics.uci.edu/dataset/327/phishing+websites) |
 | `banknote` | 1,372 | 4 | genuine vs forged banknotes, from wavelet features of the photos | [UCI Banknote Authentication](https://archive.ics.uci.edu/dataset/267/banknote+authentication) |
 | `conflict` | 2,000 | 8 | armed-conflict risk — a **disclosed simulation**, not real events | generated from published risk factors (see `datasets.js`) |
@@ -363,8 +364,10 @@ This is two layered things:
 
 ## Join the network
 
-The live network is `cortex-warnet-v4` — training a war-lethality model on real
-Correlates of War data, on the 10-year emission schedule.
+The live network is `cortex-onset-v1` — training a civil-war onset model on the
+real Fearon & Laitin (2003) data, on the 10-year emission schedule. The
+consensus trains only on years ≤1988; the dashboard grades the model on the
+held-out 1989+ years it has never seen — the honest, out-of-sample number.
 
 1. **Open the wallet** (`wallet.html`) — it makes your MIND address (your key
    lives only here).

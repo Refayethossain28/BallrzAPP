@@ -24,7 +24,7 @@ Usage:
                                 [--task-json '{"id": ..., ...}']
 
 The snapshot is the JSON written by cortex/node.mjs ({taskId, blocks}) or the
-browser's localStorage chain. Default task: the live warnet-v4 mainnet.
+browser's localStorage chain. Default task: the live onset-v1 mainnet.
 Exit code 0 = every block valid; 1 = invalid (reason printed).
 """
 import argparse
@@ -313,7 +313,12 @@ def dim_of(arch):
 
 
 def load_embedded_csv(name: str):
-    """Extract an embedded dataset verbatim from cortex/datasets.js."""
+    """Extract an embedded dataset verbatim from cortex/datasets.js.
+
+    Returns (features, labels, years). Datasets whose first CSV column is a
+    year (per DATASETS[...].yearColumn in datasets.js) get it stripped into
+    `years` — it is row metadata for temporal splits, not a model feature.
+    """
     src = (Path(__file__).parent / "datasets.js").read_text()
     m = re.search(r"var %s_CSV = `\n?(.*?)`;" % name.upper(), src, re.S)
     if not m:
@@ -323,7 +328,10 @@ def load_embedded_csv(name: str):
         for line in m.group(1).strip().splitlines()
         if line.strip()
     ]
-    return [r[:-1] for r in rows], [int(r[-1]) for r in rows]
+    year_col_datasets = {"onset"}
+    if name in year_col_datasets:
+        return [r[1:-1] for r in rows], [int(r[-1]) for r in rows], [int(r[0]) for r in rows]
+    return [r[:-1] for r in rows], [int(r[-1]) for r in rows], None
 
 
 def standardise(features):
@@ -350,7 +358,12 @@ def make_task(opts):
     t.setdefault("minImprovement", 0.004)
     t.setdefault("rewardPerLoss", 1000000)
     if "dataset" in t:
-        feats, labels = load_embedded_csv(t["dataset"])
+        feats, labels, years = load_embedded_csv(t["dataset"])
+        if t.get("yearMax") is not None:
+            if years is None:
+                raise SystemExit("yearMax needs a dataset with per-row years")
+            kept = [(f, l) for f, l, y in zip(feats, labels, years) if y <= t["yearMax"]]
+            feats, labels = [f for f, _ in kept], [l for _, l in kept]
         t["X"] = standardise(feats)
         t["y"] = labels
         t["inputs"] = len(feats[0])
@@ -358,6 +371,11 @@ def make_task(opts):
         raise SystemExit("this validator supports embedded-dataset tasks (the live network)")
     t["arch"] = arch_of(t["inputs"], t["layers"])
     t["dim"] = dim_of(t["arch"])
+    # Rare-event tasks: genesis output bias starts at the base-rate logit
+    # (consensus param; see cortex/engine.js makeTask).
+    if opts.get("outputBiasInit") == "baserate":
+        rate = min(1 - 1e-9, max(1e-9, sum(t["y"]) / len(t["y"])))
+        t["outputBias"] = js_round((dln(rate) - dln(1 - rate)) / t["quantum"]) * t["quantum"]
     return t
 
 
@@ -370,6 +388,12 @@ def random_weights(task, seed_str: str):
         for _ in range(out_n * in_n):
             w.append(gaussian(rng) * scale)
         w.extend([0.0] * out_n)
+    if task.get("outputBias") is not None:
+        # base-rate genesis (see engine.js): output layer = exact baseline predictor
+        out_span = task["arch"][-2] + 1
+        for z in range(len(w) - out_span, len(w) - 1):
+            w[z] = 0.0
+        w[-1] = task["outputBias"]
     return quantise(w, task["quantum"])
 
 
@@ -574,13 +598,15 @@ def validate_chain(task, blocks, genesis_seed):
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
-MAINNET_V4 = {
-    "id": "cortex-warnet-v4",
-    "dataset": "war",
-    "layers": [24, 24],
-    "minImprovement": 0.000002,
-    "rewardPerLoss": 3000000000000,
-    "schedule": {"startAt": 1783641600000, "halfLifeMs": 72582480000, "budget": 0.32, "minIntervalMs": 60000},
+MAINNET = {
+    "id": "cortex-onset-v1",
+    "dataset": "onset",
+    "yearMax": 1988,
+    "layers": [16, 16],
+    "outputBiasInit": "baserate",
+    "minImprovement": 0.0000001,
+    "rewardPerLoss": 130000000000000,
+    "schedule": {"startAt": 1783728000000, "halfLifeMs": 72582480000, "budget": 0.0074, "minIntervalMs": 60000},
 }
 
 
@@ -588,11 +614,11 @@ def main():
     ap = argparse.ArgumentParser(description="Independently validate a Cortex chain snapshot.")
     ap.add_argument("snapshot", help="chain snapshot JSON ({taskId, blocks})")
     ap.add_argument("--genesis-seed", default="cortex-genesis")
-    ap.add_argument("--task-json", help="task options as JSON (default: live warnet-v4)")
+    ap.add_argument("--task-json", help="task options as JSON (default: live onset-v1)")
     args = ap.parse_args()
 
     snap = json.loads(Path(args.snapshot).read_text())
-    opts = json.loads(args.task_json) if args.task_json else MAINNET_V4
+    opts = json.loads(args.task_json) if args.task_json else MAINNET
     if snap.get("taskId") and snap["taskId"] != opts["id"]:
         print(f"INVALID: snapshot is for task {snap['taskId']!r}, validating {opts['id']!r}")
         return 1

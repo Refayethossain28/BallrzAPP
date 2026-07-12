@@ -14,7 +14,8 @@ dressed up as more than it is.
 
 | dataset | real? | what one row is | label | rows | source |
 |---|---|---|---|---|---|
-| `war` **(LIVE task)** | ✅ real | a militarized interstate confrontation | 1 = it turned **lethal**, 0 = it did not | 2324 | Correlates of War (`mmb_war`) via Rdatasets/`{stevedata}` |
+| `onset` **(LIVE task)** | ✅ real | a country-year, 1945–1998 (7 covariates; year kept as split metadata) | 1 = a **civil war began** (RARE: 1.65%) | 6125 | Fearon & Laitin 2003 (APSR) via github.com/hail2thief/juanr `fearon.rda` |
+| `war` | ✅ real | a militarized interstate confrontation | 1 = it turned **lethal**, 0 = it did not | 2324 | Correlates of War (`mmb_war`) via Rdatasets/`{stevedata}` |
 | `banknote` | ✅ real | wavelet features of a banknote photo | 1/0 authenticity | 1372 | UCI Banknote Authentication |
 | `phishing` | ✅ real | 30 URL/site signals | 1 = phishing | 3000 (sampled) | UCI Phishing Websites |
 | `conflict` | ⚠️ **simulation** | a hypothetical country-period | 1 = conflict (SIMULATED) | 2000 | generated from published risk factors — **not real events** |
@@ -26,31 +27,43 @@ can never be mistaken for real conflict data. See the long comment above
 `generateConflict()` in `datasets.js` for the risk factors it is grounded in
 (Fearon & Laitin 2003; Collier & Hoeffler 2004; Hegre et al.; Uppsala ViEWS).
 
-## The live task: conflict **lethality**, not **onset**
+## The live task: real civil-war **onset**, honestly graded
 
-The `war` task answers a real, learnable question on verified data:
+The `onset` task answers the question this project circled for weeks:
 
-> *Given a militarized confrontation between states is already happening, does
-> it turn lethal?*
+> *Does a civil war begin in this country-year?*
 
-It does **not** answer the more valuable **onset** question — *will a conflict
-break out at all?* — because that requires data we will not embed until it is
-verified (below).
+on the **real Fearon & Laitin (2003) replication data** — the canonical academic
+onset study, and the very paper whose risk factors our earlier `conflict`
+simulation was modelled on. The simulation is now superseded by the real thing
+(it stays embedded, clearly labelled, as a record of the honest path we took).
 
-## Adding real conflict **onset** data (the honest path)
+Provenance and preparation, in full:
 
-Onset forecasting is the prediction most worth having, and its canonical
-sources are:
+- **Source:** Fearon, James D. & David D. Laitin. 2003. "Ethnicity, Insurgency,
+  and Civil War." *American Political Science Review* 97(1): 75–90. Obtained
+  from the maintained public mirror in Juan Tellez's `{juanr}` teaching package
+  (`github.com/hail2thief/juanr`, `data/fearon.rda`) — the same
+  GitHub-mirror provenance channel as our `war` dataset.
+- **Preparation (deterministic, documented in `datasets.js`):** rows with any
+  missing value dropped (6,610 → 6,125); the onset label binarised (F&L code
+  `4` = multiple onsets → `1`); features rounded to 6 decimals. Both the
+  feature/label bytes and the year column are SHA-256-pinned in the tests.
+- **Honesty about imbalance:** onsets are RARE — 101 of 6,125 rows (1.65%).
+  Raw accuracy is therefore a meaningless number (always-predict-peace scores
+  98.3%). The network's honest metrics are **cross-entropy skill vs the
+  always-peace baseline** and **risk ranking** (does a real onset score higher
+  than a peace-year?).
+- **The temporal split (the whole point):** the consensus task trains **only on
+  years ≤ 1988**. Every row after 1988 is held out — the model is *never paid*
+  to fit it — and the dashboard grades the tip model on that unseen future.
+  That number is generalisation, not memorisation.
 
-- **UCDP / PRIO Armed Conflict Dataset** — the academic standard, `ucdp.uu.se`
-  (free for research; cite the version).
-- **ACLED** — Armed Conflict Location & Event Data, `acleddata.com`
-  (registration + attribution required).
+## Adding more onset data later (the same honest path)
 
-We do **not** ship an onset dataset, on purpose: this project will not embed or
-hash-pin conflict data it has not verified, and these sources require you to
-download under their licence. When you have a real CSV, the builder wires it in
-with the *same* integrity treatment as `war`/`banknote`/`phishing`:
+Richer sources (UCDP/PRIO at `ucdp.uu.se`, ACLED at `acleddata.com`) require
+registration and licence acceptance we cannot do for you. When you have a CSV,
+the builder wires it in with the *same* integrity treatment:
 
 ```sh
 # 1. See the CSV's columns:

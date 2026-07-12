@@ -257,6 +257,23 @@
     if (real) {
       // Real dataset: inputs and sample count come from the data itself.
       if (!real.features || !real.features.length) throw new Error('dataset has no rows');
+      // Temporal split (consensus-safe, deterministic): with `yearMax` set and
+      // a dataset that carries per-row years, the task TRAINS only on rows from
+      // years ≤ yearMax; later rows are stored on task.holdout for honest
+      // out-of-sample evaluation. Miners are never paid to fit the holdout —
+      // the consensus loss simply doesn't include it — so accuracy measured on
+      // it is genuine generalisation to years the model has never seen.
+      if (opts.yearMax != null) {
+        if (!real.years) throw new Error('yearMax needs a dataset with per-row years');
+        var trF = [], trL = [], hoF = [], hoL = [], hoYr = [];
+        for (var ri = 0; ri < real.features.length; ri++) {
+          if (real.years[ri] <= opts.yearMax) { trF.push(real.features[ri]); trL.push(real.labels[ri]); }
+          else { hoF.push(real.features[ri]); hoL.push(real.labels[ri]); hoYr.push(real.years[ri]); }
+        }
+        t.yearMax = Number(opts.yearMax);
+        t.holdout = { features: hoF, labels: hoL.map(function (v) { return v ? 1 : 0; }), years: hoYr }; // raw rows — standardise with task stats to score
+        real = { name: real.name, title: real.title, source: real.source, featureNames: real.featureNames, features: trF, labels: trL };
+      }
       t.dataset = real.name || String(opts.dataset || 'custom');
       t.datasetTitle = real.title || t.dataset;
       t.datasetSource = real.source || '';
@@ -290,6 +307,19 @@
     }
     t.arch = archOf(t.inputs, t.layers);
     t.dim = dimOf(t.arch);
+    // Rare-event tasks: start the output bias AT THE BASE RATE (consensus
+    // param — every node derives the same value from the same data). Without
+    // this, a random genesis predicts ~50% everywhere and the emission
+    // schedule spends most of its budget paying miners to learn the trivial
+    // constant "positives are rare" before any real signal. With it, genesis
+    // loss ≈ the baseline cross-entropy, so every block buys DISCRIMINATIVE
+    // learning from day one.
+    if (opts.outputBiasInit === 'baserate') {
+      var pos = 0, yi;
+      for (yi = 0; yi < t.y.length; yi++) pos += t.y[yi];
+      var rate = Math.min(1 - 1e-9, Math.max(1e-9, pos / t.y.length));
+      t.outputBias = Math.round((dln(rate) - dln(1 - rate)) / t.quantum) * t.quantum; // logit, on the weight grid
+    }
     return t;
   }
 
@@ -303,6 +333,17 @@
       var inN = arch[li], outN = arch[li + 1], scale = 1 / Math.sqrt(inN);
       for (var o = 0; o < outN; o++) for (var inp = 0; inp < inN; inp++) w.push(gaussian(rng) * scale); // W row-major
       for (var b = 0; b < outN; b++) w.push(0);                                                          // biases
+    }
+    // Base-rate genesis (see makeTask): the entire output layer starts as the
+    // exact baseline predictor — weights 0, bias = logit(base rate) — so the
+    // genesis model predicts the base rate for every row, its loss equals the
+    // baseline cross-entropy, and out-of-sample skill starts at exactly 0 and
+    // can only be EARNED. (Hidden layers stay random, so gradients flow.)
+    // In the flat layout the output layer is the last (fan-in + 1) entries.
+    if (task.outputBias != null) {
+      var outSpan = task.arch[task.arch.length - 2] + 1;
+      for (var z = w.length - outSpan; z < w.length - 1; z++) w[z] = 0;
+      w[w.length - 1] = task.outputBias;
     }
     return quantise(w, task.quantum);
   }

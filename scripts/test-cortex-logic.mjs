@@ -507,6 +507,61 @@ test('fork choice carries the winning chain\'s MIND balances with it', () => {
   assert.equal(nodeA.totalSupply(), nodeB.totalSupply());
 });
 
+/* ---- the REAL civil-war onset dataset (Fearon & Laitin 2003) --------------- */
+test('the REAL Fearon-Laitin onset dataset is intact (pinned) and honestly documented', () => {
+  const d = DATA.get('onset');
+  assert.match(d.title, /REAL/);
+  assert.match(d.source, /Fearon/i, 'cites the study');
+  assert.equal(d.features.length, 6125, 'country-years after dropping missing values');
+  assert.equal(d.features[0].length, 7, 'seven real covariates (year is metadata, not a feature)');
+  assert.equal(d.labels.filter((v) => v === 1).length, 101, 'known onset count');
+  assert.match(d.labelName, /RARE/i, 'the class imbalance is disclosed, not hidden');
+  assert.equal(d.years.length, 6125);
+  assert.equal(d.years[0], 1945);
+  const canon = d.features.map((f, i) => f.join(',') + '|' + d.labels[i]).join(';');
+  assert.equal(C.sha256(canon), '01b132918ab538a84404e51472fcf26155a214e95884eba811c65539b26aa706', 'data matches the pinned hash');
+  assert.equal(C.sha256(d.years.join(',')), '4fe744de8c67c542f303c5d6a36bc4dd4c394221da6e44461dfedbc010624583', 'years column matches the pinned hash');
+});
+
+test('trained on the past only, the onset model GENERALISES to unseen future years', () => {
+  // The honest headline: a temporal split. Train ≤1988, evaluate 1989+ — rows
+  // the training objective never saw. The model must beat the always-peace
+  // baseline out of sample and rank real onsets as higher-risk.
+  const t = X.makeTask({ id: 'onset-gen', dataset: 'onset', yearMax: 1988, layers: [16] });
+  assert.equal(t.samples, 4761, 'trains only on the past partition');
+  assert.equal(t.holdout.features.length, 1364, 'future rows are held out');
+  assert.ok(t.holdout.years.every((y) => y > 1988), 'holdout is strictly future');
+  const w = X.train(t, X.randomWeights(t, 'g'), 1500, 0.5);
+  const Zte = X.standardizeRows(t, t.holdout.features);
+  const teY = t.holdout.labels;
+  let oos = 0; for (let i = 0; i < Zte.length; i++) oos += X.sampleLoss(t, w, Zte[i], teY[i]);
+  oos /= Zte.length;
+  const rate = t.y.reduce((a, b) => a + b, 0) / t.y.length; // base rate learned from the PAST
+  const p0 = Math.min(1 - 1e-12, Math.max(1e-12, rate));
+  let base = 0; for (const y of teY) base += -(y * Math.log(p0) + (1 - y) * Math.log(1 - p0));
+  base /= teY.length;
+  assert.ok(oos < base - 0.003, `beats the always-peace baseline out of sample (${oos.toFixed(4)} < ${base.toFixed(4)})`);
+  let pOn = 0, nOn = 0, pOff = 0, nOff = 0;
+  for (let i = 0; i < Zte.length; i++) { const p = X.predict(t, w, Zte[i]); if (teY[i]) { pOn += p; nOn++; } else { pOff += p; nOff++; } }
+  const lift = (pOn / nOn) / (pOff / nOff);
+  assert.ok(lift > 1.3, `real onsets score higher risk than peace, out of sample (lift ×${lift.toFixed(2)})`);
+  assert.ok(lift < 20, 'and the lift is honest — this task is genuinely hard, not magically solved');
+});
+
+test('the base-rate genesis pays for discrimination, never for learning the constant', () => {
+  const naive = X.makeTask({ id: 'onset-bias', dataset: 'onset', yearMax: 1988, layers: [16, 16] });
+  const smart = X.makeTask({ id: 'onset-bias', dataset: 'onset', yearMax: 1988, layers: [16, 16], outputBiasInit: 'baserate' });
+  const wN = X.randomWeights(naive, 'g'), wS = X.randomWeights(smart, 'g');
+  const lossN = X.loss(naive, wN), lossS = X.loss(smart, wS);
+  assert.ok(lossN > 0.5, `random genesis is clueless (${lossN.toFixed(3)})`);
+  assert.ok(lossS < 0.12, `base-rate genesis starts near the baseline (${lossS.toFixed(3)})`);
+  // the bias is the base-rate logit, on the weight grid, derived from TRAIN data only
+  const rate = smart.y.reduce((a, b) => a + b, 0) / smart.y.length;
+  const logit = Math.log(rate / (1 - rate));
+  assert.ok(Math.abs(smart.outputBias - logit) < 1e-4, 'bias = logit(train base rate)');
+  assert.equal(wS[wS.length - 1], smart.outputBias, 'genesis carries it');
+});
+
 /* ---- coinbase payouts: the wallet/miner separation ------------------------- */
 test('a block can pay its reward to an address the signer holds no key for', () => {
   const t = X.makeTask({ id: 'payout' });

@@ -60,23 +60,27 @@ export function bootNode(opts = {}) {
   const mods = loadModules(opts.root);
   const { X, Net } = mods;
   // Defaults match the browser app (cortex/app.js) so a headless node joins the
-  // SAME chain: "warnet-v4" — the Correlates-of-War conflict-lethality task on
-  // a deeper [24,24] net with the 10-YEAR EMISSION SCHEDULE and Bitcoin-style
-  // coinbase payouts (set PAYTO to mine to a wallet this node holds no key
-  // for). Every field below is a consensus parameter and must match
-  // cortex/app.js exactly. An explicit taskId without a dataset gets the
-  // synthetic task (tests / custom nets).
+  // SAME chain: "onset-v1" — the real Fearon & Laitin civil-war onset task,
+  // trained only on years ≤ 1988 (later years held out for honest
+  // out-of-sample grading), with the 10-YEAR EMISSION SCHEDULE and
+  // Bitcoin-style coinbase payouts (set PAYTO to mine to a wallet this node
+  // holds no key for). Every field below is a consensus parameter and must
+  // match cortex/app.js and cortex/validator.py exactly. An explicit taskId
+  // without a dataset gets the synthetic task (tests / custom nets).
   const MAINNET_OPTS = {
-    dataset: 'war', layers: [24, 24],
-    minImprovement: 0.000002,
-    rewardPerLoss: 3000000000000,
-    schedule: { startAt: 1783641600000, halfLifeMs: 72582480000, budget: 0.32, minIntervalMs: 60000 },
+    dataset: 'onset', yearMax: 1988, layers: [16, 16],
+    outputBiasInit: 'baserate',
+    minImprovement: 0.0000001,
+    rewardPerLoss: 130000000000000,
+    schedule: { startAt: 1783728000000, halfLifeMs: 72582480000, budget: 0.0074, minIntervalMs: 60000 },
   };
   const useMainnet = !opts.taskId;
-  const taskId = opts.taskId || 'cortex-warnet-v4';
+  const taskId = opts.taskId || 'cortex-onset-v1';
   const genesisSeed = opts.genesisSeed || 'cortex-genesis';
   const custom = {
     ...(opts.dataset ? { dataset: opts.dataset } : {}),
+    ...(opts.yearMax != null ? { yearMax: opts.yearMax } : {}),
+    ...(opts.outputBiasInit ? { outputBiasInit: opts.outputBiasInit } : {}),
     ...(opts.layers ? { layers: opts.layers } : {}),
     ...(opts.minImprovement != null ? { minImprovement: opts.minImprovement } : {}),
     ...(opts.rewardPerLoss != null ? { rewardPerLoss: opts.rewardPerLoss } : {}),
