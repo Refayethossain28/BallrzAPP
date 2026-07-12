@@ -72,15 +72,26 @@ jobs:
           firebase deploy --only firestore:rules,storage \
             --project apexvip-1b4a9 --non-interactive --force
 
-      # Indexes + the ApexVIP functions codebase — a bonus; don't fail the run if
-      # IAM perms or the Cloud Functions APIs aren't fully set up yet.
-      - name: Deploy indexes + ApexVIP functions (best effort)
+      # Indexes deploy with the same credentials as the (mandatory) rules deploy
+      # above — a silent index failure surfaces only as broken queries in prod,
+      # so this step must be LOUD, not best-effort.
+      - name: Deploy Firestore indexes
+        if: steps.gate.outputs.ok == 'true'
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          firebase deploy --only firestore:indexes \
+            --project apexvip-1b4a9 --non-interactive --force
+
+      # The ApexVIP functions codebase — a bonus; don't fail the run if IAM
+      # perms or the Cloud Functions APIs aren't fully set up yet.
+      - name: Deploy ApexVIP functions (best effort)
         if: steps.gate.outputs.ok == 'true'
         continue-on-error: true
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
         run: |
-          firebase deploy --only firestore:indexes,functions:apexvip \
+          firebase deploy --only functions:apexvip \
             --project apexvip-1b4a9 --non-interactive --force
 
       # Side-apps codebase = Lingua (linguaAI) + Ripple. Deployed on its own so a

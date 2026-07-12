@@ -45,6 +45,8 @@ export interface Booking {
   baseFare?: number;
   price?: number;
   currency?: string;
+  /** Set server-side when the client-written fare fails integrity checks. */
+  fareFlagged?: boolean;
 
   pickup?: string;
   dropoff?: string;

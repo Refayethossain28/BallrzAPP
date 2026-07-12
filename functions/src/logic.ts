@@ -63,8 +63,12 @@ export function bookingEvent(before: Booking | null, after: Booking | null): str
   if (before.status !== after.status) {
     switch (after.status) {
       case 'confirmed':       return 'confirmed';
+      // The driver app writes 'accepted' when a chauffeur claims the job —
+      // that IS the driver-assigned moment for the client's email/SMS.
+      case 'accepted':
       case 'driver_assigned': return 'driver_assigned';
       case 'en_route':
+      case 'arrived':
       case 'arriving':        return 'en_route';
       case 'completed':       return 'completed';
       case 'cancelled':       return 'cancelled';

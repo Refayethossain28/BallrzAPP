@@ -141,6 +141,8 @@ export const getHotelRates = onCall(
     if (lat == null || lng == null || !checkIn) {
       throw new HttpsError('invalid-argument', 'lat, lng and checkIn are required');
     }
+    // Guest-reachable + paid upstream (Amadeus) — throttle per caller.
+    await enforceRateLimit(request, 'hotels', request.auth ? 60 : 20);
 
     const nightCount = Math.max(1, Math.min(14, Number(nights) || 1));
     const adults = Math.max(1, Math.min(9, Number(guests) || 2));
@@ -293,6 +295,19 @@ async function squareFetch(path: string, body: unknown, token: string): Promise<
   return data;
 }
 
+// GET a Square resource (e.g. a payment) — squareFetch is POST-only.
+async function squareGet(path: string, token: string): Promise<any> {
+  const res = await fetch(`${SQUARE_HOST}/v2${path}`, {
+    headers: { 'Authorization': `Bearer ${token}`, 'Square-Version': SQUARE_API_VERSION },
+  });
+  const data = await res.json().catch(() => ({})) as { errors?: SquareErrorDetail[] } & Record<string, any>;
+  if (!res.ok) {
+    const msg = (data.errors && data.errors.map((e) => e.detail || e.code).join('; ')) || `Square ${res.status}`;
+    const err = new SquareError(msg); err.squareStatus = res.status; err.squareErrors = data.errors; throw err;
+  }
+  return data;
+}
+
 function toMinorUnits(amount: unknown): number {
   const n = Math.round(Number(amount) * 100);
   if (!Number.isFinite(n) || n <= 0) throw new HttpsError('invalid-argument', 'Invalid amount');
@@ -358,15 +373,19 @@ export const captureSquarePayment = onCall(
 );
 
 // Refund a captured payment (full or partial) per the cancellation policy.
+// ADMIN ONLY: refunds move money out of the business. A client must never be
+// able to self-refund a captured fare (ride taken → refund → free ride), so
+// ownership alone is not sufficient here — staff review the cancellation and
+// issue the refund from the admin console.
 export const refundSquarePayment = onCall(
   { secrets: [SQUARE_ACCESS_TOKEN], region: 'us-central1' },
   async (request: CallableRequest<RefundSquarePaymentInput>) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+    if (!(await isAdminUid(request.auth.uid))) throw new HttpsError('permission-denied', 'Refunds are issued by the operations team');
     const d = request.data || {};
     if (!d.paymentId || !d.idempotencyKey) {
       throw new HttpsError('invalid-argument', 'paymentId and idempotencyKey are required');
     }
-    await assertPaymentOwnership(request.auth.uid, d.paymentId);
     const body = {
       idempotency_key: String(d.idempotencyKey),
       payment_id: d.paymentId,
@@ -430,19 +449,59 @@ async function sendSms(to: string, body: string): Promise<void> {
 }
 
 export const onBookingWrite = onDocumentWritten(
-  { document: 'bookings/{bookingId}', secrets: [SENDGRID_API_KEY, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN], region: 'us-central1' },
+  { document: 'bookings/{bookingId}', secrets: [SENDGRID_API_KEY, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, SQUARE_ACCESS_TOKEN], region: 'us-central1' },
   async (event) => {
     const before = event.data && event.data.before && event.data.before.exists ? event.data.before.data() as Booking : null;
     const after  = event.data && event.data.after  && event.data.after.exists  ? event.data.after.data()  as Booking : null;
     const kind = bookingEvent(before, after);
     if (!kind) return;
+    // On completion, CAPTURE the pre-authorized card payment. processSquarePayment
+    // authorizes with autocomplete:false; without this step the hold expires in
+    // ~7 days and the platform collects nothing while still owing the driver.
+    // Idempotent: a payment already completed just errors and is ignored.
+    if (kind === 'completed' && after && after.squarePaymentId && !(after as Record<string, unknown>).paymentCapturedAt) {
+      try {
+        await squareFetch(`/payments/${encodeURIComponent(String(after.squarePaymentId))}/complete`, {}, SQUARE_ACCESS_TOKEN.value());
+        await event.data!.after.ref.set({ paymentStatus: 'captured', paymentCapturedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+        logger.info('payment captured on completion', { booking: event.params.bookingId });
+      } catch (err) {
+        const msg = errMessage(err);
+        if (/COMPLETED|already/i.test(msg)) {
+          await event.data!.after.ref.set({ paymentStatus: 'captured', paymentCapturedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true }).catch(() => {});
+        } else {
+          logger.error('payment capture failed — needs ops attention', { booking: event.params.bookingId, err: msg });
+          await event.data!.after.ref.set({ paymentStatus: 'capture_failed' }, { merge: true }).catch(() => {});
+        }
+      }
+    }
+    // On cancellation, fan out to the dispatch artifacts the client can't touch
+    // (rules make jobs/open_jobs driver/admin-only): retract the open_job so no
+    // new driver claims it, and mark any claimed job cancelled so the driver's
+    // app drops it before they drive to a dead pickup.
+    if (kind === 'cancelled') {
+      const db = admin.firestore();
+      await db.collection('open_jobs').doc(event.params.bookingId).delete().catch(() => {});
+      try {
+        const jobs = await db.collection('jobs').where('bookingDocId', '==', event.params.bookingId).get();
+        const batch = db.batch();
+        jobs.docs.forEach((j) => batch.set(j.ref, { status: 'cancelled', cancelledAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true }));
+        await batch.commit();
+      } catch (err) { logger.error('cancel fan-out', errMessage(err)); }
+    }
     // On completion, record the driver's earning to the payout ledger
     // (idempotent — one entry per booking). Settled later via payoutDriver.
     // Share = 80% under the commission model, admin-set under subscription.
     if (kind === 'completed' && after && after.driverId) {
       try {
         const amount = driverEarning(after, await platformCommissionPct());
-        if (amount > 0) {
+        // Fare sanity: the fare fields are client-written, so never let an
+        // inflated (or flagged) booking mint an oversized payout — park it for
+        // ops review instead.
+        const { ceiling } = await fareBounds();
+        if (after.fareFlagged || amount > ceiling) {
+          logger.error('payout skipped — fare flagged or over ceiling', { booking: event.params.bookingId, amount, ceiling });
+          await admin.firestore().doc(`bookings/${event.params.bookingId}`).set({ fareFlagged: true, payoutStatus: 'review' }, { merge: true });
+        } else if (amount > 0) {
           const entry: DriverPayout = {
             driverId: after.driverId,
             bookingRef: after.ref || event.params.bookingId,
@@ -493,7 +552,10 @@ export const onBookingWrite = onDocumentWritten(
  * Note: hotel discovery is resolved on-device before this is called, so we focus
  * on rides, quotes, modifications, recurring trips, flight updates and chat.
  * =========================================================================== */
-const APEXAI_MODEL = process.env.APEXAI_MODEL || 'claude-opus-4-8';
+// Sonnet by default: intent extraction + a short concierge reply doesn't need
+// Opus, and this endpoint is guest-reachable — cost scales with strangers.
+// Override with APEXAI_MODEL for A/B or an upgrade.
+const APEXAI_MODEL = process.env.APEXAI_MODEL || 'claude-sonnet-5';
 
 const APEXAI_INTENT_TOOL: Anthropic.Tool = {
   name: 'booking_intent',
@@ -639,6 +701,27 @@ async function anthropicMessages(body: Anthropic.MessageCreateParamsNonStreaming
   return anthropicClient(apiKey).messages.create(body);
 }
 
+// ── Abuse throttle for guest-reachable callables ─────────────────────────────
+// parseBookingIntent and getHotelRates spend real money per call (Anthropic /
+// Amadeus) and are reachable without auth for guest UX, so cap calls per caller
+// per hour. Keyed by uid when signed in, else a hash of the caller IP. A simple
+// windowed Firestore counter is plenty at this scale; App Check is the longer-
+// term hardening (see go-live checklist).
+async function enforceRateLimit(request: CallableRequest<unknown>, op: string, perHour: number): Promise<void> {
+  const raw = request.auth?.uid || request.rawRequest?.ip || 'anon';
+  const key = createHash('sha256').update(`${op}|${raw}`).digest('hex').slice(0, 32);
+  const hour = Math.floor(Date.now() / 3600000);
+  const ref = admin.firestore().doc(`rate_limits/${key}`);
+  const allowed = await admin.firestore().runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const d = (snap.exists ? snap.data() : {}) as { hour?: number; count?: number };
+    const count = d.hour === hour ? (Number(d.count) || 0) + 1 : 1;
+    tx.set(ref, { hour, count, op, at: admin.firestore.FieldValue.serverTimestamp() });
+    return count <= perHour;
+  }).catch(() => true); // limiter must never take the feature down with it
+  if (!allowed) throw new HttpsError('resource-exhausted', 'Too many requests — please try again shortly.');
+}
+
 export const parseBookingIntent = onCall(
   { secrets: [ANTHROPIC_API_KEY], region: 'us-central1' },
   async (request: CallableRequest<ParseBookingInput>) => {
@@ -647,6 +730,7 @@ export const parseBookingIntent = onCall(
       throw new HttpsError('invalid-argument', 'message is required');
     }
     if (p.message.length > 1000) throw new HttpsError('invalid-argument', 'message too long (max 1000 chars)');
+    await enforceRateLimit(request, 'apexai', request.auth ? 120 : 30);
     const apiKey = ANTHROPIC_API_KEY.value();
     if (!apiKey) throw new HttpsError('failed-precondition', 'ANTHROPIC_API_KEY not configured.');
     try {
@@ -752,8 +836,17 @@ export const generateReferralCode = onCall({ region: 'us-central1' }, async (req
   const snap = await ref.get();
   const existing = snap.exists && (snap.data() as User | undefined)?.referralCode;
   if (existing) return { code: existing };
-  // Deterministic, human-friendly code derived from the uid.
-  const code = 'APX-' + uid.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toUpperCase().padEnd(6, 'X');
+  // Deterministic, human-friendly code derived from the uid — but codes credit
+  // real balances, so a collision would credit the wrong referrer. Verify
+  // uniqueness and lengthen from the uid until free.
+  const clean = uid.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().padEnd(20, 'X');
+  let code = '';
+  for (let len = 6; len <= 12; len++) {
+    const candidate = 'APX-' + clean.slice(0, len);
+    const clash = await admin.firestore().collection('users').where('referralCode', '==', candidate).limit(1).get();
+    if (clash.empty) { code = candidate; break; }
+  }
+  if (!code) throw new HttpsError('internal', 'Could not allocate a referral code');
   await ref.set({ referralCode: code }, { merge: true });
   return { code };
 });
@@ -766,21 +859,23 @@ export const applyReferralCode = onCall({ region: 'us-central1' }, async (reques
   const code = String((request.data || {}).code || '').trim().toUpperCase();
   if (!code) throw new HttpsError('invalid-argument', 'code is required');
   const db = admin.firestore();
-  const me = db.doc(`users/${uid}`);
-  const meSnap = await me.get();
-  if (meSnap.exists && (meSnap.data() as User | undefined)?.referredBy) {
-    throw new HttpsError('failed-precondition', 'A referral code has already been applied.');
-  }
   const q = await db.collection('users').where('referralCode', '==', code).limit(1).get();
   if (q.empty) throw new HttpsError('not-found', 'That referral code is not valid.');
   const referrer = q.docs[0];
   if (referrer.id === uid) throw new HttpsError('failed-precondition', 'You cannot use your own code.');
   const CREDIT = 50;
-  const inc = admin.firestore.FieldValue.increment(CREDIT);
-  await Promise.all([
-    me.set({ referredBy: referrer.id, apexBalance: inc }, { merge: true }),
-    referrer.ref.set({ apexBalance: inc }, { merge: true }),
-  ]);
+  // Transaction: the already-applied check and the credit writes must be atomic,
+  // or two concurrent calls both pass the check and double-credit.
+  await db.runTransaction(async (tx) => {
+    const me = db.doc(`users/${uid}`);
+    const meSnap = await tx.get(me);
+    if (meSnap.exists && (meSnap.data() as User | undefined)?.referredBy) {
+      throw new HttpsError('failed-precondition', 'A referral code has already been applied.');
+    }
+    const inc = admin.firestore.FieldValue.increment(CREDIT);
+    tx.set(me, { referredBy: referrer.id, apexBalance: inc }, { merge: true });
+    tx.set(referrer.ref, { apexBalance: inc }, { merge: true });
+  });
   return { message: `Referral applied — you and your friend each earned ${CREDIT} APEX.`, creditsAwarded: CREDIT };
 });
 
@@ -820,18 +915,27 @@ export const submitTripRating = onCall({ region: 'us-central1' }, async (request
   if (!booking) throw new HttpsError('not-found', 'Booking not found');
   const b = (booking.data() as Booking) || {};
   if (b.clientId !== uid && !(await isStaff(uid))) throw new HttpsError('permission-denied', 'Not your booking');
+  // Only completed trips can be rated, the rated driver is ALWAYS the booking's
+  // own assigned driver (a client-supplied driverId would let anyone tank or
+  // inflate an arbitrary driver's average), and each booking counts once —
+  // re-rating adjusts the mean by the delta instead of adding a new vote.
+  if (b.status !== 'completed' && !(await isStaff(uid))) {
+    throw new HttpsError('failed-precondition', 'Only completed trips can be rated');
+  }
+  const previous = Number(b.rating) || 0;
   const comment = String(d.comment || '').slice(0, 1000);
   await booking.ref.set({ rating, ratingComment: comment, ratedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
-  const driverId = d.driverId || b.driverId;
+  const driverId = b.driverId;
   if (driverId) {
     // Maintain a simple running mean: ratingSum / ratingCount.
     await admin.firestore().runTransaction(async (tx) => {
       const dRef = admin.firestore().doc(`drivers/${driverId}`);
       const dSnap = await tx.get(dRef);
       const cur = dSnap.exists ? (dSnap.data() as Driver) : {} as Driver;
-      const count = (Number(cur.ratingCount) || 0) + 1;
-      const sum = (Number(cur.ratingSum) || 0) + rating;
-      tx.set(dRef, { ratingCount: count, ratingSum: sum, rating: Math.round((sum / count) * 10) / 10 }, { merge: true });
+      // First rating for this booking adds a vote; a re-rate replaces it.
+      const count = (Number(cur.ratingCount) || 0) + (previous ? 0 : 1);
+      const sum = (Number(cur.ratingSum) || 0) + rating - previous;
+      tx.set(dRef, { ratingCount: count, ratingSum: sum, rating: Math.round((sum / Math.max(1, count)) * 10) / 10 }, { merge: true });
     });
   }
   return { ok: true };
@@ -923,7 +1027,9 @@ export const validateApplePayMerchant = onCall(
 // claims one via a transaction. Without this bridge a booking never reaches a
 // driver. Idempotent: the open_job id == the booking id.
 
-export const onBookingCreated = onDocumentCreated('bookings/{bookingId}', async (event) => {
+export const onBookingCreated = onDocumentCreated(
+  { document: 'bookings/{bookingId}', secrets: [SQUARE_ACCESS_TOKEN], region: 'us-central1' },
+  async (event) => {
   const snap = event.data;
   if (!snap) return;
   const b = (snap.data() as Booking) || {};
@@ -931,6 +1037,45 @@ export const onBookingCreated = onDocumentCreated('bookings/{bookingId}', async 
   // Only broadcast bookings that still need a driver and have a pickup.
   if (b.status && !['confirmed', 'pending', 'paid'].includes(b.status)) return;
   if (!b.pickup) return;
+
+  // ── Fare integrity ─────────────────────────────────────────────────────────
+  // The booking doc (and therefore its price/baseFare, which drive the driver's
+  // payout) is client-written. Never dispatch a booking whose money doesn't
+  // check out; flag it for the ops team instead.
+  const price = Number(b.price) || 0;
+  const { floor, ceiling } = await fareBounds();
+  let fareProblem = '';
+  if (price < floor || price > ceiling) {
+    fareProblem = `price £${price} outside permitted range £${floor}–£${ceiling}`;
+  } else if (b.squarePaymentId) {
+    // A prepaid booking must have actually paid its own fare: fetch the payment
+    // and compare the authorized amount to the booking price.
+    try {
+      const out = await squareGet(`/payments/${encodeURIComponent(String(b.squarePaymentId))}`, SQUARE_ACCESS_TOKEN.value());
+      const paidMinor = Number(out?.payment?.amount_money?.amount);
+      if (Number.isFinite(paidMinor) && Math.abs(paidMinor - Math.round(price * 100)) > 100) {
+        fareProblem = `paid £${(paidMinor / 100).toFixed(2)} but booking says £${price}`;
+      }
+    } catch (err) {
+      // Square unreachable / sandbox id — log but don't block the booking.
+      logger.warn('payment verification skipped', { booking: event.params.bookingId, err: errMessage(err) });
+    }
+  }
+  if (fareProblem) {
+    logger.error('fare mismatch — booking flagged, not dispatched', { booking: event.params.bookingId, fareProblem });
+    await snap.ref.set({ fareFlagged: true, fareFlagReason: fareProblem, paymentStatus: 'review' }, { merge: true });
+    return;
+  }
+
+  // Honour the operator's dispatch mode: in 'manual' the admin assigns each
+  // booking by hand from the console — auto-broadcasting would race them.
+  try {
+    const disp = await admin.firestore().doc('settings/dispatch').get();
+    if (disp.exists && (disp.data() as { mode?: string }).mode === 'manual') {
+      logger.info('manual dispatch mode — not broadcasting', { booking: event.params.bookingId });
+      return;
+    }
+  } catch (_) { /* default: broadcast */ }
 
   const openRef = admin.firestore().collection('open_jobs').doc(event.params.bookingId);
   if ((await openRef.get()).exists) return; // already dispatched
@@ -1116,24 +1261,39 @@ export const payoutDriver = onCall(
     const driverId = String((request.data || {}).driverId || '');
     if (!driverId) throw new HttpsError('invalid-argument', 'driverId is required');
     const db = admin.firestore();
-    const owed = await db.collection('driver_payouts').where('driverId', '==', driverId).where('status', '==', 'owed').get();
-    if (owed.empty) return { paid: 0, count: 0 };
-    const currency = ((owed.docs[0].data() as DriverPayout).currency || 'GBP').toLowerCase();
-    const total = owed.docs.reduce((s, x) => s + (Number((x.data() as DriverPayout).amount) || 0), 0);
+    // Atomically CLAIM the owed rows first (owed → settling). Two concurrent
+    // settlements then see disjoint sets — without this, both could read
+    // overlapping rows, derive different idempotency keys, and double-pay the
+    // overlap. If the transfer fails the claim is reverted below.
+    const settlementId = `stl_${Date.now().toString(36)}_${driverId.slice(0, 6)}`;
+    const claimed = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(db.collection('driver_payouts').where('driverId', '==', driverId).where('status', '==', 'owed'));
+      snap.docs.forEach((x) => tx.set(x.ref, { status: 'settling', settlementId }, { merge: true }));
+      return snap.docs.map((x) => ({ id: x.id, ref: x.ref, data: x.data() as DriverPayout }));
+    });
+    if (!claimed.length) return { paid: 0, count: 0 };
+    const revertClaim = async () => {
+      const batch = db.batch();
+      claimed.forEach((x) => batch.set(x.ref, { status: 'owed', settlementId: admin.firestore.FieldValue.delete() }, { merge: true }));
+      await batch.commit().catch((e) => logger.error('payout claim revert failed', errMessage(e)));
+    };
+    const currency = (claimed[0].data.currency || 'GBP').toLowerCase();
+    const total = claimed.reduce((s, x) => s + (Number(x.data.amount) || 0), 0);
     const d = ((await db.doc(`drivers/${driverId}`).get()).data() as Driver) || {};
     const accountId = d.payout && d.payout.accountId;
     const stripe = stripeClient();
     let transferId: string | null = null;
     if (stripe) {
       if (!accountId || !(d.payout && d.payout.payoutsEnabled)) {
+        await revertClaim();
         throw new HttpsError('failed-precondition', 'Driver has not completed payout onboarding');
       }
       try {
         // Deterministic idempotency key over the exact set of ledger rows being
-        // settled: two concurrent/retried payouts of the same owed entries hit
-        // Stripe's idempotency layer and create at most one transfer.
+        // settled: a retried payout of the same claimed set hits Stripe's
+        // idempotency layer and creates at most one transfer.
         const idempotencyKey = createHash('sha256')
-          .update(driverId + '|' + owed.docs.map((x) => x.id).sort().join(','))
+          .update(driverId + '|' + claimed.map((x) => x.id).sort().join(','))
           .digest('hex');
         const tr = await stripe.transfers.create(
           { amount: total * 100, currency, destination: accountId, metadata: { driverId } },
@@ -1141,19 +1301,20 @@ export const payoutDriver = onCall(
         );
         transferId = tr.id;
       } catch (err) {
+        await revertClaim();
         throw new HttpsError('failed-precondition', 'Stripe transfer failed: ' + errMessage(err));
       }
     }
     const batch = db.batch();
-    owed.docs.forEach((x) => batch.set(x.ref, { status: 'paid', paidAt: admin.firestore.FieldValue.serverTimestamp(), transferId }, { merge: true }));
+    claimed.forEach((x) => batch.set(x.ref, { status: 'paid', paidAt: admin.firestore.FieldValue.serverTimestamp(), transferId }, { merge: true }));
     await batch.commit();
     // Append-only audit entry (server-side, can't be tampered with client-side).
     await db.collection('audit_log').add({
       ts: admin.firestore.FieldValue.serverTimestamp(),
       actorUid: request.auth.uid, actorName: 'Admin (server)',
       action: 'payout', target: driverId,
-      detail: `${currency.toUpperCase()} ${total} · ${owed.size} trip(s)${stripe ? ' · ' + transferId : ' · mock'}`,
+      detail: `${currency.toUpperCase()} ${total} · ${claimed.length} trip(s)${stripe ? ' · ' + transferId : ' · mock'}`,
     }).catch(() => {});
-    return { paid: total, count: owed.size, currency: currency.toUpperCase(), transferId, mock: !stripe };
+    return { paid: total, count: claimed.length, currency: currency.toUpperCase(), transferId, mock: !stripe };
   }
 );

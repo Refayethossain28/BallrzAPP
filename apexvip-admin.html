@@ -201,7 +201,7 @@ body.light .sidebar{background:rgba(240,235,226,.6)!important}
     <div style="flex:1"><div style="font-size:13px;font-weight:600">Admin</div><div style="font-size:11px;color:var(--fg-subtle)">admin@apexvip.com</div></div>
     <button onclick="toggleLayout()" title="Switch layout" style="background:var(--surface);border:1px solid var(--border);border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center" id="layout-btn">🖥</button>
     <button onclick="toggleTheme()" style="background:var(--surface);border:1px solid var(--border);border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center" id="theme-btn">☀️</button>
-    <button onclick="go('login')" style="background:none;border:none;color:var(--fg-dim);cursor:pointer;font-size:20px;line-height:1">⏻</button>
+    <button onclick="adminSignOut()" title="Sign out" style="background:none;border:none;color:var(--fg-dim);cursor:pointer;font-size:20px;line-height:1">⏻</button>
   </div>
 </div>
 <div class="main" id="main"></div>
@@ -292,7 +292,9 @@ function track(event, props){
     arr.push(ev);
     if(arr.length>2000) arr.splice(0,arr.length-2000);
     localStorage.setItem(key,JSON.stringify(arr));
-    if(FIREBASE_ENABLED) db.collection('analytics').add(ev).catch(reportError);
+    // analytics create requires a signed-in user (rules) — pre-login events
+    // stay local rather than generating a permission-denied per navigation.
+    if(FIREBASE_ENABLED&&auth.currentUser) db.collection('analytics').add(ev).catch(()=>{});
   }catch(e){}
 }
 
@@ -378,16 +380,26 @@ async function createBookingInFirestore(){
   if(!FIREBASE_ENABLED){closeModal();return;}
   const inputs=document.querySelectorAll('#modal-box input,#modal-box select');
   const ref='APX-'+(Math.floor(1000+Math.random()*9000));
+  const isV=(inputs[6]?.value||'').includes('V-Class');
   try{
     await db.collection('bookings').add({
       ref,clientName:inputs[0]?.value||'',pickup:inputs[1]?.value||'',
       dropoff:inputs[2]?.value||'',date:inputs[3]?.value||'',
       time:inputs[4]?.value||'',flight:inputs[5]?.value||'',
-      vehicle:(inputs[6]?.value||'').includes('V-Class')?'V-Class':'S-Class',
-      status:'pending',driver:'—',price:185,
+      vehicle:isV?'V-Class':'S-Class',
+      // Ops-created booking: stamp the operator as the creating principal (the
+      // rules accept admin creates) and price by the actual vehicle class.
+      clientId:(auth.currentUser&&auth.currentUser.uid)||'',
+      status:'pending',driver:'—',price:isV?225:185,baseFare:isV?225:185,
       createdAt:firebase.firestore.FieldValue.serverTimestamp()
     });
-  }catch(err){console.warn('Create booking:',err.message);}
+    showToast('Booking '+ref+' created','success');
+    logAudit('booking_create',ref,(inputs[0]?.value||'')+' · '+(inputs[1]?.value||'')+' → '+(inputs[2]?.value||''));
+  }catch(err){
+    // NEVER swallow this: the operator must know the booking didn't save.
+    reportError(err,'create-booking');
+    alert('Could not create the booking: '+(err&&err.message||'permission denied'));
+  }
   closeModal();render();
 }
 
@@ -418,8 +430,17 @@ function startAdminListeners(){
       const priceStr=x.currency==='AED'?(x.price?'AED '+x.price:'AED 685'):(x.price?'£'+x.price:(x.priceStr||'£185'));
       return{id:d.id,docId:d.id,client:esc(x.clientName||'—'),pickup:esc(x.pickup||''),dropoff:esc(x.dropoff||''),
         date:esc(x.date||''),time:esc(x.time||''),vehicle:esc(x.vehicle||'S-Class'),
-        driver:esc(x.driverName||x.driver||'—'),driverId:x.driverId||'',status:x.status||'pending',
+        driver:esc(x.driverName||x.driver||'—'),driverId:x.driverId||'',status:safeToken(x.status,'pending'),
+        clientId:x.clientId||'',flight:esc(x.flight||''),notes:esc((x.concierge&&x.concierge.instructions)||x.notes||''),
+        serviceType:safeToken(x.serviceType,'airport'),serviceLabel:esc(x.serviceLabel||'Airport Transfer'),
+        priceNum:Number(x.price)||0,fareFlagged:!!x.fareFlagged,
         price:esc(priceStr),ref:esc(x.ref||d.id),location:esc(x.location||''),currency:x.currency||'GBP',
+        // Raw values for anything written BACK to Firestore (dispatch payloads)
+        // — the esc()'d display copies must never be persisted.
+        _raw:{clientName:x.clientName||'',pickup:x.pickup||'',dropoff:x.dropoff||x.airport||'',
+          date:x.date||'',time:x.time||'',vehicle:x.vehicle||'S-Class',ref:x.ref||d.id,
+          flight:x.flight||'',notes:(x.concierge&&x.concierge.instructions)||x.notes||'',
+          serviceType:x.serviceType||'airport',serviceLabel:x.serviceLabel||'Airport Transfer'},
         _created:x.createdAt&&x.createdAt.toDate?x.createdAt.toDate():null};
     });
     if(!['login'].includes(S.screen))render();
@@ -429,21 +450,25 @@ function startAdminListeners(){
       DRIVERS=snap.docs.filter(d=>d.data().role!=='admin').map(d=>{
         const x=d.data();
         return{id:d.id,uid:d.id,name:esc(x.name||''),initials:esc((x.name||'??').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2)),
-          color:x.color||'#C8A97E',rating:Number(x.rating)||4.8,status:x.status||'offline',
+          // color feeds a style="" attribute — only a real CSS color token may pass.
+          color:/^#[0-9a-fA-F]{3,8}$/.test(String(x.color||''))?x.color:'#C8A97E',
+          rating:Number(x.rating)||4.8,status:safeToken(x.status,'offline'),
           vehicle:esc(x.vehicle||'S-Class'),model:esc(x.model||x.vehicle||'S-Class'),
-          reg:esc(x.reg||x.plate||''),trips:x.trips||0,earnings:'£'+(Number(x.earnings)||0),
+          reg:esc(x.reg||x.plate||''),trips:Number(x.trips)||0,earnings:'£'+(Number(x.earnings)||0),
+          payout:x.payout||null,
+          _raw:{name:x.name||'Driver',reg:x.reg||x.plate||''},
           documents:x.documents||{},compliance:x.compliance||null};
       });
       if(!['login'].includes(S.screen))render();
     }
-  },()=>{});
+  },e=>console.warn('Drivers:',e.code));
   db.collection('users').onSnapshot(snap=>{
     const all=snap.docs.map(d=>{
       const x=d.data();
       return{id:d.id,name:esc(x.name||x.displayName||'—'),email:esc(x.email||''),phone:esc(x.phone||'—'),
-        bookings:x.bookings||0,spent:'£'+(Number(x.spent)||0),
+        bookings:Number(x.bookings)||0,spent:'£'+(Number(x.spent)||0),
         tier:esc(x.tier||'standard'),joined:esc(x.joined||x.createdAt?.toDate?.().toLocaleDateString('en-GB',{month:'short',year:'numeric'})||'—'),
-        role:x.role||'client'};
+        role:safeToken(x.role,'client')};
     });
     CLIENTS=all;
     if(!['login'].includes(S.screen))render();
@@ -525,18 +550,27 @@ function safeParse(str,fallback){try{const v=JSON.parse(str);return v==null?fall
 // Escape user/driver-controlled strings before they enter innerHTML templates.
 // Single tested implementation lives in the shared engine (security/escape.ts).
 const esc=(typeof ApexEngine!=='undefined'&&ApexEngine.escapeHtml)||(x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
+// Status/role/enum values that clients and drivers can write to Firestore end
+// up in class="" attributes and badge labels — reduce them to a plain token so
+// a hostile `status` string can never carry markup into the admin console.
+function safeToken(v,fallback){const t=String(v??'').replace(/[^a-zA-Z0-9_-]/g,'').slice(0,24);return t||fallback;}
+// Driver-supplied document URLs render as href="" — only allow http(s), never
+// javascript:/data: schemes.
+function safeUrl(u){return /^https?:\/\//i.test(String(u||''));}
 
 function badge(s){
   const m={
     pending:'tag-amber Pending',confirmed:'tag-blue Confirmed',active:'tag-green Active',
     offered:'tag-gold 📢 Offered',accepted:'tag-green Accepted',
     en_route:'tag-green En Route',arrived:'tag-green Arrived',onboard:'tag-green On Board',
-    completed:'tag-gray Completed',cancelled:'tag-red Cancelled',
+    completed:'tag-gray Completed',cancelled:'tag-red Cancelled',declined:'tag-red Declined',
     online:'tag-green Online',ontrip:'tag-amber On Trip',offline:'tag-gray Offline',
+    review:'tag-red ⚠ Review',
     available:'tag-green Available',vip:'tag-gold VIP',vvip:'tag-purple VVIP',standard:'tag-gray Standard'
   };
-  const v=m[s]||('tag-gray '+s);const[c,...r]=v.split(' ');
-  return`<span class="tag ${c}">${r.join(' ')}</span>`;
+  // Unknown values are client-writable — token-sanitize before they touch HTML.
+  const v=m[s]||('tag-gray '+safeToken(s,'unknown'));const[c,...r]=v.split(' ');
+  return`<span class="tag ${c}">${esc(r.join(' '))}</span>`;
 }
 function av(initials,color,size=36){return`<div class="avatar" style="background:${color};width:${size}px;height:${size}px;font-size:${Math.round(size*.35)}px">${initials}</div>`;}
 
@@ -980,8 +1014,8 @@ concierge:()=>{
       html+='<tr style="border-top:1px solid var(--border)">'
         +'<td style="padding:10px">'+esc(m.memberName||'—')+'</td>'
         +'<td style="padding:10px;max-width:280px">'+cat+' '+esc(r.title||'')+'<div style="color:var(--fg-ghost);font-size:11px">'+(r.messages?r.messages.length:0)+' messages</div></td>'
-        +'<td style="padding:10px"><span class="tag '+(TIERTAG[t]||'tag-gray')+'">'+t.toUpperCase()+'</span></td>'
-        +'<td style="padding:10px">'+(V.STATUS_LABEL[r.status]||r.status)+'</td>'
+        +'<td style="padding:10px"><span class="tag '+(TIERTAG[t]||'tag-gray')+'">'+safeToken(t,'—').toUpperCase()+'</span></td>'
+        +'<td style="padding:10px">'+(V.STATUS_LABEL[r.status]||safeToken(r.status,'—'))+'</td>'
         +'<td style="padding:10px"><span class="tag '+sb[0]+'">'+sb.slice(1).join(' ')+'</span></td>'
         +'<td style="padding:10px">'+ago(r.submittedAt||now)+'</td>'
         +'<td style="padding:10px;white-space:nowrap">'+wait+' <button class="btn btn-glass btn-sm" onclick="vcReply(\''+r.docId+'\')">Reply</button></td>'
@@ -1002,10 +1036,10 @@ concierge:()=>{
       const n=VREQS.filter(r=>r.ownerUid===m.uid).length;
       html+='<tr style="border-top:1px solid var(--border)">'
         +'<td style="padding:10px">'+esc(m.memberName||m.uid.slice(0,8))+'</td>'
-        +'<td style="padding:10px"><span class="tag '+(TIERTAG[t]||'tag-gray')+'">'+String(t).toUpperCase()+'</span></td>'
-        +'<td style="padding:10px">'+((m.sub&&m.sub.status)||'—')+(m.sub&&m.sub.cancelAtPeriodEnd?' · ending':'')+'</td>'
-        +'<td style="padding:10px">'+(m.billing||'local')+'</td>'
-        +'<td style="padding:10px">'+(m.points||0)+'</td>'
+        +'<td style="padding:10px"><span class="tag '+(TIERTAG[t]||'tag-gray')+'">'+safeToken(t,'—').toUpperCase()+'</span></td>'
+        +'<td style="padding:10px">'+safeToken(m.sub&&m.sub.status,'—')+(m.sub&&m.sub.cancelAtPeriodEnd?' · ending':'')+'</td>'
+        +'<td style="padding:10px">'+safeToken(m.billing,'local')+'</td>'
+        +'<td style="padding:10px">'+(Number(m.points)||0)+'</td>'
         +'<td style="padding:10px">'+(m.sub&&m.sub.periodEnd?new Date(m.sub.periodEnd).toLocaleDateString('en-GB',{day:'numeric',month:'short'}):'—')+'</td>'
         +'<td style="padding:10px">'+n+'</td>'
         +'</tr>';
@@ -1484,12 +1518,12 @@ documents:()=>{
           return`<div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--surface-b);border-radius:12px;border:1px solid var(--border);flex-wrap:wrap">
             <div style="flex:1;min-width:140px">
               <div style="font-size:13px;font-weight:700;margin-bottom:3px">${lbl}</div>
-              <div style="font-size:11px;color:var(--fg-dim)">${doc.fileName||'File'} · ${dt}</div>
-              ${doc.rejectNote?`<div style="font-size:11px;color:#ef4444;margin-top:3px">Note: ${doc.rejectNote}</div>`:''}
+              <div style="font-size:11px;color:var(--fg-dim)">${esc(doc.fileName||'File')} · ${dt}</div>
+              ${doc.rejectNote?`<div style="font-size:11px;color:#ef4444;margin-top:3px">Note: ${esc(doc.rejectNote)}</div>`:''}
             </div>
             <span class="tag ${sc}">${sl}</span>
             <div style="display:flex;gap:6px;flex-shrink:0">
-              ${doc.url?`<a href="${doc.url}" target="_blank" rel="noopener" style="padding:6px 12px;background:var(--surface-c);border:1px solid var(--border);border-radius:8px;color:var(--fg);font-size:12px;font-weight:600;text-decoration:none">View</a>`:''}
+              ${safeUrl(doc.url)?`<a href="${esc(doc.url)}" target="_blank" rel="noopener" style="padding:6px 12px;background:var(--surface-c);border:1px solid var(--border);border-radius:8px;color:var(--fg);font-size:12px;font-weight:600;text-decoration:none">View</a>`:''}
               ${doc.status!=='approved'?`<button onclick="approveDoc('${d.id}','${type}')" style="padding:6px 12px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.25);border-radius:8px;color:#22c55e;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Approve</button>`:''}
               ${doc.status!=='rejected'?`<button onclick="rejectDoc('${d.id}','${type}')" style="padding:6px 12px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:8px;color:#ef4444;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Reject</button>`:''}
             </div>
@@ -1716,7 +1750,7 @@ function showDriver(id){const d=DRIVERS.find(x=>x.id===id);if(!d)return;
       <div style="display:flex;align-items:center;gap:10px">
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:600">${t.label}</div>
-          <div style="font-size:11px;color:var(--fg-subtle)">${up.url?`<a href="${up.url}" target="_blank" style="color:var(--gold)">View upload</a> · ${up.uploadedAt||''}`:'No upload yet'}</div>
+          <div style="font-size:11px;color:var(--fg-subtle)">${safeUrl(up.url)?`<a href="${esc(up.url)}" target="_blank" rel="noopener" style="color:var(--gold)">View upload</a> · ${esc(up.uploadedAt||'')}`:'No upload yet'}</div>
         </div>
         <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;white-space:nowrap"><input type="checkbox" id="cmp_ok_${t.key}" ${a.approved?'checked':''}/> Approved</label>
       </div>
@@ -1871,7 +1905,8 @@ async function quickIntakeCreate(){
       dropoff:v('qi_dropoff'), airport, flight,
       date:v('qi_date'), time:v('qi_time'),
       vehicle, serviceType:(airport||flight)?'airport':'point',
-      status:'confirmed', price:vehicle==='V-Class'?225:185,
+      clientId:(auth.currentUser&&auth.currentUser.uid)||'',
+      status:'confirmed', price:vehicle==='V-Class'?225:185, baseFare:vehicle==='V-Class'?225:185,
       location:'london', source:'operator_intake',
       createdAt:firebase.firestore.FieldValue.serverTimestamp()
     });
@@ -1914,23 +1949,37 @@ function openDispatch(ref){
 // Writes open_jobs/{bookingDocId} (stable id, so it can't double-broadcast and
 // it matches the onBookingCreated dispatch function) and stamps `market` so the
 // job shows up in the driver app's open_jobs.where('market','==',…) query.
+// Driver share of a fare under the CURRENT business settings — 80% under the
+// commission model unless the admin has set a different commissionPct.
+function driverPayFor(amount){
+  const pct=Number((S._business||{}).commissionPct);
+  const keep=(100-(Number.isFinite(pct)&&pct>=0&&pct<=50?pct:20))/100;
+  return Math.round((Number(amount)||0)*keep);
+}
+
 function broadcastDispatch(){
   const booking=BOOKINGS.find(b=>b.id===S._dispatchRef||b.ref===S._dispatchRef);
   if(booking){booking.status='offered';booking.driver='📢 Broadcast…';}
   if(FIREBASE_ENABLED&&booking?.docId){
+    const raw=booking._raw||{};
+    // priceNum is the numeric fare in the booking's own currency — never parse
+    // digits out of the display string, or "AED 685" dispatches as £685.
+    const pay=driverPayFor(booking.priceNum);
     db.collection('open_jobs').doc(booking.docId).set({
-      bookingDocId:booking.docId,bookingRef:booking.ref||booking.id,
+      bookingDocId:booking.docId,bookingRef:raw.ref||booking.id,
       market:booking.location||booking.market||'london',
-      clientId:booking.clientId||'',clientName:booking.client||'',
-      pickup:booking.pickup||'',
-      dropoff:booking.dropoff||'',date:booking.date||'',time:booking.time||'',
-      vehicle:booking.vehicle||'S-Class',
-      pay:Math.round(parseInt((booking.price||'0').replace(/[^0-9]/g,''))*0.8),
+      clientId:booking.clientId||'',clientName:raw.clientName||'',
+      type:raw.serviceType||'airport',serviceLabel:raw.serviceLabel||'Airport Transfer',
+      pickup:raw.pickup||'',
+      dropoff:raw.dropoff||'',date:raw.date||'',time:raw.time||'',
+      vehicle:raw.vehicle||'S-Class',
+      flight:raw.flight||'',notes:raw.notes||'',
+      pay,currency:booking.currency||'GBP',
       status:'open',driverId:'',
       createdAt:firebase.firestore.FieldValue.serverTimestamp()
     }).catch(reportError);
     db.collection('bookings').doc(booking.docId).update({status:'offered'}).catch(reportError);
-    logAudit('dispatch_broadcast', booking.ref||booking.id, (booking.pickup||'')+' · driver pay £'+Math.round(parseInt((booking.price||'0').replace(/[^0-9]/g,''))*0.8));
+    logAudit('dispatch_broadcast', raw.ref||booking.id, (raw.pickup||'')+' · driver pay '+(booking.currency||'GBP')+' '+pay);
   }
   S._dispatchOpen=false;
   render();
@@ -1963,27 +2012,29 @@ function confirmDispatch(driverIdOrName){
     // Manual assignment supersedes any live broadcast offer
     db.collection('open_jobs').where('bookingDocId','==',booking.docId).where('status','==','open').get()
       .then(snap=>snap.docs.forEach(d=>d.ref.update({status:'cancelled'}).catch(reportError))).catch(reportError);
+    const raw=booking._raw||{};
+    const drvRaw=driver._raw||{name:driver.name,reg:driver.reg};
     db.collection('bookings').doc(booking.docId).update({
-      driverId:driver.uid||driver.id||driver.name,
-      driverName:driver.name,
-      driverPlate:driver.reg||driver.plate||'',
+      driverId:driver.uid||driver.id||drvRaw.name,
+      driverName:drvRaw.name,
+      driverPlate:drvRaw.reg||'',
       status:'accepted',
       assignedAt:firebase.firestore.FieldValue.serverTimestamp()
     }).catch(reportError);
-    logAudit('dispatch_assign', booking.ref||booking.id, 'to '+driver.name);
+    logAudit('dispatch_assign', raw.ref||booking.id, 'to '+driver.name);
     if(driver.uid){
       db.collection('jobs').add({
-        driverId:driver.uid,bookingRef:booking.ref||booking.id,
+        driverId:driver.uid,bookingRef:raw.ref||booking.id,
         bookingDocId:booking.docId||'',
-        clientId:booking.clientId||'',clientName:booking.client||booking.clientName||'',
-        serviceLabel:booking.serviceLabel||booking.vehicleLabel||'Airport Transfer',
-        type:booking.serviceType||'airport',
-        pickup:booking.pickup||'',dropoff:booking.dropoff||'',
-        date:booking.date||'',time:booking.time||'',
-        flight:booking.flight||'',notes:booking.notes||booking.specialRequests||'',
+        clientId:booking.clientId||'',clientName:raw.clientName||'',
+        serviceLabel:raw.serviceLabel||'Airport Transfer',
+        type:raw.serviceType||'airport',
+        pickup:raw.pickup||'',dropoff:raw.dropoff||'',
+        date:raw.date||'',time:raw.time||'',
+        flight:raw.flight||'',notes:raw.notes||'',
         vehicle:driver.model||driver.vehicle||'',
         market:booking.location||booking.market||'london',
-        pay:Math.round(parseInt((booking.price||'0').replace(/[^0-9]/g,''))*0.8),
+        pay:driverPayFor(booking.priceNum),currency:booking.currency||'GBP',
         status:'pending',
         createdAt:firebase.firestore.FieldValue.serverTimestamp()
       }).catch(reportError);
@@ -2004,27 +2055,31 @@ function initAdminMap() {
     : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
     {maxZoom:19}).addTo(_adminMap);
 
-  // Subscribe to all driver locations
+  // Subscribe to all driver positions. GPS lives in driver_locations (split
+  // from the drivers record so clients can track without seeing driver PII);
+  // name/status/vehicle come from the already-escaped DRIVERS mapping.
   if (FIREBASE_ENABLED) {
-    db.collection('drivers').onSnapshot(snap => {
+    db.collection('driver_locations').onSnapshot(snap => {
       snap.docs.forEach(doc => {
         const d = doc.data();
         const id = doc.id;
         if (!d.lat || !d.lng) return;
         const pos = [d.lat, d.lng];
-        const isActive = d.status === 'online' || d.status === 'ontrip';
+        const drv = DRIVERS.find(x => x.id === id) || {};
+        const status = drv.status || 'offline';
+        const isActive = status === 'online' || status === 'ontrip';
         if (_adminMarkers[id]) {
           _adminMarkers[id].setLatLng(pos);
         } else {
           _adminMarkers[id] = L.circleMarker(pos, {
             radius: 10,
-            fillColor: d.status === 'ontrip' ? '#D4A843' : (isActive ? '#22c55e' : '#666'),
+            fillColor: status === 'ontrip' ? '#D4A843' : (isActive ? '#22c55e' : '#666'),
             color: '#fff', weight: 2, opacity: 1, fillOpacity: 0.9
           }).addTo(_adminMap)
-            .bindPopup(`<b style="font-family:sans-serif;font-size:13px">${d.name||'Driver'}</b><br/><span style="font-size:11px;color:#888">${d.status||'offline'} · ${d.vehicle||''}</span>`);
+            .bindPopup(`<b style="font-family:sans-serif;font-size:13px">${drv.name||'Driver'}</b><br/><span style="font-size:11px;color:#888">${esc(status)} · ${drv.vehicle||''}</span>`);
         }
       });
-    }, () => {});
+    }, err => reportError(err, 'admin-map-listener'));
   } else {
     // Demo: place markers for each DRIVER with a fake London position
     const londonArea = [[51.507,-0.127],[51.514,-0.142],[51.496,-0.108],[51.522,-0.098],[51.489,-0.154]];
@@ -2045,11 +2100,21 @@ function logAudit(action, target, detail){
   try{
     db.collection('audit_log').add({
       ts: firebase.firestore.FieldValue.serverTimestamp(),
-      actorUid: (auth.currentUser&&auth.currentUser.uid)||'admin',
+      // Rules require actorUid == request.auth.uid — a fallback string would
+      // guarantee rejection, silently losing the audit entry.
+      actorUid: (auth.currentUser&&auth.currentUser.uid)||'',
       actorName: (auth.currentUser&&(auth.currentUser.displayName||auth.currentUser.email))||'Admin',
       action, target: String(target||''), detail: String(detail||'')
-    });
+    }).catch(e=>reportError(e,'audit-log'));
   }catch(e){ console.warn('audit',e.code); }
+}
+
+// Real sign-out: end the Firebase session, don't just show the login screen —
+// otherwise onAuthStateChanged silently logs the next person straight back in
+// on a shared ops machine.
+function adminSignOut(){
+  const done=()=>{S.screen='login';location.reload();};
+  if(FIREBASE_ENABLED&&auth.currentUser){auth.signOut().then(done,done);}else done();
 }
 const AUDIT_LABEL={business_model_update:'✦ Biz model',booking_create:'⚡ Booking',dispatch_broadcast:'📢 Broadcast',dispatch_assign:'🚗 Assigned',compliance_update:'🛡 Compliance',vehicle_add:'➕ Vehicle',vehicle_update:'🔧 Vehicle',vehicle_remove:'🗑 Vehicle',payout:'💸 Payout',payout_approve:'✅ Payout req',payout_reject:'❌ Payout req',pricing_update:'£ Pricing'};
 function loadAudit(){
@@ -2126,7 +2191,9 @@ function loadErrors(){
     if(!list.length){ el.innerHTML='<div style="text-align:center;padding:40px;color:var(--fg-4);font-size:13px">🎉 No errors reported'+(appF!=='all'?' from the '+appF+' app':'')+'</div>'; return; }
     el.innerHTML=list.map(g=>{
       const r=g.latest; const t=when(r);
-      const app=r.app||'client';
+      // errors/ create is world-writable (telemetry), so r.app is attacker
+      // input — token-sanitize before it enters the admin's DOM.
+      const app=safeToken(r.app,'client');
       const appColor={client:'#3b82f6',driver:'#22c55e',admin:'#a855f7'}[app]||'var(--fg-dim)';
       return `<div class="card" style="padding:14px 16px;margin-bottom:8px">
         <div style="display:flex;align-items:flex-start;gap:12px">
@@ -2243,10 +2310,16 @@ function loadPayouts() {
 }
 
 function approvePayoutReq(id) {
-  db.collection('payout_requests').doc(id).update({status:'approved',approvedAt:firebase.firestore.FieldValue.serverTimestamp()}).then(()=>{logAudit('payout_approve',id,'');loadPayouts();}).catch(reportError);
+  if(!confirm('Approve this payout request? This is recorded in the audit log.'))return;
+  db.collection('payout_requests').doc(id).update({status:'approved',approvedAt:firebase.firestore.FieldValue.serverTimestamp()})
+    .then(()=>{logAudit('payout_approve',id,'');loadPayouts();})
+    .catch(e=>{reportError(e,'payout-approve');alert('Could not approve: '+(e.message||e.code));});
 }
 function rejectPayoutReq(id) {
-  db.collection('payout_requests').doc(id).update({status:'rejected',rejectedAt:firebase.firestore.FieldValue.serverTimestamp()}).then(()=>{logAudit('payout_reject',id,'');loadPayouts();}).catch(reportError);
+  if(!confirm('Reject this payout request?'))return;
+  db.collection('payout_requests').doc(id).update({status:'rejected',rejectedAt:firebase.firestore.FieldValue.serverTimestamp()})
+    .then(()=>{logAudit('payout_reject',id,'');loadPayouts();})
+    .catch(e=>{reportError(e,'payout-reject');alert('Could not reject: '+(e.message||e.code));});
 }
 
 async function loadPricingAdmin(){

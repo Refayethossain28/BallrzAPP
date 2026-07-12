@@ -10,7 +10,7 @@
 import { test, before, after, beforeEach } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocs, collection, setDoc, updateDoc } from 'firebase/firestore';
 
 let env;
 const client = (uid) => env.authenticatedContext(uid).firestore();
@@ -164,4 +164,57 @@ test('a velvet member cannot self-award loyalty points', async () => {
   await assertSucceeds(updateDoc(doc(client('m1'), 'velvet_members/m1'), { name: 'M2' }));
   await assertFails(updateDoc(doc(client('m1'), 'velvet_members/m1'), { points: 999 }));
   await assertSucceeds(updateDoc(doc(admin(), 'velvet_members/m1'), { points: 250 }));
+});
+
+// ── Launch-audit guards ──────────────────────────────────────────────────────
+
+test('admins can create bookings for clients (ops console)', async () => {
+  await assertSucceeds(setDoc(doc(admin(), 'bookings/adm1'), { clientId: 'admin-1', clientName: 'Walk-in', price: 185 }));
+  // A client still can't create under someone else's id.
+  await assertFails(setDoc(doc(client('c1'), 'bookings/adm2'), { clientId: 'c2' }));
+});
+
+test('drivers cannot read unassigned bookings (client PII protection)', async () => {
+  await seed((db) => setDoc(doc(db, 'bookings/pii1'), { clientId: 'c1', clientEmail: 'x@y.z', pickup: '1 Home St', driverId: '' }));
+  await assertFails(getDoc(doc(driver('d1'), 'bookings/pii1')));
+  // …the assigned driver still reads their own job's booking.
+  await seed((db) => setDoc(doc(db, 'bookings/pii2'), { clientId: 'c1', driverId: 'd1' }));
+  await assertSucceeds(getDoc(doc(driver('d1'), 'bookings/pii2')));
+});
+
+test('drivers record is staff/self-only; GPS lives in driver_locations', async () => {
+  await seed((db) => setDoc(doc(db, 'drivers/dx'), { name: 'D', payout: { accountId: 'acct_secret' } }));
+  await assertFails(getDoc(doc(client('c1'), 'drivers/dx')));        // client can't read payout/compliance
+  await assertSucceeds(getDoc(doc(driver('dx'), 'drivers/dx')));     // self
+  await assertSucceeds(getDoc(doc(admin(), 'drivers/dx')));          // staff
+  // Positions: driver writes own, any signed-in user reads (trip tracking).
+  await assertSucceeds(setDoc(doc(driver('dx'), 'driver_locations/dx'), { lat: 51.5, lng: -0.12 }));
+  await assertFails(setDoc(doc(driver('dx'), 'driver_locations/other'), { lat: 0, lng: 0 }));
+  await assertSucceeds(getDoc(doc(client('c1'), 'driver_locations/dx')));
+});
+
+test('payout_requests: driver files their own, admin works the queue', async () => {
+  await assertSucceeds(setDoc(doc(driver('d1'), 'payout_requests/p1'), { driverId: 'd1', amount: 320 }));
+  await assertFails(setDoc(doc(driver('d1'), 'payout_requests/p2'), { driverId: 'd2', amount: 320 })); // not for another driver
+  await assertFails(updateDoc(doc(driver('d1'), 'payout_requests/p1'), { status: 'approved' }));       // no self-approval
+  await assertSucceeds(updateDoc(doc(admin(), 'payout_requests/p1'), { status: 'approved' }));
+  await assertFails(getDoc(doc(driver('d2'), 'payout_requests/p1')));                                  // not another driver's
+});
+
+test('invites: a code can be checked by exact id pre-auth, but not enumerated', async () => {
+  await seed((db) => setDoc(doc(db, 'invites/GOLD123'), { active: true }));
+  await assertSucceeds(getDoc(doc(env.unauthenticatedContext().firestore(), 'invites/GOLD123')));
+  await assertFails(getDocs(collection(client('c1'), 'invites')));   // list stays admin-only
+});
+
+test('a subscriber cannot re-stamp their own trial end date', async () => {
+  await seed((db) => setDoc(doc(db, 'subscriptions/s1'), { status: 'trial', trialEndsAt: '2026-08-01' }));
+  await assertSucceeds(updateDoc(doc(client('s1'), 'subscriptions/s1'), { status: 'cancelled' }));
+  await assertFails(updateDoc(doc(client('s1'), 'subscriptions/s1'), { trialEndsAt: '2099-01-01' }));
+  await assertSucceeds(updateDoc(doc(admin(), 'subscriptions/s1'), { trialEndsAt: '2026-09-01' }));
+});
+
+test('corporates are ops-console-only', async () => {
+  await assertFails(setDoc(doc(client('c1'), 'corporates/co1'), { name: 'Evil Corp' }));
+  await assertSucceeds(setDoc(doc(admin(), 'corporates/co2'), { name: 'Real Corp' }));
 });

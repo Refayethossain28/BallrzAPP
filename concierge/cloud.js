@@ -173,7 +173,9 @@
       billing: s.billing || 'local',
       sub: s.sub || null,
       invoices: s.invoices || [],
-      points: s.points || 0,
+      // NOTE: no `points` — the rules freeze loyalty points on every
+      // self-update (server-minted only). Including them rejected the WHOLE
+      // batch (profile + every concierge request) once a member earned any.
       spentPence: s.spentPence || 0,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
     };
