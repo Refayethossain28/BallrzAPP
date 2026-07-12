@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   summarisePortfolio, buildRentLedger, summariseFinances, taxYearStartYear, taxYearLabel, formatGBP,
+  depositProtectionStatus,
   type PortfolioProperty,
 } from '@rentmatch/shared';
 import { useAuth } from '../auth/AuthProvider';
@@ -45,6 +46,13 @@ export default function Home() {
   const portfolio = summarisePortfolio(listings.map(toPortfolio));
   const needsAttention = portfolio.counts.attention + portfolio.counts.breach;
   const totalArrears = tenancies.reduce((sum, t) => sum + arrearsOf(t), 0);
+  // Deposits past their 30-day protection deadline (or protected but prescribed
+  // info not served) — a Section 21-blocking, penalty-carrying legal exposure.
+  const depositsAtRisk = tenancies.filter((t) => {
+    if (t.status !== 'active') return false;
+    const s = depositProtectionStatus(t.deposit, Date.now()).state;
+    return s === 'overdue' || s === 'info-outstanding';
+  }).length;
   const thisYear = taxYearStartYear(Date.now());
   const finance = summariseFinances(income, expenses, thisYear);
 
@@ -59,9 +67,13 @@ export default function Home() {
         <Stat n={tenancies.filter((t) => t.status === 'active').length} label="Tenancies" />
       </div>
 
-      {(needsAttention > 0 || totalArrears > 0) && (
+      {(needsAttention > 0 || totalArrears > 0 || depositsAtRisk > 0) && (
         <>
           <div className="section-t">Needs attention</div>
+          {depositsAtRisk > 0 && (
+            <Alert to="/landlord/rent" tone="bad"
+              text={`${depositsAtRisk} deposit${depositsAtRisk === 1 ? '' : 's'} not properly protected — Section 21 at risk`} />
+          )}
           {portfolio.counts.breach > 0 && (
             <Alert to="/landlord/compliance" tone="bad"
               text={`${portfolio.counts.breach} propert${portfolio.counts.breach === 1 ? 'y has' : 'ies have'} a missing or expired certificate`} />

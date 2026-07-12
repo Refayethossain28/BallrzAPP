@@ -14,6 +14,7 @@ export default function ListingDetail() {
   const navigate = useNavigate();
   const { user, profile } = useAuth();
   const [busy, setBusy] = useState(false);
+  const [enquireError, setEnquireError] = useState('');
   const { data: l, isLoading } = useQuery({ queryKey: ['listing', id], queryFn: () => fetchListing(id) });
 
   if (isLoading) return <p className="sub">Loading…</p>;
@@ -24,9 +25,12 @@ export default function ListingDetail() {
   async function enquire() {
     if (!user || !l) return;
     setBusy(true);
+    setEnquireError('');
     try {
       const dealId = await createOrGetDeal(l, { uid: user.uid, name: profile?.displayName ?? 'Renter' });
       navigate(`/deal/${dealId}`);
+    } catch (err) {
+      setEnquireError(err instanceof Error ? err.message : 'Could not start the enquiry — please try again.');
     } finally {
       setBusy(false);
     }
@@ -103,6 +107,7 @@ export default function ListingDetail() {
           <button className="cta" disabled={l.status !== 'live' || busy} onClick={enquire}>
             {l.status !== 'live' ? 'This property has been let' : busy ? 'Opening…' : 'Enquire & message landlord'}
           </button>
+          {enquireError && <p className="error" style={{ marginTop: 8 }}>{enquireError}</p>}
           <p className="faint" style={{ textAlign: 'center', fontSize: 11, marginTop: 10 }}>
             Message the landlord, arrange a viewing, agree terms, then sign the tenancy.
           </p>
