@@ -38,10 +38,24 @@
  * (`self.BallrzCoin`) and in the Node test sandbox (`module.exports`).
  */
 (function (root, factory) {
-  if (typeof module !== 'undefined' && module.exports) module.exports = factory();
-  else root.BallrzCoin = factory();
-})(typeof self !== 'undefined' ? self : this, function () {
+  if (typeof module !== 'undefined' && module.exports) module.exports = factory(root);
+  else root.BallrzCoin = factory(root);
+})(typeof self !== 'undefined' ? self : this, function (root) {
   'use strict';
+
+  /* ======================================================================
+   * Audited-crypto provider (optional)
+   * ----------------------------------------------------------------------
+   * If a BallrzCryptoProvider global is registered BEFORE this file loads
+   * (cortex/vendor/noble-crypto.js bundles the audited @noble/secp256k1 and
+   * @noble/hashes libraries and registers one), the hashing and curve
+   * primitives below delegate to it and the hand-rolled implementations
+   * become a cross-checked fallback. Differential equivalence — identical
+   * hashes, public keys, addresses and signatures — is pinned by
+   * scripts/test-cortex-crypto.mjs. With no provider, behaviour is
+   * unchanged.
+   * ==================================================================== */
+  var HW = (root && root.BallrzCryptoProvider) || null;
 
   /* ======================================================================
    * Monetary constants
@@ -129,7 +143,8 @@
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
   ];
 
-  function sha256Bytes(bytes) {
+  function sha256Bytes(bytes) { return HW ? HW.sha256Bytes(bytes) : sha256BytesJS(bytes); }
+  function sha256BytesJS(bytes) {
     var len = bytes.length;
     var padded = new Uint8Array((((len + 8) >> 6) + 1) << 6);
     padded.set(bytes);
@@ -180,7 +195,8 @@
   /* ======================================================================
    * HMAC-SHA256 (RFC 2104) — needed for RFC 6979 deterministic nonces
    * ==================================================================== */
-  function hmacSha256(keyBytes, msgBytes) {
+  function hmacSha256(keyBytes, msgBytes) { return HW ? HW.hmacSha256(keyBytes, msgBytes) : hmacSha256JS(keyBytes, msgBytes); }
+  function hmacSha256JS(keyBytes, msgBytes) {
     var key = keyBytes.length > 64 ? sha256Bytes(keyBytes) : keyBytes;
     var ipad = new Uint8Array(64), opad = new Uint8Array(64);
     for (var i = 0; i < 64; i++) {
@@ -259,7 +275,8 @@
     return s;
   }
 
-  function getPublicKey(privHex) {
+  function getPublicKey(privHex) { return HW ? HW.getPublicKey(privHex) : getPublicKeyJS(privHex); }
+  function getPublicKeyJS(privHex) {
     var d = BigInt('0x' + privHex);
     if (d <= ZERO || d >= CURVE_N) throw new Error('private key out of range');
     var Q = pointMul(d, G);
@@ -309,7 +326,8 @@
     };
   }
 
-  function sign(msgHashHex, privHex) {
+  function sign(msgHashHex, privHex) { return HW ? HW.sign(msgHashHex, privHex) : signJS(msgHashHex, privHex); }
+  function signJS(msgHashHex, privHex) {
     if (typeof msgHashHex !== 'string' || msgHashHex.length !== 64) throw new Error('message hash must be 32 bytes hex');
     var d = BigInt('0x' + privHex);
     if (d <= ZERO || d >= CURVE_N) throw new Error('private key out of range');
@@ -328,6 +346,10 @@
   }
 
   function verify(msgHashHex, sigHex, pubHex) {
+    if (HW) { try { return !!HW.verify(msgHashHex, sigHex, pubHex); } catch (e) { return false; } }
+    return verifyJS(msgHashHex, sigHex, pubHex);
+  }
+  function verifyJS(msgHashHex, sigHex, pubHex) {
     try {
       if (typeof sigHex !== 'string' || sigHex.length !== 128) return false;
       var r = BigInt('0x' + sigHex.slice(0, 64));
@@ -351,7 +373,8 @@
   // identical secret over an open channel. Returns the 32-byte x-coordinate as
   // hex — HASH it before use as a key (see the app's E2E chat). This lets the
   // coin's own wallets do end-to-end encryption with no new key system.
-  function ecdh(privHex, pubHex) {
+  function ecdh(privHex, pubHex) { return HW && HW.ecdh ? HW.ecdh(privHex, pubHex) : ecdhJS(privHex, pubHex); }
+  function ecdhJS(privHex, pubHex) {
     var d = BigInt('0x' + privHex);
     if (d <= ZERO || d >= CURVE_N) throw new Error('private key out of range');
     var P = decompressPoint(pubHex);
@@ -1094,6 +1117,11 @@
     base58Check: base58Check, base58CheckDecode: base58CheckDecode,
     // elliptic-curve crypto
     getPublicKey: getPublicKey, sign: sign, verify: verify, ecdh: ecdh,
+    // which crypto backs the primitives (null = built-in), plus the built-in
+    // implementations regardless — so the differential tests can compare the
+    // audited provider against the hand-rolled reference byte for byte.
+    cryptoProvider: HW ? String(HW.name || 'provider') : null,
+    _builtinCrypto: { sha256Bytes: sha256BytesJS, hmacSha256: hmacSha256JS, getPublicKey: getPublicKeyJS, sign: signJS, verify: verifyJS, ecdh: ecdhJS },
     // wallets & addresses
     generateWallet: generateWallet, walletFromPrivateKey: walletFromPrivateKey,
     addressFromPublicKey: addressFromPublicKey, isValidAddress: isValidAddress,

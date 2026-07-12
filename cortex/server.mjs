@@ -1,0 +1,83 @@
+#!/usr/bin/env node
+/**
+ * Cortex relay — cross-device networking for the Proof-of-Learning chain.
+ *
+ * Same design as the TimeCoin relay (coin/server.mjs) and it REUSES that
+ * hardened, tested server via `createRelay` — a dumb message forwarder that
+ * never validates a block or holds a key, so consensus stays entirely in the
+ * nodes (cortex/net.js + engine.js `replaceChain`). It also serves the Cortex
+ * app, so deploying this one file gives a URL that IS a shared Cortex network.
+ *
+ * ── ⚠ TESTNET ONLY ───────────────────────────────────────────────────────────
+ * Not safe as a real-value network yet: the model's forward pass uses floating-
+ * point tanh/exp/log, which aren't guaranteed bit-identical across machines, so
+ * honest nodes could disagree on a block and fork. A deterministic fixed-point
+ * forward pass is the gate for a trustworthy network — see cortex/DEPLOY.md and
+ * cortex/TRUSTLESS.md. Use this for local/testnet experimentation.
+ *
+ * Run:   node cortex/server.mjs            (PORT=8088)
+ * Env:   PORT, SELF_URL, and the RELAY_* knobs documented in coin/server.mjs.
+ */
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createRelay, startKeepAlive } from '../coin/server.mjs';
+
+const DIR = dirname(fileURLToPath(import.meta.url));
+
+// The Cortex app + its modules. index.html loads ../coin/engine.js, which the
+// browser requests as /coin/engine.js — served here from the sibling coin dir.
+const STATIC = {
+  '/': ['index.html', 'text/html; charset=utf-8'],
+  '/index.html': ['index.html', 'text/html; charset=utf-8'],
+  '/app.html': ['app.html', 'text/html; charset=utf-8'],
+  '/mine.html': ['mine.html', 'text/html; charset=utf-8'],       // redirect stub → /app.html#mine
+  '/wallet.html': ['wallet.html', 'text/html; charset=utf-8'],   // redirect stub → /app.html#wallet
+  '/guide.html': ['guide.html', 'text/html; charset=utf-8'],
+  '/network.html': ['network.html', 'text/html; charset=utf-8'],
+  '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
+  '/miner-worker.js': ['miner-worker.js', 'text/javascript; charset=utf-8'],
+  '/vendor/noble-crypto.js': ['vendor/noble-crypto.js', 'text/javascript; charset=utf-8'],
+  '/keystore.js': ['keystore.js', 'text/javascript; charset=utf-8'],
+  '/sw.js': ['sw.js', 'text/javascript; charset=utf-8'],
+  '/cortex.webmanifest': ['cortex.webmanifest', 'application/manifest+json; charset=utf-8'],
+  '/mine.webmanifest': ['mine.webmanifest', 'application/manifest+json; charset=utf-8'],
+  '/wallet.webmanifest': ['wallet.webmanifest', 'application/manifest+json; charset=utf-8'],
+  '/favicon.ico': ['cortex-icon-192.png', 'image/png'],
+  '/cortex-icon-192.png': ['cortex-icon-192.png', 'image/png'],
+  '/cortex-icon-512.png': ['cortex-icon-512.png', 'image/png'],
+  '/cortex-icon-maskable-512.png': ['cortex-icon-maskable-512.png', 'image/png'],
+  '/cortex-icon-180.png': ['cortex-icon-180.png', 'image/png'],
+  '/mine-icon-192.png': ['mine-icon-192.png', 'image/png'],
+  '/mine-icon-512.png': ['mine-icon-512.png', 'image/png'],
+  '/mine-icon-maskable-512.png': ['mine-icon-maskable-512.png', 'image/png'],
+  '/mine-icon-180.png': ['mine-icon-180.png', 'image/png'],
+  '/wallet-icon-192.png': ['wallet-icon-192.png', 'image/png'],
+  '/wallet-icon-512.png': ['wallet-icon-512.png', 'image/png'],
+  '/wallet-icon-maskable-512.png': ['wallet-icon-maskable-512.png', 'image/png'],
+  '/wallet-icon-180.png': ['wallet-icon-180.png', 'image/png'],
+  '/engine.js': ['engine.js', 'text/javascript; charset=utf-8'],
+  '/datasets.js': ['datasets.js', 'text/javascript; charset=utf-8'],
+  '/holdout.js': ['holdout.js', 'text/javascript; charset=utf-8'],
+  '/tournament.js': ['tournament.js', 'text/javascript; charset=utf-8'],
+  '/prover.js': ['prover.js', 'text/javascript; charset=utf-8'],
+  '/net.js': ['net.js', 'text/javascript; charset=utf-8'],
+  '/coin/engine.js': ['../coin/engine.js', 'text/javascript; charset=utf-8'],
+};
+
+// The gossip message types cortex/net.js speaks (the relay only forwards these).
+const TYPES = ['hello', 'chain', 'block', 'tx'];
+
+export function createCortexRelay(opts = {}) {
+  return createRelay({ ...opts, name: 'cortex-relay', types: TYPES, staticFiles: STATIC, dir: DIR });
+}
+
+// Boot when run directly (not when imported by tests).
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const PORT = Number(process.env.PORT || 8088);
+  const server = createCortexRelay();
+  server.listen(PORT, () => {
+    console.log(`cortex relay on :${PORT}  (⚠ testnet only — see cortex/DEPLOY.md)`);
+    if (process.env.SELF_URL) startKeepAlive(process.env.SELF_URL);
+  });
+  process.on('SIGTERM', () => server.close(() => process.exit(0)));
+}

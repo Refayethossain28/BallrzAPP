@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Cortex — a Proof-of-Learning blockchain</title>
+<style>
+  :root { color-scheme: dark; --bg:#0b0e14; --panel:#141a24; --line:#232c3b; --ink:#e6edf6; --dim:#8ea1bd; --accent:#5ad1a8; --accent2:#6aa9ff; --bad:#ff6b81; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased; }
+  header { padding:calc(22px + env(safe-area-inset-top)) 20px 8px; }
+  h1 { margin:0; font-size:22px; letter-spacing:-.02em; }
+  h1 span { color:var(--accent); }
+  .tag { color:var(--dim); font-size:13px; margin-top:4px; }
+  main { max-width:920px; margin:0 auto; padding:12px 16px 60px; }
+  .grid { display:grid; grid-template-columns:1fr; gap:16px; }
+  @media (min-width:760px){ .grid { grid-template-columns:340px 1fr; align-items:start; } }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px; }
+  canvas { width:100%; height:auto; aspect-ratio:1/1; background:#080b11; border-radius:12px; display:block; }
+  .stats { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:0 0 14px; }
+  .stat { background:#0e1420; border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+  .stat b { display:block; font-size:20px; font-variant-numeric:tabular-nums; }
+  .stat small { color:var(--dim); font-size:12px; }
+  button { appearance:none; border:0; border-radius:10px; padding:12px 16px; font-size:15px; font-weight:600; cursor:pointer; background:var(--accent); color:#04150f; width:100%; }
+  button:disabled { opacity:.5; cursor:default; }
+  .ghost { background:transparent; color:var(--dim); border:1px solid var(--line); margin-top:8px; }
+  .blocks { margin-top:14px; max-height:280px; overflow:auto; border-top:1px solid var(--line); }
+  .blk { display:flex; gap:10px; align-items:baseline; padding:8px 2px; border-bottom:1px solid var(--line); font-size:13px; }
+  .blk .h { color:var(--accent2); font-variant-numeric:tabular-nums; }
+  .blk .who { color:var(--dim); font-family:ui-monospace,Menlo,monospace; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+  .blk .loss { color:var(--accent); font-variant-numeric:tabular-nums; }
+  .note { color:var(--dim); font-size:12.5px; margin-top:10px; }
+  .pick { display:block; font-size:12px; color:var(--dim); margin-bottom:14px; }
+  .pick select { display:block; width:100%; margin-top:6px; padding:10px 12px; font-size:14px; color:var(--ink); background:#0e1420; border:1px solid var(--line); border-radius:10px; }
+  code { background:#0e1420; padding:1px 5px; border-radius:5px; font-size:12.5px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Cortex <span>·</span> a Proof-of-Learning blockchain</h1>
+  <div class="tag">Miners don't burn hashes — they <b>train a shared neural network</b>. Every block is a signed, verifiable proof the model got smarter.</div>
+</header>
+<main>
+  <div class="grid">
+    <section class="panel">
+      <label class="pick">Learning task
+        <select id="dataset">
+          <option value="synthetic">Synthetic XOR — 2-D, visualised</option>
+          <option value="banknote">Banknote — real forgery detection, 4-D</option>
+        </select>
+      </label>
+      <div class="stats">
+        <div class="stat"><b id="s-height">0</b><small>blocks mined</small></div>
+        <div class="stat"><b id="s-acc">–</b><small>model accuracy</small></div>
+        <div class="stat"><b id="s-loss">–</b><small>current loss</small></div>
+        <div class="stat"><b id="s-learn">0</b><small>total learning</small></div>
+        <div class="stat"><b id="s-bal">0 MIND</b><small>your wallet</small></div>
+        <div class="stat"><b id="s-supply">0 MIND</b><small>total supply</small></div>
+      </div>
+      <button id="mine">⛏️ Mine a block (train &amp; earn MIND)</button>
+      <button id="send" class="ghost">💸 Send half my MIND to a friend</button>
+      <button id="reset" class="ghost">Reset chain</button>
+      <div class="note" id="netstat">Local only — not connected to a network.</div>
+      <div class="blocks" id="blocks"></div>
+      <div class="note">Each block trains from the tip's weights until the loss drops by at least the network's <code>minImprovement</code>, and <b>mints MIND to you in proportion to the learning</b> — so the money is earned by teaching the shared model. Verifying a block is one forward pass; the loss (and your reward) is recomputed, never trusted. Total supply is bounded by the knowledge the network can create, and stops growing once the model converges.</div>
+    </section>
+    <section class="panel">
+      <canvas id="view" width="600" height="600"></canvas>
+      <div class="note" id="viewnote">The shared task: classify a noisy <b>XOR</b> of two coordinates — impossible for a straight line. Dots are the dataset (two classes); the shaded field is the network's live decision boundary. Watch it bend as the chain learns.</div>
+    </section>
+  </div>
+</main>
+
+<script src="vendor/noble-crypto.js"></script>
+<script src="../coin/engine.js"></script>
+<script src="datasets.js"></script>
+<script src="engine.js"></script>
+<script src="net.js"></script>
+<script>
+(function () {
+  'use strict';
+  var Cortex = self.BallrzCortex, Coin = self.BallrzCoin, Net = self.BallrzCortexNet;
+  var task, chain, wallet, friend, mining = false;
+  var node = null, transport = null, pollTimer = null; // networking (only when served by a relay)
+
+  var $ = function (id) { return document.getElementById(id); };
+  var mind = function (u) { return Cortex.formatMind(u); };
+
+  function fresh() {
+    var ds = $('dataset') ? $('dataset').value : 'synthetic';
+    if (ds === 'banknote') {
+      task = Cortex.makeTask({ id: 'cortex-banknote', dataset: 'banknote', layers: [16] });
+    } else {
+      task = Cortex.makeTask({ id: 'cortex-live-demo' });
+    }
+    chain = new Cortex.Chain(task, { genesisSeed: 'demo', at: Date.now() });
+    wallet = Coin.generateWallet();
+    friend = Coin.generateWallet();
+    // Networking only makes sense on the shared synthetic genesis; banknote is local.
+    if (ds === 'banknote') disconnect(); else attachNode();
+    var note = $('viewnote');
+    if (note) note.innerHTML = task.dataset
+      ? 'Real <b>' + task.datasetTitle + '</b>: ' + task.samples + ' banknotes, ' + task.inputs + ' features → genuine/forged. The model is 4-D, so this is a 2-D slice — <b>' + task.featureNames[0] + '</b> vs <b>' + task.featureNames[1] + '</b>, other features held at their mean. Watch accuracy climb as the chain learns real forgery detection.'
+      : 'The shared task: classify a noisy <b>XOR</b> of two coordinates — impossible for a straight line. Dots are the dataset (two classes); the shaded field is the network\'s live decision boundary. Watch it bend as the chain learns.';
+    render();
+  }
+
+  function render() {
+    $('s-height').textContent = chain.height();
+    $('s-acc').textContent = (chain.accuracy() * 100).toFixed(1) + '%';
+    $('s-loss').textContent = chain.tipLoss().toFixed(4);
+    $('s-learn').textContent = chain.cumulativeImprovement().toFixed(4);
+    $('s-bal').textContent = mind(chain.balanceOf(wallet.address));
+    $('s-supply').textContent = mind(chain.totalSupply());
+    $('send').disabled = chain.balanceOf(wallet.address) <= 0;
+    var box = $('blocks'); box.innerHTML = '';
+    chain.blocks.slice().reverse().forEach(function (b) {
+      var row = document.createElement('div'); row.className = 'blk';
+      var who = b.index === 0 ? 'genesis' : (b.miner || '').slice(0, 12) + '…';
+      var right = b.index === 0 ? '—' : '+' + mind(b.reward) + (b.txs && b.txs.length ? ' · ' + b.txs.length + ' tx' : '');
+      row.innerHTML = '<span class="h">#' + b.index + '</span>' +
+        '<span class="who">' + who + '</span>' +
+        '<span class="loss">' + right + '</span>';
+      box.appendChild(row);
+    });
+    drawBoundary();
+  }
+
+  function drawBoundary() {
+    var cv = $('view'), g = cv.getContext('2d'); if (!g) return;
+    var W = cv.width, H = cv.height, step = 12;
+    var w = chain.tip().weights;
+    var R = task.dataset ? 3 : 1;            // axis half-range (z-scores for real data)
+    var toPx = function (v) { return ((v / R + 1) / 2) * W; };
+    var toPy = function (v) { return ((1 - v / R) / 2) * H; };
+    g.clearRect(0, 0, W, H);
+    // decision field: a 2-D slice over features 0 & 1, other features at their mean (0 when standardised)
+    for (var px = 0; px < W; px += step) {
+      for (var py = 0; py < H; py += step) {
+        var pt = new Array(task.inputs); for (var d = 0; d < task.inputs; d++) pt[d] = 0;
+        pt[0] = ((px / W) * 2 - 1) * R; pt[1] = (1 - (py / H) * 2) * R;
+        var p = Cortex.predict(task, w, pt); // real forward pass through the shared net
+        var tt = Math.max(0, Math.min(1, p));
+        g.fillStyle = 'rgba(' + Math.round(106 + (90 - 106) * tt) + ',' + Math.round(169 + (209 - 169) * tt) + ',' + Math.round(255 + (168 - 255) * tt) + ',0.18)';
+        g.fillRect(px, py, step, step);
+      }
+    }
+    // data points (first two features)
+    var rad = task.X.length > 400 ? 2 : 4, alpha = task.X.length > 400 ? 0.6 : 1;
+    g.globalAlpha = alpha;
+    for (var i = 0; i < task.X.length; i++) {
+      g.beginPath(); g.arc(toPx(task.X[i][0]), toPy(task.X[i][1]), rad, 0, Math.PI * 2);
+      g.fillStyle = task.y[i] === 1 ? '#5ad1a8' : '#6aa9ff';
+      g.fill();
+    }
+    g.globalAlpha = 1;
+  }
+
+  // --- networking: activate only when the page is served by a Cortex relay ---
+  function setNet(msg) { var el = $('netstat'); if (el) el.textContent = msg; }
+  function disconnect() { if (pollTimer) { try { clearInterval(pollTimer); } catch (e) {} pollTimer = null; } node = null; transport = null; setNet('Local only — this task is not networked.'); }
+  function attachNode() {
+    if (!Net) return;
+    var origin = (self.location && typeof self.location.origin === 'string') ? self.location.origin : '';
+    if (origin.indexOf('http') !== 0) { setNet('Local only — open via a Cortex relay to join a network.'); return; }
+    try {
+      fetch(origin + '/status').then(function (r) { return r.json(); }).then(function (d) {
+        if (!d || d.name !== 'cortex-relay') { setNet('Local only — not served by a Cortex relay.'); return; }
+        transport = Net.httpTransport(origin);
+        node = Net.createNode({ id: wallet.address.slice(0, 10), chain: chain, send: function (m) { transport.send(m); } });
+        node.hello();
+        pollTimer = setInterval(function () { transport.poll(function (m) { node.receive(m); }).then(function () { render(); }).catch(function () {}); }, 2000);
+        setNet('⇄ Connected — mining and MIND transfers are shared across the network.');
+        render();
+      }).catch(function () { setNet('Local only — no relay reachable.'); });
+    } catch (e) { setNet('Local only.'); }
+  }
+
+  // Mine a block from the given private key, optionally carrying transfers.
+  // Training is heavy, so it runs off a timer to keep the UI responsive. When
+  // connected to a relay, the block (and any transfers) broadcast to the network.
+  function mineWith(privKey, txs, label) {
+    if (mining) return;
+    mining = true; $('mine').disabled = true; $('send').disabled = true;
+    $('mine').textContent = label || 'Training…';
+    setTimeout(function () {
+      var blk = null;
+      try {
+        if (node) {
+          (txs || []).forEach(function (tx) { node.submitTx(tx); });
+          blk = node.mineAndBroadcast({ privKey: privKey, steps: 300, at: Date.now(), nonce: 'b' + chain.height() });
+        } else {
+          blk = chain.mineBlock({ privKey: privKey, steps: 300, at: Date.now(), nonce: 'b' + chain.height(), txs: txs || [] });
+          if (blk) chain.addBlock(blk);
+        }
+      } catch (e) { blk = null; }
+      mining = false; $('mine').disabled = false;
+      if (!blk) { $('mine').textContent = '✅ Model converged — chain complete'; render(); return; }
+      $('mine').textContent = '⛏️ Mine a block (train & earn MIND)';
+      render();
+    }, 20);
+  }
+
+  function mine() { mineWith(wallet.privateKey, [], 'Training…'); }
+
+  // Sign a transfer of half your MIND to a fresh "friend" wallet, then mine the
+  // block that settles it (you earn the block's reward too). Demonstrates that
+  // MIND is genuinely spendable, not just a score.
+  function send() {
+    var bal = chain.balanceOf(wallet.address);
+    if (bal <= 0 || mining) return;
+    var tx = Cortex.signTransfer({
+      privKey: wallet.privateKey, to: friend.address,
+      amount: Math.floor(bal / 2), at: Date.now(), nonce: 'pay-' + chain.height()
+    });
+    mineWith(wallet.privateKey, [tx], 'Settling transfer…');
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    fresh();
+    $('mine').addEventListener('click', mine);
+    $('send').addEventListener('click', send);
+    $('reset').addEventListener('click', fresh);
+    $('dataset').addEventListener('change', fresh);
+  });
+})();
+</script>
+</body>
+</html>
