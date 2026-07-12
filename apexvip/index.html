@@ -633,8 +633,92 @@ footer.site a:hover{color:var(--gold)}
 }
 .mobile-cta .btn{flex:1;padding:14px 18px}
 
+/* ═══════════ CUTTING-EDGE EFFECTS LAYER ═══════════ */
+/* Scroll progress — a hairline of gold across the very top */
+#progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:120;pointer-events:none;background:transparent}
+#progress b{display:block;height:100%;width:100%;transform-origin:left;transform:scaleX(0);background:linear-gradient(90deg,var(--gold-b),var(--gold),var(--gold-hi));box-shadow:0 0 12px rgba(212,175,110,.55)}
+
+/* Shimmering gold text — light sweeps through the lettering */
+.shimmer{
+  background:linear-gradient(110deg,var(--gold-b) 20%,var(--gold-hi) 38%,#fff8e9 50%,var(--gold-hi) 62%,var(--gold-b) 80%);
+  background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+  animation:shimmer 5.5s ease-in-out infinite;
+}
+@keyframes shimmer{0%,100%{background-position:110% 0}50%{background-position:-10% 0}}
+.hero h1 em.shimmer{font-style:italic}
+
+/* Hero headline — per-letter rise-and-focus reveal (spans added by JS) */
+.hero h1 .wd{display:inline-block;white-space:nowrap}
+.hero h1 .ch{display:inline-block;white-space:pre}
+html.fx .hero h1{animation:none}
+html.fx .hero h1 .ch{opacity:0;transform:translateY(.55em) rotate(4deg);filter:blur(10px);animation:chIn 1s var(--ease) forwards;animation-delay:calc(.25s + var(--i)*.045s)}
+@keyframes chIn{to{opacity:1;transform:none;filter:blur(0)}}
+
+/* Hero film — imperceptibly slow push-in */
+html.fx .hero-media video{animation:heroZoom 26s ease-in-out infinite alternate}
+@keyframes heroZoom{from{transform:scale(1)}to{transform:scale(1.09)}}
+
+/* Gold dust — canvas pinned behind the hero copy */
+#dust{position:absolute;inset:0;z-index:-1;pointer-events:none}
+
+/* Cursor aura — a soft pool of candlelight that follows the pointer */
+#aura{
+  position:fixed;left:0;top:0;width:520px;height:520px;z-index:85;pointer-events:none;
+  border-radius:50%;opacity:0;transition:opacity .6s;
+  background:radial-gradient(circle,rgba(212,175,110,.075) 0%,rgba(212,175,110,.028) 38%,transparent 68%);
+  transform:translate(-50%,-50%);mix-blend-mode:screen;
+}
+html.fx.has-aura #aura{opacity:1}
+
+/* Magnetic buttons — drawn gently toward the cursor (JS sets the offset) */
+.magnetic{transition:transform .35s var(--ease),box-shadow .35s,background .35s,border-color .35s}
+.magnetic>span.lbl{display:inline-block;transition:transform .35s var(--ease)}
+
+/* 3D tilt cards — perspective follows the mouse; a glare tracks it */
+.tilt{transform-style:preserve-3d;position:relative}
+html.fx .tilt{transition:transform .5s var(--ease),border-color .5s,box-shadow .5s}
+html.fx .tilt:hover{transform:perspective(900px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) translateY(-6px)}
+html.fx .tilt::after{
+  content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity .5s;
+  background:radial-gradient(360px circle at var(--mx,50%) var(--my,50%),rgba(255,244,220,.11),transparent 60%);
+}
+html.fx .tilt:hover::after{opacity:1}
+
+/* Sheen — a blade of light crosses premium cards on hover */
+.sheen{position:relative;overflow:hidden}
+.sheen::before{
+  content:'';position:absolute;top:-30%;bottom:-30%;left:-90%;width:55%;z-index:1;pointer-events:none;
+  background:linear-gradient(105deg,transparent 0%,rgba(255,248,235,.055) 42%,rgba(255,248,235,.14) 50%,rgba(255,248,235,.055) 58%,transparent 100%);
+  transform:skewX(-18deg);transition:left 0s;
+}
+.sheen:hover::before{left:150%;transition:left 1.1s var(--ease)}
+
+/* Liquid-gold border — a light travels the rim of the flagship cards */
+.rimlight{position:relative}
+.rimlight::before{
+  content:'';position:absolute;inset:-1px;border-radius:inherit;padding:1px;z-index:0;pointer-events:none;
+  background:conic-gradient(from var(--rim,0deg),transparent 0 8%,var(--gold) 12%,var(--gold-hi) 15%,var(--gold) 18%,transparent 24% 100%);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;
+  opacity:0;transition:opacity .8s;
+}
+html.fx .rimlight.lit::before{opacity:.9}
+
+/* ── Drive with ApexVIP ── */
+.drivers{background:var(--bg-2)}
+.drv-stats{margin-top:56px;display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.drv-stat{border-radius:20px;padding:34px 28px;text-align:center}
+.drv-stat b{display:block;font-family:var(--serif);font-weight:400;font-size:clamp(44px,5vw,64px);line-height:1}
+.drv-stat small{display:block;margin-top:10px;font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--fg-3)}
+.drv-grid{margin-top:20px;display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.drv-card{border-radius:20px;padding:32px 30px}
+.drv-card .ico{font-size:22px;color:var(--gold);margin-bottom:14px}
+.drv-card h3{font-size:20px;margin-bottom:9px}
+.drv-card p{color:var(--fg-2);font-size:13.5px}
+
 /* ── Responsive ────────────────────────────────────────────────────── */
 @media (max-width:1020px){
+  .drv-grid{grid-template-columns:1fr}
   .svc-grid{grid-template-columns:repeat(2,1fr)}
   .fleet-grid,.city-grid,.tiers,.quote-grid,.apps-grid{grid-template-columns:repeat(2,1fr)}
   .how-grid,.promise-grid{grid-template-columns:repeat(2,1fr)}
@@ -657,6 +741,7 @@ footer.site a:hover{color:var(--gold)}
   .stat{padding:30px 12px}
   .svc-grid,.fleet-grid,.city-grid,.tiers,.quote-grid,.apps-grid{grid-template-columns:1fr}
   .how-grid,.promise-grid{grid-template-columns:1fr}
+  .drv-stats{grid-template-columns:1fr}
   .bento{grid-template-columns:1fr}
   .bento .cw2{grid-column:span 1}
   .member-note .btn{margin-left:0}
@@ -678,6 +763,8 @@ footer.site a:hover{color:var(--gold)}
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
+<div id="progress" aria-hidden="true"><b></b></div>
+<div id="aura" aria-hidden="true"></div>
 
 <nav id="nav" aria-label="Primary">
   <a class="brand" href="#top" aria-label="ApexVIP home">
@@ -690,11 +777,12 @@ footer.site a:hover{color:var(--gold)}
     <a href="#using">How to use</a>
     <a href="#cities">Cities</a>
     <a href="#membership">Membership</a>
+    <a href="#drivers">Drivers</a>
     <a href="#faq">FAQ</a>
   </div>
   <div class="nav-cta">
     <a class="btn btn-ghost btn-sm" href="../concierge/">Concierge</a>
-    <a class="btn btn-gold btn-sm" href="#reserve">Reserve</a>
+    <a class="btn btn-gold btn-sm magnetic" href="#reserve">Reserve</a>
     <button class="burger" id="burger" aria-label="Open menu" aria-expanded="false">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 7h18M3 12h18M3 17h18"/></svg>
     </button>
@@ -707,6 +795,7 @@ footer.site a:hover{color:var(--gold)}
   <a href="#fleet">Fleet</a>
   <a href="#cities">Cities</a>
   <a href="#membership">Membership</a>
+  <a href="#drivers">Drivers</a>
   <a href="#faq">FAQ</a>
   <a href="#reserve">Reserve</a>
 </div>
@@ -720,13 +809,14 @@ footer.site a:hover{color:var(--gold)}
       <source src="../promo/silent/apexvip-promo-landscape-silent.mp4" type="video/mp4"/>
     </video>
   </div>
+  <canvas id="dust" aria-hidden="true"></canvas>
   <div class="hero-inner">
     <div class="kicker">London · Dubai coming soon</div>
-    <h1>Travel, <em>perfected.</em></h1>
+    <h1 id="heroTitle">Travel, <em class="shimmer">perfected.</em></h1>
     <p class="lede">The world's most considered chauffeur service. A professional at the wheel, a concierge in your pocket, and a car that arrives before you think to ask.</p>
     <div class="hero-ctas">
-      <a class="btn btn-gold" href="#reserve">Reserve your place</a>
-      <a class="btn btn-ghost" href="../apexvip-client.html">Book a chauffeur</a>
+      <a class="btn btn-gold magnetic" href="#reserve">Reserve your place</a>
+      <a class="btn btn-ghost magnetic" href="#apps">Get the app</a>
     </div>
   </div>
   <div class="hero-foot">
@@ -766,13 +856,13 @@ footer.site a:hover{color:var(--gold)}
         <span class="num">01</span>
         <h3>Airport &amp; private aviation</h3>
         <p>We track your flight and move with it. Meet &amp; greet in arrivals, and sixty minutes of waiting on us after touchdown — commercial terminal or private FBO, from Farnborough to Le Bourget.</p>
-        <a class="more" href="../apexvip-client.html">Book a transfer</a>
+        <a class="more" href="#apps">Book it in the app</a>
       </article>
       <article class="svc rv rv-d1">
         <span class="num">02</span>
         <h3>Chauffeur by the hour</h3>
         <p>Your car and chauffeur, held at your disposal. Board meetings, evenings out, a day of errands done properly — multi-stop itineraries handled without a second thought.</p>
-        <a class="more" href="../apexvip-client.html">Reserve time</a>
+        <a class="more" href="#apps">Book it in the app</a>
       </article>
       <article class="svc rv rv-d2">
         <span class="num">03</span>
@@ -813,13 +903,13 @@ footer.site a:hover{color:var(--gold)}
     <h2 class="section-title rv">One app. The whole service.</h2>
     <p class="section-sub rv rv-d1">Book a car, track it, message your chauffeur, settle without lifting a finger, and reach a concierge for everything else — all from one place, on any device.</p>
     <div class="bento">
-      <div class="cell feature glass rv"><div class="ico">✦</div><div class="big">Just say it.<br/><em>It's booked.</em></div><p>ApexAI turns a sentence — “S-Class to LHR T5 when BA284 lands” — into a confirmed ride at a fixed fare. It reads airports, flight numbers, times and multi-stop routes, day or night.</p></div>
+      <div class="cell feature glass tilt sheen rv"><div class="ico">✦</div><div class="big">Just say it.<br/><em>It's booked.</em></div><p>ApexAI turns a sentence — “S-Class to LHR T5 when BA284 lands” — into a confirmed ride at a fixed fare. It reads airports, flight numbers, times and multi-stop routes, day or night.</p></div>
       <div class="cell glass rv rv-d1"><div class="ico">◎</div><h3>Live tracking</h3><p>Watch your chauffeur approach in real time — and share a live link so whoever's meeting you can too.</p></div>
       <div class="cell glass rv rv-d2"><div class="ico">◈</div><h3>Fixed fares</h3><p>Quoted before you ride, inclusive of VAT. No surge, no meter, no surprises.</p></div>
       <div class="cell glass rv"><div class="ico">✈</div><h3>Airport-ready</h3><p>Flight tracking, meet &amp; greet, and 60 minutes' complimentary wait after you land.</p></div>
       <div class="cell glass rv rv-d1"><div class="ico">💬</div><h3>In-app chat</h3><p>Message your chauffeur directly — no numbers exchanged, no missed calls.</p></div>
-      <div class="cell feature glass cw2 rv rv-d2"><div class="ico">💳</div><div class="big">Step out. <em>It's paid.</em></div><p>Settle automatically with Apple Pay, Google Pay, a saved card or ApexCoin — or pay on a corporate account. A receipt lands in your trips, points on every pound.</p></div>
-      <div class="cell feature glass cw2 rv"><div class="ico">🎩</div><div class="big">A concierge for <em>everything else.</em></div><p>Eight desks beyond the car — travel, dining, events, shopping, home, wellness and gifting. Ask in one thread; three priced options come back.</p></div>
+      <div class="cell feature glass cw2 tilt sheen rv rv-d2"><div class="ico">💳</div><div class="big">Step out. <em>It's paid.</em></div><p>Settle automatically with Apple Pay, Google Pay, a saved card or ApexCoin — or pay on a corporate account. A receipt lands in your trips, points on every pound.</p></div>
+      <div class="cell feature glass cw2 tilt sheen rv"><div class="ico">🎩</div><div class="big">A concierge for <em>everything else.</em></div><p>Eight desks beyond the car — travel, dining, events, shopping, home, wellness and gifting. Ask in one thread; three priced options come back.</p></div>
       <div class="cell glass rv rv-d1"><div class="ico">✧</div><h3>Amenities</h3><p>Add still water, Wi-Fi, a child seat, flowers or a carbon offset in a tap.</p></div>
       <div class="cell glass rv rv-d2"><div class="ico">◆</div><h3>Points &amp; status</h3><p>Earn on every journey and climb the status tiers as you ride.</p></div>
       <div class="cell glass rv"><div class="ico">↗</div><h3>Refer &amp; gift</h3><p>Share your code for ride credit, or gift a journey to someone with a tap.</p></div>
@@ -953,7 +1043,7 @@ footer.site a:hover{color:var(--gold)}
     <h2 class="section-title rv">Immaculate, always.</h2>
     <p class="section-sub rv rv-d1">Every car is detailed before every journey, stocked with still water, and driven by a chauffeur trained to be remembered for all the right reasons — or not at all.</p>
     <div class="fleet-grid">
-      <article class="car rv">
+      <article class="car tilt sheen rv">
         <div class="car-img"><img src="../vehicles/s-class.jpg" alt="Mercedes-Benz S-Class" width="1448" height="1086" loading="lazy" onerror="this.style.display='none'"/></div>
         <div class="car-body">
           <div class="cls">Executive saloon</div>
@@ -962,7 +1052,7 @@ footer.site a:hover{color:var(--gold)}
           <ul><li>Up to 3 guests</li><li>2 large cases</li><li>Wi-Fi &amp; chargers</li></ul>
         </div>
       </article>
-      <article class="car rv rv-d1">
+      <article class="car tilt sheen rv rv-d1">
         <div class="car-img"><img src="../vehicles/v-class.jpg" alt="Mercedes-Benz V-Class" width="1448" height="1086" loading="lazy" onerror="this.style.display='none'"/></div>
         <div class="car-body">
           <div class="cls">Luxury MPV</div>
@@ -971,7 +1061,7 @@ footer.site a:hover{color:var(--gold)}
           <ul><li>Up to 7 guests</li><li>7 large cases</li><li>Conference seating</li></ul>
         </div>
       </article>
-      <article class="car rv rv-d2">
+      <article class="car tilt sheen rv rv-d2">
         <div class="car-img"><div class="placeholder serif" aria-hidden="true">A</div></div>
         <div class="car-body">
           <div class="cls">In every car</div>
@@ -1040,7 +1130,7 @@ footer.site a:hover{color:var(--gold)}
       <span style="color:var(--gold);font-weight:700">Reserve your spot →</span>
     </a>
     <div class="tiers">
-      <article class="tier rv">
+      <article class="tier sheen rv">
         <h3>Silver</h3>
         <div class="price"><sup>£</sup>49 <small>/ month</small></div>
         <div class="trial">7-day free trial</div>
@@ -1052,7 +1142,7 @@ footer.site a:hover{color:var(--gold)}
         </ul>
         <a class="btn btn-ghost" href="../concierge/">Start Silver</a>
       </article>
-      <article class="tier black rv rv-d1">
+      <article class="tier black sheen rimlight rv rv-d1">
         <span class="flag-top">Most requested</span>
         <h3>Black</h3>
         <div class="price"><sup>£</sup>499 <small>/ month</small></div>
@@ -1066,7 +1156,7 @@ footer.site a:hover{color:var(--gold)}
         </ul>
         <a class="btn btn-gold" href="../concierge/">Go Black</a>
       </article>
-      <article class="tier rv rv-d2">
+      <article class="tier sheen rv rv-d2">
         <h3>Gold</h3>
         <div class="price"><sup>£</sup>199 <small>/ month</small></div>
         <div class="trial">7-day free trial</div>
@@ -1085,7 +1175,7 @@ footer.site a:hover{color:var(--gold)}
         <h3>Chauffeur membership — £199 a month</h3>
         <p>Unlock the booking desk in the ApexVIP app: fixed fares, flight-tracked pickups and the full fleet. New members ride on us for the first 30 days.</p>
       </div>
-      <a class="btn btn-gold" href="../apexvip-client.html">Begin your trial</a>
+      <a class="btn btn-gold magnetic" href="#apps">Get the app to begin</a>
     </div>
   </div>
 </section>
@@ -1130,12 +1220,49 @@ footer.site a:hover{color:var(--gold)}
   </div>
 </section>
 
+<!-- ═════════ DRIVE WITH APEXVIP ═════════ -->
+<section id="drivers" class="lucent drivers">
+  <div class="glow"><b class="g1"></b><b class="g2"></b></div>
+  <div class="wrap">
+    <div class="kicker rv">Drive with ApexVIP</div>
+    <h2 class="section-title rv">The best seat<br/>in the business.</h2>
+    <p class="section-sub rv rv-d1">Professional chauffeurs deserve a professional platform. Keep the lion's share of every fare, choose your own hours, and run your whole day from an app built around you.</p>
+
+    <div class="drv-stats">
+      <div class="drv-stat glass rv"><b class="shimmer">80%</b><small>of every fare is yours</small></div>
+      <div class="drv-stat glass rv rv-d1"><b class="shimmer">£0</b><small>to join — no upfront fees</small></div>
+      <div class="drv-stat glass rv rv-d2"><b class="shimmer">You</b><small>decide when you go online</small></div>
+    </div>
+
+    <div class="drv-grid">
+      <div class="drv-card glass tilt rv">
+        <div class="ico">◈</div><h3>Earnings without asterisks</h3>
+        <p>A fixed 80% of every fare, visible per journey in your earnings dashboard — today, this week, this month — with fast payouts straight to your bank via Stripe.</p>
+      </div>
+      <div class="drv-card glass tilt rv rv-d1">
+        <div class="ico">◷</div><h3>Your hours, your patch</h3>
+        <p>Go online when it suits you, accept the jobs you want, and see the route, timing and fare before you commit. No penalties, no pressure.</p>
+      </div>
+      <div class="drv-card glass tilt rv rv-d2">
+        <div class="ico">✦</div><h3>A driver app that respects you</h3>
+        <p>Live GPS jobs, one-tap navigation, in-app guest chat, flight-tracked pickups and a clean payout ledger — everything in one place, installable from the browser.</p>
+      </div>
+    </div>
+
+    <div class="rv rv-d2" style="margin-top:44px;display:flex;gap:16px;flex-wrap:wrap">
+      <a class="btn btn-gold magnetic" href="../apexvip-driver.html">Explore the driver app</a>
+      <a class="btn btn-ghost magnetic" href="#faq">Questions first?</a>
+    </div>
+  </div>
+</section>
+
 <!-- ═════════ FAQ ═════════ -->
 <section id="faq">
   <div class="wrap">
     <div class="kicker rv">Questions</div>
     <h2 class="section-title rv">Good to know.</h2>
     <div class="faq-list rv rv-d1">
+      <details class="faq-item"><summary>How do I book a journey?</summary><p>Every booking is made in the ApexVIP app — there's no booking on this website. Install the app from your browser (Share → Add to Home Screen on iPhone, Install app on Android), then ask ApexAI or tap out your journey. Your car, fare and chauffeur are confirmed in seconds.</p></details>
       <details class="faq-item"><summary>Where does ApexVIP operate?</summary><p>ApexVIP is live in London today — covering every major airport (Heathrow, Gatwick, City, Luton, Stansted) plus the private aviation terminals. Dubai is coming soon; reserve your place now to be among the first when it opens.</p></details>
       <details class="faq-item"><summary>How does membership work?</summary><p>Chauffeur membership is £199 a month and unlocks the booking desk: fixed fares, flight-tracked pickups and the full fleet — with the first 30 days complimentary for new members. The ApexVIP Concierge is a separate subscription from £49 a month across Silver, Gold and Black tiers.</p></details>
       <details class="faq-item"><summary>What will my journey cost?</summary><p>Every fare is fixed and shown before you confirm, inclusive of VAT — a typical Heathrow transfer is around £95. No surge pricing, ever.</p></details>
@@ -1152,7 +1279,7 @@ footer.site a:hover{color:var(--gold)}
     <div class="kicker rv">Reserve your place</div>
     <h2 class="section-title rv">Begin the conversation.</h2>
     <p class="section-sub rv rv-d1">Leave your email and we'll be in touch when your invitation is ready — no card required. Founding members lock in launch pricing, and the first month is on us.</p>
-    <form class="enquiry rv rv-d1" id="enquiryForm" novalidate>
+    <form class="enquiry rimlight rv rv-d1" id="enquiryForm" novalidate>
       <div id="enqForm">
         <div class="enquiry-row">
           <div class="fieldset">
@@ -1190,7 +1317,7 @@ footer.site a:hover{color:var(--gold)}
   <div class="wrap">
     <div class="kicker rv">The ApexVIP suite</div>
     <h2 class="section-title rv">Every seat has an app.</h2>
-    <p class="section-sub rv rv-d1">Guests, members, chauffeurs and the operations desk each get a purpose-built app — installable straight from the browser, no app store required.</p>
+    <p class="section-sub rv rv-d1">All bookings are made in the ApexVIP app — this site is your introduction. Guests, members, chauffeurs and the operations desk each get a purpose-built app, installable straight from the browser, no app store required.</p>
     <div class="apps-grid">
       <a class="app-card rv" href="../apexvip-client.html">
         <div class="tag">For guests &amp; members</div>
@@ -1233,10 +1360,10 @@ footer.site a:hover{color:var(--gold)}
 <!-- ═════════ FINAL CTA ═════════ -->
 <section class="final">
   <h2 class="rv">Your chauffeur is <em>already nearby.</em></h2>
-  <p class="rv rv-d1">Reserve your place, book in one sentence, ride in silence — and arrive exactly as intended.</p>
+  <p class="rv rv-d1">Reserve your place today — then every booking happens in the ApexVIP app, in one sentence.</p>
   <div class="rv rv-d2" style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap">
-    <a class="btn btn-gold" href="#reserve">Reserve your place</a>
-    <a class="btn btn-ghost" href="../apexvip-client.html">Book a chauffeur</a>
+    <a class="btn btn-gold magnetic" href="#reserve">Reserve your place</a>
+    <a class="btn btn-ghost magnetic" href="#apps">Get the app</a>
   </div>
 </section>
 
@@ -1264,7 +1391,7 @@ footer.site a:hover{color:var(--gold)}
           <li><a href="#fleet">Fleet</a></li>
           <li><a href="#cities">Cities</a></li>
           <li><a href="#membership">Membership</a></li>
-          <li><a href="../apexvip-driver.html">Drive with us</a></li>
+          <li><a href="#drivers">Drive with us</a></li>
         </ul>
       </div>
       <div>
@@ -1286,7 +1413,7 @@ footer.site a:hover{color:var(--gold)}
 
 <!-- Sticky mobile call-to-action -->
 <div class="mobile-cta">
-  <a class="btn btn-ghost" href="../apexvip-client.html">Book</a>
+  <a class="btn btn-ghost" href="#apps">Get the app</a>
   <a class="btn btn-gold" href="#reserve">Reserve</a>
 </div>
 
@@ -1394,6 +1521,148 @@ footer.site a:hover{color:var(--gold)}
           heroInner.style.opacity = String(Math.max(0, 1 - y / (vh * 0.9)));
         }
       });
+    }
+  }
+
+  /* Scroll progress hairline (all devices, cheap) */
+  const progress = document.querySelector('#progress b');
+  if (progress && !reduced) {
+    scrollFns.push(() => {
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      progress.style.transform = 'scaleX(' + (max > 0 ? (window.scrollY / max).toFixed(4) : 0) + ')';
+    });
+  }
+
+  /* ══ The fx layer — desktop pointers, motion allowed ══ */
+  const fx = !reduced && matchMedia('(pointer: fine)').matches && innerWidth > 820;
+  if (fx) {
+    document.documentElement.classList.add('fx');
+
+    /* Hero headline — split into characters for the rise-and-focus reveal */
+    const h1 = document.getElementById('heroTitle');
+    if (h1) {
+      let i = 0;
+      const chars = (text, frag) => {
+        let wd = null;
+        for (const ch of text) {
+          if (ch === ' ') { frag.appendChild(document.createTextNode(' ')); wd = null; continue; }
+          if (!wd) { wd = document.createElement('span'); wd.className = 'wd'; frag.appendChild(wd); }
+          const s = document.createElement('span');
+          s.className = 'ch'; s.style.setProperty('--i', i++); s.textContent = ch;
+          wd.appendChild(s);
+        }
+      };
+      const split = (node) => {
+        [...node.childNodes].forEach((n) => {
+          if (n.nodeType === 3) {
+            const frag = document.createDocumentFragment();
+            chars(n.textContent, frag);
+            node.replaceChild(frag, n);
+          } else if (n.nodeType === 1) split(n);
+        });
+      };
+      split(h1);
+    }
+
+    /* Cursor aura */
+    const aura = document.getElementById('aura');
+    if (aura) {
+      let ax = -600, ay = -600, tx = ax, ty = ay, on = false;
+      addEventListener('pointermove', (e) => {
+        tx = e.clientX; ty = e.clientY;
+        if (!on) { on = true; document.documentElement.classList.add('has-aura'); }
+      }, { passive: true });
+      (function glide() {
+        ax += (tx - ax) * 0.12; ay += (ty - ay) * 0.12;
+        aura.style.transform = 'translate(' + (ax - 260).toFixed(1) + 'px,' + (ay - 260).toFixed(1) + 'px)';
+        requestAnimationFrame(glide);
+      })();
+    }
+
+    /* Magnetic buttons — pulled a few px toward the cursor */
+    document.querySelectorAll('.magnetic').forEach((btn) => {
+      const strength = 0.32, max = 10;
+      btn.addEventListener('pointermove', (e) => {
+        const r = btn.getBoundingClientRect();
+        let dx = (e.clientX - r.left - r.width / 2) * strength;
+        let dy = (e.clientY - r.top - r.height / 2) * strength;
+        dx = Math.max(-max, Math.min(max, dx)); dy = Math.max(-max, Math.min(max, dy));
+        btn.style.transform = 'translate(' + dx.toFixed(1) + 'px,' + dy.toFixed(1) + 'px)';
+      });
+      btn.addEventListener('pointerleave', () => { btn.style.transform = ''; });
+    });
+
+    /* 3D tilt cards — angle and glare follow the mouse */
+    document.querySelectorAll('.tilt').forEach((card) => {
+      card.addEventListener('pointermove', (e) => {
+        const r = card.getBoundingClientRect();
+        const px = (e.clientX - r.left) / r.width, py = (e.clientY - r.top) / r.height;
+        card.style.setProperty('--ry', ((px - 0.5) * 7).toFixed(2) + 'deg');
+        card.style.setProperty('--rx', ((0.5 - py) * 7).toFixed(2) + 'deg');
+        card.style.setProperty('--mx', (px * 100).toFixed(1) + '%');
+        card.style.setProperty('--my', (py * 100).toFixed(1) + '%');
+      });
+      card.addEventListener('pointerleave', () => {
+        card.style.setProperty('--rx', '0deg'); card.style.setProperty('--ry', '0deg');
+      });
+    });
+
+    /* Liquid-gold rim — the light circles the flagship cards while on screen */
+    const rims = [...document.querySelectorAll('.rimlight')];
+    if (rims.length) {
+      let deg = 0, rimVisible = false;
+      const rio = new IntersectionObserver((es) => {
+        es.forEach((e) => e.target.classList.toggle('lit', e.isIntersecting));
+        rimVisible = rims.some((r) => r.classList.contains('lit'));
+      }, { threshold: 0.2 });
+      rims.forEach((r) => rio.observe(r));
+      (function spin() {
+        if (rimVisible) {
+          deg = (deg + 0.55) % 360;
+          rims.forEach((r) => r.style.setProperty('--rim', deg + 'deg'));
+        }
+        requestAnimationFrame(spin);
+      })();
+    }
+
+    /* Gold dust — a drifting particle field behind the hero copy */
+    const dust = document.getElementById('dust');
+    if (dust && !navigator.connection?.saveData) {
+      const ctx = dust.getContext('2d');
+      const hero = dust.parentElement;
+      let W = 0, H = 0, parts = [], heroVisible = true;
+      const seed = () => {
+        const dpr = Math.min(2, devicePixelRatio || 1);
+        W = hero.clientWidth; H = hero.clientHeight;
+        dust.width = W * dpr; dust.height = H * dpr;
+        dust.style.width = W + 'px'; dust.style.height = H + 'px';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const n = Math.min(70, Math.round(W / 22));
+        parts = Array.from({ length: n }, () => ({
+          x: Math.random() * W, y: Math.random() * H,
+          r: 0.6 + Math.random() * 1.7,
+          vy: 0.08 + Math.random() * 0.3, vx: (Math.random() - 0.5) * 0.12,
+          tw: Math.random() * Math.PI * 2, ts: 0.008 + Math.random() * 0.02,
+        }));
+      };
+      new IntersectionObserver((es) => { heroVisible = es[0].isIntersecting; }, { threshold: 0 }).observe(hero);
+      addEventListener('resize', seed, { passive: true });
+      seed();
+      (function drift() {
+        if (heroVisible && !document.hidden) {
+          ctx.clearRect(0, 0, W, H);
+          for (const p of parts) {
+            p.y -= p.vy; p.x += p.vx; p.tw += p.ts;
+            if (p.y < -4) { p.y = H + 4; p.x = Math.random() * W; }
+            if (p.x < -4) p.x = W + 4; else if (p.x > W + 4) p.x = -4;
+            const a = 0.10 + 0.22 * (0.5 + Math.sin(p.tw) / 2);
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.2832);
+            ctx.fillStyle = 'rgba(224,190,130,' + a.toFixed(3) + ')';
+            ctx.fill();
+          }
+        }
+        requestAnimationFrame(drift);
+      })();
     }
   }
 })();
