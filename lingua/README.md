@@ -1,8 +1,10 @@
 # Lingua — learn & translate any language (and its dialects)
 
 A single-file, offline-first **PWA** built to take a learner from zero to
-conversational fast — in any of 90+ languages, including **Arabic Fusha (MSA)**
-and 9 more Arabic dialects (searchable: type "fusha" on the picker).
+conversational fast — in **every language in the world**: 180+ built into the
+picker (all treated equally, listed alphabetically), and a free-type option for
+anything else — type any language name into the search and study it. Many
+languages include regional dialect/variety support.
 
 **The fluency method built into the app** — the five things research actually
 supports, wired together as a daily loop:
@@ -41,14 +43,15 @@ Pick a language and you get:
 - **🕘 Saved** — every translation is saved on-device automatically; reopen, replay
   the audio, or delete from the **Saved** panel. No account, no cloud.
 
-### Dialect support
-- **Arabic** — Fusha (MSA), Egyptian, Saudi, Emirati, Levantine, Gulf, Iraqi,
-  Maghrebi, Sudanese, Yemeni.
-- **Urdu** — Standard, Lahori, Karachi, Dakhini, Hyderabadi, Rekhta.
-- **English** — British, American, Australian, Indian.
-- **Spanish** — Castilian, Mexican, Rioplatense, Colombian/Andean.
-- **Portuguese** — Brazilian, European · **French** — Metropolitan, Québécois ·
-  **German** — Germany, Austrian, Swiss · **Chinese** — Mainland, Taiwan.
+### Dialect / variety support
+Several languages ship with selectable regional varieties, each treated as a
+distinct target (its own phrasing, voice and notes) — alphabetically:
+
+- **Arabic** (10) · **Chinese** (2) · **English** (4) · **French** (2) ·
+  **German** (3) · **Portuguese** (2) · **Spanish** (4) · **Urdu** (6)
+
+Dialect names are searchable in the picker, and the free-type option covers any
+variety that isn't listed.
 
 Each is treated as a distinct variety with its own phrasing and notes.
 
