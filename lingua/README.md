@@ -1,19 +1,37 @@
 # Lingua — learn & translate any language (and its dialects)
 
-A single-file, offline-first **PWA** for learning and translating any of 90+
-languages. Pick a language and you get:
+A single-file, offline-first **PWA** built to take a learner from zero to
+conversational fast — in any of 90+ languages, including **Arabic Fusha (MSA)**
+and 9 more Arabic dialects (searchable: type "fusha" on the picker).
 
-- **📚 Learn** — a structured course: ordered units (greetings → numbers →
-  travel → …) with on-device progress tracking. Open a unit for a lesson, then
-  jump straight into practice or chat for it. Tick units off as you go.
+**The fluency method built into the app** — the five things research actually
+supports, wired together as a daily loop:
+
+1. **🔁 Spaced repetition (SRS)** — every phrase you meet (lessons, flashcards,
+   quizzes, drills, stories) becomes a card in an SM-2-style memory deck with
+   due dates. The header chip shows cards due; reviews come first.
+2. **🗣 Forced speaking** — the Speak-it drill plays the phrase, listens to you
+   say it (speech recognition), and scores your pronunciation on-device.
+3. **✍️ Forced production** — the Type-it drill makes you produce the sentence;
+   Claude grades it like an examiner and shows the natural native phrasing.
+4. **📖 Comprehensible input** — AI-written graded micro-stories at your exact
+   level and dialect, translations hidden until tapped.
+5. **🔥 The habit loop** — streak + daily XP goal (header chip), because fluency
+   is mostly showing up daily.
+
+Pick a language and you get:
+
+- **📚 Learn** — a CEFR-style course, **A1 → B2, 24 units** (survival basics →
+  debate & idioms), each ending in production: lesson → drills → speak → chat.
+  On-device progress per language + dialect.
 - **🔁 Translate** — type text in any language and translate it into the one
   you're studying (and back, via the swap arrow). Results show the native
   script, romanized pronunciation, a literal gloss, register, and dialect notes.
 - **🎓 Teach me** — pick a topic and level for a short, dialect-aware lesson with
   pronunciation, plus an "ask anything about this language" box.
-- **🃏 Practice** — turn a topic into **flashcards** (recall + reveal, mark
-  *Got it* / *Again*) and a **multiple-choice quiz** with scoring. AI-generated
-  sets when Live AI is on; offline basics otherwise.
+- **🃏 Practice** — five drill modes on any unit: **flashcards**, **quiz**,
+  **✍️ Type it** (AI-graded production), **🗣 Speak it** (pronunciation score),
+  and **📖 Story** (graded reading). Everything feeds the SRS deck.
 - **💬 Chat** — practise a real conversation with an AI tutor who replies in your
   chosen dialect, gives romanization + an English gloss, and gently corrects you.
 - **🔊 Listen** — tap the speaker on any phrase to hear it read aloud (browser

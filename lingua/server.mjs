@@ -108,6 +108,61 @@ const CHAT_TOOL = {
   }
 };
 
+const GRADE_TOOL = {
+  name: "grade_result",
+  description: "Grade a learner's attempt at producing a phrase in the target language/dialect.",
+  input_schema: {
+    type: "object",
+    properties: {
+      correct:       { type: "boolean", description: "True if the attempt is an acceptable, natural way to express the prompt (minor spelling/diacritic slips still count as correct)." },
+      score:         { type: "integer", description: "0–100 quality score for the attempt." },
+      better:        { type: "string", description: "The most natural way a native speaker of this dialect would say it (native script)." },
+      pronunciation: { type: "string", description: "Romanized pronunciation of 'better'. Empty if Latin script." },
+      explanation:   { type: "string", description: "One or two short, encouraging sentences on what was right/wrong." }
+    },
+    required: ["correct", "score", "better"]
+  }
+};
+
+const STORY_TOOL = {
+  name: "story",
+  description: "Return a short graded story in the target language/dialect for reading practice.",
+  input_schema: {
+    type: "object",
+    properties: {
+      title:        { type: "string", description: "Story title in the target language (native script)." },
+      titleEnglish: { type: "string" },
+      paragraphs: {
+        type: "array",
+        description: "3–5 short paragraphs, strictly level-appropriate (A1/beginner = very short simple sentences with common words).",
+        items: {
+          type: "object",
+          properties: {
+            text:          { type: "string", description: "Paragraph in the target language/dialect (native script)." },
+            pronunciation: { type: "string", description: "Romanized pronunciation. Empty if Latin script." },
+            translation:   { type: "string", description: "English translation of the paragraph." }
+          },
+          required: ["text", "translation"]
+        }
+      },
+      vocab: {
+        type: "array",
+        description: "5–8 key words from the story worth learning.",
+        items: {
+          type: "object",
+          properties: {
+            word:          { type: "string" },
+            pronunciation: { type: "string" },
+            meaning:       { type: "string" }
+          },
+          required: ["word", "meaning"]
+        }
+      }
+    },
+    required: ["title", "paragraphs"]
+  }
+};
+
 function targetLabel(p) {
   return p.dialect ? `${p.targetName} (${p.dialect} dialect)` : p.targetName;
 }
@@ -162,6 +217,32 @@ function buildRequest(p) {
       .map((m) => ({ role: m.role, content: m.content }));
     if (!messages.length) messages.push({ role: "user", content: "(Start the conversation with a friendly greeting and a simple question.)" });
     return { sys, messages, tools: [CHAT_TOOL], force: "tutor_reply" };
+  }
+  if (p.mode === "grade") {
+    const sys =
+      "You are a precise but encouraging language examiner for the SPECIFIC dialect requested. " +
+      "Grade the learner's production attempt fairly: accept any natural, correct way to express " +
+      "the prompt (not only the expected answer), forgive minor spelling/diacritic slips, and " +
+      "always show the most natural native phrasing with romanization for non-Latin scripts.";
+    const user =
+      `Language: ${targetLabel(p)}. Learner level: ${p.level || "beginner"}.` +
+      (p.dialectNote ? ` Dialect context: ${p.dialectNote}.` : "") +
+      `\n\nPrompt (English): ${JSON.stringify(p.prompt || "")}` +
+      `\nExpected answer (one acceptable version): ${JSON.stringify(p.expected || "")}` +
+      `\nLearner's attempt: ${JSON.stringify(p.answer || "")}`;
+    return { sys, messages: [{ role: "user", content: user }], tools: [GRADE_TOOL], force: "grade_result" };
+  }
+  if (p.mode === "story") {
+    const sys =
+      "You are a language-learning author writing graded readers. Write a genuinely interesting " +
+      "micro-story STRICTLY at the requested level, in the SPECIFIC dialect requested (its real " +
+      "everyday vocabulary, not only the standard form). Native script, with romanized " +
+      "pronunciation for non-Latin scripts, and faithful English translations.";
+    const user =
+      `Write a short graded story for a ${p.level || "beginner"} learner of ${targetLabel(p)}` +
+      (p.topic ? ` on the theme "${p.topic}"` : "") + "." +
+      (p.dialectNote ? ` Dialect context: ${p.dialectNote}.` : "");
+    return { sys, messages: [{ role: "user", content: user }], tools: [STORY_TOOL], force: "story" };
   }
   // ask
   const sys =

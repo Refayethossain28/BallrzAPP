@@ -179,6 +179,29 @@
   .unit .ut{ font-weight:600; font-size:15px; }
   .unit .us{ font-size:12px; color:var(--muted2); }
   .unit .chev{ margin-left:auto; color:var(--muted2); }
+  .cefr{ margin:16px 0 4px; display:flex; align-items:center; gap:8px; }
+  .cefr .lv{ font-size:11px; font-weight:800; letter-spacing:.05em; color:#0b0e17; padding:3px 8px; border-radius:7px;
+    background:linear-gradient(135deg,var(--accent),var(--teal)); }
+  .cefr .lt{ font-size:13px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+  .review-banner{ display:flex; align-items:center; gap:10px; width:100%; text-align:left; cursor:pointer; font:inherit;
+    margin:10px 0 4px; padding:12px 14px; border-radius:12px; color:var(--ink);
+    background:linear-gradient(135deg,rgba(52,225,192,.14),rgba(110,139,255,.10)); border:1px solid rgba(52,225,192,.4); }
+  .review-banner b{ color:var(--teal); }
+  .method{ margin-top:10px; padding:10px 12px; border-radius:11px; border:1px dashed var(--line);
+    color:var(--muted); font-size:12.5px; }
+  /* drills: speak-it & type-it & story */
+  .score{ font-size:30px; font-weight:800; letter-spacing:-.02em; }
+  .score.good{ color:var(--teal); } .score.mid{ color:var(--warn); } .score.bad{ color:var(--bad); }
+  .heard{ color:var(--muted); font-size:14px; margin-top:4px; font-style:italic; }
+  .grade-good{ border:1px solid rgba(52,225,192,.45); background:rgba(52,225,192,.08); border-radius:11px; padding:10px 12px; margin-top:10px; }
+  .grade-bad{ border:1px solid rgba(255,207,110,.4); background:rgba(255,207,110,.06); border-radius:11px; padding:10px 12px; margin-top:10px; }
+  .story-p{ padding:10px 0; border-top:1px solid var(--line); }
+  .story-p:first-of-type{ border-top:0; }
+  .story-p .st{ font-size:19px; line-height:1.6; }
+  .story-p.rtl .st{ direction:rtl; text-align:right; }
+  .story-p .tr{ color:var(--muted); font-size:13.5px; margin-top:6px; }
+  .vocab-w{ display:inline-block; margin:3px 4px 3px 0; padding:6px 10px; border-radius:999px; font-size:13px;
+    background:var(--panel2); border:1px solid var(--line); }
   footer{ color:var(--muted2); font-size:12px; margin-top:26px; text-align:center; }
   footer a{ color:var(--muted); }
   /* live-config modal */
@@ -196,9 +219,10 @@
     <div class="logo">あ</div>
     <div>
       <h1>Lingua</h1>
-      <p class="sub">Learn &amp; translate any language — including Arabic &amp; Urdu dialects</p>
+      <p class="sub">The fluency engine — any language, incl. Arabic Fusha &amp; dialects</p>
     </div>
     <div style="margin-left:auto; display:flex; gap:8px; align-items:center">
+      <button id="statChip" class="hdr-btn" type="button" title="Your streak, XP and cards due for review">🔥0 · ⭐0/20</button>
       <button id="histBtn" class="hdr-btn" type="button" title="Saved translations">🕘 Saved</button>
       <button id="aiPill" class="ai-pill" type="button" title="AI accuracy mode" style="margin-left:0">
         <span class="dot"></span><span id="aiPillText">AI: offline</span>
@@ -210,7 +234,7 @@
   <section id="picker" class="card">
     <h2>1 · Choose a language to work with</h2>
     <div class="search">
-      <input id="langSearch" type="search" placeholder="Search 90+ languages — try “arabic”, “urdu”, “japanese”…" autocomplete="off">
+      <input id="langSearch" type="search" placeholder="Search 90+ languages — try “fusha”, “arabic”, “lahori”, “japanese”…" autocomplete="off">
     </div>
     <div id="langGrid" class="langgrid"></div>
   </section>
@@ -291,11 +315,15 @@
 
     <!-- PRACTICE pane -->
     <div id="panePractice" class="hidden" style="margin-top:16px">
-      <label class="fld">Flashcards &amp; quiz</label>
+      <label class="fld">Drills — every mode feeds your spaced-repetition memory deck</label>
       <div class="row wrap">
-        <button class="btn" id="practiceGen" type="button">New practice set</button>
-        <span class="hint" id="practiceHint">Builds cards from the topic &amp; level set in “Teach”, via AI — or the offline basics.</span>
+        <button class="btn" id="practiceGen" type="button">🃏 Flashcards</button>
+        <button class="btn sec" id="drillBtn" type="button">✍️ Type it</button>
+        <button class="btn sec" id="speakDrillBtn" type="button">🗣 Speak it</button>
+        <button class="btn sec" id="storyBtn" type="button">📖 Story</button>
+        <button class="mini" id="reviewBtn" type="button">🔁 Review due</button>
       </div>
+      <span class="hint" id="practiceHint">Uses the topic &amp; level from “Teach”. Type-it grading and stories need Live AI; Speak-it scores your pronunciation on-device.</span>
       <div id="practiceArea" class="out"></div>
     </div>
 
@@ -692,6 +720,16 @@ var T_PRACTICE = { name:"practice_set", description:"Return vocabulary/phrase ca
 var T_CHAT = { name:"tutor_reply", description:"Reply as a friendly native-speaker tutor and gently correct the learner.",
   input_schema:{ type:"object", properties:{
     reply:{type:"string"}, pronunciation:{type:"string"}, english:{type:"string"}, correction:{type:"string"} }, required:["reply"] } };
+var T_GRADE = { name:"grade_result", description:"Grade a learner's production attempt fairly: accept any natural correct phrasing, forgive minor spelling/diacritic slips, always show the most natural native phrasing.",
+  input_schema:{ type:"object", properties:{
+    correct:{type:"boolean"}, score:{type:"integer"}, better:{type:"string"}, pronunciation:{type:"string"}, explanation:{type:"string"} },
+    required:["correct","score","better"] } };
+var T_STORY = { name:"story", description:"Return a short graded story in the target language/dialect for reading practice, strictly level-appropriate.",
+  input_schema:{ type:"object", properties:{
+    title:{type:"string"}, titleEnglish:{type:"string"},
+    paragraphs:{ type:"array", items:{ type:"object", properties:{ text:{type:"string"}, pronunciation:{type:"string"}, translation:{type:"string"} }, required:["text","translation"] } },
+    vocab:{ type:"array", items:{ type:"object", properties:{ word:{type:"string"}, pronunciation:{type:"string"}, meaning:{type:"string"} }, required:["word","meaning"] } } },
+    required:["title","paragraphs"] } };
 function tLabel(p){ return p.dialect ? (p.targetName + " (" + p.dialect + " dialect)") : p.targetName; }
 function buildAnthropicBody(p){
   var sys, messages, tools = null, force = null;
@@ -712,6 +750,15 @@ function buildAnthropicBody(p){
     var hist = (p.messages||[]).filter(function(m){ return m && (m.role==="user"||m.role==="assistant") && typeof m.content==="string"; }).map(function(m){ return { role:m.role, content:m.content }; });
     if(!hist.length) hist.push({ role:"user", content:"(Start the conversation with a friendly greeting and a simple question.)" });
     messages = hist; tools = [T_CHAT]; force = "tutor_reply";
+  } else if(p.mode==="grade"){
+    sys = "You are a precise but encouraging language examiner for the SPECIFIC dialect requested. Grade the learner's production attempt fairly: accept any natural, correct way to express the prompt (not only the expected answer), forgive minor spelling/diacritic slips, and always show the most natural native phrasing with romanization for non-Latin scripts.";
+    messages = [{ role:"user", content:"Language: " + tLabel(p) + ". Learner level: " + (p.level||"beginner") + "." + (p.dialectNote?(" Dialect context: "+p.dialectNote+"."):"") +
+      "\n\nPrompt (English): " + JSON.stringify(p.prompt||"") + "\nExpected answer (one acceptable version): " + JSON.stringify(p.expected||"") + "\nLearner's attempt: " + JSON.stringify(p.answer||"") }];
+    tools = [T_GRADE]; force = "grade_result";
+  } else if(p.mode==="story"){
+    sys = "You are a language-learning author writing graded readers. Write a genuinely interesting micro-story STRICTLY at the requested level, in the SPECIFIC dialect requested (its real everyday vocabulary, not only the standard form). Native script, with romanized pronunciation for non-Latin scripts, and faithful English translations.";
+    messages = [{ role:"user", content:"Write a short graded story for a " + (p.level||"beginner") + " learner of " + tLabel(p) + (p.topic?(" on the theme \"" + p.topic + "\""):"") + "." + (p.dialectNote?(" Dialect context: "+p.dialectNote+"."):"") }];
+    tools = [T_STORY]; force = "story";
   } else {
     sys = "You are an expert, accurate language teacher. Answer the learner's question about the language/dialect clearly and concisely. Give examples in native script with romanized pronunciation where helpful. If the question is about a specific dialect, answer for that variety.";
     messages = [{ role:"user", content:"Language: " + tLabel(p) + "." + (p.dialectNote?(" Dialect context: "+p.dialectNote+"."):"") + "\n\nQuestion: " + (p.question||"") }];
@@ -766,18 +813,46 @@ var state = {
   live: false        // is an AI engine reachable?
 };
 
-var TOPICS = [
-  { id:"greetings", label:"Greetings" },
-  { id:"intro", label:"Introduce yourself" },
-  { id:"numbers", label:"Numbers 1–10" },
-  { id:"travel", label:"Getting around" },
-  { id:"food", label:"Food & ordering" },
-  { id:"shopping", label:"Shopping" },
-  { id:"directions", label:"Directions" },
-  { id:"emergency", label:"Emergencies" },
-  { id:"smalltalk", label:"Small talk" },
-  { id:"grammar", label:"Grammar basics" }
+/* CEFR-style course: 24 ordered units from survival basics to near-fluency.
+   The path IS the method — every unit ends in production (drills, speaking,
+   chat), because recognition alone never made anyone fluent. */
+var CURRICULUM = [
+  { level:"A1", title:"Foundations", units:[
+    { id:"greetings", label:"Greetings" },
+    { id:"intro", label:"Introduce yourself" },
+    { id:"numbers", label:"Numbers 1–10" },
+    { id:"family", label:"Family & people" },
+    { id:"basics", label:"Colors, days & time" },
+    { id:"phrases", label:"Survival phrases" } ] },
+  { level:"A2", title:"Everyday life", units:[
+    { id:"food", label:"Food & ordering" },
+    { id:"shopping", label:"Shopping & money" },
+    { id:"directions", label:"Directions" },
+    { id:"travel", label:"Getting around" },
+    { id:"smalltalk", label:"Weather & small talk" },
+    { id:"routine", label:"Daily routine" } ] },
+  { level:"B1", title:"Conversational", units:[
+    { id:"feelings", label:"Feelings & opinions" },
+    { id:"plans", label:"Making plans" },
+    { id:"work", label:"Work & study" },
+    { id:"emergency", label:"Health & emergencies" },
+    { id:"past", label:"Telling stories (past tense)" },
+    { id:"future", label:"Hopes & plans (future tense)" } ] },
+  { level:"B2", title:"Toward fluency", units:[
+    { id:"opinions", label:"Debate & persuasion" },
+    { id:"news", label:"News & current events" },
+    { id:"idioms", label:"Idioms & humor" },
+    { id:"culture", label:"Culture & traditions" },
+    { id:"business", label:"Business & negotiation" },
+    { id:"deep", label:"Deep conversation" } ] }
 ];
+var TOPICS = [];
+for(var _ci=0; _ci<CURRICULUM.length; _ci++){
+  for(var _ui=0; _ui<CURRICULUM[_ci].units.length; _ui++){
+    var _u = CURRICULUM[_ci].units[_ui];
+    TOPICS.push({ id:_u.id, label:_u.label, level:CURRICULUM[_ci].level });
+  }
+}
 var LEVELS = [
   { id:"beginner", label:"Beginner" },
   { id:"intermediate", label:"Intermediate" },
@@ -899,7 +974,15 @@ function buildLangGrid(filter){
   var n = 0;
   for(var i=0;i<LANGS.length;i++){
     var L = LANGS[i];
-    if(f && L.name.toLowerCase().indexOf(f) < 0 && (L.native||"").toLowerCase().indexOf(f) < 0 && L.id.indexOf(f) < 0) continue;
+    if(f){
+      var hit = L.name.toLowerCase().indexOf(f) >= 0 || (L.native||"").toLowerCase().indexOf(f) >= 0 || L.id.indexOf(f) >= 0;
+      if(!hit && L.d){
+        for(var q=0;q<L.d.length;q++){
+          if(L.d[q].name.toLowerCase().indexOf(f) >= 0 || (L.d[q].native||"").indexOf(filter) >= 0){ hit = true; break; }
+        }
+      }
+      if(!hit) continue;
+    }
     n++;
     var b = el("button","langbtn"); b.type = "button";
     b.appendChild(el("span","flag", L.flag || "🌐"));
@@ -947,8 +1030,9 @@ function selectLanguage(L){
   clear($("translateOut")); clear($("teachOut")); clear($("askOut"));
   clear($("practiceArea")); clear($("chatLog")); clear($("learnArea"));
   $("chatInput").placeholder = "Chat in " + L.name + " or English…";
-  // default to translate mode
-  setMode("translate");
+  renderStats(); // due-card count is per language+dialect
+  // land on the course — the guided path is the product
+  setMode("learn"); renderLearn();
   try{ window.scrollTo(0,0); }catch(e){}
 }
 
@@ -961,6 +1045,8 @@ function selectDialect(dia){
   }
   $("dialectNote").textContent = dia.note || "";
   updateDstLabel();
+  renderStats(); // deck + progress are per dialect
+  if(state.mode === "learn") renderLearn();
 }
 
 function buildSrcOptions(){
@@ -1097,10 +1183,11 @@ function renderTranslate(out, r, ai){
   if(meta.children.length) card.appendChild(meta);
   out.appendChild(card);
   out.appendChild(srcLabel(ai));
-  // save to on-device history
+  // save to on-device history + count toward today's goal
   if(r.translation){
     addHist({ ts: Date.now(), fromName: state.lastFrom, toName: state.lastTo, source: state.lastSrc,
               translation: r.translation, pronunciation: r.pronunciation || "", rtl: state.tgtRtl, bcp: state.tgtBcp });
+    award(2);
   }
 }
 function strong(t){ var s=el("b"); s.textContent=t; return s; }
@@ -1147,6 +1234,11 @@ function renderLesson(out, r, ai){
   if(r.tip){ var tp=el("div","tip"); tp.textContent="💡 " + r.tip; card.appendChild(tp); }
   out.appendChild(card);
   out.appendChild(srcLabel(ai));
+  // lesson phrases join the review deck; finishing a lesson counts toward the goal
+  if(items.length){
+    srsAddMany(items.map(function(it){ return { front: it.meaning || "", back: it.phrase || "", pronunciation: it.pronunciation || "" }; }));
+    award(5);
+  }
 }
 
 /* ---- ASK ANYTHING ---- */
@@ -1198,30 +1290,11 @@ function offlinePractice(){
   }
   return items;
 }
-function genPractice(){
-  var area = $("practiceArea"); busy(area, "Building practice set…");
-  var topicLabel = (TOPICS.filter(function(x){return x.id===state.topic;})[0]||{}).label;
-  var payload = {
-    mode:"practice", topic:topicLabel, level:state.level, count:10,
-    targetName:state.lang.name, targetNative:state.lang.native,
-    dialect:state.dialect?state.dialect.name:"", dialectNote:state.dialect?state.dialect.note:""
-  };
-  var go = function(items){ startPractice(items); };
-  if(aiAvailable()){
-    callAI(payload).then(function(r){ go(r.items||[]); })
-      .catch(function(){ if(state.engine==="local"){ setLive(false); state.engine="offline"; } go(offlinePractice()); });
-  } else { go(offlinePractice()); }
-}
+function genPractice(){ fetchPracticeItems(startPractice); }
 function startPractice(items){
   var clean = (items||[]).filter(function(x){ return x && x.front && x.back; });
-  if(!clean.length){
-    var area = $("practiceArea"); clear(area);
-    var box = el("div","result");
-    box.appendChild(el("div","err","No practice items available offline for this selection."));
-    box.appendChild(el("div","hint","Enable Live AI (top-right) to generate a full practice set for any language, dialect, topic and level."));
-    area.appendChild(box);
-    return;
-  }
+  if(!clean.length){ noItemsMsg(); return; }
+  srsAddMany(clean); // every card you meet joins the spaced-repetition deck
   state.practice = { items:clean, queue:[], right:0, again:0, mode:"flash", revealed:false };
   for(var i=0;i<clean.length;i++) state.practice.queue.push(i);
   renderPractice();
@@ -1233,6 +1306,8 @@ function practiceSummary(area, title){
   var rrow = el("div","row wrap"); rrow.style.marginTop="12px";
   var fc = el("button","btn"); fc.type="button"; fc.textContent="↻ Flashcards"; on(fc,"click",function(){ startPractice(P.items); }); rrow.appendChild(fc);
   var qz = el("button","btn sec"); qz.type="button"; qz.textContent="🎯 Quiz me"; on(qz,"click",function(){ startQuiz(P.items); }); rrow.appendChild(qz);
+  var dr = el("button","btn sec"); dr.type="button"; dr.textContent="✍️ Type it"; on(dr,"click",function(){ startDrill(P.items); }); rrow.appendChild(dr);
+  var sp = el("button","btn sec"); sp.type="button"; sp.textContent="🗣 Speak it"; on(sp,"click",function(){ startSpeak(P.items); }); rrow.appendChild(sp);
   var nu = el("button","mini"); nu.type="button"; nu.textContent="New set"; on(nu,"click",genPractice); rrow.appendChild(nu);
   done.appendChild(rrow);
   area.appendChild(done);
@@ -1259,9 +1334,9 @@ function renderPractice(){
     if(card.pronunciation){ var pr=el("div","pron"); pr.textContent="🗣 "+card.pronunciation; c.appendChild(pr); }
     var arow = el("div","row"); arow.style.justifyContent="center"; arow.style.marginTop="12px";
     var ok = el("button","btn"); ok.type="button"; ok.textContent="✓ Got it";
-    on(ok,"click",function(){ P.right++; P.queue.shift(); P.revealed=false; renderPractice(); });
+    on(ok,"click",function(){ P.right++; srsFeed(card.front, card.back, true); award(2); P.queue.shift(); P.revealed=false; renderPractice(); });
     var no = el("button","btn sec"); no.type="button"; no.textContent="↻ Again";
-    on(no,"click",function(){ P.again++; var f=P.queue.shift(); P.queue.push(f); P.revealed=false; renderPractice(); });
+    on(no,"click",function(){ P.again++; srsFeed(card.front, card.back, false); var f=P.queue.shift(); P.queue.push(f); P.revealed=false; renderPractice(); });
     arow.appendChild(ok); arow.appendChild(no); c.appendChild(arow);
   }
   area.appendChild(c);
@@ -1291,8 +1366,8 @@ function renderQuiz(){
       var b = el("button","btn sec qopt" + (state.lang.rtl?" rtl":"")); b.type="button"; b.textContent = opt;
       on(b,"click",function(){
         if(answered) return; answered = true;
-        if(opt===card.back){ P.right++; b.style.background="rgba(52,225,192,.25)"; b.style.borderColor="var(--teal)"; }
-        else { b.style.background="rgba(255,122,138,.2)"; b.style.borderColor="var(--bad)"; }
+        if(opt===card.back){ P.right++; srsFeed(card.front, card.back, true); award(3); b.style.background="rgba(52,225,192,.25)"; b.style.borderColor="var(--teal)"; }
+        else { srsFeed(card.front, card.back, false); b.style.background="rgba(255,122,138,.2)"; b.style.borderColor="var(--bad)"; }
         speak(card.back, bcp);
         var nx = el("button","btn"); nx.type="button"; nx.textContent="Next"; nx.style.marginTop="6px";
         on(nx,"click",function(){ P.queue.shift(); renderQuiz(); });
@@ -1302,6 +1377,421 @@ function renderQuiz(){
     })(opts[k]);
   }
   area.appendChild(c);
+}
+
+/* =========================================================================
+   SRS — spaced-repetition memory deck (SM-2-lite). Every phrase you meet in a
+   lesson, flashcard, quiz, drill or speaking rep becomes a card with a due
+   date; graded reviews stretch the interval (Again resets, Good ≈ ×EF,
+   Easy ≈ ×EF×1.3). This is the engine that actually builds long-term recall.
+   ========================================================================= */
+var SRS_KEY = "lingua.srs.v1";
+function loadSrsAll(){ try{ return JSON.parse(localStorage.getItem(SRS_KEY) || "{}") || {}; }catch(e){ return {}; } }
+function saveSrsAll(a){ try{ localStorage.setItem(SRS_KEY, JSON.stringify(a)); }catch(e){} }
+function srsDeck(){ return loadSrsAll()[progKey()] || {}; }
+function srsSave(deck){ var a = loadSrsAll(); a[progKey()] = deck; saveSrsAll(a); }
+function srsAddMany(items){
+  if(!state.lang || !items) return;
+  var deck = srsDeck(), changed = false;
+  for(var i=0;i<items.length;i++){
+    var it = items[i];
+    if(!it || !it.front || !it.back) continue;
+    var id = it.front + "→" + it.back;
+    if(!deck[id]){ deck[id] = { f:it.front, b:it.back, p:it.pronunciation||"", ef:2.5, ivl:0, due:Date.now(), n:0 }; changed = true; }
+  }
+  if(changed) srsSave(deck);
+}
+function srsDue(){
+  var deck = srsDeck(), now = Date.now(), out = [];
+  for(var k in deck){ if(deck.hasOwnProperty(k) && deck[k] && deck[k].due <= now) out.push({ id:k, c:deck[k] }); }
+  out.sort(function(a,b){ return a.c.due - b.c.due; });
+  return out.slice(0, 30);
+}
+function srsGradeCard(id, g){ // g: 0 = again, 1 = good, 2 = easy
+  var deck = srsDeck(), c = deck[id];
+  if(!c) return;
+  if(g === 0){ c.ivl = 0; c.ef = Math.max(1.3, (c.ef||2.5) - 0.2); c.due = Date.now() + 10*60000; }
+  else {
+    var days = c.ivl <= 0 ? (g === 2 ? 3 : 1) : c.ivl * (c.ef||2.5) * (g === 2 ? 1.3 : 1);
+    c.ivl = Math.max(1, Math.round(days));
+    if(g === 2) c.ef = Math.min(3, (c.ef||2.5) + 0.05);
+    c.due = Date.now() + c.ivl * 86400000;
+  }
+  c.n = (c.n||0) + 1;
+  deck[id] = c; srsSave(deck);
+}
+function srsFeed(front, back, good){ // convenience hook from any drill outcome
+  if(!front || !back) return;
+  srsAddMany([{ front:front, back:back }]);
+  srsGradeCard(front + "→" + back, good ? 1 : 0);
+}
+
+/* =========================================================================
+   Stats — daily XP goal + streak. The habit loop: fluency is mostly showing
+   up every day; the streak makes that visible and the goal makes it finite.
+   ========================================================================= */
+var STATS_KEY = "lingua.stats.v1";
+function loadStats(){
+  var d = { xp:0, streak:0, last:"", goal:20, today:0, tdate:"" };
+  try{ var s = JSON.parse(localStorage.getItem(STATS_KEY) || "null"); if(s){ for(var k in d){ if(d.hasOwnProperty(k) && s[k] != null) d[k] = s[k]; } } }catch(e){}
+  return d;
+}
+function saveStats(s){ try{ localStorage.setItem(STATS_KEY, JSON.stringify(s)); }catch(e){} }
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+function award(n){
+  var s = loadStats(), ds = todayStr();
+  if(s.tdate !== ds){ s.tdate = ds; s.today = 0; }
+  if(s.last !== ds){
+    var y = new Date(Date.now() - 86400000).toISOString().slice(0,10);
+    s.streak = (s.last === y) ? (s.streak||0) + 1 : 1;
+    s.last = ds;
+  }
+  s.xp += n; s.today += n;
+  saveStats(s); renderStats();
+}
+function renderStats(){
+  var chip = $("statChip"); if(!chip) return;
+  var s = loadStats();
+  var today = (s.tdate === todayStr()) ? s.today : 0;
+  var due = state.lang ? srsDue().length : 0;
+  chip.textContent = "🔥" + (s.streak||0) + " · ⭐" + today + "/" + (s.goal||20) + (due ? " · 🔁" + due : "");
+  chip.title = "Streak " + (s.streak||0) + " day(s) · " + today + "/" + (s.goal||20) + " XP today" + (due ? " · " + due + " card(s) due for review" : "");
+}
+
+/* =========================================================================
+   Pronunciation scoring — normalize both strings (case, Latin diacritics,
+   Arabic harakat, punctuation) and compare with Levenshtein similarity.
+   Runs fully on-device; no AI needed.
+   ========================================================================= */
+function normText(s){
+  s = String(s||"").toLowerCase();
+  try{ s = s.normalize("NFD").replace(/[̀-ͯ]/g, ""); }catch(e){}
+  s = s.replace(/[ً-ْٰـ]/g, "");            // Arabic harakat + tatweel
+  s = s.replace(/[^\p{L}\p{N}\s]/gu, " ");
+  return s.replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "");
+}
+function similarity(a, b){
+  if(!a && !b) return 1;
+  if(!a || !b) return 0;
+  var m = a.length, n = b.length;
+  var prev = [], cur = [], i, j;
+  for(j=0;j<=n;j++) prev[j] = j;
+  for(i=1;i<=m;i++){
+    cur[0] = i;
+    for(j=1;j<=n;j++){
+      cur[j] = Math.min(prev[j] + 1, cur[j-1] + 1, prev[j-1] + (a.charAt(i-1) === b.charAt(j-1) ? 0 : 1));
+    }
+    var t = prev; prev = cur; cur = t;
+  }
+  return 1 - prev[n] / Math.max(m, n);
+}
+
+/* =========================================================================
+   SPEAK-IT drill — hear it, say it, get scored. Forced oral production with
+   immediate feedback is the single fastest fluency lever.
+   ========================================================================= */
+function startSpeak(items){
+  var clean = (items||[]).filter(function(x){ return x && x.front && x.back; });
+  if(!clean.length){ noItemsMsg(); return; }
+  if(!speechInOK()){
+    var area = $("practiceArea"); clear(area);
+    var box = el("div","result");
+    box.appendChild(el("div","err","Speech recognition isn't supported in this browser."));
+    box.appendChild(el("div","hint","Try Chrome, Edge or Safari for the speaking drill — the other drills work everywhere."));
+    area.appendChild(box);
+    return;
+  }
+  state.practice = { items:clean, queue:[], right:0, mode:"speak" };
+  for(var i=0;i<clean.length;i++) state.practice.queue.push(i);
+  renderSpeak();
+}
+function renderSpeak(){
+  var area = $("practiceArea"); clear(area);
+  var P = state.practice; if(!P) return;
+  var bcp = bcpForLang(state.lang, state.dialect);
+  if(!P.queue.length){ practiceSummary(area, "Speaking drill done — " + P.right + "/" + P.items.length + " nailed 🗣"); return; }
+  var card = P.items[P.queue[0]];
+  var pos = P.items.length - P.queue.length + 1;
+  area.appendChild(el("div","hint","Phrase " + pos + " of " + P.items.length + " · say it like a local"));
+  var c = el("div","result"); c.style.textAlign = "center";
+  c.appendChild(el("div","mn", card.front));
+  var trow = el("div","target-row"); trow.style.justifyContent = "center";
+  var tgt = el("div","target"); tgt.textContent = card.back; if(state.lang.rtl) tgt.style.direction = "rtl";
+  trow.appendChild(tgt); trow.appendChild(speakBtn(card.back, bcp));
+  c.appendChild(trow);
+  if(card.pronunciation) c.appendChild(el("div","pron","🗣 " + card.pronunciation));
+  var res = el("div"); res.style.minHeight = "56px"; res.style.marginTop = "10px";
+  c.appendChild(res);
+  var row = el("div","row"); row.style.justifyContent = "center"; row.style.marginTop = "8px";
+  var mic = el("button","spk mic"); mic.type = "button"; mic.textContent = "🎤"; mic.style.width = "56px"; mic.style.height = "56px"; mic.style.fontSize = "24px";
+  on(mic,"click",function(){
+    listen(bcp, mic, function(heard){
+      clear(res);
+      var sc = Math.round(similarity(normText(heard), normText(card.back)) * 100);
+      var cls = sc >= 80 ? "good" : (sc >= 55 ? "mid" : "bad");
+      res.appendChild(el("div","score " + cls, sc + "%"));
+      res.appendChild(el("div","heard","heard: “" + heard + "”"));
+      if(sc >= 80){
+        res.appendChild(el("div","pr","Excellent — that's the sound. ✓"));
+        P.right++; srsFeed(card.front, card.back, true); award(5);
+        var nx = el("button","btn"); nx.type = "button"; nx.textContent = "Next →"; nx.style.marginTop = "8px";
+        on(nx,"click",function(){ P.queue.shift(); renderSpeak(); });
+        res.appendChild(nx);
+      } else {
+        res.appendChild(el("div","hint", sc >= 55 ? "Close — listen again and mind the stressed syllable." : "Listen once more and copy the rhythm, not just the sounds."));
+      }
+    });
+  });
+  row.appendChild(mic);
+  c.appendChild(row);
+  var skip = el("button","mini"); skip.type = "button"; skip.textContent = "Skip"; skip.style.marginTop = "10px";
+  on(skip,"click",function(){ srsFeed(card.front, card.back, false); P.queue.shift(); renderSpeak(); });
+  c.appendChild(skip);
+  area.appendChild(c);
+}
+
+/* =========================================================================
+   TYPE-IT drill — produce the sentence from English; Claude grades it like an
+   examiner (accepts any natural phrasing, shows the native way). Offline it
+   falls back to a similarity check against the expected answer.
+   ========================================================================= */
+function startDrill(items){
+  var clean = (items||[]).filter(function(x){ return x && x.front && x.back; });
+  if(!clean.length){ noItemsMsg(); return; }
+  state.practice = { items:clean, queue:[], right:0, mode:"drill" };
+  for(var i=0;i<clean.length;i++) state.practice.queue.push(i);
+  renderDrill();
+}
+function renderDrill(){
+  var area = $("practiceArea"); clear(area);
+  var P = state.practice; if(!P) return;
+  var bcp = bcpForLang(state.lang, state.dialect);
+  if(!P.queue.length){ practiceSummary(area, "Production drill done — " + P.right + "/" + P.items.length + " ✍️"); return; }
+  var card = P.items[P.queue[0]];
+  var pos = P.items.length - P.queue.length + 1;
+  area.appendChild(el("div","hint","Sentence " + pos + " of " + P.items.length + " · write it in " + variantName()));
+  var c = el("div","result");
+  c.appendChild(el("div","mn","How do you say:"));
+  var f = el("div"); f.style.fontSize = "20px"; f.style.fontWeight = "600"; f.style.margin = "6px 0 12px"; f.textContent = card.front;
+  c.appendChild(f);
+  var irow = el("div","row");
+  var inp = el("input"); inp.type = "text"; inp.setAttribute("autocomplete","off"); inp.placeholder = "Type it in " + state.lang.name + "…";
+  if(state.lang.rtl){ inp.style.direction = "rtl"; }
+  var iwrap = el("div","grow"); iwrap.appendChild(inp); irow.appendChild(iwrap);
+  var mic = el("button","spk mic"); mic.type = "button"; mic.textContent = "🎤";
+  if(!speechInOK()){ mic.disabled = true; mic.style.opacity = "0.45"; }
+  else on(mic,"click",function(){ listen(bcp, mic, function(t){ inp.value = (inp.value ? inp.value + " " : "") + t; }); });
+  irow.appendChild(mic);
+  var chk = el("button","btn"); chk.type = "button"; chk.textContent = "Check";
+  irow.appendChild(chk);
+  c.appendChild(irow);
+  var out = el("div"); c.appendChild(out);
+  var checked = false;
+  function next(){ P.queue.shift(); renderDrill(); }
+  function showNext(){ var nx = el("button","btn"); nx.type = "button"; nx.textContent = "Next →"; nx.style.marginTop = "10px"; on(nx,"click",next); out.appendChild(nx); }
+  function showGrade(g){
+    clear(out);
+    var ok = !!g.correct;
+    var box = el("div", ok ? "grade-good" : "grade-bad");
+    box.appendChild(el("div", null, (ok ? "✓ Correct" : "✗ Not quite") + (g.score != null ? " · " + g.score + "/100" : "")));
+    if(g.better){
+      var brow = el("div","target-row"); brow.style.marginTop = "6px";
+      var bt = el("div"); bt.style.fontSize = "18px"; bt.style.fontWeight = "600"; bt.textContent = g.better;
+      if(state.lang.rtl){ bt.style.direction = "rtl"; }
+      brow.appendChild(bt); brow.appendChild(speakBtn(g.better, bcp));
+      box.appendChild(brow);
+    }
+    if(g.pronunciation) box.appendChild(el("div","pr","🗣 " + g.pronunciation));
+    if(g.explanation) box.appendChild(el("div","mn", g.explanation));
+    out.appendChild(box);
+    if(ok){ P.right++; award(5); }
+    srsFeed(card.front, card.back, ok);
+    showNext();
+  }
+  function doCheck(){
+    if(checked) return;
+    var ans = inp.value;
+    if(!ans.trim()){ inp.focus(); return; }
+    checked = true;
+    if(aiAvailable()){
+      busy(out, "Grading…");
+      callAI({
+        mode:"grade", prompt:card.front, expected:card.back, answer:ans, level:state.level,
+        targetName:state.lang.name, dialect:state.dialect?state.dialect.name:"", dialectNote:state.dialect?state.dialect.note:""
+      }).then(showGrade).catch(function(){
+        if(state.engine==="local"){ setLive(false); state.engine="offline"; }
+        var sim = similarity(normText(ans), normText(card.back));
+        showGrade({ correct: sim >= 0.85, score: Math.round(sim*100), better: card.back, pronunciation: card.pronunciation||"", explanation: "Graded offline by similarity — enable Live AI for real examiner feedback." });
+      });
+    } else {
+      var sim = similarity(normText(ans), normText(card.back));
+      showGrade({ correct: sim >= 0.85, score: Math.round(sim*100), better: card.back, pronunciation: card.pronunciation||"", explanation: "Graded offline by similarity — enable Live AI for real examiner feedback." });
+    }
+  }
+  on(chk,"click",doCheck);
+  on(inp,"keydown",function(e){ if(e.key === "Enter") doCheck(); });
+  area.appendChild(c);
+}
+function noItemsMsg(){
+  var area = $("practiceArea"); clear(area);
+  var box = el("div","result");
+  box.appendChild(el("div","err","No practice items available offline for this selection."));
+  box.appendChild(el("div","hint","Enable Live AI (top-right) to generate full sets for any language, dialect, topic and level."));
+  area.appendChild(box);
+}
+
+/* =========================================================================
+   STORY — graded reading (comprehensible input). AI writes a micro-story at
+   your exact level in your exact dialect; translations are hidden until
+   tapped so your brain works for the meaning first.
+   ========================================================================= */
+function genStory(){
+  var area = $("practiceArea");
+  if(!aiAvailable()){
+    clear(area);
+    var box = el("div","result");
+    box.appendChild(el("div","err","Stories are written live by the AI at your level."));
+    box.appendChild(el("div","hint","Enable Live AI (top-right) — paste your Anthropic key or run the proxy — to unlock graded reading."));
+    area.appendChild(box);
+    return;
+  }
+  busy(area, "Writing your story…");
+  var topicLabel = (TOPICS.filter(function(x){ return x.id===state.topic; })[0]||{}).label;
+  callAI({
+    mode:"story", topic:topicLabel, level:state.level,
+    targetName:state.lang.name, dialect:state.dialect?state.dialect.name:"", dialectNote:state.dialect?state.dialect.note:""
+  }).then(function(r){ renderStory(area, r); })
+    .catch(function(){
+      if(state.engine==="local"){ setLive(false); state.engine="offline"; }
+      clear(area);
+      var c = el("div","result"); c.appendChild(el("div","err","Couldn't reach the AI just now — try again in a moment."));
+      area.appendChild(c);
+    });
+}
+function renderStory(area, r){
+  clear(area);
+  var bcp = bcpForLang(state.lang, state.dialect);
+  var card = el("div","result");
+  var trow = el("div","target-row");
+  var h = el("div"); h.style.fontWeight = "700"; h.style.fontSize = "19px"; h.textContent = r.title || "Story";
+  if(state.lang.rtl) h.style.direction = "rtl";
+  trow.appendChild(h); trow.appendChild(speakBtn(r.title || "", bcp));
+  card.appendChild(trow);
+  if(r.titleEnglish) card.appendChild(el("div","mn", r.titleEnglish));
+  var ps = r.paragraphs || [];
+  for(var i=0;i<ps.length;i++){
+    (function(p){
+      var box = el("div","story-p" + (state.lang.rtl ? " rtl" : ""));
+      var st = el("div","st"); st.textContent = p.text || ""; box.appendChild(st);
+      if(p.pronunciation) box.appendChild(el("div","pr","🗣 " + p.pronunciation));
+      var row = el("div","row"); row.style.marginTop = "6px";
+      row.appendChild(speakBtn(p.text || "", bcp));
+      var tr = el("button","mini"); tr.type = "button"; tr.textContent = "Show translation";
+      var trd = el("div","tr hidden"); trd.textContent = p.translation || "";
+      on(tr,"click",function(){ if(trd.classList.contains("hidden")){ show(trd); tr.textContent = "Hide translation"; } else { hide(trd); tr.textContent = "Show translation"; } });
+      row.appendChild(tr);
+      box.appendChild(row); box.appendChild(trd);
+      card.appendChild(box);
+    })(ps[i]);
+  }
+  var vocab = r.vocab || [];
+  if(vocab.length){
+    var vh = el("div","mn"); vh.style.marginTop = "12px"; vh.textContent = "Key words (added to your review deck):"; card.appendChild(vh);
+    var vwrap = el("div"); vwrap.style.marginTop = "4px";
+    for(var v=0;v<vocab.length;v++){
+      var w = vocab[v];
+      var chip = el("span","vocab-w", (w.word||"") + (w.pronunciation ? " · " + w.pronunciation : "") + " — " + (w.meaning||""));
+      vwrap.appendChild(chip);
+    }
+    card.appendChild(vwrap);
+    srsAddMany(vocab.map(function(w){ return { front:w.meaning||"", back:w.word||"", pronunciation:w.pronunciation||"" }; }));
+  }
+  var again = el("button","btn sec"); again.type = "button"; again.textContent = "📖 Another story"; again.style.marginTop = "12px";
+  on(again,"click",genStory);
+  card.appendChild(again);
+  area.appendChild(card);
+  area.appendChild(srcLabel(true));
+  award(5); renderStats();
+}
+
+/* =========================================================================
+   REVIEW — the daily SRS session over due cards. Again / Good / Easy.
+   ========================================================================= */
+function startReview(){
+  var due = srsDue();
+  setMode("practice");
+  var area = $("practiceArea"); clear(area);
+  if(!due.length){
+    var box = el("div","result");
+    box.appendChild(el("div",null,"✅ Nothing due — your deck is fresh."));
+    box.appendChild(el("div","hint","Do a unit or a drill and new phrases will queue up for review at the right time."));
+    area.appendChild(box);
+    return;
+  }
+  state.review = { cards:due, i:0, revealed:false };
+  renderReview();
+}
+function renderReview(){
+  var area = $("practiceArea"); clear(area);
+  var R = state.review; if(!R) return;
+  var bcp = bcpForLang(state.lang, state.dialect);
+  if(R.i >= R.cards.length){
+    var done = el("div","result");
+    var h = el("div"); h.style.fontWeight = "700"; h.style.fontSize = "17px"; h.textContent = "Review complete — " + R.cards.length + " cards 🔁";
+    done.appendChild(h);
+    done.appendChild(el("div","mn","That's the memory work done for now. Come back when the chip shows cards due."));
+    area.appendChild(done);
+    renderStats();
+    return;
+  }
+  var it = R.cards[R.i], c = it.c;
+  area.appendChild(el("div","hint","Review " + (R.i+1) + " of " + R.cards.length));
+  var box = el("div","result"); box.style.textAlign = "center";
+  box.appendChild(el("div","mn","Recall this in " + variantName() + ":"));
+  var f = el("div"); f.style.fontSize = "22px"; f.style.fontWeight = "600"; f.style.margin = "10px 0"; f.textContent = c.f;
+  box.appendChild(f);
+  if(!R.revealed){
+    var sa = el("button","btn"); sa.type = "button"; sa.textContent = "Show answer";
+    on(sa,"click",function(){ R.revealed = true; renderReview(); });
+    box.appendChild(sa);
+  } else {
+    var brow = el("div","target-row"); brow.style.justifyContent = "center";
+    var b = el("div","target"); b.textContent = c.b; if(state.lang.rtl) b.style.direction = "rtl";
+    brow.appendChild(b); brow.appendChild(speakBtn(c.b, bcp));
+    box.appendChild(brow);
+    if(c.p) box.appendChild(el("div","pron","🗣 " + c.p));
+    var arow = el("div","row"); arow.style.justifyContent = "center"; arow.style.marginTop = "12px";
+    function gradeBtn(label, cls, g, xp){
+      var btn = el("button", cls); btn.type = "button"; btn.textContent = label;
+      on(btn,"click",function(){ srsGradeCard(it.id, g); if(xp) award(xp); R.i++; R.revealed = false; renderReview(); });
+      return btn;
+    }
+    arow.appendChild(gradeBtn("↻ Again","btn sec",0,0));
+    arow.appendChild(gradeBtn("✓ Good","btn",1,2));
+    arow.appendChild(gradeBtn("⚡ Easy","btn sec",2,2));
+    box.appendChild(arow);
+  }
+  area.appendChild(box);
+}
+
+/* fetch a practice set (AI or offline) and hand it to a drill starter */
+function fetchPracticeItems(cb){
+  var area = $("practiceArea"); busy(area, "Building practice set…");
+  var topicLabel = (TOPICS.filter(function(x){ return x.id===state.topic; })[0]||{}).label;
+  var payload = {
+    mode:"practice", topic:topicLabel, level:state.level, count:10,
+    targetName:state.lang.name, targetNative:state.lang.native,
+    dialect:state.dialect?state.dialect.name:"", dialectNote:state.dialect?state.dialect.note:""
+  };
+  var go = function(items){ cb((items||[]).filter(function(x){ return x && x.front && x.back; })); };
+  if(aiAvailable()){
+    callAI(payload).then(function(r){ go(r.items||[]); })
+      .catch(function(){ if(state.engine==="local"){ setLive(false); state.engine="offline"; } go(offlinePractice()); });
+  } else { go(offlinePractice()); }
+}
+function ensureSet(cb){
+  if(state.practice && state.practice.items && state.practice.items.length){ cb(state.practice.items); }
+  else fetchPracticeItems(cb);
 }
 
 /* =========================================================================
@@ -1357,6 +1847,7 @@ function sendChat(seed){
   };
   callAI(payload).then(function(r){
     state.chat.push({ role:"assistant", text:r.reply||"", data:r });
+    if(!seed) award(3); // each real conversational turn counts
     renderChat();
   }).catch(function(){
     if(state.engine==="local"){ setLive(false); state.engine="offline"; }
@@ -1385,23 +1876,47 @@ function renderLearn(){
   for(var i=0;i<TOPICS.length;i++){ if(isDone(TOPICS[i].id)) done++; }
   var pct = Math.round(done / TOPICS.length * 100);
   var title = el("div"); title.style.fontWeight="700"; title.style.fontSize="17px"; title.textContent = "Learn " + variantName(); area.appendChild(title);
-  var sub = el("div","mn"); sub.style.margin="2px 0 6px"; sub.textContent = "A guided path — " + done + " of " + TOPICS.length + " units complete."; area.appendChild(sub);
+  var sub = el("div","mn"); sub.style.margin="2px 0 6px"; sub.textContent = "A1 → B2 course — " + done + " of " + TOPICS.length + " units complete."; area.appendChild(sub);
   var hr = el("div","learn-head"); var bar = el("div","bar"); var fill = el("i"); fill.style.width = pct + "%"; bar.appendChild(fill); hr.appendChild(bar);
   var lvl = el("span","hint"); lvl.style.margin="0"; lvl.textContent = state.level + " · change in Teach"; hr.appendChild(lvl);
   area.appendChild(hr);
-  for(var j=0;j<TOPICS.length;j++){
-    (function(t, n){
-      var d = isDone(t.id);
-      var u = el("button","unit" + (d?" done":"")); u.type = "button";
-      var ix = el("span","ix"); ix.textContent = d ? "✓" : String(n+1); u.appendChild(ix);
-      var box = el("span");
-      var ut = el("span","ut", t.label); ut.style.display="block";
-      var us = el("span","us", d ? "Completed · tap to revisit" : "Tap to start this unit"); us.style.display="block";
-      box.appendChild(ut); box.appendChild(us); u.appendChild(box);
-      u.appendChild(el("span","chev","›"));
-      on(u,"click",function(){ learnOpen(t); });
-      area.appendChild(u);
-    })(TOPICS[j], j);
+
+  // the daily engine: reviews first — retention beats novelty
+  var due = srsDue();
+  if(due.length){
+    var rb = el("button","review-banner"); rb.type = "button";
+    var rt = el("span"); rt.innerHTML = ""; rt.appendChild(el("b", null, "🔁 " + due.length + " card" + (due.length===1?"":"s") + " due"));
+    rt.appendChild(document.createTextNode(" — review first. Spaced repetition is what moves phrases into permanent memory."));
+    rb.appendChild(rt);
+    on(rb,"click",startReview);
+    area.appendChild(rb);
+  }
+  var method = el("div","method");
+  method.textContent = "⚡ The fluency loop (15 focused min/day): 1) clear due reviews · 2) one unit · 3) say every phrase out loud (🗣 Speak it) · 4) five chat turns with the tutor. Production over recognition, every day.";
+  area.appendChild(method);
+
+  var n = 0;
+  for(var s=0;s<CURRICULUM.length;s++){
+    var sec = CURRICULUM[s];
+    var head = el("div","cefr");
+    head.appendChild(el("span","lv", sec.level));
+    head.appendChild(el("span","lt", sec.title));
+    area.appendChild(head);
+    for(var j=0;j<sec.units.length;j++){
+      (function(t, idx){
+        var d = isDone(t.id);
+        var u = el("button","unit" + (d?" done":"")); u.type = "button";
+        var ix = el("span","ix"); ix.textContent = d ? "✓" : String(idx+1); u.appendChild(ix);
+        var box = el("span");
+        var ut = el("span","ut", t.label); ut.style.display="block";
+        var us = el("span","us", d ? "Completed · tap to revisit" : "Lesson → drills → speak → chat"); us.style.display="block";
+        box.appendChild(ut); box.appendChild(us); u.appendChild(box);
+        u.appendChild(el("span","chev","›"));
+        on(u,"click",function(){ learnOpen(t); });
+        area.appendChild(u);
+      })(sec.units[j], n);
+      n++;
+    }
   }
 }
 function learnOpen(t){
@@ -1424,8 +1939,11 @@ function renderLearnUnit(t, r, ai){
   var holder = el("div"); holder.style.marginTop="10px"; area.appendChild(holder);
   renderLesson(holder, r, ai);
   var row = el("div","row wrap"); row.style.marginTop="12px";
-  var prac = el("button","btn"); prac.type="button"; prac.textContent="🃏 Practice this"; on(prac,"click",function(){ setMode("practice"); genPractice(); }); row.appendChild(prac);
-  var chat = el("button","btn sec"); chat.type="button"; chat.textContent="💬 Practice in chat"; on(chat,"click",function(){ setMode("chat"); renderChat(); }); row.appendChild(chat);
+  var prac = el("button","btn"); prac.type="button"; prac.textContent="🃏 Flashcards"; on(prac,"click",function(){ setMode("practice"); genPractice(); }); row.appendChild(prac);
+  var dr = el("button","btn sec"); dr.type="button"; dr.textContent="✍️ Type it"; on(dr,"click",function(){ setMode("practice"); ensureSet(startDrill); }); row.appendChild(dr);
+  var sp = el("button","btn sec"); sp.type="button"; sp.textContent="🗣 Speak it"; on(sp,"click",function(){ setMode("practice"); ensureSet(startSpeak); }); row.appendChild(sp);
+  var st = el("button","btn sec"); st.type="button"; st.textContent="📖 Story"; on(st,"click",function(){ setMode("practice"); genStory(); }); row.appendChild(st);
+  var chat = el("button","btn sec"); chat.type="button"; chat.textContent="💬 Chat"; on(chat,"click",function(){ setMode("chat"); renderChat(); }); row.appendChild(chat);
   var dn = isDone(t.id);
   var mc = el("button", dn ? "btn sec" : "btn"); mc.type="button"; mc.textContent = dn ? "✓ Completed (undo)" : "✓ Mark complete";
   on(mc,"click",function(){ setDone(t.id, !isDone(t.id)); renderLearn(); });
@@ -1505,8 +2023,13 @@ function init(){
   on($("askBtn"),"click",doAsk);
   on($("askText"),"keydown",function(e){ if(e.key==="Enter") doAsk(); });
 
-  // Practice
-  on($("practiceGen"),"click",genPractice);
+  // Practice drills
+  on($("practiceGen"),"click",function(){ ensureSet(startPractice); });
+  on($("drillBtn"),"click",function(){ ensureSet(startDrill); });
+  on($("speakDrillBtn"),"click",function(){ ensureSet(startSpeak); });
+  on($("storyBtn"),"click",genStory);
+  on($("reviewBtn"),"click",startReview);
+  on($("statChip"),"click",function(){ if(state.lang){ setMode("learn"); renderLearn(); } });
 
   // Chat
   on($("chatSend"),"click",function(){ sendChat(false); });
@@ -1546,6 +2069,7 @@ function init(){
 
   // detect the proxy (no-op offline)
   checkLive();
+  renderStats();
 }
 
 /* run after DOM is parsed; smoke-test stubs make every call above safe */
