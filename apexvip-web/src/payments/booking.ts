@@ -32,6 +32,9 @@ export interface BookingPayloadInput {
   clientId: string;
   clientName?: string;
   clientEmail?: string;
+  /** E.164-ish phone from the profile — the lifecycle SMS sender reads
+   *  booking.clientPhone; without it every SMS silently skips. */
+  clientPhone?: string;
   booking: BookingDraft;
   /** VAT-inclusive total, base fare, discount and VAT from the fare engine. */
   fare: { total: number; base: number; discount: number; vat: number };
@@ -59,6 +62,7 @@ export function buildBookingPayload(input: BookingPayloadInput): Record<string, 
     clientId: input.clientId,
     clientName: input.clientName || '',
     clientEmail: input.clientEmail || '',
+    clientPhone: input.clientPhone || '',
     serviceType,
     serviceLabel: SERVICE_LABELS[serviceType] || 'Airport Transfer',
     pickup: b.pickup || '',

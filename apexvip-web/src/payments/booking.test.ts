@@ -29,6 +29,11 @@ test('payment status derives from the Square payment id', () => {
   assert.equal(buildBookingPayload({ ...BASE, squarePaymentId: 'sq_1' }).paymentStatus, 'paid');
 });
 
+test('clientPhone rides along for the lifecycle SMS sender', () => {
+  assert.equal(buildBookingPayload({ ...BASE, clientPhone: '+447700900123' }).clientPhone, '+447700900123');
+  assert.equal(buildBookingPayload(BASE).clientPhone, '');
+});
+
 test('PA passenger only rides along in PA mode', () => {
   const pa = { name: 'VIP' };
   assert.equal(buildBookingPayload({ ...BASE, paMode: true, paPassenger: pa }).paPassenger, pa);
