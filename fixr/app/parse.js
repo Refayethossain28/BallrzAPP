@@ -86,6 +86,53 @@ async function parseWithClaude(c, text) {
   return { ...normalize(payload, text), _engine: "llm" };
 }
 
+/* ---------- client confirmation drafts (AI copilot beyond intake) ---------- */
+
+const DRAFT_SYSTEM = `You write short confirmation texts a luxury chauffeur/concierge
+service sends its clients. Warm, precise, discreet — two or three sentences, no emoji,
+no exclamation marks. Sign off "— Fixr". Confirm the key details back to the client.`;
+
+export async function draftMessage(request) {
+  const c = getClient();
+  if (c) {
+    try {
+      const res = await c.messages.create({
+        model: MODEL,
+        max_tokens: 300,
+        system: DRAFT_SYSTEM,
+        messages: [{
+          role: "user",
+          content: `Draft the confirmation text for this booking:\n${JSON.stringify({
+            client: request.client_name, type: request.type,
+            details: request.parsed_payload, fee: request.quote_amount,
+          })}`,
+        }],
+      });
+      const block = res.content.find((b) => b.type === "text");
+      if (block?.text?.trim()) return { text: block.text.trim(), engine: "llm" };
+    } catch (err) {
+      console.warn("[draft] LLM failed, using template:", err.message);
+    }
+  }
+  return { text: templateDraft(request), engine: "template" };
+}
+
+function templateDraft(r) {
+  const p = r.parsed_payload || {};
+  const name = r.client_name && !/^(new client|guest)$/i.test(r.client_name) ? ` ${r.client_name}` : "";
+  if (r.type === "concierge") {
+    const fee = r.quote_amount ? ` The service fee is $${r.quote_amount}.` : "";
+    return `Good day${name} — we've received your request: ${p.notes || p.venue || "your concierge request"}.` +
+      ` Your concierge is arranging it now and will confirm the details shortly.${fee} — Fixr`;
+  }
+  const route = [p.pickup, p.dropoff].filter(Boolean).join(" to ") || p.dropoff || "your destination";
+  const flight = p.flight ? ` We're tracking flight ${p.flight} and will adjust your pickup automatically.` : "";
+  const fare = r.quote_amount ? ` Your fare is $${r.quote_amount}.` : "";
+  return `Good day${name} — your ${p.vehicle && p.vehicle !== "Any" ? p.vehicle : "car"} is confirmed` +
+    ` for ${p.datetime || "the requested time"}, ${route}.${flight}${fare}` +
+    ` Your chauffeur's details will follow shortly. — Fixr`;
+}
+
 /* ---------- heuristic fallback (no dependencies, deterministic) ---------- */
 
 const AIRPORTS = ["JFK", "LGA", "EWR", "LAX", "SFO", "ORD", "MIA", "BOS", "DCA", "IAD", "ATL", "TEB", "VNY"];

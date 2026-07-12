@@ -93,6 +93,55 @@ try {
   const persisted = all.find((r) => r.id === req.id);
   ok(persisted && persisted.audit_log.length >= 4, `audit trail persisted (${persisted.audit_log.length} entries)`);
 
+  // Client memory: repeat bookings build a profile with trips + preferences.
+  const clientsList = await call("/api/clients");
+  const park = clientsList.find((c) => c.name === "Ms. Park");
+  ok(park && park.trips >= 1, `client remembered from booking (${park.name}, ${park.trips} trip)`);
+  const booking2 = await call(`/api/client/request`, {
+    method: "POST",
+    body: JSON.stringify({ client_name: "Ms. Park", pickup: "SoHo", dropoff: "Newark", vehicle: "SUV" }),
+  });
+  ok(booking2.request.client_id === park.id, `repeat booking linked to same client profile`);
+  await call(`/api/clients/${park.id}/prefs`, { method: "POST", body: JSON.stringify({ preferences: "Texts only · 15 min buffer" }) });
+  const { client_profile } = await call("/api/parse", {
+    method: "POST",
+    body: JSON.stringify({ text: "Sedan for Ms. Park to the airport tomorrow 9am" }),
+  });
+  ok(client_profile && client_profile.preferences.includes("Texts only") && client_profile.trips >= 2,
+     `AI intake recognizes repeat client (★ ${client_profile.trips} trips, prefs shown)`);
+
+  // AI-drafted client message (template fallback with no key).
+  const draft = await call(`/api/requests/${req.id}/draft`, { method: "POST" });
+  ok(draft.text.includes("Fixr") && draft.text.length > 40, `client message drafted (${draft.engine})`);
+
+  // Today dashboard.
+  const stats = await call("/api/stats");
+  ok(stats.today.trips >= 3 && stats.today.captured >= req.quote_amount,
+     `stats: ${stats.today.trips} trips today, $${stats.today.captured} captured, $${stats.today.driver_paid} to drivers`);
+
+  // Live updates: SSE stream delivers a request.created event.
+  const ac = new AbortController();
+  const sse = await fetch(base + "/api/events", { signal: ac.signal, headers: { Accept: "text/event-stream" } });
+  const reader = sse.body.getReader();
+  const sawEvent = (async () => {
+    const dec = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return false;
+      buf += dec.decode(value, { stream: true });
+      if (buf.includes("request.created")) return true;
+    }
+  })();
+  await call("/api/requests", { method: "POST", body: JSON.stringify({ parsed: { ...parsed, client: "Mr. SSE" }, source: "test" }) });
+  const gotLive = await Promise.race([sawEvent, new Promise((r) => setTimeout(() => r(false), 4000))]);
+  ac.abort();
+  ok(gotLive, `SSE live update received (request.created)`);
+
+  // Demo seed refuses when the board already has data (protects real data).
+  const seedTry = await fetch(base + "/api/demo/seed", { method: "POST" });
+  ok(seedTry.status === 409, `demo seed refuses on a non-empty board (409)`);
+
   console.log(`\n${passed} checks passed`);
 } catch (e) {
   console.error("\n✗ FAILED:", e.message);
