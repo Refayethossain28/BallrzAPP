@@ -142,6 +142,63 @@ try {
   const seedTry = await fetch(base + "/api/demo/seed", { method: "POST" });
   ok(seedTry.status === 409, `demo seed refuses on a non-empty board (409)`);
 
+  // Phone capture + SMS notifications (log mode without Twilio keys).
+  const phoneBooking = await call(`/api/client/request`, {
+    method: "POST",
+    body: JSON.stringify({ client_name: "Mr. Grant", phone: "+1 917 555 0142", pickup: "Tribeca", dropoff: "EWR" }),
+  });
+  await call(`/api/requests/${phoneBooking.request.id}/confirm`, { method: "POST" });
+  await new Promise((r) => setTimeout(r, 250)); // notify is fire-and-forget
+  const clientsNow = await call("/api/clients");
+  ok(clientsNow.find((c) => c.name === "Mr. Grant")?.phone === "+1 917 555 0142", `client phone captured from booking`);
+  const feed = await call("/api/notifications");
+  const note = feed.find((n) => n.request_id === phoneBooking.request.id);
+  ok(note && /confirmed/i.test(note.body) && note.recipient.includes("917"),
+     `client notification composed + recorded (${note.channel}/${note.status})`);
+
+  // Driver-scoped lifecycle (works even when the console is locked).
+  const d2 = drivers[1];
+  await call(`/api/requests/${phoneBooking.request.id}/assign`, { method: "POST", body: JSON.stringify({ resource_id: d2.id }) });
+  const dEn = await call(`/api/driver/${d2.id}/trips/${phoneBooking.request.id}/enroute`, { method: "POST" });
+  ok(dEn.status === "in_progress", `driver-scoped enroute`);
+  const wrongDriver = await fetch(base + `/api/driver/${drivers[2].id}/trips/${phoneBooking.request.id}/complete`, { method: "POST" });
+  ok(wrongDriver.status === 404, `another driver cannot touch the trip (404)`);
+  const dDone = await call(`/api/driver/${d2.id}/trips/${phoneBooking.request.id}/complete`, { method: "POST" });
+  ok(dDone.request.status === "completed" && dDone.payment.status === "succeeded", `driver-scoped complete + settlement`);
+
+  // Preference-aware intake: saved vehicle preference auto-applies.
+  const grant = (await call("/api/clients")).find((c) => c.name === "Mr. Grant");
+  await call(`/api/clients/${grant.id}/prefs`, { method: "POST", body: JSON.stringify({ preferences: "Prefers Escalade, no small talk" }) });
+  const prefParse = await call("/api/parse", { method: "POST", body: JSON.stringify({ text: "Car for Mr. Grant to JFK tomorrow 8am" }) });
+  ok(prefParse.parsed.vehicle === "Cadillac Escalade" && prefParse.parsed._vehicle_auto === true,
+     `saved preference auto-selects vehicle (${prefParse.parsed.vehicle})`);
+  ok(prefParse.quote.total > 0 && prefParse.quote.lines.some((l) => l[0].includes("1.45")),
+     `auto-selected vehicle priced with its multiplier ($${prefParse.quote.total})`);
+
+  // Vendor rolodex.
+  const vendor = await call("/api/vendors", { method: "POST", body: JSON.stringify({ name: "Carbone", category: "dining", contact: "maitre d'", notes: "corner booths" }) });
+  const vendorsNow = await call("/api/vendors");
+  ok(vendor.id && vendorsNow.some((v) => v.name === "Carbone"), `vendor rolodex create + list`);
+
+  // Owner digest (template mode without a key).
+  const digest = await call("/api/digest");
+  ok(digest.text.includes("$") && digest.text.includes("Fixr"), `owner digest written (${digest.engine})`);
+
+  // Operator auth: locks the console APIs when OPERATOR_KEY is set.
+  process.env.OPERATOR_KEY = "test-key-123";
+  const locked = await fetch(base + "/api/requests");
+  ok(locked.status === 401, `console APIs lock when OPERATOR_KEY is set (401)`);
+  const unlocked = await fetch(base + "/api/requests", { headers: { "x-operator-key": "test-key-123" } });
+  ok(unlocked.status === 200, `operator key unlocks (200)`);
+  const driverStill = await fetch(base + `/api/driver/${d2.id}/trips`);
+  ok(driverStill.status === 200, `driver app unaffected by console lock`);
+  const passengerStill = await fetch(base + `/api/client/request/${phoneBooking.request.id}`);
+  ok(passengerStill.status === 200, `passenger tracking unaffected by console lock`);
+  delete process.env.OPERATOR_KEY;
+
+  const health = await call("/api/health");
+  ok(health.notify === "log" && health.auth === "open", `health reports notify=${health.notify} auth=${health.auth}`);
+
   console.log(`\n${passed} checks passed`);
 } catch (e) {
   console.error("\n✗ FAILED:", e.message);
