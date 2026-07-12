@@ -1,9 +1,16 @@
 // Fixr operator console — talks to the real REST API in server.js.
 const $ = (id) => document.getElementById(id);
-const api = (p, opts) => fetch(p, { headers: { "Content-Type": "application/json" }, ...opts }).then((r) => {
+const opKey = () => localStorage.getItem("fixr_operator_key") || "";
+const api = (p, opts) => fetch(p, {
+  ...opts,
+  headers: { "Content-Type": "application/json", ...(opKey() ? { "x-operator-key": opKey() } : {}), ...(opts?.headers || {}) },
+}).then((r) => {
+  if (r.status === 401) { showLogin(); return Promise.reject(new Error("operator key required")); }
   if (!r.ok) return r.json().then((e) => Promise.reject(new Error(e.error || r.statusText)));
   return r.json();
 });
+
+function showLogin() { document.getElementById("login-bg").style.display = "grid"; }
 
 const STAGES = ["quoted", "confirmed", "assigned", "in_progress", "completed"];
 const STAGE_LABEL = { quoted: "Quoted", confirmed: "Confirmed", assigned: "Assigned", in_progress: "En route", completed: "Completed" };
@@ -19,10 +26,13 @@ let requests = [];
 let drivers = [];
 let clients = [];
 let stats = null;
+let notifications = [];
+let vendors = [];
 
 async function refresh() {
-  [requests, drivers, clients, stats] = await Promise.all([
+  [requests, drivers, clients, stats, notifications, vendors] = await Promise.all([
     api("/api/requests"), api("/api/resources"), api("/api/clients"), api("/api/stats"),
+    api("/api/notifications").catch(() => []), api("/api/vendors").catch(() => []),
   ]);
   render();
 }
@@ -49,10 +59,42 @@ async function boot() {
     try { await api("/api/demo/seed", { method: "POST" }); await refresh(); }
     catch (e) { alert(e.message); } finally { $("demo-btn").disabled = false; }
   };
+  $("opkey-btn").onclick = async () => {
+    localStorage.setItem("fixr_operator_key", $("opkey").value.trim());
+    try {
+      await api("/api/stats");
+      $("login-bg").style.display = "none"; $("opkey-err").textContent = "";
+      await refresh();
+    } catch { $("opkey-err").textContent = "That key was not accepted."; }
+  };
+  $("opkey").addEventListener("keydown", (e) => { if (e.key === "Enter") $("opkey-btn").click(); });
+  $("digest-btn").onclick = async (e) => {
+    e.preventDefault();
+    $("m-title").textContent = "Owner digest";
+    $("m-body").innerHTML = '<div class="note">Writing…</div>';
+    $("modal-bg").style.display = "grid";
+    try {
+      const d = await api("/api/digest");
+      $("m-body").innerHTML = `<div class="draftbox" style="display:block">${d.text}</div>
+        <div class="actions"><button class="btn-ghost" onclick="navigator.clipboard.writeText(this.parentElement.previousElementSibling.textContent)">📋 Copy</button>
+        <button class="btn-ghost" onclick="document.getElementById('modal-bg').style.display='none'">Close</button></div>
+        <div class="note">${d.engine === "llm" ? "Written by Claude from today's numbers." : "Template summary — set ANTHROPIC_API_KEY for the AI-written version."}</div>`;
+    } catch (err) { $("m-body").innerHTML = `<div class="note">${err.message}</div>`; }
+  };
+  $("vendor-add").onclick = async (e) => {
+    e.preventDefault();
+    const name = prompt("Vendor name (restaurant, venue, charter…):"); if (!name) return;
+    const category = prompt("Category (dining / tickets / aviation / yacht / other):") || "";
+    const contact = prompt("Contact (phone / email / maître d'):") || "";
+    const notes = prompt("Notes (what they can do for your clients):") || "";
+    await api("/api/vendors", { method: "POST", body: JSON.stringify({ name, category, contact, notes }) });
+    await refresh();
+  };
   try {
     const h = await api("/api/health");
     $("s-mode").textContent = h.intake === "llm" ? "Claude" : "Heuristic";
-    $("foot").innerHTML += ` &middot; live mode: intake=<code>${h.intake}</code> payments=<code>${h.payments}</code>`;
+    $("notify-mode").textContent = h.notify === "twilio" ? "SMS live" : "logged (set TWILIO_*)";
+    $("foot").innerHTML += ` &middot; live mode: intake=<code>${h.intake}</code> payments=<code>${h.payments}</code> notify=<code>${h.notify}</code> auth=<code>${h.auth}</code>`;
   } catch {}
   await refresh();
   subscribeLive();
@@ -82,7 +124,7 @@ function renderDraft() {
       ? row("Venue", p.venue || "—") + row("Party size", p.pax) + row("When", p.datetime)
       : row("When", p.datetime) +
         row("Route", [p.pickup, p.dropoff].filter(Boolean).join("  →  ") || "—") +
-        row("Vehicle", p.vehicle) + row("Passengers", p.pax) +
+        row("Vehicle", p.vehicle + (p._vehicle_auto ? ' <span class="star">· auto from prefs</span>' : "")) + row("Passengers", p.pax) +
         (p.flight ? row("Flight (auto-tracked)", p.flight) : "") +
         (p.hours ? row("Hours", p.hours) : ""));
   // Client memory: recognize repeat clients at parse time.
@@ -164,6 +206,21 @@ function render() {
     window.open(link.url, "_blank");
     setTimeout(refresh, 800);
   });
+
+  // Vendor rolodex.
+  $("vendors").innerHTML = vendors.length ? vendors.map((v) => `
+    <div class="vrow"><div><b>${v.name}</b><div class="vmeta">${[v.contact, v.notes].filter(Boolean).join(" · ")}</div></div>
+    ${v.category ? `<span class="vcat">${v.category}</span>` : ""}</div>`).join("")
+    : '<div class="note">Your black book — restaurants, charters, box seats. Tap + add.</div>';
+
+  // Outbound client notifications feed.
+  $("notifications").innerHTML = notifications.length ? notifications.slice(0, 12).map((n) => `
+    <div class="nrow"><span class="nb">${n.body}</span>
+      <div class="nm"><span class="${n.status === "sent" ? "sent" : "logged"}">${n.status === "sent" ? "✓ SMS sent" : "logged"}</span>
+      ${n.recipient ? " · " + n.recipient : ""} · ${fmt(n.created_at)}</div></div>`).join("")
+    : '<div class="note">Client texts appear here as trips progress (real SMS when TWILIO_* is set).</div>';
+
+  renderMap();
 
   $("s-open").textContent = requests.filter((r) => r.status !== "completed").length;
   $("s-rev").textContent = "$" + requests.reduce((s, r) => s + (r.quote_amount || 0), 0).toLocaleString();
@@ -297,5 +354,30 @@ function renderAudit() {
 const initials = (n) => n.split(" ").map((x) => x[0]).join("");
 const fmt = (iso) => { try { return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); } catch { return ""; } };
 const minsToSla = (iso) => iso ? Math.max(0, Math.round((new Date(iso) - Date.now()) / 60000)) : null;
+
+/* Live driver map — Leaflet from CDN; graceful fallback when unreachable. */
+let map = null, markers = {};
+function renderMap() {
+  const located = drivers.filter((d) => d.last_lat != null && d.last_lng != null);
+  if (typeof L === "undefined") {
+    document.getElementById("map").style.display = "none";
+    const fb = document.getElementById("map-fallback");
+    fb.style.display = "block";
+    fb.textContent = located.length
+      ? located.map((d) => `${d.name}: ${Number(d.last_lat).toFixed(4)}, ${Number(d.last_lng).toFixed(4)}`).join(" · ")
+      : "Driver positions appear when drivers share location.";
+    return;
+  }
+  if (!map) {
+    map = L.map("map", { zoomControl: false, attributionControl: false }).setView([40.7484, -73.9857], 12);
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", { maxZoom: 19 }).addTo(map);
+  }
+  for (const d of located) {
+    const pos = [d.last_lat, d.last_lng];
+    if (markers[d.id]) markers[d.id].setLatLng(pos);
+    else markers[d.id] = L.marker(pos).addTo(map).bindPopup(d.name);
+  }
+  if (located.length) map.setView([located[0].last_lat, located[0].last_lng], 12);
+}
 
 boot();

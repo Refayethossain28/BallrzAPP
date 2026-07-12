@@ -32,8 +32,19 @@ export async function init() {
   await q(`
     CREATE TABLE IF NOT EXISTS clients (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, name_key TEXT NOT NULL UNIQUE,
-      tier TEXT DEFAULT 'standard', preferences TEXT DEFAULT '',
+      tier TEXT DEFAULT 'standard', preferences TEXT DEFAULT '', phone TEXT DEFAULT '',
       created_at TEXT NOT NULL, last_seen_at TEXT
+    )`);
+  await q(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS phone TEXT DEFAULT ''`);
+  await q(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY, request_id TEXT, recipient TEXT, channel TEXT,
+      body TEXT, status TEXT, created_at TEXT NOT NULL
+    )`);
+  await q(`
+    CREATE TABLE IF NOT EXISTS vendors (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT DEFAULT '',
+      contact TEXT DEFAULT '', notes TEXT DEFAULT '', created_at TEXT NOT NULL
     )`);
 }
 
@@ -60,20 +71,53 @@ export async function setResourceLocation(id, lat, lng) {
 /* ---------- clients (the memory layer) ---------- */
 const GENERIC_NAMES = /^(new client|guest|client|customer)$/i;
 
-export async function findOrCreateClient(name) {
+export async function findOrCreateClient(name, phone) {
   const clean = (name || "").trim();
   if (!clean || GENERIC_NAMES.test(clean)) return null;
   const key = clean.toLowerCase();
+  const ph = (phone || "").trim();
   let c = (await q(`SELECT * FROM clients WHERE name_key=$1`, [key])).rows[0];
   if (!c) {
     const id = "C" + randomUUID().slice(0, 8);
-    await q(`INSERT INTO clients (id, name, name_key, created_at, last_seen_at) VALUES ($1,$2,$3,$4,$5)
-             ON CONFLICT (name_key) DO NOTHING`, [id, clean, key, now(), now()]);
+    await q(`INSERT INTO clients (id, name, name_key, phone, created_at, last_seen_at) VALUES ($1,$2,$3,$4,$5,$6)
+             ON CONFLICT (name_key) DO NOTHING`, [id, clean, key, ph, now(), now()]);
     c = (await q(`SELECT * FROM clients WHERE name_key=$1`, [key])).rows[0];
   } else {
-    await q(`UPDATE clients SET last_seen_at=$1 WHERE id=$2`, [now(), c.id]);
+    await q(`UPDATE clients SET last_seen_at=$1, phone=CASE WHEN $2<>'' THEN $2 ELSE phone END WHERE id=$3`,
+      [now(), ph, c.id]);
+    c = (await q(`SELECT * FROM clients WHERE id=$1`, [c.id])).rows[0];
   }
   return c;
+}
+
+/* ---------- notifications ---------- */
+export async function recordNotification({ request_id, recipient, channel, body, status }) {
+  const id = "N" + randomUUID().slice(0, 8);
+  await q(`INSERT INTO notifications (id, request_id, recipient, channel, body, status, created_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    [id, request_id || null, recipient || "", channel, body, status, now()]);
+  return id;
+}
+export async function listNotifications(limit = 30) {
+  return (await q(`SELECT * FROM notifications ORDER BY created_at DESC LIMIT $1`, [limit])).rows;
+}
+
+/* ---------- vendors (concierge rolodex) ---------- */
+export async function createVendor({ name, category, contact, notes }) {
+  const id = "V" + randomUUID().slice(0, 8);
+  await q(`INSERT INTO vendors (id, name, category, contact, notes, created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
+    [id, name, category || "", contact || "", notes || "", now()]);
+  return (await q(`SELECT * FROM vendors WHERE id=$1`, [id])).rows[0];
+}
+export async function listVendors() {
+  return (await q(`SELECT * FROM vendors ORDER BY name`)).rows;
+}
+export async function updateVendor(id, { name, category, contact, notes }) {
+  const v = (await q(`SELECT * FROM vendors WHERE id=$1`, [id])).rows[0];
+  if (!v) return null;
+  await q(`UPDATE vendors SET name=$1, category=$2, contact=$3, notes=$4 WHERE id=$5`,
+    [name ?? v.name, category ?? v.category, contact ?? v.contact, notes ?? v.notes, id]);
+  return (await q(`SELECT * FROM vendors WHERE id=$1`, [id])).rows[0];
 }
 
 export async function getClientByName(name) {

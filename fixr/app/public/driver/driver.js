@@ -65,7 +65,7 @@ async function act(a, id) {
     const dest = encodeURIComponent(p?.parsed_payload?.dropoff || "");
     return window.open(`https://maps.google.com/?q=${dest}`, "_blank");
   }
-  try { await api(`/api/requests/${id}/${a}`, { method: "POST" }); await load(); }
+  try { await api(`/api/driver/${DRIVER_ID}/trips/${id}/${a}`, { method: "POST" }); await load(); }
   catch (e) { alert(e.message); }
 }
 

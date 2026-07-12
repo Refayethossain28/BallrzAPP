@@ -14,6 +14,7 @@ function form() {
     pickup: $("pickup").value.trim(), dropoff: $("dropoff").value.trim(),
     when: $("when").value.trim(), pax: $("pax").value || 1,
     vehicle: $("vehicle").value, flight: $("flight").value.trim(), client_name: $("name").value.trim(),
+    phone: $("phone").value.trim(),
   };
 }
 
@@ -62,7 +63,7 @@ $("conc-btn").onclick = async () => {
   try {
     const { request: r } = await api("/api/client/concierge", {
       method: "POST",
-      body: JSON.stringify({ request, when: $("c-when").value.trim(), client_name: $("c-name").value.trim() }),
+      body: JSON.stringify({ request, when: $("c-when").value.trim(), client_name: $("c-name").value.trim(), phone: $("c-phone").value.trim() }),
     });
     saveTrip(r.id);
     openTracking(r.id);
