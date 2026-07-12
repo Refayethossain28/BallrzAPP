@@ -162,7 +162,7 @@ input:focus{border-color:var(--gold)}
 .step-line{flex:1;height:2px;background:var(--border);margin-top:-14px}
 .bar-row{display:flex;align-items:flex-end;gap:6px;height:80px;margin:12px 0}
 .bar-col{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1}
-.bar-fill{border-radius:4px 4px 0 0;background:var(--gold);width:100%;transform-origin:bottom;animation:growBar .5s ease both}
+.bar,.bar-fill{border-radius:4px 4px 0 0;background:var(--gold);width:100%;transform-origin:bottom;animation:growBar .5s ease both}
 .bar-col:nth-child(2) .bar-fill{animation-delay:.05s}
 .bar-col:nth-child(3) .bar-fill{animation-delay:.1s}
 .bar-col:nth-child(4) .bar-fill{animation-delay:.15s}
@@ -262,8 +262,10 @@ try {
     auth.onAuthStateChanged(async user => {
       if(user && S.screen === 'login'){
         const doc = await db.collection('users').doc(user.uid).get().catch(()=>null);
-        const isDriver = !doc || !doc.exists || doc.data().role === 'driver';
-        if(isDriver){
+        // Session restore mirrors driverLogin: only a provisioned driver
+        // profile (users/{uid}.role == 'driver') gets in — the rules deny
+        // everything else, so pretending otherwise just yields a dead app.
+        if(doc && doc.exists && doc.data().role === 'driver'){
           _driverId = user.uid;
           setupDriverListeners(user.uid);
           go('home');
@@ -281,7 +283,9 @@ function track(event, props){
     arr.push(ev);
     if(arr.length>2000) arr.splice(0,arr.length-2000);
     localStorage.setItem(key,JSON.stringify(arr));
-    if(FIREBASE_ENABLED) db.collection('analytics').add(ev).catch(reportError);
+    // analytics create requires a signed-in user (rules) — pre-login events
+    // stay local rather than generating a permission-denied per navigation.
+    if(FIREBASE_ENABLED&&auth.currentUser) db.collection('analytics').add(ev).catch(()=>{});
   }catch(e){}
 }
 
@@ -321,8 +325,10 @@ let S={
   screen:'login',
   theme: localStorage.getItem('apexvip_driver_theme')||'dark',
   profile:{name:'Driver',initials:'DR',vehicle:'',model:'',reg:'',rating:4.9,trips:0},
-  apexcoin: 0,
-  _axcHistory:[], // earned in-session from real completed trips
+  // AXC persists locally — a wallet balance that reset to 0 on every reload
+  // was money-shaped UI that silently evaporated.
+  apexcoin: (function(){try{return Number(JSON.parse(localStorage.getItem('apexvip_driver_axc')||'0'))||0;}catch(_){return 0;}})(),
+  _axcHistory: (function(){try{const v=JSON.parse(localStorage.getItem('apexvip_driver_axc_hist')||'[]');return Array.isArray(v)?v:[];}catch(_){return [];}})(),
   online:false,
   jobOverlay:false,
   countdown:30,
@@ -402,12 +408,18 @@ async function driverLogin(){
   try{
     const cred=await auth.signInWithEmailAndPassword(email,pass);
     const doc=await db.collection('users').doc(cred.user.uid).get();
-    const isDriver=!doc.exists||doc.data().role==='driver';
-    if(isDriver){
+    // The security rules only grant driver access when users/{uid}.role ==
+    // 'driver' (admin-provisioned). Treating a MISSING profile as a driver
+    // used to "log in" accounts whose every jobs/bookings read then failed
+    // silently — surface the real state instead.
+    if(doc.exists&&doc.data().role==='driver'){
       _driverId=cred.user.uid;
       track('driver_login',{method:'firebase',src:'driver'});
       setupDriverListeners(cred.user.uid);
       go('home');
+    }else if(!doc.exists){
+      auth.signOut();
+      alert('This account isn\'t set up as an ApexVIP chauffeur yet. Ask the operations team to provision your driver profile, then sign in again.');
     }else{auth.signOut();alert('Access denied. Driver accounts only.');}
   }catch(err){
     alert('Invalid credentials');
@@ -450,15 +462,21 @@ function mapJob(doc){
 // Safe JSON.parse — never throws at render time on corrupt localStorage.
 function safeParse(str,fallback){try{const v=JSON.parse(str);return v==null?fallback:v;}catch(_){return fallback;}}
 // Broadcast (open_jobs) mapper — client-controlled fields escaped, mirroring mapJob().
+// `_raw` keeps the unescaped originals: anything written BACK to Firestore must
+// use raw values, or "O'Neill" gets persisted as "O&#39;Neill" and double-escapes.
 function mapOpenJob(d){
   const x=d.data();
   return {_openId:d.id,_broadcast:true,bookingDocId:x.bookingDocId||'',bookingRef:esc(x.bookingRef||''),
     type:x.type||'airport',client:esc(x.clientName||'Client'),
     initials:esc((x.clientName||'CL').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2)),
     service:esc(x.serviceLabel||'Airport Transfer'),pickup:esc(x.pickup||''),
-    dropoff:esc(x.dropoff||''),time:esc(x.time||'Now'),
+    dropoff:esc(x.dropoff||''),time:esc(x.time||'Now'),date:esc(x.date||''),
+    market:x.market||'london',clientId:x.clientId||'',
     pay:Number(x.pay)||95,flight:esc(x.flight||''),notes:esc(x.notes||''),
-    vehicle:esc(x.vehicle||'S-Class'),status:'pending'};
+    vehicle:esc(x.vehicle||'S-Class'),status:'pending',
+    _raw:{bookingRef:x.bookingRef||'',clientName:x.clientName||'Client',serviceLabel:x.serviceLabel||'Airport Transfer',
+      pickup:x.pickup||'',dropoff:x.dropoff||'',time:x.time||'Now',date:x.date||'',
+      flight:x.flight||'',notes:x.notes||'',vehicle:x.vehicle||'S-Class'}};
 }
 
 function setupDriverListeners(uid){
@@ -486,11 +504,17 @@ function setupDriverListeners(uid){
       trips:p.trips||0,
       market:p.market||'london'
     };
+    // NB: no `rating` here — the running average on drivers/{uid} is maintained
+    // server-side by submitTripRating; writing p.rating||4.9 on every login
+    // would clobber the real customer ratings.
     db.collection('drivers').doc(uid).set({
       name,vehicle:S.profile.model||S.profile.vehicle,
       model:S.profile.model||S.profile.vehicle,
-      reg:S.profile.reg,rating:S.profile.rating,role:'driver'
+      reg:S.profile.reg,role:'driver'
     },{merge:true}).catch(reportError);
+    // The open_jobs feed is market-scoped — now that the profile (and its real
+    // market) has loaded, re-subscribe if we were listening on the default.
+    subscribeOpenJobs(uid);
     render();
   }).catch(reportError);
   db.collection('jobs').where('driverId','==',uid).where('status','in',['pending','accepted','en_route','arrived','onboard'])
@@ -499,25 +523,49 @@ function setupDriverListeners(uid){
       JOBS.length=0;
       snap.docs.forEach(d=>JOBS.push(mapJob(d)));
       // New pending job and driver is idle → ring the job offer overlay
-      const pending=JOBS.find(j=>j.status==='pending');
+      const pending=JOBS.find(j=>j.status==='pending'&&!(S._dismissedOffers||{})[j.id]);
       if(pending&&!S.jobOverlay&&!S.activeJob){
-        S._offeredJob=pending;
-        S.jobOverlay=true;S.countdown=30;startCountdown();
+        ringOffer(pending);
       }
-      // Resume an in-progress job after app reload
+      // Resume an in-progress job after app reload — and restart the GPS
+      // stream + trip timer the reload killed, or the client's live tracking
+      // goes dark mid-trip.
       if(!S.activeJob){
         const inProgress=JOBS.find(j=>['accepted','en_route','arrived','onboard'].includes(j.status));
-        if(inProgress){S.activeJob=inProgress;S.tripStep={accepted:2,en_route:2,arrived:3,onboard:4}[inProgress.status]||2;}
+        if(inProgress){
+          S.activeJob=inProgress;S.tripStep={accepted:2,en_route:2,arrived:3,onboard:4}[inProgress.status]||2;
+          startGPSStream();
+          if(inProgress.status==='onboard'&&!S._tripTimerInterval){
+            S._tripTimerInterval=setInterval(()=>{S.tripTimer++;const el=document.getElementById('trip-timer');if(el){const m=Math.floor(S.tripTimer/60);const s=S.tripTimer%60;el.textContent=(m<10?'0'+m:m)+':'+(s<10?'0'+s:s);}},1000);
+          }
+        }else if(!S._statusReconciled&&_driverId){
+          // Fresh reload with no live trip: the app boots offline, so make the
+          // drivers doc agree — otherwise dispatch broadcasts at a "phantom
+          // online" driver whose app suppresses every ring.
+          S._statusReconciled=true;
+          if(!S.online) db.collection('drivers').doc(_driverId).set({status:'offline'},{merge:true}).catch(reportError);
+        }
       }
       render();
     },err=>reportError(err,'driver-jobs-listener'));
 
   // Broadcast dispatch: open jobs are offered to every online driver at once.
   // First driver to accept claims it via a transaction.
-  const market = S.driverProfile?.market || S.profile?.market || 'london';
-  db.collection('open_jobs').where('status','==','open').where('market','==',market)
+  subscribeOpenJobs(uid);
+}
+
+// Market-scoped open_jobs feed. Subscribed at login with the default market and
+// RE-subscribed once the profile loads — previously the market was read
+// synchronously before the async profile fetch finished, permanently binding
+// every driver to 'london' and leaving other markets deaf to broadcasts.
+function subscribeOpenJobs(uid){
+  const market = S.profile?.market || 'london';
+  if(S._openJobsMarket===market && S._openJobsUnsub) return; // already on the right feed
+  if(S._openJobsUnsub){ S._openJobsUnsub(); S._openJobsUnsub=null; }
+  S._openJobsMarket=market;
+  S._openJobsUnsub=db.collection('open_jobs').where('status','==','open').where('market','==',market)
     .onSnapshot(snap=>{
-      const open=snap.docs.map(mapOpenJob);
+      const open=snap.docs.map(mapOpenJob).filter(j=>!(S._dismissedOffers||{})[j._openId]);
       S._openJobs=open;
       // If the job we're ringing got claimed by another driver, stand down
       if(S.jobOverlay&&S._offeredJob?._broadcast&&!open.find(j=>j._openId===S._offeredJob._openId)){
@@ -527,10 +575,19 @@ function setupDriverListeners(uid){
       }
       // Ring the offer for online, idle drivers
       if(open.length&&S.online&&!S.jobOverlay&&!S.activeJob){
-        S._offeredJob=open[0];
-        S.jobOverlay=true;S.countdown=30;startCountdown();render();
+        ringOffer(open[0]);
       }
     },err=>reportError(err,'driver-openjobs-listener'));
+}
+
+// Present a job offer. The ring overlay is only rendered by the home screen, so
+// bring the driver home first — otherwise the 30s countdown runs invisibly on
+// Earnings/Profile/etc. and auto-expires a job they never saw.
+function ringOffer(job){
+  S._offeredJob=job;
+  S.jobOverlay=true;S.countdown=30;
+  if(S.screen!=='home'){S.screen='home';track('screen_view',{screen:'home',src:'driver'});}
+  startCountdown();haptic&&haptic('medium');render();
 }
 
 // First-to-accept claim — the transaction guarantees only one driver wins
@@ -552,19 +609,25 @@ async function claimBroadcastJob(job){
         assignedAt:firebase.firestore.FieldValue.serverTimestamp()
       }).catch(reportError);
     }
+    // Persist RAW values (job._raw), never the esc()'d display copies — HTML
+    // entities must not leak into Firestore or they double-escape on read.
+    const raw=job._raw||{};
     const jobDoc=await db.collection('jobs').add({
-      driverId:_driverId,bookingRef:job.bookingRef,bookingDocId:job.bookingDocId,
-      clientId:job.clientId||'',clientName:job.client||'',
-      type:job.type||'airport',serviceLabel:job.service||'Airport Transfer',
-      pickup:job.pickup,dropoff:job.dropoff,
-      date:job.date||'',time:job.time||'',vehicle:job.vehicle,pay:job.pay,
-      flight:job.flight||'',notes:job.notes||'',market:job.market||'london',
+      driverId:_driverId,bookingRef:raw.bookingRef??job.bookingRef,bookingDocId:job.bookingDocId,
+      clientId:job.clientId||'',clientName:raw.clientName??job.client??'',
+      type:job.type||'airport',serviceLabel:raw.serviceLabel??job.service??'Airport Transfer',
+      pickup:raw.pickup??job.pickup,dropoff:raw.dropoff??job.dropoff,
+      date:raw.date??job.date??'',time:raw.time??job.time??'',vehicle:raw.vehicle??job.vehicle,pay:job.pay,
+      flight:raw.flight??job.flight??'',notes:raw.notes??job.notes??'',market:job.market||'london',
       status:'accepted',
       createdAt:firebase.firestore.FieldValue.serverTimestamp()
     });
     return {...job,id:jobDoc.id};
   }catch(e){
-    return null; // lost the race
+    // Only a lost race reads as 'taken'; anything else (rules, network) is a
+    // real failure the driver + telemetry must hear about.
+    if(!/taken/.test(String(e&&e.message))) reportError(e,'claim-job');
+    return null;
   }
 }
 
@@ -588,7 +651,10 @@ function _writeLocation(pos){
   const now=Date.now();
   if(now-_gpsLastWrite<4000)return; // max 1 Firestore write per 4 s
   _gpsLastWrite=now;
-  db.collection('drivers').doc(_driverId).set({
+  // Coordinates go to driver_locations, NOT the drivers record: the tracking
+  // map is readable by every signed-in user, while the drivers doc carries
+  // compliance/payout data that must stay staff/self-only.
+  db.collection('driver_locations').doc(_driverId).set({
     lat:pos.coords.latitude,lng:pos.coords.longitude,
     heading:pos.coords.heading||0,speed:pos.coords.speed||0,
     updatedAt:firebase.firestore.FieldValue.serverTimestamp()
@@ -665,7 +731,7 @@ function renderDocsList(){
         <div style="flex:1;min-width:0">
           <div style="font-size:14px;font-weight:600;margin-bottom:2px">${d.label}</div>
           <div style="font-size:11px;color:${stColor}">${stLabel}${doc.expiresAt?` · Expires ${doc.expiresAt}`:''}</div>
-          ${doc.note&&st==='rejected'?`<div style="font-size:11px;color:#ef4444;margin-top:3px">${doc.note}</div>`:''}
+          ${(doc.rejectNote||doc.note)&&st==='rejected'?`<div style="font-size:11px;color:#ef4444;margin-top:3px">${esc(doc.rejectNote||doc.note)}</div>`:''}
         </div>
         <label style="background:var(--surface-b);border:1px solid var(--border);color:var(--fg-dim);padding:7px 13px;border-radius:10px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0;white-space:nowrap">
           ${st==='none'?'Upload':'Replace'}
@@ -814,7 +880,9 @@ async function registerDriverFCM(){
     const perm = await Notification.requestPermission();
     if(perm !== 'granted') return;
     if('serviceWorker' in navigator){
-      const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+      // Relative path — on GitHub Pages the site lives under /BallrzAPP/, so a
+      // domain-absolute '/firebase-messaging-sw.js' 404s and no token is minted.
+      const reg = await navigator.serviceWorker.register('firebase-messaging-sw.js');
       const messaging = firebase.messaging();
       const token = await messaging.getToken({
         vapidKey: (typeof APEXVIP_VAPID_KEY !== 'undefined' && APEXVIP_VAPID_KEY ? APEXVIP_VAPID_KEY : ''),
@@ -852,6 +920,21 @@ function driverComplianceState(){
   const storedOk=!(S._compliance&&S._compliance.compliant===false);
   if(docsOk&&!storedOk)missing.push('vehicle MOT/road tax');
   return {ok:docsOk&&storedOk,missing,expired};
+}
+
+// Clean sign-out: stop the GPS stream and mark the driver offline BEFORE the
+// auth session ends — otherwise the drivers doc stays 'online' forever and a
+// live geolocation watch keeps firing (rules-rejected) after logout.
+function driverSignOut(){
+  stopGPSStream();
+  clearInterval(S._cdTimer);clearInterval(S._tripTimerInterval);
+  S.online=false;S.jobOverlay=false;S._offeredJob=null;
+  if(S._openJobsUnsub){S._openJobsUnsub();S._openJobsUnsub=null;S._openJobsMarket=null;}
+  const done=()=>go('login');
+  if(FIREBASE_ENABLED&&_driverId){
+    db.collection('drivers').doc(_driverId).set({status:'offline'},{merge:true})
+      .catch(()=>{}).then(()=>auth.signOut()).then(done,done);
+  }else done();
 }
 
 function goOnline(){
@@ -947,7 +1030,20 @@ async function acceptJob(){
 
 function declineJob(){
   clearInterval(S._cdTimer);
-  S.jobOverlay=false;
+  const offered=S._offeredJob;
+  S.jobOverlay=false;S._offeredJob=null;
+  // Remember the dismissal locally so the live listener doesn't re-ring the
+  // same offer on its very next snapshot (which made decline a no-op loop).
+  S._dismissedOffers=S._dismissedOffers||{};
+  if(offered?._openId) S._dismissedOffers[offered._openId]=true;
+  if(offered?.id) S._dismissedOffers[offered.id]=true;
+  // A manually-assigned job must ALSO be declined in Firestore: the admin
+  // stamped the booking with this driver at dispatch, so a silent local
+  // dismiss leaves the client watching a "assigned" chauffeur who never comes.
+  if(FIREBASE_ENABLED&&offered&&!offered._broadcast&&offered.id){
+    db.collection('jobs').doc(offered.id).update({status:'declined',declinedAt:firebase.firestore.FieldValue.serverTimestamp()}).catch(reportError);
+    syncBookingStatus(offered,'confirmed',{driverId:'',driverName:'',driverPlate:''});
+  }
   track('job_declined',{src:'driver'});
   render();
 }
@@ -955,13 +1051,13 @@ function declineJob(){
 function refreshJobs(){
   if(!FIREBASE_ENABLED)return;
   showToast('Checking for new jobs…','info',2000);
-  const market = S.driverProfile?.market || S.profile?.market || 'london';
+  const market = S.profile?.market || 'london';
   db.collection('open_jobs').where('status','==','open').where('market','==',market).limit(20).get().then(snap=>{
-    const open=snap.docs.map(mapOpenJob);
+    const open=snap.docs.map(mapOpenJob).filter(j=>!(S._dismissedOffers||{})[j._openId]);
     S._openJobs=open;
     showToast(open.length?`${open.length} job${open.length!==1?'s':''} available`:'No open jobs right now',open.length?'success':'info');
     if(open.length&&S.online&&!S.jobOverlay&&!S.activeJob){
-      S._offeredJob=open[0];S.jobOverlay=true;S.countdown=30;startCountdown();
+      ringOffer(open[0]);
     }
     render();
   }).catch(e=>{showToast('Could not reach server','error');render();});
@@ -1081,9 +1177,11 @@ function _advanceStep(){
     S._tripTimerInterval=setInterval(()=>{S.tripTimer++;const el=document.getElementById('trip-timer');if(el){const m=Math.floor(S.tripTimer/60);const s=S.tripTimer%60;el.textContent=(m<10?'0'+m:m)+':'+(s<10?'0'+s:s);}},1000);
   }
   if(S.tripStep===5){
-    stopGPSStream();
+    // Trip over — but a driver who is still ONLINE keeps streaming GPS, or
+    // dispatch and the admin live map track a stale position all shift.
+    if(!S.online) stopGPSStream();
     clearInterval(S._tripTimerInterval);
-    if(FIREBASE_ENABLED&&_driverId) db.collection('drivers').doc(_driverId).set({status:'online'},{merge:true}).catch(reportError);
+    if(FIREBASE_ENABLED&&_driverId) db.collection('drivers').doc(_driverId).set({status:S.online?'online':'offline'},{merge:true}).catch(reportError);
     if(FIREBASE_ENABLED&&S.activeJob?.id){
       db.collection('jobs').doc(S.activeJob.id).update({status:'completed',completedAt:firebase.firestore.FieldValue.serverTimestamp()}).catch(reportError);
       syncBookingStatus(S.activeJob,'completed',{completedAt:firebase.firestore.FieldValue.serverTimestamp()});
@@ -1091,7 +1189,11 @@ function _advanceStep(){
     // Award 2% of job value as ApexCoin
     const jobPay=S.activeJob?.pay||0;
     const axcEarned=parseFloat((jobPay*0.02).toFixed(2));
-    if(axcEarned>0){S.apexcoin=parseFloat((S.apexcoin+axcEarned).toFixed(2));S._axcHistory.unshift({desc:S.activeJob?.service||'Trip',type:'earn',amount:axcEarned,date:'Just now'});}
+    if(axcEarned>0){
+      S.apexcoin=parseFloat((S.apexcoin+axcEarned).toFixed(2));
+      S._axcHistory.unshift({desc:S.activeJob?.service||'Trip',type:'earn',amount:axcEarned,date:new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short'})});
+      try{localStorage.setItem('apexvip_driver_axc',JSON.stringify(S.apexcoin));localStorage.setItem('apexvip_driver_axc_hist',JSON.stringify(S._axcHistory.slice(0,50)));}catch(_){}
+    }
     track('trip_completed',{pay:jobPay,axc:axcEarned,duration:S.tripTimer,src:'driver'});
     S._lastCompletedJob=S.activeJob;
     S.activeJob=null;go('trip-complete');
@@ -1587,12 +1689,12 @@ profile:()=>`<div class="screen">
     </div>`).join('')}
   </div>
   <div class="card" style="margin-bottom:20px">
-    ${[{icon:'💬',l:'Help & Support'},{icon:'📞',l:'Call Dispatch'}].map(r=>`<div class="menu-row">
+    ${[{icon:'💬',l:'Help & Support',act:"window.open('mailto:support@apexvip.co.uk?subject=Chauffeur%20support','_blank')"},{icon:'📞',l:'Call Dispatch',act:"driverAIQuick('I need to reach dispatch')"}].map(r=>`<div class="menu-row" onclick="${r.act}" style="cursor:pointer">
       <div style="display:flex;align-items:center;gap:12px"><span style="font-size:18px">${r.icon}</span><span style="font-size:15px">${r.l}</span></div>
       <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
     </div>`).join('')}
   </div>
-  <button style="width:100%;padding:15px;background:transparent;border:1px solid rgba(239,68,68,.2);border-radius:14px;color:#ef4444;font-size:15px;cursor:pointer;font-family:inherit;font-weight:600" onclick="FIREBASE_ENABLED?auth.signOut().then(()=>go('login')):go('login')">Sign Out</button>
+  <button style="width:100%;padding:15px;background:transparent;border:1px solid rgba(239,68,68,.2);border-radius:14px;color:#ef4444;font-size:15px;cursor:pointer;font-family:inherit;font-weight:600" onclick="driverSignOut()">Sign Out</button>
   ${nav()}
 </div>`,
 
@@ -1617,10 +1719,10 @@ axcWallet:()=>`<div class="screen">
   ${(S._axcHistory||[]).map(h=>`
   <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--divider)">
     <div style="width:36px;height:36px;border-radius:10px;background:${h.type==='earn'?'rgba(34,197,94,.07)':'rgba(200,169,126,.07)'};display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">${h.type==='earn'?'↑':'↓'}</div>
-    <div style="flex:1"><div style="font-size:13px;font-weight:500">${h.desc}</div><div style="font-size:11px;color:var(--fg-subtle);margin-top:1px">${h.date}</div></div>
-    <div style="font-size:14px;font-weight:700;color:${h.type==='earn'?'#22c55e':'var(--fg-dim)'}">+${h.amount.toFixed(2)} AXC</div>
+    <div style="flex:1"><div style="font-size:13px;font-weight:500">${esc(h.desc)}</div><div style="font-size:11px;color:var(--fg-subtle);margin-top:1px">${esc(h.date)}</div></div>
+    <div style="font-size:14px;font-weight:700;color:${h.type==='earn'?'#22c55e':'var(--fg-dim)'}">+${(Number(h.amount)||0).toFixed(2)} AXC</div>
   </div>`).join('')}
-  <button class="btn btn-gold" style="margin-top:20px">Redeem as Cash</button>
+  <button class="btn btn-gold" style="margin-top:20px" onclick="showToast('AXC redemption is settled with your weekly payout — ask dispatch to include it.','info',4000)">Redeem as Cash</button>
   <div style="height:20px"></div>
 </div>`,
 
