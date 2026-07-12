@@ -61,12 +61,16 @@ service cloud.firestore {
         return !touched().hasAny(bookingFinancials())
           && !touched().hasAny(['clientName', 'clientEmail', 'rating', 'ratingComment', 'ratedBy', 'driverRating']);
       }
-      allow create: if signedIn() && request.resource.data.clientId == request.auth.uid;
+      // Admins (ops console New Booking / Quick Intake) create bookings for
+      // clients; a client may only create their own.
+      allow create: if isAdmin()
+        || (signedIn() && request.resource.data.clientId == request.auth.uid);
+      // NOTE: drivers deliberately can NOT read unassigned bookings — those
+      // carry the client's email/phone/home pickup. Dispatch goes through
+      // open_jobs (which strips PII); claiming is an update, not a read.
       allow read: if isAdmin()
         || (signedIn() && resource.data.clientId == request.auth.uid)
-        || (isDriver() && resource.data.driverId == request.auth.uid)
-        || (isDriver()
-            && (!('driverId' in resource.data) || resource.data.driverId == '' || resource.data.driverId == null));
+        || (isDriver() && resource.data.driverId == request.auth.uid);
       allow update: if isAdmin()
         || (signedIn() && resource.data.clientId == request.auth.uid && clientBookingUpdateOk())
         || (isDriver() && resource.data.driverId == request.auth.uid && driverBookingUpdateOk())
@@ -108,18 +112,38 @@ service cloud.firestore {
       allow read, write: if isUser(uid);
     }
 
-    // Drivers — anyone signed in may read live status (for trip tracking).
-    // A driver writes only their own record (status, profile, document uploads),
-    // but may NOT write the `compliance` verdict or the `payout` account state —
-    // only admins / Cloud Functions set those. This is the self-approval guard.
+    // Drivers — the operational record: profile, documents, compliance verdict,
+    // Stripe payout state. That's staff/self data, NOT public: exposing it to
+    // every signed-in user leaks compliance status and payout account ids.
+    // Live GPS for client trip-tracking lives in driver_locations below.
+    // A driver writes only their own record, and may NOT write the `compliance`
+    // verdict or the `payout` account state — only admins / Cloud Functions set
+    // those. This is the self-approval guard.
     match /drivers/{driverId} {
-      allow read:   if signedIn();
+      allow read:   if isAdmin() || isUser(driverId);
       allow create: if isAdmin()
         || (isUser(driverId) && !request.resource.data.keys().hasAny(['compliance', 'payout']));
       allow update: if isAdmin()
         || (isUser(driverId)
             && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['compliance', 'payout']));
       allow delete: if isAdmin();
+    }
+
+    // Live driver positions — coordinates only (lat/lng/heading/at), split from
+    // the drivers record so trip tracking works without exposing driver PII.
+    // Any signed-in user may read (the client tracking map, incl. anonymous
+    // track-link viewers); only the driver writes their own position.
+    match /driver_locations/{driverId} {
+      allow read:  if signedIn();
+      allow write: if isAdmin() || isUser(driverId);
+    }
+
+    // Driver payout requests — a driver asks ops to settle their balance.
+    // (Without this block the whole feature was default-denied on both sides.)
+    match /payout_requests/{id} {
+      allow create: if isDriver() && request.resource.data.driverId == request.auth.uid;
+      allow read:   if isAdmin() || (isDriver() && resource.data.driverId == request.auth.uid);
+      allow update, delete: if isAdmin();
     }
 
     // Driver payout ledger — earnings owed per completed trip. Written by Cloud
@@ -175,9 +199,16 @@ service cloud.firestore {
     // NOTE (launch): self-service 'active' writes are the prototype's mock
     // billing — move activation server-side once a real billing rail is wired.
     match /subscriptions/{uid} {
-      allow read:           if isUser(uid) || isAdmin();
-      allow create, update: if isAdmin() || isUser(uid);
-      allow delete:         if isAdmin();
+      allow read:   if isUser(uid) || isAdmin();
+      allow create: if isAdmin() || isUser(uid);
+      // Self-updates may not rewrite trialEndsAt — otherwise the free trial is
+      // infinitely extendable by re-stamping the date. (Self-service 'active'
+      // remains the mock billing path; gate it server-side when a real billing
+      // rail is wired — see the go-live checklist.)
+      allow update: if isAdmin()
+        || (isUser(uid)
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['trialEndsAt', 'startedAt']));
+      allow delete: if isAdmin();
     }
 
     // Audit log — append-only record of staff actions (dispatch, compliance,
@@ -206,7 +237,19 @@ service cloud.firestore {
     // Lead capture (write-only from the app; admins read).
     match /city_interest/{id} { allow create: if true; allow read, update, delete: if isAdmin(); }
     match /waitlist/{id}      { allow create: if true; allow read, update, delete: if isAdmin(); }
-    match /invites/{id}       { allow create: if true; allow read, update, delete: if isAdmin(); }
+    // Invites are capability tokens: registration checks a code by exact id
+    // BEFORE the user has an account, so `get` must be public — but `list`
+    // stays admin-only so codes can't be enumerated.
+    match /invites/{id} {
+      allow create: if true;
+      allow get:    if true;
+      allow list, update, delete: if isAdmin();
+    }
+
+    // Corporate accounts — managed entirely from the ops console.
+    match /corporates/{id} {
+      allow read, write: if isAdmin();
+    }
 
     // ---------------------------------------------------------------------
     // Velvet — the subscription VIP concierge (concierge/). Data is scoped in

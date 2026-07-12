@@ -59,6 +59,9 @@ test('bookingEvent: create / delete / status transitions', () => {
   assert.equal(bookingEvent(null, { status: 'pending' }), 'received');
   assert.equal(bookingEvent({ status: 'pending' }, null), null);
   assert.equal(bookingEvent({ status: 'pending' }, { status: 'confirmed' }), 'confirmed');
+  // The driver app's real vocabulary: claim → 'accepted', at pickup → 'arrived'.
+  assert.equal(bookingEvent({ status: 'confirmed' }, { status: 'accepted' }), 'driver_assigned');
+  assert.equal(bookingEvent({ status: 'accepted' }, { status: 'arrived' }), 'en_route');
   assert.equal(bookingEvent({ status: 'confirmed' }, { status: 'en_route' }), 'en_route');
   assert.equal(bookingEvent({ status: 'confirmed' }, { status: 'arriving' }), 'en_route');
   assert.equal(bookingEvent({ status: 'en_route' }, { status: 'completed' }), 'completed');
