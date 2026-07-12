@@ -48,6 +48,12 @@ jobs:
           git diff --exit-code apexvip-engine.js \
             || (echo "::error::apexvip-engine.js is stale — run 'npm run build:engine' and commit." && exit 1)
 
+      # Every file the published pages / SW precache reference must exist and be
+      # copied by pages.yml — the class of bug that 404'd apexvip-engine.js for
+      # every visitor and silently emptied the offline shell (apexvip-dubai).
+      - name: Published-asset references resolve
+        run: node scripts/check-published-assets.mjs
+
   # Integration gate: the booking → dispatch → driver-claim loop, against the
   # real Firebase emulator (needs Java + firebase-tools).
   dispatch:

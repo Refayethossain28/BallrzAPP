@@ -1,13 +1,16 @@
 // ApexVIP Service Worker — Push Notifications + Offline PWA shell
 // Version 3.2
 
-const CACHE_NAME = 'apexvip-v10';
+const CACHE_NAME = 'apexvip-v11';
+// Every URL here must actually exist on the published site: cache.addAll() is
+// atomic, so a single 404 rejects the whole call and the offline shell ends up
+// EMPTY (the install handler swallows the rejection). CI checks this list.
 const OFFLINE_URLS = [
   '/BallrzAPP/apexvip-client.html',
   '/BallrzAPP/apexvip-driver.html',
-  '/BallrzAPP/apexvip-dubai.html',
   '/BallrzAPP/apexvip-admin.html',
   '/BallrzAPP/apexvip-core.js',
+  '/BallrzAPP/apexvip-lib.js',
   '/BallrzAPP/apexvip-engine.js',
   '/BallrzAPP/firebase.js',
   '/BallrzAPP/manifest.json',
@@ -126,14 +129,16 @@ self.addEventListener('message', event => {
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js');
 
-// NOTE: This config is intentionally public (it's the Firebase SDK config, not a secret)
+// NOTE: This config is intentionally public (it's the Firebase SDK config, not a secret).
+// It MUST match firebase.js (project apexvip-1b4a9) — the apps register tokens
+// against that project, so a mismatched SW never receives their pushes.
 firebase.initializeApp({
-  apiKey: "AIzaSyC0UQeh8dSw3dxx9hTS-STWKcXVEzOStks",
-  authDomain: "apexvip.firebaseapp.com",
-  projectId: "apexvip",
-  storageBucket: "apexvip.firebasestorage.app",
-  messagingSenderId: "125847962387",
-  appId: "1:125847962387:web:331a7de3eb8df8dc4b90e6"
+  apiKey: "AIzaSyAr3OsrEG3yVx-bD3jxc_kSBY7bkCQUPxI",
+  authDomain: "apexvip-1b4a9.firebaseapp.com",
+  projectId: "apexvip-1b4a9",
+  storageBucket: "apexvip-1b4a9.firebasestorage.app",
+  messagingSenderId: "254410067879",
+  appId: "1:254410067879:web:754b71a35182c997f37082"
 });
 
 const messaging = firebase.messaging();
@@ -145,8 +150,8 @@ messaging.onBackgroundMessage(payload => {
 
   self.registration.showNotification(title || 'ApexVIP', {
     body: body || '',
-    icon: '/icon-192.png',
-    badge: '/icon-192.png',
+    icon: '/BallrzAPP/icon-192.png',
+    badge: '/BallrzAPP/icon-192.png',
     data: { screen },
     actions: [
       { action: 'open', title: 'Open' },
