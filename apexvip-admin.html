@@ -1876,20 +1876,36 @@ function quickIntakeForm(){
   </div>
 </div>`;}
 
+// On-device parse — the shared engine's intent parser (same one the client and
+// driver use). Lets Quick Intake extract fields even when the parseBookingIntent
+// Cloud Function isn't reachable, instead of giving up to a manual form.
+function _quickIntakeLocal(text){
+  if(typeof ApexEngine==='undefined'||!ApexEngine.parseIntentLocal) return null;
+  const d=ApexEngine.parseIntentLocal(text,{now:new Date()})||{};
+  // "6 people", "party of 7", "group of 6" → V-Class (people carrier).
+  const m=text.match(/\b(\d+)\s*(?:people|pax|passengers|guests)\b/i)||text.match(/\b(?:party|group)\s*of\s*(\d+)\b/i);
+  if(m&&parseInt(m[1],10)>=5) d.vehicle=d.vehicle||'V-Class';
+  d._local=true;
+  return d;
+}
+
 async function quickIntakeParse(){
   const text=(document.getElementById('qi-text')?.value||'').trim();
   if(!text){alert('Paste the booking message first');return;}
   const btn=document.getElementById('qi-parse-btn'); if(btn){btn.textContent='Parsing…';btn.disabled=true;}
-  let d={};
-  try{ if(fns) d=(await fns.httpsCallable('parseBookingIntent')({message:text.slice(0,1000),now:new Date().toISOString()})).data||{}; }
-  catch(e){ const h=document.getElementById('qi-hint'); if(h)h.textContent='⚠️ ApexAI unavailable — fill the fields manually.'; }
+  let d=null, local=false;
+  try{
+    if(fns) d=(await fns.httpsCallable('parseBookingIntent')({message:text.slice(0,1000),mode:'default',now:new Date().toISOString()})).data||{};
+  }catch(e){ /* fall through to the on-device parser */ }
+  if(!d){ d=_quickIntakeLocal(text)||{}; local=!!d._local; }
   if(btn){btn.textContent='Parse with ApexAI';btn.disabled=false;}
   const set=(id,v)=>{const el=document.getElementById(id); if(el&&v) el.value=v;};
   set('qi_pickup',d.pickup); set('qi_dropoff',d.dropoff); set('qi_airport',d.airport);
   set('qi_date',d.date); set('qi_time',d.time||d.suggestedPickupTime); set('qi_flight',d.flight);
   if(d.paPassenger&&d.paPassenger.name) set('qi_client',d.paPassenger.name);
   if(d.vehicle){const sel=document.getElementById('qi_vehicle'); if(sel) sel.value=/v-?class|van|sprinter|mpv/i.test(d.vehicle)?'V-Class':'S-Class';}
-  const hint=document.getElementById('qi-hint'); if(hint&&!hint.textContent) hint.textContent=d.reply?('✦ '+d.reply):'✦ Parsed — review and create.';
+  const hint=document.getElementById('qi-hint');
+  if(hint) hint.textContent = local ? '✦ Parsed on-device — review the fields and create.' : (d.reply?('✦ '+d.reply):'✦ Parsed — review and create.');
 }
 
 async function quickIntakeCreate(){
