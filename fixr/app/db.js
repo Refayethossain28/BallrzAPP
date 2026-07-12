@@ -15,4 +15,5 @@ export const {
   listResources, getResource, setResourceStatus, setResourceConnect, setResourceLocation,
   createRequest, getRequest, listRequests, listRequestsForDriver,
   appendAudit, setStatus, assignResource, setQuote, recordPayment,
+  findOrCreateClient, getClientByName, listClients, updateClientPrefs, getStats,
 } = backend;

@@ -17,10 +17,25 @@ const SAMPLES = [
 let draft = null;
 let requests = [];
 let drivers = [];
+let clients = [];
+let stats = null;
 
 async function refresh() {
-  [requests, drivers] = await Promise.all([api("/api/requests"), api("/api/resources")]);
+  [requests, drivers, clients, stats] = await Promise.all([
+    api("/api/requests"), api("/api/resources"), api("/api/clients"), api("/api/stats"),
+  ]);
   render();
+}
+
+// Live updates: one SSE stream; any change re-renders the board within ~150ms.
+function subscribeLive() {
+  try {
+    const es = new EventSource("/api/events");
+    let t;
+    es.onmessage = () => { clearTimeout(t); t = setTimeout(refresh, 150); };
+    es.onopen = () => $("live-dot").classList.remove("off");
+    es.onerror = () => $("live-dot").classList.add("off");
+  } catch { $("live-dot").classList.add("off"); }
 }
 
 async function boot() {
@@ -29,12 +44,18 @@ async function boot() {
   $("parse-btn").onclick = doParse;
   $("confirm-btn").onclick = doConfirm;
   $("modal-bg").onclick = (e) => { if (e.target === $("modal-bg")) closeModal(); };
+  $("demo-btn").onclick = async () => {
+    $("demo-btn").disabled = true;
+    try { await api("/api/demo/seed", { method: "POST" }); await refresh(); }
+    catch (e) { alert(e.message); } finally { $("demo-btn").disabled = false; }
+  };
   try {
     const h = await api("/api/health");
     $("s-mode").textContent = h.intake === "llm" ? "Claude" : "Heuristic";
     $("foot").innerHTML += ` &middot; live mode: intake=<code>${h.intake}</code> payments=<code>${h.payments}</code>`;
   } catch {}
   await refresh();
+  subscribeLive();
 }
 
 async function doParse() {
@@ -43,8 +64,8 @@ async function doParse() {
   const btn = $("parse-btn");
   btn.disabled = true; btn.textContent = "⚡ Parsing…";
   try {
-    const { parsed, quote } = await api("/api/parse", { method: "POST", body: JSON.stringify({ text }) });
-    draft = { parsed, quote };
+    const { parsed, quote, client_profile } = await api("/api/parse", { method: "POST", body: JSON.stringify({ text }) });
+    draft = { parsed, quote, client_profile };
     renderDraft();
   } catch (e) { alert("Parse failed: " + e.message); }
   finally { btn.disabled = false; btn.textContent = "⚡ Parse into a booking"; }
@@ -64,6 +85,13 @@ function renderDraft() {
         row("Vehicle", p.vehicle) + row("Passengers", p.pax) +
         (p.flight ? row("Flight (auto-tracked)", p.flight) : "") +
         (p.hours ? row("Hours", p.hours) : ""));
+  // Client memory: recognize repeat clients at parse time.
+  const cp = draft.client_profile;
+  if (cp) {
+    $("fields").innerHTML += `<div class="knownbox">★ <b>${cp.name}</b> — trip #${(cp.trips || 0) + 1}` +
+      (cp.spend ? ` · $${Number(cp.spend).toLocaleString()} lifetime` : "") +
+      (cp.preferences ? `<br>Prefs: ${cp.preferences}` : "") + `</div>`;
+  }
   const q = $("quote");
   q.style.display = "block";
   q.innerHTML = quote
@@ -89,6 +117,37 @@ function render() {
     return `<div class="lane"><h3>${STAGE_LABEL[st]} <i>${items.length}</i></h3>${items.map(reqCard).join("")}</div>`;
   }).join("");
   document.querySelectorAll(".req").forEach((el) => (el.onclick = () => openReq(el.dataset.id)));
+  $("empty-board").style.display = requests.length === 0 ? "block" : "none";
+
+  // Today dashboard.
+  if (stats?.today) {
+    const t = stats.today;
+    const sb = (v, l) => `<div class="sb"><b>${v}</b><span>${l}</span></div>`;
+    $("statsbar").innerHTML =
+      sb(t.trips || 0, "Trips today") +
+      sb("$" + Number(t.booked || 0).toLocaleString(), "Booked") +
+      sb("$" + Number(t.captured || 0).toLocaleString(), "Captured") +
+      sb("$" + Number(t.driver_paid || 0).toLocaleString(), "To drivers") +
+      sb("$" + Number(t.platform_fees || 0).toFixed(2), "Platform fees") +
+      sb(stats.open_requests || 0, "Open");
+  }
+
+  // Client memory list.
+  $("clients").innerHTML = clients.length ? clients.map((c) => `
+    <div class="clientrow"><div class="av">${initials(c.name)}</div>
+      <div class="meta"><b>${c.name}</b>
+        <span class="prefs" data-cid="${c.id}" title="Click to edit preferences">${c.preferences || "add preferences…"}</span>
+      </div>
+      <span class="star">★ ${c.trips || 0} trip${c.trips === 1 ? "" : "s"}${c.spend ? ` · $${Number(c.spend).toLocaleString()}` : ""}</span>
+    </div>`).join("")
+    : '<div class="note">No clients yet — they\'re remembered automatically from bookings.</div>';
+  $("clients").querySelectorAll("[data-cid]").forEach((el) => el.onclick = async () => {
+    const c = clients.find((x) => x.id === el.dataset.cid);
+    const next = prompt(`Preferences for ${c.name}:`, c.preferences || "");
+    if (next === null) return;
+    await api(`/api/clients/${c.id}/prefs`, { method: "POST", body: JSON.stringify({ preferences: next }) });
+    await refresh();
+  });
 
   $("drivers").innerHTML = drivers.map((d) => `
     <div class="driver"><div class="av">${initials(d.name)}</div>
@@ -139,8 +198,11 @@ function openReq(id) {
     ${r.type !== "concierge" ? f("Route", [p.pickup, p.dropoff].filter(Boolean).join(" → ") || p.dropoff) + f("Vehicle", p.vehicle) : f("Venue", p.venue)}
     ${p.flight ? `<div class="field"><span>Flight</span><b id="flightline">checking…</b></div>` : ""}
     ${f("Quote", r.quote_amount ? "$" + r.quote_amount : "set fee")}
+    ${clientBadge(r)}
     <div class="field"><span>Original message</span></div>
     <div class="raw">“${r.raw_inbound_text || ""}”</div>
+    <button class="btn-ghost" data-act="draftmsg" style="margin-top:12px;width:100%">✉ Draft client message</button>
+    <div class="draftbox" id="draftbox"></div>
     ${!r.quote_amount && r.status !== "completed"
       ? `<div style="margin-top:14px"><span style="color:var(--muted);font-size:12px">Set service fee ($)</span>
          <div style="display:flex;gap:8px;margin-top:5px">
@@ -174,10 +236,35 @@ function openReq(id) {
   }
 }
 
+function clientBadge(r) {
+  const c = r.client_id ? clients.find((x) => x.id === r.client_id) : null;
+  if (!c) return "";
+  return `<div class="knownbox">★ <b>${c.name}</b> — ${c.trips || 0} trip${c.trips === 1 ? "" : "s"}` +
+    (c.spend ? ` · $${Number(c.spend).toLocaleString()} lifetime` : "") +
+    (c.preferences ? `<br>Prefs: ${c.preferences}` : "") + `</div>`;
+}
+
 async function act(a, id) {
   if (!a) return;
   if (a === "close") return closeModal();
   try {
+    if (a === "draftmsg") {
+      const box = document.getElementById("draftbox");
+      box.style.display = "block";
+      box.textContent = "Drafting…";
+      const d = await api(`/api/requests/${id}/draft`, { method: "POST" });
+      box.innerHTML = "";
+      box.textContent = d.text;
+      const copy = document.createElement("button");
+      copy.className = "btn-ghost"; copy.style.cssText = "margin-top:8px;width:100%";
+      copy.textContent = "📋 Copy";
+      copy.onclick = async (ev) => {
+        ev.stopPropagation();
+        try { await navigator.clipboard.writeText(d.text); copy.textContent = "✓ Copied"; } catch {}
+      };
+      box.appendChild(copy);
+      return; // keep modal open, no refresh needed
+    }
     if (a === "fee") {
       const amt = Number(document.getElementById("feeInput").value);
       if (!(amt > 0)) return alert("Enter a fee amount");

@@ -98,4 +98,10 @@ $("onboard-btn").onclick = async () => {
 };
 
 load();
-setInterval(load, 15000); // poll for new assignments
+// Live updates via SSE (new assignments appear instantly); polling stays as fallback.
+try {
+  const es = new EventSource("/api/events");
+  let esT;
+  es.onmessage = () => { clearTimeout(esT); esT = setTimeout(load, 200); };
+} catch {}
+setInterval(load, 30000); // fallback poll

@@ -7,6 +7,7 @@ const api = (p, opts) => fetch(p, { headers: { "Content-Type": "application/json
 const STEPS = ["quoted", "confirmed", "assigned", "in_progress", "completed"];
 const LABEL = { quoted: "Request received", confirmed: "Confirmed", assigned: "Driver assigned", in_progress: "On the way", completed: "Completed" };
 let pollTimer = null;
+let trackedId = null;
 
 function form() {
   return {
@@ -71,6 +72,7 @@ $("conc-btn").onclick = async () => {
 $("back-btn").onclick = () => { clearInterval(pollTimer); show("book"); renderTrips(); };
 
 async function openTracking(id) {
+  trackedId = id;
   show("track");
   await refreshTrack(id);
   clearInterval(pollTimer);
@@ -97,7 +99,7 @@ async function refreshTrack(id) {
     if (t.driver) {
       d.style.display = "flex";
       d.innerHTML = `<div class="av">${t.driver.name.split(" ").map((x) => x[0]).join("")}</div>
-        <div><b>${t.driver.name}</b><div style="color:var(--muted);font-size:13px">${t.driver.vehicle || ""}${t.driver.sharing_location ? " · sharing live location" : ""}</div></div>`;
+        <div><b>${t.driver.name}</b><div style="color:var(--muted);font-size:13px">${t.driver.vehicle || ""}${t.driver.sharing_location ? " · live location" + agoLabel(t.driver.location_at) : ""}</div></div>`;
     } else d.style.display = "none";
     if (t.status === "completed") clearInterval(pollTimer);
   } catch (e) { $("err").textContent = e.message; }
@@ -106,6 +108,12 @@ async function refreshTrack(id) {
 function show(which) {
   $("book").style.display = which === "book" ? "block" : "none";
   $("track").style.display = which === "track" ? "block" : "none";
+}
+
+function agoLabel(iso) {
+  if (!iso) return "";
+  const s = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000));
+  return s < 90 ? ` (updated ${s}s ago)` : ` (updated ${Math.round(s / 60)}m ago)`;
 }
 
 /* local trip history */
@@ -125,3 +133,13 @@ async function renderTrips() {
 }
 
 renderTrips();
+
+// Live updates: refresh the tracked trip the moment anything changes server-side.
+try {
+  const es = new EventSource("/api/events");
+  let esT;
+  es.onmessage = () => {
+    if (!trackedId) return;
+    clearTimeout(esT); esT = setTimeout(() => refreshTrack(trackedId), 200);
+  };
+} catch {}
