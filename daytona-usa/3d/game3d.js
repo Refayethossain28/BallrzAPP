@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R61 — WebGPU white-screen watchdog';
+const BUILD = 'BUILD R62 — renderer tag + watchdog v2';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -268,9 +268,17 @@ function initThree(){
       const d=x.getImageData(0,0,w,h).data;
       let mn=255,mx=0;
       for (let i=0;i<d.length;i+=4){ const l=(d[i]+d[i+1]+d[i+2])/3; if(l<mn)mn=l; if(l>mx)mx=l; }
-      if (mx-mn<6 && mn>200){ console.warn('WebGPU presented a blank white frame — falling back to WebGL'); location.replace(location.pathname); }
+      const uniform = (mx-mn<6 && mn>80);   // any uniform LIGHT frame = only the clear
+      if (!uniform) return;                 // colour drew; the sky gradient never is.
+      if (_post){                           // stage 1: maybe only the bloom pass broke —
+        _post=null;                         // drop post-fx and give raw WebGPU a chance
+        console.warn('WebGPU blank frame — post-fx disabled, rechecking');
+        setTimeout(checkBlank, 4000); return;
+      }
+      console.warn('WebGPU still blank — falling back to WebGL');
+      location.replace(location.pathname);  // stage 2: back to the proven renderer
     }catch(e){} };
-    setTimeout(checkBlank, 5000); setTimeout(checkBlank, 12000);
+    setTimeout(checkBlank, 5000); setTimeout(checkBlank, 14000);
   }
 
   // Recover from a lost GPU context (iOS Safari can drop it). preventDefault on
@@ -2601,7 +2609,8 @@ function startRace(){
   camera.position.copy(_tmp).addScaledVector(f.tan,-11); camera.position.y+=5.2;
   camera.up.set(0,1,0); camera.lookAt(_tmp.clone().addScaledVector(f.tan,16).setY(_tmp.y+4.4));
   // HUD text
-  setText('trackName', G.circuit.name+' • '+BUILD.split('—')[0].trim());
+  // renderer tag so a screenshot instantly tells us which path is active
+  setText('trackName', G.circuit.name+' • '+BUILD.split('—')[0].trim()+(_GPU?' • WEBGPU':' • WEBGL'));
   updateRaceHUDText();
   hideOverlay();
   updateViewBtn();
