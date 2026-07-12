@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R62 — renderer tag + watchdog v2';
+const BUILD = 'BUILD R63 — realistic cockpit';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -2245,6 +2245,20 @@ function drawDashboard(W,H,sp){
   let mg=hctx.createLinearGradient(0,H*0.02,0,H*0.06); mg.addColorStop(0,'#26405e'); mg.addColorStop(1,'#0b121d');
   hctx.fillStyle=mg; roundRect(-W*0.084,H*0.024,W*0.168,H*0.032,H*0.008); hctx.fill();
   hctx.restore();
+  // sun visor folded up over the driver's (right) side of the glass
+  hctx.save(); hctx.translate(W*0.78,H*0.05); hctx.rotate(0.02);
+  hctx.fillStyle='#14161d'; roundRect(-W*0.16,0,W*0.32,H*0.05,H*0.012); hctx.fill();
+  hctx.fillStyle='rgba(150,160,180,0.12)'; hctx.fillRect(-W*0.16,H*0.044,W*0.32,Math.max(1,H*0.004));
+  hctx.restore();
+  // right wing mirror out on the door (RHD driver side)
+  hctx.fillStyle='#0c0e13'; roundRect(W*0.885,H*0.315,W*0.105,H*0.075,H*0.014); hctx.fill();
+  const wm=hctx.createLinearGradient(0,H*0.32,0,H*0.39); wm.addColorStop(0,'#2c4a6a'); wm.addColorStop(1,'#0e1826');
+  hctx.fillStyle=wm; roundRect(W*0.893,H*0.322,W*0.089,H*0.061,H*0.01); hctx.fill();
+  hctx.fillStyle='rgba(90,95,104,0.9)'; hctx.fillRect(W*0.893,H*0.362,W*0.089,H*0.021);   // road in the mirror
+  // door card + window sill sliver along the right edge
+  hctx.fillStyle='#0e1016';
+  hctx.beginPath(); hctx.moveTo(W,H*0.42); hctx.lineTo(W*0.945,H*0.50); hctx.lineTo(W*0.945,H); hctx.lineTo(W,H); hctx.closePath(); hctx.fill();
+  hctx.fillStyle='rgba(150,160,180,0.15)'; hctx.fillRect(W*0.945,H*0.50,Math.max(1,W*0.004),H*0.5);
 
   // ============================ DASHBOARD ============================
   const dashTop=H*0.70;   // cowl top — leaves the road / bonnet visible above
@@ -2313,6 +2327,13 @@ function drawDashboard(W,H,sp){
 
   // ===================== DRIVER BINNACLE (right, RHD) =====================
   const bx=W*0.72;                                       // driver sits on the right
+  // anti-glare hood arcing over the instrument cluster
+  hctx.fillStyle='#0d0f14';
+  hctx.beginPath();
+  hctx.moveTo(bx-W*0.22, dashTop+H*0.012);
+  hctx.quadraticCurveTo(bx, dashTop-H*0.085, bx+W*0.22, dashTop+H*0.012);
+  hctx.quadraticCurveTo(bx, dashTop-H*0.038, bx-W*0.22, dashTop+H*0.012);
+  hctx.closePath(); hctx.fill();
   hctx.fillStyle='rgba(5,6,9,0.94)';
   roundRect(bx-W*0.205, dashTop-H*0.015, W*0.41, H*0.165, H*0.022); hctx.fill();
   hctx.lineWidth=Math.max(1.5,H*0.003); hctx.strokeStyle='rgba(120,132,150,0.3)';
@@ -2330,8 +2351,15 @@ function drawDashboard(W,H,sp){
   hctx.fillText('GT', bx, gy+gr*0.35);
 
   // ===================== STEERING WHEEL (right, RHD) =====================
-  // modern flat-bottom (D-cut) racing wheel — a bit bigger, on the right.
-  const cx=bx, cy=H*1.0, R=Min*0.235;
+  // modern flat-bottom (D-cut) racing wheel — compact, on the right.
+  const cx=bx, cy=H*1.0, R=Min*0.175;
+  // indicator + wiper stalks poking out from the column behind the wheel
+  hctx.strokeStyle='#14161c'; hctx.lineCap='round'; hctx.lineWidth=Math.max(4,Min*0.015);
+  hctx.beginPath(); hctx.moveTo(cx-Min*0.05, cy-R*0.62); hctx.lineTo(cx-Min*0.19, cy-R*0.86); hctx.stroke();
+  hctx.beginPath(); hctx.moveTo(cx+Min*0.05, cy-R*0.56); hctx.lineTo(cx+Min*0.185, cy-R*0.78); hctx.stroke();
+  hctx.fillStyle='#1d212b';
+  hctx.beginPath(); hctx.arc(cx-Min*0.19, cy-R*0.86, Min*0.011, 0, 6.28); hctx.fill();
+  hctx.beginPath(); hctx.arc(cx+Min*0.185, cy-R*0.78, Min*0.011, 0, 6.28); hctx.fill();
   hctx.save();
   hctx.translate(cx,cy); hctx.rotate(steer*0.55);
   hctx.lineCap='round'; hctx.lineJoin='round';
@@ -2369,7 +2397,31 @@ function drawDashboard(W,H,sp){
   hctx.fillText('GT', 0, R*0.01);
   // 12 o'clock centre marker (motorsport stripe)
   hctx.fillStyle='#d6262b'; roundRect(-R*0.045,-R-R*0.05, R*0.09, R*0.16, R*0.02); hctx.fill();
+  // driver's gloved hands at 9 & 3 — they grip the rim and turn with the wheel
+  for (const s of [-1,1]){
+    hctx.save(); hctx.translate(s*R,0);
+    // racing-suit sleeve reaching up from below
+    hctx.fillStyle='#0d0e13';
+    hctx.beginPath(); hctx.ellipse(s*R*0.32, R*0.62, R*0.20, R*0.50, s*0.35, 0, 6.28); hctx.fill();
+    // palm wrapped around the rim
+    hctx.fillStyle='#101014';
+    hctx.beginPath(); hctx.ellipse(0,0,R*0.145,R*0.27,0,0,6.28); hctx.fill();
+    // fingers curling over the inner face of the rim
+    hctx.fillStyle='#191922';
+    for (let k=0;k<4;k++){ const fy=-R*0.185+k*R*0.12;
+      hctx.beginPath(); hctx.ellipse(-s*R*0.105,fy,R*0.075,R*0.052,0,0,6.28); hctx.fill(); }
+    // thumb hooked over the top inside
+    hctx.beginPath(); hctx.ellipse(-s*R*0.10,-R*0.20,R*0.05,R*0.095,s*0.55,0,6.28); hctx.fill();
+    // glove knuckle highlight
+    hctx.fillStyle='rgba(120,128,148,0.18)';
+    hctx.beginPath(); hctx.ellipse(s*R*0.04,-R*0.04,R*0.055,R*0.14,0,0,6.28); hctx.fill();
+    hctx.restore();
+  }
   hctx.restore();
+  // cabin ambient shadow — the corners darken so the frame reads as "inside"
+  const vg=hctx.createRadialGradient(W*0.5,H*0.52,Min*0.46,W*0.5,H*0.60,Min*1.05);
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.38)');
+  hctx.fillStyle=vg; hctx.fillRect(0,0,W,H);
 }
 function roundRect(x,y,w,h,r){ hctx.beginPath(); hctx.moveTo(x+r,y); hctx.arcTo(x+w,y,x+w,y+h,r); hctx.arcTo(x+w,y+h,x,y+h,r); hctx.arcTo(x,y+h,x,y,r); hctx.arcTo(x,y,x+w,y,r); hctx.closePath(); }
 
