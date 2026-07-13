@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R65 — local Buck Rogers support';
+const BUILD = 'BUILD R66 — New Dawn Fades';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -2695,11 +2695,16 @@ function startRaceMusic(){
   let st = sel;
   if (st.apple) st = SOUNDTRACKS.daytona;
   try {
-    const intro = new Audio(st.intro); intro.volume=0.75;
-    const loop  = new Audio(st.loop);  loop.loop=true; loop.volume=0.75;
-    intro.addEventListener('ended', ()=>{ try{ loop.currentTime=0; loop.play().catch(()=>{}); }catch(e){} });
-    intro.play().catch(()=>{ try{ loop.play().catch(()=>{}); }catch(e){} });   // if intro blocked, go straight to loop
-    _raceAudio = { intro, loop };
+    const loop = new Audio(st.loop); loop.loop=true; loop.volume=0.75;
+    if (st.intro){                       // intro once -> loop
+      const intro = new Audio(st.intro); intro.volume=0.75;
+      intro.addEventListener('ended', ()=>{ try{ loop.currentTime=0; loop.play().catch(()=>{}); }catch(e){} });
+      intro.play().catch(()=>{ try{ loop.play().catch(()=>{}); }catch(e){} });   // if intro blocked, go straight to loop
+      _raceAudio = { intro, loop };
+    } else {                             // loop-only track (full songs)
+      loop.play().catch(()=>{});
+      _raceAudio = { intro:null, loop };
+    }
   } catch(e){ /* audio optional */ }
 }
 function stopRaceMusic(){
@@ -2922,7 +2927,7 @@ function showEndScreen(win){
 // ----------------------------------------------------------------------------
 const SOUNDTRACKS = {
   daytona: { name:'DAYTONA', icon:'🏁', desc:'The original — big arcade theme', intro:'./audio/intro.mp3',      loop:'./audio/soundtrack.mp3' },
-  heat:    { name:'HEAT',    icon:'🌆', desc:'Driving synth groove',           intro:'./audio/heat-intro.mp3', loop:'./audio/heat-soundtrack.mp3' },
+  heat:    { name:'NEW DAWN FADES', icon:'🌘', desc:'Joy Division — your purchased copy', loop:'./audio/new-dawn-fades.m4a' },
   buckrogers:{ name:'BUCK ROGERS', icon:'🚀', desc:'Feeder — via your Apple Music', apple:true, song:'buck rogers feeder',
                localSrcs:['./audio/buck-rogers.m4a','./audio/buck-rogers.mp3'] },
   applemusic:{ name:'APPLE MUSIC', icon:'🍎', desc:'Stream from your library', apple:true },
