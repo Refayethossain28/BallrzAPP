@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R72 — V-Class corner lamps';
+const BUILD = 'BUILD R73 — V-Class vertical taillights';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -1024,17 +1024,18 @@ function addVanBody(g, liv, hero, W, L){
   }
   g.add(lmBox(dark, W-0.30,0.26,0.08, 0,0.52,2.62));
   g.add(lmBox(dark, W-0.10,0.12,0.10, 0,0.36,2.58));
-  // rear: slim horizontal LED taillights just under the rear glass, tapering
-  // toward the centre and wrapping around onto the body sides (per the photos).
-  // Smoked-red housings with a bright LED blade that flares on braking.
+  // rear: the V-Class signature — TALL VERTICAL taillight units running down
+  // each edge of the tailgate, from the window line toward the bumper.
+  // Smoked-red housings with a bright vertical LED blade that flares on braking.
   const tlHouse=new THREE.MeshStandardMaterial({color:0x3a0d10, roughness:0.35, metalness:0.2, emissive:0x550a0a, emissiveIntensity:0.35});
   const tlLed=new THREE.MeshStandardMaterial({color:0xff4038, emissive:0xe0140e, emissiveIntensity:1.1, roughness:0.3});
   g.userData.brakeMats = g.userData.brakeMats||[];
   for (const sx of [-1,1]){
-    g.add(lmBox(tlHouse, 0.44,0.14,0.06, sx*0.77, 1.40, -2.655));           // corner lamp only —
-    g.add(lmBox(tlLed,   0.36,0.05,0.065, sx*0.77, 1.41, -2.66));           // wide body-colour gap between
-    g.add(lmBox(tlHouse, 0.06,0.14,0.26, sx*(W/2+0.005), 1.40, -2.50));     // wrap onto the side
-    g.add(lmBox(tlLed,   0.065,0.05,0.20, sx*(W/2+0.012), 1.41, -2.50));    // side LED sliver
+    g.add(lmBox(tlHouse, 0.22,0.64,0.06, sx*(W/2-0.15), 1.06, -2.655));     // tall vertical housing
+    g.add(lmBox(tlHouse, 0.16,0.10,0.06, sx*(W/2-0.18), 1.42, -2.652));     // tapered top tip at the window line
+    g.add(lmBox(tlLed,   0.08,0.56,0.065, sx*(W/2-0.15), 1.06, -2.66));     // vertical LED blade
+    g.add(lmBox(tlHouse, 0.06,0.60,0.14, sx*(W/2+0.005), 1.06, -2.58));     // wrap onto the body side
+    g.add(lmBox(tlLed,   0.065,0.50,0.07, sx*(W/2+0.012), 1.06, -2.57));    // side LED sliver
   }
   g.userData.brakeMats.push(tlLed);
   g.add(lmBox(chrome, 1.5,0.04,0.05, 0,1.26,-2.665));
@@ -1118,7 +1119,7 @@ function buildCar(vehicle, lite){
   // additive red glow behind the taillights (blooms under braking)
   const glowMat=new THREE.MeshBasicMaterial({map:glowTex(0xff2a1a), transparent:true, opacity:0.0, depthWrite:false, blending:THREE.AdditiveBlending, fog:false});
   g.userData.tailGlow=[];
-  for (const sx of [-0.82,0.82]){ const q=new THREE.Mesh(new THREE.PlaneGeometry(VAN?0.8:1.5, VAN?0.5:1.1), glowMat.clone()); q.position.set(VAN?sx*0.95:sx,VAN?1.41:0.82,-L*0.5-0.2); q.rotation.y=Math.PI; q.userData.noShadow=true; g.add(q); g.userData.tailGlow.push(q); }
+  for (const sx of [-0.82,0.82]){ const q=new THREE.Mesh(new THREE.PlaneGeometry(VAN?0.5:1.5, VAN?0.95:1.1), glowMat.clone()); q.position.set(VAN?sx*1.07:sx,VAN?1.06:0.82,-L*0.5-0.2); q.rotation.y=Math.PI; q.userData.noShadow=true; g.add(q); g.userData.tailGlow.push(q); }
   // a faint contact patch under the car — grounds distant cars that fall outside
   // the (tight) real-time shadow frustum; subtle so it doesn't double the shadow.
   { const sh=new THREE.Mesh(new THREE.PlaneGeometry(W*1.7,L*1.1), new THREE.MeshBasicMaterial({map:blobTex(), transparent:true, opacity:0.28, depthWrite:false, fog:false}));
