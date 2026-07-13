@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R69 — photoreal car pass';
+const BUILD = 'BUILD R70 — Mercedes V-Class';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -78,6 +78,10 @@ const VEHICLES = [
     livery:{ body:0x9333ea, hood:0xfacc15, roof:0xfacc15, num:88, sponsor:'SABRE' },
     speedMul:1.14, accelMul:1.12, steerMul:1.1, gripMul:1.14, brakeMul:1.08, rollMul:0.92,
     desc:'A sleek GT all-rounder — quick everywhere, no weakness.' },
+  { name:'V-CLASS', kind:'van', color:0x0d0f13,
+    livery:{ body:0x0d0f13, hood:0x0d0f13, roof:0x0d0f13, num:0, sponsor:'V-CLASS' },
+    speedMul:0.96, accelMul:0.92, steerMul:0.9, gripMul:1.08, brakeMul:1.06, rollMul:1.3,
+    desc:'The black executive Mercedes MPV — heavy, planted, deceptively rapid.' },
 ];
 // stock-car liveries for the AI field (varied colours + race numbers)
 const RIVAL_LIVERIES = [
@@ -987,6 +991,76 @@ function makeSponsorTex(text, accent){
 }
 function decal(tex, w, h){ return new THREE.Mesh(new THREE.PlaneGeometry(w,h), new THREE.MeshBasicMaterial({map:tex, transparent:true})); }
 
+// A black executive Mercedes V-Class MPV, built from the van side profiles.
+// Styled after the real thing: chrome-framed grille with the three-pointed
+// star, privacy-tinted glasshouse, roof rails, running boards, wrap-around
+// LED taillights and UK yellow plates.
+function addVanBody(g, liv, hero, W, L){
+  const body=paintMat(liv.body, hero), dark=matteMat(0x0d0f13), chrome=chromeMat();
+  const glass=glassMat(false);                                  // privacy tint — opaque black glass
+  g.add(extrudeCar(VAN_LOWER, W, 0.07, body));                  // lower hull
+  g.add(extrudeCar(VAN_GLASS, W-0.14, 0.04, glass));            // tinted glasshouse band
+  g.add(extrudeCar(VAN_ROOF,  W-0.20, 0.04, body));             // roof cap
+  // pillars breaking up the glass band
+  for (const pz of [1.55, 0.45, -0.75, -1.95]) g.add(lmBox(dark, W-0.12, 0.78, 0.10, 0, 1.68, pz));
+  // roof rails
+  for (const sx of [-0.68,0.68]) g.add(lmBox(dark, 0.09,0.07,L*0.66, sx, 2.30, -0.35));
+  // chrome beltline strips under the glass
+  for (const sx of [-1,1]) g.add(lmBox(chrome, 0.03,0.045,L*0.86, sx*(W/2-0.02), 1.30, -0.15));
+  // front: gloss grille + chrome frame + twin slats + the three-pointed star
+  g.add(lmBox(dark,   1.30,0.52,0.06, 0,0.95,2.60));
+  g.add(lmBox(chrome, 1.42,0.62,0.05, 0,0.95,2.565));
+  for (const dy of [-0.13,0.13]) g.add(lmBox(chrome, 1.22,0.045,0.08, 0,0.95+dy,2.615));
+  { const star=new THREE.Group();
+    star.add(new THREE.Mesh(new THREE.TorusGeometry(0.155,0.02,8,28), chrome));
+    const spoke=new THREE.BoxGeometry(0.035,0.16,0.035); spoke.translate(0,0.08,0);
+    for (let k=0;k<3;k++){ const m=new THREE.Mesh(spoke, chrome); m.rotation.z=k*Math.PI*2/3; star.add(m); }   // one point up, two down
+    star.position.set(0,0.95,2.66); g.add(star); }
+  // LED headlight units + lower intake + splitter lip
+  for (const sx of [-0.72,0.72]){
+    g.add(lmBox(chrome, 0.58,0.26,0.05, sx,1.14,2.615));
+    g.add(lmBox(new THREE.MeshStandardMaterial({color:0xf4f8ff, emissive:0xbfd8ff, emissiveIntensity:0.5, roughness:0.2}), 0.46,0.16,0.05, sx,1.14,2.645));
+  }
+  g.add(lmBox(dark, W-0.30,0.26,0.08, 0,0.52,2.62));
+  g.add(lmBox(dark, W-0.10,0.12,0.10, 0,0.36,2.58));
+  // rear: wrap-around LED taillights (flare on braking), chrome strip, star badge
+  const tl=new THREE.MeshStandardMaterial({color:0xff3024, emissive:0xe01410, emissiveIntensity:0.8, roughness:0.4});
+  g.userData.brakeMats = g.userData.brakeMats||[];
+  for (const sx of [-1,1]){
+    g.add(lmBox(tl, 0.52,0.16,0.06, sx*0.62, 1.52, -2.66));
+    g.add(lmBox(tl, 0.15,0.42,0.06, sx*(W/2-0.16), 1.34, -2.65));
+  }
+  g.userData.brakeMats.push(tl);
+  g.add(lmBox(chrome, 1.5,0.04,0.05, 0,1.26,-2.665));
+  { const ring=new THREE.Mesh(new THREE.TorusGeometry(0.09,0.015,8,24), chrome); ring.position.set(0,1.10,-2.665); g.add(ring); }
+  // UK yellow number plates front & rear
+  const plate=new THREE.MeshStandardMaterial({color:0xf2c811, roughness:0.5});
+  g.add(lmBox(plate, 0.92,0.22,0.03, 0,0.66,2.665));
+  g.add(lmBox(plate, 0.92,0.22,0.03, 0,0.84,-2.67));
+  addMirrors(g, W/2+0.06, 1.45, 1.62, dark);
+  if (!hero) return;                                            // ---- hero extras ----
+  // polished running boards along each rocker
+  const steel=new THREE.MeshStandardMaterial({color:0xb8bcc4, metalness:0.9, roughness:0.3, envMap:envTex, envMapIntensity:1.2});
+  for (const sx of [-1,1]) g.add(lmBox(steel, 0.10,0.05,L*0.44, sx*(W/2+0.03), 0.34, -0.35));
+  // door shut-lines, sliding-door rail + chrome handles
+  const seam=new THREE.MeshStandardMaterial({color:0x05060a, roughness:0.9});
+  for (const sx of [-1,1]){
+    g.add(lmBox(seam, 0.02,0.9,0.022, sx*(W/2+0.005), 0.85, 1.1));
+    g.add(lmBox(seam, 0.02,0.9,0.022, sx*(W/2+0.005), 0.85, -0.05));
+    g.add(lmBox(seam, 0.02,0.02,1.15, sx*(W/2+0.005), 1.26, 0.5));
+    g.add(lmBox(chrome, 0.03,0.05,0.20, sx*(W/2+0.01), 1.05, 1.0));
+    g.add(lmBox(chrome, 0.03,0.05,0.20, sx*(W/2+0.01), 1.05, -0.25));
+  }
+  g.add(lmBox(dark, W-0.5,0.05,0.35, 0,2.32,-2.30));            // roof spoiler
+  g.add(lmBox(dark, 0.14,0.11,0.30, 0,2.30,-1.55));             // shark-fin antenna
+  // baked-shadow depth: wheel-arch pools (same trick as the stock car)
+  const archMat=new THREE.MeshBasicMaterial({map:blobTex(), transparent:true, opacity:0.5, depthWrite:false, color:0x000000});
+  for (const [ax,az] of [[-1,L*0.31],[1,L*0.31],[-1,-L*0.31],[1,-L*0.31]]){
+    const q=new THREE.Mesh(new THREE.PlaneGeometry(1.25,0.8), archMat);
+    q.position.set(ax*(W/2+0.035), 0.55, az); q.rotation.y=ax*Math.PI/2; q.userData.noShadow=true; g.add(q);
+  }
+}
+
 // smooth low stock-car body side profile (front=+x, up=+y) — rounded nose & tail
 const STOCK_BODY=[[2.46,0.40],[2.54,0.74],[2.30,0.96],[1.5,1.02],[0.7,1.04],[-1.45,1.04],[-2.25,0.96],[-2.5,0.66],[-2.48,0.40],[-2.26,0.28],[2.26,0.28]];
 // A Daytona-style NASCAR stock car with a smooth curved body. Front faces +z.
@@ -996,7 +1070,12 @@ function buildCar(vehicle, lite){
   const hero=!lite;
   const main=paintMat(liv.body,hero), accent=paintMat(liv.hood,hero), roofM=paintMat(liv.roof!=null?liv.roof:liv.hood,hero);
   const white=paintMat(0xffffff,hero), glass=glassMat(hero), dark=matteMat(0x16181c);
-  const L=4.9, W=2.16;
+  const VAN = vehicle.kind==='van';
+  const L = VAN?5.3:4.9, W = VAN?2.06:2.16;
+  if (VAN){
+    addVanBody(g, liv, hero, W, L);
+    addWheels(g, W/2-0.04, L*0.31, 0.5, lite);
+  } else {
   // ---- smooth curved main body (sharper bevel = defined NASCAR panels, not bulbous) ----
   g.add(extrudeCar(STOCK_BODY, W, 0.07, main));
   // white lower band (rockers) + front splitter + rear bumper, slightly proud
@@ -1029,10 +1108,11 @@ function buildCar(vehicle, lite){
   addCarDetails(g, W, L, lite, liv);
   // racing wheels tucked under the fenders
   addWheels(g, W/2-0.04, L*0.3, 0.55, lite);
+  }
   // additive red glow behind the taillights (blooms under braking)
   const glowMat=new THREE.MeshBasicMaterial({map:glowTex(0xff2a1a), transparent:true, opacity:0.0, depthWrite:false, blending:THREE.AdditiveBlending, fog:false});
   g.userData.tailGlow=[];
-  for (const sx of [-0.82,0.82]){ const q=new THREE.Mesh(new THREE.PlaneGeometry(1.5,1.1), glowMat.clone()); q.position.set(sx,0.82,-L*0.5-0.2); q.rotation.y=Math.PI; q.userData.noShadow=true; g.add(q); g.userData.tailGlow.push(q); }
+  for (const sx of [-0.82,0.82]){ const q=new THREE.Mesh(new THREE.PlaneGeometry(1.5,1.1), glowMat.clone()); q.position.set(sx,VAN?1.42:0.82,-L*0.5-0.2); q.rotation.y=Math.PI; q.userData.noShadow=true; g.add(q); g.userData.tailGlow.push(q); }
   // a faint contact patch under the car — grounds distant cars that fall outside
   // the (tight) real-time shadow frustum; subtle so it doesn't double the shadow.
   { const sh=new THREE.Mesh(new THREE.PlaneGeometry(W*1.7,L*1.1), new THREE.MeshBasicMaterial({map:blobTex(), transparent:true, opacity:0.28, depthWrite:false, fog:false}));
@@ -1042,7 +1122,7 @@ function buildCar(vehicle, lite){
   { const hg=new THREE.MeshBasicMaterial({map:glowTex(0xfff0c2), transparent:true, opacity:0.85, depthWrite:false, blending:THREE.AdditiveBlending, fog:false});
     g.userData.headGlow=[];
     for (const sx of [-0.82,0.82]){ const q=new THREE.Mesh(new THREE.PlaneGeometry(1.3,1.0), hg.clone());
-      q.position.set(sx,0.82,L*0.5+0.18); q.userData.noShadow=true; q.visible=false; g.add(q); g.userData.headGlow.push(q); }
+      q.position.set(sx,VAN?1.08:0.82,L*0.5+0.18); q.userData.noShadow=true; q.visible=false; g.add(q); g.userData.headGlow.push(q); }
     const pool=new THREE.Mesh(new THREE.PlaneGeometry(W*2.7, L*3.1),
       new THREE.MeshBasicMaterial({map:glowTex(0xffe9b8), transparent:true, opacity:0.22, depthWrite:false, blending:THREE.AdditiveBlending, fog:false}));
     pool.rotation.x=-Math.PI/2; pool.position.set(0,0.12,L*0.5+L*1.4);
@@ -2976,7 +3056,7 @@ const SOUNDTRACKS = {
   applemusic:{ name:'APPLE MUSIC', icon:'🍎', desc:'Stream from your library', apple:true },
 };
 let selApplePlaylist=null, selApplePlaylistName='';
-const VEH_ICON = ['🏎️','🏁','⚡','🛞','🗡️'];
+const VEH_ICON = ['🏎️','🏁','⚡','🛞','🗡️','🚐'];
 const CIR_ICON = ['🏔️','🎡','🌆','🏜️'];
 let selVeh=0, selCir=1, selSnd='daytona', selTod='day', selWx='clear';
 const TOD_ITEMS = [{key:'day',icon:'☀️',name:'DAY',desc:'Bright daylight racing'},
