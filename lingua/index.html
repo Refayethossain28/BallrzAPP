@@ -202,6 +202,17 @@
   .story-p .tr{ color:var(--muted); font-size:13.5px; margin-top:6px; }
   .vocab-w{ display:inline-block; margin:3px 4px 3px 0; padding:6px 10px; border-radius:999px; font-size:13px;
     background:var(--panel2); border:1px solid var(--line); }
+  /* live interpreter */
+  .btn.listening{ background:linear-gradient(135deg,var(--bad),#ff9a6e); animation:pulse 1.2s infinite; }
+  #liveFeed{ display:flex; flex-direction:column; gap:10px; max-height:420px; overflow:auto; }
+  .seg{ border:1px solid var(--line); border-radius:12px; padding:11px 13px; background:rgba(0,0,0,.22); }
+  .seg .heard-line{ color:var(--muted); font-size:13.5px; }
+  .seg .tr-row{ display:flex; align-items:flex-start; gap:8px; margin-top:6px; }
+  .seg .tr-text{ flex:1 1 auto; min-width:0; font-size:18px; font-weight:600; line-height:1.45; }
+  .seg.rtl .tr-text{ direction:rtl; text-align:right; }
+  .seg.rtl .tr-row{ flex-direction:row-reverse; }
+  .seg .pr{ color:var(--teal); font-size:12.5px; margin-top:3px; }
+  .seg.interim{ opacity:.6; border-style:dashed; }
   footer{ color:var(--muted2); font-size:12px; margin-top:26px; text-align:center; }
   footer a{ color:var(--muted); }
   /* live-config modal */
@@ -262,6 +273,7 @@
       <button class="tab" id="tabTeach" role="tab" aria-selected="false" type="button">🎓 Teach</button>
       <button class="tab" id="tabPractice" role="tab" aria-selected="false" type="button">🃏 Practice</button>
       <button class="tab" id="tabChat" role="tab" aria-selected="false" type="button">💬 Chat</button>
+      <button class="tab" id="tabLive" role="tab" aria-selected="false" type="button">🎙 Live</button>
     </div>
 
     <!-- LEARN pane (structured course) -->
@@ -341,6 +353,29 @@
         <button class="mini" id="chatClear" type="button">Clear</button>
         <span class="hint">The tutor replies in your dialect and gently corrects you. Needs Live AI.</span>
       </div>
+    </div>
+
+    <!-- LIVE INTERPRETER pane -->
+    <div id="paneLive" class="hidden" style="margin-top:16px">
+      <label class="fld">Live interpreter — listens to a conversation and translates as it's spoken</label>
+      <div class="row" style="margin-bottom:10px">
+        <div class="grow">
+          <label class="fld">They're speaking</label>
+          <select id="liveFrom"></select>
+        </div>
+        <button class="swap" id="liveSwap" type="button" title="Swap direction" style="align-self:flex-end">⇄</button>
+        <div class="grow">
+          <label class="fld">Translate into</label>
+          <select id="liveTo"></select>
+        </div>
+      </div>
+      <div class="row wrap">
+        <button class="btn" id="liveBtn" type="button">🎙 Start listening</button>
+        <button class="chip" id="liveSpeakToggle" type="button" aria-selected="true">🔊 Speak translations aloud</button>
+        <button class="mini" id="liveClear" type="button">Clear</button>
+      </div>
+      <div id="liveStatus" class="hint" style="margin-top:8px">Tap Start, allow the microphone, and hold the phone near the conversation. Each sentence is translated as it lands.</div>
+      <div id="liveFeed" class="out"></div>
     </div>
   </section>
 
@@ -1150,6 +1185,7 @@ function selectLanguage(L){
   clear($("translateOut")); clear($("teachOut")); clear($("askOut"));
   clear($("practiceArea")); clear($("chatLog")); clear($("learnArea"));
   $("chatInput").placeholder = "Chat in " + L.name + " or English…";
+  liveStop(); buildLiveSelects(); clear($("liveFeed")); // re-default interpreter to the new language
   renderStats(); // due-card count is per language+dialect
   // land on the course — the guided path is the product
   setMode("learn"); renderLearn();
@@ -1198,8 +1234,8 @@ function updateDstLabel(){
   $("srcText").placeholder = "Type or paste " + from + " text to translate…";
 }
 
-var MODE_TAB = { learn:"tabLearn", translate:"tabTranslate", teach:"tabTeach", practice:"tabPractice", chat:"tabChat" };
-var MODE_PANE = { learn:"paneLearn", translate:"paneTranslate", teach:"paneTeach", practice:"panePractice", chat:"paneChat" };
+var MODE_TAB = { learn:"tabLearn", translate:"tabTranslate", teach:"tabTeach", practice:"tabPractice", chat:"tabChat", live:"tabLive" };
+var MODE_PANE = { learn:"paneLearn", translate:"paneTranslate", teach:"paneTeach", practice:"panePractice", chat:"paneChat", live:"paneLive" };
 function setMode(m){
   state.mode = m;
   for(var k in MODE_TAB){
@@ -2078,6 +2114,122 @@ function refreshKeyStatus(){
   else { s.textContent = "No key saved."; s.style.color = "var(--muted2)"; }
 }
 
+/* =========================================================================
+   LIVE INTERPRETER — continuous speech recognition on one language, each
+   finished sentence translated by the AI into the other and (optionally)
+   spoken aloud. Recognition auto-restarts after silence, so it keeps up with
+   a real conversation until you press Stop.
+   ========================================================================= */
+var live = { on:false, rec:null, speak:true, interimEl:null };
+function liveLangById(id){ return LANGS.filter(function(x){ return x.id===id; })[0]; }
+function liveDialectFor(langId){
+  return (state.lang && state.lang.id === langId && state.dialect) ? state.dialect : null;
+}
+function buildLiveSelects(){
+  var from = $("liveFrom"), to = $("liveTo");
+  if(!from || !to) return;
+  clear(from); clear(to);
+  function opt(L){ var o = el("option"); o.value = L.id; o.textContent = (L.flag ? L.flag + " " : "") + L.name; return o; }
+  for(var i=0;i<LANGS.length;i++){ from.appendChild(opt(LANGS[i])); to.appendChild(opt(LANGS[i])); }
+  // default: the conversation is in your study language, translated into English
+  var study = (state.lang && state.lang.id.indexOf("x:") !== 0) ? state.lang.id : null;
+  from.value = (study && study !== "en") ? study : "es";
+  to.value = "en";
+}
+function liveInterim(text){
+  var feed = $("liveFeed");
+  if(!text){
+    if(live.interimEl && live.interimEl.parentNode) live.interimEl.parentNode.removeChild(live.interimEl);
+    live.interimEl = null;
+    return;
+  }
+  if(!live.interimEl){
+    live.interimEl = el("div","seg interim");
+    live.interimEl.appendChild(el("div","heard-line",""));
+    feed.appendChild(live.interimEl);
+  }
+  live.interimEl.firstChild.textContent = "🎙 " + text + "…";
+  try{ feed.scrollTop = feed.scrollHeight; }catch(e){}
+}
+function liveSegment(text){
+  var feed = $("liveFeed");
+  var fromL = liveLangById($("liveFrom").value);
+  var toL = liveLangById($("liveTo").value);
+  if(!fromL || !toL) return;
+  var toDia = liveDialectFor(toL.id);
+  var toBcp = bcpForLang(toL, toDia);
+  var seg = el("div","seg" + (toL.rtl ? " rtl" : ""));
+  seg.appendChild(el("div","heard-line","🎙 " + text));
+  var row = el("div","tr-row");
+  var tr = el("div","tr-text");
+  tr.appendChild(el("span","spin"));
+  row.appendChild(tr);
+  seg.appendChild(row);
+  // keep the interim line last
+  if(live.interimEl && live.interimEl.parentNode === feed) feed.insertBefore(seg, live.interimEl);
+  else feed.appendChild(seg);
+  try{ feed.scrollTop = feed.scrollHeight; }catch(e){}
+  callAI({
+    mode:"translate", text:text,
+    sourceName: fromL.name,
+    targetName: toL.name, targetNative: toL.native || "",
+    dialect: toDia ? toDia.name : "",
+    dialectNote: toDia ? toDia.note : ""
+  }).then(function(r){
+    clear(tr); tr.textContent = r.translation || "—";
+    row.appendChild(speakBtn(r.translation || "", toBcp));
+    if(r.pronunciation) seg.appendChild(el("div","pr","🗣 " + r.pronunciation));
+    if(live.speak && r.translation) speak(r.translation, toBcp);
+    award(1);
+    try{ feed.scrollTop = feed.scrollHeight; }catch(e){}
+  }).catch(function(){
+    if(state.engine === "local"){ setLive(false); state.engine = "offline"; }
+    clear(tr); tr.textContent = "—";
+    seg.appendChild(el("div","err","Couldn't translate this line — check the AI connection (top-right pill)."));
+  });
+}
+function liveStart(){
+  var status = $("liveStatus");
+  if(!speechInOK()){ status.textContent = "Speech recognition isn't supported in this browser — try Chrome, Edge or Safari."; return; }
+  if(!aiAvailable()){ status.textContent = "Live interpreting needs Live AI — tap the AI pill (top-right) and connect your key or a proxy."; return; }
+  var R = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var fromL = liveLangById($("liveFrom").value);
+  var r;
+  try{ r = new R(); }catch(e){ status.textContent = "Couldn't start the microphone."; return; }
+  r.lang = bcpForLang(fromL, liveDialectFor(fromL && fromL.id));
+  r.continuous = true; r.interimResults = true; r.maxAlternatives = 1;
+  live.rec = r; live.on = true;
+  $("liveBtn").textContent = "⏹ Stop"; $("liveBtn").classList.add("listening");
+  status.textContent = "Listening in " + (fromL ? fromL.name : "…") + "… every finished sentence is translated below.";
+  r.onresult = function(ev){
+    var interim = "";
+    for(var i = ev.resultIndex; i < ev.results.length; i++){
+      var res = ev.results[i];
+      if(res.isFinal){ var t = (res[0].transcript || "").trim(); if(t) liveSegment(t); }
+      else interim += res[0].transcript;
+    }
+    liveInterim(interim.replace(/^\s+|\s+$/g, ""));
+  };
+  r.onerror = function(e){
+    if(e && (e.error === "not-allowed" || e.error === "service-not-allowed")){
+      liveStop();
+      status.textContent = "Microphone permission was blocked — allow it in the browser settings and try again.";
+    }
+    // "no-speech" / "aborted" are routine pauses; onend's auto-restart handles them
+  };
+  r.onend = function(){ if(live.on && live.rec === r){ try{ r.start(); }catch(e){} } };
+  try{ r.start(); }catch(e){ status.textContent = "Couldn't start the microphone."; liveStop(); }
+}
+function liveStop(){
+  live.on = false;
+  if(live.rec){ var r = live.rec; live.rec = null; try{ r.stop(); }catch(e){} }
+  liveInterim("");
+  var b = $("liveBtn");
+  if(b){ b.textContent = "🎙 Start listening"; b.classList.remove("listening"); }
+  var s = $("liveStatus");
+  if(s) s.textContent = "Stopped. Tap Start to listen again.";
+}
+
 /* ---- SAVED TRANSLATIONS view ---- */
 function renderHist(){
   var list = $("histList"); clear(list);
@@ -2156,6 +2308,21 @@ function init(){
   on($("chatInput"),"keydown",function(e){ if(e.key==="Enter") sendChat(false); });
   on($("chatStart"),"click",function(){ state.chat=[]; sendChat(true); });
   on($("chatClear"),"click",function(){ state.chat=[]; renderChat(); });
+
+  // Live interpreter
+  buildLiveSelects();
+  on($("tabLive"),"click",function(){ setMode("live"); });
+  on($("liveBtn"),"click",function(){ if(live.on) liveStop(); else liveStart(); });
+  on($("liveSwap"),"click",function(){
+    var f = $("liveFrom"), t = $("liveTo"), tmp = f.value; f.value = t.value; t.value = tmp;
+    if(live.on){ liveStop(); liveStart(); }
+  });
+  on($("liveFrom"),"change",function(){ if(live.on){ liveStop(); liveStart(); } });
+  on($("liveSpeakToggle"),"click",function(){
+    live.speak = !live.speak;
+    $("liveSpeakToggle").setAttribute("aria-selected", live.speak ? "true" : "false");
+  });
+  on($("liveClear"),"click",function(){ clear($("liveFeed")); live.interimEl = null; });
 
   // Speech input (mic) — translate uses the "from" language; chat uses the target.
   wireMic($("translateMic"),
