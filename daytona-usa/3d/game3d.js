@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R67 — King of Speed';
+const BUILD = 'BUILD R68 — Buck Rogers plays locally';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -2680,20 +2680,13 @@ function startRaceMusic(){
   stopRaceMusic();
   if (window.GameMusic && window.GameMusic.stop){ try{ window.GameMusic.stop(); }catch(e){} }   // silence procedural menu music
   const sel = SOUNDTRACKS[G.soundtrack] || SOUNDTRACKS.daytona;
-  if (sel.localSrc){   // a purchased copy in audio/ plays directly — no account needed
-    try { const loop=new Audio(sel.localSrc); loop.loop=true; loop.volume=0.75;
-      loop.play().catch(()=>{}); _raceAudio={intro:null, loop}; } catch(e){}
-    return;
-  }
   if (appleActive()){   // stream the player's own Apple Music instead of a built-in track
-    if (sel.song) window.AppleMusic.playSong(sel.song);           // named-song card (Buck Rogers)
-    else if (G.applePlaylist) window.AppleMusic.playPlaylist(G.applePlaylist);
+    if (G.applePlaylist) window.AppleMusic.playPlaylist(G.applePlaylist);
     else window.AppleMusic.resume();
     return;
   }
-  // an Apple-backed card without a connected account falls back to the classic theme
-  let st = sel;
-  if (st.apple) st = SOUNDTRACKS.daytona;
+  // the Apple card without a connected account falls back to the arcade theme
+  const st = sel.apple ? SOUNDTRACKS.daytona : sel;
   try {
     const loop = new Audio(st.loop); loop.loop=true; loop.volume=0.75;
     if (st.intro){                       // intro once -> loop
@@ -2928,19 +2921,9 @@ function showEndScreen(win){
 const SOUNDTRACKS = {
   daytona: { name:'KING OF SPEED', icon:'🏁', desc:'The real Daytona USA arcade theme', loop:'./audio/king-of-speed.m4a' },
   heat:    { name:'NEW DAWN FADES', icon:'🌘', desc:'Joy Division — your purchased copy', loop:'./audio/new-dawn-fades.m4a' },
-  buckrogers:{ name:'BUCK ROGERS', icon:'🚀', desc:'Feeder — via your Apple Music', apple:true, song:'buck rogers feeder',
-               localSrcs:['./audio/buck-rogers.m4a','./audio/buck-rogers.mp3'] },
+  buckrogers:{ name:'BUCK ROGERS', icon:'🚀', desc:'Feeder — your purchased copy', loop:'./audio/buck-rogers.m4a' },
   applemusic:{ name:'APPLE MUSIC', icon:'🍎', desc:'Stream from your library', apple:true },
 };
-// detect locally-added purchased copies of named-song tracks (e.g. an iTunes
-// purchase dropped into audio/). Runs once at boot; a found file wins over
-// Apple Music streaming and needs no account connection.
-(async ()=>{ try{
-  for (const k in SOUNDTRACKS){ const st=SOUNDTRACKS[k]; if (!st.localSrcs) continue;
-    for (const src of st.localSrcs){
-      try{ const r=await fetch(src,{method:'HEAD'}); if (r && r.ok){ st.localSrc=src; break; } }catch(e){}
-    } }
-}catch(e){} })();
 let selApplePlaylist=null, selApplePlaylistName='';
 const VEH_ICON = ['🏎️','🏁','⚡','🛞','🗡️'];
 const CIR_ICON = ['🏔️','🎡','🌆','🏜️'];
@@ -3073,8 +3056,7 @@ function showCircuitSelect(){
 
 function showSoundtrackSelect(){
   const keys=Object.keys(SOUNDTRACKS);
-  const items = keys.map(k=>{ const s=SOUNDTRACKS[k];
-    return {icon:s.icon, name:s.name, desc:(s.localSrc?'Your purchased copy — ready to play':s.desc)}; });
+  const items = keys.map(k=>({icon:SOUNDTRACKS[k].icon, name:SOUNDTRACKS[k].name, desc:SOUNDTRACKS[k].desc}));
   const selIdx = keys.indexOf(selSnd);
   const todIdx = TOD_ITEMS.findIndex(t=>t.key===selTod);
   const wxIdx  = WX_ITEMS.findIndex(t=>t.key===selWx);
@@ -3088,12 +3070,7 @@ function showSoundtrackSelect(){
       <button class="btn ghost" id="backBtn">◀ BACK</button>
       <button class="btn" id="goBtn">GREEN FLAG ▶</button>
     </div></div>`);
-  wireCards('data-snd', i=>{ selSnd=keys[i];
-    const s=SOUNDTRACKS[selSnd];
-    // playlist streaming always opens the Apple screen; a named-song card
-    // (Buck Rogers) only needs it when there's no local copy AND no account
-    if (selSnd==='applemusic' || (s.apple && !s.localSrc && !(window.AppleMusic && window.AppleMusic.authorized))) showAppleMusic();
-    else showSoundtrackSelect(); });
+  wireCards('data-snd', i=>{ selSnd=keys[i]; if (SOUNDTRACKS[selSnd].apple) showAppleMusic(); else showSoundtrackSelect(); });
   wireCards('data-tod', i=>{ selTod=TOD_ITEMS[i].key; showSoundtrackSelect(); });
   wireCards('data-wx',  i=>{ selWx=WX_ITEMS[i].key; showSoundtrackSelect(); });
   document.getElementById('backBtn').onclick = G.champ ? showVehicleSelect : showCircuitSelect;
