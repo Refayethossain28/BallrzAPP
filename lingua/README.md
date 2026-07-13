@@ -36,6 +36,13 @@ Pick a language and you get:
   and **📖 Story** (graded reading). Everything feeds the SRS deck.
 - **💬 Chat** — practise a real conversation with an AI tutor who replies in your
   chosen dialect, gives romanization + an English gloss, and gently corrects you.
+- **🎙 Live interpreter** — point the phone at a conversation: continuous speech
+  recognition transcribes each sentence and the AI translates it into any
+  language you pick, optionally speaking it aloud. Two dropdowns (they speak /
+  translate into), a swap button, and auto-restart after silences so it keeps up
+  until you press Stop. Needs Live AI + a browser with speech recognition
+  (Chrome/Edge/Safari). Tip: with 🔊 speak-aloud on, the mic may pick up the
+  spoken translation — mute it or use headphones in noisy two-way use.
 - **🔊 Listen** — tap the speaker on any phrase to hear it read aloud (browser
   speech synthesis; uses the dialect's voice where available). Works offline.
 - **🎤 Speak** — dictate into the translate box or chat with the mic button
