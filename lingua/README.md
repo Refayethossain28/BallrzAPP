@@ -49,6 +49,16 @@ Pick a language and you get:
   (Web Speech API; Chrome/Edge/Safari).
 - **🕘 Saved** — every translation is saved on-device automatically; reopen, replay
   the audio, or delete from the **Saved** panel. No account, no cloud.
+- **📖 Qur'an studio** — a dedicated section for learning the Qur'an, all 114
+  surahs. **Read** (Uthmani script + Saheeh International translation +
+  transliteration, per-ayah recitation audio), **Memorize** (hifz: listen →
+  first-letter skeleton → recall, graded into its own spaced-repetition deck),
+  **Recite** (speech-scored against the verified text, harakāt-aware
+  normalization), and AI **Explain** per ayah. Integrity rule: the Qur'anic
+  text and audio are **never AI-generated** — text is the Tanzil-verified
+  mushaf via the AlQuran.cloud API (cached on-device after first load),
+  recitation is Mishary Rashid Alafasy; the AI provides only clearly-labelled
+  study explanations, with a standing note to consult qualified scholars.
 
 ### Dialect / variety support
 Several languages ship with selectable regional varieties, each treated as a

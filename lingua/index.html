@@ -213,6 +213,17 @@
   .seg.rtl .tr-row{ flex-direction:row-reverse; }
   .seg .pr{ color:var(--teal); font-size:12.5px; margin-top:3px; }
   .seg.interim{ opacity:.6; border-style:dashed; }
+  /* qur'an studio */
+  .ayah{ border:1px solid var(--line); border-radius:14px; padding:14px; background:rgba(0,0,0,.22); margin-top:10px; }
+  .ayah .ar{ font-size:26px; line-height:2.1; direction:rtl; text-align:right;
+    font-family:"Amiri Quran","Amiri","KFGQPC Uthmanic Script HAFS","Scheherazade New","Noto Naskh Arabic","Geeza Pro",serif; }
+  .ayah .tl{ color:var(--teal); font-size:13.5px; margin-top:8px; }
+  .ayah .tr2{ color:var(--muted); font-size:14px; margin-top:6px; line-height:1.55; }
+  .ayah .arow{ display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; align-items:center; }
+  .ayah .num{ font-size:11px; color:var(--muted2); font-weight:700; letter-spacing:.04em; }
+  .ayah .exp{ margin-top:10px; padding:10px 12px; border-radius:10px; background:rgba(110,139,255,.08);
+    border:1px solid rgba(110,139,255,.25); font-size:14px; line-height:1.6; white-space:pre-wrap; }
+  .hifz-skel{ font-size:24px; line-height:2.1; direction:rtl; text-align:right; color:var(--muted); }
   footer{ color:var(--muted2); font-size:12px; margin-top:26px; text-align:center; }
   footer a{ color:var(--muted); }
   /* live-config modal */
@@ -248,6 +259,18 @@
       <input id="langSearch" type="search" placeholder="Search 180+ languages — or type any language on Earth…" autocomplete="off">
     </div>
     <div id="langGrid" class="langgrid"></div>
+  </section>
+
+  <!-- QUR'AN studio entry -->
+  <section id="quranEntry" class="card" style="border-color:rgba(52,225,192,.35); background:linear-gradient(135deg,rgba(52,225,192,.07),rgba(110,139,255,.05))">
+    <button class="unit" id="quranOpen" type="button" style="margin-top:0; background:transparent; border:0; padding:4px 0">
+      <span class="ix" style="background:linear-gradient(135deg,var(--teal),var(--accent)); color:#0b0e17; border-color:transparent; width:38px; height:38px; font-size:17px">📖</span>
+      <span>
+        <span class="ut" style="display:block">Learn the Qur'an</span>
+        <span class="us" style="display:block">Read · memorize (hifz) · recite · understand — verified text &amp; real recitation, all 114 surahs</span>
+      </span>
+      <span class="chev">›</span>
+    </button>
   </section>
 
   <!-- STEP 2 — the workspace -->
@@ -377,6 +400,32 @@
       <div id="liveStatus" class="hint" style="margin-top:8px">Tap Start, allow the microphone, and hold the phone near the conversation. Each sentence is translated as it lands.</div>
       <div id="liveFeed" class="out"></div>
     </div>
+  </section>
+
+  <!-- QUR'AN studio -->
+  <section id="quranPanel" class="card hidden">
+    <div class="selbar">
+      <span class="big">📖</span>
+      <span class="nm">Qur'an</span>
+      <span class="nat" id="qSubtitle"></span>
+      <button class="ghost" id="quranClose" type="button" style="margin-left:auto">‹ Back</button>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <div class="grow"><select id="qSurah"></select></div>
+    </div>
+    <div class="chips" style="margin-top:10px" id="qModeChips">
+      <button class="chip" id="qmRead" aria-selected="true" type="button">📖 Read</button>
+      <button class="chip" id="qmHifz" aria-selected="false" type="button">🧠 Memorize</button>
+      <button class="chip" id="qmRecite" aria-selected="false" type="button">🗣 Recite</button>
+      <button class="chip" id="qmReview" aria-selected="false" type="button">🔁 Review due</button>
+    </div>
+    <div class="row wrap" style="margin-top:10px">
+      <button class="chip" id="qTrToggle" aria-selected="true" type="button">Translation</button>
+      <button class="chip" id="qTlToggle" aria-selected="false" type="button">Transliteration</button>
+      <span class="hint" style="margin:0">Text: Tanzil Uthmani (AlQuran.cloud) · Recitation: Mishary Rashid Alafasy · Translation: Saheeh International</span>
+    </div>
+    <div id="quranArea" class="out"></div>
+    <div class="hint" style="margin-top:12px">🤲 AI explanations are a study aid only — the Qur'anic text and audio come from verified sources, never from the AI. For religious guidance, rely on qualified scholars and established tafsīr.</div>
   </section>
 
   <!-- Saved translations (on-device) -->
@@ -947,6 +996,7 @@ var state = {
   practice: null,    // {items, queue, right, again, mode, revealed}
   chat: [],          // [{role:'user'|'assistant', text, data}]
   engine: "offline", // "local" | "hosted" | "offline"
+  deckOverride: null, // "quran" while the Qur'an studio is open (its own SRS deck)
   live: false        // is an AI engine reachable?
 };
 
@@ -1159,7 +1209,7 @@ function selectLanguage(L){
   $("selFlag").textContent = L.flag || "🌐";
   $("selName").textContent = L.name;
   $("selNative").textContent = L.native || "";
-  hide($("picker")); show($("workspace"));
+  hide($("picker")); hide($("quranEntry")); show($("workspace"));
 
   // dialect chips
   if(L.d && L.d.length){
@@ -1623,6 +1673,7 @@ function normText(s){
   s = String(s||"").toLowerCase();
   try{ s = s.normalize("NFD").replace(/[̀-ͯ]/g, ""); }catch(e){}
   s = s.replace(/[ً-ْٰـ]/g, "");            // Arabic harakat + tatweel
+  s = s.replace(/[أإآٱ]/g, "ا").replace(/ى/g, "ي").replace(/ؤ/g, "و").replace(/ئ/g, "ي"); // alef/hamza variants (Uthmani ↔ plain)
   s = s.replace(/[^\p{L}\p{N}\s]/gu, " ");
   return s.replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "");
 }
@@ -1873,10 +1924,11 @@ function renderStory(area, r){
 /* =========================================================================
    REVIEW — the daily SRS session over due cards. Again / Good / Easy.
    ========================================================================= */
+function reviewHost(){ return state.deckOverride === "quran" ? $("quranArea") : $("practiceArea"); }
 function startReview(){
   var due = srsDue();
-  setMode("practice");
-  var area = $("practiceArea"); clear(area);
+  if(state.deckOverride !== "quran") setMode("practice");
+  var area = reviewHost(); clear(area);
   if(!due.length){
     var box = el("div","result");
     box.appendChild(el("div",null,"✅ Nothing due — your deck is fresh."));
@@ -1888,9 +1940,9 @@ function startReview(){
   renderReview();
 }
 function renderReview(){
-  var area = $("practiceArea"); clear(area);
+  var area = reviewHost(); clear(area);
   var R = state.review; if(!R) return;
-  var bcp = bcpForLang(state.lang, state.dialect);
+  var bcp = state.deckOverride === "quran" ? "ar-SA" : bcpForLang(state.lang, state.dialect);
   if(R.i >= R.cards.length){
     var done = el("div","result");
     var h = el("div"); h.style.fontWeight = "700"; h.style.fontSize = "17px"; h.textContent = "Review complete — " + R.cards.length + " cards 🔁";
@@ -1903,7 +1955,7 @@ function renderReview(){
   var it = R.cards[R.i], c = it.c;
   area.appendChild(el("div","hint","Review " + (R.i+1) + " of " + R.cards.length));
   var box = el("div","result"); box.style.textAlign = "center";
-  box.appendChild(el("div","mn","Recall this in " + variantName() + ":"));
+  box.appendChild(el("div","mn", state.deckOverride === "quran" ? "Recite from memory:" : "Recall this in " + variantName() + ":"));
   var f = el("div"); f.style.fontSize = "22px"; f.style.fontWeight = "600"; f.style.margin = "10px 0"; f.textContent = c.f;
   box.appendChild(f);
   if(!R.revealed){
@@ -1912,7 +1964,8 @@ function renderReview(){
     box.appendChild(sa);
   } else {
     var brow = el("div","target-row"); brow.style.justifyContent = "center";
-    var b = el("div","target"); b.textContent = c.b; if(state.lang.rtl) b.style.direction = "rtl";
+    var b = el("div","target"); b.textContent = c.b;
+    if((state.lang && state.lang.rtl) || state.deckOverride === "quran") b.style.direction = "rtl";
     brow.appendChild(b); brow.appendChild(speakBtn(c.b, bcp));
     box.appendChild(brow);
     if(c.p) box.appendChild(el("div","pron","🗣 " + c.p));
@@ -2019,7 +2072,10 @@ function sendChat(seed){
 var PROG_KEY = "lingua.progress.v1";
 function loadProg(){ try{ return JSON.parse(localStorage.getItem(PROG_KEY) || "{}") || {}; }catch(e){ return {}; } }
 function saveProg(p){ try{ localStorage.setItem(PROG_KEY, JSON.stringify(p)); }catch(e){} }
-function progKey(){ return state.lang ? (state.dialect ? state.lang.id + ":" + state.dialect.id : state.lang.id) : ""; }
+function progKey(){
+  if(state.deckOverride) return state.deckOverride; // e.g. the Qur'an hifz deck
+  return state.lang ? (state.dialect ? state.lang.id + ":" + state.dialect.id : state.lang.id) : "";
+}
 function isDone(topicId){ var p = loadProg()[progKey()] || {}; return !!p[topicId]; }
 function setDone(topicId, v){ var all = loadProg(), k = progKey(), p = all[k] || {}; if(v) p[topicId] = true; else delete p[topicId]; all[k] = p; saveProg(all); }
 function syncTopicChips(){
@@ -2230,6 +2286,293 @@ function liveStop(){
   if(s) s.textContent = "Stopped. Tap Start to listen again.";
 }
 
+/* =========================================================================
+   QUR'AN STUDIO — read, memorize (hifz), recite, understand.
+   Design rule: the Qur'anic TEXT and AUDIO are never AI-generated. Text is the
+   Tanzil-verified Uthmani mushaf + Saheeh International translation +
+   transliteration, fetched from the AlQuran.cloud API and cached on-device;
+   recitation audio is Mishary Rashid Alafasy per ayah from the Islamic Network
+   CDN. The AI is used ONLY for clearly-labelled study explanations.
+   ========================================================================= */
+var Q_API = "https://api.alquran.cloud/v1";
+var Q_AUDIO = "https://cdn.islamic.network/quran/audio/128/ar.alafasy/"; // + globalAyah + ".mp3"
+var Q_CACHE_KEY = "lingua.quran.v1";
+var qstate = { index:null, n:0, data:null, mode:"read", tr:true, tl:false, audio:null, hifz:null, recite:null };
+
+function qCacheGet(k){ try{ var a = JSON.parse(localStorage.getItem(Q_CACHE_KEY) || "{}"); return a[k] || null; }catch(e){ return null; } }
+function qCachePut(k, v){
+  try{
+    var a = JSON.parse(localStorage.getItem(Q_CACHE_KEY) || "{}");
+    a[k] = v; localStorage.setItem(Q_CACHE_KEY, JSON.stringify(a));
+  }catch(e){ /* storage full — cache is best-effort */ }
+}
+function qFetch(url){
+  return fetch(url).then(function(r){
+    if(!r || !r.ok) throw new Error("quran api " + (r && r.status));
+    return r.json();
+  }).then(function(j){
+    if(!j || j.code !== 200 || !j.data) throw new Error("quran api shape");
+    return j.data;
+  });
+}
+function qError(msg){
+  var area = $("quranArea"); clear(area);
+  var box = el("div","result");
+  box.appendChild(el("div","err", msg));
+  box.appendChild(el("div","hint","The Qur'an text comes from the verified AlQuran.cloud source, so the first load of each surah needs an internet connection. Once loaded, it's cached on this device."));
+  var retry = el("button","btn sec"); retry.type = "button"; retry.textContent = "Try again"; retry.style.marginTop = "10px";
+  on(retry,"click",function(){ qstate.index ? qLoadSurah(qstate.n || 1) : openQuran(); });
+  box.appendChild(retry);
+  area.appendChild(box);
+}
+
+function openQuran(){
+  state.deckOverride = "quran";
+  hide($("picker")); hide($("quranEntry")); hide($("workspace")); hide($("historyPanel"));
+  show($("quranPanel"));
+  renderStats();
+  if(qstate.index){ qBuildSelect(); qLoadSurah(qstate.n || 1); return; }
+  var cached = qCacheGet("index");
+  if(cached){ qstate.index = cached; qBuildSelect(); qLoadSurah(1); return; }
+  busy($("quranArea"), "Loading the surah index…");
+  qFetch(Q_API + "/surah").then(function(list){
+    qstate.index = list.map(function(s){
+      return { n:s.number, ar:s.name, en:s.englishName, meaning:s.englishNameTranslation, ayahs:s.numberOfAyahs, place:s.revelationType };
+    });
+    qCachePut("index", qstate.index);
+    qBuildSelect(); qLoadSurah(1);
+  }).catch(function(){ qError("Couldn't load the surah index."); });
+}
+function closeQuran(){
+  state.deckOverride = null;
+  qAudioStop();
+  hide($("quranPanel")); show($("picker")); show($("quranEntry"));
+  renderStats();
+}
+function qBuildSelect(){
+  var sel = $("qSurah"); clear(sel);
+  for(var i=0;i<qstate.index.length;i++){
+    var s = qstate.index[i];
+    var o = el("option"); o.value = s.n;
+    o.textContent = s.n + ". " + s.en + " — " + s.ar + " · " + s.ayahs + " ayahs";
+    sel.appendChild(o);
+  }
+  sel.value = qstate.n || 1;
+}
+function qSurahMeta(){ return (qstate.index || []).filter(function(s){ return s.n === qstate.n; })[0] || {}; }
+function qLoadSurah(n){
+  qstate.n = n; qAudioStop();
+  var cached = qCacheGet("s" + n);
+  if(cached){ qstate.data = cached; qRender(); return; }
+  busy($("quranArea"), "Loading surah…");
+  qFetch(Q_API + "/surah/" + n + "/editions/quran-uthmani,en.sahih,en.transliteration").then(function(eds){
+    var byId = {};
+    for(var i=0;i<eds.length;i++){ byId[(eds[i].edition && eds[i].edition.identifier) || i] = eds[i].ayahs || []; }
+    var ar = byId["quran-uthmani"] || eds[0].ayahs || [];
+    var tr = byId["en.sahih"] || [];
+    var tl = byId["en.transliteration"] || [];
+    var ayahs = [];
+    for(var j=0;j<ar.length;j++){
+      ayahs.push({
+        n: ar[j].numberInSurah, g: ar[j].number, ar: ar[j].text,
+        tr: tr[j] ? tr[j].text : "", tl: tl[j] ? tl[j].text : ""
+      });
+    }
+    if(!ayahs.length) throw new Error("empty surah");
+    qstate.data = ayahs;
+    qCachePut("s" + n, ayahs);
+    qRender();
+  }).catch(function(){ qError("Couldn't load this surah."); });
+}
+function qAudioStop(){ if(qstate.audio){ try{ qstate.audio.pause(); }catch(e){} qstate.audio = null; } }
+function qPlay(g){
+  try{
+    if(typeof Audio === "undefined") return;
+    qAudioStop();
+    var a = new Audio(Q_AUDIO + g + ".mp3");
+    qstate.audio = a;
+    a.play()["catch"](function(){});
+  }catch(e){}
+}
+function qSetMode(m){
+  qstate.mode = m;
+  var ids = { read:"qmRead", hifz:"qmHifz", recite:"qmRecite", review:"qmReview" };
+  for(var k in ids){ if(ids.hasOwnProperty(k)) $(ids[k]).setAttribute("aria-selected", k===m ? "true" : "false"); }
+  if(m === "review"){ startReview(); return; }
+  qRender();
+}
+function qCardId(a){ return "Surah " + (qSurahMeta().en || qstate.n) + " " + qstate.n + ":" + a.n + " — recite from memory"; }
+function qAddHifz(a){
+  srsAddMany([{ front: qCardId(a), back: a.ar, pronunciation: a.tl || "" }]);
+  renderStats();
+}
+
+/* ---- READ ---- */
+function qRender(){
+  var meta = qSurahMeta();
+  $("qSubtitle").textContent = meta.en ? (meta.en + " · " + (meta.meaning || "") + " · " + (meta.place || "")) : "";
+  if(qstate.mode === "hifz"){ qRenderHifz(); return; }
+  if(qstate.mode === "recite"){ qRenderRecite(); return; }
+  var area = $("quranArea"); clear(area);
+  var d = qstate.data || [];
+  for(var i=0;i<d.length;i++){
+    (function(a){
+      var card = el("div","ayah");
+      card.appendChild(el("div","num", qstate.n + ":" + a.n));
+      card.appendChild(el("div","ar", a.ar));
+      if(qstate.tl && a.tl) card.appendChild(el("div","tl", a.tl));
+      if(qstate.tr && a.tr) card.appendChild(el("div","tr2", a.tr));
+      var row = el("div","arow");
+      var play = el("button","mini"); play.type="button"; play.textContent = "▶️ Listen";
+      on(play,"click",function(){ qPlay(a.g); });
+      row.appendChild(play);
+      var hz = el("button","mini"); hz.type="button"; hz.textContent = "🧠 Add to hifz";
+      on(hz,"click",function(){ qAddHifz(a); hz.textContent = "✓ In your deck"; hz.disabled = true; });
+      row.appendChild(hz);
+      var ex = el("button","mini"); ex.type="button"; ex.textContent = "🤖 Explain";
+      var expBox = null;
+      on(ex,"click",function(){
+        if(expBox){ card.removeChild(expBox); expBox = null; ex.textContent = "🤖 Explain"; return; }
+        if(!aiAvailable()){
+          expBox = el("div","exp"); expBox.textContent = "Explanations need Live AI — tap the AI pill (top-right) to connect.";
+          card.appendChild(expBox); return;
+        }
+        expBox = el("div","exp"); expBox.appendChild(el("span","spin")); card.appendChild(expBox);
+        callAI({
+          mode:"ask", targetName:"Qur'anic (Classical) Arabic",
+          question: "As a study aid for a Qur'an student, explain surah " + (qSurahMeta().en || qstate.n) + " (" + qstate.n + ":" + a.n + ").\n" +
+            "Use ONLY this verified text — do not quote scripture from memory.\nArabic: " + a.ar + "\nTranslation (Saheeh International): " + a.tr +
+            "\n\nGive: 1) a brief word-by-word gloss, 2) the overall meaning, 3) helpful context. Be concise and respectful; note that for religious rulings the student should consult qualified scholars."
+        }).then(function(r){
+          clear(expBox); expBox.textContent = r.answer || "—";
+        })["catch"](function(){
+          clear(expBox); expBox.textContent = "Couldn't reach the AI just now — try again.";
+        });
+        ex.textContent = "▲ Hide";
+      });
+      row.appendChild(ex);
+      card.appendChild(row);
+      area.appendChild(card);
+    })(d[i]);
+  }
+}
+
+/* ---- MEMORIZE (hifz): listen → skeleton → recall, graded into the SRS deck ---- */
+function qSkeleton(ar){
+  var words = String(ar||"").split(/\s+/), out = [];
+  for(var i=0;i<words.length;i++){ var w = words[i]; out.push(w ? (w.charAt(0) + "ـ ـ") : w); }
+  return out.join("   ");
+}
+function qRenderHifz(){
+  var area = $("quranArea"); clear(area);
+  if(!qstate.hifz || qstate.hifz.surah !== qstate.n) qstate.hifz = { surah:qstate.n, i:0, stage:0 };
+  var H = qstate.hifz, d = qstate.data || [];
+  if(H.i >= d.length){
+    var done = el("div","result");
+    var h = el("div"); h.style.fontWeight="700"; h.style.fontSize="17px";
+    h.textContent = "Ma shaa Allah — you've worked through " + (qSurahMeta().en || "this surah") + " 🎉";
+    done.appendChild(h);
+    done.appendChild(el("div","mn","Every ayah is in your review deck now. The 🔁 Review chip will resurface each one at the right time — that's how hifz sticks."));
+    var again = el("button","btn sec"); again.type="button"; again.textContent = "↻ Start over"; again.style.marginTop="10px";
+    on(again,"click",function(){ qstate.hifz = null; qRenderHifz(); });
+    done.appendChild(again);
+    area.appendChild(done);
+    return;
+  }
+  var a = d[H.i];
+  area.appendChild(el("div","hint","Ayah " + (H.i+1) + " of " + d.length + " · listen, read, then recall from the skeleton"));
+  var card = el("div","ayah");
+  card.appendChild(el("div","num", qstate.n + ":" + a.n));
+  if(H.stage === 0){ card.appendChild(el("div","ar", a.ar)); }
+  else { card.appendChild(el("div","hifz-skel", qSkeleton(a.ar))); }
+  if(a.tl && qstate.tl) card.appendChild(el("div","tl", a.tl));
+  if(a.tr) card.appendChild(el("div","tr2", a.tr));
+  var row = el("div","arow");
+  var play = el("button","mini"); play.type="button"; play.textContent = "▶️ Listen";
+  on(play,"click",function(){ qPlay(a.g); });
+  row.appendChild(play);
+  if(H.stage === 0){
+    var go = el("button","btn"); go.type="button"; go.textContent = "I've read it — hide the words";
+    on(go,"click",function(){ H.stage = 1; qAddHifz(a); qRenderHifz(); });
+    row.appendChild(go);
+  } else {
+    var showBtn = el("button","mini"); showBtn.type="button"; showBtn.textContent = "👁 Show";
+    on(showBtn,"click",function(){ H.stage = 0; qRenderHifz(); });
+    row.appendChild(showBtn);
+    var okB = el("button","btn"); okB.type="button"; okB.textContent = "✓ Recited it";
+    on(okB,"click",function(){
+      srsGradeCard(qCardId(a) + "→" + a.ar, 1); award(3);
+      H.i++; H.stage = 0; qRenderHifz();
+    });
+    row.appendChild(okB);
+    var no = el("button","btn sec"); no.type="button"; no.textContent = "↻ Not yet";
+    on(no,"click",function(){ srsGradeCard(qCardId(a) + "→" + a.ar, 0); H.stage = 0; qRenderHifz(); });
+    row.appendChild(no);
+  }
+  card.appendChild(row);
+  area.appendChild(card);
+}
+
+/* ---- RECITE: say the ayah, scored against the verified text on-device ---- */
+function qRenderRecite(){
+  var area = $("quranArea"); clear(area);
+  if(!speechInOK()){
+    var box = el("div","result");
+    box.appendChild(el("div","err","Speech recognition isn't supported in this browser."));
+    box.appendChild(el("div","hint","Try Chrome, Edge or Safari — Read and Memorize work everywhere."));
+    area.appendChild(box);
+    return;
+  }
+  if(!qstate.recite || qstate.recite.surah !== qstate.n) qstate.recite = { surah:qstate.n, i:0 };
+  var R = qstate.recite, d = qstate.data || [];
+  if(R.i >= d.length){
+    var done = el("div","result");
+    var h = el("div"); h.style.fontWeight="700"; h.style.fontSize="17px"; h.textContent = "Surah complete 🗣✨";
+    done.appendChild(h);
+    var again = el("button","btn sec"); again.type="button"; again.textContent = "↻ Start over"; again.style.marginTop="10px";
+    on(again,"click",function(){ qstate.recite = null; qRenderRecite(); });
+    done.appendChild(again);
+    area.appendChild(done);
+    return;
+  }
+  var a = d[R.i];
+  area.appendChild(el("div","hint","Ayah " + (R.i+1) + " of " + d.length + " · listen, then recite (the score is an approximate aid — recognition of tajwīd is imperfect)"));
+  var card = el("div","ayah");
+  card.appendChild(el("div","num", qstate.n + ":" + a.n));
+  card.appendChild(el("div","ar", a.ar));
+  if(a.tr && qstate.tr) card.appendChild(el("div","tr2", a.tr));
+  var res = el("div"); res.style.minHeight = "52px"; res.style.marginTop = "8px"; res.style.textAlign = "center";
+  card.appendChild(res);
+  var row = el("div","arow"); row.style.justifyContent = "center";
+  var play = el("button","mini"); play.type="button"; play.textContent = "▶️ Listen";
+  on(play,"click",function(){ qPlay(a.g); });
+  row.appendChild(play);
+  var mic = el("button","spk mic"); mic.type="button"; mic.textContent = "🎤"; mic.style.width="52px"; mic.style.height="52px"; mic.style.fontSize="22px";
+  on(mic,"click",function(){
+    listen("ar-SA", mic, function(heard){
+      clear(res);
+      var sc = Math.round(similarity(normText(heard), normText(a.ar)) * 100);
+      var cls = sc >= 75 ? "good" : (sc >= 50 ? "mid" : "bad");
+      res.appendChild(el("div","score " + cls, sc + "%"));
+      if(sc >= 75){
+        res.appendChild(el("div","pr","Beautiful. ✓"));
+        award(5); qAddHifz(a);
+        var nx = el("button","btn"); nx.type="button"; nx.textContent = "Next ayah →"; nx.style.marginTop="6px";
+        on(nx,"click",function(){ R.i++; qRenderRecite(); });
+        res.appendChild(nx);
+      } else {
+        res.appendChild(el("div","hint","Listen once more and match the reciter's rhythm."));
+      }
+    });
+  });
+  row.appendChild(mic);
+  var skip = el("button","mini"); skip.type="button"; skip.textContent = "Skip";
+  on(skip,"click",function(){ R.i++; qRenderRecite(); });
+  row.appendChild(skip);
+  card.appendChild(row);
+  area.appendChild(card);
+}
+
 /* ---- SAVED TRANSLATIONS view ---- */
 function renderHist(){
   var list = $("histList"); clear(list);
@@ -2270,7 +2613,7 @@ function init(){
   buildTopicChips();
 
   on($("langSearch"),"input",function(e){ buildLangGrid(e.target.value); });
-  on($("changeLang"),"click",function(){ show($("picker")); hide($("workspace")); try{window.scrollTo(0,0);}catch(_){} });
+  on($("changeLang"),"click",function(){ show($("picker")); show($("quranEntry")); hide($("workspace")); try{window.scrollTo(0,0);}catch(_){} });
 
   on($("tabLearn"),"click",function(){ setMode("learn"); renderLearn(); });
   on($("tabTranslate"),"click",function(){ setMode("translate"); });
@@ -2323,6 +2666,17 @@ function init(){
     $("liveSpeakToggle").setAttribute("aria-selected", live.speak ? "true" : "false");
   });
   on($("liveClear"),"click",function(){ clear($("liveFeed")); live.interimEl = null; });
+
+  // Qur'an studio
+  on($("quranOpen"),"click",openQuran);
+  on($("quranClose"),"click",closeQuran);
+  on($("qSurah"),"change",function(e){ qstate.hifz = null; qstate.recite = null; qLoadSurah(parseInt(e.target.value, 10) || 1); });
+  on($("qmRead"),"click",function(){ qSetMode("read"); });
+  on($("qmHifz"),"click",function(){ qSetMode("hifz"); });
+  on($("qmRecite"),"click",function(){ qSetMode("recite"); });
+  on($("qmReview"),"click",function(){ qSetMode("review"); });
+  on($("qTrToggle"),"click",function(){ qstate.tr = !qstate.tr; $("qTrToggle").setAttribute("aria-selected", qstate.tr ? "true":"false"); if(qstate.mode !== "review") qRender(); });
+  on($("qTlToggle"),"click",function(){ qstate.tl = !qstate.tl; $("qTlToggle").setAttribute("aria-selected", qstate.tl ? "true":"false"); if(qstate.mode !== "review") qRender(); });
 
   // Speech input (mic) — translate uses the "from" language; chat uses the target.
   wireMic($("translateMic"),
