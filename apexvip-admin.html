@@ -729,8 +729,13 @@ dashboard:()=>`<div class="screen">
     const p=ApexEngine.buildPulse(ts,new Date());
     if(!p.ready) return '';
     const now=new Date(); const heat=ApexEngine.heatAt(p,now); const peak=ApexEngine.nextPeak(p,now);
+    // "Open jobs" = genuinely unclaimed AND due now — a booking already
+    // assigned to a driver, or dated next week, is not scarcity pressure.
+    const todayISO=new Date().toISOString().slice(0,10);
+    const openNow=BOOKINGS.filter(b=>['pending','confirmed','offered'].includes(b.status)
+      &&!b.driverId&&(!b.date||b.date<=todayISO)).length;
     const surge=(typeof ApexEngine.yieldMultiplier==='function')?ApexEngine.yieldMultiplier({
-      openJobs:BOOKINGS.filter(b=>['pending','confirmed','offered'].includes(b.status)).length,
+      openJobs:openNow,
       idleDrivers:DRIVERS.filter(d=>d.status==='online').length,heat,previous:S._yieldPrev||1}):null;
     if(surge)S._yieldPrev=surge.multiplier;
     return `<div class="card" style="margin-bottom:20px;display:flex;gap:26px;align-items:center;flex-wrap:wrap">
@@ -832,17 +837,28 @@ bookings:()=>{const f=S.bFilter;const list=f==='all'?BOOKINGS:BOOKINGS.filter(b=
         ranked = ApexCore.discreteMode(bk, avail).drivers.map(d=>({...d,_score:d.discreteTotal!==undefined?d.discreteTotal:d.matchScore,_label:'pts'}));
       } else if(typeof ApexEngine!=='undefined' && ApexEngine.rankDrivers){
         // ApexMatch™ — explainable six-factor ranking from the shared engine.
+        // NOTE: no `compliant` gate here — confirmDispatch() already blocks a
+        // non-compliant assignment with the specific reason, and hard-gating
+        // in the ranking emptied this list ("No available drivers") whenever
+        // document review was incomplete or the vehicles snapshot hadn't
+        // landed yet. Every online driver stays VISIBLE; the engine ranks the
+        // suitable ones and the unsuitable are listed below with the reason.
         const paxM=String((ref._raw&&ref._raw.notes)||'').match(/\b(\d+)\s*(?:people|pax|passengers)\b/i);
         const job = {vehicle:(ref._raw&&ref._raw.vehicle)||'S-Class',passengers:paxM?parseInt(paxM[1],10):0,
           clientTier:(CLIENTS.find(c=>c.id===ref.clientId)||{}).tier||'standard'};
         const results = ApexEngine.rankDrivers(avail.map(d=>({
           id:d.id,rating:d.rating,ratingCount:d.ratingCount||0,vehicle:d.model||d.vehicle,
-          compliant:typeof computeCompliance==='function'?computeCompliance(d).ok:undefined,status:'online',
+          status:'online',
         })), job);
         const byId = Object.fromEntries(results.map(r=>[r.id,r]));
-        ranked = avail.filter(d=>byId[d.id]).sort((a,b)=>byId[b.id].score-byId[a.id].score)
+        const scored = avail.filter(d=>byId[d.id]).sort((a,b)=>byId[b.id].score-byId[a.id].score)
           .map(d=>({...d,_score:byId[d.id].score,_label:'ApexMatch™',
-            _why:`perf ${(byId[d.id].factors.performance*100|0)} · fit ${(byId[d.id].factors.vehicleFit*100|0)}`}));
+            _why:`perf ${(byId[d.id].factors.performance*100|0)} · fit ${(byId[d.id].factors.vehicleFit*100|0)}`
+              +(typeof computeCompliance==='function'&&!computeCompliance(d).ok?' · ⚠ compliance':'')}));
+        // Vehicle-unfit drivers (e.g. saloon vs a 6-passenger job) stay listed,
+        // unranked, with the reason — never silently vanished.
+        const unfit = avail.filter(d=>!byId[d.id]).map(d=>({...d,_score:null,_why:'⚠ vehicle not suited to this job'}));
+        ranked = scored.concat(unfit);
       } else {
         ranked = avail.map(d=>({...d,_score:null}));
       }

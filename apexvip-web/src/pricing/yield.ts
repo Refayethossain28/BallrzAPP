@@ -76,7 +76,10 @@ export function yieldMultiplier(input: YieldInput): YieldQuote {
   const open = Math.max(0, Number(input.openJobs) || 0);
   const idle = Math.max(0, Number(input.idleDrivers) || 0);
   const heat = Number.isFinite(input.heat) ? Math.max(0, input.heat!) : 1;
-  const prev = clamp(Number(input.previous) || 1, YIELD_FLOOR, YIELD_CAP);
+  // Snap `previous` onto the 0.05 grid FIRST: stepping from an off-grid value
+  // and then quantizing could move up to step + quantum/2, violating the
+  // ±0.05 hysteresis promise for consumers that persist their own previous.
+  const prev = clamp(quantize(Number(input.previous) || 1), YIELD_FLOOR, YIELD_CAP);
 
   // Pressure: live scarcity plus a gentle predictive pre-warm from ApexPulse.
   const pressure = open / Math.max(1, idle) + HEAT_WEIGHT * Math.max(0, heat - 1);

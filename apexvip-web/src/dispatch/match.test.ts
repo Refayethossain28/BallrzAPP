@@ -72,3 +72,14 @@ test('haversine: London → Heathrow is ~23 km', () => {
   const km = haversineKm(51.5074, -0.1278, 51.47, -0.4543);
   assert.ok(km > 20 && km < 27, String(km));
 });
+
+test('non-numeric acceptRate cannot poison the score into NaN', () => {
+  const bad = matchScore(D({ id: 'bad', acceptRate: NaN }), {})!;
+  assert.ok(Number.isFinite(bad.score), String(bad.score));
+  const worded = matchScore(D({ id: 'w', acceptRate: '90%' as unknown as number }), {})!;
+  assert.ok(Number.isFinite(worded.score));
+  // Ranking stays deterministic with a poisoned driver in the pool.
+  const r = rankDrivers([D({ id: 'bad', acceptRate: NaN }), D({ id: 'ok' })], {});
+  assert.equal(r.length, 2);
+  assert.ok(r.every(x => Number.isFinite(x.score)));
+});
