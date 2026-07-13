@@ -62,6 +62,21 @@
     resume(){ try { this.instance && this.instance.play();  }catch(e){} },
     stop(){   try { this.instance && this.instance.stop();  }catch(e){} },
     next(){   try { this.instance && this.instance.skipToNextItem(); }catch(e){} },
+
+    // search the Apple Music catalog for a song and loop it (used for the
+    // built-in "named song" soundtrack cards, e.g. Buck Rogers by Feeder)
+    async playSong(term){
+      if (!this.instance || !term) return false;
+      try {
+        const sf = this.instance.storefrontId || 'us';
+        const r = await this.instance.api.music('/v1/catalog/'+sf+'/search', { term, types:'songs', limit:1 });
+        const hits = r && r.data && r.data.results && r.data.results.songs && r.data.results.songs.data;
+        const song = hits && hits[0]; if (!song) return false;
+        await this.instance.setQueue({ song: song.id });
+        try { this.instance.repeatMode = window.MusicKit.PlayerRepeatMode.one; } catch(e){}
+        await this.instance.play(); return true;
+      } catch(e){ console.warn('[AppleMusic] playSong failed', e); return false; }
+    },
     isPlaying(){ try { return !!(this.instance && this.instance.isPlaying); }catch(e){ return false; } },
     nowPlayingTitle(){
       try { const i=this.instance && this.instance.nowPlayingItem; return i ? (i.title || (i.attributes && i.attributes.name) || '') : ''; }

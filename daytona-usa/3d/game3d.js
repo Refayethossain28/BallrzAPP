@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R63 — realistic cockpit';
+const BUILD = 'BUILD R64 — Buck Rogers soundtrack';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -2675,16 +2675,20 @@ function startRace(){
 
 // ---- race soundtrack: the chosen soundtrack (intro once -> loop) ----
 let _raceAudio = { intro:null, loop:null };
-function appleActive(){ return G.soundtrack==='applemusic' && window.AppleMusic && window.AppleMusic.authorized; }
+function appleActive(){ const st=SOUNDTRACKS[G.soundtrack]; return !!(st && st.apple && window.AppleMusic && window.AppleMusic.authorized); }
 function startRaceMusic(){
   stopRaceMusic();
   if (window.GameMusic && window.GameMusic.stop){ try{ window.GameMusic.stop(); }catch(e){} }   // silence procedural menu music
   if (appleActive()){   // stream the player's own Apple Music instead of a built-in track
-    if (G.applePlaylist) window.AppleMusic.playPlaylist(G.applePlaylist);
+    const st=SOUNDTRACKS[G.soundtrack];
+    if (st.song) window.AppleMusic.playSong(st.song);             // named-song card (Buck Rogers)
+    else if (G.applePlaylist) window.AppleMusic.playPlaylist(G.applePlaylist);
     else window.AppleMusic.resume();
     return;
   }
-  const st = SOUNDTRACKS[G.soundtrack] || SOUNDTRACKS.daytona;
+  // an Apple-backed card without a connected account falls back to the classic theme
+  let st = SOUNDTRACKS[G.soundtrack] || SOUNDTRACKS.daytona;
+  if (st.apple) st = SOUNDTRACKS.daytona;
   try {
     const intro = new Audio(st.intro); intro.volume=0.75;
     const loop  = new Audio(st.loop);  loop.loop=true; loop.volume=0.75;
@@ -2914,6 +2918,7 @@ function showEndScreen(win){
 const SOUNDTRACKS = {
   daytona: { name:'DAYTONA', icon:'🏁', desc:'The original — big arcade theme', intro:'./audio/intro.mp3',      loop:'./audio/soundtrack.mp3' },
   heat:    { name:'HEAT',    icon:'🌆', desc:'Driving synth groove',           intro:'./audio/heat-intro.mp3', loop:'./audio/heat-soundtrack.mp3' },
+  buckrogers:{ name:'BUCK ROGERS', icon:'🚀', desc:'Feeder — via your Apple Music', apple:true, song:'buck rogers feeder' },
   applemusic:{ name:'APPLE MUSIC', icon:'🍎', desc:'Stream from your library', apple:true },
 };
 let selApplePlaylist=null, selApplePlaylistName='';
@@ -3062,7 +3067,12 @@ function showSoundtrackSelect(){
       <button class="btn ghost" id="backBtn">◀ BACK</button>
       <button class="btn" id="goBtn">GREEN FLAG ▶</button>
     </div></div>`);
-  wireCards('data-snd', i=>{ selSnd=keys[i]; if (selSnd==='applemusic') showAppleMusic(); else showSoundtrackSelect(); });
+  wireCards('data-snd', i=>{ selSnd=keys[i];
+    const s=SOUNDTRACKS[selSnd];
+    // playlist streaming always opens the Apple screen; a named-song card
+    // (Buck Rogers) only needs it when the account isn't connected yet
+    if (selSnd==='applemusic' || (s.apple && !(window.AppleMusic && window.AppleMusic.authorized))) showAppleMusic();
+    else showSoundtrackSelect(); });
   wireCards('data-tod', i=>{ selTod=TOD_ITEMS[i].key; showSoundtrackSelect(); });
   wireCards('data-wx',  i=>{ selWx=WX_ITEMS[i].key; showSoundtrackSelect(); });
   document.getElementById('backBtn').onclick = G.champ ? showVehicleSelect : showCircuitSelect;
