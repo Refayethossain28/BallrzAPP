@@ -2632,9 +2632,22 @@ function liveStart(){
     liveInterim(interim.replace(/^\s+|\s+$/g, ""));
   };
   r.onerror = function(e){
-    if(e && (e.error === "not-allowed" || e.error === "service-not-allowed")){
+    var code = e && e.error;
+    var standalone = false;
+    try{ standalone = (window.navigator && navigator.standalone === true) || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches === true); }catch(err){}
+    if(code === "not-allowed"){
       liveStop();
-      status.textContent = "Microphone permission was blocked — allow it in the browser settings and try again.";
+      status.textContent = standalone
+        ? "Microphone blocked. iPhone home-screen apps can't use speech recognition — open this page in the Safari app instead, then: tap ᴬᴬ in the address bar → Website Settings → Microphone → Allow."
+        : "Microphone permission was blocked. iPhone: tap ᴬᴬ in the address bar → Website Settings → Microphone → Allow, and check Settings → Privacy & Security → Microphone → Safari is ON. Then reload and try again.";
+    } else if(code === "service-not-allowed"){
+      liveStop();
+      status.textContent = standalone
+        ? "iOS doesn't allow speech recognition inside the installed home-screen app — open this page in the Safari app itself and it will work. Also make sure Settings → General → Keyboard → Dictation is ON."
+        : "The device's speech service refused. On iPhone, turn ON Settings → General → Keyboard → Dictation, then reload and try again.";
+    } else if(code === "audio-capture"){
+      liveStop();
+      status.textContent = "No usable microphone was found — check that nothing else is holding the mic and try again.";
     }
     // "no-speech" / "aborted" are routine pauses; onend's auto-restart handles them
   };
