@@ -106,14 +106,28 @@ jobs:
           && echo "::notice title=linguaAI deployed::Lingua hosted AI is live." \
           || echo "::warning title=linguaAI deploy failed::See this step's log for the exact permission/API missing."
 
-      # Rules are the critical part — this step must succeed.
-      - name: Deploy Firestore + Storage rules
+      # Firestore rules are the security-critical part — this step must succeed
+      # and must never be blocked by anything else.
+      - name: Deploy Firestore rules
         if: steps.gate.outputs.ok == 'true'
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
         run: |
-          firebase deploy --only firestore:rules,storage \
+          firebase deploy --only firestore:rules \
             --project apexvip-1b4a9 --non-interactive --force
+
+      # Storage rules deploy separately: until Firebase Storage is initialized
+      # on the project (console → Storage → Get started) the default bucket
+      # doesn't exist and this fails — which must NOT block the Firestore rules.
+      - name: Deploy Storage rules (best effort until Storage is initialized)
+        if: steps.gate.outputs.ok == 'true'
+        continue-on-error: true
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          firebase deploy --only storage \
+            --project apexvip-1b4a9 --non-interactive --force \
+            || echo "::warning title=Storage rules not deployed::Initialize Firebase Storage on apexvip-1b4a9 (console → Storage → Get started), then re-run this workflow."
 
       # Indexes deploy with the same credentials as the (mandatory) rules deploy
       # above — a silent index failure surfaces only as broken queries in prod,
