@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R71 — V-Class LED taillights';
+const BUILD = 'BUILD R72 — V-Class corner lamps';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -997,6 +997,7 @@ function decal(tex, w, h){ return new THREE.Mesh(new THREE.PlaneGeometry(w,h), n
 // LED taillights and UK yellow plates.
 function addVanBody(g, liv, hero, W, L){
   const body=paintMat(liv.body, hero), dark=matteMat(0x0d0f13), chrome=chromeMat();
+  body.envMapIntensity=Math.min(body.envMapIntensity,1.3);   // keep the black paint OBSIDIAN — sky reflections washed it grey
   const glass=glassMat(false);                                  // privacy tint — opaque black glass
   g.add(extrudeCar(VAN_LOWER, W, 0.07, body));                  // lower hull
   g.add(extrudeCar(VAN_GLASS, W-0.14, 0.04, glass));            // tinted glasshouse band
@@ -1030,11 +1031,10 @@ function addVanBody(g, liv, hero, W, L){
   const tlLed=new THREE.MeshStandardMaterial({color:0xff4038, emissive:0xe0140e, emissiveIntensity:1.1, roughness:0.3});
   g.userData.brakeMats = g.userData.brakeMats||[];
   for (const sx of [-1,1]){
-    g.add(lmBox(tlHouse, 0.60,0.135,0.06, sx*0.70, 1.40, -2.655));          // main lamp
-    g.add(lmBox(tlHouse, 0.22,0.095,0.06, sx*0.31, 1.38, -2.652));          // tapered inner tip
-    g.add(lmBox(tlLed,   0.52,0.045,0.065, sx*0.70, 1.41, -2.66));          // LED blade
-    g.add(lmBox(tlHouse, 0.06,0.135,0.28, sx*(W/2+0.005), 1.40, -2.49));    // wrap onto the side
-    g.add(lmBox(tlLed,   0.065,0.045,0.22, sx*(W/2+0.012), 1.41, -2.49));   // side LED sliver
+    g.add(lmBox(tlHouse, 0.44,0.14,0.06, sx*0.77, 1.40, -2.655));           // corner lamp only —
+    g.add(lmBox(tlLed,   0.36,0.05,0.065, sx*0.77, 1.41, -2.66));           // wide body-colour gap between
+    g.add(lmBox(tlHouse, 0.06,0.14,0.26, sx*(W/2+0.005), 1.40, -2.50));     // wrap onto the side
+    g.add(lmBox(tlLed,   0.065,0.05,0.20, sx*(W/2+0.012), 1.41, -2.50));    // side LED sliver
   }
   g.userData.brakeMats.push(tlLed);
   g.add(lmBox(chrome, 1.5,0.04,0.05, 0,1.26,-2.665));
@@ -1118,7 +1118,7 @@ function buildCar(vehicle, lite){
   // additive red glow behind the taillights (blooms under braking)
   const glowMat=new THREE.MeshBasicMaterial({map:glowTex(0xff2a1a), transparent:true, opacity:0.0, depthWrite:false, blending:THREE.AdditiveBlending, fog:false});
   g.userData.tailGlow=[];
-  for (const sx of [-0.82,0.82]){ const q=new THREE.Mesh(new THREE.PlaneGeometry(1.5,1.1), glowMat.clone()); q.position.set(sx,VAN?1.42:0.82,-L*0.5-0.2); q.rotation.y=Math.PI; q.userData.noShadow=true; g.add(q); g.userData.tailGlow.push(q); }
+  for (const sx of [-0.82,0.82]){ const q=new THREE.Mesh(new THREE.PlaneGeometry(VAN?0.8:1.5, VAN?0.5:1.1), glowMat.clone()); q.position.set(VAN?sx*0.95:sx,VAN?1.41:0.82,-L*0.5-0.2); q.rotation.y=Math.PI; q.userData.noShadow=true; g.add(q); g.userData.tailGlow.push(q); }
   // a faint contact patch under the car — grounds distant cars that fall outside
   // the (tight) real-time shadow frustum; subtle so it doesn't double the shadow.
   { const sh=new THREE.Mesh(new THREE.PlaneGeometry(W*1.7,L*1.1), new THREE.MeshBasicMaterial({map:blobTex(), transparent:true, opacity:0.28, depthWrite:false, fog:false}));
@@ -2200,8 +2200,9 @@ function render(){
     // chase camera — behind + above the car, ALWAYS world-up (never inverts/rolls
     // badly), finiteness-guarded. Height uses world up so the camera is always above.
     const camLat = G.offset * 0.30;
+    const tall = (G.vehicle && G.vehicle.kind==='van') ? 1 : 0;   // the V-Class roof needs a higher, further camera
     worldPos(G.dist, camLat, _tmp);
-    _camPos.copy(_tmp).addScaledVector(f.tan,-11); _camPos.y += 5.2;
+    _camPos.copy(_tmp).addScaledVector(f.tan,-(11+tall*2.5)); _camPos.y += 5.2+tall*1.3;
     _look.copy(_tmp).addScaledVector(f.tan, 16);   _look.y += 4.4;
     if (finite(_camPos) && finite(_look)){
       camera.position.lerp(_camPos, 0.25);
