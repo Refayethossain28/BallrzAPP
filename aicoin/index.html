@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#07090f">
+<title>AI Token (AIT) — mine AI tokens</title>
+<meta name="description" content="A proof-of-work cryptocurrency where the miner mines AI tokens: 1 spark = 1 model token of inference. Every tab is a full node.">
+<style>
+  :root {
+    --bg: #07090f; --panel: #0d1220; --panel2: #111831; --line: #1e2a4a;
+    --ink: #e8eefc; --dim: #8b9bc4; --faint: #55648f;
+    --ai: #7c5cff; --ai2: #38d6ff; --ok: #33d69f; --warn: #ffb020; --bad: #ff5c7a;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding-bottom: 48px;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 0 16px; }
+  header { padding: 34px 0 10px; }
+  h1 { margin: 0; font-size: 30px; letter-spacing: -0.5px; }
+  h1 .tick { background: linear-gradient(90deg, var(--ai), var(--ai2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .tag { color: var(--dim); margin: 6px 0 0; max-width: 62ch; }
+  .tag b { color: var(--ink); }
+  .stats { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; min-width: 128px; flex: 1; }
+  .stat .k { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--faint); }
+  .stat .v { font-family: var(--mono); font-size: 16px; margin-top: 2px; word-break: break-all; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 840px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
+  .card.wide { grid-column: 1 / -1; }
+  h2 { margin: 0 0 4px; font-size: 17px; }
+  h2 .em { color: var(--ai2); }
+  .sub { color: var(--dim); font-size: 13px; margin: 0 0 12px; }
+  .mono { font-family: var(--mono); }
+  .addr { font-family: var(--mono); font-size: 12.5px; color: var(--ai2); word-break: break-all; }
+  .big { font-size: 26px; font-family: var(--mono); }
+  .tokens { color: var(--ok); font-family: var(--mono); }
+  label { display: block; font-size: 12px; color: var(--faint); text-transform: uppercase; letter-spacing: 1px; margin: 10px 0 4px; }
+  input, textarea {
+    width: 100%; background: var(--panel2); border: 1px solid var(--line); border-radius: 9px;
+    color: var(--ink); padding: 9px 11px; font-family: var(--mono); font-size: 13.5px;
+  }
+  textarea { min-height: 84px; resize: vertical; font-family: inherit; }
+  input:focus, textarea:focus { outline: none; border-color: var(--ai); }
+  button {
+    background: linear-gradient(90deg, var(--ai), #5a3df0); color: #fff; border: 0; border-radius: 9px;
+    padding: 10px 16px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 12px;
+  }
+  button.ghost { background: var(--panel2); border: 1px solid var(--line); color: var(--dim); font-weight: 500; }
+  button.mine { background: linear-gradient(90deg, #0ea5b7, var(--ai2)); color: #04222b; width: 100%; padding: 13px; font-size: 16px; }
+  button.mine.on { background: linear-gradient(90deg, var(--bad), #ff8f5c); color: #2b0410; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .row { display: flex; gap: 10px; align-items: end; }
+  .row > div { flex: 1; }
+  .msg { font-size: 13px; margin-top: 10px; min-height: 18px; color: var(--dim); word-break: break-word; }
+  .msg.ok { color: var(--ok); } .msg.bad { color: var(--bad); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--faint); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; padding: 6px 8px; }
+  td { padding: 7px 8px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 12.5px; }
+  .pill { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: 11.5px; font-family: var(--mono); }
+  .pill.ok { background: rgba(51, 214, 159, 0.12); color: var(--ok); }
+  .pill.warn { background: rgba(255, 176, 32, 0.12); color: var(--warn); }
+  .pill.bad { background: rgba(255, 92, 122, 0.12); color: var(--bad); }
+  .receipt { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-top: 10px; background: var(--panel2); }
+  .receipt .p { font-size: 13.5px; margin: 0 0 6px; color: var(--ink); }
+  .receipt .m { font-family: var(--mono); font-size: 11.5px; color: var(--faint); word-break: break-all; }
+  .spark { color: var(--warn); }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; color: var(--dim); font-size: 13px; }
+  .foot { color: var(--faint); font-size: 12.5px; margin-top: 22px; }
+  .foot a { color: var(--dim); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>⛏️🧠 <span class="tick">AI Token</span> <span class="mono" style="font-size:18px;color:var(--faint)">AIT</span></h1>
+    <p class="tag">A proof-of-work blockchain where <b>the miner mines AI tokens</b>. The base unit is
+    the <b class="spark">spark</b>, pegged at <b>1 spark = 1 model token</b> of AI inference —
+    so 1 AIT buys 100,000 tokens, and your balance reads as compute. Every tab of this page is a
+    full node: it keeps the ledger, verifies every rule, and mines.</p>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><div class="k">Block height</div><div class="v" id="stHeight">0</div></div>
+    <div class="stat"><div class="k">Difficulty</div><div class="v" id="stDiff">1</div></div>
+    <div class="stat"><div class="k">Block reward</div><div class="v" id="stReward">128 AIT</div></div>
+    <div class="stat"><div class="k">Mined so far</div><div class="v" id="stSupply">0 / 33,554,432 AIT</div></div>
+    <div class="stat"><div class="k">Mempool</div><div class="v" id="stMempool">0 tx</div></div>
+    <div class="stat"><div class="k">Peers (tabs)</div><div class="v" id="stPeers">0</div></div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>⛏️ Miner — <span class="em">earn AI tokens</span></h2>
+      <p class="sub">Proof-of-work: grind double-SHA-256 nonces until the block hash meets the
+      target. Each block you find pays its coinbase — subsidy plus fees — straight to your wallet, in AIT.</p>
+      <button class="mine" id="mineBtn">▶ Start mining AI tokens</button>
+      <div class="stats" style="margin:12px 0 0">
+        <div class="stat"><div class="k">Hashrate</div><div class="v" id="mnRate">—</div></div>
+        <div class="stat"><div class="k">Blocks found</div><div class="v" id="mnFound">0</div></div>
+        <div class="stat"><div class="k">AIT mined</div><div class="v" id="mnEarned">0 AIT</div></div>
+      </div>
+      <div class="msg" id="mnMsg">Idle. The chain retargets every 10 blocks toward one block per 15 s.</div>
+    </div>
+
+    <div class="card">
+      <h2>👛 Wallet</h2>
+      <p class="sub">secp256k1 keys, base58check address — your AIT and the inference it meters.</p>
+      <div class="addr" id="wAddr"></div>
+      <div class="big" id="wBal" style="margin-top:8px">0 AIT</div>
+      <div class="tokens" id="wTokens">≈ 0 model tokens of inference</div>
+      <div class="row">
+        <div><label>Send to address</label><input id="sendTo" placeholder="B…" autocomplete="off"></div>
+      </div>
+      <div class="row">
+        <div><label>Amount (AIT)</label><input id="sendAmt" placeholder="1.5" inputmode="decimal"></div>
+        <div><label>Fee (AIT)</label><input id="sendFee" placeholder="0" inputmode="decimal"></div>
+        <div><button id="sendBtn">Send</button></div>
+      </div>
+      <div class="msg" id="sendMsg"></div>
+      <details>
+        <summary>Keys — back up / restore</summary>
+        <label>Private key (hex)</label>
+        <input id="privKey" autocomplete="off">
+        <div class="row"><div><button class="ghost" id="showKeyBtn">Reveal</button></div>
+        <div><button class="ghost" id="importKeyBtn">Import key</button></div>
+        <div><button class="ghost" id="newKeyBtn">New wallet</button></div></div>
+        <div class="msg" id="keyMsg">Keys live in this browser's localStorage only — demo-grade custody.</div>
+      </details>
+    </div>
+
+    <div class="card wide">
+      <h2>🧠 Spend AIT on inference — <span class="em">prompt-commitment receipts</span></h2>
+      <p class="sub">Pay for AI by burning sparks to your prompt's commitment address —
+      <span class="mono">base58check(sha256d(prompt)[0..20])</span>. No key exists for that address, so the
+      payment is provably unspendable, commits to your exact prompt without revealing it, and shrinks the
+      AIT supply. Any provider can verify the receipt from the prompt + txId alone.</p>
+      <div class="grid">
+        <div>
+          <label>Prompt</label>
+          <textarea id="prompt" placeholder="Explain proof of work to a five-year-old…"></textarea>
+          <div class="row">
+            <div><label>Model tokens to buy</label><input id="promptTokens" inputmode="numeric" placeholder="1000"></div>
+            <div><label>Cost</label><div class="big" style="font-size:18px" id="promptCost">—</div></div>
+            <div><button id="payBtn">Pay &amp; get receipt</button></div>
+          </div>
+          <div class="msg" id="payMsg"></div>
+        </div>
+        <div>
+          <label>My receipts (prompts stay local — only their hashes are on chain)</label>
+          <div id="receipts"><div class="msg">No receipts yet. Mine some AIT, then pay for a prompt.</div></div>
+        </div>
+      </div>
+      <details>
+        <summary>Verify someone else's receipt (as an inference provider would)</summary>
+        <div class="row">
+          <div><label>Transaction id</label><input id="vTx" autocomplete="off"></div>
+          <div><label>Revealed prompt</label><input id="vPrompt" autocomplete="off"></div>
+          <div><label>Model tokens</label><input id="vTokens" inputmode="numeric"></div>
+          <div><button class="ghost" id="verifyBtn">Verify</button></div>
+        </div>
+        <div class="msg" id="vMsg"></div>
+      </details>
+    </div>
+
+    <div class="card wide">
+      <h2>🔍 Block explorer</h2>
+      <p class="sub">The most recent blocks on the heaviest chain this node knows. Open this page in a second
+      tab: both nodes gossip over BroadcastChannel and converge by cumulative work.</p>
+      <table>
+        <thead><tr><th>Height</th><th>Hash</th><th>Txs</th><th>Coinbase → miner</th><th>Burned</th><th>When</th></tr></thead>
+        <tbody id="blocks"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <p class="foot">A BallrzAPP concept prototype. The consensus core is
+  <a href="../coin/engine.js">coin/engine.js</a> (SHA-256, secp256k1, UTXO, PoW — tested against published
+  vectors); the AI-token layer is <a href="engine.js">aicoin/engine.js</a>, unit-tested in
+  <span class="mono">scripts/test-aicoin-logic.mjs</span>. Demo-grade key storage; see TimeCoin's
+  <a href="../coin/SECURITY.md">SECURITY.md</a> for the honest limitations shared by both chains.</p>
+</div>
+
+<script src="../coin/engine.js"></script>
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+  var Coin = self.BallrzCoin, AI = self.BallrzAI;
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s).replace(/[&<>"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }); };
+
+  /* ---- node state: wallet, chain, receipts — all persisted locally ---- */
+  var WALLET_KEY = 'ballrzai-wallet-v1', CHAIN_KEY = 'ballrzai-chain-v1', RECEIPTS_KEY = 'ballrzai-receipts-v1';
+  var store = {
+    get: function (k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (err) { return null; } },
+    set: function (k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (err) { /* quota — demo data */ } }
+  };
+
+  var wallet = (function () {
+    var saved = store.get(WALLET_KEY);
+    try { if (saved && saved.privateKey) return Coin.walletFromPrivateKey(saved.privateKey); } catch (err) { /* regenerate */ }
+    var w = Coin.generateWallet();
+    store.set(WALLET_KEY, { privateKey: w.privateKey });
+    return w;
+  })();
+
+  var chain = (function () {
+    var saved = store.get(CHAIN_KEY);
+    if (saved && saved.blocks) {
+      try { return Coin.Blockchain.fromJSON({ params: AI.PARAMS, blocks: saved.blocks }); }
+      catch (err) { /* corrupt/stale — start fresh */ }
+    }
+    return AI.createChain();
+  })();
+  function persistChain() { store.set(CHAIN_KEY, { blocks: chain.blocks }); }
+
+  var receipts = store.get(RECEIPTS_KEY) || [];
+  function persistReceipts() { store.set(RECEIPTS_KEY, receipts); }
+
+  /* ---- networking: every same-browser tab is a peer ---- */
+  var bc = null, peers = {}, PEER_ID = String(Date.now()) + ':' + Math.floor(Math.random() * 1e9);
+  function broadcast(msg) { if (bc) { msg.from = PEER_ID; try { bc.postMessage(msg); } catch (err) { /* non-clonable */ } } }
+  function shareChain() { broadcast({ type: 'chain', blocks: chain.blocks }); }
+  if (typeof BroadcastChannel !== 'undefined') {
+    bc = new BroadcastChannel('ballrzai-net-v1');
+    bc.onmessage = function (ev) {
+      var msg = ev && ev.data; if (!msg || msg.from === PEER_ID) return;
+      if (msg.from) peers[msg.from] = Date.now();
+      if (msg.type === 'hello') { shareChain(); }
+      else if (msg.type === 'chain') {
+        if (chain.replaceChain(msg.blocks)) { persistChain(); render(); }
+        else if (msg.blocks && msg.blocks.length < chain.blocks.length) shareChain(); // help them catch up
+      } else if (msg.type === 'tx') {
+        try { chain.submitTransaction(msg.tx); render(); } catch (err) { /* dup or spent */ }
+      }
+      render();
+    };
+  }
+
+  /* ---- miner: grind nonces in time slices so the tab stays responsive ---- */
+  var mining = false, template = null, templatePool = -1, found = 0, earned = 0;
+  var SLICE = 40000, window10 = []; // [t, hashes] pairs for the hashrate readout
+  function freshTemplate() {
+    template = chain.prepareBlock(wallet.address, { extra: 'mined by ' + wallet.address.slice(0, 8) });
+    templatePool = chain.mempool.length;
+  }
+  function minerTick() {
+    if (!mining) return;
+    if (!template || template.prevHash !== chain.tip.hash || templatePool !== chain.mempool.length) freshTemplate();
+    var before = template.nonce || 0;
+    var solved = Coin.mine(template, { maxIterations: SLICE });
+    var now = Date.now();
+    window10.push([now, (solved ? template.nonce - before + 1 : SLICE)]);
+    while (window10.length && window10[0][0] < now - 5000) window10.shift();
+    var span = window10.length > 1 ? (now - window10[0][0]) / 1000 : 1;
+    var hashes = 0; for (var i = 0; i < window10.length; i++) hashes += window10[i][1];
+    $('mnRate').textContent = (hashes / Math.max(span, 0.2) / 1000).toFixed(1) + ' kH/s';
+    if (solved) {
+      try {
+        chain.addBlock(template, { now: now });
+        found++; earned += template.transactions[0].outputs[0].amount;
+        $('mnMsg').textContent = 'Block #' + template.height + ' mined — coinbase paid ' +
+          AI.formatAIT(template.transactions[0].outputs[0].amount) + ' to your wallet.';
+        $('mnMsg').className = 'msg ok';
+        persistChain(); shareChain();
+      } catch (err) { /* a peer beat us to this height — retarget onto their tip */ }
+      template = null;
+      render();
+    }
+    setTimeout(minerTick, 0);
+  }
+  $('mineBtn').addEventListener('click', function () {
+    mining = !mining;
+    $('mineBtn').textContent = mining ? '■ Stop mining' : '▶ Start mining AI tokens';
+    $('mineBtn').className = mining ? 'mine on' : 'mine';
+    if (mining) { $('mnMsg').textContent = 'Mining… every hash is a lottery ticket against the target.'; $('mnMsg').className = 'msg'; minerTick(); }
+    else { $('mnRate').textContent = '—'; $('mnMsg').textContent = 'Stopped.'; $('mnMsg').className = 'msg'; }
+  });
+
+  /* ---- wallet: send AIT ---- */
+  function flash(id, text, ok) { var el = $(id); el.textContent = text; el.className = 'msg ' + (ok ? 'ok' : 'bad'); }
+  $('sendBtn').addEventListener('click', function () {
+    try {
+      var amount = Coin.parseAmount($('sendAmt').value);
+      var fee = $('sendFee').value.trim() ? Coin.parseAmount($('sendFee').value) : 0;
+      var tx = chain.send(wallet, $('sendTo').value.trim(), amount, fee);
+      broadcast({ type: 'tx', tx: tx });
+      flash('sendMsg', 'Sent — tx ' + tx.id.slice(0, 16) + '… is in the mempool awaiting a miner.', true);
+      $('sendAmt').value = ''; render();
+    } catch (err) { flash('sendMsg', err.message, false); }
+  });
+
+  /* ---- keys ---- */
+  $('showKeyBtn').addEventListener('click', function () { $('privKey').value = wallet.privateKey; });
+  $('importKeyBtn').addEventListener('click', function () {
+    try {
+      wallet = Coin.walletFromPrivateKey($('privKey').value.trim());
+      store.set(WALLET_KEY, { privateKey: wallet.privateKey });
+      flash('keyMsg', 'Imported — this node now mines and spends as ' + wallet.address.slice(0, 12) + '…', true);
+      template = null; render();
+    } catch (err) { flash('keyMsg', err.message, false); }
+  });
+  $('newKeyBtn').addEventListener('click', function () {
+    wallet = Coin.generateWallet();
+    store.set(WALLET_KEY, { privateKey: wallet.privateKey });
+    $('privKey').value = '';
+    flash('keyMsg', 'New wallet created. The old key is gone unless you backed it up.', true);
+    template = null; render();
+  });
+
+  /* ---- inference: quote, pay, verify ---- */
+  var tokensEdited = false;
+  $('promptTokens').addEventListener('input', function () { tokensEdited = true; quote(); });
+  $('prompt').addEventListener('input', function () {
+    if (!tokensEdited) $('promptTokens').value = String(AI.estimateTokens($('prompt').value) + 1000); // prompt + response budget
+    quote();
+  });
+  function quote() {
+    var n = parseInt($('promptTokens').value, 10);
+    $('promptCost').textContent = (n > 0) ? AI.formatAIT(AI.costForTokens(n)) : '—';
+  }
+  $('payBtn').addEventListener('click', function () {
+    try {
+      var prompt = $('prompt').value;
+      var n = parseInt($('promptTokens').value, 10);
+      var r = AI.payForInference({ chain: chain, wallet: wallet, prompt: prompt, modelTokens: n });
+      broadcast({ type: 'tx', tx: r.tx });
+      receipts.unshift({ txId: r.txId, prompt: prompt, modelTokens: n, cost: r.cost, when: Date.now() });
+      persistReceipts();
+      flash('payMsg', 'Paid ' + AI.formatAIT(r.cost) + ' to the prompt’s commitment address. Receipt confirms once mined.', true);
+      render();
+    } catch (err) { flash('payMsg', err.message, false); }
+  });
+  $('verifyBtn').addEventListener('click', function () {
+    var v = AI.verifyInferenceReceipt(chain, {
+      txId: $('vTx').value.trim(), prompt: $('vPrompt').value, modelTokens: parseInt($('vTokens').value, 10)
+    });
+    flash('vMsg', (v.ok ? 'VALID — ' : 'NOT VALID — ') + v.status, v.ok);
+  });
+
+  /* ---- rendering ---- */
+  function renderReceipts() {
+    if (!receipts.length) { $('receipts').innerHTML = '<div class="msg">No receipts yet. Mine some AIT, then pay for a prompt.</div>'; return; }
+    $('receipts').innerHTML = receipts.slice(0, 6).map(function (r) {
+      var v = AI.verifyInferenceReceipt(chain, r);
+      var pill = v.ok ? '<span class="pill ok">✓ ' + v.confirmations + ' conf</span>'
+        : /pending/.test(v.status) ? '<span class="pill warn">pending</span>'
+        : '<span class="pill bad">' + esc(v.status.split(':')[0]) + '</span>';
+      return '<div class="receipt"><p class="p">“' + esc(r.prompt.length > 90 ? r.prompt.slice(0, 90) + '…' : r.prompt) + '” ' + pill + '</p>' +
+        '<div class="m">' + r.modelTokens + ' tokens · ' + AI.formatAIT(r.cost) + ' · tx ' + esc(r.txId) + '</div></div>';
+    }).join('');
+  }
+  function renderBlocks() {
+    // Prompt hashes on chain are opaque; only receipts this node holds can
+    // label an output as an inference burn.
+    var commitments = {};
+    receipts.forEach(function (r) {
+      try { commitments[AI.promptAddress(r.prompt)] = true; } catch (err) { /* skip */ }
+    });
+    var rows = chain.blocks.slice(-8).reverse().map(function (b) {
+      var cb = b.transactions[0];
+      var reward = cb.outputs.reduce(function (s, o) { return s + o.amount; }, 0);
+      var burned = 0;
+      b.transactions.slice(1).forEach(function (tx) {
+        tx.outputs.forEach(function (o) { if (commitments[o.address]) burned += o.amount; });
+      });
+      return '<tr><td>' + b.height + '</td><td>' + esc(b.hash.slice(0, 20)) + '…</td><td>' + b.transactions.length + '</td>' +
+        '<td>' + (b.height === 0 ? '— (genesis)' : esc(AI.formatAIT(reward)) + ' → ' + esc((cb.outputs[0] && cb.outputs[0].address || '').slice(0, 10)) + '…') + '</td>' +
+        '<td>' + (burned ? '<span class="spark">' + esc(AI.formatAIT(burned)) + '</span>' : '—') + '</td>' +
+        '<td>' + new Date(b.timestamp).toLocaleTimeString() + '</td></tr>';
+    });
+    $('blocks').innerHTML = rows.join('');
+  }
+  function render() {
+    var s = chain.stats();
+    $('stHeight').textContent = String(s.height);
+    $('stDiff').textContent = String(s.difficulty);
+    $('stReward').textContent = AI.formatAIT(s.blockReward);
+    $('stSupply').textContent = (s.supply / AI.COIN).toLocaleString() + ' / ' + (s.maxSupply / AI.COIN).toLocaleString() + ' AIT';
+    $('stMempool').textContent = s.mempoolSize + ' tx';
+    var live = 0, cutoff = Date.now() - 30000;
+    for (var p in peers) if (peers[p] > cutoff) live++;
+    $('stPeers').textContent = String(live);
+    $('wAddr').textContent = wallet.address;
+    var bal = chain.getBalance(wallet.address);
+    $('wBal').textContent = AI.formatAIT(bal);
+    $('wTokens').textContent = '≈ ' + AI.tokensFor(bal).toLocaleString() + ' model tokens of inference';
+    $('mnFound').textContent = String(found);
+    $('mnEarned').textContent = AI.formatAIT(earned);
+    renderReceipts();
+    renderBlocks();
+  }
+
+  render();
+  quote();
+  broadcast({ type: 'hello' });
+  setInterval(render, 5000); // confirmations / peer liveness tick over even when idle
+})();
+</script>
+</body>
+</html>
