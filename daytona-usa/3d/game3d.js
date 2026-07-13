@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R66 — New Dawn Fades';
+const BUILD = 'BUILD R67 — King of Speed';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -2926,7 +2926,7 @@ function showEndScreen(win){
 //  Menu flow: title -> vehicle -> circuit -> soundtrack -> race
 // ----------------------------------------------------------------------------
 const SOUNDTRACKS = {
-  daytona: { name:'DAYTONA', icon:'🏁', desc:'The original — big arcade theme', intro:'./audio/intro.mp3',      loop:'./audio/soundtrack.mp3' },
+  daytona: { name:'KING OF SPEED', icon:'🏁', desc:'The real Daytona USA arcade theme', loop:'./audio/king-of-speed.m4a' },
   heat:    { name:'NEW DAWN FADES', icon:'🌘', desc:'Joy Division — your purchased copy', loop:'./audio/new-dawn-fades.m4a' },
   buckrogers:{ name:'BUCK ROGERS', icon:'🚀', desc:'Feeder — via your Apple Music', apple:true, song:'buck rogers feeder',
                localSrcs:['./audio/buck-rogers.m4a','./audio/buck-rogers.mp3'] },
