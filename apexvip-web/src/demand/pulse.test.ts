@@ -68,3 +68,17 @@ test('advice: quiet-with-forecast at noon, strong inside the rush, honest cold s
   assert.equal(cold.level, 'quiet');
   assert.match(cold.reason, /Not enough booking history/);
 });
+
+test('nextPeak returns the NEXT local peak, not the tallest in the window', () => {
+  // Small Friday 14:00 bump (soon) + big Saturday 10:00 rush (later).
+  const two: number[] = [];
+  for (let w = 1; w <= 6; w++) {
+    for (let i = 0; i < 4; i++) two.push(at(w, 5, 14)); // Fri 2pm — smaller
+    for (let i = 0; i < 9; i++) two.push(at(w, 6, 10)); // Sat 10am — bigger
+  }
+  const p2 = buildPulse(two, NOW); // NOW = Friday 12:00
+  const peak = nextPeak(p2, NOW);
+  assert.ok(peak);
+  assert.equal(peak!.label, 'Fri 14:00'); // the NEXT one, 2h away
+  assert.equal(peak!.hoursAway, 2);
+});

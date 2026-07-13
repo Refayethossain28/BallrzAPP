@@ -108,16 +108,24 @@ export function heatAt(profile: PulseProfile, when: Date): number {
   return Math.round(profile.buckets[hourOfWeek(when)] * 100) / 100;
 }
 
-/** The next local peak (≥1.25× typical) in the coming 24 h, or null. */
+/**
+ * The NEXT local peak (≥1.25× typical) in the coming 24 h, or null.
+ * "Next" is literal: the first coming bucket that is a local maximum above the
+ * threshold — not the tallest in the window. A driver an hour from a 1.3×
+ * rush must hear about THAT rush, not a 2.0× one twenty hours later.
+ */
 export function nextPeak(profile: PulseProfile, from: Date): PulsePeak | null {
   if (!profile || !profile.ready) return null;
   const start = hourOfWeek(from);
-  let best: PulsePeak | null = null;
   for (let h = 0; h < 24; h++) {
     const b = (start + h) % 168;
     const v = profile.buckets[b];
-    if (v >= PEAK_THRESHOLD && (!best || v > best.intensity)) {
-      best = {
+    if (v < PEAK_THRESHOLD) continue;
+    // Local maximum on the circular profile (plateaus count via >=).
+    const before = profile.buckets[(b + 167) % 168];
+    const after = profile.buckets[(b + 1) % 168];
+    if (v >= before && v >= after) {
+      return {
         bucket: b,
         intensity: Math.round(v * 100) / 100,
         hoursAway: h,
@@ -125,7 +133,7 @@ export function nextPeak(profile: PulseProfile, from: Date): PulsePeak | null {
       };
     }
   }
-  return best;
+  return null;
 }
 
 /** Chauffeur-facing "should I go online?" recommendation. */

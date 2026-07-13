@@ -158,10 +158,14 @@ export function matchScore(driver: MatchDriver, job: MatchJob): MatchResult | nu
   const fit = vehicleFit(driver.vehicle, job);
   if (fit === 0) return null;
 
+  // Coerce hard: a NaN anywhere here would poison the weighted sum into a
+  // NaN score, which sorts unpredictably and breaks ranking determinism.
+  const rating = Number.isFinite(Number(driver.rating)) && Number(driver.rating) > 0 ? Number(driver.rating) : RATING_PRIOR;
+  const accept = Number.isFinite(Number(driver.acceptRate)) ? Number(driver.acceptRate) : ACCEPT_PRIOR;
   const perf01 = Math.max(0, Math.min(1,
-    (shrink(Number(driver.rating) || RATING_PRIOR, Number(driver.ratingCount) || 0, RATING_PRIOR, RATING_K) - 3) / 2));
+    (shrink(rating, Number(driver.ratingCount) || 0, RATING_PRIOR, RATING_K) - 3) / 2));
   const rel01 = Math.max(0, Math.min(1,
-    shrink(Number(driver.acceptRate ?? ACCEPT_PRIOR), Number(driver.offerCount) || 0, ACCEPT_PRIOR, ACCEPT_K)));
+    shrink(accept, Number(driver.offerCount) || 0, ACCEPT_PRIOR, ACCEPT_K)));
   const prox01 = (Number.isFinite(driver.lat) && Number.isFinite(driver.lng) &&
                   Number.isFinite(job.lat) && Number.isFinite(job.lng))
     ? Math.exp(-haversineKm(driver.lat!, driver.lng!, job.lat!, job.lng!) / PROXIMITY_SCALE_KM)

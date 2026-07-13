@@ -51,3 +51,9 @@ test('ApexPulse heat pre-warms pricing before the queue forms', () => {
   const hot = yieldMultiplier({ openJobs: 2, idleDrivers: 2, heat: 2.5, previous: 1.2 });
   assert.ok(hot.target > cold.target);
 });
+
+test('an off-grid previous still moves at most one 0.05 step', () => {
+  const q = yieldMultiplier({ openJobs: 0, idleDrivers: 8, heat: 0.5, previous: 1.02 });
+  // 1.02 snaps to 1.00; one step down is 0.95 — never a 0.07+ jump.
+  assert.ok(Math.abs(q.multiplier - 1.0) <= YIELD_STEP + 1e-9, String(q.multiplier));
+});
