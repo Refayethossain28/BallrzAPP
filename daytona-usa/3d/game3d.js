@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R68 — Buck Rogers plays locally';
+const BUILD = 'BUILD R69 — photoreal car pass';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -741,7 +741,7 @@ function detailClone(kind, rep){ const t=makeDetailTex(kind).clone(); t.wrapS=t.
 // hero = the player's car gets full clearcoat PBR + flake; rivals get a cheaper metallic.
 function paintMat(c, hero){
   if (hero){
-    const m=new THREE.MeshPhysicalMaterial({color:c, metalness:0.55, roughness:0.34, clearcoat:1.0, clearcoatRoughness:0.05, envMap:envTex, envMapIntensity:_MATFX?2.2:1.7});
+    const m=new THREE.MeshPhysicalMaterial({color:c, metalness:0.55, roughness:0.30, clearcoat:1.0, clearcoatRoughness:0.05, envMap:envTex, envMapIntensity:_MATFX?2.5:1.8});
     m.clearcoatNormalMap=flakeNormalTex(); m.clearcoatNormalScale=new THREE.Vector2(0.16,0.16);
     m.roughnessMap=detailClone('rough',6);   // visible metallic-flake clusters in the sheen
     if (_MATFX){ try{ m.iridescence=0.22; m.iridescenceIOR=1.3; m.clearcoatRoughness=0.03;
@@ -755,7 +755,9 @@ function paintMat(c, hero){
 function matteMat(c){ const m=new THREE.MeshStandardMaterial({color:c, metalness:0, roughness:0.85}); const t=detailClone('rough',3); m.map=t;
   if (_MATNORMAL){ const n=detailNormal('rough',3); if(n){ m.normalMap=n; m.normalScale=new THREE.Vector2(0.6,0.6); } else { m.bumpMap=t; m.bumpScale=0.25; } }
   else { m.bumpMap=t; m.bumpScale=0.25; } return m; }
-function glassMat(){ return new THREE.MeshStandardMaterial({color:0x070d18, metalness:0.7, roughness:0.04, envMap:envTex, envMapIntensity:_MATFX?2.4:1.8}); }
+// clear=true (hero car) makes the glass slightly see-through so the cockpit
+// interior and driver's helmet read through the glasshouse.
+function glassMat(clear){ return new THREE.MeshStandardMaterial({color:0x0a1220, metalness:0.7, roughness:0.04, envMap:envTex, envMapIntensity:_MATFX?2.4:1.8, transparent:!!clear, opacity:clear?0.72:1}); }
 function chromeMat(){ const m=new THREE.MeshStandardMaterial({color:0xc4c9d2, metalness:0.95, roughness:0.2, envMap:envTex, envMapIntensity:1.4}); m.roughnessMap=makeDetailTex('metal'); return m; }
 function shadeHex(hex, amt){ const r=Math.max(0,Math.min(255,(hex>>16&255)+amt)), g=Math.max(0,Math.min(255,(hex>>8&255)+amt)), b=Math.max(0,Math.min(255,(hex&255)+amt)); return (r<<16)|(g<<8)|b; }
 let _emblemTex=null;
@@ -814,17 +816,32 @@ function addLights(g,y,zf,zr,lite){
 let _wheelTex=null;
 function makeWheelTexture(){
   if (_wheelTex) return _wheelTex;
-  const S=160, cv=document.createElement('canvas'); cv.width=cv.height=S; const x=cv.getContext('2d'); const c=S/2;
+  const S=256, cv=document.createElement('canvas'); cv.width=cv.height=S; const x=cv.getContext('2d'); const c=S/2;
   x.fillStyle='#0b0b0c'; x.beginPath(); x.arc(c,c,c,0,6.28); x.fill();                 // tyre
+  // white sidewall lettering curved around the tyre (racing-slick look)
+  x.save(); x.translate(c,c); x.fillStyle='rgba(238,240,244,0.92)';
+  x.font=`900 ${Math.round(S*0.075)}px Arial`; x.textAlign='center'; x.textBaseline='middle';
+  const word='DAYTONA';
+  for (const off of [0, Math.PI]){
+    for (let i=0;i<word.length;i++){
+      const a=off - (word.length-1)*0.5*0.16 + i*0.16;
+      x.save(); x.rotate(a); x.translate(0,-c*0.885);
+      x.fillText(word[i],0,0); x.restore();
+    }
+  }
+  x.restore();
+  // thin white pinstripe ring between tyre and rim
+  x.strokeStyle='rgba(230,233,238,0.75)'; x.lineWidth=S*0.008;
+  x.beginPath(); x.arc(c,c,c*0.78,0,6.28); x.stroke();
   x.fillStyle='#16191e'; x.beginPath(); x.arc(c,c,c*0.74,0,6.28); x.fill();            // rim well (dark)
-  const g=x.createRadialGradient(c,c*0.7,4,c,c,c*0.7); g.addColorStop(0,'#e3e8ee'); g.addColorStop(0.6,'#aab1bb'); g.addColorStop(1,'#787f89');
+  const g=x.createRadialGradient(c,c*0.7,S*0.025,c,c,c*0.7); g.addColorStop(0,'#e3e8ee'); g.addColorStop(0.6,'#aab1bb'); g.addColorStop(1,'#787f89');
   for (let k=0;k<5;k++){ x.save(); x.translate(c,c); x.rotate(k/5*6.28 - Math.PI/2); x.fillStyle=g;
-    x.beginPath(); x.moveTo(-6,16); x.lineTo(6,16); x.lineTo(11,c*0.66); x.lineTo(-11,c*0.66); x.closePath(); x.fill(); x.restore(); }   // 5 spokes
+    x.beginPath(); x.moveTo(-S*0.0375,S*0.1); x.lineTo(S*0.0375,S*0.1); x.lineTo(S*0.069,c*0.66); x.lineTo(-S*0.069,c*0.66); x.closePath(); x.fill(); x.restore(); }   // 5 spokes
   x.strokeStyle='#cfd5dd'; x.lineWidth=S*0.03; x.beginPath(); x.arc(c,c,c*0.72,0,6.28); x.stroke();   // polished outer lip
-  const hg=x.createRadialGradient(c,c*0.9,2,c,c,18); hg.addColorStop(0,'#d7dce3'); hg.addColorStop(1,'#9aa0a9');
-  x.fillStyle=hg; x.beginPath(); x.arc(c,c,18,0,6.28); x.fill();                       // centre cap
-  x.fillStyle='#33373e'; for (let k=0;k<5;k++){ const a=k/5*6.28; x.beginPath(); x.arc(c+Math.cos(a)*11,c+Math.sin(a)*11,2.6,0,6.28); x.fill(); }   // lug nuts
-  x.fillStyle='#202329'; x.beginPath(); x.arc(c,c,5,0,6.28); x.fill();
+  const hg=x.createRadialGradient(c,c*0.9,2,c,c,S*0.1125); hg.addColorStop(0,'#d7dce3'); hg.addColorStop(1,'#9aa0a9');
+  x.fillStyle=hg; x.beginPath(); x.arc(c,c,S*0.1125,0,6.28); x.fill();                 // centre cap
+  x.fillStyle='#33373e'; for (let k=0;k<5;k++){ const a=k/5*6.28; x.beginPath(); x.arc(c+Math.cos(a)*S*0.069,c+Math.sin(a)*S*0.069,S*0.01625,0,6.28); x.fill(); }   // lug nuts
+  x.fillStyle='#202329'; x.beginPath(); x.arc(c,c,S*0.031,0,6.28); x.fill();
   _wheelTex=new THREE.CanvasTexture(cv); _wheelTex.colorSpace=THREE.SRGBColorSpace; return _wheelTex;
 }
 function addWheels(g,tx,tz,r,lite){
@@ -905,6 +922,40 @@ function addCarDetails(g, W, L, lite, liv){
   for (const sx of [-1,1]) g.add(lmBox(chrome, 0.04,0.04,L*0.34, sx*(W/2-0.2),1.46,-L*0.06));
   // twin windscreen wipers
   for (const sx of [-0.4,0.1]) g.add(lmBox(seam, 0.025,0.03,0.5, sx, 1.06, L*0.14+0.06));
+  // ---- photoreal pass: cockpit interior, driver, baked-shadow depth ----
+  // interior shell visible through the (now translucent) hero glass
+  const cabin=new THREE.MeshStandardMaterial({color:0x0b0d11, roughness:0.95});
+  g.add(lmBox(cabin, W-0.75, 0.30, L*0.30, 0, 1.20, -L*0.05));
+  // driver: racing seat + halo headrest + helmet with a dark visor (sits on the left)
+  g.add(lmBox(cabin, 0.42, 0.34, 0.14, -0.35, 1.30, -0.52));                       // seat back
+  const helmet=new THREE.Mesh(new THREE.SphereGeometry(0.155, 18, 14),
+    new THREE.MeshStandardMaterial({color:liv.hood!=null?liv.hood:0xffffff, metalness:0.3, roughness:0.25, envMap:envTex, envMapIntensity:1.4}));
+  helmet.position.set(-0.35, 1.34, -0.18); g.add(helmet);
+  g.add(lmBox(new THREE.MeshStandardMaterial({color:0x05070c, metalness:0.6, roughness:0.1, envMap:envTex, envMapIntensity:1.6}),
+              0.20, 0.09, 0.05, -0.35, 1.35, -0.04));                              // visor
+  // baked-look shadowing: dark radial pools inside each wheel arch...
+  const archMat=new THREE.MeshBasicMaterial({map:blobTex(), transparent:true, opacity:0.5, depthWrite:false, color:0x000000});
+  for (const [ax,az] of [[-1,L*0.3],[1,L*0.3],[-1,-L*0.3],[1,-L*0.3]]){
+    const q=new THREE.Mesh(new THREE.PlaneGeometry(1.35,0.85), archMat);
+    q.position.set(ax*(W/2+0.035), 0.60, az); q.rotation.y=ax*Math.PI/2;
+    q.userData.noShadow=true; g.add(q);
+  }
+  // ...and an ambient-occlusion gradient hugging each rocker panel
+  for (const sxr of [-1,1]){
+    const q=new THREE.Mesh(new THREE.PlaneGeometry(L*0.82,0.34),
+      new THREE.MeshBasicMaterial({map:aoGradTex(), transparent:true, opacity:0.5, depthWrite:false}));
+    q.position.set(sxr*(W/2+0.02), 0.46, -0.05); q.rotation.y=sxr*Math.PI/2;
+    q.userData.noShadow=true; g.add(q);
+  }
+}
+// vertical shading tile: black at the bottom fading out upward (rocker AO)
+let _aoGrad=null;
+function aoGradTex(){
+  if (_aoGrad) return _aoGrad;
+  const cv=document.createElement('canvas'); cv.width=8; cv.height=64; const x=cv.getContext('2d');
+  const gr=x.createLinearGradient(0,0,0,64); gr.addColorStop(0,'rgba(0,0,0,0)'); gr.addColorStop(1,'rgba(0,0,0,0.85)');
+  x.fillStyle=gr; x.fillRect(0,0,8,64);
+  _aoGrad=new THREE.CanvasTexture(cv); return _aoGrad;
 }
 function addDetails(g, W, frontZ, rearZ, beltY, lowY){
   const chrome=chromeMat(), plate=new THREE.MeshStandardMaterial({color:0xeef0f2, roughness:0.5});
@@ -944,7 +995,7 @@ function buildCar(vehicle, lite){
   const g=new THREE.Group();
   const hero=!lite;
   const main=paintMat(liv.body,hero), accent=paintMat(liv.hood,hero), roofM=paintMat(liv.roof!=null?liv.roof:liv.hood,hero);
-  const white=paintMat(0xffffff,hero), glass=glassMat(), dark=matteMat(0x16181c);
+  const white=paintMat(0xffffff,hero), glass=glassMat(hero), dark=matteMat(0x16181c);
   const L=4.9, W=2.16;
   // ---- smooth curved main body (sharper bevel = defined NASCAR panels, not bulbous) ----
   g.add(extrudeCar(STOCK_BODY, W, 0.07, main));
