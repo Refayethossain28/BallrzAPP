@@ -56,6 +56,17 @@ jobs:
           SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
 
+      # Prints WHICH robot identity this deploy runs as (email + project). The
+      # email is an identifier, not a credential — safe to log, and essential
+      # for granting it the right IAM roles when a deploy 403s. Split around
+      # the "@" so GitHub's per-line secret masking can't hide it.
+      - name: Show deploy identity
+        if: steps.gate.outputs.ok == 'true'
+        run: |
+          echo "== deploy identity =="
+          jq -r '"account: " + (.client_email // "?" | split("@") | .[0]) + " (at) " + (.client_email // "?" | split("@") | .[1] // "?")' "$RUNNER_TEMP/sa.json" || echo "could not parse sa.json (is the secret valid JSON?)"
+          jq -r '"project: " + (.project_id // "?")' "$RUNNER_TEMP/sa.json" || true
+
       - name: Install Firebase CLI + function deps
         if: steps.gate.outputs.ok == 'true'
         run: |
