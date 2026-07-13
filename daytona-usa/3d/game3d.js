@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R70 — Mercedes V-Class';
+const BUILD = 'BUILD R71 — V-Class LED taillights';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -1023,14 +1023,20 @@ function addVanBody(g, liv, hero, W, L){
   }
   g.add(lmBox(dark, W-0.30,0.26,0.08, 0,0.52,2.62));
   g.add(lmBox(dark, W-0.10,0.12,0.10, 0,0.36,2.58));
-  // rear: wrap-around LED taillights (flare on braking), chrome strip, star badge
-  const tl=new THREE.MeshStandardMaterial({color:0xff3024, emissive:0xe01410, emissiveIntensity:0.8, roughness:0.4});
+  // rear: slim horizontal LED taillights just under the rear glass, tapering
+  // toward the centre and wrapping around onto the body sides (per the photos).
+  // Smoked-red housings with a bright LED blade that flares on braking.
+  const tlHouse=new THREE.MeshStandardMaterial({color:0x3a0d10, roughness:0.35, metalness:0.2, emissive:0x550a0a, emissiveIntensity:0.35});
+  const tlLed=new THREE.MeshStandardMaterial({color:0xff4038, emissive:0xe0140e, emissiveIntensity:1.1, roughness:0.3});
   g.userData.brakeMats = g.userData.brakeMats||[];
   for (const sx of [-1,1]){
-    g.add(lmBox(tl, 0.52,0.16,0.06, sx*0.62, 1.52, -2.66));
-    g.add(lmBox(tl, 0.15,0.42,0.06, sx*(W/2-0.16), 1.34, -2.65));
+    g.add(lmBox(tlHouse, 0.60,0.135,0.06, sx*0.70, 1.40, -2.655));          // main lamp
+    g.add(lmBox(tlHouse, 0.22,0.095,0.06, sx*0.31, 1.38, -2.652));          // tapered inner tip
+    g.add(lmBox(tlLed,   0.52,0.045,0.065, sx*0.70, 1.41, -2.66));          // LED blade
+    g.add(lmBox(tlHouse, 0.06,0.135,0.28, sx*(W/2+0.005), 1.40, -2.49));    // wrap onto the side
+    g.add(lmBox(tlLed,   0.065,0.045,0.22, sx*(W/2+0.012), 1.41, -2.49));   // side LED sliver
   }
-  g.userData.brakeMats.push(tl);
+  g.userData.brakeMats.push(tlLed);
   g.add(lmBox(chrome, 1.5,0.04,0.05, 0,1.26,-2.665));
   { const ring=new THREE.Mesh(new THREE.TorusGeometry(0.09,0.015,8,24), chrome); ring.position.set(0,1.10,-2.665); g.add(ring); }
   // UK yellow number plates front & rear
