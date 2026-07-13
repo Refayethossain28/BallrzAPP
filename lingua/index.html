@@ -499,6 +499,55 @@ footer a:hover{ color:var(--ink); }
 .modal p{ color:var(--muted); font-size:13.5px; margin:0 0 14px; line-height:1.6; }
 .modal code{ background:rgba(255,255,255,.09); padding:2px 7px; border-radius:7px; font-size:12.5px; }
 
+/* ============================================================================
+   LIGHT THEME — token overrides + surface tweaks. Toggled via
+   html[data-theme="light"]; preference stored on-device, defaults to the
+   system's prefers-color-scheme.
+   ============================================================================ */
+html[data-theme="light"]{ color-scheme:light; }
+html[data-theme="light"] body{
+  --bg:#eef1f9; --ink:#181d31; --muted:#49547a; --muted2:#7b85a8;
+  --accent:#5b6cff; --accent2:#8b63f4; --teal:#0dab8f; --warn:#a8731c; --bad:#d5455a;
+  --glass:rgba(255,255,255,.6); --glass2:rgba(255,255,255,.82);
+  --line:rgba(24,29,60,.15); --line-soft:rgba(24,29,60,.09);
+  --field:rgba(255,255,255,.78);
+  --shadow:0 24px 60px -30px rgba(40,52,120,.25), 0 2px 8px rgba(40,52,120,.07);
+  --glow-a:0 8px 28px -10px rgba(91,108,255,.45);
+  --glow-t:0 8px 28px -12px rgba(13,171,143,.4);
+  background:var(--bg); color:var(--ink);
+}
+html[data-theme="light"] body::before{ opacity:.5; }
+html[data-theme="light"] body::after{ opacity:.45; }
+html[data-theme="light"]::before{ opacity:.32; }
+html[data-theme="light"] h1{
+  background:linear-gradient(120deg,#1b2140 15%,#3c4b9e 55%,#6a55d4);
+  -webkit-background-clip:text; background-clip:text;
+}
+html[data-theme="light"] .card{ background:linear-gradient(180deg,rgba(255,255,255,.88),rgba(255,255,255,.6) 42%); }
+html[data-theme="light"] .card::before{ background:linear-gradient(90deg,transparent,rgba(255,255,255,.95),transparent); }
+html[data-theme="light"] .tabs{ background:rgba(255,255,255,.55); }
+html[data-theme="light"] .result,
+html[data-theme="light"] .seg,
+html[data-theme="light"] .ayah{ background:linear-gradient(180deg,rgba(255,255,255,.85),rgba(255,255,255,.55)); }
+html[data-theme="light"] .modal{ background:rgba(228,232,246,.55); }
+html[data-theme="light"] .modal .box{ background:linear-gradient(180deg,#ffffff,#eef1fa); }
+html[data-theme="light"] .modal code{ background:rgba(24,29,60,.08); }
+html[data-theme="light"] .tip{ color:#2e3a66; }
+html[data-theme="light"] .method{ background:rgba(255,255,255,.45); border-color:rgba(24,29,60,.18); }
+html[data-theme="light"] .unit .ix{ background:rgba(24,29,60,.06); }
+html[data-theme="light"] .bar{ background:rgba(24,29,60,.1); }
+html[data-theme="light"] .field, html[data-theme="light"] input, html[data-theme="light"] textarea, html[data-theme="light"] select{ color:var(--ink); }
+html[data-theme="light"] input:focus, html[data-theme="light"] textarea:focus, html[data-theme="light"] select:focus{ background:#fff; }
+html[data-theme="light"] .bubble.bot{ background:rgba(255,255,255,.85); }
+html[data-theme="light"] .correction{ background:rgba(168,115,28,.08); border-color:rgba(168,115,28,.35); }
+html[data-theme="light"] .ayah .ar{ text-shadow:none; }
+html[data-theme="light"] .badge-src{ background:rgba(255,255,255,.6); }
+html[data-theme="light"] *::-webkit-scrollbar-thumb{ background:rgba(24,29,60,.22); }
+html[data-theme="light"] *::-webkit-scrollbar-thumb:hover{ background:rgba(24,29,60,.35); }
+html[data-theme="light"] ::selection{ background:rgba(91,108,255,.25); color:#181d31; }
+html[data-theme="light"] .vocab-w{ background:rgba(255,255,255,.7); }
+html[data-theme="light"] footer a{ border-bottom-color:rgba(24,29,60,.25); }
+
 /* ---- motion preferences ---- */
 @media (prefers-reduced-motion: reduce){
   *, *::before, *::after{ animation:none !important; transition:none !important; scroll-behavior:auto !important; }
@@ -522,6 +571,7 @@ footer a:hover{ color:var(--ink); }
       <p class="sub">The fluency engine — every language in the world</p>
     </div>
     <div style="margin-left:auto; display:flex; gap:8px; align-items:center">
+      <button id="themeBtn" class="hdr-btn" type="button" title="Switch light / dark theme">🌙</button>
       <button id="statChip" class="hdr-btn" type="button" title="Your streak, XP and cards due for review">🔥0 · ⭐0/20</button>
       <button id="histBtn" class="hdr-btn" type="button" title="Saved translations">🕘 Saved</button>
       <button id="aiPill" class="ai-pill" type="button" title="AI accuracy mode" style="margin-left:0">
@@ -1258,6 +1308,44 @@ function callByok(payload){
     return { answer:text };
   });
 }
+
+/* =========================================================================
+   THEME — light/dark toggle. Stored on-device; defaults to the system's
+   prefers-color-scheme; ?theme=light|dark in the URL wins for that visit.
+   ========================================================================= */
+var THEME_KEY = "lingua.theme.v1";
+function applyTheme(t){
+  t = t === "light" ? "light" : "dark";
+  try{ document.documentElement.setAttribute("data-theme", t); }catch(e){}
+  try{
+    var m = document.querySelector('meta[name="theme-color"]');
+    if(m) m.setAttribute("content", t === "light" ? "#eef1f9" : "#05070f");
+  }catch(e){}
+  var b = $("themeBtn");
+  if(b) b.textContent = t === "light" ? "☀️" : "🌙";
+  return t;
+}
+function initTheme(){
+  var t = null;
+  try{
+    var q = String(window.location.search || "");
+    if(q.indexOf("theme=light") >= 0) t = "light";
+    else if(q.indexOf("theme=dark") >= 0) t = "dark";
+  }catch(e){}
+  if(!t){ try{ t = localStorage.getItem(THEME_KEY); }catch(e){} }
+  if(t !== "light" && t !== "dark"){
+    try{ t = (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches === true) ? "light" : "dark"; }catch(e){ t = "dark"; }
+  }
+  applyTheme(t);
+}
+function toggleTheme(){
+  var cur = "dark";
+  try{ cur = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark"; }catch(e){}
+  var next = cur === "light" ? "dark" : "light";
+  applyTheme(next);
+  try{ localStorage.setItem(THEME_KEY, next); }catch(e){}
+}
+initTheme(); // apply before first paint to avoid a theme flash
 
 /* ---- app state ---- */
 var state = {
@@ -2971,6 +3059,10 @@ function init(){
     else { hide(p); }
   });
   on($("histClear"),"click",function(){ saveHist([]); renderHist(); });
+
+  // Theme toggle
+  on($("themeBtn"),"click",toggleTheme);
+  initTheme(); // set the button icon now that the DOM is ready
 
   // AI pill / modal
   on($("aiPill"),"click",function(){ refreshKeyStatus(); show($("aiModal")); });
