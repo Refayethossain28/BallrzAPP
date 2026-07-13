@@ -452,7 +452,7 @@ function startAdminListeners(){
         return{id:d.id,uid:d.id,name:esc(x.name||''),initials:esc((x.name||'??').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2)),
           // color feeds a style="" attribute — only a real CSS color token may pass.
           color:/^#[0-9a-fA-F]{3,8}$/.test(String(x.color||''))?x.color:'#C8A97E',
-          rating:Number(x.rating)||4.8,status:safeToken(x.status,'offline'),
+          rating:Number(x.rating)||4.8,ratingCount:Number(x.ratingCount)||0,status:safeToken(x.status,'offline'),
           vehicle:esc(x.vehicle||'S-Class'),model:esc(x.model||x.vehicle||'S-Class'),
           reg:esc(x.reg||x.plate||''),trips:Number(x.trips)||0,earnings:'£'+(Number(x.earnings)||0),
           payout:x.payout||null,
@@ -723,6 +723,24 @@ dashboard:()=>`<div class="screen">
       ${body}
     </div>`;
   })()}
+  ${(()=>{ // ApexPulse™ demand outlook — learned from this operation's own bookings.
+    if(typeof ApexEngine==='undefined'||!ApexEngine.buildPulse) return '';
+    const ts=BOOKINGS.map(b=>b._created&&b._created.getTime?b._created.getTime():null).filter(Boolean);
+    const p=ApexEngine.buildPulse(ts,new Date());
+    if(!p.ready) return '';
+    const now=new Date(); const heat=ApexEngine.heatAt(p,now); const peak=ApexEngine.nextPeak(p,now);
+    const surge=(typeof ApexEngine.yieldMultiplier==='function')?ApexEngine.yieldMultiplier({
+      openJobs:BOOKINGS.filter(b=>['pending','confirmed','offered'].includes(b.status)).length,
+      idleDrivers:DRIVERS.filter(d=>d.status==='online').length,heat,previous:S._yieldPrev||1}):null;
+    if(surge)S._yieldPrev=surge.multiplier;
+    return `<div class="card" style="margin-bottom:20px;display:flex;gap:26px;align-items:center;flex-wrap:wrap">
+      <div><div style="font-size:10px;color:var(--fg-subtle);letter-spacing:1px">APEXPULSE™ DEMAND</div>
+        <div style="font-size:22px;font-weight:800;color:${heat>=1.5?'#ef4444':heat>=1.1?'var(--gold)':'var(--fg)'}">${heat}×<span style="font-size:11px;color:var(--fg-subtle);font-weight:400"> typical hour</span></div></div>
+      ${peak?`<div><div style="font-size:10px;color:var(--fg-subtle);letter-spacing:1px">NEXT PEAK</div>
+        <div style="font-size:15px;font-weight:700">${peak.label} <span style="font-size:11px;color:var(--fg-dim)">(${peak.intensity}× · in ${peak.hoursAway}h)</span></div></div>`:''}
+      ${surge?`<div><div style="font-size:10px;color:var(--fg-subtle);letter-spacing:1px">APEXYIELD™ MULTIPLIER</div>
+        <div style="font-size:15px;font-weight:700;color:${surge.multiplier>1?'var(--gold)':'var(--fg)'}">${surge.multiplier.toFixed(2)}× <span style="font-size:11px;color:var(--fg-dim)">${surge.direction}</span></div></div>`:''}
+    </div>`;})()}
   <div style="display:flex;gap:20px;margin-bottom:24px;flex-wrap:wrap">
     <div class="card" style="flex:2;min-width:280px">
       <div style="font-size:14px;font-weight:600;margin-bottom:14px">Revenue — Last 7 Days</div>
@@ -807,11 +825,27 @@ bookings:()=>{const f=S.bFilter;const list=f==='all'?BOOKINGS:BOOKINGS.filter(b=
     ${(()=>{
       const avail = DRIVERS.filter(d=>d.status==='available'||d.status==='online');
       const ref = BOOKINGS.find(b=>b.id===S._dispatchRef||b.ref===S._dispatchRef)||{};
-      const bk = {vehicleClass:ref.vehicle||'S-Class',corporateId:ref.corporateId,clientId:ref.clientId,pickup:ref.pickup};
       const useDiscrete = S._discreteDispatch && typeof ApexCore!=='undefined';
-      const ranked = typeof ApexCore!=='undefined'
-        ? (useDiscrete ? ApexCore.discreteMode(bk, avail).drivers : ApexCore.prestigeMatch(bk, avail))
-        : avail.map(d=>({...d,matchScore:null}));
+      let ranked;
+      if(useDiscrete){
+        const bk = {vehicleClass:ref.vehicle||'S-Class',corporateId:ref.corporateId,clientId:ref.clientId,pickup:ref.pickup};
+        ranked = ApexCore.discreteMode(bk, avail).drivers.map(d=>({...d,_score:d.discreteTotal!==undefined?d.discreteTotal:d.matchScore,_label:'pts'}));
+      } else if(typeof ApexEngine!=='undefined' && ApexEngine.rankDrivers){
+        // ApexMatch™ — explainable six-factor ranking from the shared engine.
+        const paxM=String((ref._raw&&ref._raw.notes)||'').match(/\b(\d+)\s*(?:people|pax|passengers)\b/i);
+        const job = {vehicle:(ref._raw&&ref._raw.vehicle)||'S-Class',passengers:paxM?parseInt(paxM[1],10):0,
+          clientTier:(CLIENTS.find(c=>c.id===ref.clientId)||{}).tier||'standard'};
+        const results = ApexEngine.rankDrivers(avail.map(d=>({
+          id:d.id,rating:d.rating,ratingCount:d.ratingCount||0,vehicle:d.model||d.vehicle,
+          compliant:typeof computeCompliance==='function'?computeCompliance(d).ok:undefined,status:'online',
+        })), job);
+        const byId = Object.fromEntries(results.map(r=>[r.id,r]));
+        ranked = avail.filter(d=>byId[d.id]).sort((a,b)=>byId[b.id].score-byId[a.id].score)
+          .map(d=>({...d,_score:byId[d.id].score,_label:'ApexMatch™',
+            _why:`perf ${(byId[d.id].factors.performance*100|0)} · fit ${(byId[d.id].factors.vehicleFit*100|0)}`}));
+      } else {
+        ranked = avail.map(d=>({...d,_score:null}));
+      }
       if(!ranked.length) return '<div style="text-align:center;padding:20px;color:var(--fg-ghost);font-size:13px">No available drivers right now</div>';
       return ranked.map(d=>`
     <div onclick="confirmDispatch('${d.id||d.name}')" style="display:flex;align-items:center;gap:14px;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:14px;margin-bottom:8px;cursor:pointer">
@@ -820,9 +854,10 @@ bookings:()=>{const f=S.bFilter;const list=f==='all'?BOOKINGS:BOOKINGS.filter(b=
         <div style="font-size:14px;font-weight:600">${d.name}</div>
         <div style="font-size:12px;color:var(--fg-dim);margin-top:2px">${d.model||d.vehicle||'S-Class'} · ${d.reg||d.plate||''}</div>
         ${useDiscrete&&d.privacyScore!==undefined?`<div style="font-size:11px;color:#a78bfa;margin-top:2px;font-weight:600">+${d.privacyScore} privacy</div>`:''}
+        ${d._why?`<div style="font-size:10px;color:var(--fg-subtle);margin-top:2px" title="ApexMatch factor breakdown">${d._why}</div>`:''}
       </div>
       <div style="display:flex;align-items:center;gap:8px">
-        ${d.matchScore!=null?`<span style="font-size:11px;font-weight:700;color:#C8A97E">${useDiscrete&&d.discreteTotal!==undefined?d.discreteTotal:d.matchScore}pts</span>`:''}
+        ${d._score!=null?`<span style="font-size:11px;font-weight:700;color:#C8A97E" title="${d._label==='ApexMatch™'?'ApexMatch™ score (0–100)':'match points'}">${d._label==='ApexMatch™'?'✦ '+d._score:d._score+'pts'}</span>`:''}
         <div style="width:8px;height:8px;border-radius:50%;background:${d.status==='online'?'#22c55e':'#C8A97E'}"></div>
       </div>
     </div>`).join('');

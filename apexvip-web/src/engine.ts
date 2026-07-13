@@ -26,3 +26,7 @@ export { buildBookingPayload, SERVICE_LABELS } from './payments/booking.ts';
 export { summarizeEarnings, dailyEarnings, owedBalance } from './driver/earnings.ts';
 export { errorMessage, errorFingerprint, formatErrorReport, shouldReport } from './telemetry/errors.ts';
 export { buildConciergeContext, firstName } from './concierge/context.ts';
+// Proprietary ApexVIP algorithms — © 2026 ApexVIP. All rights reserved.
+export { matchScore, rankDrivers, vehicleFit, haversineKm } from './dispatch/match.ts';
+export { buildPulse, heatAt, nextPeak, goOnlineAdvice, hourOfWeek } from './demand/pulse.ts';
+export { yieldMultiplier, YIELD_CAP, YIELD_FLOOR, YIELD_STEP } from './pricing/yield.ts';
