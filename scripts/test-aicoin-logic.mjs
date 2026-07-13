@@ -159,6 +159,72 @@ test('paying for inference without funds fails; fees on receipts go to the miner
   assert.equal(chain.getBalance(bob.address), 128 * AI.COIN + 250);
 });
 
+test('provider mode: the cost pays the provider, a 1-spark burn binds payment to prompt', () => {
+  const chain = AI.createChain(EASY);
+  mineAt(chain, alice.address, 1);
+  const prompt = 'Summarise this block header';
+  const r = AI.payForInference({ chain, wallet: alice, prompt, modelTokens: 3000, provider: bob.address, timestamp: T0 + 30000 });
+  mineAt(chain, alice.address, 2);
+
+  // Bob (the provider) actually earned the cost; only 1 spark was burned.
+  assert.equal(chain.getBalance(bob.address), 3000);
+  assert.equal(chain.getBalance(AI.promptAddress(prompt)), AI.COMMIT_AMOUNT);
+  assert.equal(chain.getBalance(alice.address), 2 * 128 * AI.COIN - 3000 - AI.COMMIT_AMOUNT);
+
+  // Verifies as a provider receipt…
+  const v = AI.verifyInferenceReceipt(chain, { txId: r.txId, prompt, modelTokens: 3000, provider: bob.address });
+  assert.equal(v.ok, true);
+  assert.match(v.status, /to provider/);
+  // …but not against an uninvolved provider, an overclaim, or as a full burn.
+  // (A provider verifies their OWN address; the payer's change output means
+  // claiming the payer as provider would pass — documented in engine.js.)
+  const carol = C.walletFromPrivateKey('3'.padStart(64, '0'));
+  assert.equal(AI.verifyInferenceReceipt(chain, { txId: r.txId, prompt, modelTokens: 3000, provider: carol.address }).ok, false);
+  assert.equal(AI.verifyInferenceReceipt(chain, { txId: r.txId, prompt, modelTokens: 3001, provider: bob.address }).ok, false);
+  assert.match(AI.verifyInferenceReceipt(chain, { txId: r.txId, prompt, modelTokens: 3000 }).status, /underpaid/);
+  // Bad provider addresses are rejected outright.
+  assert.throws(() => AI.payForInference({ chain, wallet: alice, prompt, modelTokens: 10, provider: 'not-an-address', timestamp: T0 + 60000 }));
+});
+
+test('buildPayment: multi-output transfers with change, validated like any transfer', () => {
+  const chain = AI.createChain(EASY);
+  mineAt(chain, alice.address, 1);
+  const tx = AI.buildPayment({
+    utxos: chain.spendableUtxos(alice.address), wallet: alice,
+    outputs: [{ address: bob.address, amount: 1000 }, { address: bob.address, amount: 2000 }],
+    fee: 50, timestamp: T0 + 30000
+  });
+  chain.submitTransaction(tx);
+  mineAt(chain, bob.address, 2);
+  assert.equal(chain.getBalance(bob.address), 3000 + 128 * AI.COIN + 50); // outputs + subsidy + fee
+  assert.equal(chain.getBalance(alice.address), 128 * AI.COIN - 3050);
+  assert.throws(() => AI.buildPayment({ utxos: [], wallet: alice, outputs: [{ address: bob.address, amount: 1 }] }), /insufficient/);
+  assert.throws(() => AI.buildPayment({ utxos: chain.spendableUtxos(alice.address), wallet: alice, outputs: [] }));
+});
+
+test('notary: 1 spark proves a document existed at a block height and time', () => {
+  const chain = AI.createChain(EASY);
+  mineAt(chain, alice.address, 1);
+  const text = 'I, Alice, predicted the halving on 2026-07-13.';
+  const n = AI.notarize({ chain, wallet: alice, text, timestamp: T0 + 30000 });
+  assert.equal(n.address, AI.commitmentAddress(C.sha256d(C.utf8ToBytes(text))));
+
+  let v = AI.verifyNotarization(chain, { txId: n.txId, text });
+  assert.equal(v.ok, false);
+  assert.match(v.status, /pending/);
+
+  const block = mineAt(chain, alice.address, 2);
+  v = AI.verifyNotarization(chain, { txId: n.txId, text });
+  assert.equal(v.ok, true);
+  assert.equal(v.height, 2);
+  assert.equal(v.timestamp, block.timestamp); // the PoW-backed timestamp
+  // Same digest, passed directly, verifies too; any other content does not.
+  assert.equal(AI.verifyNotarization(chain, { txId: n.txId, digestHex: n.digestHex }).ok, true);
+  assert.match(AI.verifyNotarization(chain, { txId: n.txId, text: text + ' ' }).status, /mismatch/);
+  assert.match(AI.verifyNotarization(chain, { txId: 'f'.repeat(64), text }).status, /not found/);
+  assert.match(AI.verifyNotarization(chain, { txId: n.txId, digestHex: 'zz' }).status, /invalid/);
+});
+
 test('ordinary AIT transfers still work (it is a real currency, not only a meter)', () => {
   const chain = AI.createChain(EASY);
   mineAt(chain, alice.address, 1);

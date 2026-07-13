@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#07090f">
-<title>AI Token (AIT) — mine AI tokens</title>
-<meta name="description" content="A proof-of-work cryptocurrency where the miner mines AI tokens: 1 spark = 1 model token of inference. Every tab is a full node.">
+<title>AI Token (AIT) — mine AI tokens, spend them on real AI</title>
+<meta name="description" content="A proof-of-work cryptocurrency where the miner mines AI tokens: 1 spark = 1 model token. Confirmed receipts redeem for real, local GPT inference; the same commitments notarize any document. Every tab is a full node.">
 <style>
   :root {
     --bg: #07090f; --panel: #0d1220; --panel2: #111831; --line: #1e2a4a;
@@ -23,7 +23,7 @@
   header { padding: 34px 0 10px; }
   h1 { margin: 0; font-size: 30px; letter-spacing: -0.5px; }
   h1 .tick { background: linear-gradient(90deg, var(--ai), var(--ai2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .tag { color: var(--dim); margin: 6px 0 0; max-width: 62ch; }
+  .tag { color: var(--dim); margin: 6px 0 0; max-width: 68ch; }
   .tag b { color: var(--ink); }
   .stats { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0; }
   .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; min-width: 128px; flex: 1; }
@@ -47,6 +47,7 @@
   }
   textarea { min-height: 84px; resize: vertical; font-family: inherit; }
   input:focus, textarea:focus { outline: none; border-color: var(--ai); }
+  input[type=file] { padding: 7px; font-size: 12px; color: var(--dim); }
   button {
     background: linear-gradient(90deg, var(--ai), #5a3df0); color: #fff; border: 0; border-radius: 9px;
     padding: 10px 16px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 12px;
@@ -54,6 +55,7 @@
   button.ghost { background: var(--panel2); border: 1px solid var(--line); color: var(--dim); font-weight: 500; }
   button.mine { background: linear-gradient(90deg, #0ea5b7, var(--ai2)); color: #04222b; width: 100%; padding: 13px; font-size: 16px; }
   button.mine.on { background: linear-gradient(90deg, var(--bad), #ff8f5c); color: #2b0410; }
+  button.run { background: linear-gradient(90deg, #1f9e6d, var(--ok)); color: #042b1c; padding: 6px 12px; font-size: 12.5px; margin: 8px 0 0; }
   button:disabled { opacity: 0.5; cursor: default; }
   .row { display: flex; gap: 10px; align-items: end; }
   .row > div { flex: 1; }
@@ -66,10 +68,18 @@
   .pill.ok { background: rgba(51, 214, 159, 0.12); color: var(--ok); }
   .pill.warn { background: rgba(255, 176, 32, 0.12); color: var(--warn); }
   .pill.bad { background: rgba(255, 92, 122, 0.12); color: var(--bad); }
+  .pill.ai { background: rgba(124, 92, 255, 0.15); color: #b3a1ff; }
   .receipt { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-top: 10px; background: var(--panel2); }
   .receipt .p { font-size: 13.5px; margin: 0 0 6px; color: var(--ink); }
   .receipt .m { font-family: var(--mono); font-size: 11.5px; color: var(--faint); word-break: break-all; }
+  .receipt .ans { white-space: pre-wrap; font-family: var(--mono); font-size: 12.5px; color: #bfe8d8;
+    background: #0a1526; border: 1px solid #16324a; border-radius: 8px; padding: 8px 10px; margin-top: 8px; }
   .spark { color: var(--warn); }
+  .modelbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: var(--panel2);
+    border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin-bottom: 12px; font-size: 13px; }
+  .modelbar .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--faint); flex: none; }
+  .modelbar.ready .dot { background: var(--ok); }
+  .modelbar button { margin: 0; padding: 6px 12px; font-size: 12.5px; }
   details { margin-top: 10px; }
   summary { cursor: pointer; color: var(--dim); font-size: 13px; }
   .foot { color: var(--faint); font-size: 12.5px; margin-top: 22px; }
@@ -80,10 +90,11 @@
 <div class="wrap">
   <header>
     <h1>⛏️🧠 <span class="tick">AI Token</span> <span class="mono" style="font-size:18px;color:var(--faint)">AIT</span></h1>
-    <p class="tag">A proof-of-work blockchain where <b>the miner mines AI tokens</b>. The base unit is
-    the <b class="spark">spark</b>, pegged at <b>1 spark = 1 model token</b> of AI inference —
-    so 1 AIT buys 100,000 tokens, and your balance reads as compute. Every tab of this page is a
-    full node: it keeps the ledger, verifies every rule, and mines.</p>
+    <p class="tag">A proof-of-work blockchain where <b>the miner mines AI tokens</b> — and the tokens are
+    <b>redeemable</b>: the base unit, the <b class="spark">spark</b>, is pegged at <b>1 spark = 1 model token</b>,
+    and a confirmed receipt runs a real GPT <b>on this device</b>, streaming exactly the tokens you paid for.
+    Pay an inference <b>provider</b> or burn to stay neutral; the same commitment trick <b>notarizes any document</b>.
+    Every tab of this page is a full node: ledger, consensus, miner, model.</p>
   </header>
 
   <div class="stats">
@@ -92,7 +103,7 @@
     <div class="stat"><div class="k">Block reward</div><div class="v" id="stReward">128 AIT</div></div>
     <div class="stat"><div class="k">Mined so far</div><div class="v" id="stSupply">0 / 33,554,432 AIT</div></div>
     <div class="stat"><div class="k">Mempool</div><div class="v" id="stMempool">0 tx</div></div>
-    <div class="stat"><div class="k">Peers (tabs)</div><div class="v" id="stPeers">0</div></div>
+    <div class="stat"><div class="k">Network</div><div class="v" id="stNet">0 tabs</div></div>
   </div>
 
   <div class="grid">
@@ -136,19 +147,29 @@
     </div>
 
     <div class="card wide">
-      <h2>🧠 Spend AIT on inference — <span class="em">prompt-commitment receipts</span></h2>
-      <p class="sub">Pay for AI by burning sparks to your prompt's commitment address —
-      <span class="mono">base58check(sha256d(prompt)[0..20])</span>. No key exists for that address, so the
-      payment is provably unspendable, commits to your exact prompt without revealing it, and shrinks the
-      AIT supply. Any provider can verify the receipt from the prompt + txId alone.</p>
+      <h2>🧠 AI desk — <span class="em">spend sparks on real inference</span></h2>
+      <p class="sub">Pay for AI with an on-chain receipt: the payment carries a burned commitment to
+      <span class="mono">sha256d(prompt)</span>, so it proves <i>what</i> was bought without revealing it.
+      Leave the provider blank to burn the whole cost (deflationary, provider-neutral) or name a provider's
+      address to pay them, with a 1-spark burn binding payment↔prompt. Once the receipt confirms, <b>Run</b> it:
+      the from-scratch GPT (<a href="../llm-from-scratch/README.md">llm-from-scratch</a>) generates on this
+      device, token by token, stopping at exactly what you paid for.</p>
+      <div class="modelbar" id="modelBar">
+        <span class="dot"></span>
+        <span id="modelStatus">Local model not loaded.</span>
+        <button class="ghost" id="modelBtn">Load model (~9 MB)</button>
+      </div>
       <div class="grid">
         <div>
           <label>Prompt</label>
-          <textarea id="prompt" placeholder="Explain proof of work to a five-year-old…"></textarea>
+          <textarea id="prompt" placeholder="ROMEO: But soft, what light…"></textarea>
           <div class="row">
-            <div><label>Model tokens to buy</label><input id="promptTokens" inputmode="numeric" placeholder="1000"></div>
+            <div><label>Model tokens to buy <span id="tokSrc"></span></label><input id="promptTokens" inputmode="numeric" placeholder="200"></div>
             <div><label>Cost</label><div class="big" style="font-size:18px" id="promptCost">—</div></div>
-            <div><button id="payBtn">Pay &amp; get receipt</button></div>
+          </div>
+          <div class="row">
+            <div><label>Provider address (blank = burn)</label><input id="provider" placeholder="B… (optional)" autocomplete="off"></div>
+            <div style="flex:0 0 auto"><button id="payBtn">Pay &amp; get receipt</button></div>
           </div>
           <div class="msg" id="payMsg"></div>
         </div>
@@ -163,41 +184,94 @@
           <div><label>Transaction id</label><input id="vTx" autocomplete="off"></div>
           <div><label>Revealed prompt</label><input id="vPrompt" autocomplete="off"></div>
           <div><label>Model tokens</label><input id="vTokens" inputmode="numeric"></div>
-          <div><button class="ghost" id="verifyBtn">Verify</button></div>
+          <div><label>Provider (blank = burn)</label><input id="vProvider" autocomplete="off"></div>
+          <div style="flex:0 0 auto"><button class="ghost" id="verifyBtn">Verify</button></div>
         </div>
         <div class="msg" id="vMsg"></div>
       </details>
     </div>
 
     <div class="card wide">
+      <h2>📜 Notary — <span class="em">prove a document existed</span></h2>
+      <p class="sub">The receipt mechanism, generalised: burn <b>1 spark</b> to the commitment address of any
+      content's hash and the block's proof-of-work timestamps it forever. Contracts, predictions, drafts,
+      designs — prove <i>this exact content existed by this time</i> without revealing it until you choose to.
+      Verification needs only the content + txId.</p>
+      <div class="grid">
+        <div>
+          <label>Text to notarize</label>
+          <textarea id="notText" placeholder="I, the undersigned, predicted on 13 Jul 2026 that…"></textarea>
+          <label>…or a file (hashed locally, never uploaded)</label>
+          <input type="file" id="notFile">
+          <div class="row">
+            <div><div class="msg" id="notDigest">sha256d: —</div></div>
+            <div style="flex:0 0 auto"><button id="notarizeBtn">Notarize (1 spark)</button></div>
+          </div>
+          <div class="msg" id="notMsg"></div>
+        </div>
+        <div>
+          <label>My notarizations</label>
+          <div id="notary"><div class="msg">Nothing notarized yet.</div></div>
+          <details>
+            <summary>Verify a notarization (content + txId)</summary>
+            <div class="row">
+              <div><label>Transaction id</label><input id="nvTx" autocomplete="off"></div>
+              <div><label>Text (or pick a file below)</label><input id="nvText" autocomplete="off"></div>
+            </div>
+            <input type="file" id="nvFile">
+            <button class="ghost" id="nvBtn">Verify</button>
+            <div class="msg" id="nvMsg"></div>
+          </details>
+        </div>
+      </div>
+    </div>
+
+    <div class="card wide">
       <h2>🔍 Block explorer</h2>
-      <p class="sub">The most recent blocks on the heaviest chain this node knows. Open this page in a second
-      tab: both nodes gossip over BroadcastChannel and converge by cumulative work.</p>
+      <p class="sub">The most recent blocks on the heaviest chain this node knows. Tabs in this browser sync
+      over BroadcastChannel; add a relay below to sync with other devices.</p>
       <table>
-        <thead><tr><th>Height</th><th>Hash</th><th>Txs</th><th>Coinbase → miner</th><th>Burned</th><th>When</th></tr></thead>
+        <thead><tr><th>Height</th><th>Hash</th><th>Txs</th><th>Coinbase → miner</th><th>Committed</th><th>When</th></tr></thead>
         <tbody id="blocks"></tbody>
       </table>
+      <details>
+        <summary>Network — connect this node to other devices</summary>
+        <p class="sub" style="margin-top:8px">Run <span class="mono">node aicoin/server.mjs</span> and enter its URL
+        (or just open that URL — a served page auto-connects to its own origin). The relay is dumb: it forwards
+        gossip but can't forge a spark; every node re-verifies everything.</p>
+        <div class="row">
+          <div><input id="relayInput" placeholder="https://your-node.example.com" autocomplete="off"></div>
+          <div style="flex:0 0 auto"><button class="ghost" id="relayAddBtn">Add relay</button></div>
+        </div>
+        <div class="msg" id="relayList">No relays configured.</div>
+      </details>
     </div>
   </div>
 
-  <p class="foot">A BallrzAPP concept prototype. The consensus core is
-  <a href="../coin/engine.js">coin/engine.js</a> (SHA-256, secp256k1, UTXO, PoW — tested against published
-  vectors); the AI-token layer is <a href="engine.js">aicoin/engine.js</a>, unit-tested in
-  <span class="mono">scripts/test-aicoin-logic.mjs</span>. Demo-grade key storage; see TimeCoin's
-  <a href="../coin/SECURITY.md">SECURITY.md</a> for the honest limitations shared by both chains.</p>
+  <p class="foot">A BallrzAPP concept prototype. Consensus core: <a href="../coin/engine.js">coin/engine.js</a>
+  (SHA-256, secp256k1, UTXO, PoW — tested against published vectors). AI layer:
+  <a href="engine.js">aicoin/engine.js</a>. Model: <a href="../llm-from-scratch/README.md">llm-from-scratch</a>,
+  running entirely client-side. Tests: <span class="mono">scripts/test-aicoin-logic.mjs</span>,
+  <span class="mono">scripts/test-aicoin-relay.mjs</span>. Demo-grade key storage — see
+  <a href="../coin/SECURITY.md">SECURITY.md</a> for shared limitations.</p>
 </div>
 
 <script src="../coin/engine.js"></script>
 <script src="engine.js"></script>
+<script src="../llm-from-scratch/web/gpt.js"></script>
 <script>
 (function () {
   'use strict';
   var Coin = self.BallrzCoin, AI = self.BallrzAI;
+  var GPTLIB = (typeof self !== 'undefined' && self.GPTLib) || null;
+  var MODEL_URL = '../llm-from-scratch/web/model.json';
+  var GEN_OPTS = { temperature: 0.9, topK: 40, repetitionPenalty: 1.3 };
   var $ = function (id) { return document.getElementById(id); };
   var esc = function (s) { return String(s).replace(/[&<>"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }); };
 
-  /* ---- node state: wallet, chain, receipts — all persisted locally ---- */
-  var WALLET_KEY = 'ballrzai-wallet-v1', CHAIN_KEY = 'ballrzai-chain-v1', RECEIPTS_KEY = 'ballrzai-receipts-v1';
+  /* ---- node state: wallet, chain, receipts, notarizations ---- */
+  var WALLET_KEY = 'ballrzai-wallet-v1', CHAIN_KEY = 'ballrzai-chain-v1',
+      RECEIPTS_KEY = 'ballrzai-receipts-v1', NOTARY_KEY = 'ballrzai-notary-v1', RELAYS_KEY = 'ballrzai-relays-v1';
   var store = {
     get: function (k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (err) { return null; } },
     set: function (k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (err) { /* quota — demo data */ } }
@@ -223,30 +297,109 @@
 
   var receipts = store.get(RECEIPTS_KEY) || [];
   function persistReceipts() { store.set(RECEIPTS_KEY, receipts); }
+  var notarizations = store.get(NOTARY_KEY) || [];
+  function persistNotary() { store.set(NOTARY_KEY, notarizations); }
 
-  /* ---- networking: every same-browser tab is a peer ---- */
+  /* ---- networking: same-browser tabs + cross-device relays ---- */
   var bc = null, peers = {}, PEER_ID = String(Date.now()) + ':' + Math.floor(Math.random() * 1e9);
-  function broadcast(msg) { if (bc) { msg.from = PEER_ID; try { bc.postMessage(msg); } catch (err) { /* non-clonable */ } } }
+  var relays = []; // [{url, seen, up}]
+  function relayAdd(url) {
+    url = String(url || '').trim().replace(/\/+$/, '');
+    if (!/^https?:\/\/./.test(url)) return false;
+    for (var i = 0; i < relays.length; i++) if (relays[i].url === url) return false;
+    relays.push({ url: url, seen: 0, up: false });
+    store.set(RELAYS_KEY, relays.map(function (r) { return r.url; }));
+    return true;
+  }
+  function handleNetMessage(msg) {
+    if (!msg || msg.from === PEER_ID) return;
+    if (msg.from) peers[msg.from] = Date.now();
+    if (msg.type === 'hello') { shareChain(); }
+    else if (msg.type === 'chain') {
+      if (chain.replaceChain(msg.blocks)) { persistChain(); render(); }
+      else if (msg.blocks && msg.blocks.length < chain.blocks.length) shareChain(); // help them catch up
+    } else if (msg.type === 'tx') {
+      try { chain.submitTransaction(msg.tx); render(); } catch (err) { /* dup or spent */ }
+    }
+  }
+  function broadcast(msg) {
+    msg.from = PEER_ID;
+    if (bc) { try { bc.postMessage(msg); } catch (err) { /* non-clonable */ } }
+    var body;
+    try { body = JSON.stringify(msg); } catch (err) { return; }
+    relays.forEach(function (r) {
+      fetch(r.url + '/msg', { method: 'POST', headers: { 'content-type': 'application/json' }, body: body })
+        .catch(function () { /* relay down — the poll loop will notice */ });
+    });
+  }
   function shareChain() { broadcast({ type: 'chain', blocks: chain.blocks }); }
+  function pollRelays() {
+    relays.forEach(function (r) {
+      fetch(r.url + '/msgs?since=' + r.seen, { cache: 'no-store' })
+        .then(function (res) { return res.json(); })
+        .then(function (d) {
+          r.up = true;
+          if (typeof d.seq === 'number') r.seen = d.seq;
+          if (Array.isArray(d.msgs)) d.msgs.forEach(handleNetMessage);
+        })
+        .catch(function () { r.up = false; });
+    });
+  }
   if (typeof BroadcastChannel !== 'undefined') {
     bc = new BroadcastChannel('ballrzai-net-v1');
-    bc.onmessage = function (ev) {
-      var msg = ev && ev.data; if (!msg || msg.from === PEER_ID) return;
-      if (msg.from) peers[msg.from] = Date.now();
-      if (msg.type === 'hello') { shareChain(); }
-      else if (msg.type === 'chain') {
-        if (chain.replaceChain(msg.blocks)) { persistChain(); render(); }
-        else if (msg.blocks && msg.blocks.length < chain.blocks.length) shareChain(); // help them catch up
-      } else if (msg.type === 'tx') {
-        try { chain.submitTransaction(msg.tx); render(); } catch (err) { /* dup or spent */ }
-      }
-      render();
-    };
+    bc.onmessage = function (ev) { handleNetMessage(ev && ev.data); render(); };
+  }
+  (store.get(RELAYS_KEY) || []).forEach(relayAdd);
+  try { // served from a relay? connect to our own origin; honour ?relay= links
+    var proto = String((typeof location !== 'undefined' && location.protocol) || '');
+    if (/^https?:$/.test(proto)) relayAdd(location.origin);
+    new URLSearchParams(String((typeof location !== 'undefined' && location.search) || ''))
+      .getAll('relay').forEach(relayAdd);
+  } catch (err) { /* sandboxed */ }
+  $('relayAddBtn').addEventListener('click', function () {
+    if (relayAdd($('relayInput').value)) { $('relayInput').value = ''; pollRelays(); render(); }
+    else flash('relayList', 'Enter a full http(s) relay URL.', false);
+  });
+
+  /* ---- the local model: quotes and redemption ---- */
+  var model = null, modelLoading = false;
+  function modelSay(text, ready) {
+    $('modelStatus').textContent = text;
+    $('modelBar').className = 'modelbar' + (ready ? ' ready' : '');
+  }
+  function ensureModel() {
+    if (model) return Promise.resolve(model);
+    if (!GPTLIB) return Promise.reject(new Error('gpt.js failed to load'));
+    if (ensureModel.pending) return ensureModel.pending;
+    modelLoading = true;
+    modelSay('Loading weights…', false);
+    ensureModel.pending = fetch(MODEL_URL, { cache: 'force-cache' })
+      .then(function (res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+      .then(function (spec) {
+        model = new GPTLIB.Model(spec);
+        modelLoading = false;
+        var c = model.config;
+        modelSay('Model ready — ' + c.n_layer + ' layers, ' + c.n_embd + ' dim, ' + c.vocab_size + '-token vocab, ' +
+          c.block_size + ' context. Runs on this device; quotes now use its real tokenizer.', true);
+        quote(); renderReceipts();
+        return model;
+      })
+      .catch(function (err) {
+        modelLoading = false; ensureModel.pending = null;
+        modelSay('Could not load model.json (' + err.message + '). Serve the app — node aicoin/server.mjs — and reload.', false);
+        throw err;
+      });
+    return ensureModel.pending;
+  }
+  $('modelBtn').addEventListener('click', function () { ensureModel().catch(function () { /* shown in bar */ }); });
+  function countTokens(text) {
+    if (model) { try { return model.tokenizer.encode(String(text)).length; } catch (err) { /* fall back */ } }
+    return AI.estimateTokens(text);
   }
 
   /* ---- miner: grind nonces in time slices so the tab stays responsive ---- */
   var mining = false, template = null, templatePool = -1, found = 0, earned = 0;
-  var SLICE = 40000, window10 = []; // [t, hashes] pairs for the hashrate readout
+  var SLICE = 40000, rateWin = []; // [t, hashes] pairs for the hashrate readout
   function freshTemplate() {
     template = chain.prepareBlock(wallet.address, { extra: 'mined by ' + wallet.address.slice(0, 8) });
     templatePool = chain.mempool.length;
@@ -257,10 +410,10 @@
     var before = template.nonce || 0;
     var solved = Coin.mine(template, { maxIterations: SLICE });
     var now = Date.now();
-    window10.push([now, (solved ? template.nonce - before + 1 : SLICE)]);
-    while (window10.length && window10[0][0] < now - 5000) window10.shift();
-    var span = window10.length > 1 ? (now - window10[0][0]) / 1000 : 1;
-    var hashes = 0; for (var i = 0; i < window10.length; i++) hashes += window10[i][1];
+    rateWin.push([now, (solved ? template.nonce - before + 1 : SLICE)]);
+    while (rateWin.length && rateWin[0][0] < now - 5000) rateWin.shift();
+    var span = rateWin.length > 1 ? (now - rateWin[0][0]) / 1000 : 1;
+    var hashes = 0; for (var i = 0; i < rateWin.length; i++) hashes += rateWin[i][1];
     $('mnRate').textContent = (hashes / Math.max(span, 0.2) / 1000).toFixed(1) + ' kH/s';
     if (solved) {
       try {
@@ -315,68 +468,200 @@
     template = null; render();
   });
 
-  /* ---- inference: quote, pay, verify ---- */
+  /* ---- AI desk: quote, pay, run, verify ---- */
   var tokensEdited = false;
   $('promptTokens').addEventListener('input', function () { tokensEdited = true; quote(); });
   $('prompt').addEventListener('input', function () {
-    if (!tokensEdited) $('promptTokens').value = String(AI.estimateTokens($('prompt').value) + 1000); // prompt + response budget
+    if (!tokensEdited) $('promptTokens').value = String(countTokens($('prompt').value) + 200); // prompt + response budget
     quote();
   });
   function quote() {
     var n = parseInt($('promptTokens').value, 10);
     $('promptCost').textContent = (n > 0) ? AI.formatAIT(AI.costForTokens(n)) : '—';
+    $('tokSrc').textContent = model ? '(real tokenizer)' : '(~4 chars/token estimate)';
   }
   $('payBtn').addEventListener('click', function () {
     try {
       var prompt = $('prompt').value;
       var n = parseInt($('promptTokens').value, 10);
-      var r = AI.payForInference({ chain: chain, wallet: wallet, prompt: prompt, modelTokens: n });
+      var provider = $('provider').value.trim();
+      var r = AI.payForInference({ chain: chain, wallet: wallet, prompt: prompt, modelTokens: n, provider: provider || undefined });
       broadcast({ type: 'tx', tx: r.tx });
-      receipts.unshift({ txId: r.txId, prompt: prompt, modelTokens: n, cost: r.cost, when: Date.now() });
+      receipts.unshift({ txId: r.txId, prompt: prompt, modelTokens: n, cost: r.cost, provider: r.provider, spent: false, answer: '', when: Date.now() });
       persistReceipts();
-      flash('payMsg', 'Paid ' + AI.formatAIT(r.cost) + ' to the prompt’s commitment address. Receipt confirms once mined.', true);
+      flash('payMsg', provider
+        ? 'Paid ' + AI.formatAIT(r.cost) + ' to the provider (+1 spark commitment burn). Runs once mined.'
+        : 'Burned ' + AI.formatAIT(r.cost) + ' to the prompt’s commitment address. Runs once mined.', true);
       render();
     } catch (err) { flash('payMsg', err.message, false); }
   });
   $('verifyBtn').addEventListener('click', function () {
     var v = AI.verifyInferenceReceipt(chain, {
-      txId: $('vTx').value.trim(), prompt: $('vPrompt').value, modelTokens: parseInt($('vTokens').value, 10)
+      txId: $('vTx').value.trim(), prompt: $('vPrompt').value,
+      modelTokens: parseInt($('vTokens').value, 10),
+      provider: $('vProvider').value.trim() || undefined
     });
     flash('vMsg', (v.ok ? 'VALID — ' : 'NOT VALID — ') + v.status, v.ok);
   });
 
+  /* ---- redemption: a confirmed receipt runs the model, metered ---- */
+  var streamingTx = null;
+  function runReceipt(txId) {
+    var r = null;
+    for (var i = 0; i < receipts.length; i++) if (receipts[i].txId === txId) r = receipts[i];
+    if (!r || streamingTx) return;
+    var v = AI.verifyInferenceReceipt(chain, r);
+    if (!v.ok) { flash('payMsg', 'Receipt not yet valid: ' + v.status, false); return; }
+    ensureModel().then(function () {
+      var promptToks = countTokens(r.prompt);
+      var budget = r.modelTokens - promptToks;
+      if (budget <= 0) {
+        flash('payMsg', 'The prompt alone is ' + promptToks + ' tokens — the ' + r.modelTokens + ' you paid for leave nothing to generate.', false);
+        return;
+      }
+      streamingTx = txId;
+      r.answer = ''; r.spent = true; persistReceipts(); // metered like any API: tokens are consumed by running
+      renderReceipts(true);
+      var out = $('ans-' + txId);
+      flash('payMsg', 'Generating ' + budget + ' tokens on-device (' + promptToks + ' prompt + ' + budget + ' response = ' + r.modelTokens + ' paid)…', true);
+      var remaining = budget;
+      (function step() {
+        if (remaining <= 0 || !model) {
+          streamingTx = null; persistReceipts(); render();
+          flash('payMsg', 'Done — ' + r.modelTokens + ' paid tokens fully redeemed as real inference.', true);
+          return;
+        }
+        var take = Math.min(12, remaining);
+        try {
+          model.generate(r.prompt + r.answer, take, GEN_OPTS, function (tok) {
+            r.answer += tok;
+            if (out) out.textContent = r.answer + '▋';
+          });
+        } catch (err) {
+          streamingTx = null; r.spent = false; persistReceipts(); // a failed run doesn't bill
+          flash('payMsg', 'Generation failed: ' + err.message, false); render(); return;
+        }
+        remaining -= take;
+        setTimeout(step, 0);
+      })();
+    }).catch(function () { flash('payMsg', 'Load the model first (button above).', false); });
+  }
+  $('receipts').addEventListener('click', function (ev) {
+    var t = ev && ev.target, id = t && t.getAttribute && t.getAttribute('data-run');
+    if (id) runReceipt(id);
+  });
+
+  /* ---- notary ---- */
+  var notFileDigest = null; // {digestHex, name}
+  function hashBytes(bytes) { return Coin.sha256d(bytes); }
+  function refreshDigest() {
+    var d = notFileDigest ? notFileDigest.digestHex
+      : ($('notText').value ? hashBytes(Coin.utf8ToBytes($('notText').value)) : null);
+    $('notDigest').textContent = 'sha256d: ' + (d ? d.slice(0, 32) + '…' : '—');
+    return d;
+  }
+  $('notText').addEventListener('input', function () { notFileDigest = null; try { $('notFile').value = ''; } catch (err) {} refreshDigest(); });
+  $('notFile').addEventListener('change', function (ev) {
+    var f = ev && ev.target && ev.target.files && ev.target.files[0];
+    if (!f) { notFileDigest = null; refreshDigest(); return; }
+    var reader = new FileReader();
+    reader.onload = function () {
+      notFileDigest = { digestHex: hashBytes(new Uint8Array(reader.result)), name: f.name };
+      refreshDigest();
+    };
+    reader.readAsArrayBuffer(f);
+  });
+  $('notarizeBtn').addEventListener('click', function () {
+    try {
+      var digest = refreshDigest();
+      if (!digest) { flash('notMsg', 'Type some text or pick a file first.', false); return; }
+      var n = AI.notarize({ chain: chain, wallet: wallet, digestHex: digest });
+      broadcast({ type: 'tx', tx: n.tx });
+      notarizations.unshift({
+        txId: n.txId, digestHex: digest,
+        label: notFileDigest ? '📎 ' + notFileDigest.name : ($('notText').value.slice(0, 60) || digest.slice(0, 16)),
+        when: Date.now()
+      });
+      persistNotary();
+      flash('notMsg', 'Committed. Once mined, the block’s proof-of-work timestamps this content forever.', true);
+      render();
+    } catch (err) { flash('notMsg', err.message, false); }
+  });
+  var nvFileDigest = null;
+  $('nvFile').addEventListener('change', function (ev) {
+    var f = ev && ev.target && ev.target.files && ev.target.files[0];
+    if (!f) { nvFileDigest = null; return; }
+    var reader = new FileReader();
+    reader.onload = function () { nvFileDigest = hashBytes(new Uint8Array(reader.result)); flash('nvMsg', 'File hashed — hit Verify.', true); };
+    reader.readAsArrayBuffer(f);
+  });
+  $('nvBtn').addEventListener('click', function () {
+    var digest = nvFileDigest || ($('nvText').value ? hashBytes(Coin.utf8ToBytes($('nvText').value)) : null);
+    if (!digest) { flash('nvMsg', 'Provide the text or file to check.', false); return; }
+    var v = AI.verifyNotarization(chain, { txId: $('nvTx').value.trim(), digestHex: digest });
+    flash('nvMsg', (v.ok ? 'PROVEN — existed by ' + new Date(v.timestamp).toLocaleString() + ', ' : 'NOT PROVEN — ') + v.status, v.ok);
+  });
+
   /* ---- rendering ---- */
-  function renderReceipts() {
+  function renderReceipts(force) {
+    if (streamingTx && !force) return; // don't yank the DOM out from under a stream
     if (!receipts.length) { $('receipts').innerHTML = '<div class="msg">No receipts yet. Mine some AIT, then pay for a prompt.</div>'; return; }
     $('receipts').innerHTML = receipts.slice(0, 6).map(function (r) {
       var v = AI.verifyInferenceReceipt(chain, r);
       var pill = v.ok ? '<span class="pill ok">✓ ' + v.confirmations + ' conf</span>'
         : /pending/.test(v.status) ? '<span class="pill warn">pending</span>'
         : '<span class="pill bad">' + esc(v.status.split(':')[0]) + '</span>';
+      if (r.provider) pill += ' <span class="pill ai">provider</span>';
+      var run = '';
+      if (r.txId === streamingTx) run = '<span class="pill ai">generating…</span>';
+      else if (v.ok && !r.spent) run = '<button class="run" data-run="' + esc(r.txId) + '">▶ Run — redeem for real inference</button>';
+      else if (r.spent) pill += ' <span class="pill ok">redeemed</span>';
+      var ans = (r.answer || r.txId === streamingTx)
+        ? '<div class="ans" id="ans-' + esc(r.txId) + '">' + esc(r.answer || '') + (r.txId === streamingTx ? '▋' : '') + '</div>' : '';
       return '<div class="receipt"><p class="p">“' + esc(r.prompt.length > 90 ? r.prompt.slice(0, 90) + '…' : r.prompt) + '” ' + pill + '</p>' +
-        '<div class="m">' + r.modelTokens + ' tokens · ' + AI.formatAIT(r.cost) + ' · tx ' + esc(r.txId) + '</div></div>';
+        '<div class="m">' + r.modelTokens + ' tokens · ' + AI.formatAIT(r.cost) +
+        (r.provider ? ' → ' + esc(r.provider.slice(0, 10)) + '…' : ' burned') + ' · tx ' + esc(r.txId) + '</div>' + run + ans + '</div>';
+    }).join('');
+  }
+  function renderNotary() {
+    if (!notarizations.length) { $('notary').innerHTML = '<div class="msg">Nothing notarized yet.</div>'; return; }
+    $('notary').innerHTML = notarizations.slice(0, 5).map(function (n) {
+      var v = AI.verifyNotarization(chain, n);
+      var pill = v.ok ? '<span class="pill ok">✓ block #' + v.height + '</span>'
+        : /pending/.test(v.status) ? '<span class="pill warn">pending</span>'
+        : '<span class="pill bad">' + esc(v.status.split(':')[0]) + '</span>';
+      return '<div class="receipt"><p class="p">' + esc(n.label) + ' ' + pill + '</p>' +
+        '<div class="m">' + (v.ok ? 'existed by ' + new Date(v.timestamp).toLocaleString() + ' · ' : '') + 'tx ' + esc(n.txId) + '</div></div>';
     }).join('');
   }
   function renderBlocks() {
-    // Prompt hashes on chain are opaque; only receipts this node holds can
-    // label an output as an inference burn.
+    // Commitment outputs this node can label (its own receipts + notarizations).
     var commitments = {};
     receipts.forEach(function (r) {
       try { commitments[AI.promptAddress(r.prompt)] = true; } catch (err) { /* skip */ }
     });
+    notarizations.forEach(function (n) {
+      try { commitments[AI.commitmentAddress(n.digestHex)] = true; } catch (err) { /* skip */ }
+    });
     var rows = chain.blocks.slice(-8).reverse().map(function (b) {
       var cb = b.transactions[0];
       var reward = cb.outputs.reduce(function (s, o) { return s + o.amount; }, 0);
-      var burned = 0;
+      var committed = 0;
       b.transactions.slice(1).forEach(function (tx) {
-        tx.outputs.forEach(function (o) { if (commitments[o.address]) burned += o.amount; });
+        tx.outputs.forEach(function (o) { if (commitments[o.address]) committed += o.amount; });
       });
       return '<tr><td>' + b.height + '</td><td>' + esc(b.hash.slice(0, 20)) + '…</td><td>' + b.transactions.length + '</td>' +
         '<td>' + (b.height === 0 ? '— (genesis)' : esc(AI.formatAIT(reward)) + ' → ' + esc((cb.outputs[0] && cb.outputs[0].address || '').slice(0, 10)) + '…') + '</td>' +
-        '<td>' + (burned ? '<span class="spark">' + esc(AI.formatAIT(burned)) + '</span>' : '—') + '</td>' +
+        '<td>' + (committed ? '<span class="spark">' + esc(AI.formatAIT(committed)) + '</span>' : '—') + '</td>' +
         '<td>' + new Date(b.timestamp).toLocaleTimeString() + '</td></tr>';
     });
     $('blocks').innerHTML = rows.join('');
+  }
+  function renderRelays() {
+    if (!relays.length) { $('relayList').textContent = 'No relays configured.'; return; }
+    $('relayList').innerHTML = relays.map(function (r) {
+      return '<span class="pill ' + (r.up ? 'ok' : 'warn') + '">' + esc(r.url) + (r.up ? ' · up' : ' · connecting…') + '</span>';
+    }).join(' ');
   }
   function render() {
     var s = chain.stats();
@@ -387,7 +672,8 @@
     $('stMempool').textContent = s.mempoolSize + ' tx';
     var live = 0, cutoff = Date.now() - 30000;
     for (var p in peers) if (peers[p] > cutoff) live++;
-    $('stPeers').textContent = String(live);
+    var up = 0; relays.forEach(function (r) { if (r.up) up++; });
+    $('stNet').textContent = live + ' tab' + (live === 1 ? '' : 's') + (relays.length ? ' · ' + up + '/' + relays.length + ' relay' + (relays.length === 1 ? '' : 's') : '');
     $('wAddr').textContent = wallet.address;
     var bal = chain.getBalance(wallet.address);
     $('wBal').textContent = AI.formatAIT(bal);
@@ -395,12 +681,16 @@
     $('mnFound').textContent = String(found);
     $('mnEarned').textContent = AI.formatAIT(earned);
     renderReceipts();
+    renderNotary();
     renderBlocks();
+    renderRelays();
   }
 
   render();
   quote();
   broadcast({ type: 'hello' });
+  pollRelays();
+  setInterval(pollRelays, 2500);
   setInterval(render, 5000); // confirmations / peer liveness tick over even when idle
 })();
 </script>
