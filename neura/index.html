@@ -213,6 +213,9 @@
         <div style="flex:1"></div>
       </div>
       <div id="minerlog" style="margin-top:12px" aria-live="polite"></div>
+      <p style="font-size:.8rem;color:var(--ink-3);margin:12px 0 0">Leaving a device running? Use the
+        <a id="minerLink" href="mine.html">dedicated miner</a> — it holds no keys, mines to an address
+        you paste, and keeps the screen awake.</p>
     </section>
 
     <section class="panel span6">
@@ -221,7 +224,7 @@
       <label for="sendFrom">From</label>
       <select id="sendFrom"></select>
       <label for="sendTo">To address</label>
-      <input id="sendTo" placeholder="N… (a Neura address)" autocomplete="off" spellcheck="false">
+      <input id="sendTo" placeholder="B… (a Neura address)" autocomplete="off" spellcheck="false">
       <div class="row">
         <div><label for="sendAmt">Amount</label><input id="sendAmt" placeholder="1.5" inputmode="decimal"></div>
         <div><label for="sendFee">Fee (optional)</label><input id="sendFee" placeholder="0.001" inputmode="decimal"></div>
@@ -506,6 +509,12 @@
     }
     $('mineWallet').innerHTML = opts || '<option value="">Create a wallet first</option>';
     $('sendFrom').innerHTML = opts || '<option value="">Create a wallet first</option>';
+    // hand the dedicated miner your reward address via its ?pay= link
+    var ml = $('minerLink');
+    if (ml && objs.length) {
+      var mi = parseInt($('mineWallet').value, 10); if (isNaN(mi) || !objs[mi]) mi = 0;
+      ml.href = 'mine.html?pay=' + objs[mi].address;
+    }
   }
 
   document.addEventListener('click', function (ev) {
