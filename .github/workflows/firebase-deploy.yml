@@ -92,6 +92,20 @@ jobs:
           npm --prefix functions install
           npm --prefix functions-side install
 
+      # Side-apps codebase = Lingua (linguaAI) + Ripple. Deployed FIRST and on
+      # its own, so a storage/rules permission gap can't block Lingua's hosted
+      # AI from going live. Uses the project's shared ANTHROPIC_API_KEY secret.
+      - name: Deploy side-apps functions — Lingua linguaAI
+        if: steps.gate.outputs.ok == 'true'
+        continue-on-error: true
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          firebase deploy --only functions:side-apps \
+            --project apexvip-1b4a9 --non-interactive --force \
+          && echo "::notice title=linguaAI deployed::Lingua hosted AI is live." \
+          || echo "::warning title=linguaAI deploy failed::See this step's log for the exact permission/API missing."
+
       # Rules are the critical part — this step must succeed.
       - name: Deploy Firestore + Storage rules
         if: steps.gate.outputs.ok == 'true'
@@ -123,14 +137,3 @@ jobs:
           firebase deploy --only functions:apexvip \
             --project apexvip-1b4a9 --non-interactive --force
 
-      # Side-apps codebase = Lingua (linguaAI) + Ripple. Deployed on its own so a
-      # problem in the ApexVIP codebase can't block Lingua's hosted AI from going
-      # live. Uses the shared ANTHROPIC_API_KEY secret already on the project.
-      - name: Deploy side-apps functions — Lingua linguaAI (best effort)
-        if: steps.gate.outputs.ok == 'true'
-        continue-on-error: true
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
-        run: |
-          firebase deploy --only functions:side-apps \
-            --project apexvip-1b4a9 --non-interactive --force
