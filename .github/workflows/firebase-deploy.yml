@@ -56,6 +56,24 @@ jobs:
           SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
 
+      # macOS TextEdit silently converts straight quotes to typographic (smart)
+      # quotes when JSON passes through it, corrupting the credential. Values in
+      # a service-account key can never legitimately contain curly quotes or
+      # non-breaking spaces, so normalizing them back is always safe.
+      - name: Repair smart quotes in the credential
+        if: steps.gate.outputs.ok == 'true'
+        run: |
+          python3 - <<'EOF'
+          import io, os
+          p = os.path.join(os.environ["RUNNER_TEMP"], "sa.json")
+          s = io.open(p, encoding="utf-8", errors="replace").read()
+          fixed = (s.replace("\u201c", '"').replace("\u201d", '"')
+                    .replace("\u2018", "'").replace("\u2019", "'")
+                    .replace("\u00a0", " "))
+          io.open(p, "w", encoding="utf-8").write(fixed)
+          print("repaired" if fixed != s else "no repair needed")
+          EOF
+
       # Prints WHICH robot identity this deploy runs as (email + project). The
       # email is an identifier, not a credential — safe to log, and essential
       # for granting it the right IAM roles when a deploy 403s. Split around
