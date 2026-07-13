@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R73 — V-Class vertical taillights';
+const BUILD = 'BUILD R74 — V-Class tailgate rebuilt v4';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -111,6 +111,10 @@ const UP       = new THREE.Vector3(0,1,0);
 const MOBILE = (typeof navigator!=='undefined') &&
   (/iPhone|iPad|iPod|Android|Mobi/i.test(navigator.userAgent) ||
    ((navigator.maxTouchPoints||0) > 1 && Math.min(window.innerWidth,window.innerHeight) < 820));
+
+// debug/showroom camera pose (?pose=rear|front|side) — fixed close-up of the
+// player's car so body details can be checked against reference photos.
+const _POSE = (typeof location!=='undefined' && /[?&]pose=(\w+)/.exec(location.search)||[])[1]||'';
 
 let renderer, scene, camera, sun, sky, hemiLight, ambLight;
 let _GPU=false, _post=null;   // WebGPU renderer + its post-processing (bloom) pipeline
@@ -996,75 +1000,91 @@ function decal(tex, w, h){ return new THREE.Mesh(new THREE.PlaneGeometry(w,h), n
 // star, privacy-tinted glasshouse, roof rails, running boards, wrap-around
 // LED taillights and UK yellow plates.
 function addVanBody(g, liv, hero, W, L){
+  // NOTE on extents: the beveled extrusion reaches ~z ±2.75 and x ±1.10 — every
+  // fitting must mount PROUD of that or it vanishes inside the bodywork.
   const body=paintMat(liv.body, hero), dark=matteMat(0x0d0f13), chrome=chromeMat();
   body.envMapIntensity=Math.min(body.envMapIntensity,1.3);   // keep the black paint OBSIDIAN — sky reflections washed it grey
   const glass=glassMat(false);                                  // privacy tint — opaque black glass
   g.add(extrudeCar(VAN_LOWER, W, 0.07, body));                  // lower hull
   g.add(extrudeCar(VAN_GLASS, W-0.14, 0.04, glass));            // tinted glasshouse band
   g.add(extrudeCar(VAN_ROOF,  W-0.20, 0.04, body));             // roof cap
-  // pillars breaking up the glass band
-  for (const pz of [1.55, 0.45, -0.75, -1.95]) g.add(lmBox(dark, W-0.12, 0.78, 0.10, 0, 1.68, pz));
+  // pillars breaking up the glass band (wider than the glass so they show)
+  for (const pz of [1.55, 0.45, -0.75, -1.95]) g.add(lmBox(dark, W, 0.78, 0.10, 0, 1.68, pz));
   // roof rails
-  for (const sx of [-0.68,0.68]) g.add(lmBox(dark, 0.09,0.07,L*0.66, sx, 2.30, -0.35));
+  for (const sx of [-0.68,0.68]) g.add(lmBox(dark, 0.09,0.07,L*0.66, sx, 2.34, -0.35));
   // chrome beltline strips under the glass
-  for (const sx of [-1,1]) g.add(lmBox(chrome, 0.03,0.045,L*0.86, sx*(W/2-0.02), 1.30, -0.15));
-  // front: gloss grille + chrome frame + twin slats + the three-pointed star
-  g.add(lmBox(dark,   1.30,0.52,0.06, 0,0.95,2.60));
-  g.add(lmBox(chrome, 1.42,0.62,0.05, 0,0.95,2.565));
-  for (const dy of [-0.13,0.13]) g.add(lmBox(chrome, 1.22,0.045,0.08, 0,0.95+dy,2.615));
+  for (const sx of [-1,1]) g.add(lmBox(chrome, 0.03,0.045,L*0.80, sx*1.115, 1.30, -0.15));
+
+  // ---- NOSE: flat face panel over the curved extrusion, fittings on top ----
+  g.add(lmBox(body, W-0.06, 0.94, 0.10, 0, 0.86, 2.72));
+  g.add(lmBox(dark,   1.30,0.52,0.06, 0,0.95,2.79));                       // gloss grille
+  g.add(lmBox(chrome, 1.42,0.62,0.05, 0,0.95,2.78));                       // chrome frame
+  for (const dy of [-0.13,0.13]) g.add(lmBox(chrome, 1.22,0.045,0.08, 0,0.95+dy,2.805));
   { const star=new THREE.Group();
     star.add(new THREE.Mesh(new THREE.TorusGeometry(0.155,0.02,8,28), chrome));
     const spoke=new THREE.BoxGeometry(0.035,0.16,0.035); spoke.translate(0,0.08,0);
     for (let k=0;k<3;k++){ const m=new THREE.Mesh(spoke, chrome); m.rotation.z=k*Math.PI*2/3; star.add(m); }   // one point up, two down
-    star.position.set(0,0.95,2.66); g.add(star); }
-  // LED headlight units + lower intake + splitter lip
-  for (const sx of [-0.72,0.72]){
-    g.add(lmBox(chrome, 0.58,0.26,0.05, sx,1.14,2.615));
-    g.add(lmBox(new THREE.MeshStandardMaterial({color:0xf4f8ff, emissive:0xbfd8ff, emissiveIntensity:0.5, roughness:0.2}), 0.46,0.16,0.05, sx,1.14,2.645));
+    star.position.set(0,0.95,2.84); g.add(star); }
+  for (const sx of [-0.72,0.72]){                                          // LED headlight units
+    g.add(lmBox(chrome, 0.58,0.26,0.05, sx,1.16,2.795));
+    g.add(lmBox(new THREE.MeshStandardMaterial({color:0xf4f8ff, emissive:0xbfd8ff, emissiveIntensity:0.5, roughness:0.2}), 0.46,0.16,0.05, sx,1.16,2.815));
   }
-  g.add(lmBox(dark, W-0.30,0.26,0.08, 0,0.52,2.62));
-  g.add(lmBox(dark, W-0.10,0.12,0.10, 0,0.36,2.58));
-  // rear: the V-Class signature — TALL VERTICAL taillight units running down
-  // each edge of the tailgate, from the window line toward the bumper.
-  // Smoked-red housings with a bright vertical LED blade that flares on braking.
-  const tlHouse=new THREE.MeshStandardMaterial({color:0x3a0d10, roughness:0.35, metalness:0.2, emissive:0x550a0a, emissiveIntensity:0.35});
-  const tlLed=new THREE.MeshStandardMaterial({color:0xff4038, emissive:0xe0140e, emissiveIntensity:1.1, roughness:0.3});
+  g.add(lmBox(dark, W-0.30,0.24,0.08, 0,0.52,2.78));                       // lower intake
+  g.add(lmBox(dark, W-0.10,0.12,0.10, 0,0.34,2.62));                       // splitter lip
+
+  // ---- TAILGATE: flat panel + rear window, the V-Class furniture on top ----
+  // low-gloss tailgate panel (a mirror-bright horizon band swamped the lamps)
+  const tailPanel=new THREE.MeshStandardMaterial({color:0x0b0d11, metalness:0.4, roughness:0.5, envMap:envTex, envMapIntensity:0.5});
+  g.add(lmBox(tailPanel, W-0.06, 1.06, 0.10, 0, 0.88, -2.81));             // tailgate panel (clear of the hull's spline bulge)
+  g.add(lmBox(glass, W-0.36, 0.60, 0.06, 0, 1.72, -2.66));                 // rear window pane
+  // TALL VERTICAL taillight units down each tailgate edge: trapezoid housings
+  // (widest at the window line), red/amber/clear segments + a bright vertical
+  // LED edge that flares on braking.
+  const tlHouse=new THREE.MeshStandardMaterial({color:0x9a1518, roughness:0.3, metalness:0.15, emissive:0xa01218, emissiveIntensity:0.55});
+  const tlLed=new THREE.MeshStandardMaterial({color:0xff4038, emissive:0xe0140e, emissiveIntensity:1.3, roughness:0.3});
+  const tlAmber=new THREE.MeshStandardMaterial({color:0xff9a2a, emissive:0xa85a00, emissiveIntensity:0.3, roughness:0.4});
+  const tlClear=new THREE.MeshStandardMaterial({color:0xd8dde4, roughness:0.25, metalness:0.3});
   g.userData.brakeMats = g.userData.brakeMats||[];
+  // outer edge runs straight down the tailgate edge; inner edge tapers.
+  const OUT=W/2-0.04;                                    // lamp outer edge x
   for (const sx of [-1,1]){
-    g.add(lmBox(tlHouse, 0.22,0.64,0.06, sx*(W/2-0.15), 1.06, -2.655));     // tall vertical housing
-    g.add(lmBox(tlHouse, 0.16,0.10,0.06, sx*(W/2-0.18), 1.42, -2.652));     // tapered top tip at the window line
-    g.add(lmBox(tlLed,   0.08,0.56,0.065, sx*(W/2-0.15), 1.06, -2.66));     // vertical LED blade
-    g.add(lmBox(tlHouse, 0.06,0.60,0.14, sx*(W/2+0.005), 1.06, -2.58));     // wrap onto the body side
-    g.add(lmBox(tlLed,   0.065,0.50,0.07, sx*(W/2+0.012), 1.06, -2.57));    // side LED sliver
+    const blocks=[[0.42,0.32,1.26],[0.34,0.30,0.97],[0.26,0.22,0.72]];   // [width,height,centreY], widest at the window line
+    for (const [bw,bh,by] of blocks){
+      const cx=sx*(OUT-bw/2);
+      g.add(lmBox(tlHouse, bw+0.05,bh+0.05,0.06, cx, by, -2.875));       // smoked border
+      g.add(lmBox(tlLed,   bw,bh,0.06, cx, by, -2.89));                  // bright red lens
+    }
+    g.add(lmBox(tlAmber, 0.26,0.09,0.05, sx*(OUT-0.17), 1.06, -2.925));  // amber indicator band
+    g.add(lmBox(tlClear, 0.20,0.08,0.05, sx*(OUT-0.14), 0.90, -2.925));  // clear reverse lens
   }
   g.userData.brakeMats.push(tlLed);
-  g.add(lmBox(chrome, 1.5,0.04,0.05, 0,1.26,-2.665));
-  { const ring=new THREE.Mesh(new THREE.TorusGeometry(0.09,0.015,8,24), chrome); ring.position.set(0,1.10,-2.665); g.add(ring); }
+  g.add(lmBox(chrome, 0.86,0.03,0.05, 0,1.32,-2.885));                     // slim tailgate chrome strip
+  { const ring=new THREE.Mesh(new THREE.TorusGeometry(0.09,0.015,8,24), chrome); ring.position.set(0,1.10,-2.90); g.add(ring); }
   // UK yellow number plates front & rear
   const plate=new THREE.MeshStandardMaterial({color:0xf2c811, roughness:0.5});
-  g.add(lmBox(plate, 0.92,0.22,0.03, 0,0.66,2.665));
-  g.add(lmBox(plate, 0.92,0.22,0.03, 0,0.84,-2.67));
-  addMirrors(g, W/2+0.06, 1.45, 1.62, dark);
+  g.add(lmBox(plate, 0.92,0.22,0.03, 0,0.62,2.80));
+  g.add(lmBox(plate, 0.92,0.22,0.03, 0,0.80,-2.90));
+  addMirrors(g, W/2+0.12, 1.45, 1.62, dark);
   if (!hero) return;                                            // ---- hero extras ----
   // polished running boards along each rocker
   const steel=new THREE.MeshStandardMaterial({color:0xb8bcc4, metalness:0.9, roughness:0.3, envMap:envTex, envMapIntensity:1.2});
-  for (const sx of [-1,1]) g.add(lmBox(steel, 0.10,0.05,L*0.44, sx*(W/2+0.03), 0.34, -0.35));
+  for (const sx of [-1,1]) g.add(lmBox(steel, 0.10,0.05,L*0.44, sx*1.14, 0.34, -0.35));
   // door shut-lines, sliding-door rail + chrome handles
   const seam=new THREE.MeshStandardMaterial({color:0x05060a, roughness:0.9});
   for (const sx of [-1,1]){
-    g.add(lmBox(seam, 0.02,0.9,0.022, sx*(W/2+0.005), 0.85, 1.1));
-    g.add(lmBox(seam, 0.02,0.9,0.022, sx*(W/2+0.005), 0.85, -0.05));
-    g.add(lmBox(seam, 0.02,0.02,1.15, sx*(W/2+0.005), 1.26, 0.5));
-    g.add(lmBox(chrome, 0.03,0.05,0.20, sx*(W/2+0.01), 1.05, 1.0));
-    g.add(lmBox(chrome, 0.03,0.05,0.20, sx*(W/2+0.01), 1.05, -0.25));
+    g.add(lmBox(seam, 0.02,0.9,0.022, sx*1.115, 0.85, 1.1));
+    g.add(lmBox(seam, 0.02,0.9,0.022, sx*1.115, 0.85, -0.05));
+    g.add(lmBox(seam, 0.02,0.02,1.15, sx*1.115, 1.26, 0.5));
+    g.add(lmBox(chrome, 0.03,0.05,0.20, sx*1.12, 1.05, 1.0));
+    g.add(lmBox(chrome, 0.03,0.05,0.20, sx*1.12, 1.05, -0.25));
   }
-  g.add(lmBox(dark, W-0.5,0.05,0.35, 0,2.32,-2.30));            // roof spoiler
-  g.add(lmBox(dark, 0.14,0.11,0.30, 0,2.30,-1.55));             // shark-fin antenna
+  g.add(lmBox(dark, W-0.5,0.05,0.35, 0,2.34,-2.35));            // roof spoiler
+  g.add(lmBox(dark, 0.14,0.11,0.30, 0,2.32,-1.55));             // shark-fin antenna
   // baked-shadow depth: wheel-arch pools (same trick as the stock car)
   const archMat=new THREE.MeshBasicMaterial({map:blobTex(), transparent:true, opacity:0.5, depthWrite:false, color:0x000000});
   for (const [ax,az] of [[-1,L*0.31],[1,L*0.31],[-1,-L*0.31],[1,-L*0.31]]){
     const q=new THREE.Mesh(new THREE.PlaneGeometry(1.25,0.8), archMat);
-    q.position.set(ax*(W/2+0.035), 0.55, az); q.rotation.y=ax*Math.PI/2; q.userData.noShadow=true; g.add(q);
+    q.position.set(ax*1.125, 0.55, az); q.rotation.y=ax*Math.PI/2; q.userData.noShadow=true; g.add(q);
   }
 }
 
@@ -1119,7 +1139,7 @@ function buildCar(vehicle, lite){
   // additive red glow behind the taillights (blooms under braking)
   const glowMat=new THREE.MeshBasicMaterial({map:glowTex(0xff2a1a), transparent:true, opacity:0.0, depthWrite:false, blending:THREE.AdditiveBlending, fog:false});
   g.userData.tailGlow=[];
-  for (const sx of [-0.82,0.82]){ const q=new THREE.Mesh(new THREE.PlaneGeometry(VAN?0.5:1.5, VAN?0.95:1.1), glowMat.clone()); q.position.set(VAN?sx*1.07:sx,VAN?1.06:0.82,-L*0.5-0.2); q.rotation.y=Math.PI; q.userData.noShadow=true; g.add(q); g.userData.tailGlow.push(q); }
+  for (const sx of [-0.82,0.82]){ const q=new THREE.Mesh(new THREE.PlaneGeometry(VAN?0.5:1.5, VAN?0.95:1.1), glowMat.clone()); q.position.set(VAN?sx*1.01:sx,VAN?1.05:0.82,VAN?-L*0.5-0.42:-L*0.5-0.2); q.rotation.y=Math.PI; q.userData.noShadow=true; g.add(q); g.userData.tailGlow.push(q); }
   // a faint contact patch under the car — grounds distant cars that fall outside
   // the (tight) real-time shadow frustum; subtle so it doesn't double the shadow.
   { const sh=new THREE.Mesh(new THREE.PlaneGeometry(W*1.7,L*1.1), new THREE.MeshBasicMaterial({map:blobTex(), transparent:true, opacity:0.28, depthWrite:false, fog:false}));
@@ -1129,7 +1149,7 @@ function buildCar(vehicle, lite){
   { const hg=new THREE.MeshBasicMaterial({map:glowTex(0xfff0c2), transparent:true, opacity:0.85, depthWrite:false, blending:THREE.AdditiveBlending, fog:false});
     g.userData.headGlow=[];
     for (const sx of [-0.82,0.82]){ const q=new THREE.Mesh(new THREE.PlaneGeometry(1.3,1.0), hg.clone());
-      q.position.set(sx,VAN?1.08:0.82,L*0.5+0.18); q.userData.noShadow=true; q.visible=false; g.add(q); g.userData.headGlow.push(q); }
+      q.position.set(sx,VAN?1.16:0.82,L*0.5+0.18); q.userData.noShadow=true; q.visible=false; g.add(q); g.userData.headGlow.push(q); }
     const pool=new THREE.Mesh(new THREE.PlaneGeometry(W*2.7, L*3.1),
       new THREE.MeshBasicMaterial({map:glowTex(0xffe9b8), transparent:true, opacity:0.22, depthWrite:false, blending:THREE.AdditiveBlending, fog:false}));
     pool.rotation.x=-Math.PI/2; pool.position.set(0,0.12,L*0.5+L*1.4);
@@ -2197,6 +2217,14 @@ function render(){
       camera.lookAt(_look);
       camera.rotateZ(-G.steerVis*0.05);   // subtle body roll
     }
+  } else if (_POSE){
+    // fixed close-up debug/showroom pose around the player's car
+    worldPos(G.dist, G.offset, _tmp);
+    const d = _POSE==='front'?11.5:(_POSE==='side'?0.01:-11.5);
+    _camPos.copy(_tmp).addScaledVector(f.tan, d); _camPos.y += 2.6;
+    if (_POSE==='side') _camPos.addScaledVector(f.right, 11);
+    _look.copy(_tmp); _look.y += 1.8;
+    if (finite(_camPos) && finite(_look)){ camera.position.copy(_camPos); camera.up.set(0,1,0); camera.lookAt(_look); }
   } else {
     // chase camera — behind + above the car, ALWAYS world-up (never inverts/rolls
     // badly), finiteness-guarded. Height uses world up so the camera is always above.
