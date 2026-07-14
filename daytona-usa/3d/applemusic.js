@@ -28,7 +28,7 @@
       if (!this.sdkLoaded()) return false;
       const token = this.devToken(); if (!token) return false;
       try {
-        await window.MusicKit.configure({ developerToken: token, app: { name: 'Daytona USA 3D', build: '1.0' } });
+        await window.MusicKit.configure({ developerToken: token, app: { name: 'ApexGP', build: '1.0' } });
         this.instance = window.MusicKit.getInstance();
         this.configured = true;
         return true;

@@ -1,7 +1,7 @@
 // Service worker: makes the game installable + playable offline.
 // Network-first (so updates land), with a cache fallback that ignores the
 // ?v= cache-buster so a freshly-requested game3d.js?v=NEW still resolves offline.
-const CACHE = 'daytona3d-v1';
+const CACHE = 'apexgp-v1';
 const SHELL = ['./','./index.html','./game3d.js','./applemusic.js','../music.js',
                './vendor/three.module.js','./manifest.webmanifest','./icon.svg'];
 

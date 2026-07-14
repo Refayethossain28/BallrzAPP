@@ -1,5 +1,5 @@
 // ============================================================================
-//  DAYTONA USA — 3D Polygon Edition  (clean rewrite)
+//  APEX GP — arcade circuit racer  (formerly Daytona USA 3D)
 //  Architecture goals (hard requirements):
 //   1. Forward rendering ONLY — no post-processing/bloom. Never a black screen.
 //   2. On-rail arcade car: position is (dist along spline, lateral offset). The
@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R77 — pause menu with quit';
+const BUILD = 'BUILD R78 — APEX GP arcade menu';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -843,7 +843,7 @@ function makeWheelTexture(){
   // white sidewall lettering curved around the tyre (racing-slick look)
   x.save(); x.translate(c,c); x.fillStyle='rgba(238,240,244,0.92)';
   x.font=`900 ${Math.round(S*0.075)}px Arial`; x.textAlign='center'; x.textBaseline='middle';
-  const word='DAYTONA';
+  const word='APEX GP';
   for (const off of [0, Math.PI]){
     for (let i=0;i<word.length;i++){
       const a=off - (word.length-1)*0.5*0.16 + i*0.16;
@@ -926,7 +926,7 @@ function addCarDetails(g, W, L, lite, liv){
   for (const dz of [0.0,-0.5]) g.add(lmBox(dark, W-0.72,0.03,0.3, 0,1.61,dz-L*0.06));
   const ant=new THREE.Mesh(new THREE.CylinderGeometry(0.015,0.015,0.5,6), dark); ant.position.set(W*0.28,1.85,-L*0.1); g.add(ant);
   // windshield sun-visor sponsor band (raked to match the screen)
-  const band=decal(makeSponsorTex(liv.sponsor||'DAYTONA', liv.body), 1.3,0.2);
+  const band=decal(makeSponsorTex(liv.sponsor||'APEX', liv.body), 1.3,0.2);
   band.position.set(0,1.4,0.5); band.rotation.x=0.62; g.add(band);
   // ---- fine realism touches: panel shut-lines, chrome trim, door handles, wipers ----
   const seam=new THREE.MeshStandardMaterial({color:0x05060a, roughness:0.9});
@@ -1141,7 +1141,7 @@ function buildCar(vehicle, lite){
   // door number + sponsor decals (skip on lite rivals)
   if (!lite) for (const sx of [-1,1]){
     const dn=decal(makeNumberTex(liv.num), 0.92, 0.92); dn.position.set(sx*(W/2+0.04), 0.86, 0.42); dn.rotation.y=sx>0?-Math.PI/2:Math.PI/2; g.add(dn);
-    const sp=decal(makeSponsorTex(liv.sponsor||'DAYTONA', liv.hood), 1.55,0.5); sp.position.set(sx*(W/2+0.04), 0.68, -0.7); sp.rotation.y=sx>0?-Math.PI/2:Math.PI/2; g.add(sp);
+    const sp=decal(makeSponsorTex(liv.sponsor||'APEX', liv.hood), 1.55,0.5); sp.position.set(sx*(W/2+0.04), 0.68, -0.7); sp.rotation.y=sx>0?-Math.PI/2:Math.PI/2; g.add(sp);
   }
   // sticker headlights + taillights (taillights flare under braking)
   addLights(g, 0.82, L*0.5, L*0.5, lite);
@@ -3249,7 +3249,7 @@ function startAttract(){
     const hud=document.getElementById('hud'); if(hud) hud.style.visibility='hidden';
     ['viewBtn','pauseBtn'].forEach(id=>{ const e=document.getElementById(id); if(e){ if(id==='viewBtn')e.classList.add('hidden'); else e.style.display='none'; }});
     const t=document.getElementById('touch'); if(t) t.style.display='none';
-    showBanner('DAYTONA <span class="red">USA</span><br><span style="font-size:0.46em;letter-spacing:2px">▶ TAP TO PLAY</span>', 0, true);
+    showBanner('APEX <span class="red">GP</span><br><span style="font-size:0.46em;letter-spacing:2px">▶ TAP TO PLAY</span>', 0, true);
     startRaceMusic();
   } catch(e){ endAttract(); }
 }
@@ -3279,19 +3279,21 @@ function showMenu(){
   stopRaceMusic();
   if (window.AppleMusic && window.AppleMusic.isPlaying()) window.AppleMusic.pause();   // hush the user's music in menus
   if (window.GameMusic){ try{ window.GameMusic.start && window.GameMusic.start(); window.GameMusic.setMode && window.GameMusic.setMode('menu'); }catch(e){} }
-  showOverlay(`<h1 class="title">DAYTONA <span class="red">USA</span></h1>
-    <div class="subtitle">3D POLYGON EDITION</div>
+  showOverlay(`<h1 class="title">APEX <span class="red">GP</span></h1>
+    <div class="subtitle">ARCADE CIRCUIT RACING</div>
+    <div class="checker" style="width:min(560px,84vw);margin:0 auto 12px"></div>
     <div class="subtitle" style="margin:2px 0 10px;color:#ffd400;font-size:14px">◆ ${_profile.credits.toLocaleString()} CR &nbsp;·&nbsp; ${_profile.races} races &nbsp;·&nbsp; ${_profile.wins} wins</div>
-    <div class="menu-card">
-      <h2>MERCEDES CIRCUIT RACING</h2>
-      <p style="font-size:13px;opacity:.85;margin:0 0 14px">Pick your car, circuit, time, weather & soundtrack. ${BUILD}</p>
+    <div class="menu-card arcade">
+      <h2>SELECT RACE MODE</h2>
       <button class="btn" id="startBtn">SINGLE RACE ▶</button>
       <div style="height:8px"></div>
       <button class="btn ghost" id="ttBtn">⏱ TIME TRIAL</button>
       <div style="height:8px"></div>
       <button class="btn ghost" id="gpBtn">🏆 GRAND PRIX</button>
+      <div class="flash" style="margin-top:16px;color:#ffd400;letter-spacing:3px;font-weight:900;font-size:14px">◉ FREE PLAY — PRESS START</div>
     </div>
-    <div class="credit">Fan-made, non-commercial.</div>`);
+    <div class="checker" style="width:min(560px,84vw);margin:12px auto 0"></div>
+    <div class="credit">Fan-made, non-commercial. · ${BUILD}</div>`);
   document.getElementById('startBtn').onclick = ()=>{ try{ensureAudio();}catch(e){} G.champ=null; G.timeTrial=false; showVehicleSelect(); };
   document.getElementById('ttBtn').onclick    = ()=>{ try{ensureAudio();}catch(e){} G.champ=null; G.timeTrial=true; showVehicleSelect(); };
   document.getElementById('gpBtn').onclick    = ()=>{ try{ensureAudio();}catch(e){} G.timeTrial=false; champStart(); showVehicleSelect(); };
