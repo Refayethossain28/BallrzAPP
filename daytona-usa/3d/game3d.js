@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R74 — V-Class tailgate rebuilt v4';
+const BUILD = 'BUILD R75 — Daytona/GT handling';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -156,6 +156,8 @@ const G = {
   vehicle: VEHICLES[1],
   theme: THEMES[3],
   dist: 0, offset: 0, speed: 0, steerVis: 0,
+  gear: 1, rpm: 0.3, shiftCut: 0,         // GT-style drivetrain (5-speed auto + shift kick)
+  drift: 0, driftVis: 0, pitchVis: 0,     // Daytona powerslide state + weight-transfer visuals
   lap: 1, maxSpeed: 120, view: 'chase',   // chase | cockpit
   // race timing / scoring
   timeLeft: 0, totalTime: 0, rollT: 0, cdNum: -1, green: false,
@@ -1829,8 +1831,23 @@ function racingUpdate(dt){
   const v=G.vehicle, maxSpeed=G.maxSpeed;
   const onGrass = Math.abs(G.offset) > ROAD_W + RUMBLE_W;
 
-  // longitudinal
-  if (keys.gas)        G.speed += 84 * v.accelMul * dt;
+  // ---- GT-style drivetrain: 5-speed auto. Each gear pulls hardest low in its
+  //      band; upshifts cut the throttle for a beat (the classic shift kick). ----
+  {
+    const sf=Math.min(1.3, Math.abs(G.speed)/maxSpeed);
+    const TOPS=[0.20,0.36,0.54,0.75,1.31];
+    let gi=0; while (gi<4 && sf>TOPS[gi]) gi++;
+    if (gi+1>G.gear) G.shiftCut=0.13;                      // upshift kick
+    G.gear=gi+1;
+    if (G.shiftCut>0) G.shiftCut-=dt;
+    const lo=gi?TOPS[gi-1]:0, hi=TOPS[gi];
+    const inBand=Math.max(0,Math.min(1,(sf-lo)/(hi-lo)));
+    const target=(G.shiftCut>0?0.36:0.30)+0.68*inBand;     // revs drop through a shift
+    G.rpm += (target-G.rpm)*Math.min(1,dt*(G.shiftCut>0?16:9));
+  }
+  // longitudinal — low gears pull hard, top gear stretches (GT power band)
+  const gearPull=[1.42,1.26,1.12,1.0,0.88][G.gear-1]||1;
+  if (keys.gas)        G.speed += 84 * v.accelMul * gearPull * (G.shiftCut>0?0.15:1) * dt;
   else                 G.speed -= 22 * dt;                 // coast
   if (keys.brake)      G.speed -= 95 * v.brakeMul * dt;
   G.speed -= G.speed * 0.012;                              // drag
@@ -1864,12 +1881,27 @@ function racingUpdate(dt){
   G.steerVis += (steer - G.steerVis) * 0.2;
   const speedFrac = Math.min(1, Math.abs(G.speed)/maxSpeed);
   const grip = v.gripMul * (onGrass?0.7:1) * (G.rain?0.82:1);
-  G.offset += steer * 16 * v.steerMul * grip * dt * (0.35 + 0.65*speedFrac) * Math.sign(G.speed||1);
-  // gentle centrifugal drift on curves
   const f = frameAt(G.dist);
-  G.offset += f.curv * speedFrac * 11 * dt;
+  // ---- Daytona-style powerslide: at speed, a brake-tap while steering (or just
+  //      steering hard through a real corner) breaks the tail loose. Held, the
+  //      slide keeps corner speed; the honest line without it understeers. ----
+  const cornering = Math.abs(f.curv)*speedFrac;
+  if (!G.drift){
+    if (steer!==0 && speedFrac>0.5 && (keys.brake || cornering>0.030)) G.drift=steer;
+  } else if (steer===0 || speedFrac<0.32){ G.drift=0; }     // hooks back straight
+  else { G.drift=steer; }                                   // flick across mid-slide
+  G.driftVis += ((G.drift ? G.drift*(0.35+0.45*Math.min(1,cornering*14)) : 0) - G.driftVis)*Math.min(1,dt*6);
+  // steering authority: GT understeer as speed rises — restored by sliding
+  const authority = G.drift ? 1.35 : (1 - 0.38*speedFrac);
+  G.offset += steer * 16 * v.steerMul * grip * authority * dt * (0.35 + 0.65*speedFrac) * Math.sign(G.speed||1);
+  // centrifugal push (the tail runs wide in a slide)
+  G.offset += f.curv * speedFrac * (G.drift?17:11) * dt;
+  // corner-speed model: gripping through a fast corner scrubs speed off
+  // (understeer); a held powerslide carries momentum — the Daytona way round.
+  if (!G.drift && cornering>0.042) G.speed -= G.speed*Math.min(0.9,(cornering-0.042)*26)*dt;
+  else if (G.drift)                G.speed -= G.speed*0.055*dt;
   // ---- drift scoring: hold a fast line through corners to build a combo ----
-  const driftNow = speedFrac>0.62 && !onGrass && (steer!==0 || Math.abs(f.curv)>0.02);
+  const driftNow = !onGrass && (!!G.drift ? speedFrac>0.45 : (speedFrac>0.62 && (steer!==0 || Math.abs(f.curv)>0.02)));
   if (driftNow){ const gain=speedFrac*55*_driftCombo*dt; _driftActive+=dt; _driftCombo=Math.min(6, 1+((_driftActive*0.85)|0)); _sessionScore+=gain; _driftRun+=gain; }
   else {
     if (_driftRun>250){ const cols=['#ffd400','#ffae3a','#ff7a3a','#ff4dd2','#7affd4','#ffffff'];
@@ -2178,9 +2210,12 @@ function render(){
   placeGhost();
   animateWorld();
   updateNightLights();
-  // visual lean
-  playerCar.rotateY(G.steerVis * 0.16);
-  playerCar.rotateZ(-G.steerVis * 0.05 * (G.vehicle.rollMul||1));
+  // visual lean + powerslide yaw + weight transfer
+  playerCar.rotateY(G.steerVis * 0.16 + (G.driftVis||0)*0.55);      // the Daytona slide angle
+  playerCar.rotateZ(-(G.steerVis*0.05 + (G.driftVis||0)*0.06) * (G.vehicle.rollMul||1));
+  { const pt=(G.state==='racing' ? ((keys.brake?0.030:0) + (keys.gas?-0.016:0) + (G.shiftCut>0?0.011:0)) : 0);
+    G.pitchVis += (pt - G.pitchVis)*0.12;
+    playerCar.rotateX(G.pitchVis*(G.vehicle.rollMul||1)); }         // dive / squat / shift kick
   if (playerCar.userData.brakeMats){
     const on = G.state==='racing' && (keys.brake || G.speed<0);
     for (const m of playerCar.userData.brakeMats) m.emissiveIntensity = on?2.6:0.8;
@@ -2506,16 +2541,16 @@ function drawDashboard(W,H,sp){
   hctx.lineWidth=Math.max(1.5,H*0.003); hctx.strokeStyle='rgba(120,132,150,0.3)';
   roundRect(bx-W*0.205, dashTop-H*0.015, W*0.41, H*0.165, H*0.022); hctx.stroke();
   const gy=dashTop+H*0.055, gr=Min*0.078;
-  drawDial(bx-W*0.092, gy, gr, sp, {ticks:10, major:1, redFrom:0.8, label:'RPM'});
+  drawDial(bx-W*0.092, gy, gr, Math.max(0,Math.min(1,G.rpm||sp)), {ticks:10, major:1, redFrom:0.8, label:'RPM'});
   drawDial(bx+W*0.092, gy, gr, Math.min(1,kmh/340), {ticks:8, major:2, value:kmh, label:'KM/H'});
   // shift light between the gauges — flares as the revs hit the redline
-  const shift = sp>0.86;
+  const shift = (G.rpm||sp)>0.90;
   hctx.fillStyle = shift ? '#ff2a2a' : '#3a1414';
   hctx.beginPath(); hctx.arc(bx, gy-gr*0.62, gr*0.16, 0, 6.28); hctx.fill();
   if (shift){ hctx.fillStyle='rgba(255,60,60,0.35)'; hctx.beginPath(); hctx.arc(bx, gy-gr*0.62, gr*0.34, 0, 6.28); hctx.fill(); }
   // gear badge under the shift light
   hctx.fillStyle='#cdd4de'; hctx.font=`900 ${Math.round(gr*0.32)}px Arial`; hctx.textAlign='center'; hctx.textBaseline='middle';
-  hctx.fillText('GT', bx, gy+gr*0.35);
+  hctx.fillText(String(G.gear||1), bx, gy+gr*0.35);   // current gear
 
   // ===================== STEERING WHEEL (right, RHD) =====================
   // modern flat-bottom (D-cut) racing wheel — compact, on the right.
@@ -2639,8 +2674,8 @@ function drawHUD(){
     hctx.strokeStyle=`hsl(${(1-i/ticks)*230},90%,55%)`;
     hctx.beginPath(); hctx.arc(gx,gy,gr,lerp(a0,a1,i/ticks),lerp(a0,a1,(i+1)/ticks)); hctx.stroke();
   }
-  // needle
-  const na=lerp(a0,a1,sp);
+  // needle follows engine RPM (dips through each upshift)
+  const na=lerp(a0,a1,Math.max(0,Math.min(1,(G.state==='racing'||G.state==='rolling')?G.rpm:sp)));
   hctx.strokeStyle='#ffd400'; hctx.lineWidth=Math.max(3,gr*0.08);
   hctx.beginPath(); hctx.moveTo(gx,gy); hctx.lineTo(gx+Math.cos(na)*gr*0.92, gy+Math.sin(na)*gr*0.92); hctx.stroke();
   hctx.fillStyle='#ffd400'; hctx.beginPath(); hctx.arc(gx,gy,gr*0.1,0,6.28); hctx.fill();
@@ -2649,6 +2684,8 @@ function drawHUD(){
   for (let i=0;i<=ticks;i++){ const a=lerp(a0,a1,i/ticks); hctx.fillText(String(i), gx+Math.cos(a)*gr*1.28, gy+Math.sin(a)*gr*1.28); }
   // speed number
   const kmh=Math.round(Math.abs(G.speed)*2.4);
+  hctx.fillStyle='#ffd400'; hctx.font=`900 ${Math.round(gr*0.3)}px Arial`;
+  hctx.fillText('G'+(G.gear||1), gx+gr*0.85, gy+gr*0.35);          // current gear
   hctx.fillStyle='#2bd451'; hctx.font=`bold ${Math.round(gr*0.5)}px Arial`;
   hctx.fillText(kmh, gx, gy+gr*0.7);
   hctx.fillStyle='#fff'; hctx.font=`bold ${Math.round(gr*0.2)}px Arial`;
@@ -2811,6 +2848,7 @@ function startRace(){
   buildRivals(G.timeTrial ? 0 : (MOBILE ? 7 : 9));   // time trial = solo vs your ghost
   G.maxSpeed = G.circuit.maxSpeed * G.vehicle.speedMul * 0.58;   // tuned to feel
   G.dist=0; G.offset=0; G.speed=0; G.lap=1; G.steerVis=0;
+  G.gear=1; G.rpm=0.3; G.shiftCut=0; G.drift=0; G.driftVis=0; G.pitchVis=0;
   G.timeLeft=G.timeTrial ? G.circuit.startTime*3 : G.circuit.startTime; G.totalTime=0; G.rollT=0; G.cdNum=-1; G.green=false;
   G.boost=1; G.boostActive=false; G.lapStart=0; G.bestLap=bestLapFor(); G.recordSet=false;   // nitro full + load best lap
   _replay=[]; _recT=0;                                  // fresh replay recording
@@ -2902,8 +2940,9 @@ function updateEngine(){
   const racing = (G.state==='racing' || G.state==='rolling');
   const sp = Math.min(1, Math.abs(G.speed)/(G.maxSpeed||1));
   const onGas = !!(keys && keys.gas);
-  // RPM: idle floor + speed, with a little extra lift on the throttle
-  const rpm  = 0.12 + sp*0.84 + (onGas?0.06:0);
+  // RPM follows the real drivetrain when racing (audible gear shifts)
+  const rpm  = racing ? (0.10 + Math.max(0,Math.min(1,G.rpm))*0.86)
+                      : (0.12 + sp*0.84 + (onGas?0.06:0));
   const base = 46 + rpm*168;                       // fundamental in Hz
   const wob  = racing && sp<0.05 ? Math.sin(t*9)*1.4 : 0;   // idle lope
   _eng.sawA.o.frequency.setTargetAtTime(base+wob,     t, 0.05);
