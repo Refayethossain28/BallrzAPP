@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R82 — V-Class interior';
+const BUILD = 'BUILD R83 — V-Class driving position';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -2363,10 +2363,15 @@ function render(){
   } else if (firstPerson){
     worldPos(G.dist, G.offset, _tmp);
     let eyeFwd, eyeY, lookDrop;
+    const tallVan = G.vehicle && G.vehicle.kind==='van';   // the V-Class bonnet line is far higher
     if (G.view==='dash'){            // hood cam: nearer the nose so only a short bonnet shows
-      eyeFwd = 2.15; eyeY = _tmp.y + 1.74; lookDrop = 1.9;
+      eyeFwd = tallVan ? 2.35 : 2.15;
+      eyeY   = _tmp.y + (tallVan ? 2.62 : 1.74);           // above the van's bonnet, MPV driving position
+      lookDrop = tallVan ? 2.55 : 1.9;
     } else {                         // cockpit: eye in the cabin
-      eyeFwd = 0.4;  eyeY = _tmp.y + 1.5;  lookDrop = 0.4;
+      eyeFwd = tallVan ? 1.2 : 0.4;
+      eyeY   = _tmp.y + (tallVan ? 2.55 : 1.5);
+      lookDrop = 0.4;
     }
     _camPos.copy(_tmp).addScaledVector(f.tan, eyeFwd); _camPos.y = eyeY;
     _look.copy(_tmp).addScaledVector(f.tan, 22).addScaledVector(f.right, G.steerVis*3.2);
