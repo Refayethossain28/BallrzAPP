@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R78 — APEX GP arcade menu';
+const BUILD = 'BUILD R79 — full controller support';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -1907,11 +1907,14 @@ function racingUpdate(dt){
     const target=(G.shiftCut>0?0.36:0.30)+0.68*inBand;     // revs drop through a shift
     G.rpm += (target-G.rpm)*Math.min(1,dt*(G.shiftCut>0?16:9));
   }
-  // longitudinal — low gears pull hard, top gear stretches (GT power band)
+  // longitudinal — low gears pull hard, top gear stretches (GT power band).
+  // Controller triggers are ANALOG: partial throttle / trail braking work.
   const gearPull=[1.42,1.26,1.12,1.0,0.88][G.gear-1]||1;
-  if (keys.gas)        G.speed += 84 * v.accelMul * gearPull * (G.shiftCut>0?0.15:1) * dt;
+  const throttle = _padGasV>0.06 ? _padGasV : (keys.gas?1:0);
+  const brakeIn  = _padBrakeV>0.06 ? _padBrakeV : (keys.brake?1:0);
+  if (throttle>0)      G.speed += 84 * v.accelMul * gearPull * (G.shiftCut>0?0.15:1) * throttle * dt;
   else                 G.speed -= 22 * dt;                 // coast
-  if (keys.brake)      G.speed -= 95 * v.brakeMul * dt;
+  if (brakeIn>0)       G.speed -= 95 * v.brakeMul * brakeIn * dt;
   G.speed -= G.speed * 0.012;                              // drag
   if (onGrass)         G.speed -= G.speed * 0.05;          // grass scrub
   // ---- nitro boost: a held surge that drains the meter, refilling when idle ----
@@ -1939,7 +1942,8 @@ function racingUpdate(dt){
   G.speed = Math.max(-maxSpeed*0.28, Math.min(maxSpeed*1.3, G.speed));
 
   // steering -> lateral offset (only meaningful when moving)
-  const steer = (keys.right?1:0) - (keys.left?1:0);
+  let steer = (keys.right?1:0) - (keys.left?1:0);
+  if (_padSteerAx!==0) steer = _padSteerAx;                // analog stick overrides
   G.steerVis += (steer - G.steerVis) * 0.2;
   const speedFrac = Math.min(1, Math.abs(G.speed)/maxSpeed);
   const grip = v.gripMul * (onGrass?0.7:1) * (G.rain?0.82:1);
@@ -1949,9 +1953,9 @@ function racingUpdate(dt){
   //      slide keeps corner speed; the honest line without it understeers. ----
   const cornering = Math.abs(f.curv)*speedFrac;
   if (!G.drift){
-    if (steer!==0 && speedFrac>0.5 && (keys.brake || cornering>0.030)) G.drift=steer;
-  } else if (steer===0 || speedFrac<0.32){ G.drift=0; }     // hooks back straight
-  else { G.drift=steer; }                                   // flick across mid-slide
+    if (Math.abs(steer)>0.4 && speedFrac>0.5 && (keys.brake || cornering>0.030)) G.drift=Math.sign(steer);
+  } else if (Math.abs(steer)<0.1 || speedFrac<0.32){ G.drift=0; }   // hooks back straight
+  else { G.drift=Math.sign(steer); }                                // flick across mid-slide
   G.driftVis += ((G.drift ? G.drift*(0.35+0.45*Math.min(1,cornering*14)) : 0) - G.driftVis)*Math.min(1,dt*6);
   // steering authority: GT understeer as speed rises — restored by sliding
   const authority = G.drift ? 1.35 : (1 - 0.38*speedFrac);
@@ -2874,30 +2878,84 @@ function bindInput(){
   hook('tgas','gas'); hook('tbrake','brake'); hook('tleft','left'); hook('tright','right'); hook('tboost','boost');
 }
 
-// ---- gamepad support (polled each frame; standard mapping) ----
-let _padOn=false;
+// ---- Bluetooth / USB controller support (Gamepad API, standard mapping) ----
+// Xbox / PlayStation / MFi pads: left stick or d-pad steers (ANALOG), RT/R2
+// gas + LT/L2 brake (analog triggers), A/Cross gas, B/Circle brake, X/Square
+// or RB nitro, Y/Triangle camera, Start pauses. Menus navigate with the
+// d-pad/stick, A selects, B goes back. Rumble fires with the game's haptics.
+let _padOn=false, _padSteerAx=0, _padGasV=0, _padBrakeV=0;
+const _padPrev={};
+let _padNavIdx=0;
 function pollGamepad(){
   if (!navigator.getGamepads) return;
   let gp=null; const list=navigator.getGamepads(); for (const g of list){ if(g){ gp=g; break; } }
-  if (!gp){ _padOn=false; return; }
+  if (!gp){ _padOn=false; _padSteerAx=0; _padGasV=0; _padBrakeV=0; return; }
   const b=gp.buttons, ax=gp.axes;
-  const pressed=i=>b[i]&&(b[i].pressed||b[i].value>0.4);
-  const lx=ax[0]||0;
-  const padLeft  = lx<-0.35 || pressed(14);
-  const padRight = lx> 0.35 || pressed(15);
-  const padGas   = pressed(7) || pressed(0);          // RT or A
-  const padBrake = pressed(6) || pressed(1);          // LT or B
+  const val=i=>(b[i]&&b[i].value)||0;
+  const pressed=i=>!!(b[i]&&(b[i].pressed||b[i].value>0.4));
+  const rise=(name,on)=>{ const was=_padPrev[name]; _padPrev[name]=on; return on&&!was; };
+  // analog steering (deadzoned + rescaled) — d-pad forces full lock
+  const lx=ax[0]||0, ly=ax[1]||0;
+  _padSteerAx = Math.abs(lx)>0.15 ? Math.max(-1,Math.min(1,(Math.abs(lx)-0.15)/0.8))*Math.sign(lx) : 0;
+  if (pressed(14)) _padSteerAx=-1; else if (pressed(15)) _padSteerAx=1;
+  _padGasV   = Math.max(val(7), pressed(0)?1:0);      // RT (analog) or A
+  _padBrakeV = Math.max(val(6), pressed(1)?1:0);      // LT (analog) or B
+  const padLeft  = _padSteerAx<-0.25, padRight=_padSteerAx>0.25;
+  const padGas   = _padGasV>0.06, padBrake=_padBrakeV>0.06;
   const padBoost = pressed(2) || pressed(5);          // X or RB
-  const active = padLeft||padRight||padGas||padBrake||padBoost;
+  const aBtn   = rise('a',  pressed(0));
+  const bBtn   = rise('bk', pressed(1));
+  const stBtn  = rise('st', pressed(9));
+  const yBtn   = rise('y',  pressed(3));
+  const active = padLeft||padRight||padGas||padBrake||padBoost||aBtn||stBtn;
   if (active && G.state==='attract'){ endAttract(); return; }
   if (active && _onTitle){ armIdle(); }
-  if (G.state==='racing'){
-    keys.left=padLeft; keys.right=padRight; keys.gas=keys.gas||padGas; keys.brake=keys.brake||padBrake; keys.boost=keys.boost||padBoost;
+  // ---- menu navigation: d-pad/stick moves, A selects, B backs out ----
+  const overlay=document.getElementById('overlay');
+  if (overlay && !overlay.classList.contains('hidden')){
+    const items=[...overlay.querySelectorAll('button, .selcard')].filter(e=>e.offsetParent!==null);
+    if (items.length){
+      const prev = rise('nl', lx<-0.5||pressed(14)) || rise('nu', ly<-0.5||pressed(12));
+      const next = rise('nr', lx> 0.5||pressed(15)) || rise('nd', ly> 0.5||pressed(13));
+      if (_padNavIdx>=items.length) _padNavIdx=0;
+      if (prev) _padNavIdx=(_padNavIdx-1+items.length)%items.length;
+      if (next) _padNavIdx=(_padNavIdx+1)%items.length;
+      items.forEach((e,i)=>e.classList.toggle('padsel', i===_padNavIdx));
+      if (aBtn){ const el=items[_padNavIdx]; _padNavIdx=0; if (el) el.click(); }
+      else if (bBtn){ const back=overlay.querySelector('#backBtn')||overlay.querySelector('#amBack')
+        ||[...overlay.querySelectorAll('button')].find(e=>/◀/.test(e.textContent)); if (back){ _padNavIdx=0; back.click(); } }
+      _padOn=true; return;                            // a menu is up — don't drive
+    }
   }
+  // Start pauses / resumes; Y cycles the camera
+  if (stBtn && (G.state==='racing'||G.state==='paused')) togglePause();
+  if (yBtn && (G.state==='racing'||G.state==='replay')) toggleView();
+  // ---- race input: write on press, clear on OUR release (keyboard untouched) ----
+  if (G.state==='racing'){
+    if (padLeft)  keys.left=true;  else if (_padPrev.pl) keys.left=false;
+    if (padRight) keys.right=true; else if (_padPrev.pr) keys.right=false;
+    if (padGas)   keys.gas=true;   else if (_padPrev.pg) keys.gas=false;
+    if (padBrake) keys.brake=true; else if (_padPrev.pb) keys.brake=false;
+    if (padBoost) keys.boost=true; else if (_padPrev.px) keys.boost=false;
+  }
+  _padPrev.pl=padLeft; _padPrev.pr=padRight; _padPrev.pg=padGas; _padPrev.pb=padBrake; _padPrev.px=padBoost;
   _padOn = active;
 }
-// ---- haptics (Android & Capacitor; no-op on iOS Safari, harmless) ----
-function haptic(ms){ try{ if (navigator.vibrate) navigator.vibrate(ms); }catch(e){} }
+// controller connect/disconnect feedback
+try{
+  window.addEventListener('gamepadconnected', ()=>{ try{ arcadeCallout('🎮 CONTROLLER CONNECTED', '#7ad7ff', [_NOTE.C5,_NOTE.E5]); }catch(e){} });
+  window.addEventListener('gamepaddisconnected', ()=>{ _padOn=false; _padSteerAx=0; _padGasV=0; _padBrakeV=0; });
+}catch(e){}
+// ---- haptics: phone vibration + controller rumble (both optional) ----
+function haptic(ms){
+  try{ if (navigator.vibrate) navigator.vibrate(ms); }catch(e){}
+  try{
+    const dur=Math.min(600, Array.isArray(ms)?ms.reduce((a,b)=>a+b,0):(ms||80));
+    const list=navigator.getGamepads?navigator.getGamepads():[];
+    for (const g of list){ if (!g) continue; const act=g.vibrationActuator;
+      if (act && act.playEffect) act.playEffect(act.type||'dual-rumble', {duration:dur, strongMagnitude:0.7, weakMagnitude:0.4}); }
+  }catch(e){}
+}
 
 // ----------------------------------------------------------------------------
 //  Race start (full menu flow lands in M4 — for now START drives immediately)
