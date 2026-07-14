@@ -8,11 +8,11 @@ export default function SplashScreen() {
   const [phase, setPhase] = useState<'showing' | 'leaving' | 'gone'>('showing')
 
   useEffect(() => {
-    if (sessionStorage.getItem('fxsp-splash-seen')) {
+    if (sessionStorage.getItem('apexfx-splash-seen')) {
       setPhase('gone')
       return
     }
-    sessionStorage.setItem('fxsp-splash-seen', '1')
+    sessionStorage.setItem('apexfx-splash-seen', '1')
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const hold = reduceMotion ? 900 : 3000
     const t1 = setTimeout(() => setPhase('leaving'), hold)
@@ -78,7 +78,7 @@ export default function SplashScreen() {
           className="splash-rise splash-gold text-3xl sm:text-4xl font-semibold tracking-[0.32em] mb-3"
           style={{ animationDelay: '1s', fontFamily: 'Georgia, "Times New Roman", serif' }}
         >
-          FX&nbsp;SIGNAL&nbsp;PRO
+          APEX&nbsp;FX
         </h1>
 
         {/* Tagline */}

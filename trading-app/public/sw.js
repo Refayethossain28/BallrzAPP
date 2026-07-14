@@ -1,9 +1,9 @@
-// FX Signal Pro service worker — offline app shell + asset caching.
+// ApexFX service worker — offline app shell + asset caching.
 // Strategy:
 //   - /api/*            → network only (never cache live market/AI data)
 //   - /_next/static, /icons → cache-first (immutable build assets)
 //   - navigations & rest → network-first, fall back to cache, then app shell
-const CACHE = 'fxsignal-v1'
+const CACHE = 'apexfx-v1'
 const SHELL = ['/', '/manifest.webmanifest']
 
 self.addEventListener('install', (event) => {

@@ -4,14 +4,14 @@ import ServiceWorkerRegistrar from '@/components/ServiceWorkerRegistrar'
 import SplashScreen from '@/components/SplashScreen'
 
 export const metadata: Metadata = {
-  title: 'FX Signal Pro — Currency Trading Analysis',
+  title: 'ApexFX — Currency Trading Analysis',
   description: 'Real-time forex analysis with buy/sell signals, take profit, and stop loss levels',
-  applicationName: 'FX Signal Pro',
+  applicationName: 'ApexFX',
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'FX Signal Pro',
+    title: 'ApexFX',
   },
   icons: {
     icon: [
