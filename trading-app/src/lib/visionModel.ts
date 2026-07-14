@@ -46,11 +46,16 @@ const OUTPUT_SCHEMA = {
       items: { type: 'string' },
       description: '1-3 things that would invalidate the setup',
     },
+    liveContext: {
+      type: 'string',
+      description:
+        '1-2 sentences of live market context found via web search: current price vs the screenshot, notable news or events affecting the instrument. "Not available" if search yielded nothing useful.',
+    },
   },
   required: [
     'isChart', 'instrument', 'timeframe', 'currentPrice', 'verdict', 'confidence',
     'entry', 'takeProfit1', 'takeProfit2', 'stopLoss', 'riskRewardRatio',
-    'summary', 'rationale', 'keyRisks',
+    'summary', 'rationale', 'keyRisks', 'liveContext',
   ],
   additionalProperties: false,
 } as const
@@ -77,6 +82,16 @@ Then produce ONE actionable trade plan:
 - If the image is not a price chart or trading screen, set isChart to false, verdict NEUTRAL,
   and explain in the summary.
 
+You also have a web_search tool. After reading the chart, run 1-3 quick searches to check
+the instrument's live price and any market-moving news from the last day or two. Use what
+you find to sharpen or temper the verdict, and summarize it in liveContext:
+- If the live price has moved materially away from the screenshot, say so and lower
+  confidence — the entry/SL/TP still describe the chart as captured.
+- If major news (central bank decisions, data releases) contradicts the technical setup,
+  surface that tension in keyRisks.
+- If searches fail or add nothing, set liveContext to "Not available" and analyze the
+  chart on its own — never block the verdict on search.
+
 This is educational analysis, not financial advice.`
 
 export async function analyzeScreenshot(
@@ -94,33 +109,19 @@ export async function analyzeScreenshot(
   try {
     const client = new Anthropic({ apiKey })
 
-    // Fable 5 has thinking always on — the `thinking` param is omitted.
-    const response = await client.beta.messages.create({
-      model: MODEL,
-      max_tokens: 4096,
-      betas: ['server-side-fallback-2026-06-01'],
-      fallbacks: [{ model: FALLBACK_MODEL }],
-      system: SYSTEM_PROMPT,
-      output_config: {
-        effort: 'medium',
-        format: { type: 'json_schema', schema: OUTPUT_SCHEMA },
-      },
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: { type: 'base64', media_type: mediaType, data: imageBase64 },
-            },
-            {
-              type: 'text',
-              text: 'Analyze this trading screenshot and return your trade plan.',
-            },
-          ],
-        },
-      ],
-    })
+    let response: Anthropic.Beta.BetaMessage
+    try {
+      response = await runModel(client, imageBase64, mediaType, true)
+    } catch (err) {
+      // If the web-search combination is ever rejected, degrade gracefully to
+      // a chart-only analysis rather than failing the request.
+      if (err instanceof Anthropic.BadRequestError) {
+        console.warn('Web search request rejected, retrying without search:', err.message)
+        response = await runModel(client, imageBase64, mediaType, false)
+      } else {
+        throw err
+      }
+    }
 
     if (response.stop_reason === 'refusal') {
       return { error: 'The AI declined to analyze this image. Try a different screenshot.' }
@@ -153,6 +154,58 @@ export async function analyzeScreenshot(
     }
     return { error: 'Failed to analyze the screenshot. Please try again.' }
   }
+}
+
+// Runs the vision request, optionally with the server-side web search tool.
+// Web search executes on Anthropic's servers inside the same call; when the
+// server-side search loop pauses (stop_reason "pause_turn"), we resume by
+// echoing the assistant turn back, per the API contract.
+async function runModel(
+  client: Anthropic,
+  imageBase64: string,
+  mediaType: ImageMediaType,
+  withSearch: boolean,
+): Promise<Anthropic.Beta.BetaMessage> {
+  let messages: Anthropic.Beta.BetaMessageParam[] = [
+    {
+      role: 'user',
+      content: [
+        {
+          type: 'image',
+          source: { type: 'base64', media_type: mediaType, data: imageBase64 },
+        },
+        {
+          type: 'text',
+          text: 'Analyze this trading screenshot and return your trade plan.',
+        },
+      ],
+    },
+  ]
+
+  // Fable 5 has thinking always on — the `thinking` param is omitted.
+  const baseParams = {
+    model: MODEL,
+    max_tokens: 8192,
+    betas: ['server-side-fallback-2026-06-01'],
+    fallbacks: [{ model: FALLBACK_MODEL }],
+    system: SYSTEM_PROMPT,
+    output_config: {
+      effort: 'medium' as const,
+      format: { type: 'json_schema' as const, schema: OUTPUT_SCHEMA },
+    },
+    ...(withSearch
+      ? { tools: [{ type: 'web_search_20260209' as const, name: 'web_search' as const, max_uses: 3 }] }
+      : {}),
+  }
+
+  let response = await client.beta.messages.create({ ...baseParams, messages })
+
+  for (let i = 0; i < 3 && response.stop_reason === 'pause_turn'; i++) {
+    messages = [...messages, { role: 'assistant', content: response.content }]
+    response = await client.beta.messages.create({ ...baseParams, messages })
+  }
+
+  return response
 }
 
 function normalizeVerdict(v: unknown): SignalType {
