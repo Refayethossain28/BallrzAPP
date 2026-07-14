@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R84 — photoreal V-Class dash';
+const BUILD = 'BUILD R85 — dash fits all orientations';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -2798,16 +2798,24 @@ function drawVanDash(W,H,sp,steer,kmh,Min){
   initVanDashPhoto();
   if (_vdReady && _vdCanvas){
     const iw=_vdCanvas.width, ih=_vdCanvas.height;
-    const scale=W/iw, dh=ih*scale, dy=H-dh;
-    hctx.drawImage(_vdCanvas, 0, dy, W, dh);
-    const px=u=>u*W, py=v=>dy+v*dh;                       // photo-space -> screen
+    // aspect-aware fit: pin the dash's leading edge (~v0.30 in the photo) to
+    // mid-screen so the road stays visible in ANY orientation. Wide screens
+    // crop the footwell off the bottom; tall screens crop the passenger side
+    // (right-anchored — this is a RHD cabin, the wheel must stay on screen).
+    const scale=Math.max(W/iw, (H*0.52)/ih);
+    const dw=iw*scale, dh=ih*scale;
+    const dx=Math.min(0, W-dw);
+    let dy=H*0.52 - dh*0.30;
+    if (dy+dh < H) dy=H-dh;                               // never leave a gap under the dash
+    hctx.drawImage(_vdCanvas, dx, dy, dw, dh);
+    const px=u=>dx+u*dw, py=v=>dy+v*dh;                   // photo-space -> screen
     // live rotating wheel (circular crop of the real wheel)
     const wl=_vdWheel;
     if (wl){ const wr=wl.R*scale;
       hctx.save(); hctx.translate(px(wl.cx), py(wl.cy)); hctx.rotate(steer*0.5);
       hctx.drawImage(wl.cv, -wr,-wr, wr*2, wr*2); hctx.restore(); }
     // live content on the real tablet screen
-    { const sx=px(0.418), sy=py(0.268), sw=(0.556-0.418)*W, sh=(0.415-0.268)*dh;
+    { const sx=px(0.418), sy=py(0.268), sw=(0.556-0.418)*dw, sh=(0.415-0.268)*dh;
       hctx.fillStyle='#04060a'; roundRect(sx,sy,sw,sh,sh*0.08); hctx.fill();
       hctx.save(); roundRect(sx,sy,sw,sh,sh*0.08); hctx.clip();
       hctx.strokeStyle='rgba(40,210,170,0.85)'; hctx.lineWidth=Math.max(1.5,sh*0.04); hctx.lineCap='round';
@@ -2819,15 +2827,16 @@ function drawVanDash(W,H,sp,steer,kmh,Min){
       hctx.fillText('KM/H · '+(G.circuit&&G.circuit.name||''), sx+sw*0.08, sy+sh*0.60);
       hctx.restore(); }
     // live needles + gear on the real cluster (mostly visible left of the wheel)
-    { const dcx=px(0.678), dcy=py(0.372), dr=W*0.028;
+    { const dcx=px(0.678), dcy=py(0.372), dr=dw*0.028;
       const a=Math.PI*0.78 + Math.max(0,Math.min(1,G.rpm||sp))*Math.PI*1.42;
       hctx.strokeStyle='#ff7a2a'; hctx.lineWidth=Math.max(2,dr*0.12); hctx.lineCap='round';
       hctx.beginPath(); hctx.moveTo(dcx,dcy); hctx.lineTo(dcx+Math.cos(a)*dr, dcy+Math.sin(a)*dr); hctx.stroke();
-      hctx.fillStyle='#7ad7ff'; hctx.font=`900 ${Math.round(W*0.016)}px Arial`; hctx.textAlign='center'; hctx.textBaseline='middle';
+      hctx.fillStyle='#7ad7ff'; hctx.font=`900 ${Math.round(dw*0.016)}px Arial`; hctx.textAlign='center'; hctx.textBaseline='middle';
       hctx.fillText('D'+(G.gear||1), px(0.742), py(0.352)); }
     // night: dim the photographed cabin to match the world
-    if (G.night){ hctx.fillStyle='rgba(6,8,16,0.45)'; hctx.fillRect(0,dy,W,dh); }
-    else if (G.sunset){ hctx.fillStyle='rgba(120,60,20,0.14)'; hctx.fillRect(0,dy,W,dh); }
+    const tintY=Math.max(0, dy+dh*0.30);
+    if (G.night){ hctx.fillStyle='rgba(6,8,16,0.45)'; hctx.fillRect(0,tintY,W,H-tintY); }
+    else if (G.sunset){ hctx.fillStyle='rgba(120,60,20,0.14)'; hctx.fillRect(0,tintY,W,H-tintY); }
     // cabin shadow vignette
     const vg=hctx.createRadialGradient(W*0.5,H*0.5,Min*0.5,W*0.5,H*0.6,Min*1.08);
     vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.32)');
