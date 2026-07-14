@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R75 — Daytona/GT handling';
+const BUILD = 'BUILD R76 — New York + real Dubai + replay music';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -23,12 +23,23 @@ const LONDON_LAYOUT = [
   [-272,0,95],[-292,0,0],[-272,0,-95],
   [-210,0,-180],
 ];
+// DUBAI — a Sheikh-Zayed-Road mega straight blasting past the supertalls,
+// long 8th-gear sweepers, then tightening marina esses on the way home.
 const DUBAI_LAYOUT = [
-  [0,0,-205],[125,0,-205],[250,0,-205],
-  [330,0,-105],[352,0,0],[330,0,105],
-  [250,0,205],[83,0,205],[-83,0,205],[-250,0,205],
-  [-330,0,105],[-352,0,0],[-330,0,-105],
-  [-250,0,-205],
+  [0,0,-280],[170,0,-280],[340,0,-280],
+  [455,0,-160],[480,0,10],[400,0,160],
+  [240,0,215],[80,0,290],[-110,0,320],
+  [-300,0,255],[-430,0,110],[-450,0,-70],
+  [-330,0,-230],[-165,0,-280],
+];
+// NEW YORK — a Manhattan street circuit: avenue straights and hard right-angle
+// blocks, kinking through the park section before the run back downtown.
+const NY_LAYOUT = [
+  [0,0,-210],[130,0,-210],[260,0,-210],
+  [290,0,-100],[290,0,30],
+  [190,0,70],[180,0,180],[60,0,210],
+  [-80,0,150],[-210,0,170],[-290,0,80],
+  [-290,0,-70],[-180,0,-120],[-120,0,-210],
 ];
 const CANYON_LAYOUT = [
   [0,0,-230],[150,0,-250],[290,0,-170],[340,0,-40],
@@ -36,15 +47,16 @@ const CANYON_LAYOUT = [
   [-180,0,250],[-310,0,150],[-350,0,0],[-300,0,-140],[-170,0,-250],
 ];
 const CIRCUITS = [
-  { name:'DAYTONA', laps:8, maxSpeed:118, curveMul:0.85, aiSpeed:0.74, startTime:60, lapBonus:26, seed:1,  theme:0 },
+  { name:'NEW YORK', laps:6, maxSpeed:122, curveMul:1.0, aiSpeed:0.78, startTime:62, lapBonus:30, seed:7, theme:0, layout:NY_LAYOUT },
   { name:'LONDON',  laps:6, maxSpeed:120, curveMul:1.0,  aiSpeed:0.78, startTime:62, lapBonus:30, seed:11, theme:3, layout:LONDON_LAYOUT },
-  { name:'DUBAI',   laps:6, maxSpeed:132, curveMul:1.0,  aiSpeed:0.82, startTime:66, lapBonus:30, seed:23, theme:4, layout:DUBAI_LAYOUT },
+  { name:'DUBAI',   laps:6, maxSpeed:136, curveMul:1.0,  aiSpeed:0.82, startTime:66, lapBonus:30, seed:23, theme:4, layout:DUBAI_LAYOUT },
   { name:'CANYON',  laps:6, maxSpeed:128, curveMul:1.05, aiSpeed:0.80, startTime:64, lapBonus:30, seed:37, theme:1, layout:CANYON_LAYOUT },
 ];
 const THEMES = [
-  { asphalt:0x83878d, grass:0x4a9c54, grass2:0x3f8f49, mountain:0x8a9099, snow:true,
-    prop:'pine', skyline:'mountain', landmark:'usa', buildings:false,
-    skyTop:'#1f6fd6', skyMid:'#5aa6f0', skyHorizon:'#dff0ff', fog:0xbfe2ff },
+  // [0] NEW YORK — steel-blue Manhattan: park trees, brownstones, supertalls
+  { asphalt:0x7c8086, grass:0x4e8f4c, grass2:0x417f40, mountain:0x8a9099, snow:false,
+    prop:'tree', skyline:'city', landmark:'nyc', buildings:true,
+    skyTop:'#2f6fc0', skyMid:'#7fb0e8', skyHorizon:'#e8f0fa', fog:0xcfdcea },
   // [1] CANYON — warm desert sunset, red-rock mountains, palms
   { asphalt:0x8a7d72, grass:0xcaa46a, grass2:0xb8945c, mountain:0xb5683f, snow:false,
     prop:'palm', skyline:'mountain', landmark:'usa', buildings:false,
@@ -1540,6 +1552,43 @@ function addGoldenGate(group, frames, spec){
   placeLandmark(group, g, frames, spec);
 }
 
+// ---- New York landmarks ----
+function addEmpireState(group, frames, spec){
+  const g=new THREE.Group();
+  const deco=txMat({color:0xb8b2a4, roughness:0.75},'stone',3);
+  const winA=makeWindowTexture(false), winB=makeWindowTexture(false);
+  const win=new THREE.MeshStandardMaterial({color:0xa8a294, roughness:0.7, map:winA, emissive:0xffe39a, emissiveMap:winB, emissiveIntensity:0.35});
+  win.map.repeat.set(3,10); win.emissiveMap.repeat.set(3,10);
+  // classic art-deco setbacks stepping to the crown
+  const steps=[[46,26,46],[38,40,38],[30,56,30],[22,42,22],[15,30,15]];
+  let y=0; for (const [w,h,d] of steps){ const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), win); b.position.y=y+h/2; g.add(b); y+=h; }
+  const crown=new THREE.Mesh(new THREE.CylinderGeometry(4,7,18,10), deco); crown.position.y=y+9; g.add(crown); y+=18;
+  const spike=new THREE.Mesh(new THREE.CylinderGeometry(0.5,2,42,8), new THREE.MeshStandardMaterial({color:0xd9dde2, metalness:0.7, roughness:0.25})); spike.position.y=y+21; g.add(spike);
+  placeLandmark(group, g, frames, spec);
+}
+// drive-through gate: twin granite towers + suspended main cables over the road
+function addBrooklynBridge(group, frames, spec){
+  const f=frames[((Math.floor(DIV*(spec?spec.frac:0.12)))%DIV+DIV)%DIV], g=new THREE.Group();
+  const granite=txMat({color:0xb2a38c, roughness:0.85},'stone',4);
+  const cableM=new THREE.MeshStandardMaterial({color:0x2b2e34, roughness:0.5, metalness:0.6});
+  const half=ROAD_W+RUMBLE_W+10, H=95, tw=12, td=8;
+  for (const sx of [-1,1]){
+    g.add(lmBox(granite, tw, H, td, sx*half, H/2, 0));
+    g.add(lmBox(granite, tw+6, 10, td+2, sx*half, H-5, 0));      // cap
+    g.add(lmBox(granite, tw+4, 6, td+1, sx*half, 3, 0));         // plinth
+  }
+  g.add(lmBox(granite, half*2+tw, 4, td, 0, 26, 0));             // deck edge high over the road
+  for (const sz of [-3.5,3.5]){ let prev=null;
+    for (let i=0;i<=14;i++){ const t=i/14, x=(t-0.5)*(half*2), y=H-8 - (H-8-32)*(1-Math.pow(2*t-1,2));
+      if (prev){ const mx=(x+prev.x)/2,my=(y+prev.y)/2,dx=x-prev.x,dy=y-prev.y,len=Math.hypot(dx,dy);
+        const c=lmBox(cableM,len,0.8,0.8,mx,my,sz); c.rotation.z=Math.atan2(dy,dx); g.add(c); }
+      if (i%2===0 && i>0 && i<14){ const hgt=y-28; if (hgt>3) g.add(lmBox(cableM,0.4,hgt,0.4,x,28+hgt/2,sz)); }
+      prev={x,y};
+    }
+  }
+  g.position.copy(f.pos); g.rotation.y=Math.atan2(f.tan.x,f.tan.z); g.scale.setScalar((spec&&spec.scale)||1); group.add(g);
+}
+
 // ---- build the whole scenery group (grounded, mobile-budgeted) ----
 function buildScenery(){
   if (sceneryGroup){ scene.remove(sceneryGroup); disposeTree(sceneryGroup); }
@@ -1570,6 +1619,7 @@ function buildScenery(){
   const REP = MOBILE ? 3 : 4, N12 = MOBILE ? 6 : 10;
   const heroFns = th.landmark==='london' ? Array.from({length:REP}).flatMap(()=>L4)
     : th.landmark==='dubai' ? Array.from({length:N12},(_,i)=>[addBurj,addBurjAlArab][i%2])
+    : th.landmark==='nyc'   ? Array.from({length:N12},(_,i)=>[addEmpireState,addStatueOfLiberty][i%2])
     : th.landmark==='usa'   ? Array.from({length:N12},(_,i)=>[addStatueOfLiberty,addGoldenGate][i%2]) : [];
   const cen=new THREE.Vector3(); for(const fr of frames) cen.add(fr.pos); cen.multiplyScalar(1/frames.length);
   const heroSlots = heroFns.map((fn,i)=>{ const fi=Math.floor(((i+0.5)/heroFns.length)*DIV)%DIV, f=frames[fi];
@@ -1577,7 +1627,7 @@ function buildScenery(){
 
   // gate (Tower Bridge / Dubai Frame) on the straightest start stretch
   let gateFi=-1;
-  if (th.landmark==='london' || th.landmark==='dubai'){ let bs=Infinity;
+  if (th.landmark==='london' || th.landmark==='dubai' || th.landmark==='nyc'){ let bs=Infinity;
     for (let i=Math.floor(DIV*0.04);i<=Math.floor(DIV*0.20);i++){ let s=0; for(let k=-45;k<=45;k++) s+=Math.abs(frames[(i+k+DIV)%DIV].curv); if(s<bs){bs=s;gateFi=i;} } }
   const gateNear=i=>{ if(gateFi<0)return false; let d=Math.abs(i-gateFi); d=Math.min(d,DIV-d); return d<30; };
   const heroNear=(i,side)=> gateNear(i) || heroSlots.some(h=>{ if(h.side!==side)return false; let d=Math.abs(i-h.fi); d=Math.min(d,DIV-d); return d<26; });
@@ -1596,7 +1646,7 @@ function buildScenery(){
   // distant skyline ring (city) or mountains
   if (th.skyline==='city'){
     const winTex=makeWindowTexture(th.landmark==='dubai'); const RING=MOBILE?30:84;
-    for (let i=0;i<RING;i++){ const ang=(i/RING)*Math.PI*2; const r=560+(mulberry32(i+99)())*260; const h=70+(mulberry32(i+5)())*(th.landmark==='dubai'?260:140); const w=24+(mulberry32(i+13)())*26;
+    for (let i=0;i<RING;i++){ const ang=(i/RING)*Math.PI*2; const r=560+(mulberry32(i+99)())*260; const h=70+(mulberry32(i+5)())*(th.landmark==='dubai'?260:(th.landmark==='nyc'?210:140)); const w=24+(mulberry32(i+13)())*26;
       const col=th.landmark==='dubai'?0x9fb6cc:[0x8a6a52,0x9c7a52,0x70615a,0x86756b][i%4];
       const mat=new THREE.MeshStandardMaterial({color:col, roughness:0.7, metalness:th.landmark==='dubai'?0.4:0.05, map:winTex.clone(), emissive:0xffe39a, emissiveMap:winTex.clone(), emissiveIntensity:0.4}); mat.map.repeat.set(Math.max(1,w/12),Math.max(2,h/12)); mat.emissiveMap.repeat.copy(mat.map.repeat);
       _pulse.push({mat, base:0.62, ph:i*1.3, sp:3.2, flash:true}); _scroll.push({tex:mat.emissiveMap, v:0.02});   // brighter twinkly neon windows
@@ -1608,6 +1658,17 @@ function buildScenery(){
       const m=new THREE.Mesh(new THREE.ConeGeometry(h*0.9,h,5),mtnMat); m.position.set(Math.cos(ang)*r,h/2-40,Math.sin(ang)*r); sceneryGroup.add(m);
       if (th.snow){ const cap=new THREE.Mesh(new THREE.ConeGeometry(h*0.32,h*0.34,5),snowMat); cap.position.set(Math.cos(ang)*r,h-40-h*0.17,Math.sin(ang)*r); sceneryGroup.add(cap); } }
   }
+  // rolling golden dunes around the desert circuit (between city and track)
+  if (th.landmark==='dubai'){
+    const duneMat=new THREE.MeshLambertMaterial({color:0xd9bd82, map:makeDetailTex('rough')});
+    const ND=MOBILE?8:16;
+    for (let i=0;i<ND;i++){ const ang=(i/ND)*Math.PI*2 + 0.19;
+      const r=340+(mulberry32(i+55)())*170, sc=40+(mulberry32(i+7)())*70;
+      const d=new THREE.Mesh(new THREE.SphereGeometry(1,10,7), duneMat);
+      d.scale.set(sc*2.2, sc*0.5, sc); d.position.set(Math.cos(ang)*r, -sc*0.12, Math.sin(ang)*r);
+      d.rotation.y=ang; sceneryGroup.add(d);
+    }
+  }
   // a bold continuous city skyline on the horizon, ringing the whole circuit
   try{ buildSkylineBackdrop(cen, th); }catch(e){ _scnInfo='SKYLINE-ERR:'+(e&&e.message||e); }
 
@@ -1615,7 +1676,7 @@ function buildScenery(){
   // landmark's BASE FOOTPRINT so its near edge always clears the kerb by a fixed
   // margin (otherwise a wide base — e.g. the Shard — sits across the racing line).
   const FOOT = new Map([[addBigBen,9],[addLondonEye,11],[addGherkin,17],[addShard,22],
-                        [addBurj,19],[addBurjAlArab,26],[addStatueOfLiberty,18],[addGoldenGate,30]]);
+                        [addBurj,19],[addBurjAlArab,26],[addStatueOfLiberty,18],[addGoldenGate,30],[addEmpireState,25]]);
   const HSCALE = 1.9;
   heroSlots.forEach(({fn,fi,side})=>{ const f=frames[fi];
     const off=(ROAD_W+RUMBLE_W) + (FOOT.get(fn)||14)*HSCALE + 6;
@@ -1629,6 +1690,7 @@ function buildScenery(){
   const sA=straightestIn(Math.floor(DIV*0.04),Math.floor(DIV*0.20));
   if (th.landmark==='london') try{ addTowerBridge(sceneryGroup, frames, {frac:sA/DIV, scale:1.5}); }catch(e){ _scnInfo='GATE-ERR:'+(e&&e.message||e); }
   if (th.landmark==='dubai')  try{ addDubaiFrame(sceneryGroup, frames, {frac:sA/DIV, scale:1.0}); }catch(e){ _scnInfo='GATE-ERR:'+(e&&e.message||e); }
+  if (th.landmark==='nyc')    try{ addBrooklynBridge(sceneryGroup, frames, {frac:sA/DIV, scale:1.15}); }catch(e){ _scnInfo='GATE-ERR:'+(e&&e.message||e); }
 
   // mid-distance buildings (urban) — outside of the loop, clear of landmarks
   if (th.buildings){
@@ -1648,7 +1710,7 @@ function buildScenery(){
   const lp=new THREE.Mesh(postGeo,postMat); lp.position.set(-ROAD_W-2,8,0); gantry.add(lp);
   const rp=new THREE.Mesh(postGeo,postMat); rp.position.set(ROAD_W+2,8,0); gantry.add(rp);
   const beam=new THREE.Mesh(new THREE.BoxGeometry((ROAD_W+2)*2,3,1.5), new THREE.MeshLambertMaterial({color:0xc1272d, map:makeDetailTex('metal')})); beam.position.set(0,15.5,0); gantry.add(beam);
-  const board=new THREE.Mesh(new THREE.BoxGeometry(8,3,0.5), new THREE.MeshBasicMaterial({map:makeSignTexture('DAYTONA','#c1272d')})); board.position.set(0,12,0.9); gantry.add(board);
+  const board=new THREE.Mesh(new THREE.BoxGeometry(8,3,0.5), new THREE.MeshBasicMaterial({map:makeSignTexture(G.circuit.name,'#c1272d')})); board.position.set(0,12,0.9); gantry.add(board);
   // a waving checkered flag on the right post (segmented so it ripples)
   {
     const flagTex=makeCheckerTex();
@@ -1988,9 +2050,20 @@ function startReplay(){
   const t=document.getElementById('touch'); if(t) t.style.display='none';
   const vb=document.getElementById('viewBtn'); if(vb) vb.classList.remove('hidden');
   showBanner('▶ REPLAY', 0);
+  // cinema audio: one of the soundtrack songs plays over the replay
+  try{
+    if (window.GameMusic && window.GameMusic.stop) window.GameMusic.stop();
+    stopRaceMusic();
+    const pool=Object.keys(SOUNDTRACKS).filter(k=>SOUNDTRACKS[k].loop);
+    const st=SOUNDTRACKS[pool[(Math.random()*pool.length)|0]];
+    const loop=new Audio(st.loop); loop.loop=true; loop.volume=0.7;
+    loop.play().catch(()=>{}); _raceAudio={intro:null, loop};
+  }catch(e){}
 }
 function exitReplay(){
   G.state='finished'; hideBanner(); G.view='chase';
+  stopRaceMusic();                                       // silence the replay song
+  if (window.GameMusic){ try{ window.GameMusic.start && window.GameMusic.start(); window.GameMusic.setMode && window.GameMusic.setMode('menu'); }catch(e){} }
   const pb=document.getElementById('pauseBtn'); if(pb) pb.textContent='❚❚ PAUSE';
   showEndScreen(G.lastWin);
 }
@@ -3132,7 +3205,7 @@ const SOUNDTRACKS = {
 };
 let selApplePlaylist=null, selApplePlaylistName='';
 const VEH_ICON = ['🏎️','🏁','⚡','🛞','🗡️','🚐'];
-const CIR_ICON = ['🏔️','🎡','🌆','🏜️'];
+const CIR_ICON = ['🗽','🎡','🌆','🏜️'];
 let selVeh=0, selCir=1, selSnd='daytona', selTod='day', selWx='clear';
 const TOD_ITEMS = [{key:'day',icon:'☀️',name:'DAY',desc:'Bright daylight racing'},
                    {key:'night',icon:'🌙',name:'NIGHT',desc:'Neon-lit night with stars'},
