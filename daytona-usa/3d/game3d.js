@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R81 — more texture mapping';
+const BUILD = 'BUILD R82 — V-Class interior';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -2548,6 +2548,7 @@ function drawDial(cx,cy,r,frac,opt){
 function drawDashboard(W,H,sp){
   const steer=G.steerVis, kmh=Math.round(Math.abs(G.speed)*2.4);
   const Min=Math.min(W,H);
+  const VAN = !!(G.vehicle && G.vehicle.kind==='van');   // V-Class gets its real interior
 
   // ============================ WINDSCREEN ============================
   // roof header bar across the very top
@@ -2557,8 +2558,8 @@ function drawDashboard(W,H,sp){
   let sb=hctx.createLinearGradient(0,H*0.05,0,H*0.17);
   sb.addColorStop(0,'rgba(22,34,62,0.55)'); sb.addColorStop(1,'rgba(22,34,62,0)');
   hctx.fillStyle=sb; hctx.fillRect(0,H*0.05,W,H*0.12);
-  // A-pillars (thick, angled) framing the glass
-  hctx.fillStyle='rgba(9,10,15,0.96)';
+  // A-pillars (thick, angled) framing the glass — light grey trim in the V-Class
+  hctx.fillStyle=VAN?'rgba(150,154,162,0.96)':'rgba(9,10,15,0.96)';
   hctx.beginPath(); hctx.moveTo(0,H*0.05); hctx.lineTo(W*0.17,H*0.05); hctx.lineTo(0,H*0.55); hctx.closePath(); hctx.fill();
   hctx.beginPath(); hctx.moveTo(W,H*0.05); hctx.lineTo(W*0.83,H*0.05); hctx.lineTo(W,H*0.55); hctx.closePath(); hctx.fill();
   // faint glass reflection sheen sweeping across the upper screen
@@ -2587,6 +2588,8 @@ function drawDashboard(W,H,sp){
   hctx.fillStyle='#0e1016';
   hctx.beginPath(); hctx.moveTo(W,H*0.42); hctx.lineTo(W*0.945,H*0.50); hctx.lineTo(W*0.945,H); hctx.lineTo(W,H); hctx.closePath(); hctx.fill();
   hctx.fillStyle='rgba(150,160,180,0.15)'; hctx.fillRect(W*0.945,H*0.50,Math.max(1,W*0.004),H*0.5);
+
+  if (VAN){ drawVanDash(W,H,sp,steer,kmh,Min); return; }
 
   // ============================ DASHBOARD ============================
   const dashTop=H*0.70;   // cowl top — leaves the road / bonnet visible above
@@ -2749,6 +2752,144 @@ function drawDashboard(W,H,sp){
   // cabin ambient shadow — the corners darken so the frame reads as "inside"
   const vg=hctx.createRadialGradient(W*0.5,H*0.52,Min*0.46,W*0.5,H*0.60,Min*1.05);
   vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.38)');
+  hctx.fillStyle=vg; hctx.fillRect(0,0,W,H);
+}
+// ---- V-Class dashboard (from the reference photo): deep soft-touch dash,
+//      burl-wood trim band, round turbine vents, a tablet screen standing on
+//      the dash top, silver button strips, a wood centre console with the
+//      COMAND touchpad, twin-dial cluster, and the three-spoke Mercedes wheel.
+function drawVanDash(W,H,sp,steer,kmh,Min){
+  const dashTop=H*0.64;                                  // the van dash sits tall and deep
+  // wipers parked on the glass
+  hctx.strokeStyle='rgba(16,18,24,0.85)'; hctx.lineWidth=Math.max(2,H*0.0045); hctx.lineCap='round';
+  hctx.beginPath(); hctx.moveTo(W*0.22,dashTop+H*0.005); hctx.lineTo(W*0.5,dashTop-H*0.12); hctx.stroke();
+  hctx.beginPath(); hctx.moveTo(W*0.56,dashTop+H*0.005); hctx.lineTo(W*0.80,dashTop-H*0.10); hctx.stroke();
+  // deep soft-touch dash top with a stitched leading edge
+  hctx.beginPath();
+  hctx.moveTo(0,H); hctx.lineTo(0,dashTop+H*0.02);
+  hctx.quadraticCurveTo(W*0.5, dashTop-H*0.045, W, dashTop+H*0.02);
+  hctx.lineTo(W,H); hctx.closePath();
+  const dg=hctx.createLinearGradient(0,dashTop-H*0.04,0,H);
+  dg.addColorStop(0,'#2e3138'); dg.addColorStop(0.16,'#1a1c21'); dg.addColorStop(1,'#08090b');
+  hctx.fillStyle=dg; hctx.fill();
+  hctx.lineWidth=Math.max(1.4,H*0.0022); hctx.strokeStyle='rgba(120,126,138,0.5)'; hctx.setLineDash([5,5]);
+  hctx.beginPath(); hctx.moveTo(0,dashTop+H*0.025); hctx.quadraticCurveTo(W*0.5, dashTop-H*0.04, W, dashTop+H*0.025); hctx.stroke();
+  hctx.setLineDash([]);
+  // burl-wood trim band sweeping the full width
+  const wy=dashTop+H*0.075, wh=H*0.085;
+  hctx.save();
+  hctx.beginPath();
+  hctx.moveTo(0,wy); hctx.quadraticCurveTo(W*0.5, wy-H*0.03, W, wy);
+  hctx.lineTo(W,wy+wh); hctx.quadraticCurveTo(W*0.5, wy+wh-H*0.03, 0, wy+wh);
+  hctx.closePath();
+  const wg=hctx.createLinearGradient(0,wy-H*0.03,0,wy+wh);
+  wg.addColorStop(0,'#7a4a28'); wg.addColorStop(0.45,'#5a3419'); wg.addColorStop(0.75,'#6e4222'); wg.addColorStop(1,'#3d2413');
+  hctx.fillStyle=wg; hctx.fill();
+  hctx.clip();
+  hctx.globalAlpha=0.35; hctx.strokeStyle='#8a5a34'; hctx.lineWidth=1.4;
+  for (let r=0;r<7;r++){ hctx.beginPath();
+    for (let px=0;px<=W;px+=24){ const yy=wy+wh*(0.14+r*0.13)+Math.sin(px*0.012+r*2.1)*3.2; px===0?hctx.moveTo(px,yy):hctx.lineTo(px,yy); }
+    hctx.stroke(); }
+  hctx.globalAlpha=1; hctx.restore();
+  hctx.lineWidth=Math.max(1.5,H*0.003); hctx.strokeStyle='rgba(200,206,214,0.55)';
+  hctx.beginPath(); hctx.moveTo(0,wy); hctx.quadraticCurveTo(W*0.5, wy-H*0.03, W, wy); hctx.stroke();
+  // round turbine vents set into the wood (chrome ring + radial louvres)
+  const vent=(cx,cy,r)=>{
+    hctx.fillStyle='#0c0e12'; hctx.beginPath(); hctx.arc(cx,cy,r,0,6.28); hctx.fill();
+    hctx.lineWidth=Math.max(2,r*0.16); hctx.strokeStyle='#c9cfd7'; hctx.beginPath(); hctx.arc(cx,cy,r,0,6.28); hctx.stroke();
+    hctx.strokeStyle='#3a3f47'; hctx.lineWidth=Math.max(1,r*0.09);
+    for (let k=0;k<8;k++){ const a=k/8*6.28+0.4; hctx.beginPath(); hctx.moveTo(cx+Math.cos(a)*r*0.25,cy+Math.sin(a)*r*0.25); hctx.lineTo(cx+Math.cos(a+0.5)*r*0.86,cy+Math.sin(a+0.5)*r*0.86); hctx.stroke(); }
+    hctx.fillStyle='#1d2129'; hctx.beginPath(); hctx.arc(cx,cy,r*0.2,0,6.28); hctx.fill();
+  };
+  const vr=Min*0.036, vy=wy+wh*0.42;
+  vent(W*0.06,vy,vr); vent(W*0.24,vy,vr); vent(W*0.415,vy,vr); vent(W*0.585,vy,vr); vent(W*0.945,vy,vr);
+  // tablet-style infotainment screen STANDING on the dash top (silver frame)
+  { const sw=W*0.20, sh=H*0.105, sx=W*0.5-sw/2, sy=dashTop-H*0.115;
+    hctx.fillStyle='#b9bec6'; roundRect(sx-W*0.008,sy-H*0.008,sw+W*0.016,sh+H*0.016,H*0.012); hctx.fill();
+    hctx.fillStyle='#04060a'; roundRect(sx,sy,sw,sh,H*0.008); hctx.fill();
+    hctx.save(); roundRect(sx,sy,sw,sh,H*0.008); hctx.clip();
+    hctx.strokeStyle='rgba(40,210,170,0.85)'; hctx.lineWidth=Math.max(2,H*0.004); hctx.lineCap='round';
+    hctx.beginPath(); hctx.moveTo(sx+sw*0.14,sy+sh*0.88); hctx.lineTo(sx+sw*0.36,sy+sh*0.44);
+    hctx.lineTo(sx+sw*0.55,sy+sh*0.56); hctx.lineTo(sx+sw*0.85,sy+sh*0.2); hctx.stroke();
+    hctx.fillStyle='#e9eef5'; hctx.font=`900 ${Math.round(sh*0.30)}px Arial`; hctx.textAlign='left'; hctx.textBaseline='alphabetic';
+    hctx.fillText(kmh, sx+sw*0.08, sy+sh*0.36);
+    hctx.fillStyle='#8fb0c8'; hctx.font=`700 ${Math.round(sh*0.15)}px Arial`;
+    hctx.fillText('KM/H · '+(G.circuit&&G.circuit.name||''), sx+sw*0.08, sy+sh*0.55);
+    hctx.restore();
+    hctx.fillStyle='#9aa0a8'; hctx.fillRect(W*0.5-W*0.012, sy+sh+H*0.008, W*0.024, H*0.012); }   // stand
+  // wood centre console sweeping down in a V, with the COMAND touchpad
+  hctx.beginPath();
+  hctx.moveTo(W*0.415,wy+wh); hctx.lineTo(W*0.585,wy+wh);
+  hctx.lineTo(W*0.64,H); hctx.lineTo(W*0.36,H); hctx.closePath();
+  const cg=hctx.createLinearGradient(0,wy+wh,0,H);
+  cg.addColorStop(0,'#5a3419'); cg.addColorStop(0.5,'#4a2a15'); cg.addColorStop(1,'#2c1a0d');
+  hctx.fillStyle=cg; hctx.fill();
+  hctx.strokeStyle='rgba(200,206,214,0.4)'; hctx.lineWidth=Math.max(1.5,H*0.0025); hctx.stroke();
+  // silver climate button strips on the console face (under the centre vents)
+  hctx.textAlign='center'; hctx.textBaseline='middle';
+  for (const byy of [wy+wh+H*0.022, wy+wh+H*0.056]){
+    hctx.fillStyle='#c3c8d0'; roundRect(W*0.425, byy, W*0.15, H*0.022, H*0.009); hctx.fill();
+    hctx.fillStyle='#5a5f68';
+    for (let k=0;k<5;k++) hctx.fillRect(W*0.437+k*W*0.028, byy+H*0.006, W*0.016, H*0.010);
+  }
+  hctx.fillStyle='#b9bec6'; roundRect(W*0.455, H*0.87, W*0.09, H*0.055, H*0.012); hctx.fill();     // touchpad
+  hctx.fillStyle='#1c2029'; hctx.beginPath(); hctx.arc(W*0.5, H*0.965, Min*0.026, 0, 6.28); hctx.fill();
+  hctx.lineWidth=Math.max(2,Min*0.006); hctx.strokeStyle='#c9cfd7'; hctx.beginPath(); hctx.arc(W*0.5, H*0.965, Min*0.026, 0, 6.28); hctx.stroke();   // rotary
+  // ---- driver cluster (right): hooded twin dials + centre info screen ----
+  const bx=W*0.75;
+  hctx.fillStyle='#0d0f14';
+  hctx.beginPath(); hctx.moveTo(bx-W*0.185, dashTop+H*0.012);
+  hctx.quadraticCurveTo(bx, dashTop-H*0.075, bx+W*0.185, dashTop+H*0.012);
+  hctx.quadraticCurveTo(bx, dashTop-H*0.03, bx-W*0.185, dashTop+H*0.012); hctx.closePath(); hctx.fill();
+  hctx.fillStyle='rgba(5,6,9,0.94)';
+  roundRect(bx-W*0.175, dashTop-H*0.008, W*0.35, H*0.135, H*0.02); hctx.fill();
+  const gy=dashTop+H*0.052, gr=Min*0.062;
+  drawDial(bx-W*0.105, gy, gr, Math.max(0,Math.min(1,G.rpm||sp)), {ticks:10, major:1, redFrom:0.8, label:'RPM'});
+  drawDial(bx+W*0.105, gy, gr, Math.min(1,kmh/340), {ticks:8, major:2, value:kmh, label:'KM/H'});
+  hctx.fillStyle='#0a1220'; roundRect(bx-W*0.036, gy-gr*0.55, W*0.072, gr*1.1, H*0.008); hctx.fill();   // centre info screen
+  hctx.fillStyle='#7ad7ff'; hctx.font=`900 ${Math.round(gr*0.42)}px Arial`; hctx.textAlign='center'; hctx.textBaseline='middle';
+  hctx.fillText('D'+(G.gear||1), bx, gy-gr*0.14);
+  hctx.fillStyle='#cdd4de'; hctx.font=`700 ${Math.round(gr*0.26)}px Arial`;
+  hctx.fillText('LAP '+Math.min(G.lap,(G.circuit&&G.circuit.laps)||G.lap)+'/'+((G.circuit&&G.circuit.laps)||'-'), bx, gy+gr*0.3);
+  // ---- the three-spoke Mercedes wheel (round rim, star on the boss) ----
+  const cx=bx, cy=H*0.985, R=Min*0.205;
+  hctx.save(); hctx.translate(cx,cy); hctx.rotate(steer*0.55);
+  hctx.lineCap='round';
+  hctx.lineWidth=Math.max(7,R*0.21); hctx.strokeStyle='#0a0b0f';
+  hctx.beginPath(); hctx.arc(0,0,R,0,6.28); hctx.stroke();
+  const rg=hctx.createLinearGradient(0,-R,0,R);
+  rg.addColorStop(0,'#34383f'); rg.addColorStop(0.5,'#1c1f24'); rg.addColorStop(1,'#101216');
+  hctx.lineWidth=Math.max(4,R*0.13); hctx.strokeStyle=rg;
+  hctx.beginPath(); hctx.arc(0,0,R,0,6.28); hctx.stroke();
+  // spokes: two horizontal + one down, with silver multifunction pods
+  hctx.strokeStyle='#1b1e25'; hctx.lineCap='butt'; hctx.lineWidth=R*0.26;
+  for (const s2 of [-1,1]){ hctx.beginPath(); hctx.moveTo(0,0); hctx.lineTo(s2*R*0.9, R*0.06); hctx.stroke(); }
+  hctx.lineWidth=R*0.22; hctx.beginPath(); hctx.moveTo(0,R*0.1); hctx.lineTo(0,R*0.9); hctx.stroke();
+  hctx.fillStyle='#c3c8d0';
+  for (const s2 of [-1,1]){ roundRect(s2*R*0.52-R*0.11, -R*0.09, R*0.22, R*0.18, R*0.05); hctx.fill(); }
+  // boss with the three-pointed star
+  hctx.fillStyle='#15181e'; hctx.beginPath(); hctx.arc(0,0,R*0.30,0,6.28); hctx.fill();
+  hctx.lineWidth=Math.max(1.5,R*0.03); hctx.strokeStyle='#c9cfd7';
+  hctx.beginPath(); hctx.arc(0,0,R*0.21,0,6.28); hctx.stroke();
+  for (let k=0;k<3;k++){ const a=-Math.PI/2 + k*Math.PI*2/3;
+    hctx.beginPath(); hctx.moveTo(0,0); hctx.lineTo(Math.cos(a)*R*0.21, Math.sin(a)*R*0.21); hctx.stroke(); }
+  // driver's hands at 9 & 3 (turn with the wheel)
+  for (const s2 of [-1,1]){
+    hctx.save(); hctx.translate(s2*R,0);
+    hctx.fillStyle='#0d0e13';
+    hctx.beginPath(); hctx.ellipse(s2*R*0.32, R*0.62, R*0.20, R*0.50, s2*0.35, 0, 6.28); hctx.fill();
+    hctx.fillStyle='#101014';
+    hctx.beginPath(); hctx.ellipse(0,0,R*0.145,R*0.27,0,0,6.28); hctx.fill();
+    hctx.fillStyle='#191922';
+    for (let k=0;k<4;k++){ const fy=-R*0.185+k*R*0.12;
+      hctx.beginPath(); hctx.ellipse(-s2*R*0.105,fy,R*0.075,R*0.052,0,0,6.28); hctx.fill(); }
+    hctx.beginPath(); hctx.ellipse(-s2*R*0.10,-R*0.20,R*0.05,R*0.095,s2*0.55,0,6.28); hctx.fill();
+    hctx.restore();
+  }
+  hctx.restore();
+  // cabin ambient shadow
+  const vg=hctx.createRadialGradient(W*0.5,H*0.5,Min*0.46,W*0.5,H*0.58,Min*1.05);
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.36)');
   hctx.fillStyle=vg; hctx.fillRect(0,0,W,H);
 }
 function roundRect(x,y,w,h,r){ hctx.beginPath(); hctx.moveTo(x+r,y); hctx.arcTo(x+w,y,x+w,y+h,r); hctx.arcTo(x+w,y+h,x,y+h,r); hctx.arcTo(x,y+h,x,y,r); hctx.arcTo(x,y,x+w,y,r); hctx.closePath(); }
