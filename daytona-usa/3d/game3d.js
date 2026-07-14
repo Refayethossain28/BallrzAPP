@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R85 — dash fits all orientations';
+const BUILD = 'BUILD R86 — Mercedes S-Class';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -94,6 +94,10 @@ const VEHICLES = [
     livery:{ body:0x0d0f13, hood:0x0d0f13, roof:0x0d0f13, num:0, sponsor:'V-CLASS' },
     speedMul:0.96, accelMul:0.92, steerMul:0.9, gripMul:1.08, brakeMul:1.06, rollMul:1.3,
     desc:'The black executive Mercedes MPV — heavy, planted, deceptively rapid.' },
+  { name:'S-CLASS', kind:'sedan', color:0x0b0d11,
+    livery:{ body:0x0b0d11, hood:0x0b0d11, roof:0x0b0d11, num:0, sponsor:'S-CLASS' },
+    speedMul:1.16, accelMul:1.10, steerMul:1.02, gripMul:1.10, brakeMul:1.14, rollMul:1.0,
+    desc:'The 537hp flagship limousine — serene comfort, massive pace.' },
 ];
 // stock-car liveries for the AI field (varied colours + race numbers)
 const RIVAL_LIVERIES = [
@@ -1109,6 +1113,72 @@ function addVanBody(g, liv, hero, W, L){
   }
 }
 
+// A black Mercedes S-Class flagship sedan (W223, AMG line) from the dormant
+// sedan profiles — wide slat grille + bonnet star, slim LED lights front and
+// rear, chrome beltline, flush handles and trapezoid exhausts.
+function addSedanBody(g, liv, hero, W, L){
+  const body=paintMat(liv.body, hero), dark=matteMat(0x0d0f13), chrome=chromeMat();
+  body.envMapIntensity=Math.min(body.envMapIntensity,1.5);
+  const glass=glassMat(false);
+  g.add(extrudeCar(SED_LOWER, W, 0.07, body));               // hull (extents ~z±2.69, x±1.13)
+  g.add(extrudeCar(SED_GLASS, W-0.14, 0.05, glass));
+  g.add(extrudeCar(SED_ROOF,  W-0.30, 0.05, body));
+  g.add(lmBox(dark, W-0.10, 0.42, 0.08, 0, 1.34, -0.62));    // B-pillar band
+  for (const sx of [-1,1]) g.add(lmBox(chrome, 0.03,0.035,L*0.60, sx*1.145, 1.17, -0.45));
+  // ---- nose: chrome-framed slat grille, grille star + bonnet star, LED lights ----
+  g.add(lmBox(body, W-0.10, 0.62, 0.10, 0, 0.72, 2.60));
+  g.add(lmBox(chrome, 1.24,0.46,0.05, 0,0.80,2.70));
+  g.add(lmBox(dark,   1.12,0.38,0.06, 0,0.80,2.72));
+  for (const dy of [-0.10,0,0.10]) g.add(lmBox(chrome, 1.04,0.028,0.075, 0,0.80+dy,2.745));
+  { const star=new THREE.Group();
+    star.add(new THREE.Mesh(new THREE.TorusGeometry(0.11,0.016,8,26), chrome));
+    const spoke=new THREE.BoxGeometry(0.026,0.115,0.026); spoke.translate(0,0.057,0);
+    for (let k=0;k<3;k++){ const m=new THREE.Mesh(spoke, chrome); m.rotation.z=k*Math.PI*2/3; star.add(m); }
+    star.position.set(0,0.80,2.79); g.add(star); }
+  { const s2=new THREE.Group();                              // upright bonnet star
+    s2.add(new THREE.Mesh(new THREE.TorusGeometry(0.055,0.01,6,18), chrome));
+    const sp2=new THREE.BoxGeometry(0.016,0.055,0.016); sp2.translate(0,0.027,0);
+    for (let k=0;k<3;k++){ const m=new THREE.Mesh(sp2, chrome); m.rotation.z=k*Math.PI*2/3; s2.add(m); }
+    s2.position.set(0,1.16,2.28); g.add(s2); }
+  const led=new THREE.MeshStandardMaterial({color:0xf4f8ff, emissive:0xbfd8ff, emissiveIntensity:0.55, roughness:0.2});
+  for (const sx of [-0.74,0.74]){
+    g.add(lmBox(dark, 0.52,0.17,0.06, sx,1.02,2.63));
+    g.add(lmBox(led,  0.44,0.09,0.05, sx,1.02,2.67));
+  }
+  g.add(lmBox(dark, W-0.55,0.20,0.08, 0,0.42,2.64));
+  const plate=new THREE.MeshStandardMaterial({color:0xf2c811, roughness:0.5});
+  g.add(lmBox(plate, 0.88,0.20,0.03, 0,0.52,2.73));
+  // ---- tail: slim horizontal LED units wrapping the wings, chrome, exhausts ----
+  g.add(lmBox(body, W-0.10, 0.72, 0.10, 0, 0.70, -2.62));
+  const tlHouse=new THREE.MeshStandardMaterial({color:0x5a0f12, roughness:0.3, metalness:0.15, emissive:0x7a0d10, emissiveIntensity:0.5});
+  const tlLed=new THREE.MeshStandardMaterial({color:0xff4038, emissive:0xe0140e, emissiveIntensity:1.25, roughness:0.3});
+  g.userData.brakeMats=g.userData.brakeMats||[];
+  for (const sx of [-1,1]){
+    g.add(lmBox(tlHouse, 0.62,0.14,0.06, sx*0.64, 0.98, -2.73));
+    g.add(lmBox(tlLed,   0.54,0.05,0.06, sx*0.64, 0.99, -2.745));
+    g.add(lmBox(tlHouse, 0.07,0.13,0.30, sx*1.145, 0.98, -2.50));
+  }
+  g.userData.brakeMats.push(tlLed);
+  g.add(lmBox(chrome, 1.12,0.035,0.05, 0,0.86,-2.735));
+  g.add(lmBox(plate, 0.88,0.20,0.03, 0,0.60,-2.75));
+  const steel=new THREE.MeshStandardMaterial({color:0xb8bcc4, metalness:0.9, roughness:0.3, envMap:envTex, envMapIntensity:1.2});
+  for (const sx of [-0.72,0.72]) g.add(lmBox(steel, 0.30,0.10,0.06, sx,0.36,-2.70));
+  addMirrors(g, W/2+0.10, 1.22, 0.68, dark);
+  if (!hero) return;                                          // ---- hero extras ----
+  const seam=new THREE.MeshStandardMaterial({color:0x05060a, roughness:0.9});
+  for (const sx of [-1,1]){
+    g.add(lmBox(seam, 0.02,0.60,0.022, sx*1.14, 0.78, 0.72));
+    g.add(lmBox(seam, 0.02,0.60,0.022, sx*1.14, 0.78, -0.52));
+    g.add(lmBox(chrome, 0.028,0.045,0.24, sx*1.145, 1.02, 0.30));   // flush handles
+    g.add(lmBox(chrome, 0.028,0.045,0.24, sx*1.145, 1.02, -0.95));
+  }
+  const archMat=new THREE.MeshBasicMaterial({map:blobTex(), transparent:true, opacity:0.5, depthWrite:false, color:0x000000});
+  for (const [ax,az] of [[-1,L*0.30],[1,L*0.30],[-1,-L*0.30],[1,-L*0.30]]){
+    const q=new THREE.Mesh(new THREE.PlaneGeometry(1.25,0.75), archMat);
+    q.position.set(ax*1.15, 0.52, az); q.rotation.y=ax*Math.PI/2; q.userData.noShadow=true; g.add(q);
+  }
+}
+
 // smooth low stock-car body side profile (front=+x, up=+y) — rounded nose & tail
 const STOCK_BODY=[[2.46,0.40],[2.54,0.74],[2.30,0.96],[1.5,1.02],[0.7,1.04],[-1.45,1.04],[-2.25,0.96],[-2.5,0.66],[-2.48,0.40],[-2.26,0.28],[2.26,0.28]];
 // A Daytona-style NASCAR stock car with a smooth curved body. Front faces +z.
@@ -1118,11 +1188,14 @@ function buildCar(vehicle, lite){
   const hero=!lite;
   const main=paintMat(liv.body,hero), accent=paintMat(liv.hood,hero), roofM=paintMat(liv.roof!=null?liv.roof:liv.hood,hero);
   const white=paintMat(0xffffff,hero), glass=glassMat(hero), dark=matteMat(0x16181c);
-  const VAN = vehicle.kind==='van';
-  const L = VAN?5.3:4.9, W = VAN?2.06:2.16;
+  const VAN = vehicle.kind==='van', SED = vehicle.kind==='sedan';
+  const L = VAN?5.3:(SED?5.2:4.9), W = VAN?2.06:(SED?2.12:2.16);
   if (VAN){
     addVanBody(g, liv, hero, W, L);
     addWheels(g, W/2-0.04, L*0.31, 0.5, lite);
+  } else if (SED){
+    addSedanBody(g, liv, hero, W, L);
+    addWheels(g, W/2-0.04, L*0.30, 0.48, lite);
   } else {
   // ---- smooth curved main body (sharper bevel = defined NASCAR panels, not bulbous) ----
   g.add(extrudeCar(STOCK_BODY, W, 0.07, main));
@@ -2594,6 +2667,8 @@ function drawDashboard(W,H,sp){
   hctx.beginPath(); hctx.moveTo(W,H*0.42); hctx.lineTo(W*0.945,H*0.50); hctx.lineTo(W*0.945,H); hctx.lineTo(W,H); hctx.closePath(); hctx.fill();
   hctx.fillStyle='rgba(150,160,180,0.15)'; hctx.fillRect(W*0.945,H*0.50,Math.max(1,W*0.004),H*0.5);
 
+  const PK = (G.vehicle && DASH_PHOTOS[G.vehicle.kind]) ? G.vehicle.kind : '';
+  if (PK){ initDashPhoto(PK); if (drawPhotoDash(PK,W,H,sp,steer,kmh,Min)) return; }
   if (VAN){ drawVanDash(W,H,sp,steer,kmh,Min); return; }
 
   // ============================ DASHBOARD ============================
@@ -2763,40 +2838,50 @@ function drawDashboard(W,H,sp){
 //      composited as the dash (windscreen punched out so the 3D world shows
 //      through), with a live rotating wheel, cluster needles and screen
 //      content drawn on top. Falls back to the procedural dash until loaded.
-let _vdImg=null, _vdReady=false, _vdCanvas=null, _vdWheel=null;
-function initVanDashPhoto(){
-  if (_vdImg) return; _vdImg=new Image();
-  _vdImg.onload=()=>{ try{ buildVanDashLayers(); _vdReady=true; }catch(e){} };
-  _vdImg.onerror=()=>{ _vdReady=false; };
-  _vdImg.src='./img/vclass-dash.jpg';
-}
-function buildVanDashLayers(){
-  const iw=_vdImg.naturalWidth, ih=_vdImg.naturalHeight;
-  const cv=document.createElement('canvas'); cv.width=iw; cv.height=ih; const x=cv.getContext('2d');
-  x.drawImage(_vdImg,0,0);
-  // punch the windscreen out to transparency (polygon traced on the photo)
-  x.globalCompositeOperation='destination-out';
-  x.beginPath();
-  const P=[[0,0],[1,0],[1,0.44],[0.955,0.335],[0.885,0.255],[0.615,0.245],[0.555,0.30],[0.42,0.315],[0.30,0.315],[0.10,0.30],[0,0.27]];
-  P.forEach(([u,v],i)=>{ i?x.lineTo(u*iw,v*ih):x.moveTo(u*iw,v*ih); });
-  x.closePath(); x.fill();
-  x.globalCompositeOperation='source-over';
-  _vdCanvas=cv;
-  // circular crop of the real wheel so it can rotate with the steering
-  const R=Math.round(iw*0.135), wc=document.createElement('canvas'); wc.width=wc.height=R*2;
-  const wx=wc.getContext('2d');
-  wx.beginPath(); wx.arc(R,R,R,0,6.28); wx.clip();
-  wx.drawImage(_vdImg, -(0.795*iw-R), -(0.60*ih-R));
-  _vdWheel={cv:wc, R, cx:0.795, cy:0.60};
+// per-vehicle photo configs: windscreen cut polygon, wheel crop, live overlays.
+// The van cut is generous on the right (the cowl/pillar slab blocked the view).
+const DASH_PHOTOS={
+  van:  { src:'./img/vclass-dash.jpg', dashV:0.30,
+          cut:[[0,0],[1,0],[1,0.46],[0.94,0.38],[0.86,0.30],[0.75,0.26],[0.615,0.245],[0.555,0.30],[0.42,0.315],[0.30,0.315],[0.10,0.30],[0,0.27]],
+          wheel:{cx:0.795, cy:0.60, r:0.135},
+          screen:{x0:0.418,y0:0.268,x1:0.556,y1:0.415} },
+  sedan:{ src:'./img/sclass-dash.jpg', dashV:0.385,
+          cut:[[0.115,0.015],[0.885,0.015],[0.865,0.30],[0.79,0.375],[0.55,0.395],[0.30,0.39],[0.175,0.36],[0.135,0.29]],
+          wheel:{cx:0.257, cy:0.63, r:0.115},
+          screen:{x0:0.442,y0:0.49,x1:0.578,y1:0.715},
+          dial:{cx:0.225, cy:0.437, r:0.02}, gear:{x:0.335, y:0.44} },
+};
+const _vd={};
+function initDashPhoto(kind){
+  if (_vd[kind]) return; const cfg=DASH_PHOTOS[kind]; if (!cfg) return;
+  const st=_vd[kind]={ready:false};
+  const img=new Image();
+  img.onload=()=>{ try{
+    const iw=img.naturalWidth, ih=img.naturalHeight;
+    const cv=document.createElement('canvas'); cv.width=iw; cv.height=ih; const x=cv.getContext('2d');
+    x.drawImage(img,0,0);
+    x.globalCompositeOperation='destination-out';               // punch the windscreen
+    x.beginPath(); cfg.cut.forEach(([u,v],i)=>{ i?x.lineTo(u*iw,v*ih):x.moveTo(u*iw,v*ih); });
+    x.closePath(); x.fill();
+    x.globalCompositeOperation='source-over';
+    const R=Math.round(iw*cfg.wheel.r), wc=document.createElement('canvas'); wc.width=wc.height=R*2;
+    const wx=wc.getContext('2d');
+    wx.beginPath(); wx.arc(R,R,R,0,6.28); wx.clip();            // rotating wheel crop
+    wx.drawImage(img, -(cfg.wheel.cx*iw-R), -(cfg.wheel.cy*ih-R));
+    st.canvas=cv; st.wheel={cv:wc,R}; st.ready=true;
+  }catch(e){} };
+  img.onerror=()=>{ st.ready=false; };
+  img.src=cfg.src;
 }
 
 // ---- V-Class dashboard (from the reference photo): deep soft-touch dash,
 //      burl-wood trim band, round turbine vents, a tablet screen standing on
 //      the dash top, silver button strips, a wood centre console with the
 //      COMAND touchpad, twin-dial cluster, and the three-spoke Mercedes wheel.
-function drawVanDash(W,H,sp,steer,kmh,Min){
-  initVanDashPhoto();
-  if (_vdReady && _vdCanvas){
+function drawPhotoDash(kind,W,H,sp,steer,kmh,Min){
+  const st=_vd[kind], cfg=DASH_PHOTOS[kind];
+  if (st && st.ready && st.canvas){
+    const _vdCanvas=st.canvas, _vdWheel=st.wheel;
     const iw=_vdCanvas.width, ih=_vdCanvas.height;
     // aspect-aware fit: pin the dash's leading edge (~v0.30 in the photo) to
     // mid-screen so the road stays visible in ANY orientation. Wide screens
@@ -2805,7 +2890,7 @@ function drawVanDash(W,H,sp,steer,kmh,Min){
     const scale=Math.max(W/iw, (H*0.52)/ih);
     const dw=iw*scale, dh=ih*scale;
     const dx=Math.min(0, W-dw);
-    let dy=H*0.52 - dh*0.30;
+    let dy=H*0.52 - dh*cfg.dashV;
     if (dy+dh < H) dy=H-dh;                               // never leave a gap under the dash
     hctx.drawImage(_vdCanvas, dx, dy, dw, dh);
     const px=u=>dx+u*dw, py=v=>dy+v*dh;                   // photo-space -> screen
@@ -2815,7 +2900,8 @@ function drawVanDash(W,H,sp,steer,kmh,Min){
       hctx.save(); hctx.translate(px(wl.cx), py(wl.cy)); hctx.rotate(steer*0.5);
       hctx.drawImage(wl.cv, -wr,-wr, wr*2, wr*2); hctx.restore(); }
     // live content on the real tablet screen
-    { const sx=px(0.418), sy=py(0.268), sw=(0.556-0.418)*dw, sh=(0.415-0.268)*dh;
+    { const sc=cfg.screen;
+      const sx=px(sc.x0), sy=py(sc.y0), sw=(sc.x1-sc.x0)*dw, sh=(sc.y1-sc.y0)*dh;
       hctx.fillStyle='#04060a'; roundRect(sx,sy,sw,sh,sh*0.08); hctx.fill();
       hctx.save(); roundRect(sx,sy,sw,sh,sh*0.08); hctx.clip();
       hctx.strokeStyle='rgba(40,210,170,0.85)'; hctx.lineWidth=Math.max(1.5,sh*0.04); hctx.lineCap='round';
@@ -2824,25 +2910,30 @@ function drawVanDash(W,H,sp,steer,kmh,Min){
       hctx.fillStyle='#e9eef5'; hctx.font=`900 ${Math.round(sh*0.34)}px Arial`; hctx.textAlign='left'; hctx.textBaseline='alphabetic';
       hctx.fillText(kmh, sx+sw*0.08, sy+sh*0.40);
       hctx.fillStyle='#8fb0c8'; hctx.font=`700 ${Math.round(sh*0.16)}px Arial`;
-      hctx.fillText('KM/H · '+(G.circuit&&G.circuit.name||''), sx+sw*0.08, sy+sh*0.60);
+      hctx.fillText('KM/H · D'+(G.gear||1)+' · '+(G.circuit&&G.circuit.name||''), sx+sw*0.08, sy+sh*0.60);
+      hctx.fillStyle='#ffd24a'; hctx.font=`900 ${Math.round(sh*0.14)}px Arial`;
+      hctx.fillText('LAP '+Math.min(G.lap,(G.circuit&&G.circuit.laps)||G.lap)+'/'+((G.circuit&&G.circuit.laps)||'-'), sx+sw*0.08, sy+sh*0.78);
       hctx.restore(); }
-    // live needles + gear on the real cluster (mostly visible left of the wheel)
-    { const dcx=px(0.678), dcy=py(0.372), dr=dw*0.028;
+    // live needle + gear on the real cluster (only where the photo keeps one)
+    if (cfg.dial){ const dcx=px(cfg.dial.cx), dcy=py(cfg.dial.cy), dr=dw*cfg.dial.r;
       const a=Math.PI*0.78 + Math.max(0,Math.min(1,G.rpm||sp))*Math.PI*1.42;
       hctx.strokeStyle='#ff7a2a'; hctx.lineWidth=Math.max(2,dr*0.12); hctx.lineCap='round';
       hctx.beginPath(); hctx.moveTo(dcx,dcy); hctx.lineTo(dcx+Math.cos(a)*dr, dcy+Math.sin(a)*dr); hctx.stroke();
       hctx.fillStyle='#7ad7ff'; hctx.font=`900 ${Math.round(dw*0.016)}px Arial`; hctx.textAlign='center'; hctx.textBaseline='middle';
-      hctx.fillText('D'+(G.gear||1), px(0.742), py(0.352)); }
+      hctx.fillText('D'+(G.gear||1), px(cfg.gear.x), py(cfg.gear.y)); }
     // night: dim the photographed cabin to match the world
-    const tintY=Math.max(0, dy+dh*0.30);
+    const tintY=Math.max(0, dy+dh*cfg.dashV);
     if (G.night){ hctx.fillStyle='rgba(6,8,16,0.45)'; hctx.fillRect(0,tintY,W,H-tintY); }
     else if (G.sunset){ hctx.fillStyle='rgba(120,60,20,0.14)'; hctx.fillRect(0,tintY,W,H-tintY); }
     // cabin shadow vignette
     const vg=hctx.createRadialGradient(W*0.5,H*0.5,Min*0.5,W*0.5,H*0.6,Min*1.08);
     vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.32)');
     hctx.fillStyle=vg; hctx.fillRect(0,0,W,H);
-    return;
+    return true;
   }
+  return false;
+}
+function drawVanDash(W,H,sp,steer,kmh,Min){
   const dashTop=H*0.64;                                  // the van dash sits tall and deep
   // wipers parked on the glass
   hctx.strokeStyle='rgba(16,18,24,0.85)'; hctx.lineWidth=Math.max(2,H*0.0045); hctx.lineCap='round';
@@ -3259,7 +3350,8 @@ function startRace(){
   _replay=[]; _recT=0;                                  // fresh replay recording
   _sessionScore=0; _driftActive=0; _driftCombo=1; _driftRun=0;   // fresh drift score
   keys.gas=keys.brake=keys.left=keys.right=keys.boost=false;
-  if (G.view==='cinematic') G.view='chase';
+  G.view = (G.vehicle && DASH_PHOTOS[G.vehicle.kind]) ? 'dash'
+         : (G.view==='cinematic' ? 'chase' : G.view);   // Mercedes start in their real cabin
   G.started=true; G.state='rolling';
   _callout=null; _lastPos=1+rivals.length; _lastOvertakeT=-9;   // reset arcade callout state
   initSmoke(); resetSmoke();                          // tyre-smoke pool ready & cleared
@@ -3537,7 +3629,7 @@ const SOUNDTRACKS = {
   applemusic:{ name:'APPLE MUSIC', icon:'🍎', desc:'Stream from your library', apple:true },
 };
 let selApplePlaylist=null, selApplePlaylistName='';
-const VEH_ICON = ['🏎️','🏁','⚡','🛞','🗡️','🚐'];
+const VEH_ICON = ['🏎️','🏁','⚡','🛞','🗡️','🚐','🚘'];
 const CIR_ICON = ['🗽','🎡','🌆','🏜️'];
 let selVeh=0, selCir=1, selSnd='daytona', selTod='day', selWx='clear';
 const TOD_ITEMS = [{key:'day',icon:'☀️',name:'DAY',desc:'Bright daylight racing'},
