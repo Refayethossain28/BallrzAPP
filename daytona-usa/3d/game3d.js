@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R80 — Top Gun soundtrack';
+const BUILD = 'BUILD R81 — more texture mapping';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -666,14 +666,15 @@ function buildRoadMesh(){
   }
   // kerbs + start/finish checker (vertex colours)
   {
-    const pos=[],col=[],nor=[]; const c=new THREE.Color();
-    const vert=(p,n)=>{ pos.push(p.x,p.y,p.z); col.push(c.r,c.g,c.b); nor.push(n.x,n.y,n.z); };
+    const pos=[],col=[],nor=[],uv=[]; const c=new THREE.Color();
+    const vert=(p,n,u,v)=>{ pos.push(p.x,p.y,p.z); col.push(c.r,c.g,c.b); nor.push(n.x,n.y,n.z); uv.push(u,v); };
     const ribbon=(latIn,latOut,lift,colorFn)=>{
       for (let i=0;i<DIV;i++){
         const a=frames[i], b=frames[(i+1)%DIV];
         pt(ia,a,latIn,lift); pt(oa,a,latOut,lift); pt(ib,b,latIn,lift); pt(ob,b,latOut,lift);
         colorFn(i,c);
-        vert(ia,a.up); vert(ib,b.up); vert(ob,b.up); vert(ia,a.up); vert(ob,b.up); vert(oa,a.up);
+        const v0=i*0.45, v1=(i+1)*0.45;
+        vert(ia,a.up,0,v0); vert(ib,b.up,0,v1); vert(ob,b.up,1,v1); vert(ia,a.up,0,v0); vert(ob,b.up,1,v1); vert(oa,a.up,1,v0);
       }
     };
     ribbon(-ROAD_W-RUMBLE_W,-ROAD_W,0.02, i=>Math.floor(i/4)%2?c.setHex(0xd03a32):c.setHex(0xe9e9ee));
@@ -689,7 +690,8 @@ function buildRoadMesh(){
         const a=frames[i], b=frames[(i+1)%DIV];
         pt(ia,a,lat-hw,0.03); pt(oa,a,lat+hw,0.03); pt(ib,b,lat-hw,0.03); pt(ob,b,lat+hw,0.03);
         c.setHex(0xe6e6e6);
-        vert(ia,a.up); vert(ib,b.up); vert(ob,b.up); vert(ia,a.up); vert(ob,b.up); vert(oa,a.up);
+        const v0=i*0.45, v1=(i+1)*0.45;
+        vert(ia,a.up,0,v0); vert(ib,b.up,0,v1); vert(ob,b.up,1,v1); vert(ia,a.up,0,v0); vert(ob,b.up,1,v1); vert(oa,a.up,1,v0);
       }
     };
     dashed(0, 0.18);              // centre line
@@ -703,14 +705,19 @@ function buildRoadMesh(){
         const l1=-ROAD_W+(2*ROAD_W/NB)*s, l2=-ROAD_W+(2*ROAD_W/NB)*(s+1);
         pt(ia,a,l1,0.05); pt(oa,a,l2,0.05); pt(ib,b,l1,0.05); pt(ob,b,l2,0.05);
         c.setHex((i+s)%2===0?0xffffff:0x14181c);
-        vert(ia,a.up); vert(ib,b.up); vert(ob,b.up); vert(ia,a.up); vert(ob,b.up); vert(oa,a.up);
+        const v0=i*0.45, v1=(i+1)*0.45, u0=s/NB, u1=(s+1)/NB;
+        vert(ia,a.up,u0,v0); vert(ib,b.up,u0,v1); vert(ob,b.up,u1,v1); vert(ia,a.up,u0,v0); vert(ob,b.up,u1,v1); vert(oa,a.up,u1,v0);
       }
     }
     const geo=new THREE.BufferGeometry();
     geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
     geo.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
     geo.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3));
-    const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({vertexColors:true, side:THREE.DoubleSide}));
+    geo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+    // grime tile multiplies the painted vertex colours; its bump gives the
+    // kerbs/markings a worn, ridged surface instead of flat shading
+    const grime=makeGrimeTex();
+    const mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({vertexColors:true, side:THREE.DoubleSide, map:grime, bumpMap:grime, bumpScale:0.5}));
     mesh.receiveShadow=true; scene.add(mesh); roadParts.push(mesh);
   }
   // night: sodium lampposts lining the verge — emissive head, an additive glow
@@ -868,7 +875,7 @@ function makeWheelTexture(){
 }
 function addWheels(g,tx,tz,r,lite){
   const tyre=new THREE.CylinderGeometry(r,r,0.52,lite?10:(_HI?40:22)); tyre.rotateZ(Math.PI/2);
-  const tm=new THREE.MeshStandardMaterial({color:0x0c0c0e, roughness:0.85, metalness:0.0});
+  const tm=new THREE.MeshStandardMaterial({color:0x1a1a1d, roughness:0.85, metalness:0.0, map:makeTyreTex(), bumpMap:makeTyreTex(), bumpScale:0.4});
   const simpleRim = lite ? new THREE.CylinderGeometry(r*0.62,r*0.62,0.54,8).rotateZ(Math.PI/2) : null;
   const rm=chromeMat();
   const wheelTex = lite?null:makeWheelTexture();
@@ -1172,6 +1179,45 @@ function buildCar(vehicle, lite){
   g.traverse(o=>{ if(o.isMesh && !o.userData.noShadow){ o.castShadow=true; } });
   return g;
 }
+// ---- extra surface tiles: kerb grime, tyre tread, dune sand ripples ----
+let _grimeTex=null;
+function makeGrimeTex(){          // near-white speckle/scratch tile — MULTIPLIES
+  if (_grimeTex) return _grimeTex;   // vertex colours, so kerbs keep their paint
+  const S=128, cv=document.createElement('canvas'); cv.width=cv.height=S; const x=cv.getContext('2d');
+  x.fillStyle='#e6e6e6'; x.fillRect(0,0,S,S);
+  for (let i=0;i<900;i++){ const g=170+Math.random()*70|0; x.globalAlpha=0.25+Math.random()*0.4;
+    x.fillStyle=`rgb(${g},${g},${g})`; x.fillRect(Math.random()*S, Math.random()*S, 1+Math.random()*2.5, 1+Math.random()*2.5); }
+  x.globalAlpha=0.35; x.strokeStyle='#9a9a9a'; x.lineWidth=1;
+  for (let i=0;i<10;i++){ x.beginPath(); const y=Math.random()*S; x.moveTo(0,y); x.lineTo(S,y+(Math.random()-0.5)*10); x.stroke(); }
+  x.globalAlpha=1;
+  const t=new THREE.CanvasTexture(cv); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.anisotropy=_maxAniso; _grimeTex=t; return t;
+}
+let _tyreTex=null;
+function makeTyreTex(){           // rubber base + circumferential tread grooves
+  if (_tyreTex) return _tyreTex;
+  const S=128, cv=document.createElement('canvas'); cv.width=cv.height=S; const x=cv.getContext('2d');
+  x.fillStyle='#141416'; x.fillRect(0,0,S,S);
+  for (let i=0;i<700;i++){ const g=14+Math.random()*22|0; x.globalAlpha=0.5;
+    x.fillStyle=`rgb(${g},${g},${g})`; x.fillRect(Math.random()*S, Math.random()*S, 2, 2); }
+  x.globalAlpha=1;
+  for (const fy of [0.22,0.4,0.6,0.78]){ x.fillStyle='#050507'; x.fillRect(0,S*fy-2,S,4); }   // grooves
+  x.fillStyle='#0a0a0c'; for (let i=0;i<16;i++){ x.fillRect(i*(S/16),S*0.44,3,S*0.12); }      // sipes
+  const t=new THREE.CanvasTexture(cv); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(6,1); t.anisotropy=_maxAniso; _tyreTex=t; return t;
+}
+let _sandTex=null;
+function makeSandTex(){           // wind-ripple waves over speckled sand
+  if (_sandTex) return _sandTex;
+  const S=256, cv=document.createElement('canvas'); cv.width=cv.height=S; const x=cv.getContext('2d');
+  x.fillStyle='#d9bd82'; x.fillRect(0,0,S,S);
+  for (let i=0;i<2600;i++){ const p=[['#cfb073',0.5],['#e4ca92',0.45],['#c2a468',0.35]][(Math.random()*3)|0];
+    x.globalAlpha=p[1]; x.fillStyle=p[0]; x.fillRect(Math.random()*S, Math.random()*S, 1.5, 1.5); }
+  x.globalAlpha=0.5; x.strokeStyle='#b8985c'; x.lineWidth=2.2; x.lineCap='round';
+  for (let r=0;r<11;r++){ const y0=r*(S/11)+6; x.beginPath();
+    for (let px=0;px<=S;px+=8){ const yy=y0+Math.sin(px*0.09+r*1.7)*4; px===0?x.moveTo(px,yy):x.lineTo(px,yy); } x.stroke(); }
+  x.globalAlpha=1;
+  const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(4,2); t.anisotropy=_maxAniso; _sandTex=t; return t;
+}
+
 // cached soft radial textures for glows + contact shadow
 let _blobTex=null, _glowCache={};
 function blobTex(){ if(_blobTex) return _blobTex; const cv=document.createElement('canvas'); cv.width=cv.height=128; const x=cv.getContext('2d');
@@ -1658,14 +1704,17 @@ function buildScenery(){
       const m=new THREE.Mesh(new THREE.ConeGeometry(h*0.9,h,5),mtnMat); m.position.set(Math.cos(ang)*r,h/2-40,Math.sin(ang)*r); sceneryGroup.add(m);
       if (th.snow){ const cap=new THREE.Mesh(new THREE.ConeGeometry(h*0.32,h*0.34,5),snowMat); cap.position.set(Math.cos(ang)*r,h-40-h*0.17,Math.sin(ang)*r); sceneryGroup.add(cap); } }
   }
-  // rolling golden dunes around the desert circuit (between city and track)
+  // rolling golden dunes around the desert circuit — placed OUTSIDE the
+  // track's real extent (the layout grew; a fixed radius parked one on the road)
   if (th.landmark==='dubai'){
-    const duneMat=new THREE.MeshLambertMaterial({color:0xd9bd82, map:makeDetailTex('rough')});
+    let maxR=0; for (const fr of frames){ maxR=Math.max(maxR, Math.hypot(fr.pos.x-cen.x, fr.pos.z-cen.z)); }
+    const duneMat=new THREE.MeshLambertMaterial({color:0xffffff, map:makeSandTex(), bumpMap:makeSandTex(), bumpScale:0.6});
     const ND=MOBILE?8:16;
     for (let i=0;i<ND;i++){ const ang=(i/ND)*Math.PI*2 + 0.19;
-      const r=340+(mulberry32(i+55)())*170, sc=40+(mulberry32(i+7)())*70;
+      const sc=40+(mulberry32(i+7)())*70;
+      const r=maxR + sc*2.2 + 40 + (mulberry32(i+55)())*140;   // near edge clears the track
       const d=new THREE.Mesh(new THREE.SphereGeometry(1,10,7), duneMat);
-      d.scale.set(sc*2.2, sc*0.5, sc); d.position.set(Math.cos(ang)*r, -sc*0.12, Math.sin(ang)*r);
+      d.scale.set(sc*2.2, sc*0.5, sc); d.position.set(cen.x+Math.cos(ang)*r, -sc*0.12, cen.z+Math.sin(ang)*r);
       d.rotation.y=ang; sceneryGroup.add(d);
     }
   }
