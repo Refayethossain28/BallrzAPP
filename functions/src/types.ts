@@ -199,3 +199,9 @@ export interface ParseBookingInput {
   mode?: string;
   context?: unknown;
 }
+
+/** parseWhatsAppBooking — a pasted WhatsApp message or thread (staff only). */
+export interface ParseWhatsAppInput {
+  message?: string;
+  now?: string;
+}

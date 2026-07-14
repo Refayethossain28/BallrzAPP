@@ -433,7 +433,8 @@ function startAdminListeners(){
         driver:esc(x.driverName||x.driver||'—'),driverId:x.driverId||'',status:safeToken(x.status,'pending'),
         clientId:x.clientId||'',flight:esc(x.flight||''),notes:esc((x.concierge&&x.concierge.instructions)||x.notes||''),
         serviceType:safeToken(x.serviceType,'airport'),serviceLabel:esc(x.serviceLabel||'Airport Transfer'),
-        priceNum:Number(x.price)||0,fareFlagged:!!x.fareFlagged,
+        priceNum:Number(x.price)||0,fareFlagged:!!x.fareFlagged,source:safeToken(x.source,''),
+        _sourceText:esc(String(x.sourceText||'').slice(0,1500)),
         price:esc(priceStr),ref:esc(x.ref||d.id),location:esc(x.location||''),currency:x.currency||'GBP',
         // Raw values for anything written BACK to Firestore (dispatch payloads)
         // — the esc()'d display copies must never be persisted.
@@ -784,6 +785,7 @@ bookings:()=>{const f=S.bFilter;const list=f==='all'?BOOKINGS:BOOKINGS.filter(b=
         <button onclick="setDispatchMode('manual')" style="padding:7px 12px;border-radius:8px;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;background:${S.dispatchMode==='manual'?'var(--gold)':'transparent'};color:${S.dispatchMode==='manual'?'#000':'var(--fg-dim)'}">Manual dispatch</button>
         <button onclick="setDispatchMode('broadcast')" style="padding:7px 12px;border-radius:8px;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;background:${S.dispatchMode==='broadcast'?'var(--gold)':'transparent'};color:${S.dispatchMode==='broadcast'?'#000':'var(--fg-dim)'}">📢 Instant broadcast</button>
       </div>
+      <a href="apexvip-whatsapp.html" target="_blank" rel="noopener" class="btn btn-glass btn-sm" style="text-decoration:none;display:inline-flex;align-items:center" title="Paste a WhatsApp message — ApexAI turns it into a booking here">💬 WhatsApp Desk</a>
       <button class="btn btn-glass btn-sm" onclick="openModal(quickIntakeForm())" style="margin-right:8px">⚡ Quick Intake</button>
       <button class="btn btn-gold btn-sm" onclick="openModal(newBookingForm())">+ New Booking</button>
     </div>
@@ -793,7 +795,7 @@ bookings:()=>{const f=S.bFilter;const list=f==='all'?BOOKINGS:BOOKINGS.filter(b=
   <div class="card"><div style="overflow-x:auto"><table>
     <thead><tr><th>ID</th><th>Client</th><th>Route</th><th>Date</th><th>Vehicle</th><th>Driver</th><th>Status</th><th>Price</th><th></th></tr></thead>
     <tbody>${list.length===0?`<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--fg-subtle)">No bookings yet — new bookings appear here in real time</td></tr>`:list.map(b=>`<tr>
-      <td style="color:var(--gold);font-weight:600;font-size:12px">${b.id}${b.location==='dubai'?'<span style="margin-left:5px;font-size:10px;background:rgba(0,180,255,.12);color:#38bdf8;border:1px solid rgba(56,189,248,.25);border-radius:6px;padding:1px 5px;font-weight:700">AE</span>':b.location==='london'?'<span style="margin-left:5px;font-size:10px;background:rgba(200,169,126,.1);color:var(--gold);border:1px solid rgba(200,169,126,.2);border-radius:6px;padding:1px 5px;font-weight:700">GB</span>':''}</td>
+      <td style="color:var(--gold);font-weight:600;font-size:12px">${b.id}${b.source==='whatsapp'?'<span title="Created from a pasted WhatsApp message" style="margin-left:5px;font-size:10px;background:rgba(37,211,102,.1);color:#25D366;border:1px solid rgba(37,211,102,.25);border-radius:6px;padding:1px 5px;font-weight:700">💬 WA</span>':''}${b.location==='dubai'?'<span style="margin-left:5px;font-size:10px;background:rgba(0,180,255,.12);color:#38bdf8;border:1px solid rgba(56,189,248,.25);border-radius:6px;padding:1px 5px;font-weight:700">AE</span>':b.location==='london'?'<span style="margin-left:5px;font-size:10px;background:rgba(200,169,126,.1);color:var(--gold);border:1px solid rgba(200,169,126,.2);border-radius:6px;padding:1px 5px;font-weight:700">GB</span>':''}</td>
       <td style="font-weight:500">${b.client}</td>
       <td style="color:var(--fg-dim);font-size:13px">${b.pickup} → ${b.dropoff}</td>
       <td style="color:var(--fg-dim);font-size:12px">${b.date} ${b.time}</td>
@@ -1699,6 +1701,10 @@ function showBooking(id){const b=BOOKINGS.find(x=>x.id===id);if(!b)return;
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px">
       ${[['Client',b.client],['Vehicle',b.vehicle],['Pickup',b.pickup],['Driver',b.driver],['Drop-off',b.dropoff],['Date & Time',b.date+' '+b.time],['Price',`<span style="color:var(--gold);font-weight:700">${b.price}</span>`],['Status',badge(b.status)],b.location?['Market',b.location==='dubai'?'🇦🇪 Dubai':'🇬🇧 London']:null].filter(Boolean).map(([l,v])=>`<div><div style="font-size:10px;color:var(--fg-subtle);margin-bottom:4px;letter-spacing:.5px">${l.toUpperCase()}</div><div style="font-size:14px;font-weight:500">${v}</div></div>`).join('')}
     </div>
+    ${b.source==='whatsapp'&&b._sourceText?`<div style="background:rgba(37,211,102,.06);border:1px solid rgba(37,211,102,.2);border-radius:12px;padding:12px 14px;margin-bottom:18px">
+      <div style="font-size:10px;color:#25D366;font-weight:700;letter-spacing:.5px;margin-bottom:6px">💬 ORIGINAL WHATSAPP MESSAGE</div>
+      <div style="font-size:12px;color:var(--fg-dim);line-height:1.6;white-space:pre-wrap;max-height:160px;overflow-y:auto">${b._sourceText}</div>
+    </div>`:''}
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       ${!b.driverId?`<button class="btn btn-gold btn-sm" onclick="closeModal();openDispatch('${b.id}')">Assign Driver</button>`:''}
       <button class="btn btn-glass btn-sm" onclick="closeModal()">Close</button>
