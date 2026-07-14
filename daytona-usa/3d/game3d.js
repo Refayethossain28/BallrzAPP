@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R83 — V-Class driving position';
+const BUILD = 'BUILD R84 — photoreal V-Class dash';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -2759,11 +2759,81 @@ function drawDashboard(W,H,sp){
   vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.38)');
   hctx.fillStyle=vg; hctx.fillRect(0,0,W,H);
 }
+// ---- photoreal V-Class dashboard: the owner's real interior photo is
+//      composited as the dash (windscreen punched out so the 3D world shows
+//      through), with a live rotating wheel, cluster needles and screen
+//      content drawn on top. Falls back to the procedural dash until loaded.
+let _vdImg=null, _vdReady=false, _vdCanvas=null, _vdWheel=null;
+function initVanDashPhoto(){
+  if (_vdImg) return; _vdImg=new Image();
+  _vdImg.onload=()=>{ try{ buildVanDashLayers(); _vdReady=true; }catch(e){} };
+  _vdImg.onerror=()=>{ _vdReady=false; };
+  _vdImg.src='./img/vclass-dash.jpg';
+}
+function buildVanDashLayers(){
+  const iw=_vdImg.naturalWidth, ih=_vdImg.naturalHeight;
+  const cv=document.createElement('canvas'); cv.width=iw; cv.height=ih; const x=cv.getContext('2d');
+  x.drawImage(_vdImg,0,0);
+  // punch the windscreen out to transparency (polygon traced on the photo)
+  x.globalCompositeOperation='destination-out';
+  x.beginPath();
+  const P=[[0,0],[1,0],[1,0.44],[0.955,0.335],[0.885,0.255],[0.615,0.245],[0.555,0.30],[0.42,0.315],[0.30,0.315],[0.10,0.30],[0,0.27]];
+  P.forEach(([u,v],i)=>{ i?x.lineTo(u*iw,v*ih):x.moveTo(u*iw,v*ih); });
+  x.closePath(); x.fill();
+  x.globalCompositeOperation='source-over';
+  _vdCanvas=cv;
+  // circular crop of the real wheel so it can rotate with the steering
+  const R=Math.round(iw*0.135), wc=document.createElement('canvas'); wc.width=wc.height=R*2;
+  const wx=wc.getContext('2d');
+  wx.beginPath(); wx.arc(R,R,R,0,6.28); wx.clip();
+  wx.drawImage(_vdImg, -(0.795*iw-R), -(0.60*ih-R));
+  _vdWheel={cv:wc, R, cx:0.795, cy:0.60};
+}
+
 // ---- V-Class dashboard (from the reference photo): deep soft-touch dash,
 //      burl-wood trim band, round turbine vents, a tablet screen standing on
 //      the dash top, silver button strips, a wood centre console with the
 //      COMAND touchpad, twin-dial cluster, and the three-spoke Mercedes wheel.
 function drawVanDash(W,H,sp,steer,kmh,Min){
+  initVanDashPhoto();
+  if (_vdReady && _vdCanvas){
+    const iw=_vdCanvas.width, ih=_vdCanvas.height;
+    const scale=W/iw, dh=ih*scale, dy=H-dh;
+    hctx.drawImage(_vdCanvas, 0, dy, W, dh);
+    const px=u=>u*W, py=v=>dy+v*dh;                       // photo-space -> screen
+    // live rotating wheel (circular crop of the real wheel)
+    const wl=_vdWheel;
+    if (wl){ const wr=wl.R*scale;
+      hctx.save(); hctx.translate(px(wl.cx), py(wl.cy)); hctx.rotate(steer*0.5);
+      hctx.drawImage(wl.cv, -wr,-wr, wr*2, wr*2); hctx.restore(); }
+    // live content on the real tablet screen
+    { const sx=px(0.418), sy=py(0.268), sw=(0.556-0.418)*W, sh=(0.415-0.268)*dh;
+      hctx.fillStyle='#04060a'; roundRect(sx,sy,sw,sh,sh*0.08); hctx.fill();
+      hctx.save(); roundRect(sx,sy,sw,sh,sh*0.08); hctx.clip();
+      hctx.strokeStyle='rgba(40,210,170,0.85)'; hctx.lineWidth=Math.max(1.5,sh*0.04); hctx.lineCap='round';
+      hctx.beginPath(); hctx.moveTo(sx+sw*0.14,sy+sh*0.86); hctx.lineTo(sx+sw*0.38,sy+sh*0.42);
+      hctx.lineTo(sx+sw*0.56,sy+sh*0.56); hctx.lineTo(sx+sw*0.86,sy+sh*0.2); hctx.stroke();
+      hctx.fillStyle='#e9eef5'; hctx.font=`900 ${Math.round(sh*0.34)}px Arial`; hctx.textAlign='left'; hctx.textBaseline='alphabetic';
+      hctx.fillText(kmh, sx+sw*0.08, sy+sh*0.40);
+      hctx.fillStyle='#8fb0c8'; hctx.font=`700 ${Math.round(sh*0.16)}px Arial`;
+      hctx.fillText('KM/H · '+(G.circuit&&G.circuit.name||''), sx+sw*0.08, sy+sh*0.60);
+      hctx.restore(); }
+    // live needles + gear on the real cluster (mostly visible left of the wheel)
+    { const dcx=px(0.678), dcy=py(0.372), dr=W*0.028;
+      const a=Math.PI*0.78 + Math.max(0,Math.min(1,G.rpm||sp))*Math.PI*1.42;
+      hctx.strokeStyle='#ff7a2a'; hctx.lineWidth=Math.max(2,dr*0.12); hctx.lineCap='round';
+      hctx.beginPath(); hctx.moveTo(dcx,dcy); hctx.lineTo(dcx+Math.cos(a)*dr, dcy+Math.sin(a)*dr); hctx.stroke();
+      hctx.fillStyle='#7ad7ff'; hctx.font=`900 ${Math.round(W*0.016)}px Arial`; hctx.textAlign='center'; hctx.textBaseline='middle';
+      hctx.fillText('D'+(G.gear||1), px(0.742), py(0.352)); }
+    // night: dim the photographed cabin to match the world
+    if (G.night){ hctx.fillStyle='rgba(6,8,16,0.45)'; hctx.fillRect(0,dy,W,dh); }
+    else if (G.sunset){ hctx.fillStyle='rgba(120,60,20,0.14)'; hctx.fillRect(0,dy,W,dh); }
+    // cabin shadow vignette
+    const vg=hctx.createRadialGradient(W*0.5,H*0.5,Min*0.5,W*0.5,H*0.6,Min*1.08);
+    vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.32)');
+    hctx.fillStyle=vg; hctx.fillRect(0,0,W,H);
+    return;
+  }
   const dashTop=H*0.64;                                  // the van dash sits tall and deep
   // wipers parked on the glass
   hctx.strokeStyle='rgba(16,18,24,0.85)'; hctx.lineWidth=Math.max(2,H*0.0045); hctx.lineCap='round';
