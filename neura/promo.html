@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Neura — the chain that thinks · 21,000,000 coins, one growing mind</title>
+<meta name="description" content="Neura is an AI-native store of value: 21,000,000 coins fixed forever, secured by proof-of-work, and a neural network every block must train — verified by every node. Watch the mind of the chain being born, live on this page.">
+<meta property="og:title" content="Neura — the chain that thinks">
+<meta property="og:description" content="A fixed 21,000,000 coins. A mind that grows with every block. No premine, no committee, no printer.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#08091a">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='26' fill='none' stroke='%238b7cf7' stroke-width='6'/%3E%3Cpath d='M23 44V20l18 24V20' fill='none' stroke='%23e8e6ff' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #08091a; --surface: #0e1020; --panel: rgba(139,124,247,.055);
+    --line: rgba(139,124,247,.18); --line-soft: rgba(139,124,247,.10);
+    --ink: #f0eeff; --ink-2: #aeacce; --ink-3: #737093;
+    --accent: #8b7cf7; --accent-2: #58e6d9; --gold: #f2c14e;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; color: var(--ink); background: var(--bg);
+    font: 400 17px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+    -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  }
+  .bgfx { position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(1000px 620px at 75% -8%, rgba(139,124,247,.20), transparent 62%),
+      radial-gradient(760px 500px at 8% 34%, rgba(88,230,217,.09), transparent 58%),
+      radial-gradient(900px 640px at 55% 108%, rgba(139,124,247,.13), transparent 60%); }
+  .wrap { max-width: 1140px; margin: 0 auto; padding: 0 22px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ---------- nav ---------- */
+  nav { display: flex; align-items: center; gap: 18px; padding: 20px 0; }
+  nav .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .01em; color: var(--ink); }
+  nav .brand svg { display: block; }
+  nav .links { margin-left: auto; display: flex; gap: 22px; font-size: .92rem; }
+  nav .links a { color: var(--ink-2); }
+  nav .links a.cta { color: #fff; background: linear-gradient(135deg, var(--accent), #6a5ae0);
+    padding: 8px 16px; border-radius: 999px; }
+  nav .links a.cta:hover { text-decoration: none; filter: brightness(1.12); }
+  @media (max-width: 640px) { nav .links a:not(.cta) { display: none; } }
+
+  /* ---------- hero ---------- */
+  .hero { display: grid; grid-template-columns: 1.05fr .95fr; gap: 48px; align-items: center;
+    padding: 64px 0 84px; min-height: 74vh; }
+  @media (max-width: 880px) { .hero { grid-template-columns: 1fr; padding-top: 30px; } }
+  .kicker { font-size: .8rem; letter-spacing: .22em; text-transform: uppercase; color: var(--accent-2); margin-bottom: 18px; }
+  h1.display { font-size: clamp(2.7rem, 6.4vw, 4.6rem); line-height: 1.03; letter-spacing: -.03em; margin: 0 0 22px; font-weight: 750; }
+  h1.display em { font-style: normal; background: linear-gradient(100deg, #b7aaff 10%, var(--accent-2) 90%);
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lede { font-size: clamp(1.05rem, 2vw, 1.22rem); color: var(--ink-2); max-width: 30em; margin: 0 0 30px; }
+  .lede b { color: var(--ink); font-weight: 600; }
+  .ctas { display: flex; gap: 14px; flex-wrap: wrap; }
+  .btn { display: inline-block; border-radius: 12px; padding: 14px 26px; font-weight: 650; font-size: 1rem;
+    background: linear-gradient(135deg, var(--accent), #6a5ae0); color: #fff;
+    box-shadow: 0 10px 34px rgba(139,124,247,.36); transition: transform .08s ease, filter .18s ease; }
+  .btn:hover { filter: brightness(1.12); text-decoration: none; }
+  .btn:active { transform: scale(.97); }
+  .btn.ghost { background: transparent; border: 1px solid var(--line); color: var(--ink); box-shadow: none; }
+  .microproof { margin-top: 26px; font-size: .84rem; color: var(--ink-3); }
+  .microproof code { font-family: var(--mono); color: var(--ink-2); font-size: .8rem; }
+
+  /* the living mind */
+  .mindstage { position: relative; justify-self: center; width: min(420px, 88vw); }
+  .mindframe { position: relative; border-radius: 28px; padding: 18px; background: var(--surface);
+    border: 1px solid var(--line);
+    box-shadow: 0 0 0 1px rgba(139,124,247,.06), 0 30px 90px rgba(139,124,247,.28), inset 0 0 60px rgba(139,124,247,.05); }
+  #birth { width: 100%; aspect-ratio: 1; display: block; border-radius: 18px; background: #0a0c18; }
+  .mindhud { display: flex; justify-content: space-between; align-items: baseline; margin-top: 14px;
+    font-family: var(--mono); font-size: .8rem; color: var(--ink-2); }
+  .mindhud b { color: var(--accent-2); font-weight: 600; }
+  .mindcap { text-align: center; color: var(--ink-3); font-size: .82rem; margin-top: 14px; }
+  .mindcap b { color: var(--ink-2); }
+  .halo { position: absolute; inset: -70px; z-index: -1; border-radius: 50%;
+    background: radial-gradient(circle, rgba(139,124,247,.30), transparent 65%); filter: blur(8px); }
+
+  /* ---------- sections ---------- */
+  section { padding: 84px 0; }
+  .eyebrow { font-size: .78rem; letter-spacing: .2em; text-transform: uppercase; color: var(--accent); margin-bottom: 14px; }
+  h2 { font-size: clamp(1.8rem, 4vw, 2.6rem); letter-spacing: -.02em; line-height: 1.12; margin: 0 0 14px; font-weight: 720; }
+  .sub { color: var(--ink-2); max-width: 44em; font-size: 1.05rem; margin: 0 0 40px; }
+  .sub b { color: var(--ink); }
+
+  /* numbers strip */
+  .numbers { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; }
+  .num { background: var(--panel); border: 1px solid var(--line-soft); border-radius: 18px; padding: 22px 20px; }
+  .num b { display: block; font-size: clamp(1.6rem, 3vw, 2.1rem); font-weight: 750; letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums; color: var(--ink); }
+  .num span { font-size: .82rem; color: var(--ink-3); }
+
+  /* how a block thinks */
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; counter-reset: step; }
+  .step { position: relative; background: var(--panel); border: 1px solid var(--line-soft); border-radius: 18px; padding: 26px 22px 22px; }
+  .step::before { counter-increment: step; content: counter(step, decimal-leading-zero);
+    font-family: var(--mono); font-size: .78rem; color: var(--accent-2); letter-spacing: .12em; }
+  .step h3 { margin: 10px 0 8px; font-size: 1.06rem; }
+  .step p { margin: 0; color: var(--ink-2); font-size: .92rem; }
+  .step code { font-family: var(--mono); font-size: .8rem; color: var(--accent-2); background: rgba(88,230,217,.07);
+    padding: 1px 6px; border-radius: 6px; }
+
+  /* scarcity */
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 44px; align-items: center; }
+  @media (max-width: 880px) { .split { grid-template-columns: 1fr; } }
+  .chartcard { background: var(--surface); border: 1px solid var(--line); border-radius: 22px; padding: 24px; position: relative; }
+  #emission { width: 100%; height: 260px; display: block; }
+  #emtip { position: absolute; pointer-events: none; background: #191d3d; border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 10px; font-size: .78rem; display: none; white-space: nowrap;
+    transform: translate(-50%, -130%); font-variant-numeric: tabular-nums; }
+  .chartnote { font-size: .78rem; color: var(--ink-3); margin-top: 10px; }
+  ul.creed { list-style: none; margin: 0; padding: 0; }
+  ul.creed li { padding: 14px 0 14px 34px; position: relative; color: var(--ink-2); border-bottom: 1px solid var(--line-soft); }
+  ul.creed li::before { content: "Ⓝ"; position: absolute; left: 0; top: 13px; color: var(--accent); }
+  ul.creed b { color: var(--ink); }
+
+  /* proof cards */
+  .proofgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 760px) { .proofgrid { grid-template-columns: 1fr; } }
+  .proof { border-radius: 22px; padding: 30px 26px; border: 1px solid var(--line-soft); background: var(--panel); }
+  .proof.highlight { border-color: rgba(88,230,217,.35); background: linear-gradient(150deg, rgba(88,230,217,.08), rgba(139,124,247,.07)); }
+  .proof h3 { margin: 0 0 10px; font-size: 1.2rem; }
+  .proof p { margin: 0 0 10px; color: var(--ink-2); font-size: .95rem; }
+  .proof .tick { color: var(--accent-2); }
+
+  /* join */
+  .joingrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; }
+  .join { background: var(--surface); border: 1px solid var(--line); border-radius: 22px; padding: 28px 24px;
+    display: flex; flex-direction: column; gap: 10px; transition: transform .18s ease, border-color .18s ease; }
+  .join:hover { transform: translateY(-4px); border-color: var(--accent); }
+  .join .glyph { font-size: 1.7rem; }
+  .join h3 { margin: 0; font-size: 1.12rem; }
+  .join p { margin: 0; color: var(--ink-2); font-size: .92rem; flex: 1; }
+  .join a { font-weight: 650; }
+
+  /* honesty + footer */
+  .honest { border: 1px solid rgba(242,193,78,.32); background: rgba(242,193,78,.05); border-radius: 22px;
+    padding: 26px 26px; color: var(--ink-2); font-size: .95rem; }
+  .honest b { color: var(--gold); }
+  footer { border-top: 1px solid var(--line-soft); padding: 40px 0 60px; color: var(--ink-3); font-size: .86rem; }
+  footer .cols { display: flex; gap: 28px; flex-wrap: wrap; justify-content: space-between; }
+
+  /* reveal animation */
+  .reveal { opacity: 0; transform: translateY(22px); transition: opacity .7s ease, transform .7s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .reveal { opacity: 1; transform: none; transition: none; }
+    .join { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="bgfx"></div>
+<div class="wrap">
+
+  <nav>
+    <span class="brand">
+      <svg width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="26" fill="none" stroke="#8b7cf7" stroke-width="6"/><path d="M23 44V20l18 24V20" fill="none" stroke="#e8e6ff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Neura
+    </span>
+    <span class="links">
+      <a href="#mind">The mind</a>
+      <a href="#scarcity">Scarcity</a>
+      <a href="#proof">Proof</a>
+      <a href="#join">Join</a>
+      <a class="cta" href="index.html">Launch the app</a>
+    </span>
+  </nav>
+
+  <!-- ================= HERO ================= -->
+  <header class="hero">
+    <div>
+      <div class="kicker">An AI-native store of value</div>
+      <h1 class="display">The chain<br>that <em>thinks</em>.</h1>
+      <p class="lede">
+        A fixed <b>21,000,000 coins</b>. A neural network that <b>every block must train</b> and
+        <b>every node verifies</b>. No premine, no committee, no printer — scarcity you can count,
+        and a mind the whole network grows together.
+      </p>
+      <div class="ctas">
+        <a class="btn" href="index.html">Launch the app — mine your first block</a>
+        <a class="btn ghost" href="https://github.com/refayethossain28/BallrzAPP/blob/main/neura/README.md">Read the whitepaper</a>
+      </div>
+      <div class="microproof">
+        Real secp256k1 · real proof-of-work · real learning — every claim on this page is enforced by
+        <code>neura/engine.js</code> and attacked in 17 public tests.
+      </div>
+    </div>
+
+    <div class="mindstage">
+      <div class="halo"></div>
+      <div class="mindframe">
+        <canvas id="birth" width="96" height="96" aria-label="A neural network, training live on this page, slowly painting the Neura mark"></canvas>
+        <div class="mindhud"><span>block <b id="bBlock">0</b></span><span>synapse <b id="bScore">0.0</b>/100</span><span>loss <b id="bLoss">—</b></span></div>
+      </div>
+      <div class="mindcap"><b>This is not a video.</b> It's the real Neura network, training in your
+        browser right now — the same code every node runs to verify a block. At genesis it knows
+        nothing; watch it dream the mark into existence.</div>
+    </div>
+  </header>
+
+  <!-- ================= NUMBERS ================= -->
+  <section id="numbers" class="reveal">
+    <div class="numbers">
+      <div class="num"><b>21,000,000</b><span>coins, ever — a hard cap enforced by consensus</span></div>
+      <div class="num"><b>0</b><span>premined — the genesis block pays nobody</span></div>
+      <div class="num"><b>50 → 25 → 12.5</b><span>block reward halves every 210,000 blocks</span></div>
+      <div class="num"><b>1 mind</b><span>trained one verified step per block, owned by everyone</span></div>
+    </div>
+  </section>
+
+  <!-- ================= THE MIND ================= -->
+  <section id="mind" class="reveal">
+    <div class="eyebrow">Proof of Intelligence</div>
+    <h2>Every block must think before it counts.</h2>
+    <p class="sub">Bitcoin proved that energy can secure money. Neura asks that energy to do one more
+      thing on its way through: <b>teach the chain</b>. A block that didn't train the mind — or trained
+      it wrong by a single bit — is rejected by every node on the network.</p>
+    <div class="steps">
+      <div class="step"><h3>The seed is dealt</h3><p>The training batch for block <em>H</em> is derived from
+        <code>sha256(H | prevHash)</code> — fixed by the chain itself before mining starts. No cherry-picking,
+        no shortcuts.</p></div>
+      <div class="step"><h3>The miner thinks</h3><p>One exact SGD step advances the shared network. Bit-deterministic
+        by construction: only IEEE-exact math, so every CPU on Earth derives the same weights.</p></div>
+      <div class="step"><h3>The work seals it</h3><p>The new mind's hash is committed in the coinbase —
+        <code>PoI1|…</code> — which feeds the merkle root, which feeds the block hash the proof-of-work grinds
+        against.</p></div>
+      <div class="step"><h3>Everyone verifies</h3><p>Every node re-runs the training step and compares hashes.
+        A heavier chain with fake intelligence is rejected outright — <b>work cannot buy a lie</b>.</p></div>
+    </div>
+  </section>
+
+  <!-- ================= SCARCITY ================= -->
+  <section id="scarcity" class="reveal">
+    <div class="split">
+      <div>
+        <div class="eyebrow">Absolute scarcity</div>
+        <h2>Money holds value when no one can print it.</h2>
+        <ul class="creed">
+          <li><b>21,000,000 NEURA, ever.</b> The cap is a consensus rule every node enforces — not a promise,
+            not a policy, not a committee's mood.</li>
+          <li><b>Bitcoin's exact emission.</b> 50 per block, halving every 210,000 blocks. The curve on the
+            right is computed live from the same parameters the chain enforces.</li>
+          <li><b>No premine, no founders' cut.</b> The genesis block pays nobody. Every coin that will ever
+            exist enters the world the same way: someone mined it — and trained the mind to do so.</li>
+          <li><b>Integer money.</b> Balances are whole sparks (0.00001 NEURA) — no floating-point, no rounding,
+            no leaks.</li>
+        </ul>
+      </div>
+      <div class="chartcard">
+        <svg id="emission" role="img" aria-label="NEURA supply over time, halving by halving, approaching the 21 million cap"></svg>
+        <div id="emtip"></div>
+        <div class="chartnote">Circulating supply by block height — each step fainter as the reward halves,
+          forever approaching, never reaching, 21,000,000.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PROOF ================= -->
+  <section id="proof" class="reveal">
+    <div class="eyebrow">Built, not pitched</div>
+    <h2>Every claim here runs in your browser.</h2>
+    <p class="sub">Neura isn't a token on someone else's chain and there's no smart-contract hand-waving —
+      it's a <b>whole cryptocurrency implemented from raw bytes</b>, small enough to read and honest enough
+      to attack.</p>
+    <div class="proofgrid">
+      <div class="proof highlight">
+        <h3>🧠 The intelligence is real</h3>
+        <p><span class="tick">✓</span> A genuinely learned image — never stored, always computed from the weights</p>
+        <p><span class="tick">✓</span> Training bound to block hashes; verified by replay on every node</p>
+        <p><span class="tick">✓</span> Reorgs rewind the mind — the smartest chain and the heaviest chain grow together</p>
+      </div>
+      <div class="proof">
+        <h3>🔐 The money is real</h3>
+        <p><span class="tick">✓</span> SHA-256 from FIPS 180-4, ECDSA on secp256k1 (Bitcoin's curve), RFC 6979 signatures</p>
+        <p><span class="tick">✓</span> UTXO ledger, merkle trees, difficulty retargeting, heaviest-chain consensus</p>
+        <p><span class="tick">✓</span> Crypto verified against published test vectors</p>
+      </div>
+      <div class="proof">
+        <h3>⚔️ It survives attack</h3>
+        <p><span class="tick">✓</span> Double-spends, forged signatures and coinbase inflation — rejected</p>
+        <p><span class="tick">✓</span> Missing, forged and stale Proofs of Intelligence — rejected</p>
+        <p><span class="tick">✓</span> A heavier chain with fake learning — rejected (yes, there's a test)</p>
+      </div>
+      <div class="proof">
+        <h3>🌐 It's a real network</h3>
+        <p><span class="tick">✓</span> Every tab is an independent node with its own copy of the chain</p>
+        <p><span class="tick">✓</span> Blocks and transactions gossip between nodes; heaviest valid chain wins</p>
+        <p><span class="tick">✓</span> A keyless companion <a href="mine.html">miner</a> for always-on devices</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= JOIN ================= -->
+  <section id="join" class="reveal">
+    <div class="eyebrow">Be part of it</div>
+    <h2>Mining here isn't spending electricity.<br>It's leaving a mark on a mind.</h2>
+    <p class="sub">The network's intelligence is consensus state: mine <b>one block</b> and your training
+      step is inside every future copy of the chain, on every node, forever. That's the invitation.</p>
+    <div class="joingrid">
+      <div class="join"><span class="glyph">👛</span><h3>Open the app</h3>
+        <p>Create a wallet in one tap — keys are generated on your device and never leave it. See the mind,
+          the supply, and the block explorer live.</p>
+        <a href="index.html">Launch Neura →</a></div>
+      <div class="join"><span class="glyph">⛏🧠</span><h3>Mine your first block</h3>
+        <p>One button thinks and grinds. Earn 50 NEURA + fees, advance the mind one verified step, and watch
+          the mark sharpen because of you.</p>
+        <a href="index.html">Start mining →</a></div>
+      <div class="join"><span class="glyph">📟</span><h3>Run the always-on miner</h3>
+        <p>A keyless miner for a spare phone or laptop: paste your address, press start, keep it open. It can
+          mine, but it can never spend.</p>
+        <a href="mine.html">Open the miner →</a></div>
+    </div>
+  </section>
+
+  <!-- ================= HONESTY ================= -->
+  <section class="reveal" style="padding-top:0">
+    <div class="honest">
+      <b>The honesty box — read this before you fall in love.</b> Neura is a real, working implementation
+      and an early prototype: coins have <b>no market price</b> and are not for sale, keys live unencrypted
+      in your browser, the network is tab-to-tab gossip rather than global p2p, and the on-chain network is
+      deliberately small so every node can verify every training step. Nothing here is investment advice —
+      it's a working thesis about what an AI-native store of value must look like, with every rule readable
+      in the <a href="https://github.com/refayethossain28/BallrzAPP/tree/main/neura">open source</a> and the
+      full risk notes in the <a href="https://github.com/refayethossain28/BallrzAPP/blob/main/neura/README.md">whitepaper</a>.
+    </div>
+  </section>
+
+  <footer>
+    <div class="cols">
+      <span>Neura Ⓝ — the chain that thinks. Built from raw bytes in
+        <a href="https://github.com/refayethossain28/BallrzAPP">BallrzAPP</a>.</span>
+      <span><a href="index.html">App</a> · <a href="mine.html">Miner</a> ·
+        <a href="https://github.com/refayethossain28/BallrzAPP/blob/main/neura/README.md">Whitepaper</a> ·
+        <a href="https://github.com/refayethossain28/BallrzAPP/blob/main/scripts/test-neura-logic.mjs">Tests</a></span>
+    </div>
+  </footer>
+</div>
+
+<script src="../coin/engine.js"></script>
+<script src="brain.js"></script>
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+  var C = self.BallrzCoin, B = self.NeuraBrain;
+  var $ = function (id) { return document.getElementById(id); };
+
+  /* ============ the living mind: real training, live on the page ============ */
+  var brain = B.initBrain(C.sha256(C.utf8ToBytes('Neura promo — a mind is born')));
+  var l0 = B.evalLoss(brain), block = 0;
+  var reduced = false;
+  try { reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) {}
+
+  function shade(v) {
+    v = Math.max(0, Math.min(1, v));
+    var s = [[10,12,24],[58,44,130],[139,124,247],[236,234,255]];
+    var t = v * 3, i = Math.min(2, Math.floor(t)), f = t - i;
+    return [Math.round(s[i][0]+(s[i+1][0]-s[i][0])*f), Math.round(s[i][1]+(s[i+1][1]-s[i][1])*f), Math.round(s[i][2]+(s[i+1][2]-s[i][2])*f)];
+  }
+  function paintMind() {
+    var cv = $('birth'); if (!cv || !cv.getContext) return;
+    var ctx = cv.getContext('2d'); if (!ctx || !ctx.createImageData) return;
+    var img = B.render(brain, 96), id = ctx.createImageData(96, 96);
+    for (var i = 0; i < 96 * 96; i++) {
+      var rgb = shade(img[i]);
+      id.data[i*4] = rgb[0]; id.data[i*4+1] = rgb[1]; id.data[i*4+2] = rgb[2]; id.data[i*4+3] = 255;
+    }
+    ctx.putImageData(id, 0, 0);
+  }
+  function hud() {
+    var loss = B.evalLoss(brain);
+    $('bBlock').textContent = String(block);
+    $('bScore').textContent = Math.max(0, Math.min(100, (1 - loss / l0) * 100)).toFixed(1);
+    $('bLoss').textContent = loss.toFixed(4);
+  }
+  function tick() {
+    // Train exactly like the chain does: one PoI step per simulated block,
+    // seeded deterministically. Same code path validators run.
+    block++;
+    B.trainStep(brain, C.sha256(C.utf8ToBytes('promo-block|' + block)));
+    paintMind(); hud();
+    if (block < 1200) setTimeout(tick, reduced ? 900 : 140);
+  }
+  paintMind(); hud();
+  setTimeout(tick, 500);
+
+  /* ============ emission curve — computed from the real chain params ============ */
+  var emPts = [];
+  function renderEmission() {
+    var svg = $('emission'); if (!svg) return;
+    var chain = new (self.NeuraChain.Chain)(); // a throwaway node: the curve uses the real consensus params
+    var interval = chain.params.halvingInterval, sub0 = chain.params.initialSubsidy;
+    var CAP = 21000000 * C.COIN;
+    var ERAS = 7, W = svg.clientWidth || 520, H = 260, PAD = { l: 8, r: 96, t: 26, b: 30 };
+    var maxH = ERAS * interval;
+    var X = function (h) { return PAD.l + h / maxH * (W - PAD.l - PAD.r); };
+    var Y = function (s) { return PAD.t + (1 - s / CAP) * (H - PAD.t - PAD.b); };
+    // supply(h) sampled finely enough to show the halving knees
+    emPts = [];
+    var d = '', supply = 0;
+    for (var era = 0; era <= ERAS; era++) {
+      var h = era * interval;
+      emPts.push({ h: h, s: supply, x: X(h), y: Y(supply) });
+      d += (era ? 'L' : 'M') + X(h).toFixed(1) + ' ' + Y(supply).toFixed(1);
+      supply += Math.floor(sub0 / Math.pow(2, era)) * interval;
+      if (era < ERAS) { emPts.push({ h: (era + 1) * interval, s: supply, x: X((era + 1) * interval), y: Y(supply) }); d += 'L' + X((era + 1) * interval).toFixed(1) + ' ' + Y(supply).toFixed(1); }
+    }
+    var capY = Y(CAP);
+    var grid = '';
+    for (var g = 1; g <= 3; g++) {
+      var gy = PAD.t + g * (H - PAD.t - PAD.b) / 4;
+      grid += '<line x1="' + PAD.l + '" x2="' + (W - PAD.r) + '" y1="' + gy + '" y2="' + gy + '" stroke="rgba(240,238,255,.06)"/>';
+    }
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    svg.innerHTML = grid +
+      '<line x1="' + PAD.l + '" x2="' + (W - PAD.r) + '" y1="' + capY + '" y2="' + capY + '" stroke="#f2c14e" stroke-width="1" stroke-dasharray="5 5" opacity=".7"/>' +
+      '<text x="' + (W - PAD.r + 8) + '" y="' + (capY + 4) + '" fill="#f2c14e" font-size="11">21,000,000 cap</text>' +
+      '<path d="' + d + '" fill="none" stroke="#8b7cf7" stroke-width="2.5" stroke-linejoin="round"/>' +
+      '<text x="' + PAD.l + '" y="' + (H - 8) + '" fill="#737093" font-size="11">block 0</text>' +
+      '<text x="' + (W - PAD.r) + '" y="' + (H - 8) + '" fill="#737093" font-size="11" text-anchor="end">block ' + (maxH / 1000) + 'k</text>';
+  }
+  function emHover(ev) {
+    var svg = $('emission'), tip = $('emtip');
+    if (!svg || !tip || !emPts.length || !svg.getBoundingClientRect) return;
+    var r = svg.getBoundingClientRect();
+    var vw = (svg.viewBox && svg.viewBox.baseVal && svg.viewBox.baseVal.width) || r.width || 1;
+    var mx = (ev.clientX - r.left) * vw / (r.width || 1);
+    var best = emPts[0], bd = Infinity;
+    for (var i = 0; i < emPts.length; i++) { var dd = Math.abs(emPts[i].x - mx); if (dd < bd) { bd = dd; best = emPts[i]; } }
+    tip.style.display = 'block';
+    tip.style.left = (best.x / vw * (r.width || 1) + 24) + 'px';
+    tip.style.top = (best.y / 260 * (r.height || 1) + 24) + 'px';
+    tip.textContent = 'block ' + best.h.toLocaleString() + ' · ' + Math.round(best.s / C.COIN).toLocaleString() + ' NEURA';
+  }
+  function emLeave() { var tip = $('emtip'); if (tip) tip.style.display = 'none'; }
+  renderEmission();
+  $('emission').addEventListener('mousemove', emHover);
+  $('emission').addEventListener('mouseleave', emLeave);
+  if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('resize', renderEmission);
+
+  /* ============ scroll reveal ============ */
+  try {
+    if (typeof IntersectionObserver !== 'undefined' && !reduced) {
+      var io = new IntersectionObserver(function (entries) {
+        for (var i = 0; i < entries.length; i++) {
+          if (entries[i].isIntersecting) { entries[i].target.classList.add('in'); io.unobserve(entries[i].target); }
+        }
+      }, { threshold: 0.12 });
+      var els = document.querySelectorAll('.reveal');
+      for (var j = 0; j < els.length; j++) io.observe(els[j]);
+    } else {
+      var all = document.querySelectorAll('.reveal');
+      for (var k = 0; k < all.length; k++) all[k].classList.add('in');
+    }
+  } catch (e) {
+    var fb = document.querySelectorAll('.reveal');
+    for (var m = 0; m < fb.length; m++) fb[m].classList.add('in');
+  }
+})();
+</script>
+</body>
+</html>
