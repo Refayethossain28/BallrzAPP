@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R86 — Mercedes S-Class';
+const BUILD = 'BUILD R87 — S-Class driver view';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -2627,6 +2627,8 @@ function drawDashboard(W,H,sp){
   const steer=G.steerVis, kmh=Math.round(Math.abs(G.speed)*2.4);
   const Min=Math.min(W,H);
   const VAN = !!(G.vehicle && G.vehicle.kind==='van');   // V-Class gets its real interior
+  const PK = (G.vehicle && DASH_PHOTOS[G.vehicle.kind]) ? G.vehicle.kind : '';
+  if (PK){ initDashPhoto(PK); if (drawPhotoDash(PK,W,H,sp,steer,kmh,Min)) return; }
 
   // ============================ WINDSCREEN ============================
   // roof header bar across the very top
@@ -2667,8 +2669,6 @@ function drawDashboard(W,H,sp){
   hctx.beginPath(); hctx.moveTo(W,H*0.42); hctx.lineTo(W*0.945,H*0.50); hctx.lineTo(W*0.945,H); hctx.lineTo(W,H); hctx.closePath(); hctx.fill();
   hctx.fillStyle='rgba(150,160,180,0.15)'; hctx.fillRect(W*0.945,H*0.50,Math.max(1,W*0.004),H*0.5);
 
-  const PK = (G.vehicle && DASH_PHOTOS[G.vehicle.kind]) ? G.vehicle.kind : '';
-  if (PK){ initDashPhoto(PK); if (drawPhotoDash(PK,W,H,sp,steer,kmh,Min)) return; }
   if (VAN){ drawVanDash(W,H,sp,steer,kmh,Min); return; }
 
   // ============================ DASHBOARD ============================
@@ -2845,11 +2845,15 @@ const DASH_PHOTOS={
           cut:[[0,0],[1,0],[1,0.46],[0.94,0.38],[0.86,0.30],[0.75,0.26],[0.615,0.245],[0.555,0.30],[0.42,0.315],[0.30,0.315],[0.10,0.30],[0,0.27]],
           wheel:{cx:0.795, cy:0.60, r:0.135},
           screen:{x0:0.418,y0:0.268,x1:0.556,y1:0.415} },
-  sedan:{ src:'./img/sclass-dash.jpg', dashV:0.385,
-          cut:[[0.115,0.015],[0.885,0.015],[0.865,0.30],[0.79,0.375],[0.55,0.395],[0.30,0.39],[0.175,0.36],[0.135,0.29]],
-          wheel:{cx:0.257, cy:0.63, r:0.115},
-          screen:{x0:0.442,y0:0.49,x1:0.578,y1:0.715},
-          dial:{cx:0.225, cy:0.437, r:0.02}, gear:{x:0.335, y:0.44} },
+  // RHD driver's-eye shot: the cut hugs the cluster hood and the wheel rim so
+  // both stay opaque while the glass either side punches through to the world.
+  sedan:{ src:'./img/sclass-dash.jpg', dashV:0.235,
+          cut:[[0,0.02],[0.705,0.02],[0.725,0.115],[0.745,0.235],[0.665,0.245],[0.64,0.21],[0.615,0.155],
+               [0.585,0.13],[0.525,0.12],[0.465,0.13],[0.437,0.16],[0.415,0.20],[0.39,0.215],
+               [0.30,0.20],[0.15,0.215],[0,0.235]],
+          wheel:{cx:0.523, cy:0.47, r:0.145},
+          screen:{x0:0.118,y0:0.32,x1:0.312,y1:0.615},
+          dial:{cx:0.457, cy:0.30, r:0.028}, gear:{x:0.525, y:0.30} },
 };
 const _vd={};
 function initDashPhoto(kind){
