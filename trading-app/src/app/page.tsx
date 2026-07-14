@@ -104,6 +104,9 @@ export default function TradingApp() {
             <Link href="/journal" className="text-xs text-gray-400 hover:text-white transition-colors">
               Journal
             </Link>
+            <Link href="/account" className="text-xs text-gray-400 hover:text-white transition-colors hidden sm:inline">
+              Account
+            </Link>
             <Link
               href="/screenshot"
               className="text-xs font-semibold text-blue-300 bg-blue-600/20 border border-blue-500/40 px-3 py-1.5 rounded-full hover:bg-blue-600/30 transition-colors"
