@@ -82,6 +82,12 @@ Then produce ONE actionable trade plan:
 - If the image is not a price chart or trading screen, set isChart to false, verdict NEUTRAL,
   and explain in the summary.
 
+You may receive up to three screenshots. If more than one is provided, treat them as the
+SAME instrument on different timeframes: use the highest timeframe for trend direction and
+bias, and the lowest for entry timing and levels. Set the timeframe field to the entry
+timeframe. If the timeframes conflict (e.g. uptrend on 4h but breakdown on 15m), reduce
+confidence or prefer NEUTRAL, and state the alignment or conflict explicitly in rationale.
+
 You also have a web_search tool. After reading the chart, run 1-3 quick searches to check
 the instrument's live price and any market-moving news from the last day or two. Use what
 you find to sharpen or temper the verdict, and summarize it in liveContext:
@@ -94,9 +100,13 @@ you find to sharpen or temper the verdict, and summarize it in liveContext:
 
 This is educational analysis, not financial advice.`
 
+export interface AnalyzableImage {
+  base64: string
+  mediaType: ImageMediaType
+}
+
 export async function analyzeScreenshot(
-  imageBase64: string,
-  mediaType: ImageMediaType,
+  images: AnalyzableImage[],
 ): Promise<ScreenshotAnalysis | { error: string }> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
@@ -111,13 +121,13 @@ export async function analyzeScreenshot(
 
     let response: Anthropic.Beta.BetaMessage
     try {
-      response = await runModel(client, imageBase64, mediaType, true)
+      response = await runModel(client, images, true)
     } catch (err) {
       // If the web-search combination is ever rejected, degrade gracefully to
       // a chart-only analysis rather than failing the request.
       if (err instanceof Anthropic.BadRequestError) {
         console.warn('Web search request rejected, retrying without search:', err.message)
-        response = await runModel(client, imageBase64, mediaType, false)
+        response = await runModel(client, images, false)
       } else {
         throw err
       }
@@ -162,21 +172,23 @@ export async function analyzeScreenshot(
 // echoing the assistant turn back, per the API contract.
 async function runModel(
   client: Anthropic,
-  imageBase64: string,
-  mediaType: ImageMediaType,
+  images: AnalyzableImage[],
   withSearch: boolean,
 ): Promise<Anthropic.Beta.BetaMessage> {
   let messages: Anthropic.Beta.BetaMessageParam[] = [
     {
       role: 'user',
       content: [
-        {
+        ...images.map((img): Anthropic.Beta.BetaImageBlockParam => ({
           type: 'image',
-          source: { type: 'base64', media_type: mediaType, data: imageBase64 },
-        },
+          source: { type: 'base64', media_type: img.mediaType, data: img.base64 },
+        })),
         {
           type: 'text',
-          text: 'Analyze this trading screenshot and return your trade plan.',
+          text:
+            images.length > 1
+              ? `Analyze these ${images.length} screenshots (same instrument, different timeframes) and return one trade plan.`
+              : 'Analyze this trading screenshot and return your trade plan.',
         },
       ],
     },

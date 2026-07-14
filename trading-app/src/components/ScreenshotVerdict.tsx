@@ -1,6 +1,9 @@
 'use client'
+import { useState } from 'react'
 import type { ScreenshotAnalysis } from '@/lib/types'
-import { TrendingUp, TrendingDown, Minus, Target, ShieldAlert, LogIn, AlertTriangle, Globe } from 'lucide-react'
+import { shareResultCard } from '@/lib/shareCard'
+import PositionSizeCalculator from '@/components/PositionSizeCalculator'
+import { TrendingUp, TrendingDown, Minus, Target, ShieldAlert, LogIn, AlertTriangle, Globe, Share2, Loader2 } from 'lucide-react'
 
 const VERDICT_STYLES = {
   BUY: { badge: 'bg-buy/20 text-buy border-buy/40', bar: 'bg-buy', Icon: TrendingUp },
@@ -10,6 +13,18 @@ const VERDICT_STYLES = {
 
 export default function ScreenshotVerdict({ result }: { result: ScreenshotAnalysis }) {
   const { badge, bar, Icon } = VERDICT_STYLES[result.verdict]
+  const [sharing, setSharing] = useState(false)
+
+  const share = async () => {
+    setSharing(true)
+    try {
+      await shareResultCard(result, window.location.host)
+    } catch {
+      // Sharing is best-effort; a failed render shouldn't disturb the verdict.
+    } finally {
+      setSharing(false)
+    }
+  }
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -66,6 +81,25 @@ export default function ScreenshotVerdict({ result }: { result: ScreenshotAnalys
           <span className="text-white font-mono font-semibold">{result.riskRewardRatio}</span>
         </div>
       )}
+
+      {/* Position sizing */}
+      {result.verdict !== 'NEUTRAL' && (
+        <PositionSizeCalculator
+          entry={result.entry}
+          stopLoss={result.stopLoss}
+          takeProfit1={result.takeProfit1}
+        />
+      )}
+
+      {/* Share */}
+      <button
+        onClick={share}
+        disabled={sharing}
+        className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-surface-border bg-surface-card hover:border-blue-500/50 hover:bg-blue-600/10 text-sm font-semibold text-gray-300 hover:text-white transition-all disabled:opacity-60"
+      >
+        {sharing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
+        Share signal card
+      </button>
 
       {/* Rationale + risks */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
