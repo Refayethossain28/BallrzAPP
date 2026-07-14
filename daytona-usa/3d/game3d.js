@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R76 — New York + real Dubai + replay music';
+const BUILD = 'BUILD R77 — pause menu with quit';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -3449,8 +3449,25 @@ function frame(now){
 // ----------------------------------------------------------------------------
 function togglePause(){
   if (G.state==='replay'){ exitReplay(); return; }
-  if (G.state==='racing'){ G.state='paused'; pauseRaceMusic(true); showBanner('PAUSED', 0); }
-  else if (G.state==='paused'){ G.state='racing'; pauseRaceMusic(false); hideBanner(); }
+  if (G.state==='racing'){
+    G.state='paused'; pauseRaceMusic(true);
+    showOverlay(`<h1 class="title">PAUSED</h1>
+      <div class="menu-card">
+        <button class="btn" id="resumeBtn">▶ RESUME</button>
+        <div style="height:8px"></div>
+        <button class="btn ghost" id="quitBtn">✕ QUIT TO MENU</button>
+      </div>`);
+    const r=document.getElementById('resumeBtn'); if(r) r.onclick=togglePause;
+    const q=document.getElementById('quitBtn'); if(q) q.onclick=()=>{
+      hideBanner(); stopRaceMusic();
+      const t=document.getElementById('touch'); if(t) t.style.display='none';
+      showMenu();
+    };
+  }
+  else if (G.state==='paused'){
+    G.state='racing'; pauseRaceMusic(false); hideOverlay();
+    const vb=document.getElementById('viewBtn'); if(vb) vb.classList.remove('hidden');   // showOverlay hid it
+  }
 }
 window.__togglePause = togglePause;
 
