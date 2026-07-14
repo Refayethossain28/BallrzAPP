@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R79 — full controller support';
+const BUILD = 'BUILD R80 — Top Gun soundtrack';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -3259,6 +3259,7 @@ const SOUNDTRACKS = {
   daytona: { name:'KING OF SPEED', icon:'🏁', desc:'The real Daytona USA arcade theme', loop:'./audio/king-of-speed.m4a' },
   heat:    { name:'NEW DAWN FADES', icon:'🌘', desc:'Joy Division — your purchased copy', loop:'./audio/new-dawn-fades.m4a' },
   buckrogers:{ name:'BUCK ROGERS', icon:'🚀', desc:'Feeder — your purchased copy', loop:'./audio/buck-rogers.m4a' },
+  topgun:  { name:'TOP GUN', icon:'✈️', desc:'Danger Zone — your purchased copy', loop:'./audio/danger-zone.m4a' },
   applemusic:{ name:'APPLE MUSIC', icon:'🍎', desc:'Stream from your library', apple:true },
 };
 let selApplePlaylist=null, selApplePlaylistName='';
