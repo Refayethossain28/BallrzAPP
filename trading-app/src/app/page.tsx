@@ -10,6 +10,7 @@ import IndicatorGrid from '@/components/IndicatorGrid'
 import PriceChart from '@/components/PriceChart'
 import NewsSection from '@/components/NewsSection'
 import MarketOverview from '@/components/MarketOverview'
+import AIStatusBadge from '@/components/AIStatusBadge'
 
 const DISCLAIMER = 'This tool is for educational purposes only. Trading forex involves significant risk. Never trade with money you cannot afford to lose.'
 
@@ -99,6 +100,7 @@ export default function TradingApp() {
             </div>
           </div>
           <div className="flex items-center gap-4">
+            <AIStatusBadge />
             <Link
               href="/screenshot"
               className="text-xs font-semibold text-blue-300 bg-blue-600/20 border border-blue-500/40 px-3 py-1.5 rounded-full hover:bg-blue-600/30 transition-colors"
