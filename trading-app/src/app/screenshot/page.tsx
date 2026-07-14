@@ -104,7 +104,7 @@ export default function ScreenshotAnalyzer() {
           <Link href="/" className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white text-sm font-bold">FX</div>
             <div>
-              <h1 className="text-white font-bold text-base leading-none">FX Signal Pro</h1>
+              <h1 className="text-white font-bold text-base leading-none">ApexFX</h1>
               <p className="text-gray-400 text-xs">Screenshot Analyzer</p>
             </div>
           </Link>
