@@ -1,5 +1,6 @@
 // Generates the PWA icon set as PNGs with zero external dependencies.
-// Draws a simple ascending bar-chart motif on the app's blue brand color.
+// Draws the ApexFX monogram — gold ring, three rising candlesticks, and an
+// ascending trace on a dark radial backdrop — matching the splash screen.
 // Run with: node scripts/generate-icons.mjs
 import zlib from 'node:zlib'
 import fs from 'node:fs'
@@ -60,53 +61,120 @@ function encodePNG(width, height, rgba) {
 }
 
 // --- drawing ---
-function drawIcon(size, pad) {
+// All geometry lives in the splash monogram's 120x120 viewBox space and is
+// scaled about the center; `scale` < 1 shrinks the mark (maskable safe zone).
+function drawIcon(size, scale) {
   const W = size
   const H = size
   const px = Buffer.alloc(W * H * 4)
-  const bg = [0x25, 0x63, 0xeb] // blue-600 (#2563eb) — matches the in-app logo
-  for (let i = 0; i < W * H; i++) {
-    px[i * 4] = bg[0]
-    px[i * 4 + 1] = bg[1]
-    px[i * 4 + 2] = bg[2]
-    px[i * 4 + 3] = 255
+
+  // Dark radial backdrop: #10131d at the focus fading to near-black.
+  const fx = 0.5 * W
+  const fy = 0.38 * H
+  const maxD = Math.hypot(0.5 * W, 0.62 * H)
+  const top = [16, 19, 29]
+  const bot = [4, 5, 9]
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const t = Math.min(1, Math.hypot(x - fx, y - fy) / maxD)
+      const i = (y * W + x) * 4
+      px[i] = Math.round(top[0] + (bot[0] - top[0]) * t)
+      px[i + 1] = Math.round(top[1] + (bot[1] - top[1]) * t)
+      px[i + 2] = Math.round(top[2] + (bot[2] - top[2]) * t)
+      px[i + 3] = 255
+    }
   }
 
-  const rect = (x0, y0, x1, y1, color) => {
-    for (let y = Math.max(0, Math.round(y0)); y < Math.min(H, Math.round(y1)); y++) {
-      for (let x = Math.max(0, Math.round(x0)); x < Math.min(W, Math.round(x1)); x++) {
-        const i = (y * W + x) * 4
-        px[i] = color[0]
-        px[i + 1] = color[1]
-        px[i + 2] = color[2]
-        px[i + 3] = 255
+  const blend = (x, y, color, a) => {
+    if (x < 0 || y < 0 || x >= W || y >= H || a <= 0) return
+    const na = Math.min(1, a)
+    const i = (y * W + x) * 4
+    px[i] = Math.round(px[i] * (1 - na) + color[0] * na)
+    px[i + 1] = Math.round(px[i + 1] * (1 - na) + color[1] * na)
+    px[i + 2] = Math.round(px[i + 2] * (1 - na) + color[2] * na)
+  }
+
+  // viewBox(120) -> pixel space, scaled about the icon center
+  const T = (v) => (0.5 + (v / 120 - 0.5) * scale) * size
+  const S = (len) => (len / 120) * scale * size
+  const cov = (halfWidth, d) => Math.max(0, Math.min(1, halfWidth + 0.5 - d))
+
+  // Thick line segment with round caps (distance-to-segment coverage).
+  const seg = (x1, y1, x2, y2, w, color, alpha = 1) => {
+    const ax = T(x1), ay = T(y1), bx = T(x2), by = T(y2), hw = S(w) / 2
+    const minX = Math.floor(Math.min(ax, bx) - hw - 2)
+    const maxX = Math.ceil(Math.max(ax, bx) + hw + 2)
+    const minY = Math.floor(Math.min(ay, by) - hw - 2)
+    const maxY = Math.ceil(Math.max(ay, by) + hw + 2)
+    const dx = bx - ax, dy = by - ay
+    const len2 = dx * dx + dy * dy || 1
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        const t = Math.max(0, Math.min(1, ((x + 0.5 - ax) * dx + (y + 0.5 - ay) * dy) / len2))
+        const d = Math.hypot(x + 0.5 - (ax + t * dx), y + 0.5 - (ay + t * dy))
+        blend(x, y, color, cov(hw, d) * alpha)
       }
     }
   }
 
-  const white = [255, 255, 255]
-  const inner = size * (1 - 2 * pad)
-  const left = size * pad
-  const baseY = size * (1 - pad)
-  const heights = [0.32, 0.52, 0.66, 0.88] // clean ascending trend
-  const nbars = heights.length
-  const gap = inner * 0.07
-  const bw = (inner - gap * (nbars - 1)) / nbars
-  for (let b = 0; b < nbars; b++) {
-    const x0 = left + b * (bw + gap)
-    rect(x0, baseY - inner * heights[b], x0 + bw, baseY, white)
+  // Axis-aligned filled rectangle with anti-aliased edges.
+  const rect = (x0, y0, x1, y1, color, alpha = 1) => {
+    const l = T(x0), t = T(y0), r = T(x1), b = T(y1)
+    for (let y = Math.floor(t) - 1; y <= Math.ceil(b) + 1; y++) {
+      for (let x = Math.floor(l) - 1; x <= Math.ceil(r) + 1; x++) {
+        const d = Math.max(l - (x + 0.5), x + 0.5 - r, t - (y + 0.5), y + 0.5 - b)
+        blend(x, y, color, Math.max(0, Math.min(1, 0.5 - d)) * alpha)
+      }
+    }
   }
+
+  const ring = (cx, cy, r, w, color, alpha) => {
+    const pcx = T(cx), pcy = T(cy), pr = S(r), hw = S(w) / 2
+    const lo = Math.floor(pcx - pr - hw - 2)
+    const hi = Math.ceil(pcx + pr + hw + 2)
+    for (let y = Math.floor(pcy - pr - hw - 2); y <= Math.ceil(pcy + pr + hw + 2); y++) {
+      for (let x = lo; x <= hi; x++) {
+        const d = Math.abs(Math.hypot(x + 0.5 - pcx, y + 0.5 - pcy) - pr)
+        blend(x, y, color, cov(hw, d) * alpha)
+      }
+    }
+  }
+
+  // Champagne-gold palette (matches the splash monogram)
+  const gold1 = [200, 163, 85]  // #c8a355
+  const gold2 = [217, 185, 104] // #d9b968
+  const gold3 = [240, 223, 174] // #f0dfae
+  const cream = [247, 236, 200] // #f7ecc8
+
+  ring(60, 60, 56, 2.4, gold2, 0.5)
+
+  // Candles: wick then body, ascending left to right
+  seg(42, 58, 42, 82, 1.8, gold1)
+  rect(38.5, 63, 45.5, 77, gold1)
+  seg(60, 46, 60, 72, 1.8, gold2)
+  rect(56.5, 51, 63.5, 67, gold2)
+  seg(78, 34, 78, 62, 1.8, gold3)
+  rect(74.5, 39, 81.5, 56, gold3)
+
+  // Ascending trace with arrowhead
+  const w = 2.6
+  seg(30, 88, 47, 70, w, cream)
+  seg(47, 70, 60, 77, w, cream)
+  seg(60, 77, 90, 32, w, cream)
+  seg(83, 32, 90, 32, w, cream)
+  seg(90, 32, 90, 39, w, cream)
+
   return encodePNG(W, H, px)
 }
 
 fs.mkdirSync(OUT_DIR, { recursive: true })
 const targets = [
-  ['icon-192.png', 192, 0.16],
-  ['icon-512.png', 512, 0.16],
-  ['icon-maskable-512.png', 512, 0.26], // extra safe-zone padding for maskable
-  ['apple-touch-icon.png', 180, 0.16],
+  ['icon-192.png', 192, 0.98],
+  ['icon-512.png', 512, 0.98],
+  ['icon-maskable-512.png', 512, 0.7], // shrink into the maskable safe zone
+  ['apple-touch-icon.png', 180, 0.98],
 ]
-for (const [name, size, pad] of targets) {
-  fs.writeFileSync(path.join(OUT_DIR, name), drawIcon(size, pad))
+for (const [name, size, scale] of targets) {
+  fs.writeFileSync(path.join(OUT_DIR, name), drawIcon(size, scale))
   console.log('wrote', path.relative(path.join(__dirname, '..'), path.join(OUT_DIR, name)))
 }

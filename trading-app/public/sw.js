@@ -3,7 +3,7 @@
 //   - /api/*            → network only (never cache live market/AI data)
 //   - /_next/static, /icons → cache-first (immutable build assets)
 //   - navigations & rest → network-first, fall back to cache, then app shell
-const CACHE = 'apexfx-v1'
+const CACHE = 'apexfx-v2'
 const SHELL = ['/', '/manifest.webmanifest']
 
 self.addEventListener('install', (event) => {
