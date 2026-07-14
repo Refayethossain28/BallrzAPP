@@ -4,7 +4,8 @@ import Link from 'next/link'
 import type { ScreenshotAnalysis } from '@/lib/types'
 import ScreenshotVerdict from '@/components/ScreenshotVerdict'
 import AIStatusBadge from '@/components/AIStatusBadge'
-import { addEntry, makeThumb } from '@/lib/journal'
+import { makeThumb } from '@/lib/journal'
+import { saveEntry } from '@/lib/journalStore'
 import { ImagePlus, ClipboardPaste, Loader2, RotateCcw, Plus, Sparkles, X } from 'lucide-react'
 
 const DISCLAIMER = 'This tool is for educational purposes only. AI can misread charts. Trading involves significant risk. Never trade with money you cannot afford to lose.'
@@ -88,7 +89,7 @@ export default function ScreenshotAnalyzer() {
         // Auto-save to the journal (best-effort; never blocks the verdict).
         try {
           const thumb = await makeThumb(toAnalyze[0].previewUrl)
-          addEntry(data, thumb)
+          await saveEntry(data, thumb)
         } catch { /* ignore */ }
       }
     } catch {

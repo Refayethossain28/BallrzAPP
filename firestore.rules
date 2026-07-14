@@ -398,5 +398,12 @@ service cloud.firestore {
         allow read, write: if inChat();
       }
     }
+
+    // ApexFX trading app — each user owns their own journal subtree. Trade
+    // docs hold chart analyses (verdict, levels, outcome, thumbnail); no
+    // cross-user reads.
+    match /apexfx/{uid}/trades/{tradeId} {
+      allow read, write: if isUser(uid);
+    }
   }
 }

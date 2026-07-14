@@ -1,11 +1,10 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import {
-  loadJournal, setOutcome, removeEntry, clearJournal, computeStats,
-  type JournalEntry, type TradeOutcome,
-} from '@/lib/journal'
-import { Trash2, BookOpen } from 'lucide-react'
+import { computeStats, type JournalEntry, type TradeOutcome } from '@/lib/journal'
+import { loadEntries, markOutcome, deleteEntry, clearAll } from '@/lib/journalStore'
+import { useAuth } from '@/lib/useAuth'
+import { Trash2, BookOpen, Cloud, CloudOff, Zap } from 'lucide-react'
 
 // Trade journal + scoreboard. Entries live in this device's localStorage —
 // every analysis is saved automatically; outcomes are marked by the trader.
@@ -26,29 +25,65 @@ const VERDICT_BADGE: Record<string, string> = {
 }
 
 export default function JournalPage() {
+  const { user, ready } = useAuth()
   const [entries, setEntries] = useState<JournalEntry[]>([])
   const [loaded, setLoaded] = useState(false)
+  const [autoScored, setAutoScored] = useState<number | null>(null)
+
+  // Auto-score open trades against real price history whenever the journal opens.
+  const autoScore = useCallback(async (current: JournalEntry[]) => {
+    const open = current.filter(e => e.verdict !== 'NEUTRAL' && e.outcome === 'open')
+    if (open.length === 0) return
+    try {
+      const res = await fetch('/api/score-trades', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          trades: open.map(e => ({
+            id: e.id, instrument: e.instrument, verdict: e.verdict,
+            takeProfit1: e.takeProfit1, stopLoss: e.stopLoss, createdAt: e.createdAt,
+          })),
+        }),
+      })
+      if (!res.ok) return
+      const { results } = await res.json() as { results: Array<{ id: string; outcome: 'tp1' | 'sl' | null }> }
+      const hits = results.filter(r => r.outcome !== null)
+      for (const hit of hits) await markOutcome(hit.id, hit.outcome!)
+      if (hits.length > 0) {
+        setEntries(await loadEntries())
+        setAutoScored(hits.length)
+      }
+    } catch { /* scoring is best-effort */ }
+  }, [])
 
   useEffect(() => {
-    setEntries(loadJournal())
-    setLoaded(true)
-  }, [])
+    if (!ready) return
+    let cancelled = false
+    ;(async () => {
+      const loadedEntries = await loadEntries()
+      if (cancelled) return
+      setEntries(loadedEntries)
+      setLoaded(true)
+      void autoScore(loadedEntries)
+    })()
+    return () => { cancelled = true }
+  }, [ready, user, autoScore])
 
   const stats = computeStats(entries)
 
-  const mark = (id: string, outcome: TradeOutcome) => {
-    setOutcome(id, outcome)
-    setEntries(loadJournal())
+  const mark = async (id: string, outcome: TradeOutcome) => {
+    await markOutcome(id, outcome)
+    setEntries(await loadEntries())
   }
 
-  const remove = (id: string) => {
-    removeEntry(id)
-    setEntries(loadJournal())
+  const remove = async (id: string) => {
+    await deleteEntry(id)
+    setEntries(await loadEntries())
   }
 
-  const clearAll = () => {
+  const clearEverything = async () => {
     if (window.confirm('Delete the entire journal? This cannot be undone.')) {
-      clearJournal()
+      await clearAll()
       setEntries([])
     }
   }
@@ -64,13 +99,38 @@ export default function JournalPage() {
               <p className="text-gray-400 text-xs">Trade Journal</p>
             </div>
           </Link>
-          <Link href="/screenshot" className="text-xs text-gray-400 hover:text-white transition-colors">
-            ← Analyzer
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link href="/account" className="text-xs text-gray-400 hover:text-white transition-colors">
+              Account
+            </Link>
+            <Link href="/screenshot" className="text-xs text-gray-400 hover:text-white transition-colors">
+              ← Analyzer
+            </Link>
+          </div>
         </div>
       </header>
 
       <main className="max-w-5xl mx-auto px-4 py-6 space-y-6">
+        {/* Sync + auto-score status */}
+        <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
+          {user ? (
+            <span className="inline-flex items-center gap-1.5 text-buy bg-buy/10 border border-buy/25 px-2.5 py-1 rounded-full">
+              <Cloud className="w-3.5 h-3.5" /> Synced to {user.email}
+            </span>
+          ) : (
+            <Link
+              href="/account"
+              className="inline-flex items-center gap-1.5 text-gray-400 bg-surface-muted/60 border border-surface-border px-2.5 py-1 rounded-full hover:text-white"
+            >
+              <CloudOff className="w-3.5 h-3.5" /> On this device only — sign in to sync
+            </Link>
+          )}
+          {autoScored !== null && (
+            <span className="inline-flex items-center gap-1.5 text-yellow-400 bg-yellow-500/10 border border-yellow-500/25 px-2.5 py-1 rounded-full">
+              <Zap className="w-3.5 h-3.5" /> {autoScored} trade{autoScored === 1 ? '' : 's'} auto-scored from price history
+            </span>
+          )}
+        </div>
         {/* Scoreboard */}
         <div className="card p-5">
           <h2 className="text-white font-semibold text-sm mb-4">Scoreboard</h2>
@@ -128,7 +188,7 @@ export default function JournalPage() {
                       {` · ${e.confidence}%`}
                     </span>
                     <button
-                      onClick={() => remove(e.id)}
+                      onClick={() => void remove(e.id)}
                       aria-label="Delete entry"
                       className="ml-auto text-gray-600 hover:text-sell transition-colors"
                     >
@@ -143,7 +203,7 @@ export default function JournalPage() {
                       {OUTCOME_OPTIONS.map(o => (
                         <button
                           key={o.value}
-                          onClick={() => mark(e.id, o.value)}
+                          onClick={() => void mark(e.id, o.value)}
                           className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
                             e.outcome === o.value
                               ? o.tone
@@ -163,11 +223,13 @@ export default function JournalPage() {
 
         {entries.length > 0 && (
           <div className="text-center">
-            <button onClick={clearAll} className="text-xs text-gray-600 hover:text-sell transition-colors">
+            <button onClick={() => void clearEverything()} className="text-xs text-gray-600 hover:text-sell transition-colors">
               Clear entire journal
             </button>
             <p className="text-[11px] text-gray-600 mt-2">
-              The journal is stored on this device only.
+              {user
+                ? 'Open trades are checked against real price history each time you visit.'
+                : 'Stored on this device only — sign in to sync across devices.'}
             </p>
           </div>
         )}
