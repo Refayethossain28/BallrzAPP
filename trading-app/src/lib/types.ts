@@ -71,6 +71,7 @@ export interface ScreenshotAnalysis {
   summary: string
   rationale: string[]
   keyRisks: string[]
+  liveContext?: string
   model?: string
 }
 

@@ -1,6 +1,6 @@
 'use client'
 import type { ScreenshotAnalysis } from '@/lib/types'
-import { TrendingUp, TrendingDown, Minus, Target, ShieldAlert, LogIn, AlertTriangle } from 'lucide-react'
+import { TrendingUp, TrendingDown, Minus, Target, ShieldAlert, LogIn, AlertTriangle, Globe } from 'lucide-react'
 
 const VERDICT_STYLES = {
   BUY: { badge: 'bg-buy/20 text-buy border-buy/40', bar: 'bg-buy', Icon: TrendingUp },
@@ -42,6 +42,12 @@ export default function ScreenshotVerdict({ result }: { result: ScreenshotAnalys
           </div>
         </div>
         <p className="text-gray-300 text-sm mt-4">{result.summary}</p>
+        {result.liveContext && !/^not available/i.test(result.liveContext.trim()) && (
+          <div className="mt-3 flex gap-2 items-start text-sm text-blue-300/90 bg-blue-600/10 border border-blue-500/20 rounded-lg px-3 py-2">
+            <Globe className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{result.liveContext}</span>
+          </div>
+        )}
       </div>
 
       {/* Trade levels */}

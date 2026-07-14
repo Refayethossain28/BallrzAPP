@@ -172,7 +172,7 @@ export default function ScreenshotAnalyzer() {
                 <div className="card p-10 text-center">
                   <Loader2 className="w-8 h-8 text-blue-400 animate-spin mx-auto mb-4" />
                   <p className="text-white font-semibold">Reading your chart…</p>
-                  <p className="text-gray-500 text-sm mt-1">The AI is identifying the instrument, trend, and key levels</p>
+                  <p className="text-gray-500 text-sm mt-1">The AI is identifying the instrument and key levels, and checking live prices &amp; news on the web</p>
                 </div>
               )}
               {error && !loading && (
