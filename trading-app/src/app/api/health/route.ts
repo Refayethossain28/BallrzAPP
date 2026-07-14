@@ -44,7 +44,7 @@ async function checkAI(): Promise<HealthResult> {
 
   try {
     const client = new Anthropic({ apiKey })
-    await client.models.retrieve('claude-opus-4-8')
+    await client.models.retrieve('claude-fable-5')
     return { ai: 'online', message: 'AI is connected and ready.', checkedAt }
   } catch (err) {
     if (err instanceof Anthropic.AuthenticationError) {

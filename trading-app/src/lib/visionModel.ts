@@ -7,7 +7,11 @@ import type { ScreenshotAnalysis, SignalType } from './types'
 // the browser. Unlike the pair analyzer there is no heuristic fallback:
 // without a vision model there is nothing to read the image with.
 
-const MODEL = 'claude-opus-4-8'
+// Claude Fable 5, with Opus 4.8 as a server-side fallback: if Fable 5's
+// safety classifiers decline a request, the API re-runs it on Opus in the
+// same call. The response's `model` field reports which one answered.
+const MODEL = 'claude-fable-5'
+const FALLBACK_MODEL = 'claude-opus-4-8'
 
 export type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
 
@@ -90,11 +94,13 @@ export async function analyzeScreenshot(
   try {
     const client = new Anthropic({ apiKey })
 
-    const response = await client.messages.create({
+    // Fable 5 has thinking always on — the `thinking` param is omitted.
+    const response = await client.beta.messages.create({
       model: MODEL,
       max_tokens: 4096,
+      betas: ['server-side-fallback-2026-06-01'],
+      fallbacks: [{ model: FALLBACK_MODEL }],
       system: SYSTEM_PROMPT,
-      thinking: { type: 'adaptive' },
       output_config: {
         effort: 'medium',
         format: { type: 'json_schema', schema: OUTPUT_SCHEMA },
@@ -121,7 +127,7 @@ export async function analyzeScreenshot(
     }
 
     const text = response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+      .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text')
       .map(b => b.text)
       .join('')
       .trim()
