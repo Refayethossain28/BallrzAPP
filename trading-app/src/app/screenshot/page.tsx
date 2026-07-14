@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import type { ScreenshotAnalysis } from '@/lib/types'
 import ScreenshotVerdict from '@/components/ScreenshotVerdict'
+import AIStatusBadge from '@/components/AIStatusBadge'
 import { ImagePlus, ClipboardPaste, Loader2, RotateCcw } from 'lucide-react'
 
 const DISCLAIMER = 'This tool is for educational purposes only. AI can misread charts. Trading involves significant risk. Never trade with money you cannot afford to lose.'
@@ -107,9 +108,12 @@ export default function ScreenshotAnalyzer() {
               <p className="text-gray-400 text-xs">Screenshot Analyzer</p>
             </div>
           </Link>
-          <Link href="/" className="text-xs text-gray-400 hover:text-white transition-colors">
-            ← Pair Analyzer
-          </Link>
+          <div className="flex items-center gap-3">
+            <AIStatusBadge />
+            <Link href="/" className="text-xs text-gray-400 hover:text-white transition-colors">
+              ← Pair Analyzer
+            </Link>
+          </div>
         </div>
       </header>
 
