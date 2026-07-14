@@ -9,6 +9,9 @@ the money also grows a mind the whole network co-owns.
 Open [`index.html`](index.html) (or the
 [live demo](https://refayethossain28.github.io/BallrzAPP/neura/)) — create a
 wallet, mine, and watch the **mind of the chain** learn to paint its own mark.
+The story in one scroll: [the website](https://refayethossain28.github.io/BallrzAPP/neura/promo.html)
+([`promo.html`](promo.html)) — its hero is the real network training live on
+the page.
 
 ## The idea in one paragraph
 
@@ -141,4 +144,5 @@ p2p. Neura adds its own honest caveats:
 | [`engine.js`](engine.js) | The Neura chain: PARAMS, Proof-of-Intelligence validation, PoI-aware fork choice |
 | [`index.html`](index.html) | The whole node in one file: landing page, wallets, miner, explorer, the mind |
 | [`mine.html`](mine.html) | The dedicated miner — keyless, mines to a pasted address, for always-on devices |
+| [`promo.html`](promo.html) | The website — a one-page pitch whose hero is the real network training live |
 | [`../scripts/test-neura-logic.mjs`](../scripts/test-neura-logic.mjs) | The test suite (`npm run test:neura`) |
