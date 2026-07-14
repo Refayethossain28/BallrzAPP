@@ -99,6 +99,11 @@ open neura/index.html          # or serve the repo root and visit /neura/
 - **Network:** open a second tab — each tab is an independent node; they gossip
   blocks and transactions over `BroadcastChannel` and converge on the heaviest
   valid chain. The chain and wallets persist in `localStorage`.
+- **Dedicated miner** ([`mine.html`](mine.html)): for leaving a device running.
+  It holds **no keys and can't spend** — paste a payout address from the app
+  (or follow the app's prefilled `?pay=` link), press start, and it thinks,
+  grinds and pays rewards to that address, keeping the screen awake where the
+  browser allows. It joins the same tab-to-tab network as the app.
 
 Tests — the brain's determinism, the PoI rules under attack (missing, forged
 and stale commitments; a heavier chain with fake intelligence), the 21M cap,
@@ -135,4 +140,5 @@ p2p. Neura adds its own honest caveats:
 | [`brain.js`](brain.js) | The deterministic neural network: sfc32 PRNG, ReLU MLP, SDF target, exact serialisation |
 | [`engine.js`](engine.js) | The Neura chain: PARAMS, Proof-of-Intelligence validation, PoI-aware fork choice |
 | [`index.html`](index.html) | The whole node in one file: landing page, wallets, miner, explorer, the mind |
+| [`mine.html`](mine.html) | The dedicated miner — keyless, mines to a pasted address, for always-on devices |
 | [`../scripts/test-neura-logic.mjs`](../scripts/test-neura-logic.mjs) | The test suite (`npm run test:neura`) |
