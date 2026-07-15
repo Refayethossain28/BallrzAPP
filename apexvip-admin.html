@@ -59,13 +59,30 @@ body::after{width:480px;height:480px;right:-8%;bottom:-12%;background:radial-gra
   padding-top:env(safe-area-inset-top)}
 body.light .sidebar{background:rgba(240,235,226,.92)}
 .main{margin-left:240px;flex:1;padding:32px;min-height:100vh}
+/* Horizontally-scrollable wrapper for wide tables — keeps momentum scroll on
+   iOS and prevents the page body from ever scrolling sideways. */
+.scroll-x{overflow-x:auto;-webkit-overflow-scrolling:touch}
+/* Dim scrim behind the off-canvas sidebar; tap it to close the menu. */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:40;opacity:0;pointer-events:none;transition:opacity .25s;-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
+body.compact .sidebar.open ~ .scrim{opacity:1;pointer-events:auto}
+
 /* Compact (mobile-optimised) layout — applied via the layout toggle, or
    automatically on small screens until the admin picks a mode. */
-body.compact .sidebar{transform:translateX(-240px)}
+body.compact .sidebar{transform:translateX(-240px);box-shadow:0 0 40px rgba(0,0,0,.5)}
 body.compact .sidebar.open{transform:translateX(0)}
-body.compact .main{margin-left:0;padding:calc(env(safe-area-inset-top) + 64px) 16px 80px}
+body.compact .main{margin-left:0;padding:calc(env(safe-area-inset-top) + 64px) 14px 88px}
 body.compact .stat-card{min-width:calc(50% - 7px)}
 body.compact table{font-size:12px}
+body.compact .scroll-x{margin:0 -14px;padding:0 14px} /* let tables bleed to the screen edge */
+body.compact .card{padding:16px}
+body.compact .section-title{font-size:19px}
+body.compact .section-header{margin-bottom:18px}
+/* Give nav rows and desk-action buttons finger-sized hit areas on touch. */
+body.compact .s-nav-item{padding:14px 20px;font-size:15px}
+body.compact .btn{padding:12px 20px}
+body.compact .btn-sm{padding:9px 15px}
+/* Section-header action buttons go full width so they never get clipped. */
+body.compact .section-header>.btn{width:100%}
 input,select,textarea{font-size:16px !important}
 
 /* ── Sidebar nav items ── */
@@ -204,6 +221,7 @@ body.light .sidebar{background:rgba(240,235,226,.6)!important}
     <button onclick="adminSignOut()" title="Sign out" style="background:none;border:none;color:var(--fg-dim);cursor:pointer;font-size:20px;line-height:1">⏻</button>
   </div>
 </div>
+<div class="scrim" onclick="toggleMenu()"></div>
 <div class="main" id="main"></div>
 <div id="modal-bg" style="display:none" class="modal-bg" onclick="closeModal()">
   <div class="modal" id="modal-box" onclick="event.stopPropagation()"></div>
@@ -1053,7 +1071,7 @@ concierge:()=>{
   if(!queue.length){
     html+='<div style="color:var(--fg-subtle);font-size:13px;padding:18px 0;text-align:center">No open requests. New ones appear here the moment a member submits'+(FIREBASE_ENABLED?'.':' (connect Firebase to go live).')+'</div>';
   }else{
-    html+='<table style="width:100%;border-collapse:collapse;font-size:13px">';
+    html+='<div class="scroll-x"><table style="width:100%;border-collapse:collapse;font-size:13px">';
     html+='<tr style="color:var(--fg-subtle);text-align:left"><th style="padding:8px 10px">Member</th><th style="padding:8px 10px">Request</th><th style="padding:8px 10px">Tier</th><th style="padding:8px 10px">Status</th><th style="padding:8px 10px">SLA</th><th style="padding:8px 10px">Waiting</th><th style="padding:8px 10px">Desk actions</th></tr>';
     queue.forEach(r=>{
       const t=vcTier(r), m=vcMember(r.ownerUid);
@@ -1072,7 +1090,7 @@ concierge:()=>{
         +'<td style="padding:10px;white-space:nowrap">'+wait+' <button class="btn btn-glass btn-sm" onclick="vcReply(\''+r.docId+'\')">Reply</button></td>'
         +'</tr>';
     });
-    html+='</table>';
+    html+='</table></div>';
   }
   html+='</div>';
   // members roster
@@ -1080,7 +1098,7 @@ concierge:()=>{
   if(!VMEMBERS.length){
     html+='<div style="color:var(--fg-subtle);font-size:13px;padding:18px 0;text-align:center">No concierge members yet.</div>';
   }else{
-    html+='<table style="width:100%;border-collapse:collapse;font-size:13px">';
+    html+='<div class="scroll-x"><table style="width:100%;border-collapse:collapse;font-size:13px">';
     html+='<tr style="color:var(--fg-subtle);text-align:left"><th style="padding:8px 10px">Member</th><th style="padding:8px 10px">Tier</th><th style="padding:8px 10px">Status</th><th style="padding:8px 10px">Billing</th><th style="padding:8px 10px">Points</th><th style="padding:8px 10px">Period ends</th><th style="padding:8px 10px">Requests</th></tr>';
     VMEMBERS.slice().sort((a,b)=>(RANK[(b.sub||{}).tierId]||0)-(RANK[(a.sub||{}).tierId]||0)).forEach(m=>{
       const t=(m.sub&&m.sub.tierId)||'—';
@@ -1095,7 +1113,7 @@ concierge:()=>{
         +'<td style="padding:10px">'+n+'</td>'
         +'</tr>';
     });
-    html+='</table>';
+    html+='</table></div>';
   }
   html+='</div></div>';
   return html;
