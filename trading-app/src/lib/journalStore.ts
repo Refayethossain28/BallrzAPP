@@ -1,6 +1,6 @@
 'use client'
 import {
-  collection, deleteDoc, doc, getDocs, orderBy, query, setDoc, updateDoc, limit,
+  collection, deleteDoc, doc, getDocs, orderBy, query, setDoc, limit,
 } from 'firebase/firestore'
 import { firebaseAuth, firestore } from './firebase'
 import type { ScreenshotAnalysis } from './types'
@@ -49,7 +49,9 @@ export async function markOutcome(id: string, outcome: TradeOutcome): Promise<vo
   localSetOutcome(id, outcome)
   const userId = uid()
   if (userId) {
-    await updateDoc(doc(tradesCol(userId), id), { outcome }).catch(() => { /* doc may be local-only */ })
+    // Merge-write: works whether or not the cloud doc exists yet, and any
+    // real failure surfaces to the caller instead of vanishing silently.
+    await setDoc(doc(tradesCol(userId), id), { outcome }, { merge: true })
   }
 }
 
