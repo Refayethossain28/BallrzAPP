@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R87 — S-Class driver view';
+const BUILD = 'BUILD R88 — S-Class road view';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -2436,11 +2436,13 @@ function render(){
   } else if (firstPerson){
     worldPos(G.dist, G.offset, _tmp);
     let eyeFwd, eyeY, lookDrop;
-    const tallVan = G.vehicle && G.vehicle.kind==='van';   // the V-Class bonnet line is far higher
+    const kind = G.vehicle && G.vehicle.kind;
+    const tallVan = kind==='van';                          // the V-Class bonnet line is far higher
+    const sedanCab = kind==='sedan';                       // S-Class photo cabin: glass band sits high on screen
     if (G.view==='dash'){            // hood cam: nearer the nose so only a short bonnet shows
-      eyeFwd = tallVan ? 2.35 : 2.15;
-      eyeY   = _tmp.y + (tallVan ? 2.62 : 1.74);           // above the van's bonnet, MPV driving position
-      lookDrop = tallVan ? 2.55 : 1.9;
+      eyeFwd = tallVan ? 2.35 : (sedanCab ? 2.3 : 2.15);
+      eyeY   = _tmp.y + (tallVan ? 2.62 : (sedanCab ? 2.15 : 1.74));
+      lookDrop = tallVan ? 2.55 : (sedanCab ? 3.2 : 1.9);  // steeper pitch drops the road into the glass band
     } else {                         // cockpit: eye in the cabin
       eyeFwd = tallVan ? 1.2 : 0.4;
       eyeY   = _tmp.y + (tallVan ? 2.55 : 1.5);
@@ -2841,13 +2843,13 @@ function drawDashboard(W,H,sp){
 // per-vehicle photo configs: windscreen cut polygon, wheel crop, live overlays.
 // The van cut is generous on the right (the cowl/pillar slab blocked the view).
 const DASH_PHOTOS={
-  van:  { src:'./img/vclass-dash.jpg', dashV:0.30,
+  van:  { src:'./img/vclass-dash.jpg', dashV:0.30, pin:0.52,
           cut:[[0,0],[1,0],[1,0.46],[0.94,0.38],[0.86,0.30],[0.75,0.26],[0.615,0.245],[0.555,0.30],[0.42,0.315],[0.30,0.315],[0.10,0.30],[0,0.27]],
           wheel:{cx:0.795, cy:0.60, r:0.135},
           screen:{x0:0.418,y0:0.268,x1:0.556,y1:0.415} },
   // RHD driver's-eye shot: the cut hugs the cluster hood and the wheel rim so
   // both stay opaque while the glass either side punches through to the world.
-  sedan:{ src:'./img/sclass-dash.jpg', dashV:0.235,
+  sedan:{ src:'./img/sclass-dash.jpg', dashV:0.235, pin:0.62,
           cut:[[0,0.02],[0.705,0.02],[0.725,0.115],[0.745,0.235],[0.665,0.245],[0.64,0.21],[0.615,0.155],
                [0.585,0.13],[0.525,0.12],[0.465,0.13],[0.437,0.16],[0.415,0.20],[0.39,0.215],
                [0.30,0.20],[0.15,0.215],[0,0.235]],
@@ -2891,10 +2893,11 @@ function drawPhotoDash(kind,W,H,sp,steer,kmh,Min){
     // mid-screen so the road stays visible in ANY orientation. Wide screens
     // crop the footwell off the bottom; tall screens crop the passenger side
     // (right-anchored — this is a RHD cabin, the wheel must stay on screen).
-    const scale=Math.max(W/iw, (H*0.52)/ih);
+    const pin=cfg.pin||0.52;
+    const scale=Math.max(W/iw, (H*pin)/ih);
     const dw=iw*scale, dh=ih*scale;
     const dx=Math.min(0, W-dw);
-    let dy=H*0.52 - dh*cfg.dashV;
+    let dy=H*pin - dh*cfg.dashV;
     if (dy+dh < H) dy=H-dh;                               // never leave a gap under the dash
     hctx.drawImage(_vdCanvas, dx, dy, dw, dh);
     const px=u=>dx+u*dw, py=v=>dy+v*dh;                   // photo-space -> screen
