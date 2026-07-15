@@ -19,6 +19,7 @@ import type {
   ProcessSquarePaymentInput,
   RefundSquarePaymentInput,
   ParseBookingInput,
+  ParseWhatsAppInput,
 } from './types.js';
 
 // ── Result shapes ───────────────────────────────────────────────────────────
@@ -130,6 +131,29 @@ export interface BookingIntentResult {
   [key: string]: unknown;
 }
 
+/**
+ * parseWhatsAppBooking (WhatsApp Booking Desk): the booking extracted from a
+ * pasted WhatsApp message/thread, for operator review before creation.
+ */
+export interface WhatsAppBookingResult {
+  summary?: string;
+  clientName?: string;
+  clientPhone?: string;
+  pickup?: string;
+  dropoff?: string;
+  airport?: string;
+  flight?: string;
+  date?: string;
+  time?: string;
+  vehicle?: string;
+  passengers?: number;
+  serviceType?: string;
+  notes?: string;
+  confidence?: number;
+  missing?: string[];
+  [key: string]: unknown;
+}
+
 // ── The callable map ────────────────────────────────────────────────────────
 
 export interface CallableSpec<Data, Result> {
@@ -143,6 +167,7 @@ export interface ApexCallables {
   captureSquarePayment: CallableSpec<{ paymentId: string }, SquareCaptureResult>;
   refundSquarePayment: CallableSpec<RefundSquarePaymentInput, SquareRefundResult>;
   parseBookingIntent: CallableSpec<ParseBookingInput, BookingIntentResult>;
+  parseWhatsAppBooking: CallableSpec<ParseWhatsAppInput, WhatsAppBookingResult>;
   generateReferralCode: CallableSpec<void, ReferralCodeResult>;
   applyReferralCode: CallableSpec<{ code: string }, ApplyReferralResult>;
   sendChauffeurMessage: CallableSpec<{ bookingRef: string; message: string; fromRole?: 'client' | 'driver' | 'concierge' }, OkResult>;

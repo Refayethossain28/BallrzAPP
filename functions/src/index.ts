@@ -61,6 +61,7 @@ import type {
   DriverPayout,
   GetHotelRatesInput,
   ParseBookingInput,
+  ParseWhatsAppInput,
   Pricing,
   ProcessSquarePaymentInput,
   RefundSquarePaymentInput,
@@ -740,6 +741,95 @@ export const parseBookingIntent = onCall(
     } catch (err) {
       logger.error('parseBookingIntent', errMessage(err));
       // Throw so the client cleanly falls back to its on-device parser.
+      throw new HttpsError('unavailable', errMessage(err));
+    }
+  }
+);
+
+/* ===========================================================================
+ * parseWhatsAppBooking — the WhatsApp Booking Desk brain (apexvip-whatsapp.html)
+ *
+ * Operators paste an inbound WhatsApp message — or a whole exported thread —
+ * into the desk app; this turns it into the exact booking fields the ops
+ * console's `bookings` collection uses, by forcing a single structured tool
+ * call. WhatsApp pastes differ from concierge chat: they carry export
+ * metadata ("[12/07/2026, 14:32] Ana Petrova: …", "+44 7911 123456"), can
+ * span many messages with corrections ("actually make it 3pm"), and the
+ * client's name/phone usually live in the metadata rather than the prose —
+ * so this gets its own tool schema and a larger input budget than
+ * parseBookingIntent. Staff-only: unlike the concierge endpoint it is never
+ * guest-reachable, so it requires a signed-in admin/driver account.
+ * If the function is absent or errors, the desk app falls back to its
+ * on-device parser (ApexEngine.parseIntentLocal + WhatsApp-format regexes).
+ * =========================================================================== */
+const WHATSAPP_BOOKING_TOOL: Anthropic.Tool = {
+  name: 'whatsapp_booking',
+  description: 'Return the booking extracted from a pasted WhatsApp message or thread, ready for operator review.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      summary:     { type: 'string', description: 'One calm sentence for the operator summarising the booking you extracted, e.g. "Ana Petrova — Claridge\'s to Heathrow T5, tomorrow 09:00, flight BA247, 2 passengers."' },
+      clientName:  { type: 'string', description: 'The client\'s name, from the WhatsApp sender metadata ("[…] Ana Petrova: …") or the message text ("this is James…"). Empty if unknown.' },
+      clientPhone: { type: 'string', description: 'The client\'s phone number if it appears anywhere (sender metadata or text), formatted as given, e.g. "+44 7911 123456". Empty if none.' },
+      pickup:      { type: 'string', description: 'Pickup address/area exactly as stated. Empty if not stated.' },
+      dropoff:     { type: 'string', description: 'Destination (non-airport). Empty if not stated.' },
+      airport:     { type: 'string', description: 'Airport + terminal if the trip involves one, e.g. "Heathrow T5", "Gatwick North". Empty otherwise.' },
+      flight:      { type: 'string', description: 'Flight number, uppercase, no space (e.g. "BA247"). Empty if none.' },
+      date:        { type: 'string', description: 'Travel date resolved to ISO YYYY-MM-DD from the current date (resolve "tomorrow", "Friday", "the 21st"). When the thread contains corrections, use the FINAL agreed date. Empty if not stated.' },
+      time:        { type: 'string', description: 'Pickup time as "HH:MM" (24h). When the thread contains corrections ("actually 3pm"), use the FINAL agreed time. Empty if not stated.' },
+      vehicle:     { type: 'string', enum: ['S-Class', 'V-Class'], description: 'S-Class unless the client asks for an MPV/van/people-carrier or the party is 4+ passengers or has lots of luggage — then V-Class.' },
+      passengers:  { type: 'integer', description: 'Passenger count if stated, else 0.' },
+      serviceType: { type: 'string', enum: ['airport', 'hourly', 'day', 'point'], description: 'airport = airport transfer; hourly = by the hour; day = full-day chauffeur; point = simple A→B.' },
+      notes:       { type: 'string', description: 'Special requests worth passing to the chauffeur (child seat, luggage, wait-and-return, name board…). Empty if none.' },
+      confidence:  { type: 'number', description: 'Your confidence 0–1 that this is a genuine, correctly-extracted booking request. Below 0.5 means the paste probably is not a booking at all.' },
+      missing:     { type: 'array', items: { type: 'string' }, description: 'Human-readable list of details the operator must still confirm with the client before dispatch, e.g. ["pickup time", "passenger count"]. Empty when nothing essential is missing.' },
+    },
+    required: ['summary', 'confidence', 'missing'],
+  },
+};
+
+export const parseWhatsAppBooking = onCall(
+  { secrets: [ANTHROPIC_API_KEY], region: 'us-central1' },
+  async (request: CallableRequest<ParseWhatsAppInput>) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+    if (!(await isStaff(request.auth.uid))) throw new HttpsError('permission-denied', 'Staff accounts only');
+    const p = request.data || {};
+    if (typeof p.message !== 'string' || !p.message.trim()) {
+      throw new HttpsError('invalid-argument', 'message is required');
+    }
+    if (p.message.length > 8000) throw new HttpsError('invalid-argument', 'message too long (max 8000 chars)');
+    await enforceRateLimit(request, 'whatsapp', 120);
+    const apiKey = ANTHROPIC_API_KEY.value();
+    if (!apiKey) throw new HttpsError('failed-precondition', 'ANTHROPIC_API_KEY not configured.');
+
+    const today = (typeof p.now === 'string' && p.now) || new Date().toISOString();
+    const sys =
+      'You are the booking-intake brain for ApexVIP, a discreet luxury chauffeur service in London. ' +
+      `The current date/time is ${today} (Europe/London). ` +
+      'An operator has pasted an inbound WhatsApp message — possibly a whole thread exported from WhatsApp, ' +
+      'with lines like "[12/07/2026, 14:32] Ana Petrova: message" or "12/07/2026, 14:32 - Ana Petrova: message". ' +
+      'Extract ONE booking and call the whatsapp_booking tool. ' +
+      'Timestamps in the metadata are when messages were SENT, not the travel time — travel details come from the message text. ' +
+      'Later messages in a thread override earlier ones ("actually make it 3pm" wins). ' +
+      'Resolve relative dates from the current date. Airports map to a terminal label (e.g. "Heathrow T5"). ' +
+      'Only fill fields the client actually stated — never invent an address, time or destination; ' +
+      'list anything essential but unstated in `missing`.';
+
+    try {
+      const data = await anthropicMessages({
+        model: APEXAI_MODEL,
+        max_tokens: 1024,
+        system: sys,
+        messages: [{ role: 'user', content: p.message.slice(0, 8000) }],
+        tools: [WHATSAPP_BOOKING_TOOL],
+        tool_choice: { type: 'tool', name: 'whatsapp_booking' },
+      }, apiKey);
+      const toolUse = data.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
+      if (!toolUse) throw new Error('model returned no structured result');
+      return (toolUse.input || {}) as Record<string, unknown>;
+    } catch (err) {
+      logger.error('parseWhatsAppBooking', errMessage(err));
+      // Throw so the desk app cleanly falls back to its on-device parser.
       throw new HttpsError('unavailable', errMessage(err));
     }
   }
