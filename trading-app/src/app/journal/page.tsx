@@ -49,11 +49,17 @@ export default function JournalPage() {
       if (!res.ok) return
       const { results } = await res.json() as { results: Array<{ id: string; outcome: 'tp1' | 'sl' | null }> }
       const hits = results.filter(r => r.outcome !== null)
-      for (const hit of hits) await markOutcome(hit.id, hit.outcome!)
-      if (hits.length > 0) {
-        setEntries(await loadEntries())
-        setAutoScored(hits.length)
+      if (hits.length === 0) return
+      for (const hit of hits) {
+        await markOutcome(hit.id, hit.outcome!).catch(err =>
+          console.error('Failed to persist auto-score:', err),
+        )
       }
+      // Only claim what actually persisted: reload and count settled hits.
+      const reloaded = await loadEntries()
+      setEntries(reloaded)
+      const settled = hits.filter(h => reloaded.find(e => e.id === h.id)?.outcome === h.outcome).length
+      if (settled > 0) setAutoScored(settled)
     } catch { /* scoring is best-effort */ }
   }, [])
 
