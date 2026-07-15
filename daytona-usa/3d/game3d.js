@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R88 — S-Class road view';
+const BUILD = 'BUILD R89 — wheel turns, line gone';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -2845,15 +2845,15 @@ function drawDashboard(W,H,sp){
 const DASH_PHOTOS={
   van:  { src:'./img/vclass-dash.jpg', dashV:0.30, pin:0.52,
           cut:[[0,0],[1,0],[1,0.46],[0.94,0.38],[0.86,0.30],[0.75,0.26],[0.615,0.245],[0.555,0.30],[0.42,0.315],[0.30,0.315],[0.10,0.30],[0,0.27]],
-          wheel:{cx:0.795, cy:0.60, r:0.135},
+          wheel:{cx:0.795, cy:0.60, r:0.135, gain:0.55},
           screen:{x0:0.418,y0:0.268,x1:0.556,y1:0.415} },
   // RHD driver's-eye shot: the cut hugs the cluster hood and the wheel rim so
   // both stay opaque while the glass either side punches through to the world.
   sedan:{ src:'./img/sclass-dash.jpg', dashV:0.235, pin:0.62,
-          cut:[[0,0.02],[0.705,0.02],[0.725,0.115],[0.745,0.235],[0.665,0.245],[0.64,0.21],[0.615,0.155],
+          cut:[[0,0],[0.705,0],[0.725,0.115],[0.745,0.235],[0.665,0.245],[0.64,0.21],[0.615,0.155],
                [0.585,0.13],[0.525,0.12],[0.465,0.13],[0.437,0.16],[0.415,0.20],[0.39,0.215],
                [0.30,0.20],[0.15,0.215],[0,0.235]],
-          wheel:{cx:0.523, cy:0.47, r:0.145},
+          wheel:{cx:0.525, cy:0.475, r:0.195, gain:0.65},
           screen:{x0:0.118,y0:0.32,x1:0.312,y1:0.615},
           dial:{cx:0.457, cy:0.30, r:0.028}, gear:{x:0.525, y:0.30} },
 };
@@ -2904,7 +2904,7 @@ function drawPhotoDash(kind,W,H,sp,steer,kmh,Min){
     // live rotating wheel (circular crop of the real wheel)
     const wl=_vdWheel;
     if (wl){ const wr=wl.R*scale;
-      hctx.save(); hctx.translate(px(wl.cx), py(wl.cy)); hctx.rotate(steer*0.5);
+      hctx.save(); hctx.translate(px(cfg.wheel.cx), py(cfg.wheel.cy)); hctx.rotate(steer*(cfg.wheel.gain||0.5));
       hctx.drawImage(wl.cv, -wr,-wr, wr*2, wr*2); hctx.restore(); }
     // live content on the real tablet screen
     { const sc=cfg.screen;
