@@ -3,7 +3,7 @@
 //   - /api/*            → network only (never cache live market/AI data)
 //   - /_next/static, /icons → cache-first (immutable build assets)
 //   - navigations & rest → network-first, fall back to cache, then app shell
-const CACHE = 'apexfx-v2'
+const CACHE = 'apexfx-v3'
 const SHELL = ['/', '/manifest.webmanifest']
 
 self.addEventListener('install', (event) => {
@@ -59,5 +59,33 @@ self.addEventListener('fetch', (event) => {
         return resp
       })
       .catch(() => caches.match(request).then((cached) => cached || caches.match('/'))),
+  )
+})
+
+// --- Push notifications (real-time trade scoring) ---
+self.addEventListener('push', (event) => {
+  let data = {}
+  try { data = event.data ? event.data.json() : {} } catch { /* plain text push */ }
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'ApexFX', {
+      body: data.body || '',
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      tag: data.tag || 'apexfx',
+      data: { url: data.url || '/journal' },
+    }),
+  )
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const url = (event.notification.data && event.notification.data.url) || '/journal'
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
+      for (const win of wins) {
+        if ('focus' in win) { win.navigate(url); return win.focus() }
+      }
+      return clients.openWindow(url)
+    }),
   )
 })

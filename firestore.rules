@@ -405,5 +405,10 @@ service cloud.firestore {
     match /apexfx/{uid}/trades/{tradeId} {
       allow read, write: if isUser(uid);
     }
+    // Web-push subscriptions for trade alerts — one doc per device, owner-only.
+    // (The scoring worker reads these with the Admin SDK, which bypasses rules.)
+    match /apexfx/{uid}/pushSubs/{subId} {
+      allow read, write: if isUser(uid);
+    }
   }
 }

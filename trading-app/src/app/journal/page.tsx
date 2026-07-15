@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { computeStats, type JournalEntry, type TradeOutcome } from '@/lib/journal'
 import { loadEntries, markOutcome, deleteEntry, clearAll } from '@/lib/journalStore'
 import { useAuth } from '@/lib/useAuth'
+import PushToggle from '@/components/PushToggle'
 import { Trash2, BookOpen, Cloud, CloudOff, Zap } from 'lucide-react'
 
 // Trade journal + scoreboard. Entries live in this device's localStorage —
@@ -114,9 +115,12 @@ export default function JournalPage() {
         {/* Sync + auto-score status */}
         <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
           {user ? (
-            <span className="inline-flex items-center gap-1.5 text-buy bg-buy/10 border border-buy/25 px-2.5 py-1 rounded-full">
-              <Cloud className="w-3.5 h-3.5" /> Synced to {user.email}
-            </span>
+            <>
+              <span className="inline-flex items-center gap-1.5 text-buy bg-buy/10 border border-buy/25 px-2.5 py-1 rounded-full">
+                <Cloud className="w-3.5 h-3.5" /> Synced to {user.email}
+              </span>
+              <PushToggle />
+            </>
           ) : (
             <Link
               href="/account"
