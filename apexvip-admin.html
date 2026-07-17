@@ -58,7 +58,7 @@ body::after{width:480px;height:480px;right:-8%;bottom:-12%;background:radial-gra
 .sidebar{width:240px;height:100vh;height:100dvh;background:rgba(10,9,8,.92);border-right:1px solid var(--border);position:fixed;top:0;left:0;display:flex;flex-direction:column;z-index:50;transition:transform .25s;backdrop-filter:blur(24px) saturate(1.3);-webkit-backdrop-filter:blur(24px) saturate(1.3);box-shadow:inset -1px 0 0 rgba(255,255,255,.05);
   padding-top:env(safe-area-inset-top)}
 body.light .sidebar{background:rgba(240,235,226,.92)}
-.main{margin-left:240px;flex:1;padding:32px;min-height:100vh}
+.main{margin-left:240px;flex:1;min-width:0;padding:32px;min-height:100vh}
 /* Horizontally-scrollable wrapper for wide tables — keeps momentum scroll on
    iOS and prevents the page body from ever scrolling sideways. */
 .scroll-x{overflow-x:auto;-webkit-overflow-scrolling:touch}
@@ -798,7 +798,7 @@ dashboard:()=>`<div class="screen">
 
 bookings:()=>{const f=S.bFilter;const list=f==='all'?BOOKINGS:BOOKINGS.filter(b=>b.status===f);return`<div class="screen">
   <div class="section-header"><div class="section-title">Bookings</div>
-    <div style="display:flex;align-items:center;gap:10px">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div style="display:flex;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:3px;gap:2px">
         <button onclick="setDispatchMode('manual')" style="padding:7px 12px;border-radius:8px;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;background:${S.dispatchMode==='manual'?'var(--gold)':'transparent'};color:${S.dispatchMode==='manual'?'#000':'var(--fg-dim)'}">Manual dispatch</button>
         <button onclick="setDispatchMode('broadcast')" style="padding:7px 12px;border-radius:8px;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;background:${S.dispatchMode==='broadcast'?'var(--gold)':'transparent'};color:${S.dispatchMode==='broadcast'?'#000':'var(--fg-dim)'}">📢 Instant broadcast</button>
@@ -1276,6 +1276,48 @@ analytics:()=>{
     html+='</div>';
   } else {html+='<div style="color:var(--fg-ghost);font-size:13px">No daily data yet</div>';}
   html+='</div></div>';
+
+  // ── 1b. Booking Funnel ────────────────────────────────────────────────────
+  // Conversion through the booking flow, from events the client app already
+  // tracks. Counts are event totals (a guest may fire a stage more than once,
+  // e.g. re-picking a vehicle), so stage-to-stage % is clamped to 100.
+  const payTaken=raw.filter(e=>e.e==='payment_charged'||e.e==='payment_token_stored'||e.e==='payment_demo').length;
+  const funnel=[
+    {label:'Booking started',n:raw.filter(e=>e.e==='booking_started').length,color:'#64748b'},
+    {label:'Vehicle selected',n:raw.filter(e=>e.e==='vehicle_selected').length,color:'#f59e0b'},
+    {label:'Checkout reached',n:raw.filter(e=>e.e==='checkout_started').length,color:'#8b5cf6'},
+    {label:'Payment taken',n:payTaken,color:'#3b82f6'},
+    {label:'Booking confirmed',n:bookings.length,color:'#22c55e'},
+  ];
+  if(funnel.some(s=>s.n>0)){
+    const fMax=Math.max(...funnel.map(s=>s.n),1);
+    const started=funnel[0].n, confirmed=funnel[4].n;
+    const overall=started>0?Math.min(100,Math.round(confirmed/started*100)):null;
+    let leakIdx=-1, leakPct=101;
+    for(let i=1;i<funnel.length;i++){
+      const prev=funnel[i-1].n; if(prev<1)continue;
+      const pct=Math.min(100,Math.round(funnel[i].n/prev*100));
+      if(pct<leakPct){leakPct=pct;leakIdx=i;}
+    }
+    html+='<div class="section-label" style="margin:0 0 12px">Booking Funnel</div>';
+    html+='<div class="card" style="margin-bottom:24px">';
+    html+='<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:16px">';
+    html+='<div style="font-size:14px;font-weight:600">Where guests drop off</div>';
+    if(overall!==null)html+='<div style="font-size:12px;color:var(--fg-dim)">Start → paid conversion <span style="font-weight:800;color:'+(overall>=35?'#22c55e':overall>=15?'#f59e0b':'#ef4444')+'">'+overall+'%</span></div>';
+    html+='</div>';
+    funnel.forEach(function(s,i){
+      const prev=i>0?funnel[i-1].n:0;
+      const conv=i>0&&prev>0?Math.min(100,Math.round(s.n/prev*100)):null;
+      html+='<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">';
+      html+='<span>'+s.label+(conv!==null?' <span style="font-size:11px;color:'+(conv>=70?'var(--fg-ghost)':conv>=40?'#f59e0b':'#ef4444')+'">'+conv+'% of previous</span>':'')+'</span>';
+      html+='<span style="font-weight:700;color:'+s.color+'">'+s.n+'</span></div>';
+      html+=bar(Math.round(s.n/fMax*100),s.color,6)+'</div>';
+    });
+    if(leakIdx>0&&leakPct<100){
+      html+='<div style="font-size:12px;color:var(--fg-dim);margin-top:4px">Biggest leak: <b>'+funnel[leakIdx-1].label+' → '+funnel[leakIdx].label+'</b> — '+(100-leakPct)+'% drop off at that step.</div>';
+    }
+    html+='</div>';
+  }
 
   // ── 2. Customer Analytics ─────────────────────────────────────────────────
   html+='<div class="section-label" style="margin:0 0 12px">Customer Analytics</div>';
