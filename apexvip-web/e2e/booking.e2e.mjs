@@ -5,7 +5,7 @@
  * Chromium with all Firebase/network SDKs blocked — deterministic offline mode,
  * identical locally and in CI. Guards the money path's UI:
  *
- *   splash → explore as guest → guide skip → home → By the Hour →
+ *   splash → explore as guest → guide skip → home (two doors) → Chauffeur → By the Hour →
  *   pickup + duration → vehicle select → booking summary (fare math) → payment
  *
  * plus: driver + admin apps load with zero page errors, and the client's
@@ -62,8 +62,14 @@ try {
   await page.goto(`${BASE}/apexvip-client.html`, { waitUntil: 'domcontentloaded' });
 
   await page.getByText('Explore as guest').click();
+  // Home is a two-door landing: Chauffeur and Concierge.
+  await page.locator(`[onclick="go('chauffeur')"]`).first().waitFor({ timeout: 5000 });
+  await page.locator(`[onclick="go('concierge')"]`).first().waitFor({ timeout: 5000 });
+  pass('client: home renders for a guest (two-door landing)');
+
+  await page.locator(`[onclick="go('chauffeur')"]`).click();
   await page.getByText('Where would you like to go?').waitFor({ timeout: 5000 });
-  pass('client: home renders for a guest');
+  pass('client: chauffeur hub renders');
 
   await page.locator(`[onclick="goBook('hourly')"]`).first().click();
   await page.locator('#bh_pu').waitFor({ timeout: 5000 });

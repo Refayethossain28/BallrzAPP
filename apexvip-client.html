@@ -2597,6 +2597,67 @@ home: () => {
           <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:#ef4444">Your trial has ended</div><div style="font-size:12px;color:var(--fg-3);margin-top:1px">Subscribe to keep booking with ApexVIP.</div></div>
           <button onclick="state._subOpen=true;render()" style="background:var(--gold);border:none;border-radius:10px;color:#0c0b09;font-size:12px;font-weight:800;padding:8px 12px;cursor:pointer;font-family:inherit;flex-shrink:0">Subscribe</button>
         </div>`;})()}
+            <!-- Two doors: everything lives behind Chauffeur or Concierge -->
+      <button onclick="go('chauffeur')" style="width:100%;display:flex;align-items:center;gap:18px;padding:24px 20px;margin-bottom:14px;background:linear-gradient(135deg,rgba(200,169,126,.13) 0%,rgba(200,169,126,.04) 100%);border:1px solid rgba(200,169,126,.3);border-radius:24px;cursor:pointer;font-family:inherit;text-align:left;transition:transform .15s var(--ease-spring)">
+        <div style="width:54px;height:54px;border-radius:18px;background:rgba(200,169,126,.14);border:1px solid rgba(200,169,126,.28);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="26" height="26" fill="none" viewBox="0 0 24 24" stroke="var(--gold)" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M6.5 11L8 6.5A2 2 0 019.9 5h4.2A2 2 0 0116 6.5L17.5 11m-11 0h11m-11 0l-1.8.4A2 2 0 003 13.3V16a1 1 0 001 1h1m12.5-6l1.8.4a2 2 0 011.7 1.9V16a1 1 0 01-1 1h-1M5 17a2 2 0 104 0m-4 0a2 2 0 014 0m6 0a2 2 0 104 0m-4 0a2 2 0 014 0M9 17h6"/></svg>
+        </div>
+        <div style="flex:1">
+          <div style="font-family:var(--font-serif);font-size:25px;font-weight:500;letter-spacing:.5px;line-height:1.1">Chauffeur</div>
+          <div style="font-size:12px;color:var(--fg-3);margin-top:4px;line-height:1.5">Airport transfers · by the hour · full day</div>
+        </div>
+        <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="var(--gold)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </button>
+
+      <button onclick="go('concierge')" style="width:100%;display:flex;align-items:center;gap:18px;padding:24px 20px;margin-bottom:16px;background:linear-gradient(135deg,rgba(200,169,126,.13) 0%,rgba(200,169,126,.04) 100%);border:1px solid rgba(200,169,126,.3);border-radius:24px;cursor:pointer;font-family:inherit;text-align:left;transition:transform .15s var(--ease-spring)">
+        <div style="width:54px;height:54px;border-radius:18px;background:rgba(200,169,126,.14);border:1px solid rgba(200,169,126,.28);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="26" height="26" fill="none" viewBox="0 0 24 24" stroke="var(--gold)" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M5 16v-.5a7 7 0 0114 0v.5M4 19h16M12 8.5V7"/><circle cx="12" cy="5.5" r="1.1"/></svg>
+        </div>
+        <div style="flex:1">
+          <div style="font-family:var(--font-serif);font-size:25px;font-weight:500;letter-spacing:.5px;line-height:1.1">Concierge</div>
+          <div style="font-size:12px;color:var(--fg-3);margin-top:4px;line-height:1.5">Dining, events, travel — your personal desk</div>
+        </div>
+        <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="var(--gold)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </button>
+
+${upcoming.length ? `
+      <div class="section-label" style="margin-bottom:12px">Upcoming</div>
+      ${upcoming.slice(0,1).map(t=>`
+      <div onclick="go('trip-detail',TRIPS.find(x=>x.id==='${t.id}'))" style="display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:15px 16px;cursor:pointer;margin-bottom:10px">
+        <div style="width:42px;height:42px;border-radius:14px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#ffffff" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M5 3l14 9-14 9V3z"/></svg>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.pickup} → ${t.dropoff}</div>
+          <div style="font-size:12px;color:var(--fg-3);margin-top:3px">${t.date} · ${t.time}</div>
+        </div>
+        <div style="font-size:16px;font-weight:800;color:#ffffff;flex-shrink:0">${t.price}</div>
+      </div>
+      ${t.flight ? flightStatusCard(t.flight) : ''}`).join('')}` : ''}
+    </div>
+  </div>
+  ${bottomNav('home')}
+</div>`;
+},
+
+chauffeur: () => `
+<div style="position:relative;height:100vh;overflow:hidden;animation:fadeIn .3s ease">
+  ${mapBg()}
+  ${auroraBg('z-index:1')}
+  <div class="top-bar">
+    <div style="display:flex;align-items:center;gap:13px">
+      <div class="back-btn" onclick="go('home')">
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+      </div>
+      <div>
+        <div style="font-size:20px;font-weight:700">Chauffeur</div>
+        <div style="font-size:12px;color:var(--fg-3);margin-top:2px">Travel, beautifully driven</div>
+      </div>
+    </div>
+  </div>
+  <div class="sheet" style="height:calc(100vh - 130px)">
+    <div class="sheet-handle"></div>
+    <div class="stagger" style="padding:20px 22px 0;height:calc(100% - 26px);overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:96px">
       <!-- ApexAI — hero button at the top -->
       <button onclick="go('concierge-chat')" style="width:100%;display:flex;align-items:center;gap:16px;padding:16px 20px;margin-bottom:16px;background:linear-gradient(135deg,rgba(200,169,126,.11) 0%,rgba(200,169,126,.04) 100%);border:1px solid rgba(200,169,126,.28);border-radius:22px;cursor:pointer;font-family:inherit;transition:transform .15s var(--ease-spring)">
         <div style="width:40px;height:40px;border-radius:14px;background:rgba(200,169,126,.14);border:1px solid rgba(200,169,126,.28);display:flex;align-items:center;justify-content:center;flex-shrink:0">
@@ -2704,48 +2765,15 @@ home: () => {
         </div>`).join('')}
       </div>
 
-      <!-- Hotels section — London's finest stays -->
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <div class="section-label">Stay in London</div>
-        <button onclick="go('hotels')" style="background:none;border:none;color:var(--gold);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:.5px">VIEW ALL →</button>
-      </div>
-      <div style="display:flex;gap:10px;overflow-x:auto;margin:0 -22px;padding:4px 22px 16px;scrollbar-width:none">
-        ${HOTELS.slice(0,6).map(h=>`
-        <div onclick="go('hotels')" style="min-width:172px;flex-shrink:0;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:16px 14px;cursor:pointer;transition:transform .12s var(--ease-spring)">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <div style="font-size:26px">${h.emoji}</div>
-            <span style="font-size:10px;font-weight:700;color:var(--gold)">★ ${h.rating.toFixed(1)}</span>
           </div>
-          <div style="font-size:13px;font-weight:700;margin-bottom:3px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h.name}</div>
-          <div style="font-size:11px;color:var(--fg-4);margin-bottom:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h.area}</div>
-          <div style="font-size:12px;color:var(--gold);font-weight:700">From £${hotelRate(h).from.toLocaleString()} <span style="color:var(--fg-4);font-weight:400">/ night</span></div>
-        </div>`).join('')}
-      </div>
-
-      ${upcoming.length ? `
-      <div class="section-label" style="margin-bottom:12px">Upcoming</div>
-      ${upcoming.slice(0,1).map(t=>`
-      <div onclick="go('trip-detail',TRIPS.find(x=>x.id==='${t.id}'))" style="display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:15px 16px;cursor:pointer;margin-bottom:10px">
-        <div style="width:42px;height:42px;border-radius:14px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#ffffff" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M5 3l14 9-14 9V3z"/></svg>
-        </div>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.pickup} → ${t.dropoff}</div>
-          <div style="font-size:12px;color:var(--fg-3);margin-top:3px">${t.date} · ${t.time}</div>
-        </div>
-        <div style="font-size:16px;font-weight:800;color:#ffffff;flex-shrink:0">${t.price}</div>
-      </div>
-      ${t.flight ? flightStatusCard(t.flight) : ''}`).join('')}` : ''}
-    </div>
   </div>
   ${bottomNav('home')}
-</div>`;
-},
+</div>`,
 
 'route-input': () => `
 <div style="height:100dvh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
   <div class="back-row">
-    <div class="back-btn" onclick="go('home')">
+    <div class="back-btn" onclick="go('chauffeur')">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
     </div>
     <div>
@@ -4363,7 +4391,7 @@ profile: () => {
 'concierge-chat': () => `
 <div style="min-height:100vh;display:flex;flex-direction:column;background:var(--bg)">
   <div class="top-bar">
-    <div class="back-btn" onclick="go('home')">
+    <div class="back-btn" onclick="go('chauffeur')">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
     </div>
     <div style="font-size:13px;font-weight:700;letter-spacing:.5px">ApexAI</div>
@@ -4503,7 +4531,7 @@ profile: () => {
 'aviation-booking': () => `
 <div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column">
   <div class="top-bar">
-    <div class="back-btn" onclick="go('home')">
+    <div class="back-btn" onclick="go('chauffeur')">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
     </div>
     <div style="font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Private Aviation</div>
@@ -5084,7 +5112,7 @@ profile: () => {
 <div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:fadeIn .3s ease">
   <div style="padding:56px 22px 0;flex-shrink:0">
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:6px">
-      <div class="back-btn" onclick="go('home')"><svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg></div>
+      <div class="back-btn" onclick="go('chauffeur')"><svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg></div>
       <div>
         <div style="font-family:var(--font-serif);font-size:28px;font-weight:300;letter-spacing:.5px">Curated Experiences</div>
         <div style="font-size:13px;color:var(--fg-3);margin-top:2px">Car + experience, arranged as one</div>
