@@ -69,3 +69,18 @@ export async function think(model, task) {
   const live = await claudeThink(model, task);
   return live ?? offlineThink(model, task);
 }
+
+/** Which brain would run right now, and why. Used by the `brain` CLI command. */
+export async function brainStatus() {
+  const hasKey = Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+  let sdk = false;
+  try {
+    await import('@anthropic-ai/sdk');
+    sdk = true;
+  } catch {}
+  return {
+    brain: hasKey && sdk ? 'claude' : 'offline',
+    credentials: hasKey ? 'found (ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN)' : 'none — set ANTHROPIC_API_KEY',
+    sdk: sdk ? '@anthropic-ai/sdk installed' : '@anthropic-ai/sdk missing — npm install',
+  };
+}

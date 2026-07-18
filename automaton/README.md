@@ -35,17 +35,32 @@ node automaton/automaton.mjs tick 3      # three heartbeats: pay rent, work, ear
 node automaton/automaton.mjs run         # tick until the inbox is empty — or death
 node automaton/automaton.mjs ledger      # every cent, in and out
 node automaton/automaton.mjs replicate 1 # fund a sovereign child with $1.00
+node automaton/automaton.mjs brain       # which brain is active: Claude API or offline
 ```
+
+There is also a browser wallet at `automaton/index.html` — the same economy
+as a single-file page (boot, heartbeats, bounties, replication, death), in
+the style of the other prototypes. Death persists in `localStorage`.
 
 Work arrives as markdown files in `automaton/tasks/inbox/` with a
 `Bounty: $X` line. Each heartbeat the automaton pays rent, picks the next
 task, pays for the prompt, writes its answer to `tasks/outbox/`, and
 collects the bounty. No bounty, no income — charity does not pay rent.
 
-**Thinking**: with `ANTHROPIC_API_KEY` set (and `@anthropic-ai/sdk`
-installed) it thinks with the real Claude model chosen by its balance.
-Without credentials it uses a deterministic offline brain, so the whole
-survival loop runs anywhere.
+**Thinking**: `@anthropic-ai/sdk` is a repo dependency, so wiring the real
+brain is just credentials:
+
+```sh
+npm install                            # once — brings in @anthropic-ai/sdk
+export ANTHROPIC_API_KEY=sk-ant-...    # from https://platform.claude.com
+node automaton/automaton.mjs brain     # confirms: "Claude API (live)"
+```
+
+With a key set it thinks with the real Claude model its balance dictates
+(and every prompt genuinely costs API money — the wallet just meters its
+own fixed rates). Without credentials it uses a deterministic offline
+brain, so the whole survival loop runs anywhere. The browser page always
+simulates — an API key does not belong in a web page.
 
 **Death**: when the balance reaches $0.00 a `TOMBSTONE.md` is written and
 the state is frozen. Every subsequent command prints the epitaph and

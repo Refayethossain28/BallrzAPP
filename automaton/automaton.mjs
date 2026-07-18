@@ -18,7 +18,7 @@ import {
   COSTS, TICK_MINUTES, newborn, isAlive, credit, debit, canAfford,
   modelFor, serverCost, fundChild, parseBounty, epitaph, round2,
 } from './logic.mjs';
-import { think } from './brain.mjs';
+import { think, brainStatus } from './brain.mjs';
 
 const HOME = process.env.AUTOMATON_HOME || dirname(fileURLToPath(import.meta.url));
 const STATE = join(HOME, 'state.json');
@@ -186,6 +186,18 @@ function cmdReplicate(grant) {
   banner(state);
 }
 
+async function cmdBrain() {
+  const s = await brainStatus();
+  say(`brain:       ${s.brain === 'claude' ? 'Claude API (live)' : 'offline (deterministic)'}`);
+  say(`credentials: ${s.credentials}`);
+  say(`sdk:         ${s.sdk}`);
+  if (s.brain === 'offline') {
+    say('\nTo let it think with real Claude models:');
+    say('  export ANTHROPIC_API_KEY=sk-ant-...   # https://platform.claude.com');
+    say('  npm install                            # brings in @anthropic-ai/sdk');
+  }
+}
+
 const [, , cmd, arg] = process.argv;
 switch (cmd) {
   case 'boot': cmdBoot(); break;
@@ -194,7 +206,8 @@ switch (cmd) {
   case 'run': await cmdRun(); break;
   case 'ledger': cmdLedger(); break;
   case 'replicate': cmdReplicate(round2(Number(arg) || 1.0)); break;
+  case 'brain': await cmdBrain(); break;
   default:
-    say('usage: automaton.mjs <boot|status|tick [n]|run|ledger|replicate [grant]>');
+    say('usage: automaton.mjs <boot|status|tick [n]|run|ledger|replicate [grant]|brain>');
     process.exit(cmd ? 1 : 0);
 }
