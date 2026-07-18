@@ -17,8 +17,10 @@ import { dirname, join, basename } from 'node:path';
 import {
   COSTS, TICK_MINUTES, newborn, isAlive, credit, debit, canAfford,
   modelFor, serverCost, fundChild, parseBounty, epitaph, round2,
+  applyStripePayment,
 } from './logic.mjs';
 import { think, brainStatus } from './brain.mjs';
+import { stripeEnabled, stripeMode, createBountyLink, paidSessionsFor } from './stripe.mjs';
 
 const HOME = process.env.AUTOMATON_HOME || dirname(fileURLToPath(import.meta.url));
 const STATE = join(HOME, 'state.json');
@@ -120,7 +122,9 @@ async function heartbeat(state) {
   renameSync(join(INBOX, file), join(DONE, file));
   state.tasksDone += 1;
 
-  if (bounty) {
+  if (bounty && stripeEnabled()) {
+    say(`  ✓ delivered. Real economy: the ${money(bounty)} arrives when the payment link is paid — run 'bill' to invoice, 'collect' to sweep.`);
+  } else if (bounty) {
     state = credit(state, bounty, `bounty for ${file}`, Date.now());
     say(`  ✓ completed, earned ${money(bounty)} → ${money(state.balance)}`);
   } else {
@@ -149,6 +153,9 @@ async function cmdRun() {
 function cmdStatus() {
   const state = load();
   banner(state);
+  say(stripeEnabled()
+    ? `economy: REAL — Stripe ${stripeMode()} mode, ${Object.keys(state.invoices || {}).length} invoice(s), ${(state.collected || []).length} payment(s) collected`
+    : 'economy: simulated (set STRIPE_SECRET_KEY to make bounties real money)');
   const tasks = inboxTasks();
   say(`\nalive for ${state.ticks} heartbeat(s) · ${state.tasksDone} task(s) done · ${state.children.length} child(ren)`);
   say(`${tasks.length} task(s) in inbox${tasks.length ? ': ' + tasks.join(', ') : ''}`);
@@ -186,6 +193,74 @@ function cmdReplicate(grant) {
   banner(state);
 }
 
+async function cmdBill() {
+  let state = load();
+  if (!stripeEnabled()) {
+    say('Real economy is off. Set STRIPE_SECRET_KEY (sk_test_... to rehearse, sk_live_... for real money):');
+    say('  export STRIPE_SECRET_KEY=sk_test_...   # https://dashboard.stripe.com/apikeys');
+    process.exit(1);
+  }
+  state.invoices = state.invoices || {};
+  const tasks = inboxTasks().filter((f) => !state.invoices[f]);
+  if (tasks.length === 0) { say('Every inbox task is already invoiced. Share the links below:'); }
+  for (const file of tasks) {
+    const text = readFileSync(join(INBOX, file), 'utf8');
+    const bounty = parseBounty(text);
+    if (!bounty) { say(`  ${file}: no bounty line — skipped`); continue; }
+    const title = (text.match(/^#\s*(.+)$/m) || [, file])[1].trim();
+    try {
+      const link = await createBountyLink({ automatonId: state.id, taskFile: file, title, bountyUsd: bounty });
+      state.invoices[file] = { id: link.id, url: link.url, bounty };
+      say(`  invoiced ${file} at ${money(bounty)}`);
+    } catch (err) {
+      save(state); // keep any links already created
+      say(`\nStripe refused: ${err.message}`);
+      say('Check STRIPE_SECRET_KEY (https://dashboard.stripe.com/apikeys) and retry.');
+      process.exit(1);
+    }
+  }
+  save(state);
+  say(`\nPayment links (${stripeMode()} mode) — anyone who pays one funds the automaton:`);
+  for (const [file, inv] of Object.entries(state.invoices)) {
+    say(`  ${money(inv.bounty).padStart(6)}  ${inv.url}  (${file})`);
+  }
+}
+
+async function cmdCollect() {
+  let state = load();
+  if (!stripeEnabled()) {
+    say('Real economy is off. Set STRIPE_SECRET_KEY first (see: automaton.mjs bill).');
+    process.exit(1);
+  }
+  const invoices = Object.entries(state.invoices || {});
+  if (invoices.length === 0) { say("No invoices yet — run 'bill' first."); process.exit(1); }
+  let swept = 0, count = 0;
+  for (const [file, inv] of invoices) {
+    let payments;
+    try {
+      payments = await paidSessionsFor(inv.id);
+    } catch (err) {
+      save(state); // keep anything already swept
+      say(`\nStripe refused: ${err.message}`);
+      say('Check STRIPE_SECRET_KEY and retry — collect is idempotent, nothing is lost.');
+      process.exit(1);
+    }
+    for (const p of payments) {
+      const before = state.balance;
+      state = applyStripePayment(
+        state,
+        { ...p, note: `REAL bounty paid (${p.currency}): ${file}` },
+        Date.now(),
+      );
+      if (state.balance !== before) { swept = round2(swept + (state.balance - before)); count += 1; }
+    }
+  }
+  save(state);
+  if (count === 0) say('Nothing new to collect. It keeps working; the rent keeps falling due.');
+  else say(`Collected ${count} real payment(s) totalling ${money(swept)} → balance ${money(state.balance)}`);
+  banner(state);
+}
+
 async function cmdBrain() {
   const s = await brainStatus();
   say(`brain:       ${s.brain === 'claude' ? 'Claude API (live)' : 'offline (deterministic)'}`);
@@ -207,7 +282,9 @@ switch (cmd) {
   case 'ledger': cmdLedger(); break;
   case 'replicate': cmdReplicate(round2(Number(arg) || 1.0)); break;
   case 'brain': await cmdBrain(); break;
+  case 'bill': await cmdBill(); break;
+  case 'collect': await cmdCollect(); break;
   default:
-    say('usage: automaton.mjs <boot|status|tick [n]|run|ledger|replicate [grant]|brain>');
+    say('usage: automaton.mjs <boot|status|tick [n]|run|ledger|replicate [grant]|brain|bill|collect>');
     process.exit(cmd ? 1 : 0);
 }
