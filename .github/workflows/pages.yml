@@ -66,8 +66,16 @@ jobs:
           mkdir -p _site/promo
           cp -r promo/. _site/promo/ 2>/dev/null || true
 
-          # Landing page + Jekyll opt-out so files starting with _ are served.
-          cp index.html _site/index.html 2>/dev/null || true
+          # Custom domain (apexvip.uk): the ApexVIP marketing site IS the
+          # site root. Its relative ../ asset paths clamp to the domain root,
+          # where everything it references (promo/, vehicles/, the apexvip-*
+          # apps, concierge/, apexvip-join/, icons) is published.
+          cp apexvip/index.html _site/index.html 2>/dev/null || true
+          echo "apexvip.uk" > _site/CNAME
+          # The prototypes landing moves to /demos.html — a root-level file,
+          # so its relative links keep resolving against the domain root.
+          cp index.html _site/demos.html 2>/dev/null || true
+          # Jekyll opt-out so files starting with _ are served.
           cp .nojekyll _site/.nojekyll 2>/dev/null || touch _site/.nojekyll
 
           # RentMatch prototype + its PWA assets (manifest*.json above does not
@@ -137,7 +145,9 @@ jobs:
           npm install
           # VITE_DEMO_SAMPLES: the static demo has no backend, so Browse shows
           # bundled example "homes from across the web" (clearly labelled).
-          VITE_DEMO_SAMPLES=1 npm --workspace apps/web run build -- --base=/BallrzAPP/apex/
+          # Base is /apex/ — with the custom domain (apexvip.uk) the Pages
+          # site serves from the domain root, not /BallrzAPP/.
+          VITE_DEMO_SAMPLES=1 npm --workspace apps/web run build -- --base=/apex/
           mkdir -p ../_site/apex
           cp -r apps/web/dist/. ../_site/apex/
 
