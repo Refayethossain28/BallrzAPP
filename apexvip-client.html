@@ -5590,6 +5590,9 @@ function _authErrorMsg(err){
     case 'auth/email-already-in-use': return 'An account with this email already exists.';
     case 'auth/weak-password': return 'Please choose a stronger password (8+ characters).';
     case 'auth/popup-closed-by-user': return 'Sign-in was cancelled.';
+    case 'auth/popup-blocked': return 'Your browser blocked the sign-in window. Please try again.';
+    case 'auth/unauthorized-domain': return 'Sign-in isn\'t authorised from this address yet. Please contact support.';
+    case 'auth/account-exists-with-different-credential': return 'This email is already registered with a different sign-in method — try email & password.';
     case 'auth/operation-not-allowed': return 'This sign-in method isn\'t enabled yet.';
     case 'auth/network-request-failed': return 'Network error — check your connection.';
     default: return (err&&err.message)||'Something went wrong. Please try again.';
@@ -5605,27 +5608,42 @@ async function forgotPassword(){
     alert('If an account exists for '+e+', a password-reset link is on its way. Check your inbox.');
   }catch(err){ state._loginErr=_authErrorMsg(err); render(); }
 }
+// First social sign-in: create a client profile if missing (popup + redirect paths)
+async function _ensureSocialProfile(u){
+  if(!u) return;
+  const ref = db.collection('users').doc(u.uid);
+  const snap = await ref.get().catch(()=>null);
+  if(snap && !snap.exists){
+    await ref.set({ name:u.displayName||'', email:u.email||'', phone:u.phoneNumber||'',
+      role:'client', tier:'standard', bookings:0, spent:0,
+      joined:new Date().toLocaleDateString('en-GB',{month:'short',year:'numeric'}),
+      createdAt:firebase.firestore.FieldValue.serverTimestamp() }, {merge:true}).catch(reportError);
+  }
+}
 async function socialSignIn(which){
   if(!FIREBASE_ENABLED){ alert('Social sign-in is available once connected to the live service.'); return; }
+  const provider = which==='apple'
+    ? new firebase.auth.OAuthProvider('apple.com')
+    : new firebase.auth.GoogleAuthProvider();
+  // Installed PWAs can't complete a popup flow — the popup opens in a separate
+  // browser context that never hands the session back. Redirect is the only
+  // reliable path there; the result lands in getRedirectResult() on relaunch.
+  const standalone = window.navigator.standalone===true || window.matchMedia('(display-mode: standalone)').matches;
   try{
-    const provider = which==='apple'
-      ? new firebase.auth.OAuthProvider('apple.com')
-      : new firebase.auth.GoogleAuthProvider();
+    if(standalone){ sessionStorage.setItem('apex_social_pending',which); await auth.signInWithRedirect(provider); return; }
     const cred = await auth.signInWithPopup(provider);
-    // First social sign-in: create a client profile if missing
-    const u = cred.user;
-    if(u){
-      const ref = db.collection('users').doc(u.uid);
-      const snap = await ref.get().catch(()=>null);
-      if(snap && !snap.exists){
-        await ref.set({ name:u.displayName||'', email:u.email||'', phone:u.phoneNumber||'',
-          role:'client', tier:'standard', bookings:0, spent:0,
-          joined:new Date().toLocaleDateString('en-GB',{month:'short',year:'numeric'}),
-          createdAt:firebase.firestore.FieldValue.serverTimestamp() }, {merge:true}).catch(reportError);
-      }
-    }
+    await _ensureSocialProfile(cred.user);
     track('user_login',{method:which,src:'client'}); haptic('success');
-  }catch(err){ state._loginErr=_authErrorMsg(err); haptic('error'); render(); }
+  }catch(err){
+    // Popup blocked or unsupported in this environment → full-page redirect.
+    const code=(err&&err.code)||'';
+    if(['auth/popup-blocked','auth/cancelled-popup-request','auth/operation-not-supported-in-this-environment','auth/web-storage-unsupported'].includes(code)){
+      try{ sessionStorage.setItem('apex_social_pending',which); await auth.signInWithRedirect(provider); return; }
+      catch(e2){ err=e2; }
+    }
+    reportError(err,'social-signin');
+    state._loginErr=_authErrorMsg(err); haptic('error'); render();
+  }
 }
 function saveRegStep1(){
   state._regName=($('rfn')?.value||'')+' '+($('rln')?.value||'');
@@ -6035,6 +6053,22 @@ async function useMyLocation(inputId){
 
 // ── Firebase auth ──────────────────────────────────────────────────────────
 if(FIREBASE_ENABLED){
+  // Complete a redirect-based social sign-in (installed PWA / blocked-popup
+  // fallback). onAuthStateChanged handles the session; this surfaces errors
+  // and creates the first-login profile the popup path would have created.
+  auth.getRedirectResult().then(cred=>{
+    if(cred&&cred.user){
+      _ensureSocialProfile(cred.user).catch(reportError);
+      const which=sessionStorage.getItem('apex_social_pending')||'google';
+      sessionStorage.removeItem('apex_social_pending');
+      track('user_login',{method:which,src:'client'}); haptic('success');
+    }
+  }).catch(err=>{
+    sessionStorage.removeItem('apex_social_pending');
+    reportError(err,'social-redirect');
+    state._loginErr=_authErrorMsg(err);
+    if(state.screen==='login') render();
+  });
   let _unsub=null;
   // Module-scoped so a re-auth (or account switch) can unsubscribe the previous
   // session's listener — declaring it inside the callback re-created it per
