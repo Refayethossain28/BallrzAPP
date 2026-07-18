@@ -83,6 +83,34 @@ export async function createBountyLink({ automatonId, taskFile, title, bountyUsd
   return { id: link.id, url: link.url };
 }
 
+/**
+ * One-shot Checkout Session for a storefront order: the customer pays the
+ * order price, then bounces back to the shop with their order id.
+ */
+export async function createCheckout({ orderId, title, amountUsd, successUrl, cancelUrl }) {
+  const session = await stripeCall('POST', '/v1/checkout/sessions', {
+    mode: 'payment',
+    line_items: [{
+      quantity: 1,
+      price_data: {
+        currency: 'usd',
+        unit_amount: Math.round(amountUsd * 100),
+        product_data: { name: `Automaton task: ${title}` },
+      },
+    }],
+    success_url: successUrl,
+    cancel_url: cancelUrl,
+    metadata: { automaton_order: orderId },
+  });
+  return { id: session.id, url: session.url };
+}
+
+/** Look up one checkout session's payment state. */
+export async function getSession(sessionId) {
+  const s = await stripeCall('GET', `/v1/checkout/sessions/${encodeURIComponent(sessionId)}`);
+  return { sessionId: s.id, paid: s.payment_status === 'paid', amountCents: s.amount_total, currency: s.currency };
+}
+
 /** All PAID checkout sessions created from one payment link. */
 export async function paidSessionsFor(paymentLinkId) {
   const res = await stripeCall(

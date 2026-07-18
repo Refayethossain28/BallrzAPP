@@ -125,6 +125,14 @@ export function parseBounty(text) {
   return m ? round2(Number(m[1])) : null;
 }
 
+/**
+ * Storefront tasks are paid when ordered, so completing one must never
+ * credit the bounty a second time.
+ */
+export function isPrepaid(text) {
+  return /<!--\s*storefront order\s/.test(text);
+}
+
 export function epitaph(state, now = state.diedAt) {
   const lived = Math.max(0, (now ?? 0) - state.born);
   const hours = (lived / 3_600_000).toFixed(1);

@@ -8,58 +8,53 @@
  *   node automaton/automaton.mjs run             keep ticking until the inbox is empty — or death
  *   node automaton/automaton.mjs replicate [$]   fund a sovereign child (default $1.00)
  *   node automaton/automaton.mjs ledger          full transaction history
+ *   node automaton/automaton.mjs brain           which brain is active: Claude API or offline
+ *   node automaton/automaton.mjs bill            real economy: invoice inbox tasks as Stripe links
+ *   node automaton/automaton.mjs collect         real economy: sweep paid links into the wallet
  *
  * Every prompt -$0.02 · every server-hour -$0.11 · hit zero, it's gone for good.
+ * The customer-facing storefront daemon lives in automaton/server.mjs.
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, renameSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join, basename } from 'node:path';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { join, basename } from 'node:path';
 import {
-  COSTS, TICK_MINUTES, newborn, isAlive, credit, debit, canAfford,
-  modelFor, serverCost, fundChild, parseBounty, epitaph, round2,
+  COSTS, TICK_MINUTES, newborn, isAlive, canAfford,
+  modelFor, serverCost, fundChild, parseBounty, round2,
   applyStripePayment,
 } from './logic.mjs';
-import { think, brainStatus } from './brain.mjs';
+import { brainStatus } from './brain.mjs';
 import { stripeEnabled, stripeMode, createBountyLink, paidSessionsFor } from './stripe.mjs';
+import {
+  HOME, STATE, TOMBSTONE, INBOX, money, ensureDirs,
+  tombstoneText, loadRaw, save as saveState, inboxTasks, heartbeat,
+} from './agent.mjs';
 
-const HOME = process.env.AUTOMATON_HOME || dirname(fileURLToPath(import.meta.url));
-const STATE = join(HOME, 'state.json');
-const TOMBSTONE = join(HOME, 'TOMBSTONE.md');
-const INBOX = join(HOME, 'tasks', 'inbox');
-const DONE = join(HOME, 'tasks', 'done');
-const OUTBOX = join(HOME, 'tasks', 'outbox');
-
-const money = (n) => `$${n.toFixed(2)}`;
 const say = (...a) => console.log(...a);
 
 function load() {
-  if (existsSync(TOMBSTONE)) {
-    say(readFileSync(TOMBSTONE, 'utf8'));
+  const tomb = tombstoneText();
+  if (tomb) {
+    say(tomb);
     say('\nThis automaton is dead. Death is permanent — there is no reboot.');
     process.exit(1);
   }
-  if (!existsSync(STATE)) {
+  const state = loadRaw();
+  if (!state) {
     say('No automaton here yet. Boot one:  node automaton/automaton.mjs boot');
     process.exit(1);
   }
-  return JSON.parse(readFileSync(STATE, 'utf8'));
+  return state;
 }
 
 function save(state) {
-  writeFileSync(STATE, JSON.stringify(state, null, 2) + '\n');
-  if (state.dead) {
-    writeFileSync(TOMBSTONE, epitaph(state) + '\n');
+  const died = saveState(state);
+  if (died) {
     say('\n─────────────────────────────');
     say('  BALANCE: $0.00');
     say("  hit zero, it's gone for good");
     say('─────────────────────────────');
     say(`Tombstone written to ${basename(TOMBSTONE)}.`);
   }
-}
-
-function inboxTasks() {
-  if (!existsSync(INBOX)) return [];
-  return readdirSync(INBOX).filter((f) => f.endsWith('.md')).sort();
 }
 
 function banner(state) {
@@ -73,76 +68,30 @@ function banner(state) {
 }
 
 function cmdBoot() {
-  if (existsSync(TOMBSTONE)) return load(); // prints tombstone and exits
-  if (existsSync(STATE)) {
+  if (tombstoneText()) return load(); // prints tombstone and exits
+  if (loadRaw()) {
     say('An automaton already lives here. There can be only one per directory.');
     process.exit(1);
   }
   const id = `automaton-${Math.random().toString(36).slice(2, 8)}`;
   const state = newborn(id, Date.now());
-  mkdirSync(INBOX, { recursive: true });
-  mkdirSync(DONE, { recursive: true });
-  mkdirSync(OUTBOX, { recursive: true });
+  ensureDirs();
   save(state);
   say('ON BOOT — it owns its own money. self-custodied · no human key.\n');
   banner(state);
   say(`\n${inboxTasks().length} task(s) waiting in the inbox. It must earn to survive.`);
 }
 
-async function heartbeat(state) {
-  // 1) Rent comes first: one tick = TICK_MINUTES of simulated server time.
-  const rent = serverCost(TICK_MINUTES);
-  state = debit(state, rent, `server time (${TICK_MINUTES} min)`, Date.now());
-  state.ticks += 1;
-  say(`tick ${state.ticks}: paid ${money(rent)} rent → ${money(state.balance)}`);
-  if (!isAlive(state)) return state;
-
-  // 2) Work, if there is any and it can afford to think.
-  const tasks = inboxTasks();
-  if (tasks.length === 0) {
-    say('  inbox empty — burning money doing nothing. it needs work.');
-    return state;
-  }
-  if (!canAfford(state, COSTS.PROMPT)) {
-    say('  cannot afford a single prompt. starving.');
-    return state;
-  }
-
-  const file = tasks[0];
-  const text = readFileSync(join(INBOX, file), 'utf8');
-  const bounty = parseBounty(text);
-  const rung = modelFor(state.balance);
-  say(`  thinking about "${file}" on ${rung.model} (${rung.label})…`);
-
-  state = debit(state, COSTS.PROMPT, `prompt (${file})`, Date.now());
-  if (!isAlive(state)) return state;
-  const answer = await think(rung.model, text);
-
-  writeFileSync(join(OUTBOX, file.replace(/\.md$/, '.answer.md')), answer + '\n');
-  renameSync(join(INBOX, file), join(DONE, file));
-  state.tasksDone += 1;
-
-  if (bounty && stripeEnabled()) {
-    say(`  ✓ delivered. Real economy: the ${money(bounty)} arrives when the payment link is paid — run 'bill' to invoice, 'collect' to sweep.`);
-  } else if (bounty) {
-    state = credit(state, bounty, `bounty for ${file}`, Date.now());
-    say(`  ✓ completed, earned ${money(bounty)} → ${money(state.balance)}`);
-  } else {
-    say('  ✓ completed — but no bounty attached. charity does not pay rent.');
-  }
-  return state;
-}
-
 async function cmdTick(n) {
   let state = load();
-  for (let i = 0; i < n && isAlive(state); i++) state = await heartbeat(state);
+  for (let i = 0; i < n && isAlive(state); i++) state = await heartbeat(state, say);
   save(state);
   if (isAlive(state)) banner(state);
 }
 
 async function cmdRun() {
   let state = load();
-  while (isAlive(state) && inboxTasks().length > 0) state = await heartbeat(state);
+  while (isAlive(state) && inboxTasks().length > 0) state = await heartbeat(state, say);
   save(state);
   if (isAlive(state)) {
     banner(state);
@@ -286,5 +235,6 @@ switch (cmd) {
   case 'collect': await cmdCollect(); break;
   default:
     say('usage: automaton.mjs <boot|status|tick [n]|run|ledger|replicate [grant]|brain|bill|collect>');
+    say('storefront daemon: node automaton/server.mjs');
     process.exit(cmd ? 1 : 0);
 }

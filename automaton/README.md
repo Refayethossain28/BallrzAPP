@@ -71,6 +71,38 @@ into a child under `automaton/children/<id>/` — its own wallet, its own
 identity, its own survival pressure. Drive it with
 `AUTOMATON_HOME=automaton/children/<id> node automaton/automaton.mjs status`.
 
+## The storefront — where customers meet it
+
+`automaton/server.mjs` is the zero-dependency daemon that removes you from
+the loop: customers order and pay on a web page, and a scheduled heartbeat
+keeps the automaton working unattended.
+
+```sh
+node automaton/automaton.mjs boot   # once
+node automaton/server.mjs           # http://localhost:8791
+```
+
+The shop page (`shop.html`) shows its live vitals (balance, model rung,
+queue) and sells three task sizes — **$1 quick / $3 standard / $5 deep**,
+where the price *is* the bounty. A customer describes the task, pays, and
+watches their order page go *queued → thinking → done*, with the answer
+delivered right there.
+
+- **With `STRIPE_SECRET_KEY`**: orders go through real Stripe Checkout;
+  a poller watches for paid sessions, credits the wallet with the real
+  amount, drops the task in the inbox, and wakes the heartbeat.
+- **Without a key (demo mode)**: orders queue instantly with simulated
+  credit — the identical loop, testable for free.
+- **Heartbeat**: rent falls due every 15 real minutes (1:1 with simulated
+  time; tune with `AUTOMATON_TICK_MS`). No orders means it starves for
+  real, even with nobody at the keyboard.
+- Storefront tasks are marked **prepaid** — completing one never credits
+  the bounty a second time.
+- Customers can only reach `/api/order` and their own order status;
+  order ids are strictly validated, bodies capped, and the order book
+  bounded. When the automaton dies, the shop shows its tombstone and
+  refuses all orders.
+
 ## The real economy (Stripe)
 
 Bounties can be **real money**. With a Stripe secret key set, every inbox
