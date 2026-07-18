@@ -44,6 +44,8 @@ export function newborn(id, now, grant = GENESIS_GRANT) {
     ticks: 0,
     tasksDone: 0,
     children: [],
+    invoices: {}, // taskFile -> { id, url, bounty } Stripe payment links
+    collected: [], // Stripe checkout-session ids already credited (dedupe)
     ledger: [
       { at: now, type: 'credit', amount: round2(grant), balance: round2(grant), note: 'genesis grant' },
     ],
@@ -101,6 +103,20 @@ export function fundChild(parent, childId, grant, now) {
   const child = newborn(childId, now, grant);
   child.ledger[0].note = `genesis grant from parent ${parent.id}`;
   return { parent: p, child };
+}
+
+/**
+ * Credit one real Stripe payment. Idempotent: a checkout-session id that has
+ * already been collected is a no-op, so `collect` can run repeatedly.
+ */
+export function applyStripePayment(state, payment, now) {
+  const collected = state.collected || [];
+  if (collected.includes(payment.sessionId)) return state;
+  const amount = round2(payment.amountCents / 100);
+  const note = payment.note || `stripe payment ${payment.sessionId}`;
+  const next = credit(state, amount, note, now);
+  next.collected = [...collected, payment.sessionId];
+  return next;
 }
 
 /** Parse "Bounty: $1.20" out of a task file. Returns null if absent. */

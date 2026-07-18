@@ -71,13 +71,43 @@ into a child under `automaton/children/<id>/` — its own wallet, its own
 identity, its own survival pressure. Drive it with
 `AUTOMATON_HOME=automaton/children/<id> node automaton/automaton.mjs status`.
 
-## What is deliberately simulated
+## The real economy (Stripe)
 
-The real Conway automaton holds actual USDC in an actual crypto wallet.
-This prototype keeps the entire economy in `state.json` on purpose: the
-mechanics (metered billing, model downgrade, earning, replication, death)
-are real; the money is not. Wiring an autonomous agent to real funds is a
-decision a human should make explicitly, not a default.
+Bounties can be **real money**. With a Stripe secret key set, every inbox
+task becomes a shareable Stripe Payment Link, and the wallet is credited
+only when someone actually pays:
+
+```sh
+export STRIPE_SECRET_KEY=sk_test_...   # sk_test_ to rehearse, sk_live_ for real money
+node automaton/automaton.mjs bill      # invoice every inbox task → payment links to share
+node automaton/automaton.mjs collect   # sweep paid sessions into the wallet (idempotent)
+node automaton/automaton.mjs status    # shows "economy: REAL — Stripe ..."
+```
+
+In real mode, completing a task **delivers the work but earns nothing by
+itself** — income only arrives via `collect`, from genuinely paid links.
+Rehearse the whole loop with an `sk_test_` key and Stripe's test card
+(`4242 4242 4242 4242`), then switch to `sk_live_` when you mean it.
+
+**Safeguards, by construction:**
+
+- The Stripe module is **receive-only** — it can create payment links and
+  read completed checkout sessions, and contains no refund, transfer, or
+  payout call. Money can flow *to* the automaton, never out of it.
+- Payments are deduplicated by checkout-session id, so `collect` is safe
+  to run repeatedly.
+- The agent never touches the rail on its own: a human runs `bill` and
+  `collect`, and the key lives in your shell, never in the repo or page.
+
+## What is still deliberately simulated
+
+The real Conway automaton holds actual USDC in a crypto wallet it alone
+controls. Here the *income* can be real (Stripe), but the wallet itself is
+`state.json` and the outbound side (rent, prompts, child grants) stays
+simulated bookkeeping — an autonomous agent with real spending power is a
+decision a human should make explicitly, not a default. The honest caveat
+about the other half: a payment link only makes money when a human chooses
+to pay it. The machine is real; the customers are still up to you.
 
 ## Tests
 

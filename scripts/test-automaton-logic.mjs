@@ -10,7 +10,9 @@ import assert from 'node:assert/strict';
 import {
   COSTS, GENESIS_GRANT, TICK_MINUTES, round2, serverCost, modelFor,
   newborn, isAlive, credit, debit, canAfford, fundChild, parseBounty, epitaph,
+  applyStripePayment,
 } from '../automaton/logic.mjs';
+import { form } from '../automaton/stripe.mjs';
 
 const T0 = Date.UTC(2026, 6, 18, 10, 54, 0);
 let passed = 0;
@@ -98,6 +100,36 @@ test('epitaph records the life honestly', () => {
   assert.match(text, /gone for good/);
   assert.match(text, /2\.0 simulated hours/);
   assert.match(text, /\$0\.00/);
+});
+
+test('stripe payments credit real cents and dedupe by session id', () => {
+  let a = newborn('a', T0);
+  const pay = { sessionId: 'cs_test_1', amountCents: 40, note: 'REAL bounty: 001' };
+  a = applyStripePayment(a, pay, T0 + 1);
+  assert.equal(a.balance, round2(5 + 0.4));
+  assert.deepEqual(a.collected, ['cs_test_1']);
+  const again = applyStripePayment(a, pay, T0 + 2); // same session — no double credit
+  assert.equal(again.balance, a.balance);
+  assert.equal(again.ledger.length, a.ledger.length);
+  const b = applyStripePayment(a, { sessionId: 'cs_test_2', amountCents: 125 }, T0 + 3);
+  assert.equal(b.balance, round2(5 + 0.4 + 1.25));
+});
+
+test('stripe payments survive states born before the real economy existed', () => {
+  const legacy = newborn('old', T0);
+  delete legacy.collected;
+  delete legacy.invoices;
+  const a = applyStripePayment(legacy, { sessionId: 'cs_x', amountCents: 100 }, T0 + 1);
+  assert.equal(a.balance, 6);
+  assert.deepEqual(a.collected, ['cs_x']);
+});
+
+test('form() flattens nested objects into Stripe form encoding', () => {
+  assert.equal(
+    form({ line_items: [{ price: 'price_1', quantity: 1 }], metadata: { automaton_task: 'a b.md' } }),
+    'line_items[0][price]=price_1&line_items[0][quantity]=1&metadata[automaton_task]=a%20b.md',
+  );
+  assert.equal(form({ currency: 'usd', unit_amount: 40, skip: null }), 'currency=usd&unit_amount=40');
 });
 
 console.log(`\nautomaton logic: ${passed} tests passed`);
