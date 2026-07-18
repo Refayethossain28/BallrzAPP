@@ -907,7 +907,17 @@ function showToast(msg, type='info', dur=3200) {
 
 function haptic(style) {
   if (navigator.vibrate) {
-    const patterns = {light:[8], medium:[20], heavy:[35], success:[10,40,20], error:[30,50,30]};
+    const patterns = {
+      light:[8], medium:[20], heavy:[35], success:[10,40,20], error:[30,50,30],
+      // Journey-milestone signatures — each moment of a trip has its own rhythm,
+      // so a guest learns to feel the difference without looking at the screen.
+      confirm:[12,60,12,60,24],   // booking confirmed: rising double-pulse
+      assigned:[10,50,18],        // chauffeur assigned
+      enroute:[8,40,8],           // on the way
+      arrived:[30,80,30,80,30],   // car at the kerb: insistent triple
+      onboard:[10],               // settle in — barely a whisper
+      complete:[16,50,16,50,40]   // journey complete: closing flourish
+    };
     navigator.vibrate(patterns[style]||patterns.light);
   }
 }
@@ -1373,6 +1383,34 @@ function applyAmbientPalette(){
 }
 applyAmbientPalette();
 setInterval(applyAmbientPalette,15*60*1000);
+
+// ── Trip history: month grouping + expense export ─────────────────────────
+function _tripMonthKey(dateStr){
+  if(/^\d{4}-\d{2}/.test(dateStr||'')) return dateStr.slice(0,7);
+  const d=new Date(dateStr); return isNaN(d)?'other':d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+}
+function _tripMonthLabel(key){
+  if(key==='other') return 'Undated';
+  const p=key.split('-'); return new Date(Number(p[0]),Number(p[1])-1,1).toLocaleDateString('en-GB',{month:'short',year:'numeric'});
+}
+function _pastTrips(){ return TRIPS.filter(t=>t.status==='completed'||t.status==='cancelled'); }
+function _filteredPastTrips(){
+  const mk=state._tripsMonth||'all';
+  return _pastTrips().filter(t=>mk==='all'||_tripMonthKey(t.date)===mk);
+}
+// Share (or copy) a plain-text expense summary of the filtered month — the
+// exact thing a PA forwards to accounts.
+function exportTrips(){
+  const list=_filteredPastTrips();
+  if(!list.length){showToast('No journeys to export','info');return;}
+  const mk=state._tripsMonth||'all';
+  const lines=list.map(t=>`${t.date} ${t.time} · ${t.pickup} → ${t.dropoff} · ${t.vehicle} · ${t.price} · ${t.id}${t.status==='cancelled'?' (cancelled)':''}`);
+  const total=list.filter(t=>t.status==='completed').reduce((s,t)=>s+(Number(String(t.price).replace(/[^0-9.]/g,''))||0),0);
+  const text='ApexVIP — journey expenses'+(mk==='all'?'':' · '+_tripMonthLabel(mk))+'\n\n'+lines.join('\n')+'\n\nTotal: £'+total.toLocaleString()+' · '+list.length+' journey'+(list.length===1?'':'s');
+  track('trips_exported',{count:list.length,src:'client'});
+  if(navigator.share){ navigator.share({title:'ApexVIP journeys',text}).catch(()=>{}); }
+  else if(navigator.clipboard){ navigator.clipboard.writeText(text).then(()=>showToast('Expense summary copied','success')).catch(()=>showToast('Could not copy','error')); }
+}
 
 // ── SilentService™ — preference memory ─────────────────────────────────────
 const HISTORY_KEY='apexvip_history';
@@ -3628,23 +3666,38 @@ payment: () => {
 trips: () => {
   const tab = state._tripsTab||'upcoming';
   const upcoming = TRIPS.filter(t=>t.status==='upcoming');
-  const past = TRIPS.filter(t=>t.status==='completed');
-  const list = tab==='upcoming'?upcoming:past;
+  const past = _pastTrips();
+  const list = tab==='upcoming'?upcoming:_filteredPastTrips();
+  const months = tab==='past' ? [...new Set(past.map(t=>_tripMonthKey(t.date)))] : [];
+  months.sort((a,b)=>b.localeCompare(a));
+  const mk = state._tripsMonth||'all';
+  const spendTotal = tab==='past' ? list.filter(t=>t.status==='completed').reduce((s,t)=>s+(Number(String(t.price).replace(/[^0-9.]/g,''))||0),0) : 0;
   return `
 <div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:fadeIn .3s ease">
   <div style="padding:56px 22px 0">
     <div style="font-size:32px;font-weight:800;margin-bottom:22px">Trips</div>
-    <div style="display:flex;margin-bottom:26px;background:var(--surface);border-radius:14px;padding:3px">
+    <div style="display:flex;margin-bottom:${tab==='past'?'14px':'26px'};background:var(--surface);border-radius:14px;padding:3px">
       ${['upcoming','past'].map(t=>`<div onclick="state._tripsTab='${t}';render()" style="flex:1;padding:10px;text-align:center;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;background:${tab===t?'#fff':'transparent'};color:${tab===t?'#000':'rgba(255,255,255,.35)'};transition:all .2s">${t==='upcoming'?'Upcoming':'Past'}</div>`).join('')}
     </div>
+    ${tab==='past'&&past.length?`
+    <div style="display:flex;gap:6px;overflow-x:auto;margin-bottom:12px;scrollbar-width:none;padding-bottom:2px">
+      ${['all',...months].map(k=>`<button onclick="state._tripsMonth='${k}';render()" style="flex-shrink:0;padding:6px 14px;border-radius:20px;background:${mk===k?'var(--gold)':'var(--surface)'};border:1px solid ${mk===k?'var(--gold)':'var(--border)'};color:${mk===k?'#0c0b09':'var(--fg-2)'};font-size:12px;font-weight:${mk===k?'700':'400'};cursor:pointer;font-family:inherit;white-space:nowrap">${k==='all'?'All':_tripMonthLabel(k)}</button>`).join('')}
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:11px 14px;margin-bottom:14px">
+      <div style="font-size:12px;color:var(--fg-3)"><b style="color:var(--fg-2)">${list.length}</b> journey${list.length===1?'':'s'} · <b style="color:var(--gold)">£${spendTotal.toLocaleString()}</b> spent</div>
+      <button onclick="exportTrips()" style="display:flex;align-items:center;gap:6px;background:var(--gold-3);border:1px solid var(--gold-2);border-radius:10px;color:var(--gold);font-size:11px;font-weight:700;padding:7px 12px;cursor:pointer;font-family:inherit">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v13M7 7l5-5 5 5"/><path d="M20 16v4a2 2 0 01-2 2H6a2 2 0 01-2-2v-4"/></svg>
+        Export
+      </button>
+    </div>`:''}
   </div>
   <div style="padding:0 22px;flex:1" class="scroll">
     ${list.length===0?`<div style="text-align:center;padding:72px 20px;animation:fadeUp .5s var(--ease-spring) both">
       <div style="width:80px;height:80px;border-radius:28px;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;margin:0 auto 22px;font-size:34px">
         ${tab==='upcoming'?'🚘':'🕐'}
       </div>
-      <div style="font-family:var(--font-serif);font-size:28px;font-weight:300;letter-spacing:.5px;margin-bottom:10px">${tab==='upcoming'?'No journeys booked':'No past journeys'}</div>
-      <div style="font-size:14px;color:var(--fg-3);margin-bottom:36px;line-height:1.65">${tab==='upcoming'?'Your next journey awaits.<br/>Book whenever you\'re ready.':'Your travel history will<br/>appear here after your first ride.'}</div>
+      <div style="font-family:var(--font-serif);font-size:28px;font-weight:300;letter-spacing:.5px;margin-bottom:10px">${tab==='upcoming'?'No journeys booked':(past.length?'Nothing this month':'No past journeys')}</div>
+      <div style="font-size:14px;color:var(--fg-3);margin-bottom:36px;line-height:1.65">${tab==='upcoming'?'Your next journey awaits.<br/>Book whenever you\'re ready.':(past.length?'No journeys in the selected month —<br/>try another filter.':'Your travel history will<br/>appear here after your first ride.')}</div>
       ${tab==='upcoming'?`<button class="btn btn-gold ripple-host" style="max-width:220px;margin:0 auto" onclick="haptic('light');addRipple(this,event);go('home')">Book a journey</button>`:''}
     </div>`:''}
     ${list.map(t=>{
@@ -5775,7 +5828,7 @@ async function payOnArrival(){
       new Promise(r=>setTimeout(r,6000))
     ]);
   }catch(e){console.warn('confirmBooking:',e.message);}
-  haptic('success');
+  haptic('confirm');
   if(state.screen!=='booking-confirmed') go('booking-confirmed');
 }
 
@@ -6045,6 +6098,18 @@ if(FIREBASE_ENABLED){
               state._activeBooking.driverName=d.driverName?esc(d.driverName):null;
               state._activeBooking.driverPlate=esc(d.driverPlate||'');
               state._activeBooking.vehicle=esc(d.vehicle||'');
+              // Milestone haptic signatures: fire once per status transition,
+              // never on the first snapshot after a page load.
+              const _mKey=_bDocId+':'+d.status;
+              if(state._lastMilestone!==_mKey){
+                const _hadPrev=!!state._lastMilestone;
+                state._lastMilestone=_mKey;
+                if(_hadPrev){
+                  const _sig={accepted:'assigned',en_route:'enroute',arrived:'arrived',onboard:'onboard',completed:'complete'}[d.status];
+                  if(_sig) haptic(_sig);
+                  if(d.status==='arrived') showToast('Your chauffeur has arrived','success');
+                }
+              }
               if(d.status==='completed'&&state.screen==='active-trip'){
                 state._lastTrip={ref:esc(d.ref),pickup:esc(d.pickup),dropoff:esc(d.dropoff||d.airport),base:d.baseFare||d.price,discount:d.discount||0,vat:d.vat||0,price:d.price};
                 go('receipt');

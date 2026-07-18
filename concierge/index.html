@@ -896,22 +896,28 @@
         (msg.from === 'desk' ? '<span class="who">' + esc(msg.ai ? 'ApexAI ✦ Concierge desk' : DESK_NAME) + '</span>' : '') +
         esc(msg.text) + '<time>' + fmtTime(msg.at) + '</time></div>';
     }
-    h += '</div>';
-
-    // options
+    // Curated options live INSIDE the thread as a desk message — the
+    // conversation is the product; nothing is delivered on a separate screen.
     if (r.status === 'options' && r.options) {
-      h += '<div class="subhead">Your options — tap to confirm</div>';
+      h += '<div class="msg desk" style="max-width:100%;width:100%">' +
+        '<span class="who">' + esc(DESK_NAME) + '</span>' +
+        '<div style="margin-bottom:2px">Your options — tap one to confirm</div>';
       for (var o = 0; o < r.options.length; o++) {
         var opt = r.options[o];
-        h += '<button class="opt" data-opt="' + o + '"><span class="r1"><b>' + esc(opt.name) +
+        h += '<button class="opt" data-opt="' + o + '" style="width:100%;margin-top:8px"><span class="r1"><b>' + esc(opt.name) +
           '</b><span class="px">' + V.fmtGBP(opt.pricePence) + '</span></span><p>' + esc(opt.detail) + '</p></button>';
       }
+      h += '</div>';
     }
     if (r.status === 'confirmed' && r.chosenOption) {
-      h += '<div class="card"><h3>Confirmed</h3><div class="opt sel" style="margin:0"><span class="r1"><b>' +
+      h += '<div class="msg desk" style="max-width:100%;width:100%">' +
+        '<span class="who">' + esc(DESK_NAME) + '</span>' +
+        '<div style="margin-bottom:8px">Confirmed ✓</div>' +
+        '<div class="opt sel" style="margin:0;width:100%"><span class="r1"><b>' +
         esc(r.chosenOption.name) + '</b><span class="px">' + V.fmtGBP(r.chosenOption.pricePence) + '</span></span><p>' +
         esc(r.chosenOption.detail) + '</p></div></div>';
     }
+    h += '</div>';
     if (V.canTransition(r.status, 'cancelled')) {
       h += '<div style="margin-top:14px"><button class="btn danger" id="dCancel" style="width:100%">Cancel this request</button></div>';
     }

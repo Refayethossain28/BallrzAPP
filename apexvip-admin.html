@@ -533,6 +533,45 @@ function vcAdvance(docId,to){
     .catch(e=>showToast('Update failed: '+e.message));
 }
 
+// The desk curates before it sends: the proposed options open in an editable
+// form so a human can adjust names, details and prices — then the package
+// lands inside the member's chat thread, not on a separate screen.
+function vcCurateOptions(docId){
+  const V=window.Velvet, r=vcReq(docId);
+  if(!V||!r||!FIREBASE_ENABLED)return;
+  if(!V.canTransition(r.status,'options')){showToast('Not allowed from '+r.status);return;}
+  const opts=V.proposeOptions(r);
+  openModal('<h3 style="margin-bottom:4px">Curate options</h3>'
+    +'<div style="font-size:12px;color:var(--fg-dim);margin-bottom:14px">Edit before sending — these land inside the member’s chat thread.</div>'
+    +opts.map((o,i)=>'<div style="border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px">'
+      +'<input id="vco-name-'+i+'" value="'+esc(o.name)+'" style="width:100%;margin-bottom:8px" placeholder="Option name"/>'
+      +'<input id="vco-detail-'+i+'" value="'+esc(o.detail)+'" style="width:100%;margin-bottom:8px" placeholder="Detail"/>'
+      +'<input id="vco-price-'+i+'" type="number" min="0" step="1" value="'+Math.round((o.pricePence||0)/100)+'" style="width:100%" placeholder="Price (£)"/>'
+      +'</div>').join('')
+    +'<button class="btn btn-gold" style="width:100%" onclick="vcSendCuratedOptions(\''+r.docId+'\')">Send to member</button>');
+}
+function vcSendCuratedOptions(docId){
+  const V=window.Velvet, r=vcReq(docId);
+  if(!V||!r||!FIREBASE_ENABLED)return;
+  const options=[];
+  for(let i=0;i<8;i++){
+    const nameEl=document.getElementById('vco-name-'+i);
+    if(!nameEl)break;
+    const name=(nameEl.value||'').trim();
+    if(!name)continue;
+    const detail=((document.getElementById('vco-detail-'+i)||{}).value||'').trim();
+    const gbp=Number((document.getElementById('vco-price-'+i)||{}).value);
+    options.push({name,detail,pricePence:Math.max(0,Math.round((isFinite(gbp)?gbp:0)*100))});
+  }
+  if(!options.length){showToast('Add at least one option','error');return;}
+  const now=Date.now(); const m=vcMember(r.ownerUid);
+  db.collection('velvet_requests').doc(docId).update({
+    status:'options',updatedAt:now,options,
+    messages:(r.messages||[]).concat([{from:'desk',text:V.deskLine(r,'options',m.memberName||''),at:now}]),
+  }).then(()=>{closeModal();track('concierge_desk_advanced',{to:'options',category:r.category,curated:true,src:'admin'});showToast('Options sent to the member');})
+   .catch(e=>showToast('Send failed: '+e.message));
+}
+
 function vcReply(docId){
   const r=vcReq(docId);
   if(!r||!FIREBASE_ENABLED)return;
@@ -1080,7 +1119,9 @@ concierge:()=>{
       const sla=V.slaState(r.submittedAt,t,now,r.firstResponseAt);
       const sb=slaBadge(sla).split(' ');
       const cat=(V.CATEGORIES.find(c=>c.id===r.category)||{}).emoji||'';
-      const acts=nextActions(r).map(([to,label])=>'<button class="btn btn-glass btn-sm" onclick="vcAdvance(\''+r.docId+'\',\''+to+'\')">'+label+'</button>').join(' ');
+      const acts=nextActions(r).map(([to,label])=>to==='options'
+        ?'<button class="btn btn-glass btn-sm" onclick="vcCurateOptions(\''+r.docId+'\')">'+label+'</button>'
+        :'<button class="btn btn-glass btn-sm" onclick="vcAdvance(\''+r.docId+'\',\''+to+'\')">'+label+'</button>').join(' ');
       const wait=r.status==='options'?'<span style="color:var(--fg-ghost)">with member</span>':(acts||'');
       html+='<tr style="border-top:1px solid var(--border)">'
         +'<td style="padding:10px">'+esc(m.memberName||'—')+'</td>'
