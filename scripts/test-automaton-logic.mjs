@@ -10,9 +10,10 @@ import assert from 'node:assert/strict';
 import {
   COSTS, GENESIS_GRANT, TICK_MINUTES, round2, serverCost, modelFor,
   newborn, isAlive, credit, debit, canAfford, fundChild, parseBounty, epitaph,
-  applyStripePayment,
+  applyStripePayment, isPrepaid,
 } from '../automaton/logic.mjs';
 import { form } from '../automaton/stripe.mjs';
+import { MENU, validateOrder, isOrderId, taskMarkdown, taskFileFor, answerFileFor } from '../automaton/orders.mjs';
 
 const T0 = Date.UTC(2026, 6, 18, 10, 54, 0);
 let passed = 0;
@@ -130,6 +131,44 @@ test('form() flattens nested objects into Stripe form encoding', () => {
     'line_items[0][price]=price_1&line_items[0][quantity]=1&metadata[automaton_task]=a%20b.md',
   );
   assert.equal(form({ currency: 'usd', unit_amount: 40, skip: null }), 'currency=usd&unit_amount=40');
+});
+
+test('storefront orders validate: title, details, and a real tier required', () => {
+  const good = validateOrder({ title: 'Write a tagline', details: 'For a mortal AI', tier: 'standard' });
+  assert.equal(good.ok, true);
+  assert.equal(good.order.price, MENU.standard.price);
+  assert.equal(validateOrder({ title: '', details: 'x', tier: 'quick' }).ok, false);
+  assert.equal(validateOrder({ title: 'x', details: '', tier: 'quick' }).ok, false);
+  assert.equal(validateOrder({ title: 'x', details: 'y', tier: 'platinum' }).ok, false);
+  assert.equal(validateOrder({ title: 'x'.repeat(121), details: 'y', tier: 'quick' }).ok, false);
+  const stripped = validateOrder({ title: '  hi  ', details: ' there ', tier: 'deep' });
+  assert.equal(stripped.order.title, 'hi');
+  assert.equal(stripped.order.price, 5);
+});
+
+test('storefront order ids are strict and file names derive from them', () => {
+  assert.equal(isOrderId('ord-a1b2c3d4e5'), true);
+  assert.equal(isOrderId('ord-../../etc'), false);
+  assert.equal(isOrderId('ord-ABCDEFGHIJ'), false);
+  assert.equal(isOrderId('anything-else'), false);
+  assert.equal(taskFileFor('ord-a1b2c3d4e5'), 'ord-a1b2c3d4e5.md');
+  assert.equal(answerFileFor('ord-a1b2c3d4e5'), 'ord-a1b2c3d4e5.answer.md');
+});
+
+test('a paid order renders as a task whose bounty is the price paid', () => {
+  const { order } = validateOrder({ title: 'Summarise a changelog', details: 'Three bullets.', tier: 'quick' });
+  const md = taskMarkdown(order, 'ord-a1b2c3d4e5');
+  assert.match(md, /^# Summarise a changelog/);
+  assert.match(md, /^Bounty: \$1\.00$/m);
+  assert.match(md, /Three bullets\./);
+  assert.match(md, /order ord-a1b2c3d4e5/);
+  assert.equal(parseBounty(md), 1.0);
+});
+
+test('storefront tasks are prepaid — completion must not credit twice', () => {
+  const { order } = validateOrder({ title: 'T', details: 'D', tier: 'quick' });
+  assert.equal(isPrepaid(taskMarkdown(order, 'ord-a1b2c3d4e5')), true);
+  assert.equal(isPrepaid('# Ordinary task\n\nBounty: $0.40\n\nbody'), false);
 });
 
 console.log(`\nautomaton logic: ${passed} tests passed`);
