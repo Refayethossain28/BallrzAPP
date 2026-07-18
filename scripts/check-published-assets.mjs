@@ -21,11 +21,13 @@ const ok = (msg) => console.log('  ✓ ' + msg);
 
 // ── 1. Service-worker precache ───────────────────────────────────────────────
 const sw = readFileSync(resolve(root, 'firebase-messaging-sw.js'), 'utf8');
-const urls = [...sw.matchAll(/'\/BallrzAPP\/([^']+)'/g)].map((m) => m[1]);
+// Precache entries are relative ('./x') so the SW works on both the custom
+// domain root (apexvip.uk) and the project path (…github.io/BallrzAPP/).
+const urls = [...sw.matchAll(/'\.\/([^']+)'/g)].map((m) => m[1]);
 if (!urls.length) fail.push('OFFLINE_URLS not found in firebase-messaging-sw.js');
 for (const u of urls) {
   if (existsSync(resolve(root, u))) ok(`precache: ${u}`);
-  else fail.push(`firebase-messaging-sw.js precaches /BallrzAPP/${u} but ${u} does not exist in the repo — cache.addAll() is atomic, this single 404 empties the offline shell`);
+  else fail.push(`firebase-messaging-sw.js precaches ./${u} but ${u} does not exist in the repo — cache.addAll() is atomic, this single 404 empties the offline shell`);
 }
 
 // ── 2. Local assets referenced by the app pages ──────────────────────────────

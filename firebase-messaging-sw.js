@@ -6,22 +6,22 @@ const CACHE_NAME = 'apexvip-v11';
 // atomic, so a single 404 rejects the whole call and the offline shell ends up
 // EMPTY (the install handler swallows the rejection). CI checks this list.
 const OFFLINE_URLS = [
-  '/BallrzAPP/apexvip-client.html',
-  '/BallrzAPP/apexvip-driver.html',
-  '/BallrzAPP/apexvip-admin.html',
-  '/BallrzAPP/apexvip-core.js',
-  '/BallrzAPP/apexvip-lib.js',
-  '/BallrzAPP/apexvip-engine.js',
-  '/BallrzAPP/firebase.js',
-  '/BallrzAPP/manifest.json',
-  '/BallrzAPP/manifest-driver.json',
-  '/BallrzAPP/icon-60.png',
-  '/BallrzAPP/icon-120.png',
-  '/BallrzAPP/icon-152.png',
-  '/BallrzAPP/icon-167.png',
-  '/BallrzAPP/icon-180.png',
-  '/BallrzAPP/icon-192.png',
-  '/BallrzAPP/icon-512.png',
+  './apexvip-client.html',
+  './apexvip-driver.html',
+  './apexvip-admin.html',
+  './apexvip-core.js',
+  './apexvip-lib.js',
+  './apexvip-engine.js',
+  './firebase.js',
+  './manifest.json',
+  './manifest-driver.json',
+  './icon-60.png',
+  './icon-120.png',
+  './icon-152.png',
+  './icon-167.png',
+  './icon-180.png',
+  './icon-192.png',
+  './icon-512.png',
 ];
 
 // ── Install: pre-cache the app shell ──────────────────────────────────────────
@@ -150,8 +150,8 @@ messaging.onBackgroundMessage(payload => {
 
   self.registration.showNotification(title || 'ApexVIP', {
     body: body || '',
-    icon: '/BallrzAPP/icon-192.png',
-    badge: '/BallrzAPP/icon-192.png',
+    icon: './icon-192.png',
+    badge: './icon-192.png',
     data: { screen },
     actions: [
       { action: 'open', title: 'Open' },
@@ -172,7 +172,7 @@ self.addEventListener('notificationclick', event => {
         wins[0].focus();
         wins[0].postMessage({ type: 'NAVIGATE', screen });
       } else {
-        clients.openWindow('/BallrzAPP/apexvip-client.html');
+        clients.openWindow('./apexvip-client.html');
       }
     })
   );
