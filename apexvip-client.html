@@ -108,15 +108,18 @@ body.ios-pwa{padding-top:env(safe-area-inset-top)}
 #app::-webkit-scrollbar{display:none}
 /* iOS: prevent input zoom (inputs must be ≥16px) */
 input,select,textarea{font-size:16px !important}
-/* iOS install banner */
+/* Install ritual — a white-glove bottom sheet, not a toast */
 #ios-install-banner{
-  position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);left:16px;right:16px;
-  background:rgba(20,16,12,.96);border:1px solid var(--border);border-radius:18px;
-  padding:14px 16px;z-index:999;display:flex;align-items:center;gap:12px;
-  backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
-  animation:slideUp .35s ease;box-shadow:0 8px 40px rgba(0,0,0,.6);
+  position:fixed;inset:0;z-index:999;display:flex;align-items:flex-end;justify-content:center;
+  background:rgba(0,0,0,.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  animation:fadeIn .3s ease;
 }
 #ios-install-banner.hidden{display:none}
+.install-sheet{
+  width:100%;max-width:430px;background:rgba(14,11,8,.97);border:1px solid var(--gold-2);border-bottom:none;
+  border-radius:28px 28px 0 0;padding:24px 24px calc(env(safe-area-inset-bottom,0px) + 20px);
+  box-shadow:0 -12px 60px rgba(0,0,0,.6);animation:slideUp .4s var(--ease-spring);
+}
 #cookie-consent{
   position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);left:16px;right:16px;
   background:rgba(20,16,12,.97);border:1px solid var(--border);border-radius:18px;
@@ -198,6 +201,17 @@ input,select,textarea{font-size:16px !important}
 .aurora i:nth-child(2){width:440px;height:440px;bottom:8%;right:-160px;background:radial-gradient(circle,rgba(180,140,55,.1),transparent 65%);animation:auroraDrift2 34s ease-in-out infinite}
 .aurora i:nth-child(3){width:380px;height:380px;top:38%;left:22%;background:radial-gradient(circle,rgba(75,55,145,.11),transparent 65%);animation:auroraDrift3 22s ease-in-out infinite}
 body.light .aurora{display:none}
+
+/* ── ApexAmbient — the palette breathes with the hour ─────────────────────
+   Rose-touched gold at dawn, the standard champagne by day, warm amber at
+   dusk, burnished and dimmer at night. Dark theme only; the driving class
+   is set by applyAmbientPalette(). */
+body.amb-dawn:not(.light){--gold:#D9BA8C;--gold-b:#bf9b4f;--gold-2:rgba(217,186,140,.24);--gold-3:rgba(217,186,140,.11);--gold-glow:0 0 28px rgba(217,186,140,.20),0 0 60px rgba(217,186,140,.07)}
+body.amb-dusk:not(.light){--gold:#E0B063;--gold-b:#c4922e;--gold-2:rgba(224,176,99,.26);--gold-3:rgba(224,176,99,.12);--gold-glow:0 0 30px rgba(224,176,99,.26),0 0 64px rgba(224,176,99,.10)}
+body.amb-night:not(.light){--gold:#C9A15E;--gold-b:#a87f28;--gold-2:rgba(201,161,94,.22);--gold-3:rgba(201,161,94,.10);--gold-glow:0 0 24px rgba(201,161,94,.18),0 0 52px rgba(201,161,94,.06)}
+body.amb-dawn:not(.light) .aurora{filter:hue-rotate(14deg) brightness(1.06)}
+body.amb-dusk:not(.light) .aurora{filter:hue-rotate(-10deg) saturate(1.15)}
+body.amb-night:not(.light) .aurora{filter:brightness(.8) saturate(.9)}
 
 /* ── Stagger entrance ────────────────────────────────────────────── */
 .stagger>*{opacity:0;animation:fadeUp .45s var(--ease-spring) forwards}
@@ -670,14 +684,29 @@ body.light .sheet{background:linear-gradient(175deg,rgba(255,255,255,.78),rgba(2
 </div>
 
 <!-- Add to Home Screen banner — shown in browser, not when already installed -->
-<div id="ios-install-banner" class="hidden">
-  <img src="icon-60.png" style="width:44px;height:44px;border-radius:10px;flex-shrink:0"/>
-  <div style="flex:1;min-width:0">
-    <div style="font-size:13px;font-weight:700;margin-bottom:2px">Add ApexVIP to Home Screen</div>
-    <div id="pwa-install-hint" style="font-size:11px;color:var(--fg-3)">Tap <svg style="display:inline;vertical-align:middle" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v13M7 7l5-5 5 5"/><path d="M20 16v4a2 2 0 01-2 2H6a2 2 0 01-2-2v-4"/></svg> Share → "Add to Home Screen"</div>
+<div id="ios-install-banner" class="hidden" onclick="snoozeInstallSheet()">
+  <div class="install-sheet" onclick="event.stopPropagation()">
+    <div style="width:40px;height:4px;border-radius:2px;background:var(--fg-5);margin:0 auto 20px"></div>
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">
+      <img src="icon-60.png" alt="" style="width:52px;height:52px;border-radius:13px;box-shadow:var(--gold-glow);flex-shrink:0"/>
+      <div style="min-width:0">
+        <div style="font-family:var(--font-serif);font-size:24px;font-weight:600;letter-spacing:.5px;line-height:1.1">ApexVIP, at hand</div>
+        <div id="pwa-install-hint" style="font-size:12px;color:var(--fg-3);margin-top:3px;line-height:1.5">Keep your chauffeur one tap from the home screen</div>
+      </div>
+    </div>
+    <div id="ios-install-steps">
+      <div style="display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:13px 14px;margin-bottom:8px">
+        <div style="width:26px;height:26px;border-radius:50%;background:var(--gold-3);border:1px solid var(--gold-2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:var(--gold);flex-shrink:0">1</div>
+        <div style="font-size:13px;color:var(--fg-2)">Tap the <svg style="display:inline;vertical-align:-2px" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v13M7 7l5-5 5 5"/><path d="M20 16v4a2 2 0 01-2 2H6a2 2 0 01-2-2v-4"/></svg> <b>Share</b> button below</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:13px 14px;margin-bottom:6px">
+        <div style="width:26px;height:26px;border-radius:50%;background:var(--gold-3);border:1px solid var(--gold-2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:var(--gold);flex-shrink:0">2</div>
+        <div style="font-size:13px;color:var(--fg-2)">Choose <b>Add to Home Screen</b></div>
+      </div>
+    </div>
+    <button id="pwa-install-btn" style="display:none;width:100%;background:var(--gold);border:none;border-radius:14px;color:#0c0b09;font-size:14px;font-weight:800;padding:15px;cursor:pointer;font-family:inherit;margin-bottom:6px">Add to Home Screen</button>
+    <button onclick="snoozeInstallSheet()" style="width:100%;background:none;border:none;color:var(--fg-3);font-size:12px;font-weight:600;padding:12px;cursor:pointer;font-family:inherit">Not now</button>
   </div>
-  <button id="pwa-install-btn" style="display:none;background:var(--gold);border:none;border-radius:10px;color:#0c0b09;font-size:12px;font-weight:700;padding:9px 14px;cursor:pointer;flex-shrink:0;font-family:inherit">Install</button>
-  <button onclick="document.getElementById('ios-install-banner').classList.add('hidden');localStorage.setItem('apexvip_pwa_dismissed','1')" style="background:none;border:none;color:var(--fg-3);font-size:20px;cursor:pointer;padding:4px;flex-shrink:0">×</button>
 </div>
 
 <!-- Cookie / privacy consent — shown on first visit (UK GDPR / PECR) -->
@@ -1333,6 +1362,17 @@ function surgeBadge(m,label){
 function auroraBg(extraStyle){
   return `<div class="aurora"${extraStyle?` style="${extraStyle}"`:''}><i></i><i></i><i></i></div>`;
 }
+
+// ── ApexAmbient — time-aware palette ──────────────────────────────────────
+// The champagne gold shifts with the hour so the app feels aware of the day:
+// dawn 5–8, day 8–17 (the default), dusk 17–21, night 21–5.
+function applyAmbientPalette(){
+  const h=new Date().getHours();
+  const mode=(h>=5&&h<8)?'amb-dawn':(h>=8&&h<17)?'':(h>=17&&h<21)?'amb-dusk':'amb-night';
+  ['amb-dawn','amb-dusk','amb-night'].forEach(c=>document.body.classList.toggle(c,c===mode));
+}
+applyAmbientPalette();
+setInterval(applyAmbientPalette,15*60*1000);
 
 // ── SilentService™ — preference memory ─────────────────────────────────────
 const HISTORY_KEY='apexvip_history';
@@ -6240,23 +6280,32 @@ maybeShowConsent();
 </script>
 
 <script>
-// ── PWA install banner (iOS instructions / Android native prompt) ─────────
+// ── PWA install ritual (white-glove bottom sheet) ─────────────────────────
+// "Not now" (or a backdrop tap) snoozes for 14 days rather than dismissing
+// forever — install is the whole ballgame for a PWA, so we may ask again.
 (function(){
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
   const isInstalled = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
-  const isDismissed = localStorage.getItem('apexvip_pwa_dismissed');
   const fromQR = new URLSearchParams(location.search).has('join');
   const banner = document.getElementById('ios-install-banner');
+  const SNOOZE_KEY = 'apexvip_pwa_snooze';
+  const snoozed = ()=> Date.now() < (Number(localStorage.getItem(SNOOZE_KEY))||0);
+  window.snoozeInstallSheet = function(){
+    if(banner) banner.classList.add('hidden');
+    localStorage.setItem(SNOOZE_KEY, String(Date.now() + 14*86400000));
+  };
   let deferredPrompt = null;
 
   window.addEventListener('beforeinstallprompt', (e)=>{
     e.preventDefault();
     deferredPrompt = e;
-    // Android/Chrome: offer one-tap install — immediately when arriving via QR
-    if(!isInstalled && (fromQR || !isDismissed)){
+    // Android/Chrome: real one-tap install — swap the iOS steps for the button.
+    if(!isInstalled && (fromQR || !snoozed()) && localStorage.getItem('apex_consent')){
       const btn = document.getElementById('pwa-install-btn');
+      const steps = document.getElementById('ios-install-steps');
       const hint = document.getElementById('pwa-install-hint');
-      if(hint) hint.textContent = 'Book in one tap, straight from your home screen';
+      if(hint) hint.textContent = 'One tap, and your chauffeur lives on the home screen';
+      if(steps) steps.style.display = 'none';
       if(btn){
         btn.style.display = 'block';
         btn.onclick = async ()=>{
@@ -6273,7 +6322,7 @@ maybeShowConsent();
 
   window.addEventListener('appinstalled', ()=>{ if(banner) banner.classList.add('hidden'); });
 
-  if(isIOS && !isInstalled && (fromQR || !isDismissed)){
+  if(isIOS && !isInstalled && (fromQR || !snoozed())){
     // From QR show at once; organic visits get it after the splash settles — but
     // never on top of the cookie-consent banner (wait until consent is resolved)
     setTimeout(()=>{ if(banner && localStorage.getItem('apex_consent')) banner.classList.remove('hidden'); }, fromQR ? 600 : 4000);
