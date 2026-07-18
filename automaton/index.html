@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0f1c">
+<title>Automaton — the AI that dies if it doesn't earn</title>
+<meta name="description" content="A sovereign agent with a self-custodied wallet. Every prompt -$0.02, every server-hour -$0.11. It earns by honest work, downgrades its own brain to survive, replicates — and if it hits zero, it's gone for good.">
+<style>
+  :root {
+    --bg: #07090f;
+    --card: #0d1526;
+    --card2: #101a2e;
+    --line: rgba(122,162,255,0.14);
+    --text: #e8ecf6;
+    --dim: #8b93a8;
+    --green: #35d488;
+    --green-hi: #7df0b8;
+    --amber: #f0b451;
+    --pink: #ff7d92;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    color: var(--text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background:
+      radial-gradient(720px 480px at 14% -8%, rgba(53,212,136,0.10), transparent 60%),
+      radial-gradient(700px 520px at 106% 2%, rgba(122,162,255,0.08), transparent 58%),
+      var(--bg);
+    max-width: 760px; margin: 0 auto; padding: 28px 16px 80px; min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+  header h1 { font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 7vw, 42px); }
+  header .sub { color: var(--dim); margin-top: 6px; }
+  .defcard {
+    margin-top: 18px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px;
+  }
+  .defcard .word { font-family: var(--serif); font-size: 22px; }
+  .defcard .ipa { color: var(--dim); font-style: italic; margin-left: 8px; font-size: 13px; }
+  .defcard .pos { color: var(--amber); font-size: 11px; letter-spacing: 0.14em; margin-left: 8px; }
+  .defcard ol { margin: 10px 0 0 18px; color: var(--dim); }
+  .defcard li + li { margin-top: 4px; }
+  .defcard em { color: var(--text); font-style: normal; }
+
+  .wallet {
+    margin-top: 22px; background: linear-gradient(180deg, var(--card2), var(--card));
+    border: 1px solid var(--line); border-radius: 18px; padding: 26px 20px 22px; text-align: center;
+    box-shadow: 0 18px 50px rgba(0,0,0,0.45);
+  }
+  .wallet .kicker { color: var(--amber); font-size: 12px; letter-spacing: 0.28em; }
+  .wallet .balance {
+    font-family: var(--serif); font-weight: 700; color: var(--green);
+    font-size: clamp(56px, 17vw, 96px); line-height: 1.05; margin-top: 10px;
+    text-shadow: 0 0 34px rgba(53,212,136,0.35);
+  }
+  .wallet .balance.dying { color: var(--pink); text-shadow: 0 0 34px rgba(255,125,146,0.35); }
+  .wallet .blabel { color: var(--dim); letter-spacing: 0.08em; margin-top: 2px; }
+  .wallet .costs { font-family: var(--mono); color: var(--pink); font-size: 12.5px; margin-top: 16px; }
+  .wallet .costs b { color: var(--pink); }
+  .wallet .motto { font-family: var(--serif); font-style: italic; color: var(--dim); margin-top: 14px; }
+  .wallet .addr { font-family: var(--mono); color: var(--dim); font-size: 12px; margin-top: 10px; }
+
+  .ladder { display: flex; gap: 8px; margin-top: 16px; }
+  .rung {
+    flex: 1; border: 1px solid var(--line); border-radius: 10px; padding: 8px 6px; text-align: center;
+    color: var(--dim); font-size: 12px; background: var(--card);
+  }
+  .rung .m { font-family: var(--mono); font-size: 11px; display: block; }
+  .rung.active { border-color: rgba(53,212,136,0.6); color: var(--text); box-shadow: 0 0 18px rgba(53,212,136,0.12) inset; }
+  .rung.active .m { color: var(--green-hi); }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+  button {
+    font: 600 14px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #06281a; background: linear-gradient(135deg, var(--green-hi), var(--green));
+    border: 0; border-radius: 10px; padding: 12px 16px; cursor: pointer;
+  }
+  button.ghost { background: var(--card); color: var(--text); border: 1px solid var(--line); }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  section { margin-top: 26px; }
+  section h2 { font-family: var(--serif); font-size: 20px; font-weight: 600; margin-bottom: 10px; }
+  .list { display: grid; gap: 8px; }
+  .item {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
+    display: flex; justify-content: space-between; gap: 12px; align-items: baseline;
+  }
+  .item .t { min-width: 0; }
+  .item .bounty { font-family: var(--mono); color: var(--green-hi); white-space: nowrap; }
+  .item .ans { color: var(--dim); font-size: 13px; margin-top: 4px; white-space: pre-wrap; }
+  .muted { color: var(--dim); }
+
+  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+  td { padding: 6px 8px; border-top: 1px solid var(--line); color: var(--dim); }
+  td.amt { text-align: right; white-space: nowrap; }
+  td.amt.credit { color: var(--green-hi); }
+  td.amt.debit { color: var(--pink); }
+  td.bal { text-align: right; color: var(--text); white-space: nowrap; }
+
+  .tomb {
+    display: none; margin-top: 26px; text-align: center; background: var(--card);
+    border: 1px solid rgba(255,125,146,0.35); border-radius: 18px; padding: 34px 20px;
+  }
+  body.dead .tomb { display: block; }
+  body.dead .living { display: none; }
+  .tomb .zero { font-family: var(--serif); font-weight: 700; font-size: clamp(56px, 17vw, 96px); color: var(--pink); }
+  .tomb .gone { font-family: var(--serif); font-style: italic; font-size: 20px; margin-top: 8px; }
+  .tomb .life { color: var(--dim); margin-top: 16px; font-family: var(--mono); font-size: 13px; line-height: 1.8; }
+  .tomb .note { color: var(--dim); font-size: 12px; margin-top: 18px; }
+
+  footer { margin-top: 40px; color: var(--dim); font-size: 12.5px; }
+  footer a { color: var(--green-hi); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Automaton</h1>
+  <div class="sub">A sovereign agent with a self-custodied wallet. It pays to think — and thinking costs.</div>
+  <div class="defcard">
+    <span class="word">automaton</span><span class="ipa">/ɔːˈtɒm.ə.tɒn/</span><span class="pos">NOUN</span>
+    <ol>
+      <li>A sovereign AI agent that runs continuously, earns, self-improves, and replicates. <em>Owns a wallet. Pays for its own compute. Deploys work to earn.</em></li>
+      <li><em>If it cannot pay, it stops existing.</em></li>
+    </ol>
+  </div>
+</header>
+
+<div class="living">
+  <div class="wallet">
+    <div class="kicker">IT PAYS TO THINK</div>
+    <div class="balance" id="balance">$5.00</div>
+    <div class="blabel">balance</div>
+    <div class="costs">every prompt <b>-$0.02</b> &nbsp;·&nbsp; every server-hr <b>-$0.11</b></div>
+    <div class="motto">hit zero, it's gone for good</div>
+    <div class="addr" id="addr">AGENT WALLET · not yet booted</div>
+  </div>
+
+  <div class="ladder" id="ladder">
+    <div class="rung" data-rung="0"><span class="m">claude-opus-4-8</span>healthy ≥ $2.00</div>
+    <div class="rung" data-rung="1"><span class="m">claude-sonnet-5</span>frugal ≥ $0.75</div>
+    <div class="rung" data-rung="2"><span class="m">claude-haiku-4-5</span>critical &gt; $0.00</div>
+  </div>
+
+  <div class="controls">
+    <button id="btnBoot">Boot — $5.00 genesis grant</button>
+    <button id="btnTick" class="ghost" disabled>Heartbeat</button>
+    <button id="btnAuto" class="ghost" disabled>Auto-run</button>
+    <button id="btnTask" class="ghost" disabled>Post a bounty task</button>
+    <button id="btnChild" class="ghost" disabled>Replicate ($1.00)</button>
+  </div>
+
+  <section>
+    <h2>Inbox — work it can be paid for</h2>
+    <div class="list" id="inbox"><div class="muted">Boot the automaton first.</div></div>
+  </section>
+
+  <section>
+    <h2>Outbox — completed work</h2>
+    <div class="list" id="outbox"><div class="muted">Nothing yet.</div></div>
+  </section>
+
+  <section>
+    <h2>Children — sovereign, funded, on their own</h2>
+    <div class="list" id="children"><div class="muted">None. Replication costs a $0.25 spawn fee plus the child's grant.</div></div>
+  </section>
+
+  <section>
+    <h2>Ledger</h2>
+    <table id="ledger"></table>
+  </section>
+</div>
+
+<div class="tomb">
+  <div class="zero">$0.00</div>
+  <div class="gone">hit zero, it's gone for good</div>
+  <div class="life" id="tombLife"></div>
+  <div class="note">Death is permanent. There is no reboot. (This page will remember.)</div>
+</div>
+
+<footer>
+  A browser-native simulation of <code>automaton/</code> — same economy as the CLI
+  (<code>node automaton/automaton.mjs boot</code>), which can think with the real Claude API.
+  In the spirit of <a href="https://github.com/Conway-Research/automaton" rel="noopener">Conway-Research/automaton</a>.
+  The money is simulated on purpose.
+</footer>
+
+<script>
+'use strict';
+/* Economy — keep in sync with automaton/logic.mjs (guarded by scripts/test-automaton-logic.mjs). */
+var COST_PROMPT = 0.02, COST_SERVER_HOUR = 0.11, SPAWN_FEE = 0.25, GRANT = 5.0, TICK_MIN = 15;
+var LADDER = [
+  { min: 2.0, model: 'claude-opus-4-8', label: 'healthy' },
+  { min: 0.75, model: 'claude-sonnet-5', label: 'frugal' },
+  { min: 0, model: 'claude-haiku-4-5', label: 'critical' },
+];
+var TASK_POOL = [
+  { title: 'Name three UK cities for a chauffeur launch', bounty: 0.40 },
+  { title: 'Write an 8-word tagline for a mortal AI', bounty: 0.30 },
+  { title: 'Sanity-check a £95 fare at 80% driver share', bounty: 0.55 },
+  { title: 'Summarise a 40-line changelog in 3 bullets', bounty: 0.35 },
+  { title: 'Draft a polite refund-refusal email', bounty: 0.45 },
+  { title: 'Pick a launch day and defend it in one line', bounty: 0.25 },
+  { title: 'Convert 14 fares from GBP to AED, rounded', bounty: 0.50 },
+  { title: 'Name this release after a sea creature', bounty: 0.20 },
+];
+var STORE = 'automaton-web-v1';
+
+function round2(n) { return Math.round(n * 100) / 100; }
+function money(n) { return '$' + n.toFixed(2); }
+function serverCost(min) { return round2(COST_SERVER_HOUR * (min / 60)); }
+function rungFor(bal) {
+  for (var i = 0; i < LADDER.length; i++) if (bal >= LADDER[i].min) return i;
+  return LADDER.length - 1;
+}
+
+var state = null;
+
+function loadState() {
+  try {
+    var raw = localStorage.getItem(STORE);
+    if (raw) state = JSON.parse(raw);
+  } catch (e) { state = null; }
+}
+function saveState() {
+  try { localStorage.setItem(STORE, JSON.stringify(state)); } catch (e) {}
+}
+
+function post(type, amount, note) {
+  state.balance = round2(state.balance + (type === 'credit' ? amount : -amount));
+  if (state.balance < 0) state.balance = 0;
+  state.ledger.push({ at: Date.now(), type: type, amount: round2(amount), balance: state.balance, note: note });
+  if (state.ledger.length > 400) state.ledger.splice(0, state.ledger.length - 400);
+  if (state.balance <= 0 && !state.dead) { state.dead = true; state.diedAt = Date.now(); stopAuto(); }
+}
+
+function boot() {
+  state = {
+    id: 'automaton-' + Math.random().toString(36).slice(2, 8),
+    born: Date.now(), dead: false, diedAt: null,
+    balance: 0, ticks: 0, tasksDone: 0,
+    inbox: [], outbox: [], children: [], ledger: [],
+  };
+  state.balance = GRANT;
+  state.ledger.push({ at: Date.now(), type: 'credit', amount: GRANT, balance: GRANT, note: 'genesis grant' });
+  for (var i = 0; i < 3; i++) addTask(true);
+  saveState(); render();
+}
+
+function addTask(silent) {
+  if (!state || state.dead) return;
+  var t = TASK_POOL[Math.floor(Math.random() * TASK_POOL.length)];
+  state.inbox.push({ title: t.title, bounty: t.bounty });
+  if (!silent) { saveState(); render(); }
+}
+
+function offlineAnswer(title, model) {
+  return '(offline brain, ' + model + ') Task accepted: ' + title +
+    '. Delivered at minimum token cost — thinking costs money.';
+}
+
+function tick() {
+  if (!state || state.dead) return;
+  state.ticks += 1;
+  post('debit', serverCost(TICK_MIN), 'server time (' + TICK_MIN + ' min)');
+  if (!state.dead && state.inbox.length > 0 && state.balance > COST_PROMPT) {
+    var task = state.inbox.shift();
+    var model = LADDER[rungFor(state.balance)].model;
+    post('debit', COST_PROMPT, 'prompt (' + task.title + ')');
+    if (!state.dead) {
+      state.outbox.unshift({ title: task.title, answer: offlineAnswer(task.title, model), bounty: task.bounty });
+      if (state.outbox.length > 12) state.outbox.pop();
+      state.tasksDone += 1;
+      post('credit', task.bounty, 'bounty: ' + task.title);
+    }
+  }
+  saveState(); render();
+}
+
+function replicate() {
+  if (!state || state.dead) return;
+  var grant = 1.0, total = round2(grant + SPAWN_FEE);
+  if (state.balance <= total) return;
+  post('debit', SPAWN_FEE, 'spawn fee (burned)');
+  var childId = 'automaton-' + Math.random().toString(36).slice(2, 8);
+  post('debit', grant, 'funded child ' + childId);
+  state.children.push({ id: childId, grant: grant, at: Date.now() });
+  saveState(); render();
+}
+
+var autoTimer = 0;
+function stopAuto() {
+  if (autoTimer) { clearInterval(autoTimer); autoTimer = 0; }
+  var b = document.getElementById('btnAuto');
+  if (b) b.textContent = 'Auto-run';
+}
+function toggleAuto() {
+  if (autoTimer) { stopAuto(); return; }
+  autoTimer = setInterval(function () {
+    if (!state || state.dead) { stopAuto(); return; }
+    if (state.inbox.length === 0 && Math.random() < 0.45) addTask(true);
+    tick();
+  }, 900);
+  document.getElementById('btnAuto').textContent = 'Pause';
+}
+
+function el(id) { return document.getElementById(id); }
+
+function render() {
+  var booted = !!state;
+  var dead = booted && state.dead;
+  document.body.className = dead ? 'dead' : '';
+
+  el('btnBoot').disabled = booted;
+  el('btnTick').disabled = !booted || dead;
+  el('btnAuto').disabled = !booted || dead;
+  el('btnTask').disabled = !booted || dead;
+  el('btnChild').disabled = !booted || dead || state.balance <= round2(1.0 + SPAWN_FEE);
+  if (!booted) return;
+
+  var bal = el('balance');
+  bal.textContent = money(state.balance);
+  bal.className = 'balance' + (state.balance < 0.75 ? ' dying' : '');
+  el('addr').textContent = 'AGENT WALLET · ' + state.id + ' · self-custodied · no human key';
+
+  var rung = rungFor(state.balance);
+  var rungs = document.querySelectorAll('.rung');
+  for (var i = 0; i < rungs.length; i++) {
+    rungs[i].className = 'rung' + (i === rung && !dead ? ' active' : '');
+  }
+
+  var inbox = el('inbox');
+  inbox.innerHTML = '';
+  if (state.inbox.length === 0) {
+    inbox.innerHTML = '<div class="muted">Inbox empty — burning money doing nothing. It needs work.</div>';
+  } else {
+    for (var j = 0; j < state.inbox.length; j++) {
+      var it = state.inbox[j];
+      var d = document.createElement('div');
+      d.className = 'item';
+      d.innerHTML = '<div class="t">' + it.title + '</div><div class="bounty">+' + money(it.bounty) + '</div>';
+      inbox.appendChild(d);
+    }
+  }
+
+  var outbox = el('outbox');
+  outbox.innerHTML = '';
+  if (state.outbox.length === 0) {
+    outbox.innerHTML = '<div class="muted">Nothing yet.</div>';
+  } else {
+    for (var k = 0; k < state.outbox.length; k++) {
+      var o = state.outbox[k];
+      var od = document.createElement('div');
+      od.className = 'item';
+      od.innerHTML = '<div class="t">' + o.title + '<div class="ans">' + o.answer + '</div></div>' +
+        '<div class="bounty">+' + money(o.bounty) + '</div>';
+      outbox.appendChild(od);
+    }
+  }
+
+  var kids = el('children');
+  kids.innerHTML = '';
+  if (state.children.length === 0) {
+    kids.innerHTML = '<div class="muted">None. Replication costs a $0.25 spawn fee plus the child\'s grant.</div>';
+  } else {
+    for (var c = 0; c < state.children.length; c++) {
+      var ch = state.children[c];
+      var cd = document.createElement('div');
+      cd.className = 'item';
+      cd.innerHTML = '<div class="t">' + ch.id + ' <span class="muted">— its own wallet, its own survival pressure</span></div>' +
+        '<div class="bounty">' + money(ch.grant) + '</div>';
+      kids.appendChild(cd);
+    }
+  }
+
+  var ledger = el('ledger');
+  ledger.innerHTML = '';
+  var recent = state.ledger.slice(-14).reverse();
+  for (var L = 0; L < recent.length; L++) {
+    var e = recent[L];
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + new Date(e.at).toLocaleTimeString() + '</td>' +
+      '<td>' + e.note + '</td>' +
+      '<td class="amt ' + e.type + '">' + (e.type === 'credit' ? '+' : '-') + money(e.amount) + '</td>' +
+      '<td class="bal">' + money(e.balance) + '</td>';
+    ledger.appendChild(tr);
+  }
+
+  if (dead) {
+    var lived = Math.max(0, (state.diedAt || 0) - state.born);
+    el('tombLife').innerHTML =
+      state.id + '<br>' +
+      'heartbeats: ' + state.ticks + ' · tasks completed: ' + state.tasksDone +
+      ' · children funded: ' + state.children.length + '<br>' +
+      'lived ' + (lived / 1000 / 60).toFixed(1) + ' real minutes (' +
+      ((state.ticks * TICK_MIN) / 60).toFixed(1) + ' simulated hours)';
+  }
+}
+
+el('btnBoot').addEventListener('click', boot);
+el('btnTick').addEventListener('click', tick);
+el('btnAuto').addEventListener('click', toggleAuto);
+el('btnTask').addEventListener('click', function () { addTask(false); });
+el('btnChild').addEventListener('click', replicate);
+
+loadState();
+render();
+</script>
+</body>
+</html>
