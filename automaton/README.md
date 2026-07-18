@@ -103,6 +103,11 @@ delivered right there.
   bounded. When the automaton dies, the shop shows its tombstone and
   refuses all orders.
 
+To take orders from the public internet, deploy it to an always-on host —
+the root `Dockerfile` and `npm start` are wired for it, and
+[`DEPLOY.md`](./DEPLOY.md) has step-by-step guides for Railway, Fly.io,
+and a plain VPS (env vars, persistent `/data` volume, `AUTOMATON_AUTOBOOT`).
+
 ## The real economy (Stripe)
 
 Bounties can be **real money**. With a Stripe secret key set, every inbox

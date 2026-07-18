@@ -28,7 +28,7 @@ import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { isAlive, modelFor, credit, applyStripePayment, round2, serverCost, TICK_MINUTES } from './logic.mjs';
+import { isAlive, modelFor, credit, applyStripePayment, round2, serverCost, TICK_MINUTES, newborn } from './logic.mjs';
 import { stripeEnabled, stripeMode, createCheckout, getSession } from './stripe.mjs';
 import {
   HOME, INBOX, OUTBOX, ORDERS, ensureDirs,
@@ -44,8 +44,16 @@ const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
 ensureDirs();
 if (!loadRaw() && !tombstoneText()) {
-  log('No automaton here — boot one first:  node automaton/automaton.mjs boot');
-  process.exit(1);
+  if (process.env.AUTOMATON_AUTOBOOT) {
+    // Cloud deploys: first container start births the agent on its volume.
+    const state = newborn(`automaton-${randomBytes(4).toString('hex').slice(0, 6)}`, Date.now());
+    save(state);
+    log(`AUTOBOOT — born ${state.id} with $${state.balance.toFixed(2)} genesis grant (home: ${HOME})`);
+  } else {
+    log('No automaton here — boot one first:  node automaton/automaton.mjs boot');
+    log('(or set AUTOMATON_AUTOBOOT=1 to birth one automatically)');
+    process.exit(1);
+  }
 }
 
 /* ── order files: orders/<id>.json { order, status, sessionId?, paidAt? } ── */
@@ -181,7 +189,10 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { id, url: `/?order=${id}` });
     }
     try {
-      const base = `http://${req.headers.host || `localhost:${PORT}`}`;
+      // Behind a TLS-terminating host (Railway/Fly/nginx) trust the forwarded
+      // proto; PUBLIC_URL overrides everything for custom domains.
+      const proto = req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+      const base = (process.env.PUBLIC_URL || `${proto}://${req.headers.host || `localhost:${PORT}`}`).replace(/\/$/, '');
       const checkout = await createCheckout({
         orderId: id,
         title: v.order.title,
