@@ -91,16 +91,34 @@ h2.title{font-size:clamp(32px,4.2vw,52px);line-height:1.08;margin-bottom:14px}
 .ok p{color:var(--fg-2);font-size:14.5px}
 footer{border-top:1px solid var(--border-2);padding:44px var(--pad);text-align:center;color:var(--fg-3);font-size:13px}
 footer a{color:var(--gold)}
+
+/* ── Light theme ── */
+html.light body{
+  --bg:#f6f3ee;--bg-2:#edeae2;--fg:#0c0b09;
+  --fg-2:rgba(12,11,9,.66);--fg-3:rgba(12,11,9,.46);
+  --surface:rgba(0,0,0,.045);--border:rgba(0,0,0,.10);--border-2:rgba(0,0,0,.065);
+}
+html.light body::after{opacity:.015}
+html.light nav{background:rgba(246,243,238,.86)}
+html.light .stat{background:linear-gradient(160deg,rgba(0,0,0,.05),rgba(0,0,0,.015))}
+html.light .enq{background:linear-gradient(165deg,rgba(0,0,0,.05),rgba(0,0,0,.015));box-shadow:0 30px 80px rgba(0,0,0,.14)}
+.theme-toggle{width:36px;height:36px;border-radius:50%;border:1px solid var(--border);display:grid;place-items:center;color:var(--gold);cursor:pointer;background:none;font-size:15px;line-height:1;transition:border-color .3s,background .3s;flex:none}
+.theme-toggle:hover{border-color:var(--gold-2);background:var(--gold-3)}
+
 @media (max-width:900px){.stats,.cards{grid-template-columns:1fr}.steps{grid-template-columns:repeat(2,1fr)}}
 @media (max-width:560px){.steps{grid-template-columns:1fr}.navlinks .btn{padding:11px 20px;font-size:12px}}
 @media (prefers-reduced-motion:reduce){*{transition-duration:.001ms!important}}
 </style>
+<script>
+(function(){try{if(localStorage.getItem('apexvip_theme')==='light')document.documentElement.classList.add('light');}catch(e){}})();
+</script>
 </head>
 <body>
 
 <nav aria-label="Primary">
   <a class="brand" href="../"><img class="appmark" src="../icon-192.png" alt="" width="34" height="34"/><b>Apex<span>VIP</span></b></a>
   <div class="navlinks">
+    <button class="theme-toggle" id="themeBtn" aria-label="Switch to light mode" title="Light / dark">☀︎</button>
     <a class="plain" href="../">Main site</a>
     <a class="btn btn-gold" href="#apply" style="padding:11px 24px;font-size:12px">Apply to drive</a>
   </div>
@@ -172,6 +190,24 @@ footer a{color:var(--gold)}
   © 2026 ApexVIP · London, Dubai coming soon · <a href="../">apexvip.uk</a>
 </footer>
 
+<script>
+(function () {
+  var btn = document.getElementById('themeBtn');
+  var meta = document.querySelector('meta[name="theme-color"]');
+  function paint(){
+    var light = document.documentElement.classList.contains('light');
+    btn.textContent = light ? '\u263e' : '\u2600\ufe0e';
+    btn.setAttribute('aria-label', light ? 'Switch to dark mode' : 'Switch to light mode');
+    if (meta) meta.setAttribute('content', light ? '#f6f3ee' : '#050403');
+  }
+  btn.addEventListener('click', function(){
+    document.documentElement.classList.toggle('light');
+    try { localStorage.setItem('apexvip_theme', document.documentElement.classList.contains('light') ? 'light' : 'dark'); } catch (e) {}
+    paint();
+  });
+  paint();
+})();
+</script>
 <script>
 (function () {
   'use strict';

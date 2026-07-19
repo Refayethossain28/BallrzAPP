@@ -718,6 +718,45 @@ html.fx .tilt:hover::after{opacity:1}
 html.fx .rimlight.lit::before{opacity:.9}
 
 
+
+/* ── Light theme ───────────────────────────────────────────────────── */
+html.light body{
+  --bg:#f6f3ee;--bg-2:#edeae2;--fg:#0c0b09;
+  --fg-2:rgba(12,11,9,.66);--fg-3:rgba(12,11,9,.46);
+  --fg-4:rgba(12,11,9,.28);--fg-5:rgba(12,11,9,.14);
+  --surface:rgba(0,0,0,.045);--surface-2:rgba(0,0,0,.075);
+  --border:rgba(0,0,0,.10);--border-2:rgba(0,0,0,.065);
+}
+html.light body::after{opacity:.015}
+html.light nav.scrolled{background:rgba(246,243,238,.86)}
+html.light #mmenu{background:rgba(246,243,238,.97)}
+html.light .glass{background:linear-gradient(160deg,rgba(0,0,0,.05),rgba(0,0,0,.015));border-color:rgba(0,0,0,.09)}
+html.light .enquiry{background:linear-gradient(165deg,rgba(0,0,0,.05),rgba(0,0,0,.015));box-shadow:0 30px 80px rgba(0,0,0,.14)}
+html.light .mobile-cta{background:rgba(246,243,238,.92)}
+html.light .glow b{opacity:.22}
+html.light .car-img{background:radial-gradient(120% 100% at 50% 0%,#e9e5da,#f2efe7)}
+html.light .car:hover{box-shadow:0 26px 70px rgba(0,0,0,.14)}
+html.light .tier.black{box-shadow:0 24px 80px rgba(0,0,0,.12)}
+html.light .qrtile{box-shadow:0 0 0 .35mm rgba(184,144,42,.6)}
+/* The cinema stays dark: hero (film + scrim) and the phone mockups */
+html.light .hero{background:#050403}
+/* Nav floats over the dark hero until it scrolls: keep its text cream there */
+html.light nav:not(.scrolled){--fg:#f5f0e8;--fg-2:rgba(245,240,232,.70);--border:rgba(255,248,235,.10);color:var(--fg)}
+html.light .hero,html.light .device{
+  --fg:#f5f0e8;--fg-2:rgba(245,240,232,.70);--fg-3:rgba(245,240,232,.45);--fg-4:rgba(245,240,232,.26);
+  --surface:rgba(255,248,235,.045);--surface-2:rgba(255,248,235,.085);
+  --border:rgba(255,248,235,.10);--border-2:rgba(255,248,235,.06);
+  color:var(--fg);
+}
+html.light .device .glass{background:linear-gradient(160deg,rgba(255,248,235,.07),rgba(255,248,235,.022));border-color:rgba(255,248,235,.11)}
+/* Theme toggle button */
+.theme-toggle{
+  width:38px;height:38px;border-radius:50%;border:1px solid var(--border);
+  display:grid;place-items:center;color:var(--gold);cursor:pointer;background:none;
+  font-size:15px;line-height:1;transition:border-color .3s,background .3s,transform .3s;flex:none;
+}
+.theme-toggle:hover{border-color:var(--gold-2);background:var(--gold-3);transform:translateY(-1px)}
+
 /* ── Responsive ────────────────────────────────────────────────────── */
 @media (max-width:1020px){
   .svc-grid{grid-template-columns:repeat(2,1fr)}
@@ -760,6 +799,10 @@ html.fx .rimlight.lit::before{opacity:.9}
   html.js .msg{opacity:1;transform:none}
 }
 </style>
+<script>
+/* Apply saved theme before first paint */
+(function(){try{if(localStorage.getItem('apexvip_theme')==='light')document.documentElement.classList.add('light');}catch(e){}})();
+</script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -781,6 +824,7 @@ html.fx .rimlight.lit::before{opacity:.9}
     <a href="#faq">FAQ</a>
   </div>
   <div class="nav-cta">
+    <button class="theme-toggle" id="themeBtn" aria-label="Switch to light mode" title="Light / dark">☀︎</button>
     <a class="btn btn-ghost btn-sm" href="../concierge/">Concierge</a>
     <a class="btn btn-gold btn-sm magnetic" href="#reserve">Reserve</a>
     <button class="burger" id="burger" aria-label="Open menu" aria-expanded="false">
@@ -1067,7 +1111,7 @@ html.fx .rimlight.lit::before{opacity:.9}
     <p class="section-sub rv rv-d1">The ApexVIP Concierge is a subscription: choose a tier, then ask for anything across eight desks. Every request comes back as three priced options — you choose, we arrange.</p>
     <a class="rv" href="../apexvip-join/" style="display:flex;gap:16px;align-items:center;justify-content:center;flex-wrap:wrap;text-align:center;text-decoration:none;margin:0 auto 30px;max-width:760px;padding:16px 22px;border:1px solid var(--gold);border-radius:16px;background:linear-gradient(180deg,rgba(212,175,55,0.10),rgba(212,175,55,0.02))">
       <span style="color:var(--gold);font-weight:700;letter-spacing:2px;font-size:12px;text-transform:uppercase">Founding cohort now open</span>
-      <span style="color:var(--ink,#f4f1ea)">50 memberships · launch pricing locked for life · first month free</span>
+      <span style="color:var(--fg)">50 memberships · launch pricing locked for life · first month free</span>
       <span style="color:var(--gold);font-weight:700">Reserve your spot →</span>
     </a>
     <div class="tiers">
@@ -1304,6 +1348,21 @@ html.fx .rimlight.lit::before{opacity:.9}
 (() => {
   document.documentElement.classList.add('js');
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* Theme toggle */
+  const themeBtn = document.getElementById('themeBtn');
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+  const paintTheme = () => {
+    const light = document.documentElement.classList.contains('light');
+    if (themeBtn) { themeBtn.textContent = light ? '☾' : '☀︎'; themeBtn.setAttribute('aria-label', light ? 'Switch to dark mode' : 'Switch to light mode'); }
+    if (themeMeta) themeMeta.setAttribute('content', light ? '#f6f3ee' : '#050403');
+  };
+  if (themeBtn) themeBtn.addEventListener('click', () => {
+    document.documentElement.classList.toggle('light');
+    try { localStorage.setItem('apexvip_theme', document.documentElement.classList.contains('light') ? 'light' : 'dark'); } catch (e) {}
+    paintTheme();
+  });
+  paintTheme();
 
   /* Nav state */
   const nav = document.getElementById('nav');
