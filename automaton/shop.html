@@ -51,11 +51,21 @@
   input:focus, textarea:focus, .tier:focus-within { outline: 2px solid rgba(53,212,136,0.5); outline-offset: 1px; }
   .tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
   @media (max-width: 520px) { .tiers { grid-template-columns: 1fr; } }
+  .services { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  @media (max-width: 520px) { .services { grid-template-columns: 1fr; } }
+  .history { display: grid; gap: 8px; }
+  .history a {
+    display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; text-decoration: none;
+    background: #0a1120; border: 1px solid var(--line); border-radius: 12px; padding: 11px 14px; color: var(--text);
+  }
+  .history a:hover, .history a:focus-visible { border-color: rgba(53,212,136,0.5); outline: none; }
+  .history .ht { font-weight: 600; font-size: 13.5px; }
+  .history .hd { color: var(--dim); font-size: 11.5px; margin-left: auto; }
   .tier { position: relative; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; cursor: pointer; background: #0a1120; }
   .tier input { position: absolute; opacity: 0; }
-  .tier .p { font-family: var(--mono); color: var(--green-hi); font-size: 15px; }
-  .tier .l { font-weight: 600; font-size: 13.5px; margin-top: 2px; }
-  .tier .d { color: var(--dim); font-size: 11.5px; margin-top: 2px; }
+  .tier .p { display: block; font-family: var(--mono); color: var(--green-hi); font-size: 15px; }
+  .tier .l { display: block; font-weight: 600; font-size: 13.5px; margin-top: 2px; }
+  .tier .d { display: block; color: var(--dim); font-size: 11.5px; margin-top: 2px; }
   .tier.sel { border-color: rgba(53,212,136,0.65); box-shadow: 0 0 16px rgba(53,212,136,0.10) inset; }
   button {
     margin-top: 18px; width: 100%; font: 600 15px/1 inherit; color: #06281a;
@@ -104,7 +114,7 @@
 <body>
 <header>
   <h1>Hire the Automaton</h1>
-  <p class="sub">An AI agent that pays for its own existence. Your task is its next meal: describe it, pay in one step, and it thinks for its life. The answer appears right here.</p>
+  <p class="sub">An AI agent that pays for its own existence. Your order is its next meal: pick a service from its menu — or set it a custom task — pay in one step, and it thinks for its life. The answer appears right here.</p>
   <div class="costline">every prompt costs it -$0.02 · every server-hr -$0.11 · if it doesn't earn, it dies</div>
 </header>
 
@@ -124,17 +134,28 @@
 </div>
 
 <form id="orderForm">
-  <h2>Give it a task</h2>
-  <label for="title">What do you need? (one line)</label>
-  <input type="text" id="title" maxlength="120" placeholder="e.g. Write a polite refund-refusal email" autocomplete="off">
-  <label for="details">Details</label>
-  <textarea id="details" maxlength="4000" placeholder="Everything it should know: context, constraints, tone, examples…"></textarea>
-  <label>Task size</label>
-  <div class="tiers" id="tiers"></div>
+  <h2>Order a service</h2>
+  <div class="services" id="services"></div>
+  <div id="customTitleRow" hidden>
+    <label for="title">What do you need? (one line)</label>
+    <input type="text" id="title" maxlength="120" placeholder="e.g. Write a polite refund-refusal email" autocomplete="off">
+  </div>
+  <label for="details" id="detailsLabel">Details</label>
+  <textarea id="details" maxlength="4000"></textarea>
+  <div id="customTierRow" hidden>
+    <label>Task size</label>
+    <div class="tiers" id="tiers"></div>
+  </div>
   <button type="submit" id="payBtn">Pay &amp; feed the automaton</button>
   <div class="err" id="err"></div>
   <p class="note" id="modeNote"></p>
 </form>
+
+<div class="panel" id="history" hidden>
+  <h2>Your past orders</h2>
+  <div class="history" id="historyList"></div>
+  <p class="note">Remembered on this device only. Open one to re-read its answer.</p>
+</div>
 
 <div class="panel">
   <h2>Recent work — what each size buys</h2>
@@ -182,6 +203,23 @@
 'use strict';
 function el(id) { return document.getElementById(id); }
 var money = function (n) { return '$' + Number(n).toFixed(2); };
+var MENU_FALLBACK = {
+  quick: { price: 1, label: 'Quick task', promise: 'a focused answer to one small question' },
+  standard: { price: 3, label: 'Standard task', promise: 'a considered piece of work' },
+  deep: { price: 5, label: 'Deep task', promise: 'its best thinking on a meaty brief' },
+};
+var SERVICES_FALLBACK = {
+  polish: { label: 'Proofread & polish', tier: 'quick', pitch: 'Paste any text; get it back corrected and tightened.', inputLabel: 'Paste the text to polish', placeholder: 'Your email, bio, essay, listing… typos and all.' },
+  names: { label: 'Names & taglines', tier: 'quick', pitch: 'Eight strong name ideas, each with a tagline.', inputLabel: 'Describe the product, company or project to name', placeholder: 'What it does, who it is for, the feeling it should give…' },
+  email: { label: 'The difficult email', tier: 'standard', pitch: 'The message you keep putting off, written ready to send.', inputLabel: 'The situation: who it is to, what happened, what you need', placeholder: 'e.g. Tell a loyal client their rate is going up 20% without losing them…' },
+  summary: { label: 'Executive summary', tier: 'standard', pitch: 'Any document in five bullets and a bottom line.', inputLabel: 'Paste the document, notes or thread to summarize', placeholder: 'Report, meeting notes, long email chain, contract clause…' },
+  listing: { label: 'Product description', tier: 'standard', pitch: 'Copy that sells: description, spec bullets, SEO title.', inputLabel: 'The product: what it is, key facts, who buys it', placeholder: 'Materials, dimensions, what makes it different, price point…' },
+  brief: { label: 'Deep-dive decision brief', tier: 'deep', pitch: 'A one-page recommendation on a real decision.', inputLabel: 'The decision and everything relevant to it', placeholder: 'e.g. Should we open in Manchester or Birmingham first? Budget, team, timing…' },
+  custom: { label: 'Custom task', tier: null, pitch: 'Anything else — describe it and pick a size.', inputLabel: 'Details', placeholder: 'Everything it should know: context, constraints, tone, examples…' },
+};
+var menu = MENU_FALLBACK;
+var services = SERVICES_FALLBACK;
+var selectedService = 'polish';
 var selectedTier = 'standard';
 var orderId = '';
 try {
@@ -190,7 +228,7 @@ try {
   if (q && /^ord-[a-z0-9]{10}$/.test(q)) orderId = q;
 } catch (e) {}
 
-function renderTiers(menu) {
+function renderTiers() {
   var box = el('tiers');
   box.innerHTML = '';
   Object.keys(menu).forEach(function (key) {
@@ -201,9 +239,67 @@ function renderTiers(menu) {
       '<span class="p">' + money(t.price) + '</span><span class="l">' + t.label + '</span><span class="d">' + t.promise + '</span>';
     lab.addEventListener('click', function () {
       selectedTier = key;
-      renderTiers(menu);
+      renderTiers();
+      updateForm();
     });
     box.appendChild(lab);
+  });
+}
+
+function renderServices() {
+  var box = el('services');
+  box.innerHTML = '';
+  Object.keys(services).forEach(function (key) {
+    var s = services[key];
+    var price = s.tier ? money(menu[s.tier].price) : 'from ' + money(menu.quick.price);
+    var lab = document.createElement('label');
+    lab.className = 'tier' + (key === selectedService ? ' sel' : '');
+    lab.innerHTML = '<input type="radio" name="service" value="' + key + '"' + (key === selectedService ? ' checked' : '') + '>' +
+      '<span class="p">' + price + '</span><span class="l">' + s.label + '</span><span class="d">' + s.pitch + '</span>';
+    lab.addEventListener('click', function () {
+      selectedService = key;
+      renderServices();
+      updateForm();
+    });
+    box.appendChild(lab);
+  });
+}
+
+function updateForm() {
+  var s = services[selectedService];
+  var isCustom = selectedService === 'custom';
+  el('customTitleRow').hidden = !isCustom;
+  el('customTierRow').hidden = !isCustom;
+  el('detailsLabel').textContent = s.inputLabel;
+  el('details').placeholder = s.placeholder;
+  var price = menu[isCustom ? selectedTier : s.tier].price;
+  el('payBtn').textContent = 'Pay ' + money(price) + ' — ' + (isCustom ? 'feed the automaton' : s.label);
+}
+
+var HISTORY_KEY = 'automaton-shop-orders';
+function readHistory() {
+  try { var h = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); return Array.isArray(h) ? h : []; } catch (e) { return []; }
+}
+function rememberOrder(id, title) {
+  try {
+    var h = readHistory().filter(function (o) { return o.id !== id; });
+    h.unshift({ id: id, title: title, at: Date.now() });
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, 12)));
+  } catch (e) {}
+}
+function renderHistory() {
+  var h = readHistory();
+  if (!h.length) return;
+  el('history').hidden = false;
+  var box = el('historyList');
+  box.innerHTML = '';
+  h.forEach(function (o) {
+    var a = document.createElement('a');
+    a.href = '/?order=' + encodeURIComponent(o.id);
+    var t = document.createElement('span'); t.className = 'ht'; t.textContent = o.title;
+    var d = document.createElement('span'); d.className = 'hd'; d.textContent = new Date(o.at).toLocaleDateString();
+    a.appendChild(t); a.appendChild(d);
+    box.appendChild(a);
   });
 }
 
@@ -222,7 +318,11 @@ function refreshState() {
         '<span class="kv">thinking with<b style="font-family:var(--mono);font-size:12.5px">' + s.model + '</b></span>' +
         '<span class="kv">queue<b>' + s.queue + ' task(s)</b></span>' +
         '<span class="kv">lifetime<b>' + s.tasksDone + ' completed</b></span>';
-      if (s.menu) renderTiers(s.menu);
+      if (s.menu) menu = s.menu;
+      if (s.services) services = s.services;
+      renderTiers();
+      renderServices();
+      updateForm();
       el('modeNote').textContent = String(s.economy).indexOf('real') === 0
         ? 'Payments are real (Stripe). Your card is charged when you confirm on the next screen.'
         : 'Demo mode: no card needed — your order queues instantly with simulated credit.';
@@ -264,10 +364,14 @@ el('orderForm').addEventListener('submit', function (ev) {
   ev.preventDefault();
   el('err').textContent = '';
   el('payBtn').disabled = true;
+  var isCustom = selectedService === 'custom';
+  var payload = isCustom
+    ? { service: 'custom', title: el('title').value, details: el('details').value, tier: selectedTier }
+    : { service: selectedService, details: el('details').value };
   fetch('/api/order', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title: el('title').value, details: el('details').value, tier: selectedTier }),
+    body: JSON.stringify(payload),
   }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
     .then(function (res) {
       if (!res.ok) {
@@ -275,6 +379,7 @@ el('orderForm').addEventListener('submit', function (ev) {
         el('payBtn').disabled = false;
         return;
       }
+      rememberOrder(res.d.id, isCustom ? el('title').value : services[selectedService].label);
       location.href = res.d.url; // Stripe checkout, or straight to the order page in demo mode
     })
     .catch(function () {
@@ -283,9 +388,10 @@ el('orderForm').addEventListener('submit', function (ev) {
     });
 });
 
-renderTiers({ quick: { price: 1, label: 'Quick task', promise: 'a focused answer to one small question' },
-  standard: { price: 3, label: 'Standard task', promise: 'a considered piece of work' },
-  deep: { price: 5, label: 'Deep task', promise: 'its best thinking on a meaty brief' } });
+renderTiers();
+renderServices();
+updateForm();
+renderHistory();
 refreshState();
 setInterval(refreshState, 10000);
 trackOrder();
