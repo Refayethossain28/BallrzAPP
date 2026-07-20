@@ -64,7 +64,7 @@ try {
   await page.getByText('Explore as guest').click();
   // Home is a two-door landing: Chauffeur and Concierge.
   await page.locator(`[onclick="go('chauffeur')"]`).first().waitFor({ timeout: 5000 });
-  await page.locator(`[onclick="go('concierge-hub')"]`).first().waitFor({ timeout: 5000 });
+  await page.locator(`[onclick="go('concierge')"]`).first().waitFor({ timeout: 5000 });
   pass('client: home renders for a guest (two-door landing)');
 
   await page.locator(`[onclick="go('chauffeur')"]`).click();
