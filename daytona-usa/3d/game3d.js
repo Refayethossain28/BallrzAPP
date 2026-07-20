@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R91 — V-Class framing restored';
+const BUILD = 'BUILD R92 — static cluster, turning wheel';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -2848,7 +2848,7 @@ const DASH_PHOTOS={
   // taken from the driver's seat (swap it in here when available).
   van:  { src:'./img/vclass-dash.jpg', dashV:0.30, pin:0.52,
           cut:[[0,0],[1,0],[1,0.46],[0.94,0.38],[0.86,0.30],[0.75,0.26],[0.615,0.245],[0.555,0.30],[0.42,0.315],[0.30,0.315],[0.10,0.30],[0,0.27]],
-          wheel:{cx:0.795, cy:0.60, r:0.135, gain:0.55},
+          wheel:{cx:0.795, cy:0.60, r:0.135, gain:0.55, win:{r0:0.40, r1:0.78, a0:195, a1:345}},
           screen:{x0:0.418,y0:0.268,x1:0.556,y1:0.415} },
   // RHD driver's-eye shot: the cut hugs the cluster hood and the wheel rim so
   // both stay opaque while the glass either side punches through to the world.
@@ -2856,7 +2856,7 @@ const DASH_PHOTOS={
           cut:[[0,0],[0.705,0],[0.725,0.115],[0.745,0.235],[0.665,0.245],[0.64,0.21],[0.615,0.155],
                [0.585,0.13],[0.525,0.12],[0.465,0.13],[0.437,0.16],[0.415,0.20],[0.39,0.215],
                [0.30,0.20],[0.15,0.215],[0,0.235]],
-          wheel:{cx:0.525, cy:0.475, r:0.195, gain:0.65},
+          wheel:{cx:0.525, cy:0.475, r:0.195, gain:0.65, win:{r0:0.44, r1:0.80, a0:200, a1:340}},
           screen:{x0:0.118,y0:0.32,x1:0.312,y1:0.615},
           dial:{cx:0.457, cy:0.30, r:0.028}, gear:{x:0.525, y:0.30} },
 };
@@ -2883,6 +2883,18 @@ function initDashPhoto(kind){
     const wx=wc.getContext('2d');
     wx.beginPath(); wx.arc(R,R,R,0,6.28); wx.clip();            // rotating wheel crop
     wx.drawImage(img, sx,sy,iw,ih, -(cfg.wheel.cx*iw-R), -(cfg.wheel.cy*ih-R), iw, ih);
+    // punch the see-through opening above the boss so the CLUSTER stays static
+    // beneath the turning wheel (otherwise the speedo rotates with the rim)
+    if (cfg.wheel.win){
+      const w=cfg.wheel.win, a0=w.a0*Math.PI/180, a1=w.a1*Math.PI/180;
+      wx.globalCompositeOperation='destination-out';
+      wx.beginPath();
+      wx.arc(R,R,R*w.r1, a0, a1, false);
+      wx.arc(R,R,R*w.r0, a1, a0, true);
+      wx.closePath(); wx.fill();
+      wx.lineWidth=4; wx.strokeStyle='rgba(0,0,0,0.5)'; wx.stroke();   // soft edge
+      wx.globalCompositeOperation='source-over';
+    }
     st.canvas=cv; st.wheel={cv:wc,R}; st.ready=true;
   }catch(e){} };
   img.onerror=()=>{ st.ready=false; };
