@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R89 — wheel turns, line gone';
+const BUILD = 'BUILD R90 — driver-seat V-Class';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -2843,10 +2843,14 @@ function drawDashboard(W,H,sp){
 // per-vehicle photo configs: windscreen cut polygon, wheel crop, live overlays.
 // The van cut is generous on the right (the cowl/pillar slab blocked the view).
 const DASH_PHOTOS={
-  van:  { src:'./img/vclass-dash.jpg', dashV:0.30, pin:0.52,
-          cut:[[0,0],[1,0],[1,0.46],[0.94,0.38],[0.86,0.30],[0.75,0.26],[0.615,0.245],[0.555,0.30],[0.42,0.315],[0.30,0.315],[0.10,0.30],[0,0.27]],
-          wheel:{cx:0.795, cy:0.60, r:0.135, gain:0.55},
-          screen:{x0:0.418,y0:0.268,x1:0.556,y1:0.415} },
+  // Driver's-seat framing: only the right (driver) side of the wide photo is
+  // used, so you sit behind the wheel exactly like the S-Class cabin.
+  van:  { src:'./img/vclass-dash.jpg', dashV:0.30, pin:0.55,
+          crop:{x0:0.42, y0:0, x1:1, y1:1},
+          cut:[[0,0],[1,0],[1,0.46],[0.897,0.38],[0.759,0.30],[0.569,0.26],[0.336,0.245],[0.233,0.30],[0,0.315]],
+          wheel:{cx:0.647, cy:0.60, r:0.225, gain:0.55},
+          screen:{x0:0.0,y0:0.268,x1:0.234,y1:0.415},
+          dial:{cx:0.445, cy:0.372, r:0.046}, gear:{x:0.555, y:0.352} },
   // RHD driver's-eye shot: the cut hugs the cluster hood and the wheel rim so
   // both stay opaque while the glass either side punches through to the world.
   sedan:{ src:'./img/sclass-dash.jpg', dashV:0.235, pin:0.62,
@@ -2863,17 +2867,23 @@ function initDashPhoto(kind){
   const st=_vd[kind]={ready:false};
   const img=new Image();
   img.onload=()=>{ try{
-    const iw=img.naturalWidth, ih=img.naturalHeight;
+    // optional crop first (driver's-seat framing); all cfg coords are in crop space
+    const c=cfg.crop||{x0:0,y0:0,x1:1,y1:1};
+    const sx=c.x0*img.naturalWidth, sy=c.y0*img.naturalHeight;
+    const iw=Math.round((c.x1-c.x0)*img.naturalWidth), ih=Math.round((c.y1-c.y0)*img.naturalHeight);
     const cv=document.createElement('canvas'); cv.width=iw; cv.height=ih; const x=cv.getContext('2d');
-    x.drawImage(img,0,0);
+    x.drawImage(img, sx,sy,iw,ih, 0,0,iw,ih);
     x.globalCompositeOperation='destination-out';               // punch the windscreen
     x.beginPath(); cfg.cut.forEach(([u,v],i)=>{ i?x.lineTo(u*iw,v*ih):x.moveTo(u*iw,v*ih); });
     x.closePath(); x.fill();
+    x.lineJoin='round';                                         // feather the cut edge (two soft passes)
+    x.lineWidth=5;  x.strokeStyle='rgba(0,0,0,0.55)'; x.stroke();
+    x.lineWidth=10; x.strokeStyle='rgba(0,0,0,0.25)'; x.stroke();
     x.globalCompositeOperation='source-over';
     const R=Math.round(iw*cfg.wheel.r), wc=document.createElement('canvas'); wc.width=wc.height=R*2;
     const wx=wc.getContext('2d');
     wx.beginPath(); wx.arc(R,R,R,0,6.28); wx.clip();            // rotating wheel crop
-    wx.drawImage(img, -(cfg.wheel.cx*iw-R), -(cfg.wheel.cy*ih-R));
+    wx.drawImage(img, sx,sy,iw,ih, -(cfg.wheel.cx*iw-R), -(cfg.wheel.cy*ih-R), iw, ih);
     st.canvas=cv; st.wheel={cv:wc,R}; st.ready=true;
   }catch(e){} };
   img.onerror=()=>{ st.ready=false; };
@@ -2917,7 +2927,7 @@ function drawPhotoDash(kind,W,H,sp,steer,kmh,Min){
       hctx.fillStyle='#e9eef5'; hctx.font=`900 ${Math.round(sh*0.34)}px Arial`; hctx.textAlign='left'; hctx.textBaseline='alphabetic';
       hctx.fillText(kmh, sx+sw*0.08, sy+sh*0.40);
       hctx.fillStyle='#8fb0c8'; hctx.font=`700 ${Math.round(sh*0.16)}px Arial`;
-      hctx.fillText('KM/H · D'+(G.gear||1)+' · '+(G.circuit&&G.circuit.name||''), sx+sw*0.08, sy+sh*0.60);
+      hctx.fillText('KM/H · D'+(G.gear||1), sx+sw*0.08, sy+sh*0.60);
       hctx.fillStyle='#ffd24a'; hctx.font=`900 ${Math.round(sh*0.14)}px Arial`;
       hctx.fillText('LAP '+Math.min(G.lap,(G.circuit&&G.circuit.laps)||G.lap)+'/'+((G.circuit&&G.circuit.laps)||'-'), sx+sw*0.08, sy+sh*0.78);
       hctx.restore(); }
