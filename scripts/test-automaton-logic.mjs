@@ -13,7 +13,7 @@ import {
   applyStripePayment, isPrepaid,
 } from '../automaton/logic.mjs';
 import { form } from '../automaton/stripe.mjs';
-import { MENU, validateOrder, isOrderId, taskMarkdown, taskFileFor, answerFileFor } from '../automaton/orders.mjs';
+import { MENU, SERVICES, validateOrder, isOrderId, taskMarkdown, taskFileFor, answerFileFor } from '../automaton/orders.mjs';
 
 const T0 = Date.UTC(2026, 6, 18, 10, 54, 0);
 let passed = 0;
@@ -169,6 +169,56 @@ test('storefront tasks are prepaid — completion must not credit twice', () => 
   const { order } = validateOrder({ title: 'T', details: 'D', tier: 'quick' });
   assert.equal(isPrepaid(taskMarkdown(order, 'ord-a1b2c3d4e5')), true);
   assert.equal(isPrepaid('# Ordinary task\n\nBounty: $0.40\n\nbody'), false);
+});
+
+test('service catalog: every service maps to a real tier and carries its brief', () => {
+  for (const [key, svc] of Object.entries(SERVICES)) {
+    if (key === 'custom') {
+      assert.equal(svc.tier, null);
+      continue;
+    }
+    assert.ok(MENU[svc.tier], `${key} has a real tier`);
+    assert.ok(svc.brief && svc.brief.length > 40, `${key} carries a working brief`);
+    assert.ok(svc.pitch && svc.inputLabel, `${key} is presentable`);
+  }
+});
+
+test('a productized order needs only the customer material', () => {
+  const v = validateOrder({ service: 'summary', details: 'Q3 was up 12%, churn doubled, hiring frozen.' });
+  assert.equal(v.ok, true);
+  assert.equal(v.order.service, 'summary');
+  assert.equal(v.order.title, SERVICES.summary.label);
+  assert.equal(v.order.tier, 'standard');
+  assert.equal(v.order.price, MENU.standard.price);
+  assert.match(v.order.details, /exactly five bullets/);
+  assert.match(v.order.details, /Customer material:/);
+  assert.match(v.order.details, /churn doubled/);
+});
+
+test('productized orders reject missing material and unknown services', () => {
+  assert.equal(validateOrder({ service: 'polish', details: '' }).ok, false);
+  assert.equal(validateOrder({ service: 'polish', details: 'x'.repeat(4001) }).ok, false);
+  assert.equal(validateOrder({ service: 'notary', details: 'x' }).ok, false);
+  // a service order ignores any client-sent tier — the catalog decides the price
+  const v = validateOrder({ service: 'polish', details: 'fix this', tier: 'deep' });
+  assert.equal(v.order.price, MENU.quick.price);
+});
+
+test('omitting the service keeps the original custom flow working', () => {
+  const v = validateOrder({ title: 'Write a tagline', details: 'For a mortal AI', tier: 'standard' });
+  assert.equal(v.ok, true);
+  assert.equal(v.order.service, 'custom');
+  assert.equal(v.order.details, 'For a mortal AI'); // no brief injected
+});
+
+test('a service order renders as a prepaid task tagged with its service', () => {
+  const { order } = validateOrder({ service: 'email', details: 'Raise rates 20% on a loyal client.' });
+  const md = taskMarkdown(order, 'ord-a1b2c3d4e5');
+  assert.match(md, /^# The difficult email/);
+  assert.match(md, /^Bounty: \$3\.00$/m);
+  assert.match(md, /email · standard/);
+  assert.equal(parseBounty(md), 3.0);
+  assert.equal(isPrepaid(md), true);
 });
 
 console.log(`\nautomaton logic: ${passed} tests passed`);

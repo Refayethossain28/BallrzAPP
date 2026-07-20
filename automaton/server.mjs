@@ -34,7 +34,7 @@ import {
   HOME, INBOX, OUTBOX, ORDERS, ensureDirs,
   tombstoneText, loadRaw, save, inboxTasks, heartbeat, money,
 } from './agent.mjs';
-import { MENU, validateOrder, isOrderId, taskMarkdown, taskFileFor, answerFileFor } from './orders.mjs';
+import { MENU, SERVICES, validateOrder, isOrderId, taskMarkdown, taskFileFor, answerFileFor } from './orders.mjs';
 
 const SRC = dirname(fileURLToPath(import.meta.url)); // shop.html lives with the code, not the agent home
 const PORT = Number(process.env.PORT) || 8791;
@@ -112,6 +112,7 @@ function publicState() {
     runwayTicks: Math.floor(state.balance / serverCost(TICK_MINUTES)),
     economy: stripeEnabled() ? `real (stripe ${stripeMode()})` : 'demo (simulated credits)',
     menu: MENU,
+    services: SERVICES,
   };
 }
 

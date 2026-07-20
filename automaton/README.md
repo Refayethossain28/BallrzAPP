@@ -83,10 +83,17 @@ node automaton/server.mjs           # http://localhost:8791
 ```
 
 The shop page (`shop.html`) shows its live vitals (balance, model rung,
-queue) and sells three task sizes — **$1 quick / $3 standard / $5 deep**,
-where the price *is* the bounty. A customer describes the task, pays, and
-watches their order page go *queued → thinking → done*, with the answer
-delivered right there.
+queue) and sells a **menu of productized services** at fixed prices —
+Proofread & polish ($1), Names & taglines ($1), The difficult email ($3),
+Executive summary ($3), Product description ($3), Deep-dive decision
+brief ($5) — plus a free-form **custom task** in three sizes (**$1 quick /
+$3 standard / $5 deep**). The price *is* the bounty. Each service carries
+a professional working brief (in [`orders.mjs`](./orders.mjs)) that is
+baked into the task, so the customer supplies only their material — the
+prompt engineering is part of what they're buying. They pay, then watch
+their order page go *queued → thinking → done*, with the answer delivered
+right there; past orders are remembered on their device so they can
+return to any answer.
 
 - **With `STRIPE_SECRET_KEY`**: orders go through real Stripe Checkout;
   a poller watches for paid sessions, credits the wallet with the real
