@@ -285,6 +285,7 @@ const NAVITEMS=[
   {id:'drivers',icon:'🚗',label:'Drivers'},
   {id:'documents',icon:'📄',label:'Documents'},
   {id:'clients',icon:'👤',label:'Clients'},
+  {id:'crm',icon:'🤝',label:'CRM'},
   {id:'fleet',icon:'🚙',label:'Fleet'},
   {id:'pricing',icon:'£',label:'Pricing'},
   {id:'analytics',icon:'📊',label:'Analytics'},
@@ -492,6 +493,15 @@ function startAdminListeners(){
     CLIENTS=all;
     if(!['login'].includes(S.screen))render();
   },e=>console.warn('Users:',e.code));
+  // CRM — relationship records + corporate pipeline (admin-only collections).
+  db.collection('crm_clients').onSnapshot(snap=>{
+    CRM_CLIENTS={};snap.docs.forEach(d=>{CRM_CLIENTS[d.id]=d.data();});
+    if(!['login'].includes(S.screen))render();
+  },e=>console.warn('CRM clients:',e.code));
+  db.collection('crm_leads').onSnapshot(snap=>{
+    LEADS=snap.docs.map(d=>({id:d.id,...d.data()}));
+    if(!['login'].includes(S.screen))render();
+  },e=>console.warn('CRM leads:',e.code));
   // Concierge desk — the concierge app's members and requests mirror here live,
   // so this console IS the desk (reply, progress, send options).
   db.collection('velvet_requests').onSnapshot(snap=>{
@@ -995,6 +1005,55 @@ clients:()=>{const f=S.cFilter;const list=f==='all'?CLIENTS:CLIENTS.filter(c=>c.
       <td><button class="btn btn-glass btn-sm" onclick="showClient('${c.id}')">View</button></td>
     </tr>`).join('')}</tbody>
   </table></div></div>
+</div>`},
+
+crm: () => {
+  const today=new Date().toISOString().slice(0,10);
+  const fups=[];
+  Object.keys(CRM_CLIENTS).forEach(uid=>{
+    (CRM_CLIENTS[uid].fups||[]).forEach((f,i)=>{
+      if(!f.done)fups.push({uid,i,note:f.note,due:f.due,client:(CLIENTS.find(c=>c.id===uid)||{}).name||uid.slice(0,8)});
+    });
+  });
+  fups.sort((a,b)=>a.due<b.due?-1:1);
+  const pipe=LEAD_STAGES.map(([k,label])=>({k,label,items:LEADS.filter(l=>(l.stage||'lead')===k)}));
+  const pipeValue=LEADS.filter(l=>l.stage!=='won').reduce((s,l)=>s+(Number(l.value)||0),0);
+  const wonValue=LEADS.filter(l=>l.stage==='won').reduce((s,l)=>s+(Number(l.value)||0),0);
+  return `<div class="screen">
+  <div class="section-header"><div><div class="section-title">CRM</div><div style="color:var(--fg-dim);font-size:13px;margin-top:2px">Relationships & the corporate pipeline — notes and preferences live on each client profile (Clients → View)</div></div>
+    <button class="btn btn-gold btn-sm" onclick="leadForm('')">+ New Lead</button></div>
+  <div class="stagger" style="display:flex;gap:14px;margin-bottom:24px;flex-wrap:wrap">
+    ${[['Open follow-ups',String(fups.length),fups.filter(f=>f.due<today).length+' overdue'],
+       ['Pipeline',LEADS.filter(l=>l.stage!=='won').length+' leads','£'+pipeValue.toLocaleString()+'/mo potential'],
+       ['Won','£'+wonValue.toLocaleString()+'/mo','contracted value']].map(([l,v,s])=>`<div class="stat-card"><div class="section-label" style="margin-bottom:12px">${l}</div><div style="font-size:26px;font-weight:800">${v}</div><div style="font-size:12px;color:var(--fg-subtle);margin-top:4px">${s}</div></div>`).join('')}
+  </div>
+  <div class="card" style="margin-bottom:24px">
+    <div class="section-label" style="margin-bottom:12px">Follow-ups</div>
+    ${fups.length===0?'<div style="color:var(--fg-ghost);font-size:13px;padding:12px 0;text-align:center">Nothing due — add follow-ups from a client profile (Clients → View)</div>':
+      fups.slice(0,12).map(f=>`<div style="display:flex;align-items:center;gap:12px;border-top:1px solid var(--divider);padding:10px 0">
+        <input type="checkbox" onchange="crmToggleFup('${f.uid}',${f.i})" style="width:16px;height:16px;accent-color:var(--gold);flex-shrink:0"/>
+        <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">${esc(f.client)}</div><div style="font-size:12px;color:var(--fg-dim)">${esc(f.note)}</div></div>
+        <span class="tag ${f.due<today?'tag-red':'tag-gray'}">${esc(f.due)}</span>
+        <button class="btn btn-glass btn-sm" onclick="showClient('${f.uid}')">Open</button>
+      </div>`).join('')}
+  </div>
+  <div class="section-label" style="margin-bottom:12px">Corporate pipeline</div>
+  <div class="scroll-x"><div style="display:flex;gap:12px;min-width:780px;align-items:flex-start;padding-bottom:6px">
+    ${pipe.map(col=>`<div style="flex:1;min-width:148px;background:var(--surface-b);border:1px solid var(--border-b);border-radius:14px;padding:10px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${col.k==='won'?'#22c55e':'var(--fg-subtle)'};margin-bottom:10px">${col.label} · ${col.items.length}</div>
+      ${col.items.map(l=>`<div class="card" style="padding:12px;margin-bottom:8px;cursor:pointer" onclick="leadForm('${l.id}')">
+        <div style="font-size:13px;font-weight:700;margin-bottom:2px">${esc(l.company)}</div>
+        <div style="font-size:11px;color:var(--fg-dim);margin-bottom:8px">${esc(l.contact||'—')}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+          <span style="font-size:12px;font-weight:700;color:var(--gold)">£${(Number(l.value)||0).toLocaleString()}/mo</span>
+          <span onclick="event.stopPropagation()" style="display:flex;gap:4px">
+            <button class="btn btn-glass btn-sm" style="padding:3px 8px" onclick="leadMove('${l.id}',-1)">◀</button>
+            <button class="btn btn-glass btn-sm" style="padding:3px 8px" onclick="leadMove('${l.id}',1)">▶</button>
+          </span>
+        </div>
+      </div>`).join('')||'<div style="font-size:11px;color:var(--fg-ghost);text-align:center;padding:14px 0">—</div>'}
+    </div>`).join('')}
+  </div></div>
 </div>`},
 
 fleet:()=>`<div class="screen">
@@ -2002,7 +2061,112 @@ function showClient(id){const c=CLIENTS.find(x=>x.id===id);if(!c)return;
       <button class="btn btn-gold btn-sm" onclick="closeModal()">Book for Client</button>
       <button class="btn btn-glass btn-sm" onclick="closeModal()">Edit</button>
     </div>
+    ${crmSection(c.id)}
   </div>`);}
+
+// ── CRM — relationship records + corporate pipeline ────────────────────────
+// Data lives in crm_clients/{uid} and crm_leads/{id} (admin-only rules), so
+// internal notes never sit in a profile doc the client can read. Without
+// Firebase everything persists locally so the demo console still works.
+let CRM_CLIENTS={}, LEADS=[];
+const LEAD_STAGES=[['lead','Lead'],['contacted','Contacted'],['proposal','Proposal'],['contract','Contract'],['won','Won']];
+if(!FIREBASE_ENABLED){
+  try{CRM_CLIENTS=JSON.parse(localStorage.getItem('apexvip_crm_clients')||'{}');}catch(_){CRM_CLIENTS={};}
+  try{LEADS=JSON.parse(localStorage.getItem('apexvip_crm_leads')||'[]');}catch(_){LEADS=[];}
+}
+function crmOf(id){return CRM_CLIENTS[id]||{notes:[],tags:[],fups:[]};}
+function crmSave(id,crm){
+  CRM_CLIENTS[id]=crm; // optimistic — the snapshot confirms
+  if(FIREBASE_ENABLED){db.collection('crm_clients').doc(id).set(crm).catch(e=>showToast('CRM save failed: '+e.message,'error'));}
+  else localStorage.setItem('apexvip_crm_clients',JSON.stringify(CRM_CLIENTS));
+  render();
+}
+function crmAddTag(id){const el=document.getElementById('crm-tag');const v=(el&&el.value||'').trim();if(!v)return;
+  const c=JSON.parse(JSON.stringify(crmOf(id)));c.tags=c.tags||[];if(!c.tags.includes(v))c.tags.push(v);crmSave(id,c);showClient(id);}
+function crmRemoveTag(id,i){const c=JSON.parse(JSON.stringify(crmOf(id)));(c.tags||[]).splice(i,1);crmSave(id,c);showClient(id);}
+function crmAddNote(id){const el=document.getElementById('crm-note');const v=(el&&el.value||'').trim();if(!v)return;
+  const c=JSON.parse(JSON.stringify(crmOf(id)));c.notes=c.notes||[];c.notes.unshift({t:v,at:Date.now()});crmSave(id,c);showClient(id);}
+function crmAddFup(id){const n=document.getElementById('crm-fup-note'),d=document.getElementById('crm-fup-due');
+  const v=(n&&n.value||'').trim(),due=(d&&d.value)||'';
+  if(!v||!due){showToast('Add a note and a date','error');return;}
+  const c=JSON.parse(JSON.stringify(crmOf(id)));c.fups=c.fups||[];c.fups.push({note:v,due,done:false});crmSave(id,c);showClient(id);}
+function crmToggleFup(id,i){const c=JSON.parse(JSON.stringify(crmOf(id)));if(c.fups&&c.fups[i])c.fups[i].done=!c.fups[i].done;crmSave(id,c);
+  if(document.getElementById('modal-bg').style.display==='flex')showClient(id);}
+function crmSection(id){
+  const c=crmOf(id);
+  const tags=(c.tags||[]).map((t,i)=>`<span class="tag tag-gold" style="display:inline-flex;align-items:center;gap:6px;margin:0 6px 6px 0">${esc(t)}<span onclick="crmRemoveTag('${id}',${i})" style="cursor:pointer;opacity:.7">×</span></span>`).join('')||'<span style="font-size:12px;color:var(--fg-ghost)">No preferences yet</span>';
+  const notes=(c.notes||[]).slice(0,5).map(n=>`<div style="border-top:1px solid var(--divider);padding:8px 0"><div style="font-size:13px">${esc(n.t)}</div><div style="font-size:10px;color:var(--fg-ghost);margin-top:2px">${new Date(n.at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div></div>`).join('');
+  const today=new Date().toISOString().slice(0,10);
+  const fups=(c.fups||[]).map((f,i)=>{
+    const od=!f.done&&f.due<today;
+    return `<div style="display:flex;align-items:center;gap:10px;border-top:1px solid var(--divider);padding:8px 0">
+      <input type="checkbox" ${f.done?'checked':''} onchange="crmToggleFup('${id}',${i})" style="width:16px;height:16px;accent-color:var(--gold)"/>
+      <div style="flex:1;font-size:13px;${f.done?'text-decoration:line-through;opacity:.5':''}">${esc(f.note)}</div>
+      <span style="font-size:11px;color:${od?'#ef4444':'var(--fg-dim)'}">${esc(f.due)}</span></div>`;}).join('');
+  return `
+    <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:14px">
+      <div class="section-label" style="margin-bottom:8px">Preferences</div>
+      <div style="margin-bottom:6px">${tags}</div>
+      <div style="display:flex;gap:6px;margin-bottom:14px"><input id="crm-tag" placeholder="e.g. Prefers a quiet ride" style="flex:1" onkeydown="if(event.key==='Enter')crmAddTag('${id}')"/><button class="btn btn-glass btn-sm" onclick="crmAddTag('${id}')">Add</button></div>
+      <div class="section-label" style="margin-bottom:8px">Internal notes</div>
+      <div style="display:flex;gap:6px;margin-bottom:4px"><input id="crm-note" placeholder="Add a note (never visible to the client)…" style="flex:1" onkeydown="if(event.key==='Enter')crmAddNote('${id}')"/><button class="btn btn-glass btn-sm" onclick="crmAddNote('${id}')">Save</button></div>
+      ${notes}
+      <div class="section-label" style="margin:12px 0 8px">Follow-ups</div>
+      <div style="display:flex;gap:6px;margin-bottom:4px;flex-wrap:wrap"><input id="crm-fup-note" placeholder="e.g. Birthday call" style="flex:2;min-width:140px"/><input id="crm-fup-due" type="date" style="flex:1;min-width:120px"/><button class="btn btn-glass btn-sm" onclick="crmAddFup('${id}')">Add</button></div>
+      ${fups}
+    </div>`;
+}
+
+// ── Corporate pipeline ─────────────────────────────────────────────────────
+function leadPersist(){if(!FIREBASE_ENABLED)localStorage.setItem('apexvip_crm_leads',JSON.stringify(LEADS));}
+function leadForm(id){
+  const l=LEADS.find(x=>x.id===id)||{company:'',contact:'',email:'',value:'',note:''};
+  openModal(`<div>
+    <div style="font-size:17px;font-weight:700;margin-bottom:14px">${id?'Edit lead':'New corporate lead'}</div>
+    <div style="display:grid;gap:10px;margin-bottom:14px">
+      <input id="ld-company" placeholder="Company" value="${esc(l.company)}"/>
+      <input id="ld-contact" placeholder="Contact name" value="${esc(l.contact||'')}"/>
+      <input id="ld-email" placeholder="Email" value="${esc(l.email||'')}"/>
+      <input id="ld-value" type="number" min="0" placeholder="Est. monthly value (£)" value="${esc(String(l.value||''))}"/>
+      <textarea id="ld-note" placeholder="Next action / notes" style="min-height:60px">${esc(l.note||'')}</textarea>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-gold" style="flex:1" onclick="leadSave('${id||''}')">Save</button>
+      ${id?`<button class="btn btn-danger btn-sm" onclick="leadDelete('${id}')">Delete</button>`:''}
+      <button class="btn btn-glass btn-sm" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>`);
+}
+function leadSave(id){
+  const g=x=>(document.getElementById(x)||{}).value||'';
+  const patch={company:g('ld-company').trim(),contact:g('ld-contact').trim(),email:g('ld-email').trim(),
+    value:Math.max(0,Number(g('ld-value'))||0),note:g('ld-note').trim(),updatedAt:Date.now()};
+  if(!patch.company){showToast('Company name required','error');return;}
+  if(id){
+    const l=LEADS.find(x=>x.id===id);if(l)Object.assign(l,patch);
+    if(FIREBASE_ENABLED)db.collection('crm_leads').doc(id).set(patch,{merge:true}).catch(e=>showToast('Save failed: '+e.message,'error'));
+  }else{
+    patch.stage='lead';patch.createdAt=Date.now();
+    if(FIREBASE_ENABLED){db.collection('crm_leads').add(patch).catch(e=>showToast('Save failed: '+e.message,'error'));}
+    else{patch.id='L'+Math.random().toString(36).slice(2,8);LEADS.push(patch);}
+  }
+  leadPersist();closeModal();render();
+  track('crm_lead_saved',{src:'admin'});
+}
+function leadMove(id,dir){
+  const l=LEADS.find(x=>x.id===id);if(!l)return;
+  const order=LEAD_STAGES.map(s=>s[0]);
+  const i=Math.max(0,Math.min(order.length-1,order.indexOf(l.stage||'lead')+dir));
+  l.stage=order[i];l.updatedAt=Date.now();
+  if(FIREBASE_ENABLED)db.collection('crm_leads').doc(id).set({stage:l.stage,updatedAt:l.updatedAt},{merge:true}).catch(e=>showToast('Move failed: '+e.message,'error'));
+  leadPersist();render();
+}
+function leadDelete(id){
+  if(!confirm('Delete this lead?'))return;
+  LEADS=LEADS.filter(x=>x.id!==id);
+  if(FIREBASE_ENABLED)db.collection('crm_leads').doc(id).delete().catch(e=>showToast('Delete failed: '+e.message,'error'));
+  leadPersist();closeModal();render();
+}
 
 // Operator quick-intake — paste a phone/SMS/email booking, ApexAI parses it into
 // fields, operator reviews + creates. Reuses the parseBookingIntent Cloud Function.

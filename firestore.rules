@@ -399,6 +399,18 @@ service cloud.firestore {
       }
     }
 
+    // ── CRM (ops console only) ────────────────────────────────────────────
+    // Client relationship records (notes, preference tags, follow-ups) live
+    // OUTSIDE users/{uid} deliberately: a user can read their own profile
+    // doc, and internal ops notes must never leak to the subject.
+    match /crm_clients/{uid} {
+      allow read, write: if isAdmin();
+    }
+    // Corporate sales pipeline.
+    match /crm_leads/{leadId} {
+      allow read, write: if isAdmin();
+    }
+
     // ApexFX trading app — each user owns their own journal subtree. Trade
     // docs hold chart analyses (verdict, levels, outcome, thumbnail); no
     // cross-user reads.
