@@ -217,6 +217,71 @@ test('summarize bundles the dashboard and names the freedom month', () => {
   assert.equal(s.passivity.score, 1);
 });
 
+/* ---- plan vs reality ---- */
+
+test('ymKey / parseYM / monthIndex round-trip and reject junk', () => {
+  assert.equal(E.ymKey({ y: 2026, m: 7 }), '2026-07');
+  const d = E.parseYM('2026-07');
+  assert.equal(d.y, 2026); assert.equal(d.m, 7);
+  assert.equal(E.parseYM('2026-13'), null);
+  assert.equal(E.parseYM('garbage'), null);
+  assert.equal(E.monthIndex({ y: 2026, m: 7 }, '2027-01'), 6);
+  assert.equal(E.monthIndex({ y: 2026, m: 7 }, '2026-06'), -1);
+  assert.equal(E.monthIndex({ y: 2026, m: 7 }, 'nope'), null);
+});
+
+test('trackRecord: sums entries per month and compares against the plan', () => {
+  const ss = [stream({ id: 'a', capital: 12000, yieldPct: 5 })]; // £50/mo flat
+  const tr = E.trackRecord([
+    { ym: '2026-07', streamId: 'a', amount: 45 },
+    { ym: '2026-08', streamId: 'a', amount: 30 },
+    { ym: '2026-08', streamId: 'a', amount: 30 },   // two entries, one month
+    { ym: '2025-01', streamId: 'a', amount: 999 },  // before the plan started
+    { ym: 'bad', streamId: 'a', amount: 10 }        // junk is dropped
+  ], ss, { months: 24, start: { y: 2026, m: 7 } });
+  assert.equal(tr.rows.length, 3);
+  assert.equal(tr.rows[0].ym, '2026-08', 'newest first');
+  assert.equal(tr.rows[0].actual, 60);
+  assert.equal(tr.rows[0].projected, 50);
+  assert.equal(tr.rows[0].delta, 10);
+  const early = tr.rows.find((r) => r.ym === '2025-01');
+  assert.equal(early.projected, null, 'no invented projection outside the plan');
+  assert.equal(tr.summary.months, 2);
+  assert.equal(tr.summary.actualTotal, 105);
+  assert.equal(tr.summary.projectedTotal, 100);
+  assert.ok(Math.abs(tr.summary.ratio - 1.05) < 1e-9);
+});
+
+/* ---- what if? ---- */
+
+test('scenario builders: reinvest-all flips DRIP; contrib targets highest yield', () => {
+  const ss = [stream({ id: 'lo', capital: 1000, yieldPct: 2 }),
+              stream({ id: 'hi', capital: 1000, yieldPct: 6 })];
+  const drip = E.scenarioReinvestAll(ss);
+  assert.ok(drip.every((s) => s.reinvest));
+  assert.ok(!ss.some((s) => s.reinvest), 'originals untouched');
+  assert.equal(E.bestYieldStreamId(ss), 'hi');
+  const c = E.scenarioAddContrib(ss, 100);
+  assert.equal(c.find((s) => s.id === 'hi').contribMonthly, 100);
+  assert.equal(c.find((s) => s.id === 'lo').contribMonthly, 0);
+  assert.equal(E.bestYieldStreamId([stream({ incomeMonthly: 50 })]), null);
+});
+
+test('compare: each habit strictly helps, and both beats either alone', () => {
+  const ss = [stream({ capital: 20000, yieldPct: 5 })];
+  const out = E.compare(ss, { months: 240, expenses: 500 }, 200);
+  const by = {}; out.forEach((r) => { by[r.key] = r; });
+  assert.equal(out.map((r) => r.key).join(','), 'base,drip,contrib,both');
+  assert.ok(by.drip.incomeEnd > by.base.incomeEnd);
+  assert.ok(by.contrib.incomeEnd > by.base.incomeEnd);
+  assert.ok(by.both.incomeEnd > by.drip.incomeEnd);
+  assert.ok(by.both.incomeEnd > by.contrib.incomeEnd);
+  // a better scenario never reaches freedom later (−1 = never counts as last)
+  const rank = (i) => (i < 0 ? Infinity : i);
+  assert.ok(rank(by.both.crossoverIndex) <= rank(by.base.crossoverIndex));
+  assert.equal(by.contrib.label, '+£200/mo in');
+});
+
 console.log('── drip passive-income-engine unit tests ──');
 let failed = 0;
 for (const [n, f] of tests) {

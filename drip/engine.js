@@ -224,6 +224,126 @@
     return Math.round((1 - h) / (1 - 1 / n) * 100) / 100;
   }
 
+  /* ------------------------------------------------------------------ *
+   *  Plan vs reality — logging what actually dripped                     *
+   * ------------------------------------------------------------------ */
+
+  /** {y,m} ⇄ 'YYYY-MM' keys for calendar months. */
+  function ymKey(d) { return d.y + '-' + (d.m < 10 ? '0' : '') + d.m; }
+  function parseYM(key) {
+    var m = /^(\d{4})-(\d{1,2})$/.exec(String(key || ''));
+    if (!m) return null;
+    var mm = +m[2];
+    if (mm < 1 || mm > 12) return null;
+    return { y: +m[1], m: mm };
+  }
+
+  /** Signed whole months from start {y,m} to a 'YYYY-MM' key (may be <0). */
+  function monthIndex(start, key) {
+    var d = parseYM(key);
+    if (!d) return null;
+    return (d.y * 12 + d.m) - (start.y * 12 + start.m);
+  }
+
+  /**
+   * Compare what actually dripped against what the current plan projected.
+   * entries: [{ ym: 'YYYY-MM', streamId, amount }] — one row per stream per
+   * month (the UI replaces rather than double-logs). Months outside the plan
+   * (before start, past the horizon) get projected:null instead of a made-up
+   * number. Returns rows (newest first) and an honesty summary: total actual,
+   * total projected over the same months, and their ratio (1 = on plan).
+   */
+  function trackRecord(entries, streams, opts) {
+    opts = opts || {};
+    var start = opts.start || { y: 2026, m: 1 };
+    var p = project(streams, opts);
+    var byYm = {};
+    (entries || []).forEach(function (e) {
+      var d = parseYM(e && e.ym);
+      if (!d) return;
+      var k = ymKey(d), amt = Math.max(0, Number(e.amount) || 0);
+      byYm[k] = (byYm[k] || 0) + amt;
+    });
+    var rows = Object.keys(byYm).sort().reverse().map(function (k) {
+      var i = monthIndex(start, k);
+      var proj = (i != null && i >= 0 && i < p.rows.length) ? p.rows[i].income : null;
+      return {
+        ym: k,
+        actual: round2(byYm[k]),
+        projected: proj,
+        delta: proj == null ? null : round2(byYm[k] - proj)
+      };
+    });
+    var withProj = rows.filter(function (r) { return r.projected != null; });
+    var at = withProj.reduce(function (a, r) { return a + r.actual; }, 0);
+    var pt = withProj.reduce(function (a, r) { return a + r.projected; }, 0);
+    return {
+      rows: rows,
+      summary: {
+        months: withProj.length,
+        actualTotal: round2(at),
+        projectedTotal: round2(pt),
+        ratio: pt > 0 ? Math.round(at / pt * 100) / 100 : null
+      }
+    };
+  }
+
+  /* ------------------------------------------------------------------ *
+   *  What if? — scenario builders + comparer                            *
+   * ------------------------------------------------------------------ */
+
+  /** Copy of the streams with DRIP switched on everywhere. */
+  function scenarioReinvestAll(streams) {
+    return (streams || []).map(function (s) {
+      var n = normalize(s); n.reinvest = true; return n;
+    });
+  }
+
+  /** id of the stream where the next pound works hardest (highest yield). */
+  function bestYieldStreamId(streams) {
+    var ns = (streams || []).map(normalize), best = null;
+    for (var i = 0; i < ns.length; i++) {
+      if (ns[i].yieldPct > 0 && (best == null || ns[i].yieldPct > best.yieldPct)) best = ns[i];
+    }
+    return best ? best.id : null;
+  }
+
+  /** Copy with £extra/mo contributed to the highest-yield stream. */
+  function scenarioAddContrib(streams, extra) {
+    extra = Math.max(0, Number(extra) || 0);
+    var target = bestYieldStreamId(streams);
+    return (streams || []).map(function (s) {
+      var n = normalize(s);
+      if (n.id === target && extra > 0) n.contribMonthly += extra;
+      return n;
+    });
+  }
+
+  /**
+   * Run the classic what-ifs side by side: as-is, DRIP everything, +£extra/mo
+   * into the highest-yield stream, and both. Each result carries the income
+   * in the final projected month and the freedom-date crossover, so the UI
+   * can show exactly what each habit buys.
+   */
+  function compare(streams, opts, extra) {
+    if (extra == null) extra = 100;
+    var defs = [
+      { key: 'base',    label: 'As things stand',        ss: (streams || []).map(normalize) },
+      { key: 'drip',    label: 'Reinvest everything',    ss: scenarioReinvestAll(streams) },
+      { key: 'contrib', label: '+£' + Math.round(extra) + '/mo in', ss: scenarioAddContrib(streams, extra) },
+      { key: 'both',    label: 'Both',                   ss: scenarioAddContrib(scenarioReinvestAll(streams), extra) }
+    ];
+    return defs.map(function (d) {
+      var p = project(d.ss, opts);
+      return {
+        key: d.key,
+        label: d.label,
+        incomeEnd: p.rows[p.rows.length - 1].income,
+        crossoverIndex: p.crossoverIndex
+      };
+    });
+  }
+
   /** Month index → { y, m } from a start {y, m(1-12)}. Pure calendar math. */
   function monthAt(start, i) {
     var t = (start.y * 12 + (start.m - 1)) + i;
@@ -267,6 +387,14 @@
     diversification: diversification,
     monthAt: monthAt,
     monthLabel: monthLabel,
-    summarize: summarize
+    summarize: summarize,
+    ymKey: ymKey,
+    parseYM: parseYM,
+    monthIndex: monthIndex,
+    trackRecord: trackRecord,
+    scenarioReinvestAll: scenarioReinvestAll,
+    bestYieldStreamId: bestYieldStreamId,
+    scenarioAddContrib: scenarioAddContrib,
+    compare: compare
   };
 });

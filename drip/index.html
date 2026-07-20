@@ -95,6 +95,18 @@
   .preset .pi { font-size: 20px; }
   .preset .pn { font-size: 12.5px; font-weight: 600; margin-top: 4px; line-height: 1.25; }
 
+  /* what-if + reality rows */
+  .wrow { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 9px 2px; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .wrow:last-child { border-bottom: 0; }
+  .wrow .wl { color: var(--dim); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wrow.best .wl { color: var(--ink); font-weight: 600; }
+  .wrow .wv { text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+  .wrow .wv b { color: var(--green); font-weight: 700; }
+  .wrow .wv small { display: block; color: var(--faint); font-size: 11.5px; }
+  .delta-up { color: var(--green); }
+  .delta-down { color: var(--red); }
+  .sumline { font-size: 12.5px; color: var(--faint); margin-top: 10px; }
+
   .field { margin-bottom: 12px; }
   .field label { display: block; font-size: 12.5px; color: var(--dim); margin-bottom: 5px; }
   .field input[type=text], .field input[type=number], .field select {
@@ -147,9 +159,22 @@
     <svg class="chart" id="chart" viewBox="0 0 640 240" role="img" aria-label="Projected monthly passive income vs expenses"></svg>
   </div>
 
+  <h2><span>What if?</span></h2>
+  <div class="card">
+    <div id="whatifRows"></div>
+    <div class="field" style="margin:12px 0 0"><label>Extra £/mo to test (goes to your highest-yield stream)</label>
+      <input type="number" id="setExtra" min="0" step="25" inputmode="decimal"></div>
+  </div>
+
   <h2>Income streams <span id="streamCount" style="text-transform:none;letter-spacing:0"></span></h2>
   <div class="card" id="streamList"></div>
   <button class="btn" id="addBtn">＋ Add a stream</button>
+
+  <h2><span>Plan vs reality</span></h2>
+  <div class="card">
+    <div id="realityRows"></div>
+    <button class="btn ghost" id="logBtn" style="margin-top:12px">✍️ Log what actually dripped</button>
+  </div>
 
   <h2>Your numbers</h2>
   <div class="card settings">
@@ -213,6 +238,18 @@
   </div>
 </div>
 
+<!-- log-actuals sheet -->
+<div class="sheet" id="logSheet">
+  <div class="grab"></div>
+  <div class="inner">
+    <h3>What actually dripped?</h3>
+    <div class="field"><label>Month</label><input type="month" id="logMonth"></div>
+    <div id="logFields"></div>
+    <div class="rowbtns"><button class="btn" id="logSaveBtn">Save</button></div>
+    <div class="rowbtns"><button class="btn ghost" id="logCancelBtn">Cancel</button></div>
+  </div>
+</div>
+
 <script src="engine.js"></script>
 <script>
 (function () {
@@ -225,16 +262,31 @@
     return '£' + String(x).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   };
 
+  function startYM() {
+    var d = new Date();
+    return { y: d.getFullYear(), m: d.getMonth() + 1 };
+  }
+
   /* ---- state ---- */
   var state = load();
   function load() {
     try {
       var raw = localStorage.getItem(LS);
-      if (raw) { var s = JSON.parse(raw); if (s && s.streams) return s; }
+      if (raw) {
+        var s = JSON.parse(raw);
+        if (s && s.streams) {
+          // migrations for states saved before logging / what-if existed
+          s.entries = s.entries || [];
+          if (s.whatIfExtra == null) s.whatIfExtra = 100;
+          s.planStart = s.planStart || startYM();
+          return s;
+        }
+      }
     } catch (e) {}
     // First run: a small, honest starter portfolio to make the app legible.
     return {
       expenses: 1800, inflation: 2.5, horizon: 120, nextId: 3,
+      entries: [], whatIfExtra: 100, planStart: startYM(),
       streams: [
         Object.assign({}, E.PRESETS.savings,  { id: '1', type: 'savings',  contribMonthly: 100 }),
         Object.assign({}, E.PRESETS.dividend, { id: '2', type: 'dividend', contribMonthly: 150 })
@@ -242,11 +294,6 @@
     };
   }
   function save() { try { localStorage.setItem(LS, JSON.stringify(state)); } catch (e) {} }
-
-  function startYM() {
-    var d = new Date();
-    return { y: d.getFullYear(), m: d.getMonth() + 1 };
-  }
 
   /* ---- dashboard ---- */
   function render() {
@@ -276,8 +323,65 @@
 
     $('hzLabel').textContent = (state.horizon / 12) + ' years';
     drawChart(s.projection);
+    renderWhatIf();
     renderStreams();
+    renderReality();
     save();
+  }
+
+  /* ---- what if? ---- */
+  function renderWhatIf() {
+    if (!state.streams.length) {
+      $('whatifRows').innerHTML = '<div class="empty">Add a stream first — then compare the habits that grow it.</div>';
+      return;
+    }
+    var opts = { months: state.horizon, expenses: state.expenses, inflationPct: state.inflation };
+    var rows = E.compare(state.streams, opts, state.whatIfExtra);
+    var base = rows[0].incomeEnd;
+    var bestKey = rows.reduce(function (a, r) { return r.incomeEnd > a.incomeEnd ? r : a; }, rows[0]).key;
+    $('whatifRows').innerHTML = rows.map(function (r) {
+      var lift = r.incomeEnd - base;
+      var freedom = r.crossoverIndex < 0 ? 'no freedom date yet'
+        : (r.crossoverIndex === 0 ? 'free now' : '🏁 ' + E.monthLabel(startYM(), r.crossoverIndex));
+      return '<div class="wrow' + (r.key === bestKey && r.key !== 'base' ? ' best' : '') + '">' +
+        '<span class="wl">' + esc(r.label) + '</span>' +
+        '<span class="wv"><b>' + fmtGBP(r.incomeEnd) + '/mo</b>' +
+        (r.key === 'base' ? '' : ' <span class="' + (lift >= 1 ? 'delta-up' : '') + '">' + (lift >= 1 ? '+' + fmtGBP(lift) : '±£0') + '</span>') +
+        '<small>in ' + (state.horizon / 12) + ' yrs · ' + freedom + '</small></span></div>';
+    }).join('');
+  }
+
+  /* ---- plan vs reality ---- */
+  function ymNice(ym) {
+    var d = E.parseYM(ym);
+    return d ? E.monthLabel(d, 0) : ym;
+  }
+
+  function renderReality() {
+    var el = $('realityRows');
+    $('logBtn').style.display = state.streams.length ? '' : 'none';
+    if (!state.entries.length) {
+      el.innerHTML = '<div class="empty">Each month, log what your streams actually paid — Drip shows how reality tracks the plan.</div>';
+      return;
+    }
+    var elapsed = (E.monthIndex(state.planStart, E.ymKey(startYM())) || 0) + 1;
+    var tr = E.trackRecord(state.entries, state.streams, {
+      months: Math.max(state.horizon, elapsed), expenses: state.expenses,
+      inflationPct: state.inflation, start: state.planStart
+    });
+    el.innerHTML = tr.rows.slice(0, 8).map(function (r) {
+      var d = r.delta;
+      var vs = r.projected == null ? '<small>plan hadn’t started</small>'
+        : '<small>plan ' + fmtGBP(r.projected) + ' · <span class="' + (d >= 0 ? 'delta-up' : 'delta-down') + '">' +
+          (d >= 0 ? '+' : '−') + fmtGBP(Math.abs(d)) + '</span></small>';
+      return '<div class="wrow"><span class="wl">' + esc(ymNice(r.ym)) + '</span>' +
+        '<span class="wv"><b>' + fmtGBP(r.actual) + '</b>' + vs + '</span></div>';
+    }).join('');
+    if (tr.summary.months > 0) {
+      el.innerHTML += '<div class="sumline">' + tr.summary.months + ' month' + (tr.summary.months > 1 ? 's' : '') +
+        ' tracked · actual ' + fmtGBP(tr.summary.actualTotal) + ' vs plan ' + fmtGBP(tr.summary.projectedTotal) +
+        (tr.summary.ratio != null ? ' · ' + Math.round(tr.summary.ratio * 100) + '% of plan' : '') + '</div>';
+    }
   }
 
   /* ---- chart: projected income vs expenses ---- */
@@ -358,7 +462,32 @@
     $('sheetBg').classList.add('open');
     $('sheet').classList.add('open');
   }
-  function closeSheet() { $('sheetBg').classList.remove('open'); $('sheet').classList.remove('open'); }
+  function closeSheet() {
+    $('sheetBg').classList.remove('open');
+    $('sheet').classList.remove('open');
+    $('logSheet').classList.remove('open');
+  }
+
+  /* ---- log-actuals sheet ---- */
+  function openLogSheet() {
+    $('logMonth').value = E.ymKey(startYM());
+    renderLogFields();
+    $('sheetBg').classList.add('open');
+    $('logSheet').classList.add('open');
+  }
+
+  function renderLogFields() {
+    var ym = $('logMonth').value;
+    var byStream = {};
+    state.entries.forEach(function (e) { if (e.ym === ym) byStream[e.streamId] = e.amount; });
+    $('logFields').innerHTML = state.streams.map(function (s) {
+      var icon = (E.PRESETS[s.type] || E.PRESETS.custom).icon;
+      var val = byStream[s.id] != null ? byStream[s.id] : '';
+      return '<div class="field"><label>' + icon + ' ' + esc(s.name) + ' — £ received</label>' +
+        '<input type="number" min="0" step="1" inputmode="decimal" data-log="' + esc(s.id) + '"' +
+        ' value="' + val + '" placeholder="' + Math.round(E.monthlyIncome(s)) + ' expected"></div>';
+    }).join('');
+  }
 
   function renderPresets() {
     $('presetGrid').innerHTML = Object.keys(E.PRESETS).map(function (t) {
@@ -431,6 +560,29 @@
     if (row) { e.preventDefault(); openSheet(row.getAttribute('data-id')); }
   });
 
+  $('logBtn').addEventListener('click', openLogSheet);
+  $('logCancelBtn').addEventListener('click', closeSheet);
+  $('logMonth').addEventListener('change', renderLogFields);
+
+  $('logSaveBtn').addEventListener('click', function () {
+    var ym = $('logMonth').value;
+    if (!E.parseYM(ym)) { closeSheet(); return; }
+    state.entries = state.entries.filter(function (e) { return e.ym !== ym; });
+    var inputs = $('logFields').querySelectorAll('input[data-log]');
+    for (var i = 0; i < inputs.length; i++) {
+      var amt = +inputs[i].value;
+      if (inputs[i].value !== '' && amt >= 0) {
+        state.entries.push({ ym: ym, streamId: inputs[i].getAttribute('data-log'), amount: amt });
+      }
+    }
+    closeSheet(); render();
+  });
+
+  $('setExtra').addEventListener('change', function () {
+    state.whatIfExtra = Math.max(0, +$('setExtra').value || 0);
+    render();
+  });
+
   [['setExpenses', 'expenses'], ['setInflation', 'inflation'], ['setHorizon', 'horizon']].forEach(function (pair) {
     var el = $(pair[0]);
     el.addEventListener('change', function () {
@@ -444,6 +596,7 @@
   $('setExpenses').value = state.expenses;
   $('setInflation').value = state.inflation;
   $('setHorizon').value = String(state.horizon);
+  $('setExtra').value = state.whatIfExtra;
   render();
 
   if ('serviceWorker' in navigator) {
