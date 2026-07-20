@@ -70,7 +70,11 @@ html{scroll-snap-type:y proximity}
 #main > section{
   min-height:100svh;
   display:flex;flex-direction:column;justify-content:center;
-  border-top:1px solid var(--border-2);
+}
+#main > section::before{
+  content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);
+  width:min(1100px,88%);height:1px;
+  background:linear-gradient(90deg,transparent,rgba(212,175,110,.5),transparent);
 }
 #main > section > .wrap{width:100%}
 body{
@@ -100,6 +104,7 @@ h1,h2,h3,.serif{font-family:var(--serif);font-weight:400;letter-spacing:.005em}
 }
 .kicker::before{content:'';width:34px;height:1px;background:linear-gradient(90deg,var(--gold),transparent)}
 .section-title{font-size:clamp(34px,4.6vw,58px);line-height:1.08;margin-bottom:16px}
+.section-title em{font-style:italic;color:var(--gold);font-weight:300}
 .section-sub{color:var(--fg-2);max-width:560px;font-size:clamp(15px,1.4vw,17px)}
 section{padding:clamp(84px,11vw,150px) var(--pad);position:relative}
 .wrap{max-width:1200px;margin:0 auto}
@@ -143,7 +148,7 @@ nav.scrolled{
 }
 .btn-gold{
   background:linear-gradient(135deg,var(--gold-hi) 0%,var(--gold) 45%,var(--gold-b) 100%);
-  color:#181205;box-shadow:0 0 0 rgba(212,175,110,0);
+  color:#181205;box-shadow:0 6px 26px rgba(212,175,110,.28);
 }
 .btn-gold:hover{transform:translateY(-2px);box-shadow:0 10px 34px rgba(212,175,110,.32)}
 .btn-ghost{border-color:var(--border);color:var(--fg)}
@@ -206,6 +211,8 @@ nav.scrolled{
   animation:cue 2.2s var(--ease) infinite;
 }
 @keyframes cue{0%{top:-56px}55%,100%{top:56px}}
+html.fx .hero .btn-gold{animation:breathe 3.6s ease-in-out infinite}
+@keyframes breathe{0%,100%{box-shadow:0 6px 26px rgba(212,175,110,.28)}50%{box-shadow:0 8px 42px rgba(212,175,110,.5)}}
 @keyframes fadeUp{from{opacity:0;transform:translateY(26px)}to{opacity:1;transform:none}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 
@@ -248,10 +255,10 @@ nav.scrolled{
   border:1px solid var(--border-2);border-radius:22px;overflow:hidden;background:var(--bg);
   transition:transform .5s var(--ease),border-color .5s,box-shadow .5s;
 }
-.car:hover{transform:translateY(-6px);border-color:var(--gold-2);box-shadow:0 26px 70px rgba(0,0,0,.5)}
+.car:hover{transform:translateY(-6px);border-color:var(--gold-2);box-shadow:0 26px 70px rgba(0,0,0,.45),0 10px 40px rgba(212,175,110,.14)}
 .car-img{aspect-ratio:4/3;overflow:hidden;position:relative;background:radial-gradient(120% 100% at 50% 0%,#171310,#0a0806)}
 .car-img img{width:100%;height:100%;object-fit:cover;transition:transform 1.2s var(--ease);filter:saturate(.9)}
-.car:hover .car-img img{transform:scale(1.05)}
+.car:hover .car-img img{transform:scale(1.05);filter:saturate(1.08)}
 .car-img .placeholder{
   position:absolute;inset:0;display:grid;place-items:center;
   font-family:var(--serif);font-style:italic;font-size:64px;color:var(--gold-2);
@@ -415,7 +422,7 @@ footer.site a:hover{color:var(--gold)}
 .lucent{position:relative;overflow:hidden}
 .lucent > .wrap{position:relative;z-index:1}
 .glow{position:absolute;inset:0;z-index:0;pointer-events:none;overflow:hidden}
-.glow b{position:absolute;display:block;border-radius:50%;filter:blur(90px);opacity:.4}
+.glow b{position:absolute;display:block;border-radius:50%;filter:blur(90px);opacity:.52}
 .glow .g1{width:46vw;height:46vw;left:-12vw;top:-16vw;background:radial-gradient(circle,rgba(212,175,110,.5),transparent 66%);animation:aur1 24s ease-in-out infinite alternate}
 .glow .g2{width:42vw;height:42vw;right:-13vw;bottom:-18vw;background:radial-gradient(circle,rgba(184,144,42,.42),transparent 64%);animation:aur2 30s ease-in-out infinite alternate}
 @keyframes aur1{to{transform:translate(9vw,7vh) scale(1.16)}}
@@ -431,14 +438,14 @@ footer.site a:hover{color:var(--gold)}
 .marquee::after{right:0;background:linear-gradient(270deg,var(--bg),transparent)}
 .marquee .track{display:flex;width:max-content;animation:scrollx 32s linear infinite}
 .marquee:hover .track{animation-play-state:paused}
-.marquee .item{display:flex;align-items:center;gap:20px;padding:22px 30px;color:var(--fg-3);font-family:var(--serif);font-size:clamp(19px,2.2vw,28px);white-space:nowrap}
+.marquee .item{display:flex;align-items:center;gap:20px;padding:22px 30px;color:var(--fg-2);font-family:var(--serif);font-size:clamp(19px,2.2vw,28px);white-space:nowrap}
 .marquee .item i{width:5px;height:5px;border-radius:50%;background:var(--gold);flex:none}
 @keyframes scrollx{to{transform:translateX(-50%)}}
 
 /* Bento capability grid */
 .bento{margin-top:60px;display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
 .bento .cell{border-radius:24px;padding:26px 26px 28px;position:relative;overflow:hidden;display:flex;flex-direction:column;transition:transform .5s var(--ease),border-color .5s,box-shadow .5s}
-.bento .cell:hover{transform:translateY(-6px);border-color:var(--gold-2);box-shadow:0 26px 60px rgba(0,0,0,.45)}
+.bento .cell:hover{transform:translateY(-6px);border-color:var(--gold-2);box-shadow:0 26px 60px rgba(0,0,0,.4),0 10px 36px rgba(212,175,110,.13)}
 .bento .cw2{grid-column:span 2}
 .bento .ch2{grid-row:span 2}
 .bento .cell .ico{font-size:22px;color:var(--gold);margin-bottom:14px;line-height:1}
@@ -884,7 +891,7 @@ html.light .device .glass{background:linear-gradient(160deg,rgba(255,248,235,.07
 <section id="services">
   <div class="wrap">
     <div class="kicker rv">What we do</div>
-    <h2 class="section-title rv">One standard.<br/>Every journey.</h2>
+    <h2 class="section-title rv">One standard.<br/><em>Every journey.</em></h2>
     <p class="section-sub rv rv-d1">Whether it's a 6 a.m. Heathrow run or a week of engagements across three time zones, the experience is identical: quiet, precise, effortless.</p>
     <div class="svc-grid">
       <article class="svc rv">
@@ -920,7 +927,7 @@ html.light .device .glass{background:linear-gradient(160deg,rgba(255,248,235,.07
   <div class="glow"><b class="g1"></b><b class="g2"></b></div>
   <div class="wrap">
     <div class="kicker rv">Everything ApexVIP</div>
-    <h2 class="section-title rv">One app. The whole service.</h2>
+    <h2 class="section-title rv">One app. <em>The whole service.</em></h2>
     <p class="section-sub rv rv-d1">Book a car, track it, message your chauffeur, settle without lifting a finger, and reach a concierge for everything else — all from one place, on any device.</p>
     <div class="bento">
       <div class="cell feature glass tilt sheen rv"><div class="ico">✦</div><div class="big">Just say it.<br/><em>It's booked.</em></div><p>ApexAI turns a sentence — “S-Class to LHR T5 when BA284 lands” — into a confirmed ride at a fixed fare. It reads airports, flight numbers, times and multi-stop routes, day or night.</p></div>
@@ -941,7 +948,7 @@ html.light .device .glass{background:linear-gradient(160deg,rgba(255,248,235,.07
   <div class="glow"><b class="g1"></b><b class="g2"></b></div>
   <div class="wrap">
     <div class="kicker rv">How to use the app</div>
-    <h2 class="section-title rv">From install to arrival<br/>in five easy steps.</h2>
+    <h2 class="section-title rv">From install to arrival<br/>in <em>five easy steps.</em></h2>
     <p class="section-sub rv rv-d1">No manual, no learning curve. Here's exactly how ApexVIP works, screen by screen.</p>
 
     <div class="install">
@@ -1052,7 +1059,7 @@ html.light .device .glass{background:linear-gradient(160deg,rgba(255,248,235,.07
 <section id="fleet" class="fleet">
   <div class="wrap">
     <div class="kicker rv">The fleet</div>
-    <h2 class="section-title rv">Immaculate, always.</h2>
+    <h2 class="section-title rv">Immaculate, <em>always.</em></h2>
     <p class="section-sub rv rv-d1">Every car is detailed before every journey, stocked with still water, and driven by a chauffeur trained to be remembered for all the right reasons — or not at all.</p>
     <div class="fleet-grid">
       <article class="car tilt sheen rv">
@@ -1090,7 +1097,7 @@ html.light .device .glass{background:linear-gradient(160deg,rgba(255,248,235,.07
 <section id="cities" class="cities">
   <div class="wrap">
     <div class="kicker rv">Where we operate</div>
-    <h2 class="section-title rv">London today.<br/>Dubai next.</h2>
+    <h2 class="section-title rv">London today.<br/><em>Dubai next.</em></h2>
     <p class="section-sub rv rv-d1">ApexVIP is live across London and every one of its airports. Dubai is coming soon — reserve now to be among the first when it opens.</p>
     <div class="city-grid">
       <article class="city rv"><span class="flag">🇬🇧</span><h3>London <small>Now serving</small></h3><p>Every commercial terminal and the private fields — Heathrow, Gatwick, City, Luton, Stansted, plus Farnborough, Biggin Hill, RAF Northolt and Harrods Aviation.</p><div class="codes"><i>LHR</i><i>LGW</i><i>STN</i><i>LCY</i><i>LTN</i><i>FAB</i><i>BQH</i></div></article>
@@ -1104,7 +1111,7 @@ html.light .device .glass{background:linear-gradient(160deg,rgba(255,248,235,.07
 <section id="membership">
   <div class="wrap">
     <div class="kicker rv">Membership</div>
-    <h2 class="section-title rv">Two ways to belong.</h2>
+    <h2 class="section-title rv">Two ways to <em>belong.</em></h2>
     <p class="section-sub rv rv-d1">The <b style="color:var(--gold);font-weight:500">Concierge membership</b> handles everything beyond the car — eight desks, one thread. The <b style="color:var(--gold);font-weight:500">Ride membership</b> unlocks the booking desk for the car itself. Take either, or both.</p>
     <div class="kicker rv" style="margin-top:54px">The Concierge membership · Silver / Gold / Black</div>
     <a class="rv" href="../apexvip-join/" style="display:flex;gap:16px;align-items:center;justify-content:center;flex-wrap:wrap;text-align:center;text-decoration:none;margin:0 auto 30px;max-width:760px;padding:16px 22px;border:1px solid var(--gold);border-radius:16px;background:linear-gradient(180deg,rgba(212,175,55,0.10),rgba(212,175,55,0.02))">
@@ -1167,7 +1174,7 @@ html.light .device .glass{background:linear-gradient(160deg,rgba(255,248,235,.07
 <section class="voices">
   <div class="wrap">
     <div class="kicker rv">The experience</div>
-    <h2 class="section-title rv">Quietly extraordinary.</h2>
+    <h2 class="section-title rv">Quietly <em>extraordinary.</em></h2>
     <div class="quote-grid">
       <blockquote class="quote rv">
         <div class="stars" aria-hidden="true">✦</div>
@@ -1192,7 +1199,7 @@ html.light .device .glass{background:linear-gradient(160deg,rgba(255,248,235,.07
 <section id="faq">
   <div class="wrap">
     <div class="kicker rv">Questions</div>
-    <h2 class="section-title rv">Good to know.</h2>
+    <h2 class="section-title rv">Good to <em>know.</em></h2>
     <div class="faq-list rv rv-d1">
       <details class="faq-item"><summary>How do I book a journey?</summary><p>Every booking is made in the ApexVIP app — there's no booking on this website. Install the app from your browser (Share → Add to Home Screen on iPhone, Install app on Android), then ask ApexAI or tap out your journey. Your car, fare and chauffeur are confirmed in seconds.</p></details>
       <details class="faq-item"><summary>Where does ApexVIP operate?</summary><p>ApexVIP is live in London today — covering every major airport (Heathrow, Gatwick, City, Luton, Stansted) plus the private aviation terminals. Dubai is coming soon; reserve your place now to be among the first when it opens.</p></details>
@@ -1209,7 +1216,7 @@ html.light .device .glass{background:linear-gradient(160deg,rgba(255,248,235,.07
 <section id="reserve" class="reserve">
   <div class="wrap">
     <div class="kicker rv">Reserve your place</div>
-    <h2 class="section-title rv">Your invitation awaits.</h2>
+    <h2 class="section-title rv">Your invitation <em>awaits.</em></h2>
     <p class="section-sub rv rv-d1">Leave your email and we'll be in touch when your invitation is ready — no card required. Founding members lock in launch pricing, and the first month is on us.</p>
     <form class="enquiry rimlight rv rv-d1" id="enquiryForm" novalidate>
       <div id="enqForm">
@@ -1248,7 +1255,7 @@ html.light .device .glass{background:linear-gradient(160deg,rgba(255,248,235,.07
 <section id="apps">
   <div class="wrap">
     <div class="kicker rv">The ApexVIP suite</div>
-    <h2 class="section-title rv">Every seat has an app.</h2>
+    <h2 class="section-title rv">Every seat has <em>an app.</em></h2>
     <p class="section-sub rv rv-d1">All bookings are made in the ApexVIP app — this site is your introduction. Guests, members and the operations desk each get a purpose-built app, installable straight from the browser, no app store required. Driving with us? Everything you need is at <a href="../drivers/" style="color:var(--gold)">apexvip.uk/drivers</a>.</p>
     <div class="apps-grid">
       <a class="app-card rv" href="../apexvip-client.html">
@@ -1577,7 +1584,7 @@ html.light .device .glass{background:linear-gradient(160deg,rgba(255,248,235,.07
         dust.width = W * dpr; dust.height = H * dpr;
         dust.style.width = W + 'px'; dust.style.height = H + 'px';
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        const n = Math.min(70, Math.round(W / 22));
+        const n = Math.min(90, Math.round(W / 17));
         parts = Array.from({ length: n }, () => ({
           x: Math.random() * W, y: Math.random() * H,
           r: 0.6 + Math.random() * 1.7,
@@ -1595,7 +1602,7 @@ html.light .device .glass{background:linear-gradient(160deg,rgba(255,248,235,.07
             p.y -= p.vy; p.x += p.vx; p.tw += p.ts;
             if (p.y < -4) { p.y = H + 4; p.x = Math.random() * W; }
             if (p.x < -4) p.x = W + 4; else if (p.x > W + 4) p.x = -4;
-            const a = 0.10 + 0.22 * (0.5 + Math.sin(p.tw) / 2);
+            const a = 0.14 + 0.26 * (0.5 + Math.sin(p.tw) / 2);
             ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.2832);
             ctx.fillStyle = 'rgba(224,190,130,' + a.toFixed(3) + ')';
             ctx.fill();
