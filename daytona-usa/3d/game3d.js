@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R92 — static cluster, turning wheel';
+const BUILD = 'BUILD R93 — drawn cabins';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -2629,8 +2629,7 @@ function drawDashboard(W,H,sp){
   const steer=G.steerVis, kmh=Math.round(Math.abs(G.speed)*2.4);
   const Min=Math.min(W,H);
   const VAN = !!(G.vehicle && G.vehicle.kind==='van');   // V-Class gets its real interior
-  const PK = (G.vehicle && DASH_PHOTOS[G.vehicle.kind]) ? G.vehicle.kind : '';
-  if (PK){ initDashPhoto(PK); if (drawPhotoDash(PK,W,H,sp,steer,kmh,Min)) return; }
+  if (G.vehicle && G.vehicle.kind==='sedan'){ drawSedanDash(W,H,sp,steer,kmh,Min); return; }
 
   // ============================ WINDSCREEN ============================
   // roof header bar across the very top
@@ -2840,127 +2839,6 @@ function drawDashboard(W,H,sp){
 //      composited as the dash (windscreen punched out so the 3D world shows
 //      through), with a live rotating wheel, cluster needles and screen
 //      content drawn on top. Falls back to the procedural dash until loaded.
-// per-vehicle photo configs: windscreen cut polygon, wheel crop, live overlays.
-// The van cut is generous on the right (the cowl/pillar slab blocked the view).
-const DASH_PHOTOS={
-  // Full-dash framing: this photo was shot from the cabin centre, so a fake
-  // driver-side crop warps the perspective — the honest fix is a real photo
-  // taken from the driver's seat (swap it in here when available).
-  van:  { src:'./img/vclass-dash.jpg', dashV:0.30, pin:0.52,
-          cut:[[0,0],[1,0],[1,0.46],[0.94,0.38],[0.86,0.30],[0.75,0.26],[0.615,0.245],[0.555,0.30],[0.42,0.315],[0.30,0.315],[0.10,0.30],[0,0.27]],
-          wheel:{cx:0.795, cy:0.60, r:0.135, gain:0.55, win:{r0:0.40, r1:0.78, a0:195, a1:345}},
-          screen:{x0:0.418,y0:0.268,x1:0.556,y1:0.415} },
-  // RHD driver's-eye shot: the cut hugs the cluster hood and the wheel rim so
-  // both stay opaque while the glass either side punches through to the world.
-  sedan:{ src:'./img/sclass-dash.jpg', dashV:0.235, pin:0.62,
-          cut:[[0,0],[0.705,0],[0.725,0.115],[0.745,0.235],[0.665,0.245],[0.64,0.21],[0.615,0.155],
-               [0.585,0.13],[0.525,0.12],[0.465,0.13],[0.437,0.16],[0.415,0.20],[0.39,0.215],
-               [0.30,0.20],[0.15,0.215],[0,0.235]],
-          wheel:{cx:0.525, cy:0.475, r:0.195, gain:0.65, win:{r0:0.44, r1:0.80, a0:200, a1:340}},
-          screen:{x0:0.118,y0:0.32,x1:0.312,y1:0.615},
-          dial:{cx:0.457, cy:0.30, r:0.028}, gear:{x:0.525, y:0.30} },
-};
-const _vd={};
-function initDashPhoto(kind){
-  if (_vd[kind]) return; const cfg=DASH_PHOTOS[kind]; if (!cfg) return;
-  const st=_vd[kind]={ready:false};
-  const img=new Image();
-  img.onload=()=>{ try{
-    // optional crop first (driver's-seat framing); all cfg coords are in crop space
-    const c=cfg.crop||{x0:0,y0:0,x1:1,y1:1};
-    const sx=c.x0*img.naturalWidth, sy=c.y0*img.naturalHeight;
-    const iw=Math.round((c.x1-c.x0)*img.naturalWidth), ih=Math.round((c.y1-c.y0)*img.naturalHeight);
-    const cv=document.createElement('canvas'); cv.width=iw; cv.height=ih; const x=cv.getContext('2d');
-    x.drawImage(img, sx,sy,iw,ih, 0,0,iw,ih);
-    x.globalCompositeOperation='destination-out';               // punch the windscreen
-    x.beginPath(); cfg.cut.forEach(([u,v],i)=>{ i?x.lineTo(u*iw,v*ih):x.moveTo(u*iw,v*ih); });
-    x.closePath(); x.fill();
-    x.lineJoin='round';                                         // feather the cut edge (two soft passes)
-    x.lineWidth=5;  x.strokeStyle='rgba(0,0,0,0.55)'; x.stroke();
-    x.lineWidth=10; x.strokeStyle='rgba(0,0,0,0.25)'; x.stroke();
-    x.globalCompositeOperation='source-over';
-    const R=Math.round(iw*cfg.wheel.r), wc=document.createElement('canvas'); wc.width=wc.height=R*2;
-    const wx=wc.getContext('2d');
-    wx.beginPath(); wx.arc(R,R,R,0,6.28); wx.clip();            // rotating wheel crop
-    wx.drawImage(img, sx,sy,iw,ih, -(cfg.wheel.cx*iw-R), -(cfg.wheel.cy*ih-R), iw, ih);
-    // punch the see-through opening above the boss so the CLUSTER stays static
-    // beneath the turning wheel (otherwise the speedo rotates with the rim)
-    if (cfg.wheel.win){
-      const w=cfg.wheel.win, a0=w.a0*Math.PI/180, a1=w.a1*Math.PI/180;
-      wx.globalCompositeOperation='destination-out';
-      wx.beginPath();
-      wx.arc(R,R,R*w.r1, a0, a1, false);
-      wx.arc(R,R,R*w.r0, a1, a0, true);
-      wx.closePath(); wx.fill();
-      wx.lineWidth=4; wx.strokeStyle='rgba(0,0,0,0.5)'; wx.stroke();   // soft edge
-      wx.globalCompositeOperation='source-over';
-    }
-    st.canvas=cv; st.wheel={cv:wc,R}; st.ready=true;
-  }catch(e){} };
-  img.onerror=()=>{ st.ready=false; };
-  img.src=cfg.src;
-}
-
-// ---- V-Class dashboard (from the reference photo): deep soft-touch dash,
-//      burl-wood trim band, round turbine vents, a tablet screen standing on
-//      the dash top, silver button strips, a wood centre console with the
-//      COMAND touchpad, twin-dial cluster, and the three-spoke Mercedes wheel.
-function drawPhotoDash(kind,W,H,sp,steer,kmh,Min){
-  const st=_vd[kind], cfg=DASH_PHOTOS[kind];
-  if (st && st.ready && st.canvas){
-    const _vdCanvas=st.canvas, _vdWheel=st.wheel;
-    const iw=_vdCanvas.width, ih=_vdCanvas.height;
-    // aspect-aware fit: pin the dash's leading edge (~v0.30 in the photo) to
-    // mid-screen so the road stays visible in ANY orientation. Wide screens
-    // crop the footwell off the bottom; tall screens crop the passenger side
-    // (right-anchored — this is a RHD cabin, the wheel must stay on screen).
-    const pin=cfg.pin||0.52;
-    const scale=Math.max(W/iw, (H*pin)/ih);
-    const dw=iw*scale, dh=ih*scale;
-    const dx=Math.min(0, W-dw);
-    let dy=H*pin - dh*cfg.dashV;
-    if (dy+dh < H) dy=H-dh;                               // never leave a gap under the dash
-    hctx.drawImage(_vdCanvas, dx, dy, dw, dh);
-    const px=u=>dx+u*dw, py=v=>dy+v*dh;                   // photo-space -> screen
-    // live rotating wheel (circular crop of the real wheel)
-    const wl=_vdWheel;
-    if (wl){ const wr=wl.R*scale;
-      hctx.save(); hctx.translate(px(cfg.wheel.cx), py(cfg.wheel.cy)); hctx.rotate(steer*(cfg.wheel.gain||0.5));
-      hctx.drawImage(wl.cv, -wr,-wr, wr*2, wr*2); hctx.restore(); }
-    // live content on the real tablet screen
-    { const sc=cfg.screen;
-      const sx=px(sc.x0), sy=py(sc.y0), sw=(sc.x1-sc.x0)*dw, sh=(sc.y1-sc.y0)*dh;
-      hctx.fillStyle='#04060a'; roundRect(sx,sy,sw,sh,sh*0.08); hctx.fill();
-      hctx.save(); roundRect(sx,sy,sw,sh,sh*0.08); hctx.clip();
-      hctx.strokeStyle='rgba(40,210,170,0.85)'; hctx.lineWidth=Math.max(1.5,sh*0.04); hctx.lineCap='round';
-      hctx.beginPath(); hctx.moveTo(sx+sw*0.14,sy+sh*0.86); hctx.lineTo(sx+sw*0.38,sy+sh*0.42);
-      hctx.lineTo(sx+sw*0.56,sy+sh*0.56); hctx.lineTo(sx+sw*0.86,sy+sh*0.2); hctx.stroke();
-      hctx.fillStyle='#e9eef5'; hctx.font=`900 ${Math.round(sh*0.34)}px Arial`; hctx.textAlign='left'; hctx.textBaseline='alphabetic';
-      hctx.fillText(kmh, sx+sw*0.08, sy+sh*0.40);
-      hctx.fillStyle='#8fb0c8'; hctx.font=`700 ${Math.round(sh*0.16)}px Arial`;
-      hctx.fillText('KM/H · D'+(G.gear||1), sx+sw*0.08, sy+sh*0.60);
-      hctx.fillStyle='#ffd24a'; hctx.font=`900 ${Math.round(sh*0.14)}px Arial`;
-      hctx.fillText('LAP '+Math.min(G.lap,(G.circuit&&G.circuit.laps)||G.lap)+'/'+((G.circuit&&G.circuit.laps)||'-'), sx+sw*0.08, sy+sh*0.78);
-      hctx.restore(); }
-    // live needle + gear on the real cluster (only where the photo keeps one)
-    if (cfg.dial){ const dcx=px(cfg.dial.cx), dcy=py(cfg.dial.cy), dr=dw*cfg.dial.r;
-      const a=Math.PI*0.78 + Math.max(0,Math.min(1,G.rpm||sp))*Math.PI*1.42;
-      hctx.strokeStyle='#ff7a2a'; hctx.lineWidth=Math.max(2,dr*0.12); hctx.lineCap='round';
-      hctx.beginPath(); hctx.moveTo(dcx,dcy); hctx.lineTo(dcx+Math.cos(a)*dr, dcy+Math.sin(a)*dr); hctx.stroke();
-      hctx.fillStyle='#7ad7ff'; hctx.font=`900 ${Math.round(dw*0.016)}px Arial`; hctx.textAlign='center'; hctx.textBaseline='middle';
-      hctx.fillText('D'+(G.gear||1), px(cfg.gear.x), py(cfg.gear.y)); }
-    // night: dim the photographed cabin to match the world
-    const tintY=Math.max(0, dy+dh*cfg.dashV);
-    if (G.night){ hctx.fillStyle='rgba(6,8,16,0.45)'; hctx.fillRect(0,tintY,W,H-tintY); }
-    else if (G.sunset){ hctx.fillStyle='rgba(120,60,20,0.14)'; hctx.fillRect(0,tintY,W,H-tintY); }
-    // cabin shadow vignette
-    const vg=hctx.createRadialGradient(W*0.5,H*0.5,Min*0.5,W*0.5,H*0.6,Min*1.08);
-    vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.32)');
-    hctx.fillStyle=vg; hctx.fillRect(0,0,W,H);
-    return true;
-  }
-  return false;
-}
 function drawVanDash(W,H,sp,steer,kmh,Min){
   const dashTop=H*0.64;                                  // the van dash sits tall and deep
   // wipers parked on the glass
@@ -2986,7 +2864,7 @@ function drawVanDash(W,H,sp,steer,kmh,Min){
   hctx.lineTo(W,wy+wh); hctx.quadraticCurveTo(W*0.5, wy+wh-H*0.03, 0, wy+wh);
   hctx.closePath();
   const wg=hctx.createLinearGradient(0,wy-H*0.03,0,wy+wh);
-  wg.addColorStop(0,'#7a4a28'); wg.addColorStop(0.45,'#5a3419'); wg.addColorStop(0.75,'#6e4222'); wg.addColorStop(1,'#3d2413');
+  wg.addColorStop(0,'#5a4026'); wg.addColorStop(0.45,'#392715'); wg.addColorStop(0.75,'#4c341d'); wg.addColorStop(1,'#221606');
   hctx.fillStyle=wg; hctx.fill();
   hctx.clip();
   hctx.globalAlpha=0.35; hctx.strokeStyle='#8a5a34'; hctx.lineWidth=1.4;
@@ -3007,7 +2885,7 @@ function drawVanDash(W,H,sp,steer,kmh,Min){
   const vr=Min*0.036, vy=wy+wh*0.42;
   vent(W*0.06,vy,vr); vent(W*0.24,vy,vr); vent(W*0.415,vy,vr); vent(W*0.585,vy,vr); vent(W*0.945,vy,vr);
   // tablet-style infotainment screen STANDING on the dash top (silver frame)
-  { const sw=W*0.20, sh=H*0.105, sx=W*0.5-sw/2, sy=dashTop-H*0.115;
+  { const sw=W*0.20, sh=H*0.105, sx=W*0.5-sw/2, sy=dashTop-H*0.075;
     hctx.fillStyle='#b9bec6'; roundRect(sx-W*0.008,sy-H*0.008,sw+W*0.016,sh+H*0.016,H*0.012); hctx.fill();
     hctx.fillStyle='#04060a'; roundRect(sx,sy,sw,sh,H*0.008); hctx.fill();
     hctx.save(); roundRect(sx,sy,sw,sh,H*0.008); hctx.clip();
@@ -3025,7 +2903,7 @@ function drawVanDash(W,H,sp,steer,kmh,Min){
   hctx.moveTo(W*0.415,wy+wh); hctx.lineTo(W*0.585,wy+wh);
   hctx.lineTo(W*0.64,H); hctx.lineTo(W*0.36,H); hctx.closePath();
   const cg=hctx.createLinearGradient(0,wy+wh,0,H);
-  cg.addColorStop(0,'#5a3419'); cg.addColorStop(0.5,'#4a2a15'); cg.addColorStop(1,'#2c1a0d');
+  cg.addColorStop(0,'#3c2915'); cg.addColorStop(0.5,'#31200f'); cg.addColorStop(1,'#1c1108');
   hctx.fillStyle=cg; hctx.fill();
   hctx.strokeStyle='rgba(200,206,214,0.4)'; hctx.lineWidth=Math.max(1.5,H*0.0025); hctx.stroke();
   // silver climate button strips on the console face (under the centre vents)
@@ -3055,7 +2933,7 @@ function drawVanDash(W,H,sp,steer,kmh,Min){
   hctx.fillStyle='#cdd4de'; hctx.font=`700 ${Math.round(gr*0.26)}px Arial`;
   hctx.fillText('LAP '+Math.min(G.lap,(G.circuit&&G.circuit.laps)||G.lap)+'/'+((G.circuit&&G.circuit.laps)||'-'), bx, gy+gr*0.3);
   // ---- the three-spoke Mercedes wheel (round rim, star on the boss) ----
-  const cx=bx, cy=H*0.985, R=Min*0.205;
+  const cx=bx, cy=H*1.0, R=Min*0.25;
   hctx.save(); hctx.translate(cx,cy); hctx.rotate(steer*0.55);
   hctx.lineCap='round';
   hctx.lineWidth=Math.max(7,R*0.21); hctx.strokeStyle='#0a0b0f';
@@ -3093,6 +2971,115 @@ function drawVanDash(W,H,sp,steer,kmh,Min){
   // cabin ambient shadow
   const vg=hctx.createRadialGradient(W*0.5,H*0.5,Min*0.46,W*0.5,H*0.58,Min*1.05);
   vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.36)');
+  hctx.fillStyle=vg; hctx.fillRect(0,0,W,H);
+}
+// ---- drawn S-Class cabin (replicates the driver's-seat reference): cream
+//      leather, centred wheel with star, widescreen cluster, portrait OLED
+//      screen, chrome vents, blue ambient light, door card at right. ----
+function drawSedanDash(W,H,sp,steer,kmh,Min){
+  const dashTop=H*0.52;
+  // upper dash cowl (near-black, soft sheen)
+  hctx.beginPath();
+  hctx.moveTo(0,H); hctx.lineTo(0,dashTop+H*0.06);
+  hctx.quadraticCurveTo(W*0.5, dashTop-H*0.075, W, dashTop+H*0.015);
+  hctx.lineTo(W,H); hctx.closePath();
+  const dg=hctx.createLinearGradient(0,dashTop-H*0.07,0,H);
+  dg.addColorStop(0,'#23252c'); dg.addColorStop(0.2,'#131419'); dg.addColorStop(1,'#07080b');
+  hctx.fillStyle=dg; hctx.fill();
+  // blue ambient light line along the dash crest
+  hctx.save(); hctx.shadowColor='#2e6cff'; hctx.shadowBlur=Math.max(6,Min*0.02);
+  hctx.strokeStyle='rgba(70,130,255,0.9)'; hctx.lineWidth=Math.max(1.5,Min*0.005);
+  hctx.beginPath(); hctx.moveTo(0,dashTop+H*0.075);
+  hctx.quadraticCurveTo(W*0.5, dashTop-H*0.055, W, dashTop+H*0.03); hctx.stroke(); hctx.restore();
+  // cream lower band (leather knee roll + console)
+  const lg=hctx.createLinearGradient(0,H*0.80,0,H);
+  lg.addColorStop(0,'#c9bda8'); lg.addColorStop(1,'#8f8471');
+  hctx.fillStyle=lg; hctx.fillRect(0,H*0.80,W,H*0.20);
+  hctx.fillStyle='rgba(0,0,0,0.18)'; hctx.fillRect(0,H*0.80,W,Math.max(1.5,H*0.004));
+  // chrome vent bank (upper left)
+  for (let k=0;k<4;k++){ const vx=W*(0.095+k*0.062), vy=dashTop+H*0.012, vw=W*0.052, vh=H*0.030;
+    hctx.fillStyle='#c9cfd7'; roundRect(vx,vy,vw,vh,vh*0.4); hctx.fill();
+    hctx.fillStyle='#14161b'; roundRect(vx+vw*0.07,vy+vh*0.18,vw*0.86,vh*0.64,vh*0.3); hctx.fill();
+    hctx.strokeStyle='#9aa2ac'; hctx.lineWidth=Math.max(1,vh*0.09);
+    hctx.beginPath(); hctx.moveTo(vx+vw*0.12,vy+vh*0.5); hctx.lineTo(vx+vw*0.88,vy+vh*0.5); hctx.stroke(); }
+  // portrait OLED screen (left) with live content
+  { const sx=W*0.115, sy=dashTop+H*0.045, sw=W*0.175, sh=H*0.30;
+    hctx.fillStyle='#04060a'; roundRect(sx,sy,sw,sh,Min*0.02); hctx.fill();
+    hctx.lineWidth=Math.max(1.5,Min*0.004); hctx.strokeStyle='rgba(120,138,165,0.5)'; roundRect(sx,sy,sw,sh,Min*0.02); hctx.stroke();
+    hctx.save(); roundRect(sx,sy,sw,sh,Min*0.02); hctx.clip();
+    hctx.strokeStyle='rgba(40,210,170,0.85)'; hctx.lineWidth=Math.max(2,sh*0.012); hctx.lineCap='round';
+    hctx.beginPath(); hctx.moveTo(sx+sw*0.16,sy+sh*0.62); hctx.lineTo(sx+sw*0.38,sy+sh*0.40);
+    hctx.lineTo(sx+sw*0.56,sy+sh*0.48); hctx.lineTo(sx+sw*0.84,sy+sh*0.24); hctx.stroke();
+    hctx.textAlign='left'; hctx.textBaseline='alphabetic';
+    hctx.fillStyle='#e9eef5'; hctx.font=`900 ${Math.round(sh*0.13)}px Arial`;
+    hctx.fillText(kmh, sx+sw*0.10, sy+sh*0.16);
+    hctx.fillStyle='#8fb0c8'; hctx.font=`700 ${Math.round(sh*0.055)}px Arial`;
+    hctx.fillText('KM/H · D'+(G.gear||1), sx+sw*0.10, sy+sh*0.225);
+    hctx.fillStyle='#ffd24a'; hctx.font=`900 ${Math.round(sh*0.055)}px Arial`;
+    hctx.fillText('LAP '+Math.min(G.lap,(G.circuit&&G.circuit.laps)||G.lap)+'/'+((G.circuit&&G.circuit.laps)||'-'), sx+sw*0.10, sy+sh*0.80);
+    hctx.restore(); hctx.textAlign='center'; hctx.textBaseline='middle'; }
+  // door card (right) with wood sliver, speaker and ambient line
+  { hctx.fillStyle='#101216';
+    hctx.beginPath(); hctx.moveTo(W,H*0.30); hctx.lineTo(W*0.87,H*0.42); hctx.lineTo(W*0.84,H); hctx.lineTo(W,H); hctx.closePath(); hctx.fill();
+    const wgd=hctx.createLinearGradient(W*0.86,0,W,0); wgd.addColorStop(0,'#4c341d'); wgd.addColorStop(1,'#2a1b0d');
+    hctx.fillStyle=wgd; hctx.beginPath(); hctx.moveTo(W*0.875,H*0.46); hctx.lineTo(W,H*0.36); hctx.lineTo(W,H*0.46); hctx.lineTo(W*0.885,H*0.56); hctx.closePath(); hctx.fill();
+    hctx.save(); hctx.shadowColor='#2e6cff'; hctx.shadowBlur=Math.max(5,Min*0.015);
+    hctx.strokeStyle='rgba(70,130,255,0.8)'; hctx.lineWidth=Math.max(1.2,Min*0.004);
+    hctx.beginPath(); hctx.moveTo(W*0.878,H*0.50); hctx.lineTo(W,H*0.40); hctx.stroke(); hctx.restore();
+    hctx.strokeStyle='#8b929c'; hctx.lineWidth=Math.max(1.5,Min*0.005);
+    hctx.beginPath(); hctx.arc(W*0.93,H*0.72,Min*0.045,0,6.28); hctx.stroke();
+    hctx.fillStyle='#1a1d23'; hctx.beginPath(); hctx.arc(W*0.93,H*0.72,Min*0.04,0,6.28); hctx.fill(); }
+  // ---- widescreen cluster behind the wheel (drawn BEFORE it: stays static) ----
+  const ccx=W*0.52, cw=W*0.30, ch=H*0.155, cy0=dashTop-H*0.125;
+  hctx.fillStyle='#05070d'; roundRect(ccx-cw/2,cy0,cw,ch,Min*0.018); hctx.fill();
+  hctx.save(); hctx.shadowColor='#2e6cff'; hctx.shadowBlur=Math.max(4,Min*0.012);
+  hctx.strokeStyle='rgba(90,140,255,0.55)'; hctx.lineWidth=Math.max(1.2,Min*0.0035);
+  roundRect(ccx-cw/2,cy0,cw,ch,Min*0.018); hctx.stroke(); hctx.restore();
+  const dial=(dx,frac,red)=>{ const dr=ch*0.36, dyc=cy0+ch*0.52;
+    hctx.strokeStyle='rgba(140,160,200,0.8)'; hctx.lineWidth=Math.max(1.2,dr*0.05);
+    hctx.beginPath(); hctx.arc(dx,dyc,dr,Math.PI*0.75,Math.PI*2.25); hctx.stroke();
+    for (let i=0;i<=8;i++){ const a=Math.PI*0.75+i/8*Math.PI*1.5;
+      hctx.beginPath(); hctx.moveTo(dx+Math.cos(a)*dr*0.86,dyc+Math.sin(a)*dr*0.86);
+      hctx.lineTo(dx+Math.cos(a)*dr,dyc+Math.sin(a)*dr); hctx.stroke(); }
+    const na=Math.PI*0.75+Math.max(0,Math.min(1,frac))*Math.PI*1.5;
+    hctx.strokeStyle=red?'#ff5a3a':'#ffc24a'; hctx.lineWidth=Math.max(2,dr*0.09);
+    hctx.beginPath(); hctx.moveTo(dx,dyc); hctx.lineTo(dx+Math.cos(na)*dr*0.9,dyc+Math.sin(na)*dr*0.9); hctx.stroke(); };
+  dial(ccx-cw*0.30, Math.max(0,Math.min(1,G.rpm||sp)), true);
+  dial(ccx+cw*0.30, Math.min(1,kmh/340), false);
+  hctx.fillStyle='#7ad7ff'; hctx.font=`900 ${Math.round(ch*0.26)}px Arial`;
+  hctx.fillText('D'+(G.gear||1), ccx, cy0+ch*0.42);
+  hctx.fillStyle='#e9eef5'; hctx.font=`900 ${Math.round(ch*0.20)}px Arial`;
+  hctx.fillText(kmh, ccx, cy0+ch*0.70);
+  // ---- the cream two-spoke wheel, rotating, star on the boss ----
+  const cx=ccx, cyw=H*1.04, R=Min*0.34;
+  hctx.save(); hctx.translate(cx,cyw); hctx.rotate(steer*0.6);
+  hctx.lineCap='round';
+  hctx.lineWidth=Math.max(8,R*0.16); hctx.strokeStyle='#8f8471';
+  hctx.beginPath(); hctx.arc(0,0,R,0,6.28); hctx.stroke();
+  const rg=hctx.createLinearGradient(0,-R,0,R);
+  rg.addColorStop(0,'#efe7d8'); rg.addColorStop(0.5,'#d9cdb8'); rg.addColorStop(1,'#b3a48d');
+  hctx.lineWidth=Math.max(5,R*0.11); hctx.strokeStyle=rg;
+  hctx.beginPath(); hctx.arc(0,0,R,0,6.28); hctx.stroke();
+  // twin silver spoke bars + bottom spoke
+  hctx.strokeStyle='#b8bec7'; hctx.lineCap='butt'; hctx.lineWidth=R*0.14;
+  for (const s2 of [-1,1]){ hctx.beginPath(); hctx.moveTo(s2*R*0.34,0); hctx.lineTo(s2*R*0.92,0); hctx.stroke(); }
+  hctx.strokeStyle='#a8aeb7'; hctx.lineWidth=R*0.11;
+  hctx.beginPath(); hctx.moveTo(0,R*0.34); hctx.lineTo(0,R*0.92); hctx.stroke();
+  // touch pads on the spokes
+  hctx.fillStyle='#20232a';
+  for (const s2 of [-1,1]){ roundRect(s2*R*0.56-R*0.10,-R*0.055,R*0.20,R*0.11,R*0.03); hctx.fill(); }
+  // boss + chrome three-pointed star
+  hctx.fillStyle='#15171d'; hctx.beginPath(); hctx.arc(0,0,R*0.30,0,6.28); hctx.fill();
+  hctx.lineWidth=Math.max(1.5,R*0.028); hctx.strokeStyle='#cfd5dd';
+  hctx.beginPath(); hctx.arc(0,0,R*0.20,0,6.28); hctx.stroke();
+  for (let k=0;k<3;k++){ const a=-Math.PI/2+k*Math.PI*2/3;
+    hctx.beginPath(); hctx.moveTo(0,0); hctx.lineTo(Math.cos(a)*R*0.20,Math.sin(a)*R*0.20); hctx.stroke(); }
+  hctx.restore();
+  // cabin lighting follows the world + ambient vignette
+  if (G.night){ hctx.fillStyle='rgba(6,8,16,0.42)'; hctx.fillRect(0,dashTop-H*0.13,W,H); }
+  else if (G.sunset){ hctx.fillStyle='rgba(120,60,20,0.13)'; hctx.fillRect(0,dashTop-H*0.13,W,H); }
+  const vg=hctx.createRadialGradient(W*0.5,H*0.48,Min*0.5,W*0.5,H*0.6,Min*1.08);
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.34)');
   hctx.fillStyle=vg; hctx.fillRect(0,0,W,H);
 }
 function roundRect(x,y,w,h,r){ hctx.beginPath(); hctx.moveTo(x+r,y); hctx.arcTo(x+w,y,x+w,y+h,r); hctx.arcTo(x+w,y+h,x,y+h,r); hctx.arcTo(x,y+h,x,y,r); hctx.arcTo(x,y,x+w,y,r); hctx.closePath(); }
@@ -3378,8 +3365,8 @@ function startRace(){
   _replay=[]; _recT=0;                                  // fresh replay recording
   _sessionScore=0; _driftActive=0; _driftCombo=1; _driftRun=0;   // fresh drift score
   keys.gas=keys.brake=keys.left=keys.right=keys.boost=false;
-  G.view = (G.vehicle && DASH_PHOTOS[G.vehicle.kind]) ? 'dash'
-         : (G.view==='cinematic' ? 'chase' : G.view);   // Mercedes start in their real cabin
+  G.view = (G.vehicle && (G.vehicle.kind==='van'||G.vehicle.kind==='sedan')) ? 'dash'
+         : (G.view==='cinematic' ? 'chase' : G.view);   // Mercedes start in their cabin
   G.started=true; G.state='rolling';
   _callout=null; _lastPos=1+rivals.length; _lastOvertakeT=-9;   // reset arcade callout state
   initSmoke(); resetSmoke();                          // tyre-smoke pool ready & cleared
