@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R90 — driver-seat V-Class';
+const BUILD = 'BUILD R91 — V-Class framing restored';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -2843,14 +2843,13 @@ function drawDashboard(W,H,sp){
 // per-vehicle photo configs: windscreen cut polygon, wheel crop, live overlays.
 // The van cut is generous on the right (the cowl/pillar slab blocked the view).
 const DASH_PHOTOS={
-  // Driver's-seat framing: only the right (driver) side of the wide photo is
-  // used, so you sit behind the wheel exactly like the S-Class cabin.
-  van:  { src:'./img/vclass-dash.jpg', dashV:0.30, pin:0.55,
-          crop:{x0:0.42, y0:0, x1:1, y1:1},
-          cut:[[0,0],[1,0],[1,0.46],[0.897,0.38],[0.759,0.30],[0.569,0.26],[0.336,0.245],[0.233,0.30],[0,0.315]],
-          wheel:{cx:0.647, cy:0.60, r:0.225, gain:0.55},
-          screen:{x0:0.0,y0:0.268,x1:0.234,y1:0.415},
-          dial:{cx:0.445, cy:0.372, r:0.046}, gear:{x:0.555, y:0.352} },
+  // Full-dash framing: this photo was shot from the cabin centre, so a fake
+  // driver-side crop warps the perspective — the honest fix is a real photo
+  // taken from the driver's seat (swap it in here when available).
+  van:  { src:'./img/vclass-dash.jpg', dashV:0.30, pin:0.52,
+          cut:[[0,0],[1,0],[1,0.46],[0.94,0.38],[0.86,0.30],[0.75,0.26],[0.615,0.245],[0.555,0.30],[0.42,0.315],[0.30,0.315],[0.10,0.30],[0,0.27]],
+          wheel:{cx:0.795, cy:0.60, r:0.135, gain:0.55},
+          screen:{x0:0.418,y0:0.268,x1:0.556,y1:0.415} },
   // RHD driver's-eye shot: the cut hugs the cluster hood and the wheel rim so
   // both stay opaque while the glass either side punches through to the world.
   sedan:{ src:'./img/sclass-dash.jpg', dashV:0.235, pin:0.62,
