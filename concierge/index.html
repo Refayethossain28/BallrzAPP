@@ -1416,7 +1416,10 @@
   load();
   rollForward();
   render();
-  setInterval(tick, 1000);
+  // Battery: the 1 s scheduler shouldn't wake a backgrounded tab — skip
+  // while hidden, and catch up the moment the app is visible again.
+  setInterval(function () { if (!document.hidden) tick(); }, 1000);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) tick(); });
 
   // Optional cloud: accounts, cross-device sync, real Stripe billing.
   if (C && C.enabled()) {
