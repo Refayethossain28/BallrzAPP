@@ -646,11 +646,22 @@ function syncBookingStatus(job,status,extra){
   }
 }
 
+let _gpsLastLat=null,_gpsLastLng=null;
 function _writeLocation(pos){
   if(!FIREBASE_ENABLED||!_driverId)return;
   const now=Date.now();
   if(now-_gpsLastWrite<4000)return; // max 1 Firestore write per 4 s
+  // Stationary-aware: a driver parked at a rank shouldn't stream identical
+  // coordinates every 4 s (≈900 writes/hour + constant radio wakeups).
+  // If we've moved less than ~15 m, drop to a 30 s heartbeat.
+  if(_gpsLastLat!=null){
+    const dLat=(pos.coords.latitude-_gpsLastLat)*111320;
+    const dLng=(pos.coords.longitude-_gpsLastLng)*111320*Math.cos(pos.coords.latitude*Math.PI/180);
+    const moved=Math.sqrt(dLat*dLat+dLng*dLng);
+    if(moved<15&&now-_gpsLastWrite<30000)return;
+  }
   _gpsLastWrite=now;
+  _gpsLastLat=pos.coords.latitude;_gpsLastLng=pos.coords.longitude;
   // Coordinates go to driver_locations, NOT the drivers record: the tracking
   // map is readable by every signed-in user, while the drivers doc carries
   // compliance/payout data that must stay staff/self-only.
@@ -682,7 +693,27 @@ function startGPSStream(){
 function stopGPSStream(){
   if(_gpsWatchId!=null){navigator.geolocation.clearWatch(_gpsWatchId);_gpsWatchId=null;}
   if(_gpsInterval){clearInterval(_gpsInterval);_gpsInterval=null;}
+  _releaseWakeLock();
 }
+
+// ── Screen wake lock ───────────────────────────────────────────────────────
+// While online, the screen sleeping would suspend the PWA and kill the GPS
+// stream mid-trip. Hold a wake lock while online and re-acquire it whenever
+// the tab becomes visible again (the OS releases it on hide). Progressive:
+// browsers without the API just behave as before.
+let _wakeLock=null;
+async function _acquireWakeLock(){
+  try{
+    if('wakeLock' in navigator && !_wakeLock){
+      _wakeLock=await navigator.wakeLock.request('screen');
+      _wakeLock.addEventListener('release',()=>{_wakeLock=null;});
+    }
+  }catch(_){/* denied (low battery etc.) — GPS still runs while visible */}
+}
+function _releaseWakeLock(){ try{ if(_wakeLock){_wakeLock.release();_wakeLock=null;} }catch(_){} }
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible' && S.online) _acquireWakeLock();
+});
 
 function nav(){
   const items=[
@@ -964,6 +995,7 @@ function goOnline(){
     if(S.online){ startGPSStream(); registerDriverFCM(); }
     else stopGPSStream();
   }
+  if(S.online)_acquireWakeLock(); else _releaseWakeLock();
   if(!S.online){clearTimeout(S._timer);clearInterval(S._cdTimer);S.jobOverlay=false;S._offeredJob=null;render();return;}
   // Coming online — first check the in-memory list from the listener
   if(FIREBASE_ENABLED&&S._openJobs?.length&&!S.jobOverlay&&!S.activeJob){
