@@ -23,8 +23,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- Leaflet loads on demand when the Live Map screen opens (see initAdminMap):
+     it was a render-blocking third-party script on every console load, for a
+     screen most sessions never visit. -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
@@ -376,7 +377,7 @@ function toggleTheme(){
   if(btn) btn.textContent=S.theme==='light'?'🌙':'☀️';
 }
 
-function go(s){S.screen=s;track('admin_screen_view',{screen:s,src:'admin'});render();document.getElementById('sidebar').classList.remove('open');window.scrollTo(0,0);if(s==='pricing')loadPricingAdmin();}
+function go(s){S.screen=s;track('admin_screen_view',{screen:s,src:'admin'});render();document.getElementById('sidebar').classList.remove('open');window.scrollTo(0,0);if(s==='pricing')loadPricingAdmin();if(s==='analytics')ensureAnalyticsFeed();}
 function toggleMenu(){document.getElementById('sidebar').classList.toggle('open');}
 function openModal(h){document.getElementById('modal-box').innerHTML=h;document.getElementById('modal-bg').style.display='flex';}
 function closeModal(){document.getElementById('modal-bg').style.display='none';}
@@ -512,9 +513,17 @@ function startAdminListeners(){
     VMEMBERS=snap.docs.map(d=>({uid:d.id,...d.data()}));
     if(!['login'].includes(S.screen))render();
   },e=>console.warn('Concierge members:',e.code));
-  // All-apps analytics: every app's track() mirrors into this collection, so
-  // the Analytics screen aggregates client + driver + admin + concierge.
-  db.collection('analytics').orderBy('t','desc').limit(4000).onSnapshot(snap=>{
+}
+
+// All-apps analytics: every app's track() mirrors into this collection, so
+// the Analytics screen aggregates client + driver + admin + concierge.
+// 4,000 docs is real bandwidth AND billed Firestore reads, so the feed
+// subscribes only when someone actually opens Analytics — not on every
+// console session.
+let _analyticsUnsub=null;
+function ensureAnalyticsFeed(){
+  if(_analyticsUnsub||!FIREBASE_ENABLED||!auth.currentUser)return;
+  _analyticsUnsub=db.collection('analytics').orderBy('t','desc').limit(4000).onSnapshot(snap=>{
     CLOUD_EVENTS=snap.docs.map(d=>d.data());
     if(S.screen==='analytics'||S.screen==='concierge')render();
   },e=>console.warn('Analytics:',e.code));
@@ -2382,10 +2391,28 @@ function confirmDispatch(driverIdOrName){
   render();
 }
 
+let _leafletLoading=null;
+function _ensureLeaflet(){
+  if(window.L) return Promise.resolve();
+  if(_leafletLoading) return _leafletLoading;
+  _leafletLoading=new Promise((res,rej)=>{
+    const css=document.createElement('link');css.rel='stylesheet';css.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';document.head.appendChild(css);
+    const s=document.createElement('script');s.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';s.onload=res;s.onerror=()=>{_leafletLoading=null;rej(new Error('leaflet load failed'));};document.head.appendChild(s);
+  });
+  return _leafletLoading;
+}
 function initAdminMap() {
   const el = document.getElementById('admin-map');
   if (!el) return;
   if (_adminMap) { _adminMap.invalidateSize(); return; }
+  _ensureLeaflet().then(()=>_initAdminMapNow()).catch(()=>{
+    const e2=document.getElementById('admin-map');
+    if(e2) e2.innerHTML='<div style="padding:48px;text-align:center;color:var(--fg-subtle)">Map failed to load — check your connection and reopen this screen.</div>';
+  });
+}
+function _initAdminMapNow() {
+  const el = document.getElementById('admin-map');
+  if (!el || _adminMap) return;
   const dark = S.theme !== 'light';
   _adminMap = L.map('admin-map', {zoomControl:true, attributionControl:false}).setView([51.5074,-0.1278], 12);
   L.tileLayer(dark
