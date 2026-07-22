@@ -3491,6 +3491,10 @@ payment: () => {
     <div style="font-size:12px;color:var(--fg-4);letter-spacing:2px;margin-bottom:8px">REFERENCE</div>
     <div style="font-size:24px;font-weight:800;color:var(--fg);letter-spacing:4px;margin-bottom:${state._lastApexEarned>0?'8px':'16px'}">${ref}</div>
     ${state.memberNumber?`<div style="font-size:11px;color:var(--gold);letter-spacing:1.5px;margin-bottom:${state._lastApexEarned>0?'16px':'28px'};opacity:.8">Charter Member #${state.memberNumber}</div>`:''}
+    ${(()=>{if(state.booking?.vehicleId!=='vClassMulti')return'';const k=Math.max(2,Math.ceil((state.booking.passengers||8)/7));const refs=Array.from({length:k},(_,i)=>i?ref+'-'+(i+1):ref).join(' · ');return `<div style="width:100%;text-align:left;background:var(--gold-3,rgba(200,169,126,.12));border:1px solid var(--gold-2,rgba(200,169,126,.3));border-radius:16px;padding:16px 18px;margin-bottom:20px">
+      <div style="font-size:13px;font-weight:700;color:var(--gold);margin-bottom:6px">🚐 Convoy of ${k} V-Classes</div>
+      <div style="font-size:12px;color:var(--fg-3);line-height:1.6">Your party of ${state.booking.passengers} travels together — each van has its own chauffeur and arrives as one convoy. References: <span style="color:var(--fg)">${refs}</span></div>
+    </div>`;})()}
     ${state.booking?.flight?flightStatusCard(state.booking.flight):''}
     ${state._lastApexEarned>0?`<div style="display:flex;align-items:center;gap:12px;background:${apexTierColor(apexTier(state.apexBalance))}18;border:1px solid ${apexTierColor(apexTier(state.apexBalance))}44;border-radius:16px;padding:14px 18px;margin-bottom:24px;width:100%">
       <div style="width:40px;height:40px;border-radius:50%;background:${apexTierColor(apexTier(state.apexBalance))}22;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">◈</div>
@@ -3654,7 +3658,7 @@ trips: () => {
           <div style="font-size:14px;color:var(--fg-3)">${t.dropoff}</div>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px">
-          <span style="color:var(--fg-3)">${t.vehicle}</span>
+          <span style="color:var(--fg-3)">${t.vehicle}${t.convoyVan?` <span style="color:var(--gold);font-size:11px;font-weight:700">· Van ${t.convoyVan} of ${t.convoySize}</span>`:''}</span>
           <div style="display:flex;align-items:center;gap:8px">
             ${t.status==='completed'&&!t.myRating?`<button onclick="event.stopPropagation();state._rateTrip=TRIPS.find(x=>x.id==='${t.id}');state._rateStars=5;state._rateOpen=true;render()" style="background:var(--gold-3,rgba(200,169,126,.12));border:1px solid var(--gold-2,rgba(200,169,126,.3));color:var(--gold,#C8A97E);padding:6px 12px;border-radius:10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">★ Rate</button>`:''}
             ${t.status==='completed'&&t.myRating?`<span style="color:var(--gold,#C8A97E);font-size:12px;letter-spacing:1px">${'★'.repeat(Math.round(t.myRating))}</span>`:''}
@@ -4802,9 +4806,10 @@ profile: () => {
       <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:14px"><span style="color:var(--fg-3)">incl. VAT 20%</span><span>£${vat}</span></div>
       <div style="height:1px;background:var(--divider);margin-bottom:14px"></div>
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <span style="font-size:16px;font-weight:700">Total paid</span>
+        <span style="font-size:16px;font-weight:700">${t.convoyVan?'Van fare':'Total paid'}</span>
         <span style="font-size:28px;font-weight:800;color:var(--gold)">£${total}</span>
       </div>
+      ${t.convoyVan?`<div style="display:flex;justify-content:space-between;font-size:13px;margin-top:12px;padding-top:12px;border-top:1px solid var(--divider)"><span style="color:var(--gold);font-weight:700">Van ${t.convoyVan} of ${t.convoySize} · convoy</span><span style="color:var(--fg-3)">Party total £${t.convoyTotal||total}</span></div>`:''}
     </div>
     <div class="card" style="padding:16px 20px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
       <div style="display:flex;align-items:center;gap:8px"><span style="color:var(--gold)">◈</span><span style="font-size:14px">APEX Rewards earned</span></div>
@@ -5884,18 +5889,39 @@ async function confirmBooking(overrideRef){
         squarePaymentId:i.squarePaymentId||null,paymentStatus:i.squarePaymentId?'paid':'pending',
         driverName:'',driverRating:null,driverPlate:'',location:'london',
         concierge:i.booking.concierge||null,paMode:!!i.paMode,paPassenger:i.paMode?(i.paPassenger??null):null});
-      const _bookingDoc = await db.collection('bookings').add({
-        ..._payloadFor({
-          ref, clientId: auth.currentUser.uid,
-          clientName: state.user?.name || '', clientEmail: auth.currentUser.email || '',
-          clientPhone: state.user?.phone || '',
-          booking: state.booking,
-          fare: { total, base, discount: disc, vat },
-          promoApplied: state._promoApplied, squarePaymentId: state._squarePaymentId,
-          paMode: state.paMode, paPassenger: state.paPassenger,
-        }),
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
+      // Convoy bookings (vClassMulti) are split into one doc per van at creation.
+      // Each van is then a plain V-Class booking — dispatched, claimed, tracked and
+      // paid out (80% of ITS OWN baseFare) by the existing machinery with zero
+      // driver/admin changes. The Square payment covers the whole party and is
+      // anchored on van 1; siblings carry no squarePaymentId (so completion-capture
+      // fires once) but inherit van 1's paymentStatus so admin never chases a
+      // "pending" fare that van 1 already covers.
+      const _isConvoy = state.booking.vehicleId==='vClassMulti';
+      const _vans = _isConvoy ? Math.max(2, Math.ceil((state.booking.passengers||8)/7)) : 1;
+      const _perBase = Math.round((base/_vans)*100)/100;
+      const _perFare = (typeof ApexEngine!=='undefined')?ApexEngine.quoteFare(_perBase,!!state._promoApplied):(()=>{const d=state._promoApplied?Math.round(_perBase*0.20):0;const t=_perBase-d;return{discount:d,total:t,vat:Math.round(t/6*100)/100};})();
+      let _bookingDoc = null;
+      for(let _v=1; _v<=_vans; _v++){
+        const _doc = await db.collection('bookings').add({
+          ..._payloadFor({
+            ref: _v===1 ? ref : ref+'-'+_v,
+            clientId: auth.currentUser.uid,
+            clientName: state.user?.name || '', clientEmail: auth.currentUser.email || '',
+            clientPhone: state.user?.phone || '',
+            booking: _isConvoy ? {...state.booking, vehicle:'Mercedes V-Class', vehicleId:'vClass', price:_perBase} : state.booking,
+            fare: _isConvoy ? { total:_perFare.total, base:_perBase, discount:_perFare.discount, vat:_perFare.vat } : { total, base, discount: disc, vat },
+            promoApplied: state._promoApplied,
+            squarePaymentId: _v===1 ? state._squarePaymentId : null,
+            paMode: state.paMode, paPassenger: state.paPassenger,
+          }),
+          ...(_isConvoy ? {
+            convoyId: ref, convoyVan: _v, convoySize: _vans, convoyTotal: total,
+            ...(_v>1 ? { paymentStatus: state._squarePaymentId ? 'paid' : 'pending' } : {}),
+          } : {}),
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        if(_v===1) _bookingDoc = _doc;
+      }
       // open_jobs broadcast is handled exclusively by the onBookingCreated Cloud Function
       // to avoid duplicates. The function checks dispatch mode before broadcasting.
       state._chatDocId = _bookingDoc.id;
@@ -6046,7 +6072,8 @@ if(FIREBASE_ENABLED){
               status:dispStatus,rawStatus:raw,price:'£'+(Number(d.price)||0),
               driver:esc(d.driverName||'TBA'),driverId:d.driverId||null,rating:Number(d.driverRating)||4.9,
               myRating:d.rating||null,
-              plate:esc(d.driverPlate||''),flight:esc(d.flight||'')
+              plate:esc(d.driverPlate||''),flight:esc(d.flight||''),
+              convoyVan:d.convoyVan||null,convoySize:d.convoySize||null,convoyTotal:Number(d.convoyTotal)||null
             });
           });
           if(['home','trips'].includes(state.screen))render();
@@ -6086,7 +6113,7 @@ if(FIREBASE_ENABLED){
                 }
               }
               if(d.status==='completed'&&state.screen==='active-trip'){
-                state._lastTrip={ref:esc(d.ref),pickup:esc(d.pickup),dropoff:esc(d.dropoff||d.airport),base:d.baseFare||d.price,discount:d.discount||0,vat:d.vat||0,price:d.price};
+                state._lastTrip={ref:esc(d.ref),pickup:esc(d.pickup),dropoff:esc(d.dropoff||d.airport),base:d.baseFare||d.price,discount:d.discount||0,vat:d.vat||0,price:d.price,convoyVan:d.convoyVan||null,convoySize:d.convoySize||null,convoyTotal:Number(d.convoyTotal)||null};
                 go('receipt');
               } else if(state.screen==='active-trip'||state.screen==='booking-confirmed')render();
             }
