@@ -173,6 +173,7 @@ h2.sec{font-size:13px;text-transform:uppercase;letter-spacing:1.6px;color:var(--
 <div class="wrap"><div id="app"></div></div>
 <div id="toast"></div>
 
+<script src="config.js"></script>
 <script src="engine.js"></script>
 <script>
 (function(){
@@ -338,6 +339,7 @@ function cardView(){
     '<button class="btn" data-act="edit" data-id="' + esc(c.id) + '">✏️ Edit</button>' +
     '<button class="btn" data-act="print" data-id="' + esc(c.id) + '">🖨 Print</button>' +
     '<button class="btn" data-act="nfc" data-id="' + esc(c.id) + '">📳 NFC tap</button>' +
+    '<button class="btn" data-act="wallet" data-id="' + esc(c.id) + '">🎟 Wallet</button>' +
     '</div>' +
     '<p class="note">The QR code opens this exact card on any phone camera — nothing to install. The link carries the whole card' + (c.avatar ? ', photo included' : '') + '.</p>';
 }
@@ -665,6 +667,36 @@ var ACTIONS = {
     else toast('Already in your wallet');
   },
   'print': function(el){ view = { name: 'print', id: el.getAttribute('data-id') }; render(); },
+  'wallet': function(el){
+    var c = findCard(el.getAttribute('data-id')); if (!c) return;
+    var cfg = window.IntroConfig || {};
+    if (!cfg.passEndpoint){
+      modal('<h3>🎟 Apple Wallet</h3>' +
+        '<p>iPhones only open Wallet passes that are <b>cryptographically signed</b> with a Pass Type ID certificate from the Apple Developer Programme — a platform rule no app can skip.</p>' +
+        '<p>Intro ships the whole pipeline: a zero-dependency pass builder and signing server (<b>intro/server.mjs</b>). Set it up once with your certificate (<b>intro/WALLET.md</b> has the 15-minute guide), point <b>intro/config.js</b> at it, and this button serves a real pass.</p>' +
+        '<p>Meanwhile, 💾 .vcf saves your card straight into iPhone Contacts.</p>' +
+        '<div class="rowbtns"><button class="btn wide" data-act="closeModal">Close</button></div>');
+      return;
+    }
+    toast('Building your pass…');
+    fetch(String(cfg.passEndpoint).replace(/\/+$/, '') + '/pass', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: E.encodeCard(c, { avatar: false }) })
+    }).then(function(resp){
+      if (!resp.ok) return resp.json().then(function(j){ throw new Error((j && j.error) || ('HTTP ' + resp.status)); });
+      return resp.blob();
+    }).then(function(blob){
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = E.vcardFilename(c).replace(/\.vcf$/, '.pkpass');
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1500);
+      toast('Pass ready — add it to Wallet');
+    }).catch(function(err){
+      toast('Wallet pass failed: ' + err.message);
+    });
+  },
   'nfc': function(el){
     nfcCard = findCard(el.getAttribute('data-id'));
     if (nfcCard){ nfcCompact = false; renderNfcModal(); }
