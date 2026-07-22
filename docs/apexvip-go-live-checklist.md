@@ -125,9 +125,14 @@ Items marked **[code done]** ship in the repo; the rest are operator/legal work.
       (`docs/apexvip-reliability-a11y.md`).
 
 ## 5a. Data protection & backups
-- [ ] Schedule daily Firestore exports: enable billing on a GCS bucket, then
-      `gcloud firestore export gs://apexvip-1b4a9-backups` on a Cloud Scheduler
-      cron (or Console → Firestore → Disaster recovery).
+- [x] **Daily Firestore exports scheduled** — `firestore-backup.yml` runs at
+      02:15 UTC nightly (and on demand from the Actions tab), exporting to
+      `gs://apexvip-1b4a9-backups/exports/<stamp>` and keeping the newest 14.
+      Restore: `gcloud firestore import gs://apexvip-1b4a9-backups/exports/<stamp>`.
+- [x] **Weekly live-backend smoke test** — `backend-smoke.yml` (Mondays + on
+      demand) verifies the deployed callables answer and that the payment and
+      refund endpoints reject unauthenticated calls. Run it after any
+      functions deploy.
 - [ ] CRM privacy: `crm_clients`/`crm_leads` are **admin-only by rule** — keep it
       that way; internal notes must never move into `users/{uid}` (clients read
       their own profile doc).

@@ -1,0 +1,74 @@
+name: Backend smoke test (live callables)
+
+# Hits the DEPLOYED Cloud Functions over HTTPS and asserts the contract the
+# apps rely on, without touching money or data:
+#   - public callables answer with a callable-shaped {"result": ...}
+#   - the payment callable REJECTS unauthenticated calls (the auth gate works)
+#   - the refund callable rejects unauthenticated calls too
+# No credentials are needed: the positive probes use the anonymously-allowed,
+# rate-limited callables, and the negative probes must fail before auth.
+# Runs weekly and on demand; run it after any functions deploy for a quick
+# "is production actually alive" answer.
+
+on:
+  schedule:
+    - cron: "45 6 * * 1"   # 06:45 UTC every Monday
+  workflow_dispatch:
+
+concurrency: backend-smoke
+
+env:
+  BASE: https://us-central1-apexvip-1b4a9.cloudfunctions.net
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Smoke the live callables
+        run: |
+          FAIL=0
+          call() {  # call <name> <json-data> -> body on stdout, HTTP code in $CODE
+            local name="$1" data="$2"
+            local out
+            out=$(curl -sS -w '\n%{http_code}' -X POST -H "Content-Type: application/json" \
+                    --max-time 30 -d "{\"data\":$data}" "$BASE/$name" || echo -e '\ncurl-error')
+            CODE=$(printf '%s' "$out" | tail -n1)
+            printf '%s' "$out" | sed '$d'
+          }
+
+          echo "== checkFlightStatus (public) =="
+          BODY=$(call checkFlightStatus '{"flight":"BA117"}')
+          echo "HTTP $CODE — ${BODY:0:200}"
+          if [ "$CODE" != "200" ] || ! printf '%s' "$BODY" | grep -q '"result"'; then
+            echo "::error title=checkFlightStatus::expected 200 with a result payload"; FAIL=1
+          fi
+
+          echo "== getHotelRates (public, rate-limited) =="
+          BODY=$(call getHotelRates '{"city":"London"}')
+          echo "HTTP $CODE — ${BODY:0:200}"
+          if [ "$CODE" != "200" ] || ! printf '%s' "$BODY" | grep -q '"result"'; then
+            echo "::error title=getHotelRates::expected 200 with a result payload"; FAIL=1
+          fi
+
+          echo "== parseBookingIntent (public, rate-limited) =="
+          BODY=$(call parseBookingIntent '{"text":"Book me a car to Heathrow tomorrow at 9am"}')
+          echo "HTTP $CODE — ${BODY:0:300}"
+          if [ "$CODE" != "200" ] || ! printf '%s' "$BODY" | grep -q '"result"'; then
+            echo "::error title=parseBookingIntent::expected 200 with a result payload"; FAIL=1
+          fi
+
+          echo "== processSquarePayment WITHOUT auth (must be rejected) =="
+          BODY=$(call processSquarePayment '{"amount":1,"sourceId":"smoke"}')
+          echo "HTTP $CODE — ${BODY:0:200}"
+          if ! printf '%s' "$BODY" | grep -qi 'UNAUTHENTICATED'; then
+            echo "::error title=Payment auth gate::unauthenticated call was NOT rejected — investigate immediately"; FAIL=1
+          fi
+
+          echo "== refundSquarePayment WITHOUT auth (must be rejected) =="
+          BODY=$(call refundSquarePayment '{"paymentId":"smoke"}')
+          echo "HTTP $CODE — ${BODY:0:200}"
+          if ! printf '%s' "$BODY" | grep -qi 'UNAUTHENTICATED'; then
+            echo "::error title=Refund auth gate::unauthenticated call was NOT rejected — investigate immediately"; FAIL=1
+          fi
+
+          [ "$FAIL" = "0" ] && echo "ALL SMOKE CHECKS PASSED" || exit 1
