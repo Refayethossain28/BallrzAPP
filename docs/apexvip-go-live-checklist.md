@@ -16,20 +16,20 @@ Items marked **[code done]** ship in the repo; the rest are operator/legal work.
 > For the **ordered sequence + exact commands** to execute a launch, see
 > `apexvip-launch-runbook.md`. This file is the *what*; the runbook is the *when*.
 
-> ## ⚠️ Read first — the deployed backend is NOT this repo
-> The live Firebase project (`apexvip-1b4a9`) already runs a **separate, gen-1
-> Cloud Functions codebase** (`assignDriverToBooking`, `parseBookingIntent`,
-> `processSquarePayment`, `sendBookingConfirmation`, …). The functions in this
-> repo's `functions/` are a **parallel gen-2 set** — they are *not* what's live.
->
-> - **Do NOT run a blanket `firebase deploy --only functions`** — it would delete
->   the live gen-1 functions this repo can't see. Always scope with `--only
->   functions:<name>` (and a gen-1↔gen-2 name clash blocks the deploy anyway).
-> - The security/payment hardening below (server-side amount check, auth, payment
->   ownership, 80% driver pay in `onBookingCreated`) lives in **this repo's**
->   functions, so it only takes effect once you **consolidate onto one codebase**.
->   Until then, port the same checks into the deployed gen-1 functions by hand.
-> - **Pre-launch task:** decide on one backend, migrate, and retire the other. Track it in §2.
+> ## ✅ Backend consolidated — one codebase (22 Jul 2026)
+> The gen-1/gen-2 split is **resolved**. The repo is the single source of truth:
+> all 18 `functions/` (apexvip) + `functions-side/` (side-apps) functions are the
+> deployed gen-2 versions, every bound secret exists in Secret Manager, and the
+> eight orphaned gen-1 functions (`assignDriverToBooking`, `handleCancellation`,
+> `hotelConciergeBook`, `notifyBookingConfirmed`, `notifyDriverArriving`,
+> `notifyDriverAssigned`, `onBookingStatusChange`, `processCheckoutPayment`) were
+> deleted after their source zips were backed up to
+> `gs://gcf-sources-254410067879-us-central1/consolidation-backup/`. The one
+> gen-1 survivor is `whatsappWebhook`, kept in case it's registered as a callback
+> URL in an external Meta console — confirm and retire or replace it before launch.
+> The **Backend consolidation** workflow (`backend-consolidate.yml`, run manually
+> from the Actions tab) re-audits or re-runs this at any time; `audit` mode is
+> read-only.
 
 ## 0. Legal & regulatory (blockers — cannot launch without)
 - [ ] **TfL Private Hire Vehicle (PHV) Operator licence** + licensed drivers & vehicles.

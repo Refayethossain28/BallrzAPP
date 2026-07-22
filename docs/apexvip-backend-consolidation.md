@@ -1,7 +1,18 @@
 # ApexVIP — Backend Consolidation Plan
 
-**Goal:** one Cloud Functions codebase, in this repo, that the three apps depend
-on — reviewable, testable, and safe to deploy. Today there are **two**:
+> ## ✅ DONE — 22 Jul 2026
+> Executed by the `backend-consolidate.yml` workflow (audit → cutover, runs
+> #1–#5). Findings vs. the plan below: all 18 repo callables/triggers were
+> **already deployed as gen-2** with every secret in Secret Manager and the
+> legacy runtime config empty, so no porting or reconciliation was needed. What
+> remained was **nine orphaned gen-1 functions**; a repo-wide grep found zero
+> callers, so eight were deleted (sources first backed up to
+> `gs://gcf-sources-254410067879-us-central1/consolidation-backup/20260722T154302Z/`)
+> and `functions:apexvip` was redeployed loudly. `whatsappWebhook` (gen-1) is the
+> single deliberate survivor — it may be registered as an external Meta callback;
+> confirm and retire it before launch. §8's definition of done is met, and a
+> blanket `firebase deploy --only functions:apexvip` is now safe. The plan below
+> is kept for history.
 
 - **Deployed (live):** a **gen-1** codebase in the `apexvip-1b4a9` project. Source
   is *not* in this repo. It serves most of the callables the apps use.
