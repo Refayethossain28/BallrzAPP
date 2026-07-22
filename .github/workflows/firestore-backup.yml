@@ -43,8 +43,9 @@ jobs:
           import io, os
           p = os.path.join(os.environ["RUNNER_TEMP"], "sa.json")
           s = io.open(p, encoding="utf-8", errors="replace").read()
-          fixed = (s.replace("“", '"').replace("”", '"')
-                    .replace("‘", "'").replace("’", "'"))
+          fixed = (s.replace(chr(0x201c), '"').replace(chr(0x201d), '"')
+                    .replace(chr(0x2018), "'").replace(chr(0x2019), "'")
+                    .replace(chr(0x00a0), " "))
           io.open(p, "w", encoding="utf-8").write(fixed)
           print("repaired" if fixed != s else "no repair needed")
           EOF
