@@ -1,0 +1,201 @@
+name: Backend consolidation (gen-1 → repo gen-2)
+
+# Executes docs/apexvip-backend-consolidation.md. Two modes:
+#
+#   audit   — READ-ONLY. Inventories every deployed Cloud Function (name, region,
+#             generation), computes exactly which gen-1 functions clash with the
+#             repo's codebase, backs their source zips up inside the project's
+#             own gcf-sources bucket, reports which Secret Manager secrets are
+#             missing, and prints the legacy runtime-config KEY names (never
+#             values). Changes nothing.
+#
+#   cutover — Does the audit, then: creates placeholder secrets for any missing
+#             ones (so the deploy can't half-fail after deletion — set real
+#             values afterwards with `firebase functions:secrets:set`), deletes
+#             ONLY the gen-1 functions that clash with repo names plus the
+#             retired `assignDriverToBooking` dispatcher (double-dispatch risk),
+#             then deploys the repo's `apexvip` codebase. Live-only gen-1 extras
+#             (sendBookingConfirmation, whatsappWebhook, …) are left untouched.
+#
+# Sources are backed up to gs://<gcf-sources-bucket>/consolidation-backup/<stamp>/
+# before any deletion — rollback = deploy the zip from the unpacked backup.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "audit = read-only inventory + plan; cutover = delete clashing gen-1 twins and deploy the repo functions"
+        type: choice
+        options: [audit, cutover]
+        default: audit
+        required: true
+
+concurrency: backend-consolidation
+
+env:
+  PROJECT: apexvip-1b4a9
+
+jobs:
+  consolidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require the service-account secret
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$SA" ]; then
+            echo "::error title=No credential::Add the FIREBASE_SERVICE_ACCOUNT repo secret first."
+            exit 1
+          fi
+          printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
+
+      # Same normalization as firebase-deploy.yml: macOS TextEdit smart-quotes
+      # corrupt pasted JSON; these characters can never be legitimate in a key.
+      - name: Repair smart quotes in the credential
+        run: |
+          python3 - <<'EOF'
+          import io, os
+          p = os.path.join(os.environ["RUNNER_TEMP"], "sa.json")
+          s = io.open(p, encoding="utf-8", errors="replace").read()
+          fixed = (s.replace("“", '"').replace("”", '"')
+                    .replace("‘", "'").replace("’", "'")
+                    .replace(" ", " "))
+          io.open(p, "w", encoding="utf-8").write(fixed)
+          print("repaired" if fixed != s else "no repair needed")
+          EOF
+
+      - name: Authenticate gcloud
+        run: |
+          gcloud auth activate-service-account --key-file="$RUNNER_TEMP/sa.json"
+          gcloud config set project "$PROJECT"
+
+      - name: Inventory deployed functions
+        run: |
+          echo "== Deployed Cloud Functions (all generations) =="
+          gcloud functions list --project "$PROJECT"
+          gcloud functions list --project "$PROJECT" \
+            --format='csv[no-heading](name,region,environment)' > /tmp/deployed.csv
+
+      - name: Compute the cutover plan
+        run: |
+          # Function names the repo deploys — read from source so this never
+          # drifts from what `firebase deploy` would actually create.
+          grep -oE '^export const [A-Za-z0-9_]+' functions/src/index.ts | awk '{print $3}' | sort -u > /tmp/repo-fns.txt
+          grep -oE '^exports\.[A-Za-z0-9_]+' functions-side/index.js | cut -d. -f2 | sort -u >> /tmp/repo-fns.txt
+          echo "== Function names in the repo codebases =="
+          cat /tmp/repo-fns.txt
+
+          : > /tmp/delete.csv
+          : > /tmp/keep-gen1.txt
+          while IFS=, read -r NAME REGION ENV; do
+            case "$ENV" in
+              *1*)
+                if grep -qx "$NAME" /tmp/repo-fns.txt; then
+                  echo "$NAME,$REGION,clashes with the repo gen-2 twin" >> /tmp/delete.csv
+                elif [ "$NAME" = "assignDriverToBooking" ]; then
+                  echo "$NAME,$REGION,retired dispatcher — onBookingCreated owns dispatch" >> /tmp/delete.csv
+                else
+                  echo "$NAME ($REGION)" >> /tmp/keep-gen1.txt
+                fi
+                ;;
+            esac
+          done < /tmp/deployed.csv
+
+          echo ""
+          echo "== PLAN: gen-1 functions deleted on cutover =="
+          if [ -s /tmp/delete.csv ]; then column -s, -t /tmp/delete.csv; else echo "(none — no clashes found)"; fi
+          echo ""
+          echo "== Gen-1 live-only extras kept untouched =="
+          if [ -s /tmp/keep-gen1.txt ]; then cat /tmp/keep-gen1.txt; else echo "(none)"; fi
+
+      - name: Back up gen-1 sources slated for deletion
+        run: |
+          [ -s /tmp/delete.csv ] || { echo "nothing to back up"; exit 0; }
+          STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+          while IFS=, read -r NAME REGION REASON; do
+            URL=$(gcloud functions describe "$NAME" --region "$REGION" --no-gen2 \
+                    --format='value(sourceArchiveUrl)' 2>/dev/null || true)
+            if [ -n "$URL" ]; then
+              BUCKET=$(printf '%s' "$URL" | cut -d/ -f3)
+              DEST="gs://$BUCKET/consolidation-backup/$STAMP/$NAME.zip"
+              gsutil cp "$URL" "$DEST" && echo "backed up: $NAME -> $DEST"
+            else
+              echo "::warning title=No source archive::$NAME ($REGION) has no sourceArchiveUrl — download its source from the Cloud Console before running cutover."
+            fi
+          done < /tmp/delete.csv
+
+      - name: Report missing Secret Manager secrets
+        run: |
+          MISSING=""
+          for S in AMADEUS_CLIENT_ID AMADEUS_CLIENT_SECRET SQUARE_ACCESS_TOKEN ANTHROPIC_API_KEY \
+                   SENDGRID_API_KEY TWILIO_ACCOUNT_SID TWILIO_AUTH_TOKEN FLIGHT_API_KEY \
+                   APPLE_PAY_MERCHANT_CERT APPLE_PAY_MERCHANT_KEY STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET; do
+            if gcloud secrets describe "$S" >/dev/null 2>&1; then
+              echo "ok:      $S"
+            else
+              echo "MISSING: $S"
+              MISSING="$MISSING $S"
+            fi
+          done
+          echo "MISSING_SECRETS=${MISSING# }" >> "$GITHUB_ENV"
+
+      # Legacy gen-1 functions keep their keys in `functions.config()`. Print the
+      # KEY PATHS only (never values) so the real credentials can be migrated
+      # into Secret Manager by hand after cutover.
+      - name: List legacy runtime-config key names (values never printed)
+        run: |
+          npm install -g firebase-tools >/dev/null 2>&1
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          firebase functions:config:get --project "$PROJECT" 2>/dev/null | python3 -c '
+          import json, sys
+          try: d = json.load(sys.stdin)
+          except Exception: print("(no legacy runtime config, or no access)"); sys.exit()
+          def walk(d, p=""):
+              for k, v in sorted(d.items()):
+                  q = f"{p}.{k}" if p else k
+                  if isinstance(v, dict): walk(v, q)
+                  else: print(q)
+          walk(d) if d else print("(legacy runtime config is empty)")
+          ' || echo "(config:get unavailable)"
+
+      # ── Everything below runs only in cutover mode ────────────────────────
+
+      # A gen-2 deploy validates every bound secret up front: one missing secret
+      # aborts the whole codebase AFTER the gen-1 twins are gone. Placeholders
+      # make the deploy atomic; functions degrade to their built-in fallbacks
+      # until real values are set with `firebase functions:secrets:set`.
+      - name: "Cutover: create placeholder secrets for missing ones"
+        if: inputs.mode == 'cutover'
+        run: |
+          [ -n "$MISSING_SECRETS" ] || { echo "all secrets present"; exit 0; }
+          for S in $MISSING_SECRETS; do
+            printf 'unset' | gcloud secrets create "$S" --replication-policy=automatic --data-file=-
+            echo "::warning title=Placeholder secret::$S holds a placeholder — set the real value: firebase functions:secrets:set $S"
+          done
+
+      - name: "Cutover: delete clashing gen-1 functions"
+        if: inputs.mode == 'cutover'
+        run: |
+          [ -s /tmp/delete.csv ] || { echo "nothing to delete"; exit 0; }
+          while IFS=, read -r NAME REGION REASON; do
+            echo "deleting gen-1 $NAME ($REGION) — $REASON"
+            gcloud functions delete "$NAME" --region "$REGION" --project "$PROJECT" --quiet
+          done < /tmp/delete.csv
+
+      - name: "Cutover: deploy the repo functions (loud — no continue-on-error)"
+        if: inputs.mode == 'cutover'
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          npm --prefix functions install
+          npm --prefix functions-side install
+          firebase deploy --only functions:apexvip \
+            --project "$PROJECT" --non-interactive --force
+
+      - name: "Cutover: verify the final state"
+        if: inputs.mode == 'cutover'
+        run: |
+          echo "== Cloud Functions after cutover =="
+          gcloud functions list --project "$PROJECT"
