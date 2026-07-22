@@ -134,6 +134,38 @@ h2.sec{font-size:13px;text-transform:uppercase;letter-spacing:1.6px;color:var(--
 .banner{display:flex;align-items:center;gap:10px;background:linear-gradient(120deg,rgba(240,180,92,.14),rgba(255,138,92,.08));
   border:1px solid rgba(240,180,92,.3);border-radius:14px;padding:12px 14px;font-size:13.5px;margin-bottom:16px;line-height:1.45}
 .back{color:var(--muted);font-size:14px;font-weight:600;display:inline-flex;align-items:center;gap:6px;padding:4px 0;margin-bottom:12px}
+
+/* ── print layout — UK business card 85×55mm + 3mm bleed = 91×61mm per side
+     (same conventions as apexvip-card: print at 100%, double-sided, flip on
+     long edge, trim to 85×55). Colors are forced exact for print. ── */
+@page{size:91mm 61mm;margin:0}
+.print-stage{display:flex;flex-direction:column;align-items:center;gap:16px;padding:4px 0 20px}
+.pnote{color:var(--faint);font-size:12px;text-align:center;line-height:1.6;max-width:91mm}
+.pcard{width:91mm;height:61mm;position:relative;overflow:hidden;flex:none;
+  -webkit-print-color-adjust:exact;print-color-adjust:exact;page-break-after:always}
+@media screen{.pcard{border-radius:2mm;box-shadow:0 8mm 16mm rgba(0,0,0,.45)}}
+.pcard .phair{position:absolute;left:8mm;right:8mm;height:.25mm}
+.pfront{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:8mm 9mm}
+.pfront .pav{width:14mm;height:14mm;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;
+  font-size:5.6mm;font-weight:700;margin-bottom:2.6mm;flex:none}
+.pfront .pav img{width:100%;height:100%;object-fit:cover;display:block}
+.pfront .pnm{font-size:6mm;font-weight:750;letter-spacing:.1mm;line-height:1.1}
+.pfront .prl{font-size:2.9mm;margin-top:1.7mm;letter-spacing:.2mm}
+.pfront .ptg{font-size:2.7mm;font-style:italic;margin-top:2.4mm}
+.pback{display:flex;align-items:center;gap:5mm;padding:7mm 8mm 7mm 9mm}
+.pback .ptxt{flex:1;min-width:0;font-size:2.7mm;line-height:1.85}
+.pback .ptxt b{font-size:3.5mm;display:block;margin-bottom:1.6mm;letter-spacing:.1mm}
+.pback .ptxt div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pback .qrtile{flex:none;width:28mm;background:#fff;border-radius:2.2mm;padding:2.2mm 2.2mm 1.6mm}
+.pback .qrtile svg{width:23.6mm;height:23.6mm;display:block;margin:0 auto}
+.pback .qrcap{font-size:1.9mm;letter-spacing:.45mm;text-transform:uppercase;text-align:center;margin-top:1.2mm;color:#4a463f}
+@media print{
+  body{background:#fff!important;background-image:none!important}
+  .wrap{max-width:none;padding:0}
+  header.top,.no-print,#toast,.pnote{display:none!important}
+  .print-stage{gap:0;padding:0}
+  .pcard{box-shadow:none;border-radius:0}
+}
 @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
@@ -304,8 +336,46 @@ function cardView(){
     '<button class="btn" data-act="copy" data-id="' + esc(c.id) + '">🔗 Copy link</button>' +
     '<button class="btn" data-act="vcf" data-id="' + esc(c.id) + '">💾 .vcf file</button>' +
     '<button class="btn" data-act="edit" data-id="' + esc(c.id) + '">✏️ Edit</button>' +
+    '<button class="btn" data-act="print" data-id="' + esc(c.id) + '">🖨 Print</button>' +
     '</div>' +
     '<p class="note">The QR code opens this exact card on any phone camera — nothing to install. The link carries the whole card' + (c.avatar ? ', photo included' : '') + '.</p>';
+}
+
+function printView(){
+  var c = findCard(view.id);
+  if (!c){ view = { name: 'home' }; return homeView(); }
+  var t = E.theme(c.theme);
+  var qr = '';
+  try{ qr = E.qrSvg(baseUrl() + '#c=' + E.encodeCard(c, { avatar: false }), 'M'); }catch(e){}
+  var role = [c.title, c.company].filter(Boolean).join(' · ');
+  var hair = 'background:linear-gradient(90deg,transparent,' + esc(t.line) + ',transparent)';
+  var rows = [c.phone, c.email, E.prettyUrl(c.website), c.location]
+    .concat(c.socials.slice(0, 2).map(function(s){
+      var meta = null; E.SOCIALS.forEach(function(m){ if (m.id === s.k) meta = m; });
+      return meta ? meta.label + '  ·  ' + (s.k === 'whatsapp' ? '+' + s.v : '@' + s.v) : '';
+    }))
+    .filter(Boolean).slice(0, 6)
+    .map(function(l){ return '<div>' + esc(l) + '</div>'; }).join('');
+  return '<div class="print-stage">' +
+    '<div class="no-print" style="align-self:stretch"><button class="back" data-act="open" data-id="' + esc(c.id) + '">‹ Back to card</button></div>' +
+    '<div class="pnote">Front — print at <b>100% scale</b>, double-sided (“flip on long edge”). Each page is 91×61mm including 3mm bleed; trim to the standard 85×55mm.</div>' +
+    '<section class="pcard pfront" style="background:' + esc(t.bg) + ';color:' + esc(t.ink) + '">' +
+      '<div class="phair" style="top:7mm;' + hair + '"></div>' +
+      avatarHtml(c, 'pav') +
+      '<div class="pnm">' + esc(c.name) + '</div>' +
+      (role ? '<div class="prl" style="color:' + esc(t.sub) + '">' + esc(role) + '</div>' : '') +
+      (c.tagline ? '<div class="ptg" style="color:' + esc(t.accent) + '">“' + esc(c.tagline) + '”</div>' : '') +
+      '<div class="phair" style="bottom:7mm;' + hair + '"></div>' +
+    '</section>' +
+    '<div class="pnote">Back — the QR opens your live card on any phone camera.</div>' +
+    '<section class="pcard pback" style="background:' + esc(t.bg) + ';color:' + esc(t.ink) + '">' +
+      '<div class="ptxt"><b style="color:' + esc(t.accent) + '">' + esc(c.name) + '</b>' + rows + '</div>' +
+      (qr ? '<div class="qrtile">' + qr + '<div class="qrcap">Scan to save my details</div></div>' : '') +
+    '</section>' +
+    '<div class="rowbtns no-print" style="align-self:stretch">' +
+      '<button class="btn primary" data-act="doPrint">🖨 Print</button>' +
+      '<button class="btn" data-act="open" data-id="' + esc(c.id) + '">Done</button>' +
+    '</div></div>';
 }
 
 function receiveView(){
@@ -328,7 +398,7 @@ function render(){
   var app = $('#app');
   var head = '<header class="top"><div class="logo">In</div><div class="brand">Intro<small>your digital business card</small></div>' +
     (view.name === 'home' && cards.length ? '<span class="right"><button class="btn small" data-act="new">＋ New</button></span>' : '') + '</header>';
-  var body = view.name === 'edit' ? editView() : view.name === 'card' ? cardView() : view.name === 'receive' ? receiveView() : homeView();
+  var body = view.name === 'edit' ? editView() : view.name === 'card' ? cardView() : view.name === 'receive' ? receiveView() : view.name === 'print' ? printView() : homeView();
   app.innerHTML = head + body;
   if (typeof scrollTo === 'function') scrollTo(0, 0);
 }
@@ -534,6 +604,8 @@ var ACTIONS = {
     if (!dup){ inbox.unshift({ card: received, savedAt: Date.now() }); commitInbox(); toast('Kept in your wallet'); }
     else toast('Already in your wallet');
   },
+  'print': function(el){ view = { name: 'print', id: el.getAttribute('data-id') }; render(); },
+  'doPrint': function(){ if (typeof window.print === 'function') window.print(); },
   'scan': function(){
     modal('<h3>Scan a card</h3>' +
       '<p id="scanStatus">Point your camera at an Intro QR code.</p>' +
