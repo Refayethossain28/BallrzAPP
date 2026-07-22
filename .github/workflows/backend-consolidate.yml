@@ -75,8 +75,22 @@ jobs:
         run: |
           echo "== Deployed Cloud Functions (all generations) =="
           gcloud functions list --project "$PROJECT"
-          gcloud functions list --project "$PROJECT" \
-            --format='csv[no-heading](name,region,environment)' > /tmp/deployed.csv
+          # csv(environment) came back empty in run #1 — parse the JSON instead.
+          # The list merges the v1 and v2 APIs: v2 entries carry
+          # environment=GEN_1/GEN_2, but entries sourced from the v1 API (all
+          # gen-1) have NO environment key at all — so absent means GEN_1
+          # (run #2 proved defaulting to GEN_2 mislabels every gen-1 function).
+          gcloud functions list --project "$PROJECT" --format=json > /tmp/fns.json
+          python3 - <<'EOF'
+          import json
+          rows = json.load(open('/tmp/fns.json'))
+          with open('/tmp/deployed.csv', 'w') as out:
+              for f in rows:
+                  parts = f['name'].split('/')
+                  out.write(f"{parts[-1]},{parts[3]},{f.get('environment','GEN_1')}\n")
+          EOF
+          echo "== parsed (name,region,generation) =="
+          cat /tmp/deployed.csv
 
       - name: Compute the cutover plan
         run: |
@@ -87,6 +101,15 @@ jobs:
           echo "== Function names in the repo codebases =="
           cat /tmp/repo-fns.txt
 
+          # Gen-1 orphans confirmed dead by the July 2026 audit: nothing in any
+          # app, the engine, or the repo functions references them (grep swept
+          # every .html/.js/.ts), and their roles are owned by gen-2 twins
+          # (onBookingCreated dispatches, onBookingWrite notifies,
+          # processSquarePayment charges). whatsappWebhook is deliberately NOT
+          # here — it may be registered as a callback URL in an external
+          # Meta/WhatsApp console that grep can't see.
+          RETIRED="assignDriverToBooking handleCancellation hotelConciergeBook notifyBookingConfirmed notifyDriverArriving notifyDriverAssigned onBookingStatusChange processCheckoutPayment"
+
           : > /tmp/delete.csv
           : > /tmp/keep-gen1.txt
           while IFS=, read -r NAME REGION ENV; do
@@ -94,8 +117,8 @@ jobs:
               *1*)
                 if grep -qx "$NAME" /tmp/repo-fns.txt; then
                   echo "$NAME,$REGION,clashes with the repo gen-2 twin" >> /tmp/delete.csv
-                elif [ "$NAME" = "assignDriverToBooking" ]; then
-                  echo "$NAME,$REGION,retired dispatcher — onBookingCreated owns dispatch" >> /tmp/delete.csv
+                elif printf ' %s ' $RETIRED | grep -q " $NAME "; then
+                  echo "$NAME,$REGION,retired orphan — no caller; gen-2 owns this role" >> /tmp/delete.csv
                 else
                   echo "$NAME ($REGION)" >> /tmp/keep-gen1.txt
                 fi
@@ -114,15 +137,26 @@ jobs:
         run: |
           [ -s /tmp/delete.csv ] || { echo "nothing to back up"; exit 0; }
           STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+          # Console/CLI-uploaded gen-1 functions have no sourceArchiveUrl (run #3
+          # showed all eight empty) — the v1 generateDownloadUrl RPC is the
+          # supported way to fetch their source zips.
+          TOKEN=$(gcloud auth print-access-token)
+          BACKUP_BUCKET=$(gsutil ls -p "$PROJECT" 2>/dev/null | grep -m1 'gcf-sources' | sed 's#^gs://##; s#/$##')
+          [ -n "$BACKUP_BUCKET" ] || BACKUP_BUCKET="$PROJECT.appspot.com"
+          echo "backup bucket: $BACKUP_BUCKET"
           while IFS=, read -r NAME REGION REASON; do
-            URL=$(gcloud functions describe "$NAME" --region "$REGION" --no-gen2 \
-                    --format='value(sourceArchiveUrl)' 2>/dev/null || true)
-            if [ -n "$URL" ]; then
-              BUCKET=$(printf '%s' "$URL" | cut -d/ -f3)
-              DEST="gs://$BUCKET/consolidation-backup/$STAMP/$NAME.zip"
-              gsutil cp "$URL" "$DEST" && echo "backed up: $NAME -> $DEST"
+            if ! gcloud functions describe "$NAME" --region "$REGION" --no-gen2 >/dev/null 2>&1; then
+              echo "::warning title=v1 describe failed::$NAME ($REGION) — cutover's gen-1 gate will SKIP deleting it."
+              continue
+            fi
+            DL=$(curl -sf -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Length: 0" \
+              "https://cloudfunctions.googleapis.com/v1/projects/$PROJECT/locations/$REGION/functions/$NAME:generateDownloadUrl" \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin).get("downloadUrl",""))' || true)
+            if [ -n "$DL" ] && curl -sf -o "/tmp/$NAME.zip" "$DL"; then
+              DEST="gs://$BACKUP_BUCKET/consolidation-backup/$STAMP/$NAME.zip"
+              gsutil -q cp "/tmp/$NAME.zip" "$DEST" && echo "backed up: $NAME -> $DEST"
             else
-              echo "::warning title=No source archive::$NAME ($REGION) has no sourceArchiveUrl — download its source from the Cloud Console before running cutover."
+              echo "::warning title=No source backup::$NAME ($REGION) — generateDownloadUrl failed; download its source from the Cloud Console if you want a rollback copy."
             fi
           done < /tmp/delete.csv
 
@@ -180,8 +214,14 @@ jobs:
         run: |
           [ -s /tmp/delete.csv ] || { echo "nothing to delete"; exit 0; }
           while IFS=, read -r NAME REGION REASON; do
+            # Hard gate on the v1 API: a gen-2 function has no v1 describe, so
+            # even a mislabeled row can never delete a gen-2 function.
+            if ! gcloud functions describe "$NAME" --region "$REGION" --no-gen2 >/dev/null 2>&1; then
+              echo "::warning title=Skipped::$NAME ($REGION) is not a gen-1 function — not deleting."
+              continue
+            fi
             echo "deleting gen-1 $NAME ($REGION) — $REASON"
-            gcloud functions delete "$NAME" --region "$REGION" --project "$PROJECT" --quiet
+            gcloud functions delete "$NAME" --region "$REGION" --project "$PROJECT" --no-gen2 --quiet
           done < /tmp/delete.csv
 
       - name: "Cutover: deploy the repo functions (loud — no continue-on-error)"
