@@ -27,46 +27,48 @@ jobs:
       - name: Smoke the live callables
         run: |
           FAIL=0
-          call() {  # call <name> <json-data> -> body on stdout, HTTP code in $CODE
+          # The callable protocol is the contract: success bodies contain
+          # {"result": ...}, failures contain {"error": {"status": ...}} — so
+          # assertions key off the body, which survives $( ) capture (an HTTP
+          # code set inside the subshell wouldn't).
+          call() {  # call <name> <json-data> -> body on stdout
             local name="$1" data="$2"
-            local out
-            out=$(curl -sS -w '\n%{http_code}' -X POST -H "Content-Type: application/json" \
-                    --max-time 30 -d "{\"data\":$data}" "$BASE/$name" || echo -e '\ncurl-error')
-            CODE=$(printf '%s' "$out" | tail -n1)
-            printf '%s' "$out" | sed '$d'
+            curl -sS -X POST -H "Content-Type: application/json" \
+              --max-time 30 -d "{\"data\":$data}" "$BASE/$name" 2>&1 | head -c 2000
           }
 
           echo "== checkFlightStatus (public) =="
           BODY=$(call checkFlightStatus '{"flight":"BA117"}')
-          echo "HTTP $CODE — ${BODY:0:200}"
-          if [ "$CODE" != "200" ] || ! printf '%s' "$BODY" | grep -q '"result"'; then
-            echo "::error title=checkFlightStatus::expected 200 with a result payload"; FAIL=1
+          echo "${BODY:0:200}"
+          if ! printf '%s' "$BODY" | grep -q '"result"'; then
+            echo "::error title=checkFlightStatus::expected a callable result payload"; FAIL=1
           fi
 
           echo "== getHotelRates (public, rate-limited) =="
-          BODY=$(call getHotelRates '{"city":"London"}')
-          echo "HTTP $CODE — ${BODY:0:200}"
-          if [ "$CODE" != "200" ] || ! printf '%s' "$BODY" | grep -q '"result"'; then
-            echo "::error title=getHotelRates::expected 200 with a result payload"; FAIL=1
+          CHECKIN=$(date -u -d '+7 days' +%F)
+          BODY=$(call getHotelRates "{\"lat\":51.5074,\"lng\":-0.1278,\"checkIn\":\"$CHECKIN\"}")
+          echo "${BODY:0:200}"
+          if ! printf '%s' "$BODY" | grep -q '"result"'; then
+            echo "::error title=getHotelRates::expected a callable result payload"; FAIL=1
           fi
 
           echo "== parseBookingIntent (public, rate-limited) =="
-          BODY=$(call parseBookingIntent '{"text":"Book me a car to Heathrow tomorrow at 9am"}')
-          echo "HTTP $CODE — ${BODY:0:300}"
-          if [ "$CODE" != "200" ] || ! printf '%s' "$BODY" | grep -q '"result"'; then
-            echo "::error title=parseBookingIntent::expected 200 with a result payload"; FAIL=1
+          BODY=$(call parseBookingIntent '{"message":"Book me a car to Heathrow tomorrow at 9am"}')
+          echo "${BODY:0:300}"
+          if ! printf '%s' "$BODY" | grep -q '"result"'; then
+            echo "::error title=parseBookingIntent::expected a callable result payload"; FAIL=1
           fi
 
           echo "== processSquarePayment WITHOUT auth (must be rejected) =="
           BODY=$(call processSquarePayment '{"amount":1,"sourceId":"smoke"}')
-          echo "HTTP $CODE — ${BODY:0:200}"
+          echo "${BODY:0:200}"
           if ! printf '%s' "$BODY" | grep -qi 'UNAUTHENTICATED'; then
             echo "::error title=Payment auth gate::unauthenticated call was NOT rejected — investigate immediately"; FAIL=1
           fi
 
           echo "== refundSquarePayment WITHOUT auth (must be rejected) =="
           BODY=$(call refundSquarePayment '{"paymentId":"smoke"}')
-          echo "HTTP $CODE — ${BODY:0:200}"
+          echo "${BODY:0:200}"
           if ! printf '%s' "$BODY" | grep -qi 'UNAUTHENTICATED'; then
             echo "::error title=Refund auth gate::unauthenticated call was NOT rejected — investigate immediately"; FAIL=1
           fi
