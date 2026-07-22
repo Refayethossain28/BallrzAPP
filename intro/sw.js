@@ -3,8 +3,8 @@
  * shell when offline — and a received card's #fragment still decodes offline
  * because the data rides in the URL, not on a server) and static assets are
  * cache-first for speed. Bump CACHE to force a clean reinstall. */
-const CACHE = 'intro-v1';
-const ASSETS = ['./', './index.html', './engine.js', './manifest.json',
+const CACHE = 'intro-v2';
+const ASSETS = ['./', './index.html', './engine.js', './config.js', './manifest.json',
                 './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
