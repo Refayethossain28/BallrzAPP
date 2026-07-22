@@ -75,8 +75,19 @@ jobs:
         run: |
           echo "== Deployed Cloud Functions (all generations) =="
           gcloud functions list --project "$PROJECT"
-          gcloud functions list --project "$PROJECT" \
-            --format='csv[no-heading](name,region,environment)' > /tmp/deployed.csv
+          # csv(environment) came back empty in run #1 — parse the JSON instead,
+          # where name is the full resource path and environment is GEN_1/GEN_2.
+          gcloud functions list --project "$PROJECT" --format=json > /tmp/fns.json
+          python3 - <<'EOF'
+          import json
+          rows = json.load(open('/tmp/fns.json'))
+          with open('/tmp/deployed.csv', 'w') as out:
+              for f in rows:
+                  parts = f['name'].split('/')
+                  out.write(f"{parts[-1]},{parts[3]},{f.get('environment','GEN_2')}\n")
+          EOF
+          echo "== parsed (name,region,generation) =="
+          cat /tmp/deployed.csv
 
       - name: Compute the cutover plan
         run: |
@@ -87,6 +98,15 @@ jobs:
           echo "== Function names in the repo codebases =="
           cat /tmp/repo-fns.txt
 
+          # Gen-1 orphans confirmed dead by the July 2026 audit: nothing in any
+          # app, the engine, or the repo functions references them (grep swept
+          # every .html/.js/.ts), and their roles are owned by gen-2 twins
+          # (onBookingCreated dispatches, onBookingWrite notifies,
+          # processSquarePayment charges). whatsappWebhook is deliberately NOT
+          # here — it may be registered as a callback URL in an external
+          # Meta/WhatsApp console that grep can't see.
+          RETIRED="assignDriverToBooking handleCancellation hotelConciergeBook notifyBookingConfirmed notifyDriverArriving notifyDriverAssigned onBookingStatusChange processCheckoutPayment"
+
           : > /tmp/delete.csv
           : > /tmp/keep-gen1.txt
           while IFS=, read -r NAME REGION ENV; do
@@ -94,8 +114,8 @@ jobs:
               *1*)
                 if grep -qx "$NAME" /tmp/repo-fns.txt; then
                   echo "$NAME,$REGION,clashes with the repo gen-2 twin" >> /tmp/delete.csv
-                elif [ "$NAME" = "assignDriverToBooking" ]; then
-                  echo "$NAME,$REGION,retired dispatcher — onBookingCreated owns dispatch" >> /tmp/delete.csv
+                elif printf ' %s ' $RETIRED | grep -q " $NAME "; then
+                  echo "$NAME,$REGION,retired orphan — no caller; gen-2 owns this role" >> /tmp/delete.csv
                 else
                   echo "$NAME ($REGION)" >> /tmp/keep-gen1.txt
                 fi
