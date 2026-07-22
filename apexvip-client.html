@@ -2991,8 +2991,9 @@ chauffeur: () => `
     </div>
     <div class="section-label" style="margin-bottom:14px">Passengers</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px" id="bp_pax">
-      ${[1,2,3,4,5,6,7,8].map(n=>{const sel=(state.booking.passengers||2)===n;return`<button onclick="setPax(${n},this)" style="width:46px;height:46px;border-radius:13px;background:${sel?'#ffffff':'rgba(255,255,255,.06)'};color:${sel?'#000':'rgba(255,255,255,.5)'};font-weight:700;font-size:15px;border:1px solid ${sel?'#ffffff':'rgba(255,255,255,.07)'};cursor:pointer;font-family:inherit;transition:all .15s">${n}</button>`;}).join('')}
+      ${[1,2,3,4,5,6,7,8,10,12,14].map(n=>{const sel=(state.booking.passengers||2)===n;return`<button onclick="setPax(${n},this)" style="width:46px;height:46px;border-radius:13px;background:${sel?'#ffffff':'rgba(255,255,255,.06)'};color:${sel?'#000':'rgba(255,255,255,.5)'};font-weight:700;font-size:15px;border:1px solid ${sel?'#ffffff':'rgba(255,255,255,.07)'};cursor:pointer;font-family:inherit;transition:all .15s">${n}</button>`;}).join('')}
     </div>
+    <div style="font-size:11px;color:var(--fg-4);margin-top:2px;line-height:1.5">1–3 travel in the S-Class · 4–7 in the V-Class · larger parties travel in multiple V-Classes</div>
     <div style="font-size:12px;color:var(--fg-4);line-height:1.6;margin-top:14px">Your fare is calculated from the live driving distance and time, plus any evening or weekend supplement. You'll see the exact price for each vehicle next.</div>
   </div>
   <div style="height:90px"></div>
@@ -3041,10 +3042,27 @@ chauffeur: () => `
     ? ApexCore.apexYield({date:bk.date,time:bk.time,vehicle:'s',market:'london'})
     : {multiplier:1.0,label:'Standard'};
   const surge = ySurge.multiplier;
+  // ── Capacity rules ────────────────────────────────────────────────────────
+  // S-Class seats up to 3, V-Class up to 7. Parties of 4–7 are steered into
+  // the V-Class automatically; parties beyond 7 travel as a convoy of
+  // ceil(n/7) V-Classes, priced per van.
+  const pax = bk.passengers||2;
+  const vNeeded = Math.ceil(pax/7);
+  if(pax<=7 && bk.vehicleId==='vClassMulti') bk.vehicleId='';   // party shrank
+  if(pax>3){
+    bk.vehicleId = pax>7 ? 'vClassMulti' : 'vClass';
+    bk.vehicle  = pax>7 ? vNeeded+'× Mercedes V-Class' : 'Mercedes V-Class';
+    bk.price    = pax>7 ? sp.v*vNeeded : sp.v;
+  }
   const sel = state.booking.vehicleId||'';
+  const sDisabledNote = pax>3 ? 'Seats up to 3 — your party is '+pax : null;
   const vehicles = [
-    {id:'sClass',name:'S-Class',full:'Mercedes S-Class',sub:'Business Sedan · Up to 3 passengers',price:sp.s,badge:'EXECUTIVE',features:['WiFi','Water','Charger','Meet & Greet'],img:'vehicles/s-class.jpg'},
-    {id:'vClass',name:'V-Class',full:'Mercedes V-Class',sub:'Business Van · Up to 7 passengers',price:sp.v,badge:'BUSINESS',features:['WiFi','Water','Charger','Child Seat'],img:'vehicles/v-class.jpg'}
+    {id:'sClass',name:'S-Class',full:'Mercedes S-Class',sub:'Business Sedan · Up to 3 passengers',price:sp.s,badge:'EXECUTIVE',features:['WiFi','Water','Charger','Meet & Greet'],img:'vehicles/s-class.jpg',disabled:pax>3,note:sDisabledNote},
+    ...(pax>7 ? [
+      {id:'vClassMulti',name:vNeeded+'× V-Class',full:vNeeded+'× Mercedes V-Class',sub:vNeeded+' vans travelling together · party of '+pax,price:sp.v*vNeeded,badge:'GROUP',features:['WiFi','Water','Charger','Convoy arrival'],img:'vehicles/v-class.jpg'}
+    ] : [
+      {id:'vClass',name:'V-Class',full:'Mercedes V-Class',sub:'Business Van · Up to 7 passengers',price:sp.v,badge:'BUSINESS',features:['WiFi','Water','Charger','Child Seat'],img:'vehicles/v-class.jpg'}
+    ])
   ];
   // Loading/route state
   const isLoading = needsRoute && !bk._route && !bk._routeErr;
@@ -3070,7 +3088,7 @@ chauffeur: () => `
       </div>
     </div>` : ''}
     ${vehicles.map(v=>`
-    <div id="vc_${v.id}" onclick="selectVehicle('${v.id}',${v.price},'${v.full}')" class="vcard ${sel===v.id?'sel':''}" style="margin-bottom:14px">
+    <div id="vc_${v.id}" ${v.disabled?'':`onclick="selectVehicle('${v.id}',${v.price},'${v.full}')"`} class="vcard ${sel===v.id?'sel':''}" style="margin-bottom:14px${v.disabled?';opacity:.4;filter:grayscale(.5);cursor:default':''}">
       <div class="vcard-media">
         <img src="${v.img}" alt="${v.full}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center top" onerror="this.style.display='none'"/>
         <div class="vcard-badge">${v.badge}</div>
@@ -3082,6 +3100,7 @@ chauffeur: () => `
           <div>
             <div style="font-size:17px;font-weight:700">${v.full}</div>
             <div style="font-size:13px;color:var(--fg-3);margin-top:3px">${v.sub}</div>
+            ${v.note?`<div style="font-size:12px;color:#f59e0b;margin-top:4px">${v.note}</div>`:''}
           </div>
           <div style="text-align:right">
             <div class="tnum" style="font-size:26px;font-weight:800;letter-spacing:-.02em;color:${sel===v.id?'#ffffff':'#fff'}">£${v.price}</div>
