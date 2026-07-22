@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ballrz Hub — every app in one place</title>
+<meta name="description" content="The launcher for everything we've built — ApexVIP, Apex, Imposter, Ripple, Drip, TimeCoin, Neura and more. One home screen, every app.">
+<meta name="theme-color" content="#0b0e17">
+<meta property="og:title" content="Ballrz Hub">
+<meta property="og:description" content="Every app we've made, in one place.">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Ballrz">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b0e17;
+    --ink: #e8ecf6;
+    --dim: #93a0c0;
+    --faint: #6b779a;
+    --line: rgba(255,255,255,0.08);
+    --card: rgba(255,255,255,0.04);
+    --blue: #6e8bff; --purple: #8b7cf7; --teal: #39e6b4; --gold: #f5c04a;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; }
+  body {
+    min-height: 100vh;
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(1200px 800px at 70% -10%, #1b2440, var(--bg) 60%) fixed;
+    color: var(--ink);
+    padding: max(20px, env(safe-area-inset-top)) 18px max(28px, env(safe-area-inset-bottom));
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+  .mark { width: 46px; height: 46px; border-radius: 12px; flex: none; }
+  h1 { font-size: 24px; margin: 0; letter-spacing: -0.02em; }
+  .sub { color: var(--dim); margin: 1px 0 0; font-size: 13.5px; }
+  #installBtn {
+    margin-left: auto; display: none; cursor: pointer; font: inherit; font-size: 13px; font-weight: 650;
+    color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 13px;
+  }
+  #installBtn:hover { border-color: rgba(120,150,255,0.5); }
+
+  .bar { display: flex; gap: 10px; margin: 18px 0 8px; align-items: center; }
+  .search { position: relative; flex: 1; }
+  .search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); opacity: .45; }
+  #q {
+    width: 100%; font: inherit; font-size: 15px; color: var(--ink);
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 11px 14px 11px 38px; outline: none;
+  }
+  #q:focus { border-color: rgba(120,150,255,0.55); }
+  #q::placeholder { color: var(--faint); }
+  .viewToggle {
+    display: flex; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; flex: none;
+  }
+  .viewToggle button {
+    font: inherit; font-size: 13px; padding: 10px 13px; cursor: pointer; border: 0;
+    background: transparent; color: var(--dim);
+  }
+  .viewToggle button[aria-pressed="true"] { background: rgba(120,150,255,0.16); color: var(--ink); }
+
+  .count { color: var(--faint); font-size: 12.5px; margin: 0 0 4px 2px; }
+
+  section { margin-top: 22px; }
+  h2 {
+    font-size: 12.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--dim); margin: 0 0 12px 2px; display: flex; align-items: baseline; gap: 8px;
+  }
+  h2 .n { color: var(--faint); font-weight: 600; letter-spacing: 0; }
+
+  /* ---- grid (home-screen) view ---- */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 16px 10px; }
+  a.tile { display: flex; flex-direction: column; align-items: center; gap: 7px; text-decoration: none; color: inherit; }
+  .icon {
+    width: 62px; height: 62px; border-radius: 15px; flex: none;
+    display: flex; align-items: center; justify-content: center; font-size: 30px;
+    border: 1px solid var(--line); background: var(--card);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+    transition: transform .12s ease, border-color .12s ease;
+    overflow: hidden;
+  }
+  .icon img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  a.tile:hover .icon, a.tile:focus-visible .icon { transform: scale(1.06); border-color: rgba(120,150,255,0.5); }
+  a.tile:active .icon { transform: scale(.94); }
+  a.tile:focus-visible { outline: none; }
+  .tname { font-size: 12px; line-height: 1.25; text-align: center; color: var(--ink); max-width: 96px; }
+
+  /* ---- list view ---- */
+  .list { display: grid; gap: 10px; }
+  a.row {
+    display: flex; gap: 13px; align-items: center; text-decoration: none; color: inherit;
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px;
+    transition: transform .12s ease, border-color .12s ease;
+  }
+  a.row:hover, a.row:focus-visible { transform: translateY(-1px); border-color: rgba(120,150,255,0.5); outline: none; }
+  a.row .icon { width: 46px; height: 46px; border-radius: 12px; font-size: 23px; box-shadow: none; }
+  .rname { font-weight: 650; font-size: 15px; }
+  .rdesc { color: var(--dim); font-size: 13px; margin-top: 1px; }
+  .rgo { margin-left: auto; color: var(--faint); flex: none; }
+
+  .empty { color: var(--dim); text-align: center; padding: 48px 0 20px; display: none; }
+
+  footer { margin-top: 40px; color: var(--faint); font-size: 12.5px; text-align: center; }
+  footer a { color: var(--dim); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .icon, a.tile .icon, a.row { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img class="mark" src="icon.svg" alt="">
+    <div>
+      <h1>Ballrz Hub</h1>
+      <p class="sub">Every app we&rsquo;ve made, in one place.</p>
+    </div>
+    <button id="installBtn" type="button">Install</button>
+  </header>
+
+  <div class="bar">
+    <div class="search">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="Search apps…" autocomplete="off" aria-label="Search apps">
+    </div>
+    <div class="viewToggle" role="group" aria-label="View">
+      <button id="viewGrid" type="button" aria-pressed="true">Grid</button>
+      <button id="viewList" type="button" aria-pressed="false">List</button>
+    </div>
+  </div>
+  <p class="count" id="count"></p>
+
+  <main id="apps"></main>
+  <p class="empty" id="empty">Nothing matches — try another word.</p>
+
+  <footer>
+    Built one app at a time · <a href="https://github.com/refayethossain28/BallrzAPP">source on GitHub</a>
+  </footer>
+</div>
+
+<script>
+'use strict';
+/* Each entry: name, url (relative to /hub/ so it works on both apexvip.uk and
+   github.io/BallrzAPP), one-line desc, tags for search, and either a real app
+   icon (img) or an emoji on a gradient tile. */
+var SECTIONS = [
+  { title: 'ApexVIP · luxury chauffeur', apps: [
+    { name: 'ApexVIP', url: '../apexvip/', img: '../icon-192.png', emoji: '✨', grad: 'gold', desc: 'The cinematic marketing site — fleet, six cities, memberships.', tags: 'website luxury chauffeur marketing' },
+    { name: 'Client', url: '../apexvip-client.html', emoji: '🚘', grad: 'gold', desc: 'Book a chauffeur, track your driver live, message in-app.', tags: 'apexvip booking ride' },
+    { name: 'Driver', url: '../apexvip-driver.html', emoji: '🛞', grad: 'gold', desc: 'Accept & manage jobs, live GPS, earnings.', tags: 'apexvip jobs portal' },
+    { name: 'Ops', url: '../apexvip-admin.html', emoji: '🎛️', grad: 'gold', desc: 'Dispatch, fleet, analytics & payouts.', tags: 'apexvip admin operations panel' },
+    { name: 'Concierge', url: '../concierge/', img: '../concierge/icon-192.png', emoji: '🛎️', grad: 'gold', desc: 'One membership, everything handled — 8 desks, real SLAs, Stripe billing.', tags: 'apexvip vip subscription silver gold black' },
+    { name: 'Founding', url: '../apexvip-join/', emoji: '🎟️', grad: 'gold', desc: 'Founding memberships — join the ApexVIP world.', tags: 'apexvip join membership' },
+    { name: 'Drive with us', url: '../drivers/', emoji: '🤝', grad: 'gold', desc: 'Recruiting page — keep 80% of every fare.', tags: 'apexvip drivers recruit earn' }
+  ]},
+  { title: 'Apex · UK rentals', apps: [
+    { name: 'Apex', url: '../apex/', img: '../rentmatch-icon-192.png', emoji: '🏘️', grad: 'teal', desc: 'The UK landlord OS — marketplace, AST signing, compliance, rent ledger.', tags: 'rentmatch property landlord renter lettings' },
+    { name: 'Apex site', url: '../apex-site/', emoji: '🏠', grad: 'teal', desc: 'The marketing site for the landlord OS.', tags: 'property marketing rentals' },
+    { name: 'Classic', url: '../rentmatch.html', emoji: '🧪', grad: 'teal', desc: 'The original single-file lettings mockup — play both sides.', tags: 'rentmatch prototype mockup' }
+  ]},
+  { title: 'Play & connect', apps: [
+    { name: 'Imposter', url: '../imposter/', img: '../imposter/icon-192.png', emoji: '🕵️', grad: 'blue', desc: 'Pass-and-play social deduction — one phone, 3–12 players, two modes.', tags: 'party game spyfall word bluff friends' },
+    { name: 'Flow', url: '../concepts/prototypes/flow-game/', emoji: '🌊', grad: 'blue', desc: 'Adaptive tap arcade — an on-device skill model keeps you on the edge.', tags: 'game arcade flow duel' },
+    { name: 'Ripple', url: '../ripple/', img: '../ripple/icon-192.png', emoji: '💬', grad: 'blue', desc: 'A private messenger that puts you in control — schedule, edit, unsend.', tags: 'chat messaging whatsapp polls' },
+    { name: 'Intro', url: '../intro/', img: '../intro/icon-192.png', emoji: '🎴', grad: 'gold', desc: 'Your digital business card — QR, NFC tap, Apple Wallet, vCard.', tags: 'card contact networking qr nfc' }
+  ]},
+  { title: 'Money & crypto', apps: [
+    { name: 'Drip', url: '../drip/', img: '../drip/icon-192.png', emoji: '💧', grad: 'teal', desc: 'The passive income engine — model your streams, find your freedom date.', tags: 'finance passive income compound invest' },
+    { name: 'TimeCoin', url: '../coin/', img: '../coin/icon-192.png', emoji: '🪙', grad: 'gold', desc: 'A Bitcoin built from raw bytes up — mine real blocks in your browser.', tags: 'crypto bitcoin blockchain ballrzcoin blz mining' },
+    { name: 'Neura', url: '../neura/', emoji: '🧠', grad: 'purple', desc: 'The chain that thinks — Proof of Intelligence on a from-scratch chain.', tags: 'crypto ai blockchain proof intelligence' },
+    { name: 'Automaton', url: '../automaton/', emoji: '🤖', grad: 'purple', desc: 'The AI that dies if it doesn’t earn.', tags: 'ai agent economy' },
+    { name: 'FX Signal Pro', url: '../trading-app/fx-signal-pro.html', emoji: '📈', grad: 'blue', desc: 'Currency-pair trading signals — an earlier build.', tags: 'forex trading signals' }
+  ]},
+  { title: 'Mind & tools', apps: [
+    { name: 'Cusp', url: '../cusp/', img: '../cusp/icon-192.png', emoji: '🎯', grad: 'blue', desc: 'What to do right now — the decision engine your to-do list is missing.', tags: 'tasks productivity todo salience focus' },
+    { name: 'Omni', url: '../omni/', img: '../omni/icon-192.png', emoji: '🧰', grad: 'blue', desc: 'The do-everything app — tasks, notes, timers, money, QR, ⌘K.', tags: 'tools calculator converter habits utility' },
+    { name: 'Lingua', url: '../lingua/', img: '../lingua/icon-192.png', emoji: '🗣️', grad: 'teal', desc: 'The fluency engine — every language, SRS, speaking drills, Qur’an studio.', tags: 'language learning translate arabic srs' },
+    { name: 'My Own AI', url: '../llm/', img: '../llm/icon-192.png', emoji: '⚡', grad: 'purple', desc: 'A GPT built from first principles — every token generated on your device.', tags: 'ai llm gpt transformer scratch shakespeare' }
+  ]},
+  { title: 'Concepts & prototypes', apps: [
+    { name: 'Split the bill', url: '../concepts/prototypes/concierge-split/', emoji: '🧾', grad: 'blue', desc: 'AI life concierge — chat, agree a split, fire payment requests.', tags: 'concept agent payments claude' },
+    { name: 'Fixr', url: '../fixr/', emoji: '🛎️', grad: 'purple', desc: 'Luxury ground transport + concierge — the static demo.', tags: 'concept transport concierge' }
+  ]}
+];
+
+var GRADS = {
+  gold:   'linear-gradient(135deg,#3a2f14,#141007)',
+  teal:   'linear-gradient(135deg,#0e3a30,#07130f)',
+  blue:   'linear-gradient(135deg,#1c2a55,#0a0e1d)',
+  purple: 'linear-gradient(135deg,#2c2255,#0e0a1d)'
+};
+
+var appsEl = document.getElementById('apps');
+var qEl = document.getElementById('q');
+var countEl = document.getElementById('count');
+var emptyEl = document.getElementById('empty');
+var gridBtn = document.getElementById('viewGrid');
+var listBtn = document.getElementById('viewList');
+
+var view = 'grid';
+try { view = localStorage.getItem('hub-view') === 'list' ? 'list' : 'grid'; } catch (e) {}
+
+function iconHTML(app) {
+  var fallback = 'background:' + GRADS[app.grad || 'blue'];
+  if (app.img) {
+    // onerror: swap to the emoji tile — e.g. /llm/ icons only exist on the
+    // published site (assembled by the Pages workflow), not in a local clone.
+    return '<span class="icon"><img src="' + app.img + '" alt="" loading="lazy"' +
+           ' onerror="var p=this.parentNode;p.style.cssText=\'' + fallback + '\';p.textContent=\'' + app.emoji + '\'"></span>';
+  }
+  return '<span class="icon" style="' + fallback + '">' + app.emoji + '</span>';
+}
+
+function matches(app, q) {
+  if (!q) return true;
+  var hay = (app.name + ' ' + app.desc + ' ' + app.tags).toLowerCase();
+  return q.split(/\s+/).every(function (w) { return hay.indexOf(w) !== -1; });
+}
+
+function render() {
+  var q = qEl.value.trim().toLowerCase();
+  var total = 0;
+  var html = '';
+  SECTIONS.forEach(function (sec) {
+    var apps = sec.apps.filter(function (a) { return matches(a, q); });
+    if (!apps.length) return;
+    total += apps.length;
+    html += '<section><h2>' + sec.title + ' <span class="n">' + apps.length + '</span></h2>';
+    if (view === 'grid') {
+      html += '<div class="grid">' + apps.map(function (a) {
+        return '<a class="tile" href="' + a.url + '" title="' + a.desc.replace(/"/g, '&quot;') + '">' +
+               iconHTML(a) + '<span class="tname">' + a.name + '</span></a>';
+      }).join('') + '</div>';
+    } else {
+      html += '<div class="list">' + apps.map(function (a) {
+        return '<a class="row" href="' + a.url + '">' + iconHTML(a) +
+               '<span><span class="rname">' + a.name + '</span><br><span class="rdesc">' + a.desc + '</span></span>' +
+               '<span class="rgo">›</span></a>';
+      }).join('') + '</div>';
+    }
+    html += '</section>';
+  });
+  appsEl.innerHTML = html;
+  emptyEl.style.display = total ? 'none' : 'block';
+  countEl.textContent = total + (total === 1 ? ' app' : ' apps');
+}
+
+function setView(v) {
+  view = v;
+  try { localStorage.setItem('hub-view', v); } catch (e) {}
+  gridBtn.setAttribute('aria-pressed', String(v === 'grid'));
+  listBtn.setAttribute('aria-pressed', String(v === 'list'));
+  render();
+}
+
+gridBtn.addEventListener('click', function () { setView('grid'); });
+listBtn.addEventListener('click', function () { setView('list'); });
+qEl.addEventListener('input', render);
+setView(view);
+
+/* ---- install prompt ---- */
+var installBtn = document.getElementById('installBtn');
+var deferredPrompt = null;
+window.addEventListener('beforeinstallprompt', function (e) {
+  e.preventDefault();
+  deferredPrompt = e;
+  installBtn.style.display = 'inline-block';
+});
+installBtn.addEventListener('click', function () {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  deferredPrompt = null;
+  installBtn.style.display = 'none';
+});
+
+/* ---- offline ---- */
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  navigator.serviceWorker.register('sw.js');
+}
+</script>
+</body>
+</html>
