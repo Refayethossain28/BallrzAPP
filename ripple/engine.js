@@ -118,6 +118,15 @@
     return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
   }
 
+  // Canonicalise a phone number for contact matching: digits only, and (to make
+  // two people's numbers line up despite country-code / formatting differences)
+  // keep the last 10 digits. Returns '' for anything too short to be a number.
+  function normalizePhone(s) {
+    var d = String(s == null ? '' : s).replace(/[^\d]/g, '');
+    if (d.length < 7) return '';
+    return d.length > 10 ? d.slice(-10) : d;
+  }
+
   // Render a whole conversation to plain text for export/backup.
   function exportChatText(chat, messages, opts) {
     opts = opts || {};
@@ -851,7 +860,7 @@
     replyOutlook: replyOutlook, echoReplyDelay: echoReplyDelay,
     nextPeakTime: nextPeakTime, groupPulse: groupPulse,
     forwardMessage: forwardMessage, exportChatText: exportChatText,
-    normalizeHandle: normalizeHandle,
+    normalizeHandle: normalizeHandle, normalizePhone: normalizePhone,
     detectCommitment: detectCommitment, extractDue: extractDue
   };
 });

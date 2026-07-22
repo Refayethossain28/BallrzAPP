@@ -443,6 +443,16 @@ test('normalizeHandle keeps a safe lookup key', () => {
   assert.equal(E.normalizeHandle(null), '');
 });
 
+/* ---------- contact matching ---------- */
+test('normalizePhone canonicalises to the last 10 digits', () => {
+  assert.equal(E.normalizePhone('+1 (415) 555-1234'), '4155551234');
+  assert.equal(E.normalizePhone('415-555-1234'), '4155551234');
+  assert.equal(E.normalizePhone('+44 7911 123456'), '7911123456'); // last 10
+  assert.equal(E.normalizePhone('123'), '');   // too short
+  assert.equal(E.normalizePhone(''), '');
+  assert.equal(E.normalizePhone(null), '');
+});
+
 /* ---------- Kept: commitment detection ---------- */
 test('detectCommitment catches a promise with an explicit time', () => {
   const c = E.detectCommitment('I\'ll call you tonight', NOW);

@@ -323,6 +323,15 @@ service cloud.firestore {
     match /ripple_push/{uid} {
       allow read, write: if isUser(uid);
     }
+    // Contact matching: SHA-256(hashed phone) -> {uid}. Lets someone who has
+    // your number in their address book discover you're on Ripple. You may only
+    // claim a hash that points at yourself. (Phone-number hashes are guessable —
+    // this is the same privacy trade-off every contact-matching app makes.)
+    match /ripple_contacts/{hash} {
+      allow read:   if signedIn();
+      allow create, update: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
     // Public username directory: handle -> {uid,name,avatar}. Anyone signed in
     // can look someone up; you may only claim/update a handle that points at YOU
     // (and can't steal one already owned by someone else).
