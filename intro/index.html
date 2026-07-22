@@ -337,6 +337,7 @@ function cardView(){
     '<button class="btn" data-act="vcf" data-id="' + esc(c.id) + '">💾 .vcf file</button>' +
     '<button class="btn" data-act="edit" data-id="' + esc(c.id) + '">✏️ Edit</button>' +
     '<button class="btn" data-act="print" data-id="' + esc(c.id) + '">🖨 Print</button>' +
+    '<button class="btn" data-act="nfc" data-id="' + esc(c.id) + '">📳 NFC tap</button>' +
     '</div>' +
     '<p class="note">The QR code opens this exact card on any phone camera — nothing to install. The link carries the whole card' + (c.avatar ? ', photo included' : '') + '.</p>';
 }
@@ -410,7 +411,7 @@ function modal(html){
   d.innerHTML = '<div class="modal">' + html + '</div>';
   document.body.appendChild(d);
 }
-function closeModal(){ stopScan(); var o = document.getElementById('overlay'); if (o && o.parentNode) o.parentNode.removeChild(o); }
+function closeModal(){ stopScan(); stopNfc(); var o = document.getElementById('overlay'); if (o && o.parentNode) o.parentNode.removeChild(o); }
 
 var toastTimer = 0;
 function toast(msg){
@@ -505,6 +506,65 @@ function handleScanned(text, loud){
     if (status) status.textContent = 'That doesn’t look like an Intro card link.';
   }
   return false;
+}
+
+/* ── NFC tap (Web NFC, Chrome on Android): write your card's link onto any
+     cheap NFC tag — a tap then opens the card on any phone, iPhones included,
+     because tags are read natively. True phone-to-phone NFC push isn't exposed
+     to the web (Android Beam is gone, NameDrop is Apple-private), so the tag
+     IS the tap — exactly how the commercial tap-card products work. ── */
+var nfcAbort = null, nfcCard = null, nfcCompact = false;
+function stopNfc(){
+  if (nfcAbort){ try{ nfcAbort.abort(); }catch(e){} nfcAbort = null; }
+}
+function nfcUrl(card, compact){
+  var src = card;
+  if (compact) src = { name: card.name, title: card.title, company: card.company,
+    phone: card.phone, email: card.email, website: card.website, theme: card.theme };
+  return baseUrl() + '#c=' + E.encodeCard(src, { avatar: false });
+}
+function nfcSupported(){ return typeof window.NDEFReader === 'function'; }
+function renderNfcModal(){
+  var c = nfcCard; if (!c) return;
+  if (!nfcSupported()){
+    modal('<h3>📳 NFC tap</h3>' +
+      '<p>This browser doesn’t expose NFC — today only <b>Chrome on Android</b> can write tags, and no phone browser can beam card-to-card directly (Android Beam was retired; iPhone’s NameDrop is Apple-only).</p>' +
+      '<p><b>The pro move:</b> write your card to a cheap NFC sticker or card once from an Android phone — after that <em>any</em> phone tapped on it (iPhones included) opens your card automatically. Until then, your QR code is every bit as fast.</p>' +
+      '<div class="rowbtns"><button class="btn wide" data-act="closeModal">Close</button></div>');
+    return;
+  }
+  var bytes = E.utf8Encode(nfcUrl(c, nfcCompact)).length;
+  var fit = bytes <= 130 ? 'fits every common tag, even the tiny NTAG213'
+          : bytes <= 480 ? 'fits the standard NTAG215 and NTAG216 tags'
+          : bytes <= 860 ? 'needs a larger NTAG216 tag'
+          : 'too big for common tags — switch on Compact below';
+  modal('<h3>📳 Write your card to an NFC tag</h3>' +
+    '<p>Turn any blank NFC tag, sticker or card into your business card. Write once — then anyone taps their phone on it and your card opens. No app on their side.</p>' +
+    '<p style="margin-bottom:6px"><b>' + bytes + ' bytes</b> — ' + fit + '.</p>' +
+    '<label style="display:flex;gap:8px;align-items:center;justify-content:center;font-size:13px;color:var(--muted);margin-bottom:12px">' +
+      '<input type="checkbox" id="nfcCompact"' + (nfcCompact ? ' checked' : '') + '/> Compact (essentials only, fits small tags)</label>' +
+    '<p id="nfcStatus" style="min-height:18px"></p>' +
+    '<div class="rowbtns"><button class="btn primary" data-act="nfcWrite">Write tag</button>' +
+    '<button class="btn" data-act="closeModal">Close</button></div>');
+}
+function startNfcRead(){
+  if (!nfcSupported()) return;
+  try{
+    var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    nfcAbort = ctl;
+    var r = new window.NDEFReader();
+    r.onreading = function(ev){
+      var recs = (ev && ev.message && ev.message.records) || [];
+      for (var i = 0; i < recs.length; i++){
+        var rec = recs[i], text = '';
+        if (rec.recordType === 'url' || rec.recordType === 'text'){
+          try{ text = new TextDecoder().decode(rec.data); }catch(e){}
+        }
+        if (text && handleScanned(text, false)) return;
+      }
+    };
+    r.scan(ctl ? { signal: ctl.signal } : undefined).catch(function(){});
+  }catch(e){}
 }
 
 function saveDraftField(f, v){ if (draft) draft[f] = v; }
@@ -605,14 +665,38 @@ var ACTIONS = {
     else toast('Already in your wallet');
   },
   'print': function(el){ view = { name: 'print', id: el.getAttribute('data-id') }; render(); },
+  'nfc': function(el){
+    nfcCard = findCard(el.getAttribute('data-id'));
+    if (nfcCard){ nfcCompact = false; renderNfcModal(); }
+  },
+  'nfcWrite': function(){
+    var c = nfcCard, status = document.getElementById('nfcStatus');
+    if (!c || !nfcSupported()) return;
+    stopNfc();
+    var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    nfcAbort = ctl;
+    if (status) status.textContent = '📳 Hold a blank tag to the back of your phone…';
+    try{
+      new window.NDEFReader()
+        .write({ records: [{ recordType: 'url', data: nfcUrl(c, nfcCompact) }] }, ctl ? { signal: ctl.signal } : undefined)
+        .then(function(){
+          if (status) status.textContent = '✅ Written! Any phone tapped on the tag now opens your card.';
+          toast('Tag written');
+        })
+        .catch(function(err){
+          if (status) status.textContent = 'Couldn’t write — ' + ((err && err.message) || 'hold the tag closer and try again') + '.';
+        });
+    }catch(e){ if (status) status.textContent = 'Couldn’t start NFC: ' + e.message; }
+  },
   'doPrint': function(){ if (typeof window.print === 'function') window.print(); },
   'scan': function(){
     modal('<h3>Scan a card</h3>' +
-      '<p id="scanStatus">Point your camera at an Intro QR code.</p>' +
+      '<p id="scanStatus">Point your camera at an Intro QR code' + (nfcSupported() ? ' — or hold an NFC card to your phone' : '') + '.</p>' +
       '<video id="scanVid" playsinline muted style="width:100%;border-radius:14px;background:#000;display:none"></video>' +
       '<div class="fld" style="text-align:left;margin-top:12px"><label>Or paste a card link</label><input id="scanPasteIn" placeholder="https://…#c=…"/></div>' +
       '<div class="rowbtns"><button class="btn primary" data-act="scanPaste">Open link</button><button class="btn" data-act="closeModal">Close</button></div>');
     startScan();
+    startNfcRead();
   },
   'scanPaste': function(){
     var inp = document.getElementById('scanPasteIn');
@@ -642,6 +726,7 @@ document.addEventListener('input', function(ev){
 });
 document.addEventListener('change', function(ev){
   var el = ev.target;
+  if (el && el.id === 'nfcCompact'){ nfcCompact = !!el.checked; renderNfcModal(); return; }
   if (el && el.id === 'avatarFile' && el.files && el.files[0]){
     resizeAvatar(el.files[0], function(dataUrl){
       if (draft){ draft.avatar = dataUrl; render(); toast('Photo added'); }
