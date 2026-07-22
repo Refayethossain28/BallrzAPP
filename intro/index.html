@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<title>Intro — your digital business card</title>
+<meta name="description" content="Make a beautiful digital business card and hand it to anyone as a link or QR code. They save you straight to their contacts — no app, no account, no server. Offline-first PWA."/>
+<meta name="theme-color" content="#0b0d14"/>
+<link rel="manifest" href="manifest.json"/>
+<link rel="icon" href="icon.svg" type="image/svg+xml"/>
+<link rel="apple-touch-icon" href="icon-180.png"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta property="og:title" content="Intro — your digital business card"/>
+<meta property="og:description" content="Your card is a link. Hand it to anyone with a QR code; they save it straight to contacts."/>
+<style>
+:root{
+  --bg:#0b0d14; --panel:#141826; --panel2:#1a1f31; --line:rgba(255,255,255,.08);
+  --text:#eef1fa; --muted:#8b93ab; --faint:#5d6478;
+  --accent:#f0b45c; --accent2:#ff8a5c; --good:#39e6b4; --bad:#ff6b6b;
+  --grad:linear-gradient(120deg,#f0b45c,#ff8a5c);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  background:var(--bg);color:var(--text);min-height:100vh;
+  background-image:radial-gradient(60% 40% at 80% -10%,rgba(240,180,92,.09),transparent 60%),
+                   radial-gradient(50% 35% at 10% 0%,rgba(255,138,92,.06),transparent 60%)}
+a{color:inherit}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.wrap{max-width:560px;margin:0 auto;padding:18px 16px calc(48px + env(safe-area-inset-bottom))}
+header.top{display:flex;align-items:center;gap:10px;padding:6px 2px 18px}
+.logo{width:34px;height:34px;border-radius:9px;background:var(--grad);display:flex;align-items:center;justify-content:center;
+  font-weight:800;color:#241303;font-size:17px;box-shadow:0 4px 14px rgba(240,180,92,.25)}
+.brand{font-size:19px;font-weight:750;letter-spacing:.2px}
+.brand small{display:block;font-size:11.5px;font-weight:500;color:var(--muted);letter-spacing:.3px}
+.top .right{margin-left:auto}
+
+.hero{text-align:center;padding:34px 8px 26px}
+.hero h1{font-size:31px;line-height:1.15;letter-spacing:-.5px}
+.hero h1 em{font-style:normal;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero p{color:var(--muted);margin:12px auto 22px;max-width:40ch;font-size:15px;line-height:1.55}
+.hero .how{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:26px}
+.hero .how span{font-size:12.5px;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:7px 12px}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--panel2);border:1px solid var(--line);
+  border-radius:12px;padding:12px 16px;font-size:14.5px;font-weight:600;transition:transform .08s}
+.btn:active{transform:scale(.97)}
+.btn.primary{background:var(--grad);color:#241303;border:none;box-shadow:0 6px 18px rgba(240,180,92,.28)}
+.btn.small{padding:8px 12px;font-size:13px;border-radius:10px}
+.btn.danger{color:var(--bad)}
+.btn.wide{width:100%}
+.rowbtns{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.rowbtns .btn{flex:1;min-width:120px}
+
+h2.sec{font-size:13px;text-transform:uppercase;letter-spacing:1.6px;color:var(--faint);margin:28px 2px 12px}
+.list{display:flex;flex-direction:column;gap:10px}
+.tile{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  padding:12px 14px;width:100%;text-align:left}
+.tile .avvy{width:44px;height:44px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;
+  font-weight:700;font-size:16px;overflow:hidden}
+.tile .avvy img{width:100%;height:100%;object-fit:cover;display:block}
+.tile .meta{flex:1;min-width:0}
+.tile .meta b{display:block;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .meta span{display:block;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.tile .chev{color:var(--faint);font-size:18px}
+.empty{color:var(--faint);font-size:13.5px;text-align:center;padding:18px;border:1px dashed var(--line);border-radius:14px;line-height:1.6}
+
+/* ── the card face ── */
+.card-face{border-radius:22px;padding:26px 24px 22px;position:relative;overflow:hidden;
+  box-shadow:0 18px 44px rgba(0,0,0,.45), 0 2px 8px rgba(0,0,0,.3)}
+.card-face .shine{position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(115deg,rgba(255,255,255,.10) 0%,rgba(255,255,255,0) 30%,rgba(255,255,255,0) 70%,rgba(255,255,255,.05) 100%)}
+.card-face .idrow{display:flex;align-items:center;gap:16px}
+.card-face .av{width:74px;height:74px;border-radius:50%;flex:none;overflow:hidden;display:flex;align-items:center;justify-content:center;
+  font-size:27px;font-weight:750}
+.card-face .av img{width:100%;height:100%;object-fit:cover;display:block}
+.card-face .who{min-width:0}
+.card-face .nm{font-size:22px;font-weight:750;letter-spacing:-.2px;line-height:1.15;overflow-wrap:anywhere}
+.card-face .rl{font-size:13.5px;margin-top:4px;line-height:1.4;overflow-wrap:anywhere}
+.card-face .tg{font-size:13px;font-style:italic;margin-top:10px;line-height:1.5}
+.card-face .hair{height:1px;margin:16px 0 14px}
+.card-face .crow{display:flex;align-items:center;gap:10px;text-decoration:none;font-size:14px;padding:6px 0;overflow-wrap:anywhere}
+.card-face .crow .ic{flex:none;width:20px;text-align:center;opacity:.85}
+.card-face .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.card-face .chip{font-size:12px;font-weight:650;letter-spacing:.3px;border-radius:999px;padding:6px 11px;text-decoration:none;
+  border:1px solid transparent}
+.card-face .bio{font-size:13px;line-height:1.55;margin-top:14px;overflow-wrap:anywhere}
+
+/* ── editor ── */
+.pv{position:relative;margin-bottom:18px}
+.fields{display:flex;flex-direction:column;gap:12px}
+.fld{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:10px 14px}
+.fld label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:var(--faint);margin-bottom:4px}
+.fld input,.fld textarea,.fld select{width:100%;background:none;border:none;outline:none;color:var(--text);font:inherit;font-size:15px}
+.fld textarea{resize:vertical;min-height:56px;line-height:1.5}
+.fld select{appearance:none;-webkit-appearance:none}
+.fld select option{background:var(--panel2);color:var(--text)}
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:420px){.duo{grid-template-columns:1fr}}
+.swatches{display:flex;gap:10px;flex-wrap:wrap;padding:4px 2px}
+.swatch{width:40px;height:40px;border-radius:12px;border:2px solid transparent;padding:0;position:relative}
+.swatch.on{border-color:var(--text)}
+.avrow{display:flex;align-items:center;gap:12px}
+.avrow .avvy{width:54px;height:54px;border-radius:50%;overflow:hidden;flex:none;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:19px}
+.avrow .avvy img{width:100%;height:100%;object-fit:cover;display:block}
+.soc-row{display:flex;align-items:center;gap:10px}
+.soc-row .fld{flex:1}
+.soc-list{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.soc-item{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:8px 12px;font-size:13.5px}
+.soc-item b{color:var(--accent);font-weight:650}
+.soc-item span{flex:1;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.soc-item button{color:var(--faint);font-size:16px;padding:2px 6px}
+.meter{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:12px 14px;font-size:12.5px;color:var(--muted)}
+.meter .bar{height:6px;background:rgba(255,255,255,.07);border-radius:99px;margin:8px 0 6px;overflow:hidden}
+.meter .bar i{display:block;height:100%;background:var(--grad);border-radius:99px;transition:width .3s}
+.sticky-save{position:sticky;bottom:14px;margin-top:18px;z-index:5}
+.sticky-save .btn{box-shadow:0 10px 26px rgba(0,0,0,.5)}
+
+/* ── modal / toast ── */
+.overlay{position:fixed;inset:0;background:rgba(5,6,10,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  display:flex;align-items:center;justify-content:center;padding:22px;z-index:40}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:22px;max-width:400px;width:100%;text-align:center}
+.modal h3{font-size:17px;margin-bottom:6px}
+.modal p{font-size:13px;color:var(--muted);line-height:1.55;margin-bottom:14px}
+.modal .qrbox{background:#fff;border-radius:14px;padding:12px;display:inline-block;max-width:100%}
+.modal .qrbox svg{width:240px;max-width:100%;height:auto}
+#toast{position:fixed;left:50%;bottom:calc(30px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(20px);
+  background:var(--panel2);border:1px solid var(--line);color:var(--text);padding:11px 18px;border-radius:999px;font-size:13.5px;
+  opacity:0;pointer-events:none;transition:all .25s;z-index:60;box-shadow:0 8px 24px rgba(0,0,0,.4);white-space:nowrap}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+.note{color:var(--faint);font-size:12px;text-align:center;line-height:1.6;margin-top:26px}
+.banner{display:flex;align-items:center;gap:10px;background:linear-gradient(120deg,rgba(240,180,92,.14),rgba(255,138,92,.08));
+  border:1px solid rgba(240,180,92,.3);border-radius:14px;padding:12px 14px;font-size:13.5px;margin-bottom:16px;line-height:1.45}
+.back{color:var(--muted);font-size:14px;font-weight:600;display:inline-flex;align-items:center;gap:6px;padding:4px 0;margin-bottom:12px}
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap"><div id="app"></div></div>
+<div id="toast"></div>
+
+<script src="engine.js"></script>
+<script>
+(function(){
+'use strict';
+var E = window.Intro;
+var $ = function(s){ return document.querySelector(s); };
+
+/* ============================================================ storage */
+var LS_CARDS = 'intro.cards.v1', LS_INBOX = 'intro.inbox.v1';
+function load(key){ try{ var v = JSON.parse(localStorage.getItem(key) || '[]'); return Array.isArray(v) ? v : []; }catch(e){ return []; } }
+function save(key, v){ try{ localStorage.setItem(key, JSON.stringify(v)); }catch(e){ toast('Storage is full — try a smaller photo'); } }
+var cards = load(LS_CARDS).map(function(c){ var n = E.normalizeCard(c); n.id = c && c.id ? String(c.id) : n.id; return n; });
+var inbox = load(LS_INBOX).map(function(r){ r = r || {}; return { card: E.normalizeCard(r.card), savedAt: r.savedAt || 0 }; });
+
+function uid(){ return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function findCard(id){ for (var i = 0; i < cards.length; i++) if (cards[i].id === id) return cards[i]; return null; }
+function baseUrl(){ return String(location.href || '').split('#')[0]; }
+
+/* ============================================================ view state */
+var view = { name: 'home' };   // home | edit | card | receive
+var draft = null;              // card being edited
+var received = null;           // decoded card from a link
+
+function openHashCard(){
+  var token = E.parseHash(String(location.hash || ''));
+  if (!token) return false;
+  var c = E.decodeCard(token);
+  if (!c) { toast('That card link is damaged'); return false; }
+  received = c; view = { name: 'receive' };
+  return true;
+}
+
+/* ============================================================ card face */
+function esc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function avatarHtml(card, cls){
+  var t = E.theme(card.theme);
+  if (card.avatar) return '<div class="' + cls + '"><img alt="" src="' + esc(card.avatar) + '"/></div>';
+  var ini = E.initials(card.name) || '☺';
+  return '<div class="' + cls + '" style="background:' + esc(t.chipBg) + ';color:' + esc(t.accent) + ';border:1px solid ' + esc(t.line) + '">' + esc(ini) + '</div>';
+}
+
+function cardHtml(card, opts){
+  opts = opts || {};
+  var t = E.theme(card.theme);
+  var live = !opts.preview;   // preview = non-interactive links
+  function crow(icon, label, href){
+    if (!label) return '';
+    var a = live && href ? '<a class="crow" style="color:' + esc(t.ink) + '" href="' + esc(href) + '"' + (href.charAt(0) === 'h' ? ' target="_blank" rel="noopener"' : '') + '>' : '<span class="crow" style="color:' + esc(t.ink) + '">';
+    return a + '<span class="ic">' + icon + '</span><span>' + esc(label) + '</span>' + (live && href ? '</a>' : '</span>');
+  }
+  var chips = card.socials.map(function(s){
+    var meta = null;
+    for (var i = 0; i < E.SOCIALS.length; i++) if (E.SOCIALS[i].id === s.k) meta = E.SOCIALS[i];
+    if (!meta) return '';
+    var url = E.socialUrl(s.k, s.v);
+    var inner = esc(meta.label);
+    var style = 'background:' + esc(t.chipBg) + ';color:' + esc(t.accent) + ';border-color:' + esc(t.line);
+    return live ? '<a class="chip" style="' + style + '" href="' + esc(url) + '" target="_blank" rel="noopener">' + inner + '</a>'
+                : '<span class="chip" style="' + style + '">' + inner + '</span>';
+  }).join('');
+  var role = [card.title, card.company].filter(Boolean).join(' · ');
+  var hasContacts = card.phone || card.email || card.website || card.location;
+  return '<div class="card-face" style="background:' + esc(t.bg) + ';color:' + esc(t.ink) + '"><div class="shine"></div>' +
+    '<div class="idrow">' + avatarHtml(card, 'av') +
+      '<div class="who"><div class="nm">' + (esc(card.name) || '<span style="opacity:.4">Your name</span>') + '</div>' +
+      (role ? '<div class="rl" style="color:' + esc(t.sub) + '">' + esc(role) + '</div>' : '') + '</div></div>' +
+    (card.tagline ? '<div class="tg" style="color:' + esc(t.sub) + '">“' + esc(card.tagline) + '”</div>' : '') +
+    (hasContacts ? '<div class="hair" style="background:linear-gradient(90deg,transparent,' + esc(t.line) + ',transparent)"></div>' : '') +
+    crow('📞', card.phone, 'tel:' + E.telDigits(card.phone)) +
+    crow('✉️', card.email, 'mailto:' + card.email) +
+    crow('🌐', E.prettyUrl(card.website), card.website) +
+    crow('📍', card.location, '') +
+    (chips ? '<div class="chips">' + chips + '</div>' : '') +
+    (card.bio ? '<div class="bio" style="color:' + esc(t.sub) + '">' + esc(card.bio) + '</div>' : '') +
+  '</div>';
+}
+
+/* ============================================================ views */
+function tileHtml(card, act, sub){
+  return '<button class="tile" data-act="' + act + '" data-id="' + esc(card.id) + '">' + avatarHtml(card, 'avvy') +
+    '<span class="meta"><b>' + (esc(card.name) || 'Untitled card') + '</b><span>' + esc(sub) + '</span></span><span class="chev">›</span></button>';
+}
+
+function homeView(){
+  var h = '';
+  if (!cards.length){
+    h += '<div class="hero"><h1>Your paper card,<br/><em>retired.</em></h1>' +
+      '<p>Design a business card that lives on your phone. Hand it over as a link or a QR code — it saves straight into their contacts. No app for them, no account for you, no server anywhere.</p>' +
+      '<button class="btn primary" data-act="new">✦ &nbsp;Create your card</button>' +
+      '<div style="margin-top:12px"><button class="btn" data-act="scan">📷 Scan a card you’ve been handed</button></div>' +
+      '<div class="how"><span>1 · Make your card</span><span>2 · Show the QR</span><span>3 · They save you</span></div></div>';
+  } else {
+    h += '<h2 class="sec">Your cards</h2><div class="list">' +
+      cards.map(function(c){ return tileHtml(c, 'open', [c.title, c.company].filter(Boolean).join(' · ') || 'Tap to share'); }).join('') +
+      '</div><div class="rowbtns"><button class="btn" data-act="new">＋ New card</button><button class="btn" data-act="scan">📷 Scan a card</button></div>';
+  }
+  h += '<h2 class="sec">Wallet — cards handed to you</h2>';
+  if (!inbox.length){
+    h += '<div class="empty">When someone shares their Intro card with you, open their link — or 📷 <b>scan their QR</b> above — and tap <b>Keep in wallet</b>. It lands here, ready to save to contacts any time.</div>';
+  } else {
+    h += '<div class="list">' + inbox.map(function(r, i){
+      return '<button class="tile" data-act="openInbox" data-i="' + i + '">' + avatarHtml(r.card, 'avvy') +
+        '<span class="meta"><b>' + (esc(r.card.name) || 'Contact') + '</b><span>' + esc([r.card.title, r.card.company].filter(Boolean).join(' · ')) + '</span></span><span class="chev">›</span></button>';
+    }).join('') + '</div>';
+  }
+  h += '<p class="note">Everything stays on this device. A shared card travels inside the link itself — Intro has no server and no database.</p>';
+  return h;
+}
+
+function editView(){
+  var c = draft;
+  var comp = E.completeness(c);
+  var socOptions = E.SOCIALS.filter(function(s){ return !c.socials.some(function(x){ return x.k === s.id; }); });
+  return '<button class="back" data-act="cancelEdit">‹ Back</button>' +
+    '<div class="pv" id="preview">' + cardHtml(c, { preview: true }) + '</div>' +
+    '<div class="meter"><b style="color:var(--text)">' + comp.pct + '% ready</b>' +
+      (comp.missing.length ? ' — consider adding ' + esc(comp.missing.slice(0, 2).join(' and ')) : ' — looking sharp') +
+      '<div class="bar"><i style="width:' + comp.pct + '%"></i></div></div>' +
+    '<h2 class="sec">Who you are</h2><div class="fields">' +
+    '<div class="avrow">' + avatarHtml(c, 'avvy') +
+      '<button class="btn small" data-act="pickAvatar">' + (c.avatar ? 'Change photo' : '📷 Add photo') + '</button>' +
+      (c.avatar ? '<button class="btn small danger" data-act="clearAvatar">Remove</button>' : '') +
+      '<input type="file" id="avatarFile" accept="image/*" style="display:none"/></div>' +
+    fld('name', 'Name', c.name, 'Ada Lovelace') +
+    '<div class="duo">' + fld('title', 'Job title', c.title, 'Analyst') + fld('company', 'Company', c.company, 'Analytical Engines Ltd') + '</div>' +
+    fld('tagline', 'Tagline', c.tagline, 'A line that sounds like you') +
+    '</div><h2 class="sec">How to reach you</h2><div class="fields">' +
+    '<div class="duo">' + fld('phone', 'Phone', c.phone, '+44 7700 900123') + fld('email', 'Email', c.email, 'you@example.com') + '</div>' +
+    '<div class="duo">' + fld('website', 'Website', c.website, 'yoursite.com') + fld('location', 'Location', c.location, 'London, UK') + '</div>' +
+    '<div class="fld"><label>Short bio</label><textarea data-f="bio" maxlength="280" placeholder="One or two sentences about what you do.">' + esc(c.bio) + '</textarea></div>' +
+    '</div><h2 class="sec">Social profiles</h2>' +
+    (c.socials.length ? '<div class="soc-list">' + c.socials.map(function(s, i){
+      var meta = null; E.SOCIALS.forEach(function(m){ if (m.id === s.k) meta = m; });
+      return '<div class="soc-item"><b>' + esc(meta ? meta.label : s.k) + '</b><span>' + esc(s.v) + '</span><button data-act="delSocial" data-i="' + i + '" aria-label="Remove">✕</button></div>';
+    }).join('') + '</div>' : '') +
+    (socOptions.length ? '<div class="soc-row" style="margin-top:10px">' +
+      '<div class="fld" style="flex:0 0 132px"><label>Network</label><select id="socNet">' + socOptions.map(function(s){ return '<option value="' + s.id + '">' + esc(s.label) + '</option>'; }).join('') + '</select></div>' +
+      '<div class="fld"><label>Handle or profile URL</label><input id="socVal" placeholder="@you"/></div>' +
+      '<button class="btn small" data-act="addSocial">Add</button></div>' : '') +
+    '<h2 class="sec">Card theme</h2><div class="swatches">' +
+    E.THEMES.map(function(t){
+      return '<button class="swatch' + (c.theme === t.id ? ' on' : '') + '" data-act="theme" data-id="' + t.id + '" title="' + esc(t.name) + '" style="background:' + esc(t.bg) + '"></button>';
+    }).join('') + '</div>' +
+    '<div class="sticky-save"><button class="btn primary wide" data-act="saveCard">Save card</button></div>' +
+    (view.id ? '<div class="rowbtns"><button class="btn danger wide" data-act="deleteCard">Delete this card</button></div>' : '');
+}
+function fld(f, label, val, ph){
+  return '<div class="fld"><label>' + esc(label) + '</label><input data-f="' + f + '" value="' + esc(val) + '" placeholder="' + esc(ph) + '"/></div>';
+}
+
+function cardView(){
+  var c = findCard(view.id);
+  if (!c) { view = { name: 'home' }; return homeView(); }
+  return '<button class="back" data-act="goHome">‹ My cards</button>' +
+    cardHtml(c) +
+    '<div class="rowbtns">' +
+    '<button class="btn primary" data-act="share" data-id="' + esc(c.id) + '">📤 Share</button>' +
+    '<button class="btn" data-act="qr" data-id="' + esc(c.id) + '">🔳 QR code</button>' +
+    '</div><div class="rowbtns">' +
+    '<button class="btn" data-act="copy" data-id="' + esc(c.id) + '">🔗 Copy link</button>' +
+    '<button class="btn" data-act="vcf" data-id="' + esc(c.id) + '">💾 .vcf file</button>' +
+    '<button class="btn" data-act="edit" data-id="' + esc(c.id) + '">✏️ Edit</button>' +
+    '</div>' +
+    '<p class="note">The QR code opens this exact card on any phone camera — nothing to install. The link carries the whole card' + (c.avatar ? ', photo included' : '') + '.</p>';
+}
+
+function receiveView(){
+  var c = received;
+  var mine = cards.length ? cards[0] : null;
+  return '<div class="banner">🎴 <span><b>' + (esc(c.name) || 'Someone') + '</b> just handed you their card.</span></div>' +
+    cardHtml(c) +
+    '<div class="rowbtns">' +
+    '<button class="btn primary" data-act="rcvVcf">📇 Save to contacts</button>' +
+    '<button class="btn" data-act="rcvKeep">🗂 Keep in wallet</button>' +
+    '</div><div class="rowbtns">' +
+    (mine ? '<button class="btn" data-act="rcvShareBack">🔁 Send yours back</button>' : '<button class="btn" data-act="rcvMakeOwn">✦ Make your own card</button>') +
+    '<button class="btn" data-act="rcvDone">Done</button>' +
+    '</div>' +
+    '<p class="note">“Save to contacts” downloads a small .vcf file — open it and your phone adds ' + (esc(c.name) || 'them') + ' with photo, number and links intact.</p>';
+}
+
+/* ============================================================ render + modal + toast */
+function render(){
+  var app = $('#app');
+  var head = '<header class="top"><div class="logo">In</div><div class="brand">Intro<small>your digital business card</small></div>' +
+    (view.name === 'home' && cards.length ? '<span class="right"><button class="btn small" data-act="new">＋ New</button></span>' : '') + '</header>';
+  var body = view.name === 'edit' ? editView() : view.name === 'card' ? cardView() : view.name === 'receive' ? receiveView() : homeView();
+  app.innerHTML = head + body;
+  if (typeof scrollTo === 'function') scrollTo(0, 0);
+}
+
+function modal(html){
+  closeModal();
+  var d = document.createElement('div');
+  d.className = 'overlay'; d.id = 'overlay';
+  d.innerHTML = '<div class="modal">' + html + '</div>';
+  document.body.appendChild(d);
+}
+function closeModal(){ stopScan(); var o = document.getElementById('overlay'); if (o && o.parentNode) o.parentNode.removeChild(o); }
+
+var toastTimer = 0;
+function toast(msg){
+  var t = document.getElementById('toast'); if (!t) return;
+  t.textContent = msg; t.className = 'show';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ t.className = ''; }, 2200);
+}
+
+/* ============================================================ actions */
+function download(name, text, type){
+  var blob = new Blob([text], { type: type });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1500);
+}
+function copyText(text, okMsg){
+  var done = function(){ toast(okMsg || 'Copied'); };
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(done, function(){ legacyCopy(text); done(); });
+  } else { legacyCopy(text); done(); }
+}
+function legacyCopy(text){
+  var ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); }catch(e){}
+  ta.remove();
+}
+function shareCard(card){
+  var url = E.shareUrl(baseUrl(), card);
+  if (navigator.share){
+    navigator.share({ title: (card.name || 'My card') + ' — Intro', text: 'Here’s my card — tap to save my details:', url: url })
+      .catch(function(){});
+  } else copyText(url, 'Link copied — paste it anywhere');
+}
+function showQr(card){
+  var url = baseUrl() + '#c=' + E.encodeCard(card, { avatar: false });   // QR payloads must stay small
+  var svg = '';
+  try{ svg = E.qrSvg(url, 'M'); }catch(e){ toast('Card too large for a QR — trim the bio'); return; }
+  modal('<h3>' + (esc(card.name) || 'Your card') + '</h3>' +
+    '<p>Any phone camera opens your card instantly — nothing to install.</p>' +
+    '<div class="qrbox">' + svg + '</div>' +
+    '<div class="rowbtns"><button class="btn wide" data-act="closeModal">Close</button></div>');
+}
+/* ── QR scanner: live camera via BarcodeDetector where supported, paste-a-link everywhere ── */
+var scanStream = null, scanTimer = 0;
+function stopScan(){
+  if (scanTimer){ clearInterval(scanTimer); scanTimer = 0; }
+  if (scanStream){
+    try{ scanStream.getTracks().forEach(function(t){ t.stop(); }); }catch(e){}
+    scanStream = null;
+  }
+}
+function startScan(){
+  var vid = document.getElementById('scanVid'), status = document.getElementById('scanStatus');
+  var md = navigator.mediaDevices, BD = window.BarcodeDetector;
+  if (!vid || !md || !md.getUserMedia || !BD){
+    if (status) status.textContent = 'Live scanning isn’t supported in this browser — paste the card link below instead (or open it with your phone’s camera app).';
+    return;
+  }
+  BD.getSupportedFormats().then(function(fmts){
+    if (!fmts || fmts.indexOf('qr_code') < 0) throw new Error('no qr support');
+    return md.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+  }).then(function(stream){
+    scanStream = stream;
+    vid.srcObject = stream; vid.style.display = 'block';
+    var p = vid.play(); if (p && p.catch) p.catch(function(){});
+    var det = new BD({ formats: ['qr_code'] });
+    scanTimer = setInterval(function(){
+      if (!scanStream) return;
+      det.detect(vid).then(function(codes){
+        for (var i = 0; i < (codes ? codes.length : 0); i++) if (handleScanned(codes[i].rawValue, false)) return;
+      }).catch(function(){});
+    }, 350);
+  }).catch(function(){
+    if (status) status.textContent = 'Couldn’t open the camera — paste the card link below instead.';
+  });
+}
+function handleScanned(text, loud){
+  var token = E.parseHash(text) || String(text || '').trim();   // accept a whole URL or a bare token
+  var c = E.decodeCard(token);
+  if (c){
+    closeModal();
+    received = c; view = { name: 'receive' }; render();
+    toast('Card scanned');
+    return true;
+  }
+  if (loud){
+    var status = document.getElementById('scanStatus');
+    if (status) status.textContent = 'That doesn’t look like an Intro card link.';
+  }
+  return false;
+}
+
+function saveDraftField(f, v){ if (draft) draft[f] = v; }
+function refreshPreview(){
+  var pv = document.getElementById('preview');
+  if (pv && draft) pv.innerHTML = cardHtml(draft, { preview: true });
+}
+function commitCards(){ save(LS_CARDS, cards); }
+function commitInbox(){ save(LS_INBOX, inbox); }
+function clearHash(){ try{ history.replaceState(null, '', String(location.pathname || '') + String(location.search || '')); }catch(e){ location.hash = ''; } }
+
+function resizeAvatar(file, cb){
+  var reader = new FileReader();
+  reader.onload = function(){
+    var img = new Image();
+    img.onload = function(){
+      var edge = E.AVATAR_EDGE;
+      var cv = document.createElement('canvas');
+      var side = Math.min(img.width, img.height);
+      cv.width = edge; cv.height = edge;
+      var ctx = cv.getContext('2d');
+      ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, edge, edge);
+      cb(cv.toDataURL('image/jpeg', 0.82));
+    };
+    img.onerror = function(){ toast('Could not read that image'); };
+    img.src = String(reader.result);
+  };
+  reader.onerror = function(){ toast('Could not read that image'); };
+  reader.readAsDataURL(file);
+}
+
+var ACTIONS = {
+  'new': function(){ draft = E.blankCard(Date.now()); view = { name: 'edit', id: '' }; render(); },
+  'open': function(el){ view = { name: 'card', id: el.getAttribute('data-id') }; render(); },
+  'goHome': function(){ view = { name: 'home' }; render(); },
+  'cancelEdit': function(){ view = view.id ? { name: 'card', id: view.id } : { name: 'home' }; draft = null; render(); },
+  'edit': function(el){
+    var c = findCard(el.getAttribute('data-id')); if (!c) return;
+    draft = E.normalizeCard(c); draft.id = c.id; draft.createdAt = c.createdAt;
+    view = { name: 'edit', id: c.id }; render();
+  },
+  'saveCard': function(){
+    if (!draft) return;
+    var clean = E.normalizeCard(draft);
+    if (!clean.name && !clean.email && !clean.phone){ toast('Add at least a name'); return; }
+    clean.createdAt = draft.createdAt || Date.now(); clean.updatedAt = Date.now();
+    clean.id = view.id || uid();
+    var i = cards.findIndex(function(c){ return c.id === clean.id; });
+    if (i >= 0) cards[i] = clean; else cards.push(clean);
+    commitCards();
+    draft = null; view = { name: 'card', id: clean.id };
+    render(); toast('Card saved');
+  },
+  'deleteCard': function(){
+    if (!view.id) return;
+    if (!confirm('Delete this card? This cannot be undone.')) return;
+    cards = cards.filter(function(c){ return c.id !== view.id; });
+    commitCards(); draft = null; view = { name: 'home' }; render(); toast('Card deleted');
+  },
+  'theme': function(el){ if (draft){ draft.theme = el.getAttribute('data-id'); render(); } },
+  'pickAvatar': function(){ var f = document.getElementById('avatarFile'); if (f) f.click(); },
+  'clearAvatar': function(){ if (draft){ draft.avatar = ''; render(); } },
+  'addSocial': function(){
+    var net = document.getElementById('socNet'), val = document.getElementById('socVal');
+    if (!draft || !net || !val) return;
+    var handle = E.socialHandle(net.value, val.value);
+    if (!handle){ toast('Enter a handle or profile link'); return; }
+    draft.socials.push({ k: net.value, v: handle });
+    render();
+  },
+  'delSocial': function(el){
+    if (!draft) return;
+    draft.socials.splice(Number(el.getAttribute('data-i')), 1);
+    render();
+  },
+  'share': function(el){ var c = findCard(el.getAttribute('data-id')); if (c) shareCard(c); },
+  'qr': function(el){ var c = findCard(el.getAttribute('data-id')); if (c) showQr(c); },
+  'copy': function(el){ var c = findCard(el.getAttribute('data-id')); if (c) copyText(E.shareUrl(baseUrl(), c), 'Link copied — paste it anywhere'); },
+  'vcf': function(el){
+    var c = findCard(el.getAttribute('data-id')); if (!c) return;
+    download(E.vcardFilename(c), E.vcard(c, new Date(c.updatedAt || Date.now()).toISOString()), 'text/vcard');
+    toast('Contact file downloaded');
+  },
+  'openInbox': function(el){
+    var r = inbox[Number(el.getAttribute('data-i'))]; if (!r) return;
+    received = r.card; view = { name: 'receive' }; render();
+  },
+  'rcvVcf': function(){
+    if (!received) return;
+    download(E.vcardFilename(received), E.vcard(received, new Date().toISOString()), 'text/vcard');
+    toast('Open the file to add them to contacts');
+  },
+  'rcvKeep': function(){
+    if (!received) return;
+    var key = JSON.stringify([received.name, received.email, received.phone]);
+    var dup = inbox.some(function(r){ return JSON.stringify([r.card.name, r.card.email, r.card.phone]) === key; });
+    if (!dup){ inbox.unshift({ card: received, savedAt: Date.now() }); commitInbox(); toast('Kept in your wallet'); }
+    else toast('Already in your wallet');
+  },
+  'scan': function(){
+    modal('<h3>Scan a card</h3>' +
+      '<p id="scanStatus">Point your camera at an Intro QR code.</p>' +
+      '<video id="scanVid" playsinline muted style="width:100%;border-radius:14px;background:#000;display:none"></video>' +
+      '<div class="fld" style="text-align:left;margin-top:12px"><label>Or paste a card link</label><input id="scanPasteIn" placeholder="https://…#c=…"/></div>' +
+      '<div class="rowbtns"><button class="btn primary" data-act="scanPaste">Open link</button><button class="btn" data-act="closeModal">Close</button></div>');
+    startScan();
+  },
+  'scanPaste': function(){
+    var inp = document.getElementById('scanPasteIn');
+    if (inp) handleScanned(String(inp.value || ''), true);
+  },
+  'rcvShareBack': function(){ if (cards.length) shareCard(cards[0]); },
+  'rcvMakeOwn': function(){ clearHash(); received = null; draft = E.blankCard(Date.now()); view = { name: 'edit', id: '' }; render(); },
+  'rcvDone': function(){ clearHash(); received = null; view = { name: 'home' }; render(); },
+  'closeModal': function(){ closeModal(); }
+};
+
+/* ============================================================ wiring */
+document.addEventListener('click', function(ev){
+  var el = ev.target;
+  if (el && el.className === 'overlay'){ closeModal(); return; }
+  while (el && el.getAttribute && !el.getAttribute('data-act')) el = el.parentNode;
+  if (!el || !el.getAttribute) return;
+  var act = el.getAttribute('data-act');
+  if (ACTIONS[act]) { ev.preventDefault(); ACTIONS[act](el); }
+});
+document.addEventListener('input', function(ev){
+  var el = ev.target;
+  if (el && el.getAttribute && el.getAttribute('data-f')){
+    saveDraftField(el.getAttribute('data-f'), el.value);
+    refreshPreview();
+  }
+});
+document.addEventListener('change', function(ev){
+  var el = ev.target;
+  if (el && el.id === 'avatarFile' && el.files && el.files[0]){
+    resizeAvatar(el.files[0], function(dataUrl){
+      if (draft){ draft.avatar = dataUrl; render(); toast('Photo added'); }
+    });
+  }
+});
+window.addEventListener('hashchange', function(){ if (openHashCard()) render(); });
+window.addEventListener('keydown', function(ev){ if (ev.key === 'Escape') closeModal(); });
+
+if ('serviceWorker' in navigator){
+  window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js').catch(function(){}); });
+}
+
+openHashCard();
+render();
+})();
+</script>
+</body>
+</html>
