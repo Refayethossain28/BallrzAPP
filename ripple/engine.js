@@ -754,6 +754,83 @@
     return out;
   }
 
+  /* ============================================================= *
+   *  KEPT — commitment detection (Ripple's purpose)               *
+   * ============================================================= *
+   * People make small promises in chat constantly ("I'll call you
+   * tonight", "send it by Friday") and quietly forget them — the slow
+   * erosion of trust. detectCommitment reads a message you're sending,
+   * decides whether it's a promise, extracts the action + a due time,
+   * so Ripple can help you actually follow through. Pure & on-device. */
+  function _atClock(now, dayOffset, hour, min, label) {
+    var d = new Date(now);
+    d.setDate(d.getDate() + dayOffset);
+    d.setHours(hour, min || 0, 0, 0);
+    if (d.getTime() <= now) d.setDate(d.getDate() + 1); // already past today → next day
+    return { at: d.getTime(), label: label };
+  }
+  function _nextDow(now, targetDow, label) {
+    var d = new Date(now), add = (targetDow - d.getDay() + 7) % 7;
+    if (add === 0) add = 7; // "on Monday" means the next one, not today
+    d.setDate(d.getDate() + add); d.setHours(10, 0, 0, 0);
+    return { at: d.getTime(), label: label };
+  }
+  var _DOW = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  // Extract a due time from natural language. Returns {at, label} or null.
+  function extractDue(low, now) {
+    var m = low.match(/\bin (\d+)\s*(minutes?|mins?|hours?|hrs?|days?|weeks?)\b/);
+    if (m) {
+      var n = +m[1], u = m[2];
+      var ms = /^m/.test(u) ? n * MINUTE : /^h/.test(u) ? n * HOUR : /^d/.test(u) ? n * DAY : n * 7 * DAY;
+      var unit = /^m/.test(u) ? 'minute' : /^h/.test(u) ? 'hour' : /^d/.test(u) ? 'day' : 'week';
+      return { at: now + ms, label: 'in ' + n + ' ' + unit + (n > 1 ? 's' : '') };
+    }
+    if (/\b(tonight|this evening)\b/.test(low)) return _atClock(now, 0, 20, 0, 'tonight');
+    if (/\btomorrow morning\b/.test(low)) return _atClock(now, 1, 9, 0, 'tomorrow morning');
+    if (/\btomorrow afternoon\b/.test(low)) return _atClock(now, 1, 14, 0, 'tomorrow afternoon');
+    if (/\btomorrow (evening|night)\b/.test(low)) return _atClock(now, 1, 20, 0, 'tomorrow evening');
+    if (/\btomorrow\b/.test(low)) return _atClock(now, 1, 10, 0, 'tomorrow');
+    if (/\bthis afternoon\b/.test(low)) return _atClock(now, 0, 14, 0, 'this afternoon');
+    if (/\bthis morning\b/.test(low)) return _atClock(now, 0, 9, 0, 'this morning');
+    if (/\bnext week\b/.test(low)) return { at: now + 7 * DAY, label: 'next week' };
+    if (/\bweekend\b/.test(low)) return _nextDow(now, 6, 'the weekend');
+    for (var i = 0; i < 7; i++) {
+      if (new RegExp('\\b(on |by |this |next |come )?' + _DOW[i] + '\\b').test(low))
+        return _nextDow(now, i, _DOW[i].charAt(0).toUpperCase() + _DOW[i].slice(1));
+    }
+    m = low.match(/\bat (\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/);
+    if (m) {
+      var h = +m[1], mm = m[2] ? +m[2] : 0, ap = m[3];
+      if (ap === 'pm' && h < 12) h += 12; if (ap === 'am' && h === 12) h = 0;
+      if (h < 24) return _atClock(now, 0, h, mm, 'at ' + m[1] + (m[2] ? ':' + m[2] : '') + (ap ? ' ' + ap : ''));
+    }
+    if (/\b(today|later|by end of day|eod)\b/.test(low)) return _atClock(now, 0, 18, 0, 'later today');
+    return null;
+  }
+  // The commitment cues — first-person future intent, or an explicit promise.
+  var _COMMIT = /\b(i'?ll|i will|i'?m gonna|i'?m going to|i am going to|i'?ll try|let me|i can (send|call|do|get|bring|pay|come|drop|check|sort|fix|help)|i promise|promise to|i'?ll get back|i'?ll be there|remind me to|will do|i'?ll sort|i'?ll handle)\b/;
+  var _NEGATE = /\b(i (can'?t|won'?t|cannot|will not)|no i|not going to|maybe i|i might|probably)\b/;
+  function detectCommitment(text, now, opts) {
+    opts = opts || {}; now = now || 0;
+    var t = String(text == null ? '' : text).trim();
+    if (!t || t.length < 4 || t.length > 240) return null;
+    if (t.charAt(0) === '/') return null; // slash command
+    var low = t.toLowerCase();
+    if (_NEGATE.test(low)) return null;
+    if (!_COMMIT.test(low)) return null;
+    var due = extractDue(low, now);
+    // Clean the action text for display.
+    var action = t.replace(/^(ok(ay)?|sure|yes|yeah|yep|fine|alright|cool)[\s,!.:-]+/i, '').trim();
+    if (action.length > 100) action = action.slice(0, 97).trim() + '…';
+    return {
+      action: action,
+      dueAt: due ? due.at : null,
+      when: due ? due.label : '',
+      // more confident when there's an explicit time attached
+      confidence: due ? 0.9 : 0.55
+    };
+  }
+
   return {
     version: '1.2.0',
     SECOND: SECOND, MINUTE: MINUTE, HOUR: HOUR, DAY: DAY,
@@ -774,6 +851,7 @@
     replyOutlook: replyOutlook, echoReplyDelay: echoReplyDelay,
     nextPeakTime: nextPeakTime, groupPulse: groupPulse,
     forwardMessage: forwardMessage, exportChatText: exportChatText,
-    normalizeHandle: normalizeHandle
+    normalizeHandle: normalizeHandle,
+    detectCommitment: detectCommitment, extractDue: extractDue
   };
 });

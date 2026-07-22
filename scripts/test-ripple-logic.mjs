@@ -443,6 +443,44 @@ test('normalizeHandle keeps a safe lookup key', () => {
   assert.equal(E.normalizeHandle(null), '');
 });
 
+/* ---------- Kept: commitment detection ---------- */
+test('detectCommitment catches a promise with an explicit time', () => {
+  const c = E.detectCommitment('I\'ll call you tonight', NOW);
+  assert.ok(c, 'should detect');
+  assert.ok(c.dueAt > NOW, 'due in the future');
+  assert.equal(c.when, 'tonight');
+  assert.ok(c.confidence >= 0.9);
+});
+test('detectCommitment parses "in N hours" precisely', () => {
+  const c = E.detectCommitment('I\'ll send the deck in 2 hours', NOW);
+  assert.equal(c.dueAt, NOW + 2 * HOUR);
+  assert.equal(c.when, 'in 2 hours');
+});
+test('detectCommitment handles tomorrow / next week / weekday', () => {
+  assert.ok(E.detectCommitment('I will get back to you tomorrow', NOW).dueAt > NOW + 6 * HOUR);
+  assert.equal(E.detectCommitment('I promise to pay you next week', NOW).when, 'next week');
+  const mon = E.detectCommitment('I\'ll drop it by Monday', NOW);
+  assert.ok(mon.dueAt > NOW && new Date(mon.dueAt).getDay() === 1);
+});
+test('detectCommitment: promise without a time still tracks (lower confidence, no due)', () => {
+  const c = E.detectCommitment('I promise to fix this', NOW);
+  assert.ok(c);
+  assert.equal(c.dueAt, null);
+  assert.ok(c.confidence < 0.9);
+});
+test('detectCommitment ignores non-commitments and negations', () => {
+  assert.equal(E.detectCommitment('how are you?', NOW), null);
+  assert.equal(E.detectCommitment('I can\'t make it tonight', NOW), null);
+  assert.equal(E.detectCommitment('maybe I will come later', NOW), null);
+  assert.equal(E.detectCommitment('/poll a | b', NOW), null);
+  assert.equal(E.detectCommitment('', NOW), null);
+});
+test('detectCommitment trims filler and long text', () => {
+  const c = E.detectCommitment('ok, I\'ll bring the drinks', NOW);
+  assert.ok(!/^ok/i.test(c.action), 'filler removed: ' + c.action);
+  assert.ok(/bring the drinks/i.test(c.action));
+});
+
 /* ---------- demo auto-responder ---------- */
 test('autoReply is deterministic and responsive', () => {
   assert.equal(E.autoReply('hey', { seed: 1 }), E.autoReply('hey', { seed: 1 }));
