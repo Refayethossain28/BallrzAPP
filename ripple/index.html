@@ -275,6 +275,29 @@
   .quiet-bar .rt b{color:var(--accent)}
   .quiet-bar .go{flex:none;cursor:pointer;font-weight:700;color:#06121e;background:var(--accent);border-radius:8px;padding:3px 10px}
   .quiet-bar .x{flex:none;color:var(--faint);font-size:17px;width:22px;height:22px}
+  /* Kept — promise chip + list */
+  .promise-bar{display:none;align-items:center;gap:9px;border-radius:11px;padding:7px 11px;margin-bottom:8px;font-size:13px;
+    background:color-mix(in srgb,var(--c) 14%,var(--panel));border:1px solid var(--c)}
+  .promise-bar.on{display:flex}
+  .promise-bar .pshake{flex:none;animation:pshake 1.4s ease-in-out infinite}
+  @keyframes pshake{0%,100%{transform:rotate(0)}25%{transform:rotate(-14deg)}75%{transform:rotate(14deg)}}
+  .promise-bar .rt{color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+  .promise-bar .rt b{color:var(--ink)} .promise-bar .rt .pw{color:var(--c);font-weight:600}
+  .promise-bar .go{flex:none;cursor:pointer;font-weight:700;color:#06121e;background:var(--c);border-radius:8px;padding:3px 10px}
+  .promise-bar .x{flex:none;color:var(--faint);font-size:17px;width:22px;height:22px}
+  .iconbtn.req.due{color:var(--warn)}
+  .promise-card{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);
+    border-radius:12px;padding:9px 11px;margin:6px 0}
+  .promise-card.overdue{border-color:var(--warn)}
+  .promise-card .pc-body{flex:1;min-width:0}
+  .pc-act{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pc-meta{font-size:12px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pc-actions{display:flex;gap:6px;flex:none}
+  .pc-btn{width:34px;height:34px;border-radius:50%;border:0;font-size:15px;cursor:pointer}
+  .pc-btn.keep{background:var(--c);color:#06121e} .pc-btn.miss{background:rgba(255,255,255,.08);color:var(--dim)}
+  .pc-tag{flex:none;font-size:11.5px;padding:3px 8px;border-radius:999px}
+  .pc-tag.kept{background:color-mix(in srgb,var(--c) 22%,transparent);color:var(--c)}
+  .pc-tag.missed{background:rgba(255,255,255,.06);color:var(--faint)}
   .leadrow{display:flex;align-items:center;gap:8px;margin:5px 0}
   .leadrow .ln{flex:none;width:74px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
   .leadrow .lb{flex:1;height:7px;border-radius:999px;background:var(--line);overflow:hidden}
@@ -373,6 +396,7 @@
         <div class="brandtext"><b>Ripple</b><span class="cloudchip demo" id="cloudChip"><span class="dot"></span>Offline demo</span></div></div>
       <button class="iconbtn" id="btnSearchGlobal" title="Search">🔍</button>
       <button class="iconbtn req hidden" id="btnRequests" title="Contact requests">👋<span class="reqbadge" id="reqBadge">0</span></button>
+      <button class="iconbtn req" id="btnPromises" title="Promises you've made">🤝<span class="reqbadge hidden" id="promBadge">0</span></button>
       <button class="iconbtn" id="btnNew" title="New chat">✏️</button>
       <a class="iconbtn" href="../coin/" target="_blank" rel="noopener" title="Pay with BallrzCoin" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center">💸</a>
       <button class="iconbtn me" id="btnSettings" title="You"><span class="avatar sm" id="myAvatar">?</span></button>
@@ -397,7 +421,7 @@
     <div class="placeholder" id="placeholder">
       <div class="logo"><i></i><i></i><i></i></div>
       <h2>Ripple</h2>
-      <p style="margin:0;max-width:340px">A messenger that finally puts you in control. Pick a chat, or start a new one.</p>
+      <p style="margin:0;max-width:360px"><b>The messenger that helps you keep your word.</b><br>It reads the rhythm of each relationship, and quietly tracks the promises you make — so you actually follow through.</p>
       <div class="feat">
         <span>⏱ Schedule &amp; auto-expire</span><span>✏️ Edit &amp; unsend</span>
         <span>📊 Polls</span><span>🎤 Voice notes</span><span>🔍 Search everything</span>
@@ -435,6 +459,9 @@
       </div>
       <div class="quiet-bar" id="quietHint">
         <div class="rt" id="quietText"></div><span class="go" id="quietGo">Schedule</span><button class="x" id="quietDismiss">×</button>
+      </div>
+      <div class="promise-bar" id="promiseChip">
+        <span class="pshake">🤝</span><div class="rt" id="promiseText"></div><span class="go" id="promiseTrack">Track it</span><button class="x" id="promiseDismiss">×</button>
       </div>
       <div class="cmd-hint" id="cmdHint"></div>
       <div class="emoji-tray hidden" id="emojiTray"></div>
@@ -562,7 +589,7 @@
       m('saved', me.id, 'Flight ref: RPL-4827 · gate info day-of', 9*D, {readBy:[me.id]}),
       m('saved', me.id, 'Idea: a messenger where you can actually *unsend* and *schedule*. 💡', 6*D, {readBy:[me.id]})
     ];
-    return { me:me, settings:{ accent:'#6e8bff', notify:true, enterToSend:true, lock:false }, chats:chats, msgs:msgs };
+    return { me:me, settings:{ accent:'#6e8bff', notify:true, enterToSend:true, lock:false }, chats:chats, msgs:msgs, promises:[] };
   }
 
   function rawLoad(){
@@ -1567,7 +1594,7 @@
   function openChat(id){
     if(cloud.on && cloud.typingFor && cloud.typingFor!==id) clearTyping(cloud.typingFor);
     active = id; replyTo=null; editing=null; scheduleAt=null; quietDismissedFor=null;
-    var et=$('emojiTray'); if(et) et.classList.add('hidden');
+    var et=$('emojiTray'); if(et) et.classList.add('hidden'); hidePromiseChip();
     var c = chat(id); if(!c) return;
     if(c.cloud){ subscribeTyping(id); subscribePresence(c); e2eePrepareChat(c); } else { unsubscribeTyping(); unsubscribePresence(); }
     updateCallButtons();
@@ -1754,6 +1781,7 @@
     ta.value=''; replyTo=null;
     var wasScheduled=scheduleAt; scheduleAt=null;
     afterSend();
+    maybeTrackPromise(c, text);   // Kept: offer to track a promise you just made
     if(c.cloud){
       // Write scheduled messages to Firestore now (held by scheduledAt>now) so the
       // server can release + deliver them even if this device goes offline. The
@@ -1769,6 +1797,100 @@
     advanceState(m, 'delivered', 900);
     if(c.id!=='saved') advanceState(m, 'read', 1800);
     maybeAutoReply(c, text);
+  }
+
+  /* ===================== KEPT — promises you make =====================
+   * Ripple's purpose: help you keep your word. When you send a message that
+   * sounds like a commitment, offer to track it and remind you before it's due.
+   * Promises live on-device in S.promises. */
+  var pendingPromise=null;
+  function maybeTrackPromise(c, text){
+    if(!c || c.id==='echo') return;                 // no point promising a bot
+    if(S.settings && S.settings.keptOff) return;
+    var det=R.detectCommitment(text, now()); if(!det) return;
+    // don't re-offer the exact same promise if it's already tracked & open
+    var dup=(S.promises||[]).some(function(p){ return p.status==='open' && p.chatId===c.id && p.action===det.action; });
+    if(dup) return;
+    pendingPromise={ chatId:c.id, chatName:chatDisplayName(c), action:det.action, dueAt:det.dueAt, when:det.when };
+    var chip=$('promiseChip'), t=$('promiseText'); if(!chip||!t) return;
+    t.innerHTML='Promise to keep: <b>'+esc(det.action)+'</b>'+(det.when?' · <span class="pw">'+esc(det.when)+'</span>':'');
+    chip.classList.add('on');
+    clearTimeout(pendingPromise._t); pendingPromise._t=setTimeout(function(){ hidePromiseChip(); }, 12000);
+  }
+  function hidePromiseChip(){ var c=$('promiseChip'); if(c) c.classList.remove('on'); }
+  function trackPendingPromise(){
+    if(!pendingPromise) return;
+    var due=pendingPromise.dueAt;
+    var remindAt = due ? Math.max(now()+5000, due - 15*60000) : 0; // 15 min before, or none
+    S.promises.push({ id:'pr_'+now().toString(36)+Math.floor(Math.random()*1e4).toString(36),
+      chatId:pendingPromise.chatId, chatName:pendingPromise.chatName, action:pendingPromise.action,
+      when:pendingPromise.when, createdAt:now(), dueAt:due||0, remindAt:remindAt, reminded:false, status:'open' });
+    pendingPromise=null; hidePromiseChip(); renderPromiseBadge(); persist();
+    toast('🤝 Promise tracked'+(due?' — I’ll remind you':''));
+  }
+  function promiseStats(){
+    var open=0, kept=0, missed=0, overdue=0, t=now();
+    (S.promises||[]).forEach(function(p){
+      if(p.status==='kept') kept++;
+      else if(p.status==='missed') missed++;
+      else { open++; if(p.dueAt && p.dueAt<t) overdue++; }
+    });
+    var decided=kept+missed;
+    return { open:open, kept:kept, missed:missed, overdue:overdue, rate: decided?Math.round(kept/decided*100):null };
+  }
+  function renderPromiseBadge(){
+    var b=$('btnPromises'); if(!b) return;
+    var st=promiseStats(); var n=st.overdue;
+    var badge=$('promBadge'); if(badge){ badge.classList.toggle('hidden', n===0); badge.textContent=n>9?'9+':n; }
+    b.classList.toggle('due', n>0);
+  }
+  function setPromiseStatus(id, status){
+    var p=(S.promises||[]).filter(function(x){ return x.id===id; })[0]; if(!p) return;
+    p.status=status; renderPromiseBadge(); persist(); promisesSheet();
+  }
+  function dropPromise(id){ S.promises=(S.promises||[]).filter(function(x){ return x.id!==id; }); renderPromiseBadge(); persist(); promisesSheet(); }
+  function promisesSheet(){
+    var st=promiseStats();
+    var open=(S.promises||[]).filter(function(p){ return p.status==='open'; })
+      .sort(function(a,b){ return (a.dueAt||9e15)-(b.dueAt||9e15); });
+    var done=(S.promises||[]).filter(function(p){ return p.status!=='open'; })
+      .sort(function(a,b){ return (b.dueAt||0)-(a.dueAt||0); }).slice(0,8);
+    function card(p){
+      var od = p.dueAt && p.dueAt<now();
+      var dueTxt = p.dueAt ? (od?'⏰ overdue · ':'due ')+formatClock(p.dueAt) : (p.when||'no date');
+      return '<div class="promise-card'+(od?' overdue':'')+'">'+
+        '<div class="pc-body"><div class="pc-act">'+esc(p.action)+'</div>'+
+        '<div class="pc-meta">'+esc(p.chatName||'')+' · '+esc(dueTxt)+'</div></div>'+
+        (p.status==='open'
+          ? '<div class="pc-actions"><button class="pc-btn keep" data-keep="'+p.id+'" title="Kept">✓</button>'+
+            '<button class="pc-btn miss" data-miss="'+p.id+'" title="Didn\'t keep">✕</button></div>'
+          : '<span class="pc-tag '+(p.status==='kept'?'kept':'missed')+'">'+(p.status==='kept'?'kept ✓':'missed')+'</span>'+
+            '<button class="x" data-drop="'+p.id+'">×</button>')+
+        '</div>';
+    }
+    var rateLine = st.rate==null ? 'Keep or miss a few to build your score.' :
+      'Kept rate <b style="color:var(--c)">'+st.rate+'%</b> · '+st.kept+' kept, '+st.missed+' missed';
+    openSheet(
+      '<h2>🤝 Promises you\'ve made</h2>'+
+      '<p class="sub">Ripple helps you keep your word. '+rateLine+'</p>'+
+      (open.length? '<div class="mini" style="margin:6px 2px">Open ('+open.length+')</div>'+open.map(card).join('')
+        : '<p class="sub" style="text-align:center;padding:14px 0">No open promises. Say things like “I’ll call you tonight” and Ripple offers to track them.</p>')+
+      (done.length? '<div class="mini" style="margin:12px 2px 6px">History</div>'+done.map(card).join(''):'')
+    );
+    Array.prototype.forEach.call(document.querySelectorAll('[data-keep]'), function(el){ el.addEventListener('click', function(){ setPromiseStatus(el.getAttribute('data-keep'),'kept'); toast('Kept 🎉'); }); });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-miss]'), function(el){ el.addEventListener('click', function(){ setPromiseStatus(el.getAttribute('data-miss'),'missed'); }); });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-drop]'), function(el){ el.addEventListener('click', function(){ dropPromise(el.getAttribute('data-drop')); }); });
+  }
+  // fire reminders for due promises (called from tickClock)
+  function tickPromises(){
+    if(!S||!S.promises) return; var t=now(), changed=false;
+    S.promises.forEach(function(p){
+      if(p.status==='open' && !p.reminded && p.remindAt && p.remindAt<=t){
+        p.reminded=true; changed=true;
+        notify(chat(p.chatId)||{id:p.chatId,muted:false}, '🤝 Promise due soon', p.action+(p.chatName?' · '+p.chatName:''));
+      }
+    });
+    if(changed){ renderPromiseBadge(); persist(); }
   }
 
   /* ---------- emoji & sticker tray ---------- */
@@ -2117,6 +2239,7 @@
       }
     });
     if(changed){ if(active) renderTimeline(); renderSidebar(); persist(); }
+    tickPromises();
   }
 
   /* ---------- notifications ---------- */
@@ -2570,6 +2693,9 @@
   function wire(){
     on('btnNew','click', newChatSheet);
     on('btnRequests','click', requestsSheet);
+    on('btnPromises','click', promisesSheet);
+    on('promiseTrack','click', trackPendingPromise);
+    on('promiseDismiss','click', hidePromiseChip);
     on('btnSettings','click', settingsSheet);
     on('cloudChip','click', cloudChipClick);
     on('btnSearchGlobal','click', function(){ var i=$('searchInput'); if(i){ i.focus(); } });
@@ -2678,10 +2804,12 @@
   /* ---------- boot ---------- */
   var _tickStarted=false;
   function startUI(){
+    if(S && !S.promises) S.promises=[]; // migrate older stores
     applyAccent();
     applyTheme();
     renderSidebar();
     updateCloudStatus();
+    renderPromiseBadge();
     if(!S.me.name && hasDoc) onboard();
     if(!_tickStarted && typeof setInterval!=='undefined'){ _tickStarted=true; setInterval(tickClock, 5000); }
     // connect to the cloud backend if one is configured (real cross-device chat)
