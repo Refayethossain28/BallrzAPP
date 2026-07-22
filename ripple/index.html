@@ -891,6 +891,7 @@
         e2eeSetup();
         startPresence();
         publishDirectory();
+        registerPhone();
         subscribeInvites();
         subscribeCalls();
         var addH=pendingAdd();
@@ -1144,6 +1145,69 @@
     if (typeof location === 'undefined' || !location.search) return null;
     var m = location.search.match(/[?&]add=([^&]+)/);
     return m ? R.normalizeHandle(decodeURIComponent(m[1])) : null;
+  }
+
+  /* ---------- contacts: invite + (where supported) match ---------- */
+  // Native share sheet — the only way an iOS web app can reach the address book:
+  // the user picks a contact and sends them a Ripple invite link.
+  function inviteFriends(){
+    var url = (S.me.handle ? myAddUrl() : (typeof location!=='undefined' ? (location.origin+location.pathname) : ''));
+    var text = "Let's talk on Ripple — private, in any browser, no app store."+
+      (S.me.handle ? " Add me: @"+S.me.handle : "");
+    if(typeof navigator!=='undefined' && navigator.share){
+      navigator.share({ title:'Join me on Ripple', text:text, url:url }).catch(function(){});
+    } else {
+      try{ navigator.clipboard.writeText(text+' '+url); toast('Invite copied — paste it to a friend'); }
+      catch(e){ toast(url); }
+    }
+  }
+  function contactsSupported(){ return typeof navigator!=='undefined' && navigator.contacts && navigator.contacts.select; }
+  function _sha256Hex(str){
+    return crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)).then(function(buf){
+      return Array.prototype.map.call(new Uint8Array(buf), function(b){ return ('0'+b.toString(16)).slice(-2); }).join('');
+    });
+  }
+  // Register my phone (hashed) so contacts can find me. Never stores the number.
+  function registerPhone(){
+    if(!cloud.on || !e2eeReady()) return Promise.resolve();
+    var n=R.normalizePhone(S.me.phone||''); if(!n) return Promise.resolve();
+    return _sha256Hex(n).then(function(h){
+      return cloud.db.collection('ripple_contacts').doc(h).set({ uid:cloud.uid }).catch(function(){});
+    });
+  }
+  // Pick contacts (Android Chrome) → hash their numbers → find who's on Ripple.
+  function findFromContacts(){
+    if(!cloud.on){ toast('Connect to the cloud first'); return; }
+    if(!contactsSupported()){ toast('Your browser can’t read contacts — use Invite instead'); return; }
+    navigator.contacts.select(['name','tel'], { multiple:true }).then(function(list){
+      if(!list || !list.length) return;
+      var byPhone={};
+      list.forEach(function(c){ var nm=(c.name&&c.name[0])||''; (c.tel||[]).forEach(function(t){ var n=R.normalizePhone(t); if(n && !byPhone[n]) byPhone[n]=nm; }); });
+      var phones=Object.keys(byPhone); if(!phones.length){ toast('No numbers in those contacts'); return; }
+      toast('Checking '+phones.length+' contacts…');
+      Promise.all(phones.map(function(p){
+        return _sha256Hex(p).then(function(h){
+          return cloud.db.collection('ripple_contacts').doc(h).get()
+            .then(function(d){ return (d.exists && d.data().uid!==cloud.uid) ? { name:byPhone[p], uid:d.data().uid } : null; })
+            .catch(function(){ return null; });
+        });
+      })).then(function(res){ contactsResultSheet(res.filter(Boolean)); });
+    }).catch(function(){});
+  }
+  function contactsResultSheet(matches){
+    if(!matches.length){ openSheet('<h2>Contacts on Ripple</h2><p class="sub">None of the contacts you picked are on Ripple yet.</p><button class="btn" id="cInvite">📨 Invite friends</button>'); on('cInvite','click', inviteFriends); return; }
+    var rows=matches.map(function(m){
+      return '<div class="pickrow" data-cuid="'+esc(m.uid)+'" data-cname="'+esc(m.name||'Contact')+'"><span class="avatar">🙂</span>'+
+        '<div class="gr" style="flex:1"><div class="t">'+esc(m.name||'Contact')+'</div><div class="d" style="font-size:12px;color:var(--faint)">on Ripple</div></div>'+
+        '<button class="btn" style="width:auto;margin:0;padding:0 12px" data-cmsg="'+esc(m.uid)+'">Message</button></div>';
+    }).join('');
+    openSheet('<h2>Contacts on Ripple 🎉</h2><p class="sub">These people from your contacts already use Ripple.</p><div class="picklist">'+rows+'</div>');
+    Array.prototype.forEach.call(document.querySelectorAll('[data-cmsg]'), function(el){
+      el.addEventListener('click', function(){
+        var row=el.closest('.pickrow');
+        startDirectChat({ uid:el.getAttribute('data-cmsg'), name:row.getAttribute('data-cname'), avatar:'🙂', handle:'' });
+      });
+    });
   }
   // Show my QR code + username so someone can scan to send me a request.
   function qrSheet(){
@@ -2300,6 +2364,7 @@
       '</div>'+
       '<div class="field"><label>Username — let people add you directly</label><input id="setHandle" value="'+esc(S.me.handle||'')+'" maxlength="20" placeholder="e.g. alex" autocapitalize="off" autocomplete="off"></div>'+
       '<div class="field"><label>Status</label><input id="setStatus" value="'+esc(S.me.status||'')+'" maxlength="60" placeholder="e.g. 🌴 On vacation · 🎧 Focusing"></div>'+
+      '<div class="field"><label>Phone — optional, lets contacts find you (stored hashed, never shared)</label><input id="setPhone" type="tel" value="'+esc(S.me.phone||'')+'" maxlength="24" placeholder="e.g. +1 415 555 1234" autocomplete="off"></div>'+
       '<div class="field"><label>Avatar</label><div class="emojipick" id="avatarPick">'+
         ['🙂','😎','🦊','🐼','🌸','🚀','🎧','🐱','🍀','⚡','🔥','🌙'].map(function(e){
           return '<button data-emoji="'+e+'" class="'+(e===S.me.avatar?'sel':'')+'">'+e+'</button>'; }).join('')+
@@ -2346,6 +2411,7 @@
   function saveSettings(){
     S.me.name = ($('setName').value||'').trim() || S.me.name || 'You';
     S.me.status = ($('setStatus').value||'').trim().slice(0,60);
+    var phoneEl=$('setPhone'); if(phoneEl){ var newPhone=(phoneEl.value||'').trim().slice(0,24); var phoneChanged=newPhone!==S.me.phone; S.me.phone=newPhone; if(phoneChanged && cloud.on) registerPhone(); }
     var newHandle=R.normalizeHandle($('setHandle').value||'');
     var handleChanged = newHandle && newHandle!==S.me.handle; S.me.handle=newHandle;
     var sel=$('avatarPick').querySelector('.sel'); if(sel) S.me.avatar=sel.getAttribute('data-emoji');
@@ -2384,7 +2450,11 @@
           '<div style="display:flex;gap:8px"><input id="ncFind" placeholder="their @username" autocapitalize="off" autocomplete="off" style="flex:1">'+
           '<button class="btn" id="ncFindBtn" style="width:auto;margin:0;padding:0 16px">Connect</button></div>'+
           '<div class="sub" id="ncFindMsg" style="margin-top:6px">'+(S.me.handle?('Your username is <b>@'+esc(S.me.handle)+'</b> — share it so others can add you.'):'Set your own username in Settings so people can add you back.')+'</div>'+
-          (S.me.handle?'<button class="btn ghost" id="ncMyQr" style="margin-top:8px">▦ Show my QR code</button>':'')+'</div>'+
+          (S.me.handle?'<button class="btn ghost" id="ncMyQr" style="margin-top:8px">▦ Show my QR code</button>':'')+
+          '<div style="display:flex;gap:8px;margin-top:8px">'+
+            '<button class="btn ghost" id="ncInvite" style="flex:1;margin:0">📨 Invite friends</button>'+
+            (contactsSupported()?'<button class="btn ghost" id="ncContacts" style="flex:1;margin:0">👥 Find contacts</button>':'')+
+          '</div></div>'+
           '<div class="hr-or">or create a chat</div>'
       : '';
     openSheet(
@@ -2417,6 +2487,8 @@
       };
       on('ncFindBtn','click', doFind);
       if($('ncMyQr')) on('ncMyQr','click', function(){ closeSheet(); qrSheet(); });
+      if($('ncInvite')) on('ncInvite','click', inviteFriends);
+      if($('ncContacts')) on('ncContacts','click', function(){ closeSheet(); findFromContacts(); });
       var fi=$('ncFind'); if(fi) fi.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); doFind(); } });
     }
     if(cloudAvailable()) on('ncCloud','click', function(){ $('ncCloud').classList.toggle('on'); });

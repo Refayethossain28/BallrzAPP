@@ -141,6 +141,19 @@ lets a delete win, keeps `ts` order — the unit tests pin this).
   key per device (no multi-device key sync), and no post-compromise key rotation
   — real ECDH+AES E2EE, not yet a production Signal-grade system.
 
+### Contacts — invite & find (platform-limited)
+
+**New chat → Invite friends** opens the device's native share sheet
+(`navigator.share`) so you can send a contact your `?add=<handle>` link — this is
+the only way an **iOS** web app can reach the address book (Apple blocks direct
+contact access for web pages entirely). **Find contacts** uses the **Contact
+Picker API** (`navigator.contacts` — Android Chrome only) to let the user pick
+contacts; their phone numbers are canonicalised (`normalizePhone()`) and
+**SHA-256 hashed on-device**, then matched against `ripple_contacts/<hash>`
+(populated when a user adds an optional phone in Settings). Only hashes are ever
+stored/queried — the number never leaves the device. Note: phone-number hashes
+are guessable, the same privacy trade-off every contact-matching messenger makes.
+
 ### Direct connect by username (no link needed)
 
 Pick a **username** in Settings and you're listed in a public `ripple_directory`
