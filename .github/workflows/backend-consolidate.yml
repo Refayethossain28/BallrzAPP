@@ -75,8 +75,11 @@ jobs:
         run: |
           echo "== Deployed Cloud Functions (all generations) =="
           gcloud functions list --project "$PROJECT"
-          # csv(environment) came back empty in run #1 — parse the JSON instead,
-          # where name is the full resource path and environment is GEN_1/GEN_2.
+          # csv(environment) came back empty in run #1 — parse the JSON instead.
+          # The list merges the v1 and v2 APIs: v2 entries carry
+          # environment=GEN_1/GEN_2, but entries sourced from the v1 API (all
+          # gen-1) have NO environment key at all — so absent means GEN_1
+          # (run #2 proved defaulting to GEN_2 mislabels every gen-1 function).
           gcloud functions list --project "$PROJECT" --format=json > /tmp/fns.json
           python3 - <<'EOF'
           import json
@@ -84,7 +87,7 @@ jobs:
           with open('/tmp/deployed.csv', 'w') as out:
               for f in rows:
                   parts = f['name'].split('/')
-                  out.write(f"{parts[-1]},{parts[3]},{f.get('environment','GEN_2')}\n")
+                  out.write(f"{parts[-1]},{parts[3]},{f.get('environment','GEN_1')}\n")
           EOF
           echo "== parsed (name,region,generation) =="
           cat /tmp/deployed.csv
@@ -200,8 +203,14 @@ jobs:
         run: |
           [ -s /tmp/delete.csv ] || { echo "nothing to delete"; exit 0; }
           while IFS=, read -r NAME REGION REASON; do
+            # Hard gate on the v1 API: a gen-2 function has no v1 describe, so
+            # even a mislabeled row can never delete a gen-2 function.
+            if ! gcloud functions describe "$NAME" --region "$REGION" --no-gen2 >/dev/null 2>&1; then
+              echo "::warning title=Skipped::$NAME ($REGION) is not a gen-1 function — not deleting."
+              continue
+            fi
             echo "deleting gen-1 $NAME ($REGION) — $REASON"
-            gcloud functions delete "$NAME" --region "$REGION" --project "$PROJECT" --quiet
+            gcloud functions delete "$NAME" --region "$REGION" --project "$PROJECT" --no-gen2 --quiet
           done < /tmp/delete.csv
 
       - name: "Cutover: deploy the repo functions (loud — no continue-on-error)"
