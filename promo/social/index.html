@@ -3,68 +3,70 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-<title>ApexVIP — Social Promos</title>
+<title>ApexVIP — Social Content Pack</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   body{background:#050403;color:#f5f0e8;font-family:-apple-system,system-ui,sans-serif;min-height:100vh;padding:40px 20px calc(env(safe-area-inset-bottom) + 40px)}
   .wrap{max-width:430px;margin:0 auto}
   h1{font-family:Georgia,'Times New Roman',serif;font-weight:500;font-size:30px;letter-spacing:1px;margin-bottom:6px}
-  .sub{color:rgba(245,240,232,.5);font-size:13px;margin-bottom:28px;line-height:1.6}
+  h2{font-family:Georgia,serif;font-weight:500;font-size:20px;letter-spacing:.5px;margin:30px 0 14px;color:#D4AF6E}
+  .sub{color:rgba(245,240,232,.5);font-size:13px;margin-bottom:8px;line-height:1.6}
   .card{background:rgba(255,248,235,.05);border:1px solid rgba(212,175,110,.25);border-radius:22px;padding:16px;margin-bottom:22px}
   .label{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#D4AF6E;margin-bottom:10px}
-  video{width:100%;border-radius:14px;background:#000;display:block}
-  .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-top:12px;padding:15px;border:none;border-radius:14px;background:#D4AF6E;color:#0c0b09;font-size:15px;font-weight:800;font-family:inherit;cursor:pointer}
+  video,img.asset{width:100%;border-radius:14px;background:#000;display:block}
+  .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-top:12px;padding:15px;border:none;border-radius:14px;background:#D4AF6E;color:#0c0b09;font-size:15px;font-weight:800;font-family:inherit;cursor:pointer;text-decoration:none}
   .btn.ghost{background:rgba(255,248,235,.08);color:#f5f0e8;border:1px solid rgba(255,248,235,.15);font-weight:600}
-  .hint{font-size:12px;color:rgba(245,240,232,.45);margin-top:10px;line-height:1.6;text-align:center}
   .status{font-size:12px;color:#D4AF6E;margin-top:8px;text-align:center;min-height:16px}
+  .hint{font-size:12px;color:rgba(245,240,232,.45);margin-top:14px;line-height:1.6;text-align:center}
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>ApexVIP</h1>
-  <div class="sub">Social promo films — save to your camera roll, then upload natively in each app.</div>
-
-  <div class="card">
-    <div class="label">TikTok cut · CTA “apexvip.uk”</div>
-    <video src="apexvip-tiktok.mp4" controls playsinline preload="metadata"></video>
-    <button class="btn" onclick="saveVideo('apexvip-tiktok.mp4','ApexVIP-TikTok.mp4',this)">Save to Photos</button>
-    <a class="btn ghost" href="apexvip-tiktok.mp4" download="ApexVIP-TikTok.mp4">Download file</a>
-    <div class="status"></div>
-  </div>
-
-  <div class="card">
-    <div class="label">Instagram cut · CTA “Link in bio”</div>
-    <video src="apexvip-instagram.mp4" controls playsinline preload="metadata"></video>
-    <button class="btn" onclick="saveVideo('apexvip-instagram.mp4','ApexVIP-Instagram.mp4',this)">Save to Photos</button>
-    <a class="btn ghost" href="apexvip-instagram.mp4" download="ApexVIP-Instagram.mp4">Download file</a>
-    <div class="status"></div>
-  </div>
-
-  <div class="hint">“Save to Photos” opens your share sheet — choose <b>Save Video</b>.<br/>
-  If that's unavailable, “Download file” saves to the Files app; open it there,<br/>tap Share → Save Video.</div>
+  <div class="sub">Social content pack — save each asset to your camera roll, then upload natively.</div>
+  <div id="list"></div>
+  <div class="hint">“Save to Photos” opens the share sheet — choose <b>Save Video</b> / <b>Save Image</b>.<br/>
+  Fallback: “Download file” saves to the Files app (open it there → Share → Save).</div>
 </div>
 <script>
-async function saveVideo(url,name,btn){
+const ASSETS=[
+  {sec:'Hero films (20 s)'},
+  {f:'apexvip-tiktok.mp4',l:'TikTok hero · CTA “apexvip.uk”',v:1},
+  {f:'apexvip-instagram.mp4',l:'Instagram hero · CTA “Link in bio”',v:1},
+  {sec:'Teasers (6–7 s loops)'},
+  {f:'teaser-arrival.mp4',l:'The Arrival · “The evening, arranged.”',v:1},
+  {f:'teaser-aviation.mp4',l:'The Jet · “Wheels down. Car waiting.”',v:1},
+  {f:'teaser-chauffeur.mp4',l:'The Drive · “Travel, beautifully driven.”',v:1},
+  {sec:'Feed posts (4:5)'},
+  {f:'post-sclass.jpg',l:'S-Class · “Travel, beautifully driven.”'},
+  {f:'post-bell.jpg',l:'The Bell · “Whatever you need, arranged.”'},
+  {f:'post-vclass.jpg',l:'V-Class · “Arrive together.”'},
+  {sec:'Story (9:16)'},
+  {f:'story-open.jpg',l:'Story card · “Bookings now open.”'},
+];
+document.getElementById('list').innerHTML=ASSETS.map(a=>{
+  if(a.sec)return '<h2>'+a.sec+'</h2>';
+  const media=a.v?'<video src="'+a.f+'" controls playsinline preload="metadata"></video>'
+                 :'<img class="asset" src="'+a.f+'" alt=""/>';
+  return '<div class="card"><div class="label">'+a.l+'</div>'+media+
+    '<button class="btn" onclick="saveAsset(\''+a.f+'\','+(a.v?1:0)+',this)">Save to Photos</button>'+
+    '<a class="btn ghost" href="'+a.f+'" download>Download file</a><div class="status"></div></div>';
+}).join('');
+async function saveAsset(url,isVideo,btn){
   const status=btn.parentElement.querySelector('.status');
   try{
     btn.disabled=true;btn.textContent='Preparing…';
-    const r=await fetch(url);
-    const blob=await r.blob();
-    const file=new File([blob],name,{type:'video/mp4'});
+    const blob=await (await fetch(url)).blob();
+    const file=new File([blob],url.split('/').pop(),{type:isVideo?'video/mp4':'image/jpeg'});
     if(navigator.canShare&&navigator.canShare({files:[file]})){
       await navigator.share({files:[file]});
-      status.textContent='Share sheet opened — choose “Save Video”.';
+      status.textContent='Share sheet opened — choose “Save '+(isVideo?'Video':'Image')+'”.';
     }else{
-      // Fallback: trigger the download link
-      const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();
+      const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=file.name;a.click();
       status.textContent='Downloading — check the Files app.';
     }
-  }catch(e){
-    if(e&&e.name==='AbortError'){status.textContent='';}
-    else status.textContent='Could not open share sheet — use “Download file” below.';
-  }finally{
-    btn.disabled=false;btn.textContent='Save to Photos';
-  }
+  }catch(e){ status.textContent=(e&&e.name==='AbortError')?'':'Use “Download file” below instead.'; }
+  finally{ btn.disabled=false;btn.textContent='Save to Photos'; }
 }
 </script>
 </body>
