@@ -231,15 +231,16 @@ function homeView(){
     h += '<div class="hero"><h1>Your paper card,<br/><em>retired.</em></h1>' +
       '<p>Design a business card that lives on your phone. Hand it over as a link or a QR code — it saves straight into their contacts. No app for them, no account for you, no server anywhere.</p>' +
       '<button class="btn primary" data-act="new">✦ &nbsp;Create your card</button>' +
+      '<div style="margin-top:12px"><button class="btn" data-act="scan">📷 Scan a card you’ve been handed</button></div>' +
       '<div class="how"><span>1 · Make your card</span><span>2 · Show the QR</span><span>3 · They save you</span></div></div>';
   } else {
     h += '<h2 class="sec">Your cards</h2><div class="list">' +
       cards.map(function(c){ return tileHtml(c, 'open', [c.title, c.company].filter(Boolean).join(' · ') || 'Tap to share'); }).join('') +
-      '</div><div class="rowbtns"><button class="btn" data-act="new">＋ New card</button></div>';
+      '</div><div class="rowbtns"><button class="btn" data-act="new">＋ New card</button><button class="btn" data-act="scan">📷 Scan a card</button></div>';
   }
   h += '<h2 class="sec">Wallet — cards handed to you</h2>';
   if (!inbox.length){
-    h += '<div class="empty">When someone shares their Intro card with you, open the link and tap <b>Keep in wallet</b> — it lands here, ready to save to contacts any time.</div>';
+    h += '<div class="empty">When someone shares their Intro card with you, open their link — or 📷 <b>scan their QR</b> above — and tap <b>Keep in wallet</b>. It lands here, ready to save to contacts any time.</div>';
   } else {
     h += '<div class="list">' + inbox.map(function(r, i){
       return '<button class="tile" data-act="openInbox" data-i="' + i + '">' + avatarHtml(r.card, 'avvy') +
@@ -339,7 +340,7 @@ function modal(html){
   d.innerHTML = '<div class="modal">' + html + '</div>';
   document.body.appendChild(d);
 }
-function closeModal(){ var o = document.getElementById('overlay'); if (o && o.parentNode) o.parentNode.removeChild(o); }
+function closeModal(){ stopScan(); var o = document.getElementById('overlay'); if (o && o.parentNode) o.parentNode.removeChild(o); }
 
 var toastTimer = 0;
 function toast(msg){
@@ -386,6 +387,56 @@ function showQr(card){
     '<div class="qrbox">' + svg + '</div>' +
     '<div class="rowbtns"><button class="btn wide" data-act="closeModal">Close</button></div>');
 }
+/* ── QR scanner: live camera via BarcodeDetector where supported, paste-a-link everywhere ── */
+var scanStream = null, scanTimer = 0;
+function stopScan(){
+  if (scanTimer){ clearInterval(scanTimer); scanTimer = 0; }
+  if (scanStream){
+    try{ scanStream.getTracks().forEach(function(t){ t.stop(); }); }catch(e){}
+    scanStream = null;
+  }
+}
+function startScan(){
+  var vid = document.getElementById('scanVid'), status = document.getElementById('scanStatus');
+  var md = navigator.mediaDevices, BD = window.BarcodeDetector;
+  if (!vid || !md || !md.getUserMedia || !BD){
+    if (status) status.textContent = 'Live scanning isn’t supported in this browser — paste the card link below instead (or open it with your phone’s camera app).';
+    return;
+  }
+  BD.getSupportedFormats().then(function(fmts){
+    if (!fmts || fmts.indexOf('qr_code') < 0) throw new Error('no qr support');
+    return md.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+  }).then(function(stream){
+    scanStream = stream;
+    vid.srcObject = stream; vid.style.display = 'block';
+    var p = vid.play(); if (p && p.catch) p.catch(function(){});
+    var det = new BD({ formats: ['qr_code'] });
+    scanTimer = setInterval(function(){
+      if (!scanStream) return;
+      det.detect(vid).then(function(codes){
+        for (var i = 0; i < (codes ? codes.length : 0); i++) if (handleScanned(codes[i].rawValue, false)) return;
+      }).catch(function(){});
+    }, 350);
+  }).catch(function(){
+    if (status) status.textContent = 'Couldn’t open the camera — paste the card link below instead.';
+  });
+}
+function handleScanned(text, loud){
+  var token = E.parseHash(text) || String(text || '').trim();   // accept a whole URL or a bare token
+  var c = E.decodeCard(token);
+  if (c){
+    closeModal();
+    received = c; view = { name: 'receive' }; render();
+    toast('Card scanned');
+    return true;
+  }
+  if (loud){
+    var status = document.getElementById('scanStatus');
+    if (status) status.textContent = 'That doesn’t look like an Intro card link.';
+  }
+  return false;
+}
+
 function saveDraftField(f, v){ if (draft) draft[f] = v; }
 function refreshPreview(){
   var pv = document.getElementById('preview');
@@ -482,6 +533,18 @@ var ACTIONS = {
     var dup = inbox.some(function(r){ return JSON.stringify([r.card.name, r.card.email, r.card.phone]) === key; });
     if (!dup){ inbox.unshift({ card: received, savedAt: Date.now() }); commitInbox(); toast('Kept in your wallet'); }
     else toast('Already in your wallet');
+  },
+  'scan': function(){
+    modal('<h3>Scan a card</h3>' +
+      '<p id="scanStatus">Point your camera at an Intro QR code.</p>' +
+      '<video id="scanVid" playsinline muted style="width:100%;border-radius:14px;background:#000;display:none"></video>' +
+      '<div class="fld" style="text-align:left;margin-top:12px"><label>Or paste a card link</label><input id="scanPasteIn" placeholder="https://…#c=…"/></div>' +
+      '<div class="rowbtns"><button class="btn primary" data-act="scanPaste">Open link</button><button class="btn" data-act="closeModal">Close</button></div>');
+    startScan();
+  },
+  'scanPaste': function(){
+    var inp = document.getElementById('scanPasteIn');
+    if (inp) handleScanned(String(inp.value || ''), true);
   },
   'rcvShareBack': function(){ if (cards.length) shareCard(cards[0]); },
   'rcvMakeOwn': function(){ clearHash(); received = null; draft = E.blankCard(Date.now()); view = { name: 'edit', id: '' }; render(); },
