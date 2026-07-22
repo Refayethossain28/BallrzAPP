@@ -137,15 +137,26 @@ jobs:
         run: |
           [ -s /tmp/delete.csv ] || { echo "nothing to back up"; exit 0; }
           STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+          # Console/CLI-uploaded gen-1 functions have no sourceArchiveUrl (run #3
+          # showed all eight empty) — the v1 generateDownloadUrl RPC is the
+          # supported way to fetch their source zips.
+          TOKEN=$(gcloud auth print-access-token)
+          BACKUP_BUCKET=$(gsutil ls -p "$PROJECT" 2>/dev/null | grep -m1 'gcf-sources' | sed 's#^gs://##; s#/$##')
+          [ -n "$BACKUP_BUCKET" ] || BACKUP_BUCKET="$PROJECT.appspot.com"
+          echo "backup bucket: $BACKUP_BUCKET"
           while IFS=, read -r NAME REGION REASON; do
-            URL=$(gcloud functions describe "$NAME" --region "$REGION" --no-gen2 \
-                    --format='value(sourceArchiveUrl)' 2>/dev/null || true)
-            if [ -n "$URL" ]; then
-              BUCKET=$(printf '%s' "$URL" | cut -d/ -f3)
-              DEST="gs://$BUCKET/consolidation-backup/$STAMP/$NAME.zip"
-              gsutil cp "$URL" "$DEST" && echo "backed up: $NAME -> $DEST"
+            if ! gcloud functions describe "$NAME" --region "$REGION" --no-gen2 >/dev/null 2>&1; then
+              echo "::warning title=v1 describe failed::$NAME ($REGION) — cutover's gen-1 gate will SKIP deleting it."
+              continue
+            fi
+            DL=$(curl -sf -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Length: 0" \
+              "https://cloudfunctions.googleapis.com/v1/projects/$PROJECT/locations/$REGION/functions/$NAME:generateDownloadUrl" \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin).get("downloadUrl",""))' || true)
+            if [ -n "$DL" ] && curl -sf -o "/tmp/$NAME.zip" "$DL"; then
+              DEST="gs://$BACKUP_BUCKET/consolidation-backup/$STAMP/$NAME.zip"
+              gsutil -q cp "/tmp/$NAME.zip" "$DEST" && echo "backed up: $NAME -> $DEST"
             else
-              echo "::warning title=No source archive::$NAME ($REGION) has no sourceArchiveUrl — download its source from the Cloud Console before running cutover."
+              echo "::warning title=No source backup::$NAME ($REGION) — generateDownloadUrl failed; download its source from the Cloud Console if you want a rollback copy."
             fi
           done < /tmp/delete.csv
 
