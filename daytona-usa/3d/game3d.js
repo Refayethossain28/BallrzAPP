@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R96 — surveyed street maps';
+const BUILD = 'BUILD R97 — textured landmarks';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -1745,14 +1745,67 @@ function addBrooklynBridge(group, frames, spec){
   g.position.copy(f.pos); g.rotation.y=Math.atan2(f.tan.x,f.tan.z); g.scale.setScalar((spec&&spec.scale)||1); group.add(g);
 }
 
+// ---- facade textures: running-bond brick + Georgian sash-window fronts ----
+let _brickCache={}, _facCache={};
+function makeBrickTex(base, mortar){
+  const key=base+'_'+(mortar||0);
+  if (_brickCache[key]) return _brickCache[key];
+  const S=128, cv=document.createElement('canvas'); cv.width=cv.height=S; const x=cv.getContext('2d');
+  const b=new THREE.Color(base), m=new THREE.Color(mortar||0xcfc8bc);
+  x.fillStyle='#'+m.getHexString(); x.fillRect(0,0,S,S);
+  const bh=S/8, bw=S/4;
+  for (let r=0;r<8;r++) for (let c=-1;c<5;c++){
+    const off=(r%2)?bw/2:0;
+    const col=b.clone().offsetHSL(0,0,Math.random()*0.14-0.07);
+    x.fillStyle='#'+col.getHexString();
+    x.fillRect(c*bw+off+1, r*bh+1, bw-2, bh-2);
+  }
+  const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; t.anisotropy=_maxAniso;
+  _brickCache[key]=t; return t;
+}
+function makeFacadeTex(brick, trim){
+  const key=brick+'_'+trim;
+  if (_facCache[key]) return _facCache[key];
+  const S=256, cv=document.createElement('canvas'); cv.width=cv.height=S; const x=cv.getContext('2d');
+  const b=new THREE.Color(brick);
+  x.fillStyle='#'+b.getHexString(); x.fillRect(0,0,S,S);
+  for (let i=0;i<1400;i++){ x.globalAlpha=0.14; x.fillStyle=Math.random()<0.5?'#000':'#fff'; x.fillRect(Math.random()*S,Math.random()*S,3,2); }
+  x.globalAlpha=1;
+  x.strokeStyle='rgba(215,205,190,0.30)'; x.lineWidth=1;
+  for (let yy=0; yy<S; yy+=8){ x.beginPath(); x.moveTo(0,yy); x.lineTo(S,yy); x.stroke(); }
+  const ec=document.createElement('canvas'); ec.width=ec.height=S; const e=ec.getContext('2d');
+  e.fillStyle='#000'; e.fillRect(0,0,S,S);
+  const trimCol='#'+(new THREE.Color(trim)).getHexString();
+  for (let r=0;r<3;r++) for (let c=0;c<3;c++){
+    const wx=S*(0.09+c*0.32), wy=S*(0.07+r*0.33), ww=S*0.185, wh=S*0.235;
+    x.fillStyle=trimCol; x.fillRect(wx-4,wy-4,ww+8,wh+8);        // white surround + sill
+    x.fillRect(wx-6,wy+wh+2,ww+12,4);
+    x.fillStyle='#1c2029'; x.fillRect(wx,wy,ww,wh);              // glass
+    x.strokeStyle=trimCol; x.lineWidth=2;
+    x.beginPath(); x.moveTo(wx,wy+wh/2); x.lineTo(wx+ww,wy+wh/2); x.stroke();   // sash bars
+    x.beginPath(); x.moveTo(wx+ww/2,wy); x.lineTo(wx+ww/2,wy+wh); x.stroke();
+    if ((r+c)%2===0){ e.fillStyle='#ffdf9a'; e.fillRect(wx,wy,ww,wh); }         // some rooms lit
+  }
+  const map=new THREE.CanvasTexture(cv); map.colorSpace=THREE.SRGBColorSpace; map.wrapS=map.wrapT=THREE.RepeatWrapping; map.anisotropy=_maxAniso;
+  const emis=new THREE.CanvasTexture(ec); emis.wrapS=emis.wrapT=THREE.RepeatWrapping;
+  _facCache[key]={map,emis}; return _facCache[key];
+}
+// a full building front: brick + white-trimmed sash windows, some lit at night
+function facadeMat(brick, trim, repX, repY){
+  const f=makeFacadeTex(brick, trim);
+  const m=new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.85, map:f.map.clone(), emissive:0xffe39a, emissiveMap:f.emis.clone(), emissiveIntensity:0.30});
+  m.map.repeat.set(repX,repY); m.emissiveMap.repeat.set(repX,repY);
+  return m;
+}
+
 // ---- Mayfair landmarks ----
 function addMayfairHotel(group, frames, spec){
   const g=new THREE.Group();
   const stone=txMat({color:0xd9d2c4, roughness:0.8},'stone',3);
-  const winA=makeWindowTexture(false), winB=makeWindowTexture(false);
-  const win=new THREE.MeshStandardMaterial({color:0xcfc8b8, roughness:0.7, map:winA, emissive:0xffe39a, emissiveMap:winB, emissiveIntensity:0.32});
-  win.map.repeat.set(6,8); win.emissiveMap.repeat.set(6,8);
+  const win=facadeMat(0xd9d2c4, 0xffffff, 4, 5);              // Portland-stone sash front
   const b=new THREE.Mesh(new THREE.BoxGeometry(46,50,18), win); b.position.y=25; g.add(b);
+  const board=new THREE.Mesh(new THREE.BoxGeometry(24,3.2,0.6), new THREE.MeshBasicMaterial({map:makeSignTexture('PARK LANE HOTEL','#123a22')}));
+  board.position.set(0,13.5,12.6); g.add(board);              // name board over the entrance
   g.add(lmBox(stone, 50,3,20, 0,51.5,0));                     // cornice
   g.add(lmBox(stone, 50,4,20, 0,2,0));                        // rusticated base
   for (const dx of [-8,-2.7,2.7,8]){ const c=new THREE.Mesh(new THREE.CylinderGeometry(0.9,1,10,8), stone); c.position.set(dx,5,11); g.add(c); }
@@ -1769,8 +1822,7 @@ function addGeorgianTerrace(group, frames, spec){
   const winT=makeWindowTexture(false);
   for (let i=0;i<4;i++){
     const x=(i-1.5)*13, h=26+(i%2)*2;
-    const wm=new THREE.MeshStandardMaterial({color:0x9a6a4c, roughness:0.8, map:winT.clone(), emissive:0xffe39a, emissiveMap:winT.clone(), emissiveIntensity:0.3});
-    wm.map.repeat.set(2,3); wm.emissiveMap.repeat.copy(wm.map.repeat);
+    const wm=facadeMat(0x8f5f45, 0xf2eee4, 1, 2);            // London-brick Georgian front
     const b=new THREE.Mesh(new THREE.BoxGeometry(12.5,h,14), wm); b.position.set(x,h/2,0); g.add(b);
     g.add(lmBox(stucco,12.5,6,14.4,x,3,0));                   // stucco ground floor
     g.add(lmBox(stucco,12.9,1.2,14.6,x,h+0.6,0));            // parapet
@@ -1791,6 +1843,8 @@ function addBerkeleyGarden(group, frames, spec){
     const t=new THREE.Mesh(new THREE.CylinderGeometry(0.8,1.1,9,7), trunkM); t.position.set(dx,4.5,dz); g.add(t);
     const c=new THREE.Mesh(new THREE.IcosahedronGeometry(6,0), leafM); c.position.set(dx,12,dz); c.scale.y=0.85; g.add(c);
   }
+  const plate=new THREE.Mesh(new THREE.BoxGeometry(10,1.6,0.3), new THREE.MeshBasicMaterial({map:makeSignTexture('BERKELEY SQUARE','#1c5c3a')}));
+  plate.position.set(0,2.6,16.5); g.add(plate);
   placeLandmark(group, g, frames, spec);
 }
 // drive-through gate: the Wellington Arch with its dark quadriga up top
@@ -1811,14 +1865,16 @@ function addWellingtonArch(group, frames, spec){
 // ---- Tooting landmarks ----
 function addTootingStation(group, frames, spec){
   const g=new THREE.Group();
-  const oxblood=txMat({color:0x7a2a24, roughness:0.6},'stone',2);
+  const oxblood=new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.22, map:makeBrickTex(0x7a2a24,0x5a1a16)});
+  oxblood.map=oxblood.map.clone(); oxblood.map.repeat.set(4,2);   // glazed ox-blood tile
   const cream=txMat({color:0xe8e2d4, roughness:0.8},'stone',2);
   const b=new THREE.Mesh(new THREE.BoxGeometry(30,16,16), oxblood); b.position.y=8; g.add(b);
   g.add(lmBox(cream, 30.6,8,16.6, 0,20,0));
   g.add(lmBox(matteMat(0x101216), 24,5,0.6, 0,5.5,8.2));      // entrance band
   const ring=new THREE.Mesh(new THREE.TorusGeometry(4,1.1,10,24), new THREE.MeshStandardMaterial({color:0xdc241f, roughness:0.5}));
   ring.position.set(0,14,8.6); g.add(ring);                   // the roundel
-  g.add(lmBox(new THREE.MeshStandardMaterial({color:0x10069f, roughness:0.5}), 11,1.8,0.8, 0,14,8.8));
+  const bar=new THREE.Mesh(new THREE.BoxGeometry(11,1.8,0.8), new THREE.MeshBasicMaterial({map:makeSignTexture('TOOTING BROADWAY','#10069f')}));
+  bar.position.set(0,14,8.8); g.add(bar);                     // the roundel name bar
   g.add(lmBox(matteMat(0x1a1d22), 26,0.8,5, 0,9.5,10));       // canopy
   placeLandmark(group, g, frames, spec);
 }
@@ -1828,8 +1884,7 @@ function addTerraceRow(group, frames, spec){
   const bay=txMat({color:0xd8d2c4, roughness:0.8},'stone',1);
   const winT=makeWindowTexture(false);
   for (let i=0;i<5;i++){ const x=(i-2)*9;
-    const wm=new THREE.MeshStandardMaterial({color:0xa06a48, roughness:0.85, map:winT.clone(), emissive:0xffe39a, emissiveMap:winT.clone(), emissiveIntensity:0.28});
-    wm.map.repeat.set(2,2); wm.emissiveMap.repeat.copy(wm.map.repeat);
+    const wm=facadeMat(0x92573c, 0xe8e2d4, 1, 1);            // Victorian brick front
     const b=new THREE.Mesh(new THREE.BoxGeometry(8.6,14,12), wm); b.position.set(x,7,0); g.add(b);
     g.add(lmBox(bay, 3.4,5,2.4, x-1.8,2.5,6.6));              // bay window
     const roof=new THREE.Mesh(new THREE.ConeGeometry(6.6,4,4), matteMat(0x3a3f45)); roof.position.set(x,16,0); roof.rotation.y=Math.PI/4; g.add(roof);
@@ -1839,7 +1894,8 @@ function addTerraceRow(group, frames, spec){
 }
 function addTootingMarket(group, frames, spec){
   const g=new THREE.Group();
-  const brick=txMat({color:0x8a4f38, roughness:0.85},'stone',3);
+  const brick=new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.85, map:makeBrickTex(0x8a4f38,0xbfae98)});
+  brick.map=brick.map.clone(); brick.map.repeat.set(5,3);
   g.add(lmBox(brick, 26,12,10, 0,6,0));
   const arch=new THREE.Mesh(new THREE.TorusGeometry(9,1.2,8,20,Math.PI), new THREE.MeshStandardMaterial({color:0x1c5c3a, roughness:0.5}));
   arch.position.set(0,12,5.4); g.add(arch);
@@ -1850,18 +1906,28 @@ function addTootingMarket(group, frames, spec){
 }
 function addLido(group, frames, spec){
   const g=new THREE.Group();
-  const pool=new THREE.Mesh(new THREE.BoxGeometry(32,0.6,12), new THREE.MeshStandardMaterial({color:0x2a9ad2, roughness:0.15, metalness:0.2, envMap:envTex, envMapIntensity:1.2}));
+  const wcv=document.createElement('canvas'); wcv.width=wcv.height=128; const wx2=wcv.getContext('2d');
+  wx2.fillStyle='#2a9ad2'; wx2.fillRect(0,0,128,128);
+  wx2.strokeStyle='rgba(255,255,255,0.35)'; wx2.lineWidth=2;
+  for (let r=0;r<7;r++){ wx2.beginPath(); for (let px2=0;px2<=128;px2+=8){ const yy=r*18+9+Math.sin(px2*0.15+r)*3; px2===0?wx2.moveTo(px2,yy):wx2.lineTo(px2,yy);} wx2.stroke(); }
+  wx2.strokeStyle='rgba(255,255,255,0.8)'; wx2.lineWidth=3;
+  for (const lx of [32,64,96]){ wx2.beginPath(); wx2.moveTo(lx,0); wx2.lineTo(lx,128); wx2.stroke(); }   // lane ropes
+  const wtex=new THREE.CanvasTexture(wcv); wtex.colorSpace=THREE.SRGBColorSpace; wtex.wrapS=wtex.wrapT=THREE.RepeatWrapping; wtex.repeat.set(3,1);
+  const pool=new THREE.Mesh(new THREE.BoxGeometry(32,0.6,12), new THREE.MeshStandardMaterial({map:wtex, roughness:0.12, metalness:0.2, envMap:envTex, envMapIntensity:1.3}));
   pool.position.y=0.3; g.add(pool);
   const doorCols=[0xd23b2a,0xf2c811,0x2a7dd2,0x2aa84a,0xe86a2a,0xc23bd2];   // the famous doors
   for (let i=0;i<8;i++) g.add(lmBox(new THREE.MeshLambertMaterial({color:doorCols[i%6]}), 3.4,5,0.6, (i-3.5)*3.8, 2.5, -8));
   g.add(lmBox(txMat({color:0xe8e2d4, roughness:0.8},'stone',2), 32,1.4,1, 0,5.8,-8));
+  const fsign=new THREE.Mesh(new THREE.BoxGeometry(16,2.2,0.4), new THREE.MeshBasicMaterial({map:makeSignTexture('TOOTING BEC LIDO','#1c6ca8')}));
+  fsign.position.set(0,7.6,-8); g.add(fsign);
   placeLandmark(group, g, frames, spec);
 }
 // drive-through gate: a riveted rail bridge over the high street
 function addRailBridge(group, frames, spec){
   const f=frames[((Math.floor(DIV*(spec?spec.frac:0.12)))%DIV+DIV)%DIV], g=new THREE.Group();
   const steel=new THREE.MeshStandardMaterial({color:0x3a5a78, metalness:0.5, roughness:0.5});
-  const brick=txMat({color:0x7a4a34, roughness:0.9},'stone',4);
+  const brick=new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.9, map:makeBrickTex(0x7a4a34,0xa89880)});
+  brick.map=brick.map.clone(); brick.map.repeat.set(3,4);
   const half=ROAD_W+RUMBLE_W+6;
   for (const sx of [-1,1]) g.add(lmBox(brick, 10, 12, 10, sx*half, 6, 0));
   g.add(lmBox(steel, half*2+10, 3.5, 9, 0, 13.5, 0));
@@ -2031,7 +2097,10 @@ function buildScenery(){
   // ---- BIG multi-row grandstands distributed around the lap (outer side, close in) ----
   const crowdTex=makeCrowdTexture();
   const NSEG=MOBILE?12:18, NROW=MOBILE?3:4;
-  const standFracs = MOBILE ? [0.008,0.028, 0.25, 0.40, 0.50, 0.62, 0.75]
+  // street circuits keep only a start/finish stand — a ring of giant
+  // grandstands buries the district character
+  const standFracs = streetTheme ? [0.008,0.045]
+                   : MOBILE ? [0.008,0.028, 0.25, 0.40, 0.50, 0.62, 0.75]
                             : [0.006,0.022,0.038, 0.13,0.25,0.37, 0.49,0.51,0.53, 0.63,0.75,0.87];
   const standCen=new THREE.Vector3(); for(const fr of frames) standCen.add(fr.pos); standCen.multiplyScalar(1/frames.length);
   const standPostMat=new THREE.MeshLambertMaterial({color:0xb9c0c7, map:makeDetailTex('metal')});
