@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R94 — Mayfair + Tooting';
+const BUILD = 'BUILD R95 — real street maps';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -46,24 +46,27 @@ const CANYON_LAYOUT = [
   [300,0,90],[200,0,170],[70,0,150],[-40,0,210],
   [-180,0,250],[-310,0,150],[-350,0,0],[-300,0,-140],[-170,0,-250],
 ];
-// MAYFAIR — Park Lane boulevard blast, Bond Street kink, a loop around
-// Berkeley Square and the Shepherd Market wiggle.
+// MAYFAIR — the real one-way blocks: PARK LANE north along Hyde Park (the
+// long west straight), right onto OXFORD STREET, down NEW BOND STREET,
+// Bruton Street into BERKELEY SQUARE (the track runs round two sides of the
+// square garden), then MOUNT STREET back to Park Lane.
 const MAYFAIR_LAYOUT = [
-  [-40,0,-235],[120,0,-235],[240,0,-235],
-  [285,0,-140],[290,0,-30],
-  [235,0,40],[240,0,140],[150,0,185],
-  [40,0,150],[-60,0,195],[-180,0,230],
-  [-295,0,165],[-307,0,20],[-298,0,-125],
-  [-190,0,-225],
+  [-300,0,-195],[-306,0,-20],[-300,0,150],
+  [-140,0,163],[30,0,170],[180,0,175],
+  [196,0,60],[186,0,-30],
+  [90,0,-62],
+  [95,0,-148],[-5,0,-158],
+  [-150,0,-172],[-282,0,-186],
 ];
-// TOOTING — the A24 high-street drag, hard Broadway junction corners, Mitcham
-// Road, then a sweep around the common back to the lights.
+// TOOTING — the real road diamond: the A24 (Upper Tooting Road) running
+// south-west to TOOTING BROADWAY junction, left down MITCHAM ROAD, the
+// Southcroft/Links link roads east, then TOOTING BEC ROAD along the common
+// (Lido side) back to the top of the high street.
 const TOOTING_LAYOUT = [
-  [0,0,-190],[130,0,-200],[250,0,-185],
-  [300,0,-90],[280,0,10],
-  [305,0,110],[220,0,190],[100,0,175],
-  [-20,0,215],[-150,0,240],[-260,0,180],
-  [-320,0,60],[-290,0,-70],[-180,0,-140],[-90,0,-185],
+  [240,0,-180],[100,0,-125],[-40,0,-65],[-170,0,-5],
+  [-125,0,120],[-60,0,225],
+  [70,0,242],[180,0,195],
+  [262,0,62],[292,0,-60],
 ];
 const CIRCUITS = [
   { name:'NEW YORK', laps:6, maxSpeed:122, curveMul:1.0, aiSpeed:0.78, startTime:62, lapBonus:30, seed:7, theme:0, layout:NY_LAYOUT },
@@ -1745,9 +1748,9 @@ function addMayfairHotel(group, frames, spec){
   const winA=makeWindowTexture(false), winB=makeWindowTexture(false);
   const win=new THREE.MeshStandardMaterial({color:0xcfc8b8, roughness:0.7, map:winA, emissive:0xffe39a, emissiveMap:winB, emissiveIntensity:0.32});
   win.map.repeat.set(6,8); win.emissiveMap.repeat.set(6,8);
-  const b=new THREE.Mesh(new THREE.BoxGeometry(60,54,20), win); b.position.y=27; g.add(b);
-  g.add(lmBox(stone, 64,3,22, 0,55.5,0));                     // cornice
-  g.add(lmBox(stone, 64,4,22, 0,2,0));                        // rusticated base
+  const b=new THREE.Mesh(new THREE.BoxGeometry(46,50,18), win); b.position.y=25; g.add(b);
+  g.add(lmBox(stone, 50,3,20, 0,51.5,0));                     // cornice
+  g.add(lmBox(stone, 50,4,20, 0,2,0));                        // rusticated base
   for (const dx of [-8,-2.7,2.7,8]){ const c=new THREE.Mesh(new THREE.CylinderGeometry(0.9,1,10,8), stone); c.position.set(dx,5,11); g.add(c); }
   const awn=new THREE.Mesh(new THREE.BoxGeometry(20,1.2,6), new THREE.MeshStandardMaterial({color:0xc9a13b, metalness:0.6, roughness:0.4})); awn.position.set(0,10.5,13); g.add(awn);
   const flagCols=[0xc8102e,0x012169,0xffffff];
@@ -1760,8 +1763,8 @@ function addGeorgianTerrace(group, frames, spec){
   const g=new THREE.Group();
   const stucco=txMat({color:0xe3ddd0, roughness:0.8},'stone',2);
   const winT=makeWindowTexture(false);
-  for (let i=0;i<5;i++){
-    const x=(i-2)*13, h=26+(i%2)*2;
+  for (let i=0;i<4;i++){
+    const x=(i-1.5)*13, h=26+(i%2)*2;
     const wm=new THREE.MeshStandardMaterial({color:0x9a6a4c, roughness:0.8, map:winT.clone(), emissive:0xffe39a, emissiveMap:winT.clone(), emissiveIntensity:0.3});
     wm.map.repeat.set(2,3); wm.emissiveMap.repeat.copy(wm.map.repeat);
     const b=new THREE.Mesh(new THREE.BoxGeometry(12.5,h,14), wm); b.position.set(x,h/2,0); g.add(b);
@@ -1771,7 +1774,7 @@ function addGeorgianTerrace(group, frames, spec){
     for (const dx of [-1.6,1.6]){ const c=new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.45,4.6,8), stucco); c.position.set(x+dx,4.6,8); g.add(c); }
     g.add(lmBox(matteMat(0x14161c),2.2,4.6,0.4,x,2.3,7.4));  // black door
   }
-  g.add(lmBox(matteMat(0x0c0e12), 66,1.6,0.3, 0,0.8,10.5));  // railings
+  g.add(lmBox(matteMat(0x0c0e12), 54,1.6,0.3, 0,0.8,10.5));  // railings
   placeLandmark(group, g, frames, spec);
 }
 function addBerkeleyGarden(group, frames, spec){
@@ -1820,7 +1823,7 @@ function addTerraceRow(group, frames, spec){
   const brick=txMat({color:0x92573c, roughness:0.85},'stone',4);
   const bay=txMat({color:0xd8d2c4, roughness:0.8},'stone',1);
   const winT=makeWindowTexture(false);
-  for (let i=0;i<6;i++){ const x=(i-2.5)*9;
+  for (let i=0;i<5;i++){ const x=(i-2)*9;
     const wm=new THREE.MeshStandardMaterial({color:0xa06a48, roughness:0.85, map:winT.clone(), emissive:0xffe39a, emissiveMap:winT.clone(), emissiveIntensity:0.28});
     wm.map.repeat.set(2,2); wm.emissiveMap.repeat.copy(wm.map.repeat);
     const b=new THREE.Mesh(new THREE.BoxGeometry(8.6,14,12), wm); b.position.set(x,7,0); g.add(b);
@@ -1843,11 +1846,11 @@ function addTootingMarket(group, frames, spec){
 }
 function addLido(group, frames, spec){
   const g=new THREE.Group();
-  const pool=new THREE.Mesh(new THREE.BoxGeometry(40,0.6,14), new THREE.MeshStandardMaterial({color:0x2a9ad2, roughness:0.15, metalness:0.2, envMap:envTex, envMapIntensity:1.2}));
+  const pool=new THREE.Mesh(new THREE.BoxGeometry(32,0.6,12), new THREE.MeshStandardMaterial({color:0x2a9ad2, roughness:0.15, metalness:0.2, envMap:envTex, envMapIntensity:1.2}));
   pool.position.y=0.3; g.add(pool);
   const doorCols=[0xd23b2a,0xf2c811,0x2a7dd2,0x2aa84a,0xe86a2a,0xc23bd2];   // the famous doors
-  for (let i=0;i<10;i++) g.add(lmBox(new THREE.MeshLambertMaterial({color:doorCols[i%6]}), 3.4,5,0.6, (i-4.5)*3.8, 2.5, -8));
-  g.add(lmBox(txMat({color:0xe8e2d4, roughness:0.8},'stone',2), 40,1.4,1, 0,5.8,-8));
+  for (let i=0;i<8;i++) g.add(lmBox(new THREE.MeshLambertMaterial({color:doorCols[i%6]}), 3.4,5,0.6, (i-3.5)*3.8, 2.5, -8));
+  g.add(lmBox(txMat({color:0xe8e2d4, roughness:0.8},'stone',2), 32,1.4,1, 0,5.8,-8));
   placeLandmark(group, g, frames, spec);
 }
 // drive-through gate: a riveted rail bridge over the high street
@@ -1898,7 +1901,15 @@ function buildScenery(){
     : th.landmark==='tooting' ? Array.from({length:N12},(_,i)=>[addTootingStation,addTerraceRow,addTootingMarket,addLido][i%4])
     : th.landmark==='usa'   ? Array.from({length:N12},(_,i)=>[addStatueOfLiberty,addGoldenGate][i%2]) : [];
   const cen=new THREE.Vector3(); for(const fr of frames) cen.add(fr.pos); cen.multiplyScalar(1/frames.length);
-  const heroSlots = heroFns.map((fn,i)=>{ const fi=Math.floor(((i+0.5)/heroFns.length)*DIV)%DIV, f=frames[fi];
+  // long frontage landmarks (terraces, hotels, the lido) MUST sit on straight
+  // stretches — on a curve their row cuts across the road. Each slot searches
+  // nearby for the flattest run before committing.
+  const heroStr=i=>{ let t=0; for(let k=-26;k<=26;k++) t+=Math.abs(frames[(i+k+DIV)%DIV].curv); return t; };
+  const heroSlots = heroFns.map((fn,i)=>{
+    let fi=Math.floor(((i+0.5)/heroFns.length)*DIV)%DIV;
+    let best=fi, bs=Infinity;
+    for (let d=-44; d<=44; d+=4){ const j=(fi+d+DIV)%DIV; const t=heroStr(j); if (t<bs){ bs=t; best=j; } }
+    fi=best; const f=frames[fi];
     const outward=(f.pos.x-cen.x)*f.right.x + (f.pos.z-cen.z)*f.right.z; return { fn, fi, side: outward>=0?1:-1 }; });
 
   // gate (Tower Bridge / Dubai Frame) on the straightest start stretch
@@ -1956,7 +1967,7 @@ function buildScenery(){
   // margin (otherwise a wide base — e.g. the Shard — sits across the racing line).
   const FOOT = new Map([[addBigBen,9],[addLondonEye,11],[addGherkin,17],[addShard,22],
                         [addBurj,19],[addBurjAlArab,26],[addStatueOfLiberty,18],[addGoldenGate,30],[addEmpireState,25],
-                        [addMayfairHotel,14],[addGeorgianTerrace,10],[addBerkeleyGarden,18],[addTootingStation,11],[addTerraceRow,9],[addTootingMarket,8],[addLido,10]]);
+                        [addMayfairHotel,18],[addGeorgianTerrace,16],[addBerkeleyGarden,20],[addTootingStation,14],[addTerraceRow,14],[addTootingMarket,12],[addLido,14]]);
   const HSCALE = 1.9;
   heroSlots.forEach(({fn,fi,side})=>{ const f=frames[fi];
     const off=(ROAD_W+RUMBLE_W) + (FOOT.get(fn)||14)*HSCALE + 6;
@@ -1980,10 +1991,13 @@ function buildScenery(){
     const nearLM = i=>keepout.some(k=>{ let d=Math.abs(i-k); d=Math.min(d,DIV-d); return d<70; });
     const winTex=makeWindowTexture(th.landmark==='dubai'); const _v=new THREE.Vector3();
     for (let i=0;i<DIV;i+=(MOBILE?70:22)){ if(nearLM(i)) continue; const f=frames[i]; _v.copy(f.pos).sub(cen); const side=(_v.dot(f.right)>=0)?1:-1;
-      const h=20+rng()*(th.landmark==='dubai'?70:34), w=12+rng()*12; const col=th.landmark==='dubai'?0xbcd0e2:[0x8a6248,0x96704e,0x6f5e54][(rng()*3)|0];
+      const near=(th.landmark==='mayfair'||th.landmark==='tooting');
+      const h=(near?13:20)+rng()*(th.landmark==='dubai'?70:(near?16:34)), w=12+rng()*(near?9:12);
+      const col=th.landmark==='dubai'?0xbcd0e2 : th.landmark==='mayfair'?[0xd8d0c0,0xcfc4b0,0x9a6a52][(rng()*3)|0]
+              : th.landmark==='tooting'?[0x92573c,0xa06a48,0xb59a7a][(rng()*3)|0] : [0x8a6248,0x96704e,0x6f5e54][(rng()*3)|0];
       const mat=new THREE.MeshStandardMaterial({color:col, roughness:0.7, metalness:th.landmark==='dubai'?0.45:0.05, map:winTex.clone(), emissive:0xffe39a, emissiveMap:winTex.clone(), emissiveIntensity:0.38}); mat.map.repeat.set(Math.max(1,w/8),Math.max(2,h/10)); mat.emissiveMap.repeat.copy(mat.map.repeat);
       _pulse.push({mat, base:0.58, ph:i*0.7, sp:2.6, flash:true}); _scroll.push({tex:mat.emissiveMap, v:0.016});
-      const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,w),mat); b.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+90+rng()*70)); b.position.y+=h/2-2; sceneryGroup.add(b); }
+      const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,w),mat); b.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+(near?32+rng()*42:90+rng()*70))); b.position.y+=h/2-2; sceneryGroup.add(b); }
   }
 
   // start/finish gantry
