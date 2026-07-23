@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R97 — textured landmarks';
+const BUILD = 'BUILD R98 — Tooting shop parades';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -1936,6 +1936,51 @@ function addRailBridge(group, frames, spec){
   g.position.copy(f.pos); g.rotation.y=Math.atan2(f.tan.x,f.tan.z); g.scale.setScalar((spec&&spec.scale)||1); group.add(g);
 }
 
+// ---- Tooting high-street shop parades: glass shopfronts + fascia signs +
+//      striped awnings under Victorian brick uppers ----
+let _shopSignCache={}, _awnTex=null;
+function makeShopSign(name, bg, fg){
+  const key=name+bg;
+  if (_shopSignCache[key]) return _shopSignCache[key];
+  const cv=document.createElement('canvas'); cv.width=256; cv.height=48; const x=cv.getContext('2d');
+  x.fillStyle=bg; x.fillRect(0,0,256,48);
+  x.strokeStyle='rgba(255,255,255,0.35)'; x.lineWidth=3; x.strokeRect(2,2,252,44);
+  x.fillStyle=fg; x.font='900 26px Arial'; x.textAlign='center'; x.textBaseline='middle';
+  x.fillText(name,128,26);
+  const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace; t.anisotropy=_maxAniso;
+  _shopSignCache[key]=t; return t;
+}
+function makeAwningTex(){
+  if (_awnTex) return _awnTex;
+  const cv=document.createElement('canvas'); cv.width=64; cv.height=32; const x=cv.getContext('2d');
+  x.fillStyle='#e8e2d4'; x.fillRect(0,0,64,32);
+  x.fillStyle='#c23b30'; for(let i=0;i<4;i++) x.fillRect(i*16,0,8,32);
+  _awnTex=new THREE.CanvasTexture(cv); _awnTex.colorSpace=THREE.SRGBColorSpace; _awnTex.wrapS=THREE.RepeatWrapping; return _awnTex;
+}
+const SHOPS=[['LAHORE KARAHI','#0f7a3a','#ffe14a'],['DOSA HOUSE','#c2311f','#ffffff'],['PIE & MASH','#134c2c','#f2e9c8'],
+  ['HALAL BUTCHER','#186b38','#ffffff'],['FRUIT & VEG','#2a7d2f','#ffffee'],['CHICKEN PALACE','#d21f1f','#ffe14a'],
+  ['SAREE CENTRE','#7a1f8a','#ffd24a'],['OFF LICENCE','#173a7a','#ffffff'],['CAFF','#7a4a1f','#ffffff'],
+  ['BARBERS','#12406b','#ffffff'],['PHARMACY','#0f7a5a','#ffffff'],['PHONES UNLOCKED','#222222','#4ad2ff']];
+function shopParade(rng, count){
+  const g=new THREE.Group();
+  const UW=8.4;
+  for (let i=0;i<count;i++){
+    const x=(i-(count-1)/2)*UW;
+    const S=SHOPS[(rng()*SHOPS.length)|0];
+    const up=new THREE.Mesh(new THREE.BoxGeometry(UW,10,12), facadeMat(0x92573c,0xe8e2d4,1,1));
+    up.position.set(x,11.2,0); g.add(up);                                     // brick upper storey
+    g.add(lmBox(matteMat(0x2a2d33), UW,6.2,11.4, x,3.1,-0.2));                // shop shell
+    const glass=new THREE.MeshStandardMaterial({color:0x18202c, roughness:0.15, metalness:0.4, emissive:0xffd9a0, emissiveIntensity:0.35, envMap:envTex, envMapIntensity:1.1});
+    const gf=new THREE.Mesh(new THREE.BoxGeometry(UW-1.2,4.6,0.5), glass); gf.position.set(x,2.6,6.0); g.add(gf);
+    const fas=new THREE.Mesh(new THREE.BoxGeometry(UW-0.4,1.9,0.5), new THREE.MeshBasicMaterial({map:makeShopSign(S[0],S[1],S[2])}));
+    fas.position.set(x,5.9,6.2); g.add(fas);                                  // the shop sign
+    if (rng()<0.45){ const aw=new THREE.Mesh(new THREE.BoxGeometry(UW-1.6,0.35,3.2), new THREE.MeshLambertMaterial({map:makeAwningTex()}));
+      aw.position.set(x,4.7,7.4); aw.rotation.x=0.42; g.add(aw); }            // striped awning
+    g.add(lmBox(txMat({color:0xd8d2c4, roughness:0.8},'stone',1), UW,0.9,12.2, x,16.6,0));   // parapet
+  }
+  return g;
+}
+
 // ---- build the whole scenery group (grounded, mobile-budgeted) ----
 function buildScenery(){
   if (sceneryGroup){ scene.remove(sceneryGroup); disposeTree(sceneryGroup); }
@@ -2070,6 +2115,24 @@ function buildScenery(){
       const mat=new THREE.MeshStandardMaterial({color:col, roughness:0.7, metalness:th.landmark==='dubai'?0.45:0.05, map:winTex.clone(), emissive:0xffe39a, emissiveMap:winTex.clone(), emissiveIntensity:0.38}); mat.map.repeat.set(Math.max(1,w/8),Math.max(2,h/10)); mat.emissiveMap.repeat.copy(mat.map.repeat);
       _pulse.push({mat, base:0.58, ph:i*0.7, sp:2.6, flash:true}); _scroll.push({tex:mat.emissiveMap, v:0.016});
       const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,w),mat); b.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+(near?32+rng()*42:90+rng()*70))); b.position.y+=h/2-2; sceneryGroup.add(b); }
+  }
+
+  // ---- Tooting: continuous parades of shops & restaurants on the straights ----
+  if (th.landmark==='tooting'){
+    const NPAR=MOBILE?5:12, COUNT=5;
+    const flatAt=i=>{ let t=0; for(let k=-16;k<=16;k++) t+=Math.abs(frames[(i+k+DIV)%DIV].curv); return t; };
+    let placed=0, side=1;
+    for (let i=0; i<DIV && placed<NPAR; i+=Math.floor(DIV/(NPAR*1.4))){
+      let best=i, bs=Infinity;
+      for (let d=-10; d<=10; d+=2){ const j=(i+d+DIV)%DIV, t=flatAt(j); if (t<bs){ bs=t; best=j; } }
+      side=-side;
+      if (heroNear(best, side) || gateNear(best) || bs>1.2) continue;   // straights only
+      const f=frames[best];
+      const par=shopParade(rng, COUNT);
+      par.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+15));
+      par.lookAt(f.pos.clone().setY(par.position.y));
+      sceneryGroup.add(par); placed++;
+    }
   }
 
   // start/finish gantry
