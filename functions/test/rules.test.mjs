@@ -218,3 +218,19 @@ test('corporates are ops-console-only', async () => {
   await assertFails(setDoc(doc(client('c1'), 'corporates/co1'), { name: 'Evil Corp' }));
   await assertSucceeds(setDoc(doc(admin(), 'corporates/co2'), { name: 'Real Corp' }));
 });
+
+// ── Vault Online: the ledger is server-authoritative ────────────────────────
+test('vaultBanks: you can watch your own bank but never write a balance', async () => {
+  await seed((db) => setDoc(doc(db, 'vaultBanks/alice'), { name: 'Alice', txns: [] }));
+  await assertSucceeds(getDoc(doc(client('alice'), 'vaultBanks/alice')));
+  await assertFails(getDoc(doc(client('mallory'), 'vaultBanks/alice')));       // not someone else's
+  await assertFails(setDoc(doc(client('alice'), 'vaultBanks/alice'), { rich: true }));   // no client mints money
+  await assertFails(updateDoc(doc(client('alice'), 'vaultBanks/alice'), { txns: [] }));  // not even the owner
+});
+
+test('vaultRails: the payee directory is not client-readable or enumerable', async () => {
+  await seed((db) => setDoc(doc(db, 'vaultRails/040101-12345678'), { uid: 'alice', name: 'Alice' }));
+  await assertFails(getDoc(doc(client('alice'), 'vaultRails/040101-12345678'))); // even your own rails
+  await assertFails(getDocs(collection(client('bob'), 'vaultRails')));
+  await assertFails(setDoc(doc(client('bob'), 'vaultRails/040101-12345678'), { uid: 'bob' })); // no hijack
+});

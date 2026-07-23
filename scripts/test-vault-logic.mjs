@@ -284,6 +284,31 @@ test('toCSV: running balance, only this account, quotes escaped', () => {
   assert.equal(potCsv.split('\n').length, 2, 'pot statement sees only its own line');
 });
 
+/* ---- compaction ---- */
+
+test('compact folds old txns into brought-forward entries, balances untouched', () => {
+  let s = topUp(bank(), 50000);
+  s = V.post(s, { amount: 7000, from: 'current', to: 'pot-1', desc: 'save', ts: NOW + 'T10:00:00Z' }).state;
+  s = V.post(s, { amount: 3000, from: 'current', to: null, desc: 'Tesco Express', ts: NOW + 'T11:00:00Z' }).state;
+  s = V.post(s, { amount: 500, from: 'pot-1', to: 'current', desc: 'back', ts: NOW + 'T12:00:00Z' }).state;
+  const before = s.accounts.map((a) => V.balanceOf(s, a.id));
+  const c = V.compact(s, 1);
+  assert.ok(c.txns.length <= 1 + s.accounts.length, 'one kept + at most one carry per account');
+  assert.equal(JSON.stringify(c.accounts.map((a) => V.balanceOf(c, a.id))), JSON.stringify(before), 'every balance conserved');
+  assert.equal(c.txns[c.txns.length - 1].desc, 'back', 'newest txn survives verbatim');
+  assert.ok(c.txns.some((t) => t.desc === 'Balance brought forward'));
+  assert.equal(V.compact(s, 100), s, 'under the cap: untouched');
+});
+
+/* ---- the server runs a byte-identical engine ---- */
+
+test('functions/src/vault-engine.js is in sync with vault/engine.js', () => {
+  const serverCopy = join(ROOT, 'functions', 'src', 'vault-engine.js');
+  const a = readFileSync(join(ROOT, 'vault', 'engine.js'), 'utf8');
+  const b = readFileSync(serverCopy, 'utf8');
+  assert.equal(a, b, 'copies diverged — cp vault/engine.js functions/src/vault-engine.js');
+});
+
 /* ---- demo seed ---- */
 
 test('seedDemo is deterministic and internally consistent', () => {

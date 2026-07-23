@@ -431,5 +431,23 @@ service cloud.firestore {
     match /apexfx/{uid}/pushSubs/{subId} {
       allow read, write: if isUser(uid);
     }
+
+    // ── Vault Online — the digital bank (vault/) ──────────────────────────
+    // The whole point of the online bank is that the ledger is SERVER-
+    // authoritative: you can watch your own bank live (onSnapshot), but no
+    // client ever writes a balance — every mutation goes through the vault*
+    // callables, which use the Admin SDK (bypassing these rules) inside
+    // Firestore transactions. A client that could write its own ledger could
+    // mint money before sending it to a friend, so: read your own, write none.
+    match /vaultBanks/{uid} {
+      allow read: if isUser(uid);
+      allow write: if false;
+    }
+    // Rails directory (sort code + account number → uid). Payee lookup goes
+    // through the vaultLookup callable so exact details are required — the
+    // directory itself must not be client-enumerable.
+    match /vaultRails/{railId} {
+      allow read, write: if false;
+    }
   }
 }
