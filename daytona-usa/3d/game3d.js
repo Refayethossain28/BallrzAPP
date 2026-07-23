@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R93 — drawn cabins';
+const BUILD = 'BUILD R94 — Mayfair + Tooting';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -46,11 +46,32 @@ const CANYON_LAYOUT = [
   [300,0,90],[200,0,170],[70,0,150],[-40,0,210],
   [-180,0,250],[-310,0,150],[-350,0,0],[-300,0,-140],[-170,0,-250],
 ];
+// MAYFAIR — Park Lane boulevard blast, Bond Street kink, a loop around
+// Berkeley Square and the Shepherd Market wiggle.
+const MAYFAIR_LAYOUT = [
+  [-40,0,-235],[120,0,-235],[240,0,-235],
+  [285,0,-140],[290,0,-30],
+  [235,0,40],[240,0,140],[150,0,185],
+  [40,0,150],[-60,0,195],[-180,0,230],
+  [-295,0,165],[-307,0,20],[-298,0,-125],
+  [-190,0,-225],
+];
+// TOOTING — the A24 high-street drag, hard Broadway junction corners, Mitcham
+// Road, then a sweep around the common back to the lights.
+const TOOTING_LAYOUT = [
+  [0,0,-190],[130,0,-200],[250,0,-185],
+  [300,0,-90],[280,0,10],
+  [305,0,110],[220,0,190],[100,0,175],
+  [-20,0,215],[-150,0,240],[-260,0,180],
+  [-320,0,60],[-290,0,-70],[-180,0,-140],[-90,0,-185],
+];
 const CIRCUITS = [
   { name:'NEW YORK', laps:6, maxSpeed:122, curveMul:1.0, aiSpeed:0.78, startTime:62, lapBonus:30, seed:7, theme:0, layout:NY_LAYOUT },
   { name:'LONDON',  laps:6, maxSpeed:120, curveMul:1.0,  aiSpeed:0.78, startTime:62, lapBonus:30, seed:11, theme:3, layout:LONDON_LAYOUT },
   { name:'DUBAI',   laps:6, maxSpeed:136, curveMul:1.0,  aiSpeed:0.82, startTime:66, lapBonus:30, seed:23, theme:4, layout:DUBAI_LAYOUT },
   { name:'CANYON',  laps:6, maxSpeed:128, curveMul:1.05, aiSpeed:0.80, startTime:64, lapBonus:30, seed:37, theme:1, layout:CANYON_LAYOUT },
+  { name:'MAYFAIR', laps:6, maxSpeed:124, curveMul:1.0,  aiSpeed:0.79, startTime:63, lapBonus:30, seed:41, theme:5, layout:MAYFAIR_LAYOUT },
+  { name:'TOOTING', laps:6, maxSpeed:118, curveMul:1.05, aiSpeed:0.77, startTime:62, lapBonus:30, seed:53, theme:6, layout:TOOTING_LAYOUT },
 ];
 const THEMES = [
   // [0] NEW YORK — steel-blue Manhattan: park trees, brownstones, supertalls
@@ -68,6 +89,14 @@ const THEMES = [
   { asphalt:0x8a8e94, grass:0xcdb47e, grass2:0xbfa666, mountain:0xd8c79a, snow:false,
     prop:'palm', skyline:'city', landmark:'dubai', buildings:true,
     skyTop:'#1670c4', skyMid:'#5aa8e4', skyHorizon:'#d8c088', fog:0xd2bd8a },
+  // [5] MAYFAIR — cream stucco and plane trees under a posh grey-blue sky
+  { asphalt:0x74787e, grass:0x4f8c4a, grass2:0x437c3e, mountain:0x9aa6b2, snow:false,
+    prop:'tree', skyline:'city', landmark:'mayfair', buildings:true, overcast:true,
+    skyTop:'#5e738c', skyMid:'#8fa3b8', skyHorizon:'#c8d4de', fog:0xc0ccd6 },
+  // [6] TOOTING — warm south-London brick, market colour, lively sky
+  { asphalt:0x7a7e84, grass:0x559550, grass2:0x478245, mountain:0x9aa6b2, snow:false,
+    prop:'tree', skyline:'city', landmark:'tooting', buildings:true,
+    skyTop:'#3f7ec9', skyMid:'#84b4e6', skyHorizon:'#e6eef6', fog:0xd5e2ee },
 ];
 const VEHICLES = [
   { name:'HORNET', kind:'stock', color:0xd6262b,
@@ -1326,6 +1355,7 @@ function placeCar(mesh, dist, offset){
 //  Scenery: textures, landmark builders, and the grounded placement system
 // ----------------------------------------------------------------------------
 let sceneryGroup=null, _scnInfo='';
+try{ Object.defineProperty(window,'_scnInfo',{get:()=>_scnInfo}); }catch(e){}
 function disposeTree(obj){ obj.traverse(o=>{ if(o.geometry)o.geometry.dispose(); const m=o.material; if(m){ (Array.isArray(m)?m:[m]).forEach(mt=>{ if(mt.map)mt.map.dispose(); mt.dispose(); }); } }); }
 
 const _detailCache={};
@@ -1708,6 +1738,131 @@ function addBrooklynBridge(group, frames, spec){
   g.position.copy(f.pos); g.rotation.y=Math.atan2(f.tan.x,f.tan.z); g.scale.setScalar((spec&&spec.scale)||1); group.add(g);
 }
 
+// ---- Mayfair landmarks ----
+function addMayfairHotel(group, frames, spec){
+  const g=new THREE.Group();
+  const stone=txMat({color:0xd9d2c4, roughness:0.8},'stone',3);
+  const winA=makeWindowTexture(false), winB=makeWindowTexture(false);
+  const win=new THREE.MeshStandardMaterial({color:0xcfc8b8, roughness:0.7, map:winA, emissive:0xffe39a, emissiveMap:winB, emissiveIntensity:0.32});
+  win.map.repeat.set(6,8); win.emissiveMap.repeat.set(6,8);
+  const b=new THREE.Mesh(new THREE.BoxGeometry(60,54,20), win); b.position.y=27; g.add(b);
+  g.add(lmBox(stone, 64,3,22, 0,55.5,0));                     // cornice
+  g.add(lmBox(stone, 64,4,22, 0,2,0));                        // rusticated base
+  for (const dx of [-8,-2.7,2.7,8]){ const c=new THREE.Mesh(new THREE.CylinderGeometry(0.9,1,10,8), stone); c.position.set(dx,5,11); g.add(c); }
+  const awn=new THREE.Mesh(new THREE.BoxGeometry(20,1.2,6), new THREE.MeshStandardMaterial({color:0xc9a13b, metalness:0.6, roughness:0.4})); awn.position.set(0,10.5,13); g.add(awn);
+  const flagCols=[0xc8102e,0x012169,0xffffff];
+  for (let i=0;i<3;i++){ const dx=(i-1)*14;
+    const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.15,8,6), chromeMat()); pole.position.set(dx,58,8); pole.rotation.x=0.5; g.add(pole);
+    const fl=new THREE.Mesh(new THREE.PlaneGeometry(4,2.4), new THREE.MeshBasicMaterial({color:flagCols[i], side:THREE.DoubleSide})); fl.position.set(dx,60.5,10.4); g.add(fl); }
+  placeLandmark(group, g, frames, spec);
+}
+function addGeorgianTerrace(group, frames, spec){
+  const g=new THREE.Group();
+  const stucco=txMat({color:0xe3ddd0, roughness:0.8},'stone',2);
+  const winT=makeWindowTexture(false);
+  for (let i=0;i<5;i++){
+    const x=(i-2)*13, h=26+(i%2)*2;
+    const wm=new THREE.MeshStandardMaterial({color:0x9a6a4c, roughness:0.8, map:winT.clone(), emissive:0xffe39a, emissiveMap:winT.clone(), emissiveIntensity:0.3});
+    wm.map.repeat.set(2,3); wm.emissiveMap.repeat.copy(wm.map.repeat);
+    const b=new THREE.Mesh(new THREE.BoxGeometry(12.5,h,14), wm); b.position.set(x,h/2,0); g.add(b);
+    g.add(lmBox(stucco,12.5,6,14.4,x,3,0));                   // stucco ground floor
+    g.add(lmBox(stucco,12.9,1.2,14.6,x,h+0.6,0));            // parapet
+    g.add(lmBox(stucco,4.4,0.9,2.6,x,7.2,8));                // portico roof
+    for (const dx of [-1.6,1.6]){ const c=new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.45,4.6,8), stucco); c.position.set(x+dx,4.6,8); g.add(c); }
+    g.add(lmBox(matteMat(0x14161c),2.2,4.6,0.4,x,2.3,7.4));  // black door
+  }
+  g.add(lmBox(matteMat(0x0c0e12), 66,1.6,0.3, 0,0.8,10.5));  // railings
+  placeLandmark(group, g, frames, spec);
+}
+function addBerkeleyGarden(group, frames, spec){
+  const g=new THREE.Group();
+  const lawn=new THREE.Mesh(new THREE.CylinderGeometry(16,16,0.6,18), new THREE.MeshLambertMaterial({color:0x4e8c48, map:makeDetailTex('rough')})); lawn.position.y=0.3; g.add(lawn);
+  const rail=new THREE.Mesh(new THREE.TorusGeometry(16,0.25,6,28), matteMat(0x101216)); rail.rotation.x=Math.PI/2; rail.position.y=1.2; g.add(rail);
+  const trunkM=txMat({color:0x7a6a52, roughness:0.9},'metal',2);
+  const leafM=new THREE.MeshLambertMaterial({color:0x4aa650, flatShading:true, map:makeDetailTex('rough')});
+  for (const [dx,dz] of [[-6,-3],[5,2],[0,7]]){
+    const t=new THREE.Mesh(new THREE.CylinderGeometry(0.8,1.1,9,7), trunkM); t.position.set(dx,4.5,dz); g.add(t);
+    const c=new THREE.Mesh(new THREE.IcosahedronGeometry(6,0), leafM); c.position.set(dx,12,dz); c.scale.y=0.85; g.add(c);
+  }
+  placeLandmark(group, g, frames, spec);
+}
+// drive-through gate: the Wellington Arch with its dark quadriga up top
+function addWellingtonArch(group, frames, spec){
+  const f=frames[((Math.floor(DIV*(spec?spec.frac:0.12)))%DIV+DIV)%DIV], g=new THREE.Group();
+  const stone=txMat({color:0xd5cdba, roughness:0.8},'stone',4);
+  const half=ROAD_W+RUMBLE_W+8, H2=64;
+  for (const sx of [-1,1]){
+    g.add(lmBox(stone, 12, H2, 12, sx*half, H2/2, 0));
+    for (const dz of [-4,4]){ const c=new THREE.Mesh(new THREE.CylinderGeometry(1.1,1.3,H2*0.7,8), stone); c.position.set(sx*half+(sx>0?-7:7), H2*0.35, dz); g.add(c); }
+  }
+  g.add(lmBox(stone, half*2+12, 10, 14, 0, H2+5, 0));         // entablature
+  const bronze=new THREE.MeshStandardMaterial({color:0x2e3b33, metalness:0.4, roughness:0.5});
+  g.add(lmBox(bronze, 10,4,6, 0,H2+12,0));
+  const wing=new THREE.Mesh(new THREE.ConeGeometry(3,9,6), bronze); wing.position.set(0,H2+19,0); g.add(wing);
+  g.position.copy(f.pos); g.rotation.y=Math.atan2(f.tan.x,f.tan.z); g.scale.setScalar((spec&&spec.scale)||1); group.add(g);
+}
+// ---- Tooting landmarks ----
+function addTootingStation(group, frames, spec){
+  const g=new THREE.Group();
+  const oxblood=txMat({color:0x7a2a24, roughness:0.6},'stone',2);
+  const cream=txMat({color:0xe8e2d4, roughness:0.8},'stone',2);
+  const b=new THREE.Mesh(new THREE.BoxGeometry(30,16,16), oxblood); b.position.y=8; g.add(b);
+  g.add(lmBox(cream, 30.6,8,16.6, 0,20,0));
+  g.add(lmBox(matteMat(0x101216), 24,5,0.6, 0,5.5,8.2));      // entrance band
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(4,1.1,10,24), new THREE.MeshStandardMaterial({color:0xdc241f, roughness:0.5}));
+  ring.position.set(0,14,8.6); g.add(ring);                   // the roundel
+  g.add(lmBox(new THREE.MeshStandardMaterial({color:0x10069f, roughness:0.5}), 11,1.8,0.8, 0,14,8.8));
+  g.add(lmBox(matteMat(0x1a1d22), 26,0.8,5, 0,9.5,10));       // canopy
+  placeLandmark(group, g, frames, spec);
+}
+function addTerraceRow(group, frames, spec){
+  const g=new THREE.Group();
+  const brick=txMat({color:0x92573c, roughness:0.85},'stone',4);
+  const bay=txMat({color:0xd8d2c4, roughness:0.8},'stone',1);
+  const winT=makeWindowTexture(false);
+  for (let i=0;i<6;i++){ const x=(i-2.5)*9;
+    const wm=new THREE.MeshStandardMaterial({color:0xa06a48, roughness:0.85, map:winT.clone(), emissive:0xffe39a, emissiveMap:winT.clone(), emissiveIntensity:0.28});
+    wm.map.repeat.set(2,2); wm.emissiveMap.repeat.copy(wm.map.repeat);
+    const b=new THREE.Mesh(new THREE.BoxGeometry(8.6,14,12), wm); b.position.set(x,7,0); g.add(b);
+    g.add(lmBox(bay, 3.4,5,2.4, x-1.8,2.5,6.6));              // bay window
+    const roof=new THREE.Mesh(new THREE.ConeGeometry(6.6,4,4), matteMat(0x3a3f45)); roof.position.set(x,16,0); roof.rotation.y=Math.PI/4; g.add(roof);
+    g.add(lmBox(brick,1.4,3,1.4,x+2.6,18.5,0));               // chimney
+  }
+  placeLandmark(group, g, frames, spec);
+}
+function addTootingMarket(group, frames, spec){
+  const g=new THREE.Group();
+  const brick=txMat({color:0x8a4f38, roughness:0.85},'stone',3);
+  g.add(lmBox(brick, 26,12,10, 0,6,0));
+  const arch=new THREE.Mesh(new THREE.TorusGeometry(9,1.2,8,20,Math.PI), new THREE.MeshStandardMaterial({color:0x1c5c3a, roughness:0.5}));
+  arch.position.set(0,12,5.4); g.add(arch);
+  const sign=new THREE.Mesh(new THREE.BoxGeometry(18,2.6,0.6), new THREE.MeshBasicMaterial({map:makeSignTexture('TOOTING MARKET','#1c5c3a')})); sign.position.set(0,13.5,5.2); g.add(sign);
+  const stallCols=[0xd23b2a,0xf2c811,0x2a7dd2,0x2aa84a];
+  for (let i=0;i<4;i++){ const a=new THREE.Mesh(new THREE.BoxGeometry(5.4,0.5,3), new THREE.MeshLambertMaterial({color:stallCols[i]})); a.position.set((i-1.5)*6.4, 8.6, 6); a.rotation.x=0.5; g.add(a); }
+  placeLandmark(group, g, frames, spec);
+}
+function addLido(group, frames, spec){
+  const g=new THREE.Group();
+  const pool=new THREE.Mesh(new THREE.BoxGeometry(40,0.6,14), new THREE.MeshStandardMaterial({color:0x2a9ad2, roughness:0.15, metalness:0.2, envMap:envTex, envMapIntensity:1.2}));
+  pool.position.y=0.3; g.add(pool);
+  const doorCols=[0xd23b2a,0xf2c811,0x2a7dd2,0x2aa84a,0xe86a2a,0xc23bd2];   // the famous doors
+  for (let i=0;i<10;i++) g.add(lmBox(new THREE.MeshLambertMaterial({color:doorCols[i%6]}), 3.4,5,0.6, (i-4.5)*3.8, 2.5, -8));
+  g.add(lmBox(txMat({color:0xe8e2d4, roughness:0.8},'stone',2), 40,1.4,1, 0,5.8,-8));
+  placeLandmark(group, g, frames, spec);
+}
+// drive-through gate: a riveted rail bridge over the high street
+function addRailBridge(group, frames, spec){
+  const f=frames[((Math.floor(DIV*(spec?spec.frac:0.12)))%DIV+DIV)%DIV], g=new THREE.Group();
+  const steel=new THREE.MeshStandardMaterial({color:0x3a5a78, metalness:0.5, roughness:0.5});
+  const brick=txMat({color:0x7a4a34, roughness:0.9},'stone',4);
+  const half=ROAD_W+RUMBLE_W+6;
+  for (const sx of [-1,1]) g.add(lmBox(brick, 10, 12, 10, sx*half, 6, 0));
+  g.add(lmBox(steel, half*2+10, 3.5, 9, 0, 13.5, 0));
+  const sign=new THREE.Mesh(new THREE.BoxGeometry(16,2.2,0.4), new THREE.MeshBasicMaterial({map:makeSignTexture('TOOTING','#10069f')})); sign.position.set(0,13.6,4.9); g.add(sign);
+  for (let i=0;i<9;i++) g.add(lmBox(steel, 0.6, 3.5, 0.6, -half+i*(half*2/8), 13.5, 4));
+  g.position.copy(f.pos); g.rotation.y=Math.atan2(f.tan.x,f.tan.z); g.scale.setScalar((spec&&spec.scale)||1); group.add(g);
+}
+
 // ---- build the whole scenery group (grounded, mobile-budgeted) ----
 function buildScenery(){
   if (sceneryGroup){ scene.remove(sceneryGroup); disposeTree(sceneryGroup); }
@@ -1739,6 +1894,8 @@ function buildScenery(){
   const heroFns = th.landmark==='london' ? Array.from({length:REP}).flatMap(()=>L4)
     : th.landmark==='dubai' ? Array.from({length:N12},(_,i)=>[addBurj,addBurjAlArab][i%2])
     : th.landmark==='nyc'   ? Array.from({length:N12},(_,i)=>[addEmpireState,addStatueOfLiberty][i%2])
+    : th.landmark==='mayfair' ? Array.from({length:N12},(_,i)=>[addMayfairHotel,addGeorgianTerrace,addBerkeleyGarden][i%3])
+    : th.landmark==='tooting' ? Array.from({length:N12},(_,i)=>[addTootingStation,addTerraceRow,addTootingMarket,addLido][i%4])
     : th.landmark==='usa'   ? Array.from({length:N12},(_,i)=>[addStatueOfLiberty,addGoldenGate][i%2]) : [];
   const cen=new THREE.Vector3(); for(const fr of frames) cen.add(fr.pos); cen.multiplyScalar(1/frames.length);
   const heroSlots = heroFns.map((fn,i)=>{ const fi=Math.floor(((i+0.5)/heroFns.length)*DIV)%DIV, f=frames[fi];
@@ -1746,7 +1903,7 @@ function buildScenery(){
 
   // gate (Tower Bridge / Dubai Frame) on the straightest start stretch
   let gateFi=-1;
-  if (th.landmark==='london' || th.landmark==='dubai' || th.landmark==='nyc'){ let bs=Infinity;
+  if (['london','dubai','nyc','mayfair','tooting'].includes(th.landmark)){ let bs=Infinity;
     for (let i=Math.floor(DIV*0.04);i<=Math.floor(DIV*0.20);i++){ let s=0; for(let k=-45;k<=45;k++) s+=Math.abs(frames[(i+k+DIV)%DIV].curv); if(s<bs){bs=s;gateFi=i;} } }
   const gateNear=i=>{ if(gateFi<0)return false; let d=Math.abs(i-gateFi); d=Math.min(d,DIV-d); return d<30; };
   const heroNear=(i,side)=> gateNear(i) || heroSlots.some(h=>{ if(h.side!==side)return false; let d=Math.abs(i-h.fi); d=Math.min(d,DIV-d); return d<26; });
@@ -1798,7 +1955,8 @@ function buildScenery(){
   // landmark's BASE FOOTPRINT so its near edge always clears the kerb by a fixed
   // margin (otherwise a wide base — e.g. the Shard — sits across the racing line).
   const FOOT = new Map([[addBigBen,9],[addLondonEye,11],[addGherkin,17],[addShard,22],
-                        [addBurj,19],[addBurjAlArab,26],[addStatueOfLiberty,18],[addGoldenGate,30],[addEmpireState,25]]);
+                        [addBurj,19],[addBurjAlArab,26],[addStatueOfLiberty,18],[addGoldenGate,30],[addEmpireState,25],
+                        [addMayfairHotel,14],[addGeorgianTerrace,10],[addBerkeleyGarden,18],[addTootingStation,11],[addTerraceRow,9],[addTootingMarket,8],[addLido,10]]);
   const HSCALE = 1.9;
   heroSlots.forEach(({fn,fi,side})=>{ const f=frames[fi];
     const off=(ROAD_W+RUMBLE_W) + (FOOT.get(fn)||14)*HSCALE + 6;
@@ -1813,6 +1971,8 @@ function buildScenery(){
   if (th.landmark==='london') try{ addTowerBridge(sceneryGroup, frames, {frac:sA/DIV, scale:1.5}); }catch(e){ _scnInfo='GATE-ERR:'+(e&&e.message||e); }
   if (th.landmark==='dubai')  try{ addDubaiFrame(sceneryGroup, frames, {frac:sA/DIV, scale:1.0}); }catch(e){ _scnInfo='GATE-ERR:'+(e&&e.message||e); }
   if (th.landmark==='nyc')    try{ addBrooklynBridge(sceneryGroup, frames, {frac:sA/DIV, scale:1.15}); }catch(e){ _scnInfo='GATE-ERR:'+(e&&e.message||e); }
+  if (th.landmark==='mayfair') try{ addWellingtonArch(sceneryGroup, frames, {frac:sA/DIV, scale:1.0}); }catch(e){ _scnInfo='GATE-ERR:'+(e&&e.message||e); }
+  if (th.landmark==='tooting') try{ addRailBridge(sceneryGroup, frames, {frac:sA/DIV, scale:1.1}); }catch(e){ _scnInfo='GATE-ERR:'+(e&&e.message||e); }
 
   // mid-distance buildings (urban) — outside of the loop, clear of landmarks
   if (th.buildings){
@@ -3645,7 +3805,7 @@ const SOUNDTRACKS = {
 };
 let selApplePlaylist=null, selApplePlaylistName='';
 const VEH_ICON = ['🏎️','🏁','⚡','🛞','🗡️','🚐','🚘'];
-const CIR_ICON = ['🗽','🎡','🌆','🏜️'];
+const CIR_ICON = ['🗽','🎡','🌆','🏜️','🎩','🍛'];
 let selVeh=0, selCir=1, selSnd='daytona', selTod='day', selWx='clear';
 const TOD_ITEMS = [{key:'day',icon:'☀️',name:'DAY',desc:'Bright daylight racing'},
                    {key:'night',icon:'🌙',name:'NIGHT',desc:'Neon-lit night with stars'},
