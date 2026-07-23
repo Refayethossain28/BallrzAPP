@@ -1,0 +1,1057 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vault — the digital bank</title>
+<meta name="description" content="A full digital bank in your browser: current account, savings pots with real daily interest, a Luhn-valid virtual card with freeze & limits, round-ups, standing orders, spending insights and CSV statements. All money simulated, all of it yours — no cloud, no account.">
+<meta name="theme-color" content="#0a0c14">
+<meta property="og:title" content="Vault — the digital bank">
+<meta property="og:description" content="Current account, savings pots, virtual card, round-ups, standing orders, insights. A whole bank, simulated honestly, on your device.">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Vault">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0a0c14;
+    --bg2: #10131f;
+    --card: rgba(255,255,255,0.045);
+    --card2: rgba(255,255,255,0.07);
+    --line: rgba(255,255,255,0.09);
+    --ink: #edf0fa;
+    --dim: #96a0bf;
+    --faint: #667096;
+    --violet: #8b7cf7;
+    --violet2: #6e8bff;
+    --mint: #3ce6b0;
+    --gold: #f5c04a;
+    --red: #ff6b7a;
+    --radius: 18px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; }
+  body {
+    min-height: 100vh;
+    font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(900px 600px at 80% -10%, #1a1f38, var(--bg) 60%) fixed;
+    color: var(--ink);
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  input, select { font: inherit; color: var(--ink); }
+  .app { max-width: 480px; margin: 0 auto; padding: max(14px, env(safe-area-inset-top)) 16px calc(84px + env(safe-area-inset-bottom)); }
+
+  /* ---------- views ---------- */
+  .view { display: none; }
+  .view.on { display: block; animation: rise .18s ease; }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+
+  h1 { font-size: 22px; margin: 6px 0 2px; letter-spacing: -0.02em; }
+  h2 { font-size: 13px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--dim); margin: 26px 0 10px 2px; }
+  .sub { color: var(--dim); font-size: 14px; margin: 0; }
+
+  /* ---------- shared bits ---------- */
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    border: 1px solid var(--line); background: var(--card2); border-radius: 14px;
+    padding: 13px 18px; font-weight: 650; font-size: 15px; width: 100%;
+  }
+  .btn.primary { background: linear-gradient(135deg, var(--violet), var(--violet2)); border: 0; color: #fff; }
+  .btn.danger { color: var(--red); border-color: rgba(255,107,122,.35); background: rgba(255,107,122,.08); }
+  .btn.ghost { background: transparent; }
+  .btn:active { transform: scale(.985); }
+  .btn[disabled] { opacity: .45; pointer-events: none; }
+  .field { margin: 12px 0; }
+  .field label { display: block; font-size: 12.5px; color: var(--dim); margin: 0 0 6px 2px; font-weight: 600; }
+  .field input, .field select {
+    width: 100%; background: var(--bg2); border: 1px solid var(--line); border-radius: 12px;
+    padding: 12px 14px; outline: none; font-size: 16px;
+  }
+  .field input:focus, .field select:focus { border-color: rgba(139,124,247,.6); }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .muted { color: var(--dim); font-size: 13px; }
+  .tiny { color: var(--faint); font-size: 12px; }
+  .right { text-align: right; }
+  .spread { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+
+  /* ---------- onboarding / lock ---------- */
+  .hero { text-align: center; padding: 40px 6px 8px; }
+  .hero .logo { width: 84px; height: 84px; border-radius: 22px; margin-bottom: 14px; }
+  .hero h1 { font-size: 28px; }
+  .hero p { color: var(--dim); margin: 8px auto 0; max-width: 320px; }
+  .padwrap { max-width: 260px; margin: 18px auto 0; }
+  .dots { display: flex; gap: 12px; justify-content: center; margin: 18px 0 8px; height: 14px; }
+  .dots i { width: 13px; height: 13px; border-radius: 50%; border: 1.5px solid var(--faint); }
+  .dots i.f { background: var(--violet); border-color: var(--violet); }
+  .pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+  .pad button {
+    height: 62px; border-radius: 16px; background: var(--card); border: 1px solid var(--line);
+    font-size: 22px; font-weight: 600;
+  }
+  .pad button:active { background: var(--card2); }
+  .pad .blank { visibility: hidden; }
+  .padmsg { text-align: center; color: var(--dim); font-size: 14px; min-height: 20px; margin-top: 10px; }
+  .shake { animation: shake .35s; }
+  @keyframes shake { 20%,60% { transform: translateX(-7px); } 40%,80% { transform: translateX(7px); } }
+
+  /* ---------- home ---------- */
+  .balCard {
+    background: linear-gradient(140deg, rgba(139,124,247,.25), rgba(60,230,176,.10)), var(--card);
+    border: 1px solid rgba(139,124,247,.35); border-radius: 22px; padding: 20px 18px 16px;
+  }
+  .balCard .label { color: var(--dim); font-size: 13px; }
+  .balCard .big { font-size: 38px; font-weight: 750; letter-spacing: -0.03em; margin: 2px 0 6px; }
+  .balCard .rails { color: var(--faint); font-size: 12.5px; letter-spacing: .02em; }
+  .quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 14px; }
+  .quick button {
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 12px 4px 10px;
+    display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; color: var(--dim);
+  }
+  .quick button b { font-size: 21px; }
+  .potStrip { display: flex; gap: 10px; overflow-x: auto; padding: 2px 0 6px; scrollbar-width: none; }
+  .potStrip::-webkit-scrollbar { display: none; }
+  .potCard {
+    min-width: 150px; flex: none; text-align: left;
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 13px 14px;
+  }
+  .potCard .nm { font-weight: 650; font-size: 14px; }
+  .potCard .bal { font-size: 18px; font-weight: 700; margin: 3px 0 7px; }
+  .meter { height: 5px; border-radius: 4px; background: rgba(255,255,255,.09); overflow: hidden; }
+  .meter i { display: block; height: 100%; background: linear-gradient(90deg, var(--mint), var(--violet)); border-radius: 4px; }
+  .potCard.newPot { display: flex; align-items: center; justify-content: center; color: var(--dim); font-size: 14px; min-height: 88px; }
+
+  .txn { display: flex; gap: 12px; align-items: center; padding: 11px 2px; border-bottom: 1px solid rgba(255,255,255,.05); }
+  .txn:last-child { border-bottom: 0; }
+  .txn .ic { width: 40px; height: 40px; border-radius: 13px; background: var(--card2); display: flex; align-items: center; justify-content: center; font-size: 19px; flex: none; }
+  .txn .who { min-width: 0; }
+  .txn .who b { display: block; font-size: 14.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .txn .who span { color: var(--faint); font-size: 12px; }
+  .txn .amt { margin-left: auto; font-weight: 700; font-size: 14.5px; white-space: nowrap; }
+  .txn .amt.in { color: var(--mint); }
+  .dayhdr { color: var(--faint); font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; margin: 14px 2px 2px; }
+
+  /* ---------- card ---------- */
+  .bankCard {
+    aspect-ratio: 1.586; border-radius: 20px; padding: 20px; position: relative; overflow: hidden;
+    background: linear-gradient(135deg, #2b2660 0%, #1a1740 45%, #0e1b33 100%);
+    border: 1px solid rgba(139,124,247,.4);
+    display: flex; flex-direction: column; justify-content: space-between;
+    box-shadow: 0 18px 40px rgba(20,10,60,.5);
+  }
+  .bankCard::after {
+    content: ""; position: absolute; inset: 0;
+    background: radial-gradient(420px 200px at 85% 0%, rgba(60,230,176,.18), transparent 60%);
+  }
+  .bankCard.frozen { filter: grayscale(.85) brightness(.8); }
+  .bankCard .top { display: flex; justify-content: space-between; align-items: flex-start; }
+  .bankCard .brand { font-weight: 800; letter-spacing: .04em; }
+  .chip { width: 40px; height: 30px; border-radius: 6px; background: linear-gradient(135deg, #f5c04a, #c98f2b); position: relative; }
+  .chip::after { content: ""; position: absolute; inset: 6px 8px; border: 1.5px solid rgba(60,30,0,.4); border-radius: 3px; }
+  .pan { font-size: 19px; letter-spacing: .12em; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .bankCard .meta { display: flex; gap: 22px; color: #cfd4ee; font-size: 12px; }
+  .bankCard .meta b { display: block; font-size: 13.5px; color: #fff; letter-spacing: .06em; }
+  .cardBtns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+  .cardBtns .btn { padding: 11px 6px; font-size: 13.5px; }
+  .limitRow { margin: 13px 0 4px; }
+  .limitRow .spread { font-size: 13.5px; }
+
+  /* ---------- insights ---------- */
+  .monthNav { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 12px; }
+  .monthNav button { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 7px 13px; font-size: 15px; }
+  .monthNav .m { font-weight: 700; }
+  .ioRow { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .ioRow .panel { padding: 13px 15px; }
+  .ioRow .k { color: var(--dim); font-size: 12.5px; }
+  .ioRow .v { font-size: 20px; font-weight: 750; margin-top: 2px; }
+  .catRow { margin: 13px 0; }
+  .catRow .spread { font-size: 14px; margin-bottom: 6px; }
+  .catRow .meter { height: 8px; border-radius: 5px; }
+
+  /* ---------- sheet ---------- */
+  .scrim { position: fixed; inset: 0; background: rgba(4,6,12,.62); backdrop-filter: blur(3px); display: none; z-index: 40; }
+  .scrim.on { display: block; }
+  .sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 41; display: none;
+    max-width: 480px; margin: 0 auto; max-height: 88vh; overflow-y: auto;
+    background: #121524; border: 1px solid var(--line); border-bottom: 0;
+    border-radius: 22px 22px 0 0; padding: 10px 18px calc(20px + env(safe-area-inset-bottom));
+  }
+  .sheet.on { display: block; animation: up .22s ease; }
+  @keyframes up { from { transform: translateY(40px); opacity: 0; } }
+  .grab { width: 42px; height: 4.5px; border-radius: 3px; background: rgba(255,255,255,.18); margin: 4px auto 12px; }
+  .sheet h3 { margin: 2px 0 12px; font-size: 18px; }
+
+  /* ---------- tabbar ---------- */
+  .tabbar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+    max-width: 480px; margin: 0 auto;
+    display: grid; grid-template-columns: repeat(5, 1fr);
+    background: rgba(13,16,28,.92); backdrop-filter: blur(14px);
+    border-top: 1px solid var(--line); padding: 8px 6px calc(8px + env(safe-area-inset-bottom));
+  }
+  .tabbar button { background: none; border: 0; color: var(--faint); font-size: 11px; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px 0; }
+  .tabbar button b { font-size: 21px; font-weight: 400; }
+  .tabbar button.on { color: var(--ink); }
+  .tabbar.hidden, .hide { display: none !important; }
+
+  /* ---------- toast ---------- */
+  #toast {
+    position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+    background: #1d2236; border: 1px solid var(--line); color: var(--ink);
+    border-radius: 13px; padding: 11px 18px; font-size: 14px; z-index: 60;
+    opacity: 0; pointer-events: none; transition: opacity .2s; max-width: 90vw; text-align: center;
+  }
+  #toast.on { opacity: 1; }
+  #toast.err { border-color: rgba(255,107,122,.5); }
+
+  .listItem { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid rgba(255,255,255,.05); padding: 12px 2px; }
+  .listItem:last-child { border-bottom: 0; }
+  .listItem .ic { width: 40px; height: 40px; border-radius: 50%; flex: none; background: linear-gradient(135deg, rgba(139,124,247,.4), rgba(60,230,176,.25)); display: flex; align-items: center; justify-content: center; font-weight: 700; }
+  .listItem .grow { min-width: 0; flex: 1; }
+  .listItem .grow b { display: block; font-size: 15px; }
+  .listItem .grow span { color: var(--faint); font-size: 12.5px; }
+  .chev { color: var(--faint); }
+
+  .switch { position: relative; width: 48px; height: 28px; flex: none; }
+  .switch input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; z-index: 2; }
+  .switch i { position: absolute; inset: 0; border-radius: 20px; background: rgba(255,255,255,.14); transition: background .15s; }
+  .switch i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: transform .15s; }
+  .switch input:checked + i { background: var(--mint); }
+  .switch input:checked + i::after { transform: translateX(20px); }
+
+  .note { background: rgba(245,192,74,.08); border: 1px solid rgba(245,192,74,.25); border-radius: 14px; padding: 12px 14px; font-size: 13px; color: #e8d9ae; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ═══════════ onboarding ═══════════ -->
+  <section id="view-onboard" class="view">
+    <div class="hero">
+      <img class="logo" src="icon.svg" alt="">
+      <h1>Vault</h1>
+      <p>A full digital bank on your device — account, pots, card, the lot. Every pound is simulated; every rule is real.</p>
+    </div>
+    <div id="obStep1">
+      <div class="field"><label for="obName">Your name</label><input id="obName" maxlength="40" placeholder="e.g. Rafa Hossain" autocomplete="name"></div>
+      <div class="field spread panel" style="padding:13px 15px">
+        <div><b style="font-size:14.5px">Start with 3 months of history</b><div class="tiny">Salary, rent, coffees — so the insights have something to show.</div></div>
+        <span class="switch"><input id="obDemo" type="checkbox" checked><i></i></span>
+      </div>
+      <button class="btn primary" style="margin-top:8px" onclick="obNext()">Continue</button>
+      <p class="tiny" style="text-align:center;margin-top:14px">No sign-up, no server — your bank lives in this browser.</p>
+    </div>
+    <div id="obStep2" class="hide">
+      <div class="padwrap">
+        <p class="padmsg" id="obPinMsg">Choose a 4-digit PIN</p>
+        <div class="dots" id="obDots"></div>
+        <div class="pad" id="obPad"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ lock ═══════════ -->
+  <section id="view-lock" class="view">
+    <div class="hero">
+      <img class="logo" src="icon.svg" alt="">
+      <h1 id="lockHello">Welcome back</h1>
+    </div>
+    <div class="padwrap">
+      <p class="padmsg" id="lockMsg">Enter your PIN</p>
+      <div class="dots" id="lockDots"></div>
+      <div class="pad" id="lockPad"></div>
+    </div>
+  </section>
+
+  <!-- ═══════════ home ═══════════ -->
+  <section id="view-home" class="view">
+    <p class="sub" id="homeHello"></p>
+    <h1>Your money</h1>
+    <div class="balCard" style="margin-top:12px">
+      <div class="label">Total balance</div>
+      <div class="big" id="homeTotal">£0.00</div>
+      <div class="rails" id="homeRails"></div>
+    </div>
+    <div class="quick">
+      <button onclick="openSend()"><b>↗️</b>Send</button>
+      <button onclick="openAdd()"><b>➕</b>Add</button>
+      <button onclick="openDetails()"><b>🧾</b>Details</button>
+      <button onclick="lockNow()"><b>🔒</b>Lock</button>
+    </div>
+    <h2>Pots</h2>
+    <div class="potStrip" id="homePots"></div>
+    <h2>Activity</h2>
+    <div id="homeTxns" class="panel" style="padding:6px 14px"></div>
+  </section>
+
+  <!-- ═══════════ pay ═══════════ -->
+  <section id="view-pay" class="view">
+    <h1>Payments</h1>
+    <div class="panel" style="margin-top:12px;padding:6px 14px">
+      <button class="listItem" onclick="openSend()"><span class="ic">↗️</span><span class="grow"><b>Send money</b><span>To a saved contact or new payee</span></span><span class="chev">›</span></button>
+      <button class="listItem" onclick="openAdd()"><span class="ic">➕</span><span class="grow"><b>Add money</b><span>Top up your current account</span></span><span class="chev">›</span></button>
+      <button class="listItem" onclick="openMove()"><span class="ic">🔁</span><span class="grow"><b>Move between accounts</b><span>Current account ↔ pots</span></span><span class="chev">›</span></button>
+      <button class="listItem" onclick="openDetails()"><span class="ic">🧾</span><span class="grow"><b>Get paid</b><span>Your sort code, account number &amp; IBAN</span></span><span class="chev">›</span></button>
+    </div>
+    <h2>Scheduled</h2>
+    <div id="soList" class="panel" style="padding:6px 14px"></div>
+    <button class="btn" style="margin-top:10px" onclick="openNewSO()">＋ New standing order</button>
+    <h2>Contacts</h2>
+    <div id="contactList" class="panel" style="padding:6px 14px"></div>
+  </section>
+
+  <!-- ═══════════ card ═══════════ -->
+  <section id="view-card" class="view">
+    <h1>Card</h1>
+    <div class="bankCard" id="cardVisual" style="margin-top:12px">
+      <div class="top"><span class="brand">VAULT</span><span class="chip"></span></div>
+      <div class="pan" id="cardPan"></div>
+      <div class="meta">
+        <span>CARDHOLDER<b id="cardName"></b></span>
+        <span>EXPIRES<b id="cardExp"></b></span>
+        <span>CVV<b id="cardCvv">•••</b></span>
+      </div>
+    </div>
+    <div class="cardBtns">
+      <button class="btn" id="revealBtn" onclick="toggleReveal()">👁 Reveal</button>
+      <button class="btn" id="freezeBtn" onclick="toggleFreeze()">🧊 Freeze</button>
+      <button class="btn" onclick="openSpend()">🛍 Test spend</button>
+    </div>
+    <h2>Limits</h2>
+    <div class="panel">
+      <div class="limitRow">
+        <div class="spread"><span>Per purchase</span><b id="limTxV"></b></div>
+      </div>
+      <div class="limitRow">
+        <div class="spread"><span>Daily card spend</span><b id="limDayV"></b></div>
+        <div class="meter" style="margin-top:7px"><i id="limDayBar"></i></div>
+        <div class="tiny" id="limDayNote" style="margin-top:5px"></div>
+      </div>
+      <button class="btn ghost" style="margin-top:8px" onclick="openLimits()">Change limits</button>
+    </div>
+    <h2>Round-ups</h2>
+    <div class="panel spread">
+      <div><b style="font-size:14.5px">Round up card spending</b><div class="tiny" id="ruNote">Spare change hops into a pot.</div></div>
+      <span class="switch"><input id="ruToggle" type="checkbox" onchange="toggleRoundUps(this.checked)"><i></i></span>
+    </div>
+  </section>
+
+  <!-- ═══════════ insights ═══════════ -->
+  <section id="view-insights" class="view">
+    <h1>Insights</h1>
+    <div class="monthNav" style="margin-top:12px">
+      <button onclick="moveMonth(-1)">‹</button>
+      <span class="m" id="insMonth"></span>
+      <button id="insNext" onclick="moveMonth(1)">›</button>
+    </div>
+    <div class="ioRow">
+      <div class="panel"><div class="k">In</div><div class="v" id="insIn" style="color:var(--mint)"></div></div>
+      <div class="panel"><div class="k">Out</div><div class="v" id="insOut"></div></div>
+    </div>
+    <h2>Spending by category</h2>
+    <div class="panel" id="insCats"></div>
+  </section>
+
+  <!-- ═══════════ more ═══════════ -->
+  <section id="view-more" class="view">
+    <h1>More</h1>
+    <h2>Account</h2>
+    <div class="panel" style="padding:6px 14px">
+      <button class="listItem" onclick="openDetails()"><span class="ic">🏦</span><span class="grow"><b>Account details</b><span id="moreRails"></span></span><span class="chev">›</span></button>
+      <button class="listItem" onclick="openStatement()"><span class="ic">📄</span><span class="grow"><b>Download statement</b><span>CSV, per account</span></span><span class="chev">›</span></button>
+      <button class="listItem" onclick="openOverdraft()"><span class="ic">🛟</span><span class="grow"><b>Arranged overdraft</b><span id="moreOd"></span></span><span class="chev">›</span></button>
+    </div>
+    <h2>Security</h2>
+    <div class="panel" style="padding:6px 14px">
+      <button class="listItem" onclick="openChangePin()"><span class="ic">🔑</span><span class="grow"><b>Change PIN</b><span>4 digits</span></span><span class="chev">›</span></button>
+      <button class="listItem" onclick="lockNow()"><span class="ic">🔒</span><span class="grow"><b>Lock now</b><span>Back to the PIN screen</span></span><span class="chev">›</span></button>
+    </div>
+    <h2>About</h2>
+    <div class="note">Vault is a <b>simulated</b> bank: the ledger, interest, card checks and IBANs are computed for real, but no actual money exists here and nothing leaves your device. Don’t type a real card number into anything.</div>
+    <button class="btn danger" style="margin-top:16px" onclick="resetBank()">Reset the bank</button>
+    <p class="tiny" style="text-align:center;margin-top:14px" id="moreSince"></p>
+  </section>
+
+</div>
+
+<!-- tabbar -->
+<nav class="tabbar hidden" id="tabbar">
+  <button data-tab="home" class="on" onclick="showTab('home')"><b>🏠</b>Home</button>
+  <button data-tab="pay" onclick="showTab('pay')"><b>💸</b>Pay</button>
+  <button data-tab="card" onclick="showTab('card')"><b>💳</b>Card</button>
+  <button data-tab="insights" onclick="showTab('insights')"><b>📊</b>Insights</button>
+  <button data-tab="more" onclick="showTab('more')"><b>⚙️</b>More</button>
+</nav>
+
+<!-- sheet + toast -->
+<div class="scrim" id="scrim" onclick="closeSheet()"></div>
+<div class="sheet" id="sheet"></div>
+<div id="toast"></div>
+
+<script src="engine.js"></script>
+<script>
+'use strict';
+/* Vault app shell — all money logic lives in engine.js (window.Vault); this
+   file is rendering, sheets and localStorage persistence only. */
+
+var V = Vault;
+var LS_KEY = 'vault-bank-v1';
+var state = null;
+var locked = true;
+var revealed = false;
+var monthOffset = 0;
+var pinBuf = '', pinStage = null; // onboarding/change-pin two-step entry
+
+/* ---------- tiny helpers ---------- */
+function $(id) { return document.getElementById(id); }
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+function nowTS() { return new Date().toISOString(); }
+function today() { return nowTS().slice(0, 10); }
+function toast(msg, isErr) {
+  var t = $('toast');
+  t.textContent = msg;
+  t.className = isErr ? 'on err' : 'on';
+  clearTimeout(toast._t);
+  toast._t = setTimeout(function () { t.className = ''; }, 2600);
+}
+function newRng() {
+  var seed = 0;
+  try {
+    var a = new Uint32Array(1);
+    crypto.getRandomValues(a);
+    seed = a[0];
+  } catch (e) { seed = (new Date().getTime()) >>> 0; }
+  return V.mulberry32(seed >>> 0);
+}
+function save() { try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {} }
+function load() {
+  try {
+    var raw = localStorage.getItem(LS_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+function niceDate(iso) {
+  var p = V.parseISO(iso);
+  var t = today();
+  if (String(iso).slice(0, 10) === t) return 'Today';
+  if (String(iso).slice(0, 10) === V.isoPlusDays(t, -1)) return 'Yesterday';
+  return p.d + ' ' + MONTHS[p.m - 1].slice(0, 3) + (p.y !== V.parseISO(t).y ? ' ' + p.y : '');
+}
+function catIcon(key) { return (V.CATEGORIES[key] || V.CATEGORIES.other).icon; }
+
+/* ---------- views & tabs ---------- */
+function showView(id) {
+  var views = document.querySelectorAll('.view');
+  for (var i = 0; i < views.length; i++) views[i].classList.remove('on');
+  $(id).classList.add('on');
+  var tb = $('tabbar');
+  if (id === 'view-onboard' || id === 'view-lock') tb.classList.add('hidden');
+  else tb.classList.remove('hidden');
+}
+function showTab(tab) {
+  showView('view-' + tab);
+  var btns = document.querySelectorAll('.tabbar button');
+  for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('on', btns[i].getAttribute('data-tab') === tab);
+  renderAll();
+  try { window.scrollTo(0, 0); } catch (e) {}
+}
+
+/* ---------- sheet ---------- */
+function openSheet(html) {
+  $('sheet').innerHTML = '<div class="grab"></div>' + html;
+  $('sheet').classList.add('on');
+  $('scrim').classList.add('on');
+}
+function closeSheet() {
+  $('sheet').classList.remove('on');
+  $('scrim').classList.remove('on');
+}
+
+/* ---------- PIN pad ---------- */
+var PAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'];
+function buildPad(el, onKey) {
+  var html = '';
+  for (var i = 0; i < PAD_KEYS.length; i++) {
+    var k = PAD_KEYS[i];
+    html += k === ''
+      ? '<button class="blank" tabindex="-1"></button>'
+      : '<button data-k="' + k + '">' + k + '</button>';
+  }
+  el.innerHTML = html;
+  el.onclick = function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('button[data-k]') : null;
+    if (b) onKey(b.getAttribute('data-k'));
+  };
+}
+function drawDots(el, n) {
+  var html = '';
+  for (var i = 0; i < 4; i++) html += '<i class="' + (i < n ? 'f' : '') + '"></i>';
+  el.innerHTML = html;
+}
+
+/* ---------- onboarding ---------- */
+function obNext() {
+  var name = String($('obName').value || '').trim();
+  if (!name) { toast('Tell us your name first', true); return; }
+  obNext._name = name;
+  $('obStep1').classList.add('hide');
+  $('obStep2').classList.remove('hide');
+  pinBuf = ''; pinStage = { first: null };
+  drawDots($('obDots'), 0);
+  buildPad($('obPad'), obKey);
+}
+function obKey(k) {
+  if (k === '⌫') pinBuf = pinBuf.slice(0, -1);
+  else if (pinBuf.length < 4) pinBuf += k;
+  drawDots($('obDots'), pinBuf.length);
+  if (pinBuf.length < 4) return;
+  if (pinStage.first === null) {
+    pinStage.first = pinBuf; pinBuf = '';
+    $('obPinMsg').textContent = 'Type it once more';
+    setTimeout(function () { drawDots($('obDots'), 0); }, 150);
+    return;
+  }
+  if (pinBuf !== pinStage.first) {
+    pinStage.first = null; pinBuf = '';
+    $('obPinMsg').textContent = 'They didn’t match — choose a PIN';
+    $('obDots').classList.add('shake');
+    setTimeout(function () { $('obDots').classList.remove('shake'); drawDots($('obDots'), 0); }, 380);
+    return;
+  }
+  createBank(obNext._name, pinBuf, $('obDemo').checked);
+}
+function createBank(name, pin, withDemo) {
+  var rng = newRng();
+  state = V.openBank({ name: name, rng: rng, nowISO: today() });
+  if (withDemo) state = V.seedDemo(state, rng, today());
+  var salt = String(Math.floor(rng() * 1e9));
+  state = V.setPin(state, pin, salt);
+  save();
+  locked = false;
+  toast('Welcome to Vault, ' + name.split(' ')[0] + ' 🎉');
+  showTab('home');
+}
+
+/* ---------- lock ---------- */
+function lockNow() { locked = true; revealed = false; renderLock(); }
+function renderLock() {
+  showView('view-lock');
+  $('lockHello').textContent = 'Hi, ' + state.name.split(' ')[0];
+  $('lockMsg').textContent = 'Enter your PIN';
+  pinBuf = '';
+  drawDots($('lockDots'), 0);
+  buildPad($('lockPad'), lockKey);
+}
+function lockKey(k) {
+  if (k === '⌫') pinBuf = pinBuf.slice(0, -1);
+  else if (pinBuf.length < 4) pinBuf += k;
+  drawDots($('lockDots'), pinBuf.length);
+  if (pinBuf.length < 4) return;
+  if (V.verifyPin(state, pinBuf)) {
+    locked = false; pinBuf = '';
+    catchUp();
+    showTab('home');
+  } else {
+    pinBuf = '';
+    $('lockMsg').textContent = 'Wrong PIN — try again';
+    $('lockDots').classList.add('shake');
+    setTimeout(function () { $('lockDots').classList.remove('shake'); drawDots($('lockDots'), 0); }, 380);
+  }
+}
+
+/* ---------- catch-up: interest + standing orders since last open ---------- */
+function catchUp() {
+  if (!state) return;
+  var before = state.txns.length;
+  state = V.accrueInterest(state, today());
+  var r = V.runDueOrders(state, today());
+  state = r.state;
+  var added = state.txns.length - before;
+  if (added > 0) {
+    save();
+    toast(added === 1 ? '1 payment processed while you were away' : added + ' payments processed while you were away');
+  } else if (state.txns.length !== before) save();
+}
+
+/* ---------- rendering ---------- */
+function renderAll() {
+  if (!state || locked) return;
+  renderHome(); renderPay(); renderCard(); renderInsights(); renderMore();
+}
+
+function renderHome() {
+  $('homeHello').textContent = 'Hi ' + state.name.split(' ')[0] + ' 👋';
+  $('homeTotal').textContent = V.fmt(V.totalBalance(state));
+  $('homeRails').textContent = state.sortCode + ' · ' + state.accountNumber + '  ·  Current ' + V.fmt(V.balanceOf(state, 'current'));
+
+  var pots = '';
+  for (var i = 0; i < state.accounts.length; i++) {
+    var a = state.accounts[i];
+    if (a.kind !== 'savings') continue;
+    var bal = V.balanceOf(state, a.id);
+    var pct = a.goal > 0 ? Math.min(100, Math.round(bal * 100 / a.goal)) : 0;
+    pots += '<button class="potCard" onclick="openPot(\'' + a.id + '\')">' +
+      '<div class="nm">🐖 ' + esc(a.name) + '</div>' +
+      '<div class="bal">' + V.fmt(bal) + '</div>' +
+      (a.goal > 0 ? '<div class="meter"><i style="width:' + pct + '%"></i></div><div class="tiny" style="margin-top:5px">' + pct + '% of ' + V.fmt(a.goal) + '</div>'
+                  : '<div class="tiny">' + a.aerPct.toFixed(1) + '% AER</div>') +
+      '</button>';
+  }
+  pots += '<button class="potCard newPot" onclick="openNewPot()">＋ New pot</button>';
+  $('homePots').innerHTML = pots;
+
+  // last 9 external+notable txns, newest first, grouped by day
+  var txns = state.txns.slice().reverse().slice(0, 9);
+  var html = '', lastDay = '';
+  for (var j = 0; j < txns.length; j++) {
+    var t = txns[j];
+    var day = String(t.ts).slice(0, 10);
+    if (day !== lastDay) { html += '<div class="dayhdr">' + niceDate(day) + '</div>'; lastDay = day; }
+    var credit = t.to === 'current' || (t.to && t.to.indexOf('pot') === 0 && t.from === null);
+    var sign = t.from === null ? '+' : t.to === null ? '−' : '';
+    var cls = t.from === null ? ' in' : '';
+    html += '<div class="txn"><span class="ic">' + catIcon(t.category) + '</span>' +
+      '<span class="who"><b>' + esc(t.desc || 'Payment') + '</b><span>' + esc(methodLabel(t)) + '</span></span>' +
+      '<span class="amt' + cls + '">' + (sign === '+' ? V.fmt(t.amount, { showPlus: true }) : sign === '−' ? V.fmt(-t.amount) : V.fmt(t.amount)) + '</span></div>';
+  }
+  $('homeTxns').innerHTML = html || '<p class="muted" style="padding:10px 0">Nothing yet — add some money to get going.</p>';
+}
+function methodLabel(t) {
+  if (t.method === 'card') return 'Card';
+  if (t.method === 'standing-order') return 'Standing order';
+  if (t.method === 'interest') return 'Interest';
+  if (t.method === 'roundup') return 'Round-up';
+  if (t.method === 'faster-payment') return 'Faster payment';
+  if (t.from && t.to) return 'Between accounts';
+  return t.from === null ? 'Received' : 'Sent';
+}
+
+function renderPay() {
+  var html = '';
+  for (var i = 0; i < state.orders.length; i++) {
+    var o = state.orders[i];
+    html += '<div class="listItem"><span class="ic">📅</span>' +
+      '<span class="grow"><b>' + esc(o.to) + '</b><span>' + V.fmt(o.amount) + ' · ' + (o.freq === 'weekly' ? 'weekly' : 'monthly') + ' · next ' + niceDate(o.nextISO) + '</span></span>' +
+      '<button class="btn ghost" style="width:auto;padding:8px 12px;font-size:12.5px" onclick="cancelSO(\'' + o.id + '\')">Cancel</button></div>';
+  }
+  $('soList').innerHTML = html || '<p class="muted" style="padding:10px 0">No standing orders yet.</p>';
+
+  var ch = '';
+  for (var j = 0; j < state.contacts.length; j++) {
+    var c = state.contacts[j];
+    ch += '<button class="listItem" onclick="openSend(' + j + ')"><span class="ic">' + esc(initials(c.name)) + '</span>' +
+      '<span class="grow"><b>' + esc(c.name) + '</b><span>' + esc(c.sortCode) + ' · ' + esc(c.accountNumber) + '</span></span><span class="chev">›</span></button>';
+  }
+  $('contactList').innerHTML = ch || '<p class="muted" style="padding:10px 0">People you pay will appear here.</p>';
+}
+function initials(name) {
+  var parts = String(name).trim().split(/\s+/);
+  return (parts[0] ? parts[0][0] : '?') + (parts[1] ? parts[1][0] : '');
+}
+
+function renderCard() {
+  var c = state.card;
+  $('cardPan').textContent = revealed ? V.groupPan(c.pan) : V.maskPan(c.pan);
+  $('cardName').textContent = state.name.toUpperCase();
+  $('cardExp').textContent = c.expiry;
+  $('cardCvv').textContent = revealed ? c.cvv : '•••';
+  $('cardVisual').classList.toggle('frozen', c.frozen);
+  $('revealBtn').textContent = revealed ? '🙈 Hide' : '👁 Reveal';
+  $('freezeBtn').textContent = c.frozen ? '☀️ Unfreeze' : '🧊 Freeze';
+  $('limTxV').textContent = V.fmt(c.limitPerTx);
+  $('limDayV').textContent = V.fmt(c.limitDaily);
+  var spent = V.cardSpentOn(state, today());
+  $('limDayBar').style.width = Math.min(100, Math.round(spent * 100 / c.limitDaily)) + '%';
+  $('limDayNote').textContent = V.fmt(spent) + ' of ' + V.fmt(c.limitDaily) + ' spent today';
+  $('ruToggle').checked = !!state.roundUpsTo;
+  var pot = state.roundUpsTo ? V.accountById(state, state.roundUpsTo) : null;
+  $('ruNote').textContent = pot ? 'Spare change hops into “' + pot.name + '”.' : 'Spare change hops into a pot.';
+}
+function toggleReveal() { revealed = !revealed; renderCard(); }
+function toggleFreeze() {
+  state = JSON.parse(JSON.stringify(state));
+  state.card.frozen = !state.card.frozen;
+  save(); renderCard();
+  toast(state.card.frozen ? 'Card frozen 🧊' : 'Card unfrozen');
+}
+function toggleRoundUps(on) {
+  state = JSON.parse(JSON.stringify(state));
+  if (on) {
+    var firstPot = null;
+    for (var i = 0; i < state.accounts.length; i++) if (state.accounts[i].kind === 'savings') { firstPot = state.accounts[i].id; break; }
+    if (!firstPot) { toast('Make a pot first', true); $('ruToggle').checked = false; return; }
+    state.roundUpsTo = firstPot;
+  } else state.roundUpsTo = null;
+  save(); renderCard();
+}
+
+function renderInsights() {
+  var t = V.parseISO(today());
+  var m = t.m - 1 + monthOffset, y = t.y;
+  while (m < 0) { m += 12; y--; }
+  while (m > 11) { m -= 12; y++; }
+  var key = y + '-' + (m + 1 < 10 ? '0' : '') + (m + 1);
+  $('insMonth').textContent = MONTHS[m] + ' ' + y;
+  $('insNext').disabled = monthOffset >= 0;
+  var io = V.inOut(state, key);
+  $('insIn').textContent = V.fmt(io.moneyIn, { showPlus: true });
+  $('insOut').textContent = V.fmt(-io.moneyOut);
+  var cats = V.spendByCategory(state, key);
+  var max = cats.length ? cats[0].amount : 1;
+  var html = '';
+  for (var i = 0; i < cats.length; i++) {
+    var c = cats[i];
+    html += '<div class="catRow"><div class="spread"><span>' + c.icon + ' ' + esc(c.label) + '</span><b>' + V.fmt(c.amount) + '</b></div>' +
+      '<div class="meter"><i style="width:' + Math.max(3, Math.round(c.amount * 100 / max)) + '%"></i></div></div>';
+  }
+  $('insCats').innerHTML = html || '<p class="muted">No spending this month. Lovely.</p>';
+}
+function moveMonth(d) { monthOffset = Math.min(0, monthOffset + d); renderInsights(); }
+
+function renderMore() {
+  $('moreRails').textContent = state.sortCode + ' · ' + state.accountNumber;
+  var od = 0;
+  for (var i = 0; i < state.accounts.length; i++) if (state.accounts[i].id === 'current') od = state.accounts[i].overdraft || 0;
+  $('moreOd').textContent = od > 0 ? V.fmt(od) + ' available' : 'Not set up';
+  $('moreSince').textContent = 'Vault customer since ' + niceDate(state.createdISO) + ' · ' + state.txns.length + ' transactions on the ledger';
+}
+
+/* ---------- sheets: money in/out ---------- */
+function openAdd() {
+  openSheet('<h3>Add money</h3>' +
+    '<div class="field"><label for="addAmt">Amount</label><input id="addAmt" inputmode="decimal" placeholder="£0.00" autocomplete="off"></div>' +
+    '<p class="tiny">Simulates a faster-payment top-up from an external account.</p>' +
+    '<button class="btn primary" onclick="doAdd()">Add to current account</button>');
+  focusSoon('addAmt');
+}
+function doAdd() {
+  var pence = V.parseAmount($('addAmt').value);
+  if (pence === null) { toast('Enter a valid amount', true); return; }
+  var r = V.post(state, { amount: pence, from: null, to: 'current', desc: 'Top up', category: 'income', method: 'faster-payment', ts: nowTS() });
+  if (r.error) { toast(r.message, true); return; }
+  state = r.state; save(); closeSheet(); renderAll();
+  toast(V.fmt(pence, { showPlus: true }) + ' added');
+}
+
+function openSend(contactIdx) {
+  var c = typeof contactIdx === 'number' ? state.contacts[contactIdx] : null;
+  openSheet('<h3>Send money</h3>' +
+    '<div class="field"><label for="sendName">To</label><input id="sendName" placeholder="Name" value="' + (c ? esc(c.name) : '') + '"></div>' +
+    '<div class="row2">' +
+      '<div class="field"><label for="sendSort">Sort code</label><input id="sendSort" inputmode="numeric" placeholder="00-00-00" value="' + (c ? esc(c.sortCode) : '') + '"></div>' +
+      '<div class="field"><label for="sendAcc">Account number</label><input id="sendAcc" inputmode="numeric" maxlength="8" placeholder="12345678" value="' + (c ? esc(c.accountNumber) : '') + '"></div>' +
+    '</div>' +
+    '<div class="field"><label for="sendAmt">Amount</label><input id="sendAmt" inputmode="decimal" placeholder="£0.00"></div>' +
+    '<div class="field"><label for="sendRef">Reference (optional)</label><input id="sendRef" maxlength="30" placeholder="e.g. Dinner"></div>' +
+    '<button class="btn primary" onclick="doSend()">Send</button>');
+  focusSoon(c ? 'sendAmt' : 'sendName');
+}
+function doSend() {
+  var name = String($('sendName').value || '').trim();
+  var sort = String($('sendSort').value || '').replace(/\D/g, '');
+  var acc = String($('sendAcc').value || '').replace(/\D/g, '');
+  var pence = V.parseAmount($('sendAmt').value);
+  var ref = String($('sendRef').value || '').trim();
+  if (!name) { toast('Who are you paying?', true); return; }
+  if (sort.length !== 6) { toast('Sort code needs 6 digits', true); return; }
+  if (acc.length !== 8) { toast('Account number needs 8 digits', true); return; }
+  if (pence === null) { toast('Enter a valid amount', true); return; }
+  var r = V.post(state, { amount: pence, from: 'current', to: null, desc: 'Sent to ' + name + (ref ? ' · ' + ref : ''), category: 'transfers', method: 'faster-payment', ts: nowTS() });
+  if (r.error) { toast(r.message, true); return; }
+  state = r.state;
+  // remember the payee
+  var sortFmt = sort.slice(0, 2) + '-' + sort.slice(2, 4) + '-' + sort.slice(4);
+  var known = false;
+  for (var i = 0; i < state.contacts.length; i++) if (state.contacts[i].accountNumber === acc && state.contacts[i].sortCode === sortFmt) known = true;
+  if (!known) {
+    state = JSON.parse(JSON.stringify(state));
+    state.contacts.push({ name: name, sortCode: sortFmt, accountNumber: acc });
+  }
+  save(); closeSheet(); renderAll();
+  toast(V.fmt(pence) + ' sent to ' + name + ' ✅');
+}
+
+function openMove() {
+  var opts = '';
+  for (var i = 0; i < state.accounts.length; i++) {
+    var a = state.accounts[i];
+    opts += '<option value="' + a.id + '">' + esc(a.name) + ' · ' + V.fmt(V.balanceOf(state, a.id)) + '</option>';
+  }
+  openSheet('<h3>Move between accounts</h3>' +
+    '<div class="field"><label for="mvFrom">From</label><select id="mvFrom">' + opts + '</select></div>' +
+    '<div class="field"><label for="mvTo">To</label><select id="mvTo">' + opts + '</select></div>' +
+    '<div class="field"><label for="mvAmt">Amount</label><input id="mvAmt" inputmode="decimal" placeholder="£0.00"></div>' +
+    '<button class="btn primary" onclick="doMove()">Move</button>');
+  // default: current → first pot
+  try { $('mvTo').selectedIndex = 1; } catch (e) {}
+  focusSoon('mvAmt');
+}
+function doMove() {
+  var pence = V.parseAmount($('mvAmt').value);
+  if (pence === null) { toast('Enter a valid amount', true); return; }
+  var from = $('mvFrom').value, to = $('mvTo').value;
+  var toName = V.accountById(state, to) ? V.accountById(state, to).name : '';
+  var r = V.post(state, { amount: pence, from: from, to: to, desc: 'Pot transfer · ' + toName, category: 'savings', ts: nowTS() });
+  if (r.error) { toast(r.message, true); return; }
+  state = r.state; save(); closeSheet(); renderAll();
+  toast(V.fmt(pence) + ' moved');
+}
+
+/* ---------- sheets: pots ---------- */
+function openNewPot() {
+  openSheet('<h3>New pot</h3>' +
+    '<div class="field"><label for="potName">Name</label><input id="potName" maxlength="30" placeholder="e.g. Holiday"></div>' +
+    '<div class="row2">' +
+      '<div class="field"><label for="potGoal">Goal (optional)</label><input id="potGoal" inputmode="decimal" placeholder="£500"></div>' +
+      '<div class="field"><label for="potAer">Interest AER %</label><input id="potAer" inputmode="decimal" value="4.0"></div>' +
+    '</div>' +
+    '<button class="btn primary" onclick="doNewPot()">Create pot</button>');
+  focusSoon('potName');
+}
+function doNewPot() {
+  var name = String($('potName').value || '').trim();
+  if (!name) { toast('Give the pot a name', true); return; }
+  var goal = V.parseAmount($('potGoal').value); // null is fine — no goal
+  var aer = parseFloat($('potAer').value);
+  state = V.createPot(state, { name: name, goal: goal || 0, aerPct: isNaN(aer) ? 4.0 : Math.max(0, Math.min(15, aer)), nowISO: today() });
+  save(); closeSheet(); renderAll();
+  toast('Pot “' + name + '” created 🐖');
+}
+function openPot(id) {
+  var a = V.accountById(state, id);
+  if (!a) return;
+  var bal = V.balanceOf(state, id);
+  openSheet('<h3>🐖 ' + esc(a.name) + '</h3>' +
+    '<div class="panel spread" style="margin-bottom:12px"><span class="muted">Balance</span><b style="font-size:20px">' + V.fmt(bal) + '</b></div>' +
+    (a.goal > 0 ? '<p class="tiny" style="margin:0 0 12px">Goal ' + V.fmt(a.goal) + ' · earning ' + a.aerPct.toFixed(1) + '% AER, paid daily</p>'
+                : '<p class="tiny" style="margin:0 0 12px">Earning ' + a.aerPct.toFixed(1) + '% AER, paid daily</p>') +
+    '<div class="field"><label for="potAmt">Amount</label><input id="potAmt" inputmode="decimal" placeholder="£0.00"></div>' +
+    '<div class="row2">' +
+      '<button class="btn primary" onclick="potMove(\'' + id + '\', true)">Add from current</button>' +
+      '<button class="btn" onclick="potMove(\'' + id + '\', false)">Withdraw</button>' +
+    '</div>');
+  focusSoon('potAmt');
+}
+function potMove(id, into) {
+  var pence = V.parseAmount($('potAmt').value);
+  if (pence === null) { toast('Enter a valid amount', true); return; }
+  var a = V.accountById(state, id);
+  var r = into
+    ? V.post(state, { amount: pence, from: 'current', to: id, desc: 'Pot transfer · ' + a.name, category: 'savings', ts: nowTS() })
+    : V.post(state, { amount: pence, from: id, to: 'current', desc: 'Withdrawal · ' + a.name, category: 'savings', ts: nowTS() });
+  if (r.error) { toast(r.message, true); return; }
+  state = r.state; save(); closeSheet(); renderAll();
+  toast(into ? V.fmt(pence) + ' tucked away' : V.fmt(pence) + ' back in your account');
+}
+
+/* ---------- sheets: card ---------- */
+function openSpend() {
+  openSheet('<h3>Test a card purchase</h3>' +
+    '<p class="tiny" style="margin:0 0 10px">Runs the real gate: freeze, per-purchase limit, daily limit — and round-ups if they’re on.</p>' +
+    '<div class="field"><label for="spMerchant">Merchant</label><input id="spMerchant" placeholder="e.g. Pret A Manger" value="Pret A Manger"></div>' +
+    '<div class="field"><label for="spAmt">Amount</label><input id="spAmt" inputmode="decimal" placeholder="£0.00"></div>' +
+    '<button class="btn primary" onclick="doSpend()">Pay by card</button>');
+  focusSoon('spAmt');
+}
+function doSpend() {
+  var pence = V.parseAmount($('spAmt').value);
+  var merchant = String($('spMerchant').value || 'Card purchase').trim() || 'Card purchase';
+  if (pence === null) { toast('Enter a valid amount', true); return; }
+  var r = V.cardPurchase(state, pence, merchant, nowTS());
+  if (r.error) { toast(r.message, true); return; }
+  state = r.state; save(); closeSheet(); renderAll();
+  toast(r.roundUpTxn ? V.fmt(pence) + ' paid · ' + V.fmt(r.roundUpTxn.amount) + ' rounded up 🐖' : V.fmt(pence) + ' paid ✅');
+}
+function openLimits() {
+  var c = state.card;
+  openSheet('<h3>Card limits</h3>' +
+    '<div class="field"><label for="limTx">Per purchase</label><input id="limTx" inputmode="decimal" value="' + (c.limitPerTx / 100) + '"></div>' +
+    '<div class="field"><label for="limDay">Daily card spend</label><input id="limDay" inputmode="decimal" value="' + (c.limitDaily / 100) + '"></div>' +
+    '<button class="btn primary" onclick="doLimits()">Save limits</button>');
+}
+function doLimits() {
+  var tx = V.parseAmount($('limTx').value);
+  var day = V.parseAmount($('limDay').value);
+  if (tx === null || day === null) { toast('Enter valid amounts', true); return; }
+  state = JSON.parse(JSON.stringify(state));
+  state.card.limitPerTx = tx;
+  state.card.limitDaily = day;
+  save(); closeSheet(); renderCard();
+  toast('Limits updated');
+}
+
+/* ---------- sheets: standing orders ---------- */
+function openNewSO() {
+  openSheet('<h3>New standing order</h3>' +
+    '<div class="field"><label for="soTo">Pay</label><input id="soTo" maxlength="40" placeholder="e.g. Landlord"></div>' +
+    '<div class="row2">' +
+      '<div class="field"><label for="soAmt">Amount</label><input id="soAmt" inputmode="decimal" placeholder="£0.00"></div>' +
+      '<div class="field"><label for="soFreq">Every</label><select id="soFreq"><option value="monthly">Month</option><option value="weekly">Week</option></select></div>' +
+    '</div>' +
+    '<div class="field"><label for="soStart">First payment</label><input id="soStart" type="date" value="' + V.isoPlusDays(today(), 1) + '"></div>' +
+    '<p class="tiny">Anchored to the day you pick — a 31st pays month-ends when the month is short, and snaps back after.</p>' +
+    '<button class="btn primary" onclick="doNewSO()">Set up</button>');
+  focusSoon('soTo');
+}
+function doNewSO() {
+  var to = String($('soTo').value || '').trim();
+  var pence = V.parseAmount($('soAmt').value);
+  var start = String($('soStart').value || '');
+  if (!to) { toast('Who gets paid?', true); return; }
+  if (pence === null) { toast('Enter a valid amount', true); return; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) { toast('Pick a start date', true); return; }
+  if (start < today()) { toast('Start date is in the past', true); return; }
+  state = V.addOrder(state, { to: to, amount: pence, freq: $('soFreq').value, startISO: start, desc: to });
+  save(); closeSheet(); renderAll();
+  toast('Standing order to ' + to + ' set up 📅');
+}
+function cancelSO(id) {
+  if (!confirm('Cancel this standing order?')) return;
+  state = JSON.parse(JSON.stringify(state));
+  for (var i = state.orders.length - 1; i >= 0; i--) if (state.orders[i].id === id) state.orders.splice(i, 1);
+  save(); renderAll();
+  toast('Standing order cancelled');
+}
+
+/* ---------- sheets: details / statement / overdraft / pin ---------- */
+function openDetails() {
+  openSheet('<h3>Your account details</h3>' +
+    '<div class="panel" style="margin-bottom:10px">' +
+      detailRow('Name', state.name) +
+      detailRow('Sort code', state.sortCode) +
+      detailRow('Account number', state.accountNumber) +
+      detailRow('IBAN', state.iban.replace(/(.{4})/g, '$1 ').trim()) +
+      detailRow('BIC', 'VAULGB2L') +
+    '</div>' +
+    '<button class="btn" onclick="copyDetails()">Copy details</button>');
+}
+function detailRow(k, v) {
+  return '<div class="spread" style="padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05)"><span class="muted">' + k + '</span><b style="font-size:14px;text-align:right">' + esc(v) + '</b></div>';
+}
+function copyDetails() {
+  var text = state.name + '\nSort code: ' + state.sortCode + '\nAccount number: ' + state.accountNumber + '\nIBAN: ' + state.iban;
+  try {
+    navigator.clipboard.writeText(text).then(function () { toast('Copied 📋'); }, function () { toast('Couldn’t copy', true); });
+  } catch (e) { toast('Couldn’t copy', true); }
+}
+function openStatement() {
+  var opts = '';
+  for (var i = 0; i < state.accounts.length; i++) opts += '<option value="' + state.accounts[i].id + '">' + esc(state.accounts[i].name) + '</option>';
+  openSheet('<h3>Download statement</h3>' +
+    '<div class="field"><label for="stAcc">Account</label><select id="stAcc">' + opts + '</select></div>' +
+    '<button class="btn primary" onclick="doStatement()">Download CSV</button>');
+}
+function doStatement() {
+  var id = $('stAcc').value;
+  var csv = V.toCSV(state, id);
+  try {
+    var blob = new Blob([csv], { type: 'text/csv' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'vault-statement-' + id + '-' + today() + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(a.href); }, 400);
+    closeSheet();
+    toast('Statement downloaded 📄');
+  } catch (e) { toast('Download not supported here', true); }
+}
+function openOverdraft() {
+  var od = 0;
+  for (var i = 0; i < state.accounts.length; i++) if (state.accounts[i].id === 'current') od = state.accounts[i].overdraft || 0;
+  openSheet('<h3>Arranged overdraft</h3>' +
+    '<p class="tiny" style="margin:0 0 10px">A safety net on your current account — spend can dip below zero down to this limit. Pots are never allowed to go negative.</p>' +
+    '<div class="field"><label for="odAmt">Overdraft limit (0 to switch off)</label><input id="odAmt" inputmode="decimal" value="' + (od / 100) + '"></div>' +
+    '<button class="btn primary" onclick="doOverdraft()">Save</button>');
+}
+function doOverdraft() {
+  var raw = String($('odAmt').value || '').trim();
+  var pence = raw === '0' || raw === '' ? 0 : V.parseAmount(raw);
+  if (pence === null) { toast('Enter a valid amount', true); return; }
+  state = JSON.parse(JSON.stringify(state));
+  for (var i = 0; i < state.accounts.length; i++) if (state.accounts[i].id === 'current') state.accounts[i].overdraft = pence;
+  save(); closeSheet(); renderAll();
+  toast(pence > 0 ? 'Overdraft set to ' + V.fmt(pence) : 'Overdraft switched off');
+}
+function openChangePin() {
+  openSheet('<h3>Change PIN</h3>' +
+    '<div class="padwrap" style="margin-top:0">' +
+      '<p class="padmsg" id="cpMsg">Enter your current PIN</p>' +
+      '<div class="dots" id="cpDots"></div>' +
+      '<div class="pad" id="cpPad"></div>' +
+    '</div>');
+  pinBuf = ''; pinStage = { step: 'old', first: null };
+  drawDots($('cpDots'), 0);
+  buildPad($('cpPad'), cpKey);
+}
+function cpKey(k) {
+  if (k === '⌫') pinBuf = pinBuf.slice(0, -1);
+  else if (pinBuf.length < 4) pinBuf += k;
+  drawDots($('cpDots'), pinBuf.length);
+  if (pinBuf.length < 4) return;
+  var entered = pinBuf; pinBuf = '';
+  if (pinStage.step === 'old') {
+    if (!V.verifyPin(state, entered)) { cpMsgShake('That’s not your current PIN'); return; }
+    pinStage.step = 'new';
+    $('cpMsg').textContent = 'Choose a new PIN';
+  } else if (pinStage.step === 'new') {
+    pinStage.first = entered; pinStage.step = 'confirm';
+    $('cpMsg').textContent = 'Type it once more';
+  } else {
+    if (entered !== pinStage.first) { pinStage.step = 'new'; pinStage.first = null; cpMsgShake('They didn’t match — choose a new PIN'); return; }
+    state = V.setPin(state, entered, String(Math.floor(newRng()() * 1e9)));
+    save(); closeSheet();
+    toast('PIN changed 🔑');
+    return;
+  }
+  setTimeout(function () { drawDots($('cpDots'), 0); }, 150);
+}
+function cpMsgShake(msg) {
+  $('cpMsg').textContent = msg;
+  $('cpDots').classList.add('shake');
+  setTimeout(function () { $('cpDots').classList.remove('shake'); drawDots($('cpDots'), 0); }, 380);
+}
+
+function resetBank() {
+  if (!confirm('Reset Vault? The whole ledger — every account, pot and transaction — is deleted. This cannot be undone.')) return;
+  try { localStorage.removeItem(LS_KEY); } catch (e) {}
+  state = null; locked = true; revealed = false; monthOffset = 0;
+  showView('view-onboard');
+  $('obStep1').classList.remove('hide');
+  $('obStep2').classList.add('hide');
+  toast('The vault is empty. Start again whenever.');
+}
+
+function focusSoon(id) { setTimeout(function () { try { $(id).focus(); } catch (e) {} }, 60); }
+
+/* ---------- boot ---------- */
+function init() {
+  state = load();
+  if (!state) {
+    showView('view-onboard');
+  } else if (state.pin) {
+    renderLock();
+  } else {
+    locked = false;
+    catchUp();
+    showTab('home');
+  }
+}
+init();
+
+/* ---------- offline ---------- */
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  navigator.serviceWorker.register('sw.js');
+}
+</script>
+</body>
+</html>
