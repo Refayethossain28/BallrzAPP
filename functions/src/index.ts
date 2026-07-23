@@ -29,6 +29,9 @@ import { STRIPE_SECRET_KEY, stripeClient } from './stripe.js';
 // Velvet — the subscription VIP concierge (concierge/): Stripe Billing
 // checkout + portal + webhook. Deployed alongside the ApexVIP functions.
 export { createVelvetCheckout, createVelvetPortal, velvetStripeWebhook } from './velvet.js';
+// Cortex Pro — the brain-gym (cortex/) subscription: Stripe Billing
+// checkout + portal + webhook. Same pattern as Velvet, single plan.
+export { createCortexCheckout, createCortexPortal, cortexStripeWebhook } from './cortex.js';
 
 import {
   round5, isoPlusDays, computeFareBounds, driverEarning, dispatchPay,

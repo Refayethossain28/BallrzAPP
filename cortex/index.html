@@ -165,6 +165,39 @@
   .ghost{flex:1;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.04);
     padding:14px;font-size:15px;font-weight:700;color:var(--dim)}
 
+  /* ---- Cortex Pro ---- */
+  .prochip{border:1px solid rgba(139,124,255,.45);background:rgba(139,124,255,.12);border-radius:999px;
+    padding:6px 12px;font-size:13px;font-weight:800;color:var(--b);white-space:nowrap}
+  .prochip.off{color:var(--dim);border-color:var(--line);background:rgba(255,255,255,.04)}
+  .fpnote{margin-left:auto;color:var(--faint);font-size:11.5px;text-align:right}
+  .card{position:relative}
+  .card.locked{opacity:.55}
+  .card.locked::after{content:"🔒";position:absolute;top:10px;right:10px;font-size:14px}
+  .modalback{position:fixed;inset:0;background:rgba(5,8,18,.72);z-index:50;
+    display:flex;align-items:flex-end;justify-content:center}
+  .sheet{width:100%;max-width:560px;max-height:88dvh;overflow:auto;
+    background:linear-gradient(180deg,var(--panel2),var(--panel));
+    border:1px solid var(--line);border-bottom:0;border-radius:22px 22px 0 0;
+    padding:20px 18px calc(20px + env(safe-area-inset-bottom))}
+  .sheet h2{margin:0 0 4px;font-size:20px;letter-spacing:-.02em}
+  .sheet .price{color:var(--dim);font-size:14px;margin-bottom:12px}
+  .sheet .price b{color:var(--ink)}
+  .perks{list-style:none;margin:0 0 14px;padding:0;display:grid;gap:8px}
+  .perks li{font-size:14px;color:var(--dim);padding-left:24px;position:relative}
+  .perks li::before{content:"✦";position:absolute;left:2px;color:var(--b)}
+  .sheet .cta{margin-bottom:10px}
+  .subline{color:var(--faint);font-size:12px;text-align:center;margin-bottom:10px}
+  .statusline{border:1px solid var(--line);border-radius:13px;background:rgba(255,255,255,.03);
+    padding:12px;font-size:14px;color:var(--dim);margin-bottom:12px}
+  .statusline b{color:var(--ink)}
+  .acct{border-top:1px solid var(--line);margin-top:14px;padding-top:14px}
+  .acct input{width:100%;font:inherit;color:var(--ink);background:rgba(255,255,255,.05);
+    border:1px solid var(--line);border-radius:11px;padding:10px 12px;margin-bottom:8px}
+  .acct .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}
+  .mini{flex:1;border:1px solid var(--line);border-radius:11px;background:rgba(255,255,255,.05);
+    padding:10px;font-size:13.5px;font-weight:700;color:var(--dim);min-width:100px}
+  .acct .note{color:var(--faint);font-size:11.5px;margin-top:8px}
+
   @media (max-width:420px){ .cards{grid-template-columns:1fr 1fr} .hero{gap:14px} .dial{width:104px;height:104px} }
   @media (prefers-reduced-motion:reduce){ *{animation:none !important;transition:none !important} }
 </style>
@@ -181,6 +214,7 @@
         <div class="tag">the daily brain gym</div>
       </div>
       <div class="spacer"></div>
+      <button class="prochip off" id="proChip" aria-label="Cortex Pro membership">✦ Pro</button>
       <div class="streakchip" id="streakChip">🔥 0</div>
     </header>
 
@@ -213,12 +247,16 @@
     </div>
 
     <div class="panel">
-      <span class="k" style="margin-bottom:10px">Free play</span>
+      <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px">
+        <span class="k">Free play</span>
+        <span class="fpnote" id="fpNote"></span>
+      </div>
       <div class="cards" id="drillCards"></div>
     </div>
 
     <footer>
-      Ten rounds a session · difficulty staircases to your edge · everything on-device, no account.<br>
+      Ten rounds a session · difficulty staircases to your edge · the daily workout is free forever.<br>
+      <button class="linkbtn" id="proBtn">✦ Cortex Pro</button> ·
       <button class="linkbtn" id="soundBtn">🔊 sound on</button> ·
       <button class="linkbtn" id="resetBtn">reset progress</button>
     </footer>
@@ -257,9 +295,16 @@
     </div>
   </div>
 
+  <!-- ================= PRO SHEET ================= -->
+  <div id="proBack" class="modalback hidden">
+    <div class="sheet" id="proSheet" role="dialog" aria-label="Cortex Pro"></div>
+  </div>
+
 </div>
 
 <script src="engine.js"></script>
+<script src="config.js"></script>
+<script src="cloud.js"></script>
 <script>
 (function () {
   'use strict';
@@ -270,7 +315,7 @@
   /* ---------------------------------------------------------- persistence */
   var defaults = function () {
     return { sound: true, levels: {}, ratings: {}, best: {}, streak: { streak: 0, lastDay: null },
-             workouts: {}, sessions: 0 };
+             workouts: {}, sessions: 0, sub: null, plays: {} };
   };
   var S = defaults();
   try {
@@ -283,6 +328,145 @@
   E.DRILLS.forEach(function (d) { DRILL[d.id] = d; });
   function levelOf(id) { return S.levels[id] || 1; }
   function today() { return E.isoDay(Date.now()); }
+  function playsToday() { return S.plays[today()] || 0; }
+  function notePlay() { var d = today(), n = (S.plays[d] || 0) + 1; S.plays = {}; S.plays[d] = n; save(); }
+
+  /* ------------------------------------------------------------ Cortex Pro */
+  // Effective subscription: once the Stripe webhook (or the server's mock
+  // trial) owns billing, the cloud mirror is the truth and the on-device
+  // demo sub is retired; otherwise the local demo sub applies.
+  var CC = window.CortexCloud || null;
+  var cloudMember = null;                       // cortex_members/{uid} mirror
+  function serverBilled() { return !!(CC && CC.serverBilled && cloudMember); }
+  function effSub() { return serverBilled() ? cloudMember.sub : S.sub; }
+
+  // The on-device demo simulates renewals; server billing renders as-is.
+  function advanceLocalSub() {
+    if (!S.sub || serverBilled()) return;
+    var adv = E.advancePro(S.sub, Date.now());
+    if (JSON.stringify(adv.sub) !== JSON.stringify(S.sub)) { S.sub = adv.sub; save(); }
+  }
+  function syncSub() {
+    if (CC && CC.status === 'on' && !CC.serverBilled) CC.push({ billing: 'local', sub: S.sub });
+  }
+
+  function tryFreePlay(id) {
+    if (!E.canFreePlay(effSub(), playsToday())) { openProSheet(); return; }
+    if (!E.isPro(effSub())) notePlay();
+    startSession(id, false);
+  }
+
+  var esc = function (s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  };
+  function fmtDate(ms) {
+    try { return new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); }
+    catch (e) { return ''; }
+  }
+  function priceStr() { return '£' + (E.PRO.pricePence / 100).toFixed(2); }
+
+  var proOpen = false;
+  function openProSheet() { proOpen = true; renderProSheet(); $('proBack').classList.remove('hidden'); }
+  function closeProSheet() { proOpen = false; $('proBack').classList.add('hidden'); }
+
+  function renderProSheet() {
+    if (!proOpen) return;
+    var sub = effSub(), pro = E.isPro(sub);
+    var html = '<h2>✦ Cortex Pro</h2>' +
+      '<div class="price"><b>' + priceStr() + '/month</b> after a ' + E.PRO.trialDays + '-day free trial</div>';
+    if (!pro) {
+      html += '<ul class="perks">' + E.PRO.perks.map(function (p) { return '<li>' + esc(p) + '</li>'; }).join('') + '</ul>';
+      if (CC && CC.status === 'on') {
+        html += '<button class="cta" id="proCheckout">Start free trial — real billing</button>' +
+          '<div class="subline">Hosted Stripe Checkout · cancel any time</div>' +
+          '<button class="mini" id="proDemo" style="width:100%">or try the on-device demo trial</button>';
+      } else {
+        html += '<button class="cta" id="proDemo">Start ' + E.PRO.trialDays + '-day free trial</button>' +
+          '<div class="subline">Demo billing — simulated on this device, no card.' +
+          (CC && CC.enabled() ? ' Sign in below to use real billing.' : '') + '</div>';
+      }
+    } else {
+      var line;
+      if (sub.cancelAtPeriodEnd) line = 'Cancelled — Pro runs until <b>' + fmtDate(sub.periodEnd) + '</b>.';
+      else if (sub.status === 'trialing') line = 'Free trial — <b>' + E.proTrialDaysLeft(sub, Date.now()) +
+        ' day' + (E.proTrialDaysLeft(sub, Date.now()) === 1 ? '' : 's') + ' left</b>. First charge of ' +
+        priceStr() + ' on <b>' + fmtDate(sub.periodEnd) + '</b>.';
+      else line = 'Active — renews on <b>' + fmtDate(sub.periodEnd) + '</b> at ' + priceStr() + '.';
+      html += '<div class="statusline">' + line + '</div>';
+      if (serverBilled()) {
+        html += '<button class="cta" id="proPortal">Manage billing</button>' +
+          '<div class="subline">Stripe Billing Portal — card, cancel, invoices</div>';
+      } else if (sub.cancelAtPeriodEnd) {
+        html += '<button class="cta" id="proResume">Resume membership</button>';
+      } else {
+        html += '<button class="mini" id="proCancel" style="width:100%">Cancel at period end</button>';
+      }
+    }
+    if (CC && CC.enabled()) {
+      html += '<div class="acct"><span class="k">Account</span>';
+      if (CC.user) {
+        html += '<div class="subline" style="text-align:left;margin-top:8px">Signed in as <b>' +
+          esc(CC.user.email || 'guest') + '</b></div>' +
+          '<div class="row"><button class="mini" id="acctOut">Sign out</button></div>';
+      } else {
+        html += '<input id="acctEmail" type="email" placeholder="email" autocomplete="email" style="margin-top:8px">' +
+          '<input id="acctPass" type="password" placeholder="password" autocomplete="current-password">' +
+          '<div class="row"><button class="mini" id="acctIn">Sign in</button>' +
+          '<button class="mini" id="acctUp">Create account</button>' +
+          '<button class="mini" id="acctGuest">Guest</button></div>' +
+          '<div class="note">Real billing needs an account so your membership can follow you across devices.</div>';
+      }
+      html += '</div>';
+    }
+    html += '<button class="mini" id="proClose" style="width:100%;margin-top:12px">Close</button>';
+    $('proSheet').innerHTML = html;
+    wireProSheet();
+  }
+
+  function wireProSheet() {
+    var q = function (id) { return document.getElementById(id); };
+    var b;
+    if ((b = q('proClose'))) b.onclick = closeProSheet;
+    if ((b = q('proDemo'))) b.onclick = function () {
+      S.sub = E.startPro(Date.now()); save(); syncSub(); renderHome(); renderProSheet();
+    };
+    if ((b = q('proCancel'))) b.onclick = function () {
+      if (serverBilled()) return;
+      S.sub = E.cancelPro(S.sub); save(); syncSub(); renderHome(); renderProSheet();
+    };
+    if ((b = q('proResume'))) b.onclick = function () {
+      if (serverBilled()) return;
+      S.sub = E.resumePro(S.sub); save(); syncSub(); renderHome(); renderProSheet();
+    };
+    if ((b = q('proCheckout'))) b.onclick = function () {
+      var btn = b; btn.disabled = true; btn.textContent = 'Opening checkout…';
+      CC.startCheckout().then(function (r) {
+        if (r && r.url) { location.href = r.url; return; }
+        btn.textContent = r && r.mock ? '✓ Trial granted (server mock mode)' : 'Done';
+      }).catch(function () {
+        btn.disabled = false; btn.textContent = 'Checkout unavailable — try the demo below';
+      });
+    };
+    if ((b = q('proPortal'))) b.onclick = function () {
+      var btn = b; btn.disabled = true;
+      CC.openPortal().then(function (r) {
+        if (r && r.url) { location.href = r.url; return; }
+        btn.disabled = false;
+      }).catch(function () { btn.disabled = false; });
+    };
+    if ((b = q('acctOut'))) b.onclick = function () { CC.signOut(); };
+    var doAuth = function (fn) {
+      var em = (q('acctEmail') || {}).value || '', pw = (q('acctPass') || {}).value || '';
+      fn(em, pw).catch(function (e) { alert((e && e.message) || 'Sign-in failed'); });
+    };
+    if ((b = q('acctIn'))) b.onclick = function () { doAuth(CC.signIn); };
+    if ((b = q('acctUp'))) b.onclick = function () { doAuth(CC.signUp); };
+    if ((b = q('acctGuest'))) b.onclick = function () {
+      CC.signInGuest().catch(function (e) { alert((e && e.message) || 'Sign-in failed'); });
+    };
+  }
 
   /* ---------------------------------------------------------------- sound */
   var actx = null;
@@ -310,11 +494,19 @@
   }
 
   function renderHome() {
+    advanceLocalSub();
     var idx = E.brainIndex(S.ratings);
     $('brainNum').textContent = idx;
     $('rankName').textContent = E.rankFor(idx);
     $('dial').style.setProperty('--p', Math.round(idx / E.MAX_RATING * 360) + 'deg');
     $('streakChip').textContent = '🔥 ' + (S.streak.streak || 0);
+
+    var sub = effSub(), canPlay = E.canFreePlay(sub, playsToday());
+    $('proChip').className = 'prochip' + (E.isPro(sub) ? '' : ' off');
+    $('proChip').textContent = E.isPro(sub) ? '✦ PRO' : '✦ Pro';
+    var left = E.freePlaysLeft(sub, playsToday());
+    $('fpNote').textContent = left == null ? '✦ Pro — unlimited'
+      : left + ' free session' + (left === 1 ? '' : 's') + ' left today · ✦ Pro = unlimited';
 
     var domHtml = '';
     E.DOMAINS.forEach(function (d) {
@@ -342,7 +534,7 @@
     btn.disabled = allDone;
 
     $('drillCards').innerHTML = E.DRILLS.map(function (d) {
-      return '<button class="card" data-drill="' + d.id + '" style="--dc:var(--d-' + d.domain + ')">' +
+      return '<button class="card' + (canPlay ? '' : ' locked') + '" data-drill="' + d.id + '" style="--dc:var(--d-' + d.domain + ')">' +
         '<div class="e">' + d.emoji + '</div><div class="nm">' + d.name + '</div>' +
         '<div class="tl">' + d.tagline + '</div>' +
         '<div class="meta"><span class="lv">Lv ' + levelOf(d.id) + '</span><span>best ' + (S.best[d.id] || 0) + '</span></div></button>';
@@ -524,6 +716,7 @@
   function endSession() {
     var sum = E.sessionSummary(G.results);
     var drill = DRILL[G.drill];
+    var drillId = G.drill;
     var day = today();
 
     // persist: staircase position, rating EMA, bests, streak, workout progress
@@ -586,7 +779,7 @@
     var ab = $('againBtn');
     if (ab) ab.onclick = function () {
       if (workoutComplete) { renderHome(); show('home'); }
-      else startSession(G.drill, false);
+      else tryFreePlay(drillId);
     };
     G = null;
   }
@@ -602,7 +795,7 @@
     var t = ev.target;
     while (t && t !== this && !(t.getAttribute && t.getAttribute('data-drill'))) t = t.parentNode;
     var id = t && t.getAttribute && t.getAttribute('data-drill');
-    if (id) startSession(id, false);
+    if (id) tryFreePlay(id);
   };
   $('quitBtn').onclick = function () {
     clearTimers(); G = null;
@@ -610,10 +803,30 @@
   };
   $('soundBtn').onclick = function () { S.sound = !S.sound; save(); renderHome(); };
   $('resetBtn').onclick = function () {
-    if (confirm('Reset all Cortex progress — ratings, levels, streak and bests?')) {
+    if (confirm('Reset all Cortex progress — ratings, levels, streak, bests and the on-device Pro demo?')) {
       S = defaults(); save(); renderHome();
     }
   };
+  $('proChip').onclick = openProSheet;
+  $('proBtn').onclick = openProSheet;
+  $('proBack').onclick = function (ev) { if (ev.target === this) closeProSheet(); };
+
+  // Optional cloud: accounts + real billing. Every path is a no-op offline.
+  if (CC) CC.init({
+    onStatus: function () { renderProSheet(); },
+    onAuth: function () { cloudMember = null; renderHome(); renderProSheet(); },
+    onRemote: function (m) {
+      cloudMember = m;
+      if (CC.serverBilled) {
+        // The server (Stripe webhook / mock trial) owns the membership now —
+        // retire the on-device demo sub so there's one source of truth.
+        if (S.sub) { S.sub = null; save(); }
+      } else {
+        syncSub();
+      }
+      renderHome(); renderProSheet();
+    },
+  });
 
   renderHome();
   show('home');

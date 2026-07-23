@@ -309,6 +309,41 @@ service cloud.firestore {
     }
 
     // ---------------------------------------------------------------------
+    // Cortex Pro — the brain-gym subscription (cortex/). Same trust model as
+    // velvet_members: the member owns their doc; in local/demo billing they may
+    // write their simulated subscription, but once real billing is on the
+    // Stripe webhook (Admin SDK, bypasses rules) owns `sub` — a client write
+    // may never CHANGE billing away from 'stripe' or touch the Stripe linkage
+    // fields, so a member cannot self-grant Pro.
+    // ---------------------------------------------------------------------
+    match /cortex_members/{uid} {
+      function cortexBillingLocked() {
+        return resource != null && resource.data.get('billing', 'local') == 'stripe';
+      }
+      function cortexKeepsStripeTruth() {
+        return request.resource.data.get('billing', 'local') == 'stripe'
+          && request.resource.data.get('sub', {}) == resource.data.get('sub', {})
+          && request.resource.data.get('stripeCustomerId', '') == resource.data.get('stripeCustomerId', '')
+          && request.resource.data.get('stripeSubscriptionId', '') == resource.data.get('stripeSubscriptionId', '');
+      }
+      allow read:   if isUser(uid) || isAdmin();
+      allow create: if isUser(uid)
+        && request.resource.data.get('billing', 'local') != 'stripe';
+      allow update: if isAdmin()
+        || (isUser(uid) && (!cortexBillingLocked() || cortexKeepsStripeTruth()));
+      allow delete: if isAdmin();
+
+      // Invoices are written by the Stripe webhook. In demo (local-billing)
+      // mode the member may record their own simulated ones.
+      match /invoices/{invoiceId} {
+        allow read:   if isUser(uid) || isAdmin();
+        allow create: if isUser(uid)
+          && get(/databases/$(database)/documents/cortex_members/$(uid)).data.get('billing', 'local') != 'stripe';
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    // ---------------------------------------------------------------------
     // Ripple — private messenger (ripple/). Anonymous-auth users; each chat is
     // readable/writable only by its members. Anyone holding an invite link may
     // add THEMSELVES to a chat's members (that's how "join by link" works), but

@@ -50,10 +50,11 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.1.0';
   var MAX_LEVEL = 30;
   var SESSION_ROUNDS = 10;
   var MAX_RATING = 1000;
+  var DAY = 86400000;
 
   var DRILLS = [
     { id: 'flash',  name: 'Flashback',   emoji: '🧩', domain: 'memory',  kind: 'recall',   tagline: 'Tap back the cells that lit up' },
@@ -411,6 +412,106 @@
     return shuffle(rng, DRILLS.map(function (d) { return d.id; })).slice(0, 3);
   }
 
+  /* --------------------------------------------------- Cortex Pro (membership) */
+  // The freemium line: the daily workout, streak and Brain Index are free
+  // forever — that's the habit loop, and paywalling it would kill the product.
+  // Pro sells *more training*: unlimited free-play sessions (free members get
+  // FREE_PLAYS_PER_DAY per calendar day) for a small monthly price with a
+  // 7-day trial. Same lifecycle shape as the concierge membership engine so
+  // the same Stripe webhook pattern can own it when real billing is on.
+
+  var TRIAL_DAYS = 7;
+  var PERIOD_DAYS = 30;
+  var FREE_PLAYS_PER_DAY = 1;
+
+  var PRO = {
+    id: 'pro', name: 'Cortex Pro', pricePence: 399,
+    trialDays: TRIAL_DAYS, periodDays: PERIOD_DAYS,
+    perks: [
+      'Unlimited free play — any drill, any time',
+      'Keep climbing past the daily session cap',
+      'The daily workout stays free for everyone',
+      'Cancel any time — Pro runs to the period end'
+    ]
+  };
+
+  /** Start Pro on a free trial. No charge until the trial ends. */
+  function startPro(now) {
+    return {
+      status: 'trialing',              // trialing | active | canceled
+      startedAt: now,
+      periodStart: now,
+      periodEnd: now + TRIAL_DAYS * DAY,
+      cancelAtPeriodEnd: false,
+      endedAt: null
+    };
+  }
+
+  /**
+   * Roll the subscription forward to `now`. Each elapsed period boundary
+   * either ends the membership (if cancellation was scheduled) or renews it,
+   * emitting an invoice for the new period. Pure: never touches the input.
+   * A null/canceled sub passes through unchanged with no invoices.
+   */
+  function advancePro(sub, now) {
+    if (!sub) return { sub: null, invoices: [] };
+    var s = {};
+    for (var k in sub) s[k] = sub[k];
+    var invoices = [];
+    while (s.status !== 'canceled' && now >= s.periodEnd) {
+      if (s.cancelAtPeriodEnd) {
+        s.status = 'canceled';
+        s.endedAt = s.periodEnd;
+        break;
+      }
+      var start = s.periodEnd;
+      s.status = 'active';
+      s.periodStart = start;
+      s.periodEnd = start + PERIOD_DAYS * DAY;
+      invoices.push({
+        amountPence: PRO.pricePence, at: start,
+        periodStart: start, periodEnd: s.periodEnd,
+        description: PRO.name + ' — ' + PERIOD_DAYS + ' days'
+      });
+    }
+    return { sub: s, invoices: invoices };
+  }
+
+  /** Schedule cancellation at period end. Pro stays live until then. */
+  function cancelPro(sub) {
+    var s = {};
+    for (var k in sub) s[k] = sub[k];
+    s.cancelAtPeriodEnd = true;
+    return s;
+  }
+
+  /** Undo a scheduled cancellation (only before the period actually ends). */
+  function resumePro(sub) {
+    if (!sub || sub.status === 'canceled') throw new Error('membership has ended');
+    var s = {};
+    for (var k in sub) s[k] = sub[k];
+    s.cancelAtPeriodEnd = false;
+    return s;
+  }
+
+  function isPro(sub) { return !!sub && sub.status !== 'canceled'; }
+
+  function proTrialDaysLeft(sub, now) {
+    if (!sub || sub.status !== 'trialing') return 0;
+    return Math.max(0, Math.ceil((sub.periodEnd - now) / DAY));
+  }
+
+  /** May a member start another free-play session today? (Workout is always free.) */
+  function canFreePlay(sub, playsToday) {
+    return isPro(sub) || (playsToday | 0) < FREE_PLAYS_PER_DAY;
+  }
+
+  /** Free-play sessions left today — null means unlimited (Pro). */
+  function freePlaysLeft(sub, playsToday) {
+    if (isPro(sub)) return null;
+    return Math.max(0, FREE_PLAYS_PER_DAY - (playsToday | 0));
+  }
+
   /* ------------------------------------------------------------ exports */
 
   return {
@@ -443,6 +544,16 @@
     isoDay: isoDay,
     dayDiff: dayDiff,
     updateStreak: updateStreak,
-    dailyWorkout: dailyWorkout
+    dailyWorkout: dailyWorkout,
+    PRO: PRO,
+    FREE_PLAYS_PER_DAY: FREE_PLAYS_PER_DAY,
+    startPro: startPro,
+    advancePro: advancePro,
+    cancelPro: cancelPro,
+    resumePro: resumePro,
+    isPro: isPro,
+    proTrialDaysLeft: proTrialDaysLeft,
+    canFreePlay: canFreePlay,
+    freePlaysLeft: freePlaysLeft
   };
 });

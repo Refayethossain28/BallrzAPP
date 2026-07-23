@@ -328,6 +328,73 @@ test('a full simulated session holds a mid-scale player near their level', () =>
   assert.ok(sum.score > 0 && sum.accuracy > 0.5);
 });
 
+/* ---- Cortex Pro membership ---- */
+
+const DAY = 86400000;
+const T0 = Date.parse('2026-07-01T12:00:00Z');
+
+test('startPro: 7-day trial, live immediately', () => {
+  const sub = E.startPro(T0);
+  assert.equal(sub.status, 'trialing');
+  assert.equal(sub.periodEnd, T0 + E.PRO.trialDays * DAY);
+  assert.ok(E.isPro(sub));
+  assert.equal(E.proTrialDaysLeft(sub, T0), 7);
+  assert.equal(E.proTrialDaysLeft(sub, T0 + 6.5 * DAY), 1);
+});
+
+test('advancePro: trial converts to active with one invoice per period', () => {
+  const sub = E.startPro(T0);
+  // mid-trial: nothing happens
+  const mid = E.advancePro(sub, T0 + 3 * DAY);
+  assert.deepEqual(mid.sub, sub);
+  assert.equal(mid.invoices.length, 0);
+  assert.equal(sub.status, 'trialing', 'input not mutated');
+  // past trial end: one renewal, one invoice at the boundary
+  const one = E.advancePro(sub, T0 + 8 * DAY);
+  assert.equal(one.sub.status, 'active');
+  assert.equal(one.invoices.length, 1);
+  assert.equal(one.invoices[0].amountPence, E.PRO.pricePence);
+  assert.equal(one.invoices[0].at, T0 + 7 * DAY);
+  assert.equal(one.sub.periodEnd, T0 + 7 * DAY + E.PRO.periodDays * DAY);
+  // two whole periods later: two more invoices, each at its own boundary
+  const three = E.advancePro(sub, T0 + 7 * DAY + 2.5 * E.PRO.periodDays * DAY);
+  assert.equal(three.invoices.length, 3);
+  assert.equal(three.invoices[2].at, T0 + 7 * DAY + 2 * E.PRO.periodDays * DAY);
+});
+
+test('cancelPro runs to period end; resumePro undoes it; canceled cannot resume', () => {
+  const sub = E.cancelPro(E.startPro(T0));
+  assert.ok(E.isPro(sub), 'still live until the period ends');
+  const ended = E.advancePro(sub, T0 + 10 * DAY);
+  assert.equal(ended.sub.status, 'canceled');
+  assert.equal(ended.sub.endedAt, T0 + 7 * DAY);
+  assert.equal(ended.invoices.length, 0, 'a scheduled cancel is never billed');
+  assert.ok(!E.isPro(ended.sub));
+  // resume before the boundary keeps it alive and billing resumes
+  const resumed = E.resumePro(E.cancelPro(E.startPro(T0)));
+  const renewed = E.advancePro(resumed, T0 + 8 * DAY);
+  assert.equal(renewed.sub.status, 'active');
+  assert.equal(renewed.invoices.length, 1);
+  assert.throws(() => E.resumePro(ended.sub));
+  // null passes through advance untouched
+  const nul = E.advancePro(null, T0);
+  assert.equal(nul.sub, null);
+  assert.equal(nul.invoices.length, 0);
+});
+
+test('free-play quota: 1/day free, unlimited on Pro (trial or active)', () => {
+  assert.equal(E.FREE_PLAYS_PER_DAY, 1);
+  assert.ok(E.canFreePlay(null, 0));
+  assert.ok(!E.canFreePlay(null, 1));
+  assert.equal(E.freePlaysLeft(null, 0), 1);
+  assert.equal(E.freePlaysLeft(null, 3), 0);
+  const sub = E.startPro(T0);
+  assert.ok(E.canFreePlay(sub, 99));
+  assert.equal(E.freePlaysLeft(sub, 99), null, 'null = unlimited');
+  const lapsed = E.advancePro(E.cancelPro(sub), T0 + 8 * DAY).sub;
+  assert.ok(!E.canFreePlay(lapsed, 1), 'a lapsed Pro is back on the free quota');
+});
+
 console.log('── cortex drill-engine unit tests ──');
 let failed = 0;
 for (const [n, f] of tests) {
