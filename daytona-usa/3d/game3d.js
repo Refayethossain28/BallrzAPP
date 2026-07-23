@@ -11,17 +11,21 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R98 — Tooting shop parades';
+const BUILD = 'BUILD R99 — all circuits on real roads';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
 // ----------------------------------------------------------------------------
+// LONDON — the Thames GP loop from real coordinates: over Westminster Bridge
+// at Big Ben (51.5008,-0.1219), Victoria Embankment north-east along the
+// river, across Blackfriars Bridge (51.5097,-0.1044), then Stamford Street /
+// Belvedere Road back along the South Bank past the London Eye (51.5033).
 const LONDON_LAYOUT = [
-  [0,0,-180],[105,0,-180],[210,0,-180],
-  [272,0,-95],[292,0,0],[272,0,95],
-  [210,0,180],[105,0,180],[-105,0,180],[-210,0,180],
-  [-272,0,95],[-292,0,0],[-272,0,-95],
-  [-210,0,-180],
+  [-252,0,243],[-207,0,180],[-179,0,74],[-173,0,-37],
+  [-125,0,-105],[-34,0,-172],[87,0,-225],[208,0,-249],
+  [344,0,-206],[368,0,-71],
+  [226,0,-32],[93,0,11],[-16,0,59],[-77,0,108],
+  [-119,0,170],[-143,0,252],
 ];
 // DUBAI — a Sheikh-Zayed-Road mega straight blasting past the supertalls,
 // long 8th-gear sweepers, then tightening marina esses on the way home.
@@ -32,14 +36,15 @@ const DUBAI_LAYOUT = [
   [-300,0,255],[-430,0,110],[-450,0,-70],
   [-330,0,-230],[-165,0,-280],
 ];
-// NEW YORK — a Manhattan street circuit: avenue straights and hard right-angle
-// blocks, kinking through the park section before the run back downtown.
+// NEW YORK — the real Midtown grid from surveyed coordinates: Columbus Circle
+// (40.7681,-73.9819) east along Central Park South, down FIFTH AVENUE past the
+// Empire State Building (40.7488,-73.9846), west on 34th Street, and back up
+// EIGHTH AVENUE — the Manhattan grid's true 29-degree tilt included.
 const NY_LAYOUT = [
-  [0,0,-210],[130,0,-210],[260,0,-210],
-  [290,0,-100],[290,0,30],
-  [190,0,70],[180,0,180],[60,0,210],
-  [-80,0,150],[-210,0,170],[-290,0,80],
-  [-290,0,-70],[-180,0,-120],[-120,0,-210],
+  [30,0,-309],[103,0,-277],[182,0,-235],[243,0,-190],
+  [174,0,-65],[103,0,63],[32,0,192],[-37,0,311],
+  [-110,0,282],[-176,0,246],[-242,0,189],
+  [-171,0,60],[-100,0,-68],[-29,0,-197],
 ];
 const CANYON_LAYOUT = [
   [0,0,-230],[150,0,-250],[290,0,-170],[340,0,-40],
@@ -53,11 +58,11 @@ const CANYON_LAYOUT = [
 // projected from real OSM/atlas coordinates (Marble Arch 51.5132,-0.1590;
 // Hyde Park anchors; Berkeley Square 51.5096,-0.1458; Bond St addresses).
 const MAYFAIR_LAYOUT = [
-  [-262,0,108],[-328,0,-4],[-377,0,-102],
-  [-180,0,-148],[4,0,-187],[82,0,-194],
-  [148,0,-122],[206,0,-43],[243,0,29],
-  [189,0,68],[177,0,140],[132,0,173],
-  [66,0,153],[-98,0,127],
+  [-227,0,103],[-293,0,-8],[-322,0,-67],[-342,0,-106],
+  [-145,0,-152],[40,0,-192],[118,0,-198],
+  [183,0,-126],[241,0,-47],[278,0,25],
+  [225,0,64],[212,0,136],[167,0,169],
+  [101,0,149],[-71,0,136],[-166,0,116],
 ];
 // TOOTING — the real road diamond: the A24 (Upper Tooting Road) running
 // south-west to TOOTING BROADWAY junction, left down MITCHAM ROAD, the
@@ -66,11 +71,11 @@ const MAYFAIR_LAYOUT = [
 // projected from real coordinates (Tooting Bec stn 51.4358,-0.1590; Broadway
 // stn 51.4278,-0.1680; Amen Corner; Southcroft Rd; Lido 51.4317,-0.1392).
 const TOOTING_LAYOUT = [
-  [-93,0,-250],[-154,0,-157],[-225,0,-56],[-316,0,65],
-  [-225,0,137],[-154,0,194],[-93,0,238],
-  [33,0,178],[160,0,105],[286,0,24],
-  [324,0,-28],[316,0,-88],
-  [134,0,-157],[8,0,-205],
+  [-73,0,-249],[-134,0,-156],[-205,0,-56],[-255,0,5],[-296,0,65],
+  [-205,0,138],[-134,0,194],[-73,0,239],
+  [53,0,178],[180,0,106],[306,0,25],
+  [344,0,-27],[337,0,-88],
+  [155,0,-156],[-2,0,-217],
 ];
 const CIRCUITS = [
   { name:'NEW YORK', laps:6, maxSpeed:122, curveMul:1.0, aiSpeed:0.78, startTime:62, lapBonus:30, seed:7, theme:0, layout:NY_LAYOUT },
