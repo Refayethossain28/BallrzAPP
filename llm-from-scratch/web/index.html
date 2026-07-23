@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>My Own AI Model — a GPT built from scratch, running in your browser</title>
+  <meta name="description" content="Your own GPT-style language model, built from scratch in NumPy and running entirely in your browser. No server, no API, no cloud — the weights ship with the page and every token is generated on your device." />
+  <meta name="theme-color" content="#0b0e14" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icon-180.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="My AI Model" />
+  <style>
+    :root { color-scheme: dark; --amber: #f5a524; --bg: #0b0e14; --panel: #131722; --line: #232838; --muted: #8b93a7; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100dvh; background: var(--bg); color: #e6e6e6;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      display: flex; justify-content: center;
+      padding: max(24px, env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom));
+    }
+    .wrap { width: 100%; max-width: 780px; }
+    header { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+    header img { width: 46px; height: 46px; border-radius: 12px; flex: none; }
+    h1 { font-size: 21px; margin: 0; line-height: 1.15; }
+    .sub { color: var(--muted); font-size: 13px; margin: 6px 0 18px; line-height: 1.5; }
+    .sub code { color: #8ab4ff; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    textarea {
+      width: 100%; min-height: 70px; resize: vertical; background: var(--bg); color: #e6e6e6;
+      border: 1px solid #2a3043; border-radius: 8px; padding: 10px; font-size: 15px; font-family: inherit;
+    }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .chip {
+      background: #0b0e14; border: 1px solid #2a3043; color: #c7cdda; border-radius: 999px;
+      padding: 5px 12px; font-size: 12.5px; cursor: pointer;
+    }
+    .chip:hover { border-color: var(--amber); color: #fff; }
+    .row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; margin-top: 14px; }
+    .ctrl { flex: 1; min-width: 120px; }
+    input[type=range] { width: 100%; accent-color: var(--amber); }
+    .val { color: #e6e6e6; font-size: 12px; }
+    button {
+      background: var(--amber); color: #1a1300; border: 0; border-radius: 8px;
+      padding: 10px 20px; font-size: 14px; font-weight: 700; cursor: pointer;
+    }
+    button.ghost { background: transparent; color: var(--amber); border: 1px solid #3a3320; font-weight: 600; }
+    button:disabled { opacity: .5; cursor: default; }
+    .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    /* Live AI toggle */
+    .switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #c7cdda; cursor: pointer; user-select: none; }
+    .switch input { position: absolute; opacity: 0; pointer-events: none; }
+    .track { width: 40px; height: 22px; border-radius: 999px; background: #2a3043; border: 1px solid #3a4155; position: relative; transition: background .15s; flex: none; }
+    .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #8b93a7; transition: transform .15s, background .15s; }
+    .switch input:checked + .track { background: #6e5bff; border-color: #8a7bff; }
+    .switch input:checked + .track::after { transform: translateX(18px); background: #fff; }
+    .switch.disabled { opacity: .45; cursor: not-allowed; }
+    .switch b { color: #b3a9ff; font-weight: 700; }
+    .linkbtn { background: none; border: 0; color: #8a7bff; font-size: 12.5px; text-decoration: underline; cursor: pointer; padding: 4px 2px; }
+    body.live { --amber: #8a7bff; }
+    body.live button#go { background: linear-gradient(135deg, #6e5bff, #a78bff); color: #fff; }
+    .gen.live { color: #b9adff; }
+    pre {
+      white-space: pre-wrap; word-break: break-word; background: var(--bg);
+      border: 1px solid var(--line); border-radius: 8px; padding: 14px; min-height: 130px;
+      font-size: 15px; line-height: 1.55; margin: 0;
+    }
+    .gen { color: var(--amber); }
+    .cursor { color: var(--amber); animation: blink 1s steps(2) infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+    .status { font-size: 12px; color: var(--muted); margin-top: 10px; }
+    .status code { color: #8ab4ff; }
+    footer { color: #667; font-size: 12px; margin-top: 6px; line-height: 1.6; }
+    footer a { color: #8ab4ff; }
+    #install { display: none; }
+    .badges { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
+    .badge { font-size: 11.5px; color: #b7c0d6; background: #10151f; border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; }
+    .badge b { color: var(--amber); font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <img src="icon.svg" alt="" />
+      <div>
+        <h1>My Own AI Model</h1>
+        <div class="sub" style="margin:2px 0 0">A GPT built from scratch — running entirely in your browser.</div>
+      </div>
+    </header>
+    <div class="sub">
+      Every mechanism a real large language model uses is here and nothing is hidden behind a framework:
+      a hand-written <b>autograd engine</b>, a <b>transformer</b> with causal self-attention, an <b>Adam</b>
+      trainer — all in pure NumPy. It was trained offline, its weights baked into this page, and the
+      forward pass re-implemented in JavaScript. <b>No server, no API, no cloud</b> — every token below is
+      generated on your device.
+    </div>
+
+    <div class="badges" id="badges"></div>
+
+    <div class="card">
+      <label for="prompt">Prompt — give it a few words to continue</label>
+      <textarea id="prompt">ROMEO:</textarea>
+      <div class="chips" id="chips"></div>
+      <div class="row">
+        <div class="ctrl">
+          <label>Length: <span id="ntok" class="val">150</span> tokens</label>
+          <input id="tokens" type="range" min="20" max="500" step="10" value="150" />
+        </div>
+        <div class="ctrl">
+          <label>Temperature: <span id="tval" class="val">0.8</span></label>
+          <input id="temp" type="range" min="0.1" max="1.5" step="0.1" value="0.8" />
+        </div>
+        <div class="ctrl">
+          <label>Top-k: <span id="kval" class="val">40</span></label>
+          <input id="topk" type="range" min="1" max="80" step="1" value="40" />
+        </div>
+        <div class="ctrl">
+          <label>Top-p (nucleus): <span id="pval" class="val">0.92</span></label>
+          <input id="topp" type="range" min="0.5" max="1" step="0.01" value="0.92" />
+        </div>
+        <div class="ctrl">
+          <label>Repetition penalty: <span id="rval" class="val">1.3</span></label>
+          <input id="rep" type="range" min="1" max="2" step="0.05" value="1.3" />
+        </div>
+      </div>
+      <div class="row">
+        <div class="actions">
+          <button id="go" disabled>Generate</button>
+          <button id="stop" class="ghost" style="display:none">Stop</button>
+          <label class="switch disabled" id="liveWrap" title="Connect a proxy to enable this.">
+            <input type="checkbox" id="live" disabled />
+            <span class="track"></span>
+            <span>⚡ Live AI <b>(Fable 5)</b></span>
+          </label>
+          <button id="proxyBtn" class="linkbtn" type="button" style="display:none"></button>
+          <button id="install" class="ghost">Install app</button>
+        </div>
+      </div>
+      <div id="status" class="status">Loading model…</div>
+    </div>
+
+    <div class="card">
+      <pre id="out"></pre>
+    </div>
+
+    <footer>
+      <b>Two engines.</b> The default is your hand-built GPT — trained from scratch, running with no
+      network, genuinely yours (small, so it reads more like a stylistic echo than a smart assistant).
+      Flip on <b>⚡ Live AI</b> to route the same prompt to real frontier <b>Fable&nbsp;5</b> and compare.
+      On the hosted page this runs through the project's server-side proxy (your key never reaches the
+      browser); running locally it uses <code>node server.mjs</code>, or paste your own via
+      <b>“connect Fable&nbsp;5 proxy”</b>. Source &amp; training code in
+      <a href="https://github.com/refayethossain28/BallrzAPP/tree/main/llm-from-scratch">llm-from-scratch/</a>.
+    </footer>
+  </div>
+
+  <!--INLINE_MODEL-->
+  <script src="gpt.js"></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const statusEl = $("status"), outEl = $("out"), goBtn = $("go"), stopBtn = $("stop");
+    let model = null, running = false, cancel = false;
+
+    bind("tokens", "ntok"); bind("temp", "tval"); bind("topk", "kval");
+    bind("topp", "pval"); bind("rep", "rval");
+    function bind(slider, label) {
+      const s = $(slider), l = $(label);
+      s.addEventListener("input", () => { l.textContent = s.value; });
+    }
+
+    // Quick-start prompt chips (the model is trained on Shakespeare).
+    ["ROMEO:", "To be, or", "My lord,", "What news", "O, speak again"]
+      .forEach((p) => {
+        const b = document.createElement("button");
+        b.className = "chip"; b.textContent = p;
+        b.addEventListener("click", () => { $("prompt").value = p; });
+        $("chips").appendChild(b);
+      });
+
+    async function loadSpec() {
+      // Prefer an inlined model (standalone llm.html); otherwise fetch model.json.
+      const inline = document.getElementById("inline-model");
+      if (inline) return JSON.parse(inline.textContent);
+      const res = await fetch("model.json");
+      if (!res.ok) throw new Error("could not fetch model.json (run a local server or use llm.html)");
+      return res.json();
+    }
+
+    (async function init() {
+      try {
+        const spec = await loadSpec();
+        model = new GPTLib.Model(spec);
+        const c = spec.config;
+        const nParams = Object.values(spec.weights)
+          .reduce((s, w) => s + w.shape.reduce((a, b) => a * b, 1), 0);
+        $("badges").innerHTML =
+          badge(`${(nParams / 1000).toFixed(0)}K <b>parameters</b>`) +
+          badge(`${c.n_layer} <b>layers</b>`) +
+          badge(`${c.n_embd}-dim`) +
+          badge(`${c.n_head} heads`) +
+          badge(`vocab ${c.vocab_size}`) +
+          badge(`ctx ${c.block_size}`) +
+          badge(`${spec.tokenizer.type} tokenizer`) +
+          badge(`100% <b>on-device</b>`);
+        statusEl.innerHTML = "Ready — the model is loaded and runs entirely in this tab.";
+        goBtn.disabled = false;
+      } catch (e) {
+        statusEl.textContent = "Error: " + e.message;
+      }
+    })();
+
+    function badge(html) { return `<span class="badge">${html}</span>`; }
+
+    function setRunning(on) {
+      running = on;
+      goBtn.style.display = on ? "none" : "";
+      stopBtn.style.display = on ? "" : "none";
+    }
+
+    // ── Live AI (Fable 5): probe a proxy (same-origin when run locally, or a
+    //    hosted URL you paste in), enable the toggle if it's reachable + keyed ──
+    const liveBox = $("live"), liveWrap = $("liveWrap"), proxyBtn = $("proxyBtn");
+    let liveModel = "Fable 5", liveAbort = null;
+    // Hosted default: the project's Firebase function (deployed with the repo).
+    // The hosted page uses it automatically; local dev uses the same-origin
+    // `node server.mjs`; an explicit URL you paste always wins.
+    const DEFAULT_PROXY = "https://us-central1-apexvip-1b4a9.cloudfunctions.net/llmLive";
+    let proxyBase = localStorage.getItem("llmProxyBase") || "";
+    let apiBase = "";                                   // the base that actually answered
+    const join = (base, p) => (base ? base.replace(/\/+$/, "") + "/" + p : p);
+    const apiUrl = (p) => join(apiBase, p);
+
+    async function healthy(base) {
+      try {
+        const r = await fetch(join(base, "health"), { cache: "no-store" });
+        const j = await r.json();
+        if (j && j.ok && j.live) return j;
+      } catch { /* unreachable */ }
+      return null;
+    }
+
+    async function probeLive() {
+      liveBox.disabled = true; liveWrap.classList.add("disabled");
+      // Explicit override wins; otherwise try local same-origin, then the hosted default.
+      const candidates = proxyBase ? [proxyBase] : ["", DEFAULT_PROXY];
+      for (const base of candidates) {
+        const j = await healthy(base);
+        if (j) {
+          apiBase = base;
+          if (j.model) liveModel = j.model;
+          liveBox.disabled = false;
+          liveWrap.classList.remove("disabled");
+          liveWrap.title = `Route the prompt to real ${liveModel} instead of the on-device model.`;
+          proxyBtn.textContent = proxyBase ? "change proxy" : "";
+          proxyBtn.style.display = proxyBase ? "" : "none";
+          return;
+        }
+      }
+      liveBox.checked = false; document.body.classList.remove("live");
+      goBtn.textContent = "Generate";
+      proxyBtn.textContent = proxyBase ? "fix proxy" : "connect Fable 5 proxy";
+      proxyBtn.style.display = "";
+    }
+    probeLive();
+
+    // Let the hosted page point at your deployed proxy without a rebuild.
+    proxyBtn.addEventListener("click", () => {
+      const url = prompt(
+        "Paste your hosted Live AI proxy URL (https://…, e.g. a Render service).\n" +
+        "Leave blank to clear and use only the on-device model.",
+        proxyBase);
+      if (url === null) return;
+      proxyBase = url.trim().replace(/\/+$/, "");
+      if (proxyBase) localStorage.setItem("llmProxyBase", proxyBase);
+      else localStorage.removeItem("llmProxyBase");
+      probeLive();
+    });
+
+    liveBox.addEventListener("change", () => {
+      document.body.classList.toggle("live", liveBox.checked);
+      goBtn.textContent = liveBox.checked ? "Ask Fable 5" : "Generate";
+    });
+
+    stopBtn.addEventListener("click", () => {
+      cancel = true;
+      if (liveAbort) { try { liveAbort.abort(); } catch {} }
+    });
+
+    // Shared output scaffold: prints the prompt, returns the span new text lands in.
+    function beginOutput(prompt, live) {
+      outEl.innerHTML = "";
+      outEl.appendChild(document.createTextNode(prompt));
+      const genSpan = document.createElement("span");
+      genSpan.className = "gen" + (live ? " live" : "");
+      outEl.appendChild(genSpan);
+      const cursor = document.createElement("span");
+      cursor.className = "cursor"; cursor.textContent = "▍";
+      outEl.appendChild(cursor);
+      return { genSpan, cursor };
+    }
+    function finish(cursor, note) { cursor.remove(); statusEl.textContent = note; setRunning(false); }
+
+    goBtn.addEventListener("click", () => {
+      if (running) return;
+      const prompt = $("prompt").value;
+      if (liveBox.checked && !liveBox.disabled) return runLive(prompt);
+      if (!model) return;
+      runLocal(prompt);
+    });
+
+    // On-device: sample token by token from the from-scratch GPT.
+    function runLocal(prompt) {
+      cancel = false; setRunning(true);
+      const nTokens = +$("tokens").value;
+      const opts = {
+        temperature: +$("temp").value,
+        topK: +$("topk").value,
+        topP: +$("topp").value,
+        repetitionPenalty: +$("rep").value,
+      };
+      const { genSpan, cursor } = beginOutput(prompt, false);
+      statusEl.textContent = "Generating on-device…";
+      let ids = model.tokenizer.encode(prompt);
+      if (ids.length === 0) ids = [model.tokenizer.stoi["\n"] || 0];
+      let n = 0;
+      const t0 = performance.now();
+      function step() {
+        if (cancel) {
+          const dt = (performance.now() - t0) / 1000;
+          return finish(cursor, `Stopped — ${n} tokens in ${dt.toFixed(1)}s.`);
+        }
+        if (n >= nTokens) {
+          const dt = (performance.now() - t0) / 1000;
+          return finish(cursor, `Done — ${nTokens} tokens in ${dt.toFixed(1)}s (${(nTokens / dt).toFixed(0)} tok/s).`);
+        }
+        const logits = model.logitsForLast(ids);
+        // Penalize repetition over a recent window so the small model stops looping.
+        const next = sampleFrom(logits, opts, ids.slice(-64));
+        ids.push(next);
+        genSpan.textContent += model.tokenizer.decode([next]);
+        n++;
+        setTimeout(step, 0);
+      }
+      step();
+    }
+
+    // Live AI: stream a completion from real Fable 5 via the local proxy.
+    async function runLive(prompt) {
+      cancel = false; setRunning(true);
+      const { genSpan, cursor } = beginOutput(prompt, true);
+      statusEl.textContent = `Asking ${liveModel}…`;
+      liveAbort = new AbortController();
+      const t0 = performance.now();
+      try {
+        const res = await fetch(apiUrl("ai"), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            prompt,
+            temperature: +$("temp").value,
+            maxTokens: +$("tokens").value,
+          }),
+          signal: liveAbort.signal,
+        });
+        if (!res.ok || !res.body) {
+          let msg = "request failed (" + res.status + ")";
+          try { const j = await res.json(); if (j && j.error) msg = j.error; } catch {}
+          throw new Error(msg);
+        }
+        const reader = res.body.getReader();
+        const dec = new TextDecoder();
+        let chars = 0;
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          const text = dec.decode(value, { stream: true });
+          genSpan.textContent += text; chars += text.length;
+          outEl.scrollTop = outEl.scrollHeight;
+        }
+        const dt = (performance.now() - t0) / 1000;
+        finish(cursor, `Done — ${liveModel} streamed ${chars} chars in ${dt.toFixed(1)}s.`);
+      } catch (e) {
+        if (e && e.name === "AbortError") finish(cursor, "Stopped.");
+        else finish(cursor, "Live AI error: " + (e.message || e));
+      } finally {
+        liveAbort = null;
+      }
+    }
+
+    // Nucleus (top-p) + top-k sampling with a repetition penalty, mirrored from
+    // gpt.js so the incremental UI loop and GPTLib.generate() agree. `ctx` is the
+    // recent token window whose logits get penalized to break repetition loops.
+    function sampleFrom(logits, opts, ctx) {
+      opts = opts || {};
+      const temperature = Math.max(opts.temperature == null ? 0.8 : opts.temperature, 1e-6);
+      const topK = opts.topK == null ? 0 : opts.topK;
+      const topP = opts.topP == null ? 1 : opts.topP;
+      const rp = opts.repetitionPenalty == null ? 1 : opts.repetitionPenalty;
+      const n = logits.length;
+      const z = new Float64Array(n);
+      for (let i = 0; i < n; i++) z[i] = logits[i];
+      if (rp !== 1 && ctx && ctx.length) {
+        const seen = ctx instanceof Set ? ctx : new Set(ctx);
+        seen.forEach((id) => { if (id >= 0 && id < n) z[id] = z[id] > 0 ? z[id] / rp : z[id] * rp; });
+      }
+      for (let i = 0; i < n; i++) z[i] /= temperature;
+      const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => z[b] - z[a]);
+      const k = (topK && topK > 0) ? Math.min(topK, n) : n;
+      const maxv = z[order[0]];
+      const probs = new Float64Array(k);
+      let sum = 0;
+      for (let j = 0; j < k; j++) { const p = Math.exp(z[order[j]] - maxv); probs[j] = p; sum += p; }
+      for (let j = 0; j < k; j++) probs[j] /= sum;
+      let cutoff = k;
+      if (topP < 1) {
+        let cum = 0;
+        for (let j = 0; j < k; j++) { cum += probs[j]; if (cum >= topP) { cutoff = j + 1; break; } }
+      }
+      let s2 = 0; for (let j = 0; j < cutoff; j++) s2 += probs[j];
+      let r = Math.random() * s2;
+      for (let j = 0; j < cutoff; j++) { r -= probs[j]; if (r <= 0) return order[j]; }
+      return order[cutoff - 1];
+    }
+
+    // Install-to-home-screen (Chromium). Safari uses Share → Add to Home Screen.
+    let deferredPrompt = null;
+    const installBtn = $("install");
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault(); deferredPrompt = e; installBtn.style.display = "";
+    });
+    installBtn.addEventListener("click", async () => {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      await deferredPrompt.userChoice;
+      deferredPrompt = null; installBtn.style.display = "none";
+    });
+
+    // Register the offline service worker (not on file://, and not when inlined).
+    if ("serviceWorker" in navigator && location.protocol.startsWith("http") &&
+        !document.getElementById("inline-model")) {
+      window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+    }
+  </script>
+</body>
+</html>

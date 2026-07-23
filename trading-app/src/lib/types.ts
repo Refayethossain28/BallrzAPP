@@ -43,6 +43,38 @@ export interface TradingSignal {
   pipValue: number
 }
 
+export interface AIInsight {
+  verdict: SignalType
+  confidence: number // 0-100
+  summary: string
+  rationale: string[]
+  keyRisks: string[]
+  agreesWithTechnical: boolean
+  timeHorizon: string
+  source: 'ai' | 'heuristic'
+  model?: string
+}
+
+// Result of analyzing a pasted/uploaded chart screenshot with the vision model.
+export interface ScreenshotAnalysis {
+  isChart: boolean
+  instrument: string
+  timeframe: string
+  currentPrice: string
+  verdict: SignalType
+  confidence: number // 0-100
+  entry: string
+  takeProfit1: string
+  takeProfit2: string
+  stopLoss: string
+  riskRewardRatio: string
+  summary: string
+  rationale: string[]
+  keyRisks: string[]
+  liveContext?: string
+  model?: string
+}
+
 export interface NewsArticle {
   title: string
   description: string
@@ -76,6 +108,7 @@ export interface ForexAnalysis {
   indicators: TechnicalIndicators
   signal: TradingSignal
   news: NewsArticle[]
+  ai?: AIInsight
   lastUpdated: string
   error?: string
 }

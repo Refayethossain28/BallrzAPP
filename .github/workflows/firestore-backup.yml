@@ -1,0 +1,84 @@
+name: Firestore backup (daily export)
+
+# Disaster-recovery copy of the whole Firestore database (bookings, users,
+# CRM, jobs). Runs nightly and on demand; exports land in the project's own
+# backup bucket and the newest 14 are kept. Restore with:
+#   gcloud firestore import gs://apexvip-1b4a9-backups/exports/<stamp>
+#
+# Uses the same FIREBASE_SERVICE_ACCOUNT credential as the deploy workflow.
+# If the export 403s, grant the service account the
+# "Cloud Datastore Import Export Admin" role in Google Cloud IAM.
+
+on:
+  schedule:
+    - cron: "15 2 * * *"   # 02:15 UTC nightly
+  workflow_dispatch:
+
+concurrency: firestore-backup
+
+env:
+  PROJECT: apexvip-1b4a9
+  BUCKET: apexvip-1b4a9-backups
+  KEEP: "14"
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the service-account secret
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$SA" ]; then
+            echo "::error title=No credential::Add the FIREBASE_SERVICE_ACCOUNT repo secret first."
+            exit 1
+          fi
+          printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
+
+      # Same normalization as firebase-deploy.yml — smart quotes can never be
+      # legitimate inside a service-account key.
+      - name: Repair smart quotes in the credential
+        run: |
+          python3 - <<'EOF'
+          import io, os
+          p = os.path.join(os.environ["RUNNER_TEMP"], "sa.json")
+          s = io.open(p, encoding="utf-8", errors="replace").read()
+          fixed = (s.replace(chr(0x201c), '"').replace(chr(0x201d), '"')
+                    .replace(chr(0x2018), "'").replace(chr(0x2019), "'")
+                    .replace(chr(0x00a0), " "))
+          io.open(p, "w", encoding="utf-8").write(fixed)
+          print("repaired" if fixed != s else "no repair needed")
+          EOF
+
+      - name: Authenticate gcloud
+        run: |
+          gcloud auth activate-service-account --key-file="$RUNNER_TEMP/sa.json"
+          gcloud config set project "$PROJECT"
+
+      # Firestore lives in europe-west2 (the Eventarc topics say so) — the
+      # export bucket must be in the same location.
+      - name: Ensure the backup bucket exists
+        run: |
+          gsutil ls -b "gs://$BUCKET" >/dev/null 2>&1 \
+            || gsutil mb -p "$PROJECT" -l europe-west2 "gs://$BUCKET"
+
+      - name: Export Firestore
+        run: |
+          STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+          gcloud firestore export "gs://$BUCKET/exports/$STAMP" --project "$PROJECT" \
+            || { echo "::error title=Export failed::If this is a 403, grant the deploy service account the 'Cloud Datastore Import Export Admin' IAM role."; exit 1; }
+          echo "exported to gs://$BUCKET/exports/$STAMP"
+
+      # Timestamped folder names sort lexically, so 'all but the newest KEEP'
+      # is a simple head. Nothing outside exports/ is ever touched.
+      - name: Prune old exports (keep newest $KEEP)
+        run: |
+          TOTAL=$(gsutil ls "gs://$BUCKET/exports/" | wc -l)
+          if [ "$TOTAL" -le "$KEEP" ]; then
+            echo "$TOTAL export(s) present — nothing to prune"
+            exit 0
+          fi
+          gsutil ls "gs://$BUCKET/exports/" | sort | head -n "-$KEEP" | while read -r OLD; do
+            echo "pruning $OLD"
+            gsutil -m -q rm -r "$OLD"
+          done

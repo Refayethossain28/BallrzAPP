@@ -53,6 +53,23 @@
   .grid-3{display:grid;grid-template-columns:2fr 1fr;gap:20px;margin-bottom:20px}
   @media(max-width:700px){.grid-2,.grid-3{grid-template-columns:1fr}}
 
+  /* AI Analyst card */
+  .ai-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px}
+  .ai-title-wrap{display:flex;gap:10px;align-items:center}
+  .ai-logo{width:28px;height:28px;border-radius:8px;background:rgba(59,130,246,.18);border:1px solid rgba(59,130,246,.4);color:#93c5fd;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
+  .ai-sub{font-size:11px;color:var(--dim);margin-top:2px}
+  .ai-verdict{display:flex;align-items:center;gap:10px;white-space:nowrap}
+  .ai-conf{font-size:13px;color:var(--sub)}
+  .ai-summary{font-size:14px;line-height:1.5;margin-bottom:12px}
+  .ai-meta{display:flex;flex-wrap:wrap;gap:8px;font-size:12px;color:var(--dim);margin-bottom:16px}
+  .ai-cols{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:700px){.ai-cols{grid-template-columns:1fr}}
+  .ai-col-title{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);margin-bottom:8px}
+  .ai-list{list-style:none;display:flex;flex-direction:column;gap:7px}
+  .ai-list li{font-size:13px;color:var(--sub);display:flex;gap:8px;line-height:1.45}
+  .ai-list li::before{content:'•';color:var(--blue);flex-shrink:0}
+  .ai-list.risk li::before{content:'!';color:var(--sell);font-weight:700}
+
   /* Market overview */
   .pair-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}
   .pair-name{font-size:22px;font-weight:700;font-family:monospace;letter-spacing:1px}
@@ -250,6 +267,30 @@
           <span id="sig-atr-note"></span>
           <span>1× / 1.5× ATR</span>
         </div>
+      </div>
+    </div>
+
+    <!-- AI Analyst -->
+    <div class="grid-full card" id="aiCard">
+      <div class="ai-head">
+        <div class="ai-title-wrap">
+          <span class="ai-logo">AI</span>
+          <div>
+            <div class="card-title" style="margin-bottom:2px">AI Analyst</div>
+            <div class="ai-sub" id="ai-sub">In-browser heuristic model</div>
+          </div>
+        </div>
+        <div class="ai-verdict">
+          <span id="ai-badge"></span>
+          <span class="ai-conf" id="ai-conf"></span>
+        </div>
+      </div>
+      <div class="conf-bar" style="margin-bottom:14px"><div class="conf-bar-fill" id="ai-conf-bar"></div></div>
+      <div class="ai-summary" id="ai-summary"></div>
+      <div class="ai-meta" id="ai-meta"></div>
+      <div class="ai-cols">
+        <div><div class="ai-col-title">Why</div><ul class="ai-list" id="ai-rationale"></ul></div>
+        <div><div class="ai-col-title">Key risks</div><ul class="ai-list risk" id="ai-risks"></ul></div>
       </div>
     </div>
 
@@ -709,6 +750,65 @@ function renderChart(data, sig, pair) {
   });
 }
 
+// ─── AI Analyst (in-browser heuristic) ─────────────────────────────────────────
+// Mirrors the heuristic fallback in the React app's AI model: blends the
+// technical signal with trend strength (ADX) and news sentiment. A static file
+// has no server to safely hold an API key, so this runs entirely client-side.
+function heuristicAI(sig, ind, news, pair) {
+  const pos=news.filter(a=>a.sent==='positive').length;
+  const neg=news.filter(a=>a.sent==='negative').length;
+  const tilt=pos-neg;
+  const trendStrong=ind.adx>25;
+  const newsAgrees=(sig.type==='BUY'&&tilt>=0)||(sig.type==='SELL'&&tilt<=0)||sig.type==='NEUTRAL';
+
+  let conf=sig.conf;
+  if(!trendStrong)conf-=8;
+  if(!newsAgrees)conf-=12;
+  if(newsAgrees&&tilt!==0)conf+=5;
+  conf=Math.max(0,Math.min(100,Math.round(conf)));
+
+  const rationale=[];
+  sig.scores.filter(s=>s.sig===sig.type&&s.w>0).sort((a,b)=>b.w-a.w).slice(0,3)
+    .forEach(s=>rationale.push(`${s.n}: ${s.d}`));
+  if(rationale.length===0)rationale.push('Indicators are mixed with no clear directional edge.');
+  rationale.push(trendStrong
+    ?`ADX ${ind.adx.toFixed(0)} confirms a strong trend, so the signal is more reliable.`
+    :`ADX ${ind.adx.toFixed(0)} shows a weak trend, so signals are less reliable.`);
+  if(news.length)rationale.push(tilt>0
+    ?`News flow skews bullish (${pos} positive vs ${neg} negative).`
+    :tilt<0?`News flow skews bearish (${neg} negative vs ${pos} positive).`
+    :'News sentiment is balanced.');
+
+  const risks=[];
+  if(!newsAgrees)risks.push('Recent news sentiment runs counter to the technical signal.');
+  if(!trendStrong)risks.push('Weak trend strength raises the odds of a false breakout.');
+  risks.push(`A close beyond the stop loss (${fmt(pair,sig.sl)}) invalidates the setup.`);
+
+  return {
+    verdict:sig.type, conf,
+    summary:sig.type==='NEUTRAL'
+      ?`No high-conviction edge on ${pair} right now — stand aside.`
+      :`${sig.type} bias on ${pair} with ${conf}% conviction.`,
+    rationale, risks, agrees:true,
+    horizon:trendStrong?'swing (days)':'intraday'
+  };
+}
+
+function renderAI(ai, pair) {
+  const cls=ai.verdict==='BUY'?'buy':ai.verdict==='SELL'?'sell':'neutral';
+  const color=ai.verdict==='BUY'?'var(--buy)':ai.verdict==='SELL'?'var(--sell)':'var(--warn)';
+  const arrow=ai.verdict==='BUY'?'▲':ai.verdict==='SELL'?'▼':'─';
+  document.getElementById('ai-badge').innerHTML=`<span class="signal-badge ${cls}">${arrow} ${ai.verdict}</span>`;
+  document.getElementById('ai-conf').textContent=`${ai.conf}%`;
+  const bar=document.getElementById('ai-conf-bar'); bar.style.width=`${ai.conf}%`; bar.style.background=color;
+  document.getElementById('ai-summary').textContent=ai.summary;
+  document.getElementById('ai-meta').innerHTML=
+    `<span>Horizon: <span style="color:var(--sub)">${ai.horizon}</span></span><span>·</span>`+
+    `<span style="color:${ai.agrees?'var(--buy)':'var(--warn)'}">${ai.agrees?'Agrees with technicals':'Diverges from technicals'}</span>`;
+  document.getElementById('ai-rationale').innerHTML=ai.rationale.map(r=>`<li><span>${r}</span></li>`).join('');
+  document.getElementById('ai-risks').innerHTML=ai.risks.map(r=>`<li><span>${r}</span></li>`).join('');
+}
+
 // ─── Main Analysis Runner ─────────────────────────────────────────────────────
 let currentPair = null;
 
@@ -759,10 +859,15 @@ async function runAnalysis(pairOverride) {
     renderIndicators(sig.scores);
     renderChart(ohlcv.slice(-30),sig,pair);
 
+    // AI analyst — render immediately, then refine once news loads
+    renderAI(heuristicAI(sig,ind,[],pair),pair);
+
     // News (async, doesn't block)
     document.getElementById('news-list').innerHTML='<div style="color:var(--dim);font-size:13px;text-align:center;padding:20px">Loading news...</div>';
     fetchNews(from,to,pair).then(articles=>{
-      renderNews(articles||mockNews(from,to),from,to);
+      const news=articles||mockNews(from,to);
+      renderNews(news,from,to);
+      renderAI(heuristicAI(sig,ind,news,pair),pair);
     });
 
     showDashboard();

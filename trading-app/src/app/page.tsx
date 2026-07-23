@@ -1,13 +1,16 @@
 'use client'
 import { useState, useCallback } from 'react'
-import type { ForexAnalysis, NewsArticle } from '@/lib/types'
+import Link from 'next/link'
+import type { AIInsight, ForexAnalysis, NewsArticle } from '@/lib/types'
 import { POPULAR_PAIRS } from '@/lib/types'
 import PairSearch from '@/components/PairSearch'
 import SignalCard from '@/components/SignalCard'
+import AIInsightCard from '@/components/AIInsightCard'
 import IndicatorGrid from '@/components/IndicatorGrid'
 import PriceChart from '@/components/PriceChart'
 import NewsSection from '@/components/NewsSection'
 import MarketOverview from '@/components/MarketOverview'
+import AIStatusBadge from '@/components/AIStatusBadge'
 
 const DISCLAIMER = 'This tool is for educational purposes only. Trading forex involves significant risk. Never trade with money you cannot afford to lose.'
 
@@ -17,12 +20,16 @@ export default function TradingApp() {
   const [newsLoading, setNewsLoading] = useState(false)
   const [analysis, setAnalysis] = useState<ForexAnalysis | null>(null)
   const [news, setNews] = useState<NewsArticle[]>([])
+  const [aiInsight, setAiInsight] = useState<AIInsight | null>(null)
+  const [aiLoading, setAiLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const analyze = useCallback(async (selectedPair: string) => {
     setLoading(true)
     setNewsLoading(true)
+    setAiLoading(true)
     setError(null)
+    setAiInsight(null)
     setPair(selectedPair)
 
     try {
@@ -31,22 +38,52 @@ export default function TradingApp() {
         fetch(`/api/news?pair=${encodeURIComponent(selectedPair)}`),
       ])
 
+      let forexData: ForexAnalysis | null = null
+      let newsArticles: NewsArticle[] = []
+
       if (forexRes.status === 'fulfilled' && forexRes.value.ok) {
         const data = await forexRes.value.json() as ForexAnalysis
-        if (data.error) { setError(data.error) } else { setAnalysis(data) }
+        if (data.error) { setError(data.error) } else { forexData = data; setAnalysis(data) }
       } else {
         setError('Failed to fetch market data. Please try again.')
       }
 
       if (newsRes.status === 'fulfilled' && newsRes.value.ok) {
         const data = await newsRes.value.json() as { articles: NewsArticle[] }
+        newsArticles = data.articles
         setNews(data.articles)
+      }
+      setNewsLoading(false)
+
+      // Run the AI model once we have the technical analysis to reason over.
+      if (forexData) {
+        try {
+          const aiRes = await fetch('/api/ai', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              pair: forexData.pair,
+              currentPrice: forexData.currentPrice,
+              priceChangePct24h: forexData.priceChangePct24h,
+              indicators: forexData.indicators,
+              signal: forexData.signal,
+              news: newsArticles,
+            }),
+          })
+          if (aiRes.ok) {
+            const insight = await aiRes.json() as AIInsight
+            if (!('error' in insight)) setAiInsight(insight)
+          }
+        } catch {
+          // AI is a non-blocking enhancement — ignore failures.
+        }
       }
     } catch (e) {
       setError('Network error. Check your connection and try again.')
     } finally {
       setLoading(false)
       setNewsLoading(false)
+      setAiLoading(false)
     }
   }, [])
 
@@ -58,18 +95,50 @@ export default function TradingApp() {
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white text-sm font-bold">FX</div>
             <div>
-              <h1 className="text-white font-bold text-base leading-none">FX Signal Pro</h1>
+              <h1 className="text-white font-bold text-base leading-none">ApexFX</h1>
               <p className="text-gray-400 text-xs">Currency Trading Analysis</p>
             </div>
           </div>
-          <div className="hidden sm:flex items-center gap-2 text-xs text-gray-500">
-            <span className="w-2 h-2 rounded-full bg-buy animate-pulse-slow" />
-            <span>Live Data</span>
+          <div className="flex items-center gap-4">
+            <AIStatusBadge />
+            <Link href="/journal" className="text-xs text-gray-400 hover:text-white transition-colors">
+              Journal
+            </Link>
+            <Link href="/account" className="text-xs text-gray-400 hover:text-white transition-colors hidden sm:inline">
+              Account
+            </Link>
+            <Link
+              href="/screenshot"
+              className="text-xs font-semibold text-blue-300 bg-blue-600/20 border border-blue-500/40 px-3 py-1.5 rounded-full hover:bg-blue-600/30 transition-colors"
+            >
+              📸 Screenshot Analyzer
+            </Link>
+            <div className="hidden sm:flex items-center gap-2 text-xs text-gray-500">
+              <span className="w-2 h-2 rounded-full bg-buy animate-pulse-slow" />
+              <span>Live Data</span>
+            </div>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-6">
+        {/* Screenshot analyzer banner */}
+        <Link
+          href="/screenshot"
+          className="block mb-6 card p-4 hover:border-blue-500/50 hover:bg-blue-600/5 transition-all"
+        >
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-xl">📸</div>
+              <div>
+                <p className="text-white font-semibold text-sm">New: AI Screenshot Analysis</p>
+                <p className="text-gray-400 text-xs">Paste a Plus500 / MT4 / TradingView screenshot and get Buy/Sell with entry, TP and SL</p>
+              </div>
+            </div>
+            <span className="text-blue-400 text-sm shrink-0">Try it →</span>
+          </div>
+        </Link>
+
         {/* Search Section */}
         <div className="mb-8">
           <div className="text-center mb-6">
@@ -135,6 +204,9 @@ export default function TradingApp() {
                 <SignalCard signal={analysis.signal} pair={analysis.pair} currentPrice={analysis.currentPrice} />
               </div>
             </div>
+
+            {/* AI analyst verdict (full width) */}
+            <AIInsightCard insight={aiInsight} loading={aiLoading} />
 
             {/* Bottom: Indicators + News */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

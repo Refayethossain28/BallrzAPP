@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Drip — the passive income engine</title>
+<meta name="description" content="Design the machine that pays you while you sleep. Model every passive income stream, watch compounding do its work, and see your freedom date — the month your streams cover your bills.">
+<meta name="theme-color" content="#0a1410">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Drip">
+<style>
+  :root {
+    --bg: #0a1410; --panel: #101d17; --panel2: #15241c; --line: #1f3529;
+    --ink: #e8f4ec; --dim: #8fb3a0; --faint: #5d7d6c;
+    --gold: #f5c04a; --gold2: #ffdd87; --green: #3fd68f; --teal: #39e6b4;
+    --red: #ff7a6e; --radius: 16px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html { color-scheme: dark; }
+  body {
+    background: radial-gradient(120% 90% at 50% -10%, #12241a 0%, var(--bg) 55%) fixed var(--bg);
+    color: var(--ink);
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+    min-height: 100vh;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) calc(24px + env(safe-area-inset-bottom)) env(safe-area-inset-left);
+  }
+  .wrap { max-width: 680px; margin: 0 auto; padding: 20px 16px 40px; }
+
+  header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  header h1 { font-size: 28px; letter-spacing: -0.5px; }
+  header h1 .drop { color: var(--teal); }
+  header .tag { color: var(--dim); font-size: 13px; }
+  .subtag { color: var(--faint); font-size: 12.5px; margin-bottom: 18px; }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin-bottom: 14px; }
+
+  /* hero */
+  .hero { background: linear-gradient(160deg, #14251c 0%, #0f1c15 70%); }
+  .hero .label { color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px; }
+  .hero .big { font-size: 42px; font-weight: 700; letter-spacing: -1px; color: var(--gold2); line-height: 1.1; margin: 2px 0 0; font-variant-numeric: tabular-nums; }
+  .hero .big small { font-size: 17px; color: var(--dim); font-weight: 500; letter-spacing: 0; }
+  .hero .peryear { color: var(--dim); font-size: 13px; margin-top: 2px; }
+
+  .meter { height: 10px; border-radius: 6px; background: #0c1811; border: 1px solid var(--line); overflow: hidden; margin-top: 14px; }
+  .meter > div { height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--green), var(--gold)); transition: width .5s ease; }
+  .meterrow { display: flex; justify-content: space-between; align-items: baseline; margin-top: 6px; font-size: 13px; color: var(--dim); }
+  .meterrow b { color: var(--ink); }
+  .freedom { margin-top: 4px; font-size: 13.5px; color: var(--dim); }
+  .freedom b { color: var(--teal); }
+
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+  .stat { background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+  .stat .k { font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.8px; }
+  .stat .v { font-size: 17px; font-weight: 650; margin-top: 2px; font-variant-numeric: tabular-nums; }
+
+  h2 { font-size: 15px; color: var(--dim); text-transform: uppercase; letter-spacing: 1.2px; margin: 22px 0 10px; display: flex; justify-content: space-between; align-items: center; }
+
+  svg.chart { width: 100%; height: auto; display: block; }
+
+  /* streams */
+  .stream { display: flex; align-items: center; gap: 12px; cursor: pointer; }
+  .stream + .stream { margin-top: 10px; }
+  .stream .icon { font-size: 24px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; flex-shrink: 0; }
+  .stream .mid { flex: 1; min-width: 0; }
+  .stream .name { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stream .sub { font-size: 12.5px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stream .amt { text-align: right; flex-shrink: 0; }
+  .stream .amt .m { font-weight: 700; color: var(--green); font-size: 16px; font-variant-numeric: tabular-nums; }
+  .stream .amt .y { font-size: 11.5px; color: var(--faint); }
+  .empty { color: var(--faint); font-size: 14px; text-align: center; padding: 18px 8px; }
+
+  button { font: inherit; border: 0; cursor: pointer; border-radius: 12px; }
+  .btn { background: linear-gradient(135deg, var(--gold), #e8a92f); color: #16130a; font-weight: 700; padding: 12px 18px; width: 100%; font-size: 15.5px; }
+  .btn:active { transform: scale(0.985); }
+  .btn.ghost { background: var(--panel2); color: var(--ink); border: 1px solid var(--line); font-weight: 600; }
+  .btn.danger { background: transparent; color: var(--red); border: 1px solid rgba(255,122,110,0.35); font-weight: 600; }
+  .rowbtns { display: flex; gap: 10px; margin-top: 12px; }
+
+  /* sheet (add / edit) */
+  .sheetbg { position: fixed; inset: 0; background: rgba(3,8,5,0.6); backdrop-filter: blur(3px); display: none; z-index: 40; }
+  .sheetbg.open { display: block; }
+  .sheet { position: fixed; left: 0; right: 0; bottom: 0; max-height: 88vh; overflow-y: auto; background: #0f1d15; border-top: 1px solid var(--line); border-radius: 20px 20px 0 0; padding: 18px 16px calc(20px + env(safe-area-inset-bottom)); z-index: 50; transform: translateY(105%); transition: transform .28s cubic-bezier(.3,.9,.3,1); }
+  .sheet.open { transform: none; }
+  .sheet .grab { width: 42px; height: 4px; border-radius: 2px; background: var(--line); margin: 0 auto 14px; }
+  .sheet h3 { font-size: 18px; margin-bottom: 12px; }
+  .sheet .inner { max-width: 680px; margin: 0 auto; }
+
+  .presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-bottom: 14px; }
+  .preset { background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 10px; text-align: left; color: var(--ink); }
+  .preset.sel { border-color: var(--gold); background: rgba(245,192,74,0.08); }
+  .preset .pi { font-size: 20px; }
+  .preset .pn { font-size: 12.5px; font-weight: 600; margin-top: 4px; line-height: 1.25; }
+
+  /* what-if + reality rows */
+  .wrow { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 9px 2px; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .wrow:last-child { border-bottom: 0; }
+  .wrow .wl { color: var(--dim); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wrow.best .wl { color: var(--ink); font-weight: 600; }
+  .wrow .wv { text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+  .wrow .wv b { color: var(--green); font-weight: 700; }
+  .wrow .wv small { display: block; color: var(--faint); font-size: 11.5px; }
+  .delta-up { color: var(--green); }
+  .delta-down { color: var(--red); }
+  .sumline { font-size: 12.5px; color: var(--faint); margin-top: 10px; }
+
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 12.5px; color: var(--dim); margin-bottom: 5px; }
+  .field input[type=text], .field input[type=number], .field select {
+    width: 100%; background: #0b160f; border: 1px solid var(--line); color: var(--ink);
+    border-radius: 10px; padding: 11px 12px; font: inherit; font-size: 15px;
+  }
+  .field input:focus, .field select:focus { outline: none; border-color: var(--green); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .hint { font-size: 11.5px; color: var(--faint); margin-top: 4px; }
+  .toggle { display: flex; align-items: center; justify-content: space-between; background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px; margin-bottom: 12px; }
+  .toggle .t { font-size: 14px; }
+  .toggle .t small { display: block; color: var(--faint); font-size: 11.5px; }
+  .switch { position: relative; width: 46px; height: 27px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 100%; height: 100%; position: absolute; margin: 0; cursor: pointer; z-index: 2; }
+  .switch .track { position: absolute; inset: 0; border-radius: 14px; background: #0b160f; border: 1px solid var(--line); transition: background .2s; }
+  .switch .knob { position: absolute; top: 3px; left: 3px; width: 21px; height: 21px; border-radius: 50%; background: var(--faint); transition: all .2s; }
+  .switch input:checked ~ .track { background: rgba(63,214,143,0.25); }
+  .switch input:checked ~ .knob { left: 22px; background: var(--green); }
+
+  .settings .grid2 { margin-bottom: 0; }
+  .honest { font-size: 12.5px; color: var(--faint); line-height: 1.55; margin-top: 16px; padding: 12px 14px; border: 1px dashed var(--line); border-radius: 12px; }
+  .honest b { color: var(--dim); }
+  footer { text-align: center; color: var(--faint); font-size: 12px; margin-top: 26px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><span class="drop">💧</span> Drip</h1>
+    <span class="tag">the passive income engine</span>
+  </header>
+  <div class="subtag">Money while you sleep isn’t magic — it’s a machine: capital → income → back into capital. Build yours here.</div>
+
+  <div class="card hero">
+    <div class="label">Your drip, this month</div>
+    <div class="big" id="incomeNow">£0<small>/mo</small></div>
+    <div class="peryear" id="incomeYear">£0 a year · £0 capital working for you</div>
+    <div class="meter"><div id="covBar" style="width:0%"></div></div>
+    <div class="meterrow"><span>Bills covered by passive income</span><b id="covPct">0%</b></div>
+    <div class="freedom" id="freedomLine">Set your monthly expenses to see your freedom date.</div>
+    <div class="stats">
+      <div class="stat"><div class="k">Passivity</div><div class="v" id="stPass">—</div></div>
+      <div class="stat"><div class="k">Spread</div><div class="v" id="stDiv">—</div></div>
+      <div class="stat"><div class="k">Upkeep</div><div class="v" id="stHrs">—</div></div>
+    </div>
+  </div>
+
+  <h2><span>The next <span id="hzLabel">10 years</span></span></h2>
+  <div class="card" id="chartCard">
+    <svg class="chart" id="chart" viewBox="0 0 640 240" role="img" aria-label="Projected monthly passive income vs expenses"></svg>
+  </div>
+
+  <h2><span>What if?</span></h2>
+  <div class="card">
+    <div id="whatifRows"></div>
+    <div class="field" style="margin:12px 0 0"><label>Extra £/mo to test (goes to your highest-yield stream)</label>
+      <input type="number" id="setExtra" min="0" step="25" inputmode="decimal"></div>
+  </div>
+
+  <h2>Income streams <span id="streamCount" style="text-transform:none;letter-spacing:0"></span></h2>
+  <div class="card" id="streamList"></div>
+  <button class="btn" id="addBtn">＋ Add a stream</button>
+
+  <h2><span>Plan vs reality</span></h2>
+  <div class="card">
+    <div id="realityRows"></div>
+    <button class="btn ghost" id="logBtn" style="margin-top:12px">✍️ Log what actually dripped</button>
+  </div>
+
+  <h2>Your numbers</h2>
+  <div class="card settings">
+    <div class="grid2">
+      <div class="field"><label>Monthly expenses (£)</label><input type="number" id="setExpenses" min="0" step="50" inputmode="decimal"></div>
+      <div class="field"><label>Inflation (%/yr)</label><input type="number" id="setInflation" step="0.1" inputmode="decimal"></div>
+    </div>
+    <div class="field" style="margin:0"><label>Horizon</label>
+      <select id="setHorizon">
+        <option value="60">5 years</option>
+        <option value="120" selected>10 years</option>
+        <option value="240">20 years</option>
+        <option value="360">30 years</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="honest">
+    <b>Honesty note.</b> Drip is a planner, not a promise. Every figure is your
+    own assumption; real yields move, tenants leave, royalties decay. Nothing
+    here is financial advice — the engine just does the compounding arithmetic
+    transparently (and is unit-tested to do it exactly).
+  </div>
+
+  <footer>Runs entirely on your device · no account · works offline · installable</footer>
+</div>
+
+<!-- add / edit sheet -->
+<div class="sheetbg" id="sheetBg"></div>
+<div class="sheet" id="sheet">
+  <div class="grab"></div>
+  <div class="inner">
+    <h3 id="sheetTitle">Add a stream</h3>
+    <div class="presets" id="presetGrid"></div>
+    <div class="field"><label>Name</label><input type="text" id="fName" maxlength="40"></div>
+    <div class="grid2">
+      <div class="field"><label>Capital invested (£)</label><input type="number" id="fCapital" min="0" step="100" inputmode="decimal"></div>
+      <div class="field"><label>Yield (%/yr on capital)</label><input type="number" id="fYield" min="0" step="0.1" inputmode="decimal"></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label>Direct income (£/mo)</label><input type="number" id="fIncome" min="0" step="10" inputmode="decimal">
+        <div class="hint">For royalties/products with no capital yield</div></div>
+      <div class="field"><label>Income growth (%/yr)</label><input type="number" id="fIncomeGrowth" step="0.5" inputmode="decimal">
+        <div class="hint">Dividend growth / rent reviews; negative = decay</div></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label>Capital growth (%/yr)</label><input type="number" id="fCapGrowth" step="0.5" inputmode="decimal"></div>
+      <div class="field"><label>You add (£/mo)</label><input type="number" id="fContrib" min="0" step="50" inputmode="decimal"></div>
+    </div>
+    <div class="toggle">
+      <div class="t">Reinvest the income (DRIP)<small>Compounding lives here — income buys more capital</small></div>
+      <div class="switch"><input type="checkbox" id="fReinvest"><div class="track"></div><div class="knob"></div></div>
+    </div>
+    <div class="field"><label>Honest upkeep (hours/month)</label><input type="number" id="fHours" min="0" step="0.5" inputmode="decimal">
+      <div class="hint">“Passive” is a spectrum — this dial measures it</div></div>
+    <div class="rowbtns">
+      <button class="btn" id="saveBtn">Save stream</button>
+      <button class="btn danger" id="deleteBtn" style="display:none;width:auto;padding:12px 16px">Delete</button>
+    </div>
+    <div class="rowbtns"><button class="btn ghost" id="cancelBtn">Cancel</button></div>
+  </div>
+</div>
+
+<!-- log-actuals sheet -->
+<div class="sheet" id="logSheet">
+  <div class="grab"></div>
+  <div class="inner">
+    <h3>What actually dripped?</h3>
+    <div class="field"><label>Month</label><input type="month" id="logMonth"></div>
+    <div id="logFields"></div>
+    <div class="rowbtns"><button class="btn" id="logSaveBtn">Save</button></div>
+    <div class="rowbtns"><button class="btn ghost" id="logCancelBtn">Cancel</button></div>
+  </div>
+</div>
+
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+  var E = window.Drip;
+  var LS = 'drip.v1';
+  var $ = function (id) { return document.getElementById(id); };
+  var fmtGBP = function (x) {
+    x = Math.round(x);
+    return '£' + String(x).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  };
+
+  function startYM() {
+    var d = new Date();
+    return { y: d.getFullYear(), m: d.getMonth() + 1 };
+  }
+
+  /* ---- state ---- */
+  var state = load();
+  function load() {
+    try {
+      var raw = localStorage.getItem(LS);
+      if (raw) {
+        var s = JSON.parse(raw);
+        if (s && s.streams) {
+          // migrations for states saved before logging / what-if existed
+          s.entries = s.entries || [];
+          if (s.whatIfExtra == null) s.whatIfExtra = 100;
+          s.planStart = s.planStart || startYM();
+          return s;
+        }
+      }
+    } catch (e) {}
+    // First run: a small, honest starter portfolio to make the app legible.
+    return {
+      expenses: 1800, inflation: 2.5, horizon: 120, nextId: 3,
+      entries: [], whatIfExtra: 100, planStart: startYM(),
+      streams: [
+        Object.assign({}, E.PRESETS.savings,  { id: '1', type: 'savings',  contribMonthly: 100 }),
+        Object.assign({}, E.PRESETS.dividend, { id: '2', type: 'dividend', contribMonthly: 150 })
+      ]
+    };
+  }
+  function save() { try { localStorage.setItem(LS, JSON.stringify(state)); } catch (e) {} }
+
+  /* ---- dashboard ---- */
+  function render() {
+    var s = E.summarize(state.streams, {
+      months: state.horizon, expenses: state.expenses,
+      inflationPct: state.inflation, start: startYM()
+    });
+
+    $('incomeNow').innerHTML = fmtGBP(s.incomeNow) + '<small>/mo</small>';
+    $('incomeYear').textContent = fmtGBP(s.yearNow) + ' a year · ' + fmtGBP(s.capitalNow) + ' capital working for you';
+
+    var covPct = Math.min(100, Math.round(s.coverage * 100));
+    $('covBar').style.width = covPct + '%';
+    $('covPct').textContent = Math.round(s.coverage * 100) + '%';
+
+    var fl = $('freedomLine');
+    if (!state.expenses) fl.innerHTML = 'Set your monthly expenses to see your freedom date.';
+    else if (s.crossoverIndex === 0) fl.innerHTML = '🏁 <b>You are there</b> — the drip already covers your bills.';
+    else if (s.crossoverIndex > 0) fl.innerHTML = '🏁 Freedom date: <b>' + s.freedomLabel + '</b> — when the drip covers your bills.';
+    else fl.innerHTML = 'No freedom date inside ' + (state.horizon / 12) + ' years yet — raise the drip: reinvest, contribute, add streams.';
+
+    $('stPass').textContent = state.streams.length ? Math.round(s.passivity.score * 100) + '%' : '—';
+    $('stDiv').textContent = state.streams.length > 1 ? Math.round(s.diversification * 100) + '%' : '—';
+    $('stHrs').textContent = s.passivity.hoursMonthly > 0
+      ? s.passivity.hoursMonthly + 'h/mo' + (s.passivity.hourly != null ? ' · ' + fmtGBP(s.passivity.hourly) + '/h' : '')
+      : 'none 😴';
+
+    $('hzLabel').textContent = (state.horizon / 12) + ' years';
+    drawChart(s.projection);
+    renderWhatIf();
+    renderStreams();
+    renderReality();
+    save();
+  }
+
+  /* ---- what if? ---- */
+  function renderWhatIf() {
+    if (!state.streams.length) {
+      $('whatifRows').innerHTML = '<div class="empty">Add a stream first — then compare the habits that grow it.</div>';
+      return;
+    }
+    var opts = { months: state.horizon, expenses: state.expenses, inflationPct: state.inflation };
+    var rows = E.compare(state.streams, opts, state.whatIfExtra);
+    var base = rows[0].incomeEnd;
+    var bestKey = rows.reduce(function (a, r) { return r.incomeEnd > a.incomeEnd ? r : a; }, rows[0]).key;
+    $('whatifRows').innerHTML = rows.map(function (r) {
+      var lift = r.incomeEnd - base;
+      var freedom = r.crossoverIndex < 0 ? 'no freedom date yet'
+        : (r.crossoverIndex === 0 ? 'free now' : '🏁 ' + E.monthLabel(startYM(), r.crossoverIndex));
+      return '<div class="wrow' + (r.key === bestKey && r.key !== 'base' ? ' best' : '') + '">' +
+        '<span class="wl">' + esc(r.label) + '</span>' +
+        '<span class="wv"><b>' + fmtGBP(r.incomeEnd) + '/mo</b>' +
+        (r.key === 'base' ? '' : ' <span class="' + (lift >= 1 ? 'delta-up' : '') + '">' + (lift >= 1 ? '+' + fmtGBP(lift) : '±£0') + '</span>') +
+        '<small>in ' + (state.horizon / 12) + ' yrs · ' + freedom + '</small></span></div>';
+    }).join('');
+  }
+
+  /* ---- plan vs reality ---- */
+  function ymNice(ym) {
+    var d = E.parseYM(ym);
+    return d ? E.monthLabel(d, 0) : ym;
+  }
+
+  function renderReality() {
+    var el = $('realityRows');
+    $('logBtn').style.display = state.streams.length ? '' : 'none';
+    if (!state.entries.length) {
+      el.innerHTML = '<div class="empty">Each month, log what your streams actually paid — Drip shows how reality tracks the plan.</div>';
+      return;
+    }
+    var elapsed = (E.monthIndex(state.planStart, E.ymKey(startYM())) || 0) + 1;
+    var tr = E.trackRecord(state.entries, state.streams, {
+      months: Math.max(state.horizon, elapsed), expenses: state.expenses,
+      inflationPct: state.inflation, start: state.planStart
+    });
+    el.innerHTML = tr.rows.slice(0, 8).map(function (r) {
+      var d = r.delta;
+      var vs = r.projected == null ? '<small>plan hadn’t started</small>'
+        : '<small>plan ' + fmtGBP(r.projected) + ' · <span class="' + (d >= 0 ? 'delta-up' : 'delta-down') + '">' +
+          (d >= 0 ? '+' : '−') + fmtGBP(Math.abs(d)) + '</span></small>';
+      return '<div class="wrow"><span class="wl">' + esc(ymNice(r.ym)) + '</span>' +
+        '<span class="wv"><b>' + fmtGBP(r.actual) + '</b>' + vs + '</span></div>';
+    }).join('');
+    if (tr.summary.months > 0) {
+      el.innerHTML += '<div class="sumline">' + tr.summary.months + ' month' + (tr.summary.months > 1 ? 's' : '') +
+        ' tracked · actual ' + fmtGBP(tr.summary.actualTotal) + ' vs plan ' + fmtGBP(tr.summary.projectedTotal) +
+        (tr.summary.ratio != null ? ' · ' + Math.round(tr.summary.ratio * 100) + '% of plan' : '') + '</div>';
+    }
+  }
+
+  /* ---- chart: projected income vs expenses ---- */
+  function drawChart(p) {
+    var W = 640, H = 240, padL = 8, padR = 8, padT = 16, padB = 26;
+    var rows = p.rows;
+    var maxY = 1;
+    for (var i = 0; i < rows.length; i++) maxY = Math.max(maxY, rows[i].income, rows[i].expenses);
+    maxY *= 1.08;
+    var X = function (i) { return padL + (W - padL - padR) * (rows.length === 1 ? 0 : i / (rows.length - 1)); };
+    var Y = function (v) { return padT + (H - padT - padB) * (1 - v / maxY); };
+    var path = function (key) {
+      var d = '';
+      for (var i = 0; i < rows.length; i++) d += (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(rows[i][key]).toFixed(1);
+      return d;
+    };
+    var inc = path('income');
+    var area = inc + 'L' + X(rows.length - 1).toFixed(1) + ' ' + Y(0) + 'L' + X(0).toFixed(1) + ' ' + Y(0) + 'Z';
+    var svg = '<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" stop-color="#3fd68f" stop-opacity="0.35"/><stop offset="1" stop-color="#3fd68f" stop-opacity="0.02"/></linearGradient></defs>';
+    svg += '<path d="' + area + '" fill="url(#g)"/>';
+    if (state.expenses > 0) svg += '<path d="' + path('expenses') + '" fill="none" stroke="#f5c04a" stroke-width="2" stroke-dasharray="5 5" opacity="0.9"/>';
+    svg += '<path d="' + inc + '" fill="none" stroke="#3fd68f" stroke-width="2.5" stroke-linejoin="round"/>';
+    if (p.crossoverIndex > 0) {
+      var cx = X(p.crossoverIndex), cy = Y(rows[p.crossoverIndex].income);
+      svg += '<line x1="' + cx + '" y1="' + Y(0) + '" x2="' + cx + '" y2="' + cy + '" stroke="#39e6b4" stroke-width="1" stroke-dasharray="3 4" opacity="0.7"/>';
+      svg += '<circle cx="' + cx + '" cy="' + cy + '" r="5" fill="#39e6b4"/>';
+      svg += '<text x="' + Math.min(cx, W - 70) + '" y="' + (Y(0) + 18) + '" fill="#39e6b4" font-size="12" text-anchor="middle">🏁 ' + esc(E.monthLabel(startYM(), p.crossoverIndex)) + '</text>';
+    }
+    // end labels
+    var last = rows[rows.length - 1];
+    svg += '<text x="' + (W - padR) + '" y="' + Math.max(12, Y(last.income) - 8) + '" fill="#3fd68f" font-size="12" text-anchor="end">' + fmtGBP(last.income) + '/mo</text>';
+    if (state.expenses > 0) svg += '<text x="' + padL + '" y="' + Math.max(12, Y(rows[0].expenses) - 8) + '" fill="#f5c04a" font-size="12">bills</text>';
+    $('chart').innerHTML = svg;
+  }
+
+  /* ---- streams list ---- */
+  function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  function streamSub(s) {
+    var n = E.normalize(s), bits = [];
+    if (E.isYieldStream(n)) bits.push(fmtGBP(n.capital) + ' @ ' + n.yieldPct + '%');
+    if (!E.isYieldStream(n) && n.incomeMonthly > 0) bits.push('direct income' + (n.incomeGrowthPct ? ', ' + (n.incomeGrowthPct > 0 ? '+' : '') + n.incomeGrowthPct + '%/yr' : ''));
+    if (n.contribMonthly > 0) bits.push('+' + fmtGBP(n.contribMonthly) + '/mo in');
+    if (n.reinvest) bits.push('DRIP ♻');
+    if (n.hoursMonthly > 0) bits.push(n.hoursMonthly + 'h upkeep');
+    return bits.join(' · ') || 'not earning yet';
+  }
+
+  function renderStreams() {
+    var el = $('streamList');
+    $('streamCount').textContent = state.streams.length ? '· ' + state.streams.length : '';
+    if (!state.streams.length) {
+      el.innerHTML = '<div class="empty">No streams yet. Add your first — even a savings account counts.</div>';
+      return;
+    }
+    el.innerHTML = state.streams.map(function (s) {
+      var inc = E.monthlyIncome(s);
+      var icon = (E.PRESETS[s.type] || E.PRESETS.custom).icon;
+      return '<div class="stream" data-id="' + esc(s.id) + '" role="button" tabindex="0">' +
+        '<div class="icon">' + icon + '</div>' +
+        '<div class="mid"><div class="name">' + esc(s.name) + '</div><div class="sub">' + esc(streamSub(s)) + '</div></div>' +
+        '<div class="amt"><div class="m">' + fmtGBP(inc) + '/mo</div><div class="y">' + fmtGBP(inc * 12) + '/yr</div></div></div>';
+    }).join('');
+  }
+
+  /* ---- sheet (add / edit) ---- */
+  var editingId = null, chosenType = 'savings';
+
+  function openSheet(id) {
+    editingId = id;
+    var s = id != null ? state.streams.filter(function (x) { return x.id === id; })[0] : null;
+    $('sheetTitle').textContent = s ? 'Edit stream' : 'Add a stream';
+    $('deleteBtn').style.display = s ? '' : 'none';
+    chosenType = s ? s.type : 'savings';
+    renderPresets();
+    fillForm(s || Object.assign({ type: 'savings' }, E.PRESETS.savings));
+    $('sheetBg').classList.add('open');
+    $('sheet').classList.add('open');
+  }
+  function closeSheet() {
+    $('sheetBg').classList.remove('open');
+    $('sheet').classList.remove('open');
+    $('logSheet').classList.remove('open');
+  }
+
+  /* ---- log-actuals sheet ---- */
+  function openLogSheet() {
+    $('logMonth').value = E.ymKey(startYM());
+    renderLogFields();
+    $('sheetBg').classList.add('open');
+    $('logSheet').classList.add('open');
+  }
+
+  function renderLogFields() {
+    var ym = $('logMonth').value;
+    var byStream = {};
+    state.entries.forEach(function (e) { if (e.ym === ym) byStream[e.streamId] = e.amount; });
+    $('logFields').innerHTML = state.streams.map(function (s) {
+      var icon = (E.PRESETS[s.type] || E.PRESETS.custom).icon;
+      var val = byStream[s.id] != null ? byStream[s.id] : '';
+      return '<div class="field"><label>' + icon + ' ' + esc(s.name) + ' — £ received</label>' +
+        '<input type="number" min="0" step="1" inputmode="decimal" data-log="' + esc(s.id) + '"' +
+        ' value="' + val + '" placeholder="' + Math.round(E.monthlyIncome(s)) + ' expected"></div>';
+    }).join('');
+  }
+
+  function renderPresets() {
+    $('presetGrid').innerHTML = Object.keys(E.PRESETS).map(function (t) {
+      var p = E.PRESETS[t];
+      return '<button class="preset' + (t === chosenType ? ' sel' : '') + '" data-type="' + t + '">' +
+        '<div class="pi">' + p.icon + '</div><div class="pn">' + esc(p.name) + '</div></button>';
+    }).join('');
+  }
+
+  function fillForm(s) {
+    $('fName').value = s.name || '';
+    $('fCapital').value = s.capital || 0;
+    $('fYield').value = s.yieldPct || 0;
+    $('fIncome').value = s.incomeMonthly || 0;
+    $('fIncomeGrowth').value = s.incomeGrowthPct || 0;
+    $('fCapGrowth').value = s.capitalGrowthPct || 0;
+    $('fContrib').value = s.contribMonthly || 0;
+    $('fReinvest').checked = !!s.reinvest;
+    $('fHours').value = s.hoursMonthly || 0;
+  }
+
+  function readForm() {
+    return {
+      id: editingId != null ? editingId : String(state.nextId++),
+      type: chosenType,
+      name: $('fName').value.trim() || E.PRESETS[chosenType].name,
+      capital: +$('fCapital').value || 0,
+      yieldPct: +$('fYield').value || 0,
+      incomeMonthly: +$('fIncome').value || 0,
+      incomeGrowthPct: +$('fIncomeGrowth').value || 0,
+      capitalGrowthPct: +$('fCapGrowth').value || 0,
+      contribMonthly: +$('fContrib').value || 0,
+      reinvest: $('fReinvest').checked,
+      hoursMonthly: +$('fHours').value || 0
+    };
+  }
+
+  /* ---- wiring ---- */
+  $('addBtn').addEventListener('click', function () { openSheet(null); });
+  $('cancelBtn').addEventListener('click', closeSheet);
+  $('sheetBg').addEventListener('click', closeSheet);
+
+  $('presetGrid').addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('.preset') : null;
+    if (!b) return;
+    chosenType = b.getAttribute('data-type');
+    renderPresets();
+    if (editingId == null) fillForm(Object.assign({ type: chosenType }, E.PRESETS[chosenType]));
+  });
+
+  $('saveBtn').addEventListener('click', function () {
+    var s = readForm();
+    var i = state.streams.findIndex(function (x) { return x.id === s.id; });
+    if (i >= 0) state.streams[i] = s; else state.streams.push(s);
+    closeSheet(); render();
+  });
+
+  $('deleteBtn').addEventListener('click', function () {
+    state.streams = state.streams.filter(function (x) { return x.id !== editingId; });
+    closeSheet(); render();
+  });
+
+  $('streamList').addEventListener('click', function (e) {
+    var row = e.target.closest ? e.target.closest('.stream') : null;
+    if (row) openSheet(row.getAttribute('data-id'));
+  });
+  $('streamList').addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var row = e.target.closest ? e.target.closest('.stream') : null;
+    if (row) { e.preventDefault(); openSheet(row.getAttribute('data-id')); }
+  });
+
+  $('logBtn').addEventListener('click', openLogSheet);
+  $('logCancelBtn').addEventListener('click', closeSheet);
+  $('logMonth').addEventListener('change', renderLogFields);
+
+  $('logSaveBtn').addEventListener('click', function () {
+    var ym = $('logMonth').value;
+    if (!E.parseYM(ym)) { closeSheet(); return; }
+    state.entries = state.entries.filter(function (e) { return e.ym !== ym; });
+    var inputs = $('logFields').querySelectorAll('input[data-log]');
+    for (var i = 0; i < inputs.length; i++) {
+      var amt = +inputs[i].value;
+      if (inputs[i].value !== '' && amt >= 0) {
+        state.entries.push({ ym: ym, streamId: inputs[i].getAttribute('data-log'), amount: amt });
+      }
+    }
+    closeSheet(); render();
+  });
+
+  $('setExtra').addEventListener('change', function () {
+    state.whatIfExtra = Math.max(0, +$('setExtra').value || 0);
+    render();
+  });
+
+  [['setExpenses', 'expenses'], ['setInflation', 'inflation'], ['setHorizon', 'horizon']].forEach(function (pair) {
+    var el = $(pair[0]);
+    el.addEventListener('change', function () {
+      state[pair[1]] = +el.value || 0;
+      if (pair[1] === 'horizon' && !state.horizon) state.horizon = 120;
+      render();
+    });
+  });
+
+  /* ---- init ---- */
+  $('setExpenses').value = state.expenses;
+  $('setInflation').value = state.inflation;
+  $('setHorizon').value = String(state.horizon);
+  $('setExtra').value = state.whatIfExtra;
+  render();
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').catch(function () {});
+    });
+  }
+})();
+</script>
+</body>
+</html>

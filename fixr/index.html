@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Fixr — Luxury Ground-Transport & Concierge OS (Phase 1 prototype)</title>
+<style>
+  :root{
+    --bg:#0b0d12; --panel:#13161d; --panel2:#181c25; --line:#262c39;
+    --ink:#e8ecf4; --muted:#8a93a6; --gold:#c8a35b; --gold2:#e3c585;
+    --green:#3ecf8e; --amber:#e3b341; --red:#e5534b; --blue:#5b8def;
+    --radius:12px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  header{display:flex;align-items:center;justify-content:space-between;
+    padding:14px 22px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:10}
+  .brand{display:flex;align-items:center;gap:12px}
+  .logo{width:30px;height:30px;border-radius:8px;
+    background:linear-gradient(135deg,var(--gold),#7a5e26);display:grid;place-items:center;
+    font-weight:800;color:#0b0d12}
+  .brand h1{font-size:16px;margin:0;letter-spacing:.4px}
+  .brand small{display:block;color:var(--muted);font-weight:400;font-size:11px;letter-spacing:.3px}
+  .stat-row{display:flex;gap:26px}
+  .stat b{display:block;font-size:18px}
+  .stat span{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.6px}
+  main{display:grid;grid-template-columns:360px 1fr 300px;gap:16px;padding:16px;max-width:1500px;margin:0 auto}
+  .col{display:flex;flex-direction:column;gap:14px;min-width:0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  .card h2{margin:0;padding:12px 16px;font-size:12px;text-transform:uppercase;letter-spacing:.8px;
+    color:var(--muted);border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+  .card .body{padding:14px 16px}
+  textarea{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+    color:var(--ink);padding:10px;resize:vertical;font:inherit;min-height:76px}
+  textarea:focus{outline:none;border-color:var(--gold)}
+  button{font:inherit;cursor:pointer;border:none;border-radius:8px;padding:9px 14px;font-weight:600}
+  .btn-gold{background:linear-gradient(135deg,var(--gold2),var(--gold));color:#0b0d12;width:100%}
+  .btn-gold:hover{filter:brightness(1.07)}
+  .btn-ghost{background:transparent;border:1px solid var(--line);color:var(--muted);padding:6px 10px;font-size:12px}
+  .btn-ghost:hover{border-color:var(--gold);color:var(--gold2)}
+  .samples{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .chip{font-size:11.5px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+    padding:5px 9px;border-radius:999px;cursor:pointer}
+  .chip:hover{border-color:var(--gold);color:var(--gold2)}
+  .parsed{margin-top:12px;border-top:1px dashed var(--line);padding-top:12px;display:none}
+  .field{display:flex;justify-content:space-between;gap:10px;padding:4px 0;font-size:13px}
+  .field span{color:var(--muted)}
+  .field b{text-align:right}
+  .field.low b{color:var(--amber)}
+  .field.low::after{content:"review";font-size:9px;color:var(--amber);border:1px solid var(--amber);
+    border-radius:4px;padding:0 4px;margin-left:6px;align-self:center}
+  .quote{margin-top:12px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:none}
+  .quote .total{display:flex;justify-content:space-between;font-size:18px;font-weight:700;
+    border-top:1px solid var(--line);margin-top:8px;padding-top:8px}
+  .quote .line{display:flex;justify-content:space-between;color:var(--muted);font-size:12px;padding:2px 0}
+  .typetag{font-size:10px;padding:2px 7px;border-radius:5px;font-weight:700;letter-spacing:.4px}
+  .t-transfer{background:rgba(91,141,239,.15);color:#a9c4ff}
+  .t-hourly{background:rgba(62,207,142,.15);color:#7fe7b8}
+  .t-airport{background:rgba(227,179,65,.15);color:#f0d28a}
+  .t-concierge{background:rgba(200,163,91,.18);color:var(--gold2)}
+  /* board */
+  .lanes{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+  .lane{background:var(--panel2);border:1px solid var(--line);border-radius:10px;min-height:120px;padding:8px}
+  .lane h3{margin:0 0 8px;font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);
+    display:flex;justify-content:space-between}
+  .lane h3 i{font-style:normal;background:var(--panel);border-radius:6px;padding:0 6px;color:var(--ink)}
+  .req{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--blue);
+    border-radius:8px;padding:9px;margin-bottom:8px;cursor:pointer;transition:.12s}
+  .req:hover{border-color:var(--gold);transform:translateY(-1px)}
+  .req .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}
+  .req .who{font-weight:600;font-size:13px}
+  .req .rt{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .req .amt{font-size:12px;color:var(--gold2);font-weight:700}
+  .req .sla{font-size:10px;margin-top:4px;display:flex;align-items:center;gap:5px;color:var(--muted)}
+  .dot{width:7px;height:7px;border-radius:50%}
+  .ok{background:var(--green)} .warn{background:var(--amber)} .late{background:var(--red)}
+  .req.concierge{border-left-color:var(--gold)}
+  /* drivers + audit */
+  .driver{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+  .driver:last-child{border:none}
+  .av{width:30px;height:30px;border-radius:50%;background:var(--panel2);display:grid;place-items:center;font-weight:700;color:var(--gold2)}
+  .driver .meta{flex:1;min-width:0}
+  .driver .meta b{font-size:13px}
+  .driver .meta span{display:block;color:var(--muted);font-size:11px}
+  .pill{font-size:10px;padding:2px 8px;border-radius:999px}
+  .p-av{background:rgba(62,207,142,.15);color:var(--green)}
+  .p-on{background:rgba(227,179,65,.15);color:var(--amber)}
+  .audit{font-size:12px;max-height:260px;overflow:auto}
+  .audit .e{display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)}
+  .audit .e:last-child{border:none}
+  .audit time{color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .audit .a{color:var(--ink)}
+  .audit .a em{color:var(--gold2);font-style:normal}
+  /* modal */
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;place-items:center;z-index:50}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:min(520px,92vw);
+    max-height:88vh;overflow:auto}
+  .modal .body{padding:18px 20px}
+  .modal h2{border-bottom:1px solid var(--line)}
+  .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  .actions button{flex:1;min-width:120px}
+  .note{color:var(--muted);font-size:11.5px;margin-top:8px}
+  .foot{max-width:1500px;margin:0 auto;padding:8px 16px 30px;color:var(--muted);font-size:11.5px}
+  .foot code{color:var(--gold2)}
+  a{color:var(--gold2)}
+  select{background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:5px}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="logo">F</div>
+    <div><h1>FIXR</h1><small>Luxury ground-transport &amp; concierge OS · Phase 1 prototype</small></div>
+  </div>
+  <div class="stat-row">
+    <div class="stat"><b id="s-open">0</b><span>Open requests</span></div>
+    <div class="stat"><b id="s-rev">$0</b><span>Booked today</span></div>
+    <div class="stat"><b id="s-drv">0</b><span>Drivers live</span></div>
+  </div>
+</header>
+
+<main>
+  <!-- LEFT: AI intake -->
+  <div class="col">
+    <div class="card">
+      <h2>AI Inbound Intake <span class="typetag t-transfer" id="intake-type">—</span></h2>
+      <div class="body">
+        <textarea id="inbound" placeholder="Paste what the client actually texted / emailed / said…"></textarea>
+        <button class="btn-gold" style="margin-top:10px" onclick="parseInbound()">⚡ Parse into a booking</button>
+        <div class="samples" id="samples"></div>
+
+        <div class="parsed" id="parsed">
+          <div id="fields"></div>
+          <div class="quote" id="quote"></div>
+          <button class="btn-gold" style="margin-top:12px" onclick="confirmRequest()">Confirm &amp; send to dispatch →</button>
+          <div class="note">Nothing is auto-dispatched. AI drafts; you own the outcome.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Drivers / Resources</h2>
+      <div class="body" id="drivers"></div>
+    </div>
+  </div>
+
+  <!-- CENTER: dispatch board -->
+  <div class="col">
+    <div class="card">
+      <h2>Dispatch Board <span style="font-weight:400;text-transform:none;letter-spacing:0">click a request to manage</span></h2>
+      <div class="body">
+        <div class="lanes" id="lanes"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: audit -->
+  <div class="col">
+    <div class="card">
+      <h2>Request Audit Log</h2>
+      <div class="body audit" id="audit"></div>
+    </div>
+    <div class="card">
+      <h2>Why this wins</h2>
+      <div class="body" style="font-size:12.5px;color:var(--muted)">
+        <p style="margin:0 0 8px"><b style="color:var(--ink)">Free text → booking</b> in one tap. Incumbents make you type every field.</p>
+        <p style="margin:0 0 8px"><b style="color:var(--ink)">One <code style="color:var(--gold2)">request</code> primitive.</b> A ride is <code style="color:var(--gold2)">type:transfer</code>; a dinner is <code style="color:var(--gold2)">type:concierge</code> — same engine. Try the concierge sample.</p>
+        <p style="margin:0 0 8px"><b style="color:var(--ink)">Owned audit trail.</b> Survives staff turnover — the WhatsApp pain-killer.</p>
+        <p style="margin:0"><b style="color:var(--ink)">Processor-agnostic payments.</b> Your Stripe, no forced merchant, no per-ride rake.</p>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- request modal -->
+<div class="modal-bg" id="modal-bg" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <h2 id="m-title">Request</h2>
+    <div class="body" id="m-body"></div>
+  </div>
+</div>
+
+<div class="foot">
+  Prototype only — runs fully offline, no API keys. The "AI" here is a deterministic heuristic parser standing in for a
+  single structured-output LLM call (<code>raw_inbound_text → parsed_payload</code>). Production stack &amp; data model in
+  <code>fixr/README.md</code>. Go-to-market in <code>fixr/GTM.md</code>, unit economics in <code>fixr/MODEL.md</code>.
+</div>
+
+<script>
+/* ---------- domain model (mirrors README data model) ---------- */
+const STAGES = ["quoted","confirmed","assigned","in_progress","completed"];
+const STAGE_LABEL = {quoted:"Quoted",confirmed:"Confirmed",assigned:"Assigned",in_progress:"En route",completed:"Completed"};
+
+let drivers = [
+  {id:"d1",name:"Marcus Hale",vehicle:"Cadillac Escalade",status:"available"},
+  {id:"d2",name:"Sofia Reyes",vehicle:"Mercedes S-Class",status:"available"},
+  {id:"d3",name:"Daniel Cho",vehicle:"Sprinter Executive",status:"on_trip"},
+];
+let requests = [];
+let draft = null;
+let seq = 100;
+
+const RATES = { base:45, perMile:3.25, airportFee:35, hourly:95,
+  vehicle:{ "Sedan":1, "Mercedes S-Class":1.4, "SUV":1.3, "Cadillac Escalade":1.45,
+            "Sprinter Executive":1.8, "Any":1.2 } };
+
+const SAMPLES = [
+  {label:"✈ JFK airport run", text:"Need a Suburban to JFK Thursday 6am for Mr. Alvarez, 2 passengers 3 bags, flight DL472"},
+  {label:"⏱ Hourly / as-directed", text:"S-Class for Mrs. Lin tomorrow 7pm, as directed about 4 hours, dinner then theater downtown"},
+  {label:"🚘 Point to point", text:"Sedan from The Peninsula to 432 Park Ave at 9:15am, just one passenger"},
+  {label:"🍽 Concierge (Phase 3)", text:"Can you get Mr. Alvarez a table for 4 at Carbone Friday 8pm, quiet corner booth"},
+];
+
+/* ---------- heuristic "AI" parser ---------- */
+const AIRPORTS = ["JFK","LGA","EWR","LAX","SFO","ORD","MIA","BOS","DCA","IAD","ATL","TEB","VNY"];
+function nowHHMM(){return new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});}
+
+function parseInbound(){
+  const raw = document.getElementById("inbound").value.trim();
+  if(!raw){ document.getElementById("inbound").focus(); return; }
+  const t = raw.toLowerCase();
+  const conf = {};
+  // type
+  let type="transfer";
+  const airport = AIRPORTS.find(a=>raw.toUpperCase().includes(a));
+  const isConcierge = /\b(table|reservation|book .* at|tickets|restaurant|dinner reservation|carbone|booth)\b/.test(t) && !/\b(car|suburban|sedan|suv|sprinter|s-class|pickup|drop)\b/.test(t);
+  if(isConcierge) type="concierge";
+  else if(/\b(hourly|as directed|as-directed|hours|hrs)\b/.test(t)) type="hourly";
+  else if(airport || /\bflight\b/.test(t)) type="airport";
+
+  // client
+  let client = (raw.match(/(?:mr\.?|mrs\.?|ms\.?|dr\.?)\s+[A-Z][a-z]+/i)||[])[0] || "New client";
+  conf.client = /(mr|mrs|ms|dr)/i.test(client)?.95:.4;
+
+  // datetime
+  let when = (raw.match(/\b(\d{1,2}(:\d{2})?\s?(am|pm))\b/i)||[])[0] || "";
+  let day  = (raw.match(/\b(today|tomorrow|mon|tue|wed|thu|fri|sat|sun)[a-z]*\b/i)||[])[0] || "";
+  let datetime = [day,when].filter(Boolean).join(" ") || "—";
+  conf.datetime = (when?.6:0)+(day?.35:0)+ (datetime==="—"?0:.05);
+
+  // pax
+  let pax = (raw.match(/(\d+)\s*(passenger|pax|people|guest)/i)||[])[1] || (raw.match(/party of (\d+)/i)||[])[1] || "1";
+  conf.pax = /passenger|pax|people|guest|party/i.test(t)?.9:.5;
+
+  // flight
+  let flight = (raw.match(/\b([A-Z]{2}\s?\d{2,4})\b/)||[])[1]?.replace(/\s/,"") || "";
+
+  // vehicle
+  let vehicle="Any";
+  if(/suburban|escalade|suv/i.test(t)) vehicle="Cadillac Escalade";
+  else if(/s-class|s class|mercedes/i.test(t)) vehicle="Mercedes S-Class";
+  else if(/sprinter|van/i.test(t)) vehicle="Sprinter Executive";
+  else if(/sedan|town car/i.test(t)) vehicle="Sedan";
+  conf.vehicle = vehicle==="Any"?.4:.92;
+
+  // locations
+  let from = (raw.match(/from ([^,]+?)(?: to | at |,|$)/i)||[])[1] || "";
+  let to   = (raw.match(/to ([A-Z0-9][^,]+?)(?: at |,|$)/i)||[])[1] || (airport?airport:"");
+  if(type==="airport" && airport && !to) to=airport;
+  conf.route = ((from?.5:0)+(to?.5:0))||.3;
+
+  // concierge venue
+  let venue = (raw.match(/at ([A-Z][a-zA-Z'’ ]+?)(?: friday| saturday| sunday| monday| tuesday| wednesday| thursday| at |,|$)/)||[])[1] || (raw.match(/\b(Carbone|[A-Z][a-z]+ (?:Grill|House|Room|Club))\b/)||[])[1] || "";
+
+  draft = { id:"R"+(++seq), type, client:client, datetime, pax, flight, vehicle, from, to, venue, raw, conf };
+  draft.quote = quoteFor(draft);
+  renderDraft();
+}
+
+function quoteFor(r){
+  if(r.type==="concierge") return null; // concierge = service fee, set manually
+  const vm = RATES.vehicle[r.vehicle]||1.2;
+  let miles = r.type==="airport"?22:9;       // stand-in for a maps distance call
+  let lines = [];
+  if(r.type==="hourly"){
+    const hrs = parseInt((r.raw.match(/(\d+)\s*(hours|hrs)/i)||[])[1]||"3",10);
+    lines.push(["Hourly ("+hrs+" hrs @ $"+RATES.hourly+")", RATES.hourly*hrs]);
+    lines.push(["Vehicle class ×"+vm, RATES.hourly*hrs*(vm-1)]);
+  } else {
+    lines.push(["Base fare", RATES.base]);
+    lines.push(["Distance (~"+miles+" mi @ $"+RATES.perMile+")", miles*RATES.perMile]);
+    lines.push(["Vehicle class ×"+vm, (RATES.base+miles*RATES.perMile)*(vm-1)]);
+    if(r.type==="airport") lines.push(["Airport meet & greet", RATES.airportFee]);
+  }
+  const total = Math.round(lines.reduce((s,l)=>s+l[1],0));
+  return {lines, total};
+}
+
+function renderDraft(){
+  document.getElementById("intake-type").textContent = draft.type;
+  document.getElementById("intake-type").className = "typetag t-"+draft.type;
+  const f = document.getElementById("fields");
+  const row=(k,v,c)=>v?`<div class="field ${c!=null&&c<.7?'low':''}"><span>${k}</span><b>${v}</b></div>`:"";
+  f.innerHTML =
+    row("Client", draft.client, draft.conf.client)+
+    (draft.type==="concierge"
+      ? row("Venue", draft.venue||"—", .6)+row("Party size", draft.pax, draft.conf.pax)+row("When", draft.datetime, draft.conf.datetime)
+      : row("When", draft.datetime, draft.conf.datetime)+
+        row("Route", [draft.from,draft.to].filter(Boolean).join("  →  ")||"—", draft.conf.route)+
+        row("Vehicle", draft.vehicle, draft.conf.vehicle)+
+        row("Passengers", draft.pax, draft.conf.pax)+
+        (draft.flight?row("Flight (auto-tracked)", draft.flight,.95):""));
+  const q = document.getElementById("quote");
+  if(draft.quote){
+    q.style.display="block";
+    q.innerHTML = draft.quote.lines.map(l=>`<div class="line"><span>${l[0]}</span><span>$${Math.round(l[1])}</span></div>`).join("")
+      + `<div class="total"><span>Instant quote</span><span>$${draft.quote.total}</span></div>`;
+  } else {
+    q.style.display="block";
+    q.innerHTML = `<div class="line"><span>Concierge request — service fee set on confirm</span></div>
+      <div class="total"><span>Type</span><span>Concierge</span></div>`;
+  }
+  document.getElementById("parsed").style.display="block";
+}
+
+function confirmRequest(){
+  if(!draft) return;
+  const r = {...draft, stage:"quoted", driver:null, created:nowHHMM(),
+    amount: draft.quote?draft.quote.total:null,
+    sla: 25 + Math.floor(Math.random()*40),  // mins until pickup, stand-in
+    audit:[]};
+  log(r,"created via AI intake","quoted");
+  requests.unshift(r);
+  draft=null;
+  document.getElementById("parsed").style.display="none";
+  document.getElementById("inbound").value="";
+  document.getElementById("intake-type").textContent="—";
+  document.getElementById("intake-type").className="typetag t-transfer";
+  render();
+}
+
+/* ---------- board ---------- */
+function render(){
+  const lanes = document.getElementById("lanes");
+  lanes.innerHTML = STAGES.map(st=>{
+    const items = requests.filter(r=>r.stage===st);
+    return `<div class="lane"><h3>${STAGE_LABEL[st]} <i>${items.length}</i></h3>${
+      items.map(r=>reqCard(r)).join("")}</div>`;
+  }).join("");
+  // drivers
+  document.getElementById("drivers").innerHTML = drivers.map(d=>`
+    <div class="driver">
+      <div class="av">${d.name.split(" ").map(x=>x[0]).join("")}</div>
+      <div class="meta"><b>${d.name}</b><span>${d.vehicle}</span></div>
+      <span class="pill ${d.status==='available'?'p-av':'p-on'}">${d.status==='available'?'Available':'On trip'}</span>
+    </div>`).join("");
+  // stats
+  document.getElementById("s-open").textContent = requests.filter(r=>r.stage!=="completed").length;
+  document.getElementById("s-rev").textContent = "$"+requests.reduce((s,r)=>s+(r.amount||0),0).toLocaleString();
+  document.getElementById("s-drv").textContent = drivers.filter(d=>d.status!=="off").length;
+}
+function reqCard(r){
+  const slaCls = r.sla>30?"ok":r.sla>12?"warn":"late";
+  const sub = r.type==="concierge" ? (r.venue||"Concierge request")
+    : (r.type==="airport"? (r.to+(r.flight?" · "+r.flight:"")) : [r.from,r.to].filter(Boolean).join(" → ")||"Point to point");
+  return `<div class="req ${r.type==='concierge'?'concierge':''}" onclick="openReq('${r.id}')">
+    <div class="top"><span class="who">${r.client}</span>
+      <span class="typetag t-${r.type}">${r.type}</span></div>
+    <div class="rt">${sub}</div>
+    <div class="top" style="margin:6px 0 0">
+      <span class="amt">${r.amount?'$'+r.amount:'—'}</span>
+      <span class="sla"><span class="dot ${slaCls}"></span>${r.driver?r.driver.name.split(' ')[0]:'pickup in '+r.sla+'m'}</span>
+    </div></div>`;
+}
+
+/* ---------- request modal & lifecycle ---------- */
+function openReq(id){
+  const r = requests.find(x=>x.id===id); if(!r) return;
+  document.getElementById("m-title").textContent = r.client+" · "+r.type;
+  const avail = drivers.filter(d=>d.status==="available");
+  const nextStage = STAGES[STAGES.indexOf(r.stage)+1];
+  document.getElementById("m-body").innerHTML = `
+    <div class="field"><span>Stage</span><b>${STAGE_LABEL[r.stage]}</b></div>
+    <div class="field"><span>When</span><b>${r.datetime}</b></div>
+    ${r.type!=="concierge"?`<div class="field"><span>Route</span><b>${[r.from,r.to].filter(Boolean).join(' → ')||r.to||'—'}</b></div>
+    <div class="field"><span>Vehicle</span><b>${r.vehicle}</b></div>`:`<div class="field"><span>Venue</span><b>${r.venue||'—'}</b></div>`}
+    ${r.flight?`<div class="field"><span>Flight</span><b>${r.flight} · on time</b></div>`:""}
+    <div class="field"><span>Quote</span><b>${r.amount?'$'+r.amount:'set fee'}</b></div>
+    <div class="field"><span>Original message</span></div>
+    <div style="color:var(--muted);font-size:12.5px;background:var(--panel2);padding:8px;border-radius:6px">“${r.raw}”</div>
+
+    ${r.stage==="confirmed"||r.stage==="quoted" ? `
+      <div style="margin-top:14px"><span style="color:var(--muted);font-size:12px">Assign resource</span>
+      <select id="assignSel" style="width:100%;margin-top:5px">
+        ${avail.length?avail.map(d=>`<option value="${d.id}">${d.name} — ${d.vehicle}</option>`).join(''):'<option>No drivers available</option>'}
+      </select></div>`:""}
+
+    <div class="actions">
+      ${r.stage==="quoted"?`<button class="btn-gold" onclick="advance('${r.id}','confirmed')">Mark client confirmed</button>`:""}
+      ${(r.stage==="confirmed")&&avail.length?`<button class="btn-gold" onclick="assign('${r.id}')">Assign &amp; dispatch</button>`:""}
+      ${r.stage==="assigned"?`<button class="btn-gold" onclick="advance('${r.id}','in_progress')">Driver en route</button>`:""}
+      ${r.stage==="in_progress"?`<button class="btn-gold" onclick="advance('${r.id}','completed')">Complete &amp; capture payment</button>`:""}
+      ${nextStage?'':'<div class="note">Completed — payment captured via your Stripe. Phase 1.5 splits the driver payout via Connect.</div>'}
+      <button class="btn-ghost" onclick="closeModal()">Close</button>
+    </div>`;
+  document.getElementById("modal-bg").style.display="grid";
+}
+function closeModal(){document.getElementById("modal-bg").style.display="none";}
+function advance(id,to){
+  const r=requests.find(x=>x.id===id);
+  const verb = to==="completed"?"completed · payment captured":to==="in_progress"?"driver en route, client SMS sent":to;
+  log(r,verb,to); r.stage=to;
+  if(to==="completed" && r.driver){ const d=drivers.find(x=>x.id===r.driver.id); if(d)d.status="available"; }
+  render(); openReq(id);
+}
+function assign(id){
+  const r=requests.find(x=>x.id===id);
+  const sel=document.getElementById("assignSel"); const d=drivers.find(x=>x.id===sel.value);
+  if(!d) return;
+  r.driver=d; d.status="on_trip"; r.stage="assigned";
+  log(r,"assigned to "+d.name+" · driver app notified","assigned");
+  render(); openReq(id);
+}
+function log(r,action,stage){
+  r.audit = r.audit||[];
+  const e={t:nowHHMM(),action,stage};
+  r.audit.push(e);
+  GLOBAL_AUDIT.unshift({who:r.client,id:r.id,...e});
+  renderAudit();
+}
+let GLOBAL_AUDIT=[];
+function renderAudit(){
+  document.getElementById("audit").innerHTML = GLOBAL_AUDIT.slice(0,40).map(e=>`
+    <div class="e"><time>${e.t}</time><div class="a"><em>${e.who}</em> · ${e.action}</div></div>`).join("")
+    || '<div class="note">No activity yet — parse a sample on the left.</div>';
+}
+
+/* ---------- seed & boot ---------- */
+function boot(){
+  document.getElementById("samples").innerHTML = SAMPLES.map((s,i)=>
+    `<span class="chip" onclick="loadSample(${i})">${s.label}</span>`).join("");
+  // seed a couple of in-flight requests so the board isn't empty
+  document.getElementById("inbound").value = SAMPLES[0].text; parseInbound(); confirmRequest();
+  requests[0].stage="in_progress"; requests[0].driver=drivers[2];
+  document.getElementById("inbound").value = SAMPLES[2].text; parseInbound(); confirmRequest();
+  requests[0].stage="confirmed";
+  renderAudit(); render();
+}
+function loadSample(i){ document.getElementById("inbound").value=SAMPLES[i].text; parseInbound(); }
+boot();
+</script>
+</body>
+</html>

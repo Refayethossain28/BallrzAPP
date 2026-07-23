@@ -1,0 +1,103 @@
+name: Train browser LLM (from scratch)
+
+# Trains the "My Own AI Model" GPT on a GitHub-hosted runner — which runs a job
+# to completion (unlike an ephemeral dev container) — then commits the exported
+# web/model.json back to the branch it ran on. Dispatch it, wait for it to
+# finish, then merge the branch so GitHub Pages deploys the new model.
+#
+# Run: Actions → "Train browser LLM (from scratch)" → Run workflow → pick branch
+#      and (optionally) tune the size/steps inputs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      corpus_url:
+        description: "Plain-text corpus URL (UTF-8)"
+        default: "https://raw.githubusercontent.com/dscape/spell/master/test/resources/big.txt"
+      tokenizer:
+        description: "char | bpe"
+        default: "bpe"
+      vocab_size:
+        default: "1024"
+      n_layer:
+        default: "6"
+      n_head:
+        default: "8"
+      n_embd:
+        default: "256"
+      block_size:
+        default: "128"
+      batch_size:
+        default: "16"
+      steps:
+        default: "3000"
+      lr:
+        default: "3e-4"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: train-llm-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - name: Checkout the target branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          persist-credentials: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: pip install numpy
+
+      - name: Fetch corpus
+        working-directory: llm-from-scratch
+        run: |
+          mkdir -p data
+          curl -fsSL "${{ inputs.corpus_url }}" -o data/corpus.txt
+          echo "corpus: $(wc -c < data/corpus.txt) bytes"
+
+      - name: Train
+        working-directory: llm-from-scratch
+        run: |
+          python train.py \
+            --data data/corpus.txt \
+            --tokenizer "${{ inputs.tokenizer }}" \
+            --vocab_size "${{ inputs.vocab_size }}" \
+            --n_layer "${{ inputs.n_layer }}" \
+            --n_head "${{ inputs.n_head }}" \
+            --n_embd "${{ inputs.n_embd }}" \
+            --block_size "${{ inputs.block_size }}" \
+            --batch_size "${{ inputs.batch_size }}" \
+            --steps "${{ inputs.steps }}" \
+            --lr "${{ inputs.lr }}" \
+            --min_lr_ratio 0.05 \
+            --eval_every 200 \
+            --out ckpt.npz
+
+      - name: Export to web/model.json
+        working-directory: llm-from-scratch
+        run: python export_web.py --ckpt ckpt.npz --out web/model.json
+
+      - name: Commit the trained model to the branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add llm-from-scratch/web/model.json
+          if git diff --cached --quiet; then
+            echo "model.json unchanged — nothing to commit"
+          else
+            SIZE=$(wc -c < llm-from-scratch/web/model.json)
+            git commit -m "Train browser LLM on runner (${{ inputs.n_layer }}L/${{ inputs.n_embd }}d, ${{ inputs.steps }} steps) [skip ci]" \
+              -m "Corpus: ${{ inputs.corpus_url }}; tokenizer ${{ inputs.tokenizer }} vocab ${{ inputs.vocab_size }}; model.json ${SIZE} bytes."
+            git push origin HEAD:${{ github.ref_name }}
+          fi

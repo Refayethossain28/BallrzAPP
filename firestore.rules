@@ -1,0 +1,435 @@
+rules_version = '2';
+
+// ApexVIP Firestore security rules.
+// Secure-by-default: everything is denied unless explicitly allowed below.
+// NOTE: this is a strong starting point — review against your final data model
+// and Cloud Functions (which use the Admin SDK and bypass these rules) before launch.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn()      { return request.auth != null; }
+    function isUser(uid)     { return signedIn() && request.auth.uid == uid; }
+    // admin/driver = a custom claim (set by the Admin SDK/seed) OR the `role`
+    // field on the user's profile doc — which is how the apps identify roles.
+    function profileRole() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role : '';
+    }
+    function isAdmin()       { return signedIn() && (request.auth.token.admin  == true || profileRole() == 'admin'); }
+    function isDriver()      { return signedIn() && (request.auth.token.driver == true || profileRole() == 'driver'); }
+
+    // User profiles — a user can read/write only their own; admins can read all.
+    // A user may NOT promote their own role (e.g. to admin/driver) — only an admin
+    // can change role; a self-update must leave role as 'client' (or unset).
+    match /users/{uid} {
+      allow read:   if isUser(uid) || isAdmin();
+      // A user may create only their OWN profile, and only as a 'client' — they
+      // can't self-promote to admin/driver on create (isAdmin trusts the role
+      // field, so an unguarded create would be a privilege-escalation hole).
+      allow create: if isUser(uid)
+        && request.resource.data.get('role', 'client') == 'client';
+      // Self-update: can't change role, and can't self-mint referral credits /
+      // loyalty balance (apexBalance/referral fields are Cloud-Function-only).
+      allow update: if isAdmin()
+        || (isUser(uid)
+            && request.resource.data.get('role', 'client') == 'client'
+            && !request.resource.data.diff(resource.data).affectedKeys()
+                 .hasAny(['apexBalance', 'referredBy', 'referralCode', 'tier', 'compliance']));
+      allow delete: if isAdmin();
+    }
+
+    // Bookings — owned by the client; the assigned driver and admins may access.
+    match /bookings/{bookingId} {
+      // Money + integrity fields NO self-update (client or driver) may change —
+      // the fare drives the server-computed payout, so a writable baseFare is
+      // literal theft. Only the Admin SDK (Cloud Functions) sets these.
+      function bookingFinancials() {
+        return ['baseFare', 'price', 'discount', 'vat', 'promoApplied', 'clientId',
+                'squarePaymentId', 'paymentStatus', 'ref', 'currency'];
+      }
+      function touched() { return request.resource.data.diff(resource.data).affectedKeys(); }
+      // A client may edit only their own booking, and not the financials, the
+      // driver-assignment fields, or their own driver rating.
+      function clientBookingUpdateOk() {
+        return !touched().hasAny(bookingFinancials())
+          && !touched().hasAny(['driverId', 'driverName', 'driverPlate', 'driverRating']);
+      }
+      // A driver may edit an assigned booking's status/assignment only — never
+      // the financials, and never the client's rating of them.
+      function driverBookingUpdateOk() {
+        return !touched().hasAny(bookingFinancials())
+          && !touched().hasAny(['clientName', 'clientEmail', 'rating', 'ratingComment', 'ratedBy', 'driverRating']);
+      }
+      // Admins (ops console New Booking / Quick Intake) create bookings for
+      // clients; a client may only create their own.
+      allow create: if isAdmin()
+        || (signedIn() && request.resource.data.clientId == request.auth.uid);
+      // NOTE: drivers deliberately can NOT read unassigned bookings — those
+      // carry the client's email/phone/home pickup. Dispatch goes through
+      // open_jobs (which strips PII); claiming is an update, not a read.
+      allow read: if isAdmin()
+        || (signedIn() && resource.data.clientId == request.auth.uid)
+        || (isDriver() && resource.data.driverId == request.auth.uid);
+      allow update: if isAdmin()
+        || (signedIn() && resource.data.clientId == request.auth.uid && clientBookingUpdateOk())
+        || (isDriver() && resource.data.driverId == request.auth.uid && driverBookingUpdateOk())
+        // A driver may claim a booking that has no driver yet (broadcast dispatch)
+        // — stamps themselves as the driver, still barred from the financials.
+        || (isDriver()
+            && (!('driverId' in resource.data) || resource.data.driverId == '' || resource.data.driverId == null)
+            && request.resource.data.driverId == request.auth.uid
+            && driverBookingUpdateOk());
+      allow delete: if isAdmin();
+
+      // Chat between the booking's client and driver.
+      match /messages/{messageId} {
+        function booking() { return get(/databases/$(database)/documents/bookings/$(bookingId)).data; }
+        allow read: if isAdmin()
+          || request.auth.uid == booking().clientId
+          || request.auth.uid == booking().driverId;
+        allow create: if signedIn()
+          && (request.auth.uid == booking().clientId || request.auth.uid == booking().driverId)
+          && request.resource.data.senderId == request.auth.uid;
+      }
+    }
+
+    // Recurring bookings — owned by the client.
+    match /recurring_bookings/{id} {
+      allow create: if signedIn() && request.resource.data.clientId == request.auth.uid;
+      allow read, update, delete: if isAdmin()
+        || (signedIn() && resource.data.clientId == request.auth.uid);
+    }
+
+    // Pending payments — created and read by their owner only.
+    match /pending_payments/{id} {
+      allow create: if signedIn() && request.resource.data.clientId == request.auth.uid;
+      allow read:   if isAdmin() || (signedIn() && resource.data.clientId == request.auth.uid);
+    }
+
+    // Push tokens — strictly per-user.
+    match /fcm_tokens/{uid} {
+      allow read, write: if isUser(uid);
+    }
+
+    // Drivers — the operational record: profile, documents, compliance verdict,
+    // Stripe payout state. That's staff/self data, NOT public: exposing it to
+    // every signed-in user leaks compliance status and payout account ids.
+    // Live GPS for client trip-tracking lives in driver_locations below.
+    // A driver writes only their own record, and may NOT write the `compliance`
+    // verdict or the `payout` account state — only admins / Cloud Functions set
+    // those. This is the self-approval guard.
+    match /drivers/{driverId} {
+      allow read:   if isAdmin() || isUser(driverId);
+      allow create: if isAdmin()
+        || (isUser(driverId) && !request.resource.data.keys().hasAny(['compliance', 'payout']));
+      allow update: if isAdmin()
+        || (isUser(driverId)
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['compliance', 'payout']));
+      allow delete: if isAdmin();
+    }
+
+    // Live driver positions — coordinates only (lat/lng/heading/at), split from
+    // the drivers record so trip tracking works without exposing driver PII.
+    // Any signed-in user may read (the client tracking map, incl. anonymous
+    // track-link viewers); only the driver writes their own position.
+    match /driver_locations/{driverId} {
+      allow read:  if signedIn();
+      allow write: if isAdmin() || isUser(driverId);
+    }
+
+    // Driver payout requests — a driver asks ops to settle their balance.
+    // (Without this block the whole feature was default-denied on both sides.)
+    match /payout_requests/{id} {
+      allow create: if isDriver() && request.resource.data.driverId == request.auth.uid;
+      allow read:   if isAdmin() || (isDriver() && resource.data.driverId == request.auth.uid);
+      allow update, delete: if isAdmin();
+    }
+
+    // Driver payout ledger — earnings owed per completed trip. Written by Cloud
+    // Functions (Admin SDK) + admins; a driver may read their own entries.
+    match /driver_payouts/{id} {
+      allow read:  if isAdmin() || (isDriver() && resource.data.driverId == request.auth.uid);
+      allow write: if isAdmin();
+    }
+
+    // Vehicles — one doc per vehicle, owned by a driver. Verified MOT / road-tax /
+    // type are compliance-relevant, so (like the driver compliance verdict) only an
+    // admin writes them; a driver may read their own.
+    match /vehicles/{vehicleId} {
+      allow read:  if isAdmin() || (isDriver() && resource.data.driverId == request.auth.uid);
+      allow write: if isAdmin();
+    }
+
+    // Job queue — drivers and admins only. A driver creates their own job doc
+    // when they win a broadcast claim.
+    match /jobs/{id} {
+      allow read, update: if isDriver() || isAdmin();
+      allow create: if isAdmin() || (isDriver() && request.resource.data.driverId == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    // Broadcast job pool — the dispatch Cloud Function creates an open_job per
+    // booking; any online driver reads jobs in their market and claims one (the
+    // claim transaction flips status open→claimed and stamps driverId).
+    match /open_jobs/{id} {
+      allow read:   if isDriver() || isAdmin();
+      // A driver may ONLY claim an open job: flip status open→claimed, stamp their
+      // own uid, and leave the dispatch payload (booking + pay) untouched — so a
+      // driver can't reopen a taken job, claim it for someone else, or inflate pay.
+      allow update: if isAdmin()
+        || ( isDriver()
+             && resource.data.status == 'open'
+             && request.resource.data.status == 'claimed'
+             && request.resource.data.driverId == request.auth.uid
+             && request.resource.data.bookingDocId == resource.data.bookingDocId
+             && request.resource.data.bookingRef == resource.data.bookingRef
+             && request.resource.data.pay == resource.data.pay );
+      allow create, delete: if isAdmin();
+    }
+
+    // Public settings (e.g. pricing) — read-only to clients; admins manage.
+    match /settings/{doc} {
+      allow read:  if true;
+      allow write: if isAdmin();
+    }
+
+    // Subscriptions — one doc per user (client or driver) when the platform runs
+    // in subscription mode. A user manages only their own; admins see all.
+    // NOTE (launch): self-service 'active' writes are the prototype's mock
+    // billing — move activation server-side once a real billing rail is wired.
+    match /subscriptions/{uid} {
+      allow read:   if isUser(uid) || isAdmin();
+      allow create: if isAdmin() || isUser(uid);
+      // Self-updates may not rewrite trialEndsAt — otherwise the free trial is
+      // infinitely extendable by re-stamping the date. (Self-service 'active'
+      // remains the mock billing path; gate it server-side when a real billing
+      // rail is wired — see the go-live checklist.)
+      allow update: if isAdmin()
+        || (isUser(uid)
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['trialEndsAt', 'startedAt']));
+      allow delete: if isAdmin();
+    }
+
+    // Audit log — append-only record of staff actions (dispatch, compliance,
+    // vehicles, payouts…). Staff create; admins read; nobody edits or deletes.
+    match /audit_log/{id} {
+      allow read:   if isAdmin();
+      // Staff may append, but only under their OWN actor id — so a driver can't
+      // forge an entry as an admin. (Server-side entries use the Admin SDK.)
+      allow create: if (isAdmin() || isDriver())
+        && request.resource.data.actorUid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // Analytics — write-only telemetry (no client reads); admins read.
+    match /analytics/{id} {
+      allow create: if signedIn();
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Crash/error reports — write-only from the app; admins read.
+    match /errors/{id} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Lead capture (write-only from the app; admins read).
+    match /city_interest/{id} { allow create: if true; allow read, update, delete: if isAdmin(); }
+    match /waitlist/{id}      { allow create: if true; allow read, update, delete: if isAdmin(); }
+    // Invites are capability tokens: registration checks a code by exact id
+    // BEFORE the user has an account, so `get` must be public — but `list`
+    // stays admin-only so codes can't be enumerated.
+    match /invites/{id} {
+      allow create: if true;
+      allow get:    if true;
+      allow list, update, delete: if isAdmin();
+    }
+
+    // Corporate accounts — managed entirely from the ops console.
+    match /corporates/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    // ---------------------------------------------------------------------
+    // Velvet — the subscription VIP concierge (concierge/). Data is scoped in
+    // velvet_* collections so it never touches the ApexVIP model. A member owns
+    // their own docs; admins are the concierge desk (they read every request
+    // and reply/progress them from the console or an ops tool).
+    // ---------------------------------------------------------------------
+
+    // Member profile + membership mirror. The member may update their profile
+    // and (in local/demo billing) their simulated subscription — but once real
+    // billing is on, the Stripe webhook (Admin SDK, bypasses rules) owns `sub`:
+    // a client write may never CHANGE billing away from 'stripe' or touch the
+    // Stripe linkage fields, so a member cannot self-grant a paid tier.
+    match /velvet_members/{uid} {
+      function billingLocked() {
+        return resource != null && resource.data.get('billing', 'local') == 'stripe';
+      }
+      function keepsStripeTruth() {
+        return request.resource.data.get('billing', 'local') == 'stripe'
+          && request.resource.data.get('sub', {}) == resource.data.get('sub', {})
+          && request.resource.data.get('stripeCustomerId', '') == resource.data.get('stripeCustomerId', '')
+          && request.resource.data.get('stripeSubscriptionId', '') == resource.data.get('stripeSubscriptionId', '');
+      }
+      // Loyalty points are minted only by the invoice/webhook logic (Admin SDK),
+      // never self-awarded — frozen on every self-update, locked billing or not.
+      function keepsPoints() {
+        return request.resource.data.get('points', 0) == resource.data.get('points', 0);
+      }
+      allow read:   if isUser(uid) || isAdmin();
+      allow create: if isUser(uid)
+        && request.resource.data.get('billing', 'local') != 'stripe'
+        && request.resource.data.get('points', 0) == 0;
+      allow update: if isAdmin()
+        || (isUser(uid) && keepsPoints() && (!billingLocked() || keepsStripeTruth()));
+      allow delete: if isAdmin();
+
+      // Invoices are written by the Stripe webhook / renewal logic. In demo
+      // (local-billing) mode the member may record their own simulated ones.
+      match /invoices/{invoiceId} {
+        allow read:   if isUser(uid) || isAdmin();
+        allow create: if isUser(uid)
+          && get(/databases/$(database)/documents/velvet_members/$(uid)).data.get('billing', 'local') != 'stripe';
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    // Concierge requests — owned by the member; the desk (admin) works them.
+    // The lifecycle state machine is enforced in the app/engine; rules enforce
+    // ownership and that a member can't reassign a request to someone else.
+    match /velvet_requests/{requestId} {
+      allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
+      allow read:   if isAdmin() || (signedIn() && resource.data.ownerUid == request.auth.uid);
+      allow update: if isAdmin()
+        || (signedIn() && resource.data.ownerUid == request.auth.uid
+            && request.resource.data.get('ownerUid', resource.data.ownerUid) == resource.data.ownerUid);
+      allow delete: if isAdmin();
+    }
+
+    // ---------------------------------------------------------------------
+    // Ripple — private messenger (ripple/). Anonymous-auth users; each chat is
+    // readable/writable only by its members. Anyone holding an invite link may
+    // add THEMSELVES to a chat's members (that's how "join by link" works), but
+    // cannot read its history until they're a member.
+    // ---------------------------------------------------------------------
+    match /ripple_users/{uid} {
+      allow read:  if signedIn();
+      allow write: if isUser(uid);
+    }
+    // Private push tokens — readable/writable ONLY by their owner (the Cloud
+    // Function reads them with the Admin SDK, which bypasses these rules).
+    match /ripple_push/{uid} {
+      allow read, write: if isUser(uid);
+    }
+    // Contact matching: SHA-256(hashed phone) -> {uid}. Lets someone who has
+    // your number in their address book discover you're on Ripple. You may only
+    // claim a hash that points at yourself. (Phone-number hashes are guessable —
+    // this is the same privacy trade-off every contact-matching app makes.)
+    match /ripple_contacts/{hash} {
+      allow read:   if signedIn();
+      allow create, update: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+    // Public username directory: handle -> {uid,name,avatar}. Anyone signed in
+    // can look someone up; you may only claim/update a handle that points at YOU
+    // (and can't steal one already owned by someone else).
+    match /ripple_directory/{handle} {
+      allow read:   if signedIn();
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow update: if signedIn() && request.resource.data.uid == request.auth.uid
+                    && resource.data.uid == request.auth.uid;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+    // Direct-connect invites: A adds B by username, which drops an invite here.
+    // The sender writes it; only the two parties can read or remove it.
+    match /ripple_invites/{inviteId} {
+      allow create: if signedIn() && request.resource.data.from == request.auth.uid;
+      allow read, delete: if signedIn() &&
+        (resource.data.to == request.auth.uid || resource.data.from == request.auth.uid);
+    }
+    // WebRTC call signaling (SDP offer/answer + ICE candidates). Only the two
+    // parties of a call may touch it; media is peer-to-peer and never stored.
+    match /ripple_calls/{callId} {
+      function party() { return signedIn() &&
+        (resource.data.caller == request.auth.uid || resource.data.callee == request.auth.uid); }
+      allow create: if signedIn() && request.resource.data.caller == request.auth.uid;
+      allow read, update, delete: if party();
+      match /{sub}/{candId} {
+        function callDoc() { return get(/databases/$(database)/documents/ripple_calls/$(callId)).data; }
+        allow read, write: if signedIn() &&
+          (callDoc().caller == request.auth.uid || callDoc().callee == request.auth.uid);
+      }
+    }
+    match /ripple_chats/{chatId} {
+      function isMember()    { return signedIn() && request.auth.uid in resource.data.members; }
+      function willBeMember(){ return signedIn() && request.auth.uid in request.resource.data.members; }
+
+      allow create: if signedIn() && willBeMember();
+      allow read:   if isMember();
+      // Members can update freely. A non-member may only join (add just
+      // themselves) AND, if the chat carries an invite token (joinCode), must
+      // prove possession of it via joinProof — so knowing the chatId alone isn't
+      // enough. Legacy chats without a joinCode stay open for backward compat.
+      allow update: if isMember()
+        || ( willBeMember()
+             && ( !('joinCode' in resource.data)
+                  || request.resource.data.joinProof == resource.data.joinCode ) );
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        function chatDoc() { return get(/databases/$(database)/documents/ripple_chats/$(chatId)).data; }
+        function inChat()  { return signedIn() && request.auth.uid in chatDoc().members; }
+        allow read:   if inChat();
+        allow create: if inChat() && request.resource.data.senderId == request.auth.uid;
+        // Updates (edits, unsend, reactions, read receipts, poll votes) are
+        // open to any member of the chat.
+        allow update: if inChat();
+        allow delete: if false;
+      }
+
+      // Ephemeral typing indicators — one doc per member; you write only your
+      // own, any member may read.
+      match /typing/{typerUid} {
+        function chatDoc() { return get(/databases/$(database)/documents/ripple_chats/$(chatId)).data; }
+        function inChat()  { return signedIn() && request.auth.uid in chatDoc().members; }
+        allow read:  if inChat();
+        allow write: if isUser(typerUid) && inChat();
+      }
+
+      // Group E2EE: the shared chat key wrapped per member with ECDH. Each doc
+      // holds ciphertext only; any member may read/write (the elected key-owner
+      // wraps a copy for everyone). The plaintext key never reaches the server.
+      match /keys/{memberUid} {
+        function chatDoc() { return get(/databases/$(database)/documents/ripple_chats/$(chatId)).data; }
+        function inChat()  { return signedIn() && request.auth.uid in chatDoc().members; }
+        allow read, write: if inChat();
+      }
+    }
+
+    // ── CRM (ops console only) ────────────────────────────────────────────
+    // Client relationship records (notes, preference tags, follow-ups) live
+    // OUTSIDE users/{uid} deliberately: a user can read their own profile
+    // doc, and internal ops notes must never leak to the subject.
+    match /crm_clients/{uid} {
+      allow read, write: if isAdmin();
+    }
+    // Corporate sales pipeline.
+    match /crm_leads/{leadId} {
+      allow read, write: if isAdmin();
+    }
+
+    // ApexFX trading app — each user owns their own journal subtree. Trade
+    // docs hold chart analyses (verdict, levels, outcome, thumbnail); no
+    // cross-user reads.
+    match /apexfx/{uid}/trades/{tradeId} {
+      allow read, write: if isUser(uid);
+    }
+    // Web-push subscriptions for trade alerts — one doc per device, owner-only.
+    // (The scoring worker reads these with the Admin SDK, which bypasses rules.)
+    match /apexfx/{uid}/pushSubs/{subId} {
+      allow read, write: if isUser(uid);
+    }
+  }
+}

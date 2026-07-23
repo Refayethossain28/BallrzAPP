@@ -1,0 +1,62 @@
+# Render Blueprint for the Fixr app (lives at repo root so Render's
+# Blueprint flow finds it). Provisions a web service + a managed Postgres
+# and wires DATABASE_URL automatically — as close to one-click as it gets.
+#
+# Deploy: dashboard.render.com → New → Blueprint → pick this repo →
+# choose branch `claude/most-needed-app-rxhbcj`. Render reads this file.
+services:
+  - type: web
+    name: fixr
+    runtime: node
+    rootDir: fixr/app
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22.11.0"
+      # Postgres connection string, injected from the database below.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fixr-db
+          property: connectionString
+      # Demo mode works with these blank. Add them in the Render dashboard
+      # (Environment tab, mark secret) to switch on the real services:
+      - key: ANTHROPIC_API_KEY   # real Claude intake
+        sync: false
+      - key: STRIPE_SECRET_KEY   # real fare capture + Connect settlement (sk_test_…)
+        sync: false
+      - key: FLIGHT_API_KEY      # real AviationStack flight tracking
+        sync: false
+
+  # ApexFX — Next.js trading app with the AI screenshot analyzer.
+  # After the first deploy, open the service's Environment tab and paste the
+  # same ANTHROPIC_API_KEY used by fixr / the ApexVIP Firebase functions.
+  - type: web
+    name: fx-signal-pro
+    runtime: node
+    rootDir: trading-app
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start -- -p $PORT
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22.11.0"
+      - key: ANTHROPIC_API_KEY   # powers the screenshot Buy/Sell analysis
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT  # service-account JSON — enables real-time scoring
+        sync: false
+      - key: VAPID_PUBLIC_KEY          # web-push signing (public half; safe to inline)
+        value: BEq6_PKG0Y7XvZBFGGjslR0gIWX0SYU0RSuLy0naj6bbFaZSwsyp_qRnw85AWJXhDkwFMPmKh-C10zcUVs34SpM
+      - key: VAPID_PRIVATE_KEY         # web-push signing (secret half)
+        sync: false
+
+databases:
+  - name: fixr-db
+    plan: free
+    databaseName: fixr
+    user: fixr
