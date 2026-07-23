@@ -12,7 +12,7 @@
  *     ApexVIP app pages exists;
  *  3. the assets those pages need are actually copied by pages.yml.
  */
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 
 const root = resolve(dirname(new URL(import.meta.url).pathname), '..');
@@ -58,6 +58,26 @@ const MUST_PUBLISH = ['apexvip-engine.js', 'apexvip-core.js', 'apexvip-lib.js', 
 for (const f of MUST_PUBLISH) {
   if (pagesYml.includes(f)) ok(`pages.yml publishes ${f}`);
   else fail.push(`pages.yml does not copy ${f} into _site — the live site will 404 it`);
+}
+
+// ── 4. Ballrz Hub lists every published app ──────────────────────────────────
+// The hub (hub/index.html) is the launcher that promises "every app we've made,
+// in one place" — but its tile list is hand-maintained, the exact class of list
+// that goes stale (Cortex shipped and silently never appeared). Any top-level
+// folder with an index.html is auto-published at /<dir>/ by pages.yml, so it
+// must have a hub tile linking '../<dir>/'.
+const HUB_EXEMPT = new Set([
+  'hub',          // the hub itself
+  'apexvip-web',  // Vite source — published as /apex/ (the hub links ../apex/)
+  'apexvip-card', // print-only thank-you card, not an app
+]);
+const hubHtml = readFileSync(resolve(root, 'hub/index.html'), 'utf8');
+for (const dir of readdirSync(root)) {
+  if (HUB_EXEMPT.has(dir) || dir.startsWith('.') || dir === 'node_modules') continue;
+  if (!statSync(resolve(root, dir)).isDirectory()) continue;
+  if (!existsSync(resolve(root, dir, 'index.html'))) continue;
+  if (hubHtml.includes(`'../${dir}/'`)) ok(`hub lists /${dir}/`);
+  else fail.push(`hub/index.html has no tile for /${dir}/ — the hub promises every app, add it to SECTIONS (or add '${dir}' to HUB_EXEMPT in this script if it isn't an app)`);
 }
 
 if (fail.length) {

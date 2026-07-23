@@ -1,7 +1,7 @@
 /* Ballrz Hub service worker — precache the shell, runtime-cache the app icons
    the tiles pull from sibling app folders (../imposter/icon-192.png etc.). */
 'use strict';
-const SHELL = 'hub-shell-v1';
+const SHELL = 'hub-shell-v2';
 const RUNTIME = 'hub-runtime-v1';
 const PRECACHE = [
   './',
@@ -31,15 +31,18 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(req.url);
   if (url.origin !== location.origin) return;
 
-  // Shell: cache-first.
+  // Shell: network-first, cache fallback — new app tiles reach returning
+  // visitors on their next online visit, no cache-version bump required.
   const scope = new URL('./', location.href).pathname;
   if (url.pathname.startsWith(scope)) {
     e.respondWith(
-      caches.match(req).then((hit) => hit || fetch(req).then((res) => {
-        const copy = res.clone();
-        caches.open(SHELL).then((c) => c.put(req, copy));
+      fetch(req).then((res) => {
+        if (res.ok) {
+          const copy = res.clone();
+          caches.open(SHELL).then((c) => c.put(req, copy));
+        }
         return res;
-      }))
+      }).catch(() => caches.match(req))
     );
     return;
   }
