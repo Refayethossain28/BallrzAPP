@@ -11,7 +11,7 @@
 // ============================================================================
 import * as THREE from 'three';
 
-const BUILD = 'BUILD R95 — real street maps';
+const BUILD = 'BUILD R96 — surveyed street maps';
 
 // ----------------------------------------------------------------------------
 //  Data (carried over from the previous version)
@@ -50,23 +50,27 @@ const CANYON_LAYOUT = [
 // long west straight), right onto OXFORD STREET, down NEW BOND STREET,
 // Bruton Street into BERKELEY SQUARE (the track runs round two sides of the
 // square garden), then MOUNT STREET back to Park Lane.
+// projected from real OSM/atlas coordinates (Marble Arch 51.5132,-0.1590;
+// Hyde Park anchors; Berkeley Square 51.5096,-0.1458; Bond St addresses).
 const MAYFAIR_LAYOUT = [
-  [-300,0,-195],[-306,0,-20],[-300,0,150],
-  [-140,0,163],[30,0,170],[180,0,175],
-  [196,0,60],[186,0,-30],
-  [90,0,-62],
-  [95,0,-148],[-5,0,-158],
-  [-150,0,-172],[-282,0,-186],
+  [-262,0,108],[-328,0,-4],[-377,0,-102],
+  [-180,0,-148],[4,0,-187],[82,0,-194],
+  [148,0,-122],[206,0,-43],[243,0,29],
+  [189,0,68],[177,0,140],[132,0,173],
+  [66,0,153],[-98,0,127],
 ];
 // TOOTING — the real road diamond: the A24 (Upper Tooting Road) running
 // south-west to TOOTING BROADWAY junction, left down MITCHAM ROAD, the
 // Southcroft/Links link roads east, then TOOTING BEC ROAD along the common
 // (Lido side) back to the top of the high street.
+// projected from real coordinates (Tooting Bec stn 51.4358,-0.1590; Broadway
+// stn 51.4278,-0.1680; Amen Corner; Southcroft Rd; Lido 51.4317,-0.1392).
 const TOOTING_LAYOUT = [
-  [240,0,-180],[100,0,-125],[-40,0,-65],[-170,0,-5],
-  [-125,0,120],[-60,0,225],
-  [70,0,242],[180,0,195],
-  [262,0,62],[292,0,-60],
+  [-93,0,-250],[-154,0,-157],[-225,0,-56],[-316,0,65],
+  [-225,0,137],[-154,0,194],[-93,0,238],
+  [33,0,178],[160,0,105],[286,0,24],
+  [324,0,-28],[316,0,-88],
+  [134,0,-157],[8,0,-205],
 ];
 const CIRCUITS = [
   { name:'NEW YORK', laps:6, maxSpeed:122, curveMul:1.0, aiSpeed:0.78, startTime:62, lapBonus:30, seed:7, theme:0, layout:NY_LAYOUT },
@@ -1919,14 +1923,16 @@ function buildScenery(){
   const gateNear=i=>{ if(gateFi<0)return false; let d=Math.abs(i-gateFi); d=Math.min(d,DIV-d); return d<30; };
   const heroNear=(i,side)=> gateNear(i) || heroSlots.some(h=>{ if(h.side!==side)return false; let d=Math.abs(i-h.fi); d=Math.min(d,DIV-d); return d<26; });
 
-  // verge props (mobile-budgeted, both verges)
-  const PROP_STEP = MOBILE ? 18 : 3;   // denser trees/props (max on desktop)
+  // verge props (mobile-budgeted, both verges). Street circuits get sparser,
+  // smaller pavement trees so the buildings define the district, not a forest.
+  const streetTheme=(th.landmark==='mayfair'||th.landmark==='tooting');
+  const PROP_STEP = MOBILE ? (streetTheme?28:18) : (streetTheme?8:3);
   const sways = th.prop!=='rock';   // trees/palms sway; rocks don't
   for (let i=0;i<DIV;i+=PROP_STEP){ const f=frames[i];
     for (const side of [-1,1]){ if (heroNear(i,side)) continue;
-      const p=makeProp(3.4+rng()*2.4); p.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+2+rng()*6)); sceneryGroup.add(p);
+      const p=makeProp(streetTheme?(1.8+rng()*0.9):(3.4+rng()*2.4)); p.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+2+rng()*6)); sceneryGroup.add(p);
       if (sways) _sway.push({obj:p, ph:rng()*6.28, amp:0.08+rng()*0.06});
-      if (!MOBILE && rng()<0.7){ const p2=makeProp(2.2+rng()*2.0); p2.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+16+rng()*16)); sceneryGroup.add(p2); if (sways) _sway.push({obj:p2, ph:rng()*6.28, amp:0.08+rng()*0.06}); }
+      if (!MOBILE && rng()<(streetTheme?0.25:0.7)){ const p2=makeProp(streetTheme?(1.6+rng()*0.8):(2.2+rng()*2.0)); p2.position.copy(f.pos).addScaledVector(f.right, side*(ROAD_W+RUMBLE_W+16+rng()*16)); sceneryGroup.add(p2); if (sways) _sway.push({obj:p2, ph:rng()*6.28, amp:0.08+rng()*0.06}); }
     }
   }
 
