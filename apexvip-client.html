@@ -1517,7 +1517,22 @@ function skyscannerSearch(){
 // desk as a flight_requests doc; staff ticket it and advance the status
 // (requested → quoted → booked → ticketed), which the client tracks here.
 function _fltAirportName(code){const a=AIRPORTS.find(x=>x.c.toLowerCase()===String(code).toLowerCase());return a?a.n:String(code).toUpperCase();}
-function openFlightSheet(){
+// The travel desk is a Velvet concierge-member privilege. Membership truth
+// is the Velvet member doc: sub exists and isn't canceled (Velvet's own
+// isLive check). Cached per session; the rules enforce the same server-side,
+// so this gate is honest UX, not the security boundary.
+async function _velvetLive(){
+  if(typeof state._velvetLive==='boolean')return state._velvetLive;
+  if(!FIREBASE_ENABLED)return true; // demo mode shows the full experience
+  if(!auth.currentUser)return false;
+  try{
+    const s=await db.collection('velvet_members').doc(auth.currentUser.uid).get();
+    const sub=s.exists?(s.data()||{}).sub:null;
+    state._velvetLive=!!sub&&sub.status!=='canceled';
+  }catch(e){state._velvetLive=false;}
+  return state._velvetLive;
+}
+async function openFlightSheet(){
   const err=document.getElementById('flt_err');
   const _fail=m=>{if(err){err.textContent=m;err.style.display='block';}};
   const from=_fltCode(document.getElementById('flt_from')?.value)||'lhr';
@@ -1532,9 +1547,24 @@ function openFlightSheet(){
   }
   if(err)err.style.display='none';
   if(FIREBASE_ENABLED&&!auth.currentUser){state._pendingScreen='flight-search';go('login');return;}
+  if(!await _velvetLive()){state._deskUpsell=true;track('desk_upsell_shown',{src:'flight'});render();return;}
   state._fltDraft={from:from.toUpperCase(),to:to.toUpperCase(),dep,ret,
     pax:parseInt(document.getElementById('flt_pax')?.value)||2,cabin:state._fltCabin||'business'};
   state._fltSheet=true;render();
+}
+// Members-only upsell sheet, shared by the flight and hotel screens.
+function deskUpsellSheet(){
+  if(!state._deskUpsell)return'';
+  return `
+  <div style="position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:500;display:flex;align-items:flex-end;justify-content:center" onclick="state._deskUpsell=false;render()">
+    <div style="background:var(--bg);border-radius:24px 24px 0 0;border:1px solid var(--border);width:100%;max-width:480px;padding:28px 24px calc(env(safe-area-inset-bottom) + 26px);animation:slideUp .25s ease" onclick="event.stopPropagation()">
+      <div style="font-size:10px;font-weight:700;letter-spacing:2.5px;color:var(--gold);margin-bottom:10px">VELVET · MEMBERS ONLY</div>
+      <div style="font-family:var(--font-serif);font-size:24px;font-weight:500;margin-bottom:8px">A privilege of membership</div>
+      <div style="font-size:14px;color:var(--fg-3);line-height:1.65;margin-bottom:20px">The travel desk — flights and stays sourced, booked and ticketed for you — is reserved for Velvet concierge members. Membership also opens the full concierge: dining, events, and the impossible-to-get.</div>
+      <button class="btn btn-gold ripple-host" onclick="addRipple(this,event);state._deskUpsell=false;go('concierge')">Explore Velvet membership</button>
+      <button onclick="state._deskUpsell=false;render()" style="width:100%;background:transparent;border:none;color:var(--fg-3);font-size:14px;padding:14px 0 0;cursor:pointer;font-family:inherit">Not now — I'll book directly</button>
+    </div>
+  </div>`;
 }
 async function submitFlightRequest(){
   const d=state._fltDraft;if(!d)return;
@@ -1602,9 +1632,10 @@ function hotelProviderOpen(p){
   haptic('light');
   window.open(urls[p],'_blank','noopener');
 }
-function openHotelSheet(){
+async function openHotelSheet(){
   const d=_hotelParams();if(!d)return;
   if(FIREBASE_ENABLED&&!auth.currentUser){state._pendingScreen='hotel-search';go('login');return;}
+  if(!await _velvetLive()){state._deskUpsell=true;track('desk_upsell_shown',{src:'hotel'});render();return;}
   state._htlDraft=d;state._htlSheet=true;render();
 }
 async function submitHotelRequest(){
@@ -3004,8 +3035,8 @@ chauffeur: () => `
     <div id="flt_err" style="display:none;color:#ef4444;font-size:13px;margin-bottom:12px"></div>
     <button class="btn btn-gold ripple-host" onclick="addRipple(this,event);skyscannerSearch()">Search flights</button>
     <div style="font-size:11px;color:var(--fg-4);text-align:center;margin-top:10px;margin-bottom:12px">Live results open on Skyscanner</div>
-    <button onclick="openFlightSheet()" style="width:100%;background:transparent;border:1px solid var(--gold-2,rgba(200,169,126,.35));border-radius:16px;padding:15px;color:var(--gold);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Book it for me — travel desk</button>
-    <div style="font-size:11px;color:var(--fg-4);text-align:center;margin-top:8px">Our desk sources the fare, books and tickets it for you</div>
+    <button onclick="openFlightSheet()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;background:transparent;border:1px solid var(--gold-2,rgba(200,169,126,.35));border-radius:16px;padding:15px;color:var(--gold);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Book it for me — travel desk <span style="font-size:9px;font-weight:700;letter-spacing:1.5px;background:var(--gold-3,rgba(200,169,126,.16));border:1px solid var(--gold-2,rgba(200,169,126,.35));border-radius:8px;padding:3px 7px">VELVET</span></button>
+    <div style="font-size:11px;color:var(--fg-4);text-align:center;margin-top:8px">A Velvet member privilege — fare sourced, booked and ticketed for you</div>
     ${state._fltReqSent?`<div style="display:flex;align-items:center;gap:12px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);border-radius:16px;padding:14px 16px;margin-top:16px">
       <span style="color:#22c55e;font-size:18px">✓</span>
       <div><div style="font-size:14px;font-weight:700">Request ${esc(state._fltReqSent)} received</div><div style="font-size:12px;color:var(--fg-3);margin-top:2px">Our travel desk will come back with options shortly.</div></div>
@@ -3038,6 +3069,7 @@ chauffeur: () => `
       <div style="font-size:11px;color:var(--fg-4);text-align:center;margin-top:10px">No payment now — we confirm the fare with you before ticketing</div>
     </div>
   </div>`)(state._fltDraft):''}
+  ${deskUpsellSheet()}
 </div>`;},
 
 // Hotels — Skyscanner-style: one search, a row of providers, each opening
@@ -3096,8 +3128,8 @@ chauffeur: () => `
       <div><div style="font-size:14px;font-weight:700;color:var(--fg)">${name}</div><div style="font-size:11px;color:var(--fg-4);margin-top:2px">${sub}</div></div>
       <div style="display:flex;align-items:center;gap:6px;color:var(--fg-3);font-size:11px">their site <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg></div>
     </button>`).join('')}
-    <button onclick="openHotelSheet()" style="width:100%;background:transparent;border:1px solid var(--gold-2,rgba(200,169,126,.35));border-radius:16px;padding:15px;color:var(--gold);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:10px">Book it for me — travel desk</button>
-    <div style="font-size:11px;color:var(--fg-4);text-align:center;margin-top:8px">Our desk secures the room, rate and any special touches</div>
+    <button onclick="openHotelSheet()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;background:transparent;border:1px solid var(--gold-2,rgba(200,169,126,.35));border-radius:16px;padding:15px;color:var(--gold);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:10px">Book it for me — travel desk <span style="font-size:9px;font-weight:700;letter-spacing:1.5px;background:var(--gold-3,rgba(200,169,126,.16));border:1px solid var(--gold-2,rgba(200,169,126,.35));border-radius:8px;padding:3px 7px">VELVET</span></button>
+    <div style="font-size:11px;color:var(--fg-4);text-align:center;margin-top:8px">A Velvet member privilege — room, rate and special touches secured</div>
     ${state._htlReqSent?`<div style="display:flex;align-items:center;gap:12px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);border-radius:16px;padding:14px 16px;margin-top:16px">
       <span style="color:#22c55e;font-size:18px">✓</span>
       <div><div style="font-size:14px;font-weight:700">Request ${esc(state._htlReqSent)} received</div><div style="font-size:12px;color:var(--fg-3);margin-top:2px">Our travel desk will come back with options shortly.</div></div>
@@ -3119,6 +3151,7 @@ chauffeur: () => `
       <div style="font-size:11px;color:var(--fg-4);text-align:center;margin-top:10px">No payment now — we confirm the rate with you before booking</div>
     </div>
   </div>`)(state._htlDraft):''}
+  ${deskUpsellSheet()}
 </div>`;},
 
 // The Concierge door: the desk itself plus curated experiences — lifestyle

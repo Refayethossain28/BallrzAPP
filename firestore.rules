@@ -420,14 +420,24 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
-    // Travel desk — flight booking requests. A client files their own request
-    // (status always starts 'requested'); staff advance it (quoted → booked →
-    // ticketed). The only client-side edit allowed is cancelling their own
-    // request — every other field is the desk's to manage.
+    // Travel desk — flight + hotel booking requests. A client files their own
+    // request (status always starts 'requested'); staff advance it (quoted →
+    // booked → ticketed). The only client-side edit allowed is cancelling
+    // their own request — every other field is the desk's to manage.
+    // Desk booking is a Velvet member privilege: creating a request requires a
+    // live Velvet membership (member doc with a sub that isn't canceled) —
+    // the same isLive truth the Velvet app uses. The client-side upsell is
+    // UX; THIS is the enforcement.
     match /flight_requests/{reqId} {
+      function velvetLive() {
+        let m = get(/databases/$(database)/documents/velvet_members/$(request.auth.uid)).data;
+        return 'sub' in m && m.sub is map && m.sub.get('status', '') != 'canceled';
+      }
       allow create: if signedIn()
         && request.resource.data.clientId == request.auth.uid
-        && request.resource.data.status == 'requested';
+        && request.resource.data.status == 'requested'
+        && exists(/databases/$(database)/documents/velvet_members/$(request.auth.uid))
+        && velvetLive();
       allow read: if isAdmin()
         || (signedIn() && resource.data.clientId == request.auth.uid);
       allow update: if isAdmin()
