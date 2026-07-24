@@ -322,6 +322,7 @@ let S={screen:'login',bFilter:'all',dFilter:'all',cFilter:'all',theme:localStora
 let _adminMap = null, _adminMarkers = {};
 // Concierge desk mirrors (velvet_* collections) + the all-apps analytics feed.
 let VREQS=[],VMEMBERS=[],CLOUD_EVENTS=null;
+let FLIGHT_REQS=[];
 
 // Dispatch mode: 'manual' (admin assigns) or 'broadcast' (new bookings are
 // offered to every online driver instantly — first to accept wins)
@@ -513,6 +514,20 @@ function startAdminListeners(){
     VMEMBERS=snap.docs.map(d=>({uid:d.id,...d.data()}));
     if(!['login'].includes(S.screen))render();
   },e=>console.warn('Concierge members:',e.code));
+  // Travel desk — flight booking requests filed from the client app.
+  db.collection('flight_requests').orderBy('createdAt','desc').limit(100).onSnapshot(snap=>{
+    FLIGHT_REQS=snap.docs.map(d=>({id:d.id,...d.data()}));
+    if(!['login'].includes(S.screen))render();
+  },e=>console.warn('Flight requests:',e.code));
+}
+
+function fltReqSetStatus(id,status){
+  if(FIREBASE_ENABLED){
+    db.collection('flight_requests').doc(id).update({status,statusUpdatedAt:firebase.firestore.FieldValue.serverTimestamp()})
+      .catch(e=>alert('Update failed: '+e.message));
+  }else{
+    const r=FLIGHT_REQS.find(x=>x.id===id);if(r)r.status=status;render();
+  }
 }
 
 // All-apps analytics: every app's track() mirrors into this collection, so
@@ -1816,6 +1831,31 @@ settings:()=>{
 
 flights: () => `
 <div>
+  <div style="margin-bottom:28px">
+    <h1 style="font-size:24px;font-weight:700;margin:0 0 4px">Travel Desk</h1>
+    <div style="font-size:13px;color:var(--fg-subtle);margin-bottom:18px">${FLIGHT_REQS.filter(r=>r.status==='requested').length} awaiting action · ${FLIGHT_REQS.length} request${FLIGHT_REQS.length===1?'':'s'} total</div>
+    ${FLIGHT_REQS.length?'':`<div class="card" style="padding:24px;text-align:center;color:var(--fg-4)"><div style="font-size:26px;margin-bottom:8px">🎫</div><div style="font-size:14px;font-weight:600;color:var(--fg-2)">No flight requests yet</div><div style="font-size:12px;margin-top:4px">Clients file them from Flights → "Book it for me" in the app.</div></div>`}
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px">
+    ${FLIGHT_REQS.map(r=>{
+      const tag={requested:['REQUESTED','tag-gold'],quoted:['QUOTED','tag-blue'],booked:['BOOKED','tag-green'],ticketed:['TICKETED','tag-green'],cancelled:['CANCELLED','tag-red']}[r.status]||['REQUESTED','tag-gold'];
+      const next={requested:[['quoted','Mark quoted']],quoted:[['booked','Mark booked']],booked:[['ticketed','Mark ticketed']]}[r.status]||[];
+      return`<div class="card" style="border-radius:18px;padding:18px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div style="font-size:11px;color:var(--fg-subtle)">${esc(r.ref||r.id)}</div>
+          <span class="tag ${tag[1]}" style="font-size:10px">${tag[0]}</span>
+        </div>
+        <div style="font-size:20px;font-weight:700;margin-bottom:2px">${esc(r.from||'?')} → ${esc(r.to||'?')}</div>
+        <div style="font-size:12px;color:var(--fg-muted);margin-bottom:8px">${esc(r.fromName||'')} → ${esc(r.toName||'')}</div>
+        <div style="font-size:13px;color:var(--fg-2);margin-bottom:8px">${esc(r.depart||'')}${r.return?' – '+esc(r.return):' · one-way'} · ${r.pax||1} pax · ${esc(String(r.cabin||'').replace('premiumeconomy','premium'))}</div>
+        <div style="font-size:12px;color:var(--fg-muted);margin-bottom:${r.notes?'6px':'12px'}">${esc(r.clientName||'—')} · ${esc(r.clientEmail||'')}${r.clientPhone?' · '+esc(r.clientPhone):''}</div>
+        ${r.notes?`<div style="font-size:12px;color:var(--fg-2);background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin-bottom:12px">“${esc(r.notes)}”</div>`:''}
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${next.map(([s,l])=>`<button class="btn btn-sm btn-gold" onclick="fltReqSetStatus('${esc(r.id)}','${s}')">${l}</button>`).join('')}
+          ${['requested','quoted'].includes(r.status)?`<button class="btn btn-sm btn-glass" style="color:#f87171" onclick="fltReqSetStatus('${esc(r.id)}','cancelled')">Cancel</button>`:''}
+        </div>
+      </div>`;}).join('')}
+    </div>
+  </div>
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px">
     <div>
       <h1 style="font-size:24px;font-weight:700;margin:0 0 4px">Flight Monitor</h1>
