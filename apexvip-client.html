@@ -1512,6 +1512,63 @@ function skyscannerSearch(){
   haptic('light');
   window.open(url,'_blank','noopener');
 }
+// "Book it for me" — the travel-desk request flow. Ticketing needs an IATA/
+// consolidator channel, so the client's configured flight goes to the ops
+// desk as a flight_requests doc; staff ticket it and advance the status
+// (requested → quoted → booked → ticketed), which the client tracks here.
+function _fltAirportName(code){const a=AIRPORTS.find(x=>x.c.toLowerCase()===String(code).toLowerCase());return a?a.n:String(code).toUpperCase();}
+function openFlightSheet(){
+  const err=document.getElementById('flt_err');
+  const _fail=m=>{if(err){err.textContent=m;err.style.display='block';}};
+  const from=_fltCode(document.getElementById('flt_from')?.value)||'lhr';
+  const to=_fltCode(document.getElementById('flt_to')?.value);
+  if(!to){_fail('Please choose a destination — an airport code (JFK) or city (Dubai).');return;}
+  const dep=document.getElementById('flt_dep')?.value||'';
+  if(!dep){_fail('Please choose a departure date.');return;}
+  let ret='';
+  if(state._fltRtn!==false){
+    ret=document.getElementById('flt_ret')?.value||'';
+    if(!ret){_fail('Please choose a return date, or switch to one-way.');return;}
+  }
+  if(err)err.style.display='none';
+  if(FIREBASE_ENABLED&&!auth.currentUser){state._pendingScreen='flight-search';go('login');return;}
+  state._fltDraft={from:from.toUpperCase(),to:to.toUpperCase(),dep,ret,
+    pax:parseInt(document.getElementById('flt_pax')?.value)||2,cabin:state._fltCabin||'business'};
+  state._fltSheet=true;render();
+}
+async function submitFlightRequest(){
+  const d=state._fltDraft;if(!d)return;
+  const notes=document.getElementById('flt_notes')?.value?.trim()||'';
+  const ref='FLT-'+(Math.floor(1000+Math.random()*9000));
+  const req={ref,clientId:auth.currentUser?.uid||'demo',
+    clientName:state.user?.name||'',clientEmail:state.user?.email||auth.currentUser?.email||'',clientPhone:state.user?.phone||'',
+    from:d.from,fromName:_fltAirportName(d.from),to:d.to,toName:_fltAirportName(d.to),
+    depart:d.dep,return:d.ret||'',pax:d.pax,cabin:d.cabin,notes,status:'requested'};
+  if(FIREBASE_ENABLED&&auth.currentUser){
+    try{await db.collection('flight_requests').add({...req,createdAt:firebase.firestore.FieldValue.serverTimestamp()});}
+    catch(e){reportError(e,'flight-request');const el=document.getElementById('flt_err');if(el){el.textContent='Could not send the request — please try again.';el.style.display='block';}state._fltSheet=false;render();return;}
+  }
+  state._fltReqs=[{...req,id:'local-'+Date.now()},...(state._fltReqs||[])];
+  state._fltSheet=false;state._fltReqSent=ref;
+  track('flight_request',{from:d.from,to:d.to,dep:d.dep,ret:d.ret,pax:d.pax,cabin:d.cabin,src:'client'});
+  haptic('confirm');render();
+}
+function _loadFlightReqs(){
+  if(!(FIREBASE_ENABLED&&auth.currentUser))return;
+  db.collection('flight_requests').where('clientId','==',auth.currentUser.uid).limit(20).get().then(snap=>{
+    const rows=snap.docs.map(x=>({id:x.id,...x.data()}));
+    rows.sort((a,b)=>(b.createdAt?.toMillis?.()||0)-(a.createdAt?.toMillis?.()||0));
+    state._fltReqs=rows.slice(0,6);
+    if(state.screen==='flight-search')render();
+  }).catch(reportError);
+}
+function cancelFlightReq(id){
+  const r=(state._fltReqs||[]).find(x=>x.id===id);if(r)r.status='cancelled';
+  if(FIREBASE_ENABLED&&auth.currentUser&&!String(id).startsWith('local-')){
+    db.collection('flight_requests').doc(id).update({status:'cancelled'}).catch(reportError);
+  }
+  render();
+}
 
 // ── Concierge AutoPlan™ — itinerary optimiser ──────────────────────────────
 function optimiseItinerary(){
@@ -2866,7 +2923,25 @@ chauffeur: () => `
     </div>
     <div id="flt_err" style="display:none;color:#ef4444;font-size:13px;margin-bottom:12px"></div>
     <button class="btn btn-gold ripple-host" onclick="addRipple(this,event);skyscannerSearch()">Search flights</button>
-    <div style="font-size:11px;color:var(--fg-4);text-align:center;margin-top:10px">Live results open on Skyscanner</div>
+    <div style="font-size:11px;color:var(--fg-4);text-align:center;margin-top:10px;margin-bottom:12px">Live results open on Skyscanner</div>
+    <button onclick="openFlightSheet()" style="width:100%;background:transparent;border:1px solid var(--gold-2,rgba(200,169,126,.35));border-radius:16px;padding:15px;color:var(--gold);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Book it for me — travel desk</button>
+    <div style="font-size:11px;color:var(--fg-4);text-align:center;margin-top:8px">Our desk sources the fare, books and tickets it for you</div>
+    ${state._fltReqSent?`<div style="display:flex;align-items:center;gap:12px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);border-radius:16px;padding:14px 16px;margin-top:16px">
+      <span style="color:#22c55e;font-size:18px">✓</span>
+      <div><div style="font-size:14px;font-weight:700">Request ${esc(state._fltReqSent)} received</div><div style="font-size:12px;color:var(--fg-3);margin-top:2px">Our travel desk will come back with options shortly.</div></div>
+    </div>`:''}
+    ${(()=>{const reqs=state._fltReqs||[];if(!reqs.length)return'';
+      const tag=s=>({requested:['Requested','var(--gold)','rgba(200,169,126,.14)'],quoted:['Quoted','#60a5fa','rgba(96,165,250,.12)'],booked:['Booked','#22c55e','rgba(34,197,94,.1)'],ticketed:['Ticketed','#22c55e','rgba(34,197,94,.1)'],cancelled:['Cancelled','#ef4444','rgba(239,68,68,.1)']}[s]||['Requested','var(--gold)','rgba(200,169,126,.14)']);
+      return `<div class="section-label" style="margin:24px 0 10px">Your flight requests</div>`+reqs.map(r=>{const[t,c,bg]=tag(r.status);return `
+      <div class="card" style="padding:14px 16px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span style="font-size:13px;font-weight:700">${esc(r.from)} → ${esc(r.to)}</span>
+          <span style="font-size:10px;font-weight:700;letter-spacing:.5px;color:${c};background:${bg};border-radius:8px;padding:4px 9px">${t}</span>
+        </div>
+        <div style="font-size:12px;color:var(--fg-3)">${esc(r.depart)}${r.return?' – '+esc(r.return):''} · ${r.pax} traveller${r.pax>1?'s':''} · ${esc(String(r.cabin||'').replace('premiumeconomy','premium'))} · ${esc(r.ref||'')}</div>
+        ${r.status==='requested'?`<button onclick="cancelFlightReq('${esc(r.id)}')" style="margin-top:8px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);color:#ef4444;padding:6px 12px;border-radius:10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Cancel request</button>`:''}
+      </div>`;}).join('');})()}
+    ${(()=>{if(!state._fltReqsLoaded){state._fltReqsLoaded=true;setTimeout(_loadFlightReqs,50);}return''})()}
     <div class="card" style="padding:16px 18px;margin-top:22px;display:flex;align-items:center;gap:14px;cursor:pointer" onclick="goBook('airport')">
       <div style="width:44px;height:44px;border-radius:14px;background:var(--gold-3,rgba(200,169,126,.12));border:1px solid var(--gold-2,rgba(200,169,126,.3));display:flex;align-items:center;justify-content:center;flex-shrink:0">
         <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="var(--gold)" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M8 17h8M6 17l-2-6 3 1 2-6 4 5 5-1-2 7H6z"/></svg>
@@ -2878,6 +2953,21 @@ chauffeur: () => `
       <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--fg-3)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
     </div>
   </div>
+  ${state._fltSheet&&state._fltDraft?(d=>`
+  <div style="position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:500;display:flex;align-items:flex-end;justify-content:center" onclick="state._fltSheet=false;render()">
+    <div style="background:var(--bg);border-radius:24px 24px 0 0;border:1px solid var(--border);width:100%;max-width:480px;padding:26px 24px calc(env(safe-area-inset-bottom) + 26px);animation:slideUp .25s ease" onclick="event.stopPropagation()">
+      <div style="font-family:var(--font-serif);font-size:22px;font-weight:500;margin-bottom:4px">Book through our travel desk</div>
+      <div style="font-size:13px;color:var(--fg-3);margin-bottom:18px">We source the best fare, book and ticket it, and confirm back to you.</div>
+      <div class="card" style="padding:16px 18px;margin-bottom:14px">
+        <div style="font-size:16px;font-weight:700;margin-bottom:4px">${esc(d.from)} → ${esc(d.to)}</div>
+        <div style="font-size:13px;color:var(--fg-3)">${esc(_fltAirportName(d.from))} to ${esc(_fltAirportName(d.to))}</div>
+        <div style="font-size:13px;color:var(--fg-2);margin-top:8px">${esc(d.dep)}${d.ret?' – '+esc(d.ret):' · one-way'} · ${d.pax} traveller${d.pax>1?'s':''} · ${esc(d.cabin.replace('premiumeconomy','premium'))}</div>
+      </div>
+      <textarea id="flt_notes" placeholder="Preferences — airline, seats, loyalty number, flexibility…" rows="2" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:13px 14px;color:var(--fg);font-size:14px;font-family:inherit;resize:none;margin-bottom:14px"></textarea>
+      <button class="btn btn-gold ripple-host" onclick="addRipple(this,event);submitFlightRequest()">Send to travel desk</button>
+      <div style="font-size:11px;color:var(--fg-4);text-align:center;margin-top:10px">No payment now — we confirm the fare with you before ticketing</div>
+    </div>
+  </div>`)(state._fltDraft):''}
 </div>`;},
 
 // The Concierge door: the desk itself plus curated experiences — lifestyle

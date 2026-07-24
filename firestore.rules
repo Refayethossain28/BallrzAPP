@@ -411,6 +411,23 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // Travel desk — flight booking requests. A client files their own request
+    // (status always starts 'requested'); staff advance it (quoted → booked →
+    // ticketed). The only client-side edit allowed is cancelling their own
+    // request — every other field is the desk's to manage.
+    match /flight_requests/{reqId} {
+      allow create: if signedIn()
+        && request.resource.data.clientId == request.auth.uid
+        && request.resource.data.status == 'requested';
+      allow read: if isAdmin()
+        || (signedIn() && resource.data.clientId == request.auth.uid);
+      allow update: if isAdmin()
+        || (signedIn() && resource.data.clientId == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+            && request.resource.data.status == 'cancelled');
+      allow delete: if isAdmin();
+    }
+
     // ApexFX trading app — each user owns their own journal subtree. Trade
     // docs hold chart analyses (verdict, levels, outcome, thumbnail); no
     // cross-user reads.
