@@ -236,7 +236,28 @@
       <h1>Vault</h1>
       <p>A full digital bank on your device — account, pots, card, the lot. Every pound is simulated; every rule is real.</p>
     </div>
-    <div id="obStep1">
+    <div id="obStep0">
+      <button class="btn" style="margin-bottom:10px;padding:16px;flex-direction:column;align-items:flex-start;gap:3px" onclick="chooseMode('online')">
+        <span>🌐 <b>Vault Online</b></span>
+        <span class="tiny" style="font-weight:400;text-align:left">Sign in on any device. Your bank lives on the server, and you can pay other Vault customers for real — the money arrives on their phone.</span>
+      </button>
+      <button class="btn" style="padding:16px;flex-direction:column;align-items:flex-start;gap:3px" onclick="chooseMode('local')">
+        <span>🔒 <b>Private vault</b></span>
+        <span class="tiny" style="font-weight:400;text-align:left">Stays on this device only. No sign-up, no server, works offline.</span>
+      </button>
+      <p class="tiny" style="text-align:center;margin-top:14px">Either way the money is simulated — the rules are what&rsquo;s real.</p>
+    </div>
+    <div id="obAuth" class="hide">
+      <div class="field"><label for="obEmail">Email</label><input id="obEmail" type="email" placeholder="you@example.com" autocomplete="email"></div>
+      <div class="field"><label for="obPw">Password</label><input id="obPw" type="password" placeholder="6+ characters" autocomplete="current-password"></div>
+      <div class="field"><label for="obName2">Your name (for new accounts)</label><input id="obName2" maxlength="40" placeholder="e.g. Rafa Hossain" autocomplete="name"></div>
+      <div class="row2" style="margin-top:6px">
+        <button class="btn primary" onclick="obSignUp()">Create account</button>
+        <button class="btn" onclick="obSignIn()">Sign in</button>
+      </div>
+      <button class="btn ghost" style="margin-top:10px" onclick="showOnboard('step0')">‹ Back</button>
+    </div>
+    <div id="obStep1" class="hide">
       <div class="field"><label for="obName">Your name</label><input id="obName" maxlength="40" placeholder="e.g. Rafa Hossain" autocomplete="name"></div>
       <div class="field spread panel" style="padding:13px 15px">
         <div><b style="font-size:14.5px">Start with 3 months of history</b><div class="tiny">Salary, rent, coffees — so the insights have something to show.</div></div>
@@ -280,7 +301,7 @@
       <button onclick="openSend()"><b>↗️</b>Send</button>
       <button onclick="openAdd()"><b>➕</b>Add</button>
       <button onclick="openDetails()"><b>🧾</b>Details</button>
-      <button onclick="lockNow()"><b>🔒</b>Lock</button>
+      <button onclick="lockNow()"><b>🔒</b><span id="quickLockLabel">Lock</span></button>
     </div>
     <h2>Pots</h2>
     <div class="potStrip" id="homePots"></div>
@@ -364,15 +385,13 @@
       <button class="listItem" onclick="openDetails()"><span class="ic">🏦</span><span class="grow"><b>Account details</b><span id="moreRails"></span></span><span class="chev">›</span></button>
       <button class="listItem" onclick="openStatement()"><span class="ic">📄</span><span class="grow"><b>Download statement</b><span>CSV, per account</span></span><span class="chev">›</span></button>
       <button class="listItem" onclick="openOverdraft()"><span class="ic">🛟</span><span class="grow"><b>Arranged overdraft</b><span id="moreOd"></span></span><span class="chev">›</span></button>
+      <button class="listItem" onclick="switchMode()"><span class="ic" id="modeIc">🌐</span><span class="grow"><b id="modeTitle"></b><span id="modeSub"></span></span><span class="chev">›</span></button>
     </div>
     <h2>Security</h2>
-    <div class="panel" style="padding:6px 14px">
-      <button class="listItem" onclick="openChangePin()"><span class="ic">🔑</span><span class="grow"><b>Change PIN</b><span>4 digits</span></span><span class="chev">›</span></button>
-      <button class="listItem" onclick="lockNow()"><span class="ic">🔒</span><span class="grow"><b>Lock now</b><span>Back to the PIN screen</span></span><span class="chev">›</span></button>
-    </div>
+    <div class="panel" style="padding:6px 14px" id="secPanel"></div>
     <h2>About</h2>
-    <div class="note">Vault is a <b>simulated</b> bank: the ledger, interest, card checks and IBANs are computed for real, but no actual money exists here and nothing leaves your device. Don’t type a real card number into anything.</div>
-    <button class="btn danger" style="margin-top:16px" onclick="resetBank()">Reset the bank</button>
+    <div class="note" id="aboutNote"></div>
+    <button class="btn danger" style="margin-top:16px" id="dangerBtn" onclick="dangerAction()">Reset the bank</button>
     <p class="tiny" style="text-align:center;margin-top:14px" id="moreSince"></p>
   </section>
 
@@ -392,6 +411,15 @@
 <div class="sheet" id="sheet"></div>
 <div id="toast"></div>
 
+<!-- Vault Online: Firebase compat SDK (same stack as the ApexVIP apps). If
+     these fail to load — offline, file://, ad-blocker — the app degrades
+     gracefully to local-only mode. ../firebase.js is the shared project
+     config published at the site root by pages.yml. -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
+<script src="../firebase.js"></script>
 <script src="engine.js"></script>
 <script>
 'use strict';
@@ -400,11 +428,115 @@
 
 var V = Vault;
 var LS_KEY = 'vault-bank-v1';
+var MODE_KEY = 'vault-mode';
 var state = null;
 var locked = true;
 var revealed = false;
 var monthOffset = 0;
 var pinBuf = '', pinStage = null; // onboarding/change-pin two-step entry
+
+/* ---------- Vault Online (Firebase) ----------
+   MODE 'local'  — the original device-only vault (localStorage, PIN lock).
+   MODE 'online' — the bank lives in vaultBanks/{uid} on the server; this
+   client only READS it (live, via onSnapshot) and every mutation goes
+   through the vault* callables, where the same engine enforces the same
+   rules — plus the things a client can't be trusted with (identity, atomic
+   P2P transfers, caps). If Firebase isn't reachable, online mode simply
+   isn't offered. */
+var MODE = 'local';
+var FB = { on: false, auth: null, db: null, fns: null, user: null, unsub: null, opening: false };
+function initFirebase() {
+  try {
+    if (typeof firebase === 'undefined' || typeof APEXVIP_FIREBASE_CONFIG === 'undefined') return;
+    var app = firebase.apps.length ? firebase.app() : firebase.initializeApp(APEXVIP_FIREBASE_CONFIG);
+    FB.auth = firebase.auth(app);
+    FB.db = firebase.firestore(app);
+    FB.fns = firebase.functions(app);
+    FB.on = true;
+  } catch (e) { FB.on = false; }
+}
+function cleanErr(e) {
+  var m = (e && e.message) || 'Something went wrong';
+  return m.replace(/^(Firebase:|INTERNAL|internal)\s*/i, '').replace(/\s*\([^)]*\)\.?$/, '') || 'Something went wrong';
+}
+function isOnline() { return MODE === 'online'; }
+function setMode(m) { try { localStorage.setItem(MODE_KEY, m); } catch (e) {} }
+/** Run one named server-side operation on my bank; state updates arrive via onSnapshot. */
+function cloudExec(op, args, silent) {
+  if (!FB.on || !FB.user) { toast('Not connected', true); return Promise.resolve(false); }
+  return FB.fns.httpsCallable('vaultExec')({ op: op, args: args || {} }).then(
+    function () { return true; },
+    function (e) { if (!silent) toast(cleanErr(e), true); return false; }
+  );
+}
+function subscribeCloud(user) {
+  MODE = 'online'; locked = false; FB.user = user;
+  if (FB.unsub) { try { FB.unsub(); } catch (e) {} }
+  FB.unsub = FB.db.doc('vaultBanks/' + user.uid).onSnapshot(function (snap) {
+    if (!snap.exists) {
+      // signed in but no bank yet (first run, or a half-finished sign-up) — open one
+      if (FB.opening) return;
+      FB.opening = true;
+      var nm = String(($('obName2') && $('obName2').value) || '').trim() ||
+               (user.email ? user.email.split('@')[0] : 'You');
+      FB.fns.httpsCallable('vaultOpen')({ name: nm }).catch(function (e) {
+        FB.opening = false;
+        toast(cleanErr(e), true);
+      });
+      return;
+    }
+    FB.opening = false;
+    var first = !state;
+    state = snap.data();
+    if (first) {
+      showTab('home');
+      cloudExec('catchup', {}, true); // interest + due standing orders since last visit
+    } else renderAll();
+  }, function (e) { toast('Connection trouble: ' + cleanErr(e), true); });
+}
+function signOutVault() {
+  if (FB.unsub) { try { FB.unsub(); } catch (e) {} FB.unsub = null; }
+  FB.user = null; state = null; revealed = false; monthOffset = 0;
+  if (FB.on) { try { FB.auth.signOut(); } catch (e) {} }
+  showOnboard('auth');
+}
+
+/* ---------- onboarding routing ---------- */
+function showOnboard(step) {
+  showView('view-onboard');
+  var steps = ['obStep0', 'obAuth', 'obStep1', 'obStep2'];
+  for (var i = 0; i < steps.length; i++) $(steps[i]).classList.add('hide');
+  $({ step0: 'obStep0', auth: 'obAuth', step1: 'obStep1', step2: 'obStep2' }[step] || 'obStep0').classList.remove('hide');
+}
+function chooseMode(m) {
+  if (m === 'online') {
+    if (!FB.on) { toast('Online mode needs an internet connection', true); return; }
+    showOnboard('auth');
+  } else {
+    showOnboard('step1');
+  }
+}
+function obSignUp() {
+  var email = String($('obEmail').value || '').trim();
+  var pw = String($('obPw').value || '');
+  var name = String($('obName2').value || '').trim();
+  if (!name) { toast('Tell us your name first', true); return; }
+  if (!email || pw.length < 6) { toast('Enter an email and a 6+ character password', true); return; }
+  FB.auth.createUserWithEmailAndPassword(email, pw).then(function (cred) {
+    setMode('online');
+    subscribeCloud(cred.user);
+    toast('Welcome to Vault, ' + name.split(' ')[0] + ' 🎉');
+  }, function (e) { toast(cleanErr(e), true); });
+}
+function obSignIn() {
+  var email = String($('obEmail').value || '').trim();
+  var pw = String($('obPw').value || '');
+  if (!email || !pw) { toast('Enter your email and password', true); return; }
+  FB.auth.signInWithEmailAndPassword(email, pw).then(function (cred) {
+    setMode('online');
+    subscribeCloud(cred.user);
+  }, function (e) { toast(cleanErr(e), true); });
+}
 
 /* ---------- tiny helpers ---------- */
 function $(id) { return document.getElementById(id); }
@@ -431,7 +563,10 @@ function newRng() {
   } catch (e) { seed = (new Date().getTime()) >>> 0; }
   return V.mulberry32(seed >>> 0);
 }
-function save() { try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {} }
+function save() {
+  if (MODE === 'online') return; // the server is the truth online — never mirror it to localStorage
+  try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {}
+}
 function load() {
   try {
     var raw = localStorage.getItem(LS_KEY);
@@ -542,7 +677,10 @@ function createBank(name, pin, withDemo) {
 }
 
 /* ---------- lock ---------- */
-function lockNow() { locked = true; revealed = false; renderLock(); }
+function lockNow() {
+  if (isOnline()) { signOutVault(); return; } // online: the session is the lock
+  locked = true; revealed = false; renderLock();
+}
 function renderLock() {
   showView('view-lock');
   $('lockHello').textContent = 'Hi, ' + state.name.split(' ')[0];
@@ -570,7 +708,7 @@ function lockKey(k) {
 
 /* ---------- catch-up: interest + standing orders since last open ---------- */
 function catchUp() {
-  if (!state) return;
+  if (!state || isOnline()) return; // online catch-up happens server-side (op: catchup)
   var before = state.txns.length;
   state = V.accrueInterest(state, today());
   var r = V.runDueOrders(state, today());
@@ -589,7 +727,8 @@ function renderAll() {
 }
 
 function renderHome() {
-  $('homeHello').textContent = 'Hi ' + state.name.split(' ')[0] + ' 👋';
+  $('homeHello').textContent = 'Hi ' + state.name.split(' ')[0] + ' 👋' + (isOnline() ? '  ·  🌐 Vault Online' : '');
+  $('quickLockLabel').textContent = isOnline() ? 'Sign out' : 'Lock';
   $('homeTotal').textContent = V.fmt(V.totalBalance(state));
   $('homeRails').textContent = state.sortCode + ' · ' + state.accountNumber + '  ·  Current ' + V.fmt(V.balanceOf(state, 'current'));
 
@@ -678,19 +817,28 @@ function renderCard() {
 }
 function toggleReveal() { revealed = !revealed; renderCard(); }
 function toggleFreeze() {
+  var frozen = !state.card.frozen;
+  if (isOnline()) {
+    cloudExec('setfrozen', { frozen: frozen }).then(function (ok) {
+      if (ok) toast(frozen ? 'Card frozen 🧊' : 'Card unfrozen');
+    });
+    return;
+  }
   state = JSON.parse(JSON.stringify(state));
-  state.card.frozen = !state.card.frozen;
+  state.card.frozen = frozen;
   save(); renderCard();
-  toast(state.card.frozen ? 'Card frozen 🧊' : 'Card unfrozen');
+  toast(frozen ? 'Card frozen 🧊' : 'Card unfrozen');
 }
 function toggleRoundUps(on) {
+  var firstPot = null;
+  for (var i = 0; i < state.accounts.length; i++) if (state.accounts[i].kind === 'savings') { firstPot = state.accounts[i].id; break; }
+  if (on && !firstPot) { toast('Make a pot first', true); $('ruToggle').checked = false; return; }
+  if (isOnline()) {
+    cloudExec('setroundups', { potId: on ? firstPot : null }).then(function (ok) { if (!ok) renderCard(); });
+    return;
+  }
   state = JSON.parse(JSON.stringify(state));
-  if (on) {
-    var firstPot = null;
-    for (var i = 0; i < state.accounts.length; i++) if (state.accounts[i].kind === 'savings') { firstPot = state.accounts[i].id; break; }
-    if (!firstPot) { toast('Make a pot first', true); $('ruToggle').checked = false; return; }
-    state.roundUpsTo = firstPot;
-  } else state.roundUpsTo = null;
+  state.roundUpsTo = on ? firstPot : null;
   save(); renderCard();
 }
 
@@ -723,6 +871,44 @@ function renderMore() {
   for (var i = 0; i < state.accounts.length; i++) if (state.accounts[i].id === 'current') od = state.accounts[i].overdraft || 0;
   $('moreOd').textContent = od > 0 ? V.fmt(od) + ' available' : 'Not set up';
   $('moreSince').textContent = 'Vault customer since ' + niceDate(state.createdISO) + ' · ' + state.txns.length + ' transactions on the ledger';
+  if (isOnline()) {
+    $('modeIc').textContent = '🔒';
+    $('modeTitle').textContent = 'Use a private local vault instead';
+    $('modeSub').textContent = 'Signed in as ' + ((FB.user && FB.user.email) || 'you');
+    $('secPanel').innerHTML =
+      '<button class="listItem" onclick="signOutVault()"><span class="ic">🚪</span><span class="grow"><b>Sign out</b><span>Your bank stays safe on the server</span></span><span class="chev">›</span></button>';
+    $('aboutNote').innerHTML = 'Vault Online is a <b>real banking system</b> with <b>simulated money</b>: your ledger lives on our server, only the bank’s own rules can move a penny, and transfers to other Vault customers are real and instant. No actual currency exists here — see the repo’s real-money roadmap for what a licensed version would take.';
+    $('dangerBtn').textContent = 'Sign out of Vault Online';
+  } else {
+    $('modeIc').textContent = '🌐';
+    $('modeTitle').textContent = 'Go online — sign in';
+    $('modeSub').textContent = 'Use your bank on any device, pay real people';
+    $('secPanel').innerHTML =
+      '<button class="listItem" onclick="openChangePin()"><span class="ic">🔑</span><span class="grow"><b>Change PIN</b><span>4 digits</span></span><span class="chev">›</span></button>' +
+      '<button class="listItem" onclick="lockNow()"><span class="ic">🔒</span><span class="grow"><b>Lock now</b><span>Back to the PIN screen</span></span><span class="chev">›</span></button>';
+    $('aboutNote').innerHTML = 'Vault is a <b>simulated</b> bank: the ledger, interest, card checks and IBANs are computed for real, but no actual money exists here and nothing leaves your device. Don’t type a real card number into anything.';
+    $('dangerBtn').textContent = 'Reset the bank';
+  }
+}
+function switchMode() {
+  if (isOnline()) {
+    setMode('local');
+    if (FB.unsub) { try { FB.unsub(); } catch (e) {} FB.unsub = null; }
+    state = null; MODE = 'local';
+    init();
+  } else {
+    if (!FB.on) { toast('Online mode needs an internet connection', true); return; }
+    setMode('online');
+    MODE = 'online'; state = null; locked = false;
+    showOnboard('auth');
+    FB.auth.onAuthStateChanged(function (user) {
+      if (user && MODE === 'online') subscribeCloud(user);
+    });
+  }
+}
+function dangerAction() {
+  if (isOnline()) { signOutVault(); return; }
+  resetBank();
 }
 
 /* ---------- sheets: money in/out ---------- */
@@ -736,6 +922,12 @@ function openAdd() {
 function doAdd() {
   var pence = V.parseAmount($('addAmt').value);
   if (pence === null) { toast('Enter a valid amount', true); return; }
+  if (isOnline()) {
+    cloudExec('topup', { amount: pence }).then(function (ok) {
+      if (ok) { closeSheet(); toast(V.fmt(pence, { showPlus: true }) + ' added'); }
+    });
+    return;
+  }
   var r = V.post(state, { amount: pence, from: null, to: 'current', desc: 'Top up', category: 'income', method: 'faster-payment', ts: nowTS() });
   if (r.error) { toast(r.message, true); return; }
   state = r.state; save(); closeSheet(); renderAll();
@@ -745,7 +937,10 @@ function doAdd() {
 function openSend(contactIdx) {
   var c = typeof contactIdx === 'number' ? state.contacts[contactIdx] : null;
   openSheet('<h3>Send money</h3>' +
-    '<div class="field"><label for="sendName">To</label><input id="sendName" placeholder="Name" value="' + (c ? esc(c.name) : '') + '"></div>' +
+    (isOnline()
+      ? '<p class="tiny" style="margin:0 0 8px">Enter their Vault sort code and account number — we’ll confirm who it is before anything moves.</p>'
+      : '<div class="field"><label for="sendName">To</label><input id="sendName" placeholder="Name" value="' + (c ? esc(c.name) : '') + '"></div>') +
+    (isOnline() ? '<input id="sendName" type="hidden" value="' + (c ? esc(c.name) : '') + '">' : '') +
     '<div class="row2">' +
       '<div class="field"><label for="sendSort">Sort code</label><input id="sendSort" inputmode="numeric" placeholder="00-00-00" value="' + (c ? esc(c.sortCode) : '') + '"></div>' +
       '<div class="field"><label for="sendAcc">Account number</label><input id="sendAcc" inputmode="numeric" maxlength="8" placeholder="12345678" value="' + (c ? esc(c.accountNumber) : '') + '"></div>' +
@@ -761,10 +956,23 @@ function doSend() {
   var acc = String($('sendAcc').value || '').replace(/\D/g, '');
   var pence = V.parseAmount($('sendAmt').value);
   var ref = String($('sendRef').value || '').trim();
-  if (!name) { toast('Who are you paying?', true); return; }
   if (sort.length !== 6) { toast('Sort code needs 6 digits', true); return; }
   if (acc.length !== 8) { toast('Account number needs 8 digits', true); return; }
   if (pence === null) { toast('Enter a valid amount', true); return; }
+  if (isOnline()) {
+    // confirmation of payee first — the server tells us who these rails belong to
+    FB.fns.httpsCallable('vaultLookup')({ sortCode: sort, accountNumber: acc }).then(function (res) {
+      var d = (res && res.data) || {};
+      if (!d.found) { toast('No Vault account with those details — check the digits', true); return; }
+      if (!confirm('Pay ' + d.name + ' ' + V.fmt(pence) + (ref ? ' · “' + ref + '”' : '') + '?')) return;
+      FB.fns.httpsCallable('vaultSend')({ toSortCode: sort, toAccountNumber: acc, amount: pence, reference: ref }).then(
+        function (r) { closeSheet(); toast(V.fmt(pence) + ' sent to ' + ((r.data && r.data.toName) || d.name) + ' ✅'); },
+        function (e) { toast(cleanErr(e), true); }
+      );
+    }, function (e) { toast(cleanErr(e), true); });
+    return;
+  }
+  if (!name) { toast('Who are you paying?', true); return; }
   var r = V.post(state, { amount: pence, from: 'current', to: null, desc: 'Sent to ' + name + (ref ? ' · ' + ref : ''), category: 'transfers', method: 'faster-payment', ts: nowTS() });
   if (r.error) { toast(r.message, true); return; }
   state = r.state;
@@ -799,6 +1007,13 @@ function doMove() {
   var pence = V.parseAmount($('mvAmt').value);
   if (pence === null) { toast('Enter a valid amount', true); return; }
   var from = $('mvFrom').value, to = $('mvTo').value;
+  if (isOnline()) {
+    var args = from === 'current' ? { potId: to, amount: pence, into: true }
+             : to === 'current' ? { potId: from, amount: pence, into: false } : null;
+    if (!args) { toast('Online moves go via your current account — pot to current, or current to pot', true); return; }
+    cloudExec('potmove', args).then(function (ok) { if (ok) { closeSheet(); toast(V.fmt(pence) + ' moved'); } });
+    return;
+  }
   var toName = V.accountById(state, to) ? V.accountById(state, to).name : '';
   var r = V.post(state, { amount: pence, from: from, to: to, desc: 'Pot transfer · ' + toName, category: 'savings', ts: nowTS() });
   if (r.error) { toast(r.message, true); return; }
@@ -822,7 +1037,14 @@ function doNewPot() {
   if (!name) { toast('Give the pot a name', true); return; }
   var goal = V.parseAmount($('potGoal').value); // null is fine — no goal
   var aer = parseFloat($('potAer').value);
-  state = V.createPot(state, { name: name, goal: goal || 0, aerPct: isNaN(aer) ? 4.0 : Math.max(0, Math.min(15, aer)), nowISO: today() });
+  aer = isNaN(aer) ? 4.0 : Math.max(0, Math.min(isOnline() ? 5 : 15, aer)); // online: the house pays at most 5%
+  if (isOnline()) {
+    cloudExec('potcreate', { name: name, goal: goal || 0, aerPct: aer }).then(function (ok) {
+      if (ok) { closeSheet(); toast('Pot “' + name + '” created 🐖'); }
+    });
+    return;
+  }
+  state = V.createPot(state, { name: name, goal: goal || 0, aerPct: aer, nowISO: today() });
   save(); closeSheet(); renderAll();
   toast('Pot “' + name + '” created 🐖');
 }
@@ -844,6 +1066,12 @@ function openPot(id) {
 function potMove(id, into) {
   var pence = V.parseAmount($('potAmt').value);
   if (pence === null) { toast('Enter a valid amount', true); return; }
+  if (isOnline()) {
+    cloudExec('potmove', { potId: id, amount: pence, into: into }).then(function (ok) {
+      if (ok) { closeSheet(); toast(into ? V.fmt(pence) + ' tucked away' : V.fmt(pence) + ' back in your account'); }
+    });
+    return;
+  }
   var a = V.accountById(state, id);
   var r = into
     ? V.post(state, { amount: pence, from: 'current', to: id, desc: 'Pot transfer · ' + a.name, category: 'savings', ts: nowTS() })
@@ -866,6 +1094,12 @@ function doSpend() {
   var pence = V.parseAmount($('spAmt').value);
   var merchant = String($('spMerchant').value || 'Card purchase').trim() || 'Card purchase';
   if (pence === null) { toast('Enter a valid amount', true); return; }
+  if (isOnline()) {
+    cloudExec('cardpurchase', { amount: pence, merchant: merchant }).then(function (ok) {
+      if (ok) { closeSheet(); toast(V.fmt(pence) + ' paid ✅'); }
+    });
+    return;
+  }
   var r = V.cardPurchase(state, pence, merchant, nowTS());
   if (r.error) { toast(r.message, true); return; }
   state = r.state; save(); closeSheet(); renderAll();
@@ -882,6 +1116,12 @@ function doLimits() {
   var tx = V.parseAmount($('limTx').value);
   var day = V.parseAmount($('limDay').value);
   if (tx === null || day === null) { toast('Enter valid amounts', true); return; }
+  if (isOnline()) {
+    cloudExec('setlimits', { perTx: tx, daily: day }).then(function (ok) {
+      if (ok) { closeSheet(); toast('Limits updated'); }
+    });
+    return;
+  }
   state = JSON.parse(JSON.stringify(state));
   state.card.limitPerTx = tx;
   state.card.limitDaily = day;
@@ -910,12 +1150,22 @@ function doNewSO() {
   if (pence === null) { toast('Enter a valid amount', true); return; }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) { toast('Pick a start date', true); return; }
   if (start < today()) { toast('Start date is in the past', true); return; }
+  if (isOnline()) {
+    cloudExec('addorder', { to: to, amount: pence, freq: $('soFreq').value, startISO: start }).then(function (ok) {
+      if (ok) { closeSheet(); toast('Standing order to ' + to + ' set up 📅'); }
+    });
+    return;
+  }
   state = V.addOrder(state, { to: to, amount: pence, freq: $('soFreq').value, startISO: start, desc: to });
   save(); closeSheet(); renderAll();
   toast('Standing order to ' + to + ' set up 📅');
 }
 function cancelSO(id) {
   if (!confirm('Cancel this standing order?')) return;
+  if (isOnline()) {
+    cloudExec('cancelorder', { id: id }).then(function (ok) { if (ok) toast('Standing order cancelled'); });
+    return;
+  }
   state = JSON.parse(JSON.stringify(state));
   for (var i = state.orders.length - 1; i >= 0; i--) if (state.orders[i].id === id) state.orders.splice(i, 1);
   save(); renderAll();
@@ -969,7 +1219,8 @@ function openOverdraft() {
   var od = 0;
   for (var i = 0; i < state.accounts.length; i++) if (state.accounts[i].id === 'current') od = state.accounts[i].overdraft || 0;
   openSheet('<h3>Arranged overdraft</h3>' +
-    '<p class="tiny" style="margin:0 0 10px">A safety net on your current account — spend can dip below zero down to this limit. Pots are never allowed to go negative.</p>' +
+    '<p class="tiny" style="margin:0 0 10px">A safety net on your current account — spend can dip below zero down to this limit. Pots are never allowed to go negative.' +
+    (isOnline() ? ' Online, the bank offers up to £500.' : '') + '</p>' +
     '<div class="field"><label for="odAmt">Overdraft limit (0 to switch off)</label><input id="odAmt" inputmode="decimal" value="' + (od / 100) + '"></div>' +
     '<button class="btn primary" onclick="doOverdraft()">Save</button>');
 }
@@ -977,6 +1228,12 @@ function doOverdraft() {
   var raw = String($('odAmt').value || '').trim();
   var pence = raw === '0' || raw === '' ? 0 : V.parseAmount(raw);
   if (pence === null) { toast('Enter a valid amount', true); return; }
+  if (isOnline()) {
+    cloudExec('setoverdraft', { amount: pence }).then(function (ok) {
+      if (ok) { closeSheet(); toast(pence > 0 ? 'Overdraft set to ' + V.fmt(pence) : 'Overdraft switched off'); }
+    });
+    return;
+  }
   state = JSON.parse(JSON.stringify(state));
   for (var i = 0; i < state.accounts.length; i++) if (state.accounts[i].id === 'current') state.accounts[i].overdraft = pence;
   save(); closeSheet(); renderAll();
@@ -1025,9 +1282,7 @@ function resetBank() {
   if (!confirm('Reset Vault? The whole ledger — every account, pot and transaction — is deleted. This cannot be undone.')) return;
   try { localStorage.removeItem(LS_KEY); } catch (e) {}
   state = null; locked = true; revealed = false; monthOffset = 0;
-  showView('view-onboard');
-  $('obStep1').classList.remove('hide');
-  $('obStep2').classList.add('hide');
+  showOnboard('step0');
   toast('The vault is empty. Start again whenever.');
 }
 
@@ -1035,9 +1290,23 @@ function focusSoon(id) { setTimeout(function () { try { $(id).focus(); } catch (
 
 /* ---------- boot ---------- */
 function init() {
+  initFirebase();
+  var mode = null;
+  try { mode = localStorage.getItem(MODE_KEY); } catch (e) {}
+  if (mode === 'online' && FB.on) {
+    MODE = 'online';
+    showOnboard('auth'); // the auth listener routes past this if already signed in
+    FB.auth.onAuthStateChanged(function (user) {
+      if (MODE !== 'online') return; // the user has since switched to a local vault
+      if (user) subscribeCloud(user);
+      else { state = null; showOnboard('auth'); }
+    });
+    return;
+  }
+  MODE = 'local';
   state = load();
   if (!state) {
-    showView('view-onboard');
+    showOnboard('step0');
   } else if (state.pin) {
     renderLock();
   } else {
