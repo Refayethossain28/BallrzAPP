@@ -1,0 +1,816 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#07091a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="AIOS">
+<meta name="description" content="AIOS — the AI operating system. A desktop that boots in your browser: windows, a real shell, a virtual disk, and an assistant that runs the OS in plain English. On-device, no account.">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<title>AIOS — the AI operating system</title>
+<style>
+  :root{
+    color-scheme: dark;
+    --bg:#07091a; --glass:rgba(16,20,42,.78); --glass2:rgba(22,27,54,.9);
+    --line:rgba(255,255,255,.1); --ink:#eef1fb; --dim:#9aa6c8; --faint:#67729a;
+    --ok:#39e6b4; --warn:#ffb454; --bad:#ff6b81; --shadow:0 24px 70px rgba(0,0,0,.55);
+  }
+  body[data-accent="violet"]{ --a:#8b7cff; --b:#6e8bff; }
+  body[data-accent="teal"]  { --a:#39e6b4; --b:#3fb8ff; }
+  body[data-accent="blue"]  { --a:#5b9dff; --b:#7c6fff; }
+  body[data-accent="rose"]  { --a:#ff6b9d; --b:#b07cff; }
+  body[data-accent="amber"] { --a:#ffb454; --b:#ff7a6b; }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:var(--ink); background:var(--bg); overflow:hidden; user-select:none;-webkit-user-select:none;
+  }
+  button,input,textarea{font:inherit;color:inherit}
+  button{cursor:pointer;border:0;background:none}
+
+  /* ── wallpaper ── */
+  #desktop{position:fixed;inset:0;overflow:hidden}
+  #wallpaper{position:absolute;inset:0;transition:background 1s;
+    background:
+      radial-gradient(1100px 700px at 74% -10%, color-mix(in srgb, var(--a) 26%, transparent) 0, transparent 62%),
+      radial-gradient(900px 680px at -6% 108%, color-mix(in srgb, var(--b) 20%, transparent) 0, transparent 58%),
+      var(--bg);}
+  #wallpaper::after{content:"";position:absolute;inset:0;opacity:.5;
+    background-image:linear-gradient(rgba(255,255,255,.028) 1px,transparent 1px),
+                     linear-gradient(90deg,rgba(255,255,255,.028) 1px,transparent 1px);
+    background-size:44px 44px;
+    mask-image:radial-gradient(80% 70% at 50% 40%,#000 30%,transparent 100%);}
+  #wallmark{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;opacity:.8}
+  #wallmark .glyph{font-size:76px;line-height:1;
+    background:linear-gradient(135deg,var(--a),var(--b));-webkit-background-clip:text;background-clip:text;color:transparent;
+    filter:drop-shadow(0 8px 30px color-mix(in srgb, var(--a) 45%, transparent))}
+  #wallmark .word{margin-top:8px;font-size:13px;letter-spacing:.42em;color:var(--faint);text-transform:uppercase}
+
+  /* ── menu bar ── */
+  #menubar{position:fixed;left:0;right:0;top:0;height:34px;z-index:5000;display:flex;align-items:center;gap:14px;
+    padding:0 12px 0 14px;background:rgba(9,12,26,.66);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+    border-bottom:1px solid var(--line);font-size:13px}
+  #menubar .brand{font-weight:700;letter-spacing:.06em}
+  #menubar .brand .g{background:linear-gradient(135deg,var(--a),var(--b));-webkit-background-clip:text;background-clip:text;color:transparent}
+  #mb-app{color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #menubar .sp{flex:1}
+  #mb-live{display:none;align-items:center;gap:5px;color:var(--ok);font-size:12px}
+  #mb-live .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  #mb-owner{color:var(--faint)}
+  #mb-clock{font-variant-numeric:tabular-nums;color:var(--dim)}
+
+  /* ── windows ── */
+  .win{position:absolute;min-width:280px;width:460px;max-width:calc(100vw - 16px);
+    background:var(--glass);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);
+    border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);
+    display:flex;flex-direction:column;overflow:hidden}
+  .win.focus{border-color:color-mix(in srgb, var(--a) 45%, var(--line))}
+  .win.min{display:none}
+  .tbar{display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:grab;border-bottom:1px solid var(--line);
+    background:rgba(255,255,255,.03);touch-action:none}
+  .tbar:active{cursor:grabbing}
+  .tbar .dot{width:12px;height:12px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:8px;color:transparent;padding:0}
+  .tbar .close{background:#ff5f57}.tbar .mini{background:#febc2e}
+  .tbar:hover .dot{color:rgba(0,0,0,.55)}
+  .tbar .t{flex:1;text-align:center;font-size:13px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tbar .t .em{margin-right:6px}
+  .wbody{flex:1;overflow:auto;min-height:60px;max-height:min(64vh,560px)}
+
+  /* ── dock ── */
+  #dock{position:fixed;left:50%;transform:translateX(-50%);bottom:max(10px,env(safe-area-inset-bottom));z-index:5000;
+    display:flex;gap:6px;padding:8px 10px;border-radius:20px;background:rgba(12,15,32,.62);
+    backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--line);max-width:calc(100vw - 12px);overflow-x:auto}
+  #dock .dapp{display:flex;flex-direction:column;align-items:center;gap:3px;padding:4px 6px;border-radius:12px;position:relative}
+  #dock .dapp:hover{background:rgba(255,255,255,.08)}
+  #dock .ic{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;font-size:23px;
+    background:linear-gradient(145deg,rgba(255,255,255,.1),rgba(255,255,255,.02));border:1px solid var(--line)}
+  #dock .dapp[data-app="assistant"] .ic{background:linear-gradient(145deg,color-mix(in srgb,var(--a) 55%,transparent),color-mix(in srgb,var(--b) 40%,transparent))}
+  #dock .run{width:4px;height:4px;border-radius:50%;background:var(--a);opacity:0}
+  #dock .dapp.on .run{opacity:1}
+
+  /* ── app content ── */
+  .pad{padding:12px 14px}
+  .rowbar{display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .rowbar .path{flex:1;font-size:12px;color:var(--dim);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left}
+  .btn{padding:5px 10px;border-radius:9px;background:rgba(255,255,255,.08);border:1px solid var(--line);font-size:13px}
+  .btn:hover{background:rgba(255,255,255,.14)}
+  .btn.acc{background:linear-gradient(135deg,var(--a),var(--b));color:#0b0d20;font-weight:650;border:0}
+  .flist{list-style:none;margin:0;padding:6px}
+  .flist li{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:10px;cursor:pointer;font-size:14px}
+  .flist li:hover{background:rgba(255,255,255,.07)}
+  .flist .fname{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .flist .meta{font-size:11.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+  .flist .del{opacity:0;font-size:12px;color:var(--bad);padding:2px 6px}
+  .flist li:hover .del{opacity:1}
+  .empty{padding:20px;text-align:center;color:var(--faint);font-size:13px}
+
+  .term{background:rgba(4,6,16,.72);min-height:230px;display:flex;flex-direction:column;height:100%}
+  .term .tout{flex:1;overflow:auto;padding:10px 12px;margin:0;font:12.5px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    white-space:pre-wrap;word-break:break-word;user-select:text;-webkit-user-select:text}
+  .term .tout .err{color:var(--bad)}
+  .term .tout .cmdline{color:var(--ok)}
+  .term form{display:flex;gap:8px;padding:8px 12px;border-top:1px solid var(--line);align-items:center}
+  .term .ps1{color:var(--ok);font:12.5px ui-monospace,Menlo,monospace;white-space:nowrap}
+  .term input{flex:1;background:none;border:0;outline:0;font:13px ui-monospace,Menlo,monospace;color:var(--ink)}
+
+  .noted{display:flex;flex-direction:column;height:100%;min-height:240px}
+  .noted textarea{flex:1;resize:none;background:none;border:0;outline:0;padding:12px 14px;color:var(--ink);
+    font:14px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;user-select:text;-webkit-user-select:text}
+  .noted .foot{display:flex;gap:8px;align-items:center;padding:8px 10px;border-top:1px solid var(--line)}
+  .noted .fpath{flex:1;font-size:11.5px;color:var(--faint);font-family:ui-monospace,Menlo,monospace;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .noted .saved{color:var(--ok);font-size:12px;opacity:0;transition:opacity .25s}
+
+  .chat{display:flex;flex-direction:column;height:100%;min-height:280px}
+  .clog{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px}
+  .msg{max-width:86%;padding:8px 12px;border-radius:14px;font-size:14px;white-space:pre-wrap;word-break:break-word;user-select:text;-webkit-user-select:text}
+  .msg.you{align-self:flex-end;background:linear-gradient(135deg,color-mix(in srgb,var(--a) 80%,#000 8%),color-mix(in srgb,var(--b) 80%,#000 8%));color:#0b0d20;border-bottom-right-radius:4px}
+  .msg.os{align-self:flex-start;background:rgba(255,255,255,.07);border:1px solid var(--line);border-bottom-left-radius:4px}
+  .msg.os.think{color:var(--faint)}
+  .chat form{display:flex;gap:8px;padding:8px 10px;border-top:1px solid var(--line)}
+  .chat input[type=text]{flex:1;background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:12px;padding:8px 12px;outline:0}
+  .chat input[type=text]:focus{border-color:color-mix(in srgb,var(--a) 55%,var(--line))}
+  .chat .hint{padding:0 12px 8px;font-size:11.5px;color:var(--faint)}
+  .livebar{display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--dim)}
+  .livebar .sp{flex:1}
+  .switch{position:relative;width:36px;height:21px;border-radius:11px;background:rgba(255,255,255,.14);transition:background .2s;flex:none}
+  .switch::after{content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:#fff;transition:left .2s}
+  .switch.on{background:var(--ok)}
+  .switch.on::after{left:17px}
+  .switch.off-disabled{opacity:.35;pointer-events:none}
+
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:13.5px}
+  .kv b{color:var(--dim);font-weight:500}
+  .plist{list-style:none;margin:10px 0 0;padding:0}
+  .plist li{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:9px;font-size:13.5px}
+  .plist li:hover{background:rgba(255,255,255,.06)}
+  .plist .pid{color:var(--faint);font-variant-numeric:tabular-nums;width:28px}
+  .plist .pname{flex:1}
+  .plist .kill{color:var(--bad);font-size:12px}
+
+  .set-row{display:flex;align-items:center;gap:10px;margin:12px 0}
+  .set-row label{width:88px;color:var(--dim);font-size:13.5px}
+  .set-row input[type=text]{flex:1;background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:10px;padding:7px 11px;outline:0}
+  .swatches{display:flex;gap:8px}
+  .sw{width:30px;height:30px;border-radius:50%;border:2px solid transparent;padding:0}
+  .sw.sel{border-color:#fff}
+  .sw[data-ac="violet"]{background:linear-gradient(135deg,#8b7cff,#6e8bff)}
+  .sw[data-ac="teal"]{background:linear-gradient(135deg,#39e6b4,#3fb8ff)}
+  .sw[data-ac="blue"]{background:linear-gradient(135deg,#5b9dff,#7c6fff)}
+  .sw[data-ac="rose"]{background:linear-gradient(135deg,#ff6b9d,#b07cff)}
+  .sw[data-ac="amber"]{background:linear-gradient(135deg,#ffb454,#ff7a6b)}
+
+  /* ── spotlight ── */
+  #spot{position:fixed;inset:0;z-index:8000;display:none;background:rgba(4,6,16,.45);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+  #spot.open{display:block}
+  #spot .box{position:absolute;left:50%;top:18%;transform:translateX(-50%);width:min(560px,calc(100vw - 28px));
+    background:var(--glass2);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+  #spot input{width:100%;background:none;border:0;outline:0;padding:15px 18px;font-size:17px}
+  #spot .prev{padding:0 18px 13px;font-size:13px;color:var(--dim);min-height:18px}
+  #spot .prev .tag{color:var(--a);font-weight:600}
+
+  /* ── toasts ── */
+  #toasts{position:fixed;right:12px;top:44px;z-index:9000;display:flex;flex-direction:column;gap:8px;width:min(320px,calc(100vw - 24px))}
+  .toast{background:var(--glass2);border:1px solid var(--line);border-left:3px solid var(--a);border-radius:12px;
+    padding:10px 13px;box-shadow:var(--shadow);animation:tin .22s ease-out}
+  .toast b{display:block;font-size:13.5px}
+  .toast .tb{font-size:12.5px;color:var(--dim);white-space:pre-wrap}
+  @keyframes tin{from{transform:translateX(30px);opacity:0}to{transform:none;opacity:1}}
+
+  /* ── boot ── */
+  #boot{position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
+    transition:opacity .5s;}
+  #boot.gone{opacity:0;pointer-events:none}
+  #boot .glyph{font-size:64px;background:linear-gradient(135deg,#8b7cff,#39e6b4);-webkit-background-clip:text;background-clip:text;color:transparent}
+  #boot .bar{width:180px;height:3px;border-radius:2px;background:rgba(255,255,255,.1);overflow:hidden}
+  #boot .fill{height:100%;width:0;background:linear-gradient(90deg,#8b7cff,#39e6b4);transition:width .9s ease-out}
+  #boot .bt{font-size:11.5px;letter-spacing:.34em;color:var(--faint);text-transform:uppercase}
+
+  @media (max-width:640px){
+    .win{width:calc(100vw - 12px) !important;left:6px !important;top:40px !important}
+    .wbody{max-height:calc(100dvh - 190px)}
+    #mb-owner{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){ *{animation:none !important;transition:none !important} }
+</style>
+</head>
+<body data-accent="violet">
+
+<div id="boot" aria-hidden="true">
+  <div class="glyph">✦</div>
+  <div class="bar"><div class="fill" id="bootfill"></div></div>
+  <div class="bt">AIOS · booting</div>
+</div>
+
+<div id="desktop">
+  <div id="wallpaper"></div>
+  <div id="wallmark"><div class="glyph">✦</div><div class="word">AIOS</div></div>
+  <div id="windows"></div>
+</div>
+
+<header id="menubar">
+  <span class="brand"><span class="g">✦</span> AIOS</span>
+  <span id="mb-app"></span>
+  <span class="sp"></span>
+  <span id="mb-live"><span class="dot"></span>Live AI</span>
+  <span id="mb-owner"></span>
+  <span id="mb-clock"></span>
+</header>
+
+<nav id="dock" aria-label="Dock"></nav>
+
+<div id="spot" role="dialog" aria-label="Ask AIOS">
+  <div class="box">
+    <input id="spot-in" type="text" placeholder="Ask the OS anything — open, calculate, note, find, timer…" autocomplete="off">
+    <div class="prev" id="spot-prev">Press <span class="tag">Enter</span> to run · <span class="tag">Esc</span> to close</div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<script src="engine.js"></script>
+<script>
+'use strict';
+/* AIOS desktop — the chrome around the kernel. All OS truth lives in the
+ * kernel state object; this file only draws it and forwards events. */
+var K = window.AiosKernel;
+var LS_KEY = 'aios.v1';
+
+/* ── state ── */
+var saved = null;
+try { saved = localStorage.getItem(LS_KEY); } catch (e) {}
+var state = saved ? K.deserialize(saved, Date.now()) : K.boot(Date.now());
+
+function save() {
+  try { localStorage.setItem(LS_KEY, K.serialize(state)); } catch (e) {}
+}
+
+/* ── dom helpers ── */
+function $(id) { return document.getElementById(id); }
+function el(tag, cls, text) {
+  var n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+}
+
+/* ── toasts ── */
+function notify(title, body) {
+  var t = el('div', 'toast');
+  t.appendChild(el('b', null, title));
+  if (body) { var b = el('div', 'tb', body); t.appendChild(b); }
+  $('toasts').appendChild(t);
+  setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 6000);
+}
+
+/* ── timers (assistant/shell "timer" effects become real) ── */
+function startTimer(seconds, label) {
+  setTimeout(function () {
+    notify('⏰ ' + (label || 'Timer'), 'Your ' + K.slugify(label || 'timer').replace(/-/g, ' ') + ' timer of ' + seconds + 's is done.');
+  }, seconds * 1000);
+}
+
+/* ── effects: one code path for shell, assistant, spotlight and live AI ── */
+function applyEffects(effects, ctx) {
+  effects = effects || [];
+  for (var i = 0; i < effects.length; i++) {
+    var ef = effects[i];
+    if (ef.type === 'open') spawnApp(ef.app, ef.arg);
+    else if (ef.type === 'timer') startTimer(ef.seconds, ef.label);
+    else if (ef.type === 'accent') { /* state already updated by the kernel */ }
+    else if (ef.type === 'clear' && ctx && ctx.onClear) ctx.onClear();
+  }
+  sync();
+}
+
+/* ── window manager glue ── */
+var winEls = {};   // pid → element
+var runtime = {};  // pid → per-window runtime (terminal scrollback, files cwd…)
+
+function spawnApp(appId, arg) {
+  var r = K.spawn(state, appId, arg);
+  if (!r.ok) { notify('AIOS', r.error); return; }
+  sync();
+  return r.proc;
+}
+
+function focusWin(pid) { K.focusProc(state, pid); sync(); }
+
+function makeWindow(proc) {
+  var w = el('div', 'win');
+  w.style.left = proc.x + 'px';
+  w.style.top = (proc.y + 34) + 'px';
+  w.dataset.pid = proc.pid;
+
+  var bar = el('div', 'tbar');
+  var close = el('button', 'dot close', '✕'); close.title = 'Close';
+  var mini = el('button', 'dot mini', '–'); mini.title = 'Minimize';
+  var title = el('div', 't');
+  var em = el('span', 'em', (K.appById(proc.app) || {}).emoji || '');
+  title.appendChild(em);
+  title.appendChild(document.createTextNode(proc.title));
+  bar.appendChild(close); bar.appendChild(mini); bar.appendChild(title);
+  w.appendChild(bar);
+
+  var body = el('div', 'wbody');
+  w.appendChild(body);
+
+  close.addEventListener('click', function (e) { e.stopPropagation(); K.closeProc(state, proc.pid); sync(); });
+  mini.addEventListener('click', function (e) { e.stopPropagation(); K.minimizeProc(state, proc.pid); sync(); });
+  w.addEventListener('pointerdown', function () { if (K.topProc(state) !== K.findProc(state, proc.pid)) focusWin(proc.pid); });
+
+  /* drag by the titlebar */
+  var drag = null;
+  bar.addEventListener('pointerdown', function (e) {
+    if (e.target === close || e.target === mini) return;
+    drag = { dx: e.clientX - w.offsetLeft, dy: e.clientY - w.offsetTop };
+    try { bar.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  bar.addEventListener('pointermove', function (e) {
+    if (!drag) return;
+    var p = K.findProc(state, proc.pid);
+    if (!p) return;
+    p.x = Math.max(0, Math.min(e.clientX - drag.dx, window.innerWidth - 120));
+    p.y = Math.max(0, Math.min(e.clientY - drag.dy - 34, window.innerHeight - 120));
+    w.style.left = p.x + 'px';
+    w.style.top = (p.y + 34) + 'px';
+  });
+  bar.addEventListener('pointerup', function () { drag = null; });
+
+  var render = APP_RENDER[proc.app] || APP_RENDER.about;
+  render(proc, body);
+  return w;
+}
+
+function sync() {
+  var i, pid;
+  /* prune closed windows */
+  for (pid in winEls) {
+    if (!K.findProc(state, Number(pid))) {
+      if (winEls[pid].parentNode) winEls[pid].parentNode.removeChild(winEls[pid]);
+      delete winEls[pid]; delete runtime[pid];
+    }
+  }
+  /* create/update live ones */
+  var top = K.topProc(state);
+  for (i = 0; i < state.procs.length; i++) {
+    var p = state.procs[i];
+    var w = winEls[p.pid];
+    if (!w) { w = winEls[p.pid] = makeWindow(p); $('windows').appendChild(w); }
+    w.style.zIndex = 100 + p.z;
+    w.classList.toggle('min', !!p.minimized);
+    w.classList.toggle('focus', top === p);
+  }
+  $('mb-app').textContent = top ? ((K.appById(top.app) || {}).name + (top.arg ? ' — ' + top.title : '')) : '';
+  $('mb-owner').textContent = state.settings.owner;
+  document.body.dataset.accent = state.settings.accent;
+  /* dock running dots */
+  var dapps = document.querySelectorAll('#dock .dapp');
+  for (i = 0; i < dapps.length; i++) {
+    var id = dapps[i].dataset.app, on = false;
+    for (var j = 0; j < state.procs.length; j++) if (state.procs[j].app === id) on = true;
+    dapps[i].classList.toggle('on', on);
+  }
+  save();
+}
+
+/* ══════════════ app renderers ══════════════ */
+var APP_RENDER = {};
+
+/* ── Files ── */
+APP_RENDER.files = function (proc, body) {
+  var rt = runtime[proc.pid] = { dir: proc.arg || '/home/user' };
+  var bar = el('div', 'rowbar');
+  var up = el('button', 'btn', '↑ Up');
+  var path = el('div', 'path');
+  var newF = el('button', 'btn', '+ File');
+  var newD = el('button', 'btn', '+ Folder');
+  bar.appendChild(up); bar.appendChild(path); bar.appendChild(newF); bar.appendChild(newD);
+  var list = el('ul', 'flist');
+  body.appendChild(bar); body.appendChild(list);
+
+  function refresh() {
+    path.textContent = rt.dir;
+    list.textContent = '';
+    var r = K.fsList(state.fs, rt.dir);
+    if (!r.ok) { rt.dir = '/'; r = K.fsList(state.fs, '/'); }
+    if (!r.entries.length) list.appendChild(el('div', 'empty', 'Empty folder'));
+    r.entries.forEach(function (e2) {
+      var li = el('li');
+      var full = K.normalizePath(rt.dir, e2.name);
+      li.appendChild(el('span', null, e2.type === 'dir' ? '📁' : '📄'));
+      li.appendChild(el('span', 'fname', e2.name));
+      li.appendChild(el('span', 'meta', e2.type === 'dir' ? '' : e2.size + ' B'));
+      var del = el('button', 'del', 'delete');
+      del.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        if (!confirm('Delete ' + full + '?')) return;
+        var rr = K.fsRemove(state.fs, full, { recursive: true });
+        if (!rr.ok) notify('Files', rr.error);
+        refresh(); sync();
+      });
+      li.appendChild(del);
+      li.addEventListener('click', function () {
+        if (e2.type === 'dir') { rt.dir = full; refresh(); }
+        else { spawnApp('notes', full); }
+      });
+      list.appendChild(li);
+    });
+  }
+  up.addEventListener('click', function () { rt.dir = K.normalizePath(rt.dir, '..'); refresh(); });
+  newD.addEventListener('click', function () {
+    var name = prompt('New folder name:'); if (!name) return;
+    var r = K.fsMkdir(state.fs, K.normalizePath(rt.dir, name), Date.now());
+    if (!r.ok) notify('Files', r.error);
+    refresh(); sync();
+  });
+  newF.addEventListener('click', function () {
+    var name = prompt('New file name:', 'untitled.txt'); if (!name) return;
+    var full = K.normalizePath(rt.dir, name);
+    var r = K.fsWrite(state.fs, full, '', Date.now());
+    if (!r.ok) { notify('Files', r.error); return; }
+    refresh(); sync();
+    spawnApp('notes', full);
+  });
+  rt.refresh = refresh;
+  refresh();
+};
+
+/* ── Terminal ── */
+APP_RENDER.terminal = function (proc, body) {
+  body.classList.add('term');
+  var out = el('pre', 'tout');
+  var form = el('form');
+  var ps1 = el('span', 'ps1');
+  var input = el('input');
+  input.setAttribute('autocomplete', 'off');
+  input.setAttribute('autocapitalize', 'off');
+  input.setAttribute('spellcheck', 'false');
+  form.appendChild(ps1); form.appendChild(input);
+  body.appendChild(out); body.appendChild(form);
+
+  var hist = [], hi = 0;
+  function prompt() { ps1.textContent = state.settings.owner + '@aios ' + state.cwd + ' $'; }
+  function print(lines, cls) {
+    for (var i = 0; i < lines.length; i++) {
+      var d = el('div', cls || null, lines[i]);
+      out.appendChild(d);
+    }
+    out.scrollTop = out.scrollHeight;
+  }
+  print([K.fsRead(state.fs, '/etc/motd').content || 'AIOS', 'Type `help` for commands, or `ai <anything>` to speak English.', '']);
+  prompt();
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var cmd = input.value;
+    input.value = '';
+    print([ps1.textContent + ' ' + cmd], 'cmdline');
+    if (cmd.trim()) { hist.push(cmd); hi = hist.length; }
+    var r = K.execCommand(state, cmd, Date.now());
+    print(r.out, r.error ? 'err' : null);
+    applyEffects(r.effects, { onClear: function () { out.textContent = ''; } });
+    prompt();
+    /* files windows may be stale after fs commands */
+    for (var pid in runtime) if (runtime[pid].refresh) runtime[pid].refresh();
+  });
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowUp') { if (hi > 0) { hi--; input.value = hist[hi] || ''; e.preventDefault(); } }
+    else if (e.key === 'ArrowDown') { if (hi < hist.length) { hi++; input.value = hist[hi] || ''; e.preventDefault(); } }
+  });
+  body.addEventListener('click', function () { input.focus(); });
+  setTimeout(function () { input.focus(); }, 50);
+};
+
+/* ── Notes ── */
+APP_RENDER.notes = function (proc, body) {
+  body.classList.add('noted');
+  var ta = el('textarea');
+  ta.placeholder = 'Write…';
+  var foot = el('div', 'foot');
+  var fpath = el('div', 'fpath');
+  var savedTag = el('span', 'saved', 'saved ✓');
+  var saveBtn = el('button', 'btn acc', 'Save');
+  foot.appendChild(fpath); foot.appendChild(savedTag); foot.appendChild(saveBtn);
+  body.appendChild(ta); body.appendChild(foot);
+
+  var path = proc.arg;
+  if (!path) {
+    path = '/home/user/notes/untitled.txt';
+    var n = 2;
+    while (K.fsGet(state.fs, path)) path = '/home/user/notes/untitled-' + (n++) + '.txt';
+  }
+  fpath.textContent = path;
+  var r = K.fsRead(state.fs, path);
+  if (r.ok) ta.value = r.content;
+
+  function doSave() {
+    var w = K.fsWrite(state.fs, path, ta.value, Date.now());
+    if (!w.ok) { notify('Notes', w.error); return; }
+    savedTag.style.opacity = 1;
+    setTimeout(function () { savedTag.style.opacity = 0; }, 1400);
+    sync();
+    for (var pid in runtime) if (runtime[pid].refresh) runtime[pid].refresh();
+  }
+  saveBtn.addEventListener('click', doSave);
+  ta.addEventListener('keydown', function (e) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); doSave(); }
+  });
+};
+
+/* ── Assistant ── */
+var liveAI = { available: false, on: false };
+APP_RENDER.assistant = function (proc, body) {
+  body.classList.add('chat');
+  var livebar = el('div', 'livebar');
+  livebar.appendChild(el('span', null, '✦ On-device intelligence'));
+  livebar.appendChild(el('span', 'sp'));
+  var liveLbl = el('span', null, 'Live AI');
+  var sw = el('button', 'switch off-disabled');
+  sw.setAttribute('aria-label', 'Toggle Live AI');
+  livebar.appendChild(liveLbl); livebar.appendChild(sw);
+  var log = el('div', 'clog');
+  var hint = el('div', 'hint', 'Try: “open the terminal” · “what’s 18% of 240” · “set a timer for 5 minutes” · “note that…”');
+  var form = el('form');
+  var input = el('input');
+  input.type = 'text';
+  input.placeholder = 'Tell the OS what you want…';
+  input.setAttribute('autocomplete', 'off');
+  var send = el('button', 'btn acc', 'Send');
+  form.appendChild(input); form.appendChild(send);
+  body.appendChild(livebar); body.appendChild(log); body.appendChild(hint); body.appendChild(form);
+
+  function bubble(text, who, extraCls) {
+    var m = el('div', 'msg ' + who + (extraCls ? ' ' + extraCls : ''), text);
+    log.appendChild(m);
+    log.scrollTop = log.scrollHeight;
+    return m;
+  }
+  bubble('Hello ' + state.settings.owner + ' — I am AIOS. I don\'t just answer, I *do*: apps, files, notes, timers, maths, settings. What do you need?', 'os');
+
+  if (liveAI.available) sw.classList.remove('off-disabled');
+  sw.classList.toggle('on', liveAI.on);
+  sw.addEventListener('click', function () {
+    liveAI.on = !liveAI.on;
+    sw.classList.toggle('on', liveAI.on);
+    $('mb-live').style.display = liveAI.on ? 'flex' : 'none';
+  });
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    bubble(text, 'you');
+    if (liveAI.on && liveAI.available) {
+      var think = bubble('thinking…', 'os', 'think');
+      fetch('api/assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: text,
+          context: { cwd: state.cwd, owner: state.settings.owner, apps: K.APPS.map(function (a) { return a.id; }),
+                     files: K.fsFind(state.fs, '').slice(0, 60) }
+        })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        think.textContent = d && d.reply ? d.reply : 'The live model returned nothing — falling back to on-device.';
+        think.classList.remove('think');
+        if (d && d.actions) {
+          /* live actions reuse the kernel: run each as a shell command */
+          for (var i = 0; i < d.actions.length; i++) {
+            var act = d.actions[i];
+            if (act && typeof act.command === 'string') {
+              var rr = K.execCommand(state, act.command, Date.now());
+              applyEffects(rr.effects);
+            }
+          }
+          sync();
+        }
+      }).catch(function () {
+        think.classList.remove('think');
+        var a = K.assistant(state, text, Date.now());
+        think.textContent = '(offline) ' + a.reply;
+        applyEffects(a.actions);
+      });
+    } else {
+      var a = K.assistant(state, text, Date.now());
+      bubble(a.reply, 'os');
+      applyEffects(a.actions);
+    }
+    for (var pid in runtime) if (runtime[pid].refresh) runtime[pid].refresh();
+  });
+  setTimeout(function () { input.focus(); }, 50);
+};
+
+/* ── Monitor ── */
+APP_RENDER.monitor = function (proc, body) {
+  var pad = el('div', 'pad');
+  body.appendChild(pad);
+  function refresh() {
+    pad.textContent = '';
+    var kv = el('div', 'kv');
+    var disk = 0;
+    try { disk = K.serialize(state).length; } catch (e) {}
+    var rows = [
+      ['Kernel', 'AIOS ' + K.VERSION + ' (browser)'],
+      ['Uptime', Math.max(0, Math.round((Date.now() - state.bootedAt) / 1000)) + 's this session'],
+      ['Disk', (disk / 1024).toFixed(1) + ' KB used (on-device)'],
+      ['Windows', String(state.procs.length)]
+    ];
+    rows.forEach(function (r) { kv.appendChild(el('b', null, r[0])); kv.appendChild(el('span', null, r[1])); });
+    pad.appendChild(kv);
+    var pl = el('ul', 'plist');
+    state.procs.forEach(function (p) {
+      var li = el('li');
+      li.appendChild(el('span', 'pid', String(p.pid)));
+      li.appendChild(el('span', 'pname', (K.appById(p.app) || {}).emoji + ' ' + p.title + (p.minimized ? ' (minimized)' : '')));
+      var kill = el('button', 'kill', 'kill');
+      kill.addEventListener('click', function () { K.closeProc(state, p.pid); sync(); refresh(); });
+      li.appendChild(kill);
+      pl.appendChild(li);
+    });
+    pad.appendChild(pl);
+    var rbtn = el('button', 'btn', '↻ Refresh');
+    rbtn.style.marginTop = '12px';
+    rbtn.addEventListener('click', refresh);
+    pad.appendChild(rbtn);
+  }
+  runtime[proc.pid] = { refresh: refresh };
+  refresh();
+};
+
+/* ── Settings ── */
+APP_RENDER.settings = function (proc, body) {
+  var pad = el('div', 'pad');
+  body.appendChild(pad);
+
+  var r1 = el('div', 'set-row');
+  r1.appendChild(el('label', null, 'Your name'));
+  var name = el('input'); name.type = 'text'; name.value = state.settings.owner; name.maxLength = 24;
+  name.addEventListener('change', function () {
+    state.settings.owner = name.value.trim().slice(0, 24) || 'user';
+    sync();
+  });
+  r1.appendChild(name);
+  pad.appendChild(r1);
+
+  var r2 = el('div', 'set-row');
+  r2.appendChild(el('label', null, 'Accent'));
+  var sws = el('div', 'swatches');
+  K.ACCENTS.forEach(function (ac) {
+    var b = el('button', 'sw' + (state.settings.accent === ac ? ' sel' : ''));
+    b.dataset.ac = ac;
+    b.title = ac;
+    b.addEventListener('click', function () {
+      state.settings.accent = ac;
+      var all = sws.querySelectorAll('.sw');
+      for (var i = 0; i < all.length; i++) all[i].classList.toggle('sel', all[i] === b);
+      sync();
+    });
+    sws.appendChild(b);
+  });
+  r2.appendChild(sws);
+  pad.appendChild(r2);
+
+  var r3 = el('div', 'set-row');
+  r3.appendChild(el('label', null, 'System'));
+  var wipe = el('button', 'btn', '⚠ Erase disk & reboot');
+  wipe.addEventListener('click', function () {
+    if (!confirm('Erase the whole AIOS disk and reboot? This clears every file and setting stored on this device.')) return;
+    try { localStorage.removeItem(LS_KEY); } catch (e) {}
+    location.reload();
+  });
+  r3.appendChild(wipe);
+  pad.appendChild(r3);
+
+  var tip = el('div', null, 'Everything AIOS knows lives in this browser — nothing is uploaded anywhere.');
+  tip.style.cssText = 'font-size:12.5px;color:var(--faint);margin-top:10px';
+  pad.appendChild(tip);
+};
+
+/* ── About ── */
+APP_RENDER.about = function (proc, body) {
+  var pad = el('div', 'pad');
+  pad.style.textAlign = 'center';
+  var g = el('div', null, '✦');
+  g.style.cssText = 'font-size:52px;background:linear-gradient(135deg,var(--a),var(--b));-webkit-background-clip:text;background-clip:text;color:transparent;margin:10px 0 4px';
+  pad.appendChild(g);
+  pad.appendChild(el('h2', null, 'AIOS ' + K.VERSION));
+  var p1 = el('p', null, 'The AI operating system. A complete desktop — virtual disk, window manager, shell and assistant — running as one deterministic kernel on your device.');
+  p1.style.cssText = 'color:var(--dim);font-size:13.5px';
+  pad.appendChild(p1);
+  var p2 = el('p', null, 'The same intelligence answers everywhere: the Assistant, the Terminal’s `ai` command, and ⌘K / Ctrl-K. No account. No cloud. Optional Live AI if you run the local proxy.');
+  p2.style.cssText = 'color:var(--faint);font-size:12.5px';
+  pad.appendChild(p2);
+  body.appendChild(pad);
+};
+
+/* ══════════════ chrome ══════════════ */
+
+/* dock */
+(function buildDock() {
+  var dock = $('dock');
+  K.APPS.forEach(function (a) {
+    var b = el('button', 'dapp');
+    b.dataset.app = a.id;
+    b.title = a.name + ' — ' + a.desc;
+    var ic = el('span', 'ic', a.emoji);
+    b.appendChild(ic);
+    b.appendChild(el('span', 'run'));
+    b.addEventListener('click', function () { spawnApp(a.id); });
+    dock.appendChild(b);
+  });
+})();
+
+/* clock */
+function tickClock() {
+  var d = new Date();
+  $('mb-clock').textContent = d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }) +
+    '  ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+tickClock();
+setInterval(tickClock, 15000);
+
+/* spotlight */
+var spot = $('spot'), spotIn = $('spot-in'), spotPrev = $('spot-prev');
+function openSpot() { spot.classList.add('open'); spotIn.value = ''; previewSpot(); setTimeout(function () { spotIn.focus(); }, 30); }
+function closeSpot() { spot.classList.remove('open'); }
+function previewSpot() {
+  var q = spotIn.value.trim();
+  if (!q) { spotPrev.innerHTML = 'Press <span class="tag">Enter</span> to run · <span class="tag">Esc</span> to close'; return; }
+  var it = K.routeIntent(q);
+  var desc = {
+    open_app: 'Open ' + ((K.appById(it.app) || {}).name || ''),
+    calc: '= ' + (typeof it.value === 'number' ? Math.round(it.value * 1e6) / 1e6 : ''),
+    timer: 'Start a ' + it.seconds + 's timer',
+    note: 'Save a note',
+    search: 'Search the disk for “' + (it.q || '') + '”',
+    mkdir: 'Create folder “' + (it.name || '') + '”',
+    time: 'Tell the time',
+    set_name: 'Call you ' + (it.name || ''),
+    set_accent: 'Switch accent to ' + (it.accent || ''),
+    help: 'Show what I can do',
+    chat: 'Ask the Assistant'
+  }[it.type] || '';
+  spotPrev.textContent = '';
+  var tag = el('span', 'tag', '✦ ');
+  spotPrev.appendChild(tag);
+  spotPrev.appendChild(document.createTextNode(desc));
+}
+spotIn.addEventListener('input', previewSpot);
+spot.addEventListener('click', function (e) { if (e.target === spot) closeSpot(); });
+spotIn.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') { closeSpot(); return; }
+  if (e.key !== 'Enter') return;
+  var q = spotIn.value.trim();
+  if (!q) { closeSpot(); return; }
+  var it = K.routeIntent(q);
+  if (it.type === 'chat') { closeSpot(); spawnApp('assistant'); return; }
+  var a = K.assistant(state, q, Date.now());
+  closeSpot();
+  notify('✦ AIOS', a.reply);
+  applyEffects(a.actions);
+  for (var pid in runtime) if (runtime[pid].refresh) runtime[pid].refresh();
+});
+window.addEventListener('keydown', function (e) {
+  if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+    e.preventDefault();
+    if (spot.classList.contains('open')) closeSpot(); else openSpot();
+  }
+});
+$('wallmark').addEventListener('click', openSpot);
+
+/* live AI availability — only if the optional proxy is serving us */
+fetch('api/health').then(function (r) { return r.json(); }).then(function (d) {
+  if (d && d.live) {
+    liveAI.available = true;
+    var sws = document.querySelectorAll('.switch');
+    for (var i = 0; i < sws.length; i++) sws[i].classList.remove('off-disabled');
+  }
+}).catch(function () {});
+
+/* boot */
+setTimeout(function () { $('bootfill').style.width = '100%'; }, 60);
+setTimeout(function () { $('boot').classList.add('gone'); }, 1050);
+
+/* first run: greet with the assistant; returning users get their desktop */
+if (!saved) {
+  spawnApp('assistant');
+  notify('✦ Welcome to AIOS', 'Press Ctrl/Cmd-K anywhere and just say what you want.');
+} else {
+  sync();
+}
+
+/* offline */
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(function () {});
+}
+</script>
+</body>
+</html>
