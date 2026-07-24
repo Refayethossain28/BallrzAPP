@@ -284,6 +284,91 @@ test('toCSV: running balance, only this account, quotes escaped', () => {
   assert.equal(potCsv.split('\n').length, 2, 'pot statement sees only its own line');
 });
 
+/* ---- crypto desk ---- */
+
+test('cryptoPrice: deterministic, positive, epoch-based, per-asset', () => {
+  const p1 = V.cryptoPrice('TIME', '2026-07-23');
+  assert.equal(p1, V.cryptoPrice('TIME', '2026-07-23'), 'same asset+day ⇒ same price, always');
+  assert.ok(p1 >= 1 && Number.isInteger(p1), 'integer pence, at least a penny');
+  assert.equal(V.cryptoPrice('TIME', '2026-01-01'), V.CRYPTO.TIME.basePence, 'epoch day is the base');
+  assert.notEqual(V.cryptoPrice('TIME', '2026-07-23'), V.cryptoPrice('TIME', '2026-07-24'), 'the market moves');
+  assert.notEqual(V.cryptoPrice('TIME', '2026-07-23'), V.cryptoPrice('NEURA', '2026-07-23'), 'assets walk their own walks');
+  assert.equal(V.cryptoPrice('DOGE', '2026-07-23'), null, 'unknown asset');
+});
+
+test('cryptoQuote: sell < mid < buy — the spread is the stated bank cut', () => {
+  const q = V.cryptoQuote('NEURA', NOW);
+  assert.ok(q.sell < q.mid && q.mid < q.buy);
+  assert.ok((q.buy - q.sell) / q.mid < 0.05, 'spread stays small');
+});
+
+test('fmtUnits renders base units as coins', () => {
+  assert.equal(V.fmtUnits(123456, 100000), '1.23456');
+  assert.equal(V.fmtUnits(100000, 100000), '1.0');
+  assert.equal(V.fmtUnits(50, 100000), '0.0005');
+});
+
+test('cryptoBuy: £ leaves through the post() gate, units land, maths exact', () => {
+  let s = topUp(bank(), 10000);
+  const q = V.cryptoQuote('TIME', NOW + 'T10:00:00Z');
+  const r = V.cryptoBuy(s, 'TIME', 5000, NOW + 'T10:00:00Z');
+  assert.ok(!r.error);
+  assert.equal(r.units, Math.floor(5000 * 100000 / q.buy));
+  assert.equal(V.balanceOf(r.state, 'current'), 5000);
+  assert.equal(r.state.crypto.TIME, r.units);
+  assert.equal(V.cryptoBuy(s, 'TIME', 20000, NOW + 'T10:00:00Z').error, 'insufficient', 'no money, no coins');
+  assert.equal(V.cryptoBuy(s, 'DOGE', 100, NOW + 'T10:00:00Z').error, 'no-asset');
+});
+
+test('cryptoSell: round-trip loses only the spread; overselling bounces', () => {
+  let s = topUp(bank(), 100000);
+  const buy = V.cryptoBuy(s, 'NEURA', 80000, NOW + 'T10:00:00Z');
+  const sell = V.cryptoSell(buy.state, 'NEURA', buy.units, NOW + 'T11:00:00Z');
+  assert.ok(!sell.error);
+  assert.equal(sell.state.crypto.NEURA, 0);
+  const back = V.balanceOf(sell.state, 'current');
+  assert.ok(back < 100000, 'the spread costs something');
+  assert.ok(back > 100000 - 80000 * 0.04, 'but no more than ~2×1.5% + rounding');
+  assert.equal(V.cryptoSell(sell.state, 'NEURA', 1, NOW + 'T12:00:00Z').error, 'insufficient');
+});
+
+test('cryptoHoldings values every asset at today’s price', () => {
+  let s = topUp(bank(), 100000);
+  s = V.cryptoBuy(s, 'TIME', 30000, NOW + 'T10:00:00Z').state;
+  const h = V.cryptoHoldings(s, NOW);
+  assert.equal(h.assets.length, Object.keys(V.CRYPTO).length);
+  const time = h.assets.find((a) => a.key === 'TIME');
+  assert.equal(time.value, Math.floor(time.units * time.price / 100000));
+  assert.equal(h.total, h.assets.reduce((t, a) => t + a.value, 0));
+});
+
+test('a pre-crypto bank state can still trade (migration)', () => {
+  let s = topUp(bank(), 10000);
+  s = JSON.parse(JSON.stringify(s));
+  delete s.crypto; // a bank opened before the crypto desk existed
+  const r = V.cryptoBuy(s, 'TIME', 2000, NOW + 'T10:00:00Z');
+  assert.ok(!r.error && r.state.crypto.TIME > 0);
+  assert.equal(V.cryptoHoldings(s, NOW).total, 0, 'holdings read as zero, not a crash');
+});
+
+test('chainBalance derives a UTXO balance from raw chain JSON', () => {
+  // coinbase pays A 50 TIME; A sends 30 to B with 20 change back to A
+  const chain = { blocks: [
+    { transactions: [{ id: 'cb1', type: 'coinbase', outputs: [{ address: 'A', amount: 5000000 }] }] },
+    { transactions: [
+      { id: 'cb2', type: 'coinbase', outputs: [{ address: 'M', amount: 5000000 }] },
+      { id: 'tx1', type: 'transfer', inputs: [{ txId: 'cb1', outIndex: 0 }],
+        outputs: [{ address: 'B', amount: 3000000 }, { address: 'A', amount: 2000000 }] }
+    ] }
+  ] };
+  assert.equal(V.chainBalance(chain, ['A']), 2000000, 'A: coinbase spent, change remains');
+  assert.equal(V.chainBalance(chain, ['B']), 3000000);
+  assert.equal(V.chainBalance(chain, ['A', 'B']), 5000000, 'multi-address sum');
+  assert.equal(V.chainBalance(chain, ['nobody']), 0);
+  assert.equal(V.chainBalance(null, ['A']), 0, 'malformed input reads as zero');
+  assert.equal(V.chainBalance({ blocks: [{}] }, ['A']), 0);
+});
+
 /* ---- compaction ---- */
 
 test('compact folds old txns into brought-forward entries, balances untouched', () => {
