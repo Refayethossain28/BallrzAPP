@@ -1469,6 +1469,50 @@ function bookUsual(){
   go('vehicle-select');
 }
 
+// ── Flights — in-app search handed off to Skyscanner ──────────────────────
+// Skyscanner's data API is partner-only, but deep-linked searches need no
+// key: we build the exact search here (route, dates, cabin, party) and open
+// live results. The airport list powers the datalist + free-text matching.
+const AIRPORTS=[
+  {c:'LHR',n:'London Heathrow'},{c:'LGW',n:'London Gatwick'},{c:'LCY',n:'London City'},{c:'STN',n:'London Stansted'},{c:'FAB',n:'Farnborough (private)'},
+  {c:'JFK',n:'New York JFK'},{c:'EWR',n:'New York Newark'},{c:'LAX',n:'Los Angeles'},{c:'MIA',n:'Miami'},
+  {c:'DXB',n:'Dubai'},{c:'AUH',n:'Abu Dhabi'},{c:'DOH',n:'Doha'},{c:'RUH',n:'Riyadh'},
+  {c:'CDG',n:'Paris Charles de Gaulle'},{c:'NCE',n:'Nice Côte d’Azur'},{c:'GVA',n:'Geneva'},{c:'ZRH',n:'Zurich'},
+  {c:'MXP',n:'Milan Malpensa'},{c:'FCO',n:'Rome Fiumicino'},{c:'MAD',n:'Madrid'},{c:'BCN',n:'Barcelona'},{c:'LIS',n:'Lisbon'},
+  {c:'ATH',n:'Athens'},{c:'IST',n:'Istanbul'},{c:'SIN',n:'Singapore'},{c:'HKG',n:'Hong Kong'},{c:'NRT',n:'Tokyo Narita'},
+  {c:'GIG',n:'Rio de Janeiro'},{c:'CPT',n:'Cape Town'},{c:'MLE',n:'Maldives Malé'},{c:'MRU',n:'Mauritius'},{c:'IBZ',n:'Ibiza'},{c:'PMI',n:'Palma de Mallorca'}
+];
+function _fltCode(v){
+  v=(v||'').trim();
+  if(/^[A-Za-z]{3}$/.test(v))return v.toLowerCase();
+  const q=v.toLowerCase();
+  const hit=AIRPORTS.find(a=>a.n.toLowerCase().includes(q)&&q.length>=3);
+  return hit?hit.c.toLowerCase():null;
+}
+function skyscannerSearch(){
+  const err=document.getElementById('flt_err');
+  const _fail=m=>{if(err){err.textContent=m;err.style.display='block';}};
+  const from=_fltCode(document.getElementById('flt_from')?.value)||'lhr';
+  const to=_fltCode(document.getElementById('flt_to')?.value);
+  if(!to){_fail('Please choose a destination — an airport code (JFK) or city (Dubai).');return;}
+  const dep=(document.getElementById('flt_dep')?.value||'').replace(/-/g,'').slice(2);
+  if(dep.length!==6){_fail('Please choose a departure date.');return;}
+  let ret='';
+  if(state._fltRtn!==false){
+    ret=(document.getElementById('flt_ret')?.value||'').replace(/-/g,'').slice(2);
+    if(ret.length!==6){_fail('Please choose a return date, or switch to one-way.');return;}
+  }
+  if(err)err.style.display='none';
+  const pax=parseInt(document.getElementById('flt_pax')?.value)||2;
+  const cabin=state._fltCabin||'business';
+  let url='https://www.skyscanner.net/transport/flights/'+from+'/'+to+'/'+dep+'/';
+  if(ret)url+=ret+'/';
+  url+='?adults='+pax+'&cabinclass='+cabin+'&rtn='+(ret?1:0)+'&preferdirects=true';
+  track('flight_search',{from,to,dep,ret,pax,cabin,src:'client'});
+  haptic('light');
+  window.open(url,'_blank','noopener');
+}
+
 // ── Concierge AutoPlan™ — itinerary optimiser ──────────────────────────────
 function optimiseItinerary(){
   if(typeof ApexCore==='undefined')return;
@@ -2747,9 +2791,14 @@ chauffeur: () => `
         <div style="font-family:var(--font-serif);font-size:21px;font-weight:500;color:#fff;letter-spacing:.5px">By the Hour</div>
         <div style="font-size:11px;color:rgba(255,255,255,.68);margin-top:2px">Your chauffeur on standby, hour by hour</div>
       </button>
-      <button onclick="goBook('day')" style="width:100%;height:110px;display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;border:1px solid rgba(200,169,126,.25);border-radius:22px;padding:14px 16px;margin-bottom:16px;cursor:pointer;font-family:inherit;text-align:left;background:linear-gradient(to right,rgba(0,0,0,.85) 35%,rgba(0,0,0,.15)),url('vehicles/v-class.jpg') right 40%/cover;transition:transform .15s var(--ease-spring)">
+      <button onclick="goBook('day')" style="width:100%;height:110px;display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;border:1px solid rgba(200,169,126,.25);border-radius:22px;padding:14px 16px;margin-bottom:10px;cursor:pointer;font-family:inherit;text-align:left;background:linear-gradient(to right,rgba(0,0,0,.85) 35%,rgba(0,0,0,.15)),url('vehicles/v-class.jpg') right 40%/cover;transition:transform .15s var(--ease-spring)">
         <div style="font-family:var(--font-serif);font-size:21px;font-weight:500;color:#fff;letter-spacing:.5px">Full Day</div>
         <div style="font-size:11px;color:rgba(255,255,255,.68);margin-top:2px">A dedicated car and chauffeur, dawn to dusk</div>
+      </button>
+      <button onclick="go('flight-search')" style="width:100%;height:110px;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;border:1px solid rgba(200,169,126,.25);border-radius:22px;padding:14px 16px;margin-bottom:16px;cursor:pointer;font-family:inherit;text-align:left;background:linear-gradient(120deg,rgba(9,14,24,.97) 45%,rgba(120,160,220,.28));transition:transform .15s var(--ease-spring)">
+        <svg aria-hidden="true" style="position:absolute;right:16px;top:50%;transform:translateY(-50%) rotate(-8deg);pointer-events:none" width="76" height="76" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.14)" stroke-width="1.2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 19h12M12 3.5l1.8 6.2 6.2 2.3-6.2 1.4L12 19l-1.8-5.6-6.2-1.4 6.2-2.3L12 3.5z"/></svg>
+        <div style="font-family:var(--font-serif);font-size:21px;font-weight:500;color:#fff;letter-spacing:.5px">Flights</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.68);margin-top:2px">Search fares worldwide · powered by Skyscanner</div>
       </button>
 
 
@@ -2757,6 +2806,79 @@ chauffeur: () => `
   </div>
   ${bottomNav('home')}
 </div>`,
+
+// Flight search — build the search in-app, open live Skyscanner results.
+// (Distinct from 'flights', the My Flights tracker screen.)
+'flight-search': () => {
+  const _d=n=>new Date(Date.now()+n*864e5).toISOString().slice(0,10);
+  const rtn=state._fltRtn!==false;
+  const cabin=state._fltCabin||'business';
+  return `
+<div style="height:100dvh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
+  <div class="back-row">
+    <div class="back-btn" onclick="go('chauffeur')">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+    </div>
+    <div>
+      <div style="font-size:20px;font-weight:700">Flights</div>
+      <div style="font-size:13px;color:var(--fg-3);margin-top:1px">Search live fares worldwide</div>
+    </div>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:0 22px calc(env(safe-area-inset-bottom) + 40px)">
+    <div style="display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:4px;margin-bottom:16px">
+      <button onclick="state._fltRtn=true;render()" style="flex:1;padding:10px;border:none;border-radius:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;background:${rtn?'var(--gold-3,rgba(200,169,126,.16))':'transparent'};color:${rtn?'var(--gold)':'var(--fg-3)'}">Return</button>
+      <button onclick="state._fltRtn=false;render()" style="flex:1;padding:10px;border:none;border-radius:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;background:${!rtn?'var(--gold-3,rgba(200,169,126,.16))':'transparent'};color:${!rtn?'var(--gold)':'var(--fg-3)'}">One-way</button>
+    </div>
+    <datalist id="apx-airports">${AIRPORTS.map(a=>`<option value="${a.c}">${esc(a.n)}</option>`).join('')}</datalist>
+    <div class="inp-card" style="margin-bottom:12px">
+      <div class="inp-row">
+        <div class="rdot rdot-gold"></div>
+        <input id="flt_from" list="apx-airports" placeholder="From" value="${esc(state._fltFrom||'LHR')}" onchange="state._fltFrom=this.value" style="font-size:15px;flex:1"/>
+      </div>
+      <div class="rline"></div>
+      <div class="inp-row">
+        <div class="rdot rdot-outline"></div>
+        <input id="flt_to" list="apx-airports" placeholder="To — airport or city" value="${esc(state._fltTo||'')}" onchange="state._fltTo=this.value" style="font-size:15px;flex:1"/>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
+      ${[['JFK','New York'],['DXB','Dubai'],['CDG','Paris'],['GVA','Geneva'],['NCE','Nice'],['MLE','Maldives']].map(([c,n])=>`<button onclick="state._fltTo='${c}';document.getElementById('flt_to').value='${c}'" style="background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:7px 13px;font-size:12px;color:var(--fg-2);cursor:pointer;font-family:inherit">${n}</button>`).join('')}
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:12px">
+      <div style="flex:1">
+        <div style="font-size:11px;color:var(--fg-4);letter-spacing:1px;margin-bottom:6px">DEPART</div>
+        <input id="flt_dep" type="date" value="${state._fltDep||_d(7)}" min="${_d(0)}" onchange="state._fltDep=this.value" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:13px 14px;color:var(--fg);font-size:14px;font-family:inherit;color-scheme:dark"/>
+      </div>
+      ${rtn?`<div style="flex:1">
+        <div style="font-size:11px;color:var(--fg-4);letter-spacing:1px;margin-bottom:6px">RETURN</div>
+        <input id="flt_ret" type="date" value="${state._fltRet||_d(10)}" min="${_d(0)}" onchange="state._fltRet=this.value" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:13px 14px;color:var(--fg);font-size:14px;font-family:inherit;color-scheme:dark"/>
+      </div>`:''}
+      <div style="width:92px">
+        <div style="font-size:11px;color:var(--fg-4);letter-spacing:1px;margin-bottom:6px">TRAVELLERS</div>
+        <select id="flt_pax" onchange="state._fltPax=this.value" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:13px 10px;color:var(--fg);font-size:14px;font-family:inherit">
+          ${[1,2,3,4,5,6,7,8].map(n=>`<option value="${n}" ${n===(parseInt(state._fltPax)||2)?'selected':''}>${n}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--fg-4);letter-spacing:1px;margin-bottom:8px">CABIN</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px">
+      ${[['economy','Economy'],['premiumeconomy','Premium'],['business','Business'],['first','First']].map(([v,l])=>`<button onclick="state._fltCabin='${v}';render()" style="background:${cabin===v?'var(--gold-3,rgba(200,169,126,.16))':'var(--surface-2)'};border:1px solid ${cabin===v?'var(--gold-2,rgba(200,169,126,.35))':'var(--border)'};border-radius:20px;padding:9px 15px;font-size:12px;font-weight:${cabin===v?'700':'400'};color:${cabin===v?'var(--gold)':'var(--fg-2)'};cursor:pointer;font-family:inherit">${l}</button>`).join('')}
+    </div>
+    <div id="flt_err" style="display:none;color:#ef4444;font-size:13px;margin-bottom:12px"></div>
+    <button class="btn btn-gold ripple-host" onclick="addRipple(this,event);skyscannerSearch()">Search flights</button>
+    <div style="font-size:11px;color:var(--fg-4);text-align:center;margin-top:10px">Live results open on Skyscanner</div>
+    <div class="card" style="padding:16px 18px;margin-top:22px;display:flex;align-items:center;gap:14px;cursor:pointer" onclick="goBook('airport')">
+      <div style="width:44px;height:44px;border-radius:14px;background:var(--gold-3,rgba(200,169,126,.12));border:1px solid var(--gold-2,rgba(200,169,126,.3));display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="var(--gold)" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M8 17h8M6 17l-2-6 3 1 2-6 4 5 5-1-2 7H6z"/></svg>
+      </div>
+      <div style="flex:1">
+        <div style="font-size:14px;font-weight:700">Land with us</div>
+        <div style="font-size:12px;color:var(--fg-3);margin-top:2px">Your chauffeur waiting in Arrivals — flight tracked, delays covered</div>
+      </div>
+      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--fg-3)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+    </div>
+  </div>
+</div>`;},
 
 // The Concierge door: the desk itself plus curated experiences — lifestyle
 // lives here, travel lives behind the Chauffeur door.
