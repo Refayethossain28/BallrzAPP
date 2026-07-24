@@ -305,6 +305,8 @@
     </div>
     <h2>Pots</h2>
     <div class="potStrip" id="homePots"></div>
+    <h2>Crypto</h2>
+    <div class="potStrip" id="homeCrypto"></div>
     <h2>Activity</h2>
     <div id="homeTxns" class="panel" style="padding:6px 14px"></div>
   </section>
@@ -748,6 +750,26 @@ function renderHome() {
   pots += '<button class="potCard newPot" onclick="openNewPot()">＋ New pot</button>';
   $('homePots').innerHTML = pots;
 
+  // the crypto desk: the repo's own chains, priced by the deterministic walk
+  var day = today();
+  var yesterday = V.isoPlusDays(day, -1);
+  var hold = V.cryptoHoldings(state, day);
+  var ch = '';
+  for (var ci = 0; ci < hold.assets.length; ci++) {
+    var asset = hold.assets[ci];
+    var prev = V.cryptoPrice(asset.key, yesterday);
+    var pct = prev > 0 ? (asset.price - prev) * 100 / prev : 0;
+    var pctTxt = (pct >= 0 ? '▲ ' : '▼ ') + Math.abs(pct).toFixed(1) + '%';
+    var pctCol = pct >= 0 ? 'var(--mint)' : 'var(--red)';
+    ch += '<button class="potCard" onclick="openCrypto(\'' + asset.key + '\')">' +
+      '<div class="nm">' + asset.icon + ' ' + esc(asset.ticker) + '</div>' +
+      '<div class="bal">' + V.fmt(asset.price) + '</div>' +
+      '<div class="tiny"><span style="color:' + pctCol + '">' + pctTxt + '</span>' +
+      (asset.units > 0 ? ' · you hold ' + V.fmt(asset.value) : '') + '</div>' +
+      '</button>';
+  }
+  $('homeCrypto').innerHTML = ch;
+
   // last 9 external+notable txns, newest first, grouped by day
   var txns = state.txns.slice().reverse().slice(0, 9);
   var html = '', lastDay = '';
@@ -1079,6 +1101,82 @@ function potMove(id, into) {
   if (r.error) { toast(r.message, true); return; }
   state = r.state; save(); closeSheet(); renderAll();
   toast(into ? V.fmt(pence) + ' tucked away' : V.fmt(pence) + ' back in your account');
+}
+
+/* ---------- sheets: crypto desk ---------- */
+/** Real on-device chain balance: the TimeCoin / Neura apps store their chain +
+    wallets in this origin's localStorage; chainBalance() derives the UTXO sum
+    without loading either consensus engine. Read-only — the bank never touches
+    those keys. Returns null when there's nothing minable on this device. */
+function onChainGlance(key) {
+  var a = V.CRYPTO[key];
+  try {
+    var chain = JSON.parse(localStorage.getItem(a.chainLS) || 'null');
+    var wallets = JSON.parse(localStorage.getItem(a.walletsLS) || '[]') || [];
+    if (!chain || !wallets.length) return null;
+    var addrs = [];
+    for (var i = 0; i < wallets.length; i++) if (wallets[i] && wallets[i].address) addrs.push(wallets[i].address);
+    if (!addrs.length) return null;
+    return { units: V.chainBalance(chain, addrs), wallets: addrs.length };
+  } catch (e) { return null; }
+}
+function openCrypto(key) {
+  var a = V.CRYPTO[key];
+  if (!a) return;
+  var day = today();
+  var q = V.cryptoQuote(key, day);
+  var units = (state.crypto && state.crypto[key]) || 0;
+  var value = Math.floor(units * q.mid / a.coin);
+  var glance = onChainGlance(key);
+  openSheet('<h3>' + a.icon + ' ' + esc(a.name) + ' · ' + esc(a.ticker) + '</h3>' +
+    '<p class="tiny" style="margin:0 0 10px">' + esc(a.blurb) + '</p>' +
+    '<div class="panel" style="margin-bottom:10px">' +
+      '<div class="spread" style="padding:5px 0"><span class="muted">Price</span><b>' + V.fmt(q.mid) + ' / ' + esc(a.ticker) + '</b></div>' +
+      '<div class="spread" style="padding:5px 0"><span class="muted">Bank buys · sells at</span><b style="font-size:13.5px">' + V.fmt(q.sell) + ' · ' + V.fmt(q.buy) + '</b></div>' +
+      '<div class="spread" style="padding:5px 0"><span class="muted">You hold</span><b>' + V.fmtUnits(units, a.coin) + ' ' + esc(a.ticker) + ' · ' + V.fmt(value) + '</b></div>' +
+    '</div>' +
+    (glance ? '<p class="tiny" style="margin:0 0 10px">⛓ On this device: <b>' + V.fmtUnits(glance.units, a.coin) + ' ' + esc(a.ticker) + '</b> across ' + glance.wallets +
+              ' wallet' + (glance.wallets === 1 ? '' : 's') + ' you mined in the ' + esc(a.name) + ' app — those keys stay yours; the bank only reads the chain.</p>'
+            : '<p class="tiny" style="margin:0 0 10px">⛓ No ' + esc(a.ticker) + ' mined on this device yet — open the ' + esc(a.name) + ' app and earn some for real.</p>') +
+    '<div class="field"><label for="cbAmt">Buy (£)</label><input id="cbAmt" inputmode="decimal" placeholder="£0.00"></div>' +
+    '<div class="field"><label for="csAmt">Sell (' + esc(a.ticker) + ')</label><input id="csAmt" inputmode="decimal" placeholder="0.0"></div>' +
+    '<div class="row2">' +
+      '<button class="btn primary" onclick="doCryptoBuy(\'' + key + '\')">Buy</button>' +
+      '<button class="btn" onclick="doCryptoSell(\'' + key + '\')">Sell</button>' +
+    '</div>' +
+    '<a class="btn ghost" style="margin-top:10px;text-decoration:none" href="' + a.app + '">Open ' + esc(a.name) + ' ↗</a>' +
+    '<p class="tiny" style="margin-top:10px">Custodial and simulated: the price is a deterministic simulated market, and holdings live in your bank, not on the chain. The spread is the bank’s stated cut.</p>');
+  focusSoon('cbAmt');
+}
+function doCryptoBuy(key) {
+  var pence = V.parseAmount($('cbAmt').value);
+  if (pence === null) { toast('Enter a £ amount to buy', true); return; }
+  if (isOnline()) {
+    cloudExec('cryptobuy', { key: key, amount: pence }).then(function (ok) {
+      if (ok) { closeSheet(); toast(V.fmt(pence) + ' of ' + key + ' bought 🪙'); }
+    });
+    return;
+  }
+  var r = V.cryptoBuy(state, key, pence, nowTS());
+  if (r.error) { toast(r.message, true); return; }
+  state = r.state; save(); closeSheet(); renderAll();
+  toast('Bought ' + V.fmtUnits(r.units, V.CRYPTO[key].coin) + ' ' + key + ' 🪙');
+}
+function doCryptoSell(key) {
+  var a = V.CRYPTO[key];
+  var coins = parseFloat($('csAmt').value);
+  if (!(coins > 0)) { toast('Enter how much ' + key + ' to sell', true); return; }
+  var units = Math.round(coins * a.coin);
+  if (isOnline()) {
+    cloudExec('cryptosell', { key: key, units: units }).then(function (ok) {
+      if (ok) { closeSheet(); toast(V.fmtUnits(units, a.coin) + ' ' + key + ' sold'); }
+    });
+    return;
+  }
+  var r = V.cryptoSell(state, key, units, nowTS());
+  if (r.error) { toast(r.message, true); return; }
+  state = r.state; save(); closeSheet(); renderAll();
+  toast('Sold for ' + V.fmt(r.pence) + ' ✅');
 }
 
 /* ---------- sheets: card ---------- */

@@ -103,6 +103,25 @@ async function main() {
   alice = await bank('alice');
   check(balance(alice, 'current') === 21000 - 350, 'the purchase landed on the server ledger');
 
+  console.log('→ the crypto desk…');
+  const preBuy = balance(await bank('alice'), 'current');
+  const buyCoin = await call('vaultExec', 'alice', { op: 'cryptobuy', args: { key: 'TIME', amount: 2000 } });
+  check(buyCoin.ok, 'buying £20 of TIME succeeds');
+  let aliceC = await bank('alice');
+  const held = (aliceC.crypto && aliceC.crypto.TIME) || 0;
+  check(held > 0, `TIME units held custodially (got ${held})`);
+  check(balance(aliceC, 'current') === preBuy - 2000, 'the £20 left through the ledger');
+  const sellCoin = await call('vaultExec', 'alice', { op: 'cryptosell', args: { key: 'TIME', units: held } });
+  check(sellCoin.ok, 'selling it all back succeeds');
+  aliceC = await bank('alice');
+  check((aliceC.crypto.TIME || 0) === 0, 'holdings back to zero');
+  const roundTrip = balance(aliceC, 'current');
+  check(roundTrip > preBuy - 2000 && roundTrip <= preBuy, `round-trip returns all but the spread (got ${preBuy - roundTrip}p cost)`);
+  const badAsset = await call('vaultExec', 'alice', { op: 'cryptobuy', args: { key: 'DOGE', amount: 100 } });
+  check(!badAsset.ok, 'unknown assets are refused');
+  const oversell = await call('vaultExec', 'alice', { op: 'cryptosell', args: { key: 'NEURA', units: 5 } });
+  check(!oversell.ok, 'selling coins you do not hold is refused');
+
   const hugeTopUp = await call('vaultExec', 'alice', { op: 'topup', args: { amount: 100000000 } });
   check(!hugeTopUp.ok && hugeTopUp.code === 'INVALID_ARGUMENT', 'top-ups over the cap are refused');
   const noAuth = await call('vaultSend', null, {

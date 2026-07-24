@@ -201,6 +201,30 @@ const OPS: Record<string, (s: VaultState, a: ExecArgs) => VaultState> = {
     for (const acct of next.accounts) if (acct.id === 'current') acct.overdraft = raw;
     return next;
   },
+  /**
+   * Crypto desk — the repo's own chains (TimeCoin, Neura) traded custodially
+   * against the £ balance. The price is the engine's deterministic walk, so
+   * the server and every client agree on it without a feed; the £ leg goes
+   * through post() like all other money. Custodial only: the bank never
+   * touches on-chain keys (the app reads those locally, read-only).
+   */
+  cryptobuy: (s, a) => {
+    const key = strOf(a.key, 10).toUpperCase();
+    const amount = penceOf(a.amount, SEND_MAX, 'Purchase');
+    const r = V.cryptoBuy(s, key, amount, nowTS());
+    if (r.error || !r.state) throw new HttpsError('failed-precondition', r.message || 'The desk said no.');
+    return r.state;
+  },
+  cryptosell: (s, a) => {
+    const key = strOf(a.key, 10).toUpperCase();
+    const units = Math.round(Number(a.units));
+    if (!Number.isFinite(units) || units <= 0 || units > Number.MAX_SAFE_INTEGER) {
+      throw new HttpsError('invalid-argument', 'Units must be a positive whole number.');
+    }
+    const r = V.cryptoSell(s, key, units, nowTS());
+    if (r.error || !r.state) throw new HttpsError('failed-precondition', r.message || 'The desk said no.');
+    return r.state;
+  },
   /** No mutation of its own — the shared catch-up (interest + due orders) is the point. */
   catchup: (s) => s,
 };

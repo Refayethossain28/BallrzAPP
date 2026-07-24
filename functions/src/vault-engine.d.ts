@@ -60,6 +60,7 @@ export interface VaultState {
   iban: string;
   accounts: VaultAccount[];
   card: VaultCard;
+  crypto?: Record<string, number>;
   roundUpsTo: string | null;
   txns: VaultTxn[];
   orders: VaultOrder[];
@@ -70,6 +71,16 @@ export interface VaultState {
 export type PostResult =
   | { state: VaultState; txn: VaultTxn; roundUpTxn?: VaultTxn; error?: undefined; message?: undefined }
   | { error: string; message: string; state?: undefined; txn?: undefined };
+
+export type CryptoTradeResult =
+  | { state: VaultState; units?: number; pence?: number; pricePence: number; error?: undefined; message?: undefined }
+  | { error: string; message: string; state?: undefined };
+
+export interface CryptoAsset {
+  name: string; ticker: string; icon: string; coin: number;
+  basePence: number; driftPct: number; volPct: number;
+  app: string; chainLS: string; walletsLS: string; blurb: string;
+}
 
 export interface VaultEngine {
   fmt(pence: number, opts?: { showPlus?: boolean }): string;
@@ -98,6 +109,17 @@ export interface VaultEngine {
   }): VaultState;
   runDueOrders(state: VaultState, nowISO: string): { state: VaultState; posted: VaultTxn[] };
   toCSV(state: VaultState, accountId: string): string;
+  CRYPTO: Record<string, CryptoAsset>;
+  cryptoPrice(key: string, dayISO: string): number | null;
+  cryptoQuote(key: string, dayISO: string): { mid: number; buy: number; sell: number } | null;
+  fmtUnits(units: number, coin: number): string;
+  cryptoBuy(state: VaultState, key: string, pencePay: number, ts: string): CryptoTradeResult;
+  cryptoSell(state: VaultState, key: string, units: number, ts: string): CryptoTradeResult;
+  cryptoHoldings(state: VaultState, dayISO: string): {
+    assets: Array<{ key: string; name: string; ticker: string; icon: string; coin: number; units: number; price: number; value: number }>;
+    total: number;
+  };
+  chainBalance(chainJSON: unknown, addresses: string[]): number;
 }
 
 declare const Vault: VaultEngine;

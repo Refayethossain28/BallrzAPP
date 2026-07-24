@@ -228,6 +228,7 @@
         { id: 'pot-1', kind: 'savings', name: 'Rainy day', aerPct: 4.0, goal: 50000, lastAccrualISO: nowISO }
       ],
       card: makeCard(rng, nowISO),
+      crypto: {},       // asset key → integer base units held custodially
       roundUpsTo: null, // pot id, or null = off
       txns: [],         // append-only; the truth
       orders: [],       // standing orders
@@ -477,6 +478,182 @@
     return s;
   }
 
+  /* ════════════════════════ crypto desk ════════════════════════
+   *
+   * The bank integrates the cryptocurrencies built in this repo — real UTXO
+   * proof-of-work chains sharing one consensus core (coin/engine.js):
+   *
+   *   TIME  — TimeCoin (coin/): Bitcoin from raw bytes up, mined in-browser
+   *   NEURA — Neura (neura/):   Proof of Intelligence on the same core
+   *
+   * Two honest layers, kept strictly apart:
+   *
+   *   CUSTODIAL — buy/sell against your £ balance at a deterministic
+   *   simulated market price (a seeded random walk: same asset + same day ⇒
+   *   the same price on every device and on the server, so the online bank
+   *   and its clients can never disagree). Holdings are integer base units
+   *   (1 coin = 100,000 units, the chains' own COIN) inside the bank state;
+   *   the £ leg of every trade goes through post() like all other money.
+   *
+   *   ON-CHAIN — chainBalance() reads a chain's exported JSON (the exact
+   *   shape coin/engine.js Blockchain.toJSON() writes, which Neura shares)
+   *   and derives the UTXO balance of a set of addresses by scanning blocks:
+   *   no consensus engine loaded, nothing trusted but arithmetic. The app
+   *   uses it to show the TIME/NEURA you actually mined on this device
+   *   alongside the custodial holdings. The bank never touches those keys.
+   */
+
+  var CRYPTO = {
+    TIME: {
+      name: 'TimeCoin', ticker: 'TIME', icon: '🪙', coin: 100000,
+      basePence: 120, driftPct: 0.03, volPct: 4.5, app: '../coin/',
+      chainLS: 'ballrzcoin.chain.v2', walletsLS: 'ballrzcoin.wallets.v2',
+      blurb: 'A Bitcoin built from raw bytes up — mine real blocks in your browser.'
+    },
+    NEURA: {
+      name: 'Neura', ticker: 'NEURA', icon: '🧠', coin: 100000,
+      basePence: 8400, driftPct: 0.05, volPct: 7, app: '../neura/',
+      chainLS: 'neura-chain-v1', walletsLS: 'neura-wallets-v1',
+      blurb: 'The chain that thinks — every block trains a shared neural network.'
+    }
+  };
+  var CRYPTO_EPOCH = '2026-01-01';
+  var SPREAD_PCT = 1.5; // the bank's cut, symmetric around mid — stated, not hidden
+
+  /**
+   * Mid-market price of ONE whole coin in integer pence for a given day —
+   * a seeded geometric random walk from CRYPTO_EPOCH: each day's return is
+   * hash(asset|day) mapped into ±volPct plus a small drift. Pure function of
+   * (asset, day): every client and the server compute the identical price.
+   */
+  function cryptoPrice(key, dayISO) {
+    var a = CRYPTO[key];
+    if (!a) return null;
+    var day = String(dayISO).slice(0, 10);
+    var price = a.basePence;
+    var d = CRYPTO_EPOCH;
+    for (var guard = 0; guard < 20000 && d < day; guard++) {
+      d = isoPlusDays(d, 1);
+      var u = parseInt(fnv1a(key + '|' + d), 16) / 0xffffffff; // 0..1, deterministic
+      var retPct = (u * 2 - 1) * a.volPct + a.driftPct;
+      price = price * (1 + retPct / 100);
+    }
+    return Math.max(1, Math.round(price));
+  }
+
+  /** What the bank will actually deal at: buy above mid, sell below it. */
+  function cryptoQuote(key, dayISO) {
+    var mid = cryptoPrice(key, dayISO);
+    if (mid === null) return null;
+    return {
+      mid: mid,
+      buy: Math.max(1, Math.ceil(mid * (1 + SPREAD_PCT / 100))),
+      sell: Math.max(1, Math.floor(mid * (1 - SPREAD_PCT / 100)))
+    };
+  }
+
+  /** "123456" base units → "1.23456" (trailing zeros trimmed, min 1 dp). */
+  function fmtUnits(units, coin) {
+    var neg = units < 0 ? '−' : '';
+    units = Math.abs(Math.round(Number(units) || 0));
+    var whole = Math.floor(units / coin);
+    var frac = String(units % coin + coin).slice(1).replace(/0+$/, '');
+    return neg + whole + '.' + (frac || '0');
+  }
+
+  /**
+   * Buy: £ leaves the current account through the ordinary post() gate
+   * (insufficient funds bounce exactly like any other spend), and integer
+   * base units land in state.crypto[key]. Returns { state, units, pricePence }.
+   */
+  function cryptoBuy(state, key, pencePay, ts) {
+    var a = CRYPTO[key];
+    if (!a) return { error: 'no-asset', message: 'Unknown asset.' };
+    pencePay = Math.round(Number(pencePay) || 0);
+    if (pencePay <= 0) return { error: 'bad-amount', message: 'Amount must be positive.' };
+    var q = cryptoQuote(key, ts);
+    var units = Math.floor(pencePay * a.coin / q.buy);
+    if (units < 1) return { error: 'too-small', message: fmt(pencePay) + ' buys less than one base unit of ' + a.ticker + '.' };
+    var r = post(state, {
+      amount: pencePay, from: 'current', to: null,
+      desc: 'Bought ' + fmtUnits(units, a.coin) + ' ' + a.ticker,
+      category: 'crypto', method: 'crypto', ts: ts
+    });
+    if (r.error) return r;
+    var s = r.state; // post() already cloned
+    s.crypto = s.crypto || {};
+    s.crypto[key] = ((s.crypto[key] || 0) + units);
+    return { state: s, units: units, pricePence: q.buy };
+  }
+
+  /** Sell base units back to £ at the bank's sell quote. */
+  function cryptoSell(state, key, units, ts) {
+    var a = CRYPTO[key];
+    if (!a) return { error: 'no-asset', message: 'Unknown asset.' };
+    units = Math.round(Number(units) || 0);
+    if (units <= 0) return { error: 'bad-amount', message: 'Amount must be positive.' };
+    var held = (state.crypto && state.crypto[key]) || 0;
+    if (units > held) return { error: 'insufficient', message: 'You hold ' + fmtUnits(held, a.coin) + ' ' + a.ticker + '.' };
+    var q = cryptoQuote(key, ts);
+    var pence = Math.floor(units * q.sell / a.coin);
+    if (pence < 1) return { error: 'too-small', message: 'That much ' + a.ticker + ' is worth less than a penny.' };
+    var r = post(state, {
+      amount: pence, from: null, to: 'current',
+      desc: 'Sold ' + fmtUnits(units, a.coin) + ' ' + a.ticker,
+      category: 'crypto', method: 'crypto', ts: ts
+    });
+    if (r.error) return r;
+    var s = r.state;
+    s.crypto = s.crypto || {};
+    s.crypto[key] = held - units;
+    return { state: s, pence: pence, pricePence: q.sell };
+  }
+
+  /** Every asset with today's price, the user's units, and their £ value. */
+  function cryptoHoldings(state, dayISO) {
+    var list = [], total = 0;
+    for (var key in CRYPTO) {
+      var a = CRYPTO[key];
+      var units = (state.crypto && state.crypto[key]) || 0;
+      var price = cryptoPrice(key, dayISO);
+      var value = Math.floor(units * price / a.coin);
+      total += value;
+      list.push({ key: key, name: a.name, ticker: a.ticker, icon: a.icon, coin: a.coin, units: units, price: price, value: value });
+    }
+    return { assets: list, total: total };
+  }
+
+  /**
+   * UTXO balance of `addresses` from a chain's exported JSON — the shape
+   * Blockchain.toJSON() writes ({ blocks: [{ transactions: [...] }] }):
+   * every transfer input spends "txId:outIndex"; whatever output was never
+   * spent and pays one of the addresses counts. Returns integer base units.
+   * Tolerant of malformed input (returns 0) — it reads foreign storage.
+   */
+  function chainBalance(chainJSON, addresses) {
+    try {
+      var blocks = (chainJSON && chainJSON.blocks) || [];
+      var mine = {};
+      for (var i = 0; i < addresses.length; i++) mine[addresses[i]] = true;
+      var spent = {}, outs = [];
+      for (var b = 0; b < blocks.length; b++) {
+        var txs = blocks[b].transactions || [];
+        for (var t = 0; t < txs.length; t++) {
+          var tx = txs[t];
+          var inputs = tx.inputs || [];
+          for (var k = 0; k < inputs.length; k++) spent[inputs[k].txId + ':' + inputs[k].outIndex] = true;
+          var outputs = tx.outputs || [];
+          for (var o = 0; o < outputs.length; o++) {
+            if (mine[outputs[o].address]) outs.push({ id: tx.id + ':' + o, amount: outputs[o].amount });
+          }
+        }
+      }
+      var sum = 0;
+      for (var j = 0; j < outs.length; j++) if (!spent[outs[j].id]) sum += Math.round(Number(outs[j].amount) || 0);
+      return sum;
+    } catch (e) { return 0; }
+  }
+
   /* ════════════════════════ insight ════════════════════════ */
 
   var CATEGORIES = {
@@ -488,6 +665,7 @@
     subs:       { label: 'Subscriptions', icon: '📺', words: ['netflix', 'spotify', 'disney', 'prime', 'icloud', 'youtube', 'gym', 'membership'] },
     income:     { label: 'Income',        icon: '💷', words: ['salary', 'payroll', 'wages', 'refund', 'top up', 'top-up'] },
     savings:    { label: 'Savings',       icon: '🐖', words: ['round-up', 'pot transfer'] },
+    crypto:     { label: 'Crypto',        icon: '🪙', words: [] },
     interest:   { label: 'Interest',      icon: '✨', words: ['interest'] },
     transfers:  { label: 'Transfers',     icon: '↔️', words: ['transfer', 'sent to', 'from '] },
     other:      { label: 'Other',         icon: '💳', words: [] }
@@ -629,6 +807,8 @@
     post: post, cardPurchase: cardPurchase, cardSpentOn: cardSpentOn,
     createPot: createPot, accrueInterest: accrueInterest, compact: compact,
     addOrder: addOrder, runDueOrders: runDueOrders,
+    CRYPTO: CRYPTO, cryptoPrice: cryptoPrice, cryptoQuote: cryptoQuote, fmtUnits: fmtUnits,
+    cryptoBuy: cryptoBuy, cryptoSell: cryptoSell, cryptoHoldings: cryptoHoldings, chainBalance: chainBalance,
     CATEGORIES: CATEGORIES, categorise: categorise, spendByCategory: spendByCategory, inOut: inOut,
     toCSV: toCSV, seedDemo: seedDemo
   };
