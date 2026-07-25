@@ -121,7 +121,7 @@ test('ls sorts dirs first then files, both alphabetical, with sizes', () => {
   const r = K.fsList(fs, '/home/user');
   assert.equal(r.ok, true);
   const names = r.entries.map((e) => e.name);
-  deq(names, ['notes', 'projects', 'aa.txt', 'zz.txt']);
+  deq(names, ['Desktop', 'notes', 'projects', 'aa.txt', 'zz.txt']);
   assert.equal(r.entries.find((e) => e.name === 'zz.txt').size, 5);
   assert.equal(K.fsList(fs, '/etc/motd').ok, false, 'ls a file fails');
 });
@@ -399,7 +399,7 @@ test('pipelines: ls | grep | head compose over the disk', () => {
   assert.ok(r.out[0].startsWith('alpha.txt'));
   deq(K.execCommand(st, 'ls | grep txt | head -n 1', T0).out.length, 1);
   const wc = K.execCommand(st, 'ls | wc', T0).out[0];
-  assert.ok(wc.startsWith('5 lines'), `notes/ projects/ + 3 files, got: ${wc}`);
+  assert.ok(wc.startsWith('6 lines'), `Desktop/ notes/ projects/ + 3 files, got: ${wc}`);
   assert.equal(K.execCommand(st, 'ls | frobnicate', T0).error, true, 'unknown filter is an error');
 });
 
@@ -436,7 +436,7 @@ test('tree draws the hierarchy, dirs first', () => {
   const st = K.boot(T0);
   const r = K.execCommand(st, 'tree ~', T0);
   assert.equal(r.error, false);
-  deq(r.out, ['user/', '├─ notes/', '│  └─ welcome.txt', '└─ projects/']);
+  deq(r.out, ['user/', '├─ Desktop/', '│  └─ Getting started.md', '├─ notes/', '│  └─ welcome.txt', '└─ projects/']);
 });
 
 /* ══════════ v2: trash ══════════ */
@@ -741,6 +741,53 @@ test('renderMarkdown: structure renders, HTML is always escaped, links http-only
   assert.ok(!html.includes('<script'), 'raw HTML is neutralised');
   assert.ok(html.includes('&lt;script&gt;'));
   assert.equal(K.renderMarkdown(''), '');
+});
+
+/* ══════════ v3.1: the graphical desktop ══════════ */
+
+test('Desktop is seeded with a Getting started note; old disks grow one on load', () => {
+  const st = K.boot(T0);
+  assert.equal(K.fsGet(st.fs, K.DESKTOP).type, 'dir');
+  const entries = K.desktopEntries(st);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].name, 'Getting started.md');
+  assert.ok(K.fsRead(st.fs, K.DESKTOP + '/Getting started.md').content.includes('Right-click'));
+  // a pre-GUI snapshot (no Desktop dir) gains one without losing data
+  const old = K.boot(T0);
+  K.fsRemove(old.fs, K.DESKTOP, { recursive: true });
+  K.fsWrite(old.fs, '/home/user/keep.txt', 'kept', T0);
+  const upgraded = K.deserialize(K.serialize(old), T0);
+  assert.equal(K.fsGet(upgraded.fs, K.DESKTOP).type, 'dir', 'Desktop recreated');
+  assert.equal(K.fsRead(upgraded.fs, '/home/user/keep.txt').content, 'kept');
+});
+
+test('icon layout: deterministic column grid, drags stick, positions clamp and persist', () => {
+  const st = K.boot(T0);
+  deq(K.defaultIconPos(0), { x: 14, y: 12 });
+  deq(K.defaultIconPos(5), { x: 14, y: 12 + 5 * 96 }, 'flows down first');
+  deq(K.defaultIconPos(6), { x: 14 + 92, y: 12 }, 'then wraps to the next column');
+  deq(K.iconPos(st, 'Getting started.md', 0), { x: 14, y: 12 }, 'unplaced icon uses its slot');
+  K.setIconPos(st, 'Getting started.md', 400.6, -50);
+  deq(K.iconPos(st, 'Getting started.md', 0), { x: 401, y: 0 }, 'rounded and clamped');
+  const st2 = K.deserialize(K.serialize(st), T0);
+  deq(K.iconPos(st2, 'Getting started.md', 0), { x: 401, y: 0 }, 'position survives reboot');
+  const hostile = K.deserialize(JSON.stringify({ v: 4, fs: K.boot(T0).fs, desktop: { 'a.txt': { x: 'NaN-ish', y: 5 }, 'b/ad': { x: 1, y: 1 }, 'c.txt': { x: 99999, y: 3 } } }), T0);
+  deq(hostile.desktop, { 'c.txt': { x: 6000, y: 3 } }, 'bad names and non-finite positions dropped, huge ones clamped');
+});
+
+test('pruneIconPos forgets icons whose file is gone; mv onto a file clobbers (unix)', () => {
+  const st = K.boot(T0);
+  K.fsWrite(st.fs, K.DESKTOP + '/a.txt', 'A', T0);
+  K.setIconPos(st, 'a.txt', 100, 100);
+  K.setIconPos(st, 'Getting started.md', 200, 200);
+  K.fsTrash(st.fs, K.DESKTOP + '/a.txt', T0);
+  K.pruneIconPos(st);
+  deq(Object.keys(st.desktop), ['Getting started.md']);
+  // rename = fsMove; renaming ONTO an existing file overwrites, like mv(1)
+  K.fsWrite(st.fs, K.DESKTOP + '/x.txt', 'X', T0);
+  K.fsWrite(st.fs, K.DESKTOP + '/y.txt', 'Y', T0);
+  assert.equal(K.fsMove(st.fs, K.DESKTOP + '/x.txt', K.DESKTOP + '/y.txt', T0).ok, true);
+  assert.equal(K.fsRead(st.fs, K.DESKTOP + '/y.txt').content, 'X');
 });
 
 console.log('── aios kernel unit tests ──');
