@@ -99,6 +99,36 @@ async function callClaude(text, context) {
   };
 }
 
+// One agent turn: the browser sends the running message history, we ask the
+// model for the next reply + commands. The browser executes them (through the
+// unit-tested kernel) and calls back with results — the loop lives client-side.
+async function callAgentTurn(messages, context) {
+  const ctx = context && typeof context === "object" ? context : {};
+  const sys = SYSTEM + `\nCurrent OS context: cwd=${ctx.cwd || "/home/user"}, user=${String(ctx.owner || "user").slice(0, 24)}.` +
+    (Array.isArray(ctx.files) && ctx.files.length ? ` Files (sample): ${ctx.files.slice(0, 40).map(String).join(", ")}` : "");
+  const safe = (Array.isArray(messages) ? messages : []).slice(-16).map((m) => ({
+    role: m && m.role === "assistant" ? "assistant" : "user",
+    content: String((m && m.content) || "").slice(0, 4000)
+  }));
+  if (!safe.length) safe.push({ role: "user", content: "(no message)" });
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": API_KEY, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({
+      model: MODEL, max_tokens: 1024, system: sys,
+      tools: [OS_TOOL], tool_choice: { type: "tool", name: "os_response" }, messages: safe
+    })
+  });
+  if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const data = await res.json();
+  const toolUse = (data.content || []).find((b) => b.type === "tool_use");
+  const input = toolUse ? toolUse.input : { reply: "" };
+  return {
+    reply: String(input.reply || ""),
+    actions: (Array.isArray(input.commands) ? input.commands : []).slice(0, 12).map((c) => ({ command: String(c).slice(0, 400) }))
+  };
+}
+
 /* ---- tiny same-origin server: static files + the two API routes ---- */
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -132,6 +162,13 @@ const server = http.createServer(async (req, res) => {
       const { text, context } = JSON.parse((await readBody(req)) || "{}");
       if (!text || typeof text !== "string") return send(400, "application/json", JSON.stringify({ error: "text required" }));
       const out = await callClaude(text, context);
+      return send(200, "application/json", JSON.stringify(out));
+    }
+    if (url.pathname === "/api/agent" && req.method === "POST") {
+      if (!API_KEY) return send(503, "application/json", JSON.stringify({ error: "Set ANTHROPIC_API_KEY to enable Live AI." }));
+      const { messages, context } = JSON.parse((await readBody(req)) || "{}");
+      if (!Array.isArray(messages)) return send(400, "application/json", JSON.stringify({ error: "messages array required" }));
+      const out = await callAgentTurn(messages, context);
       return send(200, "application/json", JSON.stringify(out));
     }
 

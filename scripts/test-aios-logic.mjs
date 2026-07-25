@@ -672,7 +672,7 @@ test('run: errors report the line and stop; depth capped; missing script', () =>
   K.fsWrite(st.fs, '/home/user/bad.sh', 'echo one\ncat /ghost\necho never', T0);
   const r = K.execCommand(st, 'run bad.sh', T0);
   assert.equal(r.error, true);
-  assert.ok(r.out.some((l) => l.includes('bad.sh: line 2')));
+  assert.ok(r.out.some((l) => l.includes('bad.sh: line stopped: cat /ghost')));
   assert.ok(!r.out.includes('never'), 'stops at the failing line');
   K.fsWrite(st.fs, '/home/user/fork.sh', 'run fork.sh', T0);
   const rec = K.execCommand(st, 'run fork.sh', T0);
@@ -788,6 +788,127 @@ test('pruneIconPos forgets icons whose file is gone; mv onto a file clobbers (un
   K.fsWrite(st.fs, K.DESKTOP + '/y.txt', 'Y', T0);
   assert.equal(K.fsMove(st.fs, K.DESKTOP + '/x.txt', K.DESKTOP + '/y.txt', T0).ok, true);
   assert.equal(K.fsRead(st.fs, K.DESKTOP + '/y.txt').content, 'X');
+});
+
+/* ══════════ v4: the AIOS Script language ══════════ */
+
+test('let evaluates arithmetic into a variable; interoperates with $expansion', () => {
+  const st = K.boot(T0);
+  assert.equal(K.execCommand(st, 'let x = 3 + 4 * 2', T0).error, false);
+  deq(K.execCommand(st, 'echo $x', T0).out, ['11']);
+  assert.equal(K.execCommand(st, 'let x = $x * 10', T0).error, false);
+  deq(K.execCommand(st, 'echo $x', T0).out, ['110']);
+  assert.equal(K.execCommand(st, 'let bad = hello', T0).error, true);
+});
+
+test('script: if / elif / else branches on comparisons and exists', () => {
+  const st = K.boot(T0);
+  const run = (src) => K.runScript(st, src, [], 'test', T0);
+  deq(run('let n = 5\nif $n > 10\n echo big\nelif $n > 3\n echo mid\nelse\n echo small\nend').out, ['mid']);
+  deq(run('if exists /home/user/notes\n echo yes\nend').out, ['yes']);
+  deq(run('if exists /ghost\n echo yes\nelse\n echo no\nend').out, ['no']);
+  deq(run('if not exists /ghost\n echo clear\nend').out, ['clear']);
+  deq(run('if apple == apple\n echo same\nend').out, ['same'], 'string equality');
+});
+
+test('script: while loops run and terminate; the step cap kills infinite loops', () => {
+  const st = K.boot(T0);
+  const r = K.runScript(st, 'let n = 3\nwhile $n > 0\n echo tick $n\n let n = $n - 1\nend\necho done', [], 't', T0);
+  deq(r.out, ['tick 3', 'tick 2', 'tick 1', 'done']);
+  assert.equal(r.error, false);
+  const inf = K.runScript(st, 'while 1\n echo x\nend', [], 't', T0);
+  assert.equal(inf.error, true);
+  assert.ok(inf.out[inf.out.length - 1].includes('exceeded'), 'infinite loop is bounded, never hangs');
+});
+
+test('script: func defines a callable command with its own $1..$9/$@ args', () => {
+  const st = K.boot(T0);
+  const r = K.runScript(st, 'func greet\n echo hello $1 and $2\nend\ngreet Ada Bob', [], 't', T0);
+  deq(r.out, ['hello Ada and Bob']);
+  // a func can build on the OS: make a project scaffold
+  K.runScript(st, 'func scaffold\n mkdir -p $1/src\n echo $1 > $1/name.txt\nend\nscaffold apollo', [], 't', T0);
+  assert.equal(K.fsGet(st.fs, '/home/user/apollo/src').type, 'dir');
+  assert.equal(K.fsRead(st.fs, '/home/user/apollo/name.txt').content, 'apollo\n');
+});
+
+test('script: $(( arithmetic )) substitutes inline, and malformed blocks error cleanly', () => {
+  const st = K.boot(T0);
+  deq(K.runScript(st, 'echo $(( 6 * 7 ))', [], 't', T0).out, ['42']);
+  assert.equal(K.runScript(st, 'if $x > 1\n echo hi', [], 't', T0).error, true, 'unclosed if');
+  assert.ok(K.runScript(st, 'end', [], 't', T0).out[0].includes('stray'), 'stray end');
+});
+
+test('run wires the interpreter to a file, with $1/$@ from the command line', () => {
+  const st = K.boot(T0);
+  K.fsWrite(st.fs, '/home/user/greet.sh', 'func hi\n echo hi $1\nend\nhi $1\nlet sum = $2 + $3\necho $sum', T0);
+  const r = K.execCommand(st, 'run greet.sh World 20 22', T0);
+  assert.equal(r.error, false);
+  deq(r.out, ['hi World', '42']);
+});
+
+/* ══════════ v4: the App SDK ══════════ */
+
+test('apps ship pre-installed as .app manifests in /apps; listApps reads them', () => {
+  const st = K.boot(T0);
+  const apps = K.listApps(st);
+  const ids = apps.map((a) => a.id).sort();
+  deq(ids, ['dice', 'tip']);
+  const tip = K.readApp(st, 'tip');
+  assert.equal(tip.name, 'Tip Calculator');
+  assert.ok(tip.ui.some((w) => w.type === 'button' && w.run.includes('$bill')));
+  assert.equal(K.readApp(st, 'ghost'), null);
+});
+
+test('app command: list, open (→ userapp effect), install, remove', () => {
+  const st = K.boot(T0);
+  assert.ok(K.execCommand(st, 'app list', T0).out.some((l) => l.includes('tip')));
+  deq(K.execCommand(st, 'app open dice', T0).effects, [{ type: 'open', app: 'userapp', arg: 'dice' }]);
+  assert.equal(K.execCommand(st, 'app open ghost', T0).error, true);
+  // install a new app from a manifest file on the disk
+  K.fsWrite(st.fs, '/home/user/clock.app', JSON.stringify({ name: 'Clock', emoji: '🕰', ui: [{ type: 'button', text: 'Now', run: 'date' }] }), T0);
+  assert.equal(K.execCommand(st, 'app install clock.app', T0).error, false);
+  assert.equal(K.readApp(st, 'clock').name, 'Clock');
+  assert.ok(K.listApps(st).map((a) => a.id).includes('clock'));
+  assert.equal(K.execCommand(st, 'app remove clock', T0).error, false);
+  assert.equal(K.readApp(st, 'clock'), null);
+  assert.equal(K.execCommand(st, 'app install /home/user/notes/welcome.txt', T0).error, true, 'non-manifest rejected');
+});
+
+test('normalizeApp is strict: bad manifests rejected, widgets/strings capped', () => {
+  assert.equal(K.parseApp('not json'), null);
+  assert.equal(K.parseApp('{"ui":[]}'), null, 'name required');
+  const a = K.normalizeApp({ name: 'X'.repeat(99), ui: [{ type: 'button', text: 'y', run: 'z' }, { type: 'evil', run: 'rm -rf /' }, { type: 'label' }] });
+  assert.equal(a.name.length, 40, 'name capped');
+  assert.equal(a.ui.length, 2, 'unknown widget types dropped');
+  assert.equal(a.ui[0].type, 'button');
+  assert.equal(a.emoji, '🧩', 'default icon');
+  const big = K.normalizeApp({ name: 'big', ui: new Array(100).fill({ type: 'label', text: 'x' }) });
+  assert.ok(big.ui.length <= 40, 'widget count capped');
+});
+
+test('userapp windows are one-per-app-id and carry the app emoji', () => {
+  const st = K.boot(T0);
+  const a = K.spawn(st, 'userapp', 'tip');
+  assert.equal(a.ok, true);
+  assert.equal(a.proc.title, 'Tip Calculator');
+  assert.equal(a.proc.emoji, '💸');
+  const again = K.spawn(st, 'userapp', 'tip');
+  assert.equal(again.existing, true, 'singleton per app id');
+  const other = K.spawn(st, 'userapp', 'dice');
+  assert.equal(other.existing, false);
+  assert.equal(st.procs.length, 2);
+  assert.equal(K.spawn(st, 'userapp', 'ghost').ok, false, 'unknown app id refused');
+});
+
+test('the two seeded apps actually compute when their buttons run', () => {
+  const st = K.boot(T0);
+  // tip: bill 100, 15%, 2 people → each pays (100+15)/2 = 57
+  K.execCommand(st, 'set bill=100', T0);
+  K.execCommand(st, 'set pct=15', T0);
+  K.execCommand(st, 'set people=2', T0);
+  const tip = K.readApp(st, 'tip');
+  const btn = tip.ui.find((w) => w.type === 'button');
+  deq(K.execCommand(st, btn.run, T0).out, ['Each pays 57.5']);
 });
 
 console.log('── aios kernel unit tests ──');

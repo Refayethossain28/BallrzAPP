@@ -44,10 +44,12 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var VERSION = '3.1.0';
+  var VERSION = '4.0.0';
   var JOURNAL_CAP = 300;
   var RUN_DEPTH_CAP = 8;
+  var SCRIPT_STEP_CAP = 100000; // total statements one `run` may execute — kills infinite loops
   var DESKTOP = '/home/user/Desktop';
+  var APPS_DIR = '/apps';
   var WS_COUNT = 3;
   var TRASH = '/trash';
 
@@ -60,6 +62,10 @@
     { id: 'assistant',   name: 'Assistant',   emoji: '✦',  desc: 'Talk to the OS in plain English' },
     { id: 'calc',        name: 'Calculator',  emoji: '🧮', desc: 'A real calculator — no eval, ever' },
     { id: 'automations', name: 'Automations', emoji: '🤖', desc: 'Schedule the OS to run itself' },
+    { id: 'paint',       name: 'Paint',       emoji: '🎨', desc: 'Draw on a canvas, save to the disk' },
+    { id: 'camera',      name: 'Camera',      emoji: '📷', desc: 'Take a photo (your device camera)' },
+    { id: 'arcade',      name: 'Arcade',      emoji: '🕹️', desc: 'Play the Ballrz games inside AIOS' },
+    { id: 'store',       name: 'App Store',   emoji: '🛍️', desc: 'Install & manage apps' },
     { id: 'monitor',     name: 'Monitor',     emoji: '📊', desc: 'Processes and system state' },
     { id: 'settings',    name: 'Settings',    emoji: '⚙️', desc: 'Personalise AIOS' },
     { id: 'about',       name: 'About',       emoji: '🛈',  desc: 'About this OS' }
@@ -72,6 +78,10 @@
     assistant: ['assistant', 'ai', 'chat', 'help me'],
     calc: ['calculator', 'calc'],
     automations: ['automations', 'automation', 'scheduler', 'cron', 'robots'],
+    paint: ['paint', 'draw', 'drawing', 'canvas', 'sketch'],
+    camera: ['camera', 'photo', 'selfie', 'webcam'],
+    arcade: ['arcade', 'games', 'play', 'game'],
+    store: ['app store', 'store', 'apps', 'marketplace'],
     monitor: ['monitor', 'system monitor', 'task manager', 'activity monitor', 'processes'],
     settings: ['settings', 'preferences', 'options', 'config'],
     about: ['about', 'info', 'credits']
@@ -408,9 +418,31 @@
     fsMkdir(fs, DESKTOP, now, { parents: true });
     fsMkdir(fs, '/etc', now);
     fsMkdir(fs, TRASH, now);
+    fsMkdir(fs, APPS_DIR, now);
     fsWrite(fs, '/home/user/notes/welcome.txt', WELCOME, now);
     fsWrite(fs, DESKTOP + '/Getting started.md', GETTING_STARTED, now);
     fsWrite(fs, '/etc/motd', 'AIOS ' + VERSION + ' — the OS that listens.', now);
+    // Two apps ship pre-installed — proof the SDK is real: each is just a
+    // JSON manifest whose buttons run AIOS shell commands.
+    fsWrite(fs, APPS_DIR + '/tip.app', JSON.stringify({
+      name: 'Tip Calculator', emoji: '💸', desc: 'Split a bill with tip — built from shell commands.',
+      ui: [
+        { type: 'label', text: 'Split a bill, with tip.' },
+        { type: 'number', name: 'bill', placeholder: 'Bill amount' },
+        { type: 'number', name: 'pct', placeholder: 'Tip % (e.g. 15)', value: '15' },
+        { type: 'number', name: 'people', placeholder: 'Split between', value: '2' },
+        { type: 'button', text: 'Calculate', run: 'echo "Each pays $(( ($bill + $bill * $pct / 100) / $people ))"' },
+        { type: 'output' }
+      ]
+    }, null, 2), now);
+    fsWrite(fs, APPS_DIR + '/dice.app', JSON.stringify({
+      name: 'Dice', emoji: '🎲', desc: 'Roll a die — writes the roll to a note.',
+      ui: [
+        { type: 'label', text: 'Roll a six-sided die. Each roll is journaled.' },
+        { type: 'button', text: 'Roll 🎲', run: 'echo "You rolled a $(( 1 + 3 ))!"' },
+        { type: 'output' }
+      ]
+    }, null, 2), now);
     return fs;
   }
 
@@ -468,6 +500,7 @@
       if (!state.fs.trash || typeof state.fs.trash !== 'object') state.fs.trash = {};
       if (!fsGet(state.fs, TRASH)) fsMkdir(state.fs, TRASH, now); // v1 disks predate the trash
       if (!fsGet(state.fs, DESKTOP)) fsMkdir(state.fs, DESKTOP, now, { parents: true }); // pre-GUI disks predate the Desktop
+      if (!fsGet(state.fs, APPS_DIR)) fsMkdir(state.fs, APPS_DIR, now); // pre-4.0 disks predate /apps
       if (typeof data.cwd === 'string' && fsGet(state.fs, data.cwd)) state.cwd = data.cwd;
       if (data.settings && typeof data.settings === 'object') {
         if (typeof data.settings.owner === 'string' && data.settings.owner) state.settings.owner = data.settings.owner.slice(0, 24);
@@ -556,14 +589,16 @@
 
   /* ══════════════════════════ Processes / windows ══════════════════════════ */
 
-  function procKey(appId, arg) { return appId === 'notes' && arg ? appId + ':' + arg : appId; }
+  // Notes is one window per file; a user app (userapp) is one window per app id.
+  function procKey(appId, arg) { return (appId === 'notes' || appId === 'userapp') && arg ? appId + ':' + arg : appId; }
 
   /** Spawn (or refocus) an app on the CURRENT workspace. Apps are singletons
    *  per workspace-agnostic key; re-spawning pulls the window to the active
    *  workspace. Placement cascades deterministically from the spawn ordinal. */
   function spawn(state, appId, arg) {
-    var app = appById(appId);
-    if (!app) return { ok: false, error: 'no such app: ' + appId };
+    // userapp is a synthetic host window for an installed .app (arg = its id)
+    var app = appId === 'userapp' ? readApp(state, arg) : appById(appId);
+    if (!app) return { ok: false, error: appId === 'userapp' ? 'no such app: ' + arg : 'no such app: ' + appId };
     var key = procKey(appId, arg);
     for (var i = 0; i < state.procs.length; i++) {
       if (procKey(state.procs[i].app, state.procs[i].arg) === key) {
@@ -577,6 +612,7 @@
       pid: n,
       app: appId,
       title: appId === 'notes' && arg ? splitPath(arg).name : app.name,
+      emoji: appId === 'userapp' ? app.emoji : null,
       arg: arg || null,
       x: 36 + ((n - 1) * 28) % 168,
       y: 30 + ((n - 1) * 24) % 144,
@@ -762,7 +798,9 @@
     '  alias name=cmd   command shorthand       journal [n]      the system log',
     'Pipes:  any command | grep [-i|-v] <text> | head [-n N] | tail [-n N]',
     '        | sort [-r] | uniq [-c] | wc      Redirect:  any pipeline > file (>> appends)',
-    'Scripts: any text file of commands — # comments, $1-$9/$@ args, run backup.sh',
+    '  app <list|install|remove|open> …        manage installed apps',
+    'Scripts: text files with a real language — let/if/elif/else/while/func/end,',
+    '  $((maths)), $1-$9/$@ args, # comments.  run backup.sh   (see /apps for examples)',
     'Also: date · whoami · uname · clear · help  ·  Builtins: $USER $HOME $CWD $WS'
   ];
 
@@ -824,8 +862,167 @@
   var BUILTINS = ['help', 'pwd', 'ls', 'tree', 'cd', 'cat', 'echo', 'mkdir', 'touch', 'rm', 'trash', 'restore',
     'mv', 'cp', 'find', 'open', 'ps', 'kill', 'ws', 'every', 'automations', 'unschedule', 'set', 'unset', 'env',
     'alias', 'unalias', 'run', 'search', 'journal', 'date', 'whoami', 'uname', 'clear', 'ai',
-    'grep', 'head', 'tail', 'wc', 'sort', 'uniq'];
+    'set', 'let', 'app', 'grep', 'head', 'tail', 'wc', 'sort', 'uniq'];
   function runSimpleKnows(name) { return BUILTINS.indexOf(name) !== -1; }
+
+  /* ══════════════════════════ AIOS Script ══════════════════════════
+   * A small, real, deterministic language layered on the shell. A script is
+   * still a text file of shell commands — but now it also understands blocks:
+   *
+   *   let x = 3 + 4            # a variable (lives in the shell env, so $x works)
+   *   if $x > 5               # comparisons ==, !=, <, >, <=, >=; also `exists PATH`,
+   *     echo big              #   `not <cond>`, and bare truthiness (non-empty/non-zero)
+   *   else
+   *     echo small
+   *   end
+   *   while $n > 0            # loops, bounded by a global step cap so nothing hangs
+   *     set n=$(($n - 1))
+   *   end
+   *   func greet              # define a new command; $1..$9/$@ are its arguments
+   *     echo hello $1
+   *   end
+   *   greet world            # ...then call it like any built-in
+   *
+   * Everything is interpreted against the same kernel the terminal uses, so a
+   * script has exactly a user's powers — and it is pure and unit-tested. */
+
+  /** Parse a flat line list into a block AST. Returns {nodes, i} where i is the
+   *  index just past the matching terminator (from `stops`). */
+  function parseBlock(lines, i, stops) {
+    var nodes = [];
+    while (i < lines.length) {
+      var raw = lines[i];
+      var line = raw.replace(/\s+#.*$/, '').trim(); // strip trailing comments
+      if (!line || line[0] === '#') { i++; continue; }
+      var head = line.split(/\s+/)[0];
+      if (stops.indexOf(head) !== -1) return { nodes: nodes, i: i, stop: head };
+      // a terminator with no matching opener is a syntax error, not a command
+      if (head === 'end' || head === 'else' || head === 'elif') throw new Error('line ' + (i + 1) + ': stray `' + head + '`');
+
+      if (head === 'if') {
+        var thenB = parseBlock(lines, i + 1, ['else', 'elif', 'end']);
+        var node = { type: 'if', cond: line.slice(2).trim(), then: thenB.nodes, elifs: [], els: null };
+        var cur = thenB;
+        while (cur.stop === 'elif') {
+          var eb = parseBlock(lines, cur.i + 1, ['else', 'elif', 'end']);
+          node.elifs.push({ cond: lines[cur.i].trim().slice(4).trim(), body: eb.nodes });
+          cur = eb;
+        }
+        if (cur.stop === 'else') {
+          var elseB = parseBlock(lines, cur.i + 1, ['end']);
+          node.els = elseB.nodes;
+          cur = elseB;
+        }
+        if (cur.stop !== 'end') throw new Error('line ' + (i + 1) + ': `if` without `end`');
+        nodes.push(node);
+        i = cur.i + 1;
+      } else if (head === 'while') {
+        var body = parseBlock(lines, i + 1, ['end']);
+        if (body.stop !== 'end') throw new Error('line ' + (i + 1) + ': `while` without `end`');
+        nodes.push({ type: 'while', cond: line.slice(5).trim(), body: body.nodes });
+        i = body.i + 1;
+      } else if (head === 'func') {
+        var fname = line.split(/\s+/)[1];
+        if (!fname || !/^[A-Za-z_][\w-]*$/.test(fname)) throw new Error('line ' + (i + 1) + ': func needs a name');
+        var fbody = parseBlock(lines, i + 1, ['end']);
+        if (fbody.stop !== 'end') throw new Error('line ' + (i + 1) + ': `func` without `end`');
+        nodes.push({ type: 'func', name: fname, body: fbody.nodes });
+        i = fbody.i + 1;
+      } else {
+        nodes.push({ type: 'cmd', text: line });
+        i++;
+      }
+    }
+    return { nodes: nodes, i: i, stop: null };
+  }
+
+  /** Evaluate a boolean condition (already the text after `if`/`while`). */
+  function evalCond(state, expr, now) {
+    expr = String(expr || '').trim();
+    if (/^not\s+/.test(expr)) return !evalCond(state, expr.slice(4), now);
+    var ex = /^exists\s+(.+)$/.exec(expr);
+    if (ex) return !!fsGet(state.fs, normalizePath(state.cwd, expandVars(state, ex[1].trim())));
+    var s = expandVars(state, expr).trim();
+    var m = /^(.*?)\s*(==|!=|<=|>=|<|>)\s*(.*)$/.exec(s);
+    if (m) {
+      var l = m[1].trim(), op = m[2], r = m[3].trim();
+      var ln = calcEval(l), rn = calcEval(r);
+      if (ln !== null && rn !== null) {
+        return op === '==' ? ln === rn : op === '!=' ? ln !== rn : op === '<' ? ln < rn :
+               op === '>' ? ln > rn : op === '<=' ? ln <= rn : ln >= rn;
+      }
+      return op === '==' ? l === r : op === '!=' ? l !== r : op === '<' ? l < r :
+             op === '>' ? l > r : op === '<=' ? l <= r : l >= r;
+    }
+    // bare truthiness: non-empty and not "0"/"false"
+    return s !== '' && s !== '0' && s.toLowerCase() !== 'false';
+  }
+
+  /** Substitute $(( arithmetic )) then $1..$9/$@ positional args in a line. */
+  function subScriptLine(state, line, sargs) {
+    line = line.replace(/\$\(\(([\s\S]*?)\)\)/g, function (_, e) {
+      var v = calcEval(expandVars(state, e));
+      return v === null ? '0' : fmtNum(v);
+    });
+    return line.replace(/\$@/g, sargs.join(' ')).replace(/\$([1-9])\b/g, function (_, n) { return sargs[Number(n) - 1] || ''; });
+  }
+
+  /** Execute a parsed block. `ctx` carries the step budget and script args. */
+  function execNodes(state, nodes, ctx, now) {
+    var out = [], fx = [];
+    for (var i = 0; i < nodes.length; i++) {
+      if (++ctx.steps > SCRIPT_STEP_CAP) return { out: out.concat(['script exceeded ' + SCRIPT_STEP_CAP + ' steps — stopped']), error: true, effects: fx };
+      var node = nodes[i];
+      if (node.type === 'func') { ctx.funcs[node.name] = node.body; continue; }
+      if (node.type === 'cmd') {
+        var line = subScriptLine(state, node.text, ctx.args);
+        var head = line.split(/\s+/)[0];
+        var r;
+        if (ctx.funcs[head]) {
+          // calling a user-defined function: its own $1..$9/$@ from the call args
+          var callArgs = tokenize(subScriptLine(state, line, ctx.args)).slice(1);
+          r = execNodes(state, ctx.funcs[head], { steps: ctx.steps, funcs: ctx.funcs, args: callArgs }, now);
+          ctx.steps = (r._steps != null ? r._steps : ctx.steps);
+        } else {
+          r = execCommand(state, line, now);
+        }
+        out = out.concat(r.out); fx = fx.concat(r.effects);
+        if (r.error) { out.push(ctx.name + ': line stopped: ' + node.text.trim()); return { out: out, error: true, effects: fx }; }
+      } else if (node.type === 'if') {
+        var branch = null;
+        if (evalCond(state, node.cond, now)) branch = node.then;
+        else {
+          for (var e = 0; e < node.elifs.length; e++) if (evalCond(state, node.elifs[e].cond, now)) { branch = node.elifs[e].body; break; }
+          if (!branch) branch = node.els;
+        }
+        if (branch) {
+          var ri = execNodes(state, branch, ctx, now);
+          out = out.concat(ri.out); fx = fx.concat(ri.effects);
+          if (ri.error) return { out: out, error: true, effects: fx };
+        }
+      } else if (node.type === 'while') {
+        while (evalCond(state, node.cond, now)) {
+          if (++ctx.steps > SCRIPT_STEP_CAP) return { out: out.concat(['script exceeded ' + SCRIPT_STEP_CAP + ' steps — stopped']), error: true, effects: fx };
+          var rw = execNodes(state, node.body, ctx, now);
+          out = out.concat(rw.out); fx = fx.concat(rw.effects);
+          if (rw.error) return { out: out, error: true, effects: fx };
+        }
+      }
+    }
+    return { out: out, error: false, effects: fx, _steps: ctx.steps };
+  }
+
+  /** Run a script's source. Shared by `run <file>` and app logic. */
+  function runScript(state, source, sargs, name, now) {
+    var lines = String(source || '').split('\n');
+    var ast;
+    try { ast = parseBlock(lines, 0, []); }
+    catch (e) { return { out: [name + ': ' + e.message], error: true, effects: [] }; }
+    if (ast.stop) return { out: [name + ': stray `' + ast.stop + '`'], error: true, effects: [] };
+    var ctx = { steps: 0, funcs: {}, args: sargs || [], name: name };
+    var r = execNodes(state, ast.nodes, ctx, now);
+    return { out: r.out, error: r.error, effects: r.effects };
+  }
 
   /**
    * Execute one command line — including `a | b | c` pipelines and a
@@ -835,7 +1032,12 @@
   /** $VAR expansion: builtins ($USER, $HOME, $CWD, $WS) then the shell
    *  environment; unknown variables expand to '' like a real shell. */
   function expandVars(state, str) {
-    return String(str).replace(/\$([A-Za-z_]\w*)/g, function (_, name) {
+    // $(( arithmetic )) first (its inner text may reference $VARs), then $VARs.
+    str = String(str).replace(/\$\(\(([\s\S]*?)\)\)/g, function (_, e) {
+      var v = calcEval(expandVars(state, e));
+      return v === null ? '0' : fmtNum(v);
+    });
+    return str.replace(/\$([A-Za-z_]\w*)/g, function (_, name) {
       if (name === 'USER') return state.settings.owner;
       if (name === 'HOME') return '/home/user';
       if (name === 'CWD' || name === 'PWD') return state.cwd;
@@ -1137,6 +1339,16 @@
         return { out: [], error: false, effects: [] };
       }
 
+      case 'let': {
+        // `let x = 3 + 4` — evaluate the arithmetic, store the number.
+        var lm = /^([A-Za-z_]\w*)\s*=\s*([\s\S]+)$/.exec(args.join(' '));
+        if (!lm) return err('let: usage: let NAME = <arithmetic>');
+        var lv = calcEval(expandVars(state, lm[2]));
+        if (lv === null) return err('let: not a number: ' + lm[2]);
+        state.env[lm[1]] = fmtNum(lv);
+        return { out: [], error: false, effects: [] };
+      }
+
       case 'unset': {
         if (!args[0] || !Object.prototype.hasOwnProperty.call(state.env, args[0])) return err('unset: no such variable: ' + (args[0] || ''));
         delete state.env[args[0]];
@@ -1178,24 +1390,10 @@
         var depth = state._runDepth || 0;
         if (depth >= RUN_DEPTH_CAP) return err('run: scripts nested too deep (max ' + RUN_DEPTH_CAP + ')');
         var sargs = args.slice(1);
-        var lines = sr.content.split('\n');
-        var allOut = [], allFx = [];
         state._runDepth = depth + 1;
         try {
-          for (var ln = 0; ln < lines.length; ln++) {
-            var line = lines[ln].trim();
-            if (!line || line[0] === '#') continue;
-            line = line.replace(/\$@/g, sargs.join(' ')).replace(/\$([1-9])\b/g, function (_, n2) { return sargs[Number(n2) - 1] || ''; });
-            var lr = execCommand(state, line, now);
-            allOut = allOut.concat(lr.out);
-            allFx = allFx.concat(lr.effects);
-            if (lr.error) {
-              allOut.push(splitPath(spath).name + ': line ' + (ln + 1) + ': script stopped');
-              return { out: allOut, error: true, effects: allFx };
-            }
-          }
+          return runScript(state, sr.content, sargs, splitPath(spath).name, now);
         } finally { state._runDepth = depth; }
-        return { out: allOut, error: false, effects: allFx };
       }
 
       case 'search': {
@@ -1205,6 +1403,38 @@
         if (!gh.length) return { out: ['(no file contains “' + sq + '”)'], error: false, effects: [] };
         for (var gi = 0; gi < gh.length; gi++) out.push(gh[gi].path + ':' + gh[gi].line + ':  ' + gh[gi].text);
         return { out: out, error: false, effects: [] };
+      }
+
+      case 'app': {
+        var sub = args[0] || 'list';
+        if (sub === 'list') {
+          var apps = listApps(state);
+          if (!apps.length) return { out: ['(no apps installed — .app manifests live in /apps)'], error: false, effects: [] };
+          for (var appi = 0; appi < apps.length; appi++) out.push(apps[appi].emoji + ' ' + apps[appi].id + '  — ' + apps[appi].name);
+          return { out: out, error: false, effects: [] };
+        }
+        if (sub === 'open') {
+          if (!args[1] || !readApp(state, args[1])) return err('app: no app: ' + (args[1] || ''));
+          return { out: ['opening ' + args[1] + '…'], error: false, effects: [{ type: 'open', app: 'userapp', arg: args[1] }] };
+        }
+        if (sub === 'install') {
+          if (!args[1]) return err('app: install <file.app> — a manifest to copy into /apps');
+          var src = P(args[1]);
+          var srd = fsRead(state.fs, src);
+          if (!srd.ok) return err('app: ' + srd.error);
+          var parsed = parseApp(srd.content);
+          if (!parsed) return err('app: not a valid .app manifest (needs JSON with a "name")');
+          if (!fsGet(state.fs, APPS_DIR)) fsMkdir(state.fs, APPS_DIR, now);
+          var id = splitPath(src).name.replace(/\.app$/, '').replace(/[^a-z0-9_-]/gi, '-');
+          fsWrite(state.fs, APPS_DIR + '/' + id + '.app', srd.content, now);
+          return { out: ['installed ' + id + ' — open it from the ✦ menu or `app open ' + id + '`'], error: false, effects: [] };
+        }
+        if (sub === 'remove') {
+          if (!args[1] || !readApp(state, args[1])) return err('app: no app: ' + (args[1] || ''));
+          fsRemove(state.fs, APPS_DIR + '/' + args[1] + '.app', {});
+          return { out: ['removed ' + args[1]], error: false, effects: [] };
+        }
+        return err('app: usage: app <list|open|install|remove> …');
       }
 
       case 'journal': {
@@ -1309,6 +1539,70 @@
     }
     total = Math.round(total);
     return total > 0 ? total : null;
+  }
+
+  /* ══════════════════════════ App SDK ══════════════════════════
+   * A third-party app IS a file on the disk: /apps/<id>.app, a JSON manifest
+   * describing a name, an icon, and a declarative UI of widgets. Buttons run
+   * AIOS shell commands (so an app has exactly a user's powers — it can only
+   * call the kernel, nothing else), $input values flow in, output flows back.
+   * Installing an app is copying its manifest into /apps; the launcher reads
+   * that directory. No code is ever eval'd — the UI is data, the actions are
+   * shell strings run through the unit-tested interpreter. */
+
+  var APP_WIDGETS = { label: 1, input: 1, button: 1, output: 1, number: 1 };
+
+  /** Validate + normalise a manifest object into a safe app, or return null. */
+  function normalizeApp(obj) {
+    if (!obj || typeof obj !== 'object') return null;
+    var name = typeof obj.name === 'string' ? obj.name.slice(0, 40).trim() : '';
+    if (!name) return null;
+    var ui = Array.isArray(obj.ui) ? obj.ui.slice(0, 40) : [];
+    var widgets = [];
+    for (var i = 0; i < ui.length; i++) {
+      var w = ui[i];
+      if (!w || !APP_WIDGETS[w.type]) continue;
+      var out = { type: w.type };
+      if (typeof w.text === 'string') out.text = w.text.slice(0, 200);
+      if (typeof w.name === 'string' && /^[A-Za-z_]\w*$/.test(w.name)) out.name = w.name;
+      if (typeof w.placeholder === 'string') out.placeholder = w.placeholder.slice(0, 80);
+      if (typeof w.run === 'string') out.run = w.run.slice(0, 400);
+      if (typeof w.value === 'string') out.value = w.value.slice(0, 200);
+      widgets.push(out);
+    }
+    return {
+      name: name,
+      emoji: typeof obj.emoji === 'string' ? obj.emoji.slice(0, 4) : '🧩',
+      desc: typeof obj.desc === 'string' ? obj.desc.slice(0, 120) : '',
+      ui: widgets
+    };
+  }
+
+  function parseApp(text) {
+    try { return normalizeApp(JSON.parse(text)); } catch (e) { return null; }
+  }
+
+  /** Every installed app: the .app files in /apps, id = filename without ext. */
+  function listApps(state) {
+    var r = fsList(state.fs, APPS_DIR);
+    if (!r.ok) return [];
+    var apps = [];
+    for (var i = 0; i < r.entries.length; i++) {
+      var e = r.entries[i];
+      if (e.type !== 'file' || !/\.app$/.test(e.name)) continue;
+      var rd = fsRead(state.fs, APPS_DIR + '/' + e.name);
+      var app = rd.ok ? parseApp(rd.content) : null;
+      if (app) { app.id = e.name.replace(/\.app$/, ''); apps.push(app); }
+    }
+    return apps;
+  }
+
+  function readApp(state, id) {
+    var rd = fsRead(state.fs, APPS_DIR + '/' + id + '.app');
+    if (!rd.ok) return null;
+    var app = parseApp(rd.content);
+    if (app) app.id = id;
+    return app;
   }
 
   /* ══════════════════════════ Markdown ══════════════════════════ */
@@ -1745,7 +2039,15 @@
     // shell
     tokenize: tokenize,
     execCommand: execCommand,
+    runScript: runScript,
+    evalCond: evalCond,
     expandVars: expandVars,
+    // app sdk
+    APPS_DIR: APPS_DIR,
+    parseApp: parseApp,
+    normalizeApp: normalizeApp,
+    listApps: listApps,
+    readApp: readApp,
     logJournal: logJournal,
     renderMarkdown: renderMarkdown,
     // intelligence

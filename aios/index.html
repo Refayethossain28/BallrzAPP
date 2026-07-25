@@ -321,6 +321,7 @@
 <div id="toasts"></div>
 
 <script src="engine.js"></script>
+<script src="config.js"></script>
 <script>
 'use strict';
 /* AIOS desktop — the chrome around the kernel. All OS truth lives in the
@@ -335,6 +336,7 @@ var state = saved ? K.deserialize(saved, Date.now()) : K.boot(Date.now());
 
 function save() {
   try { localStorage.setItem(LS_KEY, K.serialize(state)); } catch (e) {}
+  if (typeof cloud !== 'undefined' && cloud && cloud.push) cloud.push();
 }
 
 /* ── dom helpers ── */
@@ -399,7 +401,7 @@ function makeWindow(proc) {
   var mini = el('button', 'dot mini', '–'); mini.title = 'Minimize';
   var maxd = el('button', 'dot maxd', '+'); maxd.title = 'Maximize';
   var title = el('div', 't');
-  var em = el('span', 'em', (K.appById(proc.app) || {}).emoji || '');
+  var em = el('span', 'em', proc.emoji || (K.appById(proc.app) || {}).emoji || '🧩');
   title.appendChild(em);
   title.appendChild(document.createTextNode(proc.title));
   bar.appendChild(close); bar.appendChild(mini); bar.appendChild(maxd); bar.appendChild(title);
@@ -498,12 +500,32 @@ APP_RENDER.files = function (proc, body) {
   var path = el('div', 'path');
   var newF = el('button', 'btn', '+ File');
   var newD = el('button', 'btn', '+ Folder');
+  var impB = el('button', 'btn', '⬆ Import'); impB.title = 'Import a file from your device';
   var trashB = el('button', 'btn', '🗑'); trashB.title = 'Open the trash';
   var emptyB = el('button', 'btn', 'Empty'); emptyB.title = 'Empty the trash — permanent';
   bar.appendChild(up); bar.appendChild(path); bar.appendChild(newF); bar.appendChild(newD);
-  bar.appendChild(trashB); bar.appendChild(emptyB);
+  bar.appendChild(impB); bar.appendChild(trashB); bar.appendChild(emptyB);
+  var fileInput = el('input'); fileInput.type = 'file'; fileInput.style.display = 'none';
   var list = el('ul', 'flist');
-  body.appendChild(bar); body.appendChild(list);
+  body.appendChild(bar); body.appendChild(fileInput); body.appendChild(list);
+
+  // Import a real file from the user's device onto the virtual disk.
+  impB.addEventListener('click', function () { fileInput.click(); });
+  fileInput.addEventListener('change', function () {
+    var f = fileInput.files && fileInput.files[0];
+    if (!f) return;
+    var reader = new FileReader();
+    var isText = /^text\/|json|javascript|xml|csv|\.(md|txt|sh|app)$/i.test(f.type + ' ' + f.name);
+    reader.onload = function () {
+      var full = K.normalizePath(rt.dir, f.name);
+      var w = K.fsWrite(state.fs, full, reader.result, Date.now());
+      if (!w.ok) { notify('Files', w.error); return; }
+      notify('⬆ Imported', full);
+      refresh(); sync();
+    };
+    if (isText) reader.readAsText(f); else reader.readAsDataURL(f);
+    fileInput.value = '';
+  });
 
   function inTrash() { return rt.dir === K.TRASH; }
 
@@ -563,6 +585,9 @@ APP_RENDER.files = function (proc, body) {
           } });
         } else if (!inTrash()) {
           items.push({ label: 'Rename…', fn: function () { renamePath(full); refresh(); } });
+          if (e2.type === 'file') {
+            items.push({ label: 'Download', fn: function () { downloadFile(full); } });
+          }
           if (rt.dir !== K.DESKTOP) {
             items.push({ label: 'Send to Desktop', fn: function () {
               var mv = K.fsMove(state.fs, full, K.DESKTOP, Date.now());
@@ -664,6 +689,23 @@ APP_RENDER.terminal = function (proc, body) {
 
 /* ── Notes ── */
 APP_RENDER.notes = function (proc, body) {
+  // Image files (Paint/Camera save data:image PNGs) get a viewer, not an editor.
+  if (proc.arg) {
+    var ir = K.fsRead(state.fs, proc.arg);
+    if (ir.ok && /^data:image\//.test(ir.content)) {
+      var vpad = el('div', 'pad');
+      vpad.style.textAlign = 'center';
+      var img = el('img');
+      img.src = ir.content;
+      img.style.cssText = 'max-width:100%;border-radius:12px;border:1px solid var(--line)';
+      vpad.appendChild(img);
+      var cap = el('div', null, proc.arg);
+      cap.style.cssText = 'margin-top:8px;font-size:11.5px;color:var(--faint)';
+      vpad.appendChild(cap);
+      body.appendChild(vpad);
+      return;
+    }
+  }
   body.classList.add('noted');
   var editWrap = el('div', 'nedit');
   var ta = el('textarea');
@@ -765,8 +807,9 @@ function liveContext() {
   };
 }
 
-/* Direct browser → Anthropic call (BYOK). Resolves { reply, actions }. */
-function callDirect(text) {
+/* Direct browser → Anthropic call (BYOK), given a messages array.
+ * Resolves { reply, actions }. */
+function callDirectMessages(messages) {
   var ctx = liveContext();
   return fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -779,15 +822,10 @@ function callDirect(text) {
     body: JSON.stringify({
       model: 'claude-opus-4-8',
       max_tokens: 1024,
-      system: OS_SYSTEM,
+      system: OS_SYSTEM + '\nCurrent OS context: cwd=' + ctx.cwd + ', user=' + ctx.owner + '. Files (sample): ' + ctx.files.slice(0, 40).join(', '),
       tools: [OS_TOOL],
       tool_choice: { type: 'tool', name: 'os_response' },
-      messages: [{
-        role: 'user',
-        content: 'OS context: cwd=' + JSON.stringify(ctx.cwd) + ', user=' + JSON.stringify(ctx.owner) +
-          '\nFiles on disk (sample): ' + ctx.files.join(', ') +
-          '\n\nUser says: ' + String(text).slice(0, 2000)
-      }]
+      messages: messages
     })
   }).then(function (r) {
     if (!r.ok) return r.text().then(function (t) { throw new Error('anthropic ' + r.status + ': ' + t.slice(0, 200)); });
@@ -802,7 +840,7 @@ function callDirect(text) {
   });
 }
 
-/* Live call through whichever path is available. */
+/* One live exchange (single user turn) through whichever path is available. */
 function callLive(text) {
   if (liveAI.proxy) {
     return fetch('api/assistant', {
@@ -811,7 +849,51 @@ function callLive(text) {
       body: JSON.stringify({ text: text, context: liveContext() })
     }).then(function (r) { return r.json(); });
   }
-  return callDirect(text);
+  return callDirectMessages([{ role: 'user', content: String(text).slice(0, 2000) }]);
+}
+
+/* One live exchange given a full message history (used by the agent loop). */
+function callLiveMessages(messages) {
+  if (liveAI.proxy) {
+    return fetch('api/agent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: messages, context: liveContext() })
+    }).then(function (r) { return r.json(); });
+  }
+  return callDirectMessages(messages);
+}
+
+/* ── The agentic loop: the AI reads the OS, acts, sees the result, and
+ *    keeps going until the task is done. Each command runs through the
+ *    unit-tested kernel, so the agent has exactly a user's powers. `emit`
+ *    streams steps to the chat. Bounded to AGENT_MAX_STEPS turns. ── */
+var AGENT_MAX_STEPS = 6;
+function runAgent(userText, emit) {
+  var history = [{ role: 'user', content: String(userText).slice(0, 2000) }];
+  var step = 0;
+  function loop() {
+    if (step >= AGENT_MAX_STEPS) { emit('note', 'Reached the ' + AGENT_MAX_STEPS + '-step limit — stopping.'); return Promise.resolve(); }
+    step++;
+    return callLiveMessages(history).then(function (d) {
+      if (d && d.reply) emit('assistant', d.reply);
+      var acts = (d && d.actions) || [];
+      if (!acts.length) return; // done — no more actions
+      var results = [];
+      for (var i = 0; i < acts.length; i++) {
+        var r = K.execCommand(state, acts[i].command, Date.now());
+        applyEffects(r.effects);
+        var outText = r.out.join('\n');
+        emit('tool', acts[i].command, outText + (r.error ? '  [error]' : ''));
+        results.push('$ ' + acts[i].command + '\n' + (outText || '(ok)') + (r.error ? '  [error]' : ''));
+      }
+      refreshAll();
+      history.push({ role: 'assistant', content: (d.reply || '') + '\n\nI ran:\n' + acts.map(function (a) { return a.command; }).join('\n') });
+      history.push({ role: 'user', content: 'Results:\n' + results.join('\n\n') + '\n\nIf the task is complete, reply with a short summary and NO commands. Otherwise continue.' });
+      return loop();
+    });
+  }
+  return loop();
 }
 
 function refreshLiveSwitches() {
@@ -845,7 +927,19 @@ APP_RENDER.assistant = function (proc, body) {
   var liveLbl = el('span', null, 'Live AI');
   var sw = el('button', 'switch' + (liveReady() ? '' : ' off-disabled'));
   sw.setAttribute('aria-label', 'Toggle Live AI');
+  var agentLbl = el('span', null, '🤖 Agent');
+  agentLbl.title = 'Let the AI act, read the result, and keep going until the task is done';
+  var agentSw = el('button', 'switch' + (liveReady() ? '' : ' off-disabled'));
+  agentSw.setAttribute('aria-label', 'Toggle Agent mode');
   livebar.appendChild(keyBtn); livebar.appendChild(liveLbl); livebar.appendChild(sw);
+  livebar.appendChild(agentLbl); livebar.appendChild(agentSw);
+  var agent = { on: false };
+  agentSw.addEventListener('click', function () {
+    if (!liveReady()) return;
+    agent.on = !agent.on;
+    agentSw.classList.toggle('on', agent.on);
+    if (agent.on && !liveAI.on) { liveAI.on = true; sw.classList.add('on'); $('mb-live').style.display = 'flex'; }
+  });
   var log = el('div', 'clog');
   var hint = el('div', 'hint', 'Try: “convert 5 km to miles” · “90 days from now” · “set a timer for 5 minutes” · “create a folder called x then open the files”');
   var form = el('form');
@@ -880,7 +974,21 @@ APP_RENDER.assistant = function (proc, body) {
     if (!text) return;
     input.value = '';
     bubble(text, 'you');
-    if (liveAI.on && liveReady()) {
+    if (agent.on && liveReady()) {
+      // agentic mode: think → act → observe → repeat, each step shown
+      var working = bubble('🤖 working…', 'os', 'think');
+      runAgent(text, function (kind, a, b) {
+        if (working) { working.remove(); working = null; }
+        if (kind === 'assistant') bubble(a, 'os');
+        else if (kind === 'tool') { var t = bubble('⚙️ ' + a, 'os', 'think'); if (b) t.textContent = '⚙️ ' + a + '\n' + b; }
+        else if (kind === 'note') bubble(a, 'os', 'think');
+      }).catch(function (err) {
+        if (working) { working.remove(); working = null; }
+        var a = K.assistant(state, text, Date.now());
+        bubble('(agent offline: ' + (err && err.message || 'error') + ')\n' + a.reply, 'os');
+        applyEffects(a.actions);
+      }).then(function () { refreshAll(); });
+    } else if (liveAI.on && liveReady()) {
       var think = bubble('thinking…', 'os', 'think');
       callLive(text).then(function (d) {
         think.textContent = d && d.reply ? d.reply : 'The live model returned nothing — falling back to on-device.';
@@ -1002,6 +1110,235 @@ APP_RENDER.automations = function (proc, body) {
   refresh();
 };
 
+/* ── User apps (the App SDK): render a manifest's declarative UI ── */
+APP_RENDER.userapp = function (proc, body) {
+  var app = K.readApp(state, proc.arg);
+  var pad = el('div', 'pad');
+  body.appendChild(pad);
+  if (!app) { pad.appendChild(el('div', 'empty', 'This app is no longer installed.')); return; }
+  var inputs = {};      // name → input element
+  var outEl = null;
+  app.ui.forEach(function (w) {
+    if (w.type === 'label') {
+      var l = el('p', null, w.text || '');
+      l.style.cssText = 'margin:6px 0;color:var(--dim);font-size:13.5px';
+      pad.appendChild(l);
+    } else if (w.type === 'input' || w.type === 'number') {
+      var inp = el('input');
+      inp.type = w.type === 'number' ? 'number' : 'text';
+      inp.placeholder = w.placeholder || w.name || '';
+      if (w.value != null) inp.value = w.value;
+      inp.style.cssText = 'display:block;width:100%;margin:6px 0;padding:8px 11px;border-radius:10px;background:rgba(255,255,255,.06);border:1px solid var(--line);outline:0';
+      if (w.name) inputs[w.name] = inp;
+      pad.appendChild(inp);
+    } else if (w.type === 'button') {
+      var b = el('button', 'btn acc', w.text || 'Run');
+      b.style.cssText = 'margin:8px 0;width:100%';
+      b.addEventListener('click', function () {
+        // the app's action is a shell command; input values flow in as env vars
+        for (var nm in inputs) state.env[nm] = inputs[nm].value;
+        var r = K.execCommand(state, w.run || '', Date.now());
+        if (outEl) { outEl.textContent = r.out.join('\n'); outEl.classList.toggle('err', r.error); }
+        applyEffects(r.effects);
+        refreshAll();
+      });
+      pad.appendChild(b);
+    } else if (w.type === 'output') {
+      outEl = el('pre');
+      outEl.style.cssText = 'margin:8px 0 0;padding:10px 12px;min-height:22px;border-radius:10px;background:rgba(4,6,16,.5);border:1px solid var(--line);font:13px ui-monospace,Menlo,monospace;white-space:pre-wrap;user-select:text;-webkit-user-select:text';
+      pad.appendChild(outEl);
+    }
+  });
+  var foot = el('div', null, 'A user app — its buttons run AIOS shell commands. Manifest: /apps/' + app.id + '.app');
+  foot.style.cssText = 'margin-top:14px;font-size:11px;color:var(--faint)';
+  pad.appendChild(foot);
+};
+
+/* ── Paint: a real canvas you can draw on and save to the disk ── */
+APP_RENDER.paint = function (proc, body) {
+  var bar = el('div', 'rowbar');
+  var colors = ['#eef1fb', '#ff6b81', '#ffb454', '#39e6b4', '#6e8bff', '#8b7cff', '#0a0d18'];
+  var cur = { color: '#6e8bff', size: 6 };
+  colors.forEach(function (c) {
+    var s = el('button');
+    s.style.cssText = 'width:22px;height:22px;border-radius:50%;border:2px solid ' + (c === cur.color ? '#fff' : 'transparent') + ';background:' + c;
+    s.addEventListener('click', function () {
+      cur.color = c;
+      bar.querySelectorAll('button').forEach(function (b) { if (b.style.background) b.style.borderColor = 'transparent'; });
+      s.style.borderColor = '#fff';
+    });
+    bar.appendChild(s);
+  });
+  var size = el('input'); size.type = 'range'; size.min = 1; size.max = 30; size.value = cur.size;
+  size.addEventListener('input', function () { cur.size = Number(size.value); });
+  bar.appendChild(size);
+  var clearB = el('button', 'btn', 'Clear');
+  var saveB = el('button', 'btn acc', 'Save 🖼');
+  bar.appendChild(clearB); bar.appendChild(saveB);
+  body.appendChild(bar);
+  var canvas = el('canvas');
+  canvas.width = 620; canvas.height = 420;
+  canvas.style.cssText = 'display:block;width:100%;background:#0a0d18;touch-action:none;cursor:crosshair';
+  body.appendChild(canvas);
+  var g = canvas.getContext('2d');
+  g.fillStyle = '#0a0d18'; g.fillRect(0, 0, canvas.width, canvas.height);
+  var drawing = false, last = null;
+  function pos(e) {
+    var r = canvas.getBoundingClientRect();
+    return { x: (e.clientX - r.left) * (canvas.width / r.width), y: (e.clientY - r.top) * (canvas.height / r.height) };
+  }
+  canvas.addEventListener('pointerdown', function (e) { drawing = true; last = pos(e); try { canvas.setPointerCapture(e.pointerId); } catch (x) {} });
+  canvas.addEventListener('pointermove', function (e) {
+    if (!drawing) return;
+    var p = pos(e);
+    g.strokeStyle = cur.color; g.lineWidth = cur.size; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(last.x, last.y); g.lineTo(p.x, p.y); g.stroke();
+    last = p;
+  });
+  canvas.addEventListener('pointerup', function () { drawing = false; });
+  clearB.addEventListener('click', function () { g.fillStyle = '#0a0d18'; g.fillRect(0, 0, canvas.width, canvas.height); });
+  saveB.addEventListener('click', function () {
+    var data = canvas.toDataURL('image/png');
+    var name = prompt('Save drawing as:', 'drawing.png');
+    if (!name) return;
+    if (!/\.png$/i.test(name)) name += '.png';
+    var path = '/home/user/' + name;
+    var w = K.fsWrite(state.fs, path, data, Date.now());
+    if (!w.ok) { notify('Paint', w.error); return; }
+    notify('🎨 Saved', path + ' — open it from Files.');
+    refreshAll();
+  });
+};
+
+/* ── Camera: real device camera → a photo file on the disk ── */
+APP_RENDER.camera = function (proc, body) {
+  var pad = el('div', 'pad');
+  body.appendChild(pad);
+  var video = el('video'); video.autoplay = true; video.playsInline = true;
+  video.style.cssText = 'width:100%;border-radius:12px;background:#000;max-height:360px';
+  var msg = el('div', null, 'Starting camera…');
+  msg.style.cssText = 'color:var(--dim);font-size:13px;margin:8px 0';
+  var shot = el('button', 'btn acc', '📸 Take photo'); shot.style.width = '100%';
+  pad.appendChild(video); pad.appendChild(msg); pad.appendChild(shot);
+  var stream = null;
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    navigator.mediaDevices.getUserMedia({ video: true }).then(function (s) {
+      stream = s; video.srcObject = s; msg.textContent = 'Live. Say cheese.';
+    }).catch(function () { msg.textContent = 'Camera unavailable or permission denied.'; });
+  } else { msg.textContent = 'This browser has no camera API.'; }
+  shot.addEventListener('click', function () {
+    if (!stream) { notify('📷 Camera', 'No camera stream.'); return; }
+    var c = el('canvas'); c.width = video.videoWidth || 640; c.height = video.videoHeight || 480;
+    c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
+    var path = '/home/user/photo-' + (K.desktopEntries(state).length + Date.now() % 1000) + '.png';
+    K.fsWrite(state.fs, path, c.toDataURL('image/png'), Date.now());
+    notify('📷 Photo saved', path);
+    refreshAll();
+  });
+  // stop the camera when the window closes
+  var iv = setInterval(function () {
+    if (!K.findProc(state, proc.pid)) { if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); clearInterval(iv); }
+  }, 1000);
+};
+
+/* ── Arcade: the Ballrz games, running inside AIOS windows ── */
+APP_RENDER.arcade = function (proc, body) {
+  var GAMES = [
+    { name: 'Cortex', emoji: '🧩', url: '../cortex/', desc: 'The daily brain gym' },
+    { name: 'Imposter', emoji: '🕵️', url: '../imposter/', desc: 'Social deduction' },
+    { name: 'Flow', emoji: '🌊', url: '../concepts/prototypes/flow-game/', desc: 'Adaptive tap arcade' }
+  ];
+  var pad = el('div', 'pad');
+  var grid = el('div');
+  grid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px';
+  var frameWrap = el('div');
+  GAMES.forEach(function (game) {
+    var b = el('button', 'btn');
+    b.style.cssText = 'display:flex;flex-direction:column;gap:4px;padding:14px 6px;align-items:center';
+    b.appendChild(el('span', null, game.emoji)).style.fontSize = '26px';
+    b.appendChild(el('span', null, game.name));
+    var d = el('span', null, game.desc); d.style.cssText = 'font-size:10.5px;color:var(--faint)';
+    b.appendChild(d);
+    b.addEventListener('click', function () {
+      frameWrap.textContent = '';
+      var fr = el('iframe');
+      fr.src = game.url;
+      fr.style.cssText = 'width:100%;height:440px;border:1px solid var(--line);border-radius:12px;background:#000';
+      fr.setAttribute('allow', 'fullscreen; autoplay');
+      frameWrap.appendChild(fr);
+      var open = el('a', 'btn'); open.textContent = '↗ Open full';
+      open.href = game.url; open.target = '_blank';
+      open.style.cssText = 'display:inline-block;margin-top:8px;text-decoration:none';
+      frameWrap.appendChild(open);
+    });
+    grid.appendChild(b);
+  });
+  pad.appendChild(grid);
+  pad.appendChild(frameWrap);
+  body.appendChild(pad);
+};
+
+/* ── App Store: install / open / remove apps ── */
+APP_RENDER.store = function (proc, body) {
+  var pad = el('div', 'pad');
+  body.appendChild(pad);
+  function refresh() {
+    pad.textContent = '';
+    var head = el('h3', null, 'Installed apps'); head.style.cssText = 'margin:4px 0 10px;font-size:15px';
+    pad.appendChild(head);
+    var apps = K.listApps(state);
+    if (!apps.length) pad.appendChild(el('div', 'empty', 'No apps installed.'));
+    apps.forEach(function (a) {
+      var row = el('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:9px 6px;border-radius:10px';
+      row.addEventListener('mouseenter', function () { row.style.background = 'rgba(255,255,255,.05)'; });
+      row.addEventListener('mouseleave', function () { row.style.background = ''; });
+      var ico = el('span', null, a.emoji); ico.style.fontSize = '22px';
+      var meta = el('div'); meta.style.flex = '1';
+      meta.appendChild(el('div', null, a.name));
+      var d = el('div', null, a.desc || ('/apps/' + a.id + '.app')); d.style.cssText = 'font-size:11.5px;color:var(--faint)';
+      meta.appendChild(d);
+      var openB = el('button', 'btn', 'Open');
+      openB.addEventListener('click', function () { spawnApp('userapp', a.id); });
+      var rmB = el('button', 'btn', 'Remove');
+      rmB.addEventListener('click', function () {
+        if (!confirm('Remove ' + a.name + '?')) return;
+        K.execCommand(state, 'app remove ' + a.id, Date.now());
+        refresh(); sync();
+      });
+      row.appendChild(ico); row.appendChild(meta); row.appendChild(openB); row.appendChild(rmB);
+      pad.appendChild(row);
+    });
+    var mk = el('div');
+    mk.style.cssText = 'margin-top:14px;padding-top:12px;border-top:1px solid var(--line)';
+    var h2 = el('h3', null, 'Create an app'); h2.style.cssText = 'font-size:14px;margin:0 0 6px';
+    mk.appendChild(h2);
+    var tip = el('div', null, 'An app is a JSON manifest with a name, an emoji and a UI of widgets (label, input, number, button, output). Buttons run AIOS shell commands — so an app has exactly your powers.');
+    tip.style.cssText = 'font-size:11.5px;color:var(--faint);margin-bottom:8px';
+    mk.appendChild(tip);
+    var newB = el('button', 'btn acc', '+ New app from template');
+    newB.addEventListener('click', function () {
+      var name = prompt('App name:', 'My App');
+      if (!name) return;
+      var id = K.slugify(name);
+      var manifest = { name: name, emoji: '🧩', desc: 'Made with the AIOS App Store', ui: [
+        { type: 'label', text: 'Edit /apps/' + id + '.app to build me out.' },
+        { type: 'input', name: 'who', placeholder: 'Your name' },
+        { type: 'button', text: 'Greet', run: 'echo "Hello $who, from ' + name + '!"' },
+        { type: 'output' }
+      ] };
+      K.fsWrite(state.fs, K.APPS_DIR + '/' + id + '.app', JSON.stringify(manifest, null, 2), Date.now());
+      notify('🛍️ App created', name + ' — edit /apps/' + id + '.app in Notes to customise.');
+      refresh(); sync();
+      spawnApp('userapp', id);
+    });
+    mk.appendChild(newB);
+    pad.appendChild(mk);
+  }
+  runtime[proc.pid] = { refresh: refresh };
+  refresh();
+};
+
 /* ── Monitor ── */
 APP_RENDER.monitor = function (proc, body) {
   var pad = el('div', 'pad');
@@ -1092,7 +1429,18 @@ APP_RENDER.settings = function (proc, body) {
   r3.appendChild(wipe);
   pad.appendChild(r3);
 
-  var tip = el('div', null, 'Everything AIOS knows lives in this browser — nothing is uploaded anywhere.');
+  var r4 = el('div', 'set-row');
+  r4.appendChild(el('label', null, 'Cloud sync'));
+  var cs = { off: 'Off — add a Firebase config to sync across devices (see SETUP.md).',
+    connecting: 'Connecting…', on: 'On — your disk syncs across devices ☁️', error: 'Config present but connection failed.' };
+  var csEl = el('div', null, cs[cloud.status] || cs.off);
+  csEl.style.cssText = 'flex:1;font-size:12.5px;color:' + (cloud.status === 'on' ? 'var(--ok)' : 'var(--dim)');
+  r4.appendChild(csEl);
+  pad.appendChild(r4);
+
+  var tip = el('div', null, cloud.status === 'on'
+    ? 'AIOS is mirroring your disk to your private cloud — open it on another device to continue.'
+    : 'Everything AIOS knows lives in this browser. Optional cloud sync makes it follow you across devices.');
   tip.style.cssText = 'font-size:12.5px;color:var(--faint);margin-top:10px';
   pad.appendChild(tip);
 };
@@ -1137,6 +1485,19 @@ window.addEventListener('pointerdown', function (e) { if (!ctx.contains(e.target
 function refreshAll() {
   for (var pid in runtime) if (runtime[pid].refresh) runtime[pid].refresh();
   sync();
+}
+
+/* export a virtual file to the user's real device (data: URLs download as-is) */
+function downloadFile(full) {
+  var r = K.fsRead(state.fs, full);
+  if (!r.ok) { notify('Files', r.error); return; }
+  var href = /^data:/.test(r.content) ? r.content : 'data:text/plain;charset=utf-8,' + encodeURIComponent(r.content);
+  var a = el('a');
+  a.href = href;
+  a.download = K.splitPath(full).name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 function renamePath(full) {
@@ -1246,17 +1607,20 @@ $('wallpaper').addEventListener('contextmenu', function (ev) {
   ]);
 });
 
-/* ── start menu: every app one click from ✦ ── */
+/* ── start menu: every app (built-in AND installed) one click from ✦ ── */
 var startEl = $('startmenu');
 function closeStart() { startEl.classList.remove('open'); }
-(function buildStart() {
+function buildStart() {
+  startEl.textContent = '';
   var grid = el('div', 'sgrid');
-  K.APPS.forEach(function (a) {
+  var all = K.APPS.map(function (a) { return { id: a.id, arg: null, emoji: a.emoji, name: a.name, desc: a.desc }; })
+    .concat(K.listApps(state).map(function (a) { return { id: 'userapp', arg: a.id, emoji: a.emoji, name: a.name, desc: a.desc }; }));
+  all.forEach(function (a) {
     var b = el('button', 'sapp');
-    b.title = a.desc;
+    b.title = a.desc || '';
     b.appendChild(el('span', 'se', a.emoji));
     b.appendChild(el('span', 'sn', a.name));
-    b.addEventListener('click', function () { closeStart(); spawnApp(a.id); });
+    b.addEventListener('click', function () { closeStart(); spawnApp(a.id, a.arg); });
     grid.appendChild(b);
   });
   startEl.appendChild(grid);
@@ -1268,8 +1632,12 @@ function closeStart() { startEl.classList.remove('open'); }
   row.appendChild(ask);
   row.appendChild(reboot);
   startEl.appendChild(row);
-})();
-$('mb-start').addEventListener('click', function (e) { e.stopPropagation(); startEl.classList.toggle('open'); });
+}
+$('mb-start').addEventListener('click', function (e) {
+  e.stopPropagation();
+  if (!startEl.classList.contains('open')) buildStart();
+  startEl.classList.toggle('open');
+});
 window.addEventListener('pointerdown', function (e) {
   if (startEl.classList.contains('open') && !startEl.contains(e.target) && !$('mb-start').contains(e.target)) closeStart();
 });
@@ -1442,6 +1810,56 @@ if (!saved) {
 } else {
   sync();
 }
+
+/* ── Cloud sync (optional): mirror the disk to Firestore so AIOS follows you
+ *    across devices. Dormant unless config.js provides a Firebase project —
+ *    offline stays the zero-setup default. Pattern mirrors Ripple/Concierge. */
+var cloud = { status: 'off', push: null, uid: null };
+(function initCloud() {
+  var cfg = window.AIOS_FIREBASE_CONFIG;
+  if (!cfg) return; // offline mode — nothing loads, nothing syncs
+  cloud.status = 'connecting';
+  var VER = '10.12.2', parts = ['app', 'auth', 'firestore'];
+  function load(i) {
+    if (i >= parts.length) return Promise.resolve();
+    if (typeof firebase !== 'undefined' && firebase.firestore && firebase.auth) return Promise.resolve();
+    return new Promise(function (res, rej) {
+      var s = document.createElement('script');
+      s.src = 'https://www.gstatic.com/firebasejs/' + VER + '/firebase-' + parts[i] + '-compat.js';
+      s.onload = function () { load(i + 1).then(res, rej); };
+      s.onerror = rej;
+      document.head.appendChild(s);
+    });
+  }
+  load(0).then(function () {
+    var app = firebase.apps && firebase.apps.length ? firebase.app() : firebase.initializeApp(cfg);
+    var auth = firebase.auth(app), db = firebase.firestore(app);
+    return auth.signInAnonymously().then(function () { return new Promise(function (r) { auth.onAuthStateChanged(function (u) { if (u) r(u); }); }); })
+      .then(function (user) {
+        cloud.uid = user.uid;
+        var ref = db.collection('aios_disks').doc(user.uid);
+        // pull remote once; adopt it if it exists (last-write-wins on this device open)
+        return ref.get().then(function (snap) {
+          if (snap.exists && snap.data() && typeof snap.data().disk === 'string') {
+            try {
+              state = K.deserialize(snap.data().disk, Date.now());
+              save(); sync(); refreshAll && refreshAll();
+              notify('☁️ Synced', 'Restored your AIOS from the cloud.');
+            } catch (e) {}
+          }
+          cloud.status = 'on';
+          var timer = null;
+          cloud.push = function () {
+            if (timer) clearTimeout(timer);
+            timer = setTimeout(function () {
+              ref.set({ disk: K.serialize(state), updatedAt: Date.now() }).catch(function () {});
+            }, 1500); // debounce writes
+          };
+          cloud.push();
+        });
+      });
+  }).catch(function () { cloud.status = 'error'; });
+})();
 
 /* offline */
 if ('serviceWorker' in navigator) {
