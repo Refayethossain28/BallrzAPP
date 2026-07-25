@@ -44,9 +44,10 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var VERSION = '3.0.0';
+  var VERSION = '3.1.0';
   var JOURNAL_CAP = 300;
   var RUN_DEPTH_CAP = 8;
+  var DESKTOP = '/home/user/Desktop';
   var WS_COUNT = 3;
   var TRASH = '/trash';
 
@@ -377,13 +378,38 @@
     '    Variables ($NAME via `set`), aliases and a `journal` included.\n' +
     '  • Press Ctrl/Cmd-K anywhere and just say what you want.\n';
 
+  var GETTING_STARTED =
+    '# Welcome to AIOS ✦\n' +
+    '\n' +
+    'This file lives on your **Desktop** — drag its icon anywhere,\n' +
+    'right-click it (or the wallpaper) for a menu, and press the\n' +
+    '👁 button below to see this note rendered.\n' +
+    '\n' +
+    '## Point and click\n' +
+    '- **✦ menu** (top-left) — every app, one click\n' +
+    '- **Right-click the desktop** — new files and folders right here\n' +
+    '- **Drag icons** — the OS remembers where you put them\n' +
+    '- Deleting is safe: everything goes to the 🗑 **trash**, restorable\n' +
+    '\n' +
+    '## Or just say it\n' +
+    'Press `Ctrl/Cmd-K` and type — or tap 🎙 and speak:\n' +
+    '- *"set a timer for 5 minutes"*\n' +
+    '- *"convert 5 km to miles"*\n' +
+    '- *"note that the demo is on Friday"*\n' +
+    '\n' +
+    '## Or program it\n' +
+    'The Terminal is a real shell — pipes, variables, aliases,\n' +
+    'and executable scripts (`run build.sh`). Type `help` there.\n';
+
   function createFS(now) {
     var fs = { root: dirNode(now), trash: {} };
     fsMkdir(fs, '/home/user/notes', now, { parents: true });
     fsMkdir(fs, '/home/user/projects', now, { parents: true });
+    fsMkdir(fs, DESKTOP, now, { parents: true });
     fsMkdir(fs, '/etc', now);
     fsMkdir(fs, TRASH, now);
     fsWrite(fs, '/home/user/notes/welcome.txt', WELCOME, now);
+    fsWrite(fs, DESKTOP + '/Getting started.md', GETTING_STARTED, now);
     fsWrite(fs, '/etc/motd', 'AIOS ' + VERSION + ' — the OS that listens.', now);
     return fs;
   }
@@ -403,6 +429,7 @@
       env: {},
       aliases: {},
       journal: [],
+      desktop: {},
       settings: { owner: 'user', accent: 'violet' },
       bootedAt: now
     };
@@ -419,7 +446,7 @@
    *  are runtime state — a reboot starts with a clean desktop, like a real OS. */
   function serialize(state) {
     return JSON.stringify({
-      v: 3,
+      v: 4,
       fs: state.fs,
       cwd: state.cwd,
       settings: state.settings,
@@ -427,7 +454,8 @@
       nextAutoId: state.nextAutoId,
       env: state.env,
       aliases: state.aliases,
-      journal: state.journal
+      journal: state.journal,
+      desktop: state.desktop
     });
   }
 
@@ -435,10 +463,11 @@
     var state = boot(now);
     try {
       var data = JSON.parse(json);
-      if (!data || (data.v !== 1 && data.v !== 2 && data.v !== 3) || !data.fs || !data.fs.root || data.fs.root.type !== 'dir') return state;
+      if (!data || !(data.v >= 1 && data.v <= 4) || !data.fs || !data.fs.root || data.fs.root.type !== 'dir') return state;
       state.fs = data.fs;
       if (!state.fs.trash || typeof state.fs.trash !== 'object') state.fs.trash = {};
       if (!fsGet(state.fs, TRASH)) fsMkdir(state.fs, TRASH, now); // v1 disks predate the trash
+      if (!fsGet(state.fs, DESKTOP)) fsMkdir(state.fs, DESKTOP, now, { parents: true }); // pre-GUI disks predate the Desktop
       if (typeof data.cwd === 'string' && fsGet(state.fs, data.cwd)) state.cwd = data.cwd;
       if (data.settings && typeof data.settings === 'object') {
         if (typeof data.settings.owner === 'string' && data.settings.owner) state.settings.owner = data.settings.owner.slice(0, 24);
@@ -479,8 +508,50 @@
           }
         }
       }
+      if (data.desktop && typeof data.desktop === 'object') {
+        for (k in data.desktop) {
+          var pos = data.desktop[k];
+          if (pos && isFinite(pos.x) && isFinite(pos.y)) setIconPos(state, k, pos.x, pos.y);
+        }
+      }
     } catch (e) { /* corrupt snapshot → fresh boot */ }
     return state;
+  }
+
+  /* ══════════════════════════ Desktop icons ══════════════════════════ */
+
+  /** What's on the desktop: the entries of ~/Desktop (dirs first, sorted). */
+  function desktopEntries(state) {
+    var r = fsList(state.fs, DESKTOP);
+    return r.ok ? r.entries : [];
+  }
+
+  /** Deterministic default layout: icons flow down the left edge in
+   *  columns of six, like a real desktop. */
+  function defaultIconPos(index) {
+    return { x: 14 + Math.floor(index / 6) * 92, y: 12 + (index % 6) * 96 };
+  }
+
+  /** Where an icon sits: wherever the user dragged it, else its grid slot. */
+  function iconPos(state, name, index) {
+    return state.desktop[name] || defaultIconPos(index);
+  }
+
+  function setIconPos(state, name, x, y) {
+    if (badName(name)) return false;
+    state.desktop[name] = {
+      x: Math.max(0, Math.min(6000, Math.round(Number(x) || 0))),
+      y: Math.max(0, Math.min(6000, Math.round(Number(y) || 0)))
+    };
+    return true;
+  }
+
+  /** Forget positions of icons whose file is gone (renamed, trashed…). */
+  function pruneIconPos(state) {
+    var names = {};
+    var entries = desktopEntries(state);
+    for (var i = 0; i < entries.length; i++) names[entries[i].name] = true;
+    for (var n in state.desktop) if (!names[n]) delete state.desktop[n];
   }
 
   /* ══════════════════════════ Processes / windows ══════════════════════════ */
@@ -1624,6 +1695,7 @@
     ACCENTS: ACCENTS,
     WS_COUNT: WS_COUNT,
     TRASH: TRASH,
+    DESKTOP: DESKTOP,
     appById: appById,
     // vfs
     normalizePath: normalizePath,
@@ -1647,6 +1719,12 @@
     boot: boot,
     serialize: serialize,
     deserialize: deserialize,
+    // desktop icons
+    desktopEntries: desktopEntries,
+    defaultIconPos: defaultIconPos,
+    iconPos: iconPos,
+    setIconPos: setIconPos,
+    pruneIconPos: pruneIconPos,
     // processes
     spawn: spawn,
     findProc: findProc,

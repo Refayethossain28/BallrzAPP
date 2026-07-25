@@ -51,12 +51,49 @@
     filter:drop-shadow(0 8px 30px color-mix(in srgb, var(--a) 45%, transparent))}
   #wallmark .word{margin-top:8px;font-size:13px;letter-spacing:.42em;color:var(--faint);text-transform:uppercase}
 
+  /* ── desktop icons ── */
+  #icons{position:absolute;inset:34px 0 0 0;pointer-events:none}
+  .dicon{position:absolute;width:84px;display:flex;flex-direction:column;align-items:center;gap:4px;
+    padding:6px 2px 8px;border-radius:12px;pointer-events:auto;touch-action:none;cursor:default}
+  .dicon:hover{background:rgba(255,255,255,.06)}
+  .dicon.drag{opacity:.75}
+  .dicon .ig{width:52px;height:52px;border-radius:14px;display:grid;place-items:center;font-size:29px;
+    background:linear-gradient(145deg,rgba(255,255,255,.1),rgba(255,255,255,.02));border:1px solid var(--line);
+    box-shadow:0 8px 22px rgba(0,0,0,.35)}
+  .dicon .il{font-size:11.5px;line-height:1.25;text-align:center;max-width:82px;
+    overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word;
+    text-shadow:0 1px 4px rgba(0,0,0,.8)}
+
+  /* ── context menu ── */
+  #ctxmenu{position:fixed;z-index:9500;min-width:180px;background:var(--glass2);border:1px solid var(--line);
+    border-radius:12px;box-shadow:var(--shadow);padding:5px;display:none;
+    backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
+  #ctxmenu button{display:block;width:100%;text-align:left;padding:7px 12px;border-radius:8px;font-size:13.5px}
+  #ctxmenu button:hover{background:rgba(255,255,255,.09)}
+  #ctxmenu button.danger{color:var(--bad)}
+  #ctxmenu .sep{height:1px;background:var(--line);margin:5px 6px}
+
+  /* ── start menu ── */
+  #startmenu{position:fixed;left:8px;top:38px;z-index:9400;width:292px;background:var(--glass2);
+    border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:12px;display:none;
+    backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)}
+  #startmenu.open{display:block}
+  #startmenu .sgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  #startmenu .sapp{display:flex;flex-direction:column;align-items:center;gap:5px;padding:9px 4px;border-radius:12px}
+  #startmenu .sapp:hover{background:rgba(255,255,255,.08)}
+  #startmenu .sapp .se{font-size:24px}
+  #startmenu .sapp .sn{font-size:11px;color:var(--dim)}
+  #startmenu .srow{display:flex;gap:6px;margin-top:10px}
+  #startmenu .srow .btn{flex:1;text-align:center;font-size:12px}
+
   /* ── menu bar ── */
   #menubar{position:fixed;left:0;right:0;top:0;height:34px;z-index:5000;display:flex;align-items:center;gap:14px;
     padding:0 12px 0 14px;background:rgba(9,12,26,.66);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
     border-bottom:1px solid var(--line);font-size:13px}
-  #menubar .brand{font-weight:700;letter-spacing:.06em}
+  #menubar .brand{font-weight:700;letter-spacing:.06em;background:none;border:0;padding:2px 8px;border-radius:8px;font-size:13px}
+  #menubar .brand:hover{background:rgba(255,255,255,.08)}
   #menubar .brand .g{background:linear-gradient(135deg,var(--a),var(--b));-webkit-background-clip:text;background-clip:text;color:transparent}
+  #menubar .brand .chev{color:var(--faint);font-size:10px}
   #mb-app{color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #menubar .sp{flex:1}
   #mb-ws{display:flex;gap:4px}
@@ -254,11 +291,15 @@
 <div id="desktop">
   <div id="wallpaper"></div>
   <div id="wallmark"><div class="glyph">✦</div><div class="word">AIOS</div></div>
+  <div id="icons"></div>
   <div id="windows"></div>
 </div>
 
+<div id="ctxmenu" role="menu"></div>
+<div id="startmenu" role="menu" aria-label="AIOS menu"></div>
+
 <header id="menubar">
-  <span class="brand"><span class="g">✦</span> AIOS</span>
+  <button class="brand" id="mb-start" title="AIOS menu"><span class="g">✦</span> AIOS <span class="chev">▾</span></button>
   <span id="mb-ws" title="Workspaces (Ctrl/Cmd-Alt-1/2/3)"></span>
   <span id="mb-app"></span>
   <span class="sp"></span>
@@ -432,6 +473,7 @@ function sync() {
   /* workspace pills */
   var pills = document.querySelectorAll('#mb-ws button');
   for (i = 0; i < pills.length; i++) pills[i].classList.toggle('on', Number(pills[i].textContent) === state.ws);
+  renderDesktop();
   $('mb-app').textContent = top ? ((K.appById(top.app) || {}).name + (top.arg ? ' — ' + top.title : '')) : '';
   $('mb-owner').textContent = state.settings.owner;
   document.body.dataset.accent = state.settings.accent;
@@ -508,6 +550,42 @@ APP_RENDER.files = function (proc, body) {
       li.addEventListener('click', function () {
         if (e2.type === 'dir') { rt.dir = full; refresh(); }
         else { spawnApp('notes', full); }
+      });
+      li.addEventListener('contextmenu', function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        var items = [{ label: 'Open', fn: function () { e2.type === 'dir' ? (rt.dir = full, refresh()) : spawnApp('notes', full); } }];
+        if (inTrash() && state.fs.trash[e2.name]) {
+          items.push({ label: 'Restore', fn: function () {
+            var rr = K.fsRestore(state.fs, e2.name, Date.now());
+            notify('🗑 Trash', rr.ok ? 'Restored to ' + rr.origin : rr.error);
+            refreshAll();
+          } });
+        } else if (!inTrash()) {
+          items.push({ label: 'Rename…', fn: function () { renamePath(full); refresh(); } });
+          if (rt.dir !== K.DESKTOP) {
+            items.push({ label: 'Send to Desktop', fn: function () {
+              var mv = K.fsMove(state.fs, full, K.DESKTOP, Date.now());
+              if (!mv.ok) notify('Files', mv.error);
+              refreshAll();
+            } });
+          }
+        }
+        items.push('-');
+        items.push({
+          label: inTrash() ? 'Purge forever' : 'Move to Trash', danger: true,
+          fn: function () {
+            if (inTrash()) {
+              if (!confirm('Permanently delete ' + full + '? This cannot be undone.')) return;
+              K.fsRemove(state.fs, full, { recursive: true });
+            } else {
+              var tr = K.fsTrash(state.fs, full, Date.now());
+              if (!tr.ok) notify('Files', tr.error);
+            }
+            refreshAll();
+          }
+        });
+        showMenu(ev.clientX, ev.clientY, items);
       });
       list.appendChild(li);
     });
@@ -1038,6 +1116,164 @@ APP_RENDER.about = function (proc, body) {
 
 /* ══════════════ chrome ══════════════ */
 
+/* ── context menu (shared by desktop, icons and Files rows) ── */
+var ctx = $('ctxmenu');
+function hideMenu() { ctx.style.display = 'none'; }
+function showMenu(x, y, items) {
+  ctx.textContent = '';
+  items.forEach(function (it) {
+    if (it === '-') { ctx.appendChild(el('div', 'sep')); return; }
+    var b = el('button', it.danger ? 'danger' : null, it.label);
+    b.addEventListener('click', function () { hideMenu(); it.fn(); });
+    ctx.appendChild(b);
+  });
+  ctx.style.display = 'block';
+  var mw = ctx.offsetWidth || 190, mh = ctx.offsetHeight || 220;
+  ctx.style.left = Math.max(4, Math.min(x, (window.innerWidth || 1000) - mw - 8)) + 'px';
+  ctx.style.top = Math.max(4, Math.min(y, (window.innerHeight || 700) - mh - 8)) + 'px';
+}
+window.addEventListener('pointerdown', function (e) { if (!ctx.contains(e.target)) hideMenu(); });
+
+function refreshAll() {
+  for (var pid in runtime) if (runtime[pid].refresh) runtime[pid].refresh();
+  sync();
+}
+
+function renamePath(full) {
+  var sp = K.splitPath(full);
+  var nn = prompt('Rename “' + sp.name + '” to:', sp.name);
+  if (!nn || nn === sp.name) return;
+  var target = K.normalizePath(sp.parent, nn);
+  if (K.fsGet(state.fs, target) && !confirm('“' + nn + '” already exists — replace it?')) return;
+  var r = K.fsMove(state.fs, full, target, Date.now());
+  if (!r.ok) notify('Files', r.error);
+  refreshAll();
+}
+
+/* ── desktop icons: ~/Desktop drawn on the wallpaper ── */
+function fileEmoji(name, type) {
+  if (type === 'dir') return '📁';
+  var ext = ((/\.([a-z0-9]+)$/i.exec(name) || [])[1] || '').toLowerCase();
+  return ext === 'md' ? '📝' : ext === 'sh' ? '⚙️' : '📄';
+}
+
+function openEntry(full, type) {
+  if (type === 'dir') spawnApp('files', full);
+  else spawnApp('notes', full);
+}
+
+function renderDesktop() {
+  var layer = $('icons');
+  layer.textContent = '';
+  K.pruneIconPos(state);
+  var entries = K.desktopEntries(state);
+  entries.forEach(function (e2, idx) {
+    var pos = K.iconPos(state, e2.name, idx);
+    var full = K.DESKTOP + '/' + e2.name;
+    var ic = el('div', 'dicon');
+    ic.style.left = pos.x + 'px';
+    ic.style.top = pos.y + 'px';
+    var g = el('div', 'ig', fileEmoji(e2.name, e2.type));
+    ic.appendChild(g);
+    ic.appendChild(el('div', 'il', e2.name));
+
+    /* drag moves it (position remembered); a still click opens it */
+    var drag = null, moved = false;
+    ic.addEventListener('pointerdown', function (ev) {
+      if (ev.button === 2) return;
+      drag = { dx: ev.clientX - ic.offsetLeft, dy: ev.clientY - ic.offsetTop };
+      moved = false;
+      try { ic.setPointerCapture(ev.pointerId); } catch (err) {}
+    });
+    ic.addEventListener('pointermove', function (ev) {
+      if (!drag) return;
+      var nx = ev.clientX - drag.dx, ny = ev.clientY - drag.dy;
+      if (!moved && Math.abs(nx - ic.offsetLeft) + Math.abs(ny - ic.offsetTop) < 5) return;
+      moved = true;
+      ic.classList.add('drag');
+      ic.style.left = Math.max(0, nx) + 'px';
+      ic.style.top = Math.max(0, ny) + 'px';
+    });
+    ic.addEventListener('pointerup', function () {
+      if (!drag) return;
+      ic.classList.remove('drag');
+      if (moved) { K.setIconPos(state, e2.name, parseInt(ic.style.left, 10) || 0, parseInt(ic.style.top, 10) || 0); save(); }
+      else openEntry(full, e2.type);
+      drag = null;
+    });
+    ic.addEventListener('contextmenu', function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      showMenu(ev.clientX, ev.clientY, [
+        { label: 'Open', fn: function () { openEntry(full, e2.type); } },
+        { label: 'Rename…', fn: function () { renamePath(full); } },
+        '-',
+        { label: 'Move to Trash', danger: true, fn: function () {
+          var t = K.fsTrash(state.fs, full, Date.now());
+          if (t.ok) notify('🗑 Moved to trash', e2.name + ' — restorable from the 🗑 view.');
+          else notify('Desktop', t.error);
+          refreshAll();
+        } }
+      ]);
+    });
+    layer.appendChild(ic);
+  });
+}
+
+/* right-click the wallpaper: create things right where you clicked */
+function newDesktopItem(kind, x, y) {
+  var name = prompt(kind === 'dir' ? 'New folder name:' : 'New file name:', kind === 'dir' ? 'New folder' : 'untitled.md');
+  if (!name) return;
+  var full = K.normalizePath(K.DESKTOP, name);
+  if (K.fsGet(state.fs, full)) { notify('Desktop', '“' + name + '” already exists here.'); return; }
+  var r = kind === 'dir' ? K.fsMkdir(state.fs, full, Date.now()) : K.fsWrite(state.fs, full, '', Date.now());
+  if (!r.ok) { notify('Desktop', r.error); return; }
+  K.setIconPos(state, K.splitPath(full).name, Math.max(0, x - 42), Math.max(0, y - 90));
+  refreshAll();
+  if (kind !== 'dir') spawnApp('notes', full);
+}
+$('wallpaper').addEventListener('contextmenu', function (ev) {
+  ev.preventDefault();
+  var x = ev.clientX, y = ev.clientY;
+  showMenu(x, y, [
+    { label: '📄 New file here…', fn: function () { newDesktopItem('file', x, y); } },
+    { label: '📁 New folder here…', fn: function () { newDesktopItem('dir', x, y); } },
+    '-',
+    { label: '⌨️ Open Terminal', fn: function () { spawnApp('terminal'); } },
+    { label: '✦ Ask AIOS  (Ctrl/Cmd-K)', fn: function () { openSpot(); } },
+    '-',
+    { label: '⟲ Arrange icons', fn: function () { state.desktop = {}; sync(); } }
+  ]);
+});
+
+/* ── start menu: every app one click from ✦ ── */
+var startEl = $('startmenu');
+function closeStart() { startEl.classList.remove('open'); }
+(function buildStart() {
+  var grid = el('div', 'sgrid');
+  K.APPS.forEach(function (a) {
+    var b = el('button', 'sapp');
+    b.title = a.desc;
+    b.appendChild(el('span', 'se', a.emoji));
+    b.appendChild(el('span', 'sn', a.name));
+    b.addEventListener('click', function () { closeStart(); spawnApp(a.id); });
+    grid.appendChild(b);
+  });
+  startEl.appendChild(grid);
+  var row = el('div', 'srow');
+  var ask = el('button', 'btn', '✦ Ask AIOS');
+  ask.addEventListener('click', function () { closeStart(); openSpot(); });
+  var reboot = el('button', 'btn', '⟳ Reboot');
+  reboot.addEventListener('click', function () { location.reload(); });
+  row.appendChild(ask);
+  row.appendChild(reboot);
+  startEl.appendChild(row);
+})();
+$('mb-start').addEventListener('click', function (e) { e.stopPropagation(); startEl.classList.toggle('open'); });
+window.addEventListener('pointerdown', function (e) {
+  if (startEl.classList.contains('open') && !startEl.contains(e.target) && !$('mb-start').contains(e.target)) closeStart();
+});
+
 /* dock */
 (function buildDock() {
   var dock = $('dock');
@@ -1133,6 +1369,7 @@ spotIn.addEventListener('keydown', function (e) {
   for (var pid in runtime) if (runtime[pid].refresh) runtime[pid].refresh();
 });
 window.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') { hideMenu(); closeStart(); return; }
   if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
     e.preventDefault();
     if (spot.classList.contains('open')) closeSpot(); else openSpot();
