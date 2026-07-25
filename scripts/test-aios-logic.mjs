@@ -234,16 +234,16 @@ test('shell: echo redirection writes and appends via the VFS', () => {
   assert.equal(K.execCommand(st, 'echo x >', T0).error, true, 'missing file');
 });
 
-test('shell: mkdir -p, touch, rm -r, mv, cp, find compose', () => {
+test('shell: mkdir -p, touch, mv, cp, find compose; rm moves to the trash', () => {
   const st = K.boot(T0);
   assert.equal(K.execCommand(st, 'mkdir -p a/b/c', T0).error, false);
   assert.equal(K.execCommand(st, 'touch a/b/c/f.txt', T0).error, false);
   assert.equal(K.execCommand(st, 'mv a/b/c/f.txt a/g.txt', T0).error, false);
   assert.equal(K.execCommand(st, 'cp a/g.txt a/h.txt', T0).error, false);
   assert.ok(K.execCommand(st, 'find g.txt', T0).out.includes('/home/user/a/g.txt'));
-  assert.equal(K.execCommand(st, 'rm a', T0).error, true, 'non-empty without -r');
-  assert.equal(K.execCommand(st, 'rm -r a', T0).error, false);
+  assert.equal(K.execCommand(st, 'rm a', T0).error, false, 'rm is safe now — whole dirs go to the trash');
   assert.equal(K.fsGet(st.fs, '/home/user/a'), null);
+  assert.equal(K.fsGet(st.fs, '/trash/a').type, 'dir', 'landed in the trash intact');
 });
 
 test('shell: open resolves apps, files and dirs into open effects', () => {
@@ -380,6 +380,367 @@ test('shell ai command goes through the same assistant', () => {
   const r = K.execCommand(st, 'ai set a timer for 1 minutes', T0);
   assert.equal(r.error, false);
   deq(r.effects, [{ type: 'timer', seconds: 60, label: 'Timer' }]);
+});
+
+/* ══════════ v2: pipes & filters ══════════ */
+
+test('tokenize splits | into its own token, even unspaced', () => {
+  deq(K.tokenize('ls|grep txt'), ['ls', '|', 'grep', 'txt']);
+  deq(K.tokenize('cat f | head -n 3'), ['cat', 'f', '|', 'head', '-n', '3']);
+  deq(K.tokenize('echo "a|b"'), ['echo', 'a|b'], 'quoted pipe is literal');
+});
+
+test('pipelines: ls | grep | head compose over the disk', () => {
+  const st = K.boot(T0);
+  K.execCommand(st, 'touch alpha.txt beta.txt gamma.log', T0);
+  const r = K.execCommand(st, 'ls | grep txt', T0);
+  assert.equal(r.error, false);
+  assert.equal(r.out.length, 2);
+  assert.ok(r.out[0].startsWith('alpha.txt'));
+  deq(K.execCommand(st, 'ls | grep txt | head -n 1', T0).out.length, 1);
+  const wc = K.execCommand(st, 'ls | wc', T0).out[0];
+  assert.ok(wc.startsWith('5 lines'), `notes/ projects/ + 3 files, got: ${wc}`);
+  assert.equal(K.execCommand(st, 'ls | frobnicate', T0).error, true, 'unknown filter is an error');
+});
+
+test('filters: grep -i/-v, tail, sort -r, uniq -c behave', () => {
+  const st = K.boot(T0);
+  K.execCommand(st, 'echo B > f.txt', T0);
+  K.execCommand(st, 'echo a >> f.txt', T0);
+  K.execCommand(st, 'echo a >> f.txt', T0);
+  deq(K.execCommand(st, 'cat f.txt | grep -i b', T0).out, ['B']);
+  deq(K.execCommand(st, 'cat f.txt | grep -v a', T0).out, ['B', ''], 'trailing newline line survives -v');
+  deq(K.execCommand(st, 'cat f.txt | head -n 3 | sort', T0).out, ['B', 'a', 'a']);
+  deq(K.execCommand(st, 'cat f.txt | head -n 3 | sort -r | uniq -c', T0).out, ['2 a', '1 B']);
+  deq(K.execCommand(st, 'cat f.txt | tail -n 2', T0).out, ['a', '']);
+});
+
+test('filters accept a trailing file argument as input', () => {
+  const st = K.boot(T0);
+  const r = K.execCommand(st, 'grep Terminal notes/welcome.txt', T0);
+  assert.equal(r.error, false);
+  assert.ok(r.out.length >= 1 && r.out[0].includes('Terminal'));
+  assert.equal(K.execCommand(st, 'head -n 1 notes/welcome.txt', T0).out[0], 'Welcome to AIOS — the AI operating system.');
+});
+
+test('redirection works on ANY pipeline, not just echo', () => {
+  const st = K.boot(T0);
+  assert.equal(K.execCommand(st, 'ls | grep notes > listing.txt', T0).error, false);
+  assert.ok(K.fsRead(st.fs, '/home/user/listing.txt').content.includes('notes/'));
+  K.execCommand(st, 'pwd >> listing.txt', T0);
+  assert.ok(K.fsRead(st.fs, '/home/user/listing.txt').content.includes('/home/user'));
+  assert.equal(K.execCommand(st, 'ls > x > y', T0).error, true, 'redirection must end the command');
+});
+
+test('tree draws the hierarchy, dirs first', () => {
+  const st = K.boot(T0);
+  const r = K.execCommand(st, 'tree ~', T0);
+  assert.equal(r.error, false);
+  deq(r.out, ['user/', '├─ notes/', '│  └─ welcome.txt', '└─ projects/']);
+});
+
+/* ══════════ v2: trash ══════════ */
+
+test('rm → trash with origin remembered; restore puts it back', () => {
+  const st = K.boot(T0);
+  K.execCommand(st, 'echo precious > keep.txt', T0);
+  const rm = K.execCommand(st, 'rm keep.txt', T0);
+  assert.equal(rm.error, false);
+  assert.ok(rm.out[0].includes('/trash/keep.txt'));
+  assert.equal(K.fsGet(st.fs, '/home/user/keep.txt'), null);
+  assert.ok(K.execCommand(st, 'trash', T0).out[0].includes('was /home/user/keep.txt'));
+  assert.equal(K.execCommand(st, 'restore keep.txt', T0).error, false);
+  assert.equal(K.fsRead(st.fs, '/home/user/keep.txt').content, 'precious\n');
+  assert.deepEqual(JSON.parse(JSON.stringify(st.fs.trash)), {}, 'origin record cleared');
+  assert.equal(K.execCommand(st, 'restore keep.txt', T0).error, true, 'nothing left to restore');
+});
+
+test('trash: name collisions, purge inside trash, empty, protections', () => {
+  const st = K.boot(T0);
+  K.execCommand(st, 'touch a.txt', T0);
+  K.execCommand(st, 'rm a.txt', T0);
+  K.execCommand(st, 'touch a.txt', T0);
+  const second = K.execCommand(st, 'rm a.txt', T0);
+  assert.ok(second.out[0].includes('/trash/a.txt-2'), 'second delete gets a fresh name');
+  assert.equal(K.fsGet(st.fs, '/trash/a.txt-2').type, 'file');
+  const purge = K.execCommand(st, 'rm /trash/a.txt', T0);
+  assert.ok(purge.out[0].startsWith('purged'), 'rm inside the trash is permanent');
+  assert.equal(st.fs.trash['a.txt'], undefined, 'purge forgets the origin');
+  const em = K.execCommand(st, 'trash empty', T0);
+  assert.ok(em.out[0].includes('1 item'));
+  deq(K.execCommand(st, 'trash', T0).out, ['(trash is empty)']);
+  assert.equal(K.fsTrash(st.fs, '/', T0).ok, false);
+  assert.equal(K.fsTrash(st.fs, '/trash', T0).ok, false);
+  // restore refuses to clobber a recreated file
+  K.execCommand(st, 'touch b.txt', T0);
+  K.execCommand(st, 'rm b.txt', T0);
+  K.execCommand(st, 'touch b.txt', T0);
+  assert.equal(K.execCommand(st, 'restore b.txt', T0).error, true);
+});
+
+/* ══════════ v2: workspaces & window states ══════════ */
+
+test('workspaces: spawn tags the active ws, topProc is per-workspace', () => {
+  const st = K.boot(T0);
+  const a = K.spawn(st, 'terminal').proc;
+  K.switchWorkspace(st, 2);
+  const b = K.spawn(st, 'files').proc;
+  assert.equal(a.ws, 1);
+  assert.equal(b.ws, 2);
+  assert.equal(K.topProc(st).pid, b.pid, 'ws2 sees only its own window');
+  K.switchWorkspace(st, 1);
+  assert.equal(K.topProc(st).pid, a.pid);
+  assert.equal(K.switchWorkspace(st, 99), K.WS_COUNT, 'clamped high');
+  assert.equal(K.switchWorkspace(st, -3), 1, 'clamped low');
+  K.moveToWorkspace(st, a.pid, 3);
+  assert.equal(a.ws, 3);
+  const ws = K.execCommand(st, 'ws 2', T0);
+  assert.equal(ws.error, false);
+  assert.equal(st.ws, 2);
+  assert.equal(K.execCommand(st, 'ws 9', T0).error, true);
+  assert.ok(K.execCommand(st, 'ps', T0).out[0].includes('WS'), 'ps shows the workspace column');
+  // re-spawning an app pulls its window to the active workspace
+  K.spawn(st, 'terminal');
+  assert.equal(a.ws, 2);
+});
+
+test('maximize toggles, snap tiles, drag floats everything again', () => {
+  const st = K.boot(T0);
+  const p = K.spawn(st, 'files').proc;
+  K.maximizeProc(st, p.pid);
+  assert.equal(p.max, true);
+  K.maximizeProc(st, p.pid);
+  assert.equal(p.max, false);
+  K.snapProc(st, p.pid, 'left');
+  assert.equal(p.snap, 'left');
+  K.snapProc(st, p.pid, 'right');
+  assert.equal(p.snap, 'right');
+  K.snapProc(st, p.pid, 'right');
+  assert.equal(p.snap, null, 'same side again unsnaps');
+  K.snapProc(st, p.pid, 'left');
+  K.maximizeProc(st, p.pid);
+  assert.equal(p.max, true);
+  assert.equal(p.snap, null, 'maximize clears snap');
+  K.floatProc(st, p.pid);
+  assert.equal(p.max, false);
+});
+
+/* ══════════ v2: automations ══════════ */
+
+test('automations: add, due exactly on schedule, toggle, remove', () => {
+  const st = K.boot(T0);
+  const a = K.addAutomation(st, 'echo tick >> log.txt', 300, T0);
+  assert.equal(a.ok, true);
+  assert.equal(K.addAutomation(st, 'echo x', 30, T0).ok, false, 'sub-minute rejected');
+  assert.equal(K.addAutomation(st, '', 300, T0).ok, false);
+  deq(K.dueAutomations(st, T0 + 299000).map((x) => x.id), [], 'not yet');
+  deq(K.dueAutomations(st, T0 + 300000).map((x) => x.id), [a.automation.id], 'due on the dot');
+  deq(K.dueAutomations(st, T0 + 300000).map((x) => x.id), [], 'running resets the clock');
+  deq(K.dueAutomations(st, T0 + 600000).map((x) => x.id), [a.automation.id]);
+  K.toggleAutomation(st, a.automation.id, false);
+  deq(K.dueAutomations(st, T0 + 9e9).map((x) => x.id), [], 'paused never fires');
+  K.toggleAutomation(st, a.automation.id);
+  assert.equal(st.automations[0].enabled, true);
+  assert.equal(K.removeAutomation(st, a.automation.id), true);
+  assert.equal(st.automations.length, 0);
+});
+
+test('every/automations/unschedule shell commands; scheduled `ai` really executes', () => {
+  const st = K.boot(T0);
+  const r = K.execCommand(st, 'every 30m ai note that stretch your legs', T0);
+  assert.equal(r.error, false);
+  assert.ok(r.out[0].includes('every 30 minutes'));
+  assert.ok(K.execCommand(st, 'automations', T0).out[1].includes('ai note that stretch'));
+  assert.equal(K.execCommand(st, 'every nonsense echo x', T0).error, true);
+  const due = K.dueAutomations(st, T0 + 1800000);
+  assert.equal(due.length, 1);
+  const run = K.execCommand(st, due[0].command, T0 + 1800000);
+  assert.equal(run.error, false);
+  assert.ok(K.fsRead(st.fs, '/home/user/notes/stretch-your-legs.txt').ok, 'English ran on schedule');
+  assert.equal(K.execCommand(st, 'unschedule ' + due[0].id, T0).error, false);
+  assert.equal(st.automations.length, 0);
+  assert.equal(K.execCommand(st, 'unschedule 42', T0).error, true);
+});
+
+test('automations survive serialize → deserialize; hostile entries dropped', () => {
+  const st = K.boot(T0);
+  K.execCommand(st, 'every 1h echo tick >> tick.txt', T0);
+  const st2 = K.deserialize(K.serialize(st), T0);
+  assert.equal(st2.automations.length, 1);
+  assert.equal(st2.automations[0].command, 'echo tick >> tick.txt');
+  assert.equal(st2.automations[0].everySeconds, 3600);
+  assert.ok(st2.nextAutoId > st2.automations[0].id, 'ids keep counting upward');
+  const hostile = K.deserialize(JSON.stringify({
+    v: 2, fs: K.boot(T0).fs,
+    automations: [{ command: 'echo x', everySeconds: 1 }, { command: 42, everySeconds: 600 }, null]
+  }), T0);
+  assert.equal(hostile.automations.length, 0, 'sub-minute and malformed entries dropped');
+});
+
+/* ══════════ v2: conversions, dates, compound intents ══════════ */
+
+test('convertUnits: length, mass, temperature, data — and refusals', () => {
+  assert.equal(K.convertUnits('5 km to miles').value, 3.106856);
+  assert.equal(K.convertUnits('convert 100 f in c').value, 37.777778);
+  assert.equal(K.convertUnits('0c to k').value, 273.15);
+  assert.equal(K.convertUnits('2 kg in lbs').value, 4.409245);
+  assert.equal(K.convertUnits('2gb to mb').value, 2048);
+  assert.equal(K.convertUnits('12 inches to cm').value, 30.48);
+  assert.equal(K.convertUnits('5 km to kg'), null, 'cross-dimension refused');
+  assert.equal(K.convertUnits('5 blorps to miles'), null);
+  const i = K.routeIntent('convert 5 km to miles');
+  assert.equal(i.type, 'convert');
+  assert.equal(i.conv.value, 3.106856);
+});
+
+test('dateMath: days/weeks/months/years, forward and back, from a fixed clock', () => {
+  assert.equal(K.dateMath('90 days from now', T0).text, 'Thursday, 22 Oct 2026');
+  assert.equal(K.dateMath('in 2 weeks', T0).text, 'Friday, 7 Aug 2026');
+  assert.equal(K.dateMath('3 months from now', T0).text, 'Saturday, 24 Oct 2026');
+  assert.equal(K.dateMath('1 year ago', T0).text, 'Thursday, 24 Jul 2025');
+  assert.equal(K.dateMath('sometime soon', T0), null);
+  assert.equal(K.routeIntent('what date is 90 days from now').type, 'datemath');
+  assert.equal(K.routeIntent('remind me in 5 minutes').type, 'timer', 'timers keep priority over date math');
+});
+
+test('assistant chains "then"; a note containing "then" is never split', () => {
+  const st = K.boot(T0);
+  const r = K.assistant(st, 'create a folder called reports then open the files', T0);
+  assert.equal(K.fsGet(st.fs, '/home/user/reports').type, 'dir');
+  deq(r.actions.map((a) => a.app), ['files', 'files']);
+  assert.ok(r.reply.includes('Created') && r.reply.includes('Opening Files'));
+  const n = K.assistant(st, 'note that shower then breakfast then gym', T0);
+  assert.ok(n.reply.includes('shower-then-breakfast'), 'the note stayed whole');
+  assert.equal(K.fsRead(st.fs, '/home/user/notes/note-that-shower-then-breakfast.txt').ok, false, 'sanity: name from content words');
+  assert.ok(K.fsFind(st.fs, 'shower').length === 1);
+  const ws = K.assistant(st, 'switch to workspace 2', T0);
+  assert.equal(st.ws, 2);
+  assert.ok(ws.reply.includes('Workspace 2'));
+});
+
+/* ══════════ v3: variables, aliases, scripts, journal, search, markdown ══════════ */
+
+test('shell variables: set/env/unset, $VAR expansion, builtins, unknown → empty', () => {
+  const st = K.boot(T0);
+  assert.equal(K.execCommand(st, 'set project=apollo mission', T0).error, false);
+  deq(K.execCommand(st, 'echo working on $project', T0).out, ['working on apollo mission']);
+  assert.ok(K.execCommand(st, 'env', T0).out.includes('project=apollo mission'));
+  deq(K.execCommand(st, 'echo $USER at $CWD ws $WS', T0).out, ['user at /home/user ws 1']);
+  deq(K.execCommand(st, 'echo [$nope]', T0).out, ['[]'], 'unknown variable expands to empty');
+  assert.equal(K.execCommand(st, 'mkdir $project', T0).error, false, 'expansion works in any command');
+  assert.equal(K.fsGet(st.fs, '/home/user/apollo').type, 'dir');
+  assert.equal(K.execCommand(st, 'unset project', T0).error, false);
+  deq(K.execCommand(st, 'echo $project', T0).out, ['']);
+  assert.equal(K.execCommand(st, 'unset project', T0).error, true);
+  assert.equal(K.execCommand(st, 'set 9bad=x', T0).error, true, 'names must start with a letter');
+});
+
+test('aliases: define/list/use/unalias; pipes inside; cycles bounded; builtins protected', () => {
+  const st = K.boot(T0);
+  K.execCommand(st, 'touch a.txt b.txt c.log', T0);
+  assert.equal(K.execCommand(st, 'alias texts=ls | grep txt', T0).error, false);
+  deq(K.execCommand(st, 'texts', T0).out.length, 2, 'alias body may contain a pipeline');
+  deq(K.execCommand(st, 'texts | head -n 1', T0).out.length, 1, 'caller can extend the pipeline');
+  assert.ok(K.execCommand(st, 'alias', T0).out[0].startsWith('texts='));
+  assert.equal(K.execCommand(st, 'alias ls=rm -r /', T0).error, true, 'built-ins cannot be shadowed');
+  K.execCommand(st, 'alias loop=loop', T0);
+  assert.equal(K.execCommand(st, 'loop', T0).error, true, 'self-alias terminates as unknown command, no hang');
+  assert.equal(K.execCommand(st, 'unalias texts', T0).error, false);
+  assert.equal(K.execCommand(st, 'texts', T0).error, true);
+});
+
+test('alias definitions keep their $ — expansion happens at USE time', () => {
+  const st = K.boot(T0);
+  K.execCommand(st, 'alias whereami=echo $USER in $CWD', T0);
+  K.execCommand(st, 'cd /etc', T0);
+  deq(K.execCommand(st, 'whereami', T0).out, ['user in /etc']);
+});
+
+test('run: scripts execute line by line with # comments and $1/$@ args', () => {
+  const st = K.boot(T0);
+  K.fsWrite(st.fs, '/home/user/setup.sh',
+    '# project scaffold\nmkdir -p $1/src\necho hello from $@ > $1/readme.txt\nls $1\n', T0);
+  const r = K.execCommand(st, 'run setup.sh apollo two', T0);
+  assert.equal(r.error, false);
+  assert.equal(K.fsGet(st.fs, '/home/user/apollo/src').type, 'dir');
+  assert.equal(K.fsRead(st.fs, '/home/user/apollo/readme.txt').content, 'hello from apollo two\n');
+  assert.ok(r.out.some((l) => l.startsWith('src/')), 'script output is aggregated');
+});
+
+test('run: errors report the line and stop; depth capped; missing script', () => {
+  const st = K.boot(T0);
+  K.fsWrite(st.fs, '/home/user/bad.sh', 'echo one\ncat /ghost\necho never', T0);
+  const r = K.execCommand(st, 'run bad.sh', T0);
+  assert.equal(r.error, true);
+  assert.ok(r.out.some((l) => l.includes('bad.sh: line 2')));
+  assert.ok(!r.out.includes('never'), 'stops at the failing line');
+  K.fsWrite(st.fs, '/home/user/fork.sh', 'run fork.sh', T0);
+  const rec = K.execCommand(st, 'run fork.sh', T0);
+  assert.equal(rec.error, true, 'self-running script hits the depth cap, no hang');
+  assert.ok(rec.out.join(' ').includes('too deep'));
+  assert.equal(st._runDepth, 0, 'depth unwinds cleanly');
+  assert.equal(K.execCommand(st, 'run ghost.sh', T0).error, true);
+});
+
+test('journal: commands and assistant logged, viewable, capped, persisted', () => {
+  const st = K.boot(T0);
+  K.execCommand(st, 'echo hello', T0);
+  K.assistant(st, 'what is 2+2', T0 + 1000);
+  const j = K.execCommand(st, 'journal', T0 + 2000);
+  assert.ok(j.out.some((l) => l.includes('sh  echo hello')));
+  assert.ok(j.out.some((l) => l.includes('ai  what is 2+2')));
+  assert.ok(j.out[0].startsWith('12:00:00'), 'UTC timestamps from the fixed clock');
+  for (let i = 0; i < 350; i++) K.logJournal(st, 'sh', 'filler ' + i, T0);
+  assert.equal(st.journal.length, 300, 'ring buffer caps at 300');
+  const st2 = K.deserialize(K.serialize(st), T0);
+  assert.equal(st2.journal.length, 300, 'journal survives reboot');
+  deq(K.execCommand(K.boot(T0), 'journal', T0).out, ['(journal is empty)']);
+});
+
+test('search: full-text content search, shell and spoken', () => {
+  const st = K.boot(T0);
+  K.execCommand(st, 'echo the launch code is 1234 > secret.txt', T0);
+  const r = K.execCommand(st, 'search launch CODE', T0);
+  assert.equal(r.error, false);
+  assert.ok(r.out[0].includes('/home/user/secret.txt:1:'), 'path:line of the hit');
+  const g = K.fsGrep(st.fs, 'operating system');
+  assert.ok(g.some((h) => h.path === '/home/user/notes/welcome.txt' && h.line === 1));
+  const i = K.routeIntent('search for launch code in my files');
+  assert.equal(i.type, 'content_search');
+  assert.equal(i.q, 'launch code');
+  assert.ok(K.assistant(st, 'find 1234 in my notes', T0).reply.includes('secret.txt:1'));
+  assert.equal(K.routeIntent('find welcome').type, 'search', 'name search unchanged');
+});
+
+test('serialize v3 round-trips env and aliases; hostile entries dropped', () => {
+  const st = K.boot(T0);
+  K.execCommand(st, 'set city=London', T0);
+  K.execCommand(st, 'alias ll=ls', T0);
+  const st2 = K.deserialize(K.serialize(st), T0);
+  deq(st2.env, { city: 'London' });
+  deq(st2.aliases, { ll: 'ls' });
+  const hostile = K.deserialize(JSON.stringify({
+    v: 3, fs: K.boot(T0).fs,
+    env: { good: 'x', 'bad name': 'y', evil: 42 },
+    aliases: { ok: 'ls', 'no/pe': 'x' },
+    journal: [{ t: 'not-a-number', k: 'sh', x: 'bad' }, { t: T0, k: 'sh', x: 'good' }]
+  }), T0);
+  deq(hostile.env, { good: 'x' });
+  deq(hostile.aliases, { ok: 'ls' });
+  assert.equal(hostile.journal.length, 1);
+});
+
+test('renderMarkdown: structure renders, HTML is always escaped, links http-only', () => {
+  const html = K.renderMarkdown('# Title\n\nSome **bold** and *em* and `code`.\n\n- one\n- two\n\n```\nlet x = 1 < 2;\n```\n[site](https://example.com) [evil](javascript:alert(1))\n<script>alert(1)</script>');
+  assert.ok(html.includes('<h1>Title</h1>'));
+  assert.ok(html.includes('<strong>bold</strong>') && html.includes('<em>em</em>') && html.includes('<code>code</code>'));
+  assert.ok(html.includes('<ul>') && html.includes('<li>one</li>'));
+  assert.ok(html.includes('let x = 1 &lt; 2;'), 'code blocks escape HTML');
+  assert.ok(html.includes('<a href="https://example.com"'));
+  assert.ok(!html.includes('href="javascript'), 'non-http link never becomes an anchor href');
+  assert.ok(!html.includes('<script'), 'raw HTML is neutralised');
+  assert.ok(html.includes('&lt;script&gt;'));
+  assert.equal(K.renderMarkdown(''), '');
 });
 
 console.log('── aios kernel unit tests ──');
