@@ -606,17 +606,136 @@ APP_RENDER.notes = function (proc, body) {
   });
 };
 
+/* ── Assistant: Live AI ──
+ * Three ways to real intelligence, in priority order:
+ *   1. the local proxy (aios/server.mjs) — key stays server-side;
+ *   2. Bring-Your-Own-Key: paste an Anthropic key, stored ONLY in this
+ *      browser, sent straight to api.anthropic.com with Anthropic's
+ *      official direct-browser-access header (same pattern as Lingua) —
+ *      this is what makes Live AI work on the hosted static site;
+ *   3. neither → the on-device intent router (always available).
+ * Both live paths answer with the same contract as server.mjs: a reply
+ * plus AIOS shell commands, executed by the unit-tested kernel. */
+var BYOK_KEY = 'aios.anthropicKey.v1';
+function getKey() { try { return localStorage.getItem(BYOK_KEY) || ''; } catch (e) { return ''; } }
+function setKey(k) { try { if (k) localStorage.setItem(BYOK_KEY, k); else localStorage.removeItem(BYOK_KEY); } catch (e) {} }
+var liveAI = { proxy: false, on: false };
+function liveReady() { return liveAI.proxy || !!getKey(); }
+
+var OS_TOOL = {
+  name: 'os_response',
+  description: 'Respond to the user of AIOS, optionally driving the OS with shell commands.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      reply: { type: 'string', description: 'What to say in the assistant chat bubble. Warm, concise, useful.' },
+      commands: { type: 'array', description: 'AIOS shell commands to run, in order. Empty if no action needed.', items: { type: 'string' } }
+    },
+    required: ['reply']
+  }
+};
+var OS_SYSTEM = 'You are the Live AI of AIOS, an operating system running entirely in the user\'s browser.\n' +
+  'You can DO things, not just talk: every command you emit runs in the AIOS shell against the user\'s\n' +
+  'virtual disk and window manager. Available commands:\n' +
+  '  ls [path] · cd [path] · pwd · cat <file> · echo <text> > <file> (or >>) · mkdir [-p] <dir>\n' +
+  '  touch <file> · rm <path> (goes to /trash) · restore <name> · mv <a> <b> · cp <a> <b> · find <text>\n' +
+  '  tree [path] · open <app|file|dir> · ps · kill <pid> · ws [1-3] · every <interval> <command> · pipes: cmd | grep x | head -3\n' +
+  'Apps you can open: files, terminal, notes, assistant, calc, automations, monitor, settings, about.\n' +
+  'Paths are unix-style; the user\'s home is /home/user, notes live in /home/user/notes.\n' +
+  'Quote arguments containing spaces. Prefer a few precise commands over many.\n' +
+  'When the user asks for something outside the OS (facts, writing, ideas), just answer in the reply —\n' +
+  'you are also a first-class assistant. When you create or change files, mention what you did.\n' +
+  'Keep replies short; this is a chat bubble, not an essay.';
+
+function liveContext() {
+  return {
+    cwd: state.cwd, owner: state.settings.owner,
+    apps: K.APPS.map(function (a) { return a.id; }),
+    files: K.fsFind(state.fs, '').slice(0, 60)
+  };
+}
+
+/* Direct browser → Anthropic call (BYOK). Resolves { reply, actions }. */
+function callDirect(text) {
+  var ctx = liveContext();
+  return fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': getKey(),
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-opus-4-8',
+      max_tokens: 1024,
+      system: OS_SYSTEM,
+      tools: [OS_TOOL],
+      tool_choice: { type: 'tool', name: 'os_response' },
+      messages: [{
+        role: 'user',
+        content: 'OS context: cwd=' + JSON.stringify(ctx.cwd) + ', user=' + JSON.stringify(ctx.owner) +
+          '\nFiles on disk (sample): ' + ctx.files.join(', ') +
+          '\n\nUser says: ' + String(text).slice(0, 2000)
+      }]
+    })
+  }).then(function (r) {
+    if (!r.ok) return r.text().then(function (t) { throw new Error('anthropic ' + r.status + ': ' + t.slice(0, 200)); });
+    return r.json();
+  }).then(function (data) {
+    var tu = (data.content || []).filter(function (b) { return b.type === 'tool_use'; })[0];
+    var input = tu && tu.input ? tu.input : { reply: '' };
+    return {
+      reply: String(input.reply || ''),
+      actions: (Array.isArray(input.commands) ? input.commands : []).slice(0, 12).map(function (c) { return { command: String(c).slice(0, 400) }; })
+    };
+  });
+}
+
+/* Live call through whichever path is available. */
+function callLive(text) {
+  if (liveAI.proxy) {
+    return fetch('api/assistant', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text, context: liveContext() })
+    }).then(function (r) { return r.json(); });
+  }
+  return callDirect(text);
+}
+
+function refreshLiveSwitches() {
+  var sws = document.querySelectorAll('.switch');
+  for (var i = 0; i < sws.length; i++) sws[i].classList.toggle('off-disabled', !liveReady());
+  var keys = document.querySelectorAll('.keybtn');
+  for (var j = 0; j < keys.length; j++) keys[j].textContent = getKey() ? '🔑 ✓' : '🔑 Add key';
+}
+
 /* ── Assistant ── */
-var liveAI = { available: false, on: false };
 APP_RENDER.assistant = function (proc, body) {
   body.classList.add('chat');
   var livebar = el('div', 'livebar');
   livebar.appendChild(el('span', null, '✦ On-device intelligence'));
   livebar.appendChild(el('span', 'sp'));
+  var keyBtn = el('button', 'btn keybtn', getKey() ? '🔑 ✓' : '🔑 Add key');
+  keyBtn.title = 'Link your own Anthropic API key — stored only in this browser, sent only to api.anthropic.com. Enables Live AI with no server.';
+  keyBtn.addEventListener('click', function () {
+    var cur = getKey();
+    var k = prompt(cur
+      ? 'An Anthropic key is linked (stored only in this browser). Paste a new key to replace it, or clear the box and press OK to remove it.'
+      : 'Paste your Anthropic API key (sk-ant-…).\nIt is stored ONLY in this browser and sent ONLY to api.anthropic.com — that\'s what makes Live AI work on the hosted site, no server needed.\n(On a shared device, prefer running aios/server.mjs instead.)', cur);
+    if (k === null) return;
+    setKey(k.trim());
+    if (!liveReady()) { liveAI.on = false; $('mb-live').style.display = 'none'; }
+    refreshLiveSwitches();
+    var allSw = document.querySelectorAll('.switch');
+    for (var i = 0; i < allSw.length; i++) allSw[i].classList.toggle('on', liveAI.on);
+    notify('✦ Live AI', getKey() ? 'Key linked — flip the Live AI switch to talk to the real model.' : 'Key removed — back to on-device intelligence.');
+  });
   var liveLbl = el('span', null, 'Live AI');
-  var sw = el('button', 'switch off-disabled');
+  var sw = el('button', 'switch' + (liveReady() ? '' : ' off-disabled'));
   sw.setAttribute('aria-label', 'Toggle Live AI');
-  livebar.appendChild(liveLbl); livebar.appendChild(sw);
+  livebar.appendChild(keyBtn); livebar.appendChild(liveLbl); livebar.appendChild(sw);
   var log = el('div', 'clog');
   var hint = el('div', 'hint', 'Try: “convert 5 km to miles” · “90 days from now” · “set a timer for 5 minutes” · “create a folder called x then open the files”');
   var form = el('form');
@@ -634,11 +753,12 @@ APP_RENDER.assistant = function (proc, body) {
     log.scrollTop = log.scrollHeight;
     return m;
   }
-  bubble('Hello ' + state.settings.owner + ' — I am AIOS. I don\'t just answer, I *do*: apps, files, notes, timers, maths, settings. What do you need?', 'os');
+  bubble('Hello ' + state.settings.owner + ' — I am AIOS. I don\'t just answer, I *do*: apps, files, notes, timers, maths, settings. What do you need?' +
+    (liveReady() ? '' : '\n\nWant open conversation too? Tap 🔑 Add key above to link your own Anthropic key — Live AI then works right here, no server needed.'), 'os');
 
-  if (liveAI.available) sw.classList.remove('off-disabled');
   sw.classList.toggle('on', liveAI.on);
   sw.addEventListener('click', function () {
+    if (!liveReady()) return;
     liveAI.on = !liveAI.on;
     sw.classList.toggle('on', liveAI.on);
     $('mb-live').style.display = liveAI.on ? 'flex' : 'none';
@@ -650,17 +770,9 @@ APP_RENDER.assistant = function (proc, body) {
     if (!text) return;
     input.value = '';
     bubble(text, 'you');
-    if (liveAI.on && liveAI.available) {
+    if (liveAI.on && liveReady()) {
       var think = bubble('thinking…', 'os', 'think');
-      fetch('api/assistant', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: text,
-          context: { cwd: state.cwd, owner: state.settings.owner, apps: K.APPS.map(function (a) { return a.id; }),
-                     files: K.fsFind(state.fs, '').slice(0, 60) }
-        })
-      }).then(function (r) { return r.json(); }).then(function (d) {
+      callLive(text).then(function (d) {
         think.textContent = d && d.reply ? d.reply : 'The live model returned nothing — falling back to on-device.';
         think.classList.remove('think');
         if (d && d.actions) {
@@ -674,10 +786,11 @@ APP_RENDER.assistant = function (proc, body) {
           }
           sync();
         }
-      }).catch(function () {
+      }).catch(function (err) {
         think.classList.remove('think');
         var a = K.assistant(state, text, Date.now());
-        think.textContent = '(offline) ' + a.reply;
+        var why = String(err && err.message || '').indexOf('401') !== -1 ? ' (your key was rejected — tap 🔑 to fix it)' : '';
+        think.textContent = '(offline' + why + ') ' + a.reply;
         applyEffects(a.actions);
       });
     } else {
@@ -998,13 +1111,10 @@ window.addEventListener('keydown', function (e) {
 });
 $('wallmark').addEventListener('click', openSpot);
 
-/* live AI availability — only if the optional proxy is serving us */
+/* live AI availability — the optional proxy, if one is serving us
+   (BYOK needs no server: liveReady() also checks for a linked key) */
 fetch('api/health').then(function (r) { return r.json(); }).then(function (d) {
-  if (d && d.live) {
-    liveAI.available = true;
-    var sws = document.querySelectorAll('.switch');
-    for (var i = 0; i < sws.length; i++) sws[i].classList.remove('off-disabled');
-  }
+  if (d && d.live) { liveAI.proxy = true; refreshLiveSwitches(); }
 }).catch(function () {});
 
 /* boot */
