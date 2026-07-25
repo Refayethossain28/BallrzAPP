@@ -63,6 +63,9 @@
   #mb-ws button{width:20px;height:20px;border-radius:6px;font-size:11px;color:var(--faint);
     background:rgba(255,255,255,.06);border:1px solid var(--line);padding:0}
   #mb-ws button.on{color:#0b0d20;background:linear-gradient(135deg,var(--a),var(--b));border:0;font-weight:700}
+  #mb-mic{display:none;font-size:14px;padding:1px 6px;border-radius:6px;background:rgba(255,255,255,.06);border:1px solid var(--line);line-height:1.4}
+  #mb-mic.listening{background:var(--bad);border-color:var(--bad);animation:pulse 1.1s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
   #mb-live{display:none;align-items:center;gap:5px;color:var(--ok);font-size:12px}
   #mb-live .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}
   #mb-owner{color:var(--faint)}
@@ -130,8 +133,18 @@
   .term input{flex:1;background:none;border:0;outline:0;font:13px ui-monospace,Menlo,monospace;color:var(--ink)}
 
   .noted{display:flex;flex-direction:column;height:100%;min-height:240px}
+  .noted .nedit{flex:1;display:flex;min-height:0}
   .noted textarea{flex:1;resize:none;background:none;border:0;outline:0;padding:12px 14px;color:var(--ink);
     font:14px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;user-select:text;-webkit-user-select:text}
+  .noted .mdprev{flex:1;overflow:auto;padding:4px 16px;user-select:text;-webkit-user-select:text;border-left:1px solid var(--line)}
+  .noted .mdprev.solo{border-left:0}
+  .noted .mdprev h1{font-size:22px;margin:14px 0 8px}.noted .mdprev h2{font-size:18px;margin:12px 0 6px}
+  .noted .mdprev h3{font-size:15px;margin:10px 0 6px;color:var(--dim)}
+  .noted .mdprev p{margin:8px 0}.noted .mdprev ul{margin:8px 0;padding-left:20px}.noted .mdprev li{margin:3px 0}
+  .noted .mdprev code{background:rgba(255,255,255,.09);padding:1px 5px;border-radius:5px;font-size:12.5px}
+  .noted .mdprev pre{background:rgba(4,6,16,.6);border:1px solid var(--line);border-radius:10px;padding:10px 12px;overflow:auto}
+  .noted .mdprev pre code{background:none;padding:0}
+  .noted .mdprev a{color:var(--a)}
   .noted .foot{display:flex;gap:8px;align-items:center;padding:8px 10px;border-top:1px solid var(--line)}
   .noted .fpath{flex:1;font-size:11.5px;color:var(--faint);font-family:ui-monospace,Menlo,monospace;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -249,6 +262,7 @@
   <span id="mb-ws" title="Workspaces (Ctrl/Cmd-Alt-1/2/3)"></span>
   <span id="mb-app"></span>
   <span class="sp"></span>
+  <button id="mb-mic" title="Voice control — speak a command">🎙</button>
   <span id="mb-live"><span class="dot"></span>Live AI</span>
   <span id="mb-owner"></span>
   <span id="mb-clock"></span>
@@ -573,14 +587,18 @@ APP_RENDER.terminal = function (proc, body) {
 /* ── Notes ── */
 APP_RENDER.notes = function (proc, body) {
   body.classList.add('noted');
+  var editWrap = el('div', 'nedit');
   var ta = el('textarea');
-  ta.placeholder = 'Write…';
+  ta.placeholder = 'Write… Markdown supported — # headings, **bold**, `code`, - lists, [links](https://…)';
+  var prev = el('div', 'mdprev');
+  editWrap.appendChild(ta); editWrap.appendChild(prev);
   var foot = el('div', 'foot');
   var fpath = el('div', 'fpath');
   var savedTag = el('span', 'saved', 'saved ✓');
+  var prevBtn = el('button', 'btn', '👁 Preview');
   var saveBtn = el('button', 'btn acc', 'Save');
-  foot.appendChild(fpath); foot.appendChild(savedTag); foot.appendChild(saveBtn);
-  body.appendChild(ta); body.appendChild(foot);
+  foot.appendChild(fpath); foot.appendChild(savedTag); foot.appendChild(prevBtn); foot.appendChild(saveBtn);
+  body.appendChild(editWrap); body.appendChild(foot);
 
   var path = proc.arg;
   if (!path) {
@@ -591,6 +609,19 @@ APP_RENDER.notes = function (proc, body) {
   fpath.textContent = path;
   var r = K.fsRead(state.fs, path);
   if (r.ok) ta.value = r.content;
+
+  // preview modes: edit-only → split → preview-only (nice on phones)
+  var mode = 0;
+  function applyMode() {
+    ta.style.display = mode === 2 ? 'none' : '';
+    prev.style.display = mode === 0 ? 'none' : '';
+    prev.classList.toggle('solo', mode === 2);
+    prevBtn.textContent = mode === 0 ? '👁 Preview' : mode === 1 ? '⇔ Split' : '✎ Edit';
+    if (mode) prev.innerHTML = K.renderMarkdown(ta.value);
+  }
+  prevBtn.addEventListener('click', function () { mode = (mode + 1) % 3; applyMode(); });
+  ta.addEventListener('input', function () { if (mode) prev.innerHTML = K.renderMarkdown(ta.value); });
+  applyMode();
 
   function doSave() {
     var w = K.fsWrite(state.fs, path, ta.value, Date.now());
@@ -638,8 +669,9 @@ var OS_SYSTEM = 'You are the Live AI of AIOS, an operating system running entire
   'You can DO things, not just talk: every command you emit runs in the AIOS shell against the user\'s\n' +
   'virtual disk and window manager. Available commands:\n' +
   '  ls [path] · cd [path] · pwd · cat <file> · echo <text> > <file> (or >>) · mkdir [-p] <dir>\n' +
-  '  touch <file> · rm <path> (goes to /trash) · restore <name> · mv <a> <b> · cp <a> <b> · find <text>\n' +
-  '  tree [path] · open <app|file|dir> · ps · kill <pid> · ws [1-3] · every <interval> <command> · pipes: cmd | grep x | head -3\n' +
+  '  touch <file> · rm <path> (goes to /trash) · restore <name> · mv <a> <b> · cp <a> <b> · find <text> (names)\n' +
+  '  search <text> (file contents) · tree [path] · open <app|file|dir> · ps · kill <pid> · ws [1-3]\n' +
+  '  every <interval> <command> · run <script> · set NAME=value ($NAME) · alias name=cmd · journal · pipes: cmd | grep x | head -3\n' +
   'Apps you can open: files, terminal, notes, assistant, calc, automations, monitor, settings, about.\n' +
   'Paths are unix-style; the user\'s home is /home/user, notes live in /home/user/notes.\n' +
   'Quote arguments containing spaces. Prefer a few precise commands over many.\n' +
@@ -924,6 +956,15 @@ APP_RENDER.monitor = function (proc, body) {
     rbtn.style.marginTop = '12px';
     rbtn.addEventListener('click', refresh);
     pad.appendChild(rbtn);
+
+    var jh = el('h3', null, 'System journal');
+    jh.style.cssText = 'margin:16px 0 4px;font-size:13px;color:var(--dim)';
+    pad.appendChild(jh);
+    var jr = K.execCommand(state, 'journal 12', Date.now());
+    var jpre = el('pre');
+    jpre.style.cssText = 'margin:0;font:11.5px/1.5 ui-monospace,Menlo,monospace;color:var(--faint);white-space:pre-wrap;user-select:text;-webkit-user-select:text';
+    jpre.textContent = jr.out.join('\n');
+    pad.appendChild(jpre);
   }
   runtime[proc.pid] = { refresh: refresh };
   refresh();
@@ -1061,7 +1102,8 @@ function previewSpot() {
     datemath: (function () { var d = K.dateMath(it.text || '', Date.now()); return d ? d.text : 'Date arithmetic'; })(),
     timer: 'Start a ' + it.seconds + 's timer',
     note: 'Save a note',
-    search: 'Search the disk for “' + (it.q || '') + '”',
+    search: 'Search file names for “' + (it.q || '') + '”',
+    content_search: 'Search file contents for “' + (it.q || '') + '”',
     mkdir: 'Create folder “' + (it.name || '') + '”',
     time: 'Tell the time',
     workspace: 'Switch to workspace ' + (it.n || ''),
@@ -1110,6 +1152,41 @@ window.addEventListener('keydown', function (e) {
   }
 });
 $('wallmark').addEventListener('click', openSpot);
+
+/* voice control — the OS you can talk to. Uses the browser's on-device
+ * Web Speech API where present; each utterance runs through the same
+ * assistant path as typing, so voice has exactly the OS's full vocabulary. */
+(function voice() {
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var mic = $('mb-mic');
+  if (!SR) return; // unsupported browser — stay hidden, everything else works
+  mic.style.display = 'inline-block';
+  var rec = new SR();
+  rec.lang = 'en-US';
+  rec.interimResults = false;
+  rec.maxAlternatives = 1;
+  var on = false;
+  mic.addEventListener('click', function () {
+    if (on) { rec.stop(); return; }
+    try { rec.start(); } catch (e) {}
+  });
+  rec.addEventListener('start', function () { on = true; mic.classList.add('listening'); });
+  rec.addEventListener('end', function () { on = false; mic.classList.remove('listening'); });
+  rec.addEventListener('error', function (e) {
+    on = false; mic.classList.remove('listening');
+    if (e && e.error === 'not-allowed') notify('🎙 Voice', 'Microphone permission denied — allow it in your browser to talk to AIOS.');
+  });
+  rec.addEventListener('result', function (e) {
+    var text = e.results[0][0].transcript.trim();
+    if (!text) return;
+    var it = K.routeIntent(text);
+    var a = K.assistant(state, text, Date.now());
+    notify('🎙 “' + text + '”', a.reply);
+    applyEffects(a.actions);
+    for (var pid in runtime) if (runtime[pid].refresh) runtime[pid].refresh();
+    sync();
+  });
+})();
 
 /* live AI availability — the optional proxy, if one is serving us
    (BYOK needs no server: liveReady() also checks for a linked key) */

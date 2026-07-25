@@ -618,6 +618,131 @@ test('assistant chains "then"; a note containing "then" is never split', () => {
   assert.ok(ws.reply.includes('Workspace 2'));
 });
 
+/* ══════════ v3: variables, aliases, scripts, journal, search, markdown ══════════ */
+
+test('shell variables: set/env/unset, $VAR expansion, builtins, unknown → empty', () => {
+  const st = K.boot(T0);
+  assert.equal(K.execCommand(st, 'set project=apollo mission', T0).error, false);
+  deq(K.execCommand(st, 'echo working on $project', T0).out, ['working on apollo mission']);
+  assert.ok(K.execCommand(st, 'env', T0).out.includes('project=apollo mission'));
+  deq(K.execCommand(st, 'echo $USER at $CWD ws $WS', T0).out, ['user at /home/user ws 1']);
+  deq(K.execCommand(st, 'echo [$nope]', T0).out, ['[]'], 'unknown variable expands to empty');
+  assert.equal(K.execCommand(st, 'mkdir $project', T0).error, false, 'expansion works in any command');
+  assert.equal(K.fsGet(st.fs, '/home/user/apollo').type, 'dir');
+  assert.equal(K.execCommand(st, 'unset project', T0).error, false);
+  deq(K.execCommand(st, 'echo $project', T0).out, ['']);
+  assert.equal(K.execCommand(st, 'unset project', T0).error, true);
+  assert.equal(K.execCommand(st, 'set 9bad=x', T0).error, true, 'names must start with a letter');
+});
+
+test('aliases: define/list/use/unalias; pipes inside; cycles bounded; builtins protected', () => {
+  const st = K.boot(T0);
+  K.execCommand(st, 'touch a.txt b.txt c.log', T0);
+  assert.equal(K.execCommand(st, 'alias texts=ls | grep txt', T0).error, false);
+  deq(K.execCommand(st, 'texts', T0).out.length, 2, 'alias body may contain a pipeline');
+  deq(K.execCommand(st, 'texts | head -n 1', T0).out.length, 1, 'caller can extend the pipeline');
+  assert.ok(K.execCommand(st, 'alias', T0).out[0].startsWith('texts='));
+  assert.equal(K.execCommand(st, 'alias ls=rm -r /', T0).error, true, 'built-ins cannot be shadowed');
+  K.execCommand(st, 'alias loop=loop', T0);
+  assert.equal(K.execCommand(st, 'loop', T0).error, true, 'self-alias terminates as unknown command, no hang');
+  assert.equal(K.execCommand(st, 'unalias texts', T0).error, false);
+  assert.equal(K.execCommand(st, 'texts', T0).error, true);
+});
+
+test('alias definitions keep their $ — expansion happens at USE time', () => {
+  const st = K.boot(T0);
+  K.execCommand(st, 'alias whereami=echo $USER in $CWD', T0);
+  K.execCommand(st, 'cd /etc', T0);
+  deq(K.execCommand(st, 'whereami', T0).out, ['user in /etc']);
+});
+
+test('run: scripts execute line by line with # comments and $1/$@ args', () => {
+  const st = K.boot(T0);
+  K.fsWrite(st.fs, '/home/user/setup.sh',
+    '# project scaffold\nmkdir -p $1/src\necho hello from $@ > $1/readme.txt\nls $1\n', T0);
+  const r = K.execCommand(st, 'run setup.sh apollo two', T0);
+  assert.equal(r.error, false);
+  assert.equal(K.fsGet(st.fs, '/home/user/apollo/src').type, 'dir');
+  assert.equal(K.fsRead(st.fs, '/home/user/apollo/readme.txt').content, 'hello from apollo two\n');
+  assert.ok(r.out.some((l) => l.startsWith('src/')), 'script output is aggregated');
+});
+
+test('run: errors report the line and stop; depth capped; missing script', () => {
+  const st = K.boot(T0);
+  K.fsWrite(st.fs, '/home/user/bad.sh', 'echo one\ncat /ghost\necho never', T0);
+  const r = K.execCommand(st, 'run bad.sh', T0);
+  assert.equal(r.error, true);
+  assert.ok(r.out.some((l) => l.includes('bad.sh: line 2')));
+  assert.ok(!r.out.includes('never'), 'stops at the failing line');
+  K.fsWrite(st.fs, '/home/user/fork.sh', 'run fork.sh', T0);
+  const rec = K.execCommand(st, 'run fork.sh', T0);
+  assert.equal(rec.error, true, 'self-running script hits the depth cap, no hang');
+  assert.ok(rec.out.join(' ').includes('too deep'));
+  assert.equal(st._runDepth, 0, 'depth unwinds cleanly');
+  assert.equal(K.execCommand(st, 'run ghost.sh', T0).error, true);
+});
+
+test('journal: commands and assistant logged, viewable, capped, persisted', () => {
+  const st = K.boot(T0);
+  K.execCommand(st, 'echo hello', T0);
+  K.assistant(st, 'what is 2+2', T0 + 1000);
+  const j = K.execCommand(st, 'journal', T0 + 2000);
+  assert.ok(j.out.some((l) => l.includes('sh  echo hello')));
+  assert.ok(j.out.some((l) => l.includes('ai  what is 2+2')));
+  assert.ok(j.out[0].startsWith('12:00:00'), 'UTC timestamps from the fixed clock');
+  for (let i = 0; i < 350; i++) K.logJournal(st, 'sh', 'filler ' + i, T0);
+  assert.equal(st.journal.length, 300, 'ring buffer caps at 300');
+  const st2 = K.deserialize(K.serialize(st), T0);
+  assert.equal(st2.journal.length, 300, 'journal survives reboot');
+  deq(K.execCommand(K.boot(T0), 'journal', T0).out, ['(journal is empty)']);
+});
+
+test('search: full-text content search, shell and spoken', () => {
+  const st = K.boot(T0);
+  K.execCommand(st, 'echo the launch code is 1234 > secret.txt', T0);
+  const r = K.execCommand(st, 'search launch CODE', T0);
+  assert.equal(r.error, false);
+  assert.ok(r.out[0].includes('/home/user/secret.txt:1:'), 'path:line of the hit');
+  const g = K.fsGrep(st.fs, 'operating system');
+  assert.ok(g.some((h) => h.path === '/home/user/notes/welcome.txt' && h.line === 1));
+  const i = K.routeIntent('search for launch code in my files');
+  assert.equal(i.type, 'content_search');
+  assert.equal(i.q, 'launch code');
+  assert.ok(K.assistant(st, 'find 1234 in my notes', T0).reply.includes('secret.txt:1'));
+  assert.equal(K.routeIntent('find welcome').type, 'search', 'name search unchanged');
+});
+
+test('serialize v3 round-trips env and aliases; hostile entries dropped', () => {
+  const st = K.boot(T0);
+  K.execCommand(st, 'set city=London', T0);
+  K.execCommand(st, 'alias ll=ls', T0);
+  const st2 = K.deserialize(K.serialize(st), T0);
+  deq(st2.env, { city: 'London' });
+  deq(st2.aliases, { ll: 'ls' });
+  const hostile = K.deserialize(JSON.stringify({
+    v: 3, fs: K.boot(T0).fs,
+    env: { good: 'x', 'bad name': 'y', evil: 42 },
+    aliases: { ok: 'ls', 'no/pe': 'x' },
+    journal: [{ t: 'not-a-number', k: 'sh', x: 'bad' }, { t: T0, k: 'sh', x: 'good' }]
+  }), T0);
+  deq(hostile.env, { good: 'x' });
+  deq(hostile.aliases, { ok: 'ls' });
+  assert.equal(hostile.journal.length, 1);
+});
+
+test('renderMarkdown: structure renders, HTML is always escaped, links http-only', () => {
+  const html = K.renderMarkdown('# Title\n\nSome **bold** and *em* and `code`.\n\n- one\n- two\n\n```\nlet x = 1 < 2;\n```\n[site](https://example.com) [evil](javascript:alert(1))\n<script>alert(1)</script>');
+  assert.ok(html.includes('<h1>Title</h1>'));
+  assert.ok(html.includes('<strong>bold</strong>') && html.includes('<em>em</em>') && html.includes('<code>code</code>'));
+  assert.ok(html.includes('<ul>') && html.includes('<li>one</li>'));
+  assert.ok(html.includes('let x = 1 &lt; 2;'), 'code blocks escape HTML');
+  assert.ok(html.includes('<a href="https://example.com"'));
+  assert.ok(!html.includes('href="javascript'), 'non-http link never becomes an anchor href');
+  assert.ok(!html.includes('<script'), 'raw HTML is neutralised');
+  assert.ok(html.includes('&lt;script&gt;'));
+  assert.equal(K.renderMarkdown(''), '');
+});
+
 console.log('── aios kernel unit tests ──');
 let failed = 0;
 for (const [n, f] of tests) {

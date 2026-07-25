@@ -44,7 +44,9 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var VERSION = '2.0.0';
+  var VERSION = '3.0.0';
+  var JOURNAL_CAP = 300;
+  var RUN_DEPTH_CAP = 8;
   var WS_COUNT = 3;
   var TRASH = '/trash';
 
@@ -312,6 +314,28 @@
     return hits.sort();
   }
 
+  /** Full-text search: case-insensitive substring over every FILE's content.
+   *  Returns [{path, line, text}] sorted by path then line, capped at 200. */
+  function fsGrep(fs, query) {
+    var q = String(query || '').toLowerCase();
+    var hits = [];
+    (function walk(node, path) {
+      for (var name in node.children) {
+        var child = node.children[name];
+        var p = path + '/' + name;
+        if (child.type === 'dir') { walk(child, p); continue; }
+        var ls = child.content.split('\n');
+        for (var i = 0; i < ls.length && hits.length < 200; i++) {
+          if (ls[i].toLowerCase().indexOf(q) !== -1) hits.push({ path: p, line: i + 1, text: ls[i].trim().slice(0, 120) });
+        }
+      }
+    })(fs.root, '');
+    return hits.sort(function (a, b) {
+      if (a.path !== b.path) return a.path < b.path ? -1 : 1;
+      return a.line - b.line;
+    });
+  }
+
   /** ASCII tree of a directory, dirs first — the shell's `tree`. */
   function fsTree(fs, path) {
     var node = fsGet(fs, path);
@@ -349,6 +373,8 @@
     '    "convert 5 km to miles", or "note that AIOS is alive".\n' +
     '  • `rm` is safe here — deleted files go to /trash, `restore` undoes.\n' +
     '  • Schedule the OS: every 30m ai note that stretch your legs\n' +
+    '  • Write a SCRIPT: any text file of commands, then `run backup.sh`.\n' +
+    '    Variables ($NAME via `set`), aliases and a `journal` included.\n' +
     '  • Press Ctrl/Cmd-K anywhere and just say what you want.\n';
 
   function createFS(now) {
@@ -374,21 +400,34 @@
       ws: 1,
       automations: [],
       nextAutoId: 1,
+      env: {},
+      aliases: {},
+      journal: [],
       settings: { owner: 'user', accent: 'violet' },
       bootedAt: now
     };
+  }
+
+  /** Append to the system journal (ring buffer, JOURNAL_CAP entries). */
+  function logJournal(state, kind, text, now) {
+    if (!text) return;
+    state.journal.push({ t: now, k: String(kind).slice(0, 8), x: String(text).slice(0, 200) });
+    if (state.journal.length > JOURNAL_CAP) state.journal.splice(0, state.journal.length - JOURNAL_CAP);
   }
 
   /** Persist what is durable: the disk, settings and automations. Windows
    *  are runtime state — a reboot starts with a clean desktop, like a real OS. */
   function serialize(state) {
     return JSON.stringify({
-      v: 2,
+      v: 3,
       fs: state.fs,
       cwd: state.cwd,
       settings: state.settings,
       automations: state.automations,
-      nextAutoId: state.nextAutoId
+      nextAutoId: state.nextAutoId,
+      env: state.env,
+      aliases: state.aliases,
+      journal: state.journal
     });
   }
 
@@ -396,7 +435,7 @@
     var state = boot(now);
     try {
       var data = JSON.parse(json);
-      if (!data || (data.v !== 1 && data.v !== 2) || !data.fs || !data.fs.root || data.fs.root.type !== 'dir') return state;
+      if (!data || (data.v !== 1 && data.v !== 2 && data.v !== 3) || !data.fs || !data.fs.root || data.fs.root.type !== 'dir') return state;
       state.fs = data.fs;
       if (!state.fs.trash || typeof state.fs.trash !== 'object') state.fs.trash = {};
       if (!fsGet(state.fs, TRASH)) fsMkdir(state.fs, TRASH, now); // v1 disks predate the trash
@@ -420,6 +459,25 @@
         }
         state.nextAutoId = Math.max.apply(null, [1].concat(state.automations.map(function (a) { return a.id + 1; })));
         if (typeof data.nextAutoId === 'number' && data.nextAutoId > state.nextAutoId) state.nextAutoId = data.nextAutoId;
+      }
+      var k;
+      if (data.env && typeof data.env === 'object') {
+        for (k in data.env) {
+          if (/^[A-Za-z_]\w*$/.test(k) && typeof data.env[k] === 'string') state.env[k] = data.env[k].slice(0, 400);
+        }
+      }
+      if (data.aliases && typeof data.aliases === 'object') {
+        for (k in data.aliases) {
+          if (/^[A-Za-z_][\w-]*$/.test(k) && typeof data.aliases[k] === 'string') state.aliases[k] = data.aliases[k].slice(0, 400);
+        }
+      }
+      if (Array.isArray(data.journal)) {
+        for (var j = 0; j < data.journal.length && state.journal.length < JOURNAL_CAP; j++) {
+          var e2 = data.journal[j];
+          if (e2 && typeof e2.t === 'number' && typeof e2.k === 'string' && typeof e2.x === 'string') {
+            state.journal.push({ t: e2.t, k: e2.k.slice(0, 8), x: e2.x.slice(0, 200) });
+          }
+        }
       }
     } catch (e) { /* corrupt snapshot → fresh boot */ }
     return state;
@@ -628,9 +686,13 @@
     '  ps / kill <pid>  processes               ws [1-3]         workspaces',
     '  every <t> <cmd>  schedule a command      automations      list schedules',
     '  unschedule <id>  remove a schedule       ai <request>     speak English',
+    '  run <file> [a…]  execute a script        search <text>    search file CONTENTS',
+    '  set NAME=value   shell variables ($NAME) env · unset      list / remove them',
+    '  alias name=cmd   command shorthand       journal [n]      the system log',
     'Pipes:  any command | grep [-i|-v] <text> | head [-n N] | tail [-n N]',
     '        | sort [-r] | uniq [-c] | wc      Redirect:  any pipeline > file (>> appends)',
-    'Also: date · whoami · uname · clear · help'
+    'Scripts: any text file of commands — # comments, $1-$9/$@ args, run backup.sh',
+    'Also: date · whoami · uname · clear · help  ·  Builtins: $USER $HOME $CWD $WS'
   ];
 
   /** Filter stages usable after a `|`. Each maps input lines → output lines. */
@@ -688,19 +750,61 @@
   }
   var FILTERS = { grep: 1, head: 1, tail: 1, wc: 1, sort: 1, uniq: 1 };
 
+  var BUILTINS = ['help', 'pwd', 'ls', 'tree', 'cd', 'cat', 'echo', 'mkdir', 'touch', 'rm', 'trash', 'restore',
+    'mv', 'cp', 'find', 'open', 'ps', 'kill', 'ws', 'every', 'automations', 'unschedule', 'set', 'unset', 'env',
+    'alias', 'unalias', 'run', 'search', 'journal', 'date', 'whoami', 'uname', 'clear', 'ai',
+    'grep', 'head', 'tail', 'wc', 'sort', 'uniq'];
+  function runSimpleKnows(name) { return BUILTINS.indexOf(name) !== -1; }
+
   /**
    * Execute one command line — including `a | b | c` pipelines and a
    * trailing `> file` / `>> file` redirection on any pipeline. Returns
    * { out: string[], error: bool, effects: [{type:'open'|'clear'|'timer'|...}] }.
    */
+  /** $VAR expansion: builtins ($USER, $HOME, $CWD, $WS) then the shell
+   *  environment; unknown variables expand to '' like a real shell. */
+  function expandVars(state, str) {
+    return String(str).replace(/\$([A-Za-z_]\w*)/g, function (_, name) {
+      if (name === 'USER') return state.settings.owner;
+      if (name === 'HOME') return '/home/user';
+      if (name === 'CWD' || name === 'PWD') return state.cwd;
+      if (name === 'WS') return String(state.ws);
+      return Object.prototype.hasOwnProperty.call(state.env, name) ? state.env[name] : '';
+    });
+  }
+
   function execCommand(state, input, now) {
-    var toks = tokenize(String(input || ''));
+    var raw = String(input || '');
+
+    // alias expansion: first word, string-level (aliases may contain pipes),
+    // bounded and cycle-proof
+    var seen = {};
+    for (var hops = 0; hops < 5; hops++) {
+      var am = /^\s*([A-Za-z_][\w-]*)/.exec(raw);
+      if (!am || !state.aliases[am[1]] || seen[am[1]]) break;
+      seen[am[1]] = true;
+      raw = raw.replace(am[1], state.aliases[am[1]]);
+    }
+
+    // $VAR expansion — except where the argument is itself a command or
+    // sentence that must stay raw: `alias` definitions keep their $ for
+    // later, `every` expands at RUN time, `ai` takes English verbatim.
+    var fw = /^\s*(\S+)/.exec(raw);
+    var firstWord = fw ? fw[1] : '';
+    if (firstWord !== 'ai' && firstWord !== 'every' && firstWord !== 'alias') raw = expandVars(state, raw);
+
+    var toks = tokenize(raw);
     if (!toks.length) return { out: [], error: false, effects: [] };
 
-    // `every` and `ai` take a whole command / sentence as their argument —
-    // pipes and redirection belong to THAT inner command, not this line
-    // (`every 1h echo tick >> log.txt` must store the >> too).
-    if (toks[0] === 'every' || toks[0] === 'ai') return runSimple(state, toks, now);
+    // the system journal sees every top-level command (script lines are
+    // sub-commands; `ai` is journaled by the assistant itself)
+    if (!state._runDepth && toks[0] !== 'ai' && toks[0] !== 'journal') logJournal(state, 'sh', raw.trim(), now);
+
+    // `every`, `ai` and `alias` take a whole command / sentence as their
+    // argument — pipes and redirection belong to THAT inner command, not
+    // this line (`every 1h echo tick >> log.txt` must store the >>, and
+    // `alias texts=ls | grep txt` must store the pipe).
+    if (toks[0] === 'every' || toks[0] === 'ai' || toks[0] === 'alias') return runSimple(state, toks, now);
 
     // trailing redirection applies to the whole pipeline
     var redirect = null;
@@ -955,6 +1059,94 @@
         return { out: ['removed automation #' + uid], error: false, effects: [] };
       }
 
+      case 'set': {
+        var sm2 = /^([A-Za-z_]\w*)=([\s\S]*)$/.exec(args.join(' '));
+        if (!sm2) return err('set: usage: set NAME=value   (then use $NAME anywhere)');
+        state.env[sm2[1]] = sm2[2].slice(0, 400);
+        return { out: [], error: false, effects: [] };
+      }
+
+      case 'unset': {
+        if (!args[0] || !Object.prototype.hasOwnProperty.call(state.env, args[0])) return err('unset: no such variable: ' + (args[0] || ''));
+        delete state.env[args[0]];
+        return { out: [], error: false, effects: [] };
+      }
+
+      case 'env': {
+        out.push('USER=' + state.settings.owner, 'HOME=/home/user', 'CWD=' + state.cwd, 'WS=' + state.ws);
+        var envKeys = Object.keys(state.env).sort();
+        for (var ek = 0; ek < envKeys.length; ek++) out.push(envKeys[ek] + '=' + state.env[envKeys[ek]]);
+        return { out: out, error: false, effects: [] };
+      }
+
+      case 'alias': {
+        if (!args.length) {
+          var aKeys = Object.keys(state.aliases).sort();
+          if (!aKeys.length) return { out: ['(no aliases — try: alias ll=ls | sort)'], error: false, effects: [] };
+          for (var ak = 0; ak < aKeys.length; ak++) out.push(aKeys[ak] + '=' + state.aliases[aKeys[ak]]);
+          return { out: out, error: false, effects: [] };
+        }
+        var adef = /^([A-Za-z_][\w-]*)=([\s\S]+)$/.exec(args.join(' '));
+        if (!adef) return err('alias: usage: alias name=command');
+        if (runSimpleKnows(adef[1])) return err('alias: refusing to shadow the built-in `' + adef[1] + '`');
+        state.aliases[adef[1]] = adef[2].slice(0, 400);
+        return { out: [], error: false, effects: [] };
+      }
+
+      case 'unalias': {
+        if (!args[0] || !state.aliases[args[0]]) return err('unalias: no such alias: ' + (args[0] || ''));
+        delete state.aliases[args[0]];
+        return { out: [], error: false, effects: [] };
+      }
+
+      case 'run': {
+        if (!args.length) return err('run: which script? (any text file of shell commands; # comments; $1-$9 and $@ for arguments)');
+        var spath = P(args[0]);
+        var sr = fsRead(state.fs, spath);
+        if (!sr.ok) return err('run: ' + sr.error);
+        var depth = state._runDepth || 0;
+        if (depth >= RUN_DEPTH_CAP) return err('run: scripts nested too deep (max ' + RUN_DEPTH_CAP + ')');
+        var sargs = args.slice(1);
+        var lines = sr.content.split('\n');
+        var allOut = [], allFx = [];
+        state._runDepth = depth + 1;
+        try {
+          for (var ln = 0; ln < lines.length; ln++) {
+            var line = lines[ln].trim();
+            if (!line || line[0] === '#') continue;
+            line = line.replace(/\$@/g, sargs.join(' ')).replace(/\$([1-9])\b/g, function (_, n2) { return sargs[Number(n2) - 1] || ''; });
+            var lr = execCommand(state, line, now);
+            allOut = allOut.concat(lr.out);
+            allFx = allFx.concat(lr.effects);
+            if (lr.error) {
+              allOut.push(splitPath(spath).name + ': line ' + (ln + 1) + ': script stopped');
+              return { out: allOut, error: true, effects: allFx };
+            }
+          }
+        } finally { state._runDepth = depth; }
+        return { out: allOut, error: false, effects: allFx };
+      }
+
+      case 'search': {
+        if (!args.length) return err('search: search file CONTENTS for what? (find searches names)');
+        var sq = args.join(' ');
+        var gh = fsGrep(state.fs, sq);
+        if (!gh.length) return { out: ['(no file contains “' + sq + '”)'], error: false, effects: [] };
+        for (var gi = 0; gi < gh.length; gi++) out.push(gh[gi].path + ':' + gh[gi].line + ':  ' + gh[gi].text);
+        return { out: out, error: false, effects: [] };
+      }
+
+      case 'journal': {
+        var jn = args[0] ? parseInt(args[0], 10) : 20;
+        if (!isFinite(jn) || jn < 1) return err('journal: bad count');
+        var ent = state.journal.slice(-jn);
+        if (!ent.length) return { out: ['(journal is empty)'], error: false, effects: [] };
+        for (var ji = 0; ji < ent.length; ji++) {
+          out.push(new Date(ent[ji].t).toISOString().slice(11, 19) + '  ' + ent[ji].k.padEnd(3) + ' ' + ent[ji].x);
+        }
+        return { out: out, error: false, effects: [] };
+      }
+
       case 'date': return { out: [new Date(now).toString()], error: false, effects: [] };
       case 'whoami': return { out: [state.settings.owner], error: false, effects: [] };
       case 'uname': return { out: ['AIOS kernel ' + VERSION + ' (browser)'], error: false, effects: [] };
@@ -1046,6 +1238,53 @@
     }
     total = Math.round(total);
     return total > 0 ? total : null;
+  }
+
+  /* ══════════════════════════ Markdown ══════════════════════════ */
+
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  /** A small, safe Markdown renderer for Notes preview: #/##/### headings,
+   *  **bold**, *italic*, `code`, ``` blocks, - lists, [text](https://…)
+   *  links. ALL input is HTML-escaped first — a note can never inject
+   *  markup — and links are restricted to http(s). */
+  function renderMarkdown(md) {
+    var lines = String(md || '').split('\n');
+    var html = [], inCode = false, inList = false;
+    function inline(s) {
+      s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+      s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+      s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+      return s;
+    }
+    function closeList() { if (inList) { html.push('</ul>'); inList = false; } }
+    for (var i = 0; i < lines.length; i++) {
+      var rawLine = lines[i];
+      if (/^```/.test(rawLine.trim())) {
+        closeList();
+        html.push(inCode ? '</code></pre>' : '<pre><code>');
+        inCode = !inCode;
+        continue;
+      }
+      var l = escapeHtml(rawLine);
+      if (inCode) { html.push(l); continue; }
+      var h = /^(#{1,3})\s+(.*)$/.exec(l);
+      if (h) { closeList(); html.push('<h' + h[1].length + '>' + inline(h[2]) + '</h' + h[1].length + '>'); continue; }
+      var li = /^[-*]\s+(.*)$/.exec(l);
+      if (li) {
+        if (!inList) { html.push('<ul>'); inList = true; }
+        html.push('<li>' + inline(li[1]) + '</li>');
+        continue;
+      }
+      closeList();
+      if (l.trim()) html.push('<p>' + inline(l) + '</p>');
+    }
+    closeList();
+    if (inCode) html.push('</code></pre>');
+    return html.join('\n');
   }
 
   /* ══════════════════════════ Unit conversion ══════════════════════════ */
@@ -1197,6 +1436,10 @@
     var fm = /(?:create|make|new)\s+(?:a\s+)?(?:folder|directory|dir)\s*(?:called|named|:)?\s+(.+)/.exec(raw.replace(/^please\s+/i, ''));
     if (fm) return { type: 'mkdir', name: fm[1].replace(/[.?!"']+$/, '').replace(/^["']/, '') };
 
+    // content search: "search for milk in my notes", "find budget in my files"
+    var cs = /^(?:find|search|grep)\s*(?:for)?\s+(.+?)\s+in\s+(?:my\s+)?(?:files|notes|documents|disk)\b/.exec(t);
+    if (cs) return { type: 'content_search', q: cs[1].replace(/["']/g, '') };
+
     // search: "find invoices", "search for welcome", "where is my note about x"
     var sm = /^(?:find|search|look)\s*(?:for|up)?\s+(.+)$/.exec(t) || /where(?:'s| is| are)\s+(?:my\s+)?(.+)$/.exec(t);
     if (sm) return { type: 'search', q: sm[1].replace(/[.?!]+$/, '').replace(/^(the|my|a)\s+/, '') };
@@ -1320,6 +1563,16 @@
         };
       }
 
+      case 'content_search': {
+        var chits = fsGrep(state.fs, intent.q);
+        if (!chits.length) return { reply: 'No file contains “' + intent.q + '”.', actions: [] };
+        var clines = chits.slice(0, 8).map(function (h) { return h.path + ':' + h.line + ' — ' + h.text; });
+        return {
+          reply: 'Found “' + intent.q + '” in ' + chits.length + ' place' + (chits.length === 1 ? '' : 's') + ':\n  ' + clines.join('\n  ') + (chits.length > 8 ? '\n  …' : ''),
+          actions: []
+        };
+      }
+
       case 'workspace':
         switchWorkspace(state, intent.n);
         return { reply: 'Workspace ' + state.ws + '.', actions: [] };
@@ -1349,6 +1602,7 @@
    */
   function assistant(state, text, now) {
     var raw = String(text || '');
+    if (raw.trim()) logJournal(state, 'ai', raw.trim(), now);
     var segs = raw.split(/\s+(?:and\s+then|then)\s+/i);
     if (segs.length > 1 && routeIntent(segs[0]).type !== 'note') {
       var replies = [], actions = [];
@@ -1387,6 +1641,7 @@
     fsCopy: fsCopy,
     fsList: fsList,
     fsFind: fsFind,
+    fsGrep: fsGrep,
     fsTree: fsTree,
     // kernel
     boot: boot,
@@ -1412,6 +1667,9 @@
     // shell
     tokenize: tokenize,
     execCommand: execCommand,
+    expandVars: expandVars,
+    logJournal: logJournal,
+    renderMarkdown: renderMarkdown,
     // intelligence
     calcEval: calcEval,
     parseDuration: parseDuration,
