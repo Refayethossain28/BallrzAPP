@@ -180,6 +180,21 @@ python train.py --data data/shakespeare.txt --tokenizer bpe --vocab_size 512 \
 python export_web.py --ckpt ckpt-shakespeare.npz --out web/model.json
 ```
 
+### Train it on Colab (reliable, free)
+
+Training in an ephemeral container gets killed by restarts, and this pure-NumPy
+trainer is CPU-only — so the easy, reliable way to train a **bigger** model (or
+one on your own corpus, e.g. Wikipedia) is Google Colab, which runs a cell to
+completion:
+
+**[▶ Open `train_on_colab.ipynb` in Colab](https://colab.research.google.com/github/Refayethossain28/BallrzAPP/blob/main/llm-from-scratch/train_on_colab.ipynb)**
+
+Runtime → Run all. It clones the repo, downloads a corpus (WikiText-2 by
+default), trains a ~5M-param model, exports `web/model.json`, and downloads it.
+Commit that file to `llm-from-scratch/web/model.json` and the Pages deploy ships
+it. Training is resumable (`train.py` checkpoints full state), so a dropped
+runtime just continues on re-run.
+
 ### ⚡ Live AI — put your model next to real Fable 5
 
 The from-scratch model is genuinely yours, but it's tiny, so it reads more like a
