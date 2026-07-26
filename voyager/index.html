@@ -331,6 +331,20 @@ catch (e) { S = Voyager.createBrowser(); }
 var loadTimer = 0;           // embed-refusal watchdog
 var progressTimer = 0;
 var suggestIndex = -1;
+var detectedProxy = '';      // set by the boot probe when voyager/server.mjs is serving us
+var currentFrameSrc = '';    // the src the iframe is actually on (may differ from getAttribute after in-frame nav)
+var frameSyncing = false;    // true while we're recording an in-frame navigation (don't reload the frame)
+
+/* The proxy base in force right now: 'off' disables, a set URL forces it,
+ * empty falls back to a locally-detected server. When set, clearnet pages load
+ * through voyager/server.mjs and framing-refusers (YouTube, Google…) open. */
+function proxyBaseNow() {
+  var p = (S.settings.proxy || '').trim();
+  if (p === 'off') return '';
+  if (p) return p.replace(/\/+$/, '');
+  return detectedProxy;
+}
+function frameOpts() { return { torGateway: S.settings.torGateway, proxyBase: proxyBaseNow() }; }
 
 function persist() {
   try { localStorage.setItem(STORE_KEY, Voyager.serialize(S)); } catch (e) {}
@@ -433,18 +447,27 @@ function renderView(url, tab) {
   if (onionNoGateway) {
     stopProgress(true);
     $('frame').removeAttribute('src');
+    currentFrameSrc = '';
     showVeil('onion', url);
     return;
   }
+  loadFrame(url);
+}
+
+/* Point the iframe at the right src for `url` (proxy / gateway / direct). When
+ * we're only syncing an in-frame navigation, the frame is already there — keep
+ * currentFrameSrc in step but don't reload it. */
+function loadFrame(url) {
   var frame = $('frame');
-  var src = Voyager.torGatewayUrl(url, S.settings.torGateway); // no-op for clearnet
-  if (frame.getAttribute('src') !== src) {
-    startProgress();
-    showVeil('loading', url);
-    frame.setAttribute('src', src);
-    clearTimeout(loadTimer);
-    loadTimer = setTimeout(function () { showVeil('blocked', url); }, 9000);
-  }
+  var src = Voyager.resolveFrameSrc(url, frameOpts());
+  if (frameSyncing) { currentFrameSrc = src; return; }
+  if (src === currentFrameSrc) return;
+  currentFrameSrc = src;
+  startProgress();
+  showVeil('loading', url);
+  frame.setAttribute('src', src);
+  clearTimeout(loadTimer);
+  loadTimer = setTimeout(function () { showVeil('blocked', url); }, 9000);
 }
 
 function applyZoom(tab) {
@@ -596,6 +619,12 @@ function settingsPage() {
   h += '</select></div>' +
     '<div class="field"><label>Home page</label><input id="homeInput" value="' + esc(S.settings.home) + '" placeholder="voyager://start"></div>' +
     '</div>' +
+    '<h2 class="sect">🛰️ Full browser (proxy)</h2><div class="panel">' +
+    '<div class="field"><label>Proxy server</label>' +
+    '<input id="proxyInput" value="' + esc(S.settings.proxy) + '" placeholder="' + (detectedProxy ? 'auto — detected' : 'auto — off unless server running') + '" autocapitalize="off" autocorrect="off" spellcheck="false"></div>' +
+    '<p class="tiny" style="margin:2px 2px 0">Status: <b style="color:' + (proxyBaseNow() ? 'var(--mint)' : 'var(--faint)') + '">' + (proxyBaseNow() ? 'connected — ' + esc(proxyBaseNow()) : 'not connected') + '</b>. ' +
+    'Big sites (YouTube, Google, most logins) send a header that forbids being shown inside a frame, so a plain frame browser can’t open them. Run <code>node voyager/server.mjs</code> and open the address it prints — it fetches pages, strips that header and serves them back, so they load. Leave this blank to auto-use a local server, paste a URL to force one, or type <code>off</code> to disable. Honest limits: it’s a proxy, not a new engine — heavy apps, DRM video and logins (cookies are off) may not fully work, and the proxy sees your traffic, so run it yourself.</p>' +
+    '</div>' +
     '<h2 class="sect">🧅 Dark web (.onion)</h2><div class="panel">' +
     '<div class="field"><label>Tor gateway host</label>' +
     '<input id="torInput" value="' + esc(S.settings.torGateway) + '" placeholder="off — e.g. onion.ws" autocapitalize="off" autocorrect="off" spellcheck="false"></div>' +
@@ -733,12 +762,8 @@ $('reloadBtn').addEventListener('click', function () {
   var url = currentUrl();
   if (String(url).indexOf('voyager://') === 0) { renderInternal(url.slice(10)); return; }
   if (Voyager.isOnion(url) && !S.settings.torGateway) { showVeil('onion', url); return; }
-  startProgress();
-  showVeil('loading', url);
-  clearTimeout(loadTimer);
-  loadTimer = setTimeout(function () { showVeil('blocked', url); }, 9000);
-  $('frame').setAttribute('src', Voyager.torGatewayUrl(url, S.settings.torGateway));
-  commit(Voyager.navigate(S, S.activeId, url, { ts: Date.now() }));
+  currentFrameSrc = '';                 // force a real reload even if the src is unchanged
+  loadFrame(url);
 });
 $('starBtn').addEventListener('click', function () {
   var url = currentUrl();
@@ -857,6 +882,13 @@ document.addEventListener('change', function (e) {
     e.target.value = S.settings.torGateway;
     toast(S.settings.torGateway ? '🧅 Routing .onion via ' + S.settings.torGateway : 'Tor gateway off');
   }
+  if (e.target && e.target.id === 'proxyInput') {
+    saveSetting('proxy', e.target.value);
+    e.target.value = S.settings.proxy;
+    var on = proxyBaseNow();
+    toast(on ? '🛰️ Full browser via ' + on : 'Proxy off — framing sites will use the fallback');
+    currentFrameSrc = ''; // next paint reloads the current page through the new setting
+  }
 });
 
 /* ---- events: the frame ---- */
@@ -864,6 +896,7 @@ $('frame').addEventListener('load', function () {
   hideVeil();
   stopProgress(false);
   // Same-origin frames tell us their real title; cross-origin ones politely refuse.
+  // Through the proxy every page is same-origin, so titles come back for real.
   var title = '';
   try { title = this.contentDocument && this.contentDocument.title || ''; } catch (err) {}
   if (!title) title = Voyager.hostOf(currentUrl());
@@ -871,6 +904,32 @@ $('frame').addEventListener('load', function () {
 });
 $('frame').addEventListener('error', function () {
   showVeil('blocked', currentUrl());
+});
+
+/* ---- the proxy bridge: proxied pages postMessage their real navigation up
+ * here, so clicking links and submitting searches inside a page drives the
+ * omnibox, history and back/forward — a proper browser, not a dead frame. ---- */
+window.addEventListener('message', function (e) {
+  if (e.origin !== location.origin) return;      // only our own proxied content
+  var d = e.data;
+  if (!d || !d.voyager) return;
+  var url = d.url;
+  if (d.voyager === 'open' && url && /^https?:/i.test(url)) {
+    commit(Voyager.newTab(S, { url: url, ts: Date.now() }));
+    return;
+  }
+  if ((d.voyager === 'navigate' || d.voyager === 'loaded') && url && /^https?:/i.test(url)) {
+    if (url !== currentUrl()) {
+      frameSyncing = true;                        // the frame already moved itself; just record it
+      commit(Voyager.navigate(S, S.activeId, url, { ts: Date.now(), title: d.title || '' }));
+      frameSyncing = false;
+    }
+    if (d.voyager === 'loaded') {
+      if (d.title) commit(Voyager.setTitle(S, S.activeId, d.title));
+      hideVeil();
+      stopProgress(false);
+    }
+  }
 });
 
 /* ---- keyboard shortcuts (desktop comfort) ---- */
@@ -886,6 +945,27 @@ document.addEventListener('keydown', function (e) {
 /* ---- boot ---- */
 paintChrome();
 showUrl(currentUrl(), Voyager.activeTab(S));
+
+/* Ask whoever is serving us whether they're the Voyager proxy server. If so,
+ * switch into full-browser mode and reload the current page through it. On
+ * GitHub Pages this 404s and we stay a plain framing browser — no change. */
+(function detectProxy() {
+  try {
+    if (location.protocol === 'file:' || typeof fetch !== 'function') return;
+    fetch(location.origin + '/__voyager/ping', { cache: 'no-store' })
+      .then(function (r) { return r && r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (!j || !j.voyager) return;
+        detectedProxy = location.origin + '/proxy';
+        if (proxyBaseNow()) {
+          var url = currentUrl();
+          if (String(url).indexOf('voyager://') !== 0) { currentFrameSrc = ''; loadFrame(url); }
+          toast('🛰️ Full browser mode');
+        }
+      })
+      .catch(function () {});
+  } catch (e) {}
+})();
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('sw.js').catch(function () {});
