@@ -224,6 +224,33 @@
   @keyframes recblink { 50% { opacity: 0.15; } }
   #btnDashcam.rec { background: rgba(248,113,113,0.2); border-color: rgba(248,113,113,0.55); }
 
+  /* 📹 clip vault */
+  #clipList { overflow-y: auto; margin-top: 8px; }
+  .clipRow { display: flex; align-items: center; gap: 12px; padding: 12px 4px;
+    border-bottom: 1px solid var(--line); }
+  .clipRow .ci { width: 44px; height: 44px; border-radius: 12px; flex: none;
+    background: rgba(248,113,113,0.12); border: 1px solid rgba(248,113,113,0.3);
+    display: flex; align-items: center; justify-content: center; font-size: 20px; }
+  .clipRow .cn { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .clipRow .cm { font-size: 12px; color: var(--dim); }
+  .clipBtn { width: 38px; height: 38px; border-radius: 50%; flex: none; font-size: 16px;
+    background: rgba(255,255,255,0.06); border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center; }
+  #clipsEmpty { color: var(--dim); font-size: 13.5px; padding: 18px 4px; }
+
+  #clipPlayer { position: fixed; inset: 0; z-index: 90; background: rgba(5,8,16,0.94);
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    padding: 18px; gap: 14px; }
+  #clipPlayer.show { display: flex; }
+  #clipVideo { max-width: 100%; max-height: 62vh; border-radius: 14px; background: #000; }
+  #clipPlayerTitle { font-weight: 700; }
+  #clipPlayerMeta { font-size: 12.5px; color: var(--dim); margin-top: 2px; }
+  #clipPlayer .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  #clipPlayer .row button { padding: 11px 18px; border-radius: 13px; font-weight: 600;
+    background: rgba(255,255,255,0.07); border: 1px solid var(--line); }
+  #clipPlayer .row #cpShare { background: linear-gradient(135deg, #2f7ff6, #38bdf8); border: 0; }
+  #clipPlayer .row #cpDelete { color: var(--danger); border-color: rgba(248,113,113,0.4); }
+
   /* arrived card */
   #arrivedCard {
     position: fixed; z-index: 60; left: 50%; top: 50%; transform: translate(-50%,-50%) scale(0.9);
@@ -362,6 +389,10 @@
       <button data-v="auto">Auto</button><button data-v="day">Day</button><button data-v="night">Night</button>
     </div>
   </div>
+  <div class="setRow">
+    <div class="lbl">📹 Dashcam clips<div class="sub" id="clipsSub">Recordings stored on this device</div></div>
+    <button class="navCtl" id="btnOpenClips" aria-label="Open clips" style="width:auto;padding:0 16px;border-radius:12px">Open</button>
+  </div>
   <div id="aboutBox">
     <strong style="color:var(--text)">◮ Atlas</strong> — your own satnav. The map is drawn by a
     from-scratch canvas engine; guidance, snapping, phrasing and ETA come from the pure,
@@ -371,13 +402,40 @@
     <strong>🛰 tunnel-proof dead reckoning</strong> when GPS drops, a <strong>📼 flight recorder</strong>
     (drive stats + GPX export, auto 🅿️ parked-car pin), a <strong>📹 dashcam</strong>
     (record your drive with the in-app camera — time, position, speed and the next turn burned
-    into every frame; footage stays on your device and saves as a local file),
+    into every frame; clips live in an on-device vault with playback, native share-sheet export
+    and honest auto-pruning — footage never leaves your device),
     <strong>🍞 trail-back</strong> (retrace your own breadcrumbs, fully offline),
     and an <strong>⏱ ETA that learns your pace</strong>.
     Map data
     © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>
     contributors; routing by the community OSRM/FOSSGIS servers; search by Nominatim.
     Your location never leaves your device except to fetch the route you asked for.
+  </div>
+</div>
+
+<!-- 📹 clip vault sheet -->
+<div class="sheet" id="clipsSheet" role="dialog" aria-label="Dashcam clips">
+  <div class="grab"></div>
+  <div style="display:flex;align-items:center">
+    <h3 style="flex:1">📹 Dashcam clips</h3>
+    <button class="navCtl" id="btnCloseClips" aria-label="Close">✕</button>
+  </div>
+  <div style="font-size:12px;color:var(--dim);margin-top:2px" id="clipsTotal"></div>
+  <div id="clipList"></div>
+</div>
+
+<!-- clip player overlay -->
+<div id="clipPlayer" role="dialog" aria-label="Clip player">
+  <div style="text-align:center">
+    <div id="clipPlayerTitle"></div>
+    <div id="clipPlayerMeta"></div>
+  </div>
+  <video id="clipVideo" controls playsinline></video>
+  <div class="row">
+    <button id="cpShare">📤 Share</button>
+    <button id="cpSave">💾 Save file</button>
+    <button id="cpDelete">🗑 Delete</button>
+    <button id="cpClose">Close</button>
   </div>
 </div>
 
@@ -877,7 +935,7 @@ var tapPoint = null;
 /* ------------------------------ sheets ---------------------------------- */
 
 function openSheet(id) {
-  ['searchSheet', 'routeSheet', 'settingsSheet'].forEach(function (s) {
+  ['searchSheet', 'routeSheet', 'settingsSheet', 'clipsSheet'].forEach(function (s) {
     $(s).classList.toggle('open', s === id);
   });
 }
@@ -889,7 +947,7 @@ $('searchPill').addEventListener('click', function () {
   setTimeout(function () { $('searchInput').focus(); }, 250);
 });
 $('searchCancel').addEventListener('click', function () { $('searchInput').value = ''; closeSheets(); });
-$('btnSettings').addEventListener('click', function () { openSheet('settingsSheet'); });
+$('btnSettings').addEventListener('click', function () { openSheet('settingsSheet'); refreshClipsSub(); });
 $('btnCloseSettings').addEventListener('click', closeSheets);
 $('btnCloseRoute').addEventListener('click', function () { clearTrip(); closeSheets(); });
 
@@ -1325,7 +1383,7 @@ function finishNav() {
   }
   // 📹 arriving stops the dashcam; the clip is offered on the arrival card
   $('btnDashSave').style.display = 'none';
-  if (dashcam.active) stopDashcam(false, function () { $('btnDashSave').style.display = ''; });
+  if (dashcam.active) stopDashcam(function () { $('btnDashSave').style.display = ''; });
   stopNavUI();
   $('arrivedSub').textContent = (trip.dest ? trip.dest.name : 'Destination') + (wasDemo ? ' · demo complete' : '');
   $('arrivedStats').textContent = statsLine;
@@ -1375,7 +1433,7 @@ $('btnArrivedDone').addEventListener('click', function () {
 
 function stopNavUI() {
   nav.active = false;
-  if (dashcam.active) stopDashcam(false); // safety net — never leave the camera on
+  if (dashcam.active) stopDashcam(); // safety net — never leave the camera on
   if (nav.simTimer) { clearInterval(nav.simTimer); nav.simTimer = null; }
   if (nav.ghostTimer) { clearInterval(nav.ghostTimer); nav.ghostTimer = null; }
   nav.ghosting = false; nav.notes = null; nav.track = null;
@@ -1391,7 +1449,7 @@ function stopNavUI() {
   needsDraw = true;
 }
 $('btnEnd').addEventListener('click', function () {
-  if (dashcam.active) stopDashcam(true); // ending by hand is a gesture — save now
+  if (dashcam.active) stopDashcam(); // the clip lands in 📹 Dashcam clips
   stopNavUI(); clearTrip();
 });
 $('btnOverview').addEventListener('click', function () {
@@ -1544,20 +1602,31 @@ function composeDashcamFrame() {
   var elapsed = Math.floor((Date.now() - dashcam.startedAt) / 1000);
   $('dashcamTime').textContent = Math.floor(elapsed / 60) + ':' + (elapsed % 60 < 10 ? '0' : '') + (elapsed % 60);
   if (elapsed >= DASHCAM_MAX_S) {
-    stopDashcam(false, function () { toast('📹 30 min cap reached — clip ready (~' + A.recordingEstimateMB(elapsed) + ' MB)'); });
+    stopDashcam(function () { toast('📹 30 min cap reached — clip saved to Dashcam clips'); });
     return;
   }
   dashcam.raf = requestAnimationFrame(composeDashcamFrame);
 }
 
-/** Stop recording; when `download`, save immediately (needs a user gesture). */
-function stopDashcam(download, onReady) {
+/** Stop recording. Every clip is saved into the on-device 📹 vault
+ *  automatically; `onReady(clip)` fires once it's stored. */
+function stopDashcam(onReady) {
   if (!dashcam.active) return;
   dashcam.active = false;
   cancelAnimationFrame(dashcam.raf);
+  var meta = {
+    t: dashcam.startedAt,
+    name: trip.dest ? trip.dest.name : 'Drive',
+    durS: Math.round((Date.now() - dashcam.startedAt) / 1000),
+  };
   dashcam.onSaved = function () {
-    if (download) downloadDashcam();
-    if (onReady) onReady();
+    var clip = Object.assign({}, meta, { size: dashcam.blob.size, type: dashcam.blob.type, blob: dashcam.blob });
+    saveClip(clip).then(function (id) { clip.id = id; }).catch(function () {})
+      .then(function () {
+        dashcam.lastClip = clip;
+        toast('📹 Clip saved to Dashcam clips (' + A.fmtBytes(clip.size) + ')');
+        if (onReady) onReady(clip);
+      });
   };
   try { dashcam.recorder.stop(); } catch (e) { dashcam.onSaved = null; }
   if (dashcam.stream) {
@@ -1569,23 +1638,169 @@ function stopDashcam(download, onReady) {
   $('btnDashcam').classList.remove('rec');
 }
 
-function downloadDashcam() {
-  if (!dashcam.blob || !window.URL || !URL.createObjectURL) return;
-  var url = URL.createObjectURL(dashcam.blob);
-  var a = document.createElement('a');
-  a.href = url;
-  a.download = A.dashcamFilename(Date.now(), trip.dest ? trip.dest.name : '');
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
-  toast('📹 Drive video saved (' + Math.round(dashcam.blob.size / 1e5) / 10 + ' MB)');
-}
-
 $('btnDashcam').addEventListener('click', function () {
-  if (dashcam.active) stopDashcam(true); // tap = a gesture, save right away
+  if (dashcam.active) stopDashcam(function (clip) { openPlayer(clip); });
   else startDashcam();
 });
 $('dashcamBox').addEventListener('click', function () { $('dashcamBox').classList.toggle('big'); });
-$('btnDashSave').addEventListener('click', function () { downloadDashcam(); });
+$('btnDashSave').addEventListener('click', function () {
+  if (dashcam.lastClip) openPlayer(dashcam.lastClip);
+});
+
+/* ------------------------- 📹 clip vault (IndexedDB) --------------------- */
+/* Every recording is stored on this device — nowhere else — and survives
+   refreshes and restarts. The engine's pruneClips() keeps the vault honest:
+   newest 12 clips / ~800 MB, oldest evicted first. */
+
+var CLIP_LIMITS = { maxCount: 12, maxBytes: 800e6 };
+var clipDBP = null;
+function clipDB() {
+  if (clipDBP) return clipDBP;
+  clipDBP = new Promise(function (resolve, reject) {
+    if (!window.indexedDB) { reject(new Error('IndexedDB unavailable')); return; }
+    var req = indexedDB.open('atlas-dashcam', 1);
+    req.onupgradeneeded = function () { req.result.createObjectStore('clips', { keyPath: 'id', autoIncrement: true }); };
+    req.onsuccess = function () { resolve(req.result); };
+    req.onerror = function () { reject(req.error); };
+  });
+  return clipDBP;
+}
+function clipTx(mode, fn) {
+  return clipDB().then(function (db) {
+    return new Promise(function (resolve, reject) {
+      var tx = db.transaction('clips', mode);
+      var req = fn(tx.objectStore('clips'));
+      tx.oncomplete = function () { resolve(req && req.result); };
+      tx.onerror = function () { reject(tx.error); };
+      tx.onabort = function () { reject(tx.error); };
+    });
+  });
+}
+function saveClip(clip) {
+  return clipTx('readwrite', function (s) { return s.add(clip); }).then(function (id) {
+    return getClips().then(function (all) {
+      var drop = A.pruneClips(all.map(function (c) { return { id: c.id, t: c.t, size: c.size }; }), CLIP_LIMITS);
+      return Promise.all(drop.map(deleteClip)).then(function () { return id; });
+    }).catch(function () { return id; });
+  });
+}
+function getClips() { return clipTx('readonly', function (s) { return s.getAll(); }).then(function (r) { return r || []; }); }
+function deleteClip(id) { return clipTx('readwrite', function (s) { return s.delete(id); }); }
+
+function clipMetaLine(c) {
+  return A.fmtTimestamp(c.t) + ' · ' + A.fmtDur(c.durS || 0) + ' · ' + A.fmtBytes(c.size || 0);
+}
+
+function renderClips() {
+  getClips().then(function (clips) {
+    clips.sort(function (a, b) { return b.t - a.t; });
+    var total = clips.reduce(function (a, c) { return a + (c.size || 0); }, 0);
+    $('clipsTotal').textContent = clips.length
+      ? clips.length + ' clip' + (clips.length === 1 ? '' : 's') + ' · ' + A.fmtBytes(total) + ' on this device · newest ' + CLIP_LIMITS.maxCount + ' kept'
+      : '';
+    var box = $('clipList');
+    box.innerHTML = '';
+    if (!clips.length) {
+      var empty = document.createElement('div');
+      empty.id = 'clipsEmpty';
+      empty.textContent = 'No clips yet — tap 📹 while navigating to record your drive. Footage stays on this device.';
+      box.appendChild(empty);
+      return;
+    }
+    clips.forEach(function (c) {
+      var row = document.createElement('div');
+      row.className = 'clipRow';
+      row.innerHTML = '<div class="ci">📹</div>' +
+        '<div style="flex:1;min-width:0"><div class="cn"></div><div class="cm"></div></div>' +
+        '<button class="clipBtn" data-act="share" aria-label="Share">📤</button>' +
+        '<button class="clipBtn" data-act="del" aria-label="Delete">🗑</button>';
+      row.querySelector('.cn').textContent = c.name || 'Drive';
+      row.querySelector('.cm').textContent = clipMetaLine(c);
+      row.addEventListener('click', function (e) {
+        var act = e.target && e.target.getAttribute && e.target.getAttribute('data-act');
+        if (act === 'share') { shareClip(c); return; }
+        if (act === 'del') { deleteClip(c.id).then(renderClips).catch(function () {}); return; }
+        openPlayer(c);
+      });
+      box.appendChild(row);
+    });
+  }).catch(function () {
+    $('clipList').innerHTML = '';
+    $('clipsTotal').textContent = 'Clip storage unavailable (private browsing?) — recordings can still be shared right after stopping.';
+  });
+}
+
+function refreshClipsSub() {
+  getClips().then(function (clips) {
+    var total = clips.reduce(function (a, c) { return a + (c.size || 0); }, 0);
+    $('clipsSub').textContent = clips.length
+      ? clips.length + ' recording' + (clips.length === 1 ? '' : 's') + ' · ' + A.fmtBytes(total) + ' · stored on this device'
+      : 'Recordings stored on this device';
+  }).catch(function () {});
+}
+
+/* --- player overlay: play, share, save, delete --- */
+var player = { clip: null, url: null };
+function openPlayer(clip) {
+  if (!clip || !clip.blob) return;
+  player.clip = clip;
+  if (player.url && window.URL && URL.revokeObjectURL) URL.revokeObjectURL(player.url);
+  player.url = (window.URL && URL.createObjectURL) ? URL.createObjectURL(clip.blob) : null;
+  if (!player.url) { downloadClip(clip); return; }
+  $('clipVideo').src = player.url;
+  $('clipPlayerTitle').textContent = clip.name || 'Drive';
+  $('clipPlayerMeta').textContent = clipMetaLine(clip);
+  $('cpDelete').style.display = clip.id ? '' : 'none';
+  $('clipPlayer').classList.add('show');
+}
+function closePlayer() {
+  $('clipPlayer').classList.remove('show');
+  var v = $('clipVideo');
+  if (v.pause) v.pause();
+  v.removeAttribute('src'); if (v.load) v.load();
+  if (player.url && window.URL && URL.revokeObjectURL) URL.revokeObjectURL(player.url);
+  player.url = null; player.clip = null;
+}
+$('cpClose').addEventListener('click', closePlayer);
+$('cpSave').addEventListener('click', function () { if (player.clip) downloadClip(player.clip); });
+$('cpShare').addEventListener('click', function () { if (player.clip) shareClip(player.clip); });
+$('cpDelete').addEventListener('click', function () {
+  if (!player.clip || !player.clip.id) return;
+  deleteClip(player.clip.id).then(function () {
+    closePlayer();
+    if ($('clipsSheet').classList.contains('open')) renderClips();
+    toast('Clip deleted');
+  }).catch(function () { toast('Could not delete the clip'); });
+});
+
+/** 📤 native share sheet (AirDrop, WhatsApp, Photos…), download fallback. */
+function shareClip(clip) {
+  var fname = A.dashcamFilename(clip.t || Date.now(), clip.name || '');
+  if (navigator.share && window.File) {
+    try {
+      var file = new File([clip.blob], fname, { type: clip.type || 'video/webm' });
+      if (!navigator.canShare || navigator.canShare({ files: [file] })) {
+        navigator.share({ files: [file], title: 'Atlas drive' }).catch(function () {});
+        return;
+      }
+    } catch (e) {}
+  }
+  downloadClip(clip);
+}
+
+function downloadClip(clip) {
+  if (!clip.blob || !window.URL || !URL.createObjectURL) return;
+  var url = URL.createObjectURL(clip.blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = A.dashcamFilename(clip.t || Date.now(), clip.name || '');
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
+  toast('📹 Saved to your downloads (' + A.fmtBytes(clip.size || clip.blob.size) + ')');
+}
+
+$('btnOpenClips').addEventListener('click', function () { renderClips(); openSheet('clipsSheet'); });
+$('btnCloseClips').addEventListener('click', function () { openSheet('settingsSheet'); refreshClipsSub(); });
 
 /* ------------------------------ settings UI ------------------------------ */
 

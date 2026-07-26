@@ -800,6 +800,33 @@
     return Math.round(mb * 10) / 10;
   }
 
+  /** "500 B" / "255 KB" / "1.2 MB" / "2.5 GB" — decimal units. */
+  function fmtBytes(n) {
+    n = Math.max(0, n || 0);
+    if (n < 1000) return Math.round(n) + ' B';
+    if (n < 1e6) return Math.round(n / 1e3) + ' KB';
+    if (n < 1e9) return (Math.round(n / 1e5) / 10).toFixed(1) + ' MB';
+    return (Math.round(n / 1e8) / 10).toFixed(1) + ' GB';
+  }
+
+  /**
+   * Which stored clips to delete so the vault respects its limits. Newest
+   * clips win; the single newest clip is always kept, whatever its size.
+   * clips = [{id, t, size}] → array of ids to delete (oldest casualties).
+   */
+  function pruneClips(clips, limits) {
+    var maxCount = (limits && limits.maxCount) || 12;
+    var maxBytes = (limits && limits.maxBytes) || 800e6;
+    var sorted = clips.slice().sort(function (a, b) { return b.t - a.t || (b.id > a.id ? 1 : -1); });
+    var bytes = 0, drop = [];
+    for (var i = 0; i < sorted.length; i++) {
+      bytes += sorted[i].size || 0;
+      if (i === 0) continue; // the newest clip always survives
+      if (i >= maxCount || bytes > maxBytes) drop.push(sorted[i].id);
+    }
+    return drop;
+  }
+
   /* ============================ personal pace ============================== */
   // Routers predict an average driver. Atlas learns the ratio between *your*
   // drives and the prediction (EMA, clamped) and scales future ETAs by it —
@@ -874,5 +901,6 @@
     routeBack: routeBack, updatePace: updatePace,
     fmtTimestamp: fmtTimestamp, dashcamLines: dashcamLines,
     dashcamFilename: dashcamFilename, recordingEstimateMB: recordingEstimateMB,
+    fmtBytes: fmtBytes, pruneClips: pruneClips,
   };
 });
