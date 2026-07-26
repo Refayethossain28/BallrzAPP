@@ -385,6 +385,40 @@ test('setSetting stores a normalised bare torGateway host; default is off', () =
   assert.equal(s.settings.torGateway, '');                   // clearing turns it back off
 });
 
+/* ---- full-browser proxy ---- */
+
+test('proxyUrl wraps clearnet http(s) through the proxy base; no-op otherwise', () => {
+  const B = 'http://localhost:8790/proxy';
+  assert.equal(V.proxyUrl('https://youtube.com/watch?v=x', B),
+    'http://localhost:8790/proxy?url=' + encodeURIComponent('https://youtube.com/watch?v=x'));
+  assert.equal(V.proxyUrl('http://a.com', B + '/'), 'http://localhost:8790/proxy?url=' + encodeURIComponent('http://a.com')); // trailing slash trimmed
+  assert.equal(V.proxyUrl('https://a.com', ''), 'https://a.com');       // no base → unchanged
+  assert.equal(V.proxyUrl('voyager://start', B), 'voyager://start');    // non-http → unchanged
+});
+
+test('resolveFrameSrc picks proxy / gateway / direct correctly', () => {
+  const B = 'http://localhost:8790/proxy';
+  // internal pages are never proxied
+  assert.equal(V.resolveFrameSrc('voyager://start', { proxyBase: B }), 'voyager://start');
+  // a proxy set → clearnet pages route through it (this is what opens YouTube)
+  assert.equal(V.resolveFrameSrc('https://youtube.com', { proxyBase: B }),
+    'http://localhost:8790/proxy?url=' + encodeURIComponent('https://youtube.com'));
+  // no proxy → direct load (plain framing browser)
+  assert.equal(V.resolveFrameSrc('https://example.com', {}), 'https://example.com');
+  // onion always goes through the Tor gateway, never the (Tor-less) proxy
+  assert.equal(V.resolveFrameSrc('http://abc.onion', { proxyBase: B, torGateway: 'onion.ws' }), 'https://abc.onion.ws');
+  assert.equal(V.resolveFrameSrc('http://abc.onion', { proxyBase: B }), 'http://abc.onion'); // no gateway → unchanged (UI shows explainer)
+});
+
+test('setSetting stores the proxy base; default auto, "off" disables', () => {
+  let s = V.createBrowser();
+  assert.equal(s.settings.proxy, '');                                   // auto by default
+  s = V.setSetting(s, 'proxy', 'http://localhost:8790/proxy/');
+  assert.equal(s.settings.proxy, 'http://localhost:8790/proxy');        // trailing slash trimmed
+  s = V.setSetting(s, 'proxy', 'off');
+  assert.equal(s.settings.proxy, 'off');
+});
+
 /* ---- session round-trip ---- */
 
 test('serialize → restore round-trips tabs, stacks, history, bookmarks, settings', () => {
@@ -397,6 +431,7 @@ test('serialize → restore round-trips tabs, stacks, history, bookmarks, settin
   s = V.toggleBookmark(s, 'https://a.com', 'A', NOW);
   s = V.setSetting(s, 'engine', 'brave');
   s = V.setSetting(s, 'torGateway', 'onion.ws');
+  s = V.setSetting(s, 'proxy', 'http://localhost:8790/proxy');
   s = V.setZoom(s, s.activeId, 125);
 
   const r = V.restore(V.serialize(s));
@@ -409,6 +444,7 @@ test('serialize → restore round-trips tabs, stacks, history, bookmarks, settin
   assert.equal(V.activeTab(r).zoom, 125);
   assert.equal(r.settings.engine, 'brave');
   assert.equal(r.settings.torGateway, 'onion.ws');
+  assert.equal(r.settings.proxy, 'http://localhost:8790/proxy');
   assert.equal(V.isBookmarked(r, 'https://a.com'), true);
   assert.equal(r.history.length, s.history.length);
 });

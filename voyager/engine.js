@@ -220,6 +220,37 @@
     return 'https://' + s.replace(/\.onion(?=$|[:/?#])/i, '.' + g);
   }
 
+  /**
+   * Wrap a clearnet http(s) URL so it loads through the full-browser proxy
+   * (voyager/server.mjs): base "http://localhost:8790/proxy" turns
+   * https://youtube.com into …/proxy?url=<encoded>. A no-op when there's no
+   * proxy base or the URL isn't http(s) (internal pages, onion, data: …).
+   */
+  function proxyUrl(url, base) {
+    var b = String(base == null ? '' : base).trim().replace(/\/+$/, '');
+    var s = String(url == null ? '' : url);
+    if (!b || !/^https?:\/\//i.test(s)) return s;
+    return b + '?url=' + encodeURIComponent(s);
+  }
+
+  /**
+   * THE ONE PLACE that decides what a tab's <iframe> actually loads for a given
+   * address, given the current settings:
+   *   • internal voyager:// pages are handled by the chrome, returned as-is;
+   *   • .onion goes through the Tor gateway (the proxy has no Tor circuit);
+   *   • otherwise, if a proxy base is set, clearnet pages load through it
+   *     (this is what lets framing-refusers like YouTube open);
+   *   • else the URL loads directly (plain framing browser).
+   */
+  function resolveFrameSrc(url, opts) {
+    opts = opts || {};
+    var s = String(url == null ? '' : url);
+    if (s.toLowerCase().indexOf(INTERNAL) === 0) return s;
+    if (isOnion(s)) return torGatewayUrl(s, opts.torGateway);
+    if (opts.proxyBase && /^https?:\/\//i.test(s)) return proxyUrl(s, opts.proxyBase);
+    return s;
+  }
+
   /* ════════════════════════ browser state ════════════════════════ */
 
   /** A fresh browser: one tab on the start page. */
@@ -236,6 +267,7 @@
         engine: opts.engine || 'duckduckgo',
         home: opts.home || INTERNAL + 'start',
         torGateway: opts.torGateway || '',   // '' = off; a bare host like "onion.ws" routes .onion
+        proxy: opts.proxy || '',             // '' = auto-detect local server; a URL forces it; 'off' disables
       },
     };
     return newTab(state, { ts: opts.ts });
@@ -550,7 +582,7 @@
   /* ════════════════════════ settings ════════════════════════ */
 
   function setSetting(state, key, value) {
-    if (key !== 'engine' && key !== 'home' && key !== 'torGateway') return state;
+    if (key !== 'engine' && key !== 'home' && key !== 'torGateway' && key !== 'proxy') return state;
     if (key === 'engine') {
       var ok = false;
       for (var i = 0; i < SEARCH_ENGINES.length; i++) if (SEARCH_ENGINES[i].id === value) ok = true;
@@ -559,6 +591,10 @@
     if (key === 'torGateway') {
       // Store a bare host ("onion.ws"): no scheme, no leading dots, no path.
       value = String(value == null ? '' : value).trim().replace(/^https?:\/\//i, '').replace(/^\.+|\/.*$/g, '');
+    }
+    if (key === 'proxy') {
+      // '', 'off', or a base URL (trailing slash trimmed).
+      value = String(value == null ? '' : value).trim().replace(/\/+$/, '');
     }
     var next = shallow(state);
     next.settings = shallow(state.settings);
@@ -615,6 +651,7 @@
         engine: (data.settings && data.settings.engine) || 'duckduckgo',
         home: (data.settings && data.settings.home) || INTERNAL + 'start',
         torGateway: (data.settings && data.settings.torGateway) || '',
+        proxy: (data.settings && data.settings.proxy) || '',
       },
     };
     if (tabs.length === 0) return newTab(state, {});
@@ -648,6 +685,8 @@
     displayUrl: displayUrl,
     securityOf: securityOf,
     torGatewayUrl: torGatewayUrl,
+    proxyUrl: proxyUrl,
+    resolveFrameSrc: resolveFrameSrc,
     createBrowser: createBrowser,
     newTab: newTab,
     closeTab: closeTab,
