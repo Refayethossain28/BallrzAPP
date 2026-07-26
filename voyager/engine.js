@@ -110,6 +110,18 @@
   }
 
   /**
+   * Is this a Tor hidden service — a `.onion` address? The final host label
+   * is literally "onion" (v2 was 16 base32 chars, v3 is 56; we accept any
+   * non-empty label so both, and vanity subdomains, resolve). Recognising
+   * these is honest classification, not a promise we can route them — see
+   * torGatewayUrl and the app's dark-web notes.
+   */
+  function isOnion(url) {
+    var host = hostOf(url) || String(url == null ? '' : url).toLowerCase().split(/[/?#]/)[0];
+    return /(^|\.)[a-z2-7]+\.onion$/i.test(host) || /(^|\.)onion$/i.test(host);
+  }
+
+  /**
    * THE OMNIBOX CLASSIFIER. One typed string in, one decision out:
    *   { kind: 'url',      url }  — navigable address (scheme added if missing)
    *   { kind: 'internal', url }  — voyager:// chrome page
@@ -174,13 +186,38 @@
     return s.replace(/\/$/, '');
   }
 
-  /** Security posture for the chip next to the omnibox. */
+  /**
+   * Security posture for the chip next to the omnibox. Onion services are
+   * checked first: Tor encrypts and authenticates them end-to-end by the
+   * address itself, so a plain-http .onion is NOT the "insecure" warning a
+   * plain-http clearnet site is — it gets its own posture.
+   */
   function securityOf(url) {
     var s = String(url == null ? '' : url).toLowerCase();
     if (s.indexOf(INTERNAL) === 0) return 'internal';
+    if (isOnion(url)) return 'onion';
     if (s.indexOf('https://') === 0) return 'secure';
     if (s.indexOf('http://') === 0) return 'insecure';
     return 'neutral';
+  }
+
+  /**
+   * Rewrite a `.onion` URL to reach it through a Tor2web-style gateway host
+   * (e.g. gateway "onion.ws" turns `http://abc…d.onion/p` into
+   * `https://abc…d.onion.ws/p`). This is the ONLY way a sandboxed frame with
+   * no Tor circuit of its own can pull hidden-service content — and it is a
+   * real privacy trade: the gateway operator sees the traffic Tor would have
+   * hidden. Returns the URL unchanged when it isn't an onion address or no
+   * gateway is set, so it's always safe to call. Gateways are always https
+   * (the gateway↔you hop is clearnet TLS; the gateway↔onion hop is Tor).
+   */
+  function torGatewayUrl(url, gateway) {
+    var g = String(gateway == null ? '' : gateway).trim().replace(/^https?:\/\//i, '').replace(/^\.+|\/+$/g, '');
+    if (!g || !isOnion(url)) return url;
+    var s = String(url).replace(/^[a-z]+:\/\//i, '');           // drop scheme
+    // Gateways are named to sit in the .onion TLD's place: "onion.ws" turns
+    // abc.onion into abc.onion.ws. So the trailing `.onion` becomes `.` + gateway.
+    return 'https://' + s.replace(/\.onion(?=$|[:/?#])/i, '.' + g);
   }
 
   /* ════════════════════════ browser state ════════════════════════ */
@@ -198,6 +235,7 @@
       settings: {
         engine: opts.engine || 'duckduckgo',
         home: opts.home || INTERNAL + 'start',
+        torGateway: opts.torGateway || '',   // '' = off; a bare host like "onion.ws" routes .onion
       },
     };
     return newTab(state, { ts: opts.ts });
@@ -512,11 +550,15 @@
   /* ════════════════════════ settings ════════════════════════ */
 
   function setSetting(state, key, value) {
-    if (key !== 'engine' && key !== 'home') return state;
+    if (key !== 'engine' && key !== 'home' && key !== 'torGateway') return state;
     if (key === 'engine') {
       var ok = false;
       for (var i = 0; i < SEARCH_ENGINES.length; i++) if (SEARCH_ENGINES[i].id === value) ok = true;
       if (!ok) return state;
+    }
+    if (key === 'torGateway') {
+      // Store a bare host ("onion.ws"): no scheme, no leading dots, no path.
+      value = String(value == null ? '' : value).trim().replace(/^https?:\/\//i, '').replace(/^\.+|\/.*$/g, '');
     }
     var next = shallow(state);
     next.settings = shallow(state.settings);
@@ -572,6 +614,7 @@
       settings: {
         engine: (data.settings && data.settings.engine) || 'duckduckgo',
         home: (data.settings && data.settings.home) || INTERNAL + 'start',
+        torGateway: (data.settings && data.settings.torGateway) || '',
       },
     };
     if (tabs.length === 0) return newTab(state, {});
@@ -601,8 +644,10 @@
     classify: classify,
     searchUrl: searchUrl,
     hostOf: hostOf,
+    isOnion: isOnion,
     displayUrl: displayUrl,
     securityOf: securityOf,
+    torGatewayUrl: torGatewayUrl,
     createBrowser: createBrowser,
     newTab: newTab,
     closeTab: closeTab,

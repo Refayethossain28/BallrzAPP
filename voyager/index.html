@@ -76,6 +76,7 @@
   .chip.secure { color: var(--mint); }
   .chip.insecure { color: var(--gold); }
   .chip.internal { color: var(--cyan); }
+  .chip.onion { color: var(--purple); }
   .chip.neutral { color: var(--faint); }
   #urlInput {
     flex: 1; min-width: 0; background: none; border: 0; outline: none;
@@ -335,6 +336,14 @@ function persist() {
   try { localStorage.setItem(STORE_KEY, Voyager.serialize(S)); } catch (e) {}
 }
 
+/* Update a setting and persist WITHOUT repainting — for inputs that live on
+ * the settings page, whose value already reflects the change. Avoids the
+ * reentrant innerHTML rebuild that would remove the focused field mid-event. */
+function saveSetting(key, value) {
+  S = Voyager.setSetting(S, key, value);
+  persist();
+}
+
 /** Every mutation goes through here: swap state, repaint, save. */
 function commit(next) {
   var tabBefore = Voyager.activeTab(S);
@@ -383,8 +392,8 @@ function paintChrome() {
   var sec = Voyager.securityOf(url);
   var chip = $('chip');
   chip.className = 'chip ' + sec;
-  chip.textContent = sec === 'secure' ? '🔒' : sec === 'insecure' ? '⚠️' : sec === 'internal' ? '✦' : '·';
-  chip.title = sec === 'secure' ? 'Connection is HTTPS' : sec === 'insecure' ? 'Plain HTTP — not encrypted' : sec === 'internal' ? 'A Voyager page' : '';
+  chip.textContent = sec === 'secure' ? '🔒' : sec === 'insecure' ? '⚠️' : sec === 'internal' ? '✦' : sec === 'onion' ? '🧅' : '·';
+  chip.title = sec === 'secure' ? 'Connection is HTTPS' : sec === 'insecure' ? 'Plain HTTP — not encrypted' : sec === 'internal' ? 'A Voyager page' : sec === 'onion' ? 'A Tor hidden service (.onion) — end-to-end encrypted by Tor' : '';
 
   var star = $('starBtn');
   var starred = Voyager.isBookmarked(S, url);
@@ -408,23 +417,33 @@ function showUrl(url, tab) {
 /* ---- painting: the page itself ---- */
 function renderView(url, tab) {
   var internal = String(url).indexOf('voyager://') === 0;
+  // A .onion with no gateway configured can't be routed by a frame that has no
+  // Tor circuit — show the honest dark-web explainer instead of a dead load.
+  var onionNoGateway = Voyager.isOnion(url) && !S.settings.torGateway;
   $('internal').className = internal ? 'on' : '';
-  $('frameWrap').className = internal ? '' : 'on';
+  $('frameWrap').className = (internal || onionNoGateway) ? '' : 'on';
 
   if (internal) {
     hideVeil();
     stopProgress(true);
     $('frame').removeAttribute('src');
     renderInternal(url.slice('voyager://'.length) || 'start');
-  } else {
-    var frame = $('frame');
-    if (frame.getAttribute('src') !== url) {
-      startProgress();
-      showVeil('loading', url);
-      frame.setAttribute('src', url);
-      clearTimeout(loadTimer);
-      loadTimer = setTimeout(function () { showVeil('blocked', url); }, 9000);
-    }
+    return;
+  }
+  if (onionNoGateway) {
+    stopProgress(true);
+    $('frame').removeAttribute('src');
+    showVeil('onion', url);
+    return;
+  }
+  var frame = $('frame');
+  var src = Voyager.torGatewayUrl(url, S.settings.torGateway); // no-op for clearnet
+  if (frame.getAttribute('src') !== src) {
+    startProgress();
+    showVeil('loading', url);
+    frame.setAttribute('src', src);
+    clearTimeout(loadTimer);
+    loadTimer = setTimeout(function () { showVeil('blocked', url); }, 9000);
   }
 }
 
@@ -445,10 +464,20 @@ function showVeil(mode, url) {
     $('veilTitle').textContent = 'Loading ' + (Voyager.hostOf(url) || 'page') + '…';
     $('veilText').textContent = '';
     $('veilActions').innerHTML = '';
+  } else if (mode === 'onion') {
+    $('veilSpin').style.display = 'none';
+    $('veilTitle').textContent = '🧅 A Tor hidden service';
+    $('veilText').innerHTML = 'This is a <b>.onion</b> address — it lives on the Tor network, not the open internet. Reaching it properly needs a <b>Tor circuit</b>, which a page running inside your everyday browser can’t open on its own. Two honest ways through: browse it in the <b>Tor Browser</b> (real anonymity), or set a <b>Tor gateway</b> in Settings to fetch it over the clearnet — faster, but the gateway operator can see the traffic Tor would have hidden, so it is <i>not</i> anonymous.';
+    $('veilActions').innerHTML =
+      '<button class="btn primary" data-act="settings">Set a Tor gateway ⚙️</button>' +
+      '<button class="btn" data-act="copy">Copy .onion address</button>';
+    stopProgress(false);
   } else {
     $('veilSpin').style.display = 'none';
     $('veilTitle').textContent = 'This site won’t be framed';
-    $('veilText').textContent = 'Many sites (most logins, banks, big apps) send X-Frame-Options and refuse to render inside another page. That’s the site’s choice, honestly hit — not a bug.';
+    $('veilText').textContent = Voyager.isOnion(url)
+      ? 'The gateway reached the hidden service but it refuses to render inside another page (X-Frame-Options), or the gateway is down. Try opening it in a full tab, or use the Tor Browser.'
+      : 'Many sites (most logins, banks, big apps) send X-Frame-Options and refuse to render inside another page. That’s the site’s choice, honestly hit — not a bug.';
     $('veilActions').innerHTML =
       '<button class="btn primary" data-act="external">Open in full tab ↗</button>' +
       '<button class="btn" data-act="dismissveil">Wait anyway</button>';
@@ -566,7 +595,13 @@ function settingsPage() {
   }
   h += '</select></div>' +
     '<div class="field"><label>Home page</label><input id="homeInput" value="' + esc(S.settings.home) + '" placeholder="voyager://start"></div>' +
-    '</div><div class="panel">' +
+    '</div>' +
+    '<h2 class="sect">🧅 Dark web (.onion)</h2><div class="panel">' +
+    '<div class="field"><label>Tor gateway host</label>' +
+    '<input id="torInput" value="' + esc(S.settings.torGateway) + '" placeholder="off — e.g. onion.ws" autocapitalize="off" autocorrect="off" spellcheck="false"></div>' +
+    '<p class="tiny" style="margin:2px 2px 0">Voyager renders pages in a sandboxed frame with no Tor circuit of its own, so it can’t reach <b>.onion</b> hidden services directly. Name a Tor2web-style gateway here and Voyager routes <b>.onion</b> addresses through it over the clearnet (e.g. <code>abc.onion</code> → <code>abc.onion.' + esc(S.settings.torGateway || 'ws') + '</code>). Honest trade-off: a gateway is <b>not anonymous</b> — its operator sees the traffic Tor would have hidden, and gateways come and go. For real anonymity use the <b>Tor Browser</b>. Leave blank to keep it off.</p>' +
+    '</div>' +
+    '<div class="panel">' +
     '<button class="btn danger block" style="margin-top:0" data-act="clearhistory">Clear history</button>' +
     '<button class="btn danger block" data-act="wipe">Erase everything (tabs, history, bookmarks)</button>' +
     '</div>' +
@@ -578,6 +613,7 @@ function aboutPage() {
   return '<div class="page"><div class="hero"><img class="logo" src="icon.svg" alt=""><h1>Voyager</h1>' +
     '<p>The internet browser.</p></div>' +
     '<div class="panel muted">A browser, stripped to its truth, is the <i>chrome</i>: the omnibox that knows a URL from a question, tabs and their back/forward stacks, history that learns what matters to you, bookmarks, private tabs, a session that survives restarts. All of that lives in a pure, deterministic, unit-tested engine (<code>voyager/engine.js</code>) — this page is just a skin over it. The pixels come from your device’s real web engine in a sandboxed frame.</div>' +
+    '<div class="panel muted">🧅 <b>Dark web:</b> Voyager recognises <b>.onion</b> hidden-service addresses first-class and gives them their own security posture. It can’t open a Tor circuit from inside an ordinary browser, so by default it explains that honestly rather than faking it — but set a <b>Tor gateway</b> in Settings and it will route .onion addresses through it over the clearnet. A gateway is a convenience, not anonymity; the Tor Browser is the real thing.</div>' +
     '<div class="panel tiny">Honest limits: sites that send X-Frame-Options / CSP frame-ancestors refuse to be embedded — Voyager detects the silence and offers a full tab instead. Links followed <i>inside</i> a page move the frame’s own history, not Voyager’s stack. No sync, no telemetry, no cloud: your data lives in this device’s storage and nowhere else.</div></div>';
 }
 
@@ -642,6 +678,10 @@ function currentUrl() { return Voyager.tabUrl(Voyager.activeTab(S)); }
 function openExternal() {
   var url = currentUrl();
   if (String(url).indexOf('voyager://') === 0) { toast('That page lives inside Voyager'); return; }
+  // A raw .onion won't open in an ordinary browser tab — send the gateway URL
+  // if one is set (that one actually resolves); otherwise the real .onion, for
+  // whoever has the Tor Browser as their default.
+  if (Voyager.isOnion(url) && S.settings.torGateway) url = Voyager.torGatewayUrl(url, S.settings.torGateway);
   window.open(url, '_blank', 'noopener');
 }
 
@@ -692,11 +732,12 @@ $('fwdBtn').addEventListener('click', function () { commit(Voyager.forward(S, S.
 $('reloadBtn').addEventListener('click', function () {
   var url = currentUrl();
   if (String(url).indexOf('voyager://') === 0) { renderInternal(url.slice(10)); return; }
+  if (Voyager.isOnion(url) && !S.settings.torGateway) { showVeil('onion', url); return; }
   startProgress();
   showVeil('loading', url);
   clearTimeout(loadTimer);
   loadTimer = setTimeout(function () { showVeil('blocked', url); }, 9000);
-  $('frame').setAttribute('src', url);
+  $('frame').setAttribute('src', Voyager.torGatewayUrl(url, S.settings.torGateway));
   commit(Voyager.navigate(S, S.activeId, url, { ts: Date.now() }));
 });
 $('starBtn').addEventListener('click', function () {
@@ -799,15 +840,22 @@ document.addEventListener('input', function (e) {
   }
 });
 document.addEventListener('change', function (e) {
+  // Settings inputs live inside the page we'd re-render; save state and persist
+  // WITHOUT repainting, so we never clobber the focused field mid-event.
   if (e.target && e.target.id === 'engineSel') {
-    commit(Voyager.setSetting(S, 'engine', e.target.value));
+    saveSetting('engine', e.target.value);
     toast('Searching with ' + engineName());
   }
   if (e.target && e.target.id === 'homeInput') {
     var cls = Voyager.classify(e.target.value, { engine: S.settings.engine });
     var home = cls.kind === 'url' || cls.kind === 'internal' ? cls.url : 'voyager://start';
-    commit(Voyager.setSetting(S, 'home', home));
+    saveSetting('home', home);
     e.target.value = home;
+  }
+  if (e.target && e.target.id === 'torInput') {
+    saveSetting('torGateway', e.target.value);
+    e.target.value = S.settings.torGateway;
+    toast(S.settings.torGateway ? '🧅 Routing .onion via ' + S.settings.torGateway : 'Tor gateway off');
   }
 });
 
