@@ -283,6 +283,7 @@
   <div id="quickRow">
     <button class="chip" id="chipHome"><div class="e">🏠</div><div class="t">Home</div></button>
     <button class="chip" id="chipWork"><div class="e">💼</div><div class="t">Work</div></button>
+    <button class="chip" id="chipTrail"><div class="e">🍞</div><div class="t">Trail back</div></button>
     <button class="chip" id="chipDemo"><div class="e">🚗</div><div class="t">Demo drive</div></button>
   </div>
   <div id="searchResults"></div>
@@ -331,6 +332,12 @@
     </div>
   </div>
   <div class="setRow">
+    <div class="lbl">🏁 Co-driver<div class="sub">Rally pace notes — "left 4 into right 3"</div></div>
+    <div class="seg" id="segCodriver">
+      <button data-v="on">On</button><button data-v="off">Off</button>
+    </div>
+  </div>
+  <div class="setRow">
     <div class="lbl">Map style<div class="sub">Night mode inverts the map</div></div>
     <div class="seg" id="segTheme">
       <button data-v="auto">Auto</button><button data-v="day">Day</button><button data-v="night">Night</button>
@@ -339,7 +346,13 @@
   <div id="aboutBox">
     <strong style="color:var(--text)">◮ Atlas</strong> — your own satnav. The map is drawn by a
     from-scratch canvas engine; guidance, snapping, phrasing and ETA come from the pure,
-    unit-tested navigation engine (<code>engine.js</code>). Map data
+    unit-tested navigation engine (<code>engine.js</code>).
+    Things no other satnav does: <strong>🌅 sun-glare forecast</strong> (amber dashes on the route
+    where you'll drive into a low sun), <strong>🏁 co-driver rally pace notes</strong>,
+    <strong>🛰 tunnel-proof dead reckoning</strong> when GPS drops, a <strong>📼 flight recorder</strong>
+    (drive stats + GPX export, auto 🅿️ parked-car pin), <strong>🍞 trail-back</strong>
+    (retrace your own breadcrumbs, fully offline), and an <strong>⏱ ETA that learns your pace</strong>.
+    Map data
     © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>
     contributors; routing by the community OSRM/FOSSGIS servers; search by Nominatim.
     Your location never leaves your device except to fetch the route you asked for.
@@ -371,7 +384,11 @@
   <div class="big">🏁</div>
   <h2>You have arrived</h2>
   <p id="arrivedSub">Enjoy!</p>
-  <button id="btnArrivedDone">Done</button>
+  <p id="arrivedStats" style="margin-top:6px;font-size:13px;color:var(--accent2)"></p>
+  <div style="display:flex;gap:10px">
+    <button id="btnGpx" style="background:rgba(255,255,255,0.06);border:1px solid var(--line)">📼 GPX</button>
+    <button id="btnArrivedDone">Done</button>
+  </div>
 </div>
 
 <div id="tapCard">
@@ -401,9 +418,11 @@ function load(key, fallback) {
 }
 function save(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) {} }
 
-var settings = Object.assign({ units: 'metric', voice: 'on', theme: 'auto' }, load('atlas.settings', {}));
+var settings = Object.assign({ units: 'metric', voice: 'on', theme: 'auto', codriver: 'off' }, load('atlas.settings', {}));
 var places = load('atlas.places', []);     // {name, addr, lat, lon, kind?, uses, lastUsed}
 var recents = load('atlas.recents', []);   // same shape, capped
+var pace = load('atlas.pace', {});         // per-profile personal pace factor (learned)
+function paceOf() { return pace[trip.profile] || 1; }
 
 function persistSettings() { save('atlas.settings', settings); }
 function persistPlaces() { save('atlas.places', places); }
@@ -542,6 +561,16 @@ function drawPolyline(geometry, color, width, dash) {
   ctx.setLineDash([]);
 }
 
+/** Vertices of the route between two along-distances (for glare overlays). */
+function sliceGeometry(route, m0, m1) {
+  var pts = [A.pointAtAlong(route, m0)];
+  for (var i = 0; i < route.geometry.length; i++) {
+    if (route.cum[i] > m0 && route.cum[i] < m1) pts.push(route.geometry[i]);
+  }
+  pts.push(A.pointAtAlong(route, m1));
+  return pts;
+}
+
 function drawRoutes(night) {
   if (!trip.routes.length) return;
   for (var i = 0; i < trip.routes.length; i++) {
@@ -552,6 +581,13 @@ function drawRoutes(night) {
   if (main) {
     drawPolyline(main.geometry, night ? 'rgba(15,40,90,0.9)' : 'rgba(20,60,140,0.35)', 11);
     drawPolyline(main.geometry, '#2f7ff6', 7);
+    // 🌅 stretches where you'll be driving into a low sun
+    if (main.glare) {
+      for (var gi = 0; gi < main.glare.length; gi++) {
+        drawPolyline(sliceGeometry(main, main.glare[gi].startM, main.glare[gi].endM),
+                     'rgba(251,191,36,0.95)', 3.5, [9, 7]);
+      }
+    }
     // destination flag
     var end = toScreen(main.geometry[main.geometry.length - 1]);
     ctx.beginPath(); ctx.arc(end.x, end.y, 9, 0, 7); ctx.fillStyle = '#fff'; ctx.fill();
@@ -895,7 +931,7 @@ function addTitle(box, t) {
 function resultRow(p) {
   var b = document.createElement('button');
   b.className = 'result';
-  var icon = p.kind === 'home' ? '🏠' : p.kind === 'work' ? '💼' : '📍';
+  var icon = p.kind === 'home' ? '🏠' : p.kind === 'work' ? '💼' : p.kind === 'parked' ? '🅿️' : '📍';
   b.innerHTML = '<div class="ic">' + icon + '</div>' +
     '<div style="flex:1;min-width:0"><div class="nm"></div><div class="ad"></div></div>' +
     '<span class="heart' + (isFav(p) ? ' on' : '') + '">' + (isFav(p) ? '♥' : '♡') + '</span>';
@@ -1023,9 +1059,13 @@ function renderAlternatives(rawRoutes) {
     b.className = 'altCard' + (i === trip.selected ? ' on' : '');
     var raw = rawRoutes && rawRoutes[i];
     var via = raw && raw.legs && raw.legs[0] && raw.legs[0].summary ? 'via ' + raw.legs[0].summary : (i === 0 ? 'fastest' : 'alternative');
+    if (!r.glare) { try { r.glare = A.glareSegments(r, Date.now()); } catch (e) { r.glare = []; } }
+    var glareS = r.glare.reduce(function (a, s) { return a + s.durS; }, 0);
+    var pacedS = r.totalS * paceOf();
     b.innerHTML = '<div><div class="tm"></div><div class="ds"></div></div><div class="tag"></div>';
-    b.querySelector('.tm').textContent = A.fmtDur(r.totalS);
-    b.querySelector('.ds').textContent = A.fmtDist(r.totalM, settings.units) + ' · arrive ' + A.etaClock(Date.now(), r.totalS);
+    b.querySelector('.tm').textContent = A.fmtDur(pacedS);
+    b.querySelector('.ds').textContent = A.fmtDist(r.totalM, settings.units) + ' · arrive ' + A.etaClock(Date.now(), pacedS) +
+      (glareS >= 45 ? ' · 🌅 ' + A.fmtDur(glareS) + ' low sun' : '');
     b.querySelector('.tag').textContent = via;
     b.addEventListener('click', function () {
       trip.selected = i;
@@ -1099,6 +1139,13 @@ function startNav(demo) {
   nav.active = true; nav.demo = !!demo; nav.route = route;
   nav.guide = A.startGuidance();
   nav.lastReroute = Date.now();
+  // 📼 flight recorder + ⏱ personal pace + 🏁 co-driver + 🛰 ghost mode state
+  nav.track = A.newTrack(Date.now());
+  nav.startTs = Date.now(); nav.predictedS = route.totalS;
+  nav.notes = settings.codriver === 'on' ? A.paceNotes(route) : null;
+  nav.noteIdx = 0; nav.noteSpoken = {};
+  nav.lastAlong = 0; nav.lastFixTs = Date.now(); nav.ghostCount = 0; nav.ghosting = false;
+  if (!demo && !nav.ghostTimer) nav.ghostTimer = setInterval(ghostTick, 1000);
   closeSheets();
   $('topBar').classList.add('hidden');
   $('navBanner').classList.add('show');
@@ -1132,25 +1179,63 @@ function startNav(demo) {
 
 function onNavFix(fix) {
   if (!nav.active) return;
+  if (!fix.ghost) {
+    nav.lastFixTs = Date.now(); nav.ghostCount = 0;
+    if (nav.ghosting) { nav.ghosting = false; toast('🛰 GPS back'); }
+    if (nav.track) A.trackAdd(nav.track, fix, Date.now());
+  }
   var r = A.guidanceUpdate(nav.guide, nav.route, fix, { units: settings.units });
   nav.guide = r.state;
+  nav.lastAlong = r.alongM;
 
   // HUD
   var next = r.nextStep;
+  var pacedRemS = r.remainingS * paceOf();
   setBanner(next.icon, A.fmtDist(r.distToNext, settings.units), next.instruction, followingOf(r));
   $('navBanner').classList.toggle('offroute', r.offRoute);
   if (r.offRoute) $('navText').textContent = 'Off route — recalculating…';
-  $('navEta').textContent = A.etaClock(Date.now(), r.remainingS);
-  $('navMeta').textContent = A.fmtDur(r.remainingS) + ' · ' + A.fmtDist(r.remainingM, settings.units);
+  if (nav.ghosting) { $('navThen').textContent = '🛰 GPS lost — dead reckoning'; $('navThen').classList.add('show'); }
+  $('navEta').textContent = A.etaClock(Date.now(), pacedRemS);
+  $('navMeta').textContent = A.fmtDur(pacedRemS) + ' · ' + A.fmtDist(r.remainingM, settings.units);
   var v = nav.guide.speed || 0;
   var shown = settings.units === 'imperial' ? v * 2.23694 : v * 3.6;
   $('speedVal').textContent = String(Math.round(shown));
 
   if (r.announce) speak(r.announce.text);
+  else speakPaceNote(r);
 
-  if (r.offRoute && !nav.demo) maybeReroute(fix);
+  if (r.offRoute && !nav.demo && !fix.ghost) maybeReroute(fix);
   if (r.arrived) finishNav();
   needsDraw = true;
+}
+
+/* 🏁 co-driver: call the next corner rally-style, without talking over the
+   maneuver announcements (they always win the microphone). */
+function speakPaceNote(r) {
+  if (!nav.notes || r.offRoute || r.arrived) return;
+  while (nav.noteIdx < nav.notes.length && nav.notes[nav.noteIdx].alongM <= r.alongM + 8) nav.noteIdx++;
+  var n = nav.notes[nav.noteIdx];
+  if (!n || nav.noteSpoken[n.alongM]) return;
+  var horizon = Math.max(140, (nav.guide.speed || 0) * 9);
+  if (n.alongM - r.alongM <= horizon && r.distToNext > 240) {
+    nav.noteSpoken[n.alongM] = 1;
+    speak(A.paceNoteLine(n, nav.notes[nav.noteIdx + 1]));
+  }
+}
+
+/* 🛰 ghost mode: if real fixes stop arriving mid-drive (tunnel), advance the
+   position along the route at the last known speed — guidance keeps talking. */
+function ghostTick() {
+  if (!nav.active || nav.demo) return;
+  if (Date.now() - nav.lastFixTs < 3500) return;
+  var sp = nav.guide ? (nav.guide.speed || 0) : 0;
+  if (sp < 2 || nav.ghostCount >= 90 || (nav.guide && nav.guide.arrived)) return;
+  nav.ghostCount++;
+  if (!nav.ghosting) { nav.ghosting = true; toast('🛰 GPS lost — dead reckoning along the route'); }
+  var f = A.ghostAdvance(nav.route, nav.lastAlong, sp, 1);
+  gps.fix = { lat: f.lat, lon: f.lon, heading: f.heading, speed: f.speed };
+  onNavFix(f);
+  if (view.follow) glueCamera();
 }
 
 function followingOf(r) {
@@ -1183,12 +1268,73 @@ function maybeReroute(fix) {
   }).catch(function () { toast('Reroute failed — rejoin the blue line'); });
 }
 
+var lastTrack = null; // the just-finished drive, for 📼 GPX export
 function finishNav() {
-  var wasDemo = nav.demo;
+  var wasDemo = nav.demo, track = nav.track, profile = trip.profile;
+  // 📼 flight recorder: stats + keep the track for GPX / 🍞 trail-back
+  var statsLine = '';
+  if (track && track.points.length >= 5) {
+    var st = A.trackStats(track, Date.now());
+    statsLine = A.fmtDist(st.distM, settings.units) + ' · ' + A.fmtDur(st.movingS) +
+      ' moving · avg ' + Math.round(settings.units === 'imperial' ? st.avgKmh / 1.609344 : st.avgKmh) +
+      (settings.units === 'imperial' ? ' mph' : ' km/h');
+    lastTrack = track;
+    if (!wasDemo) save('atlas.lastTrack', track);
+  }
+  // ⏱ personal pace: learn how you actually drive vs the prediction
+  if (!wasDemo && nav.startTs && nav.predictedS > 60) {
+    pace[profile] = A.updatePace(pace[profile] || 1, nav.predictedS, (Date.now() - nav.startTs) / 1000);
+    save('atlas.pace', pace);
+  }
+  // 🅿️ drop a parked-car pin where the drive ended
+  if (!wasDemo && gps.fix && profile === 'car') {
+    places = places.filter(function (x) { return x.kind !== 'parked'; });
+    places.push({ name: 'Parked car', addr: 'Saved automatically when you arrived', kind: 'parked',
+                  lat: gps.fix.lat, lon: gps.fix.lon, uses: 1, lastUsed: Date.now() });
+    persistPlaces();
+  }
   stopNavUI();
   $('arrivedSub').textContent = (trip.dest ? trip.dest.name : 'Destination') + (wasDemo ? ' · demo complete' : '');
+  $('arrivedStats').textContent = statsLine;
+  $('btnGpx').style.display = lastTrack ? '' : 'none';
   $('arrivedCard').classList.add('show');
 }
+
+$('btnGpx').addEventListener('click', function () {
+  if (!lastTrack) return;
+  var gpx = A.trackToGPX(lastTrack, 'Atlas drive — ' + (trip.dest ? trip.dest.name : 'trip'));
+  var a = document.createElement('a');
+  a.href = 'data:application/gpx+xml;charset=utf-8,' + encodeURIComponent(gpx);
+  a.download = 'atlas-drive.gpx';
+  document.body.appendChild(a); a.click(); a.remove();
+  toast('📼 GPX saved — opens in any GPS app');
+});
+
+/* 🍞 trail-back: retrace your own recorded breadcrumbs — no routing server */
+function startTrailBack() {
+  var saved = lastTrack || load('atlas.lastTrack', null);
+  if (!saved || !saved.points || saved.points.length < 5) {
+    toast('No trail yet — Atlas records your track while you navigate');
+    return;
+  }
+  var st = A.trackStats(saved, saved.points[saved.points.length - 1].t);
+  var v = Math.max(1.2, Math.min(25, st.movingS > 0 ? st.distM / st.movingS : 1.4));
+  var route;
+  try { route = A.routeBack(saved.points, v); }
+  catch (e) { toast('Trail too short to trace back'); return; }
+  trip.dest = { name: 'Trail back', addr: 'Retracing your own recorded track — works fully offline',
+                lat: route.geometry[route.geometry.length - 1].lat, lon: route.geometry[route.geometry.length - 1].lon };
+  trip.demoOnly = true;
+  trip.routes = [route]; trip.selected = 0;
+  $('destName').textContent = '🍞 Trail back';
+  $('destAddr').textContent = trip.dest.addr;
+  $('searchPillText').textContent = 'Trail back';
+  $('routeStatus').className = ''; $('routeStatus').textContent = '';
+  renderAlternatives(null);
+  fitRoute(route);
+  openSheet('routeSheet');
+}
+$('chipTrail').addEventListener('click', startTrailBack);
 $('btnArrivedDone').addEventListener('click', function () {
   $('arrivedCard').classList.remove('show');
   clearTrip();
@@ -1197,6 +1343,8 @@ $('btnArrivedDone').addEventListener('click', function () {
 function stopNavUI() {
   nav.active = false;
   if (nav.simTimer) { clearInterval(nav.simTimer); nav.simTimer = null; }
+  if (nav.ghostTimer) { clearInterval(nav.ghostTimer); nav.ghostTimer = null; }
+  nav.ghosting = false; nav.notes = null; nav.track = null;
   nav.simPos = null;
   view.navMode = false; view.rot = 0; view.follow = false;
   $('topBar').classList.remove('hidden');
@@ -1270,7 +1418,7 @@ function segWire(id, key, after) {
   });
 }
 function syncSettingsUI() {
-  [['segUnits', 'units'], ['segVoice', 'voice'], ['segTheme', 'theme']].forEach(function (pair) {
+  [['segUnits', 'units'], ['segVoice', 'voice'], ['segTheme', 'theme'], ['segCodriver', 'codriver']].forEach(function (pair) {
     Array.prototype.forEach.call($(pair[0]).querySelectorAll('button'), function (b) {
       b.classList.toggle('on', b.getAttribute('data-v') === settings[pair[1]]);
     });
@@ -1280,6 +1428,7 @@ function syncSettingsUI() {
 segWire('segUnits', 'units', function () { needsDraw = true; });
 segWire('segVoice', 'voice');
 segWire('segTheme', 'theme', function () { needsDraw = true; });
+segWire('segCodriver', 'codriver');
 syncSettingsUI();
 
 /* ------------------------------ maneuver icons --------------------------- */
