@@ -751,6 +751,55 @@
     return route;
   }
 
+  /* ================================ dashcam ================================ */
+  // The camera work is browser API, but everything deterministic about the
+  // dashcam lives here: the telemetry lines burned into each frame, the
+  // filename a clip saves under, and the honest storage estimate.
+
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+  /** "2026-07-26 22:13:45" in the viewer's local time — the frame stamp. */
+  function fmtTimestamp(ms) {
+    var d = new Date(ms);
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' +
+           pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds());
+  }
+
+  /**
+   * The telemetry block burned into each dashcam frame.
+   * info = {timeStr, lat, lon, speedMS, units, instruction?, distToNextM?}
+   * → array of strings (top line first).
+   */
+  function dashcamLines(info) {
+    var shown = info.units === 'imperial' ? info.speedMS * 2.23694 : info.speedMS * 3.6;
+    var unit = info.units === 'imperial' ? 'mph' : 'km/h';
+    var lines = [
+      info.timeStr + '  ·  ' + Math.round(Math.max(0, shown)) + ' ' + unit,
+      info.lat.toFixed(5) + ', ' + info.lon.toFixed(5),
+    ];
+    if (info.instruction) {
+      lines.push('Next: ' + info.instruction +
+        (typeof info.distToNextM === 'number' ? ' — ' + fmtDist(info.distToNextM, info.units) : ''));
+    }
+    return lines;
+  }
+
+  /** "atlas-dashcam-20260726-2213-trafalgar-square.webm" — UTC, slugged. */
+  function dashcamFilename(ms, destName) {
+    var d = new Date(ms);
+    var stamp = '' + d.getUTCFullYear() + pad2(d.getUTCMonth() + 1) + pad2(d.getUTCDate()) +
+                '-' + pad2(d.getUTCHours()) + pad2(d.getUTCMinutes());
+    var slug = (destName || '').toLowerCase().replace(/[^a-z0-9]+/g, '-')
+               .replace(/^-+|-+$/g, '').slice(0, 32).replace(/-+$/, '');
+    return 'atlas-dashcam-' + stamp + (slug ? '-' + slug : '') + '.webm';
+  }
+
+  /** Honest storage estimate in MB for a recording (default ~2.5 Mbps). */
+  function recordingEstimateMB(durS, kbps) {
+    var mb = Math.max(0, durS) * (kbps || 2500) / 8 / 1000;
+    return Math.round(mb * 10) / 10;
+  }
+
   /* ============================ personal pace ============================== */
   // Routers predict an average driver. Atlas learns the ratio between *your*
   // drives and the prediction (EMA, clamped) and scales future ETAs by it —
@@ -823,5 +872,7 @@
     paceNotes: paceNotes, paceNoteLine: paceNoteLine, ghostAdvance: ghostAdvance,
     newTrack: newTrack, trackAdd: trackAdd, trackStats: trackStats, trackToGPX: trackToGPX,
     routeBack: routeBack, updatePace: updatePace,
+    fmtTimestamp: fmtTimestamp, dashcamLines: dashcamLines,
+    dashcamFilename: dashcamFilename, recordingEstimateMB: recordingEstimateMB,
   };
 });

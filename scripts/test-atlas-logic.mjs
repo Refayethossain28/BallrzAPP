@@ -525,6 +525,32 @@ test('routeBack: retraces a recorded L-shape in reverse with a synthesised turn'
   assert.throws(() => A.routeBack([{ lat: 51.5, lon: -0.1, t: 0 }], 1.4));
 });
 
+test('dashcam: telemetry lines carry time, position, speed and next turn', () => {
+  const lines = A.dashcamLines({ timeStr: '2026-07-26 22:13:45', lat: 51.50735, lon: -0.1279,
+    speedMS: 13.06, units: 'metric', instruction: 'Turn right onto End Road', distToNextM: 200 });
+  assert.equal(lines.length, 3);
+  assert.equal(lines[0], '2026-07-26 22:13:45  ·  47 km/h');
+  assert.equal(lines[1], '51.50735, -0.12790');
+  assert.equal(lines[2], 'Next: Turn right onto End Road — 200 m');
+  const mph = A.dashcamLines({ timeStr: 't', lat: 0, lon: 0, speedMS: 13.06, units: 'imperial' });
+  assert.equal(mph.length, 2, 'no instruction → two lines');
+  assert.ok(mph[0].endsWith('29 mph'), mph[0]);
+});
+
+test('dashcam: fmtTimestamp shape and dashcamFilename slugging (UTC)', () => {
+  assert.ok(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(A.fmtTimestamp(Date.UTC(2026, 6, 26, 22, 13, 45))));
+  const ms = Date.UTC(2026, 6, 26, 22, 13, 45);
+  assert.equal(A.dashcamFilename(ms, 'Trafalgar Square, London!'), 'atlas-dashcam-20260726-2213-trafalgar-square-london.webm');
+  assert.equal(A.dashcamFilename(ms, ''), 'atlas-dashcam-20260726-2213.webm');
+  assert.equal(A.dashcamFilename(ms, '§§§'), 'atlas-dashcam-20260726-2213.webm');
+});
+
+test('dashcam: recordingEstimateMB is honest arithmetic', () => {
+  near(A.recordingEstimateMB(60), 18.8, 0.05, '1 min at 2.5 Mbps');
+  near(A.recordingEstimateMB(600, 1000), 75, 0.1);
+  assert.equal(A.recordingEstimateMB(-5), 0);
+});
+
 test('updatePace: learns your speed honestly and stays clamped', () => {
   assert.equal(A.updatePace(1, 30, 600), 1, 'too short to learn from');
   const slower = A.updatePace(1, 600, 900);

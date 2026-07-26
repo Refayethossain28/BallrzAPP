@@ -205,6 +205,25 @@
   #speedVal { font-size: 21px; font-weight: 900; line-height: 1; }
   #speedUnit { font-size: 9.5px; font-weight: 700; color: #64748b; text-transform: uppercase; }
 
+  /* 📹 dashcam preview */
+  #dashcamBox {
+    position: fixed; z-index: 46; right: 14px; bottom: calc(96px + var(--sab));
+    width: 128px; border-radius: 14px; overflow: hidden; display: none;
+    border: 1px solid rgba(248,113,113,0.55); box-shadow: var(--shadow);
+    background: #000; transition: width .2s;
+  }
+  #dashcamBox.show { display: block; }
+  #dashcamBox.big { width: min(70vw, 420px); }
+  #dashcamVideo { display: block; width: 100%; aspect-ratio: 16/9; object-fit: cover; }
+  #dashcamRec {
+    position: absolute; top: 6px; left: 8px; font-size: 10.5px; font-weight: 800;
+    color: #fff; background: rgba(0,0,0,0.55); padding: 2px 7px; border-radius: 8px;
+    letter-spacing: 0.5px;
+  }
+  #dashcamRec .dot { color: #f87171; animation: recblink 1.2s steps(2) infinite; }
+  @keyframes recblink { 50% { opacity: 0.15; } }
+  #btnDashcam.rec { background: rgba(248,113,113,0.2); border-color: rgba(248,113,113,0.55); }
+
   /* arrived card */
   #arrivedCard {
     position: fixed; z-index: 60; left: 50%; top: 50%; transform: translate(-50%,-50%) scale(0.9);
@@ -350,8 +369,11 @@
     Things no other satnav does: <strong>🌅 sun-glare forecast</strong> (amber dashes on the route
     where you'll drive into a low sun), <strong>🏁 co-driver rally pace notes</strong>,
     <strong>🛰 tunnel-proof dead reckoning</strong> when GPS drops, a <strong>📼 flight recorder</strong>
-    (drive stats + GPX export, auto 🅿️ parked-car pin), <strong>🍞 trail-back</strong>
-    (retrace your own breadcrumbs, fully offline), and an <strong>⏱ ETA that learns your pace</strong>.
+    (drive stats + GPX export, auto 🅿️ parked-car pin), a <strong>📹 dashcam</strong>
+    (record your drive with the in-app camera — time, position, speed and the next turn burned
+    into every frame; footage stays on your device and saves as a local file),
+    <strong>🍞 trail-back</strong> (retrace your own breadcrumbs, fully offline),
+    and an <strong>⏱ ETA that learns your pace</strong>.
     Map data
     © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>
     contributors; routing by the community OSRM/FOSSGIS servers; search by Nominatim.
@@ -374,11 +396,17 @@
     <div id="navMeta">— · —</div>
   </div>
   <div class="grow"></div>
+  <button class="navCtl" id="btnDashcam" aria-label="Dashcam">📹</button>
   <button class="navCtl" id="btnMute" aria-label="Mute voice">🔊</button>
   <button class="navCtl" id="btnOverview" aria-label="Overview">🗺</button>
   <button class="navCtl" id="btnEnd" aria-label="End navigation">✕</button>
 </div>
 <div id="speedBubble"><div id="speedVal">0</div><div id="speedUnit">km/h</div></div>
+
+<div id="dashcamBox">
+  <video id="dashcamVideo" muted playsinline autoplay></video>
+  <div id="dashcamRec"><span class="dot">●</span> REC <span id="dashcamTime">0:00</span></div>
+</div>
 
 <div id="arrivedCard">
   <div class="big">🏁</div>
@@ -386,6 +414,7 @@
   <p id="arrivedSub">Enjoy!</p>
   <p id="arrivedStats" style="margin-top:6px;font-size:13px;color:var(--accent2)"></p>
   <div style="display:flex;gap:10px">
+    <button id="btnDashSave" style="background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.4);display:none">📹 Video</button>
     <button id="btnGpx" style="background:rgba(255,255,255,0.06);border:1px solid var(--line)">📼 GPX</button>
     <button id="btnArrivedDone">Done</button>
   </div>
@@ -1187,6 +1216,7 @@ function onNavFix(fix) {
   var r = A.guidanceUpdate(nav.guide, nav.route, fix, { units: settings.units });
   nav.guide = r.state;
   nav.lastAlong = r.alongM;
+  nav.lastR = r; // latest guidance snapshot (dashcam overlay reads this)
 
   // HUD
   var next = r.nextStep;
@@ -1293,6 +1323,9 @@ function finishNav() {
                   lat: gps.fix.lat, lon: gps.fix.lon, uses: 1, lastUsed: Date.now() });
     persistPlaces();
   }
+  // 📹 arriving stops the dashcam; the clip is offered on the arrival card
+  $('btnDashSave').style.display = 'none';
+  if (dashcam.active) stopDashcam(false, function () { $('btnDashSave').style.display = ''; });
   stopNavUI();
   $('arrivedSub').textContent = (trip.dest ? trip.dest.name : 'Destination') + (wasDemo ? ' · demo complete' : '');
   $('arrivedStats').textContent = statsLine;
@@ -1342,6 +1375,7 @@ $('btnArrivedDone').addEventListener('click', function () {
 
 function stopNavUI() {
   nav.active = false;
+  if (dashcam.active) stopDashcam(false); // safety net — never leave the camera on
   if (nav.simTimer) { clearInterval(nav.simTimer); nav.simTimer = null; }
   if (nav.ghostTimer) { clearInterval(nav.ghostTimer); nav.ghostTimer = null; }
   nav.ghosting = false; nav.notes = null; nav.track = null;
@@ -1356,7 +1390,10 @@ function stopNavUI() {
   if (window.speechSynthesis) window.speechSynthesis.cancel();
   needsDraw = true;
 }
-$('btnEnd').addEventListener('click', function () { stopNavUI(); clearTrip(); });
+$('btnEnd').addEventListener('click', function () {
+  if (dashcam.active) stopDashcam(true); // ending by hand is a gesture — save now
+  stopNavUI(); clearTrip();
+});
 $('btnOverview').addEventListener('click', function () {
   if (view.navMode) { fitRoute(nav.route); view.navMode = false; }
   else { view.navMode = true; view.follow = true; view.zoom = 16.5; glueCamera(); }
@@ -1404,6 +1441,151 @@ function releaseWakeLock() {
   try { if (nav.wakeLock && nav.wakeLock.release) nav.wakeLock.release(); } catch (e) {}
   nav.wakeLock = null;
 }
+
+/* ------------------------------- 📹 dashcam ------------------------------ */
+/* Record your drive with the in-app camera. Frames are composited onto a
+   canvas so the saved video has the telemetry burned in — time, position,
+   speed and the next maneuver — like a real dashcam. Footage never leaves
+   the device: it records into memory and saves as a local .webm file. */
+
+var DASHCAM_MAX_S = 1800; // 30 min cap ≈ 560 MB — protects memory honestly
+var dashcam = { active: false, stream: null, recorder: null, chunks: [], blob: null,
+                startedAt: 0, raf: 0, canvas: null, cctx: null, onSaved: null };
+
+function dashcamSupported() {
+  return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia &&
+            window.MediaRecorder && window.HTMLCanvasElement &&
+            HTMLCanvasElement.prototype && HTMLCanvasElement.prototype.captureStream);
+}
+
+function pickMime() {
+  var MR = window.MediaRecorder;
+  var options = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', ''];
+  for (var i = 0; i < options.length; i++) {
+    if (!options[i] || !MR.isTypeSupported || MR.isTypeSupported(options[i])) return options[i];
+  }
+  return '';
+}
+
+function startDashcam() {
+  if (dashcam.active) return;
+  if (!dashcamSupported()) { toast('Camera recording is not supported in this browser'); return; }
+  navigator.mediaDevices.getUserMedia({
+    video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+    audio: false,
+  }).then(function (stream) {
+    dashcam.stream = stream;
+    dashcam.chunks = []; dashcam.blob = null;
+    dashcam.startedAt = Date.now();
+    var v = $('dashcamVideo');
+    v.srcObject = stream;
+    var play = v.play && v.play(); if (play && play.catch) play.catch(function () {});
+    dashcam.canvas = document.createElement('canvas');
+    dashcam.canvas.width = 1280; dashcam.canvas.height = 720;
+    dashcam.cctx = dashcam.canvas.getContext('2d');
+    var mime = pickMime();
+    var rec = new MediaRecorder(dashcam.canvas.captureStream(30),
+                                mime ? { mimeType: mime, videoBitsPerSecond: 2500000 }
+                                     : { videoBitsPerSecond: 2500000 });
+    rec.ondataavailable = function (e) { if (e.data && e.data.size) dashcam.chunks.push(e.data); };
+    rec.onstop = function () {
+      dashcam.blob = new Blob(dashcam.chunks, { type: rec.mimeType || 'video/webm' });
+      dashcam.chunks = [];
+      if (dashcam.onSaved) { var f = dashcam.onSaved; dashcam.onSaved = null; f(); }
+    };
+    dashcam.recorder = rec;
+    rec.start(1000);
+    dashcam.active = true;
+    $('dashcamBox').classList.add('show');
+    $('btnDashcam').classList.add('rec');
+    composeDashcamFrame();
+    toast('📹 Dashcam recording — telemetry burned in, saved on your device only');
+  }).catch(function () {
+    toast('Camera unavailable — check the camera permission for this site');
+  });
+}
+
+/** Draw camera + telemetry into the recorded canvas, ~30 fps while active. */
+function composeDashcamFrame() {
+  if (!dashcam.active) return;
+  var c = dashcam.cctx, cw = dashcam.canvas.width, ch = dashcam.canvas.height;
+  var v = $('dashcamVideo');
+  try {
+    if (v.videoWidth) {
+      var scale = Math.max(cw / v.videoWidth, ch / v.videoHeight);
+      var w = v.videoWidth * scale, h = v.videoHeight * scale;
+      c.drawImage(v, (cw - w) / 2, (ch - h) / 2, w, h);
+    } else { c.fillStyle = '#000'; c.fillRect(0, 0, cw, ch); }
+    var pos = (nav.active && nav.demo && nav.simPos) ? nav.simPos : (gps.fix || view);
+    var r = nav.active ? nav.lastR : null;
+    var lines = A.dashcamLines({
+      timeStr: A.fmtTimestamp(Date.now()),
+      lat: pos.lat, lon: pos.lon,
+      speedMS: (nav.active && nav.guide && nav.guide.speed) || (gps.fix && gps.fix.speed) || 0,
+      units: settings.units,
+      instruction: r && r.nextStep && !r.arrived ? r.nextStep.instruction : null,
+      distToNextM: r ? r.distToNext : undefined,
+    });
+    var barH = 34 + lines.length * 30;
+    var grad = c.createLinearGradient(0, ch - barH - 40, 0, ch);
+    grad.addColorStop(0, 'rgba(0,0,0,0)'); grad.addColorStop(1, 'rgba(0,0,0,0.72)');
+    c.fillStyle = grad; c.fillRect(0, ch - barH - 40, cw, barH + 40);
+    c.fillStyle = '#fff'; c.textBaseline = 'alphabetic'; c.textAlign = 'left';
+    for (var i = 0; i < lines.length; i++) {
+      c.font = (i === 0 ? '600 ' : '') + '26px -apple-system, Segoe UI, Roboto, sans-serif';
+      c.fillText(lines[i], 24, ch - barH + 18 + i * 30);
+    }
+    c.font = '600 22px -apple-system, Segoe UI, Roboto, sans-serif';
+    c.textAlign = 'right';
+    c.fillText('◮ ATLAS', cw - 24, ch - barH + 18);
+    c.textAlign = 'left';
+  } catch (e) {}
+  // live badge + honest cap
+  var elapsed = Math.floor((Date.now() - dashcam.startedAt) / 1000);
+  $('dashcamTime').textContent = Math.floor(elapsed / 60) + ':' + (elapsed % 60 < 10 ? '0' : '') + (elapsed % 60);
+  if (elapsed >= DASHCAM_MAX_S) {
+    stopDashcam(false, function () { toast('📹 30 min cap reached — clip ready (~' + A.recordingEstimateMB(elapsed) + ' MB)'); });
+    return;
+  }
+  dashcam.raf = requestAnimationFrame(composeDashcamFrame);
+}
+
+/** Stop recording; when `download`, save immediately (needs a user gesture). */
+function stopDashcam(download, onReady) {
+  if (!dashcam.active) return;
+  dashcam.active = false;
+  cancelAnimationFrame(dashcam.raf);
+  dashcam.onSaved = function () {
+    if (download) downloadDashcam();
+    if (onReady) onReady();
+  };
+  try { dashcam.recorder.stop(); } catch (e) { dashcam.onSaved = null; }
+  if (dashcam.stream) {
+    dashcam.stream.getTracks().forEach(function (t) { t.stop(); });
+    dashcam.stream = null;
+  }
+  $('dashcamVideo').srcObject = null;
+  $('dashcamBox').classList.remove('show', 'big');
+  $('btnDashcam').classList.remove('rec');
+}
+
+function downloadDashcam() {
+  if (!dashcam.blob || !window.URL || !URL.createObjectURL) return;
+  var url = URL.createObjectURL(dashcam.blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = A.dashcamFilename(Date.now(), trip.dest ? trip.dest.name : '');
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
+  toast('📹 Drive video saved (' + Math.round(dashcam.blob.size / 1e5) / 10 + ' MB)');
+}
+
+$('btnDashcam').addEventListener('click', function () {
+  if (dashcam.active) stopDashcam(true); // tap = a gesture, save right away
+  else startDashcam();
+});
+$('dashcamBox').addEventListener('click', function () { $('dashcamBox').classList.toggle('big'); });
+$('btnDashSave').addEventListener('click', function () { downloadDashcam(); });
 
 /* ------------------------------ settings UI ------------------------------ */
 
