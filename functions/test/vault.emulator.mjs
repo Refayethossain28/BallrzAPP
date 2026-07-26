@@ -103,6 +103,23 @@ async function main() {
   alice = await bank('alice');
   check(balance(alice, 'current') === 21000 - 350, 'the purchase landed on the server ledger');
 
+  console.log('→ inbound from another bank…');
+  const bobPre = balance(await bank('bob'), 'current');
+  const payIn = await call('vaultPayIn', 'alice', {
+    toSortCode: bobBefore.sortCode, toAccountNumber: bobBefore.accountNumber,
+    senderName: 'Aunt Carol', senderBank: 'Barclays', amount: 2500, reference: 'Birthday',
+  });
+  check(payIn.ok && payIn.data.toName === 'Bob Recipient', 'external transfer reaches Bob\'s rails');
+  const bobAfter = await bank('bob');
+  check(balance(bobAfter, 'current') === bobPre + 2500, `Bob is £25 richer (got +${balance(bobAfter, 'current') - bobPre}p)`);
+  check(bobAfter.txns.some((t) => t.desc === 'From Aunt Carol · Birthday · Barclays'), 'the credit reads statement-style');
+  const payInMiss = await call('vaultPayIn', 'alice', { toSortCode: '99-99-99', toAccountNumber: '00000001', senderName: 'X', amount: 100 });
+  check(!payInMiss.ok && payInMiss.code === 'NOT_FOUND', 'unknown rails bounce');
+  const payInNoName = await call('vaultPayIn', 'alice', { toSortCode: bobBefore.sortCode, toAccountNumber: bobBefore.accountNumber, amount: 100 });
+  check(!payInNoName.ok, 'a nameless sender is refused');
+  const payInNoAuth = await call('vaultPayIn', null, { toSortCode: bobBefore.sortCode, toAccountNumber: bobBefore.accountNumber, senderName: 'X', amount: 100 });
+  check(!payInNoAuth.ok && payInNoAuth.code === 'UNAUTHENTICATED', 'no auth, no inbound rail');
+
   console.log('→ the crypto desk…');
   const preBuy = balance(await bank('alice'), 'current');
   const buyCoin = await call('vaultExec', 'alice', { op: 'cryptobuy', args: { key: 'TIME', amount: 2000 } });

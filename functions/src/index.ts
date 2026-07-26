@@ -31,7 +31,7 @@ import { STRIPE_SECRET_KEY, stripeClient } from './stripe.js';
 export { createVelvetCheckout, createVelvetPortal, velvetStripeWebhook } from './velvet.js';
 // Vault Online — the digital bank (vault/): server-authoritative ledgers in
 // vaultBanks/{uid}, atomic P2P transfers, confirmation of payee.
-export { vaultOpen, vaultExec, vaultLookup, vaultSend } from './vault.js';
+export { vaultOpen, vaultExec, vaultLookup, vaultSend, vaultPayIn } from './vault.js';
 
 import {
   round5, isoPlusDays, computeFareBounds, driverEarning, dispatchPay,

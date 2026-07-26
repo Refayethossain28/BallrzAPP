@@ -348,6 +348,26 @@
     return r;
   }
 
+  /**
+   * An inbound faster payment from an external bank — the simulated FPS
+   * rail. Money arrives into the current account carrying the sender's name,
+   * their bank and the reference: exactly the shape an inbound credit has on
+   * a real statement ("From Amelia Khan · Rent · Barclays"). The credit goes
+   * through post() like everything else; who may invoke it (and for whom) is
+   * the caller's concern — locally it's your own vault, online the server
+   * routes it to any Vault rails.
+   */
+  function inboundPayment(state, opts) {
+    var name = String(opts.senderName || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+    if (!name) return { error: 'no-sender', message: 'Who is the money from?' };
+    var amount = Math.round(Number(opts.amount) || 0);
+    if (amount <= 0) return { error: 'bad-amount', message: 'Amount must be positive.' };
+    var ref = String(opts.reference || '').replace(/\s+/g, ' ').trim().slice(0, 30);
+    var bank = String(opts.senderBank || '').replace(/\s+/g, ' ').trim().slice(0, 24);
+    var desc = ('From ' + name + (ref ? ' · ' + ref : '') + (bank ? ' · ' + bank : '')).slice(0, 80);
+    return post(state, { amount: amount, from: null, to: 'current', desc: desc, category: 'income', method: 'faster-payment', ts: opts.ts });
+  }
+
   /* ════════════════════════ pots & interest ════════════════════════ */
 
   function createPot(state, opts) {
@@ -804,7 +824,7 @@
     monthKey: monthKey, nextMonthly: nextMonthly,
     openBank: openBank, hashPin: hashPin, setPin: setPin, verifyPin: verifyPin,
     accountById: accountById, balanceOf: balanceOf, totalBalance: totalBalance,
-    post: post, cardPurchase: cardPurchase, cardSpentOn: cardSpentOn,
+    post: post, cardPurchase: cardPurchase, cardSpentOn: cardSpentOn, inboundPayment: inboundPayment,
     createPot: createPot, accrueInterest: accrueInterest, compact: compact,
     addOrder: addOrder, runDueOrders: runDueOrders,
     CRYPTO: CRYPTO, cryptoPrice: cryptoPrice, cryptoQuote: cryptoQuote, fmtUnits: fmtUnits,

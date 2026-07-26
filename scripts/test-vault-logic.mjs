@@ -176,6 +176,24 @@ test('cardPurchase round-ups hop into the pot only when enabled', () => {
   assert.ok(!r.roundUpTxn);
 });
 
+/* ---- inbound transfers from another bank ---- */
+
+test('inboundPayment credits the current account with a statement-shaped desc', () => {
+  const s = bank();
+  const r = V.inboundPayment(s, { senderName: '  Amelia   Khan ', senderBank: 'Barclays', amount: 15000, reference: 'Rent', ts: NOW + 'T09:30:00Z' });
+  assert.ok(!r.error);
+  assert.equal(V.balanceOf(r.state, 'current'), 15000);
+  const t = r.state.txns[r.state.txns.length - 1];
+  assert.equal(t.desc, 'From Amelia Khan · Rent · Barclays');
+  assert.equal(t.category, 'income');
+  assert.equal(t.method, 'faster-payment');
+  // reference and bank are optional; sender and a positive amount are not
+  assert.ok(!V.inboundPayment(s, { senderName: 'Mum', amount: 500, ts: NOW }).error);
+  assert.equal(V.inboundPayment(s, { senderName: '', amount: 500, ts: NOW }).error, 'no-sender');
+  assert.equal(V.inboundPayment(s, { senderName: 'Mum', amount: 0, ts: NOW }).error, 'bad-amount');
+  assert.equal(V.inboundPayment(s, { senderName: 'Mum', amount: -5, ts: NOW }).error, 'bad-amount');
+});
+
 /* ---- pots & interest ---- */
 
 test('createPot numbers ids past every existing pot', () => {
