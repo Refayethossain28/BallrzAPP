@@ -204,6 +204,29 @@
   #speedBubble.show { display: flex; }
   #speedVal { font-size: 21px; font-weight: 900; line-height: 1; }
   #speedUnit { font-size: 9.5px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+  #speedBubble.over { border-color: #ef4444; animation: overpulse 0.9s ease-in-out infinite; }
+  #speedBubble.over #speedVal { color: #ef4444; }
+  @keyframes overpulse { 50% { box-shadow: 0 0 0 7px rgba(239,68,68,0.25); } }
+
+  /* speed-limit road sign (data: OpenStreetMap) */
+  #limitSign {
+    position: fixed; z-index: 44; left: 84px; bottom: calc(96px + var(--sab));
+    width: 56px; height: 56px; border-radius: 50%; background: #fff;
+    border: 6px solid #e11d48; box-shadow: var(--shadow); display: none;
+    flex-direction: column; align-items: center; justify-content: center; color: #111827;
+  }
+  #limitSign.show { display: flex; }
+  #limitVal { font-size: 18px; font-weight: 900; line-height: 1; }
+  #limitUnit { font-size: 8px; font-weight: 800; color: #6b7280; text-transform: uppercase; }
+
+  /* 📷 speed camera alert */
+  #camChip {
+    position: fixed; z-index: 44; left: 50%; transform: translateX(-50%);
+    top: calc(132px + var(--sat)); background: #451a03; border: 1px solid #fbbf24;
+    color: #fde68a; padding: 8px 16px; border-radius: 999px; font-weight: 700;
+    font-size: 13.5px; display: none; box-shadow: var(--shadow); white-space: nowrap;
+  }
+  #camChip.show { display: block; }
 
   /* 📹 dashcam preview */
   #dashcamBox {
@@ -378,6 +401,12 @@
     </div>
   </div>
   <div class="setRow">
+    <div class="lbl">📷 Speed cameras<div class="sub">Alerts for fixed cameras (OpenStreetMap data)</div></div>
+    <div class="seg" id="segCameras">
+      <button data-v="on">On</button><button data-v="off">Off</button>
+    </div>
+  </div>
+  <div class="setRow">
     <div class="lbl">🏁 Co-driver<div class="sub">Rally pace notes — "left 4 into right 3"</div></div>
     <div class="seg" id="segCodriver">
       <button data-v="on">On</button><button data-v="off">Off</button>
@@ -405,7 +434,9 @@
     into every frame; clips live in an on-device vault with playback, native share-sheet export
     and honest auto-pruning — footage never leaves your device),
     <strong>🍞 trail-back</strong> (retrace your own breadcrumbs, fully offline),
-    and an <strong>⏱ ETA that learns your pace</strong>.
+    an <strong>⏱ ETA that learns your pace</strong>, and <strong>🛑 speed-limit +
+    📷 speed-camera warnings</strong> (OpenStreetMap data — only as complete as the map;
+    always obey the signs on the road).
     Map data
     © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>
     contributors; routing by the community OSRM/FOSSGIS servers; search by Nominatim.
@@ -460,6 +491,8 @@
   <button class="navCtl" id="btnEnd" aria-label="End navigation">✕</button>
 </div>
 <div id="speedBubble"><div id="speedVal">0</div><div id="speedUnit">km/h</div></div>
+<div id="limitSign" aria-label="Speed limit"><div id="limitVal">30</div><div id="limitUnit">km/h</div></div>
+<div id="camChip">📷 Speed camera</div>
 
 <div id="dashcamBox">
   <video id="dashcamVideo" muted playsinline autoplay></video>
@@ -505,7 +538,7 @@ function load(key, fallback) {
 }
 function save(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) {} }
 
-var settings = Object.assign({ units: 'metric', voice: 'on', theme: 'auto', codriver: 'off' }, load('atlas.settings', {}));
+var settings = Object.assign({ units: 'metric', voice: 'on', theme: 'auto', codriver: 'off', cameras: 'on' }, load('atlas.settings', {}));
 var places = load('atlas.places', []);     // {name, addr, lat, lon, kind?, uses, lastUsed}
 var recents = load('atlas.recents', []);   // same shape, capped
 var pace = load('atlas.pace', {});         // per-profile personal pace factor (learned)
@@ -627,8 +660,26 @@ function draw() {
   ctx.restore();
 
   drawRoutes(night);
+  drawCameras();
   drawTapPin();
   drawGpsDot();
+}
+
+/* 📷 fixed speed cameras on the route (while navigating). */
+function drawCameras() {
+  if (!nav.active || !nav.route || !nav.cameras || !nav.cameras.length) return;
+  if (settings.cameras !== 'on') return;
+  for (var i = 0; i < nav.cameras.length; i++) {
+    var p = A.pointAtAlong(nav.route, nav.cameras[i].alongM);
+    var s = toScreen(p);
+    if (s.x < -30 || s.x > W + 30 || s.y < -30 || s.y > H + 30) continue;
+    ctx.beginPath(); ctx.arc(s.x, s.y, 12, 0, 7);
+    ctx.fillStyle = '#451a03'; ctx.fill();
+    ctx.lineWidth = 2.5; ctx.strokeStyle = '#fbbf24'; ctx.stroke();
+    ctx.font = '13px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('📷', s.x, s.y + 1);
+    ctx.textBaseline = 'alphabetic';
+  }
 }
 
 function drawPolyline(geometry, color, width, dash) {
@@ -882,6 +933,57 @@ function geocode(q) {
                lat: parseFloat(r.lat), lon: parseFloat(r.lon) };
     });
   });
+}
+
+/* Speed limits + fixed speed cameras along the route, from OpenStreetMap via
+   Overpass. The corridor is the route itself (sampled), so we only pull data
+   for roads you'll actually drive. Fails silently offline — guidance never
+   depends on it. */
+var OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+function fetchSafetyData(route) {
+  var pts = [];
+  var step = Math.max(120, route.totalM / 160);
+  for (var m = 0; m <= route.totalM; m += step) {
+    var p = A.pointAtAlong(route, m);
+    pts.push(p.lat.toFixed(5) + ',' + p.lon.toFixed(5));
+  }
+  var chain = pts.join(',');
+  var q = '[out:json][timeout:15];(way["maxspeed"](around:25,' + chain + ');' +
+          'node["highway"="speed_camera"](around:60,' + chain + '););out geom 800;';
+  var attempt = function (i) {
+    if (i >= OVERPASS.length) return Promise.reject(new Error('overpass unavailable'));
+    return fetch(OVERPASS[i], {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'data=' + encodeURIComponent(q),
+    }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .catch(function (err) { return i + 1 < OVERPASS.length ? attempt(i + 1) : Promise.reject(err); });
+  };
+  return attempt(0).then(function (json) {
+    var ways = [], cams = [];
+    (json.elements || []).forEach(function (el) {
+      if (el.type === 'way' && el.tags && el.geometry) {
+        var kmh = A.parseMaxspeed(el.tags.maxspeed);
+        if (kmh != null) ways.push({ kmh: kmh, geometry: el.geometry.map(function (g) { return { lat: g.lat, lon: g.lon }; }) });
+      } else if (el.type === 'node' && el.tags && el.tags.highway === 'speed_camera') {
+        cams.push({ lat: el.lat, lon: el.lon, kmh: A.parseMaxspeed(el.tags.maxspeed) });
+      }
+    });
+    return { limits: A.mapLimitsToRoute(route, ways), cameras: A.mapCamerasToRoute(route, cams) };
+  });
+}
+
+/* Bundled safety data for the demo drive (central London really is 20 mph —
+   and the sim drives at ~47 km/h, so the overspeed warning demos itself). */
+function demoSafety(route) {
+  var g = route.geometry;
+  var ways = [
+    { kmh: A.parseMaxspeed('30 mph'), geometry: g.slice(0, 8) },   // Constitution Hill
+    { kmh: A.parseMaxspeed('20 mph'), geometry: g.slice(10, 18) }, // The Mall
+  ];
+  var camSpot = A.destinationPoint(g[14], 90, 8);
+  var cams = [{ lat: camSpot.lat, lon: camSpot.lon, kmh: A.parseMaxspeed('20 mph') }];
+  return { limits: A.mapLimitsToRoute(route, ways), cameras: A.mapCamerasToRoute(route, cams) };
 }
 
 function reverseGeocode(p) {
@@ -1233,6 +1335,16 @@ function startNav(demo) {
   nav.noteIdx = 0; nav.noteSpoken = {};
   nav.lastAlong = 0; nav.lastFixTs = Date.now(); nav.ghostCount = 0; nav.ghosting = false;
   if (!demo && !nav.ghostTimer) nav.ghostTimer = setInterval(ghostTick, 1000);
+  // 📷 speed limits + cameras (bundled for the demo, OpenStreetMap live)
+  nav.limits = []; nav.cameras = []; nav.camSpoken = {}; nav.osState = null; nav.lastSafetyTs = Date.now();
+  if (demo) {
+    var ds = demoSafety(route);
+    nav.limits = ds.limits; nav.cameras = ds.cameras;
+  } else {
+    fetchSafetyData(route).then(function (s) {
+      if (nav.active && nav.route === route) { nav.limits = s.limits; nav.cameras = s.cameras; needsDraw = true; }
+    }).catch(function () {});
+  }
   closeSheets();
   $('topBar').classList.add('hidden');
   $('navBanner').classList.add('show');
@@ -1289,12 +1401,56 @@ function onNavFix(fix) {
   var shown = settings.units === 'imperial' ? v * 2.23694 : v * 3.6;
   $('speedVal').textContent = String(Math.round(shown));
 
+  // 🛑 speed-limit sign + overspeed state machine (engine-tested hysteresis)
+  var limitKmh = A.limitAtAlong(nav.limits || [], r.alongM);
+  updateLimitSign(limitKmh);
+  var nowTs = Date.now();
+  var dtS = Math.min(3, Math.max(0.2, (nowTs - (nav.lastSafetyTs || nowTs)) / 1000));
+  nav.lastSafetyTs = nowTs;
+  var os = A.overspeedUpdate(nav.osState, v * 3.6, limitKmh, dtS);
+  nav.osState = os.state;
+  $('speedBubble').classList.toggle('over', os.over);
+
+  // 📷 camera ahead: chip with live distance + one spoken alert per camera
+  var camHit = null;
+  if (settings.cameras === 'on' && nav.cameras && nav.cameras.length && !r.arrived) {
+    var cn = A.cameraNext(nav.cameras, r.alongM);
+    if (cn && cn.distM <= Math.max(450, v * 18)) camHit = cn;
+  }
+  if (camHit) {
+    $('camChip').textContent = '📷 Speed camera · ' + A.fmtDist(camHit.distM, settings.units) +
+      (camHit.cam.kmh != null ? ' · limit ' + limitLabel(camHit.cam.kmh) : '');
+    $('camChip').classList.add('show');
+    var camKey = Math.round(camHit.cam.alongM);
+    if (!nav.camSpoken[camKey] && !r.announce) {
+      nav.camSpoken[camKey] = 1;
+      speak('Speed camera ahead' + (camHit.cam.kmh != null ? ' — the limit is ' + limitLabel(camHit.cam.kmh) : ''));
+    }
+  } else $('camChip').classList.remove('show');
+
   if (r.announce) speak(r.announce.text);
+  else if (os.warn) speak('Watch your speed — the limit is ' + limitLabel(limitKmh));
   else speakPaceNote(r);
 
   if (r.offRoute && !nav.demo && !fix.ghost) maybeReroute(fix);
   if (r.arrived) finishNav();
   needsDraw = true;
+}
+
+/** "20 mph" | "30 km/h" — the label for a km/h limit in the user's units. */
+function limitLabel(kmh) {
+  if (kmh == null) return '';
+  return settings.units === 'imperial'
+    ? Math.round(kmh / 1.609344) + ' mph'
+    : Math.round(kmh) + ' km/h';
+}
+
+function updateLimitSign(limitKmh) {
+  if (limitKmh == null) { $('limitSign').classList.remove('show'); return; }
+  $('limitVal').textContent = String(settings.units === 'imperial'
+    ? Math.round(limitKmh / 1.609344) : Math.round(limitKmh));
+  $('limitUnit').textContent = settings.units === 'imperial' ? 'mph' : 'km/h';
+  $('limitSign').classList.add('show');
 }
 
 /* 🏁 co-driver: call the next corner rally-style, without talking over the
@@ -1351,6 +1507,13 @@ function maybeReroute(fix) {
     nav.route = A.buildRoute(routes[0]);
     trip.routes = [nav.route]; trip.selected = 0;
     nav.guide = A.startGuidance();
+    // refresh limits + cameras for the new road
+    nav.limits = []; nav.cameras = []; nav.camSpoken = {}; nav.osState = null;
+    var rerouted = nav.route;
+    fetchSafetyData(rerouted).then(function (s) {
+      if (nav.active && nav.route === rerouted) { nav.limits = s.limits; nav.cameras = s.cameras; needsDraw = true; }
+    }).catch(function () {});
+    if (settings.codriver === 'on') { nav.notes = A.paceNotes(nav.route); nav.noteIdx = 0; nav.noteSpoken = {}; }
     toast('New route found');
     needsDraw = true;
   }).catch(function () { toast('Reroute failed — rejoin the blue line'); });
@@ -1442,7 +1605,9 @@ function stopNavUI() {
   $('topBar').classList.remove('hidden');
   $('navBanner').classList.remove('show');
   $('navBottom').classList.remove('show');
-  $('speedBubble').classList.remove('show');
+  $('speedBubble').classList.remove('show', 'over');
+  $('limitSign').classList.remove('show');
+  $('camChip').classList.remove('show');
   $('btnCompass').style.display = 'none';
   releaseWakeLock();
   if (window.speechSynthesis) window.speechSynthesis.cancel();
@@ -1815,7 +1980,7 @@ function segWire(id, key, after) {
   });
 }
 function syncSettingsUI() {
-  [['segUnits', 'units'], ['segVoice', 'voice'], ['segTheme', 'theme'], ['segCodriver', 'codriver']].forEach(function (pair) {
+  [['segUnits', 'units'], ['segVoice', 'voice'], ['segTheme', 'theme'], ['segCodriver', 'codriver'], ['segCameras', 'cameras']].forEach(function (pair) {
     Array.prototype.forEach.call($(pair[0]).querySelectorAll('button'), function (b) {
       b.classList.toggle('on', b.getAttribute('data-v') === settings[pair[1]]);
     });
@@ -1826,6 +1991,7 @@ segWire('segUnits', 'units', function () { needsDraw = true; });
 segWire('segVoice', 'voice');
 segWire('segTheme', 'theme', function () { needsDraw = true; });
 segWire('segCodriver', 'codriver');
+segWire('segCameras', 'cameras', function () { needsDraw = true; });
 syncSettingsUI();
 
 /* ------------------------------ maneuver icons --------------------------- */

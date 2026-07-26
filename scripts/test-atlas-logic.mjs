@@ -572,6 +572,79 @@ test('dashcam vault: pruneClips keeps newest, enforces count and byte caps', () 
   same([...A.pruneClips([{ id: 1, t: 1, size: 10 }, { id: 2, t: 9, size: 999 }], { maxCount: 5, maxBytes: 100 })], [1]);
 });
 
+test('parseMaxspeed: OSM limit vocabulary → km/h', () => {
+  near(A.parseMaxspeed('30 mph'), 48.3, 0.05);
+  assert.equal(A.parseMaxspeed('50'), 50);
+  assert.equal(A.parseMaxspeed('50 km/h'), 50);
+  assert.equal(A.parseMaxspeed('walk'), 10);
+  assert.equal(A.parseMaxspeed('none'), null);
+  assert.equal(A.parseMaxspeed('signals'), null);
+  assert.equal(A.parseMaxspeed('GB:urban'), null);
+  assert.equal(A.parseMaxspeed(''), null);
+  assert.equal(A.parseMaxspeed(null), null);
+});
+
+test('mapLimitsToRoute: parallel nearby ways map on; far or crossing ways do not', () => {
+  const { route, base } = makeRoute(); // 1000 m north then 500 m east
+  const northWay = (offM, fromM, toM, kmh) => {
+    const g = [];
+    for (let m = fromM; m <= toM; m += 100) {
+      g.push(A.destinationPoint(A.destinationPoint(base, 0, m), 90, offM));
+    }
+    return { kmh, geometry: g };
+  };
+  const ways = [
+    northWay(5, 0, 500, 48.3),          // 30 mph beside the first half
+    northWay(4, 500, 1000, 32.2),       // 20 mph beside the second half
+    northWay(200, 0, 1000, 100),        // a parallel road 200 m away — ignored
+    { kmh: 60, geometry: [A.destinationPoint(A.destinationPoint(base, 0, 300), 90, -50),
+                          A.destinationPoint(A.destinationPoint(base, 0, 300), 90, 50)] }, // crossing road — ignored
+  ];
+  const segs = A.mapLimitsToRoute(route, ways);
+  assert.equal(segs.length, 2, JSON.stringify(segs));
+  assert.equal(segs[0].kmh, 48.3); near(segs[0].startM, 0, 1); near(segs[0].endM, 500, 60);
+  assert.equal(segs[1].kmh, 32.2); near(segs[1].endM, 1000, 60);
+  assert.equal(A.limitAtAlong(segs, 200), 48.3);
+  assert.equal(A.limitAtAlong(segs, 700), 32.2);
+  assert.equal(A.limitAtAlong(segs, 1400), null, 'the eastward leg has no mapped limit');
+});
+
+test('mapCamerasToRoute + cameraNext: verge cameras snap on, far ones do not', () => {
+  const { route, base } = makeRoute();
+  const at = (m, offM) => A.destinationPoint(A.destinationPoint(base, 0, m), 90, offM);
+  const cams = [
+    { ...at(600, 10), kmh: 32.2 },
+    { ...at(605, 12) },              // 5 m later — deduped
+    { ...at(300, 200) },             // 200 m off the road — ignored
+  ];
+  const mapped = A.mapCamerasToRoute(route, cams);
+  assert.equal(mapped.length, 1, JSON.stringify(mapped));
+  near(mapped[0].alongM, 600, 5);
+  assert.equal(mapped[0].kmh, 32.2);
+  const next = A.cameraNext(mapped, 100);
+  near(next.distM, 500, 5);
+  assert.equal(A.cameraNext(mapped, 700), null, 'camera behind you is silent');
+});
+
+test('overspeedUpdate: tolerance, 3 s hysteresis, single warning, resets under limit', () => {
+  let st = null, r;
+  r = A.overspeedUpdate(st, 33, 32.2, 1);          // 1 km/h over: visually over, no warning
+  assert.equal(r.over, true); assert.equal(r.warn, false); st = r.state;
+  r = A.overspeedUpdate(null, 45, 32.2, 1); st = r.state;   // well over: clock starts
+  assert.equal(r.warn, false, '1 s over is not enough');
+  r = A.overspeedUpdate(st, 45, 32.2, 1); st = r.state;
+  r = A.overspeedUpdate(st, 45, 32.2, 1); st = r.state;
+  assert.equal(r.warn, true, 'warns after 3 s over');
+  r = A.overspeedUpdate(st, 45, 32.2, 1); st = r.state;
+  assert.equal(r.warn, false, 'warns once');
+  r = A.overspeedUpdate(st, 20, 32.2, 1); st = r.state;
+  assert.equal(r.over, false, 'back under');
+  r = A.overspeedUpdate(st, 45, 32.2, 3);
+  assert.equal(r.warn, true, 're-arms after dropping under the limit');
+  assert.equal(A.overspeedUpdate(r.state, 45, 32.2, 1).warn, false, 'still warns once per episode');
+  assert.equal(A.overspeedUpdate(null, 200, null, 1).over, false, 'no limit, no judgement');
+});
+
 test('updatePace: learns your speed honestly and stays clamped', () => {
   assert.equal(A.updatePace(1, 30, 600), 1, 'too short to learn from');
   const slower = A.updatePace(1, 600, 900);
