@@ -44,7 +44,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var VERSION = '4.0.0';
+  var VERSION = '4.1.0';
   var JOURNAL_CAP = 300;
   var RUN_DEPTH_CAP = 8;
   var SCRIPT_STEP_CAP = 100000; // total statements one `run` may execute — kills infinite loops
@@ -549,6 +549,36 @@
       }
     } catch (e) { /* corrupt snapshot → fresh boot */ }
     return state;
+  }
+
+  /* ══════════════════════════ Mobile home screen ══════════════════════════
+   * The phone shell (a springboard of app icons, one fullscreen app at a
+   * time) is a different presentation of the SAME kernel — the desktop's
+   * windows and the phone's home screen both just spawn procs and run the
+   * same app renderers. These pure helpers describe the home layout so the
+   * ordering is deterministic and testable. */
+
+  // The four apps pinned to the phone's bottom dock, in order.
+  var DOCK_FAVORITES = ['files', 'assistant', 'terminal', 'store'];
+
+  /** The phone home screen: { dock, grid }. dock is the pinned favourites;
+   *  grid is every other built-in app followed by every installed user app.
+   *  Each entry is { id, arg, emoji, name } and opens with spawn(id, arg). */
+  function springboard(state) {
+    var dock = [], grid = [];
+    for (var i = 0; i < APPS.length; i++) {
+      var a = APPS[i];
+      var entry = { id: a.id, arg: null, emoji: a.emoji, name: a.name };
+      if (DOCK_FAVORITES.indexOf(a.id) !== -1) continue; // placed via dock order below
+      grid.push(entry);
+    }
+    for (var d = 0; d < DOCK_FAVORITES.length; d++) {
+      var app = appById(DOCK_FAVORITES[d]);
+      if (app) dock.push({ id: app.id, arg: null, emoji: app.emoji, name: app.name });
+    }
+    var user = listApps(state);
+    for (var u = 0; u < user.length; u++) grid.push({ id: 'userapp', arg: user[u].id, emoji: user[u].emoji, name: user[u].name });
+    return { dock: dock, grid: grid };
   }
 
   /* ══════════════════════════ Desktop icons ══════════════════════════ */
@@ -2013,6 +2043,9 @@
     boot: boot,
     serialize: serialize,
     deserialize: deserialize,
+    // mobile home screen
+    DOCK_FAVORITES: DOCK_FAVORITES,
+    springboard: springboard,
     // desktop icons
     desktopEntries: desktopEntries,
     defaultIconPos: defaultIconPos,
