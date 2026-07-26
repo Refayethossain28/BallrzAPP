@@ -345,6 +345,12 @@ function proxyBaseNow() {
   return detectedProxy;
 }
 function frameOpts() { return { torGateway: S.settings.torGateway, proxyBase: proxyBaseNow() }; }
+/** Origin of the active proxy (for validating postMessage from proxied pages). */
+function proxyOrigin() {
+  var b = proxyBaseNow();
+  if (!b) return '\0';                 // no proxy → a value e.origin can never equal
+  try { return new URL(b).origin; } catch (e) { return '\0'; }
+}
 
 function persist() {
   try { localStorage.setItem(STORE_KEY, Voyager.serialize(S)); } catch (e) {}
@@ -498,9 +504,15 @@ function showVeil(mode, url) {
   } else {
     $('veilSpin').style.display = 'none';
     $('veilTitle').textContent = 'This site won’t be framed';
-    $('veilText').textContent = Voyager.isOnion(url)
-      ? 'The gateway reached the hidden service but it refuses to render inside another page (X-Frame-Options), or the gateway is down. Try opening it in a full tab, or use the Tor Browser.'
-      : 'Many sites (most logins, banks, big apps) send X-Frame-Options and refuse to render inside another page. That’s the site’s choice, honestly hit — not a bug.';
+    var proxyOn = !!proxyBaseNow();
+    if (Voyager.isOnion(url)) {
+      $('veilText').innerHTML = 'The gateway reached the hidden service but it refuses to render inside another page (X-Frame-Options), or the gateway is down. Try opening it in a full tab, or use the Tor Browser.';
+    } else if (proxyOn) {
+      $('veilText').innerHTML = 'Even through the proxy this page won’t render inside a frame — usually a heavy app, DRM video, or a login. Open it in a full tab instead.';
+    } else {
+      // The common case: hosted/static, no proxy. Tell them how to actually open it.
+      $('veilText').innerHTML = 'Big sites (YouTube, Google, most logins) send <b>X-Frame-Options</b> and refuse to render inside another page — the browser enforces it. To open sites like these, run Voyager’s <b>full-browser server</b> and open the address it prints:<br><code style="display:inline-block;margin-top:8px;background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:6px 10px">node voyager/server.mjs</code><br><span class="tiny">(YouTube <i>videos</i> already play here — just paste a <b>youtube.com/watch</b> or <b>youtu.be</b> link.)</span>';
+    }
     $('veilActions').innerHTML =
       '<button class="btn primary" data-act="external">Open in full tab ↗</button>' +
       '<button class="btn" data-act="dismissveil">Wait anyway</button>';
@@ -537,9 +549,29 @@ function renderInternal(page) {
   if (page === 'start') el.innerHTML = startPage();
   else if (page === 'history') el.innerHTML = historyPage('');
   else if (page === 'bookmarks') el.innerHTML = bookmarksPage();
-  else if (page === 'settings') el.innerHTML = settingsPage();
+  else if (page === 'settings') { el.innerHTML = settingsPage(); checkProxyStatus(); }
   else if (page === 'about') el.innerHTML = aboutPage();
   else el.innerHTML = startPage();
+}
+
+/** Ping the active proxy and reflect connected/unreachable in the Settings page. */
+function checkProxyStatus() {
+  var base = proxyBaseNow();
+  var el = $('proxyStatus');
+  if (!el) return;
+  if (!base) { el.innerHTML = 'Status: <b style="color:var(--faint)">not connected</b>'; return; }
+  var ping = base.replace(/\/proxy\/?$/, '') + '/__voyager/ping';
+  fetch(ping, { cache: 'no-store' })
+    .then(function (r) { return r && r.ok ? r.json() : null; })
+    .then(function (j) {
+      var el2 = $('proxyStatus'); if (!el2) return;
+      if (j && j.voyager) el2.innerHTML = 'Status: <b style="color:var(--mint)">✓ connected — ' + esc(base) + '</b>';
+      else el2.innerHTML = 'Status: <b style="color:var(--red)">reached, but not a Voyager proxy</b>';
+    })
+    .catch(function () {
+      var el2 = $('proxyStatus'); if (!el2) return;
+      el2.innerHTML = 'Status: <b style="color:var(--red)">unreachable — check the URL is your deployed /proxy</b>';
+    });
 }
 
 function favHtml(url, title, cls) {
@@ -620,10 +652,13 @@ function settingsPage() {
     '<div class="field"><label>Home page</label><input id="homeInput" value="' + esc(S.settings.home) + '" placeholder="voyager://start"></div>' +
     '</div>' +
     '<h2 class="sect">🛰️ Full browser (proxy)</h2><div class="panel">' +
-    '<div class="field"><label>Proxy server</label>' +
-    '<input id="proxyInput" value="' + esc(S.settings.proxy) + '" placeholder="' + (detectedProxy ? 'auto — detected' : 'auto — off unless server running') + '" autocapitalize="off" autocorrect="off" spellcheck="false"></div>' +
-    '<p class="tiny" style="margin:2px 2px 0">Status: <b style="color:' + (proxyBaseNow() ? 'var(--mint)' : 'var(--faint)') + '">' + (proxyBaseNow() ? 'connected — ' + esc(proxyBaseNow()) : 'not connected') + '</b>. ' +
-    'Big sites (YouTube, Google, most logins) send a header that forbids being shown inside a frame, so a plain frame browser can’t open them. Run <code>node voyager/server.mjs</code> and open the address it prints — it fetches pages, strips that header and serves them back, so they load. Leave this blank to auto-use a local server, paste a URL to force one, or type <code>off</code> to disable. Honest limits: it’s a proxy, not a new engine — heavy apps, DRM video and logins (cookies are off) may not fully work, and the proxy sees your traffic, so run it yourself.</p>' +
+    '<div class="field"><label>Proxy server URL</label>' +
+    '<input id="proxyInput" value="' + esc(S.settings.proxy) + '" placeholder="' + (detectedProxy ? 'auto — local server detected' : 'https://your-proxy.example/proxy') + '" autocapitalize="off" autocorrect="off" spellcheck="false"></div>' +
+    '<p class="tiny" id="proxyStatus" style="margin:2px 2px 0">Status: <b style="color:' + (proxyBaseNow() ? 'var(--gold)' : 'var(--faint)') + '">' + (proxyBaseNow() ? 'checking ' + esc(proxyBaseNow()) + '…' : 'not connected') + '</b></p>' +
+    '<p class="tiny" style="margin:8px 2px 0">Big sites (YouTube, Google, most logins) send a header that forbids being shown inside a frame, so a plain page can’t open them — only a <b>server</b> can strip it. Two ways to have one:</p>' +
+    '<p class="tiny" style="margin:6px 2px 0">• <b>Local:</b> run <code>node voyager/server.mjs</code> and open the address it prints (auto-detected, nothing to paste).</p>' +
+    '<p class="tiny" style="margin:4px 2px 0">• <b>Deployed:</b> host <code>voyager/server.mjs</code> once (see <b>voyager/DEPLOY.md</b>) and paste its <code>/proxy</code> URL above — then this hosted site opens any site. Type <code>off</code> to disable.</p>' +
+    '<p class="tiny" style="margin:8px 2px 0">Honest limits: a proxy isn’t a new engine — heavy apps, DRM video and cookie-logins may not fully work — and whoever runs the proxy sees the traffic, so run your own.</p>' +
     '</div>' +
     '<h2 class="sect">🧅 Dark web (.onion)</h2><div class="panel">' +
     '<div class="field"><label>Tor gateway host</label>' +
@@ -888,6 +923,7 @@ document.addEventListener('change', function (e) {
     var on = proxyBaseNow();
     toast(on ? '🛰️ Full browser via ' + on : 'Proxy off — framing sites will use the fallback');
     currentFrameSrc = ''; // next paint reloads the current page through the new setting
+    checkProxyStatus();   // verify the pasted URL and update the status line
   }
 });
 
@@ -910,7 +946,9 @@ $('frame').addEventListener('error', function () {
  * here, so clicking links and submitting searches inside a page drives the
  * omnibox, history and back/forward — a proper browser, not a dead frame. ---- */
 window.addEventListener('message', function (e) {
-  if (e.origin !== location.origin) return;      // only our own proxied content
+  // Accept only our own content: the app's origin, plus the configured proxy's
+  // origin (when the proxy is deployed on a different host than the app).
+  if (e.origin !== location.origin && e.origin !== proxyOrigin()) return;
   var d = e.data;
   if (!d || !d.voyager) return;
   var url = d.url;

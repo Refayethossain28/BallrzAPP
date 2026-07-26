@@ -46,9 +46,13 @@ const Proxy = (() => {
   return sb.module.exports;
 })();
 const PORT = Number(process.env.PORT) || 8790;
-const HOST = process.env.HOST || '127.0.0.1';
+const HOST = process.env.HOST || '127.0.0.1';           // deploy with HOST=0.0.0.0
 const ALLOW_PRIVATE = !!process.env.VOYAGER_ALLOW_PRIVATE;
 const MAX_TEXT = 12 * 1024 * 1024; // cap in-memory rewrite of html/css
+// Open-relay guard for a PUBLIC deployment: comma-separated app origins allowed
+// to use /proxy (e.g. "https://refayethossain28.github.io"). Empty = no limit
+// (fine for a localhost box; strongly recommended when deployed).
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);
 
 const STATIC = {
   '/': ['index.html', 'text/html; charset=utf-8'],
@@ -107,6 +111,16 @@ async function handleProxy(target, req, res) {
   if (!ALLOW_PRIVATE && Proxy.isBlockedHost(url.hostname)) {
     return send(res, 403, { 'content-type': 'text/html; charset=utf-8' }, errorPage('Blocked for safety', 'That host is private or internal, so the proxy refuses to reach it.'));
   }
+  // On a public deployment, only serve app origins on the allowlist. The
+  // Origin header is sent on the app's top-level iframe navigation; in-frame
+  // navigations come from the proxy's own origin (allow that too).
+  if (ALLOWED_ORIGINS.length) {
+    const ref = req.headers['origin'] || req.headers['referer'] || '';
+    const selfOrigin = `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers['host'] || ''}`;
+    if (!Proxy.originAllowed(ref, ALLOWED_ORIGINS.concat([selfOrigin]))) {
+      return send(res, 403, { 'content-type': 'text/html; charset=utf-8' }, errorPage('Not allowed', 'This proxy only serves its own app. Set ALLOWED_ORIGINS to include your site.'));
+    }
+  }
 
   // Forward the request. Cookies deliberately not forwarded (see file header).
   const init = { headers: Object.assign({}, BROWSER_HEADERS), redirect: 'follow' };
@@ -162,7 +176,10 @@ const server = http.createServer(async (req, res) => {
   const pathname = parsed.pathname;
 
   if (pathname === '/__voyager/ping') {
-    return send(res, 200, { 'content-type': 'application/json' }, JSON.stringify({ voyager: true, version: 1 }));
+    // CORS-open so the app (on another origin, when deployed) can verify a
+    // pasted proxy URL. Reveals only "I am a Voyager proxy", nothing sensitive.
+    return send(res, 200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
+      JSON.stringify({ voyager: true, version: 1 }));
   }
   if (pathname === '/proxy') {
     const target = parsed.searchParams.get('url');
@@ -178,4 +195,5 @@ server.listen(PORT, HOST, () => {
   console.log(`Voyager — full browser mode`);
   console.log(`  open  http://${shown}:${PORT}`);
   console.log(`  proxy on, SSRF guard ${ALLOW_PRIVATE ? 'OFF (private hosts allowed)' : 'on'}, cookies off`);
+  console.log(`  origin allowlist: ${ALLOWED_ORIGINS.length ? ALLOWED_ORIGINS.join(', ') : 'OFF (set ALLOWED_ORIGINS when deploying publicly)'}`);
 });

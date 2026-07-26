@@ -396,13 +396,37 @@ test('proxyUrl wraps clearnet http(s) through the proxy base; no-op otherwise', 
   assert.equal(V.proxyUrl('voyager://start', B), 'voyager://start');    // non-http → unchanged
 });
 
-test('resolveFrameSrc picks proxy / gateway / direct correctly', () => {
+test('videoEmbedUrl maps YouTube links to the embeddable player, else null', () => {
+  const EMB = 'https://www.youtube-nocookie.com/embed/';
+  assert.equal(V.videoEmbedUrl('https://www.youtube.com/watch?v=dQw4w9WgXcQ'), EMB + 'dQw4w9WgXcQ');
+  assert.equal(V.videoEmbedUrl('youtube.com/watch?v=dQw4w9WgXcQ&list=xyz'), EMB + 'dQw4w9WgXcQ'); // scheme optional, extra params ignored
+  assert.equal(V.videoEmbedUrl('https://youtu.be/dQw4w9WgXcQ'), EMB + 'dQw4w9WgXcQ');
+  assert.equal(V.videoEmbedUrl('https://www.youtube.com/shorts/dQw4w9WgXcQ'), EMB + 'dQw4w9WgXcQ');
+  assert.equal(V.videoEmbedUrl('https://m.youtube.com/watch?v=dQw4w9WgXcQ'), EMB + 'dQw4w9WgXcQ');
+  assert.equal(V.videoEmbedUrl('https://www.youtube.com/embed/dQw4w9WgXcQ'), EMB + 'dQw4w9WgXcQ'); // already embed → normalised
+  assert.equal(V.videoEmbedUrl('https://youtu.be/dQw4w9WgXcQ?t=90'), EMB + 'dQw4w9WgXcQ?start=90'); // start time preserved
+  assert.equal(V.videoEmbedUrl('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=1m30s'), EMB + 'dQw4w9WgXcQ?start=90');
+  // not a video URL → null
+  assert.equal(V.videoEmbedUrl('https://www.youtube.com/'), null);
+  assert.equal(V.videoEmbedUrl('https://www.youtube.com/results?search_query=x'), null);
+  assert.equal(V.videoEmbedUrl('https://example.com/watch?v=dQw4w9WgXcQ'), null); // not a YouTube host
+  assert.equal(V.videoEmbedUrl('https://notyoutube.com/watch?v=dQw4w9WgXcQ'), null);
+  assert.equal(V.videoEmbedUrl('https://youtu.be/tooShort'), null); // id must be 11 chars
+});
+
+test('resolveFrameSrc picks video-embed / proxy / gateway / direct correctly', () => {
   const B = 'http://localhost:8790/proxy';
   // internal pages are never proxied
   assert.equal(V.resolveFrameSrc('voyager://start', { proxyBase: B }), 'voyager://start');
-  // a proxy set → clearnet pages route through it (this is what opens YouTube)
+  // a YouTube video → its embeddable player, with OR without a proxy (this is what makes YouTube play)
+  assert.equal(V.resolveFrameSrc('https://www.youtube.com/watch?v=dQw4w9WgXcQ', {}), 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ');
+  assert.equal(V.resolveFrameSrc('https://youtu.be/dQw4w9WgXcQ', { proxyBase: B }), 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ');
+  // the YouTube *homepage* isn't a video → proxy when set, direct otherwise
   assert.equal(V.resolveFrameSrc('https://youtube.com', { proxyBase: B }),
     'http://localhost:8790/proxy?url=' + encodeURIComponent('https://youtube.com'));
+  // a proxy set → other clearnet pages route through it
+  assert.equal(V.resolveFrameSrc('https://google.com', { proxyBase: B }),
+    'http://localhost:8790/proxy?url=' + encodeURIComponent('https://google.com'));
   // no proxy → direct load (plain framing browser)
   assert.equal(V.resolveFrameSrc('https://example.com', {}), 'https://example.com');
   // onion always goes through the Tor gateway, never the (Tor-less) proxy

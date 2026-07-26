@@ -233,19 +233,58 @@
     return b + '?url=' + encodeURIComponent(s);
   }
 
+  /** Seconds from a YouTube time param: "90", "1m30s", "1h2m3s". */
+  function ytSeconds(t) {
+    t = String(t == null ? '' : t);
+    if (/^\d+$/.test(t)) return parseInt(t, 10);
+    var h = /(\d+)h/.exec(t), m = /(\d+)m/.exec(t), s = /(\d+)s/.exec(t);
+    return (h ? +h[1] * 3600 : 0) + (m ? +m[1] * 60 : 0) + (s ? +s[1] : 0);
+  }
+
+  /**
+   * Some sites will never allow raw framing but publish an embeddable player
+   * that WILL — YouTube is the big one. Map a YouTube watch / shorts / youtu.be
+   * / live link to its privacy-friendly embed player, which is *designed* to be
+   * framed and plays video with no proxy and no server. Returns null for
+   * anything that isn't a recognised video URL. Regex-only (no URL global) so
+   * it stays vm-safe and deterministic like the rest of the engine.
+   */
+  function videoEmbedUrl(url) {
+    var s = String(url == null ? '' : url).trim();
+    var m = /^(?:https?:\/\/)?([^\/?#]+)([^?#]*)(\?[^#]*)?/i.exec(s);
+    if (!m) return null;
+    var host = m[1].split('@').pop().split(':')[0].replace(/^www\./i, '').toLowerCase();
+    var path = m[2] || '', query = m[3] || '';
+    var id = null;
+    if (host === 'youtu.be') {
+      id = path.replace(/^\/+/, '').split(/[/?#]/)[0];
+    } else if (/^(m\.|music\.)?youtube(-nocookie)?\.com$/.test(host)) {
+      if (/^\/watch\/?$/.test(path)) { var vm = /[?&]v=([^&]+)/.exec(query); id = vm ? vm[1] : null; }
+      else { var pm = /^\/(?:shorts|embed|v|live|e)\/([^\/?#]+)/.exec(path); id = pm ? pm[1] : null; }
+    }
+    if (!id || !/^[A-Za-z0-9_-]{11}$/.test(id)) return null;
+    var tm = /[?&](?:t|start)=([0-9hms]+)/i.exec(query);
+    var start = tm ? ytSeconds(tm[1]) : 0;
+    return 'https://www.youtube-nocookie.com/embed/' + id + (start ? '?start=' + start : '');
+  }
+
   /**
    * THE ONE PLACE that decides what a tab's <iframe> actually loads for a given
    * address, given the current settings:
    *   • internal voyager:// pages are handled by the chrome, returned as-is;
+   *   • a recognised video (YouTube…) loads its embeddable player — this is
+   *     what makes a YouTube link actually play, with or without a server;
    *   • .onion goes through the Tor gateway (the proxy has no Tor circuit);
    *   • otherwise, if a proxy base is set, clearnet pages load through it
-   *     (this is what lets framing-refusers like YouTube open);
+   *     (this is what lets other framing-refusers open);
    *   • else the URL loads directly (plain framing browser).
    */
   function resolveFrameSrc(url, opts) {
     opts = opts || {};
     var s = String(url == null ? '' : url);
     if (s.toLowerCase().indexOf(INTERNAL) === 0) return s;
+    var embed = videoEmbedUrl(s);
+    if (embed) return embed;
     if (isOnion(s)) return torGatewayUrl(s, opts.torGateway);
     if (opts.proxyBase && /^https?:\/\//i.test(s)) return proxyUrl(s, opts.proxyBase);
     return s;
@@ -686,6 +725,7 @@
     securityOf: securityOf,
     torGatewayUrl: torGatewayUrl,
     proxyUrl: proxyUrl,
+    videoEmbedUrl: videoEmbedUrl,
     resolveFrameSrc: resolveFrameSrc,
     createBrowser: createBrowser,
     newTab: newTab,
