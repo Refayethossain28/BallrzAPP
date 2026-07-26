@@ -551,6 +551,27 @@ test('dashcam: recordingEstimateMB is honest arithmetic', () => {
   assert.equal(A.recordingEstimateMB(-5), 0);
 });
 
+test('dashcam vault: fmtBytes banding', () => {
+  assert.equal(A.fmtBytes(0), '0 B');
+  assert.equal(A.fmtBytes(500), '500 B');
+  assert.equal(A.fmtBytes(254625), '255 KB');
+  assert.equal(A.fmtBytes(1.23e6), '1.2 MB');
+  assert.equal(A.fmtBytes(2.5e9), '2.5 GB');
+});
+
+test('dashcam vault: pruneClips keeps newest, enforces count and byte caps', () => {
+  const mk = (n, size) => Array.from({ length: n }, (_, i) => ({ id: i + 1, t: 1000 + i, size: size || 10 }));
+  same(A.pruneClips([], {}), []);
+  // count cap: 15 clips, keep the 12 newest (t high = new) → drop ids 1..3
+  same([...A.pruneClips(mk(15), { maxCount: 12, maxBytes: 1e9 })].sort((a, b) => a - b), [1, 2, 3]);
+  // byte cap: 5 × 100 B with a 250 B budget → keep the 2 newest, drop 3 oldest
+  same([...A.pruneClips(mk(5, 100), { maxCount: 99, maxBytes: 250 })].sort((a, b) => a - b), [1, 2, 3]);
+  // a single oversized newest clip is never dropped
+  same(A.pruneClips([{ id: 7, t: 5, size: 999 }], { maxCount: 3, maxBytes: 100 }), []);
+  // ...but an oversized newest still evicts everything older
+  same([...A.pruneClips([{ id: 1, t: 1, size: 10 }, { id: 2, t: 9, size: 999 }], { maxCount: 5, maxBytes: 100 })], [1]);
+});
+
 test('updatePace: learns your speed honestly and stays clamped', () => {
   assert.equal(A.updatePace(1, 30, 600), 1, 'too short to learn from');
   const slower = A.updatePace(1, 600, 900);
