@@ -447,6 +447,25 @@ var pinBuf = '', pinStage = null; // onboarding/change-pin two-step entry
    isn't offered. */
 var MODE = 'local';
 var FB = { on: false, auth: null, db: null, fns: null, user: null, unsub: null, opening: false };
+
+/* A ?payto=SORTACC-ACCOUNT&name=… link opens the pay-in sheet aimed at those
+   rails once the app is unlocked — how "request money" links arrive. */
+var PENDING_PAYTO = null;
+(function () {
+  try {
+    var qs = String(location.search || '');
+    var m = /[?&]payto=(\d{6})-(\d{8})/.exec(qs);
+    if (m) {
+      var nm = /[?&]name=([^&]*)/.exec(qs);
+      PENDING_PAYTO = {
+        sort: m[1].replace(/^(\d\d)(\d\d)(\d\d)$/, '$1-$2-$3'),
+        acc: m[2],
+        name: nm ? decodeURIComponent(nm[1].replace(/\+/g, ' ')) : ''
+      };
+      if (history.replaceState) history.replaceState(null, '', location.pathname);
+    }
+  } catch (e) { PENDING_PAYTO = null; }
+})();
 function initFirebase() {
   try {
     if (typeof firebase === 'undefined' || typeof APEXVIP_FIREBASE_CONFIG === 'undefined') return;
@@ -785,6 +804,13 @@ function renderHome() {
       '<span class="amt' + cls + '">' + (sign === '+' ? V.fmt(t.amount, { showPlus: true }) : sign === '−' ? V.fmt(-t.amount) : V.fmt(t.amount)) + '</span></div>';
   }
   $('homeTxns').innerHTML = html || '<p class="muted" style="padding:10px 0">Nothing yet — add some money to get going.</p>';
+
+  // a payment-request link brought us here — open the pay-in sheet once
+  if (PENDING_PAYTO) {
+    var payto = PENDING_PAYTO;
+    PENDING_PAYTO = null;
+    setTimeout(function () { openPayIn(payto); }, 250);
+  }
 }
 function methodLabel(t) {
   if (t.method === 'card') return 'Card';
@@ -938,8 +964,79 @@ function openAdd() {
   openSheet('<h3>Add money</h3>' +
     '<div class="field"><label for="addAmt">Amount</label><input id="addAmt" inputmode="decimal" placeholder="£0.00" autocomplete="off"></div>' +
     '<p class="tiny">Simulates a faster-payment top-up from an external account.</p>' +
-    '<button class="btn primary" onclick="doAdd()">Add to current account</button>');
+    '<button class="btn primary" onclick="doAdd()">Add to current account</button>' +
+    '<button class="btn" style="margin-top:10px" onclick="openPayIn(null)">🏦 Transfer from another bank…</button>');
   focusSoon('addAmt');
+}
+
+/* ---------- inbound: transfer in from another bank ---------- */
+/** The other side of the counter: an external bank pushing money IN to Vault
+    rails — yours by default, or anyone's when opened from a payment-request
+    link (?payto=…). Online it goes through the vaultPayIn callable; locally
+    it clears after a short simulated Faster Payments delay. */
+function openPayIn(prefill) {
+  var foreign = !!(prefill && prefill.acc && prefill.acc !== state.accountNumber);
+  if (foreign && !isOnline()) {
+    openSheet('<h3>🏦 Pay ' + esc(prefill.name || 'a Vault customer') + '</h3>' +
+      '<p class="muted" style="margin:0 0 12px">This payment link pays a <b>Vault Online</b> account (' + esc(prefill.sort) + ' · ' + esc(prefill.acc) + '). ' +
+      'Your vault is in private local mode, so it can’t reach them — sign in to Vault Online first.</p>' +
+      '<button class="btn primary" onclick="closeSheet(); switchMode()">Go online</button>');
+    return;
+  }
+  var toName = foreign ? (prefill.name || 'A Vault customer') : state.name;
+  var toSort = foreign ? prefill.sort : state.sortCode;
+  var toAcc = foreign ? prefill.acc : state.accountNumber;
+  openSheet('<h3>🏦 Transfer from another bank</h3>' +
+    '<div class="panel spread" style="margin-bottom:12px;padding:12px 15px">' +
+      '<span class="muted">Paying in to</span><b style="text-align:right;font-size:14px">' + esc(toName) + '<br><span class="tiny">' + esc(toSort) + ' · ' + esc(toAcc) + '</span></b></div>' +
+    '<div class="row2">' +
+      '<div class="field"><label for="piName">Sender name</label><input id="piName" maxlength="40" placeholder="e.g. Amelia Khan"></div>' +
+      '<div class="field"><label for="piBank">Their bank (optional)</label><input id="piBank" maxlength="24" placeholder="e.g. Barclays"></div>' +
+    '</div>' +
+    '<div class="field"><label for="piAmt">Amount</label><input id="piAmt" inputmode="decimal" placeholder="£0.00"></div>' +
+    '<div class="field"><label for="piRef">Reference (optional)</label><input id="piRef" maxlength="30" placeholder="e.g. Rent"></div>' +
+    '<button class="btn primary" onclick="doPayIn(\'' + esc(toSort) + '\',\'' + esc(toAcc) + '\')">Send the transfer</button>' +
+    '<p class="tiny" style="margin-top:10px">Simulates the Faster Payments inbound rail — the credit lands with the sender’s name, bank and reference, statement-style. A licensed build would replace this form with the real thing (see the repo’s real-money roadmap).</p>');
+  focusSoon('piName');
+}
+function doPayIn(toSort, toAcc) {
+  var senderName = String($('piName').value || '').trim();
+  var senderBank = String($('piBank').value || '').trim();
+  var pence = V.parseAmount($('piAmt').value);
+  var ref = String($('piRef').value || '').trim();
+  if (!senderName) { toast('Who is the money from?', true); return; }
+  if (pence === null) { toast('Enter a valid amount', true); return; }
+  if (isOnline()) {
+    FB.fns.httpsCallable('vaultPayIn')({ toSortCode: toSort, toAccountNumber: toAcc, senderName: senderName, senderBank: senderBank, amount: pence, reference: ref }).then(
+      function (r) {
+        closeSheet();
+        var who = (r.data && r.data.toName) || 'the account';
+        toast(V.fmt(pence) + ' on its way to ' + who + ' by Faster Payments ⚡');
+      },
+      function (e) { toast(cleanErr(e), true); }
+    );
+    return;
+  }
+  closeSheet();
+  toast('Transfer sent — clearing by Faster Payments…');
+  setTimeout(function () {
+    var r = V.inboundPayment(state, { senderName: senderName, senderBank: senderBank, amount: pence, reference: ref, ts: nowTS() });
+    if (r.error) { toast(r.message, true); return; }
+    state = r.state; save(); renderAll();
+    toast(V.fmt(pence, { showPlus: true }) + ' received from ' + senderName + ' ✅');
+  }, 1800);
+}
+/** Share a link that opens Vault ready to pay money into YOUR account. */
+function requestLink() {
+  var base = '';
+  try { base = String(location.origin) + String(location.pathname); } catch (e) {}
+  var url = base + '?payto=' + state.sortCode.replace(/\D/g, '') + '-' + state.accountNumber + '&name=' + encodeURIComponent(state.name);
+  try {
+    if (navigator.share) { navigator.share({ title: 'Pay ' + state.name + ' on Vault', url: url }); return; }
+  } catch (e) {}
+  try {
+    navigator.clipboard.writeText(url).then(function () { toast('Payment link copied 📋 — send it to whoever owes you'); }, function () { toast(url); });
+  } catch (e) { toast(url); }
 }
 function doAdd() {
   var pence = V.parseAmount($('addAmt').value);
@@ -1280,7 +1377,8 @@ function openDetails() {
       detailRow('IBAN', state.iban.replace(/(.{4})/g, '$1 ').trim()) +
       detailRow('BIC', 'VAULGB2L') +
     '</div>' +
-    '<button class="btn" onclick="copyDetails()">Copy details</button>');
+    '<button class="btn" onclick="copyDetails()">Copy details</button>' +
+    '<button class="btn primary" style="margin-top:10px" onclick="requestLink()">🔗 Request money — share a payment link</button>');
 }
 function detailRow(k, v) {
   return '<div class="spread" style="padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05)"><span class="muted">' + k + '</span><b style="font-size:14px;text-align:right">' + esc(v) + '</b></div>';

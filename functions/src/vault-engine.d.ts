@@ -101,6 +101,9 @@ export interface VaultEngine {
     desc?: string; category?: string; method?: string; ts: string;
   }): PostResult;
   cardPurchase(state: VaultState, amount: number, merchant: string, ts: string): PostResult;
+  inboundPayment(state: VaultState, opts: {
+    senderName: string; senderBank?: string; amount: number; reference?: string; ts: string;
+  }): PostResult;
   createPot(state: VaultState, opts: { name: string; goal?: number; aerPct?: number; nowISO: string }): VaultState;
   accrueInterest(state: VaultState, toISO: string): VaultState;
   compact(state: VaultState, keep: number): VaultState;

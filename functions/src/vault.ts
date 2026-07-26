@@ -261,6 +261,45 @@ export const vaultLookup = onCall({ region: 'us-central1' }, async (request) => 
 });
 
 /**
+ * vaultPayIn({ toSortCode, toAccountNumber, senderName, senderBank?, amount,
+ * reference? }) — an inbound transfer from an external bank, addressed to any
+ * Vault account's rails. This is the simulated Faster Payments inbound leg: a
+ * licensed build would replace this callable's body with the BaaS partner's
+ * inbound-credit webhook. Auth is required (an abuse brake, same as top-ups),
+ * but the target doesn't have to be the caller's own bank — that's what makes
+ * request-a-payment links work. Play-money caps still bound the recipient.
+ */
+export const vaultPayIn = onCall({ region: 'us-central1' }, async (request) => {
+  uidOf(request);
+  const amount = penceOf(request.data?.amount, SEND_MAX, 'Transfer');
+  const senderName = strOf(request.data?.senderName, 40);
+  if (!senderName) throw new HttpsError('invalid-argument', 'Who is the money from?');
+  const senderBank = strOf(request.data?.senderBank, 24);
+  const reference = strOf(request.data?.reference, 30);
+  const toSort = strOf(request.data?.toSortCode, 12);
+  const toAcc = strOf(request.data?.toAccountNumber, 12);
+
+  const toName = await db().runTransaction(async (tx) => {
+    const rail = await tx.get(railRef(toSort, toAcc));
+    if (!rail.exists) throw new HttpsError('not-found', 'No Vault account with those details — check the sort code and account number.');
+    const toUid = (rail.data() as { uid: string }).uid;
+    const snap = await tx.get(bankRef(toUid));
+    if (!snap.exists) throw new HttpsError('not-found', 'That account is no longer open.');
+    const recipient = catchUp(snap.data() as unknown as VaultState);
+    if (V.totalBalance(recipient) + amount > TOTAL_CAP) {
+      throw new HttpsError('failed-precondition', 'That account is full (the play-money cap).');
+    }
+    const r = V.inboundPayment(recipient, { senderName, senderBank, amount, reference, ts: nowTS() });
+    if (r.error || !r.state) throw new HttpsError('failed-precondition', r.message || 'The bank said no.');
+    tx.set(bankRef(toUid), r.state as unknown as admin.firestore.DocumentData);
+    return recipient.name;
+  });
+
+  logger.info('vaultPayIn', { amount });
+  return { ok: true, toName };
+});
+
+/**
  * vaultSend({ toSortCode, toAccountNumber, amount, reference }) — the heart of
  * the online bank: an atomic double-entry across two users. Sender's gate
  * (funds, overdraft floor) runs in the engine; both ledgers update in one
