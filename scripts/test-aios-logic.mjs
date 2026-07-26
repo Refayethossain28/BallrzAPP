@@ -911,6 +911,29 @@ test('the two seeded apps actually compute when their buttons run', () => {
   deq(K.execCommand(st, btn.run, T0).out, ['Each pays 57.5']);
 });
 
+/* ══════════ v4.1: the mobile home screen ══════════ */
+
+test('springboard: dock favourites in order, grid holds the rest + user apps', () => {
+  const st = K.boot(T0);
+  const FAV = JSON.parse(JSON.stringify(K.DOCK_FAVORITES)); // into this realm
+  const sb = K.springboard(st);
+  deq(sb.dock.map((d) => d.id), FAV, 'dock is exactly the favourites, in order');
+  // no dock app leaks into the grid
+  const gridIds = sb.grid.filter((g) => g.id !== 'userapp').map((g) => g.id);
+  FAV.forEach((f) => assert.ok(gridIds.indexOf(f) === -1, f + ' is docked, not in the grid'));
+  // every non-dock built-in is present in the grid
+  K.APPS.forEach((a) => {
+    if (FAV.indexOf(a.id) === -1) assert.ok(gridIds.indexOf(a.id) !== -1, a.id + ' should be on the home grid');
+  });
+  // the two seeded user apps appear as userapp entries carrying their id
+  const userEntries = sb.grid.filter((g) => g.id === 'userapp').map((g) => g.arg).sort();
+  deq(userEntries, ['dice', 'tip']);
+  const tip = sb.grid.find((g) => g.arg === 'tip');
+  assert.equal(tip.name, 'Tip Calculator');
+  // every springboard entry actually spawns
+  sb.dock.concat(sb.grid).forEach((e) => assert.equal(K.spawn(st, e.id, e.arg).ok, true, e.name + ' spawns'));
+});
+
 console.log('── aios kernel unit tests ──');
 let failed = 0;
 for (const [n, f] of tests) {
