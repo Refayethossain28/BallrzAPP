@@ -95,11 +95,49 @@ test('displayUrl hides https/www but keeps http visible as a warning', () => {
   assert.equal(V.displayUrl('voyager://start'), 'voyager://start');
 });
 
-test('securityOf maps scheme → chip', () => {
+test('securityOf maps scheme → chip; onion is its own posture, not "insecure"', () => {
   assert.equal(V.securityOf('https://example.com'), 'secure');
   assert.equal(V.securityOf('http://example.com'), 'insecure');
   assert.equal(V.securityOf('voyager://history'), 'internal');
   assert.equal(V.securityOf('data:text/html,x'), 'neutral');
+  // Tor authenticates .onion by the address, so plain-http onion is NOT "insecure".
+  assert.equal(V.securityOf('http://duskgytldkxiuqc6.onion'), 'onion');
+  assert.equal(V.securityOf('https://protonmailrmez3lotccipshtkleegetolb73fuirgj7r4o4vfu7ozyd.onion/inbox'), 'onion');
+});
+
+/* ---- dark web: onion recognition & gateway routing ---- */
+
+test('isOnion recognises hidden-service hosts and only those', () => {
+  assert.equal(V.isOnion('http://duskgytldkxiuqc6.onion'), true);
+  assert.equal(V.isOnion('https://sub.facebookwkhpilnemxj7asaniu7vnjjbiltxjqhye3mhbshg7kx5tfyd.onion/x'), true);
+  assert.equal(V.isOnion('https://example.com'), false);
+  assert.equal(V.isOnion('https://onionsoup.com'), false);   // "onion" in the name ≠ .onion TLD
+  assert.equal(V.isOnion('voyager://start'), false);
+});
+
+test('classify treats an .onion address as a navigable URL', () => {
+  assert.equal(V.classify('duskgytldkxiuqc6.onion').kind, 'url');
+  assert.equal(V.classify('duskgytldkxiuqc6.onion').url, 'https://duskgytldkxiuqc6.onion');
+  assert.equal(V.classify('http://abc.onion/path').url, 'http://abc.onion/path');
+});
+
+test('torGatewayUrl rewrites .onion through a gateway, https, path/query preserved', () => {
+  assert.equal(
+    V.torGatewayUrl('http://duskgytldkxiuqc6.onion/wiki?x=1#f', 'onion.ws'),
+    'https://duskgytldkxiuqc6.onion.ws/wiki?x=1#f');
+  assert.equal(
+    V.torGatewayUrl('https://abc.onion', 'onion.ly'),
+    'https://abc.onion.ly');
+  // gateway given with scheme / trailing slash is normalised
+  assert.equal(
+    V.torGatewayUrl('http://abc.onion/p', 'https://onion.ws/'),
+    'https://abc.onion.ws/p');
+});
+
+test('torGatewayUrl is a safe no-op for clearnet URLs or when no gateway is set', () => {
+  assert.equal(V.torGatewayUrl('https://example.com/x', 'onion.ws'), 'https://example.com/x');
+  assert.equal(V.torGatewayUrl('http://abc.onion/x', ''), 'http://abc.onion/x');
+  assert.equal(V.torGatewayUrl('http://abc.onion/x', '   '), 'http://abc.onion/x');
 });
 
 /* ---- tabs ---- */
@@ -338,6 +376,15 @@ test('setSetting accepts known engines and home; rejects unknown engines and key
   assert.equal(V.setSetting(s, 'hacker', 'x').settings.hacker, undefined);
 });
 
+test('setSetting stores a normalised bare torGateway host; default is off', () => {
+  let s = V.createBrowser();
+  assert.equal(s.settings.torGateway, '');                   // off by default
+  s = V.setSetting(s, 'torGateway', 'https://onion.ws/');
+  assert.equal(s.settings.torGateway, 'onion.ws');           // scheme + slash stripped
+  s = V.setSetting(s, 'torGateway', '');
+  assert.equal(s.settings.torGateway, '');                   // clearing turns it back off
+});
+
 /* ---- session round-trip ---- */
 
 test('serialize → restore round-trips tabs, stacks, history, bookmarks, settings', () => {
@@ -349,6 +396,7 @@ test('serialize → restore round-trips tabs, stacks, history, bookmarks, settin
   s = V.newTab(s, { url: 'https://c.com', ts: NOW });
   s = V.toggleBookmark(s, 'https://a.com', 'A', NOW);
   s = V.setSetting(s, 'engine', 'brave');
+  s = V.setSetting(s, 'torGateway', 'onion.ws');
   s = V.setZoom(s, s.activeId, 125);
 
   const r = V.restore(V.serialize(s));
@@ -360,6 +408,7 @@ test('serialize → restore round-trips tabs, stacks, history, bookmarks, settin
   assert.equal(V.canForward(t), true);
   assert.equal(V.activeTab(r).zoom, 125);
   assert.equal(r.settings.engine, 'brave');
+  assert.equal(r.settings.torGateway, 'onion.ws');
   assert.equal(V.isBookmarked(r, 'https://a.com'), true);
   assert.equal(r.history.length, s.history.length);
 });
