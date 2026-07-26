@@ -645,6 +645,71 @@ test('overspeedUpdate: tolerance, 3 s hysteresis, single warning, resets under l
   assert.equal(A.overspeedUpdate(null, 200, null, 1).over, false, 'no limit, no judgement');
 });
 
+test('convoy codes: deterministic generation, normalisation, link parsing', () => {
+  let seed = 42;
+  const lcg = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2 ** 32; };
+  const code = A.makeConvoyCode(lcg);
+  assert.equal(code.length, 6);
+  assert.equal(A.validConvoyCode(code), code, 'generated codes are valid');
+  seed = 42;
+  assert.equal(A.makeConvoyCode(lcg), code, 'same seed, same code');
+  assert.equal(A.validConvoyCode(' k7m2qd '), 'K7M2QD', 'normalises case and space');
+  assert.equal(A.validConvoyCode('K7M2Q'), null, 'wrong length');
+  assert.equal(A.validConvoyCode('K7M2QO'), null, 'O is not in the alphabet');
+  assert.equal(A.parseConvoyLink('https://apexvip.uk/atlas/#convoy=K7M2QD'), 'K7M2QD');
+  assert.equal(A.parseConvoyLink('#convoy=k7m2qd'), 'K7M2QD');
+  assert.equal(A.parseConvoyLink('K7M2QD'), 'K7M2QD', 'raw code accepted');
+  assert.equal(A.parseConvoyLink('hello world'), null);
+});
+
+test('convoyAvatar: deterministic car + colour per id', () => {
+  const a = A.convoyAvatar('driver-1'), b = A.convoyAvatar('driver-1'), c = A.convoyAvatar('driver-2');
+  assert.equal(a.emoji, b.emoji); assert.equal(a.color, b.color);
+  assert.ok(typeof a.emoji === 'string' && a.emoji.length > 0);
+  assert.ok(/^#[0-9a-f]{6}$/i.test(a.color));
+  assert.ok(a.emoji !== c.emoji || a.color !== c.color, 'different ids differ somewhere');
+});
+
+test('applyBeacon: validates, ignores self and stale, newest wins, clamps name', () => {
+  const NOW = 1000000;
+  let m = {};
+  m = A.applyBeacon(m, { id: 'a', name: 'Aisha', lat: 51.5, lon: -0.1, ts: NOW - 1000 }, 'me', NOW);
+  assert.equal(Object.keys(m).length, 1);
+  assert.equal(m.a.name, 'Aisha');
+  assert.equal(A.applyBeacon(m, { id: 'me', lat: 51.5, lon: -0.1 }, 'me', NOW), m, 'own echo ignored');
+  assert.equal(A.applyBeacon(m, { id: 'b', lat: 99, lon: 0 }, 'me', NOW), m, 'bad latitude rejected');
+  assert.equal(A.applyBeacon(m, null, 'me', NOW), m);
+  const stale = A.applyBeacon(m, { id: 'a', name: 'Old', lat: 51, lon: -0.1, ts: NOW - 60000 }, 'me', NOW);
+  assert.equal(stale.a.name, 'Aisha', 'older beacon never overwrites');
+  const upd = A.applyBeacon(m, { id: 'a', name: '  ' + 'x'.repeat(60), lat: 51.6, lon: -0.2, ts: NOW }, 'me', NOW);
+  assert.equal(upd.a.lat, 51.6, 'newer beacon wins');
+  assert.equal(upd.a.name.length, 24, 'name clamped');
+  assert.ok(upd !== m && m.a.lat === 51.5, 'input map untouched');
+  const future = A.applyBeacon({}, { id: 'c', lat: 0, lon: 0, ts: NOW + 999999 }, 'me', NOW);
+  assert.ok(future.c.ts <= NOW + 60000, 'future clocks pulled back');
+});
+
+test('pruneMembers + convoyStats: silence drops you; nearest-first formation', () => {
+  const NOW = 5000000;
+  const base = { lat: 51.5, lon: -0.1 };
+  const at = (m) => A.destinationPoint(base, 0, m);
+  let members = {};
+  members = A.applyBeacon(members, { id: 'near', name: 'Near', ...at(100), ts: NOW - 2000 }, 'me', NOW);
+  members = A.applyBeacon(members, { id: 'far', name: 'Far', ...at(900), ts: NOW - 2000 }, 'me', NOW);
+  members = A.applyBeacon(members, { id: 'gone', name: 'Gone', ...at(50), ts: NOW - 60000 }, 'me', NOW - 50000);
+  const alive = A.pruneMembers(members, NOW);
+  assert.equal(Object.keys(alive).length, 2, 'silent member pruned');
+  const stats = A.convoyStats(alive, base, NOW);
+  assert.equal(stats[0].member.id, 'near');
+  assert.equal(stats[1].member.id, 'far');
+  near(stats[0].distM, 100, 2);
+  near(A.angleDiff(stats[1].brgDeg, 0), 0, 1, 'due north of me');
+  near(stats[0].staleS, 2, 0.01);
+  const noSelf = A.convoyStats(alive, null, NOW);
+  assert.equal(noSelf.length, 2);
+  assert.equal(noSelf[0].distM, null);
+});
+
 test('updatePace: learns your speed honestly and stays clamped', () => {
   assert.equal(A.updatePace(1, 30, 600), 1, 'too short to learn from');
   const slower = A.updatePace(1, 600, 900);

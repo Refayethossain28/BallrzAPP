@@ -477,6 +477,19 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ── Atlas — the satnav (atlas/) ───────────────────────────────────────
+    // Convoy mode: drivers who share a random convoy code see each other
+    // live. The code IS the capability — the parent collection cannot be
+    // listed (no rule matches it), so you must know the code to read a
+    // convoy. Each signed-in member writes ONLY their own beacon doc (keyed
+    // by their anonymous uid); beacons carry position/telemetry only.
+    match /atlas_convoys/{code}/members/{uid} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(
+             ['id', 'name', 'lat', 'lon', 'heading', 'speed', 'etaS', 'arrived', 'ts']);
+    }
+
     // ── AIOS — the AI operating system (aios/) ────────────────────────────
     // Optional cross-device sync: AIOS mirrors a user's whole serialized disk
     // to one document keyed by their anonymous uid. It is private to its owner
