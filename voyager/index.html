@@ -1,0 +1,847 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Voyager — the internet browser</title>
+<meta name="description" content="A real internet browser in your browser: tabs, a smart omnibox that knows a URL from a question, history with frecency-ranked suggestions, bookmarks, private tabs that leave no trace, per-tab zoom, six search engines and a session that survives restarts. Offline-first, installable, no account.">
+<meta name="theme-color" content="#070b16">
+<meta property="og:title" content="Voyager — the internet browser">
+<meta property="og:description" content="Tabs, smart omnibox, history, bookmarks, private mode, sessions. The whole chrome of a browser, built as a pure tested engine.">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Voyager">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #070b16;
+    --bg2: #0d1322;
+    --bar: #101829;
+    --card: rgba(255,255,255,0.05);
+    --card2: rgba(255,255,255,0.08);
+    --line: rgba(255,255,255,0.09);
+    --ink: #e9eefb;
+    --dim: #93a0c0;
+    --faint: #5f6b8f;
+    --cyan: #4cc9f0;
+    --blue: #5b7bff;
+    --mint: #3ce6b0;
+    --gold: #f5c04a;
+    --red: #ff6b7a;
+    --purple: #b07cf7;
+    --radius: 16px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  body.private { --bar: #191129; --bg: #0c0716; --bg2: #150d26; }
+  button { font: inherit; color: inherit; cursor: pointer; background: none; border: 0; padding: 0; }
+  input, select { font: inherit; color: var(--ink); }
+
+  /* ═════════ toolbar ═════════ */
+  .toolbar {
+    flex: none;
+    display: flex; align-items: center; gap: 6px;
+    padding: calc(6px + env(safe-area-inset-top)) 8px 6px;
+    background: var(--bar);
+    border-bottom: 1px solid var(--line);
+    position: relative; z-index: 30;
+  }
+  .navbtn {
+    flex: none; width: 36px; height: 36px; border-radius: 10px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 17px; color: var(--dim);
+  }
+  .navbtn:not([disabled]):active { background: var(--card2); color: var(--ink); }
+  .navbtn[disabled] { opacity: .3; cursor: default; }
+  @media (max-width: 560px) { .navbtn.fwd { display: none; } }
+
+  .omnibox {
+    flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0;
+    background: var(--bg2); border: 1px solid var(--line); border-radius: 12px;
+    padding: 0 6px 0 10px; height: 40px;
+  }
+  .omnibox:focus-within { border-color: rgba(76,201,240,.55); box-shadow: 0 0 0 3px rgba(76,201,240,.12); }
+  body.private .omnibox:focus-within { border-color: rgba(176,124,247,.55); box-shadow: 0 0 0 3px rgba(176,124,247,.12); }
+  .chip { flex: none; font-size: 13px; }
+  .chip.secure { color: var(--mint); }
+  .chip.insecure { color: var(--gold); }
+  .chip.internal { color: var(--cyan); }
+  .chip.neutral { color: var(--faint); }
+  #urlInput {
+    flex: 1; min-width: 0; background: none; border: 0; outline: none;
+    font-size: 15px; color: var(--ink);
+  }
+  #urlInput::placeholder { color: var(--faint); }
+  .star { flex: none; width: 30px; height: 30px; border-radius: 8px; font-size: 16px; color: var(--faint); display: inline-flex; align-items: center; justify-content: center; }
+  .star.on { color: var(--gold); }
+  .star:active { background: var(--card2); }
+
+  .tabbtn {
+    flex: none; width: 34px; height: 30px; margin-left: 2px;
+    border: 1.6px solid var(--dim); border-radius: 8px;
+    font-size: 12.5px; font-weight: 700; color: var(--dim);
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .tabbtn:active { border-color: var(--ink); color: var(--ink); }
+  body.private .tabbtn { border-color: var(--purple); color: var(--purple); }
+
+  /* ═════════ progress ═════════ */
+  .progress { position: absolute; left: 0; right: 0; bottom: -2px; height: 2px; pointer-events: none; }
+  .progress i {
+    display: block; height: 100%; width: 0;
+    background: linear-gradient(90deg, var(--cyan), var(--blue));
+    transition: width .25s ease, opacity .4s ease;
+  }
+
+  /* ═════════ suggestions ═════════ */
+  .suggest {
+    position: absolute; top: 100%; left: 52px; right: 52px; z-index: 40;
+    background: var(--bg2); border: 1px solid var(--line); border-radius: 14px;
+    margin-top: 6px; overflow: hidden; display: none;
+    box-shadow: 0 18px 40px rgba(0,0,0,.5);
+  }
+  @media (max-width: 560px) { .suggest { left: 8px; right: 8px; } }
+  .suggest.on { display: block; }
+  .sug { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 11px 14px; }
+  .sug + .sug { border-top: 1px solid rgba(255,255,255,.05); }
+  .sug:hover, .sug.sel { background: var(--card2); }
+  .sug .ico { flex: none; width: 20px; text-align: center; font-size: 14px; }
+  .sug .txt { flex: 1; min-width: 0; }
+  .sug .t { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; }
+  .sug .u { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--faint); }
+
+  /* ═════════ viewport ═════════ */
+  .viewport { flex: 1; position: relative; background: var(--bg); min-height: 0; }
+  #frameWrap { position: absolute; inset: 0; overflow: hidden; display: none; background: #fff; }
+  #frameWrap.on { display: block; }
+  #frame { border: 0; width: 100%; height: 100%; background: #fff; transform-origin: 0 0; }
+
+  .veil {
+    position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    flex-direction: column; gap: 14px; text-align: center; padding: 24px;
+    background: var(--bg); z-index: 5;
+  }
+  .veil.on { display: flex; }
+  .veil .spin {
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 3px solid var(--card2); border-top-color: var(--cyan);
+    animation: whirl .8s linear infinite;
+  }
+  @keyframes whirl { to { transform: rotate(360deg); } }
+  .veil h3 { margin: 0; font-size: 17px; }
+  .veil p { margin: 0; color: var(--dim); font-size: 14px; max-width: 340px; }
+  .veil .actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    border: 1px solid var(--line); background: var(--card2); border-radius: 12px;
+    padding: 11px 18px; font-weight: 650; font-size: 14px;
+  }
+  .btn.primary { background: linear-gradient(135deg, var(--cyan), var(--blue)); border: 0; color: #04121f; }
+  .btn:active { transform: scale(.97); }
+
+  /* ═════════ internal pages ═════════ */
+  #internal { position: absolute; inset: 0; overflow-y: auto; display: none; -webkit-overflow-scrolling: touch; }
+  #internal.on { display: block; }
+  .page { max-width: 640px; margin: 0 auto; padding: 22px 18px calc(40px + env(safe-area-inset-bottom)); }
+  .page h1 { font-size: 22px; margin: 8px 0 4px; letter-spacing: -0.02em; }
+  .page .sub { color: var(--dim); font-size: 14px; margin: 0 0 18px; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin: 12px 0; }
+  .muted { color: var(--dim); font-size: 13px; }
+  .tiny { color: var(--faint); font-size: 12px; }
+
+  /* start page */
+  .hero { text-align: center; padding: 7vh 10px 10px; }
+  .hero .logo { width: 88px; height: 88px; border-radius: 24px; }
+  .hero h1 { font-size: 30px; margin: 14px 0 4px; }
+  .hero p { color: var(--dim); margin: 0 auto; max-width: 300px; }
+  .startsearch {
+    display: flex; align-items: center; gap: 10px; margin: 22px auto 0; max-width: 480px;
+    background: var(--bg2); border: 1px solid var(--line); border-radius: 999px; padding: 13px 20px;
+    color: var(--faint); font-size: 15px; cursor: text; width: 100%;
+  }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 12px; margin-top: 14px; }
+  .tile { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px 4px; border-radius: 14px; }
+  .tile:hover { background: var(--card); }
+  .tile .fav { width: 48px; height: 48px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 750; color: #fff; }
+  .tile .name { font-size: 12px; color: var(--dim); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  h2.sect { font-size: 12.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); margin: 26px 0 4px 2px; }
+
+  /* list rows (history / bookmarks) */
+  .row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 12px 6px; border-bottom: 1px solid rgba(255,255,255,.05); }
+  .row:hover { background: var(--card); border-radius: 10px; }
+  .row .fav { flex: none; width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 750; color: #fff; font-size: 15px; }
+  .row .txt { flex: 1; min-width: 0; }
+  .row .t { display: block; font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .u { display: block; font-size: 12.5px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .x { flex: none; width: 30px; height: 30px; border-radius: 8px; color: var(--faint); font-size: 15px; }
+  .row .x:hover { background: var(--card2); color: var(--red); }
+  .searchbar {
+    width: 100%; background: var(--bg2); border: 1px solid var(--line); border-radius: 12px;
+    padding: 11px 14px; outline: none; font-size: 15px; margin: 4px 0 10px;
+  }
+  .searchbar:focus { border-color: rgba(76,201,240,.5); }
+
+  /* settings */
+  .field { margin: 14px 0; }
+  .field label { display: block; font-size: 12.5px; color: var(--dim); margin-bottom: 6px; font-weight: 600; }
+  .field select, .field input {
+    width: 100%; background: var(--bg2); border: 1px solid var(--line); border-radius: 12px;
+    padding: 11px 14px; outline: none; font-size: 15px;
+  }
+  .btn.danger { color: var(--red); border-color: rgba(255,107,122,.35); background: rgba(255,107,122,.08); }
+  .btn.block { width: 100%; margin-top: 10px; }
+
+  /* ═════════ tab switcher ═════════ */
+  .tabsheet {
+    position: fixed; inset: 0; z-index: 60; display: none; flex-direction: column;
+    background: rgba(4,7,14,.88); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  }
+  .tabsheet.on { display: flex; }
+  .tabsheet .head { flex: none; display: flex; align-items: center; justify-content: space-between; padding: calc(14px + env(safe-area-inset-top)) 18px 10px; }
+  .tabsheet .head b { font-size: 17px; }
+  .tabsheet .cards { flex: 1; overflow-y: auto; padding: 6px 14px 14px; display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; align-content: start; }
+  .tcard {
+    position: relative; text-align: left; border-radius: 16px; padding: 14px;
+    background: var(--card); border: 1px solid var(--line); min-height: 108px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .tcard.active { border-color: var(--cyan); box-shadow: 0 0 0 2px rgba(76,201,240,.25); }
+  .tcard.ghost { border-color: rgba(176,124,247,.4); background: rgba(176,124,247,.07); }
+  .tcard .fav { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 750; color: #fff; }
+  .tcard .t { font-size: 13.5px; font-weight: 650; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .tcard .u { font-size: 11.5px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tcard .close { position: absolute; top: 8px; right: 8px; width: 26px; height: 26px; border-radius: 8px; color: var(--faint); font-size: 13px; background: rgba(0,0,0,.25); }
+  .tcard .close:hover { color: var(--red); }
+  .tabsheet .foot { flex: none; display: flex; gap: 10px; padding: 10px 16px calc(16px + env(safe-area-inset-bottom)); }
+  .tabsheet .foot .btn { flex: 1; }
+  .btn.ghostly { border-color: rgba(176,124,247,.4); color: var(--purple); background: rgba(176,124,247,.08); }
+
+  /* ═════════ menu ═════════ */
+  .menu {
+    position: absolute; top: calc(100% + 6px); right: 8px; z-index: 50; min-width: 230px;
+    background: var(--bg2); border: 1px solid var(--line); border-radius: 14px;
+    box-shadow: 0 18px 40px rgba(0,0,0,.5); overflow: hidden; display: none;
+  }
+  .menu.on { display: block; }
+  .mi { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 12px 16px; font-size: 14.5px; }
+  .mi:hover { background: var(--card2); }
+  .mi .ico { flex: none; width: 20px; text-align: center; }
+  .mi.split { border-top: 1px solid var(--line); }
+  .zoomrow { display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; border-top: 1px solid var(--line); }
+  .zoomrow button { width: 34px; height: 34px; border-radius: 9px; font-size: 17px; color: var(--dim); }
+  .zoomrow button:hover { background: var(--card2); color: var(--ink); }
+  .zoomrow b { font-size: 13.5px; color: var(--dim); }
+
+  .toast {
+    position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(20px);
+    background: var(--bg2); border: 1px solid var(--line); color: var(--ink);
+    padding: 10px 18px; border-radius: 999px; font-size: 13.5px; z-index: 80;
+    opacity: 0; transition: all .25s ease; pointer-events: none; white-space: nowrap;
+  }
+  .toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<!-- ═════════ toolbar ═════════ -->
+<div class="toolbar" id="toolbar">
+  <button class="navbtn" id="backBtn" title="Back" aria-label="Back">←</button>
+  <button class="navbtn fwd" id="fwdBtn" title="Forward" aria-label="Forward">→</button>
+  <button class="navbtn" id="reloadBtn" title="Reload" aria-label="Reload">⟳</button>
+  <div class="omnibox">
+    <span class="chip neutral" id="chip">✦</span>
+    <input id="urlInput" type="text" inputmode="url" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+           placeholder="Search or type an address" aria-label="Search or type an address">
+    <button class="star" id="starBtn" title="Bookmark this page" aria-label="Bookmark">☆</button>
+  </div>
+  <button class="tabbtn" id="tabsBtn" title="Tabs" aria-label="Tabs">1</button>
+  <button class="navbtn" id="menuBtn" title="Menu" aria-label="Menu">⋮</button>
+  <div class="progress"><i id="progressBar"></i></div>
+  <div class="suggest" id="suggest"></div>
+
+  <!-- menu -->
+  <div class="menu" id="menu">
+    <button class="mi" data-act="newtab"><span class="ico">＋</span>New tab</button>
+    <button class="mi" data-act="newprivate"><span class="ico">🕶</span>New private tab</button>
+    <button class="mi split" data-act="bookmarks"><span class="ico">★</span>Bookmarks</button>
+    <button class="mi" data-act="history"><span class="ico">🕘</span>History</button>
+    <button class="mi" data-act="settings"><span class="ico">⚙️</span>Settings</button>
+    <button class="mi split" data-act="external"><span class="ico">↗</span>Open in full tab</button>
+    <button class="mi" data-act="copy"><span class="ico">🔗</span>Copy link</button>
+    <div class="zoomrow">
+      <button data-act="zoomout" aria-label="Zoom out">−</button>
+      <b id="zoomLabel">100%</b>
+      <button data-act="zoomin" aria-label="Zoom in">+</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═════════ viewport ═════════ -->
+<div class="viewport">
+  <div id="frameWrap"><iframe id="frame" title="Page"
+    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"
+    referrerpolicy="no-referrer-when-downgrade"></iframe></div>
+  <div id="internal" class="on"></div>
+  <div class="veil" id="veil">
+    <div class="spin" id="veilSpin"></div>
+    <h3 id="veilTitle">Loading…</h3>
+    <p id="veilText"></p>
+    <div class="actions" id="veilActions"></div>
+  </div>
+</div>
+
+<!-- ═════════ tab switcher ═════════ -->
+<div class="tabsheet" id="tabsheet">
+  <div class="head"><b id="tabCount">Tabs</b><button class="navbtn" data-act="closesheet" aria-label="Close" style="font-size:20px">✕</button></div>
+  <div class="cards" id="tabCards"></div>
+  <div class="foot">
+    <button class="btn primary" data-act="newtab">＋ New tab</button>
+    <button class="btn ghostly" data-act="newprivate">🕶 Private</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="engine.js"></script>
+<script>
+'use strict';
+/* Voyager UI — a skin over voyager/engine.js. All decisions (what a typed
+ * string means, what closing a tab focuses, what lands in history) live in
+ * the engine; this file only paints state and forwards events. */
+
+var $ = function (id) { return document.getElementById(id); };
+var STORE_KEY = 'voyager.session.v1';
+
+/* ---- state ---- */
+var S;                       // the engine state — the single source of truth
+try { S = Voyager.restore(localStorage.getItem(STORE_KEY) || ''); }
+catch (e) { S = Voyager.createBrowser(); }
+
+var loadTimer = 0;           // embed-refusal watchdog
+var progressTimer = 0;
+var suggestIndex = -1;
+
+function persist() {
+  try { localStorage.setItem(STORE_KEY, Voyager.serialize(S)); } catch (e) {}
+}
+
+/** Every mutation goes through here: swap state, repaint, save. */
+function commit(next) {
+  var tabBefore = Voyager.activeTab(S);
+  var urlBefore = Voyager.tabUrl(tabBefore);
+  var idBefore = S.activeId;
+  S = next;
+  var tab = Voyager.activeTab(S);
+  var url = Voyager.tabUrl(tab);
+  if (url !== urlBefore || S.activeId !== idBefore) showUrl(url, tab);
+  paintChrome();
+  persist();
+}
+
+/* ---- helpers ---- */
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+var TILE_COLORS = ['#5b7bff', '#4cc9f0', '#3ce6b0', '#f5c04a', '#ff6b7a', '#b07cf7', '#f78c6b', '#6bd968'];
+function tileColor(text) {
+  var h = 0; text = String(text || '?');
+  for (var i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) >>> 0;
+  return TILE_COLORS[h % TILE_COLORS.length];
+}
+function letterOf(url, title) {
+  var host = Voyager.hostOf(url);
+  var base = host.replace(/^www\./, '') || String(title || '?');
+  return base.charAt(0).toUpperCase() || '?';
+}
+function toast(msg) {
+  var t = $('toast');
+  t.textContent = msg;
+  t.classList.add('on');
+  setTimeout(function () { t.classList.remove('on'); }, 1800);
+}
+
+/* ---- painting: toolbar ---- */
+function paintChrome() {
+  var tab = Voyager.activeTab(S);
+  var url = Voyager.tabUrl(tab);
+
+  $('backBtn').disabled = !Voyager.canBack(tab);
+  $('fwdBtn').disabled = !Voyager.canForward(tab);
+
+  var sec = Voyager.securityOf(url);
+  var chip = $('chip');
+  chip.className = 'chip ' + sec;
+  chip.textContent = sec === 'secure' ? '🔒' : sec === 'insecure' ? '⚠️' : sec === 'internal' ? '✦' : '·';
+  chip.title = sec === 'secure' ? 'Connection is HTTPS' : sec === 'insecure' ? 'Plain HTTP — not encrypted' : sec === 'internal' ? 'A Voyager page' : '';
+
+  var star = $('starBtn');
+  var starred = Voyager.isBookmarked(S, url);
+  star.textContent = starred ? '★' : '☆';
+  star.className = 'star' + (starred ? ' on' : '');
+
+  $('tabsBtn').textContent = String(S.tabs.length);
+  $('zoomLabel').textContent = (tab ? tab.zoom : 100) + '%';
+  document.body.classList.toggle('private', !!(tab && tab.incognito));
+
+  applyZoom(tab);
+  renderView(url, tab);
+}
+
+function showUrl(url, tab) {
+  var input = $('urlInput');
+  if (document.activeElement === input) return;   // don't fight the typist
+  input.value = url === 'voyager://start' ? '' : Voyager.displayUrl(url);
+}
+
+/* ---- painting: the page itself ---- */
+function renderView(url, tab) {
+  var internal = String(url).indexOf('voyager://') === 0;
+  $('internal').className = internal ? 'on' : '';
+  $('frameWrap').className = internal ? '' : 'on';
+
+  if (internal) {
+    hideVeil();
+    stopProgress(true);
+    $('frame').removeAttribute('src');
+    renderInternal(url.slice('voyager://'.length) || 'start');
+  } else {
+    var frame = $('frame');
+    if (frame.getAttribute('src') !== url) {
+      startProgress();
+      showVeil('loading', url);
+      frame.setAttribute('src', url);
+      clearTimeout(loadTimer);
+      loadTimer = setTimeout(function () { showVeil('blocked', url); }, 9000);
+    }
+  }
+}
+
+function applyZoom(tab) {
+  var z = (tab && tab.zoom || 100) / 100;
+  var frame = $('frame');
+  frame.style.transform = z === 1 ? '' : 'scale(' + z + ')';
+  frame.style.width = z === 1 ? '100%' : (100 / z) + '%';
+  frame.style.height = z === 1 ? '100%' : (100 / z) + '%';
+}
+
+/* ---- the veil: spinner / embed-refusal fallback ---- */
+function showVeil(mode, url) {
+  var veil = $('veil');
+  veil.className = 'veil on';
+  if (mode === 'loading') {
+    $('veilSpin').style.display = '';
+    $('veilTitle').textContent = 'Loading ' + (Voyager.hostOf(url) || 'page') + '…';
+    $('veilText').textContent = '';
+    $('veilActions').innerHTML = '';
+  } else {
+    $('veilSpin').style.display = 'none';
+    $('veilTitle').textContent = 'This site won’t be framed';
+    $('veilText').textContent = 'Many sites (most logins, banks, big apps) send X-Frame-Options and refuse to render inside another page. That’s the site’s choice, honestly hit — not a bug.';
+    $('veilActions').innerHTML =
+      '<button class="btn primary" data-act="external">Open in full tab ↗</button>' +
+      '<button class="btn" data-act="dismissveil">Wait anyway</button>';
+    stopProgress(false);
+  }
+}
+function hideVeil() {
+  clearTimeout(loadTimer);
+  $('veil').className = 'veil';
+}
+
+/* ---- progress bar theatre ---- */
+function startProgress() {
+  var bar = $('progressBar');
+  clearInterval(progressTimer);
+  bar.style.opacity = '1';
+  bar.style.width = '8%';
+  var w = 8;
+  progressTimer = setInterval(function () {
+    w += (90 - w) * 0.08;
+    bar.style.width = w.toFixed(1) + '%';
+  }, 180);
+}
+function stopProgress(instant) {
+  var bar = $('progressBar');
+  clearInterval(progressTimer);
+  bar.style.width = '100%';
+  setTimeout(function () { bar.style.opacity = '0'; bar.style.width = '0'; }, instant ? 0 : 250);
+}
+
+/* ---- internal pages ---- */
+function renderInternal(page) {
+  var el = $('internal');
+  if (page === 'start') el.innerHTML = startPage();
+  else if (page === 'history') el.innerHTML = historyPage('');
+  else if (page === 'bookmarks') el.innerHTML = bookmarksPage();
+  else if (page === 'settings') el.innerHTML = settingsPage();
+  else if (page === 'about') el.innerHTML = aboutPage();
+  else el.innerHTML = startPage();
+}
+
+function favHtml(url, title, cls) {
+  return '<span class="fav ' + (cls || '') + '" style="background:' + tileColor(Voyager.hostOf(url) || title) + '">' + esc(letterOf(url, title)) + '</span>';
+}
+
+function startPage() {
+  var tab = Voyager.activeTab(S);
+  var ghost = tab && tab.incognito;
+  var top = Voyager.topSites(S, 8, Date.now());
+  var h = '<div class="page"><div class="hero">' +
+    '<img class="logo" src="icon.svg" alt="">' +
+    '<h1>Voyager</h1>' +
+    '<p>' + (ghost ? 'Private tab — nothing you do here is remembered.' : 'Search or type an address. The web is that way ↑') + '</p>' +
+    '<div class="startsearch" data-act="focusurl">🔍&nbsp; Search ' + esc(engineName()) + ' or type a URL</div>' +
+    '</div>';
+  if (top.length && !ghost) {
+    h += '<h2 class="sect">Top sites</h2><div class="grid">';
+    for (var i = 0; i < top.length; i++) {
+      h += '<button class="tile" data-nav="' + esc(top[i].url) + '">' + favHtml(top[i].url, top[i].title) +
+           '<span class="name">' + esc(top[i].title || top[i].host) + '</span></button>';
+    }
+    h += '</div>';
+  }
+  if (S.bookmarks.length && !ghost) {
+    h += '<h2 class="sect">Bookmarks</h2><div class="grid">';
+    var bms = S.bookmarks.slice(-8).reverse();
+    for (var b = 0; b < bms.length; b++) {
+      h += '<button class="tile" data-nav="' + esc(bms[b].url) + '">' + favHtml(bms[b].url, bms[b].title) +
+           '<span class="name">' + esc(bms[b].title) + '</span></button>';
+    }
+    h += '</div>';
+  }
+  h += '<div class="panel tiny" style="margin-top:30px">Voyager renders pages with your device’s real web engine in a sandboxed frame. Sites that forbid embedding (X-Frame-Options — most login pages) will refuse; use ⋮ → “Open in full tab” for those. Your history, bookmarks and tabs never leave this device.</div>' +
+    '</div>';
+  return h;
+}
+
+function historyPage(query) {
+  var entries = Voyager.historyEntries(S, query);
+  var h = '<div class="page"><h1>History</h1><p class="sub">' + entries.length + ' place' + (entries.length === 1 ? '' : 's') + ' remembered — only on this device.</p>' +
+    '<input class="searchbar" id="histSearch" placeholder="Search history…" value="' + esc(query) + '">';
+  if (!entries.length) h += '<div class="panel muted">Nothing here' + (query ? ' for “' + esc(query) + '”' : ' yet — the web awaits') + '.</div>';
+  for (var i = 0; i < entries.length; i++) {
+    var e = entries[i];
+    h += '<div class="row"><button style="all:unset;cursor:pointer;display:flex;align-items:center;gap:12px;flex:1;min-width:0" data-nav="' + esc(e.url) + '">' +
+      favHtml(e.url, e.title) +
+      '<span class="txt"><span class="t">' + esc(e.title || Voyager.displayUrl(e.url)) + '</span>' +
+      '<span class="u">' + esc(Voyager.displayUrl(e.url)) + (e.visits > 1 ? ' · ' + e.visits + ' visits' : '') + '</span></span></button>' +
+      '<button class="x" data-delhist="' + esc(e.url) + '" title="Remove from history">✕</button></div>';
+  }
+  if (entries.length) h += '<button class="btn danger block" data-act="clearhistory">Clear all history</button>';
+  return h + '</div>';
+}
+
+function bookmarksPage() {
+  var h = '<div class="page"><h1>Bookmarks</h1><p class="sub">Starred places, newest first.</p>';
+  if (!S.bookmarks.length) h += '<div class="panel muted">No bookmarks yet — tap the ☆ in the address bar on any page.</div>';
+  var bms = S.bookmarks.slice().reverse();
+  for (var i = 0; i < bms.length; i++) {
+    var b = bms[i];
+    h += '<div class="row"><button style="all:unset;cursor:pointer;display:flex;align-items:center;gap:12px;flex:1;min-width:0" data-nav="' + esc(b.url) + '">' +
+      favHtml(b.url, b.title) +
+      '<span class="txt"><span class="t">' + esc(b.title) + '</span><span class="u">' + esc(Voyager.displayUrl(b.url)) + '</span></span></button>' +
+      '<button class="x" data-unstar="' + esc(b.url) + '" title="Remove bookmark">✕</button></div>';
+  }
+  return h + '</div>';
+}
+
+function settingsPage() {
+  var engines = Voyager.SEARCH_ENGINES;
+  var h = '<div class="page"><h1>Settings</h1><p class="sub">Everything stays on this device.</p><div class="panel">' +
+    '<div class="field"><label>Search engine</label><select id="engineSel">';
+  for (var i = 0; i < engines.length; i++) {
+    h += '<option value="' + engines[i].id + '"' + (S.settings.engine === engines[i].id ? ' selected' : '') + '>' + esc(engines[i].name) + '</option>';
+  }
+  h += '</select></div>' +
+    '<div class="field"><label>Home page</label><input id="homeInput" value="' + esc(S.settings.home) + '" placeholder="voyager://start"></div>' +
+    '</div><div class="panel">' +
+    '<button class="btn danger block" style="margin-top:0" data-act="clearhistory">Clear history</button>' +
+    '<button class="btn danger block" data-act="wipe">Erase everything (tabs, history, bookmarks)</button>' +
+    '</div>' +
+    '<div class="panel tiny">Voyager pages: <a style="color:var(--cyan)" data-nav="voyager://about" href="javascript:void 0">voyager://about</a> · voyager://history · voyager://bookmarks · voyager://settings</div></div>';
+  return h;
+}
+
+function aboutPage() {
+  return '<div class="page"><div class="hero"><img class="logo" src="icon.svg" alt=""><h1>Voyager</h1>' +
+    '<p>The internet browser.</p></div>' +
+    '<div class="panel muted">A browser, stripped to its truth, is the <i>chrome</i>: the omnibox that knows a URL from a question, tabs and their back/forward stacks, history that learns what matters to you, bookmarks, private tabs, a session that survives restarts. All of that lives in a pure, deterministic, unit-tested engine (<code>voyager/engine.js</code>) — this page is just a skin over it. The pixels come from your device’s real web engine in a sandboxed frame.</div>' +
+    '<div class="panel tiny">Honest limits: sites that send X-Frame-Options / CSP frame-ancestors refuse to be embedded — Voyager detects the silence and offers a full tab instead. Links followed <i>inside</i> a page move the frame’s own history, not Voyager’s stack. No sync, no telemetry, no cloud: your data lives in this device’s storage and nowhere else.</div></div>';
+}
+
+function engineName() {
+  var engines = Voyager.SEARCH_ENGINES;
+  for (var i = 0; i < engines.length; i++) if (engines[i].id === S.settings.engine) return engines[i].name;
+  return engines[0].name;
+}
+
+/* ---- tab switcher ---- */
+function renderTabsheet() {
+  var cards = $('tabCards');
+  $('tabCount').textContent = S.tabs.length + ' tab' + (S.tabs.length === 1 ? '' : 's');
+  var h = '';
+  for (var i = 0; i < S.tabs.length; i++) {
+    var t = S.tabs[i];
+    var url = Voyager.tabUrl(t);
+    var title = t.title || (String(url).indexOf('voyager://') === 0 ? 'New tab' : Voyager.hostOf(url) || Voyager.displayUrl(url));
+    h += '<button class="tcard' + (t.id === S.activeId ? ' active' : '') + (t.incognito ? ' ghost' : '') + '" data-tab="' + t.id + '">' +
+      (t.incognito ? '<span class="fav" style="background:#3a2a5f">🕶</span>' : favHtml(url, title)) +
+      '<span class="t">' + esc(title) + '</span>' +
+      '<span class="u">' + esc(Voyager.displayUrl(url)) + '</span>' +
+      '<span class="close" data-closetab="' + t.id + '">✕</span></button>';
+  }
+  cards.innerHTML = h;
+}
+
+/* ---- suggestions ---- */
+function renderSuggest() {
+  var input = $('urlInput').value;
+  var box = $('suggest');
+  var items = Voyager.suggest(S, input, { nowTs: Date.now(), limit: 6 });
+  suggestIndex = -1;
+  if (!items.length) { box.className = 'suggest'; box.innerHTML = ''; return; }
+  var icons = { goto: '🌐', bookmark: '★', history: '🕘', search: '🔍' };
+  var h = '';
+  for (var i = 0; i < items.length; i++) {
+    h += '<button class="sug" data-nav="' + esc(items[i].url) + '"><span class="ico">' + icons[items[i].kind] + '</span>' +
+      '<span class="txt"><span class="t">' + esc(items[i].title) + '</span>' +
+      (items[i].kind !== 'search' ? '<span class="u">' + esc(Voyager.displayUrl(items[i].url)) + '</span>' : '') +
+      '</span></button>';
+  }
+  box.innerHTML = h;
+  box.className = 'suggest on';
+}
+function hideSuggest() { $('suggest').className = 'suggest'; suggestIndex = -1; }
+
+/* ---- actions ---- */
+function go(input) {
+  var cls = Voyager.classify(input, { engine: S.settings.engine });
+  if (cls.kind === 'empty') return;
+  navTo(cls.url);
+}
+function navTo(url) {
+  hideSuggest();
+  $('urlInput').blur();
+  commit(Voyager.navigate(S, S.activeId, url, { ts: Date.now() }));
+  showUrl(url, Voyager.activeTab(S));
+}
+function currentUrl() { return Voyager.tabUrl(Voyager.activeTab(S)); }
+
+function openExternal() {
+  var url = currentUrl();
+  if (String(url).indexOf('voyager://') === 0) { toast('That page lives inside Voyager'); return; }
+  window.open(url, '_blank', 'noopener');
+}
+
+function doWipe() {
+  if (!confirm('Erase all Voyager data on this device — tabs, history, bookmarks, settings?')) return;
+  try { localStorage.removeItem(STORE_KEY); } catch (e) {}
+  S = Voyager.createBrowser();
+  paintChrome();
+  showUrl(currentUrl(), Voyager.activeTab(S));
+  persist();
+  toast('Fresh start');
+}
+
+/* ---- events: omnibox ---- */
+$('urlInput').addEventListener('focus', function () {
+  var url = currentUrl();
+  this.value = String(url).indexOf('voyager://') === 0 ? '' : url;
+  var self = this;
+  setTimeout(function () { self.select(); }, 0);
+});
+$('urlInput').addEventListener('blur', function () {
+  var self = this;
+  setTimeout(function () { hideSuggest(); showUrl(currentUrl(), Voyager.activeTab(S)); }, 150);
+});
+$('urlInput').addEventListener('input', renderSuggest);
+$('urlInput').addEventListener('keydown', function (e) {
+  var box = $('suggest');
+  var rows = box.querySelectorAll('.sug');
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    if (!rows.length) return;
+    e.preventDefault();
+    suggestIndex = e.key === 'ArrowDown'
+      ? (suggestIndex + 1) % rows.length
+      : (suggestIndex - 1 + rows.length) % rows.length;
+    for (var i = 0; i < rows.length; i++) rows[i].className = 'sug' + (i === suggestIndex ? ' sel' : '');
+  } else if (e.key === 'Enter') {
+    if (suggestIndex >= 0 && rows[suggestIndex]) navTo(rows[suggestIndex].getAttribute('data-nav'));
+    else go(this.value);
+  } else if (e.key === 'Escape') {
+    hideSuggest();
+    this.blur();
+  }
+});
+
+/* ---- events: toolbar ---- */
+$('backBtn').addEventListener('click', function () { commit(Voyager.back(S, S.activeId)); });
+$('fwdBtn').addEventListener('click', function () { commit(Voyager.forward(S, S.activeId)); });
+$('reloadBtn').addEventListener('click', function () {
+  var url = currentUrl();
+  if (String(url).indexOf('voyager://') === 0) { renderInternal(url.slice(10)); return; }
+  startProgress();
+  showVeil('loading', url);
+  clearTimeout(loadTimer);
+  loadTimer = setTimeout(function () { showVeil('blocked', url); }, 9000);
+  $('frame').setAttribute('src', url);
+  commit(Voyager.navigate(S, S.activeId, url, { ts: Date.now() }));
+});
+$('starBtn').addEventListener('click', function () {
+  var url = currentUrl();
+  if (String(url).indexOf('voyager://') === 0) { toast('Voyager pages can’t be starred'); return; }
+  var tab = Voyager.activeTab(S);
+  var was = Voyager.isBookmarked(S, url);
+  commit(Voyager.toggleBookmark(S, url, tab.title || Voyager.hostOf(url), Date.now()));
+  toast(was ? 'Bookmark removed' : '★ Bookmarked');
+});
+$('tabsBtn').addEventListener('click', function () { renderTabsheet(); $('tabsheet').className = 'tabsheet on'; });
+$('menuBtn').addEventListener('click', function (e) {
+  e.stopPropagation();
+  $('menu').classList.toggle('on');
+});
+document.addEventListener('click', function (e) {
+  if (!$('menu').contains(e.target) && e.target !== $('menuBtn')) $('menu').classList.remove('on');
+});
+
+/* ---- events: one delegated handler for every data-act / data-nav ---- */
+document.addEventListener('click', function (e) {
+  var el = e.target;
+  while (el && el !== document.body) {
+    var nav = el.getAttribute && el.getAttribute('data-nav');
+    if (nav) { navTo(nav); return; }
+
+    var del = el.getAttribute && el.getAttribute('data-delhist');
+    if (del) {
+      commit(Voyager.deleteFromHistory(S, del));
+      renderInternal('history');
+      return;
+    }
+    var unstar = el.getAttribute && el.getAttribute('data-unstar');
+    if (unstar) {
+      commit(Voyager.toggleBookmark(S, unstar));
+      renderInternal('bookmarks');
+      return;
+    }
+    var closeId = el.getAttribute && el.getAttribute('data-closetab');
+    if (closeId) {
+      e.stopPropagation();
+      commit(Voyager.closeTab(S, Number(closeId)));
+      renderTabsheet();
+      return;
+    }
+    var tabId = el.getAttribute && el.getAttribute('data-tab');
+    if (tabId) {
+      commit(Voyager.activateTab(S, Number(tabId)));
+      $('tabsheet').className = 'tabsheet';
+      return;
+    }
+
+    var act = el.getAttribute && el.getAttribute('data-act');
+    if (act) { runAct(act); return; }
+    el = el.parentNode;
+  }
+});
+
+function runAct(act) {
+  // Zoom clicks keep the menu open so ± can be tapped repeatedly.
+  if (act !== 'zoomin' && act !== 'zoomout') $('menu').classList.remove('on');
+  if (act === 'newtab') { $('tabsheet').className = 'tabsheet'; commit(Voyager.newTab(S, { ts: Date.now() })); }
+  else if (act === 'newprivate') { $('tabsheet').className = 'tabsheet'; commit(Voyager.newTab(S, { incognito: true, ts: Date.now() })); }
+  else if (act === 'closesheet') $('tabsheet').className = 'tabsheet';
+  else if (act === 'bookmarks') navTo('voyager://bookmarks');
+  else if (act === 'history') navTo('voyager://history');
+  else if (act === 'settings') navTo('voyager://settings');
+  else if (act === 'external') openExternal();
+  else if (act === 'dismissveil') hideVeil();
+  else if (act === 'copy') {
+    var url = currentUrl();
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url);
+    toast('Link copied');
+  }
+  else if (act === 'zoomin' || act === 'zoomout') {
+    var tab = Voyager.activeTab(S);
+    var steps = [25, 33, 50, 67, 75, 90, 100, 110, 125, 150, 175, 200, 250, 300, 400, 500];
+    var idx = steps.indexOf(tab.zoom);
+    if (idx === -1) idx = 6;
+    idx = Math.max(0, Math.min(steps.length - 1, idx + (act === 'zoomin' ? 1 : -1)));
+    commit(Voyager.setZoom(S, S.activeId, steps[idx]));
+  }
+  else if (act === 'clearhistory') {
+    commit(Voyager.clearHistory(S));
+    var page = String(currentUrl()).slice(10);
+    if (page === 'history' || page === 'settings') renderInternal(page);
+    toast('History cleared');
+  }
+  else if (act === 'wipe') doWipe();
+  else if (act === 'focusurl') $('urlInput').focus();
+}
+
+/* ---- events: internal-page inputs (delegated: pages re-render freely) ---- */
+document.addEventListener('input', function (e) {
+  if (e.target && e.target.id === 'histSearch') {
+    var v = e.target.value;
+    $('internal').innerHTML = historyPage(v);
+    var again = $('histSearch');
+    if (again) { again.focus(); again.setSelectionRange(v.length, v.length); }
+  }
+});
+document.addEventListener('change', function (e) {
+  if (e.target && e.target.id === 'engineSel') {
+    commit(Voyager.setSetting(S, 'engine', e.target.value));
+    toast('Searching with ' + engineName());
+  }
+  if (e.target && e.target.id === 'homeInput') {
+    var cls = Voyager.classify(e.target.value, { engine: S.settings.engine });
+    var home = cls.kind === 'url' || cls.kind === 'internal' ? cls.url : 'voyager://start';
+    commit(Voyager.setSetting(S, 'home', home));
+    e.target.value = home;
+  }
+});
+
+/* ---- events: the frame ---- */
+$('frame').addEventListener('load', function () {
+  hideVeil();
+  stopProgress(false);
+  // Same-origin frames tell us their real title; cross-origin ones politely refuse.
+  var title = '';
+  try { title = this.contentDocument && this.contentDocument.title || ''; } catch (err) {}
+  if (!title) title = Voyager.hostOf(currentUrl());
+  commit(Voyager.setTitle(S, S.activeId, title));
+});
+$('frame').addEventListener('error', function () {
+  showVeil('blocked', currentUrl());
+});
+
+/* ---- keyboard shortcuts (desktop comfort) ---- */
+document.addEventListener('keydown', function (e) {
+  var mod = e.ctrlKey || e.metaKey;
+  if (mod && e.key === 'l') { e.preventDefault(); $('urlInput').focus(); }
+  else if (mod && e.key === 't') { e.preventDefault(); commit(Voyager.newTab(S, { ts: Date.now() })); $('urlInput').focus(); }
+  else if (mod && e.key === 'w') { e.preventDefault(); commit(Voyager.closeTab(S, S.activeId)); }
+  else if (mod && e.key === 'd') { e.preventDefault(); $('starBtn').click(); }
+  else if (e.key === 'Escape' && $('tabsheet').className.indexOf('on') !== -1) $('tabsheet').className = 'tabsheet';
+});
+
+/* ---- boot ---- */
+paintChrome();
+showUrl(currentUrl(), Voyager.activeTab(S));
+
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  navigator.serviceWorker.register('sw.js').catch(function () {});
+}
+</script>
+</body>
+</html>
