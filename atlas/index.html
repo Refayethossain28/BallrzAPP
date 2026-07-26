@@ -204,6 +204,47 @@
   #speedBubble.show { display: flex; }
   #speedVal { font-size: 21px; font-weight: 900; line-height: 1; }
   #speedUnit { font-size: 9.5px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+  #speedBubble.over { border-color: #ef4444; animation: overpulse 0.9s ease-in-out infinite; }
+  #speedBubble.over #speedVal { color: #ef4444; }
+  @keyframes overpulse { 50% { box-shadow: 0 0 0 7px rgba(239,68,68,0.25); } }
+
+  /* speed-limit road sign (data: OpenStreetMap) */
+  #limitSign {
+    position: fixed; z-index: 44; left: 84px; bottom: calc(96px + var(--sab));
+    width: 56px; height: 56px; border-radius: 50%; background: #fff;
+    border: 6px solid #e11d48; box-shadow: var(--shadow); display: none;
+    flex-direction: column; align-items: center; justify-content: center; color: #111827;
+  }
+  #limitSign.show { display: flex; }
+  #limitVal { font-size: 18px; font-weight: 900; line-height: 1; }
+  #limitUnit { font-size: 8px; font-weight: 800; color: #6b7280; text-transform: uppercase; }
+
+  /* 📷 speed camera alert */
+  #camChip {
+    position: fixed; z-index: 44; left: 50%; transform: translateX(-50%);
+    top: calc(132px + var(--sat)); background: #451a03; border: 1px solid #fbbf24;
+    color: #fde68a; padding: 8px 16px; border-radius: 999px; font-weight: 700;
+    font-size: 13.5px; display: none; box-shadow: var(--shadow); white-space: nowrap;
+  }
+  #camChip.show { display: block; }
+
+  /* 🚙 convoy */
+  .convoyBig { font-size: 34px; font-weight: 900; letter-spacing: 7px; text-align: center;
+    color: var(--accent); margin: 12px 0 2px; font-variant-numeric: tabular-nums; }
+  .convoyHint { text-align: center; color: var(--dim); font-size: 12px; margin-bottom: 10px; }
+  .convoyInput { width: 100%; height: 48px; border-radius: 14px; border: 1px solid var(--line);
+    background: rgba(255,255,255,0.05); padding: 0 16px; outline: none; color: var(--text); }
+  .convoyInput:focus { border-color: var(--accent); }
+  #convoyCode { text-transform: uppercase; letter-spacing: 3px; font-weight: 700; }
+  .convoyBtn { height: 48px; border-radius: 14px; font-weight: 700; padding: 0 18px; }
+  #convoyMembers { overflow-y: auto; margin-top: 8px; }
+  .memberRow { display: flex; align-items: center; gap: 12px; padding: 11px 4px;
+    border-bottom: 1px solid var(--line); }
+  .memberRow .av { width: 40px; height: 40px; border-radius: 50%; flex: none;
+    display: flex; align-items: center; justify-content: center; font-size: 19px;
+    border: 2px solid rgba(255,255,255,0.25); }
+  .memberRow .mn { font-weight: 650; }
+  .memberRow .mm { font-size: 12px; color: var(--dim); }
 
   /* 📹 dashcam preview */
   #dashcamBox {
@@ -307,6 +348,7 @@
     <span class="q" id="searchPillText">Where to?</span>
     <span>🔍</span>
   </button>
+  <button class="fab" id="btnConvoy" style="position:static;flex:none" aria-label="Convoy">🚙</button>
   <button class="fab" id="btnSettings" style="position:static;flex:none" aria-label="Settings">⚙️</button>
 </div>
 
@@ -378,6 +420,12 @@
     </div>
   </div>
   <div class="setRow">
+    <div class="lbl">📷 Speed cameras<div class="sub">Alerts for fixed cameras (OpenStreetMap data)</div></div>
+    <div class="seg" id="segCameras">
+      <button data-v="on">On</button><button data-v="off">Off</button>
+    </div>
+  </div>
+  <div class="setRow">
     <div class="lbl">🏁 Co-driver<div class="sub">Rally pace notes — "left 4 into right 3"</div></div>
     <div class="seg" id="segCodriver">
       <button data-v="on">On</button><button data-v="off">Off</button>
@@ -405,11 +453,58 @@
     into every frame; clips live in an on-device vault with playback, native share-sheet export
     and honest auto-pruning — footage never leaves your device),
     <strong>🍞 trail-back</strong> (retrace your own breadcrumbs, fully offline),
-    and an <strong>⏱ ETA that learns your pace</strong>.
+    an <strong>⏱ ETA that learns your pace</strong>, <strong>🛑 speed-limit +
+    📷 speed-camera warnings</strong> (OpenStreetMap data — only as complete as the map;
+    always obey the signs on the road), and <strong>🚙 convoy mode</strong> — share a code
+    and every car in your convoy appears live on the map (tabs sync instantly on one
+    device; across devices via the optional cloud in <code>config.js</code>; only people
+    with your code can see you, and beacons stop when you leave).
     Map data
     © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>
     contributors; routing by the community OSRM/FOSSGIS servers; search by Nominatim.
     Your location never leaves your device except to fetch the route you asked for.
+  </div>
+</div>
+
+<!-- 🚙 convoy sheet -->
+<div class="sheet" id="convoySheet" role="dialog" aria-label="Convoy">
+  <div class="grab"></div>
+  <div style="display:flex;align-items:center">
+    <h3 style="flex:1">🚙 Convoy</h3>
+    <button class="navCtl" id="btnCloseConvoy" aria-label="Close">✕</button>
+  </div>
+
+  <div id="convoyJoinBox">
+    <p style="color:var(--dim);font-size:13px;margin:8px 0 12px">
+      Drive together and see everyone live on the map. Share one code — every
+      device that joins it becomes a car in your convoy.
+    </p>
+    <input class="convoyInput" id="convoyName" placeholder="Your name (shown to the convoy)" maxlength="24" autocomplete="off">
+    <div style="display:flex;gap:10px;margin-top:10px">
+      <button class="convoyBtn" id="btnConvoyCreate" style="flex:1;background:linear-gradient(135deg,#2f7ff6,#38bdf8);color:#fff">＋ Create convoy</button>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:10px">
+      <input class="convoyInput" id="convoyCode" placeholder="CODE" maxlength="8" autocomplete="off" style="flex:1">
+      <button class="convoyBtn" id="btnConvoyJoin" style="background:rgba(255,255,255,0.07);border:1px solid var(--line)">Join</button>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:10px">
+      <button class="convoyBtn" id="btnConvoyDemo" style="flex:1;background:rgba(255,255,255,0.05);border:1px solid var(--line)">▶ Demo convoy — drive with Aisha &amp; Marco</button>
+    </div>
+    <p style="color:var(--dim);font-size:11.5px;margin-top:12px">
+      Same device: tabs find each other instantly. Across devices: positions sync
+      live through the cloud — only people with your code can see the convoy, and
+      beacons stop the moment you leave.
+    </p>
+  </div>
+
+  <div id="convoyLiveBox" style="display:none">
+    <div class="convoyBig" id="convoyCodeBig">——————</div>
+    <div class="convoyHint">share this code — anyone who joins it rides with you</div>
+    <div style="display:flex;gap:10px">
+      <button class="convoyBtn" id="btnConvoyShare" style="flex:1;background:linear-gradient(135deg,#2f7ff6,#38bdf8);color:#fff">📤 Invite</button>
+      <button class="convoyBtn" id="btnConvoyLeave" style="background:rgba(248,113,113,0.14);border:1px solid rgba(248,113,113,0.4)">Leave</button>
+    </div>
+    <div id="convoyMembers"></div>
   </div>
 </div>
 
@@ -460,6 +555,8 @@
   <button class="navCtl" id="btnEnd" aria-label="End navigation">✕</button>
 </div>
 <div id="speedBubble"><div id="speedVal">0</div><div id="speedUnit">km/h</div></div>
+<div id="limitSign" aria-label="Speed limit"><div id="limitVal">30</div><div id="limitUnit">km/h</div></div>
+<div id="camChip">📷 Speed camera</div>
 
 <div id="dashcamBox">
   <video id="dashcamVideo" muted playsinline autoplay></video>
@@ -489,6 +586,7 @@
 
 <div id="toast"></div>
 
+<script src="config.js"></script>
 <script src="engine.js"></script>
 <script>
 'use strict';
@@ -505,7 +603,7 @@ function load(key, fallback) {
 }
 function save(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) {} }
 
-var settings = Object.assign({ units: 'metric', voice: 'on', theme: 'auto', codriver: 'off' }, load('atlas.settings', {}));
+var settings = Object.assign({ units: 'metric', voice: 'on', theme: 'auto', codriver: 'off', cameras: 'on' }, load('atlas.settings', {}));
 var places = load('atlas.places', []);     // {name, addr, lat, lon, kind?, uses, lastUsed}
 var recents = load('atlas.recents', []);   // same shape, capped
 var pace = load('atlas.pace', {});         // per-profile personal pace factor (learned)
@@ -627,8 +725,27 @@ function draw() {
   ctx.restore();
 
   drawRoutes(night);
+  drawCameras();
+  drawConvoy();
   drawTapPin();
   drawGpsDot();
+}
+
+/* 📷 fixed speed cameras on the route (while navigating). */
+function drawCameras() {
+  if (!nav.active || !nav.route || !nav.cameras || !nav.cameras.length) return;
+  if (settings.cameras !== 'on') return;
+  for (var i = 0; i < nav.cameras.length; i++) {
+    var p = A.pointAtAlong(nav.route, nav.cameras[i].alongM);
+    var s = toScreen(p);
+    if (s.x < -30 || s.x > W + 30 || s.y < -30 || s.y > H + 30) continue;
+    ctx.beginPath(); ctx.arc(s.x, s.y, 12, 0, 7);
+    ctx.fillStyle = '#451a03'; ctx.fill();
+    ctx.lineWidth = 2.5; ctx.strokeStyle = '#fbbf24'; ctx.stroke();
+    ctx.font = '13px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('📷', s.x, s.y + 1);
+    ctx.textBaseline = 'alphabetic';
+  }
 }
 
 function drawPolyline(geometry, color, width, dash) {
@@ -884,6 +1001,57 @@ function geocode(q) {
   });
 }
 
+/* Speed limits + fixed speed cameras along the route, from OpenStreetMap via
+   Overpass. The corridor is the route itself (sampled), so we only pull data
+   for roads you'll actually drive. Fails silently offline — guidance never
+   depends on it. */
+var OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+function fetchSafetyData(route) {
+  var pts = [];
+  var step = Math.max(120, route.totalM / 160);
+  for (var m = 0; m <= route.totalM; m += step) {
+    var p = A.pointAtAlong(route, m);
+    pts.push(p.lat.toFixed(5) + ',' + p.lon.toFixed(5));
+  }
+  var chain = pts.join(',');
+  var q = '[out:json][timeout:15];(way["maxspeed"](around:25,' + chain + ');' +
+          'node["highway"="speed_camera"](around:60,' + chain + '););out geom 800;';
+  var attempt = function (i) {
+    if (i >= OVERPASS.length) return Promise.reject(new Error('overpass unavailable'));
+    return fetch(OVERPASS[i], {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'data=' + encodeURIComponent(q),
+    }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .catch(function (err) { return i + 1 < OVERPASS.length ? attempt(i + 1) : Promise.reject(err); });
+  };
+  return attempt(0).then(function (json) {
+    var ways = [], cams = [];
+    (json.elements || []).forEach(function (el) {
+      if (el.type === 'way' && el.tags && el.geometry) {
+        var kmh = A.parseMaxspeed(el.tags.maxspeed);
+        if (kmh != null) ways.push({ kmh: kmh, geometry: el.geometry.map(function (g) { return { lat: g.lat, lon: g.lon }; }) });
+      } else if (el.type === 'node' && el.tags && el.tags.highway === 'speed_camera') {
+        cams.push({ lat: el.lat, lon: el.lon, kmh: A.parseMaxspeed(el.tags.maxspeed) });
+      }
+    });
+    return { limits: A.mapLimitsToRoute(route, ways), cameras: A.mapCamerasToRoute(route, cams) };
+  });
+}
+
+/* Bundled safety data for the demo drive (central London really is 20 mph —
+   and the sim drives at ~47 km/h, so the overspeed warning demos itself). */
+function demoSafety(route) {
+  var g = route.geometry;
+  var ways = [
+    { kmh: A.parseMaxspeed('30 mph'), geometry: g.slice(0, 8) },   // Constitution Hill
+    { kmh: A.parseMaxspeed('20 mph'), geometry: g.slice(10, 18) }, // The Mall
+  ];
+  var camSpot = A.destinationPoint(g[14], 90, 8);
+  var cams = [{ lat: camSpot.lat, lon: camSpot.lon, kmh: A.parseMaxspeed('20 mph') }];
+  return { limits: A.mapLimitsToRoute(route, ways), cameras: A.mapCamerasToRoute(route, cams) };
+}
+
 function reverseGeocode(p) {
   var url = 'https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=17&lat=' + p.lat + '&lon=' + p.lon;
   return fetchJson(url).then(function (r) {
@@ -935,7 +1103,7 @@ var tapPoint = null;
 /* ------------------------------ sheets ---------------------------------- */
 
 function openSheet(id) {
-  ['searchSheet', 'routeSheet', 'settingsSheet', 'clipsSheet'].forEach(function (s) {
+  ['searchSheet', 'routeSheet', 'settingsSheet', 'clipsSheet', 'convoySheet'].forEach(function (s) {
     $(s).classList.toggle('open', s === id);
   });
 }
@@ -1233,6 +1401,16 @@ function startNav(demo) {
   nav.noteIdx = 0; nav.noteSpoken = {};
   nav.lastAlong = 0; nav.lastFixTs = Date.now(); nav.ghostCount = 0; nav.ghosting = false;
   if (!demo && !nav.ghostTimer) nav.ghostTimer = setInterval(ghostTick, 1000);
+  // 📷 speed limits + cameras (bundled for the demo, OpenStreetMap live)
+  nav.limits = []; nav.cameras = []; nav.camSpoken = {}; nav.osState = null; nav.lastSafetyTs = Date.now();
+  if (demo) {
+    var ds = demoSafety(route);
+    nav.limits = ds.limits; nav.cameras = ds.cameras;
+  } else {
+    fetchSafetyData(route).then(function (s) {
+      if (nav.active && nav.route === route) { nav.limits = s.limits; nav.cameras = s.cameras; needsDraw = true; }
+    }).catch(function () {});
+  }
   closeSheets();
   $('topBar').classList.add('hidden');
   $('navBanner').classList.add('show');
@@ -1289,12 +1467,56 @@ function onNavFix(fix) {
   var shown = settings.units === 'imperial' ? v * 2.23694 : v * 3.6;
   $('speedVal').textContent = String(Math.round(shown));
 
+  // 🛑 speed-limit sign + overspeed state machine (engine-tested hysteresis)
+  var limitKmh = A.limitAtAlong(nav.limits || [], r.alongM);
+  updateLimitSign(limitKmh);
+  var nowTs = Date.now();
+  var dtS = Math.min(3, Math.max(0.2, (nowTs - (nav.lastSafetyTs || nowTs)) / 1000));
+  nav.lastSafetyTs = nowTs;
+  var os = A.overspeedUpdate(nav.osState, v * 3.6, limitKmh, dtS);
+  nav.osState = os.state;
+  $('speedBubble').classList.toggle('over', os.over);
+
+  // 📷 camera ahead: chip with live distance + one spoken alert per camera
+  var camHit = null;
+  if (settings.cameras === 'on' && nav.cameras && nav.cameras.length && !r.arrived) {
+    var cn = A.cameraNext(nav.cameras, r.alongM);
+    if (cn && cn.distM <= Math.max(450, v * 18)) camHit = cn;
+  }
+  if (camHit) {
+    $('camChip').textContent = '📷 Speed camera · ' + A.fmtDist(camHit.distM, settings.units) +
+      (camHit.cam.kmh != null ? ' · limit ' + limitLabel(camHit.cam.kmh) : '');
+    $('camChip').classList.add('show');
+    var camKey = Math.round(camHit.cam.alongM);
+    if (!nav.camSpoken[camKey] && !r.announce) {
+      nav.camSpoken[camKey] = 1;
+      speak('Speed camera ahead' + (camHit.cam.kmh != null ? ' — the limit is ' + limitLabel(camHit.cam.kmh) : ''));
+    }
+  } else $('camChip').classList.remove('show');
+
   if (r.announce) speak(r.announce.text);
+  else if (os.warn) speak('Watch your speed — the limit is ' + limitLabel(limitKmh));
   else speakPaceNote(r);
 
   if (r.offRoute && !nav.demo && !fix.ghost) maybeReroute(fix);
   if (r.arrived) finishNav();
   needsDraw = true;
+}
+
+/** "20 mph" | "30 km/h" — the label for a km/h limit in the user's units. */
+function limitLabel(kmh) {
+  if (kmh == null) return '';
+  return settings.units === 'imperial'
+    ? Math.round(kmh / 1.609344) + ' mph'
+    : Math.round(kmh) + ' km/h';
+}
+
+function updateLimitSign(limitKmh) {
+  if (limitKmh == null) { $('limitSign').classList.remove('show'); return; }
+  $('limitVal').textContent = String(settings.units === 'imperial'
+    ? Math.round(limitKmh / 1.609344) : Math.round(limitKmh));
+  $('limitUnit').textContent = settings.units === 'imperial' ? 'mph' : 'km/h';
+  $('limitSign').classList.add('show');
 }
 
 /* 🏁 co-driver: call the next corner rally-style, without talking over the
@@ -1351,6 +1573,13 @@ function maybeReroute(fix) {
     nav.route = A.buildRoute(routes[0]);
     trip.routes = [nav.route]; trip.selected = 0;
     nav.guide = A.startGuidance();
+    // refresh limits + cameras for the new road
+    nav.limits = []; nav.cameras = []; nav.camSpoken = {}; nav.osState = null;
+    var rerouted = nav.route;
+    fetchSafetyData(rerouted).then(function (s) {
+      if (nav.active && nav.route === rerouted) { nav.limits = s.limits; nav.cameras = s.cameras; needsDraw = true; }
+    }).catch(function () {});
+    if (settings.codriver === 'on') { nav.notes = A.paceNotes(nav.route); nav.noteIdx = 0; nav.noteSpoken = {}; }
     toast('New route found');
     needsDraw = true;
   }).catch(function () { toast('Reroute failed — rejoin the blue line'); });
@@ -1434,6 +1663,7 @@ $('btnArrivedDone').addEventListener('click', function () {
 function stopNavUI() {
   nav.active = false;
   if (dashcam.active) stopDashcam(); // safety net — never leave the camera on
+  if (convoy.demoTimer) leaveConvoy(true); // demo convoy ends with the demo drive
   if (nav.simTimer) { clearInterval(nav.simTimer); nav.simTimer = null; }
   if (nav.ghostTimer) { clearInterval(nav.ghostTimer); nav.ghostTimer = null; }
   nav.ghosting = false; nav.notes = null; nav.track = null;
@@ -1442,7 +1672,9 @@ function stopNavUI() {
   $('topBar').classList.remove('hidden');
   $('navBanner').classList.remove('show');
   $('navBottom').classList.remove('show');
-  $('speedBubble').classList.remove('show');
+  $('speedBubble').classList.remove('show', 'over');
+  $('limitSign').classList.remove('show');
+  $('camChip').classList.remove('show');
   $('btnCompass').style.display = 'none';
   releaseWakeLock();
   if (window.speechSynthesis) window.speechSynthesis.cancel();
@@ -1499,6 +1731,251 @@ function releaseWakeLock() {
   try { if (nav.wakeLock && nav.wakeLock.release) nav.wakeLock.release(); } catch (e) {}
   nav.wakeLock = null;
 }
+
+/* -------------------------------- 🚙 convoy ------------------------------ */
+/* Drive together: everyone who joins a convoy code appears live on each
+   other's maps. Transport: BroadcastChannel between tabs on one device
+   (zero setup), Firestore across devices (config.js), and a simulated
+   convoy in the demo. All merging/validation is the engine's applyBeacon. */
+
+var convoy = { code: null, members: {}, bc: null, timer: null,
+               demoTimer: null, demoMembers: null,
+               fb: null, fbUid: null, fbUnsub: null, fbCol: null };
+convoy.selfId = (function () {
+  // per-TAB identity (sessionStorage): two tabs on one device must be two
+  // distinct cars, or each would drop the other's beacons as its own echo
+  var id = null;
+  try { id = sessionStorage.getItem('atlas.convoy.id'); } catch (e) {}
+  if (!id) {
+    id = 'd';
+    try {
+      var buf = new Uint32Array(2);
+      crypto.getRandomValues(buf);
+      id += buf[0].toString(36) + buf[1].toString(36);
+    } catch (e) { id += Math.floor(Math.random() * 1e15).toString(36); }
+    try { sessionStorage.setItem('atlas.convoy.id', id); } catch (e) {}
+  }
+  return id;
+})();
+
+function convoyName() {
+  var n = ($('convoyName').value || '').trim() || load('atlas.convoy.name', '') || '';
+  return n || 'Driver ' + convoy.selfId.slice(1, 5).toUpperCase();
+}
+
+function startConvoy(code, demo) {
+  code = A.validConvoyCode(code);
+  if (!code) { toast('Convoy codes are 6 letters/numbers'); return; }
+  leaveConvoy(true);
+  save('atlas.convoy.name', ($('convoyName').value || '').trim());
+  convoy.code = code; convoy.members = {};
+  if (window.BroadcastChannel) {
+    convoy.bc = new BroadcastChannel('atlas-convoy-' + code);
+    convoy.bc.onmessage = function (e) { receiveBeacon(e.data); };
+  }
+  if (!demo) fbStart(code);
+  convoy.timer = setInterval(convoyTick, 3000);
+  convoyTick();
+  $('convoyJoinBox').style.display = 'none';
+  $('convoyLiveBox').style.display = '';
+  $('convoyCodeBig').textContent = code;
+  $('btnConvoy').style.background = 'rgba(56,189,248,0.25)';
+  renderConvoyMembers();
+  toast('🚙 Convoy ' + code + ' — you\'re broadcasting');
+}
+
+function leaveConvoy(silent) {
+  if (convoy.timer) { clearInterval(convoy.timer); convoy.timer = null; }
+  if (convoy.demoTimer) { clearInterval(convoy.demoTimer); convoy.demoTimer = null; }
+  convoy.demoMembers = null;
+  if (convoy.bc) { try { convoy.bc.close(); } catch (e) {} convoy.bc = null; }
+  if (convoy.fbUnsub) { try { convoy.fbUnsub(); } catch (e) {} convoy.fbUnsub = null; }
+  if (convoy.fbCol && convoy.fbUid) { try { convoy.fbCol.doc(convoy.fbUid).delete(); } catch (e) {} }
+  convoy.fbCol = null;
+  convoy.code = null; convoy.members = {};
+  $('convoyJoinBox').style.display = '';
+  $('convoyLiveBox').style.display = 'none';
+  $('btnConvoy').style.background = '';
+  needsDraw = true;
+  if (!silent) toast('Left the convoy');
+}
+
+function convoyPos() {
+  if (nav.active && nav.demo && nav.simPos) return nav.simPos;
+  return gps.fix || null;
+}
+
+function convoyTick() {
+  var now = Date.now();
+  convoy.members = A.pruneMembers(convoy.members, now);
+  var pos = convoyPos();
+  if (pos) {
+    var b = { id: convoy.selfId, name: convoyName(), lat: pos.lat, lon: pos.lon,
+      heading: typeof pos.heading === 'number' ? pos.heading : null,
+      speed: (nav.active && nav.guide && nav.guide.speed) || pos.speed || null,
+      etaS: nav.active && nav.lastR && !nav.lastR.arrived ? Math.round(nav.lastR.remainingS * paceOf()) : null,
+      arrived: !!(nav.lastR && nav.lastR.arrived), ts: now };
+    if (convoy.bc) { try { convoy.bc.postMessage(b); } catch (e) {} }
+    if (convoy.fbCol && convoy.fbUid) {
+      try { convoy.fbCol.doc(convoy.fbUid).set(Object.assign({}, b, { id: convoy.fbUid })); } catch (e) {}
+    }
+  }
+  if ($('convoySheet').classList.contains('open')) renderConvoyMembers();
+  needsDraw = true;
+}
+
+function receiveBeacon(b) {
+  if (b && (b.id === convoy.selfId || (convoy.fbUid && b.id === convoy.fbUid))) return;
+  var next = A.applyBeacon(convoy.members, b, convoy.selfId, Date.now());
+  if (next !== convoy.members) {
+    convoy.members = next;
+    needsDraw = true;
+    if ($('convoySheet').classList.contains('open')) renderConvoyMembers();
+  }
+}
+
+function renderConvoyMembers() {
+  var box = $('convoyMembers');
+  var now = Date.now();
+  var alive = A.pruneMembers(convoy.members, now);
+  var self = convoyPos();
+  var stats = A.convoyStats(alive, self, now);
+  box.innerHTML = '';
+  var me = document.createElement('div');
+  me.className = 'memberRow';
+  var myAv = A.convoyAvatar(convoy.selfId);
+  me.innerHTML = '<div class="av"></div><div style="flex:1;min-width:0"><div class="mn"></div>' +
+    '<div class="mm">' + (self ? 'broadcasting your position' : 'waiting for a GPS fix (or start a drive)') + '</div></div>';
+  me.querySelector('.av').style.background = myAv.color + '33';
+  me.querySelector('.av').style.borderColor = myAv.color;
+  me.querySelector('.av').textContent = myAv.emoji;
+  me.querySelector('.mn').textContent = convoyName() + ' (you)';
+  box.appendChild(me);
+  stats.forEach(function (s) {
+    var m = s.member, av = A.convoyAvatar(m.id);
+    var row = document.createElement('div');
+    row.className = 'memberRow';
+    var meta = [];
+    if (s.distM != null) meta.push(A.fmtDist(s.distM, settings.units) + ' away');
+    if (m.speed != null) meta.push(Math.round(settings.units === 'imperial' ? m.speed * 2.23694 : m.speed * 3.6) +
+      (settings.units === 'imperial' ? ' mph' : ' km/h'));
+    if (m.etaS != null && !m.arrived) meta.push('ETA ' + A.fmtDur(m.etaS));
+    if (s.staleS > 12) meta.push('last seen ' + Math.round(s.staleS) + ' s ago');
+    row.innerHTML = '<div class="av"></div><div style="flex:1;min-width:0"><div class="mn"></div><div class="mm"></div></div>';
+    row.querySelector('.av').style.background = av.color + '33';
+    row.querySelector('.av').style.borderColor = av.color;
+    row.querySelector('.av').textContent = m.arrived ? '🏁' : av.emoji;
+    row.querySelector('.mn').textContent = m.name;
+    row.querySelector('.mm').textContent = meta.join(' · ') || 'in the convoy';
+    box.appendChild(row);
+  });
+}
+
+/* draw convoy members on the map (any mode) */
+function drawConvoy() {
+  if (!convoy.code) return;
+  var alive = A.pruneMembers(convoy.members, Date.now());
+  for (var k in alive) {
+    var m = alive[k], av = A.convoyAvatar(m.id);
+    var s = toScreen(m);
+    if (s.x < -40 || s.x > W + 40 || s.y < -40 || s.y > H + 40) continue;
+    ctx.beginPath(); ctx.arc(s.x, s.y, 13, 0, 7);
+    ctx.fillStyle = av.color; ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = '#fff'; ctx.stroke();
+    ctx.font = '14px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(m.arrived ? '🏁' : av.emoji, s.x, s.y + 1);
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = '600 11px -apple-system, Segoe UI, Roboto, sans-serif';
+    var label = m.name;
+    var tw = ctx.measureText(label).width;
+    ctx.fillStyle = 'rgba(11,15,28,0.75)';
+    ctx.fillRect(s.x - tw / 2 - 5, s.y + 17, tw + 10, 16);
+    ctx.fillStyle = '#eef2ff';
+    ctx.fillText(label, s.x, s.y + 29);
+  }
+}
+
+/* Firestore transport — lights up cross-device convoys (see config.js) */
+var FB_VER = '10.12.4';
+function loadFirebaseSdk(parts) {
+  return new Promise(function (resolve, reject) {
+    if (typeof firebase !== 'undefined' && firebase.firestore && firebase.auth) { resolve(); return; }
+    var i = 0;
+    (function next() {
+      if (i >= parts.length) { resolve(); return; }
+      var s = document.createElement('script');
+      s.src = 'https://www.gstatic.com/firebasejs/' + FB_VER + '/firebase-' + parts[i] + '-compat.js';
+      s.onload = function () { i++; next(); };
+      s.onerror = function () { reject(new Error('firebase sdk failed')); };
+      document.head.appendChild(s);
+    })();
+  });
+}
+function fbStart(code) {
+  var cfg = window.ATLAS_FIREBASE_CONFIG;
+  if (!cfg) return;
+  loadFirebaseSdk(['app', 'auth', 'firestore']).then(function () {
+    var app = firebase.apps && firebase.apps.length ? firebase.app() : firebase.initializeApp(cfg);
+    return firebase.auth(app).signInAnonymously().then(function (cred) {
+      if (convoy.code !== code) return; // left already
+      convoy.fbUid = (cred && cred.user && cred.user.uid) || (firebase.auth(app).currentUser || {}).uid;
+      convoy.fb = firebase.firestore(app);
+      convoy.fbCol = convoy.fb.collection('atlas_convoys').doc(code).collection('members');
+      convoy.fbUnsub = convoy.fbCol.onSnapshot(function (snap) {
+        snap.forEach(function (d) { receiveBeacon(d.data()); });
+      }, function () {});
+    });
+  }).catch(function () { /* BroadcastChannel still carries the convoy */ });
+}
+
+/* demo convoy: two simulated companions on the demo route */
+function startDemoConvoy() {
+  startConvoy(A.makeConvoyCode(), true);
+  if (!convoy.code) return;
+  closeSheets();
+  startDemoTrip(true); // begins the demo drive
+  convoy.demoMembers = [
+    { id: 'demo-aisha', name: 'Aisha', along: 150, v: 13.6 },
+    { id: 'demo-marco', name: 'Marco', along: -230, v: 12.3 },
+  ];
+  convoy.demoTimer = setInterval(function () {
+    if (!nav.route) return;
+    convoy.demoMembers.forEach(function (dm) {
+      dm.along = Math.min(nav.route.totalM, dm.along + dm.v);
+      var p = A.pointAtAlong(nav.route, Math.max(0, dm.along));
+      receiveBeacon({ id: dm.id, name: dm.name, lat: p.lat, lon: p.lon, heading: p.heading,
+        speed: dm.v, etaS: Math.round((nav.route.totalM - dm.along) / dm.v),
+        arrived: dm.along >= nav.route.totalM - 25, ts: Date.now() });
+    });
+  }, 1000);
+  toast('🚙 Demo convoy — Aisha is ahead, Marco is behind');
+}
+
+$('btnConvoy').addEventListener('click', function () {
+  $('convoyName').value = load('atlas.convoy.name', '') || '';
+  if ($('convoySheet').classList.contains('open')) closeSheets();
+  else { openSheet('convoySheet'); renderConvoyMembers(); }
+});
+$('btnCloseConvoy').addEventListener('click', closeSheets);
+$('btnConvoyCreate').addEventListener('click', function () { startConvoy(A.makeConvoyCode()); });
+$('btnConvoyJoin').addEventListener('click', function () { startConvoy($('convoyCode').value); });
+$('convoyCode').addEventListener('keydown', function (e) { if (e.key === 'Enter') startConvoy($('convoyCode').value); });
+$('btnConvoyDemo').addEventListener('click', startDemoConvoy);
+$('btnConvoyLeave').addEventListener('click', function () { leaveConvoy(false); });
+$('btnConvoyShare').addEventListener('click', function () {
+  if (!convoy.code) return;
+  var base = 'https://apexvip.uk/atlas/';
+  try {
+    if (window.location && window.location.href && String(window.location.href).indexOf('http') === 0) {
+      base = String(window.location.href).split('#')[0];
+    }
+  } catch (e) {}
+  var text = 'Join my Atlas convoy — code ' + convoy.code + ' — ' + base + '#convoy=' + convoy.code;
+  if (navigator.share) { navigator.share({ text: text }).catch(function () {}); return; }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function () { toast('Invite copied'); }, function () { toast('Code: ' + convoy.code); });
+  } else toast('Code: ' + convoy.code);
+});
 
 /* ------------------------------- 📹 dashcam ------------------------------ */
 /* Record your drive with the in-app camera. Frames are composited onto a
@@ -1815,7 +2292,7 @@ function segWire(id, key, after) {
   });
 }
 function syncSettingsUI() {
-  [['segUnits', 'units'], ['segVoice', 'voice'], ['segTheme', 'theme'], ['segCodriver', 'codriver']].forEach(function (pair) {
+  [['segUnits', 'units'], ['segVoice', 'voice'], ['segTheme', 'theme'], ['segCodriver', 'codriver'], ['segCameras', 'cameras']].forEach(function (pair) {
     Array.prototype.forEach.call($(pair[0]).querySelectorAll('button'), function (b) {
       b.classList.toggle('on', b.getAttribute('data-v') === settings[pair[1]]);
     });
@@ -1826,6 +2303,7 @@ segWire('segUnits', 'units', function () { needsDraw = true; });
 segWire('segVoice', 'voice');
 segWire('segTheme', 'theme', function () { needsDraw = true; });
 segWire('segCodriver', 'codriver');
+segWire('segCameras', 'cameras', function () { needsDraw = true; });
 syncSettingsUI();
 
 /* ------------------------------ maneuver icons --------------------------- */
@@ -1869,6 +2347,18 @@ function toast(msg) {
 
 startGps();
 updateLocateBtn();
+
+// convoy deep link: atlas/#convoy=CODE opens the join sheet prefilled
+(function () {
+  var code = null;
+  try { code = A.parseConvoyLink(String((window.location && window.location.hash) || '')); } catch (e) {}
+  if (code) {
+    $('convoyCode').value = code;
+    $('convoyName').value = load('atlas.convoy.name', '') || '';
+    openSheet('convoySheet');
+    toast('Invited to convoy ' + code + ' — tap Join');
+  }
+})();
 
 if (navigator.serviceWorker && navigator.serviceWorker.register) {
   try { navigator.serviceWorker.register('sw.js'); } catch (e) {}

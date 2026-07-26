@@ -4,10 +4,10 @@
  * opportunistically in their own bounded cache so areas you've seen keep
  * working offline; routing/search requests are never cached (live answers
  * or an honest failure). Bump CACHE to force a clean reinstall. */
-const CACHE = 'atlas-v4';
+const CACHE = 'atlas-v6';
 const TILE_CACHE = 'atlas-tiles-v1';
 const TILE_LIMIT = 600;
-const ASSETS = ['./', './index.html', './engine.js', './manifest.json',
+const ASSETS = ['./', './index.html', './engine.js', './config.js', './manifest.json',
                 './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {

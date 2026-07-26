@@ -572,6 +572,144 @@ test('dashcam vault: pruneClips keeps newest, enforces count and byte caps', () 
   same([...A.pruneClips([{ id: 1, t: 1, size: 10 }, { id: 2, t: 9, size: 999 }], { maxCount: 5, maxBytes: 100 })], [1]);
 });
 
+test('parseMaxspeed: OSM limit vocabulary → km/h', () => {
+  near(A.parseMaxspeed('30 mph'), 48.3, 0.05);
+  assert.equal(A.parseMaxspeed('50'), 50);
+  assert.equal(A.parseMaxspeed('50 km/h'), 50);
+  assert.equal(A.parseMaxspeed('walk'), 10);
+  assert.equal(A.parseMaxspeed('none'), null);
+  assert.equal(A.parseMaxspeed('signals'), null);
+  assert.equal(A.parseMaxspeed('GB:urban'), null);
+  assert.equal(A.parseMaxspeed(''), null);
+  assert.equal(A.parseMaxspeed(null), null);
+});
+
+test('mapLimitsToRoute: parallel nearby ways map on; far or crossing ways do not', () => {
+  const { route, base } = makeRoute(); // 1000 m north then 500 m east
+  const northWay = (offM, fromM, toM, kmh) => {
+    const g = [];
+    for (let m = fromM; m <= toM; m += 100) {
+      g.push(A.destinationPoint(A.destinationPoint(base, 0, m), 90, offM));
+    }
+    return { kmh, geometry: g };
+  };
+  const ways = [
+    northWay(5, 0, 500, 48.3),          // 30 mph beside the first half
+    northWay(4, 500, 1000, 32.2),       // 20 mph beside the second half
+    northWay(200, 0, 1000, 100),        // a parallel road 200 m away — ignored
+    { kmh: 60, geometry: [A.destinationPoint(A.destinationPoint(base, 0, 300), 90, -50),
+                          A.destinationPoint(A.destinationPoint(base, 0, 300), 90, 50)] }, // crossing road — ignored
+  ];
+  const segs = A.mapLimitsToRoute(route, ways);
+  assert.equal(segs.length, 2, JSON.stringify(segs));
+  assert.equal(segs[0].kmh, 48.3); near(segs[0].startM, 0, 1); near(segs[0].endM, 500, 60);
+  assert.equal(segs[1].kmh, 32.2); near(segs[1].endM, 1000, 60);
+  assert.equal(A.limitAtAlong(segs, 200), 48.3);
+  assert.equal(A.limitAtAlong(segs, 700), 32.2);
+  assert.equal(A.limitAtAlong(segs, 1400), null, 'the eastward leg has no mapped limit');
+});
+
+test('mapCamerasToRoute + cameraNext: verge cameras snap on, far ones do not', () => {
+  const { route, base } = makeRoute();
+  const at = (m, offM) => A.destinationPoint(A.destinationPoint(base, 0, m), 90, offM);
+  const cams = [
+    { ...at(600, 10), kmh: 32.2 },
+    { ...at(605, 12) },              // 5 m later — deduped
+    { ...at(300, 200) },             // 200 m off the road — ignored
+  ];
+  const mapped = A.mapCamerasToRoute(route, cams);
+  assert.equal(mapped.length, 1, JSON.stringify(mapped));
+  near(mapped[0].alongM, 600, 5);
+  assert.equal(mapped[0].kmh, 32.2);
+  const next = A.cameraNext(mapped, 100);
+  near(next.distM, 500, 5);
+  assert.equal(A.cameraNext(mapped, 700), null, 'camera behind you is silent');
+});
+
+test('overspeedUpdate: tolerance, 3 s hysteresis, single warning, resets under limit', () => {
+  let st = null, r;
+  r = A.overspeedUpdate(st, 33, 32.2, 1);          // 1 km/h over: visually over, no warning
+  assert.equal(r.over, true); assert.equal(r.warn, false); st = r.state;
+  r = A.overspeedUpdate(null, 45, 32.2, 1); st = r.state;   // well over: clock starts
+  assert.equal(r.warn, false, '1 s over is not enough');
+  r = A.overspeedUpdate(st, 45, 32.2, 1); st = r.state;
+  r = A.overspeedUpdate(st, 45, 32.2, 1); st = r.state;
+  assert.equal(r.warn, true, 'warns after 3 s over');
+  r = A.overspeedUpdate(st, 45, 32.2, 1); st = r.state;
+  assert.equal(r.warn, false, 'warns once');
+  r = A.overspeedUpdate(st, 20, 32.2, 1); st = r.state;
+  assert.equal(r.over, false, 'back under');
+  r = A.overspeedUpdate(st, 45, 32.2, 3);
+  assert.equal(r.warn, true, 're-arms after dropping under the limit');
+  assert.equal(A.overspeedUpdate(r.state, 45, 32.2, 1).warn, false, 'still warns once per episode');
+  assert.equal(A.overspeedUpdate(null, 200, null, 1).over, false, 'no limit, no judgement');
+});
+
+test('convoy codes: deterministic generation, normalisation, link parsing', () => {
+  let seed = 42;
+  const lcg = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2 ** 32; };
+  const code = A.makeConvoyCode(lcg);
+  assert.equal(code.length, 6);
+  assert.equal(A.validConvoyCode(code), code, 'generated codes are valid');
+  seed = 42;
+  assert.equal(A.makeConvoyCode(lcg), code, 'same seed, same code');
+  assert.equal(A.validConvoyCode(' k7m2qd '), 'K7M2QD', 'normalises case and space');
+  assert.equal(A.validConvoyCode('K7M2Q'), null, 'wrong length');
+  assert.equal(A.validConvoyCode('K7M2QO'), null, 'O is not in the alphabet');
+  assert.equal(A.parseConvoyLink('https://apexvip.uk/atlas/#convoy=K7M2QD'), 'K7M2QD');
+  assert.equal(A.parseConvoyLink('#convoy=k7m2qd'), 'K7M2QD');
+  assert.equal(A.parseConvoyLink('K7M2QD'), 'K7M2QD', 'raw code accepted');
+  assert.equal(A.parseConvoyLink('hello world'), null);
+});
+
+test('convoyAvatar: deterministic car + colour per id', () => {
+  const a = A.convoyAvatar('driver-1'), b = A.convoyAvatar('driver-1'), c = A.convoyAvatar('driver-2');
+  assert.equal(a.emoji, b.emoji); assert.equal(a.color, b.color);
+  assert.ok(typeof a.emoji === 'string' && a.emoji.length > 0);
+  assert.ok(/^#[0-9a-f]{6}$/i.test(a.color));
+  assert.ok(a.emoji !== c.emoji || a.color !== c.color, 'different ids differ somewhere');
+});
+
+test('applyBeacon: validates, ignores self and stale, newest wins, clamps name', () => {
+  const NOW = 1000000;
+  let m = {};
+  m = A.applyBeacon(m, { id: 'a', name: 'Aisha', lat: 51.5, lon: -0.1, ts: NOW - 1000 }, 'me', NOW);
+  assert.equal(Object.keys(m).length, 1);
+  assert.equal(m.a.name, 'Aisha');
+  assert.equal(A.applyBeacon(m, { id: 'me', lat: 51.5, lon: -0.1 }, 'me', NOW), m, 'own echo ignored');
+  assert.equal(A.applyBeacon(m, { id: 'b', lat: 99, lon: 0 }, 'me', NOW), m, 'bad latitude rejected');
+  assert.equal(A.applyBeacon(m, null, 'me', NOW), m);
+  const stale = A.applyBeacon(m, { id: 'a', name: 'Old', lat: 51, lon: -0.1, ts: NOW - 60000 }, 'me', NOW);
+  assert.equal(stale.a.name, 'Aisha', 'older beacon never overwrites');
+  const upd = A.applyBeacon(m, { id: 'a', name: '  ' + 'x'.repeat(60), lat: 51.6, lon: -0.2, ts: NOW }, 'me', NOW);
+  assert.equal(upd.a.lat, 51.6, 'newer beacon wins');
+  assert.equal(upd.a.name.length, 24, 'name clamped');
+  assert.ok(upd !== m && m.a.lat === 51.5, 'input map untouched');
+  const future = A.applyBeacon({}, { id: 'c', lat: 0, lon: 0, ts: NOW + 999999 }, 'me', NOW);
+  assert.ok(future.c.ts <= NOW + 60000, 'future clocks pulled back');
+});
+
+test('pruneMembers + convoyStats: silence drops you; nearest-first formation', () => {
+  const NOW = 5000000;
+  const base = { lat: 51.5, lon: -0.1 };
+  const at = (m) => A.destinationPoint(base, 0, m);
+  let members = {};
+  members = A.applyBeacon(members, { id: 'near', name: 'Near', ...at(100), ts: NOW - 2000 }, 'me', NOW);
+  members = A.applyBeacon(members, { id: 'far', name: 'Far', ...at(900), ts: NOW - 2000 }, 'me', NOW);
+  members = A.applyBeacon(members, { id: 'gone', name: 'Gone', ...at(50), ts: NOW - 60000 }, 'me', NOW - 50000);
+  const alive = A.pruneMembers(members, NOW);
+  assert.equal(Object.keys(alive).length, 2, 'silent member pruned');
+  const stats = A.convoyStats(alive, base, NOW);
+  assert.equal(stats[0].member.id, 'near');
+  assert.equal(stats[1].member.id, 'far');
+  near(stats[0].distM, 100, 2);
+  near(A.angleDiff(stats[1].brgDeg, 0), 0, 1, 'due north of me');
+  near(stats[0].staleS, 2, 0.01);
+  const noSelf = A.convoyStats(alive, null, NOW);
+  assert.equal(noSelf.length, 2);
+  assert.equal(noSelf[0].distM, null);
+});
+
 test('updatePace: learns your speed honestly and stays clamped', () => {
   assert.equal(A.updatePace(1, 30, 600), 1, 'too short to learn from');
   const slower = A.updatePace(1, 600, 900);

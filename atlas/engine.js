@@ -827,6 +827,124 @@
     return drop;
   }
 
+  /* ====================== speed limits & speed cameras ===================== */
+  // OpenStreetMap knows the legal limit of most roads (maxspeed=*) and the
+  // position of fixed speed cameras (highway=speed_camera). The UI fetches
+  // the raw data; everything decidable lives here: parsing OSM limit values,
+  // matching ways/cameras onto the route line, and the warning state machines.
+  // Honesty note: warnings are only as good as the map data — obey signage.
+
+  /** OSM maxspeed value → km/h, or null when unknown/unlimited/uncoded. */
+  function parseMaxspeed(v) {
+    if (v == null) return null;
+    v = String(v).trim().toLowerCase();
+    if (!v || v === 'none' || v === 'signals' || v === 'variable' || v === 'default') return null;
+    if (v === 'walk') return 10;
+    var m = /^(\d+(?:\.\d+)?)\s*mph$/.exec(v);
+    if (m) return Math.round(parseFloat(m[1]) * 1.609344 * 10) / 10;
+    m = /^(\d+(?:\.\d+)?)(?:\s*km\/h)?$/.exec(v);
+    if (m) return parseFloat(m[1]);
+    return null;
+  }
+
+  var LIMIT_SNAP_M = 30, LIMIT_PARALLEL_DEG = 40;
+
+  /**
+   * Match speed-limit ways onto the route: for each route vertex, the nearest
+   * way segment within 30 m that runs roughly parallel to the road wins; runs
+   * of the same limit merge into segments. ways = [{kmh, geometry:[{lat,lon}]}]
+   * → [{startM, endM, kmh}] sorted along the route.
+   */
+  function mapLimitsToRoute(route, ways) {
+    var g = route.geometry, cum = route.cum;
+    var segs = [];
+    ways.forEach(function (w) {
+      if (w.kmh == null || !w.geometry || w.geometry.length < 2) return;
+      for (var i = 0; i < w.geometry.length - 1; i++) {
+        var a = w.geometry[i], b = w.geometry[i + 1];
+        segs.push({ a: a, b: b, kmh: w.kmh, brg: bearing(a, b),
+          minLat: Math.min(a.lat, b.lat), maxLat: Math.max(a.lat, b.lat),
+          minLon: Math.min(a.lon, b.lon), maxLon: Math.max(a.lon, b.lon) });
+      }
+    });
+    var padLat = 0.0005, padLon = 0.001; // ~55 m gate before exact maths
+    var limitAt = [];
+    for (var vi = 0; vi < g.length; vi++) {
+      var p = g[vi];
+      var heading = vi < g.length - 1 ? bearing(p, g[vi + 1]) : bearing(g[vi - 1], p);
+      var best = null, bestD = LIMIT_SNAP_M;
+      for (var si = 0; si < segs.length; si++) {
+        var s = segs[si];
+        if (p.lat < s.minLat - padLat || p.lat > s.maxLat + padLat ||
+            p.lon < s.minLon - padLon || p.lon > s.maxLon + padLon) continue;
+        var dd = Math.abs(angleDiff(heading, s.brg));
+        if (dd > LIMIT_PARALLEL_DEG && dd < 180 - LIMIT_PARALLEL_DEG) continue; // crossing road
+        var pr = projectOnSegment(p, s.a, s.b);
+        if (pr.dist < bestD) { bestD = pr.dist; best = s.kmh; }
+      }
+      limitAt.push(best);
+    }
+    var out = [], open = null;
+    for (var i2 = 0; i2 < limitAt.length; i2++) {
+      var k = limitAt[i2], end = cum[Math.min(i2 + 1, cum.length - 1)];
+      if (open && open.kmh === k) { open.endM = end; continue; }
+      if (open) out.push(open);
+      open = k != null ? { startM: cum[i2], endM: end, kmh: k } : null;
+    }
+    if (open) out.push(open);
+    return out;
+  }
+
+  /** The limit in force at `alongM`, or null where the map is silent. */
+  function limitAtAlong(segments, alongM) {
+    for (var i = 0; i < segments.length; i++) {
+      if (alongM >= segments[i].startM - 1 && alongM <= segments[i].endM + 1) return segments[i].kmh;
+    }
+    return null;
+  }
+
+  /**
+   * Snap camera points onto the route (≤45 m off the line counts — cameras
+   * stand on the verge), dedupe within 30 m. cams = [{lat, lon, kmh?}]
+   * → [{alongM, lat, lon, kmh}] sorted along the route.
+   */
+  function mapCamerasToRoute(route, cams, maxDistM) {
+    var max = maxDistM || 45;
+    var out = [];
+    cams.forEach(function (c) {
+      var s = snapToRoute(route, c);
+      if (s.crossTrack <= max) out.push({ alongM: s.alongM, lat: c.lat, lon: c.lon, kmh: c.kmh == null ? null : c.kmh });
+    });
+    out.sort(function (a, b) { return a.alongM - b.alongM; });
+    return out.filter(function (c, i) { return i === 0 || c.alongM - out[i - 1].alongM > 30; });
+  }
+
+  /** The next camera at/after `alongM` (15 m of grace behind you). */
+  function cameraNext(cameras, alongM) {
+    for (var i = 0; i < cameras.length; i++) {
+      if (cameras[i].alongM > alongM - 15) return { cam: cameras[i], distM: Math.max(0, cameras[i].alongM - alongM) };
+    }
+    return null;
+  }
+
+  /**
+   * Overspeed state machine with hysteresis: 5 % + 1 km/h of tolerance, and
+   * you must stay over it for 3 s before the (single) spoken warning — GPS
+   * blips never nag. `over` is the immediate visual state.
+   * → {state, over, warn}
+   */
+  function overspeedUpdate(state, speedKmh, limitKmh, dtS) {
+    state = state || { overS: 0, warned: false };
+    if (limitKmh == null) return { state: { overS: 0, warned: false }, over: false, warn: false };
+    var tol = limitKmh * 1.05 + 1;
+    if (speedKmh <= tol) {
+      return { state: { overS: 0, warned: false }, over: speedKmh > limitKmh + 0.5, warn: false };
+    }
+    var overS = state.overS + Math.max(0, dtS || 0);
+    var warn = !state.warned && overS >= 3;
+    return { state: { overS: overS, warned: state.warned || warn }, over: true, warn: warn };
+  }
+
   /* ============================ personal pace ============================== */
   // Routers predict an average driver. Atlas learns the ratio between *your*
   // drives and the prediction (EMA, clamped) and scales future ETAs by it —
@@ -837,6 +955,115 @@
     var ratio = Math.max(0.5, Math.min(2, actualS / predictedS));
     var next = (pace || 1) * 0.7 + ratio * 0.3;
     return Math.round(Math.max(0.6, Math.min(1.6, next)) * 1000) / 1000;
+  }
+
+  /* ================================ convoy ================================ */
+  // Road-trip mode: drivers who share a convoy code see each other live on
+  // the map. Transport is the UI's job (BroadcastChannel between tabs,
+  // Firestore across devices); everything decidable is here — codes,
+  // deterministic avatars, beacon validation with newest-wins merging,
+  // staleness pruning and the formation stats.
+
+  var CONVOY_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no I/L/O/0/1
+
+  /** A 6-char convoy code from an injected rand() (deterministic in tests). */
+  function makeConvoyCode(rand) {
+    rand = rand || Math.random;
+    var s = '';
+    for (var i = 0; i < 6; i++) {
+      s += CONVOY_ALPHABET[Math.floor(rand() * CONVOY_ALPHABET.length) % CONVOY_ALPHABET.length];
+    }
+    return s;
+  }
+
+  /** Normalise user input to a valid code, or null. */
+  function validConvoyCode(s) {
+    if (typeof s !== 'string') return null;
+    s = s.toUpperCase().replace(/[\s-]/g, '');
+    if (s.length !== 6) return null;
+    for (var i = 0; i < s.length; i++) if (CONVOY_ALPHABET.indexOf(s[i]) < 0) return null;
+    return s;
+  }
+
+  /** Pull a convoy code out of a share link / hash / raw code. */
+  function parseConvoyLink(s) {
+    if (typeof s !== 'string') return null;
+    var m = /convoy=([A-Za-z0-9-]{4,12})/.exec(s);
+    if (m) return validConvoyCode(m[1]);
+    return validConvoyCode(s.replace(/^#/, ''));
+  }
+
+  var CONVOY_CARS = ['🚗', '🚙', '🛻', '🚐', '🏎', '🚕', '🚓', '🚌'];
+  var CONVOY_COLORS = ['#38bdf8', '#34d399', '#f472b6', '#fbbf24', '#a78bfa', '#fb7185', '#4ade80', '#f97316'];
+
+  /** Deterministic {emoji, color} for a member id — same id, same car. */
+  function convoyAvatar(id) {
+    var h = 5381;
+    id = String(id || '');
+    for (var i = 0; i < id.length; i++) h = ((h * 33) ^ id.charCodeAt(i)) >>> 0;
+    return { emoji: CONVOY_CARS[h % CONVOY_CARS.length], color: CONVOY_COLORS[(h >>> 3) % CONVOY_COLORS.length] };
+  }
+
+  /**
+   * Merge one incoming beacon into the members map. Pure and defensive:
+   * malformed beacons and our own echoes are ignored, an older timestamp
+   * never overwrites a newer one, names are clamped, clocks from the future
+   * are pulled back. → a NEW members object (input untouched).
+   */
+  function applyBeacon(members, b, selfId, now) {
+    if (!b || typeof b !== 'object') return members;
+    if (typeof b.id !== 'string' || !b.id || b.id === selfId) return members;
+    if (typeof b.lat !== 'number' || typeof b.lon !== 'number' ||
+        !isFinite(b.lat) || !isFinite(b.lon) ||
+        b.lat < -90 || b.lat > 90 || b.lon < -180 || b.lon > 180) return members;
+    var ts = typeof b.ts === 'number' && isFinite(b.ts) ? Math.min(b.ts, now + 60000) : now;
+    var prev = members[b.id];
+    if (prev && ts < prev.ts) return members;
+    var next = {};
+    for (var k in members) next[k] = members[k];
+    next[b.id] = {
+      id: b.id,
+      name: (typeof b.name === 'string' && b.name.trim() ? b.name.trim() : 'Driver').slice(0, 24),
+      lat: b.lat, lon: b.lon,
+      heading: typeof b.heading === 'number' && isFinite(b.heading) ? b.heading : null,
+      speed: typeof b.speed === 'number' && isFinite(b.speed) && b.speed >= 0 ? b.speed : null,
+      etaS: typeof b.etaS === 'number' && isFinite(b.etaS) && b.etaS >= 0 ? b.etaS : null,
+      arrived: !!b.arrived,
+      ts: ts,
+    };
+    return next;
+  }
+
+  var CONVOY_TTL_MS = 45000;
+
+  /** Drop members whose beacons have gone silent. → a new object. */
+  function pruneMembers(members, now, ttlMs) {
+    var ttl = ttlMs || CONVOY_TTL_MS;
+    var next = {};
+    for (var k in members) if (now - members[k].ts <= ttl) next[k] = members[k];
+    return next;
+  }
+
+  /**
+   * The formation, from where you sit: every other member with distance and
+   * bearing from `self` ({lat,lon}|null) and beacon age, nearest first
+   * (unknown distances last).
+   */
+  function convoyStats(members, self, now) {
+    var out = [];
+    for (var k in members) {
+      var m = members[k];
+      var distM = self ? haversine(self, m) : null;
+      out.push({ member: m, distM: distM, brgDeg: self ? bearing(self, m) : null,
+                 staleS: Math.max(0, (now - m.ts) / 1000) });
+    }
+    out.sort(function (a, b) {
+      if (a.distM == null && b.distM == null) return a.member.id < b.member.id ? -1 : 1;
+      if (a.distM == null) return 1;
+      if (b.distM == null) return -1;
+      return a.distM - b.distM;
+    });
+    return out;
   }
 
   /* ================================ places ================================ */
@@ -902,5 +1129,9 @@
     fmtTimestamp: fmtTimestamp, dashcamLines: dashcamLines,
     dashcamFilename: dashcamFilename, recordingEstimateMB: recordingEstimateMB,
     fmtBytes: fmtBytes, pruneClips: pruneClips,
+    parseMaxspeed: parseMaxspeed, mapLimitsToRoute: mapLimitsToRoute, limitAtAlong: limitAtAlong,
+    mapCamerasToRoute: mapCamerasToRoute, cameraNext: cameraNext, overspeedUpdate: overspeedUpdate,
+    makeConvoyCode: makeConvoyCode, validConvoyCode: validConvoyCode, parseConvoyLink: parseConvoyLink,
+    convoyAvatar: convoyAvatar, applyBeacon: applyBeacon, pruneMembers: pruneMembers, convoyStats: convoyStats,
   };
 });
