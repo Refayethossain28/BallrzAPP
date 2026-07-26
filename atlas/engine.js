@@ -827,6 +827,124 @@
     return drop;
   }
 
+  /* ====================== speed limits & speed cameras ===================== */
+  // OpenStreetMap knows the legal limit of most roads (maxspeed=*) and the
+  // position of fixed speed cameras (highway=speed_camera). The UI fetches
+  // the raw data; everything decidable lives here: parsing OSM limit values,
+  // matching ways/cameras onto the route line, and the warning state machines.
+  // Honesty note: warnings are only as good as the map data — obey signage.
+
+  /** OSM maxspeed value → km/h, or null when unknown/unlimited/uncoded. */
+  function parseMaxspeed(v) {
+    if (v == null) return null;
+    v = String(v).trim().toLowerCase();
+    if (!v || v === 'none' || v === 'signals' || v === 'variable' || v === 'default') return null;
+    if (v === 'walk') return 10;
+    var m = /^(\d+(?:\.\d+)?)\s*mph$/.exec(v);
+    if (m) return Math.round(parseFloat(m[1]) * 1.609344 * 10) / 10;
+    m = /^(\d+(?:\.\d+)?)(?:\s*km\/h)?$/.exec(v);
+    if (m) return parseFloat(m[1]);
+    return null;
+  }
+
+  var LIMIT_SNAP_M = 30, LIMIT_PARALLEL_DEG = 40;
+
+  /**
+   * Match speed-limit ways onto the route: for each route vertex, the nearest
+   * way segment within 30 m that runs roughly parallel to the road wins; runs
+   * of the same limit merge into segments. ways = [{kmh, geometry:[{lat,lon}]}]
+   * → [{startM, endM, kmh}] sorted along the route.
+   */
+  function mapLimitsToRoute(route, ways) {
+    var g = route.geometry, cum = route.cum;
+    var segs = [];
+    ways.forEach(function (w) {
+      if (w.kmh == null || !w.geometry || w.geometry.length < 2) return;
+      for (var i = 0; i < w.geometry.length - 1; i++) {
+        var a = w.geometry[i], b = w.geometry[i + 1];
+        segs.push({ a: a, b: b, kmh: w.kmh, brg: bearing(a, b),
+          minLat: Math.min(a.lat, b.lat), maxLat: Math.max(a.lat, b.lat),
+          minLon: Math.min(a.lon, b.lon), maxLon: Math.max(a.lon, b.lon) });
+      }
+    });
+    var padLat = 0.0005, padLon = 0.001; // ~55 m gate before exact maths
+    var limitAt = [];
+    for (var vi = 0; vi < g.length; vi++) {
+      var p = g[vi];
+      var heading = vi < g.length - 1 ? bearing(p, g[vi + 1]) : bearing(g[vi - 1], p);
+      var best = null, bestD = LIMIT_SNAP_M;
+      for (var si = 0; si < segs.length; si++) {
+        var s = segs[si];
+        if (p.lat < s.minLat - padLat || p.lat > s.maxLat + padLat ||
+            p.lon < s.minLon - padLon || p.lon > s.maxLon + padLon) continue;
+        var dd = Math.abs(angleDiff(heading, s.brg));
+        if (dd > LIMIT_PARALLEL_DEG && dd < 180 - LIMIT_PARALLEL_DEG) continue; // crossing road
+        var pr = projectOnSegment(p, s.a, s.b);
+        if (pr.dist < bestD) { bestD = pr.dist; best = s.kmh; }
+      }
+      limitAt.push(best);
+    }
+    var out = [], open = null;
+    for (var i2 = 0; i2 < limitAt.length; i2++) {
+      var k = limitAt[i2], end = cum[Math.min(i2 + 1, cum.length - 1)];
+      if (open && open.kmh === k) { open.endM = end; continue; }
+      if (open) out.push(open);
+      open = k != null ? { startM: cum[i2], endM: end, kmh: k } : null;
+    }
+    if (open) out.push(open);
+    return out;
+  }
+
+  /** The limit in force at `alongM`, or null where the map is silent. */
+  function limitAtAlong(segments, alongM) {
+    for (var i = 0; i < segments.length; i++) {
+      if (alongM >= segments[i].startM - 1 && alongM <= segments[i].endM + 1) return segments[i].kmh;
+    }
+    return null;
+  }
+
+  /**
+   * Snap camera points onto the route (≤45 m off the line counts — cameras
+   * stand on the verge), dedupe within 30 m. cams = [{lat, lon, kmh?}]
+   * → [{alongM, lat, lon, kmh}] sorted along the route.
+   */
+  function mapCamerasToRoute(route, cams, maxDistM) {
+    var max = maxDistM || 45;
+    var out = [];
+    cams.forEach(function (c) {
+      var s = snapToRoute(route, c);
+      if (s.crossTrack <= max) out.push({ alongM: s.alongM, lat: c.lat, lon: c.lon, kmh: c.kmh == null ? null : c.kmh });
+    });
+    out.sort(function (a, b) { return a.alongM - b.alongM; });
+    return out.filter(function (c, i) { return i === 0 || c.alongM - out[i - 1].alongM > 30; });
+  }
+
+  /** The next camera at/after `alongM` (15 m of grace behind you). */
+  function cameraNext(cameras, alongM) {
+    for (var i = 0; i < cameras.length; i++) {
+      if (cameras[i].alongM > alongM - 15) return { cam: cameras[i], distM: Math.max(0, cameras[i].alongM - alongM) };
+    }
+    return null;
+  }
+
+  /**
+   * Overspeed state machine with hysteresis: 5 % + 1 km/h of tolerance, and
+   * you must stay over it for 3 s before the (single) spoken warning — GPS
+   * blips never nag. `over` is the immediate visual state.
+   * → {state, over, warn}
+   */
+  function overspeedUpdate(state, speedKmh, limitKmh, dtS) {
+    state = state || { overS: 0, warned: false };
+    if (limitKmh == null) return { state: { overS: 0, warned: false }, over: false, warn: false };
+    var tol = limitKmh * 1.05 + 1;
+    if (speedKmh <= tol) {
+      return { state: { overS: 0, warned: false }, over: speedKmh > limitKmh + 0.5, warn: false };
+    }
+    var overS = state.overS + Math.max(0, dtS || 0);
+    var warn = !state.warned && overS >= 3;
+    return { state: { overS: overS, warned: state.warned || warn }, over: true, warn: warn };
+  }
+
   /* ============================ personal pace ============================== */
   // Routers predict an average driver. Atlas learns the ratio between *your*
   // drives and the prediction (EMA, clamped) and scales future ETAs by it —
@@ -902,5 +1020,7 @@
     fmtTimestamp: fmtTimestamp, dashcamLines: dashcamLines,
     dashcamFilename: dashcamFilename, recordingEstimateMB: recordingEstimateMB,
     fmtBytes: fmtBytes, pruneClips: pruneClips,
+    parseMaxspeed: parseMaxspeed, mapLimitsToRoute: mapLimitsToRoute, limitAtAlong: limitAtAlong,
+    mapCamerasToRoute: mapCamerasToRoute, cameraNext: cameraNext, overspeedUpdate: overspeedUpdate,
   };
 });

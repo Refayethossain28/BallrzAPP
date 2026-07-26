@@ -4,7 +4,7 @@
  * opportunistically in their own bounded cache so areas you've seen keep
  * working offline; routing/search requests are never cached (live answers
  * or an honest failure). Bump CACHE to force a clean reinstall. */
-const CACHE = 'atlas-v4';
+const CACHE = 'atlas-v5';
 const TILE_CACHE = 'atlas-tiles-v1';
 const TILE_LIMIT = 600;
 const ASSETS = ['./', './index.html', './engine.js', './manifest.json',
