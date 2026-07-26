@@ -1,0 +1,1332 @@
+<!doctype html>
+<!--
+  Atlas — the satnav
+  ==================
+  A complete turn-by-turn satellite navigation app in one file, on top of the
+  pure, unit-tested navigation engine in engine.js.
+
+  · From-scratch canvas slippy map (no map library): OpenStreetMap raster
+    tiles, pan / pinch / wheel zoom, smooth fractional zoom with parent-tile
+    fallback, heading-up rotation while navigating, day & night styles.
+  · Search any place on Earth (Nominatim), tap the map to pick a spot, or type
+    raw "lat, lon". Saved places (Home / Work / favourites) + recents, ranked
+    by the engine.
+  · Real routing (OSRM/FOSSGIS public servers): driving, cycling and walking
+    profiles, alternative routes you can tap to compare, live ETA.
+  · Turn-by-turn guidance: GPS snap-to-route, three speed-scaled voice bands
+    ("In 1.2 kilometres…", "In 200 metres…", "Turn left now"), roundabout
+    exits, off-route detection with automatic rerouting, arrival — spoken
+    with the on-device Web Speech API.
+  · 🚗 Demo drive: a deterministic simulator drives the route so the whole
+    app can be experienced offline, GPS or not.
+  · No account, no tracking, offline app shell, installable PWA.
+
+  Map data © OpenStreetMap contributors (openstreetmap.org/copyright).
+  Routing by the OSRM / FOSSGIS demo servers — community infrastructure,
+  used gently. Everything else runs on your device.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Atlas — the satnav</title>
+<meta name="description" content="Atlas: a complete turn-by-turn satnav in your browser. From-scratch map engine, voice guidance, rerouting, saved places, demo drive. No account, installable PWA.">
+<meta name="theme-color" content="#0b0f1c">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Atlas">
+<style>
+  :root {
+    --bg: #0b0f1c; --panel: rgba(16, 22, 40, 0.92); --panel-solid: #101628;
+    --line: rgba(255,255,255,0.09); --text: #eef2ff; --dim: #8b93ad;
+    --accent: #38bdf8; --accent2: #34d399; --danger: #f87171; --amber: #fbbf24;
+    --route: #2f7ff6; --route-alt: #64748b;
+    --radius: 18px; --shadow: 0 12px 40px rgba(0,0,0,0.45);
+    --sat: env(safe-area-inset-top, 0px); --sab: env(safe-area-inset-bottom, 0px);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body {
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg); color: var(--text); touch-action: none;
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  input { font: inherit; color: inherit; }
+
+  #map { position: fixed; inset: 0; display: block; background: #0d1322; }
+
+  /* ---------- floating chrome ---------- */
+  .fab {
+    position: fixed; z-index: 30; width: 46px; height: 46px; border-radius: 50%;
+    background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow);
+    display: flex; align-items: center; justify-content: center; font-size: 20px;
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    transition: transform .15s, opacity .2s;
+  }
+  .fab:active { transform: scale(0.92); }
+  #btnLocate { right: 14px; bottom: calc(170px + var(--sab)); }
+  #btnCompass { right: 14px; bottom: calc(226px + var(--sab)); display: none; }
+  #btnLayers { right: 14px; bottom: calc(282px + var(--sab)); }
+  #zoomBox { position: fixed; z-index: 30; left: 14px; bottom: calc(170px + var(--sab));
+    display: flex; flex-direction: column; gap: 8px; }
+  #zoomBox .fab { position: static; }
+
+  #attribution {
+    position: fixed; z-index: 25; left: 8px; bottom: calc(4px + var(--sab));
+    font-size: 10px; color: var(--dim); background: rgba(11,15,28,0.55);
+    padding: 2px 7px; border-radius: 8px; pointer-events: auto;
+  }
+  #attribution a { color: var(--dim); }
+
+  /* ---------- top search pill ---------- */
+  #topBar {
+    position: fixed; z-index: 40; top: calc(12px + var(--sat)); left: 12px; right: 12px;
+    display: flex; gap: 10px; transition: transform .25s, opacity .25s;
+  }
+  #topBar.hidden { transform: translateY(-120%); opacity: 0; pointer-events: none; }
+  #searchPill {
+    flex: 1; display: flex; align-items: center; gap: 10px; height: 52px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 26px;
+    padding: 0 18px; box-shadow: var(--shadow); backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px); color: var(--dim); text-align: left;
+  }
+  #searchPill .q { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #searchPill .logo { font-weight: 800; letter-spacing: 0.5px; color: var(--accent);
+    font-size: 13px; text-transform: uppercase; }
+
+  /* ---------- sheets ---------- */
+  .sheet {
+    position: fixed; z-index: 50; left: 0; right: 0; bottom: 0;
+    background: var(--panel-solid); border-radius: 22px 22px 0 0;
+    border-top: 1px solid var(--line); box-shadow: 0 -12px 40px rgba(0,0,0,0.5);
+    padding: 10px 16px calc(16px + var(--sab)); transform: translateY(105%);
+    transition: transform .28s cubic-bezier(.32,.72,.33,1); max-height: 82vh;
+    display: flex; flex-direction: column;
+  }
+  .sheet.open { transform: translateY(0); }
+  .grab { width: 40px; height: 4px; border-radius: 2px; background: var(--line);
+    margin: 2px auto 10px; flex: none; }
+
+  /* search sheet */
+  #searchSheet { height: 82vh; }
+  #searchBox { display: flex; gap: 10px; align-items: center; flex: none; }
+  #searchInput {
+    flex: 1; height: 48px; border-radius: 14px; border: 1px solid var(--line);
+    background: rgba(255,255,255,0.05); padding: 0 16px; outline: none; color: var(--text);
+  }
+  #searchInput:focus { border-color: var(--accent); }
+  #searchCancel { color: var(--accent); font-weight: 600; padding: 8px 4px; }
+  #searchResults { overflow-y: auto; margin-top: 10px; -webkit-overflow-scrolling: touch; }
+  .result { display: flex; gap: 12px; align-items: center; padding: 12px 6px;
+    border-bottom: 1px solid var(--line); width: 100%; text-align: left; }
+  .result .ic { width: 38px; height: 38px; border-radius: 12px; flex: none;
+    background: rgba(56,189,248,0.12); display: flex; align-items: center;
+    justify-content: center; font-size: 18px; }
+  .result .nm { font-weight: 600; }
+  .result .ad { font-size: 12.5px; color: var(--dim); overflow: hidden;
+    text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
+  .result .heart { margin-left: auto; font-size: 18px; color: var(--dim); padding: 8px; flex: none; }
+  .result .heart.on { color: var(--danger); }
+  .sectionTitle { font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase;
+    color: var(--dim); margin: 14px 6px 4px; }
+  #quickRow { display: flex; gap: 10px; margin-top: 12px; flex: none; }
+  .chip { flex: 1; background: rgba(255,255,255,0.05); border: 1px solid var(--line);
+    border-radius: 14px; padding: 10px 8px; text-align: center; }
+  .chip .e { font-size: 20px; } .chip .t { font-size: 12px; color: var(--dim); margin-top: 2px; }
+
+  /* route preview sheet */
+  #routeSheet .dest { font-weight: 700; font-size: 17px; }
+  #routeSheet .destAddr { color: var(--dim); font-size: 12.5px; margin-top: 1px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #profileRow { display: flex; gap: 8px; margin: 12px 0 4px; }
+  .profileBtn { flex: 1; padding: 9px 0; border-radius: 12px; border: 1px solid var(--line);
+    background: rgba(255,255,255,0.04); font-size: 18px; }
+  .profileBtn.on { background: rgba(56,189,248,0.16); border-color: var(--accent); }
+  #altList { display: flex; flex-direction: column; gap: 8px; margin-top: 10px;
+    overflow-y: auto; }
+  .altCard { display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+    border-radius: 14px; border: 1px solid var(--line); background: rgba(255,255,255,0.04);
+    text-align: left; width: 100%; }
+  .altCard.on { border-color: var(--route); background: rgba(47,127,246,0.14); }
+  .altCard .tm { font-size: 19px; font-weight: 800; }
+  .altCard .ds { color: var(--dim); font-size: 12.5px; }
+  .altCard .tag { margin-left: auto; font-size: 11px; color: var(--dim); }
+  #routeActions { display: flex; gap: 10px; margin-top: 14px; }
+  .bigBtn { flex: 1; height: 52px; border-radius: 16px; font-weight: 700; font-size: 16px; }
+  #btnGo { background: linear-gradient(135deg, #2f7ff6, #38bdf8); color: #fff;
+    box-shadow: 0 8px 24px rgba(47,127,246,0.4); }
+  #btnDemo { background: rgba(255,255,255,0.07); border: 1px solid var(--line); }
+  #routeStatus { color: var(--dim); font-size: 13px; text-align: center; padding: 14px 0 4px; }
+  #routeStatus.err { color: var(--danger); }
+
+  /* ---------- navigation HUD ---------- */
+  #navBanner {
+    position: fixed; z-index: 45; top: calc(12px + var(--sat)); left: 12px; right: 12px;
+    background: linear-gradient(160deg, #123a2e, #0e2f45); border: 1px solid rgba(52,211,153,0.35);
+    border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px;
+    display: none; align-items: center; gap: 14px;
+  }
+  #navBanner.show { display: flex; }
+  #navBanner.offroute { background: linear-gradient(160deg, #45230e, #3a1212);
+    border-color: rgba(251,191,36,0.4); }
+  #navIcon { width: 54px; height: 54px; flex: none; }
+  #navIcon svg { width: 100%; height: 100%; }
+  #navDist { font-size: 24px; font-weight: 800; line-height: 1.1; }
+  #navText { color: #d3e7de; font-size: 14.5px; margin-top: 2px; }
+  #navThen { font-size: 12px; color: var(--dim); margin-top: 3px; display: none; }
+  #navThen.show { display: block; }
+
+  #navBottom {
+    position: fixed; z-index: 45; left: 12px; right: 12px; bottom: calc(12px + var(--sab));
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    padding: 12px 16px; display: none; align-items: center; gap: 8px;
+  }
+  #navBottom.show { display: flex; }
+  #navEta { font-size: 20px; font-weight: 800; color: var(--accent2); }
+  #navMeta { color: var(--dim); font-size: 12.5px; }
+  #navBottom .grow { flex: 1; }
+  .navCtl { width: 44px; height: 44px; border-radius: 50%; flex: none;
+    background: rgba(255,255,255,0.06); border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center; font-size: 18px; }
+  #btnEnd { background: rgba(248,113,113,0.15); border-color: rgba(248,113,113,0.4); }
+
+  #speedBubble {
+    position: fixed; z-index: 44; left: 14px; bottom: calc(96px + var(--sab));
+    width: 62px; height: 62px; border-radius: 50%; background: #fff; color: #0b0f1c;
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    box-shadow: var(--shadow); border: 3px solid #cbd5e1;
+  }
+  #speedBubble.show { display: flex; }
+  #speedVal { font-size: 21px; font-weight: 900; line-height: 1; }
+  #speedUnit { font-size: 9.5px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+
+  /* arrived card */
+  #arrivedCard {
+    position: fixed; z-index: 60; left: 50%; top: 50%; transform: translate(-50%,-50%) scale(0.9);
+    background: var(--panel-solid); border: 1px solid var(--line); border-radius: 22px;
+    box-shadow: var(--shadow); padding: 28px 30px; text-align: center; opacity: 0;
+    pointer-events: none; transition: all .3s; max-width: 320px;
+  }
+  #arrivedCard.show { opacity: 1; transform: translate(-50%,-50%) scale(1); pointer-events: auto; }
+  #arrivedCard .big { font-size: 44px; }
+  #arrivedCard h2 { margin: 8px 0 4px; }
+  #arrivedCard p { color: var(--dim); font-size: 13.5px; }
+  #arrivedCard button { margin-top: 16px; width: 100%; height: 46px; border-radius: 14px;
+    background: rgba(56,189,248,0.16); border: 1px solid var(--accent); font-weight: 700; }
+
+  /* settings sheet */
+  .setRow { display: flex; align-items: center; gap: 12px; padding: 13px 4px;
+    border-bottom: 1px solid var(--line); }
+  .setRow .lbl { flex: 1; } .setRow .sub { font-size: 12px; color: var(--dim); }
+  .seg { display: flex; background: rgba(255,255,255,0.05); border: 1px solid var(--line);
+    border-radius: 11px; overflow: hidden; }
+  .seg button { padding: 7px 13px; font-size: 13px; color: var(--dim); }
+  .seg button.on { background: rgba(56,189,248,0.18); color: var(--text); font-weight: 600; }
+  #aboutBox { font-size: 12px; color: var(--dim); padding: 14px 4px; line-height: 1.6; }
+  #aboutBox a { color: var(--accent); }
+
+  #toast {
+    position: fixed; z-index: 80; left: 50%; transform: translateX(-50%);
+    bottom: calc(100px + var(--sab)); background: var(--panel-solid); border: 1px solid var(--line);
+    padding: 10px 18px; border-radius: 14px; box-shadow: var(--shadow); font-size: 14px;
+    opacity: 0; transition: opacity .25s; pointer-events: none; max-width: 86vw; text-align: center;
+  }
+  #toast.show { opacity: 1; }
+
+  #tapCard {
+    position: fixed; z-index: 42; left: 50%; transform: translateX(-50%);
+    bottom: calc(24px + var(--sab)); background: var(--panel-solid); border: 1px solid var(--line);
+    border-radius: 16px; box-shadow: var(--shadow); padding: 12px 14px; display: none;
+    align-items: center; gap: 12px; max-width: 92vw;
+  }
+  #tapCard.show { display: flex; }
+  #tapCard .nm { font-weight: 700; max-width: 46vw; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  #tapCard .go { background: linear-gradient(135deg, #2f7ff6, #38bdf8); color: #fff;
+    border-radius: 12px; padding: 10px 18px; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<canvas id="map"></canvas>
+
+<div id="topBar">
+  <button id="searchPill" aria-label="Search destination">
+    <span class="logo">◮ Atlas</span>
+    <span class="q" id="searchPillText">Where to?</span>
+    <span>🔍</span>
+  </button>
+  <button class="fab" id="btnSettings" style="position:static;flex:none" aria-label="Settings">⚙️</button>
+</div>
+
+<button class="fab" id="btnLayers" aria-label="Map style">🌗</button>
+<button class="fab" id="btnCompass" aria-label="Reset north">🧭</button>
+<button class="fab" id="btnLocate" aria-label="My location">📍</button>
+<div id="zoomBox">
+  <button class="fab" id="btnZoomIn" aria-label="Zoom in">＋</button>
+  <button class="fab" id="btnZoomOut" aria-label="Zoom out">－</button>
+</div>
+<div id="attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors</div>
+
+<!-- search sheet -->
+<div class="sheet" id="searchSheet" role="dialog" aria-label="Search">
+  <div class="grab"></div>
+  <div id="searchBox">
+    <input id="searchInput" type="search" placeholder="Search place, address, or lat, lon" autocomplete="off">
+    <button id="searchCancel">Cancel</button>
+  </div>
+  <div id="quickRow">
+    <button class="chip" id="chipHome"><div class="e">🏠</div><div class="t">Home</div></button>
+    <button class="chip" id="chipWork"><div class="e">💼</div><div class="t">Work</div></button>
+    <button class="chip" id="chipDemo"><div class="e">🚗</div><div class="t">Demo drive</div></button>
+  </div>
+  <div id="searchResults"></div>
+</div>
+
+<!-- route preview sheet -->
+<div class="sheet" id="routeSheet" role="dialog" aria-label="Route preview">
+  <div class="grab"></div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <div style="flex:1;min-width:0">
+      <div class="dest" id="destName">Destination</div>
+      <div class="destAddr" id="destAddr"></div>
+    </div>
+    <button class="navCtl" id="btnCloseRoute" aria-label="Close">✕</button>
+  </div>
+  <div id="profileRow">
+    <button class="profileBtn on" data-profile="car" aria-label="Drive">🚗</button>
+    <button class="profileBtn" data-profile="bike" aria-label="Cycle">🚲</button>
+    <button class="profileBtn" data-profile="foot" aria-label="Walk">🚶</button>
+  </div>
+  <div id="routeStatus"></div>
+  <div id="altList"></div>
+  <div id="routeActions">
+    <button class="bigBtn" id="btnDemo">▶ Demo</button>
+    <button class="bigBtn" id="btnGo">Start&nbsp; ➤</button>
+  </div>
+</div>
+
+<!-- settings sheet -->
+<div class="sheet" id="settingsSheet" role="dialog" aria-label="Settings">
+  <div class="grab"></div>
+  <div style="display:flex;align-items:center">
+    <h3 style="flex:1">Settings</h3>
+    <button class="navCtl" id="btnCloseSettings" aria-label="Close">✕</button>
+  </div>
+  <div class="setRow">
+    <div class="lbl">Units<div class="sub">Distances shown and spoken</div></div>
+    <div class="seg" id="segUnits">
+      <button data-v="metric">km</button><button data-v="imperial">miles</button>
+    </div>
+  </div>
+  <div class="setRow">
+    <div class="lbl">Voice guidance<div class="sub">Spoken turn-by-turn directions</div></div>
+    <div class="seg" id="segVoice">
+      <button data-v="on">On</button><button data-v="off">Off</button>
+    </div>
+  </div>
+  <div class="setRow">
+    <div class="lbl">Map style<div class="sub">Night mode inverts the map</div></div>
+    <div class="seg" id="segTheme">
+      <button data-v="auto">Auto</button><button data-v="day">Day</button><button data-v="night">Night</button>
+    </div>
+  </div>
+  <div id="aboutBox">
+    <strong style="color:var(--text)">◮ Atlas</strong> — your own satnav. The map is drawn by a
+    from-scratch canvas engine; guidance, snapping, phrasing and ETA come from the pure,
+    unit-tested navigation engine (<code>engine.js</code>). Map data
+    © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>
+    contributors; routing by the community OSRM/FOSSGIS servers; search by Nominatim.
+    Your location never leaves your device except to fetch the route you asked for.
+  </div>
+</div>
+
+<!-- nav HUD -->
+<div id="navBanner">
+  <div id="navIcon"></div>
+  <div style="flex:1;min-width:0">
+    <div id="navDist">—</div>
+    <div id="navText">Starting…</div>
+    <div id="navThen"></div>
+  </div>
+</div>
+<div id="navBottom">
+  <div>
+    <div id="navEta">--:--</div>
+    <div id="navMeta">— · —</div>
+  </div>
+  <div class="grow"></div>
+  <button class="navCtl" id="btnMute" aria-label="Mute voice">🔊</button>
+  <button class="navCtl" id="btnOverview" aria-label="Overview">🗺</button>
+  <button class="navCtl" id="btnEnd" aria-label="End navigation">✕</button>
+</div>
+<div id="speedBubble"><div id="speedVal">0</div><div id="speedUnit">km/h</div></div>
+
+<div id="arrivedCard">
+  <div class="big">🏁</div>
+  <h2>You have arrived</h2>
+  <p id="arrivedSub">Enjoy!</p>
+  <button id="btnArrivedDone">Done</button>
+</div>
+
+<div id="tapCard">
+  <div>
+    <div class="nm" id="tapName">Dropped pin</div>
+    <div style="font-size:11.5px;color:var(--dim)" id="tapCoord"></div>
+  </div>
+  <button class="go" id="tapGo">Directions</button>
+  <button class="navCtl" id="tapClose" aria-label="Close">✕</button>
+</div>
+
+<div id="toast"></div>
+
+<script src="engine.js"></script>
+<script>
+'use strict';
+/* Atlas UI — everything below is a lens over window.Atlas (engine.js). */
+
+var $ = function (id) { return document.getElementById(id); };
+var A = window.Atlas;
+
+/* ============================ settings & stores =========================== */
+
+function load(key, fallback) {
+  try { var v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
+  catch (e) { return fallback; }
+}
+function save(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) {} }
+
+var settings = Object.assign({ units: 'metric', voice: 'on', theme: 'auto' }, load('atlas.settings', {}));
+var places = load('atlas.places', []);     // {name, addr, lat, lon, kind?, uses, lastUsed}
+var recents = load('atlas.recents', []);   // same shape, capped
+
+function persistSettings() { save('atlas.settings', settings); }
+function persistPlaces() { save('atlas.places', places); }
+function persistRecents() { save('atlas.recents', recents.slice(0, 12)); }
+
+/* ================================ the map ================================ */
+/* From-scratch slippy map: world-pixel camera + OSM raster tiles on canvas. */
+
+var canvas = $('map'), ctx = canvas.getContext('2d');
+var DPR = Math.min(2.5, window.devicePixelRatio || 1);
+var view = {
+  lat: 51.5074, lon: -0.1278, zoom: 15.2,   // London until we get a fix
+  rot: 0,                                    // radians, 0 = north-up
+  follow: false,                             // camera glued to the GPS dot
+  navMode: false,                            // heading-up + anchor low on screen
+};
+var W = 0, H = 0;
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  needsDraw = true;
+}
+window.addEventListener('resize', resize);
+resize();
+
+/* tile cache with a small LRU + in-flight bookkeeping */
+var tiles = {}, tileOrder = [], TILE_CAP = 380;
+var TILE_URL = function (z, x, y) { return 'https://tile.openstreetmap.org/' + z + '/' + x + '/' + y + '.png'; };
+function getTile(z, x, y) {
+  var n = Math.pow(2, z);
+  if (y < 0 || y >= n) return null;
+  x = ((x % n) + n) % n;
+  var key = z + '/' + x + '/' + y;
+  var t = tiles[key];
+  if (t) return t;
+  t = { img: new Image(), ok: false, err: false };
+  t.img.crossOrigin = 'anonymous';
+  t.img.onload = function () { t.ok = true; needsDraw = true; };
+  t.img.onerror = function () { t.err = true; };
+  t.img.src = TILE_URL(z, x, y);
+  tiles[key] = t; tileOrder.push(key);
+  if (tileOrder.length > TILE_CAP) {
+    var drop = tileOrder.splice(0, 40);
+    for (var i = 0; i < drop.length; i++) delete tiles[drop[i]];
+  }
+  return t;
+}
+
+function nightMode() {
+  if (settings.theme === 'day') return false;
+  if (settings.theme === 'night') return true;
+  var h = new Date().getHours();
+  return h >= 19 || h < 7;
+}
+
+/* screen anchor: where the camera centre sits (lower in nav mode) */
+function anchor() { return { x: W / 2, y: view.navMode ? H * 0.72 : H / 2 }; }
+
+function worldOf(p) { return A.lonLatToWorld(p, view.zoom); }
+function toScreen(p) {
+  var w = worldOf(p), c = worldOf(view), a = anchor();
+  var dx = w.x - c.x, dy = w.y - c.y;
+  var cos = Math.cos(view.rot), sin = Math.sin(view.rot);
+  return { x: a.x + dx * cos - dy * sin, y: a.y + dx * sin + dy * cos };
+}
+function fromScreen(s) {
+  var a = anchor(), c = worldOf(view);
+  var dx = s.x - a.x, dy = s.y - a.y;
+  var cos = Math.cos(-view.rot), sin = Math.sin(-view.rot);
+  return A.worldToLonLat({ x: c.x + dx * cos - dy * sin, y: c.y + dx * sin + dy * cos }, view.zoom);
+}
+
+var needsDraw = true;
+function draw() {
+  var night = nightMode();
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = night ? '#0d1322' : '#e8e4dc';
+  ctx.fillRect(0, 0, W, H);
+
+  var z = Math.max(2, Math.min(19, Math.floor(view.zoom)));
+  var scale = Math.pow(2, view.zoom - z);
+  var c = A.lonLatToWorld(view, z);
+  var a = anchor();
+  var radius = Math.hypot(Math.max(a.x, W - a.x), Math.max(a.y, H - a.y)) / scale + A.TILE;
+
+  ctx.save();
+  ctx.translate(a.x, a.y);
+  ctx.rotate(view.rot);
+  ctx.scale(scale, scale);
+  ctx.translate(-c.x, -c.y);
+  if (night) ctx.filter = 'invert(1) hue-rotate(180deg) brightness(0.86) contrast(0.92) saturate(0.65)';
+
+  var t0x = Math.floor((c.x - radius) / A.TILE), t1x = Math.floor((c.x + radius) / A.TILE);
+  var t0y = Math.floor((c.y - radius) / A.TILE), t1y = Math.floor((c.y + radius) / A.TILE);
+  for (var ty = t0y; ty <= t1y; ty++) {
+    for (var tx = t0x; tx <= t1x; tx++) {
+      var t = getTile(z, tx, ty);
+      if (t && t.ok) { ctx.drawImage(t.img, tx * A.TILE, ty * A.TILE, A.TILE, A.TILE); continue; }
+      // parent-tile fallback keeps zooming smooth while children load
+      var pz = z - 1, px = tx >> 1, py = ty >> 1;
+      var pn = Math.pow(2, pz), pxx = ((px % pn) + pn) % pn;
+      var pt = tiles[pz + '/' + pxx + '/' + py];
+      if (pt && pt.ok) {
+        var sx = (tx & 1) * A.TILE / 2, sy = (ty & 1) * A.TILE / 2;
+        ctx.drawImage(pt.img, sx, sy, A.TILE / 2, A.TILE / 2, tx * A.TILE, ty * A.TILE, A.TILE, A.TILE);
+      } else {
+        ctx.fillStyle = night ? '#101830' : '#ded9d0';
+        ctx.fillRect(tx * A.TILE, ty * A.TILE, A.TILE, A.TILE);
+      }
+    }
+  }
+  ctx.filter = 'none';
+  ctx.restore();
+
+  drawRoutes(night);
+  drawTapPin();
+  drawGpsDot();
+}
+
+function drawPolyline(geometry, color, width, dash) {
+  if (!geometry || geometry.length < 2) return;
+  ctx.beginPath();
+  var step = Math.max(1, Math.floor(geometry.length / 900));
+  for (var i = 0; i < geometry.length; i += step) {
+    var s = toScreen(geometry[i]);
+    if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y);
+  }
+  var last = toScreen(geometry[geometry.length - 1]);
+  ctx.lineTo(last.x, last.y);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (dash) ctx.setLineDash(dash); else ctx.setLineDash([]);
+  ctx.strokeStyle = color; ctx.lineWidth = width;
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawRoutes(night) {
+  if (!trip.routes.length) return;
+  for (var i = 0; i < trip.routes.length; i++) {
+    if (i === trip.selected) continue;
+    drawPolyline(trip.routes[i].geometry, night ? 'rgba(148,163,184,0.55)' : 'rgba(100,116,139,0.55)', 6);
+  }
+  var main = trip.routes[trip.selected];
+  if (main) {
+    drawPolyline(main.geometry, night ? 'rgba(15,40,90,0.9)' : 'rgba(20,60,140,0.35)', 11);
+    drawPolyline(main.geometry, '#2f7ff6', 7);
+    // destination flag
+    var end = toScreen(main.geometry[main.geometry.length - 1]);
+    ctx.beginPath(); ctx.arc(end.x, end.y, 9, 0, 7); ctx.fillStyle = '#fff'; ctx.fill();
+    ctx.beginPath(); ctx.arc(end.x, end.y, 5.5, 0, 7); ctx.fillStyle = '#ef4444'; ctx.fill();
+  }
+}
+
+function drawTapPin() {
+  if (!tapPoint) return;
+  var s = toScreen(tapPoint);
+  ctx.font = '28px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('📍', s.x, s.y + 4);
+}
+
+function drawGpsDot() {
+  var p = (nav.active && nav.demo && nav.simPos) ? nav.simPos : gps.fix;
+  if (!p) return;
+  var s = toScreen(p);
+  if (p.acc) {
+    var rPx = p.acc / A.metresPerPixel(p.lat, view.zoom);
+    if (rPx > 14 && rPx < 400) {
+      ctx.beginPath(); ctx.arc(s.x, s.y, rPx, 0, 7);
+      ctx.fillStyle = 'rgba(56,189,248,0.10)'; ctx.fill();
+    }
+  }
+  var hdg = p.heading;
+  if (typeof hdg === 'number' && isFinite(hdg)) {
+    var rad = (hdg * Math.PI / 180) + view.rot;
+    ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(rad);
+    var g = ctx.createLinearGradient(0, -34, 0, 0);
+    g.addColorStop(0, 'rgba(56,189,248,0)'); g.addColorStop(1, 'rgba(56,189,248,0.45)');
+    ctx.beginPath(); ctx.moveTo(0, -2); ctx.lineTo(-13, -30); ctx.lineTo(13, -30); ctx.closePath();
+    ctx.fillStyle = g; ctx.fill(); ctx.restore();
+  }
+  ctx.beginPath(); ctx.arc(s.x, s.y, 10, 0, 7); ctx.fillStyle = '#fff'; ctx.fill();
+  ctx.beginPath(); ctx.arc(s.x, s.y, 7, 0, 7); ctx.fillStyle = '#2f7ff6'; ctx.fill();
+}
+
+function frame() {
+  if (needsDraw) { needsDraw = false; draw(); }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ------------------------------ gestures ------------------------------- */
+
+var pointers = {}, lastPinch = null, lastTap = 0;
+canvas.addEventListener('pointerdown', function (e) {
+  pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+  canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
+  var now = Date.now();
+  if (Object.keys(pointers).length === 1) {
+    if (now - lastTap < 300) { zoomAt(e.clientX, e.clientY, 1); lastTap = 0; }
+    else lastTap = now;
+  }
+});
+canvas.addEventListener('pointermove', function (e) {
+  var p = pointers[e.pointerId];
+  if (!p) return;
+  var ids = Object.keys(pointers);
+  if (ids.length === 1) {
+    var dx = e.clientX - p.x, dy = e.clientY - p.y;
+    if (Math.abs(dx) + Math.abs(dy) > 1) {
+      breakFollow();
+      var cos = Math.cos(-view.rot), sin = Math.sin(-view.rot);
+      var wx = dx * cos - dy * sin, wy = dx * sin + dy * cos;
+      var c = worldOf(view);
+      var np = A.worldToLonLat({ x: c.x - wx, y: c.y - wy }, view.zoom);
+      view.lat = np.lat; view.lon = np.lon;
+      needsDraw = true; lastTap = 0;
+    }
+  } else if (ids.length === 2) {
+    var q = pointers[ids[0] === String(e.pointerId) ? ids[1] : ids[0]];
+    var dist = Math.hypot(e.clientX - q.x, e.clientY - q.y);
+    if (lastPinch) {
+      var mid = { x: (e.clientX + q.x) / 2, y: (e.clientY + q.y) / 2 };
+      zoomAt(mid.x, mid.y, Math.log2(dist / lastPinch));
+    }
+    lastPinch = dist; lastTap = 0;
+  }
+  pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+});
+function endPointer(e) {
+  var moved = !pointers[e.pointerId] ? true : null;
+  delete pointers[e.pointerId];
+  if (Object.keys(pointers).length < 2) lastPinch = null;
+}
+canvas.addEventListener('pointerup', function (e) {
+  var p = pointers[e.pointerId];
+  endPointer(e);
+  // a clean tap (no drag) drops a pin
+  if (p && lastTap && Date.now() - lastTap < 280 && Math.abs(e.clientX - p.x) < 6 && Math.abs(e.clientY - p.y) < 6) {
+    if (!view.navMode) tapMap(e.clientX, e.clientY);
+  }
+});
+canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('wheel', function (e) {
+  e.preventDefault();
+  zoomAt(e.clientX, e.clientY, -e.deltaY / 340);
+}, { passive: false });
+
+function zoomAt(sx, sy, dz) {
+  var before = fromScreen({ x: sx, y: sy });
+  view.zoom = Math.max(2.2, Math.min(19.4, view.zoom + dz));
+  var after = fromScreen({ x: sx, y: sy });
+  view.lat += before.lat - after.lat;
+  view.lon += before.lon - after.lon;
+  needsDraw = true;
+}
+function breakFollow() {
+  if (view.follow) { view.follow = false; updateLocateBtn(); }
+}
+
+$('btnZoomIn').addEventListener('click', function () { view.zoom = Math.min(19.4, view.zoom + 1); needsDraw = true; });
+$('btnZoomOut').addEventListener('click', function () { view.zoom = Math.max(2.2, view.zoom - 1); needsDraw = true; });
+$('btnCompass').addEventListener('click', function () {
+  view.rot = 0; $('btnCompass').style.display = 'none'; needsDraw = true;
+});
+$('btnLayers').addEventListener('click', function () {
+  settings.theme = settings.theme === 'night' ? 'day' : settings.theme === 'day' ? 'auto' : 'night';
+  persistSettings(); syncSettingsUI();
+  toast('Map style: ' + settings.theme);
+  needsDraw = true;
+});
+
+/* ================================= GPS ================================== */
+
+var gps = { fix: null, watchId: null, denied: false };
+function startGps() {
+  if (!navigator.geolocation || gps.watchId !== null) return;
+  gps.watchId = navigator.geolocation.watchPosition(function (pos) {
+    var c = pos.coords;
+    gps.fix = { lat: c.latitude, lon: c.longitude, acc: c.accuracy,
+      speed: (typeof c.speed === 'number' && isFinite(c.speed) && c.speed >= 0) ? c.speed : null,
+      heading: (typeof c.heading === 'number' && isFinite(c.heading)) ? c.heading : gps.fix && gps.fix.heading };
+    if (view.follow) glueCamera();
+    if (nav.active && !nav.demo) onNavFix(gps.fix);
+    needsDraw = true;
+  }, function () {
+    gps.denied = true;
+    toast('Location unavailable — search a place or try the demo drive');
+  }, { enableHighAccuracy: true, maximumAge: 2000, timeout: 15000 });
+}
+function glueCamera() {
+  if (!gps.fix && !nav.demo) return;
+  var p = nav.demo ? nav.simPos : gps.fix;
+  if (!p) return;
+  view.lat = p.lat; view.lon = p.lon;
+  if (view.navMode && typeof p.heading === 'number' && isFinite(p.heading)) {
+    // ease the rotation toward heading-up
+    var target = -p.heading * Math.PI / 180;
+    var d = target - view.rot;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    view.rot += d * 0.35;
+    $('btnCompass').style.display = Math.abs(view.rot) > 0.02 ? 'flex' : 'none';
+  }
+  needsDraw = true;
+}
+$('btnLocate').addEventListener('click', function () {
+  startGps();
+  if (gps.fix) {
+    view.follow = true; view.zoom = Math.max(view.zoom, 15.5);
+    glueCamera(); updateLocateBtn();
+  } else if (gps.denied) toast('Location permission is blocked for this site');
+  else toast('Finding you…');
+});
+function updateLocateBtn() { $('btnLocate').style.opacity = view.follow ? '1' : '0.85'; }
+
+/* =============================== networking ============================== */
+
+var ROUTERS = {
+  car: ['https://routing.openstreetmap.de/routed-car/route/v1/driving/', 'https://router.project-osrm.org/route/v1/driving/'],
+  bike: ['https://routing.openstreetmap.de/routed-bike/route/v1/cycling/'],
+  foot: ['https://routing.openstreetmap.de/routed-foot/route/v1/walking/'],
+};
+
+function fetchJson(url) {
+  return fetch(url, { headers: { 'Accept': 'application/json' } }).then(function (r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  });
+}
+
+function fetchRoute(from, to, profile) {
+  var coords = from.lon.toFixed(6) + ',' + from.lat.toFixed(6) + ';' + to.lon.toFixed(6) + ',' + to.lat.toFixed(6);
+  var qs = '?alternatives=true&overview=full&steps=true&geometries=polyline';
+  var urls = ROUTERS[profile] || ROUTERS.car;
+  var attempt = function (i) {
+    if (i >= urls.length) return Promise.reject(new Error('all routers failed'));
+    return fetchJson(urls[i] + coords + qs).then(function (json) {
+      if (json.code !== 'Ok' || !json.routes || !json.routes.length) throw new Error(json.code || 'no route');
+      return json.routes;
+    }).catch(function (err) { return i + 1 < urls.length ? attempt(i + 1) : Promise.reject(err); });
+  };
+  return attempt(0);
+}
+
+function geocode(q) {
+  var url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=0&limit=8&q=' + encodeURIComponent(q);
+  return fetchJson(url).then(function (rows) {
+    return rows.map(function (r) {
+      var parts = (r.display_name || '').split(',');
+      return { name: parts[0].trim(), addr: parts.slice(1).join(',').trim(),
+               lat: parseFloat(r.lat), lon: parseFloat(r.lon) };
+    });
+  });
+}
+
+function reverseGeocode(p) {
+  var url = 'https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=17&lat=' + p.lat + '&lon=' + p.lon;
+  return fetchJson(url).then(function (r) {
+    var parts = (r.display_name || '').split(',');
+    return { name: parts[0] ? parts[0].trim() : 'Dropped pin', addr: parts.slice(1, 4).join(',').trim() };
+  });
+}
+
+/* ============================== demo route =============================== */
+/* A real London drive — Wellington Arch to Trafalgar Square via the Victoria
+   Memorial roundabout and The Mall — bundled so Atlas works with no network
+   and no GPS. OSRM-shaped, fed through the same buildRoute as live routes. */
+
+var DEMO_OSRM = (function () {
+  var g = [
+    [-0.15080, 51.50255], [-0.14900, 51.50245], [-0.14700, 51.50230], [-0.14500, 51.50215],
+    [-0.14330, 51.50200], [-0.14250, 51.50193], [-0.14208, 51.50190],
+    [-0.14170, 51.50173], [-0.14140, 51.50180], [-0.14125, 51.50200], [-0.14135, 51.50218],
+    [-0.14100, 51.50232], [-0.13900, 51.50290], [-0.13650, 51.50360], [-0.13400, 51.50430],
+    [-0.13150, 51.50500], [-0.12980, 51.50560], [-0.12905, 51.50625],
+    [-0.12860, 51.50665], [-0.12820, 51.50700], [-0.12790, 51.50735],
+  ];
+  return {
+    geometry: { coordinates: g },
+    distance: 1800, duration: 260,
+    legs: [{ steps: [
+      { name: 'Constitution Hill', distance: 610, duration: 75,
+        maneuver: { location: g[0], type: 'depart', bearing_after: 96 } },
+      { name: 'The Mall', distance: 160, duration: 25, exit: 2,
+        maneuver: { location: g[6], type: 'roundabout', exit: 2 } },
+      { name: 'The Mall', distance: 850, duration: 110,
+        maneuver: { location: g[11], type: 'exit roundabout' } },
+      { name: 'Trafalgar Square', distance: 180, duration: 40,
+        maneuver: { location: g[17], type: 'turn', modifier: 'slight left' } },
+      { name: '', distance: 0, duration: 0,
+        maneuver: { location: g[g.length - 1], type: 'arrive', modifier: 'right' } },
+    ] }],
+  };
+})();
+var DEMO_DEST = { name: 'Trafalgar Square', addr: 'Westminster, London', lat: 51.50735, lon: -0.12790 };
+
+/* ============================== trip state =============================== */
+
+var trip = { dest: null, routes: [], selected: 0, profile: 'car', demoOnly: false };
+var nav = { active: false, demo: false, guide: null, route: null, simState: null,
+            simTimer: null, simPos: null, lastReroute: 0, wakeLock: null };
+var tapPoint = null;
+
+/* ------------------------------ sheets ---------------------------------- */
+
+function openSheet(id) {
+  ['searchSheet', 'routeSheet', 'settingsSheet'].forEach(function (s) {
+    $(s).classList.toggle('open', s === id);
+  });
+}
+function closeSheets() { openSheet(null); }
+
+$('searchPill').addEventListener('click', function () {
+  openSheet('searchSheet');
+  renderResults([], '');
+  setTimeout(function () { $('searchInput').focus(); }, 250);
+});
+$('searchCancel').addEventListener('click', function () { $('searchInput').value = ''; closeSheets(); });
+$('btnSettings').addEventListener('click', function () { openSheet('settingsSheet'); });
+$('btnCloseSettings').addEventListener('click', closeSheets);
+$('btnCloseRoute').addEventListener('click', function () { clearTrip(); closeSheets(); });
+
+/* ------------------------------- search --------------------------------- */
+
+var searchTimer = 0;
+$('searchInput').addEventListener('input', function () {
+  var q = $('searchInput').value;
+  clearTimeout(searchTimer);
+  var local = A.rankPlaces(places.concat(recents), q, Date.now());
+  renderResults(local, q, true);
+  var coord = A.parseCoord(q);
+  if (coord) {
+    renderResults([{ name: 'Go to ' + q.trim(), addr: 'Coordinates', lat: coord.lat, lon: coord.lon }].concat(local), q);
+    return;
+  }
+  if (q.trim().length < 3) return;
+  searchTimer = setTimeout(function () {
+    geocode(q).then(function (rows) {
+      if ($('searchInput').value !== q) return; // stale
+      renderResults(local.concat(rows), q);
+    }).catch(function () {
+      renderResults(local, q);
+      if (!local.length) toast('Search needs a network connection');
+    });
+  }, 350);
+});
+$('searchInput').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') {
+    var first = $('searchResults').querySelector('.result');
+    if (first) first.click();
+  }
+});
+
+function isFav(p) {
+  return places.some(function (x) { return !x.kind && Math.abs(x.lat - p.lat) < 1e-6 && Math.abs(x.lon - p.lon) < 1e-6; });
+}
+function renderResults(list, q, loading) {
+  var box = $('searchResults');
+  box.innerHTML = '';
+  if (!q) {
+    var saved = A.rankPlaces(places, '', Date.now());
+    var rec = recents.slice(0, 6);
+    if (saved.length) { addTitle(box, 'Saved'); saved.forEach(function (p) { box.appendChild(resultRow(p)); }); }
+    if (rec.length) { addTitle(box, 'Recent'); rec.forEach(function (p) { box.appendChild(resultRow(p)); }); }
+    if (!saved.length && !rec.length) {
+      addTitle(box, 'Tip');
+      var tip = document.createElement('div');
+      tip.style.cssText = 'color:var(--dim);padding:10px 6px;font-size:13.5px';
+      tip.textContent = 'Search any place on Earth, tap the map to drop a pin, or try the 🚗 demo drive — it works offline.';
+      box.appendChild(tip);
+    }
+    return;
+  }
+  list.slice(0, 14).forEach(function (p) { box.appendChild(resultRow(p)); });
+  if (loading && q.trim().length >= 3) {
+    var ld = document.createElement('div');
+    ld.style.cssText = 'color:var(--dim);padding:10px 6px;font-size:12.5px';
+    ld.textContent = 'Searching…';
+    box.appendChild(ld);
+  }
+}
+function addTitle(box, t) {
+  var el = document.createElement('div');
+  el.className = 'sectionTitle'; el.textContent = t;
+  box.appendChild(el);
+}
+function resultRow(p) {
+  var b = document.createElement('button');
+  b.className = 'result';
+  var icon = p.kind === 'home' ? '🏠' : p.kind === 'work' ? '💼' : '📍';
+  b.innerHTML = '<div class="ic">' + icon + '</div>' +
+    '<div style="flex:1;min-width:0"><div class="nm"></div><div class="ad"></div></div>' +
+    '<span class="heart' + (isFav(p) ? ' on' : '') + '">' + (isFav(p) ? '♥' : '♡') + '</span>';
+  b.querySelector('.nm').textContent = p.name || 'Unknown';
+  b.querySelector('.ad').textContent = p.addr || '';
+  b.querySelector('.heart').addEventListener('click', function (e) {
+    e.stopPropagation();
+    toggleFav(p);
+    renderResults([], $('searchInput').value || '');
+    if ($('searchInput').value) $('searchInput').dispatchEvent(new Event('input'));
+  });
+  b.addEventListener('click', function () { chooseDestination(p); });
+  return b;
+}
+function toggleFav(p) {
+  var i = places.findIndex(function (x) { return !x.kind && Math.abs(x.lat - p.lat) < 1e-6 && Math.abs(x.lon - p.lon) < 1e-6; });
+  if (i >= 0) { places.splice(i, 1); toast('Removed from saved'); }
+  else { places.push({ name: p.name, addr: p.addr, lat: p.lat, lon: p.lon, uses: 1, lastUsed: Date.now() }); toast('Saved ♥'); }
+  persistPlaces();
+}
+
+/* home / work / demo chips */
+function chipHandler(kind, label, emoji) {
+  return function () {
+    var p = places.find(function (x) { return x.kind === kind; });
+    if (p) { chooseDestination(p); return; }
+    var q = $('searchInput').value.trim();
+    var setFrom = function (src, name, addr) {
+      places = places.filter(function (x) { return x.kind !== kind; });
+      places.push({ name: label, addr: (name ? name + ', ' : '') + (addr || ''), lat: src.lat, lon: src.lon,
+        kind: kind, uses: 1, lastUsed: Date.now() });
+      persistPlaces();
+      toast(emoji + ' ' + label + ' saved — tap it any time');
+      renderResults([], '');
+    };
+    if (gps.fix) setFrom(gps.fix, 'Current location', '');
+    else if (q.length >= 3) {
+      geocode(q).then(function (rows) {
+        if (rows[0]) setFrom(rows[0], rows[0].name, rows[0].addr);
+        else toast('Search for your ' + label.toLowerCase() + ' first, then tap ' + emoji);
+      }).catch(function () { toast('Type your ' + label.toLowerCase() + ' address above first'); });
+    } else toast('Type your ' + label.toLowerCase() + ' address above, then tap ' + emoji + ' to save it');
+  };
+}
+$('chipHome').addEventListener('click', chipHandler('home', 'Home', '🏠'));
+$('chipWork').addEventListener('click', chipHandler('work', 'Work', '💼'));
+$('chipDemo').addEventListener('click', function () { startDemoTrip(); });
+
+/* ------------------------------ tap-to-pin ------------------------------ */
+
+function tapMap(sx, sy) {
+  var p = fromScreen({ x: sx, y: sy });
+  tapPoint = { lat: p.lat, lon: p.lon };
+  $('tapName').textContent = 'Dropped pin';
+  $('tapCoord').textContent = p.lat.toFixed(5) + ', ' + p.lon.toFixed(5);
+  $('tapCard').classList.add('show');
+  needsDraw = true;
+  reverseGeocode(p).then(function (r) {
+    if (tapPoint && Math.abs(tapPoint.lat - p.lat) < 1e-9) $('tapName').textContent = r.name;
+  }).catch(function () {});
+}
+$('tapClose').addEventListener('click', function () {
+  tapPoint = null; $('tapCard').classList.remove('show'); needsDraw = true;
+});
+$('tapGo').addEventListener('click', function () {
+  if (!tapPoint) return;
+  var p = { name: $('tapName').textContent, addr: $('tapCoord').textContent, lat: tapPoint.lat, lon: tapPoint.lon };
+  tapPoint = null; $('tapCard').classList.remove('show');
+  chooseDestination(p);
+});
+
+/* ============================ route preview ============================== */
+
+function chooseDestination(p) {
+  trip.dest = p; trip.demoOnly = false;
+  // bump recents
+  recents = recents.filter(function (x) { return x.name !== p.name || Math.abs(x.lat - p.lat) > 1e-6; });
+  recents.unshift({ name: p.name, addr: p.addr, lat: p.lat, lon: p.lon, uses: (p.uses || 0) + 1, lastUsed: Date.now() });
+  persistRecents();
+  if (p.kind || p.uses) { p.uses = (p.uses || 0) + 1; p.lastUsed = Date.now(); persistPlaces(); }
+  $('destName').textContent = p.name || 'Destination';
+  $('destAddr').textContent = p.addr || '';
+  $('searchPillText').textContent = p.name || 'Where to?';
+  openSheet('routeSheet');
+  requestRoutes();
+}
+
+function requestRoutes() {
+  var from = gps.fix;
+  trip.routes = []; trip.selected = 0;
+  $('altList').innerHTML = '';
+  needsDraw = true;
+  if (!trip.dest) return;
+  if (!from) {
+    startGps();
+    $('routeStatus').className = '';
+    $('routeStatus').textContent = gps.denied
+      ? 'No location — routing from the map centre instead'
+      : 'Waiting for your location… (or route from the map centre)';
+    from = { lat: view.lat, lon: view.lon };
+  } else {
+    $('routeStatus').className = '';
+    $('routeStatus').textContent = 'Finding the best routes…';
+  }
+  var dest = trip.dest, profile = trip.profile;
+  fetchRoute(from, dest, profile).then(function (routes) {
+    if (trip.dest !== dest || trip.profile !== profile) return; // stale
+    trip.routes = routes.map(function (r) { return A.buildRoute(r); });
+    trip.selected = 0;
+    $('routeStatus').textContent = '';
+    renderAlternatives(routes);
+    fitRoute(trip.routes[0]);
+  }).catch(function () {
+    if (trip.dest !== dest) return;
+    $('routeStatus').className = 'err';
+    $('routeStatus').textContent = 'Routing unavailable (offline?) — the 🚗 demo drive below always works.';
+  });
+}
+
+function renderAlternatives(rawRoutes) {
+  var box = $('altList');
+  box.innerHTML = '';
+  trip.routes.forEach(function (r, i) {
+    var b = document.createElement('button');
+    b.className = 'altCard' + (i === trip.selected ? ' on' : '');
+    var raw = rawRoutes && rawRoutes[i];
+    var via = raw && raw.legs && raw.legs[0] && raw.legs[0].summary ? 'via ' + raw.legs[0].summary : (i === 0 ? 'fastest' : 'alternative');
+    b.innerHTML = '<div><div class="tm"></div><div class="ds"></div></div><div class="tag"></div>';
+    b.querySelector('.tm').textContent = A.fmtDur(r.totalS);
+    b.querySelector('.ds').textContent = A.fmtDist(r.totalM, settings.units) + ' · arrive ' + A.etaClock(Date.now(), r.totalS);
+    b.querySelector('.tag').textContent = via;
+    b.addEventListener('click', function () {
+      trip.selected = i;
+      renderAlternatives(rawRoutes);
+      fitRoute(r);
+    });
+    box.appendChild(b);
+  });
+}
+
+Array.prototype.forEach.call(document.querySelectorAll('.profileBtn'), function (b) {
+  b.addEventListener('click', function () {
+    Array.prototype.forEach.call(document.querySelectorAll('.profileBtn'), function (x) { x.classList.remove('on'); });
+    b.classList.add('on');
+    trip.profile = b.getAttribute('data-profile');
+    requestRoutes();
+  });
+});
+
+/** Frame the whole route on screen. */
+function fitRoute(route) {
+  if (!route) return;
+  var minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
+  route.geometry.forEach(function (p) {
+    minLat = Math.min(minLat, p.lat); maxLat = Math.max(maxLat, p.lat);
+    minLon = Math.min(minLon, p.lon); maxLon = Math.max(maxLon, p.lon);
+  });
+  view.rot = 0; view.navMode = false; view.follow = false;
+  view.lat = (minLat + maxLat) / 2; view.lon = (minLon + maxLon) / 2;
+  for (var z = 18; z >= 3; z -= 0.25) {
+    view.zoom = z;
+    var a = A.lonLatToWorld({ lat: maxLat, lon: minLon }, z);
+    var b = A.lonLatToWorld({ lat: minLat, lon: maxLon }, z);
+    if (Math.abs(b.x - a.x) < W * 0.8 && Math.abs(b.y - a.y) < H * 0.45) break;
+  }
+  needsDraw = true;
+}
+
+function clearTrip() {
+  trip.dest = null; trip.routes = []; trip.selected = 0;
+  $('searchPillText').textContent = 'Where to?';
+  needsDraw = true;
+}
+
+/* ============================== navigation =============================== */
+
+$('btnGo').addEventListener('click', function () { if (trip.routes.length) startNav(false); });
+$('btnDemo').addEventListener('click', function () {
+  if (trip.demoOnly || !trip.routes.length) startDemoTrip(true);
+  else startNav(true);
+});
+
+function startDemoTrip(andGo) {
+  trip.dest = DEMO_DEST; trip.demoOnly = true; trip.profile = 'car';
+  trip.routes = [A.buildRoute(DEMO_OSRM)];
+  trip.selected = 0;
+  $('destName').textContent = DEMO_DEST.name;
+  $('destAddr').textContent = DEMO_DEST.addr + ' · bundled demo route';
+  $('searchPillText').textContent = DEMO_DEST.name;
+  $('routeStatus').className = '';
+  $('routeStatus').textContent = '';
+  renderAlternatives(null);
+  fitRoute(trip.routes[0]);
+  openSheet('routeSheet');
+  if (andGo) startNav(true);
+}
+
+function startNav(demo) {
+  var route = trip.routes[trip.selected];
+  if (!route) return;
+  nav.active = true; nav.demo = !!demo; nav.route = route;
+  nav.guide = A.startGuidance();
+  nav.lastReroute = Date.now();
+  closeSheets();
+  $('topBar').classList.add('hidden');
+  $('navBanner').classList.add('show');
+  $('navBottom').classList.add('show');
+  $('speedBubble').classList.add('show');
+  $('speedUnit').textContent = settings.units === 'imperial' ? 'mph' : 'km/h';
+  view.navMode = true; view.follow = true;
+  view.zoom = Math.max(view.zoom, 16.5);
+  requestWakeLock();
+  var first = route.steps[0];
+  setBanner(first.icon, A.fmtDist(0, settings.units), first.instruction, null);
+  speak(first.instruction);
+  if (demo) {
+    nav.simState = { alongM: 0 };
+    nav.simPos = null;
+    nav.simTimer = setInterval(function () {
+      var f = A.simulateTick(nav.route, nav.simState, 0.25, trip.profile === 'foot' ? 1.6 : trip.profile === 'bike' ? 6 : 13);
+      nav.simState = { alongM: f.alongM };
+      nav.simPos = f;
+      onNavFix({ lat: f.lat, lon: f.lon, speed: f.speed, heading: f.heading });
+      if (view.follow) glueCamera();
+      if (f.done) { clearInterval(nav.simTimer); nav.simTimer = null; }
+    }, 250);
+  } else {
+    startGps();
+    if (gps.fix) glueCamera();
+    else toast('Waiting for GPS… (▶ Demo shows a simulated drive)');
+  }
+  needsDraw = true;
+}
+
+function onNavFix(fix) {
+  if (!nav.active) return;
+  var r = A.guidanceUpdate(nav.guide, nav.route, fix, { units: settings.units });
+  nav.guide = r.state;
+
+  // HUD
+  var next = r.nextStep;
+  setBanner(next.icon, A.fmtDist(r.distToNext, settings.units), next.instruction, followingOf(r));
+  $('navBanner').classList.toggle('offroute', r.offRoute);
+  if (r.offRoute) $('navText').textContent = 'Off route — recalculating…';
+  $('navEta').textContent = A.etaClock(Date.now(), r.remainingS);
+  $('navMeta').textContent = A.fmtDur(r.remainingS) + ' · ' + A.fmtDist(r.remainingM, settings.units);
+  var v = nav.guide.speed || 0;
+  var shown = settings.units === 'imperial' ? v * 2.23694 : v * 3.6;
+  $('speedVal').textContent = String(Math.round(shown));
+
+  if (r.announce) speak(r.announce.text);
+
+  if (r.offRoute && !nav.demo) maybeReroute(fix);
+  if (r.arrived) finishNav();
+  needsDraw = true;
+}
+
+function followingOf(r) {
+  var steps = nav.route.steps;
+  var i = r.stepIndex + 2;
+  if (r.distToNext < 300 && i < steps.length) return 'then ' + steps[i].instruction;
+  return null;
+}
+
+function setBanner(iconKey, dist, text, then) {
+  $('navIcon').innerHTML = ICONS[iconKey] || ICONS.straight;
+  $('navDist').textContent = dist;
+  $('navText').textContent = text;
+  if (then) { $('navThen').textContent = then; $('navThen').classList.add('show'); }
+  else $('navThen').classList.remove('show');
+}
+
+function maybeReroute(fix) {
+  var now = Date.now();
+  if (now - nav.lastReroute < 9000) return;
+  nav.lastReroute = now;
+  speak('Rerouting');
+  fetchRoute(fix, trip.dest, trip.profile).then(function (routes) {
+    if (!nav.active || nav.demo) return;
+    nav.route = A.buildRoute(routes[0]);
+    trip.routes = [nav.route]; trip.selected = 0;
+    nav.guide = A.startGuidance();
+    toast('New route found');
+    needsDraw = true;
+  }).catch(function () { toast('Reroute failed — rejoin the blue line'); });
+}
+
+function finishNav() {
+  var wasDemo = nav.demo;
+  stopNavUI();
+  $('arrivedSub').textContent = (trip.dest ? trip.dest.name : 'Destination') + (wasDemo ? ' · demo complete' : '');
+  $('arrivedCard').classList.add('show');
+}
+$('btnArrivedDone').addEventListener('click', function () {
+  $('arrivedCard').classList.remove('show');
+  clearTrip();
+});
+
+function stopNavUI() {
+  nav.active = false;
+  if (nav.simTimer) { clearInterval(nav.simTimer); nav.simTimer = null; }
+  nav.simPos = null;
+  view.navMode = false; view.rot = 0; view.follow = false;
+  $('topBar').classList.remove('hidden');
+  $('navBanner').classList.remove('show');
+  $('navBottom').classList.remove('show');
+  $('speedBubble').classList.remove('show');
+  $('btnCompass').style.display = 'none';
+  releaseWakeLock();
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+  needsDraw = true;
+}
+$('btnEnd').addEventListener('click', function () { stopNavUI(); clearTrip(); });
+$('btnOverview').addEventListener('click', function () {
+  if (view.navMode) { fitRoute(nav.route); view.navMode = false; }
+  else { view.navMode = true; view.follow = true; view.zoom = 16.5; glueCamera(); }
+  needsDraw = true;
+});
+
+/* ------------------------------- voice ---------------------------------- */
+
+$('btnMute').addEventListener('click', function () {
+  settings.voice = settings.voice === 'on' ? 'off' : 'on';
+  persistSettings(); syncSettingsUI();
+  $('btnMute').textContent = settings.voice === 'on' ? '🔊' : '🔇';
+  toast(settings.voice === 'on' ? 'Voice on' : 'Voice muted');
+});
+
+var voicePick = null;
+function speak(text) {
+  if (settings.voice !== 'on') return;
+  var synth = window.speechSynthesis, Utter = window.SpeechSynthesisUtterance;
+  if (!synth || !Utter) return;
+  try {
+    if (!voicePick) {
+      var vs = synth.getVoices() || [];
+      voicePick = vs.find(function (v) { return /en[-_]GB/i.test(v.lang); }) ||
+                  vs.find(function (v) { return /^en/i.test(v.lang); }) || null;
+    }
+    var u = new Utter(text);
+    if (voicePick) u.voice = voicePick;
+    u.rate = 1.02; u.pitch = 1;
+    synth.cancel();
+    synth.speak(u);
+  } catch (e) {}
+}
+
+/* ------------------------------ wake lock -------------------------------- */
+
+function requestWakeLock() {
+  try {
+    if (navigator.wakeLock && navigator.wakeLock.request) {
+      navigator.wakeLock.request('screen').then(function (l) { nav.wakeLock = l; }).catch(function () {});
+    }
+  } catch (e) {}
+}
+function releaseWakeLock() {
+  try { if (nav.wakeLock && nav.wakeLock.release) nav.wakeLock.release(); } catch (e) {}
+  nav.wakeLock = null;
+}
+
+/* ------------------------------ settings UI ------------------------------ */
+
+function segWire(id, key, after) {
+  var seg = $(id);
+  Array.prototype.forEach.call(seg.querySelectorAll('button'), function (b) {
+    b.addEventListener('click', function () {
+      settings[key] = b.getAttribute('data-v');
+      persistSettings(); syncSettingsUI();
+      if (after) after();
+    });
+  });
+}
+function syncSettingsUI() {
+  [['segUnits', 'units'], ['segVoice', 'voice'], ['segTheme', 'theme']].forEach(function (pair) {
+    Array.prototype.forEach.call($(pair[0]).querySelectorAll('button'), function (b) {
+      b.classList.toggle('on', b.getAttribute('data-v') === settings[pair[1]]);
+    });
+  });
+  $('btnMute').textContent = settings.voice === 'on' ? '🔊' : '🔇';
+}
+segWire('segUnits', 'units', function () { needsDraw = true; });
+segWire('segVoice', 'voice');
+segWire('segTheme', 'theme', function () { needsDraw = true; });
+syncSettingsUI();
+
+/* ------------------------------ maneuver icons --------------------------- */
+
+var ICONS = (function () {
+  function svg(body) {
+    return '<svg viewBox="0 0 48 48" fill="none" stroke="#a7f3d0" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">' + body + '</svg>';
+  }
+  var arrowHead = 'M17 15 L24 6 L31 15';
+  return {
+    'straight': svg('<path d="M24 42 V10"/><path d="' + arrowHead + '"/>'),
+    'depart': svg('<path d="M24 42 V10"/><path d="' + arrowHead + '"/><circle cx="24" cy="44" r="2.5" fill="#a7f3d0"/>'),
+    'left': svg('<path d="M30 42 V22 H12"/><path d="M19 14 L10 22 L19 30"/>'),
+    'right': svg('<path d="M18 42 V22 H36"/><path d="M29 14 L38 22 L29 30"/>'),
+    'slight-left': svg('<path d="M28 42 V26 L16 12"/><path d="M15 23 L14 10 L27 11"/>'),
+    'slight-right': svg('<path d="M20 42 V26 L32 12"/><path d="M21 11 L34 10 L33 23"/>'),
+    'sharp-left': svg('<path d="M28 42 V24 L14 34"/><path d="M14 22 L12 36 L26 38"/>'),
+    'sharp-right': svg('<path d="M20 42 V24 L34 34"/><path d="M34 22 L36 36 L22 38"/>'),
+    'uturn': svg('<path d="M32 42 V18 a8 8 0 0 0 -16 0 V30"/><path d="M9 24 L16 33 L23 24"/>'),
+    'merge-left': svg('<path d="M32 42 L24 28 V10"/><path d="M14 42 L22 28"/><path d="' + arrowHead + '"/>'),
+    'merge-right': svg('<path d="M16 42 L24 28 V10"/><path d="M34 42 L26 28"/><path d="' + arrowHead + '"/>'),
+    'ramp-left': svg('<path d="M30 42 V28 L16 16"/><path d="M15 26 L14 12 L28 13"/>'),
+    'ramp-right': svg('<path d="M18 42 V28 L32 16"/><path d="M20 13 L34 12 L33 26"/>'),
+    'roundabout': svg('<circle cx="24" cy="24" r="9"/><path d="M24 42 V33"/><path d="M24 15 V8"/><path d="M18 4 L24 8 L18 13" transform="translate(0,1)"/>'),
+    'arrive': svg('<path d="M24 42 V12"/><path d="M24 12 L36 17 L24 22" fill="#a7f3d0"/>'),
+  };
+})();
+
+/* -------------------------------- toast --------------------------------- */
+
+var toastTimer = 0;
+function toast(msg) {
+  var t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { t.classList.remove('show'); }, 2600);
+}
+
+/* --------------------------------- init ---------------------------------- */
+
+startGps();
+updateLocateBtn();
+
+if (navigator.serviceWorker && navigator.serviceWorker.register) {
+  try { navigator.serviceWorker.register('sw.js'); } catch (e) {}
+}
+</script>
+</body>
+</html>
