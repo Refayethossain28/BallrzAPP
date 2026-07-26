@@ -411,6 +411,178 @@ test('parseCoord: accepts "lat, lon", rejects junk and out-of-range', () => {
   assert.equal(A.parseCoord('High Street'), null);
 });
 
+/* --------------------- the features no other satnav has ------------------ */
+
+test('sunPosition: London equinox — south at noon, below horizon at midnight', () => {
+  const london = { lat: 51.5074, lon: -0.1278 };
+  const noon = A.sunPosition(Date.UTC(2026, 2, 20, 12, 0), london.lat, london.lon);
+  near(noon.elevation, 38.5, 3, 'noon elevation ≈ 90 − lat at equinox');
+  near(noon.azimuth, 180, 6, 'sun due south at noon');
+  const midnight = A.sunPosition(Date.UTC(2026, 2, 20, 0, 0), london.lat, london.lon);
+  assert.ok(midnight.elevation < -30, 'deep below horizon at midnight');
+  const morning = A.sunPosition(Date.UTC(2026, 2, 20, 7, 0), london.lat, london.lon);
+  assert.ok(morning.elevation > -2 && morning.elevation < 15, 'low sun just after sunrise');
+  near(morning.azimuth, 97, 10, 'rises roughly due east at equinox');
+});
+
+test('timeAtAlong: 0 at the start, totalS at the end, monotonic', () => {
+  const { route } = makeRoute();
+  near(A.timeAtAlong(route, 0), 0, 0.01);
+  near(A.timeAtAlong(route, route.totalM), route.totalS, 0.01);
+  assert.ok(A.timeAtAlong(route, 400) < A.timeAtAlong(route, 900));
+});
+
+test('glareSegments: driving east into a low morning sun glares; north does not', () => {
+  const base = { lat: 51.5, lon: -0.1 };
+  const mk = (brg) => {
+    const g = [];
+    for (let m = 0; m <= 2000; m += 200) g.push(A.destinationPoint(base, brg, m));
+    return A.buildRoute({ geometry: { coordinates: g.map((p) => [p.lon, p.lat]) }, duration: 200, legs: [] });
+  };
+  const dawn = Date.UTC(2026, 2, 20, 7, 0); // low sun ~due east over London
+  const east = A.glareSegments(mk(90), dawn);
+  assert.ok(east.length >= 1, 'eastbound at dawn glares');
+  near(east[0].startM, 0, 1);
+  assert.ok(east[0].durS > 0, 'glare stretch has a duration');
+  assert.equal(A.glareSegments(mk(0), dawn).length, 0, 'northbound at dawn is clean');
+  assert.equal(A.glareSegments(mk(90), Date.UTC(2026, 2, 20, 0, 0)).length, 0, 'no glare at night');
+});
+
+test('paceNotes: corners graded rally-style with correct sides', () => {
+  const base = { lat: 51.5, lon: -0.1 };
+  const g = [];
+  let cur = base, brg = 0;
+  const leg = (turn, dist) => {
+    brg += turn;
+    for (let m = 100; m <= dist; m += 100) g.push(A.destinationPoint(cur, brg, m));
+    cur = g[g.length - 1];
+  };
+  g.push(base);
+  leg(0, 400); leg(90, 400); leg(-45, 400); leg(15, 400);
+  const route = A.buildRoute({ geometry: { coordinates: g.map((p) => [p.lon, p.lat]) }, duration: 100, legs: [] });
+  const notes = A.paceNotes(route);
+  assert.equal(notes.length, 3, JSON.stringify(notes));
+  assert.equal(notes[0].side, 'right'); assert.equal(notes[0].grade, 2, '90° = grade 2');
+  assert.equal(notes[1].side, 'left'); assert.equal(notes[1].grade, 4, '45° = grade 4');
+  assert.equal(notes[2].side, 'right'); assert.equal(notes[2].grade, 6, '15° = grade 6 kink');
+  assert.ok(notes[0].alongM < notes[1].alongM && notes[1].alongM < notes[2].alongM);
+});
+
+test('paceNoteLine: chains "into" only when corners crowd together', () => {
+  const a = { alongM: 100, side: 'left', grade: 4 };
+  const b = { alongM: 180, side: 'right', grade: 3 };
+  const c = { alongM: 600, side: 'right', grade: 3 };
+  assert.equal(A.paceNoteLine(a, b), 'left 4 into right 3');
+  assert.equal(A.paceNoteLine(a, c), 'left 4');
+  assert.equal(A.paceNoteLine(b), 'right 3');
+});
+
+test('ghostAdvance: dead reckoning rides the route and clamps at the end', () => {
+  const { route } = makeRoute();
+  const f = A.ghostAdvance(route, 500, 15, 2);
+  assert.equal(f.ghost, true);
+  near(f.alongM, 530, 0.01);
+  near(A.haversine(f, A.pointAtAlong(route, 530)), 0, 0.5, 'on the line');
+  near(f.heading, 0, 1, 'still northbound');
+  near(A.ghostAdvance(route, route.totalM - 5, 20, 10).alongM, route.totalM, 0.01, 'clamps');
+});
+
+test('flight recorder: thinning, stats and a well-formed GPX', () => {
+  const T0 = Date.UTC(2026, 6, 26, 9, 0, 0);
+  const base = { lat: 51.5, lon: -0.1 };
+  const track = A.newTrack(T0);
+  for (let s = 0; s <= 100; s++) {
+    const p = A.destinationPoint(base, 0, s * 10); // 10 m/s due north
+    A.trackAdd(track, { lat: p.lat, lon: p.lon, speed: 10 }, T0 + s * 1000);
+  }
+  assert.ok(!A.trackAdd(track, track.points[track.points.length - 1], T0 + 101000), 'dupe rejected');
+  const st = A.trackStats(track, T0 + 101000);
+  near(st.distM, 1000, 5);
+  near(st.avgKmh, 36, 2);
+  near(st.maxKmh, 36, 1);
+  assert.equal(st.stops, 0);
+  const gpx = A.trackToGPX(track, 'Test <drive>');
+  assert.ok(gpx.startsWith('<?xml'), 'xml prolog');
+  assert.ok(gpx.includes('<name>Test &lt;drive&gt;</name>'), 'name escaped');
+  assert.equal((gpx.match(/<trkpt /g) || []).length, track.points.length);
+  assert.ok(gpx.includes('2026-07-26T09:00:00.000Z'), 'ISO times');
+});
+
+test('routeBack: retraces a recorded L-shape in reverse with a synthesised turn', () => {
+  const base = { lat: 51.5, lon: -0.1 };
+  const pts = [];
+  for (let m = 0; m <= 500; m += 50) { const p = A.destinationPoint(base, 0, m); pts.push({ lat: p.lat, lon: p.lon, t: m }); }
+  const corner = pts[pts.length - 1];
+  for (let m = 50; m <= 400; m += 50) { const p = A.destinationPoint(corner, 90, m); pts.push({ lat: p.lat, lon: p.lon, t: 500 + m }); }
+  const route = A.routeBack(pts, 1.4);
+  near(route.totalM, 900, 5);
+  near(route.totalS, 900 / 1.4, 2);
+  near(route.geometry[0].lat, pts[pts.length - 1].lat, 1e-9, 'starts where you are');
+  near(route.geometry[route.geometry.length - 1].lat, base.lat, 1e-9, 'ends at the origin');
+  const turns = route.steps.filter((s) => s.type === 'turn');
+  assert.equal(turns.length, 1, 'one corner → one instruction');
+  assert.equal(turns[0].modifier, 'left', 'outbound right turn is a left on the way back');
+  assert.throws(() => A.routeBack([{ lat: 51.5, lon: -0.1, t: 0 }], 1.4));
+});
+
+test('dashcam: telemetry lines carry time, position, speed and next turn', () => {
+  const lines = A.dashcamLines({ timeStr: '2026-07-26 22:13:45', lat: 51.50735, lon: -0.1279,
+    speedMS: 13.06, units: 'metric', instruction: 'Turn right onto End Road', distToNextM: 200 });
+  assert.equal(lines.length, 3);
+  assert.equal(lines[0], '2026-07-26 22:13:45  ·  47 km/h');
+  assert.equal(lines[1], '51.50735, -0.12790');
+  assert.equal(lines[2], 'Next: Turn right onto End Road — 200 m');
+  const mph = A.dashcamLines({ timeStr: 't', lat: 0, lon: 0, speedMS: 13.06, units: 'imperial' });
+  assert.equal(mph.length, 2, 'no instruction → two lines');
+  assert.ok(mph[0].endsWith('29 mph'), mph[0]);
+});
+
+test('dashcam: fmtTimestamp shape and dashcamFilename slugging (UTC)', () => {
+  assert.ok(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(A.fmtTimestamp(Date.UTC(2026, 6, 26, 22, 13, 45))));
+  const ms = Date.UTC(2026, 6, 26, 22, 13, 45);
+  assert.equal(A.dashcamFilename(ms, 'Trafalgar Square, London!'), 'atlas-dashcam-20260726-2213-trafalgar-square-london.webm');
+  assert.equal(A.dashcamFilename(ms, ''), 'atlas-dashcam-20260726-2213.webm');
+  assert.equal(A.dashcamFilename(ms, '§§§'), 'atlas-dashcam-20260726-2213.webm');
+});
+
+test('dashcam: recordingEstimateMB is honest arithmetic', () => {
+  near(A.recordingEstimateMB(60), 18.8, 0.05, '1 min at 2.5 Mbps');
+  near(A.recordingEstimateMB(600, 1000), 75, 0.1);
+  assert.equal(A.recordingEstimateMB(-5), 0);
+});
+
+test('dashcam vault: fmtBytes banding', () => {
+  assert.equal(A.fmtBytes(0), '0 B');
+  assert.equal(A.fmtBytes(500), '500 B');
+  assert.equal(A.fmtBytes(254625), '255 KB');
+  assert.equal(A.fmtBytes(1.23e6), '1.2 MB');
+  assert.equal(A.fmtBytes(2.5e9), '2.5 GB');
+});
+
+test('dashcam vault: pruneClips keeps newest, enforces count and byte caps', () => {
+  const mk = (n, size) => Array.from({ length: n }, (_, i) => ({ id: i + 1, t: 1000 + i, size: size || 10 }));
+  same(A.pruneClips([], {}), []);
+  // count cap: 15 clips, keep the 12 newest (t high = new) → drop ids 1..3
+  same([...A.pruneClips(mk(15), { maxCount: 12, maxBytes: 1e9 })].sort((a, b) => a - b), [1, 2, 3]);
+  // byte cap: 5 × 100 B with a 250 B budget → keep the 2 newest, drop 3 oldest
+  same([...A.pruneClips(mk(5, 100), { maxCount: 99, maxBytes: 250 })].sort((a, b) => a - b), [1, 2, 3]);
+  // a single oversized newest clip is never dropped
+  same(A.pruneClips([{ id: 7, t: 5, size: 999 }], { maxCount: 3, maxBytes: 100 }), []);
+  // ...but an oversized newest still evicts everything older
+  same([...A.pruneClips([{ id: 1, t: 1, size: 10 }, { id: 2, t: 9, size: 999 }], { maxCount: 5, maxBytes: 100 })], [1]);
+});
+
+test('updatePace: learns your speed honestly and stays clamped', () => {
+  assert.equal(A.updatePace(1, 30, 600), 1, 'too short to learn from');
+  const slower = A.updatePace(1, 600, 900);
+  assert.ok(slower > 1.1 && slower < 1.2, 'drifts toward 1.5 gently: ' + slower);
+  let p = 1;
+  for (let i = 0; i < 50; i++) p = A.updatePace(p, 600, 6000);
+  assert.equal(p, 1.6, 'upper clamp');
+  for (let i = 0; i < 50; i++) p = A.updatePace(p, 6000, 600);
+  assert.equal(p, 0.6, 'lower clamp');
+});
+
 /* --------------------------------- run ---------------------------------- */
 
 for (const [name, fn] of tests) {

@@ -550,6 +550,295 @@
     return { lat: p.lat, lon: p.lon, heading: p.heading, alongM: alongM, speed: v, done: alongM >= route.totalM };
   }
 
+  /* ============================ sun-glare forecast ========================= */
+  // No other satnav warns you about this: compute where the sun will be for
+  // each stretch of the route *at the moment you'll drive it*, and flag the
+  // stretches where you'll be driving into a low sun. Standard low-precision
+  // solar ephemeris (NOAA/Meeus form, ~0.01° — vastly better than needed).
+
+  function norm360(x) { return ((x % 360) + 360) % 360; }
+
+  /** Sun {azimuth (° from north, clockwise), elevation (°)} at ms/lat/lon. */
+  function sunPosition(ms, lat, lon) {
+    var d = ms / 86400000 - 10957.5;                       // days since J2000.0
+    var g = norm360(357.529 + 0.98560028 * d) * DEG;       // mean anomaly
+    var q = norm360(280.459 + 0.98564736 * d);             // mean longitude
+    var L = norm360(q + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * DEG;
+    var e = (23.439 - 0.00000036 * d) * DEG;               // obliquity
+    var RA = Math.atan2(Math.cos(e) * Math.sin(L), Math.cos(L));
+    var dec = Math.asin(Math.sin(e) * Math.sin(L));
+    var gmst = 18.697374558 + 24.06570982441908 * d;       // sidereal, hours
+    var H = norm360(gmst * 15 + lon) * DEG - RA;           // hour angle
+    var la = lat * DEG;
+    var elev = Math.asin(Math.sin(la) * Math.sin(dec) + Math.cos(la) * Math.cos(dec) * Math.cos(H));
+    var az = Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(la) - Math.tan(dec) * Math.cos(la));
+    return { azimuth: norm360(az / DEG + 180), elevation: elev / DEG };
+  }
+
+  /** Seconds of driving needed to reach `alongM` (inverse of remaining()). */
+  function timeAtAlong(route, alongM) {
+    return Math.max(0, route.totalS - remaining(route, alongM).durS);
+  }
+
+  var GLARE_MAX_ELEV = 22, GLARE_MIN_ELEV = -1, GLARE_CONE = 28;
+
+  /**
+   * Stretches of the route where the driver faces a low sun, given a departure
+   * time. → [{startM, endM, durS}] (merged consecutive segments).
+   */
+  function glareSegments(route, departMs) {
+    var g = route.geometry, cum = route.cum, out = [], open = null;
+    for (var i = 0; i < g.length - 1; i++) {
+      var heading = bearing(g[i], g[i + 1]);
+      var t = departMs + timeAtAlong(route, cum[i]) * 1000;
+      var sun = sunPosition(t, g[i].lat, g[i].lon);
+      var glare = sun.elevation > GLARE_MIN_ELEV && sun.elevation < GLARE_MAX_ELEV &&
+                  Math.abs(angleDiff(heading, sun.azimuth)) < GLARE_CONE;
+      if (glare) {
+        if (!open) open = { startM: cum[i], endM: cum[i + 1] };
+        else open.endM = cum[i + 1];
+      } else if (open) { out.push(open); open = null; }
+    }
+    if (open) out.push(open);
+    out.forEach(function (s) {
+      s.durS = Math.max(0, timeAtAlong(route, s.endM) - timeAtAlong(route, s.startM));
+    });
+    return out;
+  }
+
+  /* =========================== co-driver pace notes ======================== */
+  // Rally co-drivers grade corners 1 (hairpin) … 6 (barely a kink). Atlas
+  // reads the grades straight off the route geometry, so any road becomes a
+  // stage: "left 4", "right 2 into left 3". Pure curvature analysis.
+
+  var NOTE_GRADES = [ // [min total angle °, grade]
+    [110, 1], [85, 2], [60, 3], [40, 4], [25, 5], [12, 6],
+  ];
+
+  /** [{alongM, side, grade, angleDeg}] — corners graded rally-style. */
+  function paceNotes(route) {
+    var g = route.geometry, cum = route.cum, raw = [];
+    for (var i = 1; i < g.length - 1; i++) {
+      var a = angleDiff(bearing(g[i - 1], g[i]), bearing(g[i], g[i + 1]));
+      if (Math.abs(a) < 4) continue;
+      raw.push({ alongM: cum[i], angle: a });
+    }
+    // merge same-direction bends closer than 30 m into one corner
+    var merged = [];
+    raw.forEach(function (r) {
+      var last = merged[merged.length - 1];
+      if (last && (r.angle > 0) === (last.angle > 0) && r.alongM - last.endM < 30) {
+        last.angle += r.angle; last.endM = r.alongM;
+      } else merged.push({ alongM: r.alongM, endM: r.alongM, angle: r.angle });
+    });
+    var notes = [];
+    merged.forEach(function (m) {
+      var abs = Math.abs(m.angle);
+      for (var k = 0; k < NOTE_GRADES.length; k++) {
+        if (abs >= NOTE_GRADES[k][0]) {
+          notes.push({ alongM: m.alongM, side: m.angle > 0 ? 'right' : 'left',
+                       grade: NOTE_GRADES[k][1], angleDeg: Math.round(abs) });
+          break;
+        }
+      }
+    });
+    return notes;
+  }
+
+  /** "left 4" — or "left 4 into right 3" when the next corner crowds in. */
+  function paceNoteLine(note, nextNote) {
+    var line = note.side + ' ' + note.grade;
+    if (nextNote && nextNote.alongM - note.alongM < 120) {
+      line += ' into ' + nextNote.side + ' ' + nextNote.grade;
+    }
+    return line;
+  }
+
+  /* ========================= ghost mode (dead reckoning) =================== */
+
+  /** GPS gone (tunnel, canyon)? Keep the car moving along the route at its
+   *  last known speed. → a synthetic fix {lat, lon, heading, speed, ghost}. */
+  function ghostAdvance(route, alongM, speedMS, dtS) {
+    var m = Math.min(route.totalM, alongM + Math.max(0, speedMS) * dtS);
+    var p = pointAtAlong(route, m);
+    return { lat: p.lat, lon: p.lon, heading: p.heading, speed: speedMS, alongM: m, ghost: true };
+  }
+
+  /* ========================= flight recorder + GPX ========================= */
+
+  var TRACK_MIN_STEP_M = 6, TRACK_SOFT_CAP = 18000, TRACK_COARSE_STEP_M = 25;
+
+  /** A fresh on-device drive recording. */
+  function newTrack(nowMs) { return { startedAt: nowMs, points: [] }; }
+
+  /** Append a fix (thinned: ≥6 m apart, coarser once the track is huge). */
+  function trackAdd(track, fix, nowMs) {
+    var pts = track.points, last = pts[pts.length - 1];
+    var minStep = pts.length >= TRACK_SOFT_CAP ? TRACK_COARSE_STEP_M : TRACK_MIN_STEP_M;
+    if (last && haversine(last, fix) < minStep) return false;
+    pts.push({ lat: fix.lat, lon: fix.lon, t: nowMs,
+               v: typeof fix.speed === 'number' && isFinite(fix.speed) ? fix.speed : null });
+    return true;
+  }
+
+  /** Honest drive stats: distance, moving vs total time, avg/max speed, stops. */
+  function trackStats(track, nowMs) {
+    var pts = track.points;
+    var distM = 0, movingS = 0, maxV = 0, stops = 0, inStop = false;
+    for (var i = 1; i < pts.length; i++) {
+      var d = haversine(pts[i - 1], pts[i]);
+      var dt = Math.max(0.001, (pts[i].t - pts[i - 1].t) / 1000);
+      var v = d / dt;
+      distM += d;
+      if (v > 0.8) { movingS += dt; inStop = false; }
+      else if (!inStop) { stops++; inStop = true; }
+      maxV = Math.max(maxV, pts[i].v != null ? pts[i].v : v);
+    }
+    var totalS = pts.length ? Math.max(0, ((nowMs || pts[pts.length - 1].t) - track.startedAt) / 1000) : 0;
+    return { distM: distM, movingS: movingS, totalS: totalS,
+             avgKmh: movingS > 0 ? (distM / movingS) * 3.6 : 0, maxKmh: maxV * 3.6, stops: stops };
+  }
+
+  /** A real GPX 1.1 document for the recorded drive — opens in any GPS app. */
+  function trackToGPX(track, name) {
+    var esc = function (s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };
+    var out = '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      '<gpx version="1.1" creator="Atlas" xmlns="http://www.topografix.com/GPX/1/1">\n' +
+      '<trk><name>' + esc(name || 'Atlas drive') + '</name><trkseg>\n';
+    track.points.forEach(function (p) {
+      out += '<trkpt lat="' + p.lat.toFixed(6) + '" lon="' + p.lon.toFixed(6) + '">' +
+             '<time>' + new Date(p.t).toISOString() + '</time></trkpt>\n';
+    });
+    return out + '</trkseg></trk>\n</gpx>\n';
+  }
+
+  /* ============================== trail-back =============================== */
+
+  /**
+   * Turn a recorded track into a guidance route that retraces it backwards —
+   * navigation home with no routing server and no network. Turn steps are
+   * synthesised from the geometry's own corners.
+   */
+  function routeBack(points, speedMS) {
+    var v = Math.max(0.5, speedMS || 1.4);
+    var geometry = [];
+    for (var i = points.length - 1; i >= 0; i--) {
+      var p = { lat: points[i].lat, lon: points[i].lon };
+      var last = geometry[geometry.length - 1];
+      if (!last || haversine(last, p) >= 3) geometry.push(p);
+    }
+    if (geometry.length < 2) throw new Error('track too short to trace back');
+    var cum = [0];
+    for (var j = 1; j < geometry.length; j++) cum.push(cum[j - 1] + haversine(geometry[j - 1], geometry[j]));
+    var totalM = cum[cum.length - 1];
+    var route = { geometry: geometry, cum: cum, totalM: totalM, totalS: totalM / v, steps: [] };
+    var steps = [{ type: 'depart', modifier: '', exit: 0,
+                   bearingAfter: bearing(geometry[0], geometry[1]), name: '', alongM: 0 }];
+    paceNotes(route).forEach(function (n) {
+      if (n.grade > 4) return; // only real turns become instructions
+      steps.push({ type: 'turn', modifier: n.grade === 1 ? 'sharp ' + n.side : n.side,
+                   exit: 0, bearingAfter: 0, name: '', alongM: n.alongM });
+    });
+    steps.push({ type: 'arrive', modifier: '', exit: 0, bearingAfter: 0, name: '', alongM: totalM });
+    for (var k = 0; k < steps.length; k++) {
+      var end = k + 1 < steps.length ? steps[k + 1].alongM : totalM;
+      steps[k].distM = Math.max(0, end - steps[k].alongM);
+      steps[k].durS = steps[k].distM / v;
+      steps[k].instruction = instructionText(steps[k]);
+      steps[k].icon = maneuverIcon(steps[k].type, steps[k].modifier);
+    }
+    route.steps = steps;
+    return route;
+  }
+
+  /* ================================ dashcam ================================ */
+  // The camera work is browser API, but everything deterministic about the
+  // dashcam lives here: the telemetry lines burned into each frame, the
+  // filename a clip saves under, and the honest storage estimate.
+
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+  /** "2026-07-26 22:13:45" in the viewer's local time — the frame stamp. */
+  function fmtTimestamp(ms) {
+    var d = new Date(ms);
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' +
+           pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds());
+  }
+
+  /**
+   * The telemetry block burned into each dashcam frame.
+   * info = {timeStr, lat, lon, speedMS, units, instruction?, distToNextM?}
+   * → array of strings (top line first).
+   */
+  function dashcamLines(info) {
+    var shown = info.units === 'imperial' ? info.speedMS * 2.23694 : info.speedMS * 3.6;
+    var unit = info.units === 'imperial' ? 'mph' : 'km/h';
+    var lines = [
+      info.timeStr + '  ·  ' + Math.round(Math.max(0, shown)) + ' ' + unit,
+      info.lat.toFixed(5) + ', ' + info.lon.toFixed(5),
+    ];
+    if (info.instruction) {
+      lines.push('Next: ' + info.instruction +
+        (typeof info.distToNextM === 'number' ? ' — ' + fmtDist(info.distToNextM, info.units) : ''));
+    }
+    return lines;
+  }
+
+  /** "atlas-dashcam-20260726-2213-trafalgar-square.webm" — UTC, slugged. */
+  function dashcamFilename(ms, destName) {
+    var d = new Date(ms);
+    var stamp = '' + d.getUTCFullYear() + pad2(d.getUTCMonth() + 1) + pad2(d.getUTCDate()) +
+                '-' + pad2(d.getUTCHours()) + pad2(d.getUTCMinutes());
+    var slug = (destName || '').toLowerCase().replace(/[^a-z0-9]+/g, '-')
+               .replace(/^-+|-+$/g, '').slice(0, 32).replace(/-+$/, '');
+    return 'atlas-dashcam-' + stamp + (slug ? '-' + slug : '') + '.webm';
+  }
+
+  /** Honest storage estimate in MB for a recording (default ~2.5 Mbps). */
+  function recordingEstimateMB(durS, kbps) {
+    var mb = Math.max(0, durS) * (kbps || 2500) / 8 / 1000;
+    return Math.round(mb * 10) / 10;
+  }
+
+  /** "500 B" / "255 KB" / "1.2 MB" / "2.5 GB" — decimal units. */
+  function fmtBytes(n) {
+    n = Math.max(0, n || 0);
+    if (n < 1000) return Math.round(n) + ' B';
+    if (n < 1e6) return Math.round(n / 1e3) + ' KB';
+    if (n < 1e9) return (Math.round(n / 1e5) / 10).toFixed(1) + ' MB';
+    return (Math.round(n / 1e8) / 10).toFixed(1) + ' GB';
+  }
+
+  /**
+   * Which stored clips to delete so the vault respects its limits. Newest
+   * clips win; the single newest clip is always kept, whatever its size.
+   * clips = [{id, t, size}] → array of ids to delete (oldest casualties).
+   */
+  function pruneClips(clips, limits) {
+    var maxCount = (limits && limits.maxCount) || 12;
+    var maxBytes = (limits && limits.maxBytes) || 800e6;
+    var sorted = clips.slice().sort(function (a, b) { return b.t - a.t || (b.id > a.id ? 1 : -1); });
+    var bytes = 0, drop = [];
+    for (var i = 0; i < sorted.length; i++) {
+      bytes += sorted[i].size || 0;
+      if (i === 0) continue; // the newest clip always survives
+      if (i >= maxCount || bytes > maxBytes) drop.push(sorted[i].id);
+    }
+    return drop;
+  }
+
+  /* ============================ personal pace ============================== */
+  // Routers predict an average driver. Atlas learns the ratio between *your*
+  // drives and the prediction (EMA, clamped) and scales future ETAs by it —
+  // an ETA that converges on the truth about you.
+
+  function updatePace(pace, predictedS, actualS) {
+    if (!(predictedS > 60) || !(actualS > 60)) return pace || 1; // too short to learn from
+    var ratio = Math.max(0.5, Math.min(2, actualS / predictedS));
+    var next = (pace || 1) * 0.7 + ratio * 0.3;
+    return Math.round(Math.max(0.6, Math.min(1.6, next)) * 1000) / 1000;
+  }
+
   /* ================================ places ================================ */
 
   /**
@@ -606,5 +895,12 @@
     announceBands: announceBands, startGuidance: startGuidance, remaining: remaining,
     guidanceUpdate: guidanceUpdate, voiceLine: voiceLine,
     simulateTick: simulateTick, rankPlaces: rankPlaces, parseCoord: parseCoord,
+    sunPosition: sunPosition, timeAtAlong: timeAtAlong, glareSegments: glareSegments,
+    paceNotes: paceNotes, paceNoteLine: paceNoteLine, ghostAdvance: ghostAdvance,
+    newTrack: newTrack, trackAdd: trackAdd, trackStats: trackStats, trackToGPX: trackToGPX,
+    routeBack: routeBack, updatePace: updatePace,
+    fmtTimestamp: fmtTimestamp, dashcamLines: dashcamLines,
+    dashcamFilename: dashcamFilename, recordingEstimateMB: recordingEstimateMB,
+    fmtBytes: fmtBytes, pruneClips: pruneClips,
   };
 });
