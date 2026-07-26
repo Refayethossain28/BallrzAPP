@@ -957,6 +957,115 @@
     return Math.round(Math.max(0.6, Math.min(1.6, next)) * 1000) / 1000;
   }
 
+  /* ================================ convoy ================================ */
+  // Road-trip mode: drivers who share a convoy code see each other live on
+  // the map. Transport is the UI's job (BroadcastChannel between tabs,
+  // Firestore across devices); everything decidable is here — codes,
+  // deterministic avatars, beacon validation with newest-wins merging,
+  // staleness pruning and the formation stats.
+
+  var CONVOY_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no I/L/O/0/1
+
+  /** A 6-char convoy code from an injected rand() (deterministic in tests). */
+  function makeConvoyCode(rand) {
+    rand = rand || Math.random;
+    var s = '';
+    for (var i = 0; i < 6; i++) {
+      s += CONVOY_ALPHABET[Math.floor(rand() * CONVOY_ALPHABET.length) % CONVOY_ALPHABET.length];
+    }
+    return s;
+  }
+
+  /** Normalise user input to a valid code, or null. */
+  function validConvoyCode(s) {
+    if (typeof s !== 'string') return null;
+    s = s.toUpperCase().replace(/[\s-]/g, '');
+    if (s.length !== 6) return null;
+    for (var i = 0; i < s.length; i++) if (CONVOY_ALPHABET.indexOf(s[i]) < 0) return null;
+    return s;
+  }
+
+  /** Pull a convoy code out of a share link / hash / raw code. */
+  function parseConvoyLink(s) {
+    if (typeof s !== 'string') return null;
+    var m = /convoy=([A-Za-z0-9-]{4,12})/.exec(s);
+    if (m) return validConvoyCode(m[1]);
+    return validConvoyCode(s.replace(/^#/, ''));
+  }
+
+  var CONVOY_CARS = ['🚗', '🚙', '🛻', '🚐', '🏎', '🚕', '🚓', '🚌'];
+  var CONVOY_COLORS = ['#38bdf8', '#34d399', '#f472b6', '#fbbf24', '#a78bfa', '#fb7185', '#4ade80', '#f97316'];
+
+  /** Deterministic {emoji, color} for a member id — same id, same car. */
+  function convoyAvatar(id) {
+    var h = 5381;
+    id = String(id || '');
+    for (var i = 0; i < id.length; i++) h = ((h * 33) ^ id.charCodeAt(i)) >>> 0;
+    return { emoji: CONVOY_CARS[h % CONVOY_CARS.length], color: CONVOY_COLORS[(h >>> 3) % CONVOY_COLORS.length] };
+  }
+
+  /**
+   * Merge one incoming beacon into the members map. Pure and defensive:
+   * malformed beacons and our own echoes are ignored, an older timestamp
+   * never overwrites a newer one, names are clamped, clocks from the future
+   * are pulled back. → a NEW members object (input untouched).
+   */
+  function applyBeacon(members, b, selfId, now) {
+    if (!b || typeof b !== 'object') return members;
+    if (typeof b.id !== 'string' || !b.id || b.id === selfId) return members;
+    if (typeof b.lat !== 'number' || typeof b.lon !== 'number' ||
+        !isFinite(b.lat) || !isFinite(b.lon) ||
+        b.lat < -90 || b.lat > 90 || b.lon < -180 || b.lon > 180) return members;
+    var ts = typeof b.ts === 'number' && isFinite(b.ts) ? Math.min(b.ts, now + 60000) : now;
+    var prev = members[b.id];
+    if (prev && ts < prev.ts) return members;
+    var next = {};
+    for (var k in members) next[k] = members[k];
+    next[b.id] = {
+      id: b.id,
+      name: (typeof b.name === 'string' && b.name.trim() ? b.name.trim() : 'Driver').slice(0, 24),
+      lat: b.lat, lon: b.lon,
+      heading: typeof b.heading === 'number' && isFinite(b.heading) ? b.heading : null,
+      speed: typeof b.speed === 'number' && isFinite(b.speed) && b.speed >= 0 ? b.speed : null,
+      etaS: typeof b.etaS === 'number' && isFinite(b.etaS) && b.etaS >= 0 ? b.etaS : null,
+      arrived: !!b.arrived,
+      ts: ts,
+    };
+    return next;
+  }
+
+  var CONVOY_TTL_MS = 45000;
+
+  /** Drop members whose beacons have gone silent. → a new object. */
+  function pruneMembers(members, now, ttlMs) {
+    var ttl = ttlMs || CONVOY_TTL_MS;
+    var next = {};
+    for (var k in members) if (now - members[k].ts <= ttl) next[k] = members[k];
+    return next;
+  }
+
+  /**
+   * The formation, from where you sit: every other member with distance and
+   * bearing from `self` ({lat,lon}|null) and beacon age, nearest first
+   * (unknown distances last).
+   */
+  function convoyStats(members, self, now) {
+    var out = [];
+    for (var k in members) {
+      var m = members[k];
+      var distM = self ? haversine(self, m) : null;
+      out.push({ member: m, distM: distM, brgDeg: self ? bearing(self, m) : null,
+                 staleS: Math.max(0, (now - m.ts) / 1000) });
+    }
+    out.sort(function (a, b) {
+      if (a.distM == null && b.distM == null) return a.member.id < b.member.id ? -1 : 1;
+      if (a.distM == null) return 1;
+      if (b.distM == null) return -1;
+      return a.distM - b.distM;
+    });
+    return out;
+  }
+
   /* ================================ places ================================ */
 
   /**
@@ -1022,5 +1131,7 @@
     fmtBytes: fmtBytes, pruneClips: pruneClips,
     parseMaxspeed: parseMaxspeed, mapLimitsToRoute: mapLimitsToRoute, limitAtAlong: limitAtAlong,
     mapCamerasToRoute: mapCamerasToRoute, cameraNext: cameraNext, overspeedUpdate: overspeedUpdate,
+    makeConvoyCode: makeConvoyCode, validConvoyCode: validConvoyCode, parseConvoyLink: parseConvoyLink,
+    convoyAvatar: convoyAvatar, applyBeacon: applyBeacon, pruneMembers: pruneMembers, convoyStats: convoyStats,
   };
 });
