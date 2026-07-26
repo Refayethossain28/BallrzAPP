@@ -476,5 +476,14 @@ service cloud.firestore {
     match /vaultRails/{railId} {
       allow read, write: if false;
     }
+
+    // ── AIOS — the AI operating system (aios/) ────────────────────────────
+    // Optional cross-device sync: AIOS mirrors a user's whole serialized disk
+    // to one document keyed by their anonymous uid. It is private to its owner
+    // — read and write your own disk, nobody else's. (Sync is off by default;
+    // it only activates when aios/config.js carries a Firebase project.)
+    match /aios_disks/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
   }
 }
