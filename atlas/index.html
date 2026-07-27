@@ -780,6 +780,17 @@ function fromScreen(s) {
 }
 
 var needsDraw = true;
+// iOS Safari has no CanvasRenderingContext2D.filter — detect once and fall
+// back to a composite-based night inversion so night mode works everywhere.
+var FILTER_OK = (function () {
+  try {
+    ctx.filter = 'invert(1)';
+    var ok = String(ctx.filter).indexOf('invert') !== -1;
+    ctx.filter = 'none';
+    return ok;
+  } catch (e) { return false; }
+})();
+
 function draw() {
   var night = nightMode();
   var layer = settings.baseLayer === 'sat' ? 'sat' : 'map';
@@ -801,10 +812,12 @@ function draw() {
   ctx.translate(-c.x, -c.y);
   // night inverts the drawn map; satellite imagery just dims a little.
   // day map gets a whisper of saturation for the modern look.
-  ctx.filter = layer === 'sat'
-    ? (night ? 'brightness(0.82) saturate(0.9)' : 'saturate(1.05)')
-    : (night ? 'invert(1) hue-rotate(180deg) brightness(0.86) contrast(0.92) saturate(0.65)'
-             : 'saturate(1.06) contrast(1.03)');
+  if (FILTER_OK) {
+    ctx.filter = layer === 'sat'
+      ? (night ? 'brightness(0.82) saturate(0.9)' : 'saturate(1.05)')
+      : (night ? 'invert(1) hue-rotate(180deg) brightness(0.86) contrast(0.92) saturate(0.65)'
+               : 'saturate(1.06) contrast(1.03)');
+  }
 
   var t0x = Math.floor((c.x - radius) / A.TILE), t1x = Math.floor((c.x + radius) / A.TILE);
   var t0y = Math.floor((c.y - radius) / A.TILE), t1y = Math.floor((c.y + radius) / A.TILE);
@@ -825,8 +838,24 @@ function draw() {
       }
     }
   }
-  ctx.filter = 'none';
+  if (FILTER_OK) ctx.filter = 'none';
   ctx.restore();
+
+  // Safari fallback: invert the tiles via compositing (tiles only — the
+  // buildings, route and markers paint after this in their own colours)
+  if (!FILTER_OK && night) {
+    if (layer === 'map') {
+      ctx.globalCompositeOperation = 'difference';
+      ctx.fillStyle = '#efe9dd';
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = 'rgba(10,16,32,0.30)';
+      ctx.fillRect(0, 0, W, H);
+    } else {
+      ctx.fillStyle = 'rgba(2,6,14,0.35)';
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
 
   drawBuildings(night);
   drawRoutes(night);
