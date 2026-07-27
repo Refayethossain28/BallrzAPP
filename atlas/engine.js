@@ -209,6 +209,7 @@
           alongM: cum[best],
           distM: s.distance || 0,
           durS: s.duration || 0,
+          lanes: parseLanes(s),
         };
         step.instruction = instructionText(step);
         step.icon = maneuverIcon(step.type, step.modifier);
@@ -957,6 +958,100 @@
     return Math.round(Math.max(0.6, Math.min(1.6, next)) * 1000) / 1000;
   }
 
+  /* ============================ lane guidance ============================= */
+  // OSRM steps carry OSM's turn-lane data: each maneuver's first intersection
+  // lists the approach lanes with their painted arrows and whether that lane
+  // works for this maneuver. We normalise it into a little model the HUD can
+  // draw as a lane bar — lit lanes are yours.
+
+  /** OSRM lane indication → our arrow-icon key. */
+  function laneIconKey(dir) {
+    var map = {
+      'left': 'left', 'right': 'right', 'straight': 'straight', 'none': 'straight',
+      'slight left': 'slight-left', 'slight right': 'slight-right',
+      'sharp left': 'sharp-left', 'sharp right': 'sharp-right',
+      'uturn': 'uturn', 'merge to left': 'merge-left', 'merge to right': 'merge-right',
+    };
+    return map[dir] || 'straight';
+  }
+
+  /**
+   * Lanes for a raw OSRM step's maneuver, reading intersections[0].lanes.
+   * → [{icon, dirs, on}] left-to-right, or null when the map has no lane data.
+   * The icon prefers the indication that is actually valid for the maneuver.
+   */
+  function parseLanes(rawStep) {
+    var ix = rawStep && rawStep.intersections && rawStep.intersections[0];
+    var lanes = ix && ix.lanes;
+    if (!lanes || !lanes.length) return null;
+    var out = [];
+    for (var i = 0; i < lanes.length; i++) {
+      var ln = lanes[i];
+      var dirs = (ln.indications && ln.indications.length ? ln.indications : ['none']).slice(0, 3);
+      var pick = dirs[0];
+      if (ln.valid && ln.valid_indication) pick = ln.valid_indication; // OSRM ≥5.23
+      out.push({ icon: laneIconKey(pick), dirs: dirs, on: !!ln.valid });
+    }
+    return out;
+  }
+
+  /* ============================ junction views ============================ */
+  // Honest junction views: not photographs — auto-generated schematics. The
+  // UI fetches the real surrounding roads once per complex maneuver; the
+  // maths here projects everything into a local frame centred on the
+  // junction and rotated so you always approach from the bottom.
+
+  /** Steps that deserve a junction view. → array of step indexes. */
+  function junctionCandidates(steps) {
+    var out = [];
+    for (var i = 0; i < steps.length; i++) {
+      var s = steps[i];
+      if (s.type === 'roundabout' || s.type === 'rotary' || s.type === 'fork' ||
+          s.type === 'end of road' || /^sharp/.test(s.modifier || '')) out.push(i);
+    }
+    return out;
+  }
+
+  /**
+   * Project the scene around a maneuver into a local metres frame: origin at
+   * the junction, +up (−y) is the direction you approach from. ways =
+   * [[{lat,lon},…]]. → {roads: [[{x,y}]], path: [{x,y}], r} with everything
+   * clipped to radiusM. Pure — the UI just scales and strokes it.
+   */
+  function buildJunctionView(route, step, ways, radiusM) {
+    var r = radiusM || 120;
+    var c = pointAtAlong(route, step.alongM);
+    var approach = pointAtAlong(route, Math.max(0, step.alongM - 30));
+    var up = bearing(approach, c) * DEG;
+    var cosU = Math.cos(up), sinU = Math.sin(up);
+    var kLon = 111320 * Math.cos(c.lat * DEG), kLat = 110540;
+    function proj(p) {
+      var ex = (p.lon - c.lon) * kLon, ny = (p.lat - c.lat) * kLat; // metres E, N
+      // rotate so the approach bearing points up the screen (−y)
+      return { x: ex * cosU - ny * sinU, y: -(ex * sinU + ny * cosU) };
+    }
+    function clipLine(pts) {
+      var segs = [], cur = [];
+      for (var i = 0; i < pts.length; i++) {
+        var q = proj(pts[i]);
+        if (Math.hypot(q.x, q.y) <= r * 1.25) cur.push(q);
+        else if (cur.length > 1) { segs.push(cur); cur = []; }
+        else cur = [];
+      }
+      if (cur.length > 1) segs.push(cur);
+      return segs;
+    }
+    var roads = [];
+    (ways || []).forEach(function (w) { clipLine(w).forEach(function (s) { roads.push(s); }); });
+    // the route's own thread through the junction
+    var pathPts = [];
+    for (var m = Math.max(0, step.alongM - r); m <= Math.min(route.totalM, step.alongM + r); m += 8) {
+      pathPts.push(pointAtAlong(route, m));
+    }
+    var path = clipLine(pathPts)[0] || [];
+    return { roads: roads, path: path, r: r };
+  }
+
   /* ============================= 3D buildings ============================= */
   // True extruded buildings on the 2D canvas, the classic 2.5D way: every
   // footprint corner gets a roof point pushed away from the camera by an
@@ -1265,6 +1360,8 @@
     fmtBytes: fmtBytes, pruneClips: pruneClips,
     parseMaxspeed: parseMaxspeed, mapLimitsToRoute: mapLimitsToRoute, limitAtAlong: limitAtAlong,
     mapCamerasToRoute: mapCamerasToRoute, cameraNext: cameraNext, overspeedUpdate: overspeedUpdate,
+    laneIconKey: laneIconKey, parseLanes: parseLanes,
+    junctionCandidates: junctionCandidates, buildJunctionView: buildJunctionView,
     buildingHeightM: buildingHeightM, roofFactor: roofFactor, wallShade: wallShade,
     incidentDelayS: incidentDelayS, mapIncidentsToRoute: mapIncidentsToRoute,
     typicalTrafficFactor: typicalTrafficFactor, trafficAdjust: trafficAdjust,

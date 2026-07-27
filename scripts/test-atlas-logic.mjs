@@ -645,6 +645,70 @@ test('overspeedUpdate: tolerance, 3 s hysteresis, single warning, resets under l
   assert.equal(A.overspeedUpdate(null, 200, null, 1).over, false, 'no limit, no judgement');
 });
 
+test('lane guidance: parseLanes reads OSRM lane data, valid lanes light up', () => {
+  const raw = { intersections: [{ lanes: [
+    { indications: ['left'], valid: false },
+    { indications: ['straight', 'left'], valid: true, valid_indication: 'straight' },
+    { indications: [], valid: false },
+  ] }] };
+  const lanes = A.parseLanes(raw);
+  assert.equal(lanes.length, 3);
+  assert.equal(lanes[0].icon, 'left'); assert.equal(lanes[0].on, false);
+  assert.equal(lanes[1].icon, 'straight'); assert.equal(lanes[1].on, true, 'valid lane lit');
+  assert.equal(lanes[2].icon, 'straight', 'no indication → straight');
+  assert.equal(A.parseLanes({ intersections: [{}] }), null, 'no lane data → null');
+  assert.equal(A.parseLanes({}), null);
+  assert.equal(A.laneIconKey('slight right'), 'slight-right');
+  assert.equal(A.laneIconKey('uturn'), 'uturn');
+  assert.equal(A.laneIconKey('weird'), 'straight');
+});
+
+test('lane guidance: buildRoute attaches lanes to steps', () => {
+  const base = { lat: 51.5, lon: -0.1 };
+  const g = [base, A.destinationPoint(base, 0, 500), A.destinationPoint(base, 0, 1000)];
+  const r = A.buildRoute({
+    geometry: A.encodePolyline(g), duration: 100,
+    legs: [{ steps: [
+      { name: 'A', distance: 500, duration: 50, maneuver: { location: [base.lon, base.lat], type: 'depart', bearing_after: 0 } },
+      { name: 'B', distance: 500, duration: 50,
+        maneuver: { location: [g[1].lon, g[1].lat], type: 'turn', modifier: 'right' },
+        intersections: [{ lanes: [{ indications: ['right'], valid: true }, { indications: ['left'], valid: false }] }] },
+      { name: '', distance: 0, duration: 0, maneuver: { location: [g[2].lon, g[2].lat], type: 'arrive' } },
+    ] }],
+  });
+  assert.equal(r.steps[0].lanes, null);
+  assert.equal(r.steps[1].lanes.length, 2);
+  assert.equal(r.steps[1].lanes[0].on, true);
+});
+
+test('junction views: candidates picked, scene projected approach-up', () => {
+  const { route } = makeRoute(); // north 1000 m, then right turn east
+  // synthesize a sharp turn step to check candidate filtering
+  const cands = A.junctionCandidates([
+    { type: 'depart', modifier: '' }, { type: 'roundabout', modifier: '' },
+    { type: 'turn', modifier: 'sharp left' }, { type: 'turn', modifier: 'left' },
+    { type: 'fork', modifier: 'slight right' }, { type: 'arrive', modifier: '' },
+  ]);
+  same(cands, [1, 2, 4]);
+  // the real turn at 1000 m: approach is northbound, so "up" is north
+  const turn = route.steps[1];
+  const base = { lat: 51.5, lon: -0.1 };
+  const crossroad = []; // an east–west road through the junction
+  for (let m = -100; m <= 100; m += 20) crossroad.push(A.destinationPoint(A.destinationPoint(base, 0, 1000), 90, m));
+  const scene = A.buildJunctionView(route, turn, [crossroad], 120);
+  assert.ok(scene.roads.length >= 1, 'crossroad survives clipping');
+  // crossroad runs east–west through origin → its points sit near y≈0, x spans ±
+  const road = scene.roads[0];
+  const xs = road.map((p) => p.x), ys = road.map((p) => p.y);
+  assert.ok(Math.max(...xs) > 60 && Math.min(...xs) < -60, 'spans east–west');
+  assert.ok(Math.max(...ys.map(Math.abs)) < 10, 'flat across the junction');
+  // the route path enters from the bottom (+y = behind us) and exits right (+x = east)
+  assert.ok(scene.path.length > 5);
+  assert.ok(scene.path[0].y > 60, 'approach comes up from the bottom');
+  const last = scene.path[scene.path.length - 1];
+  assert.ok(last.x > 60 && Math.abs(last.y) < 25, 'exit heads out to the right');
+});
+
 test('3D buildings: height parsing, perspective factor, wall shading', () => {
   assert.equal(A.buildingHeightM({ height: '25' }), 25);
   assert.equal(A.buildingHeightM({ height: '25 m' }), 25);

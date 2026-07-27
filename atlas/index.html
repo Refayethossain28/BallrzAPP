@@ -238,6 +238,31 @@
   #limitVal { font-size: 18px; font-weight: 900; line-height: 1; }
   #limitUnit { font-size: 8px; font-weight: 800; color: #6b7280; text-transform: uppercase; }
 
+  /* 🛣 lane guidance bar */
+  #laneBar {
+    position: fixed; z-index: 46; left: 50%; transform: translateX(-50%);
+    top: calc(98px + var(--sat)); background: var(--panel-solid);
+    border: 1px solid var(--line); border-radius: 14px; padding: 5px 7px;
+    display: none; gap: 5px; box-shadow: var(--shadow);
+  }
+  #laneBar.show { display: flex; }
+  .laneSlot { width: 32px; height: 36px; border-radius: 9px; background: rgba(255,255,255,0.05);
+    display: flex; align-items: center; justify-content: center; }
+  .laneSlot.on { background: rgba(56,189,248,0.22); box-shadow: inset 0 0 0 1.5px var(--accent); }
+  .laneSlot svg { width: 23px; height: 23px; }
+  .laneSlot:not(.on) svg { opacity: 0.32; }
+
+  /* 🛣 junction view card */
+  #junctionCard {
+    position: fixed; z-index: 45; left: 12px; right: 12px; top: calc(146px + var(--sat));
+    background: rgba(10,16,30,0.93); border: 1px solid var(--line); border-radius: 18px;
+    box-shadow: var(--shadow); display: none; padding: 10px 10px 8px;
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  }
+  #junctionCard.show { display: block; }
+  #junctionTitle { font-size: 12.5px; color: #a7f3d0; text-align: center; margin-bottom: 6px; font-weight: 650; }
+  #junctionCanvas { display: block; width: 100%; height: 172px; border-radius: 12px; }
+
   /* 🚦 traffic incident alert */
   #trafChip {
     position: fixed; z-index: 44; left: 50%; transform: translateX(-50%);
@@ -498,6 +523,9 @@
     <strong>🏙 real 3D buildings</strong> (OSM footprints with real heights, extruded and
     light-shaded on-canvas), and <strong>your car</strong> as the position marker; guidance, snapping, phrasing and ETA
     come from the pure, unit-tested navigation engine (<code>engine.js</code>).
+    Turn-by-turn includes <strong>🛣 lane guidance</strong> (real OSM lane arrows, your lanes
+    lit) and <strong>junction views</strong> — honest auto-generated schematics of complex
+    junctions built from the real surrounding roads, your path glowing through them.
     Things no other satnav does: <strong>🌅 sun-glare forecast</strong> (amber dashes on the route
     where you'll drive into a low sun), <strong>🏁 co-driver rally pace notes</strong>,
     <strong>🛰 tunnel-proof dead reckoning</strong> when GPS drops, a <strong>📼 flight recorder</strong>
@@ -615,6 +643,11 @@
 <div id="limitSign" aria-label="Speed limit"><div id="limitVal">30</div><div id="limitUnit">km/h</div></div>
 <div id="camChip">📷 Speed camera</div>
 <div id="trafChip">⚠ Traffic ahead</div>
+<div id="laneBar" aria-label="Lane guidance"></div>
+<div id="junctionCard" aria-label="Junction view">
+  <div id="junctionTitle"></div>
+  <canvas id="junctionCanvas"></canvas>
+</div>
 
 <div id="dashcamBox">
   <video id="dashcamVideo" muted playsinline autoplay></video>
@@ -747,6 +780,17 @@ function fromScreen(s) {
 }
 
 var needsDraw = true;
+// iOS Safari has no CanvasRenderingContext2D.filter — detect once and fall
+// back to a composite-based night inversion so night mode works everywhere.
+var FILTER_OK = (function () {
+  try {
+    ctx.filter = 'invert(1)';
+    var ok = String(ctx.filter).indexOf('invert') !== -1;
+    ctx.filter = 'none';
+    return ok;
+  } catch (e) { return false; }
+})();
+
 function draw() {
   var night = nightMode();
   var layer = settings.baseLayer === 'sat' ? 'sat' : 'map';
@@ -768,10 +812,12 @@ function draw() {
   ctx.translate(-c.x, -c.y);
   // night inverts the drawn map; satellite imagery just dims a little.
   // day map gets a whisper of saturation for the modern look.
-  ctx.filter = layer === 'sat'
-    ? (night ? 'brightness(0.82) saturate(0.9)' : 'saturate(1.05)')
-    : (night ? 'invert(1) hue-rotate(180deg) brightness(0.86) contrast(0.92) saturate(0.65)'
-             : 'saturate(1.06) contrast(1.03)');
+  if (FILTER_OK) {
+    ctx.filter = layer === 'sat'
+      ? (night ? 'brightness(0.82) saturate(0.9)' : 'saturate(1.05)')
+      : (night ? 'invert(1) hue-rotate(180deg) brightness(0.86) contrast(0.92) saturate(0.65)'
+               : 'saturate(1.06) contrast(1.03)');
+  }
 
   var t0x = Math.floor((c.x - radius) / A.TILE), t1x = Math.floor((c.x + radius) / A.TILE);
   var t0y = Math.floor((c.y - radius) / A.TILE), t1y = Math.floor((c.y + radius) / A.TILE);
@@ -792,8 +838,24 @@ function draw() {
       }
     }
   }
-  ctx.filter = 'none';
+  if (FILTER_OK) ctx.filter = 'none';
   ctx.restore();
+
+  // Safari fallback: invert the tiles via compositing (tiles only — the
+  // buildings, route and markers paint after this in their own colours)
+  if (!FILTER_OK && night) {
+    if (layer === 'map') {
+      ctx.globalCompositeOperation = 'difference';
+      ctx.fillStyle = '#efe9dd';
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = 'rgba(10,16,32,0.30)';
+      ctx.fillRect(0, 0, W, H);
+    } else {
+      ctx.fillStyle = 'rgba(2,6,14,0.35)';
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
 
   drawBuildings(night);
   drawRoutes(night);
@@ -811,24 +873,37 @@ function draw() {
    quads shaded by a fixed NW light (engine.wallShade), painted far-to-near.
    Fetched per area from Overpass, only at close zooms, never on satellite. */
 
-var bld = { items: [], key: null, inflight: false };
-var BLD_MIN_ZOOM = 15.6, BLD_DRAW_CAP = 900;
+var bld = { items: [], key: null, inflight: false, failAt: 0 };
+var BLD_MIN_ZOOM = 15.4, BLD_DRAW_CAP = 900;
+
+function overpassQuery(q) {
+  var attempt = function (i) {
+    if (i >= OVERPASS.length) return Promise.reject(new Error('overpass unavailable'));
+    return fetch(OVERPASS[i], { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'data=' + encodeURIComponent(q) })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .catch(function (e) { return i + 1 < OVERPASS.length ? attempt(i + 1) : Promise.reject(e); });
+  };
+  return attempt(0);
+}
 
 function maybeFetchBuildings() {
   if (settings.buildings !== 'on' || settings.baseLayer === 'sat') return;
   if (view.zoom < BLD_MIN_ZOOM) return;
   var key = Math.round(view.lat * 220) + '/' + Math.round(view.lon * 140);
   if (key === bld.key || bld.inflight) return;
+  if (Date.now() - bld.failAt < 30000) return; // cool off after a failure, then retry
   bld.inflight = true;
+  // keep the box tight (~900 m square): Overpass caps the reply, and a huge
+  // box in a dense city returns a scatter of buildings that may all be
+  // outside the viewport. Panning re-fetches per ~500 m region anyway.
   var mpp = A.metresPerPixel(view.lat, view.zoom);
-  var halfM = Math.max(W, H) * 0.8 * mpp;
+  var halfM = Math.min(460, Math.max(W, H) * 0.8 * mpp);
   var dLat = halfM / 111320, dLon = dLat / Math.max(0.2, Math.cos(view.lat * Math.PI / 180));
   var q = '[out:json][timeout:12];way["building"](' +
     (view.lat - dLat).toFixed(5) + ',' + (view.lon - dLon).toFixed(5) + ',' +
-    (view.lat + dLat).toFixed(5) + ',' + (view.lon + dLon).toFixed(5) + ');out geom 1500;';
-  fetch(OVERPASS[0], { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: 'data=' + encodeURIComponent(q) })
-    .then(function (r) { if (!r.ok) throw 0; return r.json(); })
+    (view.lat + dLat).toFixed(5) + ',' + (view.lon + dLon).toFixed(5) + ');out geom 2500;';
+  overpassQuery(q)
     .then(function (json) {
       bld.items = (json.elements || []).filter(function (w) { return w.geometry && w.geometry.length > 3; })
         .map(function (w) {
@@ -838,7 +913,7 @@ function maybeFetchBuildings() {
       bld.key = key;
       needsDraw = true;
     })
-    .catch(function () { bld.key = key; }) // don't hammer a failing endpoint
+    .catch(function () { bld.failAt = Date.now(); })
     .then(function () { bld.inflight = false; });
 }
 
@@ -1396,7 +1471,12 @@ var DEMO_OSRM = (function () {
       { name: 'Constitution Hill', distance: 610, duration: 75,
         maneuver: { location: g[0], type: 'depart', bearing_after: 96 } },
       { name: 'The Mall', distance: 160, duration: 25, exit: 2,
-        maneuver: { location: g[6], type: 'roundabout', exit: 2 } },
+        maneuver: { location: g[6], type: 'roundabout', exit: 2 },
+        intersections: [{ lanes: [
+          { indications: ['left'], valid: false },
+          { indications: ['straight'], valid: true },
+          { indications: ['right'], valid: false },
+        ] }] },
       { name: 'The Mall', distance: 850, duration: 110,
         maneuver: { location: g[11], type: 'exit roundabout' } },
       { name: 'Trafalgar Square', distance: 180, duration: 40,
@@ -1741,6 +1821,15 @@ function startNav(demo) {
   nav.noteIdx = 0; nav.noteSpoken = {};
   nav.lastAlong = 0; nav.lastFixTs = Date.now(); nav.ghostCount = 0; nav.ghosting = false;
   if (!demo && !nav.ghostTimer) nav.ghostTimer = setInterval(ghostTick, 1000);
+  // 🛣 lane bar + junction views
+  nav.laneSig = ''; nav.junctionCands = A.junctionCandidates(route.steps);
+  nav.junctions = {}; nav.junctionScene = {}; nav.junctionShown = null;
+  if (demo) {
+    // bundled roads around the Victoria Memorial roundabout — demos offline
+    nav.junctionCands.forEach(function (ci) {
+      if (route.steps[ci].type === 'roundabout') nav.junctions[ci] = demoJunctionWays(route, ci);
+    });
+  } else prefetchJunctions(route);
   // 🚦 traffic view for this route (typical factor + snapped incidents)
   var rtTraf = route.traffic || { mapped: [], factor: 1 };
   nav.trafMapped = settings.traffic === 'on' ? rtTraf.mapped : [];
@@ -1856,6 +1945,34 @@ function onNavFix(fix) {
     if (!nav.trafSpoken[tKey]) { nav.trafSpoken[tKey] = 1; trafWarn = trafHit.inc; }
   } else $('trafChip').classList.remove('show');
 
+  // 🛣 lane bar: light your lanes as the maneuver approaches
+  var nIdx = r.stepIndex + 1;
+  renderLaneBar(!r.offRoute && !r.arrived && r.nextStep.lanes &&
+                r.distToNext <= Math.max(320, v * 13) ? r.nextStep.lanes : null);
+
+  // 🛣 junction view: schematic of complex junctions as you approach
+  var jShow = false;
+  if (!r.offRoute && !r.arrived && nav.junctions && nav.junctions[nIdx] && nav.junctions[nIdx].length &&
+      r.distToNext <= Math.max(280, v * 11)) {
+    if (!(nIdx in nav.junctionScene)) {
+      try { nav.junctionScene[nIdx] = A.buildJunctionView(nav.route, nav.route.steps[nIdx], nav.junctions[nIdx], 120); }
+      catch (e) { nav.junctionScene[nIdx] = null; }
+    }
+    var scene = nav.junctionScene[nIdx];
+    if (scene && scene.path.length > 3) {
+      if (nav.junctionShown !== nIdx) {
+        nav.junctionShown = nIdx;
+        $('junctionCard').classList.add('show');
+        drawJunction(scene, nav.route.steps[nIdx].instruction);
+      }
+      jShow = true;
+    }
+  }
+  if (!jShow && nav.junctionShown != null) {
+    nav.junctionShown = null;
+    $('junctionCard').classList.remove('show');
+  }
+
   if (r.announce) speak(r.announce.text);
   else if (os.warn) speak('Watch your speed — the limit is ' + limitLabel(limitKmh));
   else if (trafWarn) speak('Traffic ahead — ' + trafWarn.kind.toLowerCase() + ' in ' + A.speakDist(trafHit.distM, settings.units));
@@ -1880,6 +1997,106 @@ function updateLimitSign(limitKmh) {
     ? Math.round(limitKmh / 1.609344) : Math.round(limitKmh));
   $('limitUnit').textContent = settings.units === 'imperial' ? 'mph' : 'km/h';
   $('limitSign').classList.add('show');
+}
+
+/* -------------------- 🛣 lane guidance + junction views ------------------ */
+
+function renderLaneBar(lanes) {
+  if (!lanes) {
+    if (nav.laneSig) { nav.laneSig = ''; $('laneBar').classList.remove('show'); }
+    return;
+  }
+  var sig = lanes.map(function (l) { return l.icon + (l.on ? '1' : '0'); }).join(',');
+  if (sig !== nav.laneSig) {
+    nav.laneSig = sig;
+    $('laneBar').innerHTML = lanes.map(function (l) {
+      return '<div class="laneSlot' + (l.on ? ' on' : '') + '">' + (ICONS[l.icon] || ICONS.straight) + '</div>';
+    }).join('');
+  }
+  $('laneBar').classList.add('show');
+}
+
+/** Real roads around each complex maneuver, one batched Overpass query. */
+function prefetchJunctions(route) {
+  var cands = (nav.junctionCands || []).slice(0, 5);
+  if (!cands.length) return;
+  var parts = cands.map(function (i) {
+    var p = A.pointAtAlong(route, route.steps[i].alongM);
+    return 'way[highway](around:130,' + p.lat.toFixed(5) + ',' + p.lon.toFixed(5) + ');';
+  });
+  overpassQuery('[out:json][timeout:12];(' + parts.join('') + ');out geom 400;').then(function (json) {
+    if (!nav.active || nav.route !== route) return;
+    var ways = (json.elements || []).filter(function (w) { return w.geometry && w.geometry.length > 1; })
+      .map(function (w) { return w.geometry.map(function (g) { return { lat: g.lat, lon: g.lon }; }); });
+    cands.forEach(function (i) {
+      var p = A.pointAtAlong(route, route.steps[i].alongM);
+      nav.junctions[i] = ways.filter(function (w) {
+        return w.some(function (pt) { return A.haversine(pt, p) < 170; });
+      });
+    });
+  }).catch(function () {});
+}
+
+/** Bundled junction roads for the demo roundabout (works offline). */
+function demoJunctionWays(route, stepIdx) {
+  var c = A.pointAtAlong(route, route.steps[stepIdx].alongM);
+  function arm(brg) {
+    var w = [];
+    for (var m = 18; m <= 130; m += 22) w.push(A.destinationPoint(c, brg, m));
+    return w;
+  }
+  var circle = [];
+  for (var a = 0; a <= 360; a += 30) circle.push(A.destinationPoint(c, a, 20));
+  return [circle, arm(276), arm(68), arm(170), arm(210)];
+}
+
+/** Paint the schematic: real roads grey, your path glowing through them. */
+function drawJunction(scene, instruction) {
+  $('junctionTitle').textContent = instruction;
+  var cv = $('junctionCanvas');
+  var cw = cv.clientWidth || (W - 44), chh = 172;
+  cv.width = Math.round(cw * DPR); cv.height = Math.round(chh * DPR);
+  var c = cv.getContext('2d');
+  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  c.fillStyle = '#0b1220'; c.fillRect(0, 0, cw, chh);
+  var scale = (chh * 0.92) / (scene.r * 2);
+  var ox = cw / 2, oy = chh * 0.54;
+  function P(p) { return { x: ox + p.x * scale, y: oy + p.y * scale }; }
+  function strokeSeg(seg) {
+    c.beginPath();
+    for (var i = 0; i < seg.length; i++) { var q = P(seg[i]); i ? c.lineTo(q.x, q.y) : c.moveTo(q.x, q.y); }
+    c.stroke();
+  }
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  c.strokeStyle = '#38445f'; c.lineWidth = Math.max(7, 11 * scale);
+  scene.roads.forEach(strokeSeg);
+  c.strokeStyle = '#232c42'; c.lineWidth = 1.2;
+  scene.roads.forEach(strokeSeg);
+  if (scene.path.length > 1) {
+    c.strokeStyle = 'rgba(8,25,60,0.9)'; c.lineWidth = Math.max(8, 9 * scale);
+    strokeSeg(scene.path);
+    c.save();
+    c.shadowColor = 'rgba(56,189,248,0.8)'; c.shadowBlur = 9;
+    c.strokeStyle = '#38bdf8'; c.lineWidth = Math.max(5, 6 * scale);
+    strokeSeg(scene.path);
+    c.restore();
+    // arrowhead at the exit
+    var n = scene.path.length;
+    var e1 = P(scene.path[n - 2]), e2 = P(scene.path[n - 1]);
+    var ang = Math.atan2(e2.y - e1.y, e2.x - e1.x);
+    c.beginPath();
+    c.moveTo(e2.x + Math.cos(ang) * 10, e2.y + Math.sin(ang) * 10);
+    c.lineTo(e2.x + Math.cos(ang + 2.5) * 9, e2.y + Math.sin(ang + 2.5) * 9);
+    c.lineTo(e2.x + Math.cos(ang - 2.5) * 9, e2.y + Math.sin(ang - 2.5) * 9);
+    c.closePath();
+    c.fillStyle = '#7dd3fc'; c.fill();
+    // you, entering from the bottom
+    var s0 = P(scene.path[0]);
+    c.beginPath(); c.arc(s0.x, s0.y, 5, 0, 7);
+    c.fillStyle = '#fff'; c.fill();
+    c.beginPath(); c.arc(s0.x, s0.y, 3, 0, 7);
+    c.fillStyle = '#2f7ff6'; c.fill();
+  }
 }
 
 /* 🏁 co-driver: call the next corner rally-style, without talking over the
@@ -2051,6 +2268,9 @@ function stopNavUI() {
   $('limitSign').classList.remove('show');
   $('camChip').classList.remove('show');
   $('trafChip').classList.remove('show');
+  $('laneBar').classList.remove('show');
+  $('junctionCard').classList.remove('show');
+  nav.laneSig = ''; nav.junctionShown = null;
   $('btnCompass').style.display = 'none';
   releaseWakeLock();
   if (window.speechSynthesis) window.speechSynthesis.cancel();
