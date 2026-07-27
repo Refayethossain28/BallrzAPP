@@ -55,6 +55,31 @@ services:
       - key: VAPID_PRIVATE_KEY         # web-push signing (secret half)
         sync: false
 
+  # Voyager proxy — the full-browser proxy that lets the hosted Voyager open
+  # sites which refuse to be framed (Google, most logins). Zero-dependency,
+  # nothing to build. After deploy, paste "<this-service-url>/proxy" into
+  # Voyager → Settings → Full browser (proxy). Full guide: voyager/DEPLOY.md.
+  - type: web
+    name: voyager-proxy
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node voyager/server.mjs
+    healthCheckPath: /__voyager/ping
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22.11.0"
+      # Bind all interfaces so Render can reach the process.
+      - key: HOST
+        value: 0.0.0.0
+      # Only your Voyager app may use the proxy (soft open-relay guard).
+      # Comma-separate more origins if you open Voyager from elsewhere too.
+      - key: ALLOWED_ORIGINS
+        value: https://refayethossain28.github.io
+      # PORT is injected by Render; server.mjs honours it. Leave
+      # VOYAGER_ALLOW_PRIVATE unset in production (keeps the SSRF guard on).
+
 databases:
   - name: fixr-db
     plan: free

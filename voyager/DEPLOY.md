@@ -35,18 +35,27 @@ that blocks internal/loopback hosts, and is only for local dev/tests.
 
 ## Option A — Render.com (free tier, no card, easiest)
 
-1. Push this repo to GitHub (already done).
-2. On Render: **New → Web Service**, connect the repo.
-3. Settings:
-   - **Runtime:** Node
-   - **Build command:** *(leave empty)*
-   - **Start command:** `node voyager/server.mjs`
-   - **Environment:** add `HOST=0.0.0.0` and
-     `ALLOWED_ORIGINS=https://refayethossain28.github.io`
-4. Deploy. Render gives you a URL like `https://voyager-proxy.onrender.com`.
-5. In Voyager → **Settings → Full browser (proxy)**, paste
+The repo already ships a Render **Blueprint** (`render.yaml`) with a
+`voyager-proxy` service, so this is nearly one click:
+
+1. On [dashboard.render.com](https://dashboard.render.com): **New → Blueprint**.
+2. Pick this repo (`refayethossain28/BallrzAPP`) and the `main` branch → **Apply**.
+   Render reads `render.yaml`, finds `voyager-proxy`, and deploys it with
+   `HOST=0.0.0.0` and `ALLOWED_ORIGINS=https://refayethossain28.github.io`
+   already set. (The blueprint also lists other apps — deploy only
+   `voyager-proxy` if that's all you want.)
+3. When it's live, copy its URL, e.g. `https://voyager-proxy.onrender.com`.
+4. In Voyager → **Settings → Full browser (proxy)**, paste
    `https://voyager-proxy.onrender.com/proxy` (note the **/proxy**). The status
-   line should turn green **✓ connected**. Now open Google.
+   line turns green **✓ connected**. Now open Google.
+
+Prefer to do it by hand instead of the blueprint? **New → Web Service**, connect
+the repo, Runtime **Node**, Build command `npm install`, Start command
+`node voyager/server.mjs`, and add the two env vars above.
+
+> Free-tier note: Render spins the service down after ~15 min idle, so the
+> first page after a nap takes ~30s to wake. A paid instance or a cheap
+> always-on host avoids that.
 
 ## Option B — Fly.io / Railway
 
