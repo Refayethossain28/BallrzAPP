@@ -199,6 +199,26 @@
   function isHtml(ct) { return /\btext\/html|application\/xhtml\+xml/i.test(String(ct || '')); }
   function isCss(ct) { return /\btext\/css/i.test(String(ct || '')); }
 
+  /**
+   * Soft open-relay guard for a PUBLICLY DEPLOYED proxy: is `origin` (the
+   * Origin/Referer of an incoming /proxy request) allowed by `allowlist`?
+   * An empty allowlist means "no restriction" (fine for a localhost box).
+   * A missing origin is allowed only when the allowlist is empty — a deployed
+   * proxy with an allowlist rejects requests that don't declare a known origin.
+   * Referer/Origin can be spoofed, so this only stops casual abuse; the real
+   * protections are the SSRF host guard and keeping the deployment small.
+   */
+  function originAllowed(origin, allowlist) {
+    var list = (allowlist || []).map(function (o) { return String(o).replace(/\/+$/, '').toLowerCase(); }).filter(Boolean);
+    if (!list.length) return true;
+    var o = String(origin == null ? '' : origin).toLowerCase();
+    if (!o) return false;
+    // origin may arrive as a full Referer URL — reduce to scheme://host[:port]
+    var m = /^([a-z][a-z0-9+.-]*:\/\/[^/?#]+)/i.exec(o);
+    var norm = (m ? m[1] : o).replace(/\/+$/, '');
+    return list.indexOf(norm) !== -1;
+  }
+
   return {
     absolutize: absolutize,
     proxify: proxify,
@@ -210,6 +230,7 @@
     rewriteHtml: rewriteHtml,
     isDroppedHeader: isDroppedHeader,
     isBlockedHost: isBlockedHost,
+    originAllowed: originAllowed,
     isHtml: isHtml,
     isCss: isCss,
   };
