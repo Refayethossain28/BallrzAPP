@@ -4,7 +4,7 @@
  * opportunistically in their own bounded cache so areas you've seen keep
  * working offline; routing/search requests are never cached (live answers
  * or an honest failure). Bump CACHE to force a clean reinstall. */
-const CACHE = 'atlas-v7';
+const CACHE = 'atlas-v8';
 const TILE_CACHE = 'atlas-tiles-v1';
 const TILE_LIMIT = 600;
 const ASSETS = ['./', './index.html', './engine.js', './config.js', './manifest.json',
@@ -36,8 +36,9 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
 
-  // map tiles: cache-first with background top-up, bounded LRU-ish cache
-  if (/tile\.openstreetmap\.org$/.test(url.hostname)) {
+  // map + satellite tiles: cache-first with background top-up, bounded cache
+  if (/tile\.openstreetmap\.org$/.test(url.hostname) ||
+      (/server\.arcgisonline\.com$/.test(url.hostname) && /World_Imagery/.test(url.pathname))) {
     e.respondWith(
       caches.open(TILE_CACHE).then((c) =>
         c.match(req).then((hit) => {

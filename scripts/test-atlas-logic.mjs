@@ -645,6 +645,27 @@ test('overspeedUpdate: tolerance, 3 s hysteresis, single warning, resets under l
   assert.equal(A.overspeedUpdate(null, 200, null, 1).over, false, 'no limit, no judgement');
 });
 
+test('3D buildings: height parsing, perspective factor, wall shading', () => {
+  assert.equal(A.buildingHeightM({ height: '25' }), 25);
+  assert.equal(A.buildingHeightM({ height: '25 m' }), 25);
+  assert.equal(A.buildingHeightM({ 'building:levels': '4' }), 12);
+  assert.equal(A.buildingHeightM({}), 8, 'modest default');
+  assert.equal(A.buildingHeightM({ height: '9999' }), 150, 'clamped');
+  assert.equal(A.buildingHeightM({ height: 'tall' }), 8, 'junk → default');
+  // taller buildings lean more; zooming out flattens; always bounded
+  const lat = 51.5;
+  assert.ok(A.roofFactor(60, lat, 17) > A.roofFactor(10, lat, 17));
+  assert.ok(A.roofFactor(30, lat, 17) > A.roofFactor(30, lat, 15), 'zoom in → more lean');
+  assert.ok(A.roofFactor(150, lat, 19) <= 0.22, 'clamped');
+  assert.ok(A.roofFactor(3, lat, 12) >= 0);
+  // NW light: a north-facing wall (edge running west→east seen from south,
+  // i.e. outward normal up-screen) is brighter than a south-facing one
+  const northFace = A.wallShade(0, 0, 10, 0);   // normal (0,-1): toward light
+  const southFace = A.wallShade(10, 0, 0, 0);   // normal (0, 1): away
+  assert.ok(northFace > southFace);
+  for (const s of [northFace, southFace]) assert.ok(s >= 0 && s <= 1);
+});
+
 test('typicalTrafficFactor: peaks, nights and weekends behave like real roads', () => {
   const tue = 2, sat = 6;
   const amPeak = A.typicalTrafficFactor(8.5, tue), pmPeak = A.typicalTrafficFactor(17.5, tue);

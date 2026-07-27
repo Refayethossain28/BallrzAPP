@@ -57,7 +57,26 @@
   button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
   input { font: inherit; color: inherit; }
 
-  #map { position: fixed; inset: 0; display: block; background: #0d1322; }
+  /* 3D driving view: the canvas lives on a perspective stage; navigation
+     tilts the whole map plane like a windshield view. Pure CSS — the tile
+     engine stays 2D and cheap. */
+  #mapWrap { position: fixed; inset: 0; overflow: hidden; perspective: 950px; background: #0d1322; }
+  #map { position: absolute; inset: 0; display: block; background: #0d1322;
+    transform-origin: 50% 72%; transition: transform .45s cubic-bezier(.4,.1,.2,1); }
+  #map.threeD { transform: rotateX(52deg) scale(1.75); }
+  #vignette { position: fixed; inset: 0; pointer-events: none; z-index: 20;
+    background: radial-gradient(120% 90% at 50% 45%, transparent 58%, rgba(4,8,18,0.38) 100%); }
+
+  /* layers card */
+  #layersCard {
+    position: fixed; z-index: 60; right: 70px; bottom: calc(258px + var(--sab));
+    background: var(--panel); border: 1px solid var(--line); border-radius: 18px;
+    box-shadow: var(--shadow); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    padding: 14px 16px; display: none; min-width: 230px;
+  }
+  #layersCard.show { display: block; }
+  #layersCard .lrow { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+  #layersCard .lrow .ll { flex: 1; font-size: 13px; color: var(--dim); }
 
   /* ---------- floating chrome ---------- */
   .fab {
@@ -349,7 +368,23 @@
 </head>
 <body>
 
-<canvas id="map"></canvas>
+<div id="mapWrap"><canvas id="map"></canvas></div>
+<div id="vignette"></div>
+
+<div id="layersCard" role="dialog" aria-label="Map layers">
+  <div class="lrow"><div class="ll">Style</div>
+    <div class="seg" id="segLayer"><button data-v="map">🗺 Map</button><button data-v="sat">🛰 Satellite</button></div>
+  </div>
+  <div class="lrow"><div class="ll">View</div>
+    <div class="seg" id="segView"><button data-v="off">2D</button><button data-v="on">3D drive</button></div>
+  </div>
+  <div class="lrow"><div class="ll">Buildings</div>
+    <div class="seg" id="segBuildings"><button data-v="on">🏙 3D</button><button data-v="off">Off</button></div>
+  </div>
+  <div class="lrow"><div class="ll">Theme</div>
+    <div class="seg" id="segTheme2"><button data-v="auto">Auto</button><button data-v="day">Day</button><button data-v="night">Night</button></div>
+  </div>
+</div>
 
 <div id="topBar">
   <button id="searchPill" aria-label="Search destination">
@@ -458,8 +493,11 @@
   </div>
   <div id="aboutBox">
     <strong style="color:var(--text)">◮ Atlas</strong> — your own satnav. The map is drawn by a
-    from-scratch canvas engine; guidance, snapping, phrasing and ETA come from the pure,
-    unit-tested navigation engine (<code>engine.js</code>).
+    from-scratch canvas engine — with a <strong>🛰 satellite layer</strong> (Esri World
+    Imagery), a <strong>3D drive view</strong> that tilts the world while you navigate,
+    <strong>🏙 real 3D buildings</strong> (OSM footprints with real heights, extruded and
+    light-shaded on-canvas), and <strong>your car</strong> as the position marker; guidance, snapping, phrasing and ETA
+    come from the pure, unit-tested navigation engine (<code>engine.js</code>).
     Things no other satnav does: <strong>🌅 sun-glare forecast</strong> (amber dashes on the route
     where you'll drive into a low sun), <strong>🏁 co-driver rally pace notes</strong>,
     <strong>🛰 tunnel-proof dead reckoning</strong> when GPS drops, a <strong>📼 flight recorder</strong>
@@ -623,7 +661,7 @@ function load(key, fallback) {
 }
 function save(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) {} }
 
-var settings = Object.assign({ units: 'metric', voice: 'on', theme: 'auto', codriver: 'off', cameras: 'on', traffic: 'on' }, load('atlas.settings', {}));
+var settings = Object.assign({ units: 'metric', voice: 'on', theme: 'auto', codriver: 'off', cameras: 'on', traffic: 'on', baseLayer: 'map', view3d: 'on', buildings: 'on' }, load('atlas.settings', {}));
 var places = load('atlas.places', []);     // {name, addr, lat, lon, kind?, uses, lastUsed}
 var recents = load('atlas.recents', []);   // same shape, capped
 var pace = load('atlas.pace', {});         // per-profile personal pace factor (learned)
@@ -655,21 +693,27 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-/* tile cache with a small LRU + in-flight bookkeeping */
+/* tile cache with a small LRU + in-flight bookkeeping. Two sources:
+   'map' = OpenStreetMap raster, 'sat' = Esri World Imagery (free tiles,
+   credit shown in the attribution line — note Esri's {z}/{y}/{x} order). */
 var tiles = {}, tileOrder = [], TILE_CAP = 380;
-var TILE_URL = function (z, x, y) { return 'https://tile.openstreetmap.org/' + z + '/' + x + '/' + y + '.png'; };
-function getTile(z, x, y) {
+var TILE_URL = function (layer, z, x, y) {
+  return layer === 'sat'
+    ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + y + '/' + x
+    : 'https://tile.openstreetmap.org/' + z + '/' + x + '/' + y + '.png';
+};
+function getTile(layer, z, x, y) {
   var n = Math.pow(2, z);
   if (y < 0 || y >= n) return null;
   x = ((x % n) + n) % n;
-  var key = z + '/' + x + '/' + y;
+  var key = layer + '|' + z + '/' + x + '/' + y;
   var t = tiles[key];
   if (t) return t;
   t = { img: new Image(), ok: false, err: false };
   t.img.crossOrigin = 'anonymous';
   t.img.onload = function () { t.ok = true; needsDraw = true; };
   t.img.onerror = function () { t.err = true; };
-  t.img.src = TILE_URL(z, x, y);
+  t.img.src = TILE_URL(layer, z, x, y);
   tiles[key] = t; tileOrder.push(key);
   if (tileOrder.length > TILE_CAP) {
     var drop = tileOrder.splice(0, 40);
@@ -705,8 +749,9 @@ function fromScreen(s) {
 var needsDraw = true;
 function draw() {
   var night = nightMode();
+  var layer = settings.baseLayer === 'sat' ? 'sat' : 'map';
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  ctx.fillStyle = night ? '#0d1322' : '#e8e4dc';
+  ctx.fillStyle = layer === 'sat' ? '#090d12' : (night ? '#0d1322' : '#e8e4dc');
   ctx.fillRect(0, 0, W, H);
 
   var z = Math.max(2, Math.min(19, Math.floor(view.zoom)));
@@ -714,29 +759,35 @@ function draw() {
   var c = A.lonLatToWorld(view, z);
   var a = anchor();
   var radius = Math.hypot(Math.max(a.x, W - a.x), Math.max(a.y, H - a.y)) / scale + A.TILE;
+  // the 3D tilt magnifies (scale 1.75) — same visible area, tiles unchanged
 
   ctx.save();
   ctx.translate(a.x, a.y);
   ctx.rotate(view.rot);
   ctx.scale(scale, scale);
   ctx.translate(-c.x, -c.y);
-  if (night) ctx.filter = 'invert(1) hue-rotate(180deg) brightness(0.86) contrast(0.92) saturate(0.65)';
+  // night inverts the drawn map; satellite imagery just dims a little.
+  // day map gets a whisper of saturation for the modern look.
+  ctx.filter = layer === 'sat'
+    ? (night ? 'brightness(0.82) saturate(0.9)' : 'saturate(1.05)')
+    : (night ? 'invert(1) hue-rotate(180deg) brightness(0.86) contrast(0.92) saturate(0.65)'
+             : 'saturate(1.06) contrast(1.03)');
 
   var t0x = Math.floor((c.x - radius) / A.TILE), t1x = Math.floor((c.x + radius) / A.TILE);
   var t0y = Math.floor((c.y - radius) / A.TILE), t1y = Math.floor((c.y + radius) / A.TILE);
   for (var ty = t0y; ty <= t1y; ty++) {
     for (var tx = t0x; tx <= t1x; tx++) {
-      var t = getTile(z, tx, ty);
+      var t = getTile(layer, z, tx, ty);
       if (t && t.ok) { ctx.drawImage(t.img, tx * A.TILE, ty * A.TILE, A.TILE, A.TILE); continue; }
       // parent-tile fallback keeps zooming smooth while children load
       var pz = z - 1, px = tx >> 1, py = ty >> 1;
       var pn = Math.pow(2, pz), pxx = ((px % pn) + pn) % pn;
-      var pt = tiles[pz + '/' + pxx + '/' + py];
+      var pt = tiles[layer + '|' + pz + '/' + pxx + '/' + py];
       if (pt && pt.ok) {
         var sx = (tx & 1) * A.TILE / 2, sy = (ty & 1) * A.TILE / 2;
         ctx.drawImage(pt.img, sx, sy, A.TILE / 2, A.TILE / 2, tx * A.TILE, ty * A.TILE, A.TILE, A.TILE);
       } else {
-        ctx.fillStyle = night ? '#101830' : '#ded9d0';
+        ctx.fillStyle = layer === 'sat' ? '#0c1118' : (night ? '#101830' : '#ded9d0');
         ctx.fillRect(tx * A.TILE, ty * A.TILE, A.TILE, A.TILE);
       }
     }
@@ -744,12 +795,102 @@ function draw() {
   ctx.filter = 'none';
   ctx.restore();
 
+  drawBuildings(night);
   drawRoutes(night);
   drawCameras();
   drawTraffic();
   drawConvoy();
   drawTapPin();
   drawGpsDot();
+  maybeFetchBuildings();
+}
+
+/* ------------------------- 🏙 3D extruded buildings ----------------------- */
+/* Real OSM footprints with real heights, extruded 2.5D on the canvas: roof
+   corners lean away from the camera by the engine's roofFactor, walls are
+   quads shaded by a fixed NW light (engine.wallShade), painted far-to-near.
+   Fetched per area from Overpass, only at close zooms, never on satellite. */
+
+var bld = { items: [], key: null, inflight: false };
+var BLD_MIN_ZOOM = 15.6, BLD_DRAW_CAP = 900;
+
+function maybeFetchBuildings() {
+  if (settings.buildings !== 'on' || settings.baseLayer === 'sat') return;
+  if (view.zoom < BLD_MIN_ZOOM) return;
+  var key = Math.round(view.lat * 220) + '/' + Math.round(view.lon * 140);
+  if (key === bld.key || bld.inflight) return;
+  bld.inflight = true;
+  var mpp = A.metresPerPixel(view.lat, view.zoom);
+  var halfM = Math.max(W, H) * 0.8 * mpp;
+  var dLat = halfM / 111320, dLon = dLat / Math.max(0.2, Math.cos(view.lat * Math.PI / 180));
+  var q = '[out:json][timeout:12];way["building"](' +
+    (view.lat - dLat).toFixed(5) + ',' + (view.lon - dLon).toFixed(5) + ',' +
+    (view.lat + dLat).toFixed(5) + ',' + (view.lon + dLon).toFixed(5) + ');out geom 1500;';
+  fetch(OVERPASS[0], { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'data=' + encodeURIComponent(q) })
+    .then(function (r) { if (!r.ok) throw 0; return r.json(); })
+    .then(function (json) {
+      bld.items = (json.elements || []).filter(function (w) { return w.geometry && w.geometry.length > 3; })
+        .map(function (w) {
+          return { pts: w.geometry.map(function (g) { return { lat: g.lat, lon: g.lon }; }),
+                   h: A.buildingHeightM(w.tags) };
+        });
+      bld.key = key;
+      needsDraw = true;
+    })
+    .catch(function () { bld.key = key; }) // don't hammer a failing endpoint
+    .then(function () { bld.inflight = false; });
+}
+
+function drawBuildings(night) {
+  if (settings.buildings !== 'on' || settings.baseLayer === 'sat') return;
+  if (view.zoom < BLD_MIN_ZOOM || !bld.items.length) return;
+  var a = anchor(), M = 70;
+  var list = [];
+  for (var bi = 0; bi < bld.items.length; bi++) {
+    var b = bld.items[bi];
+    var sp = [], inView = false;
+    for (var i = 0; i < b.pts.length; i++) {
+      var s = toScreen(b.pts[i]);
+      sp.push(s);
+      if (s.x > -M && s.x < W + M && s.y > -M && s.y < H + M) inView = true;
+    }
+    if (!inView) continue;
+    var f = A.roofFactor(b.h, view.lat, view.zoom);
+    var rp = [], cx = 0, cy = 0;
+    for (var j = 0; j < sp.length; j++) {
+      rp.push({ x: sp[j].x + (sp[j].x - a.x) * f, y: sp[j].y + (sp[j].y - a.y) * f });
+      cx += sp[j].x; cy += sp[j].y;
+    }
+    cx /= sp.length; cy /= sp.length;
+    list.push({ sp: sp, rp: rp, d: Math.hypot(cx - a.x, cy - a.y) });
+    if (list.length >= BLD_DRAW_CAP) break;
+  }
+  list.sort(function (p, q) { return q.d - p.d; }); // far first, near paints over
+  for (var li = 0; li < list.length; li++) {
+    var bb = list[li], sp2 = bb.sp, rp2 = bb.rp;
+    for (var e = 0; e < sp2.length - 1; e++) {
+      var g0 = sp2[e], g1 = sp2[e + 1], r0 = rp2[e], r1 = rp2[e + 1];
+      var sh = A.wallShade(g0.x, g0.y, g1.x, g1.y);
+      ctx.beginPath();
+      ctx.moveTo(g0.x, g0.y); ctx.lineTo(g1.x, g1.y);
+      ctx.lineTo(r1.x, r1.y); ctx.lineTo(r0.x, r0.y);
+      ctx.closePath();
+      ctx.fillStyle = night
+        ? 'rgb(' + Math.round(18 + 30 * sh) + ',' + Math.round(24 + 36 * sh) + ',' + Math.round(38 + 48 * sh) + ')'
+        : 'rgb(' + Math.round(150 + 62 * sh) + ',' + Math.round(154 + 62 * sh) + ',' + Math.round(162 + 62 * sh) + ')';
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.moveTo(rp2[0].x, rp2[0].y);
+    for (var v = 1; v < rp2.length; v++) ctx.lineTo(rp2[v].x, rp2[v].y);
+    ctx.closePath();
+    ctx.fillStyle = night ? '#2a3654' : '#e6e9ee';
+    ctx.fill();
+    ctx.lineWidth = 0.8;
+    ctx.strokeStyle = night ? 'rgba(120,145,200,0.25)' : 'rgba(90,100,120,0.28)';
+    ctx.stroke();
+  }
 }
 
 /* 🚦 incident markers (orange diamonds) on the active/selected route. */
@@ -826,8 +967,13 @@ function drawRoutes(night) {
   }
   var main = trip.routes[trip.selected];
   if (main) {
-    drawPolyline(main.geometry, night ? 'rgba(15,40,90,0.9)' : 'rgba(20,60,140,0.35)', 11);
+    var sat = settings.baseLayer === 'sat';
+    drawPolyline(main.geometry, sat ? 'rgba(255,255,255,0.85)' : (night ? 'rgba(15,40,90,0.9)' : 'rgba(20,60,140,0.35)'), 11);
+    ctx.save();
+    ctx.shadowColor = 'rgba(56,189,248,0.65)'; ctx.shadowBlur = 12;
     drawPolyline(main.geometry, '#2f7ff6', 7);
+    ctx.restore();
+    drawPolyline(main.geometry, 'rgba(125,211,252,0.85)', 2.5);
     // 🌅 stretches where you'll be driving into a low sun
     if (main.glare) {
       for (var gi = 0; gi < main.glare.length; gi++) {
@@ -849,28 +995,55 @@ function drawTapPin() {
   ctx.fillText('📍', s.x, s.y + 4);
 }
 
+function rrect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+/* Your position is a car. Drawn, not an emoji: a sleek top-down body with
+   a glass roof, headlight glow and a soft ground shadow, rotated to your
+   heading (which also tilts with the 3D view — like riding your own map). */
 function drawGpsDot() {
   var p = (nav.active && nav.demo && nav.simPos) ? nav.simPos : gps.fix;
   if (!p) return;
   var s = toScreen(p);
   if (p.acc) {
     var rPx = p.acc / A.metresPerPixel(p.lat, view.zoom);
-    if (rPx > 14 && rPx < 400) {
+    if (rPx > 16 && rPx < 400) {
       ctx.beginPath(); ctx.arc(s.x, s.y, rPx, 0, 7);
       ctx.fillStyle = 'rgba(56,189,248,0.10)'; ctx.fill();
     }
   }
-  var hdg = p.heading;
-  if (typeof hdg === 'number' && isFinite(hdg)) {
-    var rad = (hdg * Math.PI / 180) + view.rot;
-    ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(rad);
-    var g = ctx.createLinearGradient(0, -34, 0, 0);
-    g.addColorStop(0, 'rgba(56,189,248,0)'); g.addColorStop(1, 'rgba(56,189,248,0.45)');
-    ctx.beginPath(); ctx.moveTo(0, -2); ctx.lineTo(-13, -30); ctx.lineTo(13, -30); ctx.closePath();
-    ctx.fillStyle = g; ctx.fill(); ctx.restore();
-  }
-  ctx.beginPath(); ctx.arc(s.x, s.y, 10, 0, 7); ctx.fillStyle = '#fff'; ctx.fill();
-  ctx.beginPath(); ctx.arc(s.x, s.y, 7, 0, 7); ctx.fillStyle = '#2f7ff6'; ctx.fill();
+  var hdg = typeof p.heading === 'number' && isFinite(p.heading) ? p.heading : 0;
+  var rad = (hdg * Math.PI / 180) + view.rot;
+  ctx.save();
+  ctx.translate(s.x, s.y); ctx.rotate(rad);
+  // halo + ground shadow
+  ctx.beginPath(); ctx.arc(0, 0, 24, 0, 7);
+  ctx.fillStyle = 'rgba(56,189,248,0.14)'; ctx.fill();
+  ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 4;
+  // body
+  var g = ctx.createLinearGradient(0, -17, 0, 17);
+  g.addColorStop(0, '#7dd3fc'); g.addColorStop(0.45, '#38bdf8'); g.addColorStop(1, '#1d4ed8');
+  rrect(-9.5, -18, 19, 36, 8);
+  ctx.fillStyle = g; ctx.fill();
+  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.lineWidth = 2.2; ctx.strokeStyle = '#fff'; ctx.stroke();
+  // windshield + rear glass
+  rrect(-6.5, -10, 13, 8, 3.5);
+  ctx.fillStyle = 'rgba(15,23,42,0.8)'; ctx.fill();
+  rrect(-6, 5, 12, 6, 3);
+  ctx.fillStyle = 'rgba(15,23,42,0.55)'; ctx.fill();
+  // headlights
+  ctx.fillStyle = 'rgba(254,249,195,0.95)';
+  ctx.beginPath(); ctx.arc(-5, -15.5, 1.8, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(5, -15.5, 1.8, 0, 7); ctx.fill();
+  ctx.restore();
 }
 
 function frame() {
@@ -945,7 +1118,7 @@ function zoomAt(sx, sy, dz) {
   needsDraw = true;
 }
 function breakFollow() {
-  if (view.follow) { view.follow = false; updateLocateBtn(); }
+  if (view.follow) { view.follow = false; updateLocateBtn(); apply3d(); }
 }
 
 $('btnZoomIn').addEventListener('click', function () { view.zoom = Math.min(19.4, view.zoom + 1); needsDraw = true; });
@@ -954,11 +1127,20 @@ $('btnCompass').addEventListener('click', function () {
   view.rot = 0; $('btnCompass').style.display = 'none'; needsDraw = true;
 });
 $('btnLayers').addEventListener('click', function () {
-  settings.theme = settings.theme === 'night' ? 'day' : settings.theme === 'day' ? 'auto' : 'night';
-  persistSettings(); syncSettingsUI();
-  toast('Map style: ' + settings.theme);
-  needsDraw = true;
+  $('layersCard').classList.toggle('show');
 });
+
+/** 3D drive view: tilt the map plane while navigating + following. */
+function apply3d() {
+  var on = settings.view3d === 'on' && view.navMode && view.follow;
+  canvas.classList.toggle('threeD', on);
+}
+
+function updateAttribution() {
+  $('attribution').innerHTML = settings.baseLayer === 'sat'
+    ? 'Imagery © Esri, Maxar, Earthstar Geographics'
+    : '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
+}
 
 /* ================================= GPS ================================== */
 
@@ -998,7 +1180,7 @@ $('btnLocate').addEventListener('click', function () {
   startGps();
   if (gps.fix) {
     view.follow = true; view.zoom = Math.max(view.zoom, 15.5);
-    glueCamera(); updateLocateBtn();
+    glueCamera(); updateLocateBtn(); apply3d();
   } else if (gps.denied) toast('Location permission is blocked for this site');
   else toast('Finding you…');
 });
@@ -1582,6 +1764,8 @@ function startNav(demo) {
   $('speedUnit').textContent = settings.units === 'imperial' ? 'mph' : 'km/h';
   view.navMode = true; view.follow = true;
   view.zoom = Math.max(view.zoom, 16.5);
+  apply3d();
+  $('layersCard').classList.remove('show');
   requestWakeLock();
   var first = route.steps[0];
   setBanner(first.icon, A.fmtDist(0, settings.units), first.instruction, null);
@@ -1859,6 +2043,7 @@ function stopNavUI() {
   nav.ghosting = false; nav.notes = null; nav.track = null;
   nav.simPos = null;
   view.navMode = false; view.rot = 0; view.follow = false;
+  apply3d();
   $('topBar').classList.remove('hidden');
   $('navBanner').classList.remove('show');
   $('navBottom').classList.remove('show');
@@ -1878,6 +2063,7 @@ $('btnEnd').addEventListener('click', function () {
 $('btnOverview').addEventListener('click', function () {
   if (view.navMode) { fitRoute(nav.route); view.navMode = false; }
   else { view.navMode = true; view.follow = true; view.zoom = 16.5; glueCamera(); }
+  apply3d();
   needsDraw = true;
 });
 
@@ -2483,7 +2669,7 @@ function segWire(id, key, after) {
   });
 }
 function syncSettingsUI() {
-  [['segUnits', 'units'], ['segVoice', 'voice'], ['segTheme', 'theme'], ['segCodriver', 'codriver'], ['segCameras', 'cameras'], ['segTraffic', 'traffic']].forEach(function (pair) {
+  [['segUnits', 'units'], ['segVoice', 'voice'], ['segTheme', 'theme'], ['segCodriver', 'codriver'], ['segCameras', 'cameras'], ['segTraffic', 'traffic'], ['segLayer', 'baseLayer'], ['segView', 'view3d'], ['segTheme2', 'theme'], ['segBuildings', 'buildings']].forEach(function (pair) {
     Array.prototype.forEach.call($(pair[0]).querySelectorAll('button'), function (b) {
       b.classList.toggle('on', b.getAttribute('data-v') === settings[pair[1]]);
     });
@@ -2496,6 +2682,11 @@ segWire('segTheme', 'theme', function () { needsDraw = true; });
 segWire('segCodriver', 'codriver');
 segWire('segCameras', 'cameras', function () { needsDraw = true; });
 segWire('segTraffic', 'traffic', function () { needsDraw = true; if (trip.routes.length && !trip.demoOnly) requestRoutes(); });
+segWire('segLayer', 'baseLayer', function () { updateAttribution(); needsDraw = true; });
+segWire('segView', 'view3d', function () { apply3d(); });
+segWire('segBuildings', 'buildings', function () { needsDraw = true; });
+segWire('segTheme2', 'theme', function () { needsDraw = true; });
+updateAttribution();
 syncSettingsUI();
 
 /* ------------------------------ maneuver icons --------------------------- */
