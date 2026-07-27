@@ -100,6 +100,16 @@ test('content-type classifiers', () => {
   assert.equal(P.isHtml('image/png'), false);
 });
 
+test('originAllowed gates a deployed proxy to its app origins', () => {
+  const allow = ['https://refayethossain28.github.io'];
+  assert.equal(P.originAllowed('https://refayethossain28.github.io', allow), true);
+  assert.equal(P.originAllowed('https://refayethossain28.github.io/voyager/', allow), true); // Referer URL reduced to origin
+  assert.equal(P.originAllowed('https://evil.example', allow), false);
+  assert.equal(P.originAllowed('', allow), false);        // deployed proxy rejects origin-less requests
+  assert.equal(P.originAllowed('', []), true);            // no allowlist (localhost) → unrestricted
+  assert.equal(P.originAllowed('https://anything.example', []), true);
+});
+
 /* ════════ integration: real proxy in front of a framing-refusing origin ════════ */
 
 function listen(server, port) {
