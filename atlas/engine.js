@@ -957,6 +957,50 @@
     return Math.round(Math.max(0.6, Math.min(1.6, next)) * 1000) / 1000;
   }
 
+  /* ============================= 3D buildings ============================= */
+  // True extruded buildings on the 2D canvas, the classic 2.5D way: every
+  // footprint corner gets a roof point pushed away from the camera by an
+  // amount that grows with the building's height and the zoom — walls are
+  // quads between ground and roof edges, shaded by a fixed NW light. The
+  // maths is here (testable); the UI fetches OSM footprints and paints.
+
+  /** Building height in metres from OSM tags: height= wins, else levels×3,
+   *  else a modest default. Clamped [3, 150] so bad data can't go skyline. */
+  function buildingHeightM(tags) {
+    tags = tags || {};
+    var h = parseFloat(String(tags.height || '').replace(/m$/i, '').trim());
+    if (!isFinite(h)) {
+      var lv = parseFloat(tags['building:levels']);
+      h = isFinite(lv) ? lv * 3 : 8;
+    }
+    return Math.min(150, Math.max(3, h));
+  }
+
+  /**
+   * How far (as a fraction of the corner's distance from the viewpoint) a
+   * roof corner leans away from the camera. Perspective from a virtual
+   * camera ~60 tile-widths up: taller buildings lean more, zooming out
+   * flattens the city. Clamped so skyscrapers never smear across the map.
+   */
+  function roofFactor(heightM, lat, zoom) {
+    var mpp = metresPerPixel(lat, zoom);          // ground metres per pixel
+    var cameraPx = 1400;                          // virtual camera height, px
+    var hPx = heightM / mpp;                      // building height in px
+    return Math.min(0.22, hPx / cameraPx);
+  }
+
+  /** Wall brightness 0..1 for an edge a→b (screen coords, y down): fixed
+   *  light from the NW, so north/west faces read brighter. */
+  function wallShade(ax, ay, bx, by) {
+    var dx = bx - ax, dy = by - ay;
+    var len = Math.hypot(dx, dy) || 1;
+    // outward normal for counter-clockwise polygons: (dy, -dx)
+    var nx = dy / len, ny = -dx / len;
+    var lx = -0.6, ly = -0.8; // light direction: from NW (up-left on screen)
+    var d = nx * lx + ny * ly;
+    return Math.max(0, Math.min(1, 0.62 + 0.38 * d));
+  }
+
   /* ============================= live traffic ============================= */
   // Two honest layers. (1) LIVE INCIDENTS — real disruptions (TfL's open feed
   // for London, or TomTom with a key) snapped onto the route with per-severity
@@ -1221,6 +1265,7 @@
     fmtBytes: fmtBytes, pruneClips: pruneClips,
     parseMaxspeed: parseMaxspeed, mapLimitsToRoute: mapLimitsToRoute, limitAtAlong: limitAtAlong,
     mapCamerasToRoute: mapCamerasToRoute, cameraNext: cameraNext, overspeedUpdate: overspeedUpdate,
+    buildingHeightM: buildingHeightM, roofFactor: roofFactor, wallShade: wallShade,
     incidentDelayS: incidentDelayS, mapIncidentsToRoute: mapIncidentsToRoute,
     typicalTrafficFactor: typicalTrafficFactor, trafficAdjust: trafficAdjust,
     remainingWithTraffic: remainingWithTraffic, nextIncident: nextIncident,

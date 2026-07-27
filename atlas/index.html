@@ -378,6 +378,9 @@
   <div class="lrow"><div class="ll">View</div>
     <div class="seg" id="segView"><button data-v="off">2D</button><button data-v="on">3D drive</button></div>
   </div>
+  <div class="lrow"><div class="ll">Buildings</div>
+    <div class="seg" id="segBuildings"><button data-v="on">🏙 3D</button><button data-v="off">Off</button></div>
+  </div>
   <div class="lrow"><div class="ll">Theme</div>
     <div class="seg" id="segTheme2"><button data-v="auto">Auto</button><button data-v="day">Day</button><button data-v="night">Night</button></div>
   </div>
@@ -491,8 +494,9 @@
   <div id="aboutBox">
     <strong style="color:var(--text)">◮ Atlas</strong> — your own satnav. The map is drawn by a
     from-scratch canvas engine — with a <strong>🛰 satellite layer</strong> (Esri World
-    Imagery), a <strong>3D drive view</strong> that tilts the world while you navigate, and
-    <strong>your car</strong> as the position marker; guidance, snapping, phrasing and ETA
+    Imagery), a <strong>3D drive view</strong> that tilts the world while you navigate,
+    <strong>🏙 real 3D buildings</strong> (OSM footprints with real heights, extruded and
+    light-shaded on-canvas), and <strong>your car</strong> as the position marker; guidance, snapping, phrasing and ETA
     come from the pure, unit-tested navigation engine (<code>engine.js</code>).
     Things no other satnav does: <strong>🌅 sun-glare forecast</strong> (amber dashes on the route
     where you'll drive into a low sun), <strong>🏁 co-driver rally pace notes</strong>,
@@ -657,7 +661,7 @@ function load(key, fallback) {
 }
 function save(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) {} }
 
-var settings = Object.assign({ units: 'metric', voice: 'on', theme: 'auto', codriver: 'off', cameras: 'on', traffic: 'on', baseLayer: 'map', view3d: 'on' }, load('atlas.settings', {}));
+var settings = Object.assign({ units: 'metric', voice: 'on', theme: 'auto', codriver: 'off', cameras: 'on', traffic: 'on', baseLayer: 'map', view3d: 'on', buildings: 'on' }, load('atlas.settings', {}));
 var places = load('atlas.places', []);     // {name, addr, lat, lon, kind?, uses, lastUsed}
 var recents = load('atlas.recents', []);   // same shape, capped
 var pace = load('atlas.pace', {});         // per-profile personal pace factor (learned)
@@ -791,12 +795,102 @@ function draw() {
   ctx.filter = 'none';
   ctx.restore();
 
+  drawBuildings(night);
   drawRoutes(night);
   drawCameras();
   drawTraffic();
   drawConvoy();
   drawTapPin();
   drawGpsDot();
+  maybeFetchBuildings();
+}
+
+/* ------------------------- 🏙 3D extruded buildings ----------------------- */
+/* Real OSM footprints with real heights, extruded 2.5D on the canvas: roof
+   corners lean away from the camera by the engine's roofFactor, walls are
+   quads shaded by a fixed NW light (engine.wallShade), painted far-to-near.
+   Fetched per area from Overpass, only at close zooms, never on satellite. */
+
+var bld = { items: [], key: null, inflight: false };
+var BLD_MIN_ZOOM = 15.6, BLD_DRAW_CAP = 900;
+
+function maybeFetchBuildings() {
+  if (settings.buildings !== 'on' || settings.baseLayer === 'sat') return;
+  if (view.zoom < BLD_MIN_ZOOM) return;
+  var key = Math.round(view.lat * 220) + '/' + Math.round(view.lon * 140);
+  if (key === bld.key || bld.inflight) return;
+  bld.inflight = true;
+  var mpp = A.metresPerPixel(view.lat, view.zoom);
+  var halfM = Math.max(W, H) * 0.8 * mpp;
+  var dLat = halfM / 111320, dLon = dLat / Math.max(0.2, Math.cos(view.lat * Math.PI / 180));
+  var q = '[out:json][timeout:12];way["building"](' +
+    (view.lat - dLat).toFixed(5) + ',' + (view.lon - dLon).toFixed(5) + ',' +
+    (view.lat + dLat).toFixed(5) + ',' + (view.lon + dLon).toFixed(5) + ');out geom 1500;';
+  fetch(OVERPASS[0], { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'data=' + encodeURIComponent(q) })
+    .then(function (r) { if (!r.ok) throw 0; return r.json(); })
+    .then(function (json) {
+      bld.items = (json.elements || []).filter(function (w) { return w.geometry && w.geometry.length > 3; })
+        .map(function (w) {
+          return { pts: w.geometry.map(function (g) { return { lat: g.lat, lon: g.lon }; }),
+                   h: A.buildingHeightM(w.tags) };
+        });
+      bld.key = key;
+      needsDraw = true;
+    })
+    .catch(function () { bld.key = key; }) // don't hammer a failing endpoint
+    .then(function () { bld.inflight = false; });
+}
+
+function drawBuildings(night) {
+  if (settings.buildings !== 'on' || settings.baseLayer === 'sat') return;
+  if (view.zoom < BLD_MIN_ZOOM || !bld.items.length) return;
+  var a = anchor(), M = 70;
+  var list = [];
+  for (var bi = 0; bi < bld.items.length; bi++) {
+    var b = bld.items[bi];
+    var sp = [], inView = false;
+    for (var i = 0; i < b.pts.length; i++) {
+      var s = toScreen(b.pts[i]);
+      sp.push(s);
+      if (s.x > -M && s.x < W + M && s.y > -M && s.y < H + M) inView = true;
+    }
+    if (!inView) continue;
+    var f = A.roofFactor(b.h, view.lat, view.zoom);
+    var rp = [], cx = 0, cy = 0;
+    for (var j = 0; j < sp.length; j++) {
+      rp.push({ x: sp[j].x + (sp[j].x - a.x) * f, y: sp[j].y + (sp[j].y - a.y) * f });
+      cx += sp[j].x; cy += sp[j].y;
+    }
+    cx /= sp.length; cy /= sp.length;
+    list.push({ sp: sp, rp: rp, d: Math.hypot(cx - a.x, cy - a.y) });
+    if (list.length >= BLD_DRAW_CAP) break;
+  }
+  list.sort(function (p, q) { return q.d - p.d; }); // far first, near paints over
+  for (var li = 0; li < list.length; li++) {
+    var bb = list[li], sp2 = bb.sp, rp2 = bb.rp;
+    for (var e = 0; e < sp2.length - 1; e++) {
+      var g0 = sp2[e], g1 = sp2[e + 1], r0 = rp2[e], r1 = rp2[e + 1];
+      var sh = A.wallShade(g0.x, g0.y, g1.x, g1.y);
+      ctx.beginPath();
+      ctx.moveTo(g0.x, g0.y); ctx.lineTo(g1.x, g1.y);
+      ctx.lineTo(r1.x, r1.y); ctx.lineTo(r0.x, r0.y);
+      ctx.closePath();
+      ctx.fillStyle = night
+        ? 'rgb(' + Math.round(18 + 30 * sh) + ',' + Math.round(24 + 36 * sh) + ',' + Math.round(38 + 48 * sh) + ')'
+        : 'rgb(' + Math.round(150 + 62 * sh) + ',' + Math.round(154 + 62 * sh) + ',' + Math.round(162 + 62 * sh) + ')';
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.moveTo(rp2[0].x, rp2[0].y);
+    for (var v = 1; v < rp2.length; v++) ctx.lineTo(rp2[v].x, rp2[v].y);
+    ctx.closePath();
+    ctx.fillStyle = night ? '#2a3654' : '#e6e9ee';
+    ctx.fill();
+    ctx.lineWidth = 0.8;
+    ctx.strokeStyle = night ? 'rgba(120,145,200,0.25)' : 'rgba(90,100,120,0.28)';
+    ctx.stroke();
+  }
 }
 
 /* 🚦 incident markers (orange diamonds) on the active/selected route. */
@@ -2575,7 +2669,7 @@ function segWire(id, key, after) {
   });
 }
 function syncSettingsUI() {
-  [['segUnits', 'units'], ['segVoice', 'voice'], ['segTheme', 'theme'], ['segCodriver', 'codriver'], ['segCameras', 'cameras'], ['segTraffic', 'traffic'], ['segLayer', 'baseLayer'], ['segView', 'view3d'], ['segTheme2', 'theme']].forEach(function (pair) {
+  [['segUnits', 'units'], ['segVoice', 'voice'], ['segTheme', 'theme'], ['segCodriver', 'codriver'], ['segCameras', 'cameras'], ['segTraffic', 'traffic'], ['segLayer', 'baseLayer'], ['segView', 'view3d'], ['segTheme2', 'theme'], ['segBuildings', 'buildings']].forEach(function (pair) {
     Array.prototype.forEach.call($(pair[0]).querySelectorAll('button'), function (b) {
       b.classList.toggle('on', b.getAttribute('data-v') === settings[pair[1]]);
     });
@@ -2590,6 +2684,7 @@ segWire('segCameras', 'cameras', function () { needsDraw = true; });
 segWire('segTraffic', 'traffic', function () { needsDraw = true; if (trip.routes.length && !trip.demoOnly) requestRoutes(); });
 segWire('segLayer', 'baseLayer', function () { updateAttribution(); needsDraw = true; });
 segWire('segView', 'view3d', function () { apply3d(); });
+segWire('segBuildings', 'buildings', function () { needsDraw = true; });
 segWire('segTheme2', 'theme', function () { needsDraw = true; });
 updateAttribution();
 syncSettingsUI();
