@@ -645,6 +645,63 @@ test('overspeedUpdate: tolerance, 3 s hysteresis, single warning, resets under l
   assert.equal(A.overspeedUpdate(null, 200, null, 1).over, false, 'no limit, no judgement');
 });
 
+test('typicalTrafficFactor: peaks, nights and weekends behave like real roads', () => {
+  const tue = 2, sat = 6;
+  const amPeak = A.typicalTrafficFactor(8.5, tue), pmPeak = A.typicalTrafficFactor(17.5, tue);
+  const shoulder = A.typicalTrafficFactor(11, tue), night = A.typicalTrafficFactor(3, tue);
+  assert.ok(pmPeak > amPeak, 'evening peak is the worst');
+  assert.ok(amPeak > shoulder && shoulder > night, 'peak > midday > night');
+  near(night, 0.92, 0.001);
+  for (let h = 0; h < 24; h++) for (const d of [0, 2, 6]) {
+    const f = A.typicalTrafficFactor(h, d);
+    assert.ok(f >= 0.9 && f <= 1.4, `bounded: h${h} d${d} = ${f}`);
+  }
+  assert.ok(A.typicalTrafficFactor(13, sat) > A.typicalTrafficFactor(13, 0) - 0.001, 'weekend midday bump');
+  assert.equal(A.typicalTrafficFactor(8.5, sat) < amPeak, true, 'no weekday rush on Saturday');
+});
+
+test('incidentDelayS: provider delay wins, severity defaults otherwise', () => {
+  assert.equal(A.incidentDelayS(4, 120), 120);
+  assert.equal(A.incidentDelayS(1), 30);
+  assert.equal(A.incidentDelayS(4), 480);
+  assert.equal(A.incidentDelayS(9), 90, 'unknown severity → moderate default');
+  assert.equal(A.incidentDelayS(2, 999999), 3600, 'capped at an hour');
+});
+
+test('mapIncidentsToRoute: snaps points and lines, ignores far, dedupes', () => {
+  const { route, base } = makeRoute();
+  const at = (m, off) => A.destinationPoint(A.destinationPoint(base, 0, m), 90, off || 0);
+  const incidents = [
+    { points: [at(400, 10)], sev: 3, kind: 'Roadworks', text: 'Lane closed' },
+    { points: [at(430, 12)], sev: 3, kind: 'Roadworks', text: 'dupe nearby' },
+    { points: [at(200, 500)], sev: 4, kind: 'Accident', text: 'far away — ignored' },
+    { points: [at(800, 400), at(820, 8), at(840, 400)], sev: 2, kind: 'Congestion', text: 'one point on route' },
+  ];
+  const mapped = A.mapIncidentsToRoute(route, incidents);
+  assert.equal(mapped.length, 2, JSON.stringify(mapped));
+  near(mapped[0].alongM, 400, 5);
+  assert.equal(mapped[0].delayS, 240);
+  near(mapped[1].alongM, 820, 5);
+  assert.equal(mapped[1].kind, 'Congestion');
+});
+
+test('trafficAdjust + remainingWithTraffic + nextIncident: the arithmetic', () => {
+  const { route } = makeRoute(); // totalS 160
+  const mapped = [{ alongM: 400, sev: 3, kind: 'Roadworks', text: '', delayS: 240 },
+                  { alongM: 1200, sev: 2, kind: 'Congestion', text: '', delayS: 90 }];
+  const adj = A.trafficAdjust(route, mapped, 1.25);
+  near(adj.durS, 160 * 1.25 + 330, 0.5);
+  assert.equal(adj.delayS, 330);
+  const remAt800 = A.remainingWithTraffic(route, 800, mapped, 1.25);
+  const baseRem = A.remaining(route, 800).durS * 1.25;
+  near(remAt800, baseRem + 90, 0.5, 'only the incident still ahead counts');
+  const nxt = A.nextIncident(mapped, 500);
+  assert.equal(nxt.inc.kind, 'Congestion');
+  near(nxt.distM, 700, 0.5);
+  assert.equal(A.nextIncident(mapped, 1300), null);
+  near(A.trafficAdjust(route, [], 1).durS, 160, 0.01, 'no traffic, no change');
+});
+
 test('convoy codes: deterministic generation, normalisation, link parsing', () => {
   let seed = 42;
   const lcg = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2 ** 32; };

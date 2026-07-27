@@ -957,6 +957,96 @@
     return Math.round(Math.max(0.6, Math.min(1.6, next)) * 1000) / 1000;
   }
 
+  /* ============================= live traffic ============================= */
+  // Two honest layers. (1) LIVE INCIDENTS — real disruptions (TfL's open feed
+  // for London, or TomTom with a key) snapped onto the route with per-severity
+  // delay estimates. (2) TYPICAL TRAFFIC — a deterministic rush-hour model
+  // (clock injected) that scales ETAs the way roads actually breathe, clearly
+  // labelled "typical". The UI fetches; everything decidable lives here.
+
+  /** Delay estimate for an incident: provider's value wins, else severity
+   *  1 (minor) … 4 (severe) maps to a conservative default. Seconds. */
+  function incidentDelayS(sev, providedS) {
+    if (typeof providedS === 'number' && isFinite(providedS) && providedS >= 0) return Math.min(3600, providedS);
+    return { 1: 30, 2: 90, 3: 240, 4: 480 }[sev] || 90;
+  }
+
+  /**
+   * Snap incidents onto the route. Each incident = {points:[{lat,lon}], sev,
+   * kind, text, delayS?} — any of its points within `tolM` (default 50 m)
+   * attaches it at that alongM. Deduped (same kind within 80 m), sorted.
+   * → [{alongM, sev, kind, text, delayS}]
+   */
+  function mapIncidentsToRoute(route, incidents, tolM) {
+    var tol = tolM || 50;
+    var out = [];
+    (incidents || []).forEach(function (inc) {
+      var pts = inc.points || [];
+      var best = null;
+      for (var i = 0; i < pts.length; i++) {
+        var p = pts[i];
+        if (typeof p.lat !== 'number' || typeof p.lon !== 'number') continue;
+        var s = snapToRoute(route, p);
+        if (s.crossTrack <= tol && (!best || s.crossTrack < best.crossTrack)) {
+          best = { crossTrack: s.crossTrack, alongM: s.alongM };
+        }
+      }
+      if (best) {
+        out.push({ alongM: best.alongM, sev: inc.sev || 2, kind: inc.kind || 'Incident',
+                   text: inc.text || '', delayS: incidentDelayS(inc.sev || 2, inc.delayS) });
+      }
+    });
+    out.sort(function (a, b) { return a.alongM - b.alongM; });
+    return out.filter(function (x, i) {
+      return i === 0 || x.alongM - out[i - 1].alongM > 80 || x.kind !== out[i - 1].kind;
+    });
+  }
+
+  /**
+   * Typical congestion multiplier for a local hour + day-of-week (0=Sun).
+   * Weekday peaks ~08:30 (×1.30) and ~17:30 (×1.35), free-flowing nights
+   * (×0.92), gentle weekend midday bump. Deterministic, bounded [0.9, 1.4].
+   */
+  function typicalTrafficFactor(hour, dow) {
+    var h = ((hour % 24) + 24) % 24;
+    var weekend = dow === 0 || dow === 6;
+    if (weekend) {
+      if (h >= 11 && h <= 16) return 1.1;
+      if (h >= 22 || h <= 6) return 0.92;
+      return 1.0;
+    }
+    var am = Math.exp(-Math.pow(h - 8.5, 2) / 2.2);   // morning peak bell
+    var pm = Math.exp(-Math.pow(h - 17.5, 2) / 2.6);  // evening peak bell
+    var f = 1.0 + 0.30 * am + 0.35 * pm;
+    if (h >= 22 || h <= 5) f = 0.92;
+    return Math.min(1.4, Math.max(0.9, Math.round(f * 1000) / 1000));
+  }
+
+  /** Whole-route traffic view: {durS (adjusted), delayS, factor}. */
+  function trafficAdjust(route, mapped, factor) {
+    var f = factor || 1;
+    var delayS = (mapped || []).reduce(function (a, m) { return a + m.delayS; }, 0);
+    return { durS: route.totalS * f + delayS, delayS: delayS, factor: f };
+  }
+
+  /** Remaining seconds from `alongM` including typical factor + incidents
+   *  still ahead of you. */
+  function remainingWithTraffic(route, alongM, mapped, factor) {
+    var base = remaining(route, alongM).durS * (factor || 1);
+    (mapped || []).forEach(function (m) { if (m.alongM > alongM - 15) base += m.delayS; });
+    return base;
+  }
+
+  /** The next incident at/after `alongM` — same contract as cameraNext. */
+  function nextIncident(mapped, alongM) {
+    for (var i = 0; i < (mapped || []).length; i++) {
+      if (mapped[i].alongM > alongM - 15) {
+        return { inc: mapped[i], distM: Math.max(0, mapped[i].alongM - alongM) };
+      }
+    }
+    return null;
+  }
+
   /* ================================ convoy ================================ */
   // Road-trip mode: drivers who share a convoy code see each other live on
   // the map. Transport is the UI's job (BroadcastChannel between tabs,
@@ -1131,6 +1221,9 @@
     fmtBytes: fmtBytes, pruneClips: pruneClips,
     parseMaxspeed: parseMaxspeed, mapLimitsToRoute: mapLimitsToRoute, limitAtAlong: limitAtAlong,
     mapCamerasToRoute: mapCamerasToRoute, cameraNext: cameraNext, overspeedUpdate: overspeedUpdate,
+    incidentDelayS: incidentDelayS, mapIncidentsToRoute: mapIncidentsToRoute,
+    typicalTrafficFactor: typicalTrafficFactor, trafficAdjust: trafficAdjust,
+    remainingWithTraffic: remainingWithTraffic, nextIncident: nextIncident,
     makeConvoyCode: makeConvoyCode, validConvoyCode: validConvoyCode, parseConvoyLink: parseConvoyLink,
     convoyAvatar: convoyAvatar, applyBeacon: applyBeacon, pruneMembers: pruneMembers, convoyStats: convoyStats,
   };

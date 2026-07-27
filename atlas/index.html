@@ -219,6 +219,15 @@
   #limitVal { font-size: 18px; font-weight: 900; line-height: 1; }
   #limitUnit { font-size: 8px; font-weight: 800; color: #6b7280; text-transform: uppercase; }
 
+  /* 🚦 traffic incident alert */
+  #trafChip {
+    position: fixed; z-index: 44; left: 50%; transform: translateX(-50%);
+    top: calc(178px + var(--sat)); background: #431407; border: 1px solid #fb923c;
+    color: #fed7aa; padding: 8px 16px; border-radius: 999px; font-weight: 700;
+    font-size: 13.5px; display: none; box-shadow: var(--shadow); white-space: nowrap;
+  }
+  #trafChip.show { display: block; }
+
   /* 📷 speed camera alert */
   #camChip {
     position: fixed; z-index: 44; left: 50%; transform: translateX(-50%);
@@ -420,6 +429,12 @@
     </div>
   </div>
   <div class="setRow">
+    <div class="lbl">🚦 Live traffic<div class="sub">Incidents (TfL / TomTom) + typical rush-hour ETAs</div></div>
+    <div class="seg" id="segTraffic">
+      <button data-v="on">On</button><button data-v="off">Off</button>
+    </div>
+  </div>
+  <div class="setRow">
     <div class="lbl">📷 Speed cameras<div class="sub">Alerts for fixed cameras (OpenStreetMap data)</div></div>
     <div class="seg" id="segCameras">
       <button data-v="on">On</button><button data-v="off">Off</button>
@@ -455,10 +470,14 @@
     <strong>🍞 trail-back</strong> (retrace your own breadcrumbs, fully offline),
     an <strong>⏱ ETA that learns your pace</strong>, <strong>🛑 speed-limit +
     📷 speed-camera warnings</strong> (OpenStreetMap data — only as complete as the map;
-    always obey the signs on the road), and <strong>🚙 convoy mode</strong> — share a code
+    always obey the signs on the road), <strong>🚙 convoy mode</strong> — share a code
     and every car in your convoy appears live on the map (tabs sync instantly on one
     device; across devices via the optional cloud in <code>config.js</code>; only people
-    with your code can see you, and beacons stop when you leave).
+    with your code can see you, and beacons stop when you leave) — and <strong>🚦 live
+    traffic</strong>: real incidents (TfL's open feed across London; worldwide with a free
+    TomTom key in <code>config.js</code>) snapped onto your routes with delay estimates
+    and spoken warnings, plus a clearly-labelled <em>typical</em> rush-hour model shaping
+    ETAs everywhere else.
     Map data
     © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>
     contributors; routing by the community OSRM/FOSSGIS servers; search by Nominatim.
@@ -557,6 +576,7 @@
 <div id="speedBubble"><div id="speedVal">0</div><div id="speedUnit">km/h</div></div>
 <div id="limitSign" aria-label="Speed limit"><div id="limitVal">30</div><div id="limitUnit">km/h</div></div>
 <div id="camChip">📷 Speed camera</div>
+<div id="trafChip">⚠ Traffic ahead</div>
 
 <div id="dashcamBox">
   <video id="dashcamVideo" muted playsinline autoplay></video>
@@ -603,7 +623,7 @@ function load(key, fallback) {
 }
 function save(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) {} }
 
-var settings = Object.assign({ units: 'metric', voice: 'on', theme: 'auto', codriver: 'off', cameras: 'on' }, load('atlas.settings', {}));
+var settings = Object.assign({ units: 'metric', voice: 'on', theme: 'auto', codriver: 'off', cameras: 'on', traffic: 'on' }, load('atlas.settings', {}));
 var places = load('atlas.places', []);     // {name, addr, lat, lon, kind?, uses, lastUsed}
 var recents = load('atlas.recents', []);   // same shape, capped
 var pace = load('atlas.pace', {});         // per-profile personal pace factor (learned)
@@ -726,9 +746,32 @@ function draw() {
 
   drawRoutes(night);
   drawCameras();
+  drawTraffic();
   drawConvoy();
   drawTapPin();
   drawGpsDot();
+}
+
+/* 🚦 incident markers (orange diamonds) on the active/selected route. */
+function drawTraffic() {
+  if (settings.traffic !== 'on') return;
+  var route = nav.active ? nav.route : trip.routes[trip.selected];
+  var mapped = nav.active ? nav.trafMapped : (route && route.traffic && route.traffic.mapped);
+  if (!route || !mapped || !mapped.length) return;
+  for (var i = 0; i < mapped.length; i++) {
+    var p = A.pointAtAlong(route, mapped[i].alongM);
+    var s = toScreen(p);
+    if (s.x < -30 || s.x > W + 30 || s.y < -30 || s.y > H + 30) continue;
+    ctx.save();
+    ctx.translate(s.x, s.y); ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = '#431407'; ctx.fillRect(-10, -10, 20, 20);
+    ctx.lineWidth = 2.5; ctx.strokeStyle = '#fb923c'; ctx.strokeRect(-10, -10, 20, 20);
+    ctx.restore();
+    ctx.fillStyle = '#fed7aa'; ctx.font = '900 13px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('!', s.x, s.y + 1);
+    ctx.textBaseline = 'alphabetic';
+  }
 }
 
 /* 📷 fixed speed cameras on the route (while navigating). */
@@ -1039,6 +1082,96 @@ function fetchSafetyData(route) {
   });
 }
 
+/* 🚦 live traffic. Keyless first: TfL's open disruption feed covers Greater
+   London; a TomTom key in config.js covers the world. Everything is filtered
+   to the routes' bounding box, normalised to {points, sev, kind, text,
+   delayS?} and handed to the engine for snapping + delay arithmetic. */
+
+function routesBbox(routes) {
+  var b = { minLat: 90, maxLat: -90, minLon: 180, maxLon: -180 };
+  routes.forEach(function (r) {
+    r.geometry.forEach(function (p) {
+      b.minLat = Math.min(b.minLat, p.lat); b.maxLat = Math.max(b.maxLat, p.lat);
+      b.minLon = Math.min(b.minLon, p.lon); b.maxLon = Math.max(b.maxLon, p.lon);
+    });
+  });
+  return b;
+}
+function geoPoints(g) {
+  if (!g || !g.coordinates) return [];
+  var c = g.coordinates, pts = [];
+  if (g.type === 'Point') pts = [c];
+  else if (g.type === 'LineString') pts = c;
+  else if (g.type === 'Polygon' || g.type === 'MultiLineString') pts = [].concat.apply([], c);
+  else return [];
+  var out = [];
+  var step = Math.max(1, Math.floor(pts.length / 12)); // cap 12 points/incident
+  for (var i = 0; i < pts.length; i += step) {
+    if (typeof pts[i][0] === 'number') out.push({ lat: pts[i][1], lon: pts[i][0] });
+  }
+  return out;
+}
+function inBbox(pts, b, pad) {
+  for (var i = 0; i < pts.length; i++) {
+    if (pts[i].lat >= b.minLat - pad && pts[i].lat <= b.maxLat + pad &&
+        pts[i].lon >= b.minLon - pad && pts[i].lon <= b.maxLon + pad) return true;
+  }
+  return false;
+}
+
+function fetchTraffic(routes) {
+  if (settings.traffic !== 'on' || !routes.length) return Promise.resolve([]);
+  var b = routesBbox(routes), pad = 0.02;
+  var key = window.ATLAS_TOMTOM_KEY;
+  if (key) {
+    var bbox = (b.minLon - pad) + ',' + (b.minLat - pad) + ',' + (b.maxLon + pad) + ',' + (b.maxLat + pad);
+    var url = 'https://api.tomtom.com/traffic/services/5/incidentDetails?key=' + encodeURIComponent(key) +
+      '&bbox=' + bbox + '&fields=' + encodeURIComponent('{incidents{geometry{type,coordinates},properties{iconCategory,magnitudeOfDelay,delay,events{description}}}}');
+    return fetchJson(url).then(function (json) {
+      return (json.incidents || []).map(function (inc) {
+        var p = inc.properties || {};
+        var KINDS = { 1: 'Accident', 6: 'Traffic jam', 7: 'Lane closed', 8: 'Road closed', 9: 'Roadworks', 14: 'Broken-down vehicle' };
+        return { points: geoPoints(inc.geometry), sev: Math.max(1, Math.min(4, p.magnitudeOfDelay || 2)),
+          kind: KINDS[p.iconCategory] || 'Incident', delayS: p.delay,
+          text: (p.events && p.events[0] && p.events[0].description) || '' };
+      }).filter(function (i) { return i.points.length; });
+    }).catch(function () { return []; });
+  }
+  // keyless: TfL open data — Greater London only
+  var LONDON = { minLat: 51.25, maxLat: 51.72, minLon: -0.55, maxLon: 0.35 };
+  if (b.maxLat < LONDON.minLat || b.minLat > LONDON.maxLat ||
+      b.maxLon < LONDON.minLon || b.minLon > LONDON.maxLon) return Promise.resolve([]);
+  return fetchJson('https://api.tfl.gov.uk/Road/All/Disruption').then(function (rows) {
+    return (rows || []).map(function (d) {
+      var pts = geoPoints(d.geography || d.geometry);
+      var sevT = String(d.severity || '');
+      var sev = /severe|serious/i.test(sevT) ? 4 : /moderate/i.test(sevT) ? 3 : /minimal|minor/i.test(sevT) ? 1 : 2;
+      return { points: pts, sev: sev, kind: d.category || 'Incident',
+               text: String(d.location || d.comments || '').slice(0, 140) };
+    }).filter(function (i) { return i.points.length && inBbox(i.points, b, pad); });
+  }).catch(function () { return []; });
+}
+
+/** Current typical-traffic factor from the local clock. */
+function trafficFactorNow() {
+  var d = new Date();
+  return A.typicalTrafficFactor(d.getHours() + d.getMinutes() / 60, d.getDay());
+}
+
+/** Attach engine traffic views to routes; sync typical-only, async incidents. */
+function applyTraffic(routes, onUpdate) {
+  var factor = settings.traffic === 'on' ? trafficFactorNow() : 1;
+  routes.forEach(function (r) { r.traffic = { mapped: [], factor: factor, adj: A.trafficAdjust(r, [], factor) }; });
+  fetchTraffic(routes).then(function (incidents) {
+    if (!incidents.length) return;
+    routes.forEach(function (r) {
+      var mapped = A.mapIncidentsToRoute(r, incidents);
+      r.traffic = { mapped: mapped, factor: factor, adj: A.trafficAdjust(r, mapped, factor) };
+    });
+    if (onUpdate) onUpdate();
+  });
+}
+
 /* Bundled safety data for the demo drive (central London really is 20 mph —
    and the sim drives at ~47 km/h, so the overspeed warning demos itself). */
 function demoSafety(route) {
@@ -1296,7 +1429,13 @@ function requestRoutes() {
     if (trip.dest !== dest || trip.profile !== profile) return; // stale
     trip.routes = routes.map(function (r) { return A.buildRoute(r); });
     trip.selected = 0;
+    trip.raw = routes;
     $('routeStatus').textContent = '';
+    applyTraffic(trip.routes, function () {
+      if (trip.dest !== dest) return;
+      renderAlternatives(trip.raw);
+      needsDraw = true;
+    });
     renderAlternatives(routes);
     fitRoute(trip.routes[0]);
   }).catch(function () {
@@ -1316,12 +1455,21 @@ function renderAlternatives(rawRoutes) {
     var via = raw && raw.legs && raw.legs[0] && raw.legs[0].summary ? 'via ' + raw.legs[0].summary : (i === 0 ? 'fastest' : 'alternative');
     if (!r.glare) { try { r.glare = A.glareSegments(r, Date.now()); } catch (e) { r.glare = []; } }
     var glareS = r.glare.reduce(function (a, s) { return a + s.durS; }, 0);
-    var pacedS = r.totalS * paceOf();
+    var tr = r.traffic;
+    var pacedS = (tr ? tr.adj.durS : r.totalS) * paceOf();
+    // is this the fastest once traffic is counted?
+    var minIdx = 0, anyDelay = false;
+    trip.routes.forEach(function (x, xi) {
+      var xd = (x.traffic ? x.traffic.adj.durS : x.totalS);
+      if (xd < (trip.routes[minIdx].traffic ? trip.routes[minIdx].traffic.adj.durS : trip.routes[minIdx].totalS)) minIdx = xi;
+      if (x.traffic && x.traffic.adj.delayS > 0) anyDelay = true;
+    });
     b.innerHTML = '<div><div class="tm"></div><div class="ds"></div></div><div class="tag"></div>';
     b.querySelector('.tm').textContent = A.fmtDur(pacedS);
     b.querySelector('.ds').textContent = A.fmtDist(r.totalM, settings.units) + ' · arrive ' + A.etaClock(Date.now(), pacedS) +
+      (tr && tr.adj.delayS >= 60 ? ' · ⚠ +' + A.fmtDur(tr.adj.delayS) + ' traffic' : '') +
       (glareS >= 45 ? ' · 🌅 ' + A.fmtDur(glareS) + ' low sun' : '');
-    b.querySelector('.tag').textContent = via;
+    b.querySelector('.tag').textContent = (anyDelay && i === minIdx && trip.routes.length > 1 ? '🚦 fastest now · ' : '') + via;
     b.addEventListener('click', function () {
       trip.selected = i;
       renderAlternatives(rawRoutes);
@@ -1377,6 +1525,16 @@ function startDemoTrip(andGo) {
   trip.dest = DEMO_DEST; trip.demoOnly = true; trip.profile = 'car';
   trip.routes = [A.buildRoute(DEMO_OSRM)];
   trip.selected = 0;
+  trip.raw = null;
+  // bundled demo incident: roadworks on The Mall — traffic demos offline too
+  (function (route) {
+    var spot = A.destinationPoint(route.geometry[13], 90, 6);
+    var mapped = A.mapIncidentsToRoute(route, [{ points: [spot], sev: 2, kind: 'Roadworks',
+      text: 'Roadworks — one lane closed' }]);
+    var factor = settings.traffic === 'on' ? trafficFactorNow() : 1;
+    route.traffic = { mapped: settings.traffic === 'on' ? mapped : [], factor: factor,
+                      adj: A.trafficAdjust(route, settings.traffic === 'on' ? mapped : [], factor) };
+  })(trip.routes[0]);
   $('destName').textContent = DEMO_DEST.name;
   $('destAddr').textContent = DEMO_DEST.addr + ' · bundled demo route';
   $('searchPillText').textContent = DEMO_DEST.name;
@@ -1401,6 +1559,11 @@ function startNav(demo) {
   nav.noteIdx = 0; nav.noteSpoken = {};
   nav.lastAlong = 0; nav.lastFixTs = Date.now(); nav.ghostCount = 0; nav.ghosting = false;
   if (!demo && !nav.ghostTimer) nav.ghostTimer = setInterval(ghostTick, 1000);
+  // 🚦 traffic view for this route (typical factor + snapped incidents)
+  var rtTraf = route.traffic || { mapped: [], factor: 1 };
+  nav.trafMapped = settings.traffic === 'on' ? rtTraf.mapped : [];
+  nav.trafFactor = settings.traffic === 'on' ? (rtTraf.factor || 1) : 1;
+  nav.trafSpoken = {};
   // 📷 speed limits + cameras (bundled for the demo, OpenStreetMap live)
   nav.limits = []; nav.cameras = []; nav.camSpoken = {}; nav.osState = null; nav.lastSafetyTs = Date.now();
   if (demo) {
@@ -1456,7 +1619,7 @@ function onNavFix(fix) {
 
   // HUD
   var next = r.nextStep;
-  var pacedRemS = r.remainingS * paceOf();
+  var pacedRemS = A.remainingWithTraffic(nav.route, r.alongM, nav.trafMapped, nav.trafFactor) * paceOf();
   setBanner(next.icon, A.fmtDist(r.distToNext, settings.units), next.instruction, followingOf(r));
   $('navBanner').classList.toggle('offroute', r.offRoute);
   if (r.offRoute) $('navText').textContent = 'Off route — recalculating…';
@@ -1494,8 +1657,24 @@ function onNavFix(fix) {
     }
   } else $('camChip').classList.remove('show');
 
+  // 🚦 incident ahead: chip with live distance + one spoken alert each
+  var trafWarn = null;
+  var trafHit = null;
+  if (nav.trafMapped && nav.trafMapped.length && !r.arrived) {
+    var ti = A.nextIncident(nav.trafMapped, r.alongM);
+    if (ti && ti.distM <= Math.max(500, v * 20)) trafHit = ti;
+  }
+  if (trafHit) {
+    $('trafChip').textContent = '⚠ ' + trafHit.inc.kind + ' · ' + A.fmtDist(trafHit.distM, settings.units) +
+      (trafHit.inc.delayS >= 60 ? ' · +' + A.fmtDur(trafHit.inc.delayS) : '');
+    $('trafChip').classList.add('show');
+    var tKey = Math.round(trafHit.inc.alongM);
+    if (!nav.trafSpoken[tKey]) { nav.trafSpoken[tKey] = 1; trafWarn = trafHit.inc; }
+  } else $('trafChip').classList.remove('show');
+
   if (r.announce) speak(r.announce.text);
   else if (os.warn) speak('Watch your speed — the limit is ' + limitLabel(limitKmh));
+  else if (trafWarn) speak('Traffic ahead — ' + trafWarn.kind.toLowerCase() + ' in ' + A.speakDist(trafHit.distM, settings.units));
   else speakPaceNote(r);
 
   if (r.offRoute && !nav.demo && !fix.ghost) maybeReroute(fix);
@@ -1580,6 +1759,17 @@ function maybeReroute(fix) {
       if (nav.active && nav.route === rerouted) { nav.limits = s.limits; nav.cameras = s.cameras; needsDraw = true; }
     }).catch(function () {});
     if (settings.codriver === 'on') { nav.notes = A.paceNotes(nav.route); nav.noteIdx = 0; nav.noteSpoken = {}; }
+    // refresh traffic for the new road
+    nav.trafSpoken = {};
+    applyTraffic([nav.route], function () {
+      if (nav.active && nav.route.traffic) {
+        nav.trafMapped = settings.traffic === 'on' ? nav.route.traffic.mapped : [];
+        nav.trafFactor = settings.traffic === 'on' ? nav.route.traffic.factor : 1;
+        needsDraw = true;
+      }
+    });
+    nav.trafMapped = settings.traffic === 'on' ? nav.route.traffic.mapped : [];
+    nav.trafFactor = settings.traffic === 'on' ? nav.route.traffic.factor : 1;
     toast('New route found');
     needsDraw = true;
   }).catch(function () { toast('Reroute failed — rejoin the blue line'); });
@@ -1675,6 +1865,7 @@ function stopNavUI() {
   $('speedBubble').classList.remove('show', 'over');
   $('limitSign').classList.remove('show');
   $('camChip').classList.remove('show');
+  $('trafChip').classList.remove('show');
   $('btnCompass').style.display = 'none';
   releaseWakeLock();
   if (window.speechSynthesis) window.speechSynthesis.cancel();
@@ -2292,7 +2483,7 @@ function segWire(id, key, after) {
   });
 }
 function syncSettingsUI() {
-  [['segUnits', 'units'], ['segVoice', 'voice'], ['segTheme', 'theme'], ['segCodriver', 'codriver'], ['segCameras', 'cameras']].forEach(function (pair) {
+  [['segUnits', 'units'], ['segVoice', 'voice'], ['segTheme', 'theme'], ['segCodriver', 'codriver'], ['segCameras', 'cameras'], ['segTraffic', 'traffic']].forEach(function (pair) {
     Array.prototype.forEach.call($(pair[0]).querySelectorAll('button'), function (b) {
       b.classList.toggle('on', b.getAttribute('data-v') === settings[pair[1]]);
     });
@@ -2304,6 +2495,7 @@ segWire('segVoice', 'voice');
 segWire('segTheme', 'theme', function () { needsDraw = true; });
 segWire('segCodriver', 'codriver');
 segWire('segCameras', 'cameras', function () { needsDraw = true; });
+segWire('segTraffic', 'traffic', function () { needsDraw = true; if (trip.routes.length && !trip.demoOnly) requestRoutes(); });
 syncSettingsUI();
 
 /* ------------------------------ maneuver icons --------------------------- */

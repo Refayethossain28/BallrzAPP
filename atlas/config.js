@@ -32,3 +32,13 @@ var ATLAS_FIREBASE_CONFIG = {
   appId: "1:254410067879:web:754b71a35182c997f37082"
 };
 if (typeof window !== 'undefined') window.ATLAS_FIREBASE_CONFIG = ATLAS_FIREBASE_CONFIG;
+
+/* Live traffic (optional key)
+ * ---------------------------
+ * Atlas ships with two keyless traffic layers: TfL's open disruption feed
+ * (real live incidents across Greater London) and a deterministic "typical
+ * traffic" rush-hour model for ETAs everywhere. For live incidents WORLDWIDE,
+ * paste a TomTom Traffic API key here (free tier: developer.tomtom.com,
+ * thousands of requests/day). Leave as null to stay keyless. */
+var ATLAS_TOMTOM_KEY = null;
+if (typeof window !== 'undefined') window.ATLAS_TOMTOM_KEY = ATLAS_TOMTOM_KEY;
