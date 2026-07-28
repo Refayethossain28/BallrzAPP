@@ -726,14 +726,24 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-/* tile cache with a small LRU + in-flight bookkeeping. Two sources:
-   'map' = OpenStreetMap raster, 'sat' = Esri World Imagery (free tiles,
-   credit shown in the attribution line — note Esri's {z}/{y}/{x} order). */
+/* tile cache with a small LRU + in-flight bookkeeping. Sources:
+   'voy'  = CARTO Voyager — clean, modern day cartography (retina @2x)
+   'dark' = CARTO Dark Matter — a DESIGNED night map, not an inversion
+   'sat'  = Esri World Imagery (note Esri's {z}/{y}/{x} order)
+   CARTO tiles fall back to openstreetmap.org per-tile if they fail. */
 var tiles = {}, tileOrder = [], TILE_CAP = 380;
+var TILE_R = (window.devicePixelRatio || 1) >= 1.5 ? '@2x' : '';
 var TILE_URL = function (layer, z, x, y) {
-  return layer === 'sat'
-    ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + y + '/' + x
-    : 'https://tile.openstreetmap.org/' + z + '/' + x + '/' + y + '.png';
+  if (layer === 'sat') {
+    return 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + y + '/' + x;
+  }
+  if (layer === 'dark') {
+    return 'https://basemaps.cartocdn.com/dark_all/' + z + '/' + x + '/' + y + TILE_R + '.png';
+  }
+  return 'https://basemaps.cartocdn.com/rastertiles/voyager/' + z + '/' + x + '/' + y + TILE_R + '.png';
+};
+var TILE_FALLBACK_URL = function (z, x, y) {
+  return 'https://tile.openstreetmap.org/' + z + '/' + x + '/' + y + '.png';
 };
 function getTile(layer, z, x, y) {
   var n = Math.pow(2, z);
@@ -742,10 +752,15 @@ function getTile(layer, z, x, y) {
   var key = layer + '|' + z + '/' + x + '/' + y;
   var t = tiles[key];
   if (t) return t;
-  t = { img: new Image(), ok: false, err: false };
+  t = { img: new Image(), ok: false, err: false, fellBack: false };
   t.img.crossOrigin = 'anonymous';
   t.img.onload = function () { t.ok = true; needsDraw = true; };
-  t.img.onerror = function () { t.err = true; };
+  t.img.onerror = function () {
+    if (layer !== 'sat' && !t.fellBack) {
+      t.fellBack = true;
+      t.img.src = TILE_FALLBACK_URL(z, x, y);
+    } else t.err = true;
+  };
   t.img.src = TILE_URL(layer, z, x, y);
   tiles[key] = t; tileOrder.push(key);
   if (tileOrder.length > TILE_CAP) {
@@ -793,9 +808,9 @@ var FILTER_OK = (function () {
 
 function draw() {
   var night = nightMode();
-  var layer = settings.baseLayer === 'sat' ? 'sat' : 'map';
+  var layer = settings.baseLayer === 'sat' ? 'sat' : (night ? 'dark' : 'voy');
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  ctx.fillStyle = layer === 'sat' ? '#090d12' : (night ? '#0d1322' : '#e8e4dc');
+  ctx.fillStyle = layer === 'sat' ? '#090d12' : (night ? '#11151d' : '#f2f0eb');
   ctx.fillRect(0, 0, W, H);
 
   var z = Math.max(2, Math.min(19, Math.floor(view.zoom)));
@@ -810,14 +825,9 @@ function draw() {
   ctx.rotate(view.rot);
   ctx.scale(scale, scale);
   ctx.translate(-c.x, -c.y);
-  // night inverts the drawn map; satellite imagery just dims a little.
-  // day map gets a whisper of saturation for the modern look.
-  if (FILTER_OK) {
-    ctx.filter = layer === 'sat'
-      ? (night ? 'brightness(0.82) saturate(0.9)' : 'saturate(1.05)')
-      : (night ? 'invert(1) hue-rotate(180deg) brightness(0.86) contrast(0.92) saturate(0.65)'
-               : 'saturate(1.06) contrast(1.03)');
-  }
+  // CARTO's Voyager/Dark Matter are already designed for day/night — no
+  // filters needed. Satellite just dims a little after dark.
+  if (FILTER_OK && layer === 'sat' && night) ctx.filter = 'brightness(0.82) saturate(0.9)';
 
   var t0x = Math.floor((c.x - radius) / A.TILE), t1x = Math.floor((c.x + radius) / A.TILE);
   var t0y = Math.floor((c.y - radius) / A.TILE), t1y = Math.floor((c.y + radius) / A.TILE);
@@ -833,7 +843,7 @@ function draw() {
         var sx = (tx & 1) * A.TILE / 2, sy = (ty & 1) * A.TILE / 2;
         ctx.drawImage(pt.img, sx, sy, A.TILE / 2, A.TILE / 2, tx * A.TILE, ty * A.TILE, A.TILE, A.TILE);
       } else {
-        ctx.fillStyle = layer === 'sat' ? '#0c1118' : (night ? '#101830' : '#ded9d0');
+        ctx.fillStyle = layer === 'sat' ? '#0c1118' : (night ? '#161b25' : '#eae7e1');
         ctx.fillRect(tx * A.TILE, ty * A.TILE, A.TILE, A.TILE);
       }
     }
@@ -841,20 +851,11 @@ function draw() {
   if (FILTER_OK) ctx.filter = 'none';
   ctx.restore();
 
-  // Safari fallback: invert the tiles via compositing (tiles only — the
-  // buildings, route and markers paint after this in their own colours)
-  if (!FILTER_OK && night) {
-    if (layer === 'map') {
-      ctx.globalCompositeOperation = 'difference';
-      ctx.fillStyle = '#efe9dd';
-      ctx.fillRect(0, 0, W, H);
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = 'rgba(10,16,32,0.30)';
-      ctx.fillRect(0, 0, W, H);
-    } else {
-      ctx.fillStyle = 'rgba(2,6,14,0.35)';
-      ctx.fillRect(0, 0, W, H);
-    }
+  // Safari (no canvas filter): dim satellite after dark with a plain wash.
+  // The map layers need nothing — Dark Matter is dark by design.
+  if (!FILTER_OK && night && layer === 'sat') {
+    ctx.fillStyle = 'rgba(2,6,14,0.35)';
+    ctx.fillRect(0, 0, W, H);
   }
 
   drawBuildings(night);
@@ -1214,7 +1215,7 @@ function apply3d() {
 function updateAttribution() {
   $('attribution').innerHTML = settings.baseLayer === 'sat'
     ? 'Imagery © Esri, Maxar, Earthstar Geographics'
-    : '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
+    : '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors · © <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>';
 }
 
 /* ================================= GPS ================================== */
