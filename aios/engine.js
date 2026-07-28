@@ -44,7 +44,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var VERSION = '4.1.0';
+  var VERSION = '4.2.0';
   var JOURNAL_CAP = 300;
   var RUN_DEPTH_CAP = 8;
   var SCRIPT_STEP_CAP = 100000; // total statements one `run` may execute — kills infinite loops
@@ -551,6 +551,48 @@
     return state;
   }
 
+  /* ══════════════════════════ Ballrz catalog ══════════════════════════
+   * Every app in the Ballrz Hub, launchable from inside AIOS: the App Store
+   * lists them and each opens as a `webapp` window/sheet hosting the real
+   * app in a sandboxed frame. URLs are relative to /aios/ so they resolve on
+   * the published site, the custom domain and a local checkout alike. */
+
+  var BALLRZ_APPS = [
+    { id: 'apexvip',    name: 'ApexVIP',        emoji: '✨', url: '../apexvip/',            desc: 'The cinematic luxury chauffeur site.' },
+    { id: 'client',     name: 'ApexVIP Client', emoji: '🚘', url: '../apexvip-client.html', desc: 'Book a chauffeur, track your driver live.' },
+    { id: 'driver',     name: 'ApexVIP Driver', emoji: '🛞', url: '../apexvip-driver.html', desc: 'Accept & manage jobs, live GPS, earnings.' },
+    { id: 'ops',        name: 'ApexVIP Ops',    emoji: '🎛️', url: '../apexvip-admin.html',  desc: 'Dispatch, fleet, analytics & payouts.' },
+    { id: 'concierge',  name: 'Concierge',      emoji: '🛎️', url: '../concierge/',          desc: 'One membership, everything handled.' },
+    { id: 'founding',   name: 'Founding',       emoji: '🎟️', url: '../apexvip-join/',       desc: 'Founding memberships — join ApexVIP.' },
+    { id: 'drivewithus', name: 'Drive with us', emoji: '🤝', url: '../drivers/',            desc: 'Recruiting — keep 80% of every fare.' },
+    { id: 'apex',       name: 'Apex',           emoji: '🏘️', url: '../apex/',               desc: 'The UK landlord OS.' },
+    { id: 'apexsite',   name: 'Apex Site',      emoji: '🏠', url: '../apex-site/',          desc: 'The landlord OS marketing site.' },
+    { id: 'imposter',   name: 'Imposter',       emoji: '🕵️', url: '../imposter/',           desc: 'Pass-and-play social deduction.' },
+    { id: 'flow',       name: 'Flow',           emoji: '🌊', url: '../concepts/prototypes/flow-game/', desc: 'Adaptive tap arcade.' },
+    { id: 'ripple',     name: 'Ripple',         emoji: '💬', url: '../ripple/',             desc: 'The private messenger that puts you in control.' },
+    { id: 'intro',      name: 'Intro',          emoji: '🎴', url: '../intro/',              desc: 'Your digital business card — QR, NFC, Wallet.' },
+    { id: 'vault',      name: 'Vault',          emoji: '🏦', url: '../vault/',              desc: 'A full digital bank with a crypto desk.' },
+    { id: 'drip',       name: 'Drip',           emoji: '💧', url: '../drip/',               desc: 'The passive income engine.' },
+    { id: 'graft',      name: 'Graft',          emoji: '⚒️', url: '../graft/',              desc: 'The income engine — hustle, plan, invoice.' },
+    { id: 'timecoin',   name: 'TimeCoin',       emoji: '🪙', url: '../coin/',               desc: 'A Bitcoin built from raw bytes — mine in-browser.' },
+    { id: 'neura',      name: 'Neura',          emoji: '🧠', url: '../neura/',              desc: 'The chain that thinks — Proof of Intelligence.' },
+    { id: 'automaton',  name: 'Automaton',      emoji: '🤖', url: '../automaton/',          desc: 'The AI that dies if it doesn’t earn.' },
+    { id: 'fxsignal',   name: 'FX Signal Pro',  emoji: '📈', url: '../trading-app/fx-signal-pro.html', desc: 'Currency-pair trading signals.' },
+    { id: 'voyager',    name: 'Voyager',        emoji: '🧭', url: '../voyager/',            desc: 'The internet browser — tabs, omnibox, memory.' },
+    { id: 'cortex',     name: 'Cortex',         emoji: '🧩', url: '../cortex/',             desc: 'The daily brain gym — five adaptive drills.' },
+    { id: 'cusp',       name: 'Cusp',           emoji: '🎯', url: '../cusp/',               desc: 'What to do right now — the salience engine.' },
+    { id: 'atlas',      name: 'Atlas',          emoji: '🗺️', url: '../atlas/',              desc: 'Your own satnav — voice turn-by-turn.' },
+    { id: 'omni',       name: 'Omni',           emoji: '🧰', url: '../omni/',               desc: 'The do-everything app.' },
+    { id: 'lingua',     name: 'Lingua',         emoji: '🗣️', url: '../lingua/',             desc: 'The fluency engine — every language.' },
+    { id: 'myownai',    name: 'My Own AI',      emoji: '⚡', url: '../llm/',                desc: 'A GPT built from first principles, on-device.' },
+    { id: 'splitbill',  name: 'Split the bill', emoji: '🧾', url: '../concepts/prototypes/concierge-split/', desc: 'AI concierge — agree a split, fire requests.' },
+    { id: 'fixr',       name: 'Fixr',           emoji: '🛎️', url: '../fixr/',               desc: 'Luxury transport + concierge — the static demo.' }
+  ];
+  function ballrzAppById(id) {
+    for (var i = 0; i < BALLRZ_APPS.length; i++) if (BALLRZ_APPS[i].id === id) return BALLRZ_APPS[i];
+    return null;
+  }
+
   /* ══════════════════════════ Mobile home screen ══════════════════════════
    * The phone shell (a springboard of app icons, one fullscreen app at a
    * time) is a different presentation of the SAME kernel — the desktop's
@@ -619,16 +661,19 @@
 
   /* ══════════════════════════ Processes / windows ══════════════════════════ */
 
-  // Notes is one window per file; a user app (userapp) is one window per app id.
-  function procKey(appId, arg) { return (appId === 'notes' || appId === 'userapp') && arg ? appId + ':' + arg : appId; }
+  // Notes is one window per file; user apps and hub webapps are one per id.
+  function procKey(appId, arg) { return (appId === 'notes' || appId === 'userapp' || appId === 'webapp') && arg ? appId + ':' + arg : appId; }
 
   /** Spawn (or refocus) an app on the CURRENT workspace. Apps are singletons
    *  per workspace-agnostic key; re-spawning pulls the window to the active
    *  workspace. Placement cascades deterministically from the spawn ordinal. */
   function spawn(state, appId, arg) {
-    // userapp is a synthetic host window for an installed .app (arg = its id)
-    var app = appId === 'userapp' ? readApp(state, arg) : appById(appId);
-    if (!app) return { ok: false, error: appId === 'userapp' ? 'no such app: ' + arg : 'no such app: ' + appId };
+    // synthetic host windows: userapp = an installed .app manifest (arg = id),
+    // webapp = a Ballrz Hub app in a frame (arg = catalog id)
+    var app = appId === 'userapp' ? readApp(state, arg)
+            : appId === 'webapp' ? ballrzAppById(arg)
+            : appById(appId);
+    if (!app) return { ok: false, error: 'no such app: ' + (appId === 'userapp' || appId === 'webapp' ? arg : appId) };
     var key = procKey(appId, arg);
     for (var i = 0; i < state.procs.length; i++) {
       if (procKey(state.procs[i].app, state.procs[i].arg) === key) {
@@ -642,7 +687,7 @@
       pid: n,
       app: appId,
       title: appId === 'notes' && arg ? splitPath(arg).name : app.name,
-      emoji: appId === 'userapp' ? app.emoji : null,
+      emoji: (appId === 'userapp' || appId === 'webapp') ? app.emoji : null,
       arg: arg || null,
       x: 36 + ((n - 1) * 28) % 168,
       y: 30 + ((n - 1) * 24) % 144,
@@ -2043,6 +2088,9 @@
     boot: boot,
     serialize: serialize,
     deserialize: deserialize,
+    // ballrz catalog
+    BALLRZ_APPS: BALLRZ_APPS,
+    ballrzAppById: ballrzAppById,
     // mobile home screen
     DOCK_FAVORITES: DOCK_FAVORITES,
     springboard: springboard,
