@@ -75,8 +75,11 @@
     about: 'About Voyager',
   };
 
-  /* The search engines a user can pick in Settings. %s is the query slot. */
+  /* The search engines a user can pick in Settings. %s is the query slot.
+   * First is the default: Seeker — the repo's own search engine, so searches
+   * stay in the family (and it frames happily, being a static page). */
   var SEARCH_ENGINES = [
+    { id: 'seeker', name: 'Seeker', template: 'https://refayethossain28.github.io/BallrzAPP/seeker/?q=%s' },
     { id: 'duckduckgo', name: 'DuckDuckGo', template: 'https://duckduckgo.com/?q=%s' },
     { id: 'google', name: 'Google', template: 'https://www.google.com/search?q=%s' },
     { id: 'bing', name: 'Bing', template: 'https://www.bing.com/search?q=%s' },
@@ -332,7 +335,7 @@
       shortcuts: [],    // custom start-page tiles: {url, title}
       sites: {},        // per-site overrides, keyed by host: {zoom?, blockTrackers?, remember?}
       settings: {
-        engine: opts.engine || 'duckduckgo',
+        engine: opts.engine || 'seeker',
         home: opts.home || INTERNAL + 'start',
         torGateway: opts.torGateway || '',   // '' = off; a bare host like "onion.ws" routes .onion
         proxy: opts.proxy || '',             // '' = auto-detect local server; a URL forces it; 'off' disables
@@ -1074,7 +1077,7 @@
       shortcuts: Array.isArray(data.shortcuts) ? data.shortcuts : [],
       sites: (data.sites && typeof data.sites === 'object' && !Array.isArray(data.sites)) ? data.sites : {},
       settings: {
-        engine: (data.settings && data.settings.engine) || 'duckduckgo',
+        engine: (data.settings && data.settings.engine) || 'seeker',
         home: (data.settings && data.settings.home) || INTERNAL + 'start',
         torGateway: (data.settings && data.settings.torGateway) || '',
         proxy: (data.settings && data.settings.proxy) || '',
