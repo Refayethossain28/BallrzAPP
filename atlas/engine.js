@@ -958,6 +958,116 @@
     return Math.round(Math.max(0.6, Math.min(1.6, next)) * 1000) / 1000;
   }
 
+  /* ============================== music player ============================ */
+  // Drive-time music from the user's own files. The pure parts live here:
+  // a from-scratch ID3v2 tag reader (title/artist/album from an MP3's first
+  // bytes), deterministic shuffle, and the queue-advance state machine.
+
+  function id3Text(enc, bytes) {
+    var i, out = '';
+    if (enc === 0) { // ISO-8859-1
+      for (i = 0; i < bytes.length; i++) out += String.fromCharCode(bytes[i]);
+      return out;
+    }
+    if (enc === 3) { // UTF-8
+      i = 0;
+      while (i < bytes.length) {
+        var b = bytes[i];
+        if (b < 0x80) { out += String.fromCharCode(b); i += 1; }
+        else if (b < 0xe0) { out += String.fromCharCode(((b & 0x1f) << 6) | (bytes[i + 1] & 0x3f)); i += 2; }
+        else if (b < 0xf0) { out += String.fromCharCode(((b & 0x0f) << 12) | ((bytes[i + 1] & 0x3f) << 6) | (bytes[i + 2] & 0x3f)); i += 3; }
+        else { // astral → surrogate pair
+          var cp = ((b & 0x07) << 18) | ((bytes[i + 1] & 0x3f) << 12) | ((bytes[i + 2] & 0x3f) << 6) | (bytes[i + 3] & 0x3f);
+          cp -= 0x10000;
+          out += String.fromCharCode(0xd800 + (cp >> 10), 0xdc00 + (cp & 0x3ff));
+          i += 4;
+        }
+      }
+      return out;
+    }
+    // UTF-16: enc 1 has a BOM, enc 2 is big-endian without one
+    var le = enc === 1 && bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe;
+    var start = enc === 1 && bytes.length >= 2 && (bytes[0] === 0xff || bytes[0] === 0xfe) ? 2 : 0;
+    for (i = start; i + 1 < bytes.length; i += 2) {
+      out += String.fromCharCode(le ? bytes[i] | (bytes[i + 1] << 8) : (bytes[i] << 8) | bytes[i + 1]);
+    }
+    return out;
+  }
+
+  /** Read title/artist/album from an MP3's leading bytes (ID3v2.3/2.4).
+   *  → {title?, artist?, album?} or null when there is no usable tag. */
+  function parseID3(bytes) {
+    if (!bytes || bytes.length < 10) return null;
+    if (bytes[0] !== 0x49 || bytes[1] !== 0x44 || bytes[2] !== 0x33) return null; // "ID3"
+    var ver = bytes[3];
+    if (ver < 3 || ver > 4) return null;
+    var size = ((bytes[6] & 0x7f) << 21) | ((bytes[7] & 0x7f) << 14) | ((bytes[8] & 0x7f) << 7) | (bytes[9] & 0x7f);
+    var end = Math.min(bytes.length, 10 + size);
+    var pos = 10;
+    if (bytes[5] & 0x40) { // extended header — skip it
+      var ext = ver === 4
+        ? ((bytes[pos] & 0x7f) << 21) | ((bytes[pos + 1] & 0x7f) << 14) | ((bytes[pos + 2] & 0x7f) << 7) | (bytes[pos + 3] & 0x7f)
+        : ((bytes[pos] << 24) | (bytes[pos + 1] << 16) | (bytes[pos + 2] << 8) | bytes[pos + 3]) + 4;
+      pos += ext;
+    }
+    var MAP = { TIT2: 'title', TPE1: 'artist', TALB: 'album' };
+    var out = {};
+    while (pos + 10 <= end) {
+      var id = String.fromCharCode(bytes[pos], bytes[pos + 1], bytes[pos + 2], bytes[pos + 3]);
+      if (!/^[A-Z0-9]{4}$/.test(id)) break;
+      var fsz = ver === 4
+        ? ((bytes[pos + 4] & 0x7f) << 21) | ((bytes[pos + 5] & 0x7f) << 14) | ((bytes[pos + 6] & 0x7f) << 7) | (bytes[pos + 7] & 0x7f)
+        : (bytes[pos + 4] << 24) | (bytes[pos + 5] << 16) | (bytes[pos + 6] << 8) | bytes[pos + 7];
+      pos += 10;
+      if (fsz <= 0 || pos + fsz > end) break;
+      var key = MAP[id];
+      if (key && !out[key]) {
+        out[key] = id3Text(bytes[pos], bytes.subarray(pos + 1, pos + fsz)).replace(/ +$/g, '').trim();
+      }
+      pos += fsz;
+    }
+    return (out.title || out.artist || out.album) ? out : null;
+  }
+
+  /** Fisher–Yates with an injected rand — a full deterministic permutation. */
+  function makeShuffleOrder(n, rand) {
+    rand = rand || Math.random;
+    var order = [];
+    for (var i = 0; i < n; i++) order.push(i);
+    for (var j = n - 1; j > 0; j--) {
+      var k = Math.floor(rand() * (j + 1)) % (j + 1);
+      var t = order[j]; order[j] = order[k]; order[k] = t;
+    }
+    return order;
+  }
+
+  /**
+   * Which track plays next. state = {idx, count, repeat: 'off'|'all'|'one',
+   * shuffle: order[]|null, dir: 1|-1, ended: bool (track finished naturally)}.
+   * → next index, or null to stop (end of queue, repeat off).
+   */
+  function nextTrack(state) {
+    if (!state || !state.count) return null;
+    if (state.repeat === 'one' && state.ended) return state.idx;
+    var pos = state.shuffle ? state.shuffle.indexOf(state.idx) : state.idx;
+    if (pos < 0) pos = 0;
+    var npos = pos + (state.dir || 1);
+    if (npos >= state.count) {
+      if (state.repeat !== 'all') return null;
+      npos = 0;
+    }
+    if (npos < 0) npos = state.count - 1;
+    return state.shuffle ? state.shuffle[npos] : npos;
+  }
+
+  /** "3:45" | "1:02:03" for a track position/length in seconds. */
+  function fmtTrackTime(s) {
+    s = Math.max(0, Math.floor(s || 0));
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    var mm = (h && m < 10 ? '0' : '') + m, ss = (sec < 10 ? '0' : '') + sec;
+    return (h ? h + ':' : '') + mm + ':' + ss;
+  }
+
   /* ============================= offline packs ============================ */
   // Which tiles cover a route's corridor, per zoom — the shopping list for
   // an offline download. Highest zooms first (navigation needs them most),
@@ -1402,6 +1512,8 @@
     fmtBytes: fmtBytes, pruneClips: pruneClips,
     parseMaxspeed: parseMaxspeed, mapLimitsToRoute: mapLimitsToRoute, limitAtAlong: limitAtAlong,
     mapCamerasToRoute: mapCamerasToRoute, cameraNext: cameraNext, overspeedUpdate: overspeedUpdate,
+    parseID3: parseID3, makeShuffleOrder: makeShuffleOrder,
+    nextTrack: nextTrack, fmtTrackTime: fmtTrackTime,
     corridorTiles: corridorTiles, packEstimateMB: packEstimateMB,
     laneIconKey: laneIconKey, parseLanes: parseLanes,
     junctionCandidates: junctionCandidates, buildJunctionView: buildJunctionView,
