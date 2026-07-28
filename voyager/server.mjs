@@ -177,6 +177,23 @@ async function handleProxy(target, req, res, blockOn) {
   send(res, upstream.status, outHeaders, buf);
 }
 
+async function handleReader(target, res) {
+  const cors = { 'content-type': 'application/json', 'access-control-allow-origin': '*' };
+  let url;
+  try { url = new URL(target); } catch (e) { return send(res, 400, cors, JSON.stringify({ error: 'bad url' })); }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return send(res, 400, cors, JSON.stringify({ error: 'unsupported' }));
+  if (!ALLOW_PRIVATE && Proxy.isBlockedHost(url.hostname)) return send(res, 403, cors, JSON.stringify({ error: 'blocked host' }));
+  let upstream;
+  try { upstream = await fetch(url.href, { headers: Object.assign({}, BROWSER_HEADERS), redirect: 'follow' }); }
+  catch (e) { return send(res, 502, cors, JSON.stringify({ error: String(e && e.message || e) })); }
+  const ct = upstream.headers.get('content-type') || '';
+  if (!Proxy.isHtml(ct)) return send(res, 415, cors, JSON.stringify({ error: 'not html' }));
+  const raw = await upstream.arrayBuffer();
+  const html = new TextDecoder('utf-8').decode(raw.byteLength > MAX_TEXT ? raw.slice(0, MAX_TEXT) : raw);
+  const article = Proxy.extractReadable(html, upstream.url || url.href);
+  send(res, 200, cors, JSON.stringify({ url: upstream.url || url.href, title: article.title, text: article.text, html: article.html, words: article.words, images: article.images }));
+}
+
 function readBody(req) {
   return new Promise((resolve) => {
     const chunks = [];
@@ -209,6 +226,14 @@ const server = http.createServer(async (req, res) => {
     if (!target) return send(res, 400, { 'content-type': 'text/plain' }, 'missing url');
     const blockOn = TRACKER_BLOCK && parsed.searchParams.get('block') !== '0';
     return handleProxy(target, req, res, blockOn);
+  }
+  if (pathname === '/reader') {
+    // Reader extraction: fetch a page and return clean {title,text,html,words}.
+    // CORS-open (the app may live on another origin) and key-gated like /proxy.
+    if (PROXY_KEY && parsed.searchParams.get('key') !== PROXY_KEY) {
+      return send(res, 403, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }, JSON.stringify({ error: 'locked' }));
+    }
+    return handleReader(parsed.searchParams.get('url'), res);
   }
   if (await serveStatic(pathname, res)) return;
   send(res, 404, { 'content-type': 'text/plain' }, 'not found');
