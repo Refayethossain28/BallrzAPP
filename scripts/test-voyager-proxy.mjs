@@ -154,6 +154,41 @@ test('countTrackers counts distinct tracker URLs in a page, and the shim reports
   assert.ok(plain.indexOf('TRK=0') !== -1);
 });
 
+test('discoverFeeds finds advertised RSS/Atom links, absolutized and deduped', () => {
+  const html = '<html><head>' +
+    '<link rel="alternate" type="application/rss+xml" href="/feed.xml">' +
+    '<link rel="alternate" type="application/atom+xml" href="https://other.site/atom">' +
+    '<link rel="alternate" type="application/rss+xml" href="/feed.xml">' +   // dupe
+    '<link rel="stylesheet" href="/style.css">' +
+    '</head></html>';
+  const feeds = P.discoverFeeds(html, 'https://blog.site/post/1');
+  assert.equal(JSON.stringify(feeds), JSON.stringify(['https://blog.site/feed.xml', 'https://other.site/atom']));
+  assert.equal(P.discoverFeeds('<p>plain page</p>', 'https://x.site/').length, 0);
+});
+
+test('parseFeed reads RSS 2.0 and Atom: titles, links, dates, CDATA, entities', () => {
+  const rss = '<?xml version="1.0"?><rss version="2.0"><channel><title>My &amp; Blog</title>' +
+    '<item><title><![CDATA[First <b>post</b>]]></title><link>https://blog.site/1</link><pubDate>Mon, 27 Jul 2026 10:00:00 GMT</pubDate></item>' +
+    '<item><title>No link</title></item>' +
+    '<item><title>Second</title><link>/relative/2</link></item>' +
+    '</channel></rss>';
+  const r = P.parseFeed(rss, 'https://blog.site/rss');
+  assert.equal(r.title, 'My & Blog');
+  assert.equal(r.items.length, 2);                                        // linkless dropped
+  assert.equal(r.items[0].title, 'First post');                           // CDATA + tags stripped
+  assert.equal(r.items[0].url, 'https://blog.site/1');
+  assert.ok(r.items[0].ts > 0);                                           // pubDate parsed
+  assert.equal(r.items[1].url, 'https://blog.site/relative/2');           // absolutized
+
+  const atom = '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><title>Atom Site</title>' +
+    '<entry><title>Entry one</title><link href="https://a.site/e1"/><updated>2026-07-26T12:00:00Z</updated></entry>' +
+    '</feed>';
+  const a = P.parseFeed(atom, 'https://a.site/atom');
+  assert.equal(a.title, 'Atom Site');
+  assert.equal(a.items[0].url, 'https://a.site/e1');
+  assert.ok(a.items[0].ts > 0);
+});
+
 test('originAllowed gates a deployed proxy to its app origins', () => {
   const allow = ['https://refayethossain28.github.io'];
   assert.equal(P.originAllowed('https://refayethossain28.github.io', allow), true);

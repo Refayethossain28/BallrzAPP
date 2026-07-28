@@ -335,6 +335,8 @@
       memory: [],       // remembered pages: {url, title, text, words, ts}
       shortcuts: [],    // custom start-page tiles: {url, title}
       sites: {},        // per-site overrides, keyed by host: {zoom?, blockTrackers?, remember?}
+      highlights: [],   // marker-pen passages: {url, text, ts}
+      follows: [],      // followed feeds: {feedUrl, siteUrl, title, items, updatedTs}
       settings: {
         engine: opts.engine || 'seeker',
         engineChosen: false,   // flips when the user picks one in Settings
@@ -907,6 +909,118 @@
     return dx > 0 ? 'back' : 'forward';
   }
 
+  /* ════════════════════════ highlights ════════════════════════
+   * Marker-pen for the web: passages you select in Reader are kept on-device,
+   * re-inked every time you return, and they survive the live page dying —
+   * they belong to YOUR copy. */
+
+  var HIGHLIGHT_CAP = 400;        // total kept (oldest fall off)
+  var HIGHLIGHT_TEXT_CAP = 500;   // chars per highlight
+
+  function addHighlight(state, url, text, ts) {
+    if (!url || String(url).toLowerCase().indexOf(INTERNAL) === 0) return state;
+    text = String(text == null ? '' : text).replace(/\s+/g, ' ').trim().slice(0, HIGHLIGHT_TEXT_CAP);
+    if (!text) return state;
+    for (var i = 0; i < state.highlights.length; i++) {
+      if (state.highlights[i].url === url && state.highlights[i].text === text) return state;
+    }
+    var next = shallow(state);
+    next.highlights = state.highlights.concat([{ url: url, text: text, ts: ts || null }]);
+    if (next.highlights.length > HIGHLIGHT_CAP) next.highlights = next.highlights.slice(next.highlights.length - HIGHLIGHT_CAP);
+    return next;
+  }
+
+  function removeHighlight(state, url, text) {
+    var next = shallow(state);
+    next.highlights = state.highlights.filter(function (h) { return !(h.url === url && h.text === text); });
+    return next;
+  }
+
+  function highlightsFor(state, url) {
+    return state.highlights.filter(function (h) { return h.url === url; });
+  }
+
+  /* ════════════════════════ follows: sites that come to you ═══════════════
+   * A from-scratch feed follower — no account, no algorithm, no unread-count
+   * anxiety. The proxy discovers a site's RSS/Atom feed; the engine keeps the
+   * follows and merges their newest items for the start page. */
+
+  var FOLLOW_CAP = 30;            // feeds followed
+  var FOLLOW_ITEM_CAP = 20;       // items kept per feed
+
+  function normFeedItems(items) {
+    var out = [];
+    for (var i = 0; i < (items || []).length && out.length < FOLLOW_ITEM_CAP; i++) {
+      var it = items[i];
+      if (!it || !it.url || !/^https?:/i.test(String(it.url))) continue;
+      out.push({ title: String(it.title || '').slice(0, 200) || displayUrl(it.url), url: it.url, ts: Number(it.ts) || null });
+    }
+    return out;
+  }
+
+  function isFollowed(state, feedOrSiteUrl) {
+    var s = String(feedOrSiteUrl || '');
+    var host = siteOf(s);
+    for (var i = 0; i < state.follows.length; i++) {
+      var f = state.follows[i];
+      if (f.feedUrl === s || (host && (siteOf(f.siteUrl) === host || siteOf(f.feedUrl) === host))) return true;
+    }
+    return false;
+  }
+
+  function addFollow(state, feed, ts) {
+    if (!feed || !feed.feedUrl || !/^https?:/i.test(String(feed.feedUrl))) return state;
+    for (var i = 0; i < state.follows.length; i++) if (state.follows[i].feedUrl === feed.feedUrl) return state;
+    var next = shallow(state);
+    next.follows = state.follows.concat([{
+      feedUrl: feed.feedUrl,
+      siteUrl: feed.siteUrl || feed.feedUrl,
+      title: String(feed.title || '').slice(0, 80) || siteOf(feed.feedUrl) || displayUrl(feed.feedUrl),
+      items: normFeedItems(feed.items),
+      updatedTs: ts || null,
+    }]);
+    if (next.follows.length > FOLLOW_CAP) next.follows = next.follows.slice(next.follows.length - FOLLOW_CAP);
+    return next;
+  }
+
+  function removeFollow(state, feedOrSiteUrl) {
+    var host = siteOf(String(feedOrSiteUrl || ''));
+    var next = shallow(state);
+    next.follows = state.follows.filter(function (f) {
+      return f.feedUrl !== feedOrSiteUrl && !(host && (siteOf(f.siteUrl) === host || siteOf(f.feedUrl) === host));
+    });
+    return next;
+  }
+
+  /** Fresh items for an already-followed feed (a refresh), newest kept. */
+  function updateFollow(state, feedUrl, items, ts) {
+    var next = shallow(state);
+    var changed = false;
+    next.follows = state.follows.map(function (f) {
+      if (f.feedUrl !== feedUrl) return f;
+      changed = true;
+      var nf = shallow(f);
+      nf.items = normFeedItems(items);
+      nf.updatedTs = ts || null;
+      return nf;
+    });
+    return changed ? next : state;
+  }
+
+  /** The start-page river: every follow's items merged, newest first. */
+  function followedItems(state, limit) {
+    var out = [];
+    for (var i = 0; i < state.follows.length; i++) {
+      var f = state.follows[i];
+      for (var j = 0; j < f.items.length; j++) {
+        out.push({ title: f.items[j].title, url: f.items[j].url, ts: f.items[j].ts, source: f.title });
+      }
+    }
+    out.sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+    if (limit && out.length > limit) out = out.slice(0, limit);
+    return out;
+  }
+
   /* ════════════════════════ start-page shortcuts ════════════════════════ */
 
   function addShortcut(state, url, title) {
@@ -1179,6 +1293,8 @@
       memory: state.memory,
       shortcuts: state.shortcuts,
       sites: state.sites || {},
+      highlights: state.highlights || [],
+      follows: state.follows || [],
       settings: state.settings,
     });
   }
@@ -1208,6 +1324,8 @@
       memory: Array.isArray(data.memory) ? data.memory : [],
       shortcuts: Array.isArray(data.shortcuts) ? data.shortcuts : [],
       sites: (data.sites && typeof data.sites === 'object' && !Array.isArray(data.sites)) ? data.sites : {},
+      highlights: Array.isArray(data.highlights) ? data.highlights : [],
+      follows: Array.isArray(data.follows) ? data.follows : [],
       settings: {
         // The stored engine, with one honest migration: 'duckduckgo' that was
         // never explicitly chosen is just the old default frozen into a saved
@@ -1301,6 +1419,14 @@
     pageChanges: pageChanges,
     summarize: summarize,
     recordTrackers: recordTrackers,
+    addHighlight: addHighlight,
+    removeHighlight: removeHighlight,
+    highlightsFor: highlightsFor,
+    isFollowed: isFollowed,
+    addFollow: addFollow,
+    removeFollow: removeFollow,
+    updateFollow: updateFollow,
+    followedItems: followedItems,
     siteOf: siteOf,
     siteSetting: siteSetting,
     setSiteSetting: setSiteSetting,
