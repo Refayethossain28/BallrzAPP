@@ -52,7 +52,7 @@ test('classify: explicit schemes pass through untouched', () => {
 test('classify: questions, phrases and non-hosts are searches through the engine', () => {
   const s = V.classify('how do browsers work');
   assert.equal(s.kind, 'search');
-  assert.equal(s.url, 'https://duckduckgo.com/?q=how%20do%20browsers%20work');
+  assert.equal(s.url, 'https://refayethossain28.github.io/BallrzAPP/seeker/?q=how%20do%20browsers%20work');
   assert.equal(V.classify('example com').kind, 'search');          // space kills URL-ness
   assert.equal(V.classify('what is example.com').kind, 'search');  // even with a domain inside
   assert.equal(V.classify('hello').kind, 'search');                // no dot, no host
@@ -61,9 +61,22 @@ test('classify: questions, phrases and non-hosts are searches through the engine
   assert.equal(V.classify('cats!?').kind, 'search');
 });
 
-test('classify: chosen engine is honoured, unknown engine falls back to the first', () => {
+test('classify: chosen engine is honoured, unknown engine falls back to the first (Seeker)', () => {
   assert.equal(V.classify('cats', { engine: 'google' }).url, 'https://www.google.com/search?q=cats');
-  assert.equal(V.classify('cats', { engine: 'nope' }).url, 'https://duckduckgo.com/?q=cats');
+  assert.equal(V.classify('cats', { engine: 'duckduckgo' }).url, 'https://duckduckgo.com/?q=cats');
+  assert.equal(V.classify('cats', { engine: 'nope' }).url, 'https://refayethossain28.github.io/BallrzAPP/seeker/?q=cats');
+});
+
+test('Seeker is the default engine: browsers are born searching their own', () => {
+  const s = V.createBrowser();
+  assert.equal(s.settings.engine, 'seeker');
+  assert.equal(V.SEARCH_ENGINES[0].id, 'seeker');
+  assert.equal(V.searchUrl('seeker', 'quantum networking'),
+    'https://refayethossain28.github.io/BallrzAPP/seeker/?q=quantum%20networking');
+  const r = V.restore(JSON.stringify({ v: 1, tabs: [{ id: 1, stack: ['voyager://start'], pos: 0 }], settings: {} }));
+  assert.equal(r.settings.engine, 'seeker');                       // absent setting → the new default
+  const kept = V.restore(V.serialize(V.setSetting(s, 'engine', 'duckduckgo')));
+  assert.equal(kept.settings.engine, 'duckduckgo');                // an explicit choice is honoured
 });
 
 test('classify: voyager:// pages are internal; unknown internal pages become searches', () => {
