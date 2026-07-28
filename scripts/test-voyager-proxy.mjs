@@ -107,6 +107,18 @@ test('content-type classifiers', () => {
   assert.equal(P.isHtml('image/png'), false);
 });
 
+test('isTracker catches ad/tracker hosts (and subdomains), leaves normal sites', () => {
+  assert.equal(P.isTracker('https://www.google-analytics.com/collect'), true);
+  assert.equal(P.isTracker('https://ssl.google-analytics.com/ga.js'), true);   // subdomain
+  assert.equal(P.isTracker('https://static.doubleclick.net/x.js'), true);
+  assert.equal(P.isTracker('https://connect.facebook.net/en_US/fbevents.js'), true);
+  assert.equal(P.isTracker('https://www.facebook.com/tr?id=1'), true);          // host+path fragment
+  assert.equal(P.isTracker('https://example.com/app.js'), false);
+  assert.equal(P.isTracker('https://en.wikipedia.org/wiki/X'), false);
+  assert.equal(P.isTracker('https://google-analytics.com.evil.test/x'), false); // real domain is evil.test, not a match
+  assert.equal(P.isTracker('https://mygoogle-analytics.com/x'), false);         // not a subdomain of the listed host
+});
+
 test('originAllowed gates a deployed proxy to its app origins', () => {
   const allow = ['https://refayethossain28.github.io'];
   assert.equal(P.originAllowed('https://refayethossain28.github.io', allow), true);
@@ -169,10 +181,18 @@ async function integration() {
     assert.ok(body.includes('/proxy?url=' + encodeURIComponent(`http://127.0.0.1:${originPort}/page2`)), 'in-page link rewritten through proxy');
     assert.ok(body.includes('/proxy?url=' + encodeURIComponent(`http://127.0.0.1:${originPort}/pic.png`)), 'relative asset rewritten');
 
+    // ad/tracker blocking: a tracker sub-resource fetched through the proxy is blocked (204)
+    const tracker = await fetch(`http://127.0.0.1:${proxyPort}/proxy?url=${encodeURIComponent('https://www.google-analytics.com/collect')}`);
+    assert.equal(tracker.status, 204, 'tracker request is blocked with 204');
+    assert.equal(tracker.headers.get('x-voyager-blocked'), '1', 'block is flagged');
+    // …unless the page opted out with block=0
+    const allowed = await fetch(`http://127.0.0.1:${proxyPort}/proxy?block=0&url=${encodeURIComponent(`http://127.0.0.1:${originPort}/`)}`);
+    assert.equal(allowed.status, 200, 'block=0 lets requests through');
+
     // SSRF guard: with the override OFF it would block; assert the classifier the server uses
     assert.equal(P.isBlockedHost('127.0.0.1'), true, 'loopback is blocked unless overridden');
 
-    console.log('  ✓ integration: proxy strips framing headers, rewrites links, serves a frame-refusing page');
+    console.log('  ✓ integration: proxy strips framing headers, rewrites links, blocks trackers, serves a frame-refusing page');
     passed++;
   } finally {
     srv.kill();

@@ -645,6 +645,60 @@ test('overspeedUpdate: tolerance, 3 s hysteresis, single warning, resets under l
   assert.equal(A.overspeedUpdate(null, 200, null, 1).over, false, 'no limit, no judgement');
 });
 
+test('music: parseID3 reads v2.3 tags in latin1, UTF-8 and UTF-16', () => {
+  // hand-build an ID3v2.3 tag: header + TIT2 (utf8) + TPE1 (latin1) + TALB (utf16le BOM)
+  const frames = [];
+  const frame = (id, encByte, textBytes) => {
+    const body = [encByte, ...textBytes];
+    const sz = body.length;
+    return [...[...id].map((c) => c.charCodeAt(0)),
+      (sz >>> 24) & 0xff, (sz >>> 16) & 0xff, (sz >>> 8) & 0xff, sz & 0xff, 0, 0, ...body];
+  };
+  const utf8 = (s) => [...Buffer.from(s, 'utf8')];
+  const latin1 = (s) => [...Buffer.from(s, 'latin1')];
+  const utf16 = (s) => [0xff, 0xfe, ...Buffer.from(s, 'utf16le')];
+  frames.push(...frame('TIT2', 3, utf8('Naïve Song 🎵')));
+  frames.push(...frame('TPE1', 0, latin1('Café Band')));
+  frames.push(...frame('TALB', 1, utf16('Road Trip')));
+  const size = frames.length;
+  const tag = new Uint8Array([
+    0x49, 0x44, 0x33, 3, 0, 0,
+    (size >>> 21) & 0x7f, (size >>> 14) & 0x7f, (size >>> 7) & 0x7f, size & 0x7f,
+    ...frames, 0xff, 0xfb, 0x90, 0x00, // a fake mp3 frame after the tag
+  ]);
+  const meta = A.parseID3(tag);
+  assert.equal(meta.title, 'Naïve Song 🎵');
+  assert.equal(meta.artist, 'Café Band');
+  assert.equal(meta.album, 'Road Trip');
+  assert.equal(A.parseID3(new Uint8Array([0xff, 0xfb, 0x90, 0x00])), null, 'no tag → null');
+  assert.equal(A.parseID3(null), null);
+});
+
+test('music: deterministic shuffle + queue advance with repeat modes', () => {
+  let seed = 7;
+  const lcg = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2 ** 32; };
+  const order = A.makeShuffleOrder(8, lcg);
+  assert.equal(order.length, 8);
+  same([...order].sort((a, b) => a - b), [0, 1, 2, 3, 4, 5, 6, 7], 'a real permutation');
+  seed = 7;
+  same(A.makeShuffleOrder(8, lcg), order, 'same seed, same order');
+  // ordered queue
+  assert.equal(A.nextTrack({ idx: 0, count: 3, repeat: 'off', shuffle: null, dir: 1 }), 1);
+  assert.equal(A.nextTrack({ idx: 2, count: 3, repeat: 'off', shuffle: null, dir: 1 }), null, 'end stops');
+  assert.equal(A.nextTrack({ idx: 2, count: 3, repeat: 'all', shuffle: null, dir: 1 }), 0, 'repeat wraps');
+  assert.equal(A.nextTrack({ idx: 0, count: 3, repeat: 'off', shuffle: null, dir: -1 }), 2, 'prev wraps back');
+  assert.equal(A.nextTrack({ idx: 1, count: 3, repeat: 'one', shuffle: null, dir: 1, ended: true }), 1, 'repeat-one loops the track');
+  assert.equal(A.nextTrack({ idx: 1, count: 3, repeat: 'one', shuffle: null, dir: 1, ended: false }), 2, 'manual skip beats repeat-one');
+  // shuffled queue follows the order array
+  const sh = [2, 0, 1];
+  assert.equal(A.nextTrack({ idx: 2, count: 3, repeat: 'off', shuffle: sh, dir: 1 }), 0);
+  assert.equal(A.nextTrack({ idx: 1, count: 3, repeat: 'all', shuffle: sh, dir: 1 }), 2, 'wraps to the shuffle head');
+  assert.equal(A.nextTrack({ idx: 0, count: 0 }), null);
+  assert.equal(A.fmtTrackTime(225), '3:45');
+  assert.equal(A.fmtTrackTime(3723), '1:02:03');
+  assert.equal(A.fmtTrackTime(0), '0:00');
+});
+
 test('offline packs: corridorTiles covers the route per zoom, deduped and capped', () => {
   const { route } = makeRoute(); // 1.5 km L-shape
   const plan = A.corridorTiles(route, { minZ: 12, maxZ: 17, bufferM: 260, cap: 1200 });

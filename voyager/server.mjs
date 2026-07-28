@@ -60,6 +60,9 @@ const PROXY_PATH = PROXY_KEY ? '/proxy?key=' + encodeURIComponent(PROXY_KEY) : '
 // Legacy soft guard: comma-separated app origins. Only enforced when no
 // PROXY_KEY is set (kept for back-compat; the key is the recommended lock).
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);
+// Ad / tracker blocking, on by default. The app can still disable it per-request
+// (?block=0); set BLOCK_TRACKERS=0 to force it off server-wide.
+const TRACKER_BLOCK = process.env.BLOCK_TRACKERS !== '0';
 
 const STATIC = {
   '/': ['index.html', 'text/html; charset=utf-8'],
@@ -107,7 +110,7 @@ async function serveStatic(pathname, res) {
   return true;
 }
 
-async function handleProxy(target, req, res) {
+async function handleProxy(target, req, res, blockOn) {
   let url;
   try { url = new URL(target); } catch (e) {
     return send(res, 400, { 'content-type': 'text/html; charset=utf-8' }, errorPage('Not a valid address', 'Voyager could not read that URL.'));
@@ -118,6 +121,14 @@ async function handleProxy(target, req, res) {
   if (!ALLOW_PRIVATE && Proxy.isBlockedHost(url.hostname)) {
     return send(res, 403, { 'content-type': 'text/html; charset=utf-8' }, errorPage('Blocked for safety', 'That host is private or internal, so the proxy refuses to reach it.'));
   }
+  // Ad / tracker blocking: a matching sub-resource just returns empty, so the
+  // page loads without the tracker rather than talking to it.
+  if (blockOn && Proxy.isTracker(target)) {
+    return send(res, 204, { 'x-voyager-blocked': '1' }, '');
+  }
+  // The rewrite path carries the key (auth) and the block flag, so every link
+  // on the page inherits the same behaviour as this request.
+  const ppath = PROXY_PATH + (blockOn ? '' : (PROXY_PATH.indexOf('?') === -1 ? '?' : '&') + 'block=0');
   // Legacy Origin allowlist — only when there's no PROXY_KEY (the key is the
   // reliable lock; Origin/Referer are often absent on framed navigations).
   if (!PROXY_KEY && ALLOWED_ORIGINS.length) {
@@ -156,8 +167,8 @@ async function handleProxy(target, req, res) {
       return send(res, upstream.status, outHeaders, Buffer.from(raw));
     }
     let text = new TextDecoder('utf-8').decode(raw);
-    text = Proxy.isHtml(ct) ? Proxy.rewriteHtml(text, finalUrl, PROXY_PATH)
-                            : Proxy.rewriteCss(text, finalUrl, PROXY_PATH);
+    text = Proxy.isHtml(ct) ? Proxy.rewriteHtml(text, finalUrl, ppath)
+                            : Proxy.rewriteCss(text, finalUrl, ppath);
     return send(res, upstream.status, outHeaders, text);
   }
 
@@ -196,7 +207,8 @@ const server = http.createServer(async (req, res) => {
     }
     const target = parsed.searchParams.get('url');
     if (!target) return send(res, 400, { 'content-type': 'text/plain' }, 'missing url');
-    return handleProxy(target, req, res);
+    const blockOn = TRACKER_BLOCK && parsed.searchParams.get('block') !== '0';
+    return handleProxy(target, req, res, blockOn);
   }
   if (await serveStatic(pathname, res)) return;
   send(res, 404, { 'content-type': 'text/plain' }, 'not found');
