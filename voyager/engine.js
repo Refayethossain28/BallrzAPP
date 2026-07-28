@@ -65,6 +65,7 @@
     start: 'Start page',
     history: 'History',
     bookmarks: 'Bookmarks',
+    reading: 'Reading list',
     settings: 'Settings',
     about: 'About Voyager',
   };
@@ -321,11 +322,15 @@
       activeId: null,
       history: [],      // append-only: {url, title, ts}
       bookmarks: [],    // {url, title, ts}
+      reading: [],      // read-later queue: {url, title, ts, read}
       settings: {
         engine: opts.engine || 'duckduckgo',
         home: opts.home || INTERNAL + 'start',
         torGateway: opts.torGateway || '',   // '' = off; a bare host like "onion.ws" routes .onion
         proxy: opts.proxy || '',             // '' = auto-detect local server; a URL forces it; 'off' disables
+        theme: opts.theme || 'dark',         // dark | light | auto
+        accent: opts.accent || 'cyan',       // named accent (see ACCENTS)
+        blockTrackers: opts.blockTrackers !== false, // ad/tracker blocking through the proxy (default on)
       },
     };
     return newTab(state, { ts: opts.ts });
@@ -532,6 +537,46 @@
     return next;
   }
 
+  /* ════════════════════════ reading list ════════════════════════ */
+
+  function inReading(state, url) {
+    for (var i = 0; i < state.reading.length; i++) if (state.reading[i].url === url) return true;
+    return false;
+  }
+
+  /** Save-for-later, distinct from bookmarks: a queue you work through and tick off. */
+  function addReading(state, url, title, ts) {
+    if (!url || String(url).toLowerCase().indexOf(INTERNAL) === 0 || inReading(state, url)) return state;
+    var next = shallow(state);
+    next.reading = state.reading.concat([{ url: url, title: title || displayUrl(url), ts: ts || null, read: false }]);
+    return next;
+  }
+
+  function removeReading(state, url) {
+    var next = shallow(state);
+    next.reading = state.reading.filter(function (r) { return r.url !== url; });
+    return next;
+  }
+
+  /** Toggle an item's read/unread flag (immutably). */
+  function toggleReadingRead(state, url) {
+    var next = shallow(state);
+    next.reading = state.reading.map(function (r) {
+      return r.url === url ? { url: r.url, title: r.title, ts: r.ts, read: !r.read } : r;
+    });
+    return next;
+  }
+
+  /** The reading list newest-first; unread before read. */
+  function readingList(state) {
+    var items = state.reading.slice();
+    items.sort(function (a, b) {
+      if (!!a.read !== !!b.read) return a.read ? 1 : -1;   // unread first
+      return (b.ts || 0) - (a.ts || 0);                     // newest first
+    });
+    return items;
+  }
+
   /* ════════════════════════ ranking: frecency ════════════════════════ */
 
   /**
@@ -637,15 +682,108 @@
     return out;
   }
 
+  /* ════════════════════════ command palette (⌘K) ════════════════════════ */
+
+  /** The quick actions the palette can run, matched by name/keyword. */
+  var COMMANDS = [
+    { id: 'newtab', title: 'New tab', keys: 'new tab open' },
+    { id: 'newprivate', title: 'New private tab', keys: 'private incognito new tab' },
+    { id: 'reading', title: 'Reading list', keys: 'reading list read later' },
+    { id: 'bookmarks', title: 'Bookmarks', keys: 'bookmarks stars saved' },
+    { id: 'history', title: 'History', keys: 'history recent visited' },
+    { id: 'settings', title: 'Settings', keys: 'settings preferences options theme proxy' },
+    { id: 'clearhistory', title: 'Clear history', keys: 'clear delete history' },
+  ];
+
+  /**
+   * The ⌘K palette: one box to jump anywhere. Blends open tabs, this browser's
+   * reading list, bookmarks and frecent history, plus the quick actions above —
+   * ranked so the most useful match leads. Empty query returns your open tabs
+   * and unread reading items (a "where was I" board).
+   */
+  function commandSearch(state, input, opts) {
+    opts = opts || {};
+    var limit = opts.limit || 10;
+    var nowTs = opts.nowTs || 0;
+    var q = String(input == null ? '' : input).toLowerCase().trim();
+    var out = [];
+
+    // open tabs first — switching is the most common intent
+    for (var t = 0; t < state.tabs.length; t++) {
+      var tab = state.tabs[t];
+      var turl = tabUrl(tab);
+      var ttitle = tab.title || displayUrl(turl);
+      var thay = (ttitle + ' ' + turl).toLowerCase();
+      if (q && thay.indexOf(q) === -1) continue;
+      out.push({ kind: 'tab', id: tab.id, title: ttitle, url: turl, incognito: tab.incognito, score: 10000 - t });
+    }
+
+    // quick actions
+    for (var c = 0; c < COMMANDS.length; c++) {
+      var cmd = COMMANDS[c];
+      if (q && (cmd.title.toLowerCase() + ' ' + cmd.keys).indexOf(q) === -1) continue;
+      out.push({ kind: 'action', id: cmd.id, title: cmd.title, score: q ? 5000 : 10 });
+    }
+
+    // reading list (unread lead)
+    for (var r = 0; r < state.reading.length; r++) {
+      var it = state.reading[r];
+      if (q && (it.title + ' ' + it.url).toLowerCase().indexOf(q) === -1) continue;
+      out.push({ kind: 'reading', url: it.url, title: it.title, read: it.read, score: (it.read ? 1000 : 3000) - r });
+    }
+
+    // bookmarks + frecent history (dedup against everything already shown)
+    var seen = {};
+    for (var s = 0; s < out.length; s++) if (out[s].url) seen[out[s].url] = true;
+    for (var b = 0; b < state.bookmarks.length; b++) {
+      var bm = state.bookmarks[b];
+      if (seen[bm.url]) continue;
+      if (q && (bm.title + ' ' + bm.url).toLowerCase().indexOf(q) === -1) continue;
+      seen[bm.url] = true;
+      out.push({ kind: 'bookmark', url: bm.url, title: bm.title, score: 2000 });
+    }
+    if (q) {
+      var ranked = rankedSites(state, nowTs);
+      for (var h = 0; h < ranked.length; h++) {
+        var site = ranked[h];
+        if (seen[site.url]) continue;
+        if ((site.url + ' ' + (site.title || '')).toLowerCase().indexOf(q) === -1) continue;
+        seen[site.url] = true;
+        out.push({ kind: 'history', url: site.url, title: site.title || displayUrl(site.url), score: 100 + site.score });
+      }
+    }
+
+    out.sort(function (a, b) { return b.score - a.score; });
+    if (out.length > limit) out = out.slice(0, limit);
+    return out;
+  }
+
   /* ════════════════════════ settings ════════════════════════ */
 
+  var THEMES = ['dark', 'light', 'auto'];
+  var ACCENTS = [
+    { id: 'cyan', name: 'Cyan', hi: '#4cc9f0', lo: '#5b7bff' },
+    { id: 'violet', name: 'Violet', hi: '#b07cf7', lo: '#6e8bff' },
+    { id: 'mint', name: 'Mint', hi: '#3ce6b0', lo: '#22b8e6' },
+    { id: 'gold', name: 'Gold', hi: '#f5c04a', lo: '#f78c3b' },
+    { id: 'rose', name: 'Rose', hi: '#ff6b9a', lo: '#ff6b7a' },
+  ];
+
   function setSetting(state, key, value) {
-    if (key !== 'engine' && key !== 'home' && key !== 'torGateway' && key !== 'proxy') return state;
+    var allowed = { engine: 1, home: 1, torGateway: 1, proxy: 1, theme: 1, accent: 1, blockTrackers: 1 };
+    if (!allowed[key]) return state;
     if (key === 'engine') {
       var ok = false;
       for (var i = 0; i < SEARCH_ENGINES.length; i++) if (SEARCH_ENGINES[i].id === value) ok = true;
       if (!ok) return state;
     }
+    if (key === 'theme' && THEMES.indexOf(value) === -1) return state;
+    if (key === 'accent') {
+      var accOk = false;
+      for (var a = 0; a < ACCENTS.length; a++) if (ACCENTS[a].id === value) accOk = true;
+      if (!accOk) return state;
+    }
+    if (key === 'blockTrackers') value = !!value;
     if (key === 'torGateway') {
       // Store a bare host ("onion.ws"): no scheme, no leading dots, no path.
       value = String(value == null ? '' : value).trim().replace(/^https?:\/\//i, '').replace(/^\.+|\/.*$/g, '');
@@ -680,6 +818,7 @@
       activeId: activeSurvives ? activeId : (tabs.length ? tabs[0].id : null),
       history: state.history,
       bookmarks: state.bookmarks,
+      reading: state.reading,
       settings: state.settings,
     });
   }
@@ -705,11 +844,15 @@
       activeId: null,
       history: Array.isArray(data.history) ? data.history : [],
       bookmarks: Array.isArray(data.bookmarks) ? data.bookmarks : [],
+      reading: Array.isArray(data.reading) ? data.reading : [],
       settings: {
         engine: (data.settings && data.settings.engine) || 'duckduckgo',
         home: (data.settings && data.settings.home) || INTERNAL + 'start',
         torGateway: (data.settings && data.settings.torGateway) || '',
         proxy: (data.settings && data.settings.proxy) || '',
+        theme: (data.settings && THEMES.indexOf(data.settings.theme) !== -1) ? data.settings.theme : 'dark',
+        accent: (data.settings && data.settings.accent) || 'cyan',
+        blockTrackers: !(data.settings && data.settings.blockTrackers === false),
       },
     };
     if (tabs.length === 0) return newTab(state, {});
@@ -766,9 +909,18 @@
     historyEntries: historyEntries,
     isBookmarked: isBookmarked,
     toggleBookmark: toggleBookmark,
+    inReading: inReading,
+    addReading: addReading,
+    removeReading: removeReading,
+    toggleReadingRead: toggleReadingRead,
+    readingList: readingList,
     frecency: frecency,
     topSites: topSites,
     suggest: suggest,
+    commandSearch: commandSearch,
+    COMMANDS: COMMANDS,
+    THEMES: THEMES,
+    ACCENTS: ACCENTS,
     setSetting: setSetting,
     serialize: serialize,
     restore: restore,
