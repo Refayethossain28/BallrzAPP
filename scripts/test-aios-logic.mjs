@@ -964,6 +964,46 @@ test('webapp windows: spawn from the catalog, singleton per app, unknown refused
   assert.equal(K.spawn(st, 'webapp', 'ghost').ok, false);
 });
 
+/* ══════════ v4.3: install hub apps to the home screen ══════════ */
+
+test('installWebapp: dedupes, validates, lands on the springboard, persists', () => {
+  const st = K.boot(T0);
+  assert.equal(K.installWebapp(st, 'seeker').ok, true);
+  assert.equal(K.installWebapp(st, 'cortex').ok, true);
+  assert.equal(K.installWebapp(st, 'seeker').already, true, 'no duplicates');
+  assert.equal(K.installWebapp(st, 'ghost').ok, false);
+  deq(st.installed, ['seeker', 'cortex']);
+  assert.equal(K.isInstalled(st, 'seeker'), true);
+  const grid = K.springboard(st).grid;
+  const hub = grid.filter((g) => g.id === 'webapp').map((g) => g.arg);
+  deq(hub, ['seeker', 'cortex'], 'installed apps on the home grid, in order');
+  assert.equal(grid.find((g) => g.arg === 'seeker').emoji, '🔎');
+  // persists across reboot; hostile ids dropped on load
+  const st2 = K.deserialize(K.serialize(st), T0);
+  deq(st2.installed, ['seeker', 'cortex']);
+  const hostile = K.deserialize(JSON.stringify({ v: 4, fs: K.boot(T0).fs, installed: ['seeker', 'nope', 'seeker', 42] }), T0);
+  deq(hostile.installed, ['seeker']);
+  // uninstall clears grid and state
+  assert.equal(K.uninstallWebapp(st, 'seeker'), true);
+  assert.equal(K.uninstallWebapp(st, 'seeker'), false);
+  deq(K.springboard(st).grid.filter((g) => g.id === 'webapp').map((g) => g.arg), ['cortex']);
+});
+
+test('shell: app install/remove work on hub ids and still on .app manifests', () => {
+  const st = K.boot(T0);
+  assert.equal(K.execCommand(st, 'app install seeker', T0).error, false);
+  deq(st.installed, ['seeker']);
+  assert.ok(K.execCommand(st, 'app install seeker', T0).out[0].includes('already'));
+  assert.equal(K.execCommand(st, 'app remove seeker', T0).error, false);
+  deq(st.installed, []);
+  assert.equal(K.execCommand(st, 'app remove seeker', T0).error, true, 'gone means gone');
+  // manifest path still works
+  K.fsWrite(st.fs, '/home/user/clock.app', JSON.stringify({ name: 'Clock', ui: [] }), T0);
+  assert.equal(K.execCommand(st, 'app install clock.app', T0).error, false);
+  assert.equal(K.readApp(st, 'clock').name, 'Clock');
+  assert.equal(K.execCommand(st, 'app remove clock', T0).error, false);
+});
+
 console.log('── aios kernel unit tests ──');
 let failed = 0;
 for (const [n, f] of tests) {
