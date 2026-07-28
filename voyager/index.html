@@ -44,6 +44,20 @@
     overflow: hidden;
   }
   body.private { --bar: #191129; --bg: #0c0716; --bg2: #150d26; }
+
+  /* ═════════ themes & accents ═════════ */
+  :root[data-accent="violet"] { --cyan: #b07cf7; --blue: #6e8bff; }
+  :root[data-accent="mint"]   { --cyan: #3ce6b0; --blue: #22b8e6; }
+  :root[data-accent="gold"]   { --cyan: #f5c04a; --blue: #f78c3b; }
+  :root[data-accent="rose"]   { --cyan: #ff6b9a; --blue: #ff6b7a; }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #f4f7fc; --bg2: #e9eef7; --bar: #ffffff;
+    --card: rgba(16,22,40,.045); --card2: rgba(16,22,40,.085); --line: rgba(16,22,40,.13);
+    --ink: #101728; --dim: #4c5772; --faint: #8894af;
+  }
+  :root[data-theme="light"] body.private { --bg: #efeaf8; --bg2: #e6def6; --bar: #f4eefc; }
+
   button { font: inherit; color: inherit; cursor: pointer; background: none; border: 0; padding: 0; }
   input, select { font: inherit; color: var(--ink); }
 
@@ -250,6 +264,47 @@
     opacity: 0; transition: all .25s ease; pointer-events: none; white-space: nowrap;
   }
   .toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ═════════ command palette (⌘K) ═════════ */
+  .palette {
+    position: fixed; inset: 0; z-index: 70; display: none;
+    background: rgba(4,7,14,.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    padding: max(60px, 12vh) 14px 14px;
+  }
+  .palette.on { display: block; animation: pfade .14s ease; }
+  @keyframes pfade { from { opacity: 0; } }
+  .palbox {
+    max-width: 560px; margin: 0 auto; background: var(--bg2); border: 1px solid var(--line);
+    border-radius: 16px; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,.55);
+  }
+  .palbox input {
+    width: 100%; background: none; border: 0; outline: none; color: var(--ink);
+    font-size: 17px; padding: 16px 18px; border-bottom: 1px solid var(--line);
+  }
+  .palbox input::placeholder { color: var(--faint); }
+  .pallist { max-height: min(52vh, 460px); overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .pi { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 11px 16px; }
+  .pi.sel, .pi:hover { background: var(--card2); }
+  .pi .ico { flex: none; width: 22px; text-align: center; font-size: 15px; }
+  .pi .txt { flex: 1; min-width: 0; }
+  .pi .t { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14.5px; }
+  .pi .u { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--faint); }
+  .pi .tag { flex: none; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; }
+  .palhint { padding: 9px 16px; font-size: 11.5px; color: var(--faint); border-top: 1px solid var(--line); display: flex; gap: 14px; }
+  .palhint b { color: var(--dim); font-weight: 600; }
+
+  /* theme + accent controls in Settings */
+  .segrow { display: flex; gap: 8px; }
+  .segrow button { flex: 1; padding: 10px; border-radius: 11px; border: 1px solid var(--line); background: var(--bg2); color: var(--dim); font-size: 13.5px; font-weight: 600; }
+  .segrow button[aria-pressed="true"] { border-color: var(--cyan); color: var(--ink); background: var(--card2); }
+  .swatches { display: flex; gap: 12px; margin-top: 4px; }
+  .swatch { width: 34px; height: 34px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+  .swatch[aria-pressed="true"] { border-color: var(--ink); box-shadow: 0 0 0 2px var(--bg2), 0 0 0 4px currentColor; }
+  .toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .switch { position: relative; width: 46px; height: 27px; border-radius: 999px; background: var(--card2); border: 1px solid var(--line); flex: none; transition: background .15s; }
+  .switch[aria-pressed="true"] { background: linear-gradient(135deg, var(--cyan), var(--blue)); border-color: transparent; }
+  .switch i { position: absolute; top: 2px; left: 2px; width: 21px; height: 21px; border-radius: 50%; background: #fff; transition: transform .15s; }
+  .switch[aria-pressed="true"] i { transform: translateX(19px); }
 </style>
 </head>
 <body>
@@ -272,9 +327,12 @@
 
   <!-- menu -->
   <div class="menu" id="menu">
-    <button class="mi" data-act="newtab"><span class="ico">＋</span>New tab</button>
+    <button class="mi" data-act="palette"><span class="ico">⌘</span>Quick find<span style="margin-left:auto;color:var(--faint);font-size:12px">⌘K</span></button>
+    <button class="mi split" data-act="newtab"><span class="ico">＋</span>New tab</button>
     <button class="mi" data-act="newprivate"><span class="ico">🕶</span>New private tab</button>
-    <button class="mi split" data-act="bookmarks"><span class="ico">★</span>Bookmarks</button>
+    <button class="mi" data-act="readlater"><span class="ico">📑</span>Read later</button>
+    <button class="mi split" data-act="reading"><span class="ico">📚</span>Reading list</button>
+    <button class="mi" data-act="bookmarks"><span class="ico">★</span>Bookmarks</button>
     <button class="mi" data-act="history"><span class="ico">🕘</span>History</button>
     <button class="mi" data-act="settings"><span class="ico">⚙️</span>Settings</button>
     <button class="mi split" data-act="external"><span class="ico">↗</span>Open in full tab</button>
@@ -311,6 +369,15 @@
   </div>
 </div>
 
+<!-- ═════════ command palette ═════════ -->
+<div class="palette" id="palette">
+  <div class="palbox">
+    <input id="palInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Jump to a tab, bookmark, reading item, or action…">
+    <div class="pallist" id="palList"></div>
+    <div class="palhint"><span><b>↑↓</b> move</span><span><b>↵</b> open</span><span><b>esc</b> close</span></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="engine.js"></script>
@@ -340,9 +407,14 @@ var frameSyncing = false;    // true while we're recording an in-frame navigatio
  * through voyager/server.mjs and framing-refusers (YouTube, Google…) open. */
 function proxyBaseNow() {
   var p = (S.settings.proxy || '').trim();
+  var base;
   if (p.toLowerCase() === 'off') return '';
-  if (p) return Voyager.normalizeProxyBase(p);   // forgiving: adds https:// and /proxy if missing
-  return detectedProxy;
+  else if (p) base = Voyager.normalizeProxyBase(p);   // forgiving: adds https:// and /proxy if missing
+  else base = detectedProxy;
+  if (!base) return '';
+  // When the user turns tracker blocking off, tell the proxy per-request.
+  if (S.settings.blockTrackers === false) base += (base.indexOf('?') === -1 ? '?' : '&') + 'block=0';
+  return base;
 }
 function frameOpts() { return { torGateway: S.settings.torGateway, proxyBase: proxyBaseNow() }; }
 /** Origin of the active proxy (for validating postMessage from proxied pages). */
@@ -424,8 +496,22 @@ function paintChrome() {
   $('zoomLabel').textContent = (tab ? tab.zoom : 100) + '%';
   document.body.classList.toggle('private', !!(tab && tab.incognito));
 
+  applyTheme();
   applyZoom(tab);
   renderView(url, tab);
+}
+
+/* Resolve theme (dark/light/auto) + accent onto <html>, and match the OS-chrome colour. */
+function applyTheme() {
+  var el = document.documentElement;
+  var theme = S.settings.theme || 'dark';
+  var resolved = theme === 'auto'
+    ? (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+    : theme;
+  el.setAttribute('data-theme', resolved);
+  el.setAttribute('data-accent', S.settings.accent || 'cyan');
+  var meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', resolved === 'light' ? '#ffffff' : '#070b16');
 }
 
 function showUrl(url, tab) {
@@ -549,9 +635,29 @@ function renderInternal(page) {
   if (page === 'start') el.innerHTML = startPage();
   else if (page === 'history') el.innerHTML = historyPage('');
   else if (page === 'bookmarks') el.innerHTML = bookmarksPage();
+  else if (page === 'reading') el.innerHTML = readingPage();
   else if (page === 'settings') { el.innerHTML = settingsPage(); checkProxyStatus(); }
   else if (page === 'about') el.innerHTML = aboutPage();
   else el.innerHTML = startPage();
+}
+
+function readingPage() {
+  var items = Voyager.readingList(S);
+  var unread = items.filter(function (r) { return !r.read; }).length;
+  var h = '<div class="page"><h1>Reading list</h1><p class="sub">' +
+    (items.length ? unread + ' unread of ' + items.length + ' saved' : 'Save pages to read later — tap 📑 in the menu on any page.') + '</p>';
+  if (!items.length) h += '<div class="panel muted">Nothing saved yet.</div>';
+  for (var i = 0; i < items.length; i++) {
+    var r = items[i];
+    h += '<div class="row" style="' + (r.read ? 'opacity:.55' : '') + '">' +
+      '<button class="x" data-readtoggle="' + esc(r.url) + '" title="' + (r.read ? 'Mark unread' : 'Mark read') + '" style="color:' + (r.read ? 'var(--mint)' : 'var(--faint)') + '">' + (r.read ? '✓' : '○') + '</button>' +
+      '<button style="all:unset;cursor:pointer;display:flex;align-items:center;gap:12px;flex:1;min-width:0" data-nav="' + esc(r.url) + '">' +
+      favHtml(r.url, r.title) +
+      '<span class="txt"><span class="t"' + (r.read ? ' style="text-decoration:line-through"' : '') + '>' + esc(r.title) + '</span>' +
+      '<span class="u">' + esc(Voyager.displayUrl(r.url)) + '</span></span></button>' +
+      '<button class="x" data-unread="' + esc(r.url) + '" title="Remove">✕</button></div>';
+  }
+  return h + '</div>';
 }
 
 /** Ping the active proxy and reflect connected/unreachable in the Settings page. */
@@ -650,6 +756,20 @@ function settingsPage() {
   }
   h += '</select></div>' +
     '<div class="field"><label>Home page</label><input id="homeInput" value="' + esc(S.settings.home) + '" placeholder="voyager://start"></div>' +
+    '</div>' +
+    '<h2 class="sect">🎨 Appearance</h2><div class="panel">' +
+    '<div class="field"><label>Theme</label><div class="segrow" id="themeSeg">' +
+    ['dark', 'light', 'auto'].map(function (t) {
+      return '<button data-theme="' + t + '" aria-pressed="' + (S.settings.theme === t) + '">' + t.charAt(0).toUpperCase() + t.slice(1) + '</button>';
+    }).join('') + '</div></div>' +
+    '<div class="field"><label>Accent</label><div class="swatches" id="accentRow">' +
+    Voyager.ACCENTS.map(function (a) {
+      return '<button class="swatch" data-accent="' + a.id + '" aria-pressed="' + (S.settings.accent === a.id) + '" title="' + a.name + '" style="background:linear-gradient(135deg,' + a.hi + ',' + a.lo + ');color:' + a.hi + '"></button>';
+    }).join('') + '</div></div>' +
+    '</div>' +
+    '<h2 class="sect">🛡️ Privacy</h2><div class="panel">' +
+    '<div class="toggle"><div><b style="font-size:14.5px">Block ads &amp; trackers</b><p class="tiny" style="margin:2px 0 0">Drops known ad/tracker requests at the proxy, so pages load lighter and quieter. Needs the full-browser proxy on.</p></div>' +
+    '<button class="switch" id="trackerSwitch" aria-pressed="' + (S.settings.blockTrackers !== false) + '" aria-label="Block trackers"><i></i></button></div>' +
     '</div>' +
     '<h2 class="sect">🛰️ Full browser (proxy)</h2><div class="panel">' +
     '<div class="field"><label>Proxy server URL</label>' +
@@ -837,6 +957,27 @@ document.addEventListener('click', function (e) {
       renderInternal('bookmarks');
       return;
     }
+    var rtoggle = el.getAttribute && el.getAttribute('data-readtoggle');
+    if (rtoggle) { commit(Voyager.toggleReadingRead(S, rtoggle)); renderInternal('reading'); return; }
+    var unread = el.getAttribute && el.getAttribute('data-unread');
+    if (unread) { commit(Voyager.removeReading(S, unread)); renderInternal('reading'); return; }
+    var setTheme = el.getAttribute && el.getAttribute('data-theme');
+    if (setTheme) { saveSetting('theme', setTheme); applyTheme(); renderInternal('settings'); return; }
+    var setAccent = el.parentNode && el.parentNode.id === 'accentRow' && el.getAttribute && el.getAttribute('data-accent');
+    if (setAccent) { saveSetting('accent', setAccent); applyTheme(); renderInternal('settings'); return; }
+    if (el.id === 'trackerSwitch') {
+      saveSetting('blockTrackers', S.settings.blockTrackers === false);
+      currentFrameSrc = '';                       // apply the change to the current page
+      renderInternal('settings');
+      toast(S.settings.blockTrackers ? '🛡️ Blocking ads & trackers' : 'Tracker blocking off');
+      return;
+    }
+    var palNav = el.getAttribute && el.getAttribute('data-palnav');
+    if (palNav) { closePalette(); navTo(palNav); return; }
+    var palTab = el.getAttribute && el.getAttribute('data-paltab');
+    if (palTab) { closePalette(); commit(Voyager.activateTab(S, Number(palTab))); return; }
+    var palAct = el.getAttribute && el.getAttribute('data-palact');
+    if (palAct) { closePalette(); runAct(palAct); return; }
     var closeId = el.getAttribute && el.getAttribute('data-closetab');
     if (closeId) {
       e.stopPropagation();
@@ -863,6 +1004,16 @@ function runAct(act) {
   if (act === 'newtab') { $('tabsheet').className = 'tabsheet'; commit(Voyager.newTab(S, { ts: Date.now() })); }
   else if (act === 'newprivate') { $('tabsheet').className = 'tabsheet'; commit(Voyager.newTab(S, { incognito: true, ts: Date.now() })); }
   else if (act === 'closesheet') $('tabsheet').className = 'tabsheet';
+  else if (act === 'palette') openPalette();
+  else if (act === 'reading') navTo('voyager://reading');
+  else if (act === 'readlater') {
+    var u = currentUrl();
+    if (String(u).indexOf('voyager://') === 0) { toast('Nothing to save here'); return; }
+    if (Voyager.inReading(S, u)) { toast('Already in your reading list'); return; }
+    var t = Voyager.activeTab(S);
+    commit(Voyager.addReading(S, u, t.title || Voyager.hostOf(u), Date.now()));
+    toast('📑 Saved to reading list');
+  }
   else if (act === 'bookmarks') navTo('voyager://bookmarks');
   else if (act === 'history') navTo('voyager://history');
   else if (act === 'settings') navTo('voyager://settings');
@@ -971,13 +1122,63 @@ window.addEventListener('message', function (e) {
   }
 });
 
+/* ---- command palette (⌘K) ---- */
+var palIndex = -1;
+function openPalette() {
+  $('menu').classList.remove('on');
+  $('palette').className = 'palette on';
+  var inp = $('palInput');
+  inp.value = '';
+  renderPalette();
+  setTimeout(function () { inp.focus(); }, 0);
+}
+function closePalette() { $('palette').className = 'palette'; palIndex = -1; }
+function renderPalette() {
+  var items = Voyager.commandSearch(S, $('palInput').value, { nowTs: Date.now(), limit: 12 });
+  palIndex = items.length ? 0 : -1;
+  var icons = { tab: '▤', action: '⚡', reading: '📑', bookmark: '★', history: '🕘' };
+  var tags = { tab: 'Tab', action: 'Action', reading: 'Reading', bookmark: 'Bookmark', history: 'History' };
+  var h = '';
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i];
+    var attr = it.kind === 'tab' ? 'data-paltab="' + it.id + '"'
+      : it.kind === 'action' ? 'data-palact="' + esc(it.id) + '"'
+      : 'data-palnav="' + esc(it.url) + '"';
+    h += '<button class="pi' + (i === 0 ? ' sel' : '') + '" ' + attr + '>' +
+      '<span class="ico">' + (it.incognito ? '🕶' : icons[it.kind] || '•') + '</span>' +
+      '<span class="txt"><span class="t">' + esc(it.title) + (it.read ? ' <span style="color:var(--faint)">· read</span>' : '') + '</span>' +
+      (it.url && it.kind !== 'action' ? '<span class="u">' + esc(Voyager.displayUrl(it.url)) + '</span>' : '') +
+      '</span><span class="tag">' + tags[it.kind] + '</span></button>';
+  }
+  $('palList').innerHTML = h || '<div class="pi" style="color:var(--faint)">No matches — press ↵ to search the web</div>';
+}
+function palRows() { return $('palList').querySelectorAll('.pi[data-paltab],.pi[data-palact],.pi[data-palnav]'); }
+$('palInput').addEventListener('input', renderPalette);
+$('palInput').addEventListener('keydown', function (e) {
+  var rows = palRows();
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    if (!rows.length) return; e.preventDefault();
+    palIndex = e.key === 'ArrowDown' ? (palIndex + 1) % rows.length : (palIndex - 1 + rows.length) % rows.length;
+    for (var i = 0; i < rows.length; i++) rows[i].className = 'pi' + (i === palIndex ? ' sel' : '');
+    if (rows[palIndex]) rows[palIndex].scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (palIndex >= 0 && rows[palIndex]) rows[palIndex].click();
+    else { var q = this.value.trim(); if (q) { closePalette(); go(q); } }
+  } else if (e.key === 'Escape') { closePalette(); }
+});
+$('palette').addEventListener('click', function (e) { if (e.target === this) closePalette(); });
+
 /* ---- keyboard shortcuts (desktop comfort) ---- */
 document.addEventListener('keydown', function (e) {
   var mod = e.ctrlKey || e.metaKey;
-  if (mod && e.key === 'l') { e.preventDefault(); $('urlInput').focus(); }
+  if (mod && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); $('palette').className.indexOf('on') !== -1 ? closePalette() : openPalette(); }
+  else if (mod && e.key === 'l') { e.preventDefault(); $('urlInput').focus(); }
   else if (mod && e.key === 't') { e.preventDefault(); commit(Voyager.newTab(S, { ts: Date.now() })); $('urlInput').focus(); }
   else if (mod && e.key === 'w') { e.preventDefault(); commit(Voyager.closeTab(S, S.activeId)); }
   else if (mod && e.key === 'd') { e.preventDefault(); $('starBtn').click(); }
+  else if (mod && (e.key === 'e' || e.key === 'E')) { e.preventDefault(); runAct('readlater'); }
+  else if (e.key === 'Escape' && $('palette').className.indexOf('on') !== -1) closePalette();
   else if (e.key === 'Escape' && $('tabsheet').className.indexOf('on') !== -1) $('tabsheet').className = 'tabsheet';
 });
 

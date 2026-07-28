@@ -206,6 +206,44 @@
   function isHtml(ct) { return /\btext\/html|application\/xhtml\+xml/i.test(String(ct || '')); }
   function isCss(ct) { return /\btext\/css/i.test(String(ct || '')); }
 
+  /* ── ad / tracker blocking: a curated host blocklist ── */
+  var TRACKERS = [
+    'doubleclick.net', 'googlesyndication.com', 'googletagmanager.com', 'googletagservices.com',
+    'google-analytics.com', 'analytics.google.com', 'adservice.google.com', 'pagead2.googlesyndication.com',
+    'g.doubleclick.net', 'connect.facebook.net', 'facebook.com/tr', 'ads-twitter.com', 'analytics.twitter.com',
+    'scorecardresearch.com', 'quantserve.com', 'adnxs.com', 'adsystem.com', 'amazon-adsystem.com',
+    'criteo.com', 'criteo.net', 'taboola.com', 'outbrain.com', 'pubmatic.com', 'rubiconproject.com',
+    'openx.net', 'casalemedia.com', 'moatads.com', 'adsafeprotected.com', 'bidswitch.net', 'rlcdn.com',
+    'hotjar.com', 'mixpanel.com', 'segment.com', 'segment.io', 'fullstory.com', 'mouseflow.com',
+    'newrelic.com', 'nr-data.net', 'branch.io', 'amplitude.com', 'clarity.ms', 'bat.bing.com',
+    'sentry.io', 'doubleverify.com', 'yieldmo.com', 'sharethrough.com', 'teads.tv', 'smartadserver.com',
+  ];
+
+  /**
+   * Should a fetched sub-resource be blocked as an ad/tracker? Matches a host
+   * against the blocklist by exact host or as a subdomain of a listed domain
+   * (so "www.google-analytics.com" and "ssl.google-analytics.com" both go).
+   * A couple of entries include a path fragment (e.g. facebook.com/tr) matched
+   * against the full URL. Pure and list-injectable so it's unit-testable.
+   */
+  function isTracker(url, list) {
+    var hosts = list || TRACKERS;
+    var s = String(url == null ? '' : url).toLowerCase();
+    var host = (function () {
+      var m = /^[a-z][a-z0-9+.-]*:\/\/([^/?#]+)/i.exec(s);
+      var h = m ? m[1] : s.split('/')[0];
+      var at = h.lastIndexOf('@'); if (at !== -1) h = h.slice(at + 1);
+      var colon = h.lastIndexOf(':'); if (colon !== -1 && h.indexOf(']') === -1) h = h.slice(0, colon);
+      return h;
+    })();
+    for (var i = 0; i < hosts.length; i++) {
+      var d = hosts[i];
+      if (d.indexOf('/') !== -1) { if (s.indexOf(d) !== -1) return true; continue; } // host+path fragment
+      if (host === d || host.slice(-(d.length + 1)) === '.' + d) return true;
+    }
+    return false;
+  }
+
   /**
    * Soft open-relay guard for a PUBLICLY DEPLOYED proxy: is `origin` (the
    * Origin/Referer of an incoming /proxy request) allowed by `allowlist`?
@@ -238,6 +276,8 @@
     isDroppedHeader: isDroppedHeader,
     isBlockedHost: isBlockedHost,
     originAllowed: originAllowed,
+    isTracker: isTracker,
+    TRACKERS: TRACKERS,
     isHtml: isHtml,
     isCss: isCss,
   };

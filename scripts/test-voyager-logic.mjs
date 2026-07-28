@@ -364,7 +364,67 @@ test('suggest: matches from history/bookmarks by frecency, goto first for URL-is
   eq(V.suggest(s, '', { nowTs: NOW }), []);       // empty input → nothing
 });
 
+/* ---- reading list ---- */
+
+test('reading list: add / dedupe / read-toggle / remove; unread before read; internal blocked', () => {
+  let s = V.createBrowser();
+  s = V.addReading(s, 'https://a.com/post', 'A post', NOW);
+  s = V.addReading(s, 'https://b.com/story', 'B story', NOW + 1);
+  s = V.addReading(s, 'https://a.com/post', 'dup', NOW + 2);       // dedupe by url
+  assert.equal(s.reading.length, 2);
+  assert.equal(V.addReading(s, 'voyager://start', 'x', NOW).reading.length, 2); // internal can't be saved
+  assert.equal(V.inReading(s, 'https://a.com/post'), true);
+  // newest-first while both unread
+  eq(V.readingList(s).map((r) => r.url), ['https://b.com/story', 'https://a.com/post']);
+  s = V.toggleReadingRead(s, 'https://b.com/story');              // mark B read → sinks below unread A
+  eq(V.readingList(s).map((r) => r.url), ['https://a.com/post', 'https://b.com/story']);
+  s = V.removeReading(s, 'https://a.com/post');
+  eq(s.reading.map((r) => r.url), ['https://b.com/story']);
+});
+
+/* ---- command palette ---- */
+
+test('commandSearch blends tabs, actions, reading, bookmarks and history, ranked', () => {
+  let s = V.createBrowser();
+  const id = s.activeId;
+  s = V.navigate(s, id, 'https://news.example.com', { title: 'The News', ts: NOW });
+  s = V.newTab(s, { url: 'https://mail.example.com', title: 'Mail', ts: NOW });
+  s = V.toggleBookmark(s, 'https://bank.example.com', 'My Bank', NOW);
+  s = V.addReading(s, 'https://longread.example.com', 'A long read', NOW);
+
+  // empty query → open tabs + actions board (no history noise)
+  const empty = V.commandSearch(s, '', { nowTs: NOW });
+  assert.ok(empty.some((x) => x.kind === 'tab'));
+  assert.ok(!empty.some((x) => x.kind === 'history'));
+
+  // typed query matches across kinds
+  const q = V.commandSearch(s, 'example', { nowTs: NOW });
+  const kinds = new Set(q.map((x) => x.kind));
+  assert.ok(kinds.has('tab') && kinds.has('bookmark') && kinds.has('reading'));
+  // an open tab outranks a history entry for the same-ish match
+  assert.equal(q[0].kind, 'tab');
+
+  // action names are searchable
+  const acts = V.commandSearch(s, 'private', { nowTs: NOW });
+  assert.ok(acts.some((x) => x.kind === 'action' && x.id === 'newprivate'));
+});
+
 /* ---- settings ---- */
+
+test('setSetting validates theme, accent and blockTrackers; defaults are sane', () => {
+  let s = V.createBrowser();
+  assert.equal(s.settings.theme, 'dark');
+  assert.equal(s.settings.accent, 'cyan');
+  assert.equal(s.settings.blockTrackers, true);
+  s = V.setSetting(s, 'theme', 'light');
+  assert.equal(s.settings.theme, 'light');
+  assert.equal(V.setSetting(s, 'theme', 'neon').settings.theme, 'light');   // invalid rejected
+  s = V.setSetting(s, 'accent', 'violet');
+  assert.equal(s.settings.accent, 'violet');
+  assert.equal(V.setSetting(s, 'accent', 'chartreuse').settings.accent, 'violet');
+  s = V.setSetting(s, 'blockTrackers', false);
+  assert.equal(s.settings.blockTrackers, false);
+});
 
 test('setSetting accepts known engines and home; rejects unknown engines and keys', () => {
   let s = V.createBrowser();
@@ -473,6 +533,10 @@ test('serialize → restore round-trips tabs, stacks, history, bookmarks, settin
   s = V.setSetting(s, 'engine', 'brave');
   s = V.setSetting(s, 'torGateway', 'onion.ws');
   s = V.setSetting(s, 'proxy', 'http://localhost:8790/proxy');
+  s = V.setSetting(s, 'theme', 'light');
+  s = V.setSetting(s, 'accent', 'gold');
+  s = V.setSetting(s, 'blockTrackers', false);
+  s = V.addReading(s, 'https://later.example.com', 'Later', NOW);
   s = V.setZoom(s, s.activeId, 125);
 
   const r = V.restore(V.serialize(s));
@@ -486,6 +550,10 @@ test('serialize → restore round-trips tabs, stacks, history, bookmarks, settin
   assert.equal(r.settings.engine, 'brave');
   assert.equal(r.settings.torGateway, 'onion.ws');
   assert.equal(r.settings.proxy, 'http://localhost:8790/proxy');
+  assert.equal(r.settings.theme, 'light');
+  assert.equal(r.settings.accent, 'gold');
+  assert.equal(r.settings.blockTrackers, false);
+  assert.equal(V.inReading(r, 'https://later.example.com'), true);
   assert.equal(V.isBookmarked(r, 'https://a.com'), true);
   assert.equal(r.history.length, s.history.length);
 });
