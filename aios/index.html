@@ -296,13 +296,15 @@
     border-bottom:1px solid var(--line);background:rgba(9,12,26,.72);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
   #p-appbar button{background:rgba(255,255,255,.08);border:1px solid var(--line);border-radius:9px;padding:6px 11px;font-size:14px;color:var(--ink)}
   #p-apptitle{flex:1;text-align:center;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  #p-appbody{flex:1;overflow:auto;position:relative;-webkit-overflow-scrolling:touch}
+  #p-appbody{flex:1;overflow:auto;position:relative;-webkit-overflow-scrolling:touch;
+    padding-bottom:env(safe-area-inset-bottom)} /* clear the home indicator so inputs/buttons aren't under it */
   /* the reused app renderers fill the fullscreen body */
   #p-appbody .wbody,#p-appbody .term,#p-appbody .chat,#p-appbody .noted,#p-appbody .calcapp,#p-appbody .autoapp{height:100%;max-height:none}
   #p-appbody .pad{padding:14px 16px}
 
-  /* home indicator — swipe/tap to go home */
-  #p-homebar{position:absolute;left:0;right:0;bottom:0;height:calc(22px + env(safe-area-inset-bottom));z-index:20}
+  /* home indicator — purely decorative; must NEVER intercept touches, or it
+     eats taps on the app content beneath it (e.g. the Assistant input + Send) */
+  #p-homebar{position:absolute;left:0;right:0;bottom:0;height:calc(22px + env(safe-area-inset-bottom));z-index:20;pointer-events:none}
   body.mobile #p-app.open ~ #p-homebar::after,#p-homebar::after{content:"";position:absolute;left:50%;bottom:8px;transform:translateX(-50%);
     width:130px;height:5px;border-radius:3px;background:rgba(255,255,255,.4)}
 
@@ -477,6 +479,9 @@
   #p-dots .dot.on{background:rgba(255,255,255,.92)}
   /* widgets live on page 1 of the pager, spanning the grid, so pages 2+ are full app grids */
   .p-page > #p-widgets{grid-column:1 / -1;margin:0 0 18px}
+  /* on phones, inputs must be ≥16px or iOS zooms the page on focus, which shoves
+     bottom inputs under the keyboard and makes them feel broken */
+  body.mobile #p-appbody input,body.mobile #p-appbody textarea{font-size:16px}
 </style>
 </head>
 <body data-accent="violet">

@@ -44,7 +44,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var VERSION = '4.5.0';
+  var VERSION = '4.6.0';
   var JOURNAL_CAP = 300;
   var RUN_DEPTH_CAP = 8;
   var SCRIPT_STEP_CAP = 100000; // total statements one `run` may execute — kills infinite loops
