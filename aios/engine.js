@@ -44,7 +44,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var VERSION = '4.2.0';
+  var VERSION = '4.3.0';
   var JOURNAL_CAP = 300;
   var RUN_DEPTH_CAP = 8;
   var SCRIPT_STEP_CAP = 100000; // total statements one `run` may execute — kills infinite loops
@@ -462,6 +462,7 @@
       aliases: {},
       journal: [],
       desktop: {},
+      installed: [],
       settings: { owner: 'user', accent: 'violet' },
       bootedAt: now
     };
@@ -487,7 +488,8 @@
       env: state.env,
       aliases: state.aliases,
       journal: state.journal,
-      desktop: state.desktop
+      desktop: state.desktop,
+      installed: state.installed
     });
   }
 
@@ -547,6 +549,9 @@
           if (pos && isFinite(pos.x) && isFinite(pos.y)) setIconPos(state, k, pos.x, pos.y);
         }
       }
+      if (Array.isArray(data.installed)) {
+        for (var ii = 0; ii < data.installed.length; ii++) installWebapp(state, data.installed[ii]);
+      }
     } catch (e) { /* corrupt snapshot → fresh boot */ }
     return state;
   }
@@ -594,6 +599,24 @@
     return null;
   }
 
+  /** Install a catalog app to the home screen (phone springboard + desktop
+   *  ✦ menu). The install list is ordered, deduped and persisted. */
+  function installWebapp(state, id) {
+    if (!ballrzAppById(id)) return { ok: false, error: 'no such app: ' + id };
+    if (state.installed.indexOf(id) !== -1) return { ok: true, already: true };
+    state.installed.push(id);
+    return { ok: true };
+  }
+
+  function uninstallWebapp(state, id) {
+    var i = state.installed.indexOf(id);
+    if (i === -1) return false;
+    state.installed.splice(i, 1);
+    return true;
+  }
+
+  function isInstalled(state, id) { return state.installed.indexOf(id) !== -1; }
+
   /* ══════════════════════════ Mobile home screen ══════════════════════════
    * The phone shell (a springboard of app icons, one fullscreen app at a
    * time) is a different presentation of the SAME kernel — the desktop's
@@ -621,6 +644,10 @@
     }
     var user = listApps(state);
     for (var u = 0; u < user.length; u++) grid.push({ id: 'userapp', arg: user[u].id, emoji: user[u].emoji, name: user[u].name });
+    for (var w = 0; w < state.installed.length; w++) {
+      var hub = ballrzAppById(state.installed[w]);
+      if (hub) grid.push({ id: 'webapp', arg: hub.id, emoji: hub.emoji, name: hub.name });
+    }
     return { dock: dock, grid: grid };
   }
 
@@ -1494,7 +1521,12 @@
           return { out: ['opening ' + args[1] + '…'], error: false, effects: [{ type: 'open', app: 'userapp', arg: args[1] }] };
         }
         if (sub === 'install') {
-          if (!args[1]) return err('app: install <file.app> — a manifest to copy into /apps');
+          if (!args[1]) return err('app: install <file.app | hub-app-id> — a manifest, or a Ballrz app for the home screen');
+          // a Ballrz catalog id installs the hub app to the home screen
+          if (ballrzAppById(args[1]) && !fsGet(state.fs, P(args[1]))) {
+            var iw = installWebapp(state, args[1]);
+            return { out: [iw.already ? args[1] + ' is already on the home screen' : 'installed ' + args[1] + ' to the home screen'], error: false, effects: [] };
+          }
           var src = P(args[1]);
           var srd = fsRead(state.fs, src);
           if (!srd.ok) return err('app: ' + srd.error);
@@ -1506,9 +1538,14 @@
           return { out: ['installed ' + id + ' — open it from the ✦ menu or `app open ' + id + '`'], error: false, effects: [] };
         }
         if (sub === 'remove') {
-          if (!args[1] || !readApp(state, args[1])) return err('app: no app: ' + (args[1] || ''));
-          fsRemove(state.fs, APPS_DIR + '/' + args[1] + '.app', {});
-          return { out: ['removed ' + args[1]], error: false, effects: [] };
+          if (args[1] && readApp(state, args[1])) {
+            fsRemove(state.fs, APPS_DIR + '/' + args[1] + '.app', {});
+            return { out: ['removed ' + args[1]], error: false, effects: [] };
+          }
+          if (args[1] && uninstallWebapp(state, args[1])) {
+            return { out: ['removed ' + args[1] + ' from the home screen'], error: false, effects: [] };
+          }
+          return err('app: no app: ' + (args[1] || ''));
         }
         return err('app: usage: app <list|open|install|remove> …');
       }
@@ -2092,6 +2129,9 @@
     // ballrz catalog
     BALLRZ_APPS: BALLRZ_APPS,
     ballrzAppById: ballrzAppById,
+    installWebapp: installWebapp,
+    uninstallWebapp: uninstallWebapp,
+    isInstalled: isInstalled,
     // mobile home screen
     DOCK_FAVORITES: DOCK_FAVORITES,
     springboard: springboard,

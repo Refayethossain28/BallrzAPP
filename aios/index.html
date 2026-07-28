@@ -1546,8 +1546,26 @@ APP_RENDER.store = function (proc, body) {
       b.title = a.desc;
       var ico = el('span', null, a.emoji); ico.style.fontSize = '18px';
       var nm = el('span', null, a.name);
-      nm.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px';
+      nm.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px';
       b.appendChild(ico); b.appendChild(nm);
+      /* ＋ installs to the home screen; ✓ uninstalls */
+      var inst = el('span', null, K.isInstalled(state, a.id) ? '✓' : '＋');
+      inst.title = K.isInstalled(state, a.id) ? 'Remove from home screen' : 'Install to home screen';
+      inst.style.cssText = 'flex:none;width:22px;height:22px;display:grid;place-items:center;border-radius:50%;font-size:13px;' +
+        (K.isInstalled(state, a.id) ? 'background:var(--ok);color:#0b0d20;font-weight:700' : 'background:rgba(255,255,255,.14)');
+      inst.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        if (K.isInstalled(state, a.id)) {
+          K.uninstallWebapp(state, a.id);
+          notify('🛍️ Removed', a.name + ' is off the home screen.');
+        } else {
+          K.installWebapp(state, a.id);
+          notify('🛍️ Installed', a.name + ' is on your home screen' + (MOBILE ? '' : ' and in the ✦ menu') + '.');
+        }
+        if (MOBILE) buildSpringboard();
+        refresh(); sync();
+      });
+      b.appendChild(inst);
       b.addEventListener('click', function () { spawnApp('webapp', a.id); });
       hgrid.appendChild(b);
     });
@@ -1875,7 +1893,8 @@ function buildStart() {
   startEl.textContent = '';
   var grid = el('div', 'sgrid');
   var all = K.APPS.map(function (a) { return { id: a.id, arg: null, emoji: a.emoji, name: a.name, desc: a.desc }; })
-    .concat(K.listApps(state).map(function (a) { return { id: 'userapp', arg: a.id, emoji: a.emoji, name: a.name, desc: a.desc }; }));
+    .concat(K.listApps(state).map(function (a) { return { id: 'userapp', arg: a.id, emoji: a.emoji, name: a.name, desc: a.desc }; }))
+    .concat(state.installed.map(function (id) { var a = K.ballrzAppById(id); return a && { id: 'webapp', arg: a.id, emoji: a.emoji, name: a.name, desc: a.desc }; }).filter(Boolean));
   all.forEach(function (a) {
     var b = el('button', 'sapp');
     b.title = a.desc || '';
