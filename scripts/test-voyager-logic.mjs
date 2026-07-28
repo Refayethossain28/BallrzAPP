@@ -778,6 +778,30 @@ test('summarize: extractive, deterministic, in reading order, honest on short te
   assert.equal(V.summarize(text, { sentences: 2 }), sum);           // deterministic
 });
 
+/* ---- ask your memory ---- */
+
+test('askMemory answers a question with a verbatim quote and names the source', () => {
+  let s = V.createBrowser();
+  s = V.rememberPage(s, { url: 'https://phys.site/quantum', title: 'Quantum piece', text:
+    'Quantum repeaters were demonstrated in Boston. The team linked two labs across the city. Funding came from the usual agencies.' }, NOW);
+  s = V.rememberPage(s, { url: 'https://cook.site/pasta', title: 'Pasta', text:
+    'Cook the pasta for nine minutes. Salt the water generously.' }, NOW);
+  const a = V.askMemory(s, 'where were quantum repeaters demonstrated?');
+  assert.ok(a.answer.indexOf('Boston') !== -1);                        // the answering sentence
+  assert.equal(a.sources[0].url, 'https://phys.site/quantum');         // with its source
+  assert.equal(a.sources[0].title, 'Quantum piece');
+  const b = V.askMemory(s, 'how long do I cook the pasta?');
+  assert.ok(b.answer.indexOf('nine minutes') !== -1);                  // right page wins per question
+});
+
+test('askMemory is honest about not knowing', () => {
+  let s = V.createBrowser();
+  assert.equal(V.askMemory(s, 'anything at all?'), null);              // empty memory
+  s = V.rememberPage(s, { url: 'https://a.site/x', title: 'X', text: 'Entirely unrelated prose lives here.' }, NOW);
+  assert.equal(V.askMemory(s, 'quantum repeaters in boston?'), null);  // no match → no invented answer
+  assert.equal(V.askMemory(s, 'the of and?'), null);                   // stopwords only → null
+});
+
 /* ---- tracker receipt ---- */
 
 test('recordTrackers accumulates per site and ignores junk', () => {
