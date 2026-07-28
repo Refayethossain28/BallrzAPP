@@ -71,6 +71,7 @@
     memory: 'Memory',
     reader: 'Reader',
     changes: 'What changed',
+    stats: 'Your numbers',
     site: 'Site settings',
     settings: 'Settings',
     about: 'About Voyager',
@@ -340,6 +341,7 @@
       spaces: [{ id: 1, name: 'Home', lastActiveId: null }],  // named workspaces
       activeSpace: 1,
       nextSpaceId: 2,
+      splitId: null,    // a second tab shown beside the active one (same space)
       settings: {
         engine: opts.engine || 'seeker',
         engineChosen: false,   // flips when the user picks one in Settings
@@ -408,6 +410,7 @@
     var space = state.tabs[idx].space || 1;
     var next = shallow(state);
     next.tabs = state.tabs.slice(0, idx).concat(state.tabs.slice(idx + 1));
+    if (state.splitId === id) next.splitId = null;   // closing a pane dissolves the split
     // Never-empty holds PER SPACE: closing a space's last tab respawns a fresh one there.
     var siblings = next.tabs.filter(function (t) { return (t.space || 1) === space; });
     if (!siblings.length) return newTab(next, { space: space });
@@ -432,6 +435,36 @@
     // Jumping to a tab in another space (palette, tab sheet) follows it there.
     if ((tab.space || 1) !== state.activeSpace) next.activeSpace = tab.space || 1;
     return next;
+  }
+
+  /* ════════════════════════ split view ════════════════════════
+   * Two tabs side by side — compare sources, write from a reference, watch
+   * while you read. The split partner must live in the active tab's space;
+   * closing either side, or leaving the space, dissolves the split. */
+
+  function setSplit(state, tabId) {
+    if (tabId == null) {
+      if (state.splitId == null) return state;
+      var off = shallow(state); off.splitId = null; return off;
+    }
+    var tab = getTab(state, tabId);
+    var active = activeTab(state);
+    if (!tab || !active || tab.id === active.id) return state;
+    if ((tab.space || 1) !== (active.space || 1)) return state;   // same desk only
+    if (state.splitId === tabId) return state;
+    var next = shallow(state);
+    next.splitId = tabId;
+    return next;
+  }
+
+  /** The tab shown in the second pane, or null when the split is off/broken. */
+  function splitTab(state) {
+    if (state.splitId == null) return null;
+    var tab = getTab(state, state.splitId);
+    var active = activeTab(state);
+    if (!tab || !active || tab.id === active.id) return null;
+    if ((tab.space || 1) !== (active.space || 1)) return null;
+    return tab;
   }
 
   /* ════════════════════════ workspaces ════════════════════════
@@ -1431,6 +1464,46 @@
     return next;
   }
 
+  /* ════════════════════════ your numbers ════════════════════════
+   * The dashboard browsers never give you honestly: everything computed
+   * on-device from your own ledgers, nothing phoned home to make it. */
+
+  function browsingStats(state, nowTs) {
+    nowTs = nowTs || 0;
+    var hosts = {}, distinct = 0;
+    for (var i = 0; i < state.history.length; i++) {
+      var h = hostOf(state.history[i].url);
+      if (h && !hosts[h]) { hosts[h] = true; distinct++; }
+    }
+    var wordsRead = 0;
+    for (var m = 0; m < state.memory.length; m++) wordsRead += Number(state.memory[m].words) || 0;
+    var trackersSeen = 0;
+    for (var k in (state.sites || {})) {
+      if (Object.prototype.hasOwnProperty.call(state.sites, k)) trackersSeen += Number(state.sites[k].trackersSeen) || 0;
+    }
+    // Reading streak: consecutive days with at least one visit, counting back
+    // from today (or yesterday, if today hasn't started yet).
+    var days = {};
+    for (var v = 0; v < state.history.length; v++) {
+      var ts = Number(state.history[v].ts);
+      if (ts > 0) days[Math.floor(ts / 86400000)] = true;
+    }
+    var today = Math.floor(nowTs / 86400000);
+    var streak = 0, cursor = days[today] ? today : today - 1;
+    while (days[cursor]) { streak++; cursor--; }
+    return {
+      visits: state.history.length,
+      sites: distinct,
+      wordsRead: wordsRead,
+      pagesRemembered: state.memory.length,
+      highlights: state.highlights.length,
+      follows: state.follows.length,
+      trackersSeen: trackersSeen,
+      streakDays: streak,
+      topSites: topSites(state, 5, nowTs),
+    };
+  }
+
   /* ════════════════════════ session ════════════════════════ */
 
   /** Persistable JSON. Incognito tabs are simply not part of the story. */
@@ -1460,6 +1533,7 @@
       spaces: state.spaces || [{ id: 1, name: 'Home', lastActiveId: null }],
       activeSpace: state.activeSpace || 1,
       nextSpaceId: state.nextSpaceId || 2,
+      splitId: state.splitId != null ? state.splitId : null,
       settings: state.settings,
     });
   }
@@ -1533,6 +1607,7 @@
     if (tabs.length === 0) return newTab(state, {});
     state.activeId = getTab(state, data.activeId) ? data.activeId : tabs[0].id;
     state.activeSpace = getTab(state, state.activeId).space || 1;   // desk follows the active tab
+    state.splitId = getTab(state, data.splitId) ? data.splitId : null;
     return state;
   }
 
@@ -1601,6 +1676,9 @@
     togglePin: togglePin,
     getSpace: getSpace,
     spaceTabs: spaceTabs,
+    setSplit: setSplit,
+    splitTab: splitTab,
+    browsingStats: browsingStats,
     addSpace: addSpace,
     renameSpace: renameSpace,
     switchSpace: switchSpace,
