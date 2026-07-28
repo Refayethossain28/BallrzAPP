@@ -464,6 +464,19 @@
      AIOS's imitation clock/signal/battery — keep the safe-area spacing and
      the ✦ Live AI dot, which is real information */
   body.standalone #p-clock,body.standalone #p-sig{display:none}
+
+  /* iOS-style paged home screen: swipe horizontally between pages of apps */
+  body.mobile #p-home{overflow:hidden}
+  #p-grid{display:flex !important;flex:1;min-height:0;gap:0 !important;overflow-x:auto;overflow-y:hidden;
+    scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  #p-grid::-webkit-scrollbar{display:none}
+  .p-page{min-width:100%;flex:0 0 100%;scroll-snap-align:center;display:grid;grid-template-columns:repeat(4,1fr);
+    gap:24px 12px;align-content:start;padding:0 1px}
+  #p-dots{display:flex;justify-content:center;align-items:center;gap:8px;height:16px;margin:2px 0 6px}
+  #p-dots .dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.32);transition:background .2s}
+  #p-dots .dot.on{background:rgba(255,255,255,.92)}
+  /* widgets live on page 1 of the pager, spanning the grid, so pages 2+ are full app grids */
+  .p-page > #p-widgets{grid-column:1 / -1;margin:0 0 18px}
 </style>
 </head>
 <body data-accent="violet">
@@ -521,10 +534,11 @@
   </div>
   <div id="p-home">
     <div id="p-search"><span>🔍</span> Ask AIOS or search…</div>
-    <div id="p-widgets"></div>
     <div id="p-grid"></div>
+    <div id="p-dots"></div>
     <div id="p-dock"></div>
   </div>
+  <div id="p-widgets"></div>
   <div id="p-app">
     <div id="p-appbar">
       <button id="p-back">‹ Home</button>
@@ -1926,7 +1940,8 @@ function widgetPicker(x, y) {
     var on = state.widgets.indexOf(w.id) !== -1;
     return { label: (on ? '✓ ' : '＋ ') + w.emoji + ' ' + w.name, fn: function () {
       if (on) K.removeWidget(state, w.id); else K.addWidget(state, w.id);
-      renderWidgets(); save();
+      if (MOBILE) buildSpringboard(); else renderWidgets();
+      save();
     } };
   }));
 }
@@ -2267,13 +2282,61 @@ function phoneIcon(entry, big) {
   return b;
 }
 
+var ROW_H = 104; // one icon row (icon + label + gap), px
+
+/* Lay out the home screen as swipeable pages. Widgets sit at the top of page
+ * 1 (spanning the grid), so page 1 holds fewer icons and pages 2+ are full. */
 function buildSpringboard() {
   var sb = K.springboard(state);
-  var grid = $('p-grid'); grid.textContent = '';
-  sb.grid.forEach(function (e) { grid.appendChild(phoneIcon(e, false)); });
+  var grid = $('p-grid');
+  var widgetsEl = $('p-widgets');          // captured before we clear the grid…
+  grid.textContent = '';                    // …so the detached node survives here
+  var gridH = grid.clientHeight;
+  if (gridH < 120) gridH = Math.max(360, (window.innerHeight || 780) - 250); // pre-layout estimate
+  var rows = Math.max(3, Math.floor(gridH / ROW_H));
+  var perFull = rows * 4;
+
+  var pages = [];
+  var page1 = el('div', 'p-page');
+  page1.appendChild(widgetsEl);            // widgets → page 1, full width
+  grid.appendChild(page1);
+  renderWidgets();                          // fill the widget cards (in page 1 now)
+  var wh = widgetsEl.offsetHeight || 0;
+  var widgetRows = wh ? Math.ceil((wh + 18) / ROW_H) : 0;
+  var per1 = Math.max(4, (rows - widgetRows) * 4);
+
+  var idx = 0;
+  for (; idx < per1 && idx < sb.grid.length; idx++) page1.appendChild(phoneIcon(sb.grid[idx], false));
+  pages.push(page1);
+  while (idx < sb.grid.length) {
+    var pg = el('div', 'p-page');
+    for (var k = 0; k < perFull && idx < sb.grid.length; k++, idx++) pg.appendChild(phoneIcon(sb.grid[idx], false));
+    grid.appendChild(pg);
+    pages.push(pg);
+  }
+
+  /* page dots (only with more than one page) */
+  var dots = $('p-dots'); dots.textContent = '';
+  if (pages.length > 1) pages.forEach(function (_, i) { dots.appendChild(el('span', 'dot' + (i === 0 ? ' on' : ''))); });
+  grid.onscroll = function () {
+    if (!grid.clientWidth) return;
+    var at = Math.round(grid.scrollLeft / grid.clientWidth);
+    var ds = dots.querySelectorAll('.dot');
+    for (var j = 0; j < ds.length; j++) ds[j].classList.toggle('on', j === at);
+  };
+
   var dock = $('p-dock'); dock.textContent = '';
   sb.dock.forEach(function (e) { dock.appendChild(phoneIcon(e, true)); });
-  renderWidgets();
+
+  /* first paint may report gridH=0; once the real height lands, re-paginate
+     if the row count changed (converges in ≤2 passes, never loops) */
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(function () {
+      if (!MOBILE) return;
+      var h = grid.clientHeight;
+      if (h > 120 && Math.max(3, Math.floor(h / ROW_H)) !== rows) buildSpringboard();
+    });
+  }
 }
 
 var phoneCur = null; // pid of the app shown fullscreen
