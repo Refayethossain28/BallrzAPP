@@ -843,6 +843,82 @@ test('follows: updateFollow refreshes items; followedItems merges newest-first a
   assert.equal(V.updateFollow(s, 'https://nope.site/rss', [], NOW), s);   // unknown feed → untouched
 });
 
+/* ---- workspaces ---- */
+
+test('spaces: addSpace switches desks and opens a first tab; new tabs land in the active space', () => {
+  let s = V.createBrowser();
+  s = V.navigate(s, s.activeId, 'https://home.site', { ts: NOW });
+  s = V.addSpace(s, 'Work', { ts: NOW });
+  assert.equal(s.activeSpace, 2);
+  assert.equal(V.getSpace(s, 2).name, 'Work');
+  assert.equal(V.tabUrl(V.activeTab(s)), 'voyager://start');           // fresh desk, fresh tab
+  s = V.newTab(s, { url: 'https://work.site', ts: NOW });
+  eq(V.spaceTabs(s, 2).map((t) => V.tabUrl(t)), ['voyager://start', 'https://work.site']);
+  assert.equal(V.spaceTabs(s, 1).length, 1);                           // Home untouched
+});
+
+test('spaces: switchSpace returns focus to the tab you last used there', () => {
+  let s = V.createBrowser();
+  s = V.navigate(s, s.activeId, 'https://home.site', { ts: NOW });
+  const homeTab = s.activeId;
+  s = V.addSpace(s, 'Work', { ts: NOW });
+  s = V.newTab(s, { url: 'https://work.site', ts: NOW });
+  const workTab = s.activeId;
+  s = V.switchSpace(s, 1);
+  assert.equal(s.activeId, homeTab);                                   // remembered
+  s = V.switchSpace(s, 2);
+  assert.equal(s.activeId, workTab);                                   // remembered both ways
+  assert.equal(V.switchSpace(s, 99), s);                               // unknown space → no-op
+});
+
+test('spaces: closeTab focuses within the space; last tab respawns IN that space', () => {
+  let s = V.createBrowser();                                           // Home: tab 1
+  s = V.addSpace(s, 'Work', { ts: NOW });                              // Work: tab 2
+  s = V.newTab(s, { url: 'https://a.work', ts: NOW });                 // Work: tab 3
+  s = V.closeTab(s, s.activeId);                                       // close 3 → focus 2, not Home's 1
+  assert.equal(V.activeTab(s).space, 2);
+  s = V.closeTab(s, s.activeId);                                       // close Work's last tab
+  assert.equal(V.spaceTabs(s, 2).length, 1);                           // respawned in Work
+  assert.equal(V.activeTab(s).space, 2);
+  assert.equal(V.tabUrl(V.activeTab(s)), 'voyager://start');
+});
+
+test('spaces: activateTab across spaces follows the tab; removeSpace guards pins and the last space', () => {
+  let s = V.createBrowser();
+  const homeTab = s.activeId;
+  s = V.addSpace(s, 'Work', { ts: NOW });
+  s = V.activateTab(s, homeTab);
+  assert.equal(s.activeSpace, 1);                                      // jumping tabs jumps desks
+  s = V.switchSpace(s, 2);
+  s = V.togglePin(s, s.activeId);
+  assert.equal(V.removeSpace(s, 2), s);                                // pinned tab → refuse demolition
+  s = V.togglePin(s, s.activeId);
+  s = V.removeSpace(s, 2);
+  assert.equal(s.spaces.length, 1);
+  assert.equal(s.activeSpace, 1);
+  assert.equal(V.activeTab(s).space, 1);
+  assert.equal(V.removeSpace(s, 1), s);                                // the last space is forever
+});
+
+test('spaces: session round-trip keeps desks, focus memory and tab homes; legacy sessions get Home', () => {
+  let s = V.createBrowser();
+  s = V.navigate(s, s.activeId, 'https://home.site', { ts: NOW });
+  s = V.addSpace(s, 'Research', { ts: NOW });
+  s = V.newTab(s, { url: 'https://paper.site', ts: NOW });
+  const r = V.restore(V.serialize(s));
+  assert.equal(r.spaces.length, 2);
+  assert.equal(V.getSpace(r, 2).name, 'Research');
+  assert.equal(r.activeSpace, 2);
+  assert.equal(V.activeTab(r).space, 2);
+  eq(V.spaceTabs(r, 1).map((t) => V.tabUrl(t)), ['https://home.site']);
+  // legacy session (no spaces field): everything lands in one Home space
+  const legacy = V.restore(JSON.stringify({ v: 1, nextId: 5, activeId: 1,
+    tabs: [{ id: 1, stack: ['https://a.com'], pos: 0 }], settings: {} }));
+  assert.equal(legacy.spaces.length, 1);
+  assert.equal(legacy.spaces[0].name, 'Home');
+  assert.equal(V.activeTab(legacy).space, 1);
+});
+
 /* ---- swipe gestures ---- */
 
 test('swipeAction: decisive horizontal swipes map to back/forward, everything else is null', () => {
