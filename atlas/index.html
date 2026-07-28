@@ -467,6 +467,7 @@
     <button class="bigBtn" id="btnDemo">▶ Demo</button>
     <button class="bigBtn" id="btnGo">Start&nbsp; ➤</button>
   </div>
+  <button id="btnOffline" style="margin-top:10px;width:100%;padding:11px;border-radius:12px;background:rgba(255,255,255,0.05);border:1px solid var(--line);font-size:13.5px;color:var(--dim)">⬇ Save this route for offline</button>
 </div>
 
 <!-- settings sheet -->
@@ -513,6 +514,10 @@
     </div>
   </div>
   <div class="setRow">
+    <div class="lbl">🗺 Offline maps<div class="sub" id="offlineSub">Save a route's maps from its preview screen</div></div>
+    <button class="navCtl" id="btnClearOffline" aria-label="Clear offline maps" style="width:auto;padding:0 16px;border-radius:12px">Clear</button>
+  </div>
+  <div class="setRow">
     <div class="lbl">📹 Dashcam clips<div class="sub" id="clipsSub">Recordings stored on this device</div></div>
     <button class="navCtl" id="btnOpenClips" aria-label="Open clips" style="width:auto;padding:0 16px;border-radius:12px">Open</button>
   </div>
@@ -523,6 +528,10 @@
     <strong>🏙 real 3D buildings</strong> (OSM footprints with real heights, extruded and
     light-shaded on-canvas), and <strong>your car</strong> as the position marker; guidance, snapping, phrasing and ETA
     come from the pure, unit-tested navigation engine (<code>engine.js</code>).
+    <strong>🗺 Offline maps</strong>: save a route from its preview and its map corridor
+    (day + night, zooms 12–17) downloads to this device — guidance, snapping and voice
+    already run locally, so a saved route navigates with no signal; only re-routing and
+    search still need a connection.
     Turn-by-turn includes <strong>🛣 lane guidance</strong> (real OSM lane arrows, your lanes
     lit) and <strong>junction views</strong> — honest auto-generated schematics of complex
     junctions built from the real surrounding roads, your path glowing through them.
@@ -1526,7 +1535,7 @@ $('searchPill').addEventListener('click', function () {
   setTimeout(function () { $('searchInput').focus(); }, 250);
 });
 $('searchCancel').addEventListener('click', function () { $('searchInput').value = ''; closeSheets(); });
-$('btnSettings').addEventListener('click', function () { openSheet('settingsSheet'); refreshClipsSub(); });
+$('btnSettings').addEventListener('click', function () { openSheet('settingsSheet'); refreshClipsSub(); refreshOfflineSub(); });
 $('btnCloseSettings').addEventListener('click', closeSheets);
 $('btnCloseRoute').addEventListener('click', function () { clearTrip(); closeSheets(); });
 
@@ -1755,7 +1764,89 @@ function renderAlternatives(rawRoutes) {
     });
     box.appendChild(b);
   });
+  offlineBtnDefault();
 }
+
+/* ------------------------- 🗺 offline map packs -------------------------- */
+/* Download the route's map corridor (z12–17, day + night styles) into a
+   durable cache the tile trimmer never touches — guidance, snapping and
+   voice already run on-device, so a saved route navigates with no signal.
+   Honest limits: re-routing and search still need a connection. */
+
+var OFFLINE_CACHE_NAME = 'atlas-offline-v1';
+var offlineBusy = false;
+
+function offlineBtnDefault() {
+  var route = trip.routes[trip.selected];
+  var btn = $('btnOffline');
+  if (!route) { btn.textContent = '⬇ Save this route for offline'; return; }
+  var plan = A.corridorTiles(route, { minZ: 12, maxZ: 17, bufferM: 260, cap: 1200 });
+  btn.textContent = '⬇ Save this route for offline · ~' + A.packEstimateMB(plan.tiles.length, 2, 30) + ' MB';
+}
+
+$('btnOffline').addEventListener('click', function () {
+  var route = trip.routes[trip.selected];
+  if (!route || offlineBusy) return;
+  if (!window.caches || !caches.open) { toast('Offline storage is not available in this browser'); return; }
+  offlineBusy = true;
+  var dayLayer = settings.baseLayer === 'positron' ? 'pos' : 'voy';
+  var plan = A.corridorTiles(route, { minZ: 12, maxZ: 17, bufferM: 260, cap: 1200 });
+  var urls = [];
+  [dayLayer, 'dark'].forEach(function (ly) {
+    plan.tiles.forEach(function (t) { urls.push(TILE_URL(ly, t.z, t.x, t.y)); });
+  });
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+  var btn = $('btnOffline'), done = 0, failed = 0, i = 0;
+  caches.open(OFFLINE_CACHE_NAME).then(function (cache) {
+    function worker() {
+      if (i >= urls.length) return Promise.resolve();
+      var url = urls[i++];
+      return fetch(url, { mode: 'cors' })
+        .then(function (resp) { if (resp.ok) return cache.put(url, resp); failed++; })
+        .catch(function () { failed++; })
+        .then(function () {
+          done++;
+          if (done % 25 === 0 || done === urls.length) {
+            btn.textContent = '⬇ Downloading maps… ' + Math.round(done / urls.length * 100) + '%';
+          }
+          return worker();
+        });
+    }
+    var lanes = [];
+    for (var k = 0; k < 6; k++) lanes.push(worker());
+    return Promise.all(lanes);
+  }).then(function () {
+    offlineBusy = false;
+    var ok = urls.length - failed;
+    if (!ok) {
+      offlineBtnDefault();
+      toast('Offline download failed — check your connection and try again');
+      return;
+    }
+    btn.textContent = '✓ Saved for offline · ' + ok + ' tiles' + (plan.truncated ? ' (long route — trimmed)' : '');
+    toast('🗺 Route saved offline — map, guidance and voice now work with no signal. Search and re-routing still need a connection.' + (failed ? ' (' + failed + ' tiles skipped)' : ''));
+  }).catch(function () {
+    offlineBusy = false;
+    offlineBtnDefault();
+    toast('Offline download failed');
+  });
+});
+
+function refreshOfflineSub() {
+  if (!window.caches || !caches.open) { $('offlineSub').textContent = 'Not available in this browser'; return; }
+  caches.open(OFFLINE_CACHE_NAME).then(function (c) { return c.keys(); }).then(function (keys) {
+    $('offlineSub').textContent = keys.length
+      ? keys.length + ' map tiles stored on this device'
+      : 'Save a route\'s maps from its preview screen';
+  }).catch(function () {});
+}
+$('btnClearOffline').addEventListener('click', function () {
+  if (!window.caches || !caches.delete) return;
+  caches.delete(OFFLINE_CACHE_NAME).then(function () {
+    toast('Offline maps cleared');
+    refreshOfflineSub();
+  }).catch(function () {});
+});
 
 Array.prototype.forEach.call(document.querySelectorAll('.profileBtn'), function (b) {
   b.addEventListener('click', function () {
