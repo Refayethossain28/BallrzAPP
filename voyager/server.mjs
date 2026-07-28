@@ -167,7 +167,10 @@ async function handleProxy(target, req, res, blockOn) {
       return send(res, upstream.status, outHeaders, Buffer.from(raw));
     }
     let text = new TextDecoder('utf-8').decode(raw);
-    text = Proxy.isHtml(ct) ? Proxy.rewriteHtml(text, finalUrl, ppath)
+    // The receipt: count the page's distinct tracker URLs before rewriting,
+    // and let the shim report the number up to the chrome.
+    const trackers = Proxy.isHtml(ct) ? Proxy.countTrackers(text) : 0;
+    text = Proxy.isHtml(ct) ? Proxy.rewriteHtml(text, finalUrl, ppath, { trackers })
                             : Proxy.rewriteCss(text, finalUrl, ppath);
     return send(res, upstream.status, outHeaders, text);
   }

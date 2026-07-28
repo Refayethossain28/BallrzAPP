@@ -736,6 +736,61 @@ test('site settings: private tabs zoom without leaving a trace', () => {
   assert.equal(V.siteSetting(s, 'secret.site', 'zoom'), undefined); // …the map never hears
 });
 
+/* ---- time travel: what changed since you read it ---- */
+
+test('diffTexts: paragraph LCS — same, edited, added, removed all land in order', () => {
+  const oldT = 'Intro stays.\n\nThe price is £10.\n\nOutro stays.';
+  const newT = 'Intro stays.\n\nThe price is £15.\n\nA brand new paragraph.\n\nOutro stays.';
+  const d = V.diffTexts(oldT, newT);
+  eq(d.map((p) => p.type), ['same', 'removed', 'added', 'added', 'same']);
+  assert.equal(d[1].text, 'The price is £10.');       // what you read
+  assert.equal(d[2].text, 'The price is £15.');       // what it says now
+  assert.equal(d[3].text, 'A brand new paragraph.');
+  eq(V.diffTexts('a\n\nb', 'a\n\nb').map((p) => p.type), ['same', 'same']);
+});
+
+test('pageChanges: compares a revisit against memory; null when nothing to say', () => {
+  let s = V.createBrowser();
+  assert.equal(V.pageChanges(s, 'https://news.site/story', 'anything'), null);   // not remembered
+  s = V.rememberPage(s, { url: 'https://news.site/story', title: 'Story', text: 'One.\n\nTwo.\n\nThree.' }, NOW);
+  assert.equal(V.pageChanges(s, 'https://news.site/story', 'One.\n\nTwo.\n\nThree.'), null); // identical
+  const c = V.pageChanges(s, 'https://news.site/story', 'One.\n\nTwo edited.\n\nThree.');
+  assert.equal(c.sinceTs, NOW);
+  assert.equal(c.added, 1);
+  assert.equal(c.removed, 1);
+  eq(c.parts.map((p) => p.type), ['same', 'removed', 'added', 'same']);
+});
+
+/* ---- TL;DR ---- */
+
+test('summarize: extractive, deterministic, in reading order, honest on short texts', () => {
+  const text = 'Quantum repeaters extend entanglement across cities. ' +
+    'The weather was pleasant on Tuesday. ' +
+    'Entanglement distribution is the core of quantum networking, and repeaters make entanglement practical. ' +
+    'Lunch was served at noon. ' +
+    'The team demonstrated quantum entanglement repeaters over a metropolitan network.';
+  const sum = V.summarize(text, { sentences: 2 });
+  assert.ok(sum.indexOf('repeaters') !== -1);                       // the topic sentences win
+  assert.ok(sum.indexOf('Lunch') === -1);                           // filler loses
+  const order = V.summarize(text, { sentences: 3 });
+  assert.ok(order.indexOf('Quantum repeaters extend') < order.indexOf('metropolitan'));  // reading order kept
+  assert.equal(V.summarize('Tiny. Text.', { sentences: 3 }), 'Tiny. Text.');             // fewer sentences than asked → all of it
+  assert.equal(V.summarize(text, { sentences: 2 }), sum);           // deterministic
+});
+
+/* ---- tracker receipt ---- */
+
+test('recordTrackers accumulates per site and ignores junk', () => {
+  let s = V.createBrowser();
+  s = V.recordTrackers(s, 'https://www.news.site/a', 3);
+  s = V.recordTrackers(s, 'https://news.site/b', 2);
+  assert.equal(s.sites['news.site'].trackersSeen, 5);               // www-stripped, summed
+  assert.equal(V.recordTrackers(s, 'https://news.site/c', 0), s);   // zero → untouched state
+  assert.equal(V.recordTrackers(s, 'voyager://start', 4), s);       // internal → untouched
+  const r = V.restore(V.serialize(s));
+  assert.equal(r.sites['news.site'].trackersSeen, 5);               // the receipt survives the session
+});
+
 /* ---- swipe gestures ---- */
 
 test('swipeAction: decisive horizontal swipes map to back/forward, everything else is null', () => {

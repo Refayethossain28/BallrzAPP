@@ -70,6 +70,7 @@
     reading: 'Reading list',
     memory: 'Memory',
     reader: 'Reader',
+    changes: 'What changed',
     site: 'Site settings',
     settings: 'Settings',
     about: 'About Voyager',
@@ -715,6 +716,116 @@
     return slice;
   }
 
+  /* ════════════════════════ time travel: what changed ════════════════════
+   * Web memory keeps the text you actually read. When the same page comes
+   * back different, a paragraph-level diff shows exactly what was edited —
+   * the quiet rewrites (news edits, price changes, ToS tweaks) browsers
+   * normally let slip past. */
+
+  function paragraphsOf(text) {
+    var out = [];
+    var parts = String(text == null ? '' : text).split(/\n\n+/);
+    for (var i = 0; i < parts.length; i++) { var p = parts[i].trim(); if (p) out.push(p); }
+    return out;
+  }
+
+  /**
+   * Paragraph-level LCS diff. Returns the merged story in order:
+   * [{type:'same'|'removed'|'added', text}] — 'removed' is what you read,
+   * 'added' is what the page says now.
+   */
+  function diffTexts(oldText, newText) {
+    var a = paragraphsOf(oldText), b = paragraphsOf(newText);
+    var n = a.length, m = b.length;
+    var L = [];                                     // (n+1)×(m+1) LCS lengths
+    for (var i = n; i >= 0; i--) {
+      L[i] = [];
+      for (var j = m; j >= 0; j--) {
+        if (i === n || j === m) L[i][j] = 0;
+        else if (a[i] === b[j]) L[i][j] = L[i + 1][j + 1] + 1;
+        else L[i][j] = Math.max(L[i + 1][j], L[i][j + 1]);
+      }
+    }
+    var out = [], x = 0, y = 0;
+    while (x < n && y < m) {
+      if (a[x] === b[y]) { out.push({ type: 'same', text: a[x] }); x++; y++; }
+      else if (L[x + 1][y] >= L[x][y + 1]) { out.push({ type: 'removed', text: a[x] }); x++; }
+      else { out.push({ type: 'added', text: b[y] }); y++; }
+    }
+    while (x < n) out.push({ type: 'removed', text: a[x++] });
+    while (y < m) out.push({ type: 'added', text: b[y++] });
+    return out;
+  }
+
+  /**
+   * Has `url` changed since it was read? null when there's nothing to compare
+   * (not remembered, no text, or identical); else {sinceTs, added, removed,
+   * parts} — parts being the full diffTexts story for rendering.
+   */
+  function pageChanges(state, url, newText) {
+    var mem = memoryEntry(state, url);
+    if (!mem || !mem.text) return null;
+    var fresh = String(newText == null ? '' : newText).slice(0, MEMORY_TEXT_CAP);
+    if (!fresh || fresh === mem.text) return null;
+    var parts = diffTexts(mem.text, fresh);
+    var added = 0, removed = 0;
+    for (var i = 0; i < parts.length; i++) {
+      if (parts[i].type === 'added') added++;
+      else if (parts[i].type === 'removed') removed++;
+    }
+    if (!added && !removed) return null;
+    return { sinceTs: mem.ts || null, added: added, removed: removed, parts: parts };
+  }
+
+  /* ════════════════════════ TL;DR: extractive summary ════════════════════ */
+
+  var STOPWORDS = ('the a an and or but if then else of to in on at by for with from as is are was were be been ' +
+    'being it its this that these those he she they them his her their we you your i me my our us not no yes do ' +
+    'does did done can could will would may might must shall should have has had having there here when where ' +
+    'what which who whom whose why how all any both each few more most other some such only own same so than ' +
+    'too very just about into over under again further once s t don now').split(' ');
+  var STOP = {};
+  for (var sw = 0; sw < STOPWORDS.length; sw++) STOP[STOPWORDS[sw]] = 1;
+
+  function sentencesOf(text) {
+    var out = [];
+    var m = String(text == null ? '' : text).replace(/\n+/g, ' ').match(/[^.!?]+[.!?]+["')\]]*|[^.!?]+$/g) || [];
+    for (var i = 0; i < m.length; i++) { var s = m[i].trim(); if (s) out.push(s); }
+    return out;
+  }
+
+  /**
+   * The gist, extracted not generated: sentences scored by how many of the
+   * text's own significant words they carry (frequency-weighted, length-
+   * normalised, early sentences nudged up), top N returned in reading order.
+   * Deterministic, offline, no model — the summary is the article's own words.
+   */
+  function summarize(text, opts) {
+    var want = (opts && opts.sentences) || 3;
+    var sents = sentencesOf(text);
+    if (sents.length <= want) return sents.join(' ');
+    var freq = {}, i, w;
+    for (i = 0; i < sents.length; i++) {
+      var words = sents[i].toLowerCase().match(/[a-z][a-z'-]{2,}/g) || [];
+      for (var j = 0; j < words.length; j++) { w = words[j]; if (!STOP[w]) freq[w] = (freq[w] || 0) + 1; }
+    }
+    var scored = [];
+    for (i = 0; i < sents.length; i++) {
+      var ws = sents[i].toLowerCase().match(/[a-z][a-z'-]{2,}/g) || [];
+      var score = 0, kept = 0;
+      for (var k = 0; k < ws.length; k++) { if (!STOP[ws[k]]) { score += freq[ws[k]]; kept++; } }
+      score = kept ? score / Math.sqrt(kept) : 0;
+      if (i === 0) score *= 1.35;                    // openers usually orient the reader
+      else if (i === 1) score *= 1.15;
+      scored.push({ i: i, score: score });
+    }
+    scored.sort(function (a, b) { return b.score - a.score || a.i - b.i; });
+    var picked = scored.slice(0, want).map(function (s) { return s.i; }).sort(function (a, b) { return a - b; });
+    var out = [];
+    for (i = 0; i < picked.length; i++) out.push(sents[picked[i]]);
+    return out.join(' ');
+  }
+
   /* ════════════════════════ per-site settings ════════════════════════
    * Overrides keyed by site (host minus www.): zoom sticks to the site the way
    * Chrome's does, and tracker-blocking / memory-capture can be flipped for one
@@ -762,6 +873,23 @@
     var next = shallow(state);
     next.sites = shallow(state.sites);
     delete next.sites[host];
+    return next;
+  }
+
+  /**
+   * The tracker receipt: tally how many tracker requests a site's pages have
+   * carried (the proxy counts them per page; this remembers). Lives in the
+   * same per-site map, shown on voyager://site.
+   */
+  function recordTrackers(state, url, n) {
+    var host = siteOf(url);
+    n = Math.floor(Number(n) || 0);
+    if (!host || n <= 0) return state;
+    var next = shallow(state);
+    next.sites = shallow(state.sites || {});
+    var site = shallow(next.sites[host] || {});
+    site.trackersSeen = (site.trackersSeen || 0) + n;
+    next.sites[host] = site;
     return next;
   }
 
@@ -1169,6 +1297,10 @@
     addShortcut: addShortcut,
     removeShortcut: removeShortcut,
     togglePin: togglePin,
+    diffTexts: diffTexts,
+    pageChanges: pageChanges,
+    summarize: summarize,
+    recordTrackers: recordTrackers,
     siteOf: siteOf,
     siteSetting: siteSetting,
     setSiteSetting: setSiteSetting,

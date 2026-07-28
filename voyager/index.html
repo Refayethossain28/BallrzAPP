@@ -349,6 +349,39 @@
   .tcard.pinned .close { display: none; }
   .tcard:not(.pinned) .pin { right: 40px; }
 
+  /* ═════════ time travel: the change banner + diff view ═════════ */
+  .changebar {
+    position: absolute; top: 8px; left: 50%; transform: translateX(-50%) translateY(-160%);
+    z-index: 8; display: flex; align-items: center; gap: 10px; max-width: min(94%, 560px);
+    background: var(--bg2); border: 1px solid rgba(245,192,74,.5); border-radius: 999px;
+    padding: 8px 8px 8px 16px; font-size: 13.5px; box-shadow: 0 10px 30px rgba(0,0,0,.45);
+    transition: transform .25s ease; white-space: nowrap;
+  }
+  .changebar.on { transform: translateX(-50%) translateY(0); }
+  .changebar .msg { overflow: hidden; text-overflow: ellipsis; }
+  .changebar .btn { padding: 7px 14px; font-size: 13px; }
+  .diff-part { margin: 0 0 1.02em; line-height: 1.66; font-size: 16.5px; }
+  .diff-part.same { color: var(--dim); }
+  .diff-part.removed { color: var(--red); text-decoration: line-through; text-decoration-thickness: 1.5px; opacity: .8; background: rgba(255,107,122,.07); border-radius: 8px; padding: 6px 10px; }
+  .diff-part.added { color: var(--ink); background: rgba(60,230,176,.1); border-left: 3px solid var(--mint); border-radius: 8px; padding: 6px 10px; }
+  .diff-key { display: flex; gap: 16px; font-size: 12px; color: var(--faint); margin: 6px 0 18px; }
+  .diff-key i { font-style: normal; }
+  .diff-key .k-add { color: var(--mint); } .diff-key .k-rem { color: var(--red); }
+
+  /* TL;DR box in Reader */
+  .tldr {
+    background: var(--card); border: 1px solid rgba(76,201,240,.35); border-left: 3px solid var(--cyan);
+    border-radius: 12px; padding: 12px 16px; margin: 0 0 18px; font-size: 15.5px; line-height: 1.6;
+  }
+  .tldr b.tag { display: block; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--cyan); margin-bottom: 5px; }
+
+  /* tracker receipt badge in the omnibox */
+  .trkbadge {
+    flex: none; display: none; align-items: center; gap: 3px; font-size: 11px; font-weight: 700;
+    color: var(--purple); border: 1px solid rgba(176,124,247,.4); border-radius: 999px; padding: 2px 7px;
+  }
+  .trkbadge.on { display: inline-flex; }
+
   /* memory results */
   .mem-hit { align-items: flex-start; }
   .mem-hit .snip { display: block; font-size: 13px; color: var(--dim); line-height: 1.5; margin-top: 3px; white-space: normal; }
@@ -365,6 +398,7 @@
   <button class="navbtn" id="reloadBtn" title="Reload" aria-label="Reload">⟳</button>
   <div class="omnibox">
     <span class="chip neutral" id="chip">✦</span>
+    <span class="trkbadge" id="trkBadge" title="Tracker requests this page carried (blocked by the proxy)">🛡<span id="trkCount"></span></span>
     <input id="urlInput" type="text" inputmode="url" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
            placeholder="Search or type an address" aria-label="Search or type an address">
     <button class="star" id="starBtn" title="Bookmark this page" aria-label="Bookmark">☆</button>
@@ -408,6 +442,11 @@
   <div class="swipezone right" id="swipeR"></div>
   <div class="swipehint left" id="hintBack">‹</div>
   <div class="swipehint right" id="hintFwd">›</div>
+  <div class="changebar" id="changebar">
+    <span class="msg" id="changeMsg"></span>
+    <button class="btn primary" data-act="viewchanges">See what changed</button>
+    <button class="navbtn" data-act="dismisschanges" style="width:28px;height:28px;font-size:13px" aria-label="Dismiss">✕</button>
+  </div>
   <div class="veil" id="veil">
     <div class="spin" id="veilSpin"></div>
     <h3 id="veilTitle">Loading…</h3>
@@ -453,6 +492,7 @@ try { S = Voyager.restore(localStorage.getItem(STORE_KEY) || ''); }
 catch (e) { S = Voyager.createBrowser(); }
 
 var loadTimer = 0;           // embed-refusal watchdog
+var pageTrackers = {};       // url → tracker count for pages loaded this session
 var progressTimer = 0;
 var suggestIndex = -1;
 var detectedProxy = '';      // set by the boot probe when voyager/server.mjs is serving us
@@ -559,7 +599,15 @@ function paintChrome() {
 
   applyTheme();
   applyZoom(tab);
+  paintTrackerBadge();
   renderView(url, tab);
+}
+
+/** 🛡 N in the omnibox when the current page carried tracker requests. */
+function paintTrackerBadge() {
+  var n = pageTrackers[currentUrl()] || 0;
+  $('trkBadge').className = 'trkbadge' + (n > 0 ? ' on' : '');
+  if (n > 0) $('trkCount').textContent = String(n);
 }
 
 /* Resolve theme (dark/light/auto) + accent onto <html>, and match the OS-chrome colour. */
@@ -699,6 +747,7 @@ function renderInternal(page) {
   else if (page === 'reading') el.innerHTML = readingPage();
   else if (page === 'memory') el.innerHTML = memoryPage('');
   else if (page === 'reader') el.innerHTML = readerPage();
+  else if (page === 'changes') el.innerHTML = changesPage();
   else if (page === 'site') el.innerHTML = sitePage();
   else if (page === 'settings') { el.innerHTML = settingsPage(); checkProxyStatus(); }
   else if (page === 'about') el.innerHTML = aboutPage();
@@ -792,6 +841,7 @@ function sitePage() {
       '<div class="toggle"><div><b style="font-size:14.5px">Remember pages from this site</b><p class="tiny" style="margin:2px 0 0">' + (remOv === undefined ? 'Following the global setting.' : 'Overriding the global setting for this site.') + '</p></div>' +
       '<button class="switch" data-sitetoggle="remember" aria-pressed="' + siteEffective('https://' + host + '/', 'remember') + '" aria-label="Remember pages from this site"><i></i></button></div>' +
       '<p class="tiny" style="margin:12px 2px 0">🔍 Zoom here: <b>' + (zoomOv || 100) + '%</b>' + (zoomOv ? ' (saved for this site — zoom with ⋮ − / + ; 100% forgets it)' : ' — zoom with ⋮ − / + and this site will remember it') + '</p>' +
+      ((S.sites[host] && S.sites[host].trackersSeen) ? '<p class="tiny" style="margin:6px 2px 0;color:var(--purple)">🛡 The receipt: this site’s pages have carried <b>' + S.sites[host].trackersSeen + '</b> tracker request' + (S.sites[host].trackersSeen === 1 ? '' : 's') + (siteEffective('https://' + host + '/', 'blockTrackers') ? ' — blocked at the proxy' : ' — blocking is off here') + '.</p>' : '') +
       ((zoomOv !== undefined || blockOv !== undefined || remOv !== undefined) ? '<button class="btn block" data-clearsite="' + esc(host) + '">Clear overrides for this site</button>' : '') +
       '</div>';
   } else {
@@ -808,6 +858,7 @@ function sitePage() {
       if (st.zoom !== undefined) bits.push(st.zoom + '%');
       if (st.blockTrackers !== undefined) bits.push(st.blockTrackers ? 'blocking on' : 'blocking off');
       if (st.remember !== undefined) bits.push(st.remember ? 'remembering' : 'not remembering');
+      if (st.trackersSeen) bits.push('🛡 ' + st.trackersSeen + ' trackers');
       h += '<div class="row"><span class="txt" style="flex:1;min-width:0"><span class="t">' + esc(hosts[i]) + '</span><span class="u">' + esc(bits.join(' · ')) + '</span></span>' +
         '<button class="x" data-clearsite="' + esc(hosts[i]) + '" title="Clear overrides">✕</button></div>';
     }
@@ -833,9 +884,11 @@ function readerPage() {
     '<h1 class="rtitle">' + esc(a.title || host) + '</h1>' +
     '<div class="rbar">' +
       '<button class="btn primary" data-readeropen="' + esc(a.url) + '">Open live page ↗</button>' +
+      (a.text ? '<button class="btn" data-act="tldr">⚡ TL;DR</button>' : '') +
       (Voyager.inReading(S, a.url) ? '' : '<button class="btn" data-readersave="' + esc(a.url) + '">📑 Read later</button>') +
       (a.from === 'memory' ? '<button class="btn" data-forgetmem="' + esc(a.url) + '" data-frommemreader="1">🗑 Forget</button>' : '') +
     '</div>';
+  if (a.tldr) h += '<div class="tldr"><b class="tag">⚡ TL;DR — the article’s own words, distilled</b>' + esc(a.tldr) + '</div>';
   if (a.from === 'live' && a.images && a.images.length) {
     h += '<img class="rimg" src="' + esc(a.images[0]) + '" alt="" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'">';
   }
@@ -847,6 +900,37 @@ function readerPage() {
     for (var i = 0; i < parts.length; i++) { var p = parts[i].trim(); if (p) body += '<p>' + esc(p) + '</p>'; }
   }
   h += '<div class="rbody">' + (body || '<p class="muted">No readable text was found on this page.</p>') + '</div>';
+  return h + '</div>';
+}
+
+/* ---- time travel: what changed since you read it ----
+ * When a remembered page comes back with different text, the capture path
+ * diffs old vs new BEFORE overwriting the memory, offers a banner, and this
+ * page renders the story: what you read struck through, what's new lit up. */
+var diffState = null;   // {url, title, sinceTs, added, removed, parts}
+function showChangeBanner() {
+  if (!diffState) return;
+  $('changeMsg').textContent = '📝 Changed since you read it — ' +
+    (diffState.added ? diffState.added + ' new' : '') +
+    (diffState.added && diffState.removed ? ', ' : '') +
+    (diffState.removed ? diffState.removed + ' gone' : '');
+  $('changebar').className = 'changebar on';
+}
+function hideChangeBanner() { $('changebar').className = 'changebar'; }
+function changesPage() {
+  var d = diffState;
+  if (!d) return '<div class="reader"><div class="rempty"><h1>What changed</h1><p class="muted">When a page you’ve read comes back different, Voyager shows the edits here. Nothing to show right now.</p></div></div>';
+  var host = Voyager.hostOf(d.url) || Voyager.displayUrl(d.url);
+  var since = d.sinceTs ? new Date(d.sinceTs).toLocaleDateString() : 'you read it';
+  var h = '<div class="reader">' +
+    '<div class="rmeta"><span class="badge">📝 what changed</span><span>' + esc(host) + '</span><span>· since ' + esc(since) + '</span></div>' +
+    '<h1 class="rtitle">' + esc(d.title || host) + '</h1>' +
+    '<div class="diff-key"><i class="k-add">▎new — the page says this now</i><i class="k-rem">✕ gone — you read this, it’s been removed or edited</i></div>' +
+    '<div class="rbar"><button class="btn primary" data-readeropen="' + esc(d.url) + '">Open live page ↗</button></div>';
+  for (var i = 0; i < d.parts.length; i++) {
+    var p = d.parts[i];
+    h += '<p class="diff-part ' + p.type + '">' + esc(p.text) + '</p>';
+  }
   return h + '</div>';
 }
 
@@ -910,6 +994,12 @@ function captureToMemory(url, j) {
   var tab = Voyager.activeTab(S);
   if (tab && tab.incognito) return;
   if (!j || !j.text) return;
+  // Time travel: diff against the copy you actually read BEFORE overwriting it.
+  var ch = Voyager.pageChanges(S, url, j.text);
+  if (ch) {
+    diffState = { url: url, title: j.title || Voyager.hostOf(url), sinceTs: ch.sinceTs, added: ch.added, removed: ch.removed, parts: ch.parts };
+    if (url === currentUrl()) showChangeBanner();
+  }
   commit(Voyager.rememberPage(S, { url: url, title: j.title, text: j.text, words: j.words }, Date.now()));
 }
 
@@ -1137,6 +1227,7 @@ function go(input) {
 }
 function navTo(url) {
   hideSuggest();
+  hideChangeBanner();
   $('urlInput').blur();
   commit(Voyager.navigate(S, S.activeId, url, { ts: Date.now() }));
   showUrl(url, Voyager.activeTab(S));
@@ -1361,6 +1452,13 @@ function runAct(act) {
     siteViewHost = Voyager.siteOf(siteUrl);
     navTo('voyager://site');
   }
+  else if (act === 'tldr') {
+    if (!readerState || !readerState.text) return;
+    readerState.tldr = readerState.tldr ? '' : Voyager.summarize(readerState.text, { sentences: 3 });
+    renderInternal('reader');
+  }
+  else if (act === 'viewchanges') { hideChangeBanner(); navTo('voyager://changes'); }
+  else if (act === 'dismisschanges') hideChangeBanner();
   else if (act === 'clearmemory') {
     if (!confirm('Forget every page Voyager has remembered on this device?')) return;
     commit(Voyager.clearMemory(S));
@@ -1492,6 +1590,13 @@ window.addEventListener('message', function (e) {
       if (d.title) commit(Voyager.setTitle(S, S.activeId, d.title));
       hideVeil();
       stopProgress(false);
+      // The receipt: the shim counted the page's tracker requests server-side.
+      var trk = Math.floor(Number(d.trackers) || 0);
+      if (trk > 0) {
+        pageTrackers[url] = trk;
+        commit(Voyager.recordTrackers(S, url, trk));
+      }
+      paintTrackerBadge();
       maybeCapture(url);
     }
   }

@@ -108,10 +108,11 @@
    * omnibox, history and back/forward track the real page you're on.
    * Written as a joined array to keep the `</script>` terminator safe.
    */
-  function clientShim(pageUrl, proxyPath) {
+  function clientShim(pageUrl, proxyPath, opts) {
+    var trackers = Math.floor(Number(opts && opts.trackers) || 0);
     var body = [
       '(function(){',
-      'var B=' + JSON.stringify(proxyPath) + ',PAGE=' + JSON.stringify(pageUrl) + ';',
+      'var B=' + JSON.stringify(proxyPath) + ',PAGE=' + JSON.stringify(pageUrl) + ',TRK=' + trackers + ';',
       'var SEP=B.indexOf("?")===-1?"?":"&";',   // key-locked proxies pass B="/proxy?key=…"
       'function abs(u){try{return new URL(u,PAGE).href;}catch(e){return null;}}',
       'function P(u){if(u==null)return u;var s=String(u);',
@@ -137,7 +138,7 @@
       'var act=real(f.getAttribute("action")||PAGE);var qs="";try{qs=new URLSearchParams(new FormData(f)).toString();}catch(x){}',
       'var tgt=act+(act.indexOf("?")>=0?"&":"?")+qs;parent.postMessage({voyager:"navigate",url:tgt},"*");location.href=P(tgt);},true);',
       // report where we landed (redirects included) so the chrome can catch up
-      'function announce(){try{parent.postMessage({voyager:"loaded",url:PAGE,title:document.title},"*");}catch(e){}}',
+      'function announce(){try{parent.postMessage({voyager:"loaded",url:PAGE,title:document.title,trackers:TRK},"*");}catch(e){}}',
       'if(document.readyState==="complete")announce();window.addEventListener("load",announce);',
       '})();'
     ].join('');
@@ -148,7 +149,7 @@
    * Rewrite a full HTML document so every link, asset and style keeps flowing
    * through the proxy, framing blocks are removed, and the client shim is in.
    */
-  function rewriteHtml(html, pageUrl, proxyPath) {
+  function rewriteHtml(html, pageUrl, proxyPath, opts) {
     html = String(html == null ? '' : html);
     proxyPath = proxyPath || '/proxy';
     var base = effectiveBase(html, pageUrl);
@@ -176,7 +177,7 @@
         return attr + '=' + q + r + q;
       });
 
-    var shim = clientShim(base, proxyPath);
+    var shim = clientShim(base, proxyPath, opts);
     if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, function (m) { return m + shim; });
     if (/<html[^>]*>/i.test(html)) return html.replace(/<html[^>]*>/i, function (m) { return m + shim; });
     return shim + html;
@@ -342,6 +343,25 @@
   }
 
   /**
+   * The receipt behind the shield: how many DISTINCT tracker URLs does this
+   * page's HTML ask for (script/img/iframe/link srcs and hrefs)? The server
+   * counts before rewriting and the shim reports it up, so the chrome can say
+   * "this page carried N trackers" with a straight face. Pure and testable.
+   */
+  function countTrackers(html, list) {
+    var seen = {}, n = 0, m;
+    var re = /\b(?:src|href)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi;
+    var s = String(html == null ? '' : html);
+    while ((m = re.exec(s))) {
+      var u = m[1] != null ? m[1] : (m[2] != null ? m[2] : m[3]);
+      if (!u || seen[u]) continue;
+      seen[u] = 1;
+      if (isTracker(u, list)) n++;
+    }
+    return n;
+  }
+
+  /**
    * Soft open-relay guard for a PUBLICLY DEPLOYED proxy: is `origin` (the
    * Origin/Referer of an incoming /proxy request) allowed by `allowlist`?
    * An empty allowlist means "no restriction" (fine for a localhost box).
@@ -374,6 +394,7 @@
     isBlockedHost: isBlockedHost,
     originAllowed: originAllowed,
     isTracker: isTracker,
+    countTrackers: countTrackers,
     TRACKERS: TRACKERS,
     stripTags: stripTags,
     extractReadable: extractReadable,
