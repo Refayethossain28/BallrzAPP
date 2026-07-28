@@ -49,9 +49,16 @@ const PORT = Number(process.env.PORT) || 8790;
 const HOST = process.env.HOST || '127.0.0.1';           // deploy with HOST=0.0.0.0
 const ALLOW_PRIVATE = !!process.env.VOYAGER_ALLOW_PRIVATE;
 const MAX_TEXT = 12 * 1024 * 1024; // cap in-memory rewrite of html/css
-// Open-relay guard for a PUBLIC deployment: comma-separated app origins allowed
-// to use /proxy (e.g. "https://refayethossain28.github.io"). Empty = no limit
-// (fine for a localhost box; strongly recommended when deployed).
+// Reliable lock for a PUBLIC deployment: set PROXY_KEY and every /proxy request
+// must carry ?key=<PROXY_KEY>. Unlike an Origin/Referer allowlist (which phone
+// browsers often don't send on framed navigations), a key rides in the URL, so
+// it always arrives. The key is threaded into every rewritten link too. Empty =
+// no key required.
+const PROXY_KEY = process.env.PROXY_KEY || '';
+// The proxy path handed to the rewriter — carries the key so in-page links stay authorised.
+const PROXY_PATH = PROXY_KEY ? '/proxy?key=' + encodeURIComponent(PROXY_KEY) : '/proxy';
+// Legacy soft guard: comma-separated app origins. Only enforced when no
+// PROXY_KEY is set (kept for back-compat; the key is the recommended lock).
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);
 
 const STATIC = {
@@ -111,14 +118,13 @@ async function handleProxy(target, req, res) {
   if (!ALLOW_PRIVATE && Proxy.isBlockedHost(url.hostname)) {
     return send(res, 403, { 'content-type': 'text/html; charset=utf-8' }, errorPage('Blocked for safety', 'That host is private or internal, so the proxy refuses to reach it.'));
   }
-  // On a public deployment, only serve app origins on the allowlist. The
-  // Origin header is sent on the app's top-level iframe navigation; in-frame
-  // navigations come from the proxy's own origin (allow that too).
-  if (ALLOWED_ORIGINS.length) {
+  // Legacy Origin allowlist — only when there's no PROXY_KEY (the key is the
+  // reliable lock; Origin/Referer are often absent on framed navigations).
+  if (!PROXY_KEY && ALLOWED_ORIGINS.length) {
     const ref = req.headers['origin'] || req.headers['referer'] || '';
     const selfOrigin = `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers['host'] || ''}`;
     if (!Proxy.originAllowed(ref, ALLOWED_ORIGINS.concat([selfOrigin]))) {
-      return send(res, 403, { 'content-type': 'text/html; charset=utf-8' }, errorPage('Not allowed', 'This proxy only serves its own app. Set ALLOWED_ORIGINS to include your site.'));
+      return send(res, 403, { 'content-type': 'text/html; charset=utf-8' }, errorPage('Not allowed', 'This proxy only serves its own app. Remove ALLOWED_ORIGINS, or switch to a PROXY_KEY (see voyager/DEPLOY.md).'));
     }
   }
 
@@ -150,8 +156,8 @@ async function handleProxy(target, req, res) {
       return send(res, upstream.status, outHeaders, Buffer.from(raw));
     }
     let text = new TextDecoder('utf-8').decode(raw);
-    text = Proxy.isHtml(ct) ? Proxy.rewriteHtml(text, finalUrl, '/proxy')
-                            : Proxy.rewriteCss(text, finalUrl, '/proxy');
+    text = Proxy.isHtml(ct) ? Proxy.rewriteHtml(text, finalUrl, PROXY_PATH)
+                            : Proxy.rewriteCss(text, finalUrl, PROXY_PATH);
     return send(res, upstream.status, outHeaders, text);
   }
 
@@ -182,6 +188,12 @@ const server = http.createServer(async (req, res) => {
       JSON.stringify({ voyager: true, version: 1 }));
   }
   if (pathname === '/proxy') {
+    // Reliable lock: if a key is configured, it must match — it rides in the URL
+    // so it survives framed navigations that strip Origin/Referer.
+    if (PROXY_KEY && parsed.searchParams.get('key') !== PROXY_KEY) {
+      return send(res, 403, { 'content-type': 'text/html; charset=utf-8' },
+        errorPage('Locked', 'This proxy needs its key. In Voyager → Settings, add “?key=YOURKEY” to the proxy URL (matching PROXY_KEY on the server).'));
+    }
     const target = parsed.searchParams.get('url');
     if (!target) return send(res, 400, { 'content-type': 'text/plain' }, 'missing url');
     return handleProxy(target, req, res);
@@ -195,5 +207,5 @@ server.listen(PORT, HOST, () => {
   console.log(`Voyager — full browser mode`);
   console.log(`  open  http://${shown}:${PORT}`);
   console.log(`  proxy on, SSRF guard ${ALLOW_PRIVATE ? 'OFF (private hosts allowed)' : 'on'}, cookies off`);
-  console.log(`  origin allowlist: ${ALLOWED_ORIGINS.length ? ALLOWED_ORIGINS.join(', ') : 'OFF (set ALLOWED_ORIGINS when deploying publicly)'}`);
+  console.log(`  lock: ${PROXY_KEY ? 'PROXY_KEY on (append ?key=… in Voyager)' : (ALLOWED_ORIGINS.length ? 'origin allowlist ' + ALLOWED_ORIGINS.join(', ') : 'OPEN (set PROXY_KEY to lock a public deploy)')}`);
 });

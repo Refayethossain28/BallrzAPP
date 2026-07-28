@@ -230,7 +230,26 @@
     var b = String(base == null ? '' : base).trim().replace(/\/+$/, '');
     var s = String(url == null ? '' : url);
     if (!b || !/^https?:\/\//i.test(s)) return s;
-    return b + '?url=' + encodeURIComponent(s);
+    var sep = b.indexOf('?') === -1 ? '?' : '&';   // base may carry ?key=… on a locked proxy
+    return b + sep + 'url=' + encodeURIComponent(s);
+  }
+
+  /**
+   * Make a user-typed proxy value forgiving: add https:// if missing, drop a
+   * trailing slash, and append the `/proxy` path if they only pasted the host
+   * (so "voyager-proxy.onrender.com" and ".../proxy?key=x" both just work). A
+   * query string (the optional ?key=…) is preserved. '' / 'off' pass through.
+   */
+  function normalizeProxyBase(raw) {
+    var s = String(raw == null ? '' : raw).trim();
+    if (!s || s.toLowerCase() === 'off') return s ? 'off' : '';
+    var q = '';
+    var qi = s.indexOf('?');
+    if (qi !== -1) { q = s.slice(qi); s = s.slice(0, qi); }
+    s = s.replace(/\/+$/, '');
+    if (!/^https?:\/\//i.test(s)) s = 'https://' + s;
+    if (!/\/proxy$/i.test(s)) s += '/proxy';
+    return s + q;
   }
 
   /** Seconds from a YouTube time param: "90", "1m30s", "1h2m3s". */
@@ -725,6 +744,7 @@
     securityOf: securityOf,
     torGatewayUrl: torGatewayUrl,
     proxyUrl: proxyUrl,
+    normalizeProxyBase: normalizeProxyBase,
     videoEmbedUrl: videoEmbedUrl,
     resolveFrameSrc: resolveFrameSrc,
     createBrowser: createBrowser,

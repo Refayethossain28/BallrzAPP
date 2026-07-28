@@ -414,6 +414,23 @@ test('videoEmbedUrl maps YouTube links to the embeddable player, else null', () 
   assert.equal(V.videoEmbedUrl('https://youtu.be/tooShort'), null); // id must be 11 chars
 });
 
+test('normalizeProxyBase is forgiving: adds https:// and /proxy, keeps ?key, honours off', () => {
+  assert.equal(V.normalizeProxyBase('voyager-proxy.onrender.com'), 'https://voyager-proxy.onrender.com/proxy');
+  assert.equal(V.normalizeProxyBase('https://x.onrender.com/'), 'https://x.onrender.com/proxy');
+  assert.equal(V.normalizeProxyBase('https://x.onrender.com/proxy'), 'https://x.onrender.com/proxy'); // already complete
+  assert.equal(V.normalizeProxyBase('x.onrender.com/proxy?key=abc'), 'https://x.onrender.com/proxy?key=abc'); // key preserved, path present
+  assert.equal(V.normalizeProxyBase('x.onrender.com?key=abc'), 'https://x.onrender.com/proxy?key=abc');       // /proxy inserted before query
+  assert.equal(V.normalizeProxyBase('off'), 'off');
+  assert.equal(V.normalizeProxyBase(''), '');
+});
+
+test('proxyUrl threads a ?key on the base through with the right separator', () => {
+  assert.equal(V.proxyUrl('https://google.com', 'https://x.onrender.com/proxy'),
+    'https://x.onrender.com/proxy?url=' + encodeURIComponent('https://google.com'));
+  assert.equal(V.proxyUrl('https://google.com', 'https://x.onrender.com/proxy?key=abc'),
+    'https://x.onrender.com/proxy?key=abc&url=' + encodeURIComponent('https://google.com'));
+});
+
 test('resolveFrameSrc picks video-embed / proxy / gateway / direct correctly', () => {
   const B = 'http://localhost:8790/proxy';
   // internal pages are never proxied
