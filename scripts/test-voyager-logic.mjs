@@ -633,6 +633,91 @@ test('restore never reuses ids: nextId clears every restored tab id', () => {
   assert.equal(new Set(ids).size, ids.length);
 });
 
+/* ---- pinned tabs ---- */
+
+test('togglePin: pinned tabs move to the front (in pin order) and refuse closeTab', () => {
+  let s = V.createBrowser();                                   // tab 1 (start)
+  s = V.newTab(s, { url: 'https://a.com', ts: NOW });          // tab 2
+  s = V.newTab(s, { url: 'https://b.com', ts: NOW });          // tab 3
+  s = V.togglePin(s, 3);                                       // pin b → front
+  eq(s.tabs.map((t) => t.id), [3, 1, 2]);
+  s = V.togglePin(s, 2);                                       // pin a → after b
+  eq(s.tabs.map((t) => t.id), [3, 2, 1]);
+  const before = s.tabs.length;
+  s = V.closeTab(s, 3);                                        // pinned → refused
+  assert.equal(s.tabs.length, before);
+  s = V.togglePin(s, 3);                                       // unpin → first unpinned
+  eq(s.tabs.map((t) => t.id), [2, 3, 1]);
+  s = V.closeTab(s, 3);                                        // now it closes
+  assert.equal(s.tabs.length, before - 1);
+});
+
+test('togglePin: private tabs cannot be pinned; pinned survives the session round-trip', () => {
+  let s = V.createBrowser();
+  s = V.newTab(s, { incognito: true, ts: NOW });
+  const ghost = s.activeId;
+  assert.equal(V.togglePin(s, ghost), s);                      // refused outright
+  s = V.newTab(s, { url: 'https://keep.me', ts: NOW });
+  s = V.togglePin(s, s.activeId);
+  const r = V.restore(V.serialize(s));
+  assert.equal(r.tabs.filter((t) => t.pinned).length, 1);
+  assert.equal(V.tabUrl(r.tabs.find((t) => t.pinned)), 'https://keep.me');
+});
+
+/* ---- per-site settings ---- */
+
+test('site settings: siteOf normalizes, setSiteSetting validates, clears and drops empties', () => {
+  assert.equal(V.siteOf('https://www.example.com/a/b'), 'example.com');
+  assert.equal(V.siteOf('WWW.Example.COM'), 'example.com');
+  assert.equal(V.siteOf('voyager://settings'), '');
+  let s = V.createBrowser();
+  s = V.setSiteSetting(s, 'https://news.site/x', 'blockTrackers', false);
+  assert.equal(V.siteSetting(s, 'https://www.news.site/other', 'blockTrackers'), false);
+  assert.equal(V.siteSetting(s, 'https://elsewhere.com', 'blockTrackers'), undefined);
+  s = V.setSiteSetting(s, 'news.site', 'nonsense', 1);         // unknown key → no-op
+  assert.equal(s.sites['news.site'].nonsense, undefined);
+  s = V.setSiteSetting(s, 'news.site', 'blockTrackers', null); // clear → entry drops
+  assert.equal(s.sites['news.site'], undefined);
+  s = V.setSiteSetting(s, 'a.com', 'remember', 0);
+  s = V.clearSiteSettings(s, 'https://a.com/deep');
+  assert.equal(s.sites['a.com'], undefined);
+});
+
+test('site settings: zoom sticks to the site — setZoom remembers, navigate re-applies, 100 forgets', () => {
+  let s = V.createBrowser();
+  s = V.navigate(s, s.activeId, 'https://docs.site/page1', { ts: NOW });
+  s = V.setZoom(s, s.activeId, 150);
+  assert.equal(V.siteSetting(s, 'docs.site', 'zoom'), 150);
+  s = V.navigate(s, s.activeId, 'https://other.com', { ts: NOW });
+  assert.equal(V.activeTab(s).zoom, 100);                      // no override elsewhere
+  s = V.navigate(s, s.activeId, 'https://docs.site/page2', { ts: NOW });
+  assert.equal(V.activeTab(s).zoom, 150);                      // back on the site → applied
+  s = V.setZoom(s, s.activeId, 100);                           // default clears the memory
+  assert.equal(V.siteSetting(s, 'docs.site', 'zoom'), undefined);
+  const r = V.restore(V.serialize(V.setSiteSetting(s, 'kept.com', 'zoom', 125)));
+  assert.equal(V.siteSetting(r, 'kept.com', 'zoom'), 125);     // survives the session
+});
+
+test('site settings: private tabs zoom without leaving a trace', () => {
+  let s = V.createBrowser();
+  s = V.newTab(s, { incognito: true, ts: NOW });
+  s = V.navigate(s, s.activeId, 'https://secret.site/x', { ts: NOW });
+  s = V.setZoom(s, s.activeId, 200);
+  assert.equal(V.activeTab(s).zoom, 200);                      // the tab zooms…
+  assert.equal(V.siteSetting(s, 'secret.site', 'zoom'), undefined); // …the map never hears
+});
+
+/* ---- swipe gestures ---- */
+
+test('swipeAction: decisive horizontal swipes map to back/forward, everything else is null', () => {
+  assert.equal(V.swipeAction(120, 10), 'back');                // rightward → back
+  assert.equal(V.swipeAction(-90, -20), 'forward');            // leftward → forward
+  assert.equal(V.swipeAction(40, 0), null);                    // too short
+  assert.equal(V.swipeAction(100, 80), null);                  // too diagonal
+  assert.equal(V.swipeAction(80, 0, { minDist: 100 }), null);  // custom threshold
+  assert.equal(V.swipeAction(0, 200), null);                   // vertical scroll is sacred
+});
+
 /* ---- run ---- */
 for (const [name, fn] of tests) {
   try { fn(); passed++; console.log(`  ✓ ${name}`); }

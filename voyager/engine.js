@@ -70,6 +70,7 @@
     reading: 'Reading list',
     memory: 'Memory',
     reader: 'Reader',
+    site: 'Site settings',
     settings: 'Settings',
     about: 'About Voyager',
   };
@@ -329,6 +330,7 @@
       reading: [],      // read-later queue: {url, title, ts, read}
       memory: [],       // remembered pages: {url, title, text, words, ts}
       shortcuts: [],    // custom start-page tiles: {url, title}
+      sites: {},        // per-site overrides, keyed by host: {zoom?, blockTrackers?, remember?}
       settings: {
         engine: opts.engine || 'duckduckgo',
         home: opts.home || INTERNAL + 'start',
@@ -351,6 +353,7 @@
       pos: 0,                // …and where in it we stand
       title: '',
       incognito: !!(opts && opts.incognito),
+      pinned: false,
       zoom: 100,
       openedAt: (opts && opts.ts) || null,
     };
@@ -388,6 +391,8 @@
     var idx = -1;
     for (var i = 0; i < state.tabs.length; i++) if (state.tabs[i].id === id) { idx = i; break; }
     if (idx === -1) return state;
+    // Pinning is protection: a pinned tab can't be closed — unpin it first.
+    if (state.tabs[idx].pinned) return state;
     var next = shallow(state);
     next.tabs = state.tabs.slice(0, idx).concat(state.tabs.slice(idx + 1));
     if (next.tabs.length === 0) return newTab(next, {});
@@ -402,6 +407,27 @@
     if (!getTab(state, id) || state.activeId === id) return state;
     var next = shallow(state);
     next.activeId = id;
+    return next;
+  }
+
+  /**
+   * Pin / unpin a tab. Pinned tabs live at the front of the strip (in the
+   * order they were pinned), survive ⌘W and the ✕ button, and ride along in
+   * the saved session. Private tabs can't be pinned — pinning is a promise of
+   * permanence, and a private tab's whole point is to vanish.
+   */
+  function togglePin(state, id) {
+    var tab = getTab(state, id);
+    if (!tab || tab.incognito) return state;
+    var t = shallow(tab);
+    t.pinned = !tab.pinned;
+    var rest = [];
+    for (var i = 0; i < state.tabs.length; i++) if (state.tabs[i].id !== id) rest.push(state.tabs[i]);
+    var lastPinned = -1;
+    for (var j = 0; j < rest.length; j++) if (rest[j].pinned) lastPinned = j;
+    var next = shallow(state);
+    // pin → after the existing pinned block; unpin → first of the unpinned
+    next.tabs = rest.slice(0, lastPinned + 1).concat([t]).concat(rest.slice(lastPinned + 1));
     return next;
   }
 
@@ -425,6 +451,10 @@
       t.pos = t.stack.length - 1;
     }
     t.title = opts.title || '';
+    // Zoom follows the site, the way Chrome's does: a saved override applies
+    // the moment you arrive, everywhere else is 100%. Private tabs stay on
+    // their own per-tab zoom and never touch the shared map.
+    if (!t.incognito) t.zoom = siteSetting(state, url, 'zoom') || 100;
     next.tabs = replaceTab(state.tabs, t);
     return recordVisit(next, t, url, opts.title, opts.ts);
   }
@@ -470,7 +500,12 @@
     return next;
   }
 
-  /** Zoom is clamped to the familiar 25%–500% and snapped to whole percents. */
+  /**
+   * Zoom is clamped to the familiar 25%–500% and snapped to whole percents.
+   * In a normal tab on a real site the choice is remembered for that site
+   * (100% clears the memory — the default isn't an override); private tabs
+   * zoom themselves without leaving a trace.
+   */
   function setZoom(state, tabId, zoom) {
     var tab = getTab(state, tabId);
     if (!tab) return state;
@@ -480,6 +515,7 @@
     var t = shallow(tab);
     t.zoom = z;
     next.tabs = replaceTab(state.tabs, t);
+    if (!tab.incognito) next = setSiteSetting(next, tabUrl(tab) || '', 'zoom', z);
     return next;
   }
 
@@ -673,6 +709,70 @@
     if (start > 0) slice = '…' + slice.replace(/^\S*\s/, '');
     if (start + 200 < text.length) slice = slice.replace(/\s\S*$/, '') + '…';
     return slice;
+  }
+
+  /* ════════════════════════ per-site settings ════════════════════════
+   * Overrides keyed by site (host minus www.): zoom sticks to the site the way
+   * Chrome's does, and tracker-blocking / memory-capture can be flipped for one
+   * site without touching the global switch. Absent key = use the global. */
+
+  /** The site key for a URL or bare host: lowercased host, www. stripped. */
+  function siteOf(urlOrHost) {
+    var s = String(urlOrHost == null ? '' : urlOrHost).trim();
+    var host = s.indexOf('://') !== -1 ? hostOf(s) : s.toLowerCase().split(/[/?#]/)[0];
+    return host.replace(/^www\./, '');
+  }
+
+  /** One override for a URL/host, or undefined when the global should rule. */
+  function siteSetting(state, urlOrHost, key) {
+    var site = (state.sites || {})[siteOf(urlOrHost)];
+    return site ? site[key] : undefined;
+  }
+
+  /**
+   * Set (or clear, with value === undefined/null) one per-site override.
+   * zoom clamps to 25–500 and 100 clears itself — the default isn't an override.
+   */
+  function setSiteSetting(state, urlOrHost, key, value) {
+    var host = siteOf(urlOrHost);
+    var allowed = { zoom: 1, blockTrackers: 1, remember: 1 };
+    if (!host || !allowed[key]) return state;
+    if (key === 'zoom' && value != null) {
+      value = Math.max(25, Math.min(500, Math.round(Number(value) || 100)));
+      if (value === 100) value = null;
+    }
+    if ((key === 'blockTrackers' || key === 'remember') && value != null) value = !!value;
+    var next = shallow(state);
+    next.sites = shallow(state.sites || {});
+    var site = shallow(next.sites[host] || {});
+    if (value == null) delete site[key]; else site[key] = value;
+    var empty = true;
+    for (var k in site) if (Object.prototype.hasOwnProperty.call(site, k)) { empty = false; break; }
+    if (empty) delete next.sites[host]; else next.sites[host] = site;
+    return next;
+  }
+
+  function clearSiteSettings(state, urlOrHost) {
+    var host = siteOf(urlOrHost);
+    if (!host || !(state.sites || {})[host]) return state;
+    var next = shallow(state);
+    next.sites = shallow(state.sites);
+    delete next.sites[host];
+    return next;
+  }
+
+  /* ════════════════════════ swipe gestures ════════════════════════ */
+
+  /**
+   * Classify a completed touch drag: a decisively horizontal swipe of at least
+   * minDist px (default 70) is 'back' (rightward — dragging the past back in)
+   * or 'forward' (leftward); anything shorter or too vertical is null.
+   */
+  function swipeAction(dx, dy, opts) {
+    var minDist = (opts && opts.minDist) || 70;
+    dx = Number(dx) || 0; dy = Number(dy) || 0;
+    if (Math.abs(dx) < minDist || Math.abs(dx) < 2 * Math.abs(dy)) return null;
+    return dx > 0 ? 'back' : 'forward';
   }
 
   /* ════════════════════════ start-page shortcuts ════════════════════════ */
@@ -928,7 +1028,7 @@
     for (var i = 0; i < state.tabs.length; i++) {
       var t = state.tabs[i];
       if (t.incognito) continue;
-      tabs.push({ id: t.id, stack: t.stack.slice(), pos: t.pos, title: t.title, zoom: t.zoom, openedAt: t.openedAt });
+      tabs.push({ id: t.id, stack: t.stack.slice(), pos: t.pos, title: t.title, pinned: !!t.pinned, zoom: t.zoom, openedAt: t.openedAt });
     }
     var activeId = state.activeId;
     var activeSurvives = false;
@@ -943,6 +1043,7 @@
       reading: state.reading,
       memory: state.memory,
       shortcuts: state.shortcuts,
+      sites: state.sites || {},
       settings: state.settings,
     });
   }
@@ -958,7 +1059,7 @@
       var t = data.tabs[i];
       if (!t || t.incognito || !Array.isArray(t.stack) || !t.stack.length) continue;
       var pos = Math.max(0, Math.min(t.stack.length - 1, Number(t.pos) || 0));
-      tabs.push({ id: t.id, stack: t.stack, pos: pos, title: String(t.title || ''), incognito: false, zoom: Math.max(25, Math.min(500, Number(t.zoom) || 100)), openedAt: t.openedAt || null });
+      tabs.push({ id: t.id, stack: t.stack, pos: pos, title: String(t.title || ''), incognito: false, pinned: !!t.pinned, zoom: Math.max(25, Math.min(500, Number(t.zoom) || 100)), openedAt: t.openedAt || null });
       if (t.id > maxId) maxId = t.id;
     }
     var state = {
@@ -971,6 +1072,7 @@
       reading: Array.isArray(data.reading) ? data.reading : [],
       memory: Array.isArray(data.memory) ? data.memory : [],
       shortcuts: Array.isArray(data.shortcuts) ? data.shortcuts : [],
+      sites: (data.sites && typeof data.sites === 'object' && !Array.isArray(data.sites)) ? data.sites : {},
       settings: {
         engine: (data.settings && data.settings.engine) || 'duckduckgo',
         home: (data.settings && data.settings.home) || INTERNAL + 'start',
@@ -1050,6 +1152,12 @@
     searchMemory: searchMemory,
     addShortcut: addShortcut,
     removeShortcut: removeShortcut,
+    togglePin: togglePin,
+    siteOf: siteOf,
+    siteSetting: siteSetting,
+    setSiteSetting: setSiteSetting,
+    clearSiteSettings: clearSiteSettings,
+    swipeAction: swipeAction,
     frecency: frecency,
     topSites: topSites,
     suggest: suggest,
