@@ -927,6 +927,69 @@
     return out.join(' ');
   }
 
+  /* ════════════════════════ ask your memory ════════════════════════
+   * A question in, an answer out — extracted verbatim from pages you've
+   * actually read, with the sources named. No model, no cloud: the corpus is
+   * your memory, the answer is a quote. */
+
+  /**
+   * Answer a question from remembered pages. Scores each memory hit's
+   * sentences by how many significant question terms they carry (frequency-
+   * free — the question drives, not the document), returns up to two of the
+   * best sentences (each from its own page allowed) plus their sources.
+   * null when the question has no significant terms or nothing matches.
+   */
+  function askMemory(state, question, opts) {
+    opts = opts || {};
+    var terms = String(question == null ? '' : question).toLowerCase().match(/[a-z][a-z'-]{2,}/g) || [];
+    terms = terms.filter(function (w) { return !STOP[w]; });
+    if (!terms.length) return null;
+    // Best-effort retrieval — questions carry words the page won't ("long",
+    // "why"), so rank pages by how many terms they DO carry, not AND-match.
+    var pages = [];
+    for (var pm = 0; pm < state.memory.length; pm++) {
+      var cand = state.memory[pm];
+      var hay = ((cand.title || '') + ' ' + (cand.text || '')).toLowerCase();
+      var got = 0;
+      for (var pt = 0; pt < terms.length; pt++) if (hay.indexOf(terms[pt]) !== -1) got++;
+      if (got) pages.push({ url: cand.url, got: got, ts: cand.ts || 0 });
+    }
+    if (!pages.length) return null;
+    pages.sort(function (a, b) { return b.got - a.got || b.ts - a.ts; });
+    if (pages.length > (opts.pages || 3)) pages = pages.slice(0, opts.pages || 3);
+    var best = [];
+    for (var p = 0; p < pages.length; p++) {
+      var mem = memoryEntry(state, pages[p].url);
+      if (!mem || !mem.text) continue;
+      var sents = sentencesOf(mem.text);
+      for (var i = 0; i < sents.length; i++) {
+        var low = sents[i].toLowerCase();
+        var hit = 0;
+        for (var t = 0; t < terms.length; t++) if (low.indexOf(terms[t]) !== -1) hit++;
+        if (!hit) continue;
+        var words = low.match(/[a-z][a-z'-]{2,}/g) || [];
+        // coverage first, then density — a tight sentence beats a rambling one
+        best.push({ score: hit * 100 + (words.length ? Math.round(100 * hit / Math.sqrt(words.length)) : 0),
+                    text: sents[i], url: mem.url, title: mem.title });
+      }
+    }
+    if (!best.length) return null;
+    best.sort(function (a, b) { return b.score - a.score; });
+    var picked = [];
+    for (var b2 = 0; b2 < best.length && picked.length < 2; b2++) {
+      if (picked.length && best[b2].score < best[0].score * 0.5) break;   // don't pad with weak lines
+      picked.push(best[b2]);
+    }
+    var sources = [];
+    var srcSeen = {};
+    for (var s2 = 0; s2 < picked.length; s2++) {
+      if (srcSeen[picked[s2].url]) continue;
+      srcSeen[picked[s2].url] = true;
+      sources.push({ url: picked[s2].url, title: picked[s2].title });
+    }
+    return { answer: picked.map(function (x) { return x.text; }).join(' '), sources: sources };
+  }
+
   /* ════════════════════════ per-site settings ════════════════════════
    * Overrides keyed by site (host minus www.): zoom sticks to the site the way
    * Chrome's does, and tracker-blocking / memory-capture can be flipped for one
@@ -1545,6 +1608,7 @@
     diffTexts: diffTexts,
     pageChanges: pageChanges,
     summarize: summarize,
+    askMemory: askMemory,
     recordTrackers: recordTrackers,
     addHighlight: addHighlight,
     removeHighlight: removeHighlight,
