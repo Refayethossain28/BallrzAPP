@@ -107,6 +107,23 @@ test('content-type classifiers', () => {
   assert.equal(P.isHtml('image/png'), false);
 });
 
+test('extractReadable pulls the article, drops chrome, de-tails the title', () => {
+  const html = '<html><head><title>The Headline — Daily Example</title></head><body>' +
+    '<nav><a href="/">Home</a></nav><header>banner</header>' +
+    '<article><h1>The Headline</h1>' +
+    '<p>First paragraph of the actual story with several real words in it.</p>' +
+    '<p>Second paragraph adds more detail and context to the report.</p>' +
+    '<img src="/img/lead.jpg"><script>evil()</script></article>' +
+    '<aside>promoted junk links</aside><footer>copyright junk</footer></body></html>';
+  const a = P.extractReadable(html, 'https://daily.example.com/headline');
+  assert.equal(a.title, 'The Headline');                                  // " — Daily Example" tail removed
+  assert.ok(a.text.includes('First paragraph') && a.text.includes('Second paragraph'));
+  assert.ok(!/banner|promoted junk|copyright junk|Home/.test(a.text));    // chrome gone
+  assert.ok(a.words >= 10);
+  assert.ok(/<p>First paragraph/.test(a.html) && !/<script/.test(a.html)); // safe skeleton
+  assert.equal(JSON.stringify(a.images), JSON.stringify(['https://daily.example.com/img/lead.jpg']));  // resolved absolute
+});
+
 test('isTracker catches ad/tracker hosts (and subdomains), leaves normal sites', () => {
   assert.equal(P.isTracker('https://www.google-analytics.com/collect'), true);
   assert.equal(P.isTracker('https://ssl.google-analytics.com/ga.js'), true);   // subdomain
@@ -188,6 +205,11 @@ async function integration() {
     // …unless the page opted out with block=0
     const allowed = await fetch(`http://127.0.0.1:${proxyPort}/proxy?block=0&url=${encodeURIComponent(`http://127.0.0.1:${originPort}/`)}`);
     assert.equal(allowed.status, 200, 'block=0 lets requests through');
+
+    // reader endpoint returns clean extracted JSON (the web-memory source)
+    const reader = await (await fetch(`http://127.0.0.1:${proxyPort}/reader?url=${encodeURIComponent(`http://127.0.0.1:${originPort}/`)}`)).json();
+    assert.ok(reader.title, 'reader returns a title');
+    assert.equal(typeof reader.text, 'string', 'reader returns text');
 
     // SSRF guard: with the override OFF it would block; assert the classifier the server uses
     assert.equal(P.isBlockedHost('127.0.0.1'), true, 'loopback is blocked unless overridden');

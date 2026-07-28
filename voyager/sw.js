@@ -3,7 +3,7 @@
  * the cached shell when offline) and static assets are cache-first for speed —
  * the browser itself opens even with no connection; only the web needs a
  * network. Bump CACHE to force a clean reinstall. */
-const CACHE = 'voyager-v3'; // v3: command palette, reading list, themes, tracker blocking
+const CACHE = 'voyager-v4'; // v4: web memory (reader + full-text search of pages you've read)
 const ASSETS = ['./', './index.html', './engine.js', './manifest.json',
                 './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 
@@ -27,7 +27,7 @@ self.addEventListener('fetch', (e) => {
   const path = new URL(req.url).pathname;
   // Full-browser proxy traffic is never cached or shell-fallen-back — it must
   // always hit the live server and return the real page.
-  if (path === '/proxy' || path.startsWith('/__voyager')) return;
+  if (path === '/proxy' || path === '/reader' || path.startsWith('/__voyager')) return;
   // Only our own shell is cached — the pages the user browses to belong to
   // their sites and go straight to the network, untouched.
   if (new URL(req.url).origin !== self.location.origin) return;

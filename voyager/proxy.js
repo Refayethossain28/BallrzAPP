@@ -206,6 +206,103 @@
   function isHtml(ct) { return /\btext\/html|application\/xhtml\+xml/i.test(String(ct || '')); }
   function isCss(ct) { return /\btext\/css/i.test(String(ct || '')); }
 
+  /* ════════════════════════ reader extraction ════════════════════════ */
+
+  function decodeEntities(s) {
+    return String(s || '')
+      .replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, function (m, e) {
+        var named = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', mdash: '—', ndash: '–', hellip: '…', rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“' };
+        if (e.charAt(0) === '#') {
+          var code = e.charAt(1) === 'x' || e.charAt(1) === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+          try { return String.fromCharCode(code); } catch (x) { return m; }
+        }
+        return named[e.toLowerCase()] != null ? named[e.toLowerCase()] : m;
+      });
+  }
+
+  function stripTags(html) {
+    return decodeEntities(String(html || '').replace(/<[^>]+>/g, ' ')).replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  /** The document <title>, cleaned of the trailing " - Site name" tail. */
+  function readTitle(html) {
+    var m = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
+    var t = m ? stripTags(m[1]) : '';
+    var h1 = /<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
+    return (h1 ? stripTags(h1[1]) : '') || t.replace(/\s*[|–—-]\s*[^|–—-]{1,40}$/, '') || t;
+  }
+
+  /**
+   * Readability-lite: pull the main article out of a page as clean text + a
+   * minimal HTML skeleton (headings, paragraphs, lists, links, images). No
+   * DOM, no dependencies — it scores block candidates by how much real
+   * paragraph text they hold, strips chrome (nav/aside/footer/script/style/
+   * forms), and keeps the winner. Good enough for articles, docs and posts;
+   * this is what feeds Reader mode and the searchable web memory.
+   */
+  function extractReadable(html, pageUrl) {
+    html = String(html == null ? '' : html);
+    var title = readTitle(html);
+
+    // isolate <body>, then remove non-content chrome wholesale
+    var body = /<body[^>]*>([\s\S]*)<\/body>/i.exec(html);
+    var work = body ? body[1] : html;
+    work = work
+      .replace(/<(script|style|noscript|template|svg|iframe|form|button|select)[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+      .replace(/<(nav|aside|footer|header)[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+      .replace(/<!--[\s\S]*?-->/g, ' ');
+
+    // candidate containers: article, main, or divs/sections — pick the one with the most <p> text
+    var best = null, bestScore = 0;
+    var re = /<(article|main|section|div)[^>]*>([\s\S]*?)<\/\1>/gi, m;
+    while ((m = re.exec(work))) {
+      var inner = m[2];
+      var paras = inner.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [];
+      var textLen = 0;
+      for (var i = 0; i < paras.length; i++) textLen += stripTags(paras[i]).length;
+      var score = textLen + (m[1].toLowerCase() === 'article' ? 800 : m[1].toLowerCase() === 'main' ? 300 : 0);
+      if (score > bestScore) { bestScore = score; best = inner; }
+    }
+    var region = best || work;
+
+    // keep only content-bearing tags, as a clean skeleton
+    var kept = [];
+    var tagRe = /<(h[1-6]|p|li|blockquote|pre|figcaption)[^>]*>([\s\S]*?)<\/\1>/gi, k;
+    while ((k = tagRe.exec(region))) {
+      var tag = k[1].toLowerCase();
+      var txt = stripTags(k[2]);
+      if (!txt) continue;
+      if ((tag === 'p' || tag === 'blockquote') && txt.length < 2) continue;
+      kept.push({ tag: tag, text: txt });
+    }
+    // images with a src (resolved absolute)
+    var imgs = [];
+    var imgRe = /<img[^>]*\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s">]+))[^>]*>/gi, im;
+    while ((im = imgRe.exec(region)) && imgs.length < 12) {
+      var src = im[1] != null ? im[1] : (im[2] != null ? im[2] : im[3]);
+      var abs = absolutize(src, pageUrl);
+      if (abs && /\.(jpe?g|png|webp|gif|avif)(\?|$)/i.test(abs)) imgs.push(abs);
+    }
+
+    var textParts = [];
+    for (var j = 0; j < kept.length; j++) textParts.push(kept[j].text);
+    var text = textParts.join('\n\n');
+    var words = text ? text.split(/\s+/).length : 0;
+
+    // minimal, safe HTML skeleton (text is entity-escaped, so it's inert)
+    function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
+    var htmlParts = [];
+    for (var b = 0; b < kept.length; b++) {
+      var t2 = kept[b].tag, x = esc(kept[b].text);
+      if (t2 === 'li') htmlParts.push('<li>' + x + '</li>');
+      else if (/^h[1-6]$/.test(t2)) htmlParts.push('<' + t2 + '>' + x + '</' + t2 + '>');
+      else if (t2 === 'blockquote') htmlParts.push('<blockquote>' + x + '</blockquote>');
+      else if (t2 === 'pre') htmlParts.push('<pre>' + x + '</pre>');
+      else htmlParts.push('<p>' + x + '</p>');
+    }
+    return { title: title, text: text, html: htmlParts.join('\n'), words: words, images: imgs };
+  }
+
   /* ── ad / tracker blocking: a curated host blocklist ── */
   var TRACKERS = [
     'doubleclick.net', 'googlesyndication.com', 'googletagmanager.com', 'googletagservices.com',
@@ -278,6 +375,8 @@
     originAllowed: originAllowed,
     isTracker: isTracker,
     TRACKERS: TRACKERS,
+    stripTags: stripTags,
+    extractReadable: extractReadable,
     isHtml: isHtml,
     isCss: isCss,
   };
