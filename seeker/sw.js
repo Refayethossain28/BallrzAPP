@@ -1,9 +1,9 @@
-/* Offline service worker for Voyager. One HTML file + the engine, so
- * navigations are network-first (you always get the latest build when online,
- * the cached shell when offline) and static assets are cache-first for speed —
- * the browser itself opens even with no connection; only the web needs a
- * network. Bump CACHE to force a clean reinstall. */
-const CACHE = 'voyager-v5'; // v5: pinned tabs, swipe gestures, per-site settings
+/* Offline service worker for Seeker. One HTML file + the engine, so navigations
+ * are network-first (you always get the latest build when online, the cached
+ * shell when offline) and static assets are cache-first for speed. Live search
+ * APIs (/api/, wikipedia, algolia, …) are never cached — live means live.
+ * Bump CACHE to force a clean reinstall. */
+const CACHE = 'seeker-v1';
 const ASSETS = ['./', './index.html', './engine.js', './manifest.json',
                 './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 
@@ -24,15 +24,11 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   const req = e.request;
-  const path = new URL(req.url).pathname;
-  // Full-browser proxy traffic is never cached or shell-fallen-back — it must
-  // always hit the live server and return the real page.
-  if (path === '/proxy' || path === '/reader' || path.startsWith('/__voyager')) return;
-  // Only our own shell is cached — the pages the user browses to belong to
-  // their sites and go straight to the network, untouched.
-  if (new URL(req.url).origin !== self.location.origin) return;
+  const url = new URL(req.url);
+  if (url.pathname.includes('/api/') || url.origin !== self.location.origin) return; // live data stays live
+
   const isPage = req.mode === 'navigate' ||
-                 (req.destination === '' && /\/(index\.html)?(\?.*)?$/.test(new URL(req.url).pathname));
+                 (req.destination === '' && /\/(index\.html)?(\?.*)?$/.test(url.pathname));
 
   if (isPage) {
     e.respondWith(

@@ -579,6 +579,7 @@
     { id: 'automaton',  name: 'Automaton',      emoji: '🤖', url: '../automaton/',          desc: 'The AI that dies if it doesn’t earn.' },
     { id: 'fxsignal',   name: 'FX Signal Pro',  emoji: '📈', url: '../trading-app/fx-signal-pro.html', desc: 'Currency-pair trading signals.' },
     { id: 'voyager',    name: 'Voyager',        emoji: '🧭', url: '../voyager/',            desc: 'The internet browser — tabs, omnibox, memory.' },
+    { id: 'seeker',     name: 'Seeker',         emoji: '🔎', url: '../seeker/',             desc: 'The search engine — BM25 ranking, instant answers.' },
     { id: 'cortex',     name: 'Cortex',         emoji: '🧩', url: '../cortex/',             desc: 'The daily brain gym — five adaptive drills.' },
     { id: 'cusp',       name: 'Cusp',           emoji: '🎯', url: '../cusp/',               desc: 'What to do right now — the salience engine.' },
     { id: 'atlas',      name: 'Atlas',          emoji: '🗺️', url: '../atlas/',              desc: 'Your own satnav — voice turn-by-turn.' },

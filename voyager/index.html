@@ -324,6 +324,31 @@
   .badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--cyan); border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; }
   .badge.mem { color: var(--purple); }
 
+  /* ═════════ swipe gestures ═════════ */
+  .swipezone { position: absolute; top: 0; bottom: 0; width: 24px; z-index: 6; touch-action: none; }
+  @media (hover: hover) and (pointer: fine) { .swipezone { display: none; } } /* touch-only: never steal mouse clicks */
+  .swipezone.left { left: 0; } .swipezone.right { right: 0; }
+  .swipehint {
+    position: absolute; top: 50%; transform: translateY(-50%) scale(.6); z-index: 7;
+    width: 54px; height: 54px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    background: var(--bg2); border: 1px solid var(--line); color: var(--cyan); font-size: 24px;
+    opacity: 0; transition: opacity .12s ease, transform .12s ease; pointer-events: none;
+    box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  }
+  .swipehint.on { opacity: 1; transform: translateY(-50%) scale(1); }
+  .swipehint.left { left: 14px; } .swipehint.right { right: 14px; }
+
+  /* pinned tabs */
+  .tcard.pinned { border-color: rgba(245,192,74,.45); }
+  .tcard .pin {
+    position: absolute; top: 8px; right: 8px; width: 26px; height: 26px; border-radius: 8px;
+    color: var(--faint); font-size: 13px; background: rgba(0,0,0,.25);
+  }
+  .tcard .pin.on { color: var(--gold); }
+  .tcard.pinned .pin { right: 8px; }
+  .tcard.pinned .close { display: none; }
+  .tcard:not(.pinned) .pin { right: 40px; }
+
   /* memory results */
   .mem-hit { align-items: flex-start; }
   .mem-hit .snip { display: block; font-size: 13px; color: var(--dim); line-height: 1.5; margin-top: 3px; white-space: normal; }
@@ -354,6 +379,8 @@
     <button class="mi" data-act="palette"><span class="ico">⌘</span>Quick find<span style="margin-left:auto;color:var(--faint);font-size:12px">⌘K</span></button>
     <button class="mi split" data-act="newtab"><span class="ico">＋</span>New tab</button>
     <button class="mi" data-act="newprivate"><span class="ico">🕶</span>New private tab</button>
+    <button class="mi" data-act="pintab"><span class="ico">📌</span><span id="pinLabel">Pin this tab</span></button>
+    <button class="mi" data-act="sitesettings"><span class="ico">🌐</span>Site settings</button>
     <button class="mi" data-act="reader"><span class="ico">📖</span>Reader view<span style="margin-left:auto;color:var(--faint);font-size:12px">clean text</span></button>
     <button class="mi" data-act="readlater"><span class="ico">📑</span>Read later</button>
     <button class="mi split" data-act="memory"><span class="ico">🧠</span>Web memory<span style="margin-left:auto;color:var(--faint);font-size:12px">search read</span></button>
@@ -377,6 +404,10 @@
     sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"
     referrerpolicy="no-referrer-when-downgrade"></iframe></div>
   <div id="internal" class="on"></div>
+  <div class="swipezone left" id="swipeL"></div>
+  <div class="swipezone right" id="swipeR"></div>
+  <div class="swipehint left" id="hintBack">‹</div>
+  <div class="swipehint right" id="hintFwd">›</div>
   <div class="veil" id="veil">
     <div class="spin" id="veilSpin"></div>
     <h3 id="veilTitle">Loading…</h3>
@@ -438,8 +469,11 @@ function proxyBaseNow() {
   else if (p) base = Voyager.normalizeProxyBase(p);   // forgiving: adds https:// and /proxy if missing
   else base = detectedProxy;
   if (!base) return '';
-  // When the user turns tracker blocking off, tell the proxy per-request.
-  if (S.settings.blockTrackers === false) base += (base.indexOf('?') === -1 ? '?' : '&') + 'block=0';
+  // Tell the proxy per-request when blocking is off — globally, or overridden
+  // for the active tab's site (per-site settings win either way).
+  if (!siteEffective(Voyager.tabUrl(Voyager.activeTab(S)), 'blockTrackers')) {
+    base += (base.indexOf('?') === -1 ? '?' : '&') + 'block=0';
+  }
   return base;
 }
 function frameOpts() { return { torGateway: S.settings.torGateway, proxyBase: proxyBaseNow() }; }
@@ -519,6 +553,7 @@ function paintChrome() {
   star.className = 'star' + (starred ? ' on' : '');
 
   $('tabsBtn').textContent = String(S.tabs.length);
+  $('pinLabel').textContent = tab && tab.pinned ? 'Unpin this tab' : 'Pin this tab';
   $('zoomLabel').textContent = (tab ? tab.zoom : 100) + '%';
   document.body.classList.toggle('private', !!(tab && tab.incognito));
 
@@ -664,6 +699,7 @@ function renderInternal(page) {
   else if (page === 'reading') el.innerHTML = readingPage();
   else if (page === 'memory') el.innerHTML = memoryPage('');
   else if (page === 'reader') el.innerHTML = readerPage();
+  else if (page === 'site') el.innerHTML = sitePage();
   else if (page === 'settings') { el.innerHTML = settingsPage(); checkProxyStatus(); }
   else if (page === 'about') el.innerHTML = aboutPage();
   else el.innerHTML = startPage();
@@ -727,6 +763,56 @@ function memoryPage(query) {
       '<button class="x" data-forgetmem="' + esc(m.url) + '" title="Forget this page">✕</button></div>';
   }
   if (total) h += '<button class="btn danger block" data-act="clearmemory">Forget everything Voyager remembers</button>';
+  return h + '</div>';
+}
+
+/* ---- per-site settings ----
+ * The host whose settings voyager://site shows — captured just before we
+ * navigate there (navigating replaces the tab's URL, so it can't be derived). */
+var siteViewHost = '';
+
+/** Effective per-site value: the site's override if set, else the global. */
+function siteEffective(url, key) {
+  var ov = Voyager.siteSetting(S, url || '', key);
+  if (ov !== undefined) return ov;
+  return key === 'blockTrackers' ? S.settings.blockTrackers !== false : S.settings.remember !== false;
+}
+
+function sitePage() {
+  var host = siteViewHost;
+  var h = '<div class="page"><h1>Site settings</h1><p class="sub">Overrides for one site — everything else follows the global switches.</p>';
+  if (host) {
+    var zoomOv = Voyager.siteSetting(S, host, 'zoom');
+    var blockOv = Voyager.siteSetting(S, host, 'blockTrackers');
+    var remOv = Voyager.siteSetting(S, host, 'remember');
+    h += '<div class="panel">' +
+      '<p style="margin:0 0 10px;font-size:16px"><b>' + esc(host) + '</b></p>' +
+      '<div class="toggle" style="margin-bottom:12px"><div><b style="font-size:14.5px">Block ads &amp; trackers here</b><p class="tiny" style="margin:2px 0 0">' + (blockOv === undefined ? 'Following the global setting.' : 'Overriding the global setting for this site.') + '</p></div>' +
+      '<button class="switch" data-sitetoggle="blockTrackers" aria-pressed="' + siteEffective('https://' + host + '/', 'blockTrackers') + '" aria-label="Block trackers on this site"><i></i></button></div>' +
+      '<div class="toggle"><div><b style="font-size:14.5px">Remember pages from this site</b><p class="tiny" style="margin:2px 0 0">' + (remOv === undefined ? 'Following the global setting.' : 'Overriding the global setting for this site.') + '</p></div>' +
+      '<button class="switch" data-sitetoggle="remember" aria-pressed="' + siteEffective('https://' + host + '/', 'remember') + '" aria-label="Remember pages from this site"><i></i></button></div>' +
+      '<p class="tiny" style="margin:12px 2px 0">🔍 Zoom here: <b>' + (zoomOv || 100) + '%</b>' + (zoomOv ? ' (saved for this site — zoom with ⋮ − / + ; 100% forgets it)' : ' — zoom with ⋮ − / + and this site will remember it') + '</p>' +
+      ((zoomOv !== undefined || blockOv !== undefined || remOv !== undefined) ? '<button class="btn block" data-clearsite="' + esc(host) + '">Clear overrides for this site</button>' : '') +
+      '</div>';
+  } else {
+    h += '<div class="panel muted">Open a website first, then choose ⋮ → Site settings.</div>';
+  }
+  var hosts = [];
+  for (var k in (S.sites || {})) if (Object.prototype.hasOwnProperty.call(S.sites, k) && k !== host) hosts.push(k);
+  if (hosts.length) {
+    hosts.sort();
+    h += '<h2 class="sect">Other sites with overrides</h2><div class="panel">';
+    for (var i = 0; i < hosts.length; i++) {
+      var st = S.sites[hosts[i]];
+      var bits = [];
+      if (st.zoom !== undefined) bits.push(st.zoom + '%');
+      if (st.blockTrackers !== undefined) bits.push(st.blockTrackers ? 'blocking on' : 'blocking off');
+      if (st.remember !== undefined) bits.push(st.remember ? 'remembering' : 'not remembering');
+      h += '<div class="row"><span class="txt" style="flex:1;min-width:0"><span class="t">' + esc(hosts[i]) + '</span><span class="u">' + esc(bits.join(' · ')) + '</span></span>' +
+        '<button class="x" data-clearsite="' + esc(hosts[i]) + '" title="Clear overrides">✕</button></div>';
+    }
+    h += '</div>';
+  }
   return h + '</div>';
 }
 
@@ -806,7 +892,7 @@ function readerEndpoint(targetUrl) {
  * pages, or when Remember is off; deduped so we don't refetch the same URL. */
 var lastCaptured = '';
 function maybeCapture(url) {
-  if (S.settings.remember === false) return;
+  if (!siteEffective(url, 'remember')) return;   // global off, or this site opted out
   var tab = Voyager.activeTab(S);
   if (tab && tab.incognito) return;
   if (!url || String(url).indexOf('http') !== 0) return;
@@ -820,7 +906,7 @@ function maybeCapture(url) {
     .catch(function () {});
 }
 function captureToMemory(url, j) {
-  if (S.settings.remember === false) return;
+  if (!siteEffective(url, 'remember')) return;
   var tab = Voyager.activeTab(S);
   if (tab && tab.incognito) return;
   if (!j || !j.text) return;
@@ -986,7 +1072,7 @@ function settingsPage() {
     '<button class="btn danger block" style="margin-top:0" data-act="clearhistory">Clear history</button>' +
     '<button class="btn danger block" data-act="wipe">Erase everything (tabs, history, bookmarks)</button>' +
     '</div>' +
-    '<div class="panel tiny">Voyager pages: <a style="color:var(--cyan)" data-nav="voyager://about" href="javascript:void 0">voyager://about</a> · voyager://history · voyager://bookmarks · voyager://settings</div></div>';
+    '<div class="panel tiny">Voyager pages: <a style="color:var(--cyan)" data-nav="voyager://about" href="javascript:void 0">voyager://about</a> · <a style="color:var(--purple)" data-nav="voyager://memory" href="javascript:void 0">voyager://memory</a> · voyager://history · voyager://bookmarks · voyager://site · voyager://settings</div></div>';
   return h;
 }
 
@@ -1013,11 +1099,12 @@ function renderTabsheet() {
     var t = S.tabs[i];
     var url = Voyager.tabUrl(t);
     var title = t.title || (String(url).indexOf('voyager://') === 0 ? 'New tab' : Voyager.hostOf(url) || Voyager.displayUrl(url));
-    h += '<button class="tcard' + (t.id === S.activeId ? ' active' : '') + (t.incognito ? ' ghost' : '') + '" data-tab="' + t.id + '">' +
+    h += '<button class="tcard' + (t.id === S.activeId ? ' active' : '') + (t.incognito ? ' ghost' : '') + (t.pinned ? ' pinned' : '') + '" data-tab="' + t.id + '">' +
       (t.incognito ? '<span class="fav" style="background:#3a2a5f">🕶</span>' : favHtml(url, title)) +
       '<span class="t">' + esc(title) + '</span>' +
       '<span class="u">' + esc(Voyager.displayUrl(url)) + '</span>' +
-      '<span class="close" data-closetab="' + t.id + '">✕</span></button>';
+      (t.incognito ? '' : '<span class="pin' + (t.pinned ? ' on' : '') + '" data-pintab="' + t.id + '" title="' + (t.pinned ? 'Unpin' : 'Pin') + '">📌</span>') +
+      (t.pinned ? '' : '<span class="close" data-closetab="' + t.id + '">✕</span>') + '</button>';
   }
   cards.innerHTML = h;
 }
@@ -1208,6 +1295,29 @@ document.addEventListener('click', function (e) {
       renderTabsheet();
       return;
     }
+    var pinId = el.getAttribute && el.getAttribute('data-pintab');
+    if (pinId) {
+      e.stopPropagation();
+      commit(Voyager.togglePin(S, Number(pinId)));
+      renderTabsheet();
+      return;
+    }
+    var siteToggle = el.getAttribute && el.getAttribute('data-sitetoggle');
+    if (siteToggle && siteViewHost) {
+      // Flip the *effective* value into an explicit override for this site.
+      var cur = siteEffective('https://' + siteViewHost + '/', siteToggle);
+      commit(Voyager.setSiteSetting(S, siteViewHost, siteToggle, !cur));
+      currentFrameSrc = '';                       // blocking changes ride the next load
+      renderInternal('site');
+      return;
+    }
+    var clearSite = el.getAttribute && el.getAttribute('data-clearsite');
+    if (clearSite) {
+      commit(Voyager.clearSiteSettings(S, clearSite));
+      renderInternal('site');
+      toast('Overrides cleared');
+      return;
+    }
     var tabId = el.getAttribute && el.getAttribute('data-tab');
     if (tabId) {
       commit(Voyager.activateTab(S, Number(tabId)));
@@ -1239,6 +1349,18 @@ function runAct(act) {
   }
   else if (act === 'reader') openReader();
   else if (act === 'memory') navTo('voyager://memory');
+  else if (act === 'pintab') {
+    var ptab = Voyager.activeTab(S);
+    if (ptab && ptab.incognito) { toast('Private tabs can’t be pinned — they’re meant to vanish'); return; }
+    var wasPinned = ptab && ptab.pinned;
+    commit(Voyager.togglePin(S, S.activeId));
+    toast(wasPinned ? 'Unpinned' : '📌 Pinned — this tab can’t be closed until you unpin it');
+  }
+  else if (act === 'sitesettings') {
+    var siteUrl = currentUrl();
+    siteViewHost = Voyager.siteOf(siteUrl);
+    navTo('voyager://site');
+  }
   else if (act === 'clearmemory') {
     if (!confirm('Forget every page Voyager has remembered on this device?')) return;
     commit(Voyager.clearMemory(S));
@@ -1422,13 +1544,50 @@ $('palInput').addEventListener('keydown', function (e) {
 });
 $('palette').addEventListener('click', function (e) { if (e.target === this) closePalette(); });
 
+/* ---- swipe gestures: drag from the screen edge (or anywhere on an internal
+ * page) to go back (rightward) / forward (leftward). The frame eats touches,
+ * so thin edge zones sit over it — touch devices only; the engine's pure
+ * swipeAction() decides what a drag meant. ---- */
+function attachSwipe(el) {
+  var sx = 0, sy = 0, live = false;
+  el.addEventListener('touchstart', function (e) {
+    live = e.touches.length === 1;
+    if (live) { sx = e.touches[0].clientX; sy = e.touches[0].clientY; }
+  }, { passive: true });
+  el.addEventListener('touchmove', function (e) {
+    if (!live) return;
+    var act = Voyager.swipeAction(e.touches[0].clientX - sx, e.touches[0].clientY - sy, { minDist: 30 });
+    var tab = Voyager.activeTab(S);
+    $('hintBack').className = 'swipehint left' + (act === 'back' && Voyager.canBack(tab) ? ' on' : '');
+    $('hintFwd').className = 'swipehint right' + (act === 'forward' && Voyager.canForward(tab) ? ' on' : '');
+  }, { passive: true });
+  el.addEventListener('touchend', function (e) {
+    $('hintBack').className = 'swipehint left';
+    $('hintFwd').className = 'swipehint right';
+    if (!live) return;
+    live = false;
+    var t = e.changedTouches[0];
+    var act = Voyager.swipeAction(t.clientX - sx, t.clientY - sy);
+    if (act === 'back') commit(Voyager.back(S, S.activeId));
+    else if (act === 'forward') commit(Voyager.forward(S, S.activeId));
+  }, { passive: true });
+}
+attachSwipe($('swipeL'));
+attachSwipe($('swipeR'));
+attachSwipe($('internal'));
+
 /* ---- keyboard shortcuts (desktop comfort) ---- */
 document.addEventListener('keydown', function (e) {
   var mod = e.ctrlKey || e.metaKey;
   if (mod && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); $('palette').className.indexOf('on') !== -1 ? closePalette() : openPalette(); }
   else if (mod && e.key === 'l') { e.preventDefault(); $('urlInput').focus(); }
   else if (mod && e.key === 't') { e.preventDefault(); commit(Voyager.newTab(S, { ts: Date.now() })); $('urlInput').focus(); }
-  else if (mod && e.key === 'w') { e.preventDefault(); commit(Voyager.closeTab(S, S.activeId)); }
+  else if (mod && e.key === 'w') {
+    e.preventDefault();
+    var wt = Voyager.activeTab(S);
+    if (wt && wt.pinned) { toast('📌 Pinned — unpin to close'); return; }
+    commit(Voyager.closeTab(S, S.activeId));
+  }
   else if (mod && e.key === 'd') { e.preventDefault(); $('starBtn').click(); }
   else if (mod && (e.key === 'e' || e.key === 'E')) { e.preventDefault(); runAct('readlater'); }
   else if (e.key === 'Escape' && $('palette').className.indexOf('on') !== -1) closePalette();
