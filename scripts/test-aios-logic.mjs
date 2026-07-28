@@ -1052,6 +1052,69 @@ test('widgetData: notes shows the newest note; automations knows what runs next;
   assert.equal(K.widgetData(st, 'nope', T0), null);
 });
 
+/* ══════════ v4.7: full AI parity — timer/theme/name/widget/write ══════════ */
+
+test('shell timer: emits the real timer effect; rejects junk', () => {
+  const st = K.boot(T0);
+  const r = K.execCommand(st, 'timer 5m tea', T0);
+  assert.equal(r.error, false);
+  deq(r.effects, [{ type: 'timer', seconds: 300, label: 'tea' }]);
+  assert.ok(r.out[0].includes('5 minutes') && r.out[0].includes('tea'));
+  deq(K.execCommand(st, 'timer 90s', T0).effects, [{ type: 'timer', seconds: 90, label: 'Timer' }]);
+  assert.equal(K.execCommand(st, 'timer soon', T0).error, true);
+  assert.equal(K.execCommand(st, 'timer', T0).error, true);
+});
+
+test('shell theme + name: change settings, list options, persist', () => {
+  const st = K.boot(T0);
+  assert.ok(K.execCommand(st, 'theme', T0).out[0].includes('violet'), 'bare theme lists current + options');
+  const r = K.execCommand(st, 'theme teal', T0);
+  assert.equal(r.error, false);
+  deq(r.effects, [{ type: 'accent', accent: 'teal' }]);
+  assert.equal(st.settings.accent, 'teal');
+  assert.equal(K.execCommand(st, 'theme plaid', T0).error, true, 'unknown accents refused');
+  assert.equal(st.settings.accent, 'teal', 'bad theme leaves the setting alone');
+  deq(K.execCommand(st, 'name', T0).out, ['user'], 'bare name prints the owner');
+  K.execCommand(st, 'name Ada Lovelace', T0);
+  assert.equal(st.settings.owner, 'Ada Lovelace');
+  assert.equal(K.execCommand(st, 'name ' + 'x'.repeat(60), T0).error, false);
+  assert.equal(st.settings.owner.length, 24, 'owner capped at 24 chars');
+  const st2 = K.deserialize(K.serialize(st), T0);
+  assert.equal(st2.settings.accent, 'teal');
+});
+
+test('shell widget: list marks active, add/remove round-trip via the shell', () => {
+  const st = K.boot(T0);
+  const list = K.execCommand(st, 'widget list', T0).out.join('\n');
+  assert.ok(list.includes('✓ clock') && list.includes('automations'), 'list shows all, ticks active');
+  assert.equal(K.execCommand(st, 'widget add automations', T0).error, false);
+  assert.ok(st.widgets.includes('automations'));
+  assert.equal(K.execCommand(st, 'widget add weather', T0).error, true, 'unknown widget refused');
+  assert.equal(K.execCommand(st, 'widget remove clock', T0).error, false);
+  assert.ok(!st.widgets.includes('clock'));
+  assert.equal(K.execCommand(st, 'widget remove clock', T0).error, true);
+  assert.equal(K.execCommand(st, 'widget frobnicate', T0).error, true, 'bad subcommand → usage error');
+});
+
+test('write: whole files in one command — \\n, raw > and |, then run it', () => {
+  const st = K.boot(T0);
+  const r = K.execCommand(st, 'write notes/plan.md # Plan\\n- one\\n- two', T0);
+  assert.equal(r.error, false);
+  assert.equal(K.fsRead(st.fs, '/home/user/notes/plan.md').content, '# Plan\n- one\n- two\n');
+  assert.ok(r.out[0].includes('3 lines'));
+  // write is a RAW command: > and | in the content are literal, not redirection
+  K.execCommand(st, 'write shapes.txt a > b | c', T0);
+  assert.equal(K.fsRead(st.fs, '/home/user/shapes.txt').content, 'a > b | c\n');
+  assert.equal(K.fsRead(st.fs, '/home/user/b').ok, false, 'no stray redirect target created');
+  // the payoff: the AI can author a real script and execute it
+  K.execCommand(st, 'write count.sh let n = 3\\nwhile $n > 0\\necho tick $n\\nset n=$(($n - 1))\\nend', T0);
+  const run = K.execCommand(st, 'run count.sh', T0);
+  assert.equal(run.error, false);
+  deq(run.out, ['tick 3', 'tick 2', 'tick 1']);
+  assert.equal(K.execCommand(st, 'write onlypath', T0).error, true, 'missing content → usage error');
+  assert.equal(K.execCommand(st, 'write /nope/deep.txt hi', T0).error, true, 'bad parent dir surfaces');
+});
+
 console.log('── aios kernel unit tests ──');
 let failed = 0;
 for (const [n, f] of tests) {
