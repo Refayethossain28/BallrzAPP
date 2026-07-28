@@ -382,6 +382,23 @@
   }
   .trkbadge.on { display: inline-flex; }
 
+  /* ═════════ highlights: the marker pen ═════════ */
+  .rbody mark.hl { background: rgba(245,192,74,.32); color: inherit; border-radius: 4px; padding: 1px 3px; box-shadow: 0 0 0 1px rgba(245,192,74,.25); }
+  :root[data-theme="light"] .rbody mark.hl { background: rgba(245,192,74,.45); }
+  .hlbubble {
+    position: fixed; z-index: 85; display: none; transform: translate(-50%, -130%);
+    background: var(--bg2); border: 1px solid rgba(245,192,74,.55); border-radius: 999px;
+    padding: 8px 16px; font-size: 13.5px; font-weight: 650; color: var(--gold);
+    box-shadow: 0 10px 28px rgba(0,0,0,.45); white-space: nowrap;
+  }
+  .hlbubble.on { display: block; }
+  .hlrow { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,.05); }
+  .hlrow .q { flex: 1; font-size: 14px; color: var(--dim); font-style: italic; }
+  .hlrow .q::before { content: '“'; color: var(--gold); } .hlrow .q::after { content: '”'; color: var(--gold); }
+
+  /* ═════════ follows: sites that come to you ═════════ */
+  .feeditem .src { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .04em; color: var(--cyan); text-transform: uppercase; margin-right: 8px; }
+
   /* memory results */
   .mem-hit { align-items: flex-start; }
   .mem-hit .snip { display: block; font-size: 13px; color: var(--dim); line-height: 1.5; margin-top: 3px; white-space: normal; }
@@ -415,6 +432,7 @@
     <button class="mi" data-act="newprivate"><span class="ico">🕶</span>New private tab</button>
     <button class="mi" data-act="pintab"><span class="ico">📌</span><span id="pinLabel">Pin this tab</span></button>
     <button class="mi" data-act="sitesettings"><span class="ico">🌐</span>Site settings</button>
+    <button class="mi" data-act="follow"><span class="ico">📡</span><span id="followLabel">Follow this site</span></button>
     <button class="mi" data-act="reader"><span class="ico">📖</span>Reader view<span style="margin-left:auto;color:var(--faint);font-size:12px">clean text</span></button>
     <button class="mi" data-act="readlater"><span class="ico">📑</span>Read later</button>
     <button class="mi split" data-act="memory"><span class="ico">🧠</span>Web memory<span style="margin-left:auto;color:var(--faint);font-size:12px">search read</span></button>
@@ -442,6 +460,7 @@
   <div class="swipezone right" id="swipeR"></div>
   <div class="swipehint left" id="hintBack">‹</div>
   <div class="swipehint right" id="hintFwd">›</div>
+  <div class="hlbubble" id="hlBubble" data-act="savehighlight">🖍 Highlight</div>
   <div class="changebar" id="changebar">
     <span class="msg" id="changeMsg"></span>
     <button class="btn primary" data-act="viewchanges">See what changed</button>
@@ -594,6 +613,7 @@ function paintChrome() {
 
   $('tabsBtn').textContent = String(S.tabs.length);
   $('pinLabel').textContent = tab && tab.pinned ? 'Unpin this tab' : 'Pin this tab';
+  $('followLabel').textContent = Voyager.isFollowed(S, url) ? 'Following — unfollow' : 'Follow this site';
   $('zoomLabel').textContent = (tab ? tab.zoom : 100) + '%';
   document.body.classList.toggle('private', !!(tab && tab.incognito));
 
@@ -899,8 +919,35 @@ function readerPage() {
     body = '';
     for (var i = 0; i < parts.length; i++) { var p = parts[i].trim(); if (p) body += '<p>' + esc(p) + '</p>'; }
   }
-  h += '<div class="rbody">' + (body || '<p class="muted">No readable text was found on this page.</p>') + '</div>';
+  var hls = Voyager.highlightsFor(S, a.url);
+  body = applyMarks(body, hls);
+  h += '<div class="rbody" id="rbody">' + (body || '<p class="muted">No readable text was found on this page.</p>') + '</div>';
+  if (hls.length) {
+    h += '<h2 class="sect">🖍 Your highlights</h2><div class="panel">';
+    for (var q = 0; q < hls.length; q++) {
+      h += '<div class="hlrow"><span class="q">' + esc(hls[q].text) + '</span>' +
+        '<button class="x" data-unhl="' + q + '" title="Remove highlight">✕</button></div>';
+    }
+    h += '</div>';
+  }
   return h + '</div>';
+}
+
+/* Re-ink saved highlights into the (already-escaped) reader body: each saved
+ * passage is matched word-by-word across flexible whitespace, first hit only,
+ * and never inside a tag (\s+ can't cross markup). */
+function applyMarks(bodyHtml, hls) {
+  for (var i = 0; i < hls.length; i++) {
+    var words = esc(hls[i].text).split(/\s+/).map(function (w) {
+      return w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    });
+    if (!words.length) continue;
+    try {
+      var re = new RegExp(words.join('\\s+'));
+      if (re.test(bodyHtml)) bodyHtml = bodyHtml.replace(re, function (m) { return '<mark class="hl">' + m + '</mark>'; });
+    } catch (e) {}
+  }
+  return bodyHtml;
 }
 
 /* ---- time travel: what changed since you read it ----
@@ -1059,6 +1106,16 @@ function startPage() {
     h += '<button class="tile" data-act="addshortcut" title="Pin the current page"><span class="fav" style="background:var(--card2);color:var(--dim)">＋</span><span class="name">Add</span></button>';
     h += '</div>';
   }
+  // The river: newest posts from sites you follow — no account, no algorithm.
+  if (S.follows.length && !ghost) {
+    var river = Voyager.followedItems(S, 8);
+    h += '<h2 class="sect">From sites you follow <button class="x" data-act="refreshfeeds" title="Refresh feeds" style="display:inline-flex;width:22px;height:22px;vertical-align:middle">↻</button></h2>';
+    for (var fi = 0; fi < river.length; fi++) {
+      h += '<div class="row feeditem"><button style="all:unset;cursor:pointer;flex:1;min-width:0;display:block" data-nav="' + esc(river[fi].url) + '">' +
+        '<span class="t" style="display:block;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span class="src">' + esc(river[fi].source) + '</span>' + esc(river[fi].title) + '</span></button></div>';
+    }
+    if (!river.length) h += '<div class="panel muted">Followed feeds are quiet — tap ↻ to refresh.</div>';
+  }
   if (top.length && !ghost) {
     h += '<h2 class="sect">Top sites</h2><div class="grid">';
     for (var i = 0; i < top.length; i++) {
@@ -1139,6 +1196,11 @@ function settingsPage() {
     '<p class="tiny" style="margin:10px 2px 0">' + (S.memory.length ? S.memory.length + ' page' + (S.memory.length === 1 ? '' : 's') + ' remembered · ' : '') + '<a style="color:var(--purple)" data-nav="voyager://memory" href="javascript:void 0">Search your memory →</a></p>' +
     (S.memory.length ? '<button class="btn danger block" data-act="clearmemory">Forget everything remembered</button>' : '') +
     '</div>' +
+    (S.follows.length ? '<h2 class="sect">📡 Sites you follow</h2><div class="panel">' +
+      S.follows.map(function (f) {
+        return '<div class="row"><span class="txt" style="flex:1;min-width:0"><span class="t">' + esc(f.title) + '</span><span class="u">' + esc(Voyager.displayUrl(f.feedUrl)) + '</span></span>' +
+          '<button class="x" data-unfollow="' + esc(f.feedUrl) + '" title="Unfollow">✕</button></div>';
+      }).join('') + '</div>' : '') +
     '<h2 class="sect">🛡️ Privacy</h2><div class="panel">' +
     '<div class="toggle"><div><b style="font-size:14.5px">Block ads &amp; trackers</b><p class="tiny" style="margin:2px 0 0">Drops known ad/tracker requests at the proxy, so pages load lighter and quieter. Needs the full-browser proxy on.</p></div>' +
     '<button class="switch" id="trackerSwitch" aria-pressed="' + (S.settings.blockTrackers !== false) + '" aria-label="Block trackers"><i></i></button></div>' +
@@ -1348,6 +1410,15 @@ document.addEventListener('click', function (e) {
     }
     var rmshort = el.getAttribute && el.getAttribute('data-rmshortcut');
     if (rmshort) { commit(Voyager.removeShortcut(S, rmshort)); renderInternal('start'); return; }
+    var unhl = el.getAttribute && el.getAttribute('data-unhl');
+    if (unhl != null && readerState) {
+      var rhls = Voyager.highlightsFor(S, readerState.url);
+      var target = rhls[Number(unhl)];
+      if (target) { commit(Voyager.removeHighlight(S, readerState.url, target.text)); renderInternal('reader'); toast('Highlight removed'); }
+      return;
+    }
+    var unfollow = el.getAttribute && el.getAttribute('data-unfollow');
+    if (unfollow) { commit(Voyager.removeFollow(S, unfollow)); renderInternal('settings'); toast('Unfollowed'); return; }
     var ropen = el.getAttribute && el.getAttribute('data-readeropen');
     if (ropen) { navTo(ropen); return; }
     var rsave = el.getAttribute && el.getAttribute('data-readersave');
@@ -1459,6 +1530,35 @@ function runAct(act) {
   }
   else if (act === 'viewchanges') { hideChangeBanner(); navTo('voyager://changes'); }
   else if (act === 'dismisschanges') hideChangeBanner();
+  else if (act === 'savehighlight') {
+    if (!readerState || !pendingSelection) return;
+    commit(Voyager.addHighlight(S, readerState.url, pendingSelection, Date.now()));
+    pendingSelection = '';
+    $('hlBubble').className = 'hlbubble';
+    renderInternal('reader');
+    toast('🖍 Highlighted — it’s yours now, even if the page dies');
+  }
+  else if (act === 'follow') {
+    var fUrl = currentUrl();
+    if (String(fUrl).indexOf('voyager://') === 0) { toast('Open a website first'); return; }
+    if (Voyager.isFollowed(S, fUrl)) {
+      commit(Voyager.removeFollow(S, fUrl));
+      toast('Unfollowed');
+      return;
+    }
+    var fep = feedsEndpoint(fUrl);
+    if (!fep) { toast('Following needs the full-browser proxy — set one in Settings'); return; }
+    toast('📡 Looking for a feed…');
+    fetch(fep, { cache: 'no-store' })
+      .then(function (r) { return r ? r.json() : null; })
+      .then(function (j) {
+        if (!j || !j.items || !j.items.length) { toast(j && j.error === 'no feed advertised' ? 'This site doesn’t advertise a feed' : 'No feed found'); return; }
+        commit(Voyager.addFollow(S, j, Date.now()));
+        toast('📡 Following ' + (j.title || Voyager.siteOf(fUrl)) + ' — new posts land on your start page');
+      })
+      .catch(function () { toast('Feed lookup failed — check the proxy'); });
+  }
+  else if (act === 'refreshfeeds') refreshFeeds(false);
   else if (act === 'clearmemory') {
     if (!confirm('Forget every page Voyager has remembered on this device?')) return;
     commit(Voyager.clearMemory(S));
@@ -1649,6 +1749,64 @@ $('palInput').addEventListener('keydown', function (e) {
 });
 $('palette').addEventListener('click', function (e) { if (e.target === this) closePalette(); });
 
+/* ---- highlights: select in Reader, tap the marker ---- */
+var pendingSelection = '';
+function readerSelectionText() {
+  if (!readerState || String(currentUrl()) !== 'voyager://reader') return '';
+  var sel = window.getSelection && window.getSelection();
+  if (!sel || sel.isCollapsed) return '';
+  var text = String(sel.toString() || '').replace(/\s+/g, ' ').trim();
+  if (text.length < 3 || text.length > 500) return '';
+  var rb = $('rbody');
+  if (!rb || !sel.anchorNode || !rb.contains(sel.anchorNode)) return '';
+  return text;
+}
+function maybeShowHlBubble() {
+  var text = readerSelectionText();
+  var b = $('hlBubble');
+  if (!text) { b.className = 'hlbubble'; pendingSelection = ''; return; }
+  pendingSelection = text;
+  try {
+    var rect = window.getSelection().getRangeAt(0).getBoundingClientRect();
+    b.style.left = Math.max(70, Math.min(window.innerWidth - 70, rect.left + rect.width / 2)) + 'px';
+    b.style.top = Math.max(90, rect.top) + 'px';
+  } catch (e) { b.style.left = '50%'; b.style.top = '120px'; }
+  b.className = 'hlbubble on';
+}
+document.addEventListener('mouseup', function () { setTimeout(maybeShowHlBubble, 0); });
+document.addEventListener('touchend', function () { setTimeout(maybeShowHlBubble, 60); });
+// keep the selection alive while the bubble is tapped
+$('hlBubble').addEventListener('mousedown', function (e) { e.preventDefault(); });
+
+/* ---- follows: the site's feed, fetched through the proxy ---- */
+function feedsEndpoint(targetUrl) {
+  var base = proxyBaseNow();
+  if (!base) return '';
+  var root = base.replace(/[?#].*$/, '').replace(/\/proxy\/?$/, '');
+  var key = /[?&]key=([^&]+)/.exec(S.settings.proxy || '');
+  return root + '/feeds?url=' + encodeURIComponent(targetUrl) + (key ? '&key=' + key[1] : '');
+}
+var feedsRefreshedAt = 0;
+function refreshFeeds(quiet) {
+  if (!S.follows.length) return;
+  var now = Date.now();
+  if (quiet && now - feedsRefreshedAt < 10 * 60 * 1000) return;   // at most every 10 min in the background
+  feedsRefreshedAt = now;
+  var jobs = S.follows.map(function (f) {
+    var ep = feedsEndpoint(f.feedUrl);
+    if (!ep) return Promise.resolve();
+    return fetch(ep, { cache: 'no-store' })
+      .then(function (r) { return r && r.ok ? r.json() : null; })
+      .then(function (j) { if (j && j.items) S = Voyager.updateFollow(S, f.feedUrl, j.items, Date.now()); })
+      .catch(function () {});
+  });
+  Promise.all(jobs).then(function () {
+    persist();
+    if (String(currentUrl()) === 'voyager://start') renderInternal('start');
+    if (!quiet) toast('📡 Feeds refreshed');
+  });
+}
+
 /* ---- swipe gestures: drag from the screen edge (or anywhere on an internal
  * page) to go back (rightward) / forward (leftward). The frame eats touches,
  * so thin edge zones sit over it — touch devices only; the engine's pure
@@ -1718,6 +1876,7 @@ showUrl(currentUrl(), Voyager.activeTab(S));
           var url = currentUrl();
           if (String(url).indexOf('voyager://') !== 0) { currentFrameSrc = ''; loadFrame(url); }
           toast('🛰️ Full browser mode');
+          refreshFeeds(true);            // quiet pull of followed feeds on boot
         }
       })
       .catch(function () {});

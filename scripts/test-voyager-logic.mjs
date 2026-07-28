@@ -791,6 +791,58 @@ test('recordTrackers accumulates per site and ignores junk', () => {
   assert.equal(r.sites['news.site'].trackersSeen, 5);               // the receipt survives the session
 });
 
+/* ---- highlights ---- */
+
+test('highlights: add/dupe/remove, whitespace-normalised, internal pages refused, session round-trip', () => {
+  let s = V.createBrowser();
+  s = V.addHighlight(s, 'https://a.com/post', '  the   key\n insight  ', NOW);
+  assert.equal(s.highlights.length, 1);
+  assert.equal(s.highlights[0].text, 'the key insight');                  // normalised
+  s = V.addHighlight(s, 'https://a.com/post', 'the key insight', NOW);    // dupe → no-op
+  assert.equal(s.highlights.length, 1);
+  s = V.addHighlight(s, 'voyager://start', 'nope', NOW);                  // internal → refused
+  assert.equal(s.highlights.length, 1);
+  s = V.addHighlight(s, 'https://b.com/x', 'other passage', NOW);
+  eq(V.highlightsFor(s, 'https://a.com/post').map((h) => h.text), ['the key insight']);
+  const r = V.restore(V.serialize(s));
+  assert.equal(r.highlights.length, 2);                                   // survives the session
+  s = V.removeHighlight(s, 'https://a.com/post', 'the key insight');
+  assert.equal(V.highlightsFor(s, 'https://a.com/post').length, 0);
+});
+
+/* ---- follows: sites that come to you ---- */
+
+test('follows: add/dedupe/remove by feed or site, items normalised and capped', () => {
+  let s = V.createBrowser();
+  const feed = { feedUrl: 'https://blog.site/rss', siteUrl: 'https://www.blog.site/', title: 'The Blog', items: [
+    { title: 'Post two', url: 'https://blog.site/2', ts: NOW },
+    { title: '', url: 'https://blog.site/1', ts: NOW - DAY },
+    { title: 'junk', url: 'javascript:alert(1)' },                        // non-http → dropped
+  ] };
+  s = V.addFollow(s, feed, NOW);
+  assert.equal(s.follows.length, 1);
+  assert.equal(s.follows[0].items.length, 2);
+  assert.equal(s.follows[0].items[1].title, 'blog.site/1');               // titleless → displayUrl
+  assert.equal(V.addFollow(s, feed, NOW), s);                             // same feedUrl → no-op
+  assert.equal(V.isFollowed(s, 'https://blog.site/some/page'), true);     // by site host
+  assert.equal(V.isFollowed(s, 'https://other.site/'), false);
+  const r = V.restore(V.serialize(s));
+  assert.equal(r.follows[0].title, 'The Blog');                           // survives the session
+  s = V.removeFollow(s, 'https://www.blog.site/anything');                // unfollow by site
+  assert.equal(s.follows.length, 0);
+});
+
+test('follows: updateFollow refreshes items; followedItems merges newest-first across feeds', () => {
+  let s = V.createBrowser();
+  s = V.addFollow(s, { feedUrl: 'https://a.site/rss', title: 'A', items: [{ title: 'a-old', url: 'https://a.site/1', ts: NOW - 2 * DAY }] }, NOW);
+  s = V.addFollow(s, { feedUrl: 'https://b.site/rss', title: 'B', items: [{ title: 'b-new', url: 'https://b.site/9', ts: NOW }] }, NOW);
+  s = V.updateFollow(s, 'https://a.site/rss', [{ title: 'a-fresh', url: 'https://a.site/2', ts: NOW - DAY }], NOW);
+  const river = V.followedItems(s, 10);
+  eq(river.map((i) => i.title), ['b-new', 'a-fresh']);
+  eq(river.map((i) => i.source), ['B', 'A']);
+  assert.equal(V.updateFollow(s, 'https://nope.site/rss', [], NOW), s);   // unknown feed → untouched
+});
+
 /* ---- swipe gestures ---- */
 
 test('swipeAction: decisive horizontal swipes map to back/forward, everything else is null', () => {

@@ -304,6 +304,67 @@
     return { title: title, text: text, html: htmlParts.join('\n'), words: words, images: imgs };
   }
 
+  /* ── feeds: discovery + a minimal RSS/Atom parser (for Follow) ── */
+
+  /** The RSS/Atom feed URLs a page advertises via <link rel="alternate">, absolutized. */
+  function discoverFeeds(html, pageUrl) {
+    var out = [], m;
+    var re = /<link\b[^>]*>/gi;
+    var s = String(html == null ? '' : html);
+    while ((m = re.exec(s)) && out.length < 3) {
+      var tag = m[0];
+      if (!/rel\s*=\s*["']?alternate["']?/i.test(tag)) continue;
+      if (!/type\s*=\s*["']?application\/(rss|atom)\+xml["']?/i.test(tag)) continue;
+      var href = /href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s">]+))/i.exec(tag);
+      if (!href) continue;
+      var abs = absolutize(href[1] != null ? href[1] : (href[2] != null ? href[2] : href[3]), pageUrl);
+      if (abs && out.indexOf(abs) === -1) out.push(abs);
+    }
+    return out;
+  }
+
+  function feedField(block, tag) {
+    var m = new RegExp('<' + tag + '(?:\\s[^>]*)?>([\\s\\S]*?)</' + tag + '>', 'i').exec(block);
+    if (!m) return '';
+    return decodeEntities(m[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/<[^>]+>/g, '')).trim();
+  }
+
+  /**
+   * Parse just enough RSS 2.0 / Atom to follow a site: the feed title and its
+   * items' {title, url, ts}. Pure string work — no XML DOM, unit-testable.
+   */
+  function parseFeed(xml, feedUrl) {
+    var s = String(xml == null ? '' : xml);
+    var isAtom = /<feed[\s>]/i.test(s) && !/<rss[\s>]/i.test(s);
+    var items = [], m;
+    if (isAtom) {
+      var head = s.split(/<entry[\s>]/i)[0];
+      var title = feedField(head, 'title');
+      var re = /<entry(?:\s[^>]*)?>([\s\S]*?)<\/entry>/gi;
+      while ((m = re.exec(s)) && items.length < 20) {
+        var e = m[1];
+        var link = /<link\b[^>]*href\s*=\s*(?:"([^"]*)"|'([^']*)')[^>]*>/i.exec(e);
+        var url = link ? absolutize(link[1] != null ? link[1] : link[2], feedUrl) : null;
+        if (!url) continue;
+        var when = feedField(e, 'updated') || feedField(e, 'published');
+        items.push({ title: feedField(e, 'title'), url: url, ts: when ? (Date.parse(when) || null) : null });
+      }
+      return { title: title, items: items };
+    }
+    var chanHead = s.split(/<item[\s>]/i)[0];
+    var rssTitle = feedField(chanHead, 'title');
+    var ire = /<item(?:\s[^>]*)?>([\s\S]*?)<\/item>/gi;
+    while ((m = ire.exec(s)) && items.length < 20) {
+      var it = m[1];
+      var u = feedField(it, 'link') || feedField(it, 'guid');
+      u = u ? absolutize(u, feedUrl) : null;
+      if (!u || !/^https?:/i.test(u)) continue;
+      var pub = feedField(it, 'pubDate') || feedField(it, 'dc:date');
+      items.push({ title: feedField(it, 'title'), url: u, ts: pub ? (Date.parse(pub) || null) : null });
+    }
+    return { title: rssTitle, items: items };
+  }
+
   /* ── ad / tracker blocking: a curated host blocklist ── */
   var TRACKERS = [
     'doubleclick.net', 'googlesyndication.com', 'googletagmanager.com', 'googletagservices.com',
@@ -395,6 +456,8 @@
     originAllowed: originAllowed,
     isTracker: isTracker,
     countTrackers: countTrackers,
+    discoverFeeds: discoverFeeds,
+    parseFeed: parseFeed,
     TRACKERS: TRACKERS,
     stripTags: stripTags,
     extractReadable: extractReadable,

@@ -197,6 +197,43 @@ async function handleReader(target, res) {
   send(res, 200, cors, JSON.stringify({ url: upstream.url || url.href, title: article.title, text: article.text, html: article.html, words: article.words, images: article.images }));
 }
 
+/* Follow a site: given a page (or feed) URL, find its RSS/Atom feed, parse it,
+ * and return {feedUrl, siteUrl, title, items:[{title,url,ts}]}. */
+async function handleFeeds(target, res) {
+  const cors = { 'content-type': 'application/json', 'access-control-allow-origin': '*' };
+  let url;
+  try { url = new URL(target); } catch (e) { return send(res, 400, cors, JSON.stringify({ error: 'bad url' })); }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return send(res, 400, cors, JSON.stringify({ error: 'unsupported' }));
+  if (!ALLOW_PRIVATE && Proxy.isBlockedHost(url.hostname)) return send(res, 403, cors, JSON.stringify({ error: 'blocked host' }));
+
+  const grab = async (u) => {
+    const r = await fetch(u, { headers: Object.assign({}, BROWSER_HEADERS), redirect: 'follow' });
+    const raw = await r.arrayBuffer();
+    return { ct: r.headers.get('content-type') || '', body: new TextDecoder('utf-8').decode(raw.byteLength > MAX_TEXT ? raw.slice(0, MAX_TEXT) : raw), url: r.url || u };
+  };
+
+  try {
+    let page = await grab(url.href);
+    let feedUrl = page.url;
+    let xml = page.body;
+    if (Proxy.isHtml(page.ct)) {
+      const found = Proxy.discoverFeeds(page.body, page.url);
+      if (!found.length) return send(res, 404, cors, JSON.stringify({ error: 'no feed advertised' }));
+      // the discovered feed must pass the same SSRF guard as the page
+      const fu = new URL(found[0]);
+      if (!ALLOW_PRIVATE && Proxy.isBlockedHost(fu.hostname)) return send(res, 403, cors, JSON.stringify({ error: 'blocked host' }));
+      const feed = await grab(found[0]);
+      feedUrl = feed.url;
+      xml = feed.body;
+    }
+    const parsed = Proxy.parseFeed(xml, feedUrl);
+    if (!parsed.items.length) return send(res, 404, cors, JSON.stringify({ error: 'feed had no items' }));
+    send(res, 200, cors, JSON.stringify({ feedUrl, siteUrl: url.href, title: parsed.title, items: parsed.items }));
+  } catch (e) {
+    send(res, 502, cors, JSON.stringify({ error: String(e && e.message || e) }));
+  }
+}
+
 function readBody(req) {
   return new Promise((resolve) => {
     const chunks = [];
@@ -237,6 +274,13 @@ const server = http.createServer(async (req, res) => {
       return send(res, 403, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }, JSON.stringify({ error: 'locked' }));
     }
     return handleReader(parsed.searchParams.get('url'), res);
+  }
+  if (pathname === '/feeds') {
+    // Feed discovery + parse (for Follow). CORS-open and key-gated like /proxy.
+    if (PROXY_KEY && parsed.searchParams.get('key') !== PROXY_KEY) {
+      return send(res, 403, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }, JSON.stringify({ error: 'locked' }));
+    }
+    return handleFeeds(parsed.searchParams.get('url'), res);
   }
   if (await serveStatic(pathname, res)) return;
   send(res, 404, { 'content-type': 'text/plain' }, 'not found');
