@@ -44,7 +44,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var VERSION = '4.3.0';
+  var VERSION = '4.4.0';
   var JOURNAL_CAP = 300;
   var RUN_DEPTH_CAP = 8;
   var SCRIPT_STEP_CAP = 100000; // total statements one `run` may execute — kills infinite loops
@@ -463,6 +463,7 @@
       journal: [],
       desktop: {},
       installed: [],
+      widgets: ['clock', 'notes'],
       settings: { owner: 'user', accent: 'violet' },
       bootedAt: now
     };
@@ -489,7 +490,8 @@
       aliases: state.aliases,
       journal: state.journal,
       desktop: state.desktop,
-      installed: state.installed
+      installed: state.installed,
+      widgets: state.widgets
     });
   }
 
@@ -551,6 +553,10 @@
       }
       if (Array.isArray(data.installed)) {
         for (var ii = 0; ii < data.installed.length; ii++) installWebapp(state, data.installed[ii]);
+      }
+      if (Array.isArray(data.widgets)) {
+        state.widgets = [];
+        for (var wi = 0; wi < data.widgets.length; wi++) addWidget(state, data.widgets[wi]);
       }
     } catch (e) { /* corrupt snapshot → fresh boot */ }
     return state;
@@ -616,6 +622,83 @@
   }
 
   function isInstalled(state, id) { return state.installed.indexOf(id) !== -1; }
+
+  /* ══════════════════════════ Home-screen widgets ══════════════════════════
+   * Glanceable cards on the home screen (phone springboard and desktop
+   * wallpaper). Which widgets you keep is persisted state; what each one
+   * shows is a pure function of (state, now), so every card is testable. */
+
+  var WIDGETS = [
+    { id: 'clock',       name: 'Clock',       emoji: '🕰', desc: 'Time and date, big' },
+    { id: 'notes',       name: 'Latest note', emoji: '📝', desc: 'Your most recent note, tap to open' },
+    { id: 'automations', name: 'Automations', emoji: '🤖', desc: 'What the OS runs next' },
+    { id: 'system',      name: 'System',      emoji: '📊', desc: 'Kernel, disk and journal at a glance' }
+  ];
+  function widgetById(id) {
+    for (var i = 0; i < WIDGETS.length; i++) if (WIDGETS[i].id === id) return WIDGETS[i];
+    return null;
+  }
+
+  function addWidget(state, id) {
+    if (!widgetById(id)) return { ok: false, error: 'no such widget: ' + id };
+    if (state.widgets.indexOf(id) !== -1) return { ok: true, already: true };
+    state.widgets.push(id);
+    return { ok: true };
+  }
+
+  function removeWidget(state, id) {
+    var i = state.widgets.indexOf(id);
+    if (i === -1) return false;
+    state.widgets.splice(i, 1);
+    return true;
+  }
+
+  /** The data a widget shows, computed purely from OS state + the clock. */
+  function widgetData(state, id, now) {
+    if (id === 'clock') {
+      var d = new Date(now);
+      return { ts: now, iso: d.toISOString() };
+    }
+    if (id === 'notes') {
+      var r = fsList(state.fs, '/home/user/notes');
+      var best = null;
+      if (r.ok) {
+        for (var i = 0; i < r.entries.length; i++) {
+          var e = r.entries[i];
+          if (e.type === 'file' && (!best || e.mtime > best.mtime)) best = e;
+        }
+      }
+      if (!best) return { empty: true };
+      var content = fsRead(state.fs, '/home/user/notes/' + best.name).content || '';
+      return {
+        empty: false,
+        path: '/home/user/notes/' + best.name,
+        title: best.name.replace(/\.(txt|md)$/, ''),
+        preview: content.split('\n').filter(function (l) { return l.trim(); }).slice(0, 3)
+      };
+    }
+    if (id === 'automations') {
+      var enabled = state.automations.filter(function (a) { return a.enabled; });
+      if (!enabled.length) return { count: 0 };
+      var next = null, nextIn = Infinity;
+      for (var j = 0; j < enabled.length; j++) {
+        var due = Math.max(0, enabled[j].lastRun + enabled[j].everySeconds * 1000 - now);
+        if (due < nextIn) { nextIn = due; next = enabled[j]; }
+      }
+      return { count: enabled.length, nextIn: Math.round(nextIn / 1000), nextCommand: next.command };
+    }
+    if (id === 'system') {
+      var last = state.journal.length ? state.journal[state.journal.length - 1] : null;
+      return {
+        version: VERSION,
+        windows: state.procs.length,
+        diskBytes: serialize(state).length,
+        installed: state.installed.length,
+        lastJournal: last ? last.x : null
+      };
+    }
+    return null;
+  }
 
   /* ══════════════════════════ Mobile home screen ══════════════════════════
    * The phone shell (a springboard of app icons, one fullscreen app at a
@@ -2132,6 +2215,12 @@
     installWebapp: installWebapp,
     uninstallWebapp: uninstallWebapp,
     isInstalled: isInstalled,
+    // widgets
+    WIDGETS: WIDGETS,
+    widgetById: widgetById,
+    addWidget: addWidget,
+    removeWidget: removeWidget,
+    widgetData: widgetData,
     // mobile home screen
     DOCK_FAVORITES: DOCK_FAVORITES,
     springboard: springboard,
