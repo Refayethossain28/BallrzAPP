@@ -1004,6 +1004,54 @@ test('shell: app install/remove work on hub ids and still on .app manifests', ()
   assert.equal(K.execCommand(st, 'app remove clock', T0).error, false);
 });
 
+/* ══════════ v4.4: home-screen widgets ══════════ */
+
+test('widgets: defaults, add/remove/dedupe, persistence, hostile ids dropped', () => {
+  const st = K.boot(T0);
+  deq(st.widgets, ['clock', 'notes'], 'sensible defaults');
+  assert.equal(K.addWidget(st, 'automations').ok, true);
+  assert.equal(K.addWidget(st, 'automations').already, true);
+  assert.equal(K.addWidget(st, 'weather').ok, false, 'unknown widget refused');
+  deq(st.widgets, ['clock', 'notes', 'automations']);
+  const st2 = K.deserialize(K.serialize(st), T0);
+  deq(st2.widgets, ['clock', 'notes', 'automations'], 'picks survive reboot');
+  assert.equal(K.removeWidget(st, 'clock'), true);
+  assert.equal(K.removeWidget(st, 'clock'), false);
+  deq(st.widgets, ['notes', 'automations']);
+  const hostile = K.deserialize(JSON.stringify({ v: 4, fs: K.boot(T0).fs, widgets: ['notes', 'evil', 'notes', 9] }), T0);
+  deq(hostile.widgets, ['notes']);
+  assert.equal(JSON.parse(JSON.stringify(K.WIDGETS)).length, 4);
+});
+
+test('widgetData: notes shows the newest note; automations knows what runs next; system reports', () => {
+  const st = K.boot(T0);
+  // notes: welcome.txt is seeded; a newer note wins
+  K.fsWrite(st.fs, '/home/user/notes/plan.md', '# Plan\nfirst do this\nthen that\nand more\nlines', T0 + 5000);
+  const n = K.widgetData(st, 'notes', T0 + 9000);
+  assert.equal(n.empty, false);
+  assert.equal(n.title, 'plan');
+  assert.equal(n.path, '/home/user/notes/plan.md');
+  deq(n.preview, ['# Plan', 'first do this', 'then that'], 'first three non-empty lines');
+  // automations: next due is the soonest enabled one
+  K.execCommand(st, 'every 10m echo a', T0);
+  K.execCommand(st, 'every 2m echo b', T0);
+  const a = K.widgetData(st, 'automations', T0 + 60 * 1000);
+  assert.equal(a.count, 2);
+  assert.equal(a.nextIn, 60, '2m schedule, 1m elapsed → 60s to go');
+  assert.equal(a.nextCommand, 'echo b');
+  K.toggleAutomation(st, st.automations[1].id, false);
+  assert.equal(K.widgetData(st, 'automations', T0 + 60 * 1000).nextCommand, 'echo a', 'disabled ones don\'t count');
+  deq(JSON.parse(JSON.stringify(K.widgetData(K.boot(T0), 'automations', T0))), { count: 0 });
+  // system: real numbers
+  const s = K.widgetData(st, 'system', T0);
+  assert.equal(s.version, K.VERSION);
+  assert.ok(s.diskBytes > 1000);
+  assert.ok(s.lastJournal.includes('every 2m'), 'last journal line surfaces');
+  // clock echoes the injected clock; unknown id is null
+  assert.equal(K.widgetData(st, 'clock', T0).ts, T0);
+  assert.equal(K.widgetData(st, 'nope', T0), null);
+});
+
 console.log('── aios kernel unit tests ──');
 let failed = 0;
 for (const [n, f] of tests) {
