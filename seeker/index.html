@@ -160,17 +160,19 @@
 </head>
 <body>
 
+<div id="fatal" style="display:none;position:fixed;left:12px;right:12px;top:12px;z-index:99;background:#2a1520;border:1px solid #7a2f45;color:#ffd7de;border-radius:12px;padding:12px 16px;font-size:14px;box-shadow:0 12px 40px rgba(0,0,0,.5)"></div>
+
 <div class="wrap">
 
   <!-- results header (hidden on home) -->
   <div class="rhead">
     <div class="mini" id="miniLogo" title="Seeker home">🔎<span class="word g" style="background:linear-gradient(92deg,#4d9fff,#9f6bff);-webkit-background-clip:text;background-clip:text;color:transparent">Seeker</span></div>
     <div class="searchbar">
-      <div class="box" id="boxTop">
+      <form class="box" id="boxTop" action="." novalidate>
         <span class="mag">🔎</span>
-        <input id="qTop" type="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Search the web…" aria-label="Search">
-        <button class="clear" id="clearTop" aria-label="Clear">✕</button>
-      </div>
+        <input id="qTop" type="search" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" placeholder="Search the web…" aria-label="Search">
+        <button class="clear" id="clearTop" type="button" aria-label="Clear">✕</button>
+      </form>
       <div class="sugg" id="suggTop"></div>
     </div>
   </div>
@@ -182,11 +184,11 @@
     <div class="logo"><span class="lens">🔎</span><span class="g">Seeker</span></div>
     <div class="tagline">The search engine — <b>BM25 ranking, typo tolerance, instant answers</b>, live internet sources<br>and your own crawler. Built from scratch, running on your device.</div>
     <div class="searchbar">
-      <div class="box" id="boxHome">
+      <form class="box" id="boxHome" action="." novalidate>
         <span class="mag">🔎</span>
-        <input id="qHome" type="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Search the web — or try 12*12, 5 km to miles, !w bm25 …" aria-label="Search">
-        <button class="clear" id="clearHome" aria-label="Clear">✕</button>
-      </div>
+        <input id="qHome" type="search" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" placeholder="Search the web — or try 12*12, 5 km to miles, !w bm25 …" aria-label="Search">
+        <button class="clear" id="clearHome" type="button" aria-label="Clear">✕</button>
+      </form>
       <div class="sugg" id="suggHome"></div>
     </div>
     <div class="homebtns">
@@ -255,7 +257,34 @@
 <script>
 (function () {
   'use strict';
+
+  /* A page that dies silently looks like "nothing happens" on a phone, where
+   * there is no console. Surface fatal problems in a visible banner instead. */
+  var fatalShown = false;
+  function showFatal(text) {
+    try {
+      var el = document.getElementById('fatal');
+      if (!el || fatalShown) return;
+      fatalShown = true;
+      el.textContent = text + ' ';
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = '↻ Reload';
+      b.style.cssText = 'margin-left:8px;background:#3d1f2d;color:#ffd7de;border:1px solid #7a2f45;border-radius:8px;padding:4px 12px;font-size:13px;cursor:pointer';
+      b.onclick = function () { window.location.reload(); };
+      el.appendChild(b);
+      el.style.display = 'block';
+    } catch (e) { /* the banner must never be a second crash */ }
+  }
+  window.addEventListener('error', function (ev) {
+    showFatal('⚠️ Seeker hit an error — ' + String(ev && ev.message || 'unknown') + '. A reload usually fixes it.');
+  });
+
   var S = window.Seeker;
+  if (!S) {
+    showFatal('⚠️ Seeker’s engine (engine.js) didn’t load — usually a flaky connection or a stale cache.');
+    return;
+  }
   var $ = function (id) { return document.getElementById(id); };
 
   /* ================================================================
@@ -791,9 +820,6 @@
         e.preventDefault(); suggSel = (suggSel + 1) % suggItems.length; paintSugg(which);
       } else if (e.key === 'ArrowUp' && suggItems.length) {
         e.preventDefault(); suggSel = (suggSel - 1 + suggItems.length) % suggItems.length; paintSugg(which);
-      } else if (e.key === 'Enter') {
-        var q = suggSel >= 0 && suggItems[suggSel] ? suggItems[suggSel].text : input.value;
-        runSearch(q, true);
       } else if (e.key === 'Escape') {
         closeSugg();
       }
@@ -867,7 +893,21 @@
     catch (e) { return ''; }
   }
 
+  // Enter / the mobile keyboard's "search" key = a real form submit, which
+  // every browser and IME delivers reliably (keydown "Enter" is not universal).
+  function wireForm(which) {
+    var form = which === 'home' ? $('boxHome') : $('boxTop');
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var input = which === 'home' ? $('qHome') : $('qTop');
+      var q = suggSel >= 0 && suggItems[suggSel] ? suggItems[suggSel].text : input.value;
+      try { input.blur(); } catch (err) {} // dismiss the mobile keyboard
+      runSearch(q, true);
+    });
+  }
+
   wireInput('home'); wireInput('top');
+  wireForm('home'); wireForm('top');
 
   /* ---- boot ---- */
   renderSources();
