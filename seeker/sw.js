@@ -1,9 +1,10 @@
 /* Offline service worker for Seeker. One HTML file + the engine, so navigations
- * are network-first (you always get the latest build when online, the cached
- * shell when offline) and static assets are cache-first for speed. Live search
- * APIs (/api/, wikipedia, algolia, …) are never cached — live means live.
- * Bump CACHE to force a clean reinstall. */
-const CACHE = 'seeker-v1';
+ * AND engine.js are network-first (you always get the latest matching pair when
+ * online, the cached copies when offline — a stale cached engine must never run
+ * under a newer page) and the remaining static assets are cache-first for
+ * speed. Live search APIs (/api/, wikipedia, algolia, …) are never cached —
+ * live means live. Bump CACHE to force a clean reinstall. */
+const CACHE = 'seeker-v2';
 const ASSETS = ['./', './index.html', './engine.js', './manifest.json',
                 './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 
@@ -29,14 +30,16 @@ self.addEventListener('fetch', (e) => {
 
   const isPage = req.mode === 'navigate' ||
                  (req.destination === '' && /\/(index\.html)?(\?.*)?$/.test(url.pathname));
+  const isEngine = /\/engine\.js$/.test(url.pathname);
 
-  if (isPage) {
+  if (isPage || isEngine) {
+    const cacheKey = isEngine ? './engine.js' : './index.html';
     e.respondWith(
       fetch(req).then((resp) => {
         const copy = resp.clone();
-        caches.open(CACHE).then((c) => c.put('./index.html', copy)).catch(() => {});
+        caches.open(CACHE).then((c) => c.put(cacheKey, copy)).catch(() => {});
         return resp;
-      }).catch(() => caches.match(req).then((hit) => hit || caches.match('./index.html')))
+      }).catch(() => caches.match(req).then((hit) => hit || caches.match(cacheKey)))
     );
     return;
   }

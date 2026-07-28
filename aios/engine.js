@@ -44,7 +44,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var VERSION = '4.2.0';
+  var VERSION = '4.5.0';
   var JOURNAL_CAP = 300;
   var RUN_DEPTH_CAP = 8;
   var SCRIPT_STEP_CAP = 100000; // total statements one `run` may execute — kills infinite loops
@@ -462,6 +462,8 @@
       aliases: {},
       journal: [],
       desktop: {},
+      installed: [],
+      widgets: ['clock', 'notes'],
       settings: { owner: 'user', accent: 'violet' },
       bootedAt: now
     };
@@ -487,7 +489,9 @@
       env: state.env,
       aliases: state.aliases,
       journal: state.journal,
-      desktop: state.desktop
+      desktop: state.desktop,
+      installed: state.installed,
+      widgets: state.widgets
     });
   }
 
@@ -547,6 +551,13 @@
           if (pos && isFinite(pos.x) && isFinite(pos.y)) setIconPos(state, k, pos.x, pos.y);
         }
       }
+      if (Array.isArray(data.installed)) {
+        for (var ii = 0; ii < data.installed.length; ii++) installWebapp(state, data.installed[ii]);
+      }
+      if (Array.isArray(data.widgets)) {
+        state.widgets = [];
+        for (var wi = 0; wi < data.widgets.length; wi++) addWidget(state, data.widgets[wi]);
+      }
     } catch (e) { /* corrupt snapshot → fresh boot */ }
     return state;
   }
@@ -594,6 +605,101 @@
     return null;
   }
 
+  /** Install a catalog app to the home screen (phone springboard + desktop
+   *  ✦ menu). The install list is ordered, deduped and persisted. */
+  function installWebapp(state, id) {
+    if (!ballrzAppById(id)) return { ok: false, error: 'no such app: ' + id };
+    if (state.installed.indexOf(id) !== -1) return { ok: true, already: true };
+    state.installed.push(id);
+    return { ok: true };
+  }
+
+  function uninstallWebapp(state, id) {
+    var i = state.installed.indexOf(id);
+    if (i === -1) return false;
+    state.installed.splice(i, 1);
+    return true;
+  }
+
+  function isInstalled(state, id) { return state.installed.indexOf(id) !== -1; }
+
+  /* ══════════════════════════ Home-screen widgets ══════════════════════════
+   * Glanceable cards on the home screen (phone springboard and desktop
+   * wallpaper). Which widgets you keep is persisted state; what each one
+   * shows is a pure function of (state, now), so every card is testable. */
+
+  var WIDGETS = [
+    { id: 'clock',       name: 'Clock',       emoji: '🕰', desc: 'Time and date, big' },
+    { id: 'notes',       name: 'Latest note', emoji: '📝', desc: 'Your most recent note, tap to open' },
+    { id: 'automations', name: 'Automations', emoji: '🤖', desc: 'What the OS runs next' },
+    { id: 'system',      name: 'System',      emoji: '📊', desc: 'Kernel, disk and journal at a glance' }
+  ];
+  function widgetById(id) {
+    for (var i = 0; i < WIDGETS.length; i++) if (WIDGETS[i].id === id) return WIDGETS[i];
+    return null;
+  }
+
+  function addWidget(state, id) {
+    if (!widgetById(id)) return { ok: false, error: 'no such widget: ' + id };
+    if (state.widgets.indexOf(id) !== -1) return { ok: true, already: true };
+    state.widgets.push(id);
+    return { ok: true };
+  }
+
+  function removeWidget(state, id) {
+    var i = state.widgets.indexOf(id);
+    if (i === -1) return false;
+    state.widgets.splice(i, 1);
+    return true;
+  }
+
+  /** The data a widget shows, computed purely from OS state + the clock. */
+  function widgetData(state, id, now) {
+    if (id === 'clock') {
+      var d = new Date(now);
+      return { ts: now, iso: d.toISOString() };
+    }
+    if (id === 'notes') {
+      var r = fsList(state.fs, '/home/user/notes');
+      var best = null;
+      if (r.ok) {
+        for (var i = 0; i < r.entries.length; i++) {
+          var e = r.entries[i];
+          if (e.type === 'file' && (!best || e.mtime > best.mtime)) best = e;
+        }
+      }
+      if (!best) return { empty: true };
+      var content = fsRead(state.fs, '/home/user/notes/' + best.name).content || '';
+      return {
+        empty: false,
+        path: '/home/user/notes/' + best.name,
+        title: best.name.replace(/\.(txt|md)$/, ''),
+        preview: content.split('\n').filter(function (l) { return l.trim(); }).slice(0, 3)
+      };
+    }
+    if (id === 'automations') {
+      var enabled = state.automations.filter(function (a) { return a.enabled; });
+      if (!enabled.length) return { count: 0 };
+      var next = null, nextIn = Infinity;
+      for (var j = 0; j < enabled.length; j++) {
+        var due = Math.max(0, enabled[j].lastRun + enabled[j].everySeconds * 1000 - now);
+        if (due < nextIn) { nextIn = due; next = enabled[j]; }
+      }
+      return { count: enabled.length, nextIn: Math.round(nextIn / 1000), nextCommand: next.command };
+    }
+    if (id === 'system') {
+      var last = state.journal.length ? state.journal[state.journal.length - 1] : null;
+      return {
+        version: VERSION,
+        windows: state.procs.length,
+        diskBytes: serialize(state).length,
+        installed: state.installed.length,
+        lastJournal: last ? last.x : null
+      };
+    }
+    return null;
+  }
+
   /* ══════════════════════════ Mobile home screen ══════════════════════════
    * The phone shell (a springboard of app icons, one fullscreen app at a
    * time) is a different presentation of the SAME kernel — the desktop's
@@ -621,6 +727,10 @@
     }
     var user = listApps(state);
     for (var u = 0; u < user.length; u++) grid.push({ id: 'userapp', arg: user[u].id, emoji: user[u].emoji, name: user[u].name });
+    for (var w = 0; w < state.installed.length; w++) {
+      var hub = ballrzAppById(state.installed[w]);
+      if (hub) grid.push({ id: 'webapp', arg: hub.id, emoji: hub.emoji, name: hub.name });
+    }
     return { dock: dock, grid: grid };
   }
 
@@ -1494,7 +1604,12 @@
           return { out: ['opening ' + args[1] + '…'], error: false, effects: [{ type: 'open', app: 'userapp', arg: args[1] }] };
         }
         if (sub === 'install') {
-          if (!args[1]) return err('app: install <file.app> — a manifest to copy into /apps');
+          if (!args[1]) return err('app: install <file.app | hub-app-id> — a manifest, or a Ballrz app for the home screen');
+          // a Ballrz catalog id installs the hub app to the home screen
+          if (ballrzAppById(args[1]) && !fsGet(state.fs, P(args[1]))) {
+            var iw = installWebapp(state, args[1]);
+            return { out: [iw.already ? args[1] + ' is already on the home screen' : 'installed ' + args[1] + ' to the home screen'], error: false, effects: [] };
+          }
           var src = P(args[1]);
           var srd = fsRead(state.fs, src);
           if (!srd.ok) return err('app: ' + srd.error);
@@ -1506,9 +1621,14 @@
           return { out: ['installed ' + id + ' — open it from the ✦ menu or `app open ' + id + '`'], error: false, effects: [] };
         }
         if (sub === 'remove') {
-          if (!args[1] || !readApp(state, args[1])) return err('app: no app: ' + (args[1] || ''));
-          fsRemove(state.fs, APPS_DIR + '/' + args[1] + '.app', {});
-          return { out: ['removed ' + args[1]], error: false, effects: [] };
+          if (args[1] && readApp(state, args[1])) {
+            fsRemove(state.fs, APPS_DIR + '/' + args[1] + '.app', {});
+            return { out: ['removed ' + args[1]], error: false, effects: [] };
+          }
+          if (args[1] && uninstallWebapp(state, args[1])) {
+            return { out: ['removed ' + args[1] + ' from the home screen'], error: false, effects: [] };
+          }
+          return err('app: no app: ' + (args[1] || ''));
         }
         return err('app: usage: app <list|open|install|remove> …');
       }
@@ -2092,6 +2212,15 @@
     // ballrz catalog
     BALLRZ_APPS: BALLRZ_APPS,
     ballrzAppById: ballrzAppById,
+    installWebapp: installWebapp,
+    uninstallWebapp: uninstallWebapp,
+    isInstalled: isInstalled,
+    // widgets
+    WIDGETS: WIDGETS,
+    widgetById: widgetById,
+    addWidget: addWidget,
+    removeWidget: removeWidget,
+    widgetData: widgetData,
     // mobile home screen
     DOCK_FAVORITES: DOCK_FAVORITES,
     springboard: springboard,

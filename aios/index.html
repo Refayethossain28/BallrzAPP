@@ -260,7 +260,11 @@
   body.mobile #phone{display:block;position:fixed;inset:0;z-index:6000}
   /* in mobile mode, hide all desktop chrome */
   body.mobile #menubar,body.mobile #dock,body.mobile #windows,body.mobile #icons,
-  body.mobile #wallmark,body.mobile #ctxmenu,body.mobile #startmenu{display:none !important}
+  body.mobile #wallmark,body.mobile #startmenu,body.mobile #d-widgets{display:none !important}
+  /* the context menu is shared (widget picker) — center it as a sheet on phones */
+  body.mobile #ctxmenu{left:12px !important;right:12px !important;bottom:calc(24px + env(safe-area-inset-bottom)) !important;
+    top:auto !important;width:auto;min-width:0;border-radius:16px;padding:6px}
+  body.mobile #ctxmenu button{padding:12px 14px;font-size:15px;border-radius:11px}
   #p-status{position:absolute;left:0;right:0;top:0;height:calc(28px + env(safe-area-inset-top));
     padding:max(4px,env(safe-area-inset-top)) 16px 0;display:flex;align-items:center;gap:8px;
     font-size:13px;font-weight:600;z-index:10;color:var(--ink);pointer-events:none}
@@ -435,6 +439,23 @@
     background:linear-gradient(160deg,var(--c1,#8b7cff),var(--c2,#6e8bff));box-shadow:inset 0 1px 0 rgba(255,255,255,.3)}
   #p-switcher-close{background:rgba(255,255,255,.16);border:0;color:var(--ink);border-radius:20px;padding:11px 22px;font-weight:600}
 
+  /* ── home-screen widgets (shared card style; phone grid + desktop column) ── */
+  #p-widgets{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:0 0 22px}
+  #d-widgets{position:absolute;top:46px;right:14px;width:230px;display:flex;flex-direction:column;gap:10px;z-index:1}
+  .widget{border-radius:20px;padding:12px 14px;text-align:left;overflow:hidden;border:1px solid rgba(255,255,255,.14);
+    background:rgba(255,255,255,.1);backdrop-filter:blur(22px) saturate(160%);-webkit-backdrop-filter:blur(22px) saturate(160%);
+    box-shadow:0 8px 24px rgba(0,0,0,.3);color:var(--ink);min-height:86px;display:flex;flex-direction:column}
+  .widget .wcap{display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;letter-spacing:.04em;
+    text-transform:uppercase;color:rgba(255,255,255,.55);margin-bottom:5px}
+  .widget .wbig{font-size:26px;font-weight:700;letter-spacing:-.01em;line-height:1.1}
+  .widget .wsub{font-size:11.5px;color:rgba(255,255,255,.6);margin-top:2px}
+  .widget .wline{font-size:12px;line-height:1.45;color:rgba(255,255,255,.82);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .widget.span2{grid-column:span 2}
+  .widget.addw{align-items:center;justify-content:center;color:rgba(255,255,255,.45);border-style:dashed;background:rgba(255,255,255,.04);min-height:60px}
+  .widget.addw:hover{color:var(--ink)}
+  .widget .wx{position:absolute;visibility:hidden}
+  #d-widgets .widget{min-height:0}
+
   /* hub webapps get a browser-sized window on the desktop */
   body:not(.mobile) .win.w-webapp{width:min(940px,calc(100vw - 32px))}
   body:not(.mobile) .win.w-webapp .wbody{height:min(72vh,660px);max-height:none}
@@ -443,6 +464,19 @@
      AIOS's imitation clock/signal/battery — keep the safe-area spacing and
      the ✦ Live AI dot, which is real information */
   body.standalone #p-clock,body.standalone #p-sig{display:none}
+
+  /* iOS-style paged home screen: swipe horizontally between pages of apps */
+  body.mobile #p-home{overflow:hidden}
+  #p-grid{display:flex !important;flex:1;min-height:0;gap:0 !important;overflow-x:auto;overflow-y:hidden;
+    scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  #p-grid::-webkit-scrollbar{display:none}
+  .p-page{min-width:100%;flex:0 0 100%;scroll-snap-align:center;display:grid;grid-template-columns:repeat(4,1fr);
+    gap:24px 12px;align-content:start;padding:0 1px}
+  #p-dots{display:flex;justify-content:center;align-items:center;gap:8px;height:16px;margin:2px 0 6px}
+  #p-dots .dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.32);transition:background .2s}
+  #p-dots .dot.on{background:rgba(255,255,255,.92)}
+  /* widgets live on page 1 of the pager, spanning the grid, so pages 2+ are full app grids */
+  .p-page > #p-widgets{grid-column:1 / -1;margin:0 0 18px}
 </style>
 </head>
 <body data-accent="violet">
@@ -456,6 +490,7 @@
 <div id="desktop">
   <div id="wallpaper"></div>
   <div id="wallmark"><div class="glyph">✦</div><div class="word">AIOS</div></div>
+  <div id="d-widgets"></div>
   <div id="icons"></div>
   <div id="windows"></div>
 </div>
@@ -500,8 +535,10 @@
   <div id="p-home">
     <div id="p-search"><span>🔍</span> Ask AIOS or search…</div>
     <div id="p-grid"></div>
+    <div id="p-dots"></div>
     <div id="p-dock"></div>
   </div>
+  <div id="p-widgets"></div>
   <div id="p-app">
     <div id="p-appbar">
       <button id="p-back">‹ Home</button>
@@ -677,6 +714,7 @@ function sync() {
   var pills = document.querySelectorAll('#mb-ws button');
   for (i = 0; i < pills.length; i++) pills[i].classList.toggle('on', Number(pills[i].textContent) === state.ws);
   renderDesktop();
+  renderWidgets();
   var topApp = top ? K.appById(top.app) : null;
   $('mb-app').textContent = top ? (topApp ? topApp.name + (top.arg ? ' — ' + top.title : '') : top.title) : '';
   $('mb-owner').textContent = state.settings.owner;
@@ -1546,8 +1584,26 @@ APP_RENDER.store = function (proc, body) {
       b.title = a.desc;
       var ico = el('span', null, a.emoji); ico.style.fontSize = '18px';
       var nm = el('span', null, a.name);
-      nm.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px';
+      nm.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px';
       b.appendChild(ico); b.appendChild(nm);
+      /* ＋ installs to the home screen; ✓ uninstalls */
+      var inst = el('span', null, K.isInstalled(state, a.id) ? '✓' : '＋');
+      inst.title = K.isInstalled(state, a.id) ? 'Remove from home screen' : 'Install to home screen';
+      inst.style.cssText = 'flex:none;width:22px;height:22px;display:grid;place-items:center;border-radius:50%;font-size:13px;' +
+        (K.isInstalled(state, a.id) ? 'background:var(--ok);color:#0b0d20;font-weight:700' : 'background:rgba(255,255,255,.14)');
+      inst.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        if (K.isInstalled(state, a.id)) {
+          K.uninstallWebapp(state, a.id);
+          notify('🛍️ Removed', a.name + ' is off the home screen.');
+        } else {
+          K.installWebapp(state, a.id);
+          notify('🛍️ Installed', a.name + ' is on your home screen' + (MOBILE ? '' : ' and in the ✦ menu') + '.');
+        }
+        if (MOBILE) buildSpringboard();
+        refresh(); sync();
+      });
+      b.appendChild(inst);
       b.addEventListener('click', function () { spawnApp('webapp', a.id); });
       hgrid.appendChild(b);
     });
@@ -1842,6 +1898,69 @@ function renderDesktop() {
   });
 }
 
+/* ── home-screen widgets: same cards on the phone grid and the desktop ── */
+function widgetCard(id) {
+  var meta = K.widgetById(id);
+  var d = K.widgetData(state, id, Date.now());
+  var card = el('button', 'widget' + (id === 'notes' ? ' span2' : ''));
+  var cap = el('div', 'wcap');
+  cap.appendChild(el('span', null, meta.emoji));
+  cap.appendChild(el('span', null, meta.name));
+  card.appendChild(cap);
+  if (id === 'clock') {
+    var now = new Date();
+    card.appendChild(el('div', 'wbig', now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })));
+    card.appendChild(el('div', 'wsub', now.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' })));
+    card.addEventListener('click', function () { openSpot(); });
+  } else if (id === 'notes') {
+    if (d.empty) card.appendChild(el('div', 'wsub', 'No notes yet — say “note that…”'));
+    else {
+      card.appendChild(el('div', 'wline', d.title));
+      d.preview.slice(0, 2).forEach(function (l) { var ln = el('div', 'wline', l); ln.style.color = 'rgba(255,255,255,.55)'; card.appendChild(ln); });
+      card.addEventListener('click', function () { spawnApp('notes', d.path); });
+    }
+  } else if (id === 'automations') {
+    if (!d.count) card.appendChild(el('div', 'wsub', 'Nothing scheduled'));
+    else {
+      card.appendChild(el('div', 'wbig', d.nextIn < 60 ? d.nextIn + 's' : Math.round(d.nextIn / 60) + 'm'));
+      card.appendChild(el('div', 'wsub', 'until: ' + d.nextCommand.slice(0, 40)));
+    }
+    card.addEventListener('click', function () { spawnApp('automations'); });
+  } else if (id === 'system') {
+    card.appendChild(el('div', 'wline', '✦ AIOS ' + d.version + ' · ' + d.windows + ' window' + (d.windows === 1 ? '' : 's')));
+    card.appendChild(el('div', 'wline', (d.diskBytes / 1024).toFixed(1) + ' KB disk · ' + d.installed + ' installed'));
+    if (d.lastJournal) { var lj = el('div', 'wline', '» ' + d.lastJournal); lj.style.color = 'rgba(255,255,255,.5)'; card.appendChild(lj); }
+    card.addEventListener('click', function () { spawnApp('monitor'); });
+  }
+  return card;
+}
+
+function widgetPicker(x, y) {
+  showMenu(x, y, K.WIDGETS.map(function (w) {
+    var on = state.widgets.indexOf(w.id) !== -1;
+    return { label: (on ? '✓ ' : '＋ ') + w.emoji + ' ' + w.name, fn: function () {
+      if (on) K.removeWidget(state, w.id); else K.addWidget(state, w.id);
+      if (MOBILE) buildSpringboard(); else renderWidgets();
+      save();
+    } };
+  }));
+}
+
+function renderWidgets() {
+  var host = MOBILE ? $('p-widgets') : $('d-widgets');
+  var other = MOBILE ? $('d-widgets') : $('p-widgets');
+  if (other) other.textContent = '';
+  if (!host) return;
+  host.textContent = '';
+  state.widgets.forEach(function (id) {
+    if (K.widgetById(id)) host.appendChild(widgetCard(id));
+  });
+  var add = el('button', 'widget addw', '＋ widgets');
+  add.addEventListener('click', function (e) { widgetPicker(e.clientX || 80, e.clientY || 120); });
+  host.appendChild(add);
+}
+setInterval(function () { if (document.hasFocus && document.hasFocus()) renderWidgets(); }, 30000);
+
 /* right-click the wallpaper: create things right where you clicked */
 function newDesktopItem(kind, x, y) {
   var name = prompt(kind === 'dir' ? 'New folder name:' : 'New file name:', kind === 'dir' ? 'New folder' : 'untitled.md');
@@ -1875,7 +1994,8 @@ function buildStart() {
   startEl.textContent = '';
   var grid = el('div', 'sgrid');
   var all = K.APPS.map(function (a) { return { id: a.id, arg: null, emoji: a.emoji, name: a.name, desc: a.desc }; })
-    .concat(K.listApps(state).map(function (a) { return { id: 'userapp', arg: a.id, emoji: a.emoji, name: a.name, desc: a.desc }; }));
+    .concat(K.listApps(state).map(function (a) { return { id: 'userapp', arg: a.id, emoji: a.emoji, name: a.name, desc: a.desc }; }))
+    .concat(state.installed.map(function (id) { var a = K.ballrzAppById(id); return a && { id: 'webapp', arg: a.id, emoji: a.emoji, name: a.name, desc: a.desc }; }).filter(Boolean));
   all.forEach(function (a) {
     var b = el('button', 'sapp');
     b.title = a.desc || '';
@@ -2162,12 +2282,61 @@ function phoneIcon(entry, big) {
   return b;
 }
 
+var ROW_H = 104; // one icon row (icon + label + gap), px
+
+/* Lay out the home screen as swipeable pages. Widgets sit at the top of page
+ * 1 (spanning the grid), so page 1 holds fewer icons and pages 2+ are full. */
 function buildSpringboard() {
   var sb = K.springboard(state);
-  var grid = $('p-grid'); grid.textContent = '';
-  sb.grid.forEach(function (e) { grid.appendChild(phoneIcon(e, false)); });
+  var grid = $('p-grid');
+  var widgetsEl = $('p-widgets');          // captured before we clear the grid…
+  grid.textContent = '';                    // …so the detached node survives here
+  var gridH = grid.clientHeight;
+  if (gridH < 120) gridH = Math.max(360, (window.innerHeight || 780) - 250); // pre-layout estimate
+  var rows = Math.max(3, Math.floor(gridH / ROW_H));
+  var perFull = rows * 4;
+
+  var pages = [];
+  var page1 = el('div', 'p-page');
+  page1.appendChild(widgetsEl);            // widgets → page 1, full width
+  grid.appendChild(page1);
+  renderWidgets();                          // fill the widget cards (in page 1 now)
+  var wh = widgetsEl.offsetHeight || 0;
+  var widgetRows = wh ? Math.ceil((wh + 18) / ROW_H) : 0;
+  var per1 = Math.max(4, (rows - widgetRows) * 4);
+
+  var idx = 0;
+  for (; idx < per1 && idx < sb.grid.length; idx++) page1.appendChild(phoneIcon(sb.grid[idx], false));
+  pages.push(page1);
+  while (idx < sb.grid.length) {
+    var pg = el('div', 'p-page');
+    for (var k = 0; k < perFull && idx < sb.grid.length; k++, idx++) pg.appendChild(phoneIcon(sb.grid[idx], false));
+    grid.appendChild(pg);
+    pages.push(pg);
+  }
+
+  /* page dots (only with more than one page) */
+  var dots = $('p-dots'); dots.textContent = '';
+  if (pages.length > 1) pages.forEach(function (_, i) { dots.appendChild(el('span', 'dot' + (i === 0 ? ' on' : ''))); });
+  grid.onscroll = function () {
+    if (!grid.clientWidth) return;
+    var at = Math.round(grid.scrollLeft / grid.clientWidth);
+    var ds = dots.querySelectorAll('.dot');
+    for (var j = 0; j < ds.length; j++) ds[j].classList.toggle('on', j === at);
+  };
+
   var dock = $('p-dock'); dock.textContent = '';
   sb.dock.forEach(function (e) { dock.appendChild(phoneIcon(e, true)); });
+
+  /* first paint may report gridH=0; once the real height lands, re-paginate
+     if the row count changed (converges in ≤2 passes, never loops) */
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(function () {
+      if (!MOBILE) return;
+      var h = grid.clientHeight;
+      if (h > 120 && Math.max(3, Math.floor(h / ROW_H)) !== rows) buildSpringboard();
+    });
+  }
 }
 
 var phoneCur = null; // pid of the app shown fullscreen
