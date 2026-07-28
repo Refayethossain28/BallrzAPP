@@ -79,6 +79,22 @@ test('Seeker is the default engine: browsers are born searching their own', () =
   assert.equal(kept.settings.engine, 'duckduckgo');                // an explicit choice is honoured
 });
 
+test('engine migration: a legacy default upgrades to Seeker, a real choice never does', () => {
+  const legacyTab = [{ id: 1, stack: ['voyager://start'], pos: 0 }];
+  // pre-Seeker session: engine 'duckduckgo' was the default, never chosen
+  const legacy = V.restore(JSON.stringify({ v: 1, tabs: legacyTab, settings: { engine: 'duckduckgo' } }));
+  assert.equal(legacy.settings.engine, 'seeker');
+  // a legacy session where the user picked something else keeps it
+  const google = V.restore(JSON.stringify({ v: 1, tabs: legacyTab, settings: { engine: 'google' } }));
+  assert.equal(google.settings.engine, 'google');
+  // choosing duckduckgo NOW stamps engineChosen, and it survives every future restore
+  let s = V.setSetting(V.createBrowser(), 'engine', 'duckduckgo');
+  assert.equal(s.settings.engineChosen, true);
+  s = V.restore(V.serialize(s));
+  s = V.restore(V.serialize(s));                                   // twice: the migration must not creep
+  assert.equal(s.settings.engine, 'duckduckgo');
+});
+
 test('classify: voyager:// pages are internal; unknown internal pages become searches', () => {
   eq(V.classify('voyager://history'), { kind: 'internal', url: 'voyager://history' });
   assert.equal(V.classify('VOYAGER://Settings').url, 'voyager://settings'); // case-blind

@@ -336,6 +336,7 @@
       sites: {},        // per-site overrides, keyed by host: {zoom?, blockTrackers?, remember?}
       settings: {
         engine: opts.engine || 'seeker',
+        engineChosen: false,   // flips when the user picks one in Settings
         home: opts.home || INTERNAL + 'start',
         torGateway: opts.torGateway || '',   // '' = off; a bare host like "onion.ws" routes .onion
         proxy: opts.proxy || '',             // '' = auto-detect local server; a URL forces it; 'off' disables
@@ -1020,6 +1021,9 @@
     var next = shallow(state);
     next.settings = shallow(state.settings);
     next.settings[key] = value;
+    // Remember that the engine was *chosen*, not defaulted — so a future
+    // change of Voyager's default never overrides a deliberate pick.
+    if (key === 'engine') next.settings.engineChosen = true;
     return next;
   }
 
@@ -1077,7 +1081,16 @@
       shortcuts: Array.isArray(data.shortcuts) ? data.shortcuts : [],
       sites: (data.sites && typeof data.sites === 'object' && !Array.isArray(data.sites)) ? data.sites : {},
       settings: {
-        engine: (data.settings && data.settings.engine) || 'seeker',
+        // The stored engine, with one honest migration: 'duckduckgo' that was
+        // never explicitly chosen is just the old default frozen into a saved
+        // session — upgrade it to Seeker. A deliberate pick (engineChosen,
+        // stamped by setSetting) is kept forever, whatever the default becomes.
+        engine: (function () {
+          var stored = (data.settings && data.settings.engine) || 'seeker';
+          var chosen = !!(data.settings && data.settings.engineChosen);
+          return (stored === 'duckduckgo' && !chosen) ? 'seeker' : stored;
+        })(),
+        engineChosen: !!(data.settings && data.settings.engineChosen),
         home: (data.settings && data.settings.home) || INTERNAL + 'start',
         torGateway: (data.settings && data.settings.torGateway) || '',
         proxy: (data.settings && data.settings.proxy) || '',
