@@ -136,6 +136,24 @@ test('isTracker catches ad/tracker hosts (and subdomains), leaves normal sites',
   assert.equal(P.isTracker('https://mygoogle-analytics.com/x'), false);         // not a subdomain of the listed host
 });
 
+test('countTrackers counts distinct tracker URLs in a page, and the shim reports the number', () => {
+  const html = '<html><head>' +
+    '<script src="https://www.google-analytics.com/ga.js"></script>' +
+    '<script src="https://www.google-analytics.com/ga.js"></script>' +   // duplicate → counted once
+    '<img src="https://static.doubleclick.net/pixel.gif">' +
+    '<script src="/app.js"></script>' +
+    '<a href="https://example.com/page">x</a>' +
+    '</head><body></body></html>';
+  assert.equal(P.countTrackers(html), 2);
+  assert.equal(P.countTrackers('<p>no urls at all</p>'), 0);
+  // the count rides into the shim and out through the loaded message
+  const out = P.rewriteHtml(html, 'https://example.com/', '/proxy', { trackers: 2 });
+  assert.ok(out.indexOf('TRK=2') !== -1);
+  assert.ok(out.indexOf('trackers:TRK') !== -1);
+  const plain = P.rewriteHtml(html, 'https://example.com/', '/proxy');   // no opts → 0, never NaN
+  assert.ok(plain.indexOf('TRK=0') !== -1);
+});
+
 test('originAllowed gates a deployed proxy to its app origins', () => {
   const allow = ['https://refayethossain28.github.io'];
   assert.equal(P.originAllowed('https://refayethossain28.github.io', allow), true);
