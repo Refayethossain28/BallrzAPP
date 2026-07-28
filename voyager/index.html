@@ -225,6 +225,16 @@
   .tabsheet .head { flex: none; display: flex; align-items: center; justify-content: space-between; padding: calc(14px + env(safe-area-inset-top)) 18px 10px; }
   .tabsheet .head b { font-size: 17px; }
   .tabsheet .cards { flex: 1; overflow-y: auto; padding: 6px 14px 14px; display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; align-content: start; }
+  .spacebar { flex: none; display: flex; gap: 8px; padding: 2px 16px 10px; overflow-x: auto; -webkit-overflow-scrolling: touch; align-items: center; }
+  .spacepill {
+    flex: none; display: inline-flex; align-items: center; gap: 7px;
+    border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px;
+    font-size: 13px; font-weight: 650; color: var(--dim); background: var(--card);
+  }
+  .spacepill.active { border-color: var(--cyan); color: var(--ink); background: var(--card2); }
+  .spacepill .n { font-size: 11px; color: var(--faint); }
+  .spacepill .op { font-size: 11px; color: var(--faint); padding: 2px 3px; border-radius: 5px; }
+  .spacepill .op:hover { color: var(--ink); background: var(--card2); }
   .tcard {
     position: relative; text-align: left; border-radius: 16px; padding: 14px;
     background: var(--card); border: 1px solid var(--line); min-height: 108px;
@@ -477,6 +487,7 @@
 <!-- ═════════ tab switcher ═════════ -->
 <div class="tabsheet" id="tabsheet">
   <div class="head"><b id="tabCount">Tabs</b><button class="navbtn" data-act="closesheet" aria-label="Close" style="font-size:20px">✕</button></div>
+  <div class="spacebar" id="spaceBar"></div>
   <div class="cards" id="tabCards"></div>
   <div class="foot">
     <button class="btn primary" data-act="newtab">＋ New tab</button>
@@ -611,7 +622,7 @@ function paintChrome() {
   star.textContent = starred ? '★' : '☆';
   star.className = 'star' + (starred ? ' on' : '');
 
-  $('tabsBtn').textContent = String(S.tabs.length);
+  $('tabsBtn').textContent = String(Voyager.spaceTabs(S, S.activeSpace).length);
   $('pinLabel').textContent = tab && tab.pinned ? 'Unpin this tab' : 'Pin this tab';
   $('followLabel').textContent = Voyager.isFollowed(S, url) ? 'Following — unfollow' : 'Follow this site';
   $('zoomLabel').textContent = (tab ? tab.zoom : 100) + '%';
@@ -1245,10 +1256,27 @@ function engineName() {
 /* ---- tab switcher ---- */
 function renderTabsheet() {
   var cards = $('tabCards');
-  $('tabCount').textContent = S.tabs.length + ' tab' + (S.tabs.length === 1 ? '' : 's');
+  // Space pills: one desk per pill, active gets rename/remove, + adds.
+  var pills = '';
+  for (var sp = 0; sp < S.spaces.length; sp++) {
+    var space = S.spaces[sp];
+    var active = space.id === S.activeSpace;
+    var count = Voyager.spaceTabs(S, space.id).length;
+    pills += '<span class="spacepill' + (active ? ' active' : '') + '" data-space="' + space.id + '" role="button">' +
+      esc(space.name) + ' <span class="n">' + count + '</span>' +
+      (active ? '<button class="op" data-renamespace="' + space.id + '" title="Rename space">✏️</button>' : '') +
+      (active && S.spaces.length > 1 ? '<button class="op" data-rmspace="' + space.id + '" title="Close space">✕</button>' : '') +
+      '</span>';
+  }
+  pills += '<button class="spacepill" data-addspace="1" title="New space">＋ Space</button>';
+  $('spaceBar').innerHTML = pills;
+
+  var mine = Voyager.spaceTabs(S, S.activeSpace);
+  var spaceName = (Voyager.getSpace(S, S.activeSpace) || {}).name || 'Tabs';
+  $('tabCount').textContent = spaceName + ' — ' + mine.length + ' tab' + (mine.length === 1 ? '' : 's');
   var h = '';
-  for (var i = 0; i < S.tabs.length; i++) {
-    var t = S.tabs[i];
+  for (var i = 0; i < mine.length; i++) {
+    var t = mine[i];
     var url = Voyager.tabUrl(t);
     var title = t.title || (String(url).indexOf('voyager://') === 0 ? 'New tab' : Voyager.hostOf(url) || Voyager.displayUrl(url));
     h += '<button class="tcard' + (t.id === S.activeId ? ' active' : '') + (t.incognito ? ' ghost' : '') + (t.pinned ? ' pinned' : '') + '" data-tab="' + t.id + '">' +
@@ -1461,6 +1489,41 @@ document.addEventListener('click', function (e) {
     if (pinId) {
       e.stopPropagation();
       commit(Voyager.togglePin(S, Number(pinId)));
+      renderTabsheet();
+      return;
+    }
+    var renSpace = el.getAttribute && el.getAttribute('data-renamespace');
+    if (renSpace) {
+      e.stopPropagation();
+      var curName = (Voyager.getSpace(S, Number(renSpace)) || {}).name || '';
+      var newName = prompt('Rename this space', curName);
+      if (newName && newName.trim()) commit(Voyager.renameSpace(S, Number(renSpace), newName));
+      renderTabsheet();
+      return;
+    }
+    var rmSpace = el.getAttribute && el.getAttribute('data-rmspace');
+    if (rmSpace) {
+      e.stopPropagation();
+      var victim = Voyager.getSpace(S, Number(rmSpace));
+      var vTabs = Voyager.spaceTabs(S, Number(rmSpace));
+      if (vTabs.some(function (t) { return t.pinned; })) { toast('📌 This space holds pinned tabs — unpin them first'); return; }
+      if (!confirm('Close the “' + (victim ? victim.name : '') + '” space and its ' + vTabs.length + ' tab' + (vTabs.length === 1 ? '' : 's') + '?')) return;
+      commit(Voyager.removeSpace(S, Number(rmSpace)));
+      renderTabsheet();
+      return;
+    }
+    var addSp = el.getAttribute && el.getAttribute('data-addspace');
+    if (addSp) {
+      var spName = prompt('Name the new space', '');
+      if (spName == null) return;
+      commit(Voyager.addSpace(S, spName, { ts: Date.now() }));
+      renderTabsheet();
+      toast('🗂 New space — tabs you open now live here');
+      return;
+    }
+    var swSpace = el.getAttribute && el.getAttribute('data-space');
+    if (swSpace && Number(swSpace) !== S.activeSpace) {
+      commit(Voyager.switchSpace(S, Number(swSpace)));
       renderTabsheet();
       return;
     }

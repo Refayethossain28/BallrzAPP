@@ -337,6 +337,9 @@
       sites: {},        // per-site overrides, keyed by host: {zoom?, blockTrackers?, remember?}
       highlights: [],   // marker-pen passages: {url, text, ts}
       follows: [],      // followed feeds: {feedUrl, siteUrl, title, items, updatedTs}
+      spaces: [{ id: 1, name: 'Home', lastActiveId: null }],  // named workspaces
+      activeSpace: 1,
+      nextSpaceId: 2,
       settings: {
         engine: opts.engine || 'seeker',
         engineChosen: false,   // flips when the user picks one in Settings
@@ -361,6 +364,7 @@
       title: '',
       incognito: !!(opts && opts.incognito),
       pinned: false,
+      space: (opts && opts.space) || 1,
       zoom: 100,
       openedAt: (opts && opts.ts) || null,
     };
@@ -380,6 +384,7 @@
     opts = opts || {};
     var url = opts.url || state.settings.home || INTERNAL + 'start';
     var tab = makeTab(state.nextId, url, opts);
+    tab.space = opts.space || state.activeSpace || 1;   // new tabs open in the space you're in
     var next = shallow(state);
     next.nextId = state.nextId + 1;
     next.tabs = state.tabs.concat([tab]);
@@ -400,20 +405,114 @@
     if (idx === -1) return state;
     // Pinning is protection: a pinned tab can't be closed — unpin it first.
     if (state.tabs[idx].pinned) return state;
+    var space = state.tabs[idx].space || 1;
     var next = shallow(state);
     next.tabs = state.tabs.slice(0, idx).concat(state.tabs.slice(idx + 1));
-    if (next.tabs.length === 0) return newTab(next, {});
+    // Never-empty holds PER SPACE: closing a space's last tab respawns a fresh one there.
+    var siblings = next.tabs.filter(function (t) { return (t.space || 1) === space; });
+    if (!siblings.length) return newTab(next, { space: space });
     if (state.activeId === id) {
-      var neighbour = next.tabs[Math.min(idx, next.tabs.length - 1)];
-      next.activeId = neighbour.id;
+      // Focus falls to the right-hand neighbour WITHIN the space, else the left one.
+      var after = null, before = null;
+      for (var j = 0; j < next.tabs.length; j++) {
+        if ((next.tabs[j].space || 1) !== space) continue;
+        if (j >= idx && !after) after = next.tabs[j];
+        if (j < idx) before = next.tabs[j];
+      }
+      next.activeId = (after || before).id;
     }
     return next;
   }
 
   function activateTab(state, id) {
-    if (!getTab(state, id) || state.activeId === id) return state;
+    var tab = getTab(state, id);
+    if (!tab || state.activeId === id) return state;
     var next = shallow(state);
     next.activeId = id;
+    // Jumping to a tab in another space (palette, tab sheet) follows it there.
+    if ((tab.space || 1) !== state.activeSpace) next.activeSpace = tab.space || 1;
+    return next;
+  }
+
+  /* ════════════════════════ workspaces ════════════════════════
+   * Named spaces — Work, Research, a rabbit hole — each with its own tabs.
+   * One browser, several mental desks; switching desks never loses a tab. */
+
+  function getSpace(state, id) {
+    for (var i = 0; i < (state.spaces || []).length; i++) if (state.spaces[i].id === id) return state.spaces[i];
+    return null;
+  }
+
+  function spaceTabs(state, id) {
+    return state.tabs.filter(function (t) { return (t.space || 1) === id; });
+  }
+
+  /** Create a space, switch to it, and open its first tab (never empty). */
+  function addSpace(state, name, opts) {
+    opts = opts || {};
+    name = String(name == null ? '' : name).trim().slice(0, 24) || 'Space ' + state.nextSpaceId;
+    var next = shallow(state);
+    next.spaces = state.spaces.concat([{ id: state.nextSpaceId, name: name, lastActiveId: null }]);
+    next.nextSpaceId = state.nextSpaceId + 1;
+    next.spaces = rememberSpaceFocus(next.spaces, state.activeSpace, state.activeId);
+    next.activeSpace = state.nextSpaceId;
+    return newTab(next, { ts: opts.ts, space: state.nextSpaceId });
+  }
+
+  function renameSpace(state, id, name) {
+    name = String(name == null ? '' : name).trim().slice(0, 24);
+    if (!name || !getSpace(state, id)) return state;
+    var next = shallow(state);
+    next.spaces = state.spaces.map(function (s) {
+      if (s.id !== id) return s;
+      var ns = shallow(s); ns.name = name; return ns;
+    });
+    return next;
+  }
+
+  function rememberSpaceFocus(spaces, spaceId, activeId) {
+    return spaces.map(function (s) {
+      if (s.id !== spaceId) return s;
+      var ns = shallow(s); ns.lastActiveId = activeId; return ns;
+    });
+  }
+
+  /** Switch desks: focus returns to the tab you last used there. */
+  function switchSpace(state, id) {
+    if (!getSpace(state, id) || state.activeSpace === id) return state;
+    var next = shallow(state);
+    next.spaces = rememberSpaceFocus(state.spaces, state.activeSpace, state.activeId);
+    next.activeSpace = id;
+    var tabs = spaceTabs(next, id);
+    if (!tabs.length) return newTab(next, { space: id });
+    var sp = getSpace(next, id);
+    var last = sp && sp.lastActiveId != null ? tabs.filter(function (t) { return t.id === sp.lastActiveId; })[0] : null;
+    next.activeId = (last || tabs[0]).id;
+    return next;
+  }
+
+  /**
+   * Remove a space and close its tabs. Refused for the last space, and for a
+   * space holding pinned tabs — pins are promises, unpin before demolishing.
+   */
+  function removeSpace(state, id) {
+    if (!getSpace(state, id) || state.spaces.length <= 1) return state;
+    var doomed = spaceTabs(state, id);
+    for (var i = 0; i < doomed.length; i++) if (doomed[i].pinned) return state;
+    var next = shallow(state);
+    next.spaces = state.spaces.filter(function (s) { return s.id !== id; });
+    next.tabs = state.tabs.filter(function (t) { return (t.space || 1) !== id; });
+    if (state.activeSpace === id) {
+      next.activeSpace = next.spaces[0].id;
+      var tabs = spaceTabs(next, next.activeSpace);
+      if (!tabs.length) return newTab(next, { space: next.activeSpace });
+      var sp = getSpace(next, next.activeSpace);
+      var last = sp && sp.lastActiveId != null ? tabs.filter(function (t) { return t.id === sp.lastActiveId; })[0] : null;
+      next.activeId = (last || tabs[0]).id;
+    } else if (!getTab(next, next.activeId)) {
+      var fallback = spaceTabs(next, next.activeSpace);
+      if (fallback.length) next.activeId = fallback[0].id;
+    }
     return next;
   }
 
@@ -1277,7 +1376,7 @@
     for (var i = 0; i < state.tabs.length; i++) {
       var t = state.tabs[i];
       if (t.incognito) continue;
-      tabs.push({ id: t.id, stack: t.stack.slice(), pos: t.pos, title: t.title, pinned: !!t.pinned, zoom: t.zoom, openedAt: t.openedAt });
+      tabs.push({ id: t.id, stack: t.stack.slice(), pos: t.pos, title: t.title, pinned: !!t.pinned, space: t.space || 1, zoom: t.zoom, openedAt: t.openedAt });
     }
     var activeId = state.activeId;
     var activeSurvives = false;
@@ -1295,6 +1394,9 @@
       sites: state.sites || {},
       highlights: state.highlights || [],
       follows: state.follows || [],
+      spaces: state.spaces || [{ id: 1, name: 'Home', lastActiveId: null }],
+      activeSpace: state.activeSpace || 1,
+      nextSpaceId: state.nextSpaceId || 2,
       settings: state.settings,
     });
   }
@@ -1310,9 +1412,24 @@
       var t = data.tabs[i];
       if (!t || t.incognito || !Array.isArray(t.stack) || !t.stack.length) continue;
       var pos = Math.max(0, Math.min(t.stack.length - 1, Number(t.pos) || 0));
-      tabs.push({ id: t.id, stack: t.stack, pos: pos, title: String(t.title || ''), incognito: false, pinned: !!t.pinned, zoom: Math.max(25, Math.min(500, Number(t.zoom) || 100)), openedAt: t.openedAt || null });
+      tabs.push({ id: t.id, stack: t.stack, pos: pos, title: String(t.title || ''), incognito: false, pinned: !!t.pinned, space: Number(t.space) || 1, zoom: Math.max(25, Math.min(500, Number(t.zoom) || 100)), openedAt: t.openedAt || null });
       if (t.id > maxId) maxId = t.id;
     }
+    // Workspaces: validate the stored list (legacy sessions get the one Home
+    // space), and re-home any tab whose space no longer exists.
+    var spaces = [];
+    if (Array.isArray(data.spaces)) {
+      for (var sp = 0; sp < data.spaces.length; sp++) {
+        var s0 = data.spaces[sp];
+        if (s0 && Number(s0.id) > 0 && s0.name) spaces.push({ id: Number(s0.id), name: String(s0.name).slice(0, 24), lastActiveId: s0.lastActiveId != null ? s0.lastActiveId : null });
+      }
+    }
+    if (!spaces.length) spaces = [{ id: 1, name: 'Home', lastActiveId: null }];
+    var spaceIds = {};
+    for (var si = 0; si < spaces.length; si++) spaceIds[spaces[si].id] = true;
+    var maxSpace = 0;
+    for (var sm = 0; sm < spaces.length; sm++) if (spaces[sm].id > maxSpace) maxSpace = spaces[sm].id;
+    for (var ti = 0; ti < tabs.length; ti++) if (!spaceIds[tabs[ti].space]) tabs[ti].space = spaces[0].id;
     var state = {
       v: VERSION,
       nextId: Math.max(Number(data.nextId) || 1, maxId + 1),
@@ -1326,6 +1443,9 @@
       sites: (data.sites && typeof data.sites === 'object' && !Array.isArray(data.sites)) ? data.sites : {},
       highlights: Array.isArray(data.highlights) ? data.highlights : [],
       follows: Array.isArray(data.follows) ? data.follows : [],
+      spaces: spaces,
+      activeSpace: spaceIds[Number(data.activeSpace)] ? Number(data.activeSpace) : spaces[0].id,
+      nextSpaceId: Math.max(Number(data.nextSpaceId) || 2, maxSpace + 1),
       settings: {
         // The stored engine, with one honest migration: 'duckduckgo' that was
         // never explicitly chosen is just the old default frozen into a saved
@@ -1349,6 +1469,7 @@
     };
     if (tabs.length === 0) return newTab(state, {});
     state.activeId = getTab(state, data.activeId) ? data.activeId : tabs[0].id;
+    state.activeSpace = getTab(state, state.activeId).space || 1;   // desk follows the active tab
     return state;
   }
 
@@ -1415,6 +1536,12 @@
     addShortcut: addShortcut,
     removeShortcut: removeShortcut,
     togglePin: togglePin,
+    getSpace: getSpace,
+    spaceTabs: spaceTabs,
+    addSpace: addSpace,
+    renameSpace: renameSpace,
+    switchSpace: switchSpace,
+    removeSpace: removeSpace,
     diffTexts: diffTexts,
     pageChanges: pageChanges,
     summarize: summarize,
