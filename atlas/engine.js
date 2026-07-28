@@ -958,6 +958,48 @@
     return Math.round(Math.max(0.6, Math.min(1.6, next)) * 1000) / 1000;
   }
 
+  /* ============================= offline packs ============================ */
+  // Which tiles cover a route's corridor, per zoom — the shopping list for
+  // an offline download. Highest zooms first (navigation needs them most),
+  // deduped, honestly capped with a truncation flag.
+
+  function corridorTiles(route, opts) {
+    opts = opts || {};
+    var minZ = opts.minZ || 12, maxZ = opts.maxZ || 17;
+    var bufferM = opts.bufferM || 260, cap = opts.cap || 1200;
+    var seen = {}, out = [], truncated = false;
+    for (var z = maxZ; z >= minZ && !truncated; z--) {
+      var mpp = metresPerPixel(route.geometry[0].lat, z);
+      var tileM = mpp * TILE;
+      var step = Math.max(60, tileM / 3);
+      var r = Math.min(2, Math.round(bufferM / tileM));
+      var n = Math.pow(2, z);
+      for (var m = 0; m <= route.totalM && !truncated; m += step) {
+        var w = lonLatToWorld(pointAtAlong(route, m), z);
+        var t = tileForWorld(w, z);
+        for (var dx = -r; dx <= r; dx++) {
+          for (var dy = -r; dy <= r; dy++) {
+            var ty = t.ty + dy;
+            if (ty < 0 || ty >= n) continue;
+            var tx = (((t.tx + dx) % n) + n) % n;
+            var key = z + '/' + tx + '/' + ty;
+            if (seen[key]) continue;
+            seen[key] = 1;
+            if (out.length >= cap) { truncated = true; break; }
+            out.push({ z: z, x: tx, y: ty });
+          }
+          if (truncated) break;
+        }
+      }
+    }
+    return { tiles: out, truncated: truncated };
+  }
+
+  /** Honest size estimate for a pack: tiles × styles × ~30 KB. → MB */
+  function packEstimateMB(tileCount, stylesCount, avgKB) {
+    return Math.round(tileCount * (stylesCount || 1) * (avgKB || 30) / 1000 * 10) / 10;
+  }
+
   /* ============================ lane guidance ============================= */
   // OSRM steps carry OSM's turn-lane data: each maneuver's first intersection
   // lists the approach lanes with their painted arrows and whether that lane
@@ -1360,6 +1402,7 @@
     fmtBytes: fmtBytes, pruneClips: pruneClips,
     parseMaxspeed: parseMaxspeed, mapLimitsToRoute: mapLimitsToRoute, limitAtAlong: limitAtAlong,
     mapCamerasToRoute: mapCamerasToRoute, cameraNext: cameraNext, overspeedUpdate: overspeedUpdate,
+    corridorTiles: corridorTiles, packEstimateMB: packEstimateMB,
     laneIconKey: laneIconKey, parseLanes: parseLanes,
     junctionCandidates: junctionCandidates, buildJunctionView: buildJunctionView,
     buildingHeightM: buildingHeightM, roofFactor: roofFactor, wallShade: wallShade,

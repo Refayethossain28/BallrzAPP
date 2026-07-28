@@ -4,8 +4,9 @@
  * opportunistically in their own bounded cache so areas you've seen keep
  * working offline; routing/search requests are never cached (live answers
  * or an honest failure). Bump CACHE to force a clean reinstall. */
-const CACHE = 'atlas-v11';
+const CACHE = 'atlas-v12';
 const TILE_CACHE = 'atlas-tiles-v1';
+const OFFLINE_CACHE = 'atlas-offline-v1'; // downloaded route packs — never trimmed
 const TILE_LIMIT = 600;
 const ASSETS = ['./', './index.html', './engine.js', './config.js', './manifest.json',
                 './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
@@ -19,7 +20,7 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== TILE_CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== TILE_CACHE && k !== OFFLINE_CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -40,16 +41,21 @@ self.addEventListener('fetch', (e) => {
   if (/tile\.openstreetmap\.org$/.test(url.hostname) ||
       /basemaps\.cartocdn\.com$/.test(url.hostname) ||
       (/server\.arcgisonline\.com$/.test(url.hostname) && /World_Imagery/.test(url.pathname))) {
+    // check every cache — offline route packs answer here too, so a saved
+    // route's map renders with no signal at all
     e.respondWith(
-      caches.open(TILE_CACHE).then((c) =>
-        c.match(req).then((hit) => {
-          const net = fetch(req).then((resp) => {
-            if (resp.ok) { c.put(req, resp.clone()).then(trimTiles).catch(() => {}); }
-            return resp;
-          }).catch(() => hit);
-          return hit || net;
-        })
-      )
+      caches.match(req).then((hit) => {
+        const net = fetch(req).then((resp) => {
+          if (resp.ok) {
+            const copy = resp.clone();
+            caches.open(TILE_CACHE)
+              .then((c) => c.put(req, copy).then(trimTiles))
+              .catch(() => {});
+          }
+          return resp;
+        }).catch(() => hit);
+        return hit || net;
+      })
     );
     return;
   }

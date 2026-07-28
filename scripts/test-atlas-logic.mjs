@@ -645,6 +645,28 @@ test('overspeedUpdate: tolerance, 3 s hysteresis, single warning, resets under l
   assert.equal(A.overspeedUpdate(null, 200, null, 1).over, false, 'no limit, no judgement');
 });
 
+test('offline packs: corridorTiles covers the route per zoom, deduped and capped', () => {
+  const { route } = makeRoute(); // 1.5 km L-shape
+  const plan = A.corridorTiles(route, { minZ: 12, maxZ: 17, bufferM: 260, cap: 1200 });
+  assert.ok(plan.tiles.length > 20 && plan.tiles.length <= 1200, 'plausible count: ' + plan.tiles.length);
+  assert.equal(plan.truncated, false);
+  const zooms = new Set(plan.tiles.map((t) => t.z));
+  for (let z = 12; z <= 17; z++) assert.ok(zooms.has(z), 'zoom ' + z + ' present');
+  const keys = plan.tiles.map((t) => t.z + '/' + t.x + '/' + t.y);
+  assert.equal(new Set(keys).size, keys.length, 'no duplicate tiles');
+  // high zoom needs more tiles than low zoom for the same corridor
+  const at17 = plan.tiles.filter((t) => t.z === 17).length;
+  const at12 = plan.tiles.filter((t) => t.z === 12).length;
+  assert.ok(at17 > at12, `z17 ${at17} > z12 ${at12}`);
+  // cap honours the flag and keeps the highest zooms (nav needs them most)
+  const small = A.corridorTiles(route, { minZ: 12, maxZ: 17, cap: 15 });
+  assert.equal(small.truncated, true);
+  assert.equal(small.tiles.length, 15);
+  assert.ok(small.tiles.every((t) => t.z === 17), 'cap fills highest zoom first');
+  assert.equal(A.packEstimateMB(100, 2, 30), 6);
+  assert.equal(A.packEstimateMB(0), 0);
+});
+
 test('lane guidance: parseLanes reads OSRM lane data, valid lanes light up', () => {
   const raw = { intersections: [{ lanes: [
     { indications: ['left'], valid: false },
