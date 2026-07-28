@@ -434,6 +434,15 @@
   .p-card .pc-emoji{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;font-size:22px;
     background:linear-gradient(160deg,var(--c1,#8b7cff),var(--c2,#6e8bff));box-shadow:inset 0 1px 0 rgba(255,255,255,.3)}
   #p-switcher-close{background:rgba(255,255,255,.16);border:0;color:var(--ink);border-radius:20px;padding:11px 22px;font-weight:600}
+
+  /* hub webapps get a browser-sized window on the desktop */
+  body:not(.mobile) .win.w-webapp{width:min(940px,calc(100vw - 32px))}
+  body:not(.mobile) .win.w-webapp .wbody{height:min(72vh,660px);max-height:none}
+
+  /* installed as a real PWA: the device draws its own status bar, so hide
+     AIOS's imitation clock/signal/battery — keep the safe-area spacing and
+     the ✦ Live AI dot, which is real information */
+  body.standalone #p-clock,body.standalone #p-sig{display:none}
 </style>
 </head>
 <body data-accent="violet">
@@ -580,7 +589,7 @@ function spawnApp(appId, arg) {
 function focusWin(pid) { K.focusProc(state, pid); sync(); }
 
 function makeWindow(proc) {
-  var w = el('div', 'win');
+  var w = el('div', 'win w-' + proc.app);
   w.style.left = proc.x + 'px';
   w.style.top = (proc.y + 34) + 'px';
   w.dataset.pid = proc.pid;
@@ -668,7 +677,8 @@ function sync() {
   var pills = document.querySelectorAll('#mb-ws button');
   for (i = 0; i < pills.length; i++) pills[i].classList.toggle('on', Number(pills[i].textContent) === state.ws);
   renderDesktop();
-  $('mb-app').textContent = top ? ((K.appById(top.app) || {}).name + (top.arg ? ' — ' + top.title : '')) : '';
+  var topApp = top ? K.appById(top.app) : null;
+  $('mb-app').textContent = top ? (topApp ? topApp.name + (top.arg ? ' — ' + top.title : '') : top.title) : '';
   $('mb-owner').textContent = state.settings.owner;
   document.body.dataset.accent = state.settings.accent;
   /* dock running dots */
@@ -1470,6 +1480,26 @@ APP_RENDER.arcade = function (proc, body) {
   body.appendChild(pad);
 };
 
+/* ── Ballrz Hub webapps: the real app, framed inside an AIOS window ── */
+APP_RENDER.webapp = function (proc, body) {
+  var app = K.ballrzAppById(proc.arg);
+  if (!app) { body.appendChild(el('div', 'empty', 'Unknown app.')); return; }
+  body.style.cssText = 'display:flex;flex-direction:column;height:100%';
+  var fr = el('iframe');
+  fr.src = app.url;
+  fr.style.cssText = 'flex:1;width:100%;border:0;background:#0b0e17;min-height:0';
+  fr.setAttribute('allow', 'fullscreen; autoplay; camera; microphone; geolocation');
+  var foot = el('div');
+  foot.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 10px;border-top:1px solid var(--line);font-size:11.5px;color:var(--faint)';
+  foot.appendChild(el('span', null, app.name + ' — running inside AIOS'));
+  var sp = el('span'); sp.style.flex = '1'; foot.appendChild(sp);
+  var full = el('a', 'btn'); full.textContent = '↗ Open full';
+  full.href = app.url; full.target = '_blank'; full.rel = 'noopener';
+  full.style.cssText = 'text-decoration:none;font-size:12px;padding:3px 9px';
+  foot.appendChild(full);
+  body.appendChild(fr); body.appendChild(foot);
+};
+
 /* ── App Store: install / open / remove apps ── */
 APP_RENDER.store = function (proc, body) {
   var pad = el('div', 'pad');
@@ -1501,6 +1531,29 @@ APP_RENDER.store = function (proc, body) {
       row.appendChild(ico); row.appendChild(meta); row.appendChild(openB); row.appendChild(rmB);
       pad.appendChild(row);
     });
+    /* the whole Ballrz Hub, installable-feeling: every repo app opens
+       inside an AIOS window (or fullscreen sheet on the phone) */
+    var hubWrap = el('div');
+    hubWrap.style.cssText = 'margin-top:14px;padding-top:12px;border-top:1px solid var(--line)';
+    var hh = el('h3', null, '🚀 Ballrz Hub — ' + K.BALLRZ_APPS.length + ' apps');
+    hh.style.cssText = 'font-size:14px;margin:0 0 8px';
+    hubWrap.appendChild(hh);
+    var hgrid = el('div');
+    hgrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px';
+    K.BALLRZ_APPS.forEach(function (a) {
+      var b = el('button', 'btn');
+      b.style.cssText = 'display:flex;align-items:center;gap:8px;text-align:left;padding:8px 10px';
+      b.title = a.desc;
+      var ico = el('span', null, a.emoji); ico.style.fontSize = '18px';
+      var nm = el('span', null, a.name);
+      nm.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px';
+      b.appendChild(ico); b.appendChild(nm);
+      b.addEventListener('click', function () { spawnApp('webapp', a.id); });
+      hgrid.appendChild(b);
+    });
+    hubWrap.appendChild(hgrid);
+    pad.appendChild(hubWrap);
+
     var mk = el('div');
     mk.style.cssText = 'margin-top:14px;padding-top:12px;border-top:1px solid var(--line)';
     var h2 = el('h3', null, 'Create an app'); h2.style.cssText = 'font-size:14px;margin:0 0 6px';
@@ -2070,6 +2123,14 @@ fetch('api/health').then(function (r) { return r.json(); }).then(function (d) {
  * app switcher — instead of draggable windows. Desktop chrome is hidden by
  * CSS (body.mobile); sync() short-circuits to phoneChrome(). */
 var MOBILE = false;
+/* Installed as a PWA? Then the device shows a REAL status bar above us —
+   hide our imitation one (CSS keys off body.standalone). */
+try {
+  if (window.navigator.standalone === true ||
+      (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches === true)) {
+    document.body.classList.add('standalone');
+  }
+} catch (e) {}
 var LAYOUT_KEY = 'aios.layout'; // 'auto' | 'phone' | 'desktop' (device preference, not disk state)
 function getLayout() {
   try {

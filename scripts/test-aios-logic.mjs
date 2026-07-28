@@ -934,6 +934,36 @@ test('springboard: dock favourites in order, grid holds the rest + user apps', (
   sb.dock.concat(sb.grid).forEach((e) => assert.equal(K.spawn(st, e.id, e.arg).ok, true, e.name + ' spawns'));
 });
 
+/* ══════════ v4.2: the Ballrz catalog ══════════ */
+
+test('BALLRZ_APPS: every hub app present with a unique id and a relative url; AIOS itself excluded', () => {
+  const apps = JSON.parse(JSON.stringify(K.BALLRZ_APPS));
+  assert.ok(apps.length >= 25, 'the whole hub catalog, got ' + apps.length);
+  const ids = apps.map((a) => a.id);
+  assert.equal(new Set(ids).size, ids.length, 'ids unique');
+  apps.forEach((a) => {
+    assert.ok(a.name && a.emoji && a.desc, a.id + ' fully described');
+    assert.ok(a.url.startsWith('../'), a.id + ' url is relative to /aios/');
+  });
+  assert.ok(!apps.some((a) => a.url === '../aios/'), 'AIOS does not open itself');
+  ['cortex', 'voyager', 'vault', 'timecoin', 'ripple', 'imposter', 'atlas', 'graft'].forEach((id) =>
+    assert.ok(ids.includes(id), id + ' in catalog'));
+  assert.equal(K.ballrzAppById('cortex').name, 'Cortex');
+  assert.equal(K.ballrzAppById('nope'), null);
+});
+
+test('webapp windows: spawn from the catalog, singleton per app, unknown refused', () => {
+  const st = K.boot(T0);
+  const a = K.spawn(st, 'webapp', 'cortex');
+  assert.equal(a.ok, true);
+  assert.equal(a.proc.title, 'Cortex');
+  assert.equal(a.proc.emoji, '🧩');
+  assert.equal(K.spawn(st, 'webapp', 'cortex').existing, true, 'singleton per catalog id');
+  assert.equal(K.spawn(st, 'webapp', 'vault').existing, false, 'different app, new window');
+  assert.equal(st.procs.length, 2);
+  assert.equal(K.spawn(st, 'webapp', 'ghost').ok, false);
+});
+
 console.log('── aios kernel unit tests ──');
 let failed = 0;
 for (const [n, f] of tests) {
