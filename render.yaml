@@ -57,7 +57,7 @@ services:
 
   # Voyager proxy — the full-browser proxy that lets the hosted Voyager open
   # sites which refuse to be framed (Google, most logins). Zero-dependency,
-  # nothing to build. After deploy, paste "<this-service-url>/proxy" into
+  # nothing to build. After deploy, paste this service's URL into
   # Voyager → Settings → Full browser (proxy). Full guide: voyager/DEPLOY.md.
   - type: web
     name: voyager-proxy
@@ -73,10 +73,12 @@ services:
       # Bind all interfaces so Render can reach the process.
       - key: HOST
         value: 0.0.0.0
-      # Only your Voyager app may use the proxy (soft open-relay guard).
-      # Comma-separate more origins if you open Voyager from elsewhere too.
-      - key: ALLOWED_ORIGINS
-        value: https://refayethossain28.github.io
+      # It deploys OPEN (SSRF-guarded) so it works the moment it's live — no
+      # Origin allowlist, which phone browsers break on framed navigations.
+      # To LOCK it to just you, add a PROXY_KEY here (any long random string)
+      # and append "?key=<same value>" to the proxy URL in Voyager → Settings:
+      #   - key: PROXY_KEY
+      #     generateValue: true   # Render makes a secret; read it in the dashboard
       # PORT is injected by Render; server.mjs honours it. Leave
       # VOYAGER_ALLOW_PRIVATE unset in production (keeps the SSRF guard on).
 

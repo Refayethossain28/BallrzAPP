@@ -46,13 +46,19 @@
     try { return new URL(s, base).href; } catch (e) { return null; }
   }
 
-  /** Wrap an absolute http(s) URL so the browser routes it back through us. */
+  /**
+   * Wrap an absolute http(s) URL so the browser routes it back through us.
+   * proxyPath may already carry a query (e.g. "/proxy?key=SECRET" when the
+   * deployment is key-locked), so the `url` param joins with the right
+   * separator and the key rides along on every rewritten link.
+   */
   function proxify(absUrl, proxyPath) {
     var s = String(absUrl == null ? '' : absUrl);
     if (!/^https?:\/\//i.test(s)) return s;
     var p = String(proxyPath == null ? '/proxy' : proxyPath);
-    if (s.indexOf(p + '?url=') === 0) return s;         // already proxied
-    return p + '?url=' + encodeURIComponent(s);
+    var sep = p.indexOf('?') === -1 ? '?' : '&';
+    if (s.indexOf(p + sep + 'url=') === 0) return s;    // already proxied
+    return p + sep + 'url=' + encodeURIComponent(s);
   }
 
   /** absolutize + proxify in one step; returns null when the value is inert. */
@@ -106,12 +112,13 @@
     var body = [
       '(function(){',
       'var B=' + JSON.stringify(proxyPath) + ',PAGE=' + JSON.stringify(pageUrl) + ';',
+      'var SEP=B.indexOf("?")===-1?"?":"&";',   // key-locked proxies pass B="/proxy?key=…"
       'function abs(u){try{return new URL(u,PAGE).href;}catch(e){return null;}}',
       'function P(u){if(u==null)return u;var s=String(u);',
       'if(/^(#|javascript:|data:|mailto:|tel:|blob:|about:)/i.test(s))return s;',
-      'if(s.indexOf(B+"?url=")===0)return s;var a=abs(s);',
-      'if(!a||!/^https?:/i.test(a))return s;return B+"?url="+encodeURIComponent(a);}',
-      'function real(u){var s=String(u||""),k=B+"?url=";',
+      'if(s.indexOf(B+SEP+"url=")===0)return s;var a=abs(s);',
+      'if(!a||!/^https?:/i.test(a))return s;return B+SEP+"url="+encodeURIComponent(a);}',
+      'function real(u){var s=String(u||""),k=B+SEP+"url=";',
       'if(s.indexOf(k)===0){try{return decodeURIComponent(s.slice(k.length));}catch(e){}}return abs(s)||s;}',
       // fetch / XHR keep flowing through the proxy
       'var of=window.fetch;if(of)window.fetch=function(i,init){try{if(typeof i==="string")i=P(i);else if(i&&i.url)i=new Request(P(i.url),i);}catch(e){}return of.call(this,i,init);};',

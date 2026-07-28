@@ -52,6 +52,13 @@ test('proxify wraps absolute http(s) once, leaves others', () => {
   assert.equal(P.proxify('data:x', '/proxy'), 'data:x');
 });
 
+test('proxify threads a key-carrying proxyPath onto every link (&url=)', () => {
+  assert.equal(P.proxify('https://a.com/x', '/proxy?key=SECRET'),
+    '/proxy?key=SECRET&url=' + encodeURIComponent('https://a.com/x'));
+  // idempotent with the key present too
+  assert.equal(P.proxify('/proxy?key=SECRET&url=already', '/proxy?key=SECRET'), '/proxy?key=SECRET&url=already');
+});
+
 test('rewriteHtml routes href/src/action, srcset, styles, and strips base/CSP', () => {
   const html = '<html><head>' +
     '<base href="https://ex.com/a/">' +
@@ -173,6 +180,52 @@ async function integration() {
   }
 }
 
+async function integrationKeyed() {
+  const origin = http.createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html', 'x-frame-options': 'DENY' });
+    res.end('<html><head><title>Locked HQ</title></head><body><h1>hi</h1><a href="/next">go</a></body></html>');
+  });
+  const originPort = await listen(origin, 0);
+
+  const proxyPort = 8798;
+  const KEY = 'test-secret-123';
+  const srv = spawn(process.execPath, [join(ROOT, 'voyager', 'server.mjs')], {
+    env: Object.assign({}, process.env, { PORT: String(proxyPort), HOST: '127.0.0.1', VOYAGER_ALLOW_PRIVATE: '1', PROXY_KEY: KEY }),
+    stdio: 'ignore',
+  });
+  try {
+    for (let i = 0; i < 40; i++) {
+      try { const r = await fetch(`http://127.0.0.1:${proxyPort}/__voyager/ping`); if (r.ok) break; } catch (e) {}
+      await sleep(100);
+    }
+    const target = `http://127.0.0.1:${originPort}/`;
+    const enc = encodeURIComponent(target);
+
+    // no key → 403 Locked
+    const noKey = await fetch(`http://127.0.0.1:${proxyPort}/proxy?url=${enc}`);
+    assert.equal(noKey.status, 403, 'request without key is rejected');
+
+    // wrong key → 403
+    const badKey = await fetch(`http://127.0.0.1:${proxyPort}/proxy?url=${enc}&key=nope`);
+    assert.equal(badKey.status, 403, 'wrong key is rejected');
+
+    // right key → 200, framing stripped, and rewritten links carry the key
+    const ok = await fetch(`http://127.0.0.1:${proxyPort}/proxy?key=${KEY}&url=${enc}`);
+    assert.equal(ok.status, 200, 'correct key is accepted');
+    assert.equal(ok.headers.get('x-frame-options'), null, 'framing header stripped');
+    const body = await ok.text();
+    assert.ok(body.includes('Locked HQ'), 'content served with the key');
+    assert.ok(body.includes(`/proxy?key=${KEY}&url=` + encodeURIComponent(`http://127.0.0.1:${originPort}/next`)),
+      'in-page links carry the key so navigation stays authorised');
+
+    console.log('  ✓ integration (keyed): PROXY_KEY blocks keyless requests and threads the key through links');
+    passed++;
+  } finally {
+    srv.kill();
+    origin.close();
+  }
+}
+
 /* ---- run ---- */
 for (const [name, fn] of tests) {
   try { fn(); passed++; console.log(`  ✓ ${name}`); }
@@ -180,6 +233,8 @@ for (const [name, fn] of tests) {
 }
 try { await integration(); }
 catch (err) { console.error(`  ✗ integration\n${err.stack || err.message}\n`); process.exitCode = 1; }
+try { await integrationKeyed(); }
+catch (err) { console.error(`  ✗ integration (keyed)\n${err.stack || err.message}\n`); process.exitCode = 1; }
 
-console.log(`\nvoyager proxy: ${passed}/${tests.length + 1} passed`);
+console.log(`\nvoyager proxy: ${passed}/${tests.length + 2} passed`);
 if (process.exitCode) process.exit(1);

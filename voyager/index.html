@@ -340,8 +340,8 @@ var frameSyncing = false;    // true while we're recording an in-frame navigatio
  * through voyager/server.mjs and framing-refusers (YouTube, Google…) open. */
 function proxyBaseNow() {
   var p = (S.settings.proxy || '').trim();
-  if (p === 'off') return '';
-  if (p) return p.replace(/\/+$/, '');
+  if (p.toLowerCase() === 'off') return '';
+  if (p) return Voyager.normalizeProxyBase(p);   // forgiving: adds https:// and /proxy if missing
   return detectedProxy;
 }
 function frameOpts() { return { torGateway: S.settings.torGateway, proxyBase: proxyBaseNow() }; }
@@ -560,7 +560,7 @@ function checkProxyStatus() {
   var el = $('proxyStatus');
   if (!el) return;
   if (!base) { el.innerHTML = 'Status: <b style="color:var(--faint)">not connected</b>'; return; }
-  var ping = base.replace(/\/proxy\/?$/, '') + '/__voyager/ping';
+  var ping = base.replace(/\?.*$/, '').replace(/\/proxy\/?$/, '') + '/__voyager/ping';
   fetch(ping, { cache: 'no-store' })
     .then(function (r) { return r && r.ok ? r.json() : null; })
     .then(function (j) {
@@ -657,7 +657,8 @@ function settingsPage() {
     '<p class="tiny" id="proxyStatus" style="margin:2px 2px 0">Status: <b style="color:' + (proxyBaseNow() ? 'var(--gold)' : 'var(--faint)') + '">' + (proxyBaseNow() ? 'checking ' + esc(proxyBaseNow()) + '…' : 'not connected') + '</b></p>' +
     '<p class="tiny" style="margin:8px 2px 0">Big sites (YouTube, Google, most logins) send a header that forbids being shown inside a frame, so a plain page can’t open them — only a <b>server</b> can strip it. Two ways to have one:</p>' +
     '<p class="tiny" style="margin:6px 2px 0">• <b>Local:</b> run <code>node voyager/server.mjs</code> and open the address it prints (auto-detected, nothing to paste).</p>' +
-    '<p class="tiny" style="margin:4px 2px 0">• <b>Deployed:</b> host <code>voyager/server.mjs</code> once (see <b>voyager/DEPLOY.md</b>) and paste its <code>/proxy</code> URL above — then this hosted site opens any site. Type <code>off</code> to disable.</p>' +
+    '<p class="tiny" style="margin:4px 2px 0">• <b>Deployed:</b> host <code>voyager/server.mjs</code> once (see <b>voyager/DEPLOY.md</b>) and paste its URL above — just the address is fine, <code>/proxy</code> is added for you. Then this hosted site opens any site. Type <code>off</code> to disable.</p>' +
+    '<p class="tiny" style="margin:4px 2px 0">Locking a public proxy? Set <code>PROXY_KEY</code> on the server and add <code>?key=YOURKEY</code> to the URL above — it rides in the link, so it works where an origin allowlist wouldn’t.</p>' +
     '<p class="tiny" style="margin:8px 2px 0">Honest limits: a proxy isn’t a new engine — heavy apps, DRM video and cookie-logins may not fully work — and whoever runs the proxy sees the traffic, so run your own.</p>' +
     '</div>' +
     '<h2 class="sect">🧅 Dark web (.onion)</h2><div class="panel">' +
