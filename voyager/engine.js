@@ -59,6 +59,8 @@
   var VERSION = 1;               // session schema version for serialize/restore
   var INTERNAL = 'voyager://';   // our chrome pages live on this scheme
   var HISTORY_CAP = 2000;        // ledger cap — oldest visits fall off
+  var MEMORY_CAP = 150;          // remembered pages kept (oldest evicted)
+  var MEMORY_TEXT_CAP = 6000;    // chars of readable text stored per page (for search + snapshot)
 
   /* Internal pages the chrome renders natively (no iframe). */
   var INTERNAL_PAGES = {
@@ -66,6 +68,8 @@
     history: 'History',
     bookmarks: 'Bookmarks',
     reading: 'Reading list',
+    memory: 'Memory',
+    reader: 'Reader',
     settings: 'Settings',
     about: 'About Voyager',
   };
@@ -323,6 +327,8 @@
       history: [],      // append-only: {url, title, ts}
       bookmarks: [],    // {url, title, ts}
       reading: [],      // read-later queue: {url, title, ts, read}
+      memory: [],       // remembered pages: {url, title, text, words, ts}
+      shortcuts: [],    // custom start-page tiles: {url, title}
       settings: {
         engine: opts.engine || 'duckduckgo',
         home: opts.home || INTERNAL + 'start',
@@ -331,6 +337,8 @@
         theme: opts.theme || 'dark',         // dark | light | auto
         accent: opts.accent || 'cyan',       // named accent (see ACCENTS)
         blockTrackers: opts.blockTrackers !== false, // ad/tracker blocking through the proxy (default on)
+        remember: opts.remember !== false,   // capture readable pages into memory (default on)
+        startName: opts.startName || '',     // optional greeting name on the start page
       },
     };
     return newTab(state, { ts: opts.ts });
@@ -577,6 +585,112 @@
     return items;
   }
 
+  /* ════════════════════════ web memory ════════════════════════ */
+  /* The thing no mainstream browser does: a private, on-device, full-text-
+   * searchable memory of the readable text of pages you actually read — so you
+   * can find "that article" by what it *said*, and re-open a clean offline
+   * copy even after the page is paywalled, changed or gone. Never records
+   * private tabs or internal pages. Capped so localStorage can't run away. */
+
+  function inMemory(state, url) {
+    for (var i = 0; i < state.memory.length; i++) if (state.memory[i].url === url) return true;
+    return false;
+  }
+
+  /** Remember a page's readable text (replaces any prior copy of the same URL). */
+  function rememberPage(state, entry, ts) {
+    if (!entry || !entry.url || String(entry.url).toLowerCase().indexOf(INTERNAL) === 0) return state;
+    var text = String(entry.text || '').slice(0, MEMORY_TEXT_CAP);
+    if (!text) return state;
+    var rec = {
+      url: entry.url,
+      title: entry.title || displayUrl(entry.url),
+      text: text,
+      words: Number(entry.words) || text.split(/\s+/).length,
+      ts: ts || null,
+    };
+    var next = shallow(state);
+    next.memory = state.memory.filter(function (m) { return m.url !== entry.url; }).concat([rec]);
+    if (next.memory.length > MEMORY_CAP) next.memory = next.memory.slice(next.memory.length - MEMORY_CAP);
+    return next;
+  }
+
+  function forgetMemory(state, url) {
+    var next = shallow(state);
+    next.memory = state.memory.filter(function (m) { return m.url !== url; });
+    return next;
+  }
+
+  function clearMemory(state) { var next = shallow(state); next.memory = []; return next; }
+
+  function memoryEntry(state, url) {
+    for (var i = 0; i < state.memory.length; i++) if (state.memory[i].url === url) return state.memory[i];
+    return null;
+  }
+
+  /**
+   * Full-text search over remembered pages. Ranks by how many of the query
+   * terms hit the title (weighted) and body, lightly boosted by recency, and
+   * returns a highlighted-around snippet of the first match. Empty query lists
+   * everything newest-first.
+   */
+  function searchMemory(state, query, opts) {
+    opts = opts || {};
+    var limit = opts.limit || 50;
+    var terms = String(query == null ? '' : query).toLowerCase().split(/\s+/).filter(Boolean);
+    var out = [];
+    for (var i = 0; i < state.memory.length; i++) {
+      var m = state.memory[i];
+      var title = (m.title || '').toLowerCase();
+      var text = (m.text || '').toLowerCase();
+      var score = 0, firstAt = -1;
+      if (!terms.length) {
+        score = 1;
+      } else {
+        for (var t = 0; t < terms.length; t++) {
+          var term = terms[t];
+          var inTitle = title.indexOf(term) !== -1;
+          var at = text.indexOf(term);
+          if (!inTitle && at === -1) { score = 0; firstAt = -1; break; } // require every term (AND)
+          if (inTitle) score += 8;
+          if (at !== -1) { score += 2; if (firstAt === -1 || at < firstAt) firstAt = at; }
+        }
+      }
+      if (score <= 0) continue;
+      out.push({ url: m.url, title: m.title, ts: m.ts, words: m.words, score: score, snippet: snippetAround(m.text, firstAt, terms) });
+    }
+    out.sort(function (a, b) { return b.score - a.score || (b.ts || 0) - (a.ts || 0); });
+    if (out.length > limit) out = out.slice(0, limit);
+    return out;
+  }
+
+  /** A ~180-char window of text around the first matched term, trimmed to words. */
+  function snippetAround(text, at, terms) {
+    text = String(text || '');
+    if (at < 0) { at = 0; }
+    var start = Math.max(0, at - 70);
+    var slice = text.slice(start, start + 200).replace(/\s+/g, ' ').trim();
+    if (start > 0) slice = '…' + slice.replace(/^\S*\s/, '');
+    if (start + 200 < text.length) slice = slice.replace(/\s\S*$/, '') + '…';
+    return slice;
+  }
+
+  /* ════════════════════════ start-page shortcuts ════════════════════════ */
+
+  function addShortcut(state, url, title) {
+    if (!url || String(url).toLowerCase().indexOf(INTERNAL) === 0) return state;
+    for (var i = 0; i < state.shortcuts.length; i++) if (state.shortcuts[i].url === url) return state;
+    var next = shallow(state);
+    next.shortcuts = state.shortcuts.concat([{ url: url, title: title || displayUrl(url) }]);
+    return next;
+  }
+
+  function removeShortcut(state, url) {
+    var next = shallow(state);
+    next.shortcuts = state.shortcuts.filter(function (s) { return s.url !== url; });
+    return next;
+  }
+
   /* ════════════════════════ ranking: frecency ════════════════════════ */
 
   /**
@@ -743,6 +857,13 @@
       out.push({ kind: 'bookmark', url: bm.url, title: bm.title, score: 2000 });
     }
     if (q) {
+      // remembered pages matched by their *contents* — the unique bit
+      var mem = searchMemory(state, q, { limit: 4 });
+      for (var mm = 0; mm < mem.length; mm++) {
+        if (seen[mem[mm].url]) continue;
+        seen[mem[mm].url] = true;
+        out.push({ kind: 'memory', url: mem[mm].url, title: mem[mm].title, snippet: mem[mm].snippet, score: 1500 });
+      }
       var ranked = rankedSites(state, nowTs);
       for (var h = 0; h < ranked.length; h++) {
         var site = ranked[h];
@@ -770,7 +891,7 @@
   ];
 
   function setSetting(state, key, value) {
-    var allowed = { engine: 1, home: 1, torGateway: 1, proxy: 1, theme: 1, accent: 1, blockTrackers: 1 };
+    var allowed = { engine: 1, home: 1, torGateway: 1, proxy: 1, theme: 1, accent: 1, blockTrackers: 1, remember: 1, startName: 1 };
     if (!allowed[key]) return state;
     if (key === 'engine') {
       var ok = false;
@@ -783,7 +904,8 @@
       for (var a = 0; a < ACCENTS.length; a++) if (ACCENTS[a].id === value) accOk = true;
       if (!accOk) return state;
     }
-    if (key === 'blockTrackers') value = !!value;
+    if (key === 'blockTrackers' || key === 'remember') value = !!value;
+    if (key === 'startName') value = String(value == null ? '' : value).slice(0, 40);
     if (key === 'torGateway') {
       // Store a bare host ("onion.ws"): no scheme, no leading dots, no path.
       value = String(value == null ? '' : value).trim().replace(/^https?:\/\//i, '').replace(/^\.+|\/.*$/g, '');
@@ -819,6 +941,8 @@
       history: state.history,
       bookmarks: state.bookmarks,
       reading: state.reading,
+      memory: state.memory,
+      shortcuts: state.shortcuts,
       settings: state.settings,
     });
   }
@@ -845,6 +969,8 @@
       history: Array.isArray(data.history) ? data.history : [],
       bookmarks: Array.isArray(data.bookmarks) ? data.bookmarks : [],
       reading: Array.isArray(data.reading) ? data.reading : [],
+      memory: Array.isArray(data.memory) ? data.memory : [],
+      shortcuts: Array.isArray(data.shortcuts) ? data.shortcuts : [],
       settings: {
         engine: (data.settings && data.settings.engine) || 'duckduckgo',
         home: (data.settings && data.settings.home) || INTERNAL + 'start',
@@ -853,6 +979,8 @@
         theme: (data.settings && THEMES.indexOf(data.settings.theme) !== -1) ? data.settings.theme : 'dark',
         accent: (data.settings && data.settings.accent) || 'cyan',
         blockTrackers: !(data.settings && data.settings.blockTrackers === false),
+        remember: !(data.settings && data.settings.remember === false),
+        startName: (data.settings && String(data.settings.startName || '').slice(0, 40)) || '',
       },
     };
     if (tabs.length === 0) return newTab(state, {});
@@ -914,6 +1042,14 @@
     removeReading: removeReading,
     toggleReadingRead: toggleReadingRead,
     readingList: readingList,
+    inMemory: inMemory,
+    rememberPage: rememberPage,
+    forgetMemory: forgetMemory,
+    clearMemory: clearMemory,
+    memoryEntry: memoryEntry,
+    searchMemory: searchMemory,
+    addShortcut: addShortcut,
+    removeShortcut: removeShortcut,
     frecency: frecency,
     topSites: topSites,
     suggest: suggest,

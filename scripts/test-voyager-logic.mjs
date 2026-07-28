@@ -382,6 +382,50 @@ test('reading list: add / dedupe / read-toggle / remove; unread before read; int
   eq(s.reading.map((r) => r.url), ['https://b.com/story']);
 });
 
+/* ---- web memory (the unique feature) ---- */
+
+test('memory: remember, full-text search by contents, snippet, dedupe, forget', () => {
+  let s = V.createBrowser();
+  s = V.rememberPage(s, { url: 'https://a.com/mars', title: 'Mission to Mars', text: 'NASA announced a new rover heading to the red planet next year.', words: 11 }, NOW);
+  s = V.rememberPage(s, { url: 'https://b.com/cooking', title: 'Best sourdough', text: 'A long ferment gives the bread its sour tang and open crumb.', words: 12 }, NOW + 1);
+  assert.equal(V.inMemory(s, 'https://a.com/mars'), true);
+  // search by a word that only appears in the BODY, not the title/url
+  const rover = V.searchMemory(s, 'rover');
+  assert.equal(rover.length, 1);
+  assert.equal(rover[0].url, 'https://a.com/mars');
+  assert.ok(rover[0].snippet.toLowerCase().includes('rover'));
+  // AND semantics: every term must hit
+  assert.equal(V.searchMemory(s, 'rover sourdough').length, 0);
+  assert.equal(V.searchMemory(s, 'bread ferment').length, 1);
+  // empty query lists everything, newest first
+  assert.deepEqual(V.searchMemory(s, '').map((m) => m.url).length, 2);
+  // re-remembering the same URL replaces, doesn't duplicate
+  s = V.rememberPage(s, { url: 'https://a.com/mars', title: 'Mars, updated', text: 'Updated: launch slipped to spring.', words: 5 }, NOW + 2);
+  assert.equal(s.memory.filter((m) => m.url === 'https://a.com/mars').length, 1);
+  assert.equal(V.memoryEntry(s, 'https://a.com/mars').title, 'Mars, updated');
+  s = V.forgetMemory(s, 'https://a.com/mars');
+  assert.equal(V.inMemory(s, 'https://a.com/mars'), false);
+});
+
+test('memory ignores private/internal/textless and caps stored text', () => {
+  let s = V.createBrowser();
+  assert.equal(V.rememberPage(s, { url: 'voyager://start', text: 'x' }, NOW).memory.length, 0);
+  assert.equal(V.rememberPage(s, { url: 'https://x.com', text: '' }, NOW).memory.length, 0);
+  const big = 'word '.repeat(4000);   // 20000 chars
+  s = V.rememberPage(s, { url: 'https://x.com/long', title: 'Long', text: big }, NOW);
+  assert.ok(V.memoryEntry(s, 'https://x.com/long').text.length <= 6000);
+});
+
+test('start-page shortcuts add/dedupe/remove; internal rejected', () => {
+  let s = V.createBrowser();
+  s = V.addShortcut(s, 'https://news.example.com', 'News');
+  s = V.addShortcut(s, 'https://news.example.com', 'dup');
+  assert.equal(s.shortcuts.length, 1);
+  assert.equal(V.addShortcut(s, 'voyager://start', 'x').shortcuts.length, 1);
+  s = V.removeShortcut(s, 'https://news.example.com');
+  assert.equal(s.shortcuts.length, 0);
+});
+
 /* ---- command palette ---- */
 
 test('commandSearch blends tabs, actions, reading, bookmarks and history, ranked', () => {
@@ -411,11 +455,12 @@ test('commandSearch blends tabs, actions, reading, bookmarks and history, ranked
 
 /* ---- settings ---- */
 
-test('setSetting validates theme, accent and blockTrackers; defaults are sane', () => {
+test('setSetting validates theme, accent, blockTrackers, remember, startName', () => {
   let s = V.createBrowser();
   assert.equal(s.settings.theme, 'dark');
   assert.equal(s.settings.accent, 'cyan');
   assert.equal(s.settings.blockTrackers, true);
+  assert.equal(s.settings.remember, true);
   s = V.setSetting(s, 'theme', 'light');
   assert.equal(s.settings.theme, 'light');
   assert.equal(V.setSetting(s, 'theme', 'neon').settings.theme, 'light');   // invalid rejected
@@ -424,6 +469,10 @@ test('setSetting validates theme, accent and blockTrackers; defaults are sane', 
   assert.equal(V.setSetting(s, 'accent', 'chartreuse').settings.accent, 'violet');
   s = V.setSetting(s, 'blockTrackers', false);
   assert.equal(s.settings.blockTrackers, false);
+  s = V.setSetting(s, 'remember', false);
+  assert.equal(s.settings.remember, false);
+  s = V.setSetting(s, 'startName', 'Rafa');
+  assert.equal(s.settings.startName, 'Rafa');
 });
 
 test('setSetting accepts known engines and home; rejects unknown engines and keys', () => {
@@ -536,7 +585,10 @@ test('serialize → restore round-trips tabs, stacks, history, bookmarks, settin
   s = V.setSetting(s, 'theme', 'light');
   s = V.setSetting(s, 'accent', 'gold');
   s = V.setSetting(s, 'blockTrackers', false);
+  s = V.setSetting(s, 'startName', 'Rafa');
   s = V.addReading(s, 'https://later.example.com', 'Later', NOW);
+  s = V.rememberPage(s, { url: 'https://mem.example.com', title: 'Remembered', text: 'kept for later search', words: 4 }, NOW);
+  s = V.addShortcut(s, 'https://pinned.example.com', 'Pinned');
   s = V.setZoom(s, s.activeId, 125);
 
   const r = V.restore(V.serialize(s));
@@ -553,7 +605,11 @@ test('serialize → restore round-trips tabs, stacks, history, bookmarks, settin
   assert.equal(r.settings.theme, 'light');
   assert.equal(r.settings.accent, 'gold');
   assert.equal(r.settings.blockTrackers, false);
+  assert.equal(r.settings.startName, 'Rafa');
   assert.equal(V.inReading(r, 'https://later.example.com'), true);
+  assert.equal(V.inMemory(r, 'https://mem.example.com'), true);
+  assert.equal(V.searchMemory(r, 'search').length, 1);   // memory survives + stays searchable
+  assert.equal(r.shortcuts.length, 1);
   assert.equal(V.isBookmarked(r, 'https://a.com'), true);
   assert.equal(r.history.length, s.history.length);
 });
