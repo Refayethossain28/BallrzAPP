@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Graft — the income engine</title>
+<meta name="description" content="No app can conjure money — Graft shortens the honest path to it. Match your hours, skills and cash to real side hustles with honest £/hr, plan your way to a monthly target, log what you earn, and send the invoice that gets you paid.">
+<meta name="theme-color" content="#130c07">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Graft">
+<style>
+  :root {
+    --bg: #130c07; --panel: #1c1209; --panel2: #251811; --line: #38271a;
+    --ink: #f4ebe2; --dim: #c2a687; --faint: #8a6f52;
+    --ember: #ff9d42; --ember2: #ffc46b; --gold: #f5c04a;
+    --green: #4ade80; --red: #ff7a6e; --radius: 16px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html { color-scheme: dark; }
+  body {
+    background: radial-gradient(120% 90% at 50% -10%, #241409 0%, var(--bg) 55%) fixed var(--bg);
+    color: var(--ink);
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+    min-height: 100vh;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) calc(24px + env(safe-area-inset-bottom)) env(safe-area-inset-left);
+  }
+  .wrap { max-width: 680px; margin: 0 auto; padding: 20px 16px 40px; }
+
+  header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  header h1 { font-size: 28px; letter-spacing: -0.5px; }
+  header h1 .spark { color: var(--ember); }
+  header .tag { color: var(--dim); font-size: 13px; }
+  .subtag { color: var(--faint); font-size: 12.5px; margin-bottom: 18px; }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin-bottom: 14px; }
+
+  /* hero */
+  .hero { background: linear-gradient(160deg, #271609 0%, #1a0f07 70%); }
+  .hero .label { color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px; }
+  .hero .big { font-size: 42px; font-weight: 700; letter-spacing: -1px; color: var(--ember2); line-height: 1.1; margin: 2px 0 0; font-variant-numeric: tabular-nums; }
+  .hero .big small { font-size: 17px; color: var(--dim); font-weight: 500; letter-spacing: 0; }
+  .hero .vs { color: var(--dim); font-size: 13px; margin-top: 2px; }
+  .hero .vs b { color: var(--ink); }
+  .hero .vs .edit { color: var(--ember); cursor: pointer; text-decoration: underline dotted; }
+
+  .meter { height: 10px; border-radius: 6px; background: #150d07; border: 1px solid var(--line); overflow: hidden; margin-top: 14px; }
+  .meter > div { height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--ember), var(--gold)); transition: width .5s ease; }
+  .meterrow { display: flex; justify-content: space-between; align-items: baseline; margin-top: 6px; font-size: 13px; color: var(--dim); }
+  .meterrow b { color: var(--ink); }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 14px; }
+  .stat { background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 9px 10px; }
+  .stat .k { font-size: 10.5px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.7px; }
+  .stat .v { font-size: 16px; font-weight: 650; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  @media (max-width: 420px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+
+  h2 { font-size: 15px; color: var(--dim); text-transform: uppercase; letter-spacing: 1.2px; margin: 22px 0 10px; display: flex; justify-content: space-between; align-items: center; }
+  h2 .mini { font-size: 12px; letter-spacing: 0; text-transform: none; color: var(--faint); font-weight: 500; }
+
+  /* profile inputs */
+  .prow { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .field { margin-bottom: 10px; }
+  .field label { display: block; font-size: 12px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 4px; }
+  .field input, .field select {
+    width: 100%; background: var(--panel2); border: 1px solid var(--line); color: var(--ink);
+    border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 15px;
+  }
+  .field input:focus, .field select:focus { outline: none; border-color: var(--ember); }
+
+  .seg { display: flex; background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .seg button { flex: 1; background: transparent; color: var(--dim); padding: 10px 6px; font-size: 13.5px; font-weight: 600; border-radius: 0; }
+  .seg button.sel { background: rgba(255,157,66,0.15); color: var(--ember2); }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 4px; }
+  .chip { background: var(--panel2); border: 1px solid var(--line); color: var(--dim); border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600; }
+  .chip.sel { border-color: var(--ember); color: var(--ember2); background: rgba(255,157,66,0.1); }
+
+  /* hustle list */
+  .hustle { display: flex; align-items: flex-start; gap: 12px; padding: 11px 2px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .hustle:last-child { border-bottom: 0; }
+  .hustle .icon { font-size: 22px; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; flex-shrink: 0; }
+  .hustle .mid { flex: 1; min-width: 0; }
+  .hustle .name { font-weight: 600; font-size: 15px; }
+  .hustle .facts { font-size: 12.5px; color: var(--dim); margin-top: 1px; }
+  .hustle .facts b { color: var(--green); font-weight: 650; }
+  .hustle .why { font-size: 12px; color: var(--faint); margin-top: 2px; }
+  .hustle .score { flex-shrink: 0; text-align: right; }
+  .hustle .score .n { font-weight: 700; font-size: 16px; color: var(--ember2); font-variant-numeric: tabular-nums; }
+  .hustle .score .add { font-size: 11.5px; color: var(--faint); }
+  .hustle.picked .score .add { color: var(--green); }
+  .hustle.dear .score .n { color: var(--faint); }
+  .blurb { display: none; font-size: 13px; color: var(--dim); margin-top: 6px; line-height: 1.45; }
+  .hustle.open .blurb { display: block; }
+  .showmore { width: 100%; margin-top: 10px; }
+
+  /* plan */
+  .prowl { display: grid; grid-template-columns: auto 1fr auto; grid-template-areas: "ic nm x" "ctl ctl out"; align-items: center; column-gap: 10px; row-gap: 6px; padding: 10px 2px; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .prowl:last-child { border-bottom: 0; }
+  .prowl .ic { grid-area: ic; }
+  .prowl .nm { grid-area: nm; min-width: 0; font-weight: 600; }
+  .prowl .ctl { grid-area: ctl; display: flex; align-items: center; gap: 8px; }
+  .prowl input { width: 64px; background: var(--panel2); border: 1px solid var(--line); color: var(--ink); border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 14px; text-align: right; }
+  .prowl .per { color: var(--faint); font-size: 12px; }
+  .prowl .out { grid-area: out; text-align: right; font-variant-numeric: tabular-nums; }
+  .prowl .out b { color: var(--green); }
+  .prowl .out .h { display: block; font-size: 11.5px; color: var(--faint); }
+  .prowl .x { grid-area: x; color: var(--red); font-size: 18px; background: none; padding: 2px 6px; }
+  .plansum { margin-top: 12px; font-size: 14px; color: var(--dim); }
+  .plansum b { color: var(--ink); }
+  .plansum .good { color: var(--green); }
+  .plansum .bad { color: var(--red); }
+
+  /* entries */
+  .entry { display: flex; align-items: center; gap: 10px; padding: 9px 2px; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .entry:last-child { border-bottom: 0; }
+  .entry .ic { font-size: 18px; }
+  .entry .nm { flex: 1; min-width: 0; }
+  .entry .nm .d { font-size: 11.5px; color: var(--faint); }
+  .entry .amt { font-weight: 700; color: var(--green); font-variant-numeric: tabular-nums; }
+  .entry .x { color: var(--red); font-size: 17px; background: none; padding: 2px 6px; }
+  .empty { color: var(--faint); font-size: 14px; text-align: center; padding: 18px 8px; }
+  .taxnote { margin-top: 10px; font-size: 12.5px; color: var(--faint); line-height: 1.45; }
+  .taxnote b { color: var(--dim); }
+
+  button { font: inherit; border: 0; cursor: pointer; border-radius: 12px; }
+  .btn { background: linear-gradient(135deg, var(--ember), #e07f24); color: #1a0e04; font-weight: 700; padding: 12px 18px; width: 100%; font-size: 15.5px; }
+  .btn:active { transform: scale(0.985); }
+  .btn.ghost { background: var(--panel2); color: var(--ink); border: 1px solid var(--line); font-weight: 600; }
+  .rowbtns { display: flex; gap: 10px; margin-top: 12px; }
+
+  /* invoice */
+  .iline { display: grid; grid-template-columns: 1fr 58px 78px 28px; gap: 8px; margin-bottom: 8px; }
+  .iline input { background: var(--panel2); border: 1px solid var(--line); color: var(--ink); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 14px; }
+  .iline input.num { text-align: right; }
+  .iline .x { color: var(--red); background: none; font-size: 17px; }
+  .itotals { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 10px; font-size: 14px; }
+  .itotals .r { display: flex; justify-content: space-between; padding: 3px 0; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .itotals .r.total { color: var(--ink); font-weight: 700; font-size: 16px; }
+  .itotals .r.total span:last-child { color: var(--green); }
+
+  /* reality */
+  .real li { margin: 8px 0 8px 18px; font-size: 13.5px; color: var(--dim); line-height: 1.45; }
+  .real b { color: var(--ink); }
+
+  footer { text-align: center; color: var(--faint); font-size: 12px; margin-top: 26px; line-height: 1.6; }
+
+  /* sheet */
+  .sheetbg { position: fixed; inset: 0; background: rgba(8,4,2,0.6); backdrop-filter: blur(3px); display: none; z-index: 40; }
+  .sheetbg.open { display: block; }
+  .sheet { position: fixed; left: 0; right: 0; bottom: 0; max-height: 88vh; overflow-y: auto; background: #201409; border-top: 1px solid var(--line); border-radius: 20px 20px 0 0; padding: 18px 16px calc(20px + env(safe-area-inset-bottom)); z-index: 50; transform: translateY(105%); transition: transform .28s cubic-bezier(.3,.9,.3,1); }
+  .sheet.open { transform: none; }
+  .sheet .grab { width: 42px; height: 4px; border-radius: 2px; background: var(--line); margin: 0 auto 14px; }
+  .sheet h3 { font-size: 18px; margin-bottom: 12px; }
+  .sheet .inner { max-width: 680px; margin: 0 auto; }
+
+  /* print: only the invoice */
+  #printArea { display: none; }
+  @media print {
+    body { background: #fff; padding: 0; }
+    .wrap, .sheetbg, .sheet { display: none !important; }
+    #printArea { display: block; color: #111; font: 14px/1.5 Georgia, 'Times New Roman', serif; padding: 40px; }
+    #printArea h1 { font-size: 26px; margin-bottom: 2px; }
+    #printArea .muted { color: #666; }
+    #printArea table { width: 100%; border-collapse: collapse; margin-top: 24px; }
+    #printArea th, #printArea td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #ddd; }
+    #printArea th:last-child, #printArea td:last-child, #printArea th:nth-child(2), #printArea td:nth-child(2), #printArea th:nth-child(3), #printArea td:nth-child(3) { text-align: right; }
+    #printArea .totals { margin-top: 16px; margin-left: auto; width: 260px; }
+    #printArea .totals div { display: flex; justify-content: space-between; padding: 3px 0; }
+    #printArea .totals .grand { font-weight: bold; border-top: 2px solid #111; margin-top: 6px; padding-top: 6px; font-size: 16px; }
+    #printArea .foot { margin-top: 40px; color: #666; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header><h1>Graft<span class="spark">⚒</span></h1><div class="tag">the income engine</div></header>
+  <div class="subtag">No app can conjure money. This one shortens the honest path to it: hours + skills → the right hustle → a plan → the invoice.</div>
+
+  <!-- hero -->
+  <div class="card hero">
+    <div class="label">Earned this month</div>
+    <div class="big" id="earnedNow">£0</div>
+    <div class="vs">of your <b id="targetLabel">£1,000</b>/mo target · <span class="edit" id="editTarget">change</span></div>
+    <div class="meter"><div id="progBar" style="width:0%"></div></div>
+    <div class="meterrow"><span>progress</span><span><b id="progPct">0%</b></span></div>
+    <div class="stats">
+      <div class="stat"><div class="k">£/hr earned</div><div class="v" id="stRate">—</div></div>
+      <div class="stat"><div class="k">Hours logged</div><div class="v" id="stHours">0</div></div>
+      <div class="stat"><div class="k">Week streak</div><div class="v" id="stStreak">0</div></div>
+      <div class="stat"><div class="k">Best earner</div><div class="v" id="stBest">—</div></div>
+    </div>
+  </div>
+
+  <!-- matcher -->
+  <h2>Find your hustle <span class="mini" id="matchCount"></span></h2>
+  <div class="card">
+    <div class="prow">
+      <div class="field"><label>Hours free / week</label><input type="number" id="pHours" min="0" max="80" step="1"></div>
+      <div class="field"><label>Cash to start (£)</label><input type="number" id="pCash" min="0" step="10"></div>
+    </div>
+    <div class="field"><label>What matters most</label>
+      <div class="seg"><button id="wantFast">⚡ Cash soon</button><button id="wantScale">📈 Builds & scales</button></div>
+    </div>
+    <div class="field"><label>Skills you already have</label><div class="chips" id="skillChips"></div></div>
+  </div>
+  <div class="card" id="hustleList"></div>
+
+  <!-- plan -->
+  <h2>My hustles &amp; the plan</h2>
+  <div class="card">
+    <div id="planRows"></div>
+    <div class="plansum" id="planSum"></div>
+  </div>
+
+  <!-- log -->
+  <h2>Log what you earn</h2>
+  <div class="card">
+    <button class="btn" id="addEntryBtn">+ Log an earning</button>
+    <div id="entryList" style="margin-top:8px"></div>
+    <div class="taxnote" id="taxNote"></div>
+  </div>
+
+  <!-- invoice -->
+  <h2>Get paid <span class="mini">the invoice generator</span></h2>
+  <div class="card">
+    <div class="prow">
+      <div class="field"><label>From (you / your business)</label><input id="invFrom" placeholder="Your name"></div>
+      <div class="field"><label>Bill to</label><input id="invClient" placeholder="Client name"></div>
+    </div>
+    <div class="field"><label>Line items</label><div id="invLines"></div>
+      <button class="btn ghost" id="invAddLine" style="padding:8px">+ Add line</button>
+    </div>
+    <div class="prow">
+      <div class="field"><label>Discount %</label><input type="number" id="invDiscount" min="0" max="100" step="1"></div>
+      <div class="field"><label>VAT %</label><input type="number" id="invVat" min="0" max="30" step="1"></div>
+    </div>
+    <div class="itotals" id="invTotals"></div>
+    <div class="rowbtns">
+      <button class="btn" id="invPrint">🖨 Print / PDF</button>
+      <button class="btn ghost" id="invShare">Share text</button>
+    </div>
+  </div>
+
+  <!-- reality -->
+  <h2>Reality check</h2>
+  <div class="card">
+    <ul class="real">
+      <li><b>The ranges are the honest part.</b> Every £/hr here is what people actually make, not what a course-seller claims. Your first weeks will sit at the bottom of the range.</li>
+      <li><b>Fast money and big money are different hustles.</b> Delivery pays this week and never scales; a course pays nothing for months and might scale forever. The matcher weighs whichever you pick — most people should run one of each.</li>
+      <li><b>Tax:</b> the first £1,000/yr of side income is covered by the UK trading allowance. Above that, register for Self Assessment. Renting a room has its own £7,500 allowance.</li>
+      <li><b>Anything promising guaranteed daily returns, crypto doubling, or "passive £10k/mo" is a scam.</b> Real income is boring: hours, skill, repeat customers, invoices paid.</li>
+    </ul>
+  </div>
+
+  <footer>Graft ⚒ — the income engine · your data never leaves this device<br>works offline · add to home screen to install</footer>
+</div>
+
+<!-- log sheet -->
+<div class="sheetbg" id="sheetBg"></div>
+<div class="sheet" id="logSheet">
+  <div class="grab"></div>
+  <div class="inner">
+    <h3>Log an earning</h3>
+    <div class="field"><label>Hustle</label><select id="logHustle"></select></div>
+    <div class="prow">
+      <div class="field"><label>Amount (£)</label><input type="number" id="logAmount" min="0" step="0.01" placeholder="45"></div>
+      <div class="field"><label>Hours spent</label><input type="number" id="logHours" min="0" step="0.5" placeholder="3"></div>
+    </div>
+    <div class="field"><label>Date</label><input type="date" id="logDate"></div>
+    <div class="rowbtns"><button class="btn" id="logSaveBtn">Save</button></div>
+    <div class="rowbtns"><button class="btn ghost" id="logCancelBtn">Cancel</button></div>
+  </div>
+</div>
+
+<!-- print-only invoice -->
+<div id="printArea"></div>
+
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+  var E = window.Graft;
+  var LS = 'graft.v1';
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&quot;';
+    });
+  };
+
+  function todayISO() {
+    var d = new Date();
+    var mm = d.getMonth() + 1, dd = d.getDate();
+    return d.getFullYear() + '-' + (mm < 10 ? '0' : '') + mm + '-' + (dd < 10 ? '0' : '') + dd;
+  }
+
+  /* ---- state ---- */
+  var state = load();
+  function load() {
+    try {
+      var raw = localStorage.getItem(LS);
+      if (raw) {
+        var s = JSON.parse(raw);
+        if (s && s.profile) {
+          s.picks = s.picks || []; s.entries = s.entries || [];
+          s.invoice = s.invoice || freshInvoice();
+          if (s.nextId == null) s.nextId = 1;
+          if (s.showAll == null) s.showAll = false;
+          return s;
+        }
+      }
+    } catch (e) {}
+    return {
+      target: 1000, nextId: 1, showAll: false,
+      profile: { hoursWeekly: 10, cash: 100, wants: 'fast', skills: [] },
+      picks: [], entries: [], invoice: freshInvoice()
+    };
+  }
+  function freshInvoice() {
+    return { seq: 1, from: '', client: '', discountPct: 0, vatPct: 0,
+             lines: [{ desc: '', qty: 1, unit: 0 }] };
+  }
+  function save() { try { localStorage.setItem(LS, JSON.stringify(state)); } catch (e) {} }
+
+  /* ---- hero ---- */
+  function renderHero() {
+    var mk = E.monthKey(todayISO());
+    var t = E.monthTotals(state.entries, mk);
+    $('earnedNow').textContent = E.money(t.earned, t.earned === Math.round(t.earned));
+    $('targetLabel').textContent = E.money(state.target, true);
+    var pct = state.target > 0 ? Math.min(100, Math.round(t.earned / state.target * 100)) : 0;
+    $('progBar').style.width = pct + '%';
+    $('progPct').textContent = pct + '%';
+    $('stRate').textContent = t.hours > 0 ? E.money(t.rate, true) : '—';
+    $('stHours').textContent = t.hours;
+    $('stStreak').textContent = E.streakWeeks(state.entries, todayISO());
+    var best = E.bestEarner(state.entries, mk);
+    var bh = best && E.hustle(best);
+    $('stBest').textContent = bh ? bh.icon : '—';
+  }
+  $('editTarget').addEventListener('click', function () {
+    var v = prompt('Monthly income target (£):', state.target);
+    if (v == null) return;
+    var n = Math.max(0, Math.round(Number(v) || 0));
+    if (n > 0) { state.target = n; save(); renderAll(); }
+  });
+
+  /* ---- matcher ---- */
+  function bindProfile() {
+    $('pHours').value = state.profile.hoursWeekly;
+    $('pCash').value = state.profile.cash;
+    var chips = '';
+    for (var i = 0; i < E.SKILLS.length; i++) {
+      var s = E.SKILLS[i];
+      chips += '<button class="chip' + (state.profile.skills.indexOf(s) !== -1 ? ' sel' : '') + '" data-skill="' + s + '">' + s + '</button>';
+    }
+    $('skillChips').innerHTML = chips;
+    $('wantFast').className = state.profile.wants === 'fast' ? 'sel' : '';
+    $('wantScale').className = state.profile.wants === 'scale' ? 'sel' : '';
+  }
+  $('pHours').addEventListener('input', function () { state.profile.hoursWeekly = Math.max(0, Number(this.value) || 0); save(); renderMatch(); renderPlan(); });
+  $('pCash').addEventListener('input', function () { state.profile.cash = Math.max(0, Number(this.value) || 0); save(); renderMatch(); });
+  $('wantFast').addEventListener('click', function () { state.profile.wants = 'fast'; save(); bindProfile(); renderMatch(); });
+  $('wantScale').addEventListener('click', function () { state.profile.wants = 'scale'; save(); bindProfile(); renderMatch(); });
+  $('skillChips').addEventListener('click', function (ev) {
+    var b = ev.target.closest ? ev.target.closest('[data-skill]') : null;
+    if (!b) return;
+    var s = b.getAttribute('data-skill');
+    var i = state.profile.skills.indexOf(s);
+    if (i === -1) state.profile.skills.push(s); else state.profile.skills.splice(i, 1);
+    save(); bindProfile(); renderMatch();
+  });
+
+  var openBlurbs = {};
+  function renderMatch() {
+    var recs = E.recommend(state.profile);
+    var shown = state.showAll ? recs : recs.slice(0, 6);
+    var html = '';
+    for (var i = 0; i < shown.length; i++) {
+      var r = shown[i], h = r.hustle;
+      var picked = !!findPick(h.id);
+      html += '<div class="hustle' + (picked ? ' picked' : '') + (r.affordable ? '' : ' dear') + (openBlurbs[h.id] ? ' open' : '') + '" data-id="' + h.id + '">' +
+        '<div class="icon">' + h.icon + '</div>' +
+        '<div class="mid"><div class="name">' + esc(h.name) + '</div>' +
+        '<div class="facts"><b>£' + h.rate[0] + '–' + h.rate[1] + '/hr</b> · ' +
+          (h.startCost === 0 ? '£0 start' : E.money(h.startCost, true) + ' start') + ' · first £ ~' + h.firstPayDays + 'd</div>' +
+        (r.reasons.length ? '<div class="why">' + esc(r.reasons.join(' · ')) + '</div>' : '') +
+        '<div class="blurb">' + esc(h.blurb) + '</div></div>' +
+        '<div class="score"><div class="n">' + r.score + '</div><div class="add">' + (picked ? '✓ in plan' : '+ add') + '</div></div>' +
+        '</div>';
+    }
+    html += '<button class="btn ghost showmore" id="showMoreBtn">' + (state.showAll ? 'Show top matches only' : 'Show all ' + recs.length + ' hustles') + '</button>';
+    $('hustleList').innerHTML = html;
+    $('matchCount').textContent = 'ranked for you';
+    $('showMoreBtn').addEventListener('click', function () { state.showAll = !state.showAll; save(); renderMatch(); });
+  }
+  $('hustleList').addEventListener('click', function (ev) {
+    if (ev.target && ev.target.id === 'showMoreBtn') return;
+    var row = ev.target.closest ? ev.target.closest('.hustle') : null;
+    if (!row) return;
+    var id = row.getAttribute('data-id');
+    // first tap opens the blurb; the score corner toggles the pick
+    if (ev.target.closest && ev.target.closest('.score')) { togglePick(id); return; }
+    openBlurbs[id] = !openBlurbs[id];
+    renderMatch();
+  });
+  function findPick(id) {
+    for (var i = 0; i < state.picks.length; i++) if (state.picks[i].id === id) return state.picks[i];
+    return null;
+  }
+  function togglePick(id) {
+    var p = findPick(id);
+    if (p) state.picks.splice(state.picks.indexOf(p), 1);
+    else {
+      var h = E.hustle(id);
+      if (h) state.picks.push({ id: id, rate: Math.round(E.rateMid(h)), capWeekly: null });
+    }
+    save(); renderMatch(); renderPlan();
+  }
+
+  /* ---- plan ---- */
+  function renderPlan() {
+    if (!state.picks.length) {
+      $('planRows').innerHTML = '<div class="empty">Tap a hustle’s score above to add it to your plan.</div>';
+      $('planSum').innerHTML = '';
+      return;
+    }
+    var p = E.plan(state.target, state.picks, state.profile.hoursWeekly);
+    var byId = {};
+    for (var j = 0; j < p.rows.length; j++) byId[p.rows[j].id] = p.rows[j];
+    var html = '';
+    for (var i = 0; i < state.picks.length; i++) {
+      var pk = state.picks[i], h = E.hustle(pk.id), row = byId[pk.id];
+      if (!h) continue;
+      html += '<div class="prowl" data-id="' + pk.id + '">' +
+        '<span class="ic">' + h.icon + '</span><span class="nm">' + esc(h.name) + '</span>' +
+        '<span class="ctl"><input type="number" class="rate" value="' + pk.rate + '" min="1" step="1"><span class="per">£/hr at your level</span></span>' +
+        '<span class="out">' + (row && row.hoursWeekly > 0
+          ? '<b>' + E.money(row.monthly, true) + '</b>/mo<span class="h">' + row.hoursWeekly + ' h/wk</span>'
+          : '<span class="h">not needed</span>') + '</span>' +
+        '<button class="x" title="Remove">×</button></div>';
+    }
+    $('planRows').innerHTML = html;
+    var sum;
+    if (p.feasible) {
+      sum = '<span class="good">✓ Target hit:</span> <b>' + E.money(p.monthly, true) + '/mo</b> from <b>' + p.hoursUsed +
+            ' h/wk</b>' + (p.hoursSpare > 0 ? ' — ' + p.hoursSpare + ' h/wk spare' : '');
+    } else {
+      sum = '<span class="bad">Short by ' + E.money(p.shortfall, true) + '/mo</span> — this plan makes <b>' +
+            E.money(p.monthly, true) + '/mo</b> in your ' + state.profile.hoursWeekly +
+            ' h/wk. Raise your rates, add hours, or pick a higher-paying hustle.';
+    }
+    $('planSum').innerHTML = sum;
+  }
+  $('planRows').addEventListener('input', function (ev) {
+    if (!ev.target.classList || !ev.target.classList.contains('rate')) return;
+    var row = ev.target.closest('.prowl');
+    var pk = findPick(row.getAttribute('data-id'));
+    if (pk) { pk.rate = Math.max(1, Number(ev.target.value) || 1); save(); renderPlanSumOnly(); }
+  });
+  // keep focus while typing a rate: re-render only the summary line
+  function renderPlanSumOnly() {
+    var p = E.plan(state.target, state.picks, state.profile.hoursWeekly);
+    $('planSum').innerHTML = p.feasible
+      ? '<span class="good">✓ Target hit:</span> <b>' + E.money(p.monthly, true) + '/mo</b> from <b>' + p.hoursUsed + ' h/wk</b>'
+      : '<span class="bad">Short by ' + E.money(p.shortfall, true) + '/mo</span> — this plan makes <b>' + E.money(p.monthly, true) + '/mo</b>.';
+  }
+  $('planRows').addEventListener('change', function () { renderPlan(); });
+  $('planRows').addEventListener('click', function (ev) {
+    if (!ev.target.classList || !ev.target.classList.contains('x')) return;
+    var row = ev.target.closest('.prowl');
+    togglePick(row.getAttribute('data-id'));
+  });
+
+  /* ---- log ---- */
+  function openSheet() {
+    var opts = '';
+    var pool = state.picks.length ? state.picks : null;
+    if (pool) for (var i = 0; i < pool.length; i++) {
+      var h = E.hustle(pool[i].id);
+      if (h) opts += '<option value="' + h.id + '">' + h.icon + ' ' + esc(h.name) + '</option>';
+    }
+    for (var k = 0; k < E.HUSTLES.length; k++) {
+      var hh = E.HUSTLES[k];
+      if (pool && findPick(hh.id)) continue;
+      opts += '<option value="' + hh.id + '">' + hh.icon + ' ' + esc(hh.name) + '</option>';
+    }
+    opts += '<option value="other">💰 Other</option>';
+    $('logHustle').innerHTML = opts;
+    $('logAmount').value = ''; $('logHours').value = '';
+    $('logDate').value = todayISO();
+    $('sheetBg').classList.add('open'); $('logSheet').classList.add('open');
+  }
+  function closeSheet() { $('sheetBg').classList.remove('open'); $('logSheet').classList.remove('open'); }
+  $('addEntryBtn').addEventListener('click', openSheet);
+  $('logCancelBtn').addEventListener('click', closeSheet);
+  $('sheetBg').addEventListener('click', closeSheet);
+  $('logSaveBtn').addEventListener('click', function () {
+    var amt = Number($('logAmount').value) || 0;
+    if (amt <= 0) { alert('Enter the amount you earned.'); return; }
+    state.entries.unshift({
+      id: String(state.nextId++), dateISO: $('logDate').value || todayISO(),
+      hustleId: $('logHustle').value, amount: amt,
+      hours: Math.max(0, Number($('logHours').value) || 0)
+    });
+    save(); closeSheet(); renderAll();
+  });
+  function renderEntries() {
+    if (!state.entries.length) {
+      $('entryList').innerHTML = '<div class="empty">Nothing logged yet. The first entry is the hardest — go earn it.</div>';
+    } else {
+      var html = '';
+      var shown = state.entries.slice(0, 8);
+      for (var i = 0; i < shown.length; i++) {
+        var e = shown[i], h = E.hustle(e.hustleId);
+        html += '<div class="entry" data-id="' + e.id + '">' +
+          '<span class="ic">' + (h ? h.icon : '💰') + '</span>' +
+          '<span class="nm">' + esc(h ? h.name : 'Other') +
+          '<span class="d"> · ' + esc(e.dateISO) + (e.hours ? ' · ' + e.hours + 'h' : '') + '</span></span>' +
+          '<span class="amt">+' + E.money(e.amount) + '</span>' +
+          '<button class="x" title="Delete">×</button></div>';
+      }
+      if (state.entries.length > 8) html += '<div class="empty" style="padding:8px">+ ' + (state.entries.length - 8) + ' older entries counted in totals</div>';
+      $('entryList').innerHTML = html;
+    }
+    var year = todayISO().slice(0, 4);
+    var ta = E.tradingAllowance(E.yearTotal(state.entries, year));
+    $('taxNote').innerHTML = ta.mustReport
+      ? '<b>Tax:</b> you’ve logged ' + E.money(ta.taxFree + ta.above, true) + ' in ' + year +
+        ' — that’s ' + E.money(ta.above, true) + ' over the £1,000 trading allowance, so register for Self Assessment. Not tax advice.'
+      : '<b>Tax:</b> ' + E.money(ta.taxFree, true) + ' of ' + year + '’s £1,000 trading allowance used — nothing to report yet. Not tax advice.';
+  }
+  $('entryList').addEventListener('click', function (ev) {
+    if (!ev.target.classList || !ev.target.classList.contains('x')) return;
+    var id = ev.target.closest('.entry').getAttribute('data-id');
+    for (var i = 0; i < state.entries.length; i++) {
+      if (state.entries[i].id === id) { state.entries.splice(i, 1); break; }
+    }
+    save(); renderAll();
+  });
+
+  /* ---- invoice ---- */
+  function bindInvoice() {
+    $('invFrom').value = state.invoice.from;
+    $('invClient').value = state.invoice.client;
+    $('invDiscount').value = state.invoice.discountPct;
+    $('invVat').value = state.invoice.vatPct;
+    renderInvLines(); renderInvTotals();
+  }
+  function renderInvLines() {
+    var html = '';
+    for (var i = 0; i < state.invoice.lines.length; i++) {
+      var l = state.invoice.lines[i];
+      html += '<div class="iline" data-i="' + i + '">' +
+        '<input class="desc" placeholder="What you did" value="' + esc(l.desc) + '">' +
+        '<input class="num qty" type="number" min="0" step="0.5" placeholder="qty" value="' + l.qty + '">' +
+        '<input class="num unit" type="number" min="0" step="0.01" placeholder="£ each" value="' + l.unit + '">' +
+        '<button class="x">×</button></div>';
+    }
+    $('invLines').innerHTML = html;
+  }
+  function renderInvTotals() {
+    var t = E.invoiceTotals(state.invoice.lines, state.invoice);
+    var html = '<div class="r"><span>Subtotal</span><span>' + E.money(t.subtotal) + '</span></div>';
+    if (t.discount > 0) html += '<div class="r"><span>Discount</span><span>−' + E.money(t.discount) + '</span></div>';
+    if (t.vat > 0) html += '<div class="r"><span>VAT</span><span>' + E.money(t.vat) + '</span></div>';
+    html += '<div class="r total"><span>' + esc(E.invoiceRef(state.invoice.seq, todayISO())) + ' · Total due</span><span>' + E.money(t.total) + '</span></div>';
+    $('invTotals').innerHTML = html;
+  }
+  $('invFrom').addEventListener('input', function () { state.invoice.from = this.value; save(); });
+  $('invClient').addEventListener('input', function () { state.invoice.client = this.value; save(); });
+  $('invDiscount').addEventListener('input', function () { state.invoice.discountPct = Math.max(0, Number(this.value) || 0); save(); renderInvTotals(); });
+  $('invVat').addEventListener('input', function () { state.invoice.vatPct = Math.max(0, Number(this.value) || 0); save(); renderInvTotals(); });
+  $('invAddLine').addEventListener('click', function () {
+    state.invoice.lines.push({ desc: '', qty: 1, unit: 0 });
+    save(); renderInvLines();
+  });
+  $('invLines').addEventListener('input', function (ev) {
+    var row = ev.target.closest ? ev.target.closest('.iline') : null;
+    if (!row) return;
+    var l = state.invoice.lines[Number(row.getAttribute('data-i'))];
+    if (!l) return;
+    if (ev.target.classList.contains('desc')) l.desc = ev.target.value;
+    if (ev.target.classList.contains('qty')) l.qty = Number(ev.target.value) || 0;
+    if (ev.target.classList.contains('unit')) l.unit = Number(ev.target.value) || 0;
+    save(); renderInvTotals();
+  });
+  $('invLines').addEventListener('click', function (ev) {
+    if (!ev.target.classList || !ev.target.classList.contains('x')) return;
+    var i = Number(ev.target.closest('.iline').getAttribute('data-i'));
+    state.invoice.lines.splice(i, 1);
+    if (!state.invoice.lines.length) state.invoice.lines.push({ desc: '', qty: 1, unit: 0 });
+    save(); renderInvLines(); renderInvTotals();
+  });
+  function invoiceText() {
+    var inv = state.invoice;
+    var t = E.invoiceTotals(inv.lines, inv);
+    var ref = E.invoiceRef(inv.seq, todayISO());
+    var out = ['INVOICE ' + ref, 'From: ' + (inv.from || '—'), 'To: ' + (inv.client || '—'), 'Date: ' + todayISO(), ''];
+    for (var i = 0; i < inv.lines.length; i++) {
+      var l = inv.lines[i];
+      if (!l.desc && !l.unit) continue;
+      out.push((l.desc || 'Work') + ' — ' + l.qty + ' × ' + E.money(l.unit) + ' = ' + E.money(l.qty * l.unit));
+    }
+    out.push('');
+    if (t.discount > 0) out.push('Discount: −' + E.money(t.discount));
+    if (t.vat > 0) out.push('VAT: ' + E.money(t.vat));
+    out.push('TOTAL DUE: ' + E.money(t.total));
+    return out.join('\n');
+  }
+  $('invPrint').addEventListener('click', function () {
+    var inv = state.invoice;
+    var t = E.invoiceTotals(inv.lines, inv);
+    var ref = E.invoiceRef(inv.seq, todayISO());
+    var rows = '';
+    for (var i = 0; i < inv.lines.length; i++) {
+      var l = inv.lines[i];
+      if (!l.desc && !l.unit) continue;
+      rows += '<tr><td>' + esc(l.desc || 'Work') + '</td><td>' + l.qty + '</td><td>' + E.money(l.unit) + '</td><td>' + E.money(l.qty * l.unit) + '</td></tr>';
+    }
+    $('printArea').innerHTML =
+      '<h1>Invoice</h1><div class="muted">' + esc(ref) + ' · ' + todayISO() + '</div>' +
+      '<p style="margin-top:18px"><strong>From:</strong> ' + esc(inv.from || '—') +
+      '<br><strong>Bill to:</strong> ' + esc(inv.client || '—') + '</p>' +
+      '<table><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th></tr>' + rows + '</table>' +
+      '<div class="totals"><div><span>Subtotal</span><span>' + E.money(t.subtotal) + '</span></div>' +
+      (t.discount > 0 ? '<div><span>Discount</span><span>−' + E.money(t.discount) + '</span></div>' : '') +
+      (t.vat > 0 ? '<div><span>VAT</span><span>' + E.money(t.vat) + '</span></div>' : '') +
+      '<div class="grand"><span>Total due</span><span>' + E.money(t.total) + '</span></div></div>' +
+      '<div class="foot">Thank you for your business. · Generated with Graft</div>';
+    state.invoice.seq = (Number(state.invoice.seq) || 1) + 1;
+    save();
+    window.print();
+    renderInvTotals();
+  });
+  $('invShare').addEventListener('click', function () {
+    var text = invoiceText();
+    if (navigator.share) { navigator.share({ text: text }); return; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text);
+      alert('Invoice copied to clipboard.');
+    } else prompt('Copy your invoice:', text);
+  });
+
+  /* ---- boot ---- */
+  function renderAll() { renderHero(); bindProfile(); renderMatch(); renderPlan(); renderEntries(); bindInvoice(); }
+  renderAll();
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  }
+})();
+</script>
+</body>
+</html>
