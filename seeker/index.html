@@ -107,6 +107,15 @@
   .dym { margin: 8px 2px; font-size: 14.5px; color: var(--dim); }
   .dym a { font-weight: 600; font-style: italic; }
 
+  /* ---- knowledge panel ---- */
+  .kp { display: flex; gap: 14px; align-items: flex-start; }
+  .kp img { width: 84px; height: 84px; border-radius: 12px; object-fit: cover; flex: none;
+            background: var(--card2); }
+  .kp .kpt { font-size: 18px; font-weight: 700; }
+  .kp .kpd { color: var(--gold); font-size: 12.5px; margin-bottom: 4px; }
+  .kp .kpe { color: var(--dim); font-size: 13.5px; line-height: 1.5; }
+  .kp a { display: inline-block; margin-top: 6px; font-size: 13px; }
+
   /* ---- results ---- */
   #results { padding-top: 4px; }
   .r { padding: 12px 2px 14px; }
@@ -204,6 +213,7 @@
   <!-- results -->
   <div class="results-wrap">
     <div id="answerBox"></div>
+    <div id="kpanel"></div>
     <div id="dym"></div>
     <div class="stats" id="stats"></div>
     <div id="results"></div>
@@ -239,7 +249,9 @@
         <tr><td><code>title:word</code></td><td>the word must be in the title</td></tr>
         <tr><td><code>site:host</code> · <code>url:path</code></td><td>restrict by host / URL</td></tr>
         <tr><td><code>!w</code> <code>!g</code> <code>!yt</code> <code>!gh</code> <code>!so</code> <code>!hn</code> <code>!maps</code> …</td><td>bangs — jump straight to that site’s search</td></tr>
-        <tr><td><code>12*(3+4)^2</code> · <code>5 km to miles</code> · <code>time in tokyo</code></td><td>instant answers, computed on-device</td></tr>
+        <tr><td><code>12*(3+4)^2</code> · <code>15% of 80</code> · <code>5 km to miles</code> · <code>time in tokyo</code> · <code>days until christmas</code></td><td>instant answers, computed on-device</td></tr>
+        <tr><td><code>100 usd to gbp</code> · <code>bitcoin price</code> · <code>weather in london</code> · <code>define serendipity</code></td><td>live answers — ECB rates, CoinGecko, Open-Meteo, dictionaryapi.dev, all keyless</td></tr>
+        <tr><td><code>eiffel tower</code></td><td>entity queries get a Wikipedia knowledge panel</td></tr>
       </table>
       <p style="margin-top:10px">Under the hood: a from-scratch <b>Porter stemmer</b>, a positional
       <b>inverted index</b>, <b>BM25</b> ranking with field weights, proximity and coverage,
@@ -488,8 +500,9 @@
   }
 
   function renderHomeExtras() {
-    var ex = ['bm25 ranking', 'satnav with offline maps', '"proof of intelligence"', '5 km to miles',
-              'browser private tabs', '12*(3+4)^2', 'time in tokyo', '!w porter stemmer'];
+    var ex = ['eiffel tower', 'weather in london', '100 usd to gbp', 'bitcoin price',
+              'define serendipity', 'days until christmas', '"proof of intelligence"',
+              '12*(3+4)^2', '!w porter stemmer'];
     $('examples').innerHTML = ex.map(function (e) {
       return '<button class="chip" data-q="' + esc(e) + '">' + esc(e) + '</button>';
     }).join('');
@@ -548,23 +561,139 @@
       '<button class="chip" id="liveOnBtn" style="margin-top:12px">🌐 Turn live sources on &amp; search again</button></div>') : '');
   }
 
-  function renderAnswer(q) {
-    var a = S.instantAnswer(q);
-    if (!a) { $('answerBox').innerHTML = ''; return; }
-    var big = '', lbl = '';
-    if (a.type === 'calc') { lbl = 'Calculator'; big = esc(q.trim()) + ' = <b>' + esc(a.value) + '</b>'; }
-    else if (a.type === 'convert') { lbl = 'Unit conversion'; big = esc(a.text); }
+  // WMO weather interpretation codes → glyph + label (Open-Meteo speaks WMO).
+  var WMO = { 0: ['☀️', 'Clear'], 1: ['🌤', 'Mainly clear'], 2: ['⛅', 'Partly cloudy'], 3: ['☁️', 'Overcast'],
+    45: ['🌫', 'Fog'], 48: ['🌫', 'Rime fog'], 51: ['🌦', 'Light drizzle'], 53: ['🌦', 'Drizzle'],
+    55: ['🌦', 'Heavy drizzle'], 61: ['🌧', 'Light rain'], 63: ['🌧', 'Rain'], 65: ['🌧', 'Heavy rain'],
+    66: ['🌧', 'Freezing rain'], 67: ['🌧', 'Freezing rain'], 71: ['🌨', 'Light snow'], 73: ['🌨', 'Snow'],
+    75: ['🌨', 'Heavy snow'], 77: ['🌨', 'Snow grains'], 80: ['🌧', 'Showers'], 81: ['🌧', 'Showers'],
+    82: ['🌧', 'Violent showers'], 85: ['🌨', 'Snow showers'], 86: ['🌨', 'Snow showers'],
+    95: ['⛈', 'Thunderstorm'], 96: ['⛈', 'Storm + hail'], 99: ['⛈', 'Storm + hail'] };
+
+  function setAnswer(lbl, bigHtml, src) {
+    $('answerBox').innerHTML = '<div class="card answer"><div class="lbl">' + esc(lbl) + ' · ' +
+      esc(src) + '</div><div class="big">' + bigHtml + '</div></div>';
+  }
+  function clearAnswerIfCurrent(seq) { if (seq === liveSeq) $('answerBox').innerHTML = ''; }
+  function fmtNum(v) {
+    var n = Number(v);
+    return Math.abs(n) >= 1000 ? n.toLocaleString('en-GB', { maximumFractionDigits: 2 })
+                               : String(Math.round(n * 1e6) / 1e6);
+  }
+
+  function renderAnswer(q, seq) {
+    var a = S.instantAnswer(q, Date.now());
+    $('answerBox').innerHTML = '';
+    if (!a) return;
+    var dev = 'computed on-device';
+
+    if (a.type === 'calc') setAnswer('Calculator', esc(String(a.text).replace(/ = .*$/, '')) + ' = <b>' + esc(a.value) + '</b>', dev);
+    else if (a.type === 'percent') setAnswer('Percentage', esc(String(a.text).replace(/ = .*$/, '')) + ' = <b>' + esc(a.value) + '</b>', dev);
+    else if (a.type === 'convert') setAnswer('Unit conversion', esc(a.text), dev);
     else if (a.type === 'time') {
-      lbl = 'World clock';
       var now = '';
       try {
         now = new Intl.DateTimeFormat('en-GB', { timeZone: a.zone, hour: '2-digit', minute: '2-digit',
           weekday: 'short', day: 'numeric', month: 'short' }).format(new Date());
       } catch (e) { now = 'unavailable'; }
-      big = '<b>' + esc(now) + '</b> in ' + esc(a.city);
+      setAnswer('World clock', '<b>' + esc(now) + '</b> in ' + esc(a.city), dev);
     }
-    $('answerBox').innerHTML = '<div class="card answer"><div class="lbl">' + lbl +
-      ' · computed on-device</div><div class="big">' + big + '</div></div>';
+    else if (a.type === 'date') {
+      if (a.kind === 'days-until') setAnswer('Date maths', '<b>' + esc(a.days) + ' day' + (a.days === 1 ? '' : 's') +
+        '</b> until ' + esc(a.label) + ' (' + esc(a.weekday) + ', ' + esc(a.dateISO) + ')', dev);
+      else if (a.kind === 'date-from-now') setAnswer('Date maths', esc(a.n + ' ' + a.unit + (a.n === 1 ? '' : 's')) +
+        ' from today is <b>' + esc(a.weekday) + ', ' + esc(a.dateISO) + '</b>', dev);
+      else setAnswer('Date maths', esc(a.label) + ' falls on a <b>' + esc(a.weekday) + '</b> (' + esc(a.dateISO) + ')', dev);
+    }
+    else if (a.type === 'currency') {
+      setAnswer('Currency', esc(fmtNum(a.amount) + ' ' + a.from) + ' = <b>…</b>', 'live ECB rates · frankfurter.app');
+      getJSON('https://api.frankfurter.app/latest?amount=' + a.amount + '&from=' + a.from + '&to=' + a.to)
+        .then(function (d) {
+          if (seq !== liveSeq) return;
+          var v = d && d.rates && d.rates[a.to];
+          if (v == null) { clearAnswerIfCurrent(seq); return; }
+          setAnswer('Currency', esc(fmtNum(a.amount) + ' ' + a.from) + ' = <b>' + esc(fmtNum(v)) + ' ' + a.to + '</b>',
+            'live ECB rates · frankfurter.app');
+        }).catch(function () { clearAnswerIfCurrent(seq); });
+    }
+    else if (a.type === 'crypto') {
+      setAnswer('Crypto', esc(a.id) + ' = <b>…</b>', 'live · CoinGecko');
+      getJSON('https://api.coingecko.com/api/v3/simple/price?ids=' + a.id + '&vs_currencies=' + a.vs)
+        .then(function (d) {
+          if (seq !== liveSeq) return;
+          var v = d && d[a.id] && d[a.id][a.vs];
+          if (v == null) { clearAnswerIfCurrent(seq); return; }
+          setAnswer('Crypto', '1 ' + esc(a.id) + ' = <b>' + esc(fmtNum(v)) + ' ' + esc(a.vs.toUpperCase()) + '</b>',
+            'live · CoinGecko');
+        }).catch(function () { clearAnswerIfCurrent(seq); });
+    }
+    else if (a.type === 'weather') {
+      setAnswer('Weather', esc(a.place) + ': <b>…</b>', 'live · Open-Meteo');
+      getJSON('https://geocoding-api.open-meteo.com/v1/search?name=' + encodeURIComponent(a.place) + '&count=1')
+        .then(function (g) {
+          var hit = g && g.results && g.results[0];
+          if (!hit) throw new Error('no place');
+          return getJSON('https://api.open-meteo.com/v1/forecast?latitude=' + hit.latitude +
+            '&longitude=' + hit.longitude + '&current_weather=true').then(function (w) {
+            if (seq !== liveSeq) return;
+            var cw = w && w.current_weather;
+            if (!cw) { clearAnswerIfCurrent(seq); return; }
+            var code = WMO[cw.weathercode] || ['·', ''];
+            setAnswer('Weather', '<b>' + esc(Math.round(cw.temperature)) + '°C ' + code[0] + '</b> ' +
+              esc(code[1]) + ' in ' + esc(hit.name) + (hit.country_code ? ' (' + esc(hit.country_code) + ')' : '') +
+              ' · wind ' + esc(Math.round(cw.windspeed)) + ' km/h', 'live · Open-Meteo');
+          });
+        }).catch(function () { clearAnswerIfCurrent(seq); });
+    }
+    else if (a.type === 'define') {
+      setAnswer('Dictionary', esc(a.word) + ': <b>…</b>', 'live · dictionaryapi.dev');
+      getJSON('https://api.dictionaryapi.dev/api/v2/entries/en/' + encodeURIComponent(a.word))
+        .then(function (d) {
+          if (seq !== liveSeq) return;
+          var e0 = d && d[0], mean = e0 && e0.meanings && e0.meanings[0];
+          var def = mean && mean.definitions && mean.definitions[0] && mean.definitions[0].definition;
+          if (!def) { clearAnswerIfCurrent(seq); return; }
+          setAnswer('Dictionary', '<b>' + esc(e0.word) + '</b>' +
+            (e0.phonetic ? ' <span style="color:var(--faint)">' + esc(e0.phonetic) + '</span>' : '') +
+            (mean.partOfSpeech ? ' <i style="color:var(--gold);font-size:15px">' + esc(mean.partOfSpeech) + '</i>' : '') +
+            '<div style="font-size:16px;font-weight:400;margin-top:4px">' + esc(def) + '</div>',
+            'live · dictionaryapi.dev');
+        }).catch(function () { clearAnswerIfCurrent(seq); });
+    }
+  }
+
+  /* ---- knowledge panel: a Google-style entity card, from Wikipedia ---- */
+  function loadKnowledge(q, seq) {
+    $('kpanel').innerHTML = '';
+    if (!enabled.wiki) return;
+    if (/["\-:!]|\bOR\b/.test(q) || S.tokenize(q).length > 4 || !S.tokenize(q).length) return;
+    var title = q.trim().replace(/\s+/g, '_');
+    fetchSummary(title).catch(function () {
+      // Not an exact title — resolve via opensearch, then retry once.
+      return getJSON('https://en.wikipedia.org/w/api.php?action=opensearch&search=' +
+        encodeURIComponent(q.trim()) + '&limit=1&format=json&origin=*').then(function (d) {
+        var best = d && d[1] && d[1][0];
+        if (!best) throw new Error('no entity');
+        return fetchSummary(String(best).replace(/\s+/g, '_'));
+      });
+    }).catch(function () {});
+
+    function fetchSummary(t) {
+      return getJSON('https://en.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(t) + '?redirect=true')
+        .then(function (d) {
+          if (seq !== liveSeq) return;
+          if (!d || d.type !== 'standard' || !d.extract) throw new Error('no summary');
+          var img = d.thumbnail && d.thumbnail.source;
+          var url = d.content_urls && d.content_urls.desktop && d.content_urls.desktop.page;
+          $('kpanel').innerHTML = '<div class="card kp">' +
+            (img ? '<img src="' + esc(img) + '" alt="" loading="lazy">' : '') +
+            '<div><div class="kpt">' + esc(d.title) + '</div>' +
+            (d.description ? '<div class="kpd">' + esc(d.description) + '</div>' : '') +
+            '<div class="kpe">' + esc(String(d.extract).slice(0, 380)) + (String(d.extract).length > 380 ? '…' : '') + '</div>' +
+            (url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener">From Wikipedia →</a>' : '') +
+            '</div></div>';
+        });
+    }
   }
 
   function renderDym(q, res) {
@@ -614,7 +743,9 @@
       try { history.pushState({ q: q }, '', '?q=' + encodeURIComponent(q)); } catch (e) {}
     }
 
-    renderAnswer(q);
+    var seq = ++liveSeq;
+    renderAnswer(q, seq);
+    loadKnowledge(q, seq);
     var local = localItems(q);
     renderDym(q, local.res);
 
@@ -626,7 +757,6 @@
       ' in ' + msTxt + ' ms — asking the internet…';
 
     // Fan out to the live internet; results fuse in as they land.
-    var seq = ++liveSeq;
     var active = SOURCES.filter(function (s) { return enabled[s.id]; });
     var pending = active.length;
     $('liveStatus').textContent = pending ? 'Live: ' + active.map(function (s) { return s.label; }).join(', ') + '…' : '';
@@ -672,8 +802,11 @@
 
   function goHome() {
     currentQuery = '';
+    liveSeq++; // orphan any in-flight answer/knowledge fetches
     setMode(false);
     $('qHome').value = ''; $('qTop').value = '';
+    $('answerBox').innerHTML = ''; $('kpanel').innerHTML = ''; $('dym').innerHTML = '';
+    $('results').innerHTML = ''; $('stats').textContent = ''; $('liveStatus').textContent = '';
     syncClear();
     closeSugg();
     renderHomeExtras();

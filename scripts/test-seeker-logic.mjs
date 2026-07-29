@@ -309,6 +309,72 @@ test('instantAnswer routes to the right answer type', () => {
   assert.equal(E.instantAnswer('porter stemmer'), null);
 });
 
+test('percent: "15% of 80" = 12, phrased forms too', () => {
+  assert.equal(E.parsePercent('15% of 80').value, 12);
+  assert.equal(E.parsePercent('7.5 percent of 200').value, 15);
+  assert.equal(E.instantAnswer('what is 15% of 80').value, 12);
+  assert.equal(E.parsePercent('80 of 15%'), null);
+});
+
+test('currency: parses codes and symbols against the ECB set', () => {
+  deq(E.parseCurrency('100 usd to gbp'), { amount: 100, from: 'USD', to: 'GBP' });
+  deq(E.parseCurrency('£50 in eur'), { amount: 50, from: 'GBP', to: 'EUR' });
+  deq(E.parseCurrency('convert 1,500 jpy into usd'), { amount: 1500, from: 'JPY', to: 'USD' });
+  assert.equal(E.parseCurrency('100 xxx to gbp'), null);  // unknown code
+  assert.equal(E.parseCurrency('100 usd to usd'), null);  // no-op
+  assert.equal(E.parseCurrency('5 km to miles'), null);   // that's a unit, not money
+});
+
+test('crypto: coin aliases and vs-currency', () => {
+  deq(E.parseCrypto('bitcoin price'), { id: 'bitcoin', symbol: 'BITCOIN', vs: 'usd' });
+  deq(E.parseCrypto('eth price in gbp'), { id: 'ethereum', symbol: 'ETH', vs: 'gbp' });
+  deq(E.parseCrypto('price of doge'), { id: 'dogecoin', symbol: 'DOGE', vs: 'usd' });
+  assert.equal(E.parseCrypto('porter price'), null);
+});
+
+test('weather: all three phrasings, junk rejected', () => {
+  deq(E.parseWeather('weather in london'), { place: 'london' });
+  deq(E.parseWeather('tokyo weather'), { place: 'tokyo' });
+  deq(E.parseWeather('weather new york?'), { place: 'new york' });
+  assert.equal(E.parseWeather('weather'), null);
+  assert.equal(E.parseWeather('"weather" -in london'), null);
+});
+
+test('define: define / meaning of / what does X mean', () => {
+  deq(E.parseDefine('define serendipity'), { word: 'serendipity' });
+  deq(E.parseDefine('meaning of petrichor'), { word: 'petrichor' });
+  deq(E.parseDefine('what does ephemeral mean?'), { word: 'ephemeral' });
+  assert.equal(E.parseDefine('define a very long phrase of words'), null);
+});
+
+test('date maths is clock-injected and deterministic', () => {
+  const NOW = Date.UTC(2026, 5, 17, 10, 0, 0); // 2026-06-17
+  const du = E.parseDateQuery('how many days until christmas', NOW);
+  assert.equal(du.dateISO, '2026-12-25');
+  assert.equal(du.days, 191);
+  assert.equal(du.weekday, 'Friday'); // 2026-12-25 is a Friday
+  const past = E.parseDateQuery('days until 1 january', NOW);
+  assert.equal(past.dateISO, '2027-01-01'); // next occurrence, not last
+  const fn = E.parseDateQuery('30 days from today', NOW);
+  assert.equal(fn.dateISO, '2026-07-17');
+  const wd = E.parseDateQuery('what day is 25 december', NOW);
+  assert.equal(wd.weekday, 'Friday');
+  assert.equal(E.parseDateQuery('days until 31 february', NOW), null); // not a date
+  assert.equal(E.parseDateQuery('what day is it', NOW), null);
+});
+
+test('instantAnswer routes the new types and strips lead-ins', () => {
+  assert.equal(E.instantAnswer('100 usd to gbp').type, 'currency');
+  assert.equal(E.instantAnswer('bitcoin price').type, 'crypto');
+  assert.equal(E.instantAnswer('weather in london').type, 'weather');
+  assert.equal(E.instantAnswer('define serendipity').type, 'define');
+  assert.equal(E.instantAnswer('days until christmas', Date.UTC(2026, 0, 1)).type, 'date');
+  assert.equal(E.instantAnswer("what's 12*12").value, 144);
+  assert.equal(E.instantAnswer('porter stemmer'), null); // still no false positives
+  assert.equal(E.instantAnswer('time in tokyo').type, 'time');
+  assert.equal(E.instantAnswer('5 km to miles').type, 'convert');
+});
+
 /* ---- runner ---- */
 for (const [name, fn] of tests) {
   try { fn(); passed++; console.log('  ✓ ' + name); }
