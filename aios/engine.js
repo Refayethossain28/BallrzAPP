@@ -44,7 +44,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var VERSION = '4.6.0';
+  var VERSION = '4.7.0';
   var JOURNAL_CAP = 300;
   var RUN_DEPTH_CAP = 8;
   var SCRIPT_STEP_CAP = 100000; // total statements one `run` may execute — kills infinite loops
@@ -985,6 +985,9 @@
     'Pipes:  any command | grep [-i|-v] <text> | head [-n N] | tail [-n N]',
     '        | sort [-r] | uniq [-c] | wc      Redirect:  any pipeline > file (>> appends)',
     '  app <list|install|remove|open> …        manage installed apps',
+    '  write <file> <text> (\\n = newline)      author whole files in one command',
+    '  timer <t> [label]   set a timer         theme <accent>   set the look',
+    '  name [you]          who you are         widget <list|add|remove> home cards',
     'Scripts: text files with a real language — let/if/elif/else/while/func/end,',
     '  $((maths)), $1-$9/$@ args, # comments.  run backup.sh   (see /apps for examples)',
     'Also: date · whoami · uname · clear · help  ·  Builtins: $USER $HOME $CWD $WS'
@@ -1048,7 +1051,7 @@
   var BUILTINS = ['help', 'pwd', 'ls', 'tree', 'cd', 'cat', 'echo', 'mkdir', 'touch', 'rm', 'trash', 'restore',
     'mv', 'cp', 'find', 'open', 'ps', 'kill', 'ws', 'every', 'automations', 'unschedule', 'set', 'unset', 'env',
     'alias', 'unalias', 'run', 'search', 'journal', 'date', 'whoami', 'uname', 'clear', 'ai',
-    'set', 'let', 'app', 'grep', 'head', 'tail', 'wc', 'sort', 'uniq'];
+    'set', 'let', 'app', 'timer', 'theme', 'name', 'widget', 'write', 'grep', 'head', 'tail', 'wc', 'sort', 'uniq'];
   function runSimpleKnows(name) { return BUILTINS.indexOf(name) !== -1; }
 
   /* ══════════════════════════ AIOS Script ══════════════════════════
@@ -1247,10 +1250,11 @@
 
     // $VAR expansion — except where the argument is itself a command or
     // sentence that must stay raw: `alias` definitions keep their $ for
-    // later, `every` expands at RUN time, `ai` takes English verbatim.
+    // later, `every` expands at RUN time, `ai` takes English verbatim, and
+    // `write` authors files — a script's $n must land on disk as $n.
     var fw = /^\s*(\S+)/.exec(raw);
     var firstWord = fw ? fw[1] : '';
-    if (firstWord !== 'ai' && firstWord !== 'every' && firstWord !== 'alias') raw = expandVars(state, raw);
+    if (firstWord !== 'ai' && firstWord !== 'every' && firstWord !== 'alias' && firstWord !== 'write') raw = expandVars(state, raw);
 
     var toks = tokenize(raw);
     if (!toks.length) return { out: [], error: false, effects: [] };
@@ -1263,7 +1267,7 @@
     // argument — pipes and redirection belong to THAT inner command, not
     // this line (`every 1h echo tick >> log.txt` must store the >>, and
     // `alias texts=ls | grep txt` must store the pipe).
-    if (toks[0] === 'every' || toks[0] === 'ai' || toks[0] === 'alias') return runSimple(state, toks, now);
+    if (toks[0] === 'every' || toks[0] === 'ai' || toks[0] === 'alias' || toks[0] === 'write') return runSimple(state, toks, now);
 
     // trailing redirection applies to the whole pipeline
     var redirect = null;
@@ -1642,6 +1646,64 @@
           out.push(new Date(ent[ji].t).toISOString().slice(11, 19) + '  ' + ent[ji].k.padEnd(3) + ' ' + ent[ji].x);
         }
         return { out: out, error: false, effects: [] };
+      }
+
+      case 'timer': {
+        // `timer 5m tea` — same effect the assistant's spoken timers emit
+        if (!args.length) return err('timer: usage: timer <duration> [label…]  e.g. timer 5m tea');
+        var tsecs = parseDuration(args[0]);
+        if (!tsecs) return err('timer: bad duration: ' + args[0]);
+        var tlabel = args.slice(1).join(' ') || 'Timer';
+        return {
+          out: ['timer set for ' + fmtDuration(tsecs) + (tlabel !== 'Timer' ? ' — ' + tlabel : '')],
+          error: false, effects: [{ type: 'timer', seconds: tsecs, label: tlabel }]
+        };
+      }
+
+      case 'theme': {
+        if (!args[0]) return { out: ['accent: ' + state.settings.accent + '  (options: ' + ACCENTS.join(', ') + ')'], error: false, effects: [] };
+        if (ACCENTS.indexOf(args[0]) === -1) return err('theme: pick one of: ' + ACCENTS.join(', '));
+        state.settings.accent = args[0];
+        return { out: ['accent set to ' + args[0]], error: false, effects: [{ type: 'accent', accent: args[0] }] };
+      }
+
+      case 'name': {
+        if (!args.length) return { out: [state.settings.owner], error: false, effects: [] };
+        state.settings.owner = args.join(' ').slice(0, 24);
+        return { out: ['hello, ' + state.settings.owner], error: false, effects: [] };
+      }
+
+      case 'widget': {
+        var wsub = args[0] || 'list';
+        if (wsub === 'list') {
+          for (var wl = 0; wl < WIDGETS.length; wl++) {
+            out.push((state.widgets.indexOf(WIDGETS[wl].id) !== -1 ? '✓ ' : '  ') + WIDGETS[wl].id.padEnd(12) + WIDGETS[wl].desc);
+          }
+          return { out: out, error: false, effects: [] };
+        }
+        if (wsub === 'add') {
+          var wa = addWidget(state, args[1] || '');
+          if (!wa.ok) return err('widget: ' + wa.error);
+          return { out: [wa.already ? args[1] + ' is already on the home screen' : 'added ' + args[1] + ' to the home screen'], error: false, effects: [] };
+        }
+        if (wsub === 'remove') {
+          if (!removeWidget(state, args[1] || '')) return err('widget: not on the home screen: ' + (args[1] || ''));
+          return { out: ['removed ' + args[1]], error: false, effects: [] };
+        }
+        return err('widget: usage: widget <list|add|remove> [id]');
+      }
+
+      case 'write': {
+        // `write <file> <content>` — \n in the content becomes a real newline,
+        // so scripts, notes and .app manifests can be authored in ONE command
+        // (echo can only append a line at a time). This is what lets the
+        // Live AI build whole programs for the user.
+        if (args.length < 2) return err('write: usage: write <file> <content…>  (\\n makes a new line)');
+        var wpath = P(args[0]);
+        var wtext = args.slice(1).join(' ').replace(/\\n/g, '\n');
+        var wres = fsWrite(state.fs, wpath, wtext + (wtext.endsWith('\n') ? '' : '\n'), now);
+        if (!wres.ok) return err('write: ' + wres.error);
+        return { out: ['wrote ' + wpath + ' (' + wtext.split('\n').length + ' lines)'], error: false, effects: [] };
       }
 
       case 'date': return { out: [new Date(now).toString()], error: false, effects: [] };
