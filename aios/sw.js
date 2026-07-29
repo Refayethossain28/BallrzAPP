@@ -2,7 +2,7 @@
  * are network-first (you always get the latest build when online, the cached
  * shell when offline) and static assets are cache-first for speed.
  * Bump CACHE to force a clean reinstall. */
-const CACHE = 'aios-v15'; // v15: streaming + memory Live AI
+const CACHE = 'aios-v16'; // v16: web research + Notification Centre
 const ASSETS = ['./', './index.html', './engine.js', './config.js', './manifest.json',
                 './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 
@@ -23,8 +23,10 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   const req = e.request;
-  // The optional Live AI proxy is never cached — always straight to the network.
-  if (new URL(req.url).pathname.indexOf('/api/') !== -1) return;
+  // Live data stays live: the optional AI proxy and any cross-origin API
+  // (Wikipedia research, Anthropic) are never touched, never cached.
+  const u = new URL(req.url);
+  if (u.pathname.indexOf('/api/') !== -1 || u.origin !== self.location.origin) return;
   const isPage = req.mode === 'navigate' ||
                  (req.destination === '' && /\/(index\.html)?(\?.*)?$/.test(new URL(req.url).pathname));
 

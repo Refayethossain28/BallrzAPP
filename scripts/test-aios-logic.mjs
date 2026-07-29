@@ -1115,6 +1115,48 @@ test('write: whole files in one command — \\n, raw > and |, then run it', () =
   assert.equal(K.execCommand(st, 'write /nope/deep.txt hi', T0).error, true, 'bad parent dir surfaces');
 });
 
+/* ══════════ v4.9: Notification Centre ══════════ */
+
+test('notices: push, unread tracking, read, clear, ring cap', () => {
+  const st = K.boot(T0);
+  deq(st.notices, [], 'boots empty');
+  K.pushNotice(st, '⏰ Timer', 'tea is ready', T0);
+  K.pushNotice(st, '✦ Live AI', '', T0 + 1000);
+  assert.equal(K.unreadNotices(st), 2);
+  assert.equal(st.notices[0].title, '⏰ Timer');
+  K.markNoticesRead(st);
+  assert.equal(K.unreadNotices(st), 0);
+  K.pushNotice(st, 'again', 'x', T0 + 2000);
+  assert.equal(K.unreadNotices(st), 1, 'new arrivals are unread');
+  assert.equal(K.pushNotice(st, '', '', T0), null, 'empty notice refused');
+  for (let i = 0; i < 150; i++) K.pushNotice(st, 'n' + i, '', T0 + i);
+  assert.equal(st.notices.length, 100, 'ring buffer caps at 100');
+  assert.equal(st.notices[99].title, 'n149', 'newest kept');
+  K.clearNotices(st);
+  deq(st.notices, []);
+});
+
+test('notices: survive serialize, hostile snapshots sanitized, shell command', () => {
+  const st = K.boot(T0);
+  K.pushNotice(st, 'Hello', 'world', T0);
+  K.markNoticesRead(st);
+  K.pushNotice(st, 'Fresh', 'unread one', T0 + 1000);
+  const st2 = K.deserialize(K.serialize(st), T0);
+  assert.equal(st2.notices.length, 2);
+  assert.equal(st2.notices[0].read, true, 'read flag survives');
+  assert.equal(K.unreadNotices(st2), 1);
+  const hostile = K.deserialize(JSON.stringify({ v: 4, fs: K.boot(T0).fs,
+    notices: [{ t: 'nope' }, { t: 1, title: 'x'.repeat(500), body: 7, read: 'yes' }, 9] }), T0);
+  assert.equal(hostile.notices.length, 1, 'junk entries dropped');
+  assert.equal(hostile.notices[0].title.length, 60, 'title capped');
+  assert.equal(hostile.notices[0].read, false, 'non-boolean read → unread');
+  // the shell sees the same state (● marks unread, newest first)
+  const out = K.execCommand(st, 'notices', T0).out;
+  assert.ok(out[0].includes('● Fresh') && out[1].includes('  Hello'));
+  assert.equal(K.execCommand(st, 'notices clear', T0).error, false);
+  deq(K.execCommand(st, 'notices', T0).out, ['no notifications']);
+});
+
 console.log('── aios kernel unit tests ──');
 let failed = 0;
 for (const [n, f] of tests) {

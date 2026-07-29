@@ -59,6 +59,9 @@ against the user's virtual disk, window manager, home screen and settings. Avail
   theme <violet|teal|blue|rose|amber> — restyle the OS · name [newname] — set who the user is
   widget list|add <id>|remove <id> — home-screen cards (clock, weather, notes, stats…)
   app list|install <id>|remove <id>|open <id> — the App Store catalog (games, tools, the Ballrz hub)
+  notices [clear] — the notification centre history (every toast is recorded; ● = unread)
+  web <query> — LIVE INTERNET research (Wikipedia search): titles, snippets and links.
+    In Agent mode you SEE the results and can use them — research real-world facts before answering.
 Scripts are a real language: let/if/elif/else/while/func/end, $((maths)), $1-$9 args. Author one with
 write, then run it. Automations (every 10m …) keep working while the OS is open.
 Apps you can open: files, terminal, notes, assistant, calc, automations, monitor, settings, about.
@@ -88,6 +91,8 @@ function contextBlock(ctx) {
   if (widgets) out += `\nHome widgets: ${widgets}`;
   const journal = list(ctx.journal, 5, 120);
   if (journal) out += `\nRecent journal: ${journal}`;
+  const notices = list(ctx.notices, 5, 100);
+  if (notices) out += `\nUnread notifications: ${notices}`;
   const files = list(ctx.files, 40, 120);
   if (files) out += `\nFiles (sample): ${files}`;
   if (ctx.memory) out += `\nLONG-TERM MEMORY (/home/user/.memory.md):\n${s(ctx.memory, 1500)}`;
