@@ -989,6 +989,71 @@ test('browsingStats: honest on-device numbers, streak counts consecutive days', 
   assert.equal(V.browsingStats(gappy, NOW).streakDays, 1);
 });
 
+/* ---- recently closed: ⌘⇧T ---- */
+
+test('reopenTab brings back the whole tab — stack, position, title, zoom, and its space', () => {
+  let s = V.createBrowser();
+  s = V.newTab(s, { url: 'https://a.com', ts: NOW });
+  s = V.navigate(s, s.activeId, 'https://a.com/deep', { ts: NOW });
+  s = V.setTitle(s, s.activeId, 'Deep page');
+  const doomedId = s.activeId;
+  s = V.closeTab(s, doomedId);
+  assert.equal(s.closedTabs.length, 1);
+  s = V.reopenTab(s);
+  const back = V.activeTab(s);
+  eq(back.stack, ['https://a.com', 'https://a.com/deep']);
+  assert.equal(back.pos, 1);
+  assert.equal(back.title, 'Deep page');
+  assert.equal(s.closedTabs.length, 0);                              // consumed
+  assert.ok(back.id !== doomedId);                                   // ids are never reused
+  assert.equal(V.reopenTab(s), s);                                   // empty list → no-op
+});
+
+test('recently closed: private tabs leave no trace; list caps at 10; survives the session', () => {
+  let s = V.createBrowser();
+  s = V.newTab(s, { incognito: true, url: 'https://secret.site', ts: NOW });
+  s = V.closeTab(s, s.activeId);
+  assert.equal(s.closedTabs.length, 0);                              // no trace, not even a regret
+  for (let i = 0; i < 12; i++) {
+    s = V.newTab(s, { url: 'https://site' + i + '.com', ts: NOW });
+    s = V.closeTab(s, s.activeId);
+  }
+  assert.equal(s.closedTabs.length, 10);                             // capped, oldest gone
+  assert.equal(s.closedTabs[9].stack[0], 'https://site11.com');
+  const r = V.restore(V.serialize(s));
+  assert.equal(r.closedTabs.length, 10);                             // ⌘⇧T works after a restart
+  const reopened = V.reopenTab(r);
+  assert.equal(V.tabUrl(V.activeTab(reopened)), 'https://site11.com');
+});
+
+test('reopenTab lands in the active space when its own desk was demolished', () => {
+  let s = V.createBrowser();
+  s = V.addSpace(s, 'Doomed', { ts: NOW });
+  s = V.newTab(s, { url: 'https://work.site', ts: NOW });
+  s = V.closeTab(s, s.activeId);                                     // closed in space 2
+  s = V.switchSpace(s, 1);
+  s = V.removeSpace(s, 2);                                           // demolish the desk
+  s = V.reopenTab(s);
+  assert.equal(V.activeTab(s).space, 1);                             // falls back to the active desk
+  assert.equal(V.tabUrl(V.activeTab(s)), 'https://work.site');
+});
+
+/* ---- reader comfort ---- */
+
+test('readerSize clamps to 14–24 and readerSerif is boolean; both round-trip', () => {
+  let s = V.createBrowser();
+  assert.equal(s.settings.readerSize, 17);
+  s = V.setSetting(s, 'readerSize', 99);
+  assert.equal(s.settings.readerSize, 24);
+  s = V.setSetting(s, 'readerSize', 3);
+  assert.equal(s.settings.readerSize, 14);
+  s = V.setSetting(s, 'readerSerif', 1);
+  assert.equal(s.settings.readerSerif, true);
+  const r = V.restore(V.serialize(s));
+  assert.equal(r.settings.readerSize, 14);
+  assert.equal(r.settings.readerSerif, true);
+});
+
 /* ---- swipe gestures ---- */
 
 test('swipeAction: decisive horizontal swipes map to back/forward, everything else is null', () => {
