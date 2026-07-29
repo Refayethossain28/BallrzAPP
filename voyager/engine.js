@@ -71,6 +71,7 @@
     memory: 'Memory',
     reader: 'Reader',
     changes: 'What changed',
+    stats: 'Your numbers',
     site: 'Site settings',
     settings: 'Settings',
     about: 'About Voyager',
@@ -340,6 +341,7 @@
       spaces: [{ id: 1, name: 'Home', lastActiveId: null }],  // named workspaces
       activeSpace: 1,
       nextSpaceId: 2,
+      splitId: null,    // a second tab shown beside the active one (same space)
       settings: {
         engine: opts.engine || 'seeker',
         engineChosen: false,   // flips when the user picks one in Settings
@@ -408,6 +410,7 @@
     var space = state.tabs[idx].space || 1;
     var next = shallow(state);
     next.tabs = state.tabs.slice(0, idx).concat(state.tabs.slice(idx + 1));
+    if (state.splitId === id) next.splitId = null;   // closing a pane dissolves the split
     // Never-empty holds PER SPACE: closing a space's last tab respawns a fresh one there.
     var siblings = next.tabs.filter(function (t) { return (t.space || 1) === space; });
     if (!siblings.length) return newTab(next, { space: space });
@@ -432,6 +435,36 @@
     // Jumping to a tab in another space (palette, tab sheet) follows it there.
     if ((tab.space || 1) !== state.activeSpace) next.activeSpace = tab.space || 1;
     return next;
+  }
+
+  /* ════════════════════════ split view ════════════════════════
+   * Two tabs side by side — compare sources, write from a reference, watch
+   * while you read. The split partner must live in the active tab's space;
+   * closing either side, or leaving the space, dissolves the split. */
+
+  function setSplit(state, tabId) {
+    if (tabId == null) {
+      if (state.splitId == null) return state;
+      var off = shallow(state); off.splitId = null; return off;
+    }
+    var tab = getTab(state, tabId);
+    var active = activeTab(state);
+    if (!tab || !active || tab.id === active.id) return state;
+    if ((tab.space || 1) !== (active.space || 1)) return state;   // same desk only
+    if (state.splitId === tabId) return state;
+    var next = shallow(state);
+    next.splitId = tabId;
+    return next;
+  }
+
+  /** The tab shown in the second pane, or null when the split is off/broken. */
+  function splitTab(state) {
+    if (state.splitId == null) return null;
+    var tab = getTab(state, state.splitId);
+    var active = activeTab(state);
+    if (!tab || !active || tab.id === active.id) return null;
+    if ((tab.space || 1) !== (active.space || 1)) return null;
+    return tab;
   }
 
   /* ════════════════════════ workspaces ════════════════════════
@@ -927,6 +960,69 @@
     return out.join(' ');
   }
 
+  /* ════════════════════════ ask your memory ════════════════════════
+   * A question in, an answer out — extracted verbatim from pages you've
+   * actually read, with the sources named. No model, no cloud: the corpus is
+   * your memory, the answer is a quote. */
+
+  /**
+   * Answer a question from remembered pages. Scores each memory hit's
+   * sentences by how many significant question terms they carry (frequency-
+   * free — the question drives, not the document), returns up to two of the
+   * best sentences (each from its own page allowed) plus their sources.
+   * null when the question has no significant terms or nothing matches.
+   */
+  function askMemory(state, question, opts) {
+    opts = opts || {};
+    var terms = String(question == null ? '' : question).toLowerCase().match(/[a-z][a-z'-]{2,}/g) || [];
+    terms = terms.filter(function (w) { return !STOP[w]; });
+    if (!terms.length) return null;
+    // Best-effort retrieval — questions carry words the page won't ("long",
+    // "why"), so rank pages by how many terms they DO carry, not AND-match.
+    var pages = [];
+    for (var pm = 0; pm < state.memory.length; pm++) {
+      var cand = state.memory[pm];
+      var hay = ((cand.title || '') + ' ' + (cand.text || '')).toLowerCase();
+      var got = 0;
+      for (var pt = 0; pt < terms.length; pt++) if (hay.indexOf(terms[pt]) !== -1) got++;
+      if (got) pages.push({ url: cand.url, got: got, ts: cand.ts || 0 });
+    }
+    if (!pages.length) return null;
+    pages.sort(function (a, b) { return b.got - a.got || b.ts - a.ts; });
+    if (pages.length > (opts.pages || 3)) pages = pages.slice(0, opts.pages || 3);
+    var best = [];
+    for (var p = 0; p < pages.length; p++) {
+      var mem = memoryEntry(state, pages[p].url);
+      if (!mem || !mem.text) continue;
+      var sents = sentencesOf(mem.text);
+      for (var i = 0; i < sents.length; i++) {
+        var low = sents[i].toLowerCase();
+        var hit = 0;
+        for (var t = 0; t < terms.length; t++) if (low.indexOf(terms[t]) !== -1) hit++;
+        if (!hit) continue;
+        var words = low.match(/[a-z][a-z'-]{2,}/g) || [];
+        // coverage first, then density — a tight sentence beats a rambling one
+        best.push({ score: hit * 100 + (words.length ? Math.round(100 * hit / Math.sqrt(words.length)) : 0),
+                    text: sents[i], url: mem.url, title: mem.title });
+      }
+    }
+    if (!best.length) return null;
+    best.sort(function (a, b) { return b.score - a.score; });
+    var picked = [];
+    for (var b2 = 0; b2 < best.length && picked.length < 2; b2++) {
+      if (picked.length && best[b2].score < best[0].score * 0.5) break;   // don't pad with weak lines
+      picked.push(best[b2]);
+    }
+    var sources = [];
+    var srcSeen = {};
+    for (var s2 = 0; s2 < picked.length; s2++) {
+      if (srcSeen[picked[s2].url]) continue;
+      srcSeen[picked[s2].url] = true;
+      sources.push({ url: picked[s2].url, title: picked[s2].title });
+    }
+    return { answer: picked.map(function (x) { return x.text; }).join(' '), sources: sources };
+  }
+
   /* ════════════════════════ per-site settings ════════════════════════
    * Overrides keyed by site (host minus www.): zoom sticks to the site the way
    * Chrome's does, and tracker-blocking / memory-capture can be flipped for one
@@ -1368,6 +1464,46 @@
     return next;
   }
 
+  /* ════════════════════════ your numbers ════════════════════════
+   * The dashboard browsers never give you honestly: everything computed
+   * on-device from your own ledgers, nothing phoned home to make it. */
+
+  function browsingStats(state, nowTs) {
+    nowTs = nowTs || 0;
+    var hosts = {}, distinct = 0;
+    for (var i = 0; i < state.history.length; i++) {
+      var h = hostOf(state.history[i].url);
+      if (h && !hosts[h]) { hosts[h] = true; distinct++; }
+    }
+    var wordsRead = 0;
+    for (var m = 0; m < state.memory.length; m++) wordsRead += Number(state.memory[m].words) || 0;
+    var trackersSeen = 0;
+    for (var k in (state.sites || {})) {
+      if (Object.prototype.hasOwnProperty.call(state.sites, k)) trackersSeen += Number(state.sites[k].trackersSeen) || 0;
+    }
+    // Reading streak: consecutive days with at least one visit, counting back
+    // from today (or yesterday, if today hasn't started yet).
+    var days = {};
+    for (var v = 0; v < state.history.length; v++) {
+      var ts = Number(state.history[v].ts);
+      if (ts > 0) days[Math.floor(ts / 86400000)] = true;
+    }
+    var today = Math.floor(nowTs / 86400000);
+    var streak = 0, cursor = days[today] ? today : today - 1;
+    while (days[cursor]) { streak++; cursor--; }
+    return {
+      visits: state.history.length,
+      sites: distinct,
+      wordsRead: wordsRead,
+      pagesRemembered: state.memory.length,
+      highlights: state.highlights.length,
+      follows: state.follows.length,
+      trackersSeen: trackersSeen,
+      streakDays: streak,
+      topSites: topSites(state, 5, nowTs),
+    };
+  }
+
   /* ════════════════════════ session ════════════════════════ */
 
   /** Persistable JSON. Incognito tabs are simply not part of the story. */
@@ -1397,6 +1533,7 @@
       spaces: state.spaces || [{ id: 1, name: 'Home', lastActiveId: null }],
       activeSpace: state.activeSpace || 1,
       nextSpaceId: state.nextSpaceId || 2,
+      splitId: state.splitId != null ? state.splitId : null,
       settings: state.settings,
     });
   }
@@ -1470,6 +1607,7 @@
     if (tabs.length === 0) return newTab(state, {});
     state.activeId = getTab(state, data.activeId) ? data.activeId : tabs[0].id;
     state.activeSpace = getTab(state, state.activeId).space || 1;   // desk follows the active tab
+    state.splitId = getTab(state, data.splitId) ? data.splitId : null;
     return state;
   }
 
@@ -1538,6 +1676,9 @@
     togglePin: togglePin,
     getSpace: getSpace,
     spaceTabs: spaceTabs,
+    setSplit: setSplit,
+    splitTab: splitTab,
+    browsingStats: browsingStats,
     addSpace: addSpace,
     renameSpace: renameSpace,
     switchSpace: switchSpace,
@@ -1545,6 +1686,7 @@
     diffTexts: diffTexts,
     pageChanges: pageChanges,
     summarize: summarize,
+    askMemory: askMemory,
     recordTrackers: recordTrackers,
     addHighlight: addHighlight,
     removeHighlight: removeHighlight,

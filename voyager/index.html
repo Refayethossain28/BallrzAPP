@@ -141,6 +141,28 @@
   #frameWrap.on { display: block; }
   #frame { border: 0; width: 100%; height: 100%; background: #fff; transform-origin: 0 0; }
 
+  /* ═════════ split view: two panes ═════════ */
+  #frameWrap2 { position: absolute; overflow: hidden; display: none; background: #fff; }
+  #frame2 { border: 0; width: 100%; height: 100%; background: #fff; }
+  body.split #frameWrap.on { inset: 0 50% 0 0; border-right: 1.5px solid var(--line); }
+  body.split #frameWrap2.on { display: block; inset: 0 0 0 50%; }
+  @media (max-width: 700px) {   /* narrow screens stack the panes */
+    body.split #frameWrap.on { inset: 0 0 50% 0; border-right: 0; border-bottom: 1.5px solid var(--line); }
+    body.split #frameWrap2.on { inset: 50% 0 0 0; }
+  }
+  .splitclose {
+    position: absolute; top: 8px; right: 8px; z-index: 9; display: none;
+    width: 30px; height: 30px; border-radius: 9px; font-size: 14px;
+    background: rgba(0,0,0,.55); color: #fff; align-items: center; justify-content: center;
+  }
+  body.split .splitclose { display: inline-flex; }
+
+  /* ═════════ your numbers ═════════ */
+  .statgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin: 14px 0; }
+  .statcard { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+  .statcard b { display: block; font-size: 24px; letter-spacing: -0.02em; }
+  .statcard span { font-size: 12px; color: var(--dim); }
+
   .veil {
     position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
     flex-direction: column; gap: 14px; text-align: center; padding: 24px;
@@ -441,6 +463,8 @@
     <button class="mi split" data-act="newtab"><span class="ico">＋</span>New tab</button>
     <button class="mi" data-act="newprivate"><span class="ico">🕶</span>New private tab</button>
     <button class="mi" data-act="pintab"><span class="ico">📌</span><span id="pinLabel">Pin this tab</span></button>
+    <button class="mi" data-act="splitview"><span class="ico">⿻</span><span id="splitLabel">Split view</span></button>
+    <button class="mi" data-act="stats"><span class="ico">📊</span>Your numbers</button>
     <button class="mi" data-act="sitesettings"><span class="ico">🌐</span>Site settings</button>
     <button class="mi" data-act="follow"><span class="ico">📡</span><span id="followLabel">Follow this site</span></button>
     <button class="mi" data-act="reader"><span class="ico">📖</span>Reader view<span style="margin-left:auto;color:var(--faint);font-size:12px">clean text</span></button>
@@ -465,6 +489,10 @@
   <div id="frameWrap"><iframe id="frame" title="Page"
     sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"
     referrerpolicy="no-referrer-when-downgrade"></iframe></div>
+  <div id="frameWrap2"><iframe id="frame2" title="Split page"
+    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"
+    referrerpolicy="no-referrer-when-downgrade"></iframe></div>
+  <button class="splitclose" data-act="unsplit" title="Close split">⿻✕</button>
   <div id="internal" class="on"></div>
   <div class="swipezone left" id="swipeL"></div>
   <div class="swipezone right" id="swipeR"></div>
@@ -528,6 +556,8 @@ var suggestIndex = -1;
 var detectedProxy = '';      // set by the boot probe when voyager/server.mjs is serving us
 var currentFrameSrc = '';    // the src the iframe is actually on (may differ from getAttribute after in-frame nav)
 var frameSyncing = false;    // true while we're recording an in-frame navigation (don't reload the frame)
+var currentFrameSrc2 = '';   // same, for the split pane
+var frameSyncing2 = false;
 
 /* The proxy base in force right now: 'off' disables, a set URL forces it,
  * empty falls back to a locally-detected server. When set, clearnet pages load
@@ -625,6 +655,7 @@ function paintChrome() {
   $('tabsBtn').textContent = String(Voyager.spaceTabs(S, S.activeSpace).length);
   $('pinLabel').textContent = tab && tab.pinned ? 'Unpin this tab' : 'Pin this tab';
   $('followLabel').textContent = Voyager.isFollowed(S, url) ? 'Following — unfollow' : 'Follow this site';
+  $('splitLabel').textContent = Voyager.splitTab(S) ? 'Close split view' : 'Split view';
   $('zoomLabel').textContent = (tab ? tab.zoom : 100) + '%';
   document.body.classList.toggle('private', !!(tab && tab.incognito));
 
@@ -669,6 +700,8 @@ function renderView(url, tab) {
   $('internal').className = internal ? 'on' : '';
   $('frameWrap').className = (internal || onionNoGateway) ? '' : 'on';
 
+  renderSplit(internal);
+
   if (internal) {
     hideVeil();
     stopProgress(true);
@@ -684,6 +717,26 @@ function renderView(url, tab) {
     return;
   }
   loadFrame(url);
+}
+
+/* ---- split view: the second pane paints the split tab ---- */
+function renderSplit(mainIsInternal) {
+  var st = Voyager.splitTab(S);
+  var stUrl = st ? Voyager.tabUrl(st) : null;
+  // A split needs two real pages: internal pages own the whole viewport.
+  var on = !!(st && !mainIsInternal && String(stUrl).indexOf('voyager://') !== 0);
+  document.body.classList.toggle('split', on);
+  $('frameWrap2').className = on ? 'on' : '';
+  if (!on) {
+    $('frame2').removeAttribute('src');
+    currentFrameSrc2 = '';
+    return;
+  }
+  var src = Voyager.resolveFrameSrc(stUrl, frameOpts());
+  if (frameSyncing2) { currentFrameSrc2 = src; return; }
+  if (src === currentFrameSrc2) return;
+  currentFrameSrc2 = src;
+  $('frame2').setAttribute('src', src);
 }
 
 /* Point the iframe at the right src for `url` (proxy / gateway / direct). When
@@ -739,8 +792,13 @@ function showVeil(mode, url) {
       // The common case: hosted/static, no proxy. Tell them how to actually open it.
       $('veilText').innerHTML = 'Big sites (YouTube, Google, most logins) send <b>X-Frame-Options</b> and refuse to render inside another page — the browser enforces it. To open sites like these, run Voyager’s <b>full-browser server</b> and open the address it prints:<br><code style="display:inline-block;margin-top:8px;background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:6px 10px">node voyager/server.mjs</code><br><span class="tiny">(YouTube <i>videos</i> already play here — just paste a <b>youtube.com/watch</b> or <b>youtu.be</b> link.)</span>';
     }
+    // Resurrection: if your memory holds a copy of this page, the dead web
+    // doesn't get the last word.
+    var savedCopy = Voyager.inMemory(S, url)
+      ? '<button class="btn primary" data-readmem="' + esc(url) + '">📖 Read your saved copy</button>' : '';
     $('veilActions').innerHTML =
-      '<button class="btn primary" data-act="external">Open in full tab ↗</button>' +
+      savedCopy +
+      '<button class="btn' + (savedCopy ? '' : ' primary') + '" data-act="external">Open in full tab ↗</button>' +
       '<button class="btn" data-act="dismissveil">Wait anyway</button>';
     stopProgress(false);
   }
@@ -779,6 +837,7 @@ function renderInternal(page) {
   else if (page === 'memory') el.innerHTML = memoryPage('');
   else if (page === 'reader') el.innerHTML = readerPage();
   else if (page === 'changes') el.innerHTML = changesPage();
+  else if (page === 'stats') el.innerHTML = statsPage();
   else if (page === 'site') el.innerHTML = sitePage();
   else if (page === 'settings') { el.innerHTML = settingsPage(); checkProxyStatus(); }
   else if (page === 'about') el.innerHTML = aboutPage();
@@ -825,10 +884,21 @@ function memoryPage(query) {
   var h = '<div class="page"><h1>Web memory</h1><p class="sub">' +
     (total ? 'Search the full text of the ' + total + ' page' + (total === 1 ? '' : 's') + ' you’ve read — by anything they <i>said</i>. All on this device.'
            : 'Nothing remembered yet. Open pages through the full browser (proxy) with <b>Remember</b> on, and Voyager keeps a searchable, offline copy of each one.') + '</p>';
-  if (total) h += '<input class="searchbar" id="memSearch" placeholder="Search everything you’ve read…" value="' + esc(query) + '" autocapitalize="off" autocorrect="off" spellcheck="false">';
+  if (total) h += '<input class="searchbar" id="memSearch" placeholder="Search everything you’ve read — or ask a question…" value="' + esc(query) + '" autocapitalize="off" autocorrect="off" spellcheck="false">';
   if (!total) {
     h += '<div class="panel muted">Tip: turn on <b>Settings → Remember pages I read</b>, connect the full-browser proxy, and browse. Every article becomes findable here.</div>';
     return h + '</div>';
+  }
+  // A question in → an answer out, quoted verbatim from pages you've read.
+  if (query && query.trim().split(/\s+/).length >= 2) {
+    var ans = Voyager.askMemory(S, query);
+    if (ans) {
+      h += '<div class="tldr" style="border-color:rgba(176,124,247,.4);border-left-color:var(--purple)">' +
+        '<b class="tag" style="color:var(--purple)">🔮 From what you’ve read</b>“' + esc(ans.answer) + '”' +
+        ans.sources.map(function (src) {
+          return '<div style="margin-top:7px"><button style="all:unset;cursor:pointer;color:var(--cyan);font-size:13px" data-readmem="' + esc(src.url) + '">— ' + esc(src.title) + ' →</button></div>';
+        }).join('') + '</div>';
+    }
   }
   if (!hits.length) { h += '<div class="panel muted">No remembered page matches “' + esc(query) + '”.</div>'; }
   for (var i = 0; i < hits.length; i++) {
@@ -843,6 +913,34 @@ function memoryPage(query) {
       '<button class="x" data-forgetmem="' + esc(m.url) + '" title="Forget this page">✕</button></div>';
   }
   if (total) h += '<button class="btn danger block" data-act="clearmemory">Forget everything Voyager remembers</button>';
+  return h + '</div>';
+}
+
+/* ---- your numbers: the honest dashboard ---- */
+function statsPage() {
+  var st = Voyager.browsingStats(S, Date.now());
+  function card(value, label) { return '<div class="statcard"><b>' + value + '</b><span>' + label + '</span></div>'; }
+  var h = '<div class="page"><h1>Your numbers</h1><p class="sub">Computed on this device from your own ledgers. Nothing was phoned home to make this page.</p>' +
+    '<div class="statgrid">' +
+    card(st.streakDays, 'day reading streak 🔥') +
+    card(st.visits.toLocaleString(), 'pages visited') +
+    card(st.sites.toLocaleString(), 'sites explored') +
+    card(st.wordsRead.toLocaleString(), 'words read (remembered pages)') +
+    card(st.pagesRemembered, 'pages in your memory 🧠') +
+    card(st.highlights, 'highlights kept 🖍') +
+    card(st.follows, 'sites followed 📡') +
+    card(st.trackersSeen.toLocaleString(), 'tracker requests carried 🛡') +
+    '</div>';
+  if (st.topSites.length) {
+    h += '<h2 class="sect">Where you actually go</h2>';
+    for (var i = 0; i < st.topSites.length; i++) {
+      var t = st.topSites[i];
+      h += '<div class="row"><button style="all:unset;cursor:pointer;display:flex;align-items:center;gap:12px;flex:1;min-width:0" data-nav="' + esc(t.url) + '">' +
+        favHtml(t.url, t.title) +
+        '<span class="txt"><span class="t">' + esc(t.title || t.host) + '</span><span class="u">' + esc(Voyager.displayUrl(t.url)) + '</span></span></button></div>';
+    }
+  }
+  h += '<div class="panel tiny" style="margin-top:24px">Words read counts the clean text of pages in your Web Memory. The tracker number is what pages <i>carried</i> — with blocking on, the proxy dropped them.</div>';
   return h + '</div>';
 }
 
@@ -1231,6 +1329,12 @@ function settingsPage() {
     '<input id="torInput" value="' + esc(S.settings.torGateway) + '" placeholder="off — e.g. onion.ws" autocapitalize="off" autocorrect="off" spellcheck="false"></div>' +
     '<p class="tiny" style="margin:2px 2px 0">Voyager renders pages in a sandboxed frame with no Tor circuit of its own, so it can’t reach <b>.onion</b> hidden services directly. Name a Tor2web-style gateway here and Voyager routes <b>.onion</b> addresses through it over the clearnet (e.g. <code>abc.onion</code> → <code>abc.onion.' + esc(S.settings.torGateway || 'ws') + '</code>). Honest trade-off: a gateway is <b>not anonymous</b> — its operator sees the traffic Tor would have hidden, and gateways come and go. For real anonymity use the <b>Tor Browser</b>. Leave blank to keep it off.</p>' +
     '</div>' +
+    '<h2 class="sect">💾 Backup &amp; move</h2><div class="panel">' +
+    '<p class="tiny" style="margin:0 0 10px">Your whole browser — tabs, spaces, history, bookmarks, memory, highlights, follows, settings — as one file. No account, no cloud: carry it to another device and import it there.</p>' +
+    '<button class="btn block" style="margin-top:0" data-act="exportall">📤 Export everything</button>' +
+    '<button class="btn block" data-act="importall">📥 Import a backup</button>' +
+    '<input type="file" id="importFile" accept=".json,application/json" style="display:none">' +
+    '</div>' +
     '<div class="panel">' +
     '<button class="btn danger block" style="margin-top:0" data-act="clearhistory">Clear history</button>' +
     '<button class="btn danger block" data-act="wipe">Erase everything (tabs, history, bookmarks)</button>' +
@@ -1284,6 +1388,7 @@ function renderTabsheet() {
       '<span class="t">' + esc(title) + '</span>' +
       '<span class="u">' + esc(Voyager.displayUrl(url)) + '</span>' +
       (t.incognito ? '' : '<span class="pin' + (t.pinned ? ' on' : '') + '" data-pintab="' + t.id + '" title="' + (t.pinned ? 'Unpin' : 'Pin') + '">📌</span>') +
+      (t.id !== S.activeId && String(url).indexOf('voyager://') !== 0 ? '<span class="pin" style="right:' + (t.pinned ? '40px' : '72px') + '" data-splittab="' + t.id + '" title="Open beside the active tab">⿻</span>' : '') +
       (t.pinned ? '' : '<span class="close" data-closetab="' + t.id + '">✕</span>') + '</button>';
   }
   cards.innerHTML = h;
@@ -1492,6 +1597,13 @@ document.addEventListener('click', function (e) {
       renderTabsheet();
       return;
     }
+    var splitId = el.getAttribute && el.getAttribute('data-splittab');
+    if (splitId) {
+      e.stopPropagation();
+      commit(Voyager.setSplit(S, Number(splitId)));
+      $('tabsheet').className = 'tabsheet';
+      return;
+    }
     var renSpace = el.getAttribute && el.getAttribute('data-renamespace');
     if (renSpace) {
       e.stopPropagation();
@@ -1622,6 +1734,34 @@ function runAct(act) {
       .catch(function () { toast('Feed lookup failed — check the proxy'); });
   }
   else if (act === 'refreshfeeds') refreshFeeds(false);
+  else if (act === 'stats') navTo('voyager://stats');
+  else if (act === 'unsplit') commit(Voyager.setSplit(S, null));
+  else if (act === 'splitview') {
+    if (Voyager.splitTab(S)) { commit(Voyager.setSplit(S, null)); return; }
+    // pick the most natural partner: another tab in this space, preferring a real page
+    var mates = Voyager.spaceTabs(S, S.activeSpace).filter(function (t) { return t.id !== S.activeId; });
+    if (!mates.length) { toast('Open another tab first, then split'); return; }
+    var partner = null;
+    for (var mi = mates.length - 1; mi >= 0; mi--) {
+      if (String(Voyager.tabUrl(mates[mi])).indexOf('voyager://') !== 0) { partner = mates[mi]; break; }
+    }
+    if (!partner) { toast('The other tabs here are Voyager pages — open a website to split with'); return; }
+    commit(Voyager.setSplit(S, partner.id));
+    toast('⿻ Split — ⋮ → Close split view to end it');
+  }
+  else if (act === 'exportall') {
+    try {
+      var blob = new Blob([Voyager.serialize(S)], { type: 'application/json' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'voyager-backup.json';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+      toast('📤 Backup downloaded — keep it somewhere safe');
+    } catch (e) { toast('Export failed'); }
+  }
+  else if (act === 'importall') { var fi = $('importFile'); if (fi) fi.click(); }
   else if (act === 'clearmemory') {
     if (!confirm('Forget every page Voyager has remembered on this device?')) return;
     commit(Voyager.clearMemory(S));
@@ -1693,6 +1833,27 @@ document.addEventListener('change', function (e) {
     saveSetting('home', home);
     e.target.value = home;
   }
+  if (e.target && e.target.id === 'importFile') {
+    var file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      var text = String(reader.result || '');
+      var parsed = null;
+      try { parsed = JSON.parse(text); } catch (err) {}
+      // Validate BEFORE touching anything — a bad file must never wipe a browser.
+      if (!parsed || parsed.v !== 1 || !Array.isArray(parsed.tabs)) { toast('That doesn’t look like a Voyager backup'); return; }
+      if (!confirm('Replace everything in this browser with the backup? (Your current tabs, history and memory will be overwritten.)')) return;
+      S = Voyager.restore(text);
+      persist();
+      readerState = null; diffState = null;
+      paintChrome();
+      showUrl(currentUrl(), Voyager.activeTab(S));
+      toast('📥 Backup restored — welcome back');
+    };
+    reader.readAsText(file);
+  }
   if (e.target && e.target.id === 'nameInput') {
     saveSetting('startName', e.target.value);
     e.target.value = S.settings.startName;
@@ -1741,6 +1902,22 @@ window.addEventListener('message', function (e) {
   var url = d.url;
   if (d.voyager === 'open' && url && /^https?:/i.test(url)) {
     commit(Voyager.newTab(S, { url: url, ts: Date.now() }));
+    return;
+  }
+  // Split-pane traffic drives the SPLIT tab's stack, not the active one.
+  var fromSplit = false;
+  try { fromSplit = !!(e.source && $('frame2').contentWindow === e.source); } catch (err) {}
+  if (fromSplit) {
+    var stab = Voyager.splitTab(S);
+    if (!stab) return;
+    if ((d.voyager === 'navigate' || d.voyager === 'loaded') && url && /^https?:/i.test(url)) {
+      if (url !== Voyager.tabUrl(stab)) {
+        frameSyncing2 = true;
+        commit(Voyager.navigate(S, stab.id, url, { ts: Date.now(), title: d.title || '' }));
+        frameSyncing2 = false;
+      }
+      if (d.voyager === 'loaded' && d.title) commit(Voyager.setTitle(S, stab.id, d.title));
+    }
     return;
   }
   if ((d.voyager === 'navigate' || d.voyager === 'loaded') && url && /^https?:/i.test(url)) {

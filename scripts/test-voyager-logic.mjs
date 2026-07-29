@@ -778,6 +778,30 @@ test('summarize: extractive, deterministic, in reading order, honest on short te
   assert.equal(V.summarize(text, { sentences: 2 }), sum);           // deterministic
 });
 
+/* ---- ask your memory ---- */
+
+test('askMemory answers a question with a verbatim quote and names the source', () => {
+  let s = V.createBrowser();
+  s = V.rememberPage(s, { url: 'https://phys.site/quantum', title: 'Quantum piece', text:
+    'Quantum repeaters were demonstrated in Boston. The team linked two labs across the city. Funding came from the usual agencies.' }, NOW);
+  s = V.rememberPage(s, { url: 'https://cook.site/pasta', title: 'Pasta', text:
+    'Cook the pasta for nine minutes. Salt the water generously.' }, NOW);
+  const a = V.askMemory(s, 'where were quantum repeaters demonstrated?');
+  assert.ok(a.answer.indexOf('Boston') !== -1);                        // the answering sentence
+  assert.equal(a.sources[0].url, 'https://phys.site/quantum');         // with its source
+  assert.equal(a.sources[0].title, 'Quantum piece');
+  const b = V.askMemory(s, 'how long do I cook the pasta?');
+  assert.ok(b.answer.indexOf('nine minutes') !== -1);                  // right page wins per question
+});
+
+test('askMemory is honest about not knowing', () => {
+  let s = V.createBrowser();
+  assert.equal(V.askMemory(s, 'anything at all?'), null);              // empty memory
+  s = V.rememberPage(s, { url: 'https://a.site/x', title: 'X', text: 'Entirely unrelated prose lives here.' }, NOW);
+  assert.equal(V.askMemory(s, 'quantum repeaters in boston?'), null);  // no match → no invented answer
+  assert.equal(V.askMemory(s, 'the of and?'), null);                   // stopwords only → null
+});
+
 /* ---- tracker receipt ---- */
 
 test('recordTrackers accumulates per site and ignores junk', () => {
@@ -917,6 +941,52 @@ test('spaces: session round-trip keeps desks, focus memory and tab homes; legacy
   assert.equal(legacy.spaces.length, 1);
   assert.equal(legacy.spaces[0].name, 'Home');
   assert.equal(V.activeTab(legacy).space, 1);
+});
+
+/* ---- split view ---- */
+
+test('split view: same-space partner only; closing either side or leaving the space dissolves it', () => {
+  let s = V.createBrowser();
+  s = V.newTab(s, { url: 'https://a.com', ts: NOW });                  // tab 2 (active)
+  s = V.newTab(s, { url: 'https://b.com', ts: NOW });                  // tab 3 (active)
+  assert.equal(V.setSplit(s, s.activeId), s);                          // can't split with yourself
+  s = V.setSplit(s, 2);
+  assert.equal(V.splitTab(s).id, 2);
+  const roundTrip = V.restore(V.serialize(s));
+  assert.equal(V.splitTab(roundTrip).id, 2);                           // split survives the session
+  let closed = V.closeTab(s, 2);
+  assert.equal(V.splitTab(closed), null);                              // closing the pane dissolves
+  s = V.addSpace(s, 'Work', { ts: NOW });
+  assert.equal(V.splitTab(s), null);                                   // other desk → no split shown
+  assert.equal(V.setSplit(s, 2), s);                                   // cross-space split refused
+  s = V.setSplit(s, null);
+  assert.equal(s.splitId, null);                                       // explicit off is clean
+});
+
+/* ---- your numbers ---- */
+
+test('browsingStats: honest on-device numbers, streak counts consecutive days', () => {
+  let s = V.createBrowser();
+  s = V.navigate(s, s.activeId, 'https://a.com/1', { ts: NOW - 2 * DAY });
+  s = V.navigate(s, s.activeId, 'https://a.com/2', { ts: NOW - DAY });
+  s = V.navigate(s, s.activeId, 'https://b.com/x', { ts: NOW });
+  s = V.rememberPage(s, { url: 'https://a.com/1', title: 'One', text: 'ten short words of text live here in this line', words: 10 }, NOW);
+  s = V.addHighlight(s, 'https://a.com/1', 'short words', NOW);
+  s = V.recordTrackers(s, 'https://a.com/1', 7);
+  const st = V.browsingStats(s, NOW);
+  assert.equal(st.visits, 3);
+  assert.equal(st.sites, 2);
+  assert.equal(st.wordsRead, 10);
+  assert.equal(st.pagesRemembered, 1);
+  assert.equal(st.highlights, 1);
+  assert.equal(st.trackersSeen, 7);
+  assert.equal(st.streakDays, 3);                                      // today + two days back
+  assert.equal(st.topSites.length, 2);
+  // a gap breaks the streak
+  let gappy = V.createBrowser();
+  gappy = V.navigate(gappy, gappy.activeId, 'https://a.com', { ts: NOW - 3 * DAY });
+  gappy = V.navigate(gappy, gappy.activeId, 'https://b.com', { ts: NOW });
+  assert.equal(V.browsingStats(gappy, NOW).streakDays, 1);
 });
 
 /* ---- swipe gestures ---- */
