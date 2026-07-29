@@ -193,6 +193,17 @@
   .msg.you{align-self:flex-end;background:linear-gradient(135deg,color-mix(in srgb,var(--a) 80%,#000 8%),color-mix(in srgb,var(--b) 80%,#000 8%));color:#0b0d20;border-bottom-right-radius:4px}
   .msg.os{align-self:flex-start;background:rgba(255,255,255,.07);border:1px solid var(--line);border-bottom-left-radius:4px}
   .msg.os.think{color:var(--faint)}
+  /* rendered-Markdown bubbles: the OS (and Live AI) speak Markdown — show it, don't spell it */
+  .msg.md{white-space:normal}
+  .msg.md p{margin:0 0 8px}
+  .msg.md p:last-child{margin:0}
+  .msg.md ul{margin:4px 0 8px 18px;padding:0}
+  .msg.md li{margin:2px 0}
+  .msg.md h1,.msg.md h2,.msg.md h3{margin:6px 0 4px;font-size:15px}
+  .msg.md code{background:rgba(255,255,255,.09);border-radius:4px;padding:1px 5px;font-size:12.5px}
+  .msg.md pre{background:rgba(0,0,0,.3);border-radius:8px;padding:8px 10px;overflow-x:auto;margin:6px 0}
+  .msg.md pre code{background:none;padding:0}
+  .msg.md a{color:inherit;text-decoration:underline}
   .chat form{display:flex;gap:8px;padding:8px 10px;border-top:1px solid var(--line)}
   .chat input[type=text]{flex:1;background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:12px;padding:8px 12px;outline:0}
   .chat input[type=text]:focus{border-color:color-mix(in srgb,var(--a) 55%,var(--line))}
@@ -1197,7 +1208,12 @@ APP_RENDER.assistant = function (proc, body) {
   body.appendChild(livebar); body.appendChild(log); body.appendChild(hint); body.appendChild(form);
 
   function bubble(text, who, extraCls) {
-    var m = el('div', 'msg ' + who + (extraCls ? ' ' + extraCls : ''), text);
+    var m = el('div', 'msg ' + who + (extraCls ? ' ' + extraCls : ''));
+    // The OS and Live AI speak Markdown — render it (safely escaped by the
+    // kernel's renderer) instead of spelling the asterisks. Your own words,
+    // and status bubbles that get .textContent updates later, stay plain.
+    if (who === 'os' && !extraCls) { m.classList.add('md'); m.innerHTML = K.renderMarkdown(text); }
+    else m.textContent = text;
     log.appendChild(m);
     log.scrollTop = log.scrollHeight;
     return m;
@@ -1236,7 +1252,9 @@ APP_RENDER.assistant = function (proc, body) {
     } else if (liveAI.on && liveReady()) {
       var think = bubble('thinking…', 'os', 'think');
       callLive(text).then(function (d) {
-        think.textContent = d && d.reply ? d.reply : 'The live model returned nothing — falling back to on-device.';
+        // the model answers in Markdown — render it, don't spell the asterisks
+        think.classList.add('md');
+        think.innerHTML = K.renderMarkdown(d && d.reply ? d.reply : 'The live model returned nothing — falling back to on-device.');
         think.classList.remove('think');
         if (d && d.actions) {
           /* live actions reuse the kernel: run each as a shell command */
