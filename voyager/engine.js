@@ -342,6 +342,7 @@
       activeSpace: 1,
       nextSpaceId: 2,
       splitId: null,    // a second tab shown beside the active one (same space)
+      closedTabs: [],   // recently closed (⌘⇧T): {stack, pos, title, space, zoom}
       settings: {
         engine: opts.engine || 'seeker',
         engineChosen: false,   // flips when the user picks one in Settings
@@ -353,6 +354,8 @@
         blockTrackers: opts.blockTrackers !== false, // ad/tracker blocking through the proxy (default on)
         remember: opts.remember !== false,   // capture readable pages into memory (default on)
         startName: opts.startName || '',     // optional greeting name on the start page
+        readerSize: 17,                      // Reader text size in px (14–24)
+        readerSerif: false,                  // Reader in serif, book-style
       },
     };
     return newTab(state, { ts: opts.ts });
@@ -411,6 +414,15 @@
     var next = shallow(state);
     next.tabs = state.tabs.slice(0, idx).concat(state.tabs.slice(idx + 1));
     if (state.splitId === id) next.splitId = null;   // closing a pane dissolves the split
+    // Remember what was closed, so ⌘⇧T can take it back. Private tabs vanish
+    // for real — no trace, not even a regret.
+    var dead = state.tabs[idx];
+    if (!dead.incognito) {
+      next.closedTabs = (state.closedTabs || []).concat([{
+        stack: dead.stack.slice(), pos: dead.pos, title: dead.title, space: space, zoom: dead.zoom,
+      }]);
+      if (next.closedTabs.length > 10) next.closedTabs = next.closedTabs.slice(next.closedTabs.length - 10);
+    }
     // Never-empty holds PER SPACE: closing a space's last tab respawns a fresh one there.
     var siblings = next.tabs.filter(function (t) { return (t.space || 1) === space; });
     if (!siblings.length) return newTab(next, { space: space });
@@ -434,6 +446,34 @@
     next.activeId = id;
     // Jumping to a tab in another space (palette, tab sheet) follows it there.
     if ((tab.space || 1) !== state.activeSpace) next.activeSpace = tab.space || 1;
+    return next;
+  }
+
+  /**
+   * ⌘⇧T: bring back a recently closed tab — its whole back/forward stack,
+   * title, zoom, and the space it lived in (falling back to the active space
+   * if that desk was demolished). idx picks from the recently-closed list;
+   * default is the most recent.
+   */
+  function reopenTab(state, idx) {
+    var list = state.closedTabs || [];
+    if (!list.length) return state;
+    var i = idx == null ? list.length - 1 : idx;
+    if (i < 0 || i >= list.length) return state;
+    var dead = list[i];
+    var space = getSpace(state, dead.space) ? dead.space : state.activeSpace;
+    var next = shallow(state);
+    next.closedTabs = list.slice(0, i).concat(list.slice(i + 1));
+    var tab = makeTab(next.nextId, dead.stack[0], {});
+    tab.stack = dead.stack.slice();
+    tab.pos = Math.max(0, Math.min(dead.stack.length - 1, Number(dead.pos) || 0));
+    tab.title = String(dead.title || '');
+    tab.zoom = Math.max(25, Math.min(500, Number(dead.zoom) || 100));
+    tab.space = space;
+    next.nextId = next.nextId + 1;
+    next.tabs = next.tabs.concat([tab]);
+    next.activeId = tab.id;
+    next.activeSpace = space;
     return next;
   }
 
@@ -1343,6 +1383,7 @@
   var COMMANDS = [
     { id: 'newtab', title: 'New tab', keys: 'new tab open' },
     { id: 'newprivate', title: 'New private tab', keys: 'private incognito new tab' },
+    { id: 'reopen', title: 'Reopen closed tab', keys: 'reopen closed tab restore undo' },
     { id: 'reading', title: 'Reading list', keys: 'reading list read later' },
     { id: 'bookmarks', title: 'Bookmarks', keys: 'bookmarks stars saved' },
     { id: 'history', title: 'History', keys: 'history recent visited' },
@@ -1432,7 +1473,7 @@
   ];
 
   function setSetting(state, key, value) {
-    var allowed = { engine: 1, home: 1, torGateway: 1, proxy: 1, theme: 1, accent: 1, blockTrackers: 1, remember: 1, startName: 1 };
+    var allowed = { engine: 1, home: 1, torGateway: 1, proxy: 1, theme: 1, accent: 1, blockTrackers: 1, remember: 1, startName: 1, readerSize: 1, readerSerif: 1 };
     if (!allowed[key]) return state;
     if (key === 'engine') {
       var ok = false;
@@ -1445,8 +1486,9 @@
       for (var a = 0; a < ACCENTS.length; a++) if (ACCENTS[a].id === value) accOk = true;
       if (!accOk) return state;
     }
-    if (key === 'blockTrackers' || key === 'remember') value = !!value;
+    if (key === 'blockTrackers' || key === 'remember' || key === 'readerSerif') value = !!value;
     if (key === 'startName') value = String(value == null ? '' : value).slice(0, 40);
+    if (key === 'readerSize') value = Math.max(14, Math.min(24, Math.round(Number(value) || 17)));
     if (key === 'torGateway') {
       // Store a bare host ("onion.ws"): no scheme, no leading dots, no path.
       value = String(value == null ? '' : value).trim().replace(/^https?:\/\//i, '').replace(/^\.+|\/.*$/g, '');
@@ -1534,6 +1576,7 @@
       activeSpace: state.activeSpace || 1,
       nextSpaceId: state.nextSpaceId || 2,
       splitId: state.splitId != null ? state.splitId : null,
+      closedTabs: state.closedTabs || [],
       settings: state.settings,
     });
   }
@@ -1602,8 +1645,19 @@
         blockTrackers: !(data.settings && data.settings.blockTrackers === false),
         remember: !(data.settings && data.settings.remember === false),
         startName: (data.settings && String(data.settings.startName || '').slice(0, 40)) || '',
+        readerSize: Math.max(14, Math.min(24, Math.round(Number(data.settings && data.settings.readerSize) || 17))),
+        readerSerif: !!(data.settings && data.settings.readerSerif),
       },
     };
+    state.closedTabs = [];
+    if (Array.isArray(data.closedTabs)) {
+      for (var ct = 0; ct < data.closedTabs.length && state.closedTabs.length < 10; ct++) {
+        var c0 = data.closedTabs[ct];
+        if (c0 && Array.isArray(c0.stack) && c0.stack.length) {
+          state.closedTabs.push({ stack: c0.stack, pos: Number(c0.pos) || 0, title: String(c0.title || ''), space: Number(c0.space) || 1, zoom: Number(c0.zoom) || 100 });
+        }
+      }
+    }
     if (tabs.length === 0) return newTab(state, {});
     state.activeId = getTab(state, data.activeId) ? data.activeId : tabs[0].id;
     state.activeSpace = getTab(state, state.activeId).space || 1;   // desk follows the active tab
@@ -1678,6 +1732,7 @@
     spaceTabs: spaceTabs,
     setSplit: setSplit,
     splitTab: splitTab,
+    reopenTab: reopenTab,
     browsingStats: browsingStats,
     addSpace: addSpace,
     renameSpace: renameSpace,
