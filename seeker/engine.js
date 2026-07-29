@@ -927,14 +927,166 @@
     return { city: city.replace(/\b[a-z]/g, function (ch) { return ch.toUpperCase(); }), zone: tz };
   }
 
+  /* ---- percentages: "15% of 80" ---- */
+  function parsePercent(q) {
+    var m = /^\s*(-?\d+(?:\.\d+)?)\s*(?:%|percent)\s+of\s+(-?\d+(?:[,.]\d+)*)\s*$/i
+      .exec(fold(q));
+    if (!m) return null;
+    var pct = parseFloat(m[1]), base = parseFloat(m[2].replace(/,/g, ''));
+    if (!isFinite(pct) || !isFinite(base)) return null;
+    var v = Math.round(pct * base / 100 * 1e10) / 1e10;
+    return { value: v, text: m[1] + '% of ' + m[2] + ' = ' + v };
+  }
+
+  /* ---- live currency: "100 usd to gbp", "£50 in eur" ----
+   * The engine parses; the shell resolves with live ECB rates. The code table
+   * is the ECB reference set (what frankfurter.app serves keylessly). */
+  var CURRENCIES = {};
+  ('usd eur gbp jpy aud bgn brl cad chf cny czk dkk hkd huf idr ils inr isk ' +
+   'krw mxn myr nok nzd php pln ron sek sgd thb try zar').split(' ')
+    .forEach(function (c) { CURRENCIES[c] = 1; });
+  var CURRENCY_SYMBOLS = { '$': 'usd', '£': 'gbp', '€': 'eur', '¥': 'jpy' };
+  function parseCurrency(q) {
+    var m = /^\s*(?:convert\s+)?([$£€¥])?\s*(\d+(?:[,.]\d+)*)\s*([a-z]{3})?\s+(?:in|to|into|as)\s+(?:([a-z]{3})|([$£€¥]))\s*$/i
+      .exec(fold(q));
+    if (!m) return null;
+    var from = m[3] ? m[3].toLowerCase() : (m[1] ? CURRENCY_SYMBOLS[m[1]] : null);
+    var to = m[4] ? m[4].toLowerCase() : (m[5] ? CURRENCY_SYMBOLS[m[5]] : null);
+    if (!from || !to || !CURRENCIES[from] || !CURRENCIES[to] || from === to) return null;
+    var amount = parseFloat(m[2].replace(/,/g, ''));
+    if (!isFinite(amount)) return null;
+    return { amount: amount, from: from.toUpperCase(), to: to.toUpperCase() };
+  }
+
+  /* ---- crypto prices: "bitcoin price", "eth price in gbp" ---- */
+  var CRYPTO = { btc: 'bitcoin', bitcoin: 'bitcoin', eth: 'ethereum', ethereum: 'ethereum',
+    sol: 'solana', solana: 'solana', doge: 'dogecoin', dogecoin: 'dogecoin',
+    xrp: 'ripple', ripple: 'ripple', ada: 'cardano', cardano: 'cardano',
+    ltc: 'litecoin', litecoin: 'litecoin', bnb: 'binancecoin', trx: 'tron', tron: 'tron',
+    xmr: 'monero', monero: 'monero' };
+  function parseCrypto(q) {
+    var m = /^\s*(?:price of\s+)?(\w+)\s+(?:price|value)(?:\s+in\s+([a-z]{3}))?\s*$/i.exec(fold(q)) ||
+            (/^\s*price of\s+(\w+)\s*$/i.exec(fold(q)));
+    if (!m) return null;
+    var id = CRYPTO[String(m[1]).toLowerCase()];
+    if (!id) return null;
+    var vs = m[2] ? String(m[2]).toLowerCase() : 'usd';
+    return { id: id, symbol: String(m[1]).toUpperCase(), vs: vs };
+  }
+
+  /* ---- weather: "weather in london", "tokyo weather" ---- */
+  function parseWeather(q) {
+    var f = fold(q).replace(/\?+\s*$/, '').trim();
+    var m = /^weather\s+(?:in|at|for)\s+(.+)$/.exec(f) ||
+            /^weather\s+(.+)$/.exec(f) ||
+            /^(.+?)\s+weather$/.exec(f);
+    if (!m) return null;
+    var place = m[1].trim();
+    if (!place || place.length > 60 || /["\-:!]/.test(place)) return null;
+    return { place: place };
+  }
+
+  /* ---- dictionary: "define serendipity", "meaning of petrichor" ---- */
+  function parseDefine(q) {
+    var m = /^\s*(?:define|definition of|meaning of|what does)\s+([a-z][a-z\- ]*?)(?:\s+mean)?\s*\??\s*$/i
+      .exec(fold(q));
+    if (!m) return null;
+    var word = m[1].trim();
+    if (!word || word.split(/\s+/).length > 3) return null;
+    return { word: word };
+  }
+
+  /* ---- date maths (clock-injected: `now` in ms, UTC arithmetic) ---- */
+  var DAY_MS = 86400000;
+  var WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  var MONTHS = { january: 0, february: 1, march: 2, april: 3, may: 4, june: 5, july: 6,
+    august: 7, september: 8, october: 9, november: 10, december: 11,
+    jan: 0, feb: 1, mar: 2, apr: 3, jun: 5, jul: 6, aug: 7, sep: 8, sept: 8, oct: 9, nov: 10, dec: 11 };
+  var NAMED_DAYS = { christmas: [11, 25], 'christmas day': [11, 25], 'new year': [0, 1],
+    'new years': [0, 1], "new year's": [0, 1], halloween: [9, 31],
+    valentines: [1, 14], "valentine's day": [1, 14], 'valentines day': [1, 14] };
+
+  function isoOf(ms) { return new Date(ms).toISOString().slice(0, 10); }
+  function dateFloor(ms) { return Math.floor(ms / DAY_MS) * DAY_MS; }
+
+  // "christmas" | "25 december" | "december 25" | "25 dec 2027" → next occurrence (UTC ms)
+  function parseDateSpec(s, now) {
+    s = fold(s).replace(/\?+\s*$/, '').trim();
+    var md = NAMED_DAYS[s], y = null, m2;
+    if (!md) {
+      if ((m2 = /^(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?([a-z]+)(?:\s+(\d{4}))?$/.exec(s))) {
+        if (MONTHS[m2[2]] == null) return null;
+        md = [MONTHS[m2[2]], parseInt(m2[1], 10)]; y = m2[3] ? parseInt(m2[3], 10) : null;
+      } else if ((m2 = /^([a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s+(\d{4}))?$/.exec(s))) {
+        if (MONTHS[m2[1]] == null) return null;
+        md = [MONTHS[m2[1]], parseInt(m2[2], 10)]; y = m2[3] ? parseInt(m2[3], 10) : null;
+      } else return null;
+    }
+    if (md[1] < 1 || md[1] > 31) return null;
+    var nowD = new Date(dateFloor(now));
+    var year = y != null ? y : nowD.getUTCFullYear();
+    var t = Date.UTC(year, md[0], md[1]);
+    if (y == null && t < dateFloor(now)) t = Date.UTC(year + 1, md[0], md[1]);
+    var chk = new Date(t);
+    if (chk.getUTCMonth() !== md[0] || chk.getUTCDate() !== md[1]) return null; // e.g. 31 feb
+    return t;
+  }
+
+  function parseDateQuery(q, now) {
+    var f = fold(q).replace(/\?+\s*$/, '').trim();
+    var m = /^(?:how many\s+)?days\s+(?:until|till|to)\s+(.+)$/.exec(f);
+    if (m) {
+      var t = parseDateSpec(m[1], now);
+      if (t == null) return null;
+      var days = Math.round((t - dateFloor(now)) / DAY_MS);
+      return { kind: 'days-until', days: days, dateISO: isoOf(t),
+        weekday: WEEKDAYS[new Date(t).getUTCDay()], label: m[1].trim() };
+    }
+    m = /^(\d+)\s+(day|week|month)s?\s+from\s+(?:today|now)$/.exec(f);
+    if (m) {
+      var n = parseInt(m[1], 10), t2;
+      if (m[2] === 'day') t2 = dateFloor(now) + n * DAY_MS;
+      else if (m[2] === 'week') t2 = dateFloor(now) + n * 7 * DAY_MS;
+      else { var d0 = new Date(dateFloor(now)); t2 = Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth() + n, Math.min(d0.getUTCDate(), 28)); }
+      return { kind: 'date-from-now', n: n, unit: m[2], dateISO: isoOf(t2),
+        weekday: WEEKDAYS[new Date(t2).getUTCDay()] };
+    }
+    m = /^what\s+day\s+(?:is|was|falls on)\s+(.+)$/.exec(f);
+    if (m && m[1] !== 'it' && m[1] !== 'today') {
+      var t3 = parseDateSpec(m[1], now);
+      if (t3 == null) return null;
+      return { kind: 'weekday-of', dateISO: isoOf(t3), weekday: WEEKDAYS[new Date(t3).getUTCDay()],
+        label: m[1].trim() };
+    }
+    return null;
+  }
+
   // One front door: what kind of instant answer (if any) does this query earn?
-  function instantAnswer(q) {
-    var v = calc(q);
-    if (v !== null) return { type: 'calc', query: q, value: v, text: String(q).trim() + ' = ' + v };
-    var cv = convert(q);
+  // On-device types (calc/percent/convert/time/date) carry their answer; live
+  // types (currency/crypto/weather/define) carry what the shell should fetch.
+  function instantAnswer(q, now) {
+    now = now == null ? 0 : now;
+    var s = String(q == null ? '' : q).trim()
+      .replace(/^(?:what\s+is|what's|whats|how\s+much\s+is)\s+/i, '')
+      .replace(/[?=]+\s*$/, '');
+    var v = calc(s);
+    if (v !== null) return { type: 'calc', query: q, value: v, text: s + ' = ' + v };
+    var p = parsePercent(s);
+    if (p) return { type: 'percent', query: q, value: p.value, text: p.text };
+    var cv = convert(s);
     if (cv) return { type: 'convert', query: q, value: cv.value, text: cv.text };
-    var t = parseTimeQuery(q);
+    var cur = parseCurrency(s);
+    if (cur) return { type: 'currency', query: q, amount: cur.amount, from: cur.from, to: cur.to };
+    var cr = parseCrypto(s);
+    if (cr) return { type: 'crypto', query: q, id: cr.id, symbol: cr.symbol, vs: cr.vs };
+    var t = parseTimeQuery(s);
     if (t) return { type: 'time', query: q, city: t.city, zone: t.zone };
+    var dq = parseDateQuery(s, now);
+    if (dq) { dq.type = 'date'; dq.query = q; return dq; }
+    var w = parseWeather(s);
+    if (w) return { type: 'weather', query: q, place: w.place };
+    var df = parseDefine(s);
+    if (df) return { type: 'define', query: q, word: df.word };
     return null;
   }
 
@@ -956,6 +1108,10 @@
     parseRobots: parseRobots, robotsAllowed: robotsAllowed,
     createCrawler: createCrawler, crawlerNext: crawlerNext, crawlerAdd: crawlerAdd,
     // instant answers
-    calc: calc, convert: convert, parseTimeQuery: parseTimeQuery, instantAnswer: instantAnswer
+    calc: calc, convert: convert, parseTimeQuery: parseTimeQuery,
+    parsePercent: parsePercent, parseCurrency: parseCurrency, parseCrypto: parseCrypto,
+    parseWeather: parseWeather, parseDefine: parseDefine,
+    parseDateSpec: parseDateSpec, parseDateQuery: parseDateQuery,
+    instantAnswer: instantAnswer
   };
 });
