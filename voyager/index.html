@@ -356,6 +356,22 @@
   .badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--cyan); border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; }
   .badge.mem { color: var(--purple); }
 
+  /* ═════════ 📱 hand-off (QR) ═════════ */
+  .handoff {
+    position: fixed; inset: 0; z-index: 90; display: none; align-items: center; justify-content: center;
+    background: rgba(4,7,14,.7); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); padding: 20px;
+  }
+  .handoff.on { display: flex; }
+  .handoffcard {
+    background: var(--bg2); border: 1px solid var(--line); border-radius: 20px;
+    padding: 22px; max-width: 360px; width: 100%; text-align: center;
+    box-shadow: 0 24px 60px rgba(0,0,0,.55);
+  }
+  .handoffcard h3 { margin: 0 0 4px; font-size: 17px; }
+  .handoffcard .u { font-size: 12px; color: var(--faint); word-break: break-all; margin: 10px 0 0; }
+  .handoffcard canvas { width: min(64vw, 260px); height: min(64vw, 260px); image-rendering: pixelated; border-radius: 12px; background: #fff; padding: 10px; box-sizing: content-box; margin-top: 14px; }
+  .handoffcard .btn { margin-top: 16px; width: 100%; }
+
   /* ═════════ find in page (⌘F) ═════════ */
   .findbar {
     position: absolute; top: calc(100% + 6px); left: 8px; z-index: 45;
@@ -489,6 +505,8 @@
     <button class="mi" data-act="pintab"><span class="ico">📌</span><span id="pinLabel">Pin this tab</span></button>
     <button class="mi" data-act="splitview"><span class="ico">⿻</span><span id="splitLabel">Split view</span></button>
     <button class="mi" data-act="stats"><span class="ico">📊</span>Your numbers</button>
+    <button class="mi" data-act="handoff"><span class="ico">📱</span>Hand off to another device</button>
+    <button class="mi" data-act="pip"><span class="ico">🎬</span>Pop video out</button>
     <button class="mi" data-act="sitesettings"><span class="ico">🌐</span>Site settings</button>
     <button class="mi" data-act="follow"><span class="ico">📡</span><span id="followLabel">Follow this site</span></button>
     <button class="mi" data-act="reader"><span class="ico">📖</span>Reader view<span style="margin-left:auto;color:var(--faint);font-size:12px">clean text</span></button>
@@ -556,9 +574,21 @@
   </div>
 </div>
 
+<!-- ═════════ 📱 hand-off ═════════ -->
+<div class="handoff" id="handoff">
+  <div class="handoffcard">
+    <h3>📱 Hand off this page</h3>
+    <p class="tiny" style="margin:0">Scan with the other device’s camera — the page opens there. Nothing goes through a server.</p>
+    <canvas id="handoffCanvas" width="290" height="290"></canvas>
+    <p class="u" id="handoffUrl"></p>
+    <button class="btn" data-act="handoffclose">Done</button>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="engine.js"></script>
+<script src="qr.js"></script>
 <script>
 'use strict';
 /* Voyager UI — a skin over voyager/engine.js. All decisions (what a typed
@@ -1754,13 +1784,20 @@ function runAct(act) {
   else if (act === 'viewchanges') { hideChangeBanner(); navTo('voyager://changes'); }
   else if (act === 'dismisschanges') hideChangeBanner();
   else if (act === 'savehighlight') {
-    if (!readerState || !pendingSelection) return;
-    commit(Voyager.addHighlight(S, readerState.url, pendingSelection, Date.now()));
+    if (!pendingSelection) return;
+    var hUrl = /^https?:/i.test(pendingSelectionUrl) ? pendingSelectionUrl : (readerState && readerState.url);
+    if (!hUrl) return;
+    commit(Voyager.addHighlight(S, hUrl, pendingSelection, Date.now()));
     pendingSelection = '';
+    pendingSelectionUrl = '';
     $('hlBubble').className = 'hlbubble';
-    renderInternal('reader');
+    if (String(currentUrl()) === 'voyager://reader') renderInternal('reader');
+    else inkLivePage();                              // ink it into the live page right away
     toast('🖍 Highlighted — it’s yours now, even if the page dies');
   }
+  else if (act === 'handoff') openHandoff();
+  else if (act === 'handoffclose') $('handoff').className = 'handoff';
+  else if (act === 'pip') popVideoOut();
   else if (act === 'follow') {
     var fUrl = currentUrl();
     if (String(fUrl).indexOf('voyager://') === 0) { toast('Open a website first'); return; }
@@ -1949,6 +1986,8 @@ $('frame').addEventListener('load', function () {
   if (!title) title = Voyager.hostOf(currentUrl());
   commit(Voyager.setTitle(S, S.activeId, title));
   maybeCapture(currentUrl());
+  hookLivePage();                                    // annotations on the live page
+  inkLivePage();
 });
 $('frame').addEventListener('error', function () {
   showVeil('blocked', currentUrl());
@@ -2002,6 +2041,8 @@ window.addEventListener('message', function (e) {
       }
       paintTrackerBadge();
       maybeCapture(url);
+      hookLivePage();
+      inkLivePage();
     }
   }
 });
@@ -2146,6 +2187,127 @@ $('findInput').addEventListener('keydown', function (e) {
   else if (e.key === 'Escape') { closeFind(); }
 });
 
+/* ---- 📱 hand-off: the page as a QR code, drawn by our own encoder ---- */
+function openHandoff() {
+  var url = currentUrl();
+  if (String(url).indexOf('voyager://') === 0) url = location.href;   // hand off Voyager itself
+  var code;
+  try { code = VoyagerQR.encode(url); }
+  catch (e) { toast('This address is too long for a hand-off code'); return; }
+  var cv = $('handoffCanvas');
+  var scale = Math.max(2, Math.floor(290 / code.size));
+  cv.width = cv.height = code.size * scale;
+  var ctx = cv.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.fillStyle = '#000';
+  for (var r = 0; r < code.size; r++) {
+    for (var c = 0; c < code.size; c++) {
+      if (code.modules[r][c]) ctx.fillRect(c * scale, r * scale, scale, scale);
+    }
+  }
+  $('handoffUrl').textContent = url;
+  $('handoff').className = 'handoff on';
+}
+$('handoff').addEventListener('click', function (e) { if (e.target === this) this.className = 'handoff'; });
+
+/* ---- 🎬 picture-in-picture: pop a page's video out of the frame ---- */
+function popVideoOut() {
+  var docs = [];
+  try { if ($('frame').contentDocument) docs.push($('frame').contentDocument); } catch (e) {}
+  try { if (document.body.classList.contains('split') && $('frame2').contentDocument) docs.push($('frame2').contentDocument); } catch (e) {}
+  for (var i = 0; i < docs.length; i++) {
+    var vids = docs[i].querySelectorAll('video');
+    for (var v = 0; v < vids.length; v++) {
+      var video = vids[v];
+      if (video.readyState === 0 && !video.currentSrc) continue;
+      if (document.pictureInPictureEnabled && video.requestPictureInPicture) {
+        video.requestPictureInPicture().then(function () { toast('🎬 Popped out — it follows you between tabs'); })
+          .catch(function () { toast('The video refused picture-in-picture'); });
+        return;
+      }
+      toast('This browser doesn’t offer picture-in-picture');
+      return;
+    }
+  }
+  toast('No reachable video — embedded players (YouTube) have their own PiP button');
+}
+
+/* ---- 🖍 annotations on LIVE pages: through the proxy every page is
+ * same-origin, so Voyager can read your selection inside the frame and ink
+ * your saved highlights straight into the real page on every visit. ---- */
+var pendingSelectionUrl = '';   // where a pending selection came from (reader or live page)
+
+function liveDoc() {
+  try {
+    var doc = $('frame').contentDocument;
+    return doc && doc.body ? doc : null;
+  } catch (e) { return null; }
+}
+
+function hookLivePage() {
+  var doc = liveDoc();
+  if (!doc || doc.__voyagerHooked) return;
+  doc.__voyagerHooked = true;
+  function onSelect() {
+    setTimeout(function () {
+      var win = doc.defaultView;
+      var sel = win && win.getSelection && win.getSelection();
+      var b = $('hlBubble');
+      if (!sel || sel.isCollapsed) { if (pendingSelectionUrl !== 'voyager://reader') { b.className = 'hlbubble'; } return; }
+      var text = String(sel.toString() || '').replace(/\s+/g, ' ').trim();
+      if (text.length < 3 || text.length > 500) return;
+      pendingSelection = text;
+      pendingSelectionUrl = currentUrl();
+      try {
+        var rect = sel.getRangeAt(0).getBoundingClientRect();
+        var frameRect = $('frame').getBoundingClientRect();
+        b.style.left = Math.max(70, Math.min(window.innerWidth - 70, frameRect.left + rect.left + rect.width / 2)) + 'px';
+        b.style.top = Math.max(90, frameRect.top + rect.top) + 'px';
+      } catch (e) { b.style.left = '50%'; b.style.top = '120px'; }
+      b.className = 'hlbubble on';
+    }, 0);
+  }
+  doc.addEventListener('mouseup', onSelect);
+  doc.addEventListener('touchend', function () { setTimeout(onSelect, 60); });
+}
+
+/** Re-ink saved highlights into the live page's own DOM (first match wins). */
+function inkLivePage() {
+  var doc = liveDoc();
+  if (!doc) return;
+  var hls = Voyager.highlightsFor(S, currentUrl());
+  if (!hls.length) return;
+  for (var i = 0; i < hls.length; i++) {
+    if (doc.querySelector('mark[data-voyhl="' + i + '"]')) continue;
+    var words = hls[i].text.split(/\s+/);
+    var probe = words.slice(0, 12).join(' ').toLowerCase();          // selections can span nodes; match the head
+    var walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, null);
+    var node;
+    while ((node = walker.nextNode())) {
+      var p = node.parentNode && node.parentNode.nodeName;
+      if (p === 'SCRIPT' || p === 'STYLE' || p === 'MARK') continue;
+      var at = node.nodeValue.toLowerCase().replace(/\s+/g, ' ').indexOf(probe);
+      if (at === -1) continue;
+      // map the normalised offset back onto the raw node text
+      var raw = node.nodeValue.toLowerCase();
+      var rawAt = raw.indexOf(probe);
+      if (rawAt === -1) rawAt = at;                                  // whitespace differed; best effort
+      var end = Math.min(node.nodeValue.length, rawAt + hls[i].text.length);
+      try {
+        var range = doc.createRange();
+        range.setStart(node, rawAt);
+        range.setEnd(node, end);
+        var mark = doc.createElement('mark');
+        mark.setAttribute('data-voyhl', String(i));
+        mark.setAttribute('style', 'background:rgba(245,192,74,.45);color:inherit;border-radius:3px;box-shadow:0 0 0 1px rgba(245,192,74,.3)');
+        range.surroundContents(mark);
+      } catch (e) {}
+      break;
+    }
+  }
+}
+
 /* ---- highlights: select in Reader, tap the marker ---- */
 var pendingSelection = '';
 function readerSelectionText() {
@@ -2163,6 +2325,7 @@ function maybeShowHlBubble() {
   var b = $('hlBubble');
   if (!text) { b.className = 'hlbubble'; pendingSelection = ''; return; }
   pendingSelection = text;
+  pendingSelectionUrl = readerState ? readerState.url : '';
   try {
     var rect = window.getSelection().getRangeAt(0).getBoundingClientRect();
     b.style.left = Math.max(70, Math.min(window.innerWidth - 70, rect.left + rect.width / 2)) + 'px';
