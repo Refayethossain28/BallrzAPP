@@ -4,7 +4,7 @@
  * under a newer page) and the remaining static assets are cache-first for
  * speed. Live search APIs (/api/, wikipedia, algolia, …) are never cached —
  * live means live. Bump CACHE to force a clean reinstall. */
-const CACHE = 'seeker-v2';
+const CACHE = 'seeker-v3';
 const ASSETS = ['./', './index.html', './engine.js', './manifest.json',
                 './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 
