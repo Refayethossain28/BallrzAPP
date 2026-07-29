@@ -60,9 +60,17 @@
     return s;
   }
 
-  // Words = runs of letters/digits (apostrophes dropped: don't → dont).
+  // Words = runs of letters/digits in ANY script (apostrophes dropped:
+  // don't → dont). Unicode property classes are built via the constructor so
+  // engines without \p support parse the file and fall back to ASCII.
+  var WORD_RE = (function () {
+    // \p{M} keeps combining vowel signs (Bengali matras, Devanagari, …) inside
+    // their word instead of splitting it at every mark.
+    try { return new RegExp('[\\p{L}\\p{M}\\p{N}]+', 'gu'); }
+    catch (e) { return /[a-z0-9]+/g; }
+  })();
   function tokenize(s) {
-    return fold(s).replace(/['’]/g, '').match(/[a-z0-9]+/g) || [];
+    return fold(s).replace(/['’]/g, '').match(WORD_RE) || [];
   }
 
   // The 60-ish highest-frequency English words. They ARE indexed (so the
@@ -90,6 +98,7 @@
   function stem(w) {
     w = String(w);
     if (w.length < 3) return w;
+    if (!/^[a-z]+$/.test(w)) return w; // Porter is English; other scripts pass through
     var first = w.charAt(0);
     if (first === 'y') w = 'Y' + w.slice(1); // leading y is a consonant
 

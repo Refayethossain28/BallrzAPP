@@ -96,6 +96,25 @@
   .srcrow { display: none; gap: 8px; flex-wrap: wrap; padding: 10px 0 2px; }
   body.results .srcrow { display: flex; }
   .srcrow .chip.on { color: var(--text); border-color: var(--brand); background: rgba(77,159,255,.16); }
+  .langsel { margin-left: auto; background: var(--card); color: var(--dim); border: 1px solid var(--line);
+             border-radius: 999px; padding: 4px 10px; font-size: 12.5px; outline: none; }
+
+  /* ---- verticals: All / Images / News ---- */
+  .tabs { display: none; gap: 2px; border-bottom: 1px solid var(--line); margin-top: 4px; }
+  body.results .tabs { display: flex; }
+  .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--dim);
+                 padding: 8px 14px; font-size: 14px; cursor: pointer; }
+  .tabs button.on { color: var(--text); border-bottom-color: var(--brand); }
+
+  /* ---- image results ---- */
+  .imggrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+             gap: 10px; padding-top: 12px; }
+  .imggrid a { display: block; border-radius: 10px; overflow: hidden; background: var(--card2);
+               border: 1px solid var(--line); }
+  .imggrid a:hover { border-color: var(--brand); text-decoration: none; }
+  .imggrid img { width: 100%; height: 120px; object-fit: cover; display: block; }
+  .imggrid .cap { font-size: 11px; color: var(--faint); padding: 4px 8px; white-space: nowrap;
+                  overflow: hidden; text-overflow: ellipsis; }
 
   .stats { color: var(--faint); font-size: 12.5px; padding: 10px 2px; }
 
@@ -189,6 +208,12 @@
 
   <div class="srcrow" id="srcRow" title="Live internet sources — toggle what Seeker asks"></div>
 
+  <div class="tabs" id="tabRow">
+    <button type="button" data-tab="all" class="on">All</button>
+    <button type="button" data-tab="images">Images</button>
+    <button type="button" data-tab="news">News</button>
+  </div>
+
   <!-- home hero -->
   <div class="hero" id="hero">
     <div class="logo"><span class="lens">🔎</span><span class="g">Seeker</span></div>
@@ -252,6 +277,8 @@
         <tr><td><code>12*(3+4)^2</code> · <code>15% of 80</code> · <code>5 km to miles</code> · <code>time in tokyo</code> · <code>days until christmas</code></td><td>instant answers, computed on-device</td></tr>
         <tr><td><code>100 usd to gbp</code> · <code>bitcoin price</code> · <code>weather in london</code> · <code>define serendipity</code></td><td>live answers — ECB rates, CoinGecko, Open-Meteo, dictionaryapi.dev, all keyless</td></tr>
         <tr><td><code>eiffel tower</code></td><td>entity queries get a Wikipedia knowledge panel</td></tr>
+        <tr><td><b>All · Images · News</b></td><td>verticals — 🖼 Openverse + Wikimedia Commons; 📰 GDELT's worldwide article index + Hacker News</td></tr>
+        <tr><td><b>🌐 language</b></td><td>the picker switches Wikipedia-powered results, suggestions and the knowledge panel across 14 languages — and the index itself speaks every script (Arabic, Bengali, CJK…)</td></tr>
       </table>
       <p style="margin-top:10px">Under the hood: a from-scratch <b>Porter stemmer</b>, a positional
       <b>inverted index</b>, <b>BM25</b> ranking with field weights, proximity and coverage,
@@ -370,10 +397,10 @@
   var SOURCES = [
     { id: 'wiki', label: 'Wikipedia', weight: 1.15, fav: 'W',
       fetch: function (q) {
-        return getJSON('https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=' +
+        return getJSON(wikiBase() + '/w/api.php?action=query&list=search&srsearch=' +
           encodeURIComponent(q) + '&format=json&srlimit=6&origin=*').then(function (d) {
           var items = (d && d.query && d.query.search || []).map(function (it) {
-            return { title: it.title, url: 'https://en.wikipedia.org/wiki/' + encodeURIComponent(String(it.title).replace(/ /g, '_')),
+            return { title: it.title, url: wikiBase() + '/wiki/' + encodeURIComponent(String(it.title).replace(/ /g, '_')),
               snippet: stripTags(it.snippet || ''), fav: 'W' };
           });
           if (!items.length) return items;
@@ -382,7 +409,7 @@
           // (property P856) as a first-class result — so "wandsworth" gives
           // you wandsworth.gov.uk, not just the article about it.
           var top = d.query.search[0].title;
-          return getJSON('https://en.wikipedia.org/w/api.php?action=query&prop=pageprops&ppprop=wikibase_item&titles=' +
+          return getJSON(wikiBase() + '/w/api.php?action=query&prop=pageprops&ppprop=wikibase_item&titles=' +
             encodeURIComponent(top) + '&format=json&origin=*').then(function (pp) {
             var pages = pp && pp.query && pp.query.pages || {}, qid = null;
             for (var k in pages) {
@@ -442,7 +469,8 @@
   /* ================================================================
    *  State + persistence
    * ================================================================ */
-  var LS = { crawled: 'seeker.crawled.v1', recent: 'seeker.recent.v1', sources: 'seeker.sources.v1' };
+  var LS = { crawled: 'seeker.crawled.v1', recent: 'seeker.recent.v1', sources: 'seeker.sources.v1',
+             lang: 'seeker.lang.v1' };
   function lsGet(k, fallback) {
     try { var v = localStorage.getItem(k); return v == null ? fallback : JSON.parse(v); }
     catch (e) { return fallback; }
@@ -457,6 +485,16 @@
   var enabled = lsGet(LS.sources, { wiki: true, hn: true, so: true, books: true });
   var recents = lsGet(LS.recent, []);
   var currentQuery = '', liveSeq = 0, selIdx = -1, suggSel = -1, lastResults = [];
+  var vertical = 'all'; // 'all' | 'images' | 'news'
+
+  // The live web in your language: which Wikipedia powers results,
+  // suggestions and the knowledge panel.
+  var WIKI_LANGS = { en: 'English', es: 'Español', fr: 'Français', de: 'Deutsch', it: 'Italiano',
+    pt: 'Português', ru: 'Русский', ar: 'العربية', bn: 'বাংলা', hi: 'हिन्दी', ur: 'اردو',
+    tr: 'Türkçe', ja: '日本語', zh: '中文' };
+  var lang = lsGet(LS.lang, 'en');
+  if (!WIKI_LANGS[lang]) lang = 'en';
+  function wikiBase() { return 'https://' + lang + '.wikipedia.org'; }
 
   /* ================================================================
    *  Small utilities
@@ -525,7 +563,31 @@
       SOURCES.map(function (s) {
         return '<button class="chip src ' + (enabled[s.id] ? 'on' : '') + '" data-src="' + s.id + '">' +
           esc(s.label) + '</button>';
-      }).join('');
+      }).join('') +
+      '<select class="langsel" id="langSel" title="Language for Wikipedia-powered results">' +
+      Object.keys(WIKI_LANGS).map(function (k) {
+        return '<option value="' + k + '"' + (k === lang ? ' selected' : '') + '>' +
+          esc(WIKI_LANGS[k]) + '</option>';
+      }).join('') + '</select>';
+    var sel = $('langSel');
+    if (sel && sel.addEventListener) sel.addEventListener('change', function () {
+      lang = WIKI_LANGS[sel.value] ? sel.value : 'en';
+      lsSet(LS.lang, lang);
+      if (currentQuery) runSearch(currentQuery, false);
+    });
+  }
+
+  function paintTabs() {
+    var kids = $('tabRow').querySelectorAll('button');
+    for (var i = 0; i < kids.length; i++) {
+      kids[i].classList.toggle('on', kids[i].getAttribute('data-tab') === vertical);
+    }
+  }
+  function setVertical(v) {
+    if (vertical === v) return;
+    vertical = v;
+    paintTabs();
+    if (currentQuery) runSearch(currentQuery, true);
   }
 
   function favFor(item) {
@@ -670,7 +732,7 @@
     var title = q.trim().replace(/\s+/g, '_');
     fetchSummary(title).catch(function () {
       // Not an exact title — resolve via opensearch, then retry once.
-      return getJSON('https://en.wikipedia.org/w/api.php?action=opensearch&search=' +
+      return getJSON(wikiBase() + '/w/api.php?action=opensearch&search=' +
         encodeURIComponent(q.trim()) + '&limit=1&format=json&origin=*').then(function (d) {
         var best = d && d[1] && d[1][0];
         if (!best) throw new Error('no entity');
@@ -679,7 +741,7 @@
     }).catch(function () {});
 
     function fetchSummary(t) {
-      return getJSON('https://en.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(t) + '?redirect=true')
+      return getJSON(wikiBase() + '/api/rest_v1/page/summary/' + encodeURIComponent(t) + '?redirect=true')
         .then(function (d) {
           if (seq !== liveSeq) return;
           if (!d || d.type !== 'standard' || !d.extract) throw new Error('no summary');
@@ -726,6 +788,84 @@
     return { items: items, res: res, ms: t1 - t0 };
   }
 
+  /* ---- 🖼 Images vertical: Openverse (CC) + Wikimedia Commons ---- */
+  function searchImages(q, seq) {
+    $('results').innerHTML = ''; lastResults = [];
+    $('stats').textContent = 'Searching images…';
+    var imgs = [], pending = 2;
+    function done() {
+      pending--;
+      if (seq !== liveSeq) return;
+      $('results').innerHTML = imgs.length ? '<div class="imggrid">' + imgs.map(function (im) {
+        return '<a href="' + esc(im.url) + '" target="_blank" rel="noopener">' +
+          '<img src="' + esc(im.thumb) + '" alt="' + esc(im.title) + '" loading="lazy">' +
+          '<div class="cap">' + esc(im.title || im.src) + '</div></a>';
+      }).join('') + '</div>' :
+        (pending === 0 ? '<div class="empty">No images found for <b>' + esc(currentQuery) + '</b>.</div>' : '');
+      $('stats').textContent = imgs.length ? imgs.length +
+        ' images · Openverse (openly licensed) + Wikimedia Commons — tap to open the source' :
+        (pending === 0 ? '' : 'Searching images…');
+    }
+    getJSON('https://api.openverse.org/v1/images/?q=' + encodeURIComponent(q) + '&page_size=20')
+      .then(function (d) {
+        (d && d.results || []).forEach(function (r) {
+          if (r.thumbnail) imgs.push({ thumb: r.thumbnail, url: r.foreign_landing_url || r.url,
+            title: r.title || '', src: 'Openverse' });
+        });
+      }).catch(function () {}).then(done);
+    getJSON('https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=' +
+      encodeURIComponent(q) + '&gsrnamespace=6&gsrlimit=20&prop=imageinfo&iiprop=url&iiurlwidth=320&format=json&origin=*')
+      .then(function (d) {
+        var pages = d && d.query && d.query.pages || {};
+        for (var k in pages) {
+          var ii = pages[k].imageinfo && pages[k].imageinfo[0];
+          if (ii && ii.thumburl) imgs.push({ thumb: ii.thumburl, url: ii.descriptionurl || ii.url,
+            title: String(pages[k].title || '').replace(/^File:/, ''), src: 'Commons' });
+        }
+      }).catch(function () {}).then(done);
+  }
+
+  /* ---- 📰 News vertical: GDELT's worldwide article index + Hacker News ---- */
+  function fmtGdeltDate(s) {
+    s = String(s || '');
+    return s.length >= 8 ? s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8) : '';
+  }
+  function searchNews(q, seq) {
+    $('results').innerHTML = ''; lastResults = [];
+    $('stats').textContent = 'Searching the world’s news…';
+    var lists = [], pending = 2;
+    function done() {
+      pending--;
+      if (seq !== liveSeq) return;
+      var merged = S.rrfMerge(lists, 20);
+      lastResults = merged;
+      renderResults(merged, { done: pending === 0 });
+      $('stats').textContent = merged.length ? merged.length +
+        ' news results · GDELT worldwide index + Hacker News, fused by RRF' :
+        (pending === 0 ? '' : 'Searching the world’s news…');
+      if (!merged.length && pending === 0) {
+        $('results').innerHTML = '<div class="empty">No news found for <b>' + esc(currentQuery) + '</b>.</div>';
+      }
+    }
+    getJSON('https://api.gdeltproject.org/api/v2/doc/doc?query=' + encodeURIComponent(q) +
+      '&mode=artlist&maxrecords=12&format=json&sort=hybridrel')
+      .then(function (d) {
+        var items = (d && d.articles || []).map(function (a) {
+          return { title: a.title || a.url, url: a.url, fav: '📰',
+            snippet: (a.domain || '') + (a.seendate ? ' · ' + fmtGdeltDate(a.seendate) : '') };
+        });
+        if (items.length) lists.push({ source: 'gdelt', weight: 1.2, items: items });
+      }).catch(function () {}).then(done);
+    getJSON('https://hn.algolia.com/api/v1/search?query=' + encodeURIComponent(q) + '&tags=story&hitsPerPage=8')
+      .then(function (d) {
+        var items = (d && d.hits || []).map(function (h) {
+          return { title: h.title || '(untitled)', url: h.url || ('https://news.ycombinator.com/item?id=' + h.objectID),
+            fav: 'Y', snippet: (h.points || 0) + ' points · ' + (h.num_comments || 0) + ' comments on Hacker News' };
+        });
+        if (items.length) lists.push({ source: 'hn', weight: 0.7, items: items });
+      }).catch(function () {}).then(done);
+  }
+
   function runSearch(q, push) {
     q = String(q || '').trim();
     if (!q) { goHome(); return; }
@@ -740,10 +880,23 @@
     selIdx = -1;
     remember(q);
     if (push && window.history && history.pushState) {
-      try { history.pushState({ q: q }, '', '?q=' + encodeURIComponent(q)); } catch (e) {}
+      try {
+        history.pushState({ q: q, t: vertical }, '', '?q=' + encodeURIComponent(q) +
+          (vertical !== 'all' ? '&t=' + vertical : ''));
+      } catch (e) {}
     }
 
     var seq = ++liveSeq;
+    paintTabs();
+    if (vertical !== 'all') {
+      // Image and news verticals have their own renderers; answers, the
+      // knowledge panel and the fused list belong to the All tab.
+      $('answerBox').innerHTML = ''; $('kpanel').innerHTML = ''; $('dym').innerHTML = '';
+      $('liveStatus').textContent = '';
+      if (vertical === 'images') searchImages(q, seq);
+      else searchNews(q, seq);
+      return;
+    }
     renderAnswer(q, seq);
     loadKnowledge(q, seq);
     var local = localItems(q);
@@ -803,6 +956,8 @@
   function goHome() {
     currentQuery = '';
     liveSeq++; // orphan any in-flight answer/knowledge fetches
+    vertical = 'all';
+    paintTabs();
     setMode(false);
     $('qHome').value = ''; $('qTop').value = '';
     $('answerBox').innerHTML = ''; $('kpanel').innerHTML = ''; $('dym').innerHTML = '';
@@ -844,7 +999,7 @@
 
   var liveSuggest = debounce(function (which, q) {
     if (!enabled.wiki) return;
-    getJSON('https://en.wikipedia.org/w/api.php?action=opensearch&search=' + encodeURIComponent(q) +
+    getJSON(wikiBase() + '/w/api.php?action=opensearch&search=' + encodeURIComponent(q) +
       '&limit=5&format=json&origin=*').then(function (d) {
       var input = which === 'home' ? $('qHome') : $('qTop');
       if (String(input.value).trim() !== q) return;      // stale
@@ -1011,6 +1166,10 @@
         if (it) runSearch(it.text, true);
         return;
       }
+      if (t.getAttribute && t.getAttribute('data-tab')) {
+        setVertical(t.getAttribute('data-tab'));
+        return;
+      }
       if (t.getAttribute && t.getAttribute('data-q') != null) {
         runSearch(t.getAttribute('data-q'), true);
         return;
@@ -1063,13 +1222,16 @@
   });
 
   window.addEventListener('popstate', function () {
-    var q = qFromUrl();
-    if (q) runSearch(q, false); else goHome();
+    var st = qFromUrl();
+    if (st.q) { vertical = st.t; paintTabs(); runSearch(st.q, false); } else goHome();
   });
 
   function qFromUrl() {
-    try { return new URLSearchParams(String(location.search || '')).get('q') || ''; }
-    catch (e) { return ''; }
+    try {
+      var p = new URLSearchParams(String(location.search || ''));
+      var t = p.get('t');
+      return { q: p.get('q') || '', t: (t === 'images' || t === 'news') ? t : 'all' };
+    } catch (e) { return { q: '', t: 'all' }; }
   }
 
   // Enter / the mobile keyboard's "search" key = a real form submit, which
@@ -1092,7 +1254,7 @@
   renderSources();
   renderHomeExtras();
   var q0 = qFromUrl();
-  if (q0) { runSearch(q0, false); }
+  if (q0.q) { vertical = q0.t; paintTabs(); runSearch(q0.q, false); }
   syncClear();
 
   if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator &&
