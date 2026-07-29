@@ -44,7 +44,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var VERSION = '4.8.0';
+  var VERSION = '4.9.0';
   var JOURNAL_CAP = 300;
   var RUN_DEPTH_CAP = 8;
   var SCRIPT_STEP_CAP = 100000; // total statements one `run` may execute — kills infinite loops
@@ -464,10 +464,35 @@
       desktop: {},
       installed: [],
       widgets: ['clock', 'notes'],
+      notices: [],
       settings: { owner: 'user', accent: 'violet' },
       bootedAt: now
     };
   }
+
+  /* ══════════════════════════ Notification Centre ══════════════════════════
+   * Every notification the OS shows is also a durable record on the state —
+   * a ring buffer with unread tracking, so the shade/bell can show history
+   * across reboots (like a phone's notification centre, but serialized and
+   * unit-tested like everything else here). */
+  var NOTICE_CAP = 100;
+
+  function pushNotice(state, title, body, now) {
+    if (!title && !body) return null;
+    var n = { t: now, title: String(title || '').slice(0, 60), body: String(body || '').slice(0, 200), read: false };
+    state.notices.push(n);
+    if (state.notices.length > NOTICE_CAP) state.notices.splice(0, state.notices.length - NOTICE_CAP);
+    return n;
+  }
+  function unreadNotices(state) {
+    var c = 0;
+    for (var i = 0; i < state.notices.length; i++) if (!state.notices[i].read) c++;
+    return c;
+  }
+  function markNoticesRead(state) {
+    for (var i = 0; i < state.notices.length; i++) state.notices[i].read = true;
+  }
+  function clearNotices(state) { state.notices = []; }
 
   /** Append to the system journal (ring buffer, JOURNAL_CAP entries). */
   function logJournal(state, kind, text, now) {
@@ -491,7 +516,8 @@
       journal: state.journal,
       desktop: state.desktop,
       installed: state.installed,
-      widgets: state.widgets
+      widgets: state.widgets,
+      notices: state.notices
     });
   }
 
@@ -557,6 +583,15 @@
       if (Array.isArray(data.widgets)) {
         state.widgets = [];
         for (var wi = 0; wi < data.widgets.length; wi++) addWidget(state, data.widgets[wi]);
+      }
+      if (Array.isArray(data.notices)) {
+        for (var ni = 0; ni < data.notices.length && state.notices.length < NOTICE_CAP; ni++) {
+          var nn = data.notices[ni];
+          if (nn && typeof nn.t === 'number' && (typeof nn.title === 'string' || typeof nn.body === 'string')) {
+            state.notices.push({ t: nn.t, title: String(nn.title || '').slice(0, 60),
+              body: String(nn.body || '').slice(0, 200), read: nn.read === true });
+          }
+        }
       }
     } catch (e) { /* corrupt snapshot → fresh boot */ }
     return state;
@@ -988,6 +1023,7 @@
     '  write <file> <text> (\\n = newline)      author whole files in one command',
     '  timer <t> [label]   set a timer         theme <accent>   set the look',
     '  name [you]          who you are         widget <list|add|remove> home cards',
+    '  notices [clear]     notification centre history (● = unread)',
     'Scripts: text files with a real language — let/if/elif/else/while/func/end,',
     '  $((maths)), $1-$9/$@ args, # comments.  run backup.sh   (see /apps for examples)',
     'Also: date · whoami · uname · clear · help  ·  Builtins: $USER $HOME $CWD $WS'
@@ -1051,7 +1087,7 @@
   var BUILTINS = ['help', 'pwd', 'ls', 'tree', 'cd', 'cat', 'echo', 'mkdir', 'touch', 'rm', 'trash', 'restore',
     'mv', 'cp', 'find', 'open', 'ps', 'kill', 'ws', 'every', 'automations', 'unschedule', 'set', 'unset', 'env',
     'alias', 'unalias', 'run', 'search', 'journal', 'date', 'whoami', 'uname', 'clear', 'ai',
-    'set', 'let', 'app', 'timer', 'theme', 'name', 'widget', 'write', 'grep', 'head', 'tail', 'wc', 'sort', 'uniq'];
+    'set', 'let', 'app', 'timer', 'theme', 'name', 'widget', 'write', 'notices', 'grep', 'head', 'tail', 'wc', 'sort', 'uniq'];
   function runSimpleKnows(name) { return BUILTINS.indexOf(name) !== -1; }
 
   /* ══════════════════════════ AIOS Script ══════════════════════════
@@ -1693,6 +1729,17 @@
         return err('widget: usage: widget <list|add|remove> [id]');
       }
 
+      case 'notices': {
+        if (args[0] === 'clear') { clearNotices(state); return { out: ['notification centre cleared'], error: false, effects: [] }; }
+        if (!state.notices.length) return { out: ['no notifications'], error: false, effects: [] };
+        var nOut = [];
+        for (var nc = state.notices.length - 1; nc >= 0 && nOut.length < 20; nc--) {
+          var nv = state.notices[nc];
+          nOut.push((nv.read ? '  ' : '● ') + nv.title + (nv.body ? ' — ' + nv.body : ''));
+        }
+        return { out: nOut, error: false, effects: [] };
+      }
+
       case 'write': {
         // `write <file> <content>` — \n in the content becomes a real newline,
         // so scripts, notes and .app manifests can be authored in ONE command
@@ -2283,6 +2330,11 @@
     addWidget: addWidget,
     removeWidget: removeWidget,
     widgetData: widgetData,
+    // notification centre
+    pushNotice: pushNotice,
+    unreadNotices: unreadNotices,
+    markNoticesRead: markNoticesRead,
+    clearNotices: clearNotices,
     // mobile home screen
     DOCK_FAVORITES: DOCK_FAVORITES,
     springboard: springboard,
