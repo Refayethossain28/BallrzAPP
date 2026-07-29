@@ -360,10 +360,36 @@
       fetch: function (q) {
         return getJSON('https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=' +
           encodeURIComponent(q) + '&format=json&srlimit=6&origin=*').then(function (d) {
-          return (d && d.query && d.query.search || []).map(function (it) {
+          var items = (d && d.query && d.query.search || []).map(function (it) {
             return { title: it.title, url: 'https://en.wikipedia.org/wiki/' + encodeURIComponent(String(it.title).replace(/ /g, '_')),
               snippet: stripTags(it.snippet || ''), fav: 'W' };
           });
+          if (!items.length) return items;
+          // Real things have real websites. Follow the top hit to Wikidata
+          // (also keyless + CORS-open) and surface its official website
+          // (property P856) as a first-class result — so "wandsworth" gives
+          // you wandsworth.gov.uk, not just the article about it.
+          var top = d.query.search[0].title;
+          return getJSON('https://en.wikipedia.org/w/api.php?action=query&prop=pageprops&ppprop=wikibase_item&titles=' +
+            encodeURIComponent(top) + '&format=json&origin=*').then(function (pp) {
+            var pages = pp && pp.query && pp.query.pages || {}, qid = null;
+            for (var k in pages) {
+              var w = pages[k] && pages[k].pageprops && pages[k].pageprops.wikibase_item;
+              if (w) qid = w;
+            }
+            if (!qid) return items;
+            return getJSON('https://www.wikidata.org/w/api.php?action=wbgetclaims&entity=' +
+              encodeURIComponent(qid) + '&property=P856&format=json&origin=*').then(function (wd) {
+              var claims = wd && wd.claims && wd.claims.P856 || [];
+              var site = claims.length && claims[0].mainsnak && claims[0].mainsnak.datavalue &&
+                claims[0].mainsnak.datavalue.value;
+              if (typeof site === 'string' && /^https?:\/\//i.test(site)) {
+                items.unshift({ title: top + ' — official website', url: site,
+                  snippet: 'The official site of ' + top + ' (from its Wikidata record).', fav: '🌐' });
+              }
+              return items;
+            });
+          }).catch(function () { return items; });
         });
       } },
     { id: 'hn', label: 'Hacker News', weight: 0.8, fav: 'Y',
