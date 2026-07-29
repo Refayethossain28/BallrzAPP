@@ -375,6 +375,20 @@ test('instantAnswer routes the new types and strips lead-ins', () => {
   assert.equal(E.instantAnswer('5 km to miles').type, 'convert');
 });
 
+test('the index speaks every language: Unicode tokenize, stem, search', () => {
+  deq(E.tokenize('مرحبا بالعالم'), ['مرحبا', 'بالعالم']);          // Arabic
+  // Bengali: compare in the engine's NFKD-normalized space (visually identical)
+  deq(E.tokenize('আমার সোনার বাংলা'), 'আমার সোনার বাংলা'.normalize('NFKD').split(' '));
+  assert.equal(E.stem('مرحبا'), 'مرحبا');   // Porter passes non-Latin through
+  assert.equal(E.stem('running'), 'run');   // …and still stems English
+  const ix = E.createIndex();
+  E.addDoc(ix, { url: 'https://x.example/ar', title: 'مرحبا بالعالم', body: 'هذا اختبار للفهرس العربي' });
+  E.addDoc(ix, { url: 'https://x.example/en', title: 'Hello world', body: 'an english page' });
+  assert.equal(E.search(ix, 'اختبار').total, 1);
+  assert.equal(E.search(ix, 'مرحبا').results[0].doc.url, 'https://x.example/ar');
+  assert.equal(E.search(ix, 'hello').results[0].doc.url, 'https://x.example/en');
+});
+
 /* ---- runner ---- */
 for (const [name, fn] of tests) {
   try { fn(); passed++; console.log('  ✓ ' + name); }
