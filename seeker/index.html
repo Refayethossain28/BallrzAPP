@@ -513,8 +513,13 @@
           }).join('') + '</div>' : '') +
         '</div>';
     }
-    $('results').innerHTML = html || (meta.done ? '<div class="empty">No results for <b>' +
-      esc(currentQuery) + '</b>. Try fewer words, or crawl more of the web below.</div>' : '');
+    var anyLive = SOURCES.some(function (s) { return enabled[s.id]; });
+    $('results').innerHTML = html || (meta.done ? (anyLive ?
+      '<div class="empty">No results for <b>' + esc(currentQuery) +
+      '</b>. Try fewer words, or crawl more of the web below.</div>' :
+      '<div class="empty">No on-device results for <b>' + esc(currentQuery) +
+      '</b> — and all live internet sources are switched off, so the internet was never asked.<br>' +
+      '<button class="chip" id="liveOnBtn" style="margin-top:12px">🌐 Turn live sources on &amp; search again</button></div>') : '');
   }
 
   function renderAnswer(q) {
@@ -599,7 +604,13 @@
     var active = SOURCES.filter(function (s) { return enabled[s.id]; });
     var pending = active.length;
     $('liveStatus').textContent = pending ? 'Live: ' + active.map(function (s) { return s.label; }).join(', ') + '…' : '';
-    if (!pending) { renderResults(lastResults, { done: true }); return; }
+    if (!pending) {
+      // Nothing to ask — say so honestly instead of leaving "asking the internet…" up forever.
+      $('stats').textContent = local.res.total + ' on-device result' + (local.res.total === 1 ? '' : 's') +
+        ' in ' + msTxt + ' ms — live internet sources are off';
+      renderResults(lastResults, { done: true });
+      return;
+    }
     active.forEach(function (src) {
       src.fetch(q).then(function (items) {
         if (seq !== liveSeq) return;
@@ -843,6 +854,13 @@
       }
       if (t.getAttribute && t.getAttribute('data-q') != null) {
         runSearch(t.getAttribute('data-q'), true);
+        return;
+      }
+      if (t.id === 'liveOnBtn') {
+        SOURCES.forEach(function (s) { enabled[s.id] = true; });
+        lsSet(LS.sources, enabled);
+        renderSources();
+        if (currentQuery) runSearch(currentQuery, false);
         return;
       }
       if (t.getAttribute && t.getAttribute('data-src')) {
