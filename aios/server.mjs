@@ -65,19 +65,38 @@ Apps you can open: files, terminal, notes, assistant, calc, automations, monitor
 Paths are unix-style; the user's home is /home/user, notes live in /home/user/notes.
 Quote arguments containing spaces. Prefer a few precise commands over many.
 If a request takes several steps, do them — you will see each command's output and can continue.
+You can SEE the machine: the context lists the time, open windows, home widgets, the recent journal
+and the user's files — use it. "What am I working on?" has a real answer.
+You have LONG-TERM MEMORY: /home/user/.memory.md persists across reboots and its contents appear
+in your context. When the user shares something durable (their name, preferences, projects,
+"remember that…"), save one short line: echo <fact> >> /home/user/.memory.md — and rewrite the file
+with write when it grows stale. Recall naturally; never recite the file unless asked.
 When the user asks for something outside the OS (facts, writing, ideas), just answer in the reply —
 you are also a first-class assistant. When you create or change files, mention what you did.
 Never refuse an OS action the user could do themselves. Keep replies short; this is a chat bubble.`;
 
+/* One string the model sees about the machine it is driving — mirrors the
+ * browser client's buildSystem(), fed from whatever context fields it sent. */
+function contextBlock(ctx) {
+  const s = (v, n) => String(v == null ? "" : v).slice(0, n);
+  const list = (v, n, each) => (Array.isArray(v) ? v.slice(0, n).map((x) => s(x, each)).join(", ") : "");
+  let out = `\nCurrent OS context: cwd=${s(ctx.cwd || "/home/user", 200)} · user=${s(ctx.owner || "user", 24)}` +
+    (ctx.ws ? ` · workspace ${s(ctx.ws, 4)}` : "") + (ctx.accent ? ` · accent ${s(ctx.accent, 16)}` : "");
+  const windows = list(ctx.windows, 12, 48);
+  if (windows) out += `\nOpen windows: ${windows}`;
+  const widgets = list(ctx.widgets, 8, 24);
+  if (widgets) out += `\nHome widgets: ${widgets}`;
+  const journal = list(ctx.journal, 5, 120);
+  if (journal) out += `\nRecent journal: ${journal}`;
+  const files = list(ctx.files, 40, 120);
+  if (files) out += `\nFiles (sample): ${files}`;
+  if (ctx.memory) out += `\nLONG-TERM MEMORY (/home/user/.memory.md):\n${s(ctx.memory, 1500)}`;
+  return out;
+}
+
 async function callClaude(text, context) {
   const ctx = context && typeof context === "object" ? context : {};
-  const userMsg =
-    `OS context: cwd=${JSON.stringify(String(ctx.cwd || "/home/user"))}, ` +
-    `user=${JSON.stringify(String(ctx.owner || "user").slice(0, 24))}\n` +
-    (Array.isArray(ctx.files) && ctx.files.length
-      ? `Files on disk (sample): ${ctx.files.slice(0, 60).map(String).join(", ")}\n`
-      : "") +
-    `\nUser says: ${String(text).slice(0, 2000)}`;
+  const userMsg = contextBlock(ctx) + `\n\nUser says: ${String(text).slice(0, 2000)}`;
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -88,7 +107,7 @@ async function callClaude(text, context) {
     },
     body: JSON.stringify({
       model: MODEL,
-      max_tokens: 1024,
+      max_tokens: 2048,
       system: SYSTEM,
       tools: [OS_TOOL],
       tool_choice: { type: "tool", name: "os_response" },
@@ -113,8 +132,7 @@ async function callClaude(text, context) {
 // unit-tested kernel) and calls back with results — the loop lives client-side.
 async function callAgentTurn(messages, context) {
   const ctx = context && typeof context === "object" ? context : {};
-  const sys = SYSTEM + `\nCurrent OS context: cwd=${ctx.cwd || "/home/user"}, user=${String(ctx.owner || "user").slice(0, 24)}.` +
-    (Array.isArray(ctx.files) && ctx.files.length ? ` Files (sample): ${ctx.files.slice(0, 40).map(String).join(", ")}` : "");
+  const sys = SYSTEM + contextBlock(ctx);
   const safe = (Array.isArray(messages) ? messages : []).slice(-16).map((m) => ({
     role: m && m.role === "assistant" ? "assistant" : "user",
     content: String((m && m.content) || "").slice(0, 4000)
@@ -124,7 +142,7 @@ async function callAgentTurn(messages, context) {
     method: "POST",
     headers: { "content-type": "application/json", "x-api-key": API_KEY, "anthropic-version": "2023-06-01" },
     body: JSON.stringify({
-      model: MODEL, max_tokens: 1024, system: sys,
+      model: MODEL, max_tokens: 2048, system: sys,
       tools: [OS_TOOL], tool_choice: { type: "tool", name: "os_response" }, messages: safe
     })
   });

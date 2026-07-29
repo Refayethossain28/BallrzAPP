@@ -1060,16 +1060,41 @@ var OS_SYSTEM = 'You are the Live AI of AIOS, an operating system running entire
   'Paths are unix-style; the user\'s home is /home/user, notes live in /home/user/notes.\n' +
   'Quote arguments containing spaces. Prefer a few precise commands over many.\n' +
   'If a request takes several steps, do them — you will see each command\'s output and can continue.\n' +
+  'You can SEE the machine: the context below lists the time, open windows, home widgets, the recent\n' +
+  'journal and the user\'s files — use it. "What am I working on?" has a real answer.\n' +
+  'You have LONG-TERM MEMORY: /home/user/.memory.md persists across reboots and its contents appear\n' +
+  'in your context. When the user shares something durable (their name, preferences, projects,\n' +
+  '"remember that…"), save one short line: echo <fact> >> /home/user/.memory.md — and rewrite the file\n' +
+  'with write when it grows stale. Recall naturally; never recite the file unless asked.\n' +
   'When the user asks for something outside the OS (facts, writing, ideas), just answer in the reply —\n' +
   'you are also a first-class assistant. When you create or change files, mention what you did.\n' +
   'Never refuse an OS action the user could do themselves. Keep replies short; this is a chat bubble.';
 
 function liveContext() {
+  var mem = K.fsRead(state.fs, '/home/user/.memory.md');
   return {
     cwd: state.cwd, owner: state.settings.owner,
     apps: K.APPS.map(function (a) { return a.id; }),
-    files: K.fsFind(state.fs, '').slice(0, 60)
+    files: K.fsFind(state.fs, '').slice(0, 60),
+    ws: state.ws, accent: state.settings.accent,
+    windows: state.procs.map(function (p) { return p.app + (p.arg ? ':' + String(p.title).slice(0, 24) : '') + ' (ws' + p.ws + ')'; }).slice(0, 12),
+    widgets: state.widgets.slice(),
+    journal: (state.journal || []).slice(-5).map(function (j) { return j.k + ': ' + j.x; }),
+    memory: mem.ok ? String(mem.content).slice(0, 1500) : ''
   };
+}
+
+/* One string the model sees about the machine it is driving — same shape for
+ * the streaming and plain paths. */
+function buildSystem(ctx) {
+  return OS_SYSTEM +
+    '\nCurrent OS context: time=' + new Date().toString() + ' · cwd=' + ctx.cwd + ' · user=' + ctx.owner +
+    ' · workspace ' + ctx.ws + ' · accent ' + ctx.accent +
+    '\nOpen windows: ' + (ctx.windows.length ? ctx.windows.join(', ') : 'none') +
+    '\nHome widgets: ' + ctx.widgets.join(', ') +
+    (ctx.journal.length ? '\nRecent journal: ' + ctx.journal.join(' | ') : '') +
+    '\nFiles (sample): ' + ctx.files.slice(0, 40).join(', ') +
+    (ctx.memory ? '\nLONG-TERM MEMORY (/home/user/.memory.md):\n' + ctx.memory : '');
 }
 
 /* Direct browser → Anthropic call (BYOK), given a messages array.
@@ -1086,8 +1111,8 @@ function callDirectMessages(messages) {
     },
     body: JSON.stringify({
       model: 'claude-opus-4-8',
-      max_tokens: 1024,
-      system: OS_SYSTEM + '\nCurrent OS context: cwd=' + ctx.cwd + ', user=' + ctx.owner + '. Files (sample): ' + ctx.files.slice(0, 40).join(', '),
+      max_tokens: 2048,
+      system: buildSystem(ctx),
       tools: [OS_TOOL],
       tool_choice: { type: 'tool', name: 'os_response' },
       messages: messages
@@ -1105,20 +1130,99 @@ function callDirectMessages(messages) {
   });
 }
 
-/* One live exchange (single user turn) through whichever path is available. */
-function callLive(text) {
-  if (liveAI.proxy) {
-    return fetch('api/assistant', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: text, context: liveContext() })
-    }).then(function (r) { return r.json(); });
-  }
-  return callDirectMessages([{ role: 'user', content: String(text).slice(0, 2000) }]);
+/* The os_response arguments stream in as partial JSON; "reply" is the first
+ * key, so its value can be previewed live long before the JSON is complete.
+ * The regex only accepts whole escape sequences, so a chunk ending mid-\uXXXX
+ * never corrupts the preview. */
+function previewReply(buf) {
+  var m = /"reply"\s*:\s*"((?:[^"\\]|\\.)*)/.exec(buf);
+  if (!m) return '';
+  try { return JSON.parse('"' + m[1] + '"'); } catch (e) { return m[1]; }
 }
 
-/* One live exchange given a full message history (used by the agent loop). */
-function callLiveMessages(messages) {
+/* Streaming BYOK call: the model's words type themselves into the chat as
+ * they are generated, claude.ai-style. Resolves the same { reply, actions }
+ * as the plain call; throws 'no-stream' when the browser can't stream. */
+function streamDirectMessages(messages, onDelta) {
+  var ctx = liveContext();
+  return fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': getKey(),
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-opus-4-8',
+      max_tokens: 2048,
+      stream: true,
+      system: buildSystem(ctx),
+      tools: [OS_TOOL],
+      tool_choice: { type: 'tool', name: 'os_response' },
+      messages: messages
+    })
+  }).then(function (r) {
+    if (!r.ok) return r.text().then(function (t) { throw new Error('anthropic ' + r.status + ': ' + t.slice(0, 200)); });
+    // A gateway may answer a stream request with plain JSON — accept that too.
+    if ((r.headers.get('content-type') || '').indexOf('json') !== -1) {
+      return r.json().then(function (data) {
+        var tu = (data.content || []).filter(function (b) { return b.type === 'tool_use'; })[0];
+        var input = tu && tu.input ? tu.input : { reply: '' };
+        return {
+          reply: String(input.reply || ''),
+          actions: (Array.isArray(input.commands) ? input.commands : []).slice(0, 12).map(function (c) { return { command: String(c).slice(0, 400) }; })
+        };
+      });
+    }
+    if (!r.body || !r.body.getReader) throw new Error('no-stream');
+    var reader = r.body.getReader(), dec = new TextDecoder();
+    var buf = '', json = '', text = '';
+    function pump() {
+      return reader.read().then(function (ch) {
+        if (ch.done) return finish();
+        buf += dec.decode(ch.value, { stream: true });
+        var lines = buf.split('\n'); buf = lines.pop();
+        for (var i = 0; i < lines.length; i++) {
+          var ln = lines[i];
+          if (ln.slice(0, 6) !== 'data: ') continue;
+          var ev; try { ev = JSON.parse(ln.slice(6)); } catch (e) { continue; }
+          if (ev.type === 'content_block_delta' && ev.delta) {
+            if (ev.delta.type === 'input_json_delta') json += ev.delta.partial_json || '';
+            else if (ev.delta.type === 'text_delta') text += ev.delta.text || '';
+            if (onDelta) { var pv = previewReply(json) || text; if (pv) onDelta(pv); }
+          }
+        }
+        return pump();
+      });
+    }
+    function finish() {
+      var input = null;
+      try { input = JSON.parse(json); } catch (e) { input = null; }
+      var reply = input && input.reply != null ? String(input.reply) : (previewReply(json) || text);
+      var cmds = input && Array.isArray(input.commands) ? input.commands : [];
+      return {
+        reply: reply,
+        actions: cmds.slice(0, 12).map(function (c) { return { command: String(c).slice(0, 400) }; })
+      };
+    }
+    return pump();
+  });
+}
+
+/* Stream when the browser can, silently fall back when it can't. Real API
+ * errors (401 bad key, network down) still propagate to the offline brain. */
+function callDirectSmart(messages, onDelta) {
+  return streamDirectMessages(messages, onDelta).catch(function (e) {
+    if (e && /no-stream/.test(String(e.message))) return callDirectMessages(messages);
+    throw e;
+  });
+}
+
+
+/* One live exchange given a full message history (assistant + agent loop).
+ * onDelta (optional) receives the growing reply while it streams. */
+function callLiveMessages(messages, onDelta) {
   if (liveAI.proxy) {
     return fetch('api/agent', {
       method: 'POST',
@@ -1126,21 +1230,24 @@ function callLiveMessages(messages) {
       body: JSON.stringify({ messages: messages, context: liveContext() })
     }).then(function (r) { return r.json(); });
   }
-  return callDirectMessages(messages);
+  return callDirectSmart(messages, onDelta);
 }
 
 /* ── The agentic loop: the AI reads the OS, acts, sees the result, and
  *    keeps going until the task is done. Each command runs through the
  *    unit-tested kernel, so the agent has exactly a user's powers. `emit`
  *    streams steps to the chat. Bounded to AGENT_MAX_STEPS turns. ── */
-var AGENT_MAX_STEPS = 6;
-function runAgent(userText, emit) {
-  var history = [{ role: 'user', content: String(userText).slice(0, 2000) }];
+var AGENT_MAX_STEPS = 12;
+function runAgent(seedMessages, emit) {
+  // the agent continues the conversation — it remembers what was said before
+  var history = Array.isArray(seedMessages)
+    ? seedMessages.slice()
+    : [{ role: 'user', content: String(seedMessages).slice(0, 2000) }];
   var step = 0;
   function loop() {
     if (step >= AGENT_MAX_STEPS) { emit('note', 'Reached the ' + AGENT_MAX_STEPS + '-step limit — stopping.'); return Promise.resolve(); }
     step++;
-    return callLiveMessages(history).then(function (d) {
+    return callLiveMessages(history, function (pv) { emit('stream', pv); }).then(function (d) {
       if (d && d.reply) emit('assistant', d.reply);
       var acts = (d && d.actions) || [];
       if (!acts.length) return; // done — no more actions
@@ -1205,8 +1312,29 @@ APP_RENDER.assistant = function (proc, body) {
     agentSw.classList.toggle('on', agent.on);
     if (agent.on && !liveAI.on) { liveAI.on = true; sw.classList.add('on'); $('mb-live').style.display = 'flex'; }
   });
+  /* 🔊 spoken replies — on-device Web Speech synthesis, no network */
+  var speak = { on: false };
+  try { speak.on = localStorage.getItem('aios.speak.v1') === '1'; } catch (e) {}
+  var spkBtn = el('button', 'btn', speak.on ? '🔊' : '🔇');
+  spkBtn.title = 'Speak replies aloud (on-device)';
+  spkBtn.addEventListener('click', function () {
+    speak.on = !speak.on;
+    spkBtn.textContent = speak.on ? '🔊' : '🔇';
+    try { localStorage.setItem('aios.speak.v1', speak.on ? '1' : '0'); } catch (e) {}
+    if (!speak.on && window.speechSynthesis) try { speechSynthesis.cancel(); } catch (e) {}
+  });
+  livebar.appendChild(spkBtn);
+  function say(text) {
+    if (!speak.on || !window.speechSynthesis) return;
+    try {
+      speechSynthesis.cancel();
+      speechSynthesis.speak(new SpeechSynthesisUtterance(String(text).replace(/[*_`#>|]/g, '').slice(0, 400)));
+    } catch (e) {}
+  }
+  /* the conversation — the model sees the whole thread, not one-line amnesia */
+  var convo = [];
   var log = el('div', 'clog');
-  var hint = el('div', 'hint', 'Try: “convert 5 km to miles” · “90 days from now” · “set a timer for 5 minutes” · “create a folder called x then open the files”');
+  var hint = el('div', 'hint', 'Try: “remember that I’m vegetarian” · “what am I working on?” · “build me a workout app” · “make it cozy in here”');
   var form = el('form');
   var input = el('input');
   input.type = 'text';
@@ -1244,27 +1372,48 @@ APP_RENDER.assistant = function (proc, body) {
     if (!text) return;
     input.value = '';
     bubble(text, 'you');
+    convo.push({ role: 'user', content: text.slice(0, 2000) });
+    if (convo.length > 24) convo.splice(0, convo.length - 24);
     if (agent.on && liveReady()) {
-      // agentic mode: think → act → observe → repeat, each step shown
+      // agentic mode: think → act → observe → repeat, each step shown live
       var working = bubble('🤖 working…', 'os', 'think');
-      runAgent(text, function (kind, a, b) {
+      var streamB = null, lastReply = '';
+      runAgent(convo.slice(-24), function (kind, a, b) {
         if (working) { working.remove(); working = null; }
-        if (kind === 'assistant') bubble(a, 'os');
-        else if (kind === 'tool') { var t = bubble('⚙️ ' + a, 'os', 'think'); if (b) t.textContent = '⚙️ ' + a + '\n' + b; }
+        if (kind === 'stream') {
+          if (!streamB) streamB = bubble('', 'os', 'think');
+          streamB.textContent = a;
+          log.scrollTop = log.scrollHeight;
+        } else if (kind === 'assistant') {
+          if (streamB) { streamB.remove(); streamB = null; }
+          bubble(a, 'os'); lastReply = a;
+        } else if (kind === 'tool') { var t = bubble('⚙️ ' + a, 'os', 'think'); if (b) t.textContent = '⚙️ ' + a + '\n' + b; }
         else if (kind === 'note') bubble(a, 'os', 'think');
+      }).then(function () {
+        if (streamB) { streamB.remove(); streamB = null; }
+        if (lastReply) { convo.push({ role: 'assistant', content: lastReply.slice(0, 2000) }); say(lastReply); }
+        refreshAll();
       }).catch(function (err) {
         if (working) { working.remove(); working = null; }
+        if (streamB) { streamB.remove(); streamB = null; }
         var a = K.assistant(state, text, Date.now());
         bubble('(agent offline: ' + (err && err.message || 'error') + ')\n' + a.reply, 'os');
         applyEffects(a.actions);
-      }).then(function () { refreshAll(); });
+        refreshAll();
+      });
     } else if (liveAI.on && liveReady()) {
       var think = bubble('thinking…', 'os', 'think');
-      callLive(text).then(function (d) {
+      callLiveMessages(convo.slice(-24), function (pv) {
+        think.textContent = pv;
+        log.scrollTop = log.scrollHeight;
+      }).then(function (d) {
         // the model answers in Markdown — render it, don't spell the asterisks
+        var reply = d && d.reply ? d.reply : 'The live model returned nothing — falling back to on-device.';
         think.classList.add('md');
-        think.innerHTML = K.renderMarkdown(d && d.reply ? d.reply : 'The live model returned nothing — falling back to on-device.');
+        think.innerHTML = K.renderMarkdown(reply);
         think.classList.remove('think');
+        convo.push({ role: 'assistant', content: String(reply).slice(0, 2000) });
+        say(reply);
         if (d && d.actions) {
           /* live actions reuse the kernel: run each as a shell command */
           for (var i = 0; i < d.actions.length; i++) {

@@ -2,7 +2,7 @@
  * are network-first (you always get the latest build when online, the cached
  * shell when offline) and static assets are cache-first for speed.
  * Bump CACHE to force a clean reinstall. */
-const CACHE = 'aios-v14'; // v14: assistant bubbles render Markdown
+const CACHE = 'aios-v15'; // v15: streaming + memory Live AI
 const ASSETS = ['./', './index.html', './engine.js', './config.js', './manifest.json',
                 './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 
