@@ -6512,7 +6512,7 @@ async function withdrawApexOnchain(){
     const idempotencyKey=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():String(Date.now());
     const r=await fns.httpsCallable('withdrawCoinsOnchain')({amount,address,idempotencyKey});
     track('apex_withdrawn',{amount:r.data.withdrawn,src:'client'});
-    _chainSay('✓ '+r.data.withdrawn+' APEX sent as AXC'+(r.data.explorer?' · <a href="'+r.data.explorer+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">view transaction</a>':''),true);
+    _chainSay(`✓ ${r.data.withdrawn} APEX sent as AXC${r.data.explorer?` · <a href="${r.data.explorer}" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">view transaction</a>`:''}`,true);
   }catch(e){_chainSay('Withdrawal failed: '+esc(e.message||String(e)),false);}
 }
 async function depositApexOnchain(){
