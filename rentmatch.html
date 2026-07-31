@@ -1,0 +1,1204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Apex — UK lettings, landlord ↔ renter</title>
+<meta name="description" content="Landlords advertise property, renters find a home. Message, book a viewing, then both parties sign a UK-compliant Assured Shorthold Tenancy. The landlord pays £100 on signing." />
+<meta name="theme-color" content="#0b0f1a" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Apex" />
+<link rel="manifest" href="rentmatch-manifest.json" />
+<link rel="apple-touch-icon" href="rentmatch-icon-180.png" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%2334e1c0'/%3E%3Cstop offset='1' stop-color='%237b8cff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='14' fill='%230b0f1a'/%3E%3Cpath d='M18 30 L32 18 L46 30 V46 H38 V36 H26 V46 H18 Z' fill='none' stroke='url(%23g)' stroke-width='3.4' stroke-linejoin='round'/%3E%3C/svg%3E" />
+<style>
+  :root{
+    --bg0:#0b0f1a; --bg1:#0f1424; --panel:rgba(255,255,255,.045); --panel2:rgba(255,255,255,.07);
+    --ink:#eaf0ff; --muted:#90a0c4; --faint:#65739b; --line:rgba(255,255,255,.10);
+    --c1:#34e1c0; --c2:#7b8cff; --accent:#7b8cff; --good:#36f0a6; --bad:#ff5d6c; --warn:#ffd166;
+    --grad:linear-gradient(135deg,var(--c1),var(--c2));
+    --maxw:520px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;
+    -webkit-tap-highlight-color:transparent;
+    background:
+      radial-gradient(80% 55% at 50% -10%, rgba(123,140,255,.18), transparent 60%),
+      radial-gradient(70% 50% at 95% 4%, rgba(52,225,192,.12), transparent 55%),
+      var(--bg0);}
+  #app{display:flex;flex-direction:column;height:100%;max-width:var(--maxw);margin:0 auto;position:relative;
+    padding:env(safe-area-inset-top) 0 0;}
+
+  /* header */
+  header{display:flex;align-items:center;gap:10px;padding:12px 16px 10px;}
+  .logo{display:flex;align-items:center;gap:9px;font-weight:800;letter-spacing:.2px;font-size:18px}
+  .logo .mk{width:26px;height:26px;border-radius:8px;background:var(--grad);display:grid;place-items:center;
+    color:#04121c;font-size:14px;box-shadow:0 6px 18px -6px rgba(123,140,255,.7)}
+  .logo b{background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .spacer{flex:1}
+  .roleswitch{display:flex;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:3px;font-size:12.5px}
+  .roleswitch button{appearance:none;border:0;background:transparent;color:var(--muted);font-weight:700;
+    padding:7px 12px;border-radius:999px;cursor:pointer;letter-spacing:.2px}
+  .roleswitch button.on{background:var(--grad);color:#04121c}
+
+  /* generic */
+  main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:4px 16px 96px}
+  h2.screen-t{font-size:22px;margin:6px 0 2px;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:13.5px;margin:0 0 16px}
+  .muted{color:var(--muted)} .faint{color:var(--faint)}
+  .row{display:flex;gap:10px} .wrap{flex-wrap:wrap} .center{align-items:center}
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;
+    padding:4px 9px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);color:var(--muted)}
+  .pill.good{color:var(--good);border-color:rgba(54,240,166,.3);background:rgba(54,240,166,.08)}
+  .pill.warn{color:var(--warn);border-color:rgba(255,209,102,.3);background:rgba(255,209,102,.08)}
+  .pill.accent{color:var(--c2);border-color:rgba(123,140,255,.35);background:rgba(123,140,255,.1)}
+  .pill.bad{color:var(--bad);border-color:rgba(255,93,108,.3);background:rgba(255,93,108,.08)}
+
+  button.cta{appearance:none;border:0;border-radius:13px;padding:13px 18px;font-size:15px;font-weight:700;
+    color:#04121c;cursor:pointer;background:var(--grad);width:100%;
+    box-shadow:0 10px 26px -10px rgba(52,225,192,.6);transition:transform .07s ease,opacity .2s}
+  button.cta:active{transform:translateY(1px) scale(.995)}
+  button.cta:disabled{opacity:.4;cursor:not-allowed;box-shadow:none}
+  button.cta.ghost{background:var(--panel2);color:var(--ink);border:1px solid var(--line);box-shadow:none}
+  button.cta.bad{background:linear-gradient(135deg,#ff7a86,#ff5d6c);color:#2a0a0e}
+  button.cta.sm{padding:9px 14px;font-size:13px;width:auto;border-radius:11px}
+
+  .field{margin:0 0 12px}
+  .field label{display:block;font-size:12px;color:var(--muted);font-weight:700;margin:0 0 6px;letter-spacing:.3px}
+  .field input,.field select,.field textarea{width:100%;background:var(--bg1);border:1px solid var(--line);
+    color:var(--ink);border-radius:11px;padding:12px;font-size:15px;font-family:inherit;outline:none}
+  .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--c2)}
+  .field textarea{min-height:84px;resize:vertical}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:18px;overflow:hidden;margin:0 0 14px}
+  .card .body{padding:14px}
+
+  /* listing card */
+  .photo{height:148px;position:relative;display:flex;align-items:flex-end;padding:10px}
+  .photo .tags{display:flex;gap:6px;flex-wrap:wrap}
+  .photo .tag{font-size:11px;font-weight:700;background:rgba(8,11,20,.6);backdrop-filter:blur(6px);
+    border:1px solid rgba(255,255,255,.14);color:#fff;padding:4px 9px;border-radius:999px}
+  .listing-h{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .price{font-size:20px;font-weight:800;letter-spacing:-.01em}
+  .price small{font-size:12px;color:var(--muted);font-weight:600}
+  .addr{font-size:13.5px;color:var(--muted);margin:2px 0 0}
+  .specs{display:flex;gap:14px;margin:11px 0 0;font-size:13px;color:var(--muted)}
+  .specs b{color:var(--ink)}
+
+  /* filters */
+  .filters{display:flex;gap:8px;overflow-x:auto;padding:2px 0 12px;margin:0 -2px}
+  .filters select,.filters input{flex:0 0 auto;background:var(--bg1);border:1px solid var(--line);color:var(--ink);
+    border-radius:999px;padding:9px 13px;font-size:13px;font-family:inherit;outline:none}
+
+  /* detail */
+  .gallery{height:230px;position:relative}
+  .back{position:absolute;top:14px;left:14px;z-index:3;width:38px;height:38px;border-radius:50%;
+    display:grid;place-items:center;background:rgba(8,11,20,.6);backdrop-filter:blur(8px);
+    border:1px solid var(--line);color:#fff;font-size:17px;cursor:pointer}
+  .section-t{font-size:13px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:var(--faint);margin:20px 0 9px}
+
+  /* messages */
+  .thread{display:flex;flex-direction:column;gap:8px;padding:6px 0 14px}
+  .msg{max-width:80%;padding:9px 13px;border-radius:15px;font-size:14px;line-height:1.4}
+  .msg.me{align-self:flex-end;background:var(--grad);color:#04121c;border-bottom-right-radius:5px}
+  .msg.them{align-self:flex-start;background:var(--panel2);border:1px solid var(--line);border-bottom-left-radius:5px}
+  .msg.sys{align-self:center;background:transparent;color:var(--faint);font-size:12px;text-align:center;max-width:90%}
+  .msg .t{display:block;font-size:10px;opacity:.6;margin-top:3px}
+  .composer{display:flex;gap:8px;padding:10px 0 4px;position:sticky;bottom:0}
+  .composer input{flex:1;background:var(--bg1);border:1px solid var(--line);color:var(--ink);
+    border-radius:999px;padding:12px 16px;font-size:15px;outline:none}
+  .composer button{width:46px;height:46px;flex:0 0 auto;border-radius:50%;border:0;background:var(--grad);
+    color:#04121c;font-size:18px;cursor:pointer}
+
+  /* deal status banner */
+  .statusbar{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:13px 14px;margin:0 0 14px}
+  .steps{display:flex;align-items:center;gap:0;margin:10px 0 0}
+  .step{flex:1;text-align:center;font-size:9.5px;color:var(--faint);position:relative;font-weight:700;letter-spacing:.2px}
+  .step .dot{width:18px;height:18px;border-radius:50%;background:var(--bg1);border:1.5px solid var(--line);
+    margin:0 auto 5px;display:grid;place-items:center;font-size:10px;color:var(--faint)}
+  .step.done .dot{background:var(--grad);border-color:transparent;color:#04121c}
+  .step.now .dot{border-color:var(--c2);color:var(--c2);box-shadow:0 0 0 3px rgba(123,140,255,.2)}
+  .step.done, .step.now{color:var(--ink)}
+  .step::before{content:"";position:absolute;top:9px;left:-50%;width:100%;height:1.5px;background:var(--line);z-index:-0}
+  .step:first-child::before{display:none}
+  .step.done::before{background:var(--grad)}
+
+  /* bottom nav */
+  nav.tabbar{position:absolute;bottom:0;left:0;right:0;display:flex;background:rgba(11,15,26,.92);
+    backdrop-filter:blur(14px);border-top:1px solid var(--line);padding:8px 8px calc(8px + env(safe-area-inset-bottom))}
+  nav.tabbar button{flex:1;appearance:none;border:0;background:transparent;color:var(--faint);
+    font-size:10.5px;font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;padding:4px}
+  nav.tabbar button .ic{font-size:19px;line-height:1}
+  nav.tabbar button.on{color:var(--c2)}
+  nav.tabbar button .badge{position:absolute;transform:translate(11px,-4px);background:var(--bad);color:#fff;
+    font-size:9px;font-weight:800;min-width:15px;height:15px;border-radius:999px;padding:0 3px;display:grid;place-items:center}
+
+  /* modal / sheet */
+  .sheet-bg{position:fixed;inset:0;background:rgba(4,6,12,.66);backdrop-filter:blur(3px);z-index:40;
+    display:flex;align-items:flex-end;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s}
+  .sheet-bg.open{opacity:1;pointer-events:auto}
+  .sheet{width:100%;max-width:var(--maxw);background:var(--bg1);border:1px solid var(--line);border-bottom:0;
+    border-radius:22px 22px 0 0;padding:18px 18px calc(20px + env(safe-area-inset-bottom));max-height:90vh;overflow-y:auto;
+    transform:translateY(20px);transition:transform .22s ease}
+  .sheet-bg.open .sheet{transform:translateY(0)}
+  .sheet .grab{width:38px;height:4px;border-radius:999px;background:var(--line);margin:0 auto 14px}
+  .sheet h3{margin:0 0 4px;font-size:18px}
+
+  /* contract */
+  .contract{background:#0d1322;border:1px solid var(--line);border-radius:14px;padding:18px;font-size:12.5px;
+    line-height:1.6;color:#cdd7f0;max-height:340px;overflow-y:auto}
+  .contract h4{color:var(--ink);font-size:13.5px;margin:16px 0 5px;letter-spacing:.3px}
+  .contract h4:first-child{margin-top:0}
+  .contract .cl{margin:0 0 7px} .contract b{color:#eaf0ff}
+  .contract .num{color:var(--c2);font-weight:800;margin-right:5px}
+  .checklist{list-style:none;padding:0;margin:8px 0 0}
+  .checklist li{display:flex;gap:9px;align-items:flex-start;font-size:13px;padding:7px 0;border-bottom:1px solid var(--line)}
+  .checklist li:last-child{border-bottom:0}
+  .checklist .ck{color:var(--good);font-weight:800;flex:0 0 auto}
+  .sigbox{border:1.5px dashed var(--line);border-radius:12px;padding:14px;text-align:center;margin:10px 0;
+    background:var(--panel)}
+  .sigbox.signed{border-style:solid;border-color:rgba(54,240,166,.4);background:rgba(54,240,166,.06)}
+  .sig-name{font-family:"Snell Roundhand","Segoe Script",cursive;font-size:26px;color:var(--c1)}
+
+  .empty{text-align:center;padding:50px 20px;color:var(--faint)}
+  .empty .big{font-size:40px;margin-bottom:10px}
+  .hr{height:1px;background:var(--line);margin:16px 0}
+  .kv{display:flex;justify-content:space-between;font-size:14px;padding:7px 0;border-bottom:1px solid var(--line)}
+  .kv:last-child{border-bottom:0} .kv .k{color:var(--muted)} .kv .v{font-weight:700}
+  .notice{background:rgba(123,140,255,.08);border:1px solid rgba(123,140,255,.25);border-radius:12px;
+    padding:11px 13px;font-size:12.5px;color:#c3ccf0;margin:0 0 14px}
+  .fee{background:linear-gradient(135deg,rgba(52,225,192,.1),rgba(123,140,255,.1));
+    border:1px solid rgba(123,140,255,.3);border-radius:16px;padding:16px;text-align:center;margin:14px 0}
+  .fee .amt{font-size:34px;font-weight:800;letter-spacing:-.02em}
+  a.link{color:var(--c2);text-decoration:none;font-weight:600}
+  .toast{position:fixed;bottom:88px;left:50%;transform:translateX(-50%) translateY(20px);z-index:60;
+    background:#0d1322;border:1px solid var(--line);color:var(--ink);
+    padding:11px 18px;border-radius:999px;font-size:13.5px;font-weight:600;opacity:0;transition:all .25s;
+    box-shadow:0 12px 30px -10px rgba(0,0,0,.7)}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* Apex splash screen — shown on launch, fades out */
+  #splash{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
+    background:radial-gradient(85% 60% at 50% 38%, #15233f, #0b0f1a 72%);transition:opacity .55s ease;}
+  #splash.hide{opacity:0;pointer-events:none}
+  #splash .mark{width:104px;height:104px;border-radius:28px;background:var(--grad);display:grid;place-items:center;
+    font-size:56px;color:#04121c;box-shadow:0 26px 64px -18px rgba(52,225,192,.6), inset 0 1px 0 rgba(255,255,255,.4);
+    animation:apexpop .6s cubic-bezier(.2,.8,.2,1) both;}
+  #splash .word{font-size:38px;font-weight:800;letter-spacing:1px;line-height:1;
+    background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+    animation:apexrise .6s .12s both;}
+  #splash .tag{color:var(--muted);font-size:12px;letter-spacing:4px;text-transform:uppercase;animation:apexrise .6s .26s both;}
+  #splash .dots{display:flex;gap:6px;margin-top:8px;animation:apexrise .6s .4s both}
+  #splash .dots i{width:7px;height:7px;border-radius:50%;background:var(--c1);opacity:.5;animation:apexpulse 1.1s ease-in-out infinite}
+  #splash .dots i:nth-child(2){animation-delay:.18s;background:var(--c2)}
+  #splash .dots i:nth-child(3){animation-delay:.36s;background:var(--c2)}
+  @keyframes apexpop{from{transform:scale(.55);opacity:0}to{transform:scale(1);opacity:1}}
+  @keyframes apexrise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes apexpulse{0%,100%{opacity:.35;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}
+</style>
+</head>
+<body>
+<div id="splash">
+  <div class="mark">⌂</div>
+  <div class="word">Apex</div>
+  <div class="tag">UK lettings</div>
+  <div class="dots"><i></i><i></i><i></i></div>
+</div>
+<div id="app">
+  <header>
+    <div class="logo"><span class="mk">⌂</span> <span><b>Apex</b></span></div>
+    <div class="spacer"></div>
+    <div class="roleswitch" id="roleSwitch">
+      <button data-role="renter">Renter</button>
+      <button data-role="landlord">Landlord</button>
+    </div>
+  </header>
+  <main id="view"></main>
+  <nav class="tabbar" id="tabbar"></nav>
+</div>
+
+<div class="sheet-bg" id="sheetBg"><div class="sheet" id="sheet"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================================
+   Apex — UK lettings marketplace prototype
+   Single-file, zero-build. Landlords advertise; renters search; both parties
+   message, arrange a viewing, agree terms, then sign a UK-compliant Assured
+   Shorthold Tenancy (AST). The landlord is charged £100 on contract signing.
+
+   Both roles share one localStorage state so a renter action shows up in the
+   landlord view (toggle role in the header) — the whole deal lifecycle is
+   playable in one browser.
+   ============================================================================ */
+
+const STORE_KEY = 'rentmatch_v1';
+const FEE_PENCE = 10000; // £100.00 landlord fee on signing
+const $ = (s, r = document) => r.querySelector(s);
+
+/* ---- money / date helpers ---- */
+const gbp = (pence) => '£' + (pence / 100).toLocaleString('en-GB', { minimumFractionDigits: pence % 100 ? 2 : 0, maximumFractionDigits: 2 });
+const fmtDate = (ts) => new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+const fmtDateTime = (ts) => new Date(ts).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const addDays = (ts, d) => ts + d * 864e5;
+const escapeHtml = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h << 5) - h + s.charCodeAt(i) | 0; return h; }
+
+/* ---- generated property imagery ----------------------------------------------
+   Each listing gets a deterministic, fully offline SVG "photo" of the building
+   (no network, no binary assets). We avoid encodeURIComponent (not present in
+   the smoke-test sandbox) by single-quoting attributes and escaping only '#'. */
+const PALETTES = [
+  { sky1: '#bfe3ff', sky2: '#7fb4e8', wall: '#ece3d4', wall2: '#dccfba', roof: '#7b4a3a', ground: '#cdbfae' },
+  { sky1: '#ffd9a8', sky2: '#ff9e7d', wall: '#f1e7da', wall2: '#e5d6c4', roof: '#5b4a8a', ground: '#c9b29a' },
+  { sky1: '#cfe9ff', sky2: '#9ec9f0', wall: '#dfe3ea', wall2: '#cdd3df', roof: '#3a4a6b', ground: '#b9c2cc' },
+  { sky1: '#d7f0e6', sky2: '#9fd4c2', wall: '#efe9df', wall2: '#ddd5c7', roof: '#874c3a', ground: '#c2c7ba' },
+  { sky1: '#e7dcff', sky2: '#b9a6f0', wall: '#ece6f3', wall2: '#dcd2ea', roof: '#4a3a6b', ground: '#bdb6c9' },
+];
+const GLASS = '#bfe0ff';
+function buildingSVG(seed) {
+  const h = Math.abs(hashStr(String(seed)));
+  const P = PALETTES[h % PALETTES.length];
+  const v = h % 3;
+  const fr = (x, y, w, hh) => // white window cross-frame
+    `<rect x='${x + w / 2 - 1}' y='${y}' width='2' height='${hh}' fill='#fff' opacity='0.5'/>`
+    + `<rect x='${x}' y='${y + hh / 2 - 1}' width='${w}' height='2' fill='#fff' opacity='0.5'/>`;
+  let scene = '';
+  if (v === 0) { // detached house
+    scene = `<rect x='244' y='84' width='15' height='30' fill='${P.roof}'/>`
+      + `<polygon points='110,122 200,64 290,122' fill='${P.roof}'/>`
+      + `<rect x='132' y='120' width='136' height='74' fill='${P.wall}'/>`
+      + `<rect x='150' y='136' width='30' height='26' rx='2' fill='${GLASS}'/>` + fr(150, 136, 30, 26)
+      + `<rect x='220' y='136' width='30' height='26' rx='2' fill='${GLASS}'/>` + fr(220, 136, 30, 26)
+      + `<rect x='188' y='152' width='24' height='42' rx='2' fill='${P.roof}'/>`
+      + `<rect x='184' y='190' width='32' height='5' fill='#b9ab98'/>`
+      + `<circle cx='207' cy='174' r='2.4' fill='#e7d49a'/>`;
+  } else if (v === 1) { // apartment block
+    let win = '';
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) {
+      const lit = (h >> (r * 4 + c)) & 1;
+      win += `<rect x='${120 + c * 41}' y='${74 + r * 28}' width='27' height='18' rx='2' fill='${lit ? '#dff0ff' : '#9bb6d6'}'/>`;
+    }
+    scene = `<rect x='108' y='58' width='184' height='136' fill='${P.wall}'/>${win}`
+      + `<rect x='176' y='154' width='48' height='9' fill='${P.roof}'/>`
+      + `<rect x='186' y='162' width='28' height='32' fill='${P.roof}'/>`;
+  } else { // pair of townhouses
+    scene = `<rect x='96' y='112' width='104' height='82' fill='${P.wall}'/>`
+      + `<polygon points='94,114 148,72 202,114' fill='${P.roof}'/>`
+      + `<rect x='204' y='112' width='104' height='82' fill='${P.wall2}'/>`
+      + `<polygon points='202,114 256,72 310,114' fill='${P.roof}'/>`
+      + `<rect x='120' y='150' width='22' height='44' fill='${P.roof}'/>`
+      + `<rect x='244' y='150' width='22' height='44' fill='${P.roof}'/>`
+      + `<rect x='156' y='128' width='28' height='20' rx='2' fill='${GLASS}'/>` + fr(156, 128, 28, 20)
+      + `<rect x='268' y='128' width='28' height='20' rx='2' fill='${GLASS}'/>` + fr(268, 128, 28, 20);
+  }
+  const tree = `<rect x='52' y='152' width='10' height='40' fill='#6b4a2a'/>`
+    + `<circle cx='57' cy='146' r='22' fill='#5fa85f'/><circle cx='42' cy='157' r='15' fill='#52934c'/><circle cx='73' cy='157' r='15' fill='#6cb46d'/>`;
+  const bushes = `<ellipse cx='322' cy='193' rx='30' ry='12' fill='#579c52'/><ellipse cx='112' cy='194' rx='22' ry='10' fill='#62a85d'/>`;
+  return `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 240' preserveAspectRatio='xMidYMid slice'>`
+    + `<defs><linearGradient id='s' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='${P.sky1}'/><stop offset='1' stop-color='${P.sky2}'/></linearGradient></defs>`
+    + `<rect width='400' height='240' fill='url(%23s)'/>`
+    + `<circle cx='330' cy='50' r='24' fill='#fff' opacity='0.85'/>`
+    + `<ellipse cx='86' cy='52' rx='40' ry='14' fill='#fff' opacity='0.6'/>`
+    + `<ellipse cx='150' cy='62' rx='30' ry='11' fill='#fff' opacity='0.45'/>`
+    + `<rect x='0' y='186' width='400' height='54' fill='${P.ground}'/>`
+    + `<rect x='0' y='182' width='400' height='8' fill='#7fae5e'/>`
+    + `<rect x='0' y='190' width='400' height='3' fill='#000' opacity='0.07'/>`
+    + tree + scene + bushes
+    + `</svg>`;
+}
+/* Real property photos (Unsplash CDN). Listings map to one deterministically.
+   The generated SVG illustration is layered underneath as an offline / failed-
+   load fallback, so a missing photo degrades to art, not a broken image. */
+const PHOTOS = [
+  'photo-1568605114967-8130f3a36994', 'photo-1570129477492-45c003edd2be',
+  'photo-1512917774080-9991f1c4c750', 'photo-1605276374104-dee2a0ed3cd6',
+  'photo-1582268611958-ebfd161ef9cf', 'photo-1493809842364-78817add7ffb',
+  'photo-1502005229762-cf1b2da7c5d6', 'photo-1512918728675-ed5a9ecdebfd',
+  'photo-1560448204-e02f11c3d0e2', 'photo-1484154218962-a197022b5858',
+  'photo-1480074568708-e7b720bb3f09', 'photo-1572120360610-d971b9d7767c',
+].map((id) => `https://images.unsplash.com/${id}?auto=format&fit=crop&w=800&q=70`);
+
+/** A CSS background: the listing's real photo, with the generated SVG as fallback.
+   Output is injected into an HTML style="…" attribute via innerHTML, so the url()
+   quotes are written as &quot; (and & as &amp;) to survive attribute parsing —
+   plain " would close the attribute early and the background would never apply. */
+const grad = (seed) => {
+  const svg = buildingSVG(seed).replace(/\n/g, '').replace(/#/g, '%23');
+  const photo = PHOTOS[Math.abs(hashStr(String(seed))) % PHOTOS.length].replace(/&/g, '&amp;');
+  return `url(&quot;${photo}&quot;) center/cover no-repeat, url(&quot;data:image/svg+xml,${svg}&quot;) center/cover no-repeat, #142033`;
+};
+const uid = () => 'id' + Math.random().toString(36).slice(2, 9);
+const now = () => Date.now();
+
+/* ----------------------------------------------------------------------------
+   State
+   ---------------------------------------------------------------------------- */
+let S = loadState();
+let role = S.role || 'renter';
+let tab = role === 'renter' ? 'browse' : 'props';   // current tab per role
+let nav = { screen: 'list', id: null };               // sub-navigation within a tab
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) { /* ignore */ }
+  return seed();
+}
+function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch (e) {} }
+
+function seed() {
+  const landlord = { name: 'Priya Sharma', email: 'priya@example.co.uk', phone: '07700 900111' };
+  const renter = { name: 'Tom Baxter', email: 'tom@example.co.uk', phone: '07700 900222' };
+  const mk = (o) => Object.assign({ id: uid(), createdAt: now(), status: 'live', landlordId: 'me-landlord' }, o);
+  const listings = [
+    mk({ title: '2-bed flat, Victorian conversion', street: '14 Mapledene Road', area: 'Hackney', city: 'London', postcode: 'E8 3JN', type: 'Flat', beds: 2, baths: 1, rentPence: 220000, furnished: 'Furnished', epc: 'C', available: addDays(now(), 14), deposit: 'auto', desc: 'Bright first-floor conversion with original features, large bay windows and a modern kitchen. Two minutes from London Fields.', features: ['Garden access', 'Gas central heating', 'Double glazing', 'Near station'] }),
+    mk({ title: 'Studio in converted warehouse', street: '3 Tobacco Wharf', area: 'Northern Quarter', city: 'Manchester', postcode: 'M4 1LW', type: 'Studio', beds: 0, baths: 1, rentPence: 95000, furnished: 'Furnished', epc: 'B', available: addDays(now(), 7), deposit: 'auto', desc: 'Stylish open-plan studio with exposed brick and high ceilings, right in the heart of the city.', features: ['Bills included option', 'High ceilings', 'Concierge', 'Lift'] }),
+    mk({ title: '3-bed terraced house', street: '27 Cardigan Road', area: 'Headingley', city: 'Leeds', postcode: 'LS6 1LJ', type: 'House', beds: 3, baths: 2, rentPence: 165000, furnished: 'Unfurnished', epc: 'D', available: addDays(now(), 30), deposit: 'auto', desc: 'Spacious family terrace with a private rear garden, off-street parking and a recently refitted bathroom.', features: ['Private garden', 'Off-street parking', 'Pets considered', 'Near schools'] }),
+    mk({ title: '1-bed apartment, riverside', street: '8 Capstan Square', area: 'Cardiff Bay', city: 'Cardiff', postcode: 'CF10 4PA', type: 'Flat', beds: 1, baths: 1, rentPence: 110000, furnished: 'Part-furnished', epc: 'B', available: addDays(now(), 3), deposit: 'auto', desc: 'Contemporary apartment with a Juliet balcony overlooking the marina. Gym and parking included.', features: ['Marina view', 'Gym', 'Allocated parking', 'Balcony'] }),
+  ];
+  return {
+    role: 'renter',
+    me: { landlord, renter },
+    listings,
+    deals: [],        // { id, listingId, status, messages[], viewing, contract, payment }
+    seenToast: false,
+  };
+}
+
+/* deposit cap: Tenant Fees Act 2019 — 5 weeks' rent if annual rent < £50k, else 6 weeks */
+function depositPence(rentPence) {
+  const annual = rentPence * 12;
+  const weekly = (rentPence * 12) / 52;
+  const weeks = annual < 5000000 ? 5 : 6;
+  return Math.round(weekly * weeks);
+}
+function weeklyRent(rentPence) { return Math.round((rentPence * 12) / 52); }
+
+/* ----------------------------------------------------------------------------
+   Deal lifecycle
+   ---------------------------------------------------------------------------- */
+const STAGES = ['enquiry', 'viewing', 'agreed', 'contract', 'signed', 'complete'];
+const STAGE_LABEL = { enquiry: 'Enquiry', viewing: 'Viewing', agreed: 'Terms agreed', contract: 'Contract', signed: 'Signed', complete: 'Let agreed' };
+
+function dealFor(listingId) { return S.deals.find((d) => d.listingId === listingId); }
+function getDeal(id) { return S.deals.find((d) => d.id === id); }
+
+function createDeal(listingId, firstMsg) {
+  let d = dealFor(listingId);
+  if (d) return d;
+  d = {
+    id: uid(), listingId, createdAt: now(), stage: 'enquiry',
+    messages: [], viewing: null,
+    agreed: { renter: false, landlord: false },
+    contract: null,
+    signed: { renter: null, landlord: null },
+    payment: null,
+  };
+  if (firstMsg) d.messages.push({ from: 'renter', text: firstMsg, ts: now() });
+  d.messages.push({ from: 'sys', text: 'Enquiry started. Say hello and ask about a viewing.', ts: now() });
+  S.deals.push(d);
+  save();
+  return d;
+}
+
+function stageIndex(d) { return STAGES.indexOf(d.stage); }
+
+/* recompute the highest stage the deal has reached */
+function recomputeStage(d) {
+  let st = 'enquiry';
+  if (d.viewing) st = 'viewing';
+  if (d.agreed.renter && d.agreed.landlord) st = 'agreed';
+  if (d.contract) st = 'contract';
+  if (d.signed.renter && d.signed.landlord) st = 'signed';
+  if (d.payment && d.payment.paid) st = 'complete';
+  d.stage = st;
+}
+
+function addMessage(d, from, text) {
+  d.messages.push({ from, text, ts: now() });
+  save();
+}
+
+/* ----------------------------------------------------------------------------
+   Render — root
+   ---------------------------------------------------------------------------- */
+function render() {
+  // role switch state
+  document.querySelectorAll('#roleSwitch button').forEach((b) => b.classList.toggle('on', b.dataset.role === role));
+  renderTabbar();
+  const v = $('#view');
+  v.scrollTop = v.scrollTop; // keep
+  v.innerHTML = screenHtml();
+  wireScreen();
+}
+
+function unreadCount(forRole) {
+  // count deals whose last message is from the *other* party
+  const other = forRole === 'renter' ? 'landlord' : 'renter';
+  return S.deals.filter((d) => {
+    const real = d.messages.filter((m) => m.from !== 'sys');
+    return real.length && real[real.length - 1].from === other;
+  }).length;
+}
+
+function renderTabbar() {
+  const tb = $('#tabbar');
+  const tabs = role === 'renter'
+    ? [['browse', '🔎', 'Search'], ['msgs', '💬', 'Chats'], ['saved', '♡', 'Saved']]
+    : [['props', '🏠', 'Listings'], ['msgs', '💬', 'Enquiries'], ['account', '👤', 'Account']];
+  const unread = unreadCount(role);
+  tb.innerHTML = tabs.map(([id, ic, label]) => {
+    const badge = id === 'msgs' && unread ? `<span class="badge">${unread}</span>` : '';
+    return `<button data-tab="${id}" class="${tab === id ? 'on' : ''}">${badge}<span class="ic">${ic}</span>${label}</button>`;
+  }).join('');
+}
+
+/* ----------------------------------------------------------------------------
+   Screen router
+   ---------------------------------------------------------------------------- */
+function screenHtml() {
+  if (nav.screen === 'detail') return detailScreen(nav.id);
+  if (nav.screen === 'chat') return chatScreen(nav.id);
+  if (nav.screen === 'contract') return contractScreen(nav.id);
+  if (nav.screen === 'newprop') return newPropScreen();
+  // tab landing screens
+  if (role === 'renter') {
+    if (tab === 'browse') return browseScreen();
+    if (tab === 'msgs') return chatsListScreen();
+    if (tab === 'saved') return savedScreen();
+  } else {
+    if (tab === 'props') return propsScreen();
+    if (tab === 'msgs') return chatsListScreen();
+    if (tab === 'account') return accountScreen();
+  }
+  return browseScreen();
+}
+
+/* ---------- RENTER: browse ---------- */
+let filters = { city: '', beds: '', max: '' };
+
+function browseScreen() {
+  const live = S.listings.filter((l) => l.status !== 'let');
+  const cities = [...new Set(S.listings.map((l) => l.city))];
+  const filtered = live.filter((l) =>
+    (!filters.city || l.city === filters.city) &&
+    (filters.beds === '' || (filters.beds === '0' ? l.beds === 0 : l.beds >= +filters.beds)) &&
+    (!filters.max || l.rentPence <= +filters.max * 100));
+  return `
+    <h2 class="screen-t">Find your next home</h2>
+    <p class="sub">${filtered.length} propert${filtered.length === 1 ? 'y' : 'ies'} available to rent</p>
+    <div class="filters">
+      <select data-f="city"><option value="">All cities</option>${cities.map((c) => `<option ${filters.city === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
+      <select data-f="beds">
+        <option value="">Any beds</option><option value="0" ${filters.beds === '0' ? 'selected' : ''}>Studio</option>
+        <option value="1" ${filters.beds === '1' ? 'selected' : ''}>1+ bed</option>
+        <option value="2" ${filters.beds === '2' ? 'selected' : ''}>2+ beds</option>
+        <option value="3" ${filters.beds === '3' ? 'selected' : ''}>3+ beds</option>
+      </select>
+      <input data-f="max" type="number" inputmode="numeric" placeholder="Max £ pcm" value="${filters.max}" style="width:120px" />
+    </div>
+    ${filtered.length ? filtered.map(listingCard).join('') : `<div class="empty"><div class="big">🏚️</div>No matches — try widening your filters.</div>`}
+  `;
+}
+
+function listingCard(l) {
+  const d = dealFor(l.id);
+  const tag = l.status === 'let' ? `<span class="pill bad">Let agreed</span>`
+    : d ? `<span class="pill accent">${STAGE_LABEL[d.stage]}</span>` : '';
+  return `
+    <div class="card" data-open="${l.id}" style="cursor:pointer">
+      <div class="photo" style="background:${grad(l.id)}">
+        <div class="tags">
+          <span class="tag">${l.type}</span><span class="tag">${l.furnished}</span><span class="tag">EPC ${l.epc}</span>
+        </div>
+      </div>
+      <div class="body">
+        <div class="listing-h">
+          <div>
+            <div class="price">${gbp(l.rentPence)}<small> /month</small></div>
+            <div class="addr">${escapeHtml(l.area)}, ${escapeHtml(l.city)} · ${escapeHtml(l.postcode)}</div>
+          </div>
+          ${tag}
+        </div>
+        <div class="specs">
+          <span>🛏 <b>${l.beds === 0 ? 'Studio' : l.beds}</b></span>
+          <span>🛁 <b>${l.baths}</b></span>
+          <span>📅 <b>${fmtDate(l.available)}</b></span>
+        </div>
+      </div>
+    </div>`;
+}
+
+/* ---------- RENTER: saved (re-uses deal list as "interested") ---------- */
+function savedScreen() {
+  const mine = S.deals.map((d) => S.listings.find((l) => l.id === d.listingId)).filter(Boolean);
+  if (!mine.length) return `<h2 class="screen-t">Saved</h2><div class="empty"><div class="big">♡</div>Enquire on a property and it shows up here.</div>`;
+  return `<h2 class="screen-t">Properties you're pursuing</h2><p class="sub">${mine.length} active</p>${mine.map(listingCard).join('')}`;
+}
+
+/* ---------- LANDLORD: listings ---------- */
+function propsScreen() {
+  const mine = S.listings.filter((l) => l.landlordId === 'me-landlord');
+  return `
+    <h2 class="screen-t">Your listings</h2>
+    <p class="sub">Advertise a property and review enquiries from renters.</p>
+    <button class="cta" data-act="newprop" style="margin-bottom:16px">＋ Advertise a property</button>
+    ${mine.length ? mine.map(landlordListingCard).join('') : `<div class="empty"><div class="big">🏠</div>No listings yet.</div>`}
+  `;
+}
+function landlordListingCard(l) {
+  const d = dealFor(l.id);
+  const enquiries = d ? 1 : 0;
+  return `
+    <div class="card" data-open="${l.id}" style="cursor:pointer">
+      <div class="photo" style="background:${grad(l.id)}">
+        <div class="tags"><span class="tag">${l.status === 'let' ? 'Let agreed' : 'Live'}</span><span class="tag">${l.type}</span></div>
+      </div>
+      <div class="body">
+        <div class="listing-h">
+          <div><div class="price">${gbp(l.rentPence)}<small> /month</small></div>
+          <div class="addr">${escapeHtml(l.street)}, ${escapeHtml(l.city)}</div></div>
+          ${enquiries ? `<span class="pill ${d.stage === 'complete' ? 'good' : 'accent'}">${STAGE_LABEL[d.stage]}</span>` : `<span class="pill">No enquiries</span>`}
+        </div>
+        <div class="specs"><span>🛏 <b>${l.beds === 0 ? 'Studio' : l.beds}</b></span><span>🛁 <b>${l.baths}</b></span><span>EPC <b>${l.epc}</b></span></div>
+      </div>
+    </div>`;
+}
+
+/* ---------- LANDLORD: account ---------- */
+function accountScreen() {
+  const paid = S.deals.filter((d) => d.payment && d.payment.paid);
+  const earned = paid.length * FEE_PENCE;
+  return `
+    <h2 class="screen-t">Account</h2>
+    <p class="sub">Signed in as ${escapeHtml(S.me.landlord.name)}</p>
+    <div class="card"><div class="body">
+      <div class="kv"><span class="k">Name</span><span class="v">${escapeHtml(S.me.landlord.name)}</span></div>
+      <div class="kv"><span class="k">Email</span><span class="v">${escapeHtml(S.me.landlord.email)}</span></div>
+      <div class="kv"><span class="k">Phone</span><span class="v">${escapeHtml(S.me.landlord.phone)}</span></div>
+    </div></div>
+    <div class="section-t">Billing</div>
+    <div class="card"><div class="body">
+      <div class="kv"><span class="k">Tenancies completed</span><span class="v">${paid.length}</span></div>
+      <div class="kv"><span class="k">Platform fees paid</span><span class="v">${gbp(earned)}</span></div>
+      <p class="muted" style="font-size:12.5px;margin:12px 0 0">Apex charges landlords a one-off <b>${gbp(FEE_PENCE)}</b> fee at the point the tenancy agreement is signed by both parties. Renters are never charged a fee (Tenant Fees Act 2019).</p>
+    </div></div>
+    <div class="section-t">Reset</div>
+    <button class="cta ghost" data-act="reset">Reset demo data</button>
+  `;
+}
+
+/* ---------- shared: chats list ---------- */
+function chatsListScreen() {
+  if (!S.deals.length) {
+    return `<h2 class="screen-t">${role === 'renter' ? 'Your chats' : 'Enquiries'}</h2>
+      <div class="empty"><div class="big">💬</div>${role === 'renter' ? 'Enquire on a property to start a conversation.' : 'When a renter enquires, the conversation appears here.'}</div>`;
+  }
+  const items = S.deals.slice().sort((a, b) => lastTs(b) - lastTs(a)).map((d) => {
+    const l = S.listings.find((x) => x.id === d.listingId);
+    const last = d.messages[d.messages.length - 1];
+    const who = role === 'renter' ? escapeHtml(S.me.landlord.name) : escapeHtml(S.me.renter.name);
+    const other = role === 'renter' ? 'landlord' : 'renter';
+    const unread = d.messages.filter((m) => m.from !== 'sys').slice(-1)[0];
+    const isUnread = unread && unread.from === other;
+    return `
+      <div class="card" data-chat="${d.id}" style="cursor:pointer"><div class="body">
+        <div class="row center" style="justify-content:space-between">
+          <div style="display:flex;gap:11px;align-items:center;min-width:0">
+            <div style="width:44px;height:44px;border-radius:11px;flex:0 0 auto;background:${grad(l.id)}"></div>
+            <div style="min-width:0">
+              <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${who} · ${escapeHtml(l.area || l.city)}</div>
+              <div class="muted" style="font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px">
+                ${isUnread ? '<b style="color:var(--ink)">' : ''}${escapeHtml(last.text)}${isUnread ? '</b>' : ''}</div>
+            </div>
+          </div>
+          <div style="text-align:right;flex:0 0 auto">
+            <div class="pill ${d.stage === 'complete' ? 'good' : 'accent'}" style="margin-bottom:5px">${STAGE_LABEL[d.stage]}</div>
+            <div class="faint" style="font-size:10.5px">${fmtDateTime(last.ts)}</div>
+          </div>
+        </div>
+      </div></div>`;
+  }).join('');
+  return `<h2 class="screen-t">${role === 'renter' ? 'Your chats' : 'Enquiries'}</h2><p class="sub">Message, arrange a viewing, agree terms.</p>${items}`;
+}
+function lastTs(d) { return d.messages.length ? d.messages[d.messages.length - 1].ts : d.createdAt; }
+
+/* ----------------------------------------------------------------------------
+   Listing detail
+   ---------------------------------------------------------------------------- */
+function detailScreen(id) {
+  const l = S.listings.find((x) => x.id === id);
+  if (!l) return backTo();
+  const d = dealFor(l.id);
+  const dep = depositPence(l.rentPence);
+  const isLandlord = role === 'landlord';
+  return `
+    <div class="gallery" style="background:${grad(l.id)};margin:-4px -16px 0">
+      <div class="back" data-back>‹</div>
+    </div>
+    <div style="padding-top:14px">
+      <div class="row wrap" style="gap:6px;margin-bottom:8px">
+        <span class="pill">${l.type}</span><span class="pill">${l.furnished}</span>
+        <span class="pill">EPC ${l.epc}</span>${l.status === 'let' ? '<span class="pill bad">Let agreed</span>' : ''}
+      </div>
+      <div class="price" style="font-size:26px">${gbp(l.rentPence)}<small> per month</small></div>
+      <div class="addr" style="font-size:15px;margin-top:3px">${escapeHtml(l.street)}, ${escapeHtml(l.area)}, ${escapeHtml(l.city)} ${escapeHtml(l.postcode)}</div>
+      <div class="specs" style="font-size:14.5px;margin-top:13px">
+        <span>🛏 <b>${l.beds === 0 ? 'Studio' : l.beds + ' bed' + (l.beds > 1 ? 's' : '')}</b></span>
+        <span>🛁 <b>${l.baths} bath</b></span>
+        <span>📅 <b>${fmtDate(l.available)}</b></span>
+      </div>
+
+      <div class="section-t">About this property</div>
+      <p style="font-size:14.5px;line-height:1.6;color:#cdd7f0;margin:0">${escapeHtml(l.desc)}</p>
+
+      <div class="section-t">Features</div>
+      <div class="row wrap" style="gap:7px">${(l.features || []).map((f) => `<span class="pill">${escapeHtml(f)}</span>`).join('')}</div>
+
+      <div class="section-t">The numbers</div>
+      <div class="card"><div class="body">
+        <div class="kv"><span class="k">Monthly rent</span><span class="v">${gbp(l.rentPence)}</span></div>
+        <div class="kv"><span class="k">Holding deposit (max 1 week)</span><span class="v">${gbp(weeklyRent(l.rentPence))}</span></div>
+        <div class="kv"><span class="k">Tenancy deposit (max 5 weeks)</span><span class="v">${gbp(dep)}</span></div>
+        <div class="kv"><span class="k">Available from</span><span class="v">${fmtDate(l.available)}</span></div>
+      </div></div>
+      <div class="notice">💡 Under the <b>Tenant Fees Act 2019</b> the only payments a renter can be charged are rent, a capped tenancy deposit, a capped holding deposit and a few default fees. Apex never charges renters.</div>
+
+      ${isLandlord
+        ? (d
+          ? `<button class="cta" data-chat="${d.id}">Open enquiry (${STAGE_LABEL[d.stage]})</button>`
+          : `<div class="notice">No enquiries on this listing yet. Renters can message you from here.</div>
+             <button class="cta ghost" data-act="editnote">Listing is live ✓</button>`)
+        : (l.status === 'let'
+          ? `<button class="cta" disabled>This property has been let</button>`
+          : (d
+            ? `<button class="cta" data-chat="${d.id}">Continue conversation (${STAGE_LABEL[d.stage]})</button>`
+            : `<button class="cta" data-act="enquire" data-id="${l.id}">Enquire &amp; message landlord</button>`))}
+    </div>
+  `;
+}
+function backTo() { nav = { screen: 'list', id: null }; return screenHtml(); }
+
+/* ----------------------------------------------------------------------------
+   Chat / deal room — the heart of the flow
+   ---------------------------------------------------------------------------- */
+function chatScreen(dealId) {
+  const d = getDeal(dealId);
+  if (!d) return backTo();
+  const l = S.listings.find((x) => x.id === d.listingId);
+  const me = role;
+  const other = role === 'renter' ? 'landlord' : 'renter';
+  const otherName = role === 'renter' ? S.me.landlord.name : S.me.renter.name;
+
+  const bubbles = d.messages.map((m) => {
+    if (m.from === 'sys') return `<div class="msg sys">${escapeHtml(m.text)}</div>`;
+    const mine = m.from === me;
+    return `<div class="msg ${mine ? 'me' : 'them'}">${escapeHtml(m.text)}<span class="t">${fmtDateTime(m.ts)}</span></div>`;
+  }).join('');
+
+  return `
+    <div class="row center" style="gap:10px;margin:2px 0 12px">
+      <div class="back" data-back style="position:static">‹</div>
+      <div style="width:40px;height:40px;border-radius:10px;background:${grad(l.id)}"></div>
+      <div style="min-width:0">
+        <div style="font-weight:700">${escapeHtml(otherName)}</div>
+        <div class="muted" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(l.area)}, ${escapeHtml(l.city)} · ${gbp(l.rentPence)}/mo</div>
+      </div>
+    </div>
+
+    ${dealStatusBar(d)}
+    ${dealActions(d)}
+
+    <div class="section-t">Conversation</div>
+    <div class="thread" id="thread">${bubbles}</div>
+    <div class="composer">
+      <input id="msgInput" placeholder="Message ${escapeHtml(otherName.split(' ')[0])}…" autocomplete="off" />
+      <button data-act="send" data-id="${d.id}">➤</button>
+    </div>
+  `;
+}
+
+function dealStatusBar(d) {
+  const idx = stageIndex(d);
+  return `
+    <div class="statusbar">
+      <div class="row center" style="justify-content:space-between">
+        <b>Deal progress</b><span class="pill ${d.stage === 'complete' ? 'good' : 'accent'}">${STAGE_LABEL[d.stage]}</span>
+      </div>
+      <div class="steps">
+        ${STAGES.map((s, i) => `<div class="step ${i < idx ? 'done' : ''} ${i === idx ? 'now' : ''}">
+          <div class="dot">${i < idx ? '✓' : i + 1}</div>${STAGE_LABEL[s]}</div>`).join('')}
+      </div>
+    </div>`;
+}
+
+/* contextual action buttons depending on stage + role */
+function dealActions(d) {
+  const l = S.listings.find((x) => x.id === d.listingId);
+  const me = role;
+  let html = '';
+
+  /* viewing */
+  if (!d.viewing) {
+    html += `<button class="cta ghost" data-act="reqview" data-id="${d.id}" style="margin-bottom:10px">📅 ${me === 'renter' ? 'Request a viewing' : 'Propose a viewing time'}</button>`;
+  } else if (d.viewing.status === 'proposed') {
+    if (d.viewing.by !== me) {
+      html += `<div class="notice">Viewing proposed for <b>${fmtDateTime(d.viewing.ts)}</b>.</div>
+        <div class="row" style="margin-bottom:10px">
+          <button class="cta sm" data-act="confirmview" data-id="${d.id}" style="flex:1">Confirm viewing</button>
+          <button class="cta sm ghost" data-act="reqview" data-id="${d.id}" style="flex:1">Suggest another</button>
+        </div>`;
+    } else {
+      html += `<div class="notice">You proposed a viewing for <b>${fmtDateTime(d.viewing.ts)}</b> — waiting for the other party to confirm.</div>`;
+    }
+  } else if (d.viewing.status === 'confirmed') {
+    html += `<div class="notice">✅ Viewing confirmed for <b>${fmtDateTime(d.viewing.ts)}</b>.</div>`;
+  }
+
+  /* agree terms — only meaningful once a viewing exists */
+  if (d.viewing && d.viewing.status === 'confirmed' && !(d.signed.renter && d.signed.landlord)) {
+    const iAgreed = d.agreed[me];
+    const bothAgreed = d.agreed.renter && d.agreed.landlord;
+    if (!bothAgreed) {
+      html += `<button class="cta ${iAgreed ? 'ghost' : ''}" data-act="agree" data-id="${d.id}" ${iAgreed ? 'disabled' : ''} style="margin-bottom:10px">
+        ${iAgreed ? '✓ You\'ve agreed — awaiting the other party' : '🤝 Agree to proceed to a tenancy'}</button>`;
+    }
+  }
+
+  /* contract */
+  if (d.agreed.renter && d.agreed.landlord) {
+    if (!d.contract && me === 'landlord') {
+      html += `<button class="cta" data-act="draft" data-id="${d.id}" style="margin-bottom:10px">📄 Draft the tenancy agreement</button>`;
+    } else if (!d.contract) {
+      html += `<div class="notice">Both parties agreed. The landlord is preparing the tenancy agreement.</div>`;
+    } else {
+      html += `<button class="cta" data-act="opencontract" data-id="${d.id}" style="margin-bottom:10px">
+        📄 ${d.signed[me] ? 'View tenancy agreement' : 'Review &amp; sign tenancy agreement'}</button>`;
+    }
+  }
+
+  if (d.stage === 'complete') {
+    html += `<div class="notice">🎉 Tenancy agreed for <b>${escapeHtml(l.area)}, ${escapeHtml(l.city)}</b>. Both parties have signed and the agreement is in force.</div>`;
+  }
+  return html;
+}
+
+/* ----------------------------------------------------------------------------
+   Contract — UK Assured Shorthold Tenancy (AST)
+   ---------------------------------------------------------------------------- */
+function buildContract(d) {
+  const l = S.listings.find((x) => x.id === d.listingId);
+  const start = Math.max(l.available, addDays(now(), 7));
+  return {
+    type: 'Assured Shorthold Tenancy',
+    drafted: now(),
+    landlord: { ...S.me.landlord },
+    tenant: { ...S.me.renter },
+    propertyAddress: `${l.street}, ${l.area}, ${l.city}, ${l.postcode}`,
+    rentPence: l.rentPence,
+    depositPence: depositPence(l.rentPence),
+    depositScheme: 'Deposit Protection Service (DPS) — custodial',
+    termMonths: 12,
+    startDate: start,
+    endDate: addDays(start, 365),
+    furnished: l.furnished,
+    epc: l.epc,
+  };
+}
+
+function contractScreen(dealId) {
+  const d = getDeal(dealId);
+  if (!d || !d.contract) return backTo();
+  const c = d.contract;
+  const me = role;
+  const iSigned = !!d.signed[me];
+  const bothSigned = d.signed.renter && d.signed.landlord;
+  const myName = me === 'renter' ? S.me.renter.name : S.me.landlord.name;
+
+  return `
+    <div class="row center" style="gap:10px;margin:2px 0 12px">
+      <div class="back" data-back style="position:static">‹</div>
+      <div><div style="font-weight:800;font-size:17px">Tenancy Agreement</div>
+      <div class="muted" style="font-size:12.5px">${c.type} (England) · drafted ${fmtDate(c.drafted)}</div></div>
+    </div>
+
+    <div class="notice">This Assured Shorthold Tenancy is governed by the Housing Act 1988 (as amended). Both parties must sign for it to take effect. ${role === 'landlord' ? `On signing, Apex charges the landlord a one-off <b>${gbp(FEE_PENCE)}</b> platform fee.` : 'Renters are never charged a platform fee.'}</div>
+
+    ${contractBody(c)}
+
+    <div class="section-t">Statutory compliance</div>
+    <ul class="checklist">
+      ${complianceItems(c).map((x) => `<li><span class="ck">✓</span><div><b>${x.t}</b><br><span class="muted" style="font-size:12px">${x.d}</span></div></li>`).join('')}
+    </ul>
+
+    <div class="section-t">Signatures</div>
+    ${sigBlock('landlord', d, c)}
+    ${sigBlock('renter', d, c)}
+
+    ${bothSigned
+      ? `<div class="notice" style="border-color:rgba(54,240,166,.4);background:rgba(54,240,166,.07)">✅ Fully executed on ${fmtDate(Math.max(d.signed.renter.ts, d.signed.landlord.ts))}. ${d.payment && d.payment.paid ? `Landlord platform fee of <b>${gbp(FEE_PENCE)}</b> paid (ref ${d.payment.ref}).` : ''}</div>`
+      : (iSigned
+        ? `<div class="notice">You signed as <b>${escapeHtml(myName)}</b>. Waiting for the other party to sign.</div>`
+        : `<button class="cta" data-act="sign" data-id="${d.id}">✍️ Sign as ${escapeHtml(myName)}</button>`)}
+  `;
+}
+
+function contractBody(c) {
+  const wk = weeklyRent(c.rentPence);
+  const depWeeks = c.rentPence * 12 < 5000000 ? 5 : 6;
+  return `<div class="contract">
+    <h4>Parties</h4>
+    <div class="cl"><b>The Landlord:</b> ${escapeHtml(c.landlord.name)} (${escapeHtml(c.landlord.email)})</div>
+    <div class="cl"><b>The Tenant:</b> ${escapeHtml(c.tenant.name)} (${escapeHtml(c.tenant.email)})</div>
+    <div class="cl"><b>The Property:</b> ${escapeHtml(c.propertyAddress)}, let ${c.furnished.toLowerCase()}.</div>
+
+    <h4>1. The Tenancy</h4>
+    <div class="cl"><span class="num">1.1</span>The Landlord lets and the Tenant takes the Property for a fixed term of <b>${c.termMonths} months</b> commencing on <b>${fmtDate(c.startDate)}</b> and ending on <b>${fmtDate(c.endDate)}</b>.</div>
+    <div class="cl"><span class="num">1.2</span>This is an Assured Shorthold Tenancy as defined by section 19A of the Housing Act 1988. The provisions for recovery of possession in sections 21 and 8 of that Act apply.</div>
+
+    <h4>2. Rent</h4>
+    <div class="cl"><span class="num">2.1</span>The Tenant shall pay rent of <b>${gbp(c.rentPence)} per calendar month</b> (equivalent to ${gbp(wk)} per week), payable monthly in advance on the ${ordinal(new Date(c.startDate).getDate())} day of each month.</div>
+    <div class="cl"><span class="num">2.2</span>The first payment is due on or before the commencement date.</div>
+
+    <h4>3. Deposit</h4>
+    <div class="cl"><span class="num">3.1</span>The Tenant shall pay a tenancy deposit of <b>${gbp(c.depositPence)}</b> (equal to ${depWeeks} weeks' rent — within the cap set by the Tenant Fees Act 2019).</div>
+    <div class="cl"><span class="num">3.2</span>The deposit will be protected in the <b>${escapeHtml(c.depositScheme)}</b>, a government-authorised scheme, within 30 days of receipt, and the prescribed information will be served on the Tenant.</div>
+
+    <h4>4. Tenant's obligations</h4>
+    <div class="cl"><span class="num">4.1</span>To pay the rent and any other sums due under this Agreement.</div>
+    <div class="cl"><span class="num">4.2</span>To keep the interior of the Property in good and clean condition (fair wear and tear excepted).</div>
+    <div class="cl"><span class="num">4.3</span>Not to sublet or part with possession of the whole or any part of the Property without the Landlord's written consent.</div>
+    <div class="cl"><span class="num">4.4</span>To use the Property as a single private residence only.</div>
+
+    <h4>5. Landlord's obligations</h4>
+    <div class="cl"><span class="num">5.1</span>To keep in repair the structure and exterior of the Property and the installations for the supply of water, gas, electricity, sanitation, space heating and water heating, in accordance with section 11 of the Landlord and Tenant Act 1985.</div>
+    <div class="cl"><span class="num">5.2</span>To ensure the Property is fit for human habitation throughout the tenancy (Homes (Fitness for Human Habitation) Act 2018).</div>
+    <div class="cl"><span class="num">5.3</span>To allow the Tenant quiet enjoyment of the Property during the tenancy.</div>
+
+    <h4>6. Notices &amp; possession</h4>
+    <div class="cl"><span class="num">6.1</span>The Landlord may recover possession after the fixed term by serving not less than two months' notice under section 21 of the Housing Act 1988, subject to having complied with all statutory pre-conditions.</div>
+    <div class="cl"><span class="num">6.2</span>The Landlord may seek possession during the term on the statutory grounds in Schedule 2 to the Housing Act 1988 (section 8).</div>
+
+    <h4>7. Right to Rent</h4>
+    <div class="cl"><span class="num">7.1</span>The Tenant confirms that all occupiers have the right to rent in the United Kingdom under the Immigration Act 2014, and that satisfactory documentary checks have been carried out.</div>
+  </div>`;
+}
+function ordinal(n) { const s = ['th', 'st', 'nd', 'rd'], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); }
+
+function complianceItems(c) {
+  return [
+    { t: 'Deposit protection', d: `${c.depositScheme} — protected within 30 days, prescribed information served.` },
+    { t: 'How to Rent guide', d: 'The current MHCLG "How to Rent" checklist provided to the tenant before move-in.' },
+    { t: 'Energy Performance Certificate', d: `Valid EPC provided (rating ${escapeHtml(c.epc)}). A property must be at least band E to be let.` },
+    { t: 'Gas Safety Record (CP12)', d: 'Annual gas safety check by a Gas Safe registered engineer; record provided.' },
+    { t: 'Electrical safety (EICR)', d: 'Electrical Installation Condition Report in place (max 5-yearly) per the 2020 Regulations.' },
+    { t: 'Smoke & CO alarms', d: 'Smoke alarm on each storey and a carbon-monoxide alarm in rooms with a solid-fuel appliance.' },
+    { t: 'Right to Rent checks', d: 'Immigration Act 2014 checks completed for all adult occupiers.' },
+    { t: 'Tenant Fees Act 2019', d: 'No prohibited fees charged; deposit within the statutory cap.' },
+  ];
+}
+
+function sigBlock(party, d, c) {
+  const sig = d.signed[party];
+  const name = party === 'landlord' ? c.landlord.name : c.tenant.name;
+  return `<div class="sigbox ${sig ? 'signed' : ''}">
+    <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:1px;font-weight:700">${party === 'landlord' ? 'Landlord' : 'Tenant'}</div>
+    ${sig
+      ? `<div class="sig-name">${escapeHtml(name)}</div><div class="faint" style="font-size:11px">Signed ${fmtDateTime(sig.ts)}</div>`
+      : `<div style="font-size:22px;opacity:.35;padding:6px 0">—</div><div class="faint" style="font-size:11px">Awaiting signature</div>`}
+  </div>`;
+}
+
+/* ----------------------------------------------------------------------------
+   New listing form (landlord)
+   ---------------------------------------------------------------------------- */
+function newPropScreen() {
+  return `
+    <div class="row center" style="gap:10px;margin:2px 0 12px"><div class="back" data-back style="position:static">‹</div>
+    <div style="font-weight:800;font-size:18px">Advertise a property</div></div>
+    <form id="propForm">
+      <div class="field"><label>Headline</label><input name="title" required placeholder="e.g. Bright 2-bed flat near the park" /></div>
+      <div class="field"><label>Street address</label><input name="street" required placeholder="14 Mapledene Road" /></div>
+      <div class="two">
+        <div class="field"><label>Area</label><input name="area" required placeholder="Hackney" /></div>
+        <div class="field"><label>City</label><input name="city" required placeholder="London" /></div>
+      </div>
+      <div class="two">
+        <div class="field"><label>Postcode</label><input name="postcode" required placeholder="E8 3JN" /></div>
+        <div class="field"><label>Type</label><select name="type"><option>Flat</option><option>House</option><option>Studio</option><option>Maisonette</option><option>Room</option></select></div>
+      </div>
+      <div class="two">
+        <div class="field"><label>Bedrooms</label><input name="beds" type="number" inputmode="numeric" value="2" min="0" /></div>
+        <div class="field"><label>Bathrooms</label><input name="baths" type="number" inputmode="numeric" value="1" min="1" /></div>
+      </div>
+      <div class="two">
+        <div class="field"><label>Rent (£ / month)</label><input name="rent" type="number" inputmode="numeric" required value="1500" /></div>
+        <div class="field"><label>EPC rating</label><select name="epc"><option>A</option><option>B</option><option selected>C</option><option>D</option><option>E</option></select></div>
+      </div>
+      <div class="field"><label>Furnishing</label><select name="furnished"><option>Furnished</option><option>Unfurnished</option><option>Part-furnished</option></select></div>
+      <div class="field"><label>Description</label><textarea name="desc" placeholder="Tell renters what makes this home special…"></textarea></div>
+      <button class="cta" type="submit">Publish listing</button>
+    </form>
+  `;
+}
+
+/* ----------------------------------------------------------------------------
+   Wiring / interactions
+   ---------------------------------------------------------------------------- */
+function wireScreen() {
+  // open listing detail
+  document.querySelectorAll('[data-open]').forEach((el) => el.onclick = () => { nav = { screen: 'detail', id: el.dataset.open }; render(); });
+  document.querySelectorAll('[data-chat]').forEach((el) => el.onclick = () => { nav = { screen: 'chat', id: el.dataset.chat }; render(); });
+  document.querySelectorAll('[data-back]').forEach((el) => el.onclick = goBack);
+
+  // filters
+  document.querySelectorAll('[data-f]').forEach((el) => {
+    el.oninput = () => { filters[el.dataset.f] = el.value; if (el.tagName === 'SELECT') render(); };
+    el.onchange = () => { filters[el.dataset.f] = el.value; render(); };
+  });
+
+  // generic actions
+  document.querySelectorAll('[data-act]').forEach((el) => el.onclick = () => handleAct(el.dataset.act, el.dataset.id, el));
+
+  // chat composer
+  const input = $('#msgInput');
+  if (input) {
+    input.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); sendCurrentMessage(); } };
+  }
+  // new-prop form
+  const form = $('#propForm');
+  if (form) form.onsubmit = submitProp;
+
+  // scroll chat to bottom
+  const thread = $('#thread');
+  if (thread) thread.scrollIntoView ? (thread.parentElement.scrollTop = 1e6) : null;
+  const main = $('#view');
+  if (nav.screen === 'chat' && main) main.scrollTop = main.scrollHeight;
+}
+
+function goBack() {
+  if (nav.screen === 'contract') { nav = { screen: 'chat', id: nav.id }; }
+  else nav = { screen: 'list', id: null };
+  render();
+}
+
+function sendCurrentMessage() {
+  const input = $('#msgInput');
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text) return;
+  const d = getDeal(nav.id);
+  addMessage(d, role, text);
+  recomputeStage(d); save();
+  render();
+}
+
+function handleAct(act, id, el) {
+  if (act === 'newprop') { nav = { screen: 'newprop' }; render(); return; }
+  if (act === 'enquire') {
+    const d = createDeal(id, `Hi, I'm interested in this property — is it still available?`);
+    nav = { screen: 'chat', id: d.id }; render();
+    toast('Enquiry sent to the landlord'); return;
+  }
+  if (act === 'send') { sendCurrentMessage(); return; }
+  if (act === 'reqview') { openViewingSheet(id); return; }
+  if (act === 'confirmview') {
+    const d = getDeal(id); d.viewing.status = 'confirmed';
+    addMessage(d, 'sys', `Viewing confirmed for ${fmtDateTime(d.viewing.ts)}.`);
+    recomputeStage(d); save(); render(); toast('Viewing confirmed ✅'); return;
+  }
+  if (act === 'agree') {
+    const d = getDeal(id); d.agreed[role] = true;
+    addMessage(d, 'sys', `${role === 'renter' ? S.me.renter.name : S.me.landlord.name} agreed to proceed to a tenancy.`);
+    if (d.agreed.renter && d.agreed.landlord) addMessage(d, 'sys', 'Both parties have agreed terms. The landlord can now draft the tenancy agreement.');
+    recomputeStage(d); save(); render();
+    toast(d.agreed.renter && d.agreed.landlord ? 'Both parties agreed 🤝' : 'You agreed — awaiting the other party'); return;
+  }
+  if (act === 'draft') {
+    const d = getDeal(id); d.contract = buildContract(d);
+    addMessage(d, 'sys', 'Tenancy agreement drafted and shared with both parties for signature.');
+    recomputeStage(d); save(); nav = { screen: 'contract', id: d.id }; render(); toast('Tenancy agreement drafted 📄'); return;
+  }
+  if (act === 'opencontract') { nav = { screen: 'contract', id }; render(); return; }
+  if (act === 'sign') { handleSign(id); return; }
+  if (act === 'reset') {
+    if (confirm('Reset all demo data? This clears every listing, chat and contract.')) {
+      S = seed(); role = 'renter'; tab = 'browse'; nav = { screen: 'list' }; save(); render(); toast('Demo reset');
+    }
+    return;
+  }
+}
+
+/* ---- signing: triggers landlord £100 fee ---- */
+function handleSign(dealId) {
+  const d = getDeal(dealId);
+  if (role === 'landlord' && !(d.payment && d.payment.paid)) {
+    // landlord must pass through the £100 fee checkout before the signature lands
+    openPaymentSheet(d);
+    return;
+  }
+  applySignature(d, role);
+}
+
+function applySignature(d, who) {
+  const name = who === 'renter' ? S.me.renter.name : S.me.landlord.name;
+  d.signed[who] = { name, ts: now() };
+  addMessage(d, 'sys', `${name} signed the tenancy agreement.`);
+  if (d.signed.renter && d.signed.landlord) {
+    const l = S.listings.find((x) => x.id === d.listingId);
+    if (l) l.status = 'let';
+    addMessage(d, 'sys', '🎉 Agreement fully executed. The tenancy is now in force.');
+  }
+  recomputeStage(d); save(); render();
+  toast(`Signed as ${name} ✍️`);
+}
+
+/* ----------------------------------------------------------------------------
+   Sheets: viewing scheduler + payment checkout
+   ---------------------------------------------------------------------------- */
+function openSheet(html) { $('#sheet').innerHTML = `<div class="grab"></div>${html}`; $('#sheetBg').classList.add('open'); wireSheet(); }
+function closeSheet() { $('#sheetBg').classList.remove('open'); }
+function wireSheet() {
+  document.querySelectorAll('#sheet [data-sheet]').forEach((el) => el.onclick = () => handleSheet(el.dataset.sheet, el));
+  const f = $('#viewForm'); if (f) f.onsubmit = submitViewing;
+}
+$('#sheetBg').onclick = (e) => { if (e.target.id === 'sheetBg') closeSheet(); };
+
+function openViewingSheet(dealId) {
+  const d = getDeal(dealId);
+  // default proposal: 2 days out at 6pm
+  const dt = new Date(addDays(now(), 2)); dt.setHours(18, 0, 0, 0);
+  const val = toLocalInput(dt);
+  openSheet(`
+    <h3>${role === 'renter' ? 'Request a viewing' : 'Propose a viewing'}</h3>
+    <p class="muted" style="font-size:13px;margin:0 0 14px">Suggest a date and time. The other party confirms or proposes an alternative.</p>
+    <form id="viewForm" data-id="${dealId}">
+      <div class="field"><label>Date &amp; time</label><input type="datetime-local" name="dt" value="${val}" required /></div>
+      <button class="cta" type="submit">Send proposal</button>
+    </form>`);
+}
+function toLocalInput(dt) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}T${p(dt.getHours())}:${p(dt.getMinutes())}`;
+}
+function submitViewing(e) {
+  e.preventDefault();
+  const dealId = e.target.dataset.id;
+  const d = getDeal(dealId);
+  const ts = new Date(e.target.dt.value).getTime();
+  if (!ts) return;
+  d.viewing = { ts, status: 'proposed', by: role };
+  addMessage(d, 'sys', `${role === 'renter' ? S.me.renter.name : S.me.landlord.name} proposed a viewing for ${fmtDateTime(ts)}.`);
+  recomputeStage(d); save(); closeSheet(); render();
+  toast('Viewing proposal sent 📅');
+}
+
+function openPaymentSheet(d) {
+  openSheet(`
+    <h3>Confirm &amp; pay platform fee</h3>
+    <p class="muted" style="font-size:13px;margin:0 0 6px">Apex charges the landlord a one-off fee at the point the tenancy is signed. Your signature is applied once payment succeeds.</p>
+    <div class="fee">
+      <div class="muted" style="font-size:12px;letter-spacing:.4px;text-transform:uppercase;font-weight:700">Platform fee</div>
+      <div class="amt">${gbp(FEE_PENCE)}</div>
+      <div class="muted" style="font-size:12px">one-off · charged on signing · incl. VAT</div>
+    </div>
+    <div class="field"><label>Card number</label><input id="pcard" inputmode="numeric" placeholder="4242 4242 4242 4242" value="4242 4242 4242 4242" /></div>
+    <div class="two">
+      <div class="field"><label>Expiry</label><input id="pexp" placeholder="04 / 28" value="04 / 28" /></div>
+      <div class="field"><label>CVC</label><input id="pcvc" inputmode="numeric" placeholder="123" value="123" /></div>
+    </div>
+    <button class="cta" data-sheet="pay" data-id="${d.id}">Pay ${gbp(FEE_PENCE)} &amp; sign</button>
+    <button class="cta ghost" data-sheet="cancel" style="margin-top:9px">Cancel</button>
+    <p class="faint" style="font-size:11px;text-align:center;margin:12px 0 0">🔒 Demo checkout — no real card is charged.</p>
+  `);
+}
+
+function handleSheet(action, el) {
+  if (action === 'cancel') { closeSheet(); return; }
+  if (action === 'pay') {
+    const btn = el; btn.disabled = true; btn.textContent = 'Processing…';
+    const d = getDeal(el.dataset.id);
+    setTimeout(() => {
+      d.payment = { paid: true, pence: FEE_PENCE, ts: now(), ref: 'RM-' + Math.random().toString(36).slice(2, 8).toUpperCase() };
+      addMessage(d, 'sys', `Landlord platform fee of ${gbp(FEE_PENCE)} paid (ref ${d.payment.ref}).`);
+      save(); closeSheet();
+      applySignature(d, 'landlord');
+      toast(`Paid ${gbp(FEE_PENCE)} — signature applied`);
+    }, 700);
+  }
+}
+
+/* ---- new listing submit ---- */
+function submitProp(e) {
+  e.preventDefault();
+  const f = e.target;
+  const beds = Math.max(0, parseInt(f.beds.value || '0', 10));
+  const rentPence = Math.max(0, Math.round(parseFloat(f.rent.value || '0') * 100));
+  const listing = {
+    id: uid(), createdAt: now(), status: 'live', landlordId: 'me-landlord',
+    title: f.title.value.trim(), street: f.street.value.trim(), area: f.area.value.trim(),
+    city: f.city.value.trim(), postcode: f.postcode.value.trim().toUpperCase(),
+    type: f.type.value, beds, baths: Math.max(1, parseInt(f.baths.value || '1', 10)),
+    rentPence, furnished: f.furnished.value, epc: f.epc.value,
+    available: addDays(now(), 14), deposit: 'auto',
+    desc: f.desc.value.trim() || 'A great place to call home.',
+    features: ['Available now', f.furnished.value, `EPC ${f.epc.value}`],
+  };
+  S.listings.unshift(listing); save();
+  nav = { screen: 'list', id: null }; tab = 'props'; render();
+  toast('Listing published — renters can now find it 🏠');
+}
+
+/* ---- toast ---- */
+let toastTimer = null;
+function toast(msg) {
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+/* ----------------------------------------------------------------------------
+   Role switch + tabbar wiring (delegated, set once)
+   ---------------------------------------------------------------------------- */
+$('#roleSwitch').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  role = b.dataset.role; S.role = role; save();
+  tab = role === 'renter' ? 'browse' : 'props';
+  nav = { screen: 'list', id: null };
+  render();
+});
+$('#tabbar').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  tab = b.dataset.tab; nav = { screen: 'list', id: null }; render();
+});
+
+/* ----------------------------------------------------------------------------
+   Boot
+   ---------------------------------------------------------------------------- */
+render();
+if (!S.seenToast) { S.seenToast = true; save(); setTimeout(() => toast('Tip: switch Renter ↔ Landlord up top to play both sides'), 700); }
+
+/* dismiss the Apex splash after a beat (or on tap) */
+(function () {
+  const splash = document.getElementById('splash');
+  if (!splash) return;
+  const hide = () => splash.classList.add('hide');
+  setTimeout(hide, 1600);
+  splash.addEventListener('click', hide);
+})();
+</script>
+<script>
+/* PWA: register the offline app-shell service worker (https only). */
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('rentmatch-sw.js').catch(() => {});
+  });
+}
+</script>
+</body>
+</html>

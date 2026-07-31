@@ -1,0 +1,3395 @@
+<!doctype html>
+<!--
+  Atlas — the satnav
+  ==================
+  A complete turn-by-turn satellite navigation app in one file, on top of the
+  pure, unit-tested navigation engine in engine.js.
+
+  · From-scratch canvas slippy map (no map library): OpenStreetMap raster
+    tiles, pan / pinch / wheel zoom, smooth fractional zoom with parent-tile
+    fallback, heading-up rotation while navigating, day & night styles.
+  · Search any place on Earth (Nominatim), tap the map to pick a spot, or type
+    raw "lat, lon". Saved places (Home / Work / favourites) + recents, ranked
+    by the engine.
+  · Real routing (OSRM/FOSSGIS public servers): driving, cycling and walking
+    profiles, alternative routes you can tap to compare, live ETA.
+  · Turn-by-turn guidance: GPS snap-to-route, three speed-scaled voice bands
+    ("In 1.2 kilometres…", "In 200 metres…", "Turn left now"), roundabout
+    exits, off-route detection with automatic rerouting, arrival — spoken
+    with the on-device Web Speech API.
+  · 🚗 Demo drive: a deterministic simulator drives the route so the whole
+    app can be experienced offline, GPS or not.
+  · No account, no tracking, offline app shell, installable PWA.
+
+  Map data © OpenStreetMap contributors (openstreetmap.org/copyright).
+  Routing by the OSRM / FOSSGIS demo servers — community infrastructure,
+  used gently. Everything else runs on your device.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Atlas — the satnav</title>
+<meta name="description" content="Atlas: a complete turn-by-turn satnav in your browser. From-scratch map engine, voice guidance, rerouting, saved places, demo drive. No account, installable PWA.">
+<meta name="theme-color" content="#0b0f1c">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Atlas">
+<style>
+  :root {
+    --bg: #0b0f1c; --panel: rgba(16, 22, 40, 0.92); --panel-solid: #101628;
+    --line: rgba(255,255,255,0.09); --text: #eef2ff; --dim: #8b93ad;
+    --accent: #38bdf8; --accent2: #34d399; --danger: #f87171; --amber: #fbbf24;
+    --route: #2f7ff6; --route-alt: #64748b;
+    --radius: 18px; --shadow: 0 12px 40px rgba(0,0,0,0.45);
+    --sat: env(safe-area-inset-top, 0px); --sab: env(safe-area-inset-bottom, 0px);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body {
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg); color: var(--text); touch-action: none;
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  input { font: inherit; color: inherit; }
+
+  /* 3D driving view: the canvas lives on a perspective stage; navigation
+     tilts the whole map plane like a windshield view. Pure CSS — the tile
+     engine stays 2D and cheap. */
+  #mapWrap { position: fixed; inset: 0; overflow: hidden; perspective: 950px; background: #0d1322; }
+  #map { position: absolute; inset: 0; display: block; background: #0d1322;
+    transform-origin: 50% 72%; transition: transform .45s cubic-bezier(.4,.1,.2,1); }
+  #map.threeD { transform: rotateX(52deg) scale(1.75); }
+  #vignette { position: fixed; inset: 0; pointer-events: none; z-index: 20;
+    background: radial-gradient(120% 90% at 50% 45%, transparent 58%, rgba(4,8,18,0.38) 100%); }
+
+  /* layers card */
+  #layersCard {
+    position: fixed; z-index: 60; right: 70px; bottom: calc(258px + var(--sab));
+    background: var(--panel); border: 1px solid var(--line); border-radius: 18px;
+    box-shadow: var(--shadow); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    padding: 14px 16px; display: none; min-width: 230px;
+  }
+  #layersCard.show { display: block; }
+  #layersCard .lrow { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+  #layersCard .lrow .ll { flex: 1; font-size: 13px; color: var(--dim); }
+
+  /* ---------- floating chrome ---------- */
+  .fab {
+    position: fixed; z-index: 30; width: 46px; height: 46px; border-radius: 50%;
+    background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow);
+    display: flex; align-items: center; justify-content: center; font-size: 20px;
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    transition: transform .15s, opacity .2s;
+  }
+  .fab:active { transform: scale(0.92); }
+  #btnLocate { right: 14px; bottom: calc(170px + var(--sab)); }
+  #btnCompass { right: 14px; bottom: calc(226px + var(--sab)); display: none; }
+  #btnLayers { right: 14px; bottom: calc(282px + var(--sab)); }
+  #btnMusic { right: 14px; bottom: calc(338px + var(--sab)); }
+
+  /* 🎵 music */
+  #musicStrip {
+    position: fixed; z-index: 46; left: 50%; transform: translateX(-50%);
+    bottom: calc(96px + var(--sab)); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 999px; box-shadow: var(--shadow);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    display: none; align-items: center; gap: 6px; padding: 6px 8px 6px 14px; max-width: 80vw;
+  }
+  #musicStrip.show { display: flex; }
+  #musicStripTitle { font-size: 12.5px; font-weight: 650; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; max-width: 34vw; }
+  .musicBtn { width: 34px; height: 34px; border-radius: 50%; flex: none;
+    background: rgba(255,255,255,0.06); border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center; font-size: 14px; }
+  #trackList { overflow-y: auto; margin-top: 8px; }
+  .trackRow { display: flex; align-items: center; gap: 12px; padding: 10px 4px;
+    border-bottom: 1px solid var(--line); }
+  .trackRow .ti { width: 40px; height: 40px; border-radius: 12px; flex: none;
+    background: rgba(56,189,248,0.12); display: flex; align-items: center;
+    justify-content: center; font-size: 18px; }
+  .trackRow .tn { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .trackRow.playing .tn { color: var(--accent); }
+  .trackRow .ta { font-size: 12px; color: var(--dim); overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  #musicControls { display: flex; align-items: center; justify-content: center;
+    gap: 14px; margin-top: 12px; }
+  #musicControls .musicBtn.big { width: 56px; height: 56px; font-size: 21px;
+    background: rgba(56,189,248,0.18); border-color: var(--accent); }
+  #musicControls .musicBtn.mode.on { background: rgba(56,189,248,0.22);
+    box-shadow: inset 0 0 0 1.5px var(--accent); }
+  #musicSeekRow { display: flex; align-items: center; gap: 10px; margin-top: 10px;
+    font-size: 11.5px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  #musicSeek { flex: 1; accent-color: var(--accent); }
+  #zoomBox { position: fixed; z-index: 30; left: 14px; bottom: calc(170px + var(--sab));
+    display: flex; flex-direction: column; gap: 8px; }
+  #zoomBox .fab { position: static; }
+
+  #attribution {
+    position: fixed; z-index: 25; left: 8px; bottom: calc(4px + var(--sab));
+    font-size: 10px; color: var(--dim); background: rgba(11,15,28,0.55);
+    padding: 2px 7px; border-radius: 8px; pointer-events: auto;
+  }
+  #attribution a { color: var(--dim); }
+
+  /* ---------- top search pill ---------- */
+  #topBar {
+    position: fixed; z-index: 40; top: calc(12px + var(--sat)); left: 12px; right: 12px;
+    display: flex; gap: 10px; transition: transform .25s, opacity .25s;
+  }
+  #topBar.hidden { transform: translateY(-120%); opacity: 0; pointer-events: none; }
+  #searchPill {
+    flex: 1; display: flex; align-items: center; gap: 10px; height: 52px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 26px;
+    padding: 0 18px; box-shadow: var(--shadow); backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px); color: var(--dim); text-align: left;
+  }
+  #searchPill .q { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #searchPill .logo { font-weight: 800; letter-spacing: 0.5px; color: var(--accent);
+    font-size: 13px; text-transform: uppercase; }
+
+  /* ---------- sheets ---------- */
+  .sheet {
+    position: fixed; z-index: 50; left: 0; right: 0; bottom: 0;
+    background: var(--panel-solid); border-radius: 22px 22px 0 0;
+    border-top: 1px solid var(--line); box-shadow: 0 -12px 40px rgba(0,0,0,0.5);
+    padding: 10px 16px calc(16px + var(--sab)); transform: translateY(105%);
+    transition: transform .28s cubic-bezier(.32,.72,.33,1); max-height: 82vh;
+    display: flex; flex-direction: column;
+  }
+  .sheet.open { transform: translateY(0); }
+  .grab { width: 40px; height: 4px; border-radius: 2px; background: var(--line);
+    margin: 2px auto 10px; flex: none; }
+
+  /* search sheet */
+  #searchSheet { height: 82vh; }
+  #searchBox { display: flex; gap: 10px; align-items: center; flex: none; }
+  #searchInput {
+    flex: 1; height: 48px; border-radius: 14px; border: 1px solid var(--line);
+    background: rgba(255,255,255,0.05); padding: 0 16px; outline: none; color: var(--text);
+  }
+  #searchInput:focus { border-color: var(--accent); }
+  #searchCancel { color: var(--accent); font-weight: 600; padding: 8px 4px; }
+  #searchResults { overflow-y: auto; margin-top: 10px; -webkit-overflow-scrolling: touch; }
+  .result { display: flex; gap: 12px; align-items: center; padding: 12px 6px;
+    border-bottom: 1px solid var(--line); width: 100%; text-align: left; }
+  .result .ic { width: 38px; height: 38px; border-radius: 12px; flex: none;
+    background: rgba(56,189,248,0.12); display: flex; align-items: center;
+    justify-content: center; font-size: 18px; }
+  .result .nm { font-weight: 600; }
+  .result .ad { font-size: 12.5px; color: var(--dim); overflow: hidden;
+    text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
+  .result .heart { margin-left: auto; font-size: 18px; color: var(--dim); padding: 8px; flex: none; }
+  .result .heart.on { color: var(--danger); }
+  .sectionTitle { font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase;
+    color: var(--dim); margin: 14px 6px 4px; }
+  #quickRow { display: flex; gap: 10px; margin-top: 12px; flex: none; }
+  .chip { flex: 1; background: rgba(255,255,255,0.05); border: 1px solid var(--line);
+    border-radius: 14px; padding: 10px 8px; text-align: center; }
+  .chip .e { font-size: 20px; } .chip .t { font-size: 12px; color: var(--dim); margin-top: 2px; }
+
+  /* route preview sheet */
+  #routeSheet .dest { font-weight: 700; font-size: 17px; }
+  #routeSheet .destAddr { color: var(--dim); font-size: 12.5px; margin-top: 1px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #profileRow { display: flex; gap: 8px; margin: 12px 0 4px; }
+  .profileBtn { flex: 1; padding: 9px 0; border-radius: 12px; border: 1px solid var(--line);
+    background: rgba(255,255,255,0.04); font-size: 18px; }
+  .profileBtn.on { background: rgba(56,189,248,0.16); border-color: var(--accent); }
+  #altList { display: flex; flex-direction: column; gap: 8px; margin-top: 10px;
+    overflow-y: auto; }
+  .altCard { display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+    border-radius: 14px; border: 1px solid var(--line); background: rgba(255,255,255,0.04);
+    text-align: left; width: 100%; }
+  .altCard.on { border-color: var(--route); background: rgba(47,127,246,0.14); }
+  .altCard .tm { font-size: 19px; font-weight: 800; }
+  .altCard .ds { color: var(--dim); font-size: 12.5px; }
+  .altCard .tag { margin-left: auto; font-size: 11px; color: var(--dim); }
+  #routeActions { display: flex; gap: 10px; margin-top: 14px; }
+  .bigBtn { flex: 1; height: 52px; border-radius: 16px; font-weight: 700; font-size: 16px; }
+  #btnGo { background: linear-gradient(135deg, #2f7ff6, #38bdf8); color: #fff;
+    box-shadow: 0 8px 24px rgba(47,127,246,0.4); }
+  #btnDemo { background: rgba(255,255,255,0.07); border: 1px solid var(--line); }
+  #routeStatus { color: var(--dim); font-size: 13px; text-align: center; padding: 14px 0 4px; }
+  #routeStatus.err { color: var(--danger); }
+
+  /* ---------- navigation HUD ---------- */
+  #navBanner {
+    position: fixed; z-index: 45; top: calc(12px + var(--sat)); left: 12px; right: 12px;
+    background: linear-gradient(160deg, #123a2e, #0e2f45); border: 1px solid rgba(52,211,153,0.35);
+    border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px;
+    display: none; align-items: center; gap: 14px;
+  }
+  #navBanner.show { display: flex; }
+  #navBanner.offroute { background: linear-gradient(160deg, #45230e, #3a1212);
+    border-color: rgba(251,191,36,0.4); }
+  #navIcon { width: 54px; height: 54px; flex: none; }
+  #navIcon svg { width: 100%; height: 100%; }
+  #navDist { font-size: 24px; font-weight: 800; line-height: 1.1; }
+  #navText { color: #d3e7de; font-size: 14.5px; margin-top: 2px; }
+  #navThen { font-size: 12px; color: var(--dim); margin-top: 3px; display: none; }
+  #navThen.show { display: block; }
+
+  #navBottom {
+    position: fixed; z-index: 45; left: 12px; right: 12px; bottom: calc(12px + var(--sab));
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    padding: 12px 16px; display: none; align-items: center; gap: 8px;
+  }
+  #navBottom.show { display: flex; }
+  #navEta { font-size: 20px; font-weight: 800; color: var(--accent2); }
+  #navMeta { color: var(--dim); font-size: 12.5px; }
+  #navBottom .grow { flex: 1; }
+  .navCtl { width: 44px; height: 44px; border-radius: 50%; flex: none;
+    background: rgba(255,255,255,0.06); border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center; font-size: 18px; }
+  #btnEnd { background: rgba(248,113,113,0.15); border-color: rgba(248,113,113,0.4); }
+
+  #speedBubble {
+    position: fixed; z-index: 44; left: 14px; bottom: calc(96px + var(--sab));
+    width: 62px; height: 62px; border-radius: 50%; background: #fff; color: #0b0f1c;
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    box-shadow: var(--shadow); border: 3px solid #cbd5e1;
+  }
+  #speedBubble.show { display: flex; }
+  #speedVal { font-size: 21px; font-weight: 900; line-height: 1; }
+  #speedUnit { font-size: 9.5px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+  #speedBubble.over { border-color: #ef4444; animation: overpulse 0.9s ease-in-out infinite; }
+  #speedBubble.over #speedVal { color: #ef4444; }
+  @keyframes overpulse { 50% { box-shadow: 0 0 0 7px rgba(239,68,68,0.25); } }
+
+  /* speed-limit road sign (data: OpenStreetMap) */
+  #limitSign {
+    position: fixed; z-index: 44; left: 84px; bottom: calc(96px + var(--sab));
+    width: 56px; height: 56px; border-radius: 50%; background: #fff;
+    border: 6px solid #e11d48; box-shadow: var(--shadow); display: none;
+    flex-direction: column; align-items: center; justify-content: center; color: #111827;
+  }
+  #limitSign.show { display: flex; }
+  #limitVal { font-size: 18px; font-weight: 900; line-height: 1; }
+  #limitUnit { font-size: 8px; font-weight: 800; color: #6b7280; text-transform: uppercase; }
+
+  /* 🛣 lane guidance bar */
+  #laneBar {
+    position: fixed; z-index: 46; left: 50%; transform: translateX(-50%);
+    top: calc(98px + var(--sat)); background: var(--panel-solid);
+    border: 1px solid var(--line); border-radius: 14px; padding: 5px 7px;
+    display: none; gap: 5px; box-shadow: var(--shadow);
+  }
+  #laneBar.show { display: flex; }
+  .laneSlot { width: 32px; height: 36px; border-radius: 9px; background: rgba(255,255,255,0.05);
+    display: flex; align-items: center; justify-content: center; }
+  .laneSlot.on { background: rgba(56,189,248,0.22); box-shadow: inset 0 0 0 1.5px var(--accent); }
+  .laneSlot svg { width: 23px; height: 23px; }
+  .laneSlot:not(.on) svg { opacity: 0.32; }
+
+  /* 🛣 junction view card */
+  #junctionCard {
+    position: fixed; z-index: 45; left: 12px; right: 12px; top: calc(146px + var(--sat));
+    background: rgba(10,16,30,0.93); border: 1px solid var(--line); border-radius: 18px;
+    box-shadow: var(--shadow); display: none; padding: 10px 10px 8px;
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  }
+  #junctionCard.show { display: block; }
+  #junctionTitle { font-size: 12.5px; color: #a7f3d0; text-align: center; margin-bottom: 6px; font-weight: 650; }
+  #junctionCanvas { display: block; width: 100%; height: 172px; border-radius: 12px; }
+
+  /* 🚦 traffic incident alert */
+  #trafChip {
+    position: fixed; z-index: 44; left: 50%; transform: translateX(-50%);
+    top: calc(178px + var(--sat)); background: #431407; border: 1px solid #fb923c;
+    color: #fed7aa; padding: 8px 16px; border-radius: 999px; font-weight: 700;
+    font-size: 13.5px; display: none; box-shadow: var(--shadow); white-space: nowrap;
+  }
+  #trafChip.show { display: block; }
+
+  /* 📷 speed camera alert */
+  #camChip {
+    position: fixed; z-index: 44; left: 50%; transform: translateX(-50%);
+    top: calc(132px + var(--sat)); background: #451a03; border: 1px solid #fbbf24;
+    color: #fde68a; padding: 8px 16px; border-radius: 999px; font-weight: 700;
+    font-size: 13.5px; display: none; box-shadow: var(--shadow); white-space: nowrap;
+  }
+  #camChip.show { display: block; }
+
+  /* 🚙 convoy */
+  .convoyBig { font-size: 34px; font-weight: 900; letter-spacing: 7px; text-align: center;
+    color: var(--accent); margin: 12px 0 2px; font-variant-numeric: tabular-nums; }
+  .convoyHint { text-align: center; color: var(--dim); font-size: 12px; margin-bottom: 10px; }
+  .convoyInput { width: 100%; height: 48px; border-radius: 14px; border: 1px solid var(--line);
+    background: rgba(255,255,255,0.05); padding: 0 16px; outline: none; color: var(--text); }
+  .convoyInput:focus { border-color: var(--accent); }
+  #convoyCode { text-transform: uppercase; letter-spacing: 3px; font-weight: 700; }
+  .convoyBtn { height: 48px; border-radius: 14px; font-weight: 700; padding: 0 18px; }
+  #convoyMembers { overflow-y: auto; margin-top: 8px; }
+  .memberRow { display: flex; align-items: center; gap: 12px; padding: 11px 4px;
+    border-bottom: 1px solid var(--line); }
+  .memberRow .av { width: 40px; height: 40px; border-radius: 50%; flex: none;
+    display: flex; align-items: center; justify-content: center; font-size: 19px;
+    border: 2px solid rgba(255,255,255,0.25); }
+  .memberRow .mn { font-weight: 650; }
+  .memberRow .mm { font-size: 12px; color: var(--dim); }
+
+  /* 📹 dashcam preview */
+  #dashcamBox {
+    position: fixed; z-index: 46; right: 14px; bottom: calc(96px + var(--sab));
+    width: 128px; border-radius: 14px; overflow: hidden; display: none;
+    border: 1px solid rgba(248,113,113,0.55); box-shadow: var(--shadow);
+    background: #000; transition: width .2s;
+  }
+  #dashcamBox.show { display: block; }
+  #dashcamBox.big { width: min(70vw, 420px); }
+  #dashcamVideo { display: block; width: 100%; aspect-ratio: 16/9; object-fit: cover; }
+  #dashcamRec {
+    position: absolute; top: 6px; left: 8px; font-size: 10.5px; font-weight: 800;
+    color: #fff; background: rgba(0,0,0,0.55); padding: 2px 7px; border-radius: 8px;
+    letter-spacing: 0.5px;
+  }
+  #dashcamRec .dot { color: #f87171; animation: recblink 1.2s steps(2) infinite; }
+  @keyframes recblink { 50% { opacity: 0.15; } }
+  #btnDashcam.rec { background: rgba(248,113,113,0.2); border-color: rgba(248,113,113,0.55); }
+
+  /* 📹 clip vault */
+  #clipList { overflow-y: auto; margin-top: 8px; }
+  .clipRow { display: flex; align-items: center; gap: 12px; padding: 12px 4px;
+    border-bottom: 1px solid var(--line); }
+  .clipRow .ci { width: 44px; height: 44px; border-radius: 12px; flex: none;
+    background: rgba(248,113,113,0.12); border: 1px solid rgba(248,113,113,0.3);
+    display: flex; align-items: center; justify-content: center; font-size: 20px; }
+  .clipRow .cn { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .clipRow .cm { font-size: 12px; color: var(--dim); }
+  .clipBtn { width: 38px; height: 38px; border-radius: 50%; flex: none; font-size: 16px;
+    background: rgba(255,255,255,0.06); border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center; }
+  #clipsEmpty { color: var(--dim); font-size: 13.5px; padding: 18px 4px; }
+
+  #clipPlayer { position: fixed; inset: 0; z-index: 90; background: rgba(5,8,16,0.94);
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    padding: 18px; gap: 14px; }
+  #clipPlayer.show { display: flex; }
+  #clipVideo { max-width: 100%; max-height: 62vh; border-radius: 14px; background: #000; }
+  #clipPlayerTitle { font-weight: 700; }
+  #clipPlayerMeta { font-size: 12.5px; color: var(--dim); margin-top: 2px; }
+  #clipPlayer .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  #clipPlayer .row button { padding: 11px 18px; border-radius: 13px; font-weight: 600;
+    background: rgba(255,255,255,0.07); border: 1px solid var(--line); }
+  #clipPlayer .row #cpShare { background: linear-gradient(135deg, #2f7ff6, #38bdf8); border: 0; }
+  #clipPlayer .row #cpDelete { color: var(--danger); border-color: rgba(248,113,113,0.4); }
+
+  /* arrived card */
+  #arrivedCard {
+    position: fixed; z-index: 60; left: 50%; top: 50%; transform: translate(-50%,-50%) scale(0.9);
+    background: var(--panel-solid); border: 1px solid var(--line); border-radius: 22px;
+    box-shadow: var(--shadow); padding: 28px 30px; text-align: center; opacity: 0;
+    pointer-events: none; transition: all .3s; max-width: 320px;
+  }
+  #arrivedCard.show { opacity: 1; transform: translate(-50%,-50%) scale(1); pointer-events: auto; }
+  #arrivedCard .big { font-size: 44px; }
+  #arrivedCard h2 { margin: 8px 0 4px; }
+  #arrivedCard p { color: var(--dim); font-size: 13.5px; }
+  #arrivedCard button { margin-top: 16px; width: 100%; height: 46px; border-radius: 14px;
+    background: rgba(56,189,248,0.16); border: 1px solid var(--accent); font-weight: 700; }
+
+  /* settings sheet */
+  .setRow { display: flex; align-items: center; gap: 12px; padding: 13px 4px;
+    border-bottom: 1px solid var(--line); }
+  .setRow .lbl { flex: 1; } .setRow .sub { font-size: 12px; color: var(--dim); }
+  .seg { display: flex; background: rgba(255,255,255,0.05); border: 1px solid var(--line);
+    border-radius: 11px; overflow: hidden; }
+  .seg button { padding: 7px 13px; font-size: 13px; color: var(--dim); }
+  .seg button.on { background: rgba(56,189,248,0.18); color: var(--text); font-weight: 600; }
+  #aboutBox { font-size: 12px; color: var(--dim); padding: 14px 4px; line-height: 1.6; }
+  #aboutBox a { color: var(--accent); }
+
+  #toast {
+    position: fixed; z-index: 80; left: 50%; transform: translateX(-50%);
+    bottom: calc(100px + var(--sab)); background: var(--panel-solid); border: 1px solid var(--line);
+    padding: 10px 18px; border-radius: 14px; box-shadow: var(--shadow); font-size: 14px;
+    opacity: 0; transition: opacity .25s; pointer-events: none; max-width: 86vw; text-align: center;
+  }
+  #toast.show { opacity: 1; }
+
+  #tapCard {
+    position: fixed; z-index: 42; left: 50%; transform: translateX(-50%);
+    bottom: calc(24px + var(--sab)); background: var(--panel-solid); border: 1px solid var(--line);
+    border-radius: 16px; box-shadow: var(--shadow); padding: 12px 14px; display: none;
+    align-items: center; gap: 12px; max-width: 92vw;
+  }
+  #tapCard.show { display: flex; }
+  #tapCard .nm { font-weight: 700; max-width: 46vw; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  #tapCard .go { background: linear-gradient(135deg, #2f7ff6, #38bdf8); color: #fff;
+    border-radius: 12px; padding: 10px 18px; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<div id="mapWrap"><canvas id="map"></canvas></div>
+<div id="vignette"></div>
+
+<div id="layersCard" role="dialog" aria-label="Map layers">
+  <div class="lrow"><div class="ll">Style</div>
+    <div class="seg" id="segLayer"><button data-v="map">🗺 Map</button><button data-v="positron">◽ Minimal</button><button data-v="sat">🛰 Sat</button></div>
+  </div>
+  <div class="lrow"><div class="ll">View</div>
+    <div class="seg" id="segView"><button data-v="off">2D</button><button data-v="on">3D drive</button></div>
+  </div>
+  <div class="lrow"><div class="ll">Buildings</div>
+    <div class="seg" id="segBuildings"><button data-v="on">🏙 3D</button><button data-v="off">Off</button></div>
+  </div>
+  <div class="lrow"><div class="ll">Theme</div>
+    <div class="seg" id="segTheme2"><button data-v="auto">Auto</button><button data-v="day">Day</button><button data-v="night">Night</button></div>
+  </div>
+</div>
+
+<div id="topBar">
+  <button id="searchPill" aria-label="Search destination">
+    <span class="logo">◮ Atlas</span>
+    <span class="q" id="searchPillText">Where to?</span>
+    <span>🔍</span>
+  </button>
+  <button class="fab" id="btnConvoy" style="position:static;flex:none" aria-label="Convoy">🚙</button>
+  <button class="fab" id="btnSettings" style="position:static;flex:none" aria-label="Settings">⚙️</button>
+</div>
+
+<button class="fab" id="btnLayers" aria-label="Map style">🌗</button>
+<button class="fab" id="btnMusic" aria-label="Music">🎵</button>
+<button class="fab" id="btnCompass" aria-label="Reset north">🧭</button>
+<button class="fab" id="btnLocate" aria-label="My location">📍</button>
+<div id="zoomBox">
+  <button class="fab" id="btnZoomIn" aria-label="Zoom in">＋</button>
+  <button class="fab" id="btnZoomOut" aria-label="Zoom out">－</button>
+</div>
+<div id="attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors</div>
+
+<!-- search sheet -->
+<div class="sheet" id="searchSheet" role="dialog" aria-label="Search">
+  <div class="grab"></div>
+  <div id="searchBox">
+    <input id="searchInput" type="search" placeholder="Search place, address, or lat, lon" autocomplete="off">
+    <button id="searchCancel">Cancel</button>
+  </div>
+  <div id="quickRow">
+    <button class="chip" id="chipHome"><div class="e">🏠</div><div class="t">Home</div></button>
+    <button class="chip" id="chipWork"><div class="e">💼</div><div class="t">Work</div></button>
+    <button class="chip" id="chipTrail"><div class="e">🍞</div><div class="t">Trail back</div></button>
+    <button class="chip" id="chipDemo"><div class="e">🚗</div><div class="t">Demo drive</div></button>
+  </div>
+  <div id="searchResults"></div>
+</div>
+
+<!-- route preview sheet -->
+<div class="sheet" id="routeSheet" role="dialog" aria-label="Route preview">
+  <div class="grab"></div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <div style="flex:1;min-width:0">
+      <div class="dest" id="destName">Destination</div>
+      <div class="destAddr" id="destAddr"></div>
+    </div>
+    <button class="navCtl" id="btnCloseRoute" aria-label="Close">✕</button>
+  </div>
+  <div id="profileRow">
+    <button class="profileBtn on" data-profile="car" aria-label="Drive">🚗</button>
+    <button class="profileBtn" data-profile="bike" aria-label="Cycle">🚲</button>
+    <button class="profileBtn" data-profile="foot" aria-label="Walk">🚶</button>
+  </div>
+  <div id="routeStatus"></div>
+  <div id="altList"></div>
+  <div id="routeActions">
+    <button class="bigBtn" id="btnDemo">▶ Demo</button>
+    <button class="bigBtn" id="btnGo">Start&nbsp; ➤</button>
+  </div>
+  <button id="btnOffline" style="margin-top:10px;width:100%;padding:11px;border-radius:12px;background:rgba(255,255,255,0.05);border:1px solid var(--line);font-size:13.5px;color:var(--dim)">⬇ Save this route for offline</button>
+</div>
+
+<!-- settings sheet -->
+<div class="sheet" id="settingsSheet" role="dialog" aria-label="Settings">
+  <div class="grab"></div>
+  <div style="display:flex;align-items:center">
+    <h3 style="flex:1">Settings</h3>
+    <button class="navCtl" id="btnCloseSettings" aria-label="Close">✕</button>
+  </div>
+  <div class="setRow">
+    <div class="lbl">Units<div class="sub">Distances shown and spoken</div></div>
+    <div class="seg" id="segUnits">
+      <button data-v="metric">km</button><button data-v="imperial">miles</button>
+    </div>
+  </div>
+  <div class="setRow">
+    <div class="lbl">Voice guidance<div class="sub">Spoken turn-by-turn directions</div></div>
+    <div class="seg" id="segVoice">
+      <button data-v="on">On</button><button data-v="off">Off</button>
+    </div>
+  </div>
+  <div class="setRow">
+    <div class="lbl">🚦 Live traffic<div class="sub">Incidents (TfL / TomTom) + typical rush-hour ETAs</div></div>
+    <div class="seg" id="segTraffic">
+      <button data-v="on">On</button><button data-v="off">Off</button>
+    </div>
+  </div>
+  <div class="setRow">
+    <div class="lbl">📷 Speed cameras<div class="sub">Alerts for fixed cameras (OpenStreetMap data)</div></div>
+    <div class="seg" id="segCameras">
+      <button data-v="on">On</button><button data-v="off">Off</button>
+    </div>
+  </div>
+  <div class="setRow">
+    <div class="lbl">🏁 Co-driver<div class="sub">Rally pace notes — "left 4 into right 3"</div></div>
+    <div class="seg" id="segCodriver">
+      <button data-v="on">On</button><button data-v="off">Off</button>
+    </div>
+  </div>
+  <div class="setRow">
+    <div class="lbl">Map style<div class="sub">Night mode inverts the map</div></div>
+    <div class="seg" id="segTheme">
+      <button data-v="auto">Auto</button><button data-v="day">Day</button><button data-v="night">Night</button>
+    </div>
+  </div>
+  <div class="setRow">
+    <div class="lbl">🗺 Offline maps<div class="sub" id="offlineSub">Save a route's maps from its preview screen</div></div>
+    <button class="navCtl" id="btnClearOffline" aria-label="Clear offline maps" style="width:auto;padding:0 16px;border-radius:12px">Clear</button>
+  </div>
+  <div class="setRow">
+    <div class="lbl">📹 Dashcam clips<div class="sub" id="clipsSub">Recordings stored on this device</div></div>
+    <button class="navCtl" id="btnOpenClips" aria-label="Open clips" style="width:auto;padding:0 16px;border-radius:12px">Open</button>
+  </div>
+  <div id="aboutBox">
+    <strong style="color:var(--text)">◮ Atlas</strong> — your own satnav. The map is drawn by a
+    from-scratch canvas engine — with a <strong>🛰 satellite layer</strong> (Esri World
+    Imagery), a <strong>3D drive view</strong> that tilts the world while you navigate,
+    <strong>🏙 real 3D buildings</strong> (OSM footprints with real heights, extruded and
+    light-shaded on-canvas), and <strong>your car</strong> as the position marker; guidance, snapping, phrasing and ETA
+    come from the pure, unit-tested navigation engine (<code>engine.js</code>).
+    <strong>🎵 Music</strong>: import your own songs (stored on this device, playable offline)
+    with shuffle/repeat, lock-screen controls — and the music <em>ducks automatically</em>
+    while the satnav speaks, like a built-in car system.
+    <strong>🗺 Offline maps</strong>: save a route from its preview and its map corridor
+    (day + night, zooms 12–17) downloads to this device — guidance, snapping and voice
+    already run locally, so a saved route navigates with no signal; only re-routing and
+    search still need a connection.
+    Turn-by-turn includes <strong>🛣 lane guidance</strong> (real OSM lane arrows, your lanes
+    lit) and <strong>junction views</strong> — honest auto-generated schematics of complex
+    junctions built from the real surrounding roads, your path glowing through them.
+    Things no other satnav does: <strong>🌅 sun-glare forecast</strong> (amber dashes on the route
+    where you'll drive into a low sun), <strong>🏁 co-driver rally pace notes</strong>,
+    <strong>🛰 tunnel-proof dead reckoning</strong> when GPS drops, a <strong>📼 flight recorder</strong>
+    (drive stats + GPX export, auto 🅿️ parked-car pin), a <strong>📹 dashcam</strong>
+    (record your drive with the in-app camera — time, position, speed and the next turn burned
+    into every frame; clips live in an on-device vault with playback, native share-sheet export
+    and honest auto-pruning — footage never leaves your device),
+    <strong>🍞 trail-back</strong> (retrace your own breadcrumbs, fully offline),
+    an <strong>⏱ ETA that learns your pace</strong>, <strong>🛑 speed-limit +
+    📷 speed-camera warnings</strong> (OpenStreetMap data — only as complete as the map;
+    always obey the signs on the road), <strong>🚙 convoy mode</strong> — share a code
+    and every car in your convoy appears live on the map (tabs sync instantly on one
+    device; across devices via the optional cloud in <code>config.js</code>; only people
+    with your code can see you, and beacons stop when you leave) — and <strong>🚦 live
+    traffic</strong>: real incidents (TfL's open feed across London; worldwide with a free
+    TomTom key in <code>config.js</code>) snapped onto your routes with delay estimates
+    and spoken warnings, plus a clearly-labelled <em>typical</em> rush-hour model shaping
+    ETAs everywhere else.
+    Map data
+    © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>
+    contributors; routing by the community OSRM/FOSSGIS servers; search by Nominatim.
+    Your location never leaves your device except to fetch the route you asked for.
+  </div>
+</div>
+
+<!-- 🎵 music sheet -->
+<div class="sheet" id="musicSheet" role="dialog" aria-label="Music">
+  <div class="grab"></div>
+  <div style="display:flex;align-items:center">
+    <h3 style="flex:1">🎵 Music</h3>
+    <button class="navCtl" id="btnCloseMusic" aria-label="Close">✕</button>
+  </div>
+  <div style="text-align:center;margin-top:8px">
+    <div id="musicNowTitle" style="font-weight:700;font-size:16px">Nothing playing</div>
+    <div id="musicNowArtist" style="color:var(--dim);font-size:12.5px;margin-top:2px">Add your songs below — they stay on this device</div>
+  </div>
+  <div id="musicSeekRow">
+    <span id="musicPos">0:00</span>
+    <input type="range" id="musicSeek" min="0" max="1000" value="0" aria-label="Seek">
+    <span id="musicDur">0:00</span>
+  </div>
+  <div id="musicControls">
+    <button class="musicBtn mode" id="btnMusicShuffle" aria-label="Shuffle">🔀</button>
+    <button class="musicBtn" id="btnMusicPrev" aria-label="Previous">⏮</button>
+    <button class="musicBtn big" id="btnMusicPlay" aria-label="Play or pause">▶</button>
+    <button class="musicBtn" id="btnMusicNext" aria-label="Next">⏭</button>
+    <button class="musicBtn mode" id="btnMusicRepeat" aria-label="Repeat">🔁</button>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;margin-top:14px">
+    <button id="btnMusicImport" style="flex:1;height:44px;border-radius:13px;background:rgba(255,255,255,0.06);border:1px solid var(--line);font-weight:650">＋ Add songs</button>
+    <span id="musicMeta" style="font-size:11.5px;color:var(--dim)"></span>
+  </div>
+  <input type="file" id="fileMusicInput" accept="audio/*" multiple style="display:none">
+  <div id="trackList"></div>
+</div>
+
+<!-- 🚙 convoy sheet -->
+<div class="sheet" id="convoySheet" role="dialog" aria-label="Convoy">
+  <div class="grab"></div>
+  <div style="display:flex;align-items:center">
+    <h3 style="flex:1">🚙 Convoy</h3>
+    <button class="navCtl" id="btnCloseConvoy" aria-label="Close">✕</button>
+  </div>
+
+  <div id="convoyJoinBox">
+    <p style="color:var(--dim);font-size:13px;margin:8px 0 12px">
+      Drive together and see everyone live on the map. Share one code — every
+      device that joins it becomes a car in your convoy.
+    </p>
+    <input class="convoyInput" id="convoyName" placeholder="Your name (shown to the convoy)" maxlength="24" autocomplete="off">
+    <div style="display:flex;gap:10px;margin-top:10px">
+      <button class="convoyBtn" id="btnConvoyCreate" style="flex:1;background:linear-gradient(135deg,#2f7ff6,#38bdf8);color:#fff">＋ Create convoy</button>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:10px">
+      <input class="convoyInput" id="convoyCode" placeholder="CODE" maxlength="8" autocomplete="off" style="flex:1">
+      <button class="convoyBtn" id="btnConvoyJoin" style="background:rgba(255,255,255,0.07);border:1px solid var(--line)">Join</button>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:10px">
+      <button class="convoyBtn" id="btnConvoyDemo" style="flex:1;background:rgba(255,255,255,0.05);border:1px solid var(--line)">▶ Demo convoy — drive with Aisha &amp; Marco</button>
+    </div>
+    <p style="color:var(--dim);font-size:11.5px;margin-top:12px">
+      Same device: tabs find each other instantly. Across devices: positions sync
+      live through the cloud — only people with your code can see the convoy, and
+      beacons stop the moment you leave.
+    </p>
+  </div>
+
+  <div id="convoyLiveBox" style="display:none">
+    <div class="convoyBig" id="convoyCodeBig">——————</div>
+    <div class="convoyHint">share this code — anyone who joins it rides with you</div>
+    <div style="display:flex;gap:10px">
+      <button class="convoyBtn" id="btnConvoyShare" style="flex:1;background:linear-gradient(135deg,#2f7ff6,#38bdf8);color:#fff">📤 Invite</button>
+      <button class="convoyBtn" id="btnConvoyLeave" style="background:rgba(248,113,113,0.14);border:1px solid rgba(248,113,113,0.4)">Leave</button>
+    </div>
+    <div id="convoyMembers"></div>
+  </div>
+</div>
+
+<!-- 📹 clip vault sheet -->
+<div class="sheet" id="clipsSheet" role="dialog" aria-label="Dashcam clips">
+  <div class="grab"></div>
+  <div style="display:flex;align-items:center">
+    <h3 style="flex:1">📹 Dashcam clips</h3>
+    <button class="navCtl" id="btnCloseClips" aria-label="Close">✕</button>
+  </div>
+  <div style="font-size:12px;color:var(--dim);margin-top:2px" id="clipsTotal"></div>
+  <div id="clipList"></div>
+</div>
+
+<!-- clip player overlay -->
+<div id="clipPlayer" role="dialog" aria-label="Clip player">
+  <div style="text-align:center">
+    <div id="clipPlayerTitle"></div>
+    <div id="clipPlayerMeta"></div>
+  </div>
+  <video id="clipVideo" controls playsinline></video>
+  <div class="row">
+    <button id="cpShare">📤 Share</button>
+    <button id="cpSave">💾 Save file</button>
+    <button id="cpDelete">🗑 Delete</button>
+    <button id="cpClose">Close</button>
+  </div>
+</div>
+
+<!-- nav HUD -->
+<div id="navBanner">
+  <div id="navIcon"></div>
+  <div style="flex:1;min-width:0">
+    <div id="navDist">—</div>
+    <div id="navText">Starting…</div>
+    <div id="navThen"></div>
+  </div>
+</div>
+<div id="navBottom">
+  <div>
+    <div id="navEta">--:--</div>
+    <div id="navMeta">— · —</div>
+  </div>
+  <div class="grow"></div>
+  <button class="navCtl" id="btnDashcam" aria-label="Dashcam">📹</button>
+  <button class="navCtl" id="btnMute" aria-label="Mute voice">🔊</button>
+  <button class="navCtl" id="btnOverview" aria-label="Overview">🗺</button>
+  <button class="navCtl" id="btnEnd" aria-label="End navigation">✕</button>
+</div>
+<div id="speedBubble"><div id="speedVal">0</div><div id="speedUnit">km/h</div></div>
+<div id="limitSign" aria-label="Speed limit"><div id="limitVal">30</div><div id="limitUnit">km/h</div></div>
+<div id="camChip">📷 Speed camera</div>
+<div id="trafChip">⚠ Traffic ahead</div>
+<div id="laneBar" aria-label="Lane guidance"></div>
+<div id="junctionCard" aria-label="Junction view">
+  <div id="junctionTitle"></div>
+  <canvas id="junctionCanvas"></canvas>
+</div>
+
+<div id="dashcamBox">
+  <video id="dashcamVideo" muted playsinline autoplay></video>
+  <div id="dashcamRec"><span class="dot">●</span> REC <span id="dashcamTime">0:00</span></div>
+</div>
+
+<div id="arrivedCard">
+  <div class="big">🏁</div>
+  <h2>You have arrived</h2>
+  <p id="arrivedSub">Enjoy!</p>
+  <p id="arrivedStats" style="margin-top:6px;font-size:13px;color:var(--accent2)"></p>
+  <div style="display:flex;gap:10px">
+    <button id="btnDashSave" style="background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.4);display:none">📹 Video</button>
+    <button id="btnGpx" style="background:rgba(255,255,255,0.06);border:1px solid var(--line)">📼 GPX</button>
+    <button id="btnArrivedDone">Done</button>
+  </div>
+</div>
+
+<div id="tapCard">
+  <div>
+    <div class="nm" id="tapName">Dropped pin</div>
+    <div style="font-size:11.5px;color:var(--dim)" id="tapCoord"></div>
+  </div>
+  <button class="go" id="tapGo">Directions</button>
+  <button class="navCtl" id="tapClose" aria-label="Close">✕</button>
+</div>
+
+<div id="musicStrip">
+  <span id="musicStripTitle">—</span>
+  <button class="musicBtn" id="msPrev" aria-label="Previous">⏮</button>
+  <button class="musicBtn" id="msPlay" aria-label="Play or pause">▶</button>
+  <button class="musicBtn" id="msNext" aria-label="Next">⏭</button>
+</div>
+
+<div id="toast"></div>
+
+<script src="config.js"></script>
+<script src="engine.js"></script>
+<script>
+'use strict';
+/* Atlas UI — everything below is a lens over window.Atlas (engine.js). */
+
+var $ = function (id) { return document.getElementById(id); };
+var A = window.Atlas;
+
+/* ============================ settings & stores =========================== */
+
+function load(key, fallback) {
+  try { var v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
+  catch (e) { return fallback; }
+}
+function save(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) {} }
+
+var settings = Object.assign({ units: 'metric', voice: 'on', theme: 'auto', codriver: 'off', cameras: 'on', traffic: 'on', baseLayer: 'map', view3d: 'on', buildings: 'on' }, load('atlas.settings', {}));
+var places = load('atlas.places', []);     // {name, addr, lat, lon, kind?, uses, lastUsed}
+var recents = load('atlas.recents', []);   // same shape, capped
+var pace = load('atlas.pace', {});         // per-profile personal pace factor (learned)
+function paceOf() { return pace[trip.profile] || 1; }
+
+function persistSettings() { save('atlas.settings', settings); }
+function persistPlaces() { save('atlas.places', places); }
+function persistRecents() { save('atlas.recents', recents.slice(0, 12)); }
+
+/* ================================ the map ================================ */
+/* From-scratch slippy map: world-pixel camera + OSM raster tiles on canvas. */
+
+var canvas = $('map'), ctx = canvas.getContext('2d');
+var DPR = Math.min(2.5, window.devicePixelRatio || 1);
+var view = {
+  lat: 51.5074, lon: -0.1278, zoom: 15.2,   // London until we get a fix
+  rot: 0,                                    // radians, 0 = north-up
+  follow: false,                             // camera glued to the GPS dot
+  navMode: false,                            // heading-up + anchor low on screen
+};
+var W = 0, H = 0;
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  needsDraw = true;
+}
+window.addEventListener('resize', resize);
+resize();
+
+/* tile cache with a small LRU + in-flight bookkeeping. Sources:
+   'voy'  = CARTO Voyager — clean, modern day cartography (retina @2x)
+   'dark' = CARTO Dark Matter — a DESIGNED night map, not an inversion
+   'sat'  = Esri World Imagery (note Esri's {z}/{y}/{x} order)
+   CARTO tiles fall back to openstreetmap.org per-tile if they fail. */
+var tiles = {}, tileOrder = [], TILE_CAP = 380;
+var TILE_R = (window.devicePixelRatio || 1) >= 1.5 ? '@2x' : '';
+var TILE_URL = function (layer, z, x, y) {
+  if (layer === 'sat') {
+    return 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + y + '/' + x;
+  }
+  if (layer === 'dark') {
+    return 'https://basemaps.cartocdn.com/dark_all/' + z + '/' + x + '/' + y + TILE_R + '.png';
+  }
+  if (layer === 'pos') {
+    return 'https://basemaps.cartocdn.com/light_all/' + z + '/' + x + '/' + y + TILE_R + '.png';
+  }
+  return 'https://basemaps.cartocdn.com/rastertiles/voyager/' + z + '/' + x + '/' + y + TILE_R + '.png';
+};
+var TILE_FALLBACK_URL = function (z, x, y) {
+  return 'https://tile.openstreetmap.org/' + z + '/' + x + '/' + y + '.png';
+};
+function getTile(layer, z, x, y) {
+  var n = Math.pow(2, z);
+  if (y < 0 || y >= n) return null;
+  x = ((x % n) + n) % n;
+  var key = layer + '|' + z + '/' + x + '/' + y;
+  var t = tiles[key];
+  if (t) return t;
+  t = { img: new Image(), ok: false, err: false, fellBack: false };
+  t.img.crossOrigin = 'anonymous';
+  t.img.onload = function () { t.ok = true; needsDraw = true; };
+  t.img.onerror = function () {
+    if (layer !== 'sat' && !t.fellBack) {
+      t.fellBack = true;
+      t.img.src = TILE_FALLBACK_URL(z, x, y);
+    } else t.err = true;
+  };
+  t.img.src = TILE_URL(layer, z, x, y);
+  tiles[key] = t; tileOrder.push(key);
+  if (tileOrder.length > TILE_CAP) {
+    var drop = tileOrder.splice(0, 40);
+    for (var i = 0; i < drop.length; i++) delete tiles[drop[i]];
+  }
+  return t;
+}
+
+function nightMode() {
+  if (settings.theme === 'day') return false;
+  if (settings.theme === 'night') return true;
+  var h = new Date().getHours();
+  return h >= 19 || h < 7;
+}
+
+/* screen anchor: where the camera centre sits (lower in nav mode) */
+function anchor() { return { x: W / 2, y: view.navMode ? H * 0.72 : H / 2 }; }
+
+function worldOf(p) { return A.lonLatToWorld(p, view.zoom); }
+function toScreen(p) {
+  var w = worldOf(p), c = worldOf(view), a = anchor();
+  var dx = w.x - c.x, dy = w.y - c.y;
+  var cos = Math.cos(view.rot), sin = Math.sin(view.rot);
+  return { x: a.x + dx * cos - dy * sin, y: a.y + dx * sin + dy * cos };
+}
+function fromScreen(s) {
+  var a = anchor(), c = worldOf(view);
+  var dx = s.x - a.x, dy = s.y - a.y;
+  var cos = Math.cos(-view.rot), sin = Math.sin(-view.rot);
+  return A.worldToLonLat({ x: c.x + dx * cos - dy * sin, y: c.y + dx * sin + dy * cos }, view.zoom);
+}
+
+var needsDraw = true;
+// iOS Safari has no CanvasRenderingContext2D.filter — detect once and fall
+// back to a composite-based night inversion so night mode works everywhere.
+var FILTER_OK = (function () {
+  try {
+    ctx.filter = 'invert(1)';
+    var ok = String(ctx.filter).indexOf('invert') !== -1;
+    ctx.filter = 'none';
+    return ok;
+  } catch (e) { return false; }
+})();
+
+function draw() {
+  var night = nightMode();
+  var layer = settings.baseLayer === 'sat' ? 'sat'
+            : night ? 'dark'
+            : settings.baseLayer === 'positron' ? 'pos' : 'voy';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = layer === 'sat' ? '#090d12' : night ? '#161b26' : layer === 'pos' ? '#f4f4f2' : '#f2f0eb';
+  ctx.fillRect(0, 0, W, H);
+
+  var z = Math.max(2, Math.min(19, Math.floor(view.zoom)));
+  var scale = Math.pow(2, view.zoom - z);
+  var c = A.lonLatToWorld(view, z);
+  var a = anchor();
+  var radius = Math.hypot(Math.max(a.x, W - a.x), Math.max(a.y, H - a.y)) / scale + A.TILE;
+  // the 3D tilt magnifies (scale 1.75) — same visible area, tiles unchanged
+
+  ctx.save();
+  ctx.translate(a.x, a.y);
+  ctx.rotate(view.rot);
+  ctx.scale(scale, scale);
+  ctx.translate(-c.x, -c.y);
+  // CARTO's styles are already designed — the night map just gets a lift so
+  // roads read at a glance while driving; satellite dims a little after dark.
+  if (FILTER_OK) {
+    if (layer === 'dark') ctx.filter = 'brightness(1.45) saturate(1.05)';
+    else if (layer === 'sat' && night) ctx.filter = 'brightness(0.82) saturate(0.9)';
+  }
+
+  var t0x = Math.floor((c.x - radius) / A.TILE), t1x = Math.floor((c.x + radius) / A.TILE);
+  var t0y = Math.floor((c.y - radius) / A.TILE), t1y = Math.floor((c.y + radius) / A.TILE);
+  for (var ty = t0y; ty <= t1y; ty++) {
+    for (var tx = t0x; tx <= t1x; tx++) {
+      var t = getTile(layer, z, tx, ty);
+      if (t && t.ok) { ctx.drawImage(t.img, tx * A.TILE, ty * A.TILE, A.TILE, A.TILE); continue; }
+      // parent-tile fallback keeps zooming smooth while children load
+      var pz = z - 1, px = tx >> 1, py = ty >> 1;
+      var pn = Math.pow(2, pz), pxx = ((px % pn) + pn) % pn;
+      var pt = tiles[layer + '|' + pz + '/' + pxx + '/' + py];
+      if (pt && pt.ok) {
+        var sx = (tx & 1) * A.TILE / 2, sy = (ty & 1) * A.TILE / 2;
+        ctx.drawImage(pt.img, sx, sy, A.TILE / 2, A.TILE / 2, tx * A.TILE, ty * A.TILE, A.TILE, A.TILE);
+      } else {
+        ctx.fillStyle = layer === 'sat' ? '#0c1118' : night ? '#1c2230' : layer === 'pos' ? '#efefed' : '#eae7e1';
+        ctx.fillRect(tx * A.TILE, ty * A.TILE, A.TILE, A.TILE);
+      }
+    }
+  }
+  if (FILTER_OK) ctx.filter = 'none';
+  ctx.restore();
+
+  // Safari (no canvas filter): brighten the night map with a screen-composite
+  // lift, and dim satellite after dark with a plain wash.
+  if (!FILTER_OK && night) {
+    if (layer === 'dark') {
+      ctx.globalCompositeOperation = 'screen';
+      ctx.fillStyle = 'rgba(58,68,92,0.42)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalCompositeOperation = 'source-over';
+    } else if (layer === 'sat') {
+      ctx.fillStyle = 'rgba(2,6,14,0.35)';
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  drawBuildings(night);
+  drawRoutes(night);
+  drawCameras();
+  drawTraffic();
+  drawConvoy();
+  drawTapPin();
+  drawGpsDot();
+  maybeFetchBuildings();
+}
+
+/* ------------------------- 🏙 3D extruded buildings ----------------------- */
+/* Real OSM footprints with real heights, extruded 2.5D on the canvas: roof
+   corners lean away from the camera by the engine's roofFactor, walls are
+   quads shaded by a fixed NW light (engine.wallShade), painted far-to-near.
+   Fetched per area from Overpass, only at close zooms, never on satellite. */
+
+var bld = { items: [], key: null, inflight: false, failAt: 0 };
+var BLD_MIN_ZOOM = 15.4, BLD_DRAW_CAP = 900;
+
+function overpassQuery(q) {
+  var attempt = function (i) {
+    if (i >= OVERPASS.length) return Promise.reject(new Error('overpass unavailable'));
+    return fetch(OVERPASS[i], { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'data=' + encodeURIComponent(q) })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .catch(function (e) { return i + 1 < OVERPASS.length ? attempt(i + 1) : Promise.reject(e); });
+  };
+  return attempt(0);
+}
+
+function maybeFetchBuildings() {
+  if (settings.buildings !== 'on' || settings.baseLayer === 'sat') return;
+  if (view.zoom < BLD_MIN_ZOOM) return;
+  var key = Math.round(view.lat * 220) + '/' + Math.round(view.lon * 140);
+  if (key === bld.key || bld.inflight) return;
+  if (Date.now() - bld.failAt < 30000) return; // cool off after a failure, then retry
+  bld.inflight = true;
+  // keep the box tight (~900 m square): Overpass caps the reply, and a huge
+  // box in a dense city returns a scatter of buildings that may all be
+  // outside the viewport. Panning re-fetches per ~500 m region anyway.
+  var mpp = A.metresPerPixel(view.lat, view.zoom);
+  var halfM = Math.min(460, Math.max(W, H) * 0.8 * mpp);
+  var dLat = halfM / 111320, dLon = dLat / Math.max(0.2, Math.cos(view.lat * Math.PI / 180));
+  var q = '[out:json][timeout:12];way["building"](' +
+    (view.lat - dLat).toFixed(5) + ',' + (view.lon - dLon).toFixed(5) + ',' +
+    (view.lat + dLat).toFixed(5) + ',' + (view.lon + dLon).toFixed(5) + ');out geom 2500;';
+  overpassQuery(q)
+    .then(function (json) {
+      bld.items = (json.elements || []).filter(function (w) { return w.geometry && w.geometry.length > 3; })
+        .map(function (w) {
+          return { pts: w.geometry.map(function (g) { return { lat: g.lat, lon: g.lon }; }),
+                   h: A.buildingHeightM(w.tags) };
+        });
+      bld.key = key;
+      needsDraw = true;
+    })
+    .catch(function () { bld.failAt = Date.now(); })
+    .then(function () { bld.inflight = false; });
+}
+
+function drawBuildings(night) {
+  if (settings.buildings !== 'on' || settings.baseLayer === 'sat') return;
+  if (view.zoom < BLD_MIN_ZOOM || !bld.items.length) return;
+  var a = anchor(), M = 70;
+  var list = [];
+  for (var bi = 0; bi < bld.items.length; bi++) {
+    var b = bld.items[bi];
+    var sp = [], inView = false;
+    for (var i = 0; i < b.pts.length; i++) {
+      var s = toScreen(b.pts[i]);
+      sp.push(s);
+      if (s.x > -M && s.x < W + M && s.y > -M && s.y < H + M) inView = true;
+    }
+    if (!inView) continue;
+    var f = A.roofFactor(b.h, view.lat, view.zoom);
+    var rp = [], cx = 0, cy = 0;
+    for (var j = 0; j < sp.length; j++) {
+      rp.push({ x: sp[j].x + (sp[j].x - a.x) * f, y: sp[j].y + (sp[j].y - a.y) * f });
+      cx += sp[j].x; cy += sp[j].y;
+    }
+    cx /= sp.length; cy /= sp.length;
+    list.push({ sp: sp, rp: rp, d: Math.hypot(cx - a.x, cy - a.y) });
+    if (list.length >= BLD_DRAW_CAP) break;
+  }
+  list.sort(function (p, q) { return q.d - p.d; }); // far first, near paints over
+  for (var li = 0; li < list.length; li++) {
+    var bb = list[li], sp2 = bb.sp, rp2 = bb.rp;
+    for (var e = 0; e < sp2.length - 1; e++) {
+      var g0 = sp2[e], g1 = sp2[e + 1], r0 = rp2[e], r1 = rp2[e + 1];
+      var sh = A.wallShade(g0.x, g0.y, g1.x, g1.y);
+      ctx.beginPath();
+      ctx.moveTo(g0.x, g0.y); ctx.lineTo(g1.x, g1.y);
+      ctx.lineTo(r1.x, r1.y); ctx.lineTo(r0.x, r0.y);
+      ctx.closePath();
+      ctx.fillStyle = night
+        ? 'rgb(' + Math.round(18 + 30 * sh) + ',' + Math.round(24 + 36 * sh) + ',' + Math.round(38 + 48 * sh) + ')'
+        : 'rgb(' + Math.round(150 + 62 * sh) + ',' + Math.round(154 + 62 * sh) + ',' + Math.round(162 + 62 * sh) + ')';
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.moveTo(rp2[0].x, rp2[0].y);
+    for (var v = 1; v < rp2.length; v++) ctx.lineTo(rp2[v].x, rp2[v].y);
+    ctx.closePath();
+    ctx.fillStyle = night ? '#2a3654' : '#e6e9ee';
+    ctx.fill();
+    ctx.lineWidth = 0.8;
+    ctx.strokeStyle = night ? 'rgba(120,145,200,0.25)' : 'rgba(90,100,120,0.28)';
+    ctx.stroke();
+  }
+}
+
+/* 🚦 incident markers (orange diamonds) on the active/selected route. */
+function drawTraffic() {
+  if (settings.traffic !== 'on') return;
+  var route = nav.active ? nav.route : trip.routes[trip.selected];
+  var mapped = nav.active ? nav.trafMapped : (route && route.traffic && route.traffic.mapped);
+  if (!route || !mapped || !mapped.length) return;
+  for (var i = 0; i < mapped.length; i++) {
+    var p = A.pointAtAlong(route, mapped[i].alongM);
+    var s = toScreen(p);
+    if (s.x < -30 || s.x > W + 30 || s.y < -30 || s.y > H + 30) continue;
+    ctx.save();
+    ctx.translate(s.x, s.y); ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = '#431407'; ctx.fillRect(-10, -10, 20, 20);
+    ctx.lineWidth = 2.5; ctx.strokeStyle = '#fb923c'; ctx.strokeRect(-10, -10, 20, 20);
+    ctx.restore();
+    ctx.fillStyle = '#fed7aa'; ctx.font = '900 13px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('!', s.x, s.y + 1);
+    ctx.textBaseline = 'alphabetic';
+  }
+}
+
+/* 📷 fixed speed cameras on the route (while navigating). */
+function drawCameras() {
+  if (!nav.active || !nav.route || !nav.cameras || !nav.cameras.length) return;
+  if (settings.cameras !== 'on') return;
+  for (var i = 0; i < nav.cameras.length; i++) {
+    var p = A.pointAtAlong(nav.route, nav.cameras[i].alongM);
+    var s = toScreen(p);
+    if (s.x < -30 || s.x > W + 30 || s.y < -30 || s.y > H + 30) continue;
+    ctx.beginPath(); ctx.arc(s.x, s.y, 12, 0, 7);
+    ctx.fillStyle = '#451a03'; ctx.fill();
+    ctx.lineWidth = 2.5; ctx.strokeStyle = '#fbbf24'; ctx.stroke();
+    ctx.font = '13px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('📷', s.x, s.y + 1);
+    ctx.textBaseline = 'alphabetic';
+  }
+}
+
+function drawPolyline(geometry, color, width, dash) {
+  if (!geometry || geometry.length < 2) return;
+  ctx.beginPath();
+  var step = Math.max(1, Math.floor(geometry.length / 900));
+  for (var i = 0; i < geometry.length; i += step) {
+    var s = toScreen(geometry[i]);
+    if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y);
+  }
+  var last = toScreen(geometry[geometry.length - 1]);
+  ctx.lineTo(last.x, last.y);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (dash) ctx.setLineDash(dash); else ctx.setLineDash([]);
+  ctx.strokeStyle = color; ctx.lineWidth = width;
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+/** Vertices of the route between two along-distances (for glare overlays). */
+function sliceGeometry(route, m0, m1) {
+  var pts = [A.pointAtAlong(route, m0)];
+  for (var i = 0; i < route.geometry.length; i++) {
+    if (route.cum[i] > m0 && route.cum[i] < m1) pts.push(route.geometry[i]);
+  }
+  pts.push(A.pointAtAlong(route, m1));
+  return pts;
+}
+
+function drawRoutes(night) {
+  if (!trip.routes.length) return;
+  for (var i = 0; i < trip.routes.length; i++) {
+    if (i === trip.selected) continue;
+    drawPolyline(trip.routes[i].geometry, night ? 'rgba(148,163,184,0.55)' : 'rgba(100,116,139,0.55)', 6);
+  }
+  var main = trip.routes[trip.selected];
+  if (main) {
+    var sat = settings.baseLayer === 'sat';
+    drawPolyline(main.geometry, sat ? 'rgba(255,255,255,0.85)' : (night ? 'rgba(15,40,90,0.9)' : 'rgba(20,60,140,0.35)'), 11);
+    ctx.save();
+    ctx.shadowColor = 'rgba(56,189,248,0.65)'; ctx.shadowBlur = 12;
+    drawPolyline(main.geometry, '#2f7ff6', 7);
+    ctx.restore();
+    drawPolyline(main.geometry, 'rgba(125,211,252,0.85)', 2.5);
+    // 🌅 stretches where you'll be driving into a low sun
+    if (main.glare) {
+      for (var gi = 0; gi < main.glare.length; gi++) {
+        drawPolyline(sliceGeometry(main, main.glare[gi].startM, main.glare[gi].endM),
+                     'rgba(251,191,36,0.95)', 3.5, [9, 7]);
+      }
+    }
+    // destination flag
+    var end = toScreen(main.geometry[main.geometry.length - 1]);
+    ctx.beginPath(); ctx.arc(end.x, end.y, 9, 0, 7); ctx.fillStyle = '#fff'; ctx.fill();
+    ctx.beginPath(); ctx.arc(end.x, end.y, 5.5, 0, 7); ctx.fillStyle = '#ef4444'; ctx.fill();
+  }
+}
+
+function drawTapPin() {
+  if (!tapPoint) return;
+  var s = toScreen(tapPoint);
+  ctx.font = '28px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('📍', s.x, s.y + 4);
+}
+
+function rrect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+/* Your position is a car. Drawn, not an emoji: a sleek top-down body with
+   a glass roof, headlight glow and a soft ground shadow, rotated to your
+   heading (which also tilts with the 3D view — like riding your own map). */
+function drawGpsDot() {
+  var p = (nav.active && nav.demo && nav.simPos) ? nav.simPos : gps.fix;
+  if (!p) return;
+  var s = toScreen(p);
+  if (p.acc) {
+    var rPx = p.acc / A.metresPerPixel(p.lat, view.zoom);
+    if (rPx > 16 && rPx < 400) {
+      ctx.beginPath(); ctx.arc(s.x, s.y, rPx, 0, 7);
+      ctx.fillStyle = 'rgba(56,189,248,0.10)'; ctx.fill();
+    }
+  }
+  var hdg = typeof p.heading === 'number' && isFinite(p.heading) ? p.heading : 0;
+  var rad = (hdg * Math.PI / 180) + view.rot;
+  ctx.save();
+  ctx.translate(s.x, s.y); ctx.rotate(rad);
+  // halo + ground shadow
+  ctx.beginPath(); ctx.arc(0, 0, 24, 0, 7);
+  ctx.fillStyle = 'rgba(56,189,248,0.14)'; ctx.fill();
+  ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 4;
+  // body
+  var g = ctx.createLinearGradient(0, -17, 0, 17);
+  g.addColorStop(0, '#7dd3fc'); g.addColorStop(0.45, '#38bdf8'); g.addColorStop(1, '#1d4ed8');
+  rrect(-9.5, -18, 19, 36, 8);
+  ctx.fillStyle = g; ctx.fill();
+  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.lineWidth = 2.2; ctx.strokeStyle = '#fff'; ctx.stroke();
+  // windshield + rear glass
+  rrect(-6.5, -10, 13, 8, 3.5);
+  ctx.fillStyle = 'rgba(15,23,42,0.8)'; ctx.fill();
+  rrect(-6, 5, 12, 6, 3);
+  ctx.fillStyle = 'rgba(15,23,42,0.55)'; ctx.fill();
+  // headlights
+  ctx.fillStyle = 'rgba(254,249,195,0.95)';
+  ctx.beginPath(); ctx.arc(-5, -15.5, 1.8, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(5, -15.5, 1.8, 0, 7); ctx.fill();
+  ctx.restore();
+}
+
+function frame() {
+  if (needsDraw) { needsDraw = false; draw(); }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ------------------------------ gestures ------------------------------- */
+
+var pointers = {}, lastPinch = null, lastTap = 0;
+canvas.addEventListener('pointerdown', function (e) {
+  pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+  canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
+  var now = Date.now();
+  if (Object.keys(pointers).length === 1) {
+    if (now - lastTap < 300) { zoomAt(e.clientX, e.clientY, 1); lastTap = 0; }
+    else lastTap = now;
+  }
+});
+canvas.addEventListener('pointermove', function (e) {
+  var p = pointers[e.pointerId];
+  if (!p) return;
+  var ids = Object.keys(pointers);
+  if (ids.length === 1) {
+    var dx = e.clientX - p.x, dy = e.clientY - p.y;
+    if (Math.abs(dx) + Math.abs(dy) > 1) {
+      breakFollow();
+      var cos = Math.cos(-view.rot), sin = Math.sin(-view.rot);
+      var wx = dx * cos - dy * sin, wy = dx * sin + dy * cos;
+      var c = worldOf(view);
+      var np = A.worldToLonLat({ x: c.x - wx, y: c.y - wy }, view.zoom);
+      view.lat = np.lat; view.lon = np.lon;
+      needsDraw = true; lastTap = 0;
+    }
+  } else if (ids.length === 2) {
+    var q = pointers[ids[0] === String(e.pointerId) ? ids[1] : ids[0]];
+    var dist = Math.hypot(e.clientX - q.x, e.clientY - q.y);
+    if (lastPinch) {
+      var mid = { x: (e.clientX + q.x) / 2, y: (e.clientY + q.y) / 2 };
+      zoomAt(mid.x, mid.y, Math.log2(dist / lastPinch));
+    }
+    lastPinch = dist; lastTap = 0;
+  }
+  pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+});
+function endPointer(e) {
+  var moved = !pointers[e.pointerId] ? true : null;
+  delete pointers[e.pointerId];
+  if (Object.keys(pointers).length < 2) lastPinch = null;
+}
+canvas.addEventListener('pointerup', function (e) {
+  var p = pointers[e.pointerId];
+  endPointer(e);
+  // a clean tap (no drag) drops a pin
+  if (p && lastTap && Date.now() - lastTap < 280 && Math.abs(e.clientX - p.x) < 6 && Math.abs(e.clientY - p.y) < 6) {
+    if (!view.navMode) tapMap(e.clientX, e.clientY);
+  }
+});
+canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('wheel', function (e) {
+  e.preventDefault();
+  zoomAt(e.clientX, e.clientY, -e.deltaY / 340);
+}, { passive: false });
+
+function zoomAt(sx, sy, dz) {
+  var before = fromScreen({ x: sx, y: sy });
+  view.zoom = Math.max(2.2, Math.min(19.4, view.zoom + dz));
+  var after = fromScreen({ x: sx, y: sy });
+  view.lat += before.lat - after.lat;
+  view.lon += before.lon - after.lon;
+  needsDraw = true;
+}
+function breakFollow() {
+  if (view.follow) { view.follow = false; updateLocateBtn(); apply3d(); }
+}
+
+$('btnZoomIn').addEventListener('click', function () { view.zoom = Math.min(19.4, view.zoom + 1); needsDraw = true; });
+$('btnZoomOut').addEventListener('click', function () { view.zoom = Math.max(2.2, view.zoom - 1); needsDraw = true; });
+$('btnCompass').addEventListener('click', function () {
+  view.rot = 0; $('btnCompass').style.display = 'none'; needsDraw = true;
+});
+$('btnLayers').addEventListener('click', function () {
+  $('layersCard').classList.toggle('show');
+});
+
+/** 3D drive view: tilt the map plane while navigating + following. */
+function apply3d() {
+  var on = settings.view3d === 'on' && view.navMode && view.follow;
+  canvas.classList.toggle('threeD', on);
+}
+
+function updateAttribution() {
+  $('attribution').innerHTML = settings.baseLayer === 'sat'
+    ? 'Imagery © Esri, Maxar, Earthstar Geographics'
+    : '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors · © <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>';
+}
+
+/* ================================= GPS ================================== */
+
+var gps = { fix: null, watchId: null, denied: false };
+function startGps() {
+  if (!navigator.geolocation || gps.watchId !== null) return;
+  gps.watchId = navigator.geolocation.watchPosition(function (pos) {
+    var c = pos.coords;
+    gps.fix = { lat: c.latitude, lon: c.longitude, acc: c.accuracy,
+      speed: (typeof c.speed === 'number' && isFinite(c.speed) && c.speed >= 0) ? c.speed : null,
+      heading: (typeof c.heading === 'number' && isFinite(c.heading)) ? c.heading : gps.fix && gps.fix.heading };
+    if (view.follow) glueCamera();
+    if (nav.active && !nav.demo) onNavFix(gps.fix);
+    needsDraw = true;
+  }, function () {
+    gps.denied = true;
+    toast('Location unavailable — search a place or try the demo drive');
+  }, { enableHighAccuracy: true, maximumAge: 2000, timeout: 15000 });
+}
+function glueCamera() {
+  if (!gps.fix && !nav.demo) return;
+  var p = nav.demo ? nav.simPos : gps.fix;
+  if (!p) return;
+  view.lat = p.lat; view.lon = p.lon;
+  if (view.navMode && typeof p.heading === 'number' && isFinite(p.heading)) {
+    // ease the rotation toward heading-up
+    var target = -p.heading * Math.PI / 180;
+    var d = target - view.rot;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    view.rot += d * 0.35;
+    $('btnCompass').style.display = Math.abs(view.rot) > 0.02 ? 'flex' : 'none';
+  }
+  needsDraw = true;
+}
+$('btnLocate').addEventListener('click', function () {
+  startGps();
+  if (gps.fix) {
+    view.follow = true; view.zoom = Math.max(view.zoom, 15.5);
+    glueCamera(); updateLocateBtn(); apply3d();
+  } else if (gps.denied) toast('Location permission is blocked for this site');
+  else toast('Finding you…');
+});
+function updateLocateBtn() { $('btnLocate').style.opacity = view.follow ? '1' : '0.85'; }
+
+/* =============================== networking ============================== */
+
+var ROUTERS = {
+  car: ['https://routing.openstreetmap.de/routed-car/route/v1/driving/', 'https://router.project-osrm.org/route/v1/driving/'],
+  bike: ['https://routing.openstreetmap.de/routed-bike/route/v1/cycling/'],
+  foot: ['https://routing.openstreetmap.de/routed-foot/route/v1/walking/'],
+};
+
+function fetchJson(url) {
+  return fetch(url, { headers: { 'Accept': 'application/json' } }).then(function (r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  });
+}
+
+function fetchRoute(from, to, profile) {
+  var coords = from.lon.toFixed(6) + ',' + from.lat.toFixed(6) + ';' + to.lon.toFixed(6) + ',' + to.lat.toFixed(6);
+  var qs = '?alternatives=true&overview=full&steps=true&geometries=polyline';
+  var urls = ROUTERS[profile] || ROUTERS.car;
+  var attempt = function (i) {
+    if (i >= urls.length) return Promise.reject(new Error('all routers failed'));
+    return fetchJson(urls[i] + coords + qs).then(function (json) {
+      if (json.code !== 'Ok' || !json.routes || !json.routes.length) throw new Error(json.code || 'no route');
+      return json.routes;
+    }).catch(function (err) { return i + 1 < urls.length ? attempt(i + 1) : Promise.reject(err); });
+  };
+  return attempt(0);
+}
+
+function geocode(q) {
+  var url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=0&limit=8&q=' + encodeURIComponent(q);
+  return fetchJson(url).then(function (rows) {
+    return rows.map(function (r) {
+      var parts = (r.display_name || '').split(',');
+      return { name: parts[0].trim(), addr: parts.slice(1).join(',').trim(),
+               lat: parseFloat(r.lat), lon: parseFloat(r.lon) };
+    });
+  });
+}
+
+/* Speed limits + fixed speed cameras along the route, from OpenStreetMap via
+   Overpass. The corridor is the route itself (sampled), so we only pull data
+   for roads you'll actually drive. Fails silently offline — guidance never
+   depends on it. */
+var OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+function fetchSafetyData(route) {
+  var pts = [];
+  var step = Math.max(120, route.totalM / 160);
+  for (var m = 0; m <= route.totalM; m += step) {
+    var p = A.pointAtAlong(route, m);
+    pts.push(p.lat.toFixed(5) + ',' + p.lon.toFixed(5));
+  }
+  var chain = pts.join(',');
+  var q = '[out:json][timeout:15];(way["maxspeed"](around:25,' + chain + ');' +
+          'node["highway"="speed_camera"](around:60,' + chain + '););out geom 800;';
+  var attempt = function (i) {
+    if (i >= OVERPASS.length) return Promise.reject(new Error('overpass unavailable'));
+    return fetch(OVERPASS[i], {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'data=' + encodeURIComponent(q),
+    }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .catch(function (err) { return i + 1 < OVERPASS.length ? attempt(i + 1) : Promise.reject(err); });
+  };
+  return attempt(0).then(function (json) {
+    var ways = [], cams = [];
+    (json.elements || []).forEach(function (el) {
+      if (el.type === 'way' && el.tags && el.geometry) {
+        var kmh = A.parseMaxspeed(el.tags.maxspeed);
+        if (kmh != null) ways.push({ kmh: kmh, geometry: el.geometry.map(function (g) { return { lat: g.lat, lon: g.lon }; }) });
+      } else if (el.type === 'node' && el.tags && el.tags.highway === 'speed_camera') {
+        cams.push({ lat: el.lat, lon: el.lon, kmh: A.parseMaxspeed(el.tags.maxspeed) });
+      }
+    });
+    return { limits: A.mapLimitsToRoute(route, ways), cameras: A.mapCamerasToRoute(route, cams) };
+  });
+}
+
+/* 🚦 live traffic. Keyless first: TfL's open disruption feed covers Greater
+   London; a TomTom key in config.js covers the world. Everything is filtered
+   to the routes' bounding box, normalised to {points, sev, kind, text,
+   delayS?} and handed to the engine for snapping + delay arithmetic. */
+
+function routesBbox(routes) {
+  var b = { minLat: 90, maxLat: -90, minLon: 180, maxLon: -180 };
+  routes.forEach(function (r) {
+    r.geometry.forEach(function (p) {
+      b.minLat = Math.min(b.minLat, p.lat); b.maxLat = Math.max(b.maxLat, p.lat);
+      b.minLon = Math.min(b.minLon, p.lon); b.maxLon = Math.max(b.maxLon, p.lon);
+    });
+  });
+  return b;
+}
+function geoPoints(g) {
+  if (!g || !g.coordinates) return [];
+  var c = g.coordinates, pts = [];
+  if (g.type === 'Point') pts = [c];
+  else if (g.type === 'LineString') pts = c;
+  else if (g.type === 'Polygon' || g.type === 'MultiLineString') pts = [].concat.apply([], c);
+  else return [];
+  var out = [];
+  var step = Math.max(1, Math.floor(pts.length / 12)); // cap 12 points/incident
+  for (var i = 0; i < pts.length; i += step) {
+    if (typeof pts[i][0] === 'number') out.push({ lat: pts[i][1], lon: pts[i][0] });
+  }
+  return out;
+}
+function inBbox(pts, b, pad) {
+  for (var i = 0; i < pts.length; i++) {
+    if (pts[i].lat >= b.minLat - pad && pts[i].lat <= b.maxLat + pad &&
+        pts[i].lon >= b.minLon - pad && pts[i].lon <= b.maxLon + pad) return true;
+  }
+  return false;
+}
+
+function fetchTraffic(routes) {
+  if (settings.traffic !== 'on' || !routes.length) return Promise.resolve([]);
+  var b = routesBbox(routes), pad = 0.02;
+  var key = window.ATLAS_TOMTOM_KEY;
+  if (key) {
+    var bbox = (b.minLon - pad) + ',' + (b.minLat - pad) + ',' + (b.maxLon + pad) + ',' + (b.maxLat + pad);
+    var url = 'https://api.tomtom.com/traffic/services/5/incidentDetails?key=' + encodeURIComponent(key) +
+      '&bbox=' + bbox + '&fields=' + encodeURIComponent('{incidents{geometry{type,coordinates},properties{iconCategory,magnitudeOfDelay,delay,events{description}}}}');
+    return fetchJson(url).then(function (json) {
+      return (json.incidents || []).map(function (inc) {
+        var p = inc.properties || {};
+        var KINDS = { 1: 'Accident', 6: 'Traffic jam', 7: 'Lane closed', 8: 'Road closed', 9: 'Roadworks', 14: 'Broken-down vehicle' };
+        return { points: geoPoints(inc.geometry), sev: Math.max(1, Math.min(4, p.magnitudeOfDelay || 2)),
+          kind: KINDS[p.iconCategory] || 'Incident', delayS: p.delay,
+          text: (p.events && p.events[0] && p.events[0].description) || '' };
+      }).filter(function (i) { return i.points.length; });
+    }).catch(function () { return []; });
+  }
+  // keyless: TfL open data — Greater London only
+  var LONDON = { minLat: 51.25, maxLat: 51.72, minLon: -0.55, maxLon: 0.35 };
+  if (b.maxLat < LONDON.minLat || b.minLat > LONDON.maxLat ||
+      b.maxLon < LONDON.minLon || b.minLon > LONDON.maxLon) return Promise.resolve([]);
+  return fetchJson('https://api.tfl.gov.uk/Road/All/Disruption').then(function (rows) {
+    return (rows || []).map(function (d) {
+      var pts = geoPoints(d.geography || d.geometry);
+      var sevT = String(d.severity || '');
+      var sev = /severe|serious/i.test(sevT) ? 4 : /moderate/i.test(sevT) ? 3 : /minimal|minor/i.test(sevT) ? 1 : 2;
+      return { points: pts, sev: sev, kind: d.category || 'Incident',
+               text: String(d.location || d.comments || '').slice(0, 140) };
+    }).filter(function (i) { return i.points.length && inBbox(i.points, b, pad); });
+  }).catch(function () { return []; });
+}
+
+/** Current typical-traffic factor from the local clock. */
+function trafficFactorNow() {
+  var d = new Date();
+  return A.typicalTrafficFactor(d.getHours() + d.getMinutes() / 60, d.getDay());
+}
+
+/** Attach engine traffic views to routes; sync typical-only, async incidents. */
+function applyTraffic(routes, onUpdate) {
+  var factor = settings.traffic === 'on' ? trafficFactorNow() : 1;
+  routes.forEach(function (r) { r.traffic = { mapped: [], factor: factor, adj: A.trafficAdjust(r, [], factor) }; });
+  fetchTraffic(routes).then(function (incidents) {
+    if (!incidents.length) return;
+    routes.forEach(function (r) {
+      var mapped = A.mapIncidentsToRoute(r, incidents);
+      r.traffic = { mapped: mapped, factor: factor, adj: A.trafficAdjust(r, mapped, factor) };
+    });
+    if (onUpdate) onUpdate();
+  });
+}
+
+/* Bundled safety data for the demo drive (central London really is 20 mph —
+   and the sim drives at ~47 km/h, so the overspeed warning demos itself). */
+function demoSafety(route) {
+  var g = route.geometry;
+  var ways = [
+    { kmh: A.parseMaxspeed('30 mph'), geometry: g.slice(0, 8) },   // Constitution Hill
+    { kmh: A.parseMaxspeed('20 mph'), geometry: g.slice(10, 18) }, // The Mall
+  ];
+  var camSpot = A.destinationPoint(g[14], 90, 8);
+  var cams = [{ lat: camSpot.lat, lon: camSpot.lon, kmh: A.parseMaxspeed('20 mph') }];
+  return { limits: A.mapLimitsToRoute(route, ways), cameras: A.mapCamerasToRoute(route, cams) };
+}
+
+function reverseGeocode(p) {
+  var url = 'https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=17&lat=' + p.lat + '&lon=' + p.lon;
+  return fetchJson(url).then(function (r) {
+    var parts = (r.display_name || '').split(',');
+    return { name: parts[0] ? parts[0].trim() : 'Dropped pin', addr: parts.slice(1, 4).join(',').trim() };
+  });
+}
+
+/* ============================== demo route =============================== */
+/* A real London drive — Wellington Arch to Trafalgar Square via the Victoria
+   Memorial roundabout and The Mall — bundled so Atlas works with no network
+   and no GPS. OSRM-shaped, fed through the same buildRoute as live routes. */
+
+var DEMO_OSRM = (function () {
+  var g = [
+    [-0.15080, 51.50255], [-0.14900, 51.50245], [-0.14700, 51.50230], [-0.14500, 51.50215],
+    [-0.14330, 51.50200], [-0.14250, 51.50193], [-0.14208, 51.50190],
+    [-0.14170, 51.50173], [-0.14140, 51.50180], [-0.14125, 51.50200], [-0.14135, 51.50218],
+    [-0.14100, 51.50232], [-0.13900, 51.50290], [-0.13650, 51.50360], [-0.13400, 51.50430],
+    [-0.13150, 51.50500], [-0.12980, 51.50560], [-0.12905, 51.50625],
+    [-0.12860, 51.50665], [-0.12820, 51.50700], [-0.12790, 51.50735],
+  ];
+  return {
+    geometry: { coordinates: g },
+    distance: 1800, duration: 260,
+    legs: [{ steps: [
+      { name: 'Constitution Hill', distance: 610, duration: 75,
+        maneuver: { location: g[0], type: 'depart', bearing_after: 96 } },
+      { name: 'The Mall', distance: 160, duration: 25, exit: 2,
+        maneuver: { location: g[6], type: 'roundabout', exit: 2 },
+        intersections: [{ lanes: [
+          { indications: ['left'], valid: false },
+          { indications: ['straight'], valid: true },
+          { indications: ['right'], valid: false },
+        ] }] },
+      { name: 'The Mall', distance: 850, duration: 110,
+        maneuver: { location: g[11], type: 'exit roundabout' } },
+      { name: 'Trafalgar Square', distance: 180, duration: 40,
+        maneuver: { location: g[17], type: 'turn', modifier: 'slight left' } },
+      { name: '', distance: 0, duration: 0,
+        maneuver: { location: g[g.length - 1], type: 'arrive', modifier: 'right' } },
+    ] }],
+  };
+})();
+var DEMO_DEST = { name: 'Trafalgar Square', addr: 'Westminster, London', lat: 51.50735, lon: -0.12790 };
+
+/* ============================== trip state =============================== */
+
+var trip = { dest: null, routes: [], selected: 0, profile: 'car', demoOnly: false };
+var nav = { active: false, demo: false, guide: null, route: null, simState: null,
+            simTimer: null, simPos: null, lastReroute: 0, wakeLock: null };
+var tapPoint = null;
+
+/* ------------------------------ sheets ---------------------------------- */
+
+function openSheet(id) {
+  ['searchSheet', 'routeSheet', 'settingsSheet', 'clipsSheet', 'convoySheet', 'musicSheet'].forEach(function (s) {
+    $(s).classList.toggle('open', s === id);
+  });
+}
+function closeSheets() { openSheet(null); }
+
+$('searchPill').addEventListener('click', function () {
+  openSheet('searchSheet');
+  renderResults([], '');
+  setTimeout(function () { $('searchInput').focus(); }, 250);
+});
+$('searchCancel').addEventListener('click', function () { $('searchInput').value = ''; closeSheets(); });
+$('btnSettings').addEventListener('click', function () { openSheet('settingsSheet'); refreshClipsSub(); refreshOfflineSub(); });
+$('btnCloseSettings').addEventListener('click', closeSheets);
+$('btnCloseRoute').addEventListener('click', function () { clearTrip(); closeSheets(); });
+
+/* ------------------------------- search --------------------------------- */
+
+var searchTimer = 0;
+$('searchInput').addEventListener('input', function () {
+  var q = $('searchInput').value;
+  clearTimeout(searchTimer);
+  var local = A.rankPlaces(places.concat(recents), q, Date.now());
+  renderResults(local, q, true);
+  var coord = A.parseCoord(q);
+  if (coord) {
+    renderResults([{ name: 'Go to ' + q.trim(), addr: 'Coordinates', lat: coord.lat, lon: coord.lon }].concat(local), q);
+    return;
+  }
+  if (q.trim().length < 3) return;
+  searchTimer = setTimeout(function () {
+    geocode(q).then(function (rows) {
+      if ($('searchInput').value !== q) return; // stale
+      renderResults(local.concat(rows), q);
+    }).catch(function () {
+      renderResults(local, q);
+      if (!local.length) toast('Search needs a network connection');
+    });
+  }, 350);
+});
+$('searchInput').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') {
+    var first = $('searchResults').querySelector('.result');
+    if (first) first.click();
+  }
+});
+
+function isFav(p) {
+  return places.some(function (x) { return !x.kind && Math.abs(x.lat - p.lat) < 1e-6 && Math.abs(x.lon - p.lon) < 1e-6; });
+}
+function renderResults(list, q, loading) {
+  var box = $('searchResults');
+  box.innerHTML = '';
+  if (!q) {
+    var saved = A.rankPlaces(places, '', Date.now());
+    var rec = recents.slice(0, 6);
+    if (saved.length) { addTitle(box, 'Saved'); saved.forEach(function (p) { box.appendChild(resultRow(p)); }); }
+    if (rec.length) { addTitle(box, 'Recent'); rec.forEach(function (p) { box.appendChild(resultRow(p)); }); }
+    if (!saved.length && !rec.length) {
+      addTitle(box, 'Tip');
+      var tip = document.createElement('div');
+      tip.style.cssText = 'color:var(--dim);padding:10px 6px;font-size:13.5px';
+      tip.textContent = 'Search any place on Earth, tap the map to drop a pin, or try the 🚗 demo drive — it works offline.';
+      box.appendChild(tip);
+    }
+    return;
+  }
+  list.slice(0, 14).forEach(function (p) { box.appendChild(resultRow(p)); });
+  if (loading && q.trim().length >= 3) {
+    var ld = document.createElement('div');
+    ld.style.cssText = 'color:var(--dim);padding:10px 6px;font-size:12.5px';
+    ld.textContent = 'Searching…';
+    box.appendChild(ld);
+  }
+}
+function addTitle(box, t) {
+  var el = document.createElement('div');
+  el.className = 'sectionTitle'; el.textContent = t;
+  box.appendChild(el);
+}
+function resultRow(p) {
+  var b = document.createElement('button');
+  b.className = 'result';
+  var icon = p.kind === 'home' ? '🏠' : p.kind === 'work' ? '💼' : p.kind === 'parked' ? '🅿️' : '📍';
+  b.innerHTML = '<div class="ic">' + icon + '</div>' +
+    '<div style="flex:1;min-width:0"><div class="nm"></div><div class="ad"></div></div>' +
+    '<span class="heart' + (isFav(p) ? ' on' : '') + '">' + (isFav(p) ? '♥' : '♡') + '</span>';
+  b.querySelector('.nm').textContent = p.name || 'Unknown';
+  b.querySelector('.ad').textContent = p.addr || '';
+  b.querySelector('.heart').addEventListener('click', function (e) {
+    e.stopPropagation();
+    toggleFav(p);
+    renderResults([], $('searchInput').value || '');
+    if ($('searchInput').value) $('searchInput').dispatchEvent(new Event('input'));
+  });
+  b.addEventListener('click', function () { chooseDestination(p); });
+  return b;
+}
+function toggleFav(p) {
+  var i = places.findIndex(function (x) { return !x.kind && Math.abs(x.lat - p.lat) < 1e-6 && Math.abs(x.lon - p.lon) < 1e-6; });
+  if (i >= 0) { places.splice(i, 1); toast('Removed from saved'); }
+  else { places.push({ name: p.name, addr: p.addr, lat: p.lat, lon: p.lon, uses: 1, lastUsed: Date.now() }); toast('Saved ♥'); }
+  persistPlaces();
+}
+
+/* home / work / demo chips */
+function chipHandler(kind, label, emoji) {
+  return function () {
+    var p = places.find(function (x) { return x.kind === kind; });
+    if (p) { chooseDestination(p); return; }
+    var q = $('searchInput').value.trim();
+    var setFrom = function (src, name, addr) {
+      places = places.filter(function (x) { return x.kind !== kind; });
+      places.push({ name: label, addr: (name ? name + ', ' : '') + (addr || ''), lat: src.lat, lon: src.lon,
+        kind: kind, uses: 1, lastUsed: Date.now() });
+      persistPlaces();
+      toast(emoji + ' ' + label + ' saved — tap it any time');
+      renderResults([], '');
+    };
+    if (gps.fix) setFrom(gps.fix, 'Current location', '');
+    else if (q.length >= 3) {
+      geocode(q).then(function (rows) {
+        if (rows[0]) setFrom(rows[0], rows[0].name, rows[0].addr);
+        else toast('Search for your ' + label.toLowerCase() + ' first, then tap ' + emoji);
+      }).catch(function () { toast('Type your ' + label.toLowerCase() + ' address above first'); });
+    } else toast('Type your ' + label.toLowerCase() + ' address above, then tap ' + emoji + ' to save it');
+  };
+}
+$('chipHome').addEventListener('click', chipHandler('home', 'Home', '🏠'));
+$('chipWork').addEventListener('click', chipHandler('work', 'Work', '💼'));
+$('chipDemo').addEventListener('click', function () { startDemoTrip(); });
+
+/* ------------------------------ tap-to-pin ------------------------------ */
+
+function tapMap(sx, sy) {
+  var p = fromScreen({ x: sx, y: sy });
+  tapPoint = { lat: p.lat, lon: p.lon };
+  $('tapName').textContent = 'Dropped pin';
+  $('tapCoord').textContent = p.lat.toFixed(5) + ', ' + p.lon.toFixed(5);
+  $('tapCard').classList.add('show');
+  needsDraw = true;
+  reverseGeocode(p).then(function (r) {
+    if (tapPoint && Math.abs(tapPoint.lat - p.lat) < 1e-9) $('tapName').textContent = r.name;
+  }).catch(function () {});
+}
+$('tapClose').addEventListener('click', function () {
+  tapPoint = null; $('tapCard').classList.remove('show'); needsDraw = true;
+});
+$('tapGo').addEventListener('click', function () {
+  if (!tapPoint) return;
+  var p = { name: $('tapName').textContent, addr: $('tapCoord').textContent, lat: tapPoint.lat, lon: tapPoint.lon };
+  tapPoint = null; $('tapCard').classList.remove('show');
+  chooseDestination(p);
+});
+
+/* ============================ route preview ============================== */
+
+function chooseDestination(p) {
+  trip.dest = p; trip.demoOnly = false;
+  // bump recents
+  recents = recents.filter(function (x) { return x.name !== p.name || Math.abs(x.lat - p.lat) > 1e-6; });
+  recents.unshift({ name: p.name, addr: p.addr, lat: p.lat, lon: p.lon, uses: (p.uses || 0) + 1, lastUsed: Date.now() });
+  persistRecents();
+  if (p.kind || p.uses) { p.uses = (p.uses || 0) + 1; p.lastUsed = Date.now(); persistPlaces(); }
+  $('destName').textContent = p.name || 'Destination';
+  $('destAddr').textContent = p.addr || '';
+  $('searchPillText').textContent = p.name || 'Where to?';
+  openSheet('routeSheet');
+  requestRoutes();
+}
+
+function requestRoutes() {
+  var from = gps.fix;
+  trip.routes = []; trip.selected = 0;
+  $('altList').innerHTML = '';
+  needsDraw = true;
+  if (!trip.dest) return;
+  if (!from) {
+    startGps();
+    $('routeStatus').className = '';
+    $('routeStatus').textContent = gps.denied
+      ? 'No location — routing from the map centre instead'
+      : 'Waiting for your location… (or route from the map centre)';
+    from = { lat: view.lat, lon: view.lon };
+  } else {
+    $('routeStatus').className = '';
+    $('routeStatus').textContent = 'Finding the best routes…';
+  }
+  var dest = trip.dest, profile = trip.profile;
+  fetchRoute(from, dest, profile).then(function (routes) {
+    if (trip.dest !== dest || trip.profile !== profile) return; // stale
+    trip.routes = routes.map(function (r) { return A.buildRoute(r); });
+    trip.selected = 0;
+    trip.raw = routes;
+    $('routeStatus').textContent = '';
+    applyTraffic(trip.routes, function () {
+      if (trip.dest !== dest) return;
+      renderAlternatives(trip.raw);
+      needsDraw = true;
+    });
+    renderAlternatives(routes);
+    fitRoute(trip.routes[0]);
+  }).catch(function () {
+    if (trip.dest !== dest) return;
+    $('routeStatus').className = 'err';
+    $('routeStatus').textContent = 'Routing unavailable (offline?) — the 🚗 demo drive below always works.';
+  });
+}
+
+function renderAlternatives(rawRoutes) {
+  var box = $('altList');
+  box.innerHTML = '';
+  trip.routes.forEach(function (r, i) {
+    var b = document.createElement('button');
+    b.className = 'altCard' + (i === trip.selected ? ' on' : '');
+    var raw = rawRoutes && rawRoutes[i];
+    var via = raw && raw.legs && raw.legs[0] && raw.legs[0].summary ? 'via ' + raw.legs[0].summary : (i === 0 ? 'fastest' : 'alternative');
+    if (!r.glare) { try { r.glare = A.glareSegments(r, Date.now()); } catch (e) { r.glare = []; } }
+    var glareS = r.glare.reduce(function (a, s) { return a + s.durS; }, 0);
+    var tr = r.traffic;
+    var pacedS = (tr ? tr.adj.durS : r.totalS) * paceOf();
+    // is this the fastest once traffic is counted?
+    var minIdx = 0, anyDelay = false;
+    trip.routes.forEach(function (x, xi) {
+      var xd = (x.traffic ? x.traffic.adj.durS : x.totalS);
+      if (xd < (trip.routes[minIdx].traffic ? trip.routes[minIdx].traffic.adj.durS : trip.routes[minIdx].totalS)) minIdx = xi;
+      if (x.traffic && x.traffic.adj.delayS > 0) anyDelay = true;
+    });
+    b.innerHTML = '<div><div class="tm"></div><div class="ds"></div></div><div class="tag"></div>';
+    b.querySelector('.tm').textContent = A.fmtDur(pacedS);
+    b.querySelector('.ds').textContent = A.fmtDist(r.totalM, settings.units) + ' · arrive ' + A.etaClock(Date.now(), pacedS) +
+      (tr && tr.adj.delayS >= 60 ? ' · ⚠ +' + A.fmtDur(tr.adj.delayS) + ' traffic' : '') +
+      (glareS >= 45 ? ' · 🌅 ' + A.fmtDur(glareS) + ' low sun' : '');
+    b.querySelector('.tag').textContent = (anyDelay && i === minIdx && trip.routes.length > 1 ? '🚦 fastest now · ' : '') + via;
+    b.addEventListener('click', function () {
+      trip.selected = i;
+      renderAlternatives(rawRoutes);
+      fitRoute(r);
+    });
+    box.appendChild(b);
+  });
+  offlineBtnDefault();
+}
+
+/* ------------------------- 🗺 offline map packs -------------------------- */
+/* Download the route's map corridor (z12–17, day + night styles) into a
+   durable cache the tile trimmer never touches — guidance, snapping and
+   voice already run on-device, so a saved route navigates with no signal.
+   Honest limits: re-routing and search still need a connection. */
+
+var OFFLINE_CACHE_NAME = 'atlas-offline-v1';
+var offlineBusy = false;
+
+function offlineBtnDefault() {
+  var route = trip.routes[trip.selected];
+  var btn = $('btnOffline');
+  if (!route) { btn.textContent = '⬇ Save this route for offline'; return; }
+  var plan = A.corridorTiles(route, { minZ: 12, maxZ: 17, bufferM: 260, cap: 1200 });
+  btn.textContent = '⬇ Save this route for offline · ~' + A.packEstimateMB(plan.tiles.length, 2, 30) + ' MB';
+}
+
+$('btnOffline').addEventListener('click', function () {
+  var route = trip.routes[trip.selected];
+  if (!route || offlineBusy) return;
+  if (!window.caches || !caches.open) { toast('Offline storage is not available in this browser'); return; }
+  offlineBusy = true;
+  var dayLayer = settings.baseLayer === 'positron' ? 'pos' : 'voy';
+  var plan = A.corridorTiles(route, { minZ: 12, maxZ: 17, bufferM: 260, cap: 1200 });
+  var urls = [];
+  [dayLayer, 'dark'].forEach(function (ly) {
+    plan.tiles.forEach(function (t) { urls.push(TILE_URL(ly, t.z, t.x, t.y)); });
+  });
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+  var btn = $('btnOffline'), done = 0, failed = 0, i = 0;
+  caches.open(OFFLINE_CACHE_NAME).then(function (cache) {
+    function worker() {
+      if (i >= urls.length) return Promise.resolve();
+      var url = urls[i++];
+      return fetch(url, { mode: 'cors' })
+        .then(function (resp) { if (resp.ok) return cache.put(url, resp); failed++; })
+        .catch(function () { failed++; })
+        .then(function () {
+          done++;
+          if (done % 25 === 0 || done === urls.length) {
+            btn.textContent = '⬇ Downloading maps… ' + Math.round(done / urls.length * 100) + '%';
+          }
+          return worker();
+        });
+    }
+    var lanes = [];
+    for (var k = 0; k < 6; k++) lanes.push(worker());
+    return Promise.all(lanes);
+  }).then(function () {
+    offlineBusy = false;
+    var ok = urls.length - failed;
+    if (!ok) {
+      offlineBtnDefault();
+      toast('Offline download failed — check your connection and try again');
+      return;
+    }
+    btn.textContent = '✓ Saved for offline · ' + ok + ' tiles' + (plan.truncated ? ' (long route — trimmed)' : '');
+    toast('🗺 Route saved offline — map, guidance and voice now work with no signal. Search and re-routing still need a connection.' + (failed ? ' (' + failed + ' tiles skipped)' : ''));
+  }).catch(function () {
+    offlineBusy = false;
+    offlineBtnDefault();
+    toast('Offline download failed');
+  });
+});
+
+function refreshOfflineSub() {
+  if (!window.caches || !caches.open) { $('offlineSub').textContent = 'Not available in this browser'; return; }
+  caches.open(OFFLINE_CACHE_NAME).then(function (c) { return c.keys(); }).then(function (keys) {
+    $('offlineSub').textContent = keys.length
+      ? keys.length + ' map tiles stored on this device'
+      : 'Save a route\'s maps from its preview screen';
+  }).catch(function () {});
+}
+$('btnClearOffline').addEventListener('click', function () {
+  if (!window.caches || !caches.delete) return;
+  caches.delete(OFFLINE_CACHE_NAME).then(function () {
+    toast('Offline maps cleared');
+    refreshOfflineSub();
+  }).catch(function () {});
+});
+
+Array.prototype.forEach.call(document.querySelectorAll('.profileBtn'), function (b) {
+  b.addEventListener('click', function () {
+    Array.prototype.forEach.call(document.querySelectorAll('.profileBtn'), function (x) { x.classList.remove('on'); });
+    b.classList.add('on');
+    trip.profile = b.getAttribute('data-profile');
+    requestRoutes();
+  });
+});
+
+/** Frame the whole route on screen. */
+function fitRoute(route) {
+  if (!route) return;
+  var minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
+  route.geometry.forEach(function (p) {
+    minLat = Math.min(minLat, p.lat); maxLat = Math.max(maxLat, p.lat);
+    minLon = Math.min(minLon, p.lon); maxLon = Math.max(maxLon, p.lon);
+  });
+  view.rot = 0; view.navMode = false; view.follow = false;
+  view.lat = (minLat + maxLat) / 2; view.lon = (minLon + maxLon) / 2;
+  for (var z = 18; z >= 3; z -= 0.25) {
+    view.zoom = z;
+    var a = A.lonLatToWorld({ lat: maxLat, lon: minLon }, z);
+    var b = A.lonLatToWorld({ lat: minLat, lon: maxLon }, z);
+    if (Math.abs(b.x - a.x) < W * 0.8 && Math.abs(b.y - a.y) < H * 0.45) break;
+  }
+  needsDraw = true;
+}
+
+function clearTrip() {
+  trip.dest = null; trip.routes = []; trip.selected = 0;
+  $('searchPillText').textContent = 'Where to?';
+  needsDraw = true;
+}
+
+/* ============================== navigation =============================== */
+
+$('btnGo').addEventListener('click', function () { if (trip.routes.length) startNav(false); });
+$('btnDemo').addEventListener('click', function () {
+  if (trip.demoOnly || !trip.routes.length) startDemoTrip(true);
+  else startNav(true);
+});
+
+function startDemoTrip(andGo) {
+  trip.dest = DEMO_DEST; trip.demoOnly = true; trip.profile = 'car';
+  trip.routes = [A.buildRoute(DEMO_OSRM)];
+  trip.selected = 0;
+  trip.raw = null;
+  // bundled demo incident: roadworks on The Mall — traffic demos offline too
+  (function (route) {
+    var spot = A.destinationPoint(route.geometry[13], 90, 6);
+    var mapped = A.mapIncidentsToRoute(route, [{ points: [spot], sev: 2, kind: 'Roadworks',
+      text: 'Roadworks — one lane closed' }]);
+    var factor = settings.traffic === 'on' ? trafficFactorNow() : 1;
+    route.traffic = { mapped: settings.traffic === 'on' ? mapped : [], factor: factor,
+                      adj: A.trafficAdjust(route, settings.traffic === 'on' ? mapped : [], factor) };
+  })(trip.routes[0]);
+  $('destName').textContent = DEMO_DEST.name;
+  $('destAddr').textContent = DEMO_DEST.addr + ' · bundled demo route';
+  $('searchPillText').textContent = DEMO_DEST.name;
+  $('routeStatus').className = '';
+  $('routeStatus').textContent = '';
+  renderAlternatives(null);
+  fitRoute(trip.routes[0]);
+  openSheet('routeSheet');
+  if (andGo) startNav(true);
+}
+
+function startNav(demo) {
+  var route = trip.routes[trip.selected];
+  if (!route) return;
+  nav.active = true; nav.demo = !!demo; nav.route = route;
+  nav.guide = A.startGuidance();
+  nav.lastReroute = Date.now();
+  // 📼 flight recorder + ⏱ personal pace + 🏁 co-driver + 🛰 ghost mode state
+  nav.track = A.newTrack(Date.now());
+  nav.startTs = Date.now(); nav.predictedS = route.totalS;
+  nav.notes = settings.codriver === 'on' ? A.paceNotes(route) : null;
+  nav.noteIdx = 0; nav.noteSpoken = {};
+  nav.lastAlong = 0; nav.lastFixTs = Date.now(); nav.ghostCount = 0; nav.ghosting = false;
+  if (!demo && !nav.ghostTimer) nav.ghostTimer = setInterval(ghostTick, 1000);
+  // 🛣 lane bar + junction views
+  nav.laneSig = ''; nav.junctionCands = A.junctionCandidates(route.steps);
+  nav.junctions = {}; nav.junctionScene = {}; nav.junctionShown = null;
+  if (demo) {
+    // bundled roads around the Victoria Memorial roundabout — demos offline
+    nav.junctionCands.forEach(function (ci) {
+      if (route.steps[ci].type === 'roundabout') nav.junctions[ci] = demoJunctionWays(route, ci);
+    });
+  } else prefetchJunctions(route);
+  // 🚦 traffic view for this route (typical factor + snapped incidents)
+  var rtTraf = route.traffic || { mapped: [], factor: 1 };
+  nav.trafMapped = settings.traffic === 'on' ? rtTraf.mapped : [];
+  nav.trafFactor = settings.traffic === 'on' ? (rtTraf.factor || 1) : 1;
+  nav.trafSpoken = {};
+  // 📷 speed limits + cameras (bundled for the demo, OpenStreetMap live)
+  nav.limits = []; nav.cameras = []; nav.camSpoken = {}; nav.osState = null; nav.lastSafetyTs = Date.now();
+  if (demo) {
+    var ds = demoSafety(route);
+    nav.limits = ds.limits; nav.cameras = ds.cameras;
+  } else {
+    fetchSafetyData(route).then(function (s) {
+      if (nav.active && nav.route === route) { nav.limits = s.limits; nav.cameras = s.cameras; needsDraw = true; }
+    }).catch(function () {});
+  }
+  closeSheets();
+  $('topBar').classList.add('hidden');
+  $('navBanner').classList.add('show');
+  $('navBottom').classList.add('show');
+  $('speedBubble').classList.add('show');
+  $('speedUnit').textContent = settings.units === 'imperial' ? 'mph' : 'km/h';
+  view.navMode = true; view.follow = true;
+  view.zoom = Math.max(view.zoom, 16.5);
+  apply3d();
+  $('layersCard').classList.remove('show');
+  requestWakeLock();
+  var first = route.steps[0];
+  setBanner(first.icon, A.fmtDist(0, settings.units), first.instruction, null);
+  speak(first.instruction);
+  if (demo) {
+    nav.simState = { alongM: 0 };
+    nav.simPos = null;
+    nav.simTimer = setInterval(function () {
+      var f = A.simulateTick(nav.route, nav.simState, 0.25, trip.profile === 'foot' ? 1.6 : trip.profile === 'bike' ? 6 : 13);
+      nav.simState = { alongM: f.alongM };
+      nav.simPos = f;
+      onNavFix({ lat: f.lat, lon: f.lon, speed: f.speed, heading: f.heading });
+      if (view.follow) glueCamera();
+      if (f.done) { clearInterval(nav.simTimer); nav.simTimer = null; }
+    }, 250);
+  } else {
+    startGps();
+    if (gps.fix) glueCamera();
+    else toast('Waiting for GPS… (▶ Demo shows a simulated drive)');
+  }
+  needsDraw = true;
+}
+
+function onNavFix(fix) {
+  if (!nav.active) return;
+  if (!fix.ghost) {
+    nav.lastFixTs = Date.now(); nav.ghostCount = 0;
+    if (nav.ghosting) { nav.ghosting = false; toast('🛰 GPS back'); }
+    if (nav.track) A.trackAdd(nav.track, fix, Date.now());
+  }
+  var r = A.guidanceUpdate(nav.guide, nav.route, fix, { units: settings.units });
+  nav.guide = r.state;
+  nav.lastAlong = r.alongM;
+  nav.lastR = r; // latest guidance snapshot (dashcam overlay reads this)
+
+  // HUD
+  var next = r.nextStep;
+  var pacedRemS = A.remainingWithTraffic(nav.route, r.alongM, nav.trafMapped, nav.trafFactor) * paceOf();
+  setBanner(next.icon, A.fmtDist(r.distToNext, settings.units), next.instruction, followingOf(r));
+  $('navBanner').classList.toggle('offroute', r.offRoute);
+  if (r.offRoute) $('navText').textContent = 'Off route — recalculating…';
+  if (nav.ghosting) { $('navThen').textContent = '🛰 GPS lost — dead reckoning'; $('navThen').classList.add('show'); }
+  $('navEta').textContent = A.etaClock(Date.now(), pacedRemS);
+  $('navMeta').textContent = A.fmtDur(pacedRemS) + ' · ' + A.fmtDist(r.remainingM, settings.units);
+  var v = nav.guide.speed || 0;
+  var shown = settings.units === 'imperial' ? v * 2.23694 : v * 3.6;
+  $('speedVal').textContent = String(Math.round(shown));
+
+  // 🛑 speed-limit sign + overspeed state machine (engine-tested hysteresis)
+  var limitKmh = A.limitAtAlong(nav.limits || [], r.alongM);
+  updateLimitSign(limitKmh);
+  var nowTs = Date.now();
+  var dtS = Math.min(3, Math.max(0.2, (nowTs - (nav.lastSafetyTs || nowTs)) / 1000));
+  nav.lastSafetyTs = nowTs;
+  var os = A.overspeedUpdate(nav.osState, v * 3.6, limitKmh, dtS);
+  nav.osState = os.state;
+  $('speedBubble').classList.toggle('over', os.over);
+
+  // 📷 camera ahead: chip with live distance + one spoken alert per camera
+  var camHit = null;
+  if (settings.cameras === 'on' && nav.cameras && nav.cameras.length && !r.arrived) {
+    var cn = A.cameraNext(nav.cameras, r.alongM);
+    if (cn && cn.distM <= Math.max(450, v * 18)) camHit = cn;
+  }
+  if (camHit) {
+    $('camChip').textContent = '📷 Speed camera · ' + A.fmtDist(camHit.distM, settings.units) +
+      (camHit.cam.kmh != null ? ' · limit ' + limitLabel(camHit.cam.kmh) : '');
+    $('camChip').classList.add('show');
+    var camKey = Math.round(camHit.cam.alongM);
+    if (!nav.camSpoken[camKey] && !r.announce) {
+      nav.camSpoken[camKey] = 1;
+      speak('Speed camera ahead' + (camHit.cam.kmh != null ? ' — the limit is ' + limitLabel(camHit.cam.kmh) : ''));
+    }
+  } else $('camChip').classList.remove('show');
+
+  // 🚦 incident ahead: chip with live distance + one spoken alert each
+  var trafWarn = null;
+  var trafHit = null;
+  if (nav.trafMapped && nav.trafMapped.length && !r.arrived) {
+    var ti = A.nextIncident(nav.trafMapped, r.alongM);
+    if (ti && ti.distM <= Math.max(500, v * 20)) trafHit = ti;
+  }
+  if (trafHit) {
+    $('trafChip').textContent = '⚠ ' + trafHit.inc.kind + ' · ' + A.fmtDist(trafHit.distM, settings.units) +
+      (trafHit.inc.delayS >= 60 ? ' · +' + A.fmtDur(trafHit.inc.delayS) : '');
+    $('trafChip').classList.add('show');
+    var tKey = Math.round(trafHit.inc.alongM);
+    if (!nav.trafSpoken[tKey]) { nav.trafSpoken[tKey] = 1; trafWarn = trafHit.inc; }
+  } else $('trafChip').classList.remove('show');
+
+  // 🛣 lane bar: light your lanes as the maneuver approaches
+  var nIdx = r.stepIndex + 1;
+  renderLaneBar(!r.offRoute && !r.arrived && r.nextStep.lanes &&
+                r.distToNext <= Math.max(320, v * 13) ? r.nextStep.lanes : null);
+
+  // 🛣 junction view: schematic of complex junctions as you approach
+  var jShow = false;
+  if (!r.offRoute && !r.arrived && nav.junctions && nav.junctions[nIdx] && nav.junctions[nIdx].length &&
+      r.distToNext <= Math.max(280, v * 11)) {
+    if (!(nIdx in nav.junctionScene)) {
+      try { nav.junctionScene[nIdx] = A.buildJunctionView(nav.route, nav.route.steps[nIdx], nav.junctions[nIdx], 120); }
+      catch (e) { nav.junctionScene[nIdx] = null; }
+    }
+    var scene = nav.junctionScene[nIdx];
+    if (scene && scene.path.length > 3) {
+      if (nav.junctionShown !== nIdx) {
+        nav.junctionShown = nIdx;
+        $('junctionCard').classList.add('show');
+        drawJunction(scene, nav.route.steps[nIdx].instruction);
+      }
+      jShow = true;
+    }
+  }
+  if (!jShow && nav.junctionShown != null) {
+    nav.junctionShown = null;
+    $('junctionCard').classList.remove('show');
+  }
+
+  if (r.announce) speak(r.announce.text);
+  else if (os.warn) speak('Watch your speed — the limit is ' + limitLabel(limitKmh));
+  else if (trafWarn) speak('Traffic ahead — ' + trafWarn.kind.toLowerCase() + ' in ' + A.speakDist(trafHit.distM, settings.units));
+  else speakPaceNote(r);
+
+  if (r.offRoute && !nav.demo && !fix.ghost) maybeReroute(fix);
+  if (r.arrived) finishNav();
+  needsDraw = true;
+}
+
+/** "20 mph" | "30 km/h" — the label for a km/h limit in the user's units. */
+function limitLabel(kmh) {
+  if (kmh == null) return '';
+  return settings.units === 'imperial'
+    ? Math.round(kmh / 1.609344) + ' mph'
+    : Math.round(kmh) + ' km/h';
+}
+
+function updateLimitSign(limitKmh) {
+  if (limitKmh == null) { $('limitSign').classList.remove('show'); return; }
+  $('limitVal').textContent = String(settings.units === 'imperial'
+    ? Math.round(limitKmh / 1.609344) : Math.round(limitKmh));
+  $('limitUnit').textContent = settings.units === 'imperial' ? 'mph' : 'km/h';
+  $('limitSign').classList.add('show');
+}
+
+/* -------------------- 🛣 lane guidance + junction views ------------------ */
+
+function renderLaneBar(lanes) {
+  if (!lanes) {
+    if (nav.laneSig) { nav.laneSig = ''; $('laneBar').classList.remove('show'); }
+    return;
+  }
+  var sig = lanes.map(function (l) { return l.icon + (l.on ? '1' : '0'); }).join(',');
+  if (sig !== nav.laneSig) {
+    nav.laneSig = sig;
+    $('laneBar').innerHTML = lanes.map(function (l) {
+      return '<div class="laneSlot' + (l.on ? ' on' : '') + '">' + (ICONS[l.icon] || ICONS.straight) + '</div>';
+    }).join('');
+  }
+  $('laneBar').classList.add('show');
+}
+
+/** Real roads around each complex maneuver, one batched Overpass query. */
+function prefetchJunctions(route) {
+  var cands = (nav.junctionCands || []).slice(0, 5);
+  if (!cands.length) return;
+  var parts = cands.map(function (i) {
+    var p = A.pointAtAlong(route, route.steps[i].alongM);
+    return 'way[highway](around:130,' + p.lat.toFixed(5) + ',' + p.lon.toFixed(5) + ');';
+  });
+  overpassQuery('[out:json][timeout:12];(' + parts.join('') + ');out geom 400;').then(function (json) {
+    if (!nav.active || nav.route !== route) return;
+    var ways = (json.elements || []).filter(function (w) { return w.geometry && w.geometry.length > 1; })
+      .map(function (w) { return w.geometry.map(function (g) { return { lat: g.lat, lon: g.lon }; }); });
+    cands.forEach(function (i) {
+      var p = A.pointAtAlong(route, route.steps[i].alongM);
+      nav.junctions[i] = ways.filter(function (w) {
+        return w.some(function (pt) { return A.haversine(pt, p) < 170; });
+      });
+    });
+  }).catch(function () {});
+}
+
+/** Bundled junction roads for the demo roundabout (works offline). */
+function demoJunctionWays(route, stepIdx) {
+  var c = A.pointAtAlong(route, route.steps[stepIdx].alongM);
+  function arm(brg) {
+    var w = [];
+    for (var m = 18; m <= 130; m += 22) w.push(A.destinationPoint(c, brg, m));
+    return w;
+  }
+  var circle = [];
+  for (var a = 0; a <= 360; a += 30) circle.push(A.destinationPoint(c, a, 20));
+  return [circle, arm(276), arm(68), arm(170), arm(210)];
+}
+
+/** Paint the schematic: real roads grey, your path glowing through them. */
+function drawJunction(scene, instruction) {
+  $('junctionTitle').textContent = instruction;
+  var cv = $('junctionCanvas');
+  var cw = cv.clientWidth || (W - 44), chh = 172;
+  cv.width = Math.round(cw * DPR); cv.height = Math.round(chh * DPR);
+  var c = cv.getContext('2d');
+  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  c.fillStyle = '#0b1220'; c.fillRect(0, 0, cw, chh);
+  var scale = (chh * 0.92) / (scene.r * 2);
+  var ox = cw / 2, oy = chh * 0.54;
+  function P(p) { return { x: ox + p.x * scale, y: oy + p.y * scale }; }
+  function strokeSeg(seg) {
+    c.beginPath();
+    for (var i = 0; i < seg.length; i++) { var q = P(seg[i]); i ? c.lineTo(q.x, q.y) : c.moveTo(q.x, q.y); }
+    c.stroke();
+  }
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  c.strokeStyle = '#38445f'; c.lineWidth = Math.max(7, 11 * scale);
+  scene.roads.forEach(strokeSeg);
+  c.strokeStyle = '#232c42'; c.lineWidth = 1.2;
+  scene.roads.forEach(strokeSeg);
+  if (scene.path.length > 1) {
+    c.strokeStyle = 'rgba(8,25,60,0.9)'; c.lineWidth = Math.max(8, 9 * scale);
+    strokeSeg(scene.path);
+    c.save();
+    c.shadowColor = 'rgba(56,189,248,0.8)'; c.shadowBlur = 9;
+    c.strokeStyle = '#38bdf8'; c.lineWidth = Math.max(5, 6 * scale);
+    strokeSeg(scene.path);
+    c.restore();
+    // arrowhead at the exit
+    var n = scene.path.length;
+    var e1 = P(scene.path[n - 2]), e2 = P(scene.path[n - 1]);
+    var ang = Math.atan2(e2.y - e1.y, e2.x - e1.x);
+    c.beginPath();
+    c.moveTo(e2.x + Math.cos(ang) * 10, e2.y + Math.sin(ang) * 10);
+    c.lineTo(e2.x + Math.cos(ang + 2.5) * 9, e2.y + Math.sin(ang + 2.5) * 9);
+    c.lineTo(e2.x + Math.cos(ang - 2.5) * 9, e2.y + Math.sin(ang - 2.5) * 9);
+    c.closePath();
+    c.fillStyle = '#7dd3fc'; c.fill();
+    // you, entering from the bottom
+    var s0 = P(scene.path[0]);
+    c.beginPath(); c.arc(s0.x, s0.y, 5, 0, 7);
+    c.fillStyle = '#fff'; c.fill();
+    c.beginPath(); c.arc(s0.x, s0.y, 3, 0, 7);
+    c.fillStyle = '#2f7ff6'; c.fill();
+  }
+}
+
+/* 🏁 co-driver: call the next corner rally-style, without talking over the
+   maneuver announcements (they always win the microphone). */
+function speakPaceNote(r) {
+  if (!nav.notes || r.offRoute || r.arrived) return;
+  while (nav.noteIdx < nav.notes.length && nav.notes[nav.noteIdx].alongM <= r.alongM + 8) nav.noteIdx++;
+  var n = nav.notes[nav.noteIdx];
+  if (!n || nav.noteSpoken[n.alongM]) return;
+  var horizon = Math.max(140, (nav.guide.speed || 0) * 9);
+  if (n.alongM - r.alongM <= horizon && r.distToNext > 240) {
+    nav.noteSpoken[n.alongM] = 1;
+    speak(A.paceNoteLine(n, nav.notes[nav.noteIdx + 1]));
+  }
+}
+
+/* 🛰 ghost mode: if real fixes stop arriving mid-drive (tunnel), advance the
+   position along the route at the last known speed — guidance keeps talking. */
+function ghostTick() {
+  if (!nav.active || nav.demo) return;
+  if (Date.now() - nav.lastFixTs < 3500) return;
+  var sp = nav.guide ? (nav.guide.speed || 0) : 0;
+  if (sp < 2 || nav.ghostCount >= 90 || (nav.guide && nav.guide.arrived)) return;
+  nav.ghostCount++;
+  if (!nav.ghosting) { nav.ghosting = true; toast('🛰 GPS lost — dead reckoning along the route'); }
+  var f = A.ghostAdvance(nav.route, nav.lastAlong, sp, 1);
+  gps.fix = { lat: f.lat, lon: f.lon, heading: f.heading, speed: f.speed };
+  onNavFix(f);
+  if (view.follow) glueCamera();
+}
+
+function followingOf(r) {
+  var steps = nav.route.steps;
+  var i = r.stepIndex + 2;
+  if (r.distToNext < 300 && i < steps.length) return 'then ' + steps[i].instruction;
+  return null;
+}
+
+function setBanner(iconKey, dist, text, then) {
+  $('navIcon').innerHTML = ICONS[iconKey] || ICONS.straight;
+  $('navDist').textContent = dist;
+  $('navText').textContent = text;
+  if (then) { $('navThen').textContent = then; $('navThen').classList.add('show'); }
+  else $('navThen').classList.remove('show');
+}
+
+function maybeReroute(fix) {
+  var now = Date.now();
+  if (now - nav.lastReroute < 9000) return;
+  nav.lastReroute = now;
+  speak('Rerouting');
+  fetchRoute(fix, trip.dest, trip.profile).then(function (routes) {
+    if (!nav.active || nav.demo) return;
+    nav.route = A.buildRoute(routes[0]);
+    trip.routes = [nav.route]; trip.selected = 0;
+    nav.guide = A.startGuidance();
+    // refresh limits + cameras for the new road
+    nav.limits = []; nav.cameras = []; nav.camSpoken = {}; nav.osState = null;
+    var rerouted = nav.route;
+    fetchSafetyData(rerouted).then(function (s) {
+      if (nav.active && nav.route === rerouted) { nav.limits = s.limits; nav.cameras = s.cameras; needsDraw = true; }
+    }).catch(function () {});
+    if (settings.codriver === 'on') { nav.notes = A.paceNotes(nav.route); nav.noteIdx = 0; nav.noteSpoken = {}; }
+    // refresh traffic for the new road
+    nav.trafSpoken = {};
+    applyTraffic([nav.route], function () {
+      if (nav.active && nav.route.traffic) {
+        nav.trafMapped = settings.traffic === 'on' ? nav.route.traffic.mapped : [];
+        nav.trafFactor = settings.traffic === 'on' ? nav.route.traffic.factor : 1;
+        needsDraw = true;
+      }
+    });
+    nav.trafMapped = settings.traffic === 'on' ? nav.route.traffic.mapped : [];
+    nav.trafFactor = settings.traffic === 'on' ? nav.route.traffic.factor : 1;
+    toast('New route found');
+    needsDraw = true;
+  }).catch(function () { toast('Reroute failed — rejoin the blue line'); });
+}
+
+var lastTrack = null; // the just-finished drive, for 📼 GPX export
+function finishNav() {
+  var wasDemo = nav.demo, track = nav.track, profile = trip.profile;
+  // 📼 flight recorder: stats + keep the track for GPX / 🍞 trail-back
+  var statsLine = '';
+  if (track && track.points.length >= 5) {
+    var st = A.trackStats(track, Date.now());
+    statsLine = A.fmtDist(st.distM, settings.units) + ' · ' + A.fmtDur(st.movingS) +
+      ' moving · avg ' + Math.round(settings.units === 'imperial' ? st.avgKmh / 1.609344 : st.avgKmh) +
+      (settings.units === 'imperial' ? ' mph' : ' km/h');
+    lastTrack = track;
+    if (!wasDemo) save('atlas.lastTrack', track);
+  }
+  // ⏱ personal pace: learn how you actually drive vs the prediction
+  if (!wasDemo && nav.startTs && nav.predictedS > 60) {
+    pace[profile] = A.updatePace(pace[profile] || 1, nav.predictedS, (Date.now() - nav.startTs) / 1000);
+    save('atlas.pace', pace);
+  }
+  // 🅿️ drop a parked-car pin where the drive ended
+  if (!wasDemo && gps.fix && profile === 'car') {
+    places = places.filter(function (x) { return x.kind !== 'parked'; });
+    places.push({ name: 'Parked car', addr: 'Saved automatically when you arrived', kind: 'parked',
+                  lat: gps.fix.lat, lon: gps.fix.lon, uses: 1, lastUsed: Date.now() });
+    persistPlaces();
+  }
+  // 📹 arriving stops the dashcam; the clip is offered on the arrival card
+  $('btnDashSave').style.display = 'none';
+  if (dashcam.active) stopDashcam(function () { $('btnDashSave').style.display = ''; });
+  stopNavUI();
+  $('arrivedSub').textContent = (trip.dest ? trip.dest.name : 'Destination') + (wasDemo ? ' · demo complete' : '');
+  $('arrivedStats').textContent = statsLine;
+  $('btnGpx').style.display = lastTrack ? '' : 'none';
+  $('arrivedCard').classList.add('show');
+}
+
+$('btnGpx').addEventListener('click', function () {
+  if (!lastTrack) return;
+  var gpx = A.trackToGPX(lastTrack, 'Atlas drive — ' + (trip.dest ? trip.dest.name : 'trip'));
+  var a = document.createElement('a');
+  a.href = 'data:application/gpx+xml;charset=utf-8,' + encodeURIComponent(gpx);
+  a.download = 'atlas-drive.gpx';
+  document.body.appendChild(a); a.click(); a.remove();
+  toast('📼 GPX saved — opens in any GPS app');
+});
+
+/* 🍞 trail-back: retrace your own recorded breadcrumbs — no routing server */
+function startTrailBack() {
+  var saved = lastTrack || load('atlas.lastTrack', null);
+  if (!saved || !saved.points || saved.points.length < 5) {
+    toast('No trail yet — Atlas records your track while you navigate');
+    return;
+  }
+  var st = A.trackStats(saved, saved.points[saved.points.length - 1].t);
+  var v = Math.max(1.2, Math.min(25, st.movingS > 0 ? st.distM / st.movingS : 1.4));
+  var route;
+  try { route = A.routeBack(saved.points, v); }
+  catch (e) { toast('Trail too short to trace back'); return; }
+  trip.dest = { name: 'Trail back', addr: 'Retracing your own recorded track — works fully offline',
+                lat: route.geometry[route.geometry.length - 1].lat, lon: route.geometry[route.geometry.length - 1].lon };
+  trip.demoOnly = true;
+  trip.routes = [route]; trip.selected = 0;
+  $('destName').textContent = '🍞 Trail back';
+  $('destAddr').textContent = trip.dest.addr;
+  $('searchPillText').textContent = 'Trail back';
+  $('routeStatus').className = ''; $('routeStatus').textContent = '';
+  renderAlternatives(null);
+  fitRoute(route);
+  openSheet('routeSheet');
+}
+$('chipTrail').addEventListener('click', startTrailBack);
+$('btnArrivedDone').addEventListener('click', function () {
+  $('arrivedCard').classList.remove('show');
+  clearTrip();
+});
+
+function stopNavUI() {
+  nav.active = false;
+  if (dashcam.active) stopDashcam(); // safety net — never leave the camera on
+  if (convoy.demoTimer) leaveConvoy(true); // demo convoy ends with the demo drive
+  if (nav.simTimer) { clearInterval(nav.simTimer); nav.simTimer = null; }
+  if (nav.ghostTimer) { clearInterval(nav.ghostTimer); nav.ghostTimer = null; }
+  nav.ghosting = false; nav.notes = null; nav.track = null;
+  nav.simPos = null;
+  view.navMode = false; view.rot = 0; view.follow = false;
+  apply3d();
+  $('topBar').classList.remove('hidden');
+  $('navBanner').classList.remove('show');
+  $('navBottom').classList.remove('show');
+  $('speedBubble').classList.remove('show', 'over');
+  $('limitSign').classList.remove('show');
+  $('camChip').classList.remove('show');
+  $('trafChip').classList.remove('show');
+  $('laneBar').classList.remove('show');
+  $('junctionCard').classList.remove('show');
+  nav.laneSig = ''; nav.junctionShown = null;
+  $('btnCompass').style.display = 'none';
+  releaseWakeLock();
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+  needsDraw = true;
+}
+$('btnEnd').addEventListener('click', function () {
+  if (dashcam.active) stopDashcam(); // the clip lands in 📹 Dashcam clips
+  stopNavUI(); clearTrip();
+});
+$('btnOverview').addEventListener('click', function () {
+  if (view.navMode) { fitRoute(nav.route); view.navMode = false; }
+  else { view.navMode = true; view.follow = true; view.zoom = 16.5; glueCamera(); }
+  apply3d();
+  needsDraw = true;
+});
+
+/* ------------------------------- voice ---------------------------------- */
+
+$('btnMute').addEventListener('click', function () {
+  settings.voice = settings.voice === 'on' ? 'off' : 'on';
+  persistSettings(); syncSettingsUI();
+  $('btnMute').textContent = settings.voice === 'on' ? '🔊' : '🔇';
+  toast(settings.voice === 'on' ? 'Voice on' : 'Voice muted');
+});
+
+var voicePick = null;
+function speak(text) {
+  if (settings.voice !== 'on') return;
+  var synth = window.speechSynthesis, Utter = window.SpeechSynthesisUtterance;
+  if (!synth || !Utter) return;
+  try {
+    if (!voicePick) {
+      var vs = synth.getVoices() || [];
+      voicePick = vs.find(function (v) { return /en[-_]GB/i.test(v.lang); }) ||
+                  vs.find(function (v) { return /^en/i.test(v.lang); }) || null;
+    }
+    var u = new Utter(text);
+    if (voicePick) u.voice = voicePick;
+    u.rate = 1.02; u.pitch = 1;
+    // 🎵 voice priority: dip the music while guidance talks
+    duckMusic();
+    u.onend = unduckMusic;
+    u.onerror = unduckMusic;
+    synth.cancel();
+    synth.speak(u);
+  } catch (e) {}
+}
+
+/* ------------------------------ wake lock -------------------------------- */
+
+function requestWakeLock() {
+  try {
+    if (navigator.wakeLock && navigator.wakeLock.request) {
+      navigator.wakeLock.request('screen').then(function (l) { nav.wakeLock = l; }).catch(function () {});
+    }
+  } catch (e) {}
+}
+function releaseWakeLock() {
+  try { if (nav.wakeLock && nav.wakeLock.release) nav.wakeLock.release(); } catch (e) {}
+  nav.wakeLock = null;
+}
+
+/* -------------------------------- 🎵 music ------------------------------- */
+/* Drive-time music from your own files: imported songs live in IndexedDB on
+   this device (like dashcam clips), play through one <audio> element with
+   shuffle/repeat from the engine's queue logic, surface on the lock screen
+   via the Media Session API — and duck automatically whenever the satnav
+   voice speaks, exactly like a built-in car system. */
+
+var music = { tracks: [], idx: -1, playing: false, shuffle: null, repeat: 'off',
+              audio: null, url: null, dbp: null, loaded: false, duckTimer: 0 };
+
+function musicDB() {
+  if (music.dbp) return music.dbp;
+  music.dbp = new Promise(function (resolve, reject) {
+    if (!window.indexedDB) { reject(new Error('no idb')); return; }
+    var req = indexedDB.open('atlas-music', 1);
+    req.onupgradeneeded = function () { req.result.createObjectStore('tracks', { keyPath: 'id', autoIncrement: true }); };
+    req.onsuccess = function () { resolve(req.result); };
+    req.onerror = function () { reject(req.error); };
+  });
+  return music.dbp;
+}
+function musicTx(mode, fn) {
+  return musicDB().then(function (db) {
+    return new Promise(function (resolve, reject) {
+      var tx = db.transaction('tracks', mode);
+      var req = fn(tx.objectStore('tracks'));
+      tx.oncomplete = function () { resolve(req && req.result); };
+      tx.onerror = function () { reject(tx.error); };
+    });
+  });
+}
+
+function loadMusic() {
+  return musicTx('readonly', function (s) { return s.getAll(); }).then(function (rows) {
+    music.tracks = (rows || []).sort(function (a, b) { return a.addedAt - b.addedAt; });
+    music.loaded = true;
+    if (music.shuffle) music.shuffle = A.makeShuffleOrder(music.tracks.length, Math.random);
+    renderTracks();
+  }).catch(function () {
+    music.loaded = true;
+    $('musicMeta').textContent = 'Storage unavailable';
+  });
+}
+
+function ensureAudio() {
+  if (music.audio) return music.audio;
+  var a = document.createElement('audio');
+  a.preload = 'metadata';
+  a.addEventListener('ended', function () {
+    var ni = A.nextTrack({ idx: music.idx, count: music.tracks.length, repeat: music.repeat,
+                           shuffle: music.shuffle, dir: 1, ended: true });
+    if (ni == null) { music.playing = false; updateMusicUI(); }
+    else playIdx(ni);
+  });
+  a.addEventListener('play', function () { music.playing = true; updateMusicUI(); });
+  a.addEventListener('pause', function () { music.playing = false; updateMusicUI(); });
+  a.addEventListener('timeupdate', updateSeekUI);
+  a.addEventListener('loadedmetadata', updateSeekUI);
+  music.audio = a;
+  return a;
+}
+
+function playIdx(i) {
+  var t = music.tracks[i];
+  if (!t || !(window.URL && URL.createObjectURL)) return;
+  var a = ensureAudio();
+  if (music.url) { try { URL.revokeObjectURL(music.url); } catch (e) {} }
+  music.url = URL.createObjectURL(t.blob);
+  a.src = music.url;
+  music.idx = i;
+  var p = a.play();
+  if (p && p.catch) p.catch(function () {});
+  updateMusicUI();
+  updateMediaSession(t);
+}
+
+function musicSkip(dir) {
+  var ni = A.nextTrack({ idx: music.idx, count: music.tracks.length, repeat: music.repeat,
+                         shuffle: music.shuffle, dir: dir, ended: false });
+  if (ni != null) playIdx(ni);
+}
+
+function musicToggle() {
+  if (!music.tracks.length) { toast('Add some songs first — 🎵 → ＋ Add songs'); return; }
+  if (music.idx < 0) { playIdx(music.shuffle ? music.shuffle[0] : 0); return; }
+  var a = ensureAudio();
+  if (a.paused) { var p = a.play(); if (p && p.catch) p.catch(function () {}); }
+  else a.pause();
+}
+
+/* voice priority: guidance speaks, music dips, then swells back */
+function duckMusic() {
+  if (music.audio && music.playing) {
+    music.audio.volume = 0.22;
+    clearTimeout(music.duckTimer);
+    music.duckTimer = setTimeout(unduckMusic, 12000); // safety net
+  }
+}
+function unduckMusic() {
+  clearTimeout(music.duckTimer);
+  if (music.audio) music.audio.volume = 1;
+}
+
+function updateMediaSession(t) {
+  try {
+    if (!navigator.mediaSession || typeof MediaMetadata === 'undefined') return;
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: t.title || t.name, artist: t.artist || 'Atlas', album: t.album || 'My drive',
+    });
+    navigator.mediaSession.setActionHandler('play', musicToggle);
+    navigator.mediaSession.setActionHandler('pause', musicToggle);
+    navigator.mediaSession.setActionHandler('previoustrack', function () { musicSkip(-1); });
+    navigator.mediaSession.setActionHandler('nexttrack', function () { musicSkip(1); });
+  } catch (e) {}
+}
+
+function updateMusicUI() {
+  var t = music.tracks[music.idx];
+  var icon = music.playing ? '⏸' : '▶';
+  $('btnMusicPlay').textContent = icon;
+  $('msPlay').textContent = icon;
+  $('musicNowTitle').textContent = t ? (t.title || t.name) : 'Nothing playing';
+  $('musicNowArtist').textContent = t ? (t.artist || '') : 'Add your songs below — they stay on this device';
+  $('musicStripTitle').textContent = t ? (t.title || t.name) : '—';
+  $('musicStrip').classList.toggle('show', music.idx >= 0);
+  $('btnMusicShuffle').classList.toggle('on', !!music.shuffle);
+  $('btnMusicRepeat').classList.toggle('on', music.repeat !== 'off');
+  $('btnMusicRepeat').textContent = music.repeat === 'one' ? '🔂' : '🔁';
+  var rows = document.querySelectorAll('#trackList .trackRow');
+  for (var i = 0; i < rows.length; i++) {
+    rows[i].classList.toggle('playing', Number(rows[i].getAttribute('data-i')) === music.idx);
+  }
+}
+
+var seekLast = -1;
+function updateSeekUI() {
+  var a = music.audio;
+  if (!a) return;
+  var cur = Math.floor(a.currentTime || 0);
+  if (cur === seekLast) return;
+  seekLast = cur;
+  $('musicPos').textContent = A.fmtTrackTime(cur);
+  $('musicDur').textContent = A.fmtTrackTime(a.duration || 0);
+  if (a.duration) $('musicSeek').value = String(Math.round(cur / a.duration * 1000));
+}
+
+function renderTracks() {
+  var box = $('trackList');
+  box.innerHTML = '';
+  var total = music.tracks.reduce(function (s, t) { return s + (t.size || 0); }, 0);
+  $('musicMeta').textContent = music.tracks.length
+    ? music.tracks.length + ' song' + (music.tracks.length === 1 ? '' : 's') + ' · ' + A.fmtBytes(total)
+    : '';
+  if (!music.tracks.length) {
+    var empty = document.createElement('div');
+    empty.style.cssText = 'color:var(--dim);font-size:13px;padding:16px 4px';
+    empty.textContent = 'No songs yet. ＋ Add songs imports audio files from your phone — they stay on this device, play offline, and duck automatically when the satnav speaks.';
+    box.appendChild(empty);
+    return;
+  }
+  music.tracks.forEach(function (t, i) {
+    var row = document.createElement('div');
+    row.className = 'trackRow';
+    row.setAttribute('data-i', String(i));
+    row.innerHTML = '<div class="ti">🎵</div>' +
+      '<div style="flex:1;min-width:0"><div class="tn"></div><div class="ta"></div></div>' +
+      '<button class="clipBtn" data-act="del" aria-label="Remove">🗑</button>';
+    row.querySelector('.tn').textContent = t.title || t.name;
+    row.querySelector('.ta').textContent = (t.artist ? t.artist + ' · ' : '') + A.fmtBytes(t.size || 0);
+    row.addEventListener('click', function (e) {
+      if (e.target && e.target.getAttribute && e.target.getAttribute('data-act') === 'del') {
+        musicTx('readwrite', function (s) { return s.delete(t.id); }).then(function () {
+          if (music.idx === i && music.audio) { music.audio.pause(); music.idx = -1; }
+          loadMusic().then(updateMusicUI);
+        }).catch(function () {});
+        return;
+      }
+      playIdx(i);
+    });
+    box.appendChild(row);
+  });
+  updateMusicUI();
+}
+
+$('btnMusic').addEventListener('click', function () {
+  if ($('musicSheet').classList.contains('open')) { closeSheets(); return; }
+  openSheet('musicSheet');
+  if (!music.loaded) loadMusic();
+});
+$('btnCloseMusic').addEventListener('click', closeSheets);
+$('btnMusicImport').addEventListener('click', function () { $('fileMusicInput').click(); });
+$('fileMusicInput').addEventListener('change', function () {
+  var files = Array.prototype.slice.call($('fileMusicInput').files || []);
+  if (!files.length) return;
+  var added = 0, skipped = 0;
+  var next = function (k) {
+    if (k >= files.length) {
+      $('fileMusicInput').value = '';
+      loadMusic().then(function () {
+        toast('🎵 Added ' + added + ' song' + (added === 1 ? '' : 's') + (skipped ? ' (' + skipped + ' skipped)' : ''));
+      });
+      return;
+    }
+    var f = files[k];
+    if (f.size > 80e6) { skipped++; next(k + 1); return; }
+    f.slice(0, 262144).arrayBuffer().then(function (buf) {
+      var meta = null;
+      try { meta = A.parseID3(new Uint8Array(buf)); } catch (e) {}
+      var rec = { name: f.name.replace(/\.[^.]+$/, ''), title: meta && meta.title, artist: meta && meta.artist,
+                  album: meta && meta.album, size: f.size, type: f.type, blob: f, addedAt: Date.now() + k };
+      return musicTx('readwrite', function (s) { return s.add(rec); }).then(function () { added++; });
+    }).catch(function () { skipped++; }).then(function () { next(k + 1); });
+  };
+  next(0);
+});
+$('btnMusicPlay').addEventListener('click', musicToggle);
+$('msPlay').addEventListener('click', musicToggle);
+$('btnMusicPrev').addEventListener('click', function () { musicSkip(-1); });
+$('msPrev').addEventListener('click', function () { musicSkip(-1); });
+$('btnMusicNext').addEventListener('click', function () { musicSkip(1); });
+$('msNext').addEventListener('click', function () { musicSkip(1); });
+$('btnMusicShuffle').addEventListener('click', function () {
+  music.shuffle = music.shuffle ? null : A.makeShuffleOrder(music.tracks.length, Math.random);
+  updateMusicUI();
+  toast(music.shuffle ? 'Shuffle on' : 'Shuffle off');
+});
+$('btnMusicRepeat').addEventListener('click', function () {
+  music.repeat = music.repeat === 'off' ? 'all' : music.repeat === 'all' ? 'one' : 'off';
+  updateMusicUI();
+  toast(music.repeat === 'off' ? 'Repeat off' : music.repeat === 'all' ? 'Repeat all' : 'Repeat one');
+});
+$('musicSeek').addEventListener('input', function () {
+  var a = music.audio;
+  if (a && a.duration) a.currentTime = Number($('musicSeek').value) / 1000 * a.duration;
+});
+
+/* -------------------------------- 🚙 convoy ------------------------------ */
+/* Drive together: everyone who joins a convoy code appears live on each
+   other's maps. Transport: BroadcastChannel between tabs on one device
+   (zero setup), Firestore across devices (config.js), and a simulated
+   convoy in the demo. All merging/validation is the engine's applyBeacon. */
+
+var convoy = { code: null, members: {}, bc: null, timer: null,
+               demoTimer: null, demoMembers: null,
+               fb: null, fbUid: null, fbUnsub: null, fbCol: null };
+convoy.selfId = (function () {
+  // per-TAB identity (sessionStorage): two tabs on one device must be two
+  // distinct cars, or each would drop the other's beacons as its own echo
+  var id = null;
+  try { id = sessionStorage.getItem('atlas.convoy.id'); } catch (e) {}
+  if (!id) {
+    id = 'd';
+    try {
+      var buf = new Uint32Array(2);
+      crypto.getRandomValues(buf);
+      id += buf[0].toString(36) + buf[1].toString(36);
+    } catch (e) { id += Math.floor(Math.random() * 1e15).toString(36); }
+    try { sessionStorage.setItem('atlas.convoy.id', id); } catch (e) {}
+  }
+  return id;
+})();
+
+function convoyName() {
+  var n = ($('convoyName').value || '').trim() || load('atlas.convoy.name', '') || '';
+  return n || 'Driver ' + convoy.selfId.slice(1, 5).toUpperCase();
+}
+
+function startConvoy(code, demo) {
+  code = A.validConvoyCode(code);
+  if (!code) { toast('Convoy codes are 6 letters/numbers'); return; }
+  leaveConvoy(true);
+  save('atlas.convoy.name', ($('convoyName').value || '').trim());
+  convoy.code = code; convoy.members = {};
+  if (window.BroadcastChannel) {
+    convoy.bc = new BroadcastChannel('atlas-convoy-' + code);
+    convoy.bc.onmessage = function (e) { receiveBeacon(e.data); };
+  }
+  if (!demo) fbStart(code);
+  convoy.timer = setInterval(convoyTick, 3000);
+  convoyTick();
+  $('convoyJoinBox').style.display = 'none';
+  $('convoyLiveBox').style.display = '';
+  $('convoyCodeBig').textContent = code;
+  $('btnConvoy').style.background = 'rgba(56,189,248,0.25)';
+  renderConvoyMembers();
+  toast('🚙 Convoy ' + code + ' — you\'re broadcasting');
+}
+
+function leaveConvoy(silent) {
+  if (convoy.timer) { clearInterval(convoy.timer); convoy.timer = null; }
+  if (convoy.demoTimer) { clearInterval(convoy.demoTimer); convoy.demoTimer = null; }
+  convoy.demoMembers = null;
+  if (convoy.bc) { try { convoy.bc.close(); } catch (e) {} convoy.bc = null; }
+  if (convoy.fbUnsub) { try { convoy.fbUnsub(); } catch (e) {} convoy.fbUnsub = null; }
+  if (convoy.fbCol && convoy.fbUid) { try { convoy.fbCol.doc(convoy.fbUid).delete(); } catch (e) {} }
+  convoy.fbCol = null;
+  convoy.code = null; convoy.members = {};
+  $('convoyJoinBox').style.display = '';
+  $('convoyLiveBox').style.display = 'none';
+  $('btnConvoy').style.background = '';
+  needsDraw = true;
+  if (!silent) toast('Left the convoy');
+}
+
+function convoyPos() {
+  if (nav.active && nav.demo && nav.simPos) return nav.simPos;
+  return gps.fix || null;
+}
+
+function convoyTick() {
+  var now = Date.now();
+  convoy.members = A.pruneMembers(convoy.members, now);
+  var pos = convoyPos();
+  if (pos) {
+    var b = { id: convoy.selfId, name: convoyName(), lat: pos.lat, lon: pos.lon,
+      heading: typeof pos.heading === 'number' ? pos.heading : null,
+      speed: (nav.active && nav.guide && nav.guide.speed) || pos.speed || null,
+      etaS: nav.active && nav.lastR && !nav.lastR.arrived ? Math.round(nav.lastR.remainingS * paceOf()) : null,
+      arrived: !!(nav.lastR && nav.lastR.arrived), ts: now };
+    if (convoy.bc) { try { convoy.bc.postMessage(b); } catch (e) {} }
+    if (convoy.fbCol && convoy.fbUid) {
+      try { convoy.fbCol.doc(convoy.fbUid).set(Object.assign({}, b, { id: convoy.fbUid })); } catch (e) {}
+    }
+  }
+  if ($('convoySheet').classList.contains('open')) renderConvoyMembers();
+  needsDraw = true;
+}
+
+function receiveBeacon(b) {
+  if (b && (b.id === convoy.selfId || (convoy.fbUid && b.id === convoy.fbUid))) return;
+  var next = A.applyBeacon(convoy.members, b, convoy.selfId, Date.now());
+  if (next !== convoy.members) {
+    convoy.members = next;
+    needsDraw = true;
+    if ($('convoySheet').classList.contains('open')) renderConvoyMembers();
+  }
+}
+
+function renderConvoyMembers() {
+  var box = $('convoyMembers');
+  var now = Date.now();
+  var alive = A.pruneMembers(convoy.members, now);
+  var self = convoyPos();
+  var stats = A.convoyStats(alive, self, now);
+  box.innerHTML = '';
+  var me = document.createElement('div');
+  me.className = 'memberRow';
+  var myAv = A.convoyAvatar(convoy.selfId);
+  me.innerHTML = '<div class="av"></div><div style="flex:1;min-width:0"><div class="mn"></div>' +
+    '<div class="mm">' + (self ? 'broadcasting your position' : 'waiting for a GPS fix (or start a drive)') + '</div></div>';
+  me.querySelector('.av').style.background = myAv.color + '33';
+  me.querySelector('.av').style.borderColor = myAv.color;
+  me.querySelector('.av').textContent = myAv.emoji;
+  me.querySelector('.mn').textContent = convoyName() + ' (you)';
+  box.appendChild(me);
+  stats.forEach(function (s) {
+    var m = s.member, av = A.convoyAvatar(m.id);
+    var row = document.createElement('div');
+    row.className = 'memberRow';
+    var meta = [];
+    if (s.distM != null) meta.push(A.fmtDist(s.distM, settings.units) + ' away');
+    if (m.speed != null) meta.push(Math.round(settings.units === 'imperial' ? m.speed * 2.23694 : m.speed * 3.6) +
+      (settings.units === 'imperial' ? ' mph' : ' km/h'));
+    if (m.etaS != null && !m.arrived) meta.push('ETA ' + A.fmtDur(m.etaS));
+    if (s.staleS > 12) meta.push('last seen ' + Math.round(s.staleS) + ' s ago');
+    row.innerHTML = '<div class="av"></div><div style="flex:1;min-width:0"><div class="mn"></div><div class="mm"></div></div>';
+    row.querySelector('.av').style.background = av.color + '33';
+    row.querySelector('.av').style.borderColor = av.color;
+    row.querySelector('.av').textContent = m.arrived ? '🏁' : av.emoji;
+    row.querySelector('.mn').textContent = m.name;
+    row.querySelector('.mm').textContent = meta.join(' · ') || 'in the convoy';
+    box.appendChild(row);
+  });
+}
+
+/* draw convoy members on the map (any mode) */
+function drawConvoy() {
+  if (!convoy.code) return;
+  var alive = A.pruneMembers(convoy.members, Date.now());
+  for (var k in alive) {
+    var m = alive[k], av = A.convoyAvatar(m.id);
+    var s = toScreen(m);
+    if (s.x < -40 || s.x > W + 40 || s.y < -40 || s.y > H + 40) continue;
+    ctx.beginPath(); ctx.arc(s.x, s.y, 13, 0, 7);
+    ctx.fillStyle = av.color; ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = '#fff'; ctx.stroke();
+    ctx.font = '14px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(m.arrived ? '🏁' : av.emoji, s.x, s.y + 1);
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = '600 11px -apple-system, Segoe UI, Roboto, sans-serif';
+    var label = m.name;
+    var tw = ctx.measureText(label).width;
+    ctx.fillStyle = 'rgba(11,15,28,0.75)';
+    ctx.fillRect(s.x - tw / 2 - 5, s.y + 17, tw + 10, 16);
+    ctx.fillStyle = '#eef2ff';
+    ctx.fillText(label, s.x, s.y + 29);
+  }
+}
+
+/* Firestore transport — lights up cross-device convoys (see config.js) */
+var FB_VER = '10.12.4';
+function loadFirebaseSdk(parts) {
+  return new Promise(function (resolve, reject) {
+    if (typeof firebase !== 'undefined' && firebase.firestore && firebase.auth) { resolve(); return; }
+    var i = 0;
+    (function next() {
+      if (i >= parts.length) { resolve(); return; }
+      var s = document.createElement('script');
+      s.src = 'https://www.gstatic.com/firebasejs/' + FB_VER + '/firebase-' + parts[i] + '-compat.js';
+      s.onload = function () { i++; next(); };
+      s.onerror = function () { reject(new Error('firebase sdk failed')); };
+      document.head.appendChild(s);
+    })();
+  });
+}
+function fbStart(code) {
+  var cfg = window.ATLAS_FIREBASE_CONFIG;
+  if (!cfg) return;
+  loadFirebaseSdk(['app', 'auth', 'firestore']).then(function () {
+    var app = firebase.apps && firebase.apps.length ? firebase.app() : firebase.initializeApp(cfg);
+    return firebase.auth(app).signInAnonymously().then(function (cred) {
+      if (convoy.code !== code) return; // left already
+      convoy.fbUid = (cred && cred.user && cred.user.uid) || (firebase.auth(app).currentUser || {}).uid;
+      convoy.fb = firebase.firestore(app);
+      convoy.fbCol = convoy.fb.collection('atlas_convoys').doc(code).collection('members');
+      convoy.fbUnsub = convoy.fbCol.onSnapshot(function (snap) {
+        snap.forEach(function (d) { receiveBeacon(d.data()); });
+      }, function () {});
+    });
+  }).catch(function () { /* BroadcastChannel still carries the convoy */ });
+}
+
+/* demo convoy: two simulated companions on the demo route */
+function startDemoConvoy() {
+  startConvoy(A.makeConvoyCode(), true);
+  if (!convoy.code) return;
+  closeSheets();
+  startDemoTrip(true); // begins the demo drive
+  convoy.demoMembers = [
+    { id: 'demo-aisha', name: 'Aisha', along: 150, v: 13.6 },
+    { id: 'demo-marco', name: 'Marco', along: -230, v: 12.3 },
+  ];
+  convoy.demoTimer = setInterval(function () {
+    if (!nav.route) return;
+    convoy.demoMembers.forEach(function (dm) {
+      dm.along = Math.min(nav.route.totalM, dm.along + dm.v);
+      var p = A.pointAtAlong(nav.route, Math.max(0, dm.along));
+      receiveBeacon({ id: dm.id, name: dm.name, lat: p.lat, lon: p.lon, heading: p.heading,
+        speed: dm.v, etaS: Math.round((nav.route.totalM - dm.along) / dm.v),
+        arrived: dm.along >= nav.route.totalM - 25, ts: Date.now() });
+    });
+  }, 1000);
+  toast('🚙 Demo convoy — Aisha is ahead, Marco is behind');
+}
+
+$('btnConvoy').addEventListener('click', function () {
+  $('convoyName').value = load('atlas.convoy.name', '') || '';
+  if ($('convoySheet').classList.contains('open')) closeSheets();
+  else { openSheet('convoySheet'); renderConvoyMembers(); }
+});
+$('btnCloseConvoy').addEventListener('click', closeSheets);
+$('btnConvoyCreate').addEventListener('click', function () { startConvoy(A.makeConvoyCode()); });
+$('btnConvoyJoin').addEventListener('click', function () { startConvoy($('convoyCode').value); });
+$('convoyCode').addEventListener('keydown', function (e) { if (e.key === 'Enter') startConvoy($('convoyCode').value); });
+$('btnConvoyDemo').addEventListener('click', startDemoConvoy);
+$('btnConvoyLeave').addEventListener('click', function () { leaveConvoy(false); });
+$('btnConvoyShare').addEventListener('click', function () {
+  if (!convoy.code) return;
+  var base = 'https://apexvip.uk/atlas/';
+  try {
+    if (window.location && window.location.href && String(window.location.href).indexOf('http') === 0) {
+      base = String(window.location.href).split('#')[0];
+    }
+  } catch (e) {}
+  var text = 'Join my Atlas convoy — code ' + convoy.code + ' — ' + base + '#convoy=' + convoy.code;
+  if (navigator.share) { navigator.share({ text: text }).catch(function () {}); return; }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function () { toast('Invite copied'); }, function () { toast('Code: ' + convoy.code); });
+  } else toast('Code: ' + convoy.code);
+});
+
+/* ------------------------------- 📹 dashcam ------------------------------ */
+/* Record your drive with the in-app camera. Frames are composited onto a
+   canvas so the saved video has the telemetry burned in — time, position,
+   speed and the next maneuver — like a real dashcam. Footage never leaves
+   the device: it records into memory and saves as a local .webm file. */
+
+var DASHCAM_MAX_S = 1800; // 30 min cap ≈ 560 MB — protects memory honestly
+var dashcam = { active: false, stream: null, recorder: null, chunks: [], blob: null,
+                startedAt: 0, raf: 0, canvas: null, cctx: null, onSaved: null };
+
+function dashcamSupported() {
+  return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia &&
+            window.MediaRecorder && window.HTMLCanvasElement &&
+            HTMLCanvasElement.prototype && HTMLCanvasElement.prototype.captureStream);
+}
+
+function pickMime() {
+  var MR = window.MediaRecorder;
+  var options = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', ''];
+  for (var i = 0; i < options.length; i++) {
+    if (!options[i] || !MR.isTypeSupported || MR.isTypeSupported(options[i])) return options[i];
+  }
+  return '';
+}
+
+function startDashcam() {
+  if (dashcam.active) return;
+  if (!dashcamSupported()) { toast('Camera recording is not supported in this browser'); return; }
+  navigator.mediaDevices.getUserMedia({
+    video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+    audio: false,
+  }).then(function (stream) {
+    dashcam.stream = stream;
+    dashcam.chunks = []; dashcam.blob = null;
+    dashcam.startedAt = Date.now();
+    var v = $('dashcamVideo');
+    v.srcObject = stream;
+    var play = v.play && v.play(); if (play && play.catch) play.catch(function () {});
+    dashcam.canvas = document.createElement('canvas');
+    dashcam.canvas.width = 1280; dashcam.canvas.height = 720;
+    dashcam.cctx = dashcam.canvas.getContext('2d');
+    var mime = pickMime();
+    var rec = new MediaRecorder(dashcam.canvas.captureStream(30),
+                                mime ? { mimeType: mime, videoBitsPerSecond: 2500000 }
+                                     : { videoBitsPerSecond: 2500000 });
+    rec.ondataavailable = function (e) { if (e.data && e.data.size) dashcam.chunks.push(e.data); };
+    rec.onstop = function () {
+      dashcam.blob = new Blob(dashcam.chunks, { type: rec.mimeType || 'video/webm' });
+      dashcam.chunks = [];
+      if (dashcam.onSaved) { var f = dashcam.onSaved; dashcam.onSaved = null; f(); }
+    };
+    dashcam.recorder = rec;
+    rec.start(1000);
+    dashcam.active = true;
+    $('dashcamBox').classList.add('show');
+    $('btnDashcam').classList.add('rec');
+    composeDashcamFrame();
+    toast('📹 Dashcam recording — telemetry burned in, saved on your device only');
+  }).catch(function () {
+    toast('Camera unavailable — check the camera permission for this site');
+  });
+}
+
+/** Draw camera + telemetry into the recorded canvas, ~30 fps while active. */
+function composeDashcamFrame() {
+  if (!dashcam.active) return;
+  var c = dashcam.cctx, cw = dashcam.canvas.width, ch = dashcam.canvas.height;
+  var v = $('dashcamVideo');
+  try {
+    if (v.videoWidth) {
+      var scale = Math.max(cw / v.videoWidth, ch / v.videoHeight);
+      var w = v.videoWidth * scale, h = v.videoHeight * scale;
+      c.drawImage(v, (cw - w) / 2, (ch - h) / 2, w, h);
+    } else { c.fillStyle = '#000'; c.fillRect(0, 0, cw, ch); }
+    var pos = (nav.active && nav.demo && nav.simPos) ? nav.simPos : (gps.fix || view);
+    var r = nav.active ? nav.lastR : null;
+    var lines = A.dashcamLines({
+      timeStr: A.fmtTimestamp(Date.now()),
+      lat: pos.lat, lon: pos.lon,
+      speedMS: (nav.active && nav.guide && nav.guide.speed) || (gps.fix && gps.fix.speed) || 0,
+      units: settings.units,
+      instruction: r && r.nextStep && !r.arrived ? r.nextStep.instruction : null,
+      distToNextM: r ? r.distToNext : undefined,
+    });
+    var barH = 34 + lines.length * 30;
+    var grad = c.createLinearGradient(0, ch - barH - 40, 0, ch);
+    grad.addColorStop(0, 'rgba(0,0,0,0)'); grad.addColorStop(1, 'rgba(0,0,0,0.72)');
+    c.fillStyle = grad; c.fillRect(0, ch - barH - 40, cw, barH + 40);
+    c.fillStyle = '#fff'; c.textBaseline = 'alphabetic'; c.textAlign = 'left';
+    for (var i = 0; i < lines.length; i++) {
+      c.font = (i === 0 ? '600 ' : '') + '26px -apple-system, Segoe UI, Roboto, sans-serif';
+      c.fillText(lines[i], 24, ch - barH + 18 + i * 30);
+    }
+    c.font = '600 22px -apple-system, Segoe UI, Roboto, sans-serif';
+    c.textAlign = 'right';
+    c.fillText('◮ ATLAS', cw - 24, ch - barH + 18);
+    c.textAlign = 'left';
+  } catch (e) {}
+  // live badge + honest cap
+  var elapsed = Math.floor((Date.now() - dashcam.startedAt) / 1000);
+  $('dashcamTime').textContent = Math.floor(elapsed / 60) + ':' + (elapsed % 60 < 10 ? '0' : '') + (elapsed % 60);
+  if (elapsed >= DASHCAM_MAX_S) {
+    stopDashcam(function () { toast('📹 30 min cap reached — clip saved to Dashcam clips'); });
+    return;
+  }
+  dashcam.raf = requestAnimationFrame(composeDashcamFrame);
+}
+
+/** Stop recording. Every clip is saved into the on-device 📹 vault
+ *  automatically; `onReady(clip)` fires once it's stored. */
+function stopDashcam(onReady) {
+  if (!dashcam.active) return;
+  dashcam.active = false;
+  cancelAnimationFrame(dashcam.raf);
+  var meta = {
+    t: dashcam.startedAt,
+    name: trip.dest ? trip.dest.name : 'Drive',
+    durS: Math.round((Date.now() - dashcam.startedAt) / 1000),
+  };
+  dashcam.onSaved = function () {
+    var clip = Object.assign({}, meta, { size: dashcam.blob.size, type: dashcam.blob.type, blob: dashcam.blob });
+    saveClip(clip).then(function (id) { clip.id = id; }).catch(function () {})
+      .then(function () {
+        dashcam.lastClip = clip;
+        toast('📹 Clip saved to Dashcam clips (' + A.fmtBytes(clip.size) + ')');
+        if (onReady) onReady(clip);
+      });
+  };
+  try { dashcam.recorder.stop(); } catch (e) { dashcam.onSaved = null; }
+  if (dashcam.stream) {
+    dashcam.stream.getTracks().forEach(function (t) { t.stop(); });
+    dashcam.stream = null;
+  }
+  $('dashcamVideo').srcObject = null;
+  $('dashcamBox').classList.remove('show', 'big');
+  $('btnDashcam').classList.remove('rec');
+}
+
+$('btnDashcam').addEventListener('click', function () {
+  if (dashcam.active) stopDashcam(function (clip) { openPlayer(clip); });
+  else startDashcam();
+});
+$('dashcamBox').addEventListener('click', function () { $('dashcamBox').classList.toggle('big'); });
+$('btnDashSave').addEventListener('click', function () {
+  if (dashcam.lastClip) openPlayer(dashcam.lastClip);
+});
+
+/* ------------------------- 📹 clip vault (IndexedDB) --------------------- */
+/* Every recording is stored on this device — nowhere else — and survives
+   refreshes and restarts. The engine's pruneClips() keeps the vault honest:
+   newest 12 clips / ~800 MB, oldest evicted first. */
+
+var CLIP_LIMITS = { maxCount: 12, maxBytes: 800e6 };
+var clipDBP = null;
+function clipDB() {
+  if (clipDBP) return clipDBP;
+  clipDBP = new Promise(function (resolve, reject) {
+    if (!window.indexedDB) { reject(new Error('IndexedDB unavailable')); return; }
+    var req = indexedDB.open('atlas-dashcam', 1);
+    req.onupgradeneeded = function () { req.result.createObjectStore('clips', { keyPath: 'id', autoIncrement: true }); };
+    req.onsuccess = function () { resolve(req.result); };
+    req.onerror = function () { reject(req.error); };
+  });
+  return clipDBP;
+}
+function clipTx(mode, fn) {
+  return clipDB().then(function (db) {
+    return new Promise(function (resolve, reject) {
+      var tx = db.transaction('clips', mode);
+      var req = fn(tx.objectStore('clips'));
+      tx.oncomplete = function () { resolve(req && req.result); };
+      tx.onerror = function () { reject(tx.error); };
+      tx.onabort = function () { reject(tx.error); };
+    });
+  });
+}
+function saveClip(clip) {
+  return clipTx('readwrite', function (s) { return s.add(clip); }).then(function (id) {
+    return getClips().then(function (all) {
+      var drop = A.pruneClips(all.map(function (c) { return { id: c.id, t: c.t, size: c.size }; }), CLIP_LIMITS);
+      return Promise.all(drop.map(deleteClip)).then(function () { return id; });
+    }).catch(function () { return id; });
+  });
+}
+function getClips() { return clipTx('readonly', function (s) { return s.getAll(); }).then(function (r) { return r || []; }); }
+function deleteClip(id) { return clipTx('readwrite', function (s) { return s.delete(id); }); }
+
+function clipMetaLine(c) {
+  return A.fmtTimestamp(c.t) + ' · ' + A.fmtDur(c.durS || 0) + ' · ' + A.fmtBytes(c.size || 0);
+}
+
+function renderClips() {
+  getClips().then(function (clips) {
+    clips.sort(function (a, b) { return b.t - a.t; });
+    var total = clips.reduce(function (a, c) { return a + (c.size || 0); }, 0);
+    $('clipsTotal').textContent = clips.length
+      ? clips.length + ' clip' + (clips.length === 1 ? '' : 's') + ' · ' + A.fmtBytes(total) + ' on this device · newest ' + CLIP_LIMITS.maxCount + ' kept'
+      : '';
+    var box = $('clipList');
+    box.innerHTML = '';
+    if (!clips.length) {
+      var empty = document.createElement('div');
+      empty.id = 'clipsEmpty';
+      empty.textContent = 'No clips yet — tap 📹 while navigating to record your drive. Footage stays on this device.';
+      box.appendChild(empty);
+      return;
+    }
+    clips.forEach(function (c) {
+      var row = document.createElement('div');
+      row.className = 'clipRow';
+      row.innerHTML = '<div class="ci">📹</div>' +
+        '<div style="flex:1;min-width:0"><div class="cn"></div><div class="cm"></div></div>' +
+        '<button class="clipBtn" data-act="share" aria-label="Share">📤</button>' +
+        '<button class="clipBtn" data-act="del" aria-label="Delete">🗑</button>';
+      row.querySelector('.cn').textContent = c.name || 'Drive';
+      row.querySelector('.cm').textContent = clipMetaLine(c);
+      row.addEventListener('click', function (e) {
+        var act = e.target && e.target.getAttribute && e.target.getAttribute('data-act');
+        if (act === 'share') { shareClip(c); return; }
+        if (act === 'del') { deleteClip(c.id).then(renderClips).catch(function () {}); return; }
+        openPlayer(c);
+      });
+      box.appendChild(row);
+    });
+  }).catch(function () {
+    $('clipList').innerHTML = '';
+    $('clipsTotal').textContent = 'Clip storage unavailable (private browsing?) — recordings can still be shared right after stopping.';
+  });
+}
+
+function refreshClipsSub() {
+  getClips().then(function (clips) {
+    var total = clips.reduce(function (a, c) { return a + (c.size || 0); }, 0);
+    $('clipsSub').textContent = clips.length
+      ? clips.length + ' recording' + (clips.length === 1 ? '' : 's') + ' · ' + A.fmtBytes(total) + ' · stored on this device'
+      : 'Recordings stored on this device';
+  }).catch(function () {});
+}
+
+/* --- player overlay: play, share, save, delete --- */
+var player = { clip: null, url: null };
+function openPlayer(clip) {
+  if (!clip || !clip.blob) return;
+  player.clip = clip;
+  if (player.url && window.URL && URL.revokeObjectURL) URL.revokeObjectURL(player.url);
+  player.url = (window.URL && URL.createObjectURL) ? URL.createObjectURL(clip.blob) : null;
+  if (!player.url) { downloadClip(clip); return; }
+  $('clipVideo').src = player.url;
+  $('clipPlayerTitle').textContent = clip.name || 'Drive';
+  $('clipPlayerMeta').textContent = clipMetaLine(clip);
+  $('cpDelete').style.display = clip.id ? '' : 'none';
+  $('clipPlayer').classList.add('show');
+}
+function closePlayer() {
+  $('clipPlayer').classList.remove('show');
+  var v = $('clipVideo');
+  if (v.pause) v.pause();
+  v.removeAttribute('src'); if (v.load) v.load();
+  if (player.url && window.URL && URL.revokeObjectURL) URL.revokeObjectURL(player.url);
+  player.url = null; player.clip = null;
+}
+$('cpClose').addEventListener('click', closePlayer);
+$('cpSave').addEventListener('click', function () { if (player.clip) downloadClip(player.clip); });
+$('cpShare').addEventListener('click', function () { if (player.clip) shareClip(player.clip); });
+$('cpDelete').addEventListener('click', function () {
+  if (!player.clip || !player.clip.id) return;
+  deleteClip(player.clip.id).then(function () {
+    closePlayer();
+    if ($('clipsSheet').classList.contains('open')) renderClips();
+    toast('Clip deleted');
+  }).catch(function () { toast('Could not delete the clip'); });
+});
+
+/** 📤 native share sheet (AirDrop, WhatsApp, Photos…), download fallback. */
+function shareClip(clip) {
+  var fname = A.dashcamFilename(clip.t || Date.now(), clip.name || '');
+  if (navigator.share && window.File) {
+    try {
+      var file = new File([clip.blob], fname, { type: clip.type || 'video/webm' });
+      if (!navigator.canShare || navigator.canShare({ files: [file] })) {
+        navigator.share({ files: [file], title: 'Atlas drive' }).catch(function () {});
+        return;
+      }
+    } catch (e) {}
+  }
+  downloadClip(clip);
+}
+
+function downloadClip(clip) {
+  if (!clip.blob || !window.URL || !URL.createObjectURL) return;
+  var url = URL.createObjectURL(clip.blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = A.dashcamFilename(clip.t || Date.now(), clip.name || '');
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
+  toast('📹 Saved to your downloads (' + A.fmtBytes(clip.size || clip.blob.size) + ')');
+}
+
+$('btnOpenClips').addEventListener('click', function () { renderClips(); openSheet('clipsSheet'); });
+$('btnCloseClips').addEventListener('click', function () { openSheet('settingsSheet'); refreshClipsSub(); });
+
+/* ------------------------------ settings UI ------------------------------ */
+
+function segWire(id, key, after) {
+  var seg = $(id);
+  Array.prototype.forEach.call(seg.querySelectorAll('button'), function (b) {
+    b.addEventListener('click', function () {
+      settings[key] = b.getAttribute('data-v');
+      persistSettings(); syncSettingsUI();
+      if (after) after();
+    });
+  });
+}
+function syncSettingsUI() {
+  [['segUnits', 'units'], ['segVoice', 'voice'], ['segTheme', 'theme'], ['segCodriver', 'codriver'], ['segCameras', 'cameras'], ['segTraffic', 'traffic'], ['segLayer', 'baseLayer'], ['segView', 'view3d'], ['segTheme2', 'theme'], ['segBuildings', 'buildings']].forEach(function (pair) {
+    Array.prototype.forEach.call($(pair[0]).querySelectorAll('button'), function (b) {
+      b.classList.toggle('on', b.getAttribute('data-v') === settings[pair[1]]);
+    });
+  });
+  $('btnMute').textContent = settings.voice === 'on' ? '🔊' : '🔇';
+}
+segWire('segUnits', 'units', function () { needsDraw = true; });
+segWire('segVoice', 'voice');
+segWire('segTheme', 'theme', function () { needsDraw = true; });
+segWire('segCodriver', 'codriver');
+segWire('segCameras', 'cameras', function () { needsDraw = true; });
+segWire('segTraffic', 'traffic', function () { needsDraw = true; if (trip.routes.length && !trip.demoOnly) requestRoutes(); });
+segWire('segLayer', 'baseLayer', function () { updateAttribution(); needsDraw = true; });
+segWire('segView', 'view3d', function () { apply3d(); });
+segWire('segBuildings', 'buildings', function () { needsDraw = true; });
+segWire('segTheme2', 'theme', function () { needsDraw = true; });
+updateAttribution();
+syncSettingsUI();
+
+/* ------------------------------ maneuver icons --------------------------- */
+
+var ICONS = (function () {
+  function svg(body) {
+    return '<svg viewBox="0 0 48 48" fill="none" stroke="#a7f3d0" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">' + body + '</svg>';
+  }
+  var arrowHead = 'M17 15 L24 6 L31 15';
+  return {
+    'straight': svg('<path d="M24 42 V10"/><path d="' + arrowHead + '"/>'),
+    'depart': svg('<path d="M24 42 V10"/><path d="' + arrowHead + '"/><circle cx="24" cy="44" r="2.5" fill="#a7f3d0"/>'),
+    'left': svg('<path d="M30 42 V22 H12"/><path d="M19 14 L10 22 L19 30"/>'),
+    'right': svg('<path d="M18 42 V22 H36"/><path d="M29 14 L38 22 L29 30"/>'),
+    'slight-left': svg('<path d="M28 42 V26 L16 12"/><path d="M15 23 L14 10 L27 11"/>'),
+    'slight-right': svg('<path d="M20 42 V26 L32 12"/><path d="M21 11 L34 10 L33 23"/>'),
+    'sharp-left': svg('<path d="M28 42 V24 L14 34"/><path d="M14 22 L12 36 L26 38"/>'),
+    'sharp-right': svg('<path d="M20 42 V24 L34 34"/><path d="M34 22 L36 36 L22 38"/>'),
+    'uturn': svg('<path d="M32 42 V18 a8 8 0 0 0 -16 0 V30"/><path d="M9 24 L16 33 L23 24"/>'),
+    'merge-left': svg('<path d="M32 42 L24 28 V10"/><path d="M14 42 L22 28"/><path d="' + arrowHead + '"/>'),
+    'merge-right': svg('<path d="M16 42 L24 28 V10"/><path d="M34 42 L26 28"/><path d="' + arrowHead + '"/>'),
+    'ramp-left': svg('<path d="M30 42 V28 L16 16"/><path d="M15 26 L14 12 L28 13"/>'),
+    'ramp-right': svg('<path d="M18 42 V28 L32 16"/><path d="M20 13 L34 12 L33 26"/>'),
+    'roundabout': svg('<circle cx="24" cy="24" r="9"/><path d="M24 42 V33"/><path d="M24 15 V8"/><path d="M18 4 L24 8 L18 13" transform="translate(0,1)"/>'),
+    'arrive': svg('<path d="M24 42 V12"/><path d="M24 12 L36 17 L24 22" fill="#a7f3d0"/>'),
+  };
+})();
+
+/* -------------------------------- toast --------------------------------- */
+
+var toastTimer = 0;
+function toast(msg) {
+  var t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { t.classList.remove('show'); }, 2600);
+}
+
+/* --------------------------------- init ---------------------------------- */
+
+startGps();
+updateLocateBtn();
+
+// convoy deep link: atlas/#convoy=CODE opens the join sheet prefilled
+(function () {
+  var code = null;
+  try { code = A.parseConvoyLink(String((window.location && window.location.hash) || '')); } catch (e) {}
+  if (code) {
+    $('convoyCode').value = code;
+    $('convoyName').value = load('atlas.convoy.name', '') || '';
+    openSheet('convoySheet');
+    toast('Invited to convoy ' + code + ' — tap Join');
+  }
+})();
+
+if (navigator.serviceWorker && navigator.serviceWorker.register) {
+  try { navigator.serviceWorker.register('sw.js'); } catch (e) {}
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#143A34">
+<title>Favours, not cash — join the circle · TimeCoin</title>
+<meta name="description" content="A neighbourhood favours circle. Help each other out — lifts, cooking, repairs, babysitting — and count it in hours, not money. Not crypto, nothing to buy. Join free.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Swap favours, not cash — join the circle">
+<meta property="og:description" content="Help each other out and keep score in hours, not money. Everyone's hour counts the same. Not crypto, nothing to buy — just neighbours helping neighbours.">
+<style>
+  :root{
+    --paper:#F1EADB; --paper-2:#FBF7EF; --edge:#E7DDC9;
+    --ink:#143A34; --ink-soft:#4C5A54; --gold:#C9862B; --gold-deep:#A86D1E;
+    --coral:#DE5B3C; --line:rgba(20,58,52,.16); --line-soft:rgba(20,58,52,.09);
+  }
+  /* deliberate single "printed poster" look — hold it steady in either viewer theme */
+  :root[data-theme="dark"], :root[data-theme="light"]{
+    --paper:#F1EADB; --paper-2:#FBF7EF; --edge:#E7DDC9;
+    --ink:#143A34; --ink-soft:#4C5A54; --gold:#C9862B; --gold-deep:#A86D1E;
+    --coral:#DE5B3C; --line:rgba(20,58,52,.16); --line-soft:rgba(20,58,52,.09);
+  }
+  *{box-sizing:border-box;}
+  html,body{background:var(--edge);}
+  body{margin:0;padding:26px 16px 40px;display:flex;justify-content:center;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:var(--ink);-webkit-font-smoothing:antialiased;}
+  .poster{width:100%;max-width:430px;background:var(--paper);
+    border:1px solid var(--line);border-radius:22px;overflow:hidden;
+    box-shadow:0 18px 50px rgba(20,58,52,.16),0 2px 0 rgba(255,255,255,.5) inset;
+    animation:rise .7s cubic-bezier(.16,1,.3,1) both;}
+  @keyframes rise{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:none;}}
+  @media (prefers-reduced-motion:reduce){.poster{animation:none;}}
+  .pad{padding:30px 28px;}
+  .serif{font-family:Georgia,"Iowan Old Style","Times New Roman",serif;}
+
+  .eyebrow{font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;
+    color:var(--gold-deep);font-weight:600;display:flex;align-items:center;gap:9px;}
+  .eyebrow::before{content:"";width:22px;height:2px;background:var(--gold);border-radius:2px;}
+
+  h1{font-family:Georgia,serif;font-weight:700;text-wrap:balance;
+    font-size:clamp(38px,11vw,46px);line-height:1.02;letter-spacing:-.01em;margin:16px 0 0;}
+  h1 .dot{color:var(--coral);}
+  .deck{font-size:16.5px;line-height:1.55;color:var(--ink-soft);margin:16px 0 0;max-width:34ch;}
+  .deck b{color:var(--ink);font-weight:600;}
+
+  .rule{height:1px;background:var(--line-soft);margin:26px 0;}
+
+  .sect-label{font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--gold-deep);font-weight:700;margin-bottom:16px;}
+
+  ol.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:16px;counter-reset:s;}
+  ol.steps li{display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start;counter-increment:s;}
+  ol.steps li::before{content:counter(s);grid-row:span 2;
+    font-family:Georgia,serif;font-size:17px;font-weight:700;color:var(--gold-deep);
+    width:34px;height:34px;border-radius:50%;border:1.5px solid var(--gold);
+    display:grid;place-items:center;background:var(--paper-2);}
+  ol.steps .st{font-weight:650;font-size:16px;}
+  ol.steps .sd{font-size:14.5px;color:var(--ink-soft);line-height:1.5;margin-top:2px;}
+
+  ul.why{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:13px;}
+  ul.why li{display:grid;grid-template-columns:auto 1fr;gap:11px;font-size:15.5px;line-height:1.45;}
+  ul.why li::before{content:"\25C6";color:var(--gold);font-size:11px;margin-top:5px;}
+  ul.why b{font-weight:650;}
+
+  .chips{display:flex;flex-wrap:wrap;gap:8px;}
+  .chip{font-size:13.5px;padding:7px 12px;border-radius:999px;background:var(--paper-2);
+    border:1px solid var(--line);color:var(--ink);white-space:nowrap;}
+
+  .trust{margin:26px 0 0;padding:14px 16px;border-radius:14px;
+    background:rgba(20,58,52,.05);border:1px dashed var(--line);
+    font-size:14px;line-height:1.5;color:var(--ink);}
+  .trust b{color:var(--gold-deep);}
+
+  .join{background:var(--ink);color:var(--paper);padding:28px;}
+  .join .top{display:flex;gap:20px;align-items:center;}
+  .join .qr{background:#fff;padding:9px;border-radius:12px;line-height:0;flex:0 0 auto;
+    box-shadow:0 6px 18px rgba(0,0,0,.25);}
+  .join .qr svg{display:block;width:118px;height:118px;}
+  .join .jt{font-family:Georgia,serif;font-size:22px;font-weight:700;line-height:1.1;}
+  .join .jd{font-size:13.5px;line-height:1.5;color:rgba(241,234,219,.82);margin-top:7px;}
+  .join .jd b{color:#fff;font-weight:650;}
+  .join .cta{display:block;margin-top:20px;text-align:center;text-decoration:none;
+    background:linear-gradient(180deg,#e6b45c,#c9862b);color:#20170a;font-weight:700;
+    font-size:16px;padding:15px 18px;border-radius:13px;letter-spacing:.01em;}
+  .join .cta:focus-visible{outline:3px solid #fff;outline-offset:2px;}
+  .join .url{margin-top:12px;text-align:center;font-size:12.5px;font-weight:600;
+    color:var(--gold);word-break:break-all;}
+</style>
+</head>
+<body>
+<div class="poster">
+  <div class="pad">
+    <div class="eyebrow">A neighbourhood favours circle</div>
+    <h1 class="serif">Swap favours,<br>not cash<span class="dot">.</span></h1>
+    <p class="deck">Help each other out — a lift into town, a cooked meal, a leaky tap, a hand moving a sofa — and keep score in <b>hours</b>, not money. Everyone’s hour counts the same.</p>
+
+    <div class="rule"></div>
+
+    <div class="sect-label">How it works</div>
+    <ol class="steps">
+      <li><div class="st">Join, free</div><div class="sd">Thirty seconds, nothing to download. You start with a couple of hours to spend.</div></li>
+      <li><div class="st">Help someone</div><div class="sd">Do a favour from the board — you earn that many hours.</div></li>
+      <li><div class="st">Spend your hours</div><div class="sd">Need a hand yourself? Someone in the circle helps, and you pay in hours.</div></li>
+    </ol>
+
+    <div class="rule"></div>
+
+    <div class="sect-label">Why people love it</div>
+    <ul class="why">
+      <li><span><b>It’s fair.</b> An hour of your time is worth an hour of anyone else’s — no haggling.</span></li>
+      <li><span><b>No money needed.</b> No fees, no bank, nobody taking a cut.</span></li>
+      <li><span><b>It builds community.</b> You get to know — and rely on — the people around you.</span></li>
+      <li><span><b>It’s genuinely yours.</b> Nothing to buy, nothing to sell, no catch.</span></li>
+    </ul>
+
+    <div class="rule"></div>
+
+    <div class="sect-label">Bigger than one street</div>
+    <p class="deck" style="max-width:38ch">Circles can join hands. When a nearby circle links up with yours, a favour can travel between them — someone you both know simply passes it along. You get a wider pool of people to help and be helped by, no one’s in charge, and your circle still keeps its own tally.</p>
+
+    <div class="rule"></div>
+
+    <div class="sect-label">Things people are already swapping</div>
+    <div class="chips">
+      <span class="chip">🚗 Lifts</span>
+      <span class="chip">🍲 Cooking</span>
+      <span class="chip">🔧 Repairs</span>
+      <span class="chip">🐕 Dog-walking</span>
+      <span class="chip">👶 Babysitting</span>
+      <span class="chip">✂️ Haircuts</span>
+      <span class="chip">🪴 Gardening</span>
+      <span class="chip">💻 Tech help</span>
+    </div>
+
+    <div class="trust">
+      <b>Not crypto.</b> Nothing to buy, it has no price, you can’t invest in it. It’s just a fair, private way for neighbours to trade favours — like a time bank.
+    </div>
+  </div>
+
+  <div class="join">
+    <div class="top">
+      <div class="qr" aria-label="Scan to join">
+        <svg xmlns="http://www.w3.org/2000/svg" width="280" height="280" viewBox="0 0 280 280" shape-rendering="crispEdges"><rect width="280" height="280" fill="#ffffff"/><path fill="#143A34" d="M24 24h8v8h-8zM32 24h8v8h-8zM40 24h8v8h-8zM48 24h8v8h-8zM56 24h8v8h-8zM64 24h8v8h-8zM72 24h8v8h-8zM104 24h8v8h-8zM120 24h8v8h-8zM128 24h8v8h-8zM144 24h8v8h-8zM176 24h8v8h-8zM200 24h8v8h-8zM208 24h8v8h-8zM216 24h8v8h-8zM224 24h8v8h-8zM232 24h8v8h-8zM240 24h8v8h-8zM248 24h8v8h-8zM24 32h8v8h-8zM72 32h8v8h-8zM88 32h8v8h-8zM104 32h8v8h-8zM128 32h8v8h-8zM136 32h8v8h-8zM144 32h8v8h-8zM152 32h8v8h-8zM160 32h8v8h-8zM168 32h8v8h-8zM200 32h8v8h-8zM248 32h8v8h-8zM24 40h8v8h-8zM40 40h8v8h-8zM48 40h8v8h-8zM56 40h8v8h-8zM72 40h8v8h-8zM120 40h8v8h-8zM128 40h8v8h-8zM144 40h8v8h-8zM152 40h8v8h-8zM168 40h8v8h-8zM176 40h8v8h-8zM200 40h8v8h-8zM216 40h8v8h-8zM224 40h8v8h-8zM232 40h8v8h-8zM248 40h8v8h-8zM24 48h8v8h-8zM40 48h8v8h-8zM48 48h8v8h-8zM56 48h8v8h-8zM72 48h8v8h-8zM88 48h8v8h-8zM96 48h8v8h-8zM104 48h8v8h-8zM120 48h8v8h-8zM136 48h8v8h-8zM160 48h8v8h-8zM168 48h8v8h-8zM200 48h8v8h-8zM216 48h8v8h-8zM224 48h8v8h-8zM232 48h8v8h-8zM248 48h8v8h-8zM24 56h8v8h-8zM40 56h8v8h-8zM48 56h8v8h-8zM56 56h8v8h-8zM72 56h8v8h-8zM96 56h8v8h-8zM152 56h8v8h-8zM160 56h8v8h-8zM168 56h8v8h-8zM176 56h8v8h-8zM184 56h8v8h-8zM200 56h8v8h-8zM216 56h8v8h-8zM224 56h8v8h-8zM232 56h8v8h-8zM248 56h8v8h-8zM24 64h8v8h-8zM72 64h8v8h-8zM88 64h8v8h-8zM96 64h8v8h-8zM112 64h8v8h-8zM120 64h8v8h-8zM144 64h8v8h-8zM152 64h8v8h-8zM160 64h8v8h-8zM200 64h8v8h-8zM248 64h8v8h-8zM24 72h8v8h-8zM32 72h8v8h-8zM40 72h8v8h-8zM48 72h8v8h-8zM56 72h8v8h-8zM64 72h8v8h-8zM72 72h8v8h-8zM88 72h8v8h-8zM104 72h8v8h-8zM120 72h8v8h-8zM136 72h8v8h-8zM152 72h8v8h-8zM168 72h8v8h-8zM184 72h8v8h-8zM200 72h8v8h-8zM208 72h8v8h-8zM216 72h8v8h-8zM224 72h8v8h-8zM232 72h8v8h-8zM240 72h8v8h-8zM248 72h8v8h-8zM96 80h8v8h-8zM104 80h8v8h-8zM112 80h8v8h-8zM136 80h8v8h-8zM152 80h8v8h-8zM168 80h8v8h-8zM184 80h8v8h-8zM24 88h8v8h-8zM32 88h8v8h-8zM40 88h8v8h-8zM48 88h8v8h-8zM56 88h8v8h-8zM72 88h8v8h-8zM80 88h8v8h-8zM88 88h8v8h-8zM96 88h8v8h-8zM112 88h8v8h-8zM160 88h8v8h-8zM184 88h8v8h-8zM192 88h8v8h-8zM208 88h8v8h-8zM224 88h8v8h-8zM240 88h8v8h-8zM24 96h8v8h-8zM32 96h8v8h-8zM88 96h8v8h-8zM104 96h8v8h-8zM120 96h8v8h-8zM128 96h8v8h-8zM136 96h8v8h-8zM152 96h8v8h-8zM160 96h8v8h-8zM168 96h8v8h-8zM176 96h8v8h-8zM184 96h8v8h-8zM200 96h8v8h-8zM208 96h8v8h-8zM216 96h8v8h-8zM248 96h8v8h-8zM32 104h8v8h-8zM40 104h8v8h-8zM48 104h8v8h-8zM56 104h8v8h-8zM64 104h8v8h-8zM72 104h8v8h-8zM80 104h8v8h-8zM88 104h8v8h-8zM104 104h8v8h-8zM128 104h8v8h-8zM136 104h8v8h-8zM144 104h8v8h-8zM152 104h8v8h-8zM160 104h8v8h-8zM192 104h8v8h-8zM216 104h8v8h-8zM24 112h8v8h-8zM32 112h8v8h-8zM48 112h8v8h-8zM56 112h8v8h-8zM80 112h8v8h-8zM120 112h8v8h-8zM128 112h8v8h-8zM176 112h8v8h-8zM192 112h8v8h-8zM200 112h8v8h-8zM208 112h8v8h-8zM224 112h8v8h-8zM240 112h8v8h-8zM24 120h8v8h-8zM32 120h8v8h-8zM56 120h8v8h-8zM72 120h8v8h-8zM80 120h8v8h-8zM88 120h8v8h-8zM96 120h8v8h-8zM104 120h8v8h-8zM120 120h8v8h-8zM136 120h8v8h-8zM144 120h8v8h-8zM160 120h8v8h-8zM176 120h8v8h-8zM224 120h8v8h-8zM232 120h8v8h-8zM40 128h8v8h-8zM48 128h8v8h-8zM56 128h8v8h-8zM64 128h8v8h-8zM80 128h8v8h-8zM152 128h8v8h-8zM160 128h8v8h-8zM168 128h8v8h-8zM176 128h8v8h-8zM184 128h8v8h-8zM200 128h8v8h-8zM208 128h8v8h-8zM216 128h8v8h-8zM248 128h8v8h-8zM24 136h8v8h-8zM32 136h8v8h-8zM40 136h8v8h-8zM48 136h8v8h-8zM72 136h8v8h-8zM104 136h8v8h-8zM112 136h8v8h-8zM120 136h8v8h-8zM144 136h8v8h-8zM160 136h8v8h-8zM184 136h8v8h-8zM192 136h8v8h-8zM200 136h8v8h-8zM216 136h8v8h-8zM224 136h8v8h-8zM232 136h8v8h-8zM40 144h8v8h-8zM112 144h8v8h-8zM136 144h8v8h-8zM152 144h8v8h-8zM168 144h8v8h-8zM184 144h8v8h-8zM192 144h8v8h-8zM200 144h8v8h-8zM208 144h8v8h-8zM240 144h8v8h-8zM24 152h8v8h-8zM48 152h8v8h-8zM64 152h8v8h-8zM72 152h8v8h-8zM80 152h8v8h-8zM88 152h8v8h-8zM112 152h8v8h-8zM160 152h8v8h-8zM176 152h8v8h-8zM224 152h8v8h-8zM232 152h8v8h-8zM24 160h8v8h-8zM40 160h8v8h-8zM48 160h8v8h-8zM80 160h8v8h-8zM88 160h8v8h-8zM96 160h8v8h-8zM120 160h8v8h-8zM128 160h8v8h-8zM136 160h8v8h-8zM176 160h8v8h-8zM192 160h8v8h-8zM200 160h8v8h-8zM208 160h8v8h-8zM216 160h8v8h-8zM232 160h8v8h-8zM248 160h8v8h-8zM24 168h8v8h-8zM48 168h8v8h-8zM72 168h8v8h-8zM88 168h8v8h-8zM96 168h8v8h-8zM104 168h8v8h-8zM128 168h8v8h-8zM136 168h8v8h-8zM144 168h8v8h-8zM160 168h8v8h-8zM168 168h8v8h-8zM192 168h8v8h-8zM208 168h8v8h-8zM216 168h8v8h-8zM232 168h8v8h-8zM24 176h8v8h-8zM48 176h8v8h-8zM88 176h8v8h-8zM96 176h8v8h-8zM120 176h8v8h-8zM128 176h8v8h-8zM168 176h8v8h-8zM176 176h8v8h-8zM184 176h8v8h-8zM200 176h8v8h-8zM216 176h8v8h-8zM240 176h8v8h-8zM24 184h8v8h-8zM40 184h8v8h-8zM48 184h8v8h-8zM56 184h8v8h-8zM72 184h8v8h-8zM88 184h8v8h-8zM104 184h8v8h-8zM120 184h8v8h-8zM136 184h8v8h-8zM144 184h8v8h-8zM152 184h8v8h-8zM160 184h8v8h-8zM176 184h8v8h-8zM184 184h8v8h-8zM192 184h8v8h-8zM200 184h8v8h-8zM208 184h8v8h-8zM216 184h8v8h-8zM232 184h8v8h-8zM240 184h8v8h-8zM248 184h8v8h-8zM88 192h8v8h-8zM104 192h8v8h-8zM152 192h8v8h-8zM168 192h8v8h-8zM184 192h8v8h-8zM216 192h8v8h-8zM224 192h8v8h-8zM232 192h8v8h-8zM240 192h8v8h-8zM248 192h8v8h-8zM24 200h8v8h-8zM32 200h8v8h-8zM40 200h8v8h-8zM48 200h8v8h-8zM56 200h8v8h-8zM64 200h8v8h-8zM72 200h8v8h-8zM88 200h8v8h-8zM104 200h8v8h-8zM112 200h8v8h-8zM120 200h8v8h-8zM144 200h8v8h-8zM152 200h8v8h-8zM176 200h8v8h-8zM184 200h8v8h-8zM200 200h8v8h-8zM216 200h8v8h-8zM224 200h8v8h-8zM232 200h8v8h-8zM24 208h8v8h-8zM72 208h8v8h-8zM88 208h8v8h-8zM96 208h8v8h-8zM112 208h8v8h-8zM136 208h8v8h-8zM144 208h8v8h-8zM152 208h8v8h-8zM176 208h8v8h-8zM184 208h8v8h-8zM216 208h8v8h-8zM240 208h8v8h-8zM24 216h8v8h-8zM40 216h8v8h-8zM48 216h8v8h-8zM56 216h8v8h-8zM72 216h8v8h-8zM88 216h8v8h-8zM104 216h8v8h-8zM112 216h8v8h-8zM144 216h8v8h-8zM160 216h8v8h-8zM184 216h8v8h-8zM192 216h8v8h-8zM200 216h8v8h-8zM208 216h8v8h-8zM216 216h8v8h-8zM232 216h8v8h-8zM24 224h8v8h-8zM40 224h8v8h-8zM48 224h8v8h-8zM56 224h8v8h-8zM72 224h8v8h-8zM88 224h8v8h-8zM120 224h8v8h-8zM128 224h8v8h-8zM136 224h8v8h-8zM152 224h8v8h-8zM160 224h8v8h-8zM168 224h8v8h-8zM176 224h8v8h-8zM224 224h8v8h-8zM232 224h8v8h-8zM240 224h8v8h-8zM248 224h8v8h-8zM24 232h8v8h-8zM40 232h8v8h-8zM48 232h8v8h-8zM56 232h8v8h-8zM72 232h8v8h-8zM88 232h8v8h-8zM104 232h8v8h-8zM128 232h8v8h-8zM136 232h8v8h-8zM144 232h8v8h-8zM160 232h8v8h-8zM184 232h8v8h-8zM192 232h8v8h-8zM200 232h8v8h-8zM208 232h8v8h-8zM216 232h8v8h-8zM224 232h8v8h-8zM232 232h8v8h-8zM240 232h8v8h-8zM24 240h8v8h-8zM72 240h8v8h-8zM104 240h8v8h-8zM120 240h8v8h-8zM128 240h8v8h-8zM144 240h8v8h-8zM152 240h8v8h-8zM168 240h8v8h-8zM184 240h8v8h-8zM200 240h8v8h-8zM224 240h8v8h-8zM240 240h8v8h-8zM24 248h8v8h-8zM32 248h8v8h-8zM40 248h8v8h-8zM48 248h8v8h-8zM56 248h8v8h-8zM64 248h8v8h-8zM72 248h8v8h-8zM88 248h8v8h-8zM96 248h8v8h-8zM104 248h8v8h-8zM120 248h8v8h-8zM136 248h8v8h-8zM144 248h8v8h-8zM160 248h8v8h-8zM176 248h8v8h-8zM200 248h8v8h-8zM216 248h8v8h-8zM232 248h8v8h-8z"/></svg>
+      </div>
+      <div>
+        <div class="jt serif">Scan to join</div>
+        <div class="jd">Point your phone’s camera here, or tap below. <b>Ask me for an invite</b> and you’ll start with a couple of hours.</div>
+      </div>
+    </div>
+    <a class="cta" href="./">Open the app &rarr;</a>
+    <div class="url">ballrzcoin-jtb2.onrender.com</div>
+  </div>
+</div>
+</body>
+</html>

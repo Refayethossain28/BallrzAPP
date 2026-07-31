@@ -1,0 +1,84 @@
+name: Backend smoke test (live callables)
+
+# Hits the DEPLOYED Cloud Functions over HTTPS and asserts the contract the
+# apps rely on, without touching money or data:
+#   - public callables answer with a callable-shaped {"result": ...}
+#   - the payment callable REJECTS unauthenticated calls (the auth gate works)
+#   - the refund callable rejects unauthenticated calls too
+# No credentials are needed: the positive probes use the anonymously-allowed,
+# rate-limited callables, and the negative probes must fail before auth.
+# Runs weekly and on demand; run it after any functions deploy for a quick
+# "is production actually alive" answer.
+
+on:
+  schedule:
+    - cron: "45 6 * * 1"   # 06:45 UTC every Monday
+  workflow_dispatch:
+
+concurrency: backend-smoke
+
+env:
+  BASE: https://us-central1-apexvip-1b4a9.cloudfunctions.net
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Smoke the live callables
+        run: |
+          FAIL=0
+          # The callable protocol is the contract: success bodies contain
+          # {"result": ...}, failures contain {"error": {"status": ...}} — so
+          # assertions key off the body, which survives $( ) capture (an HTTP
+          # code set inside the subshell wouldn't).
+          call() {  # call <name> <json-data> -> body on stdout
+            local name="$1" data="$2"
+            curl -sS -X POST -H "Content-Type: application/json" \
+              --max-time 30 -d "{\"data\":$data}" "$BASE/$name" 2>&1 | head -c 2000
+          }
+
+          echo "== checkFlightStatus (public) =="
+          BODY=$(call checkFlightStatus '{"flight":"BA117"}')
+          echo "${BODY:0:200}"
+          if ! printf '%s' "$BODY" | grep -q '"result"'; then
+            echo "::error title=checkFlightStatus::expected a callable result payload"; FAIL=1
+          fi
+
+          echo "== getHotelRates (public, rate-limited) =="
+          CHECKIN=$(date -u -d '+7 days' +%F)
+          BODY=$(call getHotelRates "{\"lat\":51.5074,\"lng\":-0.1278,\"checkIn\":\"$CHECKIN\"}")
+          echo "${BODY:0:200}"
+          # UNAVAILABLE = the Amadeus provider is down/misconfigured — a known
+          # degraded state the client handles with its own fallback rates, so
+          # warn instead of failing (run #2, 22 Jul 2026: live creds don't
+          # return rates yet — recheck AMADEUS_CLIENT_ID/SECRET before launch).
+          if printf '%s' "$BODY" | grep -q '"result"'; then
+            :
+          elif printf '%s' "$BODY" | grep -q 'UNAVAILABLE'; then
+            echo "::warning title=getHotelRates degraded::provider unavailable — client falls back to its own rates; check the Amadeus secrets"
+          else
+            echo "::error title=getHotelRates::expected a result or a clean UNAVAILABLE"; FAIL=1
+          fi
+
+          echo "== parseBookingIntent (public, rate-limited) =="
+          BODY=$(call parseBookingIntent '{"message":"Book me a car to Heathrow tomorrow at 9am"}')
+          echo "${BODY:0:300}"
+          if ! printf '%s' "$BODY" | grep -q '"result"'; then
+            echo "::error title=parseBookingIntent::expected a callable result payload"; FAIL=1
+          fi
+
+          echo "== processSquarePayment WITHOUT auth (must be rejected) =="
+          BODY=$(call processSquarePayment '{"amount":1,"sourceId":"smoke"}')
+          echo "${BODY:0:200}"
+          if ! printf '%s' "$BODY" | grep -qi 'UNAUTHENTICATED'; then
+            echo "::error title=Payment auth gate::unauthenticated call was NOT rejected — investigate immediately"; FAIL=1
+          fi
+
+          echo "== refundSquarePayment WITHOUT auth (must be rejected) =="
+          BODY=$(call refundSquarePayment '{"paymentId":"smoke"}')
+          echo "${BODY:0:200}"
+          if ! printf '%s' "$BODY" | grep -qi 'UNAUTHENTICATED'; then
+            echo "::error title=Refund auth gate::unauthenticated call was NOT rejected — investigate immediately"; FAIL=1
+          fi
+
+          [ "$FAIL" = "0" ] && echo "ALL SMOKE CHECKS PASSED" || exit 1

@@ -1,0 +1,190 @@
+rules_version = '2';
+
+// RentMatch Firestore security rules.
+//
+// Core principle: money, deal-stage and contract fields are written ONLY by
+// Cloud Functions (privileged Admin SDK, which bypasses these rules). Clients
+// may create an enquiry and post messages, but may never mutate a deal's stage,
+// signatures, payment or contract — those flow exclusively through callable
+// Functions that enforce the state machine and compliance gates.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() { return request.auth != null; }
+    function uid() { return request.auth.uid; }
+    function isParticipant(deal) {
+      return uid() == deal.renterId || uid() == deal.landlordId;
+    }
+
+    // Agent-tier access: a landlord may connect their portfolio to an agency (it
+    // sets `agencyId` on their own user doc). Members of that agency may then
+    // read the landlord's data. Resolved via the landlord's user doc, so no
+    // per-document stamping is needed.
+    function landlordAgency(landlordId) {
+      return get(/databases/$(database)/documents/users/$(landlordId)).data.get('agencyId', '');
+    }
+    function isAgencyMemberFor(landlordId) {
+      return isSignedIn()
+        && landlordAgency(landlordId) != ''
+        && uid() in get(/databases/$(database)/documents/agencies/$(landlordAgency(landlordId))).data.memberIds;
+    }
+
+    // Users can read/write only their own profile.
+    match /users/{userId} {
+      allow read, write: if isSignedIn() && uid() == userId;
+    }
+
+    // Properties + their compliance docs are owned by the landlord.
+    match /properties/{propertyId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.landlordId == uid();
+      allow update, delete: if isSignedIn() && resource.data.landlordId == uid();
+
+      match /complianceDocs/{docId} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn() &&
+          get(/databases/$(database)/documents/properties/$(propertyId)).data.landlordId == uid();
+      }
+    }
+
+    // Live listings are publicly readable; only the owning landlord edits them —
+    // but `status` is server-authoritative: it changes only via the
+    // `publishListing` Cloud Function (Admin SDK), never directly from a client.
+    match /listings/{listingId} {
+      // Advertised listings (live, or let — so a renter still sees "this
+      // property has been let") are public. Drafts were never advertised and
+      // stay private to the owning landlord: a world-readable draft would leak
+      // an unfinished, non-compliance-checked property and its landlordId.
+      allow read: if resource.data.status in ['live', 'let']
+        || (isSignedIn() && resource.data.landlordId == uid());
+      allow create: if isSignedIn() && request.resource.data.landlordId == uid()
+        && request.resource.data.status == 'draft';
+      allow update: if isSignedIn() && resource.data.landlordId == uid()
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'landlordId']);
+      allow delete: if isSignedIn() && resource.data.landlordId == uid();
+    }
+
+    // Agencies: members read; the owner manages it. Client-list changes go
+    // through Cloud Functions (connectToAgency/disconnectFromAgency).
+    match /agencies/{agencyId} {
+      allow read: if isSignedIn() && uid() in resource.data.memberIds;
+      allow create: if isSignedIn() && request.resource.data.ownerId == uid();
+      allow update, delete: if isSignedIn() && resource.data.ownerId == uid();
+    }
+
+    // Deals: a renter may open one; both participants may read it.
+    match /deals/{dealId} {
+      function changedKeys() {
+        return request.resource.data.diff(resource.data).affectedKeys();
+      }
+      allow read: if isSignedIn() && isParticipant(resource.data);
+      // A renter opens their own enquiry. The new deal must start clean: at the
+      // enquiry stage, with neither party agreed and no money/signature/contract
+      // fields pre-set — so a client can't fabricate a "completed" or pre-agreed
+      // deal. Those fields only ever advance through Cloud Functions.
+      allow create: if isSignedIn()
+        && request.resource.data.renterId == uid()
+        && request.resource.data.stage == 'enquiry'
+        && request.resource.data.agreed == { 'renter': false, 'landlord': false }
+        && request.resource.data.contractDrafted == false
+        && request.resource.data.feePaid == false
+        && request.resource.data.signed == { 'renter': null, 'landlord': null };
+      // M2: participants may update only the messaging/viewing/agreement fields.
+      // Guards: (a) the deal must still be pre-contract — once a contract is
+      // drafted or the stage advances to contract/signing/completed, the client
+      // can no longer touch it (no rolling a signed deal back to 'enquiry');
+      // (b) each party may flip only their OWN half of `agreed`, so a renter
+      // can't forge the landlord's consent (which gates the £100 fee) and vice
+      // versa. Signatures, payment and contract stay locked to Functions.
+      allow update: if isSignedIn() && isParticipant(resource.data)
+        && changedKeys().hasOnly(['stage', 'viewing', 'agreed', 'updatedAt'])
+        && request.resource.data.stage in ['enquiry', 'viewing', 'agreed', 'cancelled']
+        && resource.data.stage in ['enquiry', 'viewing', 'agreed']
+        && resource.data.contractDrafted == false
+        && (uid() == resource.data.renterId
+              ? request.resource.data.agreed.landlord == resource.data.agreed.landlord
+              : request.resource.data.agreed.renter == resource.data.agreed.renter);
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        // M2: either participant may post in their own deal (this includes the
+        // client-generated "system" notes for viewings/agreement). M3 moves
+        // system messages behind Cloud Functions so they can't be forged.
+        allow read: if isSignedIn() &&
+          isParticipant(get(/databases/$(database)/documents/deals/$(dealId)).data);
+        allow create: if isSignedIn() &&
+          isParticipant(get(/databases/$(database)/documents/deals/$(dealId)).data);
+        allow update, delete: if false;
+      }
+
+      // Audit trail is append-only via Functions; clients read only.
+      match /events/{eventId} {
+        allow read: if isSignedIn() &&
+          isParticipant(get(/databases/$(database)/documents/deals/$(dealId)).data);
+        allow write: if false;
+      }
+    }
+
+    // Viewings: participants read; writes go through Functions.
+    match /viewings/{viewingId} {
+      allow read: if isSignedIn() && isParticipant(resource.data);
+      allow write: if false;
+    }
+
+    // Contracts + payments are entirely Function-managed and read-only to clients.
+    match /contracts/{contractId} {
+      allow read: if isSignedIn() && isParticipant(resource.data);
+      allow write: if false;
+    }
+    match /payments/{paymentId} {
+      allow read: if isSignedIn() && uid() == resource.data.landlordId;
+      allow write: if false;
+    }
+
+    // Tenancies are the landlord's own rent bookkeeping (not a server-
+    // authoritative money flow like deals), so the owning landlord has full
+    // CRUD over their tenancies and the payments recorded against them.
+    match /tenancies/{tenancyId} {
+      allow read: if isSignedIn() && (resource.data.landlordId == uid() || isAgencyMemberFor(resource.data.landlordId));
+      allow update, delete: if isSignedIn() && resource.data.landlordId == uid();
+      allow create: if isSignedIn() && request.resource.data.landlordId == uid();
+
+      match /payments/{paymentId} {
+        allow read: if isSignedIn() &&
+          (get(/databases/$(database)/documents/tenancies/$(tenancyId)).data.landlordId == uid()
+           || isAgencyMemberFor(get(/databases/$(database)/documents/tenancies/$(tenancyId)).data.landlordId));
+        allow write: if isSignedIn() &&
+          get(/databases/$(database)/documents/tenancies/$(tenancyId)).data.landlordId == uid();
+      }
+    }
+
+    // Expenses are the landlord's own financial records — owner CRUD, agency read.
+    match /expenses/{expenseId} {
+      allow read: if isSignedIn() && (resource.data.landlordId == uid() || isAgencyMemberFor(resource.data.landlordId));
+      allow update, delete: if isSignedIn() && resource.data.landlordId == uid();
+      allow create: if isSignedIn() && request.resource.data.landlordId == uid();
+    }
+
+    // Pseudonymous analytics: signed-in users may append events attributed to
+    // themselves; events are never readable or mutable from clients (the daily
+    // aggregation cron reads them under the Admin SDK). Published aggregates
+    // are k-anonymised, server-written, and readable by signed-in users.
+    match /analyticsEvents/{eventId} {
+      allow create: if isSignedIn() && request.resource.data.actorId == uid();
+      allow read, update, delete: if false;
+    }
+    match /marketStats/{docId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // Aggregated listings from licensed external feeds: part of the public
+    // marketplace (world-readable, like live listings); written only by the
+    // daily ingestion cron under the Admin SDK.
+    match /externalListings/{listingId} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}

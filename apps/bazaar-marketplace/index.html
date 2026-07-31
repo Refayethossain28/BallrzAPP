@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bazaar — Buy &amp; Sell Marketplace</title>
+<style>
+  :root {
+    --bg: #0d0b09;
+    --surface: #17130f;
+    --surface-2: #201a14;
+    --border: rgba(255, 255, 255, 0.08);
+    --text: #f0ebe4;
+    --text-dim: #9c9186;
+    --accent: #f59e0b;
+    --accent-soft: rgba(245, 158, 11, 0.14);
+    --danger: #f87171;
+    --radius: 14px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- Header ---------- */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(13, 11, 9, 0.85);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    backdrop-filter: blur(8px);
+  }
+  header a.back {
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 13px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    white-space: nowrap;
+    transition: color .15s, border-color .15s;
+  }
+  header a.back:hover { color: var(--text); border-color: rgba(255,255,255,0.2); }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; flex: 1; }
+  .brand .logo {
+    width: 30px; height: 30px; border-radius: 9px;
+    background: linear-gradient(135deg, var(--accent), #ef4444);
+    display: grid; place-items: center; font-size: 15px;
+  }
+  .brand small { color: var(--text-dim); font-weight: 400; font-size: 12px; }
+  .sell-btn {
+    background: var(--accent);
+    color: #241500;
+    border: none;
+    padding: 9px 16px;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: var(--font);
+    transition: filter .15s;
+  }
+  .sell-btn:hover { filter: brightness(1.1); }
+
+  /* ---------- Layout & controls ---------- */
+  main { max-width: 1150px; margin: 0 auto; padding: 22px 20px 60px; }
+  .controls {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .controls .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .search {
+    flex: 1;
+    min-width: 200px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    padding: 10px 14px;
+    font-size: 14px;
+    font-family: var(--font);
+    outline: none;
+    transition: border-color .15s;
+  }
+  .search:focus { border-color: var(--accent); }
+  select.sort {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    padding: 10px 12px;
+    font-size: 13px;
+    font-family: var(--font);
+    outline: none;
+    cursor: pointer;
+  }
+  .price-wrap { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-dim); min-width: 220px; flex: 1; }
+  .price-wrap output { color: var(--text); font-weight: 600; min-width: 84px; }
+  input[type="range"] {
+    flex: 1;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 7px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: var(--font);
+    transition: color .15s, border-color .15s, background .15s;
+  }
+  .chip:hover { color: var(--text); }
+  .chip.active {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .result-meta { font-size: 13px; color: var(--text-dim); margin-bottom: 12px; }
+
+  /* ---------- Listing grid ---------- */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 16px;
+  }
+  .listing {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform .15s, border-color .15s;
+    display: flex;
+    flex-direction: column;
+  }
+  .listing:hover { transform: translateY(-3px); border-color: rgba(255,255,255,0.18); }
+  .listing .img {
+    height: 130px;
+    display: grid;
+    place-items: center;
+    font-size: 56px;
+    background: linear-gradient(160deg, var(--surface-2), #15100b);
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  .fav-btn {
+    position: absolute;
+    top: 10px; right: 10px;
+    background: rgba(0,0,0,0.45);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    width: 34px; height: 34px;
+    font-size: 16px;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    color: var(--text-dim);
+    transition: color .15s, transform .1s;
+  }
+  .fav-btn:hover { transform: scale(1.12); }
+  .fav-btn.faved { color: #f43f5e; }
+  .listing .body { padding: 14px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+  .listing .title { font-weight: 600; font-size: 14px; line-height: 1.35; }
+  .listing .meta { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text-dim); margin-top: auto; }
+  .listing .price { color: var(--accent); font-weight: 700; font-size: 16px; }
+  .rating { color: #fbbf24; font-size: 12px; }
+  .cat-tag {
+    display: inline-block;
+    align-self: flex-start;
+    font-size: 11px;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+  .empty-state {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: var(--text-dim);
+    padding: 60px 0;
+    font-size: 15px;
+  }
+  .empty-state span { font-size: 40px; display: block; margin-bottom: 12px; }
+
+  /* ---------- Modals ---------- */
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.65);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    padding: 20px;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--surface);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 16px;
+    width: 100%;
+    max-width: 480px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.55);
+  }
+  .modal .close-x {
+    position: sticky;
+    top: 10px;
+    float: right;
+    margin: 10px 12px 0 0;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    width: 32px; height: 32px;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 14px;
+    z-index: 2;
+  }
+  .modal .close-x:hover { color: var(--text); }
+  .detail-hero {
+    height: 160px;
+    display: grid;
+    place-items: center;
+    font-size: 72px;
+    background: linear-gradient(160deg, var(--surface-2), #15100b);
+    border-bottom: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+  }
+  .detail-body { padding: 20px 22px 24px; }
+  .detail-body h3 { font-size: 19px; margin-bottom: 6px; }
+  .detail-body .price-line { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+  .detail-body .price-line .price { color: var(--accent); font-weight: 700; font-size: 22px; }
+  .detail-body .desc { font-size: 14px; color: var(--text-dim); line-height: 1.55; margin-bottom: 16px; }
+  .seller-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+  }
+  .seller-card .avatar {
+    width: 40px; height: 40px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    display: grid;
+    place-items: center;
+    font-weight: 700;
+    font-size: 15px;
+  }
+  .seller-card .info { flex: 1; }
+  .seller-card .info .name { font-weight: 600; font-size: 14px; }
+  .seller-card .info .sub { font-size: 12px; color: var(--text-dim); }
+
+  /* Chat */
+  .chat-box { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .chat-box .chat-title { font-size: 12px; color: var(--text-dim); padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+  .chat-log { padding: 12px; display: flex; flex-direction: column; gap: 8px; min-height: 70px; max-height: 180px; overflow-y: auto; }
+  .msg { max-width: 80%; padding: 8px 12px; border-radius: 12px; font-size: 13px; line-height: 1.4; }
+  .msg.me { align-self: flex-end; background: var(--accent-soft); color: var(--text); border: 1px solid rgba(245,158,11,0.3); border-bottom-right-radius: 4px; }
+  .msg.them { align-self: flex-start; background: var(--surface-2); border: 1px solid var(--border); border-bottom-left-radius: 4px; color: var(--text-dim); }
+  .chat-input-row { display: flex; border-top: 1px solid var(--border); }
+  .chat-input-row input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    padding: 11px 12px;
+    font-size: 13px;
+    font-family: var(--font);
+    outline: none;
+  }
+  .chat-input-row button {
+    background: transparent;
+    border: none;
+    color: var(--accent);
+    font-weight: 700;
+    padding: 0 16px;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: var(--font);
+  }
+  .chat-input-row button:hover { text-decoration: underline; }
+
+  /* Sell form */
+  .sell-form { padding: 22px; }
+  .sell-form h3 { font-size: 18px; margin-bottom: 16px; }
+  .field { margin-bottom: 13px; }
+  .field label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
+  .field input, .field select, .field textarea {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    padding: 10px 12px;
+    font-size: 14px;
+    font-family: var(--font);
+    outline: none;
+    transition: border-color .15s;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent); }
+  .field textarea { resize: vertical; min-height: 60px; }
+  .field-row { display: flex; gap: 12px; }
+  .field-row .field { flex: 1; }
+  .form-error { color: var(--danger); font-size: 12px; margin-bottom: 10px; display: none; }
+  .form-actions { display: flex; gap: 10px; margin-top: 6px; }
+  .btn {
+    flex: 1;
+    padding: 11px;
+    border-radius: 10px;
+    border: none;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--font);
+    transition: filter .15s;
+  }
+  .btn:hover { filter: brightness(1.1); }
+  .btn.primary { background: var(--accent); color: #241500; }
+  .btn.ghost { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    bottom: 24px; left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--surface-2);
+    border: 1px solid var(--accent);
+    color: var(--text);
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .25s, transform .25s;
+    z-index: 60;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<header>
+  <a class="back" href="../index.html">&larr; All apps</a>
+  <div class="brand">
+    <div class="logo">&#128717;</div>
+    <div>Bazaar <small>buy &amp; sell anything</small></div>
+  </div>
+  <button class="sell-btn" id="openSellBtn">+ Sell an item</button>
+</header>
+
+<main>
+  <section class="controls">
+    <div class="row">
+      <input class="search" id="searchInput" type="search" placeholder="Search listings, sellers…" aria-label="Search listings">
+      <select class="sort" id="sortSelect" aria-label="Sort listings">
+        <option value="newest">Newest first</option>
+        <option value="price-asc">Price: low to high</option>
+        <option value="price-desc">Price: high to low</option>
+        <option value="rating">Top rated</option>
+      </select>
+      <div class="price-wrap">
+        <span>Max price</span>
+        <input type="range" id="priceRange" min="0" max="1000" step="10" value="1000" aria-label="Maximum price">
+        <output id="priceOut">$1000</output>
+      </div>
+    </div>
+    <div class="row">
+      <div class="chips" id="chipRow"></div>
+    </div>
+  </section>
+
+  <div class="result-meta" id="resultMeta"></div>
+  <section class="grid" id="grid"></section>
+</main>
+
+<!-- Detail modal -->
+<div class="modal-backdrop" id="detailBackdrop">
+  <div class="modal" role="dialog" aria-modal="true">
+    <button class="close-x" data-close="detailBackdrop" aria-label="Close">&#10005;</button>
+    <div class="detail-hero" id="dHero"></div>
+    <div class="detail-body">
+      <span class="cat-tag" id="dCat"></span>
+      <h3 id="dTitle" style="margin-top:8px"></h3>
+      <div class="price-line">
+        <span class="price" id="dPrice"></span>
+        <span class="rating" id="dRating"></span>
+      </div>
+      <p class="desc" id="dDesc"></p>
+      <div class="seller-card">
+        <div class="avatar" id="dSellerAvatar"></div>
+        <div class="info">
+          <div class="name" id="dSellerName"></div>
+          <div class="sub" id="dSellerSub"></div>
+        </div>
+      </div>
+      <div class="chat-box">
+        <div class="chat-title">Message seller</div>
+        <div class="chat-log" id="chatLog"></div>
+        <div class="chat-input-row">
+          <input type="text" id="chatInput" placeholder="Hi, is this still available?" maxlength="200">
+          <button id="chatSend">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Sell modal -->
+<div class="modal-backdrop" id="sellBackdrop">
+  <div class="modal" role="dialog" aria-modal="true">
+    <form class="sell-form" id="sellForm">
+      <h3>Sell an item</h3>
+      <div class="field">
+        <label for="sTitle">Title</label>
+        <input id="sTitle" type="text" placeholder="e.g. Vintage road bike" maxlength="70" required>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="sCategory">Category</label>
+          <select id="sCategory"></select>
+        </div>
+        <div class="field">
+          <label for="sPrice">Price ($)</label>
+          <input id="sPrice" type="number" min="1" max="100000" step="1" placeholder="120" required>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="sSeller">Your name</label>
+          <input id="sSeller" type="text" placeholder="e.g. Sam Porter" maxlength="40" required>
+        </div>
+        <div class="field">
+          <label for="sEmoji">Emoji image</label>
+          <input id="sEmoji" type="text" placeholder="📦" maxlength="4">
+        </div>
+      </div>
+      <div class="field">
+        <label for="sDesc">Description</label>
+        <textarea id="sDesc" placeholder="Condition, age, pickup details…" maxlength="400"></textarea>
+      </div>
+      <div class="form-error" id="sellError"></div>
+      <div class="form-actions">
+        <button type="button" class="btn ghost" data-close="sellBackdrop">Cancel</button>
+        <button type="submit" class="btn primary">Post listing</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var LS_LISTINGS = 'bazaar_user_listings_v1';
+  var LS_FAVS = 'bazaar_favs_v1';
+
+  var CATEGORIES = ['Electronics', 'Furniture', 'Fashion', 'Sports', 'Books', 'Home & Garden'];
+  var DAY = 86400000;
+  var NOW = Date.now();
+
+  // ---------- Seed data (16 listings) ----------
+  var SEED = [
+    { id: 's1',  title: 'MacBook Air M2, 16GB — barely used',    category: 'Electronics',   price: 780, seller: 'Nina Alvarez',  rating: 4.9, emoji: '💻', desc: 'Bought last year, battery cycle count under 60. Comes with original charger and box. No dents or scratches.', createdAt: NOW - 2 * DAY },
+    { id: 's2',  title: 'Mid-century walnut coffee table',        category: 'Furniture',     price: 240, seller: 'Theo Brandt',   rating: 4.7, emoji: '🪑', desc: 'Solid walnut, 120×60cm. A few light rings on top that could be sanded out. Pickup only.', createdAt: NOW - 5 * DAY },
+    { id: 's3',  title: 'Sony WH-1000XM5 headphones',             category: 'Electronics',   price: 210, seller: 'Priya Raman',   rating: 4.8, emoji: '🎧', desc: 'Excellent noise cancelling, includes case and cable. Selling because I switched to earbuds.', createdAt: NOW - 1 * DAY },
+    { id: 's4',  title: 'Vintage leather biker jacket (M)',       category: 'Fashion',       price: 95,  seller: 'Marco Silva',   rating: 4.5, emoji: '🧥', desc: 'Real leather, broken in beautifully. Fits a medium build. Small scuff on the left elbow.', createdAt: NOW - 9 * DAY },
+    { id: 's5',  title: 'Trek FX 3 hybrid bike, 2023',            category: 'Sports',        price: 520, seller: 'Aisha Khan',    rating: 4.9, emoji: '🚲', desc: 'Serviced last month, new brake pads. Size L frame. Includes rear rack and lights.', createdAt: NOW - 3 * DAY },
+    { id: 's6',  title: 'Complete Harry Potter box set',          category: 'Books',         price: 45,  seller: 'Theo Brandt',   rating: 4.6, emoji: '📚', desc: 'Hardcover UK editions, all seven books. Spines intact, pages clean. Great gift.', createdAt: NOW - 12 * DAY },
+    { id: 's7',  title: 'Monstera deliciosa, 1.4m tall',          category: 'Home & Garden', price: 35,  seller: 'Lena Fischer',  rating: 4.4, emoji: '🪴', desc: 'Healthy and huge — outgrowing my flat. Comes in a ceramic pot. Bring a big car.', createdAt: NOW - 4 * DAY },
+    { id: 's8',  title: 'Nintendo Switch OLED + 4 games',         category: 'Electronics',   price: 265, seller: 'Jonas Weber',   rating: 4.7, emoji: '🎮', desc: 'Includes Zelda TOTK, Mario Kart 8, Splatoon 3 and Metroid Dread. Screen protector since day one.', createdAt: NOW - 6 * DAY },
+    { id: 's9',  title: 'IKEA PAX wardrobe, white, 2m',           category: 'Furniture',     price: 110, seller: 'Sara Lindqvist',rating: 4.2, emoji: '🚪', desc: 'Disassembled and ready to go. All screws bagged and labelled. Mirror doors.', createdAt: NOW - 15 * DAY },
+    { id: 's10', title: 'Nike Air Max 97, size 42, worn twice',   category: 'Fashion',       price: 85,  seller: 'Marco Silva',   rating: 4.6, emoji: '👟', desc: 'Basically new — wrong size for me and past the return window. Original box included.', createdAt: NOW - 7 * DAY },
+    { id: 's11', title: 'Wilson Pro Staff tennis racket',         category: 'Sports',        price: 130, seller: 'Aisha Khan',    rating: 4.8, emoji: '🎾', desc: 'Freshly restrung at 52 lbs. Grip 3. Includes cover and 2 overgrips.', createdAt: NOW - 10 * DAY },
+    { id: 's12', title: 'Espresso machine — Gaggia Classic Pro',  category: 'Home & Garden', price: 320, seller: 'Lena Fischer',  rating: 4.9, emoji: '☕', desc: 'Descaled monthly, pulls beautiful shots. Includes bottomless portafilter and tamper.', createdAt: NOW - 8 * DAY },
+    { id: 's13', title: 'Sapiens + Homo Deus, like new',          category: 'Books',         price: 18,  seller: 'Nina Alvarez',  rating: 4.3, emoji: '📖', desc: 'Both paperbacks read once. No notes or folded pages.', createdAt: NOW - 20 * DAY },
+    { id: 's14', title: 'iPad 10th gen, 64GB, blue',              category: 'Electronics',   price: 330, seller: 'Jonas Weber',   rating: 4.7, emoji: '📱', desc: 'Perfect condition, always in a case. Includes USB-C charger. iCloud unlocked.', createdAt: NOW - 11 * DAY },
+    { id: 's15', title: 'Standing desk, electric, 140×70',        category: 'Furniture',     price: 290, seller: 'Sara Lindqvist',rating: 4.8, emoji: '🖥️', desc: 'Dual motor, memory presets, quiet. Top has one small chip on the back edge.', createdAt: NOW - 13 * DAY },
+    { id: 's16', title: 'Yoga set: mat, blocks, strap',           category: 'Sports',        price: 30,  seller: 'Priya Raman',   rating: 4.1, emoji: '🧘', desc: 'Cork blocks, 6mm mat, cotton strap. All cleaned. Great starter kit.', createdAt: NOW - 18 * DAY }
+  ];
+
+  var SELLER_REPLIES = [
+    'Hey! Yes, it’s still available. Want to come see it this week?',
+    'Thanks for reaching out! I’m flexible on pickup times — evenings work best.',
+    'Hi! Happy to answer any questions. The condition is exactly as described.',
+    'Sure thing! I could also meet somewhere central if that’s easier for you.'
+  ];
+
+  // ---------- Storage ----------
+  function loadJSON(key, fallback) {
+    try {
+      var raw = localStorage.getItem(key);
+      if (raw) return JSON.parse(raw);
+    } catch (e) { /* ignore */ }
+    return fallback;
+  }
+  var userListings = loadJSON(LS_LISTINGS, []);
+  var favs = loadJSON(LS_FAVS, []);
+  function saveUserListings() { localStorage.setItem(LS_LISTINGS, JSON.stringify(userListings)); }
+  function saveFavs() { localStorage.setItem(LS_FAVS, JSON.stringify(favs)); }
+
+  function allListings() { return SEED.concat(userListings); }
+
+  // ---------- Filter state ----------
+  var state = {
+    query: '',
+    category: 'All',
+    maxPrice: null,   // set after computing bounds
+    sort: 'newest',
+    favsOnly: false
+  };
+
+  var priceRange = document.getElementById('priceRange');
+  var priceOut = document.getElementById('priceOut');
+  function setupPriceRange() {
+    var max = allListings().reduce(function (m, l) { return Math.max(m, l.price); }, 0);
+    max = Math.ceil(max / 50) * 50;
+    var keepAtMax = state.maxPrice === null || state.maxPrice >= +priceRange.max;
+    priceRange.max = max;
+    if (keepAtMax) {
+      priceRange.value = max;
+      state.maxPrice = max;
+    }
+    priceOut.textContent = '$' + priceRange.value;
+  }
+  priceRange.addEventListener('input', function () {
+    state.maxPrice = +priceRange.value;
+    priceOut.textContent = '$' + priceRange.value;
+    render();
+  });
+
+  // ---------- Chips ----------
+  var chipRow = document.getElementById('chipRow');
+  function renderChips() {
+    chipRow.innerHTML = '';
+    var items = ['All'].concat(CATEGORIES);
+    items.forEach(function (cat) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip' + (state.category === cat && !state.favsOnly ? ' active' : '');
+      b.textContent = cat;
+      b.addEventListener('click', function () {
+        state.category = cat;
+        state.favsOnly = false;
+        renderChips();
+        render();
+      });
+      chipRow.appendChild(b);
+    });
+    var favChip = document.createElement('button');
+    favChip.type = 'button';
+    favChip.className = 'chip' + (state.favsOnly ? ' active' : '');
+    favChip.textContent = '♥ Favourites' + (favs.length ? ' (' + favs.length + ')' : '');
+    favChip.addEventListener('click', function () {
+      state.favsOnly = !state.favsOnly;
+      renderChips();
+      render();
+    });
+    chipRow.appendChild(favChip);
+  }
+
+  // ---------- Search & sort ----------
+  document.getElementById('searchInput').addEventListener('input', function (e) {
+    state.query = e.target.value.trim().toLowerCase();
+    render();
+  });
+  document.getElementById('sortSelect').addEventListener('change', function (e) {
+    state.sort = e.target.value;
+    render();
+  });
+
+  // ---------- Grid ----------
+  var grid = document.getElementById('grid');
+  var resultMeta = document.getElementById('resultMeta');
+
+  function filtered() {
+    var list = allListings().filter(function (l) {
+      if (state.favsOnly && favs.indexOf(l.id) === -1) return false;
+      if (state.category !== 'All' && !state.favsOnly && l.category !== state.category) return false;
+      if (l.price > state.maxPrice) return false;
+      if (state.query) {
+        var hay = (l.title + ' ' + l.category + ' ' + l.seller + ' ' + l.desc).toLowerCase();
+        if (hay.indexOf(state.query) === -1) return false;
+      }
+      return true;
+    });
+    switch (state.sort) {
+      case 'price-asc':  list.sort(function (a, b) { return a.price - b.price; }); break;
+      case 'price-desc': list.sort(function (a, b) { return b.price - a.price; }); break;
+      case 'rating':     list.sort(function (a, b) { return b.rating - a.rating; }); break;
+      default:           list.sort(function (a, b) { return b.createdAt - a.createdAt; });
+    }
+    return list;
+  }
+
+  function stars(r) {
+    var full = Math.round(r);
+    return '★★★★★'.slice(0, full) + '☆☆☆☆☆'.slice(0, 5 - full) + ' ' + r.toFixed(1);
+  }
+
+  function render() {
+    var list = filtered();
+    resultMeta.textContent = list.length + ' listing' + (list.length === 1 ? '' : 's') +
+      (state.favsOnly ? ' in favourites' : (state.category !== 'All' ? ' in ' + state.category : ''));
+    grid.innerHTML = '';
+
+    if (!list.length) {
+      grid.innerHTML = '<div class="empty-state"><span>🔍</span>Nothing matches those filters.<br>Try widening the price range or clearing the search.</div>';
+      return;
+    }
+
+    list.forEach(function (l) {
+      var card = document.createElement('article');
+      card.className = 'listing';
+
+      var img = document.createElement('div');
+      img.className = 'img';
+      img.textContent = l.emoji;
+
+      var favBtn = document.createElement('button');
+      favBtn.type = 'button';
+      var isFaved = favs.indexOf(l.id) !== -1;
+      favBtn.className = 'fav-btn' + (isFaved ? ' faved' : '');
+      favBtn.innerHTML = isFaved ? '&#10084;' : '&#9825;';
+      favBtn.title = isFaved ? 'Remove from favourites' : 'Add to favourites';
+      favBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        toggleFav(l.id);
+      });
+      img.appendChild(favBtn);
+
+      var body = document.createElement('div');
+      body.className = 'body';
+      body.innerHTML =
+        '<span class="cat-tag">' + escapeHtml(l.category) + '</span>' +
+        '<div class="title">' + escapeHtml(l.title) + '</div>' +
+        '<div class="rating">' + stars(l.rating) + '</div>' +
+        '<div class="meta"><span>' + escapeHtml(l.seller) + '</span><span class="price">$' + l.price + '</span></div>';
+
+      card.appendChild(img);
+      card.appendChild(body);
+      card.addEventListener('click', function () { openDetail(l); });
+      grid.appendChild(card);
+    });
+  }
+
+  function toggleFav(id) {
+    var i = favs.indexOf(id);
+    if (i === -1) favs.push(id); else favs.splice(i, 1);
+    saveFavs();
+    renderChips();
+    render();
+  }
+
+  // ---------- Detail modal + chat ----------
+  var detailBackdrop = document.getElementById('detailBackdrop');
+  var chatLog = document.getElementById('chatLog');
+  var chatInput = document.getElementById('chatInput');
+  var currentListing = null;
+  var replyTimer = null;
+
+  function openDetail(l) {
+    currentListing = l;
+    document.getElementById('dHero').textContent = l.emoji;
+    document.getElementById('dCat').textContent = l.category;
+    document.getElementById('dTitle').textContent = l.title;
+    document.getElementById('dPrice').textContent = '$' + l.price;
+    document.getElementById('dRating').textContent = stars(l.rating);
+    document.getElementById('dDesc').textContent = l.desc || 'No description provided.';
+    document.getElementById('dSellerAvatar').textContent = l.seller.split(' ').map(function (w) { return w[0]; }).join('').slice(0, 2).toUpperCase();
+    document.getElementById('dSellerName').textContent = l.seller;
+    var sellerCount = allListings().filter(function (x) { return x.seller === l.seller; }).length;
+    document.getElementById('dSellerSub').textContent = stars(l.rating) + ' · ' + sellerCount + ' active listing' + (sellerCount === 1 ? '' : 's');
+
+    chatLog.innerHTML = '';
+    addChatMsg('them', 'Hi! I’m ' + l.seller.split(' ')[0] + ' — ask me anything about this item.');
+    chatInput.value = '';
+    detailBackdrop.classList.add('open');
+  }
+
+  function addChatMsg(who, text) {
+    var m = document.createElement('div');
+    m.className = 'msg ' + who;
+    m.textContent = text;
+    chatLog.appendChild(m);
+    chatLog.scrollTop = chatLog.scrollHeight;
+  }
+
+  function sendChat() {
+    var text = chatInput.value.trim();
+    if (!text || !currentListing) return;
+    addChatMsg('me', text);
+    chatInput.value = '';
+    clearTimeout(replyTimer);
+    replyTimer = setTimeout(function () {
+      if (!detailBackdrop.classList.contains('open')) return;
+      addChatMsg('them', SELLER_REPLIES[Math.floor(Math.random() * SELLER_REPLIES.length)]);
+    }, 900);
+  }
+  document.getElementById('chatSend').addEventListener('click', sendChat);
+  chatInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') sendChat(); });
+
+  // ---------- Sell modal ----------
+  var sellBackdrop = document.getElementById('sellBackdrop');
+  var sellForm = document.getElementById('sellForm');
+  var sellError = document.getElementById('sellError');
+  var sCategory = document.getElementById('sCategory');
+  CATEGORIES.forEach(function (c) {
+    var o = document.createElement('option');
+    o.value = c;
+    o.textContent = c;
+    sCategory.appendChild(o);
+  });
+
+  document.getElementById('openSellBtn').addEventListener('click', function () {
+    sellForm.reset();
+    sellError.style.display = 'none';
+    sellBackdrop.classList.add('open');
+    setTimeout(function () { document.getElementById('sTitle').focus(); }, 0);
+  });
+
+  sellForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var title = document.getElementById('sTitle').value.trim();
+    var price = Math.round(+document.getElementById('sPrice').value);
+    var seller = document.getElementById('sSeller').value.trim();
+    var emoji = document.getElementById('sEmoji').value.trim() || '📦';
+    var desc = document.getElementById('sDesc').value.trim();
+
+    if (!title || !seller) return showSellError('Please fill in the title and your name.');
+    if (!(price > 0)) return showSellError('Please enter a valid price.');
+
+    userListings.push({
+      id: 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      title: title,
+      category: sCategory.value,
+      price: price,
+      seller: seller,
+      rating: 5.0, // new sellers start at 5.0 in this demo
+      emoji: emoji,
+      desc: desc,
+      createdAt: Date.now()
+    });
+    saveUserListings();
+    setupPriceRange();
+    closeAll();
+    render();
+    showToast('Listing posted — it’s live!');
+  });
+  function showSellError(msg) {
+    sellError.textContent = msg;
+    sellError.style.display = 'block';
+  }
+
+  // ---------- Modal plumbing ----------
+  function closeAll() {
+    detailBackdrop.classList.remove('open');
+    sellBackdrop.classList.remove('open');
+    clearTimeout(replyTimer);
+    currentListing = null;
+  }
+  document.querySelectorAll('[data-close]').forEach(function (btn) {
+    btn.addEventListener('click', closeAll);
+  });
+  [detailBackdrop, sellBackdrop].forEach(function (bd) {
+    bd.addEventListener('click', function (e) { if (e.target === bd) closeAll(); });
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeAll(); });
+
+  // ---------- Toast ----------
+  var toastEl = document.getElementById('toast');
+  var toastTimer = null;
+  function showToast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.classList.remove('show'); }, 2400);
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  // ---------- Init ----------
+  setupPriceRange();
+  renderChips();
+  render();
+})();
+</script>
+</body>
+</html>

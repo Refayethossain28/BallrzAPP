@@ -1,0 +1,153 @@
+name: Deploy Firebase (rules • storage • functions)
+
+# Auto-publishes the Firebase backend whenever its config changes on main, so
+# rules/functions never have to be deployed by hand. Needs one repo secret:
+#   FIREBASE_SERVICE_ACCOUNT = the full JSON of a service-account key for the
+#   apexvip-1b4a9 project (Firebase console → Project settings → Service accounts
+#   → Generate new private key). Give that service account the "Editor" role in
+#   Google Cloud IAM so it can deploy rules and functions.
+#
+# This also deploys the "side-apps" codebase (Lingua's linguaAI + Ripple), which
+# reuses the SAME project-level ANTHROPIC_API_KEY secret as the ApexVIP functions
+# — so once that secret exists, Lingua's hosted AI goes live with no extra key.
+#
+# Until the secret is set, the job skips cleanly (stays green) with a notice.
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "firestore.rules"
+      - "storage.rules"
+      - "firestore.indexes.json"
+      - "firebase.json"
+      - "functions/**"
+      - "functions-side/**"
+      - ".github/workflows/firebase-deploy.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for the service-account secret
+        id: gate
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -n "$SA" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Firebase auto-deploy idle::Add the FIREBASE_SERVICE_ACCOUNT repo secret to enable automatic deploys."
+          fi
+
+      - name: Set up Node
+        if: steps.gate.outputs.ok == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Write service-account key
+        if: steps.gate.outputs.ok == 'true'
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
+
+      # macOS TextEdit silently converts straight quotes to typographic (smart)
+      # quotes when JSON passes through it, corrupting the credential. Values in
+      # a service-account key can never legitimately contain curly quotes or
+      # non-breaking spaces, so normalizing them back is always safe.
+      - name: Repair smart quotes in the credential
+        if: steps.gate.outputs.ok == 'true'
+        run: |
+          python3 - <<'EOF'
+          import io, os
+          p = os.path.join(os.environ["RUNNER_TEMP"], "sa.json")
+          s = io.open(p, encoding="utf-8", errors="replace").read()
+          fixed = (s.replace("\u201c", '"').replace("\u201d", '"')
+                    .replace("\u2018", "'").replace("\u2019", "'")
+                    .replace("\u00a0", " "))
+          io.open(p, "w", encoding="utf-8").write(fixed)
+          print("repaired" if fixed != s else "no repair needed")
+          EOF
+
+      # Prints WHICH robot identity this deploy runs as (email + project). The
+      # email is an identifier, not a credential — safe to log, and essential
+      # for granting it the right IAM roles when a deploy 403s. Split around
+      # the "@" so GitHub's per-line secret masking can't hide it.
+      - name: Show deploy identity
+        if: steps.gate.outputs.ok == 'true'
+        run: |
+          echo "== deploy identity =="
+          jq -r '"account: " + (.client_email // "?" | split("@") | .[0]) + " (at) " + (.client_email // "?" | split("@") | .[1] // "?")' "$RUNNER_TEMP/sa.json" || echo "could not parse sa.json (is the secret valid JSON?)"
+          jq -r '"project: " + (.project_id // "?")' "$RUNNER_TEMP/sa.json" || true
+
+      - name: Install Firebase CLI + function deps
+        if: steps.gate.outputs.ok == 'true'
+        run: |
+          npm install -g firebase-tools
+          npm --prefix functions install
+          npm --prefix functions-side install
+
+      # Side-apps codebase = Lingua (linguaAI) + Ripple. Deployed FIRST and on
+      # its own, so a storage/rules permission gap can't block Lingua's hosted
+      # AI from going live. Uses the project's shared ANTHROPIC_API_KEY secret.
+      - name: Deploy side-apps functions — Lingua linguaAI
+        if: steps.gate.outputs.ok == 'true'
+        continue-on-error: true
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          firebase deploy --only functions:side-apps \
+            --project apexvip-1b4a9 --non-interactive --force \
+          && echo "::notice title=linguaAI deployed::Lingua hosted AI is live." \
+          || echo "::warning title=linguaAI deploy failed::See this step's log for the exact permission/API missing."
+
+      # Firestore rules are the security-critical part — this step must succeed
+      # and must never be blocked by anything else.
+      - name: Deploy Firestore rules
+        if: steps.gate.outputs.ok == 'true'
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          firebase deploy --only firestore:rules \
+            --project apexvip-1b4a9 --non-interactive --force
+
+      # Storage rules deploy separately: until Firebase Storage is initialized
+      # on the project (console → Storage → Get started) the default bucket
+      # doesn't exist and this fails — which must NOT block the Firestore rules.
+      - name: Deploy Storage rules (best effort until Storage is initialized)
+        if: steps.gate.outputs.ok == 'true'
+        continue-on-error: true
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          firebase deploy --only storage \
+            --project apexvip-1b4a9 --non-interactive --force \
+            || echo "::warning title=Storage rules not deployed::Initialize Firebase Storage on apexvip-1b4a9 (console → Storage → Get started), then re-run this workflow."
+
+      # Indexes deploy with the same credentials as the (mandatory) rules deploy
+      # above — a silent index failure surfaces only as broken queries in prod,
+      # so this step must be LOUD, not best-effort.
+      - name: Deploy Firestore indexes
+        if: steps.gate.outputs.ok == 'true'
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          firebase deploy --only firestore:indexes \
+            --project apexvip-1b4a9 --non-interactive --force
+
+      # The ApexVIP functions codebase — a bonus; don't fail the run if IAM
+      # perms or the Cloud Functions APIs aren't fully set up yet.
+      - name: Deploy ApexVIP functions (best effort)
+        if: steps.gate.outputs.ok == 'true'
+        continue-on-error: true
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          firebase deploy --only functions:apexvip \
+            --project apexvip-1b4a9 --non-interactive --force
+

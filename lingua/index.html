@@ -1,0 +1,3108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#05070f">
+<title>Lingua — learn & translate any language (and its dialects)</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Lingua">
+<!-- Firebase (compat) — only used for the optional hosted "cloud AI" fallback.
+     Loaded from the CDN; if offline or blocked, the app simply stays offline. -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
+<style>
+/* ============================================================================
+   LINGUA · design system v2 — "aurora glass"
+   Deep-space canvas with drifting aurora light, glassmorphism surfaces,
+   gradient ink, and springy micro-interactions. Pure CSS — no new assets,
+   no external fonts, offline-safe, RTL-aware, reduced-motion friendly.
+   ============================================================================ */
+:root{
+  color-scheme: dark;
+  --bg:#05070f;
+  --ink:#eef1fb; --muted:#9aa7cb; --muted2:#68739c;
+  --accent:#7c8bff; --accent2:#a78bfa; --teal:#3ce6c3; --warn:#ffcf6e; --bad:#ff7a8a;
+  --brand: linear-gradient(135deg,#7c8bff 0%,#a78bfa 48%,#3ce6c3 110%);
+  --brand-soft: linear-gradient(135deg,rgba(124,139,255,.16),rgba(167,139,250,.10) 50%,rgba(60,230,195,.12));
+  --glass: rgba(255,255,255,.045);
+  --glass2: rgba(255,255,255,.07);
+  --line: rgba(255,255,255,.10);
+  --line-soft: rgba(255,255,255,.06);
+  --field:rgba(3,5,12,.55);
+  --radius:22px; --radius-s:14px;
+  --shadow: 0 24px 60px -28px rgba(0,0,0,.85), 0 2px 8px rgba(0,0,0,.35);
+  --glow-a: 0 8px 32px -6px rgba(124,139,255,.45);
+  --glow-t: 0 8px 32px -8px rgba(60,230,195,.4);
+  --ease: cubic-bezier(.22,1,.36,1);
+}
+*{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html,body{ margin:0; }
+html{ scroll-behavior:smooth; }
+body{
+  min-height:100vh; color:var(--ink);
+  font:16px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Inter,sans-serif;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  background:var(--bg);
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  overflow-x:hidden;
+}
+/* ---- aurora canvas ---- */
+body::before, body::after{
+  content:""; position:fixed; z-index:-2; border-radius:50%;
+  filter:blur(90px); pointer-events:none; will-change:transform;
+}
+body::before{
+  width:80vmax; height:80vmax; top:-34vmax; left:-20vmax; opacity:.85;
+  filter:blur(70px);
+  background:
+    radial-gradient(closest-side, rgba(124,139,255,.55), transparent 70%),
+    radial-gradient(closest-side at 72% 68%, rgba(167,139,250,.45), transparent 72%);
+  animation:auroraA 30s var(--ease) infinite alternate;
+}
+body::after{
+  width:70vmax; height:70vmax; bottom:-26vmax; right:-24vmax; opacity:.75;
+  filter:blur(70px);
+  background:
+    radial-gradient(closest-side, rgba(60,230,195,.48), transparent 68%),
+    radial-gradient(closest-side at 28% 30%, rgba(255,122,180,.28), transparent 74%);
+  animation:auroraB 38s var(--ease) infinite alternate;
+}
+/* third field: a warm rose ribbon sweeping mid-screen */
+html::before{
+  content:""; position:fixed; z-index:-2; border-radius:50%; pointer-events:none; will-change:transform;
+  width:52vmax; height:52vmax; top:32%; left:52%; opacity:.5; filter:blur(80px);
+  background:
+    radial-gradient(closest-side, rgba(255,122,180,.30), transparent 70%),
+    radial-gradient(closest-side at 30% 70%, rgba(124,139,255,.28), transparent 72%);
+  animation:auroraC 34s var(--ease) infinite alternate;
+}
+@keyframes auroraC{ from{ transform:translate3d(0,0,0) scale(1); } to{ transform:translate3d(-16vmax,10vmax,0) scale(1.25); } }
+@keyframes auroraA{ from{ transform:translate3d(0,0,0) rotate(0deg); } to{ transform:translate3d(9vmax,7vmax,0) rotate(28deg); } }
+@keyframes auroraB{ from{ transform:translate3d(0,0,0) rotate(0deg); } to{ transform:translate3d(-8vmax,-6vmax,0) rotate(-24deg); } }
+
+::selection{ background:rgba(124,139,255,.35); color:#fff; }
+*::-webkit-scrollbar{ width:8px; height:8px; }
+*::-webkit-scrollbar-thumb{ background:rgba(255,255,255,.14); border-radius:99px; }
+*::-webkit-scrollbar-thumb:hover{ background:rgba(255,255,255,.24); }
+*::-webkit-scrollbar-track{ background:transparent; }
+:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; border-radius:8px; }
+
+.wrap{ width:100%; max-width:780px; margin:0 auto; padding:26px 18px 72px; position:relative; }
+
+/* ---- header ---- */
+header.top{ display:flex; align-items:center; gap:14px; margin-bottom:10px; flex-wrap:wrap; }
+.logo{
+  width:52px; height:52px; border-radius:13px; flex:0 0 auto; display:block;
+  object-fit:cover; background:transparent;
+  box-shadow:var(--glow-a);
+  transition:transform .3s var(--ease);
+}
+.logo:hover{ transform:scale(1.05) rotate(-2deg); }
+h1{
+  font-size:30px; margin:0; letter-spacing:-.035em; font-weight:800; line-height:1.1;
+  background:linear-gradient(120deg,#fff 20%,#c6cdf5 55%,#8fa0e8);
+  -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+}
+.sub{ color:var(--muted); margin:3px 0 0; font-size:13px; letter-spacing:.01em; }
+
+.ai-pill, .hdr-btn{
+  display:inline-flex; align-items:center; gap:7px; cursor:pointer; white-space:nowrap;
+  font-size:12px; font-weight:700; letter-spacing:.02em; padding:9px 13px; border-radius:999px;
+  border:1px solid var(--line); color:var(--muted); font-family:inherit;
+  background:var(--glass);
+  -webkit-backdrop-filter:blur(14px) saturate(150%); backdrop-filter:blur(14px) saturate(150%);
+  transition:border-color .25s var(--ease), color .25s var(--ease), transform .25s var(--ease), box-shadow .25s var(--ease);
+}
+.ai-pill:hover, .hdr-btn:hover{ color:var(--ink); border-color:rgba(124,139,255,.55); transform:translateY(-1px); }
+.ai-pill .dot{ width:8px; height:8px; border-radius:50%; background:var(--muted2); transition:background .3s; }
+.ai-pill.live{ color:var(--teal); border-color:rgba(60,230,195,.5); background:rgba(60,230,195,.09); box-shadow:var(--glow-t); }
+.ai-pill.live .dot{ background:var(--teal); box-shadow:0 0 10px var(--teal); animation:livePulse 2.4s ease infinite; }
+@keyframes livePulse{ 50%{ opacity:.55; } }
+
+/* ---- header overflow guards ---- */
+header.top > div:nth-of-type(2){ min-width:0; flex:1 1 auto; }
+header.top .logo{ flex:0 0 auto; width:52px; }
+header.top > div:last-of-type{ flex-wrap:wrap; justify-content:flex-end; row-gap:8px; max-width:100%; }
+
+/* ---- surfaces ---- */
+.card{
+  position:relative; margin-top:16px; padding:20px;
+  background:linear-gradient(180deg,rgba(255,255,255,.065),rgba(255,255,255,.03) 42%);
+  border:1px solid var(--line); border-radius:var(--radius);
+  -webkit-backdrop-filter:blur(22px) saturate(150%); backdrop-filter:blur(22px) saturate(150%);
+  box-shadow:var(--shadow);
+  animation:rise .5s var(--ease) both;
+}
+.card::before{
+  content:""; position:absolute; inset:0 12% auto 12%; height:1px; border-radius:1px;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.4),transparent);
+  pointer-events:none;
+}
+@keyframes rise{ from{ opacity:0; transform:translateY(10px); } to{ opacity:1; transform:none; } }
+.card h2{
+  display:flex; align-items:center; gap:9px;
+  font-size:12px; text-transform:uppercase; letter-spacing:.14em; color:var(--muted);
+  margin:0 0 14px; font-weight:800;
+}
+.card h2::before{ content:""; width:16px; height:3px; border-radius:3px; background:var(--brand); box-shadow:0 0 10px rgba(124,139,255,.7); }
+label.fld{ display:block; font-size:12px; color:var(--muted); margin:0 0 7px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; }
+
+/* ---- fields ---- */
+.search{ position:relative; }
+input[type=text], input[type=search], input[type=password], textarea, select{
+  width:100%; color:var(--ink); background:var(--field);
+  border:1px solid var(--line); border-radius:var(--radius-s); padding:13px 15px; font:inherit; outline:none;
+  transition:border-color .25s var(--ease), box-shadow .25s var(--ease), background .25s var(--ease);
+  -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+}
+input::placeholder, textarea::placeholder{ color:var(--muted2); }
+input:focus, textarea:focus, select:focus{
+  border-color:rgba(124,139,255,.75);
+  box-shadow:0 0 0 4px rgba(124,139,255,.16), var(--glow-a);
+  background:rgba(3,5,12,.72);
+}
+textarea{ resize:vertical; min-height:104px; line-height:1.6; }
+select{ appearance:none; -webkit-appearance:none;
+  background-image:linear-gradient(45deg,transparent 49%,var(--muted) 50%,transparent 51%),linear-gradient(135deg,transparent 49%,var(--muted) 50%,transparent 51%);
+  background-position:calc(100% - 20px) 55%, calc(100% - 14px) 55%; background-size:6px 6px; background-repeat:no-repeat; padding-right:38px; }
+
+/* ---- language grid ---- */
+.langgrid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(148px,1fr)); gap:10px; margin-top:14px;
+  max-height:360px; overflow:auto; padding:3px; border-radius:14px; }
+.langbtn{
+  display:flex; align-items:center; gap:10px; text-align:left; cursor:pointer; font:inherit; color:var(--ink);
+  background:var(--glass); border:1px solid var(--line-soft); border-radius:16px; padding:12px;
+  transition:transform .3s var(--ease), border-color .3s var(--ease), background .3s var(--ease), box-shadow .3s var(--ease);
+}
+.langbtn:hover{ transform:translateY(-2px) scale(1.015); border-color:rgba(124,139,255,.55); background:var(--glass2); box-shadow:var(--glow-a); }
+.langbtn:active{ transform:scale(.98); }
+.langbtn{ overflow:hidden; flex-wrap:wrap; row-gap:6px; }
+.langbtn .flag{ font-size:23px; line-height:1; flex:0 0 auto; filter:drop-shadow(0 3px 8px rgba(0,0,0,.45)); }
+.langbtn > span:nth-of-type(2){ min-width:0; flex:1 1 auto; }
+.langbtn .nat{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.langbtn .nm{ font-size:14px; font-weight:650; line-height:1.2; letter-spacing:-.01em; }
+.langbtn .nat{ font-size:11.5px; color:var(--muted2); line-height:1.25; }
+.langbtn .has-d{
+  margin-left:auto; flex:0 0 auto; font-size:10px; font-weight:800; letter-spacing:.02em;
+  color:var(--teal); border:1px solid rgba(60,230,195,.4); background:rgba(60,230,195,.08);
+  border-radius:999px; padding:3px 8px;
+}
+
+/* ---- selected language bar ---- */
+.selbar{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.selbar .big{ font-size:26px; filter:drop-shadow(0 3px 10px rgba(0,0,0,.5)); }
+.selbar .nm{ font-weight:800; font-size:21px; letter-spacing:-.02em; }
+.selbar .nat{ color:var(--muted); font-size:14px; }
+.ghost{
+  background:transparent; border:1px solid var(--line); color:var(--muted); border-radius:11px;
+  padding:8px 14px; font:inherit; font-size:13px; font-weight:600; cursor:pointer;
+  transition:color .25s, border-color .25s, transform .25s var(--ease);
+}
+.ghost:hover{ color:var(--ink); border-color:rgba(124,139,255,.6); transform:translateY(-1px); }
+
+/* ---- chips ---- */
+.chips{ display:flex; flex-wrap:wrap; gap:8px; }
+.chip{
+  cursor:pointer; font:inherit; font-size:13px; font-weight:600; padding:9px 15px; border-radius:999px;
+  border:1px solid var(--line); background:var(--glass); color:var(--muted);
+  transition:all .3s var(--ease);
+}
+.chip:hover{ color:var(--ink); border-color:rgba(124,139,255,.5); transform:translateY(-1px); }
+.chip[aria-selected=true]{
+  color:#060812; background:var(--brand); border-color:transparent; font-weight:800;
+  box-shadow:var(--glow-a); transform:translateY(-1px);
+}
+.chip.dia[aria-selected=true]{ background:linear-gradient(135deg,#3ce6c3,#7c8bff); box-shadow:var(--glow-t); }
+
+/* ---- tabs ---- */
+.tabs{
+  display:flex; gap:5px; background:rgba(2,4,10,.5); padding:6px; border-radius:16px; border:1px solid var(--line-soft);
+  -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px); overflow-x:auto; scrollbar-width:none;
+}
+.tabs::-webkit-scrollbar{ display:none; }
+.tab{
+  flex:1 0 auto; cursor:pointer; font:inherit; font-weight:700; font-size:13.5px; padding:10px 13px; border-radius:11px;
+  border:0; background:transparent; color:var(--muted); white-space:nowrap; letter-spacing:-.01em;
+  transition:all .3s var(--ease);
+}
+.tab:hover{ color:var(--ink); }
+.tab[aria-selected=true]{ background:var(--brand); color:#060812; box-shadow:var(--glow-a); }
+
+/* ---- rows & buttons ---- */
+.row{ display:flex; gap:10px; align-items:center; }
+.row.wrap{ flex-wrap:wrap; }
+.grow{ flex:1 1 auto; min-width:0; }
+.btn{
+  cursor:pointer; font:inherit; font-weight:800; font-size:15px; letter-spacing:-.01em;
+  padding:13px 20px; border-radius:var(--radius-s); border:0; color:#060812; white-space:nowrap;
+  background:var(--brand); background-size:170% 170%; background-position:0% 30%;
+  box-shadow:var(--glow-a), inset 0 1px 0 rgba(255,255,255,.35);
+  transition:background-position .5s var(--ease), transform .25s var(--ease), box-shadow .25s var(--ease), opacity .2s;
+}
+.btn:hover{ background-position:90% 70%; transform:translateY(-1px); }
+.btn:active{ transform:scale(.97); }
+.btn:disabled{ opacity:.5; cursor:default; transform:none; }
+.btn.sec{
+  background:var(--glass2); color:var(--ink); border:1px solid var(--line); box-shadow:none;
+  -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+}
+.btn.sec:hover{ border-color:rgba(124,139,255,.55); }
+.swap{
+  flex:0 0 auto; width:46px; height:46px; border-radius:var(--radius-s); border:1px solid var(--line);
+  background:var(--glass2); color:var(--muted); font-size:18px; cursor:pointer;
+  transition:all .3s var(--ease);
+}
+.swap:hover{ color:var(--ink); border-color:rgba(124,139,255,.55); transform:rotate(180deg); }
+.mini{
+  background:transparent; border:1px solid var(--line); color:var(--muted); border-radius:10px;
+  padding:7px 11px; font:inherit; font-size:12.5px; font-weight:600; cursor:pointer;
+  transition:color .25s, border-color .25s, transform .2s var(--ease);
+}
+.mini:hover{ color:var(--ink); border-color:rgba(124,139,255,.55); }
+.mini:active{ transform:scale(.96); }
+
+/* ---- results & lessons ---- */
+.out{ margin-top:16px; }
+.result{
+  border:1px solid var(--line); border-radius:18px; padding:18px;
+  background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(2,4,10,.35));
+  -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
+  animation:rise .45s var(--ease) both;
+}
+.result .target{ font-size:26px; line-height:1.4; font-weight:650; letter-spacing:-.01em; }
+.result.rtl .target{ direction:rtl; text-align:right; }
+.result .pron{ color:var(--teal); font-size:15px; margin-top:7px; }
+.meta{ display:grid; gap:8px; margin-top:14px; padding-top:12px; border-top:1px solid var(--line-soft); }
+.meta .m{ font-size:13.5px; color:var(--muted); }
+.meta .m b{ color:var(--ink); font-weight:650; }
+.lesson .item{ padding:14px 0; border-top:1px solid var(--line-soft); }
+.lesson .item:first-child{ border-top:0; padding-top:0; }
+.lesson .ph{ font-size:20px; font-weight:650; }
+.lesson.rtl .ph{ direction:rtl; text-align:right; }
+.lesson .pr{ color:var(--teal); font-size:14px; margin-top:2px; }
+.lesson .mn{ color:var(--muted); font-size:14px; margin-top:2px; }
+.tip{
+  margin-top:14px; padding:12px 14px; border-radius:13px; font-size:13.5px; color:#d5dcf7;
+  background:rgba(124,139,255,.09); border:1px solid rgba(124,139,255,.28);
+}
+.tip.teal{ background:rgba(60,230,195,.07); border-color:rgba(60,230,195,.28); }
+.ask-out{ white-space:pre-wrap; font-size:15px; line-height:1.65; }
+.hint{ color:var(--muted2); font-size:12.5px; margin-top:8px; line-height:1.5; }
+.err{ color:var(--bad); font-size:13.5px; font-weight:600; }
+.spin{
+  display:inline-block; width:15px; height:15px; border:2px solid rgba(124,139,255,.25);
+  border-top-color:var(--accent); border-radius:50%; animation:sp .7s linear infinite; vertical-align:-2px;
+}
+@keyframes sp{ to{ transform:rotate(360deg); } }
+.hidden{ display:none !important; }
+.badge-src{
+  display:inline-flex; align-items:center; gap:6px; font-size:10.5px; font-weight:800; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--muted2); margin-top:12px; padding:5px 10px; border-radius:999px; border:1px solid var(--line-soft); background:var(--glass);
+}
+.badge-src.ai{ color:var(--teal); border-color:rgba(60,230,195,.35); }
+
+/* ---- speak buttons & mic ---- */
+.spk{
+  display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; flex:0 0 auto;
+  border-radius:10px; border:1px solid var(--line); background:var(--glass2); color:var(--teal); font-size:15px; cursor:pointer;
+  transition:all .3s var(--ease);
+}
+.spk:hover{ border-color:rgba(60,230,195,.6); transform:scale(1.08); box-shadow:var(--glow-t); }
+.spk:active{ transform:scale(.94); }
+.spk.mic{ color:var(--accent); }
+.spk.mic:hover{ border-color:rgba(124,139,255,.6); box-shadow:var(--glow-a); }
+.spk.mic.rec{ color:var(--bad); border-color:var(--bad); box-shadow:0 0 20px rgba(255,122,138,.5); animation:pulse 1.1s infinite; }
+@keyframes pulse{ 50%{ opacity:.5; } }
+.target-row{ display:flex; align-items:flex-start; gap:10px; }
+.result.rtl .target-row{ flex-direction:row-reverse; }
+.target-row .target{ flex:1 1 auto; min-width:0; }
+.ph-row{ display:flex; align-items:center; gap:8px; }
+.lesson.rtl .ph-row{ flex-direction:row-reverse; }
+.ph-row .ph{ flex:1 1 auto; min-width:0; }
+
+/* ---- saved translations ---- */
+.hist-item{ border-top:1px solid var(--line-soft); padding:13px 0; }
+.hist-item:first-child{ border-top:0; padding-top:0; }
+.hist-dir{ font-size:10.5px; color:var(--muted2); text-transform:uppercase; letter-spacing:.1em; font-weight:800; }
+.hist-src{ color:var(--muted); font-size:13.5px; margin-top:2px; }
+.hist-tgt{ font-size:17px; font-weight:650; margin-top:3px; }
+.hist-pr{ color:var(--teal); font-size:12.5px; margin-top:2px; }
+.hist-row{ display:flex; align-items:flex-start; gap:8px; }
+.hist-actions{ margin-left:auto; display:flex; gap:6px; flex:0 0 auto; }
+
+/* ---- quiz options ---- */
+.qopt{ display:block; width:100%; text-align:left; margin:8px 0; }
+.lesson.rtl .qopt, .qopt.rtl{ direction:rtl; text-align:right; }
+
+/* ---- chat ---- */
+#chatLog{ max-height:400px; overflow:auto; display:flex; flex-direction:column; gap:11px; padding:4px 2px; }
+.bubble{
+  max-width:86%; padding:11px 14px; border-radius:18px; font-size:15px; line-height:1.5; word-wrap:break-word;
+  animation:rise .35s var(--ease) both;
+}
+.bubble.user{
+  align-self:flex-end; color:#060812; font-weight:600; border-bottom-right-radius:6px;
+  background:var(--brand); box-shadow:var(--glow-a);
+}
+.bubble.bot{
+  align-self:flex-start; border-bottom-left-radius:6px;
+  background:var(--glass2); border:1px solid var(--line-soft);
+  -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+}
+.bubble.bot.rtl{ direction:rtl; text-align:right; }
+.bubble .pr{ color:var(--teal); font-size:12.5px; margin-top:5px; }
+.bubble .en{ color:var(--muted); font-size:12.5px; margin-top:4px; }
+.bubble .row2{ display:flex; align-items:center; gap:8px; margin-top:9px; }
+.bubble.bot.rtl .row2{ flex-direction:row-reverse; }
+.correction{
+  align-self:flex-start; max-width:90%; font-size:12.5px; color:var(--warn);
+  background:rgba(255,207,110,.07); border:1px solid rgba(255,207,110,.3); border-radius:12px; padding:8px 11px;
+}
+
+/* ---- learn: course path ---- */
+.learn-head{ display:flex; align-items:center; gap:12px; margin:4px 0 12px; }
+.bar{ height:9px; border-radius:999px; background:rgba(255,255,255,.07); overflow:hidden; flex:1; border:1px solid var(--line-soft); }
+.bar > i{
+  display:block; height:100%; border-radius:999px;
+  background:linear-gradient(90deg,#7c8bff,#a78bfa,#3ce6c3,#7c8bff); background-size:220% 100%;
+  box-shadow:0 0 14px rgba(124,139,255,.65); animation:shimmer 4.5s linear infinite;
+  transition:width .8s var(--ease);
+}
+@keyframes shimmer{ to{ background-position:-220% 0; } }
+.unit{
+  display:flex; align-items:center; gap:13px; padding:13px 14px; width:100%; text-align:left; cursor:pointer; font:inherit; color:inherit;
+  border:1px solid var(--line-soft); border-radius:16px; background:var(--glass); margin-top:9px;
+  transition:all .3s var(--ease);
+}
+.unit:hover{ border-color:rgba(124,139,255,.5); background:var(--glass2); transform:translateX(4px); box-shadow:var(--glow-a); }
+.unit .ix{
+  width:32px; height:32px; flex:0 0 auto; border-radius:50%; display:grid; place-items:center; font-size:13px; font-weight:800;
+  background:rgba(255,255,255,.06); color:var(--muted); border:1px solid var(--line);
+  transition:all .3s var(--ease);
+}
+.unit.done .ix{ background:var(--brand); color:#060812; border-color:transparent; box-shadow:var(--glow-t); }
+.unit .ut{ font-weight:650; font-size:15px; letter-spacing:-.01em; }
+.unit .us{ font-size:12px; color:var(--muted2); margin-top:1px; }
+.unit .chev{ margin-left:auto; color:var(--muted2); font-size:18px; transition:transform .3s var(--ease); }
+.unit:hover .chev{ transform:translateX(3px); color:var(--accent); }
+.cefr{ margin:20px 0 4px; display:flex; align-items:center; gap:9px; }
+.cefr .lv{
+  font-size:11px; font-weight:900; letter-spacing:.06em; color:#060812; padding:4px 10px; border-radius:8px;
+  background:var(--brand); box-shadow:var(--glow-a);
+}
+.cefr .lt{ font-size:12px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:.12em; }
+.review-banner{
+  display:flex; align-items:center; gap:10px; width:100%; text-align:left; cursor:pointer; font:inherit;
+  margin:12px 0 4px; padding:14px 16px; border-radius:16px; color:var(--ink);
+  background:linear-gradient(135deg,rgba(60,230,195,.14),rgba(124,139,255,.10));
+  border:1px solid rgba(60,230,195,.45); box-shadow:var(--glow-t);
+  transition:transform .3s var(--ease), box-shadow .3s var(--ease);
+  animation:rise .5s var(--ease) both;
+}
+.review-banner:hover{ transform:translateY(-2px); }
+.review-banner b{ color:var(--teal); }
+.method{
+  margin-top:12px; padding:11px 14px; border-radius:14px; border:1px dashed rgba(255,255,255,.14);
+  color:var(--muted); font-size:12.5px; line-height:1.55; background:rgba(255,255,255,.02);
+}
+
+/* ---- drills ---- */
+.score{ font-size:38px; font-weight:900; letter-spacing:-.03em; }
+.score.good{
+  background:linear-gradient(120deg,#3ce6c3,#7c8bff); -webkit-background-clip:text; background-clip:text;
+  -webkit-text-fill-color:transparent; filter:drop-shadow(0 0 18px rgba(60,230,195,.4));
+}
+.score.mid{ color:var(--warn); }
+.score.bad{ color:var(--bad); }
+.heard{ color:var(--muted); font-size:14px; margin-top:4px; font-style:italic; }
+.grade-good{
+  border:1px solid rgba(60,230,195,.5); background:rgba(60,230,195,.08); border-radius:14px; padding:12px 14px; margin-top:12px;
+  box-shadow:var(--glow-t); animation:rise .4s var(--ease) both;
+}
+.grade-bad{
+  border:1px solid rgba(255,207,110,.45); background:rgba(255,207,110,.06); border-radius:14px; padding:12px 14px; margin-top:12px;
+  animation:rise .4s var(--ease) both;
+}
+.story-p{ padding:12px 0; border-top:1px solid var(--line-soft); }
+.story-p:first-of-type{ border-top:0; }
+.story-p .st{ font-size:20px; line-height:1.7; }
+.story-p.rtl .st{ direction:rtl; text-align:right; }
+.story-p .tr{ color:var(--muted); font-size:13.5px; margin-top:7px; line-height:1.55; }
+.vocab-w{
+  display:inline-block; margin:3px 5px 3px 0; padding:7px 12px; border-radius:999px; font-size:13px;
+  background:var(--glass2); border:1px solid var(--line-soft);
+}
+
+/* ---- live interpreter ---- */
+.btn.listening{
+  background:linear-gradient(135deg,#ff7a8a,#ff9a6e); animation:pulse 1.2s infinite;
+  box-shadow:0 8px 30px -6px rgba(255,122,138,.55);
+}
+#liveFeed{ display:flex; flex-direction:column; gap:11px; max-height:440px; overflow:auto; }
+.seg{
+  border:1px solid var(--line-soft); border-radius:16px; padding:13px 15px;
+  background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(2,4,10,.3));
+  animation:rise .35s var(--ease) both;
+}
+.seg .heard-line{ color:var(--muted); font-size:13.5px; }
+.seg .tr-row{ display:flex; align-items:flex-start; gap:8px; margin-top:7px; }
+.seg .tr-text{ flex:1 1 auto; min-width:0; font-size:18.5px; font-weight:650; line-height:1.5; }
+.seg.rtl .tr-text{ direction:rtl; text-align:right; }
+.seg.rtl .tr-row{ flex-direction:row-reverse; }
+.seg .pr{ color:var(--teal); font-size:12.5px; margin-top:4px; }
+.seg.interim{ opacity:.55; border-style:dashed; animation:none; }
+
+/* ---- qur'an studio ---- */
+.ayah{
+  border:1px solid var(--line-soft); border-radius:18px; padding:17px; margin-top:12px;
+  background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(2,4,10,.32));
+  -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px);
+  animation:rise .4s var(--ease) both;
+}
+.ayah .ar{
+  font-size:28px; line-height:2.2; direction:rtl; text-align:right;
+  font-family:"Amiri Quran","Amiri","KFGQPC Uthmanic Script HAFS","Scheherazade New","Noto Naskh Arabic","Geeza Pro",serif;
+  text-shadow:0 0 30px rgba(124,139,255,.16);
+}
+.ayah .tl{ color:var(--teal); font-size:13.5px; margin-top:9px; }
+.ayah .tr2{ color:var(--muted); font-size:14px; margin-top:7px; line-height:1.6; }
+.ayah .arow{ display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; align-items:center; }
+.ayah .num{
+  display:inline-block; font-size:10.5px; color:var(--accent); font-weight:800; letter-spacing:.08em;
+  border:1px solid rgba(124,139,255,.35); background:rgba(124,139,255,.08); border-radius:999px; padding:3px 9px;
+}
+.ayah .exp{
+  margin-top:12px; padding:12px 14px; border-radius:13px; font-size:14px; line-height:1.65; white-space:pre-wrap;
+  background:rgba(124,139,255,.08); border:1px solid rgba(124,139,255,.26);
+}
+.hifz-skel{ font-size:26px; line-height:2.2; direction:rtl; text-align:right; color:var(--muted); letter-spacing:1px; }
+
+/* ---- footer & modal ---- */
+footer{ color:var(--muted2); font-size:12px; margin-top:30px; text-align:center; line-height:1.7; }
+footer a{ color:var(--muted); text-decoration:none; border-bottom:1px solid rgba(255,255,255,.18); }
+footer a:hover{ color:var(--ink); }
+.modal{ position:fixed; inset:0; background:rgba(2,3,8,.72); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+  display:grid; place-items:center; padding:18px; z-index:50; }
+.modal .box{
+  width:100%; max-width:460px; max-height:86vh; overflow:auto; padding:24px; border-radius:24px;
+  background:linear-gradient(180deg,rgba(26,32,58,.92),rgba(10,13,26,.94));
+  border:1px solid var(--line); box-shadow:var(--shadow), var(--glow-a);
+  animation:rise .4s var(--ease) both;
+}
+.modal h3{ margin:0 0 8px; font-size:19px; letter-spacing:-.02em; }
+.modal p{ color:var(--muted); font-size:13.5px; margin:0 0 14px; line-height:1.6; }
+.modal code{ background:rgba(255,255,255,.09); padding:2px 7px; border-radius:7px; font-size:12.5px; }
+
+/* ============================================================================
+   LIGHT THEME — token overrides + surface tweaks. Toggled via
+   html[data-theme="light"]; preference stored on-device, defaults to the
+   system's prefers-color-scheme.
+   ============================================================================ */
+html[data-theme="light"]{ color-scheme:light; }
+html[data-theme="light"] body{
+  --bg:#eef1f9; --ink:#181d31; --muted:#49547a; --muted2:#7b85a8;
+  --accent:#5b6cff; --accent2:#8b63f4; --teal:#0dab8f; --warn:#a8731c; --bad:#d5455a;
+  --glass:rgba(255,255,255,.6); --glass2:rgba(255,255,255,.82);
+  --line:rgba(24,29,60,.15); --line-soft:rgba(24,29,60,.09);
+  --field:rgba(255,255,255,.78);
+  --shadow:0 24px 60px -30px rgba(40,52,120,.25), 0 2px 8px rgba(40,52,120,.07);
+  --glow-a:0 8px 28px -10px rgba(91,108,255,.45);
+  --glow-t:0 8px 28px -12px rgba(13,171,143,.4);
+  background:var(--bg); color:var(--ink);
+}
+html[data-theme="light"] body::before{ opacity:.5; }
+html[data-theme="light"] body::after{ opacity:.45; }
+html[data-theme="light"]::before{ opacity:.32; }
+html[data-theme="light"] h1{
+  background:linear-gradient(120deg,#1b2140 15%,#3c4b9e 55%,#6a55d4);
+  -webkit-background-clip:text; background-clip:text;
+}
+html[data-theme="light"] .card{ background:linear-gradient(180deg,rgba(255,255,255,.88),rgba(255,255,255,.6) 42%); }
+html[data-theme="light"] .card::before{ background:linear-gradient(90deg,transparent,rgba(255,255,255,.95),transparent); }
+html[data-theme="light"] .tabs{ background:rgba(255,255,255,.55); }
+html[data-theme="light"] .result,
+html[data-theme="light"] .seg,
+html[data-theme="light"] .ayah{ background:linear-gradient(180deg,rgba(255,255,255,.85),rgba(255,255,255,.55)); }
+html[data-theme="light"] .modal{ background:rgba(228,232,246,.55); }
+html[data-theme="light"] .modal .box{ background:linear-gradient(180deg,#ffffff,#eef1fa); }
+html[data-theme="light"] .modal code{ background:rgba(24,29,60,.08); }
+html[data-theme="light"] .tip{ color:#2e3a66; }
+html[data-theme="light"] .method{ background:rgba(255,255,255,.45); border-color:rgba(24,29,60,.18); }
+html[data-theme="light"] .unit .ix{ background:rgba(24,29,60,.06); }
+html[data-theme="light"] .bar{ background:rgba(24,29,60,.1); }
+html[data-theme="light"] .field, html[data-theme="light"] input, html[data-theme="light"] textarea, html[data-theme="light"] select{ color:var(--ink); }
+html[data-theme="light"] input:focus, html[data-theme="light"] textarea:focus, html[data-theme="light"] select:focus{ background:#fff; }
+html[data-theme="light"] .bubble.bot{ background:rgba(255,255,255,.85); }
+html[data-theme="light"] .correction{ background:rgba(168,115,28,.08); border-color:rgba(168,115,28,.35); }
+html[data-theme="light"] .ayah .ar{ text-shadow:none; }
+html[data-theme="light"] .badge-src{ background:rgba(255,255,255,.6); }
+html[data-theme="light"] *::-webkit-scrollbar-thumb{ background:rgba(24,29,60,.22); }
+html[data-theme="light"] *::-webkit-scrollbar-thumb:hover{ background:rgba(24,29,60,.35); }
+html[data-theme="light"] ::selection{ background:rgba(91,108,255,.25); color:#181d31; }
+html[data-theme="light"] .vocab-w{ background:rgba(255,255,255,.7); }
+html[data-theme="light"] footer a{ border-bottom-color:rgba(24,29,60,.25); }
+
+/* ---- motion preferences ---- */
+@media (prefers-reduced-motion: reduce){
+  *, *::before, *::after{ animation:none !important; transition:none !important; scroll-behavior:auto !important; }
+}
+@media (max-width:480px){
+  .wrap{ padding:20px 13px 64px; }
+  h1{ font-size:26px; }
+  .logo{ width:46px; height:46px; border-radius:11px; }
+  .card{ padding:16px; border-radius:19px; }
+  .result .target{ font-size:23px; }
+  .ayah .ar{ font-size:25px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <img class="logo" src="icon.svg" alt="Lingua">
+    <div>
+      <h1>Lingua</h1>
+      <p class="sub">The fluency engine — every language in the world</p>
+    </div>
+    <div style="margin-left:auto; display:flex; gap:8px; align-items:center">
+      <button id="themeBtn" class="hdr-btn" type="button" title="Switch light / dark theme">🌙</button>
+      <button id="statChip" class="hdr-btn" type="button" title="Your streak, XP and cards due for review">🔥0 · ⭐0/20</button>
+      <button id="histBtn" class="hdr-btn" type="button" title="Saved translations">🕘 Saved</button>
+      <button id="aiPill" class="ai-pill" type="button" title="AI accuracy mode" style="margin-left:0">
+        <span class="dot"></span><span id="aiPillText">AI: offline</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- STEP 1 — pick a language -->
+  <section id="picker" class="card">
+    <h2>1 · Choose a language to work with</h2>
+    <div class="search">
+      <input id="langSearch" type="search" placeholder="Search 180+ languages — or type any language on Earth…" autocomplete="off">
+    </div>
+    <div id="langGrid" class="langgrid"></div>
+  </section>
+
+  <!-- QUR'AN studio entry -->
+  <section id="quranEntry" class="card" style="border-color:rgba(52,225,192,.35); background:linear-gradient(135deg,rgba(52,225,192,.07),rgba(110,139,255,.05))">
+    <button class="unit" id="quranOpen" type="button" style="margin-top:0; background:transparent; border:0; padding:4px 0">
+      <span class="ix" style="background:linear-gradient(135deg,var(--teal),var(--accent)); color:#0b0e17; border-color:transparent; width:38px; height:38px; font-size:17px">📖</span>
+      <span>
+        <span class="ut" style="display:block">Learn the Qur'an</span>
+        <span class="us" style="display:block">Read · memorize (hifz) · recite · understand — verified text &amp; real recitation, all 114 surahs</span>
+      </span>
+      <span class="chev">›</span>
+    </button>
+  </section>
+
+  <!-- STEP 2 — the workspace -->
+  <section id="workspace" class="card hidden">
+    <div class="selbar">
+      <span class="big" id="selFlag">🌐</span>
+      <span class="nm" id="selName">—</span>
+      <span class="nat" id="selNative"></span>
+      <button class="ghost" id="changeLang" type="button" style="margin-left:auto">Change</button>
+    </div>
+
+    <!-- dialect picker (only some languages) -->
+    <div id="dialectWrap" class="hidden" style="margin-top:14px">
+      <label class="fld" id="dialectLabel">Dialect / variety</label>
+      <div id="dialectChips" class="chips"></div>
+      <div id="dialectNote" class="hint"></div>
+    </div>
+
+    <!-- mode tabs -->
+    <div class="tabs" style="margin-top:16px" role="tablist">
+      <button class="tab" id="tabLearn" role="tab" aria-selected="false" type="button">📚 Learn</button>
+      <button class="tab" id="tabTranslate" role="tab" aria-selected="true" type="button">🔁 Translate</button>
+      <button class="tab" id="tabTeach" role="tab" aria-selected="false" type="button">🎓 Teach</button>
+      <button class="tab" id="tabPractice" role="tab" aria-selected="false" type="button">🃏 Practice</button>
+      <button class="tab" id="tabChat" role="tab" aria-selected="false" type="button">💬 Chat</button>
+      <button class="tab" id="tabLive" role="tab" aria-selected="false" type="button">🎙 Live</button>
+    </div>
+
+    <!-- LEARN pane (structured course) -->
+    <div id="paneLearn" class="hidden" style="margin-top:16px">
+      <div id="learnArea"></div>
+    </div>
+
+    <!-- TRANSLATE pane -->
+    <div id="paneTranslate" class="hidden" style="margin-top:16px">
+      <label class="fld" id="dirLabel">Translate from … to …</label>
+      <div class="row" id="dirRow" style="margin-bottom:12px">
+        <div class="grow" id="colOther"><select id="srcLang"></select></div>
+        <button class="swap" id="swapBtn" type="button" title="Swap direction">⇄</button>
+        <div class="grow" id="colStudy">
+          <input id="dstLabel" type="text" readonly value="—" style="opacity:.9">
+        </div>
+      </div>
+      <textarea id="srcText" placeholder="Type or paste text to translate…"></textarea>
+      <div class="row wrap" style="margin-top:12px">
+        <button class="btn" id="translateBtn" type="button">Translate</button>
+        <button class="btn sec" id="clearBtn" type="button">Clear</button>
+        <button class="spk mic" id="translateMic" type="button" title="Speak to translate">🎤</button>
+        <span class="hint" id="translateHint">Tip: tap 🎤 to dictate · enable Live AI for full-accuracy translations.</span>
+      </div>
+      <div id="translateOut" class="out"></div>
+    </div>
+
+    <!-- TEACH pane -->
+    <div id="paneTeach" class="hidden" style="margin-top:16px">
+      <label class="fld">Pick a topic to learn</label>
+      <div id="topicChips" class="chips"></div>
+
+      <label class="fld" style="margin-top:14px">Your level</label>
+      <div id="levelChips" class="chips"></div>
+
+      <div class="row wrap" style="margin-top:14px">
+        <button class="btn" id="teachBtn" type="button">Teach me</button>
+        <span class="hint">Generates a short, dialect-aware lesson with pronunciation.</span>
+      </div>
+      <div id="teachOut" class="out"></div>
+
+      <div style="margin-top:20px; border-top:1px solid var(--line); padding-top:16px">
+        <label class="fld">…or ask anything about this language</label>
+        <div class="row">
+          <div class="grow"><input id="askText" type="text" placeholder="e.g. “How do I count to ten?” or “Explain the past tense”"></div>
+          <button class="btn" id="askBtn" type="button">Ask</button>
+        </div>
+        <div id="askOut" class="out"></div>
+      </div>
+    </div>
+
+    <!-- PRACTICE pane -->
+    <div id="panePractice" class="hidden" style="margin-top:16px">
+      <label class="fld">Drills — every mode feeds your spaced-repetition memory deck</label>
+      <div class="row wrap">
+        <button class="btn" id="practiceGen" type="button">🃏 Flashcards</button>
+        <button class="btn sec" id="drillBtn" type="button">✍️ Type it</button>
+        <button class="btn sec" id="speakDrillBtn" type="button">🗣 Speak it</button>
+        <button class="btn sec" id="storyBtn" type="button">📖 Story</button>
+        <button class="mini" id="reviewBtn" type="button">🔁 Review due</button>
+      </div>
+      <span class="hint" id="practiceHint">Uses the topic &amp; level from “Teach”. Type-it grading and stories need Live AI; Speak-it scores your pronunciation on-device.</span>
+      <div id="practiceArea" class="out"></div>
+    </div>
+
+    <!-- CHAT pane -->
+    <div id="paneChat" class="hidden" style="margin-top:16px">
+      <label class="fld">Conversation practice</label>
+      <div id="chatLog"></div>
+      <div class="row" style="margin-top:12px">
+        <button class="spk mic" id="chatMic" type="button" title="Speak">🎤</button>
+        <div class="grow"><input id="chatInput" type="text" placeholder="Chat here…"></div>
+        <button class="btn" id="chatSend" type="button">Send</button>
+      </div>
+      <div class="row wrap" style="margin-top:8px">
+        <button class="mini" id="chatStart" type="button">✨ Start a conversation</button>
+        <button class="mini" id="chatClear" type="button">Clear</button>
+        <span class="hint">The tutor replies in your dialect and gently corrects you. Needs Live AI.</span>
+      </div>
+    </div>
+
+    <!-- LIVE INTERPRETER pane -->
+    <div id="paneLive" class="hidden" style="margin-top:16px">
+      <label class="fld">Live interpreter — listens to a conversation and translates as it's spoken</label>
+      <div class="row" style="margin-bottom:10px">
+        <div class="grow">
+          <label class="fld">They're speaking</label>
+          <select id="liveFrom"></select>
+        </div>
+        <button class="swap" id="liveSwap" type="button" title="Swap direction" style="align-self:flex-end">⇄</button>
+        <div class="grow">
+          <label class="fld">Translate into</label>
+          <select id="liveTo"></select>
+        </div>
+      </div>
+      <div class="row wrap">
+        <button class="btn" id="liveBtn" type="button">🎙 Start listening</button>
+        <button class="chip" id="liveSpeakToggle" type="button" aria-selected="true">🔊 Speak translations aloud</button>
+        <button class="mini" id="liveClear" type="button">Clear</button>
+      </div>
+      <div id="liveStatus" class="hint" style="margin-top:8px">Tap Start, allow the microphone, and hold the phone near the conversation. Each sentence is translated as it lands.</div>
+      <div id="liveFeed" class="out"></div>
+    </div>
+  </section>
+
+  <!-- QUR'AN studio -->
+  <section id="quranPanel" class="card hidden">
+    <div class="selbar">
+      <span class="big">📖</span>
+      <span class="nm">Qur'an</span>
+      <span class="nat" id="qSubtitle"></span>
+      <button class="ghost" id="quranClose" type="button" style="margin-left:auto">‹ Back</button>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <div class="grow"><select id="qSurah"></select></div>
+    </div>
+    <div class="chips" style="margin-top:10px" id="qModeChips">
+      <button class="chip" id="qmRead" aria-selected="true" type="button">📖 Read</button>
+      <button class="chip" id="qmHifz" aria-selected="false" type="button">🧠 Memorize</button>
+      <button class="chip" id="qmRecite" aria-selected="false" type="button">🗣 Recite</button>
+      <button class="chip" id="qmReview" aria-selected="false" type="button">🔁 Review due</button>
+    </div>
+    <div class="row wrap" style="margin-top:10px">
+      <button class="chip" id="qTrToggle" aria-selected="true" type="button">Translation</button>
+      <button class="chip" id="qTlToggle" aria-selected="false" type="button">Transliteration</button>
+      <span class="hint" style="margin:0">Text: Tanzil Uthmani (AlQuran.cloud) · Recitation: Mishary Rashid Alafasy · Translation: Saheeh International</span>
+    </div>
+    <div id="quranArea" class="out"></div>
+    <div class="hint" style="margin-top:12px">🤲 AI explanations are a study aid only — the Qur'anic text and audio come from verified sources, never from the AI. For religious guidance, rely on qualified scholars and established tafsīr.</div>
+  </section>
+
+  <!-- Saved translations (on-device) -->
+  <section id="historyPanel" class="card hidden">
+    <div class="row" style="justify-content:space-between; align-items:center">
+      <h2 style="margin:0">🕘 Saved translations</h2>
+      <button id="histClear" class="mini" type="button">Clear all</button>
+    </div>
+    <div id="histList" style="margin-top:10px"></div>
+  </section>
+
+  <footer>
+    Lingua · part of <a href="../">BallrzAPP prototypes</a> · works offline · tap 🔊 to listen · enable Live AI for accuracy
+  </footer>
+</div>
+
+<!-- Live AI config modal -->
+<div id="aiModal" class="modal hidden">
+  <div class="box">
+    <h3>Enable Live AI accuracy</h3>
+    <p>Powered by Claude. Quickest way — paste your own Anthropic key (it’s stored only in this browser and sent directly to Anthropic):</p>
+    <div class="row" style="margin-bottom:6px">
+      <div class="grow"><input id="byokInput" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false"></div>
+      <button class="btn" id="byokSave" type="button">Save</button>
+    </div>
+    <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:12px">
+      <span class="hint" id="byokStatus" style="margin:0">No key saved.</span>
+      <button class="mini" id="byokClear" type="button">Remove key</button>
+    </div>
+    <p style="color:#ffcf6e;font-size:12px;margin:0 0 14px;background:rgba(255,207,110,.08);border:1px solid rgba(255,207,110,.3);border-radius:10px;padding:9px 11px">
+      ⚠️ Your key stays on this device (localStorage) and is sent straight to Anthropic. Don’t do this on a shared/public computer — for that, use the local proxy or hosted function below.
+    </p>
+    <p style="color:#cdd6f5;font-size:13px;margin:0 0 8px"><b>Local proxy</b> — run it once, then open <code>http://localhost:8788</code>:</p>
+    <p style="background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:10px;padding:12px;color:#cdd6f5;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.7">
+      cd lingua<br>ANTHROPIC_API_KEY=sk-ant-… node server.mjs
+    </p>
+    <p style="color:#cdd6f5;font-size:13px;margin:0 0 4px"><b>Hosted (cloud)</b> — deploy the <code>linguaAI</code> Firebase function once and the live web link gets AI automatically (see <code>lingua/README.md</code>).</p>
+    <p>Until either is connected, Lingua runs offline with a built-in starter phrasebook. Audio (🔊) and saved translations work offline too.</p>
+    <div class="row" style="justify-content:flex-end">
+      <button class="ghost" id="aiRetry" type="button">Re-check connection</button>
+      <button class="btn sec" id="aiClose" type="button">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===========================================================================
+   Lingua — single-file language learning + translation app.
+   Pure front-end. Accuracy comes from Claude via the local proxy (server.mjs);
+   when that's not running, an honest offline starter phrasebook fills in and
+   the UI clearly labels which engine produced each answer.
+   =========================================================================== */
+"use strict";
+
+/* ---- language catalogue. `d` = dialects/varieties; `rtl` = right-to-left. ---- */
+var LANGS = [
+  { id:"ar", name:"Arabic", native:"العربية", flag:"🇸🇦", rtl:true, d:[
+      { id:"msa", name:"Modern Standard (Fusha)", native:"الفُصحى", note:"The formal, pan-Arab written & broadcast standard. Best for documents, news and learners." },
+      { id:"egy", name:"Egyptian", native:"المصري", note:"Cairo/Delta Arabic — the most widely understood spoken dialect thanks to film & TV." },
+      { id:"sau", name:"Saudi", native:"السعودي", note:"Najdi & Hejazi varieties of the Arabian Peninsula." },
+      { id:"are", name:"Emirati", native:"الإماراتي", note:"Gulf (Khaleeji) Arabic as spoken in the UAE." },
+      { id:"lev", name:"Levantine", native:"الشامي", note:"Syria, Lebanon, Jordan & Palestine." },
+      { id:"glf", name:"Gulf", native:"الخليجي", note:"Broader Khaleeji across Kuwait, Qatar, Bahrain & the Gulf." },
+      { id:"irq", name:"Iraqi", native:"العراقي", note:"Mesopotamian Arabic." },
+      { id:"mor", name:"Maghrebi (Darija)", native:"الدارجة", note:"Morocco, Algeria & Tunisia." },
+      { id:"sdn", name:"Sudanese", native:"السوداني", note:"Sudanese Arabic of the Nile Valley." },
+      { id:"yem", name:"Yemeni", native:"اليمني", note:"Southern Arabian varieties of Yemen." }
+    ] },
+  { id:"ur", name:"Urdu", native:"اردو", flag:"🇵🇰", rtl:true, d:[
+      { id:"std", name:"Standard Urdu", native:"معیاری اردو", note:"The literary & official register taught in schools and used in media." },
+      { id:"lah", name:"Lahori", native:"لاہوری", note:"Lahore/Punjab speech — Punjabi-influenced vocabulary, rhythm and intonation." },
+      { id:"khi", name:"Karachi", native:"کراچی", note:"Cosmopolitan Karachi Urdu with Sindhi & English borrowings." },
+      { id:"dak", name:"Dakhini", native:"دکنی", note:"Deccani Urdu of southern India — older forms and distinct vocabulary." },
+      { id:"hyd", name:"Hyderabadi", native:"حیدرآبادی", note:"Hyderabad speech, famous for “nakko / hau / miyan”." },
+      { id:"rek", name:"Rekhta", native:"ریختہ", note:"The classical, poetic register of ghazals and Urdu literature." }
+    ] },
+  { id:"en", name:"English", native:"English", flag:"🇬🇧", d:[
+      { id:"gb", name:"British", native:"British English", note:"Standard UK English (Received Pronunciation / standard spelling)." },
+      { id:"us", name:"American", native:"American English", note:"US spelling and vocabulary." },
+      { id:"au", name:"Australian", native:"Australian English", note:"Australian vocabulary and idiom." },
+      { id:"in", name:"Indian", native:"Indian English", note:"South-Asian English usage and idiom." }
+    ] },
+  { id:"es", name:"Spanish", native:"Español", flag:"🇪🇸", d:[
+      { id:"es", name:"Castilian (Spain)", native:"Español de España", note:"Peninsular Spanish — uses vosotros and ceceo." },
+      { id:"mx", name:"Mexican", native:"Español mexicano", note:"Mexico & much of North/Central America." },
+      { id:"ar", name:"Rioplatense", native:"Español rioplatense", note:"Argentina & Uruguay — voseo and ‘sh’ for ll/y." },
+      { id:"co", name:"Colombian / Andean", native:"Español andino", note:"Colombia & the Andean region — clear, neutral usage." }
+    ] },
+  { id:"fr", name:"French", native:"Français", flag:"🇫🇷", d:[
+      { id:"fr", name:"Metropolitan", native:"Français de France", note:"Standard European French." },
+      { id:"ca", name:"Canadian (Québécois)", native:"Français québécois", note:"Quebec French — distinct vocabulary and pronunciation." }
+    ] },
+  { id:"de", name:"German", native:"Deutsch", flag:"🇩🇪", d:[
+      { id:"de", name:"German (Germany)", native:"Hochdeutsch", note:"Standard High German." },
+      { id:"at", name:"Austrian", native:"Österreichisches Deutsch", note:"Austrian standard German." },
+      { id:"ch", name:"Swiss", native:"Schweizerdeutsch", note:"Swiss standard German (no ß; distinct vocabulary)." }
+    ] },
+  { id:"it", name:"Italian", native:"Italiano", flag:"🇮🇹" },
+  { id:"pt", name:"Portuguese", native:"Português", flag:"🇵🇹", d:[
+      { id:"br", name:"Brazilian", native:"Português brasileiro", note:"Brazil — the most widely spoken Portuguese variety." },
+      { id:"pt", name:"European", native:"Português europeu", note:"Portugal & African Lusophone standard." }
+    ] },
+  { id:"nl", name:"Dutch", native:"Nederlands", flag:"🇳🇱" },
+  { id:"ru", name:"Russian", native:"Русский", flag:"🇷🇺" },
+  { id:"pl", name:"Polish", native:"Polski", flag:"🇵🇱" },
+  { id:"uk", name:"Ukrainian", native:"Українська", flag:"🇺🇦" },
+  { id:"cs", name:"Czech", native:"Čeština", flag:"🇨🇿" },
+  { id:"sk", name:"Slovak", native:"Slovenčina", flag:"🇸🇰" },
+  { id:"ro", name:"Romanian", native:"Română", flag:"🇷🇴" },
+  { id:"bg", name:"Bulgarian", native:"Български", flag:"🇧🇬" },
+  { id:"sr", name:"Serbian", native:"Српски", flag:"🇷🇸" },
+  { id:"hr", name:"Croatian", native:"Hrvatski", flag:"🇭🇷" },
+  { id:"sl", name:"Slovenian", native:"Slovenščina", flag:"🇸🇮" },
+  { id:"el", name:"Greek", native:"Ελληνικά", flag:"🇬🇷" },
+  { id:"tr", name:"Turkish", native:"Türkçe", flag:"🇹🇷" },
+  { id:"hu", name:"Hungarian", native:"Magyar", flag:"🇭🇺" },
+  { id:"fi", name:"Finnish", native:"Suomi", flag:"🇫🇮" },
+  { id:"sv", name:"Swedish", native:"Svenska", flag:"🇸🇪" },
+  { id:"no", name:"Norwegian", native:"Norsk", flag:"🇳🇴" },
+  { id:"da", name:"Danish", native:"Dansk", flag:"🇩🇰" },
+  { id:"is", name:"Icelandic", native:"Íslenska", flag:"🇮🇸" },
+  { id:"et", name:"Estonian", native:"Eesti", flag:"🇪🇪" },
+  { id:"lv", name:"Latvian", native:"Latviešu", flag:"🇱🇻" },
+  { id:"lt", name:"Lithuanian", native:"Lietuvių", flag:"🇱🇹" },
+  { id:"sq", name:"Albanian", native:"Shqip", flag:"🇦🇱" },
+  { id:"mk", name:"Macedonian", native:"Македонски", flag:"🇲🇰" },
+  { id:"ga", name:"Irish", native:"Gaeilge", flag:"🇮🇪" },
+  { id:"cy", name:"Welsh", native:"Cymraeg", flag:"🏴" },
+  { id:"ca", name:"Catalan", native:"Català", flag:"🇪🇸" },
+  { id:"eu", name:"Basque", native:"Euskara", flag:"🇪🇸" },
+  { id:"gl", name:"Galician", native:"Galego", flag:"🇪🇸" },
+  { id:"he", name:"Hebrew", native:"עברית", flag:"🇮🇱", rtl:true },
+  { id:"fa", name:"Persian (Farsi)", native:"فارسی", flag:"🇮🇷", rtl:true },
+  { id:"prs", name:"Dari", native:"دری", flag:"🇦🇫", rtl:true },
+  { id:"ps", name:"Pashto", native:"پښتو", flag:"🇦🇫", rtl:true },
+  { id:"ku", name:"Kurdish", native:"Kurdî", flag:"🟨" },
+  { id:"hi", name:"Hindi", native:"हिन्दी", flag:"🇮🇳" },
+  { id:"bn", name:"Bengali", native:"বাংলা", flag:"🇧🇩" },
+  { id:"pa", name:"Punjabi", native:"ਪੰਜਾਬੀ", flag:"🇮🇳" },
+  { id:"gu", name:"Gujarati", native:"ગુજરાતી", flag:"🇮🇳" },
+  { id:"mr", name:"Marathi", native:"मराठी", flag:"🇮🇳" },
+  { id:"ta", name:"Tamil", native:"தமிழ்", flag:"🇮🇳" },
+  { id:"te", name:"Telugu", native:"తెలుగు", flag:"🇮🇳" },
+  { id:"kn", name:"Kannada", native:"ಕನ್ನಡ", flag:"🇮🇳" },
+  { id:"ml", name:"Malayalam", native:"മലയാളം", flag:"🇮🇳" },
+  { id:"si", name:"Sinhala", native:"සිංහල", flag:"🇱🇰" },
+  { id:"ne", name:"Nepali", native:"नेपाली", flag:"🇳🇵" },
+  { id:"zh", name:"Chinese (Mandarin)", native:"中文 / 普通话", flag:"🇨🇳", d:[
+      { id:"cn", name:"Mainland (Simplified)", native:"简体 / 普通话", note:"Mainland China — simplified characters, Putonghua." },
+      { id:"tw", name:"Taiwan (Traditional)", native:"繁體 / 國語", note:"Taiwan — traditional characters, Guoyu." }
+    ] },
+  { id:"yue", name:"Chinese (Cantonese)", native:"廣東話", flag:"🇭🇰" },
+  { id:"ja", name:"Japanese", native:"日本語", flag:"🇯🇵" },
+  { id:"ko", name:"Korean", native:"한국어", flag:"🇰🇷" },
+  { id:"vi", name:"Vietnamese", native:"Tiếng Việt", flag:"🇻🇳" },
+  { id:"th", name:"Thai", native:"ภาษาไทย", flag:"🇹🇭" },
+  { id:"lo", name:"Lao", native:"ລາວ", flag:"🇱🇦" },
+  { id:"km", name:"Khmer", native:"ខ្មែរ", flag:"🇰🇭" },
+  { id:"my", name:"Burmese", native:"မြန်မာ", flag:"🇲🇲" },
+  { id:"id", name:"Indonesian", native:"Bahasa Indonesia", flag:"🇮🇩" },
+  { id:"ms", name:"Malay", native:"Bahasa Melayu", flag:"🇲🇾" },
+  { id:"tl", name:"Filipino (Tagalog)", native:"Tagalog", flag:"🇵🇭" },
+  { id:"sw", name:"Swahili", native:"Kiswahili", flag:"🇰🇪" },
+  { id:"am", name:"Amharic", native:"አማርኛ", flag:"🇪🇹" },
+  { id:"ha", name:"Hausa", native:"Hausa", flag:"🇳🇬" },
+  { id:"yo", name:"Yoruba", native:"Yorùbá", flag:"🇳🇬" },
+  { id:"ig", name:"Igbo", native:"Igbo", flag:"🇳🇬" },
+  { id:"zu", name:"Zulu", native:"isiZulu", flag:"🇿🇦" },
+  { id:"xh", name:"Xhosa", native:"isiXhosa", flag:"🇿🇦" },
+  { id:"af", name:"Afrikaans", native:"Afrikaans", flag:"🇿🇦" },
+  { id:"so", name:"Somali", native:"Soomaali", flag:"🇸🇴" },
+  { id:"hy", name:"Armenian", native:"Հայերեն", flag:"🇦🇲" },
+  { id:"ka", name:"Georgian", native:"ქართული", flag:"🇬🇪" },
+  { id:"az", name:"Azerbaijani", native:"Azərbaycan", flag:"🇦🇿" },
+  { id:"kk", name:"Kazakh", native:"Қазақ", flag:"🇰🇿" },
+  { id:"uz", name:"Uzbek", native:"Oʻzbek", flag:"🇺🇿" },
+  { id:"mn", name:"Mongolian", native:"Монгол", flag:"🇲🇳" },
+  { id:"eo", name:"Esperanto", native:"Esperanto", flag:"🟩" },
+  { id:"la", name:"Latin", native:"Latina", flag:"🏛️" },
+  { id:"ht", name:"Haitian Creole", native:"Kreyòl", flag:"🇭🇹" },
+  { id:"mi", name:"Māori", native:"Te Reo Māori", flag:"🇳🇿" },
+  { id:"haw", name:"Hawaiian", native:"ʻŌlelo Hawaiʻi", flag:"🌺" },
+  { id:"sm", name:"Samoan", native:"Gagana Sāmoa", flag:"🇼🇸" },
+  // Africa
+  { id:"wo", name:"Wolof", native:"Wolof", flag:"🇸🇳" },
+  { id:"ff", name:"Fula (Fulfulde)", native:"Fulfulde", flag:"🇸🇳" },
+  { id:"tw", name:"Twi (Akan)", native:"Twi", flag:"🇬🇭" },
+  { id:"ee", name:"Ewe", native:"Eʋegbe", flag:"🇬🇭" },
+  { id:"om", name:"Oromo", native:"Afaan Oromoo", flag:"🇪🇹" },
+  { id:"ti", name:"Tigrinya", native:"ትግርኛ", flag:"🇪🇷" },
+  { id:"sn", name:"Shona", native:"chiShona", flag:"🇿🇼" },
+  { id:"rw", name:"Kinyarwanda", native:"Ikinyarwanda", flag:"🇷🇼" },
+  { id:"rn", name:"Kirundi", native:"Ikirundi", flag:"🇧🇮" },
+  { id:"ln", name:"Lingala", native:"Lingála", flag:"🇨🇩" },
+  { id:"lg", name:"Luganda", native:"Oluganda", flag:"🇺🇬" },
+  { id:"st", name:"Sesotho", native:"Sesotho", flag:"🇱🇸" },
+  { id:"tn", name:"Setswana", native:"Setswana", flag:"🇧🇼" },
+  { id:"ny", name:"Chichewa", native:"Chichewa", flag:"🇲🇼" },
+  { id:"bm", name:"Bambara", native:"Bamanankan", flag:"🇲🇱" },
+  { id:"ber", name:"Tamazight (Berber)", native:"ⵜⴰⵎⴰⵣⵉⵖⵜ", flag:"🇲🇦" },
+  { id:"kab", name:"Kabyle", native:"Taqbaylit", flag:"🇩🇿" },
+  { id:"mg", name:"Malagasy", native:"Malagasy", flag:"🇲🇬" },
+  { id:"ki", name:"Kikuyu", native:"Gĩkũyũ", flag:"🇰🇪" },
+  // Middle East, Caucasus & Central Asia
+  { id:"ug", name:"Uyghur", native:"ئۇيغۇرچە", flag:"🌙", rtl:true },
+  { id:"bo", name:"Tibetan", native:"བོད་སྐད", flag:"🏔️" },
+  { id:"ky", name:"Kyrgyz", native:"Кыргызча", flag:"🇰🇬" },
+  { id:"tk", name:"Turkmen", native:"Türkmençe", flag:"🇹🇲" },
+  { id:"tg", name:"Tajik", native:"Тоҷикӣ", flag:"🇹🇯" },
+  { id:"tt", name:"Tatar", native:"Татарча", flag:"🇷🇺" },
+  { id:"ce", name:"Chechen", native:"Нохчийн", flag:"🇷🇺" },
+  { id:"arc", name:"Aramaic (Syriac)", native:"ܣܘܪܝܝܐ", flag:"🕊️", rtl:true },
+  { id:"bal", name:"Balochi", native:"بلوچی", flag:"🇵🇰", rtl:true },
+  // Europe
+  { id:"be", name:"Belarusian", native:"Беларуская", flag:"🇧🇾" },
+  { id:"bs", name:"Bosnian", native:"Bosanski", flag:"🇧🇦" },
+  { id:"cnr", name:"Montenegrin", native:"Crnogorski", flag:"🇲🇪" },
+  { id:"lb", name:"Luxembourgish", native:"Lëtzebuergesch", flag:"🇱🇺" },
+  { id:"mt", name:"Maltese", native:"Malti", flag:"🇲🇹" },
+  { id:"fo", name:"Faroese", native:"Føroyskt", flag:"🇫🇴" },
+  { id:"fy", name:"Frisian", native:"Frysk", flag:"🇳🇱" },
+  { id:"br", name:"Breton", native:"Brezhoneg", flag:"🇫🇷" },
+  { id:"gd", name:"Scottish Gaelic", native:"Gàidhlig", flag:"🏴󠁧󠁢󠁳󠁣󠁴󠁿" },
+  { id:"kw", name:"Cornish", native:"Kernewek", flag:"🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
+  { id:"oc", name:"Occitan", native:"Occitan", flag:"🇫🇷" },
+  { id:"sc", name:"Sardinian", native:"Sardu", flag:"🇮🇹" },
+  { id:"co", name:"Corsican", native:"Corsu", flag:"🇫🇷" },
+  { id:"rm", name:"Romansh", native:"Rumantsch", flag:"🇨🇭" },
+  { id:"yi", name:"Yiddish", native:"ייִדיש", flag:"🕎", rtl:true },
+  { id:"se", name:"Northern Sami", native:"Davvisámegiella", flag:"🇳🇴" },
+  // South Asia
+  { id:"as", name:"Assamese", native:"অসমীয়া", flag:"🇮🇳" },
+  { id:"or", name:"Odia", native:"ଓଡ଼ିଆ", flag:"🇮🇳" },
+  { id:"bho", name:"Bhojpuri", native:"भोजपुरी", flag:"🇮🇳" },
+  { id:"mai", name:"Maithili", native:"मैथिली", flag:"🇮🇳" },
+  { id:"sd", name:"Sindhi", native:"سنڌي", flag:"🇵🇰", rtl:true },
+  { id:"sa", name:"Sanskrit", native:"संस्कृतम्", flag:"🕉️" },
+  { id:"ks", name:"Kashmiri", native:"کٲشُر", flag:"🇮🇳", rtl:true },
+  { id:"gom", name:"Konkani", native:"कोंकणी", flag:"🇮🇳" },
+  { id:"mni", name:"Manipuri (Meitei)", native:"ꯃꯤꯇꯩꯂꯣꯟ", flag:"🇮🇳" },
+  { id:"dz", name:"Dzongkha", native:"རྫོང་ཁ", flag:"🇧🇹" },
+  { id:"dv", name:"Dhivehi", native:"ދިވެހި", flag:"🇲🇻", rtl:true },
+  { id:"syl", name:"Sylheti", native:"ꠍꠤꠟꠐꠤ", flag:"🇧🇩" },
+  // East & Southeast Asia
+  { id:"nan", name:"Hokkien (Taiwanese)", native:"台語", flag:"🇹🇼" },
+  { id:"hak", name:"Hakka", native:"客家話", flag:"🇨🇳" },
+  { id:"wuu", name:"Shanghainese (Wu)", native:"上海话", flag:"🇨🇳" },
+  { id:"hmn", name:"Hmong", native:"Hmoob", flag:"🇱🇦" },
+  { id:"jv", name:"Javanese", native:"Basa Jawa", flag:"🇮🇩" },
+  { id:"su", name:"Sundanese", native:"Basa Sunda", flag:"🇮🇩" },
+  { id:"min", name:"Minangkabau", native:"Baso Minang", flag:"🇮🇩" },
+  { id:"ban", name:"Balinese", native:"Basa Bali", flag:"🇮🇩" },
+  { id:"ceb", name:"Cebuano", native:"Binisaya", flag:"🇵🇭" },
+  { id:"ilo", name:"Ilocano", native:"Ilokano", flag:"🇵🇭" },
+  { id:"hil", name:"Hiligaynon", native:"Ilonggo", flag:"🇵🇭" },
+  { id:"tet", name:"Tetum", native:"Tetun", flag:"🇹🇱" },
+  // Pacific
+  { id:"fj", name:"Fijian", native:"Vosa Vakaviti", flag:"🇫🇯" },
+  { id:"to", name:"Tongan", native:"Lea faka-Tonga", flag:"🇹🇴" },
+  { id:"ty", name:"Tahitian", native:"Reo Tahiti", flag:"🇵🇫" },
+  { id:"ch", name:"Chamorro", native:"Chamoru", flag:"🇬🇺" },
+  { id:"mh", name:"Marshallese", native:"Kajin M̧ajeļ", flag:"🇲🇭" },
+  { id:"bi", name:"Bislama", native:"Bislama", flag:"🇻🇺" },
+  { id:"tpi", name:"Tok Pisin", native:"Tok Pisin", flag:"🇵🇬" },
+  // Americas — indigenous & creoles
+  { id:"qu", name:"Quechua", native:"Runasimi", flag:"🇵🇪" },
+  { id:"ay", name:"Aymara", native:"Aymar aru", flag:"🇧🇴" },
+  { id:"gn", name:"Guarani", native:"Avañe'ẽ", flag:"🇵🇾" },
+  { id:"nah", name:"Nahuatl", native:"Nāhuatl", flag:"🇲🇽" },
+  { id:"yua", name:"Yucatec Maya", native:"Maaya t'aan", flag:"🇲🇽" },
+  { id:"quc", name:"K'iche'", native:"K'iche'", flag:"🇬🇹" },
+  { id:"arn", name:"Mapudungun", native:"Mapudungun", flag:"🇨🇱" },
+  { id:"nv", name:"Navajo", native:"Diné bizaad", flag:"🇺🇸" },
+  { id:"chr", name:"Cherokee", native:"ᏣᎳᎩ", flag:"🇺🇸" },
+  { id:"iu", name:"Inuktitut", native:"ᐃᓄᒃᑎᑐᑦ", flag:"🇨🇦" },
+  { id:"cr", name:"Cree", native:"ᓀᐦᐃᔭᐍᐏᐣ", flag:"🇨🇦" },
+  { id:"kl", name:"Greenlandic", native:"Kalaallisut", flag:"🇬🇱" },
+  { id:"jam", name:"Jamaican Patois", native:"Patwa", flag:"🇯🇲" },
+  { id:"pap", name:"Papiamento", native:"Papiamentu", flag:"🇨🇼" },
+  { id:"mfe", name:"Mauritian Creole", native:"Kreol Morisien", flag:"🇲🇺" },
+  { id:"kea", name:"Cape Verdean Creole", native:"Kriolu", flag:"🇨🇻" },
+  // Constructed
+  { id:"tok", name:"Toki Pona", native:"toki pona", flag:"🌱" }
+];
+// Equal treatment: one alphabetical list, no language pinned above another.
+LANGS.sort(function(a,b){ return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0); });
+
+/* honest, tiny offline starter phrasebook — only confident basics. Keyed by
+   language id (and dialect id for Arabic/Urdu). The full, accurate experience
+   comes from Live AI; this just keeps the demo alive on a plane. */
+var PHRASES = {
+  en:{ hello:["Hello","",""], thanks:["Thank you","",""], bye:["Goodbye","",""], yes:["Yes","",""], no:["No","",""] },
+  es:{ hello:["Hola","OH-lah",""], thanks:["Gracias","GRAH-syas",""], bye:["Adiós","ah-DYOHS",""], yes:["Sí","see",""], no:["No","noh",""] },
+  fr:{ hello:["Bonjour","bon-ZHOOR",""], thanks:["Merci","mehr-SEE",""], bye:["Au revoir","oh ruh-VWAHR",""], yes:["Oui","wee",""], no:["Non","nohn",""] },
+  de:{ hello:["Hallo","HAH-loh",""], thanks:["Danke","DAHN-kuh",""], bye:["Tschüss","chooss",""], yes:["Ja","yah",""], no:["Nein","nine",""] },
+  it:{ hello:["Ciao","chow",""], thanks:["Grazie","GRAH-tsyeh",""], bye:["Arrivederci","ah-ree-veh-DEHR-chee",""], yes:["Sì","see",""], no:["No","noh",""] },
+  pt:{ hello:["Olá","oh-LAH",""], thanks:["Obrigado","oh-bree-GAH-doo",""], bye:["Tchau","chow",""], yes:["Sim","seeng",""], no:["Não","nowng",""] },
+  hi:{ hello:["नमस्ते","na-mas-TÉ",""], thanks:["धन्यवाद","dhan-ya-VAAD",""], bye:["अलविदा","al-vi-DAA",""], yes:["हाँ","haan",""], no:["नहीं","na-HEEN",""] },
+  ja:{ hello:["こんにちは","kon-nichi-wa",""], thanks:["ありがとう","a-ri-ga-tou",""], bye:["さようなら","sa-yoo-na-ra",""], yes:["はい","hai",""], no:["いいえ","ii-e",""] },
+  zh:{ hello:["你好","nǐ hǎo",""], thanks:["谢谢","xièxie",""], bye:["再见","zàijiàn",""], yes:["是","shì",""], no:["不","bù",""] },
+  ko:{ hello:["안녕하세요","an-nyeong-ha-se-yo",""], thanks:["감사합니다","gam-sa-ham-ni-da",""], bye:["안녕히 가세요","an-nyeong-hi ga-se-yo",""], yes:["네","ne",""], no:["아니요","a-ni-yo",""] },
+  ru:{ hello:["Здравствуйте","ZDRAHST-vooy-tye",""], thanks:["Спасибо","spa-SEE-ba",""], bye:["До свидания","da svee-DAH-nya",""], yes:["Да","da",""], no:["Нет","nyet",""] },
+  tr:{ hello:["Merhaba","MEHR-ha-ba",""], thanks:["Teşekkürler","te-shek-kur-LER",""], bye:["Güle güle","gu-LE gu-LE",""], yes:["Evet","e-VET",""], no:["Hayır","ha-YUR",""] },
+  sw:{ hello:["Habari","ha-BA-ri",""], thanks:["Asante","a-SAN-te",""], bye:["Kwaheri","kwa-HE-ri",""], yes:["Ndiyo","n-DEE-yo",""], no:["Hapana","ha-PA-na",""] },
+  "ar:msa":{ hello:["السلام عليكم","as-salāmu ʿalaykum","Peace be upon you"], thanks:["شكراً","shukran",""], bye:["مع السلامة","maʿa s-salāma",""], yes:["نعم","naʿam",""], no:["لا","lā",""] },
+  "ar:egy":{ hello:["إزيك","izzayyak","How are you / hi"], thanks:["شكراً","shukran",""], bye:["سلام","salām",""], yes:["أيوة","aywa",""], no:["لأ","laʾ",""] },
+  "ar:sau":{ hello:["السلام عليكم","as-salām ʿalaykum",""], thanks:["مشكور","mashkūr",""], bye:["مع السلامة","maʿa s-salāma",""], yes:["إي","ee",""], no:["لا","la",""] },
+  "ar:are":{ hello:["السلام عليكم","as-salām ʿalaykum",""], thanks:["مشكور","mashkūr",""], bye:["فمان الله","fī amān illah",""], yes:["إي","ee",""], no:["لا","la",""] },
+  "ur:std":{ hello:["السلام علیکم","as-salām ʿalaikum",""], thanks:["شکریہ","shukriya",""], bye:["خدا حافظ","khudā hāfiz",""], yes:["جی ہاں","jī hāñ",""], no:["نہیں","nahīñ",""] },
+  "ur:lah":{ hello:["السلام علیکم","as-salām ʿalaikum",""], thanks:["مہربانی","mehrbānī","(Punjabi-flavoured ‘thanks’)"], bye:["اللہ بیلی","allāh bēlī","‘God be your friend’ — typically Lahori/Punjabi"], yes:["ہاں جی","hāñ jī",""], no:["نہیں جی","nahīñ jī",""] }
+};
+
+/* ---- tiny DOM helpers ---- */
+function $(id){ return document.getElementById(id); }
+function el(tag, cls, txt){ var e = document.createElement(tag); if(cls) e.className = cls; if(txt!=null) e.textContent = txt; return e; }
+function clear(node){ if(node) node.innerHTML = ""; }
+function on(node, ev, fn){ if(node && node.addEventListener) node.addEventListener(ev, fn); }
+function show(node){ if(node) node.classList.remove("hidden"); }
+function hide(node){ if(node) node.classList.add("hidden"); }
+
+/* =========================================================================
+   Audio pronunciation — uses the browser's built-in speech synthesis. Quality
+   depends on the voices installed on the device; the requested BCP-47 tag (and
+   dialect override where the OS has one) gives the best available match.
+   ========================================================================= */
+var BCP = {
+  en:"en-US", es:"es-ES", fr:"fr-FR", de:"de-DE", it:"it-IT", pt:"pt-PT", nl:"nl-NL",
+  ru:"ru-RU", pl:"pl-PL", uk:"uk-UA", cs:"cs-CZ", sk:"sk-SK", ro:"ro-RO", bg:"bg-BG",
+  sr:"sr-RS", hr:"hr-HR", sl:"sl-SI", el:"el-GR", tr:"tr-TR", hu:"hu-HU", fi:"fi-FI",
+  sv:"sv-SE", no:"nb-NO", da:"da-DK", is:"is-IS", et:"et-EE", lv:"lv-LV", lt:"lt-LT",
+  sq:"sq-AL", mk:"mk-MK", ga:"ga-IE", cy:"cy-GB", ca:"ca-ES", eu:"eu-ES", gl:"gl-ES",
+  he:"he-IL", fa:"fa-IR", prs:"fa-AF", ps:"ps-AF", ku:"ku", hi:"hi-IN", bn:"bn-BD",
+  pa:"pa-IN", gu:"gu-IN", mr:"mr-IN", ta:"ta-IN", te:"te-IN", kn:"kn-IN", ml:"ml-IN",
+  si:"si-LK", ne:"ne-NP", zh:"zh-CN", yue:"zh-HK", ja:"ja-JP", ko:"ko-KR", vi:"vi-VN",
+  th:"th-TH", lo:"lo-LA", km:"km-KH", my:"my-MM", id:"id-ID", ms:"ms-MY", tl:"fil-PH",
+  sw:"sw-KE", am:"am-ET", ha:"ha", yo:"yo", ig:"ig", zu:"zu-ZA", xh:"xh", af:"af-ZA",
+  so:"so", hy:"hy-AM", ka:"ka-GE", az:"az-AZ", kk:"kk-KZ", uz:"uz", mn:"mn", eo:"eo",
+  la:"la", ht:"ht", mi:"mi-NZ", haw:"haw", sm:"sm", ar:"ar-SA", ur:"ur-PK"
+};
+var DIALECT_BCP = {
+  "ar:msa":"ar-SA", "ar:egy":"ar-EG", "ar:sau":"ar-SA", "ar:are":"ar-AE", "ar:lev":"ar-LB",
+  "ar:glf":"ar-KW", "ar:irq":"ar-IQ", "ar:mor":"ar-MA", "ar:sdn":"ar-SD", "ar:yem":"ar-YE",
+  "ur:std":"ur-PK", "ur:lah":"ur-PK", "ur:khi":"ur-PK", "ur:dak":"ur-IN", "ur:hyd":"ur-IN", "ur:rek":"ur-PK",
+  "en:gb":"en-GB", "en:us":"en-US", "en:au":"en-AU", "en:in":"en-IN",
+  "es:es":"es-ES", "es:mx":"es-MX", "es:ar":"es-AR", "es:co":"es-CO",
+  "pt:br":"pt-BR", "pt:pt":"pt-PT", "fr:fr":"fr-FR", "fr:ca":"fr-CA",
+  "de:de":"de-DE", "de:at":"de-AT", "de:ch":"de-CH", "zh:cn":"zh-CN", "zh:tw":"zh-TW"
+};
+function bcpForLang(lang, dialect){
+  if(!lang) return "";
+  if(dialect){ var k = lang.id + ":" + dialect.id; if(DIALECT_BCP[k]) return DIALECT_BCP[k]; }
+  return BCP[lang.id] || lang.id;
+}
+function speechOK(){ try{ return typeof window !== "undefined" && !!window.speechSynthesis && typeof SpeechSynthesisUtterance !== "undefined"; }catch(e){ return false; } }
+function speak(text, bcp){
+  try{
+    if(!text || !speechOK()) return;
+    window.speechSynthesis.cancel();
+    var u = new SpeechSynthesisUtterance(text);
+    if(bcp) u.lang = bcp;
+    u.rate = 0.92;
+    var voices = window.speechSynthesis.getVoices ? window.speechSynthesis.getVoices() : [];
+    if(bcp && voices && voices.length){
+      var pre = bcp.toLowerCase(), base = pre.slice(0,2);
+      var pick = null;
+      for(var i=0;i<voices.length;i++){ var vl=(voices[i].lang||"").toLowerCase(); if(vl===pre){ pick=voices[i]; break; } if(!pick && vl.slice(0,2)===base) pick=voices[i]; }
+      if(pick) u.voice = pick;
+    }
+    window.speechSynthesis.speak(u);
+  }catch(e){}
+}
+function speakBtn(text, bcp){
+  var b = el("button","spk"); b.type = "button"; b.title = "Listen"; b.setAttribute("aria-label","Listen"); b.textContent = "🔊";
+  if(!speechOK()){ b.disabled = true; b.style.opacity = "0.45"; b.title = "Audio not supported on this device"; }
+  on(b,"click",function(){ speak(text, bcp); });
+  return b;
+}
+
+/* ---- speech INPUT (talk to translate / chat) via Web Speech API ---- */
+function speechInOK(){ try{ return typeof window !== "undefined" && !!(window.SpeechRecognition || window.webkitSpeechRecognition); }catch(e){ return false; } }
+var _rec = null;
+function listen(bcp, btn, onText){
+  try{
+    var R = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if(!R) return;
+    if(_rec){ try{ _rec.stop(); }catch(e){} _rec = null; if(btn) btn.classList.remove("rec"); return; }
+    var r = new R(); _rec = r;
+    r.lang = bcp || "en-US"; r.interimResults = false; r.maxAlternatives = 1;
+    if(btn) btn.classList.add("rec");
+    r.onresult = function(ev){ try{ onText(ev.results[0][0].transcript); }catch(e){} };
+    r.onerror = function(){};
+    r.onend = function(){ if(btn) btn.classList.remove("rec"); _rec = null; };
+    r.start();
+  }catch(e){ if(btn) btn.classList.remove("rec"); _rec = null; }
+}
+function wireMic(btn, getBcp, onText){
+  if(!btn) return;
+  if(!speechInOK()){ btn.disabled = true; btn.style.opacity = "0.45"; btn.title = "Speech input not supported on this browser"; return; }
+  on(btn,"click",function(){ listen(getBcp(), btn, onText); });
+}
+
+/* =========================================================================
+   Saved translations — stored on-device (localStorage). No account, no cloud.
+   ========================================================================= */
+var HIST_KEY = "lingua.history.v1";
+function loadHist(){ try{ return JSON.parse(localStorage.getItem(HIST_KEY) || "[]") || []; }catch(e){ return []; } }
+function saveHist(a){ try{ localStorage.setItem(HIST_KEY, JSON.stringify(a.slice(0,100))); }catch(e){} }
+function addHist(entry){
+  var a = loadHist();
+  a = a.filter(function(x){ return !(x.source===entry.source && x.translation===entry.translation && x.toName===entry.toName); });
+  a.unshift(entry);
+  saveHist(a);
+}
+function delHist(ts){ saveHist(loadHist().filter(function(x){ return x.ts!==ts; })); renderHist(); }
+
+/* =========================================================================
+   Hosted (cloud) AI — optional Firebase callable so the live web link can use
+   Claude without anyone running a local proxy. Deploy the `linguaAI` function
+   (see lingua/README.md) and this lights up automatically. Guarded so the page
+   works fine when Firebase is absent (e.g. offline or the headless smoke test).
+   ========================================================================= */
+var LINGUA_HOSTED_AI = true; // set false to disable the cloud fallback entirely
+var LINGUA_FIREBASE_CONFIG = {
+  apiKey: "AIzaSyAr3OsrEG3yVx-bD3jxc_kSBY7bkCQUPxI",
+  authDomain: "apexvip-1b4a9.firebaseapp.com",
+  projectId: "apexvip-1b4a9",
+  storageBucket: "apexvip-1b4a9.firebasestorage.app",
+  messagingSenderId: "254410067879",
+  appId: "1:254410067879:web:754b71a35182c997f37082"
+};
+var _fbFns = null;
+function hostedReady(){
+  if(!LINGUA_HOSTED_AI) return false;
+  try{
+    if(typeof firebase === "undefined" || !firebase.functions) return false;
+    if(!_fbFns){
+      var app = (firebase.apps && firebase.apps.length) ? firebase.app() : firebase.initializeApp(LINGUA_FIREBASE_CONFIG);
+      _fbFns = firebase.functions(app);
+    }
+    return true;
+  }catch(e){ return false; }
+}
+function callHosted(payload){
+  return _fbFns.httpsCallable("linguaAI")(payload).then(function(res){
+    var d = res && res.data;
+    if(!d || d.ok === false) throw new Error((d && d.error) || "no result");
+    return d.result;
+  });
+}
+
+/* =========================================================================
+   Bring-Your-Own-Key (BYOK) — link the app directly to YOUR Anthropic key.
+   The key is stored only in this browser (localStorage) and sent straight to
+   api.anthropic.com using Anthropic's official direct-browser-access header.
+   This makes the live web link work with no proxy and no deploy. It's a
+   convenience for personal use — on a shared device, prefer the local proxy or
+   the hosted function instead.
+   ========================================================================= */
+var BYOK_KEY = "lingua.anthropicKey.v1";
+function getKey(){ try{ return localStorage.getItem(BYOK_KEY) || ""; }catch(e){ return ""; } }
+function setKey(k){ try{ if(k){ localStorage.setItem(BYOK_KEY, k); } else { localStorage.removeItem(BYOK_KEY); } }catch(e){} }
+function byokReady(){ return !!getKey(); }
+
+/* Same prompts/tools as server.mjs, built client-side for the direct call. */
+var T_TRANSLATE = { name:"translation_result", description:"Return a precise translation with pronunciation and useful learner notes.",
+  input_schema:{ type:"object", properties:{
+    translation:{type:"string"}, pronunciation:{type:"string"}, literal:{type:"string"}, register:{type:"string"}, notes:{type:"string"} },
+    required:["translation"] } };
+var T_LESSON = { name:"lesson", description:"Return a short, level-appropriate, dialect-aware mini lesson.",
+  input_schema:{ type:"object", properties:{
+    title:{type:"string"}, intro:{type:"string"},
+    items:{ type:"array", items:{ type:"object", properties:{ phrase:{type:"string"}, pronunciation:{type:"string"}, meaning:{type:"string"} }, required:["phrase","meaning"] } },
+    tip:{type:"string"}, dialectNote:{type:"string"} }, required:["title","items"] } };
+var T_PRACTICE = { name:"practice_set", description:"Return vocabulary/phrase cards for flashcards and quiz.",
+  input_schema:{ type:"object", properties:{
+    items:{ type:"array", items:{ type:"object", properties:{ front:{type:"string"}, back:{type:"string"}, pronunciation:{type:"string"} }, required:["front","back"] } } },
+    required:["items"] } };
+var T_CHAT = { name:"tutor_reply", description:"Reply as a friendly native-speaker tutor and gently correct the learner.",
+  input_schema:{ type:"object", properties:{
+    reply:{type:"string"}, pronunciation:{type:"string"}, english:{type:"string"}, correction:{type:"string"} }, required:["reply"] } };
+var T_GRADE = { name:"grade_result", description:"Grade a learner's production attempt fairly: accept any natural correct phrasing, forgive minor spelling/diacritic slips, always show the most natural native phrasing.",
+  input_schema:{ type:"object", properties:{
+    correct:{type:"boolean"}, score:{type:"integer"}, better:{type:"string"}, pronunciation:{type:"string"}, explanation:{type:"string"} },
+    required:["correct","score","better"] } };
+var T_STORY = { name:"story", description:"Return a short graded story in the target language/dialect for reading practice, strictly level-appropriate.",
+  input_schema:{ type:"object", properties:{
+    title:{type:"string"}, titleEnglish:{type:"string"},
+    paragraphs:{ type:"array", items:{ type:"object", properties:{ text:{type:"string"}, pronunciation:{type:"string"}, translation:{type:"string"} }, required:["text","translation"] } },
+    vocab:{ type:"array", items:{ type:"object", properties:{ word:{type:"string"}, pronunciation:{type:"string"}, meaning:{type:"string"} }, required:["word","meaning"] } } },
+    required:["title","paragraphs"] } };
+function tLabel(p){ return p.dialect ? (p.targetName + " (" + p.dialect + " dialect)") : p.targetName; }
+function buildAnthropicBody(p){
+  var sys, messages, tools = null, force = null;
+  if(p.mode==="translate"){
+    sys = "You are an expert translator and dialectologist. Translate accurately into the EXACT requested language and dialect, using the natural phrasing a native speaker of that specific variety would use. Use the correct native script. Provide romanized pronunciation for non-Latin scripts. Be precise and never invent words.";
+    messages = [{ role:"user", content:"Translate the following from " + p.sourceName + " into " + tLabel(p) + "." + (p.dialectNote?(" Dialect context: "+p.dialectNote+"."):"") + "\n\nText:\n" + JSON.stringify(p.text||"") }];
+    tools = [T_TRANSLATE]; force = "translation_result";
+  } else if(p.mode==="teach"){
+    sys = "You are a patient, accurate language tutor. Produce a short, practical mini-lesson for the requested topic, tailored to the learner's level and to the SPECIFIC dialect requested. Use correct native script and give romanized pronunciation for non-Latin scripts.";
+    messages = [{ role:"user", content:"Teach a " + p.level + " learner the topic \"" + p.topic + "\" in " + tLabel(p) + "." + (p.dialectNote?(" Dialect context: "+p.dialectNote+"."):"") }];
+    tools = [T_LESSON]; force = "lesson";
+  } else if(p.mode==="practice"){
+    sys = "You are a language tutor building flashcards. Produce genuinely useful, correct items for the SPECIFIC dialect requested, with native script and romanized pronunciation for non-Latin scripts. Vary the items; keep them appropriate to the learner's level.";
+    messages = [{ role:"user", content:"Create a practice set of about " + (p.count||10) + " items on \"" + p.topic + "\" for a " + p.level + " learner of " + tLabel(p) + "." + (p.dialectNote?(" Dialect context: "+p.dialectNote+"."):"") }];
+    tools = [T_PRACTICE]; force = "practice_set";
+  } else if(p.mode==="chat"){
+    sys = "You are a warm, encouraging native-speaker conversation partner and tutor for a " + (p.level||"beginner") + " learner of " + tLabel(p) + "." + (p.dialectNote?(" Dialect context: "+p.dialectNote+"."):"") + " Stay in character as a friendly local. Reply in the target dialect's natural everyday speech, kept short and simple for the learner's level. Always provide romanized pronunciation and a brief English gloss. If the learner's last message has a mistake, add a short kind correction; otherwise leave it empty. Keep the conversation going with a simple question.";
+    var hist = (p.messages||[]).filter(function(m){ return m && (m.role==="user"||m.role==="assistant") && typeof m.content==="string"; }).map(function(m){ return { role:m.role, content:m.content }; });
+    if(!hist.length) hist.push({ role:"user", content:"(Start the conversation with a friendly greeting and a simple question.)" });
+    messages = hist; tools = [T_CHAT]; force = "tutor_reply";
+  } else if(p.mode==="grade"){
+    sys = "You are a precise but encouraging language examiner for the SPECIFIC dialect requested. Grade the learner's production attempt fairly: accept any natural, correct way to express the prompt (not only the expected answer), forgive minor spelling/diacritic slips, and always show the most natural native phrasing with romanization for non-Latin scripts.";
+    messages = [{ role:"user", content:"Language: " + tLabel(p) + ". Learner level: " + (p.level||"beginner") + "." + (p.dialectNote?(" Dialect context: "+p.dialectNote+"."):"") +
+      "\n\nPrompt (English): " + JSON.stringify(p.prompt||"") + "\nExpected answer (one acceptable version): " + JSON.stringify(p.expected||"") + "\nLearner's attempt: " + JSON.stringify(p.answer||"") }];
+    tools = [T_GRADE]; force = "grade_result";
+  } else if(p.mode==="story"){
+    sys = "You are a language-learning author writing graded readers. Write a genuinely interesting micro-story STRICTLY at the requested level, in the SPECIFIC dialect requested (its real everyday vocabulary, not only the standard form). Native script, with romanized pronunciation for non-Latin scripts, and faithful English translations.";
+    messages = [{ role:"user", content:"Write a short graded story for a " + (p.level||"beginner") + " learner of " + tLabel(p) + (p.topic?(" on the theme \"" + p.topic + "\""):"") + "." + (p.dialectNote?(" Dialect context: "+p.dialectNote+"."):"") }];
+    tools = [T_STORY]; force = "story";
+  } else {
+    sys = "You are an expert, accurate language teacher. Answer the learner's question about the language/dialect clearly and concisely. Give examples in native script with romanized pronunciation where helpful. If the question is about a specific dialect, answer for that variety.";
+    messages = [{ role:"user", content:"Language: " + tLabel(p) + "." + (p.dialectNote?(" Dialect context: "+p.dialectNote+"."):"") + "\n\nQuestion: " + (p.question||"") }];
+  }
+  var body = { model:"claude-opus-4-8", max_tokens:1500, system:sys, messages:messages };
+  if(tools){ body.tools = tools; body.tool_choice = { type:"tool", name:force }; }
+  return body;
+}
+function callByok(payload){
+  var key = getKey();
+  if(!key) return Promise.reject(new Error("no key"));
+  var body = buildAnthropicBody(payload);
+  return fetch("https://api.anthropic.com/v1/messages", {
+    method:"POST",
+    headers:{
+      "content-type":"application/json",
+      "x-api-key":key,
+      "anthropic-version":"2023-06-01",
+      "anthropic-dangerous-direct-browser-access":"true"
+    },
+    body: JSON.stringify(body)
+  }).then(function(res){
+    if(!res.ok) return res.text().then(function(t){ throw new Error("anthropic " + res.status + ": " + t); });
+    return res.json();
+  }).then(function(data){
+    var blocks = data.content || [];
+    if(body.tools){
+      var tu = blocks.filter(function(x){ return x.type==="tool_use"; })[0];
+      if(!tu) throw new Error("no structured result");
+      return tu.input || {};
+    }
+    var text = blocks.filter(function(x){ return x.type==="text"; }).map(function(x){ return x.text; }).join("\n").trim();
+    return { answer:text };
+  });
+}
+
+/* =========================================================================
+   THEME — light/dark toggle. Stored on-device; defaults to the system's
+   prefers-color-scheme; ?theme=light|dark in the URL wins for that visit.
+   ========================================================================= */
+var THEME_KEY = "lingua.theme.v1";
+function applyTheme(t){
+  t = t === "light" ? "light" : "dark";
+  try{ document.documentElement.setAttribute("data-theme", t); }catch(e){}
+  try{
+    var m = document.querySelector('meta[name="theme-color"]');
+    if(m) m.setAttribute("content", t === "light" ? "#eef1f9" : "#05070f");
+  }catch(e){}
+  var b = $("themeBtn");
+  if(b) b.textContent = t === "light" ? "☀️" : "🌙";
+  return t;
+}
+function initTheme(){
+  var t = null;
+  try{
+    var q = String(window.location.search || "");
+    if(q.indexOf("theme=light") >= 0) t = "light";
+    else if(q.indexOf("theme=dark") >= 0) t = "dark";
+  }catch(e){}
+  if(!t){ try{ t = localStorage.getItem(THEME_KEY); }catch(e){} }
+  if(t !== "light" && t !== "dark"){
+    try{ t = (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches === true) ? "light" : "dark"; }catch(e){ t = "dark"; }
+  }
+  applyTheme(t);
+}
+function toggleTheme(){
+  var cur = "dark";
+  try{ cur = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark"; }catch(e){}
+  var next = cur === "light" ? "dark" : "light";
+  applyTheme(next);
+  try{ localStorage.setItem(THEME_KEY, next); }catch(e){}
+}
+initTheme(); // apply before first paint to avoid a theme flash
+
+/* ---- app state ---- */
+var state = {
+  lang: null,        // selected LANGS entry
+  dialect: null,     // selected dialect object (or null)
+  mode: "translate",
+  src: "en",         // the "other" (non-study) language id in the translate pane
+  reversed: false,   // false: other → study ; true: study → other
+  tgtRtl: false,     // is the active translation target right-to-left?
+  tgtBcp: "",        // BCP-47 tag of the active translation target (for audio)
+  lastFrom: "", lastTo: "", lastSrc: "", // context for saving translations
+  topic: "greetings",
+  level: "beginner",
+  practice: null,    // {items, queue, right, again, mode, revealed}
+  chat: [],          // [{role:'user'|'assistant', text, data}]
+  engine: "offline", // "local" | "hosted" | "offline"
+  deckOverride: null, // "quran" while the Qur'an studio is open (its own SRS deck)
+  live: false        // is an AI engine reachable?
+};
+
+/* CEFR-style course: 24 ordered units from survival basics to near-fluency.
+   The path IS the method — every unit ends in production (drills, speaking,
+   chat), because recognition alone never made anyone fluent. */
+var CURRICULUM = [
+  { level:"A1", title:"Foundations", units:[
+    { id:"greetings", label:"Greetings" },
+    { id:"intro", label:"Introduce yourself" },
+    { id:"numbers", label:"Numbers 1–10" },
+    { id:"family", label:"Family & people" },
+    { id:"basics", label:"Colors, days & time" },
+    { id:"phrases", label:"Survival phrases" } ] },
+  { level:"A2", title:"Everyday life", units:[
+    { id:"food", label:"Food & ordering" },
+    { id:"shopping", label:"Shopping & money" },
+    { id:"directions", label:"Directions" },
+    { id:"travel", label:"Getting around" },
+    { id:"smalltalk", label:"Weather & small talk" },
+    { id:"routine", label:"Daily routine" } ] },
+  { level:"B1", title:"Conversational", units:[
+    { id:"feelings", label:"Feelings & opinions" },
+    { id:"plans", label:"Making plans" },
+    { id:"work", label:"Work & study" },
+    { id:"emergency", label:"Health & emergencies" },
+    { id:"past", label:"Telling stories (past tense)" },
+    { id:"future", label:"Hopes & plans (future tense)" } ] },
+  { level:"B2", title:"Toward fluency", units:[
+    { id:"opinions", label:"Debate & persuasion" },
+    { id:"news", label:"News & current events" },
+    { id:"idioms", label:"Idioms & humor" },
+    { id:"culture", label:"Culture & traditions" },
+    { id:"business", label:"Business & negotiation" },
+    { id:"deep", label:"Deep conversation" } ] }
+];
+var TOPICS = [];
+for(var _ci=0; _ci<CURRICULUM.length; _ci++){
+  for(var _ui=0; _ui<CURRICULUM[_ci].units.length; _ui++){
+    var _u = CURRICULUM[_ci].units[_ui];
+    TOPICS.push({ id:_u.id, label:_u.label, level:CURRICULUM[_ci].level });
+  }
+}
+var LEVELS = [
+  { id:"beginner", label:"Beginner" },
+  { id:"intermediate", label:"Intermediate" },
+  { id:"advanced", label:"Advanced" }
+];
+
+/* =========================================================================
+   AI layer — talks to server.mjs when present, else falls back offline.
+   ========================================================================= */
+function variantName(){
+  if(!state.lang) return "";
+  if(state.dialect) return state.lang.name + " — " + state.dialect.name + " dialect";
+  return state.lang.name;
+}
+/* offline phrasebook entry: prefer the dialect-specific set, else the base language. */
+function bookFor(){
+  if(!state.lang) return null;
+  if(state.dialect && PHRASES[state.lang.id + ":" + state.dialect.id]) return PHRASES[state.lang.id + ":" + state.dialect.id];
+  return PHRASES[state.lang.id] || null;
+}
+
+/* POST to the local proxy. Returns parsed JSON or throws. */
+function callProxy(payload){
+  return fetch("/ai", {
+    method:"POST",
+    headers:{ "content-type":"application/json" },
+    body: JSON.stringify(payload)
+  }).then(function(res){
+    if(!res.ok) throw new Error("proxy " + res.status);
+    return res.json();
+  }).then(function(data){
+    if(!data || data.ok === false) throw new Error((data && data.error) || "no result");
+    return data.result;
+  });
+}
+
+/* Route an AI request to whichever engine is available. Priority: local proxy
+   (dev) → your own key (BYOK) → hosted Firebase callable. Throws if none. */
+function aiAvailable(){ return state.engine === "local" || byokReady() || hostedReady(); }
+function callAI(payload){
+  if(state.engine === "local") return callProxy(payload);
+  if(byokReady()) return callByok(payload).then(function(r){
+    if(state.engine !== "local"){ state.engine = "byok"; setLive(true, "key"); }
+    return r;
+  });
+  return callHosted(payload).then(function(r){
+    if(state.engine !== "local"){ state.engine = "hosted"; setLive(true, "cloud"); }
+    return r;
+  });
+}
+
+/* health check: prefer the local proxy, then your own key; the hosted engine is
+   confirmed lazily on first successful call. Never throws to the caller. */
+function checkLive(){
+  return fetch("/health").then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(d){
+      if(d && d.live){ state.engine = "local"; setLive(true, "local"); return true; }
+      if(byokReady()){ state.engine = "byok"; setLive(true, "key"); return true; }
+      state.engine = "offline"; setLive(false); return false;
+    })
+    .catch(function(){
+      if(byokReady()){ state.engine = "byok"; setLive(true, "key"); return true; }
+      state.engine = "offline"; setLive(false); return false;
+    });
+}
+function setLive(v, kind){
+  state.live = v;
+  var pill = $("aiPill"), txt = $("aiPillText");
+  if(v){ pill.classList.add("live"); txt.textContent = kind === "cloud" ? "AI: cloud" : (kind === "key" ? "AI: your key" : "AI: live"); }
+  else { pill.classList.remove("live"); txt.textContent = "AI: offline"; }
+}
+
+/* ---- offline fallbacks (clearly labelled in the UI) ---- */
+function offlineTranslate(text){
+  // The offline starter set only covers English → study-language basics.
+  if(state.reversed){ return { _offline:true, _need:true }; }
+  var book = bookFor();
+  var t = (text||"").trim().toLowerCase();
+  var map = { "hello":"hello","hi":"hello","hey":"hello","thank you":"thanks","thanks":"thanks",
+              "goodbye":"bye","bye":"bye","yes":"yes","no":"no" };
+  var slot = map[t];
+  if(book && slot && book[slot]){
+    var e = book[slot];
+    return { translation:e[0], pronunciation:e[1]||"", literal:e[2]||"", register:"", notes:"",
+             _offline:true };
+  }
+  return { _offline:true, _need:true };
+}
+function offlineLesson(){
+  var book = bookFor();
+  var items = [];
+  if(book){
+    var order = ["hello","thanks","bye","yes","no"];
+    var labels = { hello:"Hello", thanks:"Thank you", bye:"Goodbye", yes:"Yes", no:"No" };
+    for(var i=0;i<order.length;i++){
+      var e = book[order[i]];
+      if(e && e[0]) items.push({ phrase:e[0], pronunciation:e[1]||"", meaning:labels[order[i]] });
+    }
+  }
+  return {
+    title: "Starter phrases — " + variantName(),
+    intro: items.length ? "A few essentials to get you started." : "",
+    items: items,
+    tip: "This is the built-in offline starter set. Enable Live AI (top-right) for a full lesson tailored to “" +
+         (TOPICS.filter(function(x){return x.id===state.topic;})[0]||{}).label + "” at your level.",
+    dialectNote: state.dialect ? state.dialect.note : "",
+    _offline:true,
+    _need: items.length === 0
+  };
+}
+
+/* =========================================================================
+   Rendering
+   ========================================================================= */
+function buildLangGrid(filter){
+  var grid = $("langGrid");
+  clear(grid);
+  var f = (filter||"").trim().toLowerCase();
+  var n = 0;
+  for(var i=0;i<LANGS.length;i++){
+    var L = LANGS[i];
+    if(f){
+      var hit = L.name.toLowerCase().indexOf(f) >= 0 || (L.native||"").toLowerCase().indexOf(f) >= 0 || L.id.indexOf(f) >= 0;
+      if(!hit && L.d){
+        for(var q=0;q<L.d.length;q++){
+          if(L.d[q].name.toLowerCase().indexOf(f) >= 0 || (L.d[q].native||"").indexOf(filter) >= 0){ hit = true; break; }
+        }
+      }
+      if(!hit) continue;
+    }
+    n++;
+    var b = el("button","langbtn"); b.type = "button";
+    b.appendChild(el("span","flag", L.flag || "🌐"));
+    var box = el("span"); box.style.display="block";
+    var nm = el("span","nm", L.name); nm.style.display="block";
+    var nat = el("span","nat", L.native||""); nat.style.display="block";
+    box.appendChild(nm); box.appendChild(nat);
+    b.appendChild(box);
+    if(L.d && L.d.length){ b.appendChild(el("span","has-d", L.d.length + " dialects")); }
+    (function(entry){ on(b,"click",function(){ selectLanguage(entry); }); })(L);
+    grid.appendChild(b);
+  }
+  // Any language on Earth: whatever you type is studyable — the AI engines
+  // take the language name as free text, so nothing is off the list.
+  if(f && f.length >= 2){
+    var q = capWords(filter.trim());
+    var custom = el("button","langbtn"); custom.type = "button"; custom.style.gridColumn = "1/-1";
+    custom.appendChild(el("span","flag","🌐"));
+    var cbox = el("span"); cbox.style.display = "block";
+    var cnm = el("span","nm","Study “" + q + "”"); cnm.style.display = "block";
+    var cnat = el("span","nat", n ? "…or study exactly what you typed — any language or dialect on Earth" : "Not in the built-in list — study it anyway, powered by AI"); cnat.style.display = "block";
+    cbox.appendChild(cnm); cbox.appendChild(cnat);
+    custom.appendChild(cbox);
+    on(custom,"click",function(){ selectLanguage({ id:"x:" + q.toLowerCase(), name:q, native:"", flag:"🌐" }); });
+    grid.appendChild(custom);
+  } else if(n === 0){
+    var none = el("div","hint","Type any language name — everything on Earth is studyable."); none.style.gridColumn = "1/-1"; grid.appendChild(none);
+  }
+}
+function capWords(s){
+  return String(s||"").replace(/\S+/g, function(w){ return w.charAt(0).toUpperCase() + w.slice(1); });
+}
+
+function selectLanguage(L){
+  state.lang = L;
+  state.dialect = (L.d && L.d.length) ? L.d[0] : null;
+  $("selFlag").textContent = L.flag || "🌐";
+  $("selName").textContent = L.name;
+  $("selNative").textContent = L.native || "";
+  hide($("picker")); hide($("quranEntry")); show($("workspace"));
+
+  // dialect chips
+  if(L.d && L.d.length){
+    show($("dialectWrap"));
+    var wrap = $("dialectChips"); clear(wrap);
+    for(var i=0;i<L.d.length;i++){
+      (function(dia){
+        var c = el("button","chip dia"); c.type="button";
+        c.textContent = dia.name + (dia.native ? "  "+dia.native : "");
+        c.setAttribute("aria-selected", dia.id===state.dialect.id ? "true":"false");
+        on(c,"click",function(){ selectDialect(dia); });
+        wrap.appendChild(c);
+      })(L.d[i]);
+    }
+    $("dialectNote").textContent = state.dialect ? state.dialect.note : "";
+  } else {
+    hide($("dialectWrap"));
+  }
+  state.reversed = false;
+  state.practice = null; state.chat = [];
+  buildSrcOptions();
+  updateDstLabel();
+  clear($("translateOut")); clear($("teachOut")); clear($("askOut"));
+  clear($("practiceArea")); clear($("chatLog")); clear($("learnArea"));
+  $("chatInput").placeholder = "Chat in " + L.name + " or English…";
+  liveStop(); buildLiveSelects(); clear($("liveFeed")); // re-default interpreter to the new language
+  renderStats(); // due-card count is per language+dialect
+  // land on the course — the guided path is the product
+  setMode("learn"); renderLearn();
+  try{ window.scrollTo(0,0); }catch(e){}
+}
+
+function selectDialect(dia){
+  state.dialect = dia;
+  var chips = $("dialectChips").children;
+  for(var i=0;i<chips.length;i++){ chips[i].setAttribute("aria-selected","false"); }
+  for(var j=0;j<chips.length;j++){
+    if(chips[j].textContent.indexOf(dia.name)===0){ chips[j].setAttribute("aria-selected","true"); }
+  }
+  $("dialectNote").textContent = dia.note || "";
+  updateDstLabel();
+  renderStats(); // deck + progress are per dialect
+  if(state.mode === "learn") renderLearn();
+}
+
+function buildSrcOptions(){
+  var sel = $("srcLang"); clear(sel);
+  // English first, then the rest alphabetically by name
+  var sorted = LANGS.slice().sort(function(a,b){ return a.name<b.name?-1:1; });
+  function opt(L){ var o=el("option"); o.value=L.id; o.textContent=(L.flag?L.flag+" ":"")+L.name; return o; }
+  // ensure source defaults to English unless target is English
+  for(var i=0;i<sorted.length;i++){ sel.appendChild(opt(sorted[i])); }
+  state.src = (state.lang && state.lang.id==="en") ? "es" : "en";
+  sel.value = state.src;
+}
+
+function otherLang(){ return LANGS.filter(function(x){return x.id===state.src;})[0]; }
+
+function updateDstLabel(){
+  // colStudy always shows the chosen study language/variant; colOther holds the
+  // dropdown. The `reversed` flag flips visual order and translation direction.
+  $("dstLabel").value = (state.lang ? (state.lang.flag||"")+" " : "") + variantName();
+  var colOther = $("colOther"), colStudy = $("colStudy"), swap = $("swapBtn");
+  if(swap) swap.style.order = "2";
+  if(colOther) colOther.style.order = state.reversed ? "3" : "1";
+  if(colStudy) colStudy.style.order = state.reversed ? "1" : "3";
+  var oth = otherLang();
+  var othName = oth ? oth.name : state.src;
+  var from = state.reversed ? variantName() : othName;
+  var to   = state.reversed ? othName : variantName();
+  if($("dirLabel")) $("dirLabel").textContent = "Translate  " + from + "  →  " + to;
+  $("srcText").placeholder = "Type or paste " + from + " text to translate…";
+}
+
+var MODE_TAB = { learn:"tabLearn", translate:"tabTranslate", teach:"tabTeach", practice:"tabPractice", chat:"tabChat", live:"tabLive" };
+var MODE_PANE = { learn:"paneLearn", translate:"paneTranslate", teach:"paneTeach", practice:"panePractice", chat:"paneChat", live:"paneLive" };
+function setMode(m){
+  state.mode = m;
+  for(var k in MODE_TAB){
+    if(!MODE_TAB.hasOwnProperty(k)) continue;
+    $(MODE_TAB[k]).setAttribute("aria-selected", k===m ? "true":"false");
+    if(k===m) show($(MODE_PANE[k])); else hide($(MODE_PANE[k]));
+  }
+}
+
+function buildTopicChips(){
+  var wrap = $("topicChips"); clear(wrap);
+  for(var i=0;i<TOPICS.length;i++){
+    (function(t){
+      var c = el("button","chip"); c.type="button"; c.textContent=t.label;
+      c.setAttribute("aria-selected", t.id===state.topic?"true":"false");
+      on(c,"click",function(){
+        state.topic = t.id;
+        var k = wrap.children;
+        for(var x=0;x<k.length;x++){ k[x].setAttribute("aria-selected","false"); }
+        c.setAttribute("aria-selected","true");
+      });
+      wrap.appendChild(c);
+    })(TOPICS[i]);
+  }
+  var lw = $("levelChips"); clear(lw);
+  for(var j=0;j<LEVELS.length;j++){
+    (function(lv){
+      var c = el("button","chip"); c.type="button"; c.textContent=lv.label;
+      c.setAttribute("aria-selected", lv.id===state.level?"true":"false");
+      on(c,"click",function(){
+        state.level = lv.id;
+        var k = lw.children;
+        for(var x=0;x<k.length;x++){ k[x].setAttribute("aria-selected","false"); }
+        c.setAttribute("aria-selected","true");
+      });
+      lw.appendChild(c);
+    })(LEVELS[j]);
+  }
+}
+
+function busy(node, msg){
+  clear(node);
+  var d = el("div"); d.style.color="var(--muted)"; d.style.fontSize="14px";
+  d.appendChild(el("span","spin")); d.appendChild(document.createTextNode("  " + (msg||"Thinking…")));
+  node.appendChild(d);
+}
+function srcLabel(ai){ var b = el("div", ai ? "badge-src ai" : "badge-src", ai ? "✦ Claude AI" : "offline starter set"); return b; }
+
+/* ---- TRANSLATE ---- */
+function doTranslate(){
+  var text = $("srcText").value;
+  if(!text.trim()){ $("srcText").focus(); return; }
+  var out = $("translateOut");
+  busy(out, "Translating…");
+  var oth = otherLang();
+  var studyName = variantName();
+  var fromName = state.reversed ? studyName : (oth ? oth.name : state.src);
+  var toName   = state.reversed ? (oth ? oth.name : state.src) : studyName;
+  // RTL + BCP-47 (for audio) of the *target* drive direction and pronunciation.
+  state.tgtRtl = state.reversed ? !!(oth && oth.rtl) : !!state.lang.rtl;
+  state.tgtBcp = state.reversed ? bcpForLang(oth, null) : bcpForLang(state.lang, state.dialect);
+  state.lastFrom = fromName; state.lastTo = toName; state.lastSrc = text;
+  var payload = {
+    mode:"translate", text:text,
+    sourceName: fromName,
+    targetName: toName,
+    targetNative: state.reversed ? (oth ? oth.native : "") : state.lang.native,
+    dialect: state.dialect ? state.dialect.name : "",
+    dialectNote: state.dialect ? state.dialect.note : ""
+  };
+  var done = function(r, ai){ renderTranslate(out, r, ai); };
+  if(aiAvailable()){
+    callAI(payload).then(function(r){ done(r,true); })
+      .catch(function(){ if(state.engine==="local"){ setLive(false); state.engine="offline"; } done(offlineTranslate(text), false); });
+  } else {
+    done(offlineTranslate(text), false);
+  }
+}
+function renderTranslate(out, r, ai){
+  clear(out);
+  out.removeAttribute("data-translation");
+  if(r._need){
+    var box = el("div","result");
+    box.appendChild(el("div","err","No offline entry for that phrase."));
+    box.appendChild(el("div","hint","Enable Live AI (top-right) for an accurate translation of any text."));
+    out.appendChild(box);
+    out.appendChild(srcLabel(false));
+    return;
+  }
+  if(r.translation) out.setAttribute("data-translation", r.translation);
+  var card = el("div","result" + (state.tgtRtl ? " rtl":""));
+  var trow = el("div","target-row");
+  trow.appendChild(el("div","target", r.translation || "—"));
+  if(r.translation) trow.appendChild(speakBtn(r.translation, state.tgtBcp));
+  card.appendChild(trow);
+  if(r.pronunciation) card.appendChild(el("div","pron", "🗣 " + r.pronunciation));
+  var meta = el("div","meta");
+  if(r.literal){ var m1=el("div","m"); m1.innerHTML=""; m1.appendChild(strong("Literal: ")); m1.appendChild(document.createTextNode(r.literal)); meta.appendChild(m1); }
+  if(r.register){ var m2=el("div","m"); m2.appendChild(strong("Register: ")); m2.appendChild(document.createTextNode(r.register)); meta.appendChild(m2); }
+  if(r.notes){ var m3=el("div","m"); m3.appendChild(strong("Notes: ")); m3.appendChild(document.createTextNode(r.notes)); meta.appendChild(m3); }
+  if(meta.children.length) card.appendChild(meta);
+  out.appendChild(card);
+  out.appendChild(srcLabel(ai));
+  // save to on-device history + count toward today's goal
+  if(r.translation){
+    addHist({ ts: Date.now(), fromName: state.lastFrom, toName: state.lastTo, source: state.lastSrc,
+              translation: r.translation, pronunciation: r.pronunciation || "", rtl: state.tgtRtl, bcp: state.tgtBcp });
+    award(2);
+  }
+}
+function strong(t){ var s=el("b"); s.textContent=t; return s; }
+
+/* ---- TEACH ---- */
+function doTeach(){
+  var out = $("teachOut");
+  busy(out, "Building your lesson…");
+  var topicLabel = (TOPICS.filter(function(x){return x.id===state.topic;})[0]||{}).label;
+  var payload = {
+    mode:"teach", topic: topicLabel, level: state.level,
+    targetName: state.lang.name, targetNative: state.lang.native,
+    dialect: state.dialect ? state.dialect.name : "",
+    dialectNote: state.dialect ? state.dialect.note : ""
+  };
+  var done = function(r, ai){ renderLesson(out, r, ai); };
+  if(aiAvailable()){
+    callAI(payload).then(function(r){ done(r,true); })
+      .catch(function(){ if(state.engine==="local"){ setLive(false); state.engine="offline"; } done(offlineLesson(), false); });
+  } else {
+    done(offlineLesson(), false);
+  }
+}
+function renderLesson(out, r, ai){
+  clear(out);
+  var card = el("div","result lesson" + (state.lang.rtl ? " rtl":""));
+  var h = el("div"); h.style.fontWeight="700"; h.style.fontSize="17px"; h.style.marginBottom="4px"; h.textContent=r.title||"Lesson";
+  card.appendChild(h);
+  if(r.intro){ var ip=el("div","mn"); ip.style.marginBottom="6px"; ip.textContent=r.intro; card.appendChild(ip); }
+  var lessonBcp = bcpForLang(state.lang, state.dialect);
+  var items = r.items || [];
+  for(var i=0;i<items.length;i++){
+    var it = items[i];
+    var box = el("div","item");
+    var prow = el("div","ph-row");
+    prow.appendChild(el("div","ph", it.phrase||""));
+    if(it.phrase) prow.appendChild(speakBtn(it.phrase, lessonBcp));
+    box.appendChild(prow);
+    if(it.pronunciation) box.appendChild(el("div","pr","🗣 " + it.pronunciation));
+    if(it.meaning) box.appendChild(el("div","mn", it.meaning));
+    card.appendChild(box);
+  }
+  if(r.dialectNote){ var dn=el("div","tip teal"); dn.textContent="Dialect: " + r.dialectNote; card.appendChild(dn); }
+  if(r.tip){ var tp=el("div","tip"); tp.textContent="💡 " + r.tip; card.appendChild(tp); }
+  out.appendChild(card);
+  out.appendChild(srcLabel(ai));
+  // lesson phrases join the review deck; finishing a lesson counts toward the goal
+  if(items.length){
+    srsAddMany(items.map(function(it){ return { front: it.meaning || "", back: it.phrase || "", pronunciation: it.pronunciation || "" }; }));
+    award(5);
+  }
+}
+
+/* ---- ASK ANYTHING ---- */
+function doAsk(){
+  var q = $("askText").value;
+  if(!q.trim()){ $("askText").focus(); return; }
+  var out = $("askOut");
+  busy(out, "Asking Claude…");
+  if(!aiAvailable()){
+    clear(out);
+    var box = el("div","result");
+    box.appendChild(el("div","err","Free-form questions need Live AI."));
+    box.appendChild(el("div","hint","Enable Live AI (top-right) to ask anything about " + variantName() + " and get an accurate answer."));
+    out.appendChild(box);
+    return;
+  }
+  var payload = {
+    mode:"ask", question:q,
+    targetName: state.lang.name,
+    dialect: state.dialect ? state.dialect.name : "",
+    dialectNote: state.dialect ? state.dialect.note : ""
+  };
+  callAI(payload).then(function(r){
+    clear(out);
+    var card = el("div","result");
+    var a = el("div","ask-out"); a.textContent = r.answer || "—"; card.appendChild(a);
+    out.appendChild(card);
+    out.appendChild(srcLabel(true));
+  }).catch(function(){
+    if(state.engine==="local"){ setLive(false); state.engine="offline"; }
+    clear(out);
+    var c = el("div","result");
+    c.appendChild(el("div","err","Couldn't reach the AI just now."));
+    c.appendChild(el("div","hint","Try again, run the local proxy, or deploy the cloud function (see lingua/README.md)."));
+    out.appendChild(c);
+  });
+}
+
+/* =========================================================================
+   PRACTICE — flashcards + multiple-choice quiz
+   ========================================================================= */
+function shuffle(a){ a = a.slice(); for(var i=a.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function offlinePractice(){
+  var book = bookFor(), items = [];
+  if(book){
+    var order = ["hello","thanks","bye","yes","no"];
+    var labels = { hello:"Hello", thanks:"Thank you", bye:"Goodbye", yes:"Yes", no:"No" };
+    for(var i=0;i<order.length;i++){ var e=book[order[i]]; if(e&&e[0]) items.push({ front:labels[order[i]], back:e[0], pronunciation:e[1]||"" }); }
+  }
+  return items;
+}
+function genPractice(){ fetchPracticeItems(startPractice); }
+function startPractice(items){
+  var clean = (items||[]).filter(function(x){ return x && x.front && x.back; });
+  if(!clean.length){ noItemsMsg(); return; }
+  srsAddMany(clean); // every card you meet joins the spaced-repetition deck
+  state.practice = { items:clean, queue:[], right:0, again:0, mode:"flash", revealed:false };
+  for(var i=0;i<clean.length;i++) state.practice.queue.push(i);
+  renderPractice();
+}
+function practiceSummary(area, title){
+  var P = state.practice;
+  var done = el("div","result");
+  var h = el("div"); h.style.fontWeight="700"; h.style.fontSize="17px"; h.textContent = title; done.appendChild(h);
+  var rrow = el("div","row wrap"); rrow.style.marginTop="12px";
+  var fc = el("button","btn"); fc.type="button"; fc.textContent="↻ Flashcards"; on(fc,"click",function(){ startPractice(P.items); }); rrow.appendChild(fc);
+  var qz = el("button","btn sec"); qz.type="button"; qz.textContent="🎯 Quiz me"; on(qz,"click",function(){ startQuiz(P.items); }); rrow.appendChild(qz);
+  var dr = el("button","btn sec"); dr.type="button"; dr.textContent="✍️ Type it"; on(dr,"click",function(){ startDrill(P.items); }); rrow.appendChild(dr);
+  var sp = el("button","btn sec"); sp.type="button"; sp.textContent="🗣 Speak it"; on(sp,"click",function(){ startSpeak(P.items); }); rrow.appendChild(sp);
+  var nu = el("button","mini"); nu.type="button"; nu.textContent="New set"; on(nu,"click",genPractice); rrow.appendChild(nu);
+  done.appendChild(rrow);
+  area.appendChild(done);
+}
+function renderPractice(){
+  var area = $("practiceArea"); clear(area);
+  var P = state.practice; if(!P) return;
+  var bcp = bcpForLang(state.lang, state.dialect);
+  if(!P.queue.length){ practiceSummary(area, "Nice work! 🎉  " + P.right + " known, " + P.again + " to review."); return; }
+  var pos = P.items.length - P.queue.length + 1;
+  area.appendChild(el("div","hint","Card " + pos + " of " + P.items.length));
+  var card = P.items[P.queue[0]];
+  var c = el("div","result"); c.style.textAlign="center";
+  c.appendChild(el("div","mn","What's this in " + variantName() + "?"));
+  var front = el("div"); front.style.fontSize="22px"; front.style.fontWeight="600"; front.style.margin="10px 0"; front.textContent = card.front; c.appendChild(front);
+  if(!P.revealed){
+    var sa = el("button","btn"); sa.type="button"; sa.textContent="Show answer";
+    on(sa,"click",function(){ P.revealed=true; renderPractice(); });
+    c.appendChild(sa);
+  } else {
+    var brow = el("div","target-row"); brow.style.justifyContent="center";
+    var back = el("div","target"); back.textContent = card.back; if(state.lang.rtl){ back.style.direction="rtl"; }
+    brow.appendChild(back); brow.appendChild(speakBtn(card.back, bcp)); c.appendChild(brow);
+    if(card.pronunciation){ var pr=el("div","pron"); pr.textContent="🗣 "+card.pronunciation; c.appendChild(pr); }
+    var arow = el("div","row"); arow.style.justifyContent="center"; arow.style.marginTop="12px";
+    var ok = el("button","btn"); ok.type="button"; ok.textContent="✓ Got it";
+    on(ok,"click",function(){ P.right++; srsFeed(card.front, card.back, true); award(2); P.queue.shift(); P.revealed=false; renderPractice(); });
+    var no = el("button","btn sec"); no.type="button"; no.textContent="↻ Again";
+    on(no,"click",function(){ P.again++; srsFeed(card.front, card.back, false); var f=P.queue.shift(); P.queue.push(f); P.revealed=false; renderPractice(); });
+    arow.appendChild(ok); arow.appendChild(no); c.appendChild(arow);
+  }
+  area.appendChild(c);
+}
+function startQuiz(items){
+  var clean = (items||[]).filter(function(x){ return x && x.front && x.back; });
+  state.practice = { items:clean, queue:[], right:0, again:0, mode:"quiz" };
+  for(var i=0;i<clean.length;i++) state.practice.queue.push(i);
+  renderQuiz();
+}
+function renderQuiz(){
+  var area = $("practiceArea"); clear(area);
+  var P = state.practice; if(!P) return;
+  var bcp = bcpForLang(state.lang, state.dialect);
+  if(!P.queue.length){ practiceSummary(area, "Quiz complete — " + P.right + "/" + P.items.length + " 🎯"); return; }
+  var idx = P.queue[0], card = P.items[idx];
+  var pos = P.items.length - P.queue.length + 1;
+  area.appendChild(el("div","hint","Question " + pos + " of " + P.items.length + " · score " + P.right));
+  var c = el("div","result");
+  c.appendChild(el("div","mn","Which is “" + card.front + "” in " + variantName() + "?"));
+  var others = [];
+  for(var i=0;i<P.items.length;i++){ if(i!==idx) others.push(P.items[i].back); }
+  var opts = shuffle([card.back].concat(shuffle(others).slice(0,3)));
+  var answered = false;
+  for(var k=0;k<opts.length;k++){
+    (function(opt){
+      var b = el("button","btn sec qopt" + (state.lang.rtl?" rtl":"")); b.type="button"; b.textContent = opt;
+      on(b,"click",function(){
+        if(answered) return; answered = true;
+        if(opt===card.back){ P.right++; srsFeed(card.front, card.back, true); award(3); b.style.background="rgba(52,225,192,.25)"; b.style.borderColor="var(--teal)"; }
+        else { srsFeed(card.front, card.back, false); b.style.background="rgba(255,122,138,.2)"; b.style.borderColor="var(--bad)"; }
+        speak(card.back, bcp);
+        var nx = el("button","btn"); nx.type="button"; nx.textContent="Next"; nx.style.marginTop="6px";
+        on(nx,"click",function(){ P.queue.shift(); renderQuiz(); });
+        c.appendChild(nx);
+      });
+      c.appendChild(b);
+    })(opts[k]);
+  }
+  area.appendChild(c);
+}
+
+/* =========================================================================
+   SRS — spaced-repetition memory deck (SM-2-lite). Every phrase you meet in a
+   lesson, flashcard, quiz, drill or speaking rep becomes a card with a due
+   date; graded reviews stretch the interval (Again resets, Good ≈ ×EF,
+   Easy ≈ ×EF×1.3). This is the engine that actually builds long-term recall.
+   ========================================================================= */
+var SRS_KEY = "lingua.srs.v1";
+function loadSrsAll(){ try{ return JSON.parse(localStorage.getItem(SRS_KEY) || "{}") || {}; }catch(e){ return {}; } }
+function saveSrsAll(a){ try{ localStorage.setItem(SRS_KEY, JSON.stringify(a)); }catch(e){} }
+function srsDeck(){ return loadSrsAll()[progKey()] || {}; }
+function srsSave(deck){ var a = loadSrsAll(); a[progKey()] = deck; saveSrsAll(a); }
+function srsAddMany(items){
+  if(!state.lang || !items) return;
+  var deck = srsDeck(), changed = false;
+  for(var i=0;i<items.length;i++){
+    var it = items[i];
+    if(!it || !it.front || !it.back) continue;
+    var id = it.front + "→" + it.back;
+    if(!deck[id]){ deck[id] = { f:it.front, b:it.back, p:it.pronunciation||"", ef:2.5, ivl:0, due:Date.now(), n:0 }; changed = true; }
+  }
+  if(changed) srsSave(deck);
+}
+function srsDue(){
+  var deck = srsDeck(), now = Date.now(), out = [];
+  for(var k in deck){ if(deck.hasOwnProperty(k) && deck[k] && deck[k].due <= now) out.push({ id:k, c:deck[k] }); }
+  out.sort(function(a,b){ return a.c.due - b.c.due; });
+  return out.slice(0, 30);
+}
+function srsGradeCard(id, g){ // g: 0 = again, 1 = good, 2 = easy
+  var deck = srsDeck(), c = deck[id];
+  if(!c) return;
+  if(g === 0){ c.ivl = 0; c.ef = Math.max(1.3, (c.ef||2.5) - 0.2); c.due = Date.now() + 10*60000; }
+  else {
+    var days = c.ivl <= 0 ? (g === 2 ? 3 : 1) : c.ivl * (c.ef||2.5) * (g === 2 ? 1.3 : 1);
+    c.ivl = Math.max(1, Math.round(days));
+    if(g === 2) c.ef = Math.min(3, (c.ef||2.5) + 0.05);
+    c.due = Date.now() + c.ivl * 86400000;
+  }
+  c.n = (c.n||0) + 1;
+  deck[id] = c; srsSave(deck);
+}
+function srsFeed(front, back, good){ // convenience hook from any drill outcome
+  if(!front || !back) return;
+  srsAddMany([{ front:front, back:back }]);
+  srsGradeCard(front + "→" + back, good ? 1 : 0);
+}
+
+/* =========================================================================
+   Stats — daily XP goal + streak. The habit loop: fluency is mostly showing
+   up every day; the streak makes that visible and the goal makes it finite.
+   ========================================================================= */
+var STATS_KEY = "lingua.stats.v1";
+function loadStats(){
+  var d = { xp:0, streak:0, last:"", goal:20, today:0, tdate:"" };
+  try{ var s = JSON.parse(localStorage.getItem(STATS_KEY) || "null"); if(s){ for(var k in d){ if(d.hasOwnProperty(k) && s[k] != null) d[k] = s[k]; } } }catch(e){}
+  return d;
+}
+function saveStats(s){ try{ localStorage.setItem(STATS_KEY, JSON.stringify(s)); }catch(e){} }
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+function award(n){
+  var s = loadStats(), ds = todayStr();
+  if(s.tdate !== ds){ s.tdate = ds; s.today = 0; }
+  if(s.last !== ds){
+    var y = new Date(Date.now() - 86400000).toISOString().slice(0,10);
+    s.streak = (s.last === y) ? (s.streak||0) + 1 : 1;
+    s.last = ds;
+  }
+  s.xp += n; s.today += n;
+  saveStats(s); renderStats();
+}
+function renderStats(){
+  var chip = $("statChip"); if(!chip) return;
+  var s = loadStats();
+  var today = (s.tdate === todayStr()) ? s.today : 0;
+  var due = state.lang ? srsDue().length : 0;
+  chip.textContent = "🔥" + (s.streak||0) + " · ⭐" + today + "/" + (s.goal||20) + (due ? " · 🔁" + due : "");
+  chip.title = "Streak " + (s.streak||0) + " day(s) · " + today + "/" + (s.goal||20) + " XP today" + (due ? " · " + due + " card(s) due for review" : "");
+}
+
+/* =========================================================================
+   Pronunciation scoring — normalize both strings (case, Latin diacritics,
+   Arabic harakat, punctuation) and compare with Levenshtein similarity.
+   Runs fully on-device; no AI needed.
+   ========================================================================= */
+function normText(s){
+  s = String(s||"").toLowerCase();
+  try{ s = s.normalize("NFD").replace(/[̀-ͯ]/g, ""); }catch(e){}
+  s = s.replace(/[ً-ْٰـ]/g, "");            // Arabic harakat + tatweel
+  s = s.replace(/[أإآٱ]/g, "ا").replace(/ى/g, "ي").replace(/ؤ/g, "و").replace(/ئ/g, "ي"); // alef/hamza variants (Uthmani ↔ plain)
+  s = s.replace(/[^\p{L}\p{N}\s]/gu, " ");
+  return s.replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "");
+}
+function similarity(a, b){
+  if(!a && !b) return 1;
+  if(!a || !b) return 0;
+  var m = a.length, n = b.length;
+  var prev = [], cur = [], i, j;
+  for(j=0;j<=n;j++) prev[j] = j;
+  for(i=1;i<=m;i++){
+    cur[0] = i;
+    for(j=1;j<=n;j++){
+      cur[j] = Math.min(prev[j] + 1, cur[j-1] + 1, prev[j-1] + (a.charAt(i-1) === b.charAt(j-1) ? 0 : 1));
+    }
+    var t = prev; prev = cur; cur = t;
+  }
+  return 1 - prev[n] / Math.max(m, n);
+}
+
+/* =========================================================================
+   SPEAK-IT drill — hear it, say it, get scored. Forced oral production with
+   immediate feedback is the single fastest fluency lever.
+   ========================================================================= */
+function startSpeak(items){
+  var clean = (items||[]).filter(function(x){ return x && x.front && x.back; });
+  if(!clean.length){ noItemsMsg(); return; }
+  if(!speechInOK()){
+    var area = $("practiceArea"); clear(area);
+    var box = el("div","result");
+    box.appendChild(el("div","err","Speech recognition isn't supported in this browser."));
+    box.appendChild(el("div","hint","Try Chrome, Edge or Safari for the speaking drill — the other drills work everywhere."));
+    area.appendChild(box);
+    return;
+  }
+  state.practice = { items:clean, queue:[], right:0, mode:"speak" };
+  for(var i=0;i<clean.length;i++) state.practice.queue.push(i);
+  renderSpeak();
+}
+function renderSpeak(){
+  var area = $("practiceArea"); clear(area);
+  var P = state.practice; if(!P) return;
+  var bcp = bcpForLang(state.lang, state.dialect);
+  if(!P.queue.length){ practiceSummary(area, "Speaking drill done — " + P.right + "/" + P.items.length + " nailed 🗣"); return; }
+  var card = P.items[P.queue[0]];
+  var pos = P.items.length - P.queue.length + 1;
+  area.appendChild(el("div","hint","Phrase " + pos + " of " + P.items.length + " · say it like a local"));
+  var c = el("div","result"); c.style.textAlign = "center";
+  c.appendChild(el("div","mn", card.front));
+  var trow = el("div","target-row"); trow.style.justifyContent = "center";
+  var tgt = el("div","target"); tgt.textContent = card.back; if(state.lang.rtl) tgt.style.direction = "rtl";
+  trow.appendChild(tgt); trow.appendChild(speakBtn(card.back, bcp));
+  c.appendChild(trow);
+  if(card.pronunciation) c.appendChild(el("div","pron","🗣 " + card.pronunciation));
+  var res = el("div"); res.style.minHeight = "56px"; res.style.marginTop = "10px";
+  c.appendChild(res);
+  var row = el("div","row"); row.style.justifyContent = "center"; row.style.marginTop = "8px";
+  var mic = el("button","spk mic"); mic.type = "button"; mic.textContent = "🎤"; mic.style.width = "56px"; mic.style.height = "56px"; mic.style.fontSize = "24px";
+  on(mic,"click",function(){
+    listen(bcp, mic, function(heard){
+      clear(res);
+      var sc = Math.round(similarity(normText(heard), normText(card.back)) * 100);
+      var cls = sc >= 80 ? "good" : (sc >= 55 ? "mid" : "bad");
+      res.appendChild(el("div","score " + cls, sc + "%"));
+      res.appendChild(el("div","heard","heard: “" + heard + "”"));
+      if(sc >= 80){
+        res.appendChild(el("div","pr","Excellent — that's the sound. ✓"));
+        P.right++; srsFeed(card.front, card.back, true); award(5);
+        var nx = el("button","btn"); nx.type = "button"; nx.textContent = "Next →"; nx.style.marginTop = "8px";
+        on(nx,"click",function(){ P.queue.shift(); renderSpeak(); });
+        res.appendChild(nx);
+      } else {
+        res.appendChild(el("div","hint", sc >= 55 ? "Close — listen again and mind the stressed syllable." : "Listen once more and copy the rhythm, not just the sounds."));
+      }
+    });
+  });
+  row.appendChild(mic);
+  c.appendChild(row);
+  var skip = el("button","mini"); skip.type = "button"; skip.textContent = "Skip"; skip.style.marginTop = "10px";
+  on(skip,"click",function(){ srsFeed(card.front, card.back, false); P.queue.shift(); renderSpeak(); });
+  c.appendChild(skip);
+  area.appendChild(c);
+}
+
+/* =========================================================================
+   TYPE-IT drill — produce the sentence from English; Claude grades it like an
+   examiner (accepts any natural phrasing, shows the native way). Offline it
+   falls back to a similarity check against the expected answer.
+   ========================================================================= */
+function startDrill(items){
+  var clean = (items||[]).filter(function(x){ return x && x.front && x.back; });
+  if(!clean.length){ noItemsMsg(); return; }
+  state.practice = { items:clean, queue:[], right:0, mode:"drill" };
+  for(var i=0;i<clean.length;i++) state.practice.queue.push(i);
+  renderDrill();
+}
+function renderDrill(){
+  var area = $("practiceArea"); clear(area);
+  var P = state.practice; if(!P) return;
+  var bcp = bcpForLang(state.lang, state.dialect);
+  if(!P.queue.length){ practiceSummary(area, "Production drill done — " + P.right + "/" + P.items.length + " ✍️"); return; }
+  var card = P.items[P.queue[0]];
+  var pos = P.items.length - P.queue.length + 1;
+  area.appendChild(el("div","hint","Sentence " + pos + " of " + P.items.length + " · write it in " + variantName()));
+  var c = el("div","result");
+  c.appendChild(el("div","mn","How do you say:"));
+  var f = el("div"); f.style.fontSize = "20px"; f.style.fontWeight = "600"; f.style.margin = "6px 0 12px"; f.textContent = card.front;
+  c.appendChild(f);
+  var irow = el("div","row");
+  var inp = el("input"); inp.type = "text"; inp.setAttribute("autocomplete","off"); inp.placeholder = "Type it in " + state.lang.name + "…";
+  if(state.lang.rtl){ inp.style.direction = "rtl"; }
+  var iwrap = el("div","grow"); iwrap.appendChild(inp); irow.appendChild(iwrap);
+  var mic = el("button","spk mic"); mic.type = "button"; mic.textContent = "🎤";
+  if(!speechInOK()){ mic.disabled = true; mic.style.opacity = "0.45"; }
+  else on(mic,"click",function(){ listen(bcp, mic, function(t){ inp.value = (inp.value ? inp.value + " " : "") + t; }); });
+  irow.appendChild(mic);
+  var chk = el("button","btn"); chk.type = "button"; chk.textContent = "Check";
+  irow.appendChild(chk);
+  c.appendChild(irow);
+  var out = el("div"); c.appendChild(out);
+  var checked = false;
+  function next(){ P.queue.shift(); renderDrill(); }
+  function showNext(){ var nx = el("button","btn"); nx.type = "button"; nx.textContent = "Next →"; nx.style.marginTop = "10px"; on(nx,"click",next); out.appendChild(nx); }
+  function showGrade(g){
+    clear(out);
+    var ok = !!g.correct;
+    var box = el("div", ok ? "grade-good" : "grade-bad");
+    box.appendChild(el("div", null, (ok ? "✓ Correct" : "✗ Not quite") + (g.score != null ? " · " + g.score + "/100" : "")));
+    if(g.better){
+      var brow = el("div","target-row"); brow.style.marginTop = "6px";
+      var bt = el("div"); bt.style.fontSize = "18px"; bt.style.fontWeight = "600"; bt.textContent = g.better;
+      if(state.lang.rtl){ bt.style.direction = "rtl"; }
+      brow.appendChild(bt); brow.appendChild(speakBtn(g.better, bcp));
+      box.appendChild(brow);
+    }
+    if(g.pronunciation) box.appendChild(el("div","pr","🗣 " + g.pronunciation));
+    if(g.explanation) box.appendChild(el("div","mn", g.explanation));
+    out.appendChild(box);
+    if(ok){ P.right++; award(5); }
+    srsFeed(card.front, card.back, ok);
+    showNext();
+  }
+  function doCheck(){
+    if(checked) return;
+    var ans = inp.value;
+    if(!ans.trim()){ inp.focus(); return; }
+    checked = true;
+    if(aiAvailable()){
+      busy(out, "Grading…");
+      callAI({
+        mode:"grade", prompt:card.front, expected:card.back, answer:ans, level:state.level,
+        targetName:state.lang.name, dialect:state.dialect?state.dialect.name:"", dialectNote:state.dialect?state.dialect.note:""
+      }).then(showGrade).catch(function(){
+        if(state.engine==="local"){ setLive(false); state.engine="offline"; }
+        var sim = similarity(normText(ans), normText(card.back));
+        showGrade({ correct: sim >= 0.85, score: Math.round(sim*100), better: card.back, pronunciation: card.pronunciation||"", explanation: "Graded offline by similarity — enable Live AI for real examiner feedback." });
+      });
+    } else {
+      var sim = similarity(normText(ans), normText(card.back));
+      showGrade({ correct: sim >= 0.85, score: Math.round(sim*100), better: card.back, pronunciation: card.pronunciation||"", explanation: "Graded offline by similarity — enable Live AI for real examiner feedback." });
+    }
+  }
+  on(chk,"click",doCheck);
+  on(inp,"keydown",function(e){ if(e.key === "Enter") doCheck(); });
+  area.appendChild(c);
+}
+function noItemsMsg(){
+  var area = $("practiceArea"); clear(area);
+  var box = el("div","result");
+  box.appendChild(el("div","err","No practice items available offline for this selection."));
+  box.appendChild(el("div","hint","Enable Live AI (top-right) to generate full sets for any language, dialect, topic and level."));
+  area.appendChild(box);
+}
+
+/* =========================================================================
+   STORY — graded reading (comprehensible input). AI writes a micro-story at
+   your exact level in your exact dialect; translations are hidden until
+   tapped so your brain works for the meaning first.
+   ========================================================================= */
+function genStory(){
+  var area = $("practiceArea");
+  if(!aiAvailable()){
+    clear(area);
+    var box = el("div","result");
+    box.appendChild(el("div","err","Stories are written live by the AI at your level."));
+    box.appendChild(el("div","hint","Enable Live AI (top-right) — paste your Anthropic key or run the proxy — to unlock graded reading."));
+    area.appendChild(box);
+    return;
+  }
+  busy(area, "Writing your story…");
+  var topicLabel = (TOPICS.filter(function(x){ return x.id===state.topic; })[0]||{}).label;
+  callAI({
+    mode:"story", topic:topicLabel, level:state.level,
+    targetName:state.lang.name, dialect:state.dialect?state.dialect.name:"", dialectNote:state.dialect?state.dialect.note:""
+  }).then(function(r){ renderStory(area, r); })
+    .catch(function(){
+      if(state.engine==="local"){ setLive(false); state.engine="offline"; }
+      clear(area);
+      var c = el("div","result"); c.appendChild(el("div","err","Couldn't reach the AI just now — try again in a moment."));
+      area.appendChild(c);
+    });
+}
+function renderStory(area, r){
+  clear(area);
+  var bcp = bcpForLang(state.lang, state.dialect);
+  var card = el("div","result");
+  var trow = el("div","target-row");
+  var h = el("div"); h.style.fontWeight = "700"; h.style.fontSize = "19px"; h.textContent = r.title || "Story";
+  if(state.lang.rtl) h.style.direction = "rtl";
+  trow.appendChild(h); trow.appendChild(speakBtn(r.title || "", bcp));
+  card.appendChild(trow);
+  if(r.titleEnglish) card.appendChild(el("div","mn", r.titleEnglish));
+  var ps = r.paragraphs || [];
+  for(var i=0;i<ps.length;i++){
+    (function(p){
+      var box = el("div","story-p" + (state.lang.rtl ? " rtl" : ""));
+      var st = el("div","st"); st.textContent = p.text || ""; box.appendChild(st);
+      if(p.pronunciation) box.appendChild(el("div","pr","🗣 " + p.pronunciation));
+      var row = el("div","row"); row.style.marginTop = "6px";
+      row.appendChild(speakBtn(p.text || "", bcp));
+      var tr = el("button","mini"); tr.type = "button"; tr.textContent = "Show translation";
+      var trd = el("div","tr hidden"); trd.textContent = p.translation || "";
+      on(tr,"click",function(){ if(trd.classList.contains("hidden")){ show(trd); tr.textContent = "Hide translation"; } else { hide(trd); tr.textContent = "Show translation"; } });
+      row.appendChild(tr);
+      box.appendChild(row); box.appendChild(trd);
+      card.appendChild(box);
+    })(ps[i]);
+  }
+  var vocab = r.vocab || [];
+  if(vocab.length){
+    var vh = el("div","mn"); vh.style.marginTop = "12px"; vh.textContent = "Key words (added to your review deck):"; card.appendChild(vh);
+    var vwrap = el("div"); vwrap.style.marginTop = "4px";
+    for(var v=0;v<vocab.length;v++){
+      var w = vocab[v];
+      var chip = el("span","vocab-w", (w.word||"") + (w.pronunciation ? " · " + w.pronunciation : "") + " — " + (w.meaning||""));
+      vwrap.appendChild(chip);
+    }
+    card.appendChild(vwrap);
+    srsAddMany(vocab.map(function(w){ return { front:w.meaning||"", back:w.word||"", pronunciation:w.pronunciation||"" }; }));
+  }
+  var again = el("button","btn sec"); again.type = "button"; again.textContent = "📖 Another story"; again.style.marginTop = "12px";
+  on(again,"click",genStory);
+  card.appendChild(again);
+  area.appendChild(card);
+  area.appendChild(srcLabel(true));
+  award(5); renderStats();
+}
+
+/* =========================================================================
+   REVIEW — the daily SRS session over due cards. Again / Good / Easy.
+   ========================================================================= */
+function reviewHost(){ return state.deckOverride === "quran" ? $("quranArea") : $("practiceArea"); }
+function startReview(){
+  var due = srsDue();
+  if(state.deckOverride !== "quran") setMode("practice");
+  var area = reviewHost(); clear(area);
+  if(!due.length){
+    var box = el("div","result");
+    box.appendChild(el("div",null,"✅ Nothing due — your deck is fresh."));
+    box.appendChild(el("div","hint","Do a unit or a drill and new phrases will queue up for review at the right time."));
+    area.appendChild(box);
+    return;
+  }
+  state.review = { cards:due, i:0, revealed:false };
+  renderReview();
+}
+function renderReview(){
+  var area = reviewHost(); clear(area);
+  var R = state.review; if(!R) return;
+  var bcp = state.deckOverride === "quran" ? "ar-SA" : bcpForLang(state.lang, state.dialect);
+  if(R.i >= R.cards.length){
+    var done = el("div","result");
+    var h = el("div"); h.style.fontWeight = "700"; h.style.fontSize = "17px"; h.textContent = "Review complete — " + R.cards.length + " cards 🔁";
+    done.appendChild(h);
+    done.appendChild(el("div","mn","That's the memory work done for now. Come back when the chip shows cards due."));
+    area.appendChild(done);
+    renderStats();
+    return;
+  }
+  var it = R.cards[R.i], c = it.c;
+  area.appendChild(el("div","hint","Review " + (R.i+1) + " of " + R.cards.length));
+  var box = el("div","result"); box.style.textAlign = "center";
+  box.appendChild(el("div","mn", state.deckOverride === "quran" ? "Recite from memory:" : "Recall this in " + variantName() + ":"));
+  var f = el("div"); f.style.fontSize = "22px"; f.style.fontWeight = "600"; f.style.margin = "10px 0"; f.textContent = c.f;
+  box.appendChild(f);
+  if(!R.revealed){
+    var sa = el("button","btn"); sa.type = "button"; sa.textContent = "Show answer";
+    on(sa,"click",function(){ R.revealed = true; renderReview(); });
+    box.appendChild(sa);
+  } else {
+    var brow = el("div","target-row"); brow.style.justifyContent = "center";
+    var b = el("div","target"); b.textContent = c.b;
+    if((state.lang && state.lang.rtl) || state.deckOverride === "quran") b.style.direction = "rtl";
+    brow.appendChild(b); brow.appendChild(speakBtn(c.b, bcp));
+    box.appendChild(brow);
+    if(c.p) box.appendChild(el("div","pron","🗣 " + c.p));
+    var arow = el("div","row"); arow.style.justifyContent = "center"; arow.style.marginTop = "12px";
+    function gradeBtn(label, cls, g, xp){
+      var btn = el("button", cls); btn.type = "button"; btn.textContent = label;
+      on(btn,"click",function(){ srsGradeCard(it.id, g); if(xp) award(xp); R.i++; R.revealed = false; renderReview(); });
+      return btn;
+    }
+    arow.appendChild(gradeBtn("↻ Again","btn sec",0,0));
+    arow.appendChild(gradeBtn("✓ Good","btn",1,2));
+    arow.appendChild(gradeBtn("⚡ Easy","btn sec",2,2));
+    box.appendChild(arow);
+  }
+  area.appendChild(box);
+}
+
+/* fetch a practice set (AI or offline) and hand it to a drill starter */
+function fetchPracticeItems(cb){
+  var area = $("practiceArea"); busy(area, "Building practice set…");
+  var topicLabel = (TOPICS.filter(function(x){ return x.id===state.topic; })[0]||{}).label;
+  var payload = {
+    mode:"practice", topic:topicLabel, level:state.level, count:10,
+    targetName:state.lang.name, targetNative:state.lang.native,
+    dialect:state.dialect?state.dialect.name:"", dialectNote:state.dialect?state.dialect.note:""
+  };
+  var go = function(items){ cb((items||[]).filter(function(x){ return x && x.front && x.back; })); };
+  if(aiAvailable()){
+    callAI(payload).then(function(r){ go(r.items||[]); })
+      .catch(function(){ if(state.engine==="local"){ setLive(false); state.engine="offline"; } go(offlinePractice()); });
+  } else { go(offlinePractice()); }
+}
+function ensureSet(cb){
+  if(state.practice && state.practice.items && state.practice.items.length){ cb(state.practice.items); }
+  else fetchPracticeItems(cb);
+}
+
+/* =========================================================================
+   CHAT — conversation practice with the AI tutor (needs Live AI)
+   ========================================================================= */
+function renderChat(){
+  var log = $("chatLog"); clear(log);
+  var bcp = bcpForLang(state.lang, state.dialect);
+  if(!state.chat.length){
+    var hint = el("div","hint");
+    hint.textContent = aiAvailable()
+      ? "Say hello, or tap “Start a conversation” and the tutor will get you going."
+      : "Conversation practice needs Live AI (top-right).";
+    log.appendChild(hint);
+    return;
+  }
+  for(var i=0;i<state.chat.length;i++){
+    var m = state.chat[i];
+    if(m.role==="user"){
+      var u = el("div","bubble user"); u.textContent = m.text; log.appendChild(u);
+    } else {
+      var d = m.data || {};
+      var b = el("div","bubble bot" + (state.lang.rtl?" rtl":""));
+      b.appendChild(el("div",null, m.text || d.reply || ""));
+      if(d.pronunciation){ var pr=el("div","pr"); pr.textContent="🗣 "+d.pronunciation; b.appendChild(pr); }
+      if(d.english){ var en=el("div","en"); en.textContent=d.english; b.appendChild(en); }
+      var r2 = el("div","row2"); r2.appendChild(speakBtn(m.text || d.reply || "", bcp)); b.appendChild(r2);
+      log.appendChild(b);
+      if(d.correction){ var co=el("div","correction"); co.textContent="✎ "+d.correction; log.appendChild(co); }
+    }
+  }
+  try{ log.scrollTop = log.scrollHeight; }catch(e){}
+}
+function sendChat(seed){
+  if(!aiAvailable()){ renderChat(); return; }
+  var text = "";
+  if(!seed){
+    text = $("chatInput").value;
+    if(!text.trim()){ $("chatInput").focus(); return; }
+    state.chat.push({ role:"user", text:text });
+    $("chatInput").value = "";
+  }
+  renderChat();
+  var log = $("chatLog");
+  var typing = el("div","bubble bot"); typing.appendChild(el("span","spin")); typing.appendChild(document.createTextNode("  …"));
+  log.appendChild(typing); try{ log.scrollTop = log.scrollHeight; }catch(e){}
+  var msgs = state.chat.map(function(m){
+    return { role:m.role, content: m.role==="assistant" ? ((m.data && m.data.reply) || m.text || "") : m.text };
+  });
+  var payload = {
+    mode:"chat", messages:msgs, level:state.level,
+    targetName:state.lang.name, dialect:state.dialect?state.dialect.name:"", dialectNote:state.dialect?state.dialect.note:""
+  };
+  callAI(payload).then(function(r){
+    state.chat.push({ role:"assistant", text:r.reply||"", data:r });
+    if(!seed) award(3); // each real conversational turn counts
+    renderChat();
+  }).catch(function(){
+    if(state.engine==="local"){ setLive(false); state.engine="offline"; }
+    renderChat();
+    var l = $("chatLog"); var e = el("div","correction"); e.textContent = "Couldn't reach the tutor just now — try again, or enable Live AI."; l.appendChild(e);
+  });
+}
+
+/* =========================================================================
+   LEARN — a structured course path with on-device progress. Ties the lessons,
+   practice and chat together into ordered units you can work through.
+   ========================================================================= */
+var PROG_KEY = "lingua.progress.v1";
+function loadProg(){ try{ return JSON.parse(localStorage.getItem(PROG_KEY) || "{}") || {}; }catch(e){ return {}; } }
+function saveProg(p){ try{ localStorage.setItem(PROG_KEY, JSON.stringify(p)); }catch(e){} }
+function progKey(){
+  if(state.deckOverride) return state.deckOverride; // e.g. the Qur'an hifz deck
+  return state.lang ? (state.dialect ? state.lang.id + ":" + state.dialect.id : state.lang.id) : "";
+}
+function isDone(topicId){ var p = loadProg()[progKey()] || {}; return !!p[topicId]; }
+function setDone(topicId, v){ var all = loadProg(), k = progKey(), p = all[k] || {}; if(v) p[topicId] = true; else delete p[topicId]; all[k] = p; saveProg(all); }
+function syncTopicChips(){
+  var wrap = $("topicChips"); if(!wrap) return; var k = wrap.children;
+  for(var i=0;i<k.length && i<TOPICS.length;i++){ k[i].setAttribute("aria-selected", TOPICS[i].id===state.topic ? "true":"false"); }
+}
+function renderLearn(){
+  var area = $("learnArea"); clear(area);
+  var done = 0;
+  for(var i=0;i<TOPICS.length;i++){ if(isDone(TOPICS[i].id)) done++; }
+  var pct = Math.round(done / TOPICS.length * 100);
+  var title = el("div"); title.style.fontWeight="700"; title.style.fontSize="17px"; title.textContent = "Learn " + variantName(); area.appendChild(title);
+  var sub = el("div","mn"); sub.style.margin="2px 0 6px"; sub.textContent = "A1 → B2 course — " + done + " of " + TOPICS.length + " units complete."; area.appendChild(sub);
+  var hr = el("div","learn-head"); var bar = el("div","bar"); var fill = el("i"); fill.style.width = pct + "%"; bar.appendChild(fill); hr.appendChild(bar);
+  var lvl = el("span","hint"); lvl.style.margin="0"; lvl.textContent = state.level + " · change in Teach"; hr.appendChild(lvl);
+  area.appendChild(hr);
+
+  // the daily engine: reviews first — retention beats novelty
+  var due = srsDue();
+  if(due.length){
+    var rb = el("button","review-banner"); rb.type = "button";
+    var rt = el("span"); rt.innerHTML = ""; rt.appendChild(el("b", null, "🔁 " + due.length + " card" + (due.length===1?"":"s") + " due"));
+    rt.appendChild(document.createTextNode(" — review first. Spaced repetition is what moves phrases into permanent memory."));
+    rb.appendChild(rt);
+    on(rb,"click",startReview);
+    area.appendChild(rb);
+  }
+  var method = el("div","method");
+  method.textContent = "⚡ The fluency loop (15 focused min/day): 1) clear due reviews · 2) one unit · 3) say every phrase out loud (🗣 Speak it) · 4) five chat turns with the tutor. Production over recognition, every day.";
+  area.appendChild(method);
+
+  var n = 0;
+  for(var s=0;s<CURRICULUM.length;s++){
+    var sec = CURRICULUM[s];
+    var head = el("div","cefr");
+    head.appendChild(el("span","lv", sec.level));
+    head.appendChild(el("span","lt", sec.title));
+    area.appendChild(head);
+    for(var j=0;j<sec.units.length;j++){
+      (function(t, idx){
+        var d = isDone(t.id);
+        var u = el("button","unit" + (d?" done":"")); u.type = "button";
+        var ix = el("span","ix"); ix.textContent = d ? "✓" : String(idx+1); u.appendChild(ix);
+        var box = el("span");
+        var ut = el("span","ut", t.label); ut.style.display="block";
+        var us = el("span","us", d ? "Completed · tap to revisit" : "Lesson → drills → speak → chat"); us.style.display="block";
+        box.appendChild(ut); box.appendChild(us); u.appendChild(box);
+        u.appendChild(el("span","chev","›"));
+        on(u,"click",function(){ learnOpen(t); });
+        area.appendChild(u);
+      })(sec.units[j], n);
+      n++;
+    }
+  }
+}
+function learnOpen(t){
+  state.topic = t.id; syncTopicChips();
+  var area = $("learnArea"); busy(area, "Preparing your “" + t.label + "” unit…");
+  var payload = {
+    mode:"teach", topic:t.label, level:state.level,
+    targetName:state.lang.name, targetNative:state.lang.native,
+    dialect:state.dialect?state.dialect.name:"", dialectNote:state.dialect?state.dialect.note:""
+  };
+  var render = function(r, ai){ renderLearnUnit(t, r, ai); };
+  if(aiAvailable()){
+    callAI(payload).then(function(r){ render(r, true); })
+      .catch(function(){ if(state.engine==="local"){ setLive(false); state.engine="offline"; } render(offlineLesson(), false); });
+  } else { render(offlineLesson(), false); }
+}
+function renderLearnUnit(t, r, ai){
+  var area = $("learnArea"); clear(area);
+  var back = el("button","mini"); back.type="button"; back.textContent="← Back to path"; on(back,"click",renderLearn); area.appendChild(back);
+  var holder = el("div"); holder.style.marginTop="10px"; area.appendChild(holder);
+  renderLesson(holder, r, ai);
+  var row = el("div","row wrap"); row.style.marginTop="12px";
+  var prac = el("button","btn"); prac.type="button"; prac.textContent="🃏 Flashcards"; on(prac,"click",function(){ setMode("practice"); genPractice(); }); row.appendChild(prac);
+  var dr = el("button","btn sec"); dr.type="button"; dr.textContent="✍️ Type it"; on(dr,"click",function(){ setMode("practice"); ensureSet(startDrill); }); row.appendChild(dr);
+  var sp = el("button","btn sec"); sp.type="button"; sp.textContent="🗣 Speak it"; on(sp,"click",function(){ setMode("practice"); ensureSet(startSpeak); }); row.appendChild(sp);
+  var st = el("button","btn sec"); st.type="button"; st.textContent="📖 Story"; on(st,"click",function(){ setMode("practice"); genStory(); }); row.appendChild(st);
+  var chat = el("button","btn sec"); chat.type="button"; chat.textContent="💬 Chat"; on(chat,"click",function(){ setMode("chat"); renderChat(); }); row.appendChild(chat);
+  var dn = isDone(t.id);
+  var mc = el("button", dn ? "btn sec" : "btn"); mc.type="button"; mc.textContent = dn ? "✓ Completed (undo)" : "✓ Mark complete";
+  on(mc,"click",function(){ setDone(t.id, !isDone(t.id)); renderLearn(); });
+  row.appendChild(mc);
+  area.appendChild(row);
+}
+
+function refreshKeyStatus(){
+  var s = $("byokStatus"); if(!s) return;
+  var k = getKey();
+  if(k){ s.textContent = "Key saved on this device (…" + k.slice(-4) + "). The app is linked to your Anthropic key."; s.style.color = "var(--teal)"; }
+  else { s.textContent = "No key saved."; s.style.color = "var(--muted2)"; }
+}
+
+/* =========================================================================
+   LIVE INTERPRETER — continuous speech recognition on one language, each
+   finished sentence translated by the AI into the other and (optionally)
+   spoken aloud. Recognition auto-restarts after silence, so it keeps up with
+   a real conversation until you press Stop.
+   ========================================================================= */
+var live = { on:false, rec:null, speak:true, interimEl:null };
+function liveLangById(id){ return LANGS.filter(function(x){ return x.id===id; })[0]; }
+function liveDialectFor(langId){
+  return (state.lang && state.lang.id === langId && state.dialect) ? state.dialect : null;
+}
+function buildLiveSelects(){
+  var from = $("liveFrom"), to = $("liveTo");
+  if(!from || !to) return;
+  clear(from); clear(to);
+  function opt(L){ var o = el("option"); o.value = L.id; o.textContent = (L.flag ? L.flag + " " : "") + L.name; return o; }
+  for(var i=0;i<LANGS.length;i++){ from.appendChild(opt(LANGS[i])); to.appendChild(opt(LANGS[i])); }
+  // default: the conversation is in your study language, translated into English
+  var study = (state.lang && state.lang.id.indexOf("x:") !== 0) ? state.lang.id : null;
+  from.value = (study && study !== "en") ? study : "es";
+  to.value = "en";
+}
+function liveInterim(text){
+  var feed = $("liveFeed");
+  if(!text){
+    if(live.interimEl && live.interimEl.parentNode) live.interimEl.parentNode.removeChild(live.interimEl);
+    live.interimEl = null;
+    return;
+  }
+  if(!live.interimEl){
+    live.interimEl = el("div","seg interim");
+    live.interimEl.appendChild(el("div","heard-line",""));
+    feed.appendChild(live.interimEl);
+  }
+  live.interimEl.firstChild.textContent = "🎙 " + text + "…";
+  try{ feed.scrollTop = feed.scrollHeight; }catch(e){}
+}
+function liveSegment(text){
+  var feed = $("liveFeed");
+  var fromL = liveLangById($("liveFrom").value);
+  var toL = liveLangById($("liveTo").value);
+  if(!fromL || !toL) return;
+  var toDia = liveDialectFor(toL.id);
+  var toBcp = bcpForLang(toL, toDia);
+  var seg = el("div","seg" + (toL.rtl ? " rtl" : ""));
+  seg.appendChild(el("div","heard-line","🎙 " + text));
+  var row = el("div","tr-row");
+  var tr = el("div","tr-text");
+  tr.appendChild(el("span","spin"));
+  row.appendChild(tr);
+  seg.appendChild(row);
+  // keep the interim line last
+  if(live.interimEl && live.interimEl.parentNode === feed) feed.insertBefore(seg, live.interimEl);
+  else feed.appendChild(seg);
+  try{ feed.scrollTop = feed.scrollHeight; }catch(e){}
+  callAI({
+    mode:"translate", text:text,
+    sourceName: fromL.name,
+    targetName: toL.name, targetNative: toL.native || "",
+    dialect: toDia ? toDia.name : "",
+    dialectNote: toDia ? toDia.note : ""
+  }).then(function(r){
+    clear(tr); tr.textContent = r.translation || "—";
+    row.appendChild(speakBtn(r.translation || "", toBcp));
+    if(r.pronunciation) seg.appendChild(el("div","pr","🗣 " + r.pronunciation));
+    if(live.speak && r.translation) speak(r.translation, toBcp);
+    award(1);
+    try{ feed.scrollTop = feed.scrollHeight; }catch(e){}
+  }).catch(function(){
+    if(state.engine === "local"){ setLive(false); state.engine = "offline"; }
+    clear(tr); tr.textContent = "—";
+    seg.appendChild(el("div","err","Couldn't translate this line — check the AI connection (top-right pill)."));
+  });
+}
+function liveStart(){
+  var status = $("liveStatus");
+  if(!speechInOK()){ status.textContent = "Speech recognition isn't supported in this browser — try Chrome, Edge or Safari."; return; }
+  if(!aiAvailable()){ status.textContent = "Live interpreting needs Live AI — tap the AI pill (top-right) and connect your key or a proxy."; return; }
+  var R = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var fromL = liveLangById($("liveFrom").value);
+  var r;
+  try{ r = new R(); }catch(e){ status.textContent = "Couldn't start the microphone."; return; }
+  r.lang = bcpForLang(fromL, liveDialectFor(fromL && fromL.id));
+  r.continuous = true; r.interimResults = true; r.maxAlternatives = 1;
+  live.rec = r; live.on = true;
+  $("liveBtn").textContent = "⏹ Stop"; $("liveBtn").classList.add("listening");
+  status.textContent = "Listening in " + (fromL ? fromL.name : "…") + "… every finished sentence is translated below.";
+  r.onresult = function(ev){
+    var interim = "";
+    for(var i = ev.resultIndex; i < ev.results.length; i++){
+      var res = ev.results[i];
+      if(res.isFinal){ var t = (res[0].transcript || "").trim(); if(t) liveSegment(t); }
+      else interim += res[0].transcript;
+    }
+    liveInterim(interim.replace(/^\s+|\s+$/g, ""));
+  };
+  r.onerror = function(e){
+    var code = e && e.error;
+    var standalone = false;
+    try{ standalone = (window.navigator && navigator.standalone === true) || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches === true); }catch(err){}
+    if(code === "not-allowed"){
+      liveStop();
+      status.textContent = standalone
+        ? "Microphone blocked. iPhone home-screen apps can't use speech recognition — open this page in the Safari app instead, then: tap ᴬᴬ in the address bar → Website Settings → Microphone → Allow."
+        : "Microphone permission was blocked. iPhone: tap ᴬᴬ in the address bar → Website Settings → Microphone → Allow, and check Settings → Privacy & Security → Microphone → Safari is ON. Then reload and try again.";
+    } else if(code === "service-not-allowed"){
+      liveStop();
+      status.textContent = standalone
+        ? "iOS doesn't allow speech recognition inside the installed home-screen app — open this page in the Safari app itself and it will work. Also make sure Settings → General → Keyboard → Dictation is ON."
+        : "The device's speech service refused. On iPhone, turn ON Settings → General → Keyboard → Dictation, then reload and try again.";
+    } else if(code === "audio-capture"){
+      liveStop();
+      status.textContent = "No usable microphone was found — check that nothing else is holding the mic and try again.";
+    }
+    // "no-speech" / "aborted" are routine pauses; onend's auto-restart handles them
+  };
+  r.onend = function(){ if(live.on && live.rec === r){ try{ r.start(); }catch(e){} } };
+  try{ r.start(); }catch(e){ status.textContent = "Couldn't start the microphone."; liveStop(); }
+}
+function liveStop(){
+  live.on = false;
+  if(live.rec){ var r = live.rec; live.rec = null; try{ r.stop(); }catch(e){} }
+  liveInterim("");
+  var b = $("liveBtn");
+  if(b){ b.textContent = "🎙 Start listening"; b.classList.remove("listening"); }
+  var s = $("liveStatus");
+  if(s) s.textContent = "Stopped. Tap Start to listen again.";
+}
+
+/* =========================================================================
+   QUR'AN STUDIO — read, memorize (hifz), recite, understand.
+   Design rule: the Qur'anic TEXT and AUDIO are never AI-generated. Text is the
+   Tanzil-verified Uthmani mushaf + Saheeh International translation +
+   transliteration, fetched from the AlQuran.cloud API and cached on-device;
+   recitation audio is Mishary Rashid Alafasy per ayah from the Islamic Network
+   CDN. The AI is used ONLY for clearly-labelled study explanations.
+   ========================================================================= */
+var Q_API = "https://api.alquran.cloud/v1";
+var Q_AUDIO = "https://cdn.islamic.network/quran/audio/128/ar.alafasy/"; // + globalAyah + ".mp3"
+var Q_CACHE_KEY = "lingua.quran.v1";
+var qstate = { index:null, n:0, data:null, mode:"read", tr:true, tl:false, audio:null, hifz:null, recite:null };
+
+function qCacheGet(k){ try{ var a = JSON.parse(localStorage.getItem(Q_CACHE_KEY) || "{}"); return a[k] || null; }catch(e){ return null; } }
+function qCachePut(k, v){
+  try{
+    var a = JSON.parse(localStorage.getItem(Q_CACHE_KEY) || "{}");
+    a[k] = v; localStorage.setItem(Q_CACHE_KEY, JSON.stringify(a));
+  }catch(e){ /* storage full — cache is best-effort */ }
+}
+function qFetch(url){
+  return fetch(url).then(function(r){
+    if(!r || !r.ok) throw new Error("quran api " + (r && r.status));
+    return r.json();
+  }).then(function(j){
+    if(!j || j.code !== 200 || !j.data) throw new Error("quran api shape");
+    return j.data;
+  });
+}
+function qError(msg){
+  var area = $("quranArea"); clear(area);
+  var box = el("div","result");
+  box.appendChild(el("div","err", msg));
+  box.appendChild(el("div","hint","The Qur'an text comes from the verified AlQuran.cloud source, so the first load of each surah needs an internet connection. Once loaded, it's cached on this device."));
+  var retry = el("button","btn sec"); retry.type = "button"; retry.textContent = "Try again"; retry.style.marginTop = "10px";
+  on(retry,"click",function(){ qstate.index ? qLoadSurah(qstate.n || 1) : openQuran(); });
+  box.appendChild(retry);
+  area.appendChild(box);
+}
+
+function openQuran(){
+  state.deckOverride = "quran";
+  hide($("picker")); hide($("quranEntry")); hide($("workspace")); hide($("historyPanel"));
+  show($("quranPanel"));
+  renderStats();
+  if(qstate.index){ qBuildSelect(); qLoadSurah(qstate.n || 1); return; }
+  var cached = qCacheGet("index");
+  if(cached){ qstate.index = cached; qBuildSelect(); qLoadSurah(1); return; }
+  busy($("quranArea"), "Loading the surah index…");
+  qFetch(Q_API + "/surah").then(function(list){
+    qstate.index = list.map(function(s){
+      return { n:s.number, ar:s.name, en:s.englishName, meaning:s.englishNameTranslation, ayahs:s.numberOfAyahs, place:s.revelationType };
+    });
+    qCachePut("index", qstate.index);
+    qBuildSelect(); qLoadSurah(1);
+  }).catch(function(){ qError("Couldn't load the surah index."); });
+}
+function closeQuran(){
+  state.deckOverride = null;
+  qAudioStop();
+  hide($("quranPanel")); show($("picker")); show($("quranEntry"));
+  renderStats();
+}
+function qBuildSelect(){
+  var sel = $("qSurah"); clear(sel);
+  for(var i=0;i<qstate.index.length;i++){
+    var s = qstate.index[i];
+    var o = el("option"); o.value = s.n;
+    o.textContent = s.n + ". " + s.en + " — " + s.ar + " · " + s.ayahs + " ayahs";
+    sel.appendChild(o);
+  }
+  sel.value = qstate.n || 1;
+}
+function qSurahMeta(){ return (qstate.index || []).filter(function(s){ return s.n === qstate.n; })[0] || {}; }
+function qLoadSurah(n){
+  qstate.n = n; qAudioStop();
+  var cached = qCacheGet("s" + n);
+  if(cached){ qstate.data = cached; qRender(); return; }
+  busy($("quranArea"), "Loading surah…");
+  qFetch(Q_API + "/surah/" + n + "/editions/quran-uthmani,en.sahih,en.transliteration").then(function(eds){
+    var byId = {};
+    for(var i=0;i<eds.length;i++){ byId[(eds[i].edition && eds[i].edition.identifier) || i] = eds[i].ayahs || []; }
+    var ar = byId["quran-uthmani"] || eds[0].ayahs || [];
+    var tr = byId["en.sahih"] || [];
+    var tl = byId["en.transliteration"] || [];
+    var ayahs = [];
+    for(var j=0;j<ar.length;j++){
+      ayahs.push({
+        n: ar[j].numberInSurah, g: ar[j].number, ar: ar[j].text,
+        tr: tr[j] ? tr[j].text : "", tl: tl[j] ? tl[j].text : ""
+      });
+    }
+    if(!ayahs.length) throw new Error("empty surah");
+    qstate.data = ayahs;
+    qCachePut("s" + n, ayahs);
+    qRender();
+  }).catch(function(){ qError("Couldn't load this surah."); });
+}
+function qAudioStop(){ if(qstate.audio){ try{ qstate.audio.pause(); }catch(e){} qstate.audio = null; } }
+function qPlay(g){
+  try{
+    if(typeof Audio === "undefined") return;
+    qAudioStop();
+    var a = new Audio(Q_AUDIO + g + ".mp3");
+    qstate.audio = a;
+    a.play()["catch"](function(){});
+  }catch(e){}
+}
+function qSetMode(m){
+  qstate.mode = m;
+  var ids = { read:"qmRead", hifz:"qmHifz", recite:"qmRecite", review:"qmReview" };
+  for(var k in ids){ if(ids.hasOwnProperty(k)) $(ids[k]).setAttribute("aria-selected", k===m ? "true" : "false"); }
+  if(m === "review"){ startReview(); return; }
+  qRender();
+}
+function qCardId(a){ return "Surah " + (qSurahMeta().en || qstate.n) + " " + qstate.n + ":" + a.n + " — recite from memory"; }
+function qAddHifz(a){
+  srsAddMany([{ front: qCardId(a), back: a.ar, pronunciation: a.tl || "" }]);
+  renderStats();
+}
+
+/* ---- READ ---- */
+function qRender(){
+  var meta = qSurahMeta();
+  $("qSubtitle").textContent = meta.en ? (meta.en + " · " + (meta.meaning || "") + " · " + (meta.place || "")) : "";
+  if(qstate.mode === "hifz"){ qRenderHifz(); return; }
+  if(qstate.mode === "recite"){ qRenderRecite(); return; }
+  var area = $("quranArea"); clear(area);
+  var d = qstate.data || [];
+  for(var i=0;i<d.length;i++){
+    (function(a){
+      var card = el("div","ayah");
+      card.appendChild(el("div","num", qstate.n + ":" + a.n));
+      card.appendChild(el("div","ar", a.ar));
+      if(qstate.tl && a.tl) card.appendChild(el("div","tl", a.tl));
+      if(qstate.tr && a.tr) card.appendChild(el("div","tr2", a.tr));
+      var row = el("div","arow");
+      var play = el("button","mini"); play.type="button"; play.textContent = "▶️ Listen";
+      on(play,"click",function(){ qPlay(a.g); });
+      row.appendChild(play);
+      var hz = el("button","mini"); hz.type="button"; hz.textContent = "🧠 Add to hifz";
+      on(hz,"click",function(){ qAddHifz(a); hz.textContent = "✓ In your deck"; hz.disabled = true; });
+      row.appendChild(hz);
+      var ex = el("button","mini"); ex.type="button"; ex.textContent = "🤖 Explain";
+      var expBox = null;
+      on(ex,"click",function(){
+        if(expBox){ card.removeChild(expBox); expBox = null; ex.textContent = "🤖 Explain"; return; }
+        if(!aiAvailable()){
+          expBox = el("div","exp"); expBox.textContent = "Explanations need Live AI — tap the AI pill (top-right) to connect.";
+          card.appendChild(expBox); return;
+        }
+        expBox = el("div","exp"); expBox.appendChild(el("span","spin")); card.appendChild(expBox);
+        callAI({
+          mode:"ask", targetName:"Qur'anic (Classical) Arabic",
+          question: "As a study aid for a Qur'an student, explain surah " + (qSurahMeta().en || qstate.n) + " (" + qstate.n + ":" + a.n + ").\n" +
+            "Use ONLY this verified text — do not quote scripture from memory.\nArabic: " + a.ar + "\nTranslation (Saheeh International): " + a.tr +
+            "\n\nGive: 1) a brief word-by-word gloss, 2) the overall meaning, 3) helpful context. Be concise and respectful; note that for religious rulings the student should consult qualified scholars."
+        }).then(function(r){
+          clear(expBox); expBox.textContent = r.answer || "—";
+        })["catch"](function(){
+          clear(expBox); expBox.textContent = "Couldn't reach the AI just now — try again.";
+        });
+        ex.textContent = "▲ Hide";
+      });
+      row.appendChild(ex);
+      card.appendChild(row);
+      area.appendChild(card);
+    })(d[i]);
+  }
+}
+
+/* ---- MEMORIZE (hifz): listen → skeleton → recall, graded into the SRS deck ---- */
+function qSkeleton(ar){
+  var words = String(ar||"").split(/\s+/), out = [];
+  for(var i=0;i<words.length;i++){ var w = words[i]; out.push(w ? (w.charAt(0) + "ـ ـ") : w); }
+  return out.join("   ");
+}
+function qRenderHifz(){
+  var area = $("quranArea"); clear(area);
+  if(!qstate.hifz || qstate.hifz.surah !== qstate.n) qstate.hifz = { surah:qstate.n, i:0, stage:0 };
+  var H = qstate.hifz, d = qstate.data || [];
+  if(H.i >= d.length){
+    var done = el("div","result");
+    var h = el("div"); h.style.fontWeight="700"; h.style.fontSize="17px";
+    h.textContent = "Ma shaa Allah — you've worked through " + (qSurahMeta().en || "this surah") + " 🎉";
+    done.appendChild(h);
+    done.appendChild(el("div","mn","Every ayah is in your review deck now. The 🔁 Review chip will resurface each one at the right time — that's how hifz sticks."));
+    var again = el("button","btn sec"); again.type="button"; again.textContent = "↻ Start over"; again.style.marginTop="10px";
+    on(again,"click",function(){ qstate.hifz = null; qRenderHifz(); });
+    done.appendChild(again);
+    area.appendChild(done);
+    return;
+  }
+  var a = d[H.i];
+  area.appendChild(el("div","hint","Ayah " + (H.i+1) + " of " + d.length + " · listen, read, then recall from the skeleton"));
+  var card = el("div","ayah");
+  card.appendChild(el("div","num", qstate.n + ":" + a.n));
+  if(H.stage === 0){ card.appendChild(el("div","ar", a.ar)); }
+  else { card.appendChild(el("div","hifz-skel", qSkeleton(a.ar))); }
+  if(a.tl && qstate.tl) card.appendChild(el("div","tl", a.tl));
+  if(a.tr) card.appendChild(el("div","tr2", a.tr));
+  var row = el("div","arow");
+  var play = el("button","mini"); play.type="button"; play.textContent = "▶️ Listen";
+  on(play,"click",function(){ qPlay(a.g); });
+  row.appendChild(play);
+  if(H.stage === 0){
+    var go = el("button","btn"); go.type="button"; go.textContent = "I've read it — hide the words";
+    on(go,"click",function(){ H.stage = 1; qAddHifz(a); qRenderHifz(); });
+    row.appendChild(go);
+  } else {
+    var showBtn = el("button","mini"); showBtn.type="button"; showBtn.textContent = "👁 Show";
+    on(showBtn,"click",function(){ H.stage = 0; qRenderHifz(); });
+    row.appendChild(showBtn);
+    var okB = el("button","btn"); okB.type="button"; okB.textContent = "✓ Recited it";
+    on(okB,"click",function(){
+      srsGradeCard(qCardId(a) + "→" + a.ar, 1); award(3);
+      H.i++; H.stage = 0; qRenderHifz();
+    });
+    row.appendChild(okB);
+    var no = el("button","btn sec"); no.type="button"; no.textContent = "↻ Not yet";
+    on(no,"click",function(){ srsGradeCard(qCardId(a) + "→" + a.ar, 0); H.stage = 0; qRenderHifz(); });
+    row.appendChild(no);
+  }
+  card.appendChild(row);
+  area.appendChild(card);
+}
+
+/* ---- RECITE: say the ayah, scored against the verified text on-device ---- */
+function qRenderRecite(){
+  var area = $("quranArea"); clear(area);
+  if(!speechInOK()){
+    var box = el("div","result");
+    box.appendChild(el("div","err","Speech recognition isn't supported in this browser."));
+    box.appendChild(el("div","hint","Try Chrome, Edge or Safari — Read and Memorize work everywhere."));
+    area.appendChild(box);
+    return;
+  }
+  if(!qstate.recite || qstate.recite.surah !== qstate.n) qstate.recite = { surah:qstate.n, i:0 };
+  var R = qstate.recite, d = qstate.data || [];
+  if(R.i >= d.length){
+    var done = el("div","result");
+    var h = el("div"); h.style.fontWeight="700"; h.style.fontSize="17px"; h.textContent = "Surah complete 🗣✨";
+    done.appendChild(h);
+    var again = el("button","btn sec"); again.type="button"; again.textContent = "↻ Start over"; again.style.marginTop="10px";
+    on(again,"click",function(){ qstate.recite = null; qRenderRecite(); });
+    done.appendChild(again);
+    area.appendChild(done);
+    return;
+  }
+  var a = d[R.i];
+  area.appendChild(el("div","hint","Ayah " + (R.i+1) + " of " + d.length + " · listen, then recite (the score is an approximate aid — recognition of tajwīd is imperfect)"));
+  var card = el("div","ayah");
+  card.appendChild(el("div","num", qstate.n + ":" + a.n));
+  card.appendChild(el("div","ar", a.ar));
+  if(a.tr && qstate.tr) card.appendChild(el("div","tr2", a.tr));
+  var res = el("div"); res.style.minHeight = "52px"; res.style.marginTop = "8px"; res.style.textAlign = "center";
+  card.appendChild(res);
+  var row = el("div","arow"); row.style.justifyContent = "center";
+  var play = el("button","mini"); play.type="button"; play.textContent = "▶️ Listen";
+  on(play,"click",function(){ qPlay(a.g); });
+  row.appendChild(play);
+  var mic = el("button","spk mic"); mic.type="button"; mic.textContent = "🎤"; mic.style.width="52px"; mic.style.height="52px"; mic.style.fontSize="22px";
+  on(mic,"click",function(){
+    listen("ar-SA", mic, function(heard){
+      clear(res);
+      var sc = Math.round(similarity(normText(heard), normText(a.ar)) * 100);
+      var cls = sc >= 75 ? "good" : (sc >= 50 ? "mid" : "bad");
+      res.appendChild(el("div","score " + cls, sc + "%"));
+      if(sc >= 75){
+        res.appendChild(el("div","pr","Beautiful. ✓"));
+        award(5); qAddHifz(a);
+        var nx = el("button","btn"); nx.type="button"; nx.textContent = "Next ayah →"; nx.style.marginTop="6px";
+        on(nx,"click",function(){ R.i++; qRenderRecite(); });
+        res.appendChild(nx);
+      } else {
+        res.appendChild(el("div","hint","Listen once more and match the reciter's rhythm."));
+      }
+    });
+  });
+  row.appendChild(mic);
+  var skip = el("button","mini"); skip.type="button"; skip.textContent = "Skip";
+  on(skip,"click",function(){ R.i++; qRenderRecite(); });
+  row.appendChild(skip);
+  card.appendChild(row);
+  area.appendChild(card);
+}
+
+/* ---- SAVED TRANSLATIONS view ---- */
+function renderHist(){
+  var list = $("histList"); clear(list);
+  var a = loadHist();
+  if(!a.length){
+    list.appendChild(el("div","hint","No saved translations yet — every translation you make is saved here automatically, and works offline."));
+    return;
+  }
+  for(var i=0;i<a.length;i++){
+    (function(h){
+      var item = el("div","hist-item");
+      item.appendChild(el("div","hist-dir", (h.fromName||"") + "  →  " + (h.toName||"")));
+      var row = el("div","hist-row");
+      var col = el("div","grow");
+      col.appendChild(el("div","hist-src", h.source||""));
+      var tgt = el("div","hist-tgt"); tgt.textContent = h.translation||"";
+      if(h.rtl){ tgt.style.direction="rtl"; tgt.style.textAlign="right"; }
+      col.appendChild(tgt);
+      if(h.pronunciation) col.appendChild(el("div","hist-pr","🗣 " + h.pronunciation));
+      row.appendChild(col);
+      var actions = el("div","hist-actions");
+      actions.appendChild(speakBtn(h.translation||"", h.bcp||""));
+      var del = el("button","mini"); del.type="button"; del.textContent="Delete";
+      on(del,"click",function(){ delHist(h.ts); });
+      actions.appendChild(del);
+      row.appendChild(actions);
+      item.appendChild(row);
+      list.appendChild(item);
+    })(a[i]);
+  }
+}
+
+/* =========================================================================
+   Wiring
+   ========================================================================= */
+function init(){
+  buildLangGrid("");
+  buildTopicChips();
+
+  on($("langSearch"),"input",function(e){ buildLangGrid(e.target.value); });
+  on($("changeLang"),"click",function(){ show($("picker")); show($("quranEntry")); hide($("workspace")); try{window.scrollTo(0,0);}catch(_){} });
+
+  on($("tabLearn"),"click",function(){ setMode("learn"); renderLearn(); });
+  on($("tabTranslate"),"click",function(){ setMode("translate"); });
+  on($("tabTeach"),"click",function(){ setMode("teach"); });
+  on($("tabPractice"),"click",function(){ setMode("practice"); });
+  on($("tabChat"),"click",function(){ setMode("chat"); renderChat(); });
+
+  on($("srcLang"),"change",function(e){ state.src = e.target.value; updateDstLabel(); });
+  on($("swapBtn"),"click",function(){
+    // Flip translation direction between the "other" language and the study
+    // language. If there's a previous result, feed it back in as the new input.
+    state.reversed = !state.reversed;
+    var prev = $("translateOut").getAttribute("data-translation");
+    if(prev){ $("srcText").value = prev; clear($("translateOut")); }
+    updateDstLabel();
+  });
+  on($("translateBtn"),"click",doTranslate);
+  on($("clearBtn"),"click",function(){ $("srcText").value=""; clear($("translateOut")); $("srcText").focus(); });
+  on($("srcText"),"keydown",function(e){ if((e.metaKey||e.ctrlKey) && e.key==="Enter") doTranslate(); });
+
+  on($("teachBtn"),"click",doTeach);
+  on($("askBtn"),"click",doAsk);
+  on($("askText"),"keydown",function(e){ if(e.key==="Enter") doAsk(); });
+
+  // Practice drills
+  on($("practiceGen"),"click",function(){ ensureSet(startPractice); });
+  on($("drillBtn"),"click",function(){ ensureSet(startDrill); });
+  on($("speakDrillBtn"),"click",function(){ ensureSet(startSpeak); });
+  on($("storyBtn"),"click",genStory);
+  on($("reviewBtn"),"click",startReview);
+  on($("statChip"),"click",function(){ if(state.lang){ setMode("learn"); renderLearn(); } });
+
+  // Chat
+  on($("chatSend"),"click",function(){ sendChat(false); });
+  on($("chatInput"),"keydown",function(e){ if(e.key==="Enter") sendChat(false); });
+  on($("chatStart"),"click",function(){ state.chat=[]; sendChat(true); });
+  on($("chatClear"),"click",function(){ state.chat=[]; renderChat(); });
+
+  // Live interpreter
+  buildLiveSelects();
+  on($("tabLive"),"click",function(){ setMode("live"); });
+  on($("liveBtn"),"click",function(){ if(live.on) liveStop(); else liveStart(); });
+  on($("liveSwap"),"click",function(){
+    var f = $("liveFrom"), t = $("liveTo"), tmp = f.value; f.value = t.value; t.value = tmp;
+    if(live.on){ liveStop(); liveStart(); }
+  });
+  on($("liveFrom"),"change",function(){ if(live.on){ liveStop(); liveStart(); } });
+  on($("liveSpeakToggle"),"click",function(){
+    live.speak = !live.speak;
+    $("liveSpeakToggle").setAttribute("aria-selected", live.speak ? "true" : "false");
+  });
+  on($("liveClear"),"click",function(){ clear($("liveFeed")); live.interimEl = null; });
+
+  // Qur'an studio
+  on($("quranOpen"),"click",openQuran);
+  on($("quranClose"),"click",closeQuran);
+  on($("qSurah"),"change",function(e){ qstate.hifz = null; qstate.recite = null; qLoadSurah(parseInt(e.target.value, 10) || 1); });
+  on($("qmRead"),"click",function(){ qSetMode("read"); });
+  on($("qmHifz"),"click",function(){ qSetMode("hifz"); });
+  on($("qmRecite"),"click",function(){ qSetMode("recite"); });
+  on($("qmReview"),"click",function(){ qSetMode("review"); });
+  on($("qTrToggle"),"click",function(){ qstate.tr = !qstate.tr; $("qTrToggle").setAttribute("aria-selected", qstate.tr ? "true":"false"); if(qstate.mode !== "review") qRender(); });
+  on($("qTlToggle"),"click",function(){ qstate.tl = !qstate.tl; $("qTlToggle").setAttribute("aria-selected", qstate.tl ? "true":"false"); if(qstate.mode !== "review") qRender(); });
+
+  // Speech input (mic) — translate uses the "from" language; chat uses the target.
+  wireMic($("translateMic"),
+    function(){ return state.reversed ? bcpForLang(state.lang, state.dialect) : bcpForLang(otherLang(), null); },
+    function(t){ var ta=$("srcText"); ta.value = (ta.value ? ta.value+" " : "") + t; });
+  wireMic($("chatMic"),
+    function(){ return bcpForLang(state.lang, state.dialect); },
+    function(t){ var ci=$("chatInput"); ci.value = (ci.value ? ci.value+" " : "") + t; });
+
+  // Saved translations panel
+  on($("histBtn"),"click",function(){
+    var p = $("historyPanel");
+    if(p.classList.contains("hidden")){ renderHist(); show(p); try{ p.scrollIntoView({behavior:"smooth"}); }catch(_){} }
+    else { hide(p); }
+  });
+  on($("histClear"),"click",function(){ saveHist([]); renderHist(); });
+
+  // Theme toggle
+  on($("themeBtn"),"click",toggleTheme);
+  initTheme(); // set the button icon now that the DOM is ready
+
+  // AI pill / modal
+  on($("aiPill"),"click",function(){ refreshKeyStatus(); show($("aiModal")); });
+  on($("aiClose"),"click",function(){ hide($("aiModal")); });
+  on($("aiRetry"),"click",function(){ checkLive().then(function(ok){ if(ok) hide($("aiModal")); }); });
+
+  // BYOK key controls
+  on($("byokSave"),"click",function(){
+    var v = ($("byokInput").value || "").trim();
+    if(!v){ $("byokInput").focus(); return; }
+    setKey(v); $("byokInput").value = "";
+    checkLive(); refreshKeyStatus();
+  });
+  on($("byokClear"),"click",function(){ setKey(""); checkLive(); refreshKeyStatus(); });
+
+  // detect the proxy (no-op offline)
+  checkLive();
+  renderStats();
+}
+
+/* run after DOM is parsed; smoke-test stubs make every call above safe */
+if(document.readyState === "loading"){ on(document,"DOMContentLoaded",init); } else { init(); }
+
+/* PWA service worker — guarded & .catch() only, mirroring the other prototypes
+   so the headless smoke test never executes a real registration. */
+if("serviceWorker" in navigator){
+  on(window,"load",function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); });
+}
+</script>
+</body>
+</html>

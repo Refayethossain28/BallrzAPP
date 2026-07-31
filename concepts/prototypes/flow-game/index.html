@@ -1,0 +1,1570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Flow — adaptive arcade</title>
+<meta name="description" content="Stay in the zone. A one-thumb arcade that learns your skill and keeps every round on the edge." />
+<meta name="theme-color" content="#06070e" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Flow" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icon-180.png" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%233ae1ff'/%3E%3Cstop offset='.55' stop-color='%239a7bff'/%3E%3Cstop offset='1' stop-color='%23ff63b6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='14' fill='%23070912'/%3E%3Ccircle cx='32' cy='32' r='20' fill='none' stroke='url(%23g)' stroke-width='4'/%3E%3Ccircle cx='32' cy='32' r='9' fill='url(%23g)'/%3E%3C/svg%3E" />
+<style>
+  :root{
+    --bg0:#06070e; --panel:rgba(255,255,255,.05); --ink:#eaf0ff; --muted:#8b94b8;
+    --line:rgba(255,255,255,.10);
+    --c1:#3ae1ff; --c2:#9a7bff; --c3:#ff63b6;
+    --accent:#3ae1ff; --good:#36f0a6; --bad:#ff5d6c; --band:#ffd166; --vs:#b388ff;
+    --grad:linear-gradient(135deg,var(--c1),var(--c2) 55%,var(--c3));
+    --mono:'Courier New', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;color:var(--ink);overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
+    background:
+      radial-gradient(80% 55% at 50% -8%, rgba(154,123,255,.22), transparent 60%),
+      radial-gradient(70% 50% at 92% 6%, rgba(58,225,255,.14), transparent 55%),
+      radial-gradient(90% 60% at 8% 102%, rgba(255,99,182,.13), transparent 55%),
+      var(--bg0);}
+  body::before{content:"";position:fixed;inset:-20%;z-index:0;pointer-events:none;filter:blur(22px);
+    background:radial-gradient(40% 30% at 30% 30%, rgba(58,225,255,.10), transparent 60%),
+              radial-gradient(40% 30% at 70% 70%, rgba(154,123,255,.10), transparent 60%);
+    animation:drift 18s ease-in-out infinite alternate}
+  @keyframes drift{from{transform:translate3d(-3%,-2%,0) scale(1)}to{transform:translate3d(3%,3%,0) scale(1.08)}}
+  #wrap{position:relative;z-index:1;display:flex;flex-direction:column;height:100%;max-width:520px;margin:0 auto;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+  @supports (height:100dvh){ html,body{height:100dvh} }   /* true full-screen on mobile */
+  #haptswitch,#haptlabel{position:fixed;bottom:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none;z-index:-1}
+
+  header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px}
+  header h1{font-size:19px;margin:0;font-weight:800;letter-spacing:3px;line-height:1;
+    background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+    filter:drop-shadow(0 0 14px rgba(96,150,255,.35))}
+  header h1 .sub{display:block;margin-top:2px;font-size:8.5px;letter-spacing:2.5px;font-weight:700;
+    text-transform:uppercase;color:var(--muted);-webkit-text-fill-color:var(--muted)}
+  .chip{display:inline-flex;align-items:center;font-size:11px;color:var(--muted);
+    background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 11px;backdrop-filter:blur(8px)}
+  #muteBtn{appearance:none;color:var(--ink);background:var(--panel);border:1px solid var(--line);
+    border-radius:50%;width:34px;height:34px;font-size:14px;cursor:pointer;line-height:1;backdrop-filter:blur(8px)}
+  #fxBtn{appearance:none;color:var(--muted);background:var(--panel);border:1px solid var(--line);
+    border-radius:999px;height:34px;padding:0 11px;font:700 10px/1 var(--mono);letter-spacing:1px;cursor:pointer;backdrop-filter:blur(8px)}
+  body.lowfx #grain{display:none}
+  body.lowfx #stage,body.lowfx #stage::before{animation:none}
+
+  #stage{position:relative;flex:1;margin:0 12px;border-radius:22px;overflow:hidden;touch-action:none;
+    border:1px solid var(--line);
+    background:linear-gradient(180deg,rgba(58,225,255,.06),transparent 30%),
+      radial-gradient(120% 90% at 50% -10%,#161d33 0%,#0a0d1a 70%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06), 0 20px 50px -22px rgba(0,0,0,.85), 0 0 60px -22px rgba(96,150,255,.4)}
+  @keyframes stageglow{
+    0%,100%{box-shadow:inset 0 1px 0 rgba(255,255,255,.06), 0 20px 50px -22px rgba(0,0,0,.85), 0 0 46px -24px rgba(58,225,255,.55)}
+    50%{box-shadow:inset 0 1px 0 rgba(255,255,255,.06), 0 20px 50px -22px rgba(0,0,0,.85), 0 0 78px -16px rgba(154,123,255,.8)}}
+  /* moving CRT scan-sweep bar */
+  #stage::before{content:"";position:absolute;left:0;right:0;height:20%;z-index:3;pointer-events:none;
+    background:linear-gradient(180deg,transparent,rgba(160,200,255,.08),transparent);animation:scansweep 4.5s linear infinite}
+  @keyframes scansweep{0%{top:-20%}100%{top:100%}}
+  /* cinematic film grain */
+  #grain{position:absolute;inset:-60%;z-index:4;pointer-events:none;opacity:.05;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size:180px 180px;animation:grain .5s steps(2) infinite}
+  @keyframes grain{0%{transform:translate(0,0)}50%{transform:translate(-4%,3%)}100%{transform:translate(3%,-2%)}}
+  canvas#game{display:block;width:100%;height:100%;position:relative;z-index:1}
+  #gpufx{position:absolute;inset:0;z-index:1;width:100%;height:100%;pointer-events:none;display:none}
+  canvas#game.shake{animation:shake .4s cubic-bezier(.36,.07,.19,.97)}
+  /* CRT: scanlines + vignette over the play */
+  #stage::after{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;
+    background:
+      repeating-linear-gradient(0deg, rgba(0,0,0,.09) 0 1px, transparent 1px 3px),
+      radial-gradient(120% 90% at 50% 50%, transparent 54%, rgba(0,0,0,.5))}
+
+  /* full-SCREEN overlays (menu / pause / handoff / result / over) */
+  .screen{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;
+    flex-direction:column;text-align:center;gap:12px;
+    padding:max(18px,env(safe-area-inset-top)) 20px max(18px,env(safe-area-inset-bottom));
+    background:rgba(7,9,16,.84);backdrop-filter:blur(14px) saturate(1.2);overflow:auto}
+  .screen h2{margin:0;font-family:var(--mono);font-size:28px;font-weight:800;letter-spacing:2px;text-transform:uppercase;
+    background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .screen p{margin:0;color:var(--muted);font-size:13px;line-height:1.55;max-width:340px}
+  .screen .lead{color:var(--ink);font-size:15px;font-weight:600}
+  .screen .tiny{font-size:11px;opacity:.65}
+  .demo{width:min(330px,90%);height:92px;border-radius:14px;border:1px solid var(--line);
+    background:rgba(0,0,0,.25);box-shadow:inset 0 0 30px rgba(96,150,255,.10)}
+
+  #pauseBtn{position:absolute;top:12px;right:12px;z-index:5;display:none;place-items:center;
+    width:40px;height:40px;border-radius:50%;border:1px solid var(--line);
+    background:rgba(12,16,28,.7);backdrop-filter:blur(8px);color:var(--ink);font-size:14px;cursor:pointer}
+
+  button.cta{appearance:none;border:0;border-radius:14px;padding:14px 26px;font-size:15px;font-weight:700;
+    letter-spacing:.3px;color:#04121c;cursor:pointer;
+    background:var(--grad);box-shadow:0 8px 24px -8px rgba(58,225,255,.55),inset 0 1px 0 rgba(255,255,255,.4);
+    transition:transform .08s ease}
+  button.cta:active{transform:translateY(1px) scale(.99)}
+  button.cta.ghost{background:var(--panel);color:var(--ink);border:1px solid var(--line);box-shadow:none;backdrop-filter:blur(8px)}
+  button.cta.vs{background:linear-gradient(135deg,#a070ff,#ff63b6);color:#fff;
+    box-shadow:0 8px 24px -8px rgba(255,99,182,.55),inset 0 1px 0 rgba(255,255,255,.35)}
+  .btnrow{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+  .menucol{display:flex;flex-direction:column;gap:10px;width:min(280px,82%)}
+  .menucol .cta{width:100%}
+  button.share{appearance:none;border:1px solid var(--line);background:var(--panel);color:var(--muted);
+    border-radius:999px;padding:8px 14px;font-size:12px;cursor:pointer;backdrop-filter:blur(8px)}
+
+  /* bottom: "live engine" telemetry, styled as a premium HUD */
+  .telhead{display:flex;align-items:center;gap:8px;padding:12px 16px 7px;
+    font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);font-weight:700}
+  .telhead .dot{width:7px;height:7px;border-radius:50%;background:var(--good);
+    box-shadow:0 0 10px var(--good);animation:pulse 1.6s ease-in-out infinite}
+  .telhead .grow{flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
+  .telhead b{color:var(--ink)}
+  @keyframes pulse{0%,100%{opacity:.45}50%{opacity:1}}
+  .hud{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;padding:0 12px}
+  .card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:16px;
+    padding:11px 12px;backdrop-filter:blur(8px);overflow:hidden}
+  .card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--grad);opacity:.9}
+  .card .k{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;font-weight:600}
+  .card .v{font-size:22px;font-weight:800;margin-top:3px;letter-spacing:.5px;
+    font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+  .card .v small{font-size:11px;color:var(--muted);font-weight:600}
+  #flowwrap{padding:12px 12px 6px}
+  #flowbar{position:relative;height:34px;border-radius:12px;overflow:hidden;border:1px solid var(--line);
+    background:linear-gradient(90deg, rgba(255,93,108,.20), rgba(54,240,166,.10) 55%, rgba(255,255,255,.04))}
+  #band{position:absolute;top:0;bottom:0;background:rgba(255,209,102,.18);
+    border-left:1px dashed var(--band);border-right:1px dashed var(--band);box-shadow:inset 0 0 20px rgba(255,209,102,.25)}
+  #served{position:absolute;top:4px;bottom:4px;width:4px;border-radius:3px;background:#fff;
+    box-shadow:0 0 12px var(--c1),0 0 4px #fff;transition:left .35s cubic-bezier(.2,.7,.2,1)}
+  #flowlabel{display:flex;justify-content:space-between;font-size:9.5px;color:var(--muted);margin-top:5px;letter-spacing:.3px}
+  #spark{padding:0 12px 8px}
+  #spark canvas{height:48px;width:100%;border-radius:12px;border:1px solid var(--line);background:rgba(0,0,0,.22)}
+  .legend{font-size:10px;color:var(--muted);text-align:center;padding:2px 16px 12px;line-height:1.5}
+  .legend b{color:var(--ink);font-weight:600}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:9.5px;font-weight:700}
+  #cosmetics{display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap}
+  .swatch{width:32px;height:32px;border-radius:50%;border:2px solid rgba(255,255,255,.25);cursor:pointer;
+    position:relative;display:flex;align-items:center;justify-content:center;font-size:11px;
+    box-shadow:0 0 12px -2px currentColor}
+  .swatch.sel{outline:2px solid #fff;outline-offset:2px}
+  .swatch.locked{cursor:not-allowed;opacity:.4;box-shadow:none}
+  .swatch .lk{position:absolute;font-size:10px;color:#cfd9e4}
+  .cosline{font-size:10px;color:var(--muted)}
+
+  /* intro splash */
+  #splash{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:18px;transition:opacity .55s ease;
+    background:radial-gradient(60% 50% at 50% 45%, #11152a, #06070e 75%)}
+  #splash.gone{opacity:0;pointer-events:none}
+  .splogo-wrap{position:relative;display:grid;place-items:center}
+  .splogo-wrap::before,.splogo-wrap::after{content:"";position:absolute;border-radius:50%}
+  .splogo-wrap::before{width:220px;height:220px;border:1px solid rgba(120,160,255,.35);animation:ring 2.4s ease-out infinite}
+  .splogo-wrap::after{width:150px;height:150px;border:1px solid rgba(255,99,182,.3);animation:ring 2.4s ease-out .6s infinite}
+  @keyframes ring{0%{transform:scale(.6);opacity:.8}100%{transform:scale(1.35);opacity:0}}
+  .splogo{font-size:64px;font-weight:900;letter-spacing:9px;
+    background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+    filter:drop-shadow(0 0 26px rgba(96,150,255,.55));animation:logoin 1s cubic-bezier(.2,.8,.2,1) both}
+  @keyframes logoin{0%{opacity:0;transform:translateY(10px) scale(.82);filter:blur(8px)}100%{opacity:1;transform:none}}
+  .sptag{font-size:12px;letter-spacing:4px;text-transform:uppercase;color:var(--muted);font-weight:600;animation:fadein 1s ease .5s both}
+  .spbar{width:160px;height:3px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden}
+  .spbar i{display:block;height:100%;width:40%;border-radius:3px;background:var(--grad);animation:load 1.5s ease-in-out infinite}
+  @keyframes load{0%{margin-left:-40%}100%{margin-left:100%}}
+  .sphint{font-size:11px;color:var(--muted);opacity:.6;animation:fadein 1s ease 1.4s both}
+  @keyframes fadein{from{opacity:0}to{opacity:1}}
+
+  /* game-over + lives juice (canvas#game.shake animates this) */
+  @keyframes shake{10%,90%{transform:translateX(-3px)}20%,80%{transform:translateX(4px)}
+    30%,50%,70%{transform:translateX(-8px)}40%,60%{transform:translateX(8px)}}
+  .bigscore{font-family:var(--mono);font-size:58px;font-weight:900;letter-spacing:3px;line-height:1;
+    background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+    filter:drop-shadow(0 0 22px rgba(96,150,255,.4))}
+  .menustat{display:inline-flex;align-items:center;font-size:11px;color:var(--muted);font-weight:600;
+    background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 12px;backdrop-filter:blur(8px)}
+
+  /* ---- title-screen treatment ---- */
+  .screen.menu{justify-content:center;gap:11px}
+  .hero{position:relative;display:grid;place-items:center;padding:10px 0 2px;margin-bottom:2px}
+  .hero::before,.hero::after{content:"";position:absolute;border-radius:50%;pointer-events:none}
+  .hero::before{width:148px;height:148px;border:1px solid rgba(120,160,255,.22);animation:spin 16s linear infinite}
+  .hero::after{width:108px;height:108px;border:1px dashed rgba(255,99,182,.20);animation:spin 11s linear infinite reverse}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .hero-title{position:relative;font-family:var(--mono);font-size:52px;font-weight:900;letter-spacing:8px;line-height:1;
+    background:linear-gradient(100deg,#3ae1ff,#9a7bff,#ff63b6,#3ae1ff);background-size:220% 100%;
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+    filter:drop-shadow(0 0 26px rgba(96,150,255,.45));animation:shimmer 6s linear infinite}
+  @keyframes shimmer{to{background-position:220% 0}}
+  .hero-tag{position:relative;margin-top:9px;font-size:10.5px;letter-spacing:5px;text-transform:uppercase;
+    color:var(--muted);font-weight:700}
+
+  .rules{display:flex;flex-direction:column;gap:8px;width:min(330px,94%)}
+  .rule{display:flex;align-items:center;gap:11px;font-size:13.5px;color:var(--ink);text-align:left;
+    background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:9px 12px;backdrop-filter:blur(8px)}
+  .ic{width:30px;height:30px;flex:0 0 30px;border-radius:9px;display:grid;place-items:center;font-size:15px}
+  .ic-tap{background:rgba(58,225,255,.16);box-shadow:inset 0 0 0 1px rgba(58,225,255,.45)}
+  .ic-avoid{background:rgba(255,93,108,.16);box-shadow:inset 0 0 0 1px rgba(255,93,108,.45)}
+  .ic-bonus{background:rgba(255,209,102,.16);box-shadow:inset 0 0 0 1px rgba(255,209,102,.45)}
+  .ic-pow{background:rgba(154,123,255,.16);box-shadow:inset 0 0 0 1px rgba(154,123,255,.45);color:#b9a3ff}
+
+  .menu-cta{display:flex;flex-direction:column;gap:10px;width:min(330px,94%)}
+  .cta.big{display:flex;flex-direction:column;align-items:center;gap:1px;padding:13px;border-radius:16px;
+    position:relative;overflow:hidden}
+  .cta.big b{font-size:16px;letter-spacing:.3px}
+  .cta.big small{font-weight:600;font-size:11px;color:rgba(4,18,28,.66)}
+  .cta.big::after{content:"";position:absolute;top:0;left:-60%;width:40%;height:100%;
+    background:linear-gradient(100deg,transparent,rgba(255,255,255,.5),transparent);
+    transform:skewX(-18deg);animation:sheen 4.5s ease-in-out infinite}
+  @keyframes sheen{0%,72%{left:-60%}88%{left:130%}100%{left:130%}}
+  .cta-row{display:flex;gap:10px}
+  .cta-row .cta{flex:1}
+  .menu-note{font-size:12px;max-width:320px}
+  .menu-foot{display:flex;align-items:center;gap:10px;justify-content:center}
+  .press-start{font-family:var(--mono);font-size:12px;font-weight:800;letter-spacing:3px;
+    color:var(--c1);text-shadow:0 0 10px rgba(58,225,255,.6);animation:blink 1.1s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+  @media (prefers-reduced-motion: reduce){
+    .hero::before,.hero::after,.hero-title,.cta.big::after,body::before,.press-start,
+    #stage,#stage::before,#grain{animation:none}
+  }
+</style>
+</head>
+<body>
+<!-- iOS haptic shim: iOS has no Vibration API, but toggling a real <input switch>
+     through its <label> fires a light system haptic on iOS 17.4+. -->
+<input type="checkbox" id="haptswitch" switch tabindex="-1" aria-hidden="true">
+<label for="haptswitch" id="haptlabel" aria-hidden="true"></label>
+<!-- intro splash -->
+<div id="splash">
+  <div class="splogo-wrap"><div class="splogo">FLOW</div></div>
+  <div class="sptag">stay in the zone</div>
+  <div class="spbar"><i></i></div>
+  <div class="sphint">tap to continue</div>
+</div>
+
+<div id="wrap">
+  <header>
+    <h1>FLOW<span class="sub">adaptive arcade</span></h1>
+    <div style="display:flex;align-items:center;gap:10px">
+      <button id="fxBtn" aria-label="Graphics quality">FX·HI</button>
+      <button id="muteBtn" aria-label="Mute sound">🔊</button>
+      <span class="chip" id="seedLabel">seed —</span>
+    </div>
+  </header>
+
+  <div id="stage">
+    <canvas id="game"></canvas>
+    <canvas id="gpufx"></canvas>
+    <div id="grain"></div>
+    <button id="pauseBtn" aria-label="Pause">⏸</button>
+
+    <!-- start / how-to -->
+    <div id="overlay" class="screen menu">
+      <div class="hero">
+        <div class="hero-title">FLOW</div>
+        <div class="hero-tag">stay in the zone</div>
+      </div>
+
+      <div class="rules">
+        <div class="rule"><span class="ic ic-tap">👆</span><span>Pop the glowing circle before it fades</span></div>
+        <div class="rule"><span class="ic ic-avoid">⛔</span><span>Dodge the red <b style="color:var(--bad)">✕</b> decoys</span></div>
+        <div class="rule"><span class="ic ic-bonus">⭐</span><span>Grab bonus drops for extra points</span></div>
+        <div class="rule"><span class="ic ic-pow">◆</span><span>Catch power-ups: <b style="color:#7ee0ff">❄ slow</b> · <b style="color:#ffd166">✦ 2×</b> · <b style="color:var(--vs)">⛨ shield</b></span></div>
+      </div>
+
+      <canvas id="demoC" class="demo"></canvas>
+
+      <div class="press-start">▸ PRESS START ◂</div>
+      <div class="menu-cta">
+        <button class="cta big" id="dailyBtn"><b>▶ Daily challenge</b><small>3 lives · today's seed</small></button>
+        <div class="cta-row">
+          <button class="cta ghost" id="freeBtn">Free play</button>
+          <button class="cta vs" id="twoBtn">👥 2-Player</button>
+        </div>
+      </div>
+
+      <p class="menu-note">Learns your skill and keeps every round
+        <b style="color:var(--band)">~60% winnable</b> — never boring, never rage-quit.</p>
+
+      <div class="menu-foot">
+        <span class="menustat" id="menuBest">★ Best 0</span>
+        <button class="share" id="shareBtn">🔗 Share</button>
+      </div>
+      <div id="cosmetics"></div>
+      <div class="cosline" id="cosLine">Ring skin — unlocks at your lifetime best</div>
+    </div>
+
+    <!-- pause menu -->
+    <div id="pauseMenu" class="screen" style="display:none">
+      <h2>Paused</h2>
+      <div class="menucol">
+        <button class="cta" id="resumeBtn">▶ Resume</button>
+        <button class="cta ghost" id="restartBtn">↻ Restart</button>
+        <button class="cta ghost" id="menuBtn">⏏ End &amp; main menu</button>
+      </div>
+    </div>
+
+    <!-- 2-player hand-off -->
+    <div id="handoff" class="screen" style="display:none">
+      <h2>Pass the phone 📲</h2>
+      <p class="lead" id="handoffScore">Player 1 done</p>
+      <p class="sub">Hand the phone to <b style="color:var(--vs)">Player 2</b>. You both get the
+         <b>same levels</b> for 30 seconds — highest score wins.</p>
+      <button class="cta vs" id="readyBtn">Player 2 ready →</button>
+    </div>
+
+    <!-- 2-player result -->
+    <div id="result" class="screen" style="display:none">
+      <h2 id="resultTitle">Result</h2>
+      <p class="lead" id="resultScores"></p>
+      <div class="btnrow">
+        <button class="cta" id="okBtn">OK</button>
+        <button class="cta ghost" id="rematchBtn">Rematch</button>
+      </div>
+    </div>
+
+    <!-- 1-player game over -->
+    <div id="over" class="screen" style="display:none">
+      <h2>Game over</h2>
+      <div class="bigscore" id="overScore">0</div>
+      <p class="lead" id="overBest">Best 0</p>
+      <div class="btnrow">
+        <button class="cta" id="againBtn">Play again</button>
+        <button class="cta ghost" id="overMenuBtn">Menu</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="telhead">
+    <span class="dot"></span> Live engine
+    <span class="grow"></span>
+    <span>pool · <b id="poolN">0</b> levels</span>
+  </div>
+
+  <div class="hud">
+    <div class="card"><div class="k">Your skill</div><div class="v" id="skillV">—</div></div>
+    <div class="card"><div class="k">Difficulty</div><div class="v" id="diffV">—</div></div>
+    <div class="card"><div class="k">Win chance</div><div class="v" id="pwinV">—</div></div>
+  </div>
+
+  <div id="flowwrap">
+    <div id="flowbar">
+      <div id="band"></div>
+      <div id="served"></div>
+    </div>
+    <div id="flowlabel"><span>too hard</span><span>◆ flow zone</span><span>too easy</span></div>
+  </div>
+
+  <div id="spark"><canvas id="sparkC"></canvas></div>
+  <div class="legend">
+    <span class="pill" style="background:rgba(54,240,166,.18);color:var(--good)">live pass-rate</span>
+    homing in on the <b style="color:var(--band)">flow target</b> as it learns you
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ------------------------------------------------------------------ *
+ * Flow — a single-file prototype for Concept 2 (AI Infinite Game).
+ *
+ * Demonstrates the three load-bearing ideas from the architecture doc:
+ *   1. OFFLINE-GENERATED POOL  -> generateLevelPool() builds a large library
+ *      of parameterized levels once, each tagged with an intrinsic difficulty
+ *      vector. (In production this is the batched AI generation pipeline; we
+ *      do NOT generate in the hot path.)
+ *   2. ON-DEVICE SKILL MODEL   -> the player's skill is a single latent value
+ *      updated locally from outcomes (logistic / Elo-style). No server.
+ *   3. ONLINE FLOW SELECTION   -> each round we *select* (not generate) the
+ *      pool level whose predicted win-probability for THIS player is closest
+ *      to the flow target, with a little exploration for variety.
+ *
+ * Modes: 1-player endless (adaptive) and a 2-player pass-and-play duel
+ * (same seed -> identical levels for both -> fair time attack).
+ * ------------------------------------------------------------------ */
+
+/* ---------- deterministic RNG so a "seed" reproduces a session ---------- */
+function makeRng(seed){
+  let s = seed >>> 0;
+  return function(){ // mulberry32
+    s |= 0; s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+/* ---------- seed: daily challenge / shareable / free play ---------- */
+function hashStr(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return h>>>0;}
+function dailySeed(){const d=new Date();return hashStr('flow-'+d.getUTCFullYear()+'-'+(d.getUTCMonth()+1)+'-'+d.getUTCDate());}
+const urlSeed = new URLSearchParams(location.search).get('seed');
+let SEED, mode;
+if(urlSeed){ SEED = (parseInt(urlSeed,36)>>>0) || hashStr(urlSeed); mode='shared'; }
+else { SEED = dailySeed(); mode='daily'; }   // default to today's challenge
+let rng = makeRng(SEED);
+function setSeedLabel(){
+  const tag = mode==='daily'?'daily · ' : mode==='shared'?'shared · ' : mode==='2p'?'2-player · ' : 'free · ';
+  document.getElementById('seedLabel').textContent = tag + SEED.toString(36);
+}
+setSeedLabel();
+
+/* ---------- cosmetics: identity investment, not pay-to-win ---------- */
+const SKINS=[
+  {id:'aqua',   name:'Aqua',   ring:'#4cc2ff', fill:'rgba(76,194,255,.16)',  need:0},
+  {id:'mint',   name:'Mint',   ring:'#3ddc97', fill:'rgba(61,220,151,.16)',  need:25},
+  {id:'gold',   name:'Gold',   ring:'#ffd166', fill:'rgba(255,209,102,.16)', need:75},
+  {id:'violet', name:'Violet', ring:'#b388ff', fill:'rgba(179,136,255,.16)', need:150},
+];
+let best = +(localStorage.getItem('flow.best')||0);
+let skinId = localStorage.getItem('flow.skin')||'aqua';
+function skin(){ return SKINS.find(s=>s.id===skinId) || SKINS[0]; }
+
+/* ---------- difficulty model ---------- */
+const K = 6.0;                       // logistic steepness
+const FLOW_TARGET = 0.60;            // we aim to keep predicted win here
+const winProb = (skill, diff) => 1 / (1 + Math.exp(-K * (skill - diff)));
+
+function paramsToDifficulty(p){
+  const sizeHard = 1 - (p.radius - 22) / (54 - 22);      // 0 easy .. 1 hard
+  const lifeHard = 1 - (p.lifeMs - 650) / (1900 - 650);
+  const speedHard = p.speed / 130;
+  const decoyHard = p.decoys / 4;
+  let d = 0.34*sizeHard + 0.32*lifeHard + 0.18*speedHard + 0.16*decoyHard;
+  return Math.max(0, Math.min(1, d));
+}
+
+/* ---------- the "offline" generation pipeline ---------- */
+function generateLevelPool(n){
+  const pool = [];
+  for (let i=0;i<n;i++){
+    const p = {
+      radius: 22 + rng()*32,
+      lifeMs: 650 + rng()*1250,
+      speed:  rng()*rng()*130,
+      decoys: Math.floor(rng()*rng()*5),
+    };
+    p.diff = paramsToDifficulty(p);
+    pool.push(p);
+  }
+  pool.sort((a,b)=>a.diff-b.diff);
+  return pool;
+}
+const POOL = generateLevelPool(240);
+document.getElementById('poolN').textContent = POOL.length;
+
+/* ---------- on-device skill model ---------- */
+const player = { skill: 0.45, rounds: 0, passHistory: [] };
+function updateSkill(level, won){
+  const expected = winProb(player.skill, level.diff);
+  const lr = 0.30 / (1 + player.rounds*0.06) + 0.025;
+  player.skill += lr * ((won?1:0) - expected);
+  player.skill = Math.max(0.02, Math.min(0.98, player.skill));
+  player.rounds++;
+  player.passHistory.push(won?1:0);
+  if (player.passHistory.length > 40) player.passHistory.shift();
+}
+
+/* ---------- level selection ---------- */
+let lastIdx = -1;
+function selectLevel(){
+  if(state==='match') return selectMatchLevel();   // 2P: fixed, skill-independent
+  // 1P adaptive: nearest predicted win-prob to the flow target, with exploration
+  let best=null, bestScore=Infinity, bestIdx=-1;
+  for (let t=0;t<24;t++){
+    const idx = Math.floor(rng()*POOL.length);
+    if (idx === lastIdx) continue;
+    const lvl = POOL[idx];
+    const score = Math.abs(winProb(player.skill, lvl.diff) - flowTarget());
+    if (score < bestScore){ bestScore=score; best=lvl; bestIdx=idx; }
+  }
+  lastIdx = bestIdx;
+  return best;
+}
+/* 2P: a gentle difficulty ramp driven only by the seeded RNG, so both players
+ * (who reset to the same seed) face a pixel-identical sequence of rounds. */
+function selectMatchLevel(){
+  const target = 0.30 + 0.40*Math.min(1, matchRound/24);  // ramps 0.30 -> 0.70
+  let best=null, bs=Infinity;
+  for(let k=0;k<20;k++){
+    const lvl = POOL[Math.floor(rng()*POOL.length)];
+    const s = Math.abs(lvl.diff - target);
+    if(s<bs){ bs=s; best=lvl; }
+  }
+  matchRound++;
+  return best;
+}
+
+/* ================================================================== *
+ *  Rendering, screens, and game control
+ * ================================================================== */
+const stage    = document.getElementById('stage');
+const cv       = document.getElementById('game');
+const ctx      = cv.getContext('2d');
+const gcv      = document.getElementById('gpufx');   // WebGPU post-processing output canvas
+const demoCv   = document.getElementById('demoC');
+const demoCtx  = demoCv.getContext('2d');
+const pauseBtn = document.getElementById('pauseBtn');
+const muteBtn  = document.getElementById('muteBtn');
+const fxBtn    = document.getElementById('fxBtn');
+let gpu=null, gpuTried=false;                            // WebGPU enhancer (null unless it inits)
+let fxMode = localStorage.getItem('flow.fxmode') || 'auto';   // 'auto'(GPU if available) | 'hi' | 'lo'
+let fxHigh = (fxMode!=='lo');                            // post-FX on at all
+function gpuActive(){ return !!gpu && fxMode==='auto'; } // GPU path engaged this frame
+function fxLabel(){ return fxMode==='lo' ? 'FX·LO' : (gpuActive() ? 'FX·GPU' : 'FX·HI'); }
+function applyFx(){
+  fxHigh = (fxMode!=='lo');
+  document.body.classList.toggle('lowfx', fxMode==='lo');
+  if(gcv && !gpuActive()) gcv.style.display='none';
+  if(fxBtn) fxBtn.textContent = fxLabel();
+}
+function cycleFx(){      // GPU → HI → LO → … (tap to leave the GPU look if you want)
+  fxMode = fxMode==='auto' ? 'hi' : (fxMode==='hi' ? 'lo' : 'auto');
+  localStorage.setItem('flow.fxmode', fxMode); applyFx();
+}
+
+/* ---------- audio: ting/buzz SFX + a synth techno loop (Web Audio, no assets) ---------- */
+let actx=null, master=null, noiseBuf=null;
+let analyser=null, freqData=null;                       // audio-reactive visuals
+let musicGain=null, musicSrc=null, musicBuf=null, musicWant=false, musicLoading=false, musicAt=0, musicStart=0;
+let muted = (localStorage.getItem('flow.muted')==='1');
+/* Play the soundtrack THROUGH Web Audio (bufferSource -> gain -> analyser -> out)
+ * so the AnalyserNode reliably sees the signal. Routing an <audio> element through
+ * Web Audio reads silent on iOS Safari, which is why the border wasn't dancing. */
+function musicGraph(){
+  if(musicGain || !actx) return;
+  musicGain=actx.createGain(); musicGain.gain.value = muted?0:0.85;
+  analyser=actx.createAnalyser(); analyser.fftSize=512; analyser.smoothingTimeConstant=0.72;
+  freqData=new Uint8Array(analyser.frequencyBinCount);
+  musicGain.connect(analyser); analyser.connect(actx.destination);
+}
+function ensureAudio(){
+  if(actx){ if(actx.state==='suspended') actx.resume(); return; }
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if(!AC) return;
+  actx = new AC();
+  master = actx.createGain(); master.gain.value = muted?0:0.6; master.connect(actx.destination);
+}
+function setMuted(m){
+  muted=m; localStorage.setItem('flow.muted', m?'1':'0');
+  if(master) master.gain.value = m?0:0.7;
+  if(musicGain) musicGain.gain.value = m?0:0.85;
+  muteBtn.textContent = m?'🔇':'🔊';
+}
+/* 8-bit "blip" — stepped square arpeggio, classic arcade pop */
+function ting(){
+  if(!actx || muted) return;
+  const t=actx.currentTime, o=actx.createOscillator(), g=actx.createGain();
+  o.type='square';
+  o.frequency.setValueAtTime(880,t);
+  o.frequency.setValueAtTime(1320,t+0.05);
+  g.gain.setValueAtTime(0.32,t);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+0.14);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t+0.16);
+}
+/* descending square "bzzt" error when you hit a red decoy */
+function buzz(){
+  if(!actx || muted) return;
+  const t=actx.currentTime, o=actx.createOscillator(), g=actx.createGain();
+  o.type='square';
+  o.frequency.setValueAtTime(160,t);
+  o.frequency.setValueAtTime(120,t+0.06);
+  o.frequency.setValueAtTime(90,t+0.12);
+  g.gain.setValueAtTime(0.4,t);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+0.26);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t+0.28);
+}
+/* techno loop, scheduled on a sixteenth-note grid with a lookahead timer */
+const BPM=126, STEP=60/BPM/4;
+const BASS=[55,0,0,55, 0,55,0,0, 55,0,0,55, 0,55,0,82];
+const LEAD=[0,7,12,7, 3,10,15,10, 5,12,17,12, 7,14,19,14];   // semitone offsets — chiptune arp
+let musicOn=false, schedTimer=null, nextStepTime=0, stepIx=0;
+function noise(){
+  if(!noiseBuf){ noiseBuf=actx.createBuffer(1, actx.sampleRate*0.2, actx.sampleRate);
+    const d=noiseBuf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1; }
+  const s=actx.createBufferSource(); s.buffer=noiseBuf; return s;
+}
+function kick(t){ const o=actx.createOscillator(), g=actx.createGain();
+  o.frequency.setValueAtTime(140,t); o.frequency.exponentialRampToValueAtTime(45,t+0.11);
+  g.gain.setValueAtTime(0.7,t); g.gain.exponentialRampToValueAtTime(0.0001,t+0.3);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t+0.32); }
+function hat(t,open){ const s=noise(), hp=actx.createBiquadFilter(), g=actx.createGain();
+  hp.type='highpass'; hp.frequency.value=8000; const dur=open?0.12:0.04;
+  g.gain.setValueAtTime(open?0.22:0.16,t); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  s.connect(hp); hp.connect(g); g.connect(master); s.start(t); s.stop(t+dur+0.02); }
+function bassNote(t,f){ const o=actx.createOscillator(), lp=actx.createBiquadFilter(), g=actx.createGain();
+  o.type='sawtooth'; o.frequency.value=f; lp.type='lowpass'; lp.frequency.value=520;
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.3,t+0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+STEP*1.8);
+  o.connect(lp); lp.connect(g); g.connect(master); o.start(t); o.stop(t+STEP*2); }
+function stab(t){ [220,277.2,329.6].forEach(f=>{ const o=actx.createOscillator(), g=actx.createGain();
+  o.type='sawtooth'; o.frequency.value=f;
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.1,t+0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+0.18);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t+0.2); }); }
+function leadNote(t,semi){
+  const o=actx.createOscillator(), g=actx.createGain();
+  o.type='square'; o.frequency.value=110*Math.pow(2,semi/12);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.07,t+0.005);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+STEP*0.9);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t+STEP);
+}
+function scheduleStep(i,t){
+  if(i%4===0) kick(t);
+  hat(t, i%4===2);
+  const bf=BASS[i]; if(bf) bassNote(t,bf);
+  if(i%8===4) stab(t);
+  leadNote(t, LEAD[i]+24);          // 8-bit arpeggio two octaves up
+}
+function musicTick(){
+  if(!actx) return;
+  while(nextStepTime < actx.currentTime + 0.12){
+    scheduleStep(stepIx, nextStepTime);
+    nextStepTime += STEP; stepIx=(stepIx+1)%16;
+  }
+}
+/* synth fallback (used only if the real soundtrack can't play) */
+function startSynth(){ ensureAudio(); if(!actx || musicOn) return; musicOn=true; stepIx=0; nextStepTime=actx.currentTime+0.06; schedTimer=setInterval(musicTick,25); }
+function stopSynth(){ musicOn=false; if(schedTimer){ clearInterval(schedTimer); schedTimer=null; } }
+/* the looping soundtrack: decoded once, played via Web Audio so it's analysable */
+function loadMusic(){
+  if(musicBuf || musicLoading || !actx) return; musicLoading=true;
+  fetch('soundtrack.aac').then(r=>r.arrayBuffer()).then(ab=>{
+    actx.decodeAudioData(ab, buf=>{ musicBuf=buf; musicLoading=false; if(musicWant) playBuffer(); },
+                              ()=>{ musicLoading=false; if(musicWant) startSynth(); });   // decode failed → synth
+  }).catch(()=>{ musicLoading=false; if(musicWant) startSynth(); });
+}
+function playBuffer(){
+  if(!musicBuf || musicSrc || !musicGain) return;
+  musicSrc=actx.createBufferSource(); musicSrc.buffer=musicBuf; musicSrc.loop=true;
+  musicSrc.connect(musicGain);
+  const off = musicAt % musicBuf.duration;
+  musicSrc.start(0, off); musicStart = actx.currentTime - off;
+}
+function startMusic(){
+  ensureAudio(); if(!actx) return;
+  if(actx.state==='suspended') actx.resume();
+  musicGraph(); musicWant=true;
+  if(musicBuf) playBuffer(); else loadMusic();
+}
+function stopMusic(){
+  musicWant=false;
+  if(musicSrc){
+    if(musicBuf) musicAt = (actx.currentTime - musicStart) % musicBuf.duration;   // remember position
+    try{ musicSrc.stop(); }catch(_){} try{ musicSrc.disconnect(); }catch(_){}
+    musicSrc=null;
+  }
+  stopSynth();
+}
+
+let W=0,H=0,DPR=1;
+function resize(){
+  const r = stage.getBoundingClientRect();
+  const nW=r.width, nH=r.height;
+  if(nW===0 || nH===0) return;                 // box not laid out yet (iframe/late layout)
+  const dpr = Math.min(window.devicePixelRatio||1, 2);
+  if(nW===W && nH===H && dpr===DPR) return;    // unchanged — cheap to call every frame
+  const had = W>0 && H>0;
+  if(had && targets.length){ const sx=nW/W, sy=nH/H; for(const t of targets){ t.x*=sx; t.y*=sy; } }
+  W=nW; H=nH; DPR=dpr;
+  cv.width=W*DPR; cv.height=H*DPR; ctx.setTransform(DPR,0,0,DPR,0,0);
+  if(!bloomCv){ bloomCv=document.createElement('canvas'); bloomCtx=bloomCv.getContext('2d');
+                caCv=document.createElement('canvas'); caCtx=caCv.getContext('2d'); }
+  bloomCv.width=Math.max(1,Math.round(cv.width*0.5)); bloomCv.height=Math.max(1,Math.round(cv.height*0.5));
+  caCv.width=bloomCv.width; caCv.height=bloomCv.height;
+  initBg();                                    // rescale the background particle field
+  if(!had && live()) spawnRound();             // first real size after play began
+}
+window.addEventListener('resize', resize);
+if(window.ResizeObserver) new ResizeObserver(resize).observe(stage);
+
+/* ---------- state ---------- *
+ * splash | idle | countdown | playing | paused | match | handoff | result | over */
+let state='idle', prevState='idle';
+let level=null, targets=[], roundStart=0, roundEnds=0, pausedAt=0;
+let score=0, streak=0;
+const live = ()=> state==='playing' || state==='match';
+
+/* lives + combo (1-player arcade mode) */
+const MAXLIVES=3, LIFE_CAP=5;
+let lives=MAXLIVES, livesMode=false, cdStart=0, lastCdIdx=-1, graceUntil=0;
+function comboMult(){ return Math.min(5, 1 + Math.floor(streak/5)); }   // x1..x5
+/* In a lives run the engine aims a little higher than the 60% flow target, so
+ * misses (which cost a life) are rarer and a run lasts longer; zen/2P stay at 60%. */
+function flowTarget(){ return (livesMode && state==='playing') ? 0.70 : FLOW_TARGET; }
+/* iOS (17.4+) haptic fallback: clicking the label bound to a hidden <input switch>
+ * fires a light system haptic, since iOS has no Vibration API. No-op elsewhere. */
+const hapticEl = document.getElementById('haptlabel');
+function hapticTick(){ try{ hapticEl && hapticEl.click(); }catch(_){} }
+function vibe(p){
+  if(navigator.vibrate){ try{ navigator.vibrate(p); }catch(_){} return; }
+  const mag = Array.isArray(p) ? p.reduce((a,b)=>a+b,0) : p;   // iOS: only tick on meaningful buzzes
+  if(mag>=40) hapticTick();
+}
+function shakeStage(){ cv.classList.remove('shake'); void cv.offsetWidth; cv.classList.add('shake'); }
+
+/* 2-player */
+const MATCH_MS = 30000;
+let matchMode=false, matchPlayer=1, matchEndsAt=0, matchRound=0, p1Score=0, p2Score=0;
+
+/* ---------- bonuses + sparkle particles ---------- */
+let bonus=null, fx=[], flash=null;
+/* power-ups (1-player): a tappable orb that grants a timed/charged effect */
+let pup=null, slowUntil=0, dblUntil=0, shield=false;
+const POWERS=[
+  {id:'slow',  icon:'❄',  label:'SLOW-MO', color:'#7ee0ff', w:4, dur:4500},
+  {id:'2x',    icon:'✦',  label:'DOUBLE',  color:'#ffd166', w:4, dur:6000},
+  {id:'shield',icon:'⛨',  label:'SHIELD',  color:'#9a7bff', w:3, dur:0},
+];
+function pickPower(){ const t=POWERS.reduce((s,p)=>s+p.w,0); let r=rng()*t; for(const p of POWERS){ if((r-=p.w)<0) return p; } return POWERS[0]; }
+const slowActive=()=>performance.now()<slowUntil, dblActive=()=>performance.now()<dblUntil;
+function pad(n,w){ n=String(Math.max(0,Math.floor(n))); return '0'.repeat(Math.max(0,w-n.length))+n; }
+function doFlash(color,a){ flash={color, a}; }                 // brief full-screen colour pop
+function callout(txt,color){ fx.push({callout:txt, color, life:0, max:1.0}); }  // big "COMBO x3!" burst
+const BONUSES=[
+  {id:'star', icon:'⭐', pts:3,  color:'#ffd166', w:6},
+  {id:'gem',  icon:'💎', pts:5,  color:'#7ee0ff', w:3},
+  {id:'jack', icon:'🌟', pts:10, color:'#ffe08a', w:1},
+];
+function pickBonus(){
+  const total=BONUSES.reduce((s,b)=>s+b.w,0); let r=rng()*total;
+  for(const b of BONUSES){ if((r-=b.w)<0) return b; }
+  return BONUSES[0];
+}
+function spawnSparkle(x,y,color,n=20,spread=180){
+  for(let i=0;i<n;i++){
+    const a=Math.random()*Math.PI*2, sp=spread*(0.4+Math.random());
+    const sq=Math.random()<0.4;                    // pixel-debris chunks for retro crunch
+    fx.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-20,
+      life:0,max:0.45+Math.random()*0.35,size:(sq?2.5:2)+Math.random()*3,
+      sq, spin:Math.random()*6, color: Math.random()<0.5?color:'#ffffff'});
+  }
+  fx.push({ring:true,x,y,life:0,max:0.38,size:8,color});       // fast shockwave
+  fx.push({ring:true,x,y,life:0,max:0.55,size:4,color:'#ffffff'}); // bright outer shockwave
+}
+function floatText(x,y,txt,color){ fx.push({text:txt,x,y,vy:-46,life:0,max:0.85,color}); }
+function drawFx(dt){
+  for(let i=fx.length-1;i>=0;i--){
+    const p=fx[i]; p.life+=dt; const k=p.life/p.max;
+    if(k>=1){ fx.splice(i,1); continue; }
+    ctx.globalAlpha=1-k;
+    if(p.ring){
+      ctx.strokeStyle=p.color; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.size+k*46,0,7); ctx.stroke();
+    } else if(p.callout){
+      const sc = k<0.18 ? k/0.18 : 1;
+      ctx.globalAlpha = k>0.7 ? Math.max(0,1-(k-0.7)/0.3) : 1;
+      ctx.save(); ctx.shadowColor=p.color; ctx.shadowBlur=14; ctx.fillStyle=p.color;
+      ctx.font='900 '+(20+16*sc)+'px "Courier New", ui-monospace, monospace';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(p.callout, W/2, H*0.30); ctx.restore(); ctx.textBaseline='alphabetic';
+    } else if(p.text){
+      p.y+=p.vy*dt; ctx.fillStyle=p.color;
+      ctx.font='900 15px "Courier New", ui-monospace, monospace';
+      ctx.textAlign='center'; ctx.fillText(p.text,p.x,p.y);
+    } else {
+      p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=160*dt;
+      const sz=p.size*(1-k*0.5);
+      ctx.fillStyle=p.color;
+      if(p.sq){                                    // tumbling pixel chunk
+        ctx.save(); ctx.translate(p.x,p.y); ctx.rotate((p.spin||0)+p.life*9);
+        ctx.fillRect(-sz,-sz,sz*2,sz*2); ctx.restore();
+      } else {
+        ctx.beginPath(); ctx.arc(p.x,p.y,sz,0,7); ctx.fill();
+      }
+    }
+    ctx.globalAlpha=1;
+  }
+}
+/* classic two-note coin when a bonus is grabbed */
+function bonusSound(){
+  if(!actx||muted) return;
+  const t=actx.currentTime;
+  [988,1319].forEach((f,i)=>{ const o=actx.createOscillator(), g=actx.createGain();
+    o.type='square'; o.frequency.value=f; const ts=t+i*0.07;
+    g.gain.setValueAtTime(0.34,ts); g.gain.exponentialRampToValueAtTime(0.0001,ts+0.16);
+    o.connect(g); g.connect(master); o.start(ts); o.stop(ts+0.18); });
+}
+/* short descending square "miss" when a target times out */
+function miss(){
+  if(!actx||muted) return;
+  const t=actx.currentTime, o=actx.createOscillator(), g=actx.createGain();
+  o.type='square'; o.frequency.setValueAtTime(330,t); o.frequency.setValueAtTime(220,t+0.08);
+  g.gain.setValueAtTime(0.28,t); g.gain.exponentialRampToValueAtTime(0.0001,t+0.2);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t+0.22);
+}
+/* descending four-note square "game over" sting */
+function gameOverSound(){
+  if(!actx||muted) return;
+  const t=actx.currentTime;
+  [523,392,330,262].forEach((f,i)=>{ const o=actx.createOscillator(), g=actx.createGain();
+    o.type='square'; o.frequency.value=f; const ts=t+i*0.18;
+    g.gain.setValueAtTime(0.3,ts); g.gain.exponentialRampToValueAtTime(0.0001,ts+0.34);
+    o.connect(g); g.connect(master); o.start(ts); o.stop(ts+0.36); });
+}
+/* a square tone for each 3·2·1·GO tick */
+function beep(f){
+  if(!actx||muted) return;
+  const t=actx.currentTime, o=actx.createOscillator(), g=actx.createGain();
+  o.type='square'; o.frequency.value=f;
+  g.gain.setValueAtTime(0.32,t); g.gain.exponentialRampToValueAtTime(0.0001,t+0.15);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t+0.17);
+}
+
+/* ---------- screens / chrome ---------- */
+const SCREENS=['overlay','pauseMenu','handoff','result','over'];
+function showScreen(name){ for(const s of SCREENS) document.getElementById(s).style.display=(s===name)?'flex':'none'; }
+function updateChrome(){ pauseBtn.style.display = live() ? 'grid' : 'none'; }
+
+/* ---------- a round ---------- */
+function spawnRound(){
+  level = selectLevel();
+  const margin = level.radius+8, sp = level.speed;
+  targets = [];
+  const mk = (decoy)=>{ const a=rng()*Math.PI*2; return {
+      x: margin + rng()*(W-2*margin), y: margin + rng()*(H-2*margin), r: level.radius,
+      vx: Math.cos(a)*sp, vy: Math.sin(a)*sp, decoy, born: performance.now() }; };
+  targets.push(mk(false));
+  for(let i=0;i<level.decoys;i++) targets.push(mk(true));
+  // ~1 in 3 rounds drops a tappable bonus. Decided from the seeded RNG (and the
+  // draw is consumed every round regardless), so a 2-player duel stays fair.
+  // Grabbing it scores extra and does NOT end the round.
+  bonus = null;
+  if(rng() < 0.34){
+    const b=pickBonus(), a=rng()*Math.PI*2, bsp=40+rng()*60, br=20;
+    bonus={ type:b, r:br, x:br+rng()*(W-2*br), y:br+rng()*(H-2*br),
+            vx:Math.cos(a)*bsp, vy:Math.sin(a)*bsp, pulse:rng()*6, born:performance.now() };
+  }
+  // power-up: 1-player only (the rng draw is skipped in a 2P match, so the duel
+  // stays bit-identical), and only when no bonus took this round.
+  pup = null;
+  if(!matchMode && !bonus && rng() < 0.16){
+    const p=pickPower(), a=rng()*Math.PI*2, psp=30+rng()*45, pr=22;
+    pup={ type:p, r:pr, x:pr+rng()*(W-2*pr), y:pr+rng()*(H-2*pr),
+          vx:Math.cos(a)*psp, vy:Math.sin(a)*psp, pulse:rng()*6, born:performance.now() };
+  }
+  roundStart = performance.now(); roundEnds = roundStart + level.lifeMs;
+  refreshHud();
+}
+function activatePower(p){
+  const now=performance.now();
+  if(p.id==='slow') slowUntil=now+p.dur;
+  else if(p.id==='2x') dblUntil=now+p.dur;
+  else if(p.id==='shield') shield=true;
+  callout(p.label, p.color); impactCA(0.8);
+}
+function endRound(won){
+  if(state==='playing') updateSkill(level, won);
+  if(won){
+    const m0=comboMult(); streak++; const m=comboMult();         // multiplier before/after this hit
+    score += m0 * (dblActive()?2:1); vibe(12);
+    if(m>m0) callout('COMBO x'+m+'!', '#ffd166');                // multiplier just leveled up
+    // reward a long clean streak with a life back (capped)
+    if(livesMode && streak>0 && streak%10===0 && lives<LIFE_CAP){
+      lives++; floatText(W/2, 42, '+1 ♥', '#ff8fa0'); beep(990); callout('EXTRA LIFE', '#ff8fa0');
+    }
+    if(state==='playing'){
+      if(score>best){ best=score; localStorage.setItem('flow.best',best); renderCosmetics(); }
+      drawSpark();
+    }
+  } else {
+    streak=0;
+    if(state==='playing') drawSpark();
+    if(livesMode){
+      const now=performance.now();
+      if(shield){                            // power-up absorbs the hit
+        shield=false; callout('BLOCKED', '#9a7bff'); doFlash('#9a7bff',0.18); shakeStage();
+      } else if(now >= graceUntil){          // brief immunity prevents a cascade double-hit
+        lives--; graceUntil=now+800; shakeStage(); vibe(60); doFlash('#ff5d6c',0.22);
+        if(lives<=0){ refreshHud(); gameOver(); return; }
+      }
+    }
+  }
+  refreshHud();
+  if(live()) spawnRound();
+}
+
+function refreshHud(){
+  document.getElementById('skillV').innerHTML = Math.round(player.skill*100) + '<small>/100</small>';
+  if(level){
+    document.getElementById('diffV').innerHTML = Math.round(level.diff*100) + '<small>/100</small>';
+    const pw = winProb(player.skill, level.diff);
+    document.getElementById('pwinV').innerHTML = Math.round(pw*100) + '<small>%</small>';
+    const bar = document.getElementById('flowbar').clientWidth;
+    document.getElementById('served').style.left = (pw*(bar-3))+'px';
+  }
+  const bar = document.getElementById('flowbar').clientWidth;
+  const band = document.getElementById('band');
+  band.style.left = (0.50*bar)+'px';
+  band.style.width = (0.20*bar)+'px';
+}
+
+/* sparkline of rolling pass-rate vs flow target */
+const sc = document.getElementById('sparkC');
+const sctx = sc.getContext('2d');
+function drawSpark(){
+  const r = sc.getBoundingClientRect();
+  sc.width = r.width*DPR; sc.height = r.height*DPR;
+  sctx.setTransform(DPR,0,0,DPR,0,0);
+  const w=r.width,h=r.height;
+  sctx.clearRect(0,0,w,h);
+  sctx.strokeStyle='rgba(255,209,102,.55)'; sctx.setLineDash([4,4]);
+  const ty = h-(FLOW_TARGET*h);
+  sctx.beginPath();sctx.moveTo(0,ty);sctx.lineTo(w,ty);sctx.stroke();
+  sctx.setLineDash([]);
+  const hist=player.passHistory; if(hist.length<2) return;
+  sctx.strokeStyle='#3ddc97'; sctx.lineWidth=2; sctx.beginPath();
+  for(let i=0;i<hist.length;i++){
+    const lo=Math.max(0,i-7); let s=0,c=0;
+    for(let j=lo;j<=i;j++){s+=hist[j];c++;}
+    const rate=s/c;
+    const x=(i/(hist.length-1))*w, y=h-(rate*h);
+    i?sctx.lineTo(x,y):sctx.moveTo(x,y);
+  }
+  sctx.stroke();
+}
+
+/* ---------- drawing the board ---------- */
+function hexA(hex,a){ const n=parseInt(hex.slice(1),16); return 'rgba('+((n>>16)&255)+','+((n>>8)&255)+','+(n&255)+','+a+')'; }
+
+/* drifting particle + nebula field behind the play */
+let bgP=[], stars=[], beatPulse=0, dispScore=0, bloomCv=null, bloomCtx=null, caCv=null, caCtx=null;
+let caUntil=0, caMag=0;
+function impactCA(s){ caUntil=performance.now()+130; caMag=s; }   // chromatic-aberration kick on a hit
+function initBg(){
+  const cols=['#3ae1ff','#9a7bff','#ff63b6','#ffffff'];
+  const n=Math.max(10, Math.round(W*H/26000));
+  bgP=[];
+  for(let i=0;i<n;i++) bgP.push({ x:Math.random()*W, y:Math.random()*H,
+    r:0.6+Math.random()*1.7, sp:5+Math.random()*16, a:0.10+Math.random()*0.25,
+    c:cols[Math.floor(Math.random()*cols.length)] });
+  const m=Math.max(26, Math.round(W*H/7000)), maxR=Math.hypot(W,H)/2;
+  stars=[];
+  for(let i=0;i<m;i++) stars.push({ a:Math.random()*Math.PI*2, r:Math.random()*maxR,
+    sp:28+Math.random()*70, c:cols[Math.floor(Math.random()*cols.length)] });
+}
+function drawBg(dt){
+  if(!stars.length) initBg();
+  // nebula colour wash — brightens on the beat
+  const t=performance.now()/1000, lift=0.10+0.09*beatPulse;
+  const blobs=[[0.30+0.06*Math.sin(t*0.3),0.27+0.05*Math.cos(t*0.24),'58,225,255'],
+               [0.72+0.05*Math.cos(t*0.27),0.72+0.06*Math.sin(t*0.22),'154,123,255']];
+  for(const b of blobs){
+    const cx=b[0]*W, cy=b[1]*H, rad=Math.min(W,H)*0.55;
+    const g=ctx.createRadialGradient(cx,cy,0,cx,cy,rad);
+    g.addColorStop(0,'rgba('+b[2]+','+lift+')'); g.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  }
+  // warp starfield streaking out from the centre — accelerates on the beat
+  const cx=W/2, cy=H/2, maxR=Math.hypot(W,H)/2, boost=1+2.4*beatPulse;
+  for(const s of stars){
+    const pr=s.r; s.r += s.sp*dt*boost;
+    if(s.r>maxR){ s.a=Math.random()*Math.PI*2; s.r=Math.random()*30; continue; }
+    const f=s.r/maxR;
+    ctx.globalAlpha=0.12+0.55*f; ctx.strokeStyle=s.c; ctx.lineWidth=0.5+1.8*f;
+    ctx.beginPath();
+    ctx.moveTo(cx+Math.cos(s.a)*pr, cy+Math.sin(s.a)*pr);
+    ctx.lineTo(cx+Math.cos(s.a)*s.r, cy+Math.sin(s.a)*s.r);
+    ctx.stroke();
+  }
+  // slow drifting specks for depth
+  for(const p of bgP){
+    p.y-=p.sp*dt; if(p.y<-3){ p.y=H+3; p.x=Math.random()*W; }
+    ctx.globalAlpha=p.a; ctx.fillStyle=p.c;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,7); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+/* gold edge-glow that intensifies with the combo multiplier */
+function drawComboGlow(){
+  const m=comboMult(); if(m<=1) return;
+  const a=Math.min(0.5,(m-1)*0.12), R=Math.min(W,H);
+  const g=ctx.createRadialGradient(W/2,H/2,R*0.34,W/2,H/2,R*0.64);
+  g.addColorStop(0,'rgba(255,209,102,0)'); g.addColorStop(1,'rgba(255,209,102,'+a+')');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+}
+/* play-area border that flashes to the beat (beatPulse is audio-driven) */
+function drawBorderFlash(){
+  const p=beatPulse, inset=2.5, rad=20, x=inset, y=inset, w=W-2*inset, h=H-2*inset;
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  ctx.lineWidth=2+8*p;
+  ctx.strokeStyle='rgba(150,205,255,'+(0.12+0.7*p)+')';
+  ctx.shadowColor='#5cc8ff'; ctx.shadowBlur=8+34*p;
+  ctx.beginPath();
+  ctx.moveTo(x+rad,y);
+  ctx.arcTo(x+w,y,   x+w,y+h, rad);
+  ctx.arcTo(x+w,y+h, x,  y+h, rad);
+  ctx.arcTo(x,  y+h, x,  y,   rad);
+  ctx.arcTo(x,  y,   x+w,y,   rad);
+  ctx.closePath();
+  ctx.stroke();
+  ctx.restore();
+}
+
+function shade(hex,f){           // f>0 lighten toward white, f<0 darken toward black
+  const n=parseInt(hex.slice(1),16); let r=(n>>16)&255,g=(n>>8)&255,b=n&255;
+  if(f>=0){ r+=(255-r)*f; g+=(255-g)*f; b+=(255-b)*f; } else { r*=1+f; g*=1+f; b*=1+f; }
+  return 'rgb('+(r|0)+','+(g|0)+','+(b|0)+')';
+}
+function drawTargets(dt, advance){
+  const now=performance.now();
+  const ref = (state==='paused') ? pausedAt : now;
+  const remain = Math.max(0,(roundEnds-ref)/level.lifeMs);
+  const ts = slowActive() ? 0.42 : 1;          // ❄ slow-mo power-up
+  if(advance) dt*=ts;
+  for(const t of targets){
+    if(advance){
+      t.x+=t.vx*dt; t.y+=t.vy*dt;
+      if(t.x<t.r||t.x>W-t.r){t.vx*=-1;t.x=Math.max(t.r,Math.min(W-t.r,t.x));}
+      if(t.y<t.r||t.y>H-t.r){t.vy*=-1;t.y=Math.max(t.r,Math.min(H-t.r,t.y));}
+    }
+    // spring pop-in (easeOutBack) + gentle breathing pulse
+    const grow = t.born ? Math.min(1,(now-t.born)/220) : 1;
+    const c1=1.70158, ease = grow>=1 ? 1 : 1 + (c1+1)*Math.pow(grow-1,3) + c1*Math.pow(grow-1,2);
+    const R = Math.max(1, t.r * ease * (1 + 0.035*Math.sin(now/260 + (t.x+t.y)*0.01)));
+    const ring = t.decoy ? '#ff5d6c' : skin().ring;
+    const base = t.decoy ? '#ff5d6c' : ring;
+    // motion-blur trail: a smear behind a fast-moving orb (length & opacity ∝ speed)
+    if(advance){
+      const sp=Math.hypot(t.vx,t.vy);
+      if(sp>34){
+        ctx.save(); ctx.globalAlpha=Math.min(0.4, sp/600); ctx.strokeStyle=base;
+        ctx.lineWidth=R*1.5; ctx.lineCap='round';
+        ctx.beginPath(); ctx.moveTo(t.x - t.vx*0.05, t.y - t.vy*0.05); ctx.lineTo(t.x, t.y); ctx.stroke();
+        ctx.restore();
+      }
+    }
+    const lx=t.x - R*0.30, ly=t.y - R*0.32;          // virtual light, upper-left
+    // soft contact shadow on the floor
+    ctx.save(); ctx.globalAlpha=0.30; ctx.fillStyle='#000';
+    ctx.beginPath(); ctx.ellipse(t.x, t.y+R*0.98, R*0.82, R*0.30, 0, 0, 7); ctx.fill(); ctx.restore();
+    // glossy sphere body (lit from upper-left)
+    const sg=ctx.createRadialGradient(lx,ly,R*0.08, t.x,t.y,R*1.05);
+    sg.addColorStop(0, shade(base,0.7)); sg.addColorStop(0.45, base); sg.addColorStop(1, shade(base,-0.64));
+    ctx.fillStyle=sg; ctx.beginPath(); ctx.arc(t.x,t.y,R,0,7); ctx.fill();
+    // glowing rim outline
+    ctx.save(); ctx.shadowColor=base; ctx.shadowBlur=t.decoy?16:20;
+    ctx.lineWidth=2.4; ctx.strokeStyle=shade(base,0.4);
+    ctx.beginPath(); ctx.arc(t.x,t.y,R,0,7); ctx.stroke(); ctx.restore();
+    // specular highlight
+    const sp=ctx.createRadialGradient(lx,ly,0, lx,ly,R*0.62);
+    sp.addColorStop(0,'rgba(255,255,255,0.92)'); sp.addColorStop(0.45,'rgba(255,255,255,0.12)'); sp.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=sp; ctx.beginPath(); ctx.arc(lx,ly,R*0.6,0,7); ctx.fill();
+    if(t.decoy){
+      const q=R*0.4; ctx.save(); ctx.lineWidth=4; ctx.lineCap='round';
+      ctx.shadowColor='#ff2740'; ctx.shadowBlur=12; ctx.strokeStyle='#ffffff';
+      ctx.beginPath(); ctx.moveTo(t.x-q,t.y-q); ctx.lineTo(t.x+q,t.y+q);
+      ctx.moveTo(t.x+q,t.y-q); ctx.lineTo(t.x-q,t.y+q); ctx.stroke(); ctx.restore();
+    } else {
+      // life ring shifts green -> amber -> red as time runs out
+      const lc = remain>0.5 ? '#36f0a6' : remain>0.25 ? '#ffd166' : '#ff5d6c';
+      ctx.save(); ctx.shadowColor=lc; ctx.shadowBlur=12; ctx.lineWidth=3.5; ctx.lineCap='round'; ctx.strokeStyle=lc;
+      ctx.beginPath(); ctx.arc(t.x,t.y,R*0.74,-Math.PI/2,-Math.PI/2+remain*Math.PI*2,false); ctx.stroke();
+      ctx.restore();
+    }
+  }
+  // bonus — rotating, glowing, with a soft aura
+  if(bonus){
+    if(advance){
+      bonus.x+=bonus.vx*dt; bonus.y+=bonus.vy*dt;
+      if(bonus.x<bonus.r||bonus.x>W-bonus.r){bonus.vx*=-1;bonus.x=Math.max(bonus.r,Math.min(W-bonus.r,bonus.x));}
+      if(bonus.y<bonus.r||bonus.y>H-bonus.r){bonus.vy*=-1;bonus.y=Math.max(bonus.r,Math.min(H-bonus.r,bonus.y));}
+    }
+    const grow=bonus.born?Math.min(1,(now-bonus.born)/220):1;
+    const R=bonus.r*grow*(1+0.12*Math.sin(now/120+bonus.pulse)), col=bonus.type.color;
+    const ag=ctx.createRadialGradient(bonus.x,bonus.y,0,bonus.x,bonus.y,R*1.1);
+    ag.addColorStop(0,hexA(col,0.40)); ag.addColorStop(1,hexA(col,0));
+    ctx.fillStyle=ag; ctx.beginPath(); ctx.arc(bonus.x,bonus.y,R*1.1,0,7); ctx.fill();
+    ctx.save(); ctx.shadowColor=col; ctx.shadowBlur=20; ctx.lineWidth=2.5; ctx.strokeStyle=col;
+    ctx.beginPath(); ctx.arc(bonus.x,bonus.y,R,0,7); ctx.stroke(); ctx.restore();
+    ctx.save(); ctx.translate(bonus.x,bonus.y); ctx.rotate(0.2*Math.sin(now/500+bonus.pulse));
+    ctx.font=(R*1.1)+'px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(bonus.type.icon,0,1); ctx.restore(); ctx.textBaseline='alphabetic';
+  }
+  // power-up — pulsing aura, rotating diamond frame, upright glyph
+  if(pup){
+    if(advance){
+      pup.x+=pup.vx*dt; pup.y+=pup.vy*dt;
+      if(pup.x<pup.r||pup.x>W-pup.r){pup.vx*=-1;pup.x=Math.max(pup.r,Math.min(W-pup.r,pup.x));}
+      if(pup.y<pup.r||pup.y>H-pup.r){pup.vy*=-1;pup.y=Math.max(pup.r,Math.min(H-pup.r,pup.y));}
+    }
+    const grow=pup.born?Math.min(1,(now-pup.born)/220):1;
+    const R=pup.r*grow*(1+0.10*Math.sin(now/110+pup.pulse)), col=pup.type.color;
+    const ag=ctx.createRadialGradient(pup.x,pup.y,0,pup.x,pup.y,R*1.35);
+    ag.addColorStop(0,hexA(col,0.5)); ag.addColorStop(1,hexA(col,0));
+    ctx.fillStyle=ag; ctx.beginPath(); ctx.arc(pup.x,pup.y,R*1.35,0,7); ctx.fill();
+    ctx.save(); ctx.translate(pup.x,pup.y); ctx.rotate(now/700+pup.pulse);
+    ctx.shadowColor=col; ctx.shadowBlur=22; ctx.lineWidth=3; ctx.strokeStyle=col;
+    ctx.beginPath();
+    for(let i=0;i<4;i++){ const a=i/4*Math.PI*2, x=Math.cos(a)*R*1.1, y=Math.sin(a)*R*1.1; i?ctx.lineTo(x,y):ctx.moveTo(x,y); }
+    ctx.closePath(); ctx.stroke(); ctx.restore();
+    ctx.save(); ctx.shadowColor=col; ctx.shadowBlur=10; ctx.fillStyle='#fff';
+    ctx.font='900 '+(R*1.05)+'px "Courier New", system-ui, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(pup.type.icon, pup.x, pup.y+1); ctx.restore(); ctx.textBaseline='alphabetic';
+  }
+}
+/* arcade cabinet HUD: blocky monospace, leading zeros, glowing */
+function arcText(align,x,y,txt,color,px){
+  ctx.font='900 '+px+'px "Courier New", ui-monospace, monospace';
+  ctx.textAlign=align; ctx.textBaseline='alphabetic';
+  ctx.save(); ctx.shadowColor=color; ctx.shadowBlur=8; ctx.fillStyle=color;
+  ctx.fillText(txt,x,y); ctx.restore();
+}
+function drawScore(ref){
+  const shown=Math.round(dispScore);
+  if(matchMode){
+    const secs=Math.max(0,Math.ceil((matchEndsAt-ref)/1000));
+    arcText('left',  12,   16, 'P'+matchPlayer, '#9a7bff', 11);
+    arcText('left',  12,   38, pad(shown,6),    '#eaf0ff', 22);
+    arcText('right', W-12, 16, 'TIME',           secs<=5?'#ff5d6c':'#8b94b8', 11);
+    arcText('right', W-12, 38, pad(secs,2),      secs<=5?'#ff5d6c':'#eaf0ff', 22+(secs<=5?2*beatPulse:0));
+  } else {
+    arcText('left',  12,   16, 'SCORE',       '#8b94b8', 11);
+    arcText('left',  12,   38, pad(shown,6),   '#eaf0ff', 22);
+    arcText('right', W-12, 16, 'HI',          '#8b94b8', 11);
+    arcText('right', W-12, 38, pad(Math.max(best,shown),6), '#ffd166', 22);
+    if(livesMode) arcText('center', W/2, 16, '♥'.repeat(Math.max(0,lives)) || '–', '#ff5d6c', 14);
+    const m=comboMult();
+    if(m>1) arcText('center', W/2, 42, 'x'+m, '#ffd166', 20+6*beatPulse);   // throbs on the beat
+    // active power-ups: chips along the bottom edge
+    const act=[];
+    if(slowActive()) act.push(['❄ '+Math.ceil((slowUntil-ref)/1000)+'s','#7ee0ff']);
+    if(dblActive())  act.push(['✦ 2× '+Math.ceil((dblUntil-ref)/1000)+'s','#ffd166']);
+    if(shield)       act.push(['⛨ SHIELD','#9a7bff']);
+    act.forEach((a,i)=> arcText('left', 12, H-12-i*18, a[0], a[1], 12));
+  }
+}
+function drawCountdown(e){
+  const idx=Math.floor(e), frac=e-idx;
+  const label = idx>=3 ? 'GO' : String(3-idx);
+  const grow = Math.min(1, frac*3);
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, 1-Math.max(0,(frac-0.6)/0.4));
+  ctx.fillStyle = idx>=3 ? '#36f0a6' : '#eaf0ff';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.shadowColor='rgba(96,150,255,.7)'; ctx.shadowBlur=26;
+  ctx.font='800 '+(46+44*grow)+'px system-ui';
+  ctx.fillText(label, W/2, H/2);
+  ctx.restore(); ctx.textBaseline='alphabetic';
+}
+
+/* ---------- looping how-to demo on the start screen ---------- */
+function drawDemo(now){
+  const r = demoCv.getBoundingClientRect();
+  if(r.width===0) return;
+  if(demoCv.width!==Math.round(r.width*DPR) || demoCv.height!==Math.round(r.height*DPR)){
+    demoCv.width=r.width*DPR; demoCv.height=r.height*DPR;
+  }
+  demoCtx.setTransform(DPR,0,0,DPR,0,0);
+  const w=r.width, h=r.height; demoCtx.clearRect(0,0,w,h);
+  const cyc=(now/2200)%1;                       // 0..1 loop
+  const R=Math.min(h*0.28,24);
+  const gx=w*0.32, gy=h*0.52;                   // good target
+  const dx=w*0.70+Math.sin(now/280)*4, dy=h*0.52;  // decoy wobbles
+
+  // good circle (pops near end of loop)
+  const pop = cyc>=0.72 && cyc<0.86 ? (cyc-0.72)/0.14 : -1;
+  demoCtx.beginPath();demoCtx.arc(gx,gy,R*(pop>=0?1+pop*0.4:1),0,7);
+  demoCtx.fillStyle='rgba(76,194,255,.18)';demoCtx.fill();
+  demoCtx.lineWidth=3;demoCtx.strokeStyle='#4cc2ff';
+  demoCtx.beginPath();demoCtx.arc(gx,gy,R,0,7);demoCtx.stroke();
+  if(pop>=0){ demoCtx.fillStyle='rgba(61,220,151,'+(0.45*(1-pop))+')';
+    demoCtx.beginPath();demoCtx.arc(gx,gy,R*(1+pop),0,7);demoCtx.fill(); }
+  // incoming tap ring + finger
+  if(cyc<0.72){
+    const app=cyc/0.72;
+    demoCtx.strokeStyle='rgba(255,255,255,'+(0.85*app)+')';demoCtx.lineWidth=2;
+    demoCtx.beginPath();demoCtx.arc(gx,gy,R+16-app*16,0,7);demoCtx.stroke();
+    demoCtx.font='20px system-ui';demoCtx.textAlign='center';
+    demoCtx.fillText('👆', gx+(1-app)*34, gy+R+10+(1-app)*8);
+  }
+  demoCtx.font='600 11px system-ui';demoCtx.textAlign='center';
+  demoCtx.fillStyle='#3ddc97';demoCtx.fillText('TAP', gx, gy-R-8);
+
+  // decoy (with X) — never tap this one
+  demoCtx.beginPath();demoCtx.arc(dx,dy,R,0,7);
+  demoCtx.fillStyle='rgba(255,107,107,.16)';demoCtx.fill();
+  demoCtx.lineWidth=3;demoCtx.strokeStyle='#ff6b6b';
+  demoCtx.beginPath();demoCtx.arc(dx,dy,R,0,7);demoCtx.stroke();
+  const q=R*0.45;demoCtx.beginPath();
+  demoCtx.moveTo(dx-q,dy-q);demoCtx.lineTo(dx+q,dy+q);
+  demoCtx.moveTo(dx+q,dy-q);demoCtx.lineTo(dx-q,dy+q);demoCtx.stroke();
+  demoCtx.fillStyle='#ff6b6b';demoCtx.fillText('AVOID', dx, dy-R-8);
+}
+
+/* HDR-ish bloom: downsample the frame, blur it, add it back (lighter) so every
+ * bright neon edge blooms — the single biggest "next-gen" lift on a 2D canvas. */
+function applyBloom(){
+  if(!fxHigh || !bloomCtx || !cv.width) return;
+  const bw=bloomCv.width, bh=bloomCv.height;
+  bloomCtx.setTransform(1,0,0,1,0,0);
+  bloomCtx.clearRect(0,0,bw,bh);
+  bloomCtx.drawImage(cv,0,0,bw,bh);
+  ctx.save();
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.globalCompositeOperation='lighter';
+  ctx.globalAlpha=0.42+0.32*beatPulse;        // bloom pumps with the music
+  try{ ctx.filter='blur('+Math.max(2,Math.round(cv.width*0.013))+'px)'; }catch(_){}
+  ctx.drawImage(bloomCv,0,0,cv.width,cv.height);
+  ctx.restore();
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+
+/* Depth of field: replace the backdrop with a blurred copy of itself, so the
+ * background sits softly behind the sharp foreground orbs. Call right after the
+ * background is drawn (and before any foreground). */
+function blurBackdrop(){
+  if(!fxHigh || !bloomCtx || !cv.width) return;
+  const bw=bloomCv.width, bh=bloomCv.height;
+  bloomCtx.setTransform(1,0,0,1,0,0); bloomCtx.clearRect(0,0,bw,bh);
+  bloomCtx.drawImage(cv,0,0,bw,bh);
+  ctx.save(); ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,cv.width,cv.height);
+  try{ ctx.filter='blur('+Math.max(1,Math.round(cv.width*0.006))+'px)'; }catch(_){}
+  ctx.drawImage(bloomCv,0,0,cv.width,cv.height);
+  ctx.restore(); ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+
+/* Chromatic aberration: briefly after an impact, add red/blue channel-split
+ * ghosts of the frame, offset apart. Reuses bloomCv (the current frame copy). */
+function applyCA(){
+  if(!fxHigh) return;
+  const now=performance.now(); if(now>caUntil || !caCtx || !cv.width) return;
+  const k=(caUntil-now)/130, dx=Math.max(1, cv.width*0.012*caMag*k);
+  ctx.save(); ctx.setTransform(1,0,0,1,0,0); ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=0.3*k;
+  const splat=(tint,ox)=>{
+    caCtx.setTransform(1,0,0,1,0,0); caCtx.globalCompositeOperation='source-over'; caCtx.globalAlpha=1;
+    caCtx.clearRect(0,0,caCv.width,caCv.height); caCtx.drawImage(bloomCv,0,0);
+    caCtx.globalCompositeOperation='multiply'; caCtx.fillStyle=tint; caCtx.fillRect(0,0,caCv.width,caCv.height);
+    caCtx.globalCompositeOperation='source-over';
+    ctx.drawImage(caCv, ox,0, cv.width,cv.height);
+  };
+  splat('#ff1414', dx); splat('#1414ff', -dx);
+  ctx.restore(); ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+
+/* ================================================================== *
+ *  WebGPU post-processing (optional enhancer).
+ *  Takes the finished 2D scene from `cv`, uploads it as a texture, and runs a
+ *  single fragment-shader pass — multi-tap bloom + chromatic aberration +
+ *  colour grade + vignette + grain, beat-reactive — onto the overlay canvas
+ *  `gcv`. Fully gated: any failure (no WebGPU, bad device, draw error) nulls
+ *  `gpu` and the renderer falls back to the Canvas2D post-FX below.
+ * ================================================================== */
+const GPU_WGSL = `
+struct U { res: vec2f, time: f32, beat: f32 };
+@group(0) @binding(0) var samp: sampler;
+@group(0) @binding(1) var tex: texture_2d<f32>;
+@group(0) @binding(2) var<uniform> u: U;
+@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
+  var p = array<vec2f,3>(vec2f(-1.0,-1.0), vec2f(3.0,-1.0), vec2f(-1.0,3.0));
+  return vec4f(p[i], 0.0, 1.0);
+}
+// The source 2D canvas is UNPREMULTIPLIED over black, so faint (low-alpha) but
+// saturated pixels must be multiplied by alpha or they read full-bright (that's
+// what washed the background to cyan). Premultiply every sample.
+fn smp(uv: vec2f) -> vec3f { let t = textureSample(tex, samp, uv); return t.rgb * t.a; }
+@fragment fn fs(@builtin(position) frag: vec4f) -> @location(0) vec4f {
+  let uv = frag.xy / u.res;
+  let c = uv - vec2f(0.5, 0.5);
+  let texel = vec2f(1.0,1.0) / u.res;
+  // chromatic aberration (toward edges, more on the beat)
+  let off = c * (0.0013 + 0.0028 * u.beat);
+  let sa = textureSample(tex, samp, uv + off);
+  let sb = textureSample(tex, samp, uv);
+  let sc = textureSample(tex, samp, uv - off);
+  var col = vec3f(sa.r*sa.a, sb.g*sb.a, sc.b*sc.a);
+  // radial multi-tap bloom on genuinely bright pixels only
+  var bloom = vec3f(0.0);
+  let R = 2.5 + 2.5 * u.beat;
+  for (var k: i32 = 0; k < 10; k = k + 1) {
+    let a = f32(k) * 0.6283;
+    let d = vec2f(cos(a), sin(a));
+    let s1 = smp(uv + d * texel * R);
+    let s2 = smp(uv + d * texel * R * 2.2);
+    bloom = bloom + smoothstep(vec3f(0.62), vec3f(1.0), s1) * 0.55
+                  + smoothstep(vec3f(0.72), vec3f(1.0), s2) * 0.45;
+  }
+  col = col + (bloom / 10.0) * (0.5 + 0.5 * u.beat);
+  // gentle grade
+  let l = dot(col, vec3f(0.299, 0.587, 0.114));
+  col = mix(vec3f(l), col, 1.08);
+  col = (col - 0.5) * 1.04 + 0.5;
+  // vignette
+  col = col * (0.62 + 0.38 * smoothstep(0.95, 0.4, length(c)));
+  // film grain
+  let n = fract(sin(dot(uv * u.res, vec2f(12.9898, 78.233)) + u.time) * 43758.5453);
+  col = col + (n - 0.5) * 0.022;
+  return vec4f(clamp(col, vec3f(0.0), vec3f(1.0)), 1.0);
+}`;
+async function initGPU(){
+  if(gpuTried) return; gpuTried=true;
+  if(typeof navigator==='undefined' || !navigator.gpu || !gcv) return;
+  try{
+    const adapter = await navigator.gpu.requestAdapter(); if(!adapter) return;
+    const device  = await adapter.requestDevice();
+    const gctx = gcv.getContext('webgpu'); if(!gctx) return;
+    const format = navigator.gpu.getPreferredCanvasFormat();
+    gctx.configure({ device, format, alphaMode:'opaque' });
+    const mod = device.createShaderModule({ code: GPU_WGSL });
+    const pipeline = device.createRenderPipeline({
+      layout:'auto',
+      vertex:{ module:mod, entryPoint:'vs' },
+      fragment:{ module:mod, entryPoint:'fs', targets:[{ format }] },
+      primitive:{ topology:'triangle-list' }
+    });
+    const sampler = device.createSampler({ magFilter:'linear', minFilter:'linear' });
+    const uni = device.createBuffer({ size:16, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST });
+    gpu = { device, gctx, format, pipeline, sampler, uni, tex:null, bind:null, w:0, h:0 };
+    if(device.lost && device.lost.then) device.lost.then(()=>{ gpu=null; if(fxBtn) fxBtn.textContent=fxLabel(); if(gcv) gcv.style.display='none'; });
+    if(fxBtn) fxBtn.textContent=fxLabel();          // surface "FX·GPU" once it's live
+  }catch(_){ gpu=null; }
+}
+function gpuSize(){
+  const { device, sampler, uni, pipeline } = gpu;
+  gcv.width=cv.width; gcv.height=cv.height;
+  if(gpu.tex) try{ gpu.tex.destroy(); }catch(_){}
+  gpu.tex = device.createTexture({ size:[cv.width, cv.height], format:'rgba8unorm',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
+  gpu.bind = device.createBindGroup({ layout:pipeline.getBindGroupLayout(0), entries:[
+    { binding:0, resource:sampler },
+    { binding:1, resource:gpu.tex.createView() },
+    { binding:2, resource:{ buffer:uni } } ] });
+  gpu.w=cv.width; gpu.h=cv.height;
+}
+function gpuPost(){
+  if(!gpu || !cv.width) return false;
+  try{
+    const { device, gctx, pipeline, uni } = gpu;
+    if(gpu.w!==cv.width || gpu.h!==cv.height) gpuSize();
+    device.queue.copyExternalImageToTexture({ source:cv, flipY:false }, { texture:gpu.tex }, [cv.width, cv.height]);
+    device.queue.writeBuffer(uni, 0, new Float32Array([cv.width, cv.height, performance.now()/1000, beatPulse]));
+    const enc = device.createCommandEncoder();
+    const pass = enc.beginRenderPass({ colorAttachments:[{ view:gctx.getCurrentTexture().createView(),
+      clearValue:{r:0,g:0,b:0,a:1}, loadOp:'clear', storeOp:'store' }] });
+    pass.setPipeline(pipeline); pass.setBindGroup(0, gpu.bind); pass.draw(3); pass.end();
+    device.queue.submit([enc.finish()]);
+    return true;
+  }catch(_){ gpu=null; if(fxBtn) fxBtn.textContent=fxLabel(); return false; }
+}
+
+/* ---------- input ---------- */
+function hit(px,py){
+  if(!live()) return;
+  // power-up first — grabbing it activates a timed/charged effect, round continues
+  if(pup && (px-pup.x)**2+(py-pup.y)**2 <= (pup.r+8)**2){
+    spawnSparkle(pup.x,pup.y,pup.type.color,26,200);
+    bonusSound(); activatePower(pup.type); pup=null; refreshHud();
+    return;
+  }
+  // bonus next — grabbing it scores extra but does not end the round
+  if(bonus && (px-bonus.x)**2+(py-bonus.y)**2 <= (bonus.r+8)**2){
+    const pts=bonus.type.pts; score+=pts;
+    if(state==='playing' && score>best){ best=score; localStorage.setItem('flow.best',best); renderCosmetics(); }
+    spawnSparkle(bonus.x,bonus.y,bonus.type.color,22,160);
+    floatText(bonus.x,bonus.y-bonus.r-6,'+'+pts,bonus.type.color);
+    doFlash(bonus.type.color,0.14); impactCA(0.7);
+    bonusSound(); refreshHud(); bonus=null;
+    return;
+  }
+  for(const t of targets){
+    if((px-t.x)**2+(py-t.y)**2 <= (t.r+6)**2){
+      if(t.decoy){ buzz(); doFlash('#ff5d6c',0.18); vibe([0,60,40,90]); impactCA(1.0); }   // red cross → buzz + big split
+      else { ting(); spawnSparkle(t.x,t.y,skin().ring);
+             floatText(t.x,t.y-t.r-8,'+'+comboMult(),skin().ring); doFlash('#ffffff',0.10); impactCA(0.5); }
+      endRound(!t.decoy); return;
+    }
+  }
+}
+stage.addEventListener('pointerdown', e=>{
+  if(!live()) return;
+  const r=stage.getBoundingClientRect();
+  hit(e.clientX-r.left, e.clientY-r.top);
+});
+pauseBtn.addEventListener('pointerdown', e=>e.stopPropagation());  // don't count as a board tap
+
+/* ---------- main loop ---------- */
+let last=performance.now();
+function frame(now){
+  let dt=(now-last)/1000; last=now; if(dt>0.05) dt=0.05;
+  // beat pulse: react to the real soundtrack's bass when we can analyse it,
+  // otherwise fall back to an implied 126 BPM clock.
+  let audioLive=false;
+  if(analyser && freqData && !muted && musicSrc){
+    analyser.getByteFrequencyData(freqData);
+    let s=0; for(let i=1;i<10;i++) s+=freqData[i]; s/=(9*255);          // bass energy 0..1
+    beatPulse=Math.max(beatPulse*0.86, Math.min(1, s*1.7)); audioLive=true;
+  } else {
+    const beatLen=60000/126; beatPulse=Math.pow(1-((now%beatLen)/beatLen),2.2);
+  }
+  dispScore += (score-dispScore)*Math.min(1,dt*12);                              // arcade score roll-up
+  if(Math.abs(score-dispScore)<0.5) dispScore=score;
+  resize();                       // keep canvas synced to a possibly-late/animated box
+  ctx.clearRect(0,0,W,H);
+  drawBg(state==='paused' ? 0 : dt);   // warp starfield + nebula behind everything
+  blurBackdrop();                      // depth-of-field: soften the backdrop
+  if(state==='countdown'){
+    const e=(now-cdStart)/700, idx=Math.floor(e);
+    if(idx!==lastCdIdx && idx<=3){ lastCdIdx=idx; vibe(10); beep(idx>=3 ? 1320 : 660+idx*120); }
+    drawCountdown(e);
+    if(e>=3.4){ state='playing'; lastCdIdx=-1; updateChrome(); spawnRound(); }
+    requestAnimationFrame(frame); return;
+  }
+  if(state==='match' && now>matchEndsAt){ endMatchTurn(); requestAnimationFrame(frame); return; }
+  if((state==='playing'||state==='match') && now>roundEnds){ if(livesMode){ miss(); impactCA(0.9); } endRound(false); }
+  if(live()){ drawTargets(dt, true); drawComboGlow(); drawScore(now); }
+  else if(state==='paused'){ drawTargets(0, false); drawScore(pausedAt); }
+  else if(state==='idle'){ drawDemo(now); }
+  if(fx.length) drawFx(state==='paused' ? 0 : dt);   // sparkles finish over any state
+  if(state!=='idle') drawBorderFlash();              // play-area border flashes to the beat
+  if(flash){                                          // screen-flash — drawn into the scene
+    ctx.globalAlpha=Math.max(0,flash.a); ctx.fillStyle=flash.color; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1;
+    flash.a -= (state==='paused'?0:dt)*3.2; if(flash.a<=0) flash=null;
+  }
+  let usedGPU=false;
+  if(gpuActive()) usedGPU = gpuPost();                // WebGPU enhancer (auto-falls-back on any error)
+  if(!usedGPU){ applyBloom(); applyCA(); }            // Canvas2D post-FX (also no-ops in low-FX)
+  if(gcv) gcv.style.display = usedGPU ? 'block' : 'none';
+  requestAnimationFrame(frame);
+}
+
+/* ---------- control ---------- */
+function start1P(seed, m){
+  matchMode=false; SEED=seed; mode=m; setSeedLabel(); rng=makeRng(SEED);
+  player.skill=0.45; player.rounds=0; player.passHistory=[]; score=0; streak=0; lastIdx=-1; dispScore=0;
+  bonus=null; fx=[]; pup=null; slowUntil=0; dblUntil=0; shield=false;
+  livesMode = (m!=='free'); lives=MAXLIVES; graceUntil=0;   // Daily/shared = lives; Free play = endless zen
+  showScreen(null); drawSpark(); startMusic();
+  beginCountdown();
+}
+function beginCountdown(){ state='countdown'; cdStart=performance.now(); lastCdIdx=-1; updateChrome(); }
+function pause(){
+  if(!live()) return;
+  prevState=state; pausedAt=performance.now(); state='paused';
+  updateChrome(); showScreen('pauseMenu'); stopMusic();
+}
+function resume(){
+  if(state!=='paused') return;
+  const d=performance.now()-pausedAt;
+  roundStart+=d; roundEnds+=d; if(matchMode) matchEndsAt+=d;
+  state=prevState; updateChrome(); showScreen(null); startMusic();
+}
+function restart(){ if(matchMode) startMatch(); else start1P(SEED, mode); }
+function toMenu(){ matchMode=false; livesMode=false; state='idle'; updateChrome(); showScreen('overlay'); refreshHud(); refreshMenuStats(); stopMusic(); }
+function refreshMenuStats(){ document.getElementById('menuBest').textContent = '★ Best '+best; }
+function gameOver(){
+  stopMusic(); gameOverSound(); vibe([60,40,90]);
+  const record = score>0 && score>=best;
+  document.getElementById('overScore').textContent = score;
+  document.getElementById('overBest').textContent = record ? '🎉 New best!' : 'Best '+best;
+  refreshMenuStats();
+  state='over'; updateChrome(); showScreen('over');
+}
+
+/* 2-player pass-and-play time attack */
+function startMatch(){
+  matchMode=true; matchPlayer=1; p1Score=0; p2Score=0;
+  SEED=(Math.random()*1e9)>>>0; mode='2p'; setSeedLabel();
+  beginTurn();
+}
+function beginTurn(){
+  rng=makeRng(SEED); matchRound=0; score=0; streak=0; dispScore=0;
+  player.skill=0.45; player.rounds=0; player.passHistory=[];
+  bonus=null; fx=[]; livesMode=false;
+  state='match'; showScreen(null); updateChrome();
+  matchEndsAt=performance.now()+MATCH_MS;
+  spawnRound(); drawSpark(); startMusic();
+}
+function endMatchTurn(){
+  stopMusic();
+  if(matchPlayer===1){
+    p1Score=score; matchPlayer=2;
+    document.getElementById('handoffScore').textContent='Player 1 scored '+p1Score;
+    state='handoff'; updateChrome(); showScreen('handoff');
+  } else {
+    p2Score=score; showResult();
+  }
+}
+function showResult(){
+  const title = p1Score===p2Score ? "It's a tie! 🤝"
+              : (p1Score>p2Score ? '🏆 Player 1 wins!' : '🏆 Player 2 wins!');
+  document.getElementById('resultTitle').textContent = title;
+  document.getElementById('resultScores').textContent = 'Player 1: '+p1Score+'    ·    Player 2: '+p2Score;
+  state='result'; updateChrome(); showScreen('result');
+}
+
+/* ---------- buttons ---------- */
+document.getElementById('dailyBtn').onclick = ()=> start1P(dailySeed(), 'daily');
+document.getElementById('freeBtn').onclick  = ()=> start1P((Math.random()*1e9)>>>0, 'free');
+document.getElementById('twoBtn').onclick   = ()=> startMatch();
+pauseBtn.onclick = pause;
+document.getElementById('resumeBtn').onclick  = resume;
+document.getElementById('restartBtn').onclick = ()=>{ showScreen(null); restart(); };
+document.getElementById('menuBtn').onclick    = toMenu;
+document.getElementById('readyBtn').onclick   = ()=> beginTurn();
+document.getElementById('rematchBtn').onclick = ()=> startMatch();
+document.getElementById('okBtn').onclick       = toMenu;   // 2P: acknowledge result, back to menu
+document.getElementById('againBtn').onclick    = ()=>{ showScreen(null); start1P(SEED, mode); };
+document.getElementById('overMenuBtn').onclick = toMenu;
+muteBtn.onclick = ()=> setMuted(!muted);
+fxBtn.onclick   = ()=> cycleFx();
+
+/* tiny DOM helper: a div with the given class string */
+function el(cls){ const d=document.createElement('div'); d.className=cls; return d; }
+
+/* cosmetics strip: pick an unlocked skin; locked ones show the score needed */
+function renderCosmetics(){
+  const wrap = document.getElementById('cosmetics'); wrap.innerHTML='';
+  for(const s of SKINS){
+    const unlocked = best >= s.need;
+    const d = el('swatch'+(s.id===skinId?' sel':'')+(unlocked?'':' locked'));
+    d.style.background = s.fill; d.style.borderColor = s.ring;
+    d.title = unlocked ? s.name : (s.name+' — reach '+s.need);
+    if(!unlocked){ const lk=el('lk'); lk.textContent='🔒'; d.appendChild(lk); }
+    d.onclick = ()=>{ if(!unlocked) return; skinId=s.id; localStorage.setItem('flow.skin',s.id); renderCosmetics(); };
+    wrap.appendChild(d);
+  }
+  document.getElementById('cosLine').textContent =
+    'Ring skin — lifetime best '+best+' · unlocks at 0 / 25 / 75 / 150';
+}
+
+/* share the current seed as a deep link (same generated run for anyone) */
+document.getElementById('shareBtn').onclick = async ()=>{
+  const url = location.origin + location.pathname + '?seed=' + SEED.toString(36);
+  try{ await navigator.clipboard.writeText(url); }catch(_){}
+  const b = document.getElementById('shareBtn'); const t=b.textContent;
+  b.textContent='✓ Link copied'; setTimeout(()=>b.textContent=t, 1400);
+};
+
+/* ---------- init ---------- */
+renderCosmetics();
+refreshHud();
+refreshMenuStats();
+muteBtn.textContent = muted ? '🔇' : '🔊';
+applyFx();
+try{ initGPU(); }catch(_){}      // async; sets up the WebGPU enhancer if available, else no-op
+showScreen('overlay');
+updateChrome();
+resize();
+requestAnimationFrame(frame);
+window.addEventListener('load', ()=>{ resize(); drawSpark(); });
+
+/* installable PWA: register the offline service worker (https only, e.g. on Pages).
+ * Auto-reload once when a NEW worker takes over, so deployed updates apply without
+ * a manual hard-refresh (but not on the very first install). */
+if('serviceWorker' in navigator && location.protocol==='https:'){
+  const hadController = !!navigator.serviceWorker.controller;
+  let swReloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+    if(swReloading || !hadController) return; swReloading=true; location.reload();
+  });
+  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('service-worker.js').catch(()=>{}); });
+}
+
+/* intro splash: auto-dismiss after a beat, or tap to skip (also warms audio) */
+const splash = document.getElementById('splash');
+function dismissSplash(){
+  if(!splash || splash.classList.contains('gone')) return;
+  splash.classList.add('gone');
+  setTimeout(()=>{ splash.style.display='none'; }, 600);
+}
+splash.addEventListener('pointerdown', ()=>{ ensureAudio(); dismissSplash(); });
+setTimeout(dismissSplash, 2300);
+</script>
+</body>
+</html>

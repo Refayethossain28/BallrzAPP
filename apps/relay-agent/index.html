@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Relay — Autonomous agent simulator</title>
+<style>
+  :root {
+    --bg: #0a0f0d;
+    --panel: #101815;
+    --panel-2: #16211c;
+    --border: #24352d;
+    --text: #e7efe9;
+    --muted: #8fa89a;
+    --accent: #34d399;
+    --accent-dim: rgba(52, 211, 153, 0.12);
+    --amber: #fbbf24;
+    --danger: #f87171;
+    --radius: 12px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 15px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+  header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 10px 18px; background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 10;
+  }
+  header .logo { font-weight: 700; font-size: 17px; }
+  header .logo span { color: var(--accent); }
+  header a.back {
+    color: var(--muted); text-decoration: none; font-size: 13px;
+    padding: 5px 10px; border: 1px solid var(--border); border-radius: 8px;
+  }
+  header a.back:hover { color: var(--text); border-color: var(--accent); }
+  header .spacer { flex: 1; }
+
+  .btn {
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 13px; font-size: 13px; font-family: var(--font);
+    cursor: pointer; transition: border-color .15s;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); color: #05291c; border-color: var(--accent); font-weight: 600; }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+  .btn[disabled] { opacity: .45; cursor: default; }
+  .btn[disabled]:hover { border-color: var(--border); color: var(--text); filter: none; }
+  .btn.danger[disabled]:hover { color: var(--text); }
+
+  .wrap { max-width: 860px; margin: 0 auto; padding: 18px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px; margin-bottom: 16px;
+  }
+  .card h2 {
+    font-size: 13px; text-transform: uppercase; letter-spacing: .8px;
+    color: var(--muted); margin-bottom: 12px;
+  }
+  .presets { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .preset {
+    padding: 8px 14px; border-radius: 999px; font-size: 13px;
+    border: 1px solid var(--border); background: var(--panel-2);
+    color: var(--muted); cursor: pointer; font-family: var(--font);
+  }
+  .preset:hover, .preset.active {
+    background: var(--accent-dim); color: var(--accent);
+    border-color: rgba(52,211,153,.5);
+  }
+  .goal-row { display: flex; gap: 10px; }
+  .goal-row input {
+    flex: 1; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 9px 12px; font-size: 14px; font-family: var(--font);
+  }
+  .goal-row input:focus { outline: none; border-color: var(--accent); }
+
+  .runbar {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 12px; flex-wrap: wrap;
+  }
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 12.5px; padding: 4px 12px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--muted);
+  }
+  .status-pill .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--muted);
+  }
+  .status-pill.running { color: var(--accent); border-color: rgba(52,211,153,.5); }
+  .status-pill.running .dot { background: var(--accent); animation: pulse 1.1s infinite; }
+  .status-pill.paused { color: var(--amber); border-color: rgba(251,191,36,.5); }
+  .status-pill.paused .dot { background: var(--amber); }
+  .status-pill.aborted { color: var(--danger); border-color: rgba(248,113,113,.5); }
+  .status-pill.aborted .dot { background: var(--danger); }
+  .status-pill.done { color: var(--accent); border-color: rgba(52,211,153,.5); }
+  .status-pill.done .dot { background: var(--accent); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+
+  .plan-card { display: none; }
+  .plan-card.visible { display: block; }
+  .plan-card ol { margin-left: 20px; }
+  .plan-card li { margin-bottom: 4px; font-size: 14px; }
+  .engine-badge {
+    font-size: 10.5px; color: var(--muted); border: 1px solid var(--border);
+    border-radius: 999px; padding: 1px 8px; margin-left: 8px; vertical-align: middle;
+  }
+  .engine-badge.api { color: var(--accent); border-color: rgba(52,211,153,.5); }
+
+  /* Timeline */
+  .timeline { position: relative; }
+  .step {
+    position: relative;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 13px 15px; margin-bottom: 12px;
+    animation: slideIn .25s ease;
+  }
+  @keyframes slideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .step-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+  .step-num {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--accent-dim); color: var(--accent);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 11.5px; font-weight: 700; flex: 0 0 auto;
+  }
+  .step-tool { font-family: var(--mono); font-size: 13.5px; font-weight: 600; color: var(--accent); }
+  .step-state { font-size: 11.5px; color: var(--muted); margin-left: auto; }
+  .step-state.running { color: var(--amber); }
+  .step-state.ok { color: var(--accent); }
+  .step-state.err { color: var(--danger); }
+  .step-args {
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 9px; margin-top: 8px;
+    overflow-x: auto; white-space: pre;
+  }
+  .step-result {
+    margin-top: 9px; font-size: 13.5px; white-space: pre-wrap;
+    word-wrap: break-word;
+    border-left: 3px solid var(--border); padding-left: 11px;
+    color: var(--text);
+  }
+  .step-result .caret {
+    display: inline-block; width: 7px; height: 14px;
+    background: var(--accent); vertical-align: text-bottom;
+    animation: pulse .8s infinite;
+  }
+  .report-card { display: none; border-left: 3px solid var(--accent); }
+  .report-card.visible { display: block; }
+  .report-card .report-text { white-space: pre-wrap; word-wrap: break-word; font-size: 14px; }
+  .notice {
+    font-size: 12px; color: var(--amber);
+    background: rgba(251,191,36,.08); border: 1px solid rgba(251,191,36,.25);
+    border-radius: 8px; padding: 6px 10px; margin-bottom: 12px; display: none;
+  }
+  .notice.visible { display: block; }
+  .hint { font-size: 11.5px; color: var(--muted); margin-top: 8px; }
+  .warn {
+    font-size: 11.5px; color: var(--amber); background: rgba(251,191,36,.08);
+    border: 1px solid rgba(251,191,36,.25); border-radius: 8px;
+    padding: 8px 10px; margin-top: 8px;
+  }
+  .field { margin-bottom: 10px; }
+  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  input[type="password"] {
+    width: 100%; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; font-size: 13px; font-family: var(--font);
+  }
+  input[type="password"]:focus { outline: none; border-color: var(--accent); }
+
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,.6);
+    display: none; align-items: center; justify-content: center; z-index: 50; padding: 16px;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 18px; width: 100%; max-width: 440px;
+  }
+  .modal h3 { font-size: 16px; margin-bottom: 12px; }
+  .modal .row { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
+
+  @media (max-width: 620px) {
+    .goal-row { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <a class="back" href="../index.html">&larr; All apps</a>
+  <div class="logo">Re<span>lay</span></div>
+  <div class="spacer"></div>
+  <span id="apiStatus" style="font-size:12px;color:var(--muted);"></span>
+  <button class="btn" id="settingsBtn">Settings</button>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <h2>Give the agent a goal</h2>
+    <div class="presets">
+      <button class="preset" data-goal="Triage my inbox">Triage my inbox</button>
+      <button class="preset" data-goal="Monitor site uptime">Monitor site uptime</button>
+      <button class="preset" data-goal="Research a topic: edge computing">Research a topic</button>
+    </div>
+    <div class="goal-row">
+      <input type="text" id="goalInput" placeholder="...or type your own goal" autocomplete="off">
+      <button class="btn primary" id="runBtn">Run agent</button>
+    </div>
+    <div class="runbar">
+      <span class="status-pill" id="statusPill"><span class="dot"></span><span id="statusText">Idle</span></span>
+      <span style="flex:1"></span>
+      <button class="btn" id="pauseBtn" disabled>Pause</button>
+      <button class="btn" id="resumeBtn" disabled>Resume</button>
+      <button class="btn danger" id="abortBtn" disabled>Abort</button>
+    </div>
+    <div class="hint">All tools are simulated with seeded data — nothing leaves your browser unless you add an API key for the planning/summary text.</div>
+  </div>
+
+  <div class="notice" id="fallbackNotice"></div>
+
+  <div class="card plan-card" id="planCard">
+    <h2>Plan <span class="engine-badge" id="planBadge">Local engine</span></h2>
+    <ol id="planList"></ol>
+  </div>
+
+  <div class="timeline" id="timeline"></div>
+
+  <div class="card report-card" id="reportCard">
+    <h2>Final report <span class="engine-badge" id="reportBadge">Local engine</span></h2>
+    <div class="report-text" id="reportText"></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="settingsModal">
+  <div class="modal">
+    <h3>Settings</h3>
+    <div class="field">
+      <label for="apiKey">Anthropic API key (optional)</label>
+      <input type="password" id="apiKey" placeholder="sk-ant-...">
+    </div>
+    <div class="warn">
+      Storing API keys in browser localStorage is for <strong>local demo use only</strong>.
+      Do not use a production key. With a key, the plan and final report are written by Claude;
+      tool calls stay simulated either way.
+    </div>
+    <div class="row">
+      <button class="btn danger" id="clearKeyBtn">Clear key</button>
+      <button class="btn" id="closeSettingsBtn">Close</button>
+      <button class="btn primary" id="saveKeyBtn">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var LS_KEY = "relay.apikey.v1";
+  var $ = function (id) { return document.getElementById(id); };
+
+  // ============ seeded data ============
+
+  var INBOX = [
+    { from: "Dana Whitfield (CFO)", subject: "URGENT: wire approval needed today", body: "The vendor payment must go out today. Please approve asap or we miss the deadline." },
+    { from: "Stripe", subject: "Invoice #4821 payment failed", body: "Your payment for invoice #4821 could not be processed. Please update your billing details." },
+    { from: "Marcus Lee", subject: "Re: Thursday sync — move to 3pm?", body: "Can we shift our Thursday meeting to 3pm? I have a conflict at the usual slot." },
+    { from: "JS Weekly", subject: "Issue #712: Signals, again", body: "This week's newsletter digest covers signals, build tooling, and three new releases." },
+    { from: "prize-dept@lucky-winz.biz", subject: "You WON a $500 gift card!!!", body: "Claim your prize now!!! Click here to receive your free gift card reward." },
+    { from: "Mom", subject: "Sunday dinner?", body: "Are you coming over on Sunday? Let me know so I can plan." },
+    { from: "AWS Billing", subject: "Your invoice is available", body: "Your monthly billing statement and invoice for the linked account is now available." },
+    { from: "Priya Sharma", subject: "Standup notes + action items", body: "Notes from today's standup meeting. Your action items: review the release checklist and update the runbook." }
+  ];
+
+  function classifyEmail(e) {
+    var t = (e.subject + " " + e.body).toLowerCase();
+    if (/urgent|asap|deadline|today/.test(t) && !/won|prize/.test(t)) return "urgent";
+    if (/won|prize|gift card|claim|!!!/.test(t)) return "spam";
+    if (/invoice|payment|billing|statement/.test(t)) return "billing";
+    if (/meeting|sync|standup|3pm|reschedul/.test(t)) return "meetings";
+    if (/newsletter|digest|issue #/.test(t)) return "newsletters";
+    return "personal";
+  }
+
+  var ENDPOINTS = [
+    { host: "www.ballrz.io", status: 200, ms: 84 },
+    { host: "api.ballrz.io", status: 503, ms: 2940 },
+    { host: "auth.ballrz.io", status: 200, ms: 121 },
+    { host: "cdn.ballrz.io", status: 200, ms: 45 },
+    { host: "status.ballrz.io", status: 200, ms: 97 }
+  ];
+
+  var NOTES = [
+    { id: "N-01", title: "Edge computing basics", topic: "edge computing", text: "Edge computing moves compute close to where data is produced. Typical wins: latency drops from ~120ms to under 20ms for regional users, and bandwidth costs fall because raw data is filtered before it crosses the WAN." },
+    { id: "N-02", title: "Edge vs cloud tradeoffs", topic: "edge computing", text: "Tradeoffs: fleets of small nodes are harder to operate than one region; state synchronization is the classic pain point. Most teams keep the source of truth central and push read-mostly workloads to the edge." },
+    { id: "N-03", title: "Edge use cases survey", topic: "edge computing", text: "Strongest use cases observed: media streaming, IoT preprocessing, gaming session brokers, and personalization at the CDN layer. Weak fit: heavy batch analytics, which still belongs in core regions." },
+    { id: "N-04", title: "Vector databases overview", topic: "vector databases", text: "Vector databases index embeddings for similarity search. HNSW graphs dominate for latency; IVF variants win on memory. Hybrid keyword+vector retrieval usually beats either alone in production search." },
+    { id: "N-05", title: "WASM on the server", topic: "webassembly", text: "Server-side WebAssembly offers millisecond cold starts and strong sandboxing, making it attractive for multi-tenant plugin systems and edge runtimes." },
+    { id: "N-06", title: "Battery storage economics", topic: "solar batteries", text: "Home battery payback periods now range 6-9 years in high-tariff markets. Pairing with time-of-use tariffs and solar self-consumption is what actually makes the math work." }
+  ];
+
+  // ============ helpers ============
+
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function fmtArgs(o) { return JSON.stringify(o, null, 1).replace(/\n\s*/g, " "); }
+
+  // ============ scenarios ============
+
+  function inboxScenario() {
+    var classified = INBOX.map(function (e) { return { e: e, cat: classifyEmail(e) }; });
+    var counts = {};
+    classified.forEach(function (c) { counts[c.cat] = (counts[c.cat] || 0) + 1; });
+    var needReply = classified.filter(function (c) { return c.cat === "urgent" || c.cat === "meetings"; });
+
+    return {
+      name: "inbox",
+      goal: "Triage my inbox",
+      plan: [
+        "Fetch all unread messages from the inbox",
+        "Classify each message with keyword rules (urgent / billing / meetings / newsletters / spam / personal)",
+        "Flag messages that need a reply today",
+        "Compile a triage report with recommended next actions"
+      ],
+      steps: [
+        {
+          tool: "inbox.list",
+          args: { folder: "inbox", unread_only: true },
+          run: function () {
+            return "Fetched " + INBOX.length + " messages:\n" + INBOX.map(function (e, i) {
+              return "  " + (i + 1) + ". " + e.from + " — \"" + e.subject + "\"";
+            }).join("\n");
+          }
+        },
+        {
+          tool: "inbox.classify",
+          args: { rules: ["urgent", "billing", "meetings", "newsletters", "spam", "personal"] },
+          run: function () {
+            return classified.map(function (c) {
+              return "  [" + c.cat.toUpperCase() + "] " + c.e.subject;
+            }).join("\n") + "\n\nTotals: " + Object.keys(counts).map(function (k) { return k + "=" + counts[k]; }).join(", ");
+          }
+        },
+        {
+          tool: "inbox.flag_actions",
+          args: { criteria: "needs reply today" },
+          run: function () {
+            return needReply.length + " messages flagged for reply:\n" + needReply.map(function (c) {
+              return "  → " + c.e.from + " — \"" + c.e.subject + "\" (" + c.cat + ")";
+            }).join("\n");
+          }
+        },
+        {
+          tool: "inbox.archive",
+          args: { categories: ["newsletters", "spam"] },
+          run: function () {
+            var n = classified.filter(function (c) { return c.cat === "newsletters" || c.cat === "spam"; }).length;
+            return "Archived " + n + " low-priority messages (newsletters + spam). Spam sender reported to filter.";
+          }
+        }
+      ],
+      localReport: function () {
+        return "Inbox triage complete. Processed " + INBOX.length + " messages.\n\n" +
+          "Breakdown: " + Object.keys(counts).map(function (k) { return counts[k] + " " + k; }).join(", ") + ".\n\n" +
+          "Needs your attention today:\n" + needReply.map(function (c) {
+            return "• " + c.e.from + " — \"" + c.e.subject + "\"";
+          }).join("\n") +
+          "\n\nRecommended: approve the wire request first (CFO, deadline today), then confirm the Thursday 3pm reschedule. Billing notices filed for month-end review; newsletters and spam archived.";
+      }
+    };
+  }
+
+  function uptimeScenario() {
+    var down = ENDPOINTS.filter(function (e) { return e.status >= 500; });
+    var steps = [
+      {
+        tool: "uptime.list_endpoints",
+        args: { fleet: "ballrz.io" },
+        run: function () {
+          return "Monitoring " + ENDPOINTS.length + " endpoints:\n" + ENDPOINTS.map(function (e) {
+            return "  • https://" + e.host;
+          }).join("\n");
+        }
+      }
+    ];
+    ENDPOINTS.forEach(function (e) {
+      steps.push({
+        tool: "http.check",
+        args: { url: "https://" + e.host, timeout_ms: 5000 },
+        error: e.status >= 500,
+        run: function () {
+          return e.status >= 500
+            ? "HTTP " + e.status + " Service Unavailable — latency " + e.ms + "ms (threshold 800ms). Endpoint is DOWN."
+            : "HTTP " + e.status + " OK — latency " + e.ms + "ms. Healthy.";
+        }
+      });
+    });
+    steps.push({
+      tool: "uptime.diagnose",
+      args: { target: "api.ballrz.io" },
+      run: function () {
+        return "Diagnostics for api.ballrz.io:\n  DNS resolution: OK (3 A records)\n  TLS handshake: OK (cert valid 212 more days)\n  Load balancer: healthy\n  Upstream app pods: 1/4 responding — 3 pods crash-looping since 14:32 UTC\n  Probable cause: bad deploy (release 2026.07.31-2), OOM on startup";
+      }
+    });
+    steps.push({
+      tool: "incident.create",
+      args: { severity: "major", service: "api.ballrz.io" },
+      run: function () {
+        return "Incident INC-1042 created (severity: major).\n  Title: api.ballrz.io returning 503\n  On-call paged: platform rotation\n  Suggested action: roll back to release 2026.07.31-1";
+      }
+    });
+    return {
+      name: "uptime",
+      goal: "Monitor site uptime",
+      plan: [
+        "List all monitored endpoints for the ballrz.io fleet",
+        "Probe each endpoint over HTTP and record status + latency",
+        "Run diagnostics on any endpoint that fails its check",
+        "Open an incident and page on-call if a failure is confirmed"
+      ],
+      steps: steps,
+      localReport: function () {
+        return "Uptime sweep complete: " + (ENDPOINTS.length - down.length) + "/" + ENDPOINTS.length + " endpoints healthy.\n\n" +
+          "FAILING: api.ballrz.io (HTTP 503, 2940ms). Diagnostics point to 3/4 app pods crash-looping after release 2026.07.31-2 (OOM on startup).\n\n" +
+          "Actions taken:\n• Opened incident INC-1042 (major) and paged the platform on-call rotation.\n• Recommended rollback to release 2026.07.31-1.\n\nAll other endpoints (www, auth, cdn, status) responded 200 with latency under 130ms.";
+      }
+    };
+  }
+
+  function researchScenario(topic) {
+    topic = (topic || "edge computing").trim();
+    var tWords = topic.toLowerCase().match(/[a-z0-9]+/g) || [];
+    function scoreNote(n) {
+      var hay = (n.title + " " + n.topic + " " + n.text).toLowerCase();
+      var s = 0;
+      tWords.forEach(function (w) { if (hay.indexOf(w) !== -1) s++; });
+      return s;
+    }
+    var ranked = NOTES.map(function (n) { return { n: n, s: scoreNote(n) }; })
+      .sort(function (a, b) { return b.s - a.s; });
+    var hits = ranked.filter(function (r) { return r.s > 0; }).slice(0, 3).map(function (r) { return r.n; });
+    if (!hits.length) hits = ranked.slice(0, 2).map(function (r) { return r.n; });
+
+    var steps = [
+      {
+        tool: "notes.search",
+        args: { query: topic },
+        run: function () {
+          return "Found " + hits.length + " matching notes in the knowledge base:\n" + hits.map(function (n) {
+            return "  • " + n.id + " — \"" + n.title + "\"";
+          }).join("\n");
+        }
+      }
+    ];
+    hits.forEach(function (n) {
+      steps.push({
+        tool: "notes.read",
+        args: { id: n.id },
+        run: function () { return "\"" + n.title + "\":\n" + n.text; }
+      });
+    });
+    steps.push({
+      tool: "notes.compile",
+      args: { format: "brief", sources: hits.map(function (n) { return n.id; }) },
+      run: function () {
+        return "Compiled " + hits.length + " sources into a research brief (" +
+          hits.reduce(function (a, n) { return a + n.text.length; }, 0) + " chars of source material).";
+      }
+    });
+    return {
+      name: "research",
+      goal: "Research a topic: " + topic,
+      topic: topic,
+      hits: hits,
+      plan: [
+        "Search the local knowledge base for notes about \"" + topic + "\"",
+        "Read the most relevant notes in full",
+        "Extract the key findings from each source",
+        "Compile everything into a short research brief"
+      ],
+      steps: steps,
+      localReport: function () {
+        var exact = ranked[0] && ranked[0].s > 0;
+        var head = "Research brief: " + topic + "\n\nSources consulted: " +
+          hits.map(function (n) { return n.id; }).join(", ") + ".\n\nKey findings:\n";
+        var body = hits.map(function (n) {
+          var first = n.text.split(/(?:\.\s)/)[0];
+          return "• " + first.replace(/\.?$/, ".") + " (" + n.id + ")";
+        }).join("\n");
+        var tail = exact ? "" :
+          "\n\nNote: no notes matched the topic exactly, so the closest material in the knowledge base was used.";
+        return head + body + tail;
+      }
+    };
+  }
+
+  function pickScenario(goal) {
+    var g = goal.toLowerCase();
+    if (/inbox|email|mail|triage/.test(g)) return inboxScenario();
+    if (/uptime|monitor|site|status|endpoint|health/.test(g)) return uptimeScenario();
+    var topic = goal.replace(/^research( a topic)?:?\s*/i, "").trim();
+    return researchScenario(topic || goal);
+  }
+
+  // ============ Claude API ============
+
+  function getKey() { return (localStorage.getItem(LS_KEY) || "").trim(); }
+
+  async function callClaude(system, user, maxTokens) {
+    var res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": getKey(),
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-5",
+        max_tokens: maxTokens || 800,
+        system: system,
+        messages: [{ role: "user", content: user }]
+      })
+    });
+    if (!res.ok) throw new Error("API error " + res.status);
+    var data = await res.json();
+    var text = (data.content || [])
+      .filter(function (b) { return b.type === "text"; })
+      .map(function (b) { return b.text; })
+      .join("\n").trim();
+    if (!text) throw new Error("Empty response");
+    return text;
+  }
+
+  // ============ runner ============
+
+  var state = "idle"; // idle | running | paused | done | aborted
+  var abortRequested = false;
+
+  function setState(s) {
+    state = s;
+    var pill = $("statusPill");
+    pill.className = "status-pill " +
+      (s === "running" ? "running" : s === "paused" ? "paused" : s === "aborted" ? "aborted" : s === "done" ? "done" : "");
+    var label = { idle: "Idle", running: "Running", paused: "Paused", done: "Done", aborted: "Aborted" }[s];
+    $("statusText").textContent = label;
+    $("runBtn").disabled = (s === "running" || s === "paused");
+    $("pauseBtn").disabled = (s !== "running");
+    $("resumeBtn").disabled = (s !== "paused");
+    $("abortBtn").disabled = (s !== "running" && s !== "paused");
+  }
+
+  function AbortErr() { this.aborted = true; }
+
+  async function gate() {
+    while (state === "paused" && !abortRequested) await sleep(120);
+    if (abortRequested) throw new AbortErr();
+  }
+
+  async function typeText(el, text) {
+    var caret = document.createElement("span");
+    caret.className = "caret";
+    el.appendChild(caret);
+    var i = 0;
+    var chunk = Math.max(2, Math.ceil(text.length / 60));
+    while (i < text.length) {
+      await gate();
+      i = Math.min(text.length, i + chunk);
+      el.childNodes[0].nodeValue = text.slice(0, i);
+      await sleep(16);
+    }
+    caret.remove();
+  }
+
+  function setStatusLine(text) { $("statusText").textContent = text; }
+
+  function makeStepCard(num, tool, args) {
+    var card = document.createElement("div");
+    card.className = "step";
+    var head = document.createElement("div");
+    head.className = "step-head";
+    var n = document.createElement("span"); n.className = "step-num"; n.textContent = num;
+    var t = document.createElement("span"); t.className = "step-tool"; t.textContent = tool;
+    var st = document.createElement("span"); st.className = "step-state running"; st.textContent = "running…";
+    head.appendChild(n); head.appendChild(t); head.appendChild(st);
+    card.appendChild(head);
+    var a = document.createElement("div"); a.className = "step-args"; a.textContent = fmtArgs(args);
+    card.appendChild(a);
+    var r = document.createElement("div"); r.className = "step-result";
+    r.appendChild(document.createTextNode(""));
+    card.appendChild(r);
+    $("timeline").appendChild(card);
+    card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    return { card: card, stateEl: st, resultEl: r };
+  }
+
+  function showNotice(msg) {
+    var n = $("fallbackNotice");
+    n.textContent = msg;
+    n.classList.add("visible");
+    setTimeout(function () { n.classList.remove("visible"); }, 7000);
+  }
+
+  function toolManifest(sc) {
+    var seen = {};
+    return sc.steps.map(function (s) { return s.tool; }).filter(function (t) {
+      if (seen[t]) return false; seen[t] = true; return true;
+    }).join(", ");
+  }
+
+  async function runAgent(goal) {
+    if (state === "running" || state === "paused") return;
+    abortRequested = false;
+
+    // reset UI
+    $("timeline").innerHTML = "";
+    $("reportCard").classList.remove("visible");
+    $("planCard").classList.remove("visible");
+    $("planList").innerHTML = "";
+
+    var sc = pickScenario(goal);
+    setState("running");
+    setStatusLine("Planning…");
+
+    // ---- plan ----
+    var planItems = sc.plan;
+    var planEngine = "local";
+    if (getKey()) {
+      try {
+        var planText = await callClaude(
+          "You are Relay, an autonomous agent. Write a short numbered plan (3-5 steps, one line each) for the goal, using only the listed simulated tools. Output only the numbered list.",
+          "Goal: " + sc.goal + "\nAvailable tools: " + toolManifest(sc),
+          400
+        );
+        var lines = planText.split("\n")
+          .map(function (l) { return l.replace(/^\s*\d+[.)]\s*/, "").trim(); })
+          .filter(Boolean);
+        if (lines.length >= 2) { planItems = lines; planEngine = "claude"; }
+      } catch (e) {
+        showNotice("Claude API unavailable (" + e.message + ") — using the local planner.");
+      }
+    }
+    if (abortRequested) { setState("aborted"); return; }
+
+    var badge = $("planBadge");
+    badge.textContent = planEngine === "claude" ? "Claude (claude-sonnet-5)" : "Local engine";
+    badge.className = "engine-badge" + (planEngine === "claude" ? " api" : "");
+    planItems.forEach(function (p) {
+      var li = document.createElement("li");
+      li.textContent = p;
+      $("planList").appendChild(li);
+    });
+    $("planCard").classList.add("visible");
+
+    // ---- steps ----
+    var observations = [];
+    try {
+      for (var i = 0; i < sc.steps.length; i++) {
+        await gate();
+        var step = sc.steps[i];
+        setStatusLine("Running " + step.tool + " (" + (i + 1) + "/" + sc.steps.length + ")");
+        var ui = makeStepCard(i + 1, step.tool, step.args);
+        await sleep(450 + Math.random() * 650);
+        await gate();
+        var result = step.run();
+        observations.push(step.tool + " " + fmtArgs(step.args) + "\n" + result);
+        await typeText(ui.resultEl, result);
+        ui.stateEl.textContent = step.error ? "error" : "ok";
+        ui.stateEl.className = "step-state " + (step.error ? "err" : "ok");
+        await sleep(250);
+      }
+    } catch (e) {
+      if (e && e.aborted) {
+        setState("aborted");
+        setStatusLine("Aborted (" + observations.length + "/" + sc.steps.length + " steps completed)");
+        var rEl = document.querySelector(".step .step-state.running");
+        if (rEl) { rEl.textContent = "aborted"; rEl.className = "step-state err"; }
+        var caretEl = document.querySelector(".step-result .caret");
+        if (caretEl) caretEl.remove();
+        return;
+      }
+      throw e;
+    }
+
+    // ---- final report ----
+    setStatusLine("Writing report…");
+    var report = null, reportEngine = "local";
+    if (getKey()) {
+      try {
+        report = await callClaude(
+          "You are Relay, an autonomous agent that has just finished a run. Write a concise final report (under 180 words) for the user: what was done, what was found, and recommended next actions. Plain text, no markdown headers.",
+          "Goal: " + sc.goal + "\n\nTool call log:\n\n" + observations.join("\n\n---\n\n"),
+          700
+        );
+        reportEngine = "claude";
+      } catch (e) {
+        showNotice("Claude API unavailable (" + e.message + ") — using the local report writer.");
+      }
+    }
+    if (report === null) report = sc.localReport();
+
+    var rb = $("reportBadge");
+    rb.textContent = reportEngine === "claude" ? "Claude (claude-sonnet-5)" : "Local engine";
+    rb.className = "engine-badge" + (reportEngine === "claude" ? " api" : "");
+    $("reportText").textContent = report;
+    $("reportCard").classList.add("visible");
+    $("reportCard").scrollIntoView({ behavior: "smooth", block: "nearest" });
+    setState("done");
+    setStatusLine("Done — " + sc.steps.length + " tool calls completed");
+  }
+
+  // ============ wiring ============
+
+  document.querySelectorAll(".preset").forEach(function (b) {
+    b.addEventListener("click", function () {
+      $("goalInput").value = b.dataset.goal;
+      runAgent(b.dataset.goal);
+    });
+  });
+
+  $("runBtn").addEventListener("click", function () {
+    var g = $("goalInput").value.trim() || "Research a topic: edge computing";
+    runAgent(g);
+  });
+  $("goalInput").addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && state !== "running" && state !== "paused") {
+      $("runBtn").click();
+    }
+  });
+
+  $("pauseBtn").addEventListener("click", function () {
+    if (state === "running") { setState("paused"); setStatusLine("Paused"); }
+  });
+  $("resumeBtn").addEventListener("click", function () {
+    if (state === "paused") { setState("running"); setStatusLine("Resuming…"); }
+  });
+  $("abortBtn").addEventListener("click", function () {
+    if (state === "running" || state === "paused") {
+      abortRequested = true;
+      if (state === "paused") setState("running"); // unblock the gate loop
+    }
+  });
+
+  // settings
+  function updateApiStatus() {
+    $("apiStatus").textContent = getKey() ? "Claude API: on" : "Offline mode";
+  }
+  $("settingsBtn").addEventListener("click", function () {
+    $("apiKey").value = getKey();
+    $("settingsModal").classList.add("open");
+  });
+  $("closeSettingsBtn").addEventListener("click", function () {
+    $("settingsModal").classList.remove("open");
+  });
+  $("saveKeyBtn").addEventListener("click", function () {
+    var v = $("apiKey").value.trim();
+    if (v) localStorage.setItem(LS_KEY, v); else localStorage.removeItem(LS_KEY);
+    updateApiStatus();
+    $("settingsModal").classList.remove("open");
+  });
+  $("clearKeyBtn").addEventListener("click", function () {
+    localStorage.removeItem(LS_KEY);
+    $("apiKey").value = "";
+    updateApiStatus();
+  });
+  $("settingsModal").addEventListener("click", function (e) {
+    if (e.target === $("settingsModal")) $("settingsModal").classList.remove("open");
+  });
+
+  setState("idle");
+  updateApiStatus();
+})();
+</script>
+</body>
+</html>

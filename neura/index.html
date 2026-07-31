@@ -1,0 +1,663 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Neura — the chain that thinks</title>
+<meta name="description" content="Neura (NEURA): an AI-native store of value. 21,000,000 coins, fixed forever. Every block trains the chain's neural network — Proof of Intelligence, verified by every node.">
+<meta property="og:title" content="Neura — the chain that thinks">
+<meta property="og:description" content="A fixed 21,000,000 coins. A mind that grows with every block. Mine one and you've permanently shaped it.">
+<meta name="theme-color" content="#0e1020">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='26' fill='none' stroke='%238b7cf7' stroke-width='6'/%3E%3Cpath d='M23 44V20l18 24V20' fill='none' stroke='%23e8e6ff' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #0b0d18;
+    --surface: #0e1020;
+    --panel: #131630;
+    --panel-2: #191d3d;
+    --line: rgba(139, 124, 247, .16);
+    --ink: #eceafd;
+    --ink-2: #a7a5c6;
+    --ink-3: #6f6d92;
+    --accent: #8b7cf7;
+    --accent-2: #58e6d9;
+    --good: #4ade80;
+    --bad: #f87171;
+    --radius: 14px;
+    font-size: 16px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background:
+      radial-gradient(1200px 600px at 70% -10%, rgba(139,124,247,.14), transparent 60%),
+      radial-gradient(900px 500px at 0% 30%, rgba(88,230,217,.07), transparent 55%),
+      var(--bg);
+    color: var(--ink);
+    font: 400 1rem/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px 80px; }
+  a { color: var(--accent); }
+
+  /* ---- hero ---- */
+  header.hero { padding: 56px 0 8px; text-align: center; }
+  .mark { width: 92px; height: 92px; border-radius: 26px; margin: 0 auto 18px; display: block;
+          box-shadow: 0 0 0 1px var(--line), 0 12px 60px rgba(139,124,247,.35); background: var(--surface); }
+  h1 { font-size: clamp(2.2rem, 6vw, 3.4rem); letter-spacing: -.02em; margin: 0 0 6px; }
+  h1 .tick { color: var(--accent); }
+  .tagline { font-size: clamp(1.05rem, 2.6vw, 1.3rem); color: var(--ink-2); max-width: 620px; margin: 0 auto; }
+  .tagline b { color: var(--ink); font-weight: 600; }
+  .cta { display: flex; gap: 12px; justify-content: center; margin: 26px 0 10px; flex-wrap: wrap; }
+
+  /* ---- pillars ---- */
+  .pillars { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin: 34px 0 10px; }
+  .pillar { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 18px 16px; text-align: left; }
+  .pillar h3 { margin: 0 0 6px; font-size: 1.02rem; }
+  .pillar p { margin: 0; color: var(--ink-2); font-size: .92rem; }
+
+  /* ---- stat bar ---- */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 26px 0; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+  .stat .k { font-size: .74rem; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); }
+  .stat .v { font-size: 1.28rem; font-weight: 650; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .stat .s { font-size: .78rem; color: var(--ink-2); }
+
+  /* ---- panels ---- */
+  .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; min-width: 0; }
+  .panel h2 { margin: 0 0 4px; font-size: 1.15rem; }
+  .panel .sub { margin: 0 0 14px; color: var(--ink-2); font-size: .9rem; }
+  .span6 { grid-column: span 6; } .span12 { grid-column: span 12; }
+  @media (max-width: 860px) { .span6 { grid-column: span 12; } }
+
+  /* ---- mind ---- */
+  .mindbox { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+  .mindview { position: relative; }
+  #mind { width: 260px; height: 260px; border-radius: 12px; border: 1px solid var(--line);
+          image-rendering: auto; background: #0a0c18; display: block; }
+  .mindside { flex: 1; min-width: 240px; }
+  .score { font-size: 2.6rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+  .score small { font-size: 1rem; color: var(--ink-3); font-weight: 500; }
+  .chartbox { position: relative; margin-top: 14px; }
+  #chart { width: 100%; height: 140px; display: block; }
+  #tip { position: absolute; pointer-events: none; background: var(--panel-2); border: 1px solid var(--line);
+         border-radius: 8px; padding: 5px 9px; font-size: .78rem; color: var(--ink); display: none; white-space: nowrap;
+         transform: translate(-50%, -130%); font-variant-numeric: tabular-nums; }
+  .ghost-toggle { font-size: .8rem; color: var(--ink-2); display: inline-flex; gap: 6px; align-items: center; margin-top: 8px; cursor: pointer; user-select: none; }
+
+  /* ---- forms & buttons ---- */
+  button {
+    background: linear-gradient(135deg, var(--accent), #6a5ae0); color: #fff; border: 0; border-radius: 10px;
+    padding: 10px 18px; font: 600 .95rem/1 inherit; cursor: pointer; transition: transform .06s ease, filter .15s ease;
+  }
+  button:hover { filter: brightness(1.12); } button:active { transform: scale(.97); }
+  button.ghost { background: transparent; border: 1px solid var(--line); color: var(--ink); }
+  button.small { padding: 7px 12px; font-size: .82rem; }
+  button:disabled { opacity: .45; cursor: default; }
+  input, select {
+    background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 12px; font: 400 .95rem/1.2 inherit; width: 100%;
+  }
+  input:focus, select:focus { outline: 2px solid rgba(139,124,247,.45); outline-offset: 1px; }
+  label { display: block; font-size: .78rem; color: var(--ink-3); text-transform: uppercase; letter-spacing: .07em; margin: 12px 0 5px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .row > * { flex: 1; min-width: 130px; }
+  .row > button { flex: 0 0 auto; }
+
+  /* ---- lists & tables ---- */
+  .wallet { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-top: 10px; }
+  .wallet .addr { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem; color: var(--ink-2); word-break: break-all; }
+  .wallet .bal { font-size: 1.25rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .86rem; font-variant-numeric: tabular-nums; }
+  th { text-align: left; color: var(--ink-3); font-weight: 500; font-size: .74rem; text-transform: uppercase; letter-spacing: .07em; }
+  th, td { padding: 8px 10px; border-bottom: 1px solid rgba(139,124,247,.09); white-space: nowrap; }
+  td.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem; color: var(--ink-2); }
+
+  /* ---- miner ---- */
+  .minerstate { display: flex; align-items: center; gap: 10px; margin: 12px 0; min-height: 28px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ink-3); }
+  .dot.think { background: var(--accent-2); box-shadow: 0 0 12px var(--accent-2); animation: pulse 1s infinite; }
+  .dot.grind { background: var(--accent); box-shadow: 0 0 12px var(--accent); animation: pulse .5s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  #minerlog { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem; color: var(--ink-2);
+              background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+              height: 128px; overflow-y: auto; }
+  #minerlog .ok { color: var(--good); }
+
+  /* ---- notices ---- */
+  .honest { background: rgba(248,113,113,.06); border: 1px solid rgba(248,113,113,.25); border-radius: var(--radius);
+            padding: 16px 18px; font-size: .9rem; color: var(--ink-2); }
+  .honest b { color: var(--ink); }
+  .flash { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); background: var(--panel-2);
+           border: 1px solid var(--line); color: var(--ink); border-radius: 12px; padding: 10px 18px; font-size: .9rem;
+           opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 50; }
+  .flash.show { opacity: 1; }
+  footer { text-align: center; color: var(--ink-3); font-size: .82rem; margin-top: 46px; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="hero">
+    <canvas id="logo" class="mark" width="128" height="128" aria-label="The Neura mark, painted live by the chain's neural network"></canvas>
+    <h1>Neura <span class="tick">Ⓝ</span></h1>
+    <p class="tagline"><b>The chain that thinks.</b> A fixed <b>21,000,000</b> coins. A neural network that every
+      block must train, and every node verifies. No premine, no committee, no printer — scarcity you can count
+      and a mind you can watch grow.</p>
+    <div class="cta">
+      <button id="ctaWallet">Create a wallet</button>
+      <button id="ctaMine" class="ghost">⛏🧠 Mine &amp; train</button>
+    </div>
+  </header>
+
+  <section class="pillars">
+    <div class="pillar"><h3>🧠 Proof of Intelligence</h3>
+      <p>Every block must advance the chain's shared neural network by one exact training step, seeded by the
+         previous block's hash. The weights' hash is sealed under the proof-of-work — every node re-runs the
+         training to verify it. Learning can't be faked, skipped or cherry-picked.</p></div>
+    <div class="pillar"><h3>🪙 Absolute scarcity</h3>
+      <p>Bitcoin's exact emission curve: a 50 NEURA subsidy halving every 210,000 blocks toward a hard cap of
+         21,000,000 — a thousand times scarcer than TimeCoin. The genesis block pays nobody; every coin is
+         mined into existence.</p></div>
+    <div class="pillar"><h3>🤝 A mind you co-own</h3>
+      <p>The network's mind is consensus state: mine a single block and your training step is part of its
+         intelligence forever. Holding NEURA is holding a share of everything the chain has learned.</p></div>
+  </section>
+
+  <section class="stats" id="stats" aria-label="Live chain statistics"></section>
+
+  <main class="grid">
+    <section class="panel span6">
+      <h2>The mind of the chain</h2>
+      <p class="sub">The network is learning to paint its own mark. This image is <em>computed from the consensus
+         weights</em> — at genesis it was noise; every mined block sharpens it.</p>
+      <div class="mindbox">
+        <div class="mindview">
+          <canvas id="mind" width="96" height="96"></canvas>
+          <label class="ghost-toggle"><input type="checkbox" id="ghost" style="width:auto"> show target</label>
+        </div>
+        <div class="mindside">
+          <div class="k" style="font-size:.74rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3)">Synapse score</div>
+          <div class="score"><span id="score">0.0</span><small> / 100</small></div>
+          <div class="chartbox">
+            <svg id="chart" role="img" aria-label="The mind's error falling as blocks are mined"></svg>
+            <div id="tip"></div>
+          </div>
+          <div style="font-size:.78rem;color:var(--ink-3);margin-top:4px">Mind error (loss) by block — lower is smarter.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel span6">
+      <h2>Wallets</h2>
+      <p class="sub">Keys are generated locally and never leave this device. Back up a private key before you
+         hold anything you'd mind losing.</p>
+      <div class="row">
+        <button id="newWallet">＋ New wallet</button>
+        <button id="importWallet" class="ghost">Import key</button>
+      </div>
+      <div id="wallets"></div>
+    </section>
+
+    <section class="panel span6">
+      <h2>Mine &amp; train</h2>
+      <p class="sub">One button does both jobs: think (run the required training step), then grind (find the
+         proof-of-work). Reward: <span id="rewardNote">50 NEURA</span> + fees.</p>
+      <label for="mineWallet">Pay the reward to</label>
+      <select id="mineWallet"></select>
+      <div class="minerstate"><span class="dot" id="minerDot"></span><span id="minerState">Idle.</span></div>
+      <div class="row">
+        <button id="mineBtn">⛏🧠 Start mining</button>
+        <div style="flex:1"></div>
+      </div>
+      <div id="minerlog" style="margin-top:12px" aria-live="polite"></div>
+      <p style="font-size:.8rem;color:var(--ink-3);margin:12px 0 0">Leaving a device running? Use the
+        <a id="minerLink" href="mine.html">dedicated miner</a> — it holds no keys, mines to an address
+        you paste, and keeps the screen awake.</p>
+    </section>
+
+    <section class="panel span6">
+      <h2>Send NEURA</h2>
+      <p class="sub">Signed with your key, checked by every node, settled in the next block.</p>
+      <label for="sendFrom">From</label>
+      <select id="sendFrom"></select>
+      <label for="sendTo">To address</label>
+      <input id="sendTo" placeholder="B… (a Neura address)" autocomplete="off" spellcheck="false">
+      <div class="row">
+        <div><label for="sendAmt">Amount</label><input id="sendAmt" placeholder="1.5" inputmode="decimal"></div>
+        <div><label for="sendFee">Fee (optional)</label><input id="sendFee" placeholder="0.001" inputmode="decimal"></div>
+      </div>
+      <div class="row" style="margin-top:14px"><button id="sendBtn">Sign &amp; broadcast</button></div>
+      <div id="mempool" style="margin-top:12px;font-size:.84rem;color:var(--ink-2)"></div>
+    </section>
+
+    <section class="panel span12">
+      <h2>Block explorer</h2>
+      <p class="sub">Every block carries value <em>and</em> thought: its coinbase commits the hash of the mind it
+         trained. Open this page in a second tab — each tab is an independent node; they gossip and converge on
+         the heaviest valid chain.</p>
+      <div class="tablewrap"><table id="blocks">
+        <thead><tr><th>Height</th><th>Hash</th><th>Txs</th><th>Reward to</th><th>Mind (PoI hash)</th><th>Mind error</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+      <div id="richlist" style="margin-top:14px;font-size:.88rem;color:var(--ink-2)"></div>
+    </section>
+
+    <section class="panel span12">
+      <h2>Why be part of this</h2>
+      <p class="sub" style="margin-bottom:8px">The store-of-value case, in three sentences.</p>
+      <p style="color:var(--ink-2);margin:0 0 14px">
+        Money keeps its value when nobody can print more of it — Neura's 21,000,000-coin cap is enforced by every
+        node's consensus rules, not by anyone's promise. Proof of Intelligence means the energy that secures the
+        ledger also builds something the whole network provably shares: a mind, grown one verified step per block,
+        that no single party controls or can rewrite. And because the genesis block pays nobody, the only way NEURA
+        has ever entered the world is that someone, somewhere, did the work — mining here is joining, and joining
+        leaves a permanent mark on what the chain knows.
+      </p>
+      <div class="honest">
+        <b>The honesty box.</b> Neura is a real, working implementation — real ECDSA on secp256k1, a real UTXO
+        ledger, real proof-of-work, and a genuinely learned (never stored) image — but it is a <b>prototype, not a
+        listed asset</b>: coins have no market price, keys live unencrypted in your browser's localStorage, the
+        network is tab-to-tab gossip, and the on-chain "AI" is a small neural net chosen so every node can verify
+        every training step. Nothing here is investment advice. Read the full risk notes in
+        <a href="https://github.com/refayethossain28/BallrzAPP/blob/main/neura/README.md">README.md</a> before
+        trusting it with anything that matters.
+      </div>
+    </section>
+  </main>
+
+  <footer>Neura Ⓝ — built from raw bytes in <a href="https://github.com/refayethossain28/BallrzAPP">BallrzAPP</a>.
+    Consensus core shared with TimeCoin; Proof of Intelligence in <code>neura/engine.js</code>.
+    <a href="promo.html">The website</a> · <a href="mine.html">Dedicated miner</a>.</footer>
+</div>
+
+<div class="flash" id="flash"></div>
+
+<script src="../coin/engine.js"></script>
+<script src="brain.js"></script>
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+  var C = self.BallrzCoin, B = self.NeuraBrain, N = self.NeuraChain;
+  var $ = function (id) { return document.getElementById(id); };
+  var COIN = C.COIN;
+  var STORE_CHAIN = 'neura-chain-v1', STORE_WALLETS = 'neura-wallets-v1';
+
+  function fmt(sparks) { return C.formatAmount(sparks, 'NEURA'); }
+  function short(hex, n) { return hex ? hex.slice(0, n || 10) + '…' : ''; }
+  function flash(msg) {
+    var el = $('flash'); el.textContent = msg; el.className = 'flash show';
+    setTimeout(function () { el.className = 'flash'; }, 2600);
+  }
+
+  /* ================= state ================= */
+  var chain;
+  try {
+    var saved = localStorage.getItem(STORE_CHAIN);
+    chain = saved ? N.Chain.fromJSON(JSON.parse(saved)) : new N.Chain();
+  } catch (e) { chain = new N.Chain(); }
+
+  var wallets = [];
+  try { wallets = JSON.parse(localStorage.getItem(STORE_WALLETS) || '[]'); } catch (e) { wallets = []; }
+
+  function saveChain() { try { localStorage.setItem(STORE_CHAIN, JSON.stringify(chain.toJSON())); } catch (e) {} }
+  function saveWallets() { try { localStorage.setItem(STORE_WALLETS, JSON.stringify(wallets)); } catch (e) {} }
+  function walletObjs() { return wallets.map(function (w) { return C.walletFromPrivateKey(w.privateKey); }); }
+
+  /* ================= network (tab-to-tab gossip) ================= */
+  var bc = null;
+  if (typeof BroadcastChannel !== 'undefined') {
+    bc = new BroadcastChannel('neura-net-v1');
+    bc.onmessage = function (ev) {
+      var m = ev.data || {};
+      if (m.type === 'chain') {
+        if (chain.replaceChain(m.blocks)) { saveChain(); renderAll(); flash('Synced: adopted a heavier chain from another node'); }
+      } else if (m.type === 'tx') {
+        try { chain.submitTransaction(m.tx); renderAll(); } catch (e) { /* already known / spent */ }
+      } else if (m.type === 'hello') {
+        if (bc) bc.postMessage({ type: 'chain', blocks: chain.toJSON().blocks });
+      }
+    };
+    bc.postMessage({ type: 'hello' });
+  }
+  function gossipChain() { if (bc) bc.postMessage({ type: 'chain', blocks: chain.toJSON().blocks }); }
+  function gossipTx(tx) { if (bc) bc.postMessage({ type: 'tx', tx: tx }); }
+
+  /* ================= the mind: canvases ================= */
+  // brightness → colour: deep space → violet → white-hot thought.
+  function shade(v) {
+    v = Math.max(0, Math.min(1, v));
+    var stops = [ [10, 12, 24], [58, 44, 130], [139, 124, 247], [232, 230, 255] ];
+    var t = v * (stops.length - 1), i = Math.min(stops.length - 2, Math.floor(t)), f = t - i;
+    return [
+      Math.round(stops[i][0] + (stops[i + 1][0] - stops[i][0]) * f),
+      Math.round(stops[i][1] + (stops[i + 1][1] - stops[i][1]) * f),
+      Math.round(stops[i][2] + (stops[i + 1][2] - stops[i][2]) * f)
+    ];
+  }
+
+  function paint(canvasId, img, size) {
+    var cv = $(canvasId); if (!cv || !cv.getContext) return;
+    var ctx = cv.getContext('2d'); if (!ctx || !ctx.createImageData) return;
+    var id = ctx.createImageData(size, size);
+    for (var i = 0; i < size * size; i++) {
+      var rgb = shade(img[i]);
+      id.data[i * 4] = rgb[0]; id.data[i * 4 + 1] = rgb[1]; id.data[i * 4 + 2] = rgb[2]; id.data[i * 4 + 3] = 255;
+    }
+    ctx.putImageData(id, 0, 0);
+  }
+
+  var showGhost = false;
+  function renderMind() {
+    var size = 96;
+    var img = showGhost ? B.renderTarget(size) : B.render(chain.brain, size);
+    paint('mind', img, size);
+    // the hero logo is the same mind, smaller — the brand IS the current weights
+    var logoImg = B.render(chain.brain, 48);
+    var cv = $('logo');
+    if (cv && cv.getContext) {
+      var ctx = cv.getContext('2d');
+      if (ctx && ctx.createImageData) {
+        var id = ctx.createImageData(48, 48);
+        for (var i = 0; i < 48 * 48; i++) {
+          var rgb = shade(logoImg[i]);
+          id.data[i * 4] = rgb[0]; id.data[i * 4 + 1] = rgb[1]; id.data[i * 4 + 2] = rgb[2]; id.data[i * 4 + 3] = 255;
+        }
+        // paint at 48×48, then stretch across the whole 128×128 logo canvas
+        ctx.putImageData(id, 0, 0);
+        if (ctx.drawImage) { ctx.imageSmoothingEnabled = true; ctx.drawImage(cv, 0, 0, 48, 48, 0, 0, 128, 128); }
+      }
+    }
+  }
+
+  /* ================= loss chart (single series, hover tooltip) ================= */
+  var chartPts = []; // [{h, loss, x, y}]
+  function renderChart() {
+    var svg = $('chart'); if (!svg) return;
+    var losses = chain.losses;
+    var W = (svg.clientWidth || 420), H = 140, PAD = { l: 6, r: 44, t: 8, b: 16 };
+    var n = losses.length;
+    var lo = Infinity, hi = -Infinity, i;
+    for (i = 0; i < n; i++) { if (losses[i] < lo) lo = losses[i]; if (losses[i] > hi) hi = losses[i]; }
+    if (!(hi > lo)) { hi = lo + 1e-9; }
+    var X = function (i2) { return PAD.l + (n < 2 ? 0 : i2 / (n - 1) * (W - PAD.l - PAD.r)); };
+    var Y = function (v) { return PAD.t + (1 - (v - lo) / (hi - lo)) * (H - PAD.t - PAD.b); };
+    chartPts = [];
+    var d = '';
+    for (i = 0; i < n; i++) {
+      var x = X(i), y = Y(losses[i]);
+      chartPts.push({ h: i, loss: losses[i], x: x, y: y });
+      d += (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1);
+    }
+    var last = chartPts[n - 1];
+    var grid = '';
+    for (i = 1; i <= 3; i++) {
+      var gy = PAD.t + i * (H - PAD.t - PAD.b) / 4;
+      grid += '<line x1="' + PAD.l + '" x2="' + (W - PAD.r) + '" y1="' + gy + '" y2="' + gy + '" stroke="rgba(236,234,253,.07)" stroke-width="1"/>';
+    }
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    svg.innerHTML =
+      grid +
+      '<path d="' + d + '" fill="none" stroke="#8b7cf7" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>' +
+      (n ? '<circle cx="' + last.x + '" cy="' + last.y + '" r="3.5" fill="#8b7cf7" stroke="#0e1020" stroke-width="2"/>' +
+           '<text x="' + (last.x + 7) + '" y="' + (last.y + 4) + '" fill="#a7a5c6" font-size="11" font-family="inherit">' + last.loss.toFixed(3) + '</text>'
+         : '') +
+      '<line id="xhair" x1="0" x2="0" y1="' + PAD.t + '" y2="' + (H - PAD.b) + '" stroke="rgba(236,234,253,.25)" stroke-width="1" style="display:none"/>';
+  }
+
+  function chartHover(ev) {
+    var svg = $('chart'), tip = $('tip');
+    if (!svg || !tip || !chartPts.length || !svg.getBoundingClientRect) return;
+    var r = svg.getBoundingClientRect();
+    var mx = (ev.clientX - r.left) * ((svg.viewBox && svg.viewBox.baseVal && svg.viewBox.baseVal.width) || r.width) / (r.width || 1);
+    var best = chartPts[0], bd = Infinity, i;
+    for (i = 0; i < chartPts.length; i++) {
+      var dd = Math.abs(chartPts[i].x - mx);
+      if (dd < bd) { bd = dd; best = chartPts[i]; }
+    }
+    tip.style.display = 'block';
+    tip.style.left = (best.x / ((svg.viewBox && svg.viewBox.baseVal && svg.viewBox.baseVal.width) || 1) * (r.width || 1)) + 'px';
+    tip.style.top = (best.y / 140 * (r.height || 1)) + 'px';
+    tip.textContent = 'block ' + best.h + ' · loss ' + best.loss.toFixed(4);
+    var xh = $('xhair');
+    if (xh) { xh.style.display = 'block'; xh.setAttribute('x1', best.x); xh.setAttribute('x2', best.x); }
+  }
+  function chartLeave() {
+    var tip = $('tip'), xh = $('xhair');
+    if (tip) tip.style.display = 'none';
+    if (xh) xh.style.display = 'none';
+  }
+
+  /* ================= stats & explorer ================= */
+  function renderStats() {
+    var s = chain.stats();
+    var toHalving = s.nextHalvingHeight - s.height;
+    var pct = (s.supply / s.maxSupply * 100);
+    $('stats').innerHTML =
+      stat('Block height', s.height.toLocaleString(), 'difficulty ' + s.difficulty.toFixed(2)) +
+      stat('Circulating', fmt(s.supply), pct.toFixed(4) + '% of the 21M cap') +
+      stat('Block reward', fmt(s.blockReward), 'halves in ' + toHalving.toLocaleString() + ' blocks') +
+      stat('Synapse score', chain.synapseScore().toFixed(1) + ' / 100', chain.brain.steps.toLocaleString() + ' training steps on-chain') +
+      stat('Mind error', chain.loss.toFixed(4), 'was ' + chain.losses[0].toFixed(4) + ' at genesis') +
+      stat('Mempool', String(s.mempoolSize), s.mempoolSize === 1 ? 'transaction waiting' : 'transactions waiting');
+    $('score').textContent = chain.synapseScore().toFixed(1);
+    $('rewardNote').textContent = fmt(s.blockReward);
+  }
+  function stat(k, v, sub) {
+    return '<div class="stat"><div class="k">' + k + '</div><div class="v">' + v + '</div><div class="s">' + sub + '</div></div>';
+  }
+
+  function renderBlocks() {
+    var tbody = $('blocks') && $('blocks').tBodies && $('blocks').tBodies[0];
+    if (!tbody) return;
+    var rows = '';
+    var blocks = chain.blocks;
+    for (var i = blocks.length - 1; i >= 0 && i > blocks.length - 13; i--) {
+      var b = blocks[i], cb = b.transactions[0];
+      var poi = N.parsePoI(cb.extra);
+      var to = cb.outputs.length ? short(cb.outputs[0].address, 12) : '— (genesis pays nobody)';
+      rows += '<tr><td>' + b.height + '</td><td class="mono">' + short(b.hash, 14) + '</td><td>' + b.transactions.length +
+        '</td><td class="mono">' + to + '</td><td class="mono">' + (poi ? '🧠 ' + short(poi, 14) : '—') +
+        '</td><td>' + (chain.losses[i] !== undefined ? chain.losses[i].toFixed(4) : '—') + '</td></tr>';
+    }
+    tbody.innerHTML = rows;
+
+    var rich = chain.richList ? chain.inner.richList(5) : [];
+    if (rich.length) {
+      var items = [];
+      for (var r = 0; r < rich.length; r++) items.push(short(rich[r].address, 10) + ' — ' + fmt(rich[r].amount));
+      $('richlist').innerHTML = '<b style="color:var(--ink)">Largest minds:</b> ' + items.join(' &nbsp;·&nbsp; ');
+    } else {
+      $('richlist').textContent = 'No holders yet — the first block is still unmined. Be first.';
+    }
+  }
+
+  function renderMempool() {
+    var el = $('mempool');
+    var pool = chain.mempool;
+    if (!pool.length) { el.textContent = ''; return; }
+    var lines = [];
+    for (var i = 0; i < pool.length; i++) {
+      var tx = pool[i].tx;
+      lines.push('⏳ ' + short(tx.id, 10) + ' → ' + short(tx.outputs[0].address, 10) + ' · ' + fmt(tx.outputs[0].amount) + ' (fee ' + fmt(pool[i].fee) + ')');
+    }
+    el.innerHTML = lines.join('<br>');
+  }
+
+  /* ================= wallets ================= */
+  function renderWallets() {
+    var objs = walletObjs();
+    var html = '';
+    for (var i = 0; i < objs.length; i++) {
+      var bal = chain.getBalance(objs[i].address);
+      html += '<div class="wallet">' +
+        '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">' +
+        '<b>' + (wallets[i].name || 'Wallet ' + (i + 1)) + '</b><span class="bal">' + fmt(bal) + '</span></div>' +
+        '<div class="addr">' + objs[i].address + '</div>' +
+        '<div class="row" style="margin-top:8px">' +
+        '<button class="ghost small" data-copy="' + objs[i].address + '">Copy address</button>' +
+        '<button class="ghost small" data-key="' + i + '">Reveal key</button>' +
+        '<div style="flex:1"></div></div></div>';
+    }
+    $('wallets').innerHTML = html || '<p style="color:var(--ink-3);font-size:.9rem;margin-top:12px">No wallets yet — create one to receive the first NEURA.</p>';
+
+    var opts = '';
+    for (var j = 0; j < objs.length; j++) {
+      opts += '<option value="' + j + '">' + (wallets[j].name || 'Wallet ' + (j + 1)) + ' — ' + short(objs[j].address, 10) + '</option>';
+    }
+    $('mineWallet').innerHTML = opts || '<option value="">Create a wallet first</option>';
+    $('sendFrom').innerHTML = opts || '<option value="">Create a wallet first</option>';
+    // hand the dedicated miner your reward address via its ?pay= link
+    var ml = $('minerLink');
+    if (ml && objs.length) {
+      var mi = parseInt($('mineWallet').value, 10); if (isNaN(mi) || !objs[mi]) mi = 0;
+      ml.href = 'mine.html?pay=' + objs[mi].address;
+    }
+  }
+
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (t && t.getAttribute) {
+      var addr = t.getAttribute('data-copy');
+      if (addr) {
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(addr);
+        flash('Address copied');
+      }
+      var ki = t.getAttribute('data-key');
+      if (ki !== null && ki !== undefined && wallets[ki]) {
+        prompt('Your PRIVATE key — anyone who has it owns the coins. Store it somewhere safe:', wallets[ki].privateKey);
+      }
+    }
+  });
+
+  function makeWallet() {
+    var w = C.generateWallet();
+    wallets.push({ name: 'Wallet ' + (wallets.length + 1), privateKey: w.privateKey });
+    saveWallets(); renderWallets();
+    flash('Wallet created — ' + short(w.address, 12));
+  }
+  $('newWallet').addEventListener('click', makeWallet);
+  $('ctaWallet').addEventListener('click', function () { makeWallet(); });
+  $('importWallet').addEventListener('click', function () {
+    var key = prompt('Paste a private key (64 hex characters):');
+    if (!key) return;
+    try {
+      var w = C.walletFromPrivateKey(key.trim());
+      wallets.push({ name: 'Imported ' + short(w.address, 8), privateKey: w.privateKey });
+      saveWallets(); renderWallets(); flash('Imported ' + short(w.address, 12));
+    } catch (e) { flash('Not a valid key: ' + e.message); }
+  });
+
+  /* ================= miner ================= */
+  var mining = false, prep = null, hashes = 0, tStart = 0;
+
+  function minerSay(msg, cls) {
+    var log = $('minerlog');
+    if (!log || !log.insertAdjacentHTML) return;
+    log.insertAdjacentHTML('afterbegin', '<div' + (cls ? ' class="' + cls + '"' : '') + '>' + msg + '</div>');
+    while (log.children && log.children.length > 40) log.removeChild(log.lastChild);
+  }
+  function setMinerState(txt, dotCls) {
+    $('minerState').textContent = txt;
+    $('minerDot').className = 'dot' + (dotCls ? ' ' + dotCls : '');
+  }
+
+  function startTemplate() {
+    if (!mining) return;
+    var idx = parseInt($('mineWallet').value, 10);
+    var objs = walletObjs();
+    if (isNaN(idx) || !objs[idx]) { stopMining('Create a wallet first — the reward needs somewhere to land.'); return; }
+    setMinerState('🧠 Thinking: running the required training step…', 'think');
+    setTimeout(function () {
+      if (!mining) return;
+      try { prep = chain.prepareBlock(objs[idx].address, { tag: 'neura-web' }); }
+      catch (e) { stopMining('Could not build a block: ' + e.message); return; }
+      hashes = 0; tStart = Date.now();
+      minerSay('🧠 trained step for block ' + prep.block.height + ' → mind ' + short(N.parsePoI(prep.block.transactions[0].extra), 12));
+      grind();
+    }, 30);
+  }
+
+  function grind() {
+    if (!mining || !prep) return;
+    var SLICE = 4000;
+    var found = C.mine(prep.block, { maxIterations: SLICE, startNonce: prep.block.nonce });
+    hashes += SLICE;
+    if (found) {
+      try {
+        chain.addBlock(prep.block, { brain: prep.brain });
+        saveChain(); gossipChain();
+        minerSay('✓ block ' + prep.block.height + ' mined — ' + fmt(prep.block.transactions[0].outputs[0].amount) + ' earned, mind advanced', 'ok');
+        flash('Block ' + prep.block.height + ' mined 🧠');
+        renderAll();
+      } catch (e) {
+        minerSay('✗ our block was rejected (' + e.message + ') — retargeting', '');
+      }
+      prep = null;
+      setTimeout(startTemplate, 60);
+      return;
+    }
+    // someone else extended the chain while we ground — restart on the new tip
+    if (prep.block.height !== chain.tip.height + 1 || prep.block.prevHash !== chain.tip.hash) {
+      minerSay('↻ tip moved (another node won block ' + (prep.block.height) + ') — rebuilding template');
+      prep = null;
+      setTimeout(startTemplate, 30);
+      return;
+    }
+    var rate = hashes / Math.max(1, Date.now() - tStart);
+    setMinerState('⛏ Grinding proof-of-work… ' + (rate * 1000 / 1000).toFixed(1) + 'k hashes/s', 'grind');
+    setTimeout(grind, 0);
+  }
+
+  function stopMining(reason) {
+    mining = false; prep = null;
+    $('mineBtn').textContent = '⛏🧠 Start mining';
+    setMinerState(reason || 'Idle.');
+  }
+  $('mineBtn').addEventListener('click', function () {
+    if (mining) { stopMining('Stopped.'); minerSay('⏹ miner stopped'); return; }
+    mining = true;
+    $('mineBtn').textContent = '⏹ Stop mining';
+    minerSay('▶ miner started');
+    startTemplate();
+  });
+  $('ctaMine').addEventListener('click', function () {
+    if (!wallets.length) makeWallet();
+    if (!mining) $('mineBtn').click();
+    if ($('mineBtn').scrollIntoView) $('mineBtn').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+
+  /* ================= send ================= */
+  $('sendBtn').addEventListener('click', function () {
+    var idx = parseInt($('sendFrom').value, 10);
+    var objs = walletObjs();
+    if (isNaN(idx) || !objs[idx]) { flash('Create a wallet first'); return; }
+    var to = ($('sendTo').value || '').trim();
+    try {
+      var amount = C.parseAmount($('sendAmt').value || '');
+      var fee = ($('sendFee').value || '').trim() ? C.parseAmount($('sendFee').value) : 0;
+      var tx = chain.send(objs[idx], to, amount, fee);
+      gossipTx(tx); saveChain(); renderAll();
+      flash('Broadcast ' + short(tx.id, 12) + ' — it settles in the next mined block');
+      $('sendTo').value = ''; $('sendAmt').value = ''; $('sendFee').value = '';
+    } catch (e) { flash('✗ ' + e.message); }
+  });
+
+  /* ================= ghost toggle & chart events ================= */
+  $('ghost').addEventListener('change', function (ev) { showGhost = !!ev.target.checked; renderMind(); });
+  $('chart').addEventListener('mousemove', chartHover);
+  $('chart').addEventListener('mouseleave', chartLeave);
+  if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('resize', renderChart);
+
+  /* ================= boot ================= */
+  function renderAll() {
+    renderStats(); renderMind(); renderChart(); renderWallets(); renderBlocks(); renderMempool();
+  }
+  renderAll();
+})();
+</script>
+</body>
+</html>

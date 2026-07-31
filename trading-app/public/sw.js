@@ -1,0 +1,91 @@
+// ApexFX service worker — offline app shell + asset caching.
+// Strategy:
+//   - /api/*            → network only (never cache live market/AI data)
+//   - /_next/static, /icons → cache-first (immutable build assets)
+//   - navigations & rest → network-first, fall back to cache, then app shell
+const CACHE = 'apexfx-v3'
+const SHELL = ['/', '/manifest.webmanifest']
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches
+      .open(CACHE)
+      .then((cache) => cache.addAll(SHELL))
+      .then(() => self.skipWaiting()),
+  )
+})
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim()),
+  )
+})
+
+self.addEventListener('fetch', (event) => {
+  const { request } = event
+  if (request.method !== 'GET') return
+
+  const url = new URL(request.url)
+  if (url.origin !== self.location.origin) return
+
+  // Never cache API responses — they must always be fresh.
+  if (url.pathname.startsWith('/api/')) return
+
+  // Immutable build assets and icons: cache-first.
+  if (url.pathname.startsWith('/_next/static') || url.pathname.startsWith('/icons/')) {
+    event.respondWith(
+      caches.match(request).then(
+        (cached) =>
+          cached ||
+          fetch(request).then((resp) => {
+            const copy = resp.clone()
+            caches.open(CACHE).then((cache) => cache.put(request, copy))
+            return resp
+          }),
+      ),
+    )
+    return
+  }
+
+  // Navigations and everything else: network-first, fall back to cache, then shell.
+  event.respondWith(
+    fetch(request)
+      .then((resp) => {
+        const copy = resp.clone()
+        caches.open(CACHE).then((cache) => cache.put(request, copy))
+        return resp
+      })
+      .catch(() => caches.match(request).then((cached) => cached || caches.match('/'))),
+  )
+})
+
+// --- Push notifications (real-time trade scoring) ---
+self.addEventListener('push', (event) => {
+  let data = {}
+  try { data = event.data ? event.data.json() : {} } catch { /* plain text push */ }
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'ApexFX', {
+      body: data.body || '',
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      tag: data.tag || 'apexfx',
+      data: { url: data.url || '/journal' },
+    }),
+  )
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const url = (event.notification.data && event.notification.data.url) || '/journal'
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
+      for (const win of wins) {
+        if ('focus' in win) { win.navigate(url); return win.focus() }
+      }
+      return clients.openWindow(url)
+    }),
+  )
+})

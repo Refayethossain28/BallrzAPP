@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Concierge — split the bill (agent slice prototype)</title>
+<style>
+  :root{
+    --bg:#0b141a; --thread:#0e1a22; --me:#005c4b; --them:#1f2c33;
+    --ink:#e9edef; --muted:#8696a0; --accent:#00a884; --card:#111b21;
+    --warn:#f0b232; --good:#25d366;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;
+    -webkit-tap-highlight-color:transparent}
+  #app{display:flex;flex-direction:column;height:100%;max-width:520px;margin:0 auto;background:var(--thread)}
+  header{display:flex;align-items:center;gap:10px;padding:10px 14px;background:#1f2c33}
+  header .av{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#00a884,#005c4b);
+    display:flex;align-items:center;justify-content:center;font-weight:700}
+  header .t{font-size:15px;font-weight:600}
+  header .s{font-size:11px;color:var(--muted)}
+  #thread{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:8px;
+    background:
+      radial-gradient(1200px 600px at 50% -10%, rgba(0,168,132,.06), transparent),
+      var(--thread)}
+  .msg{max-width:80%;padding:8px 11px;border-radius:12px;font-size:14px;line-height:1.4;
+    position:relative;white-space:pre-wrap;word-wrap:break-word}
+  .msg .who{font-size:11px;font-weight:700;margin-bottom:2px;color:var(--accent)}
+  .them{align-self:flex-start;background:var(--them);border-top-left-radius:3px}
+  .me{align-self:flex-end;background:var(--me);border-top-right-radius:3px}
+  .sys{align-self:center;background:transparent;color:var(--muted);font-size:11.5px;text-align:center;
+    max-width:90%;padding:2px}
+  /* agent result / proposal card */
+  .agentcard{align-self:flex-start;max-width:90%;background:var(--card);border:1px solid #21323c;
+    border-radius:14px;overflow:hidden}
+  .agentcard .hd{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#16242c;
+    border-bottom:1px solid #21323c}
+  .agentcard .hd .dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+  .agentcard .hd b{font-size:12.5px;letter-spacing:.3px}
+  .agentcard .hd .tag{margin-left:auto;font-size:10px;color:var(--muted)}
+  .agentcard .bd{padding:12px}
+  .row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;
+    border-bottom:1px solid #1a2830;font-size:14px}
+  .row:last-child{border-bottom:0}
+  .row .amt{font-variant-numeric:tabular-nums;font-weight:700}
+  .row .who{display:flex;align-items:center;gap:8px}
+  .row .who .pic{width:26px;height:26px;border-radius:50%;background:#2a3942;display:flex;
+    align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--ink)}
+  .total{display:flex;justify-content:space-between;margin-top:8px;font-size:12px;color:var(--muted)}
+  .actions{display:flex;gap:8px;padding:10px 12px;background:#0d171d;border-top:1px solid #21323c}
+  .actions button{flex:1;appearance:none;border:0;border-radius:10px;padding:11px;font-size:13px;
+    font-weight:700;cursor:pointer}
+  .btn-primary{background:var(--accent);color:#04140f}
+  .btn-ghost{background:#22303a;color:var(--ink)}
+  .status{font-size:11px;color:var(--good);padding:6px 12px;display:flex;align-items:center;gap:6px}
+  .idem{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:var(--muted);
+    padding:0 12px 10px}
+  footer{display:flex;gap:8px;padding:10px;background:#1f2c33}
+  footer input{flex:1;border:0;border-radius:20px;padding:11px 14px;font-size:14px;background:#2a3942;color:var(--ink)}
+  footer input::placeholder{color:#7a8a96}
+  footer button{appearance:none;border:0;width:44px;height:44px;border-radius:50%;background:var(--accent);
+    color:#04140f;font-size:18px;cursor:pointer}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;padding:0 10px 8px}
+  .chip{font-size:11px;background:#22303a;color:var(--ink);border:1px solid #2c3d47;border-radius:999px;
+    padding:5px 10px;cursor:pointer}
+  .typing{font-style:italic;color:var(--muted)}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="av">SA</div>
+    <div>
+      <div class="t">Sushi crew · 3</div>
+      <div class="s">you, Sam, Alex · 🔒 end-to-end encrypted</div>
+    </div>
+  </header>
+
+  <div id="thread"></div>
+
+  <div class="chips" id="chips">
+    <div class="chip" data-send="Dinner was $138.60, split between me, Sam and Alex">💸 "Dinner was $138.60, split between me, Sam and Alex"</div>
+    <div class="chip" data-send="@assistant split $90 between me and Sam">@assistant split $90 between me and Sam</div>
+  </div>
+
+  <footer>
+    <input id="input" placeholder="Message — try mentioning a total to split…" autocomplete="off" />
+    <button id="send">➤</button>
+  </footer>
+</div>
+
+<script>
+"use strict";
+/* ------------------------------------------------------------------ *
+ * Concierge — single-file prototype for Concept 1 (AI Life Concierge).
+ * The "split the bill" agent action: the smallest viral agent slice.
+ *
+ * It models the architecture doc's load-bearing rules:
+ *   • AGENT PROPOSES, HUMAN COMMITS  -> the agent never moves money on its own;
+ *     it posts a *proposal* card and a human taps Confirm.
+ *   • STRUCTURED RESULT CARD         -> tool output renders natively in-thread,
+ *     visible to everyone in the group (this is what makes it spread).
+ *   • IDEMPOTENT TOOL CALL           -> each confirmed split carries an
+ *     idempotency key; re-confirming the SAME proposal never double-charges.
+ *
+ * The bill-parsing here is a deterministic stub standing in for the LLM
+ * tool-use layer. In production, `runAgent()` is a Claude tool-use call that
+ * returns the same structured proposal object; everything downstream is real.
+ * ------------------------------------------------------------------ */
+
+const PARTICIPANTS = ['you','Sam','Alex'];
+const thread = document.getElementById('thread');
+const input  = document.getElementById('input');
+
+/* ledger of executed payment requests, keyed by idempotency key — this is
+ * what guarantees a confirmed split is executed at most once. */
+const executed = new Set();
+
+/* ---------- rendering helpers ---------- */
+function el(cls, html){ const d=document.createElement('div'); d.className=cls; if(html!=null)d.innerHTML=html; return d; }
+function scroll(){ thread.scrollTop = thread.scrollHeight; }
+function bubble(who, text, mine){
+  const m = el('msg ' + (mine?'me':'them'));
+  if(!mine && who) m.appendChild(el('who', who));
+  m.appendChild(document.createTextNode(text));
+  thread.appendChild(m); scroll();
+}
+function sys(text){ thread.appendChild(el('sys', text)); scroll(); }
+
+/* ---------- the agent ----------
+ * callAgent() tries the REAL Claude tool-use call via the local proxy
+ * (server.mjs) and falls back to the in-page deterministic stub when no
+ * server/key is present — so this file works opened directly OR served live.
+ * Either path returns the same structured proposal shape. */
+let agentMode = 'stub';   // 'claude' once a live call succeeds
+async function callAgent(text){
+  try{
+    const r = await fetch('/agent', {
+      method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({text})
+    });
+    if(!r.ok) throw new Error('proxy '+r.status);
+    const data = await r.json();
+    if(!data.ok) throw new Error(data.error||'agent error');
+    agentMode = 'claude';
+    return data.proposal;       // may be null if Claude saw nothing actionable
+  }catch(_){
+    agentMode = 'stub';
+    return runAgent(text);      // offline fallback — identical proposal shape
+  }
+}
+
+/* ---------- the agent (deterministic stub / LLM tool-use stand-in) ----------
+ * Parses an amount + a set of named people from free text and returns a
+ * structured split proposal. Returns null if there's nothing to act on.
+ * This is the fallback; server.mjs replaces it with a real Claude tool call. */
+function runAgent(text){
+  const amtMatch = text.replace(/,/g,'').match(/\$?\s*(\d+(?:\.\d{1,2})?)/);
+  if(!amtMatch) return null;
+  const total = parseFloat(amtMatch[1]);
+  if(!(total>0)) return null;
+
+  // who's involved: scan for known names + first-person ("me"/"I")
+  const lower = text.toLowerCase();
+  const people = [];
+  if(/\b(me|i|us)\b/.test(lower)) people.push('you');
+  for(const p of PARTICIPANTS){
+    if(p==='you') continue;
+    if(lower.includes(p.toLowerCase())) people.push(p);
+  }
+  // "split between everyone" / nothing specific -> whole group
+  if(people.length<2){
+    if(/every(one|body)|group|all of us/.test(lower)) people.splice(0, people.length, ...PARTICIPANTS);
+  }
+  if(people.length<2) return null; // not enough signal to act
+
+  const uniq = [...new Set(people)];
+  // even split with remainder pennies pushed to the payer ("you")
+  const cents = Math.round(total*100);
+  const base = Math.floor(cents/uniq.length);
+  const rem = cents - base*uniq.length;
+  const shares = uniq.map((name,i)=>({
+    name,
+    cents: base + (i < rem ? 1 : 0),   // distribute leftover pennies
+  }));
+  // stable idempotency key from the normalized intent
+  const key = 'split_' + uniq.slice().sort().join('-') + '_' + cents;
+  return { kind:'split', total, payer:'you', shares, key };
+}
+
+/* ---------- proposal + confirmation card ---------- */
+function postProposal(prop){
+  const owe = prop.shares.filter(s=>s.name!=='you');
+  const card = el('agentcard');
+  card.innerHTML = `
+    <div class="hd"><span class="dot"></span><b>ASSISTANT · proposed split</b>
+      <span class="tag">needs your confirmation</span></div>
+    <div class="bd">
+      ${owe.map(s=>`
+        <div class="row">
+          <span class="who"><span class="pic">${s.name[0].toUpperCase()}</span>${s.name} owes you</span>
+          <span class="amt">$${(s.cents/100).toFixed(2)}</span>
+        </div>`).join('')}
+      <div class="total"><span>Bill total $${prop.total.toFixed(2)} · ${prop.shares.length}-way even split</span>
+        <span>you cover $${((prop.shares.find(x=>x.name==='you')||{cents:0}).cents/100).toFixed(2)}</span></div>
+    </div>
+    <div class="actions">
+      <button class="btn-ghost" data-act="cancel">Edit / cancel</button>
+      <button class="btn-primary" data-act="confirm">Confirm &amp; request</button>
+    </div>
+    <div class="idem">idempotency key: ${prop.key}</div>`;
+  thread.appendChild(card); scroll();
+
+  card.querySelector('[data-act="cancel"]').onclick = ()=>{
+    card.querySelector('.actions').remove();
+    card.querySelector('.idem').remove();
+    sys('Split cancelled — nothing was sent.');
+  };
+  card.querySelector('[data-act="confirm"]').onclick = ()=>{
+    executeSplit(prop, card);
+  };
+}
+
+/* ---------- idempotent tool execution ---------- */
+function executeSplit(prop, card){
+  const acts = card.querySelector('.actions');
+  if(executed.has(prop.key)){
+    // the whole point: re-confirming the same proposal is a no-op.
+    sys('⚠︎ This exact split was already sent — skipped (idempotency key matched). No double charge.');
+    if(acts) acts.remove();
+    return;
+  }
+  executed.add(prop.key);
+  if(acts) acts.remove();
+  const idem = card.querySelector('.idem'); if(idem) idem.remove();
+
+  const owe = prop.shares.filter(s=>s.name!=='you');
+  const status = el('status', '✓ Payment requests sent · visible to the whole group');
+  card.querySelector('.hd b').textContent = 'ASSISTANT · split executed';
+  card.querySelector('.hd .tag').textContent = 'done';
+  card.appendChild(status); scroll();
+
+  // each request appears in-thread so the group sees it -> this is the viral loop
+  owe.forEach((s,i)=>setTimeout(()=>{
+    sys(`💸 Requested $${(s.cents/100).toFixed(2)} from ${s.name} — tap to pay in chat`);
+  }, 350*(i+1)));
+}
+
+/* ---------- thread input ---------- */
+function handleUser(text){
+  bubble('you', text, true);
+  // implicit invocation: any message with a total + people triggers the agent,
+  // exactly like the doc's "@assistant or implicit trigger".
+  const typing = el('msg them typing', 'assistant is reading the thread…');
+  thread.appendChild(typing); scroll();
+  callAgent(text).then(prop=>{
+    typing.remove();
+    if(prop) postProposal(prop);
+    else sys('(no actionable bill detected — the agent stays quiet)');
+    sys(agentMode==='claude'
+      ? '· parsed by live Claude tool-use ·'
+      : '· offline stub (run server.mjs with an API key for live Claude) ·');
+  });
+}
+
+document.getElementById('send').onclick = fire;
+input.addEventListener('keydown', e=>{ if(e.key==='Enter') fire(); });
+function fire(){ const t=input.value.trim(); if(!t)return; input.value=''; handleUser(t); }
+document.getElementById('chips').addEventListener('click', e=>{
+  const c=e.target.closest('.chip'); if(!c)return; handleUser(c.dataset.send);
+});
+
+/* seed the thread */
+sys('Today');
+bubble('Sam', 'that sushi place was unreal 🍣', false);
+bubble('Alex', 'who paid? i owe you', false);
+sys('Tip: send a message with a total like "Dinner was $138.60, split between me, Sam and Alex" — or tap a suggestion below.');
+</script>
+</body>
+</html>

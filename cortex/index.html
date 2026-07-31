@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0d18">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Cortex">
+<meta name="description" content="Cortex — the daily brain gym. Five adaptive drills across memory, maths, focus, working memory and speed. Three minutes a day, on-device, no account.">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<title>Cortex — the daily brain gym</title>
+<style>
+  :root{
+    color-scheme: dark;
+    --bg:#0a0d18; --panel:#121626; --panel2:#171c30; --line:rgba(255,255,255,.09);
+    --ink:#eef1fb; --dim:#9aa6c8; --faint:#6c779b;
+    --a:#6e8bff; --b:#8b7cff; --c:#39e6b4; --warn:#ffb454; --bad:#ff6b81;
+    --d-memory:#6e8bff; --d-maths:#39e6b4; --d-focus:#ff6b81; --d-working:#8b7cff; --d-speed:#ffb454;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0}
+  body{
+    font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:radial-gradient(1200px 760px at 72% -12%,#1b2647 0,transparent 60%),
+               radial-gradient(900px 700px at 0% 110%,#152138 0,transparent 55%), var(--bg);
+    color:var(--ink); min-height:100dvh;
+    padding:max(14px,env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));
+    user-select:none;-webkit-user-select:none;
+  }
+  .wrap{max-width:640px;margin:0 auto}
+  button{font:inherit;color:inherit;cursor:pointer}
+  .hidden{display:none !important}
+
+  header{display:flex;align-items:center;gap:12px;margin:6px 2px 16px}
+  .logo{width:40px;height:40px;border-radius:12px;flex:none;position:relative;
+    background:radial-gradient(circle at 32% 28%,#20294a,#0c0f1e);
+    border:1px solid var(--line);box-shadow:0 6px 20px rgba(110,139,255,.28)}
+  .logo::before{content:"";position:absolute;inset:0;border-radius:12px;
+    background:
+      radial-gradient(4.5px 4.5px at 50% 50%, var(--c) 45%, transparent 55%),
+      radial-gradient(3.5px 3.5px at 50% 18%, var(--a) 45%, transparent 55%),
+      radial-gradient(3.5px 3.5px at 82% 38%, var(--b) 45%, transparent 55%),
+      radial-gradient(3.5px 3.5px at 78% 76%, var(--a) 45%, transparent 55%),
+      radial-gradient(3.5px 3.5px at 26% 78%, var(--b) 45%, transparent 55%),
+      radial-gradient(3.5px 3.5px at 16% 34%, var(--c) 45%, transparent 55%)}
+  h1{font-size:21px;letter-spacing:-.02em;margin:0;line-height:1}
+  .tag{color:var(--faint);font-size:12.5px;margin-top:3px}
+  .spacer{flex:1}
+  .streakchip{border:1px solid var(--line);background:rgba(255,180,84,.09);border-radius:999px;
+    padding:6px 12px;font-size:13.5px;font-weight:700;color:var(--warn);white-space:nowrap}
+
+  .panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);
+    border-radius:18px;padding:16px;margin-bottom:14px}
+  .k{display:block;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+
+  /* ---- brain index hero ---- */
+  .hero{display:flex;gap:18px;align-items:center}
+  .dial{width:118px;height:118px;border-radius:50%;flex:none;position:relative;
+    display:flex;align-items:center;justify-content:center;
+    background:conic-gradient(var(--a) 0deg,var(--b) calc(var(--p)*.6),var(--c) var(--p),rgba(255,255,255,.07) var(--p))}
+  .dial::before{content:"";position:absolute;inset:9px;border-radius:50%;background:var(--panel)}
+  .dial .num{position:relative;font-size:30px;font-weight:800;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+  .dial .cap{position:relative;display:block;text-align:center;font-size:10px;color:var(--faint);letter-spacing:.08em;text-transform:uppercase}
+  .rank{font-size:19px;font-weight:800;background:linear-gradient(90deg,var(--a),var(--b),var(--c));
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero .blurb{color:var(--dim);font-size:13.5px;margin-top:4px}
+
+  .doms{margin-top:14px;display:grid;gap:8px}
+  .dom{display:grid;grid-template-columns:96px 1fr 44px;gap:10px;align-items:center;font-size:13px}
+  .dom .nm{color:var(--dim);text-transform:capitalize}
+  .dom .bar{height:8px;border-radius:99px;background:rgba(255,255,255,.06);overflow:hidden}
+  .dom .bar i{display:block;height:100%;border-radius:99px;background:var(--dc,#6e8bff);width:0;transition:width .6s ease}
+  .dom .rt{text-align:right;font-variant-numeric:tabular-nums;color:var(--faint)}
+
+  /* ---- workout ---- */
+  .wohead{display:flex;align-items:baseline;gap:10px;margin-bottom:10px}
+  .wohead .date{color:var(--faint);font-size:12.5px}
+  .wodrills{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+  .wodrill{flex:1;min-width:100px;border:1px solid var(--line);border-radius:13px;padding:10px;text-align:center;
+    background:rgba(255,255,255,.03);font-size:13px}
+  .wodrill .e{font-size:22px}
+  .wodrill.done{border-color:rgba(57,230,180,.5);background:rgba(57,230,180,.08)}
+  .wodrill .st{color:var(--faint);font-size:11.5px}
+  .wodrill.done .st{color:var(--c)}
+  .cta{width:100%;border:0;border-radius:14px;padding:14px;font-size:16px;font-weight:800;letter-spacing:-.01em;
+    background:linear-gradient(90deg,var(--a),var(--b));color:#fff;box-shadow:0 8px 24px rgba(110,139,255,.35)}
+  .cta:active{transform:translateY(1px)}
+  .cta.done{background:rgba(57,230,180,.14);color:var(--c);box-shadow:none;border:1px solid rgba(57,230,180,.4)}
+  .wonote{color:var(--faint);font-size:12px;margin-top:9px;text-align:center}
+
+  /* ---- drill cards ---- */
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .card{border:1px solid var(--line);border-radius:15px;padding:13px;text-align:left;
+    background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.012))}
+  .card:active{transform:scale(.98)}
+  .card .e{font-size:24px}
+  .card .nm{font-weight:700;font-size:14.5px;margin-top:5px}
+  .card .tl{color:var(--faint);font-size:11.8px;line-height:1.35;margin-top:2px;min-height:2.7em}
+  .card .meta{display:flex;justify-content:space-between;color:var(--dim);font-size:11.5px;margin-top:7px}
+  .lv{color:var(--dc,#6e8bff);font-weight:700}
+
+  footer{color:var(--faint);font-size:12px;text-align:center;margin-top:18px;line-height:1.7}
+  .linkbtn{background:none;border:0;color:var(--dim);text-decoration:underline;font-size:12px;padding:2px 4px}
+
+  /* ---- play ---- */
+  .topbar{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .quit{border:1px solid var(--line);background:rgba(255,255,255,.04);border-radius:10px;width:34px;height:34px;color:var(--dim);font-size:15px}
+  .topbar .who{font-weight:700;font-size:15px}
+  .topbar .rc{color:var(--faint);font-size:12.5px}
+  .score{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:800;font-size:17px}
+  .combo{margin-left:8px;color:var(--warn);font-weight:800;font-size:13px;min-width:44px;text-align:right}
+
+  .timer{height:6px;border-radius:99px;background:rgba(255,255,255,.06);overflow:hidden;margin-bottom:16px}
+  .timer i{display:block;height:100%;width:100%;border-radius:99px;background:linear-gradient(90deg,var(--c),var(--a))}
+  .timer.low i{background:var(--bad)}
+
+  .stage{min-height:380px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
+    border-radius:18px;position:relative;padding:10px 0}
+  .stage.good{animation:okflash .5s}
+  .stage.badf{animation:badflash .5s}
+  @keyframes okflash{0%{background:rgba(57,230,180,.16)}100%{background:transparent}}
+  @keyframes badflash{0%{background:rgba(255,107,129,.16)}30%{transform:translateX(-5px)}60%{transform:translateX(5px)}100%{background:transparent}}
+  .instr{color:var(--dim);font-size:14px;text-align:center;min-height:1.5em}
+
+  .pgrid{display:grid;gap:8px}
+  .cell{border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.045);width:100%;aspect-ratio:1;
+    font-size:24px;display:flex;align-items:center;justify-content:center;color:var(--ink);transition:background .12s,transform .08s}
+  .cell:active{transform:scale(.94)}
+  .cell.lit{background:linear-gradient(135deg,var(--a),var(--b));border-color:transparent;box-shadow:0 0 18px rgba(110,139,255,.5)}
+  .cell.sel{background:rgba(57,230,180,.28);border-color:rgba(57,230,180,.6)}
+  .cell.hit{background:rgba(57,230,180,.4)}
+  .cell.miss{background:rgba(255,107,129,.4)}
+
+  .prompt{font-size:40px;font-weight:800;letter-spacing:-.02em;text-align:center;font-variant-numeric:tabular-nums;min-height:1.2em}
+  .prompt.word{font-size:52px;letter-spacing:.02em}
+  .bigsym{font-size:88px;line-height:1;min-height:96px;display:flex;align-items:center}
+  .opts{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%;max-width:420px}
+  .opt{border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.05);padding:16px 8px;
+    font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+  .opt:active{transform:scale(.97)}
+  .opt.sym{font-size:34px;padding:12px 8px}
+
+  .float{position:absolute;top:24%;left:50%;transform:translateX(-50%);font-weight:800;font-size:22px;
+    color:var(--c);pointer-events:none;animation:rise .8s forwards}
+  .float.neg{color:var(--bad)}
+  @keyframes rise{0%{opacity:0;translate:0 12px}20%{opacity:1}100%{opacity:0;translate:0 -34px}}
+
+  /* ---- results ---- */
+  .bigscore{font-size:52px;font-weight:800;letter-spacing:-.04em;text-align:center;
+    background:linear-gradient(90deg,var(--a),var(--b),var(--c));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .resgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0}
+  .res{border:1px solid var(--line);border-radius:13px;padding:11px;text-align:center;background:rgba(255,255,255,.03)}
+  .res .v{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}
+  .res .l{color:var(--faint);font-size:11px;letter-spacing:.05em;text-transform:uppercase;margin-top:2px}
+  .delta{text-align:center;font-size:14px;color:var(--dim);margin-bottom:14px}
+  .delta b{color:var(--c)}
+  .banner{text-align:center;border-radius:13px;padding:10px;margin-bottom:14px;font-weight:700;font-size:14px}
+  .banner.best{background:rgba(57,230,180,.12);color:var(--c);border:1px solid rgba(57,230,180,.4)}
+  .banner.streak{background:rgba(255,180,84,.1);color:var(--warn);border:1px solid rgba(255,180,84,.4)}
+  .btnrow{display:flex;gap:10px}
+  .btnrow .cta{flex:1}
+  .ghost{flex:1;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.04);
+    padding:14px;font-size:15px;font-weight:700;color:var(--dim)}
+
+  @media (max-width:420px){ .cards{grid-template-columns:1fr 1fr} .hero{gap:14px} .dial{width:104px;height:104px} }
+  @media (prefers-reduced-motion:reduce){ *{animation:none !important;transition:none !important} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ================= HOME ================= -->
+  <div id="home">
+    <header>
+      <div class="logo" aria-hidden="true"></div>
+      <div>
+        <h1>Cortex</h1>
+        <div class="tag">the daily brain gym</div>
+      </div>
+      <div class="spacer"></div>
+      <div class="streakchip" id="streakChip">🔥 0</div>
+    </header>
+
+    <div class="panel hero">
+      <div class="dial" id="dial" style="--p:0deg">
+        <div>
+          <span class="num" id="brainNum">0</span>
+          <span class="cap">brain index</span>
+        </div>
+      </div>
+      <div>
+        <span class="k">Your rank</span>
+        <div class="rank" id="rankName">Spark</div>
+        <div class="blurb">Five drills, five cognitive domains. The staircase adapts every round, so it's always hard enough to train — never hard enough to quit.</div>
+      </div>
+    </div>
+    <div class="panel">
+      <span class="k" style="margin-bottom:10px">Domains</span>
+      <div class="doms" id="doms"></div>
+    </div>
+
+    <div class="panel">
+      <div class="wohead">
+        <span class="k">⚡ Today's workout</span>
+        <span class="date" id="woDate"></span>
+      </div>
+      <div class="wodrills" id="woDrills"></div>
+      <button class="cta" id="woBtn">Start today's workout</button>
+      <div class="wonote">Everyone on Earth gets this same 3-drill circuit today.</div>
+    </div>
+
+    <div class="panel">
+      <span class="k" style="margin-bottom:10px">Free play</span>
+      <div class="cards" id="drillCards"></div>
+    </div>
+
+    <footer>
+      Ten rounds a session · difficulty staircases to your edge · everything on-device, no account.<br>
+      <button class="linkbtn" id="soundBtn">🔊 sound on</button> ·
+      <button class="linkbtn" id="resetBtn">reset progress</button>
+    </footer>
+  </div>
+
+  <!-- ================= PLAY ================= -->
+  <div id="play" class="hidden">
+    <div class="topbar">
+      <button class="quit" id="quitBtn" aria-label="Quit session">✕</button>
+      <div>
+        <div class="who" id="playWho"></div>
+        <div class="rc" id="playRound"></div>
+      </div>
+      <div class="score" id="playScore">0</div>
+      <div class="combo" id="playCombo"></div>
+    </div>
+    <div class="timer" id="timerWrap"><i id="timerBar"></i></div>
+    <div class="stage" id="stage"></div>
+  </div>
+
+  <!-- ================= RESULTS ================= -->
+  <div id="done" class="hidden">
+    <header>
+      <div class="logo" aria-hidden="true"></div>
+      <div>
+        <h1 id="doneTitle">Session complete</h1>
+        <div class="tag" id="doneSub"></div>
+      </div>
+    </header>
+    <div class="panel">
+      <div class="bigscore" id="doneScore">0</div>
+      <div class="resgrid" id="doneStats"></div>
+      <div class="delta" id="doneDelta"></div>
+      <div id="doneBanners"></div>
+      <div class="btnrow" id="doneBtns"></div>
+    </div>
+  </div>
+
+</div>
+
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+  var E = window.Cortex;
+  var $ = function (id) { return document.getElementById(id); };
+  var KEY = 'cortex-v1';
+
+  /* ---------------------------------------------------------- persistence */
+  var defaults = function () {
+    return { sound: true, levels: {}, ratings: {}, best: {}, streak: { streak: 0, lastDay: null },
+             workouts: {}, sessions: 0 };
+  };
+  var S = defaults();
+  try {
+    var raw = localStorage.getItem(KEY);
+    if (raw) { var got = JSON.parse(raw); for (var k in defaults()) if (got[k] !== undefined) S[k] = got[k]; }
+  } catch (e) {}
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+
+  var DRILL = {};
+  E.DRILLS.forEach(function (d) { DRILL[d.id] = d; });
+  function levelOf(id) { return S.levels[id] || 1; }
+  function today() { return E.isoDay(Date.now()); }
+
+  /* ---------------------------------------------------------------- sound */
+  var actx = null;
+  function beep(freq, dur, delay, type, gain) {
+    if (!S.sound) return;
+    try {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      var t = actx.currentTime + (delay || 0);
+      var o = actx.createOscillator(), g = actx.createGain();
+      o.type = type || 'sine'; o.frequency.value = freq;
+      g.gain.setValueAtTime(gain || 0.08, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(actx.destination);
+      o.start(t); o.stop(t + dur);
+    } catch (e) {}
+  }
+  function sGood() { beep(660, .12); beep(880, .16, .07); }
+  function sBad() { beep(150, .22, 0, 'square', 0.06); }
+  function sDone() { [523, 659, 784, 1047].forEach(function (f, i) { beep(f, .18, i * 0.09); }); }
+  function buzz(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
+
+  /* ----------------------------------------------------------- home view */
+  function show(view) {
+    ['home', 'play', 'done'].forEach(function (v) { $(v).classList.toggle('hidden', v !== view); });
+  }
+
+  function renderHome() {
+    var idx = E.brainIndex(S.ratings);
+    $('brainNum').textContent = idx;
+    $('rankName').textContent = E.rankFor(idx);
+    $('dial').style.setProperty('--p', Math.round(idx / E.MAX_RATING * 360) + 'deg');
+    $('streakChip').textContent = '🔥 ' + (S.streak.streak || 0);
+
+    var domHtml = '';
+    E.DOMAINS.forEach(function (d) {
+      var r = S.ratings[d] || 0;
+      domHtml += '<div class="dom" style="--dc:var(--d-' + d + ')"><span class="nm">' + d + '</span>' +
+        '<span class="bar"><i style="width:' + Math.round(r / E.MAX_RATING * 100) + '%;background:var(--d-' + d + ')"></i></span>' +
+        '<span class="rt">' + (r || '—') + '</span></div>';
+    });
+    $('doms').innerHTML = domHtml;
+
+    var day = today();
+    var wo = E.dailyWorkout(day);
+    var done = S.workouts[day] || [];
+    $('woDate').textContent = day;
+    $('woDrills').innerHTML = wo.map(function (id) {
+      var d = DRILL[id], isDone = done.indexOf(id) !== -1;
+      return '<div class="wodrill' + (isDone ? ' done' : '') + '"><div class="e">' + d.emoji + '</div>' +
+        d.name + '<div class="st">' + (isDone ? '✓ done' : 'Lv ' + levelOf(id)) + '</div></div>';
+    }).join('');
+    var allDone = wo.every(function (id) { return done.indexOf(id) !== -1; });
+    var btn = $('woBtn');
+    btn.textContent = allDone ? '✓ Workout complete — see you tomorrow' :
+      done.length ? 'Continue workout (' + done.length + '/3)' : 'Start today’s workout';
+    btn.classList.toggle('done', allDone);
+    btn.disabled = allDone;
+
+    $('drillCards').innerHTML = E.DRILLS.map(function (d) {
+      return '<button class="card" data-drill="' + d.id + '" style="--dc:var(--d-' + d.domain + ')">' +
+        '<div class="e">' + d.emoji + '</div><div class="nm">' + d.name + '</div>' +
+        '<div class="tl">' + d.tagline + '</div>' +
+        '<div class="meta"><span class="lv">Lv ' + levelOf(d.id) + '</span><span>best ' + (S.best[d.id] || 0) + '</span></div></button>';
+    }).join('');
+
+    $('soundBtn').textContent = S.sound ? '🔊 sound on' : '🔇 sound off';
+  }
+
+  /* --------------------------------------------------------- game session */
+  // G = the running session; null when not playing.
+  var G = null;
+  var timerT = null, phaseT = [];
+
+  function clearTimers() {
+    if (timerT) { clearTimeout(timerT); timerT = null; }
+    phaseT.forEach(clearTimeout); phaseT = [];
+  }
+  function later(fn, ms) { phaseT.push(setTimeout(fn, ms)); }
+
+  function startSession(drillId, workoutMode) {
+    clearTimers();
+    G = { drill: drillId, workout: !!workoutMode, level: levelOf(drillId), startLevel: levelOf(drillId),
+          round: 0, score: 0, run: 0, results: [], rng: E.makeRng((Math.random() * 0xffffffff) >>> 0) };
+    show('play');
+    $('playWho').textContent = DRILL[drillId].emoji + ' ' + DRILL[drillId].name;
+    nextRound();
+  }
+
+  function nextRound() {
+    if (G.round >= E.SESSION_ROUNDS) return endSession();
+    G.round++;
+    G.cur = E.genRound(G.drill, G.level, G.rng);
+    G.answered = false;
+    $('playRound').textContent = 'Round ' + G.round + '/' + E.SESSION_ROUNDS + ' · Lv ' + G.level;
+    $('playScore').textContent = G.score;
+    $('playCombo').textContent = G.run >= 2 ? '×' + E.comboMultiplier(G.run).toFixed(1) : '';
+    renderRound(G.cur);
+  }
+
+  function startTimer(ms) {
+    var bar = $('timerBar'), wrap = $('timerWrap');
+    wrap.classList.remove('low');
+    bar.style.transition = 'none'; bar.style.width = '100%';
+    // force reflow so the transition restarts from full
+    void bar.offsetWidth;
+    bar.style.transition = 'width ' + ms + 'ms linear'; bar.style.width = '0%';
+    G.roundStart = Date.now();
+    if (timerT) clearTimeout(timerT);
+    phaseT.push(setTimeout(function () { wrap.classList.add('low'); }, Math.max(0, ms - 1500)));
+    timerT = setTimeout(function () { settle(null); }, ms);
+  }
+  function freezeTimer() {
+    var bar = $('timerBar');
+    try { bar.style.width = getComputedStyle(bar).width; } catch (e) {}
+    bar.style.transition = 'none';
+  }
+
+  /* ---- per-kind renderers ---- */
+  function renderRound(r) {
+    var st = $('stage');
+    st.className = 'stage';
+    if (r.kind === 'recall') renderRecall(r, st);
+    else if (r.kind === 'sequence') renderEcho(r, st);
+    else if (r.kind === 'gridtap') renderOdd(r, st);
+    else renderChoice(r, st);
+  }
+
+  function gridHtml(r, cls) {
+    var n = r.grid, html = '<div class="pgrid" style="grid-template-columns:repeat(' + n + ',1fr);width:min(86vw,' + (n * 64 + (n - 1) * 8) + 'px)">';
+    for (var i = 0; i < n * n; i++) html += '<button class="cell" data-i="' + i + '">' + (cls ? r.symbols[i] : '') + '</button>';
+    return html + '</div>';
+  }
+
+  function renderRecall(r, st) {
+    st.innerHTML = '<div class="instr">Memorise the lit cells…</div>' + gridHtml(r, false);
+    var cells = st.querySelectorAll('.cell');
+    r.lit.forEach(function (i) { if (cells[i]) cells[i].classList.add('lit'); });
+    $('timerBar').style.transition = 'none'; $('timerBar').style.width = '100%';
+    var picked = [];
+    later(function () {
+      r.lit.forEach(function (i) { if (cells[i]) cells[i].classList.remove('lit'); });
+      st.firstChild.textContent = 'Tap the ' + r.lit.length + ' cells that were lit';
+      startTimer(r.timeLimitMs);
+      for (var i = 0; i < cells.length; i++) (function (cell, idx) {
+        cell.onclick = function () {
+          if (G.answered) return;
+          var at = picked.indexOf(idx);
+          if (at !== -1) { picked.splice(at, 1); cell.classList.remove('sel'); return; }
+          picked.push(idx); cell.classList.add('sel');
+          beep(520 + picked.length * 40, .05, 0, 'sine', 0.04);
+          if (picked.length === r.lit.length) settle(picked.slice());
+        };
+      })(cells[i], i);
+    }, r.showMs);
+  }
+
+  function renderChoice(r, st) {
+    var top = r.drill === 'stroop'
+      ? '<div class="instr">' + r.prompt + '</div><div class="prompt word" style="color:' + r.inkHex + '">' + r.word + '</div>'
+      : '<div class="instr">Solve it</div><div class="prompt">' + r.prompt + '</div>';
+    st.innerHTML = top + '<div class="opts">' + r.options.map(function (o) {
+      return '<button class="opt" data-v="' + o + '">' + o + '</button>';
+    }).join('') + '</div>';
+    wireOpts(st, r.drill === 'storm');
+    startTimer(r.timeLimitMs);
+  }
+
+  function renderEcho(r, st) {
+    st.innerHTML = '<div class="instr">Watch the stream…</div><div class="bigsym" id="echoSym"></div>';
+    var sym = $('echoSym');
+    $('timerBar').style.transition = 'none'; $('timerBar').style.width = '100%';
+    r.sequence.forEach(function (s, i) {
+      later(function () { sym.textContent = s; sym.style.opacity = 1; beep(440 + i * 30, .04, 0, 'sine', 0.03); }, i * r.itemMs);
+      later(function () { sym.style.opacity = 0; }, i * r.itemMs + r.itemMs * 0.72);
+    });
+    later(function () {
+      st.innerHTML = '<div class="instr">' + r.prompt + '</div><div class="opts">' + r.options.map(function (o) {
+        return '<button class="opt sym" data-v="' + o + '">' + o + '</button>';
+      }).join('') + '</div>';
+      wireOpts(st, false);
+      startTimer(r.timeLimitMs);
+    }, r.sequence.length * r.itemMs + 150);
+  }
+
+  function renderOdd(r, st) {
+    st.innerHTML = '<div class="instr">Tap the odd one out</div>' + gridHtml(r, true);
+    var cells = st.querySelectorAll('.cell');
+    for (var i = 0; i < cells.length; i++) (function (cell, idx) {
+      cell.onclick = function () { if (!G.answered) settle(idx); };
+    })(cells[i], i);
+    startTimer(r.timeLimitMs);
+  }
+
+  function wireOpts(st, numeric) {
+    var opts = st.querySelectorAll('.opt');
+    for (var i = 0; i < opts.length; i++) (function (btn) {
+      btn.onclick = function () {
+        if (G.answered) return;
+        var v = btn.getAttribute('data-v');
+        settle(numeric ? Number(v) : v);
+      };
+    })(opts[i]);
+  }
+
+  /* ---- resolve a round (answer=null ⇒ timeout) ---- */
+  function settle(answer) {
+    if (!G || G.answered) return;
+    G.answered = true;
+    clearTimers(); freezeTimer();
+    var r = G.cur;
+    var ms = Date.now() - (G.roundStart || Date.now());
+    var correct = answer !== null && E.checkAnswer(r, answer);
+    var pts = Math.round(E.roundPoints(G.level, correct, ms, r.timeLimitMs) * E.comboMultiplier(G.run));
+    var st = $('stage');
+
+    if (correct) { G.run++; sGood(); buzz(18); }
+    else { G.run = 0; sBad(); buzz([60, 40, 60]); }
+    G.results.push({ correct: correct, ms: ms, level: G.level, points: E.roundPoints(G.level, correct, ms, r.timeLimitMs) });
+    G.score += pts;
+    G.level = E.nextLevel(G.level, correct);
+
+    // reveal: recall shows hits/misses, odd shows the intruder
+    if (r.kind === 'recall' || r.kind === 'gridtap') {
+      var cells = st.querySelectorAll('.cell');
+      if (r.kind === 'recall') r.lit.forEach(function (i) { if (cells[i]) cells[i].classList.add(correct ? 'hit' : 'miss'); });
+      else if (cells[r.answer]) cells[r.answer].classList.add(correct ? 'hit' : 'miss');
+    }
+    st.classList.add(correct ? 'good' : 'badf');
+    var f = document.createElement('div');
+    f.className = 'float' + (correct ? '' : ' neg');
+    f.textContent = correct ? '+' + pts : (answer === null ? '⏱ time!' : '✕');
+    st.appendChild(f);
+    $('playScore').textContent = G.score;
+
+    later(nextRound, correct ? 620 : 850);
+  }
+
+  /* ---- session end ---- */
+  function endSession() {
+    var sum = E.sessionSummary(G.results);
+    var drill = DRILL[G.drill];
+    var day = today();
+
+    // persist: staircase position, rating EMA, bests, streak, workout progress
+    S.levels[G.drill] = G.level;
+    var perf = E.sessionPerformance(sum);
+    var oldRating = S.ratings[drill.domain] || 0;
+    var oldIndex = E.brainIndex(S.ratings);
+    S.ratings[drill.domain] = E.updateRating(oldRating, perf);
+    var newIndex = E.brainIndex(S.ratings);
+    var isBest = sum.score > (S.best[G.drill] || 0);
+    if (isBest) S.best[G.drill] = sum.score;
+    var hadPlayedToday = S.streak.lastDay === day;
+    S.streak = E.updateStreak(S.streak, day);
+    S.sessions++;
+
+    var wo = E.dailyWorkout(day);
+    var inWorkout = G.workout;
+    if (inWorkout) {
+      var done = S.workouts[day] || [];
+      if (done.indexOf(G.drill) === -1) done.push(G.drill);
+      S.workouts[day] = done;
+    }
+    save();
+
+    // render results
+    var woDone = S.workouts[day] || [];
+    var nextDrill = inWorkout ? wo.filter(function (id) { return woDone.indexOf(id) === -1; })[0] : null;
+    var workoutComplete = inWorkout && !nextDrill;
+
+    $('doneTitle').textContent = workoutComplete ? '🏆 Workout complete' : drill.emoji + ' ' + drill.name;
+    $('doneSub').textContent = workoutComplete ? 'All three drills done — brain fed for ' + day
+      : (inWorkout ? 'Workout drill ' + woDone.length + '/3' : 'Free play session');
+    $('doneScore').textContent = sum.score;
+    $('doneStats').innerHTML =
+      '<div class="res"><div class="v">' + Math.round(sum.accuracy * 100) + '%</div><div class="l">accuracy</div></div>' +
+      '<div class="res"><div class="v">×' + sum.bestCombo + '</div><div class="l">best combo</div></div>' +
+      '<div class="res"><div class="v">' + sum.peakLevel + '</div><div class="l">peak level</div></div>';
+
+    var dr = S.ratings[drill.domain] - oldRating;
+    var di = newIndex - oldIndex;
+    $('doneDelta').innerHTML = drill.domain + ' rating <b>' + S.ratings[drill.domain] + '</b> (' + (dr >= 0 ? '+' : '') + dr + ')' +
+      ' · brain index <b>' + newIndex + '</b> (' + (di >= 0 ? '+' : '') + di + ') · rank <b>' + E.rankFor(newIndex) + '</b>';
+
+    var banners = '';
+    if (isBest && sum.score > 0) banners += '<div class="banner best">🎉 New personal best on ' + drill.name + '!</div>';
+    if (!hadPlayedToday) banners += '<div class="banner streak">🔥 Day streak: ' + S.streak.streak + (S.streak.streak > 1 ? ' — keep the chain alive' : ' — come back tomorrow') + '</div>';
+    $('doneBanners').innerHTML = banners;
+
+    var btns = '';
+    if (nextDrill) btns = '<button class="ghost" id="homeBtn">Home</button><button class="cta" id="nextBtn">Next: ' + DRILL[nextDrill].emoji + ' ' + DRILL[nextDrill].name + '</button>';
+    else btns = '<button class="ghost" id="homeBtn">Home</button><button class="cta" id="againBtn">' + (workoutComplete ? 'Free play' : 'Play again') + '</button>';
+    $('doneBtns').innerHTML = btns;
+
+    show('done');
+    sDone(); buzz([30, 30, 30, 30, 80]);
+
+    $('homeBtn').onclick = function () { renderHome(); show('home'); };
+    var nb = $('nextBtn');
+    if (nb) nb.onclick = function () { startSession(nextDrill, true); };
+    var ab = $('againBtn');
+    if (ab) ab.onclick = function () {
+      if (workoutComplete) { renderHome(); show('home'); }
+      else startSession(G.drill, false);
+    };
+    G = null;
+  }
+
+  /* ------------------------------------------------------------- wiring */
+  $('woBtn').onclick = function () {
+    var day = today();
+    var wo = E.dailyWorkout(day), done = S.workouts[day] || [];
+    var next = wo.filter(function (id) { return done.indexOf(id) === -1; })[0];
+    if (next) startSession(next, true);
+  };
+  $('drillCards').onclick = function (ev) {
+    var t = ev.target;
+    while (t && t !== this && !(t.getAttribute && t.getAttribute('data-drill'))) t = t.parentNode;
+    var id = t && t.getAttribute && t.getAttribute('data-drill');
+    if (id) startSession(id, false);
+  };
+  $('quitBtn').onclick = function () {
+    clearTimers(); G = null;
+    renderHome(); show('home');
+  };
+  $('soundBtn').onclick = function () { S.sound = !S.sound; save(); renderHome(); };
+  $('resetBtn').onclick = function () {
+    if (confirm('Reset all Cortex progress — ratings, levels, streak and bests?')) {
+      S = defaults(); save(); renderHome();
+    }
+  };
+
+  renderHome();
+  show('home');
+
+  if ('serviceWorker' in navigator) {
+    try { navigator.serviceWorker.register('sw.js'); } catch (e) {}
+  }
+})();
+</script>
+</body>
+</html>
