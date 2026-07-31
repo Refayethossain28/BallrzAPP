@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quill — AI content tool</title>
+<style>
+  :root {
+    --bg: #0d0b14;
+    --panel: #151221;
+    --panel-2: #1c1830;
+    --border: #2d2749;
+    --text: #ece9f6;
+    --muted: #9a92b8;
+    --accent: #a78bfa;
+    --accent-dim: rgba(167, 139, 250, 0.14);
+    --danger: #f87171;
+    --radius: 12px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 15px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 18px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  header .logo { font-weight: 700; font-size: 17px; }
+  header .logo span { color: var(--accent); }
+  header a.back {
+    color: var(--muted); text-decoration: none; font-size: 13px;
+    padding: 5px 10px; border: 1px solid var(--border); border-radius: 8px;
+  }
+  header a.back:hover { color: var(--text); border-color: var(--accent); }
+  header .spacer { flex: 1; }
+
+  .btn {
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 13px; font-size: 13px; font-family: var(--font);
+    cursor: pointer; transition: border-color .15s;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); color: #1d1147; border-color: var(--accent); font-weight: 600; }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn.small { padding: 4px 9px; font-size: 12px; }
+  .btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+  .btn[disabled] { opacity: .5; cursor: default; }
+
+  .wrap {
+    max-width: 1100px; margin: 0 auto; padding: 18px;
+    display: grid; grid-template-columns: 1fr 320px; gap: 16px;
+    align-items: start;
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px;
+  }
+  .card h2 {
+    font-size: 13px; text-transform: uppercase; letter-spacing: .8px;
+    color: var(--muted); margin-bottom: 12px;
+  }
+
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+  .tab {
+    padding: 8px 14px; border-radius: 999px; font-size: 13px;
+    border: 1px solid var(--border); background: var(--panel-2);
+    color: var(--muted); cursor: pointer; font-family: var(--font);
+  }
+  .tab.active {
+    background: var(--accent-dim); color: var(--accent);
+    border-color: rgba(167,139,250,.5); font-weight: 600;
+  }
+
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  input[type="text"], input[type="password"], textarea, select {
+    width: 100%; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; font-size: 13.5px; font-family: var(--font);
+  }
+  textarea { resize: vertical; min-height: 110px; }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .output-card {
+    margin-top: 16px; background: var(--panel-2);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px; display: none;
+  }
+  .output-card.visible { display: block; }
+  .output-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .output-head .title { font-weight: 600; font-size: 14px; flex: 1; }
+  .engine-badge {
+    font-size: 10.5px; color: var(--muted); border: 1px solid var(--border);
+    border-radius: 999px; padding: 1px 8px;
+  }
+  .engine-badge.api { color: var(--accent); border-color: rgba(167,139,250,.5); }
+  .output-text { white-space: pre-wrap; word-wrap: break-word; font-size: 14px; }
+  .notice {
+    margin-top: 10px; font-size: 12px; color: #fbbf24;
+    background: rgba(251,191,36,.08); border: 1px solid rgba(251,191,36,.25);
+    border-radius: 8px; padding: 6px 10px; display: none;
+  }
+  .notice.visible { display: block; }
+
+  .hist-item {
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; margin-bottom: 8px; background: var(--panel-2);
+    cursor: pointer; transition: border-color .15s;
+  }
+  .hist-item:hover { border-color: var(--accent); }
+  .hist-item .hi-top { display: flex; gap: 8px; align-items: baseline; }
+  .hist-item .hi-tool { font-size: 12px; font-weight: 600; color: var(--accent); flex: 1; }
+  .hist-item .hi-time { font-size: 10.5px; color: var(--muted); }
+  .hist-item .hi-preview {
+    font-size: 12px; color: var(--muted); margin-top: 3px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .warn {
+    font-size: 11.5px; color: #fbbf24; background: rgba(251,191,36,.08);
+    border: 1px solid rgba(251,191,36,.25); border-radius: 8px;
+    padding: 8px 10px; margin-top: 8px;
+  }
+  .hint { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,.6);
+    display: none; align-items: center; justify-content: center; z-index: 50; padding: 16px;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 18px; width: 100%; max-width: 440px;
+  }
+  .modal h3 { font-size: 16px; margin-bottom: 12px; }
+  .modal .row { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
+
+  @media (max-width: 860px) {
+    .wrap { grid-template-columns: 1fr; }
+    .row2 { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <a class="back" href="../index.html">&larr; All apps</a>
+  <div class="logo">Qu<span>ill</span></div>
+  <div class="spacer"></div>
+  <span id="apiStatus" style="font-size:12px;color:var(--muted);"></span>
+  <button class="btn" id="settingsBtn">Settings</button>
+</header>
+
+<div class="wrap">
+  <main class="card">
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-tool="summarize">Summarizer</button>
+      <button class="tab" data-tool="email">Email drafter</button>
+      <button class="tab" data-tool="product">Product description</button>
+      <button class="tab" data-tool="tone">Tone rewriter</button>
+    </div>
+
+    <!-- Summarizer -->
+    <section class="panel active" id="panel-summarize">
+      <div class="field">
+        <label for="sumText">Text to summarize</label>
+        <textarea id="sumText" placeholder="Paste an article, report, or long email..."></textarea>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label for="sumLen">Summary length</label>
+          <select id="sumLen">
+            <option value="2">Short (2 sentences)</option>
+            <option value="4" selected>Medium (4 sentences)</option>
+            <option value="7">Long (7 sentences)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="sumStyle">Style</label>
+          <select id="sumStyle">
+            <option value="paragraph" selected>Paragraph</option>
+            <option value="bullets">Bullet points</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn primary" data-run="summarize">Summarize</button>
+    </section>
+
+    <!-- Email drafter -->
+    <section class="panel" id="panel-email">
+      <div class="row2">
+        <div class="field">
+          <label for="emRecipient">Recipient</label>
+          <input type="text" id="emRecipient" placeholder="e.g. Sarah, the finance team">
+        </div>
+        <div class="field">
+          <label for="emSender">Your name</label>
+          <input type="text" id="emSender" placeholder="e.g. Rafa">
+        </div>
+      </div>
+      <div class="field">
+        <label for="emGoal">Goal of the email</label>
+        <input type="text" id="emGoal" placeholder="e.g. request budget approval for the Q3 offsite">
+      </div>
+      <div class="field">
+        <label for="emPoints">Key points (one per line)</label>
+        <textarea id="emPoints" placeholder="venue is booked for Sept 12&#10;total cost is 4,200&#10;need sign-off by Friday"></textarea>
+      </div>
+      <div class="field">
+        <label for="emTone">Tone</label>
+        <select id="emTone">
+          <option value="formal">Formal</option>
+          <option value="friendly" selected>Friendly</option>
+          <option value="direct">Direct</option>
+        </select>
+      </div>
+      <button class="btn primary" data-run="email">Draft email</button>
+    </section>
+
+    <!-- Product description -->
+    <section class="panel" id="panel-product">
+      <div class="row2">
+        <div class="field">
+          <label for="prName">Product name</label>
+          <input type="text" id="prName" placeholder="e.g. AeroBrew 2">
+        </div>
+        <div class="field">
+          <label for="prAudience">Audience (optional)</label>
+          <input type="text" id="prAudience" placeholder="e.g. home coffee enthusiasts">
+        </div>
+      </div>
+      <div class="field">
+        <label for="prFeatures">Feature bullets (one per line)</label>
+        <textarea id="prFeatures" placeholder="brews in 90 seconds&#10;self-cleaning steam cycle&#10;fits under low cabinets"></textarea>
+      </div>
+      <div class="field">
+        <label for="prTone">Tone</label>
+        <select id="prTone">
+          <option value="professional" selected>Professional</option>
+          <option value="playful">Playful</option>
+          <option value="luxury">Luxury</option>
+        </select>
+      </div>
+      <button class="btn primary" data-run="product">Write description</button>
+    </section>
+
+    <!-- Tone rewriter -->
+    <section class="panel" id="panel-tone">
+      <div class="field">
+        <label for="toText">Text to rewrite</label>
+        <textarea id="toText" placeholder="Paste the text whose tone you want to change..."></textarea>
+      </div>
+      <div class="field">
+        <label for="toDir">Rewrite direction</label>
+        <select id="toDir">
+          <option value="formal" selected>Make it more formal</option>
+          <option value="casual">Make it more casual</option>
+        </select>
+      </div>
+      <button class="btn primary" data-run="tone">Rewrite</button>
+    </section>
+
+    <!-- Output -->
+    <div class="output-card" id="outputCard">
+      <div class="output-head">
+        <div class="title" id="outputTitle">Output</div>
+        <span class="engine-badge" id="engineBadge">Local engine</span>
+        <button class="btn small" id="copyBtn">Copy</button>
+      </div>
+      <div class="output-text" id="outputText"></div>
+    </div>
+    <div class="notice" id="fallbackNotice"></div>
+  </main>
+
+  <aside class="card">
+    <h2>History</h2>
+    <div id="histList"></div>
+    <div class="hint" id="histEmpty">Generations you run will appear here (stored in this browser).</div>
+    <button class="btn small danger" id="clearHistBtn" style="margin-top:8px;">Clear history</button>
+  </aside>
+</div>
+
+<div class="modal-backdrop" id="settingsModal">
+  <div class="modal">
+    <h3>Settings</h3>
+    <div class="field">
+      <label for="apiKey">Anthropic API key (optional)</label>
+      <input type="password" id="apiKey" placeholder="sk-ant-...">
+    </div>
+    <div class="warn">
+      Storing API keys in browser localStorage is for <strong>local demo use only</strong>.
+      Do not use a production key. Without a key, Quill uses its built-in offline writing engine.
+    </div>
+    <div class="row">
+      <button class="btn danger" id="clearKeyBtn">Clear key</button>
+      <button class="btn" id="closeSettingsBtn">Close</button>
+      <button class="btn primary" id="saveKeyBtn">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var LS_KEY = "quill.apikey.v1";
+  var LS_HIST = "quill.history.v1";
+  var $ = function (id) { return document.getElementById(id); };
+
+  var TOOL_NAMES = {
+    summarize: "Summary",
+    email: "Email draft",
+    product: "Product description",
+    tone: "Tone rewrite"
+  };
+
+  var STOPWORDS = new Set(("a,an,the,and,or,but,if,then,of,in,on,at,to,for,with,by,from,as,is,are,was,were,be,been,it,its,this,that,these,those,i,you,he,she,we,they,them,his,her,our,your,their,my,me,do,does,did,have,has,had,will,would,can,could,should,may,might,must,not,no,so,than,too,very,just,about,into,over,after,before,out,up,down,there,here,when,where,why,how,what,which,who,all,any,both,each,more,most,other,some,such,only,own,same,also").split(","));
+
+  function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+  function splitSentences(text) {
+    return (text.replace(/\s+/g, " ").match(/[^.!?]+[.!?]+(?:["')\]]+)?|[^.!?]+$/g) || [])
+      .map(function (s) { return s.trim(); })
+      .filter(function (s) { return s.length > 0; });
+  }
+
+  function words(text) {
+    return (text.toLowerCase().match(/[a-z0-9']+/g) || [])
+      .filter(function (w) { return w.length > 1 && !STOPWORDS.has(w); });
+  }
+
+  // ---------- Local engines ----------
+
+  function localSummarize(text, n, style) {
+    var sentences = splitSentences(text);
+    if (sentences.length <= n) {
+      return style === "bullets"
+        ? sentences.map(function (s) { return "• " + s; }).join("\n")
+        : sentences.join(" ");
+    }
+    var freq = new Map();
+    words(text).forEach(function (w) { freq.set(w, (freq.get(w) || 0) + 1); });
+    var scored = sentences.map(function (s, i) {
+      var ws = words(s);
+      var score = 0;
+      ws.forEach(function (w) { score += freq.get(w) || 0; });
+      score = ws.length ? score / Math.sqrt(ws.length) : 0;
+      if (i === 0) score *= 1.25; // lead sentence bonus
+      return { s: s, i: i, score: score };
+    });
+    scored.sort(function (a, b) { return b.score - a.score; });
+    var top = scored.slice(0, n).sort(function (a, b) { return a.i - b.i; });
+    return style === "bullets"
+      ? top.map(function (x) { return "• " + x.s; }).join("\n")
+      : top.map(function (x) { return x.s; }).join(" ");
+  }
+
+  var EMAIL_T = {
+    formal: {
+      greet: ["Dear {r},", "Dear {r},"],
+      open: [
+        "I am writing to {g}.",
+        "I would like to {g}, and wanted to share the relevant details with you.",
+        "The purpose of this message is to {g}."
+      ],
+      lead: ["Please find the key points below:", "For your consideration:", "The main details are as follows:"],
+      close: [
+        "Please let me know if you require any further information.",
+        "I would appreciate your response at your earliest convenience.",
+        "Thank you in advance for your time and consideration."
+      ],
+      sign: ["Kind regards,", "Sincerely,", "Best regards,"]
+    },
+    friendly: {
+      greet: ["Hi {r},", "Hello {r},", "Hey {r},"],
+      open: [
+        "Hope you're doing well! I'm reaching out because I'd like to {g}.",
+        "Quick note from my side — I want to {g}.",
+        "Hope your week is going well. I wanted to touch base to {g}."
+      ],
+      lead: ["Here's the quick rundown:", "A few things worth knowing:", "Here are the main points:"],
+      close: [
+        "Let me know what you think!",
+        "Happy to chat if anything's unclear.",
+        "Any questions, just shout."
+      ],
+      sign: ["Thanks,", "Cheers,", "Best,"]
+    },
+    direct: {
+      greet: ["{r} —", "Hi {r},"],
+      open: [
+        "I need to {g}.",
+        "Following up so we can {g}.",
+        "Short version: I want to {g}."
+      ],
+      lead: ["Key points:", "Details:", "What you need to know:"],
+      close: [
+        "Can you confirm by end of day?",
+        "Let me know if anything blocks this.",
+        "Reply with a yes/no and we're set."
+      ],
+      sign: ["Thanks,", "— ", "Best,"]
+    }
+  };
+
+  function localEmail(recipient, sender, goal, points, tone) {
+    var t = EMAIL_T[tone] || EMAIL_T.friendly;
+    var r = recipient || "there";
+    var g = goal ? goal.replace(/^to\s+/i, "") : "follow up on our recent conversation";
+    var lines = [];
+    lines.push(pick(t.greet).replace("{r}", r));
+    lines.push("");
+    lines.push(pick(t.open).replace("{g}", g));
+    var pts = points.split(/\n+/).map(function (p) { return p.trim(); }).filter(Boolean);
+    if (pts.length) {
+      lines.push("");
+      lines.push(pick(t.lead));
+      pts.forEach(function (p) {
+        lines.push("• " + p.charAt(0).toUpperCase() + p.slice(1).replace(/[.]?$/, ""));
+      });
+    }
+    lines.push("");
+    lines.push(pick(t.close));
+    lines.push("");
+    lines.push(pick(t.sign));
+    lines.push(sender || "");
+    return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  var PRODUCT_T = {
+    professional: {
+      head: ["Meet {p}.", "Introducing {p}.", "{p} — built to work as hard as you do."],
+      intro: [
+        "Designed {a}, {p} delivers dependable performance where it matters most.",
+        "{p} combines thoughtful engineering with everyday practicality{a2}.",
+        "Every detail of {p} is engineered for reliability and ease of use{a2}."
+      ],
+      featLead: ["What sets it apart:", "Key capabilities:", "Highlights:"],
+      cta: [
+        "Upgrade your workflow with {p} today.",
+        "See the difference {p} makes — order yours now.",
+        "{p} is available now."
+      ]
+    },
+    playful: {
+      head: ["Say hello to {p}!", "{p} has entered the chat.", "Meet your new favorite thing: {p}."],
+      intro: [
+        "{p} is here to make life easier{a2} — and a lot more fun.",
+        "Built {a}, {p} does the boring parts so you don't have to.",
+        "We packed {p} with the good stuff{a2}. You're welcome."
+      ],
+      featLead: ["Here's why you'll love it:", "The fun part:", "What's inside:"],
+      cta: [
+        "Go on — treat yourself to {p}.",
+        "Grab {p} before everyone else does.",
+        "Your future self says thanks. Get {p} today."
+      ]
+    },
+    luxury: {
+      head: ["{p}. Crafted without compromise.", "Introducing {p} — where design meets distinction.", "{p}: the definitive choice."],
+      intro: [
+        "Meticulously crafted {a}, {p} elevates the everyday into the exceptional.",
+        "{p} embodies refined engineering and understated elegance{a2}.",
+        "For those who expect more, {p} delivers an experience beyond the ordinary{a2}."
+      ],
+      featLead: ["Distinctive by design:", "The hallmarks:", "Considered in every detail:"],
+      cta: [
+        "Experience {p} for yourself.",
+        "{p} — reserved for those who notice the difference.",
+        "Discover {p} today."
+      ]
+    }
+  };
+
+  function featureSentence(f) {
+    var s = f.trim().replace(/^[-•*]\s*/, "");
+    if (!s) return "";
+    s = s.charAt(0).toUpperCase() + s.slice(1).replace(/[.]?$/, "");
+    var tails = [
+      " — so it fits seamlessly into your routine.",
+      ", giving you one less thing to think about.",
+      ", designed with real-world use in mind.",
+      " — a small detail that makes a big difference.",
+      ", every single time."
+    ];
+    return "• " + s + pick(tails);
+  }
+
+  function localProduct(name, audience, features, tone) {
+    var t = PRODUCT_T[tone] || PRODUCT_T.professional;
+    var p = name || "this product";
+    var a = audience ? "for " + audience : "with the user in mind";
+    var a2 = audience ? " for " + audience : "";
+    function fill(s) { return s.split("{p}").join(p).split("{a}").join(a).split("{a2}").join(a2); }
+    var lines = [fill(pick(t.head)), "", fill(pick(t.intro))];
+    var feats = features.split(/\n+/).map(function (f) { return f.trim(); }).filter(Boolean);
+    if (feats.length) {
+      lines.push("");
+      lines.push(pick(t.featLead));
+      feats.forEach(function (f) { var fs = featureSentence(f); if (fs) lines.push(fs); });
+    }
+    lines.push("");
+    lines.push(fill(pick(t.cta)));
+    return lines.join("\n").trim();
+  }
+
+  // casual -> formal substitutions
+  var TO_FORMAL = [
+    ["can't", "cannot"], ["won't", "will not"], ["don't", "do not"], ["doesn't", "does not"],
+    ["didn't", "did not"], ["isn't", "is not"], ["aren't", "are not"], ["wasn't", "was not"],
+    ["couldn't", "could not"], ["shouldn't", "should not"], ["wouldn't", "would not"],
+    ["haven't", "have not"], ["hasn't", "has not"], ["it's", "it is"], ["that's", "that is"],
+    ["there's", "there is"], ["we're", "we are"], ["they're", "they are"], ["you're", "you are"],
+    ["i'm", "I am"], ["let's", "let us"], ["gonna", "going to"], ["wanna", "want to"],
+    ["gotta", "have to"], ["kinda", "somewhat"], ["sorta", "somewhat"],
+    ["hey", "hello"], ["hi there", "hello"], ["yeah", "yes"], ["yep", "yes"], ["nope", "no"],
+    ["ok", "acceptable"], ["okay", "acceptable"], ["thanks", "thank you"],
+    ["thanks a lot", "thank you very much"], ["a lot of", "a considerable amount of"],
+    ["lots of", "numerous"], ["a bunch of", "several"], ["stuff", "material"],
+    ["things", "matters"], ["get", "obtain"], ["got", "received"], ["really", "notably"],
+    ["pretty", "rather"], ["huge", "substantial"], ["big", "significant"],
+    ["awesome", "excellent"], ["cool", "impressive"], ["great", "excellent"],
+    ["bad", "unsatisfactory"], ["asap", "at your earliest convenience"],
+    ["btw", "incidentally"], ["fyi", "for your information"], ["guys", "everyone"],
+    ["kids", "children"], ["buy", "purchase"], ["need", "require"], ["help", "assist"],
+    ["show", "demonstrate"], ["tell", "inform"], ["ask", "inquire"], ["also", "additionally"],
+    ["but", "however"], ["so", "therefore"], ["about", "regarding"], ["right now", "at present"],
+    ["soon", "in the near future"], ["fix", "resolve"], ["check", "verify"],
+    ["start", "commence"], ["end", "conclude"], ["use", "utilize"]
+  ];
+
+  // formal -> casual substitutions
+  var TO_CASUAL = [
+    ["cannot", "can't"], ["will not", "won't"], ["do not", "don't"], ["does not", "doesn't"],
+    ["did not", "didn't"], ["is not", "isn't"], ["are not", "aren't"],
+    ["could not", "couldn't"], ["should not", "shouldn't"], ["would not", "wouldn't"],
+    ["have not", "haven't"], ["it is", "it's"], ["that is", "that's"], ["there is", "there's"],
+    ["we are", "we're"], ["they are", "they're"], ["you are", "you're"], ["let us", "let's"],
+    ["hello", "hey"], ["greetings", "hey"], ["therefore", "so"], ["however", "but"],
+    ["additionally", "also"], ["furthermore", "plus"], ["nevertheless", "still"],
+    ["utilize", "use"], ["utilise", "use"], ["commence", "start"], ["conclude", "wrap up"],
+    ["purchase", "buy"], ["obtain", "get"], ["acquire", "get"], ["require", "need"],
+    ["assist", "help"], ["assistance", "help"], ["demonstrate", "show"], ["inform", "tell"],
+    ["inquire", "ask"], ["regarding", "about"], ["concerning", "about"],
+    ["at your earliest convenience", "when you get a chance"], ["at present", "right now"],
+    ["in the near future", "soon"], ["approximately", "about"], ["sufficient", "enough"],
+    ["numerous", "a lot of"], ["substantial", "big"], ["considerable", "big"],
+    ["excellent", "great"], ["unsatisfactory", "not great"], ["resolve", "fix"],
+    ["verify", "check"], ["endeavor", "try"], ["attempt", "try"], ["individuals", "people"],
+    ["children", "kids"], ["notably", "really"], ["prior to", "before"],
+    ["subsequent to", "after"], ["in order to", "to"], ["thank you very much", "thanks a lot"],
+    ["thank you", "thanks"], ["kind regards", "cheers"], ["sincerely", "cheers"]
+  ];
+
+  function matchCase(src, repl) {
+    if (src === src.toUpperCase() && src.length > 1) return repl.toUpperCase();
+    if (src.charAt(0) === src.charAt(0).toUpperCase()) {
+      return repl.charAt(0).toUpperCase() + repl.slice(1);
+    }
+    return repl;
+  }
+
+  function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+
+  function localTone(text, dir) {
+    var map = dir === "formal" ? TO_FORMAL : TO_CASUAL;
+    // longest-first so multiword phrases win
+    var sorted = map.slice().sort(function (a, b) { return b[0].length - a[0].length; });
+    var out = text;
+    sorted.forEach(function (pair) {
+      var re = new RegExp("\\b" + escapeRe(pair[0]) + "\\b", "gi");
+      out = out.replace(re, function (m) { return matchCase(m, pair[1]); });
+    });
+    return out;
+  }
+
+  // ---------- Claude API ----------
+  function getKey() { return (localStorage.getItem(LS_KEY) || "").trim(); }
+
+  async function callClaude(system, user, maxTokens) {
+    var res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": getKey(),
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-5",
+        max_tokens: maxTokens || 1024,
+        system: system,
+        messages: [{ role: "user", content: user }]
+      })
+    });
+    if (!res.ok) throw new Error("API error " + res.status);
+    var data = await res.json();
+    var text = (data.content || [])
+      .filter(function (b) { return b.type === "text"; })
+      .map(function (b) { return b.text; })
+      .join("\n").trim();
+    if (!text) throw new Error("Empty response");
+    return text;
+  }
+
+  function claudePrompt(tool, inputs) {
+    switch (tool) {
+      case "summarize":
+        return {
+          system: "You are a precise summarizer. Output only the summary, no preamble.",
+          user: "Summarize the following text in about " + inputs.len + " sentences" +
+            (inputs.style === "bullets" ? ", formatted as bullet points" : ", as a paragraph") +
+            ":\n\n" + inputs.text
+        };
+      case "email":
+        return {
+          system: "You draft complete, ready-to-send emails. Output only the email text (greeting through sign-off), no commentary.",
+          user: "Draft a " + inputs.tone + " email.\nRecipient: " + (inputs.recipient || "unknown") +
+            "\nSender: " + (inputs.sender || "unknown") +
+            "\nGoal: " + inputs.goal +
+            "\nKey points:\n" + inputs.points
+        };
+      case "product":
+        return {
+          system: "You write compelling product descriptions. Output only the description, no commentary.",
+          user: "Write a " + inputs.tone + " product description.\nProduct: " + inputs.name +
+            (inputs.audience ? "\nAudience: " + inputs.audience : "") +
+            "\nFeatures:\n" + inputs.features
+        };
+      case "tone":
+        return {
+          system: "You rewrite text in a different tone while preserving the meaning. Output only the rewritten text.",
+          user: "Rewrite the following text to be more " + inputs.dir + ":\n\n" + inputs.text
+        };
+    }
+  }
+
+  // ---------- history ----------
+  function loadHist() {
+    try { return JSON.parse(localStorage.getItem(LS_HIST) || "[]"); }
+    catch (e) { return []; }
+  }
+  function saveHistEntry(tool, preview, output, engine) {
+    var hist = loadHist();
+    hist.unshift({ tool: tool, preview: preview, output: output, engine: engine, ts: Date.now() });
+    if (hist.length > 30) hist = hist.slice(0, 30);
+    localStorage.setItem(LS_HIST, JSON.stringify(hist));
+    renderHist();
+  }
+  function renderHist() {
+    var hist = loadHist();
+    var list = $("histList");
+    list.innerHTML = "";
+    $("histEmpty").style.display = hist.length ? "none" : "block";
+    hist.forEach(function (h) {
+      var item = document.createElement("div");
+      item.className = "hist-item";
+      var d = new Date(h.ts);
+      var time = d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      item.innerHTML =
+        '<div class="hi-top"><span class="hi-tool"></span><span class="hi-time"></span></div>' +
+        '<div class="hi-preview"></div>';
+      item.querySelector(".hi-tool").textContent = TOOL_NAMES[h.tool] || h.tool;
+      item.querySelector(".hi-time").textContent = time;
+      item.querySelector(".hi-preview").textContent = h.preview;
+      item.addEventListener("click", function () {
+        showOutput(TOOL_NAMES[h.tool] || h.tool, h.output, h.engine);
+      });
+      list.appendChild(item);
+    });
+  }
+
+  // ---------- UI ----------
+  function showOutput(title, text, engine) {
+    $("outputTitle").textContent = title;
+    $("outputText").textContent = text;
+    var badge = $("engineBadge");
+    badge.textContent = engine === "claude" ? "Claude (claude-sonnet-5)" : "Local engine";
+    badge.className = "engine-badge" + (engine === "claude" ? " api" : "");
+    $("outputCard").classList.add("visible");
+  }
+
+  function showFallbackNotice(msg) {
+    var n = $("fallbackNotice");
+    n.textContent = msg;
+    n.classList.add("visible");
+    setTimeout(function () { n.classList.remove("visible"); }, 6000);
+  }
+
+  function collectInputs(tool) {
+    switch (tool) {
+      case "summarize":
+        return {
+          text: $("sumText").value.trim(),
+          len: parseInt($("sumLen").value, 10),
+          style: $("sumStyle").value
+        };
+      case "email":
+        return {
+          recipient: $("emRecipient").value.trim(),
+          sender: $("emSender").value.trim(),
+          goal: $("emGoal").value.trim(),
+          points: $("emPoints").value.trim(),
+          tone: $("emTone").value
+        };
+      case "product":
+        return {
+          name: $("prName").value.trim(),
+          audience: $("prAudience").value.trim(),
+          features: $("prFeatures").value.trim(),
+          tone: $("prTone").value
+        };
+      case "tone":
+        return { text: $("toText").value.trim(), dir: $("toDir").value };
+    }
+  }
+
+  function validate(tool, inp) {
+    if (tool === "summarize" && !inp.text) return "Paste some text to summarize.";
+    if (tool === "email" && !inp.goal && !inp.points) return "Give the email a goal or some key points.";
+    if (tool === "product" && !inp.name && !inp.features) return "Give the product a name or some features.";
+    if (tool === "tone" && !inp.text) return "Paste some text to rewrite.";
+    return null;
+  }
+
+  function runLocal(tool, inp) {
+    switch (tool) {
+      case "summarize": return localSummarize(inp.text, inp.len, inp.style);
+      case "email": return localEmail(inp.recipient, inp.sender, inp.goal, inp.points, inp.tone);
+      case "product": return localProduct(inp.name, inp.audience, inp.features, inp.tone);
+      case "tone": return localTone(inp.text, inp.dir);
+    }
+  }
+
+  function previewOf(tool, inp) {
+    switch (tool) {
+      case "summarize": return inp.text.slice(0, 80);
+      case "email": return inp.goal || inp.points.split("\n")[0] || "email";
+      case "product": return inp.name || inp.features.split("\n")[0] || "product";
+      case "tone": return "(" + inp.dir + ") " + inp.text.slice(0, 70);
+    }
+  }
+
+  var running = false;
+  async function run(tool, btn) {
+    if (running) return;
+    var inp = collectInputs(tool);
+    var err = validate(tool, inp);
+    if (err) { showOutput(TOOL_NAMES[tool], err, "local"); return; }
+
+    running = true;
+    var origLabel = btn.textContent;
+    btn.textContent = "Working…";
+    btn.disabled = true;
+
+    var output = null, engine = "local";
+    if (getKey()) {
+      try {
+        var p = claudePrompt(tool, inp);
+        output = await callClaude(p.system, p.user, 1024);
+        engine = "claude";
+      } catch (e) {
+        showFallbackNotice("Claude API unavailable (" + e.message + ") — used the local engine instead.");
+      }
+    }
+    if (output === null) output = runLocal(tool, inp);
+
+    showOutput(TOOL_NAMES[tool], output, engine);
+    saveHistEntry(tool, previewOf(tool, inp), output, engine);
+
+    btn.textContent = origLabel;
+    btn.disabled = false;
+    running = false;
+  }
+
+  // tabs
+  $("tabs").addEventListener("click", function (e) {
+    var tab = e.target.closest(".tab");
+    if (!tab) return;
+    document.querySelectorAll(".tab").forEach(function (t) { t.classList.remove("active"); });
+    document.querySelectorAll(".panel").forEach(function (p) { p.classList.remove("active"); });
+    tab.classList.add("active");
+    $("panel-" + tab.dataset.tool).classList.add("active");
+  });
+
+  document.querySelectorAll("[data-run]").forEach(function (btn) {
+    btn.addEventListener("click", function () { run(btn.dataset.run, btn); });
+  });
+
+  $("copyBtn").addEventListener("click", function () {
+    var text = $("outputText").textContent;
+    function done() {
+      $("copyBtn").textContent = "Copied";
+      setTimeout(function () { $("copyBtn").textContent = "Copy"; }, 1500);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(text); done(); });
+    } else {
+      fallbackCopy(text); done();
+    }
+  });
+  function fallbackCopy(text) {
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); } catch (e) { /* ignore */ }
+    document.body.removeChild(ta);
+  }
+
+  $("clearHistBtn").addEventListener("click", function () {
+    localStorage.removeItem(LS_HIST);
+    renderHist();
+  });
+
+  // settings
+  function updateApiStatus() {
+    $("apiStatus").textContent = getKey() ? "Claude API: on" : "Offline mode";
+  }
+  $("settingsBtn").addEventListener("click", function () {
+    $("apiKey").value = getKey();
+    $("settingsModal").classList.add("open");
+  });
+  $("closeSettingsBtn").addEventListener("click", function () {
+    $("settingsModal").classList.remove("open");
+  });
+  $("saveKeyBtn").addEventListener("click", function () {
+    var v = $("apiKey").value.trim();
+    if (v) localStorage.setItem(LS_KEY, v); else localStorage.removeItem(LS_KEY);
+    updateApiStatus();
+    $("settingsModal").classList.remove("open");
+  });
+  $("clearKeyBtn").addEventListener("click", function () {
+    localStorage.removeItem(LS_KEY);
+    $("apiKey").value = "";
+    updateApiStatus();
+  });
+  $("settingsModal").addEventListener("click", function (e) {
+    if (e.target === $("settingsModal")) $("settingsModal").classList.remove("open");
+  });
+
+  renderHist();
+  updateApiStatus();
+})();
+</script>
+</body>
+</html>

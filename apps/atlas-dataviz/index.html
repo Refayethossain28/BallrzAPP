@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas — City Data Explorer</title>
+<style>
+  :root{
+    --bg:#0d0d0f; --card:#17171a;
+    --border:rgba(255,255,255,0.08);
+    --text:#f2f2f0; --text-2:#a3a29b; --muted:#898781;
+    --grid:#2c2c2a; --axis:#383835;
+    --accent:#9085e9; --accent-soft:rgba(144,133,233,0.14);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--bg);color:var(--text);
+    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+    -webkit-font-smoothing:antialiased}
+
+  .topbar{
+    display:flex;align-items:center;gap:16px;
+    padding:12px 24px;border-bottom:1px solid var(--border);
+    position:sticky;top:0;background:rgba(13,13,15,0.88);
+    backdrop-filter:blur(8px);z-index:20;
+  }
+  .back{font-size:13px;color:var(--text-2);text-decoration:none;padding:6px 10px;
+    border:1px solid var(--border);border-radius:8px;white-space:nowrap}
+  .back:hover{color:var(--text);border-color:rgba(255,255,255,0.16)}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:16px}
+  .brand .logo{width:22px;height:22px;border-radius:7px;background:var(--accent);
+    display:inline-flex;align-items:center;justify-content:center}
+  .topbar .spacer{flex:1}
+  .topbar .who{font-size:12.5px;color:var(--muted)}
+
+  .wrap{max-width:1120px;margin:0 auto;padding:24px 24px 56px}
+
+  /* filters */
+  .filters{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:18px}
+  .chip{
+    appearance:none;border:1px solid var(--border);background:var(--card);
+    color:var(--text-2);font:inherit;font-size:13px;padding:6px 13px;border-radius:999px;
+    cursor:pointer;display:inline-flex;align-items:center;gap:7px;
+  }
+  .chip:hover{color:var(--text);border-color:rgba(255,255,255,0.16)}
+  .chip .cdot{width:8px;height:8px;border-radius:50%;background:var(--dot,transparent)}
+  .chip.active{color:var(--text);border-color:var(--accent);background:var(--accent-soft);font-weight:600}
+  .filters input{
+    margin-left:auto;background:var(--card);border:1px solid var(--border);border-radius:9px;
+    color:var(--text);font:inherit;font-size:13px;padding:7px 12px;width:220px;max-width:100%;
+  }
+  .filters input::placeholder{color:var(--muted)}
+  .filters input:focus{outline:none;border-color:var(--accent)}
+
+  .layout{display:grid;grid-template-columns:1fr;gap:14px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px}
+  .card h2{font-size:14.5px;font-weight:600}
+  .card .sub{font-size:12.5px;color:var(--muted);margin-top:3px}
+
+  .chart-box{position:relative;margin-top:12px}
+  .chart-box svg{display:block;width:100%;height:auto}
+  .tooltip{
+    position:absolute;pointer-events:none;z-index:5;display:none;
+    background:#222226;border:1px solid rgba(255,255,255,0.12);border-radius:9px;
+    padding:9px 12px;font-size:12px;box-shadow:0 8px 24px rgba(0,0,0,0.5);
+  }
+  .tooltip .tt-city{font-size:13px;font-weight:600;white-space:nowrap}
+  .tooltip .tt-meta{color:var(--muted);margin:2px 0 6px;white-space:nowrap}
+  .tooltip .tt-row{display:flex;justify-content:space-between;gap:16px;white-space:nowrap;line-height:1.55}
+  .tooltip .tt-row .l{color:var(--text-2)}
+  .tooltip .tt-row .v{font-weight:600;font-variant-numeric:tabular-nums}
+
+  /* table */
+  .table-card{padding:0;overflow:hidden}
+  .table-head{display:flex;align-items:baseline;gap:12px;padding:16px 18px}
+  .table-head h2{font-size:14.5px}
+  .table-head .count{font-size:12.5px;color:var(--muted)}
+  .table-scroll{overflow-x:auto;max-height:430px;overflow-y:auto}
+  table{width:100%;border-collapse:collapse;font-size:13px;min-width:660px}
+  thead th{
+    text-align:left;font-weight:500;color:var(--text-2);font-size:12px;
+    padding:9px 18px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);
+    cursor:pointer;user-select:none;white-space:nowrap;
+    position:sticky;top:0;background:var(--card);z-index:2;
+  }
+  thead th:hover{color:var(--text)}
+  thead th .arrow{display:inline-block;width:1em;color:var(--muted);font-size:11px}
+  thead th.sorted{color:var(--text)}
+  thead th.sorted .arrow{color:var(--accent)}
+  tbody td{padding:9px 18px;border-bottom:1px solid rgba(255,255,255,0.04);white-space:nowrap}
+  tbody tr{cursor:pointer}
+  tbody tr:hover td{background:rgba(255,255,255,0.025)}
+  tbody tr.selected td{background:var(--accent-soft)}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .rdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px;vertical-align:0.5px}
+  .costbar{display:inline-block;vertical-align:2px;width:56px;height:4px;border-radius:2px;
+    background:var(--grid);margin-left:10px;overflow:hidden}
+  .costbar i{display:block;height:100%;border-radius:2px;background:var(--accent)}
+  .empty{padding:28px 18px;text-align:center;color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="back" href="../index.html">&#8592; All apps</a>
+    <span class="brand">
+      <span class="logo"><svg width="13" height="13" viewBox="0 0 13 13"><circle cx="6.5" cy="6.5" r="5" fill="none" stroke="#fff" stroke-width="1.4"/><ellipse cx="6.5" cy="6.5" rx="2.4" ry="5" fill="none" stroke="#fff" stroke-width="1.2"/><line x1="1.5" y1="6.5" x2="11.5" y2="6.5" stroke="#fff" stroke-width="1.2"/></svg></span>
+      Atlas
+    </span>
+    <span class="spacer"></span>
+    <span class="who">40 world cities &middot; built-in dataset</span>
+  </header>
+
+  <div class="wrap">
+    <div class="filters" id="chips">
+      <input type="search" id="search" placeholder="Search city or country&hellip;" aria-label="Search cities">
+    </div>
+
+    <div class="layout">
+      <section class="card">
+        <h2>Population vs cost of living</h2>
+        <div class="sub">x = metro population (log) · y = cost index (NYC = 100) · dot size = avg temp · color = region · click a dot to highlight the row</div>
+        <div class="chart-box" id="chartBox">
+          <svg id="scatter" viewBox="0 0 760 440" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Scatter plot of population versus cost index"></svg>
+          <div class="tooltip" id="tip"></div>
+        </div>
+      </section>
+
+      <section class="card table-card">
+        <div class="table-head">
+          <h2>Cities</h2>
+          <span class="count" id="count"></span>
+        </div>
+        <div class="table-scroll" id="tableScroll">
+          <table>
+            <thead id="thead">
+              <tr>
+                <th data-key="name">City <span class="arrow"></span></th>
+                <th data-key="country">Country <span class="arrow"></span></th>
+                <th data-key="region">Region <span class="arrow"></span></th>
+                <th data-key="pop" class="num">Population <span class="arrow"></span></th>
+                <th data-key="temp" class="num">Avg temp <span class="arrow"></span></th>
+                <th data-key="cost">Cost index <span class="arrow"></span></th>
+              </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+          </table>
+          <div class="empty" id="emptyMsg" style="display:none">No cities match the current filters.</div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+<script>
+"use strict";
+/* ---------------- dataset: 40 world cities ----------------
+   pop = metro population in millions, temp = avg annual °C,
+   cost = cost-of-living index (NYC = 100)                    */
+const CITIES = [
+  ["Tokyo","Japan","Asia",37.4,16,83],
+  ["Delhi","India","Asia",32.9,25,32],
+  ["Shanghai","China","Asia",29.2,17,48],
+  ["Jakarta","Indonesia","Asia",34.5,27,38],
+  ["Seoul","South Korea","Asia",25.5,12,71],
+  ["Mumbai","India","Asia",21.3,27,35],
+  ["Beijing","China","Asia",21.8,13,46],
+  ["Bangkok","Thailand","Asia",17.1,29,42],
+  ["Singapore","Singapore","Asia",6.0,27,91],
+  ["London","United Kingdom","Europe",14.3,11,82],
+  ["Paris","France","Europe",13.0,12,78],
+  ["Istanbul","Türkiye","Europe",15.8,14,37],
+  ["Madrid","Spain","Europe",6.7,15,58],
+  ["Berlin","Germany","Europe",6.1,10,65],
+  ["Rome","Italy","Europe",4.3,16,61],
+  ["Warsaw","Poland","Europe",3.1,9,46],
+  ["Vienna","Austria","Europe",2.9,11,67],
+  ["Lisbon","Portugal","Europe",2.9,17,52],
+  ["Amsterdam","Netherlands","Europe",2.5,10,76],
+  ["Stockholm","Sweden","Europe",2.4,7,72],
+  ["Zurich","Switzerland","Europe",1.4,9,98],
+  ["New York","United States","North America",19.8,13,100],
+  ["Mexico City","Mexico","North America",22.0,16,41],
+  ["Los Angeles","United States","North America",12.5,18,79],
+  ["Chicago","United States","North America",8.9,10,71],
+  ["Toronto","Canada","North America",6.4,8,68],
+  ["San Francisco","United States","North America",4.7,14,96],
+  ["Vancouver","Canada","North America",2.7,10,70],
+  ["São Paulo","Brazil","South America",22.6,20,40],
+  ["Buenos Aires","Argentina","South America",15.4,17,35],
+  ["Rio de Janeiro","Brazil","South America",13.7,24,38],
+  ["Bogotá","Colombia","South America",11.3,14,30],
+  ["Lima","Peru","South America",11.0,19,33],
+  ["Santiago","Chile","South America",6.9,15,45],
+  ["Cairo","Egypt","Africa",21.9,22,26],
+  ["Lagos","Nigeria","Africa",15.9,27,34],
+  ["Johannesburg","South Africa","Africa",6.1,16,36],
+  ["Nairobi","Kenya","Africa",5.1,19,33],
+  ["Sydney","Australia","Oceania",5.3,18,81],
+  ["Melbourne","Australia","Oceania",5.2,15,76]
+].map((d, i) => ({ id: i, name: d[0], country: d[1], region: d[2], pop: d[3], temp: d[4], cost: d[5] }));
+
+const REGIONS = ["Asia","Europe","North America","South America","Africa","Oceania"];
+const REGION_COLOR = {
+  "Asia":"#d95926", "Europe":"#3987e5", "North America":"#199e70",
+  "South America":"#c98500", "Africa":"#d55181", "Oceania":"#9085e9"
+};
+
+/* ---------------- state ---------------- */
+const state = {
+  regions: new Set((function(){
+    try{
+      const v = JSON.parse(localStorage.getItem("atlas.regions") || "[]");
+      return Array.isArray(v) ? v.filter(r => REGIONS.includes(r)) : [];
+    }catch(e){ return []; }
+  })()),                       // empty set = all regions
+  query: "",
+  sort: { key: "pop", dir: -1 },
+  selected: null               // city id or null
+};
+
+function filtered(){
+  const q = state.query.trim().toLowerCase();
+  return CITIES.filter(c =>
+    (state.regions.size === 0 || state.regions.has(c.region)) &&
+    (!q || c.name.toLowerCase().includes(q) || c.country.toLowerCase().includes(q)));
+}
+
+/* ---------------- region chips ---------------- */
+const chipsEl = document.getElementById("chips");
+const searchEl = document.getElementById("search");
+function buildChips(){
+  const frag = document.createDocumentFragment();
+  const all = document.createElement("button");
+  all.className = "chip"; all.dataset.region = ""; all.textContent = "All regions";
+  frag.appendChild(all);
+  for (const r of REGIONS){
+    const b = document.createElement("button");
+    b.className = "chip"; b.dataset.region = r;
+    const dot = document.createElement("span");
+    dot.className = "cdot"; dot.style.background = REGION_COLOR[r];
+    b.append(dot, document.createTextNode(r));
+    frag.appendChild(b);
+  }
+  chipsEl.insertBefore(frag, searchEl);
+}
+function syncChips(){
+  chipsEl.querySelectorAll(".chip").forEach(b => {
+    const r = b.dataset.region;
+    b.classList.toggle("active", r === "" ? state.regions.size === 0 : state.regions.has(r));
+  });
+}
+chipsEl.addEventListener("click", ev => {
+  const b = ev.target.closest(".chip");
+  if (!b) return;
+  const r = b.dataset.region;
+  if (r === "") state.regions.clear();
+  else if (state.regions.has(r)) state.regions.delete(r);
+  else state.regions.add(r);
+  if (state.regions.size === REGIONS.length) state.regions.clear();
+  localStorage.setItem("atlas.regions", JSON.stringify([...state.regions]));
+  update();
+});
+searchEl.addEventListener("input", () => { state.query = searchEl.value; update(); });
+
+/* ---------------- scatter plot ---------------- */
+const SVG_NS = "http://www.w3.org/2000/svg";
+function svgEl(tag, attrs, parent){
+  const e = document.createElementNS(SVG_NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+const svg = document.getElementById("scatter");
+const tip = document.getElementById("tip");
+const chartBox = document.getElementById("chartBox");
+
+const W = 760, H = 440, L = 52, R = 18, T = 16, B = 42;
+const IW = W - L - R, IH = H - T - B;
+const POP_MIN = 1.2, POP_MAX = 42;          // millions, log scale
+const COST_MIN = 20, COST_MAX = 105;
+const TMIN = 6, TMAX = 29;                  // temp -> radius
+const xOf = p => L + (Math.log10(p) - Math.log10(POP_MIN)) / (Math.log10(POP_MAX) - Math.log10(POP_MIN)) * IW;
+const yOf = c => T + IH - (c - COST_MIN) / (COST_MAX - COST_MIN) * IH;
+const rOf = t => 5 + (t - TMIN) / (TMAX - TMIN) * 7;
+
+function showTip(c, px, py){
+  tip.textContent = "";
+  const t1 = document.createElement("div"); t1.className = "tt-city"; t1.textContent = c.name;
+  const t2 = document.createElement("div"); t2.className = "tt-meta"; t2.textContent = c.country + " · " + c.region;
+  tip.append(t1, t2);
+  const rows = [
+    ["Population", c.pop.toFixed(1) + "M"],
+    ["Cost index", String(c.cost)],
+    ["Avg temp", c.temp + "°C"]
+  ];
+  for (const [l, v] of rows){
+    const row = document.createElement("div"); row.className = "tt-row";
+    const ls = document.createElement("span"); ls.className = "l"; ls.textContent = l;
+    const vs = document.createElement("span"); vs.className = "v"; vs.textContent = v;
+    row.append(ls, vs); tip.appendChild(row);
+  }
+  tip.style.display = "block";
+  const rect = svg.getBoundingClientRect();
+  const sx = rect.width / W, sy = rect.height / H;
+  let x = px * sx + 14, y = Math.max(0, py * sy - 30);
+  if (x + tip.offsetWidth > chartBox.clientWidth) x = px * sx - tip.offsetWidth - 14;
+  if (y + tip.offsetHeight > rect.height) y = rect.height - tip.offsetHeight - 4;
+  tip.style.left = x + "px";
+  tip.style.top = y + "px";
+}
+function hideTip(){ tip.style.display = "none"; }
+
+function renderScatter(list){
+  svg.textContent = "";
+  hideTip();
+
+  // gridlines + axes
+  for (let c = 20; c <= 100; c += 20){
+    const yy = yOf(c);
+    svgEl("line", { x1: L, x2: W - R, y1: yy, y2: yy, stroke: "var(--grid)", "stroke-width": 1 }, svg);
+    const t = svgEl("text", { x: L - 8, y: yy + 4, "text-anchor": "end", "font-size": 11, fill: "var(--muted)" }, svg);
+    t.textContent = String(c);
+  }
+  for (const p of [2, 5, 10, 20, 40]){
+    const xx = xOf(p);
+    svgEl("line", { x1: xx, x2: xx, y1: T, y2: T + IH, stroke: "var(--grid)", "stroke-width": 1 }, svg);
+    const t = svgEl("text", { x: xx, y: H - 22, "text-anchor": "middle", "font-size": 11, fill: "var(--muted)" }, svg);
+    t.textContent = p + "M";
+  }
+  svgEl("line", { x1: L, x2: W - R, y1: T + IH, y2: T + IH, stroke: "var(--axis)", "stroke-width": 1 }, svg);
+  const xt = svgEl("text", { x: L + IW / 2, y: H - 4, "text-anchor": "middle", "font-size": 11, fill: "var(--text-2)" }, svg);
+  xt.textContent = "Metro population (millions, log scale)";
+  const yt = svgEl("text", { x: 12, y: T + IH / 2, "font-size": 11, fill: "var(--text-2)",
+    transform: "rotate(-90 12 " + (T + IH / 2) + ")", "text-anchor": "middle" }, svg);
+  yt.textContent = "Cost index";
+
+  // dots — draw big dots first so small ones stay clickable on top
+  const sorted = [...list].sort((a, b) => b.temp - a.temp);
+  for (const c of sorted){
+    const cx = xOf(c.pop), cy = yOf(c.cost), r = rOf(c.temp);
+    const g = svgEl("g", { "data-id": c.id }, svg);
+    if (state.selected === c.id){
+      svgEl("circle", { cx, cy, r: r + 4, fill: "none", stroke: "#ffffff", "stroke-width": 2, opacity: 0.9 }, g);
+    }
+    svgEl("circle", { cx, cy, r, fill: REGION_COLOR[c.region],
+      stroke: "var(--card)", "stroke-width": 2, opacity: 0.92 }, g);
+    // hit target bigger than the mark
+    const hit = svgEl("circle", { cx, cy, r: Math.max(13, r + 5), fill: "transparent", style: "cursor:pointer" }, g);
+    hit.addEventListener("pointerenter", () => {
+      g.querySelector("circle:nth-last-child(2)").setAttribute("opacity", "1");
+      showTip(c, cx, cy - r);
+    });
+    hit.addEventListener("pointerleave", () => {
+      g.querySelector("circle:nth-last-child(2)").setAttribute("opacity", "0.92");
+      hideTip();
+    });
+    hit.addEventListener("click", () => selectCity(state.selected === c.id ? null : c.id, true));
+  }
+}
+
+/* ---------------- table ---------------- */
+const tbody = document.getElementById("tbody");
+function renderTable(list){
+  tbody.textContent = "";
+  const { key, dir } = state.sort;
+  const rows = [...list].sort((a, b) => {
+    const va = a[key], vb = b[key];
+    if (typeof va === "string") return va.localeCompare(vb) * dir;
+    return (va - vb) * dir;
+  });
+  for (const c of rows){
+    const tr = document.createElement("tr");
+    tr.dataset.id = c.id;
+    if (state.selected === c.id) tr.classList.add("selected");
+
+    const tdN = document.createElement("td");
+    const dot = document.createElement("span");
+    dot.className = "rdot"; dot.style.background = REGION_COLOR[c.region];
+    const strong = document.createElement("strong"); strong.textContent = c.name;
+    tdN.append(dot, strong);
+    const tdC = document.createElement("td"); tdC.textContent = c.country;
+    const tdR = document.createElement("td"); tdR.textContent = c.region;
+    const tdP = document.createElement("td"); tdP.className = "num"; tdP.textContent = c.pop.toFixed(1) + "M";
+    const tdT = document.createElement("td"); tdT.className = "num"; tdT.textContent = c.temp + "°C";
+    const tdCost = document.createElement("td");
+    tdCost.textContent = String(c.cost);
+    const bar = document.createElement("span"); bar.className = "costbar";
+    const fill = document.createElement("i"); fill.style.width = c.cost + "%";
+    bar.appendChild(fill); tdCost.appendChild(bar);
+
+    tr.append(tdN, tdC, tdR, tdP, tdT, tdCost);
+    tbody.appendChild(tr);
+  }
+  document.getElementById("emptyMsg").style.display = rows.length ? "none" : "block";
+  document.getElementById("count").textContent = rows.length + " of " + CITIES.length + " cities";
+  document.querySelectorAll("#thead th").forEach(th => {
+    const active = th.dataset.key === key;
+    th.classList.toggle("sorted", active);
+    th.querySelector(".arrow").textContent = active ? (dir === 1 ? "↑" : "↓") : "↕";
+  });
+}
+document.getElementById("thead").addEventListener("click", ev => {
+  const th = ev.target.closest("th");
+  if (!th) return;
+  const key = th.dataset.key;
+  if (state.sort.key === key) state.sort.dir *= -1;
+  else state.sort = { key, dir: (key === "name" || key === "country" || key === "region") ? 1 : -1 };
+  renderTable(filtered());
+});
+tbody.addEventListener("click", ev => {
+  const tr = ev.target.closest("tr");
+  if (!tr) return;
+  const id = parseInt(tr.dataset.id, 10);
+  selectCity(state.selected === id ? null : id, false);
+});
+
+/* ---------------- linked selection ---------------- */
+function selectCity(id, fromChart){
+  state.selected = id;
+  renderScatter(filtered());
+  tbody.querySelectorAll("tr").forEach(tr => {
+    const on = parseInt(tr.dataset.id, 10) === id;
+    tr.classList.toggle("selected", on);
+    if (on && fromChart) tr.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  });
+}
+
+/* ---------------- update all ---------------- */
+function update(){
+  const list = filtered();
+  if (state.selected !== null && !list.some(c => c.id === state.selected)) state.selected = null;
+  syncChips();
+  renderScatter(list);
+  renderTable(list);
+}
+
+buildChips();
+update();
+</script>
+</body>
+</html>
