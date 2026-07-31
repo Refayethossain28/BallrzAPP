@@ -179,7 +179,8 @@ var DEFAULT_STATE = {
   name: 'You', plus: false, plusSince: null, points: 0,
   ledger: [], trips: [], orders: [], parcels: [], locks: [], scheduled: [],
   welcomeUsed: false, contactsSent: {},
-  captain: { seen: 0, accepted: 0, fares: [], seed: 0 }
+  captain: { seen: 0, accepted: 0, fares: [], seed: 0 },
+  pass: null, payLater: [], refUsed: false, trusted: ''
 };
 var S = load();
 function load() {
@@ -200,7 +201,8 @@ var ui = { // transient
   sendFrom: 'home', sendTo: 'work', sendSize: 'm', activeOrder: null, activeParcel: null,
   animFrac: 0,
   eatMode: 'rest', mbasket: {}, activeQuik: null,
-  captainOn: false, capOnline: false, capOffers: null, capTrip: null
+  captainOn: false, capOnline: false, capOffers: null, capTrip: null,
+  stops: []
 };
 
 /* ── helpers ───────────────────────────────────────────────────────── */
@@ -220,6 +222,18 @@ function pay(amount, label, kind) {
   if (!E.canSpend(S.ledger, amount)) return false;
   S.ledger.push(E.makeTx(kind || 'spend', -amount, label, Date.now()));
   return true;
+}
+/* wallet first; short? put it on the PayLater tab (within the honest limit) */
+function spend(amount, label, kind) {
+  if (pay(amount, label, kind)) return 'wallet';
+  var chk = E.plCanCharge(S.payLater, amount, Date.now());
+  if (chk.ok) {
+    E.plCharge(S.payLater, amount, label, Date.now());
+    toast('Wallet short — ' + money(amount) + ' went on your PayLater tab 🗓️');
+    return 'paylater';
+  }
+  toast(chk.why + ' — top up in Pay 💳');
+  return null;
 }
 function earn(kind, amount, label) {
   var pts = E.pointsFor(kind, amount);
@@ -256,16 +270,28 @@ function render() {
 }
 
 /* ══ GO ═══════════════════════════════════════════════════════════════ */
+function stopIds() { return [ui.from].concat(ui.stops).concat([ui.to]); }
+function goQuote(classId, now) {
+  return ui.stops.length
+    ? E.multiStopQuote(stopIds(), classId, now)
+    : E.quote(ui.from, ui.to, classId, now);
+}
 function viewGo() {
   if (ui.activeTrip) return viewTrip();
   var now = Date.now();
   var s = E.surgeAt(now);
-  var quotes = E.quoteAll(ui.from, ui.to, now);
+  var quotes = E.RIDE_CLASSES.map(function (c) { return goQuote(c.id, now); }).filter(Boolean);
   var q = quotes.find(function (x) { return x.classId === ui.cls; }) || quotes[0];
   var h = '<canvas id="map" width="900" height="440"></canvas>';
   h += '<label class="f">Pickup</label><select onchange="ui.from=this.value;render()">' + placeOpts(ui.from) + '</select>';
+  ui.stops.forEach(function (st, i) {
+    h += '<label class="f">Stop ' + (i + 1) + '</label><div class="row">' +
+      '<div class="grow"><select onchange="ui.stops[' + i + ']=this.value;render()">' + placeOpts(st) + '</select></div>' +
+      '<button class="btn mini ghost" onclick="ui.stops.splice(' + i + ',1);render()">✕</button></div>';
+  });
   h += '<label class="f">Destination</label><select onchange="ui.to=this.value;render()">' + placeOpts(ui.to) + '</select>';
-  if (ui.from === ui.to) return h + '<div class="card mt center dim">Pick two different places 🙂</div>';
+  if (ui.stops.length < 2) h += '<button class="btn mini ghost mt" onclick="ui.stops.push(\'central\');render()">＋ Add a stop</button>';
+  if (!q) return h + '<div class="card mt center dim">Pick different places for each stop 🙂</div>';
   h += '<div style="height:12px"></div>';
   if (s.reason && s.mult > 1) h += '<div class="banner surge">⚡ ' + s.mult.toFixed(1) + '× — ' + esc(s.reason) + '. The full reason & maths are in your fare breakdown.</div>';
   if (s.reason && s.mult < 1) h += '<div class="banner calm">🌙 ' + esc(s.reason) + ' — fares are ' + Math.round((1 - s.mult) * 100) + '% lower right now.</div>';
@@ -283,13 +309,27 @@ function viewGo() {
   h += q.breakdown.map(function (l) { return '<div class="kv"><span>' + esc(l.label) + '</span><span>' + money(l.amount) + '</span></div>'; }).join('');
   h += '<div class="kv total"><span style="color:var(--text)">Upfront total — what you pay</span><span>' + money(q.total) + '</span></div>';
   h += '</div>';
-  h += '<button class="btn" onclick="bookRide(' + q.total + ')">Book ' + c.name + ' · ' + money(q.total) + '</button>';
-  h += '<div class="grid2 mt">';
-  h += '<button class="btn ghost" onclick="openBid()">🤝 Name your fare</button>';
-  h += '<button class="btn ghost" onclick="openSchedule()">📅 Schedule</button>';
-  h += '</div>';
-  var pl = E.priceLockQuote(q);
-  h += '<button class="btn ghost mt" onclick="lockPrice()">🔒 Lock ' + money(pl.locked) + ' for ' + pl.days + ' days — ' + money(pl.fee) + '</button>';
+  var passHere = E.passCovers(S.pass, ui.from, ui.to, ui.cls, now) && !ui.stops.length;
+  if (passHere) {
+    h += '<div class="banner calm">🎟️ Your Route Pass covers this ride — ' + S.pass.left + ' of ' + E.PASS_RIDES + ' left.</div>';
+    h += '<button class="btn" onclick="bookPassRide()">Use pass ride · already paid</button>';
+  } else {
+    h += '<button class="btn" onclick="bookRide(' + q.total + ')">Book ' + c.name + ' · ' + money(q.total) + '</button>';
+  }
+  if (!ui.stops.length) {
+    h += '<div class="grid2 mt">';
+    h += '<button class="btn ghost" onclick="openBid()">🤝 Name your fare</button>';
+    h += '<button class="btn ghost" onclick="openSchedule()">📅 Schedule</button>';
+    h += '</div>';
+    var pl = E.priceLockQuote(q);
+    h += '<button class="btn ghost mt" onclick="lockPrice()">🔒 Lock ' + money(pl.locked) + ' for ' + pl.days + ' days — ' + money(pl.fee) + '</button>';
+    if (!passHere) {
+      var rp = E.routePassQuote(ui.from, ui.to, ui.cls, now);
+      h += '<button class="btn ghost mt" onclick="buyRoutePass()">🎟️ Route Pass: ' + E.PASS_RIDES + ' rides at ' + money(rp.perRide) + ' — save ' + money(rp.saves) + '</button>';
+    }
+  } else {
+    h += '<div class="faint mt center">Bidding, scheduling and passes apply to single-stop rides.</div>';
+  }
   var activeLocks = S.locks.filter(function (l) { return E.lockValid(l, now); });
   if (activeLocks.length) {
     h += '<h3>Your price locks</h3>' + activeLocks.map(function (l) {
@@ -330,8 +370,9 @@ function drawMap() {
   // route
   var trip = ui.activeTrip;
   var fromId = trip ? trip.quote.fromId : ui.from, toId = trip ? trip.quote.toId : ui.to;
-  if (fromId !== toId) {
-    var pts = E.pathPoints(fromId, toId);
+  var route = trip ? (trip.quote.stops || [trip.quote.fromId, trip.quote.toId]) : stopIds();
+  var pts = E.pathThrough(route);
+  if (pts.length > 1 && (fromId !== toId || route.length > 2)) {
     ctx.strokeStyle = '#6c5cff'; ctx.lineWidth = 5; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     ctx.setLineDash(trip ? [] : [10, 8]);
     ctx.beginPath(); ctx.moveTo(X(pts[0].x), Y(pts[0].y));
@@ -346,7 +387,7 @@ function drawMap() {
   }
   // places
   E.PLACES.forEach(function (p) {
-    var hot = p.id === fromId || p.id === toId;
+    var hot = route.indexOf(p.id) !== -1;
     ctx.font = (hot ? 22 : 15) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.globalAlpha = hot ? 1 : 0.75;
     ctx.fillText(p.emoji, X(p.x), Y(p.y));
@@ -358,22 +399,39 @@ function drawMap() {
   });
 }
 
-function bookRide(fare, lockUsed) {
+function bookRide(fare, lockUsed, viaPass) {
   var now = Date.now();
-  var q = E.quote(ui.from, ui.to, ui.cls, now);
+  var q = goQuote(ui.cls, now);
   if (!q) return;
   fare = fare != null ? fare : q.total;
-  if (!pay(fare, 'Ride · ' + E.place(ui.from).name + ' → ' + E.place(ui.to).name, 'ride')) {
-    toast('Not enough Orbit Cash — top up in Pay 💳'); go('pay'); return;
+  if (!viaPass && !spend(fare, 'Ride · ' + E.place(q.fromId).name + ' → ' + E.place(q.toId).name, 'ride')) {
+    go('pay'); return;
   }
   var drivers = E.driversNear(ui.from, ui.cls, new Date(now).toDateString());
   var d = E.matchDriver(drivers);
   var trip = E.createTrip(q, d, fare, now);
   trip.lockUsed = !!lockUsed;
+  trip.viaPass = !!viaPass;
   ui.activeTrip = trip;
+  ui.stops = [];
   S.trips.unshift(trip); save();
   runTrip();
   render();
+}
+function buyRoutePass() {
+  var rp = E.routePassQuote(ui.from, ui.to, ui.cls, Date.now());
+  if (!rp) return;
+  if (S.pass && S.pass.left > 0 && Date.now() <= S.pass.untilMs) { toast('You already have an active Route Pass (' + S.pass.left + ' rides left)'); return; }
+  if (!spend(rp.price, 'Route Pass · ' + E.place(ui.from).name + ' ↔ ' + E.place(ui.to).name, 'pass')) return;
+  S.pass = { fromId: ui.from, toId: ui.to, classId: ui.cls, perRide: rp.perRide, left: E.PASS_RIDES, untilMs: Date.now() + E.PASS_DAYS * 86400000 };
+  save(); render();
+  toast('Route Pass active — ' + E.PASS_RIDES + ' rides, saves ' + money(rp.saves) + ' 🎟️');
+}
+function bookPassRide() {
+  if (!E.passCovers(S.pass, ui.from, ui.to, ui.cls, Date.now())) return;
+  S.pass.left--;
+  bookRide(S.pass.perRide, false, true);
+  toast('Pass ride — ' + S.pass.left + ' left');
 }
 function runTrip() {
   clearInterval(ui.tripTimer);
@@ -425,6 +483,7 @@ function viewTrip() {
     h += '<div class="card flat"><b>🛡️ Safety toolkit</b>' +
       '<div class="kv mt"><span>Tell the driver your PIN</span><span class="total">' + E.tripPin(t.id) + '</span></div>' +
       '<div class="kv"><span>Live-trip share code</span><span><b>' + E.shareCode(t.id) + '</b></span></div>' +
+      (S.trusted ? '<div class="faint mt">🔗 Auto-shared with ' + esc(S.trusted) + ' — they can follow this trip live.</div>' : '') +
       '<div class="faint mt">Anyone with the code can follow this trip. In a real emergency, tap SOS to call local services.</div>' +
       '<div class="grid2 mt"><button class="btn mini ghost" onclick="toast(\'Share code copied — send it to a trusted contact\')">📤 Share trip</button>' +
       '<button class="btn mini danger" onclick="toast(\'SOS demo — this would call emergency services\')">🆘 SOS</button></div></div>';
@@ -433,6 +492,9 @@ function viewTrip() {
   } else if (t.status === 'COMPLETED') {
     h += '<div class="card center"><b>How was your trip with ' + esc(d.name) + '?</b>' +
       '<div class="stars mt" id="stars">' + [1, 2, 3, 4, 5].map(function (n) { return '<span onclick="rate(' + n + ')">☆</span>'; }).join('') + '</div>' +
+      (t.tipped ? '<div class="faint mt">You tipped ' + money(t.tipped) + ' — 100% to ' + esc(d.name) + ' 💝</div>' :
+        '<div class="mt"><span class="faint">Tip ' + esc(d.name) + '? Every penny is theirs:</span><div class="row mt" style="justify-content:center">' +
+        E.TIP_PRESETS.map(function (n) { return '<button class="btn mini ghost" onclick="tipDriver(' + n + ')">£' + n + '</button>'; }).join('') + '</div></div>') +
       '<div class="faint mt">Cashback landed: ' + money(E.rideCashback(t.fare, S.plus)) + ' → wallet · +' + E.pointsFor('ride', t.fare) + ' pts</div>' +
       '<button class="btn mt" onclick="endTrip()">Done</button></div>';
   } else {
@@ -457,6 +519,13 @@ function doCancel() {
   endTrip();
 }
 function endTrip() { clearInterval(ui.tripTimer); ui.activeTrip = null; render(); }
+function tipDriver(n) {
+  var t = ui.activeTrip; if (!t || t.tipped) return;
+  if (!pay(n, 'Tip to ' + t.driver.name + ' (100% theirs)', 'tip')) { toast('Not enough Orbit Cash for the tip'); return; }
+  t.tipped = E.tipEarn(n);
+  save(); render();
+  toast(money(n) + ' to ' + t.driver.name + ' — no platform cut 💝');
+}
 
 /* bidding */
 function openBid() {
@@ -588,7 +657,7 @@ function placeOrder() {
   var r = E.restaurant(ui.rest);
   var bt = basketTotal(r);
   var q = E.eatQuote(r.id, 'home', bt, { plus: S.plus, promo: ui.promo || null, when: Date.now() });
-  if (!pay(q.total, 'Eat · ' + r.name, 'eat')) { toast('Not enough Orbit Cash — top up in Pay 💳'); go('pay'); return; }
+  if (!spend(q.total, 'Eat · ' + r.name, 'eat')) { go('pay'); return; }
   if (ui.promo === 'WELCOME20') S.welcomeUsed = true;
   var items = r.menu.map(function (m, i) { return ui.basket[i] ? ui.basket[i] + '× ' + m[0] : null; }).filter(Boolean);
   var order = { id: 'E' + Date.now().toString(36).toUpperCase(), restId: r.id, items: items, total: q.total, etaMin: q.etaMin, status: 'PLACED', log: [{ status: 'PLACED', ms: Date.now() }] };
@@ -661,7 +730,7 @@ function placeQuik() {
   var bt = mbasketTotal();
   var q = E.quikQuote('home', bt, { plus: S.plus, when: Date.now() });
   if (!q) return;
-  if (!pay(q.total, 'Market · Quik groceries', 'eat')) { toast('Not enough Orbit Cash — top up in Pay 💳'); go('pay'); return; }
+  if (!spend(q.total, 'Market · Quik groceries', 'eat')) { go('pay'); return; }
   var items = [];
   E.MARKET_AISLES.forEach(function (a, i) {
     a.items.forEach(function (m, j) { var n = ui.mbasket[i + ':' + j]; if (n) items.push(n + '× ' + m[0]); });
@@ -714,7 +783,7 @@ function viewSend() {
 }
 function bookParcel() {
   var q = E.sendQuote(ui.sendFrom, ui.sendTo, ui.sendSize, { plus: S.plus });
-  if (!pay(q.total, 'Courier · ' + E.place(ui.sendFrom).name + ' → ' + E.place(ui.sendTo).name, 'send')) { toast('Not enough Orbit Cash — top up in Pay 💳'); go('pay'); return; }
+  if (!spend(q.total, 'Courier · ' + E.place(ui.sendFrom).name + ' → ' + E.place(ui.sendTo).name, 'send')) { go('pay'); return; }
   var job = { id: 'P' + Date.now().toString(36).toUpperCase(), fromId: ui.sendFrom, toId: ui.sendTo, sizeId: ui.sendSize, total: q.total, status: 'BOOKED', log: [{ status: 'BOOKED', ms: Date.now() }] };
   ui.activeParcel = job; S.parcels.unshift(job);
   earn('send', q.total);
@@ -751,6 +820,20 @@ function viewPay() {
   h += '<div class="card"><b>Send to a friend</b><div class="pillrow mt">' + CONTACTS.map(function (c) {
     return '<div class="pill" onclick="p2p(\'' + c + '\')"><div class="em">👤</div><div class="nm">' + c + '</div><div class="pr">send £5</div></div>';
   }).join('') + '</div><div class="faint">Instant, free, straight from your Orbit Cash.</div></div>';
+  var pld = E.plDue(S.payLater, Date.now());
+  var open = S.payLater.filter(function (c) { return !c.settled; });
+  h += '<div class="card"><b>🗓️ PayLater</b> <span class="faint">— this month\'s tab, one payment</span>';
+  h += '<div class="progress mt"><i style="width:' + Math.min(100, Math.round(pld.due / E.PAYLATER_LIMIT * 100)) + '%"></i></div>';
+  h += '<div class="kv mt"><span>On the tab</span><span class="total">' + money(pld.due) + ' <span class="faint">of £' + E.PAYLATER_LIMIT + '</span></span></div>';
+  if (open.length) {
+    h += open.slice(-4).map(function (c) { return '<div class="kv"><span>' + esc(c.label) + '</span><span>' + money(c.amount) + '</span></div>'; }).join('');
+    h += E.canSpend(S.ledger, pld.due)
+      ? '<button class="btn mini ghost mt" onclick="settlePL()">Settle ' + money(pld.due) + ' from wallet</button>'
+      : '<div class="faint mt">Top up to settle the tab.</div>';
+  } else {
+    h += '<div class="faint mt">Nothing on the tab. When your wallet is short, purchases land here instead (up to the limit) — no interest, no fees, honest by design.</div>';
+  }
+  h += '</div>';
   h += '<div class="card"><b>Split a bill</b><div class="grid2 mt">' +
     '<input type="number" id="splitTotal" placeholder="Total £" min="1" step="0.01">' +
     '<input type="number" id="splitN" placeholder="People" min="2" step="1" value="3"></div>' +
@@ -768,6 +851,14 @@ function topUp(n) { S.ledger.push(E.makeTx('topup', n, 'Top up', Date.now())); e
 function p2p(name) {
   if (!pay(5, 'Sent to ' + name + ' 💸', 'p2p')) { toast('Not enough Orbit Cash'); return; }
   save(); render(); toast('Sent £5.00 to ' + name + ' — instant & free');
+}
+function settlePL() {
+  var due = E.plDue(S.payLater, Date.now()).due;
+  if (!due || !pay(due, 'PayLater settled', 'paylater')) return;
+  E.plSettle(S.payLater, Date.now());
+  earn('pay', due);
+  save(); render();
+  toast('Tab cleared — ' + money(due) + ' settled ✅');
 }
 function doSplit() {
   var t = parseFloat($('splitTotal').value), n = parseInt($('splitN').value, 10);
@@ -827,7 +918,17 @@ function viewMe() {
         '<div class="end">' + money(t.fare) + '</div></div>';
     }).join('');
   }
+  h += '<div class="card"><b>🎁 Give £5, get £5</b>' +
+    '<div class="kv mt"><span>Your code — share it</span><span class="total">' + E.referralCode(S.name) + '</span></div>' +
+    (S.refUsed
+      ? '<div class="faint mt">Referral bonus already claimed ✅</div>'
+      : '<div class="row mt"><div class="grow"><input type="text" id="refIn" placeholder="Friend\'s code" maxlength="6" style="text-transform:uppercase"></div>' +
+        '<button class="btn mini" onclick="applyRef()">Apply</button></div>') +
+    '<div class="faint mt">Demo note: any valid code that isn\'t your own works once.</div></div>';
   h += '<div class="card flat small"><b>🛡️ Safety centre</b><div class="dim mt">Every trip gets a driver-verify PIN and a live share code. Drivers are simulated here — this is a product demo, and all data stays on your device.</div>' +
+    '<label class="f">Trusted contact — trips auto-share with them</label>' +
+    '<div class="row"><div class="grow"><input type="text" id="trustIn" placeholder="e.g. Amira" value="' + esc(S.trusted) + '"></div>' +
+    '<button class="btn mini" onclick="S.trusted=document.getElementById(\'trustIn\').value.trim();save();render();toast(S.trusted?\'Trips now auto-share with \'+S.trusted:\'Auto-share off\')">Save</button></div>' +
     '<button class="btn mini ghost mt" onclick="resetAll()">Reset the demo</button></div>';
   return h;
 }
@@ -919,6 +1020,15 @@ function redeem() {
   S.ledger.push(E.makeTx('redeem', rq.credit, 'Rewards redeemed (' + rq.points.toLocaleString() + ' pts)', Date.now()));
   save(); render();
   toast(rq.points.toLocaleString() + ' pts → ' + money(rq.credit) + ' Orbit Cash ✨');
+}
+function applyRef() {
+  var code = $('refIn').value;
+  var res = E.applyReferral(code, S.name, S.refUsed);
+  if (!res.ok) { toast(res.why); return; }
+  S.refUsed = true;
+  S.ledger.push(E.makeTx('referral', res.bonus, 'Referral bonus 🎁', Date.now()));
+  save(); render();
+  toast('£' + res.bonus + ' for you — and £' + res.bonus + ' for your friend 🎉');
 }
 function resetAll() {
   localStorage.removeItem('orbit-state');
