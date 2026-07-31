@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TravelDeals — Cheap Flights & Hotels</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --blue:#2563eb;--blue-d:#1d4ed8;--blue-l:#dbeafe;--blue-xl:#eff6ff;
+  --green:#059669;--green-d:#047857;--green-l:#d1fae5;--green-xl:#ecfdf5;
+  --slate-9:#0f172a;--slate-8:#1e293b;--slate-7:#334155;--slate-6:#475569;
+  --slate-5:#64748b;--slate-4:#94a3b8;--slate-3:#cbd5e1;--slate-2:#e2e8f0;
+  --slate-1:#f1f5f9;--slate-0:#f8fafc;--white:#fff;
+  --amber:#d97706;--amber-l:#fef3c7;--red:#dc2626;--red-l:#fee2e2;
+  --sh1:0 1px 3px rgba(0,0,0,.08);--sh2:0 4px 12px rgba(0,0,0,.1);--sh3:0 8px 24px rgba(0,0,0,.12);
+  --r:12px;--rs:8px;--rf:9999px
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--slate-0);color:var(--slate-8);font-size:14px;line-height:1.5}
+a{color:inherit}
+input,select,button{font-family:inherit;font-size:14px}
+
+/* Layout */
+.header{background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 50%,#0f172a 100%);color:#fff;padding:0}
+.header-inner{max-width:900px;margin:0 auto;padding:28px 20px 0}
+.logo{display:flex;align-items:center;gap:12px;margin-bottom:20px}
+.logo-icon{font-size:32px}
+.logo-title{font-size:22px;font-weight:800;letter-spacing:-.5px}
+.logo-sub{font-size:12px;color:#93c5fd;margin-top:1px}
+.tabs{display:flex;gap:4px}
+.tab-btn{display:flex;align-items:center;gap:6px;padding:10px 20px;border:none;border-radius:10px 10px 0 0;cursor:pointer;font-weight:600;font-size:14px;transition:all .15s}
+.tab-btn.active{background:#fff;color:var(--slate-9)}
+.tab-btn:not(.active){background:transparent;color:#93c5fd}
+.tab-btn:not(.active):hover{background:rgba(255,255,255,.1);color:#fff}
+
+/* Search panel */
+.search-panel{background:#fff;border-bottom:1px solid var(--slate-2);box-shadow:var(--sh1)}
+.search-inner{max-width:900px;margin:0 auto;padding:24px 20px}
+.form-hidden{display:none}
+
+/* Form elements */
+.trip-types{display:flex;gap:8px;margin-bottom:16px}
+.trip-btn{padding:5px 14px;border-radius:var(--rf);border:none;cursor:pointer;font-weight:600;font-size:12px;transition:all .15s}
+.trip-btn.active{background:var(--blue);color:#fff}
+.trip-btn:not(.active){background:var(--slate-1);color:var(--slate-6)}
+.trip-btn:not(.active):hover{background:var(--slate-2)}
+
+.form-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.form-grid-4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:12px}
+.form-group{display:flex;flex-direction:column;gap:4px}
+.form-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--slate-5)}
+.form-hint{font-size:11px;color:var(--slate-4);margin-top:2px}
+.form-input,.form-select{
+  border:1.5px solid var(--slate-2);border-radius:var(--rs);padding:10px 12px;
+  outline:none;transition:border-color .15s,box-shadow .15s;background:#fff;color:var(--slate-8);width:100%
+}
+.form-input:focus,.form-select:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-l)}
+.form-select.green:focus{border-color:var(--green);box-shadow:0 0 0 3px var(--green-l)}
+.form-input.green:focus{border-color:var(--green);box-shadow:0 0 0 3px var(--green-l)}
+
+.city-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.city-chip{padding:4px 10px;border-radius:var(--rf);border:1.5px solid var(--slate-2);background:#fff;cursor:pointer;font-size:12px;font-weight:500;color:var(--slate-6);transition:all .15s}
+.city-chip:hover{border-color:var(--green);color:var(--green)}
+.city-chip.selected{background:var(--green);border-color:var(--green);color:#fff}
+
+.search-btn{
+  width:100%;padding:13px;border:none;border-radius:var(--r);cursor:pointer;
+  font-weight:700;font-size:15px;color:#fff;transition:all .15s;margin-top:4px
+}
+.search-btn.blue{background:var(--blue)}
+.search-btn.blue:hover{background:var(--blue-d)}
+.search-btn.green{background:var(--green)}
+.search-btn.green:hover{background:var(--green-d)}
+.search-btn:disabled{opacity:.6;cursor:not-allowed}
+
+/* Main content */
+.main{max-width:900px;margin:0 auto;padding:20px}
+
+/* Demo banner */
+.demo-banner{
+  display:flex;align-items:flex-start;gap:10px;background:var(--amber-l);
+  border:1.5px solid #fcd34d;border-radius:var(--r);padding:12px 16px;
+  color:var(--amber);margin-bottom:16px;font-size:13px
+}
+.demo-banner a{color:var(--amber);font-weight:700;text-decoration:underline}
+
+/* Results header */
+.results-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.results-count{font-weight:600;color:var(--slate-7);font-size:13px}
+.sort-btns{display:flex;align-items:center;gap:6px}
+.sort-label{font-size:12px;color:var(--slate-5)}
+.sort-btn{padding:5px 12px;border-radius:var(--rs);border:1.5px solid var(--slate-2);background:#fff;cursor:pointer;font-size:12px;font-weight:600;color:var(--slate-6);transition:all .15s}
+.sort-btn.active.blue{background:var(--blue);border-color:var(--blue);color:#fff}
+.sort-btn.active.green{background:var(--green);border-color:var(--green);color:#fff}
+.sort-btn:not(.active):hover{border-color:var(--slate-4)}
+
+/* Flight card */
+.card{background:#fff;border:1.5px solid var(--slate-2);border-radius:var(--r);padding:16px;margin-bottom:10px;box-shadow:var(--sh1);transition:box-shadow .15s,border-color .15s}
+.card:hover{box-shadow:var(--sh2);border-color:var(--slate-3)}
+.card-inner{display:flex;align-items:stretch;gap:16px}
+.card-body{flex:1;min-width:0}
+.card-price{display:flex;flex-direction:column;align-items:flex-end;justify-content:space-between;padding-left:16px;border-left:1.5px solid var(--slate-2);min-width:120px}
+
+.seg{display:flex;align-items:center;gap:12px}
+.airline-badge{width:36px;height:36px;border-radius:var(--rs);background:var(--blue-xl);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--blue);flex-shrink:0;letter-spacing:0}
+.seg-times{display:flex;align-items:center;gap:0;flex:1;min-width:0}
+.seg-dep,.seg-arr{text-align:center;min-width:52px}
+.seg-time{font-size:16px;font-weight:800;color:var(--slate-9)}
+.seg-code{font-size:11px;font-weight:700;color:var(--slate-5)}
+.seg-middle{flex:1;display:flex;flex-direction:column;align-items:center;padding:0 8px}
+.seg-dur{font-size:11px;color:var(--slate-5);margin-bottom:3px}
+.seg-line{display:flex;align-items:center;width:100%;gap:4px}
+.seg-line-hr{flex:1;height:1.5px;background:var(--slate-3)}
+.seg-plane{font-size:14px;color:var(--slate-4)}
+.seg-fn{font-size:10px;color:var(--slate-4)}
+.seg-stops{font-size:11px;color:var(--amber);font-weight:600;margin-top:4px;padding-left:48px}
+.return-divider{border-top:1.5px dashed var(--slate-2);margin:10px 0;padding-top:10px}
+.return-label{font-size:11px;color:var(--slate-5);margin-bottom:6px;padding-left:48px}
+
+.price-amount{font-size:24px;font-weight:800;color:var(--blue)}
+.price-sub{font-size:11px;color:var(--slate-5)}
+.pill{display:inline-block;padding:2px 8px;border-radius:var(--rf);font-size:11px;font-weight:600}
+.pill-green{background:var(--green-l);color:var(--green-d)}
+.pill-blue{background:var(--blue-l);color:var(--blue-d)}
+.pill-red{background:var(--red-l);color:var(--red)}
+.pill-gray{background:var(--slate-1);color:var(--slate-6)}
+.pills-row{display:flex;flex-direction:column;gap:4px;align-items:flex-end;margin-top:4px}
+.book-btn{
+  padding:9px 20px;border:none;border-radius:var(--rs);cursor:pointer;font-weight:700;font-size:13px;color:#fff;transition:background .15s;margin-top:8px;white-space:nowrap
+}
+.book-btn.blue{background:var(--blue)}
+.book-btn.blue:hover{background:var(--blue-d)}
+.book-btn.green{background:var(--green)}
+.book-btn.green:hover{background:var(--green-d)}
+
+/* Hotel card */
+.hotel-icon{width:80px;height:80px;border-radius:var(--rs);background:linear-gradient(135deg,var(--green-l),#a7f3d0);display:flex;align-items:center;justify-content:center;font-size:36px;flex-shrink:0}
+.hotel-body{flex:1;min-width:0}
+.hotel-name{font-size:16px;font-weight:700;color:var(--slate-9);margin-bottom:4px}
+.hotel-stars-row{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.stars{color:#f59e0b;font-size:13px;letter-spacing:1px}
+.rating-badge{padding:2px 7px;border-radius:5px;font-size:12px;font-weight:800;color:#fff}
+.rating-label{font-size:12px;color:var(--slate-5)}
+.review-count{font-size:11px;color:var(--slate-4)}
+.hotel-addr{font-size:12px;color:var(--slate-5);display:flex;align-items:center;gap:4px;margin-bottom:8px}
+.amenities{display:flex;flex-wrap:wrap;gap:5px}
+.amenity{padding:3px 8px;border-radius:var(--rf);border:1.5px solid var(--slate-2);font-size:11px;color:var(--slate-6)}
+
+/* Loading */
+.loading{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 0;gap:16px}
+.spinner{width:44px;height:44px;border-radius:50%;border:4px solid var(--slate-2);animation:spin .8s linear infinite}
+.spinner.blue{border-top-color:var(--blue)}
+.spinner.green{border-top-color:var(--green)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{color:var(--slate-5);font-size:13px}
+
+/* Empty / error */
+.empty-state{text-align:center;padding:60px 20px}
+.empty-icon{font-size:52px;margin-bottom:12px}
+.empty-text{color:var(--slate-5);font-size:14px}
+.error-box{background:var(--red-l);border:1.5px solid #fca5a5;border-radius:var(--r);padding:14px 16px;color:var(--red);font-size:13px;margin-bottom:16px}
+
+/* Features */
+.features{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:12px}
+.feature-card{background:#fff;border:1.5px solid var(--slate-2);border-radius:var(--r);padding:20px;text-align:center;box-shadow:var(--sh1)}
+.feature-icon{font-size:32px;margin-bottom:10px}
+.feature-title{font-weight:700;color:var(--slate-8);margin-bottom:5px}
+.feature-desc{font-size:12px;color:var(--slate-5);line-height:1.6}
+
+/* Footer */
+.footer{border-top:1.5px solid var(--slate-2);margin-top:40px;padding:20px;text-align:center;color:var(--slate-4);font-size:12px}
+
+/* Responsive */
+@media(max-width:640px){
+  .form-grid-2,.form-grid-4{grid-template-columns:1fr 1fr}
+  .features{grid-template-columns:1fr}
+  .card-inner{flex-direction:column}
+  .card-price{flex-direction:row;border-left:none;border-top:1.5px solid var(--slate-2);padding-left:0;padding-top:12px;min-width:unset;align-items:center}
+  .hotel-icon{width:56px;height:56px;font-size:24px}
+}
+@media(max-width:480px){
+  .form-grid-2,.form-grid-4{grid-template-columns:1fr}
+  .seg-time{font-size:14px}
+}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-inner">
+    <div class="logo">
+      <div class="logo-icon">✈️</div>
+      <div>
+        <div class="logo-title">TravelDeals</div>
+        <div class="logo-sub">Find the cheapest flights &amp; hotels worldwide</div>
+      </div>
+    </div>
+    <div class="tabs">
+      <button class="tab-btn active" id="tab-flights" onclick="switchTab('flights')">✈️ &nbsp;Flights</button>
+      <button class="tab-btn" id="tab-hotels" onclick="switchTab('hotels')">🏨 &nbsp;Hotels</button>
+    </div>
+  </div>
+</header>
+
+<div class="search-panel">
+  <div class="search-inner">
+
+    <!-- Flight Form -->
+    <div id="form-flights">
+      <div class="trip-types">
+        <button class="trip-btn active" id="trip-roundtrip" onclick="setTrip('roundtrip')">Round Trip</button>
+        <button class="trip-btn" id="trip-oneway" onclick="setTrip('oneway')">One Way</button>
+      </div>
+      <div class="form-grid-2">
+        <div class="form-group">
+          <label class="form-label">From</label>
+          <input class="form-input" id="f-origin" type="text" placeholder="e.g. JFK" maxlength="3" oninput="this.value=this.value.toUpperCase()">
+          <span class="form-hint">3-letter airport code</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label">To</label>
+          <input class="form-input" id="f-dest" type="text" placeholder="e.g. LAX" maxlength="3" oninput="this.value=this.value.toUpperCase()">
+          <span class="form-hint">3-letter airport code</span>
+        </div>
+      </div>
+      <div class="form-grid-4">
+        <div class="form-group">
+          <label class="form-label">Departure</label>
+          <input class="form-input" id="f-dep" type="date">
+        </div>
+        <div class="form-group" id="f-ret-group">
+          <label class="form-label">Return</label>
+          <input class="form-input" id="f-ret" type="date">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Passengers</label>
+          <select class="form-select" id="f-adults">
+            <option value="1">1 Adult</option><option value="2">2 Adults</option>
+            <option value="3">3 Adults</option><option value="4">4 Adults</option>
+            <option value="5">5 Adults</option><option value="6">6 Adults</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Class</label>
+          <select class="form-select" id="f-class">
+            <option value="ECONOMY">Economy</option>
+            <option value="PREMIUM_ECONOMY">Prem. Economy</option>
+            <option value="BUSINESS">Business</option>
+            <option value="FIRST">First Class</option>
+          </select>
+        </div>
+      </div>
+      <button class="search-btn blue" id="f-search-btn" onclick="searchFlights()">Search Flights</button>
+    </div>
+
+    <!-- Hotel Form -->
+    <div id="form-hotels" class="form-hidden">
+      <div class="form-group" style="margin-bottom:12px">
+        <label class="form-label">Destination City</label>
+        <input class="form-input green" id="h-city" type="text" placeholder="e.g. NYC, LON, PAR" maxlength="3" oninput="this.value=this.value.toUpperCase();updateChips()">
+        <div class="city-chips" id="city-chips">
+          <button class="city-chip" onclick="pickCity('NYC','New York')">New York</button>
+          <button class="city-chip" onclick="pickCity('LAX','Los Angeles')">Los Angeles</button>
+          <button class="city-chip" onclick="pickCity('LON','London')">London</button>
+          <button class="city-chip" onclick="pickCity('PAR','Paris')">Paris</button>
+          <button class="city-chip" onclick="pickCity('DXB','Dubai')">Dubai</button>
+          <button class="city-chip" onclick="pickCity('TYO','Tokyo')">Tokyo</button>
+          <button class="city-chip" onclick="pickCity('SYD','Sydney')">Sydney</button>
+          <button class="city-chip" onclick="pickCity('BCN','Barcelona')">Barcelona</button>
+        </div>
+      </div>
+      <div class="form-grid-4">
+        <div class="form-group">
+          <label class="form-label">Check-in</label>
+          <input class="form-input green" id="h-checkin" type="date">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Check-out</label>
+          <input class="form-input green" id="h-checkout" type="date">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Guests</label>
+          <select class="form-select green" id="h-guests">
+            <option value="1">1 Guest</option><option value="2" selected>2 Guests</option>
+            <option value="3">3 Guests</option><option value="4">4 Guests</option>
+            <option value="5">5 Guests</option><option value="6">6 Guests</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Rooms</label>
+          <select class="form-select green" id="h-rooms">
+            <option value="1" selected>1 Room</option><option value="2">2 Rooms</option>
+            <option value="3">3 Rooms</option><option value="4">4 Rooms</option>
+          </select>
+        </div>
+      </div>
+      <button class="search-btn green" id="h-search-btn" onclick="searchHotels()">Search Hotels</button>
+    </div>
+
+  </div>
+</div>
+
+<div class="main" id="main-content">
+  <!-- Features shown initially -->
+  <div id="features" class="features">
+    <div class="feature-card">
+      <div class="feature-icon">💰</div>
+      <div class="feature-title">Best Price Guarantee</div>
+      <div class="feature-desc">Compare hundreds of airlines and hotels to find you the lowest fares available.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔍</div>
+      <div class="feature-title">Smart Search</div>
+      <div class="feature-desc">Search flights and hotels worldwide with flexible dates, passengers and room options.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🌍</div>
+      <div class="feature-title">Global Coverage</div>
+      <div class="feature-desc">10,000+ airports and 150,000+ hotels across 190+ countries at your fingertips.</div>
+    </div>
+  </div>
+  <!-- Results injected here -->
+  <div id="results"></div>
+</div>
+
+<footer class="footer">
+  TravelDeals &mdash; Powered by Amadeus Travel API &nbsp;|&nbsp; Connect your API key in <code>.env.local</code> for live prices
+</footer>
+
+<script>
+// ─── State ───────────────────────────────────────────────────────────────────
+const S = {
+  tab: 'flights',
+  tripType: 'roundtrip',
+  loading: false,
+  hasSearched: false,
+  flights: [],
+  hotels: [],
+  flightSort: 'price',
+  hotelSort: 'price',
+  cityName: '',
+};
+
+// ─── Data ────────────────────────────────────────────────────────────────────
+const AIRLINES = [
+  {name:'Delta Air Lines',code:'DL'},{name:'American Airlines',code:'AA'},
+  {name:'United Airlines',code:'UA'},{name:'Southwest Airlines',code:'WN'},
+  {name:'JetBlue Airways',code:'B6'},{name:'Alaska Airlines',code:'AS'},
+  {name:'Spirit Airlines',code:'NK'},{name:'Frontier Airlines',code:'F9'},
+];
+const HOTELS = [
+  'Grand Hyatt','Marriott Downtown','Hilton Garden Inn','Westin Hotel',
+  'Four Seasons','Sheraton Hotel','Holiday Inn Express','Courtyard by Marriott',
+];
+const AMENITIES = ['Free WiFi','Pool','Gym','Restaurant','Bar','Spa','Room Service','Breakfast Included','Parking','Airport Shuttle'];
+const AMENITY_ICONS = {'Free WiFi':'📶','Pool':'🏊','Gym':'💪','Restaurant':'🍽️','Bar':'🍸','Spa':'🧖','Room Service':'🛎️','Breakfast Included':'🥐','Parking':'🅿️','Airport Shuttle':'🚌'};
+const CITIES = {NYC:'New York',LAX:'Los Angeles',LON:'London',PAR:'Paris',DXB:'Dubai',TYO:'Tokyo',SYD:'Sydney',BCN:'Barcelona'};
+
+function rnd(min,max){return Math.round(min+Math.random()*(max-min))}
+
+function genFlights(params) {
+  return AIRLINES.map((al,i) => {
+    const stops = (i===1||i===4) ? 1 : 0;
+    const dh = rnd(2,10), dm = [0,15,30,45][i%4];
+    const base = (S.tripType==='roundtrip'?180:99) + (stops?0:60) + [0,0,0,0,50,120,0,0][i];
+    const price = rnd(base, base+200);
+    const depTime = `${String(6+i*2).padStart(2,'0')}:${['00','15','30','45'][i%4]}`;
+    const dep = new Date(params.dep+'T'+depTime+':00');
+    const arr = new Date(dep.getTime()+(dh*60+dm)*60000);
+    let retDep, retArr;
+    if(S.tripType==='roundtrip' && params.ret){
+      retDep = new Date(params.ret+'T'+String(8+(i%5)*2).padStart(2,'0')+':00:00');
+      retArr = new Date(retDep.getTime()+(dh*60+dm)*60000);
+    }
+    return {id:'f'+i,al,stops,dh,dm,dep:dep.toISOString(),arr:arr.toISOString(),
+      retDep:retDep?.toISOString(),retArr:retArr?.toISOString(),
+      fn:al.code+(100+i*37),price,cls:params.cls,seats:rnd(1,9),
+      origin:params.origin,dest:params.dest};
+  });
+}
+
+function genHotels(params) {
+  const nights = Math.max(1,Math.round((new Date(params.out)-new Date(params.in))/86400000));
+  return HOTELS.map((name,i) => {
+    const stars = Math.max(2,Math.min(5,5-Math.floor(i/3)));
+    const ppn = rnd(55+i*30, 100+i*40);
+    const ams = AMENITIES.slice(i%4,(i%4)+rnd(3,6));
+    return {id:'h'+i,name:name+' '+(S.cityName||params.city),stars,
+      rating:Math.round((6.5+Math.random()*3)*10)/10,
+      reviews:rnd(200,3500),addr:(100+i*12)+' Main St, '+(S.cityName||params.city),
+      ppn,total:ppn*nights,nights,ams};
+  });
+}
+
+// ─── Formatters ──────────────────────────────────────────────────────────────
+const fmtTime = iso => new Date(iso).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true});
+const fmtDate = iso => new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+const fmtDur  = (h,m) => `${h}h${m?` ${m}m`:''}`;
+const fmtP    = n => '$'+n.toLocaleString();
+
+function ratingColor(r){
+  if(r>=9)return '#16a34a';
+  if(r>=8)return '#22c55e';
+  if(r>=7)return '#eab308';
+  return '#94a3b8';
+}
+function ratingLabel(r){
+  if(r>=9)return 'Exceptional';
+  if(r>=8)return 'Excellent';
+  if(r>=7)return 'Very Good';
+  return 'Good';
+}
+
+// ─── Renderers ───────────────────────────────────────────────────────────────
+function segHTML(dep,arr,origin,dest,fn,dh,dm,stops,stopCode){
+  return `
+    <div class="seg">
+      <div class="airline-badge">${fn.slice(0,2)}</div>
+      <div class="seg-times">
+        <div class="seg-dep">
+          <div class="seg-time">${fmtTime(dep)}</div>
+          <div class="seg-code">${origin}</div>
+        </div>
+        <div class="seg-middle">
+          <div class="seg-dur">${fmtDur(dh,dm)}</div>
+          <div class="seg-line">
+            <div class="seg-line-hr"></div>
+            <div class="seg-plane">✈</div>
+            <div class="seg-line-hr"></div>
+          </div>
+          <div class="seg-fn">${fn}</div>
+        </div>
+        <div class="seg-arr">
+          <div class="seg-time">${fmtTime(arr)}</div>
+          <div class="seg-code">${dest}</div>
+        </div>
+      </div>
+    </div>
+    ${stops?`<div class="seg-stops">1 stop via ${stopCode||'ORD'}</div>`:''}
+  `;
+}
+
+function flightCardHTML(f){
+  const stopCodes = ['ORD','ATL','DFW','LAX','JFK'];
+  const stopCode = stopCodes[Math.abs(f.id.charCodeAt(1)-48)%stopCodes.length];
+  const clsLabel = {ECONOMY:'Economy',PREMIUM_ECONOMY:'Prem. Economy',BUSINESS:'Business',FIRST:'First Class'}[f.cls]||f.cls;
+  const retSection = f.retDep ? `
+    <div class="return-divider">
+      <div class="return-label">Return — ${fmtDate(f.retDep)}</div>
+      ${segHTML(f.retDep,f.retArr,f.dest,f.origin,f.al.code+(parseInt(f.id.slice(1))*37+200),f.dh,f.dm,0,'')}
+    </div>` : '';
+  return `
+    <div class="card">
+      <div class="card-inner">
+        <div class="card-body">
+          ${segHTML(f.dep,f.arr,f.origin,f.dest,f.fn,f.dh,f.dm,f.stops,stopCode)}
+          ${retSection}
+          <div style="margin-top:6px;padding-left:48px;font-size:12px;color:var(--slate-5)">${f.al.name}</div>
+        </div>
+        <div class="card-price">
+          <div>
+            <div class="price-amount">${fmtP(f.price)}</div>
+            <div class="price-sub">per person</div>
+            <div class="pills-row" style="margin-top:6px">
+              ${f.stops===0?'<span class="pill pill-green">Nonstop</span>':''}
+              <span class="pill pill-gray">${clsLabel}</span>
+              ${f.seats<=3?`<span class="pill pill-red">${f.seats} left!</span>`:''}
+            </div>
+          </div>
+          <button class="book-btn blue">Select</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function hotelCardHTML(h){
+  const ams = h.ams.slice(0,5).map(a=>`<span class="amenity">${AMENITY_ICONS[a]||'✓'} ${a}</span>`).join('');
+  const stars = '★'.repeat(h.stars)+'☆'.repeat(5-h.stars);
+  return `
+    <div class="card">
+      <div class="card-inner">
+        <div class="hotel-icon">🏨</div>
+        <div class="hotel-body">
+          <div class="hotel-name">${h.name}</div>
+          <div class="hotel-stars-row">
+            <span class="stars">${stars}</span>
+            <span class="rating-badge" style="background:${ratingColor(h.rating)}">${h.rating}</span>
+            <span class="rating-label">${ratingLabel(h.rating)}</span>
+            <span class="review-count">(${h.reviews.toLocaleString()} reviews)</span>
+          </div>
+          <div class="hotel-addr">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            ${h.addr}
+          </div>
+          <div class="amenities">${ams}</div>
+        </div>
+        <div class="card-price">
+          <div>
+            <div class="price-amount" style="color:var(--green)">${fmtP(h.ppn)}</div>
+            <div class="price-sub">per night</div>
+            <div class="price-sub" style="margin-top:2px">${fmtP(h.total)} total · ${h.nights} night${h.nights!==1?'s':''}</div>
+          </div>
+          <button class="book-btn green">Book Now</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ─── Sort ─────────────────────────────────────────────────────────────────────
+function sortFlights(flights, key) {
+  return [...flights].sort((a,b)=>{
+    if(key==='price') return a.price-b.price;
+    if(key==='stops') return a.stops-b.stops;
+    if(key==='duration') return (a.dh*60+a.dm)-(b.dh*60+b.dm);
+    return 0;
+  });
+}
+
+// ─── Render results ───────────────────────────────────────────────────────────
+function renderResults() {
+  const el = document.getElementById('results');
+  const features = document.getElementById('features');
+  features.style.display = 'none';
+
+  if(S.loading) {
+    const color = S.tab==='flights'?'blue':'green';
+    el.innerHTML = `<div class="loading"><div class="spinner ${color}"></div><div class="loading-text">Searching for the best deals...</div></div>`;
+    return;
+  }
+
+  let html = '';
+
+  if(S.tab==='flights') {
+    if(S.flightError) {
+      html = `<div class="error-box"><strong>Error:</strong> ${S.flightError}</div>`;
+    } else if(S.flights.length) {
+      const sorted = sortFlights(S.flights, S.flightSort);
+      const sortBtns = ['price','duration','stops'].map(k=>`
+        <button class="sort-btn ${S.flightSort===k?'active blue':''}" onclick="setFlightSort('${k}')">${k.charAt(0).toUpperCase()+k.slice(1)}</button>
+      `).join('');
+      html += `
+        <div class="demo-banner">
+          <span>ℹ️</span>
+          <span><strong>Demo mode</strong> — showing sample data. Add your free <a href="https://developers.amadeus.com/register" target="_blank">Amadeus API keys</a> for live results.</span>
+        </div>
+        <div class="results-header">
+          <div class="results-count">${sorted.length} flights found</div>
+          <div class="sort-btns"><span class="sort-label">Sort by:</span>${sortBtns}</div>
+        </div>
+        ${sorted.map(flightCardHTML).join('')}`;
+    } else if(S.hasSearched) {
+      html = `<div class="empty-state"><div class="empty-icon">✈️</div><div class="empty-text">No flights found. Try different dates or routes.</div></div>`;
+    }
+  } else {
+    if(S.hotelError) {
+      html = `<div class="error-box"><strong>Error:</strong> ${S.hotelError}</div>`;
+    } else if(S.hotels.length) {
+      const sorted = S.hotelSort==='price'
+        ? [...S.hotels].sort((a,b)=>a.ppn-b.ppn)
+        : [...S.hotels].sort((a,b)=>b.rating-a.rating);
+      const sortBtns = ['price','rating'].map(k=>`
+        <button class="sort-btn ${S.hotelSort===k?'active green':''}" onclick="setHotelSort('${k}')">${k.charAt(0).toUpperCase()+k.slice(1)}</button>
+      `).join('');
+      html += `
+        <div class="demo-banner">
+          <span>ℹ️</span>
+          <span><strong>Demo mode</strong> — showing sample data. Add your free <a href="https://developers.amadeus.com/register" target="_blank">Amadeus API keys</a> for live results.</span>
+        </div>
+        <div class="results-header">
+          <div class="results-count">${sorted.length} hotels found</div>
+          <div class="sort-btns"><span class="sort-label">Sort by:</span>${sortBtns}</div>
+        </div>
+        ${sorted.map(hotelCardHTML).join('')}`;
+    } else if(S.hasSearched) {
+      html = `<div class="empty-state"><div class="empty-icon">🏨</div><div class="empty-text">No hotels found. Try a different city or dates.</div></div>`;
+    }
+  }
+
+  el.innerHTML = html;
+  if(S.hasSearched && !S.loading) el.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+// ─── Actions ──────────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  S.tab = tab;
+  document.getElementById('tab-flights').className = 'tab-btn'+(tab==='flights'?' active':'');
+  document.getElementById('tab-hotels').className  = 'tab-btn'+(tab==='hotels'?' active':'');
+  document.getElementById('form-flights').className = tab==='flights'?'':'form-hidden';
+  document.getElementById('form-hotels').className  = tab==='hotels'?'':'form-hidden';
+  S.hasSearched = false;
+  S.loading = false;
+  S.flightError = null;
+  S.hotelError  = null;
+  document.getElementById('results').innerHTML = '';
+  document.getElementById('features').style.display = '';
+}
+
+function setTrip(type) {
+  S.tripType = type;
+  document.getElementById('trip-roundtrip').className = 'trip-btn'+(type==='roundtrip'?' active':'');
+  document.getElementById('trip-oneway').className    = 'trip-btn'+(type==='oneway'?' active':'');
+  document.getElementById('f-ret-group').style.display = type==='roundtrip'?'':'none';
+}
+
+function pickCity(code,name) {
+  S.cityName = name;
+  document.getElementById('h-city').value = code;
+  document.querySelectorAll('.city-chip').forEach(c=>{
+    c.className = 'city-chip'+(c.textContent.trim()===name?' selected':'');
+  });
+}
+
+function updateChips() {
+  const val = document.getElementById('h-city').value;
+  const name = CITIES[val]||'';
+  S.cityName = name;
+  document.querySelectorAll('.city-chip').forEach(c=>{
+    c.className = 'city-chip'+(name && c.textContent.trim()===name?' selected':'');
+  });
+}
+
+function setFlightSort(key) {
+  S.flightSort = key;
+  renderResults();
+}
+function setHotelSort(key) {
+  S.hotelSort = key;
+  renderResults();
+}
+
+function validate(fields) {
+  for(const [id, label] of fields) {
+    if(!document.getElementById(id).value.trim()) {
+      alert(`Please fill in: ${label}`);
+      document.getElementById(id).focus();
+      return false;
+    }
+  }
+  return true;
+}
+
+function searchFlights() {
+  if(!validate([['f-origin','From (airport code)'],['f-dest','To (airport code)'],['f-dep','Departure Date']])) return;
+  const origin = document.getElementById('f-origin').value.trim();
+  const dest   = document.getElementById('f-dest').value.trim();
+  const dep    = document.getElementById('f-dep').value;
+  const ret    = document.getElementById('f-ret').value;
+  const cls    = document.getElementById('f-class').value;
+  if(origin.length!==3||dest.length!==3) { alert('Please enter 3-letter airport codes (e.g. JFK, LAX, LHR)'); return; }
+
+  S.loading = true; S.hasSearched = true; S.flightError = null; S.flights = [];
+  document.getElementById('f-search-btn').disabled = true;
+  document.getElementById('f-search-btn').textContent = 'Searching...';
+  renderResults();
+
+  setTimeout(()=>{
+    S.flights = genFlights({origin,dest,dep,ret,cls});
+    S.loading = false;
+    document.getElementById('f-search-btn').disabled = false;
+    document.getElementById('f-search-btn').textContent = 'Search Flights';
+    renderResults();
+  }, 1200);
+}
+
+function searchHotels() {
+  if(!validate([['h-city','City Code'],['h-checkin','Check-in Date'],['h-checkout','Check-out Date']])) return;
+  const city    = document.getElementById('h-city').value.trim();
+  const checkin = document.getElementById('h-checkin').value;
+  const checkout= document.getElementById('h-checkout').value;
+  if(city.length!==3) { alert('Please enter a 3-letter city code (e.g. NYC, LON, PAR)'); return; }
+  if(new Date(checkout)<=new Date(checkin)) { alert('Check-out must be after check-in'); return; }
+
+  S.loading = true; S.hasSearched = true; S.hotelError = null; S.hotels = [];
+  document.getElementById('h-search-btn').disabled = true;
+  document.getElementById('h-search-btn').textContent = 'Searching...';
+  renderResults();
+
+  setTimeout(()=>{
+    S.hotels = genHotels({city,in:checkin,out:checkout});
+    S.loading = false;
+    document.getElementById('h-search-btn').disabled = false;
+    document.getElementById('h-search-btn').textContent = 'Search Hotels';
+    renderResults();
+  }, 1200);
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+(function init(){
+  const today = new Date().toISOString().split('T')[0];
+  const next7 = new Date(Date.now()+7*86400000).toISOString().split('T')[0];
+  const next14= new Date(Date.now()+14*86400000).toISOString().split('T')[0];
+  document.getElementById('f-dep').min = today;
+  document.getElementById('f-dep').value = next7;
+  document.getElementById('f-ret').min = today;
+  document.getElementById('f-ret').value = next14;
+  document.getElementById('h-checkin').min = today;
+  document.getElementById('h-checkin').value = next7;
+  document.getElementById('h-checkout').min = today;
+  document.getElementById('h-checkout').value = next14;
+
+  // Update return date min when departure changes
+  document.getElementById('f-dep').addEventListener('change', function(){
+    document.getElementById('f-ret').min = this.value;
+  });
+  document.getElementById('h-checkin').addEventListener('change', function(){
+    document.getElementById('h-checkout').min = this.value;
+  });
+})();
+</script>
+</body>
+</html>
