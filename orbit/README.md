@@ -4,7 +4,7 @@
 the world's super-apps great and combining their signature moves, then adding a
 few of its own. Zero-build, single-file, offline-first, installable PWA. Every
 rule that touches money or state lives in a pure, deterministic, clock-injected
-engine ([`engine.js`](./engine.js)) with 39 unit tests
+engine ([`engine.js`](./engine.js)) with 49 unit tests
 (`npm run test:orbit`).
 
 ## The research — who Orbit steals from, and what it does better
@@ -41,6 +41,12 @@ And the parts most of them *won't* do, which Orbit treats as features:
   (requested → matched → arriving → arrived → in trip → completed) with a car
   animating along the route, safety PIN + share code, predictable cancel fees,
   scheduled rides (30 min – 7 days, price locked) and 7-day price locks.
+  **Multi-stop rides** (up to two extra stops — legs itemised, ONE booking fee
+  for the whole journey plus an honest 60p per stop, so it always beats booking
+  the legs separately), a **🎟️ Route Pass** (10 rides on any route at 15% off,
+  valid both directions for 30 days, savings stated up front), **tips with no
+  platform cut** (£1/£2/£3 on the receipt — every penny reaches the captain),
+  and a **trusted contact** whose name rides along on every trip's live-share.
 - **🍔 Eat** — ten kitchens with menus, itemised checkout (delivery by real
   road distance, small-order fee, capped service fee, `WELCOME20`), live order
   tracking, and DineOut discounts (10%, or 20% with Orbit+). Plus **🛒 Market**
@@ -50,7 +56,11 @@ And the parts most of them *won't* do, which Orbit treats as features:
   real ETA instead of pretending.
 - **📦 Send** — insured door-to-door parcels in three sizes with live tracking.
 - **💳 Pay** — the ledger wallet: top-ups, free P2P, fair bill splitting,
-  2% ride cashback (10% with Orbit+), full activity history.
+  2% ride cashback (10% with Orbit+), full activity history. Plus **🗓️
+  PayLater** — when the wallet is short, purchases go on this month's tab
+  instead (Grab-PayLater-style), with a hard honest £100 limit, no interest,
+  no fees, and one-tap settling from the wallet; and **🎁 referrals** — a
+  deterministic personal code, give £5 / get £5, once.
 - **⭐ Me** — Orbit+ (30-day trial, savings meter vs the £9.99 price),
   rewards points & tiers with redemption (500 pts → £2.50), ride history,
   your zero-emission km, and the safety centre.
@@ -74,5 +84,5 @@ device in `localStorage`.
 
 ```sh
 open orbit/index.html    # or serve the repo and browse to /orbit/
-npm run test:orbit       # 39 engine tests
+npm run test:orbit       # 49 engine tests
 ```

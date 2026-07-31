@@ -176,6 +176,117 @@
     return RIDE_CLASSES.map(function (c) { return quote(fromId, toId, c.id, when); }).filter(Boolean);
   }
 
+  /* ── multi-stop rides: one booking, several legs ────────────────── */
+  var STOP_FEE = 0.60; // per extra stop — covers the wait, shown as a line item
+  function multiStopQuote(stopIds, classId, when) {
+    if (!Array.isArray(stopIds) || stopIds.length < 2 || stopIds.length > 4) return null;
+    for (var i = 0; i < stopIds.length; i++) {
+      if (!place(stopIds[i])) return null;
+      if (i > 0 && stopIds[i] === stopIds[i - 1]) return null;
+    }
+    var legs = [];
+    for (var j = 1; j < stopIds.length; j++) {
+      var q = quote(stopIds[j - 1], stopIds[j], classId, when);
+      if (!q) return null;
+      legs.push(q);
+    }
+    var extraStops = stopIds.length - 2;
+    var km = 0, mins = 0, sum = 0, co2 = 0;
+    legs.forEach(function (l) { km += l.km; mins += l.mins; sum += l.total; co2 += l.co2g; });
+    // one booking fee for the whole journey, not one per leg
+    var total = Math.round((sum - BOOKING_FEE * (legs.length - 1) + extraStops * STOP_FEE) * 100) / 100;
+    var breakdown = legs.map(function (l, k) {
+      return { label: 'Leg ' + (k + 1) + ': ' + place(l.fromId).name + ' → ' + place(l.toId).name, amount: Math.round((l.total - BOOKING_FEE) * 100) / 100 };
+    });
+    if (extraStops > 0) breakdown.push({ label: extraStops + ' extra stop' + (extraStops > 1 ? 's' : '') + ' × £' + STOP_FEE.toFixed(2), amount: Math.round(extraStops * STOP_FEE * 100) / 100 });
+    breakdown.push({ label: 'Booking fee (one, not per leg)', amount: BOOKING_FEE });
+    return {
+      stops: stopIds.slice(), legs: legs, classId: classId,
+      fromId: stopIds[0], toId: stopIds[stopIds.length - 1],
+      km: Math.round(km * 10) / 10, mins: mins, co2g: co2,
+      surge: legs[0].surge, total: total, breakdown: breakdown
+    };
+  }
+  function pathThrough(stopIds) {
+    var pts = [];
+    for (var i = 1; i < stopIds.length; i++) {
+      var seg = pathPoints(stopIds[i - 1], stopIds[i]);
+      pts = pts.concat(i === 1 ? seg : seg.slice(1));
+    }
+    return pts;
+  }
+
+  /* ── tipping: 100% to the captain, always ───────────────────────── */
+  var TIP_PRESETS = [1, 2, 3];
+  function tipEarn(tip) { return Math.round(tip * 100) / 100; } // no platform cut on tips
+
+  /* ── Route Pass: 10 rides on a route, 15% off, 30 days ──────────── */
+  var PASS_RIDES = 10, PASS_DISCOUNT = 0.15, PASS_DAYS = 30;
+  function routePassQuote(fromId, toId, classId, when) {
+    var q = quote(fromId, toId, classId, when);
+    if (!q) return null;
+    var perRide = Math.round(q.total * (1 - PASS_DISCOUNT) * 100) / 100;
+    return {
+      fromId: fromId, toId: toId, classId: classId,
+      rides: PASS_RIDES, days: PASS_DAYS, perRide: perRide,
+      price: Math.round(perRide * PASS_RIDES * 100) / 100,
+      saves: Math.round((q.total - perRide) * PASS_RIDES * 100) / 100
+    };
+  }
+  function passCovers(pass, fromId, toId, classId, nowMs) {
+    if (!pass || pass.left <= 0 || nowMs > pass.untilMs) return false;
+    if (pass.classId !== classId) return false;
+    // a route pass works in both directions
+    return (pass.fromId === fromId && pass.toId === toId) || (pass.fromId === toId && pass.toId === fromId);
+  }
+
+  /* ── PayLater: this month's tab, settled in one payment ─────────── */
+  var PAYLATER_LIMIT = 100;
+  function monthKey(nowMs) {
+    var d = new Date(nowMs);
+    return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0');
+  }
+  function plDue(charges, nowMs) {
+    var mk = monthKey(nowMs), due = 0;
+    (charges || []).forEach(function (c) { if (!c.settled) due += c.amount; });
+    return { month: mk, due: Math.round(due * 100) / 100 };
+  }
+  function plCanCharge(charges, amount, nowMs) {
+    if (!(amount > 0)) return { ok: false, why: 'Nothing to charge' };
+    var due = plDue(charges, nowMs).due;
+    if (due + amount > PAYLATER_LIMIT + 1e-9) {
+      return { ok: false, why: 'That would pass your £' + PAYLATER_LIMIT + ' PayLater limit (£' + due.toFixed(2) + ' already on the tab)' };
+    }
+    return { ok: true, why: null };
+  }
+  function plCharge(charges, amount, label, nowMs) {
+    var chk = plCanCharge(charges, amount, nowMs);
+    if (!chk.ok) return null;
+    charges.push({ amount: Math.round(amount * 100) / 100, label: label, ms: nowMs, month: monthKey(nowMs), settled: false });
+    return charges;
+  }
+  function plSettle(charges, nowMs) {
+    var total = 0;
+    (charges || []).forEach(function (c) { if (!c.settled) { total += c.amount; c.settled = true; c.settledMs = nowMs; } });
+    return Math.round(total * 100) / 100;
+  }
+
+  /* ── referrals: give £5, get £5, once ───────────────────────────── */
+  var REFERRAL_BONUS = 5;
+  function referralCode(name) {
+    var abc = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    var h = hashStr('ref:' + String(name).toLowerCase().trim()), out = '';
+    for (var i = 0; i < 6; i++) { out += abc[h % abc.length]; h = Math.floor(h / abc.length) + i * 13; }
+    return out;
+  }
+  function applyReferral(code, ownName, alreadyUsed) {
+    var c = String(code || '').toUpperCase().trim();
+    if (alreadyUsed) return { ok: false, why: 'You\'ve already used a referral code' };
+    if (!/^[A-Z2-9]{6}$/.test(c)) return { ok: false, why: 'Codes are 6 letters/numbers' };
+    if (c === referralCode(ownName)) return { ok: false, why: 'That\'s your own code 🙂' };
+    return { ok: true, why: null, bonus: REFERRAL_BONUS };
+  }
+
   /* ── the driver pool (seeded, stable per pickup+day) ────────────── */
   var DRIVER_FIRST = ['Amir', 'Layla', 'Omar', 'Fatima', 'Yusuf', 'Nadia', 'Karim', 'Sofia', 'Hassan', 'Amina', 'Tariq', 'Zara', 'Marco', 'Elena', 'Dele', 'Priya'];
   var DRIVER_CARS = { moto: ['Honda PCX', 'Yamaha NMAX'], mini: ['Toyota Aygo', 'Kia Picanto', 'Fiat 500'], go: ['Toyota Corolla', 'Honda Civic', 'Nissan Sentra'], comfort: ['Toyota Camry', 'VW Passat', 'Skoda Superb'], xl: ['Kia Carnival', 'Toyota Sienna', 'VW Sharan'], lux: ['Mercedes E-Class', 'BMW 5 Series', 'Lexus ES'], green: ['Tesla Model 3', 'Nissan Leaf', 'BYD Seal'] };
@@ -516,7 +627,14 @@
   }
 
   return {
-    version: '1.1.0',
+    version: '1.2.0',
+    STOP_FEE: STOP_FEE, multiStopQuote: multiStopQuote, pathThrough: pathThrough,
+    TIP_PRESETS: TIP_PRESETS, tipEarn: tipEarn,
+    PASS_RIDES: PASS_RIDES, PASS_DISCOUNT: PASS_DISCOUNT, PASS_DAYS: PASS_DAYS,
+    routePassQuote: routePassQuote, passCovers: passCovers,
+    PAYLATER_LIMIT: PAYLATER_LIMIT, monthKey: monthKey, plDue: plDue,
+    plCanCharge: plCanCharge, plCharge: plCharge, plSettle: plSettle,
+    REFERRAL_BONUS: REFERRAL_BONUS, referralCode: referralCode, applyReferral: applyReferral,
     MARKET_STORE_AT: MARKET_STORE_AT, MARKET_AISLES: MARKET_AISLES,
     QUIK_FEE: QUIK_FEE, QUIK_FREE_MIN: QUIK_FREE_MIN, QUIK_SMALL_MIN: QUIK_SMALL_MIN,
     QUIK_PROMISE_MIN: QUIK_PROMISE_MIN, QUIK_LATE_CREDIT: QUIK_LATE_CREDIT,

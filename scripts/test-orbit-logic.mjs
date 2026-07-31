@@ -327,6 +327,94 @@ test('acceptanceRate and day summary', () => {
   assert.equal(day.net, 20.4);
 });
 
+/* ── multi-stop rides ── */
+test('multiStopQuote: legs sum, ONE booking fee, per-stop fee itemised', () => {
+  const m = E.multiStopQuote(['home', 'central', 'airport'], 'go', CALM);
+  const a = E.quote('home', 'central', 'go', CALM), b = E.quote('central', 'airport', 'go', CALM);
+  assert.equal(m.legs.length, 2);
+  assert.equal(m.km, Math.round((a.km + b.km) * 10) / 10);
+  const expected = Math.round((a.total + b.total - E.BOOKING_FEE + E.STOP_FEE) * 100) / 100;
+  assert.equal(m.total, expected);
+  assert.ok(m.total < a.total + b.total, 'one booking beats two separate rides');
+  assert.ok(m.breakdown.some(l => /extra stop/.test(l.label)));
+  const sum = m.breakdown.reduce((s, l) => s + l.amount, 0);
+  assert.ok(Math.abs(sum - m.total) < 0.02, `${sum} vs ${m.total}`);
+});
+test('multiStopQuote: validation — 2-4 stops, no repeats, known places', () => {
+  assert.equal(E.multiStopQuote(['home'], 'go', CALM), null);
+  assert.equal(E.multiStopQuote(['home', 'home'], 'go', CALM), null);
+  assert.equal(E.multiStopQuote(['home', 'nowhere'], 'go', CALM), null);
+  assert.equal(E.multiStopQuote(['home', 'work', 'mall', 'uni', 'park'], 'go', CALM), null);
+  assert.ok(E.multiStopQuote(['home', 'work'], 'go', CALM));
+});
+test('pathThrough concatenates legs without duplicating join points', () => {
+  const pts = E.pathThrough(['home', 'central', 'airport']);
+  assert.equal(pts.length, 5); // 3 + 3 - 1 shared
+  const end = pts[pts.length - 1];
+  assert.equal(end.x, E.place('airport').x);
+});
+
+/* ── tips ── */
+test('tips: 100% to the captain, no platform cut', () => {
+  assert.equal(E.tipEarn(2), 2);
+  assert.equal(E.tipEarn(2.505), 2.51);
+});
+
+/* ── route pass ── */
+test('routePassQuote: 15% off per ride, price = 10 rides, savings honest', () => {
+  const q = E.quote('home', 'work', 'go', CALM);
+  const p = E.routePassQuote('home', 'work', 'go', CALM);
+  assert.equal(p.perRide, Math.round(q.total * 0.85 * 100) / 100);
+  assert.equal(p.price, Math.round(p.perRide * 10 * 100) / 100);
+  assert.equal(p.saves, Math.round((q.total - p.perRide) * 10 * 100) / 100);
+});
+test('passCovers: route both directions, class-bound, expiry and rides-left enforced', () => {
+  const pass = { fromId: 'home', toId: 'work', classId: 'go', left: 3, untilMs: CALM + 30 * 86400000 };
+  assert.ok(E.passCovers(pass, 'home', 'work', 'go', CALM));
+  assert.ok(E.passCovers(pass, 'work', 'home', 'go', CALM), 'return trips covered');
+  assert.ok(!E.passCovers(pass, 'home', 'work', 'comfort', CALM));
+  assert.ok(!E.passCovers(pass, 'home', 'airport', 'go', CALM));
+  assert.ok(!E.passCovers({ ...pass, left: 0 }, 'home', 'work', 'go', CALM));
+  assert.ok(!E.passCovers(pass, 'home', 'work', 'go', CALM + 31 * 86400000));
+});
+
+/* ── PayLater ── */
+test('PayLater: charges accrue, £100 limit enforced with a reason', () => {
+  const charges = [];
+  assert.ok(E.plCharge(charges, 60, 'Ride', CALM));
+  assert.equal(E.plDue(charges, CALM).due, 60);
+  const deny = E.plCanCharge(charges, 45, CALM);
+  assert.equal(deny.ok, false);
+  assert.match(deny.why, /£100/);
+  assert.equal(E.plCharge(charges, 45, 'Eat', CALM), null);
+  assert.ok(E.plCanCharge(charges, 40, CALM).ok);
+});
+test('PayLater: settle clears the tab and returns the exact total', () => {
+  const charges = [];
+  E.plCharge(charges, 20.5, 'Ride', CALM);
+  E.plCharge(charges, 10.25, 'Eat', CALM);
+  assert.equal(E.plSettle(charges, CALM + 1000), 30.75);
+  assert.equal(E.plDue(charges, CALM + 1000).due, 0);
+  assert.ok(charges.every(c => c.settled));
+  assert.equal(E.plSettle(charges, CALM + 2000), 0, 'second settle is a no-op');
+});
+
+/* ── referrals ── */
+test('referralCode: deterministic per name, right shape', () => {
+  assert.equal(E.referralCode('You'), E.referralCode('you '));
+  assert.match(E.referralCode('You'), /^[A-Z2-9]{6}$/);
+  assert.notEqual(E.referralCode('You'), E.referralCode('Amira'));
+});
+test('applyReferral: rejects own code, bad shapes and reuse; pays £5 once', () => {
+  const own = E.referralCode('You');
+  assert.equal(E.applyReferral(own, 'You', false).ok, false);
+  assert.equal(E.applyReferral('AB', 'You', false).ok, false);
+  assert.equal(E.applyReferral(E.referralCode('Amira'), 'You', true).ok, false);
+  const ok = E.applyReferral(E.referralCode('Amira'), 'You', false);
+  assert.equal(ok.ok, true);
+  assert.equal(ok.bonus, 5);
+});
+
 test('fmtMoney formats sign and pence', () => {
   assert.equal(E.fmtMoney(7.5), '£7.50');
   assert.equal(E.fmtMoney(-3), '−£3.00');
