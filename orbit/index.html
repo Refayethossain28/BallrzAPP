@@ -169,6 +169,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
   <div class="toast" id="toast"></div>
 </div>
 
+<script src="config.js"></script>
 <script src="engine.js"></script>
 <script>
 'use strict';
@@ -180,7 +181,7 @@ var DEFAULT_STATE = {
   ledger: [], trips: [], orders: [], parcels: [], locks: [], scheduled: [],
   welcomeUsed: false, contactsSent: {},
   captain: { seen: 0, accepted: 0, fares: [], seed: 0 },
-  pass: null, payLater: [], refUsed: false, trusted: '', favs: []
+  pass: null, payLater: [], refUsed: false, trusted: '', favs: [], uid: null
 };
 var S = load();
 function load() {
@@ -250,6 +251,169 @@ function placeOpts(sel) {
 function openSheet(html) { $('sheet').innerHTML = '<div class="grab"></div>' + html; $('sheetWrap').classList.add('open'); }
 function closeSheet() { $('sheetWrap').classList.remove('open'); }
 
+/* ── the REAL marketplace transport ─────────────────────────────────
+ * Every legal state transition is decided by the engine's protocol
+ * (mkRideRequest / marketClaim / marketAdvance / …) — this object only
+ * MOVES ride objects: instantly between tabs over BroadcastChannel, and
+ * across devices over Firestore when config.js carries a project.      */
+var Market = {
+  uid: null, bc: null, db: null, cloud: false, live: false, onRide: null,
+  init: function () {
+    if (!S.uid) { S.uid = 'u' + Math.random().toString(36).slice(2, 12); save(); }
+    this.uid = S.uid;
+    var self = this;
+    try {
+      this.bc = new BroadcastChannel('orbit-market');
+      this.bc.onmessage = function (e) { if (e.data && e.data.ride) self._recv(e.data.ride); };
+      this.live = true;
+    } catch (e) {}
+    this._cloud();
+  },
+  _cloud: function () {
+    var cfg = (typeof ORBIT_FIREBASE_CONFIG !== 'undefined') && ORBIT_FIREBASE_CONFIG;
+    if (!cfg || !cfg.projectId || location.protocol === 'file:') return;
+    var self = this, V = '10.12.2', parts = ['app', 'auth', 'firestore'];
+    (function load(i) {
+      if (i >= parts.length) { boot(); return; }
+      var s = document.createElement('script');
+      s.src = 'https://www.gstatic.com/firebasejs/' + V + '/firebase-' + parts[i] + '-compat.js';
+      s.onload = function () { load(i + 1); };
+      s.onerror = function () {}; // offline → two-tab realness still works
+      document.head.appendChild(s);
+    })(0);
+    function boot() {
+      try {
+        var app = firebase.apps && firebase.apps.length ? firebase.app() : firebase.initializeApp(cfg);
+        firebase.auth(app).signInAnonymously().then(function (cred) {
+          self.uid = S.uid = cred.user.uid; save();
+          self.db = firebase.firestore(app);
+          self.cloud = true;
+          self.db.collection('orbit_rides').where('ts', '>', Date.now() - 10 * 60000)
+            .onSnapshot(function (snap) {
+              snap.docChanges().forEach(function (ch) { self._recv(ch.doc.data()); });
+            }, function () {});
+          if (tab === 'me' || ui.captainOn) render();
+        }).catch(function () {});
+      } catch (e) {}
+    }
+  },
+  publish: function (ride) {
+    if (this.bc) { try { this.bc.postMessage({ ride: ride }); } catch (e) {} }
+    if (this.cloud) { try { this.db.collection('orbit_rides').doc(ride.id).set(JSON.parse(JSON.stringify(ride))); } catch (e) {} }
+  },
+  _recv: function (ride) { if (E.validRequest(ride) && Market.onRide) Market.onRide(ride); }
+};
+
+/* rider side */
+function askRealCaptains() {
+  var now = Date.now();
+  var q = E.quote(ui.from, ui.to, ui.cls, now);
+  if (!q) return;
+  var req = E.mkRideRequest({
+    id: 'RR' + now.toString(36) + Math.random().toString(36).slice(2, 6),
+    riderUid: Market.uid, riderName: S.name,
+    fromId: ui.from, toId: ui.to, classId: ui.cls, fare: q.total
+  }, now);
+  ui.realReq = req; ui.realRole = 'rider';
+  Market.publish(req);
+  clearInterval(ui.realTimer);
+  ui.realTimer = setInterval(function () {
+    if (!ui.realReq || ui.realReq.status !== 'OPEN') { clearInterval(ui.realTimer); return; }
+    if (E.requestExpired(ui.realReq, Date.now())) {
+      clearInterval(ui.realTimer);
+      var cx = E.marketCancel(ui.realReq, Market.uid);
+      if (cx.ok) Market.publish(cx.ride);
+      ui.realReq = null;
+      toast('No real captains this time — the simulated fleet has you 🤖');
+      bookRide();
+      return;
+    }
+    if (tab === 'goTab') { var el = $('realCount'); if (el) el.textContent = Math.max(0, Math.ceil((E.MARKET_OPEN_MS - (Date.now() - ui.realReq.ts)) / 1000)); }
+  }, 500);
+  render();
+}
+function cancelRealSearch(silent) {
+  clearInterval(ui.realTimer);
+  if (ui.realReq) {
+    var cx = E.marketCancel(ui.realReq, Market.uid);
+    if (cx.ok) Market.publish(cx.ride);
+  }
+  ui.realReq = null;
+  if (!silent) render();
+}
+function onMarketRide(ride) {
+  /* rider: my open request got claimed / advanced */
+  if (ui.realRole === 'rider' && ui.realReq && ride.id === ui.realReq.id) {
+    if (ride.status === 'CLAIMED' && ui.realReq.status === 'OPEN') {
+      var resolved = E.marketResolveClaim(ui.realReq, ride, Date.now());
+      if (resolved.status === 'CLAIMED') {
+        ui.realReq = resolved;
+        Market.publish(resolved); // authority: everyone learns who won
+        if (!spend(resolved.fare, 'Ride (real captain) · ' + E.place(resolved.fromId).name + ' → ' + E.place(resolved.toId).name, 'ride')) {
+          cancelRealSearch(true); render(); return;
+        }
+        toast('👤 ' + resolved.captain.name + ' accepted — a real human is driving');
+      }
+    } else if (ride.captainUid && ui.realReq.captainUid === ride.captainUid &&
+               E.MARKET_FLOW.indexOf(ride.status) > E.MARKET_FLOW.indexOf(ui.realReq.status)) {
+      ui.realReq = ride;
+      if (ride.status === 'COMPLETED') {
+        S.ledger.push(E.makeTx('cashback', E.rideCashback(ride.fare, S.plus), 'Ride cashback (' + (S.plus ? '10%' : '2%') + ')', Date.now()));
+        earn('ride', ride.fare);
+        S.trips.unshift({ id: ride.id, quote: { fromId: ride.fromId, toId: ride.toId, classId: ride.classId, km: E.roadKm(ride.fromId, ride.toId), stops: null }, fare: ride.fare, status: 'COMPLETED', startedMs: ride.ts, real: true, driver: { name: ride.captain.name } });
+        save();
+      }
+    }
+    if (tab === 'goTab') render();
+    return;
+  }
+  /* captain: open requests from other humans; and my claimed ride's fate */
+  if (ride.riderUid !== Market.uid) {
+    ui.capReqs = ui.capReqs || {};
+    if (ride.status === 'OPEN' && !E.requestExpired(ride, Date.now())) ui.capReqs[ride.id] = ride;
+    else if (ui.capReqs[ride.id] && (ride.status !== 'OPEN')) delete ui.capReqs[ride.id];
+    if (ui.capRide && ride.id === ui.capRide.id) {
+      if (ride.status === 'CLAIMED' && ride.captainUid !== Market.uid) {
+        ui.capRide = null;
+        toast('Another captain was faster — next one\'s yours');
+      } else if (ride.status === 'CANCELLED') {
+        ui.capRide = null;
+        toast('The rider cancelled');
+      }
+    }
+    if (ui.captainOn && tab === 'me') render();
+  }
+}
+/* captain side */
+function capClaimReal(id) {
+  var req = (ui.capReqs || {})[id];
+  if (!req) return;
+  var me = { uid: Market.uid, name: S.name, car: 'Toyota Corolla', plate: 'M' + String(100 + E.hashStr(Market.uid) % 900), rating: 4.9 };
+  var c = E.marketClaim(req, me, Date.now());
+  if (!c.ok) { toast(c.why); delete ui.capReqs[id]; render(); return; }
+  ui.capRide = c.ride;
+  delete ui.capReqs[id];
+  Market.publish(c.ride);
+  S.captain.seen++; S.captain.accepted++; save();
+  render();
+}
+function capAdvanceReal() {
+  if (!ui.capRide) return;
+  var a = E.marketAdvance(ui.capRide, Market.uid);
+  if (!a.ok) { toast(a.why); return; }
+  ui.capRide = a.ride;
+  Market.publish(a.ride);
+  if (a.ride.status === 'COMPLETED') {
+    var cut = E.captainEarn(a.ride.fare);
+    S.ledger.push(E.makeTx('captain', cut.driver, 'Captain earnings (real ride) · ' + E.place(a.ride.fromId).name + ' → ' + E.place(a.ride.toId).name, Date.now()));
+    S.captain.fares.push(a.ride.fare);
+    save();
+    toast('Real ride complete — ' + money(cut.driver) + ' earned 🎉');
+    setTimeout(function () { ui.capRide = null; if (tab === 'me') render(); }, 2200);
+  }
+  render();
+}
+
 /* ── router ────────────────────────────────────────────────────────── */
 function go(t) {
   tab = t === 'pay' ? 'pay' : t === 'me' ? 'me' : t;
@@ -278,6 +442,7 @@ function goQuote(classId, now) {
     : E.quote(ui.from, ui.to, classId, now);
 }
 function viewGo() {
+  if (ui.realReq) return viewRealRide();
   if (ui.activeTrip) return viewTrip();
   if (ui.activeWheel) return viewWheelRide();
   var now = Date.now();
@@ -322,6 +487,10 @@ function viewGo() {
     h += '<button class="btn" onclick="bookPassRide()">Use pass ride · already paid</button>';
   } else {
     h += '<button class="btn" onclick="bookRide(' + q.total + ')">Book ' + c.name + ' · ' + money(q.total) + '</button>';
+    if (Market.live && !ui.stops.length) {
+      h += '<button class="btn ghost mt" onclick="askRealCaptains()">👤 Ask REAL captains first · ' + money(q.total) + '</button>' +
+        '<div class="faint center">A real human in Captain mode' + (Market.cloud ? ' — any device, anywhere' : ' — e.g. this app in another tab') + ' — can accept your request. Nobody bites in ' + Math.round(E.MARKET_OPEN_MS / 1000) + 's? The simulated fleet takes over.</div>';
+    }
   }
   if (!ui.stops.length) {
     h += '<div class="grid2 mt">';
@@ -559,6 +728,56 @@ function tipDriver(n) {
   t.tipped = E.tipEarn(n);
   save(); render();
   toast(money(n) + ' to ' + t.driver.name + ' — no platform cut 💝');
+}
+
+/* the rider's REAL-ride screen */
+function viewRealRide() {
+  var r = ui.realReq;
+  var h = '<canvas id="map" width="900" height="440"></canvas>';
+  if (r.status === 'OPEN') {
+    var left = Math.max(0, Math.ceil((E.MARKET_OPEN_MS - (Date.now() - r.ts)) / 1000));
+    h += '<div class="card mt center"><b>👤 Asking real captains…</b>' +
+      '<div class="bigmoney mt" id="realCount">' + left + '</div>' +
+      '<div class="dim small">' + esc(E.place(r.fromId).name) + ' → ' + esc(E.place(r.toId).name) + ' · ' + money(r.fare) + '</div>' +
+      '<div class="faint mt">' + (Market.cloud ? 'Broadcasting to every device on the Orbit network.' : 'Open this app in a second tab, switch to 🧢 Captain mode and go online — then accept your own request to see both sides.') + '</div>' +
+      '<button class="btn ghost mt" onclick="cancelRealSearch()">Cancel</button></div>';
+    return h;
+  }
+  var labels = { CLAIMED: 'accepted your ride', ARRIVING: 'is on the way', ARRIVED: 'has arrived 🚗', IN_TRIP: 'is driving you', COMPLETED: 'dropped you off 🎉' };
+  h += '<div class="banner calm">👤 REAL ride — every update below is a human tapping buttons, not a script.</div>';
+  h += '<div class="card"><div class="row"><div class="em" style="font-size:30px">🧢</div>' +
+    '<div class="grow"><b>' + esc(r.captain.name) + '</b> <span class="tag gold">★ ' + r.captain.rating.toFixed(1) + '</span><br>' +
+    '<span class="small dim">' + esc(r.captain.car) + ' · <b>' + esc(r.captain.plate) + '</b></span></div>' +
+    '<div class="total">' + money(r.fare) + '</div></div>' +
+    '<div class="hr"></div><b>' + esc(r.captain.name) + ' ' + labels[r.status] + '</b>' +
+    '<ul class="steps mt">' + E.MARKET_FLOW.slice(1).map(function (st) {
+      var i = E.MARKET_FLOW.indexOf(st), cur = E.MARKET_FLOW.indexOf(r.status);
+      var lbl = { CLAIMED: 'Captain matched', ARRIVING: 'On the way', ARRIVED: 'At your pickup', IN_TRIP: 'On the road', COMPLETED: 'Arrived' }[st];
+      return '<li class="' + (i < cur ? 'done' : i === cur ? 'now' : '') + '">' + lbl + '</li>';
+    }).join('') + '</ul></div>';
+  if (r.status !== 'COMPLETED') {
+    h += '<div class="card flat"><b>🛡️ Safety toolkit</b>' +
+      '<div class="kv mt"><span>Tell your captain the PIN</span><span class="total">' + E.tripPin(r.id) + '</span></div>' +
+      '<div class="kv"><span>Live-trip share code</span><span><b>' + E.shareCode(r.id) + '</b></span></div></div>';
+    if (r.status === 'CLAIMED' || r.status === 'ARRIVING' || r.status === 'ARRIVED') {
+      h += '<button class="btn ghost" onclick="cancelRealRide()">Cancel ride</button>';
+    }
+  } else {
+    h += '<div class="card center"><div class="faint">Cashback landed: ' + money(E.rideCashback(r.fare, S.plus)) + ' · +' + E.pointsFor('ride', r.fare) + ' pts</div>' +
+      '<button class="btn mt" onclick="ui.realReq=null;ui.realRole=null;render()">Done</button></div>';
+  }
+  return h;
+}
+function cancelRealRide() {
+  var r = ui.realReq; if (!r) return;
+  var cx = E.marketCancel(r, Market.uid);
+  if (!cx.ok) { toast(cx.why); return; }
+  Market.publish(cx.ride);
+  S.ledger.push(E.makeTx('refund', r.fare, 'Real ride cancelled — refund', Date.now()));
+  save();
+  ui.realReq = null; ui.realRole = null;
+  toast('Cancelled — ' + money(r.fare) + ' refunded');
+  render();
 }
 
 /* Orbit Wheels — bikes & e-scooters */
@@ -1079,8 +1298,32 @@ function viewCaptain() {
       '<div class="kv mt"><span>You earn</span><span class="total" style="color:var(--accent2)">' + money(o.earn) + '</span></div></div>';
     return h;
   }
+  if (ui.capRide) {
+    var rr = ui.capRide;
+    var nextLabel = { CLAIMED: '🚗 I\'m on my way', ARRIVING: '📍 I\'ve arrived at the pickup', ARRIVED: '▶️ Start the trip', IN_TRIP: '🏁 Complete the trip' }[rr.status];
+    h += '<div class="banner calm">👤 REAL ride — ' + esc(rr.riderName) + ' is a human watching your every tap live.</div>';
+    h += '<div class="card"><div class="kv"><span><b>' + esc(rr.riderName) + '</b> · ' + esc(E.place(rr.fromId).name) + ' → ' + esc(E.place(rr.toId).name) + '</span><span class="total" style="color:var(--accent2)">' + money(E.captainEarn(rr.fare).driver) + '</span></div>' +
+      '<div class="faint">of ' + money(rr.fare) + ' fare · status: ' + rr.status.toLowerCase().replace(/_/g, ' ') + '</div>' +
+      (rr.status !== 'COMPLETED' ? '<button class="btn mt" onclick="capAdvanceReal()">' + nextLabel + '</button>' : '<div class="banner calm mt">Done — payout is in your wallet 🎉</div>') + '</div>';
+    return h;
+  }
   h += '<div class="card row"><div class="grow"><b>' + (ui.capOnline ? 'You\'re online 🟢' : 'You\'re offline') + '</b><div class="faint">' + (ui.capOnline ? 'Offers below — accept or pass, no penalty games.' : 'Go online to see ride offers.') + '</div></div>' +
     '<button class="btn mini' + (ui.capOnline ? ' ghost' : '') + '" onclick="capToggle()">' + (ui.capOnline ? 'Go offline' : 'Go online') + '</button></div>';
+  if (ui.capOnline) {
+    var reals = Object.keys(ui.capReqs || {}).map(function (k) { return ui.capReqs[k]; })
+      .filter(function (r) { return !E.requestExpired(r, Date.now()); });
+    if (reals.length) {
+      h += reals.map(function (r) {
+        return '<div class="card" style="border-color:var(--accent2)"><div class="row"><div class="em">👤</div>' +
+          '<div class="grow"><b>' + esc(r.riderName) + '</b> <span class="tag green">REAL</span>' +
+          '<div class="s dim">' + esc(E.place(r.fromId).name) + ' → ' + esc(E.place(r.toId).name) + ' · ' + E.rideClass(r.classId).name + '</div></div>' +
+          '<div class="end">' + money(E.captainEarn(r.fare).driver) + '<br><span class="faint">of ' + money(r.fare) + '</span></div></div>' +
+          '<button class="btn mt" onclick="capClaimReal(\'' + r.id + '\')">Accept — a real human is waiting</button></div>';
+      }).join('');
+    } else {
+      h += '<div class="faint center mb">👤 Real requests appear here the moment a rider asks — try it: open a second tab' + (Market.cloud ? ' or any other device' : '') + ', book a ride, choose "Ask REAL captains".</div>';
+    }
+  }
   if (ui.capOnline && ui.capOffers && ui.capOffers.length) {
     h += ui.capOffers.map(function (o, i) {
       return '<div class="card flat"><div class="row"><div class="em" style="font-size:24px">' + E.rideClass(o.classId).emoji + '</div>' +
@@ -1093,7 +1336,8 @@ function viewCaptain() {
     h += '<button class="btn ghost" onclick="capRefresh()">🔄 Check for new offers</button>';
   }
   h += '<div class="card flat small"><b>Why captains like Orbit</b><div class="dim mt">' +
-    'You see the full fare, your exact ' + Math.round(E.CAPTAIN_CUT * 100) + '% and the pickup distance <i>before</i> you accept. Passing never hides future offers, and every payout lands in the same in-app wallet, instantly.</div></div>';
+    'You see the full fare, your exact ' + Math.round(E.CAPTAIN_CUT * 100) + '% and the pickup distance <i>before</i> you accept. Passing never hides future offers, and every payout lands in the same in-app wallet, instantly.</div>' +
+    '<div class="faint mt">' + (Market.cloud ? '🌐 Real-ride network: cross-device (Firestore connected)' : Market.live ? '📡 Real-ride network: this device (tabs) — see orbit/SETUP.md for cross-device' : '🤖 Real-ride network unavailable — simulated offers only') + '</div></div>';
   return h;
 }
 function capToggle() {
@@ -1174,6 +1418,8 @@ function resetAll() {
 }
 
 /* ── boot ──────────────────────────────────────────────────────────── */
+Market.onRide = onMarketRide;
+Market.init();
 go('goTab');
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('sw.js').catch(function () {});

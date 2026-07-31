@@ -1,6 +1,6 @@
 /* Orbit service worker — cache-first shell so the app works offline. */
-var CACHE = 'orbit-v3';
-var SHELL = ['.', 'index.html', 'engine.js', 'icon.svg', 'manifest.webmanifest'];
+var CACHE = 'orbit-v4';
+var SHELL = ['.', 'index.html', 'engine.js', 'config.js', 'icon.svg', 'manifest.webmanifest'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(SHELL); }).then(function () { return self.skipWaiting(); }));

@@ -490,6 +490,47 @@ service cloud.firestore {
              ['id', 'name', 'lat', 'lon', 'heading', 'speed', 'etaS', 'arrived', 'ts']);
     }
 
+    // ── Orbit — the everything app (orbit/) ───────────────────────────────
+    // The real rider↔captain marketplace. Anonymous-auth users; a ride
+    // request is created by its rider, claimed by exactly one captain, and
+    // advanced only by that captain. The fare is set once by the rider and
+    // frozen: no update may change it (a captain who could edit the fare
+    // could charge whatever they liked). Requests carry no PII beyond a
+    // chosen display name; any signed-in captain may read the open pool.
+    match /orbit_rides/{rideId} {
+      function frozen() {
+        return request.resource.data.fare == resource.data.fare
+          && request.resource.data.riderUid == resource.data.riderUid
+          && request.resource.data.fromId == resource.data.fromId
+          && request.resource.data.toId == resource.data.toId
+          && request.resource.data.classId == resource.data.classId;
+      }
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.riderUid == request.auth.uid
+        && request.resource.data.status == 'OPEN'
+        && request.resource.data.fare is number && request.resource.data.fare > 0;
+      allow update: if signedIn() && frozen() && (
+        // the rider may only cancel, and not once the trip has started
+        ( resource.data.riderUid == request.auth.uid
+          && request.resource.data.status == 'CANCELLED'
+          && resource.data.status != 'IN_TRIP' && resource.data.status != 'COMPLETED' )
+        // a captain may claim an OPEN request — stamping their own uid
+        || ( resource.data.status == 'OPEN'
+             && request.resource.data.status == 'CLAIMED'
+             && request.resource.data.captainUid == request.auth.uid
+             && request.auth.uid != resource.data.riderUid )
+        // only the assigned captain advances, one legal step at a time
+        || ( resource.data.captainUid == request.auth.uid
+             && request.resource.data.captainUid == request.auth.uid
+             && ( (resource.data.status == 'CLAIMED'  && request.resource.data.status == 'ARRIVING')
+               || (resource.data.status == 'ARRIVING' && request.resource.data.status == 'ARRIVED')
+               || (resource.data.status == 'ARRIVED'  && request.resource.data.status == 'IN_TRIP')
+               || (resource.data.status == 'IN_TRIP'  && request.resource.data.status == 'COMPLETED') ) )
+      );
+      allow delete: if signedIn() && resource.data.riderUid == request.auth.uid;
+    }
+
     // ── AIOS — the AI operating system (aios/) ────────────────────────────
     // Optional cross-device sync: AIOS mirrors a user's whole serialized disk
     // to one document keyed by their anonymous uid. It is private to its owner
