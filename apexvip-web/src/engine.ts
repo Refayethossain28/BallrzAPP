@@ -32,3 +32,8 @@ export {
   apexTier, apexTierColor, tierProgress,
   applyCoinRedemption, appendCoinTx, coinSupply,
 } from './coin/coin.ts';
+export { buildConciergeContext, firstName } from './concierge/context.ts';
+// Proprietary ApexVIP algorithms — © 2026 ApexVIP. All rights reserved.
+export { matchScore, rankDrivers, vehicleFit, haversineKm } from './dispatch/match.ts';
+export { buildPulse, heatAt, nextPeak, goOnlineAdvice, hourOfWeek } from './demand/pulse.ts';
+export { yieldMultiplier, YIELD_CAP, YIELD_FLOOR, YIELD_STEP } from './pricing/yield.ts';

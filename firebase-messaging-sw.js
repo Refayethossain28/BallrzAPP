@@ -1,23 +1,27 @@
 // ApexVIP Service Worker — Push Notifications + Offline PWA shell
-// Version 3.1
+// Version 3.2
 
-const CACHE_NAME = 'apexvip-v7';
+const CACHE_NAME = 'apexvip-v11';
+// Every URL here must actually exist on the published site: cache.addAll() is
+// atomic, so a single 404 rejects the whole call and the offline shell ends up
+// EMPTY (the install handler swallows the rejection). CI checks this list.
 const OFFLINE_URLS = [
-  '/BallrzAPP/apexvip-client.html',
-  '/BallrzAPP/apexvip-driver.html',
-  '/BallrzAPP/apexvip-dubai.html',
-  '/BallrzAPP/apexvip-admin.html',
-  '/BallrzAPP/apexvip-core.js',
-  '/BallrzAPP/firebase.js',
-  '/BallrzAPP/manifest.json',
-  '/BallrzAPP/manifest-driver.json',
-  '/BallrzAPP/icon-60.png',
-  '/BallrzAPP/icon-120.png',
-  '/BallrzAPP/icon-152.png',
-  '/BallrzAPP/icon-167.png',
-  '/BallrzAPP/icon-180.png',
-  '/BallrzAPP/icon-192.png',
-  '/BallrzAPP/icon-512.png',
+  './apexvip-client.html',
+  './apexvip-driver.html',
+  './apexvip-admin.html',
+  './apexvip-core.js',
+  './apexvip-lib.js',
+  './apexvip-engine.js',
+  './firebase.js',
+  './manifest.json',
+  './manifest-driver.json',
+  './icon-60.png',
+  './icon-120.png',
+  './icon-152.png',
+  './icon-167.png',
+  './icon-180.png',
+  './icon-192.png',
+  './icon-512.png',
 ];
 
 // ── Install: pre-cache the app shell ──────────────────────────────────────────
@@ -125,14 +129,16 @@ self.addEventListener('message', event => {
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js');
 
-// NOTE: This config is intentionally public (it's the Firebase SDK config, not a secret)
+// NOTE: This config is intentionally public (it's the Firebase SDK config, not a secret).
+// It MUST match firebase.js (project apexvip-1b4a9) — the apps register tokens
+// against that project, so a mismatched SW never receives their pushes.
 firebase.initializeApp({
-  apiKey: "AIzaSyC0UQeh8dSw3dxx9hTS-STWKcXVEzOStks",
-  authDomain: "apexvip.firebaseapp.com",
-  projectId: "apexvip",
-  storageBucket: "apexvip.firebasestorage.app",
-  messagingSenderId: "125847962387",
-  appId: "1:125847962387:web:331a7de3eb8df8dc4b90e6"
+  apiKey: "AIzaSyAr3OsrEG3yVx-bD3jxc_kSBY7bkCQUPxI",
+  authDomain: "apexvip-1b4a9.firebaseapp.com",
+  projectId: "apexvip-1b4a9",
+  storageBucket: "apexvip-1b4a9.firebasestorage.app",
+  messagingSenderId: "254410067879",
+  appId: "1:254410067879:web:754b71a35182c997f37082"
 });
 
 const messaging = firebase.messaging();
@@ -144,8 +150,8 @@ messaging.onBackgroundMessage(payload => {
 
   self.registration.showNotification(title || 'ApexVIP', {
     body: body || '',
-    icon: '/icon-192.png',
-    badge: '/icon-192.png',
+    icon: './icon-192.png',
+    badge: './icon-192.png',
     data: { screen },
     actions: [
       { action: 'open', title: 'Open' },
@@ -166,7 +172,7 @@ self.addEventListener('notificationclick', event => {
         wins[0].focus();
         wins[0].postMessage({ type: 'NAVIGATE', screen });
       } else {
-        clients.openWindow('/BallrzAPP/apexvip-client.html');
+        clients.openWindow('./apexvip-client.html');
       }
     })
   );

@@ -35,6 +35,7 @@ export default function ComplianceManager({ listing }: { listing: Listing }) {
     try {
       await uploadComplianceDoc(listing, type, file);
       await queryClient.invalidateQueries({ queryKey: ['listing', listing.id] });
+      await queryClient.invalidateQueries({ queryKey: ['listings'] });
     } catch {
       setError('Upload failed — please try again.');
     } finally {
@@ -49,6 +50,7 @@ export default function ComplianceManager({ listing }: { listing: Listing }) {
       const { data } = await publishListing({ listingId: listing.id });
       setResult(data);
       await queryClient.invalidateQueries({ queryKey: ['listing', listing.id] });
+      await queryClient.invalidateQueries({ queryKey: ['listings'] });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not publish.');
     } finally {
@@ -85,7 +87,9 @@ export default function ComplianceManager({ listing }: { listing: Listing }) {
         </ul>
       )}
       {error && <p className="error">{error}</p>}
-      {listing.status !== 'live' && (
+      {listing.trackingOnly ? (
+        <div className="notice">This property is tracked for compliance only and is never advertised. Add it as a listing to let it out.</div>
+      ) : listing.status !== 'live' && (
         <button className="cta" disabled={busy === 'publish'} onClick={publish}>
           {busy === 'publish' ? 'Checking…' : 'Publish listing'}
         </button>

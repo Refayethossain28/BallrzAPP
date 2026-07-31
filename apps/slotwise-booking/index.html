@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Slotwise — Booking &amp; Scheduling</title>
+<style>
+  :root {
+    --bg: #0b0f14;
+    --surface: #121820;
+    --surface-2: #1a2230;
+    --border: rgba(255, 255, 255, 0.08);
+    --text: #e8edf4;
+    --text-dim: #8b96a5;
+    --accent: #2dd4bf;
+    --accent-soft: rgba(45, 212, 191, 0.14);
+    --danger: #f87171;
+    --danger-soft: rgba(248, 113, 113, 0.12);
+    --radius: 14px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- Header ---------- */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(11, 15, 20, 0.85);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    backdrop-filter: blur(8px);
+  }
+  header a.back {
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 13px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    transition: color .15s, border-color .15s;
+    white-space: nowrap;
+  }
+  header a.back:hover { color: var(--text); border-color: rgba(255,255,255,0.2); }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; }
+  .brand .logo {
+    width: 30px; height: 30px; border-radius: 9px;
+    background: linear-gradient(135deg, var(--accent), #0ea5e9);
+    display: grid; place-items: center; font-size: 15px;
+  }
+  .brand small { color: var(--text-dim); font-weight: 400; font-size: 12px; }
+
+  /* ---------- Layout ---------- */
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px 20px 60px;
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 20px;
+  }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+  .card h2 { font-size: 15px; margin-bottom: 14px; font-weight: 600; }
+  .card h2 span { color: var(--text-dim); font-weight: 400; font-size: 13px; }
+
+  /* ---------- Calendar ---------- */
+  .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .cal-head .title { font-size: 16px; font-weight: 700; }
+  .cal-nav { display: flex; gap: 8px; }
+  .cal-nav button {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background .15s;
+  }
+  .cal-nav button.today-btn { width: auto; padding: 0 12px; font-size: 12px; color: var(--text-dim); }
+  .cal-nav button:hover { background: rgba(255,255,255,0.08); }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .cal-grid .dow {
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 6px 0;
+  }
+  .cal-cell {
+    aspect-ratio: 1 / 0.85;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    font-size: 13px;
+    cursor: pointer;
+    background: var(--surface-2);
+    color: var(--text);
+    transition: background .15s, border-color .15s;
+    position: relative;
+    user-select: none;
+  }
+  .cal-cell:hover:not(.empty):not(.past) { background: rgba(255,255,255,0.09); }
+  .cal-cell.empty { background: transparent; cursor: default; }
+  .cal-cell.past { color: #4a5563; cursor: not-allowed; background: rgba(255,255,255,0.02); }
+  .cal-cell.today { border-color: var(--accent); font-weight: 700; }
+  .cal-cell.selected { background: var(--accent-soft); border-color: var(--accent); }
+  .cal-cell .dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--accent);
+  }
+  .cal-cell.past .dot { background: #4a5563; }
+  .cal-cell .dot.hidden { visibility: hidden; }
+
+  /* ---------- Slots ---------- */
+  .slots-empty { color: var(--text-dim); font-size: 14px; padding: 24px 0; text-align: center; }
+  .slot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px; }
+  .slot {
+    padding: 10px 4px;
+    text-align: center;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    font-size: 13px;
+    cursor: pointer;
+    color: var(--text);
+    font-family: var(--font);
+    transition: background .15s, border-color .15s;
+  }
+  .slot:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
+  .slot:disabled { cursor: not-allowed; opacity: 0.45; }
+  .slot.booked {
+    background: var(--danger-soft);
+    border-color: rgba(248, 113, 113, 0.25);
+    color: var(--danger);
+    opacity: 1;
+  }
+  .slot.booked small { display: block; font-size: 10px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .legend { display: flex; gap: 16px; margin-top: 14px; font-size: 12px; color: var(--text-dim); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .legend .free i { background: var(--surface-2); border: 1px solid var(--border); }
+  .legend .taken i { background: var(--danger-soft); border: 1px solid rgba(248,113,113,0.4); }
+
+  /* ---------- Upcoming bookings ---------- */
+  .bookings { grid-column: 1 / -1; }
+  .booking-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 8px;
+    background: var(--surface-2);
+    flex-wrap: wrap;
+  }
+  .booking-row .when {
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+    min-width: 86px;
+  }
+  .booking-row .who { flex: 1; min-width: 150px; }
+  .booking-row .who .name { font-weight: 600; font-size: 14px; }
+  .booking-row .who .svc { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+  .booking-row .price { font-size: 14px; font-weight: 600; }
+  .booking-row button.cancel {
+    background: transparent;
+    border: 1px solid rgba(248,113,113,0.35);
+    color: var(--danger);
+    padding: 6px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: var(--font);
+    transition: background .15s;
+  }
+  .booking-row button.cancel:hover { background: var(--danger-soft); }
+  .no-bookings { color: var(--text-dim); font-size: 14px; padding: 12px 0; }
+
+  /* ---------- Modal ---------- */
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    padding: 20px;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--surface);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 16px;
+    width: 100%;
+    max-width: 420px;
+    padding: 24px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+  }
+  .modal h3 { font-size: 17px; margin-bottom: 4px; }
+  .modal .sub { color: var(--accent); font-size: 13px; font-weight: 600; margin-bottom: 18px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
+  .field input, .field select, .field textarea {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    padding: 10px 12px;
+    font-size: 14px;
+    font-family: var(--font);
+    outline: none;
+    transition: border-color .15s;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent); }
+  .field textarea { resize: vertical; min-height: 64px; }
+  .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+  .btn {
+    flex: 1;
+    padding: 11px;
+    border-radius: 10px;
+    border: none;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--font);
+    transition: filter .15s;
+  }
+  .btn:hover { filter: brightness(1.1); }
+  .btn.primary { background: var(--accent); color: #06231f; }
+  .btn.ghost { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+  .form-error { color: var(--danger); font-size: 12px; margin-top: 8px; display: none; }
+
+  /* ---------- Toast ---------- */
+  .toast {
+    position: fixed;
+    bottom: 24px; left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--surface-2);
+    border: 1px solid var(--accent);
+    color: var(--text);
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .25s, transform .25s;
+    z-index: 60;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<header>
+  <a class="back" href="../index.html">&larr; All apps</a>
+  <div class="brand">
+    <div class="logo">&#128337;</div>
+    <div>Slotwise <small>booking &amp; scheduling</small></div>
+  </div>
+</header>
+
+<main>
+  <!-- Calendar -->
+  <section class="card">
+    <div class="cal-head">
+      <div class="title" id="calTitle"></div>
+      <div class="cal-nav">
+        <button id="prevBtn" title="Previous month" aria-label="Previous month">&larr;</button>
+        <button class="today-btn" id="todayBtn">Today</button>
+        <button id="nextBtn" title="Next month" aria-label="Next month">&rarr;</button>
+      </div>
+    </div>
+    <div class="cal-grid" id="calGrid"></div>
+  </section>
+
+  <!-- Day slots -->
+  <section class="card">
+    <h2 id="slotsTitle">Time slots</h2>
+    <div id="slotsBody"><div class="slots-empty">Select a day on the calendar to see available slots.</div></div>
+    <div class="legend">
+      <span class="free"><i></i>Available</span>
+      <span class="taken"><i></i>Booked</span>
+    </div>
+  </section>
+
+  <!-- Upcoming bookings -->
+  <section class="card bookings">
+    <h2>Upcoming bookings <span id="bookingCount"></span></h2>
+    <div id="bookingList"></div>
+  </section>
+</main>
+
+<!-- Booking modal -->
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <h3 id="modalTitle">New booking</h3>
+    <div class="sub" id="modalWhen"></div>
+    <form id="bookingForm">
+      <div class="field">
+        <label for="fName">Your name</label>
+        <input id="fName" type="text" placeholder="e.g. Jordan Ellis" maxlength="60" required>
+      </div>
+      <div class="field">
+        <label for="fService">Service</label>
+        <select id="fService"></select>
+      </div>
+      <div class="field">
+        <label for="fNotes">Notes <span style="opacity:.6">(optional)</span></label>
+        <textarea id="fNotes" placeholder="Anything we should know?" maxlength="300"></textarea>
+      </div>
+      <div class="form-error" id="formError"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn ghost" id="cancelModal">Cancel</button>
+        <button type="submit" class="btn primary">Confirm booking</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var STORAGE_KEY = 'slotwise_bookings_v1';
+
+  var SERVICES = [
+    { id: 'consult',  name: 'Consultation',       price: 40 },
+    { id: 'massage',  name: 'Deep Tissue Massage', price: 75 },
+    { id: 'training', name: 'Personal Training',   price: 60 },
+    { id: 'physio',   name: 'Physiotherapy',       price: 85 },
+    { id: 'nutrition',name: 'Nutrition Coaching',  price: 55 }
+  ];
+
+  // Slots: 9:00 -> 16:30 in 30-min steps (last slot ends 17:00)
+  var SLOT_TIMES = (function () {
+    var t = [];
+    for (var h = 9; h < 17; h++) {
+      t.push(pad(h) + ':00');
+      t.push(pad(h) + ':30');
+    }
+    return t;
+  })();
+
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function dateKey(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function todayKey() { return dateKey(new Date()); }
+  function parseKey(key) {
+    var p = key.split('-');
+    return new Date(+p[0], +p[1] - 1, +p[2]);
+  }
+  function fmtDate(key) {
+    return parseKey(key).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  }
+  function fmtDateLong(key) {
+    return parseKey(key).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  }
+  function uid() { return 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+  // ---------- Storage ----------
+  function loadBookings() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) { /* corrupt -> reseed */ }
+    var seeded = seedBookings();
+    saveBookings(seeded);
+    return seeded;
+  }
+  function saveBookings(list) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+  }
+
+  // Seed a handful of realistic bookings relative to today.
+  function seedBookings() {
+    var names = ['Maya Chen', 'Liam O’Connor', 'Priya Nair', 'Diego Fuentes', 'Amara Okafor', 'Tom Becker', 'Sofia Rossi'];
+    var plan = [
+      { dayOffset: 0, time: '14:00', svc: 1, name: names[0], notes: 'Shoulder tension' },
+      { dayOffset: 1, time: '09:30', svc: 0, name: names[1], notes: '' },
+      { dayOffset: 1, time: '11:00', svc: 2, name: names[2], notes: 'First session' },
+      { dayOffset: 2, time: '10:00', svc: 3, name: names[3], notes: 'Knee rehab, week 3' },
+      { dayOffset: 2, time: '15:30', svc: 4, name: names[4], notes: '' },
+      { dayOffset: 4, time: '13:00', svc: 1, name: names[5], notes: 'Prefers firm pressure' },
+      { dayOffset: 6, time: '09:00', svc: 0, name: names[6], notes: 'Follow-up' }
+    ];
+    var out = [];
+    var base = new Date();
+    for (var i = 0; i < plan.length; i++) {
+      var p = plan[i];
+      var d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + p.dayOffset);
+      var svc = SERVICES[p.svc];
+      out.push({
+        id: uid() + i,
+        date: dateKey(d),
+        time: p.time,
+        name: p.name,
+        service: svc.name,
+        price: svc.price,
+        notes: p.notes,
+        createdAt: Date.now() - i * 1000
+      });
+    }
+    return out;
+  }
+
+  // ---------- State ----------
+  var bookings = loadBookings();
+  var view = new Date();          // month currently shown
+  view.setDate(1);
+  var selectedDay = todayKey();   // YYYY-MM-DD
+  var pendingSlot = null;         // { date, time } while modal open
+
+  function bookingsOn(key) {
+    return bookings.filter(function (b) { return b.date === key; });
+  }
+  function findBooking(key, time) {
+    for (var i = 0; i < bookings.length; i++) {
+      if (bookings[i].date === key && bookings[i].time === time) return bookings[i];
+    }
+    return null;
+  }
+
+  // ---------- Calendar ----------
+  var calGrid = document.getElementById('calGrid');
+  var calTitle = document.getElementById('calTitle');
+
+  function renderCalendar() {
+    calTitle.textContent = view.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    calGrid.innerHTML = '';
+
+    var dows = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    dows.forEach(function (d) {
+      var el = document.createElement('div');
+      el.className = 'dow';
+      el.textContent = d;
+      calGrid.appendChild(el);
+    });
+
+    var year = view.getFullYear(), month = view.getMonth();
+    var firstDow = (new Date(year, month, 1).getDay() + 6) % 7; // Monday-first
+    var daysInMonth = new Date(year, month + 1, 0).getDate();
+    var tKey = todayKey();
+
+    for (var i = 0; i < firstDow; i++) {
+      var blank = document.createElement('div');
+      blank.className = 'cal-cell empty';
+      calGrid.appendChild(blank);
+    }
+
+    for (var day = 1; day <= daysInMonth; day++) {
+      (function (day) {
+        var d = new Date(year, month, day);
+        var key = dateKey(d);
+        var cell = document.createElement('div');
+        cell.className = 'cal-cell';
+        var isPast = key < tKey;
+        if (isPast) cell.classList.add('past');
+        if (key === tKey) cell.classList.add('today');
+        if (key === selectedDay) cell.classList.add('selected');
+
+        var num = document.createElement('span');
+        num.textContent = day;
+        cell.appendChild(num);
+
+        var dot = document.createElement('span');
+        dot.className = 'dot' + (bookingsOn(key).length ? '' : ' hidden');
+        cell.appendChild(dot);
+
+        cell.addEventListener('click', function () {
+          selectedDay = key; // past days are viewable, just not bookable
+          renderCalendar();
+          renderSlots();
+        });
+        calGrid.appendChild(cell);
+      })(day);
+    }
+  }
+
+  document.getElementById('prevBtn').addEventListener('click', function () {
+    view.setMonth(view.getMonth() - 1);
+    renderCalendar();
+  });
+  document.getElementById('nextBtn').addEventListener('click', function () {
+    view.setMonth(view.getMonth() + 1);
+    renderCalendar();
+  });
+  document.getElementById('todayBtn').addEventListener('click', function () {
+    view = new Date();
+    view.setDate(1);
+    selectedDay = todayKey();
+    renderCalendar();
+    renderSlots();
+  });
+
+  // ---------- Slots ----------
+  var slotsBody = document.getElementById('slotsBody');
+  var slotsTitle = document.getElementById('slotsTitle');
+
+  function renderSlots() {
+    if (!selectedDay) {
+      slotsTitle.textContent = 'Time slots';
+      slotsBody.innerHTML = '<div class="slots-empty">Select a day on the calendar to see available slots.</div>';
+      return;
+    }
+    slotsTitle.textContent = fmtDateLong(selectedDay);
+
+    var tKey = todayKey();
+    if (selectedDay < tKey) {
+      slotsBody.innerHTML = '<div class="slots-empty">This date is in the past &mdash; bookings are only possible for today onwards.</div>';
+      return;
+    }
+
+    var now = new Date();
+    var nowHM = pad(now.getHours()) + ':' + pad(now.getMinutes());
+    var grid = document.createElement('div');
+    grid.className = 'slot-grid';
+
+    SLOT_TIMES.forEach(function (time) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'slot';
+      var existing = findBooking(selectedDay, time);
+      if (existing) {
+        btn.classList.add('booked');
+        btn.disabled = true;
+        btn.innerHTML = time + '<small>' + escapeHtml(existing.name.split(' ')[0]) + '</small>';
+        btn.title = existing.name + ' — ' + existing.service;
+      } else if (selectedDay === tKey && time <= nowHM) {
+        btn.disabled = true;
+        btn.textContent = time;
+        btn.title = 'This time has already passed';
+      } else {
+        btn.textContent = time;
+        btn.addEventListener('click', function () { openModal(selectedDay, time); });
+      }
+      grid.appendChild(btn);
+    });
+
+    slotsBody.innerHTML = '';
+    slotsBody.appendChild(grid);
+  }
+
+  // ---------- Upcoming bookings ----------
+  var bookingList = document.getElementById('bookingList');
+  var bookingCount = document.getElementById('bookingCount');
+
+  function renderBookings() {
+    var tKey = todayKey();
+    var upcoming = bookings
+      .filter(function (b) { return b.date >= tKey; })
+      .sort(function (a, b) {
+        return a.date === b.date ? (a.time < b.time ? -1 : 1) : (a.date < b.date ? -1 : 1);
+      });
+
+    bookingCount.textContent = upcoming.length ? '(' + upcoming.length + ')' : '';
+    bookingList.innerHTML = '';
+
+    if (!upcoming.length) {
+      bookingList.innerHTML = '<div class="no-bookings">No upcoming bookings yet &mdash; pick a day and grab a slot.</div>';
+      return;
+    }
+
+    upcoming.forEach(function (b) {
+      var row = document.createElement('div');
+      row.className = 'booking-row';
+      row.innerHTML =
+        '<div class="when">' + fmtDate(b.date) + '<br>' + b.time + '</div>' +
+        '<div class="who"><div class="name">' + escapeHtml(b.name) + '</div>' +
+        '<div class="svc">' + escapeHtml(b.service) +
+        (b.notes ? ' &middot; ' + escapeHtml(b.notes) : '') + '</div></div>' +
+        '<div class="price">$' + b.price + '</div>';
+      var cancel = document.createElement('button');
+      cancel.className = 'cancel';
+      cancel.textContent = 'Cancel';
+      cancel.addEventListener('click', function () {
+        if (!confirm('Cancel ' + b.name + '’s ' + b.service + ' on ' + fmtDate(b.date) + ' at ' + b.time + '?')) return;
+        bookings = bookings.filter(function (x) { return x.id !== b.id; });
+        saveBookings(bookings);
+        refresh();
+        showToast('Booking cancelled');
+      });
+      row.appendChild(cancel);
+      bookingList.appendChild(row);
+    });
+  }
+
+  // ---------- Modal ----------
+  var backdrop = document.getElementById('modalBackdrop');
+  var modalWhen = document.getElementById('modalWhen');
+  var form = document.getElementById('bookingForm');
+  var fName = document.getElementById('fName');
+  var fService = document.getElementById('fService');
+  var fNotes = document.getElementById('fNotes');
+  var formError = document.getElementById('formError');
+
+  // Populate service select
+  SERVICES.forEach(function (s, i) {
+    var opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = s.name + ' — $' + s.price;
+    fService.appendChild(opt);
+  });
+
+  function openModal(date, time) {
+    pendingSlot = { date: date, time: time };
+    modalWhen.textContent = fmtDateLong(date) + ' at ' + time;
+    form.reset();
+    formError.style.display = 'none';
+    backdrop.classList.add('open');
+    setTimeout(function () { fName.focus(); }, 0);
+  }
+  function closeModal() {
+    backdrop.classList.remove('open');
+    pendingSlot = null;
+  }
+  document.getElementById('cancelModal').addEventListener('click', closeModal);
+  backdrop.addEventListener('click', function (e) { if (e.target === backdrop) closeModal(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && backdrop.classList.contains('open')) closeModal();
+  });
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (!pendingSlot) return;
+
+    var name = fName.value.trim();
+    if (!name) { return showFormError('Please enter your name.'); }
+
+    // Guard against stale state: past date/time or a race with another tab.
+    var tKey = todayKey();
+    var now = new Date();
+    var nowHM = pad(now.getHours()) + ':' + pad(now.getMinutes());
+    if (pendingSlot.date < tKey || (pendingSlot.date === tKey && pendingSlot.time <= nowHM)) {
+      return showFormError('That time is in the past. Please pick another slot.');
+    }
+    bookings = loadBookings();
+    if (findBooking(pendingSlot.date, pendingSlot.time)) {
+      renderSlots();
+      return showFormError('Sorry, that slot was just taken. Please pick another.');
+    }
+
+    var svc = SERVICES[+fService.value] || SERVICES[0];
+    bookings.push({
+      id: uid(),
+      date: pendingSlot.date,
+      time: pendingSlot.time,
+      name: name,
+      service: svc.name,
+      price: svc.price,
+      notes: fNotes.value.trim(),
+      createdAt: Date.now()
+    });
+    saveBookings(bookings);
+    closeModal();
+    refresh();
+    showToast('Booked — ' + svc.name + ' on ' + fmtDate(selectedDay));
+  });
+
+  function showFormError(msg) {
+    formError.textContent = msg;
+    formError.style.display = 'block';
+  }
+
+  // ---------- Misc ----------
+  var toastEl = document.getElementById('toast');
+  var toastTimer = null;
+  function showToast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.classList.remove('show'); }, 2400);
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function refresh() {
+    renderCalendar();
+    renderSlots();
+    renderBookings();
+  }
+
+  refresh();
+})();
+</script>
+</body>
+</html>

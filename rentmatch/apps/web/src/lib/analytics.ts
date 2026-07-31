@@ -9,12 +9,16 @@ import { auth, db } from './firebase';
  * Failures are swallowed: analytics must never block or break a user flow.
  */
 export function track(event: Omit<AnalyticsEvent, 'ts' | 'actorId'>): void {
-  const uid = auth.currentUser?.uid;
-  if (!uid) return; // rules require an authenticated, attributed event
-  addDoc(collection(db, 'analyticsEvents'), {
-    ...event,
-    actorId: uid,
-    ts: Date.now(),
-    recordedAt: serverTimestamp(),
-  }).catch(() => {});
+  // Wrapped whole: addDoc validates field values synchronously and THROWS on an
+  // undefined value (not just an async rejection), so a `.catch()` alone can't
+  // honour the "never break a user flow" contract. Strip undefined fields too.
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return; // rules require an authenticated, attributed event
+    const clean: Record<string, unknown> = { actorId: uid, ts: Date.now(), recordedAt: serverTimestamp() };
+    for (const [k, v] of Object.entries(event)) if (v !== undefined) clean[k] = v;
+    addDoc(collection(db, 'analyticsEvents'), clean).catch(() => {});
+  } catch {
+    /* analytics must never throw into a caller */
+  }
 }

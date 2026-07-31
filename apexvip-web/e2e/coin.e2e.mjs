@@ -55,6 +55,8 @@ async function newPage(seed = {}) {
 async function toPayment(page) {
   await page.goto(`${BASE}/apexvip-client.html`, { waitUntil: 'domcontentloaded' });
   await page.getByText('Explore as guest').click();
+  // Home is a two-door landing: enter the Chauffeur side first.
+  await page.locator(`[onclick="go('chauffeur')"]`).first().click();
   await page.getByText('Where would you like to go?').waitFor({ timeout: 5000 });
   await page.locator(`[onclick="goBook('hourly')"]`).first().click();
   await page.locator('#bh_pu').waitFor({ timeout: 5000 });

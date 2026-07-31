@@ -28,9 +28,10 @@ const REQUEST_SCHEMA = {
     },
     hours: { type: "integer", description: "Hours for hourly/as-directed bookings; 0 otherwise." },
     venue: { type: "string", description: "For concierge requests: the venue/restaurant; else empty." },
+    phone: { type: "string", description: "Client mobile number if present in the message; else empty." },
     notes: { type: "string" },
   },
-  required: ["type", "client", "datetime", "pickup", "dropoff", "flight", "pax", "vehicle", "hours", "venue", "notes"],
+  required: ["type", "client", "datetime", "pickup", "dropoff", "flight", "pax", "vehicle", "hours", "venue", "phone", "notes"],
 };
 
 const SYSTEM = `You are the intake parser for a luxury chauffeur & concierge dispatch system.
@@ -86,6 +87,86 @@ async function parseWithClaude(c, text) {
   return { ...normalize(payload, text), _engine: "llm" };
 }
 
+/* ---------- client confirmation drafts (AI copilot beyond intake) ---------- */
+
+const DRAFT_SYSTEM = `You write short confirmation texts a luxury chauffeur/concierge
+service sends its clients. Warm, precise, discreet — two or three sentences, no emoji,
+no exclamation marks. Sign off "— Fixr". Confirm the key details back to the client.`;
+
+export async function draftMessage(request) {
+  const c = getClient();
+  if (c) {
+    try {
+      const res = await c.messages.create({
+        model: MODEL,
+        max_tokens: 300,
+        system: DRAFT_SYSTEM,
+        messages: [{
+          role: "user",
+          content: `Draft the confirmation text for this booking:\n${JSON.stringify({
+            client: request.client_name, type: request.type,
+            details: request.parsed_payload, fee: request.quote_amount,
+          })}`,
+        }],
+      });
+      const block = res.content.find((b) => b.type === "text");
+      if (block?.text?.trim()) return { text: block.text.trim(), engine: "llm" };
+    } catch (err) {
+      console.warn("[draft] LLM failed, using template:", err.message);
+    }
+  }
+  return { text: templateDraft(request), engine: "template" };
+}
+
+function templateDraft(r) {
+  const p = r.parsed_payload || {};
+  const name = r.client_name && !/^(new client|guest)$/i.test(r.client_name) ? ` ${r.client_name}` : "";
+  if (r.type === "concierge") {
+    const fee = r.quote_amount ? ` The service fee is $${r.quote_amount}.` : "";
+    return `Good day${name} — we've received your request: ${p.notes || p.venue || "your concierge request"}.` +
+      ` Your concierge is arranging it now and will confirm the details shortly.${fee} — Fixr`;
+  }
+  const route = [p.pickup, p.dropoff].filter(Boolean).join(" to ") || p.dropoff || "your destination";
+  const flight = p.flight ? ` We're tracking flight ${p.flight} and will adjust your pickup automatically.` : "";
+  const fare = r.quote_amount ? ` Your fare is $${r.quote_amount}.` : "";
+  return `Good day${name} — your ${p.vehicle && p.vehicle !== "Any" ? p.vehicle : "car"} is confirmed` +
+    ` for ${p.datetime || "the requested time"}, ${route}.${flight}${fare}` +
+    ` Your chauffeur's details will follow shortly. — Fixr`;
+}
+
+/* ---------- owner digest (AI-written business summary) ---------- */
+
+const DIGEST_SYSTEM = `You write a short weekly business digest for the owner of a luxury
+chauffeur & concierge company. Confident, concrete, numbers-first — 4 to 6 sentences,
+no emoji, no headings. Mention notable clients by name when given. Sign off "— Fixr".`;
+
+export async function writeDigest(data) {
+  const c = getClient();
+  if (c) {
+    try {
+      const res = await c.messages.create({
+        model: MODEL,
+        max_tokens: 500,
+        system: DIGEST_SYSTEM,
+        messages: [{ role: "user", content: `Write the digest from this data:\n${JSON.stringify(data)}` }],
+      });
+      const block = res.content.find((b) => b.type === "text");
+      if (block?.text?.trim()) return { text: block.text.trim(), engine: "llm" };
+    } catch (err) {
+      console.warn("[digest] LLM failed, using template:", err.message);
+    }
+  }
+  const t = data.today || {};
+  const top = (data.top_clients || []).map((x) => `${x.name} (${x.trips} trips)`).join(", ");
+  return {
+    text: `Today: ${t.trips || 0} trips booked worth $${Number(t.booked || 0).toLocaleString()}, ` +
+      `$${Number(t.captured || 0).toLocaleString()} captured, $${Number(t.driver_paid || 0).toLocaleString()} settled to drivers, ` +
+      `$${Number(t.platform_fees || 0).toFixed(2)} in platform fees. ${data.open_requests || 0} requests are open.` +
+      (top ? ` Top clients: ${top}.` : "") + ` — Fixr`,
+    engine: "template",
+  };
+}
+
 /* ---------- heuristic fallback (no dependencies, deterministic) ---------- */
 
 const AIRPORTS = ["JFK", "LGA", "EWR", "LAX", "SFO", "ORD", "MIA", "BOS", "DCA", "IAD", "ATL", "TEB", "VNY"];
@@ -122,8 +203,9 @@ export function heuristicParse(raw) {
   if (type === "airport" && airport && !dropoff) dropoff = airport;
   const hours = parseInt((raw.match(/(\d+)\s*(hours|hrs)/i) || [])[1] || (type === "hourly" ? "3" : "0"), 10);
   const venue = (raw.match(/at ([A-Z][a-zA-Z'’ ]+?)(?: friday| saturday| sunday| monday| tuesday| wednesday| thursday| at |,|$)/) || [])[1] || "";
+  const phone = (raw.match(/(\+?\d[\d\s().-]{8,}\d)/) || [])[1] || "";
 
-  return normalize({ type, client, datetime, pickup, dropoff, flight, pax, vehicle, hours, venue, notes: "" }, raw);
+  return normalize({ type, client, datetime, pickup, dropoff, flight, pax, vehicle, hours, venue, phone, notes: "" }, raw);
 }
 
 function normalize(p, raw) {
@@ -138,6 +220,7 @@ function normalize(p, raw) {
     vehicle: p.vehicle || "Any",
     hours: Number.isFinite(p.hours) ? p.hours : 0,
     venue: p.venue || "",
+    phone: (p.phone || "").trim(),
     notes: p.notes || "",
     raw,
   };

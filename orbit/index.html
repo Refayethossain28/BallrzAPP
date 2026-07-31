@@ -1,0 +1,1045 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Orbit — rides, eats, parcels & pay</title>
+<meta name="description" content="The everything app: book rides with honest upfront fares or name your own, order food, send parcels, and pay — all in one place.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0b0e1a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+:root {
+  --bg: #0b0e1a; --panel: #141a2e; --panel2: #1b2340; --line: #262f52;
+  --text: #eef1fb; --dim: #9aa4c7; --faint: #5b6488;
+  --accent: #6c5cff; --accent2: #22d3a5; --gold: #f5c04c; --red: #ff5d73;
+  --r: 16px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 15px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overscroll-behavior: none;
+}
+#app { max-width: 520px; margin: 0 auto; min-height: 100dvh; display: flex; flex-direction: column; position: relative; }
+
+/* header */
+header {
+  display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px;
+  position: sticky; top: 0; z-index: 20; background: linear-gradient(var(--bg) 75%, transparent);
+}
+.logo { font-weight: 800; font-size: 20px; letter-spacing: .5px; }
+.logo span { color: var(--accent); }
+.chip {
+  margin-left: auto; display: flex; align-items: center; gap: 6px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 99px;
+  padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.chip.tier { margin-left: 0; }
+.chip b { color: var(--accent2); }
+
+main { flex: 1; padding: 0 16px calc(86px + env(safe-area-inset-bottom)); }
+h2 { font-size: 17px; margin: 18px 0 10px; }
+h3 { font-size: 15px; margin: 14px 0 8px; }
+.dim { color: var(--dim); } .faint { color: var(--faint); font-size: 12px; }
+.small { font-size: 13px; }
+
+/* tab bar */
+nav {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 30;
+  display: flex; justify-content: center; background: rgba(11,14,26,.92);
+  backdrop-filter: blur(12px); border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+nav .inner { display: flex; width: 100%; max-width: 520px; }
+nav button {
+  flex: 1; background: none; border: none; color: var(--faint); font: inherit;
+  font-size: 11px; font-weight: 600; padding: 9px 0 8px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+}
+nav button .ico { font-size: 21px; line-height: 1; }
+nav button.on { color: var(--text); }
+nav button.on .ico { transform: translateY(-1px); }
+
+/* cards & controls */
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; margin-bottom: 12px; }
+.card.flat { background: var(--panel2); }
+.row { display: flex; align-items: center; gap: 10px; }
+.row .grow { flex: 1; min-width: 0; }
+.btn {
+  display: block; width: 100%; border: none; border-radius: 14px; cursor: pointer;
+  background: var(--accent); color: #fff; font: inherit; font-weight: 700;
+  padding: 14px; font-size: 15px; text-align: center;
+}
+.btn:disabled { opacity: .45; cursor: default; }
+.btn.ghost { background: var(--panel2); color: var(--text); border: 1px solid var(--line); }
+.btn.mini { width: auto; padding: 8px 14px; font-size: 13px; border-radius: 10px; display: inline-block; }
+.btn.danger { background: var(--red); }
+select, input[type=text], input[type=number], input[type=datetime-local] {
+  width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+  border-radius: 12px; padding: 12px; font: inherit; appearance: none;
+}
+label.f { display: block; font-size: 12px; color: var(--dim); margin: 10px 0 5px; font-weight: 600; }
+.pillrow { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+.pillrow::-webkit-scrollbar { display: none; }
+.pill {
+  flex: 0 0 auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 10px 12px; cursor: pointer; text-align: center; min-width: 92px;
+}
+.pill.on { border-color: var(--accent); background: rgba(108,92,255,.14); }
+.pill .em { font-size: 22px; } .pill .nm { font-weight: 700; font-size: 13px; margin-top: 2px; }
+.pill .pr { font-size: 12px; color: var(--dim); }
+.banner { border-radius: 12px; padding: 10px 12px; font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+.banner.surge { background: rgba(245,192,76,.12); color: var(--gold); border: 1px solid rgba(245,192,76,.35); }
+.banner.calm { background: rgba(34,211,165,.1); color: var(--accent2); border: 1px solid rgba(34,211,165,.3); }
+.hr { height: 1px; background: var(--line); margin: 12px 0; }
+.kv { display: flex; justify-content: space-between; font-size: 13.5px; padding: 3px 0; }
+.kv span:first-child { color: var(--dim); }
+.total { font-weight: 800; font-size: 16px; }
+.tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: rgba(108,92,255,.18); color: #b5aaff; }
+.tag.green { background: rgba(34,211,165,.15); color: var(--accent2); }
+.tag.gold { background: rgba(245,192,76,.15); color: var(--gold); }
+
+/* map */
+#map { width: 100%; height: 230px; border-radius: var(--r); border: 1px solid var(--line); display: block; background: #0e1327; }
+
+/* timeline */
+.steps { list-style: none; }
+.steps li { display: flex; gap: 10px; padding: 6px 0; color: var(--faint); font-size: 13.5px; align-items: center; }
+.steps li::before { content: ''; width: 10px; height: 10px; border-radius: 50%; background: var(--line); flex: 0 0 auto; }
+.steps li.done { color: var(--dim); } .steps li.done::before { background: var(--accent2); }
+.steps li.now { color: var(--text); font-weight: 700; } .steps li.now::before { background: var(--accent); box-shadow: 0 0 0 4px rgba(108,92,255,.25); }
+
+/* lists */
+.item { display: flex; gap: 12px; align-items: center; padding: 12px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); margin-bottom: 10px; cursor: pointer; }
+.item .em { font-size: 26px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; background: var(--panel2); border-radius: 12px; flex: 0 0 auto; }
+.item .grow { flex: 1; min-width: 0; }
+.item .t { font-weight: 700; font-size: 14.5px; } .item .s { font-size: 12.5px; color: var(--dim); }
+.item .end { text-align: right; font-size: 13px; font-weight: 700; flex: 0 0 auto; }
+
+.stars { color: var(--gold); font-size: 22px; letter-spacing: 4px; cursor: pointer; user-select: none; }
+.progress { height: 8px; border-radius: 99px; background: var(--panel2); overflow: hidden; }
+.progress i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 99px; }
+
+/* sheet */
+#sheetWrap { position: fixed; inset: 0; z-index: 40; display: none; }
+#sheetWrap.open { display: block; }
+#sheetBg { position: absolute; inset: 0; background: rgba(0,0,0,.55); }
+#sheet {
+  position: absolute; left: 0; right: 0; bottom: 0; margin: 0 auto; max-width: 520px;
+  background: var(--panel); border-radius: 20px 20px 0 0; border: 1px solid var(--line); border-bottom: none;
+  padding: 16px 16px calc(20px + env(safe-area-inset-bottom)); max-height: 86dvh; overflow-y: auto;
+}
+#sheet .grab { width: 40px; height: 4px; border-radius: 99px; background: var(--line); margin: 0 auto 12px; }
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: 96px; z-index: 60;
+  background: var(--panel2); border: 1px solid var(--line); color: var(--text);
+  padding: 10px 16px; border-radius: 12px; font-size: 13.5px; font-weight: 600;
+  opacity: 0; transition: opacity .25s; pointer-events: none; max-width: 90vw; text-align: center;
+}
+.toast.show { opacity: 1; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.bigmoney { font-size: 34px; font-weight: 800; letter-spacing: -.5px; }
+.center { text-align: center; }
+.mt { margin-top: 10px; } .mb { margin-bottom: 10px; }
+.bid-log div { padding: 6px 0; border-bottom: 1px dashed var(--line); font-size: 13.5px; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+.slidewrap { padding: 6px 0; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo">O<span>rbit</span></div>
+    <div class="chip tier" id="tierChip" onclick="go('me')">🏅 <b id="tierName">Bronze</b></div>
+    <div class="chip" onclick="go('pay')">💳 <b id="walletChip">£0.00</b></div>
+  </header>
+  <main id="main"></main>
+  <nav><div class="inner">
+    <button data-tab="goTab" onclick="go('goTab')"><span class="ico">🚕</span>Go</button>
+    <button data-tab="eat" onclick="go('eat')"><span class="ico">🍔</span>Eat</button>
+    <button data-tab="send" onclick="go('send')"><span class="ico">📦</span>Send</button>
+    <button data-tab="pay" onclick="go('pay')"><span class="ico">💳</span>Pay</button>
+    <button data-tab="me" onclick="go('me')"><span class="ico">⭐</span>Me</button>
+  </div></nav>
+  <div id="sheetWrap"><div id="sheetBg" onclick="closeSheet()"></div><div id="sheet"></div></div>
+  <div class="toast" id="toast"></div>
+</div>
+
+<script src="engine.js"></script>
+<script>
+'use strict';
+var E = OrbitEngine;
+
+/* ── state ─────────────────────────────────────────────────────────── */
+var DEFAULT_STATE = {
+  name: 'You', plus: false, plusSince: null, points: 0,
+  ledger: [], trips: [], orders: [], parcels: [], locks: [], scheduled: [],
+  welcomeUsed: false, contactsSent: {},
+  captain: { seen: 0, accepted: 0, fares: [], seed: 0 },
+  pass: null, payLater: [], refUsed: false, trusted: ''
+};
+var S = load();
+function load() {
+  try {
+    var raw = localStorage.getItem('orbit-state');
+    if (raw) return Object.assign({}, DEFAULT_STATE, JSON.parse(raw));
+  } catch (e) {}
+  var s = JSON.parse(JSON.stringify(DEFAULT_STATE));
+  s.ledger.push(E.makeTx('topup', 25, 'Welcome credit 🎁', Date.now()));
+  return s;
+}
+function save() { try { localStorage.setItem('orbit-state', JSON.stringify(S)); } catch (e) {} }
+
+var tab = 'goTab';
+var ui = { // transient
+  from: 'home', to: 'airport', cls: 'go', bidOpen: false, bidOffer: null,
+  activeTrip: null, tripTimer: null, basket: {}, rest: null, promo: '',
+  sendFrom: 'home', sendTo: 'work', sendSize: 'm', activeOrder: null, activeParcel: null,
+  animFrac: 0,
+  eatMode: 'rest', mbasket: {}, activeQuik: null,
+  captainOn: false, capOnline: false, capOffers: null, capTrip: null,
+  stops: []
+};
+
+/* ── helpers ───────────────────────────────────────────────────────── */
+function $(id) { return document.getElementById(id); }
+function money(n) { return E.fmtMoney(n); }
+function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function toast(msg) {
+  var t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._t); toast._t = setTimeout(function () { t.classList.remove('show'); }, 2400);
+}
+function balance() { return E.walletBalance(S.ledger); }
+function refreshChips() {
+  $('walletChip').textContent = money(balance());
+  $('tierName').textContent = E.tierFor(S.points).name;
+}
+function pay(amount, label, kind) {
+  if (!E.canSpend(S.ledger, amount)) return false;
+  S.ledger.push(E.makeTx(kind || 'spend', -amount, label, Date.now()));
+  return true;
+}
+/* wallet first; short? put it on the PayLater tab (within the honest limit) */
+function spend(amount, label, kind) {
+  if (pay(amount, label, kind)) return 'wallet';
+  var chk = E.plCanCharge(S.payLater, amount, Date.now());
+  if (chk.ok) {
+    E.plCharge(S.payLater, amount, label, Date.now());
+    toast('Wallet short — ' + money(amount) + ' went on your PayLater tab 🗓️');
+    return 'paylater';
+  }
+  toast(chk.why + ' — top up in Pay 💳');
+  return null;
+}
+function earn(kind, amount, label) {
+  var pts = E.pointsFor(kind, amount);
+  var bonus = E.tierFor(S.points).id === 'silver' || E.tierFor(S.points).id === 'gold' || E.tierFor(S.points).id === 'platinum' ? Math.floor(pts * 0.1) : 0;
+  S.points += pts + bonus;
+  if (label) toast(label + '  ·  +' + (pts + bonus) + ' pts');
+}
+function placeOpts(sel) {
+  return E.PLACES.map(function (p) {
+    return '<option value="' + p.id + '"' + (p.id === sel ? ' selected' : '') + '>' + p.emoji + ' ' + esc(p.name) + '</option>';
+  }).join('');
+}
+function openSheet(html) { $('sheet').innerHTML = '<div class="grab"></div>' + html; $('sheetWrap').classList.add('open'); }
+function closeSheet() { $('sheetWrap').classList.remove('open'); }
+
+/* ── router ────────────────────────────────────────────────────────── */
+function go(t) {
+  tab = t === 'pay' ? 'pay' : t === 'me' ? 'me' : t;
+  document.querySelectorAll('nav button').forEach(function (b) {
+    b.classList.toggle('on', b.dataset.tab === tab);
+  });
+  render();
+}
+function render() {
+  closeSheet();
+  var m = $('main');
+  if (tab === 'goTab') m.innerHTML = viewGo();
+  else if (tab === 'eat') m.innerHTML = viewEat();
+  else if (tab === 'send') m.innerHTML = viewSend();
+  else if (tab === 'pay') m.innerHTML = viewPay();
+  else m.innerHTML = viewMe();
+  refreshChips();
+  if (tab === 'goTab') drawMap();
+}
+
+/* ══ GO ═══════════════════════════════════════════════════════════════ */
+function stopIds() { return [ui.from].concat(ui.stops).concat([ui.to]); }
+function goQuote(classId, now) {
+  return ui.stops.length
+    ? E.multiStopQuote(stopIds(), classId, now)
+    : E.quote(ui.from, ui.to, classId, now);
+}
+function viewGo() {
+  if (ui.activeTrip) return viewTrip();
+  var now = Date.now();
+  var s = E.surgeAt(now);
+  var quotes = E.RIDE_CLASSES.map(function (c) { return goQuote(c.id, now); }).filter(Boolean);
+  var q = quotes.find(function (x) { return x.classId === ui.cls; }) || quotes[0];
+  var h = '<canvas id="map" width="900" height="440"></canvas>';
+  h += '<label class="f">Pickup</label><select onchange="ui.from=this.value;render()">' + placeOpts(ui.from) + '</select>';
+  ui.stops.forEach(function (st, i) {
+    h += '<label class="f">Stop ' + (i + 1) + '</label><div class="row">' +
+      '<div class="grow"><select onchange="ui.stops[' + i + ']=this.value;render()">' + placeOpts(st) + '</select></div>' +
+      '<button class="btn mini ghost" onclick="ui.stops.splice(' + i + ',1);render()">✕</button></div>';
+  });
+  h += '<label class="f">Destination</label><select onchange="ui.to=this.value;render()">' + placeOpts(ui.to) + '</select>';
+  if (ui.stops.length < 2) h += '<button class="btn mini ghost mt" onclick="ui.stops.push(\'central\');render()">＋ Add a stop</button>';
+  if (!q) return h + '<div class="card mt center dim">Pick different places for each stop 🙂</div>';
+  h += '<div style="height:12px"></div>';
+  if (s.reason && s.mult > 1) h += '<div class="banner surge">⚡ ' + s.mult.toFixed(1) + '× — ' + esc(s.reason) + '. The full reason & maths are in your fare breakdown.</div>';
+  if (s.reason && s.mult < 1) h += '<div class="banner calm">🌙 ' + esc(s.reason) + ' — fares are ' + Math.round((1 - s.mult) * 100) + '% lower right now.</div>';
+  h += '<div class="pillrow">' + quotes.map(function (x) {
+    var c = E.rideClass(x.classId);
+    return '<div class="pill' + (x.classId === ui.cls ? ' on' : '') + '" onclick="ui.cls=\'' + x.classId + '\';render()">' +
+      '<div class="em">' + c.emoji + '</div><div class="nm">' + c.name + '</div><div class="pr">' + money(x.total) + '</div></div>';
+  }).join('') + '</div>';
+  var c = E.rideClass(ui.cls);
+  h += '<div class="card mt">';
+  h += '<div class="row"><div class="grow"><b>' + c.emoji + ' ' + c.name + '</b> <span class="dim small">· ' + c.blurb + ' · ' + c.seats + ' seat' + (c.seats > 1 ? 's' : '') + '</span></div>' +
+       '<div class="total">' + money(q.total) + '</div></div>';
+  h += '<div class="faint mt">' + q.km + ' km · ~' + q.mins + ' min · ' + (q.co2g === 0 ? '<span class="tag green">0 g CO₂</span>' : '~' + q.co2g + ' g CO₂') + '</div>';
+  h += '<div class="hr"></div>';
+  h += q.breakdown.map(function (l) { return '<div class="kv"><span>' + esc(l.label) + '</span><span>' + money(l.amount) + '</span></div>'; }).join('');
+  h += '<div class="kv total"><span style="color:var(--text)">Upfront total — what you pay</span><span>' + money(q.total) + '</span></div>';
+  h += '</div>';
+  var passHere = E.passCovers(S.pass, ui.from, ui.to, ui.cls, now) && !ui.stops.length;
+  if (passHere) {
+    h += '<div class="banner calm">🎟️ Your Route Pass covers this ride — ' + S.pass.left + ' of ' + E.PASS_RIDES + ' left.</div>';
+    h += '<button class="btn" onclick="bookPassRide()">Use pass ride · already paid</button>';
+  } else {
+    h += '<button class="btn" onclick="bookRide(' + q.total + ')">Book ' + c.name + ' · ' + money(q.total) + '</button>';
+  }
+  if (!ui.stops.length) {
+    h += '<div class="grid2 mt">';
+    h += '<button class="btn ghost" onclick="openBid()">🤝 Name your fare</button>';
+    h += '<button class="btn ghost" onclick="openSchedule()">📅 Schedule</button>';
+    h += '</div>';
+    var pl = E.priceLockQuote(q);
+    h += '<button class="btn ghost mt" onclick="lockPrice()">🔒 Lock ' + money(pl.locked) + ' for ' + pl.days + ' days — ' + money(pl.fee) + '</button>';
+    if (!passHere) {
+      var rp = E.routePassQuote(ui.from, ui.to, ui.cls, now);
+      h += '<button class="btn ghost mt" onclick="buyRoutePass()">🎟️ Route Pass: ' + E.PASS_RIDES + ' rides at ' + money(rp.perRide) + ' — save ' + money(rp.saves) + '</button>';
+    }
+  } else {
+    h += '<div class="faint mt center">Bidding, scheduling and passes apply to single-stop rides.</div>';
+  }
+  var activeLocks = S.locks.filter(function (l) { return E.lockValid(l, now); });
+  if (activeLocks.length) {
+    h += '<h3>Your price locks</h3>' + activeLocks.map(function (l) {
+      return '<div class="card flat row"><div class="grow small"><b>' + esc(E.place(l.fromId).name) + ' → ' + esc(E.place(l.toId).name) + '</b><br><span class="faint">' + E.rideClass(l.classId).name + ' · locked at ' + money(l.locked) + ' · until ' + new Date(l.untilMs).toLocaleDateString() + '</span></div>' +
+        '<button class="btn mini" onclick="useLock(' + l.id + ')">Ride</button></div>';
+    }).join('');
+  }
+  if (S.scheduled.length) {
+    h += '<h3>Scheduled rides</h3>' + S.scheduled.map(function (r, i) {
+      return '<div class="card flat row"><div class="grow small"><b>' + esc(E.place(r.fromId).name) + ' → ' + esc(E.place(r.toId).name) + '</b><br><span class="faint">' + new Date(r.whenMs).toLocaleString() + ' · ' + E.rideClass(r.classId).name + ' · ' + money(r.total) + ' locked in</span></div>' +
+        '<button class="btn mini ghost" onclick="S.scheduled.splice(' + i + ',1);save();render()">✕</button></div>';
+    }).join('');
+  }
+  return h;
+}
+
+function drawMap() {
+  var cv = $('map'); if (!cv) return;
+  var ctx = cv.getContext('2d');
+  var W = cv.width, H = cv.height;
+  var pad = 55;
+  var xs = E.PLACES.map(function (p) { return p.x; }), ys = E.PLACES.map(function (p) { return p.y; });
+  var minX = Math.min.apply(0, xs), maxX = Math.max.apply(0, xs);
+  var minY = Math.min.apply(0, ys), maxY = Math.max.apply(0, ys);
+  function X(x) { return pad + (x - minX) / (maxX - minX) * (W - pad * 2); }
+  function Y(y) { return pad + (y - minY) / (maxY - minY) * (H - pad * 2); }
+  ctx.clearRect(0, 0, W, H);
+  // streets grid
+  ctx.strokeStyle = '#1a2140'; ctx.lineWidth = 2;
+  for (var gx = 0; gx <= 16; gx += 2) { ctx.beginPath(); ctx.moveTo(X(gx), 0); ctx.lineTo(X(gx), H); ctx.stroke(); }
+  for (var gy = 0; gy <= 13; gy += 2) { ctx.beginPath(); ctx.moveTo(0, Y(gy)); ctx.lineTo(W, Y(gy)); ctx.stroke(); }
+  // river
+  ctx.strokeStyle = '#14315a'; ctx.lineWidth = 26; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(X(0), Y(9.6)); ctx.quadraticCurveTo(X(7), Y(10.8), X(16), Y(11.4)); ctx.stroke();
+  // park
+  ctx.fillStyle = 'rgba(34,211,165,.10)';
+  ctx.beginPath(); ctx.ellipse(X(4.6), Y(2.4), 58, 34, 0, 0, 7); ctx.fill();
+  // route
+  var trip = ui.activeTrip;
+  var fromId = trip ? trip.quote.fromId : ui.from, toId = trip ? trip.quote.toId : ui.to;
+  var route = trip ? (trip.quote.stops || [trip.quote.fromId, trip.quote.toId]) : stopIds();
+  var pts = E.pathThrough(route);
+  if (pts.length > 1 && (fromId !== toId || route.length > 2)) {
+    ctx.strokeStyle = '#6c5cff'; ctx.lineWidth = 5; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.setLineDash(trip ? [] : [10, 8]);
+    ctx.beginPath(); ctx.moveTo(X(pts[0].x), Y(pts[0].y));
+    for (var i = 1; i < pts.length; i++) ctx.lineTo(X(pts[i].x), Y(pts[i].y));
+    ctx.stroke(); ctx.setLineDash([]);
+    if (trip && (trip.status === 'IN_TRIP' || trip.status === 'ARRIVING')) {
+      var frac = trip.status === 'ARRIVING' ? 0 : ui.animFrac;
+      var pos = E.posAlong(pts, frac);
+      ctx.font = '26px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(E.rideClass(trip.quote.classId).emoji, X(pos.x), Y(pos.y) - 4);
+    }
+  }
+  // places
+  E.PLACES.forEach(function (p) {
+    var hot = route.indexOf(p.id) !== -1;
+    ctx.font = (hot ? 22 : 15) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.globalAlpha = hot ? 1 : 0.75;
+    ctx.fillText(p.emoji, X(p.x), Y(p.y));
+    if (hot) {
+      ctx.font = 'bold 12px sans-serif'; ctx.fillStyle = '#eef1fb';
+      ctx.fillText(p.name, X(p.x), Y(p.y) + 20);
+    }
+    ctx.globalAlpha = 1;
+  });
+}
+
+function bookRide(fare, lockUsed, viaPass) {
+  var now = Date.now();
+  var q = goQuote(ui.cls, now);
+  if (!q) return;
+  fare = fare != null ? fare : q.total;
+  if (!viaPass && !spend(fare, 'Ride · ' + E.place(q.fromId).name + ' → ' + E.place(q.toId).name, 'ride')) {
+    go('pay'); return;
+  }
+  var drivers = E.driversNear(ui.from, ui.cls, new Date(now).toDateString());
+  var d = E.matchDriver(drivers);
+  var trip = E.createTrip(q, d, fare, now);
+  trip.lockUsed = !!lockUsed;
+  trip.viaPass = !!viaPass;
+  ui.activeTrip = trip;
+  ui.stops = [];
+  S.trips.unshift(trip); save();
+  runTrip();
+  render();
+}
+function buyRoutePass() {
+  var rp = E.routePassQuote(ui.from, ui.to, ui.cls, Date.now());
+  if (!rp) return;
+  if (S.pass && S.pass.left > 0 && Date.now() <= S.pass.untilMs) { toast('You already have an active Route Pass (' + S.pass.left + ' rides left)'); return; }
+  if (!spend(rp.price, 'Route Pass · ' + E.place(ui.from).name + ' ↔ ' + E.place(ui.to).name, 'pass')) return;
+  S.pass = { fromId: ui.from, toId: ui.to, classId: ui.cls, perRide: rp.perRide, left: E.PASS_RIDES, untilMs: Date.now() + E.PASS_DAYS * 86400000 };
+  save(); render();
+  toast('Route Pass active — ' + E.PASS_RIDES + ' rides, saves ' + money(rp.saves) + ' 🎟️');
+}
+function bookPassRide() {
+  if (!E.passCovers(S.pass, ui.from, ui.to, ui.cls, Date.now())) return;
+  S.pass.left--;
+  bookRide(S.pass.perRide, false, true);
+  toast('Pass ride — ' + S.pass.left + ' left');
+}
+function runTrip() {
+  clearInterval(ui.tripTimer);
+  ui.animFrac = 0;
+  ui.tripTimer = setInterval(function () {
+    var t = ui.activeTrip; if (!t) { clearInterval(ui.tripTimer); return; }
+    if (t.status === 'IN_TRIP' && ui.animFrac < 1) {
+      ui.animFrac = Math.min(1, ui.animFrac + 0.045);
+      if (ui.animFrac < 1) { if (tab === 'goTab') { drawMap(); updateTripMeta(); } return; }
+    }
+    if (t.status !== 'COMPLETED') {
+      E.tripAdvance(t, Date.now()); save();
+      if (t.status === 'COMPLETED') {
+        clearInterval(ui.tripTimer);
+        var cash = E.rideCashback(t.fare, S.plus);
+        S.ledger.push(E.makeTx('cashback', cash, 'Ride cashback (' + (S.plus ? '10%' : '2%') + ')', Date.now()));
+        earn('ride', t.fare);
+        save();
+      }
+      if (tab === 'goTab') render();
+    }
+  }, 1600);
+}
+function updateTripMeta() {
+  var el = $('tripPct');
+  if (el && ui.activeTrip) el.textContent = Math.round(ui.animFrac * 100) + '%';
+}
+function viewTrip() {
+  var t = ui.activeTrip, d = t.driver;
+  var h = '<canvas id="map" width="900" height="440"></canvas>';
+  var statusLine = {
+    REQUESTED: 'Finding your driver…', MATCHED: d.name + ' accepted your ride',
+    ARRIVING: d.name + ' is on the way — ' + d.etaMin + ' min', ARRIVED: d.name + ' has arrived 🚗',
+    IN_TRIP: 'On the way — <span id="tripPct">' + Math.round(ui.animFrac * 100) + '%</span> there', COMPLETED: 'You have arrived 🎉', CANCELLED: 'Trip cancelled'
+  }[t.status];
+  h += '<div class="card mt"><div class="row">' +
+    '<div class="em" style="font-size:30px">' + E.rideClass(t.quote.classId).emoji + '</div>' +
+    '<div class="grow"><b>' + esc(d.name) + '</b> <span class="tag gold">★ ' + d.rating.toFixed(2) + '</span><br>' +
+    '<span class="small dim">' + esc(d.car) + ' · <b>' + esc(d.plate) + '</b> · ' + d.trips.toLocaleString() + ' trips</span></div>' +
+    '<div class="total">' + money(t.fare) + '</div></div>';
+  h += '<div class="hr"></div><div><b>' + statusLine + '</b></div>';
+  h += '<ul class="steps mt">' + E.TRIP_FLOW.map(function (st) {
+    var i = E.TRIP_FLOW.indexOf(st), cur = E.TRIP_FLOW.indexOf(t.status);
+    var cls = t.status === 'CANCELLED' ? '' : i < cur ? 'done' : i === cur ? 'now' : '';
+    var label = { REQUESTED: 'Requested', MATCHED: 'Driver matched', ARRIVING: 'Driver on the way', ARRIVED: 'At your pickup', IN_TRIP: 'On the road', COMPLETED: 'Arrived' }[st];
+    return '<li class="' + cls + '">' + label + '</li>';
+  }).join('') + '</ul></div>';
+  if (t.status !== 'COMPLETED' && t.status !== 'CANCELLED') {
+    h += '<div class="card flat"><b>🛡️ Safety toolkit</b>' +
+      '<div class="kv mt"><span>Tell the driver your PIN</span><span class="total">' + E.tripPin(t.id) + '</span></div>' +
+      '<div class="kv"><span>Live-trip share code</span><span><b>' + E.shareCode(t.id) + '</b></span></div>' +
+      (S.trusted ? '<div class="faint mt">🔗 Auto-shared with ' + esc(S.trusted) + ' — they can follow this trip live.</div>' : '') +
+      '<div class="faint mt">Anyone with the code can follow this trip. In a real emergency, tap SOS to call local services.</div>' +
+      '<div class="grid2 mt"><button class="btn mini ghost" onclick="toast(\'Share code copied — send it to a trusted contact\')">📤 Share trip</button>' +
+      '<button class="btn mini danger" onclick="toast(\'SOS demo — this would call emergency services\')">🆘 SOS</button></div></div>';
+    var cq = E.cancelQuote(t, Date.now());
+    h += '<button class="btn ghost" onclick="doCancel()">Cancel ride' + (cq && cq.fee ? ' · ' + money(cq.fee) + ' fee' : ' · free') + '</button>';
+  } else if (t.status === 'COMPLETED') {
+    h += '<div class="card center"><b>How was your trip with ' + esc(d.name) + '?</b>' +
+      '<div class="stars mt" id="stars">' + [1, 2, 3, 4, 5].map(function (n) { return '<span onclick="rate(' + n + ')">☆</span>'; }).join('') + '</div>' +
+      (t.tipped ? '<div class="faint mt">You tipped ' + money(t.tipped) + ' — 100% to ' + esc(d.name) + ' 💝</div>' :
+        '<div class="mt"><span class="faint">Tip ' + esc(d.name) + '? Every penny is theirs:</span><div class="row mt" style="justify-content:center">' +
+        E.TIP_PRESETS.map(function (n) { return '<button class="btn mini ghost" onclick="tipDriver(' + n + ')">£' + n + '</button>'; }).join('') + '</div></div>') +
+      '<div class="faint mt">Cashback landed: ' + money(E.rideCashback(t.fare, S.plus)) + ' → wallet · +' + E.pointsFor('ride', t.fare) + ' pts</div>' +
+      '<button class="btn mt" onclick="endTrip()">Done</button></div>';
+  } else {
+    h += '<button class="btn" onclick="endTrip()">Back</button>';
+  }
+  return h;
+}
+function rate(n) {
+  var spans = $('stars').children;
+  for (var i = 0; i < 5; i++) spans[i].textContent = i < n ? '★' : '☆';
+  if (ui.activeTrip) { ui.activeTrip.rated = n; save(); }
+  toast('Thanks — you rated ' + n + '★');
+}
+function doCancel() {
+  var t = ui.activeTrip; if (!t) return;
+  var cq = E.cancelQuote(t, Date.now()); if (!cq) return;
+  var refund = t.fare - cq.fee;
+  E.cancelTrip(t, Date.now());
+  if (refund > 0) S.ledger.push(E.makeTx('refund', refund, 'Ride cancelled — refund' + (cq.fee ? ' minus ' + money(cq.fee) + ' fee' : ''), Date.now()));
+  save();
+  toast(cq.fee ? 'Cancelled — ' + money(cq.fee) + ' fee (' + cq.reason.toLowerCase() + ')' : 'Cancelled free — ' + cq.reason.toLowerCase());
+  endTrip();
+}
+function endTrip() { clearInterval(ui.tripTimer); ui.activeTrip = null; render(); }
+function tipDriver(n) {
+  var t = ui.activeTrip; if (!t || t.tipped) return;
+  if (!pay(n, 'Tip to ' + t.driver.name + ' (100% theirs)', 'tip')) { toast('Not enough Orbit Cash for the tip'); return; }
+  t.tipped = E.tipEarn(n);
+  save(); render();
+  toast(money(n) + ' to ' + t.driver.name + ' — no platform cut 💝');
+}
+
+/* bidding */
+function openBid() {
+  var q = E.quote(ui.from, ui.to, ui.cls, Date.now()); if (!q) return;
+  ui.bidOffer = Math.round(q.total * 0.85 * 4) / 4;
+  openSheet(bidHtml(q, null));
+}
+function bidHtml(q, responses) {
+  var h = '<h2 style="margin-top:0">🤝 Name your fare</h2>' +
+    '<div class="dim small">The upfront price is ' + money(q.total) + '. Offer what feels fair — nearby drivers accept, counter or pass. Below ' + Math.round(E.BID_FLOOR * 100) + '% of the fare, nobody moves: their time has a price too.</div>' +
+    '<div class="bigmoney center mt" id="bidAmt">' + money(ui.bidOffer) + '</div>' +
+    '<div class="slidewrap"><input type="range" min="' + (q.total * 0.55).toFixed(2) + '" max="' + q.total.toFixed(2) + '" step="0.25" value="' + ui.bidOffer + '" oninput="ui.bidOffer=+this.value;document.getElementById(\'bidAmt\').textContent=money(ui.bidOffer)"></div>' +
+    '<button class="btn" onclick="sendBid()">Send offer</button>';
+  if (responses) {
+    h += '<h3>Driver responses</h3><div class="bid-log">' + responses.map(function (r) {
+      var d = r.driver;
+      if (r.kind === 'accept') return '<div>✅ <b>' + esc(d.name) + '</b> (★' + d.rating.toFixed(2) + ', ' + d.etaMin + ' min away) accepts <b>' + money(r.amount) + '</b></div>';
+      if (r.kind === 'counter') return '<div>↩️ <b>' + esc(d.name) + '</b> counters at <b>' + money(r.amount) + '</b> <button class="btn mini ghost" onclick="takeBid(' + r.amount + ')">Take it</button></div>';
+      return '<div>❌ <b>' + esc(d.name) + '</b> passes</div>';
+    }).join('') + '</div>';
+    var best = E.bestBid(responses);
+    if (best && best.kind === 'accept') h += '<button class="btn mt" onclick="takeBid(' + best.amount + ')">Ride with ' + esc(best.driver.name) + ' · ' + money(best.amount) + '</button>';
+    if (!best) h += '<div class="banner surge mt">No takers at that price — nudge it up a little.</div>';
+  }
+  return h;
+}
+function sendBid() {
+  var q = E.quote(ui.from, ui.to, ui.cls, Date.now()); if (!q) return;
+  var drivers = E.driversNear(ui.from, ui.cls, new Date().toDateString());
+  var responses = E.bidResponses(q, ui.bidOffer, drivers);
+  openSheet(bidHtml(q, responses));
+}
+function takeBid(amount) { closeSheet(); bookRide(amount); }
+
+/* schedule & lock */
+function openSchedule() {
+  var q = E.quote(ui.from, ui.to, ui.cls, Date.now()); if (!q) return;
+  openSheet('<h2 style="margin-top:0">📅 Schedule this ride</h2>' +
+    '<div class="dim small">Book 30 minutes to 7 days ahead. Your price is locked at booking — surge later can\'t touch it.</div>' +
+    '<label class="f">When</label><input type="datetime-local" id="schedWhen">' +
+    '<div class="kv mt"><span>' + esc(E.place(ui.from).name) + ' → ' + esc(E.place(ui.to).name) + ' · ' + E.rideClass(ui.cls).name + '</span><span class="total">' + money(q.total) + '</span></div>' +
+    '<button class="btn mt" onclick="doSchedule()">Lock it in</button>');
+}
+function doSchedule() {
+  var v = $('schedWhen').value;
+  if (!v) { toast('Pick a date & time first'); return; }
+  var whenMs = new Date(v).getTime();
+  var chk = E.validateSchedule(Date.now(), whenMs);
+  if (!chk.ok) { toast(chk.why); return; }
+  var q = E.quote(ui.from, ui.to, ui.cls, whenMs);
+  S.scheduled.push({ fromId: ui.from, toId: ui.to, classId: ui.cls, whenMs: whenMs, total: q.total });
+  save(); closeSheet(); render();
+  toast('Scheduled — ' + money(q.total) + ' locked in ✅');
+}
+function lockPrice() {
+  var q = E.quote(ui.from, ui.to, ui.cls, Date.now()); if (!q) return;
+  var pl = E.priceLockQuote(q);
+  if (!pay(pl.fee, 'Price lock · ' + E.place(ui.from).name + ' → ' + E.place(ui.to).name, 'lock')) { toast('Not enough Orbit Cash for the lock fee'); return; }
+  S.locks.push({ id: Date.now(), fromId: ui.from, toId: ui.to, classId: ui.cls, locked: pl.locked, untilMs: Date.now() + pl.days * 86400000 });
+  save(); render();
+  toast('Price locked at ' + money(pl.locked) + ' for ' + pl.days + ' days 🔒');
+}
+function useLock(id) {
+  var l = S.locks.find(function (x) { return x.id === id; }); if (!l) return;
+  ui.from = l.fromId; ui.to = l.toId; ui.cls = l.classId;
+  S.locks = S.locks.filter(function (x) { return x.id !== id; });
+  bookRide(l.locked, true);
+  toast('Riding at your locked price — ' + money(l.locked));
+}
+
+/* ══ EAT ══════════════════════════════════════════════════════════════ */
+function basketCount() { var n = 0; for (var k in ui.basket) n += ui.basket[k]; return n; }
+function basketTotal(r) {
+  var t = 0;
+  r.menu.forEach(function (m, i) { t += (ui.basket[i] || 0) * m[1]; });
+  return Math.round(t * 100) / 100;
+}
+function viewEat() {
+  if (ui.activeQuik) return viewQuik();
+  if (ui.activeOrder) return viewOrder();
+  if (ui.rest) return viewRestaurant();
+  var h = '<h2>🍔 Eat</h2>';
+  h += '<div class="grid2 mb">' +
+    '<button class="btn mini' + (ui.eatMode === 'rest' ? '' : ' ghost') + '" style="width:100%" onclick="ui.eatMode=\'rest\';render()">🍔 Restaurants</button>' +
+    '<button class="btn mini' + (ui.eatMode === 'market' ? '' : ' ghost') + '" style="width:100%" onclick="ui.eatMode=\'market\';render()">🛒 Market</button></div>';
+  if (ui.eatMode === 'market') return h + viewMarket();
+  if (S.plus) h += '<div class="banner calm">Orbit+ active — free delivery on baskets over £' + E.EAT_FREE_DELIVERY_MIN + ' ✅</div>';
+  else if (!S.welcomeUsed) h += '<div class="banner surge">🎁 First order? Code <b>WELCOME20</b> takes 20% off (max £10).</div>';
+  h += E.RESTAURANTS.map(function (r) {
+    var eq2 = E.eatQuote(r.id, 'home', 20, { plus: S.plus, when: Date.now() });
+    return '<div class="item" onclick="ui.rest=\'' + r.id + '\';ui.basket={};render()">' +
+      '<div class="em">' + r.emoji + '</div>' +
+      '<div class="grow"><div class="t">' + esc(r.name) + (r.dineOut ? ' <span class="tag gold">DineOut −' + E.dineOutPct(S.plus) + '%</span>' : '') + '</div>' +
+      '<div class="s">' + esc(r.cuisine) + ' · ★ ' + r.rating + ' · ' + '££££'.slice(0, r.price) + ' · ' + eq2.etaMin + ' min</div></div>' +
+      '<div class="end">' + (eq2.deliveryFee === 0 ? '<span class="tag green">Free delivery</span>' : money(eq2.deliveryFee)) + '</div></div>';
+  }).join('');
+  return h;
+}
+function viewRestaurant() {
+  var r = E.restaurant(ui.rest);
+  var bt = basketTotal(r);
+  var h = '<div class="row mb"><button class="btn mini ghost" onclick="ui.rest=null;render()">← Back</button></div>';
+  h += '<h2 style="margin-top:4px">' + r.emoji + ' ' + esc(r.name) + '</h2>' +
+    '<div class="dim small">' + esc(r.cuisine) + ' · ★ ' + r.rating + ' · near ' + esc(E.place(r.at).name) + (r.dineOut ? ' · <span class="tag gold">DineOut −' + E.dineOutPct(S.plus) + '% when you eat in</span>' : '') + '</div>';
+  h += '<div style="height:8px"></div>';
+  h += r.menu.map(function (m, i) {
+    var n = ui.basket[i] || 0;
+    return '<div class="item" style="cursor:default"><div class="grow"><div class="t">' + esc(m[0]) + '</div><div class="s">' + money(m[1]) + '</div></div>' +
+      '<button class="btn mini ghost" ' + (n ? '' : 'disabled ') + 'onclick="ui.basket[' + i + ']=Math.max(0,(ui.basket[' + i + ']||0)-1);render()">−</button>' +
+      '<b style="min-width:18px;text-align:center">' + n + '</b>' +
+      '<button class="btn mini" onclick="ui.basket[' + i + ']=(ui.basket[' + i + ']||0)+1;render()">+</button></div>';
+  }).join('');
+  if (bt > 0) {
+    var q = E.eatQuote(r.id, 'home', bt, { plus: S.plus, promo: ui.promo || null, when: Date.now() });
+    h += '<div class="card mt">';
+    h += '<div class="kv"><span>Basket (' + basketCount() + ')</span><span>' + money(q.basket) + '</span></div>';
+    h += '<div class="kv"><span>Delivery to ' + esc(E.place('home').name) + (q.freeDelivery ? ' — Orbit+ perk' : '') + '</span><span>' + (q.deliveryFee ? money(q.deliveryFee) : 'Free') + '</span></div>';
+    if (q.smallOrderFee) h += '<div class="kv"><span>Small-order fee (under £8)</span><span>' + money(q.smallOrderFee) + '</span></div>';
+    h += '<div class="kv"><span>Service fee (10%, capped £3)</span><span>' + money(q.serviceFee) + '</span></div>';
+    if (q.discount) h += '<div class="kv"><span>WELCOME20</span><span style="color:var(--accent2)">−' + money(q.discount) + '</span></div>';
+    h += '<div class="kv total"><span style="color:var(--text)">Total · ~' + q.etaMin + ' min</span><span>' + money(q.total) + '</span></div>';
+    if (!S.welcomeUsed && !ui.promo) h += '<button class="btn mini ghost mt" onclick="ui.promo=\'WELCOME20\';render()">Apply WELCOME20</button>';
+    h += '</div>';
+    h += '<button class="btn" onclick="placeOrder()">Place order · ' + money(q.total) + '</button>';
+  }
+  return h;
+}
+function placeOrder() {
+  var r = E.restaurant(ui.rest);
+  var bt = basketTotal(r);
+  var q = E.eatQuote(r.id, 'home', bt, { plus: S.plus, promo: ui.promo || null, when: Date.now() });
+  if (!spend(q.total, 'Eat · ' + r.name, 'eat')) { go('pay'); return; }
+  if (ui.promo === 'WELCOME20') S.welcomeUsed = true;
+  var items = r.menu.map(function (m, i) { return ui.basket[i] ? ui.basket[i] + '× ' + m[0] : null; }).filter(Boolean);
+  var order = { id: 'E' + Date.now().toString(36).toUpperCase(), restId: r.id, items: items, total: q.total, etaMin: q.etaMin, status: 'PLACED', log: [{ status: 'PLACED', ms: Date.now() }] };
+  ui.activeOrder = order; ui.promo = '';
+  S.orders.unshift(order);
+  earn('eat', q.total);
+  save();
+  runOrder();
+  render();
+}
+function runOrder() {
+  clearInterval(ui.orderTimer);
+  ui.orderTimer = setInterval(function () {
+    var o = ui.activeOrder; if (!o) { clearInterval(ui.orderTimer); return; }
+    if (o.status === 'DELIVERED') { clearInterval(ui.orderTimer); return; }
+    E.orderAdvance(o, Date.now()); save();
+    if (tab === 'eat') render();
+  }, 2600);
+}
+function viewOrder() {
+  var o = ui.activeOrder, r = E.restaurant(o.restId);
+  var labels = { PLACED: 'Order placed', COOKING: r.name + ' is cooking', COURIER_ON_WAY: 'Courier on the way', ALMOST_THERE: 'Almost there…', DELIVERED: 'Delivered — enjoy! 🎉' };
+  var h = '<h2>' + r.emoji + ' ' + esc(labels[o.status]) + '</h2>';
+  h += '<div class="card"><div class="small dim">' + o.items.map(esc).join(' · ') + '</div>' +
+    '<div class="kv mt total"><span style="color:var(--text)">Paid</span><span>' + money(o.total) + '</span></div></div>';
+  h += '<ul class="steps card flat">' + E.ORDER_FLOW.map(function (st) {
+    var i = E.ORDER_FLOW.indexOf(st), cur = E.ORDER_FLOW.indexOf(o.status);
+    return '<li class="' + (i < cur ? 'done' : i === cur ? 'now' : '') + '">' + labels[st] + '</li>';
+  }).join('') + '</ul>';
+  h += o.status === 'DELIVERED'
+    ? '<button class="btn" onclick="ui.activeOrder=null;ui.rest=null;render()">Done</button>'
+    : '<button class="btn ghost" onclick="ui.activeOrder=null;ui.rest=null;render()">Order more while you wait</button>';
+  return h;
+}
+
+/* Market — Quik groceries */
+function mbasketTotal() {
+  var t = 0;
+  E.MARKET_AISLES.forEach(function (a, i) {
+    a.items.forEach(function (m, j) { t += (ui.mbasket[i + ':' + j] || 0) * m[1]; });
+  });
+  return Math.round(t * 100) / 100;
+}
+function viewMarket() {
+  var bt = mbasketTotal();
+  var h = '<div class="banner calm">⚡ Groceries from the Old Town dark store. Close by? We promise <b>' + E.QUIK_PROMISE_MIN + ' minutes</b> — late means ' + money(E.QUIK_LATE_CREDIT) + ' credit, automatically.</div>';
+  h += E.MARKET_AISLES.map(function (a, i) {
+    return '<h3>' + a.emoji + ' ' + esc(a.name) + '</h3>' + a.items.map(function (m, j) {
+      var k = i + ':' + j, n = ui.mbasket[k] || 0;
+      return '<div class="item" style="cursor:default"><div class="grow"><div class="t">' + esc(m[0]) + '</div><div class="s">' + money(m[1]) + '</div></div>' +
+        '<button class="btn mini ghost" ' + (n ? '' : 'disabled ') + 'onclick="ui.mbasket[\'' + k + '\']=Math.max(0,(ui.mbasket[\'' + k + '\']||0)-1);render()">−</button>' +
+        '<b style="min-width:18px;text-align:center">' + n + '</b>' +
+        '<button class="btn mini" onclick="ui.mbasket[\'' + k + '\']=(ui.mbasket[\'' + k + '\']||0)+1;render()">+</button></div>';
+    }).join('');
+  }).join('');
+  if (bt > 0) {
+    var q = E.quikQuote('home', bt, { plus: S.plus, when: Date.now() });
+    h += '<div class="card mt">';
+    h += '<div class="kv"><span>Basket</span><span>' + money(q.basket) + '</span></div>';
+    h += '<div class="kv"><span>Delivery' + (q.fee === 0 ? ' — Orbit+ perk' : '') + '</span><span>' + (q.fee ? money(q.fee) : 'Free') + '</span></div>';
+    if (q.smallOrderFee) h += '<div class="kv"><span>Small-basket fee (under £' + E.QUIK_SMALL_MIN + ')</span><span>' + money(q.smallOrderFee) + '</span></div>';
+    h += '<div class="kv total"><span style="color:var(--text)">Total · ~' + q.etaMin + ' min' + (q.promise15 ? ' ⚡' : '') + '</span><span>' + money(q.total) + '</span></div>';
+    if (q.promise15) h += '<div class="faint mt">⚡ Inside the ' + E.QUIK_PROMISE_MIN + '-minute promise zone.</div>';
+    h += '</div>';
+    h += '<button class="btn" onclick="placeQuik()">Order groceries · ' + money(q.total) + '</button>';
+  }
+  return h;
+}
+function placeQuik() {
+  var bt = mbasketTotal();
+  var q = E.quikQuote('home', bt, { plus: S.plus, when: Date.now() });
+  if (!q) return;
+  if (!spend(q.total, 'Market · Quik groceries', 'eat')) { go('pay'); return; }
+  var items = [];
+  E.MARKET_AISLES.forEach(function (a, i) {
+    a.items.forEach(function (m, j) { var n = ui.mbasket[i + ':' + j]; if (n) items.push(n + '× ' + m[0]); });
+  });
+  var order = { id: 'Q' + Date.now().toString(36).toUpperCase(), items: items, total: q.total, etaMin: q.etaMin, promise15: q.promise15, status: 'PLACED', log: [{ status: 'PLACED', ms: Date.now() }] };
+  ui.activeQuik = order; ui.mbasket = {};
+  S.orders.unshift(order);
+  earn('eat', q.total);
+  save();
+  clearInterval(ui.quikTimer);
+  ui.quikTimer = setInterval(function () {
+    if (!ui.activeQuik || ui.activeQuik.status === 'DELIVERED') { clearInterval(ui.quikTimer); return; }
+    E.quikAdvance(ui.activeQuik, Date.now()); save();
+    if (tab === 'eat') render();
+  }, 2600);
+  render();
+}
+function viewQuik() {
+  var o = ui.activeQuik;
+  var labels = { PLACED: 'Order placed', PACKING: 'Packing your bag', RIDER_ON_WAY: 'Rider on the way ⚡', DELIVERED: 'Delivered — that was quick! 🎉' };
+  var h = '<h2>🛒 ' + labels[o.status] + '</h2>';
+  h += '<div class="card"><div class="small dim">' + o.items.map(esc).join(' · ') + '</div>' +
+    '<div class="kv mt total"><span style="color:var(--text)">Paid · promised ~' + o.etaMin + ' min</span><span>' + money(o.total) + '</span></div>' +
+    (o.promise15 ? '<div class="faint mt">⚡ ' + E.QUIK_PROMISE_MIN + '-minute promise — late means ' + money(E.QUIK_LATE_CREDIT) + ' credit back.</div>' : '') + '</div>';
+  h += '<ul class="steps card flat">' + E.QUIK_FLOW.map(function (st) {
+    var i = E.QUIK_FLOW.indexOf(st), cur = E.QUIK_FLOW.indexOf(o.status);
+    return '<li class="' + (i < cur ? 'done' : i === cur ? 'now' : '') + '">' + labels[st] + '</li>';
+  }).join('') + '</ul>';
+  h += o.status === 'DELIVERED'
+    ? '<button class="btn" onclick="ui.activeQuik=null;render()">Done</button>'
+    : '<button class="btn ghost" onclick="ui.activeQuik=null;render()">Keep shopping</button>';
+  return h;
+}
+
+/* ══ SEND ═════════════════════════════════════════════════════════════ */
+function viewSend() {
+  if (ui.activeParcel) return viewParcel();
+  var h = '<h2>📦 Send</h2><div class="dim small mb">Door-to-door courier in under an hour. Every parcel insured to £100.</div>';
+  h += '<label class="f">Pick up from</label><select onchange="ui.sendFrom=this.value;render()">' + placeOpts(ui.sendFrom) + '</select>';
+  h += '<label class="f">Deliver to</label><select onchange="ui.sendTo=this.value;render()">' + placeOpts(ui.sendTo) + '</select>';
+  h += '<label class="f">Size</label><div class="pillrow">' + E.PARCEL_SIZES.map(function (p) {
+    return '<div class="pill' + (p.id === ui.sendSize ? ' on' : '') + '" onclick="ui.sendSize=\'' + p.id + '\';render()">' +
+      '<div class="em">' + p.emoji + '</div><div class="nm">' + p.name + '</div><div class="pr">to ' + p.maxKg + ' kg</div></div>';
+  }).join('') + '</div>';
+  var q = E.sendQuote(ui.sendFrom, ui.sendTo, ui.sendSize, { plus: S.plus });
+  if (!q) return h + '<div class="card mt center dim">Pick two different places 🙂</div>';
+  h += '<div class="card mt"><div class="kv"><span>' + q.km + ' km · ~' + q.etaMin + ' min · insured to £' + q.insuredTo + (S.plus ? ' · Orbit+ −10%' : '') + '</span><span class="total">' + money(q.total) + '</span></div></div>';
+  h += '<button class="btn" onclick="bookParcel()">Book courier · ' + money(q.total) + '</button>';
+  return h;
+}
+function bookParcel() {
+  var q = E.sendQuote(ui.sendFrom, ui.sendTo, ui.sendSize, { plus: S.plus });
+  if (!spend(q.total, 'Courier · ' + E.place(ui.sendFrom).name + ' → ' + E.place(ui.sendTo).name, 'send')) { go('pay'); return; }
+  var job = { id: 'P' + Date.now().toString(36).toUpperCase(), fromId: ui.sendFrom, toId: ui.sendTo, sizeId: ui.sendSize, total: q.total, status: 'BOOKED', log: [{ status: 'BOOKED', ms: Date.now() }] };
+  ui.activeParcel = job; S.parcels.unshift(job);
+  earn('send', q.total);
+  save();
+  clearInterval(ui.parcelTimer);
+  ui.parcelTimer = setInterval(function () {
+    if (!ui.activeParcel || ui.activeParcel.status === 'DELIVERED') { clearInterval(ui.parcelTimer); return; }
+    E.sendAdvance(ui.activeParcel, Date.now()); save();
+    if (tab === 'send') render();
+  }, 2600);
+  render();
+}
+function viewParcel() {
+  var j = ui.activeParcel;
+  var labels = { BOOKED: 'Courier booked', PICKING_UP: 'Picking up your parcel', ON_THE_WAY: 'On the way', DELIVERED: 'Delivered ✅' };
+  var h = '<h2>📦 ' + labels[j.status] + '</h2>';
+  h += '<div class="card"><div class="kv"><span>' + esc(E.place(j.fromId).name) + ' → ' + esc(E.place(j.toId).name) + ' · ' + E.parcelSize(j.sizeId).name + '</span><span class="total">' + money(j.total) + '</span></div>' +
+    '<div class="faint mt">Tracking ' + j.id + ' · share it so the receiver can follow along.</div></div>';
+  h += '<ul class="steps card flat">' + E.SEND_FLOW.map(function (st) {
+    var i = E.SEND_FLOW.indexOf(st), cur = E.SEND_FLOW.indexOf(j.status);
+    return '<li class="' + (i < cur ? 'done' : i === cur ? 'now' : '') + '">' + labels[st] + '</li>';
+  }).join('') + '</ul>';
+  h += '<button class="btn' + (j.status === 'DELIVERED' ? '' : ' ghost') + '" onclick="ui.activeParcel=null;render()">' + (j.status === 'DELIVERED' ? 'Done' : 'Back') + '</button>';
+  return h;
+}
+
+/* ══ PAY ══════════════════════════════════════════════════════════════ */
+var CONTACTS = ['Amira', 'Ben', 'Chen', 'Dara'];
+function viewPay() {
+  var h = '<h2>💳 Pay</h2>';
+  h += '<div class="card center"><div class="faint">ORBIT CASH</div><div class="bigmoney">' + money(balance()) + '</div>' +
+    '<div class="faint mt">Cashback on every ride: ' + (S.plus ? '10% (Orbit+)' : '2%') + '</div>' +
+    '<div class="grid2 mt">' + [10, 25].map(function (n) { return '<button class="btn ghost" onclick="topUp(' + n + ')">Top up £' + n + '</button>'; }).join('') + '</div></div>';
+  h += '<div class="card"><b>Send to a friend</b><div class="pillrow mt">' + CONTACTS.map(function (c) {
+    return '<div class="pill" onclick="p2p(\'' + c + '\')"><div class="em">👤</div><div class="nm">' + c + '</div><div class="pr">send £5</div></div>';
+  }).join('') + '</div><div class="faint">Instant, free, straight from your Orbit Cash.</div></div>';
+  var pld = E.plDue(S.payLater, Date.now());
+  var open = S.payLater.filter(function (c) { return !c.settled; });
+  h += '<div class="card"><b>🗓️ PayLater</b> <span class="faint">— this month\'s tab, one payment</span>';
+  h += '<div class="progress mt"><i style="width:' + Math.min(100, Math.round(pld.due / E.PAYLATER_LIMIT * 100)) + '%"></i></div>';
+  h += '<div class="kv mt"><span>On the tab</span><span class="total">' + money(pld.due) + ' <span class="faint">of £' + E.PAYLATER_LIMIT + '</span></span></div>';
+  if (open.length) {
+    h += open.slice(-4).map(function (c) { return '<div class="kv"><span>' + esc(c.label) + '</span><span>' + money(c.amount) + '</span></div>'; }).join('');
+    h += E.canSpend(S.ledger, pld.due)
+      ? '<button class="btn mini ghost mt" onclick="settlePL()">Settle ' + money(pld.due) + ' from wallet</button>'
+      : '<div class="faint mt">Top up to settle the tab.</div>';
+  } else {
+    h += '<div class="faint mt">Nothing on the tab. When your wallet is short, purchases land here instead (up to the limit) — no interest, no fees, honest by design.</div>';
+  }
+  h += '</div>';
+  h += '<div class="card"><b>Split a bill</b><div class="grid2 mt">' +
+    '<input type="number" id="splitTotal" placeholder="Total £" min="1" step="0.01">' +
+    '<input type="number" id="splitN" placeholder="People" min="2" step="1" value="3"></div>' +
+    '<button class="btn mini ghost mt" onclick="doSplit()">Split it</button><div class="small mt" id="splitOut"></div></div>';
+  h += '<h3>Activity</h3>';
+  var led = S.ledger.slice().reverse();
+  h += led.length ? led.slice(0, 25).map(function (t) {
+    var pos = t.amount >= 0;
+    return '<div class="item" style="cursor:default"><div class="grow"><div class="t">' + esc(t.label) + '</div><div class="s">' + new Date(t.ms).toLocaleString() + '</div></div>' +
+      '<div class="end" style="color:' + (pos ? 'var(--accent2)' : 'var(--text)') + '">' + (pos ? '+' : '') + money(t.amount) + '</div></div>';
+  }).join('') : '<div class="dim small">No activity yet.</div>';
+  return h;
+}
+function topUp(n) { S.ledger.push(E.makeTx('topup', n, 'Top up', Date.now())); earn('pay', n); save(); render(); toast('Topped up ' + money(n) + ' ✅'); }
+function p2p(name) {
+  if (!pay(5, 'Sent to ' + name + ' 💸', 'p2p')) { toast('Not enough Orbit Cash'); return; }
+  save(); render(); toast('Sent £5.00 to ' + name + ' — instant & free');
+}
+function settlePL() {
+  var due = E.plDue(S.payLater, Date.now()).due;
+  if (!due || !pay(due, 'PayLater settled', 'paylater')) return;
+  E.plSettle(S.payLater, Date.now());
+  earn('pay', due);
+  save(); render();
+  toast('Tab cleared — ' + money(due) + ' settled ✅');
+}
+function doSplit() {
+  var t = parseFloat($('splitTotal').value), n = parseInt($('splitN').value, 10);
+  var shares = E.splitBill(t, n);
+  $('splitOut').innerHTML = shares
+    ? 'Each pays: <b>' + shares.map(money).join(' · ') + '</b> <span class="faint">(pennies shared fairly — it sums exactly)</span>'
+    : '<span class="dim">Enter a total and at least 2 people.</span>';
+}
+
+/* ══ ME ═══════════════════════════════════════════════════════════════ */
+function viewMe() {
+  if (ui.captainOn) return viewCaptain();
+  var tier = E.tierFor(S.points), next = E.nextTier(S.points);
+  var h = '<h2>⭐ ' + esc(S.name) + '</h2>';
+  h += '<button class="btn ghost mb" onclick="ui.captainOn=true;render()">🧢 Switch to Captain mode — drive & earn</button>';
+  // Orbit+
+  h += '<div class="card">';
+  if (S.plus) {
+    var since = S.plusSince || Date.now();
+    var m = monthStats();
+    h += '<div class="row"><b>Orbit+ <span class="tag">ACTIVE</span></b><div class="grow"></div><span class="faint">since ' + new Date(since).toLocaleDateString() + '</span></div>';
+    h += '<div class="kv mt"><span>Saved with Orbit+ so far</span><span class="total" style="color:var(--accent2)">' + money(E.plusSavings(m)) + '</span></div>';
+    h += '<div class="faint">vs ' + money(E.PLUS_PRICE) + '/month</div>';
+    h += '<button class="btn mini ghost mt" onclick="S.plus=false;save();render();toast(\'Orbit+ cancelled — perks end now\')">Cancel</button>';
+  } else {
+    h += '<b>Orbit+ · ' + money(E.PLUS_PRICE) + '/month</b><div class="small dim mt">' + E.PLUS_PERKS.map(function (p) { return '✅ ' + esc(p); }).join('<br>') + '</div>';
+    h += '<button class="btn mt" onclick="joinPlus()">Start ' + E.PLUS_TRIAL_DAYS + '-day free trial</button>';
+  }
+  h += '</div>';
+  // rewards
+  h += '<div class="card"><div class="row"><b>🏅 ' + tier.name + '</b><div class="grow"></div><b>' + S.points.toLocaleString() + ' pts</b></div>';
+  if (next) {
+    var span = next.at - tier.at, into = S.points - tier.at;
+    h += '<div class="progress mt"><i style="width:' + Math.min(100, Math.round(into / span * 100)) + '%"></i></div>' +
+      '<div class="faint mt">' + (next.at - S.points).toLocaleString() + ' pts to ' + next.name + ' — ' + esc(next.perk) + '</div>';
+  } else h += '<div class="faint mt">Top tier — ' + esc(tier.perk) + '</div>';
+  var rq = E.redeemQuote(S.points);
+  h += '<div class="kv mt"><span>Earn: 5 pts/£ rides · 3 eats · 2 parcels · 1 pay</span></div>';
+  h += rq.blocks
+    ? '<button class="btn mini ghost mt" onclick="redeem()">Redeem ' + rq.points.toLocaleString() + ' pts → ' + money(rq.credit) + ' credit</button>'
+    : '<div class="faint">' + (E.REDEEM_RATE.points - (S.points % E.REDEEM_RATE.points)) + ' pts until your next ' + money(E.REDEEM_RATE.credit) + ' redemption</div>';
+  h += '</div>';
+  // impact + history
+  var greenKm = 0, trips = S.trips.filter(function (t) { return t.status === 'COMPLETED'; });
+  trips.forEach(function (t) { if (t.quote.classId === 'green') greenKm += t.quote.km; });
+  h += '<div class="card flat small"><b>Your Orbit life</b>' +
+    '<div class="kv mt"><span>Trips completed</span><span>' + trips.length + '</span></div>' +
+    '<div class="kv"><span>Food orders</span><span>' + S.orders.length + '</span></div>' +
+    '<div class="kv"><span>Parcels sent</span><span>' + S.parcels.length + '</span></div>' +
+    '<div class="kv"><span>Zero-emission km (Green rides)</span><span>' + Math.round(greenKm * 10) / 10 + ' km</span></div></div>';
+  // trip history
+  if (S.trips.length) {
+    h += '<h3>Ride history</h3>' + S.trips.slice(0, 8).map(function (t) {
+      return '<div class="item" style="cursor:default"><div class="em">' + E.rideClass(t.quote.classId).emoji + '</div>' +
+        '<div class="grow"><div class="t">' + esc(E.place(t.quote.fromId).name) + ' → ' + esc(E.place(t.quote.toId).name) + '</div>' +
+        '<div class="s">' + new Date(t.startedMs).toLocaleString() + ' · ' + t.status.toLowerCase().replace(/_/g, ' ') + (t.rated ? ' · rated ' + t.rated + '★' : '') + '</div></div>' +
+        '<div class="end">' + money(t.fare) + '</div></div>';
+    }).join('');
+  }
+  h += '<div class="card"><b>🎁 Give £5, get £5</b>' +
+    '<div class="kv mt"><span>Your code — share it</span><span class="total">' + E.referralCode(S.name) + '</span></div>' +
+    (S.refUsed
+      ? '<div class="faint mt">Referral bonus already claimed ✅</div>'
+      : '<div class="row mt"><div class="grow"><input type="text" id="refIn" placeholder="Friend\'s code" maxlength="6" style="text-transform:uppercase"></div>' +
+        '<button class="btn mini" onclick="applyRef()">Apply</button></div>') +
+    '<div class="faint mt">Demo note: any valid code that isn\'t your own works once.</div></div>';
+  h += '<div class="card flat small"><b>🛡️ Safety centre</b><div class="dim mt">Every trip gets a driver-verify PIN and a live share code. Drivers are simulated here — this is a product demo, and all data stays on your device.</div>' +
+    '<label class="f">Trusted contact — trips auto-share with them</label>' +
+    '<div class="row"><div class="grow"><input type="text" id="trustIn" placeholder="e.g. Amira" value="' + esc(S.trusted) + '"></div>' +
+    '<button class="btn mini" onclick="S.trusted=document.getElementById(\'trustIn\').value.trim();save();render();toast(S.trusted?\'Trips now auto-share with \'+S.trusted:\'Auto-share off\')">Save</button></div>' +
+    '<button class="btn mini ghost mt" onclick="resetAll()">Reset the demo</button></div>';
+  return h;
+}
+/* Captain mode — the driver's side */
+function viewCaptain() {
+  var C = S.captain;
+  var day = E.captainDaySummary(C.fares);
+  var rate = E.acceptanceRate(C.accepted, C.seen);
+  var h = '<div class="row mb"><button class="btn mini ghost" onclick="ui.captainOn=false;ui.capOnline=false;ui.capTrip=null;render()">← Rider mode</button></div>';
+  h += '<h2 style="margin-top:4px">🧢 Captain ' + esc(S.name) + '</h2>';
+  h += '<div class="card center"><div class="faint">TODAY, AFTER ORBIT\'S 20%</div><div class="bigmoney" style="color:var(--accent2)">' + money(day.net) + '</div>' +
+    '<div class="faint mt">' + day.trips + ' trip' + (day.trips === 1 ? '' : 's') + ' · ' + money(day.gross) + ' gross · you keep ' + Math.round(E.CAPTAIN_CUT * 100) + 'p in every £' + (rate != null ? ' · ' + rate + '% acceptance' : '') + '</div></div>';
+  if (ui.capTrip) {
+    var o = ui.capTrip.offer, pct = Math.round(ui.capTrip.frac * 100);
+    h += '<div class="card"><b>' + (pct < 100 ? 'Driving — ' + pct + '%' : 'Trip complete 🎉') + '</b>' +
+      '<div class="small dim mt">' + esc(E.place(o.fromId).name) + ' → ' + esc(E.place(o.toId).name) + ' · ' + o.km + ' km</div>' +
+      '<div class="progress mt"><i style="width:' + pct + '%"></i></div>' +
+      '<div class="kv mt"><span>You earn</span><span class="total" style="color:var(--accent2)">' + money(o.earn) + '</span></div></div>';
+    return h;
+  }
+  h += '<div class="card row"><div class="grow"><b>' + (ui.capOnline ? 'You\'re online 🟢' : 'You\'re offline') + '</b><div class="faint">' + (ui.capOnline ? 'Offers below — accept or pass, no penalty games.' : 'Go online to see ride offers.') + '</div></div>' +
+    '<button class="btn mini' + (ui.capOnline ? ' ghost' : '') + '" onclick="capToggle()">' + (ui.capOnline ? 'Go offline' : 'Go online') + '</button></div>';
+  if (ui.capOnline && ui.capOffers && ui.capOffers.length) {
+    h += ui.capOffers.map(function (o, i) {
+      return '<div class="card flat"><div class="row"><div class="em" style="font-size:24px">' + E.rideClass(o.classId).emoji + '</div>' +
+        '<div class="grow"><b>' + esc(E.place(o.fromId).name) + ' → ' + esc(E.place(o.toId).name) + '</b>' +
+        '<div class="s dim">' + o.pickupKm + ' km to pickup · ' + o.km + ' km trip · ~' + o.mins + ' min' + (o.surge && o.surge.mult > 1 ? ' · <span class="tag gold">' + o.surge.mult.toFixed(1) + '×</span>' : '') + '</div></div>' +
+        '<div class="end">' + money(o.earn) + '<br><span class="faint">of ' + money(o.fare) + '</span></div></div>' +
+        '<div class="grid2 mt"><button class="btn mini" onclick="capAccept(' + i + ')">Accept</button><button class="btn mini ghost" onclick="capPass(' + i + ')">Pass</button></div></div>';
+    }).join('');
+  } else if (ui.capOnline) {
+    h += '<button class="btn ghost" onclick="capRefresh()">🔄 Check for new offers</button>';
+  }
+  h += '<div class="card flat small"><b>Why captains like Orbit</b><div class="dim mt">' +
+    'You see the full fare, your exact ' + Math.round(E.CAPTAIN_CUT * 100) + '% and the pickup distance <i>before</i> you accept. Passing never hides future offers, and every payout lands in the same in-app wallet, instantly.</div></div>';
+  return h;
+}
+function capToggle() {
+  ui.capOnline = !ui.capOnline;
+  if (ui.capOnline) capRefresh(); else { ui.capOffers = null; render(); }
+}
+function capRefresh() {
+  S.captain.seed++;
+  save();
+  ui.capOffers = E.captainOffers(new Date().toDateString() + '#' + S.captain.seed, Date.now(), 4);
+  render();
+}
+function capPass(i) {
+  S.captain.seen++;
+  ui.capOffers.splice(i, 1);
+  save(); render();
+}
+function capAccept(i) {
+  var o = ui.capOffers[i];
+  S.captain.seen++; S.captain.accepted++;
+  ui.capOffers = null;
+  ui.capTrip = { offer: o, frac: 0 };
+  save(); render();
+  clearInterval(ui.capTimer);
+  ui.capTimer = setInterval(function () {
+    if (!ui.capTrip) { clearInterval(ui.capTimer); return; }
+    ui.capTrip.frac = Math.min(1, ui.capTrip.frac + 0.2);
+    if (ui.capTrip.frac >= 1) {
+      clearInterval(ui.capTimer);
+      S.captain.fares.push(o.fare);
+      S.ledger.push(E.makeTx('captain', o.earn, 'Captain earnings · ' + E.place(o.fromId).name + ' → ' + E.place(o.toId).name, Date.now()));
+      save();
+      setTimeout(function () { ui.capTrip = null; if (tab === 'me') { capRefresh(); toast('Trip done — ' + money(o.earn) + ' paid to your wallet 🎉'); } }, 1400);
+    }
+    if (tab === 'me') render();
+  }, 1200);
+}
+
+function monthStats() {
+  var rideSpend = 0, dineOutSpend = 0, parcelSpend = 0, deliveriesSaved = 0;
+  S.trips.forEach(function (t) { if (t.status === 'COMPLETED') rideSpend += t.fare; });
+  S.parcels.forEach(function (p) { parcelSpend += p.total; });
+  S.orders.forEach(function (o) { deliveriesSaved += o.total >= E.EAT_FREE_DELIVERY_MIN ? 2.5 : 0; });
+  return { rideSpend: rideSpend, dineOutSpend: dineOutSpend, parcelSpend: parcelSpend, deliveriesSaved: deliveriesSaved };
+}
+function joinPlus() {
+  S.plus = true; S.plusSince = Date.now(); save(); render();
+  toast('Orbit+ trial started — ' + E.PLUS_TRIAL_DAYS + ' days free 🎉');
+}
+function redeem() {
+  var rq = E.redeemQuote(S.points);
+  if (!rq.blocks) return;
+  S.points -= rq.points;
+  S.ledger.push(E.makeTx('redeem', rq.credit, 'Rewards redeemed (' + rq.points.toLocaleString() + ' pts)', Date.now()));
+  save(); render();
+  toast(rq.points.toLocaleString() + ' pts → ' + money(rq.credit) + ' Orbit Cash ✨');
+}
+function applyRef() {
+  var code = $('refIn').value;
+  var res = E.applyReferral(code, S.name, S.refUsed);
+  if (!res.ok) { toast(res.why); return; }
+  S.refUsed = true;
+  S.ledger.push(E.makeTx('referral', res.bonus, 'Referral bonus 🎁', Date.now()));
+  save(); render();
+  toast('£' + res.bonus + ' for you — and £' + res.bonus + ' for your friend 🎉');
+}
+function resetAll() {
+  localStorage.removeItem('orbit-state');
+  location.reload();
+}
+
+/* ── boot ──────────────────────────────────────────────────────────── */
+go('goTab');
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  navigator.serviceWorker.register('sw.js').catch(function () {});
+}
+</script>
+</body>
+</html>

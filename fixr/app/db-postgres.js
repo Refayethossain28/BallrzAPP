@@ -29,6 +29,23 @@ export async function init() {
       amount INTEGER, platform_fee DOUBLE PRECISION, driver_share INTEGER, transfer_ref TEXT,
       status TEXT, created_at TEXT NOT NULL
     )`);
+  await q(`
+    CREATE TABLE IF NOT EXISTS clients (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, name_key TEXT NOT NULL UNIQUE,
+      tier TEXT DEFAULT 'standard', preferences TEXT DEFAULT '', phone TEXT DEFAULT '',
+      created_at TEXT NOT NULL, last_seen_at TEXT
+    )`);
+  await q(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS phone TEXT DEFAULT ''`);
+  await q(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY, request_id TEXT, recipient TEXT, channel TEXT,
+      body TEXT, status TEXT, created_at TEXT NOT NULL
+    )`);
+  await q(`
+    CREATE TABLE IF NOT EXISTS vendors (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT DEFAULT '',
+      contact TEXT DEFAULT '', notes TEXT DEFAULT '', created_at TEXT NOT NULL
+    )`);
 }
 
 export async function seedIfEmpty() {
@@ -51,14 +68,104 @@ export async function setResourceLocation(id, lat, lng) {
   await q(`UPDATE resources SET last_lat=$1, last_lng=$2, last_ping_at=$3 WHERE id=$4`, [lat, lng, now(), id]);
 }
 
-export async function createRequest({ type, client_name, source, raw, parsed, quote_amount, sla_minutes }) {
+/* ---------- clients (the memory layer) ---------- */
+const GENERIC_NAMES = /^(new client|guest|client|customer)$/i;
+
+export async function findOrCreateClient(name, phone) {
+  const clean = (name || "").trim();
+  if (!clean || GENERIC_NAMES.test(clean)) return null;
+  const key = clean.toLowerCase();
+  const ph = (phone || "").trim();
+  let c = (await q(`SELECT * FROM clients WHERE name_key=$1`, [key])).rows[0];
+  if (!c) {
+    const id = "C" + randomUUID().slice(0, 8);
+    await q(`INSERT INTO clients (id, name, name_key, phone, created_at, last_seen_at) VALUES ($1,$2,$3,$4,$5,$6)
+             ON CONFLICT (name_key) DO NOTHING`, [id, clean, key, ph, now(), now()]);
+    c = (await q(`SELECT * FROM clients WHERE name_key=$1`, [key])).rows[0];
+  } else {
+    await q(`UPDATE clients SET last_seen_at=$1, phone=CASE WHEN $2<>'' THEN $2 ELSE phone END WHERE id=$3`,
+      [now(), ph, c.id]);
+    c = (await q(`SELECT * FROM clients WHERE id=$1`, [c.id])).rows[0];
+  }
+  return c;
+}
+
+/* ---------- notifications ---------- */
+export async function recordNotification({ request_id, recipient, channel, body, status }) {
+  const id = "N" + randomUUID().slice(0, 8);
+  await q(`INSERT INTO notifications (id, request_id, recipient, channel, body, status, created_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    [id, request_id || null, recipient || "", channel, body, status, now()]);
+  return id;
+}
+export async function listNotifications(limit = 30) {
+  return (await q(`SELECT * FROM notifications ORDER BY created_at DESC LIMIT $1`, [limit])).rows;
+}
+
+/* ---------- vendors (concierge rolodex) ---------- */
+export async function createVendor({ name, category, contact, notes }) {
+  const id = "V" + randomUUID().slice(0, 8);
+  await q(`INSERT INTO vendors (id, name, category, contact, notes, created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
+    [id, name, category || "", contact || "", notes || "", now()]);
+  return (await q(`SELECT * FROM vendors WHERE id=$1`, [id])).rows[0];
+}
+export async function listVendors() {
+  return (await q(`SELECT * FROM vendors ORDER BY name`)).rows;
+}
+export async function updateVendor(id, { name, category, contact, notes }) {
+  const v = (await q(`SELECT * FROM vendors WHERE id=$1`, [id])).rows[0];
+  if (!v) return null;
+  await q(`UPDATE vendors SET name=$1, category=$2, contact=$3, notes=$4 WHERE id=$5`,
+    [name ?? v.name, category ?? v.category, contact ?? v.contact, notes ?? v.notes, id]);
+  return (await q(`SELECT * FROM vendors WHERE id=$1`, [id])).rows[0];
+}
+
+export async function getClientByName(name) {
+  const key = (name || "").trim().toLowerCase();
+  if (!key || GENERIC_NAMES.test(key)) return null;
+  const c = (await q(`SELECT * FROM clients WHERE name_key=$1`, [key])).rows[0];
+  return c ? withClientStats(c) : null;
+}
+
+export async function listClients() {
+  const { rows } = await q(`SELECT * FROM clients ORDER BY last_seen_at DESC`);
+  return Promise.all(rows.map(withClientStats));
+}
+
+export async function updateClientPrefs(id, preferences) {
+  await q(`UPDATE clients SET preferences=$1 WHERE id=$2`, [preferences || "", id]);
+  const c = (await q(`SELECT * FROM clients WHERE id=$1`, [id])).rows[0];
+  return c ? withClientStats(c) : null;
+}
+
+async function withClientStats(c) {
+  const s = (await q(
+    `SELECT COUNT(*)::int trips, COALESCE(SUM(quote_amount),0)::int spend FROM requests WHERE client_id=$1`, [c.id]
+  )).rows[0];
+  return { ...c, trips: s.trips, spend: s.spend };
+}
+
+/* ---------- stats ---------- */
+export async function getStats() {
+  const dayStart = new Date().toISOString().slice(0, 10);
+  const r = (await q(`SELECT COUNT(*)::int trips, COALESCE(SUM(quote_amount),0)::int booked,
+      COALESCE(SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END),0)::int completed
+      FROM requests WHERE created_at >= $1`, [dayStart])).rows[0];
+  const p = (await q(`SELECT COALESCE(SUM(amount),0)::int captured, COALESCE(SUM(driver_share),0)::int driver_paid,
+      COALESCE(SUM(platform_fee),0)::float platform_fees
+      FROM payments WHERE status='succeeded' AND created_at >= $1`, [dayStart])).rows[0];
+  const open = (await q(`SELECT COUNT(*)::int c FROM requests WHERE status != 'completed'`)).rows[0].c;
+  return { today: { ...r, ...p }, open_requests: open };
+}
+
+export async function createRequest({ type, client_name, client_id, source, raw, parsed, quote_amount, sla_minutes }) {
   const id = "R" + randomUUID().slice(0, 8);
   const sla = sla_minutes != null ? new Date(Date.now() + sla_minutes * 60000).toISOString() : null;
   const audit = [{ t: now(), action: `created via ${source}`, actor: "system" }];
   await q(`INSERT INTO requests
-      (id, client_name, type, status, source, raw_inbound_text, parsed_payload, quote_amount, sla_due_at, audit_log, created_at)
-      VALUES ($1,$2,$3,'quoted',$4,$5,$6,$7,$8,$9,$10)`,
-    [id, client_name || "New client", type, source, raw || "", JSON.stringify(parsed || {}),
+      (id, client_id, client_name, type, status, source, raw_inbound_text, parsed_payload, quote_amount, sla_due_at, audit_log, created_at)
+      VALUES ($1,$2,$3,$4,'quoted',$5,$6,$7,$8,$9,$10,$11)`,
+    [id, client_id || null, client_name || "New client", type, source, raw || "", JSON.stringify(parsed || {}),
      quote_amount ?? null, sla, JSON.stringify(audit), now()]);
   return getRequest(id);
 }

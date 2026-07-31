@@ -1,7 +1,25 @@
 # Ripple — from demo to public messenger
 
+**Ripple's purpose: it helps you keep your word.** Every other messenger just
+moves text around; Ripple is built around the *health and integrity of your
+relationships* — the rhythm of them (Pulse) and the promises you make in them
+(Kept).
+
 Ripple ships in two layers so it's genuinely useful the moment you open it, and
 genuinely deployable when you're ready for real users.
+
+## 🤝 Kept — the purpose (no other messenger does this)
+
+People make small promises in chat constantly — "I'll call you tonight", "send
+it by Friday", "let's do lunch next week" — and quietly forget them, which is the
+slow erosion of trust between people. When you send a message that sounds like a
+commitment, Ripple's `detectCommitment()` (pure, on-device — see
+[`engine.js`](./engine.js)) recognises it, pulls out the **action** and a **due
+time** from natural language, and offers to **track it**. Tracked promises live
+on-device in `S.promises`, remind you ~15 min before they're due, and feed a
+**kept-rate** score (🤝 button in the header) so you can see how reliably you
+follow through. Covered by unit tests in
+[`../scripts/test-ripple-logic.mjs`](../scripts/test-ripple-logic.mjs).
 
 ## ✨ Pulse — the one thing no other messenger does
 
@@ -122,6 +140,19 @@ lets a delete win, keeps `ts` order — the unit tests pin this).
 - **Honest scope:** text only (media/polls aren't encrypted yet), one identity
   key per device (no multi-device key sync), and no post-compromise key rotation
   — real ECDH+AES E2EE, not yet a production Signal-grade system.
+
+### Contacts — invite & find (platform-limited)
+
+**New chat → Invite friends** opens the device's native share sheet
+(`navigator.share`) so you can send a contact your `?add=<handle>` link — this is
+the only way an **iOS** web app can reach the address book (Apple blocks direct
+contact access for web pages entirely). **Find contacts** uses the **Contact
+Picker API** (`navigator.contacts` — Android Chrome only) to let the user pick
+contacts; their phone numbers are canonicalised (`normalizePhone()`) and
+**SHA-256 hashed on-device**, then matched against `ripple_contacts/<hash>`
+(populated when a user adds an optional phone in Settings). Only hashes are ever
+stored/queried — the number never leaves the device. Note: phone-number hashes
+are guessable, the same privacy trade-off every contact-matching messenger makes.
 
 ### Direct connect by username (no link needed)
 

@@ -19,7 +19,7 @@ import {
   type DealRecord, type DealViewing, type DirectDebitMandate, type EpcRating,
   type ExpenseCategory, type ExpenseEntry, type ExternalListing, type FinanceEntry, type ListingSummary,
   type RentCollection, type RentPayment, type RenewalStatus, type RenewalTerms,
-  type Subscription, type Tenancy, type TenancyAgreement,
+  type Subscription, type Tenancy, type TenancyAgreement, type DepositProtection,
 } from '@rentmatch/shared';
 
 export type Role = 'renter' | 'landlord';
@@ -61,7 +61,19 @@ export async function ensureUserProfile(
 ): Promise<UserProfile> {
   const ref = doc(usersCol, uid);
   const snap = await getDoc(ref);
-  if (snap.exists()) return snap.data() as UserProfile;
+  if (snap.exists()) {
+    const existing = snap.data() as UserProfile;
+    // Sign-up races the auth listener: the listener can create the doc with the
+    // placeholder "Member" (displayName not yet set) before signUp() runs with
+    // the real name. Upgrade the placeholder so the typed name isn't lost (it's
+    // denormalised onto listings/deals downstream).
+    const realName = displayName.trim();
+    if (realName && realName !== 'Member' && (!existing.displayName || existing.displayName === 'Member')) {
+      await setDoc(ref, { displayName: realName }, { merge: true });
+      return { ...existing, displayName: realName };
+    }
+    return existing;
+  }
   const profile: UserProfile = {
     uid,
     email,
@@ -374,11 +386,15 @@ export function watchUserDeals(uid: string, cb: (deals: Deal[]) => void): Unsubs
   return onSnapshot(q, (snap) => {
     const deals = snap.docs.map((d) => mapDeal(d.id, d.data())).sort((a, b) => b.updatedAt - a.updatedAt);
     cb(deals);
-  });
+  }, () => cb([])); // on error (e.g. rules denial) settle empty, don't hang
 }
 
 export function watchDeal(dealId: string, cb: (deal: Deal | null) => void): Unsubscribe {
-  return onSnapshot(doc(dealsCol, dealId), (snap) => cb(snap.exists() ? mapDeal(snap.id, snap.data()) : null));
+  return onSnapshot(
+    doc(dealsCol, dealId),
+    (snap) => cb(snap.exists() ? mapDeal(snap.id, snap.data()) : null),
+    () => cb(null), // error (denied / not a participant) → not-found, not a spinner
+  );
 }
 
 export function watchMessages(dealId: string, cb: (messages: Message[]) => void): Unsubscribe {
@@ -394,7 +410,7 @@ export function watchMessages(dealId: string, cb: (messages: Message[]) => void)
         ts: toMs(data.ts),
       };
     }));
-  });
+  }, () => cb([])); // error → empty thread rather than a stuck spinner
 }
 
 export async function sendMessage(dealId: string, senderId: string, senderRole: DealParty, text: string): Promise<void> {
@@ -493,6 +509,13 @@ export interface TenancyRecord extends Tenancy {
   /** Direct Debit mandate + auto-collection records (managed by Cloud Functions). */
   mandate?: DirectDebitMandate;
   collections: RentCollection[];
+  /** Deposit protection facts, for the Section 21 readiness engine. */
+  deposit?: DepositProtection;
+  /** Landlord-attested compliance-served flags for Section 21 readiness. */
+  gasSafetyProvided?: boolean;
+  epcProvided?: boolean;
+  eicrValid?: boolean;
+  howToRentProvided?: boolean;
   /** Coarse geography (postcode district) for market analytics. */
   district?: string;
   /** A renewal in flight (terms + signature/fee state), managed by Cloud Functions. */
@@ -541,16 +564,52 @@ function mapTenancy(id: string, d: Record<string, unknown>): TenancyRecord {
     totalPaidPence: Number(d.totalPaidPence ?? 0),
     mandate: (d.mandate as DirectDebitMandate | undefined) ?? undefined,
     collections: Array.isArray(d.collections) ? (d.collections as RentCollection[]) : [],
+    deposit: (d.deposit as DepositProtection | undefined) ?? undefined,
+    gasSafetyProvided: d.gasSafetyProvided === true,
+    epcProvided: d.epcProvided === true,
+    eicrValid: d.eicrValid === true,
+    howToRentProvided: d.howToRentProvided === true,
     district: d.district ? String(d.district) : undefined,
     pendingRenewal: (d.pendingRenewal as TenancyRecord['pendingRenewal']) ?? undefined,
     createdAt: toMillis(d.createdAt),
   };
 }
 
+/** Persist deposit-protection facts + the landlord-attested compliance flags
+ *  that drive the Section 21 readiness verdict. Owner-only via Firestore rules. */
+export async function saveTenancyCompliance(
+  tenancyId: string,
+  patch: {
+    deposit?: DepositProtection;
+    gasSafetyProvided?: boolean;
+    epcProvided?: boolean;
+    eicrValid?: boolean;
+    howToRentProvided?: boolean;
+  },
+): Promise<void> {
+  const clean: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined) continue;
+    if (k === 'deposit' && v && typeof v === 'object') {
+      // Strip nested undefined — the web SDK isn't set to ignore them.
+      const dep: Record<string, unknown> = {};
+      for (const [dk, dv] of Object.entries(v)) if (dv !== undefined) dep[dk] = dv;
+      clean[k] = dep;
+    } else {
+      clean[k] = v;
+    }
+  }
+  await updateDoc(doc(tenanciesCol, tenancyId), clean);
+}
+
 export async function createTenancy(input: NewTenancyInput): Promise<{ id: string }> {
-  const { beds, ...record } = input;
+  const { beds, district, ...record } = input;
   const ref = await addDoc(tenanciesCol, {
     ...record,
+    // The web SDK isn't configured to ignore undefined, so an unparseable
+    // postcode (district === undefined) would make addDoc throw. Only write it
+    // when present — same conditional-spread as createExpense/addRentPayment.
+    ...(district ? { district } : {}),
     status: 'active',
     totalPaidPence: 0,
     createdAt: serverTimestamp(),
@@ -684,6 +743,7 @@ export interface Agency {
   memberIds: string[];
   memberEmails: Record<string, string>;
   clientLandlordIds: string[];
+  clientNames: Record<string, string>;
 }
 
 const agenciesCol = collection(db, 'agencies');
@@ -696,6 +756,7 @@ function mapAgency(id: string, d: Record<string, unknown>): Agency {
     memberIds: Array.isArray(d.memberIds) ? (d.memberIds as string[]) : [],
     memberEmails: (d.memberEmails as Record<string, string>) ?? {},
     clientLandlordIds: Array.isArray(d.clientLandlordIds) ? (d.clientLandlordIds as string[]) : [],
+    clientNames: (d.clientNames as Record<string, string>) ?? {},
   };
 }
 
@@ -728,16 +789,13 @@ export interface ClientPortfolio {
 }
 
 /** Fetch one client landlord's portfolio (agency members are permitted to read it). */
-export async function fetchClientPortfolio(landlordId: string): Promise<ClientPortfolio> {
-  const [profile, listings, tenancies] = await Promise.all([
-    getDoc(doc(usersCol, landlordId)),
+export async function fetchClientPortfolio(landlordId: string, landlordName = 'Landlord'): Promise<ClientPortfolio> {
+  // The name is passed from the agency doc's denormalised clientNames map — an
+  // agency member cannot read a client landlord's private user doc under the
+  // security rules, so reading it here would fail the whole dashboard.
+  const [listings, tenancies] = await Promise.all([
     fetchLandlordListings(landlordId),
     fetchLandlordTenancies(landlordId),
   ]);
-  return {
-    landlordId,
-    landlordName: String(profile.data()?.displayName ?? 'Landlord'),
-    listings,
-    tenancies,
-  };
+  return { landlordId, landlordName, listings, tenancies };
 }

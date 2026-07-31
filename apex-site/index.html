@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Apex — the operating system for UK rentals</title>
+<meta name="description" content="Apex is the UK landlord OS and lettings marketplace: compliance autopilot, rent without chasing, tax-ready finances, in-app letting and e-signing, and homes from across the web — one system." />
+<style>
+:root{
+  --ink:#0A0F0D; --panel:#101815; --panel-2:#16211C; --panel-3:#1C2A24;
+  --line:rgba(255,255,255,.09); --line-2:rgba(255,255,255,.06);
+  --text:#E9F0EC; --muted:#8FA098; --faint:#6A7B73;
+  --brand:#17DF8B; --brand-2:#57C7FF;
+  --grad:linear-gradient(135deg,#17DF8B 0%,#57C7FF 100%);
+  --good:#35D399; --warn:#F2B33F; --bad:#F26A4B;
+  --radius:16px; --maxw:1140px;
+  --font-display:"SF Pro Display",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;
+  --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;
+  --font-mono:ui-monospace,"SF Mono","SFMono-Regular",Menlo,"Cascadia Code",monospace;
+}
+@media (prefers-color-scheme:light){
+  :root{
+    --ink:#EEF2EF; --panel:#FFFFFF; --panel-2:#F5F8F5; --panel-3:#EAF0EC;
+    --line:rgba(11,19,16,.10); --line-2:rgba(11,19,16,.06);
+    --text:#0B1310; --muted:#5C6B64; --faint:#8A988F;
+    --brand:#06B673; --brand-2:#1F8FE0;
+    --grad:linear-gradient(135deg,#06B673 0%,#1F8FE0 100%);
+    --good:#12A56E; --warn:#C7891C; --bad:#D8482A;
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#0A0F0D; --panel:#101815; --panel-2:#16211C; --panel-3:#1C2A24;
+  --line:rgba(255,255,255,.09); --line-2:rgba(255,255,255,.06);
+  --text:#E9F0EC; --muted:#8FA098; --faint:#6A7B73;
+  --brand:#17DF8B; --brand-2:#57C7FF; --grad:linear-gradient(135deg,#17DF8B 0%,#57C7FF 100%);
+  --good:#35D399; --warn:#F2B33F; --bad:#F26A4B;
+}
+:root[data-theme="light"]{
+  --ink:#EEF2EF; --panel:#FFFFFF; --panel-2:#F5F8F5; --panel-3:#EAF0EC;
+  --line:rgba(11,19,16,.10); --line-2:rgba(11,19,16,.06);
+  --text:#0B1310; --muted:#5C6B64; --faint:#8A988F;
+  --brand:#06B673; --brand-2:#1F8FE0; --grad:linear-gradient(135deg,#06B673 0%,#1F8FE0 100%);
+  --good:#12A56E; --warn:#C7891C; --bad:#D8482A;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;background:var(--ink);color:var(--text);
+  font-family:var(--font-sans);font-size:17px;line-height:1.65;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+  overflow-x:hidden;
+}
+a{color:inherit;text-decoration:none}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+.mono{font-family:var(--font-mono)}
+.eyebrow{
+  font-family:var(--font-mono);font-size:.72rem;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--brand);font-weight:600;
+}
+h1,h2,h3{margin:0;text-wrap:balance;font-family:var(--font-display);letter-spacing:-.03em;line-height:1.05;font-weight:680}
+p{margin:0}
+.section{padding:96px 0;position:relative}
+.section-head{max-width:640px;margin-bottom:48px}
+.section-head h2{font-size:clamp(1.9rem,4vw,2.9rem);margin:14px 0 16px}
+.section-head p{color:var(--muted);font-size:1.08rem;max-width:56ch}
+
+/* ---- nav ---- */
+.nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);
+  background:color-mix(in srgb,var(--ink) 72%,transparent);
+  border-bottom:1px solid var(--line-2)}
+.nav .wrap{display:flex;align-items:center;justify-content:space-between;height:64px}
+.brand{display:flex;align-items:center;gap:10px;font-family:var(--font-display);font-weight:680;font-size:1.22rem;letter-spacing:-.02em}
+.brand .mk{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;background:var(--grad);color:#04120C;font-size:.95rem;font-weight:800}
+.nav-links{display:flex;gap:30px;align-items:center}
+.nav-links a{color:var(--muted);font-size:.94rem;font-weight:500;transition:color .2s}
+.nav-links a:hover{color:var(--text)}
+@media (max-width:820px){.nav-links a:not(.btn){display:none}}
+.btn{display:inline-flex;align-items:center;gap:8px;font-family:var(--font-sans);
+  font-weight:600;font-size:.95rem;padding:11px 20px;border-radius:11px;
+  cursor:pointer;border:1px solid transparent;transition:transform .16s ease,box-shadow .16s ease,background .2s}
+.btn-primary{background:var(--grad);color:#04120C;box-shadow:0 6px 22px -8px color-mix(in srgb,var(--brand) 70%,transparent)}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 12px 30px -10px color-mix(in srgb,var(--brand) 80%,transparent)}
+.btn-ghost{border-color:var(--line);color:var(--text);background:transparent}
+.btn-ghost:hover{background:var(--panel-2);transform:translateY(-2px)}
+.btn.sm{padding:9px 16px;font-size:.9rem}
+
+/* ---- hero ---- */
+.hero{position:relative;padding:76px 0 60px;overflow:hidden}
+.hero::before{content:"";position:absolute;inset:-40% 0 auto 0;height:720px;z-index:0;
+  background:radial-gradient(60% 60% at 70% 0%,color-mix(in srgb,var(--brand) 22%,transparent),transparent 70%),
+             radial-gradient(50% 50% at 20% 10%,color-mix(in srgb,var(--brand-2) 16%,transparent),transparent 70%);
+  filter:blur(10px);pointer-events:none}
+.hero .wrap{position:relative;z-index:1;display:grid;grid-template-columns:1.02fr .98fr;gap:56px;align-items:center}
+@media (max-width:960px){.hero .wrap{grid-template-columns:1fr;gap:40px}}
+.hero h1{font-size:clamp(2.7rem,6.4vw,4.9rem);margin:18px 0 22px;font-weight:700}
+.hero h1 .g{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero p.lead{color:var(--muted);font-size:1.16rem;max-width:32ch;margin-bottom:30px}
+.hero-cta{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.hero-note{margin-top:22px;color:var(--faint);font-size:.86rem;font-family:var(--font-mono);display:flex;align-items:center;gap:8px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--good);box-shadow:0 0 0 0 color-mix(in srgb,var(--good) 60%,transparent);animation:pulse 2.4s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--good) 55%,transparent)}70%{box-shadow:0 0 0 9px transparent}100%{box-shadow:0 0 0 0 transparent}}
+
+/* ---- product surfaces ---- */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);position:relative}
+.bento{display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:auto;gap:16px}
+.bento .span2{grid-column:1 / -1}
+.surface{padding:18px}
+.surface-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.surface-title{font-family:var(--font-mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.live{display:inline-flex;align-items:center;gap:7px;font-family:var(--font-mono);font-size:.68rem;color:var(--good);letter-spacing:.08em}
+
+.prop{display:flex;align-items:center;justify-content:space-between;font-weight:600;font-size:.98rem;margin-bottom:14px}
+.prop .addr{color:var(--muted);font-weight:500;font-size:.82rem}
+.certs{display:flex;flex-direction:column;gap:9px}
+.cert{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:11px;background:var(--panel-2);border:1px solid var(--line-2)}
+.cert .stripe{width:4px;align-self:stretch;border-radius:4px}
+.cert .stripe.good{background:var(--good)}.cert .stripe.warn{background:var(--warn)}.cert .stripe.bad{background:var(--bad)}
+.cert .name{font-weight:600;font-size:.9rem;flex:1}
+.cert .state{font-family:var(--font-mono);font-size:.74rem;padding:3px 9px;border-radius:999px;font-weight:600}
+.state.good{color:var(--good);background:color-mix(in srgb,var(--good) 14%,transparent)}
+.state.warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,transparent)}
+.state.bad{color:var(--bad);background:color-mix(in srgb,var(--bad) 14%,transparent)}
+
+.ledger{display:flex;flex-direction:column;gap:2px}
+.lrow{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;padding:11px 6px;border-bottom:1px solid var(--line-2)}
+.lrow:last-child{border-bottom:0}
+.lrow .who{font-weight:600;font-size:.9rem}
+.lrow .who small{display:block;color:var(--faint);font-weight:500;font-size:.74rem;font-family:var(--font-mono)}
+.lrow .amt{font-family:var(--font-mono);font-weight:600;font-size:.92rem;font-variant-numeric:tabular-nums}
+.pill{font-family:var(--font-mono);font-size:.7rem;padding:3px 9px;border-radius:999px;font-weight:600;white-space:nowrap}
+.pill.good{color:var(--good);background:color-mix(in srgb,var(--good) 14%,transparent)}
+.pill.warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,transparent)}
+.pill.bad{color:var(--bad);background:color-mix(in srgb,var(--bad) 14%,transparent)}
+
+.stat-big{font-family:var(--font-mono);font-weight:700;font-size:2rem;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.range{height:8px;border-radius:6px;background:var(--panel-3);position:relative;margin:14px 0 8px;overflow:hidden}
+.range .fill{position:absolute;top:0;bottom:0;left:22%;right:26%;background:var(--grad);border-radius:6px}
+.range-labels{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:.72rem;color:var(--faint)}
+.mini-metrics{display:flex;gap:22px;margin-top:16px}
+.mini-metrics div span{display:block;font-family:var(--font-mono)}
+.mini-metrics .k{font-size:.68rem;color:var(--faint);letter-spacing:.08em;text-transform:uppercase}
+.mini-metrics .v{font-size:1.05rem;font-weight:700;color:var(--text);margin-top:3px}
+
+/* ---- logos / trust strip ---- */
+.trust{border-top:1px solid var(--line-2);border-bottom:1px solid var(--line-2);padding:34px 0}
+.trust .wrap{display:grid;grid-template-columns:repeat(4,1fr);gap:22px;text-align:center}
+@media (max-width:720px){.trust .wrap{grid-template-columns:repeat(2,1fr);gap:28px}}
+.trust .n{font-family:var(--font-mono);font-weight:700;font-size:1.7rem;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.trust .l{color:var(--muted);font-size:.86rem;margin-top:4px}
+
+/* ---- feature bands ---- */
+.band{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:center}
+.band.rev .band-media{order:-1}
+@media (max-width:900px){.band{grid-template-columns:1fr;gap:32px}.band.rev .band-media{order:0}}
+.band h2{font-size:clamp(1.7rem,3.4vw,2.5rem);margin:14px 0 16px}
+.band p{color:var(--muted);font-size:1.06rem;margin-bottom:20px}
+.flist{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:12px}
+.flist li{display:flex;gap:12px;align-items:flex-start;font-size:.98rem}
+.flist .ico{flex:none;width:22px;height:22px;border-radius:7px;background:color-mix(in srgb,var(--brand) 16%,transparent);
+  color:var(--brand);display:grid;place-items:center;font-size:.8rem;font-weight:800;margin-top:1px}
+.flist b{font-weight:600}
+.flist span{color:var(--muted)}
+
+/* ---- deal timeline ---- */
+.timeline{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;counter-reset:step}
+@media (max-width:860px){.timeline{grid-template-columns:1fr 1fr}}
+.step{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 18px;position:relative;overflow:hidden}
+.step::before{counter-increment:step;content:"0" counter(step);position:absolute;top:14px;right:16px;
+  font-family:var(--font-mono);font-size:.78rem;color:var(--faint)}
+.step .bar{height:3px;width:34px;border-radius:3px;background:var(--grad);margin-bottom:16px}
+.step h4{margin:0 0 6px;font-size:1rem;font-weight:650;font-family:var(--font-display);letter-spacing:-.01em}
+.step p{color:var(--muted);font-size:.86rem;margin:0}
+.step.fee{border-color:color-mix(in srgb,var(--brand) 40%,var(--line))}
+.step .fee-tag{display:inline-block;margin-top:10px;font-family:var(--font-mono);font-size:.72rem;color:var(--brand);
+  background:color-mix(in srgb,var(--brand) 12%,transparent);padding:3px 9px;border-radius:999px}
+
+/* ---- marketplace / phone ---- */
+.phone{width:290px;max-width:100%;margin:0 auto;background:var(--panel);border:1px solid var(--line);
+  border-radius:32px;padding:14px 12px 18px;box-shadow:0 40px 80px -40px rgba(0,0,0,.6)}
+.phone .notch{width:110px;height:6px;border-radius:6px;background:var(--line);margin:2px auto 14px}
+.phone .ph-head{display:flex;align-items:center;justify-content:space-between;padding:0 6px 12px}
+.phone .ph-head .brand{font-size:1rem}
+.listing{border:1px solid var(--line-2);border-radius:13px;overflow:hidden;margin-bottom:11px;background:var(--panel-2)}
+.listing .img{height:74px;background:linear-gradient(135deg,#1d2b25,#26443a)}
+.listing.ext .img{background:linear-gradient(135deg,#22303c,#2a4a5e)}
+.listing .li-body{padding:10px 12px}
+.listing .price{font-family:var(--font-mono);font-weight:700;font-size:1rem}
+.listing .price small{color:var(--faint);font-weight:500;font-size:.72rem}
+.listing .loc{color:var(--muted);font-size:.8rem;margin-top:2px}
+.listing .tags{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.tg{font-family:var(--font-mono);font-size:.64rem;padding:2px 7px;border-radius:999px;background:var(--panel-3);color:var(--muted)}
+.tg.src{color:var(--brand-2);background:color-mix(in srgb,var(--brand-2) 14%,transparent)}
+.ext-label{font-family:var(--font-mono);font-size:.64rem;color:var(--faint);letter-spacing:.1em;text-transform:uppercase;margin:6px 4px 10px}
+
+/* ---- analytics band ---- */
+.analytics{background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:40px;overflow:hidden}
+.analytics .wrap-inner{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center}
+@media (max-width:860px){.analytics .wrap-inner{grid-template-columns:1fr;gap:28px}.analytics{padding:28px}}
+.chartbox{background:var(--panel-2);border:1px solid var(--line-2);border-radius:16px;padding:20px}
+.chart-legend{display:flex;gap:18px;margin-top:12px;font-family:var(--font-mono);font-size:.74rem;color:var(--muted)}
+.chart-legend i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:6px;vertical-align:middle}
+.kanon{margin-top:16px;font-family:var(--font-mono);font-size:.76rem;color:var(--faint);display:flex;align-items:center;gap:8px}
+
+/* ---- pricing ---- */
+.prices{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;align-items:stretch}
+@media (max-width:860px){.prices{grid-template-columns:1fr}}
+.price-card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:28px;display:flex;flex-direction:column}
+.price-card.feat{border-color:color-mix(in srgb,var(--brand) 45%,var(--line));background:
+  linear-gradient(180deg,color-mix(in srgb,var(--brand) 7%,var(--panel)),var(--panel))}
+.price-card .pname{font-family:var(--font-mono);font-size:.78rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.price-card .amt{font-family:var(--font-display);font-weight:700;font-size:2.4rem;letter-spacing:-.03em;margin:14px 0 2px}
+.price-card .amt small{font-size:.9rem;color:var(--muted);font-weight:500;font-family:var(--font-mono)}
+.price-card .blurb{color:var(--muted);font-size:.9rem;min-height:40px;margin-bottom:16px}
+.price-card ul{list-style:none;padding:0;margin:0 0 24px;display:flex;flex-direction:column;gap:10px;flex:1}
+.price-card li{display:flex;gap:10px;font-size:.92rem;align-items:flex-start}
+.price-card li::before{content:"✓";color:var(--brand);font-weight:800;font-size:.85rem;margin-top:1px}
+.badge{align-self:flex-start;font-family:var(--font-mono);font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--brand);background:color-mix(in srgb,var(--brand) 14%,transparent);padding:4px 10px;border-radius:999px;margin-bottom:10px}
+.fee-note{margin-top:22px;text-align:center;color:var(--muted);font-size:.9rem}
+.fee-note b{color:var(--text)}
+
+/* ---- closing ---- */
+.closing{text-align:center;position:relative;overflow:hidden;border-radius:26px;
+  background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);padding:64px 32px}
+.closing::before{content:"";position:absolute;inset:auto 0 -60% 0;height:400px;
+  background:radial-gradient(50% 60% at 50% 100%,color-mix(in srgb,var(--brand) 22%,transparent),transparent 70%);pointer-events:none}
+.closing h2{font-size:clamp(2rem,4.6vw,3.2rem);position:relative}
+.closing p{color:var(--muted);font-size:1.1rem;max-width:46ch;margin:16px auto 28px;position:relative}
+.closing .hero-cta{justify-content:center;position:relative}
+
+/* ---- footer ---- */
+footer{border-top:1px solid var(--line-2);padding:48px 0 60px;margin-top:96px}
+footer .wrap{display:grid;grid-template-columns:1.4fr 1fr;gap:40px}
+@media (max-width:720px){footer .wrap{grid-template-columns:1fr;gap:24px}}
+footer .legal{color:var(--faint);font-size:.82rem;line-height:1.7;max-width:60ch}
+footer .fcta{display:flex;flex-direction:column;gap:12px;align-items:flex-start}
+
+/* ---- reveal ---- */
+.reveal{opacity:0;transform:translateY(18px);transition:opacity .7s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1)}
+.reveal.in{opacity:1;transform:none}
+@media (prefers-reduced-motion:reduce){
+  .reveal{opacity:1;transform:none;transition:none}
+  .dot{animation:none}
+  html{scroll-behavior:auto}
+}
+:focus-visible{outline:2px solid var(--brand);outline-offset:3px;border-radius:6px}
+.theme-toggle{background:transparent;border:1px solid var(--line);color:var(--muted);width:38px;height:38px;border-radius:10px;cursor:pointer;display:grid;place-items:center;font-size:1rem}
+.theme-toggle:hover{color:var(--text);background:var(--panel-2)}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="wrap">
+    <a class="brand" href="#top"><span class="mk">⌂</span> Apex</a>
+    <div class="nav-links">
+      <a href="#product">Product</a>
+      <a href="#let">Letting</a>
+      <a href="#marketplace">Marketplace</a>
+      <a href="#data">Market data</a>
+      <a href="#pricing">Pricing</a>
+      <button class="theme-toggle" id="themeToggle" aria-label="Toggle colour theme">◐</button>
+      <a class="btn btn-primary sm" href="https://rentmatch-apex.web.app" target="_blank" rel="noopener">Open the app</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <div>
+      <div class="eyebrow">The UK Landlord OS · England (AST)</div>
+      <h1>Run every rental<br>like <span class="g">one system.</span></h1>
+      <p class="lead">Compliance, rent, tax, letting and renewals — plus a marketplace of homes from across the web — in a single app that does the chasing for you.</p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="https://rentmatch-apex.web.app" target="_blank" rel="noopener">Open the app →</a>
+        <a class="btn btn-ghost" href="https://rentmatch-apex.web.app" target="_blank" rel="noopener">🔎 Browse homes to rent</a>
+      </div>
+      <div class="hero-note"><span class="dot"></span> Live at rentmatch-apex.web.app · free for your first property</div>
+    </div>
+
+    <div class="bento reveal">
+      <!-- compliance surface -->
+      <div class="card surface span2">
+        <div class="surface-head">
+          <span class="surface-title">Compliance autopilot</span>
+          <span class="live"><span class="dot"></span> tracking</span>
+        </div>
+        <div class="prop">14 Mapledene Road <span class="addr">Hackney · E8 3JN</span></div>
+        <div class="certs">
+          <div class="cert"><span class="stripe good"></span><span class="name">EPC</span><span class="state good">Rating C · 4 yrs left</span></div>
+          <div class="cert"><span class="stripe warn"></span><span class="name">Gas Safety</span><span class="state warn">Renew in 30 days</span></div>
+          <div class="cert"><span class="stripe bad"></span><span class="name">EICR</span><span class="state bad">Expired</span></div>
+        </div>
+      </div>
+      <!-- rent ledger -->
+      <div class="card surface">
+        <div class="surface-head"><span class="surface-title">Rent ledger</span></div>
+        <div class="ledger">
+          <div class="lrow"><div class="who">A. Okafor<small>Flat 2</small></div><div class="amt">£1,450</div><div class="pill good">Paid</div></div>
+          <div class="lrow"><div class="who">M. Lewis<small>Flat 5</small></div><div class="amt">£1,600</div><div class="pill warn">Due 3d</div></div>
+          <div class="lrow"><div class="who">S. Patel<small>Flat 9</small></div><div class="amt">£1,275</div><div class="pill bad">Arrears</div></div>
+        </div>
+      </div>
+      <!-- market stat -->
+      <div class="card surface">
+        <div class="surface-head"><span class="surface-title">Market · E8 · 2 bed</span></div>
+        <div class="stat-big">£1,850<small style="font-size:.9rem;color:var(--faint);font-family:var(--font-mono);"> /mo median</small></div>
+        <div class="range"><div class="fill"></div></div>
+        <div class="range-labels"><span>£1,600 p25</span><span>£2,100 p75</span></div>
+        <div class="mini-metrics">
+          <div><span class="k">Time to let</span><span class="v">18 days</span></div>
+          <div><span class="k">Arrears rate</span><span class="v">2.4%</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section class="trust">
+  <div class="wrap">
+    <div class="reveal"><div class="n">28</div><div class="l">automated backend services</div></div>
+    <div class="reveal"><div class="n">111</div><div class="l">unit-tested kernel checks</div></div>
+    <div class="reveal"><div class="n">£100</div><div class="l">flat fee — only when a let completes</div></div>
+    <div class="reveal"><div class="n">£0</div><div class="l">ever charged to renters</div></div>
+  </div>
+</section>
+
+<!-- ============ PRODUCT ============ -->
+<div class="wrap" id="product">
+<section class="section">
+  <div class="section-head reveal">
+    <div class="eyebrow">What it does</div>
+    <h2>Everything a landlord actually does — automated.</h2>
+    <p>Apex isn't a spreadsheet with a login. Money and legal state are server-authoritative, so the app enforces the rules instead of trusting the form.</p>
+  </div>
+
+  <div class="band reveal">
+    <div>
+      <div class="eyebrow">Compliance</div>
+      <h2>Never miss a certificate again.</h2>
+      <p>Every property's EPC, Gas Safety and EICR tracked to the exact expiry — with nudges at 60, 30 and 7 days, and the moment anything lapses. Before a fine, and before a lapse can block a Section 21.</p>
+      <ul class="flist">
+        <li><span class="ico">✓</span><span><b>Per-property vault</b> — issue-date-accurate expiry, documents stored and versioned.</span></li>
+        <li><span class="ico">✓</span><span><b>Portfolio RAG dashboard</b> — the whole book at a glance, worst-first.</span></li>
+        <li><span class="ico">✓</span><span><b>Deposit protection &amp; Section 21 readiness</b> — track the 30-day deadline and get a one-glance verdict on whether you could lawfully serve notice.</span></li>
+        <li><span class="ico">✓</span><span><b>Daily reminder engine</b> — push and email, so nothing depends on you remembering.</span></li>
+      </ul>
+    </div>
+    <div class="band-media">
+      <div class="card surface">
+        <div class="surface-head"><span class="surface-title">Portfolio · compliance</span><span class="live"><span class="dot"></span> 3 need action</span></div>
+        <div class="certs">
+          <div class="cert"><span class="stripe bad"></span><span class="name">7 Park Road · EICR</span><span class="state bad">Expired</span></div>
+          <div class="cert"><span class="stripe warn"></span><span class="name">14 Mapledene · Gas</span><span class="state warn">30 days</span></div>
+          <div class="cert"><span class="stripe warn"></span><span class="name">Flat 5, Bow · EPC</span><span class="state warn">58 days</span></div>
+          <div class="cert"><span class="stripe good"></span><span class="name">22 Vale St · all valid</span><span class="state good">Clear</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" style="padding-top:0">
+  <div class="band rev reveal">
+    <div>
+      <div class="eyebrow">Rent &amp; money</div>
+      <h2>Rent that collects and reconciles itself.</h2>
+      <p>Every tenancy gets a ledger. Arrears are flagged automatically, reminders go out on due-soon and overdue, and optional Direct Debit collects the rent and books it straight into the ledger.</p>
+      <ul class="flist">
+        <li><span class="ico">✓</span><span><b>Auto-flagged arrears</b> — chase-free, the app watches the schedule.</span></li>
+        <li><span class="ico">✓</span><span><b>Direct Debit collection</b> — mandates and daily collection built in.</span></li>
+        <li><span class="ico">✓</span><span><b>Tax-ready finances</b> — income and expenses by UK tax year, mortgage interest separated, CSV export for Self Assessment / MTD.</span></li>
+      </ul>
+    </div>
+    <div class="band-media">
+      <div class="card surface">
+        <div class="surface-head"><span class="surface-title">Finances · 2025/26 tax year</span></div>
+        <div class="mini-metrics" style="margin:6px 0 18px;gap:28px">
+          <div><span class="k">Income</span><span class="v" style="font-size:1.3rem">£41,200</span></div>
+          <div><span class="k">Expenses</span><span class="v" style="font-size:1.3rem">£12,860</span></div>
+          <div><span class="k">Net</span><span class="v" style="font-size:1.3rem;color:var(--brand)">£28,340</span></div>
+        </div>
+        <div class="ledger">
+          <div class="lrow"><div class="who">Rent received<small>12 tenancies</small></div><div class="amt">£41,200</div><div class="pill good">Income</div></div>
+          <div class="lrow"><div class="who">Mortgage interest<small>surfaced separately</small></div><div class="amt">£7,410</div><div class="pill warn">Relief</div></div>
+          <div class="lrow"><div class="who">Repairs &amp; safety<small>8 expenses</small></div><div class="amt">£5,450</div><div class="pill warn">Expense</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+</div>
+
+<!-- ============ LETTING ============ -->
+<div class="wrap" id="let">
+<section class="section" style="padding-top:0">
+  <div class="section-head reveal">
+    <div class="eyebrow">Let &amp; renew</div>
+    <h2>Advertise, agree and sign — without leaving the app.</h2>
+    <p>A let is a sequence with real legal and money steps. Apex drives all of it and only charges when it completes.</p>
+  </div>
+  <div class="timeline reveal">
+    <div class="step"><div class="bar"></div><h4>Enquiry</h4><p>A renter finds the listing and messages the landlord in a shared deal room.</p></div>
+    <div class="step"><div class="bar"></div><h4>Viewing</h4><p>Propose, confirm and track viewings — no email tag, no lost threads.</p></div>
+    <div class="step"><div class="bar"></div><h4>Agree</h4><p>Both parties agree to proceed; the app checks the property is compliant to let.</p></div>
+    <div class="step"><div class="bar"></div><h4>Sign</h4><p>A compliant AST is drafted from the kernel and e-signed by both sides.</p></div>
+    <div class="step fee"><div class="bar"></div><h4>Completed</h4><p>Tenancy goes live and books into Rent automatically.</p><span class="fee-tag">£100 fee · once, on completion</span></div>
+  </div>
+</section>
+</div>
+
+<!-- ============ MARKETPLACE ============ -->
+<div class="wrap" id="marketplace">
+<section class="section" style="padding-top:0">
+  <div class="band reveal">
+    <div>
+      <div class="eyebrow">Marketplace</div>
+      <h2>Homes from across the web, in one place.</h2>
+      <p>Renters browse Apex's own listings alongside aggregated stock from licensed feeds and partner agencies — no account needed to look. Enquiring on an Apex listing keeps the whole deal in-app; external homes link out to their source.</p>
+      <ul class="flist">
+        <li><span class="ico">✓</span><span><b>Public browsing</b> — search by city, beds and budget without signing up.</span></li>
+        <li><span class="ico">✓</span><span><b>Aggregated feeds</b> — validated, de-duplicated, and kept fresh by a daily sync.</span></li>
+        <li><span class="ico">✓</span><span><b>Account-gated enquiry</b> — a free account turns a listing into a tracked deal.</span></li>
+      </ul>
+    </div>
+    <div class="band-media">
+      <div class="phone reveal">
+        <div class="notch"></div>
+        <div class="ph-head"><span class="brand"><span class="mk">⌂</span> Apex</span><span class="btn btn-ghost sm" style="pointer-events:none">Sign in</span></div>
+        <div class="listing">
+          <div class="img"></div>
+          <div class="li-body">
+            <div class="price">£1,850<small> /month</small></div>
+            <div class="loc">Shoreditch, London · E1 6AA</div>
+            <div class="tags"><span class="tg">Flat</span><span class="tg">2 bed</span><span class="tg">EPC B</span></div>
+          </div>
+        </div>
+        <div class="ext-label">More homes from across the web</div>
+        <div class="listing ext">
+          <div class="img"></div>
+          <div class="li-body">
+            <div class="price">£1,725<small> /month</small></div>
+            <div class="loc">Ancoats, Manchester · M4</div>
+            <div class="tags"><span class="tg src">🌐 OpenLet</span><span class="tg">2 bed</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+</div>
+
+<!-- ============ AGENCY ============ -->
+<div class="wrap">
+<section class="section" style="padding-top:0">
+  <div class="band rev reveal">
+    <div>
+      <div class="eyebrow">For letting agents</div>
+      <h2>A whole book of business, worst-first.</h2>
+      <p>Agents manage many landlords with team seats. Every client's compliance and arrears roll up into one dashboard so the thing that needs attention is always on top. Landlords connect their portfolio with a code.</p>
+      <ul class="flist">
+        <li><span class="ico">✓</span><span><b>Multi-landlord dashboard</b> — connected portfolios, prioritised by risk.</span></li>
+        <li><span class="ico">✓</span><span><b>Team seats</b> — bring your staff in, billed per unit.</span></li>
+        <li><span class="ico">✓</span><span><b>Branded tenant comms</b> — the same automation, under your name.</span></li>
+      </ul>
+    </div>
+    <div class="band-media">
+      <div class="card surface">
+        <div class="surface-head"><span class="surface-title">Agency · book of business</span><span class="live"><span class="dot"></span> 24 clients</span></div>
+        <div class="ledger">
+          <div class="lrow"><div class="who">Northside Lettings<small>3 properties</small></div><div class="amt">2 alerts</div><div class="pill bad">Action</div></div>
+          <div class="lrow"><div class="who">J. Adeyemi<small>7 properties</small></div><div class="amt">1 alert</div><div class="pill warn">Soon</div></div>
+          <div class="lrow"><div class="who">Riverbank Homes<small>11 properties</small></div><div class="amt">0 alerts</div><div class="pill good">Clear</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+</div>
+
+<!-- ============ MARKET DATA ============ -->
+<div class="wrap" id="data">
+<section class="section" style="padding-top:0">
+  <div class="analytics reveal">
+    <div class="wrap-inner">
+      <div>
+        <div class="eyebrow">Market intelligence</div>
+        <h2 style="font-size:clamp(1.7rem,3.4vw,2.4rem);margin:14px 0 14px">The numbers the industry pays for — privately.</h2>
+        <p style="color:var(--muted);margin-bottom:16px">Apex learns from real lets: achieved rents, time-to-let, arrears and compliance rates by postcode district. Every figure is pseudonymous and k-anonymised — an area is only ever shown once at least five lets sit behind it, and only medians and quartiles, never an individual's rent.</p>
+        <div class="kanon"><span class="ico" style="width:20px;height:20px;border-radius:6px;background:color-mix(in srgb,var(--brand) 16%,transparent);color:var(--brand);display:grid;place-items:center;font-weight:800">k</span> k-anonymity ≥ 5 · medians &amp; quartiles only · GDPR erasure built in</div>
+      </div>
+      <div class="chartbox">
+        <div class="surface-title" style="margin-bottom:14px">Median 2-bed rent · East London districts</div>
+        <svg viewBox="0 0 320 170" width="100%" height="170" role="img" aria-label="Median 2-bed rents rising across five East London districts">
+          <defs>
+            <linearGradient id="area" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="var(--brand)" stop-opacity=".35"/>
+              <stop offset="100%" stop-color="var(--brand)" stop-opacity="0"/>
+            </linearGradient>
+            <linearGradient id="ln" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="var(--brand)"/><stop offset="100%" stop-color="var(--brand-2)"/>
+            </linearGradient>
+          </defs>
+          <line x1="0" y1="40" x2="320" y2="40" stroke="var(--line-2)"/>
+          <line x1="0" y1="80" x2="320" y2="80" stroke="var(--line-2)"/>
+          <line x1="0" y1="120" x2="320" y2="120" stroke="var(--line-2)"/>
+          <path d="M8,120 L84,96 L160,104 L236,64 L312,48 L312,170 L8,170 Z" fill="url(#area)"/>
+          <path d="M8,120 L84,96 L160,104 L236,64 L312,48" fill="none" stroke="url(#ln)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="8" cy="120" r="4" fill="var(--brand)"/><circle cx="84" cy="96" r="4" fill="var(--brand)"/>
+          <circle cx="160" cy="104" r="4" fill="var(--brand)"/><circle cx="236" cy="64" r="4" fill="var(--brand)"/>
+          <circle cx="312" cy="48" r="5" fill="var(--brand-2)"/>
+        </svg>
+        <div class="chart-legend"><span><i style="background:var(--brand)"></i>E17</span><span><i style="background:var(--brand)"></i>E10</span><span><i style="background:var(--brand)"></i>E8</span><span><i style="background:var(--brand-2)"></i>E1</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+</div>
+
+<!-- ============ PRICING ============ -->
+<div class="wrap" id="pricing">
+<section class="section" style="padding-top:0">
+  <div class="section-head reveal" style="max-width:640px">
+    <div class="eyebrow">Pricing</div>
+    <h2>Start free. Scale when your portfolio does.</h2>
+    <p>Every plan is built on the same tested engine. Renters are never charged — that's the law (Tenant Fees Act 2019), and it's the point.</p>
+  </div>
+  <div class="prices reveal">
+    <div class="price-card">
+      <div class="pname">Free</div>
+      <div class="amt">£0<small> /mo</small></div>
+      <div class="blurb">Track one property and never miss a certificate.</div>
+      <ul><li>1 property</li><li>Compliance dashboard</li><li>Expiry reminders</li></ul>
+      <a class="btn btn-ghost" href="https://rentmatch-apex.web.app" target="_blank" rel="noopener">Get started</a>
+    </div>
+    <div class="price-card feat">
+      <span class="badge">Most popular</span>
+      <div class="pname">Landlord</div>
+      <div class="amt">£99<small> /mo</small></div>
+      <div class="blurb">Everything to run a small portfolio compliantly.</div>
+      <ul><li>Up to 10 properties</li><li>Compliance dashboard + reminders</li><li>Tenancy e-signing</li><li>Document vault</li></ul>
+      <a class="btn btn-primary" href="https://rentmatch-apex.web.app" target="_blank" rel="noopener">Open the app</a>
+    </div>
+    <div class="price-card">
+      <div class="pname">Agent</div>
+      <div class="amt">£49<small> /mo + £6/unit</small></div>
+      <div class="blurb">Manage many landlords at scale, with your team.</div>
+      <ul><li>Unlimited properties</li><li>Multi-landlord &amp; team seats</li><li>Branded tenant comms</li><li>Everything in Landlord</li></ul>
+      <a class="btn btn-ghost" href="https://rentmatch-apex.web.app" target="_blank" rel="noopener">Talk to us</a>
+    </div>
+  </div>
+  <p class="fee-note reveal">Plus a one-off <b>£100</b> fee when a tenancy agreement is fully signed. No completion, no fee.</p>
+</section>
+</div>
+
+<!-- ============ CLOSING ============ -->
+<div class="wrap">
+<section class="section" style="padding-top:0">
+  <div class="closing reveal">
+    <h2>Your rentals, on autopilot.</h2>
+    <p>Compliance tracked, rent collected, taxes tidy, lets signed — and a marketplace of homes on top. Free for your first property.</p>
+    <div class="hero-cta">
+      <a class="btn btn-primary" href="https://rentmatch-apex.web.app" target="_blank" rel="noopener">Open the app →</a>
+      <a class="btn btn-ghost" href="https://rentmatch-apex.web.app" target="_blank" rel="noopener">Browse homes to rent</a>
+    </div>
+  </div>
+</section>
+</div>
+
+<footer>
+  <div class="wrap">
+    <div>
+      <a class="brand" href="#top" style="margin-bottom:14px"><span class="mk">⌂</span> Apex</a>
+      <p class="legal">Apex supports Assured Shorthold Tenancies in England, with compliance rules kept current with UK legislation. Money and legal state are server-authoritative and enforced by the platform. Analytics are pseudonymous and k-anonymised. Nothing here is legal or tax advice.</p>
+    </div>
+    <div class="fcta">
+      <a class="btn btn-primary" href="https://rentmatch-apex.web.app" target="_blank" rel="noopener">Open the app</a>
+      <span class="mono" style="color:var(--faint);font-size:.8rem">rentmatch-apex.web.app</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  // theme toggle — persists to the root as data-theme, wins over media query
+  var root=document.documentElement, key="apex-theme";
+  try{var saved=localStorage.getItem(key); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  var tgl=document.getElementById("themeToggle");
+  if(tgl) tgl.addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){ cur = matchMedia("(prefers-color-scheme:dark)").matches ? "dark":"light"; }
+    var next = cur==="dark" ? "light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(key,next);}catch(e){}
+  });
+
+  // scroll reveal
+  var els=[].slice.call(document.querySelectorAll(".reveal"));
+  if(!("IntersectionObserver" in window) || matchMedia("(prefers-reduced-motion:reduce)").matches){
+    els.forEach(function(e){e.classList.add("in");}); return;
+  }
+  var io=new IntersectionObserver(function(entries){
+    entries.forEach(function(en){ if(en.isIntersecting){ en.target.classList.add("in"); io.unobserve(en.target); } });
+  },{threshold:.12,rootMargin:"0px 0px -8% 0px"});
+  els.forEach(function(e){io.observe(e);});
+})();
+</script>
+</body>
+</html>

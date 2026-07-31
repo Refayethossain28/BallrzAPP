@@ -45,16 +45,37 @@ jobs:
           # ApexVIP apps + every PWA asset, at the site root.
           cp apexvip-client.html apexvip-driver.html apexvip-admin.html _site/ 2>/dev/null || true
           cp apexvip-core.js apexvip-lib.js firebase.js firebase-messaging-sw.js _site/ 2>/dev/null || true
+          # Shared logic engine (window.ApexEngine) — ALL three ApexVIP apps load
+          # this at the site root. Without it the engine 404s, ApexEngine is
+          # undefined, and the concierge/quotes/etc. silently degrade.
+          cp apexvip-engine.js _site/ 2>/dev/null || true
           cp manifest*.json _site/ 2>/dev/null || true
           cp icon-*.png _site/ 2>/dev/null || true
           cp -r splashes _site/ 2>/dev/null || true
+          # Fleet photography — the ApexVIP marketing site (/apexvip/) and the
+          # client app both reference ../vehicles/*.jpg at the site root. Without
+          # this the S-Class / V-Class cards render a broken-image icon.
+          cp -r vehicles _site/ 2>/dev/null || true
           # Splash / tour background videos (client, driver and admin apps all
           # reference these at the site root — without them the splash screen
           # renders a plain black background).
           cp splash-advert.mp4 splash-bg.mp4 tour-bg.mp4 _site/ 2>/dev/null || true
+          # Promo videos — the ApexVIP marketing page's hero video lives at
+          # ../promo/silent/…mp4; promo/ has no index.html so the auto-publish
+          # loop below skips it. Copy it explicitly or the hero renders dead.
+          mkdir -p _site/promo
+          cp -r promo/. _site/promo/ 2>/dev/null || true
 
-          # Landing page + Jekyll opt-out so files starting with _ are served.
-          cp index.html _site/index.html 2>/dev/null || true
+          # Custom domain (apexvip.uk): the ApexVIP marketing site IS the
+          # site root. Its relative ../ asset paths clamp to the domain root,
+          # where everything it references (promo/, vehicles/, the apexvip-*
+          # apps, concierge/, apexvip-join/, icons) is published.
+          cp apexvip/index.html _site/index.html 2>/dev/null || true
+          echo "apexvip.uk" > _site/CNAME
+          # The prototypes landing moves to /demos.html — a root-level file,
+          # so its relative links keep resolving against the domain root.
+          cp index.html _site/demos.html 2>/dev/null || true
+          # Jekyll opt-out so files starting with _ are served.
           cp .nojekyll _site/.nojekyll 2>/dev/null || touch _site/.nojekyll
 
           # RentMatch prototype + its PWA assets (manifest*.json above does not
@@ -75,19 +96,35 @@ jobs:
           mkdir -p _site/ripple
           cp -r ripple/. _site/ripple/ 2>/dev/null || true
 
-          # Velvet (concierge/) — the subscription VIP concierge PWA (app,
-          # engine, cloud config, SW, icons) — plus the other standalone PWAs
-          # the landing page links to, which were missing from this allowlist
-          # and 404ed: Cusp, Omni, Imposter, Lingua.
-          for app in concierge cusp omni imposter lingua; do
-            mkdir -p "_site/$app"
-            cp -r "$app/." "_site/$app/" 2>/dev/null || true
+          # Publish EVERY top-level folder that ships an index.html, so a new
+          # app can never 404 again. (This used to be a hand-maintained list
+          # that repeatedly went stale — Cusp, Omni, Imposter, Lingua and
+          # BallrzCoin each 404ed on launch.) Skipped: dirs that need a build
+          # or are assembled specially elsewhere in this workflow
+          # (apexvip-web = Vite source; rentmatch → /apex/; llm-from-scratch
+          # → /llm/; fixr = static index only, below), plus anything already
+          # placed into _site (e.g. ripple, copied above).
+          for d in */ ; do
+            d="${d%/}"
+            case "$d" in
+              _site|node_modules|apexvip-web|rentmatch|llm-from-scratch|fixr|concepts|functions|scripts|docs|splashes|trading-app) continue ;;
+            esac
+            if [ ! -f "$d/index.html" ]; then continue; fi
+            if [ -d "_site/$d" ]; then continue; fi
+            mkdir -p "_site/$d"
+            cp -r "$d/." "_site/$d/"
+            echo "auto-published /$d"
           done
 
           # Fixr — luxury ground-transport + concierge prototype (static demo).
           # The full Fixr app is a Node server; deploy it to Render (fixr/app/DEPLOY.md).
           mkdir -p _site/fixr
           cp fixr/index.html _site/fixr/index.html 2>/dev/null || true
+
+          # Apex marketing site — the ultra-modern presentation page for the
+          # UK landlord OS (the live app itself is at rentmatch-apex.web.app).
+          mkdir -p _site/apex-site
+          cp apex-site/index.html _site/apex-site/index.html 2>/dev/null || true
 
           echo "Assembled _site:"; ls -1 _site | head -40
 
@@ -108,7 +145,9 @@ jobs:
           npm install
           # VITE_DEMO_SAMPLES: the static demo has no backend, so Browse shows
           # bundled example "homes from across the web" (clearly labelled).
-          VITE_DEMO_SAMPLES=1 npm --workspace apps/web run build -- --base=/BallrzAPP/apex/
+          # Base is /apex/ — with the custom domain (apexvip.uk) the Pages
+          # site serves from the domain root, not /BallrzAPP/.
+          VITE_DEMO_SAMPLES=1 npm --workspace apps/web run build -- --base=/apex/
           mkdir -p ../_site/apex
           cp -r apps/web/dist/. ../_site/apex/
 

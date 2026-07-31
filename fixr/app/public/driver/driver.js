@@ -65,7 +65,7 @@ async function act(a, id) {
     const dest = encodeURIComponent(p?.parsed_payload?.dropoff || "");
     return window.open(`https://maps.google.com/?q=${dest}`, "_blank");
   }
-  try { await api(`/api/requests/${id}/${a}`, { method: "POST" }); await load(); }
+  try { await api(`/api/driver/${DRIVER_ID}/trips/${id}/${a}`, { method: "POST" }); await load(); }
   catch (e) { alert(e.message); }
 }
 
@@ -98,4 +98,10 @@ $("onboard-btn").onclick = async () => {
 };
 
 load();
-setInterval(load, 15000); // poll for new assignments
+// Live updates via SSE (new assignments appear instantly); polling stays as fallback.
+try {
+  const es = new EventSource("/api/events");
+  let esT;
+  es.onmessage = () => { clearTimeout(esT); esT = setTimeout(load, 200); };
+} catch {}
+setInterval(load, 30000); // fallback poll

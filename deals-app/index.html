@@ -1,0 +1,933 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TravelDeals — search, compare & book flights and hotels</title>
+<meta name="description" content="Price forecasts, deal scores, Everywhere search, fare freeze, seat selection and e-tickets — the flight & hotel deals engine.">
+<meta name="theme-color" content="#101426">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="TravelDeals">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg:#f4f6fb; --card:#ffffff; --ink:#16203a; --dim:#5b6884; --faint:#93a0bb;
+    --line:#e4e8f2; --accent:#3b5bfd; --accent-ink:#ffffff; --accent-soft:#eaeeff;
+    --good:#0e9f6e; --good-soft:#e3f7ef; --warn:#b45309; --warn-soft:#fdf3e2;
+    --bad:#dc2626; --bad-soft:#fdeaea; --gold:#a16207; --gold-soft:#fdf6dd;
+    --sh:0 1px 2px rgba(22,32,58,.06),0 8px 24px rgba(22,32,58,.07);
+    --r:16px; --rs:10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#0c1020; --card:#161c33; --ink:#e8ecf8; --dim:#96a2c2; --faint:#67739a;
+      --line:#242c4a; --accent:#6d86ff; --accent-ink:#0c1020; --accent-soft:#22294d;
+      --good:#34d399; --good-soft:#11302a; --warn:#fbbf24; --warn-soft:#33290f;
+      --bad:#f87171; --bad-soft:#3a1414; --gold:#fcd34d; --gold-soft:#332b10;
+      --sh:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; }
+  body {
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,sans-serif;
+    background:var(--bg); color:var(--ink);
+    padding-bottom:max(16px, env(safe-area-inset-bottom));
+  }
+  button { font:inherit; cursor:pointer; border:0; background:none; color:inherit; }
+  input,select { font:inherit; color:var(--ink); background:var(--card); border:1.5px solid var(--line); border-radius:var(--rs); padding:10px 12px; width:100%; outline:none; }
+  input:focus,select:focus { border-color:var(--accent); }
+  .wrap { max-width:880px; margin:0 auto; padding:0 14px; }
+
+  /* header */
+  header { background:linear-gradient(135deg,#101426,#1e2a5e 55%,#101426); color:#fff; padding:18px 0 0; }
+  .hrow { display:flex; align-items:center; gap:10px; }
+  .logo { width:38px; height:38px; }
+  .hname { font-weight:800; font-size:19px; letter-spacing:-.02em; }
+  .hsub { font-size:11.5px; color:#9fb0e8; margin-top:-2px; }
+  .hspace { margin-left:auto; display:flex; gap:8px; align-items:center; }
+  .chip { font-size:11.5px; font-weight:700; padding:5px 10px; border-radius:999px; background:rgba(255,255,255,.12); color:#dbe4ff; border:0; }
+  .chip.live { background:#0e9f6e; color:#fff; }
+  select.cursel { width:auto; background:rgba(255,255,255,.12); border:0; color:#dbe4ff; font-size:12px; font-weight:700; padding:5px 8px; border-radius:999px; }
+  nav { display:flex; gap:2px; margin-top:14px; overflow-x:auto; scrollbar-width:none; }
+  nav::-webkit-scrollbar{display:none}
+  nav button { flex:none; padding:10px 16px; font-weight:700; font-size:13.5px; color:#8fa0d0; border-radius:12px 12px 0 0; white-space:nowrap; }
+  nav button.on { background:var(--bg); color:var(--ink); }
+  nav button .b { display:inline-block; min-width:17px; padding:0 5px; margin-left:5px; background:var(--bad); color:#fff; border-radius:999px; font-size:10.5px; line-height:17px; }
+
+  main { padding:16px 0 40px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--sh); padding:16px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .grid4 { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+  @media(max-width:560px){ .grid4{grid-template-columns:1fr 1fr} }
+  label.f { display:block; font-size:10.5px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:var(--faint); margin:0 0 4px 2px; }
+  .row { display:flex; gap:8px; align-items:center; }
+  .seg { display:inline-flex; background:var(--bg); border:1px solid var(--line); border-radius:999px; padding:3px; gap:2px; }
+  .seg button { padding:6px 14px; border-radius:999px; font-size:12.5px; font-weight:700; color:var(--dim); }
+  .seg button.on { background:var(--accent); color:var(--accent-ink); }
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; background:var(--accent); color:var(--accent-ink); font-weight:800; padding:13px 18px; border-radius:12px; width:100%; font-size:15px; }
+  .btn:active { transform:scale(.985); }
+  .btn.sec { background:var(--accent-soft); color:var(--accent); }
+  .btn.ghost { background:transparent; border:1.5px solid var(--line); color:var(--dim); }
+  .btn.sm { width:auto; padding:8px 14px; font-size:13px; border-radius:10px; }
+  .swap { flex:none; width:38px; height:38px; border-radius:50%; background:var(--accent-soft); color:var(--accent); font-size:16px; margin-top:18px; }
+  .muted { color:var(--dim); font-size:12.5px; }
+  .tiny { color:var(--faint); font-size:11.5px; }
+
+  /* forecast banner */
+  .fc { display:flex; gap:12px; align-items:center; border-radius:var(--r); padding:13px 15px; margin:14px 0 10px; border:1px solid var(--line); }
+  .fc.buy { background:var(--good-soft); } .fc.wait { background:var(--warn-soft); } .fc.track { background:var(--accent-soft); }
+  .fc .big { font-weight:800; font-size:14.5px; }
+  .fc .why { font-size:12px; color:var(--dim); margin-top:1px; }
+  .spark { flex:none; }
+
+  /* flex strip */
+  .flex-strip { display:flex; gap:6px; overflow-x:auto; padding:2px 0 8px; scrollbar-width:none; }
+  .flex-strip::-webkit-scrollbar{display:none}
+  .fd { flex:none; text-align:center; padding:8px 12px; border-radius:12px; border:1.5px solid var(--line); background:var(--card); }
+  .fd.sel { border-color:var(--accent); background:var(--accent-soft); }
+  .fd.best .p { color:var(--good); }
+  .fd .d { font-size:11px; color:var(--dim); font-weight:700; }
+  .fd .p { font-size:13.5px; font-weight:800; }
+
+  /* offers */
+  .offer { display:flex; align-items:center; gap:12px; padding:14px; margin-bottom:10px; }
+  .al { flex:none; width:42px; height:42px; border-radius:12px; background:var(--accent-soft); color:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:900; font-size:13px; }
+  .omid { flex:1; min-width:0; }
+  .times { display:flex; align-items:baseline; gap:8px; font-weight:800; font-size:16.5px; }
+  .times .arr { color:var(--faint); font-weight:400; }
+  .times sup { font-size:10px; color:var(--warn); }
+  .osub { font-size:12px; color:var(--dim); margin-top:2px; }
+  .oright { text-align:right; flex:none; }
+  .price { font-size:19px; font-weight:900; }
+  .score { display:inline-block; font-size:10.5px; font-weight:800; padding:2px 8px; border-radius:999px; margin-top:3px; }
+  .score.hi { background:var(--good-soft); color:var(--good); }
+  .score.mid { background:var(--accent-soft); color:var(--accent); }
+  .score.lo { background:var(--warn-soft); color:var(--warn); }
+  .seatsleft { font-size:10.5px; color:var(--bad); font-weight:700; }
+  .pill { display:inline-block; font-size:10.5px; font-weight:800; padding:2px 8px; border-radius:999px; background:var(--bg); color:var(--dim); border:1px solid var(--line); }
+  .pill.gold { background:var(--gold-soft); color:var(--gold); border:0; }
+  .pill.good { background:var(--good-soft); color:var(--good); border:0; }
+
+  /* hotels */
+  .hcard { display:flex; gap:12px; padding:14px; margin-bottom:10px; }
+  .hico { flex:none; width:58px; height:58px; border-radius:14px; display:flex; align-items:center; justify-content:center; font-size:26px; background:linear-gradient(135deg,var(--accent-soft),var(--good-soft)); }
+  .stars { color:#f59e0b; font-size:12px; letter-spacing:1px; }
+  .rate { display:inline-block; background:var(--accent); color:var(--accent-ink); font-weight:800; font-size:11.5px; padding:2px 7px; border-radius:7px; }
+  .amen { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+
+  /* explore */
+  .exgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; margin-top:14px; }
+  .ex { padding:14px; cursor:pointer; }
+  .ex .flag { font-size:26px; }
+  .ex .city { font-weight:800; margin-top:4px; }
+  .ex:hover { border-color:var(--accent); }
+
+  /* wizard overlay */
+  .ovl { position:fixed; inset:0; background:rgba(10,14,28,.55); backdrop-filter:blur(3px); z-index:50; display:flex; align-items:flex-end; justify-content:center; }
+  @media(min-width:640px){ .ovl{align-items:center} }
+  .sheet { background:var(--card); width:100%; max-width:560px; max-height:92vh; overflow-y:auto; border-radius:20px 20px 0 0; padding:20px 18px calc(20px + env(safe-area-inset-bottom)); }
+  @media(min-width:640px){ .sheet{border-radius:20px} }
+  .steps { display:flex; gap:5px; margin:4px 0 16px; }
+  .steps i { flex:1; height:4px; border-radius:4px; background:var(--line); }
+  .steps i.on { background:var(--accent); }
+  .sheet h2 { font-size:18px; margin:0 0 2px; }
+  .fare { display:flex; align-items:center; gap:12px; border:1.5px solid var(--line); border-radius:14px; padding:13px; margin-bottom:8px; cursor:pointer; }
+  .fare:hover,.fare.sel { border-color:var(--accent); }
+  .perk { font-size:11.5px; color:var(--dim); }
+  .perk s { color:var(--faint); }
+
+  /* seat map */
+  .cabin { display:grid; grid-template-columns:repeat(7,1fr); gap:5px; max-width:320px; margin:12px auto; }
+  .seat { aspect-ratio:1; border-radius:7px 7px 3px 3px; background:var(--accent-soft); color:var(--accent); font-size:9.5px; font-weight:800; display:flex; align-items:center; justify-content:center; cursor:pointer; border:1.5px solid transparent; }
+  .seat.taken { background:var(--line); color:var(--faint); cursor:not-allowed; }
+  .seat.extra { background:var(--gold-soft); color:var(--gold); }
+  .seat.sel { background:var(--accent); color:var(--accent-ink); }
+  .aisle { display:flex; align-items:center; justify-content:center; color:var(--faint); font-size:9px; }
+  .legend { display:flex; gap:14px; justify-content:center; font-size:11px; color:var(--dim); }
+  .legend i { display:inline-block; width:11px; height:11px; border-radius:3px; margin-right:4px; vertical-align:-1px; }
+
+  /* summary / breakdown */
+  .bd { border-top:1px dashed var(--line); margin-top:10px; padding-top:10px; font-size:13.5px; }
+  .bd .r { display:flex; justify-content:space-between; padding:2.5px 0; }
+  .bd .tot { font-weight:900; font-size:16px; border-top:1px solid var(--line); margin-top:6px; padding-top:8px; }
+
+  /* ticket */
+  .ticket { background:linear-gradient(135deg,#101426,#25337a); color:#fff; border-radius:18px; padding:18px; position:relative; overflow:hidden; }
+  .ticket .route { display:flex; align-items:center; gap:12px; font-size:22px; font-weight:900; }
+  .ticket .route span { color:#8fa0d0; font-size:13px; font-weight:400; }
+  .ticket .meta { display:flex; gap:18px; margin-top:10px; font-size:12px; color:#b9c5ec; flex-wrap:wrap; }
+  .ticket .meta b { display:block; color:#fff; font-size:14px; }
+  .pnr { font-size:26px; font-weight:900; letter-spacing:4px; }
+  .bars { display:flex; align-items:flex-end; gap:1.5px; height:44px; margin-top:14px; background:#fff; padding:6px 10px; border-radius:8px; }
+  .bars i { background:#101426; height:100%; }
+  .stub { border-top:2px dashed rgba(255,255,255,.25); margin-top:14px; padding-top:12px; display:flex; justify-content:space-between; align-items:center; }
+
+  /* trips */
+  .trip { padding:14px; margin-bottom:10px; }
+  .trip .top { display:flex; align-items:center; gap:10px; }
+  .trip .top .grow { flex:1; min-width:0; }
+  .status { font-size:10.5px; font-weight:800; padding:3px 9px; border-radius:999px; }
+  .status.ok { background:var(--good-soft); color:var(--good); }
+  .status.held { background:var(--warn-soft); color:var(--warn); }
+  .status.x { background:var(--bad-soft); color:var(--bad); }
+  .tactions { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+
+  /* alerts */
+  .watch { display:flex; align-items:center; gap:12px; padding:13px; margin-bottom:8px; }
+  .watch.due { border-color:var(--good); }
+
+  .empty { text-align:center; padding:44px 16px; color:var(--dim); }
+  .empty .e { font-size:44px; }
+  .note { font-size:12px; color:var(--dim); background:var(--accent-soft); border-radius:12px; padding:10px 13px; margin:12px 0; }
+  .toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:var(--ink); color:var(--card); padding:11px 18px; border-radius:999px; font-weight:700; font-size:13.5px; z-index:99; box-shadow:var(--sh); animation:up .2s ease; }
+  @keyframes up { from{opacity:0;transform:translate(-50%,8px)} }
+  .err { color:var(--bad); font-size:12.5px; font-weight:600; margin-top:6px; }
+  footer { text-align:center; color:var(--faint); font-size:11.5px; padding:10px 16px 26px; }
+  h3.sec { font-size:13px; text-transform:uppercase; letter-spacing:.07em; color:var(--dim); margin:18px 0 8px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="hrow">
+      <img class="logo" src="icon.svg" alt="">
+      <div>
+        <div class="hname">TravelDeals</div>
+        <div class="hsub">Search · compare · book — flights & hotels</div>
+      </div>
+      <div class="hspace">
+        <button class="chip" id="modeChip" title="Data source">demo</button>
+        <select class="cursel" id="curSel"><option>USD</option><option>GBP</option><option>EUR</option></select>
+        <button class="chip" id="profBtn">👤 <span id="tierName">Member</span></button>
+      </div>
+    </div>
+    <nav id="nav"></nav>
+  </div>
+</header>
+
+<main class="wrap" id="main"></main>
+<footer>TravelDeals · a deterministic booking simulation over a real-geography price model — no real tickets are issued.
+Run <code>server.mjs</code> with Amadeus test keys for live fares.</footer>
+
+<script src="engine.js"></script>
+<script>
+'use strict';
+const E = DealsEngine;
+const $ = (s, el) => (el || document).querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const TODAY = new Date().toISOString().slice(0, 10);
+
+/* ── persisted state ─────────────────────────────────────────────── */
+const load = (k, d) => { try { return JSON.parse(localStorage.getItem('td2.' + k)) ?? d; } catch { return d; } };
+const save = (k, v) => { try { localStorage.setItem('td2.' + k, JSON.stringify(v)); } catch {} };
+const S = {
+  tab: 'flights',
+  cur: load('cur', 'USD'),
+  profile: load('profile', { name: '', points: 0, stays: 0, credit: 0 }),
+  trips: load('trips', []),
+  watches: load('watches', []),
+  fp: load('fp', { origin: '', dest: '', depart: E.addDays(TODAY, 21), ret: E.addDays(TODAY, 28), rt: true, adults: 1, cabin: 'economy' }),
+  hp: load('hp', { city: '', checkin: E.addDays(TODAY, 21), checkout: E.addDays(TODAY, 24), guests: 2, rooms: 1 }),
+  fRes: null, fSort: 'best', fNonstop: false,
+  hRes: null, ex: null, exOrigin: load('exOrigin', ''),
+  live: false, wiz: null
+};
+$('#curSel').value = S.cur;
+
+/* ── money display (engine prices are USD) ───────────────────────── */
+const M = usd => E.fmtMoney(E.convert(usd, 'USD', S.cur), S.cur);
+
+/* ── live mode probe (optional server.mjs) ───────────────────────── */
+try {
+  fetch('api/health', { signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(1200) : undefined })
+    .then(r => r.ok && r.json()).then(j => {
+      if (j && j.ok) { S.live = true; const c = $('#modeChip'); c.textContent = 'LIVE'; c.classList.add('live'); }
+    }).catch(() => {});
+} catch (e) {}
+
+/* ── toast ───────────────────────────────────────────────────────── */
+let toastT;
+function toast(msg) {
+  let t = $('.toast'); if (t) t.remove();
+  t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
+  document.body.appendChild(t);
+  clearTimeout(toastT); toastT = setTimeout(() => t.remove(), 2600);
+}
+
+/* ── nav ─────────────────────────────────────────────────────────── */
+const TABS = [['flights', '✈️ Flights'], ['hotels', '🏨 Hotels'], ['explore', '🌍 Explore'], ['trips', '🧳 Trips'], ['alerts', '🔔 Alerts']];
+function dueCount() { return E.alertsDue(S.watches, TODAY).filter(a => a.due).length; }
+function renderNav() {
+  $('#nav').innerHTML = TABS.map(([id, label]) => {
+    const badge = id === 'alerts' && dueCount() ? `<span class="b">${dueCount()}</span>` :
+                  id === 'trips' && S.trips.filter(t => t.status !== 'cancelled').length ? `<span class="b" style="background:var(--accent)">${S.trips.filter(t => t.status !== 'cancelled').length}</span>` : '';
+    return `<button class="${S.tab === id ? 'on' : ''}" onclick="go('${id}')">${label}${badge}</button>`;
+  }).join('');
+}
+function go(tab) { S.tab = tab; render(); }
+
+/* ── shared bits ─────────────────────────────────────────────────── */
+const airportOptions = Object.keys(E.AIRPORTS).map(c => `<option value="${c}">${E.AIRPORTS[c][0]}</option>`).join('') +
+  Object.keys(E.CITY_ALIAS).map(c => `<option value="${c}"></option>`).join('');
+function scoreHTML(s) {
+  const cls = s >= 65 ? 'hi' : s >= 45 ? 'mid' : 'lo';
+  return `<span class="score ${cls}">${s} · ${E.scoreLabel(s)}</span>`;
+}
+function sparkline(hist, w, h) {
+  if (hist.length < 2) return '';
+  const ps = hist.map(x => x.p), min = Math.min(...ps), max = Math.max(...ps) || 1;
+  const pts = ps.map((p, i) => `${(i / (ps.length - 1) * w).toFixed(1)},${(h - 3 - (p - min) / (max - min || 1) * (h - 6)).toFixed(1)}`).join(' ');
+  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="2" opacity=".8"/></svg>`;
+}
+function durTxt(m) { return Math.floor(m / 60) + 'h ' + ('0' + m % 60).slice(-2) + 'm'; }
+
+/* ══ FLIGHTS ══════════════════════════════════════════════════════ */
+function viewFlights() {
+  const p = S.fp;
+  let html = `
+  <div class="card">
+    <div class="row" style="justify-content:space-between;margin-bottom:12px">
+      <div class="seg">
+        <button class="${p.rt ? 'on' : ''}" onclick="S.fp.rt=true;render()">Round trip</button>
+        <button class="${!p.rt ? 'on' : ''}" onclick="S.fp.rt=false;render()">One way</button>
+      </div>
+    </div>
+    <div class="row">
+      <div style="flex:1"><label class="f">From</label>
+        <input id="fo" list="apts" placeholder="JFK, LON, DXB…" value="${esc(p.origin)}" maxlength="3" style="text-transform:uppercase"></div>
+      <button class="swap" onclick="swapOD()" title="Swap">⇄</button>
+      <div style="flex:1"><label class="f">To</label>
+        <input id="fd" list="apts" placeholder="City or code" value="${esc(p.dest)}" maxlength="3" style="text-transform:uppercase"></div>
+    </div>
+    <div class="grid4" style="margin-top:10px">
+      <div><label class="f">Depart</label><input id="fdep" type="date" min="${TODAY}" value="${p.depart}"></div>
+      <div ${p.rt ? '' : 'style="display:none"'}><label class="f">Return</label><input id="fret" type="date" min="${p.depart}" value="${p.ret}"></div>
+      <div><label class="f">Travellers</label><select id="fad">${[1,2,3,4,5,6].map(n => `<option ${p.adults===n?'selected':''} value="${n}">${n} adult${n>1?'s':''}</option>`).join('')}</select></div>
+      <div><label class="f">Cabin</label><select id="fcab">
+        <option value="economy" ${p.cabin==='economy'?'selected':''}>Economy</option>
+        <option value="premium" ${p.cabin==='premium'?'selected':''}>Premium</option>
+        <option value="business" ${p.cabin==='business'?'selected':''}>Business</option>
+        <option value="first" ${p.cabin==='first'?'selected':''}>First</option></select></div>
+    </div>
+    <div style="margin-top:12px"><button class="btn" onclick="doFlightSearch()">Search flights</button></div>
+    <datalist id="apts">${airportOptions}</datalist>
+  </div>`;
+
+  const R = S.fRes;
+  if (R && R.error) html += `<div class="card" style="margin-top:12px"><div class="err">${esc(R.error)}</div></div>`;
+  if (R && !R.error) {
+    const hist = E.priceHistory({ origin: p.origin, dest: p.dest, depart: p.depart, ret: p.rt ? p.ret : null, today: TODAY, cabin: p.cabin });
+    const typ = E.typical(hist);
+    const fc = E.forecast(hist, E.daysBetween(TODAY, p.depart));
+    const fcIcon = { buy: '📈', wait: '📉', track: '👀' }[fc.advice];
+    const fcTitle = { buy: 'Book now', wait: 'Wait — likely to drop', track: 'Prices stable' }[fc.advice];
+    html += `
+    <div class="fc ${fc.advice}">
+      <div style="font-size:22px">${fcIcon}</div>
+      <div style="flex:1">
+        <div class="big">${fcTitle}${fc.pct ? ` · ~${fc.pct > 0 ? '+' : ''}${fc.pct}% in 2 weeks` : ''}</div>
+        <div class="why">${esc(fc.reason)} Typical price: <b>${M(typ)}</b></div>
+      </div>
+      ${sparkline(hist, 90, 34)}
+    </div>
+    <div class="flex-strip">${E.flexGrid({ origin: p.origin, dest: p.dest, depart: p.depart, ret: p.rt ? p.ret : null, today: TODAY, cabin: p.cabin })
+      .map(x => `<button class="fd ${x.offset === 0 ? 'sel' : ''} ${x.best ? 'best' : ''}" onclick="shiftDate(${x.offset})">
+        <div class="d">${new Date(x.date + 'T12:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
+        <div class="p">${M(x.price)}</div></button>`).join('')}</div>
+    <div class="row" style="justify-content:space-between;margin:4px 0 10px">
+      <div class="seg">
+        <button class="${S.fSort === 'best' ? 'on' : ''}" onclick="S.fSort='best';render()">Best</button>
+        <button class="${S.fSort === 'cheap' ? 'on' : ''}" onclick="S.fSort='cheap';render()">Cheapest</button>
+        <button class="${S.fSort === 'fast' ? 'on' : ''}" onclick="S.fSort='fast';render()">Fastest</button>
+      </div>
+      <div class="row" style="gap:6px">
+        <button class="btn ghost sm" style="${S.fNonstop ? 'border-color:var(--accent);color:var(--accent)' : ''}" onclick="S.fNonstop=!S.fNonstop;render()">Nonstop only</button>
+        <button class="btn sec sm" onclick="watchRoute()">🔔 Watch</button>
+      </div>
+    </div>`;
+    let offers = R.offers.filter(o => !S.fNonstop || o.stops === 0);
+    if (S.fSort === 'cheap') offers = [...offers].sort((a, b) => a.price - b.price);
+    if (S.fSort === 'fast') offers = [...offers].sort((a, b) => a.durMin - b.durMin);
+    if (S.fSort === 'best') offers = [...offers].sort((a, b) => (a.price + a.durMin * 1.4) - (b.price + b.durMin * 1.4));
+    html += offers.map(o => `
+      <div class="card offer">
+        <div class="al">${o.airline.code}</div>
+        <div class="omid">
+          <div class="times">${o.dep} <span class="arr">→</span> ${o.arr}${o.nextDay ? '<sup>+1</sup>' : ''}</div>
+          <div class="osub">${esc(o.airline.name)} ${o.fn} · ${durTxt(o.durMin)} · ${o.stops === 0 ? '<b style="color:var(--good)">Nonstop</b>' : '1 stop ' + o.via}</div>
+        </div>
+        <div class="oright">
+          <div class="price">${M(o.price)}</div>
+          ${scoreHTML(E.dealScore(o.price, typ))}<br>
+          ${o.seatsLeft <= 3 ? `<span class="seatsleft">${o.seatsLeft} left at this price</span><br>` : ''}
+          <button class="btn sm" style="margin-top:6px" onclick="openFares(${R.offers.indexOf(o)})">Select</button>
+        </div>
+      </div>`).join('');
+    html += `<div class="tiny" style="text-align:center;margin-top:6px">Deal scores compare each fare with the 60-day typical price for this exact trip.</div>`;
+  }
+  return html;
+}
+function swapOD() { S.fp.origin = $('#fd').value; S.fp.dest = $('#fo').value; readFlightForm(); render(); }
+function readFlightForm() {
+  const p = S.fp;
+  if ($('#fo')) {
+    p.origin = $('#fo').value.toUpperCase().trim(); p.dest = $('#fd').value.toUpperCase().trim();
+    p.depart = $('#fdep').value; if ($('#fret')) p.ret = $('#fret').value;
+    p.adults = +$('#fad').value; p.cabin = $('#fcab').value;
+  }
+  save('fp', p);
+}
+async function doFlightSearch() {
+  readFlightForm();
+  const p = S.fp;
+  if (S.live) {
+    try {
+      const r = await fetch(`api/flights?origin=${p.origin}&dest=${p.dest}&depart=${p.depart}${p.rt ? '&ret=' + p.ret : ''}&adults=${p.adults}&cabin=${p.cabin}`);
+      if (r.ok) { S.fRes = await r.json(); render(); return; }
+    } catch {}
+  }
+  S.fRes = E.searchFlights({ origin: p.origin, dest: p.dest, depart: p.depart, ret: p.rt ? p.ret : null, adults: p.adults, cabin: p.cabin, today: TODAY });
+  render();
+}
+function shiftDate(k) {
+  S.fp.depart = E.addDays(S.fp.depart, k);
+  if (S.fp.rt) S.fp.ret = E.addDays(S.fp.ret, k);
+  save('fp', S.fp); doFlightSearch();
+}
+function watchRoute() {
+  const p = S.fp, R = S.fRes;
+  if (!R || R.error) return;
+  const cheapest = Math.min(...R.offers.map(o => o.price));
+  const target = Math.round(cheapest * 0.9);
+  S.watches.push({ kind: 'flight', origin: R.origin.code, dest: R.dest.code, depart: p.depart, ret: p.rt ? p.ret : null, cabin: p.cabin, target, created: TODAY });
+  save('watches', S.watches);
+  toast(`Watching ${R.origin.code}→${R.dest.code} — we'll flag ${M(target)} or less`);
+  renderNav();
+}
+
+/* ── fare sheet + booking wizard ─────────────────────────────────── */
+function openFares(idx) {
+  const o = S.fRes.offers[idx];
+  S.wiz = { kind: 'flight', offer: o, step: 0, fare: null, travellers: [], seats: [], bags: 0, insurance: false, email: '' };
+  render();
+}
+function pickFare(fi) {
+  const w = S.wiz;
+  w.fare = w.offer.fares[fi];
+  w.travellers = Array.from({ length: S.fp.adults }, () => ({ first: '', last: '' }));
+  w.step = 1; render();
+}
+function freezeFare(fi) {
+  const w = S.wiz, o = w.offer, f = o.fares[fi];
+  const h = E.holdQuote(f.price, TODAY);
+  S.trips.unshift({
+    kind: 'flight', status: 'held', ref: 'H' + E.makePNR(o.id + fi).slice(0, 5),
+    route: `${S.fRes.origin.code} → ${S.fRes.dest.code}`, city: S.fRes.dest.city,
+    date: S.fp.depart, detail: `${o.airline.name} ${o.fn} · ${f.brand} fare frozen at ${M(f.price)}`,
+    total: h.fee, held: { price: f.price, brand: f.brand, expires: h.expires }, cur: S.cur, createdAt: TODAY
+  });
+  save('trips', S.trips);
+  S.wiz = null;
+  toast(`Price frozen for 48h — fee ${M(h.fee)}`);
+  go('trips');
+}
+function toggleSeat(id, price, taken) {
+  if (taken) return;
+  const w = S.wiz, i = w.seats.findIndex(s => s.id === id);
+  if (i >= 0) w.seats.splice(i, 1);
+  else { if (w.seats.length >= S.fp.adults) w.seats.shift(); w.seats.push({ id, price }); }
+  render();
+}
+function bookingQuote() {
+  const w = S.wiz;
+  return E.priceBooking({ farePrice: w.fare.price, adults: S.fp.adults, seats: w.seats, bags: w.bags, insurance: w.insurance });
+}
+function wizNext() {
+  const w = S.wiz;
+  if (w.step === 1) {
+    w.travellers.forEach((t, i) => { t.first = $('#tf' + i).value; t.last = $('#tl' + i).value; });
+    w.email = $('#temail').value;
+    const errs = [];
+    w.travellers.forEach((t, i) => {
+      E.validTraveler({ ...t, email: w.email }).forEach(e => {
+        if (e === 'Valid email' && i > 0) return;
+        errs.push(e === 'Valid email' ? 'Valid email' : `Traveller ${i + 1}: ${e}`);
+      });
+    });
+    const uniq = [...new Set(errs)];
+    if (uniq.length) { w.err = uniq.join(' · '); render(); return; }
+  }
+  w.err = null; w.step++; render();
+}
+function payBooking() {
+  const w = S.wiz;
+  const pay = { number: $('#cnum').value, expiry: $('#cexp').value, cvv: $('#ccvv').value, name: $('#cname').value };
+  const errs = E.validPayment(pay, TODAY);
+  if (errs.length) { w.err = 'Check: ' + errs.join(', '); render(); return; }
+  const q = bookingQuote();
+  const credit = Math.min(S.profile.credit, q.total);
+  const paid = q.total - credit;
+  const pnr = E.makePNR(w.offer.id + w.email);
+  const pts = E.pointsEarned(paid);
+  S.profile.credit -= credit; S.profile.points += pts; save('profile', S.profile);
+  S.trips.unshift({
+    kind: 'flight', status: 'confirmed', ref: pnr,
+    route: `${S.fRes.origin.code} → ${S.fRes.dest.code}`, city: S.fRes.dest.city,
+    date: S.fp.depart, ret: S.fp.rt ? S.fp.ret : null,
+    detail: `${w.offer.airline.name} ${w.offer.fn} · ${w.offer.dep}–${w.offer.arr} · ${w.fare.brand}`,
+    airline: w.offer.airline, dep: w.offer.dep, arr: w.offer.arr,
+    travellers: w.travellers.map(t => t.first + ' ' + t.last),
+    seats: w.seats.map(s => s.id), brand: w.fare.brand,
+    total: paid, points: pts, cur: S.cur, createdAt: TODAY,
+    gate: 'B' + (1 + E.hashStr(pnr) % 42)
+  });
+  save('trips', S.trips);
+  w.done = { pnr, paid, pts, credit }; w.step = 4; render();
+}
+function closeWiz() { S.wiz = null; render(); }
+
+function viewWizard() {
+  const w = S.wiz;
+  if (!w) return '';
+  if (w.kind === 'hotel') return viewHotelWizard();
+  const R = S.fRes;
+  let body = '';
+  const stepsBar = `<div class="steps">${[0,1,2,3,4].map(i => `<i class="${i <= w.step ? 'on' : ''}"></i>`).join('')}</div>`;
+
+  if (w.step === 0) {
+    body = `<h2>Choose your fare</h2><div class="muted" style="margin-bottom:12px">${esc(w.offer.airline.name)} ${w.offer.fn} · ${R.origin.code} → ${R.dest.code}</div>` +
+      w.offer.fares.map((f, i) => `
+      <div class="fare" onclick="pickFare(${i})">
+        <div style="flex:1">
+          <b>${f.brand}</b>
+          <div class="perk">${f.bag ? '🧳 Checked bag' : '<s>🧳 No checked bag</s>'} · ${f.seat ? '💺 Free seat pick' : '<s>💺 Paid seats</s>'} · ${f.refundable ? '↩️ Refundable' : '<s>↩️ Non-refundable</s>'}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="price" style="font-size:16px">${M(f.price)}</div>
+          <button class="tiny" style="color:var(--accent);font-weight:700" onclick="event.stopPropagation();freezeFare(${i})">🧊 Freeze 48h · ${M(E.holdQuote(f.price, TODAY).fee)}</button>
+        </div>
+      </div>`).join('') +
+      `<div class="tiny" style="margin-top:8px">🧊 Fare freeze: pay a small fee now, complete the booking at this exact price any time in the next 48 hours.</div>`;
+  }
+
+  if (w.step === 1) {
+    body = `<h2>Travellers</h2><div class="muted" style="margin-bottom:10px">${w.fare.brand} fare · ${M(w.fare.price)} per person</div>` +
+      w.travellers.map((t, i) => `
+        <div class="grid2" style="margin-bottom:8px">
+          <div><label class="f">Traveller ${i + 1} — first name</label><input id="tf${i}" value="${esc(t.first)}" placeholder="As on passport"></div>
+          <div><label class="f">Last name</label><input id="tl${i}" value="${esc(t.last)}"></div>
+        </div>`).join('') +
+      `<div style="margin:2px 0 12px"><label class="f">Contact email</label><input id="temail" type="email" value="${esc(w.email)}" placeholder="you@example.com"></div>
+      ${w.err ? `<div class="err" style="margin-bottom:8px">${esc(w.err)}</div>` : ''}
+      <button class="btn" onclick="wizNext()">Continue to seats</button>`;
+  }
+
+  if (w.step === 2) {
+    const rows = E.seatMap(w.offer.id);
+    body = `<h2>Pick ${S.fp.adults > 1 ? S.fp.adults + ' seats' : 'a seat'}</h2>
+      <div class="muted">${w.fare.seat ? 'Seat selection is free on ' + w.fare.brand + ' — extras still priced.' : 'Skip for free assignment at check-in; picked seats are charged.'}</div>
+      <div class="legend" style="margin-top:10px">
+        <span><i style="background:var(--accent-soft)"></i>Standard</span>
+        <span><i style="background:var(--gold-soft)"></i>Extra legroom</span>
+        <span><i style="background:var(--line)"></i>Taken</span>
+      </div>
+      <div class="cabin">` +
+      rows.map(r => r.seats.slice(0, 3).map(s => seatBtn(s)).join('') + `<div class="aisle">${r.n}</div>` + r.seats.slice(3).map(s => seatBtn(s)).join('')).join('') +
+      `</div>
+      <div class="muted" style="text-align:center">${w.seats.length ? 'Selected: ' + w.seats.map(s => s.id + (s.price ? ` (+${M(s.price)})` : '')).join(', ') : 'No seats picked — we’ll assign free ones at check-in.'}</div>
+      <button class="btn" style="margin-top:12px" onclick="S.wiz.step=3;render()">Continue to extras & payment</button>`;
+  }
+
+  if (w.step === 3) {
+    const q = bookingQuote();
+    const credit = Math.min(S.profile.credit, q.total);
+    body = `<h2>Extras & payment</h2>
+      <div class="row" style="justify-content:space-between;margin:10px 0">
+        <div><b>🧳 Checked bags</b> <span class="muted">${M(35)} each</span></div>
+        <div class="seg"><button onclick="S.wiz.bags=Math.max(0,S.wiz.bags-1);render()">−</button><button style="pointer-events:none">${w.bags}</button><button onclick="S.wiz.bags=Math.min(4,S.wiz.bags+1);render()">+</button></div>
+      </div>
+      <label class="row" style="justify-content:space-between;margin-bottom:8px;cursor:pointer">
+        <div><b>🛟 Travel insurance</b> <span class="muted">${M(12)}/person — cancel-for-any-reason cover</span></div>
+        <input type="checkbox" style="width:auto" ${w.insurance ? 'checked' : ''} onchange="S.wiz.insurance=this.checked;render()">
+      </label>
+      <div class="bd">
+        <div class="r"><span>Fare × ${S.fp.adults}</span><b>${M(q.base)}</b></div>
+        ${q.seats ? `<div class="r"><span>Seats</span><b>${M(q.seats)}</b></div>` : ''}
+        ${q.bags ? `<div class="r"><span>Bags</span><b>${M(q.bags)}</b></div>` : ''}
+        ${q.insurance ? `<div class="r"><span>Insurance</span><b>${M(q.insurance)}</b></div>` : ''}
+        <div class="r"><span>Taxes & fees</span><b>${M(q.taxes)}</b></div>
+        ${credit ? `<div class="r" style="color:var(--good)"><span>Wallet credit</span><b>−${M(credit)}</b></div>` : ''}
+        <div class="r tot"><span>Total</span><span>${M(q.total - credit)}</span></div>
+      </div>
+      <h3 class="sec">Card details <button class="tiny" style="color:var(--accent);font-weight:700" onclick="fillTestCard()">use test card</button></h3>
+      <div style="margin-bottom:8px"><input id="cnum" inputmode="numeric" placeholder="Card number" autocomplete="cc-number"></div>
+      <div class="row" style="margin-bottom:8px">
+        <input id="cexp" placeholder="MM/YY" style="flex:1">
+        <input id="ccvv" inputmode="numeric" placeholder="CVV" style="flex:1">
+      </div>
+      <div style="margin-bottom:12px"><input id="cname" placeholder="Name on card"></div>
+      ${w.err ? `<div class="err" style="margin-bottom:8px">${esc(w.err)}</div>` : ''}
+      <button class="btn" onclick="payBooking()">Pay ${M(q.total - credit)} — demo, no real charge</button>
+      <div class="tiny" style="text-align:center;margin-top:8px">Card is Luhn-validated on device and never sent anywhere.</div>`;
+  }
+
+  if (w.step === 4) {
+    const d = w.done;
+    body = `<h2 style="text-align:center">🎉 You're booked!</h2>
+      <div class="ticket" style="margin-top:12px">
+        <div class="route">${R.origin.code} <span>→</span> ${R.dest.code}</div>
+        <div class="meta">
+          <div>Flight<b>${w.offer.fn}</b></div><div>Date<b>${S.fp.depart}</b></div>
+          <div>Departs<b>${w.offer.dep}</b></div><div>Seats<b>${w.seats.map(s => s.id).join(' ') || 'At check-in'}</b></div>
+        </div>
+        <div class="stub"><div><div class="tiny" style="color:#8fa0d0">BOOKING REF</div><div class="pnr">${d.pnr}</div></div>
+        <div style="text-align:right;font-size:12px;color:#b9c5ec">Paid<br><b style="font-size:16px;color:#fff">${M(d.paid)}</b></div></div>
+        <div class="bars">${E.barcode(d.pnr).map(x => `<i style="width:${x}px"></i>`).join('')}</div>
+      </div>
+      <div class="note">⭐ You earned <b>${d.pts.toLocaleString()} points</b>${d.credit ? ` and used ${M(d.credit)} wallet credit` : ''}. Your e-ticket lives in <b>Trips</b>.</div>
+      <div class="row">
+        <button class="btn sec" onclick="crossSellHotel()">🏨 Hotel in ${esc(R.dest.city)}</button>
+        <button class="btn" onclick="closeWiz();go('trips')">View my trips</button>
+      </div>`;
+  }
+
+  return `<div class="ovl" onclick="if(event.target===this)closeWiz()"><div class="sheet">
+    <div class="row" style="justify-content:space-between"><div class="tiny">TravelDeals booking</div><button onclick="closeWiz()" style="font-size:18px;color:var(--faint)">✕</button></div>
+    ${stepsBar}${body}</div></div>`;
+}
+function seatBtn(s) {
+  const sel = S.wiz.seats.find(x => x.id === s.id);
+  return `<button class="seat ${s.taken ? 'taken' : ''} ${s.cls !== 'std' ? 'extra' : ''} ${sel ? 'sel' : ''}"
+    onclick="toggleSeat('${s.id}',${s.price},${s.taken})" title="${s.id}${s.price ? ' +$' + s.price : ''}">${s.id}</button>`;
+}
+function fillTestCard() {
+  $('#cnum').value = '4242 4242 4242 4242'; $('#cexp').value = '12/29'; $('#ccvv').value = '123';
+  $('#cname').value = S.profile.name || 'A Traveller';
+}
+function crossSellHotel() {
+  const R = S.fRes;
+  S.hp.city = R.dest.code; S.hp.checkin = S.fp.depart;
+  S.hp.checkout = S.fp.rt ? S.fp.ret : E.addDays(S.fp.depart, 3);
+  save('hp', S.hp); S.wiz = null; S.hRes = null;
+  go('hotels'); doHotelSearch();
+}
+
+/* ══ HOTELS ═══════════════════════════════════════════════════════ */
+function viewHotels() {
+  const p = S.hp;
+  const disc = E.stayDiscountPct(S.profile.stays);
+  let html = `
+  <div class="card">
+    <div><label class="f">City</label><input id="hc" list="apts" placeholder="NYC, LON, PAR, DXB…" value="${esc(p.city)}" maxlength="3" style="text-transform:uppercase"></div>
+    <div class="grid4" style="margin-top:10px">
+      <div><label class="f">Check-in</label><input id="hin" type="date" min="${TODAY}" value="${p.checkin}"></div>
+      <div><label class="f">Check-out</label><input id="hout" type="date" min="${p.checkin}" value="${p.checkout}"></div>
+      <div><label class="f">Guests</label><select id="hg">${[1,2,3,4,5,6].map(n => `<option ${p.guests===n?'selected':''}>${n}</option>`).join('')}</select></div>
+      <div><label class="f">Rooms</label><select id="hr">${[1,2,3,4].map(n => `<option ${p.rooms===n?'selected':''}>${n}</option>`).join('')}</select></div>
+    </div>
+    <div style="margin-top:12px"><button class="btn" onclick="doHotelSearch()">Search hotels</button></div>
+  </div>
+  ${disc ? `<div class="note">💛 Loyalty level ${disc === 20 ? 3 : disc === 15 ? 2 : 1}: <b>${disc}% off</b> every stay, applied automatically at checkout (${S.profile.stays} stays completed).</div>` : ''}`;
+
+  const R = S.hRes;
+  if (R && R.error) html += `<div class="card" style="margin-top:12px"><div class="err">${esc(R.error)}</div></div>`;
+  if (R && !R.error) {
+    html += `<h3 class="sec">${R.hotels.length} stays in ${esc(R.city.city)} · ${R.nights} night${R.nights > 1 ? 's' : ''}</h3>` +
+      R.hotels.map((h, i) => `
+      <div class="card hcard">
+        <div class="hico">🏨</div>
+        <div style="flex:1;min-width:0">
+          <b>${esc(h.name)}</b> <span class="stars">${'★'.repeat(h.stars)}</span><br>
+          <span class="rate">${h.rating.toFixed(1)}</span>
+          <span class="tiny">${h.rating >= 9 ? 'Exceptional' : h.rating >= 8 ? 'Excellent' : h.rating >= 7 ? 'Very good' : 'Good'} · ${h.reviews.toLocaleString()} reviews</span>
+          <div class="tiny">📍 ${esc(h.hood)} · ${h.distKm} km from centre</div>
+          <div class="amen">${h.amenities.slice(0, 4).map(a => `<span class="pill">${esc(a)}</span>`).join('')}</div>
+        </div>
+        <div class="oright">
+          <div class="price">${M(h.nightly)}</div><div class="tiny">per night</div>
+          ${scoreHTML(h.score)}<br>
+          ${disc ? `<span class="pill gold">−${disc}% loyalty</span><br>` : ''}
+          <button class="btn sm" style="margin-top:6px" onclick="openRates(${i})">Select</button>
+        </div>
+      </div>`).join('');
+  }
+  return html;
+}
+function readHotelForm() {
+  const p = S.hp;
+  if ($('#hc')) {
+    p.city = $('#hc').value.toUpperCase().trim();
+    p.checkin = $('#hin').value; p.checkout = $('#hout').value;
+    p.guests = +$('#hg').value; p.rooms = +$('#hr').value;
+  }
+  save('hp', p);
+}
+function doHotelSearch() {
+  readHotelForm();
+  S.hRes = E.searchHotels({ ...S.hp, today: TODAY });
+  render();
+}
+function openRates(i) {
+  S.wiz = { kind: 'hotel', hotel: S.hRes.hotels[i], step: 0, rate: null, guest: { first: '', last: '', email: '' }, err: null };
+  render();
+}
+function pickRate(ri) { S.wiz.rate = S.wiz.hotel.rates[ri]; S.wiz.step = 1; render(); }
+function hotelQuote() {
+  const w = S.wiz, h = w.hotel;
+  return E.priceHotel({ nightly: h.nightly, mult: w.rate.mult, nights: h.nights, rooms: S.hp.rooms, discountPct: E.stayDiscountPct(S.profile.stays) });
+}
+function payHotel() {
+  const w = S.wiz;
+  w.guest = { first: $('#gf').value, last: $('#gl').value, email: $('#ge').value };
+  const terrs = E.validTraveler({ ...w.guest });
+  const pay = { number: $('#cnum').value, expiry: $('#cexp').value, cvv: $('#ccvv').value, name: $('#cname').value };
+  const perrs = E.validPayment(pay, TODAY);
+  if (terrs.length || perrs.length) { w.err = 'Check: ' + terrs.concat(perrs).join(', '); render(); return; }
+  const q = hotelQuote();
+  const credit = Math.min(S.profile.credit, q.total);
+  const paid = q.total - credit;
+  const ref = 'H' + E.makePNR(w.hotel.id + w.guest.email).slice(0, 5);
+  const pts = E.pointsEarned(paid);
+  S.profile.credit -= credit; S.profile.points += pts; S.profile.stays += 1; save('profile', S.profile);
+  S.trips.unshift({
+    kind: 'hotel', status: 'confirmed', ref,
+    route: w.hotel.name, city: S.hRes.city.city,
+    date: S.hp.checkin, ret: S.hp.checkout,
+    detail: `${w.rate.plan} · ${w.hotel.nights} night${w.hotel.nights > 1 ? 's' : ''} · ${S.hp.rooms} room${S.hp.rooms > 1 ? 's' : ''}`,
+    freeCancel: w.rate.freeCancel, total: paid, points: pts, cur: S.cur, createdAt: TODAY
+  });
+  save('trips', S.trips);
+  w.done = { ref, paid, pts, credit }; w.step = 2; render();
+}
+function viewHotelWizard() {
+  const w = S.wiz, h = w.hotel;
+  let body = '';
+  const stepsBar = `<div class="steps">${[0,1,2].map(i => `<i class="${i <= w.step ? 'on' : ''}"></i>`).join('')}</div>`;
+  if (w.step === 0) {
+    body = `<h2>${esc(h.name)}</h2><div class="muted" style="margin-bottom:12px"><span class="stars">${'★'.repeat(h.stars)}</span> · ${h.rating.toFixed(1)} · ${esc(h.hood)}</div>` +
+      h.rates.map((r, i) => `
+      <div class="fare" onclick="pickRate(${i})">
+        <div style="flex:1"><b>${r.plan}</b>
+          <div class="perk">${r.breakfast ? '🥐 Breakfast' : '<s>🥐 No breakfast</s>'} · ${r.freeCancel ? '<b style="color:var(--good)">✅ Free cancellation</b>' : '<s>Free cancellation</s>'}</div>
+        </div>
+        <div class="price" style="font-size:16px">${M(Math.round(h.nightly * r.mult))}<span class="tiny">/night</span></div>
+      </div>`).join('');
+  }
+  if (w.step === 1) {
+    const q = hotelQuote();
+    const credit = Math.min(S.profile.credit, q.total);
+    body = `<h2>Lead guest & payment</h2>
+      <div class="grid2" style="margin:10px 0 8px">
+        <div><label class="f">First name</label><input id="gf" value="${esc(w.guest.first)}"></div>
+        <div><label class="f">Last name</label><input id="gl" value="${esc(w.guest.last)}"></div>
+      </div>
+      <div style="margin-bottom:10px"><label class="f">Email</label><input id="ge" type="email" value="${esc(w.guest.email)}"></div>
+      <div class="bd">
+        <div class="r"><span>${w.rate.plan} × ${h.nights}n × ${S.hp.rooms}</span><b>${M(q.room)}</b></div>
+        ${q.discount ? `<div class="r" style="color:var(--gold)"><span>Loyalty discount</span><b>−${M(q.discount)}</b></div>` : ''}
+        <div class="r"><span>Taxes & city fees</span><b>${M(q.taxes)}</b></div>
+        ${credit ? `<div class="r" style="color:var(--good)"><span>Wallet credit</span><b>−${M(credit)}</b></div>` : ''}
+        <div class="r tot"><span>Total</span><span>${M(q.total - credit)}</span></div>
+      </div>
+      <h3 class="sec">Card details <button class="tiny" style="color:var(--accent);font-weight:700" onclick="fillTestCard()">use test card</button></h3>
+      <div style="margin-bottom:8px"><input id="cnum" inputmode="numeric" placeholder="Card number"></div>
+      <div class="row" style="margin-bottom:8px"><input id="cexp" placeholder="MM/YY" style="flex:1"><input id="ccvv" placeholder="CVV" style="flex:1"></div>
+      <div style="margin-bottom:12px"><input id="cname" placeholder="Name on card"></div>
+      ${w.err ? `<div class="err" style="margin-bottom:8px">${esc(w.err)}</div>` : ''}
+      <button class="btn" onclick="payHotel()">Pay ${M(q.total - credit)} — demo, no real charge</button>`;
+  }
+  if (w.step === 2) {
+    const d = w.done;
+    body = `<h2 style="text-align:center">🎉 Stay confirmed!</h2>
+      <div class="ticket" style="margin-top:12px">
+        <div class="route" style="font-size:17px">${esc(h.name)}</div>
+        <div class="meta">
+          <div>Check-in<b>${S.hp.checkin}</b></div><div>Check-out<b>${S.hp.checkout}</b></div>
+          <div>Guests<b>${S.hp.guests}</b></div><div>Ref<b>${d.ref}</b></div>
+        </div>
+        <div class="bars">${E.barcode(d.ref).map(x => `<i style="width:${x}px"></i>`).join('')}</div>
+      </div>
+      <div class="note">⭐ ${d.pts.toLocaleString()} points earned · stay #${S.profile.stays} toward your next loyalty level.</div>
+      <button class="btn" onclick="closeWiz();go('trips')">View my trips</button>`;
+  }
+  return `<div class="ovl" onclick="if(event.target===this)closeWiz()"><div class="sheet">
+    <div class="row" style="justify-content:space-between"><div class="tiny">TravelDeals booking</div><button onclick="closeWiz()" style="font-size:18px;color:var(--faint)">✕</button></div>
+    ${stepsBar}${body}</div></div>`;
+}
+
+/* ══ EXPLORE ══════════════════════════════════════════════════════ */
+function viewExplore() {
+  let html = `
+  <div class="card">
+    <div class="row">
+      <div style="flex:1"><label class="f">From</label><input id="exo" list="apts" placeholder="Your airport (e.g. LHR)" value="${esc(S.exOrigin)}" maxlength="3" style="text-transform:uppercase"></div>
+      <div style="flex:none;align-self:flex-end"><button class="btn" style="width:auto" onclick="doExplore()">Explore Everywhere</button></div>
+    </div>
+    <div class="tiny" style="margin-top:8px">We scan every destination we know and rank the best-value round trips ~4 weeks out.</div>
+  </div>`;
+  const R = S.ex;
+  if (R && R.error) html += `<div class="card" style="margin-top:12px"><div class="err">${esc(R.error)}</div></div>`;
+  if (R && !R.error) {
+    html += `<div class="exgrid">` + R.results.map(x => `
+      <div class="card ex" onclick="pickDest('${x.code}','${R.depart}','${R.ret}')">
+        <div class="flag">${x.flag}</div>
+        <div class="city">${esc(x.city)}</div>
+        <div class="tiny">${x.code} · round trip</div>
+        <div class="price" style="font-size:17px;margin-top:4px">${M(x.price)}</div>
+        ${scoreHTML(x.score)}
+      </div>`).join('') + `</div>`;
+  }
+  return html;
+}
+function doExplore() {
+  S.exOrigin = $('#exo').value.toUpperCase().trim();
+  save('exOrigin', S.exOrigin);
+  S.ex = E.searchAnywhere(S.exOrigin, TODAY);
+  render();
+}
+function pickDest(code, depart, ret) {
+  S.fp.origin = S.exOrigin; S.fp.dest = code; S.fp.depart = depart; S.fp.ret = ret; S.fp.rt = true;
+  save('fp', S.fp); S.fRes = null;
+  go('flights'); doFlightSearch();
+}
+
+/* ══ TRIPS ════════════════════════════════════════════════════════ */
+function viewTrips() {
+  if (!S.trips.length) return `<div class="empty"><div class="e">🧳</div><b>No trips yet</b><div class="muted">Book a flight or a stay and your e-tickets appear here.</div></div>`;
+  return S.trips.map((t, i) => {
+    const st = t.status === 'confirmed' ? '<span class="status ok">Confirmed</span>' :
+               t.status === 'held' ? '<span class="status held">Price frozen</span>' :
+               '<span class="status x">Cancelled</span>';
+    let extra = '';
+    if (t.status === 'held') {
+      const left = E.daysBetween(TODAY, t.held.expires);
+      extra = `<div class="tiny" style="margin-top:6px">${left >= 0 ? `Frozen at ${M(t.held.price)} — expires ${t.held.expires} (${left}d left)` : '⚠️ Hold expired'}</div>
+        <div class="tactions">
+          ${left >= 0 ? `<button class="btn sm" onclick="toast('Search the route again and book — your frozen price is honoured at checkout.')">Complete booking</button>` : ''}
+          <button class="btn ghost sm" onclick="dropTrip(${i})">Remove</button>
+        </div>`;
+    } else if (t.status === 'confirmed') {
+      extra = `<div class="tactions">
+        ${t.kind === 'flight' ? `<button class="btn sec sm" onclick="S.trips[${i}].open=!S.trips[${i}].open;render()">${t.open ? 'Hide' : 'Show'} boarding pass</button>` : ''}
+        <button class="btn ghost sm" onclick="priceMatch(${i})">💷 Price match</button>
+        <button class="btn ghost sm" style="color:var(--bad)" onclick="cancelTrip(${i})">Cancel</button>
+      </div>`;
+      if (t.open && t.kind === 'flight') {
+        extra += `<div class="ticket" style="margin-top:10px">
+          <div class="route">${esc(t.route)}</div>
+          <div class="meta">
+            <div>Date<b>${t.date}</b></div><div>Boards<b>${t.dep}</b></div>
+            <div>Gate<b>${t.gate}</b></div><div>Seats<b>${(t.seats || []).join(' ') || '—'}</b></div>
+            <div>Passenger<b>${esc((t.travellers || [])[0] || '—')}</b></div>
+          </div>
+          <div class="stub"><div><div class="tiny" style="color:#8fa0d0">REF</div><div class="pnr">${t.ref}</div></div></div>
+          <div class="bars">${E.barcode(t.ref).map(x => `<i style="width:${x}px"></i>`).join('')}</div>
+        </div>`;
+      }
+    } else {
+      extra = `<div class="tactions"><button class="btn ghost sm" onclick="dropTrip(${i})">Remove</button></div>`;
+    }
+    return `<div class="card trip">
+      <div class="top">
+        <div style="font-size:24px">${t.kind === 'flight' ? '✈️' : '🏨'}</div>
+        <div class="grow">
+          <b>${esc(t.route)}</b>
+          <div class="tiny">${t.date}${t.ret ? ' → ' + t.ret : ''} · ${esc(t.detail)}</div>
+        </div>
+        <div style="text-align:right">${st}<div class="tiny" style="margin-top:3px">${M(t.total)}</div></div>
+      </div>${extra}</div>`;
+  }).join('');
+}
+function cancelTrip(i) {
+  const t = S.trips[i];
+  const q = t.kind === 'hotel'
+    ? { refund: t.freeCancel ? t.total : 0, credit: t.freeCancel ? t.total : Math.round(t.total * 0.2) }
+    : E.refundQuote(t.brand, t.total);
+  const msg = q.refund ? `Cancel and refund ${M(q.refund)} to your card?`
+    : `This ${t.kind === 'hotel' ? 'rate' : t.brand + ' fare'} is non-refundable. Cancel for ${M(q.credit)} wallet credit instead?`;
+  if (!confirm(msg)) return;
+  t.status = 'cancelled';
+  if (!q.refund && q.credit) { S.profile.credit += q.credit; save('profile', S.profile); }
+  save('trips', S.trips);
+  toast(q.refund ? `Refunded ${M(q.refund)}` : `${M(q.credit)} added to your wallet`);
+  render();
+}
+function priceMatch(i) {
+  const t = S.trips[i];
+  const v = prompt(`Found "${t.route}" cheaper elsewhere? Enter the lower total price you found (${S.cur}):`);
+  if (v === null) return;
+  const found = Math.round(Number(v));
+  if (!isFinite(found) || found <= 0) return;
+  const foundUSD = E.convert(found, S.cur, 'USD');
+  if (foundUSD >= t.total) { toast('That isn’t lower than what you paid — no match needed.'); return; }
+  const diff = t.total - foundUSD;
+  S.profile.credit += diff; save('profile', S.profile);
+  toast(`✅ Price matched — ${M(diff)} credited to your wallet`);
+  render();
+}
+function dropTrip(i) { S.trips.splice(i, 1); save('trips', S.trips); render(); }
+
+/* ══ ALERTS ═══════════════════════════════════════════════════════ */
+function viewAlerts() {
+  if (!S.watches.length) return `<div class="empty"><div class="e">🔔</div><b>No price watches</b><div class="muted">Search a route, then tap 🔔 Watch — we check the fare against your target every time you open the app.</div></div>`;
+  const checked = E.alertsDue(S.watches, TODAY);
+  return checked.map((a, i) => `
+    <div class="card watch ${a.due ? 'due' : ''}">
+      <div style="font-size:22px">${a.due ? '🎯' : '👀'}</div>
+      <div style="flex:1">
+        <b>${a.watch.origin} → ${a.watch.dest}</b> <span class="tiny">${a.watch.depart}${a.watch.ret ? ' – ' + a.watch.ret : ''}</span>
+        <div class="tiny">Target ${M(a.watch.target)} · now <b style="color:${a.due ? 'var(--good)' : 'var(--ink)'}">${M(a.current)}</b>
+        ${a.due ? '<span class="pill good">Target hit — book it!</span>' : ''}</div>
+      </div>
+      ${a.due ? `<button class="btn sm" onclick="bookWatch(${i})">Book</button>` : ''}
+      <button class="btn ghost sm" onclick="S.watches.splice(${i},1);save('watches',S.watches);render()">✕</button>
+    </div>`).join('');
+}
+function bookWatch(i) {
+  const w = S.watches[i];
+  S.fp = { ...S.fp, origin: w.origin, dest: w.dest, depart: w.depart, ret: w.ret || S.fp.ret, rt: !!w.ret, cabin: w.cabin };
+  save('fp', S.fp); go('flights'); doFlightSearch();
+}
+
+/* ══ PROFILE ══════════════════════════════════════════════════════ */
+function viewProfile() {
+  const pr = S.profile, tier = E.tierFor(pr.points);
+  return `<div class="ovl" onclick="if(event.target===this){S.showProf=false;render()}"><div class="sheet">
+    <div class="row" style="justify-content:space-between"><h2>Your account</h2><button onclick="S.showProf=false;render()" style="font-size:18px;color:var(--faint)">✕</button></div>
+    <div style="margin:10px 0"><label class="f">Name</label><input id="pname" value="${esc(pr.name)}" placeholder="Traveller name" onchange="S.profile.name=this.value;save('profile',S.profile)"></div>
+    <div class="card" style="background:var(--accent-soft);border:0">
+      <b>⭐ ${tier.name}</b> · ${pr.points.toLocaleString()} points
+      ${tier.next ? `<div style="height:7px;border-radius:99px;background:var(--line);margin:8px 0 4px"><div style="height:100%;width:${tier.pct}%;border-radius:99px;background:var(--accent)"></div></div>
+      <div class="tiny">${(tier.nextAt - pr.points).toLocaleString()} points to ${tier.next}</div>` : '<div class="tiny">Top tier — enjoy it.</div>'}
+    </div>
+    <div class="row" style="margin-top:10px;gap:10px">
+      <div class="card" style="flex:1;text-align:center"><b>${pr.stays}</b><div class="tiny">stays · ${E.stayDiscountPct(pr.stays)}% hotel discount</div></div>
+      <div class="card" style="flex:1;text-align:center"><b>${M(pr.credit)}</b><div class="tiny">wallet credit</div></div>
+    </div>
+    <div class="tiny" style="margin-top:12px">Points: 5 per $1 spent. Tiers at 5k / 15k / 40k. Hotel loyalty: 5 stays → 10%, 15 → 15%, 30 → 20%.</div>
+  </div></div>`;
+}
+
+/* ── root render ─────────────────────────────────────────────────── */
+function render() {
+  renderNav();
+  $('#tierName').textContent = E.tierFor(S.profile.points).name;
+  const views = { flights: viewFlights, hotels: viewHotels, explore: viewExplore, trips: viewTrips, alerts: viewAlerts };
+  $('#main').innerHTML = views[S.tab]() + (S.wiz ? viewWizard() : '') + (S.showProf ? viewProfile() : '');
+}
+$('#curSel').onchange = e => { S.cur = e.target.value; save('cur', S.cur); render(); };
+$('#profBtn').onclick = () => { S.showProf = true; render(); };
+document.addEventListener('change', e => {
+  if (['fo','fd','fdep','fret','fad','fcab'].includes(e.target.id)) readFlightForm();
+  if (['hc','hin','hout','hg','hr'].includes(e.target.id)) readHotelForm();
+});
+render();
+if (dueCount()) toast(`🎯 ${dueCount()} price ${dueCount() > 1 ? 'watches hit their targets' : 'watch hit its target'}!`);
+if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js');
+</script>
+</body>
+</html>

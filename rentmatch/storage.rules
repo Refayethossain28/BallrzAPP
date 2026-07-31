@@ -10,17 +10,23 @@ service firebase.storage {
     function isSignedIn() { return request.auth != null; }
 
     // Landlord-uploaded compliance documents, namespaced by landlord uid.
+    // Read is restricted to the owning landlord: certificates carry personal
+    // data (names, addresses, engineer details), so `isSignedIn()` alone would
+    // let any registered user enumerate and download every landlord's docs
+    // (listing docs are world-readable and expose landlordId). Renters never
+    // fetch the PDFs — they see compliance *status* via the listing doc.
     match /compliance/{landlordId}/{allPaths=**} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() && request.auth.uid == landlordId;
       allow write: if isSignedIn() && request.auth.uid == landlordId
         && request.resource.size < 20 * 1024 * 1024
         && request.resource.contentType.matches('application/pdf|image/.*');
     }
 
-    // Executed tenancy agreements — written by Functions (Admin SDK) only.
+    // Executed tenancy agreements — written by Functions (Admin SDK) only, and
+    // never exposed by path: contracts live in Firestore (participant-gated),
+    // so no client reads this bucket path. Deny both directions.
     match /contracts/{dealId}/{allPaths=**} {
-      allow read: if isSignedIn();
-      allow write: if false;
+      allow read, write: if false;
     }
   }
 }

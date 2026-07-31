@@ -1,36 +1,74 @@
 # Lingua — learn & translate any language (and its dialects)
 
-A single-file, offline-first **PWA** for learning and translating any of 90+
-languages. Pick a language and you get:
+A single-file, offline-first **PWA** built to take a learner from zero to
+conversational fast — in **every language in the world**: 180+ built into the
+picker (all treated equally, listed alphabetically), and a free-type option for
+anything else — type any language name into the search and study it. Many
+languages include regional dialect/variety support.
 
-- **📚 Learn** — a structured course: ordered units (greetings → numbers →
-  travel → …) with on-device progress tracking. Open a unit for a lesson, then
-  jump straight into practice or chat for it. Tick units off as you go.
+**The fluency method built into the app** — the five things research actually
+supports, wired together as a daily loop:
+
+1. **🔁 Spaced repetition (SRS)** — every phrase you meet (lessons, flashcards,
+   quizzes, drills, stories) becomes a card in an SM-2-style memory deck with
+   due dates. The header chip shows cards due; reviews come first.
+2. **🗣 Forced speaking** — the Speak-it drill plays the phrase, listens to you
+   say it (speech recognition), and scores your pronunciation on-device.
+3. **✍️ Forced production** — the Type-it drill makes you produce the sentence;
+   Claude grades it like an examiner and shows the natural native phrasing.
+4. **📖 Comprehensible input** — AI-written graded micro-stories at your exact
+   level and dialect, translations hidden until tapped.
+5. **🔥 The habit loop** — streak + daily XP goal (header chip), because fluency
+   is mostly showing up daily.
+
+Pick a language and you get:
+
+- **📚 Learn** — a CEFR-style course, **A1 → B2, 24 units** (survival basics →
+  debate & idioms), each ending in production: lesson → drills → speak → chat.
+  On-device progress per language + dialect.
 - **🔁 Translate** — type text in any language and translate it into the one
   you're studying (and back, via the swap arrow). Results show the native
   script, romanized pronunciation, a literal gloss, register, and dialect notes.
 - **🎓 Teach me** — pick a topic and level for a short, dialect-aware lesson with
   pronunciation, plus an "ask anything about this language" box.
-- **🃏 Practice** — turn a topic into **flashcards** (recall + reveal, mark
-  *Got it* / *Again*) and a **multiple-choice quiz** with scoring. AI-generated
-  sets when Live AI is on; offline basics otherwise.
+- **🃏 Practice** — five drill modes on any unit: **flashcards**, **quiz**,
+  **✍️ Type it** (AI-graded production), **🗣 Speak it** (pronunciation score),
+  and **📖 Story** (graded reading). Everything feeds the SRS deck.
 - **💬 Chat** — practise a real conversation with an AI tutor who replies in your
   chosen dialect, gives romanization + an English gloss, and gently corrects you.
+- **🎙 Live interpreter** — point the phone at a conversation: continuous speech
+  recognition transcribes each sentence and the AI translates it into any
+  language you pick, optionally speaking it aloud. Two dropdowns (they speak /
+  translate into), a swap button, and auto-restart after silences so it keeps up
+  until you press Stop. Needs Live AI + a browser with speech recognition
+  (Chrome/Edge/Safari). Tip: with 🔊 speak-aloud on, the mic may pick up the
+  spoken translation — mute it or use headphones in noisy two-way use.
 - **🔊 Listen** — tap the speaker on any phrase to hear it read aloud (browser
   speech synthesis; uses the dialect's voice where available). Works offline.
 - **🎤 Speak** — dictate into the translate box or chat with the mic button
   (Web Speech API; Chrome/Edge/Safari).
 - **🕘 Saved** — every translation is saved on-device automatically; reopen, replay
   the audio, or delete from the **Saved** panel. No account, no cloud.
+- **📖 Qur'an studio** — a dedicated section for learning the Qur'an, all 114
+  surahs. **Read** (Uthmani script + Saheeh International translation +
+  transliteration, per-ayah recitation audio), **Memorize** (hifz: listen →
+  first-letter skeleton → recall, graded into its own spaced-repetition deck),
+  **Recite** (speech-scored against the verified text, harakāt-aware
+  normalization), and AI **Explain** per ayah. Integrity rule: the Qur'anic
+  text and audio are **never AI-generated** — text is the Tanzil-verified
+  mushaf via the AlQuran.cloud API (cached on-device after first load),
+  recitation is Mishary Rashid Alafasy; the AI provides only clearly-labelled
+  study explanations, with a standing note to consult qualified scholars.
 
-### Dialect support
-- **Arabic** — Fusha (MSA), Egyptian, Saudi, Emirati, Levantine, Gulf, Iraqi,
-  Maghrebi, Sudanese, Yemeni.
-- **Urdu** — Standard, Lahori, Karachi, Dakhini, Hyderabadi, Rekhta.
-- **English** — British, American, Australian, Indian.
-- **Spanish** — Castilian, Mexican, Rioplatense, Colombian/Andean.
-- **Portuguese** — Brazilian, European · **French** — Metropolitan, Québécois ·
-  **German** — Germany, Austrian, Swiss · **Chinese** — Mainland, Taiwan.
+### Dialect / variety support
+Several languages ship with selectable regional varieties, each treated as a
+distinct target (its own phrasing, voice and notes) — alphabetically:
+
+- **Arabic** (10) · **Chinese** (2) · **English** (4) · **French** (2) ·
+  **German** (3) · **Portuguese** (2) · **Spanish** (4) · **Urdu** (6)
+
+Dialect names are searchable in the picker, and the free-type option covers any
+variety that isn't listed.
 
 Each is treated as a distinct variety with its own phrasing and notes.
 

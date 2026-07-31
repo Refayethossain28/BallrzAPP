@@ -14,8 +14,9 @@ npm install
 npm start            # → http://localhost:3000   (operator console)
 ```
 
-Three surfaces, one server + API:
-- **Dispatch console (operator):** http://localhost:3000
+Public site + three app surfaces, one server + API:
+- **Marketing site (homepage):** http://localhost:3000  (public site — what Fixr does)
+- **Dispatch console (operator):** http://localhost:3000/app/
 - **Driver app:** http://localhost:3000/driver/?d=d1  (try d1 / d2 / d3)
 - **Client app (passenger):** http://localhost:3000/client/  (book a ride OR a concierge request, track it)
 

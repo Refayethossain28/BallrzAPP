@@ -1,0 +1,1267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Seeker — the search engine</title>
+<meta name="description" content="A real search engine built from scratch — BM25 ranking, typo tolerance, instant answers, live internet sources and your own crawler, all on your device.">
+<meta name="theme-color" content="#070a14">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Seeker">
+<style>
+  :root {
+    --bg: #070a14; --bg2: #0b101f; --card: #0e1526; --card2: #121a30;
+    --line: #1c2740; --text: #e8edf9; --dim: #8fa0c2; --faint: #5c6b8c;
+    --brand: #4d9fff; --brand2: #9f6bff; --gold: #e8b34c; --green: #3ecf8e;
+    --red: #ff6b6b; --mark: #ffd76b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(1200px 700px at 50% -10%, #101a33 0%, var(--bg) 55%) fixed, var(--bg);
+    color: var(--text);
+    font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100dvh;
+  }
+  a { color: var(--brand); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  mark { background: none; color: var(--mark); font-weight: 600; }
+
+  .wrap { max-width: 720px; margin: 0 auto; padding: 0 18px calc(40px + env(safe-area-inset-bottom)); }
+
+  /* ---- home hero ---- */
+  .hero { display: flex; flex-direction: column; align-items: center; justify-content: center;
+          min-height: 46dvh; padding-top: 9dvh; text-align: center; }
+  .logo { font-size: 56px; font-weight: 800; letter-spacing: -2px; line-height: 1.05; user-select: none; }
+  .logo .g { background: linear-gradient(92deg, var(--brand) 10%, var(--brand2) 55%, var(--gold) 95%);
+             -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .logo .lens { font-size: 40px; vertical-align: 6px; margin-right: 6px; }
+  .tagline { color: var(--dim); margin: 10px 0 26px; font-size: 15px; }
+  .tagline b { color: var(--text); font-weight: 600; }
+  body.results .hero { display: none; }
+
+  /* ---- search box ---- */
+  .searchbar { position: relative; width: 100%; max-width: 640px; margin: 0 auto; }
+  .box { display: flex; align-items: center; gap: 10px; background: var(--card);
+         border: 1px solid var(--line); border-radius: 999px; padding: 12px 18px;
+         box-shadow: 0 10px 40px rgba(0,0,0,.35); transition: border-color .15s; }
+  .box:focus-within { border-color: var(--brand); }
+  .box .mag { color: var(--faint); flex: none; font-size: 18px; }
+  .box input { flex: 1; background: none; border: 0; outline: 0; color: var(--text);
+               font-size: 17px; min-width: 0; }
+  .box input::placeholder { color: var(--faint); }
+  .box .clear { flex: none; background: none; border: 0; color: var(--faint); font-size: 16px;
+                cursor: pointer; padding: 2px 4px; display: none; }
+  .box.has .clear { display: block; }
+
+  .sugg { position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 30;
+          background: var(--card2); border: 1px solid var(--line); border-radius: 16px;
+          overflow: hidden; box-shadow: 0 18px 50px rgba(0,0,0,.5); display: none; text-align: left; }
+  .sugg.open { display: block; }
+  .sugg .s { padding: 10px 18px; cursor: pointer; color: var(--text); font-size: 15px;
+             display: flex; gap: 10px; align-items: baseline; }
+  .sugg .s .k { color: var(--faint); font-size: 12px; flex: none; width: 16px; }
+  .sugg .s.sel, .sugg .s:hover { background: rgba(77,159,255,.12); }
+  .sugg .s .src { margin-left: auto; color: var(--faint); font-size: 11px; }
+
+  .homebtns { display: flex; gap: 12px; justify-content: center; margin-top: 24px; flex-wrap: wrap; }
+  .btn { background: var(--card); color: var(--text); border: 1px solid var(--line);
+         border-radius: 10px; padding: 10px 18px; font-size: 14px; cursor: pointer; }
+  .btn:hover { border-color: var(--brand); }
+  .btn.primary { background: linear-gradient(92deg, #1d3a63, #2b2a55); border-color: #2c4a78; }
+
+  .examples { margin-top: 26px; display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .chip { background: rgba(77,159,255,.08); border: 1px solid var(--line); color: var(--dim);
+          border-radius: 999px; padding: 5px 13px; font-size: 13px; cursor: pointer; }
+  .chip:hover { color: var(--text); border-color: var(--brand); }
+
+  .homestats { text-align: center; color: var(--faint); font-size: 12.5px; margin-top: 34px; }
+  .homestats a { color: var(--dim); }
+
+  /* ---- results header ---- */
+  .rhead { display: none; align-items: center; gap: 16px; padding: 14px 0 6px; position: sticky;
+           top: 0; z-index: 20; background: linear-gradient(var(--bg) 82%, transparent); }
+  body.results .rhead { display: flex; }
+  .rhead .mini { font-size: 22px; font-weight: 800; letter-spacing: -1px; cursor: pointer; flex: none; }
+  .rhead .searchbar { margin: 0; }
+  .rhead .box { padding: 9px 16px; box-shadow: none; }
+
+  body.results .wrap.results-wrap { display: block; }
+
+  /* ---- sources row ---- */
+  .srcrow { display: none; gap: 8px; flex-wrap: wrap; padding: 10px 0 2px; }
+  body.results .srcrow { display: flex; }
+  .srcrow .chip.on { color: var(--text); border-color: var(--brand); background: rgba(77,159,255,.16); }
+  .langsel { margin-left: auto; background: var(--card); color: var(--dim); border: 1px solid var(--line);
+             border-radius: 999px; padding: 4px 10px; font-size: 12.5px; outline: none; }
+
+  /* ---- verticals: All / Images / News ---- */
+  .tabs { display: none; gap: 2px; border-bottom: 1px solid var(--line); margin-top: 4px; }
+  body.results .tabs { display: flex; }
+  .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--dim);
+                 padding: 8px 14px; font-size: 14px; cursor: pointer; }
+  .tabs button.on { color: var(--text); border-bottom-color: var(--brand); }
+
+  /* ---- image results ---- */
+  .imggrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+             gap: 10px; padding-top: 12px; }
+  .imggrid a { display: block; border-radius: 10px; overflow: hidden; background: var(--card2);
+               border: 1px solid var(--line); }
+  .imggrid a:hover { border-color: var(--brand); text-decoration: none; }
+  .imggrid img { width: 100%; height: 120px; object-fit: cover; display: block; }
+  .imggrid .cap { font-size: 11px; color: var(--faint); padding: 4px 8px; white-space: nowrap;
+                  overflow: hidden; text-overflow: ellipsis; }
+
+  .stats { color: var(--faint); font-size: 12.5px; padding: 10px 2px; }
+
+  /* ---- answer / correction cards ---- */
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+          padding: 14px 18px; margin: 8px 0; }
+  .answer .big { font-size: 26px; font-weight: 700; margin-top: 2px; }
+  .answer .lbl { color: var(--faint); font-size: 12px; text-transform: uppercase; letter-spacing: .6px; }
+  .dym { margin: 8px 2px; font-size: 14.5px; color: var(--dim); }
+  .dym a { font-weight: 600; font-style: italic; }
+
+  /* ---- knowledge panel ---- */
+  .kp { display: flex; gap: 14px; align-items: flex-start; }
+  .kp img { width: 84px; height: 84px; border-radius: 12px; object-fit: cover; flex: none;
+            background: var(--card2); }
+  .kp .kpt { font-size: 18px; font-weight: 700; }
+  .kp .kpd { color: var(--gold); font-size: 12.5px; margin-bottom: 4px; }
+  .kp .kpe { color: var(--dim); font-size: 13.5px; line-height: 1.5; }
+  .kp a { display: inline-block; margin-top: 6px; font-size: 13px; }
+
+  /* ---- results ---- */
+  #results { padding-top: 4px; }
+  .r { padding: 12px 2px 14px; }
+  .r .crumb { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--faint);
+              overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .r .crumb .fav { flex: none; width: 20px; height: 20px; border-radius: 6px; background: var(--card2);
+                   display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+  .r h3 { font-size: 17.5px; font-weight: 500; margin: 3px 0 2px; line-height: 1.3; }
+  .r h3 a { color: #9ec3ff; }
+  .r h3 a:visited { color: #c0a8ff; }
+  .r .snip { color: var(--dim); font-size: 14px; }
+  .r .badges { margin-top: 4px; display: flex; gap: 6px; }
+  .badge { font-size: 10.5px; color: var(--faint); border: 1px solid var(--line); border-radius: 5px;
+           padding: 1px 6px; letter-spacing: .3px; }
+  .badge.local { color: var(--green); border-color: rgba(62,207,142,.35); }
+  .r.sel { outline: 1px solid var(--brand); outline-offset: 6px; border-radius: 8px; }
+  .empty { color: var(--dim); padding: 26px 2px; }
+  .loading { color: var(--faint); font-size: 13px; padding: 8px 2px; }
+
+  /* ---- drawers ---- */
+  details.drawer { margin: 18px 0; border: 1px solid var(--line); border-radius: 14px;
+                   background: var(--card); overflow: hidden; }
+  details.drawer summary { cursor: pointer; padding: 12px 18px; color: var(--dim); font-size: 14px;
+                           list-style: none; user-select: none; }
+  details.drawer summary::-webkit-details-marker { display: none; }
+  details.drawer[open] summary { border-bottom: 1px solid var(--line); color: var(--text); }
+  .drawer .inner { padding: 14px 18px; font-size: 14px; color: var(--dim); }
+  .drawer .inner code { background: var(--card2); border: 1px solid var(--line); border-radius: 5px;
+                        padding: 1px 6px; font-size: 12.5px; color: var(--text); }
+  .drawer table { border-collapse: collapse; margin-top: 6px; }
+  .drawer td { padding: 3px 14px 3px 0; vertical-align: top; }
+
+  .crawlrow { display: flex; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
+  .crawlrow input[type=url], .crawlrow input[type=text] {
+    flex: 1; min-width: 200px; background: var(--bg2); border: 1px solid var(--line); color: var(--text);
+    border-radius: 8px; padding: 8px 12px; font-size: 14px; outline: none; }
+  .crawlrow input:focus { border-color: var(--brand); }
+  #crawlLog { font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--faint);
+              max-height: 160px; overflow: auto; margin-top: 8px; white-space: pre-wrap; }
+  .ok { color: var(--green); } .warn { color: var(--gold); } .err { color: var(--red); }
+
+  .recent { margin-top: 20px; text-align: center; }
+  .recent .chip { background: none; }
+
+  footer { color: var(--faint); font-size: 12px; text-align: center; padding: 30px 18px 10px; }
+  @media (max-width: 560px) {
+    .logo { font-size: 42px; } .logo .lens { font-size: 30px; }
+    .rhead .mini span.word { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div id="fatal" style="display:none;position:fixed;left:12px;right:12px;top:12px;z-index:99;background:#2a1520;border:1px solid #7a2f45;color:#ffd7de;border-radius:12px;padding:12px 16px;font-size:14px;box-shadow:0 12px 40px rgba(0,0,0,.5)"></div>
+<noscript><div style="position:fixed;left:12px;right:12px;top:12px;z-index:99;background:#2a1520;border:1px solid #7a2f45;color:#ffd7de;border-radius:12px;padding:12px 16px;font-size:14px">⚠️ JavaScript is disabled or blocked in this browser — Seeker's on-device engine needs it. The search box still works (it reloads the page), but results, instant answers and the crawler require JavaScript.</div></noscript>
+
+<div class="wrap">
+
+  <!-- results header (hidden on home) -->
+  <div class="rhead">
+    <div class="mini" id="miniLogo" title="Seeker home">🔎<span class="word g" style="background:linear-gradient(92deg,#4d9fff,#9f6bff);-webkit-background-clip:text;background-clip:text;color:transparent">Seeker</span></div>
+    <div class="searchbar">
+      <form class="box" id="boxTop" action="." novalidate>
+        <span class="mag">🔎</span>
+        <input id="qTop" name="q" type="search" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" placeholder="Search the web…" aria-label="Search">
+        <button class="clear" id="clearTop" type="button" aria-label="Clear">✕</button>
+      </form>
+      <div class="sugg" id="suggTop"></div>
+    </div>
+  </div>
+
+  <div class="srcrow" id="srcRow" title="Live internet sources — toggle what Seeker asks"></div>
+
+  <div class="tabs" id="tabRow">
+    <button type="button" data-tab="all" class="on">All</button>
+    <button type="button" data-tab="images">Images</button>
+    <button type="button" data-tab="news">News</button>
+  </div>
+
+  <!-- home hero -->
+  <div class="hero" id="hero">
+    <div class="logo"><span class="lens">🔎</span><span class="g">Seeker</span></div>
+    <div class="tagline">The search engine — <b>BM25 ranking, typo tolerance, instant answers</b>, live internet sources<br>and your own crawler. Built from scratch, running on your device.</div>
+    <div class="searchbar">
+      <form class="box" id="boxHome" action="." novalidate>
+        <span class="mag">🔎</span>
+        <input id="qHome" name="q" type="search" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" placeholder="Search the web — or try 12*12, 5 km to miles, !w bm25 …" aria-label="Search">
+        <button class="clear" id="clearHome" type="button" aria-label="Clear">✕</button>
+      </form>
+      <div class="sugg" id="suggHome"></div>
+    </div>
+    <div class="homebtns">
+      <button class="btn primary" id="goBtn" type="submit" form="boxHome">Seeker Search</button>
+      <button class="btn" id="luckyBtn" type="button" title="Straight to the top result">I’m Feeling Lucky</button>
+    </div>
+    <div class="examples" id="examples"></div>
+    <div class="recent" id="recent"></div>
+    <div class="homestats" id="homeStats"></div>
+  </div>
+
+  <!-- results -->
+  <div class="results-wrap">
+    <div id="answerBox"></div>
+    <div id="kpanel"></div>
+    <div id="dym"></div>
+    <div class="stats" id="stats"></div>
+    <div id="results"></div>
+    <div class="loading" id="liveStatus"></div>
+  </div>
+
+  <!-- crawler -->
+  <details class="drawer" id="crawlDrawer">
+    <summary>⛏ Crawl &amp; index the web yourself</summary>
+    <div class="inner">
+      <p>Seeker ships with the Ballrz universe pre-indexed, and it can <b>crawl real pages into
+      your on-device index</b> — the crawler respects <code>robots.txt</code> and
+      <code>noindex</code>, canonicalises URLs and strips tracking params. In the browser it can
+      fetch this site and CORS-open pages; run the zero-dependency companion server
+      (<code>node seeker/server.mjs</code>) and it can crawl <b>any</b> site.</p>
+      <div class="crawlrow">
+        <input type="url" id="seedUrl" placeholder="https://example.com/ — seed URL (empty = this site)">
+        <input type="text" id="maxPages" inputmode="numeric" style="flex:0 0 90px" placeholder="pages (12)">
+        <button class="btn" id="crawlBtn">Start crawl</button>
+        <button class="btn" id="clearIndexBtn" title="Remove every crawled page from the index">Clear crawled</button>
+      </div>
+      <div id="crawlLog"></div>
+    </div>
+  </details>
+
+  <!-- how it works / operators -->
+  <details class="drawer">
+    <summary>⌘ Search operators, !bangs &amp; how Seeker works</summary>
+    <div class="inner">
+      <table>
+        <tr><td><code>"exact phrase"</code></td><td>words must appear consecutively</td></tr>
+        <tr><td><code>-word</code></td><td>exclude documents containing it</td></tr>
+        <tr><td><code>title:word</code></td><td>the word must be in the title</td></tr>
+        <tr><td><code>site:host</code> · <code>url:path</code></td><td>restrict by host / URL</td></tr>
+        <tr><td><code>!w</code> <code>!g</code> <code>!yt</code> <code>!gh</code> <code>!so</code> <code>!hn</code> <code>!maps</code> …</td><td>bangs — jump straight to that site’s search</td></tr>
+        <tr><td><code>12*(3+4)^2</code> · <code>15% of 80</code> · <code>5 km to miles</code> · <code>time in tokyo</code> · <code>days until christmas</code></td><td>instant answers, computed on-device</td></tr>
+        <tr><td><code>100 usd to gbp</code> · <code>bitcoin price</code> · <code>weather in london</code> · <code>define serendipity</code></td><td>live answers — ECB rates, CoinGecko, Open-Meteo, dictionaryapi.dev, all keyless</td></tr>
+        <tr><td><code>eiffel tower</code></td><td>entity queries get a Wikipedia knowledge panel</td></tr>
+        <tr><td><b>All · Images · News</b></td><td>verticals — 🖼 Openverse + Wikimedia Commons; 📰 GDELT's worldwide article index + Hacker News</td></tr>
+        <tr><td><b>🌐 language</b></td><td>the picker switches Wikipedia-powered results, suggestions and the knowledge panel across 14 languages — and the index itself speaks every script (Arabic, Bengali, CJK…)</td></tr>
+      </table>
+      <p style="margin-top:10px">Under the hood: a from-scratch <b>Porter stemmer</b>, a positional
+      <b>inverted index</b>, <b>BM25</b> ranking with field weights, proximity and coverage,
+      <b>Damerau–Levenshtein</b> typo forgiveness, frequency-weighted <i>did-you-mean</i>,
+      best-window snippets — and live results from Wikipedia, Hacker News, Stack Overflow and
+      Open Library, fused into one ranking by <b>Reciprocal Rank Fusion</b>. Every part is pure,
+      deterministic and unit-tested (<code>npm run test:seeker</code>).</p>
+    </div>
+  </details>
+
+  <footer>Seeker · no account · no tracking · your index never leaves your device ·
+    <a href="../hub/">Ballrz Hub</a></footer>
+</div>
+
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  /* A page that dies silently looks like "nothing happens" on a phone, where
+   * there is no console. Surface fatal problems in a visible banner instead. */
+  var fatalShown = false;
+  function showFatal(text) {
+    try {
+      var el = document.getElementById('fatal');
+      if (!el || fatalShown) return;
+      fatalShown = true;
+      el.textContent = text + ' ';
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = '↻ Reload';
+      b.style.cssText = 'margin-left:8px;background:#3d1f2d;color:#ffd7de;border:1px solid #7a2f45;border-radius:8px;padding:4px 12px;font-size:13px;cursor:pointer';
+      b.onclick = function () { window.location.reload(); };
+      el.appendChild(b);
+      el.style.display = 'block';
+    } catch (e) { /* the banner must never be a second crash */ }
+  }
+  window.addEventListener('error', function (ev) {
+    showFatal('⚠️ Seeker hit an error — ' + String(ev && ev.message || 'unknown') + '. A reload usually fixes it.');
+  });
+
+  var S = window.Seeker;
+  if (!S) {
+    showFatal('⚠️ Seeker’s engine (engine.js) didn’t load — usually a flaky connection or a stale cache.');
+    return;
+  }
+  var $ = function (id) { return document.getElementById(id); };
+
+  /* ================================================================
+   *  The bundled corpus — the Ballrz universe, pre-indexed offline.
+   * ================================================================ */
+  var CORPUS = [
+    { url: '../hub/', emoji: '🚀', title: 'Ballrz Hub — the launcher', tags: 'launcher apps home',
+      body: 'Every app in one place: a home-screen-style launcher with real app icons, instant search, grid and list views, and sections for ApexVIP, Apex, games, money and crypto, and tools. Offline, installable PWA.' },
+    { url: '../apexvip/', emoji: '⭐', title: 'ApexVIP — the luxury chauffeur website', tags: 'chauffeur luxury marketing mercedes fleet',
+      body: 'The cinematic marketing one-pager for the ApexVIP world: the promo film, the Mercedes-Benz S-Class and V-Class fleet, six cities and their airports, the ApexAI chat, Concierge tiers Silver Gold Black, and the chauffeur membership.' },
+    { url: '../apexvip-client.html', emoji: '🚘', title: 'ApexVIP Client — book a chauffeur', tags: 'chauffeur booking ride client',
+      body: 'Book a chauffeur, get instant fare quotes, track your driver live on the map and message in-app. Airport transfers with flight tracking.' },
+    { url: '../apexvip-driver.html', emoji: '🛞', title: 'ApexVIP Driver — the driver portal', tags: 'chauffeur driver jobs earnings',
+      body: 'Accept and manage chauffeur jobs, live GPS navigation to pickup, and earnings — drivers keep 80% of every fare.' },
+    { url: '../apexvip-admin.html', emoji: '🎛️', title: 'ApexVIP Ops — dispatch and fleet', tags: 'admin operations dispatch analytics payouts',
+      body: 'The operations panel: dispatch bookings to drivers, manage the fleet, analytics and driver payouts.' },
+    { url: '../concierge/', emoji: '🛎️', title: 'ApexVIP Concierge — the VIP concierge', tags: 'concierge subscription silver gold black stripe sla',
+      body: 'A subscription personal concierge: Silver £49, Gold £199 or Black £499 a month with a 7-day trial. Ask for anything across 8 desks — travel, dining, events and tickets, chauffeur, shopping, home, wellness, gifting — with real SLAs, priced options, points and status. Stripe billing built in.' },
+    { url: '../aios/', emoji: '✦', title: 'AIOS — the AI operating system', tags: 'os operating system desktop terminal shell files ai agent',
+      body: 'A genuine operating system that boots in your browser: draggable windows, three workspaces, a dock, a real virtual disk with trash, a programmable terminal with Unix pipes and a scripting language, Paint, Camera, Notes with Markdown, automations, an app SDK and an AI agent whose shell speaks bash and English. Fully offline, installable.' },
+    { url: '../voyager/', emoji: '🧭', title: 'Voyager — the internet browser', tags: 'browser web tabs omnibox bookmarks history private proxy tor onion',
+      body: 'A real internet browser in your browser: tabs with per-tab back and forward stacks, a smart omnibox with frecency-ranked suggestions, bookmarks, history, top sites, private tabs, per-tab zoom, six search engines, onion routing awareness and a full web-proxy mode via its companion server so any site loads.' },
+    { url: '../atlas/', emoji: '🗺️', title: 'Atlas — the satnav', tags: 'satnav navigation gps maps route turn by turn voice traffic offline',
+      body: 'Your own satellite navigation: a from-scratch canvas slippy map with 3D buildings and satellite layer, real routes with alternatives, voice turn-by-turn guidance with lane guidance and junction views, automatic rerouting, offline maps, speed-limit and camera warnings, sun-glare forecast, rally co-driver mode, dashcam, convoy mode and live traffic.' },
+    { url: '../imposter/', emoji: '🕵️', title: 'Imposter — the party game', tags: 'party game social deduction spyfall word bluff friends',
+      body: 'The pass-and-play social deduction game: one phone, 3 to 12 players, word mode and Spyfall-style locations mode, clue rounds, discussion timer, votes, steals at the buzzer, match play with champions, per-player stats and custom packs.' },
+    { url: '../cortex/', emoji: '🧩', title: 'Cortex — the daily brain gym', tags: 'brain training memory stroop arithmetic puzzle game',
+      body: 'Five adaptive drills, one per cognitive domain — Flashback memory grid, Number Storm mental arithmetic, Ink Trap Stroop, Echo working memory, Odd One Out visual search — on a psychophysical staircase, feeding your Brain Index. The same daily workout for every human on Earth.' },
+    { url: '../ripple/', emoji: '💬', title: 'Ripple — private messenger', tags: 'chat messaging whatsapp polls voice notes encryption',
+      body: 'A messaging app that puts you in control: schedule, edit and unsend messages, auto-disappearing chats, inline polls, slash commands, rich text, voice notes, photos, reactions, threads, read ticks, app lock encryption and instant search across every chat. Real cross-device messaging with invite links.' },
+    { url: '../intro/', emoji: '🎴', title: 'Intro — your digital business card', tags: 'business card contact networking qr nfc vcard wallet',
+      body: 'Design a digital business card and hand it to anyone as a link or QR code — no server, no account. Built-in scanner, NFC tap cards, save to contacts as a real vCard, Apple Wallet passes, multiple cards and eight themes.' },
+    { url: '../drip/', emoji: '💧', title: 'Drip — the passive income engine', tags: 'finance passive income dividends compounding freedom date',
+      body: 'Model every passive income stream — savings, dividends, bonds, rental, royalties, digital products — with honest parameters, run the month-by-month compounding simulation and find your freedom date: the month passive income covers your bills.' },
+    { url: '../graft/', emoji: '⚒️', title: 'Graft — the income engine', tags: 'income side hustle gig freelance invoice planner uk',
+      body: 'The honest catalog of 18 real UK side hustles with realistic pound-per-hour ranges, matched to your hours, cash and skills; a planner that turns a monthly target into weekly hours; an earnings tracker with streaks; and an invoice generator with VAT done right.' },
+    { url: '../cusp/', emoji: '🎯', title: 'Cusp — what to do right now', tags: 'tasks productivity todo salience focus decision',
+      body: 'The decision engine your to-do list is missing: the Salience Engine scores every task across importance, deadline tightness, energy fit, your free window, momentum and staleness — then shows its working. A focus timer and a right-now plan included.' },
+    { url: '../omni/', emoji: '🧰', title: 'Omni — the do-everything app', tags: 'tools calculator converter habits timers notes qr world clock',
+      body: 'One offline-first home for your day: tasks and calendar, notes, calculator, unit and currency converter, timers and pomodoro, habit streaks, money log, weather, text tools, password generator, QR codes and a world clock, with a command palette.' },
+    { url: '../lingua/', emoji: '🗣️', title: 'Lingua — the fluency engine', tags: 'language learning translate arabic spanish srs quran',
+      body: 'Learn every language in the world — 180+ built in, with spaced repetition, pronunciation-scored speaking drills, AI-graded production, graded stories and a CEFR course from A1 to B2, plus a dedicated Quran studio with real recitation.' },
+    { url: '../llm/', emoji: '⚡', title: 'My Own AI Model — a GPT from scratch', tags: 'ai llm gpt transformer numpy autograd shakespeare',
+      body: 'A real language model built from first principles: hand-written autograd, a causal self-attention transformer, Adam and the training loop in pure NumPy, exported to the browser so every token generates on your device.' },
+    { url: '../neura/', emoji: '🧠', title: 'Neura — the AI cryptocurrency', tags: 'crypto blockchain proof of intelligence neural network mining',
+      body: 'The chain that thinks: a from-scratch cryptocurrency where every block must advance a shared neural network by one bit-deterministic training step — Proof of Intelligence — sealed under proof of work. 21 million hard cap, no premine.' },
+    { url: '../coin/', emoji: '🪙', title: 'TimeCoin — my own cryptocurrency', tags: 'crypto bitcoin blockchain utxo mining sha256 ecdsa',
+      body: 'A complete Bitcoin-style proof-of-work cryptocurrency from raw bytes up: SHA-256 from FIPS 180-4, ECDSA on secp256k1, UTXO ledger, merkle trees, difficulty retargeting, halvings, fees, mempool and real Nakamoto fork choice — mine blocks live in your browser.' },
+    { url: '../vault/', emoji: '🏦', title: 'Vault — the digital bank', tags: 'bank banking money account card pots savings fintech crypto exchange',
+      body: 'A full digital bank: accounts, cards, pots, standing orders, online transfers to real people, and a crypto desk to trade TimeCoin and Neura.' },
+    { url: '../automaton/', emoji: '🤖', title: 'Automaton — the AI that earns', tags: 'ai agent economy survival',
+      body: 'An AI agent with a wallet that must earn to stay alive — it works, gets paid, pays its costs, and dies if it runs out.' },
+    { url: '../rentmatch.html', emoji: '🏘️', title: 'Apex — UK lettings marketplace', tags: 'property landlord renter lettings tenancy ast',
+      body: 'Landlords advertise property, renters search and enquire, both parties message, book a viewing and sign a UK-compliant Assured Shorthold Tenancy. Play both sides in one browser.' },
+    { url: '../apex-site/', emoji: '🏠', title: 'Apex site — the landlord OS marketing site', tags: 'property marketing rentals landlord',
+      body: 'The marketing site for the Apex landlord operating system — marketplace, AST signing, compliance and the rent ledger.' },
+    { url: '../concepts/prototypes/flow-game/', emoji: '🌊', title: 'Flow — the adaptive tap arcade', tags: 'game arcade skill duel pwa',
+      body: 'An adaptive tap arcade: an on-device skill model and an offline level pool keep every round on the edge. Lives, combos, bonuses, two-player duel.' },
+    { url: '../concepts/prototypes/concierge-split/', emoji: '🧾', title: 'Split the bill — AI concierge concept', tags: 'concept agent payments claude chat',
+      body: 'Chat with an AI life concierge that proposes a bill split, you confirm, and it fires idempotent payment requests.' },
+    { url: '../trading-app/fx-signal-pro.html', emoji: '📈', title: 'FX Signal Pro — trading signals', tags: 'forex trading signals currency',
+      body: 'A single-file currency-pair trading signal app — an earlier build.' },
+    { url: './', emoji: '🔎', title: 'Seeker — the search engine', tags: 'search engine bm25 crawler index ranking',
+      body: 'A real search engine built from scratch: Porter stemming, a positional inverted index, BM25 ranking, phrase and field queries, typo forgiveness, did-you-mean, snippets, bangs, instant answers, live internet sources fused by reciprocal rank fusion, and your own robots-respecting crawler.' }
+  ];
+
+  /* ================================================================
+   *  Live internet sources — keyless, CORS-open, all optional.
+   * ================================================================ */
+  var SOURCES = [
+    { id: 'wiki', label: 'Wikipedia', weight: 1.15, fav: 'W',
+      fetch: function (q) {
+        return getJSON(wikiBase() + '/w/api.php?action=query&list=search&srsearch=' +
+          encodeURIComponent(q) + '&format=json&srlimit=6&origin=*').then(function (d) {
+          var items = (d && d.query && d.query.search || []).map(function (it) {
+            return { title: it.title, url: wikiBase() + '/wiki/' + encodeURIComponent(String(it.title).replace(/ /g, '_')),
+              snippet: stripTags(it.snippet || ''), fav: 'W' };
+          });
+          if (!items.length) return items;
+          // Real things have real websites. Follow the top hit to Wikidata
+          // (also keyless + CORS-open) and surface its official website
+          // (property P856) as a first-class result — so "wandsworth" gives
+          // you wandsworth.gov.uk, not just the article about it.
+          var top = d.query.search[0].title;
+          return getJSON(wikiBase() + '/w/api.php?action=query&prop=pageprops&ppprop=wikibase_item&titles=' +
+            encodeURIComponent(top) + '&format=json&origin=*').then(function (pp) {
+            var pages = pp && pp.query && pp.query.pages || {}, qid = null;
+            for (var k in pages) {
+              var w = pages[k] && pages[k].pageprops && pages[k].pageprops.wikibase_item;
+              if (w) qid = w;
+            }
+            if (!qid) return items;
+            return getJSON('https://www.wikidata.org/w/api.php?action=wbgetclaims&entity=' +
+              encodeURIComponent(qid) + '&property=P856&format=json&origin=*').then(function (wd) {
+              var claims = wd && wd.claims && wd.claims.P856 || [];
+              var site = claims.length && claims[0].mainsnak && claims[0].mainsnak.datavalue &&
+                claims[0].mainsnak.datavalue.value;
+              if (typeof site === 'string' && /^https?:\/\//i.test(site)) {
+                items.unshift({ title: top + ' — official website', url: site,
+                  snippet: 'The official site of ' + top + ' (from its Wikidata record).', fav: '🌐' });
+              }
+              return items;
+            });
+          }).catch(function () { return items; });
+        });
+      } },
+    { id: 'hn', label: 'Hacker News', weight: 0.8, fav: 'Y',
+      fetch: function (q) {
+        return getJSON('https://hn.algolia.com/api/v1/search?query=' + encodeURIComponent(q) + '&hitsPerPage=6')
+          .then(function (d) {
+            return (d && d.hits || []).map(function (h) {
+              return { title: h.title || h.story_title || '(untitled)',
+                url: h.url || ('https://news.ycombinator.com/item?id=' + h.objectID),
+                snippet: (h.points || 0) + ' points · ' + (h.num_comments || 0) + ' comments on Hacker News', fav: 'Y' };
+            });
+          });
+      } },
+    { id: 'so', label: 'Stack Overflow', weight: 0.75, fav: 'SO',
+      fetch: function (q) {
+        return getJSON('https://api.stackexchange.com/2.3/search/advanced?order=desc&sort=relevance&q=' +
+          encodeURIComponent(q) + '&site=stackoverflow&pagesize=5').then(function (d) {
+          return (d && d.items || []).map(function (it) {
+            return { title: decodeEnt(it.title || ''), url: it.link,
+              snippet: (it.is_answered ? '✓ answered · ' : '') + (it.score || 0) + ' votes · ' +
+                (it.answer_count || 0) + ' answers on Stack Overflow', fav: 'SO' };
+          });
+        });
+      } },
+    { id: 'books', label: 'Books', weight: 0.5, fav: '📚',
+      fetch: function (q) {
+        return getJSON('https://openlibrary.org/search.json?q=' + encodeURIComponent(q) +
+          '&limit=4&fields=title,author_name,first_publish_year,key').then(function (d) {
+          return (d && d.docs || []).map(function (b) {
+            return { title: b.title, url: 'https://openlibrary.org' + b.key,
+              snippet: 'Book · ' + ((b.author_name || []).slice(0, 2).join(', ') || 'unknown author') +
+                (b.first_publish_year ? ' · ' + b.first_publish_year : ''), fav: '📚' };
+          });
+        });
+      } }
+  ];
+
+  /* ================================================================
+   *  State + persistence
+   * ================================================================ */
+  var LS = { crawled: 'seeker.crawled.v1', recent: 'seeker.recent.v1', sources: 'seeker.sources.v1',
+             lang: 'seeker.lang.v1' };
+  function lsGet(k, fallback) {
+    try { var v = localStorage.getItem(k); return v == null ? fallback : JSON.parse(v); }
+    catch (e) { return fallback; }
+  }
+  function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+
+  var index = S.createIndex();
+  CORPUS.forEach(function (d) { S.addDoc(index, d); });
+  var crawled = lsGet(LS.crawled, []);
+  crawled.forEach(function (d) { S.addDoc(index, d); });
+
+  var enabled = lsGet(LS.sources, { wiki: true, hn: true, so: true, books: true });
+  var recents = lsGet(LS.recent, []);
+  var currentQuery = '', liveSeq = 0, selIdx = -1, suggSel = -1, lastResults = [];
+  var vertical = 'all'; // 'all' | 'images' | 'news'
+
+  // The live web in your language: which Wikipedia powers results,
+  // suggestions and the knowledge panel.
+  var WIKI_LANGS = { en: 'English', es: 'Español', fr: 'Français', de: 'Deutsch', it: 'Italiano',
+    pt: 'Português', ru: 'Русский', ar: 'العربية', bn: 'বাংলা', hi: 'हिन्दी', ur: 'اردو',
+    tr: 'Türkçe', ja: '日本語', zh: '中文' };
+  var lang = lsGet(LS.lang, 'en');
+  if (!WIKI_LANGS[lang]) lang = 'en';
+  function wikiBase() { return 'https://' + lang + '.wikipedia.org'; }
+
+  /* ================================================================
+   *  Small utilities
+   * ================================================================ */
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function stripTags(s) { return String(s || '').replace(/<[^>]*>/g, ''); }
+  function decodeEnt(s) {
+    return String(s || '').replace(/&(#\d+|amp|lt|gt|quot|#39|apos);/g, function (a, c) {
+      if (c === 'amp') return '&'; if (c === 'lt') return '<'; if (c === 'gt') return '>';
+      if (c === 'quot') return '"'; if (c === 'apos' || c === '#39') return "'";
+      var n = parseInt(c.slice(1), 10); return isFinite(n) ? String.fromCharCode(n) : a;
+    });
+  }
+  function getJSON(url) {
+    var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    if (ctl) setTimeout(function () { ctl.abort(); }, 8000);
+    return fetch(url, ctl ? { signal: ctl.signal } : {}).then(function (r) {
+      if (!r.ok) throw new Error('http ' + r.status);
+      return r.json();
+    });
+  }
+  function hostOf(u) { var m = /^[a-z]+:\/\/([^/?#]+)/i.exec(u || ''); return m ? m[1] : ''; }
+  function debounce(fn, ms) {
+    var t = null;
+    return function () {
+      var args = arguments, self = this;
+      if (t) clearTimeout(t);
+      t = setTimeout(function () { fn.apply(self, args); }, ms);
+    };
+  }
+
+  /* ================================================================
+   *  Rendering
+   * ================================================================ */
+  function setMode(results) {
+    document.body.classList.toggle('results', !!results);
+  }
+
+  function renderHomeExtras() {
+    var ex = ['eiffel tower', 'weather in london', '100 usd to gbp', 'bitcoin price',
+              'define serendipity', 'days until christmas', '"proof of intelligence"',
+              '12*(3+4)^2', '!w porter stemmer'];
+    $('examples').innerHTML = ex.map(function (e) {
+      return '<button class="chip" data-q="' + esc(e) + '">' + esc(e) + '</button>';
+    }).join('');
+    var terms = 0; for (var k in index.post) terms++;
+    $('homeStats').innerHTML = 'On-device index: <b>' + index.n + '</b> pages · <b>' + terms +
+      '</b> terms · plus the live internet — <a href="#" id="aboutLink">how it works</a>';
+    renderRecents();
+  }
+
+  function renderRecents() {
+    if (!recents.length) { $('recent').innerHTML = ''; return; }
+    $('recent').innerHTML = '<span style="color:var(--faint);font-size:12px">Recent: </span>' +
+      recents.slice(0, 6).map(function (q) {
+        return '<button class="chip" data-q="' + esc(q) + '">' + esc(q) + '</button>';
+      }).join(' ');
+  }
+
+  function renderSources() {
+    $('srcRow').innerHTML = '<span class="chip on" style="pointer-events:none">🔎 my index</span>' +
+      SOURCES.map(function (s) {
+        return '<button class="chip src ' + (enabled[s.id] ? 'on' : '') + '" data-src="' + s.id + '">' +
+          esc(s.label) + '</button>';
+      }).join('') +
+      '<select class="langsel" id="langSel" title="Language for Wikipedia-powered results">' +
+      Object.keys(WIKI_LANGS).map(function (k) {
+        return '<option value="' + k + '"' + (k === lang ? ' selected' : '') + '>' +
+          esc(WIKI_LANGS[k]) + '</option>';
+      }).join('') + '</select>';
+    var sel = $('langSel');
+    if (sel && sel.addEventListener) sel.addEventListener('change', function () {
+      lang = WIKI_LANGS[sel.value] ? sel.value : 'en';
+      lsSet(LS.lang, lang);
+      if (currentQuery) runSearch(currentQuery, false);
+    });
+  }
+
+  function paintTabs() {
+    var kids = $('tabRow').querySelectorAll('button');
+    for (var i = 0; i < kids.length; i++) {
+      kids[i].classList.toggle('on', kids[i].getAttribute('data-tab') === vertical);
+    }
+  }
+  function setVertical(v) {
+    if (vertical === v) return;
+    vertical = v;
+    paintTabs();
+    if (currentQuery) runSearch(currentQuery, true);
+  }
+
+  function favFor(item) {
+    if (item.emoji) return item.emoji;
+    if (item.fav) return item.fav;
+    var h = hostOf(item.url);
+    return h ? h.replace(/^www\./, '').charAt(0).toUpperCase() : '·';
+  }
+
+  function renderResults(items, meta) {
+    var html = '';
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      var disp = it.url;
+      if (/^\.\.?\//.test(disp)) disp = 'ballrz · ' + disp.replace(/^\.\.?\//, '').replace(/\/$/, '');
+      var badges = (it.sources || []).filter(function (s) { return s !== 'local'; });
+      html += '<div class="r' + (i === selIdx ? ' sel' : '') + '" data-i="' + i + '">' +
+        '<div class="crumb"><span class="fav">' + esc(favFor(it)) + '</span>' + esc(disp) + '</div>' +
+        '<h3><a href="' + esc(it.url) + '" target="_blank" rel="noopener">' + (it.titleHtml || esc(it.title)) + '</a></h3>' +
+        '<div class="snip">' + (it.snippetHtml || esc(it.snippet || '')) + '</div>' +
+        (badges.length && it.sources.length > 1 ?
+          '<div class="badges">' + it.sources.map(function (s) {
+            return '<span class="badge' + (s === 'local' ? ' local' : '') + '">' + esc(s) + '</span>';
+          }).join('') + '</div>' : '') +
+        '</div>';
+    }
+    var anyLive = SOURCES.some(function (s) { return enabled[s.id]; });
+    $('results').innerHTML = html || (meta.done ? (anyLive ?
+      '<div class="empty">No results for <b>' + esc(currentQuery) +
+      '</b>. Try fewer words, or crawl more of the web below.</div>' :
+      '<div class="empty">No on-device results for <b>' + esc(currentQuery) +
+      '</b> — and all live internet sources are switched off, so the internet was never asked.<br>' +
+      '<button class="chip" id="liveOnBtn" style="margin-top:12px">🌐 Turn live sources on &amp; search again</button></div>') : '');
+  }
+
+  // WMO weather interpretation codes → glyph + label (Open-Meteo speaks WMO).
+  var WMO = { 0: ['☀️', 'Clear'], 1: ['🌤', 'Mainly clear'], 2: ['⛅', 'Partly cloudy'], 3: ['☁️', 'Overcast'],
+    45: ['🌫', 'Fog'], 48: ['🌫', 'Rime fog'], 51: ['🌦', 'Light drizzle'], 53: ['🌦', 'Drizzle'],
+    55: ['🌦', 'Heavy drizzle'], 61: ['🌧', 'Light rain'], 63: ['🌧', 'Rain'], 65: ['🌧', 'Heavy rain'],
+    66: ['🌧', 'Freezing rain'], 67: ['🌧', 'Freezing rain'], 71: ['🌨', 'Light snow'], 73: ['🌨', 'Snow'],
+    75: ['🌨', 'Heavy snow'], 77: ['🌨', 'Snow grains'], 80: ['🌧', 'Showers'], 81: ['🌧', 'Showers'],
+    82: ['🌧', 'Violent showers'], 85: ['🌨', 'Snow showers'], 86: ['🌨', 'Snow showers'],
+    95: ['⛈', 'Thunderstorm'], 96: ['⛈', 'Storm + hail'], 99: ['⛈', 'Storm + hail'] };
+
+  function setAnswer(lbl, bigHtml, src) {
+    $('answerBox').innerHTML = '<div class="card answer"><div class="lbl">' + esc(lbl) + ' · ' +
+      esc(src) + '</div><div class="big">' + bigHtml + '</div></div>';
+  }
+  function clearAnswerIfCurrent(seq) { if (seq === liveSeq) $('answerBox').innerHTML = ''; }
+  function fmtNum(v) {
+    var n = Number(v);
+    return Math.abs(n) >= 1000 ? n.toLocaleString('en-GB', { maximumFractionDigits: 2 })
+                               : String(Math.round(n * 1e6) / 1e6);
+  }
+
+  function renderAnswer(q, seq) {
+    var a = S.instantAnswer(q, Date.now());
+    $('answerBox').innerHTML = '';
+    if (!a) return;
+    var dev = 'computed on-device';
+
+    if (a.type === 'calc') setAnswer('Calculator', esc(String(a.text).replace(/ = .*$/, '')) + ' = <b>' + esc(a.value) + '</b>', dev);
+    else if (a.type === 'percent') setAnswer('Percentage', esc(String(a.text).replace(/ = .*$/, '')) + ' = <b>' + esc(a.value) + '</b>', dev);
+    else if (a.type === 'convert') setAnswer('Unit conversion', esc(a.text), dev);
+    else if (a.type === 'time') {
+      var now = '';
+      try {
+        now = new Intl.DateTimeFormat('en-GB', { timeZone: a.zone, hour: '2-digit', minute: '2-digit',
+          weekday: 'short', day: 'numeric', month: 'short' }).format(new Date());
+      } catch (e) { now = 'unavailable'; }
+      setAnswer('World clock', '<b>' + esc(now) + '</b> in ' + esc(a.city), dev);
+    }
+    else if (a.type === 'date') {
+      if (a.kind === 'days-until') setAnswer('Date maths', '<b>' + esc(a.days) + ' day' + (a.days === 1 ? '' : 's') +
+        '</b> until ' + esc(a.label) + ' (' + esc(a.weekday) + ', ' + esc(a.dateISO) + ')', dev);
+      else if (a.kind === 'date-from-now') setAnswer('Date maths', esc(a.n + ' ' + a.unit + (a.n === 1 ? '' : 's')) +
+        ' from today is <b>' + esc(a.weekday) + ', ' + esc(a.dateISO) + '</b>', dev);
+      else setAnswer('Date maths', esc(a.label) + ' falls on a <b>' + esc(a.weekday) + '</b> (' + esc(a.dateISO) + ')', dev);
+    }
+    else if (a.type === 'currency') {
+      setAnswer('Currency', esc(fmtNum(a.amount) + ' ' + a.from) + ' = <b>…</b>', 'live ECB rates · frankfurter.app');
+      getJSON('https://api.frankfurter.app/latest?amount=' + a.amount + '&from=' + a.from + '&to=' + a.to)
+        .then(function (d) {
+          if (seq !== liveSeq) return;
+          var v = d && d.rates && d.rates[a.to];
+          if (v == null) { clearAnswerIfCurrent(seq); return; }
+          setAnswer('Currency', esc(fmtNum(a.amount) + ' ' + a.from) + ' = <b>' + esc(fmtNum(v)) + ' ' + a.to + '</b>',
+            'live ECB rates · frankfurter.app');
+        }).catch(function () { clearAnswerIfCurrent(seq); });
+    }
+    else if (a.type === 'crypto') {
+      setAnswer('Crypto', esc(a.id) + ' = <b>…</b>', 'live · CoinGecko');
+      getJSON('https://api.coingecko.com/api/v3/simple/price?ids=' + a.id + '&vs_currencies=' + a.vs)
+        .then(function (d) {
+          if (seq !== liveSeq) return;
+          var v = d && d[a.id] && d[a.id][a.vs];
+          if (v == null) { clearAnswerIfCurrent(seq); return; }
+          setAnswer('Crypto', '1 ' + esc(a.id) + ' = <b>' + esc(fmtNum(v)) + ' ' + esc(a.vs.toUpperCase()) + '</b>',
+            'live · CoinGecko');
+        }).catch(function () { clearAnswerIfCurrent(seq); });
+    }
+    else if (a.type === 'weather') {
+      setAnswer('Weather', esc(a.place) + ': <b>…</b>', 'live · Open-Meteo');
+      getJSON('https://geocoding-api.open-meteo.com/v1/search?name=' + encodeURIComponent(a.place) + '&count=1')
+        .then(function (g) {
+          var hit = g && g.results && g.results[0];
+          if (!hit) throw new Error('no place');
+          return getJSON('https://api.open-meteo.com/v1/forecast?latitude=' + hit.latitude +
+            '&longitude=' + hit.longitude + '&current_weather=true').then(function (w) {
+            if (seq !== liveSeq) return;
+            var cw = w && w.current_weather;
+            if (!cw) { clearAnswerIfCurrent(seq); return; }
+            var code = WMO[cw.weathercode] || ['·', ''];
+            setAnswer('Weather', '<b>' + esc(Math.round(cw.temperature)) + '°C ' + code[0] + '</b> ' +
+              esc(code[1]) + ' in ' + esc(hit.name) + (hit.country_code ? ' (' + esc(hit.country_code) + ')' : '') +
+              ' · wind ' + esc(Math.round(cw.windspeed)) + ' km/h', 'live · Open-Meteo');
+          });
+        }).catch(function () { clearAnswerIfCurrent(seq); });
+    }
+    else if (a.type === 'define') {
+      setAnswer('Dictionary', esc(a.word) + ': <b>…</b>', 'live · dictionaryapi.dev');
+      getJSON('https://api.dictionaryapi.dev/api/v2/entries/en/' + encodeURIComponent(a.word))
+        .then(function (d) {
+          if (seq !== liveSeq) return;
+          var e0 = d && d[0], mean = e0 && e0.meanings && e0.meanings[0];
+          var def = mean && mean.definitions && mean.definitions[0] && mean.definitions[0].definition;
+          if (!def) { clearAnswerIfCurrent(seq); return; }
+          setAnswer('Dictionary', '<b>' + esc(e0.word) + '</b>' +
+            (e0.phonetic ? ' <span style="color:var(--faint)">' + esc(e0.phonetic) + '</span>' : '') +
+            (mean.partOfSpeech ? ' <i style="color:var(--gold);font-size:15px">' + esc(mean.partOfSpeech) + '</i>' : '') +
+            '<div style="font-size:16px;font-weight:400;margin-top:4px">' + esc(def) + '</div>',
+            'live · dictionaryapi.dev');
+        }).catch(function () { clearAnswerIfCurrent(seq); });
+    }
+  }
+
+  /* ---- knowledge panel: a Google-style entity card, from Wikipedia ---- */
+  function loadKnowledge(q, seq) {
+    $('kpanel').innerHTML = '';
+    if (!enabled.wiki) return;
+    if (/["\-:!]|\bOR\b/.test(q) || S.tokenize(q).length > 4 || !S.tokenize(q).length) return;
+    var title = q.trim().replace(/\s+/g, '_');
+    fetchSummary(title).catch(function () {
+      // Not an exact title — resolve via opensearch, then retry once.
+      return getJSON(wikiBase() + '/w/api.php?action=opensearch&search=' +
+        encodeURIComponent(q.trim()) + '&limit=1&format=json&origin=*').then(function (d) {
+        var best = d && d[1] && d[1][0];
+        if (!best) throw new Error('no entity');
+        return fetchSummary(String(best).replace(/\s+/g, '_'));
+      });
+    }).catch(function () {});
+
+    function fetchSummary(t) {
+      return getJSON(wikiBase() + '/api/rest_v1/page/summary/' + encodeURIComponent(t) + '?redirect=true')
+        .then(function (d) {
+          if (seq !== liveSeq) return;
+          if (!d || d.type !== 'standard' || !d.extract) throw new Error('no summary');
+          var img = d.thumbnail && d.thumbnail.source;
+          var url = d.content_urls && d.content_urls.desktop && d.content_urls.desktop.page;
+          $('kpanel').innerHTML = '<div class="card kp">' +
+            (img ? '<img src="' + esc(img) + '" alt="" loading="lazy">' : '') +
+            '<div><div class="kpt">' + esc(d.title) + '</div>' +
+            (d.description ? '<div class="kpd">' + esc(d.description) + '</div>' : '') +
+            '<div class="kpe">' + esc(String(d.extract).slice(0, 380)) + (String(d.extract).length > 380 ? '…' : '') + '</div>' +
+            (url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener">From Wikipedia →</a>' : '') +
+            '</div></div>';
+        });
+    }
+  }
+
+  function renderDym(q, res) {
+    var box = $('dym');
+    box.innerHTML = '';
+    // Only nudge when the on-device index found little and a correction exists.
+    if (res.total >= 3) return;
+    var fix = S.didYouMean(index, q);
+    if (fix && S.fold(fix) !== S.fold(q)) {
+      box.innerHTML = 'Did you mean <a href="#" id="dymLink" data-q="' + esc(fix) + '"><mark>' +
+        esc(fix) + '</mark></a>?';
+    }
+  }
+
+  /* ================================================================
+   *  The search itself
+   * ================================================================ */
+  function localItems(q) {
+    var t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+    var res = S.search(index, q, { limit: 12 });
+    var t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+    var items = res.results.map(function (r) {
+      var segs = S.snippet(r.doc.body, res.terms, 34);
+      var snippetHtml = segs.map(function (sg) {
+        return sg.t === 'hit' ? '<mark>' + esc(sg.s) + '</mark>' : esc(sg.s);
+      }).join('');
+      return { title: r.doc.title, url: r.doc.url, snippet: r.doc.body.slice(0, 160),
+        snippetHtml: snippetHtml, emoji: r.doc.emoji };
+    });
+    return { items: items, res: res, ms: t1 - t0 };
+  }
+
+  /* ---- 🖼 Images vertical: Openverse (CC) + Wikimedia Commons ---- */
+  function searchImages(q, seq) {
+    $('results').innerHTML = ''; lastResults = [];
+    $('stats').textContent = 'Searching images…';
+    var imgs = [], pending = 2;
+    function done() {
+      pending--;
+      if (seq !== liveSeq) return;
+      $('results').innerHTML = imgs.length ? '<div class="imggrid">' + imgs.map(function (im) {
+        return '<a href="' + esc(im.url) + '" target="_blank" rel="noopener">' +
+          '<img src="' + esc(im.thumb) + '" alt="' + esc(im.title) + '" loading="lazy">' +
+          '<div class="cap">' + esc(im.title || im.src) + '</div></a>';
+      }).join('') + '</div>' :
+        (pending === 0 ? '<div class="empty">No images found for <b>' + esc(currentQuery) + '</b>.</div>' : '');
+      $('stats').textContent = imgs.length ? imgs.length +
+        ' images · Openverse (openly licensed) + Wikimedia Commons — tap to open the source' :
+        (pending === 0 ? '' : 'Searching images…');
+    }
+    getJSON('https://api.openverse.org/v1/images/?q=' + encodeURIComponent(q) + '&page_size=20')
+      .then(function (d) {
+        (d && d.results || []).forEach(function (r) {
+          if (r.thumbnail) imgs.push({ thumb: r.thumbnail, url: r.foreign_landing_url || r.url,
+            title: r.title || '', src: 'Openverse' });
+        });
+      }).catch(function () {}).then(done);
+    getJSON('https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=' +
+      encodeURIComponent(q) + '&gsrnamespace=6&gsrlimit=20&prop=imageinfo&iiprop=url&iiurlwidth=320&format=json&origin=*')
+      .then(function (d) {
+        var pages = d && d.query && d.query.pages || {};
+        for (var k in pages) {
+          var ii = pages[k].imageinfo && pages[k].imageinfo[0];
+          if (ii && ii.thumburl) imgs.push({ thumb: ii.thumburl, url: ii.descriptionurl || ii.url,
+            title: String(pages[k].title || '').replace(/^File:/, ''), src: 'Commons' });
+        }
+      }).catch(function () {}).then(done);
+  }
+
+  /* ---- 📰 News vertical: GDELT's worldwide article index + Hacker News ---- */
+  function fmtGdeltDate(s) {
+    s = String(s || '');
+    return s.length >= 8 ? s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8) : '';
+  }
+  function searchNews(q, seq) {
+    $('results').innerHTML = ''; lastResults = [];
+    $('stats').textContent = 'Searching the world’s news…';
+    var lists = [], pending = 2;
+    function done() {
+      pending--;
+      if (seq !== liveSeq) return;
+      var merged = S.rrfMerge(lists, 20);
+      lastResults = merged;
+      renderResults(merged, { done: pending === 0 });
+      $('stats').textContent = merged.length ? merged.length +
+        ' news results · GDELT worldwide index + Hacker News, fused by RRF' :
+        (pending === 0 ? '' : 'Searching the world’s news…');
+      if (!merged.length && pending === 0) {
+        $('results').innerHTML = '<div class="empty">No news found for <b>' + esc(currentQuery) + '</b>.</div>';
+      }
+    }
+    getJSON('https://api.gdeltproject.org/api/v2/doc/doc?query=' + encodeURIComponent(q) +
+      '&mode=artlist&maxrecords=12&format=json&sort=hybridrel')
+      .then(function (d) {
+        var items = (d && d.articles || []).map(function (a) {
+          return { title: a.title || a.url, url: a.url, fav: '📰',
+            snippet: (a.domain || '') + (a.seendate ? ' · ' + fmtGdeltDate(a.seendate) : '') };
+        });
+        if (items.length) lists.push({ source: 'gdelt', weight: 1.2, items: items });
+      }).catch(function () {}).then(done);
+    getJSON('https://hn.algolia.com/api/v1/search?query=' + encodeURIComponent(q) + '&tags=story&hitsPerPage=8')
+      .then(function (d) {
+        var items = (d && d.hits || []).map(function (h) {
+          return { title: h.title || '(untitled)', url: h.url || ('https://news.ycombinator.com/item?id=' + h.objectID),
+            fav: 'Y', snippet: (h.points || 0) + ' points · ' + (h.num_comments || 0) + ' comments on Hacker News' };
+        });
+        if (items.length) lists.push({ source: 'hn', weight: 0.7, items: items });
+      }).catch(function () {}).then(done);
+  }
+
+  function runSearch(q, push) {
+    q = String(q || '').trim();
+    if (!q) { goHome(); return; }
+    var bang = S.parseBang(q);
+    if (bang) { window.location.href = bang.url; return; }
+
+    currentQuery = q;
+    $('qTop').value = q; $('qHome').value = q;
+    syncClear();
+    setMode(true);
+    closeSugg();
+    selIdx = -1;
+    remember(q);
+    if (push && window.history && history.pushState) {
+      try {
+        history.pushState({ q: q, t: vertical }, '', '?q=' + encodeURIComponent(q) +
+          (vertical !== 'all' ? '&t=' + vertical : ''));
+      } catch (e) {}
+    }
+
+    var seq = ++liveSeq;
+    paintTabs();
+    if (vertical !== 'all') {
+      // Image and news verticals have their own renderers; answers, the
+      // knowledge panel and the fused list belong to the All tab.
+      $('answerBox').innerHTML = ''; $('kpanel').innerHTML = ''; $('dym').innerHTML = '';
+      $('liveStatus').textContent = '';
+      if (vertical === 'images') searchImages(q, seq);
+      else searchNews(q, seq);
+      return;
+    }
+    renderAnswer(q, seq);
+    loadKnowledge(q, seq);
+    var local = localItems(q);
+    renderDym(q, local.res);
+
+    var lists = [{ source: 'local', weight: 1.6, items: local.items }];
+    lastResults = S.rrfMerge(lists);
+    renderResults(lastResults, { done: false });
+    var msTxt = local.ms ? local.ms.toFixed(1) : '0';
+    $('stats').textContent = local.res.total + ' on-device result' + (local.res.total === 1 ? '' : 's') +
+      ' in ' + msTxt + ' ms — asking the internet…';
+
+    // Fan out to the live internet; results fuse in as they land.
+    var active = SOURCES.filter(function (s) { return enabled[s.id]; });
+    var pending = active.length;
+    $('liveStatus').textContent = pending ? 'Live: ' + active.map(function (s) { return s.label; }).join(', ') + '…' : '';
+    if (!pending) {
+      // Nothing to ask — say so honestly instead of leaving "asking the internet…" up forever.
+      $('stats').textContent = local.res.total + ' on-device result' + (local.res.total === 1 ? '' : 's') +
+        ' in ' + msTxt + ' ms — live internet sources are off';
+      renderResults(lastResults, { done: true });
+      return;
+    }
+    active.forEach(function (src) {
+      src.fetch(q).then(function (items) {
+        if (seq !== liveSeq) return;
+        lists.push({ source: src.id, weight: src.weight, items: items || [] });
+        finish();
+      }).catch(function () {
+        if (seq !== liveSeq) return;
+        finish();
+      });
+      function finish() {
+        pending--;
+        lastResults = S.rrfMerge(lists, 24);
+        renderResults(lastResults, { done: pending === 0 });
+        if (pending === 0) {
+          var n = lastResults.length;
+          $('liveStatus').textContent = '';
+          $('stats').textContent = 'About ' + n + ' fused results (' + local.res.total +
+            ' on-device in ' + msTxt + ' ms + ' + (lists.length - 1) + ' live sources, ranked by RRF)';
+        }
+      }
+    });
+  }
+
+  function lucky(q) {
+    q = String(q || '').trim();
+    if (!q) return;
+    var bang = S.parseBang(q);
+    if (bang) { window.location.href = bang.url; return; }
+    var local = localItems(q);
+    if (local.items.length) { window.location.href = local.items[0].url; return; }
+    runSearch(q, true);
+  }
+
+  function goHome() {
+    currentQuery = '';
+    liveSeq++; // orphan any in-flight answer/knowledge fetches
+    vertical = 'all';
+    paintTabs();
+    setMode(false);
+    $('qHome').value = ''; $('qTop').value = '';
+    $('answerBox').innerHTML = ''; $('kpanel').innerHTML = ''; $('dym').innerHTML = '';
+    $('results').innerHTML = ''; $('stats').textContent = ''; $('liveStatus').textContent = '';
+    syncClear();
+    closeSugg();
+    renderHomeExtras();
+    if (window.history && history.pushState) {
+      try { history.pushState({}, '', location.pathname); } catch (e) {}
+    }
+  }
+
+  function remember(q) {
+    recents = [q].concat(recents.filter(function (r) { return r !== q; })).slice(0, 10);
+    lsSet(LS.recent, recents);
+  }
+
+  /* ================================================================
+   *  Suggestions (on-device + Wikipedia opensearch)
+   * ================================================================ */
+  var suggEls = { home: $('suggHome'), top: $('suggTop') };
+  var suggItems = [];
+  function closeSugg() {
+    suggEls.home.classList.remove('open'); suggEls.top.classList.remove('open');
+    suggItems = []; suggSel = -1;
+  }
+  function openSugg(which, items) {
+    var el = suggEls[which];
+    suggItems = items; suggSel = -1;
+    if (!items.length) { closeSugg(); return; }
+    el.innerHTML = items.map(function (s, i) {
+      return '<div class="s" data-i="' + i + '"><span class="k">' + (s.kind === 'title' ? '↗' : '🔎') +
+        '</span>' + esc(s.text) + (s.src ? '<span class="src">' + esc(s.src) + '</span>' : '') + '</div>';
+    }).join('');
+    el.classList.add('open');
+    var other = which === 'home' ? 'top' : 'home';
+    suggEls[other].classList.remove('open');
+  }
+
+  var liveSuggest = debounce(function (which, q) {
+    if (!enabled.wiki) return;
+    getJSON(wikiBase() + '/w/api.php?action=opensearch&search=' + encodeURIComponent(q) +
+      '&limit=5&format=json&origin=*').then(function (d) {
+      var input = which === 'home' ? $('qHome') : $('qTop');
+      if (String(input.value).trim() !== q) return;      // stale
+      var texts = (d && d[1]) || [];
+      var have = {};
+      suggItems.forEach(function (s) { have[S.fold(s.text)] = 1; });
+      var extra = [];
+      for (var i = 0; i < texts.length; i++) {
+        if (!have[S.fold(texts[i])]) extra.push({ text: texts[i], kind: 'word', src: 'wikipedia' });
+      }
+      if (extra.length) openSugg(which, suggItems.concat(extra).slice(0, 9));
+    }).catch(function () {});
+  }, 220);
+
+  function onType(which) {
+    var input = which === 'home' ? $('qHome') : $('qTop');
+    var q = String(input.value);
+    syncClear();
+    if (!q.trim()) { closeSugg(); return; }
+    var local = S.suggest(index, q, 6);
+    openSugg(which, local);
+    if (q.trim().length >= 2 && !S.parseBang(q)) liveSuggest(which, q.trim());
+  }
+
+  /* ================================================================
+   *  Crawler UI
+   * ================================================================ */
+  var crawling = false;
+  function clog(msg, cls) {
+    var el = $('crawlLog');
+    el.innerHTML += (cls ? '<span class="' + cls + '">' : '') + esc(msg) + (cls ? '</span>' : '') + '\n';
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function serverBase() {
+    // Companion server serves this page from its own origin; probe is cheap.
+    return fetch('api/health').then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { return d && d.seeker === 'server' ? '' : null; })
+      .catch(function () { return null; });
+  }
+
+  function fetchPage(url, viaServer) {
+    if (viaServer !== null && viaServer !== undefined) {
+      return getJSON('api/fetch?url=' + encodeURIComponent(url)).then(function (d) {
+        if (!d || d.error) throw new Error(d && d.error || 'fetch failed');
+        return { html: d.html, url: d.url || url };
+      });
+    }
+    return fetch(url).then(function (r) {
+      if (!r.ok) throw new Error('http ' + r.status);
+      var ct = String(r.headers && r.headers.get && r.headers.get('content-type') || '');
+      if (ct && ct.indexOf('html') === -1) throw new Error('not html');
+      return r.text().then(function (t) { return { html: t, url: r.url || url }; });
+    });
+  }
+
+  function startCrawl() {
+    if (crawling) return;
+    var seed = String($('seedUrl').value || '').trim();
+    var maxPages = Math.max(1, Math.min(60, parseInt($('maxPages').value, 10) || 12));
+    $('crawlLog').innerHTML = '';
+    crawling = true;
+    $('crawlBtn').textContent = 'Crawling…';
+
+    serverBase().then(function (server) {
+      var viaServer = server;
+      if (!seed) {
+        // Default seed: this site's root, crawled same-origin.
+        try { seed = new URL('../', location.href).href; } catch (e) { seed = '../'; }
+      }
+      var abs = S.normalizeUrl(seed, (typeof location !== 'undefined' && location.href) || undefined);
+      if (!abs) { clog('✗ that seed URL is not crawlable', 'err'); done(); return; }
+      var sameOrigin = (typeof location !== 'undefined') && S.sameOrigin(abs, location.href);
+      if (sameOrigin) viaServer = null; // our own origin: plain fetch, no proxy needed
+      if (viaServer === null && !sameOrigin) {
+        clog('No companion server detected — the browser can only crawl this site or CORS-open pages.', 'warn');
+        clog('For the whole internet: node seeker/server.mjs, then open Seeker from there.', 'warn');
+      }
+      clog('⛏ seed ' + abs + (viaServer !== null ? ' (via companion server)' : ' (browser fetch)'));
+      var crawler = S.createCrawler(abs, { maxPages: maxPages, maxDepth: 3 });
+      var added = 0;
+
+      function step() {
+        var next = S.crawlerNext(crawler);
+        if (!next) {
+          clog('✔ crawl finished — ' + added + ' page' + (added === 1 ? '' : 's') + ' indexed', 'ok');
+          lsSet(LS.crawled, crawled);
+          renderHomeExtras();
+          done();
+          return;
+        }
+        fetchPage(next.url, viaServer).then(function (page) {
+          var doc = S.extractPage(page.html, page.url);
+          if (doc.noindex) { clog('· ' + next.url + ' — noindex, skipped', 'warn'); }
+          else if (doc.title || doc.body) {
+            var stored = { url: doc.url, title: doc.title || doc.url,
+              body: (doc.description ? doc.description + ' ' : '') + doc.body, tags: '', source: 'crawl' };
+            S.addDoc(index, stored);
+            crawled = crawled.filter(function (c) { return c.url !== stored.url; });
+            crawled.push(stored);
+            added++;
+            clog('+ ' + (doc.title || next.url).slice(0, 80));
+          }
+          S.crawlerAdd(crawler, doc.links, next.depth + 1);
+          setTimeout(step, viaServer !== null ? 150 : 50); // be polite
+        }).catch(function (e) {
+          clog('· ' + next.url + ' — ' + (e && e.message || 'failed'), 'warn');
+          setTimeout(step, 50);
+        });
+      }
+      step();
+    });
+
+    function done() {
+      crawling = false;
+      $('crawlBtn').textContent = 'Start crawl';
+    }
+  }
+
+  function clearCrawled() {
+    crawled.forEach(function (c) {
+      var id = index.byUrl[c.url];
+      if (id != null) S.removeDoc(index, id);
+    });
+    crawled = [];
+    lsSet(LS.crawled, []);
+    clog('crawled pages removed from the index', 'ok');
+    renderHomeExtras();
+  }
+
+  /* ================================================================
+   *  Events
+   * ================================================================ */
+  function syncClear() {
+    $('boxHome').classList.toggle('has', !!$('qHome').value);
+    $('boxTop').classList.toggle('has', !!$('qTop').value);
+  }
+
+  function wireInput(which) {
+    var input = which === 'home' ? $('qHome') : $('qTop');
+    input.addEventListener('input', function () { onType(which); });
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown' && suggItems.length) {
+        e.preventDefault(); suggSel = (suggSel + 1) % suggItems.length; paintSugg(which);
+      } else if (e.key === 'ArrowUp' && suggItems.length) {
+        e.preventDefault(); suggSel = (suggSel - 1 + suggItems.length) % suggItems.length; paintSugg(which);
+      } else if (e.key === 'Escape') {
+        closeSugg();
+      }
+    });
+  }
+  function paintSugg(which) {
+    var el = suggEls[which];
+    var kids = el.querySelectorAll('.s');
+    for (var i = 0; i < kids.length; i++) kids[i].classList.toggle('sel', i === suggSel);
+  }
+
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+    while (t && t !== document) {
+      if (t.classList && t.classList.contains('s') && t.parentNode &&
+          (t.parentNode.id === 'suggHome' || t.parentNode.id === 'suggTop')) {
+        var it = suggItems[parseInt(t.getAttribute('data-i'), 10)];
+        if (it) runSearch(it.text, true);
+        return;
+      }
+      if (t.getAttribute && t.getAttribute('data-tab')) {
+        setVertical(t.getAttribute('data-tab'));
+        return;
+      }
+      if (t.getAttribute && t.getAttribute('data-q') != null) {
+        runSearch(t.getAttribute('data-q'), true);
+        return;
+      }
+      if (t.id === 'liveOnBtn') {
+        SOURCES.forEach(function (s) { enabled[s.id] = true; });
+        lsSet(LS.sources, enabled);
+        renderSources();
+        if (currentQuery) runSearch(currentQuery, false);
+        return;
+      }
+      if (t.getAttribute && t.getAttribute('data-src')) {
+        var id = t.getAttribute('data-src');
+        enabled[id] = !enabled[id];
+        lsSet(LS.sources, enabled);
+        renderSources();
+        if (currentQuery) runSearch(currentQuery, false);
+        return;
+      }
+      if (t.id === 'dymLink') { e.preventDefault(); runSearch(t.getAttribute('data-q'), true); return; }
+      if (t.id === 'aboutLink') { e.preventDefault(); runSearch('seeker search engine', true); return; }
+      if (t.id === 'miniLogo') { goHome(); return; }
+      t = t.parentNode;
+    }
+    closeSugg();
+  });
+
+  // goBtn is a real submit button for the home form — the form's submit
+  // handler covers it (and with JS dead, the browser navigates to ?q= itself).
+  $('luckyBtn').addEventListener('click', function () { lucky($('qHome').value); });
+  $('clearHome').addEventListener('click', function () { $('qHome').value = ''; syncClear(); closeSugg(); $('qHome').focus(); });
+  $('clearTop').addEventListener('click', function () { $('qTop').value = ''; syncClear(); closeSugg(); $('qTop').focus(); });
+  $('crawlBtn').addEventListener('click', startCrawl);
+  $('clearIndexBtn').addEventListener('click', clearCrawled);
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === '/' && document.activeElement && document.activeElement.tagName !== 'INPUT' &&
+        document.activeElement.tagName !== 'TEXTAREA') {
+      e.preventDefault();
+      (document.body.classList.contains('results') ? $('qTop') : $('qHome')).focus();
+    } else if (document.body.classList.contains('results') && lastResults.length &&
+               document.activeElement && document.activeElement.tagName !== 'INPUT') {
+      if (e.key === 'j' || e.key === 'ArrowDown') { selIdx = Math.min(lastResults.length - 1, selIdx + 1); renderResults(lastResults, { done: true }); }
+      else if (e.key === 'k' || e.key === 'ArrowUp') { selIdx = Math.max(0, selIdx - 1); renderResults(lastResults, { done: true }); }
+      else if (e.key === 'Enter' && selIdx >= 0) {
+        var it = lastResults[selIdx];
+        if (it) window.open(it.url, '_blank', 'noopener');
+      }
+    }
+  });
+
+  window.addEventListener('popstate', function () {
+    var st = qFromUrl();
+    if (st.q) { vertical = st.t; paintTabs(); runSearch(st.q, false); } else goHome();
+  });
+
+  function qFromUrl() {
+    try {
+      var p = new URLSearchParams(String(location.search || ''));
+      var t = p.get('t');
+      return { q: p.get('q') || '', t: (t === 'images' || t === 'news') ? t : 'all' };
+    } catch (e) { return { q: '', t: 'all' }; }
+  }
+
+  // Enter / the mobile keyboard's "search" key = a real form submit, which
+  // every browser and IME delivers reliably (keydown "Enter" is not universal).
+  function wireForm(which) {
+    var form = which === 'home' ? $('boxHome') : $('boxTop');
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var input = which === 'home' ? $('qHome') : $('qTop');
+      var q = suggSel >= 0 && suggItems[suggSel] ? suggItems[suggSel].text : input.value;
+      try { input.blur(); } catch (err) {} // dismiss the mobile keyboard
+      runSearch(q, true);
+    });
+  }
+
+  wireInput('home'); wireInput('top');
+  wireForm('home'); wireForm('top');
+
+  /* ---- boot ---- */
+  renderSources();
+  renderHomeExtras();
+  var q0 = qFromUrl();
+  if (q0.q) { vertical = q0.t; paintTabs(); runSearch(q0.q, false); }
+  syncClear();
+
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator &&
+      typeof location !== 'undefined' && String(location.protocol).indexOf('http') === 0) {
+    try { navigator.serviceWorker.register('sw.js'); } catch (e) {}
+  }
+})();
+</script>
+</body>
+</html>

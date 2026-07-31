@@ -97,11 +97,17 @@ function DocCard({ listing, type, doc }: { listing: Listing; type: ComplianceDoc
   const pill = STATUS_PILL[status];
 
   async function upload(file: File) {
+    const issuedAt = new Date(issued).getTime();
+    if (!Number.isFinite(issuedAt)) {
+      setError('Enter the certificate’s issue date first.');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
-      await uploadComplianceDoc(listing, type, file, new Date(issued).getTime());
+      await uploadComplianceDoc(listing, type, file, issuedAt);
       await queryClient.invalidateQueries({ queryKey: ['listing', listing.id] });
+      await queryClient.invalidateQueries({ queryKey: ['listings'] });
     } catch {
       setError('Upload failed — please try again.');
     } finally {

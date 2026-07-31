@@ -33,6 +33,9 @@ on:
         default: "3000"
       lr:
         default: "3e-4"
+      clean_wikitext:
+        description: "Strip WikiText markup (<unk>, @,@, spaced punctuation)"
+        default: "false"
 
 permissions:
   contents: write
@@ -64,6 +67,14 @@ jobs:
         run: |
           mkdir -p data
           curl -fsSL "${{ inputs.corpus_url }}" -o data/corpus.txt
+          if [ "${{ inputs.clean_wikitext }}" = "true" ]; then
+            echo "cleaning WikiText markup…"
+            sed -i \
+              -e 's/@,@//g; s/ @\.@ /./g; s/ @-@ /-/g' \
+              -e 's/<unk>//g' \
+              -e 's/ \([,.;:!?)]\)/\1/g; s/\(( \)/(/g' \
+              data/corpus.txt
+          fi
           echo "corpus: $(wc -c < data/corpus.txt) bytes"
 
       - name: Train

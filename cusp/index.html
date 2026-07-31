@@ -383,12 +383,19 @@
   function renderPlan(ranked){
     var wrap = $("#planWrap"); wrap.innerHTML="";
     if(ranked.length<2) return;
-    var p = E.planWindow(ranked, state.windowMin);
+    // The optimiser sees the whole backlog (not just eligible tasks) so it can
+    // pack the highest-salience set into your window — and chain through a quick
+    // blocker when doing so unlocks more than playing it safe.
+    var p = E.planOptimal(state.tasks, ctx());
     if(p.plan.length<2) return; // only worth showing if it chains ≥2
-    var html = "<div class='sec'><h3>Right-now plan</h3><span class='hint'>"+p.usedMin+" of "+state.windowMin+" min</span></div><ul class='list'>";
+    var unlocked = {}; (p.unlocked||[]).forEach(function(id){ unlocked[id]=true; });
+    var hint = p.usedMin+" of "+state.windowMin+" min";
+    if(p.gainedVsGreedy>0.05) hint += " · +"+p.gainedVsGreedy+" salience vs. the easy pick";
+    var html = "<div class='sec'><h3>Right-now plan</h3><span class='hint'>"+hint+"</span></div><ul class='list'>";
     p.plan.forEach(function(it,i){
+      var tag = unlocked[it.task.id] ? " <span class='rotbadge' style='background:rgba(57,230,180,.16);color:var(--accent)'>unlocks</span>" : "";
       html += "<li class='row plan'><span class='rank'>"+(i+1)+"</span>"+
-        "<span class='rowmain'><div class='rowtitle'>"+esc(it.task.title)+"</div>"+
+        "<span class='rowmain'><div class='rowtitle'>"+esc(it.task.title)+tag+"</div>"+
         "<div class='rowsub'><span>"+fmtEffort(it.task.effort)+"</span><span class='s'>"+it.salience+"</span></div></span></li>";
     });
     wrap.innerHTML = html+"</ul>";

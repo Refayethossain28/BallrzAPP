@@ -17,6 +17,7 @@ export default function Account() {
   const { profile, signOutUser } = useAuth();
   const [pushState, setPushState] = useState<'idle' | 'working' | 'on' | 'off'>('idle');
   const [erasing, setErasing] = useState(false);
+  const [eraseError, setEraseError] = useState('');
   if (!profile) return null;
 
   async function enablePush() {
@@ -27,9 +28,13 @@ export default function Account() {
   async function eraseData() {
     if (!window.confirm('Erase your personal data? This redacts your name and email across Apex. Completed tenancy records are retained where the law requires. You will be signed out.')) return;
     setErasing(true);
+    setEraseError('');
     try {
       await requestDataErasure();
       await signOutUser();
+    } catch (err) {
+      // Never let the user believe erasure succeeded when it didn't.
+      setEraseError(err instanceof Error ? err.message : 'Erasure did not complete — please try again.');
     } finally {
       setErasing(false);
     }
@@ -68,6 +73,7 @@ export default function Account() {
       <button className="cta ghost" disabled={erasing} onClick={eraseData}>
         {erasing ? 'Erasing…' : 'Erase my personal data'}
       </button>
+      {eraseError && <p className="error">{eraseError}</p>}
       <p className="faint" style={{ fontSize: 11, margin: '8px 0 16px' }}>
         UK GDPR right to erasure. Completed tenancy records are kept where the law requires.
         Apex also records pseudonymous usage analytics — no names, emails or full addresses,

@@ -4,9 +4,10 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   buildRentLedger, buildRentStatementCsv, formatGBP, isMandateActive, mandateLabel,
   renewalDefaults, rentChangePct,
-  type RentStatus, type CollectionStatus,
+  assessSection21Readiness, depositProtectionStatus, DEPOSIT_SCHEME_NAMES,
+  type RentStatus, type CollectionStatus, type DepositScheme, type DepositProtection,
 } from '@rentmatch/shared';
-import { fetchTenancy, fetchPayments, addRentPayment, type TenancyRecord } from '../lib/db';
+import { fetchTenancy, fetchPayments, addRentPayment, saveTenancyCompliance, type TenancyRecord } from '../lib/db';
 import {
   createDirectDebitSetup, createRenewal, recordRenewalSignature, confirmRenewal,
 } from '../lib/functions';
@@ -74,6 +75,9 @@ export default function TenancyDetail() {
         queryClient.invalidateQueries({ queryKey: ['payments', id] }),
         queryClient.invalidateQueries({ queryKey: ['tenancy', id] }),
         queryClient.invalidateQueries({ queryKey: ['tenancies'] }),
+        // Finances and Home's tax-year income read ['rent-payments']; without
+        // this they'd omit the payment just recorded until the cache expires.
+        queryClient.invalidateQueries({ queryKey: ['rent-payments'] }),
       ]);
       form.reset();
     } catch {
@@ -108,6 +112,8 @@ export default function TenancyDetail() {
         <Row k="Term" v={`${tenancy.termMonths} months from ${formatDate(tenancy.startDate)}`} />
         {ledger.nextDueDate && <Row k="Next rent due" v={formatDate(ledger.nextDueDate)} />}
       </div></div>
+
+      {tenancy.status === 'active' && <NoticeReadiness tenancy={tenancy} />}
 
       <RentCollection tenancy={tenancy} />
 
@@ -354,5 +360,153 @@ function Row({ k, v }: { k: string; v: string }) {
     <div className="row center" style={{ justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid var(--line)' }}>
       <span className="muted">{k}</span><b style={{ textAlign: 'right' }}>{v}</b>
     </div>
+  );
+}
+
+/**
+ * Section 21 readiness — the deposit-protection tracker + the one-glance verdict
+ * on whether a valid no-fault notice could be served. Combines the deposit's
+ * legal status with the landlord-attested compliance facts through the shared
+ * readiness engine, worst-first.
+ */
+function NoticeReadiness({ tenancy }: { tenancy: TenancyRecord }) {
+  const queryClient = useQueryClient();
+  const now = Date.now();
+  const dep = depositProtectionStatus(tenancy.deposit, now);
+  const readiness = assessSection21Readiness({
+    tenancyStartDate: tenancy.startDate,
+    monthlyRentPence: tenancy.monthlyRentPence,
+    deposit: tenancy.deposit ?? null,
+    gasSafetyProvided: !!tenancy.gasSafetyProvided,
+    eicrValid: !!tenancy.eicrValid,
+    epcProvided: !!tenancy.epcProvided,
+    howToRentProvided: !!tenancy.howToRentProvided,
+  }, now);
+
+  const [editing, setEditing] = useState(false);
+
+  const depPill = dep.state === 'protected' ? { cls: 'good', text: 'Protected' }
+    : dep.state === 'overdue' ? { cls: 'bad', text: 'Overdue' }
+    : dep.state === 'info-outstanding' ? { cls: 'bad', text: 'Info outstanding' }
+    : dep.state === 'due' ? { cls: 'warn', text: `${dep.daysRemaining}d left` }
+    : { cls: '', text: 'No deposit' };
+
+  const verdict = readiness.ready
+    ? { border: 'rgba(54,240,166,.4)', bg: 'rgba(54,240,166,.07)', title: '✅ Ready to serve a Section 21' }
+    : { border: 'rgba(255,93,108,.4)', bg: 'rgba(255,93,108,.07)', title: `⚠️ ${readiness.blockers.length} issue${readiness.blockers.length === 1 ? '' : 's'} would invalidate a Section 21` };
+
+  async function toggle(field: 'gasSafetyProvided' | 'epcProvided' | 'eicrValid' | 'howToRentProvided', value: boolean) {
+    await saveTenancyCompliance(tenancy.id, { [field]: value });
+    queryClient.invalidateQueries({ queryKey: ['tenancy', tenancy.id] });
+    queryClient.invalidateQueries({ queryKey: ['tenancies'] });
+  }
+
+  return (
+    <>
+      <div className="section-t">Eviction readiness (Section 21)</div>
+      <div className="notice" style={{ borderColor: verdict.border, background: verdict.bg }}>
+        <b>{verdict.title}</b>
+      </div>
+
+      {readiness.items.length > 0 && (
+        <div className="card"><div className="body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {readiness.items.map((it) => (
+            <div key={it.id} className="row" style={{ gap: 10, alignItems: 'flex-start' }}>
+              <span style={{ flex: 'none', fontSize: 14 }}>{it.severity === 'blocker' ? '⛔' : '⚠️'}</span>
+              <span style={{ fontSize: 12.5, lineHeight: 1.5 }}>{it.message}</span>
+            </div>
+          ))}
+        </div></div>
+      )}
+
+      <div className="card" style={{ marginTop: 10 }}><div className="body">
+        <div className="row center" style={{ justifyContent: 'space-between', marginBottom: 6 }}>
+          <b style={{ fontSize: 14 }}>Deposit protection</b>
+          <span className={`pill ${depPill.cls}`}>{depPill.text}</span>
+        </div>
+        {tenancy.deposit
+          ? <Row k="Deposit" v={`${formatGBP(tenancy.deposit.depositPence)}${dep.scheme ? ` · ${DEPOSIT_SCHEME_NAMES[dep.scheme]}` : ''}`} />
+          : <p className="faint" style={{ fontSize: 12, margin: '4px 0 0' }}>No deposit recorded. If you took one, protect it within 30 days and record it here.</p>}
+        <button className="cta ghost" style={{ marginTop: 10 }} onClick={() => setEditing((e) => !e)}>
+          {editing ? 'Close' : tenancy.deposit ? 'Update deposit protection' : 'Record deposit protection'}
+        </button>
+        {editing && <DepositForm tenancy={tenancy} onDone={() => setEditing(false)} />}
+      </div></div>
+
+      <div className="card" style={{ marginTop: 10 }}><div className="body">
+        <b style={{ fontSize: 14 }}>Documents served to the tenant</b>
+        <p className="faint" style={{ fontSize: 11.5, margin: '4px 0 10px' }}>Tick what you gave the tenant at the start of the tenancy — each is required for a valid Section 21.</p>
+        {([
+          ['gasSafetyProvided', 'Gas safety certificate'],
+          ['epcProvided', 'Energy Performance Certificate (EPC)'],
+          ['eicrValid', 'Electrical safety report (EICR), in date'],
+          ['howToRentProvided', 'Current “How to Rent” guide'],
+        ] as const).map(([field, label]) => (
+          <label key={field} className="row center" style={{ justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid var(--line)', cursor: 'pointer' }}>
+            <span style={{ fontSize: 13 }}>{label}</span>
+            <input type="checkbox" checked={!!tenancy[field]} onChange={(e) => toggle(field, e.target.checked)} />
+          </label>
+        ))}
+      </div></div>
+    </>
+  );
+}
+
+function DepositForm({ tenancy, onDone }: { tenancy: TenancyRecord; onDone: () => void }) {
+  const queryClient = useQueryClient();
+  const d = tenancy.deposit;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    const pounds = Number(f.get('amount'));
+    if (!Number.isFinite(pounds) || pounds <= 0) { setError('Enter the deposit amount.'); return; }
+    const received = new Date(String(f.get('received'))).getTime();
+    if (!Number.isFinite(received)) { setError('Enter the date the deposit was received.'); return; }
+    const protectedStr = String(f.get('protected') ?? '');
+    const infoStr = String(f.get('info') ?? '');
+    const deposit: DepositProtection = {
+      depositPence: Math.round(pounds * 100),
+      receivedAt: received,
+      scheme: (String(f.get('scheme')) || undefined) as DepositScheme | undefined,
+      protectedAt: protectedStr ? new Date(protectedStr).getTime() : undefined,
+      prescribedInfoServedAt: infoStr ? new Date(infoStr).getTime() : undefined,
+    };
+    setBusy(true);
+    setError('');
+    try {
+      await saveTenancyCompliance(tenancy.id, { deposit });
+      await queryClient.invalidateQueries({ queryKey: ['tenancy', tenancy.id] });
+      await queryClient.invalidateQueries({ queryKey: ['tenancies'] });
+      onDone();
+    } catch {
+      setError('Could not save — please try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div className="field"><label htmlFor="dep-amount">Deposit (£)</label>
+        <input id="dep-amount" name="amount" type="number" min={1} step="0.01" required defaultValue={d ? d.depositPence / 100 : ''} /></div>
+      <div className="field"><label htmlFor="dep-received">Date received</label>
+        <input id="dep-received" name="received" type="date" required defaultValue={d ? isoDate(d.receivedAt) : todayISO()} /></div>
+      <div className="field"><label htmlFor="dep-scheme">Scheme</label>
+        <select id="dep-scheme" name="scheme" defaultValue={d?.scheme ?? ''}>
+          <option value="">Not yet protected</option>
+          <option value="dps">Deposit Protection Service</option>
+          <option value="mydeposits">mydeposits</option>
+          <option value="tds">Tenancy Deposit Scheme</option>
+        </select></div>
+      <div className="field"><label htmlFor="dep-protected">Date protected (optional)</label>
+        <input id="dep-protected" name="protected" type="date" defaultValue={d?.protectedAt ? isoDate(d.protectedAt) : ''} /></div>
+      <div className="field"><label htmlFor="dep-info">Prescribed info served (optional)</label>
+        <input id="dep-info" name="info" type="date" defaultValue={d?.prescribedInfoServedAt ? isoDate(d.prescribedInfoServedAt) : ''} /></div>
+      {error && <p className="error">{error}</p>}
+      <button className="cta" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save deposit protection'}</button>
+    </form>
   );
 }

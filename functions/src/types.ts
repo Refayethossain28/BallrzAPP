@@ -51,6 +51,8 @@ export interface Booking {
   /** APEX applied against this fare at checkout (set by the client for display;
    *  the authoritative deduction is the coin_ledger redeem row). */
   apexRedeemed?: number;
+  /** Set server-side when the client-written fare fails integrity checks. */
+  fareFlagged?: boolean;
 
   pickup?: string;
   dropoff?: string;
@@ -224,4 +226,10 @@ export interface ParseBookingInput {
   now?: string;
   mode?: string;
   context?: unknown;
+}
+
+/** parseWhatsAppBooking — a pasted WhatsApp message or thread (staff only). */
+export interface ParseWhatsAppInput {
+  message?: string;
+  now?: string;
 }

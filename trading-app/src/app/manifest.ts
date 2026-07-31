@@ -3,8 +3,8 @@ import type { MetadataRoute } from 'next'
 // Served by Next.js at /manifest.webmanifest
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'FX Signal Pro — Currency Trading Analysis',
-    short_name: 'FX Signal',
+    name: 'ApexFX — Currency Trading Analysis',
+    short_name: 'ApexFX',
     description:
       'Real-time forex analysis with buy/sell signals, take profit, stop loss, and AI insights',
     start_url: '/',

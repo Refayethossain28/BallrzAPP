@@ -72,7 +72,7 @@ export default function NewProperty() {
           <div className="field"><label htmlFor="np-baths">Bathrooms</label><input id="np-baths" name="baths" type="number" defaultValue={1} min={1} /></div>
         </div>
         <div className="two">
-          <div className="field"><label htmlFor="np-rent">Rent (£ / month)</label><input id="np-rent" name="rent" type="number" required defaultValue={1500} /></div>
+          <div className="field"><label htmlFor="np-rent">Rent (£ / month)</label><input id="np-rent" name="rent" type="number" min={1} required defaultValue={1500} /></div>
           <div className="field"><label htmlFor="np-epc">EPC rating</label>
             <select id="np-epc" name="epc" defaultValue="C"><option>A</option><option>B</option><option>C</option><option>D</option><option>E</option><option>F</option><option>G</option></select></div>
         </div>

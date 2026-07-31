@@ -31,7 +31,22 @@ export async function init() {
       amount INTEGER, platform_fee REAL, driver_share INTEGER, transfer_ref TEXT,
       status TEXT, created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS clients (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, name_key TEXT NOT NULL UNIQUE,
+      tier TEXT DEFAULT 'standard', preferences TEXT DEFAULT '', phone TEXT DEFAULT '',
+      created_at TEXT NOT NULL, last_seen_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY, request_id TEXT, recipient TEXT, channel TEXT,
+      body TEXT, status TEXT, created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS vendors (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT DEFAULT '',
+      contact TEXT DEFAULT '', notes TEXT DEFAULT '', created_at TEXT NOT NULL
+    );
   `);
+  // Migration for databases created before clients.phone existed.
+  try { db.exec(`ALTER TABLE clients ADD COLUMN phone TEXT DEFAULT ''`); } catch { /* exists */ }
 }
 
 export async function seedIfEmpty() {
@@ -53,14 +68,102 @@ export async function setResourceLocation(id, lat, lng) {
   db.prepare(`UPDATE resources SET last_lat=?, last_lng=?, last_ping_at=? WHERE id=?`).run(lat, lng, now(), id);
 }
 
-export async function createRequest({ type, client_name, source, raw, parsed, quote_amount, sla_minutes }) {
+/* ---------- clients (the memory layer) ---------- */
+const GENERIC_NAMES = /^(new client|guest|client|customer)$/i;
+
+export async function findOrCreateClient(name, phone) {
+  const clean = (name || "").trim();
+  if (!clean || GENERIC_NAMES.test(clean)) return null;
+  const key = clean.toLowerCase();
+  let c = db.prepare(`SELECT * FROM clients WHERE name_key=?`).get(key);
+  if (!c) {
+    const id = "C" + randomUUID().slice(0, 8);
+    db.prepare(`INSERT INTO clients (id, name, name_key, phone, created_at, last_seen_at) VALUES (?,?,?,?,?,?)`)
+      .run(id, clean, key, (phone || "").trim(), now(), now());
+    c = db.prepare(`SELECT * FROM clients WHERE id=?`).get(id);
+  } else {
+    db.prepare(`UPDATE clients SET last_seen_at=?, phone=CASE WHEN ?<>'' THEN ? ELSE phone END WHERE id=?`)
+      .run(now(), (phone || "").trim(), (phone || "").trim(), c.id);
+    c = db.prepare(`SELECT * FROM clients WHERE id=?`).get(c.id);
+  }
+  return c;
+}
+
+export async function getClientByName(name) {
+  const key = (name || "").trim().toLowerCase();
+  if (!key || GENERIC_NAMES.test(key)) return null;
+  const c = db.prepare(`SELECT * FROM clients WHERE name_key=?`).get(key);
+  return c ? withClientStats(c) : null;
+}
+
+export async function listClients() {
+  return db.prepare(`SELECT * FROM clients ORDER BY last_seen_at DESC`).all().map(withClientStats);
+}
+
+export async function updateClientPrefs(id, preferences) {
+  db.prepare(`UPDATE clients SET preferences=? WHERE id=?`).run(preferences || "", id);
+  const c = db.prepare(`SELECT * FROM clients WHERE id=?`).get(id);
+  return c ? withClientStats(c) : null;
+}
+
+function withClientStats(c) {
+  const s = db.prepare(
+    `SELECT COUNT(*) trips, COALESCE(SUM(quote_amount),0) spend FROM requests WHERE client_id=?`
+  ).get(c.id);
+  return { ...c, trips: s.trips, spend: s.spend };
+}
+
+/* ---------- notifications ---------- */
+export async function recordNotification({ request_id, recipient, channel, body, status }) {
+  const id = "N" + randomUUID().slice(0, 8);
+  db.prepare(`INSERT INTO notifications (id, request_id, recipient, channel, body, status, created_at)
+              VALUES (?,?,?,?,?,?,?)`)
+    .run(id, request_id || null, recipient || "", channel, body, status, now());
+  return id;
+}
+export async function listNotifications(limit = 30) {
+  return db.prepare(`SELECT * FROM notifications ORDER BY created_at DESC LIMIT ?`).all(limit);
+}
+
+/* ---------- vendors (concierge rolodex) ---------- */
+export async function createVendor({ name, category, contact, notes }) {
+  const id = "V" + randomUUID().slice(0, 8);
+  db.prepare(`INSERT INTO vendors (id, name, category, contact, notes, created_at) VALUES (?,?,?,?,?,?)`)
+    .run(id, name, category || "", contact || "", notes || "", now());
+  return db.prepare(`SELECT * FROM vendors WHERE id=?`).get(id);
+}
+export async function listVendors() {
+  return db.prepare(`SELECT * FROM vendors ORDER BY name`).all();
+}
+export async function updateVendor(id, { name, category, contact, notes }) {
+  const v = db.prepare(`SELECT * FROM vendors WHERE id=?`).get(id);
+  if (!v) return null;
+  db.prepare(`UPDATE vendors SET name=?, category=?, contact=?, notes=? WHERE id=?`)
+    .run(name ?? v.name, category ?? v.category, contact ?? v.contact, notes ?? v.notes, id);
+  return db.prepare(`SELECT * FROM vendors WHERE id=?`).get(id);
+}
+
+/* ---------- stats ---------- */
+export async function getStats() {
+  const dayStart = new Date().toISOString().slice(0, 10);
+  const r = db.prepare(`SELECT COUNT(*) trips, COALESCE(SUM(quote_amount),0) booked,
+      SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) completed
+      FROM requests WHERE created_at >= ?`).get(dayStart);
+  const p = db.prepare(`SELECT COALESCE(SUM(amount),0) captured, COALESCE(SUM(driver_share),0) driver_paid,
+      COALESCE(SUM(platform_fee),0) platform_fees
+      FROM payments WHERE status='succeeded' AND created_at >= ?`).get(dayStart);
+  const open = db.prepare(`SELECT COUNT(*) c FROM requests WHERE status != 'completed'`).get().c;
+  return { today: { ...r, ...p }, open_requests: open };
+}
+
+export async function createRequest({ type, client_name, client_id, source, raw, parsed, quote_amount, sla_minutes }) {
   const id = "R" + randomUUID().slice(0, 8);
   const sla = sla_minutes != null ? new Date(Date.now() + sla_minutes * 60000).toISOString() : null;
   const audit = [{ t: now(), action: `created via ${source}`, actor: "system" }];
   db.prepare(`INSERT INTO requests
-      (id, client_name, type, status, source, raw_inbound_text, parsed_payload, quote_amount, sla_due_at, audit_log, created_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(id, client_name || "New client", type, "quoted", source, raw || "",
+      (id, client_id, client_name, type, status, source, raw_inbound_text, parsed_payload, quote_amount, sla_due_at, audit_log, created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(id, client_id || null, client_name || "New client", type, "quoted", source, raw || "",
          JSON.stringify(parsed || {}), quote_amount ?? null, sla, JSON.stringify(audit), now());
   return getRequest(id);
 }

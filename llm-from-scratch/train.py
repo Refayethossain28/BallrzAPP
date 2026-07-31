@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 import time
 
 import numpy as np
 
 from model import GPT, GPTConfig
 from optim import Adam, clip_grad_norm
-from tokenizer import BPETokenizer, CharTokenizer
+from tokenizer import BPETokenizer, CharTokenizer, load_tokenizer
 
 
 def get_batch(data, block_size, batch_size, rng):
@@ -70,29 +71,54 @@ def main():
     with open(args.data, "r", encoding="utf-8") as f:
         text = f.read()
 
-    if args.tokenizer == "bpe":
-        print(f"training bpe tokenizer (target vocab {args.vocab_size})...")
-        tok = BPETokenizer.train(text, vocab_size=args.vocab_size)
+    # Resumable training: a full-state file next to --out lets a run that gets
+    # killed (e.g. an ephemeral container restart) pick up exactly where it left
+    # off — just launch the same command again. It stores params + optimizer
+    # moments + step + best-val + tokenizer, so BPE isn't even rebuilt on resume.
+    state_path = args.out + ".state.npz"
+    resuming = os.path.exists(state_path)
+
+    if resuming:
+        st = np.load(state_path, allow_pickle=True)
+        tok = load_tokenizer(st["tokenizer"][0])
+        config = GPTConfig(**dict(st["config"][0]))
+        print(f"resuming from {state_path}")
     else:
-        tok = CharTokenizer.from_text(text)
+        if args.tokenizer == "bpe":
+            print(f"training bpe tokenizer (target vocab {args.vocab_size})...")
+            tok = BPETokenizer.train(text, vocab_size=args.vocab_size)
+        else:
+            tok = CharTokenizer.from_text(text)
+        config = GPTConfig(
+            vocab_size=tok.vocab_size,
+            block_size=args.block_size,
+            n_layer=args.n_layer,
+            n_head=args.n_head,
+            n_embd=args.n_embd,
+        )
+
     data = np.array(tok.encode(text), dtype=np.int64)
     n = int(0.9 * len(data))
     train_data, val_data = data[:n], data[n:]
     print(f"corpus: {len(text)} chars, vocab: {tok.vocab_size}, "
           f"train tokens: {len(train_data)}, val tokens: {len(val_data)}")
 
-    config = GPTConfig(
-        vocab_size=tok.vocab_size,
-        block_size=args.block_size,
-        n_layer=args.n_layer,
-        n_head=args.n_head,
-        n_embd=args.n_embd,
-    )
     model = GPT(config)
     n_params = sum(int(np.prod(p.data.shape)) for p in model.parameters())
     print(f"model parameters: {n_params:,}")
 
     opt = Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+
+    start_step = 0
+    best_val_resumed = float("inf")
+    if resuming:
+        model.load_state([np.asarray(a) for a in st["params"]])
+        opt.m = [np.asarray(a) for a in st["opt_m"]]
+        opt.v = [np.asarray(a) for a in st["opt_v"]]
+        opt.t = int(st["opt_t"][0])
+        start_step = int(st["step"][0])
+        best_val_resumed = float(st["best_val"][0])
+        print(f"resumed at step {start_step}, best val {best_val_resumed:.4f}")
 
     # LR schedule: linear warmup then cosine decay to min_lr_ratio * lr. A fixed
     # LR tends to overshoot and drift back up late in training; warmup+cosine
@@ -114,11 +140,27 @@ def main():
             tokenizer=np.array([tok.to_json()], dtype=object),
         )
 
+    def save_state(step, best):
+        # Full training state for resume: params + Adam moments + counters.
+        np.savez(
+            state_path,
+            params=np.array(model.state(), dtype=object),
+            opt_m=np.array(opt.m, dtype=object),
+            opt_v=np.array(opt.v, dtype=object),
+            opt_t=np.array([opt.t]),
+            step=np.array([step]),
+            best_val=np.array([best]),
+            config=np.array([config.to_dict()], dtype=object),
+            tokenizer=np.array([tok.to_json()], dtype=object),
+        )
+
     # Keep the BEST-val checkpoint, not merely the last one, so a late-training
     # wobble can never ship a worse model than we already had.
-    best_val = float("inf")
+    best_val = best_val_resumed
     t0 = time.time()
-    for step in range(1, args.steps + 1):
+    if start_step >= args.steps:
+        print(f"already at step {start_step} >= {args.steps}; nothing to do")
+    for step in range(start_step + 1, args.steps + 1):
         opt.lr = lr_at(step)
         x, y = get_batch(train_data, args.block_size, args.batch_size, rng)
         _, loss = model.forward(x, y)
@@ -136,6 +178,7 @@ def main():
                 best_val = val
                 save()
                 star = "  <- best, saved"
+            save_state(step, best_val)   # checkpoint for resume (survives restarts)
             print(f"step {step:5d} | train loss {float(loss.data):.4f} | "
                   f"val loss {val:.4f} | lr {opt.lr:.2e} | {dt:.1f}s{star}")
 

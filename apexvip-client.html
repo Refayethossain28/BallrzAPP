@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <meta name="apple-mobile-web-app-title" content="ApexVIP"/>
-<link rel="manifest" href="manifest.json"/>
+<link rel="manifest" href="manifest.json?v=2"/>
 <meta name="theme-color" content="#050505"/>
 <meta name="msapplication-TileColor" content="#050505"/>
 <meta name="msapplication-TileImage" content="icon-144.png"/>
@@ -108,15 +108,18 @@ body.ios-pwa{padding-top:env(safe-area-inset-top)}
 #app::-webkit-scrollbar{display:none}
 /* iOS: prevent input zoom (inputs must be ≥16px) */
 input,select,textarea{font-size:16px !important}
-/* iOS install banner */
+/* Install ritual — a white-glove bottom sheet, not a toast */
 #ios-install-banner{
-  position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);left:16px;right:16px;
-  background:rgba(20,16,12,.96);border:1px solid var(--border);border-radius:18px;
-  padding:14px 16px;z-index:999;display:flex;align-items:center;gap:12px;
-  backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
-  animation:slideUp .35s ease;box-shadow:0 8px 40px rgba(0,0,0,.6);
+  position:fixed;inset:0;z-index:999;display:flex;align-items:flex-end;justify-content:center;
+  background:rgba(0,0,0,.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  animation:fadeIn .3s ease;
 }
 #ios-install-banner.hidden{display:none}
+.install-sheet{
+  width:100%;max-width:430px;background:rgba(14,11,8,.97);border:1px solid var(--gold-2);border-bottom:none;
+  border-radius:28px 28px 0 0;padding:24px 24px calc(env(safe-area-inset-bottom,0px) + 20px);
+  box-shadow:0 -12px 60px rgba(0,0,0,.6);animation:slideUp .4s var(--ease-spring);
+}
 #cookie-consent{
   position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);left:16px;right:16px;
   background:rgba(20,16,12,.97);border:1px solid var(--border);border-radius:18px;
@@ -198,6 +201,17 @@ input,select,textarea{font-size:16px !important}
 .aurora i:nth-child(2){width:440px;height:440px;bottom:8%;right:-160px;background:radial-gradient(circle,rgba(180,140,55,.1),transparent 65%);animation:auroraDrift2 34s ease-in-out infinite}
 .aurora i:nth-child(3){width:380px;height:380px;top:38%;left:22%;background:radial-gradient(circle,rgba(75,55,145,.11),transparent 65%);animation:auroraDrift3 22s ease-in-out infinite}
 body.light .aurora{display:none}
+
+/* ── ApexAmbient — the palette breathes with the hour ─────────────────────
+   Rose-touched gold at dawn, the standard champagne by day, warm amber at
+   dusk, burnished and dimmer at night. Dark theme only; the driving class
+   is set by applyAmbientPalette(). */
+body.amb-dawn:not(.light){--gold:#D9BA8C;--gold-b:#bf9b4f;--gold-2:rgba(217,186,140,.24);--gold-3:rgba(217,186,140,.11);--gold-glow:0 0 28px rgba(217,186,140,.20),0 0 60px rgba(217,186,140,.07)}
+body.amb-dusk:not(.light){--gold:#E0B063;--gold-b:#c4922e;--gold-2:rgba(224,176,99,.26);--gold-3:rgba(224,176,99,.12);--gold-glow:0 0 30px rgba(224,176,99,.26),0 0 64px rgba(224,176,99,.10)}
+body.amb-night:not(.light){--gold:#C9A15E;--gold-b:#a87f28;--gold-2:rgba(201,161,94,.22);--gold-3:rgba(201,161,94,.10);--gold-glow:0 0 24px rgba(201,161,94,.18),0 0 52px rgba(201,161,94,.06)}
+body.amb-dawn:not(.light) .aurora{filter:hue-rotate(14deg) brightness(1.06)}
+body.amb-dusk:not(.light) .aurora{filter:hue-rotate(-10deg) saturate(1.15)}
+body.amb-night:not(.light) .aurora{filter:brightness(.8) saturate(.9)}
 
 /* ── Stagger entrance ────────────────────────────────────────────── */
 .stagger>*{opacity:0;animation:fadeUp .45s var(--ease-spring) forwards}
@@ -670,14 +684,29 @@ body.light .sheet{background:linear-gradient(175deg,rgba(255,255,255,.78),rgba(2
 </div>
 
 <!-- Add to Home Screen banner — shown in browser, not when already installed -->
-<div id="ios-install-banner" class="hidden">
-  <img src="icon-60.png" style="width:44px;height:44px;border-radius:10px;flex-shrink:0"/>
-  <div style="flex:1;min-width:0">
-    <div style="font-size:13px;font-weight:700;margin-bottom:2px">Add ApexVIP to Home Screen</div>
-    <div id="pwa-install-hint" style="font-size:11px;color:var(--fg-3)">Tap <svg style="display:inline;vertical-align:middle" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v13M7 7l5-5 5 5"/><path d="M20 16v4a2 2 0 01-2 2H6a2 2 0 01-2-2v-4"/></svg> Share → "Add to Home Screen"</div>
+<div id="ios-install-banner" class="hidden" onclick="snoozeInstallSheet()">
+  <div class="install-sheet" onclick="event.stopPropagation()">
+    <div style="width:40px;height:4px;border-radius:2px;background:var(--fg-5);margin:0 auto 20px"></div>
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">
+      <img src="icon-60.png" alt="" style="width:52px;height:52px;border-radius:13px;box-shadow:var(--gold-glow);flex-shrink:0"/>
+      <div style="min-width:0">
+        <div style="font-family:var(--font-serif);font-size:24px;font-weight:600;letter-spacing:.5px;line-height:1.1">ApexVIP, at hand</div>
+        <div id="pwa-install-hint" style="font-size:12px;color:var(--fg-3);margin-top:3px;line-height:1.5">Keep your chauffeur one tap from the home screen</div>
+      </div>
+    </div>
+    <div id="ios-install-steps">
+      <div style="display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:13px 14px;margin-bottom:8px">
+        <div style="width:26px;height:26px;border-radius:50%;background:var(--gold-3);border:1px solid var(--gold-2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:var(--gold);flex-shrink:0">1</div>
+        <div style="font-size:13px;color:var(--fg-2)">Tap the <svg style="display:inline;vertical-align:-2px" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v13M7 7l5-5 5 5"/><path d="M20 16v4a2 2 0 01-2 2H6a2 2 0 01-2-2v-4"/></svg> <b>Share</b> button below</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:13px 14px;margin-bottom:6px">
+        <div style="width:26px;height:26px;border-radius:50%;background:var(--gold-3);border:1px solid var(--gold-2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:var(--gold);flex-shrink:0">2</div>
+        <div style="font-size:13px;color:var(--fg-2)">Choose <b>Add to Home Screen</b></div>
+      </div>
+    </div>
+    <button id="pwa-install-btn" style="display:none;width:100%;background:var(--gold);border:none;border-radius:14px;color:#0c0b09;font-size:14px;font-weight:800;padding:15px;cursor:pointer;font-family:inherit;margin-bottom:6px">Add to Home Screen</button>
+    <button onclick="snoozeInstallSheet()" style="width:100%;background:none;border:none;color:var(--fg-3);font-size:12px;font-weight:600;padding:12px;cursor:pointer;font-family:inherit">Not now</button>
   </div>
-  <button id="pwa-install-btn" style="display:none;background:var(--gold);border:none;border-radius:10px;color:#0c0b09;font-size:12px;font-weight:700;padding:9px 14px;cursor:pointer;flex-shrink:0;font-family:inherit">Install</button>
-  <button onclick="document.getElementById('ios-install-banner').classList.add('hidden');localStorage.setItem('apexvip_pwa_dismissed','1')" style="background:none;border:none;color:var(--fg-3);font-size:20px;cursor:pointer;padding:4px;flex-shrink:0">×</button>
 </div>
 
 <!-- Cookie / privacy consent — shown on first visit (UK GDPR / PECR) -->
@@ -751,7 +780,7 @@ if (FIREBASE_ENABLED) {
 
 // Ensure a subscriptions/{uid} doc exists (starts the free trial on first sight).
 async function ensureSubscription() {
-  if (!FIREBASE_ENABLED || !auth.currentUser || BUSINESS.model !== 'subscription') return;
+  if (!FIREBASE_ENABLED || !auth.currentUser || BUSINESS.model !== 'subscription' || typeof ApexEngine==='undefined') return;
   try {
     const ref = db.collection('subscriptions').doc(auth.currentUser.uid);
     const doc = await ref.get();
@@ -765,7 +794,7 @@ async function ensureSubscription() {
 
 // Current subscription state — shared, unit-tested state machine
 // (apexvip-web/src/membership/membership.ts); the driver app uses the same one.
-function subState() { return ApexEngine.membershipState(state._sub, BUSINESS); }
+function subState() { return (typeof ApexEngine!=='undefined') ? ApexEngine.membershipState(state._sub, BUSINESS) : { mode:'off' }; }
 
 // Global membership sheet — rendered on every screen so the booking gate can
 // summon it from anywhere.
@@ -883,7 +912,17 @@ function showToast(msg, type='info', dur=3200) {
 
 function haptic(style) {
   if (navigator.vibrate) {
-    const patterns = {light:[8], medium:[20], heavy:[35], success:[10,40,20], error:[30,50,30]};
+    const patterns = {
+      light:[8], medium:[20], heavy:[35], success:[10,40,20], error:[30,50,30],
+      // Journey-milestone signatures — each moment of a trip has its own rhythm,
+      // so a guest learns to feel the difference without looking at the screen.
+      confirm:[12,60,12,60,24],   // booking confirmed: rising double-pulse
+      assigned:[10,50,18],        // chauffeur assigned
+      enroute:[8,40,8],           // on the way
+      arrived:[30,80,30,80,30],   // car at the kerb: insistent triple
+      onboard:[10],               // settle in — barely a whisper
+      complete:[16,50,16,50,40]   // journey complete: closing flourish
+    };
     navigator.vibrate(patterns[style]||patterns.light);
   }
 }
@@ -891,17 +930,30 @@ function haptic(style) {
 // ── Reliability: lightweight crash reporting ──────────────────────────────
 // Keeps the last 50 errors on-device and (when available) writes to a Firestore
 // `errors` collection. Swap in Sentry/Crashlytics later via the same entry point.
+// If the shared engine failed to load (deploy race, CDN blip), retry once —
+// and everything that uses it degrades gracefully until it arrives.
+if (typeof ApexEngine === 'undefined') {
+  (function(){ const sc=document.createElement('script'); sc.src='apexvip-engine.js?retry='+Date.now(); sc.onload=()=>{ try{render();}catch(_){}} ; document.head.appendChild(sc); })();
+}
+
+const APP_BUILD='2026-07-08.2';
+try{console.info('[apexvip] client build',APP_BUILD);}catch(_){}
+
 const _errSeen = new Set();
 function reportError(err, screen){
   try{
     // Message/stack/fingerprint + session dedupe come from the shared engine
     // (telemetry/errors.ts); accepts any thrown value or a plain string.
-    const r = ApexEngine.formatErrorReport(err, { app:'client', screen:(typeof screen==='string'&&screen)||(typeof state!=='undefined'?state.screen:'')||'' });
+    const scr=(typeof screen==='string'&&screen)||(typeof state!=='undefined'?state.screen:'')||'';
+    const r = (typeof ApexEngine!=='undefined')
+      ? ApexEngine.formatErrorReport(err, { app:'client', screen:scr })
+      : { message:String((err&&err.message)||err||'unknown').slice(0,500), stack:String((err&&err.stack)||'').slice(0,1500), fingerprint:String((err&&err.message)||err||'?').slice(0,60), app:'client', screen:scr };
     console.warn('[apexvip]', r.message);
     const arr=JSON.parse(localStorage.getItem('apexvip_errors')||'[]'); arr.push({...r, ts:Date.now(), ua:(navigator.userAgent||'').slice(0,140)});
     if(arr.length>50) arr.splice(0,arr.length-50);
     localStorage.setItem('apexvip_errors',JSON.stringify(arr));
-    if(!ApexEngine.shouldReport(r.fingerprint,_errSeen)) return;   // dedupe + hard cap: no error loops
+    if(_errSeen.has(r.fingerprint)||_errSeen.size>=20) return;      // dedupe + hard cap: no error loops
+    _errSeen.add(r.fingerprint);
     if(typeof FIREBASE_ENABLED!=='undefined' && FIREBASE_ENABLED && db) db.collection('errors').add({...r, at:firebase.firestore.FieldValue.serverTimestamp()}).catch(function(){});
   }catch(_){ /* never let the reporter throw */ }
 }
@@ -998,15 +1050,20 @@ function requestDataErasure(){
 const $ = id => document.getElementById(id);
 const app = document.getElementById('app');
 
+// Safe JSON.parse for localStorage: state is built at top level, so a single
+// corrupt value would otherwise throw BEFORE the first render and brick the
+// app permanently (the crash screen can't render without `state`).
+function safeParse(str, fallback){ try{ const v = JSON.parse(str); return v==null ? fallback : v; }catch(_){ return fallback; } }
+
 let state = {
   screen: 'splash', user: null, booking: {}, selectedTrip: null,
   theme: localStorage.getItem('apexvip_theme') || 'dark',
   apexBalance: Math.max(0, parseInt(localStorage.getItem('apex_balance')||'0', 10) || 0),
-  apexTransactions: JSON.parse(localStorage.getItem('apex_txs')||'[]'),
+  apexTransactions: safeParse(localStorage.getItem('apex_txs'), []),
   _lastApexEarned: 0,
   paMode: false,
   paPassenger: { name: '', phone: '' },
-  savedAddresses: JSON.parse(localStorage.getItem('apexvip_saved_addrs') || '[]'),
+  savedAddresses: safeParse(localStorage.getItem('apexvip_saved_addrs'), []),
   _tipAmount: 0,
   _tipSent: false,
   _sosConfirm: false,
@@ -1036,15 +1093,15 @@ let state = {
   _inviteValid: false,
   _inviteChecked: false,
   _waitlistJoined: false,
-  prefs: JSON.parse(localStorage.getItem('apex_prefs') || '{"temperature":"cool","music":"jazz","convo":"friendly","newspaper":"ft","discrete":false}'),
+  prefs: safeParse(localStorage.getItem('apex_prefs'), {temperature:'cool',music:'jazz',convo:'friendly',newspaper:'ft',discrete:false}),
   _giftCode: '',
   _giftAmount: 0,
   _corporateCode: '',
   _corporateRef: '',
   _discoverCity: 'london',
-  _discoverCat: 'all',
+  _discoverCat: 'All',
   _airportPicker: false,
-  _cityInterest: JSON.parse(localStorage.getItem('apex_city_interest') || '{}'),
+  _cityInterest: safeParse(localStorage.getItem('apex_city_interest'), {}),
   memberNumber: localStorage.getItem('apex_member_no') || null,
   _flightStatus: null,
   _flightChecking: false,
@@ -1053,7 +1110,7 @@ let state = {
   _flightAddMode: false,
   _flightAddInput: '',
   _flightAddChecking: false,
-  _customFlights: JSON.parse(localStorage.getItem('apex_custom_flights')||'[]'),
+  _customFlights: safeParse(localStorage.getItem('apex_custom_flights'), []),
   _expCat: 'all',
   _expSelected: null,
   _expSlot: null,
@@ -1219,7 +1276,7 @@ async function lookupFlight(flightNum){
   }
   if(hint){
     if(delayed&&delayMins>0){
-      hint.innerHTML=`<span style="color:#fbbf24">⚠ ${flightNum.toUpperCase()} delayed ~${delayMins} min — pickup adjusted automatically</span>`;
+      hint.innerHTML=`<span style="color:#fbbf24">⚠ ${esc(flightNum.toUpperCase())} delayed ~${delayMins} min — pickup adjusted automatically</span>`;
       const tmEl=document.getElementById('ba_tm');
       if(tmEl&&tmEl.value){
         const[h,m]=tmEl.value.split(':').map(Number);
@@ -1228,7 +1285,7 @@ async function lookupFlight(flightNum){
         tmEl.value=nt; state.booking.time=nt;
       }
     } else {
-      hint.innerHTML=`<span style="color:#22c55e">✓ ${flightNum.toUpperCase()} on time — pickup window confirmed</span>`;
+      hint.innerHTML=`<span style="color:#22c55e">✓ ${esc(flightNum.toUpperCase())} on time — pickup window confirmed</span>`;
     }
   }
 }
@@ -1271,12 +1328,12 @@ function initTrackingMap(){
     _liveMode=true;
     const el2=_locEl();
     if(el2) el2.innerHTML='<span style="color:var(--fg-4)">Connecting to driver GPS…</span>';
-    _trackingUnsub=db.collection('drivers').doc(driverDocId).onSnapshot(doc=>{
+    _trackingUnsub=db.collection('driver_locations').doc(driverDocId).onSnapshot(doc=>{
       if(!doc.exists||!trackingMap)return;
       const d=doc.data();
       if(!d.lat||!d.lng)return;
       placeOrMoveDriver([d.lat,d.lng]);
-    },()=>{});
+    },err=>reportError(err,'driver-track-listener'));
   } else {
     // Simulation — driver starts near pickup and moves toward client
     let dLat=51.5074+(Math.random()-.5)*.018;
@@ -1321,6 +1378,45 @@ function auroraBg(extraStyle){
   return `<div class="aurora"${extraStyle?` style="${extraStyle}"`:''}><i></i><i></i><i></i></div>`;
 }
 
+// ── ApexAmbient — time-aware palette ──────────────────────────────────────
+// The champagne gold shifts with the hour so the app feels aware of the day:
+// dawn 5–8, day 8–17 (the default), dusk 17–21, night 21–5.
+function applyAmbientPalette(){
+  const h=new Date().getHours();
+  const mode=(h>=5&&h<8)?'amb-dawn':(h>=8&&h<17)?'':(h>=17&&h<21)?'amb-dusk':'amb-night';
+  ['amb-dawn','amb-dusk','amb-night'].forEach(c=>document.body.classList.toggle(c,c===mode));
+}
+applyAmbientPalette();
+setInterval(applyAmbientPalette,15*60*1000);
+
+// ── Trip history: month grouping + expense export ─────────────────────────
+function _tripMonthKey(dateStr){
+  if(/^\d{4}-\d{2}/.test(dateStr||'')) return dateStr.slice(0,7);
+  const d=new Date(dateStr); return isNaN(d)?'other':d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+}
+function _tripMonthLabel(key){
+  if(key==='other') return 'Undated';
+  const p=key.split('-'); return new Date(Number(p[0]),Number(p[1])-1,1).toLocaleDateString('en-GB',{month:'short',year:'numeric'});
+}
+function _pastTrips(){ return TRIPS.filter(t=>t.status==='completed'||t.status==='cancelled'); }
+function _filteredPastTrips(){
+  const mk=state._tripsMonth||'all';
+  return _pastTrips().filter(t=>mk==='all'||_tripMonthKey(t.date)===mk);
+}
+// Share (or copy) a plain-text expense summary of the filtered month — the
+// exact thing a PA forwards to accounts.
+function exportTrips(){
+  const list=_filteredPastTrips();
+  if(!list.length){showToast('No journeys to export','info');return;}
+  const mk=state._tripsMonth||'all';
+  const lines=list.map(t=>`${t.date} ${t.time} · ${t.pickup} → ${t.dropoff} · ${t.vehicle} · ${t.price} · ${t.id}${t.status==='cancelled'?' (cancelled)':''}`);
+  const total=list.filter(t=>t.status==='completed').reduce((s,t)=>s+(Number(String(t.price).replace(/[^0-9.]/g,''))||0),0);
+  const text='ApexVIP — journey expenses'+(mk==='all'?'':' · '+_tripMonthLabel(mk))+'\n\n'+lines.join('\n')+'\n\nTotal: £'+total.toLocaleString()+' · '+list.length+' journey'+(list.length===1?'':'s');
+  track('trips_exported',{count:list.length,src:'client'});
+  if(navigator.share){ navigator.share({title:'ApexVIP journeys',text}).catch(()=>{}); }
+  else if(navigator.clipboard){ navigator.clipboard.writeText(text).then(()=>showToast('Expense summary copied','success')).catch(()=>showToast('Could not copy','error')); }
+}
+
 // ── SilentService™ — preference memory ─────────────────────────────────────
 const HISTORY_KEY='apexvip_history';
 function getBookingHistory(){
@@ -1358,7 +1454,7 @@ function silentServiceCard(){
               <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#ffffff" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M4 9a8 8 0 0114-3M20 15a8 8 0 01-14 3"/></svg>
             </div>
             <div style="flex:1;min-width:0">
-              <div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Your usual — ${pf.pickup} → ${pf.dropoff}</div>
+              <div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Your usual — ${esc(pf.pickup)} → ${esc(pf.dropoff)}</div>
               <div class="tnum" style="font-size:12px;color:var(--fg-3);margin-top:3px">${pf.time} · learned from ${profile.bookings} bookings</div>
             </div>
             <div style="background:#ffffff;color:#000;border-radius:10px;padding:8px 13px;font-size:11px;font-weight:800;letter-spacing:.8px;flex-shrink:0">BOOK AGAIN</div>
@@ -1376,6 +1472,213 @@ function bookUsual(){
   else state.booking.dropoff=pf.dropoff;
   track('silent_service_book_again',{service:pf.serviceType,src:'client'});
   go('vehicle-select');
+}
+
+// ── Flights — in-app search handed off to Skyscanner ──────────────────────
+// Skyscanner's data API is partner-only, but deep-linked searches need no
+// key: we build the exact search here (route, dates, cabin, party) and open
+// live results. The airport list powers the datalist + free-text matching.
+const AIRPORTS=[
+  {c:'LHR',n:'London Heathrow'},{c:'LGW',n:'London Gatwick'},{c:'LCY',n:'London City'},{c:'STN',n:'London Stansted'},{c:'FAB',n:'Farnborough (private)'},
+  {c:'JFK',n:'New York JFK'},{c:'EWR',n:'New York Newark'},{c:'LAX',n:'Los Angeles'},{c:'MIA',n:'Miami'},
+  {c:'DXB',n:'Dubai'},{c:'AUH',n:'Abu Dhabi'},{c:'DOH',n:'Doha'},{c:'RUH',n:'Riyadh'},
+  {c:'CDG',n:'Paris Charles de Gaulle'},{c:'NCE',n:'Nice Côte d’Azur'},{c:'GVA',n:'Geneva'},{c:'ZRH',n:'Zurich'},
+  {c:'MXP',n:'Milan Malpensa'},{c:'FCO',n:'Rome Fiumicino'},{c:'MAD',n:'Madrid'},{c:'BCN',n:'Barcelona'},{c:'LIS',n:'Lisbon'},
+  {c:'ATH',n:'Athens'},{c:'IST',n:'Istanbul'},{c:'SIN',n:'Singapore'},{c:'HKG',n:'Hong Kong'},{c:'NRT',n:'Tokyo Narita'},
+  {c:'GIG',n:'Rio de Janeiro'},{c:'CPT',n:'Cape Town'},{c:'MLE',n:'Maldives Malé'},{c:'MRU',n:'Mauritius'},{c:'IBZ',n:'Ibiza'},{c:'PMI',n:'Palma de Mallorca'}
+];
+function _fltCode(v){
+  v=(v||'').trim();
+  if(/^[A-Za-z]{3}$/.test(v))return v.toLowerCase();
+  const q=v.toLowerCase();
+  const hit=AIRPORTS.find(a=>a.n.toLowerCase().includes(q)&&q.length>=3);
+  return hit?hit.c.toLowerCase():null;
+}
+function skyscannerSearch(){
+  const err=document.getElementById('flt_err');
+  const _fail=m=>{if(err){err.textContent=m;err.style.display='block';}};
+  const from=_fltCode(document.getElementById('flt_from')?.value)||'lhr';
+  const to=_fltCode(document.getElementById('flt_to')?.value);
+  if(!to){_fail('Please choose a destination — an airport code (JFK) or city (Dubai).');return;}
+  const dep=(document.getElementById('flt_dep')?.value||'').replace(/-/g,'').slice(2);
+  if(dep.length!==6){_fail('Please choose a departure date.');return;}
+  let ret='';
+  if(state._fltRtn!==false){
+    ret=(document.getElementById('flt_ret')?.value||'').replace(/-/g,'').slice(2);
+    if(ret.length!==6){_fail('Please choose a return date, or switch to one-way.');return;}
+  }
+  if(err)err.style.display='none';
+  const pax=parseInt(document.getElementById('flt_pax')?.value)||2;
+  const cabin=state._fltCabin||'business';
+  let url='https://www.skyscanner.net/transport/flights/'+from+'/'+to+'/'+dep+'/';
+  if(ret)url+=ret+'/';
+  url+='?adults='+pax+'&cabinclass='+cabin+'&rtn='+(ret?1:0)+'&preferdirects=true';
+  track('flight_search',{from,to,dep,ret,pax,cabin,src:'client'});
+  haptic('light');
+  window.open(url,'_blank','noopener');
+}
+// "Book it for me" — the travel-desk request flow. Ticketing needs an IATA/
+// consolidator channel, so the client's configured flight goes to the ops
+// desk as a flight_requests doc; staff ticket it and advance the status
+// (requested → quoted → booked → ticketed), which the client tracks here.
+function _fltAirportName(code){const a=AIRPORTS.find(x=>x.c.toLowerCase()===String(code).toLowerCase());return a?a.n:String(code).toUpperCase();}
+// The travel desk is a Velvet concierge-member privilege. Membership truth
+// is the Velvet member doc: sub exists and isn't canceled (Velvet's own
+// isLive check). Cached per session; the rules enforce the same server-side,
+// so this gate is honest UX, not the security boundary.
+async function _velvetLive(){
+  if(typeof state._velvetLive==='boolean')return state._velvetLive;
+  if(!FIREBASE_ENABLED)return true; // demo mode shows the full experience
+  if(!auth.currentUser)return false;
+  try{
+    const s=await db.collection('velvet_members').doc(auth.currentUser.uid).get();
+    const sub=s.exists?(s.data()||{}).sub:null;
+    state._velvetLive=!!sub&&sub.status!=='canceled';
+  }catch(e){state._velvetLive=false;}
+  return state._velvetLive;
+}
+async function openFlightSheet(){
+  const err=document.getElementById('flt_err');
+  const _fail=m=>{if(err){err.textContent=m;err.style.display='block';}};
+  const from=_fltCode(document.getElementById('flt_from')?.value)||'lhr';
+  const to=_fltCode(document.getElementById('flt_to')?.value);
+  if(!to){_fail('Please choose a destination — an airport code (JFK) or city (Dubai).');return;}
+  const dep=document.getElementById('flt_dep')?.value||'';
+  if(!dep){_fail('Please choose a departure date.');return;}
+  let ret='';
+  if(state._fltRtn!==false){
+    ret=document.getElementById('flt_ret')?.value||'';
+    if(!ret){_fail('Please choose a return date, or switch to one-way.');return;}
+  }
+  if(err)err.style.display='none';
+  if(FIREBASE_ENABLED&&!auth.currentUser){state._pendingScreen='flight-search';go('login');return;}
+  if(!await _velvetLive()){state._deskUpsell=true;track('desk_upsell_shown',{src:'flight'});render();return;}
+  state._fltDraft={from:from.toUpperCase(),to:to.toUpperCase(),dep,ret,
+    pax:parseInt(document.getElementById('flt_pax')?.value)||2,cabin:state._fltCabin||'business'};
+  state._fltSheet=true;render();
+}
+// Members-only upsell sheet, shared by the flight and hotel screens.
+function deskUpsellSheet(){
+  if(!state._deskUpsell)return'';
+  return `
+  <div style="position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:500;display:flex;align-items:flex-end;justify-content:center" onclick="state._deskUpsell=false;render()">
+    <div style="background:var(--bg);border-radius:24px 24px 0 0;border:1px solid var(--border);width:100%;max-width:480px;padding:28px 24px calc(env(safe-area-inset-bottom) + 26px);animation:slideUp .25s ease" onclick="event.stopPropagation()">
+      <div style="font-size:10px;font-weight:700;letter-spacing:2.5px;color:var(--gold);margin-bottom:10px">VELVET · MEMBERS ONLY</div>
+      <div style="font-family:var(--font-serif);font-size:24px;font-weight:500;margin-bottom:8px">A privilege of membership</div>
+      <div style="font-size:14px;color:var(--fg-3);line-height:1.65;margin-bottom:20px">The travel desk — flights and stays sourced, booked and ticketed for you — is reserved for Velvet concierge members. Membership also opens the full concierge: dining, events, and the impossible-to-get.</div>
+      <button class="btn btn-gold ripple-host" onclick="addRipple(this,event);state._deskUpsell=false;go('concierge')">Explore Velvet membership</button>
+      <button onclick="state._deskUpsell=false;render()" style="width:100%;background:transparent;border:none;color:var(--fg-3);font-size:14px;padding:14px 0 0;cursor:pointer;font-family:inherit">Not now — I'll book directly</button>
+    </div>
+  </div>`;
+}
+async function submitFlightRequest(){
+  const d=state._fltDraft;if(!d)return;
+  const notes=document.getElementById('flt_notes')?.value?.trim()||'';
+  const ref='FLT-'+(Math.floor(1000+Math.random()*9000));
+  const req={ref,clientId:auth.currentUser?.uid||'demo',
+    clientName:state.user?.name||'',clientEmail:state.user?.email||auth.currentUser?.email||'',clientPhone:state.user?.phone||'',
+    from:d.from,fromName:_fltAirportName(d.from),to:d.to,toName:_fltAirportName(d.to),
+    depart:d.dep,return:d.ret||'',pax:d.pax,cabin:d.cabin,notes,status:'requested'};
+  if(FIREBASE_ENABLED&&auth.currentUser){
+    try{await db.collection('flight_requests').add({...req,createdAt:firebase.firestore.FieldValue.serverTimestamp()});}
+    catch(e){reportError(e,'flight-request');const el=document.getElementById('flt_err');if(el){el.textContent='Could not send the request — please try again.';el.style.display='block';}state._fltSheet=false;render();return;}
+  }
+  state._fltReqs=[{...req,id:'local-'+Date.now()},...(state._fltReqs||[])];
+  state._fltSheet=false;state._fltReqSent=ref;
+  track('flight_request',{from:d.from,to:d.to,dep:d.dep,ret:d.ret,pax:d.pax,cabin:d.cabin,src:'client'});
+  haptic('confirm');render();
+}
+function _loadFlightReqs(){
+  if(!(FIREBASE_ENABLED&&auth.currentUser))return;
+  db.collection('flight_requests').where('clientId','==',auth.currentUser.uid).limit(20).get().then(snap=>{
+    const rows=snap.docs.map(x=>({id:x.id,...x.data()}));
+    rows.sort((a,b)=>(b.createdAt?.toMillis?.()||0)-(a.createdAt?.toMillis?.()||0));
+    state._fltReqs=rows.slice(0,6);
+    if(state.screen==='flight-search')render();
+  }).catch(reportError);
+}
+function cancelFlightReq(id){
+  const r=(state._fltReqs||[]).find(x=>x.id===id);if(r)r.status='cancelled';
+  if(FIREBASE_ENABLED&&auth.currentUser&&!String(id).startsWith('local-')){
+    db.collection('flight_requests').doc(id).update({status:'cancelled'}).catch(reportError);
+  }
+  render();
+}
+
+// ── Hotels — Skyscanner-style provider comparison + travel-desk booking ────
+// One search, many providers: the client builds the stay once and jumps to
+// any provider's pre-filled results. Desk bookings reuse flight_requests
+// (type:'hotel'), so the same admin Travel Desk and rules cover both.
+function _hotelParams(){
+  const err=document.getElementById('htl_err');
+  const _fail=m=>{if(err){err.textContent=m;err.style.display='block';}return null;};
+  const city=(document.getElementById('htl_city')?.value||'').trim();
+  if(!city)return _fail('Please enter a destination — a city or a hotel name.');
+  const ci=document.getElementById('htl_ci')?.value||'';
+  const co=document.getElementById('htl_co')?.value||'';
+  if(!ci||!co)return _fail('Please choose check-in and check-out dates.');
+  if(co<=ci)return _fail('Check-out must be after check-in.');
+  if(err)err.style.display='none';
+  return{city,ci,co,
+    guests:parseInt(document.getElementById('htl_guests')?.value)||2,
+    rooms:parseInt(document.getElementById('htl_rooms')?.value)||1};
+}
+function hotelProviderOpen(p){
+  const d=_hotelParams();if(!d)return;
+  const q=encodeURIComponent(d.city);
+  const urls={
+    booking:`https://www.booking.com/searchresults.html?ss=${q}&checkin=${d.ci}&checkout=${d.co}&group_adults=${d.guests}&no_rooms=${d.rooms}&group_children=0`,
+    hotels:`https://www.hotels.com/Hotel-Search?destination=${q}&startDate=${d.ci}&endDate=${d.co}&adults=${d.guests}&rooms=${d.rooms}`,
+    expedia:`https://www.expedia.co.uk/Hotel-Search?destination=${q}&startDate=${d.ci}&endDate=${d.co}&adults=${d.guests}&rooms=${d.rooms}`,
+    google:`https://www.google.com/travel/search?q=${encodeURIComponent('hotels in '+d.city)}`
+  };
+  if(!urls[p])return;
+  track('hotel_search',{provider:p,city:d.city,ci:d.ci,co:d.co,guests:d.guests,rooms:d.rooms,src:'client'});
+  haptic('light');
+  window.open(urls[p],'_blank','noopener');
+}
+async function openHotelSheet(){
+  const d=_hotelParams();if(!d)return;
+  if(FIREBASE_ENABLED&&!auth.currentUser){state._pendingScreen='hotel-search';go('login');return;}
+  if(!await _velvetLive()){state._deskUpsell=true;track('desk_upsell_shown',{src:'hotel'});render();return;}
+  state._htlDraft=d;state._htlSheet=true;render();
+}
+async function submitHotelRequest(){
+  const d=state._htlDraft;if(!d)return;
+  const notes=document.getElementById('htl_notes')?.value?.trim()||'';
+  const ref='HTL-'+(Math.floor(1000+Math.random()*9000));
+  const req={ref,type:'hotel',clientId:auth.currentUser?.uid||'demo',
+    clientName:state.user?.name||'',clientEmail:state.user?.email||auth.currentUser?.email||'',clientPhone:state.user?.phone||'',
+    city:d.city,checkIn:d.ci,checkOut:d.co,guests:d.guests,rooms:d.rooms,notes,status:'requested'};
+  if(FIREBASE_ENABLED&&auth.currentUser){
+    try{await db.collection('flight_requests').add({...req,createdAt:firebase.firestore.FieldValue.serverTimestamp()});}
+    catch(e){reportError(e,'hotel-request');const el=document.getElementById('htl_err');if(el){el.textContent='Could not send the request — please try again.';el.style.display='block';}state._htlSheet=false;render();return;}
+  }
+  state._fltReqs=[{...req,id:'local-'+Date.now()},...(state._fltReqs||[])];
+  state._htlSheet=false;state._htlReqSent=ref;
+  track('hotel_request',{city:d.city,ci:d.ci,co:d.co,guests:d.guests,rooms:d.rooms,src:'client'});
+  haptic('confirm');render();
+}
+// Shared "Your requests" cards — flights and hotels live in one collection,
+// so both screens show the same list with type-aware lines.
+function travelReqCards(){
+  const reqs=state._fltReqs||[];if(!reqs.length)return'';
+  const tag=s=>({requested:['Requested','var(--gold)','rgba(200,169,126,.14)'],quoted:['Quoted','#60a5fa','rgba(96,165,250,.12)'],booked:['Booked','#22c55e','rgba(34,197,94,.1)'],ticketed:['Ticketed','#22c55e','rgba(34,197,94,.1)'],cancelled:['Cancelled','#ef4444','rgba(239,68,68,.1)']}[s]||['Requested','var(--gold)','rgba(200,169,126,.14)']);
+  return `<div class="section-label" style="margin:24px 0 10px">Your travel requests</div>`+reqs.map(r=>{
+    const[t,c,bg]=tag(r.status);
+    const title=r.type==='hotel'?`🏨 ${esc(r.city||'')}`:`${esc(r.from||'')} → ${esc(r.to||'')}`;
+    const line=r.type==='hotel'
+      ?`${esc(r.checkIn||'')} – ${esc(r.checkOut||'')} · ${r.guests||1} guest${(r.guests||1)>1?'s':''} · ${r.rooms||1} room${(r.rooms||1)>1?'s':''} · ${esc(r.ref||'')}`
+      :`${esc(r.depart||'')}${r.return?' – '+esc(r.return):''} · ${r.pax||1} traveller${(r.pax||1)>1?'s':''} · ${esc(String(r.cabin||'').replace('premiumeconomy','premium'))} · ${esc(r.ref||'')}`;
+    return `
+    <div class="card" style="padding:14px 16px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-size:13px;font-weight:700">${title}</span>
+        <span style="font-size:10px;font-weight:700;letter-spacing:.5px;color:${c};background:${bg};border-radius:8px;padding:4px 9px">${t}</span>
+      </div>
+      <div style="font-size:12px;color:var(--fg-3)">${line}</div>
+      ${r.status==='requested'?`<button onclick="cancelFlightReq('${esc(r.id)}')" style="margin-top:8px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);color:#ef4444;padding:6px 12px;border-radius:10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Cancel request</button>`:''}
+    </div>`;}).join('');
 }
 
 // ── Concierge AutoPlan™ — itinerary optimiser ──────────────────────────────
@@ -1409,10 +1712,45 @@ function quickSend(text) {
   const inp = document.getElementById('concierge-inp');
   if (inp) { inp.value = text; sendConciergeMsg(); }
 }
+// Index-based chip handler: interpolating the example text into an onclick
+// attribute broke on the first quote character, leaving every chip dead.
+function quickSendExample(i) {
+  const ex = CONCIERGE_EXAMPLES[i];
+  if (ex) quickSend(ex.text);
+}
+// Index-based pickers — place names and saved addresses contain apostrophes
+// ("Claridge's"), which terminate a '-quoted onclick string and kill the tap
+// (or worse, execute an injected payload from a stored address).
+function pickPoi(i) {
+  const p = POIS[i];
+  if (!p) return;
+  state.booking.dropoff = p.name;
+  go('route-input');
+}
+function pickRecentPlace(i) {
+  const r = recentPlaces()[i];
+  const el = $('ri_do');
+  if (r != null && el) el.value = r;
+}
+function pickSavedAddress(i) {
+  const a = state.savedAddresses[i];
+  const el = $('ri_do');
+  if (a && el) el.value = a.addr;
+}
+function pickConciergeSuggestion(i) {
+  const s = (state._conciergeSuggestions || [])[i];
+  if (!s) return;
+  state.booking.dropoff = s.name;
+  state.booking.serviceType = 'airport';
+  state._conciergeSuggestions = null;
+  state._conciergeParsed = { serviceType: 'airport', dropoff: s.name };
+  render();
+}
 
 // Client-side intent parser — delegates to the shared, unit-tested engine
 // (apexvip-engine.js / window.ApexEngine); page state is passed in as context.
 function _parseIntentLocal(msg) {
+  if (typeof ApexEngine==='undefined') return { intent:'chat', reply:"I'm having a connection issue — please try again in a moment." };
   return ApexEngine.parseIntentLocal(msg, {
     prev: state.booking,
     hotel: {
@@ -1422,6 +1760,9 @@ function _parseIntentLocal(msg) {
       hotelNights: state._hotelNights,
       hotelGuests: state._hotelGuests,
     },
+    // Live rate card — lets the on-device parser answer "how much…" quotes even
+    // when the parseBookingIntent Cloud Function (Claude) is unavailable.
+    rateCard: (typeof PRICES !== 'undefined') ? PRICES : undefined,
     now: new Date(),
   });
 }
@@ -1450,7 +1791,18 @@ async function sendConciergeMsg() {
           ref:t.id, pickup:t.pickup, dropoff:t.dropoff||'', airport:t.dropoff||'',
           date:t.date, time:t.time, status:t.status, flight:t.flight||''
         }));
-        const res = await fn({ message:msg, history, trips:tripsCtx, now:new Date().toISOString() });
+        // Context engineering: assemble a bounded guest context (saved places,
+        // tier, cabin prefs, live rate card, current location) so ApexAI can
+        // resolve "home"/"the office", quote from real prices and greet by name.
+        const _cx = (typeof ApexEngine!=='undefined' && ApexEngine.buildConciergeContext) ? ApexEngine.buildConciergeContext({
+          name: state.user?.name,
+          tier: (typeof apexTier==='function') ? apexTier(state.apexBalance) : '',
+          savedAddresses: (state.savedAddresses||[]).map(a=>({label:a.label,addr:a.addr})),
+          prefs: state.prefs,
+          rateCard: (typeof PRICES!=='undefined') ? PRICES : null,
+          location: state.booking?.pickup || state._lastKnownLocation || '',
+        }) : undefined;
+        const res = await fn({ message:msg, history, trips:tripsCtx, now:new Date().toISOString(), context:_cx });
         d = res.data;
       } catch(fnErr) {
         await new Promise(r=>setTimeout(r,520));
@@ -1533,6 +1885,7 @@ function _applyBookingFields(d) {
 async function applyModifyBooking() {
   const m = state._pendingModify;
   if (!m) return;
+  if (!FIREBASE_ENABLED) { CONCIERGE_MSGS.push({ role:'system', content:'✓ Noted (demo mode).' }); state._pendingModify=null; render(); return; }
   if (!auth.currentUser) { go('login'); return; }
   try {
     const snap = await db.collection('bookings')
@@ -1553,6 +1906,7 @@ async function applyModifyBooking() {
 async function saveRecurringBooking() {
   const r = state._pendingRecurring;
   if (!r) return;
+  if (!FIREBASE_ENABLED) { CONCIERGE_MSGS.push({ role:'system', content:'✓ Noted (demo mode).' }); state._pendingRecurring=null; render(); return; }
   if (!auth.currentUser) { state._pendingScreen='concierge-chat'; go('login'); return; }
   try {
     await db.collection('recurring_bookings').add({
@@ -1574,7 +1928,7 @@ async function saveRecurringBooking() {
 
 async function applyFlightUpdate() {
   const fu = state._pendingFlightUpdate;
-  if (!fu || !auth.currentUser) return;
+  if (!fu || !FIREBASE_ENABLED || !auth.currentUser) { state._pendingFlightUpdate=null; render(); return; }
   try {
     const snap = await db.collection('bookings')
       .where('clientId','==',auth.currentUser.uid).where('ref','==',fu.trip.id).limit(1).get();
@@ -1674,10 +2028,7 @@ const CHAT_TEMPLATES = [
 function sendQuickMsg(idx) {
   const msg = CHAT_TEMPLATES[idx];
   _appendChatMsg(msg);
-  if (FIREBASE_ENABLED && fns && state._confirmedRef) {
-    const fn = fns.httpsCallable('sendChauffeurMessage');
-    fn({ bookingRef: state._confirmedRef, message: msg, fromRole: 'client' }).catch(reportError);
-  }
+  _postChatToFirestore(msg);
 }
 function sendCustomMsg() {
   const inp = document.getElementById('chat-custom-inp');
@@ -1685,10 +2036,7 @@ function sendCustomMsg() {
   const msg = inp.value.trim();
   inp.value = '';
   _appendChatMsg(msg);
-  if (FIREBASE_ENABLED && fns && state._confirmedRef) {
-    const fn = fns.httpsCallable('sendChauffeurMessage');
-    fn({ bookingRef: state._confirmedRef, message: msg, fromRole: 'client' }).catch(reportError);
-  }
+  _postChatToFirestore(msg);
 }
 function _appendChatMsg(msg) {
   const el = document.getElementById('chat-sent');
@@ -1700,15 +2048,50 @@ function _appendChatMsg(msg) {
   el.scrollTop = el.scrollHeight;
   track('chat_message_sent', { src: 'client' });
 }
+// Write a chat message straight to the booking thread in Firestore. The rules
+// already let the booking's client post here, so the chat works peer-to-peer
+// and never depends on a Cloud Function being deployed. Returns true if it was
+// able to persist (so callers know whether a local echo is still needed).
+function _postChatToFirestore(msg) {
+  const id = state._chatDocId || state._activeBooking?.docId;
+  if (FIREBASE_ENABLED && auth.currentUser && id) {
+    db.collection('bookings').doc(id).collection('messages').add({
+      senderId: auth.currentUser.uid,
+      fromRole: 'client',
+      text: msg,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    }).catch(err => {
+      // A failed send must not just vanish — the guest thinks the driver saw it.
+      reportError(err, 'chat-send');
+      showToast("Message didn't send — please try again.", 'error');
+    });
+    return true;
+  }
+  return false;
+}
 
 // ── Post-Trip Ratings ──────────────────────────────────────────────────────
 function submitRating(stars) {
   state._tripRating = stars;
   const ref = state._confirmedRef || state.selectedTrip?.id;
+  const docId = state.selectedTrip?.docId || state._chatDocId;
+  const comment = document.getElementById('rating-comment')?.value || '';
+  // Persist the rating straight onto the booking so it's never lost if the
+  // Cloud Function is unreachable (the rules let the owning client write the
+  // rating fields; the function still runs the driver-average rollup when up).
+  const _persistLocally = () => {
+    if (FIREBASE_ENABLED && auth.currentUser && docId) {
+      db.collection('bookings').doc(docId).update({
+        rating: stars, ratingComment: comment,
+        ratedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      }).catch(err => reportError(err, 'submit-rating'));
+    }
+  };
   if (FIREBASE_ENABLED && fns && ref) {
-    const fn = fns.httpsCallable('submitTripRating');
-    const comment = document.getElementById('rating-comment')?.value || '';
-    fn({ bookingRef: ref, rating: stars, comment, driverId: state.selectedTrip?.driverId || null }).catch(reportError);
+    fns.httpsCallable('submitTripRating')({ bookingRef: ref, rating: stars, comment, driverId: state.selectedTrip?.driverId || null })
+      .catch(() => _persistLocally());   // function down — don't drop the rating
+  } else {
+    _persistLocally();
   }
   track('trip_rated', { stars, src: 'client' });
   haptic('success');
@@ -1724,6 +2107,7 @@ async function runApplePay() {
     alert('Apple Pay is not available on this device. Please use the card form below.');
     return;
   }
+  if (_blockedBySubscription()) return;
   const total = _quote.cashDue;
   const request = {
     countryCode: 'GB', currencyCode: 'GBP',
@@ -1750,9 +2134,33 @@ async function runApplePay() {
     }
   };
   session.onpaymentauthorized = async (event) => {
+    // Hand the Apple Pay token to the server to actually charge it. We report
+    // STATUS_SUCCESS ONLY when the server confirms the charge — queueing a
+    // token nothing consumes and pretending it paid would confirm bookings
+    // that were never charged.
+    const ref = 'APX-' + (Math.floor(1000 + Math.random() * 9000));
+    const token = event.payment && event.payment.token;
+    const idempotencyKey = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (ref + '-' + total);
+    let ok = false, paymentId = null;
+    try {
+      if (FIREBASE_ENABLED && fns && token) {
+        const fn = fns.httpsCallable('processApplePayPayment');
+        const resp = await fn({ token, idempotencyKey, amount: total, currency: 'GBP', bookingRef: ref });
+        paymentId = resp.data && resp.data.paymentId || null;
+        ok = !!paymentId;
+      }
+    } catch (e) { reportError(e, 'apple-pay-authorize'); }
+    if (!ok) {
+      session.completePayment(ApplePaySession.STATUS_FAILURE);
+      alert('Apple Pay isn\'t available just yet — please use the secure card form below. You have not been charged.');
+      return;
+    }
     session.completePayment(ApplePaySession.STATUS_SUCCESS);
-    track('apple_pay_used', { total, src: 'client' });
-    await confirmBooking();
+    state._confirmedRef = ref;
+    state._squarePaymentId = paymentId;
+    track('apple_pay_used', { total, paymentId, src: 'client' });
+    await confirmBooking(ref);
+    if (state.screen !== 'booking-confirmed') go('booking-confirmed');
   };
   session.begin();
 }
@@ -1840,7 +2248,8 @@ function deleteAddress(id) {
 // ── Receipt Share ─────────────────────────────────────────────────────────
 function shareReceipt() {
   const t = state._lastTrip || {};
-  const text = `ApexVIP Receipt\nRef: ${t.ref||state._confirmedRef||''}\nFrom: ${t.pickup||''} → ${t.dropoff||''}\nTotal: £${t.price||''}`;
+  const _n = parseFloat(String(t.price ?? '').replace(/[^0-9.]/g, '')) || 0;
+  const text = `ApexVIP Receipt\nRef: ${t.ref||state._confirmedRef||''}\nFrom: ${t.pickup||''} → ${t.dropoff||''}\nTotal: £${_n}`;
   if (navigator.share) { navigator.share({title:'ApexVIP Receipt',text}).catch(reportError); }
   else { navigator.clipboard?.writeText(text).catch(reportError); }
 }
@@ -1865,8 +2274,8 @@ function shareTrackLink() {
 }
 function shareTrip() {
   const ref = state._confirmedRef || state._activeBooking?.ref || 'APX-4821';
-  const dn = encodeURIComponent(state._activeBooking?.driverName || 'James Harrison');
-  const dp = encodeURIComponent(state._activeBooking?.driverPlate || 'LX73 ABC');
+  const dn = encodeURIComponent(state._activeBooking?.driverName || 'Your chauffeur');
+  const dp = encodeURIComponent(state._activeBooking?.driverPlate || '');
   const did = state._activeBooking?.driverId || '';
   const url = buildTrackUrl(ref, dn, dp, did);
   track('trip_shared', { ref, src: 'client' });
@@ -1887,7 +2296,7 @@ function setupChatListener(docId) {
   state._chatDocId = docId;
   _chatUnsubDoc = docId;
   _chatUnsub = db.collection('bookings').doc(docId).collection('messages')
-    .orderBy('timestamp','asc').limitToLast(50)
+    .orderBy('createdAt','asc').limitToLast(50)
     .onSnapshot(snap => {
       state._chatMessages = snap.docs.map(d => ({...d.data(), _id: d.id}));
       const el = document.getElementById('chat-msgs');
@@ -1895,13 +2304,13 @@ function setupChatListener(docId) {
         el.innerHTML = state._chatMessages.map(m => chatBubble(m)).join('');
         el.scrollTop = el.scrollHeight;
       }
-    }, () => {});
+    }, err => reportError(err, 'chat-listener'));
 }
 
 function chatBubble(m) {
   const isMe = m.fromRole === 'client';
   return `<div style="display:flex;justify-content:${isMe?'flex-end':'flex-start'};margin-bottom:8px">
-    <div style="max-width:75%;background:${isMe?'linear-gradient(135deg,#C8A97E,#8B6020)':'var(--surface-2)'};border-radius:${isMe?'18px 18px 4px 18px':'18px 18px 18px 4px'};padding:10px 14px;font-size:13px;color:${isMe?'#000':'var(--fg)'}">${esc(m.message||'')}</div>
+    <div style="max-width:75%;background:${isMe?'linear-gradient(135deg,#C8A97E,#8B6020)':'var(--surface-2)'};border-radius:${isMe?'18px 18px 4px 18px':'18px 18px 18px 4px'};padding:10px 14px;font-size:13px;color:${isMe?'#000':'var(--fg)'}">${esc(m.text||m.message||'')}</div>
   </div>`;
 }
 
@@ -1926,16 +2335,15 @@ function clientSendMsg() {
   const inp = document.getElementById('client-chat-inp');
   if (!inp || !inp.value.trim()) return;
   const msg = inp.value.trim(); inp.value = '';
-  if (FIREBASE_ENABLED && fns && state._chatDocId) {
-    fns.httpsCallable('sendChauffeurMessage')({
-      bookingRef: state._activeBooking?.ref || state._chatDocId,
-      message: msg, fromRole: 'client'
-    }).catch(reportError);
+  // Persist straight to the booking thread — the live listener re-renders it
+  // (and the driver's app) from Firestore, so the two sides stay in sync.
+  const persisted = _postChatToFirestore(msg);
+  // Optimistic echo only when we couldn't persist (no listener will show it).
+  if (!persisted) {
+    state._chatMessages.push({text: msg, fromRole: 'client', createdAt: {toMillis:()=>Date.now()}});
+    const el = document.getElementById('chat-msgs');
+    if (el) { el.innerHTML = state._chatMessages.map(chatBubble).join(''); el.scrollTop = el.scrollHeight; }
   }
-  // Optimistic local append
-  state._chatMessages.push({message: msg, fromRole: 'client', timestamp: {toMillis:()=>Date.now()}});
-  const el = document.getElementById('chat-msgs');
-  if (el) { el.innerHTML = state._chatMessages.map(chatBubble).join(''); el.scrollTop = el.scrollHeight; }
 }
 
 function quickReply(msg) {
@@ -1956,21 +2364,34 @@ function toggleAmenity(item) {
 async function cancelBooking(bookingId, docId) {
   const reason = document.getElementById('cancel-reason')?.value || 'No reason given';
   if (FIREBASE_ENABLED && docId) {
-    await db.collection('bookings').doc(docId).update({
-      status: 'cancelled',
-      cancelledAt: firebase.firestore.FieldValue.serverTimestamp(),
-      cancelReason: reason,
-      cancelledBy: 'client'
-    }).catch(reportError);
-    // Also cancel any pending/accepted jobs linked to this booking
-    db.collection('jobs').where('bookingRef','==',bookingId).limit(1).get()
-      .then(snap => { if(!snap.empty) snap.docs[0].ref.update({status:'cancelled'}).catch(reportError); })
-      .catch(reportError);
+    try {
+      await db.collection('bookings').doc(docId).update({
+        status: 'cancelled',
+        cancelledAt: firebase.firestore.FieldValue.serverTimestamp(),
+        cancelReason: reason,
+        cancelledBy: 'client'
+      });
+      // The onBookingWrite Cloud Function fans the cancellation out to the
+      // dispatch artifacts (open_jobs / the driver's jobs doc) — the rules
+      // rightly bar clients from touching those directly.
+    } catch (err) {
+      // NEVER pretend it worked: the driver would still be dispatched.
+      reportError(err, 'cancel-booking');
+      showToast('Could not cancel — please check your connection and try again.', 'error');
+      render();
+      return;
+    }
+  } else if (FIREBASE_ENABLED && !docId) {
+    // No document id — nothing would actually be cancelled server-side.
+    showToast('Could not find this booking to cancel — please contact us.', 'error');
+    render();
+    return;
   }
   // Update local TRIPS array
   const t = TRIPS.find(x => x.id === bookingId);
   if (t) t.status = 'cancelled';
   state._cancelOpen = false;
+  showToast('Your booking has been cancelled', 'success');
   go('trips');
 }
 
@@ -2105,7 +2526,6 @@ function bottomNav(active) {
   const items = [
     {id:'home',label:'Home',svg:`<svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>`},
     {id:'trips',label:'Trips',svg:`<svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>`},
-    {id:'hotels',label:'Hotels',svg:`<svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M3 21h18M5 21V5a1 1 0 011-1h8a1 1 0 011 1v16M16 21V9a1 1 0 011-1h2a1 1 0 011 1v12M8 7h1m-1 4h1m-1 4h1m2-8h1m-1 4h1m-1 4h1"/></svg>`},
     {id:'concierge',label:'Concierge',svg:`<svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M5 16v-.5a7 7 0 0114 0v.5M4 19h16M12 8.5V7"/><circle cx="12" cy="5.5" r="1.1"/></svg>`},
     {id:'profile',label:'Profile',svg:`<svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>`}
   ];
@@ -2135,7 +2555,12 @@ async function fetchHotelRate(hotel, checkIn, nights, guests){
     try {
       const fn = fns.httpsCallable('getHotelRates');
       const res = await fn({ name:hotel.name, lat:hotel.lat, lng:hotel.lng, checkIn, nights, guests, currency:'GBP' });
-      if (res && res.data && res.data.nightly) return { ...res.data, live:true, fetchedAt:Date.now() };
+      if (res && res.data && res.data.nightly) {
+        // Normalize the live shape: home renders q.from.toLocaleString() and
+        // hotels reads q.total — a live quote missing either crashed the render.
+        const d = res.data, n = Math.max(1, Number(nights) || 1);
+        return { ...d, from: Number(d.from) || Number(d.nightly), total: Number(d.total) || Number(d.nightly) * n, live: true, fetchedAt: Date.now() };
+      }
     } catch(e) { /* fall through to local estimate */ }
   }
   return _estimateHotelRate(hotel, checkIn, nights, guests);
@@ -2286,7 +2711,7 @@ concierge: () => `
 
 
 splash: () => `
-<div style="min-height:100vh;display:flex;flex-direction:column;overflow:hidden;position:relative;background:#050505">
+<div style="min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;overflow:hidden;position:relative;background:#050505">
   <video autoplay muted loop playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0" src="splash-advert.mp4"></video>
   <div style="position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,.45) 0%,rgba(0,0,0,.25) 40%,rgba(0,0,0,.65) 100%);z-index:1;pointer-events:none"></div>
   <div style="position:absolute;top:calc(env(safe-area-inset-top) + 16px);right:20px;z-index:10">
@@ -2303,11 +2728,11 @@ splash: () => `
       <div style="font-size:11px;color:rgba(255,255,255,.45);letter-spacing:3px;animation:fadeIn 1s 2.2s both ease">London · Dubai · Global</div>
     </div>
   </div>
-  <div style="padding:0 28px max(44px,calc(env(safe-area-inset-bottom) + 24px));display:flex;flex-direction:column;gap:10px;position:relative;z-index:2;animation:slideUp .7s 2s both cubic-bezier(0.16,1,0.3,1)">
+  <div style="padding:0 28px max(48px,calc(env(safe-area-inset-bottom) + 28px));display:flex;flex-direction:column;gap:10px;position:relative;z-index:2;animation:slideUp .7s 2s both cubic-bezier(0.16,1,0.3,1)">
     <button class="btn btn-white ripple-host" onclick="haptic('light');addRipple(this,event);go('register')" style="font-size:15px;font-weight:700;letter-spacing:.04em;box-shadow:0 2px 0 rgba(0,0,0,.12),0 6px 24px rgba(0,0,0,.32),0 1px 0 rgba(255,255,255,.6) inset">Begin your journey</button>
     <button class="btn btn-glass ripple-host" onclick="haptic('light');addRipple(this,event);go('login')" style="font-size:15px;letter-spacing:.02em">Sign in</button>
-    <div style="display:flex;justify-content:center;align-items:center;padding-top:8px">
-      <button onclick="state.guideStep=0;go(localStorage.getItem('apexvip_guide_seen')?'home':'guide')" style="background:none;border:none;color:rgba(255,255,255,.38);font-size:12px;cursor:pointer;font-family:inherit;letter-spacing:1.5px;text-transform:uppercase">Explore as guest</button>
+    <div style="display:flex;justify-content:center;align-items:center;padding-top:6px">
+      <button onclick="haptic('light');state.guideStep=0;go(localStorage.getItem('apexvip_guide_seen')?'home':'guide')" style="min-height:44px;padding:12px 24px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);border-radius:24px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:rgba(255,255,255,.6);font-size:12px;cursor:pointer;font-family:inherit;letter-spacing:1.5px;text-transform:uppercase">Explore as guest</button>
     </div>
   </div>
 </div>`,
@@ -2369,7 +2794,7 @@ register: () => {
   return `
 <div style="min-height:100vh;display:flex;flex-direction:column;background:var(--bg);padding:0 24px;animation:fadeIn .3s ease">
   <div class="back-row" style="padding-bottom:24px">
-    <div class="back-btn" onclick="${s>1?'state._regStep=s-1;render()':'go(\'splash\')'}">
+    <div class="back-btn" onclick="${s>1?`state._regStep=${s-1};render()`:'go(\'splash\')'}">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
     </div>
     <div>
@@ -2408,7 +2833,7 @@ register: () => {
 },
 
 home: () => {
-  const name = state.user?.name?.split(' ')[0] || 'there';
+  const name = esc(state.user?.name?.split(' ')[0] || 'there');
   const hr = new Date().getHours();
   const greeting = hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
   const upcoming = TRIPS.filter(t=>t.status==='upcoming');
@@ -2426,10 +2851,10 @@ home: () => {
       </div>
       <div style="font-size:18px;font-weight:700;margin-top:3px">${greeting}, ${name}</div>
       <div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">
-        <button onclick="go('profile')" style="display:inline-flex;align-items:center;gap:6px;background:${apexTierColor(apexTier(state.apexBalance))}18;border:1px solid ${apexTierColor(apexTier(state.apexBalance))}44;border-radius:20px;padding:4px 11px;cursor:pointer">
+        ${(state.apexBalance>0||TRIPS.some(t=>t.status==='completed'))?`<button onclick="go('profile')" style="display:inline-flex;align-items:center;gap:6px;background:${apexTierColor(apexTier(state.apexBalance))}18;border:1px solid ${apexTierColor(apexTier(state.apexBalance))}44;border-radius:20px;padding:4px 11px;cursor:pointer">
           <span style="font-size:12px;color:${apexTierColor(apexTier(state.apexBalance))}">◈</span>
           <span style="font-size:11px;color:${apexTierColor(apexTier(state.apexBalance))};font-weight:700">${state.apexBalance.toLocaleString()} APEX</span>
-        </button>
+        </button>`:''}
         ${state.paMode ? `<div style="display:inline-flex;align-items:center;gap:5px;background:var(--gold-3);border:1px solid var(--gold-2);border-radius:20px;padding:4px 11px">
           <svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="var(--gold)" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
           <span style="font-size:10px;font-weight:700;color:var(--gold);letter-spacing:.6px">PA MODE</span>
@@ -2438,13 +2863,13 @@ home: () => {
     </div>
     <div onclick="go('notifications')" style="position:relative;width:42px;height:42px;border-radius:50%;background:var(--surface-2);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.09);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
-      <div style="position:absolute;top:9px;right:9px;width:7px;height:7px;border-radius:50%;background:var(--gold);border:1.5px solid rgba(0,0,0,.4)"></div>
+      ${(typeof NOTIFS!=='undefined'&&NOTIFS.length)?'<div style="position:absolute;top:9px;right:9px;width:7px;height:7px;border-radius:50%;background:var(--gold);border:1.5px solid rgba(0,0,0,.4)"></div>':''}
     </div>
   </div>
 
   <div class="sheet" style="height:calc(100vh - 130px)">
     <div class="sheet-handle"></div>
-    <div class="stagger" style="padding:20px 22px 0;height:calc(100% - 26px);overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:96px">
+    <div class="stagger" style="padding:20px 22px 0;height:calc(100% - 26px);overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:calc(env(safe-area-inset-bottom) + 128px)">
 
       ${(()=>{const b=state.user?.birthday||localStorage.getItem('apex_birthday');if(!b)return'';const today=new Date();const bday=new Date(b);const next=new Date(today.getFullYear(),bday.getMonth(),bday.getDate());if(next<today)next.setFullYear(today.getFullYear()+1);const days=Math.round((next-today)/86400000);if(days>7)return'';return`<div style="display:flex;align-items:center;gap:12px;background:rgba(200,169,126,.08);border:1px solid rgba(200,169,126,.2);border-radius:16px;padding:14px 18px;margin-bottom:14px"><div style="font-size:24px">🎂</div><div><div style="font-size:13px;font-weight:700;color:var(--gold)">Happy ${days===0?'Birthday!':'upcoming birthday!'}</div><div style="font-size:12px;color:var(--fg-3);margin-top:2px">${days===0?'A complimentary upgrade awaits you today.':'Your birthday journey credit activates in '+days+' day'+(days===1?'':'s')+'.'}</div></div></div>`;})()}
       ${(FIREBASE_ENABLED && auth?.currentUser && auth.currentUser.emailVerified===false)?`<div style="display:flex;align-items:center;gap:12px;background:rgba(212,168,67,.08);border:1px solid rgba(212,168,67,.28);border-radius:16px;padding:13px 16px;margin-bottom:14px">
@@ -2463,132 +2888,19 @@ home: () => {
           <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:#ef4444">Your trial has ended</div><div style="font-size:12px;color:var(--fg-3);margin-top:1px">Subscribe to keep booking with ApexVIP.</div></div>
           <button onclick="state._subOpen=true;render()" style="background:var(--gold);border:none;border-radius:10px;color:#0c0b09;font-size:12px;font-weight:800;padding:8px 12px;cursor:pointer;font-family:inherit;flex-shrink:0">Subscribe</button>
         </div>`;})()}
-      <!-- ApexAI — hero button at the top -->
-      <button onclick="go('concierge-chat')" style="width:100%;display:flex;align-items:center;gap:16px;padding:16px 20px;margin-bottom:16px;background:linear-gradient(135deg,rgba(200,169,126,.11) 0%,rgba(200,169,126,.04) 100%);border:1px solid rgba(200,169,126,.28);border-radius:22px;cursor:pointer;font-family:inherit;transition:transform .15s var(--ease-spring)">
-        <div style="width:40px;height:40px;border-radius:14px;background:rgba(200,169,126,.14);border:1px solid rgba(200,169,126,.28);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="var(--gold)" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
-        </div>
-        <div style="flex:1;text-align:left">
-          <div style="font-size:14px;font-weight:700;color:var(--gold);letter-spacing:.01em">ApexAI</div>
-          <div style="font-size:12px;color:var(--fg-3);margin-top:2px">Tell me where you need to go</div>
-        </div>
-        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="var(--gold)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-      </button>
-
-      <div onclick="go('route-input')" style="display:flex;align-items:center;gap:14px;background:var(--surface-2);border:1px solid var(--border);border-radius:22px;padding:16px 20px;margin-bottom:16px;cursor:pointer;transition:transform .15s var(--ease-spring),border-color .15s">
-        <div style="width:32px;height:32px;border-radius:10px;background:var(--surface-3);border:1px solid var(--border-2);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="var(--fg-3)" stroke-width="2"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" d="M21 21l-4.35-4.35"/></svg>
-        </div>
-        <span style="color:var(--fg-3);font-size:15px;font-weight:400;flex:1;letter-spacing:-.01em">Where would you like to go?</span>
-        <div style="background:var(--fg);color:var(--bg);border-radius:10px;padding:6px 12px;font-size:10px;font-weight:700;letter-spacing:1.5px;flex-shrink:0">BOOK</div>
+            <!-- Two doors: tall side-by-side panels — everything above the fold -->
+      <div style="display:flex;gap:12px;margin-bottom:16px">
+        <button onclick="go('chauffeur')" style="flex:1;height:clamp(300px,44vh,420px);display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;border:1px solid rgba(200,169,126,.25);border-radius:26px;padding:18px 16px;cursor:pointer;font-family:inherit;background:linear-gradient(to top,rgba(0,0,0,.78) 8%,rgba(0,0,0,.1) 55%),url('vehicles/s-class.jpg') center/cover;transition:transform .15s var(--ease-spring)">
+          <div style="font-family:var(--font-serif);font-size:26px;font-weight:500;color:#fff;letter-spacing:.5px">Chauffeur</div>
+          <div style="font-size:11px;color:rgba(255,255,255,.72);margin-top:4px;text-align:left;line-height:1.45">Airport · hourly · daily</div>
+        </button>
+        <button onclick="go('concierge')" style="flex:1;height:clamp(300px,44vh,420px);display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;border:1px solid rgba(200,169,126,.28);border-radius:26px;padding:18px 16px;cursor:pointer;font-family:inherit;background:linear-gradient(to top,rgba(0,0,0,.78) 8%,rgba(0,0,0,.12) 55%),url('vehicles/concierge-bell.jpg') center/cover;transition:transform .15s var(--ease-spring)">
+          <div style="font-family:var(--font-serif);font-size:26px;font-weight:500;color:#fff;letter-spacing:.5px">Concierge</div>
+          <div style="font-size:11px;color:rgba(255,255,255,.72);margin-top:4px;text-align:left;line-height:1.45">Your personal desk</div>
+        </button>
       </div>
 
-      ${state.paMode ? `
-      <!-- PA mode — expanded passenger form -->
-      <div style="background:var(--gold-3);border:1.5px solid var(--gold-2);border-radius:22px;padding:16px 18px;margin-bottom:16px;animation:fadeUp .35s var(--ease-spring) both">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-          <div style="display:flex;align-items:center;gap:10px">
-            <div style="width:34px;height:34px;border-radius:11px;background:rgba(200,169,126,.2);border:1px solid var(--gold-2);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-              <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="var(--gold)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
-            </div>
-            <div>
-              <div style="font-size:13px;font-weight:700;color:var(--gold)">Booking for someone else</div>
-              <div style="font-size:11px;color:var(--fg-3);margin-top:1px">Enter their details below</div>
-            </div>
-          </div>
-          <button onclick="togglePaMode(false);render()" style="background:rgba(200,169,126,.15);border:1px solid var(--gold-2);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
-            <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="var(--gold)" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-          </button>
-        </div>
-        <div style="background:rgba(200,169,126,.06);border:1px solid var(--gold-2);border-radius:14px;padding:2px 14px;margin-bottom:8px;display:flex;align-items:center;gap:10px">
-          <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="var(--fg-4)" stroke-width="2" style="flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
-          <input placeholder="Passenger name" value="${state.paPassenger.name||''}" oninput="setPaPassenger('name',this.value)" style="flex:1;padding:12px 0;font-size:14px;background:transparent;border:none;color:var(--fg);outline:none"/>
-        </div>
-        <div style="background:rgba(200,169,126,.06);border:1px solid var(--gold-2);border-radius:14px;padding:2px 14px;display:flex;align-items:center;gap:10px">
-          <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="var(--fg-4)" stroke-width="2" style="flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
-          <input placeholder="Passenger phone (optional)" value="${state.paPassenger.phone||''}" oninput="setPaPassenger('phone',this.value)" type="tel" style="flex:1;padding:12px 0;font-size:14px;background:transparent;border:none;color:var(--fg);outline:none"/>
-        </div>
-        <div style="font-size:11px;color:var(--fg-4);margin-top:10px;line-height:1.5">You receive all updates. Driver details are sent directly to the passenger.</div>
-      </div>` : `
-      <!-- Book for someone else — collapsed button -->
-      <button onclick="togglePaMode(true);render()" style="width:100%;display:flex;align-items:center;gap:13px;padding:14px 18px;margin-bottom:16px;background:var(--surface);border:1px solid var(--border);border-radius:20px;cursor:pointer;font-family:inherit;text-align:left;transition:transform .15s var(--ease-spring),border-color .15s">
-        <div style="width:34px;height:34px;border-radius:11px;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--fg-3)" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>
-        </div>
-        <div style="flex:1">
-          <div style="font-size:14px;font-weight:600;color:var(--fg-2)">Book for someone else</div>
-          <div style="font-size:12px;color:var(--fg-4);margin-top:1px">PA mode · book on behalf of a guest</div>
-        </div>
-        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="var(--fg-5)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-      </button>`}
-
-      ${silentServiceCard()}
-
-      <div class="section-label" style="margin-bottom:12px">Services</div>
-      <div class="svc-grid">
-        <div class="svc-card" onclick="state._airportPicker=true;render()">
-          <div style="font-size:28px;line-height:1">✈</div>
-          <div style="font-size:12px;font-weight:700;color:var(--fg-2);letter-spacing:.3px;text-align:center;line-height:1.3">Airport &<br>Aviation</div>
-        </div>
-        <div class="svc-card" onclick="goBook('hourly')">
-          <div style="font-size:28px;line-height:1">⏱</div>
-          <div style="font-size:12px;font-weight:700;color:var(--fg-2);letter-spacing:.3px;text-align:center;line-height:1.3">By Hour</div>
-        </div>
-        <div class="svc-card" onclick="goBook('day')">
-          <div style="font-size:28px;line-height:1">📅</div>
-          <div style="font-size:12px;font-weight:700;color:var(--fg-2);letter-spacing:.3px;text-align:center;line-height:1.3">Full Day</div>
-        </div>
-      </div>
-
-
-      <div class="section-label" style="margin-bottom:10px">Discover</div>
-      <div style="display:flex;gap:6px;overflow-x:auto;margin-bottom:10px;scrollbar-width:none;padding-bottom:2px">
-        ${['All','Hotel','Dining','Shopping','Culture'].map(c=>`<button onclick="state._discoverCat='${c}';render()" style="flex-shrink:0;padding:6px 14px;border-radius:20px;background:${state._discoverCat===c?'var(--gold)':'var(--surface)'};border:1px solid ${state._discoverCat===c?'var(--gold)':'var(--border)'};color:${state._discoverCat===c?'#0c0b09':'var(--fg-2)'};font-size:12px;font-weight:${state._discoverCat===c?'700':'400'};cursor:pointer;font-family:inherit;white-space:nowrap;transition:all .15s">${c}</button>`).join('')}
-      </div>
-      <div class="rec-row" style="margin:0 -22px 8px;padding:4px 22px">
-        ${POIS.filter(p=>state._discoverCat==='All'||p.cat===state._discoverCat).map(p=>`
-        <div class="rec-card" onclick="state.booking.dropoff='${p.name}';go('route-input')">
-          <div style="font-size:22px;margin-bottom:8px">${p.emoji}</div>
-          <div style="font-size:12px;font-weight:700;line-height:1.3;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name}</div>
-          <div style="font-size:10px;color:var(--fg-4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">${p.cat}</div>
-          ${p.city==='dubai'?'<span style="font-size:9px;background:rgba(0,200,255,.1);border:1px solid rgba(0,200,255,.2);border-radius:6px;padding:2px 6px;color:#22d3ee">DXB</span>':'<div style="font-size:10px;font-weight:700;color:var(--gold)">Book →</div>'}
-        </div>`).join('')}
-      </div>
-
-      <!-- Experiences section -->
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <div class="section-label">Experiences</div>
-        <button onclick="go('experiences')" style="background:none;border:none;color:var(--gold);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:.5px">VIEW ALL →</button>
-      </div>
-      <div style="display:flex;gap:10px;overflow-x:auto;margin:0 -22px;padding:4px 22px 16px;scrollbar-width:none">
-        ${EXPERIENCES.slice(0,5).map(x=>`
-        <div onclick="state._expSelected=EXPERIENCES.find(e=>e.id==='${x.id}');state._expSlot=null;go('experience-detail')" style="min-width:148px;flex-shrink:0;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:16px 14px;cursor:pointer;transition:transform .12s var(--ease-spring)">
-          <div style="font-size:26px;margin-bottom:8px">${x.emoji}</div>
-          <div style="font-size:13px;font-weight:700;margin-bottom:3px;line-height:1.3">${x.name}</div>
-          <div style="font-size:11px;color:var(--fg-3);margin-bottom:10px;line-height:1.4;white-space:normal">${x.tagline}</div>
-          <div style="font-size:11px;color:var(--gold);font-weight:700">${x.price>0?'From £'+(x.price+x.car):' Car from £'+x.car} · incl. car</div>
-        </div>`).join('')}
-      </div>
-
-      <!-- Hotels section — London's finest stays -->
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <div class="section-label">Stay in London</div>
-        <button onclick="go('hotels')" style="background:none;border:none;color:var(--gold);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:.5px">VIEW ALL →</button>
-      </div>
-      <div style="display:flex;gap:10px;overflow-x:auto;margin:0 -22px;padding:4px 22px 16px;scrollbar-width:none">
-        ${HOTELS.slice(0,6).map(h=>`
-        <div onclick="go('hotels')" style="min-width:172px;flex-shrink:0;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:16px 14px;cursor:pointer;transition:transform .12s var(--ease-spring)">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <div style="font-size:26px">${h.emoji}</div>
-            <span style="font-size:10px;font-weight:700;color:var(--gold)">★ ${h.rating.toFixed(1)}</span>
-          </div>
-          <div style="font-size:13px;font-weight:700;margin-bottom:3px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h.name}</div>
-          <div style="font-size:11px;color:var(--fg-4);margin-bottom:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h.area}</div>
-          <div style="font-size:12px;color:var(--gold);font-weight:700">From £${hotelRate(h).from.toLocaleString()} <span style="color:var(--fg-4);font-weight:400">/ night</span></div>
-        </div>`).join('')}
-      </div>
-
-      ${upcoming.length ? `
+${upcoming.length ? `
       <div class="section-label" style="margin-bottom:12px">Upcoming</div>
       ${upcoming.slice(0,1).map(t=>`
       <div onclick="go('trip-detail',TRIPS.find(x=>x.id==='${t.id}'))" style="display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:15px 16px;cursor:pointer;margin-bottom:10px">
@@ -2608,10 +2920,253 @@ home: () => {
 </div>`;
 },
 
+chauffeur: () => `
+<div style="position:relative;height:100vh;overflow:hidden;animation:fadeIn .3s ease">
+  ${mapBg()}
+  ${auroraBg('z-index:1')}
+  <div class="top-bar">
+    <div style="display:flex;align-items:center;gap:13px">
+      <div class="back-btn" onclick="go('home')">
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+      </div>
+      <div>
+        <div style="font-size:20px;font-weight:700">Chauffeur</div>
+        <div style="font-size:12px;color:var(--fg-3);margin-top:2px">Travel, beautifully driven</div>
+      </div>
+    </div>
+  </div>
+  <div class="sheet" style="height:calc(100vh - 130px)">
+    <div class="sheet-handle"></div>
+    <div class="stagger" style="padding:20px 22px 0;height:calc(100% - 26px);overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:calc(env(safe-area-inset-bottom) + 128px)">
+      <!-- ONE way in: the destination bar. ApexAI is the sparkle inside it. -->
+      <div style="display:flex;align-items:center;gap:12px;background:var(--surface-2);border:1px solid rgba(200,169,126,.25);border-radius:22px;padding:10px 12px 10px 10px;margin-bottom:16px;transition:border-color .15s">
+        <button onclick="go('concierge-chat')" title="Ask ApexAI" aria-label="Ask ApexAI" style="width:42px;height:42px;border-radius:14px;background:rgba(200,169,126,.14);border:1px solid rgba(200,169,126,.3);display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer">
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="var(--gold)" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
+        </button>
+        <span onclick="go('route-input')" style="color:var(--fg-3);font-size:15px;font-weight:400;flex:1;letter-spacing:-.01em;cursor:pointer;padding:10px 0">Where would you like to go?</span>
+        <div onclick="go('route-input')" style="background:var(--fg);color:var(--bg);border-radius:10px;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:1.5px;flex-shrink:0;cursor:pointer">BOOK</div>
+      </div>
+
+
+      ${silentServiceCard()}
+
+      <div class="section-label" style="margin-bottom:12px">Services</div>
+      <!-- Service panels — same photographic language as the home doors -->
+      <button onclick="state._airportPicker=true;render()" style="width:100%;height:110px;display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;border:1px solid rgba(200,169,126,.25);border-radius:22px;padding:14px 16px;margin-bottom:10px;cursor:pointer;font-family:inherit;text-align:left;background:linear-gradient(to right,rgba(0,0,0,.85) 35%,rgba(0,0,0,.15)),url('vehicles/s-class.jpg') right 30%/cover;transition:transform .15s var(--ease-spring)">
+        <div style="font-family:var(--font-serif);font-size:21px;font-weight:500;color:#fff;letter-spacing:.5px">Airport &amp; Aviation</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.68);margin-top:2px">Door to terminal · jets &amp; helicopters</div>
+      </button>
+      <button onclick="goBook('hourly')" style="width:100%;height:110px;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;border:1px solid rgba(200,169,126,.25);border-radius:22px;padding:14px 16px;margin-bottom:10px;cursor:pointer;font-family:inherit;text-align:left;background:linear-gradient(120deg,rgba(24,17,9,.97) 45%,rgba(200,169,126,.32));transition:transform .15s var(--ease-spring)">
+        <svg aria-hidden="true" style="position:absolute;right:18px;top:50%;transform:translateY(-50%);pointer-events:none" width="72" height="72" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.14)" stroke-width="1.2"><circle cx="12" cy="13" r="8"/><path stroke-linecap="round" d="M12 9v4l2.5 2.5M9 2h6"/></svg>
+        <div style="font-family:var(--font-serif);font-size:21px;font-weight:500;color:#fff;letter-spacing:.5px">By the Hour</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.68);margin-top:2px">Your chauffeur on standby, hour by hour</div>
+      </button>
+      <button onclick="goBook('day')" style="width:100%;height:110px;display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;border:1px solid rgba(200,169,126,.25);border-radius:22px;padding:14px 16px;margin-bottom:10px;cursor:pointer;font-family:inherit;text-align:left;background:linear-gradient(to right,rgba(0,0,0,.85) 35%,rgba(0,0,0,.15)),url('vehicles/v-class.jpg') right 40%/cover;transition:transform .15s var(--ease-spring)">
+        <div style="font-family:var(--font-serif);font-size:21px;font-weight:500;color:#fff;letter-spacing:.5px">Full Day</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.68);margin-top:2px">A dedicated car and chauffeur, dawn to dusk</div>
+      </button>
+      <button onclick="go('flight-search')" style="width:100%;height:110px;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;border:1px solid rgba(200,169,126,.25);border-radius:22px;padding:14px 16px;margin-bottom:16px;cursor:pointer;font-family:inherit;text-align:left;background:linear-gradient(120deg,rgba(9,14,24,.97) 45%,rgba(120,160,220,.28));transition:transform .15s var(--ease-spring)">
+        <svg aria-hidden="true" style="position:absolute;right:16px;top:50%;transform:translateY(-50%) rotate(-8deg);pointer-events:none" width="76" height="76" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.14)" stroke-width="1.2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 19h12M12 3.5l1.8 6.2 6.2 2.3-6.2 1.4L12 19l-1.8-5.6-6.2-1.4 6.2-2.3L12 3.5z"/></svg>
+        <div style="font-family:var(--font-serif);font-size:21px;font-weight:500;color:#fff;letter-spacing:.5px">Flights</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.68);margin-top:2px">Search fares worldwide · powered by Skyscanner</div>
+      </button>
+      <button onclick="go('hotel-search')" style="width:100%;height:110px;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;border:1px solid rgba(200,169,126,.25);border-radius:22px;padding:14px 16px;margin-bottom:16px;cursor:pointer;font-family:inherit;text-align:left;background:linear-gradient(120deg,rgba(20,12,6,.97) 45%,rgba(200,140,80,.3));transition:transform .15s var(--ease-spring)">
+        <svg aria-hidden="true" style="position:absolute;right:18px;top:50%;transform:translateY(-50%);pointer-events:none" width="72" height="72" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.14)" stroke-width="1.2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 20V9l9-5 9 5v11M3 20h18M7 20v-6h4v6M14 12h3v3h-3z"/></svg>
+        <div style="font-family:var(--font-serif);font-size:21px;font-weight:500;color:#fff;letter-spacing:.5px">Hotels</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.68);margin-top:2px">Compare providers · booked by our travel desk</div>
+      </button>
+
+
+          </div>
+  </div>
+  ${bottomNav('home')}
+</div>`,
+
+// Flight search — build the search in-app, open live Skyscanner results.
+// (Distinct from 'flights', the My Flights tracker screen.)
+'flight-search': () => {
+  const _d=n=>new Date(Date.now()+n*864e5).toISOString().slice(0,10);
+  const rtn=state._fltRtn!==false;
+  const cabin=state._fltCabin||'business';
+  return `
+<div style="height:100dvh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
+  <div class="back-row">
+    <div class="back-btn" onclick="go('chauffeur')">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+    </div>
+    <div>
+      <div style="font-size:20px;font-weight:700">Flights</div>
+      <div style="font-size:13px;color:var(--fg-3);margin-top:1px">Search live fares worldwide</div>
+    </div>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:0 22px calc(env(safe-area-inset-bottom) + 40px)">
+    <div style="display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:4px;margin-bottom:16px">
+      <button onclick="state._fltRtn=true;render()" style="flex:1;padding:10px;border:none;border-radius:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;background:${rtn?'var(--gold-3,rgba(200,169,126,.16))':'transparent'};color:${rtn?'var(--gold)':'var(--fg-3)'}">Return</button>
+      <button onclick="state._fltRtn=false;render()" style="flex:1;padding:10px;border:none;border-radius:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;background:${!rtn?'var(--gold-3,rgba(200,169,126,.16))':'transparent'};color:${!rtn?'var(--gold)':'var(--fg-3)'}">One-way</button>
+    </div>
+    <datalist id="apx-airports">${AIRPORTS.map(a=>`<option value="${a.c}">${esc(a.n)}</option>`).join('')}</datalist>
+    <div class="inp-card" style="margin-bottom:12px">
+      <div class="inp-row">
+        <div class="rdot rdot-gold"></div>
+        <input id="flt_from" list="apx-airports" placeholder="From" value="${esc(state._fltFrom||'LHR')}" onchange="state._fltFrom=this.value" style="font-size:15px;flex:1"/>
+      </div>
+      <div class="rline"></div>
+      <div class="inp-row">
+        <div class="rdot rdot-outline"></div>
+        <input id="flt_to" list="apx-airports" placeholder="To — airport or city" value="${esc(state._fltTo||'')}" onchange="state._fltTo=this.value" style="font-size:15px;flex:1"/>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
+      ${[['JFK','New York'],['DXB','Dubai'],['CDG','Paris'],['GVA','Geneva'],['NCE','Nice'],['MLE','Maldives']].map(([c,n])=>`<button onclick="state._fltTo='${c}';document.getElementById('flt_to').value='${c}'" style="background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:7px 13px;font-size:12px;color:var(--fg-2);cursor:pointer;font-family:inherit">${n}</button>`).join('')}
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:12px">
+      <div style="flex:1">
+        <div style="font-size:11px;color:var(--fg-4);letter-spacing:1px;margin-bottom:6px">DEPART</div>
+        <input id="flt_dep" type="date" value="${state._fltDep||_d(7)}" min="${_d(0)}" onchange="state._fltDep=this.value" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:13px 14px;color:var(--fg);font-size:14px;font-family:inherit;color-scheme:dark"/>
+      </div>
+      ${rtn?`<div style="flex:1">
+        <div style="font-size:11px;color:var(--fg-4);letter-spacing:1px;margin-bottom:6px">RETURN</div>
+        <input id="flt_ret" type="date" value="${state._fltRet||_d(10)}" min="${_d(0)}" onchange="state._fltRet=this.value" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:13px 14px;color:var(--fg);font-size:14px;font-family:inherit;color-scheme:dark"/>
+      </div>`:''}
+      <div style="width:92px">
+        <div style="font-size:11px;color:var(--fg-4);letter-spacing:1px;margin-bottom:6px">TRAVELLERS</div>
+        <select id="flt_pax" onchange="state._fltPax=this.value" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:13px 10px;color:var(--fg);font-size:14px;font-family:inherit">
+          ${[1,2,3,4,5,6,7,8].map(n=>`<option value="${n}" ${n===(parseInt(state._fltPax)||2)?'selected':''}>${n}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--fg-4);letter-spacing:1px;margin-bottom:8px">CABIN</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px">
+      ${[['economy','Economy'],['premiumeconomy','Premium'],['business','Business'],['first','First']].map(([v,l])=>`<button onclick="state._fltCabin='${v}';render()" style="background:${cabin===v?'var(--gold-3,rgba(200,169,126,.16))':'var(--surface-2)'};border:1px solid ${cabin===v?'var(--gold-2,rgba(200,169,126,.35))':'var(--border)'};border-radius:20px;padding:9px 15px;font-size:12px;font-weight:${cabin===v?'700':'400'};color:${cabin===v?'var(--gold)':'var(--fg-2)'};cursor:pointer;font-family:inherit">${l}</button>`).join('')}
+    </div>
+    <div id="flt_err" style="display:none;color:#ef4444;font-size:13px;margin-bottom:12px"></div>
+    <button class="btn btn-gold ripple-host" onclick="addRipple(this,event);skyscannerSearch()">Search flights</button>
+    <div style="font-size:11px;color:var(--fg-4);text-align:center;margin-top:10px;margin-bottom:12px">Live results open on Skyscanner</div>
+    <button onclick="openFlightSheet()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;background:transparent;border:1px solid var(--gold-2,rgba(200,169,126,.35));border-radius:16px;padding:15px;color:var(--gold);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Book it for me — travel desk <span style="font-size:9px;font-weight:700;letter-spacing:1.5px;background:var(--gold-3,rgba(200,169,126,.16));border:1px solid var(--gold-2,rgba(200,169,126,.35));border-radius:8px;padding:3px 7px">VELVET</span></button>
+    <div style="font-size:11px;color:var(--fg-4);text-align:center;margin-top:8px">A Velvet member privilege — fare sourced, booked and ticketed for you</div>
+    ${state._fltReqSent?`<div style="display:flex;align-items:center;gap:12px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);border-radius:16px;padding:14px 16px;margin-top:16px">
+      <span style="color:#22c55e;font-size:18px">✓</span>
+      <div><div style="font-size:14px;font-weight:700">Request ${esc(state._fltReqSent)} received</div><div style="font-size:12px;color:var(--fg-3);margin-top:2px">Our travel desk will come back with options shortly.</div></div>
+    </div>`:''}
+    ${travelReqCards()}
+    ${(()=>{if(!state._fltReqsLoaded){state._fltReqsLoaded=true;setTimeout(_loadFlightReqs,50);}return''})()}
+    <div class="card" style="padding:16px 18px;margin-top:22px;display:flex;align-items:center;gap:14px;cursor:pointer" onclick="goBook('airport')">
+      <div style="width:44px;height:44px;border-radius:14px;background:var(--gold-3,rgba(200,169,126,.12));border:1px solid var(--gold-2,rgba(200,169,126,.3));display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="var(--gold)" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M8 17h8M6 17l-2-6 3 1 2-6 4 5 5-1-2 7H6z"/></svg>
+      </div>
+      <div style="flex:1">
+        <div style="font-size:14px;font-weight:700">Land with us</div>
+        <div style="font-size:12px;color:var(--fg-3);margin-top:2px">Your chauffeur waiting in Arrivals — flight tracked, delays covered</div>
+      </div>
+      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--fg-3)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+    </div>
+  </div>
+  ${state._fltSheet&&state._fltDraft?(d=>`
+  <div style="position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:500;display:flex;align-items:flex-end;justify-content:center" onclick="state._fltSheet=false;render()">
+    <div style="background:var(--bg);border-radius:24px 24px 0 0;border:1px solid var(--border);width:100%;max-width:480px;padding:26px 24px calc(env(safe-area-inset-bottom) + 26px);animation:slideUp .25s ease" onclick="event.stopPropagation()">
+      <div style="font-family:var(--font-serif);font-size:22px;font-weight:500;margin-bottom:4px">Book through our travel desk</div>
+      <div style="font-size:13px;color:var(--fg-3);margin-bottom:18px">We source the best fare, book and ticket it, and confirm back to you.</div>
+      <div class="card" style="padding:16px 18px;margin-bottom:14px">
+        <div style="font-size:16px;font-weight:700;margin-bottom:4px">${esc(d.from)} → ${esc(d.to)}</div>
+        <div style="font-size:13px;color:var(--fg-3)">${esc(_fltAirportName(d.from))} to ${esc(_fltAirportName(d.to))}</div>
+        <div style="font-size:13px;color:var(--fg-2);margin-top:8px">${esc(d.dep)}${d.ret?' – '+esc(d.ret):' · one-way'} · ${d.pax} traveller${d.pax>1?'s':''} · ${esc(d.cabin.replace('premiumeconomy','premium'))}</div>
+      </div>
+      <textarea id="flt_notes" placeholder="Preferences — airline, seats, loyalty number, flexibility…" rows="2" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:13px 14px;color:var(--fg);font-size:14px;font-family:inherit;resize:none;margin-bottom:14px"></textarea>
+      <button class="btn btn-gold ripple-host" onclick="addRipple(this,event);submitFlightRequest()">Send to travel desk</button>
+      <div style="font-size:11px;color:var(--fg-4);text-align:center;margin-top:10px">No payment now — we confirm the fare with you before ticketing</div>
+    </div>
+  </div>`)(state._fltDraft):''}
+  ${deskUpsellSheet()}
+</div>`;},
+
+// Hotels — Skyscanner-style: one search, a row of providers, each opening
+// their pre-filled results; or the travel desk books it end to end.
+'hotel-search': () => {
+  const _d=n=>new Date(Date.now()+n*864e5).toISOString().slice(0,10);
+  return `
+<div style="height:100dvh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
+  <div class="back-row">
+    <div class="back-btn" onclick="go('chauffeur')">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+    </div>
+    <div>
+      <div style="font-size:20px;font-weight:700">Hotels</div>
+      <div style="font-size:13px;color:var(--fg-3);margin-top:1px">Compare providers, or let us book it</div>
+    </div>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:0 22px calc(env(safe-area-inset-bottom) + 40px)">
+    <div class="inp-card" style="margin-bottom:12px">
+      <div class="inp-row">
+        <div class="rdot rdot-gold"></div>
+        <input id="htl_city" placeholder="Where to? — city or hotel" value="${esc(state._htlCity||'')}" onchange="state._htlCity=this.value" style="font-size:15px;flex:1"/>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
+      ${['Paris','Dubai','New York','Monaco','Rome','Mykonos'].map(c=>`<button onclick="state._htlCity='${c}';document.getElementById('htl_city').value='${c}'" style="background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:7px 13px;font-size:12px;color:var(--fg-2);cursor:pointer;font-family:inherit">${c}</button>`).join('')}
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:12px">
+      <div style="flex:1">
+        <div style="font-size:11px;color:var(--fg-4);letter-spacing:1px;margin-bottom:6px">CHECK-IN</div>
+        <input id="htl_ci" type="date" value="${state._htlCi||_d(7)}" min="${_d(0)}" onchange="state._htlCi=this.value" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:13px 14px;color:var(--fg);font-size:14px;font-family:inherit;color-scheme:dark"/>
+      </div>
+      <div style="flex:1">
+        <div style="font-size:11px;color:var(--fg-4);letter-spacing:1px;margin-bottom:6px">CHECK-OUT</div>
+        <input id="htl_co" type="date" value="${state._htlCo||_d(10)}" min="${_d(1)}" onchange="state._htlCo=this.value" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:13px 14px;color:var(--fg);font-size:14px;font-family:inherit;color-scheme:dark"/>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:18px">
+      <div style="flex:1">
+        <div style="font-size:11px;color:var(--fg-4);letter-spacing:1px;margin-bottom:6px">GUESTS</div>
+        <select id="htl_guests" onchange="state._htlGuests=this.value" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:13px 10px;color:var(--fg);font-size:14px;font-family:inherit">
+          ${[1,2,3,4,5,6].map(n=>`<option value="${n}" ${n===(parseInt(state._htlGuests)||2)?'selected':''}>${n}</option>`).join('')}
+        </select>
+      </div>
+      <div style="flex:1">
+        <div style="font-size:11px;color:var(--fg-4);letter-spacing:1px;margin-bottom:6px">ROOMS</div>
+        <select id="htl_rooms" onchange="state._htlRooms=this.value" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:13px 10px;color:var(--fg);font-size:14px;font-family:inherit">
+          ${[1,2,3,4].map(n=>`<option value="${n}" ${n===(parseInt(state._htlRooms)||1)?'selected':''}>${n}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div id="htl_err" style="display:none;color:#ef4444;font-size:13px;margin-bottom:12px"></div>
+    <div class="section-label" style="margin-bottom:10px">Compare providers</div>
+    ${[['booking','Booking.com','Widest choice of stays'],['hotels','Hotels.com','Rewards on every stay'],['expedia','Expedia','Stays, packages & more'],['google','Google Hotels','Compare across the web']].map(([p,name,sub])=>`
+    <button onclick="hotelProviderOpen('${p}')" style="width:100%;display:flex;align-items:center;justify-content:space-between;background:var(--surface-2);border:1px solid var(--border);border-radius:16px;padding:15px 16px;margin-bottom:8px;cursor:pointer;font-family:inherit;text-align:left">
+      <div><div style="font-size:14px;font-weight:700;color:var(--fg)">${name}</div><div style="font-size:11px;color:var(--fg-4);margin-top:2px">${sub}</div></div>
+      <div style="display:flex;align-items:center;gap:6px;color:var(--fg-3);font-size:11px">their site <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg></div>
+    </button>`).join('')}
+    <button onclick="openHotelSheet()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;background:transparent;border:1px solid var(--gold-2,rgba(200,169,126,.35));border-radius:16px;padding:15px;color:var(--gold);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:10px">Book it for me — travel desk <span style="font-size:9px;font-weight:700;letter-spacing:1.5px;background:var(--gold-3,rgba(200,169,126,.16));border:1px solid var(--gold-2,rgba(200,169,126,.35));border-radius:8px;padding:3px 7px">VELVET</span></button>
+    <div style="font-size:11px;color:var(--fg-4);text-align:center;margin-top:8px">A Velvet member privilege — room, rate and special touches secured</div>
+    ${state._htlReqSent?`<div style="display:flex;align-items:center;gap:12px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);border-radius:16px;padding:14px 16px;margin-top:16px">
+      <span style="color:#22c55e;font-size:18px">✓</span>
+      <div><div style="font-size:14px;font-weight:700">Request ${esc(state._htlReqSent)} received</div><div style="font-size:12px;color:var(--fg-3);margin-top:2px">Our travel desk will come back with options shortly.</div></div>
+    </div>`:''}
+    ${travelReqCards()}
+    ${(()=>{if(!state._fltReqsLoaded){state._fltReqsLoaded=true;setTimeout(_loadFlightReqs,50);}return''})()}
+  </div>
+  ${state._htlSheet&&state._htlDraft?(d=>`
+  <div style="position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:500;display:flex;align-items:flex-end;justify-content:center" onclick="state._htlSheet=false;render()">
+    <div style="background:var(--bg);border-radius:24px 24px 0 0;border:1px solid var(--border);width:100%;max-width:480px;padding:26px 24px calc(env(safe-area-inset-bottom) + 26px);animation:slideUp .25s ease" onclick="event.stopPropagation()">
+      <div style="font-family:var(--font-serif);font-size:22px;font-weight:500;margin-bottom:4px">Book through our travel desk</div>
+      <div style="font-size:13px;color:var(--fg-3);margin-bottom:18px">We secure the room and rate, and arrange any special touches.</div>
+      <div class="card" style="padding:16px 18px;margin-bottom:14px">
+        <div style="font-size:16px;font-weight:700;margin-bottom:4px">🏨 ${esc(d.city)}</div>
+        <div style="font-size:13px;color:var(--fg-2)">${esc(d.ci)} – ${esc(d.co)} · ${d.guests} guest${d.guests>1?'s':''} · ${d.rooms} room${d.rooms>1?'s':''}</div>
+      </div>
+      <textarea id="htl_notes" placeholder="Preferences — hotel or brand, room type, view, occasion…" rows="2" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:13px 14px;color:var(--fg);font-size:14px;font-family:inherit;resize:none;margin-bottom:14px"></textarea>
+      <button class="btn btn-gold ripple-host" onclick="addRipple(this,event);submitHotelRequest()">Send to travel desk</button>
+      <div style="font-size:11px;color:var(--fg-4);text-align:center;margin-top:10px">No payment now — we confirm the rate with you before booking</div>
+    </div>
+  </div>`)(state._htlDraft):''}
+  ${deskUpsellSheet()}
+</div>`;},
+
+// The Concierge door: the desk itself plus curated experiences — lifestyle
+// lives here, travel lives behind the Chauffeur door.
 'route-input': () => `
 <div style="height:100dvh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
   <div class="back-row">
-    <div class="back-btn" onclick="go('home')">
+    <div class="back-btn" onclick="go('chauffeur')">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
     </div>
     <div>
@@ -2623,7 +3178,7 @@ home: () => {
     <div class="inp-card" style="margin-bottom:20px">
       <div class="inp-row">
         <div class="rdot rdot-gold"></div>
-        <input id="ri_pu" placeholder="Pickup location" style="font-size:15px;flex:1" value="${state.booking.pickup||''}"/>
+        <input id="ri_pu" placeholder="Pickup location" style="font-size:15px;flex:1" value="${esc(state.booking.pickup||'')}"/>
         <button onclick="useMyLocation('ri_pu')" title="Use my location" style="background:none;border:none;cursor:pointer;padding:4px;flex-shrink:0;display:flex;align-items:center">
           <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#ffffff" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path stroke-linecap="round" d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
         </button>
@@ -2631,26 +3186,26 @@ home: () => {
       <div class="rline"></div>
       <div class="inp-row">
         <div class="rdot rdot-outline"></div>
-        <input id="ri_do" placeholder="Dropoff or airport" style="font-size:15px" value="${state.booking.dropoff||''}"/>
+        <input id="ri_do" placeholder="Dropoff or airport" style="font-size:15px" value="${esc(state.booking.dropoff||'')}"/>
       </div>
     </div>
     ${recentPlaces().length?`<div class="section-label" style="margin-bottom:14px">Recent</div>`:''}
-    ${recentPlaces().map(r=>`
-    <div onclick="$('ri_do').value='${r}'" style="display:flex;align-items:center;gap:14px;padding:13px 0;border-bottom:1px solid var(--divider);cursor:pointer">
+    ${recentPlaces().map((r,i)=>`
+    <div onclick="pickRecentPlace(${i})" style="display:flex;align-items:center;gap:14px;padding:13px 0;border-bottom:1px solid var(--divider);cursor:pointer">
       <div style="width:36px;height:36px;border-radius:12px;background:var(--surface);display:flex;align-items:center;justify-content:center;flex-shrink:0">
         <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.3)" stroke-width="2"><circle cx="12" cy="10" r="3"/><path stroke-linecap="round" d="M12 21.7C17.3 17 20 13 20 10a8 8 0 10-16 0c0 3 2.7 6.9 8 11.7z"/></svg>
       </div>
-      <span style="font-size:15px;color:var(--fg-3)">${r}</span>
+      <span style="font-size:15px;color:var(--fg-3)">${esc(r)}</span>
       <svg style="margin-left:auto;flex-shrink:0" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.15)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
     </div>`).join('')}
     ${state.savedAddresses.length>0?`
     <div class="section-label" style="margin-bottom:14px;margin-top:8px">Saved</div>
-    ${state.savedAddresses.map(a=>`
-    <div onclick="$('ri_do').value='${a.addr}'" style="display:flex;align-items:center;gap:14px;padding:13px 0;border-bottom:1px solid var(--divider);cursor:pointer">
-      <div style="width:36px;height:36px;border-radius:12px;background:var(--gold-3);border:1px solid var(--gold-2);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px">${a.icon}</div>
+    ${state.savedAddresses.map((a,i)=>`
+    <div onclick="pickSavedAddress(${i})" style="display:flex;align-items:center;gap:14px;padding:13px 0;border-bottom:1px solid var(--divider);cursor:pointer">
+      <div style="width:36px;height:36px;border-radius:12px;background:var(--gold-3);border:1px solid var(--gold-2);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px">${esc(a.icon||'📍')}</div>
       <div style="flex:1;min-width:0">
-        <div style="font-size:12px;color:var(--gold);font-weight:700;letter-spacing:.5px;margin-bottom:2px">${a.label}</div>
-        <div style="font-size:14px;color:var(--fg-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.addr}</div>
+        <div style="font-size:12px;color:var(--gold);font-weight:700;letter-spacing:.5px;margin-bottom:2px">${esc(a.label)}</div>
+        <div style="font-size:14px;color:var(--fg-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.addr)}</div>
       </div>
     </div>`).join('')}`:''}
   </div>
@@ -2706,7 +3261,7 @@ home: () => {
     <div class="inp-card" style="margin-bottom:12px">
       <div class="inp-row">
         <div class="rdot rdot-gold"></div>
-        <input id="ba_pu" placeholder="Pickup address" style="flex:1" value="${state.booking.pickup||''}"/>
+        <input id="ba_pu" placeholder="Pickup address" style="flex:1" value="${esc(state.booking.pickup||'')}"/>
         <button onclick="useMyLocation('ba_pu')" title="Use my location" style="background:none;border:none;cursor:pointer;padding:4px;flex-shrink:0;display:flex;align-items:center">
           <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#ffffff" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path stroke-linecap="round" d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
         </button>
@@ -2748,7 +3303,7 @@ home: () => {
     </div>
   </div>
   <div style="padding:0 22px;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:calc(88px + env(safe-area-inset-bottom,0px))">
-    <div class="field" style="margin-bottom:12px;display:flex;align-items:center;gap:0"><input id="bh_pu" placeholder="Pickup location" style="flex:1" value="${state.booking.pickup||''}"/>
+    <div class="field" style="margin-bottom:12px;display:flex;align-items:center;gap:0"><input id="bh_pu" placeholder="Pickup location" style="flex:1" value="${esc(state.booking.pickup||'')}"/>
       <button onclick="useMyLocation('bh_pu')" title="Use my location" style="background:none;border:none;cursor:pointer;padding:4px;flex-shrink:0;display:flex;align-items:center">
         <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#ffffff" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path stroke-linecap="round" d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
       </button></div>
@@ -2784,7 +3339,7 @@ home: () => {
     </div>
   </div>
   <div style="padding:0 22px;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:calc(88px + env(safe-area-inset-bottom,0px))">
-    <div class="field" style="margin-bottom:12px;display:flex;align-items:center;gap:0"><input id="bd_pu" placeholder="Pickup location" style="flex:1" value="${state.booking.pickup||''}"/>
+    <div class="field" style="margin-bottom:12px;display:flex;align-items:center;gap:0"><input id="bd_pu" placeholder="Pickup location" style="flex:1" value="${esc(state.booking.pickup||'')}"/>
       <button onclick="useMyLocation('bd_pu')" title="Use my location" style="background:none;border:none;cursor:pointer;padding:4px;flex-shrink:0;display:flex;align-items:center">
         <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#ffffff" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path stroke-linecap="round" d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
       </button></div>
@@ -2822,7 +3377,7 @@ home: () => {
     <div class="inp-card" style="margin-bottom:16px">
       <div class="inp-row">
         <div class="rdot rdot-gold"></div>
-        <input id="bp_pu" placeholder="Pickup location" style="flex:1" value="${state.booking.pickup||''}"/>
+        <input id="bp_pu" placeholder="Pickup location" style="flex:1" value="${esc(state.booking.pickup||'')}"/>
         <button onclick="useMyLocation('bp_pu')" title="Use my location" style="background:none;border:none;cursor:pointer;padding:4px;flex-shrink:0;display:flex;align-items:center">
           <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#ffffff" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path stroke-linecap="round" d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
         </button>
@@ -2830,7 +3385,7 @@ home: () => {
       <div class="rline"></div>
       <div class="inp-row">
         <div class="rdot rdot-outline"></div>
-        <input id="bp_do" placeholder="Destination" style="flex:1" value="${state.booking.dropoff||''}"/>
+        <input id="bp_do" placeholder="Destination" style="flex:1" value="${esc(state.booking.dropoff||'')}"/>
       </div>
     </div>
     <div style="display:flex;gap:10px;margin-bottom:26px">
@@ -2839,8 +3394,9 @@ home: () => {
     </div>
     <div class="section-label" style="margin-bottom:14px">Passengers</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px" id="bp_pax">
-      ${[1,2,3,4,5,6,7,8].map(n=>{const sel=(state.booking.passengers||2)===n;return`<button onclick="setPax(${n},this)" style="width:46px;height:46px;border-radius:13px;background:${sel?'#ffffff':'rgba(255,255,255,.06)'};color:${sel?'#000':'rgba(255,255,255,.5)'};font-weight:700;font-size:15px;border:1px solid ${sel?'#ffffff':'rgba(255,255,255,.07)'};cursor:pointer;font-family:inherit;transition:all .15s">${n}</button>`;}).join('')}
+      ${[1,2,3,4,5,6,7,8,10,12,14].map(n=>{const sel=(state.booking.passengers||2)===n;return`<button onclick="setPax(${n},this)" style="width:46px;height:46px;border-radius:13px;background:${sel?'#ffffff':'rgba(255,255,255,.06)'};color:${sel?'#000':'rgba(255,255,255,.5)'};font-weight:700;font-size:15px;border:1px solid ${sel?'#ffffff':'rgba(255,255,255,.07)'};cursor:pointer;font-family:inherit;transition:all .15s">${n}</button>`;}).join('')}
     </div>
+    <div style="font-size:11px;color:var(--fg-4);margin-top:2px;line-height:1.5">1–3 travel in the S-Class · 4–7 in the V-Class · larger parties travel in multiple V-Classes</div>
     <div style="font-size:12px;color:var(--fg-4);line-height:1.6;margin-top:14px">Your fare is calculated from the live driving distance and time, plus any evening or weekend supplement. You'll see the exact price for each vehicle next.</div>
   </div>
   <div style="height:90px"></div>
@@ -2889,17 +3445,34 @@ home: () => {
     ? ApexCore.apexYield({date:bk.date,time:bk.time,vehicle:'s',market:'london'})
     : {multiplier:1.0,label:'Standard'};
   const surge = ySurge.multiplier;
+  // ── Capacity rules ────────────────────────────────────────────────────────
+  // S-Class seats up to 3, V-Class up to 7. Parties of 4–7 are steered into
+  // the V-Class automatically; parties beyond 7 travel as a convoy of
+  // ceil(n/7) V-Classes, priced per van.
+  const pax = bk.passengers||2;
+  const vNeeded = Math.ceil(pax/7);
+  if(pax<=7 && bk.vehicleId==='vClassMulti') bk.vehicleId='';   // party shrank
+  if(pax>3){
+    bk.vehicleId = pax>7 ? 'vClassMulti' : 'vClass';
+    bk.vehicle  = pax>7 ? vNeeded+'× Mercedes V-Class' : 'Mercedes V-Class';
+    bk.price    = pax>7 ? sp.v*vNeeded : sp.v;
+  }
   const sel = state.booking.vehicleId||'';
+  const sDisabledNote = pax>3 ? 'Seats up to 3 — your party is '+pax : null;
   const vehicles = [
-    {id:'sClass',name:'S-Class',full:'Mercedes S-Class',sub:'Business Sedan · Up to 3 passengers',price:sp.s,badge:'EXECUTIVE',features:['WiFi','Water','Charger','Meet & Greet'],img:'vehicles/s-class.jpg'},
-    {id:'vClass',name:'V-Class',full:'Mercedes V-Class',sub:'Business Van · Up to 7 passengers',price:sp.v,badge:'BUSINESS',features:['WiFi','Water','Charger','Child Seat'],img:'vehicles/v-class.jpg'}
+    {id:'sClass',name:'S-Class',full:'Mercedes S-Class',sub:'Business Sedan · Up to 3 passengers',price:sp.s,badge:'EXECUTIVE',features:['WiFi','Water','Charger','Meet & Greet'],img:'vehicles/s-class.jpg',disabled:pax>3,note:sDisabledNote},
+    ...(pax>7 ? [
+      {id:'vClassMulti',name:vNeeded+'× V-Class',full:vNeeded+'× Mercedes V-Class',sub:vNeeded+' vans travelling together · party of '+pax,price:sp.v*vNeeded,badge:'GROUP',features:['WiFi','Water','Charger','Convoy arrival'],img:'vehicles/v-class.jpg'}
+    ] : [
+      {id:'vClass',name:'V-Class',full:'Mercedes V-Class',sub:'Business Van · Up to 7 passengers',price:sp.v,badge:'BUSINESS',features:['WiFi','Water','Charger','Child Seat'],img:'vehicles/v-class.jpg'}
+    ])
   ];
   // Loading/route state
   const isLoading = needsRoute && !bk._route && !bk._routeErr;
   return `
 <div style="height:100dvh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
   <div class="back-row">
-    <div class="back-btn" onclick="go(state.booking.serviceType?'book-'+state.booking.serviceType:'home')">
+    <div class="back-btn" onclick="go(['airport','hourly','day','point'].includes(state.booking.serviceType)?'book-'+state.booking.serviceType:state.booking.serviceType==='aviation'?'aviation-booking':'home')">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
     </div>
     <div>
@@ -2918,7 +3491,7 @@ home: () => {
       </div>
     </div>` : ''}
     ${vehicles.map(v=>`
-    <div id="vc_${v.id}" onclick="selectVehicle('${v.id}',${v.price},'${v.full}')" class="vcard ${sel===v.id?'sel':''}" style="margin-bottom:14px">
+    <div id="vc_${v.id}" ${v.disabled?'':`onclick="selectVehicle('${v.id}',${v.price},'${v.full}')"`} class="vcard ${sel===v.id?'sel':''}" style="margin-bottom:14px${v.disabled?';opacity:.4;filter:grayscale(.5);cursor:default':''}">
       <div class="vcard-media">
         <img src="${v.img}" alt="${v.full}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center top" onerror="this.style.display='none'"/>
         <div class="vcard-badge">${v.badge}</div>
@@ -2930,6 +3503,7 @@ home: () => {
           <div>
             <div style="font-size:17px;font-weight:700">${v.full}</div>
             <div style="font-size:13px;color:var(--fg-3);margin-top:3px">${v.sub}</div>
+            ${v.note?`<div style="font-size:12px;color:#f59e0b;margin-top:4px">${v.note}</div>`:''}
           </div>
           <div style="text-align:right">
             <div class="tnum" style="font-size:26px;font-weight:800;letter-spacing:-.02em;color:${sel===v.id?'#ffffff':'#fff'}">£${v.price}</div>
@@ -3010,10 +3584,10 @@ home: () => {
           <div style="flex:1">
             <div style="display:flex;align-items:baseline;gap:8px">
               <span style="font-size:13px;font-weight:700;color:#D4A843;min-width:38px">${s.time||'—'}</span>
-              <span style="font-size:13px;font-weight:600">${s.place}</span>
+              <span style="font-size:13px;font-weight:600">${esc(s.place)}</span>
               ${s.anchored?`<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="rgba(212,168,67,.7)" stroke-width="2.5" style="flex-shrink:0;align-self:center"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>`:''}
             </div>
-            ${s.note?`<div style="font-size:12px;color:var(--fg-3);margin-top:2px">${s.note}</div>`:''}
+            ${s.note?`<div style="font-size:12px;color:var(--fg-3);margin-top:2px">${esc(s.note)}</div>`:''}
           </div>
           <button onclick="removeItineraryStop(${i})" style="background:none;border:none;color:var(--fg-3);font-size:16px;cursor:pointer;padding:0 2px;line-height:1">×</button>
         </div>`).join('')}
@@ -3035,7 +3609,7 @@ home: () => {
         ${c.errands.map((e,i)=>`
         <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface);border-radius:12px;border:1px solid var(--border)">
           <div style="width:16px;height:16px;border-radius:50%;border:1.5px solid var(--fg-3);flex-shrink:0"></div>
-          <span style="flex:1;font-size:13px">${e.text}</span>
+          <span style="flex:1;font-size:13px">${esc(e.text)}</span>
           <button onclick="removeErrand(${i})" style="background:none;border:none;color:var(--fg-3);font-size:16px;cursor:pointer;padding:0 2px;line-height:1">×</button>
         </div>`).join('')}
       </div>` : `<div style="font-size:13px;color:var(--fg-4);text-align:center;padding:10px 0">No errands added yet</div>`}
@@ -3056,7 +3630,7 @@ home: () => {
     <!-- Section 4: Special Instructions -->
     <div class="card" style="padding:20px;margin-bottom:10px">
       <div class="section-label" style="margin-bottom:12px">Special Instructions</div>
-      <textarea id="ci_instructions" rows="4" placeholder="Any specific requests or information for your driver…" oninput="saveConciergeInstructions()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;font-size:13px;color:var(--fg);resize:none;line-height:1.6;font-family:inherit">${c.instructions||''}</textarea>
+      <textarea id="ci_instructions" rows="4" placeholder="Any specific requests or information for your driver…" oninput="saveConciergeInstructions()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;font-size:13px;color:var(--fg);resize:none;line-height:1.6;font-family:inherit">${esc(c.instructions||'')}</textarea>
     </div>
 
     <!-- Section 5: Driver Communication -->
@@ -3079,9 +3653,9 @@ home: () => {
 'booking-summary': () => {
   const base = state.booking.price||185;
   const ok = state._promoApplied;
-  const disc = ok?Math.round(base*.2):0;
-  const total = base-disc;
-  const vat = Math.round(total/6);
+  // Same engine math as confirmBooking — the summary must show exactly what
+  // will be stored/charged, not a reimplementation that rounds differently.
+  const {discount:disc,total,vat}=(typeof ApexEngine!=='undefined')?ApexEngine.quoteFare(base,!!ok):(()=>{const d=ok?Math.round(base*0.20):0;const t=base-d;return{discount:d,total:t,vat:Math.round(t/6*100)/100};})();
   const svcLabel = {airport:'Airport Transfer',hourly:'By the Hour',day:'By the Day',point:'Point to Point'}[state.booking.serviceType]||'Airport Transfer';
   const eta = (state.booking.serviceType==='airport' && typeof ApexCore!=='undefined')
     ? ApexCore.apexETA({baseMinutes:45, tripType:'flight', hour:parseInt(state.booking.time)||10})
@@ -3096,27 +3670,29 @@ home: () => {
   </div>
   <div style="padding:0 22px;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:calc(88px + env(safe-area-inset-bottom,0px))" class="scroll">
 
-    ${state.paMode && state.paPassenger.name ? `
-    <div class="card" style="padding:16px 20px;margin-bottom:10px;background:var(--gold-3);border-color:var(--gold-2)">
-      <div style="display:flex;align-items:center;gap:12px">
-        <div style="width:36px;height:36px;border-radius:11px;background:rgba(200,169,126,.2);border:1px solid var(--gold-2);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-          <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="var(--gold)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+    <!-- Who's travelling? — PA mode lives here, inside the flow -->
+    <div class="card" style="padding:16px 20px;margin-bottom:10px${state.paMode?';background:var(--gold-3);border-color:var(--gold-2)':''}">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${state.paMode?'12px':'0'}">
+        <div>
+          <div style="font-size:14px;font-weight:700;margin-bottom:2px">Who's travelling?</div>
+          <div style="font-size:12px;color:var(--fg-3)">${state.paMode?'Booking on behalf of a guest':'You — switch to book for someone else'}</div>
         </div>
-        <div style="flex:1">
-          <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--gold);text-transform:uppercase;margin-bottom:2px">Booking for</div>
-          <div style="font-size:15px;font-weight:700;color:var(--fg)">${state.paPassenger.name}</div>
-          ${state.paPassenger.phone ? `<div style="font-size:12px;color:var(--fg-3);margin-top:1px">${state.paPassenger.phone}</div>` : ''}
+        <div onclick="togglePaMode()" style="width:46px;height:26px;border-radius:13px;background:${state.paMode?'var(--gold)':'var(--surface-2)'};border:1px solid ${state.paMode?'var(--gold)':'var(--border)'};position:relative;cursor:pointer;transition:background .2s;flex-shrink:0">
+          <div style="position:absolute;top:3px;left:${state.paMode?'23px':'3px'};width:18px;height:18px;border-radius:50%;background:#fff;transition:left .2s"></div>
         </div>
-        <span class="tag tag-gold">PA Mode</span>
       </div>
-    </div>` : ''}
+      ${state.paMode ? `
+      <div class="field" style="margin-bottom:8px"><input placeholder="Passenger name" value="${esc(state.paPassenger.name||'')}" oninput="setPaPassenger('name',this.value)" style="font-size:14px"/></div>
+      <div class="field"><input placeholder="Passenger phone (optional)" value="${esc(state.paPassenger.phone||'')}" oninput="setPaPassenger('phone',this.value)" type="tel" style="font-size:14px"/></div>
+      <div style="font-size:11px;color:var(--fg-4);margin-top:8px;line-height:1.5">You receive all updates. Driver details are sent directly to the passenger.</div>` : ''}
+    </div>
 
     <div class="card" style="padding:20px;margin-bottom:10px">
       <div class="section-label" style="margin-bottom:14px">Trip</div>
       <div style="font-size:15px;font-weight:600;color:#ffffff;margin-bottom:16px">${svcLabel}</div>
       <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:10px">
         <div class="rdot rdot-gold" style="margin-top:4px"></div>
-        <div><div style="font-size:11px;color:var(--fg-3);margin-bottom:2px">Pickup</div><div style="font-size:15px">${state.booking.pickup||'—'}</div></div>
+        <div><div style="font-size:11px;color:var(--fg-3);margin-bottom:2px">Pickup</div><div style="font-size:15px">${esc(state.booking.pickup||'—')}</div></div>
       </div>
       <div class="rline" style="height:16px;margin-bottom:10px"></div>
       <div style="display:flex;align-items:flex-start;gap:12px">
@@ -3124,7 +3700,7 @@ home: () => {
         <div><div style="font-size:11px;color:var(--fg-3);margin-bottom:2px">Drop-off</div><div style="font-size:15px">${state.booking.airport||state.booking.dropoff||'—'}</div></div>
       </div>
       ${state.booking.date?`<div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--divider);font-size:13px;color:var(--fg-3)">${state.booking.date}${state.booking.time?' · '+state.booking.time:''}</div>`:''}
-      ${state.booking.flight?`<div style="font-size:13px;color:var(--fg-3);margin-top:4px">&#x2708; ${state.booking.flight}</div>`:''}
+      ${state.booking.flight?`<div style="font-size:13px;color:var(--fg-3);margin-top:4px">&#x2708; ${esc(state.booking.flight)}</div>`:''}
     </div>
 
     ${eta?`
@@ -3317,7 +3893,10 @@ payment: () => {
 },
 
 'booking-confirmed': () => {
-  const ref = state._confirmedRef || ('APX-'+(Math.floor(1000+Math.random()*9000)));
+  // Mint once and keep — a per-render random ref changed on every re-render
+  // and matched no stored booking.
+  if (!state._confirmedRef) state._confirmedRef = 'APX-'+(Math.floor(1000+Math.random()*9000));
+  const ref = state._confirmedRef;
   return `
 <div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;align-items:center;padding:0 26px;animation:scaleIn .4s ease">
   <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">
@@ -3330,12 +3909,16 @@ payment: () => {
       </div>
       <div style="font-family:var(--font-serif);font-size:36px;font-weight:300;letter-spacing:1px;margin-bottom:8px;animation:fadeUp .5s .3s var(--ease-spring) both">Booking Confirmed</div>
       <div style="font-size:12px;color:var(--fg-4);letter-spacing:2px;text-transform:uppercase;animation:fadeIn .5s .5s both">Your journey is arranged</div>
-      ${state.user?.name?`<div style="font-size:15px;color:var(--fg-3);margin-top:12px;font-family:var(--font-serif);font-style:italic;animation:fadeIn .5s .9s both;line-height:1.5">"Good ${new Date().getHours()<12?'morning':'afternoon'}, ${state.user.name.split(' ')[0]}. Your chauffeur is briefed and awaits."</div>`:''}
+      ${state.user?.name?`<div style="font-size:15px;color:var(--fg-3);margin-top:12px;font-family:var(--font-serif);font-style:italic;animation:fadeIn .5s .9s both;line-height:1.5">"Good ${new Date().getHours()<12?'morning':'afternoon'}, ${esc(state.user.name.split(' ')[0])}. Your chauffeur is briefed and awaits."</div>`:''}
     </div>
     ${(()=>{const n=TRIPS.filter(t=>t.status==='completed').length+1;const ms={5:'🥂 Journey #5',10:'🌟 Journey #10',25:'🏆 Journey #25',50:'💎 Journey #50',100:'👑 Journey #100'};return ms[n]?`<div style="width:100%;text-align:center;padding:16px;background:rgba(200,169,126,.08);border:1px solid rgba(200,169,126,.2);border-radius:18px;margin-bottom:20px;animation:scaleIn .4s var(--ease-spring) both"><div style="font-size:28px;margin-bottom:6px">${ms[n].split(' ')[0]}</div><div style="font-size:15px;font-weight:700;color:var(--gold)">${ms[n]} milestone!</div><div style="font-size:12px;color:var(--fg-3);margin-top:4px">A personal note has been added to your account</div></div>`:''})()}
     <div style="font-size:12px;color:var(--fg-4);letter-spacing:2px;margin-bottom:8px">REFERENCE</div>
     <div style="font-size:24px;font-weight:800;color:var(--fg);letter-spacing:4px;margin-bottom:${state._lastApexEarned>0?'8px':'16px'}">${ref}</div>
     ${state.memberNumber?`<div style="font-size:11px;color:var(--gold);letter-spacing:1.5px;margin-bottom:${state._lastApexEarned>0?'16px':'28px'};opacity:.8">Charter Member #${state.memberNumber}</div>`:''}
+    ${(()=>{if(state.booking?.vehicleId!=='vClassMulti')return'';const k=Math.max(2,Math.ceil((state.booking.passengers||8)/7));const refs=Array.from({length:k},(_,i)=>i?ref+'-'+(i+1):ref).join(' · ');return `<div style="width:100%;text-align:left;background:var(--gold-3,rgba(200,169,126,.12));border:1px solid var(--gold-2,rgba(200,169,126,.3));border-radius:16px;padding:16px 18px;margin-bottom:20px">
+      <div style="font-size:13px;font-weight:700;color:var(--gold);margin-bottom:6px">🚐 Convoy of ${k} V-Classes</div>
+      <div style="font-size:12px;color:var(--fg-3);line-height:1.6">Your party of ${state.booking.passengers} travels together — each van has its own chauffeur and arrives as one convoy. References: <span style="color:var(--fg)">${refs}</span></div>
+    </div>`;})()}
     ${state.booking?.flight?flightStatusCard(state.booking.flight):''}
     ${state._lastApexEarned>0?`<div style="display:flex;align-items:center;gap:12px;background:${apexTierColor(apexTier(state.apexBalance))}18;border:1px solid ${apexTierColor(apexTier(state.apexBalance))}44;border-radius:16px;padding:14px 18px;margin-bottom:24px;width:100%">
       <div style="width:40px;height:40px;border-radius:50%;background:${apexTierColor(apexTier(state.apexBalance))}22;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">◈</div>
@@ -3444,23 +4027,38 @@ payment: () => {
 trips: () => {
   const tab = state._tripsTab||'upcoming';
   const upcoming = TRIPS.filter(t=>t.status==='upcoming');
-  const past = TRIPS.filter(t=>t.status==='completed');
-  const list = tab==='upcoming'?upcoming:past;
+  const past = _pastTrips();
+  const list = tab==='upcoming'?upcoming:_filteredPastTrips();
+  const months = tab==='past' ? [...new Set(past.map(t=>_tripMonthKey(t.date)))] : [];
+  months.sort((a,b)=>b.localeCompare(a));
+  const mk = state._tripsMonth||'all';
+  const spendTotal = tab==='past' ? list.filter(t=>t.status==='completed').reduce((s,t)=>s+(Number(String(t.price).replace(/[^0-9.]/g,''))||0),0) : 0;
   return `
 <div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:fadeIn .3s ease">
   <div style="padding:56px 22px 0">
     <div style="font-size:32px;font-weight:800;margin-bottom:22px">Trips</div>
-    <div style="display:flex;margin-bottom:26px;background:var(--surface);border-radius:14px;padding:3px">
+    <div style="display:flex;margin-bottom:${tab==='past'?'14px':'26px'};background:var(--surface);border-radius:14px;padding:3px">
       ${['upcoming','past'].map(t=>`<div onclick="state._tripsTab='${t}';render()" style="flex:1;padding:10px;text-align:center;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;background:${tab===t?'#fff':'transparent'};color:${tab===t?'#000':'rgba(255,255,255,.35)'};transition:all .2s">${t==='upcoming'?'Upcoming':'Past'}</div>`).join('')}
     </div>
+    ${tab==='past'&&past.length?`
+    <div style="display:flex;gap:6px;overflow-x:auto;margin-bottom:12px;scrollbar-width:none;padding-bottom:2px">
+      ${['all',...months].map(k=>`<button onclick="state._tripsMonth='${k}';render()" style="flex-shrink:0;padding:6px 14px;border-radius:20px;background:${mk===k?'var(--gold)':'var(--surface)'};border:1px solid ${mk===k?'var(--gold)':'var(--border)'};color:${mk===k?'#0c0b09':'var(--fg-2)'};font-size:12px;font-weight:${mk===k?'700':'400'};cursor:pointer;font-family:inherit;white-space:nowrap">${k==='all'?'All':_tripMonthLabel(k)}</button>`).join('')}
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:11px 14px;margin-bottom:14px">
+      <div style="font-size:12px;color:var(--fg-3)"><b style="color:var(--fg-2)">${list.length}</b> journey${list.length===1?'':'s'} · <b style="color:var(--gold)">£${spendTotal.toLocaleString()}</b> spent</div>
+      <button onclick="exportTrips()" style="display:flex;align-items:center;gap:6px;background:var(--gold-3);border:1px solid var(--gold-2);border-radius:10px;color:var(--gold);font-size:11px;font-weight:700;padding:7px 12px;cursor:pointer;font-family:inherit">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v13M7 7l5-5 5 5"/><path d="M20 16v4a2 2 0 01-2 2H6a2 2 0 01-2-2v-4"/></svg>
+        Export
+      </button>
+    </div>`:''}
   </div>
   <div style="padding:0 22px;flex:1" class="scroll">
     ${list.length===0?`<div style="text-align:center;padding:72px 20px;animation:fadeUp .5s var(--ease-spring) both">
       <div style="width:80px;height:80px;border-radius:28px;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;margin:0 auto 22px;font-size:34px">
         ${tab==='upcoming'?'🚘':'🕐'}
       </div>
-      <div style="font-family:var(--font-serif);font-size:28px;font-weight:300;letter-spacing:.5px;margin-bottom:10px">${tab==='upcoming'?'No journeys booked':'No past journeys'}</div>
-      <div style="font-size:14px;color:var(--fg-3);margin-bottom:36px;line-height:1.65">${tab==='upcoming'?'Your next journey awaits.<br/>Book whenever you\'re ready.':'Your travel history will<br/>appear here after your first ride.'}</div>
+      <div style="font-family:var(--font-serif);font-size:28px;font-weight:300;letter-spacing:.5px;margin-bottom:10px">${tab==='upcoming'?'No journeys booked':(past.length?'Nothing this month':'No past journeys')}</div>
+      <div style="font-size:14px;color:var(--fg-3);margin-bottom:36px;line-height:1.65">${tab==='upcoming'?'Your next journey awaits.<br/>Book whenever you\'re ready.':(past.length?'No journeys in the selected month —<br/>try another filter.':'Your travel history will<br/>appear here after your first ride.')}</div>
       ${tab==='upcoming'?`<button class="btn btn-gold ripple-host" style="max-width:220px;margin:0 auto" onclick="haptic('light');addRipple(this,event);go('home')">Book a journey</button>`:''}
     </div>`:''}
     ${list.map(t=>{
@@ -3484,12 +4082,12 @@ trips: () => {
           <div style="font-size:14px;color:var(--fg-3)">${t.dropoff}</div>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px">
-          <span style="color:var(--fg-3)">${t.vehicle}</span>
+          <span style="color:var(--fg-3)">${t.vehicle}${t.convoyVan?` <span style="color:var(--gold);font-size:11px;font-weight:700">· Van ${t.convoyVan} of ${t.convoySize}</span>`:''}</span>
           <div style="display:flex;align-items:center;gap:8px">
             ${t.status==='completed'&&!t.myRating?`<button onclick="event.stopPropagation();state._rateTrip=TRIPS.find(x=>x.id==='${t.id}');state._rateStars=5;state._rateOpen=true;render()" style="background:var(--gold-3,rgba(200,169,126,.12));border:1px solid var(--gold-2,rgba(200,169,126,.3));color:var(--gold,#C8A97E);padding:6px 12px;border-radius:10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">★ Rate</button>`:''}
             ${t.status==='completed'&&t.myRating?`<span style="color:var(--gold,#C8A97E);font-size:12px;letter-spacing:1px">${'★'.repeat(Math.round(t.myRating))}</span>`:''}
             ${t.status==='completed'?`<button onclick="event.stopPropagation();state._lastTrip=TRIPS.find(x=>x.id==='${t.id}');go('receipt')" style="background:var(--surface-2);border:1px solid var(--border);color:var(--fg);padding:6px 12px;border-radius:10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Receipt</button>`:''}
-            ${t.status!=='completed'&&t.status!=='cancelled'?`<button onclick="event.stopPropagation();state._cancelRef='${t.id}';state._cancelDocId='${t._docId||''}';state._cancelOpen=true;render()" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);color:#ef4444;padding:6px 12px;border-radius:10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Cancel</button>`:''}
+            ${t.status!=='completed'&&t.status!=='cancelled'?`<button onclick="event.stopPropagation();state._cancelRef='${t.id}';state._cancelDocId='${t.docId||''}';state._cancelOpen=true;render()" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);color:#ef4444;padding:6px 12px;border-radius:10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Cancel</button>`:''}
             <span style="font-weight:800;color:#ffffff">${t.price}</span>
           </div>
         </div>
@@ -3596,7 +4194,7 @@ trips: () => {
       <div style="font-size:14px;color:var(--fg-3);margin-bottom:22px;line-height:1.6">Cancellations within 24 hours may incur a fee.</div>
       <div style="display:flex;gap:10px">
         <button onclick="state._tripConfirming=null;render()" style="flex:1;padding:15px;background:var(--surface-2);border:none;border-radius:14px;color:#fff;font-weight:600;cursor:pointer;font-size:15px;font-family:inherit">Keep booking</button>
-        <button onclick="state._tripCancelled='${t.id}';state._tripConfirming=null;render()" style="flex:1;padding:15px;background:#ef4444;border:none;border-radius:14px;color:#fff;font-weight:700;cursor:pointer;font-size:15px;font-family:inherit">Cancel</button>
+        <button onclick="state._tripCancelled='${t.id}';state._tripConfirming=null;cancelBooking('${t.id}','${t.docId||''}')" style="flex:1;padding:15px;background:#ef4444;border:none;border-radius:14px;color:#fff;font-weight:700;cursor:pointer;font-size:15px;font-family:inherit">Cancel</button>
       </div>
     </div>`:''}
     <div style="height:40px"></div>
@@ -3850,7 +4448,12 @@ guide: () => {
 notifications: () => `
 <div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:fadeIn .3s ease">
   <div style="padding:56px 22px 22px;display:flex;justify-content:space-between;align-items:center">
-    <div style="font-size:32px;font-weight:800">Notifications</div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <div class="back-btn" onclick="go('home')">
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+      </div>
+      <div style="font-size:28px;font-weight:800">Notifications</div>
+    </div>
     <button onclick="state._allRead=true;render()" style="background:none;border:none;color:#ffffff;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Mark all read</button>
   </div>
   <div style="padding:0 22px;flex:1">
@@ -3965,8 +4568,8 @@ profile: () => {
         </div>
       </div>
       ${state.paMode ? `
-      <div class="field" style="margin-bottom:8px"><input placeholder="Passenger name" value="${state.paPassenger.name||''}" oninput="setPaPassenger('name',this.value)" style="font-size:14px"/></div>
-      <div class="field"><input placeholder="Passenger phone" value="${state.paPassenger.phone||''}" oninput="setPaPassenger('phone',this.value)" type="tel" style="font-size:14px"/></div>
+      <div class="field" style="margin-bottom:8px"><input placeholder="Passenger name" value="${esc(state.paPassenger.name||'')}" oninput="setPaPassenger('name',this.value)" style="font-size:14px"/></div>
+      <div class="field"><input placeholder="Passenger phone" value="${esc(state.paPassenger.phone||'')}" oninput="setPaPassenger('phone',this.value)" type="tel" style="font-size:14px"/></div>
       <div style="font-size:11px;color:var(--fg-3);margin-top:8px">You will receive all updates. The passenger will receive the driver details.</div>` : ''}
     </div>
     <div style="background:linear-gradient(135deg,rgba(5,5,5,1),rgba(18,14,8,1));border:1px solid rgba(200,169,126,.28);border-radius:22px;padding:22px;margin-bottom:14px;position:relative;overflow:hidden">
@@ -4167,10 +4770,13 @@ profile: () => {
 
 'active-trip': () => {
   const b = state._activeBooking || {};
-  const statusLabels = {confirmed:'Booking confirmed',accepted:'Driver assigned',en_route:'Driver en route',arrived:'Driver arrived',onboard:'On your way',completed:'Trip complete'};
-  const statusColors = {confirmed:'var(--fg-3)',accepted:'#fbbf24',en_route:'#22c55e',arrived:'#22c55e',onboard:'#22c55e',completed:'#22c55e'};
+  // 'accepted' means the chauffeur claimed the job and is DRIVING to the pickup
+  // — the driver app's next write is 'arrived', so treat accepted as en-route
+  // or the tracker sits on "assigned" and skips the en-route step entirely.
+  const statusLabels = {confirmed:'Booking confirmed',accepted:'Chauffeur en route to you',en_route:'Driver en route',arrived:'Driver arrived',onboard:'On your way',completed:'Trip complete'};
+  const statusColors = {confirmed:'var(--fg-3)',accepted:'#22c55e',en_route:'#22c55e',arrived:'#22c55e',onboard:'#22c55e',completed:'#22c55e'};
   const st = b.status || 'confirmed';
-  const stepMap = {confirmed:1,accepted:2,en_route:3,arrived:4,onboard:5,completed:6};
+  const stepMap = {confirmed:1,accepted:3,en_route:3,arrived:4,onboard:5,completed:6};
   const curStep = stepMap[st]||1;
   return `
 <div style="position:relative;height:100vh;overflow:hidden;animation:fadeIn .3s ease">
@@ -4195,14 +4801,14 @@ profile: () => {
         <div style="font-size:10px;color:var(--fg-4);letter-spacing:2px;text-transform:uppercase;margin-top:4px">Estimated arrival</div>
       </div>
       <div style="display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--divider)">
-        <div style="width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,#ffffff,#888);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:#000;flex-shrink:0">${(b.driverName||'JH').split(' ').map(n=>n[0]).join('').slice(0,2)}</div>
+        <div style="width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,#ffffff,#888);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:#000;flex-shrink:0">${b.driverName?b.driverName.split(' ').map(n=>n[0]).join('').slice(0,2):'…'}</div>
         <div style="flex:1">
-          <div style="font-size:15px;font-weight:700">${b.driverName||'James Harrison'}</div>
-          <div style="font-size:12px;color:var(--fg-3);margin-top:2px">${b.driverPlate||'LX73 ABC'} · ${b.vehicle||'Mercedes S-Class'}</div>
+          <div style="font-size:15px;font-weight:700">${b.driverName||'Assigning your chauffeur…'}</div>
+          <div style="font-size:12px;color:var(--fg-3);margin-top:2px">${b.driverName?`${b.driverPlate||''}${b.driverPlate?' · ':''}${b.vehicle||'Mercedes S-Class'}`:'Details appear the moment they accept'}</div>
         </div>
-        <a href="tel:+447700000000" style="width:40px;height:40px;border-radius:50%;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;text-decoration:none;flex-shrink:0">
-          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.948V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
-        </a>
+        <button onclick="state._prevScreen='active-trip';go('client-chat')" style="width:40px;height:40px;border-radius:50%;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#D4A843" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+        </button>
       </div>
       <div id="drv-loc-time" style="font-size:11px;color:var(--fg-4);padding:6px 0 10px;text-align:center">Waiting for driver location…</div>
       <button onclick="state._prevScreen='active-trip';go('client-chat')" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:13px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;text-align:left;margin-bottom:10px">
@@ -4244,7 +4850,7 @@ profile: () => {
 'concierge-chat': () => `
 <div style="min-height:100vh;display:flex;flex-direction:column;background:var(--bg)">
   <div class="top-bar">
-    <div class="back-btn" onclick="go('home')">
+    <div class="back-btn" onclick="go('chauffeur')">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
     </div>
     <div style="font-size:13px;font-weight:700;letter-spacing:.5px">ApexAI</div>
@@ -4262,7 +4868,7 @@ profile: () => {
       <div style="font-size:10px;color:var(--fg-4);letter-spacing:1.5px;text-transform:uppercase;text-align:center;margin-bottom:14px">Try asking…</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         ${CONCIERGE_EXAMPLES.map((ex,i)=>`
-        <div onclick="quickSend(${JSON.stringify(ex.text)})"
+        <div onclick="quickSendExample(${i})"
           style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px 13px;cursor:pointer;
                  animation:chipFloat ${2.8+i*0.25}s ease-in-out infinite;animation-delay:${(i*0.18).toFixed(2)}s;
                  transition:border-color .15s,transform .15s"
@@ -4275,11 +4881,11 @@ profile: () => {
     </div>`:''}
     ${CONCIERGE_MSGS.map(m => m.role === 'user' ? `
       <div style="align-self:flex-end;max-width:82%">
-        <div style="background:linear-gradient(135deg,#D4A843,#b8892f);border-radius:18px 18px 4px 18px;padding:14px 16px;font-size:14px;color:#000;font-weight:500;line-height:1.5">${m.content}</div>
+        <div style="background:linear-gradient(135deg,#D4A843,#b8892f);border-radius:18px 18px 4px 18px;padding:14px 16px;font-size:14px;color:#000;font-weight:500;line-height:1.5">${esc(m.content)}</div>
       </div>` : m.role === 'system' ? `
-      <div style="align-self:center;font-size:12px;color:#4CAF50;letter-spacing:.3px;text-align:center;padding:4px 12px;background:rgba(76,175,80,.1);border-radius:20px">${m.content}</div>` : `
+      <div style="align-self:center;font-size:12px;color:#4CAF50;letter-spacing:.3px;text-align:center;padding:4px 12px;background:rgba(76,175,80,.1);border-radius:20px">${esc(m.content)}</div>` : `
       <div style="align-self:flex-start;max-width:82%">
-        <div style="background:var(--surface);border:1px solid var(--border);border-radius:18px 18px 18px 4px;padding:14px 16px;font-size:14px;line-height:1.5">${m.content}</div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:18px 18px 18px 4px;padding:14px 16px;font-size:14px;line-height:1.5">${esc(m.content)}</div>
       </div>`).join('')}
     ${_conciergeLoading ? `<div style="align-self:flex-start"><div style="background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:12px 18px;font-size:20px;letter-spacing:4px;color:var(--fg-3)">···</div></div>` : ''}
 
@@ -4287,20 +4893,20 @@ profile: () => {
     <div style="align-self:stretch;background:var(--surface);border:1px solid rgba(212,168,67,.3);border-radius:18px;padding:18px 20px;margin-top:4px">
       <div style="font-size:10px;color:var(--fg-4);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px">Price Estimate</div>
       <div style="font-size:36px;font-weight:800;color:#D4A843;margin-bottom:4px">£${state._quotedPrice}</div>
-      <div style="font-size:12px;color:var(--fg-3);margin-bottom:14px">${state.booking.pickup||''} → ${state.booking.dropoff||state.booking.airport||''}</div>
+      <div style="font-size:12px;color:var(--fg-3);margin-bottom:14px">${esc(state.booking.pickup||'')} → ${esc(state.booking.dropoff||state.booking.airport||'')}</div>
       <button class="btn btn-gold" onclick="state._quotedPrice=null;conciergeReview()">Book at this price →</button>
     </div>` : ''}
 
     ${state._conciergeSuggestions ? `
     <div style="align-self:stretch;display:flex;flex-direction:column;gap:8px;margin-top:4px">
-      ${state._conciergeSuggestions.map(s=>`
-      <div onclick="state.booking.dropoff='${s.name}';state.booking.serviceType='airport';state._conciergeSuggestions=null;state._conciergeParsed={serviceType:'airport',dropoff:'${s.name}'};render()"
+      ${state._conciergeSuggestions.map((s,i)=>`
+      <div onclick="pickConciergeSuggestion(${i})"
         style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:12px">
         <div style="width:36px;height:36px;border-radius:10px;background:rgba(212,168,67,.1);border:1px solid rgba(212,168,67,.2);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">${{Dining:'🍽',Hotel:'🏨',Shopping:'🛍',Nightlife:'🎵',Spa:'💆',Experience:'✨',View:'🏙',Bar:'🍸'}[s.type]||'📍'}</div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:14px;font-weight:700">${s.name}</div>
-          <div style="font-size:11px;color:#D4A843;margin-top:1px">${s.type}</div>
-          <div style="font-size:11px;color:var(--fg-3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.notes}</div>
+          <div style="font-size:14px;font-weight:700">${esc(s.name)}</div>
+          <div style="font-size:11px;color:#D4A843;margin-top:1px">${esc(s.type)}</div>
+          <div style="font-size:11px;color:var(--fg-3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.notes)}</div>
         </div>
         <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="var(--fg-4)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
       </div>`).join('')}
@@ -4384,7 +4990,7 @@ profile: () => {
 'aviation-booking': () => `
 <div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column">
   <div class="top-bar">
-    <div class="back-btn" onclick="go('home')">
+    <div class="back-btn" onclick="go('chauffeur')">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
     </div>
     <div style="font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Private Aviation</div>
@@ -4414,7 +5020,7 @@ profile: () => {
       </div>`).join('')}
     </div>
     <div class="section-label" style="margin-bottom:10px">Tail Number (optional)</div>
-    <div class="field" style="margin-bottom:16px"><input placeholder="e.g. G-APEX or N123AB" value="${state.booking.flight||''}" oninput="state.booking.flight=this.value" style="font-size:15px;letter-spacing:1px;text-transform:uppercase"/></div>
+    <div class="field" style="margin-bottom:16px"><input placeholder="e.g. G-APEX or N123AB" value="${esc(state.booking.flight||'')}" oninput="state.booking.flight=this.value" style="font-size:15px;letter-spacing:1px;text-transform:uppercase"/></div>
     <div class="section-label" style="margin-bottom:10px">Date &amp; Time</div>
     <div style="display:flex;gap:10px;margin-bottom:28px">
       <div class="field" style="flex:1"><input type="date" value="${state.booking.date||''}" oninput="state.booking.date=this.value" style="font-size:15px"/></div>
@@ -4428,7 +5034,7 @@ profile: () => {
   const templates = [
     'I\'m on my way — approximately 5 minutes away.',
     'I have arrived and am waiting at the agreed location.',
-    'I\'m in a black Mercedes S-Class, registration ' + (state._activeBooking?.driverPlate || 'LX73 ABC') + '.',
+    'I\'m in a black ' + (state._activeBooking?.vehicle || 'Mercedes S-Class') + (state._activeBooking?.driverPlate ? ', registration ' + state._activeBooking.driverPlate : '') + '.',
     'Please take your time — I\'ll be waiting.',
     'Do you require any assistance with your luggage?',
     'The route is clear. Estimated journey time is 35 minutes.',
@@ -4558,9 +5164,9 @@ profile: () => {
         Chauffeur · En route
       </div>
     </div>
-    <a href="tel:+447700000000" style="width:38px;height:38px;border-radius:50%;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;text-decoration:none;flex-shrink:0">
+    <button onclick="showToast('Your chauffeur is reachable right here in chat — voice calls are routed via dispatch.','info',3500)" style="width:38px;height:38px;border-radius:50%;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
       <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.948V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
-    </a>
+    </button>
   </div>
   <div id="chat-msgs" class="scroll" style="flex:1;padding:16px 20px 8px;display:flex;flex-direction:column;overflow-y:auto">
     ${msgs.length ? msgs.map(m=>chatBubble(m)).join('') : `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 20px">
@@ -4585,10 +5191,14 @@ profile: () => {
 
 'receipt': () => {
   const t = state._lastTrip || {};
-  const base = t.base || t.price || 185;
-  const disc = t.discount || 0;
-  const total = t.price || (base - disc);
-  const vat = t.vat || Math.round(total/6);
+  // Numbers arrive from two shapes: the live listener (numeric baseFare/price)
+  // and the TRIPS rows (price is the DISPLAY string '£185'). Coerce hard, or
+  // the receipt renders '££185' and '£NaN'.
+  const _num = v => { const n = parseFloat(String(v ?? '').replace(/[^0-9.]/g, '')); return Number.isFinite(n) ? n : 0; };
+  const base = _num(t.base) || _num(t.price) || 185;
+  const disc = _num(t.discount);
+  const total = _num(t.price) || (base - disc);
+  const vat = _num(t.vat) || Math.round(total / 6);
   const axc = ApexEngine.clientCoinsEarned(total, ApexEngine.earnPctForBalance(state.apexBalance, state._coinRates));
   return `
 <div style="height:100dvh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
@@ -4620,16 +5230,17 @@ profile: () => {
       <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:14px"><span style="color:var(--fg-3)">incl. VAT 20%</span><span>£${vat}</span></div>
       <div style="height:1px;background:var(--divider);margin-bottom:14px"></div>
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <span style="font-size:16px;font-weight:700">Total paid</span>
+        <span style="font-size:16px;font-weight:700">${t.convoyVan?'Van fare':'Total paid'}</span>
         <span style="font-size:28px;font-weight:800;color:var(--gold)">£${total}</span>
       </div>
+      ${t.convoyVan?`<div style="display:flex;justify-content:space-between;font-size:13px;margin-top:12px;padding-top:12px;border-top:1px solid var(--divider)"><span style="color:var(--gold);font-weight:700">Van ${t.convoyVan} of ${t.convoySize} · convoy</span><span style="color:var(--fg-3)">Party total £${t.convoyTotal||total}</span></div>`:''}
     </div>
     <div class="card" style="padding:16px 20px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
       <div style="display:flex;align-items:center;gap:8px"><span style="color:var(--gold)">◈</span><span style="font-size:14px">APEX Rewards earned</span></div>
       <span style="font-weight:800;color:var(--gold)">+${axc} APEX</span>
     </div>
     <div class="card" style="padding:16px 20px">
-      <div style="font-size:13px;color:var(--fg-3);text-align:center">A receipt has been sent to<br/><span style="color:var(--fg);font-weight:600">${state.user?.email||'your email'}</span></div>
+      <div style="font-size:13px;color:var(--fg-3);text-align:center">A receipt has been sent to<br/><span style="color:var(--fg);font-weight:600">${esc(state.user?.email||'your email')}</span></div>
     </div>
   </div>
 </div>`;
@@ -4654,11 +5265,11 @@ profile: () => {
     </div>
     <div class="field" style="margin-bottom:10px">
       <div style="font-size:10px;color:var(--fg-4);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Full name</div>
-      <input id="ep_name" value="${state.user?.name||''}" style="font-size:16px;font-weight:600"/>
+      <input id="ep_name" value="${esc(state.user?.name||'')}" style="font-size:16px;font-weight:600"/>
     </div>
     <div class="field" style="margin-bottom:10px">
       <div style="font-size:10px;color:var(--fg-4);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Email</div>
-      <input id="ep_email" type="email" value="${state.user?.email||''}" style="font-size:15px"/>
+      <input id="ep_email" type="email" value="${esc(state.user?.email||'')}" style="font-size:15px"/>
     </div>
     <div class="field" style="margin-bottom:14px">
       <div style="font-size:10px;color:var(--fg-4);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Phone</div>
@@ -4684,6 +5295,9 @@ profile: () => {
   return `
 <div style="position:relative;height:100vh;overflow:hidden;background:var(--bg)">
   <div id="track-map" style="position:absolute;inset:0;z-index:0"></div>
+  <div class="back-btn" onclick="go(state.user?'trips':'home')" style="position:absolute;top:calc(env(safe-area-inset-top) + 14px);left:16px;z-index:20;background:rgba(8,7,6,.75);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+  </div>
   <div style="position:absolute;bottom:0;left:0;right:0;z-index:10;background:rgba(8,7,6,.85);backdrop-filter:blur(60px) saturate(180%);-webkit-backdrop-filter:blur(60px) saturate(180%);border-top:1px solid var(--border);border-radius:28px 28px 0 0;padding:12px 22px max(40px,calc(env(safe-area-inset-bottom,0px)+20px));animation:slideUpSheet .45s var(--ease-spring)">
     <div style="width:36px;height:4px;border-radius:2px;background:var(--fg-5);margin:0 auto 18px"></div>
     <div style="font-family:var(--font-serif);font-size:13px;font-weight:300;letter-spacing:3px;text-transform:uppercase;color:var(--gold);margin-bottom:16px;text-align:center">ApexVIP · Live Trip</div>
@@ -5121,7 +5735,7 @@ profile: () => {
 
 'experience-detail': () => {
   const x = state._expSelected;
-  if (!x) return `<div style="padding:40px;text-align:center;color:var(--fg-3)">No experience selected</div>`;
+  if (!x) return `<div style="padding:80px 40px;text-align:center;color:var(--fg-3)">No experience selected<br/><button onclick="go('home')" style="margin-top:16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;color:var(--fg-2);padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">← Back</button></div>`;
   const total = x.price + x.car;
   return `
 <div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;animation:slideUp .25s ease">
@@ -5172,7 +5786,7 @@ profile: () => {
       <div><div style="font-size:11px;color:var(--fg-4);margin-bottom:2px">TOTAL INCL. CAR</div><div style="font-size:22px;font-weight:800">${x.price>0?'£'+total:'Car from £'+x.car}</div></div>
       ${x.price>0?`<div style="font-size:11px;color:var(--fg-4);text-align:right"><div>Experience: £${x.price}</div><div>Chauffeur: £${x.car}</div></div>`:''}
     </div>
-    <button class="btn btn-gold" onclick="${state._expSlot?`state._expConfirmedRef='XP-'+Math.floor(1000+Math.random()*9000);state._expConfirmedCar='James Harrison · LX73 ABC';go('experience-confirmed')`:''}" style="opacity:${state._expSlot?1:.45};pointer-events:${state._expSlot?'all':'none'}">${state._expSlot?`Reserve ${state._expSlot} · £${x.price>0?total:x.car}`:'Select a time to reserve'}</button>
+    <button class="btn btn-gold" onclick="${state._expSlot?`state._expConfirmedRef='XP-'+Math.floor(1000+Math.random()*9000);state._expConfirmedCar='';go('experience-confirmed')`:''}" style="opacity:${state._expSlot?1:.45};pointer-events:${state._expSlot?'all':'none'}">${state._expSlot?`Reserve ${state._expSlot} · £${x.price>0?total:x.car}`:'Select a time to reserve'}</button>
   </div>
 </div>`;
 },
@@ -5186,7 +5800,7 @@ profile: () => {
     <div style="font-size:56px;margin-bottom:20px;animation:scaleIn .4s var(--ease-spring)">${x.emoji||'✦'}</div>
     <div style="font-family:var(--font-serif);font-size:32px;font-weight:300;letter-spacing:1px;margin-bottom:6px;animation:fadeUp .5s .2s var(--ease-spring) both">Experience Reserved</div>
     <div style="font-size:14px;color:var(--fg-3);margin-bottom:6px;animation:fadeIn .5s .4s both">${x.name}</div>
-    ${state.user?.name?`<div style="font-size:14px;color:var(--fg-3);font-family:var(--font-serif);font-style:italic;margin-bottom:28px;animation:fadeIn .5s .6s both;line-height:1.5">"We look forward to welcoming you, ${state.user.name.split(' ')[0]}."</div>`:'<div style="margin-bottom:28px"></div>'}
+    ${state.user?.name?`<div style="font-size:14px;color:var(--fg-3);font-family:var(--font-serif);font-style:italic;margin-bottom:28px;animation:fadeIn .5s .6s both;line-height:1.5">"We look forward to welcoming you, ${esc(state.user.name.split(' ')[0])}."</div>`:'<div style="margin-bottom:28px"></div>'}
 
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:20px;width:100%;text-align:left;margin-bottom:12px;animation:fadeIn .5s .5s both">
       <div class="section-label" style="margin-bottom:14px">Booking Details</div>
@@ -5201,7 +5815,7 @@ profile: () => {
       <div class="section-label" style="margin-bottom:14px">Your Chauffeur</div>
       <div style="display:flex;align-items:center;gap:14px">
         <div style="width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,#2a2a2a,#111);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:#fff;flex-shrink:0;border:2px solid rgba(255,255,255,.1)">JH</div>
-        <div><div style="font-size:15px;font-weight:700">James Harrison</div><div style="font-size:12px;color:var(--fg-3);margin-top:2px">Will collect you at the reserved time</div></div>
+        <div><div style="font-size:15px;font-weight:700">Your chauffeur</div><div style="font-size:12px;color:var(--fg-3);margin-top:2px">Confirmed and introduced before pickup</div></div>
       </div>
     </div>
 
@@ -5377,6 +5991,9 @@ function _authErrorMsg(err){
     case 'auth/email-already-in-use': return 'An account with this email already exists.';
     case 'auth/weak-password': return 'Please choose a stronger password (8+ characters).';
     case 'auth/popup-closed-by-user': return 'Sign-in was cancelled.';
+    case 'auth/popup-blocked': return 'Your browser blocked the sign-in window. Please try again.';
+    case 'auth/unauthorized-domain': return 'Sign-in isn\'t authorised from this address yet. Please contact support.';
+    case 'auth/account-exists-with-different-credential': return 'This email is already registered with a different sign-in method — try email & password.';
     case 'auth/operation-not-allowed': return 'This sign-in method isn\'t enabled yet.';
     case 'auth/network-request-failed': return 'Network error — check your connection.';
     default: return (err&&err.message)||'Something went wrong. Please try again.';
@@ -5392,27 +6009,42 @@ async function forgotPassword(){
     alert('If an account exists for '+e+', a password-reset link is on its way. Check your inbox.');
   }catch(err){ state._loginErr=_authErrorMsg(err); render(); }
 }
+// First social sign-in: create a client profile if missing (popup + redirect paths)
+async function _ensureSocialProfile(u){
+  if(!u) return;
+  const ref = db.collection('users').doc(u.uid);
+  const snap = await ref.get().catch(()=>null);
+  if(snap && !snap.exists){
+    await ref.set({ name:u.displayName||'', email:u.email||'', phone:u.phoneNumber||'',
+      role:'client', tier:'standard', bookings:0, spent:0,
+      joined:new Date().toLocaleDateString('en-GB',{month:'short',year:'numeric'}),
+      createdAt:firebase.firestore.FieldValue.serverTimestamp() }, {merge:true}).catch(reportError);
+  }
+}
 async function socialSignIn(which){
   if(!FIREBASE_ENABLED){ alert('Social sign-in is available once connected to the live service.'); return; }
+  const provider = which==='apple'
+    ? new firebase.auth.OAuthProvider('apple.com')
+    : new firebase.auth.GoogleAuthProvider();
+  // Installed PWAs can't complete a popup flow — the popup opens in a separate
+  // browser context that never hands the session back. Redirect is the only
+  // reliable path there; the result lands in getRedirectResult() on relaunch.
+  const standalone = window.navigator.standalone===true || window.matchMedia('(display-mode: standalone)').matches;
   try{
-    const provider = which==='apple'
-      ? new firebase.auth.OAuthProvider('apple.com')
-      : new firebase.auth.GoogleAuthProvider();
+    if(standalone){ sessionStorage.setItem('apex_social_pending',which); await auth.signInWithRedirect(provider); return; }
     const cred = await auth.signInWithPopup(provider);
-    // First social sign-in: create a client profile if missing
-    const u = cred.user;
-    if(u){
-      const ref = db.collection('users').doc(u.uid);
-      const snap = await ref.get().catch(()=>null);
-      if(snap && !snap.exists){
-        await ref.set({ name:u.displayName||'', email:u.email||'', phone:u.phoneNumber||'',
-          role:'client', tier:'standard', bookings:0, spent:0,
-          joined:new Date().toLocaleDateString('en-GB',{month:'short',year:'numeric'}),
-          createdAt:firebase.firestore.FieldValue.serverTimestamp() }, {merge:true}).catch(reportError);
-      }
-    }
+    await _ensureSocialProfile(cred.user);
     track('user_login',{method:which,src:'client'}); haptic('success');
-  }catch(err){ state._loginErr=_authErrorMsg(err); haptic('error'); render(); }
+  }catch(err){
+    // Popup blocked or unsupported in this environment → full-page redirect.
+    const code=(err&&err.code)||'';
+    if(['auth/popup-blocked','auth/cancelled-popup-request','auth/operation-not-supported-in-this-environment','auth/web-storage-unsupported'].includes(code)){
+      try{ sessionStorage.setItem('apex_social_pending',which); await auth.signInWithRedirect(provider); return; }
+      catch(e2){ err=e2; }
+    }
+    reportError(err,'social-signin');
+    state._loginErr=_authErrorMsg(err); haptic('error'); render();
+  }
 }
 function saveRegStep1(){
   state._regName=($('rfn')?.value||'')+' '+($('rln')?.value||'');
@@ -5561,8 +6193,14 @@ async function initSquare(){
   if(!el) return;
   if(!window.Square){
     el.innerHTML='<div style="padding:20px;color:var(--fg-3);font-size:13px;text-align:center">Loading payment form…</div>';
+    // square.js loads async — retry until it lands (bounded). Previously the
+    // form sat at "Loading…" forever with no recovery but navigating away.
+    state._sqRetries=(state._sqRetries||0)+1;
+    if(state._sqRetries<=20) setTimeout(initSquare,500);
+    else el.innerHTML='<div style="padding:20px;color:var(--fg-3);font-size:13px;text-align:center">Card payments are temporarily unavailable — choose "Pay on arrival" below.</div>';
     return;
   }
+  state._sqRetries=0;
   try{
     if(!_sqPayments) _sqPayments = await Square.payments(SQUARE_APP_ID, SQUARE_LOCATION_ID);
     if(_sqCard){ try{await _sqCard.destroy();}catch(e){} _sqCard=null; }
@@ -5584,6 +6222,14 @@ async function initSquare(){
   }
 }
 
+// Membership gate, checked BEFORE any money moves. confirmBooking() also
+// checks it, but by then a card may already be charged — the gate must sit at
+// the entry of every payment path.
+function _blockedBySubscription(){
+  if (subState().mode === 'expired') { state._subOpen = true; render(); return true; }
+  return false;
+}
+
 async function payOnArrival(){
   if(FIREBASE_ENABLED && !auth.currentUser){
     state._pendingScreen='payment';
@@ -5591,6 +6237,7 @@ async function payOnArrival(){
     go('login');
     return;
   }
+  if(_blockedBySubscription())return;
   const btn = document.querySelector('[onclick="payOnArrival()"]');
   if(btn){btn.disabled=true;btn.textContent='Confirming…';}
   state._squarePaymentId = null;
@@ -5600,11 +6247,12 @@ async function payOnArrival(){
       new Promise(r=>setTimeout(r,6000))
     ]);
   }catch(e){console.warn('confirmBooking:',e.message);}
-  haptic('success');
+  haptic('confirm');
   if(state.screen!=='booking-confirmed') go('booking-confirmed');
 }
 
 async function runSquarePayment(){
+  if(_blockedBySubscription())return;
   const btn = document.getElementById('sq-pay-btn');
   const errEl = document.getElementById('sq-error');
   if(errEl) errEl.style.display='none';
@@ -5659,6 +6307,7 @@ async function runSquarePayment(){
         track('payment_charged',{ref,total,paymentId,src:'client'});
       }catch(fnErr){
         await db.collection('pending_payments').add({
+          clientId: auth.currentUser?.uid || null,
           sourceId, verificationToken, idempotencyKey, amount:total, currency:'GBP', bookingRef:ref, status:'pending',
           createdAt:firebase.firestore.FieldValue.serverTimestamp()
         }).catch(reportError);
@@ -5677,11 +6326,18 @@ async function runSquarePayment(){
 
 async function confirmBooking(overrideRef){
   // Subscription gate — after the free trial ends, booking requires membership.
-  if (subState().mode === 'expired') { state._subOpen = true; render(); return; }
+  // (Payment entry points gate BEFORE charging; this is the safety net. If it
+  // ever fires post-payment, re-enable the Pay button so the UI can't wedge.)
+  if (subState().mode === 'expired') {
+    const btn = document.getElementById('sq-pay-btn');
+    if (btn) { btn.disabled = false; btn.textContent = 'Pay £' + (state._payTotal || 0); }
+    state._subOpen = true; render(); return;
+  }
   const ref = overrideRef || state._confirmedRef || ('APX-'+(Math.floor(1000+Math.random()*9000)));
   const base=state.booking.price||185;
   // Fare math (discount + VAT-inclusive total) — shared, unit-tested engine.
-  const {discount:disc,total,vat}=ApexEngine.quoteFare(base,!!state._promoApplied);
+  // quoteFare fallback mirrors payments/pricing.ts (20% promo, VAT is 1/6 of total)
+  const {discount:disc,total,vat}=(typeof ApexEngine!=='undefined')?ApexEngine.quoteFare(base,!!state._promoApplied):(()=>{const d=state._promoApplied?Math.round(base*0.20):0;const t=base-d;return{discount:d,total:t,vat:Math.round(t/6*100)/100};})();
   const svcLabel={airport:'Airport Transfer',hourly:'By the Hour',day:'By the Day'}[state.booking.serviceType]||'Airport Transfer';
   // Redeem APEX BEFORE the booking write: the server's earn trigger looks up
   // the redemption ledger row for this ref to award the tier's % of the cash
@@ -5706,19 +6362,54 @@ async function confirmBooking(overrideRef){
   state._useApexCoin=false;
   if(FIREBASE_ENABLED&&auth.currentUser){
     try{
-      // Payload assembly is shared + unit-tested (payments/booking.ts).
-      const _bookingDoc = await db.collection('bookings').add({
-        ...ApexEngine.buildBookingPayload({
-          ref, clientId: auth.currentUser.uid,
-          clientName: state.user?.name || '', clientEmail: auth.currentUser.email || '',
-          booking: state.booking,
-          fare: { total, base, discount: disc, vat },
-          apexRedeemed: _redeemed,
-          promoApplied: state._promoApplied, squarePaymentId: state._squarePaymentId,
-          paMode: state.paMode, paPassenger: state.paPassenger,
-        }),
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
+      // Payload assembly is shared + unit-tested (payments/booking.ts);
+      // inline fallback keeps booking alive if the engine script failed.
+      const _payloadFor = (typeof ApexEngine!=='undefined') ? ApexEngine.buildBookingPayload : (i)=>({
+        ref:i.ref,clientId:i.clientId,clientName:i.clientName||'',clientEmail:i.clientEmail||'',clientPhone:i.clientPhone||'',
+        serviceType:i.booking.serviceType||'airport',serviceLabel:svcLabel,
+        pickup:i.booking.pickup||'',dropoff:i.booking.dropoff||'',airport:i.booking.airport||'',
+        flight:i.booking.flight||'',date:i.booking.date||'',time:i.booking.time||'',
+        vehicle:i.booking.vehicle||'Mercedes S-Class',vehicleId:i.booking.vehicleId||'',
+        price:i.fare.total,baseFare:i.fare.base,discount:i.fare.discount,vat:i.fare.vat,
+        promoApplied:!!i.promoApplied,status:'confirmed',
+        squarePaymentId:i.squarePaymentId||null,paymentStatus:i.squarePaymentId?'paid':'pending',
+        driverName:'',driverRating:null,driverPlate:'',location:'london',
+        apexRedeemed:Math.max(0,Math.floor(Number(i.apexRedeemed)||0)),
+        concierge:i.booking.concierge||null,paMode:!!i.paMode,paPassenger:i.paMode?(i.paPassenger??null):null});
+      // Convoy bookings (vClassMulti) are split into one doc per van at creation.
+      // Each van is then a plain V-Class booking — dispatched, claimed, tracked and
+      // paid out (80% of ITS OWN baseFare) by the existing machinery with zero
+      // driver/admin changes. The Square payment covers the whole party and is
+      // anchored on van 1; siblings carry no squarePaymentId (so completion-capture
+      // fires once) but inherit van 1's paymentStatus so admin never chases a
+      // "pending" fare that van 1 already covers.
+      const _isConvoy = state.booking.vehicleId==='vClassMulti';
+      const _vans = _isConvoy ? Math.max(2, Math.ceil((state.booking.passengers||8)/7)) : 1;
+      const _perBase = Math.round((base/_vans)*100)/100;
+      const _perFare = (typeof ApexEngine!=='undefined')?ApexEngine.quoteFare(_perBase,!!state._promoApplied):(()=>{const d=state._promoApplied?Math.round(_perBase*0.20):0;const t=_perBase-d;return{discount:d,total:t,vat:Math.round(t/6*100)/100};})();
+      let _bookingDoc = null;
+      for(let _v=1; _v<=_vans; _v++){
+        const _doc = await db.collection('bookings').add({
+          ..._payloadFor({
+            ref: _v===1 ? ref : ref+'-'+_v,
+            clientId: auth.currentUser.uid,
+            clientName: state.user?.name || '', clientEmail: auth.currentUser.email || '',
+            clientPhone: state.user?.phone || '',
+            booking: _isConvoy ? {...state.booking, vehicle:'Mercedes V-Class', vehicleId:'vClass', price:_perBase} : state.booking,
+            fare: _isConvoy ? { total:_perFare.total, base:_perBase, discount:_perFare.discount, vat:_perFare.vat } : { total, base, discount: disc, vat },
+            apexRedeemed: _v===1 ? _redeemed : 0, // redemption anchors on van 1, like the payment
+            promoApplied: state._promoApplied,
+            squarePaymentId: _v===1 ? state._squarePaymentId : null,
+            paMode: state.paMode, paPassenger: state.paPassenger,
+          }),
+          ...(_isConvoy ? {
+            convoyId: ref, convoyVan: _v, convoySize: _vans, convoyTotal: total,
+            ...(_v>1 ? { paymentStatus: state._squarePaymentId ? 'paid' : 'pending' } : {}),
+          } : {}),
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        if(_v===1) _bookingDoc = _doc;
+      }
       // open_jobs broadcast is handled exclusively by the onBookingCreated Cloud Function
       // to avoid duplicates. The function checks dispatch mode before broadcasting.
       state._chatDocId = _bookingDoc.id;
@@ -5883,15 +6574,38 @@ async function useMyLocation(inputId){
 
 // ── Firebase auth ──────────────────────────────────────────────────────────
 if(FIREBASE_ENABLED){
+  // Complete a redirect-based social sign-in (installed PWA / blocked-popup
+  // fallback). onAuthStateChanged handles the session; this surfaces errors
+  // and creates the first-login profile the popup path would have created.
+  auth.getRedirectResult().then(cred=>{
+    if(cred&&cred.user){
+      _ensureSocialProfile(cred.user).catch(reportError);
+      const which=sessionStorage.getItem('apex_social_pending')||'google';
+      sessionStorage.removeItem('apex_social_pending');
+      track('user_login',{method:which,src:'client'}); haptic('success');
+    }
+  }).catch(err=>{
+    sessionStorage.removeItem('apex_social_pending');
+    reportError(err,'social-redirect');
+    state._loginErr=_authErrorMsg(err);
+    if(state.screen==='login') render();
+  });
   let _unsub=null;
+  // Module-scoped so a re-auth (or account switch) can unsubscribe the previous
+  // session's listener — declaring it inside the callback re-created it per
+  // sign-in and orphaned the old listener forever.
+  let _statusUnsub=null;
   auth.onAuthStateChanged(async user=>{
     if(user&&user.isAnonymous)return; // anonymous track-link viewers: no profile, no navigation
     if(user){
       try{
         const doc=await db.collection('users').doc(user.uid).get();
         const p=doc.exists?doc.data():{};
-        state.user={uid:user.uid,name:p.name||user.displayName||user.email.split('@')[0],email:user.email};
-      }catch(e){state.user={uid:user.uid,name:user.displayName||user.email.split('@')[0],email:user.email};}
+        // Apple Sign In (and its private-relay flow) returns a null email on
+        // repeat logins — never call .split on it or the whole session crashes.
+        const _emailName=(user.email||'').split('@')[0];
+        state.user={uid:user.uid,name:p.name||user.displayName||_emailName||'Guest',email:user.email||'',phone:p.phone||''};
+      }catch(e){const _emailName=(user.email||'').split('@')[0];state.user={uid:user.uid,name:user.displayName||_emailName||'Guest',email:user.email||'',phone:''};}
       ensureSubscription();
       if(_unsub)_unsub();
       _unsub=db.collection('bookings').where('clientId','==',user.uid)
@@ -5912,13 +6626,13 @@ if(FIREBASE_ENABLED){
               status:dispStatus,rawStatus:raw,price:'£'+(Number(d.price)||0),
               driver:esc(d.driverName||'TBA'),driverId:d.driverId||null,rating:Number(d.driverRating)||4.9,
               myRating:d.rating||null,
-              plate:esc(d.driverPlate||''),flight:esc(d.flight||'')
+              plate:esc(d.driverPlate||''),flight:esc(d.flight||''),
+              convoyVan:d.convoyVan||null,convoySize:d.convoySize||null,convoyTotal:Number(d.convoyTotal)||null
             });
           });
           if(['home','trips'].includes(state.screen))render();
-        },()=>{});
+        },err=>reportError(err,'trips-listener'));
       // Watch latest booking for real-time status
-      let _statusUnsub=null;
       function watchLatestBooking(){
         if(_statusUnsub){_statusUnsub();_statusUnsub=null;}
         if(!FIREBASE_ENABLED||!auth.currentUser)return;
@@ -5940,12 +6654,24 @@ if(FIREBASE_ENABLED){
               state._activeBooking.driverName=d.driverName?esc(d.driverName):null;
               state._activeBooking.driverPlate=esc(d.driverPlate||'');
               state._activeBooking.vehicle=esc(d.vehicle||'');
+              // Milestone haptic signatures: fire once per status transition,
+              // never on the first snapshot after a page load.
+              const _mKey=_bDocId+':'+d.status;
+              if(state._lastMilestone!==_mKey){
+                const _hadPrev=!!state._lastMilestone;
+                state._lastMilestone=_mKey;
+                if(_hadPrev){
+                  const _sig={accepted:'assigned',en_route:'enroute',arrived:'arrived',onboard:'onboard',completed:'complete'}[d.status];
+                  if(_sig) haptic(_sig);
+                  if(d.status==='arrived') showToast('Your chauffeur has arrived','success');
+                }
+              }
               if(d.status==='completed'&&state.screen==='active-trip'){
-                state._lastTrip={ref:esc(d.ref),pickup:esc(d.pickup),dropoff:esc(d.dropoff||d.airport),base:d.baseFare||d.price,discount:d.discount||0,vat:d.vat||0,price:d.price};
+                state._lastTrip={ref:esc(d.ref),pickup:esc(d.pickup),dropoff:esc(d.dropoff||d.airport),base:d.baseFare||d.price,discount:d.discount||0,vat:d.vat||0,price:d.price,convoyVan:d.convoyVan||null,convoySize:d.convoySize||null,convoyTotal:Number(d.convoyTotal)||null};
                 go('receipt');
               } else if(state.screen==='active-trip'||state.screen==='booking-confirmed')render();
             }
-          },()=>{});
+          },err=>reportError(err,'latest-booking-listener'));
       }
       watchLatestBooking();
       // ApexCoin — the server-authoritative wallet. users/{uid}.apexBalance and
@@ -6007,6 +6733,9 @@ if(FIREBASE_ENABLED){
       if(state._coinUnsub){state._coinUnsub();state._coinUnsub=null;}
       if(state._coinTxUnsub){state._coinTxUnsub();state._coinTxUnsub=null;}
       state._coinLive=false;
+      if(_statusUnsub){_statusUnsub();_statusUnsub=null;}
+      if(_chatUnsub){_chatUnsub();_chatUnsub=null;_chatUnsubDoc=null;}
+      state._chatMessages=[];state._chatDocId=null;state._activeBooking=null;state._confirmedRef=null;
       TRIPS.length=0;
       if(!['splash','login','register'].includes(state.screen))go('splash');
     }
@@ -6017,9 +6746,13 @@ if(FIREBASE_ENABLED){
 function initTrackScreen(){
   const el=document.getElementById('track-map');
   if(!el||typeof L==='undefined')return;
-  // Clean up any previous session
+  // Clean up any previous session — including the ETA ticker and the Leaflet
+  // instance: this runs on EVERY render of the track screen, and each leaked
+  // interval made the countdown tick 2x/3x faster while orphaned maps piled up.
   if(state._trackUnsub){state._trackUnsub();state._trackUnsub=null;}
   if(state._trackSimInterval){clearInterval(state._trackSimInterval);state._trackSimInterval=null;}
+  if(state._trackEtaInterval){clearInterval(state._trackEtaInterval);state._trackEtaInterval=null;}
+  if(state._trackMap){try{state._trackMap.remove();}catch(_){ } state._trackMap=null;}
 
   let dLat=51.5074+(Math.random()-.5)*.02;
   let dLng=-0.1278+(Math.random()-.5)*.02;
@@ -6031,6 +6764,7 @@ function initTrackScreen(){
 
   const tMap=L.map('track-map',{zoomControl:false,attributionControl:false,scrollWheelZoom:false})
     .setView([dLat,dLng],14);
+  state._trackMap=tMap;
   L.tileLayer(tiles,{maxZoom:19}).addTo(tMap);
 
   const dIcon=L.divIcon({className:'',html:`<div style="width:38px;height:38px;border-radius:50%;background:#0c0b09;border:2.5px solid var(--gold,#C8A97E);display:flex;align-items:center;justify-content:center;box-shadow:0 0 20px rgba(200,169,126,.4)"><svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#C8A97E" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11a2 2 0 012 2v3m-1 9h-5m-1 0a2 2 0 100 4 2 2 0 000-4zm8 0a2 2 0 100 4 2 2 0 000-4zm-6-9h5l3 5"/></svg></div>`,iconSize:[38,38],iconAnchor:[19,19]});
@@ -6041,7 +6775,7 @@ function initTrackScreen(){
   // Live Firebase tracking
   if(FIREBASE_ENABLED&&state._trackDriverId){
     const trackFn=()=>{
-      state._trackUnsub=db.collection('drivers').doc(state._trackDriverId).onSnapshot(doc=>{
+      state._trackUnsub=db.collection('driver_locations').doc(state._trackDriverId).onSnapshot(doc=>{
         if(!doc.exists)return;
         const d=doc.data();
         if(!d.lat||!d.lng)return;
@@ -6056,7 +6790,7 @@ function initTrackScreen(){
         const pos=[d.lat,d.lng];
         dMarker.setLatLng(pos);
         if(!tMap.getBounds().contains(pos))tMap.panTo(pos,{animate:true});
-      },()=>{});
+      },err=>reportError(err,'driver-track-listener2'));
     };
     // May need anonymous auth for non-logged-in viewers
     if(auth.currentUser){trackFn();}
@@ -6074,12 +6808,12 @@ function initTrackScreen(){
     },3000);
   }
 
-  // ETA countdown
-  const etaInterval=setInterval(()=>{
+  // ETA countdown (handle kept on state so re-renders clear it above)
+  state._trackEtaInterval=setInterval(()=>{
     state._trackEta=Math.max(0,state._trackEta-3);
     const el=document.getElementById('track-eta');
     if(el)el.textContent=formatEtaMin(state._trackEta);
-    if(state._trackEta===0)clearInterval(etaInterval);
+    if(state._trackEta===0){clearInterval(state._trackEtaInterval);state._trackEtaInterval=null;}
   },3000);
 }
 function formatEtaMin(s){
@@ -6159,13 +6893,16 @@ function renderNow(){
     if(state.screen==='concierge') setTimeout(sizeConciergeFrame,0);
     enhanceA11y();
   }catch(err){
-    reportError('render', (err&&err.stack)||err);
+    reportError(err,'render:'+state.screen);
     try{
+      const _detail=String((err&&err.message)||err||'').slice(0,120).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       app.innerHTML=`<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:32px;text-align:center;background:var(--bg)">
         <div style="font-size:40px">⚠️</div>
         <div style="font-family:var(--font-serif);font-size:22px;font-weight:300">Something went wrong</div>
         <div style="font-size:13px;color:var(--fg-3);max-width:280px;line-height:1.6">We hit an unexpected error. Please try again — your bookings are safe.</div>
         <button class="btn btn-gold" style="max-width:220px" onclick="location.reload()">Reload</button>
+        <div style="font-size:10px;color:var(--fg-4);max-width:300px;word-break:break-word;opacity:.6">${_detail||'(no error message)'}</div>
+        <div style="font-size:9px;color:var(--fg-4);opacity:.45;letter-spacing:1px">build ${typeof APP_BUILD!=='undefined'?APP_BUILD:'pre-diagnostic'}</div>
       </div>`;
     }catch(_){}
   }
@@ -6175,31 +6912,44 @@ generateMemberNumber();
 renderNow();
 maybeShowConsent();
 
-// Auto-check flight for upcoming trip with a flight number
-setTimeout(() => {
+// Auto-check flight for an upcoming trip with a flight number. TRIPS is filled
+// asynchronously by the Firestore listener, which can take longer than any
+// single fixed delay — so poll a bounded number of times until it lands.
+(function autoCheckFlight(attempt){
+  if (state._flightStatus) return;
   const t = TRIPS.find(t => t.status === 'upcoming' && t.flight);
-  if (t && !state._flightStatus) checkFlight(t.flight);
-}, 3000);
+  if (t) { checkFlight(t.flight); return; }
+  if (attempt < 10) setTimeout(() => autoCheckFlight(attempt + 1), 2000);
+})(0);
 </script>
 
 <script>
-// ── PWA install banner (iOS instructions / Android native prompt) ─────────
+// ── PWA install ritual (white-glove bottom sheet) ─────────────────────────
+// "Not now" (or a backdrop tap) snoozes for 14 days rather than dismissing
+// forever — install is the whole ballgame for a PWA, so we may ask again.
 (function(){
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
   const isInstalled = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
-  const isDismissed = localStorage.getItem('apexvip_pwa_dismissed');
   const fromQR = new URLSearchParams(location.search).has('join');
   const banner = document.getElementById('ios-install-banner');
+  const SNOOZE_KEY = 'apexvip_pwa_snooze';
+  const snoozed = ()=> Date.now() < (Number(localStorage.getItem(SNOOZE_KEY))||0);
+  window.snoozeInstallSheet = function(){
+    if(banner) banner.classList.add('hidden');
+    localStorage.setItem(SNOOZE_KEY, String(Date.now() + 14*86400000));
+  };
   let deferredPrompt = null;
 
   window.addEventListener('beforeinstallprompt', (e)=>{
     e.preventDefault();
     deferredPrompt = e;
-    // Android/Chrome: offer one-tap install — immediately when arriving via QR
-    if(!isInstalled && (fromQR || !isDismissed)){
+    // Android/Chrome: real one-tap install — swap the iOS steps for the button.
+    if(!isInstalled && (fromQR || !snoozed()) && localStorage.getItem('apex_consent')){
       const btn = document.getElementById('pwa-install-btn');
+      const steps = document.getElementById('ios-install-steps');
       const hint = document.getElementById('pwa-install-hint');
-      if(hint) hint.textContent = 'Book in one tap, straight from your home screen';
+      if(hint) hint.textContent = 'One tap, and your chauffeur lives on the home screen';
+      if(steps) steps.style.display = 'none';
       if(btn){
         btn.style.display = 'block';
         btn.onclick = async ()=>{
@@ -6216,7 +6966,7 @@ setTimeout(() => {
 
   window.addEventListener('appinstalled', ()=>{ if(banner) banner.classList.add('hidden'); });
 
-  if(isIOS && !isInstalled && (fromQR || !isDismissed)){
+  if(isIOS && !isInstalled && (fromQR || !snoozed())){
     // From QR show at once; organic visits get it after the splash settles — but
     // never on top of the cookie-consent banner (wait until consent is resolved)
     setTimeout(()=>{ if(banner && localStorage.getItem('apex_consent')) banner.classList.remove('hidden'); }, fromQR ? 600 : 4000);

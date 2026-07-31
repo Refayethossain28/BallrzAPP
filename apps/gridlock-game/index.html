@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Gridlock — Sliding Tile Puzzle</title>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --surface: #131722;
+    --surface-2: #1a2030;
+    --border: #252c3f;
+    --text: #e6e9f0;
+    --text-dim: #8b93a7;
+    --accent: #f5a623;
+    --accent-soft: rgba(245, 166, 35, 0.14);
+    --radius: 14px;
+    --cell: 90px;
+    --gap: 12px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  header a {
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 14px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    transition: background 0.15s, color 0.15s;
+  }
+  header a:hover { background: var(--surface-2); color: var(--text); }
+  header .app-name {
+    font-weight: 700;
+    font-size: 17px;
+    letter-spacing: 0.3px;
+  }
+  header .app-name .dot { color: var(--accent); }
+  main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px 40px;
+  }
+  .top-row {
+    width: 100%;
+    max-width: 440px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: 18px;
+    gap: 12px;
+  }
+  .title-block h1 {
+    font-size: 34px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+  .title-block h1 span { color: var(--accent); }
+  .title-block p { color: var(--text-dim); font-size: 13px; margin-top: 2px; }
+  .scores { display: flex; gap: 8px; }
+  .score-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 14px;
+    text-align: center;
+    min-width: 74px;
+  }
+  .score-box .label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--text-dim);
+  }
+  .score-box .value { font-size: 20px; font-weight: 700; margin-top: 2px; }
+  .controls-row {
+    width: 100%;
+    max-width: 440px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+  .controls-row .hint { color: var(--text-dim); font-size: 12px; }
+  .btn {
+    background: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 9px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s, transform 0.1s, opacity 0.15s;
+  }
+  .btn:hover { background: #222a3e; }
+  .btn:active { transform: scale(0.96); }
+  .btn:disabled { opacity: 0.4; cursor: default; }
+  .btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #14100a;
+  }
+  .btn.primary:hover { background: #ffb63d; }
+  .btn-group { display: flex; gap: 8px; }
+
+  .board-wrap { position: relative; touch-action: none; }
+  .board {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--gap);
+    width: calc(var(--cell) * 4 + var(--gap) * 5);
+    height: calc(var(--cell) * 4 + var(--gap) * 5);
+  }
+  .bg-cell {
+    position: absolute;
+    width: var(--cell);
+    height: var(--cell);
+    background: var(--surface-2);
+    border-radius: 10px;
+  }
+  .tile {
+    position: absolute;
+    width: var(--cell);
+    height: var(--cell);
+    top: var(--gap);
+    left: var(--gap);
+    transition: transform 0.12s ease-in-out;
+    will-change: transform;
+    z-index: 2;
+  }
+  .tile-inner {
+    width: 100%;
+    height: 100%;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: calc(var(--cell) * 0.4);
+    background: #2b3450;
+    color: var(--text);
+  }
+  .tile[data-v="2"]    .tile-inner { background: #2b3450; color: #d9deec; }
+  .tile[data-v="4"]    .tile-inner { background: #35406a; color: #e2e7f5; }
+  .tile[data-v="8"]    .tile-inner { background: #b97a2a; color: #fff6e8; }
+  .tile[data-v="16"]   .tile-inner { background: #cd8430; color: #fff6e8; }
+  .tile[data-v="32"]   .tile-inner { background: #e0762f; color: #fff4e6; }
+  .tile[data-v="64"]   .tile-inner { background: #ea5f2d; color: #fff1e6; }
+  .tile[data-v="128"]  .tile-inner { background: #edc22e; color: #3a2f08; font-size: calc(var(--cell) * 0.34); }
+  .tile[data-v="256"]  .tile-inner { background: #f0c018; color: #3a2f08; font-size: calc(var(--cell) * 0.34); box-shadow: 0 0 14px rgba(240,192,24,0.35); }
+  .tile[data-v="512"]  .tile-inner { background: #f3bd02; color: #3a2f08; font-size: calc(var(--cell) * 0.34); box-shadow: 0 0 18px rgba(243,189,2,0.4); }
+  .tile[data-v="1024"] .tile-inner { background: #f5a623; color: #241a04; font-size: calc(var(--cell) * 0.27); box-shadow: 0 0 22px rgba(245,166,35,0.45); }
+  .tile[data-v="2048"] .tile-inner { background: #ffd700; color: #241a04; font-size: calc(var(--cell) * 0.27); box-shadow: 0 0 28px rgba(255,215,0,0.55); }
+  .tile.super .tile-inner { background: #16c79a; color: #04120d; font-size: calc(var(--cell) * 0.27); box-shadow: 0 0 24px rgba(22,199,154,0.45); }
+
+  .tile.spawn .tile-inner { animation: spawn 0.18s ease 0.1s backwards; }
+  @keyframes spawn {
+    from { transform: scale(0); opacity: 0; }
+    to   { transform: scale(1); opacity: 1; }
+  }
+  .tile.merged { z-index: 3; }
+  .tile.merged .tile-inner { animation: pop 0.22s ease 0.1s backwards; }
+  @keyframes pop {
+    0%   { transform: scale(0); }
+    55%  { transform: scale(1.18); }
+    100% { transform: scale(1); }
+  }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(11, 14, 20, 0.82);
+    backdrop-filter: blur(3px);
+    border-radius: var(--radius);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    z-index: 10;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s;
+  }
+  .overlay.show { opacity: 1; pointer-events: auto; }
+  .overlay h2 { font-size: 30px; font-weight: 800; }
+  .overlay h2.win { color: var(--accent); }
+  .overlay p { color: var(--text-dim); font-size: 14px; }
+  .footer-note {
+    margin-top: 18px;
+    color: var(--text-dim);
+    font-size: 12px;
+    text-align: center;
+    line-height: 1.6;
+  }
+  kbd {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 1px 6px;
+    font-family: inherit;
+    font-size: 11px;
+  }
+  @media (max-width: 500px) {
+    :root { --cell: 68px; --gap: 9px; }
+    .title-block h1 { font-size: 26px; }
+    .score-box { min-width: 62px; padding: 6px 10px; }
+    .score-box .value { font-size: 16px; }
+  }
+  @media (max-width: 360px) {
+    :root { --cell: 58px; --gap: 8px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <a href="../index.html">&larr; All apps</a>
+  <div class="app-name">Gridlock<span class="dot">.</span></div>
+</header>
+<main>
+  <div class="top-row">
+    <div class="title-block">
+      <h1>Grid<span>lock</span></h1>
+      <p>Merge tiles. Reach 2048.</p>
+    </div>
+    <div class="scores">
+      <div class="score-box"><div class="label">Score</div><div class="value" id="score">0</div></div>
+      <div class="score-box"><div class="label">Best</div><div class="value" id="best">0</div></div>
+    </div>
+  </div>
+  <div class="controls-row">
+    <div class="btn-group">
+      <button class="btn primary" id="new-game">New Game</button>
+      <button class="btn" id="undo" disabled>Undo</button>
+    </div>
+    <div class="hint">Arrows / WASD / swipe</div>
+  </div>
+  <div class="board-wrap">
+    <div class="board" id="board"></div>
+    <div class="overlay" id="overlay">
+      <h2 id="overlay-title">Game over</h2>
+      <p id="overlay-sub"></p>
+      <div class="btn-group">
+        <button class="btn" id="overlay-keep" hidden>Keep playing</button>
+        <button class="btn primary" id="overlay-new">New game</button>
+      </div>
+    </div>
+  </div>
+  <div class="footer-note">
+    Use <kbd>&uarr;</kbd> <kbd>&darr;</kbd> <kbd>&larr;</kbd> <kbd>&rarr;</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>, or swipe on the board.<br>
+    Undo reverses your last move once.
+  </div>
+</main>
+<script>
+(function () {
+  'use strict';
+
+  var SIZE = 4;
+  var WIN_VALUE = 2048;
+  var BEST_KEY = 'gridlock-best';
+
+  var boardEl = document.getElementById('board');
+  var scoreEl = document.getElementById('score');
+  var bestEl = document.getElementById('best');
+  var undoBtn = document.getElementById('undo');
+  var overlayEl = document.getElementById('overlay');
+  var overlayTitle = document.getElementById('overlay-title');
+  var overlaySub = document.getElementById('overlay-sub');
+  var overlayKeep = document.getElementById('overlay-keep');
+  var overlayNew = document.getElementById('overlay-new');
+
+  var grid;          // grid[r][c] -> tile object or null
+  var tileEls;       // id -> DOM element
+  var nextId;
+  var score;
+  var best = parseInt(localStorage.getItem(BEST_KEY) || '0', 10) || 0;
+  var over, won, keepPlaying;
+  var undoState = null;
+  var animating = false;
+
+  // Static background cells
+  (function buildBg() {
+    for (var r = 0; r < SIZE; r++) {
+      for (var c = 0; c < SIZE; c++) {
+        var cell = document.createElement('div');
+        cell.className = 'bg-cell';
+        cell.style.top = 'calc(var(--gap) + ' + r + ' * (var(--cell) + var(--gap)))';
+        cell.style.left = 'calc(var(--gap) + ' + c + ' * (var(--cell) + var(--gap)))';
+        boardEl.appendChild(cell);
+      }
+    }
+  })();
+
+  function cellPx() {
+    var cs = getComputedStyle(document.documentElement);
+    return {
+      cell: parseFloat(cs.getPropertyValue('--cell')),
+      gap: parseFloat(cs.getPropertyValue('--gap'))
+    };
+  }
+
+  function setTransform(el, r, c) {
+    var m = cellPx();
+    el.style.transform = 'translate(' + (c * (m.cell + m.gap)) + 'px,' + (r * (m.cell + m.gap)) + 'px)';
+  }
+
+  window.addEventListener('resize', function () {
+    // Reposition all tiles when the CSS cell size changes at breakpoints.
+    forEachTile(function (t) {
+      var el = tileEls[t.id];
+      if (el) setTransform(el, t.r, t.c);
+    });
+  });
+
+  function emptyGrid() {
+    var g = [];
+    for (var r = 0; r < SIZE; r++) {
+      g.push([]);
+      for (var c = 0; c < SIZE; c++) g[r].push(null);
+    }
+    return g;
+  }
+
+  function forEachTile(fn) {
+    for (var r = 0; r < SIZE; r++)
+      for (var c = 0; c < SIZE; c++)
+        if (grid[r][c]) fn(grid[r][c]);
+  }
+
+  function emptyCells() {
+    var out = [];
+    for (var r = 0; r < SIZE; r++)
+      for (var c = 0; c < SIZE; c++)
+        if (!grid[r][c]) out.push({ r: r, c: c });
+    return out;
+  }
+
+  function makeTileEl(tile, cls) {
+    var el = document.createElement('div');
+    el.className = 'tile' + (cls ? ' ' + cls : '');
+    el.dataset.v = tile.value;
+    if (tile.value > 2048) el.classList.add('super');
+    var inner = document.createElement('div');
+    inner.className = 'tile-inner';
+    inner.textContent = tile.value;
+    el.appendChild(inner);
+    setTransform(el, tile.r, tile.c);
+    boardEl.appendChild(el);
+    tileEls[tile.id] = el;
+    return el;
+  }
+
+  function addRandomTile(animate) {
+    var cells = emptyCells();
+    if (!cells.length) return null;
+    var spot = cells[Math.floor(Math.random() * cells.length)];
+    var tile = { id: nextId++, value: Math.random() < 0.9 ? 2 : 4, r: spot.r, c: spot.c };
+    grid[tile.r][tile.c] = tile;
+    makeTileEl(tile, animate ? 'spawn' : '');
+    return tile;
+  }
+
+  function serialize() {
+    var cells = [];
+    for (var r = 0; r < SIZE; r++) {
+      cells.push([]);
+      for (var c = 0; c < SIZE; c++) {
+        cells[r].push(grid[r][c] ? grid[r][c].value : 0);
+      }
+    }
+    return { cells: cells, score: score, over: over, won: won, keepPlaying: keepPlaying };
+  }
+
+  function restore(state) {
+    clearTiles();
+    grid = emptyGrid();
+    for (var r = 0; r < SIZE; r++) {
+      for (var c = 0; c < SIZE; c++) {
+        if (state.cells[r][c]) {
+          var tile = { id: nextId++, value: state.cells[r][c], r: r, c: c };
+          grid[r][c] = tile;
+          makeTileEl(tile, '');
+        }
+      }
+    }
+    score = state.score;
+    over = state.over;
+    won = state.won;
+    keepPlaying = state.keepPlaying;
+    updateHud();
+    hideOverlay();
+  }
+
+  function clearTiles() {
+    for (var id in tileEls) {
+      if (tileEls[id].parentNode) tileEls[id].parentNode.removeChild(tileEls[id]);
+    }
+    tileEls = {};
+  }
+
+  function updateHud() {
+    scoreEl.textContent = score;
+    if (score > best) {
+      best = score;
+      localStorage.setItem(BEST_KEY, String(best));
+    }
+    bestEl.textContent = best;
+    undoBtn.disabled = !undoState;
+  }
+
+  function movesAvailable() {
+    if (emptyCells().length) return true;
+    for (var r = 0; r < SIZE; r++) {
+      for (var c = 0; c < SIZE; c++) {
+        var v = grid[r][c].value;
+        if (c + 1 < SIZE && grid[r][c + 1].value === v) return true;
+        if (r + 1 < SIZE && grid[r + 1][c].value === v) return true;
+      }
+    }
+    return false;
+  }
+
+  var VECTORS = {
+    up:    { dr: -1, dc: 0 },
+    down:  { dr: 1,  dc: 0 },
+    left:  { dr: 0,  dc: -1 },
+    right: { dr: 0,  dc: 1 }
+  };
+
+  function move(dir) {
+    if (over || animating) return;
+    if (won && !keepPlaying) return; // win overlay is up; choose an option first
+    var v = VECTORS[dir];
+    var prev = serialize();
+
+    // Traverse from the far side toward the origin of movement.
+    var rows = [0, 1, 2, 3], cols = [0, 1, 2, 3];
+    if (v.dr === 1) rows.reverse();
+    if (v.dc === 1) cols.reverse();
+
+    var moved = false;
+    var mergedThisMove = {};   // "r,c" of cells that already merged (no double-merge)
+    var removeAfter = [];      // source tiles consumed by merges
+    var mergesToRender = [];   // merged result tiles created after slide
+
+    for (var ri = 0; ri < SIZE; ri++) {
+      for (var ci = 0; ci < SIZE; ci++) {
+        var r = rows[ri], c = cols[ci];
+        var tile = grid[r][c];
+        if (!tile) continue;
+
+        // Find farthest empty position in direction v.
+        var fr = r, fc = c;
+        while (true) {
+          var nr = fr + v.dr, nc = fc + v.dc;
+          if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE || grid[nr][nc]) break;
+          fr = nr; fc = nc;
+        }
+        var nr2 = fr + v.dr, nc2 = fc + v.dc;
+        var next = (nr2 >= 0 && nr2 < SIZE && nc2 >= 0 && nc2 < SIZE) ? grid[nr2][nc2] : null;
+
+        if (next && next.value === tile.value && !mergedThisMove[nr2 + ',' + nc2]) {
+          // Merge: both tiles slide to the target cell, then are replaced.
+          grid[r][c] = null;
+          var merged = { id: nextId++, value: tile.value * 2, r: nr2, c: nc2 };
+          grid[nr2][nc2] = merged;
+          mergedThisMove[nr2 + ',' + nc2] = true;
+
+          tile.r = nr2; tile.c = nc2;
+          removeAfter.push(tile.id, next.id);
+          mergesToRender.push(merged);
+
+          setTransform(tileEls[tile.id], nr2, nc2);
+          score += merged.value;
+          moved = true;
+        } else if (fr !== r || fc !== c) {
+          grid[r][c] = null;
+          grid[fr][fc] = tile;
+          tile.r = fr; tile.c = fc;
+          setTransform(tileEls[tile.id], fr, fc);
+          moved = true;
+        }
+      }
+    }
+
+    if (!moved) return;
+
+    undoState = prev;
+    animating = true;
+
+    // After the slide transition, swap merged sources for result tiles and spawn.
+    setTimeout(function () {
+      removeAfter.forEach(function (id) {
+        var el = tileEls[id];
+        if (el && el.parentNode) el.parentNode.removeChild(el);
+        delete tileEls[id];
+      });
+      mergesToRender.forEach(function (t) {
+        makeTileEl(t, 'merged');
+        if (t.value === WIN_VALUE && !won) {
+          won = true;
+          showWin();
+        }
+      });
+      addRandomTile(true);
+      updateHud();
+      if (!movesAvailable()) {
+        over = true;
+        showGameOver();
+      }
+      animating = false;
+    }, 125);
+
+    updateHud();
+  }
+
+  function showWin() {
+    if (keepPlaying) return;
+    overlayTitle.textContent = 'You win!';
+    overlayTitle.className = 'win';
+    overlaySub.textContent = 'You made the 2048 tile. Keep going for a higher score?';
+    overlayKeep.hidden = false;
+    overlayEl.classList.add('show');
+  }
+
+  function showGameOver() {
+    overlayTitle.textContent = 'Game over';
+    overlayTitle.className = '';
+    overlaySub.textContent = 'No more moves. Final score: ' + score;
+    overlayKeep.hidden = true;
+    overlayEl.classList.add('show');
+  }
+
+  function hideOverlay() {
+    overlayEl.classList.remove('show');
+  }
+
+  function newGame() {
+    clearTiles();
+    grid = emptyGrid();
+    nextId = 1;
+    score = 0;
+    over = false;
+    won = false;
+    keepPlaying = false;
+    undoState = null;
+    animating = false;
+    hideOverlay();
+    addRandomTile(true);
+    addRandomTile(true);
+    updateHud();
+  }
+
+  function undo() {
+    if (!undoState || animating) return;
+    restore(undoState);
+    undoState = null;
+    updateHud();
+  }
+
+  // --- Input ---
+  var KEYS = {
+    ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
+    w: 'up', s: 'down', a: 'left', d: 'right',
+    W: 'up', S: 'down', A: 'left', D: 'right'
+  };
+  document.addEventListener('keydown', function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    var dir = KEYS[e.key];
+    if (dir) {
+      e.preventDefault();
+      move(dir);
+    }
+  });
+
+  var touchStart = null;
+  boardEl.addEventListener('touchstart', function (e) {
+    if (e.touches.length === 1) {
+      touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+  }, { passive: true });
+  boardEl.addEventListener('touchmove', function (e) {
+    e.preventDefault(); // stop page scroll while swiping the board
+  }, { passive: false });
+  boardEl.addEventListener('touchend', function (e) {
+    if (!touchStart) return;
+    var t = e.changedTouches[0];
+    var dx = t.clientX - touchStart.x;
+    var dy = t.clientY - touchStart.y;
+    touchStart = null;
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;
+    if (Math.abs(dx) > Math.abs(dy)) move(dx > 0 ? 'right' : 'left');
+    else move(dy > 0 ? 'down' : 'up');
+  });
+
+  document.getElementById('new-game').addEventListener('click', newGame);
+  undoBtn.addEventListener('click', undo);
+  overlayNew.addEventListener('click', newGame);
+  overlayKeep.addEventListener('click', function () {
+    keepPlaying = true;
+    hideOverlay();
+  });
+
+  tileEls = {};
+  newGame();
+})();
+</script>
+</body>
+</html>

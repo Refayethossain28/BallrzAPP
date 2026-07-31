@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Fixr — Operator Console</title>
+<link rel="stylesheet" href="./styles.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="logo">F</div>
+    <div><h1>FIXR</h1><small>Luxury ground-transport &amp; concierge OS</small></div>
+  </div>
+  <div class="stat-row">
+    <div class="stat"><b id="s-open">0</b><span>Open</span></div>
+    <div class="stat"><b id="s-rev">$0</b><span>Booked</span></div>
+    <div class="stat"><b id="s-mode">—</b><span>Intake</span></div>
+  </div>
+</header>
+
+<main>
+  <div class="col">
+    <div class="card">
+      <h2>AI Inbound Intake <span class="typetag t-transfer" id="intake-type">—</span></h2>
+      <div class="body">
+        <textarea id="inbound" placeholder="Paste what the client texted / emailed / said…"></textarea>
+        <button class="btn-gold" id="parse-btn">⚡ Parse into a booking</button>
+        <div class="samples" id="samples"></div>
+        <div class="parsed" id="parsed">
+          <div id="fields"></div>
+          <div class="quote" id="quote"></div>
+          <button class="btn-gold" id="confirm-btn">Confirm &amp; send to dispatch →</button>
+          <div class="note">Nothing is auto-dispatched. AI drafts; you own the outcome.</div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Drivers / Resources</h2>
+      <div class="body" id="drivers"></div>
+    </div>
+    <div class="card">
+      <h2>Clients <span class="muted-h">click prefs to edit</span></h2>
+      <div class="body" id="clients"></div>
+    </div>
+    <div class="card">
+      <h2>Vendor Rolodex <span class="muted-h"><a href="#" id="vendor-add">+ add</a></span></h2>
+      <div class="body" id="vendors"></div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="card">
+      <h2>Today <span class="muted-h"><a href="#" id="digest-btn">📈 owner digest</a> · <span id="live-dot">● live</span></span></h2>
+      <div class="body statsbar" id="statsbar"></div>
+    </div>
+    <div class="card">
+      <h2>Dispatch Board <span class="muted-h">click a request to manage</span></h2>
+      <div class="body">
+        <div class="lanes" id="lanes"></div>
+        <div id="empty-board" style="display:none;text-align:center;padding:18px 0">
+          <div class="note" style="margin-bottom:10px">Board is empty.</div>
+          <button class="btn-ghost" id="demo-btn">✨ Load a demo day</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="card">
+      <h2>Live Map <span class="muted-h">driver GPS</span></h2>
+      <div class="body" style="padding:0"><div id="map"></div><div class="note" id="map-fallback" style="padding:10px 16px;display:none"></div></div>
+    </div>
+    <div class="card">
+      <h2>Client Notifications <span class="muted-h" id="notify-mode"></span></h2>
+      <div class="body audit" id="notifications"></div>
+    </div>
+    <div class="card">
+      <h2>Request Audit Log</h2>
+      <div class="body audit" id="audit"></div>
+    </div>
+  </div>
+</main>
+
+<div class="modal-bg" id="login-bg" style="z-index:60">
+  <div class="modal"><h2>Operator sign-in</h2><div class="body">
+    <div class="note" style="margin-bottom:10px">This console is locked. Enter the operator key.</div>
+    <input id="opkey" type="password" placeholder="Operator key"
+      style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:11px" />
+    <button class="btn-gold" id="opkey-btn" style="margin-top:12px">Unlock console</button>
+    <div class="note" id="opkey-err" style="color:var(--red)"></div>
+  </div></div>
+</div>
+<div class="modal-bg" id="modal-bg"><div class="modal"><h2 id="m-title">Request</h2><div class="body" id="m-body"></div></div></div>
+
+<div class="foot" id="foot">
+  Real full-stack app — persistent SQLite, REST API, AI intake, payment capture.
+  Set <code>ANTHROPIC_API_KEY</code> for real LLM parsing and <code>STRIPE_SECRET_KEY</code> for real payments.
+</div>
+
+<script src="./app.js"></script>
+</body>
+</html>

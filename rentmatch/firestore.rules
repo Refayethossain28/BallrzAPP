@@ -52,7 +52,12 @@ service cloud.firestore {
     // but `status` is server-authoritative: it changes only via the
     // `publishListing` Cloud Function (Admin SDK), never directly from a client.
     match /listings/{listingId} {
-      allow read: if true;
+      // Advertised listings (live, or let — so a renter still sees "this
+      // property has been let") are public. Drafts were never advertised and
+      // stay private to the owning landlord: a world-readable draft would leak
+      // an unfinished, non-compliance-checked property and its landlordId.
+      allow read: if resource.data.status in ['live', 'let']
+        || (isSignedIn() && resource.data.landlordId == uid());
       allow create: if isSignedIn() && request.resource.data.landlordId == uid()
         && request.resource.data.status == 'draft';
       allow update: if isSignedIn() && resource.data.landlordId == uid()
@@ -74,14 +79,32 @@ service cloud.firestore {
         return request.resource.data.diff(resource.data).affectedKeys();
       }
       allow read: if isSignedIn() && isParticipant(resource.data);
-      allow create: if isSignedIn() && request.resource.data.renterId == uid();
-      // M2: participants may update only the messaging/viewing/agreement fields,
-      // and stage may never be driven past `agreed` from the client. Signatures,
-      // payment, contract and stage→contract/signing/completed stay locked to
-      // Cloud Functions (M3+).
+      // A renter opens their own enquiry. The new deal must start clean: at the
+      // enquiry stage, with neither party agreed and no money/signature/contract
+      // fields pre-set — so a client can't fabricate a "completed" or pre-agreed
+      // deal. Those fields only ever advance through Cloud Functions.
+      allow create: if isSignedIn()
+        && request.resource.data.renterId == uid()
+        && request.resource.data.stage == 'enquiry'
+        && request.resource.data.agreed == { 'renter': false, 'landlord': false }
+        && request.resource.data.contractDrafted == false
+        && request.resource.data.feePaid == false
+        && request.resource.data.signed == { 'renter': null, 'landlord': null };
+      // M2: participants may update only the messaging/viewing/agreement fields.
+      // Guards: (a) the deal must still be pre-contract — once a contract is
+      // drafted or the stage advances to contract/signing/completed, the client
+      // can no longer touch it (no rolling a signed deal back to 'enquiry');
+      // (b) each party may flip only their OWN half of `agreed`, so a renter
+      // can't forge the landlord's consent (which gates the £100 fee) and vice
+      // versa. Signatures, payment and contract stay locked to Functions.
       allow update: if isSignedIn() && isParticipant(resource.data)
         && changedKeys().hasOnly(['stage', 'viewing', 'agreed', 'updatedAt'])
-        && request.resource.data.stage in ['enquiry', 'viewing', 'agreed', 'cancelled'];
+        && request.resource.data.stage in ['enquiry', 'viewing', 'agreed', 'cancelled']
+        && resource.data.stage in ['enquiry', 'viewing', 'agreed']
+        && resource.data.contractDrafted == false
+        && (uid() == resource.data.renterId
+              ? request.resource.data.agreed.landlord == resource.data.agreed.landlord
+              : request.resource.data.agreed.renter == resource.data.agreed.renter);
       allow delete: if false;
 
       match /messages/{messageId} {

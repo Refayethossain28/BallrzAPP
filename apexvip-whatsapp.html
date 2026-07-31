@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="AV WhatsApp"/>
+<meta name="theme-color" content="#050505"/>
+<link rel="apple-touch-icon" href="icon-180.png"/>
+<title>ApexVIP — WhatsApp Booking Desk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&display=swap" rel="stylesheet"/>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
+<script src="firebase.js"></script>
+<!-- Shared pure engine — on-device parser fallback + escapeHtml. -->
+<script src="apexvip-engine.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html{height:-webkit-fill-available}
+body{background:#050505;color:#f4f0ea;font-family:-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased;min-height:100vh;min-height:-webkit-fill-available;overscroll-behavior:none;
+  --bg:#050505;--fg:#f4f0ea;--fg-muted:#c8bfb0;--fg-dim:#8a8278;--fg-subtle:#5a5550;
+  --surface:rgba(255,255,255,.045);--surface-b:rgba(255,255,255,.03);--surface-c:rgba(255,255,255,.07);
+  --border:rgba(255,255,255,.08);--divider:rgba(255,255,255,.04);
+  --gold:#C8A97E;--gold-dim:rgba(200,169,126,.14);
+  --wa:#25D366;--wa-dim:rgba(37,211,102,.12);--wa-border:rgba(37,211,102,.25)}
+
+/* ── Aurora background ── */
+body::before,body::after{content:'';position:fixed;border-radius:50%;filter:blur(90px);pointer-events:none;z-index:-1}
+body::before{width:560px;height:560px;left:18%;top:-14%;background:radial-gradient(circle,rgba(200,169,126,.07),transparent 70%);animation:auroraA 26s ease-in-out infinite alternate}
+body::after{width:480px;height:480px;right:-8%;bottom:-12%;background:radial-gradient(circle,rgba(37,211,102,.05),transparent 70%);animation:auroraB 32s ease-in-out infinite alternate}
+@keyframes auroraA{from{transform:translate(0,0) scale(1)}to{transform:translate(120px,90px) scale(1.18)}}
+@keyframes auroraB{from{transform:translate(0,0) scale(1.08)}to{transform:translate(-140px,-90px) scale(.92)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes goldShimmer{from{background-position:0% center}to{background-position:300% center}}
+@keyframes toastIn{from{opacity:0;transform:translateY(14px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes toastOut{to{opacity:0;transform:translateY(-10px) scale(.94)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.wordmark{font-family:'Cormorant Garamond',serif;font-weight:600;letter-spacing:3px;background:linear-gradient(108deg,#fff8ee 0%,#f2e4c0 8%,#D4AF6E 16%,#fff 24%,#f0e0b8 32%,#fff 40%,#e0c878 48%,#fff8ee 56%,#D4AF6E 64%,#fff 72%,#ecdcb0 80%,#fff 88%,#eedcc4 100%);background-size:300% auto;-webkit-background-clip:text;background-clip:text;color:transparent;animation:goldShimmer 6s linear infinite}
+
+.card{background:linear-gradient(155deg,rgba(255,250,240,.10),rgba(255,250,240,.045) 55%,rgba(255,250,240,.07));border:1px solid rgba(255,250,240,.16);border-radius:16px;padding:20px;-webkit-backdrop-filter:saturate(180%) blur(18px);backdrop-filter:saturate(180%) blur(18px);box-shadow:inset 0 1px .5px rgba(255,255,255,.4),inset 0 0 22px rgba(255,255,255,.035),0 12px 32px -14px rgba(0,0,0,.6)}
+.btn{padding:10px 20px;border-radius:10px;font-size:14px;font-weight:600;border:none;cursor:pointer;font-family:inherit;transition:opacity .15s,transform .12s}
+.btn:active{opacity:.85;transform:scale(.97)}
+.btn:disabled{opacity:.5;cursor:default}
+.btn-gold{background:var(--gold);color:#000}
+.btn-wa{background:var(--wa);color:#04150b}
+.btn-glass{background:var(--surface-c);border:1px solid var(--border);color:var(--fg)}
+.btn-sm{padding:7px 14px;font-size:13px}
+input,select,textarea{background:var(--surface-c);border:1px solid var(--border);border-radius:8px;color:var(--fg);padding:10px 14px;font-size:16px;outline:none;font-family:inherit;-webkit-appearance:none;width:100%}
+input:focus,select:focus,textarea:focus{border-color:var(--gold)}
+select option{background:#111}
+label.f{font-size:10px;color:var(--fg-subtle);display:block;margin-bottom:4px;letter-spacing:.6px;text-transform:uppercase;font-weight:700}
+.tag{display:inline-flex;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.2px}
+.tag-gold{background:rgba(200,169,126,.14);color:var(--gold)}
+.tag-green{background:rgba(34,197,94,.14);color:#22c55e}
+.tag-blue{background:rgba(59,130,246,.14);color:#3b82f6}
+.tag-amber{background:rgba(245,158,11,.14);color:#f59e0b}
+.tag-red{background:rgba(239,68,68,.14);color:#ef4444}
+.tag-gray{background:rgba(120,120,120,.14);color:var(--fg-dim)}
+.tag-wa{background:var(--wa-dim);color:var(--wa)}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:10px 12px;color:var(--fg-subtle);font-size:10px;font-weight:700;border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:1px;white-space:nowrap}
+td{padding:11px 12px;border-bottom:1px solid var(--divider);font-size:13px;vertical-align:middle}
+tr:hover td{background:var(--surface-b)}
+
+#toast-container{position:fixed;top:20px;right:20px;z-index:9990;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.toast{background:rgba(10,8,5,.97);backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:11px 18px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;pointer-events:auto;animation:toastIn .4s ease both;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+.toast.out{animation:toastOut .28s ease forwards}
+.toast.success{border-color:rgba(34,197,94,.2);color:#4ade80}
+.toast.error{border-color:rgba(239,68,68,.2);color:#f87171}
+.toast.info{border-color:rgba(200,169,126,.2);color:var(--gold)}
+
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(0,0,0,.25);border-top-color:#04150b;border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px;margin-right:8px}
+
+/* Paste zone — a nod to the WhatsApp chat it came from */
+.wa-paste{width:100%;min-height:190px;background:var(--surface-b);border:1px dashed var(--wa-border);border-radius:14px;color:var(--fg);padding:14px;font:inherit;font-size:14px;line-height:1.55;resize:vertical}
+.wa-paste:focus{border-color:var(--wa);border-style:solid}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+@media(max-width:560px){.grid3{grid-template-columns:1fr 1fr}}
+
+.screen{animation:fadeIn .25s ease}
+.hidden{display:none !important}
+#desk-cols{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
+@media(max-width:920px){#desk-cols{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<!-- ── Login ─────────────────────────────────────────────────────────── -->
+<div id="screen-login" class="screen" style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px">
+  <div class="card" style="width:100%;max-width:380px;padding:34px 30px;animation:fadeUp .4s ease both">
+    <div style="text-align:center;margin-bottom:26px">
+      <div class="wordmark" style="font-size:32px">ApexVIP</div>
+      <div style="font-size:9px;color:var(--fg-subtle);letter-spacing:4px;margin-top:4px;text-transform:uppercase">WhatsApp Booking Desk</div>
+    </div>
+    <div style="margin-bottom:12px"><label class="f">Email</label><input id="login-email" type="email" autocomplete="username" placeholder="ops@apexvip.com"/></div>
+    <div style="margin-bottom:18px"><label class="f">Password</label><input id="login-pass" type="password" autocomplete="current-password" placeholder="••••••••"/></div>
+    <button class="btn btn-gold" style="width:100%" onclick="deskLogin()">Sign In</button>
+    <div style="font-size:11px;color:var(--fg-subtle);text-align:center;margin-top:14px">Admin accounts only — same credentials as the ops console.</div>
+  </div>
+</div>
+
+<!-- ── Desk ──────────────────────────────────────────────────────────── -->
+<div id="screen-desk" class="screen hidden" style="max-width:1180px;margin:0 auto;padding:calc(env(safe-area-inset-top) + 22px) 20px 80px">
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:22px">
+    <div>
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <div class="wordmark" style="font-size:26px">ApexVIP</div>
+        <span class="tag tag-wa" style="font-size:12px">💬 WhatsApp Desk</span>
+      </div>
+      <div style="font-size:12px;color:var(--fg-dim);margin-top:4px">Paste an inbound WhatsApp message — ApexAI turns it into a booking in the ops console.</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <a href="apexvip-admin.html" target="_blank" rel="noopener" class="btn btn-glass btn-sm" style="text-decoration:none;display:inline-flex;align-items:center">⊞ Open Ops Console</a>
+      <button class="btn btn-glass btn-sm" onclick="deskSignOut()">⏻ Sign out</button>
+    </div>
+  </div>
+
+  <div id="desk-cols">
+    <!-- Paste + parse -->
+    <div class="card" style="animation:fadeUp .35s ease both">
+      <div style="font-size:16px;font-weight:700;margin-bottom:4px">1 · Paste the WhatsApp message</div>
+      <div style="font-size:12px;color:var(--fg-dim);margin-bottom:12px">A single message or a whole copied thread — exported chats with <span style="color:var(--fg-muted)">[12/07/2026, 14:32] Name:</span> lines work too. Later corrections in a thread win.</div>
+      <textarea id="wa-text" class="wa-paste" placeholder="e.g.&#10;[14/07/2026, 09:12] Ana Petrova: Good morning — could I have a car from Claridge's to Heathrow T5 tomorrow?&#10;[14/07/2026, 09:13] Ana Petrova: Flight BA247 at 13:40, two of us with luggage.&#10;[14/07/2026, 09:20] Ana Petrova: Actually make the pickup 9am please 🙏"></textarea>
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+        <button id="wa-parse-btn" class="btn btn-wa" style="flex:1;min-width:200px" onclick="waParse()">✨ Extract booking with AI</button>
+        <button class="btn btn-glass" onclick="waClear()">Clear</button>
+      </div>
+      <div id="wa-hint" style="font-size:12px;color:var(--gold);margin-top:10px;min-height:16px"></div>
+    </div>
+
+    <!-- Review + create -->
+    <div class="card" id="wa-review" style="animation:fadeUp .35s .06s ease both">
+      <div style="font-size:16px;font-weight:700;margin-bottom:4px">2 · Review &amp; create</div>
+      <div id="wa-summary" style="font-size:12px;color:var(--fg-dim);margin-bottom:12px">The extracted booking appears here for review before it lands in the ops console.</div>
+      <div id="wa-missing" style="display:none;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:10px;padding:9px 13px;margin-bottom:12px;font-size:12px;color:#f59e0b"></div>
+      <div class="grid2" style="margin-bottom:10px">
+        <div><label class="f">Client name</label><input id="b_client" placeholder="From the chat"/></div>
+        <div><label class="f">Client phone</label><input id="b_phone" placeholder="+44 …"/></div>
+      </div>
+      <div class="grid2" style="margin-bottom:10px">
+        <div><label class="f">Pickup</label><input id="b_pickup" placeholder="Address / hotel"/></div>
+        <div><label class="f">Dropoff / airport</label><input id="b_dropoff" placeholder="Destination or Heathrow T5"/></div>
+      </div>
+      <div class="grid3" style="margin-bottom:10px">
+        <div><label class="f">Date</label><input id="b_date" type="date"/></div>
+        <div><label class="f">Time</label><input id="b_time" type="time"/></div>
+        <div><label class="f">Flight</label><input id="b_flight" placeholder="BA247"/></div>
+      </div>
+      <div class="grid3" style="margin-bottom:10px">
+        <div><label class="f">Vehicle</label><select id="b_vehicle" onchange="waVehiclePrice()"><option>S-Class</option><option>V-Class</option></select></div>
+        <div><label class="f">Passengers</label><input id="b_pax" type="number" min="0" max="8" placeholder="0"/></div>
+        <div><label class="f">Price £</label><input id="b_price" type="number" min="0" step="5"/></div>
+      </div>
+      <div style="margin-bottom:14px"><label class="f">Notes for the chauffeur</label><input id="b_notes" placeholder="Child seat, name board, wait &amp; return…"/></div>
+      <button id="wa-create-btn" class="btn btn-gold" style="width:100%" onclick="waCreate()">Create booking in ops console</button>
+    </div>
+  </div>
+
+  <!-- Recent WhatsApp bookings -->
+  <div class="card" style="margin-top:20px;animation:fadeUp .35s .12s ease both">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <div style="font-size:16px;font-weight:700">Recent WhatsApp bookings</div>
+      <span class="tag tag-gray" id="wa-count"></span>
+    </div>
+    <div style="font-size:12px;color:var(--fg-dim);margin-bottom:12px">Live — these are the same bookings the ops console shows, tagged 💬 WhatsApp.</div>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>Ref</th><th>Client</th><th>Route</th><th>When</th><th>Vehicle</th><th>Status</th><th>Price</th></tr></thead>
+      <tbody id="wa-recent"><tr><td colspan="7" style="text-align:center;padding:32px;color:var(--fg-subtle)">Sign in to see recent bookings</td></tr></tbody>
+    </table></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+// ── Small helpers ──────────────────────────────────────────────────────
+const esc = (typeof ApexEngine!=='undefined' && ApexEngine.escapeHtml)
+  ? ApexEngine.escapeHtml
+  : s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function showToast(msg,type='info',dur=3400){
+  let c=document.getElementById('toast-container');
+  if(!c){c=document.createElement('div');c.id='toast-container';document.body.appendChild(c);}
+  const icons={success:'✓',error:'✕',info:'✦'};
+  const t=document.createElement('div');
+  t.className=`toast ${type}`;
+  t.innerHTML=`<span style="font-size:14px">${icons[type]||'✦'}</span>${msg}`;
+  c.appendChild(t);
+  const dismiss=()=>{if(!t.parentNode)return;t.classList.add('out');t.addEventListener('animationend',()=>t.remove(),{once:true});};
+  t._timer=setTimeout(dismiss,dur);
+  t.addEventListener('click',()=>{clearTimeout(t._timer);dismiss();});
+}
+const $=id=>document.getElementById(id);
+const val=id=>($(id)?.value||'').trim();
+const setVal=(id,v)=>{const el=$(id); if(el&&v!==undefined&&v!==null&&v!=='') el.value=v;};
+
+// ── Firebase init (same convention as the ops console) ─────────────────
+let auth, db, fns, FIREBASE_ENABLED=false;
+try{
+  if(typeof APEXVIP_FIREBASE_CONFIG!=='undefined' && APEXVIP_FIREBASE_CONFIG.apiKey!=='YOUR_API_KEY'){
+    const _fbApp=firebase.apps.length?firebase.app():firebase.initializeApp(APEXVIP_FIREBASE_CONFIG);
+    auth=firebase.auth(_fbApp);
+    db=firebase.firestore(_fbApp);
+    try{fns=firebase.functions(_fbApp);}catch(e){fns=null;}
+    FIREBASE_ENABLED=true;
+    // Auto-restore an existing admin session.
+    auth.onAuthStateChanged(async user=>{
+      if(user && $('screen-desk').classList.contains('hidden')){
+        const doc=await db.collection('users').doc(user.uid).get().catch(()=>null);
+        if(doc && doc.exists && doc.data().role==='admin') enterDesk();
+      }
+    });
+  }
+}catch(e){console.warn('Firebase init:',e.message);}
+
+async function deskLogin(){
+  if(!FIREBASE_ENABLED){alert('Sign-in requires the live backend.');return;}
+  try{
+    const cred=await auth.signInWithEmailAndPassword(val('login-email'),val('login-pass'));
+    const doc=await db.collection('users').doc(cred.user.uid).get();
+    if(doc.exists && doc.data().role==='admin'){enterDesk();}
+    else{auth.signOut();alert('Access denied. Admin accounts only.');}
+  }catch(err){alert('Invalid credentials');}
+}
+$('login-pass').addEventListener('keydown',e=>{if(e.key==='Enter')deskLogin();});
+
+function deskSignOut(){
+  const done=()=>location.reload();
+  if(FIREBASE_ENABLED&&auth.currentUser){auth.signOut().then(done,done);}else done();
+}
+
+let _deskEntered=false;
+function enterDesk(){
+  if(_deskEntered)return;
+  _deskEntered=true;
+  $('screen-login').classList.add('hidden');
+  $('screen-desk').classList.remove('hidden');
+  watchRecent();
+}
+
+// ── The pasted thread that produced the current review form ────────────
+let SOURCE_TEXT='';
+
+// ── AI parse: parseWhatsAppBooking → on-device fallback ────────────────
+async function waParse(){
+  const text=val('wa-text');
+  if(!text){showToast('Paste the WhatsApp message first','error');return;}
+  const btn=$('wa-parse-btn');
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Reading the message…';
+  let d=null, local=false;
+  try{
+    if(FIREBASE_ENABLED&&fns){
+      d=(await fns.httpsCallable('parseWhatsAppBooking')({message:text.slice(0,8000),now:new Date().toISOString()})).data||null;
+    }
+  }catch(e){ /* fall through to the on-device parser */ }
+  if(!d){ d=waParseLocal(text); local=true; }
+  btn.disabled=false; btn.innerHTML='✨ Extract booking with AI';
+  SOURCE_TEXT=text;
+  waFillReview(d,local);
+}
+
+// On-device fallback — WhatsApp-format regexes for the sender metadata,
+// then the shared engine's intent parser for the travel details. Keeps the
+// desk useful when the Cloud Function is unreachable.
+function waParseLocal(text){
+  // "[12/07/2026, 14:32] Name: msg"  or  "12/07/2026, 14:32 - Name: msg"
+  const lineRe=/^\[?(\d{1,2}[\/.]\d{1,2}[\/.]\d{2,4}),?\s+(\d{1,2}:\d{2})(?::\d{2})?(?:\s*[ap]m)?\]?\s*(?:-\s*)?([^:]{1,44}):\s*(.*)$/i;
+  const senders={}; const body=[];
+  for(const ln of text.split(/\r?\n/)){
+    const m=ln.match(lineRe);
+    if(m){
+      const name=m[3].trim();
+      if(!/^you$/i.test(name)&&!/apex/i.test(name)) senders[name]=(senders[name]||0)+1;
+      if(m[4]) body.push(m[4]);
+    }else if(ln.trim()) body.push(ln.trim());
+  }
+  const senderNames=Object.entries(senders).sort((a,b)=>b[1]-a[1]).map(e=>e[0]);
+  // WhatsApp shows unsaved contacts as bare numbers — treat those as the phone.
+  const nameIsPhone=s=>/^\+?[\d\s\-()]{7,}$/.test(s||'');
+  let clientName=senderNames.find(s=>!nameIsPhone(s))||'';
+  let clientPhone=senderNames.find(nameIsPhone)||'';
+  if(!clientPhone){ const pm=text.match(/\+\d[\d\s\-()]{7,}\d/)||text.match(/\b0\d{3,4}[\s-]?\d{5,7}\b/); if(pm)clientPhone=pm[0].trim(); }
+  const joined=body.join('. ');
+  const d=(typeof ApexEngine!=='undefined'&&ApexEngine.parseIntentLocal)
+    ? (ApexEngine.parseIntentLocal(joined,{now:new Date()})||{}) : {};
+  const paxM=joined.match(/\b(\d)\s*(?:of us|people|pax|passengers?|adults?)\b/i)||joined.match(/\bparty of (\d)\b/i);
+  const passengers=paxM?parseInt(paxM[1],10):0;
+  const wantsV=/\bv[\s-]?class\b|\bmpv\b|people\s*carrier|\bvan\b|\b[5-8][\s-]?seat/i.test(joined)||passengers>=4;
+  const missing=[];
+  if(!d.pickup)missing.push('pickup address');
+  if(!d.dropoff&&!d.airport)missing.push('destination');
+  if(!d.date)missing.push('travel date');
+  if(!d.time)missing.push('pickup time');
+  return {
+    clientName, clientPhone,
+    pickup:d.pickup||'', dropoff:d.dropoff||'', airport:d.airport||'',
+    flight:d.flight||'', date:d.date||'', time:d.time||'',
+    vehicle:wantsV?'V-Class':'S-Class', passengers,
+    serviceType:d.serviceType||((d.airport||d.flight)?'airport':'point'),
+    notes:'', confidence:0.4, missing,
+    summary:'Parsed on-device (AI unavailable) — please review every field carefully.',
+    _local:true,
+  };
+}
+
+// Normalise "9am" / "3.30pm" style times into the HH:MM the time input needs.
+function to24h(t){
+  if(!t)return '';
+  t=String(t).trim();
+  if(/^\d{1,2}:\d{2}$/.test(t))return t.padStart(5,'0');
+  const m=t.match(/^(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?$/i);
+  if(!m)return '';
+  let h=parseInt(m[1],10); const min=m[2]||'00'; const ap=(m[3]||'').toLowerCase();
+  if(ap==='pm'&&h<12)h+=12; if(ap==='am'&&h===12)h=0;
+  if(h>23)return '';
+  return String(h).padStart(2,'0')+':'+min;
+}
+
+function waFillReview(d,local){
+  ['b_client','b_phone','b_pickup','b_dropoff','b_date','b_time','b_flight','b_pax','b_notes'].forEach(id=>{const el=$(id);if(el)el.value='';});
+  setVal('b_client',d.clientName); setVal('b_phone',d.clientPhone);
+  setVal('b_pickup',d.pickup); setVal('b_dropoff',d.dropoff||d.airport);
+  setVal('b_date',d.date); setVal('b_time',to24h(d.time));
+  setVal('b_flight',(d.flight||'').toUpperCase());
+  if(d.passengers)setVal('b_pax',d.passengers);
+  setVal('b_notes',d.notes);
+  const veh=/v[\s-]?class/i.test(d.vehicle||'')?'V-Class':'S-Class';
+  $('b_vehicle').value=veh; waVehiclePrice();
+  const conf=typeof d.confidence==='number'?d.confidence:0.8;
+  const sum=$('wa-summary');
+  sum.textContent=(d.summary||'Extracted — review the fields and create.')+(local?'':(' · confidence '+Math.round(conf*100)+'%'));
+  sum.style.color=conf<0.5?'#f59e0b':'var(--gold)';
+  const miss=$('wa-missing');
+  if(Array.isArray(d.missing)&&d.missing.length){
+    miss.style.display='block';
+    miss.innerHTML='⚠ Still to confirm with the client: <b>'+esc(d.missing.join(', '))+'</b>';
+  }else{miss.style.display='none';}
+  $('wa-hint').textContent=local?'✦ Parsed on-device — the AI service was unreachable.':'✦ Extracted by ApexAI — review on the right, then create.';
+  if(conf<0.5&&!local)showToast('This may not be a booking request — check carefully','error');
+}
+
+// Match the ops console's manual-create pricing: S-Class £185 · V-Class £225.
+function waVehiclePrice(){
+  $('b_price').value=$('b_vehicle').value==='V-Class'?225:185;
+}
+waVehiclePrice();
+
+function waClear(){
+  $('wa-text').value=''; SOURCE_TEXT='';
+  $('wa-hint').textContent=''; $('wa-missing').style.display='none';
+  $('wa-summary').textContent='The extracted booking appears here for review before it lands in the ops console.';
+  $('wa-summary').style.color='var(--fg-dim)';
+  ['b_client','b_phone','b_pickup','b_dropoff','b_date','b_time','b_flight','b_pax','b_notes'].forEach(id=>{const el=$(id);if(el)el.value='';});
+  $('b_vehicle').value='S-Class'; waVehiclePrice();
+}
+
+// ── Create the booking — the same document shape the ops console writes,
+//    so it appears there (and to dispatch) instantly. ────────────────────
+async function waCreate(){
+  if(!FIREBASE_ENABLED||!auth.currentUser){showToast('Sign in first','error');return;}
+  if(!val('b_pickup')&&!val('b_dropoff')){showToast('A pickup or destination is required','error');return;}
+  const ref='APX-'+(Math.floor(1000+Math.random()*9000));
+  const vehicle=val('b_vehicle')||'S-Class';
+  const flight=val('b_flight').toUpperCase().replace(/\s+/g,'');
+  const dropoff=val('b_dropoff');
+  const isAirport=!!flight||/airport|heathrow|gatwick|stansted|luton|terminal|\bT\d\b/i.test(dropoff);
+  const price=Math.max(0,parseFloat(val('b_price'))||(vehicle==='V-Class'?225:185));
+  const pax=parseInt(val('b_pax'),10)||0;
+  const btn=$('wa-create-btn');
+  btn.disabled=true;btn.textContent='Creating…';
+  try{
+    await db.collection('bookings').add({
+      ref, clientName:val('b_client'), clientPhone:val('b_phone'),
+      pickup:val('b_pickup'), dropoff, airport:isAirport?dropoff:'',
+      date:val('b_date'), time:val('b_time'), flight,
+      vehicle, passengers:pax||null,
+      serviceType:isAirport?'airport':'point',
+      serviceLabel:isAirport?'Airport Transfer':'Point to Point',
+      notes:val('b_notes'),
+      // Ops-created booking: the operator is the creating principal (the
+      // rules accept admin creates); dispatch happens from the ops console.
+      clientId:auth.currentUser.uid,
+      status:'pending', driver:'—', price, baseFare:price, currency:'GBP',
+      location:'london', source:'whatsapp',
+      sourceText:SOURCE_TEXT.slice(0,1500),
+      createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+    // Append-only audit trail — same convention as the ops console.
+    db.collection('audit_log').add({
+      ts:firebase.firestore.FieldValue.serverTimestamp(),
+      actorUid:auth.currentUser.uid,
+      actorName:auth.currentUser.displayName||auth.currentUser.email||'Admin',
+      action:'booking_create', target:ref,
+      detail:'whatsapp desk · '+(val('b_client')||'unknown client')+' · '+(val('b_pickup')||'')+' → '+(dropoff||'')
+    }).catch(()=>{});
+    showToast('Booking '+ref+' created — now live in the ops console','success');
+    waClear();
+  }catch(err){
+    console.error(err);
+    showToast('Could not create the booking: '+(err&&err.message||'permission denied'),'error',6000);
+  }
+  btn.disabled=false;btn.textContent='Create booking in ops console';
+}
+
+// ── Recent WhatsApp bookings (live) ─────────────────────────────────────
+const STATUS_TAG={pending:'tag-amber',confirmed:'tag-blue',paid:'tag-blue',driver_assigned:'tag-gold',en_route:'tag-gold',arriving:'tag-gold',active:'tag-gold',completed:'tag-green',cancelled:'tag-red'};
+function watchRecent(){
+  if(!FIREBASE_ENABLED)return;
+  // Equality filter only (no orderBy) so no composite index is needed;
+  // sort client-side by createdAt.
+  db.collection('bookings').where('source','==','whatsapp').limit(100).onSnapshot(snap=>{
+    const rows=snap.docs.map(d=>{const x=d.data();return{...x,_t:x.createdAt&&x.createdAt.toDate?x.createdAt.toDate().getTime():0};})
+      .sort((a,b)=>b._t-a._t).slice(0,15);
+    $('wa-count').textContent=snap.size+' total';
+    $('wa-recent').innerHTML=rows.length===0
+      ?'<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--fg-subtle)">No WhatsApp bookings yet — paste a message above to create the first one</td></tr>'
+      :rows.map(b=>`<tr>
+        <td style="color:var(--gold);font-weight:600;font-size:12px">${esc(b.ref||'—')}</td>
+        <td style="font-weight:500">${esc(b.clientName||'—')}${b.clientPhone?`<div style="font-size:11px;color:var(--fg-subtle)">${esc(b.clientPhone)}</div>`:''}</td>
+        <td style="color:var(--fg-dim)">${esc(b.pickup||'')} → ${esc(b.dropoff||b.airport||'')}</td>
+        <td style="color:var(--fg-dim);font-size:12px">${esc(b.date||'')} ${esc(b.time||'')}</td>
+        <td style="color:var(--fg-dim)">${esc(b.vehicle||'S-Class')}</td>
+        <td><span class="tag ${STATUS_TAG[String(b.status||'pending').replace(/[^a-z_]/g,'')]||'tag-gray'}">${esc(b.status||'pending')}</span></td>
+        <td style="font-weight:700;color:var(--gold)">£${Number(b.price)||0}</td>
+      </tr>`).join('');
+  },e=>console.warn('Recent bookings:',e.code));
+}
+</script>
+</body>
+</html>

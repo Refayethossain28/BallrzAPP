@@ -1,5 +1,6 @@
 'use client'
 import { useState, useCallback } from 'react'
+import Link from 'next/link'
 import type { AIInsight, ForexAnalysis, NewsArticle } from '@/lib/types'
 import { POPULAR_PAIRS } from '@/lib/types'
 import PairSearch from '@/components/PairSearch'
@@ -9,6 +10,7 @@ import IndicatorGrid from '@/components/IndicatorGrid'
 import PriceChart from '@/components/PriceChart'
 import NewsSection from '@/components/NewsSection'
 import MarketOverview from '@/components/MarketOverview'
+import AIStatusBadge from '@/components/AIStatusBadge'
 
 const DISCLAIMER = 'This tool is for educational purposes only. Trading forex involves significant risk. Never trade with money you cannot afford to lose.'
 
@@ -93,18 +95,50 @@ export default function TradingApp() {
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white text-sm font-bold">FX</div>
             <div>
-              <h1 className="text-white font-bold text-base leading-none">FX Signal Pro</h1>
+              <h1 className="text-white font-bold text-base leading-none">ApexFX</h1>
               <p className="text-gray-400 text-xs">Currency Trading Analysis</p>
             </div>
           </div>
-          <div className="hidden sm:flex items-center gap-2 text-xs text-gray-500">
-            <span className="w-2 h-2 rounded-full bg-buy animate-pulse-slow" />
-            <span>Live Data</span>
+          <div className="flex items-center gap-4">
+            <AIStatusBadge />
+            <Link href="/journal" className="text-xs text-gray-400 hover:text-white transition-colors">
+              Journal
+            </Link>
+            <Link href="/account" className="text-xs text-gray-400 hover:text-white transition-colors hidden sm:inline">
+              Account
+            </Link>
+            <Link
+              href="/screenshot"
+              className="text-xs font-semibold text-blue-300 bg-blue-600/20 border border-blue-500/40 px-3 py-1.5 rounded-full hover:bg-blue-600/30 transition-colors"
+            >
+              📸 Screenshot Analyzer
+            </Link>
+            <div className="hidden sm:flex items-center gap-2 text-xs text-gray-500">
+              <span className="w-2 h-2 rounded-full bg-buy animate-pulse-slow" />
+              <span>Live Data</span>
+            </div>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-6">
+        {/* Screenshot analyzer banner */}
+        <Link
+          href="/screenshot"
+          className="block mb-6 card p-4 hover:border-blue-500/50 hover:bg-blue-600/5 transition-all"
+        >
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-xl">📸</div>
+              <div>
+                <p className="text-white font-semibold text-sm">New: AI Screenshot Analysis</p>
+                <p className="text-gray-400 text-xs">Paste a Plus500 / MT4 / TradingView screenshot and get Buy/Sell with entry, TP and SL</p>
+              </div>
+            </div>
+            <span className="text-blue-400 text-sm shrink-0">Try it →</span>
+          </div>
+        </Link>
+
         {/* Search Section */}
         <div className="mb-8">
           <div className="text-center mb-6">

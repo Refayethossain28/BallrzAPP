@@ -31,6 +31,57 @@ services:
       - key: FLIGHT_API_KEY      # real AviationStack flight tracking
         sync: false
 
+  # ApexFX — Next.js trading app with the AI screenshot analyzer.
+  # After the first deploy, open the service's Environment tab and paste the
+  # same ANTHROPIC_API_KEY used by fixr / the ApexVIP Firebase functions.
+  - type: web
+    name: fx-signal-pro
+    runtime: node
+    rootDir: trading-app
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start -- -p $PORT
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22.11.0"
+      - key: ANTHROPIC_API_KEY   # powers the screenshot Buy/Sell analysis
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT  # service-account JSON — enables real-time scoring
+        sync: false
+      - key: VAPID_PUBLIC_KEY          # web-push signing (public half; safe to inline)
+        value: BEq6_PKG0Y7XvZBFGGjslR0gIWX0SYU0RSuLy0naj6bbFaZSwsyp_qRnw85AWJXhDkwFMPmKh-C10zcUVs34SpM
+      - key: VAPID_PRIVATE_KEY         # web-push signing (secret half)
+        sync: false
+
+  # Voyager proxy — the full-browser proxy that lets the hosted Voyager open
+  # sites which refuse to be framed (Google, most logins). Zero-dependency,
+  # nothing to build. After deploy, paste this service's URL into
+  # Voyager → Settings → Full browser (proxy). Full guide: voyager/DEPLOY.md.
+  - type: web
+    name: voyager-proxy
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node voyager/server.mjs
+    healthCheckPath: /__voyager/ping
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22.11.0"
+      # Bind all interfaces so Render can reach the process.
+      - key: HOST
+        value: 0.0.0.0
+      # It deploys OPEN (SSRF-guarded) so it works the moment it's live — no
+      # Origin allowlist, which phone browsers break on framed navigations.
+      # To LOCK it to just you, add a PROXY_KEY here (any long random string)
+      # and append "?key=<same value>" to the proxy URL in Voyager → Settings:
+      #   - key: PROXY_KEY
+      #     generateValue: true   # Render makes a secret; read it in the dashboard
+      # PORT is injected by Render; server.mjs honours it. Leave
+      # VOYAGER_ALLOW_PRIVATE unset in production (keeps the SSRF guard on).
+
 databases:
   - name: fixr-db
     plan: free

@@ -67,6 +67,61 @@ test('context-aware follow-up: a bare postcode becomes the pickup', () => {
   assert.equal(r.serviceType, 'airport');
 });
 
+// ── Quotes — answered on-device from the rate card ──────────────────────────
+const RATE_CARD = {
+  airport_s: 185, airport_v: 225, heathrow_s: 185, heathrow_v: 225,
+  gatwick_s: 195, gatwick_v: 235, city_s: 125, city_v: 155,
+  hourly_s_rate: 65, hourly_v_rate: 75, day_s: 450, day_v: 550,
+  min_fare_s: 38, per_km_s: 2.2, min_fare_v: 50, per_km_v: 2.75,
+};
+const qctx = (over: Partial<ConciergeContext> = {}): ConciergeContext => ({ now: NOW, rateCard: RATE_CARD, ...over });
+
+test('quote: "how much for a V-Class to Heathrow tomorrow at 1700?" prices from the card', () => {
+  const r = parseIntentLocal('How much for a v class to Heathrow tomorrow at 1700?', qctx());
+  assert.equal(r.intent, 'quote');
+  assert.equal(r.serviceType, 'airport');
+  assert.equal(r.airport, 'Heathrow T5');
+  assert.match(r.reply, /£225/);       // heathrow_v
+  assert.match(r.reply, /V-Class/);
+});
+
+test('quote: S-Class is the default vehicle and uses the terminal-specific fare', () => {
+  const r = parseIntentLocal('What does a car to Gatwick cost?', qctx());
+  assert.equal(r.intent, 'quote');
+  assert.match(r.reply, /£195/);       // gatwick_s
+});
+
+test('quote: hourly rate', () => {
+  const r = parseIntentLocal('How much is hourly hire in a V-Class?', qctx());
+  assert.equal(r.intent, 'quote');
+  assert.match(r.reply, /£75/);        // hourly_v_rate
+  assert.match(r.reply, /per hour/i);
+});
+
+test('quote: full day', () => {
+  const r = parseIntentLocal('Price for a full-day chauffeur?', qctx());
+  assert.equal(r.intent, 'quote');
+  assert.match(r.reply, /£450/);       // day_s
+});
+
+test('quote: generic ask with no route lists headline rates', () => {
+  const r = parseIntentLocal('How much are your rates?', qctx());
+  assert.equal(r.intent, 'quote');
+  assert.match(r.reply, /£185/);       // airport_s headline
+});
+
+test('quote falls back gracefully when no rate card is supplied', () => {
+  const r = parseIntentLocal('How much to Heathrow?', ctx()); // no rateCard
+  assert.equal(r.intent, 'quote');
+  assert.match(r.reply, /confirm the exact fare/i);
+});
+
+test('a normal booking (no price words) is NOT treated as a quote', () => {
+  const r = parseIntentLocal('Car to Heathrow from Mayfair', qctx());
+  assert.notEqual(r.intent, 'quote');
+  assert.equal(r.pickup, 'Mayfair');
+});
+
 test('hotel discovery runs only with a hotel context', () => {
   const hotels: Hotel[] = [
     { area: 'Mayfair', rating: 5 },

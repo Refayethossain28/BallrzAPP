@@ -73,6 +73,20 @@ function reqString(v: unknown, name: string, maxLen = 256): string {
   return v.trim();
 }
 
+/**
+ * A Firestore document id: non-empty, ≤1500 chars, and free of `/` so a value
+ * like `x/payments/y` can't retarget the doc path it's interpolated into. Every
+ * owner check still fails closed on the resolved doc, but validating here rejects
+ * malformed ids up front.
+ */
+function reqId(v: unknown, name: string): string {
+  const s = reqString(v, name, 1500);
+  if (!/^[A-Za-z0-9_-]+$/.test(s)) {
+    throw new HttpsError('invalid-argument', `${name} is not a valid id.`);
+  }
+  return s;
+}
+
 /** Positive integer pence, capped (default £1m/mo) — no floats, no negatives. */
 function reqPence(v: unknown, name: string, max = 100_000_000): number {
   if (typeof v !== 'number' || !Number.isInteger(v) || v <= 0 || v > max) {
@@ -163,8 +177,7 @@ interface DraftRequest {
 export const draftContract = onCall(callableOpts, async (req: CallableRequest<DraftRequest>) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
-  const dealId = req.data?.dealId;
-  if (!dealId) throw new HttpsError('invalid-argument', 'dealId is required.');
+  const dealId = reqId(req.data?.dealId, 'dealId');
 
   const dealRef = db.doc(`deals/${dealId}`);
   const dealSnap = await dealRef.get();
@@ -259,8 +272,7 @@ export const draftContract = onCall(callableOpts, async (req: CallableRequest<Dr
 export const openSigning = onCall(callableOpts, async (req: CallableRequest<DraftRequest>) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
-  const dealId = req.data?.dealId;
-  if (!dealId) throw new HttpsError('invalid-argument', 'dealId is required.');
+  const dealId = reqId(req.data?.dealId, 'dealId');
 
   const dealRef = db.doc(`deals/${dealId}`);
   const dealSnap = await dealRef.get();
@@ -300,8 +312,7 @@ export const openSigning = onCall(callableOpts, async (req: CallableRequest<Draf
 export const recordSignature = onCall(callableOpts, async (req: CallableRequest<DraftRequest>) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
-  const dealId = req.data?.dealId;
-  if (!dealId) throw new HttpsError('invalid-argument', 'dealId is required.');
+  const dealId = reqId(req.data?.dealId, 'dealId');
 
   const dealRef = db.doc(`deals/${dealId}`);
   const dealSnap = await dealRef.get();
@@ -467,8 +478,7 @@ export const createSetupIntent = onCall(callableOpts, async (req: CallableReques
 export const chargePlatformFee = onCall(callableOpts, async (req: CallableRequest<DraftRequest>) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
-  const dealId = req.data?.dealId;
-  if (!dealId) throw new HttpsError('invalid-argument', 'dealId is required.');
+  const dealId = reqId(req.data?.dealId, 'dealId');
 
   const dealRef = db.doc(`deals/${dealId}`);
   const dealSnap = await dealRef.get();
@@ -578,6 +588,11 @@ export const publishListing = onCall(callableOpts, async (req: CallableRequest<P
   if (!snap.exists) throw new HttpsError('not-found', 'Listing not found.');
   const listing = snap.data() as Record<string, unknown>;
   if (listing.landlordId !== uid) throw new HttpsError('permission-denied', 'Not your listing.');
+  // Compliance-tracked properties are never advertised (no rent/beds/advert) —
+  // publishing one would surface a "£0/month" listing to renters.
+  if (listing.trackingOnly) {
+    throw new HttpsError('failed-precondition', 'This property is tracked for compliance only and cannot be advertised.');
+  }
 
   const docs = (Array.isArray(listing.complianceDocs) ? listing.complianceDocs : []) as ComplianceDoc[];
   const { checks, canGoLive } = evaluateListingCompliance({
@@ -809,8 +824,7 @@ async function gcFetch(path: string, method: 'GET' | 'POST', body?: unknown): Pr
 export const createDirectDebitSetup = onCall(callableOpts, async (req: CallableRequest<{ tenancyId: string }>) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
-  const tenancyId = req.data?.tenancyId;
-  if (!tenancyId) throw new HttpsError('invalid-argument', 'tenancyId is required.');
+  const tenancyId = reqId(req.data?.tenancyId, 'tenancyId');
 
   const ref = db.doc(`tenancies/${tenancyId}`);
   const snap = await ref.get();
@@ -858,6 +872,11 @@ async function updateCollectionStatus(
       match.paymentId ? c.paymentId === match.paymentId : c.period === match.period,
     );
     if (idx < 0) return null;
+    // Idempotency: GoCardless delivers webhooks at-least-once and fires both
+    // `confirmed` and `paid_out` (both → 'confirmed') for one payment. Only the
+    // FIRST transition into a status writes; a repeat returns null so the caller
+    // doesn't record the same rent payment (incrementing totalPaidPence) twice.
+    if (collections[idx].status === status) return null;
     const updated = { ...collections[idx], status };
     collections[idx] = updated;
     tx.update(ref, { collections });
@@ -873,6 +892,13 @@ async function updateCollectionStatus(
  */
 export const gocardlessWebhook = onRequest(async (req, res) => {
   const secret = process.env.GOCARDLESS_WEBHOOK_SECRET ?? '';
+  // Fail closed: with no secret, the HMAC key is empty and an attacker can
+  // reproduce it from a self-supplied body, forging mandate/payment events.
+  if (!secret) {
+    console.error('[gocardless:webhook] GOCARDLESS_WEBHOOK_SECRET unset — rejecting');
+    res.status(500).send('Webhook not configured.');
+    return;
+  }
   const signature = String(req.headers['webhook-signature'] ?? '');
   const expected = createHmac('sha256', secret).update(req.rawBody).digest('hex');
   const ok =
@@ -993,7 +1019,7 @@ const APP_URL = (process.env.APP_URL ?? 'http://localhost:5173').replace(/\/$/, 
  * plan is stamped on the subscription metadata so the webhook can mirror state
  * back without a separate customer→plan lookup.
  */
-export const createBillingCheckoutSession = onCall(
+export const createBillingCheckoutSession = onCall(callableOpts,
   async (req: CallableRequest<{ plan: PlanId; units?: number }>) => {
     const uid = req.auth?.uid;
     if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
@@ -1090,13 +1116,20 @@ export const createAgency = onCall(callableOpts, async (req: CallableRequest<{ n
 export const connectToAgency = onCall(callableOpts, async (req: CallableRequest<{ agencyId: string }>) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
-  const agencyId = reqString(req.data?.agencyId, 'agency code', 128);
+  const agencyId = reqId(req.data?.agencyId, 'agency code');
 
   const agencySnap = await db.doc(`agencies/${agencyId}`).get();
   if (!agencySnap.exists) throw new HttpsError('not-found', 'No agency with that code.');
 
+  // Denormalise the landlord's name onto the agency doc. Agency members can't
+  // read a client's private user doc under the rules, so without this the
+  // agency dashboard would fail every client name lookup.
+  const displayName = String((await db.doc(`users/${uid}`).get()).data()?.displayName ?? 'Landlord');
   await db.doc(`users/${uid}`).set({ agencyId }, { merge: true });
-  await db.doc(`agencies/${agencyId}`).update({ clientLandlordIds: FieldValue.arrayUnion(uid) });
+  await db.doc(`agencies/${agencyId}`).update({
+    clientLandlordIds: FieldValue.arrayUnion(uid),
+    [`clientNames.${uid}`]: displayName,
+  });
   return { ok: true, agencyName: String(agencySnap.data()?.name ?? 'agency') };
 });
 
@@ -1175,7 +1208,7 @@ interface RenewalTermsInput {
 export const createRenewal = onCall(callableOpts, async (req: CallableRequest<RenewalTermsInput>) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
-  const tenancyId = reqString(req.data?.tenancyId, 'tenancyId', 128);
+  const tenancyId = reqId(req.data?.tenancyId, 'tenancyId');
   const startDate = reqEpoch(req.data?.startDate, 'start date');
   const termMonths = reqInt(req.data?.termMonths, 'term', 1, 120);
   const monthlyRentPence = reqPence(req.data?.monthlyRentPence, 'rent');
@@ -1198,7 +1231,7 @@ export const createRenewal = onCall(callableOpts, async (req: CallableRequest<Re
 });
 
 /** Record a renewal signature (stands in for the e-sign provider webhook). */
-export const recordRenewalSignature = onCall(
+export const recordRenewalSignature = onCall(callableOpts,
   async (req: CallableRequest<{ tenancyId: string; party: 'landlord' | 'tenant' }>) => {
     const uid = req.auth?.uid;
     if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
@@ -1228,8 +1261,7 @@ export const recordRenewalSignature = onCall(
 export const confirmRenewal = onCall(callableOpts, async (req: CallableRequest<{ tenancyId: string }>) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'You must be signed in.');
-  const tenancyId = req.data?.tenancyId;
-  if (!tenancyId) throw new HttpsError('invalid-argument', 'tenancyId is required.');
+  const tenancyId = reqId(req.data?.tenancyId, 'tenancyId');
 
   const ref = db.doc(`tenancies/${tenancyId}`);
   const snap = await ref.get();

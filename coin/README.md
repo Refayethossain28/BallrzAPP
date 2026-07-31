@@ -1,0 +1,135 @@
+# TimeCoin (TIME) — a currency for time and favours, built like Bitcoin
+
+A complete proof-of-work cryptocurrency implemented from raw bytes up, with **zero
+dependencies**: the crypto, the ledger and the consensus rules all live in
+[`engine.js`](engine.js), and [`index.html`](index.html) is a single-file node UI
+(wallets, miner, mempool, block explorer). It's designed to be used — a community
+**time bank** you earn by mining and spend on time and favours, never cash.
+[`why.html`](why.html) makes the case for it as an honest **alternative to banks
+and cash** (what it does, its purpose, and its advantages over the banking
+system).
+
+## What's real about it
+
+The same building blocks Bitcoin uses, implemented from their specs and verified
+against published test vectors in [`../scripts/test-coin-logic.mjs`](../scripts/test-coin-logic.mjs):
+
+| Piece | Implementation |
+| --- | --- |
+| Hashing | SHA-256 from FIPS 180-4 (plus double-SHA-256 everywhere Bitcoin uses it) |
+| Signatures | ECDSA over **secp256k1** — Bitcoin's exact curve — with compressed public keys, RFC 6979 deterministic nonces and low-S normalisation (BIP-62) |
+| Addresses | base58check with a version byte and 4-byte checksum (addresses start with `B`) |
+| Ledger | UTXO model: coins are unspent outputs; transactions consume them with signed inputs |
+| Blocks | Merkle root over transaction ids; header hashed with double-SHA-256 |
+| Mining | Proof of work against a 256-bit target; difficulty retargets every 10 blocks, clamped to ×4 per step like Bitcoin |
+| Money supply | 50,000 TIME subsidy halving every 210,000 blocks — **21,000,000,000 TIME will ever exist**, hard-capped and fixed forever, sized for a worldwide community — with fees paid to the miner |
+| Consensus | Fork choice by **cumulative work** (`replaceChain`), so independent nodes converge |
+
+Open `index.html` in two browser tabs: each tab is a node with its own copy of the
+chain, syncing blocks and transactions over `BroadcastChannel`. Mine in one tab and
+watch the other adopt the heavier chain.
+
+## Known limitations — read before you trust it with value
+
+TimeCoin is real, but it is **early**, and honesty about its limits matters more
+now that people trade real time and services for it. Where it currently differs
+from Bitcoin's battle-hardened implementation: no Script language (outputs pay a
+pubkey hash directly), no coinbase maturity delay, JSON instead of the wire
+format, double-SHA-256-truncated instead of RIPEMD-160 for address hashing,
+**browser-grade key storage (localStorage — keys are not yet encrypted at rest)**,
+and the network is a polling relay rather than true p2p gossip. The full list —
+with severities, as a real auditor would write them, and none of them hidden — is
+in [`SECURITY.md`](SECURITY.md), and [`ROADMAP.md`](ROADMAP.md) lays out the path
+from here to a hardened currency. Treat these as the risk disclosures any serious
+currency owes its users, not as fine print.
+
+## Run a real multi-device network
+
+Tabs in one browser sync automatically. To connect nodes on **different
+devices**, run the zero-dependency relay — which also serves the app itself:
+
+```sh
+node coin/server.mjs                  # open http://localhost:8087 → the app, pre-connected
+```
+
+Deploy that one file to Render's free tier and you have a shareable network
+URL — the 5-minute walkthrough is in [`DEPLOY.md`](DEPLOY.md). Nodes can also
+join a relay three other ways: an invite link (`?relay=…`, shown in the app's
+Network panel), pasting the URL into the Network panel, or `relayUrl` in
+[`config.js`](config.js). The relay is deliberately dumb — it forwards messages
+but can't forge a block or touch a key; every node re-validates everything and
+adopts only the heaviest valid chain. A page served over `https://` (like
+GitHub Pages) can only call an `https://` relay.
+
+Wallet cards have a **QR button**: it encodes a `?pay=<address>` link, so a
+friend scanning it opens the app with your wallet prefilled as the recipient.
+The Send form has a **📷 Scan a friend’s QR** button: where the browser supports
+`BarcodeDetector` (Chrome/Android) it opens the camera and reads their address
+in-app; elsewhere (e.g. iOS Safari) it explains that the phone’s own Camera app
+scans the same QR, since it’s a payment link.
+The page also shows a live **leaderboard** (top holders by share of supply) and
+a **halving countdown** toward the 21-billion-TIME issuance limit.
+
+**Barter — offers board (a time bank):** TIME buys **time and favours, never
+cash**. Post something you'll do or give (“🎂 Bake a cake”) priced in **hours or
+minutes**, and pay others for theirs. The offers board is a
+[time bank](https://en.wikipedia.org/wiki/Time-based_currency): a single
+group-agreed rate (**1 TIME = _n_ minutes**, editable in the ⏳ time-rate box)
+converts every offer between time and coins, so prices read “30m · 0.5 TIME” and
+you can post in whichever unit feels natural. Anchoring value to *time* rather
+than pounds is what keeps this a favours co-op, not an investment. Offers gossip
+across the network like transactions (they live off-chain — an offer is a
+notice, not money), and a **Pay** button prefills the send form with the
+poster's address and price; you sign and mine to confirm as usual. Everyone in
+your circle should set the *same* rate — that shared agreement is what turns the
+coin into a working barter currency (like a LETS scheme or a babysitting co-op). [`CIRCLE.md`](CIRCLE.md) is a week-by-week
+playbook for bootstrapping TIME into a currency a group of ~10 friends actually
+uses — the honest version of "making the coin valuable."
+
+**Protection against a no-show seller** — because on-chain payments are final,
+the barter board adds three safeguards for the "I paid and they ghosted" case:
+
+- **Deals & reputation.** Paying an offer opens a *deal* with a lifecycle
+  (funded → confirm received → complete). Confirming delivery permanently adds a
+  ✓ to the seller's public reputation, shown on every offer they post. Deals and
+  reputation gossip over the network so the whole circle sees who's reliable.
+- **🛡 Escrow.** Instead of paying the seller directly, pay a mutually-trusted
+  third party; they release the coins to the seller once you confirm delivery,
+  or refund you if it falls through. Trust-based custody — right-sized for a
+  close circle (the agent is a person you both trust, not a smart contract).
+- **Pay on delivery** — the simplest of all: just pay *after* you receive the
+  favour. No code needed; it's the recommended default among friends.
+
+- **🔐 Trustless 2-of-3 multisig vault (in-app + engine).** For when you don't
+  want to trust even the middleman: pick **🔐 Vault** on an offer and the funds
+  lock into a *multisig address* (`createMultisigAddress([buyer, seller,
+  arbiter], 2)`, addresses start with `M`) that only releases when **2 of the 3
+  sign**. Normal release = buyer + seller; dispute = arbiter + one party. No
+  single person can abscond with the funds — it's enforced by the blockchain,
+  not by trust. In the app it's a **propose → co-sign** ceremony: any party
+  proposes a release-to-seller or refund-to-buyer, and a second party co-signs
+  to complete it (signatures gossip across devices, so the two signers can be on
+  two phones). Under the hood it's `buildMultisigSpend` → each party
+  `signMultisig` → `finalizeMultisig`, and the consensus rules reject a single
+  signature, an outsider's signatures, or a forged key set (see the multisig
+  tests in `scripts/test-coin-logic.mjs`). Multisig needs everyone's *public
+  key*, so offers now carry the poster's key and nodes gossip a small identity
+  directory; the arbiter must be someone who has used the app (so their key is
+  known).
+
+So a buyer chooses per payment: **Pay** (trust the seller), **🛡 Trusted**
+(trust a middleman), or **🔐 Vault** (trust no one — math holds the coins).
+
+Wallets can be backed up and restored: **🔑 Keys** reveals a wallet's private
+key, **🖨 Paper wallet** prints a cold-storage card (address QR on one half,
+private-key QR on the other), and **⬇ Import wallet** restores a key on any
+device — the balance follows automatically once the node syncs the chain,
+because coins live on the blockchain and the key is just the proof of
+ownership. (Keys at rest in the browser are still unencrypted — SECURITY.md #1;
+a paper wallet protects against loss, not against someone reading your screen.)
+
+## Run the tests
+
+```sh
+npm run test:coin        # 39 tests: crypto vectors, consensus rules, fork choice, multisig
+```

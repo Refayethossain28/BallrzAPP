@@ -38,7 +38,7 @@ function findHtml(dir, out = []) {
   return out;
 }
 
-/* ---- pull inline classic scripts (skip src= and type=module) ---- */
+/* ---- pull inline classic scripts (skip src=, modules, and data blocks) ---- */
 function inlineScripts(html) {
   const blocks = [];
   const re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
@@ -46,7 +46,12 @@ function inlineScripts(html) {
   while ((m = re.exec(html)) !== null) {
     const attrs = m[1] || '';
     if (/\bsrc\s*=/i.test(attrs)) continue;                 // external
-    if (/type\s*=\s*["']?module/i.test(attrs)) continue;    // ES module — skip
+    // Per the HTML spec, a type other than a JavaScript MIME type (e.g.
+    // application/ld+json structured data) is an inert data block a browser
+    // never executes — mirror that. Modules are real JS but can't run in this
+    // classic-script sandbox, so they're skipped too.
+    const type = /\btype\s*=\s*["']?\s*([^"'\s>]+)/i.exec(attrs)?.[1];
+    if (type && !/^(?:text|application)\/(?:java|ecma)script$/i.test(type)) continue;
     blocks.push(m[2]);
   }
   return blocks;
@@ -102,7 +107,7 @@ function makeSandbox() {
     // window-as-EventTarget surface and common window props
     addEventListener: noop, removeEventListener: noop, dispatchEvent: () => true,
     matchMedia: () => makeStub(), scrollTo: noop, scrollBy: noop,
-    devicePixelRatio: 2, innerWidth: 390, innerHeight: 780,
+    devicePixelRatio: 2, innerWidth: 390, innerHeight: 780, scrollX: 0, scrollY: 0,
   };
   sandbox.window = sandbox;
   sandbox.self = sandbox;

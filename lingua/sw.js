@@ -2,7 +2,7 @@
  * icons, so navigations are network-first (latest build when online, cached
  * shell when offline) and static assets are cache-first for speed.
  * The /ai and /health proxy calls are never cached. Bump CACHE to reinstall. */
-const CACHE = 'lingua-v1';
+const CACHE = 'lingua-v2';
 const ASSETS = ['./', './index.html', './manifest.json',
                 './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 
@@ -23,6 +23,7 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
+  if (url.origin !== self.location.origin) return; // Qur'an API/audio & CDNs: network-only (text is cached in localStorage)
   if (url.pathname === '/ai' || url.pathname === '/health') return; // never cache AI calls
 
   const req = e.request;
