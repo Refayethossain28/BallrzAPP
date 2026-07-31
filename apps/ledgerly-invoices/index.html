@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ledgerly — Invoice Generator</title>
+<style>
+  :root{
+    --bg:#0d0d0f; --card:#17171a; --card-2:#1d1d21;
+    --border:rgba(255,255,255,0.08);
+    --text:#f2f2f0; --text-2:#a3a29b; --muted:#898781;
+    --accent:#eb6834; --accent-soft:rgba(235,104,52,0.13);
+    --good:#0ca30c; --bad:#e66767;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--bg);color:var(--text);
+    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+    -webkit-font-smoothing:antialiased}
+
+  .topbar{
+    display:flex;align-items:center;gap:16px;
+    padding:12px 24px;border-bottom:1px solid var(--border);
+    position:sticky;top:0;background:rgba(13,13,15,0.88);
+    backdrop-filter:blur(8px);z-index:20;
+  }
+  .back{font-size:13px;color:var(--text-2);text-decoration:none;padding:6px 10px;
+    border:1px solid var(--border);border-radius:8px;white-space:nowrap}
+  .back:hover{color:var(--text);border-color:rgba(255,255,255,0.16)}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:16px}
+  .brand .logo{width:22px;height:22px;border-radius:7px;background:var(--accent);
+    display:inline-flex;align-items:center;justify-content:center}
+  .topbar .spacer{flex:1}
+  .topbar .who{font-size:12.5px;color:var(--muted)}
+
+  .wrap{max-width:1120px;margin:0 auto;padding:24px;display:grid;
+    grid-template-columns:270px 1fr;gap:16px;align-items:start}
+  @media (max-width:860px){.wrap{grid-template-columns:1fr}}
+
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px}
+
+  /* ---------- sidebar ---------- */
+  .side{padding:16px;position:sticky;top:76px}
+  @media (max-width:860px){.side{position:static}}
+  .side h2{font-size:13px;font-weight:600;color:var(--text-2);text-transform:uppercase;
+    letter-spacing:0.06em;margin-bottom:12px}
+  .btn{
+    appearance:none;border:1px solid var(--border);background:var(--card-2);
+    color:var(--text);font:inherit;font-size:13.5px;font-weight:600;
+    padding:9px 14px;border-radius:10px;cursor:pointer;
+  }
+  .btn:hover{border-color:rgba(255,255,255,0.18)}
+  .btn.primary{background:var(--accent);border-color:transparent;color:#fff}
+  .btn.primary:hover{filter:brightness(1.08)}
+  .btn.block{display:block;width:100%;text-align:center}
+  .inv-list{margin-top:12px;display:flex;flex-direction:column;gap:6px}
+  .inv-item{
+    display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;
+    border:1px solid transparent;cursor:pointer;
+  }
+  .inv-item:hover{background:rgba(255,255,255,0.04)}
+  .inv-item.active{background:var(--accent-soft);border-color:rgba(235,104,52,0.35)}
+  .inv-item .meta{flex:1;min-width:0}
+  .inv-item .no{font-size:13px;font-weight:600}
+  .inv-item .client{font-size:12px;color:var(--text-2);white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  .inv-item .amt{font-size:12.5px;font-variant-numeric:tabular-nums;color:var(--text-2)}
+  .inv-item .del{
+    appearance:none;border:0;background:transparent;color:var(--muted);cursor:pointer;
+    font-size:15px;line-height:1;padding:4px 6px;border-radius:6px;flex:none;
+  }
+  .inv-item .del:hover{color:var(--bad);background:rgba(230,103,103,0.12)}
+  .side .none{font-size:12.5px;color:var(--muted);padding:8px 2px}
+
+  /* ---------- form ---------- */
+  .main{padding:22px}
+  .main h1{font-size:17px;font-weight:700;margin-bottom:4px}
+  .main .sub{font-size:12.5px;color:var(--muted);margin-bottom:18px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media (max-width:560px){.grid2{grid-template-columns:1fr}}
+  .field{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+  .field label{font-size:12.5px;color:var(--text-2)}
+  .field input,.field select{
+    background:var(--bg);border:1px solid var(--border);border-radius:9px;
+    color:var(--text);font:inherit;font-size:13.5px;padding:8px 11px;width:100%;
+  }
+  .field input:focus{outline:none;border-color:var(--accent)}
+  .field input[readonly]{color:var(--text-2);background:var(--card-2)}
+  .field input.invalid{border-color:var(--bad)}
+  .field input::-webkit-calendar-picker-indicator{filter:invert(0.7)}
+
+  .items{margin:8px 0 4px}
+  .items-head,.item-row{
+    display:grid;grid-template-columns:1fr 76px 110px 100px 34px;gap:8px;align-items:center;
+  }
+  .items-head{font-size:12px;color:var(--text-2);padding:0 0 8px}
+  .items-head .r,.item-row .amount{text-align:right}
+  .item-row{padding:5px 0}
+  .item-row input{
+    background:var(--bg);border:1px solid var(--border);border-radius:8px;
+    color:var(--text);font:inherit;font-size:13.5px;padding:7px 10px;width:100%;
+  }
+  .item-row input:focus{outline:none;border-color:var(--accent)}
+  .item-row input.qty,.item-row input.price{text-align:right;font-variant-numeric:tabular-nums}
+  .item-row .amount{font-size:13.5px;font-variant-numeric:tabular-nums;color:var(--text-2)}
+  .item-row .rm{
+    appearance:none;border:0;background:transparent;color:var(--muted);cursor:pointer;
+    font-size:16px;border-radius:6px;padding:4px 0;
+  }
+  .item-row .rm:hover:not(:disabled){color:var(--bad);background:rgba(230,103,103,0.12)}
+  .item-row .rm:disabled{opacity:0.3;cursor:default}
+  @media (max-width:560px){
+    .items-head{display:none}
+    .item-row{grid-template-columns:1fr 60px 90px 80px 30px}
+  }
+  .add-row{margin:8px 0 16px;background:transparent;border:1px dashed rgba(255,255,255,0.18);
+    color:var(--text-2);font:inherit;font-size:13px;padding:8px;width:100%;
+    border-radius:9px;cursor:pointer}
+  .add-row:hover{color:var(--text);border-color:var(--accent)}
+
+  .bottom{display:grid;grid-template-columns:1fr 260px;gap:20px;align-items:end}
+  @media (max-width:560px){.bottom{grid-template-columns:1fr}}
+  .rates{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .totals{background:var(--card-2);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+  .totals .row{display:flex;justify-content:space-between;font-size:13px;color:var(--text-2);
+    padding:3px 0;font-variant-numeric:tabular-nums}
+  .totals .row.total{border-top:1px solid var(--border);margin-top:8px;padding-top:10px;
+    color:var(--text);font-size:16px;font-weight:700}
+  .totals .neg{color:var(--good)}
+
+  .actions{display:flex;gap:10px;margin-top:18px;align-items:center}
+  .flash{font-size:12.5px;color:var(--good);opacity:0;transition:opacity .3s}
+  .flash.show{opacity:1}
+  .flash.err{color:var(--bad)}
+
+  /* ---------- print document ---------- */
+  #printDoc{display:none}
+  @media print{
+    @page{margin:18mm}
+    body{background:#fff}
+    .topbar,.wrap{display:none !important}
+    #printDoc{display:block;color:#111;font-size:13px}
+    #printDoc .p-head{display:flex;justify-content:space-between;align-items:flex-start;
+      border-bottom:2px solid #111;padding-bottom:14px}
+    #printDoc .p-co{font-size:20px;font-weight:700}
+    #printDoc .p-co small{display:block;font-size:11px;font-weight:400;color:#555;margin-top:4px}
+    #printDoc .p-inv{text-align:right}
+    #printDoc .p-inv .t{font-size:22px;font-weight:700;letter-spacing:0.04em}
+    #printDoc .p-inv div{margin-top:2px;color:#333}
+    #printDoc .p-bill{margin:22px 0;display:flex;justify-content:space-between}
+    #printDoc .p-bill h3{font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:#666;margin-bottom:4px}
+    #printDoc table{width:100%;border-collapse:collapse;margin-top:6px}
+    #printDoc th{font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:#555;
+      text-align:left;padding:7px 8px;border-bottom:1.5px solid #111}
+    #printDoc th.r,#printDoc td.r{text-align:right}
+    #printDoc td{padding:8px;border-bottom:1px solid #ddd}
+    #printDoc .p-tot{margin-top:14px;margin-left:auto;width:260px}
+    #printDoc .p-tot .row{display:flex;justify-content:space-between;padding:3px 8px;color:#333}
+    #printDoc .p-tot .row.g{border-top:2px solid #111;margin-top:6px;padding-top:8px;
+      font-weight:700;font-size:15px;color:#111}
+    #printDoc .p-foot{margin-top:36px;color:#666;font-size:11.5px}
+  }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="back" href="../index.html">&#8592; All apps</a>
+    <span class="brand">
+      <span class="logo"><svg width="13" height="13" viewBox="0 0 13 13"><rect x="2" y="1.5" width="9" height="10" rx="1.5" fill="none" stroke="#fff" stroke-width="1.4"/><line x1="4.4" y1="4.5" x2="8.6" y2="4.5" stroke="#fff" stroke-width="1.2"/><line x1="4.4" y1="6.8" x2="8.6" y2="6.8" stroke="#fff" stroke-width="1.2"/><line x1="4.4" y1="9.1" x2="6.8" y2="9.1" stroke="#fff" stroke-width="1.2"/></svg></span>
+      Ledgerly
+    </span>
+    <span class="spacer"></span>
+    <span class="who">Internal tool &middot; invoices stored locally</span>
+  </header>
+
+  <div class="wrap">
+    <aside class="card side">
+      <h2>Saved invoices</h2>
+      <button class="btn block" id="newBtn">+ New invoice</button>
+      <div class="inv-list" id="invList"></div>
+      <div class="none" id="noneMsg" style="display:none">Nothing saved yet.</div>
+    </aside>
+
+    <section class="card main">
+      <h1 id="formTitle">New invoice</h1>
+      <div class="sub">Fill in the details below — totals update live. Save keeps it in this browser.</div>
+
+      <div class="grid2">
+        <div class="field">
+          <label for="invNo">Invoice number</label>
+          <input id="invNo" readonly>
+        </div>
+        <div class="field">
+          <label for="invDate">Invoice date</label>
+          <input id="invDate" type="date">
+        </div>
+        <div class="field">
+          <label for="clientName">Client name</label>
+          <input id="clientName" placeholder="Acme Corp" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="clientEmail">Client email</label>
+          <input id="clientEmail" type="email" placeholder="billing@acme.com" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="items">
+        <div class="items-head">
+          <span>Description</span><span class="r">Qty</span>
+          <span class="r">Unit price</span><span class="r">Amount</span><span></span>
+        </div>
+        <div id="itemRows"></div>
+      </div>
+      <button class="add-row" id="addItem">+ Add line item</button>
+
+      <div class="bottom">
+        <div class="rates">
+          <div class="field">
+            <label for="taxPct">Tax %</label>
+            <input id="taxPct" type="number" min="0" max="100" step="0.1" value="0">
+          </div>
+          <div class="field">
+            <label for="discPct">Discount %</label>
+            <input id="discPct" type="number" min="0" max="100" step="0.1" value="0">
+          </div>
+        </div>
+        <div class="totals">
+          <div class="row"><span>Subtotal</span><span id="tSub">$0.00</span></div>
+          <div class="row"><span id="tDiscLbl">Discount</span><span class="neg" id="tDisc">−$0.00</span></div>
+          <div class="row"><span id="tTaxLbl">Tax</span><span id="tTax">$0.00</span></div>
+          <div class="row total"><span>Total due</span><span id="tTotal">$0.00</span></div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="btn primary" id="saveBtn">Save invoice</button>
+        <button class="btn" id="printBtn">Print</button>
+        <span class="flash" id="flash"></span>
+      </div>
+    </section>
+  </div>
+
+  <!-- clean document shown only by @media print -->
+  <div id="printDoc" aria-hidden="true"></div>
+
+<script>
+"use strict";
+/* ---------------- storage ---------------- */
+const LS_INVOICES = "ledgerly.invoices";
+const LS_NEXTNO = "ledgerly.nextNo";
+
+function loadInvoices(){
+  try{
+    const v = JSON.parse(localStorage.getItem(LS_INVOICES) || "null");
+    return Array.isArray(v) ? v : null;
+  }catch(e){ return null; }
+}
+function seed(){
+  const demo = [
+    { no:"INV-1001", client:"Northwind Traders", email:"ops@northwind.example", date:"2026-07-02",
+      taxPct:9, discPct:0, items:[
+        {desc:"Brand identity design", qty:1, price:1800},
+        {desc:"Landing page build", qty:1, price:2400},
+        {desc:"Hosting setup", qty:2, price:150}]},
+    { no:"INV-1002", client:"Bluesky Media", email:"accounts@bluesky.example", date:"2026-07-14",
+      taxPct:9, discPct:5, items:[
+        {desc:"Monthly retainer — July", qty:1, price:3200},
+        {desc:"Extra revision rounds", qty:4, price:95}]},
+    { no:"INV-1003", client:"Kite & Co.", email:"finance@kiteco.example", date:"2026-07-28",
+      taxPct:0, discPct:10, items:[
+        {desc:"UX audit", qty:1, price:1500},
+        {desc:"Usability testing sessions", qty:6, price:220},
+        {desc:"Findings report & handoff", qty:1, price:480}]}
+  ];
+  localStorage.setItem(LS_INVOICES, JSON.stringify(demo));
+  localStorage.setItem(LS_NEXTNO, "1004");
+  return demo;
+}
+let invoices = loadInvoices();
+if (invoices === null) invoices = seed();
+function nextNo(){
+  const n = parseInt(localStorage.getItem(LS_NEXTNO), 10);
+  return Number.isFinite(n) ? n : 1004;
+}
+function persist(){ localStorage.setItem(LS_INVOICES, JSON.stringify(invoices)); }
+
+/* ---------------- helpers ---------------- */
+const $ = id => document.getElementById(id);
+const fmt = n => (n < 0 ? "−$" : "$") +
+  Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function todayStr(){
+  const d = new Date();
+  const p = x => String(x).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+}
+function prettyDate(iso){
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  const M = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return M[m - 1] + " " + d + ", " + y;
+}
+function invoiceTotal(inv){
+  const sub = inv.items.reduce((a, it) => a + it.qty * it.price, 0);
+  const disc = sub * (inv.discPct || 0) / 100;
+  const tax = (sub - disc) * (inv.taxPct || 0) / 100;
+  return sub - disc + tax;
+}
+
+/* ---------------- line item rows ---------------- */
+const rowsEl = $("itemRows");
+function addRow(item){
+  const row = document.createElement("div");
+  row.className = "item-row";
+  const desc = document.createElement("input");
+  desc.className = "desc"; desc.placeholder = "Work performed…";
+  desc.value = item ? item.desc : "";
+  const qty = document.createElement("input");
+  qty.className = "qty"; qty.type = "number"; qty.min = "0"; qty.step = "1";
+  qty.value = item ? item.qty : 1;
+  const price = document.createElement("input");
+  price.className = "price"; price.type = "number"; price.min = "0"; price.step = "0.01";
+  price.value = item ? item.price : "";
+  price.placeholder = "0.00";
+  const amount = document.createElement("span");
+  amount.className = "amount"; amount.textContent = "$0.00";
+  const rm = document.createElement("button");
+  rm.className = "rm"; rm.type = "button"; rm.title = "Remove line";
+  rm.textContent = "✕";
+  rm.addEventListener("click", () => {
+    if (rowsEl.children.length <= 1) return;
+    row.remove();
+    recalc();
+  });
+  row.append(desc, qty, price, amount, rm);
+  rowsEl.appendChild(row);
+}
+function readItems(){
+  return [...rowsEl.querySelectorAll(".item-row")].map(r => ({
+    desc: r.querySelector(".desc").value.trim(),
+    qty: Math.max(0, parseFloat(r.querySelector(".qty").value) || 0),
+    price: Math.max(0, parseFloat(r.querySelector(".price").value) || 0)
+  }));
+}
+
+/* ---------------- totals + live update ---------------- */
+function recalc(){
+  const items = readItems();
+  const rows = rowsEl.querySelectorAll(".item-row");
+  items.forEach((it, i) => {
+    rows[i].querySelector(".amount").textContent = fmt(it.qty * it.price);
+  });
+  const sub = items.reduce((a, it) => a + it.qty * it.price, 0);
+  const discPct = Math.min(100, Math.max(0, parseFloat($("discPct").value) || 0));
+  const taxPct = Math.min(100, Math.max(0, parseFloat($("taxPct").value) || 0));
+  const disc = sub * discPct / 100;
+  const tax = (sub - disc) * taxPct / 100;
+  $("tSub").textContent = fmt(sub);
+  $("tDiscLbl").textContent = "Discount (" + discPct + "%)";
+  $("tDisc").textContent = "−" + fmt(disc);
+  $("tTaxLbl").textContent = "Tax (" + taxPct + "%)";
+  $("tTax").textContent = fmt(tax);
+  $("tTotal").textContent = fmt(sub - disc + tax);
+  // single-row remove stays disabled
+  rows.forEach(r => { r.querySelector(".rm").disabled = rows.length <= 1; });
+  renderPrintDoc();
+}
+document.querySelector(".main").addEventListener("input", recalc);
+
+/* ---------------- form load / reset ---------------- */
+function currentFromForm(){
+  return {
+    no: $("invNo").value,
+    client: $("clientName").value.trim(),
+    email: $("clientEmail").value.trim(),
+    date: $("invDate").value || todayStr(),
+    taxPct: Math.min(100, Math.max(0, parseFloat($("taxPct").value) || 0)),
+    discPct: Math.min(100, Math.max(0, parseFloat($("discPct").value) || 0)),
+    items: readItems().filter(it => it.desc || it.qty * it.price > 0)
+  };
+}
+function fillForm(inv){
+  $("invNo").value = inv.no;
+  $("invDate").value = inv.date;
+  $("clientName").value = inv.client;
+  $("clientEmail").value = inv.email;
+  $("taxPct").value = inv.taxPct;
+  $("discPct").value = inv.discPct;
+  rowsEl.textContent = "";
+  (inv.items.length ? inv.items : [null]).forEach(addRow);
+  $("clientName").classList.remove("invalid");
+  $("formTitle").textContent = invoices.some(i => i.no === inv.no)
+    ? "Edit " + inv.no : "New invoice";
+  recalc();
+}
+function newInvoice(){
+  fillForm({ no: "INV-" + nextNo(), client: "", email: "", date: todayStr(),
+    taxPct: 0, discPct: 0, items: [{ desc: "", qty: 1, price: "" }] });
+  renderList();
+}
+
+/* ---------------- sidebar list ---------------- */
+function renderList(){
+  const list = $("invList");
+  list.textContent = "";
+  $("noneMsg").style.display = invoices.length ? "none" : "block";
+  const activeNo = $("invNo").value;
+  [...invoices].sort((a, b) => b.no.localeCompare(a.no)).forEach(inv => {
+    const item = document.createElement("div");
+    item.className = "inv-item" + (inv.no === activeNo ? " active" : "");
+    const meta = document.createElement("div"); meta.className = "meta";
+    const no = document.createElement("div"); no.className = "no"; no.textContent = inv.no;
+    const cl = document.createElement("div"); cl.className = "client";
+    cl.textContent = inv.client + " · " + prettyDate(inv.date);
+    meta.append(no, cl);
+    const amt = document.createElement("span"); amt.className = "amt";
+    amt.textContent = fmt(invoiceTotal(inv));
+    const del = document.createElement("button");
+    del.className = "del"; del.title = "Delete invoice"; del.textContent = "✕";
+    del.addEventListener("click", ev => {
+      ev.stopPropagation();
+      invoices = invoices.filter(i => i.no !== inv.no);
+      persist();
+      renderList();
+      flash("Deleted " + inv.no, true);
+    });
+    item.append(meta, amt, del);
+    item.addEventListener("click", () => { fillForm(inv); renderList(); });
+    list.appendChild(item);
+  });
+}
+
+/* ---------------- save / print ---------------- */
+function flash(msg, isErr){
+  const f = $("flash");
+  f.textContent = msg;
+  f.classList.toggle("err", !!isErr);
+  f.classList.add("show");
+  clearTimeout(flash._t);
+  flash._t = setTimeout(() => f.classList.remove("show"), 2200);
+}
+$("saveBtn").addEventListener("click", () => {
+  const inv = currentFromForm();
+  if (!inv.client){
+    $("clientName").classList.add("invalid");
+    $("clientName").focus();
+    flash("Client name is required", true);
+    return;
+  }
+  $("clientName").classList.remove("invalid");
+  if (!inv.items.length) inv.items = [{ desc: "Services rendered", qty: 1, price: 0 }];
+  const idx = invoices.findIndex(i => i.no === inv.no);
+  if (idx >= 0) invoices[idx] = inv; else invoices.push(inv);
+  if (inv.no === "INV-" + nextNo())
+    localStorage.setItem(LS_NEXTNO, String(nextNo() + 1));
+  persist();
+  $("formTitle").textContent = "Edit " + inv.no;
+  renderList();
+  flash("Saved " + inv.no + " ✓");
+});
+$("newBtn").addEventListener("click", newInvoice);
+$("addItem").addEventListener("click", () => { addRow(null); recalc(); });
+
+/* ---------------- print document ---------------- */
+function renderPrintDoc(){
+  const inv = currentFromForm();
+  const doc = $("printDoc");
+  doc.textContent = "";
+
+  const head = document.createElement("div"); head.className = "p-head";
+  const co = document.createElement("div"); co.className = "p-co";
+  co.textContent = "Ledgerly Studio";
+  const coSub = document.createElement("small");
+  coSub.textContent = "hello@ledgerly.example · 42 Harbor Lane, Portville";
+  co.appendChild(coSub);
+  const pi = document.createElement("div"); pi.className = "p-inv";
+  const t = document.createElement("div"); t.className = "t"; t.textContent = "INVOICE";
+  const n = document.createElement("div"); n.textContent = inv.no;
+  const d = document.createElement("div"); d.textContent = prettyDate(inv.date);
+  pi.append(t, n, d);
+  head.append(co, pi);
+
+  const bill = document.createElement("div"); bill.className = "p-bill";
+  const bto = document.createElement("div");
+  const h3 = document.createElement("h3"); h3.textContent = "Billed to";
+  const bn = document.createElement("div"); bn.textContent = inv.client || "—";
+  bn.style.fontWeight = "600";
+  const be = document.createElement("div"); be.textContent = inv.email;
+  bto.append(h3, bn, be);
+  bill.appendChild(bto);
+
+  const table = document.createElement("table");
+  const thead = document.createElement("thead");
+  const hr = document.createElement("tr");
+  [["Description",""],["Qty","r"],["Unit price","r"],["Amount","r"]].forEach(([txt, cls]) => {
+    const th = document.createElement("th");
+    if (cls) th.className = cls;
+    th.textContent = txt;
+    hr.appendChild(th);
+  });
+  thead.appendChild(hr);
+  const tb = document.createElement("tbody");
+  inv.items.forEach(it => {
+    const tr = document.createElement("tr");
+    const c1 = document.createElement("td"); c1.textContent = it.desc || "—";
+    const c2 = document.createElement("td"); c2.className = "r"; c2.textContent = it.qty;
+    const c3 = document.createElement("td"); c3.className = "r"; c3.textContent = fmt(it.price);
+    const c4 = document.createElement("td"); c4.className = "r"; c4.textContent = fmt(it.qty * it.price);
+    tr.append(c1, c2, c3, c4);
+    tb.appendChild(tr);
+  });
+  table.append(thead, tb);
+
+  const sub = inv.items.reduce((a, it) => a + it.qty * it.price, 0);
+  const disc = sub * inv.discPct / 100;
+  const tax = (sub - disc) * inv.taxPct / 100;
+  const tot = document.createElement("div"); tot.className = "p-tot";
+  const rowsData = [["Subtotal", fmt(sub)]];
+  if (inv.discPct > 0) rowsData.push(["Discount (" + inv.discPct + "%)", "−" + fmt(disc)]);
+  if (inv.taxPct > 0) rowsData.push(["Tax (" + inv.taxPct + "%)", fmt(tax)]);
+  for (const [l, v] of rowsData){
+    const r = document.createElement("div"); r.className = "row";
+    const a = document.createElement("span"); a.textContent = l;
+    const b = document.createElement("span"); b.textContent = v;
+    r.append(a, b); tot.appendChild(r);
+  }
+  const g = document.createElement("div"); g.className = "row g";
+  const gl = document.createElement("span"); gl.textContent = "Total due";
+  const gv = document.createElement("span"); gv.textContent = fmt(sub - disc + tax);
+  g.append(gl, gv); tot.appendChild(g);
+
+  const foot = document.createElement("div"); foot.className = "p-foot";
+  foot.textContent = "Payment due within 30 days. Thank you for your business.";
+
+  doc.append(head, bill, table, tot, foot);
+}
+$("printBtn").addEventListener("click", () => { renderPrintDoc(); window.print(); });
+window.addEventListener("beforeprint", renderPrintDoc);
+
+/* ---------------- init ---------------- */
+newInvoice();
+</script>
+</body>
+</html>
