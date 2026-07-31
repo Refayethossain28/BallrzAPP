@@ -219,11 +219,229 @@
     return { plan: plan, usedMin: used, leftMin: remaining };
   }
 
+  // Maximum number of window-fitting candidates the optimiser will reason about
+  // exactly. A single short window only ever fits a handful of tasks, so this is
+  // generous; past it we fall back to the greedy packer rather than ever hang.
+  var OPT_MAX_CANDIDATES = 22;
+  var OPT_MAX_STATES = 200000;
+
+  /**
+   * planOptimal — the right-now optimiser
+   * =====================================
+   *
+   * `planWindow` is greedy: it grabs the highest-salience task that still fits
+   * and moves on. That is fast but provably leaves value on the table — one big
+   * "best" task can crowd out two smaller tasks that together deliver more — and
+   * it is blind to dependency chains, because it only ever sees tasks that are
+   * *already* eligible.
+   *
+   * `planOptimal` answers the sharper question: of everything I could touch,
+   * which set actually maximises the salience I deliver before this window runs
+   * out? It is exact, not greedy — a precedence-constrained 0/1 knapsack solved
+   * over the time budget — so for any backlog that fits the window it returns a
+   * plan whose total salience is provably ≥ the greedy one.
+   *
+   * The unique part: it plans **unlock chains**. A high-value task gated by a
+   * quick prerequisite is invisible to every "list the eligible tasks" planner.
+   * Here, if doing the 5-minute unblocker *and then* its payoff both fit your
+   * window, the optimiser will schedule the pair — in the right order — and tell
+   * you which tasks it unlocked. No order is assumed: a chosen set is only ever
+   * emitted in a valid topological order, deps before dependents.
+   *
+   * Deterministic and auditable like the rest of the engine: same backlog + same
+   * moment ⇒ same plan, every time, and it reports exactly how much salience it
+   * gained over the greedy pick so the upgrade is never a black box. Pass the
+   * *whole* task list (not just the ranked/eligible slice) so it can see, and
+   * plan through, the blockers.
+   *
+   * Returns: { plan, usedMin, leftMin, totalSalience, unlocked, gainedVsGreedy,
+   *            optimal } — `plan` items are shaped exactly like `score()` output
+   * with a `.task`, so any UI that renders `planWindow` renders this unchanged.
+   */
+  function planOptimal(tasks, ctx) {
+    var now = ctx.now, windowMin = Math.max(1, ctx.windowMin || 30);
+
+    var doneSet = new Set(), byId = {};
+    for (var i = 0; i < tasks.length; i++) {
+      byId[tasks[i].id] = tasks[i];
+      if (tasks[i].done) doneSet.add(tasks[i].id);
+    }
+
+    // Schedulable = not done, not snoozed. Score each (salience is well-defined
+    // whether or not its deps are met — a blocked task still has a "worth").
+    var sched = [], schedSet = new Set(), info = {};
+    for (var k = 0; k < tasks.length; k++) {
+      var t = tasks[k];
+      if (t.done) continue;
+      if (t.snoozeUntil && t.snoozeUntil > now) continue;
+      var so = score(t, ctx);
+      info[t.id] = { task: t, value: so.salience, effort: Math.max(1, t.effort || 30), score: so };
+      sched.push(t); schedSet.add(t.id);
+    }
+
+    var unmetDeps = function (task) {
+      var out = [], deps = task.deps || [];
+      for (var d = 0; d < deps.length; d++) if (!doneSet.has(deps[d])) out.push(deps[d]);
+      return out;
+    };
+
+    // Reachable-now = every unmet dep is itself a schedulable, reachable task
+    // (so the whole prerequisite closure can be done inside this window). A dep
+    // that is snoozed, missing, or part of a cycle is a hard wall ⇒ unreachable.
+    var reach = {};
+    var reachable = function (id, stack) {
+      if (reach[id] != null) return reach[id];
+      if (stack[id]) return false;                 // dependency cycle
+      stack[id] = true;
+      var task = byId[id], um = task ? unmetDeps(task) : [], ok = true;
+      for (var d = 0; d < um.length; d++) {
+        if (!schedSet.has(um[d]) || !reachable(um[d], stack)) { ok = false; break; }
+      }
+      stack[id] = false;
+      return (reach[id] = ok);
+    };
+
+    // Candidate pool: reachable schedulable tasks that could plausibly fit.
+    // Deterministic order (salience desc, then oldest, then id) fixes the bit
+    // layout so the search — and its tiebreaks — are fully reproducible.
+    var cand = [];
+    for (var s = 0; s < sched.length; s++) {
+      var id = sched[s].id;
+      if (info[id].effort > windowMin && unmetDeps(sched[s]).length === 0) continue; // can never fit alone
+      if (reachable(id, {})) cand.push(info[id]);
+    }
+    cand.sort(function (a, b) {
+      if (b.value !== a.value) return b.value - a.value;
+      if ((a.task.createdAt || 0) !== (b.task.createdAt || 0)) return (a.task.createdAt || 0) - (b.task.createdAt || 0);
+      return a.task.id < b.task.id ? -1 : a.task.id > b.task.id ? 1 : 0;
+    });
+    if (cand.length > OPT_MAX_CANDIDATES) cand = cand.slice(0, OPT_MAX_CANDIDATES);
+
+    // Build dependency bitmasks over the candidate set. Drop (iteratively) any
+    // candidate whose unmet dep didn't make the pool — it can't be satisfied.
+    var bit = {}, n;
+    for (var pass = 0; pass < cand.length + 1; pass++) {
+      bit = {}; for (n = 0; n < cand.length; n++) bit[cand[n].task.id] = n;
+      var kept = [];
+      for (n = 0; n < cand.length; n++) {
+        var um = unmetDeps(cand[n].task), allIn = true;
+        for (var u = 0; u < um.length; u++) if (bit[um[u]] == null) { allIn = false; break; }
+        if (allIn) kept.push(cand[n]);
+      }
+      if (kept.length === cand.length) break;
+      cand = kept;
+    }
+    var N = cand.length;
+    bit = {}; for (n = 0; n < N; n++) bit[cand[n].task.id] = n;
+    var depMask = new Array(N), eff = new Array(N), val = new Array(N);
+    for (n = 0; n < N; n++) {
+      var dm = 0, um2 = unmetDeps(cand[n].task);
+      for (var x = 0; x < um2.length; x++) dm |= (1 << bit[um2[x]]);
+      depMask[n] = dm; eff[n] = cand[n].effort; val[n] = cand[n].value;
+    }
+
+    var greedy = greedyValue(cand, depMask, eff, val, windowMin, doneSet);
+
+    // Exact search over precedence-valid, budget-feasible subsets. Each subset's
+    // effort and value are a pure function of its bitmask, so we enumerate
+    // reachable masks once (adding one ready task at a time) and keep the best.
+    // Bounded by OPT_MAX_STATES; on overflow we return the greedy plan honestly.
+    var best = { mask: 0, val: 0, eff: 0, cnt: 0 }, bailed = false;
+    if (N > 0 && N <= 31) {
+      var seen = new Set([0]), stackArr = [0];
+      while (stackArr.length) {
+        var mask = stackArr.pop();
+        var curE = 0, curV = 0, cnt = 0;
+        for (n = 0; n < N; n++) if (mask & (1 << n)) { curE += eff[n]; curV += val[n]; cnt++; }
+        if (better(curV, cnt, mask, best)) best = { mask: mask, val: curV, eff: curE, cnt: cnt };
+        for (n = 0; n < N; n++) {
+          if (mask & (1 << n)) continue;
+          if ((depMask[n] & mask) !== depMask[n]) continue;     // prerequisites first
+          if (curE + eff[n] > windowMin) continue;              // must fit the window
+          var nm = mask | (1 << n);
+          if (!seen.has(nm)) {
+            seen.add(nm);
+            if (seen.size > OPT_MAX_STATES) { bailed = true; break; }
+            stackArr.push(nm);
+          }
+        }
+        if (bailed) break;
+      }
+    }
+
+    if (bailed) {
+      var gp = greedyPlan(cand, depMask, eff, windowMin, doneSet);
+      return { plan: gp.plan, usedMin: gp.used, leftMin: windowMin - gp.used,
+        totalSalience: round(gp.val, 1), unlocked: [], gainedVsGreedy: 0, optimal: false };
+    }
+
+    // Emit the winning set deps-first: repeatedly release a chosen task once all
+    // its unmet deps are already done or already placed; ties by salience.
+    var chosenIds = [], placed = new Set(), order = [];
+    for (n = 0; n < N; n++) if (best.mask & (1 << n)) chosenIds.push(cand[n].task.id);
+    while (order.length < chosenIds.length) {
+      var ready = [];
+      for (var c = 0; c < chosenIds.length; c++) {
+        var cid = chosenIds[c];
+        if (placed.has(cid)) continue;
+        var um3 = unmetDeps(byId[cid]), ok = true;
+        for (var y = 0; y < um3.length; y++) if (!placed.has(um3[y])) { ok = false; break; }
+        if (ok) ready.push(cid);
+      }
+      ready.sort(function (a, b) { return info[b].value - info[a].value; });
+      var pick = ready[0]; placed.add(pick); order.push(pick);
+    }
+
+    var plan = [], unlocked = [], used = 0;
+    for (var o = 0; o < order.length; o++) {
+      var it = info[order[o]];
+      used += it.effort;
+      if (unmetDeps(it.task).length) unlocked.push(it.task.id);
+      plan.push(Object.assign({ task: it.task }, it.score));
+    }
+
+    return {
+      plan: plan, usedMin: used, leftMin: windowMin - used,
+      totalSalience: round(best.val, 1),
+      unlocked: unlocked,
+      gainedVsGreedy: round(best.val - greedy, 1),
+      optimal: true
+    };
+  }
+
+  // Deterministic "is candidate plan A better than incumbent B?" — more salience
+  // wins; ties break to the leaner plan, then to the lexicographically smaller
+  // mask (which, given the value-desc bit order, prefers the punchier tasks).
+  function better(v, cnt, mask, b) {
+    if (v !== b.val) return v > b.val;
+    if (cnt !== b.cnt) return cnt < b.cnt;
+    return mask < b.mask;
+  }
+
+  // Greedy baseline restricted to what's eligible right now (deps already done),
+  // packed by salience — i.e. exactly what planWindow delivers — so the optimiser
+  // can report an honest, like-for-like uplift.
+  function greedyPlan(cand, depMask, eff, windowMin, doneSet) {
+    var rem = windowMin, plan = [], used = 0, total = 0;
+    for (var i = 0; i < cand.length; i++) {
+      if (depMask[i] !== 0) continue;               // not eligible without scheduling a prereq
+      if (eff[i] <= rem) {
+        plan.push(Object.assign({ task: cand[i].task }, cand[i].score));
+        rem -= eff[i]; used += eff[i]; total += cand[i].value;
+      }
+    }
+    return { plan: plan, used: used, val: total };
+  }
+  function greedyValue(cand, depMask, eff, val, windowMin, doneSet) {
+    return greedyPlan(cand, depMask, eff, windowMin, doneSet).val;
+  }
+
   return {
-    version: '1.0.0',
+    version: '1.1.0',
     WEIGHTS: WEIGHTS, LOADS: LOADS, URGENCY_HORIZON_H: URGENCY_HORIZON_H,
+    OPT_MAX_CANDIDATES: OPT_MAX_CANDIDATES,
     loadValue: loadValue, circadianEnergy: circadianEnergy,
     isEligible: isEligible, rotRisk: rotRisk,
-    score: score, rank: rank, planWindow: planWindow
+    score: score, rank: rank, planWindow: planWindow, planOptimal: planOptimal
   };
 });

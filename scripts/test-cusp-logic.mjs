@@ -144,6 +144,104 @@ test('planWindow packs highest-salience tasks that fit the time you have', () =>
   assert.equal(usedMin + leftMin, 30);
 });
 
+// ── planOptimal: the precedence-aware right-now optimiser ──────────────────
+
+// Brute-force reference: max total salience over every precedence-valid subset
+// that fits the window. Used to assert planOptimal really is optimal.
+function brute(tasks, c) {
+  const done = new Set(tasks.filter(t => t.done).map(t => t.id));
+  const sched = tasks.filter(t => !t.done && !(t.snoozeUntil && t.snoozeUntil > c.now));
+  const val = {}, eff = {};
+  for (const t of sched) { val[t.id] = E.score(t, c).salience; eff[t.id] = Math.max(1, t.effort || 30); }
+  const ids = sched.map(t => t.id);
+  let best = 0;
+  for (let m = 0; m < (1 << ids.length); m++) {
+    const set = new Set(); let e = 0, v = 0, ok = true;
+    for (let i = 0; i < ids.length; i++) if (m & (1 << i)) { set.add(ids[i]); e += eff[ids[i]]; v += val[ids[i]]; }
+    if (e > c.windowMin) continue;
+    for (const id of set) {                       // precedence: every dep done or in set
+      const t = tasks.find(x => x.id === id);
+      for (const d of (t.deps || [])) if (!done.has(d) && !set.has(d)) { ok = false; break; }
+      if (!ok) break;
+    }
+    if (ok && v > best) best = v;
+  }
+  return best;
+}
+
+test('planOptimal never scores below greedy, and beats it when greedy is myopic', () => {
+  // window 30: greedy grabs "big" (sal-heavy, 30m) and stops; two smaller tasks
+  // together fit the same window and deliver more.
+  const tasks = [
+    task({ id: 'big', importance: 5, effort: 30, load: 'light', due: NOW + 2 * HOUR }),
+    task({ id: 'a',   importance: 4, effort: 15, load: 'light' }),
+    task({ id: 'b',   importance: 4, effort: 15, load: 'light' })
+  ];
+  const c = ctx({ windowMin: 30 });
+  const { ranked } = E.rank(tasks, c);
+  const greedy = E.planWindow(ranked, 30);
+  const opt = E.planOptimal(tasks, c);
+  const greedyTotal = greedy.plan.reduce((s, p) => s + p.salience, 0);
+  assert.ok(opt.totalSalience >= greedyTotal - 1e-9, `optimal ${opt.totalSalience} ≥ greedy ${greedyTotal}`);
+  assert.ok(opt.totalSalience > greedyTotal, 'on this case optimal should strictly win');
+  assert.ok(opt.usedMin <= 30 && opt.leftMin >= 0 && opt.usedMin + opt.leftMin === 30);
+});
+
+test('planOptimal matches a brute-force optimum across the backlog', () => {
+  const tasks = [
+    task({ id: 'p', importance: 5, effort: 20, due: NOW + 90 * 60000 }),
+    task({ id: 'q', importance: 3, effort: 25, load: 'light' }),
+    task({ id: 'r', importance: 4, effort: 10 }),
+    task({ id: 's', importance: 2, effort: 15, due: NOW + 5 * HOUR }),
+    task({ id: 'u', importance: 5, effort: 35, load: 'deep' })
+  ];
+  for (const windowMin of [15, 30, 45, 60]) {
+    const c = ctx({ windowMin });
+    assert.ok(Math.abs(E.planOptimal(tasks, c).totalSalience - brute(tasks, c)) < 1e-6,
+      `window ${windowMin}: optimiser must equal brute force`);
+  }
+});
+
+test('planOptimal chains through a quick blocker to unlock a high-value task', () => {
+  // "payoff" is important but blocked by a 5-min "unblock". A greedy/eligible
+  // planner can never schedule payoff; the optimiser does both, in order.
+  const tasks = [
+    task({ id: 'unblock', importance: 3, effort: 5, load: 'light' }),
+    task({ id: 'payoff',  importance: 5, effort: 20, due: NOW + 90 * 60000, deps: ['unblock'] }),
+    task({ id: 'filler',  importance: 2, effort: 25, load: 'light' })
+  ];
+  const c = ctx({ windowMin: 30 });
+  const opt = E.planOptimal(tasks, c);
+  const ids = opt.plan.map(p => p.task.id);
+  assert.ok(ids.includes('unblock') && ids.includes('payoff'), 'both the blocker and its payoff are scheduled');
+  assert.ok(ids.indexOf('unblock') < ids.indexOf('payoff'), 'the blocker is placed first');
+  assert.equal(opt.unlocked.join(','), 'payoff', 'payoff is reported as unlocked');
+});
+
+test('planOptimal leaves a task blocked when its prerequisite can’t be done now', () => {
+  // payoff depends on a prereq that is snoozed past the moment ⇒ unreachable.
+  const tasks = [
+    task({ id: 'prereq', importance: 3, effort: 10, snoozeUntil: NOW + DAY }),
+    task({ id: 'payoff', importance: 5, effort: 15, deps: ['prereq'] }),
+    task({ id: 'safe',   importance: 4, effort: 15, load: 'light' })
+  ];
+  const c = ctx({ windowMin: 30 });
+  const ids = E.planOptimal(tasks, c).plan.map(p => p.task.id);
+  assert.ok(!ids.includes('payoff'), 'unreachable payoff is never scheduled');
+});
+
+test('planOptimal is deterministic and respects the window budget', () => {
+  const tasks = [
+    task({ id: 'a', importance: 4, effort: 12, due: NOW + 3 * HOUR }),
+    task({ id: 'b', importance: 5, effort: 18, load: 'deep' }),
+    task({ id: 'c', importance: 3, effort: 9, load: 'light' })
+  ];
+  const c = ctx({ windowMin: 25 });
+  const first = E.planOptimal(tasks, c);
+  assert.deepEqual(first.plan.map(p => p.task.id), E.planOptimal(tasks, c).plan.map(p => p.task.id));
+  assert.ok(first.usedMin <= 25);
+});
+
 test('rotRisk flags chronically skipped tasks', () => {
   assert.equal(E.rotRisk(task({ skips: 4 }), NOW), true);
   assert.equal(E.rotRisk(task({ skips: 0 }), NOW), false);
