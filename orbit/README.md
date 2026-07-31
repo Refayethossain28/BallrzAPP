@@ -4,7 +4,7 @@
 the world's super-apps great and combining their signature moves, then adding a
 few of its own. Zero-build, single-file, offline-first, installable PWA. Every
 rule that touches money or state lives in a pure, deterministic, clock-injected
-engine ([`engine.js`](./engine.js)) with 49 unit tests
+engine ([`engine.js`](./engine.js)) with 55 unit tests
 (`npm run test:orbit`).
 
 ## The research — who Orbit steals from, and what it does better
@@ -47,6 +47,15 @@ And the parts most of them *won't* do, which Orbit treats as features:
   valid both directions for 30 days, savings stated up front), **tips with no
   platform cut** (£1/£2/£3 on the receipt — every penny reaches the captain),
   and a **trusted contact** whose name rides along on every trip's live-share.
+  **🚲 Orbit Wheels** — docked bikes & e-scooters at seven stations (live,
+  seeded dock availability per station & hour drawn on the map), unlock +
+  per-minute pricing with a floor, zero-emission rides. **🕐 The smart
+  departure planner** — the same honest surge curve that prices your ride,
+  scanned over the next 12 hours: see every window's price and reason, one tap
+  books the cheapest (most apps *hide* when it's cheap; Orbit tells you).
+  **⭐ Favourite captains** — five-star a driver and add them to favourites;
+  they get first refusal on your future rides. **💼 Business rides** — flag a
+  ride at booking and it lands on a monthly expense report you can copy out.
 - **🍔 Eat** — ten kitchens with menus, itemised checkout (delivery by real
   road distance, small-order fee, capped service fee, `WELCOME20`), live order
   tracking, and DineOut discounts (10%, or 20% with Orbit+). Plus **🛒 Market**
@@ -84,5 +93,5 @@ device in `localStorage`.
 
 ```sh
 open orbit/index.html    # or serve the repo and browse to /orbit/
-npm run test:orbit       # 49 engine tests
+npm run test:orbit       # 55 engine tests
 ```

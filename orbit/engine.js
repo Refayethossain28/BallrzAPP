@@ -176,6 +176,65 @@
     return RIDE_CLASSES.map(function (c) { return quote(fromId, toId, c.id, when); }).filter(Boolean);
   }
 
+  /* ── Orbit Wheels: docked bikes & e-scooters ────────────────────── */
+  var WHEELS = [
+    { id: 'bike',    name: 'Bike',      emoji: '🚲', unlock: 0.50, perMin: 0.18, kmh: 14, minFare: 1.50 },
+    { id: 'scooter', name: 'E-scooter', emoji: '🛴', unlock: 1.00, perMin: 0.25, kmh: 18, minFare: 2.00 }
+  ];
+  function wheelMode(id) { for (var i = 0; i < WHEELS.length; i++) if (WHEELS[i].id === id) return WHEELS[i]; return null; }
+  var STATION_IDS = ['central', 'uni', 'park', 'oldtown', 'harbour', 'mall', 'tower'];
+  function isStation(placeId) { return STATION_IDS.indexOf(placeId) !== -1; }
+  function stationDocks(stationId, whenMs) {
+    if (!isStation(stationId)) return null;
+    var p = partsOf(whenMs);
+    var rng = rngFor('dock:' + stationId + ':' + p.dow + ':' + p.hour);
+    return { bikes: Math.floor(rng() * 9), scooters: Math.floor(rng() * 7) };
+  }
+  function wheelsQuote(fromId, toId, modeId, whenMs) {
+    var mode = wheelMode(modeId);
+    if (!mode || !isStation(fromId) || !isStation(toId) || fromId === toId) return null;
+    var km = roadKm(fromId, toId);
+    var mins = Math.max(3, Math.round((km / mode.kmh) * 60));
+    var price = Math.round(Math.max(mode.unlock + mins * mode.perMin, mode.minFare) * 100) / 100;
+    return { fromId: fromId, toId: toId, modeId: modeId, km: km, mins: mins, total: price, co2g: 0 };
+  }
+
+  /* ── the smart departure planner: surge, scanned honestly ───────── */
+  function fareTimeline(fromId, toId, classId, startMs, hours, stepMin) {
+    var H = hours || 12, step = (stepMin || 30) * 60000, out = [];
+    for (var ms = startMs; ms <= startMs + H * 3600000; ms += step) {
+      var q = quote(fromId, toId, classId, ms);
+      if (!q) return null;
+      out.push({ ms: ms, total: q.total, surge: q.surge });
+    }
+    return out;
+  }
+  function cheapestWindow(timeline) {
+    if (!timeline || !timeline.length) return null;
+    var best = timeline[0];
+    timeline.forEach(function (t) { if (t.total < best.total) best = t; });
+    return best;
+  }
+
+  /* ── expenses: business rides, one monthly report ───────────────── */
+  function expenseReport(trips, month) {
+    var lines = [];
+    var total = 0;
+    (trips || []).forEach(function (t) {
+      if (!t.business || t.status !== 'COMPLETED') return;
+      if (monthKey(t.startedMs) !== month) return;
+      var label = place(t.quote.fromId).name + ' → ' + place(t.quote.toId).name;
+      lines.push({ label: label, amount: t.fare, ms: t.startedMs });
+      total += t.fare;
+    });
+    total = Math.round(total * 100) / 100;
+    var text = 'Orbit business rides — ' + month + '\n' +
+      lines.map(function (l) {
+        return new Date(l.ms).toISOString().slice(0, 10) + '  ' + l.label + '  £' + l.amount.toFixed(2);
+      }).join('\n') + (lines.length ? '\n' : '') + 'Total: £' + total.toFixed(2) + ' (' + lines.length + ' rides)';
+    return { month: month, count: lines.length, total: total, lines: lines, text: text };
+  }
+
   /* ── multi-stop rides: one booking, several legs ────────────────── */
   var STOP_FEE = 0.60; // per extra stop — covers the wait, shown as a line item
   function multiStopQuote(stopIds, classId, when) {
@@ -310,9 +369,13 @@
     out.forEach(function (d) { d.etaMin = Math.max(1, Math.round(d.kmAway / 0.45)); });
     return out;
   }
-  function matchDriver(drivers) {
+  function matchDriver(drivers, favNames) {
     if (!drivers || !drivers.length) return null;
-    return drivers.slice().sort(function (a, b) { return (a.etaMin - b.etaMin) || (b.rating - a.rating); })[0];
+    var favs = favNames || [];
+    return drivers.slice().sort(function (a, b) {
+      var fa = favs.indexOf(a.name) !== -1 ? 0 : 1, fb = favs.indexOf(b.name) !== -1 ? 0 : 1;
+      return (fa - fb) || (a.etaMin - b.etaMin) || (b.rating - a.rating);
+    })[0];
   }
 
   /* ── Fair Fare — inDrive-style bidding, honest floors ───────────── */
@@ -627,7 +690,11 @@
   }
 
   return {
-    version: '1.2.0',
+    version: '1.3.0',
+    WHEELS: WHEELS, wheelMode: wheelMode, STATION_IDS: STATION_IDS, isStation: isStation,
+    stationDocks: stationDocks, wheelsQuote: wheelsQuote,
+    fareTimeline: fareTimeline, cheapestWindow: cheapestWindow,
+    expenseReport: expenseReport,
     STOP_FEE: STOP_FEE, multiStopQuote: multiStopQuote, pathThrough: pathThrough,
     TIP_PRESETS: TIP_PRESETS, tipEarn: tipEarn,
     PASS_RIDES: PASS_RIDES, PASS_DISCOUNT: PASS_DISCOUNT, PASS_DAYS: PASS_DAYS,
