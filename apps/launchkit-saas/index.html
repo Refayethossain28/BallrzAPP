@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LaunchKit — SaaS Starter</title>
+<style>
+  :root {
+    --bg: #0a0a12;
+    --surface: #12121e;
+    --surface-2: #1a1a2a;
+    --border: rgba(255, 255, 255, 0.08);
+    --text: #e9e9f2;
+    --text-dim: #8f8fa5;
+    --accent: #8b5cf6;
+    --accent-soft: rgba(139, 92, 246, 0.15);
+    --danger: #f87171;
+    --ok: #34d399;
+    --warn: #fbbf24;
+    --radius: 14px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); }
+
+  /* ---------- Header ---------- */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 13px 24px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(10, 10, 18, 0.85);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    backdrop-filter: blur(8px);
+    flex-wrap: wrap;
+  }
+  header a.back {
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 13px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    white-space: nowrap;
+    transition: color .15s, border-color .15s;
+  }
+  header a.back:hover { color: var(--text); border-color: rgba(255,255,255,0.2); }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; cursor: pointer; user-select: none; }
+  .brand .logo {
+    width: 30px; height: 30px; border-radius: 9px;
+    background: linear-gradient(135deg, var(--accent), #ec4899);
+    display: grid; place-items: center; font-size: 15px;
+  }
+  nav { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  nav a.navlink {
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 13px;
+    padding: 7px 12px;
+    border-radius: 8px;
+    transition: color .15s, background .15s;
+  }
+  nav a.navlink:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+  nav a.navlink.active { color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+  .btn {
+    display: inline-block;
+    padding: 9px 16px;
+    border-radius: 10px;
+    border: none;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: var(--font);
+    text-decoration: none;
+    text-align: center;
+    transition: filter .15s;
+  }
+  .btn:hover { filter: brightness(1.12); }
+  .btn.primary { background: var(--accent); color: #fff; }
+  .btn.ghost { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+  .btn.danger { background: transparent; color: var(--danger); border: 1px solid rgba(248,113,113,0.35); }
+  .btn.danger:hover { background: rgba(248,113,113,0.1); }
+  .btn.block { display: block; width: 100%; padding: 12px; font-size: 14px; }
+
+  /* ---------- Shared ---------- */
+  main { max-width: 1020px; margin: 0 auto; padding: 30px 20px 80px; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 22px;
+  }
+  .muted { color: var(--text-dim); }
+
+  /* ---------- Landing ---------- */
+  .hero { text-align: center; padding: 56px 0 40px; }
+  .hero .badge {
+    display: inline-block;
+    font-size: 12px;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    padding: 5px 14px;
+    border-radius: 999px;
+    margin-bottom: 20px;
+  }
+  .hero h1 {
+    font-size: clamp(30px, 5vw, 50px);
+    line-height: 1.12;
+    letter-spacing: -0.02em;
+    margin-bottom: 16px;
+  }
+  .hero h1 em {
+    font-style: normal;
+    background: linear-gradient(90deg, var(--accent), #ec4899);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+  .hero p { color: var(--text-dim); font-size: 17px; max-width: 540px; margin: 0 auto 28px; line-height: 1.6; }
+  .hero .cta-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+
+  .section-title { text-align: center; font-size: 24px; margin: 56px 0 8px; }
+  .section-sub { text-align: center; color: var(--text-dim); font-size: 14px; margin-bottom: 28px; }
+
+  .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+  .feature { padding: 20px; }
+  .feature .icon {
+    width: 40px; height: 40px;
+    border-radius: 11px;
+    background: var(--accent-soft);
+    display: grid; place-items: center;
+    font-size: 19px;
+    margin-bottom: 12px;
+  }
+  .feature h3 { font-size: 15px; margin-bottom: 6px; }
+  .feature p { font-size: 13px; color: var(--text-dim); line-height: 1.55; }
+
+  .pricing { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; align-items: stretch; }
+  .tier { display: flex; flex-direction: column; position: relative; }
+  .tier.popular { border-color: var(--accent); }
+  .tier .pop-tag {
+    position: absolute;
+    top: -11px; left: 50%;
+    transform: translateX(-50%);
+    background: var(--accent);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 12px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .tier h3 { font-size: 15px; }
+  .tier .amount { font-size: 34px; font-weight: 800; margin: 10px 0 2px; }
+  .tier .amount small { font-size: 13px; color: var(--text-dim); font-weight: 400; }
+  .tier .tagline { font-size: 12px; color: var(--text-dim); margin-bottom: 16px; }
+  .tier ul { list-style: none; margin-bottom: 20px; flex: 1; }
+  .tier li { font-size: 13px; color: var(--text-dim); padding: 5px 0; }
+  .tier li::before { content: "✓  "; color: var(--ok); }
+
+  .faq { max-width: 640px; margin: 0 auto; }
+  details {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 10px;
+    overflow: hidden;
+  }
+  summary {
+    padding: 15px 18px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    user-select: none;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "+"; color: var(--text-dim); font-size: 18px; transition: transform .2s; }
+  details[open] summary::after { transform: rotate(45deg); }
+  details .answer { padding: 0 18px 16px; font-size: 13px; color: var(--text-dim); line-height: 1.6; }
+
+  /* ---------- Auth ---------- */
+  .auth-wrap { max-width: 380px; margin: 40px auto 0; }
+  .auth-wrap h2 { font-size: 22px; margin-bottom: 6px; }
+  .auth-wrap .sub { font-size: 13px; color: var(--text-dim); margin-bottom: 22px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
+  .field input, .field select {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    padding: 11px 13px;
+    font-size: 14px;
+    font-family: var(--font);
+    outline: none;
+    transition: border-color .15s;
+  }
+  .field input:focus, .field select:focus { border-color: var(--accent); }
+  .field input[readonly] { opacity: 0.55; cursor: not-allowed; }
+  .form-error { color: var(--danger); font-size: 13px; margin-bottom: 12px; display: none; }
+  .auth-switch { text-align: center; font-size: 13px; color: var(--text-dim); margin-top: 16px; }
+  .demo-hint {
+    margin-top: 18px;
+    font-size: 12px;
+    color: var(--text-dim);
+    background: var(--surface-2);
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    line-height: 1.6;
+  }
+  .demo-hint code { color: var(--accent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+
+  /* ---------- Dashboard ---------- */
+  .page-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; flex-wrap: wrap; gap: 10px; }
+  .page-head h2 { font-size: 22px; }
+  .page-head .plan-pill {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    padding: 5px 14px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .meters { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-bottom: 20px; }
+  .meter-card .label { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; }
+  .meter-card .value { font-size: 24px; font-weight: 800; margin: 8px 0 2px; }
+  .meter-card .limit { font-size: 12px; color: var(--text-dim); margin-bottom: 12px; }
+  .bar { height: 8px; background: var(--surface-2); border-radius: 999px; overflow: hidden; border: 1px solid var(--border); }
+  .bar i {
+    display: block;
+    height: 100%;
+    background: var(--accent);
+    border-radius: 999px;
+    transition: width .6s cubic-bezier(.22,1,.36,1);
+  }
+  .bar i.warn { background: var(--warn); }
+  .bar i.hot { background: var(--danger); }
+  .meter-card .pct { font-size: 11px; color: var(--text-dim); margin-top: 6px; }
+  .activity li {
+    list-style: none;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 11px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .activity li:last-child { border-bottom: none; }
+  .activity .when { color: var(--text-dim); white-space: nowrap; font-size: 12px; }
+
+  /* ---------- Settings ---------- */
+  .settings-grid { display: grid; gap: 16px; }
+  .settings-grid h3 { font-size: 15px; margin-bottom: 14px; }
+  .swatches { display: flex; gap: 10px; flex-wrap: wrap; }
+  .swatch {
+    width: 38px; height: 38px;
+    border-radius: 999px;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: transform .12s, border-color .12s;
+  }
+  .swatch:hover { transform: scale(1.1); }
+  .swatch.active { border-color: #fff; box-shadow: 0 0 0 3px var(--accent-soft); }
+  .plan-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+  .plan-opt {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    background: var(--surface-2);
+  }
+  .plan-opt.current { border-color: var(--accent); }
+  .plan-opt h4 { font-size: 14px; }
+  .plan-opt .p { font-size: 20px; font-weight: 800; margin: 6px 0 10px; }
+  .plan-opt .p small { font-size: 11px; color: var(--text-dim); font-weight: 400; }
+  .plan-opt .lim { font-size: 12px; color: var(--text-dim); margin-bottom: 12px; line-height: 1.5; }
+
+  /* ---------- Toast ---------- */
+  .toast {
+    position: fixed;
+    bottom: 24px; left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--surface-2);
+    border: 1px solid var(--accent);
+    color: var(--text);
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .25s, transform .25s;
+    z-index: 60;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  footer { text-align: center; color: var(--text-dim); font-size: 12px; padding: 30px 20px 40px; }
+</style>
+</head>
+<body>
+
+<header>
+  <a class="back" href="../index.html">&larr; All apps</a>
+  <div class="brand" id="brandHome">
+    <div class="logo">&#128640;</div>
+    <div>LaunchKit</div>
+  </div>
+  <nav id="nav"></nav>
+</header>
+
+<main id="app"></main>
+<footer>LaunchKit demo — everything runs locally in your browser.</footer>
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* =====================================================================
+     DEMO-ONLY AUTH — do not copy into a real product.
+     Passwords are run through a trivial djb2 hash and kept in
+     localStorage purely so the demo can "remember" accounts offline.
+     This is NOT secure in any way: no salt, no key stretching, and
+     localStorage is readable by any script on the page. A real app
+     must do credential handling server-side with a proper KDF.
+     ===================================================================== */
+
+  var LS_USERS = 'launchkit_users_v1';
+  var LS_SESSION = 'launchkit_session_v1';
+
+  var PLANS = {
+    starter: { key: 'starter', name: 'Starter', price: 0,  api: 10000,   storage: 1,   seats: 3,
+               tagline: 'For side projects', feats: ['10k API calls / mo', '1 GB storage', '3 team seats', 'Community support'] },
+    pro:     { key: 'pro',     name: 'Pro',     price: 29, api: 100000,  storage: 50,  seats: 10,
+               tagline: 'For growing teams', feats: ['100k API calls / mo', '50 GB storage', '10 team seats', 'Priority support', 'Custom domains'] },
+    scale:   { key: 'scale',   name: 'Scale',   price: 99, api: 1000000, storage: 500, seats: 50,
+               tagline: 'For serious volume', feats: ['1M API calls / mo', '500 GB storage', '50 team seats', 'Dedicated support', 'SSO & audit logs', '99.9% SLA'] }
+  };
+  var PLAN_ORDER = ['starter', 'pro', 'scale'];
+
+  var ACCENTS = [
+    { name: 'Violet', hex: '#8b5cf6' },
+    { name: 'Blue',   hex: '#3b82f6' },
+    { name: 'Teal',   hex: '#14b8a6' },
+    { name: 'Rose',   hex: '#f43f5e' },
+    { name: 'Amber',  hex: '#f59e0b' }
+  ];
+
+  // Simple djb2 string hash -> hex. Demo-only, never call it secure.
+  function demoHash(str) {
+    var h = 5381;
+    for (var i = 0; i < str.length; i++) {
+      h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+    }
+    return (h >>> 0).toString(16);
+  }
+
+  // ---------- Storage ----------
+  function loadUsers() {
+    try {
+      var raw = localStorage.getItem(LS_USERS);
+      if (raw) return JSON.parse(raw);
+    } catch (e) { /* ignore */ }
+    // Seed one demo account on first run.
+    var users = {};
+    users['demo@launchkit.dev'] = {
+      name: 'Demo Founder',
+      passHash: demoHash('demo1234'),
+      plan: 'pro',
+      accent: '#8b5cf6',
+      usage: { api: 61250, storage: 18.4, seats: 6 },
+      createdAt: Date.now()
+    };
+    localStorage.setItem(LS_USERS, JSON.stringify(users));
+    return users;
+  }
+  var users = loadUsers();
+  function saveUsers() { localStorage.setItem(LS_USERS, JSON.stringify(users)); }
+
+  function sessionEmail() { return localStorage.getItem(LS_SESSION); }
+  function currentUser() {
+    var email = sessionEmail();
+    return email && users[email] ? users[email] : null;
+  }
+  function login(email) { localStorage.setItem(LS_SESSION, email); }
+  function logout() {
+    localStorage.removeItem(LS_SESSION);
+    applyAccent(ACCENTS[0].hex);
+    location.hash = '#/';
+  }
+
+  function applyAccent(hex) {
+    document.documentElement.style.setProperty('--accent', hex);
+    var r = parseInt(hex.slice(1, 3), 16),
+        g = parseInt(hex.slice(3, 5), 16),
+        b = parseInt(hex.slice(5, 7), 16);
+    document.documentElement.style.setProperty('--accent-soft', 'rgba(' + r + ',' + g + ',' + b + ',0.15)');
+  }
+
+  // ---------- Router ----------
+  var app = document.getElementById('app');
+  var nav = document.getElementById('nav');
+  document.getElementById('brandHome').addEventListener('click', function () {
+    location.hash = currentUser() ? '#/dashboard' : '#/';
+  });
+
+  var routes = {
+    '#/': renderLanding,
+    '#/login': renderLogin,
+    '#/signup': renderSignup,
+    '#/dashboard': renderDashboard,
+    '#/settings': renderSettings
+  };
+  var PROTECTED = { '#/dashboard': true, '#/settings': true };
+  var AUTH_PAGES = { '#/login': true, '#/signup': true };
+
+  function route() {
+    var hash = location.hash || '#/';
+    if (!routes[hash]) hash = '#/';
+
+    var user = currentUser();
+    // Route guard: logged-out users can't reach app pages…
+    if (PROTECTED[hash] && !user) { location.hash = '#/login'; return; }
+    // …and logged-in users skip the auth pages.
+    if (AUTH_PAGES[hash] && user) { location.hash = '#/dashboard'; return; }
+
+    applyAccent(user && user.accent ? user.accent : ACCENTS[0].hex);
+    renderNav(hash, user);
+    routes[hash]();
+    window.scrollTo(0, 0);
+  }
+  window.addEventListener('hashchange', route);
+
+  function renderNav(hash, user) {
+    if (user) {
+      nav.innerHTML =
+        '<a class="navlink' + (hash === '#/dashboard' ? ' active' : '') + '" href="#/dashboard">Dashboard</a>' +
+        '<a class="navlink' + (hash === '#/settings' ? ' active' : '') + '" href="#/settings">Settings</a>' +
+        '<button class="btn ghost" id="navLogout">Log out</button>';
+      document.getElementById('navLogout').addEventListener('click', logout);
+    } else {
+      nav.innerHTML =
+        '<a class="navlink' + (hash === '#/' ? ' active' : '') + '" href="#/">Home</a>' +
+        '<a class="navlink' + (hash === '#/login' ? ' active' : '') + '" href="#/login">Log in</a>' +
+        '<a class="btn primary" href="#/signup">Sign up free</a>';
+    }
+  }
+
+  // ---------- Landing ----------
+  function renderLanding() {
+    var features = [
+      { icon: '⚡', title: 'Instant deploys', desc: 'Ship to a global edge network in under 10 seconds, straight from git push.' },
+      { icon: '🔐', title: 'Auth built in', desc: 'Sessions, magic links, OAuth and role-based access — wired up out of the box.' },
+      { icon: '📊', title: 'Usage analytics', desc: 'Live dashboards for API calls, storage and seats. Know your burn before your bill.' },
+      { icon: '🧩', title: 'Typed SDKs', desc: 'First-class client libraries for TypeScript, Python, Go and Rust.' },
+      { icon: '🌍', title: 'Multi-region', desc: 'Data pinned to the region you choose. EU, US and APAC from day one.' },
+      { icon: '🛟', title: 'Human support', desc: 'Real engineers answer, not a ticket bot. Median first reply under 2 hours.' }
+    ];
+    var faqs = [
+      { q: 'Can I try LaunchKit for free?', a: 'Yes — the Starter plan is free forever, no credit card required. Upgrade only when you outgrow the limits.' },
+      { q: 'What happens if I hit my plan limits?', a: 'Nothing breaks. We soft-cap you, email a heads-up, and give you a 48-hour grace window to upgrade or trim usage.' },
+      { q: 'Can I change plans later?', a: 'Any time, from the Settings page. Upgrades apply instantly; downgrades take effect at the next billing cycle and are prorated.' },
+      { q: 'Do you offer refunds?', a: 'If you cancel within 14 days of a paid upgrade, we refund in full — just reply to any billing email.' },
+      { q: 'Where is my data stored?', a: 'In the region you pick at project creation. Backups are encrypted at rest and replicated across two availability zones.' }
+    ];
+
+    app.innerHTML =
+      '<section class="hero">' +
+        '<span class="badge">v2.4 — now with edge functions</span>' +
+        '<h1>Launch your SaaS<br><em>in a weekend</em></h1>' +
+        '<p>LaunchKit gives you auth, billing, analytics and deploys in one starter kit, so you can spend your time on the product — not the plumbing.</p>' +
+        '<div class="cta-row"><a class="btn primary" href="#/signup">Start free &rarr;</a><button type="button" class="btn ghost" id="seePricingBtn">See pricing</button></div>' +
+      '</section>' +
+
+      '<h2 class="section-title">Everything you need on day one</h2>' +
+      '<p class="section-sub">Batteries included. Swap any piece out later.</p>' +
+      '<div class="features">' +
+        features.map(function (f) {
+          return '<div class="card feature"><div class="icon">' + f.icon + '</div><h3>' + f.title + '</h3><p>' + f.desc + '</p></div>';
+        }).join('') +
+      '</div>' +
+
+      '<h2 class="section-title" id="pricing">Simple pricing</h2>' +
+      '<p class="section-sub">Start free. Scale when you do.</p>' +
+      '<div class="pricing">' +
+        PLAN_ORDER.map(function (key) {
+          var p = PLANS[key];
+          var popular = key === 'pro';
+          return '<div class="card tier' + (popular ? ' popular' : '') + '">' +
+            (popular ? '<span class="pop-tag">Most popular</span>' : '') +
+            '<h3>' + p.name + '</h3>' +
+            '<div class="amount">$' + p.price + '<small> /month</small></div>' +
+            '<div class="tagline">' + p.tagline + '</div>' +
+            '<ul>' + p.feats.map(function (f) { return '<li>' + f + '</li>'; }).join('') + '</ul>' +
+            '<a class="btn ' + (popular ? 'primary' : 'ghost') + ' block" href="#/signup">Get started</a>' +
+          '</div>';
+        }).join('') +
+      '</div>' +
+
+      '<h2 class="section-title">Frequently asked questions</h2>' +
+      '<p class="section-sub">Everything else — just ask.</p>' +
+      '<div class="faq">' +
+        faqs.map(function (f) {
+          return '<details><summary>' + f.q + '</summary><div class="answer">' + f.a + '</div></details>';
+        }).join('') +
+      '</div>';
+
+    document.getElementById('seePricingBtn').addEventListener('click', function () {
+      var el = document.getElementById('pricing');
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+    });
+  }
+
+  // ---------- Auth pages ----------
+  function renderLogin() {
+    app.innerHTML =
+      '<div class="auth-wrap card">' +
+        '<h2>Welcome back</h2>' +
+        '<div class="sub">Log in to your LaunchKit workspace.</div>' +
+        '<form id="loginForm">' +
+          '<div class="field"><label for="lEmail">Email</label>' +
+          '<input id="lEmail" type="email" placeholder="you@company.com" required autocomplete="username"></div>' +
+          '<div class="field"><label for="lPass">Password</label>' +
+          '<input id="lPass" type="password" placeholder="••••••••" required autocomplete="current-password"></div>' +
+          '<div class="form-error" id="loginError"></div>' +
+          '<button class="btn primary block" type="submit">Log in</button>' +
+        '</form>' +
+        '<div class="auth-switch">No account yet? <a href="#/signup">Sign up free</a></div>' +
+        '<div class="demo-hint">Demo account: <code>demo@launchkit.dev</code> / <code>demo1234</code></div>' +
+      '</div>';
+
+    document.getElementById('loginForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var email = document.getElementById('lEmail').value.trim().toLowerCase();
+      var pass = document.getElementById('lPass').value;
+      var err = document.getElementById('loginError');
+      var u = users[email];
+      if (!u || u.passHash !== demoHash(pass)) {
+        err.textContent = 'Wrong email or password.';
+        err.style.display = 'block';
+        return;
+      }
+      login(email);
+      showToast('Welcome back, ' + u.name.split(' ')[0] + '!');
+      location.hash = '#/dashboard';
+    });
+  }
+
+  function renderSignup() {
+    app.innerHTML =
+      '<div class="auth-wrap card">' +
+        '<h2>Create your account</h2>' +
+        '<div class="sub">Free forever on Starter. No card needed.</div>' +
+        '<form id="signupForm">' +
+          '<div class="field"><label for="sName">Full name</label>' +
+          '<input id="sName" type="text" placeholder="Ada Lovelace" maxlength="60" required></div>' +
+          '<div class="field"><label for="sEmail">Email</label>' +
+          '<input id="sEmail" type="email" placeholder="you@company.com" required autocomplete="username"></div>' +
+          '<div class="field"><label for="sPass">Password <span style="opacity:.6">(min 6 chars)</span></label>' +
+          '<input id="sPass" type="password" placeholder="••••••••" minlength="6" required autocomplete="new-password"></div>' +
+          '<div class="form-error" id="signupError"></div>' +
+          '<button class="btn primary block" type="submit">Create account</button>' +
+        '</form>' +
+        '<div class="auth-switch">Already have an account? <a href="#/login">Log in</a></div>' +
+      '</div>';
+
+    document.getElementById('signupForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var name = document.getElementById('sName').value.trim();
+      var email = document.getElementById('sEmail').value.trim().toLowerCase();
+      var pass = document.getElementById('sPass').value;
+      var err = document.getElementById('signupError');
+      function fail(msg) { err.textContent = msg; err.style.display = 'block'; }
+
+      if (!name) return fail('Please enter your name.');
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail('That email doesn’t look right.');
+      if (pass.length < 6) return fail('Password must be at least 6 characters.');
+      if (users[email]) return fail('An account with that email already exists. Try logging in.');
+
+      users[email] = {
+        name: name,
+        passHash: demoHash(pass), // demo-only hashing, see note at top of script
+        plan: 'starter',
+        accent: ACCENTS[0].hex,
+        // A little starting usage so the dashboard has something to show.
+        usage: {
+          api: 1200 + Math.floor(Math.random() * 3000),
+          storage: +(0.1 + Math.random() * 0.5).toFixed(1),
+          seats: 1
+        },
+        createdAt: Date.now()
+      };
+      saveUsers();
+      login(email);
+      showToast('Account created — welcome aboard!');
+      location.hash = '#/dashboard';
+    });
+  }
+
+  // ---------- Dashboard ----------
+  function fmtNum(n) {
+    if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+    return String(n);
+  }
+
+  function meterCard(label, used, limit, unit, fmt) {
+    var pct = Math.min(100, Math.round((used / limit) * 100));
+    var cls = pct >= 90 ? 'hot' : pct >= 70 ? 'warn' : '';
+    return '<div class="card meter-card">' +
+      '<div class="label">' + label + '</div>' +
+      '<div class="value">' + fmt(used) + '<span style="font-size:13px;color:var(--text-dim)"> ' + unit + '</span></div>' +
+      '<div class="limit">of ' + fmt(limit) + ' ' + unit + ' included</div>' +
+      '<div class="bar"><i class="' + cls + '" style="width:0%" data-w="' + pct + '"></i></div>' +
+      '<div class="pct">' + pct + '% used</div>' +
+    '</div>';
+  }
+
+  function renderDashboard() {
+    var user = currentUser();
+    var plan = PLANS[user.plan] || PLANS.starter;
+    var activity = [
+      { what: 'Deploy succeeded — api@a41f2c to production', when: '12 min ago' },
+      { what: 'New API key created (ci-pipeline)', when: '3 h ago' },
+      { what: 'Weekly usage report emailed to team', when: 'Yesterday' },
+      { what: 'Teammate invited: dev@' + (sessionEmail().split('@')[1] || 'company.com'), when: '2 days ago' },
+      { what: 'Plan check-in: you’re on ' + plan.name, when: '5 days ago' }
+    ];
+
+    app.innerHTML =
+      '<div class="page-head">' +
+        '<h2>Hey, ' + escapeHtml(user.name.split(' ')[0]) + ' 👋</h2>' +
+        '<span class="plan-pill">' + plan.name + ' plan</span>' +
+      '</div>' +
+      '<div class="meters">' +
+        meterCard('API calls this month', user.usage.api, plan.api, 'calls', fmtNum) +
+        meterCard('Storage', user.usage.storage, plan.storage, 'GB', function (n) { return n; }) +
+        meterCard('Team seats', user.usage.seats, plan.seats, 'seats', function (n) { return n; }) +
+      '</div>' +
+      '<div class="card">' +
+        '<h3 style="font-size:15px;margin-bottom:6px">Recent activity</h3>' +
+        '<ul class="activity">' +
+          activity.map(function (a) {
+            return '<li><span>' + escapeHtml(a.what) + '</span><span class="when">' + a.when + '</span></li>';
+          }).join('') +
+        '</ul>' +
+      '</div>';
+
+    // Animate the meter bars in.
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        app.querySelectorAll('.bar i').forEach(function (bar) {
+          bar.style.width = bar.getAttribute('data-w') + '%';
+        });
+      });
+    });
+  }
+
+  // ---------- Settings ----------
+  function renderSettings() {
+    var email = sessionEmail();
+    var user = currentUser();
+
+    app.innerHTML =
+      '<div class="page-head"><h2>Settings</h2></div>' +
+      '<div class="settings-grid">' +
+
+        '<div class="card"><h3>Profile</h3>' +
+          '<form id="profileForm" style="max-width:380px">' +
+            '<div class="field"><label for="pName">Display name</label>' +
+            '<input id="pName" type="text" maxlength="60" value="' + escapeAttr(user.name) + '" required></div>' +
+            '<div class="field"><label for="pEmail">Email (fixed in this demo)</label>' +
+            '<input id="pEmail" type="email" value="' + escapeAttr(email) + '" readonly></div>' +
+            '<button class="btn primary" type="submit">Save profile</button>' +
+          '</form>' +
+        '</div>' +
+
+        '<div class="card"><h3>Theme accent</h3>' +
+          '<p class="muted" style="font-size:13px;margin-bottom:14px">Pick the accent colour for your workspace.</p>' +
+          '<div class="swatches" id="swatches">' +
+            ACCENTS.map(function (a) {
+              return '<button type="button" class="swatch' + (user.accent === a.hex ? ' active' : '') +
+                '" style="background:' + a.hex + '" data-hex="' + a.hex + '" title="' + a.name + '" aria-label="' + a.name + '"></button>';
+            }).join('') +
+          '</div>' +
+        '</div>' +
+
+        '<div class="card"><h3>Plan</h3>' +
+          '<div class="plan-row">' +
+            PLAN_ORDER.map(function (key) {
+              var p = PLANS[key];
+              var isCurrent = user.plan === key;
+              var dir = PLAN_ORDER.indexOf(key) > PLAN_ORDER.indexOf(user.plan) ? 'Upgrade' : 'Downgrade';
+              return '<div class="plan-opt' + (isCurrent ? ' current' : '') + '">' +
+                '<h4>' + p.name + '</h4>' +
+                '<div class="p">$' + p.price + '<small> /mo</small></div>' +
+                '<div class="lim">' + fmtNum(p.api) + ' API calls · ' + p.storage + ' GB · ' + p.seats + ' seats</div>' +
+                (isCurrent
+                  ? '<button class="btn ghost block" disabled style="opacity:.55;cursor:default">Current plan</button>'
+                  : '<button class="btn ' + (dir === 'Upgrade' ? 'primary' : 'ghost') + ' block" data-plan="' + key + '">' + dir + '</button>') +
+              '</div>';
+            }).join('') +
+          '</div>' +
+        '</div>' +
+
+        '<div class="card"><h3>Session</h3>' +
+          '<p class="muted" style="font-size:13px;margin-bottom:14px">Signed in as ' + escapeHtml(email) + '.</p>' +
+          '<button class="btn danger" id="settingsLogout">Log out</button>' +
+        '</div>' +
+
+      '</div>';
+
+    document.getElementById('profileForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var name = document.getElementById('pName').value.trim();
+      if (!name) return;
+      user.name = name;
+      saveUsers();
+      showToast('Profile saved');
+    });
+
+    document.getElementById('swatches').addEventListener('click', function (e) {
+      var btn = e.target.closest('.swatch');
+      if (!btn) return;
+      user.accent = btn.getAttribute('data-hex');
+      saveUsers();
+      applyAccent(user.accent);
+      this.querySelectorAll('.swatch').forEach(function (s) { s.classList.remove('active'); });
+      btn.classList.add('active');
+      showToast('Accent updated');
+    });
+
+    app.querySelectorAll('[data-plan]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var key = btn.getAttribute('data-plan');
+        var goingUp = PLAN_ORDER.indexOf(key) > PLAN_ORDER.indexOf(user.plan);
+        user.plan = key;
+        saveUsers();
+        showToast((goingUp ? 'Upgraded' : 'Downgraded') + ' to ' + PLANS[key].name);
+        renderSettings(); // re-render to refresh current-plan state
+      });
+    });
+
+    document.getElementById('settingsLogout').addEventListener('click', logout);
+  }
+
+  // ---------- Helpers ----------
+  var toastEl = document.getElementById('toast');
+  var toastTimer = null;
+  function showToast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.classList.remove('show'); }, 2400);
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function escapeAttr(s) { return escapeHtml(s); }
+
+  // ---------- Boot ----------
+  if (!location.hash) location.hash = '#/';
+  route();
+})();
+</script>
+</body>
+</html>
