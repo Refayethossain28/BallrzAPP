@@ -488,18 +488,22 @@
     }
   };
 
+  var FEATURE_TAILS = [
+    " — so it fits seamlessly into your routine.",
+    ", giving you one less thing to think about.",
+    ", designed with real-world use in mind.",
+    " — a small detail that makes a big difference.",
+    ", every single time."
+  ];
+  var lastTail = -1;
   function featureSentence(f) {
     var s = f.trim().replace(/^[-•*]\s*/, "");
     if (!s) return "";
     s = s.charAt(0).toUpperCase() + s.slice(1).replace(/[.]?$/, "");
-    var tails = [
-      " — so it fits seamlessly into your routine.",
-      ", giving you one less thing to think about.",
-      ", designed with real-world use in mind.",
-      " — a small detail that makes a big difference.",
-      ", every single time."
-    ];
-    return "• " + s + pick(tails);
+    var i;
+    do { i = Math.floor(Math.random() * FEATURE_TAILS.length); } while (i === lastTail);
+    lastTail = i;
+    return "• " + s + FEATURE_TAILS[i];
   }
 
   function localProduct(name, audience, features, tone) {

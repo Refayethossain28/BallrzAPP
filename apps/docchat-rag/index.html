@@ -486,17 +486,17 @@
     var qTokens = new Set(tokenize(question));
     var sentences = [];
     hits.forEach(function (h, rank) {
-      splitSentences(h.chunk.text).forEach(function (s) {
+      splitSentences(h.chunk.text).forEach(function (s, idx) {
         var score = 0;
         tokenize(s).forEach(function (w) {
           if (qTokens.has(w)) score += (idf.get(w) || 1);
         });
-        if (score > 0) sentences.push({ text: s, score: score - rank * 0.15, rank: rank });
+        if (score > 0) sentences.push({ text: s, score: score - rank * 0.15, rank: rank, idx: idx });
       });
     });
     sentences.sort(function (a, b) { return b.score - a.score; });
     var picked = sentences.slice(0, 3);
-    picked.sort(function (a, b) { return a.rank - b.rank; });
+    picked.sort(function (a, b) { return (a.rank - b.rank) || (a.idx - b.idx); });
     if (!picked.length) return null;
     var seen = new Set(), out = [];
     picked.forEach(function (s) {
