@@ -1,711 +1,933 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TravelDeals — Cheap Flights & Hotels</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TravelDeals — search, compare & book flights and hotels</title>
+<meta name="description" content="Price forecasts, deal scores, Everywhere search, fare freeze, seat selection and e-tickets — the flight & hotel deals engine.">
+<meta name="theme-color" content="#101426">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="TravelDeals">
 <style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --blue:#2563eb;--blue-d:#1d4ed8;--blue-l:#dbeafe;--blue-xl:#eff6ff;
-  --green:#059669;--green-d:#047857;--green-l:#d1fae5;--green-xl:#ecfdf5;
-  --slate-9:#0f172a;--slate-8:#1e293b;--slate-7:#334155;--slate-6:#475569;
-  --slate-5:#64748b;--slate-4:#94a3b8;--slate-3:#cbd5e1;--slate-2:#e2e8f0;
-  --slate-1:#f1f5f9;--slate-0:#f8fafc;--white:#fff;
-  --amber:#d97706;--amber-l:#fef3c7;--red:#dc2626;--red-l:#fee2e2;
-  --sh1:0 1px 3px rgba(0,0,0,.08);--sh2:0 4px 12px rgba(0,0,0,.1);--sh3:0 8px 24px rgba(0,0,0,.12);
-  --r:12px;--rs:8px;--rf:9999px
-}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--slate-0);color:var(--slate-8);font-size:14px;line-height:1.5}
-a{color:inherit}
-input,select,button{font-family:inherit;font-size:14px}
+  :root {
+    color-scheme: light dark;
+    --bg:#f4f6fb; --card:#ffffff; --ink:#16203a; --dim:#5b6884; --faint:#93a0bb;
+    --line:#e4e8f2; --accent:#3b5bfd; --accent-ink:#ffffff; --accent-soft:#eaeeff;
+    --good:#0e9f6e; --good-soft:#e3f7ef; --warn:#b45309; --warn-soft:#fdf3e2;
+    --bad:#dc2626; --bad-soft:#fdeaea; --gold:#a16207; --gold-soft:#fdf6dd;
+    --sh:0 1px 2px rgba(22,32,58,.06),0 8px 24px rgba(22,32,58,.07);
+    --r:16px; --rs:10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#0c1020; --card:#161c33; --ink:#e8ecf8; --dim:#96a2c2; --faint:#67739a;
+      --line:#242c4a; --accent:#6d86ff; --accent-ink:#0c1020; --accent-soft:#22294d;
+      --good:#34d399; --good-soft:#11302a; --warn:#fbbf24; --warn-soft:#33290f;
+      --bad:#f87171; --bad-soft:#3a1414; --gold:#fcd34d; --gold-soft:#332b10;
+      --sh:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; }
+  body {
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,sans-serif;
+    background:var(--bg); color:var(--ink);
+    padding-bottom:max(16px, env(safe-area-inset-bottom));
+  }
+  button { font:inherit; cursor:pointer; border:0; background:none; color:inherit; }
+  input,select { font:inherit; color:var(--ink); background:var(--card); border:1.5px solid var(--line); border-radius:var(--rs); padding:10px 12px; width:100%; outline:none; }
+  input:focus,select:focus { border-color:var(--accent); }
+  .wrap { max-width:880px; margin:0 auto; padding:0 14px; }
 
-/* Layout */
-.header{background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 50%,#0f172a 100%);color:#fff;padding:0}
-.header-inner{max-width:900px;margin:0 auto;padding:28px 20px 0}
-.logo{display:flex;align-items:center;gap:12px;margin-bottom:20px}
-.logo-icon{font-size:32px}
-.logo-title{font-size:22px;font-weight:800;letter-spacing:-.5px}
-.logo-sub{font-size:12px;color:#93c5fd;margin-top:1px}
-.tabs{display:flex;gap:4px}
-.tab-btn{display:flex;align-items:center;gap:6px;padding:10px 20px;border:none;border-radius:10px 10px 0 0;cursor:pointer;font-weight:600;font-size:14px;transition:all .15s}
-.tab-btn.active{background:#fff;color:var(--slate-9)}
-.tab-btn:not(.active){background:transparent;color:#93c5fd}
-.tab-btn:not(.active):hover{background:rgba(255,255,255,.1);color:#fff}
+  /* header */
+  header { background:linear-gradient(135deg,#101426,#1e2a5e 55%,#101426); color:#fff; padding:18px 0 0; }
+  .hrow { display:flex; align-items:center; gap:10px; }
+  .logo { width:38px; height:38px; }
+  .hname { font-weight:800; font-size:19px; letter-spacing:-.02em; }
+  .hsub { font-size:11.5px; color:#9fb0e8; margin-top:-2px; }
+  .hspace { margin-left:auto; display:flex; gap:8px; align-items:center; }
+  .chip { font-size:11.5px; font-weight:700; padding:5px 10px; border-radius:999px; background:rgba(255,255,255,.12); color:#dbe4ff; border:0; }
+  .chip.live { background:#0e9f6e; color:#fff; }
+  select.cursel { width:auto; background:rgba(255,255,255,.12); border:0; color:#dbe4ff; font-size:12px; font-weight:700; padding:5px 8px; border-radius:999px; }
+  nav { display:flex; gap:2px; margin-top:14px; overflow-x:auto; scrollbar-width:none; }
+  nav::-webkit-scrollbar{display:none}
+  nav button { flex:none; padding:10px 16px; font-weight:700; font-size:13.5px; color:#8fa0d0; border-radius:12px 12px 0 0; white-space:nowrap; }
+  nav button.on { background:var(--bg); color:var(--ink); }
+  nav button .b { display:inline-block; min-width:17px; padding:0 5px; margin-left:5px; background:var(--bad); color:#fff; border-radius:999px; font-size:10.5px; line-height:17px; }
 
-/* Search panel */
-.search-panel{background:#fff;border-bottom:1px solid var(--slate-2);box-shadow:var(--sh1)}
-.search-inner{max-width:900px;margin:0 auto;padding:24px 20px}
-.form-hidden{display:none}
+  main { padding:16px 0 40px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--sh); padding:16px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .grid4 { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+  @media(max-width:560px){ .grid4{grid-template-columns:1fr 1fr} }
+  label.f { display:block; font-size:10.5px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:var(--faint); margin:0 0 4px 2px; }
+  .row { display:flex; gap:8px; align-items:center; }
+  .seg { display:inline-flex; background:var(--bg); border:1px solid var(--line); border-radius:999px; padding:3px; gap:2px; }
+  .seg button { padding:6px 14px; border-radius:999px; font-size:12.5px; font-weight:700; color:var(--dim); }
+  .seg button.on { background:var(--accent); color:var(--accent-ink); }
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; background:var(--accent); color:var(--accent-ink); font-weight:800; padding:13px 18px; border-radius:12px; width:100%; font-size:15px; }
+  .btn:active { transform:scale(.985); }
+  .btn.sec { background:var(--accent-soft); color:var(--accent); }
+  .btn.ghost { background:transparent; border:1.5px solid var(--line); color:var(--dim); }
+  .btn.sm { width:auto; padding:8px 14px; font-size:13px; border-radius:10px; }
+  .swap { flex:none; width:38px; height:38px; border-radius:50%; background:var(--accent-soft); color:var(--accent); font-size:16px; margin-top:18px; }
+  .muted { color:var(--dim); font-size:12.5px; }
+  .tiny { color:var(--faint); font-size:11.5px; }
 
-/* Form elements */
-.trip-types{display:flex;gap:8px;margin-bottom:16px}
-.trip-btn{padding:5px 14px;border-radius:var(--rf);border:none;cursor:pointer;font-weight:600;font-size:12px;transition:all .15s}
-.trip-btn.active{background:var(--blue);color:#fff}
-.trip-btn:not(.active){background:var(--slate-1);color:var(--slate-6)}
-.trip-btn:not(.active):hover{background:var(--slate-2)}
+  /* forecast banner */
+  .fc { display:flex; gap:12px; align-items:center; border-radius:var(--r); padding:13px 15px; margin:14px 0 10px; border:1px solid var(--line); }
+  .fc.buy { background:var(--good-soft); } .fc.wait { background:var(--warn-soft); } .fc.track { background:var(--accent-soft); }
+  .fc .big { font-weight:800; font-size:14.5px; }
+  .fc .why { font-size:12px; color:var(--dim); margin-top:1px; }
+  .spark { flex:none; }
 
-.form-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
-.form-grid-4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:12px}
-.form-group{display:flex;flex-direction:column;gap:4px}
-.form-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--slate-5)}
-.form-hint{font-size:11px;color:var(--slate-4);margin-top:2px}
-.form-input,.form-select{
-  border:1.5px solid var(--slate-2);border-radius:var(--rs);padding:10px 12px;
-  outline:none;transition:border-color .15s,box-shadow .15s;background:#fff;color:var(--slate-8);width:100%
-}
-.form-input:focus,.form-select:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-l)}
-.form-select.green:focus{border-color:var(--green);box-shadow:0 0 0 3px var(--green-l)}
-.form-input.green:focus{border-color:var(--green);box-shadow:0 0 0 3px var(--green-l)}
+  /* flex strip */
+  .flex-strip { display:flex; gap:6px; overflow-x:auto; padding:2px 0 8px; scrollbar-width:none; }
+  .flex-strip::-webkit-scrollbar{display:none}
+  .fd { flex:none; text-align:center; padding:8px 12px; border-radius:12px; border:1.5px solid var(--line); background:var(--card); }
+  .fd.sel { border-color:var(--accent); background:var(--accent-soft); }
+  .fd.best .p { color:var(--good); }
+  .fd .d { font-size:11px; color:var(--dim); font-weight:700; }
+  .fd .p { font-size:13.5px; font-weight:800; }
 
-.city-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
-.city-chip{padding:4px 10px;border-radius:var(--rf);border:1.5px solid var(--slate-2);background:#fff;cursor:pointer;font-size:12px;font-weight:500;color:var(--slate-6);transition:all .15s}
-.city-chip:hover{border-color:var(--green);color:var(--green)}
-.city-chip.selected{background:var(--green);border-color:var(--green);color:#fff}
+  /* offers */
+  .offer { display:flex; align-items:center; gap:12px; padding:14px; margin-bottom:10px; }
+  .al { flex:none; width:42px; height:42px; border-radius:12px; background:var(--accent-soft); color:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:900; font-size:13px; }
+  .omid { flex:1; min-width:0; }
+  .times { display:flex; align-items:baseline; gap:8px; font-weight:800; font-size:16.5px; }
+  .times .arr { color:var(--faint); font-weight:400; }
+  .times sup { font-size:10px; color:var(--warn); }
+  .osub { font-size:12px; color:var(--dim); margin-top:2px; }
+  .oright { text-align:right; flex:none; }
+  .price { font-size:19px; font-weight:900; }
+  .score { display:inline-block; font-size:10.5px; font-weight:800; padding:2px 8px; border-radius:999px; margin-top:3px; }
+  .score.hi { background:var(--good-soft); color:var(--good); }
+  .score.mid { background:var(--accent-soft); color:var(--accent); }
+  .score.lo { background:var(--warn-soft); color:var(--warn); }
+  .seatsleft { font-size:10.5px; color:var(--bad); font-weight:700; }
+  .pill { display:inline-block; font-size:10.5px; font-weight:800; padding:2px 8px; border-radius:999px; background:var(--bg); color:var(--dim); border:1px solid var(--line); }
+  .pill.gold { background:var(--gold-soft); color:var(--gold); border:0; }
+  .pill.good { background:var(--good-soft); color:var(--good); border:0; }
 
-.search-btn{
-  width:100%;padding:13px;border:none;border-radius:var(--r);cursor:pointer;
-  font-weight:700;font-size:15px;color:#fff;transition:all .15s;margin-top:4px
-}
-.search-btn.blue{background:var(--blue)}
-.search-btn.blue:hover{background:var(--blue-d)}
-.search-btn.green{background:var(--green)}
-.search-btn.green:hover{background:var(--green-d)}
-.search-btn:disabled{opacity:.6;cursor:not-allowed}
+  /* hotels */
+  .hcard { display:flex; gap:12px; padding:14px; margin-bottom:10px; }
+  .hico { flex:none; width:58px; height:58px; border-radius:14px; display:flex; align-items:center; justify-content:center; font-size:26px; background:linear-gradient(135deg,var(--accent-soft),var(--good-soft)); }
+  .stars { color:#f59e0b; font-size:12px; letter-spacing:1px; }
+  .rate { display:inline-block; background:var(--accent); color:var(--accent-ink); font-weight:800; font-size:11.5px; padding:2px 7px; border-radius:7px; }
+  .amen { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
 
-/* Main content */
-.main{max-width:900px;margin:0 auto;padding:20px}
+  /* explore */
+  .exgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; margin-top:14px; }
+  .ex { padding:14px; cursor:pointer; }
+  .ex .flag { font-size:26px; }
+  .ex .city { font-weight:800; margin-top:4px; }
+  .ex:hover { border-color:var(--accent); }
 
-/* Demo banner */
-.demo-banner{
-  display:flex;align-items:flex-start;gap:10px;background:var(--amber-l);
-  border:1.5px solid #fcd34d;border-radius:var(--r);padding:12px 16px;
-  color:var(--amber);margin-bottom:16px;font-size:13px
-}
-.demo-banner a{color:var(--amber);font-weight:700;text-decoration:underline}
+  /* wizard overlay */
+  .ovl { position:fixed; inset:0; background:rgba(10,14,28,.55); backdrop-filter:blur(3px); z-index:50; display:flex; align-items:flex-end; justify-content:center; }
+  @media(min-width:640px){ .ovl{align-items:center} }
+  .sheet { background:var(--card); width:100%; max-width:560px; max-height:92vh; overflow-y:auto; border-radius:20px 20px 0 0; padding:20px 18px calc(20px + env(safe-area-inset-bottom)); }
+  @media(min-width:640px){ .sheet{border-radius:20px} }
+  .steps { display:flex; gap:5px; margin:4px 0 16px; }
+  .steps i { flex:1; height:4px; border-radius:4px; background:var(--line); }
+  .steps i.on { background:var(--accent); }
+  .sheet h2 { font-size:18px; margin:0 0 2px; }
+  .fare { display:flex; align-items:center; gap:12px; border:1.5px solid var(--line); border-radius:14px; padding:13px; margin-bottom:8px; cursor:pointer; }
+  .fare:hover,.fare.sel { border-color:var(--accent); }
+  .perk { font-size:11.5px; color:var(--dim); }
+  .perk s { color:var(--faint); }
 
-/* Results header */
-.results-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px}
-.results-count{font-weight:600;color:var(--slate-7);font-size:13px}
-.sort-btns{display:flex;align-items:center;gap:6px}
-.sort-label{font-size:12px;color:var(--slate-5)}
-.sort-btn{padding:5px 12px;border-radius:var(--rs);border:1.5px solid var(--slate-2);background:#fff;cursor:pointer;font-size:12px;font-weight:600;color:var(--slate-6);transition:all .15s}
-.sort-btn.active.blue{background:var(--blue);border-color:var(--blue);color:#fff}
-.sort-btn.active.green{background:var(--green);border-color:var(--green);color:#fff}
-.sort-btn:not(.active):hover{border-color:var(--slate-4)}
+  /* seat map */
+  .cabin { display:grid; grid-template-columns:repeat(7,1fr); gap:5px; max-width:320px; margin:12px auto; }
+  .seat { aspect-ratio:1; border-radius:7px 7px 3px 3px; background:var(--accent-soft); color:var(--accent); font-size:9.5px; font-weight:800; display:flex; align-items:center; justify-content:center; cursor:pointer; border:1.5px solid transparent; }
+  .seat.taken { background:var(--line); color:var(--faint); cursor:not-allowed; }
+  .seat.extra { background:var(--gold-soft); color:var(--gold); }
+  .seat.sel { background:var(--accent); color:var(--accent-ink); }
+  .aisle { display:flex; align-items:center; justify-content:center; color:var(--faint); font-size:9px; }
+  .legend { display:flex; gap:14px; justify-content:center; font-size:11px; color:var(--dim); }
+  .legend i { display:inline-block; width:11px; height:11px; border-radius:3px; margin-right:4px; vertical-align:-1px; }
 
-/* Flight card */
-.card{background:#fff;border:1.5px solid var(--slate-2);border-radius:var(--r);padding:16px;margin-bottom:10px;box-shadow:var(--sh1);transition:box-shadow .15s,border-color .15s}
-.card:hover{box-shadow:var(--sh2);border-color:var(--slate-3)}
-.card-inner{display:flex;align-items:stretch;gap:16px}
-.card-body{flex:1;min-width:0}
-.card-price{display:flex;flex-direction:column;align-items:flex-end;justify-content:space-between;padding-left:16px;border-left:1.5px solid var(--slate-2);min-width:120px}
+  /* summary / breakdown */
+  .bd { border-top:1px dashed var(--line); margin-top:10px; padding-top:10px; font-size:13.5px; }
+  .bd .r { display:flex; justify-content:space-between; padding:2.5px 0; }
+  .bd .tot { font-weight:900; font-size:16px; border-top:1px solid var(--line); margin-top:6px; padding-top:8px; }
 
-.seg{display:flex;align-items:center;gap:12px}
-.airline-badge{width:36px;height:36px;border-radius:var(--rs);background:var(--blue-xl);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--blue);flex-shrink:0;letter-spacing:0}
-.seg-times{display:flex;align-items:center;gap:0;flex:1;min-width:0}
-.seg-dep,.seg-arr{text-align:center;min-width:52px}
-.seg-time{font-size:16px;font-weight:800;color:var(--slate-9)}
-.seg-code{font-size:11px;font-weight:700;color:var(--slate-5)}
-.seg-middle{flex:1;display:flex;flex-direction:column;align-items:center;padding:0 8px}
-.seg-dur{font-size:11px;color:var(--slate-5);margin-bottom:3px}
-.seg-line{display:flex;align-items:center;width:100%;gap:4px}
-.seg-line-hr{flex:1;height:1.5px;background:var(--slate-3)}
-.seg-plane{font-size:14px;color:var(--slate-4)}
-.seg-fn{font-size:10px;color:var(--slate-4)}
-.seg-stops{font-size:11px;color:var(--amber);font-weight:600;margin-top:4px;padding-left:48px}
-.return-divider{border-top:1.5px dashed var(--slate-2);margin:10px 0;padding-top:10px}
-.return-label{font-size:11px;color:var(--slate-5);margin-bottom:6px;padding-left:48px}
+  /* ticket */
+  .ticket { background:linear-gradient(135deg,#101426,#25337a); color:#fff; border-radius:18px; padding:18px; position:relative; overflow:hidden; }
+  .ticket .route { display:flex; align-items:center; gap:12px; font-size:22px; font-weight:900; }
+  .ticket .route span { color:#8fa0d0; font-size:13px; font-weight:400; }
+  .ticket .meta { display:flex; gap:18px; margin-top:10px; font-size:12px; color:#b9c5ec; flex-wrap:wrap; }
+  .ticket .meta b { display:block; color:#fff; font-size:14px; }
+  .pnr { font-size:26px; font-weight:900; letter-spacing:4px; }
+  .bars { display:flex; align-items:flex-end; gap:1.5px; height:44px; margin-top:14px; background:#fff; padding:6px 10px; border-radius:8px; }
+  .bars i { background:#101426; height:100%; }
+  .stub { border-top:2px dashed rgba(255,255,255,.25); margin-top:14px; padding-top:12px; display:flex; justify-content:space-between; align-items:center; }
 
-.price-amount{font-size:24px;font-weight:800;color:var(--blue)}
-.price-sub{font-size:11px;color:var(--slate-5)}
-.pill{display:inline-block;padding:2px 8px;border-radius:var(--rf);font-size:11px;font-weight:600}
-.pill-green{background:var(--green-l);color:var(--green-d)}
-.pill-blue{background:var(--blue-l);color:var(--blue-d)}
-.pill-red{background:var(--red-l);color:var(--red)}
-.pill-gray{background:var(--slate-1);color:var(--slate-6)}
-.pills-row{display:flex;flex-direction:column;gap:4px;align-items:flex-end;margin-top:4px}
-.book-btn{
-  padding:9px 20px;border:none;border-radius:var(--rs);cursor:pointer;font-weight:700;font-size:13px;color:#fff;transition:background .15s;margin-top:8px;white-space:nowrap
-}
-.book-btn.blue{background:var(--blue)}
-.book-btn.blue:hover{background:var(--blue-d)}
-.book-btn.green{background:var(--green)}
-.book-btn.green:hover{background:var(--green-d)}
+  /* trips */
+  .trip { padding:14px; margin-bottom:10px; }
+  .trip .top { display:flex; align-items:center; gap:10px; }
+  .trip .top .grow { flex:1; min-width:0; }
+  .status { font-size:10.5px; font-weight:800; padding:3px 9px; border-radius:999px; }
+  .status.ok { background:var(--good-soft); color:var(--good); }
+  .status.held { background:var(--warn-soft); color:var(--warn); }
+  .status.x { background:var(--bad-soft); color:var(--bad); }
+  .tactions { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
 
-/* Hotel card */
-.hotel-icon{width:80px;height:80px;border-radius:var(--rs);background:linear-gradient(135deg,var(--green-l),#a7f3d0);display:flex;align-items:center;justify-content:center;font-size:36px;flex-shrink:0}
-.hotel-body{flex:1;min-width:0}
-.hotel-name{font-size:16px;font-weight:700;color:var(--slate-9);margin-bottom:4px}
-.hotel-stars-row{display:flex;align-items:center;gap:8px;margin-bottom:4px}
-.stars{color:#f59e0b;font-size:13px;letter-spacing:1px}
-.rating-badge{padding:2px 7px;border-radius:5px;font-size:12px;font-weight:800;color:#fff}
-.rating-label{font-size:12px;color:var(--slate-5)}
-.review-count{font-size:11px;color:var(--slate-4)}
-.hotel-addr{font-size:12px;color:var(--slate-5);display:flex;align-items:center;gap:4px;margin-bottom:8px}
-.amenities{display:flex;flex-wrap:wrap;gap:5px}
-.amenity{padding:3px 8px;border-radius:var(--rf);border:1.5px solid var(--slate-2);font-size:11px;color:var(--slate-6)}
+  /* alerts */
+  .watch { display:flex; align-items:center; gap:12px; padding:13px; margin-bottom:8px; }
+  .watch.due { border-color:var(--good); }
 
-/* Loading */
-.loading{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 0;gap:16px}
-.spinner{width:44px;height:44px;border-radius:50%;border:4px solid var(--slate-2);animation:spin .8s linear infinite}
-.spinner.blue{border-top-color:var(--blue)}
-.spinner.green{border-top-color:var(--green)}
-@keyframes spin{to{transform:rotate(360deg)}}
-.loading-text{color:var(--slate-5);font-size:13px}
-
-/* Empty / error */
-.empty-state{text-align:center;padding:60px 20px}
-.empty-icon{font-size:52px;margin-bottom:12px}
-.empty-text{color:var(--slate-5);font-size:14px}
-.error-box{background:var(--red-l);border:1.5px solid #fca5a5;border-radius:var(--r);padding:14px 16px;color:var(--red);font-size:13px;margin-bottom:16px}
-
-/* Features */
-.features{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:12px}
-.feature-card{background:#fff;border:1.5px solid var(--slate-2);border-radius:var(--r);padding:20px;text-align:center;box-shadow:var(--sh1)}
-.feature-icon{font-size:32px;margin-bottom:10px}
-.feature-title{font-weight:700;color:var(--slate-8);margin-bottom:5px}
-.feature-desc{font-size:12px;color:var(--slate-5);line-height:1.6}
-
-/* Footer */
-.footer{border-top:1.5px solid var(--slate-2);margin-top:40px;padding:20px;text-align:center;color:var(--slate-4);font-size:12px}
-
-/* Responsive */
-@media(max-width:640px){
-  .form-grid-2,.form-grid-4{grid-template-columns:1fr 1fr}
-  .features{grid-template-columns:1fr}
-  .card-inner{flex-direction:column}
-  .card-price{flex-direction:row;border-left:none;border-top:1.5px solid var(--slate-2);padding-left:0;padding-top:12px;min-width:unset;align-items:center}
-  .hotel-icon{width:56px;height:56px;font-size:24px}
-}
-@media(max-width:480px){
-  .form-grid-2,.form-grid-4{grid-template-columns:1fr}
-  .seg-time{font-size:14px}
-}
+  .empty { text-align:center; padding:44px 16px; color:var(--dim); }
+  .empty .e { font-size:44px; }
+  .note { font-size:12px; color:var(--dim); background:var(--accent-soft); border-radius:12px; padding:10px 13px; margin:12px 0; }
+  .toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:var(--ink); color:var(--card); padding:11px 18px; border-radius:999px; font-weight:700; font-size:13.5px; z-index:99; box-shadow:var(--sh); animation:up .2s ease; }
+  @keyframes up { from{opacity:0;transform:translate(-50%,8px)} }
+  .err { color:var(--bad); font-size:12.5px; font-weight:600; margin-top:6px; }
+  footer { text-align:center; color:var(--faint); font-size:11.5px; padding:10px 16px 26px; }
+  h3.sec { font-size:13px; text-transform:uppercase; letter-spacing:.07em; color:var(--dim); margin:18px 0 8px; }
 </style>
 </head>
 <body>
 
-<header class="header">
-  <div class="header-inner">
-    <div class="logo">
-      <div class="logo-icon">✈️</div>
+<header>
+  <div class="wrap">
+    <div class="hrow">
+      <img class="logo" src="icon.svg" alt="">
       <div>
-        <div class="logo-title">TravelDeals</div>
-        <div class="logo-sub">Find the cheapest flights &amp; hotels worldwide</div>
+        <div class="hname">TravelDeals</div>
+        <div class="hsub">Search · compare · book — flights & hotels</div>
+      </div>
+      <div class="hspace">
+        <button class="chip" id="modeChip" title="Data source">demo</button>
+        <select class="cursel" id="curSel"><option>USD</option><option>GBP</option><option>EUR</option></select>
+        <button class="chip" id="profBtn">👤 <span id="tierName">Member</span></button>
       </div>
     </div>
-    <div class="tabs">
-      <button class="tab-btn active" id="tab-flights" onclick="switchTab('flights')">✈️ &nbsp;Flights</button>
-      <button class="tab-btn" id="tab-hotels" onclick="switchTab('hotels')">🏨 &nbsp;Hotels</button>
-    </div>
+    <nav id="nav"></nav>
   </div>
 </header>
 
-<div class="search-panel">
-  <div class="search-inner">
+<main class="wrap" id="main"></main>
+<footer>TravelDeals · a deterministic booking simulation over a real-geography price model — no real tickets are issued.
+Run <code>server.mjs</code> with Amadeus test keys for live fares.</footer>
 
-    <!-- Flight Form -->
-    <div id="form-flights">
-      <div class="trip-types">
-        <button class="trip-btn active" id="trip-roundtrip" onclick="setTrip('roundtrip')">Round Trip</button>
-        <button class="trip-btn" id="trip-oneway" onclick="setTrip('oneway')">One Way</button>
-      </div>
-      <div class="form-grid-2">
-        <div class="form-group">
-          <label class="form-label">From</label>
-          <input class="form-input" id="f-origin" type="text" placeholder="e.g. JFK" maxlength="3" oninput="this.value=this.value.toUpperCase()">
-          <span class="form-hint">3-letter airport code</span>
-        </div>
-        <div class="form-group">
-          <label class="form-label">To</label>
-          <input class="form-input" id="f-dest" type="text" placeholder="e.g. LAX" maxlength="3" oninput="this.value=this.value.toUpperCase()">
-          <span class="form-hint">3-letter airport code</span>
-        </div>
-      </div>
-      <div class="form-grid-4">
-        <div class="form-group">
-          <label class="form-label">Departure</label>
-          <input class="form-input" id="f-dep" type="date">
-        </div>
-        <div class="form-group" id="f-ret-group">
-          <label class="form-label">Return</label>
-          <input class="form-input" id="f-ret" type="date">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Passengers</label>
-          <select class="form-select" id="f-adults">
-            <option value="1">1 Adult</option><option value="2">2 Adults</option>
-            <option value="3">3 Adults</option><option value="4">4 Adults</option>
-            <option value="5">5 Adults</option><option value="6">6 Adults</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Class</label>
-          <select class="form-select" id="f-class">
-            <option value="ECONOMY">Economy</option>
-            <option value="PREMIUM_ECONOMY">Prem. Economy</option>
-            <option value="BUSINESS">Business</option>
-            <option value="FIRST">First Class</option>
-          </select>
-        </div>
-      </div>
-      <button class="search-btn blue" id="f-search-btn" onclick="searchFlights()">Search Flights</button>
-    </div>
-
-    <!-- Hotel Form -->
-    <div id="form-hotels" class="form-hidden">
-      <div class="form-group" style="margin-bottom:12px">
-        <label class="form-label">Destination City</label>
-        <input class="form-input green" id="h-city" type="text" placeholder="e.g. NYC, LON, PAR" maxlength="3" oninput="this.value=this.value.toUpperCase();updateChips()">
-        <div class="city-chips" id="city-chips">
-          <button class="city-chip" onclick="pickCity('NYC','New York')">New York</button>
-          <button class="city-chip" onclick="pickCity('LAX','Los Angeles')">Los Angeles</button>
-          <button class="city-chip" onclick="pickCity('LON','London')">London</button>
-          <button class="city-chip" onclick="pickCity('PAR','Paris')">Paris</button>
-          <button class="city-chip" onclick="pickCity('DXB','Dubai')">Dubai</button>
-          <button class="city-chip" onclick="pickCity('TYO','Tokyo')">Tokyo</button>
-          <button class="city-chip" onclick="pickCity('SYD','Sydney')">Sydney</button>
-          <button class="city-chip" onclick="pickCity('BCN','Barcelona')">Barcelona</button>
-        </div>
-      </div>
-      <div class="form-grid-4">
-        <div class="form-group">
-          <label class="form-label">Check-in</label>
-          <input class="form-input green" id="h-checkin" type="date">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Check-out</label>
-          <input class="form-input green" id="h-checkout" type="date">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Guests</label>
-          <select class="form-select green" id="h-guests">
-            <option value="1">1 Guest</option><option value="2" selected>2 Guests</option>
-            <option value="3">3 Guests</option><option value="4">4 Guests</option>
-            <option value="5">5 Guests</option><option value="6">6 Guests</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Rooms</label>
-          <select class="form-select green" id="h-rooms">
-            <option value="1" selected>1 Room</option><option value="2">2 Rooms</option>
-            <option value="3">3 Rooms</option><option value="4">4 Rooms</option>
-          </select>
-        </div>
-      </div>
-      <button class="search-btn green" id="h-search-btn" onclick="searchHotels()">Search Hotels</button>
-    </div>
-
-  </div>
-</div>
-
-<div class="main" id="main-content">
-  <!-- Features shown initially -->
-  <div id="features" class="features">
-    <div class="feature-card">
-      <div class="feature-icon">💰</div>
-      <div class="feature-title">Best Price Guarantee</div>
-      <div class="feature-desc">Compare hundreds of airlines and hotels to find you the lowest fares available.</div>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">🔍</div>
-      <div class="feature-title">Smart Search</div>
-      <div class="feature-desc">Search flights and hotels worldwide with flexible dates, passengers and room options.</div>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">🌍</div>
-      <div class="feature-title">Global Coverage</div>
-      <div class="feature-desc">10,000+ airports and 150,000+ hotels across 190+ countries at your fingertips.</div>
-    </div>
-  </div>
-  <!-- Results injected here -->
-  <div id="results"></div>
-</div>
-
-<footer class="footer">
-  TravelDeals &mdash; Powered by Amadeus Travel API &nbsp;|&nbsp; Connect your API key in <code>.env.local</code> for live prices
-</footer>
-
+<script src="engine.js"></script>
 <script>
-// ─── State ───────────────────────────────────────────────────────────────────
+'use strict';
+const E = DealsEngine;
+const $ = (s, el) => (el || document).querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const TODAY = new Date().toISOString().slice(0, 10);
+
+/* ── persisted state ─────────────────────────────────────────────── */
+const load = (k, d) => { try { return JSON.parse(localStorage.getItem('td2.' + k)) ?? d; } catch { return d; } };
+const save = (k, v) => { try { localStorage.setItem('td2.' + k, JSON.stringify(v)); } catch {} };
 const S = {
   tab: 'flights',
-  tripType: 'roundtrip',
-  loading: false,
-  hasSearched: false,
-  flights: [],
-  hotels: [],
-  flightSort: 'price',
-  hotelSort: 'price',
-  cityName: '',
+  cur: load('cur', 'USD'),
+  profile: load('profile', { name: '', points: 0, stays: 0, credit: 0 }),
+  trips: load('trips', []),
+  watches: load('watches', []),
+  fp: load('fp', { origin: '', dest: '', depart: E.addDays(TODAY, 21), ret: E.addDays(TODAY, 28), rt: true, adults: 1, cabin: 'economy' }),
+  hp: load('hp', { city: '', checkin: E.addDays(TODAY, 21), checkout: E.addDays(TODAY, 24), guests: 2, rooms: 1 }),
+  fRes: null, fSort: 'best', fNonstop: false,
+  hRes: null, ex: null, exOrigin: load('exOrigin', ''),
+  live: false, wiz: null
 };
+$('#curSel').value = S.cur;
 
-// ─── Data ────────────────────────────────────────────────────────────────────
-const AIRLINES = [
-  {name:'Delta Air Lines',code:'DL'},{name:'American Airlines',code:'AA'},
-  {name:'United Airlines',code:'UA'},{name:'Southwest Airlines',code:'WN'},
-  {name:'JetBlue Airways',code:'B6'},{name:'Alaska Airlines',code:'AS'},
-  {name:'Spirit Airlines',code:'NK'},{name:'Frontier Airlines',code:'F9'},
-];
-const HOTELS = [
-  'Grand Hyatt','Marriott Downtown','Hilton Garden Inn','Westin Hotel',
-  'Four Seasons','Sheraton Hotel','Holiday Inn Express','Courtyard by Marriott',
-];
-const AMENITIES = ['Free WiFi','Pool','Gym','Restaurant','Bar','Spa','Room Service','Breakfast Included','Parking','Airport Shuttle'];
-const AMENITY_ICONS = {'Free WiFi':'📶','Pool':'🏊','Gym':'💪','Restaurant':'🍽️','Bar':'🍸','Spa':'🧖','Room Service':'🛎️','Breakfast Included':'🥐','Parking':'🅿️','Airport Shuttle':'🚌'};
-const CITIES = {NYC:'New York',LAX:'Los Angeles',LON:'London',PAR:'Paris',DXB:'Dubai',TYO:'Tokyo',SYD:'Sydney',BCN:'Barcelona'};
+/* ── money display (engine prices are USD) ───────────────────────── */
+const M = usd => E.fmtMoney(E.convert(usd, 'USD', S.cur), S.cur);
 
-function rnd(min,max){return Math.round(min+Math.random()*(max-min))}
+/* ── live mode probe (optional server.mjs) ───────────────────────── */
+try {
+  fetch('api/health', { signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(1200) : undefined })
+    .then(r => r.ok && r.json()).then(j => {
+      if (j && j.ok) { S.live = true; const c = $('#modeChip'); c.textContent = 'LIVE'; c.classList.add('live'); }
+    }).catch(() => {});
+} catch (e) {}
 
-function genFlights(params) {
-  return AIRLINES.map((al,i) => {
-    const stops = (i===1||i===4) ? 1 : 0;
-    const dh = rnd(2,10), dm = [0,15,30,45][i%4];
-    const base = (S.tripType==='roundtrip'?180:99) + (stops?0:60) + [0,0,0,0,50,120,0,0][i];
-    const price = rnd(base, base+200);
-    const depTime = `${String(6+i*2).padStart(2,'0')}:${['00','15','30','45'][i%4]}`;
-    const dep = new Date(params.dep+'T'+depTime+':00');
-    const arr = new Date(dep.getTime()+(dh*60+dm)*60000);
-    let retDep, retArr;
-    if(S.tripType==='roundtrip' && params.ret){
-      retDep = new Date(params.ret+'T'+String(8+(i%5)*2).padStart(2,'0')+':00:00');
-      retArr = new Date(retDep.getTime()+(dh*60+dm)*60000);
-    }
-    return {id:'f'+i,al,stops,dh,dm,dep:dep.toISOString(),arr:arr.toISOString(),
-      retDep:retDep?.toISOString(),retArr:retArr?.toISOString(),
-      fn:al.code+(100+i*37),price,cls:params.cls,seats:rnd(1,9),
-      origin:params.origin,dest:params.dest};
-  });
+/* ── toast ───────────────────────────────────────────────────────── */
+let toastT;
+function toast(msg) {
+  let t = $('.toast'); if (t) t.remove();
+  t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
+  document.body.appendChild(t);
+  clearTimeout(toastT); toastT = setTimeout(() => t.remove(), 2600);
 }
 
-function genHotels(params) {
-  const nights = Math.max(1,Math.round((new Date(params.out)-new Date(params.in))/86400000));
-  return HOTELS.map((name,i) => {
-    const stars = Math.max(2,Math.min(5,5-Math.floor(i/3)));
-    const ppn = rnd(55+i*30, 100+i*40);
-    const ams = AMENITIES.slice(i%4,(i%4)+rnd(3,6));
-    return {id:'h'+i,name:name+' '+(S.cityName||params.city),stars,
-      rating:Math.round((6.5+Math.random()*3)*10)/10,
-      reviews:rnd(200,3500),addr:(100+i*12)+' Main St, '+(S.cityName||params.city),
-      ppn,total:ppn*nights,nights,ams};
-  });
+/* ── nav ─────────────────────────────────────────────────────────── */
+const TABS = [['flights', '✈️ Flights'], ['hotels', '🏨 Hotels'], ['explore', '🌍 Explore'], ['trips', '🧳 Trips'], ['alerts', '🔔 Alerts']];
+function dueCount() { return E.alertsDue(S.watches, TODAY).filter(a => a.due).length; }
+function renderNav() {
+  $('#nav').innerHTML = TABS.map(([id, label]) => {
+    const badge = id === 'alerts' && dueCount() ? `<span class="b">${dueCount()}</span>` :
+                  id === 'trips' && S.trips.filter(t => t.status !== 'cancelled').length ? `<span class="b" style="background:var(--accent)">${S.trips.filter(t => t.status !== 'cancelled').length}</span>` : '';
+    return `<button class="${S.tab === id ? 'on' : ''}" onclick="go('${id}')">${label}${badge}</button>`;
+  }).join('');
 }
+function go(tab) { S.tab = tab; render(); }
 
-// ─── Formatters ──────────────────────────────────────────────────────────────
-const fmtTime = iso => new Date(iso).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true});
-const fmtDate = iso => new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric'});
-const fmtDur  = (h,m) => `${h}h${m?` ${m}m`:''}`;
-const fmtP    = n => '$'+n.toLocaleString();
-
-function ratingColor(r){
-  if(r>=9)return '#16a34a';
-  if(r>=8)return '#22c55e';
-  if(r>=7)return '#eab308';
-  return '#94a3b8';
+/* ── shared bits ─────────────────────────────────────────────────── */
+const airportOptions = Object.keys(E.AIRPORTS).map(c => `<option value="${c}">${E.AIRPORTS[c][0]}</option>`).join('') +
+  Object.keys(E.CITY_ALIAS).map(c => `<option value="${c}"></option>`).join('');
+function scoreHTML(s) {
+  const cls = s >= 65 ? 'hi' : s >= 45 ? 'mid' : 'lo';
+  return `<span class="score ${cls}">${s} · ${E.scoreLabel(s)}</span>`;
 }
-function ratingLabel(r){
-  if(r>=9)return 'Exceptional';
-  if(r>=8)return 'Excellent';
-  if(r>=7)return 'Very Good';
-  return 'Good';
+function sparkline(hist, w, h) {
+  if (hist.length < 2) return '';
+  const ps = hist.map(x => x.p), min = Math.min(...ps), max = Math.max(...ps) || 1;
+  const pts = ps.map((p, i) => `${(i / (ps.length - 1) * w).toFixed(1)},${(h - 3 - (p - min) / (max - min || 1) * (h - 6)).toFixed(1)}`).join(' ');
+  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="2" opacity=".8"/></svg>`;
 }
+function durTxt(m) { return Math.floor(m / 60) + 'h ' + ('0' + m % 60).slice(-2) + 'm'; }
 
-// ─── Renderers ───────────────────────────────────────────────────────────────
-function segHTML(dep,arr,origin,dest,fn,dh,dm,stops,stopCode){
-  return `
-    <div class="seg">
-      <div class="airline-badge">${fn.slice(0,2)}</div>
-      <div class="seg-times">
-        <div class="seg-dep">
-          <div class="seg-time">${fmtTime(dep)}</div>
-          <div class="seg-code">${origin}</div>
-        </div>
-        <div class="seg-middle">
-          <div class="seg-dur">${fmtDur(dh,dm)}</div>
-          <div class="seg-line">
-            <div class="seg-line-hr"></div>
-            <div class="seg-plane">✈</div>
-            <div class="seg-line-hr"></div>
-          </div>
-          <div class="seg-fn">${fn}</div>
-        </div>
-        <div class="seg-arr">
-          <div class="seg-time">${fmtTime(arr)}</div>
-          <div class="seg-code">${dest}</div>
-        </div>
+/* ══ FLIGHTS ══════════════════════════════════════════════════════ */
+function viewFlights() {
+  const p = S.fp;
+  let html = `
+  <div class="card">
+    <div class="row" style="justify-content:space-between;margin-bottom:12px">
+      <div class="seg">
+        <button class="${p.rt ? 'on' : ''}" onclick="S.fp.rt=true;render()">Round trip</button>
+        <button class="${!p.rt ? 'on' : ''}" onclick="S.fp.rt=false;render()">One way</button>
       </div>
     </div>
-    ${stops?`<div class="seg-stops">1 stop via ${stopCode||'ORD'}</div>`:''}
-  `;
-}
+    <div class="row">
+      <div style="flex:1"><label class="f">From</label>
+        <input id="fo" list="apts" placeholder="JFK, LON, DXB…" value="${esc(p.origin)}" maxlength="3" style="text-transform:uppercase"></div>
+      <button class="swap" onclick="swapOD()" title="Swap">⇄</button>
+      <div style="flex:1"><label class="f">To</label>
+        <input id="fd" list="apts" placeholder="City or code" value="${esc(p.dest)}" maxlength="3" style="text-transform:uppercase"></div>
+    </div>
+    <div class="grid4" style="margin-top:10px">
+      <div><label class="f">Depart</label><input id="fdep" type="date" min="${TODAY}" value="${p.depart}"></div>
+      <div ${p.rt ? '' : 'style="display:none"'}><label class="f">Return</label><input id="fret" type="date" min="${p.depart}" value="${p.ret}"></div>
+      <div><label class="f">Travellers</label><select id="fad">${[1,2,3,4,5,6].map(n => `<option ${p.adults===n?'selected':''} value="${n}">${n} adult${n>1?'s':''}</option>`).join('')}</select></div>
+      <div><label class="f">Cabin</label><select id="fcab">
+        <option value="economy" ${p.cabin==='economy'?'selected':''}>Economy</option>
+        <option value="premium" ${p.cabin==='premium'?'selected':''}>Premium</option>
+        <option value="business" ${p.cabin==='business'?'selected':''}>Business</option>
+        <option value="first" ${p.cabin==='first'?'selected':''}>First</option></select></div>
+    </div>
+    <div style="margin-top:12px"><button class="btn" onclick="doFlightSearch()">Search flights</button></div>
+    <datalist id="apts">${airportOptions}</datalist>
+  </div>`;
 
-function flightCardHTML(f){
-  const stopCodes = ['ORD','ATL','DFW','LAX','JFK'];
-  const stopCode = stopCodes[Math.abs(f.id.charCodeAt(1)-48)%stopCodes.length];
-  const clsLabel = {ECONOMY:'Economy',PREMIUM_ECONOMY:'Prem. Economy',BUSINESS:'Business',FIRST:'First Class'}[f.cls]||f.cls;
-  const retSection = f.retDep ? `
-    <div class="return-divider">
-      <div class="return-label">Return — ${fmtDate(f.retDep)}</div>
-      ${segHTML(f.retDep,f.retArr,f.dest,f.origin,f.al.code+(parseInt(f.id.slice(1))*37+200),f.dh,f.dm,0,'')}
-    </div>` : '';
-  return `
-    <div class="card">
-      <div class="card-inner">
-        <div class="card-body">
-          ${segHTML(f.dep,f.arr,f.origin,f.dest,f.fn,f.dh,f.dm,f.stops,stopCode)}
-          ${retSection}
-          <div style="margin-top:6px;padding-left:48px;font-size:12px;color:var(--slate-5)">${f.al.name}</div>
-        </div>
-        <div class="card-price">
-          <div>
-            <div class="price-amount">${fmtP(f.price)}</div>
-            <div class="price-sub">per person</div>
-            <div class="pills-row" style="margin-top:6px">
-              ${f.stops===0?'<span class="pill pill-green">Nonstop</span>':''}
-              <span class="pill pill-gray">${clsLabel}</span>
-              ${f.seats<=3?`<span class="pill pill-red">${f.seats} left!</span>`:''}
-            </div>
-          </div>
-          <button class="book-btn blue">Select</button>
-        </div>
+  const R = S.fRes;
+  if (R && R.error) html += `<div class="card" style="margin-top:12px"><div class="err">${esc(R.error)}</div></div>`;
+  if (R && !R.error) {
+    const hist = E.priceHistory({ origin: p.origin, dest: p.dest, depart: p.depart, ret: p.rt ? p.ret : null, today: TODAY, cabin: p.cabin });
+    const typ = E.typical(hist);
+    const fc = E.forecast(hist, E.daysBetween(TODAY, p.depart));
+    const fcIcon = { buy: '📈', wait: '📉', track: '👀' }[fc.advice];
+    const fcTitle = { buy: 'Book now', wait: 'Wait — likely to drop', track: 'Prices stable' }[fc.advice];
+    html += `
+    <div class="fc ${fc.advice}">
+      <div style="font-size:22px">${fcIcon}</div>
+      <div style="flex:1">
+        <div class="big">${fcTitle}${fc.pct ? ` · ~${fc.pct > 0 ? '+' : ''}${fc.pct}% in 2 weeks` : ''}</div>
+        <div class="why">${esc(fc.reason)} Typical price: <b>${M(typ)}</b></div>
+      </div>
+      ${sparkline(hist, 90, 34)}
+    </div>
+    <div class="flex-strip">${E.flexGrid({ origin: p.origin, dest: p.dest, depart: p.depart, ret: p.rt ? p.ret : null, today: TODAY, cabin: p.cabin })
+      .map(x => `<button class="fd ${x.offset === 0 ? 'sel' : ''} ${x.best ? 'best' : ''}" onclick="shiftDate(${x.offset})">
+        <div class="d">${new Date(x.date + 'T12:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
+        <div class="p">${M(x.price)}</div></button>`).join('')}</div>
+    <div class="row" style="justify-content:space-between;margin:4px 0 10px">
+      <div class="seg">
+        <button class="${S.fSort === 'best' ? 'on' : ''}" onclick="S.fSort='best';render()">Best</button>
+        <button class="${S.fSort === 'cheap' ? 'on' : ''}" onclick="S.fSort='cheap';render()">Cheapest</button>
+        <button class="${S.fSort === 'fast' ? 'on' : ''}" onclick="S.fSort='fast';render()">Fastest</button>
+      </div>
+      <div class="row" style="gap:6px">
+        <button class="btn ghost sm" style="${S.fNonstop ? 'border-color:var(--accent);color:var(--accent)' : ''}" onclick="S.fNonstop=!S.fNonstop;render()">Nonstop only</button>
+        <button class="btn sec sm" onclick="watchRoute()">🔔 Watch</button>
       </div>
     </div>`;
+    let offers = R.offers.filter(o => !S.fNonstop || o.stops === 0);
+    if (S.fSort === 'cheap') offers = [...offers].sort((a, b) => a.price - b.price);
+    if (S.fSort === 'fast') offers = [...offers].sort((a, b) => a.durMin - b.durMin);
+    if (S.fSort === 'best') offers = [...offers].sort((a, b) => (a.price + a.durMin * 1.4) - (b.price + b.durMin * 1.4));
+    html += offers.map(o => `
+      <div class="card offer">
+        <div class="al">${o.airline.code}</div>
+        <div class="omid">
+          <div class="times">${o.dep} <span class="arr">→</span> ${o.arr}${o.nextDay ? '<sup>+1</sup>' : ''}</div>
+          <div class="osub">${esc(o.airline.name)} ${o.fn} · ${durTxt(o.durMin)} · ${o.stops === 0 ? '<b style="color:var(--good)">Nonstop</b>' : '1 stop ' + o.via}</div>
+        </div>
+        <div class="oright">
+          <div class="price">${M(o.price)}</div>
+          ${scoreHTML(E.dealScore(o.price, typ))}<br>
+          ${o.seatsLeft <= 3 ? `<span class="seatsleft">${o.seatsLeft} left at this price</span><br>` : ''}
+          <button class="btn sm" style="margin-top:6px" onclick="openFares(${R.offers.indexOf(o)})">Select</button>
+        </div>
+      </div>`).join('');
+    html += `<div class="tiny" style="text-align:center;margin-top:6px">Deal scores compare each fare with the 60-day typical price for this exact trip.</div>`;
+  }
+  return html;
+}
+function swapOD() { S.fp.origin = $('#fd').value; S.fp.dest = $('#fo').value; readFlightForm(); render(); }
+function readFlightForm() {
+  const p = S.fp;
+  if ($('#fo')) {
+    p.origin = $('#fo').value.toUpperCase().trim(); p.dest = $('#fd').value.toUpperCase().trim();
+    p.depart = $('#fdep').value; if ($('#fret')) p.ret = $('#fret').value;
+    p.adults = +$('#fad').value; p.cabin = $('#fcab').value;
+  }
+  save('fp', p);
+}
+async function doFlightSearch() {
+  readFlightForm();
+  const p = S.fp;
+  if (S.live) {
+    try {
+      const r = await fetch(`api/flights?origin=${p.origin}&dest=${p.dest}&depart=${p.depart}${p.rt ? '&ret=' + p.ret : ''}&adults=${p.adults}&cabin=${p.cabin}`);
+      if (r.ok) { S.fRes = await r.json(); render(); return; }
+    } catch {}
+  }
+  S.fRes = E.searchFlights({ origin: p.origin, dest: p.dest, depart: p.depart, ret: p.rt ? p.ret : null, adults: p.adults, cabin: p.cabin, today: TODAY });
+  render();
+}
+function shiftDate(k) {
+  S.fp.depart = E.addDays(S.fp.depart, k);
+  if (S.fp.rt) S.fp.ret = E.addDays(S.fp.ret, k);
+  save('fp', S.fp); doFlightSearch();
+}
+function watchRoute() {
+  const p = S.fp, R = S.fRes;
+  if (!R || R.error) return;
+  const cheapest = Math.min(...R.offers.map(o => o.price));
+  const target = Math.round(cheapest * 0.9);
+  S.watches.push({ kind: 'flight', origin: R.origin.code, dest: R.dest.code, depart: p.depart, ret: p.rt ? p.ret : null, cabin: p.cabin, target, created: TODAY });
+  save('watches', S.watches);
+  toast(`Watching ${R.origin.code}→${R.dest.code} — we'll flag ${M(target)} or less`);
+  renderNav();
 }
 
-function hotelCardHTML(h){
-  const ams = h.ams.slice(0,5).map(a=>`<span class="amenity">${AMENITY_ICONS[a]||'✓'} ${a}</span>`).join('');
-  const stars = '★'.repeat(h.stars)+'☆'.repeat(5-h.stars);
-  return `
-    <div class="card">
-      <div class="card-inner">
-        <div class="hotel-icon">🏨</div>
-        <div class="hotel-body">
-          <div class="hotel-name">${h.name}</div>
-          <div class="hotel-stars-row">
-            <span class="stars">${stars}</span>
-            <span class="rating-badge" style="background:${ratingColor(h.rating)}">${h.rating}</span>
-            <span class="rating-label">${ratingLabel(h.rating)}</span>
-            <span class="review-count">(${h.reviews.toLocaleString()} reviews)</span>
-          </div>
-          <div class="hotel-addr">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-            ${h.addr}
-          </div>
-          <div class="amenities">${ams}</div>
+/* ── fare sheet + booking wizard ─────────────────────────────────── */
+function openFares(idx) {
+  const o = S.fRes.offers[idx];
+  S.wiz = { kind: 'flight', offer: o, step: 0, fare: null, travellers: [], seats: [], bags: 0, insurance: false, email: '' };
+  render();
+}
+function pickFare(fi) {
+  const w = S.wiz;
+  w.fare = w.offer.fares[fi];
+  w.travellers = Array.from({ length: S.fp.adults }, () => ({ first: '', last: '' }));
+  w.step = 1; render();
+}
+function freezeFare(fi) {
+  const w = S.wiz, o = w.offer, f = o.fares[fi];
+  const h = E.holdQuote(f.price, TODAY);
+  S.trips.unshift({
+    kind: 'flight', status: 'held', ref: 'H' + E.makePNR(o.id + fi).slice(0, 5),
+    route: `${S.fRes.origin.code} → ${S.fRes.dest.code}`, city: S.fRes.dest.city,
+    date: S.fp.depart, detail: `${o.airline.name} ${o.fn} · ${f.brand} fare frozen at ${M(f.price)}`,
+    total: h.fee, held: { price: f.price, brand: f.brand, expires: h.expires }, cur: S.cur, createdAt: TODAY
+  });
+  save('trips', S.trips);
+  S.wiz = null;
+  toast(`Price frozen for 48h — fee ${M(h.fee)}`);
+  go('trips');
+}
+function toggleSeat(id, price, taken) {
+  if (taken) return;
+  const w = S.wiz, i = w.seats.findIndex(s => s.id === id);
+  if (i >= 0) w.seats.splice(i, 1);
+  else { if (w.seats.length >= S.fp.adults) w.seats.shift(); w.seats.push({ id, price }); }
+  render();
+}
+function bookingQuote() {
+  const w = S.wiz;
+  return E.priceBooking({ farePrice: w.fare.price, adults: S.fp.adults, seats: w.seats, bags: w.bags, insurance: w.insurance });
+}
+function wizNext() {
+  const w = S.wiz;
+  if (w.step === 1) {
+    w.travellers.forEach((t, i) => { t.first = $('#tf' + i).value; t.last = $('#tl' + i).value; });
+    w.email = $('#temail').value;
+    const errs = [];
+    w.travellers.forEach((t, i) => {
+      E.validTraveler({ ...t, email: w.email }).forEach(e => {
+        if (e === 'Valid email' && i > 0) return;
+        errs.push(e === 'Valid email' ? 'Valid email' : `Traveller ${i + 1}: ${e}`);
+      });
+    });
+    const uniq = [...new Set(errs)];
+    if (uniq.length) { w.err = uniq.join(' · '); render(); return; }
+  }
+  w.err = null; w.step++; render();
+}
+function payBooking() {
+  const w = S.wiz;
+  const pay = { number: $('#cnum').value, expiry: $('#cexp').value, cvv: $('#ccvv').value, name: $('#cname').value };
+  const errs = E.validPayment(pay, TODAY);
+  if (errs.length) { w.err = 'Check: ' + errs.join(', '); render(); return; }
+  const q = bookingQuote();
+  const credit = Math.min(S.profile.credit, q.total);
+  const paid = q.total - credit;
+  const pnr = E.makePNR(w.offer.id + w.email);
+  const pts = E.pointsEarned(paid);
+  S.profile.credit -= credit; S.profile.points += pts; save('profile', S.profile);
+  S.trips.unshift({
+    kind: 'flight', status: 'confirmed', ref: pnr,
+    route: `${S.fRes.origin.code} → ${S.fRes.dest.code}`, city: S.fRes.dest.city,
+    date: S.fp.depart, ret: S.fp.rt ? S.fp.ret : null,
+    detail: `${w.offer.airline.name} ${w.offer.fn} · ${w.offer.dep}–${w.offer.arr} · ${w.fare.brand}`,
+    airline: w.offer.airline, dep: w.offer.dep, arr: w.offer.arr,
+    travellers: w.travellers.map(t => t.first + ' ' + t.last),
+    seats: w.seats.map(s => s.id), brand: w.fare.brand,
+    total: paid, points: pts, cur: S.cur, createdAt: TODAY,
+    gate: 'B' + (1 + E.hashStr(pnr) % 42)
+  });
+  save('trips', S.trips);
+  w.done = { pnr, paid, pts, credit }; w.step = 4; render();
+}
+function closeWiz() { S.wiz = null; render(); }
+
+function viewWizard() {
+  const w = S.wiz;
+  if (!w) return '';
+  if (w.kind === 'hotel') return viewHotelWizard();
+  const R = S.fRes;
+  let body = '';
+  const stepsBar = `<div class="steps">${[0,1,2,3,4].map(i => `<i class="${i <= w.step ? 'on' : ''}"></i>`).join('')}</div>`;
+
+  if (w.step === 0) {
+    body = `<h2>Choose your fare</h2><div class="muted" style="margin-bottom:12px">${esc(w.offer.airline.name)} ${w.offer.fn} · ${R.origin.code} → ${R.dest.code}</div>` +
+      w.offer.fares.map((f, i) => `
+      <div class="fare" onclick="pickFare(${i})">
+        <div style="flex:1">
+          <b>${f.brand}</b>
+          <div class="perk">${f.bag ? '🧳 Checked bag' : '<s>🧳 No checked bag</s>'} · ${f.seat ? '💺 Free seat pick' : '<s>💺 Paid seats</s>'} · ${f.refundable ? '↩️ Refundable' : '<s>↩️ Non-refundable</s>'}</div>
         </div>
-        <div class="card-price">
-          <div>
-            <div class="price-amount" style="color:var(--green)">${fmtP(h.ppn)}</div>
-            <div class="price-sub">per night</div>
-            <div class="price-sub" style="margin-top:2px">${fmtP(h.total)} total · ${h.nights} night${h.nights!==1?'s':''}</div>
-          </div>
-          <button class="book-btn green">Book Now</button>
+        <div style="text-align:right">
+          <div class="price" style="font-size:16px">${M(f.price)}</div>
+          <button class="tiny" style="color:var(--accent);font-weight:700" onclick="event.stopPropagation();freezeFare(${i})">🧊 Freeze 48h · ${M(E.holdQuote(f.price, TODAY).fee)}</button>
         </div>
+      </div>`).join('') +
+      `<div class="tiny" style="margin-top:8px">🧊 Fare freeze: pay a small fee now, complete the booking at this exact price any time in the next 48 hours.</div>`;
+  }
+
+  if (w.step === 1) {
+    body = `<h2>Travellers</h2><div class="muted" style="margin-bottom:10px">${w.fare.brand} fare · ${M(w.fare.price)} per person</div>` +
+      w.travellers.map((t, i) => `
+        <div class="grid2" style="margin-bottom:8px">
+          <div><label class="f">Traveller ${i + 1} — first name</label><input id="tf${i}" value="${esc(t.first)}" placeholder="As on passport"></div>
+          <div><label class="f">Last name</label><input id="tl${i}" value="${esc(t.last)}"></div>
+        </div>`).join('') +
+      `<div style="margin:2px 0 12px"><label class="f">Contact email</label><input id="temail" type="email" value="${esc(w.email)}" placeholder="you@example.com"></div>
+      ${w.err ? `<div class="err" style="margin-bottom:8px">${esc(w.err)}</div>` : ''}
+      <button class="btn" onclick="wizNext()">Continue to seats</button>`;
+  }
+
+  if (w.step === 2) {
+    const rows = E.seatMap(w.offer.id);
+    body = `<h2>Pick ${S.fp.adults > 1 ? S.fp.adults + ' seats' : 'a seat'}</h2>
+      <div class="muted">${w.fare.seat ? 'Seat selection is free on ' + w.fare.brand + ' — extras still priced.' : 'Skip for free assignment at check-in; picked seats are charged.'}</div>
+      <div class="legend" style="margin-top:10px">
+        <span><i style="background:var(--accent-soft)"></i>Standard</span>
+        <span><i style="background:var(--gold-soft)"></i>Extra legroom</span>
+        <span><i style="background:var(--line)"></i>Taken</span>
       </div>
-    </div>`;
-}
-
-// ─── Sort ─────────────────────────────────────────────────────────────────────
-function sortFlights(flights, key) {
-  return [...flights].sort((a,b)=>{
-    if(key==='price') return a.price-b.price;
-    if(key==='stops') return a.stops-b.stops;
-    if(key==='duration') return (a.dh*60+a.dm)-(b.dh*60+b.dm);
-    return 0;
-  });
-}
-
-// ─── Render results ───────────────────────────────────────────────────────────
-function renderResults() {
-  const el = document.getElementById('results');
-  const features = document.getElementById('features');
-  features.style.display = 'none';
-
-  if(S.loading) {
-    const color = S.tab==='flights'?'blue':'green';
-    el.innerHTML = `<div class="loading"><div class="spinner ${color}"></div><div class="loading-text">Searching for the best deals...</div></div>`;
-    return;
+      <div class="cabin">` +
+      rows.map(r => r.seats.slice(0, 3).map(s => seatBtn(s)).join('') + `<div class="aisle">${r.n}</div>` + r.seats.slice(3).map(s => seatBtn(s)).join('')).join('') +
+      `</div>
+      <div class="muted" style="text-align:center">${w.seats.length ? 'Selected: ' + w.seats.map(s => s.id + (s.price ? ` (+${M(s.price)})` : '')).join(', ') : 'No seats picked — we’ll assign free ones at check-in.'}</div>
+      <button class="btn" style="margin-top:12px" onclick="S.wiz.step=3;render()">Continue to extras & payment</button>`;
   }
 
-  let html = '';
-
-  if(S.tab==='flights') {
-    if(S.flightError) {
-      html = `<div class="error-box"><strong>Error:</strong> ${S.flightError}</div>`;
-    } else if(S.flights.length) {
-      const sorted = sortFlights(S.flights, S.flightSort);
-      const sortBtns = ['price','duration','stops'].map(k=>`
-        <button class="sort-btn ${S.flightSort===k?'active blue':''}" onclick="setFlightSort('${k}')">${k.charAt(0).toUpperCase()+k.slice(1)}</button>
-      `).join('');
-      html += `
-        <div class="demo-banner">
-          <span>ℹ️</span>
-          <span><strong>Demo mode</strong> — showing sample data. Add your free <a href="https://developers.amadeus.com/register" target="_blank">Amadeus API keys</a> for live results.</span>
-        </div>
-        <div class="results-header">
-          <div class="results-count">${sorted.length} flights found</div>
-          <div class="sort-btns"><span class="sort-label">Sort by:</span>${sortBtns}</div>
-        </div>
-        ${sorted.map(flightCardHTML).join('')}`;
-    } else if(S.hasSearched) {
-      html = `<div class="empty-state"><div class="empty-icon">✈️</div><div class="empty-text">No flights found. Try different dates or routes.</div></div>`;
-    }
-  } else {
-    if(S.hotelError) {
-      html = `<div class="error-box"><strong>Error:</strong> ${S.hotelError}</div>`;
-    } else if(S.hotels.length) {
-      const sorted = S.hotelSort==='price'
-        ? [...S.hotels].sort((a,b)=>a.ppn-b.ppn)
-        : [...S.hotels].sort((a,b)=>b.rating-a.rating);
-      const sortBtns = ['price','rating'].map(k=>`
-        <button class="sort-btn ${S.hotelSort===k?'active green':''}" onclick="setHotelSort('${k}')">${k.charAt(0).toUpperCase()+k.slice(1)}</button>
-      `).join('');
-      html += `
-        <div class="demo-banner">
-          <span>ℹ️</span>
-          <span><strong>Demo mode</strong> — showing sample data. Add your free <a href="https://developers.amadeus.com/register" target="_blank">Amadeus API keys</a> for live results.</span>
-        </div>
-        <div class="results-header">
-          <div class="results-count">${sorted.length} hotels found</div>
-          <div class="sort-btns"><span class="sort-label">Sort by:</span>${sortBtns}</div>
-        </div>
-        ${sorted.map(hotelCardHTML).join('')}`;
-    } else if(S.hasSearched) {
-      html = `<div class="empty-state"><div class="empty-icon">🏨</div><div class="empty-text">No hotels found. Try a different city or dates.</div></div>`;
-    }
+  if (w.step === 3) {
+    const q = bookingQuote();
+    const credit = Math.min(S.profile.credit, q.total);
+    body = `<h2>Extras & payment</h2>
+      <div class="row" style="justify-content:space-between;margin:10px 0">
+        <div><b>🧳 Checked bags</b> <span class="muted">${M(35)} each</span></div>
+        <div class="seg"><button onclick="S.wiz.bags=Math.max(0,S.wiz.bags-1);render()">−</button><button style="pointer-events:none">${w.bags}</button><button onclick="S.wiz.bags=Math.min(4,S.wiz.bags+1);render()">+</button></div>
+      </div>
+      <label class="row" style="justify-content:space-between;margin-bottom:8px;cursor:pointer">
+        <div><b>🛟 Travel insurance</b> <span class="muted">${M(12)}/person — cancel-for-any-reason cover</span></div>
+        <input type="checkbox" style="width:auto" ${w.insurance ? 'checked' : ''} onchange="S.wiz.insurance=this.checked;render()">
+      </label>
+      <div class="bd">
+        <div class="r"><span>Fare × ${S.fp.adults}</span><b>${M(q.base)}</b></div>
+        ${q.seats ? `<div class="r"><span>Seats</span><b>${M(q.seats)}</b></div>` : ''}
+        ${q.bags ? `<div class="r"><span>Bags</span><b>${M(q.bags)}</b></div>` : ''}
+        ${q.insurance ? `<div class="r"><span>Insurance</span><b>${M(q.insurance)}</b></div>` : ''}
+        <div class="r"><span>Taxes & fees</span><b>${M(q.taxes)}</b></div>
+        ${credit ? `<div class="r" style="color:var(--good)"><span>Wallet credit</span><b>−${M(credit)}</b></div>` : ''}
+        <div class="r tot"><span>Total</span><span>${M(q.total - credit)}</span></div>
+      </div>
+      <h3 class="sec">Card details <button class="tiny" style="color:var(--accent);font-weight:700" onclick="fillTestCard()">use test card</button></h3>
+      <div style="margin-bottom:8px"><input id="cnum" inputmode="numeric" placeholder="Card number" autocomplete="cc-number"></div>
+      <div class="row" style="margin-bottom:8px">
+        <input id="cexp" placeholder="MM/YY" style="flex:1">
+        <input id="ccvv" inputmode="numeric" placeholder="CVV" style="flex:1">
+      </div>
+      <div style="margin-bottom:12px"><input id="cname" placeholder="Name on card"></div>
+      ${w.err ? `<div class="err" style="margin-bottom:8px">${esc(w.err)}</div>` : ''}
+      <button class="btn" onclick="payBooking()">Pay ${M(q.total - credit)} — demo, no real charge</button>
+      <div class="tiny" style="text-align:center;margin-top:8px">Card is Luhn-validated on device and never sent anywhere.</div>`;
   }
 
-  el.innerHTML = html;
-  if(S.hasSearched && !S.loading) el.scrollIntoView({behavior:'smooth',block:'start'});
-}
-
-// ─── Actions ──────────────────────────────────────────────────────────────────
-function switchTab(tab) {
-  S.tab = tab;
-  document.getElementById('tab-flights').className = 'tab-btn'+(tab==='flights'?' active':'');
-  document.getElementById('tab-hotels').className  = 'tab-btn'+(tab==='hotels'?' active':'');
-  document.getElementById('form-flights').className = tab==='flights'?'':'form-hidden';
-  document.getElementById('form-hotels').className  = tab==='hotels'?'':'form-hidden';
-  S.hasSearched = false;
-  S.loading = false;
-  S.flightError = null;
-  S.hotelError  = null;
-  document.getElementById('results').innerHTML = '';
-  document.getElementById('features').style.display = '';
-}
-
-function setTrip(type) {
-  S.tripType = type;
-  document.getElementById('trip-roundtrip').className = 'trip-btn'+(type==='roundtrip'?' active':'');
-  document.getElementById('trip-oneway').className    = 'trip-btn'+(type==='oneway'?' active':'');
-  document.getElementById('f-ret-group').style.display = type==='roundtrip'?'':'none';
-}
-
-function pickCity(code,name) {
-  S.cityName = name;
-  document.getElementById('h-city').value = code;
-  document.querySelectorAll('.city-chip').forEach(c=>{
-    c.className = 'city-chip'+(c.textContent.trim()===name?' selected':'');
-  });
-}
-
-function updateChips() {
-  const val = document.getElementById('h-city').value;
-  const name = CITIES[val]||'';
-  S.cityName = name;
-  document.querySelectorAll('.city-chip').forEach(c=>{
-    c.className = 'city-chip'+(name && c.textContent.trim()===name?' selected':'');
-  });
-}
-
-function setFlightSort(key) {
-  S.flightSort = key;
-  renderResults();
-}
-function setHotelSort(key) {
-  S.hotelSort = key;
-  renderResults();
-}
-
-function validate(fields) {
-  for(const [id, label] of fields) {
-    if(!document.getElementById(id).value.trim()) {
-      alert(`Please fill in: ${label}`);
-      document.getElementById(id).focus();
-      return false;
-    }
+  if (w.step === 4) {
+    const d = w.done;
+    body = `<h2 style="text-align:center">🎉 You're booked!</h2>
+      <div class="ticket" style="margin-top:12px">
+        <div class="route">${R.origin.code} <span>→</span> ${R.dest.code}</div>
+        <div class="meta">
+          <div>Flight<b>${w.offer.fn}</b></div><div>Date<b>${S.fp.depart}</b></div>
+          <div>Departs<b>${w.offer.dep}</b></div><div>Seats<b>${w.seats.map(s => s.id).join(' ') || 'At check-in'}</b></div>
+        </div>
+        <div class="stub"><div><div class="tiny" style="color:#8fa0d0">BOOKING REF</div><div class="pnr">${d.pnr}</div></div>
+        <div style="text-align:right;font-size:12px;color:#b9c5ec">Paid<br><b style="font-size:16px;color:#fff">${M(d.paid)}</b></div></div>
+        <div class="bars">${E.barcode(d.pnr).map(x => `<i style="width:${x}px"></i>`).join('')}</div>
+      </div>
+      <div class="note">⭐ You earned <b>${d.pts.toLocaleString()} points</b>${d.credit ? ` and used ${M(d.credit)} wallet credit` : ''}. Your e-ticket lives in <b>Trips</b>.</div>
+      <div class="row">
+        <button class="btn sec" onclick="crossSellHotel()">🏨 Hotel in ${esc(R.dest.city)}</button>
+        <button class="btn" onclick="closeWiz();go('trips')">View my trips</button>
+      </div>`;
   }
-  return true;
+
+  return `<div class="ovl" onclick="if(event.target===this)closeWiz()"><div class="sheet">
+    <div class="row" style="justify-content:space-between"><div class="tiny">TravelDeals booking</div><button onclick="closeWiz()" style="font-size:18px;color:var(--faint)">✕</button></div>
+    ${stepsBar}${body}</div></div>`;
+}
+function seatBtn(s) {
+  const sel = S.wiz.seats.find(x => x.id === s.id);
+  return `<button class="seat ${s.taken ? 'taken' : ''} ${s.cls !== 'std' ? 'extra' : ''} ${sel ? 'sel' : ''}"
+    onclick="toggleSeat('${s.id}',${s.price},${s.taken})" title="${s.id}${s.price ? ' +$' + s.price : ''}">${s.id}</button>`;
+}
+function fillTestCard() {
+  $('#cnum').value = '4242 4242 4242 4242'; $('#cexp').value = '12/29'; $('#ccvv').value = '123';
+  $('#cname').value = S.profile.name || 'A Traveller';
+}
+function crossSellHotel() {
+  const R = S.fRes;
+  S.hp.city = R.dest.code; S.hp.checkin = S.fp.depart;
+  S.hp.checkout = S.fp.rt ? S.fp.ret : E.addDays(S.fp.depart, 3);
+  save('hp', S.hp); S.wiz = null; S.hRes = null;
+  go('hotels'); doHotelSearch();
 }
 
-function searchFlights() {
-  if(!validate([['f-origin','From (airport code)'],['f-dest','To (airport code)'],['f-dep','Departure Date']])) return;
-  const origin = document.getElementById('f-origin').value.trim();
-  const dest   = document.getElementById('f-dest').value.trim();
-  const dep    = document.getElementById('f-dep').value;
-  const ret    = document.getElementById('f-ret').value;
-  const cls    = document.getElementById('f-class').value;
-  if(origin.length!==3||dest.length!==3) { alert('Please enter 3-letter airport codes (e.g. JFK, LAX, LHR)'); return; }
+/* ══ HOTELS ═══════════════════════════════════════════════════════ */
+function viewHotels() {
+  const p = S.hp;
+  const disc = E.stayDiscountPct(S.profile.stays);
+  let html = `
+  <div class="card">
+    <div><label class="f">City</label><input id="hc" list="apts" placeholder="NYC, LON, PAR, DXB…" value="${esc(p.city)}" maxlength="3" style="text-transform:uppercase"></div>
+    <div class="grid4" style="margin-top:10px">
+      <div><label class="f">Check-in</label><input id="hin" type="date" min="${TODAY}" value="${p.checkin}"></div>
+      <div><label class="f">Check-out</label><input id="hout" type="date" min="${p.checkin}" value="${p.checkout}"></div>
+      <div><label class="f">Guests</label><select id="hg">${[1,2,3,4,5,6].map(n => `<option ${p.guests===n?'selected':''}>${n}</option>`).join('')}</select></div>
+      <div><label class="f">Rooms</label><select id="hr">${[1,2,3,4].map(n => `<option ${p.rooms===n?'selected':''}>${n}</option>`).join('')}</select></div>
+    </div>
+    <div style="margin-top:12px"><button class="btn" onclick="doHotelSearch()">Search hotels</button></div>
+  </div>
+  ${disc ? `<div class="note">💛 Loyalty level ${disc === 20 ? 3 : disc === 15 ? 2 : 1}: <b>${disc}% off</b> every stay, applied automatically at checkout (${S.profile.stays} stays completed).</div>` : ''}`;
 
-  S.loading = true; S.hasSearched = true; S.flightError = null; S.flights = [];
-  document.getElementById('f-search-btn').disabled = true;
-  document.getElementById('f-search-btn').textContent = 'Searching...';
-  renderResults();
-
-  setTimeout(()=>{
-    S.flights = genFlights({origin,dest,dep,ret,cls});
-    S.loading = false;
-    document.getElementById('f-search-btn').disabled = false;
-    document.getElementById('f-search-btn').textContent = 'Search Flights';
-    renderResults();
-  }, 1200);
+  const R = S.hRes;
+  if (R && R.error) html += `<div class="card" style="margin-top:12px"><div class="err">${esc(R.error)}</div></div>`;
+  if (R && !R.error) {
+    html += `<h3 class="sec">${R.hotels.length} stays in ${esc(R.city.city)} · ${R.nights} night${R.nights > 1 ? 's' : ''}</h3>` +
+      R.hotels.map((h, i) => `
+      <div class="card hcard">
+        <div class="hico">🏨</div>
+        <div style="flex:1;min-width:0">
+          <b>${esc(h.name)}</b> <span class="stars">${'★'.repeat(h.stars)}</span><br>
+          <span class="rate">${h.rating.toFixed(1)}</span>
+          <span class="tiny">${h.rating >= 9 ? 'Exceptional' : h.rating >= 8 ? 'Excellent' : h.rating >= 7 ? 'Very good' : 'Good'} · ${h.reviews.toLocaleString()} reviews</span>
+          <div class="tiny">📍 ${esc(h.hood)} · ${h.distKm} km from centre</div>
+          <div class="amen">${h.amenities.slice(0, 4).map(a => `<span class="pill">${esc(a)}</span>`).join('')}</div>
+        </div>
+        <div class="oright">
+          <div class="price">${M(h.nightly)}</div><div class="tiny">per night</div>
+          ${scoreHTML(h.score)}<br>
+          ${disc ? `<span class="pill gold">−${disc}% loyalty</span><br>` : ''}
+          <button class="btn sm" style="margin-top:6px" onclick="openRates(${i})">Select</button>
+        </div>
+      </div>`).join('');
+  }
+  return html;
 }
-
-function searchHotels() {
-  if(!validate([['h-city','City Code'],['h-checkin','Check-in Date'],['h-checkout','Check-out Date']])) return;
-  const city    = document.getElementById('h-city').value.trim();
-  const checkin = document.getElementById('h-checkin').value;
-  const checkout= document.getElementById('h-checkout').value;
-  if(city.length!==3) { alert('Please enter a 3-letter city code (e.g. NYC, LON, PAR)'); return; }
-  if(new Date(checkout)<=new Date(checkin)) { alert('Check-out must be after check-in'); return; }
-
-  S.loading = true; S.hasSearched = true; S.hotelError = null; S.hotels = [];
-  document.getElementById('h-search-btn').disabled = true;
-  document.getElementById('h-search-btn').textContent = 'Searching...';
-  renderResults();
-
-  setTimeout(()=>{
-    S.hotels = genHotels({city,in:checkin,out:checkout});
-    S.loading = false;
-    document.getElementById('h-search-btn').disabled = false;
-    document.getElementById('h-search-btn').textContent = 'Search Hotels';
-    renderResults();
-  }, 1200);
+function readHotelForm() {
+  const p = S.hp;
+  if ($('#hc')) {
+    p.city = $('#hc').value.toUpperCase().trim();
+    p.checkin = $('#hin').value; p.checkout = $('#hout').value;
+    p.guests = +$('#hg').value; p.rooms = +$('#hr').value;
+  }
+  save('hp', p);
 }
-
-// ─── Init ─────────────────────────────────────────────────────────────────────
-(function init(){
-  const today = new Date().toISOString().split('T')[0];
-  const next7 = new Date(Date.now()+7*86400000).toISOString().split('T')[0];
-  const next14= new Date(Date.now()+14*86400000).toISOString().split('T')[0];
-  document.getElementById('f-dep').min = today;
-  document.getElementById('f-dep').value = next7;
-  document.getElementById('f-ret').min = today;
-  document.getElementById('f-ret').value = next14;
-  document.getElementById('h-checkin').min = today;
-  document.getElementById('h-checkin').value = next7;
-  document.getElementById('h-checkout').min = today;
-  document.getElementById('h-checkout').value = next14;
-
-  // Update return date min when departure changes
-  document.getElementById('f-dep').addEventListener('change', function(){
-    document.getElementById('f-ret').min = this.value;
+function doHotelSearch() {
+  readHotelForm();
+  S.hRes = E.searchHotels({ ...S.hp, today: TODAY });
+  render();
+}
+function openRates(i) {
+  S.wiz = { kind: 'hotel', hotel: S.hRes.hotels[i], step: 0, rate: null, guest: { first: '', last: '', email: '' }, err: null };
+  render();
+}
+function pickRate(ri) { S.wiz.rate = S.wiz.hotel.rates[ri]; S.wiz.step = 1; render(); }
+function hotelQuote() {
+  const w = S.wiz, h = w.hotel;
+  return E.priceHotel({ nightly: h.nightly, mult: w.rate.mult, nights: h.nights, rooms: S.hp.rooms, discountPct: E.stayDiscountPct(S.profile.stays) });
+}
+function payHotel() {
+  const w = S.wiz;
+  w.guest = { first: $('#gf').value, last: $('#gl').value, email: $('#ge').value };
+  const terrs = E.validTraveler({ ...w.guest });
+  const pay = { number: $('#cnum').value, expiry: $('#cexp').value, cvv: $('#ccvv').value, name: $('#cname').value };
+  const perrs = E.validPayment(pay, TODAY);
+  if (terrs.length || perrs.length) { w.err = 'Check: ' + terrs.concat(perrs).join(', '); render(); return; }
+  const q = hotelQuote();
+  const credit = Math.min(S.profile.credit, q.total);
+  const paid = q.total - credit;
+  const ref = 'H' + E.makePNR(w.hotel.id + w.guest.email).slice(0, 5);
+  const pts = E.pointsEarned(paid);
+  S.profile.credit -= credit; S.profile.points += pts; S.profile.stays += 1; save('profile', S.profile);
+  S.trips.unshift({
+    kind: 'hotel', status: 'confirmed', ref,
+    route: w.hotel.name, city: S.hRes.city.city,
+    date: S.hp.checkin, ret: S.hp.checkout,
+    detail: `${w.rate.plan} · ${w.hotel.nights} night${w.hotel.nights > 1 ? 's' : ''} · ${S.hp.rooms} room${S.hp.rooms > 1 ? 's' : ''}`,
+    freeCancel: w.rate.freeCancel, total: paid, points: pts, cur: S.cur, createdAt: TODAY
   });
-  document.getElementById('h-checkin').addEventListener('change', function(){
-    document.getElementById('h-checkout').min = this.value;
-  });
-})();
+  save('trips', S.trips);
+  w.done = { ref, paid, pts, credit }; w.step = 2; render();
+}
+function viewHotelWizard() {
+  const w = S.wiz, h = w.hotel;
+  let body = '';
+  const stepsBar = `<div class="steps">${[0,1,2].map(i => `<i class="${i <= w.step ? 'on' : ''}"></i>`).join('')}</div>`;
+  if (w.step === 0) {
+    body = `<h2>${esc(h.name)}</h2><div class="muted" style="margin-bottom:12px"><span class="stars">${'★'.repeat(h.stars)}</span> · ${h.rating.toFixed(1)} · ${esc(h.hood)}</div>` +
+      h.rates.map((r, i) => `
+      <div class="fare" onclick="pickRate(${i})">
+        <div style="flex:1"><b>${r.plan}</b>
+          <div class="perk">${r.breakfast ? '🥐 Breakfast' : '<s>🥐 No breakfast</s>'} · ${r.freeCancel ? '<b style="color:var(--good)">✅ Free cancellation</b>' : '<s>Free cancellation</s>'}</div>
+        </div>
+        <div class="price" style="font-size:16px">${M(Math.round(h.nightly * r.mult))}<span class="tiny">/night</span></div>
+      </div>`).join('');
+  }
+  if (w.step === 1) {
+    const q = hotelQuote();
+    const credit = Math.min(S.profile.credit, q.total);
+    body = `<h2>Lead guest & payment</h2>
+      <div class="grid2" style="margin:10px 0 8px">
+        <div><label class="f">First name</label><input id="gf" value="${esc(w.guest.first)}"></div>
+        <div><label class="f">Last name</label><input id="gl" value="${esc(w.guest.last)}"></div>
+      </div>
+      <div style="margin-bottom:10px"><label class="f">Email</label><input id="ge" type="email" value="${esc(w.guest.email)}"></div>
+      <div class="bd">
+        <div class="r"><span>${w.rate.plan} × ${h.nights}n × ${S.hp.rooms}</span><b>${M(q.room)}</b></div>
+        ${q.discount ? `<div class="r" style="color:var(--gold)"><span>Loyalty discount</span><b>−${M(q.discount)}</b></div>` : ''}
+        <div class="r"><span>Taxes & city fees</span><b>${M(q.taxes)}</b></div>
+        ${credit ? `<div class="r" style="color:var(--good)"><span>Wallet credit</span><b>−${M(credit)}</b></div>` : ''}
+        <div class="r tot"><span>Total</span><span>${M(q.total - credit)}</span></div>
+      </div>
+      <h3 class="sec">Card details <button class="tiny" style="color:var(--accent);font-weight:700" onclick="fillTestCard()">use test card</button></h3>
+      <div style="margin-bottom:8px"><input id="cnum" inputmode="numeric" placeholder="Card number"></div>
+      <div class="row" style="margin-bottom:8px"><input id="cexp" placeholder="MM/YY" style="flex:1"><input id="ccvv" placeholder="CVV" style="flex:1"></div>
+      <div style="margin-bottom:12px"><input id="cname" placeholder="Name on card"></div>
+      ${w.err ? `<div class="err" style="margin-bottom:8px">${esc(w.err)}</div>` : ''}
+      <button class="btn" onclick="payHotel()">Pay ${M(q.total - credit)} — demo, no real charge</button>`;
+  }
+  if (w.step === 2) {
+    const d = w.done;
+    body = `<h2 style="text-align:center">🎉 Stay confirmed!</h2>
+      <div class="ticket" style="margin-top:12px">
+        <div class="route" style="font-size:17px">${esc(h.name)}</div>
+        <div class="meta">
+          <div>Check-in<b>${S.hp.checkin}</b></div><div>Check-out<b>${S.hp.checkout}</b></div>
+          <div>Guests<b>${S.hp.guests}</b></div><div>Ref<b>${d.ref}</b></div>
+        </div>
+        <div class="bars">${E.barcode(d.ref).map(x => `<i style="width:${x}px"></i>`).join('')}</div>
+      </div>
+      <div class="note">⭐ ${d.pts.toLocaleString()} points earned · stay #${S.profile.stays} toward your next loyalty level.</div>
+      <button class="btn" onclick="closeWiz();go('trips')">View my trips</button>`;
+  }
+  return `<div class="ovl" onclick="if(event.target===this)closeWiz()"><div class="sheet">
+    <div class="row" style="justify-content:space-between"><div class="tiny">TravelDeals booking</div><button onclick="closeWiz()" style="font-size:18px;color:var(--faint)">✕</button></div>
+    ${stepsBar}${body}</div></div>`;
+}
+
+/* ══ EXPLORE ══════════════════════════════════════════════════════ */
+function viewExplore() {
+  let html = `
+  <div class="card">
+    <div class="row">
+      <div style="flex:1"><label class="f">From</label><input id="exo" list="apts" placeholder="Your airport (e.g. LHR)" value="${esc(S.exOrigin)}" maxlength="3" style="text-transform:uppercase"></div>
+      <div style="flex:none;align-self:flex-end"><button class="btn" style="width:auto" onclick="doExplore()">Explore Everywhere</button></div>
+    </div>
+    <div class="tiny" style="margin-top:8px">We scan every destination we know and rank the best-value round trips ~4 weeks out.</div>
+  </div>`;
+  const R = S.ex;
+  if (R && R.error) html += `<div class="card" style="margin-top:12px"><div class="err">${esc(R.error)}</div></div>`;
+  if (R && !R.error) {
+    html += `<div class="exgrid">` + R.results.map(x => `
+      <div class="card ex" onclick="pickDest('${x.code}','${R.depart}','${R.ret}')">
+        <div class="flag">${x.flag}</div>
+        <div class="city">${esc(x.city)}</div>
+        <div class="tiny">${x.code} · round trip</div>
+        <div class="price" style="font-size:17px;margin-top:4px">${M(x.price)}</div>
+        ${scoreHTML(x.score)}
+      </div>`).join('') + `</div>`;
+  }
+  return html;
+}
+function doExplore() {
+  S.exOrigin = $('#exo').value.toUpperCase().trim();
+  save('exOrigin', S.exOrigin);
+  S.ex = E.searchAnywhere(S.exOrigin, TODAY);
+  render();
+}
+function pickDest(code, depart, ret) {
+  S.fp.origin = S.exOrigin; S.fp.dest = code; S.fp.depart = depart; S.fp.ret = ret; S.fp.rt = true;
+  save('fp', S.fp); S.fRes = null;
+  go('flights'); doFlightSearch();
+}
+
+/* ══ TRIPS ════════════════════════════════════════════════════════ */
+function viewTrips() {
+  if (!S.trips.length) return `<div class="empty"><div class="e">🧳</div><b>No trips yet</b><div class="muted">Book a flight or a stay and your e-tickets appear here.</div></div>`;
+  return S.trips.map((t, i) => {
+    const st = t.status === 'confirmed' ? '<span class="status ok">Confirmed</span>' :
+               t.status === 'held' ? '<span class="status held">Price frozen</span>' :
+               '<span class="status x">Cancelled</span>';
+    let extra = '';
+    if (t.status === 'held') {
+      const left = E.daysBetween(TODAY, t.held.expires);
+      extra = `<div class="tiny" style="margin-top:6px">${left >= 0 ? `Frozen at ${M(t.held.price)} — expires ${t.held.expires} (${left}d left)` : '⚠️ Hold expired'}</div>
+        <div class="tactions">
+          ${left >= 0 ? `<button class="btn sm" onclick="toast('Search the route again and book — your frozen price is honoured at checkout.')">Complete booking</button>` : ''}
+          <button class="btn ghost sm" onclick="dropTrip(${i})">Remove</button>
+        </div>`;
+    } else if (t.status === 'confirmed') {
+      extra = `<div class="tactions">
+        ${t.kind === 'flight' ? `<button class="btn sec sm" onclick="S.trips[${i}].open=!S.trips[${i}].open;render()">${t.open ? 'Hide' : 'Show'} boarding pass</button>` : ''}
+        <button class="btn ghost sm" onclick="priceMatch(${i})">💷 Price match</button>
+        <button class="btn ghost sm" style="color:var(--bad)" onclick="cancelTrip(${i})">Cancel</button>
+      </div>`;
+      if (t.open && t.kind === 'flight') {
+        extra += `<div class="ticket" style="margin-top:10px">
+          <div class="route">${esc(t.route)}</div>
+          <div class="meta">
+            <div>Date<b>${t.date}</b></div><div>Boards<b>${t.dep}</b></div>
+            <div>Gate<b>${t.gate}</b></div><div>Seats<b>${(t.seats || []).join(' ') || '—'}</b></div>
+            <div>Passenger<b>${esc((t.travellers || [])[0] || '—')}</b></div>
+          </div>
+          <div class="stub"><div><div class="tiny" style="color:#8fa0d0">REF</div><div class="pnr">${t.ref}</div></div></div>
+          <div class="bars">${E.barcode(t.ref).map(x => `<i style="width:${x}px"></i>`).join('')}</div>
+        </div>`;
+      }
+    } else {
+      extra = `<div class="tactions"><button class="btn ghost sm" onclick="dropTrip(${i})">Remove</button></div>`;
+    }
+    return `<div class="card trip">
+      <div class="top">
+        <div style="font-size:24px">${t.kind === 'flight' ? '✈️' : '🏨'}</div>
+        <div class="grow">
+          <b>${esc(t.route)}</b>
+          <div class="tiny">${t.date}${t.ret ? ' → ' + t.ret : ''} · ${esc(t.detail)}</div>
+        </div>
+        <div style="text-align:right">${st}<div class="tiny" style="margin-top:3px">${M(t.total)}</div></div>
+      </div>${extra}</div>`;
+  }).join('');
+}
+function cancelTrip(i) {
+  const t = S.trips[i];
+  const q = t.kind === 'hotel'
+    ? { refund: t.freeCancel ? t.total : 0, credit: t.freeCancel ? t.total : Math.round(t.total * 0.2) }
+    : E.refundQuote(t.brand, t.total);
+  const msg = q.refund ? `Cancel and refund ${M(q.refund)} to your card?`
+    : `This ${t.kind === 'hotel' ? 'rate' : t.brand + ' fare'} is non-refundable. Cancel for ${M(q.credit)} wallet credit instead?`;
+  if (!confirm(msg)) return;
+  t.status = 'cancelled';
+  if (!q.refund && q.credit) { S.profile.credit += q.credit; save('profile', S.profile); }
+  save('trips', S.trips);
+  toast(q.refund ? `Refunded ${M(q.refund)}` : `${M(q.credit)} added to your wallet`);
+  render();
+}
+function priceMatch(i) {
+  const t = S.trips[i];
+  const v = prompt(`Found "${t.route}" cheaper elsewhere? Enter the lower total price you found (${S.cur}):`);
+  if (v === null) return;
+  const found = Math.round(Number(v));
+  if (!isFinite(found) || found <= 0) return;
+  const foundUSD = E.convert(found, S.cur, 'USD');
+  if (foundUSD >= t.total) { toast('That isn’t lower than what you paid — no match needed.'); return; }
+  const diff = t.total - foundUSD;
+  S.profile.credit += diff; save('profile', S.profile);
+  toast(`✅ Price matched — ${M(diff)} credited to your wallet`);
+  render();
+}
+function dropTrip(i) { S.trips.splice(i, 1); save('trips', S.trips); render(); }
+
+/* ══ ALERTS ═══════════════════════════════════════════════════════ */
+function viewAlerts() {
+  if (!S.watches.length) return `<div class="empty"><div class="e">🔔</div><b>No price watches</b><div class="muted">Search a route, then tap 🔔 Watch — we check the fare against your target every time you open the app.</div></div>`;
+  const checked = E.alertsDue(S.watches, TODAY);
+  return checked.map((a, i) => `
+    <div class="card watch ${a.due ? 'due' : ''}">
+      <div style="font-size:22px">${a.due ? '🎯' : '👀'}</div>
+      <div style="flex:1">
+        <b>${a.watch.origin} → ${a.watch.dest}</b> <span class="tiny">${a.watch.depart}${a.watch.ret ? ' – ' + a.watch.ret : ''}</span>
+        <div class="tiny">Target ${M(a.watch.target)} · now <b style="color:${a.due ? 'var(--good)' : 'var(--ink)'}">${M(a.current)}</b>
+        ${a.due ? '<span class="pill good">Target hit — book it!</span>' : ''}</div>
+      </div>
+      ${a.due ? `<button class="btn sm" onclick="bookWatch(${i})">Book</button>` : ''}
+      <button class="btn ghost sm" onclick="S.watches.splice(${i},1);save('watches',S.watches);render()">✕</button>
+    </div>`).join('');
+}
+function bookWatch(i) {
+  const w = S.watches[i];
+  S.fp = { ...S.fp, origin: w.origin, dest: w.dest, depart: w.depart, ret: w.ret || S.fp.ret, rt: !!w.ret, cabin: w.cabin };
+  save('fp', S.fp); go('flights'); doFlightSearch();
+}
+
+/* ══ PROFILE ══════════════════════════════════════════════════════ */
+function viewProfile() {
+  const pr = S.profile, tier = E.tierFor(pr.points);
+  return `<div class="ovl" onclick="if(event.target===this){S.showProf=false;render()}"><div class="sheet">
+    <div class="row" style="justify-content:space-between"><h2>Your account</h2><button onclick="S.showProf=false;render()" style="font-size:18px;color:var(--faint)">✕</button></div>
+    <div style="margin:10px 0"><label class="f">Name</label><input id="pname" value="${esc(pr.name)}" placeholder="Traveller name" onchange="S.profile.name=this.value;save('profile',S.profile)"></div>
+    <div class="card" style="background:var(--accent-soft);border:0">
+      <b>⭐ ${tier.name}</b> · ${pr.points.toLocaleString()} points
+      ${tier.next ? `<div style="height:7px;border-radius:99px;background:var(--line);margin:8px 0 4px"><div style="height:100%;width:${tier.pct}%;border-radius:99px;background:var(--accent)"></div></div>
+      <div class="tiny">${(tier.nextAt - pr.points).toLocaleString()} points to ${tier.next}</div>` : '<div class="tiny">Top tier — enjoy it.</div>'}
+    </div>
+    <div class="row" style="margin-top:10px;gap:10px">
+      <div class="card" style="flex:1;text-align:center"><b>${pr.stays}</b><div class="tiny">stays · ${E.stayDiscountPct(pr.stays)}% hotel discount</div></div>
+      <div class="card" style="flex:1;text-align:center"><b>${M(pr.credit)}</b><div class="tiny">wallet credit</div></div>
+    </div>
+    <div class="tiny" style="margin-top:12px">Points: 5 per $1 spent. Tiers at 5k / 15k / 40k. Hotel loyalty: 5 stays → 10%, 15 → 15%, 30 → 20%.</div>
+  </div></div>`;
+}
+
+/* ── root render ─────────────────────────────────────────────────── */
+function render() {
+  renderNav();
+  $('#tierName').textContent = E.tierFor(S.profile.points).name;
+  const views = { flights: viewFlights, hotels: viewHotels, explore: viewExplore, trips: viewTrips, alerts: viewAlerts };
+  $('#main').innerHTML = views[S.tab]() + (S.wiz ? viewWizard() : '') + (S.showProf ? viewProfile() : '');
+}
+$('#curSel').onchange = e => { S.cur = e.target.value; save('cur', S.cur); render(); };
+$('#profBtn').onclick = () => { S.showProf = true; render(); };
+document.addEventListener('change', e => {
+  if (['fo','fd','fdep','fret','fad','fcab'].includes(e.target.id)) readFlightForm();
+  if (['hc','hin','hout','hg','hr'].includes(e.target.id)) readHotelForm();
+});
+render();
+if (dueCount()) toast(`🎯 ${dueCount()} price ${dueCount() > 1 ? 'watches hit their targets' : 'watch hit its target'}!`);
+if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js');
 </script>
 </body>
 </html>
