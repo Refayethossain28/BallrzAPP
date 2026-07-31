@@ -435,6 +435,80 @@
     return { blocks: blocks, points: blocks * REDEEM_RATE.points, credit: Math.round(blocks * REDEEM_RATE.credit * 100) / 100 };
   }
 
+  /* ── MARKET — Quik groceries from the Old Town dark store ───────── */
+  var MARKET_STORE_AT = 'oldtown';
+  var MARKET_AISLES = [
+    { id: 'fresh',  name: 'Fresh', emoji: '🥬', items: [['Bananas (6)', 1.2], ['Avocado', 1.5], ['Cherry tomatoes', 2.1], ['Baby spinach', 1.8], ['Lemons (3)', 1.4]] },
+    { id: 'bakery', name: 'Bakery', emoji: '🥐', items: [['Sourdough loaf', 3.2], ['Croissants (4)', 3.8], ['Bagels (5)', 2.9]] },
+    { id: 'dairy',  name: 'Dairy & eggs', emoji: '🥛', items: [['Milk 2L', 1.9], ['Free-range eggs (12)', 3.4], ['Greek yoghurt', 2.6], ['Halloumi', 3.1]] },
+    { id: 'pantry', name: 'Pantry', emoji: '🍝', items: [['Spaghetti 500g', 1.6], ['Passata', 1.3], ['Olive oil 500ml', 5.8], ['Basmati rice 1kg', 3.2]] },
+    { id: 'snacks', name: 'Snacks & drinks', emoji: '🥤', items: [['Dark chocolate', 2.4], ['Salted crisps', 1.9], ['Sparkling water (6)', 3.0], ['Orange juice 1L', 2.7]] },
+    { id: 'home',   name: 'Household', emoji: '🧻', items: [['Kitchen roll (2)', 2.2], ['Washing-up liquid', 1.8], ['Toothpaste', 2.5]] }
+  ];
+  var QUIK_FEE = 1.99, QUIK_FREE_MIN = 20, QUIK_SMALL_MIN = 10, QUIK_SMALL_FEE = 1.0;
+  var QUIK_PROMISE_MIN = 15, QUIK_LATE_CREDIT = 2.0, QUIK_PICK_MIN = 4;
+  function quikQuote(dropId, basketTotal, opts) {
+    if (!place(dropId) || !(basketTotal > 0)) return null;
+    opts = opts || {};
+    var km = roadKm(MARKET_STORE_AT, dropId);
+    var etaMin = QUIK_PICK_MIN + Math.max(2, Math.round((km / 32) * 60 * trafficFactor(opts.when != null ? opts.when : 0)));
+    var fee = opts.plus && basketTotal >= QUIK_FREE_MIN ? 0 : QUIK_FEE;
+    var small = basketTotal < QUIK_SMALL_MIN ? QUIK_SMALL_FEE : 0;
+    var total = Math.round((basketTotal + fee + small) * 100) / 100;
+    return {
+      km: km, etaMin: etaMin, promise15: etaMin <= QUIK_PROMISE_MIN, lateCredit: QUIK_LATE_CREDIT,
+      basket: Math.round(basketTotal * 100) / 100, fee: fee, smallOrderFee: small, total: total
+    };
+  }
+  var QUIK_FLOW = ['PLACED', 'PACKING', 'RIDER_ON_WAY', 'DELIVERED'];
+  function quikAdvance(order, nowMs) {
+    var i = QUIK_FLOW.indexOf(order.status);
+    if (i < 0 || i >= QUIK_FLOW.length - 1) return order;
+    order.status = QUIK_FLOW[i + 1];
+    order.log.push({ status: order.status, ms: nowMs });
+    return order;
+  }
+
+  /* ── CAPTAIN — the driver's side of the marketplace ─────────────── */
+  var CAPTAIN_CUT = 0.80; // captains keep 80p in the pound, always shown
+  function captainEarn(fare) {
+    var driver = Math.round(fare * CAPTAIN_CUT * 100) / 100;
+    return { driver: driver, orbit: Math.round((fare - driver) * 100) / 100 };
+  }
+  function captainOffers(seedKey, when, n) {
+    var rng = rngFor('cap:' + seedKey);
+    var out = [], count = n || 4;
+    for (var i = 0; i < count; i++) {
+      var from = PLACES[Math.floor(rng() * PLACES.length)];
+      var to = PLACES[Math.floor(rng() * PLACES.length)];
+      if (from.id === to.id) { to = PLACES[(PLACES.indexOf(to) + 1) % PLACES.length]; }
+      var clsPool = ['go', 'go', 'go', 'comfort', 'mini', 'green'];
+      var cls = clsPool[Math.floor(rng() * clsPool.length)];
+      var q = quote(from.id, to.id, cls, when);
+      if (!q) { i--; continue; }
+      out.push({
+        id: 'O' + i + hashStr(seedKey + i).toString(36).slice(0, 4).toUpperCase(),
+        fromId: from.id, toId: to.id, classId: cls,
+        fare: q.total, km: q.km, mins: q.mins,
+        pickupKm: Math.round((0.4 + rng() * 2.4) * 10) / 10,
+        surge: q.surge, expiresSec: 15,
+        earn: captainEarn(q.total).driver
+      });
+    }
+    return out;
+  }
+  function acceptanceRate(accepted, seen) {
+    if (!(seen > 0)) return null;
+    return Math.round((accepted / seen) * 100);
+  }
+  function captainDaySummary(fares) {
+    var gross = 0;
+    (fares || []).forEach(function (f) { gross += f; });
+    gross = Math.round(gross * 100) / 100;
+    var net = captainEarn(gross).driver;
+    return { trips: (fares || []).length, gross: gross, net: net };
+  }
+
   /* ── misc ───────────────────────────────────────────────────────── */
   function fmtMoney(n) {
     var sign = n < 0 ? '−' : '';
@@ -442,7 +516,13 @@
   }
 
   return {
-    version: '1.0.0',
+    version: '1.1.0',
+    MARKET_STORE_AT: MARKET_STORE_AT, MARKET_AISLES: MARKET_AISLES,
+    QUIK_FEE: QUIK_FEE, QUIK_FREE_MIN: QUIK_FREE_MIN, QUIK_SMALL_MIN: QUIK_SMALL_MIN,
+    QUIK_PROMISE_MIN: QUIK_PROMISE_MIN, QUIK_LATE_CREDIT: QUIK_LATE_CREDIT,
+    quikQuote: quikQuote, QUIK_FLOW: QUIK_FLOW, quikAdvance: quikAdvance,
+    CAPTAIN_CUT: CAPTAIN_CUT, captainEarn: captainEarn, captainOffers: captainOffers,
+    acceptanceRate: acceptanceRate, captainDaySummary: captainDaySummary,
     hashStr: hashStr, mulberry32: mulberry32, rngFor: rngFor, partsOf: partsOf,
     PLACES: PLACES, place: place, roadKm: roadKm, WINDING: WINDING,
     pathPoints: pathPoints, pathLen: pathLen, posAlong: posAlong,

@@ -1,10 +1,10 @@
 # 🪐 Orbit — the everything app
 
-**Rides · Eats · Parcels · Pay** — one app, built by studying what makes each of
+**Rides · Eats · Groceries · Parcels · Pay — and the driver's seat too** — one app, built by studying what makes each of
 the world's super-apps great and combining their signature moves, then adding a
 few of its own. Zero-build, single-file, offline-first, installable PWA. Every
 rule that touches money or state lives in a pure, deterministic, clock-injected
-engine ([`engine.js`](./engine.js)) with 32 unit tests
+engine ([`engine.js`](./engine.js)) with 39 unit tests
 (`npm run test:orbit`).
 
 ## The research — who Orbit steals from, and what it does better
@@ -43,13 +43,24 @@ And the parts most of them *won't* do, which Orbit treats as features:
   scheduled rides (30 min – 7 days, price locked) and 7-day price locks.
 - **🍔 Eat** — ten kitchens with menus, itemised checkout (delivery by real
   road distance, small-order fee, capped service fee, `WELCOME20`), live order
-  tracking, and DineOut discounts (10%, or 20% with Orbit+).
+  tracking, and DineOut discounts (10%, or 20% with Orbit+). Plus **🛒 Market**
+  — Careem-Quik-style groceries from the Old Town dark store across six aisles,
+  with an honest **15-minute promise**: inside the promise zone it's guaranteed
+  (late = £2 credit, automatically); outside it, the app just tells you the
+  real ETA instead of pretending.
 - **📦 Send** — insured door-to-door parcels in three sizes with live tracking.
 - **💳 Pay** — the ledger wallet: top-ups, free P2P, fair bill splitting,
   2% ride cashback (10% with Orbit+), full activity history.
 - **⭐ Me** — Orbit+ (30-day trial, savings meter vs the £9.99 price),
   rewards points & tiers with redemption (500 pts → £2.50), ride history,
   your zero-emission km, and the safety centre.
+- **🧢 Captain mode** — the driver's side of the marketplace, one tap away:
+  go online and receive seeded ride offers showing the **full fare, your exact
+  80% cut and the pickup distance before you accept** (most apps hide some of
+  this); accept or pass with no penalty games, drive the trip, and the payout
+  lands in the same in-app wallet instantly, with a live day summary (trips,
+  gross, net, acceptance rate). The 80/20 split is unit-tested and mirrors the
+  repo's ApexVIP dispatch economics.
 
 ## Honesty note
 
@@ -63,5 +74,5 @@ device in `localStorage`.
 
 ```sh
 open orbit/index.html    # or serve the repo and browse to /orbit/
-npm run test:orbit       # 32 engine tests
+npm run test:orbit       # 39 engine tests
 ```

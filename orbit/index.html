@@ -178,7 +178,8 @@ var E = OrbitEngine;
 var DEFAULT_STATE = {
   name: 'You', plus: false, plusSince: null, points: 0,
   ledger: [], trips: [], orders: [], parcels: [], locks: [], scheduled: [],
-  welcomeUsed: false, contactsSent: {}
+  welcomeUsed: false, contactsSent: {},
+  captain: { seen: 0, accepted: 0, fares: [], seed: 0 }
 };
 var S = load();
 function load() {
@@ -197,7 +198,9 @@ var ui = { // transient
   from: 'home', to: 'airport', cls: 'go', bidOpen: false, bidOffer: null,
   activeTrip: null, tripTimer: null, basket: {}, rest: null, promo: '',
   sendFrom: 'home', sendTo: 'work', sendSize: 'm', activeOrder: null, activeParcel: null,
-  animFrac: 0
+  animFrac: 0,
+  eatMode: 'rest', mbasket: {}, activeQuik: null,
+  captainOn: false, capOnline: false, capOffers: null, capTrip: null
 };
 
 /* ── helpers ───────────────────────────────────────────────────────── */
@@ -532,9 +535,14 @@ function basketTotal(r) {
   return Math.round(t * 100) / 100;
 }
 function viewEat() {
+  if (ui.activeQuik) return viewQuik();
   if (ui.activeOrder) return viewOrder();
   if (ui.rest) return viewRestaurant();
   var h = '<h2>🍔 Eat</h2>';
+  h += '<div class="grid2 mb">' +
+    '<button class="btn mini' + (ui.eatMode === 'rest' ? '' : ' ghost') + '" style="width:100%" onclick="ui.eatMode=\'rest\';render()">🍔 Restaurants</button>' +
+    '<button class="btn mini' + (ui.eatMode === 'market' ? '' : ' ghost') + '" style="width:100%" onclick="ui.eatMode=\'market\';render()">🛒 Market</button></div>';
+  if (ui.eatMode === 'market') return h + viewMarket();
   if (S.plus) h += '<div class="banner calm">Orbit+ active — free delivery on baskets over £' + E.EAT_FREE_DELIVERY_MIN + ' ✅</div>';
   else if (!S.welcomeUsed) h += '<div class="banner surge">🎁 First order? Code <b>WELCOME20</b> takes 20% off (max £10).</div>';
   h += E.RESTAURANTS.map(function (r) {
@@ -613,6 +621,78 @@ function viewOrder() {
   h += o.status === 'DELIVERED'
     ? '<button class="btn" onclick="ui.activeOrder=null;ui.rest=null;render()">Done</button>'
     : '<button class="btn ghost" onclick="ui.activeOrder=null;ui.rest=null;render()">Order more while you wait</button>';
+  return h;
+}
+
+/* Market — Quik groceries */
+function mbasketTotal() {
+  var t = 0;
+  E.MARKET_AISLES.forEach(function (a, i) {
+    a.items.forEach(function (m, j) { t += (ui.mbasket[i + ':' + j] || 0) * m[1]; });
+  });
+  return Math.round(t * 100) / 100;
+}
+function viewMarket() {
+  var bt = mbasketTotal();
+  var h = '<div class="banner calm">⚡ Groceries from the Old Town dark store. Close by? We promise <b>' + E.QUIK_PROMISE_MIN + ' minutes</b> — late means ' + money(E.QUIK_LATE_CREDIT) + ' credit, automatically.</div>';
+  h += E.MARKET_AISLES.map(function (a, i) {
+    return '<h3>' + a.emoji + ' ' + esc(a.name) + '</h3>' + a.items.map(function (m, j) {
+      var k = i + ':' + j, n = ui.mbasket[k] || 0;
+      return '<div class="item" style="cursor:default"><div class="grow"><div class="t">' + esc(m[0]) + '</div><div class="s">' + money(m[1]) + '</div></div>' +
+        '<button class="btn mini ghost" ' + (n ? '' : 'disabled ') + 'onclick="ui.mbasket[\'' + k + '\']=Math.max(0,(ui.mbasket[\'' + k + '\']||0)-1);render()">−</button>' +
+        '<b style="min-width:18px;text-align:center">' + n + '</b>' +
+        '<button class="btn mini" onclick="ui.mbasket[\'' + k + '\']=(ui.mbasket[\'' + k + '\']||0)+1;render()">+</button></div>';
+    }).join('');
+  }).join('');
+  if (bt > 0) {
+    var q = E.quikQuote('home', bt, { plus: S.plus, when: Date.now() });
+    h += '<div class="card mt">';
+    h += '<div class="kv"><span>Basket</span><span>' + money(q.basket) + '</span></div>';
+    h += '<div class="kv"><span>Delivery' + (q.fee === 0 ? ' — Orbit+ perk' : '') + '</span><span>' + (q.fee ? money(q.fee) : 'Free') + '</span></div>';
+    if (q.smallOrderFee) h += '<div class="kv"><span>Small-basket fee (under £' + E.QUIK_SMALL_MIN + ')</span><span>' + money(q.smallOrderFee) + '</span></div>';
+    h += '<div class="kv total"><span style="color:var(--text)">Total · ~' + q.etaMin + ' min' + (q.promise15 ? ' ⚡' : '') + '</span><span>' + money(q.total) + '</span></div>';
+    if (q.promise15) h += '<div class="faint mt">⚡ Inside the ' + E.QUIK_PROMISE_MIN + '-minute promise zone.</div>';
+    h += '</div>';
+    h += '<button class="btn" onclick="placeQuik()">Order groceries · ' + money(q.total) + '</button>';
+  }
+  return h;
+}
+function placeQuik() {
+  var bt = mbasketTotal();
+  var q = E.quikQuote('home', bt, { plus: S.plus, when: Date.now() });
+  if (!q) return;
+  if (!pay(q.total, 'Market · Quik groceries', 'eat')) { toast('Not enough Orbit Cash — top up in Pay 💳'); go('pay'); return; }
+  var items = [];
+  E.MARKET_AISLES.forEach(function (a, i) {
+    a.items.forEach(function (m, j) { var n = ui.mbasket[i + ':' + j]; if (n) items.push(n + '× ' + m[0]); });
+  });
+  var order = { id: 'Q' + Date.now().toString(36).toUpperCase(), items: items, total: q.total, etaMin: q.etaMin, promise15: q.promise15, status: 'PLACED', log: [{ status: 'PLACED', ms: Date.now() }] };
+  ui.activeQuik = order; ui.mbasket = {};
+  S.orders.unshift(order);
+  earn('eat', q.total);
+  save();
+  clearInterval(ui.quikTimer);
+  ui.quikTimer = setInterval(function () {
+    if (!ui.activeQuik || ui.activeQuik.status === 'DELIVERED') { clearInterval(ui.quikTimer); return; }
+    E.quikAdvance(ui.activeQuik, Date.now()); save();
+    if (tab === 'eat') render();
+  }, 2600);
+  render();
+}
+function viewQuik() {
+  var o = ui.activeQuik;
+  var labels = { PLACED: 'Order placed', PACKING: 'Packing your bag', RIDER_ON_WAY: 'Rider on the way ⚡', DELIVERED: 'Delivered — that was quick! 🎉' };
+  var h = '<h2>🛒 ' + labels[o.status] + '</h2>';
+  h += '<div class="card"><div class="small dim">' + o.items.map(esc).join(' · ') + '</div>' +
+    '<div class="kv mt total"><span style="color:var(--text)">Paid · promised ~' + o.etaMin + ' min</span><span>' + money(o.total) + '</span></div>' +
+    (o.promise15 ? '<div class="faint mt">⚡ ' + E.QUIK_PROMISE_MIN + '-minute promise — late means ' + money(E.QUIK_LATE_CREDIT) + ' credit back.</div>' : '') + '</div>';
+  h += '<ul class="steps card flat">' + E.QUIK_FLOW.map(function (st) {
+    var i = E.QUIK_FLOW.indexOf(st), cur = E.QUIK_FLOW.indexOf(o.status);
+    return '<li class="' + (i < cur ? 'done' : i === cur ? 'now' : '') + '">' + labels[st] + '</li>';
+  }).join('') + '</ul>';
+  h += o.status === 'DELIVERED'
+    ? '<button class="btn" onclick="ui.activeQuik=null;render()">Done</button>'
+    : '<button class="btn ghost" onclick="ui.activeQuik=null;render()">Keep shopping</button>';
   return h;
 }
 
@@ -699,8 +779,10 @@ function doSplit() {
 
 /* ══ ME ═══════════════════════════════════════════════════════════════ */
 function viewMe() {
+  if (ui.captainOn) return viewCaptain();
   var tier = E.tierFor(S.points), next = E.nextTier(S.points);
   var h = '<h2>⭐ ' + esc(S.name) + '</h2>';
+  h += '<button class="btn ghost mb" onclick="ui.captainOn=true;render()">🧢 Switch to Captain mode — drive & earn</button>';
   // Orbit+
   h += '<div class="card">';
   if (S.plus) {
@@ -749,6 +831,76 @@ function viewMe() {
     '<button class="btn mini ghost mt" onclick="resetAll()">Reset the demo</button></div>';
   return h;
 }
+/* Captain mode — the driver's side */
+function viewCaptain() {
+  var C = S.captain;
+  var day = E.captainDaySummary(C.fares);
+  var rate = E.acceptanceRate(C.accepted, C.seen);
+  var h = '<div class="row mb"><button class="btn mini ghost" onclick="ui.captainOn=false;ui.capOnline=false;ui.capTrip=null;render()">← Rider mode</button></div>';
+  h += '<h2 style="margin-top:4px">🧢 Captain ' + esc(S.name) + '</h2>';
+  h += '<div class="card center"><div class="faint">TODAY, AFTER ORBIT\'S 20%</div><div class="bigmoney" style="color:var(--accent2)">' + money(day.net) + '</div>' +
+    '<div class="faint mt">' + day.trips + ' trip' + (day.trips === 1 ? '' : 's') + ' · ' + money(day.gross) + ' gross · you keep ' + Math.round(E.CAPTAIN_CUT * 100) + 'p in every £' + (rate != null ? ' · ' + rate + '% acceptance' : '') + '</div></div>';
+  if (ui.capTrip) {
+    var o = ui.capTrip.offer, pct = Math.round(ui.capTrip.frac * 100);
+    h += '<div class="card"><b>' + (pct < 100 ? 'Driving — ' + pct + '%' : 'Trip complete 🎉') + '</b>' +
+      '<div class="small dim mt">' + esc(E.place(o.fromId).name) + ' → ' + esc(E.place(o.toId).name) + ' · ' + o.km + ' km</div>' +
+      '<div class="progress mt"><i style="width:' + pct + '%"></i></div>' +
+      '<div class="kv mt"><span>You earn</span><span class="total" style="color:var(--accent2)">' + money(o.earn) + '</span></div></div>';
+    return h;
+  }
+  h += '<div class="card row"><div class="grow"><b>' + (ui.capOnline ? 'You\'re online 🟢' : 'You\'re offline') + '</b><div class="faint">' + (ui.capOnline ? 'Offers below — accept or pass, no penalty games.' : 'Go online to see ride offers.') + '</div></div>' +
+    '<button class="btn mini' + (ui.capOnline ? ' ghost' : '') + '" onclick="capToggle()">' + (ui.capOnline ? 'Go offline' : 'Go online') + '</button></div>';
+  if (ui.capOnline && ui.capOffers && ui.capOffers.length) {
+    h += ui.capOffers.map(function (o, i) {
+      return '<div class="card flat"><div class="row"><div class="em" style="font-size:24px">' + E.rideClass(o.classId).emoji + '</div>' +
+        '<div class="grow"><b>' + esc(E.place(o.fromId).name) + ' → ' + esc(E.place(o.toId).name) + '</b>' +
+        '<div class="s dim">' + o.pickupKm + ' km to pickup · ' + o.km + ' km trip · ~' + o.mins + ' min' + (o.surge && o.surge.mult > 1 ? ' · <span class="tag gold">' + o.surge.mult.toFixed(1) + '×</span>' : '') + '</div></div>' +
+        '<div class="end">' + money(o.earn) + '<br><span class="faint">of ' + money(o.fare) + '</span></div></div>' +
+        '<div class="grid2 mt"><button class="btn mini" onclick="capAccept(' + i + ')">Accept</button><button class="btn mini ghost" onclick="capPass(' + i + ')">Pass</button></div></div>';
+    }).join('');
+  } else if (ui.capOnline) {
+    h += '<button class="btn ghost" onclick="capRefresh()">🔄 Check for new offers</button>';
+  }
+  h += '<div class="card flat small"><b>Why captains like Orbit</b><div class="dim mt">' +
+    'You see the full fare, your exact ' + Math.round(E.CAPTAIN_CUT * 100) + '% and the pickup distance <i>before</i> you accept. Passing never hides future offers, and every payout lands in the same in-app wallet, instantly.</div></div>';
+  return h;
+}
+function capToggle() {
+  ui.capOnline = !ui.capOnline;
+  if (ui.capOnline) capRefresh(); else { ui.capOffers = null; render(); }
+}
+function capRefresh() {
+  S.captain.seed++;
+  save();
+  ui.capOffers = E.captainOffers(new Date().toDateString() + '#' + S.captain.seed, Date.now(), 4);
+  render();
+}
+function capPass(i) {
+  S.captain.seen++;
+  ui.capOffers.splice(i, 1);
+  save(); render();
+}
+function capAccept(i) {
+  var o = ui.capOffers[i];
+  S.captain.seen++; S.captain.accepted++;
+  ui.capOffers = null;
+  ui.capTrip = { offer: o, frac: 0 };
+  save(); render();
+  clearInterval(ui.capTimer);
+  ui.capTimer = setInterval(function () {
+    if (!ui.capTrip) { clearInterval(ui.capTimer); return; }
+    ui.capTrip.frac = Math.min(1, ui.capTrip.frac + 0.2);
+    if (ui.capTrip.frac >= 1) {
+      clearInterval(ui.capTimer);
+      S.captain.fares.push(o.fare);
+      S.ledger.push(E.makeTx('captain', o.earn, 'Captain earnings · ' + E.place(o.fromId).name + ' → ' + E.place(o.toId).name, Date.now()));
+      save();
+      setTimeout(function () { ui.capTrip = null; if (tab === 'me') { capRefresh(); toast('Trip done — ' + money(o.earn) + ' paid to your wallet 🎉'); } }, 1400);
+    }
+    if (tab === 'me') render();
+  }, 1200);
+}
+
 function monthStats() {
   var rideSpend = 0, dineOutSpend = 0, parcelSpend = 0, deliveriesSaved = 0;
   S.trips.forEach(function (t) { if (t.status === 'COMPLETED') rideSpend += t.fare; });

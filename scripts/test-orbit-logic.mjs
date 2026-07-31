@@ -268,6 +268,65 @@ test('redeem: 500 pts → £2.50, whole blocks only', () => {
   eq(E.redeemQuote(1249), { blocks: 2, points: 1000, credit: 5 });
   assert.equal(E.redeemQuote(499).credit, 0);
 });
+/* ── MARKET (Quik groceries) ── */
+test('quikQuote: fees itemised; Orbit+ waives the fee over £20; small-basket fee under £10', () => {
+  const q = E.quikQuote('home', 25, { when: CALM });
+  assert.equal(q.fee, E.QUIK_FEE);
+  assert.equal(q.smallOrderFee, 0);
+  const plus = E.quikQuote('home', 25, { when: CALM, plus: true });
+  assert.equal(plus.fee, 0);
+  const small = E.quikQuote('home', 6, { when: CALM });
+  assert.equal(small.smallOrderFee, 1);
+  assert.equal(small.total, Math.round((6 + E.QUIK_FEE + 1) * 100) / 100);
+  assert.equal(E.quikQuote('home', 0), null);
+});
+test('quikQuote: 15-min promise near the store, honest ETA far away; rush slows it', () => {
+  const near = E.quikQuote('home', 20, { when: CALM }); // Old Town → Home ≈ 2.6 km
+  assert.ok(near.promise15, 'near drop inside the promise');
+  assert.equal(near.lateCredit, E.QUIK_LATE_CREDIT);
+  const far = E.quikQuote('airport', 20, { when: CALM });
+  assert.ok(!far.promise15, 'airport is not a 15-min drop');
+  assert.ok(E.quikQuote('beach', 20, { when: RUSH }).etaMin >= E.quikQuote('beach', 20, { when: CALM }).etaMin);
+});
+test('quik order lifecycle walks PLACED→DELIVERED', () => {
+  const o = { status: 'PLACED', log: [{ status: 'PLACED', ms: CALM }] };
+  for (let i = 0; i < 6; i++) E.quikAdvance(o, CALM + i * 60000);
+  assert.equal(o.status, 'DELIVERED');
+  assert.equal(o.log.length, E.QUIK_FLOW.length);
+});
+test('market catalog: every item priced above zero', () => {
+  E.MARKET_AISLES.forEach(a => a.items.forEach(([name, price]) => {
+    assert.ok(price > 0, name);
+  }));
+});
+
+/* ── CAPTAIN mode ── */
+test('captainEarn: 80/20 split that reconstructs the fare exactly', () => {
+  const e = E.captainEarn(23.76);
+  assert.equal(e.driver, 19.01);
+  assert.equal(Math.round((e.driver + e.orbit) * 100) / 100, 23.76);
+  assert.equal(E.CAPTAIN_CUT, 0.8);
+});
+test('captainOffers: seeded & stable, sane geometry, earn matches the 80% cut', () => {
+  const a = E.captainOffers('shift1', CALM, 4);
+  eq(a, E.captainOffers('shift1', CALM, 4));
+  assert.equal(a.length, 4);
+  a.forEach(o => {
+    assert.notEqual(o.fromId, o.toId);
+    assert.ok(o.fare > 0 && o.km > 0 && o.pickupKm > 0);
+    assert.equal(o.earn, E.captainEarn(o.fare).driver);
+  });
+  assert.notDeepStrictEqual(JSON.parse(JSON.stringify(a)), JSON.parse(JSON.stringify(E.captainOffers('shift2', CALM, 4))));
+});
+test('acceptanceRate and day summary', () => {
+  assert.equal(E.acceptanceRate(3, 4), 75);
+  assert.equal(E.acceptanceRate(0, 0), null);
+  const day = E.captainDaySummary([10, 15.5]);
+  assert.equal(day.trips, 2);
+  assert.equal(day.gross, 25.5);
+  assert.equal(day.net, 20.4);
+});
+
 test('fmtMoney formats sign and pence', () => {
   assert.equal(E.fmtMoney(7.5), '£7.50');
   assert.equal(E.fmtMoney(-3), '−£3.00');
