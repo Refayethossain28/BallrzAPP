@@ -7,7 +7,31 @@ Functions in this codebase:
 - **`captureSquarePayment`** — capture the authorized payment on trip completion.
 - **`refundSquarePayment`** — full/partial refund per the cancellation policy.
 - **`onBookingWrite`** — Firestore trigger that emails (SendGrid) and texts
-  (Twilio) the client as a booking moves through its lifecycle.
+  (Twilio) the client as a booking moves through its lifecycle, records the
+  driver's earning to the payout ledger, and credits their 2% AXC.
+- **ApexCoin ledger** — the server-authoritative loyalty wallet.
+  `awardBookingCoins` credits clients their tier's % of the cash portion of
+  every booking (3/4/5/6% Bronze→Platinum by default, admin-tunable via
+  `settings/coins`);
+  `redeemApexCoins` is the transactional "pay with ApexCoin" at checkout;
+  `redeemDriverCoins` cashes a driver's AXC out onto the `driver_payouts` rail.
+  Balances (`users/{uid}.apexBalance`, `drivers/{uid}.apexcoin`) and the
+  append-only `coin_ledger` are functions-write-only (firestore.rules blocks
+  self-writes); deterministic ledger ids make the booking-triggered awards
+  idempotent.
+- **ApexCoin on-chain bridge** (`src/chain.ts`) — APEX leaves the app as the
+  AXC ERC-20 (`apexchain/`) and comes back: `linkChainWallet`
+  (signature-verified), `withdrawCoinsOnchain` (deduct → treasury mints,
+  idempotent, compensating refund on chain failure), `depositCoinsOnchain`
+  (verify the transfer → credit once → burn). Fails closed until
+  `settings/chain` + the `CHAIN_TREASURY_KEY` secret are configured. See
+  [`docs/apexvip-apexcoin-onchain.md`](../docs/apexvip-apexcoin-onchain.md).
+- **ApexCoin bonuses + transparency** — `monthlyCoinBonuses` (1st of each
+  month: Gold 200 / Platinum 500 APEX, top-rated drivers 10 AXC) with
+  `runCoinBonuses` as the admin-triggered equivalent (both idempotent per
+  month via deterministic ledger ids); a 25 AXC milestone every 50 completed
+  trips inside `onBookingWrite`; and `coinSupplyStats`, the public
+  ledger-aggregated totals behind `apexcoin.html` and the admin panel.
 
 All hold their provider secret server-side so the browser never sees it. See
 [`docs/apexvip-payments.md`](../docs/apexvip-payments.md) for the payment flow.
@@ -24,7 +48,7 @@ field names called out in
 cd functions
 npm install
 npm run typecheck   # tsc --noEmit — catches Firestore field/typo bugs before deploy
-npm test            # node --test — pure backend logic (src/logic.ts, 12 tests)
+npm test            # node --test — pure backend logic (src/logic.ts, 18 tests)
 npm run build       # esbuild src/index.ts → lib/index.js (the deployed artifact)
 ```
 
@@ -46,7 +70,16 @@ driver, and a driver-side `jobs` doc is created. Requires the emulator tooling
 ```sh
 npm i -g firebase-tools     # needs Java for the Firestore emulator
 npm run test:emulator        # builds, boots firestore+functions, runs test/dispatch.emulator.mjs
+npm run test:emulator:coin   # the ApexCoin lifecycle: earn → clamped/idempotent redeem → driver cash-out
+npm run test:emulator:chain  # the on-chain bridge against a real EVM (boots ganache from apexchain/)
 ```
+
+`npm run test:emulator:coin` walks the whole coin loop against the real
+functions: a booking awards the client 5% exactly once (re-fired triggers
+can't double-award), `redeemApexCoins` clamps to the balance and is
+idempotent per booking, the next booking earns on the cash portion only, trip
+completion credits the driver 2% AXC once, and `redeemDriverCoins` zeroes the
+wallet with the £ landing in `driver_payouts` as `owed`.
 
 ## Apple Pay
 
@@ -76,7 +109,7 @@ other functions (`parseBookingIntent`, `checkFlightStatus`, …), which live els
 **Always scope the deploy** so you don't touch the others:
 
 ```sh
-firebase deploy --only functions:getHotelRates,functions:processSquarePayment,functions:captureSquarePayment,functions:refundSquarePayment,functions:onBookingWrite,functions:onBookingCreated
+firebase deploy --only functions:getHotelRates,functions:processSquarePayment,functions:captureSquarePayment,functions:refundSquarePayment,functions:onBookingWrite,functions:onBookingCreated,functions:awardBookingCoins,functions:redeemApexCoins,functions:redeemDriverCoins,functions:linkChainWallet,functions:withdrawCoinsOnchain,functions:depositCoinsOnchain,functions:monthlyCoinBonuses,functions:runCoinBonuses,functions:coinSupplyStats
 ```
 
 A bare `firebase deploy` from here could try to delete functions it doesn't see.
