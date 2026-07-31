@@ -180,7 +180,7 @@ var DEFAULT_STATE = {
   ledger: [], trips: [], orders: [], parcels: [], locks: [], scheduled: [],
   welcomeUsed: false, contactsSent: {},
   captain: { seen: 0, accepted: 0, fares: [], seed: 0 },
-  pass: null, payLater: [], refUsed: false, trusted: ''
+  pass: null, payLater: [], refUsed: false, trusted: '', favs: []
 };
 var S = load();
 function load() {
@@ -202,7 +202,8 @@ var ui = { // transient
   animFrac: 0,
   eatMode: 'rest', mbasket: {}, activeQuik: null,
   captainOn: false, capOnline: false, capOffers: null, capTrip: null,
-  stops: []
+  stops: [], goMode: 'ride', wFrom: 'central', wTo: 'uni', wMode: 'bike',
+  business: false, activeWheel: null
 };
 
 /* ── helpers ───────────────────────────────────────────────────────── */
@@ -278,11 +279,16 @@ function goQuote(classId, now) {
 }
 function viewGo() {
   if (ui.activeTrip) return viewTrip();
+  if (ui.activeWheel) return viewWheelRide();
   var now = Date.now();
+  var modeSeg = '<div class="grid2 mb">' +
+    '<button class="btn mini' + (ui.goMode === 'ride' ? '' : ' ghost') + '" style="width:100%" onclick="ui.goMode=\'ride\';render()">🚗 Ride</button>' +
+    '<button class="btn mini' + (ui.goMode === 'wheels' ? '' : ' ghost') + '" style="width:100%" onclick="ui.goMode=\'wheels\';render()">🚲 Wheels</button></div>';
+  if (ui.goMode === 'wheels') return modeSeg + viewWheels(now);
   var s = E.surgeAt(now);
   var quotes = E.RIDE_CLASSES.map(function (c) { return goQuote(c.id, now); }).filter(Boolean);
   var q = quotes.find(function (x) { return x.classId === ui.cls; }) || quotes[0];
-  var h = '<canvas id="map" width="900" height="440"></canvas>';
+  var h = modeSeg + '<canvas id="map" width="900" height="440"></canvas>';
   h += '<label class="f">Pickup</label><select onchange="ui.from=this.value;render()">' + placeOpts(ui.from) + '</select>';
   ui.stops.forEach(function (st, i) {
     h += '<label class="f">Stop ' + (i + 1) + '</label><div class="row">' +
@@ -309,6 +315,7 @@ function viewGo() {
   h += q.breakdown.map(function (l) { return '<div class="kv"><span>' + esc(l.label) + '</span><span>' + money(l.amount) + '</span></div>'; }).join('');
   h += '<div class="kv total"><span style="color:var(--text)">Upfront total — what you pay</span><span>' + money(q.total) + '</span></div>';
   h += '</div>';
+  h += '<label class="row mt small" style="cursor:pointer;user-select:none"><input type="checkbox" ' + (ui.business ? 'checked ' : '') + 'onchange="ui.business=this.checked" style="width:18px;height:18px;accent-color:var(--accent)"> 💼 Business ride — goes on this month\'s expense report</label>';
   var passHere = E.passCovers(S.pass, ui.from, ui.to, ui.cls, now) && !ui.stops.length;
   if (passHere) {
     h += '<div class="banner calm">🎟️ Your Route Pass covers this ride — ' + S.pass.left + ' of ' + E.PASS_RIDES + ' left.</div>';
@@ -321,6 +328,7 @@ function viewGo() {
     h += '<button class="btn ghost" onclick="openBid()">🤝 Name your fare</button>';
     h += '<button class="btn ghost" onclick="openSchedule()">📅 Schedule</button>';
     h += '</div>';
+    h += '<button class="btn ghost mt" onclick="openPlanner()">🕐 When is it cheapest?</button>';
     var pl = E.priceLockQuote(q);
     h += '<button class="btn ghost mt" onclick="lockPrice()">🔒 Lock ' + money(pl.locked) + ' for ' + pl.days + ' days — ' + money(pl.fee) + '</button>';
     if (!passHere) {
@@ -369,8 +377,11 @@ function drawMap() {
   ctx.beginPath(); ctx.ellipse(X(4.6), Y(2.4), 58, 34, 0, 0, 7); ctx.fill();
   // route
   var trip = ui.activeTrip;
-  var fromId = trip ? trip.quote.fromId : ui.from, toId = trip ? trip.quote.toId : ui.to;
-  var route = trip ? (trip.quote.stops || [trip.quote.fromId, trip.quote.toId]) : stopIds();
+  var wheel = ui.activeWheel;
+  var fromId = trip ? trip.quote.fromId : wheel ? wheel.quote.fromId : ui.goMode === 'wheels' ? ui.wFrom : ui.from;
+  var toId = trip ? trip.quote.toId : wheel ? wheel.quote.toId : ui.goMode === 'wheels' ? ui.wTo : ui.to;
+  var route = trip ? (trip.quote.stops || [trip.quote.fromId, trip.quote.toId])
+    : (wheel || ui.goMode === 'wheels') ? [fromId, toId] : stopIds();
   var pts = E.pathThrough(route);
   if (pts.length > 1 && (fromId !== toId || route.length > 2)) {
     ctx.strokeStyle = '#6c5cff'; ctx.lineWidth = 5; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
@@ -384,9 +395,18 @@ function drawMap() {
       ctx.font = '26px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(E.rideClass(trip.quote.classId).emoji, X(pos.x), Y(pos.y) - 4);
     }
+    if (wheel) {
+      var wpos = E.posAlong(pts, wheel.frac);
+      ctx.font = '26px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(E.wheelMode(wheel.quote.modeId).emoji, X(wpos.x), Y(wpos.y) - 4);
+    }
   }
   // places
   E.PLACES.forEach(function (p) {
+    if (E.isStation(p.id)) {
+      ctx.strokeStyle = 'rgba(34,211,165,.5)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(X(p.x), Y(p.y), 13, 0, 7); ctx.stroke();
+    }
     var hot = route.indexOf(p.id) !== -1;
     ctx.font = (hot ? 22 : 15) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.globalAlpha = hot ? 1 : 0.75;
@@ -408,10 +428,11 @@ function bookRide(fare, lockUsed, viaPass) {
     go('pay'); return;
   }
   var drivers = E.driversNear(ui.from, ui.cls, new Date(now).toDateString());
-  var d = E.matchDriver(drivers);
+  var d = E.matchDriver(drivers, S.favs);
   var trip = E.createTrip(q, d, fare, now);
   trip.lockUsed = !!lockUsed;
   trip.viaPass = !!viaPass;
+  trip.business = !!ui.business;
   ui.activeTrip = trip;
   ui.stops = [];
   S.trips.unshift(trip); save();
@@ -469,7 +490,7 @@ function viewTrip() {
   }[t.status];
   h += '<div class="card mt"><div class="row">' +
     '<div class="em" style="font-size:30px">' + E.rideClass(t.quote.classId).emoji + '</div>' +
-    '<div class="grow"><b>' + esc(d.name) + '</b> <span class="tag gold">★ ' + d.rating.toFixed(2) + '</span><br>' +
+    '<div class="grow"><b>' + esc(d.name) + '</b>' + (S.favs.indexOf(d.name) !== -1 ? ' ⭐' : '') + ' <span class="tag gold">★ ' + d.rating.toFixed(2) + '</span><br>' +
     '<span class="small dim">' + esc(d.car) + ' · <b>' + esc(d.plate) + '</b> · ' + d.trips.toLocaleString() + ' trips</span></div>' +
     '<div class="total">' + money(t.fare) + '</div></div>';
   h += '<div class="hr"></div><div><b>' + statusLine + '</b></div>';
@@ -495,6 +516,7 @@ function viewTrip() {
       (t.tipped ? '<div class="faint mt">You tipped ' + money(t.tipped) + ' — 100% to ' + esc(d.name) + ' 💝</div>' :
         '<div class="mt"><span class="faint">Tip ' + esc(d.name) + '? Every penny is theirs:</span><div class="row mt" style="justify-content:center">' +
         E.TIP_PRESETS.map(function (n) { return '<button class="btn mini ghost" onclick="tipDriver(' + n + ')">£' + n + '</button>'; }).join('') + '</div></div>') +
+      '<div class="mt" id="favOffer"></div>' +
       '<div class="faint mt">Cashback landed: ' + money(E.rideCashback(t.fare, S.plus)) + ' → wallet · +' + E.pointsFor('ride', t.fare) + ' pts</div>' +
       '<button class="btn mt" onclick="endTrip()">Done</button></div>';
   } else {
@@ -506,7 +528,19 @@ function rate(n) {
   var spans = $('stars').children;
   for (var i = 0; i < 5; i++) spans[i].textContent = i < n ? '★' : '☆';
   if (ui.activeTrip) { ui.activeTrip.rated = n; save(); }
+  if (n === 5 && ui.activeTrip && S.favs.indexOf(ui.activeTrip.driver.name) === -1) {
+    var el = $('favOffer');
+    if (el) el.innerHTML = '<button class="btn mini ghost" onclick="favDriver()">⭐ Add ' + esc(ui.activeTrip.driver.name) + ' to favourite captains</button>';
+  }
   toast('Thanks — you rated ' + n + '★');
+}
+function favDriver() {
+  var t = ui.activeTrip; if (!t) return;
+  if (S.favs.indexOf(t.driver.name) === -1) S.favs.push(t.driver.name);
+  save();
+  var el = $('favOffer');
+  if (el) el.innerHTML = '<span class="faint">⭐ ' + esc(t.driver.name) + ' is a favourite — they get first refusal on your rides.</span>';
+  toast(t.driver.name + ' added to favourites ⭐');
 }
 function doCancel() {
   var t = ui.activeTrip; if (!t) return;
@@ -525,6 +559,95 @@ function tipDriver(n) {
   t.tipped = E.tipEarn(n);
   save(); render();
   toast(money(n) + ' to ' + t.driver.name + ' — no platform cut 💝');
+}
+
+/* Orbit Wheels — bikes & e-scooters */
+function stationOpts(sel) {
+  return E.STATION_IDS.map(function (id) {
+    var p = E.place(id);
+    return '<option value="' + id + '"' + (id === sel ? ' selected' : '') + '>' + p.emoji + ' ' + esc(p.name) + '</option>';
+  }).join('');
+}
+function viewWheels(now) {
+  var h = '<canvas id="map" width="900" height="440"></canvas>';
+  h += '<label class="f">From station</label><select onchange="ui.wFrom=this.value;render()">' + stationOpts(ui.wFrom) + '</select>';
+  h += '<label class="f">To station</label><select onchange="ui.wTo=this.value;render()">' + stationOpts(ui.wTo) + '</select>';
+  var docks = E.stationDocks(ui.wFrom, now);
+  h += '<div class="pillrow mt">' + E.WHEELS.map(function (w) {
+    var avail = w.id === 'bike' ? docks.bikes : docks.scooters;
+    var q0 = E.wheelsQuote(ui.wFrom, ui.wTo, w.id, now);
+    return '<div class="pill' + (w.id === ui.wMode ? ' on' : '') + '" onclick="ui.wMode=\'' + w.id + '\';render()">' +
+      '<div class="em">' + w.emoji + '</div><div class="nm">' + w.name + '</div>' +
+      '<div class="pr">' + (q0 ? money(q0.total) : '—') + ' · ' + avail + ' here</div></div>';
+  }).join('') + '</div>';
+  var q = E.wheelsQuote(ui.wFrom, ui.wTo, ui.wMode, now);
+  if (!q) return h + '<div class="card mt center dim">Pick two different stations 🙂</div>';
+  var w = E.wheelMode(ui.wMode);
+  var avail = ui.wMode === 'bike' ? docks.bikes : docks.scooters;
+  h += '<div class="card mt"><div class="kv"><span>' + q.km + ' km · ~' + q.mins + ' min · <span class="tag green">0 g CO₂</span></span><span class="total">' + money(q.total) + '</span></div>' +
+    '<div class="faint mt">£' + w.unlock.toFixed(2) + ' unlock + £' + w.perMin.toFixed(2) + '/min · docks live per station & hour</div></div>';
+  h += avail > 0
+    ? '<button class="btn" onclick="startWheel()">Unlock & ride · ' + money(q.total) + '</button>'
+    : '<div class="banner surge">No ' + w.name.toLowerCase() + 's at ' + esc(E.place(ui.wFrom).name) + ' right now — try the other mode or another station.</div>';
+  return h;
+}
+function startWheel() {
+  var q = E.wheelsQuote(ui.wFrom, ui.wTo, ui.wMode, Date.now());
+  if (!q) return;
+  if (!spend(q.total, 'Wheels · ' + E.place(q.fromId).name + ' → ' + E.place(q.toId).name, 'ride')) { go('pay'); return; }
+  ui.activeWheel = { quote: q, frac: 0 };
+  earn('ride', q.total);
+  save();
+  clearInterval(ui.wheelTimer);
+  ui.wheelTimer = setInterval(function () {
+    if (!ui.activeWheel) { clearInterval(ui.wheelTimer); return; }
+    ui.activeWheel.frac = Math.min(1, ui.activeWheel.frac + 0.06);
+    if (tab === 'goTab') render();
+    if (ui.activeWheel.frac >= 1) clearInterval(ui.wheelTimer);
+  }, 900);
+  render();
+}
+function viewWheelRide() {
+  var wr = ui.activeWheel, q = wr.quote, w = E.wheelMode(q.modeId);
+  var pct = Math.round(wr.frac * 100);
+  var h = '<canvas id="map" width="900" height="440"></canvas>';
+  h += '<div class="card mt"><b>' + w.emoji + ' ' + (pct < 100 ? 'Riding — ' + pct + '%' : 'Docked at ' + esc(E.place(q.toId).name) + ' 🎉') + '</b>' +
+    '<div class="progress mt"><i style="width:' + pct + '%"></i></div>' +
+    '<div class="kv mt"><span>' + esc(E.place(q.fromId).name) + ' → ' + esc(E.place(q.toId).name) + ' · ' + q.km + ' km</span><span class="total">' + money(q.total) + '</span></div>' +
+    '<div class="faint mt">🍃 Zero emissions — this ride adds 0 g of CO₂.</div></div>';
+  h += '<button class="btn' + (pct < 100 ? ' ghost' : '') + '" onclick="clearInterval(ui.wheelTimer);ui.activeWheel=null;render()">' + (pct < 100 ? 'End ride early' : 'Done') + '</button>';
+  return h;
+}
+
+/* smart departure planner */
+function openPlanner() {
+  var now = Date.now();
+  var tl = E.fareTimeline(ui.from, ui.to, ui.cls, now, 12, 60);
+  if (!tl) return;
+  var best = E.cheapestWindow(tl);
+  var nowTotal = tl[0].total;
+  var h = '<h2 style="margin-top:0">🕐 When is it cheapest?</h2>' +
+    '<div class="dim small">The same honest surge curve that prices your ride, scanned over the next 12 hours. No games — the cheap windows are simply when demand is low.</div>' +
+    '<div class="mt">';
+  tl.forEach(function (t, i) {
+    var d = new Date(t.ms);
+    var hh = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    var isBest = t.total === best.total;
+    h += '<div class="kv" style="' + (isBest ? 'color:var(--accent2);font-weight:700' : '') + '">' +
+      '<span>' + (i === 0 ? 'Now' : hh) + (t.surge.reason ? ' · ' + esc(t.surge.reason) : '') + (isBest ? ' · cheapest ✓' : '') + '</span>' +
+      '<span>' + money(t.total) + (i > 0 ? ' <button class="btn mini ghost" onclick="planBook(' + t.ms + ',' + t.total + ')">Book</button>' : '') + '</span></div>';
+  });
+  h += '</div>';
+  if (best.total < nowTotal) h += '<div class="banner calm mt">Waiting until the cheapest window saves ' + money(nowTotal - best.total) + ' on this ride.</div>';
+  else h += '<div class="banner calm mt">Now is already the cheapest window — no reason to wait.</div>';
+  openSheet(h);
+}
+function planBook(whenMs, total) {
+  var chk = E.validateSchedule(Date.now(), whenMs);
+  if (!chk.ok) { toast(chk.why); return; }
+  S.scheduled.push({ fromId: ui.from, toId: ui.to, classId: ui.cls, whenMs: whenMs, total: total });
+  save(); closeSheet(); render();
+  toast('Scheduled for ' + new Date(whenMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' — ' + money(total) + ' locked ✅');
 }
 
 /* bidding */
@@ -901,6 +1024,13 @@ function viewMe() {
     ? '<button class="btn mini ghost mt" onclick="redeem()">Redeem ' + rq.points.toLocaleString() + ' pts → ' + money(rq.credit) + ' credit</button>'
     : '<div class="faint">' + (E.REDEEM_RATE.points - (S.points % E.REDEEM_RATE.points)) + ' pts until your next ' + money(E.REDEEM_RATE.credit) + ' redemption</div>';
   h += '</div>';
+  // business expenses
+  var xr = E.expenseReport(S.trips, E.monthKey(Date.now()));
+  if (xr.count) {
+    h += '<div class="card"><div class="row"><b>💼 Business rides — ' + xr.month + '</b><div class="grow"></div><b>' + money(xr.total) + '</b></div>' +
+      xr.lines.slice(0, 5).map(function (l) { return '<div class="kv"><span>' + esc(l.label) + '</span><span>' + money(l.amount) + '</span></div>'; }).join('') +
+      '<button class="btn mini ghost mt" onclick="copyExpenses()">📋 Copy expense report</button></div>';
+  }
   // impact + history
   var greenKm = 0, trips = S.trips.filter(function (t) { return t.status === 'COMPLETED'; });
   trips.forEach(function (t) { if (t.quote.classId === 'green') greenKm += t.quote.km; });
@@ -1029,6 +1159,14 @@ function applyRef() {
   S.ledger.push(E.makeTx('referral', res.bonus, 'Referral bonus 🎁', Date.now()));
   save(); render();
   toast('£' + res.bonus + ' for you — and £' + res.bonus + ' for your friend 🎉');
+}
+function copyExpenses() {
+  var text = E.expenseReport(S.trips, E.monthKey(Date.now())).text;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    Promise.resolve(navigator.clipboard.writeText(text))
+      .then(function () { toast('Expense report copied 📋'); }, function () { toast('Copy blocked — report is in the console'); });
+  } else toast('Clipboard unavailable — report logged to console');
+  try { console.log(text); } catch (e) {}
 }
 function resetAll() {
   localStorage.removeItem('orbit-state');

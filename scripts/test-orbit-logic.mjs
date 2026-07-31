@@ -415,6 +415,75 @@ test('applyReferral: rejects own code, bad shapes and reuse; pays £5 once', () 
   assert.equal(ok.bonus, 5);
 });
 
+/* ── Orbit Wheels ── */
+test('stationDocks: deterministic per station+hour, bounded, stations only', () => {
+  eq(E.stationDocks('central', CALM), E.stationDocks('central', CALM));
+  const d = E.stationDocks('central', CALM);
+  assert.ok(d.bikes >= 0 && d.bikes <= 8 && d.scooters >= 0 && d.scooters <= 6);
+  assert.equal(E.stationDocks('home', CALM), null, 'home has no dock');
+  assert.notDeepStrictEqual(
+    JSON.parse(JSON.stringify(E.stationDocks('central', CALM))),
+    JSON.parse(JSON.stringify(E.stationDocks('uni', CALM))));
+});
+test('wheelsQuote: unlock + per-min with a floor; scooter faster but dearer per min; 0 CO2', () => {
+  const b = E.wheelsQuote('central', 'uni', 'bike', CALM);
+  const s = E.wheelsQuote('central', 'uni', 'scooter', CALM);
+  const bm = E.wheelMode('bike');
+  assert.equal(b.total, Math.round(Math.max(bm.unlock + b.mins * bm.perMin, bm.minFare) * 100) / 100);
+  assert.ok(s.mins < b.mins, 'scooter is quicker');
+  assert.equal(b.co2g, 0);
+  assert.equal(E.wheelsQuote('home', 'uni', 'bike', CALM), null, 'stations only');
+  assert.equal(E.wheelsQuote('central', 'central', 'bike', CALM), null);
+});
+
+/* ── smart departure planner ── */
+test('fareTimeline: right length, deterministic, rush windows cost more', () => {
+  const midnightTue = Date.UTC(2026, 7, 4, 5, 0); // Tue 05:00 → spans morning rush
+  const tl = E.fareTimeline('home', 'airport', 'go', midnightTue, 6, 30);
+  assert.equal(tl.length, 13); // 6h at 30-min steps, inclusive
+  eq(tl, E.fareTimeline('home', 'airport', 'go', midnightTue, 6, 30));
+  const at5 = tl[0], at8 = tl.find(t => new Date(t.ms).getUTCHours() === 8);
+  assert.ok(at8.total > at5.total, 'morning rush dearer than 5am');
+  assert.equal(at8.surge.reason, 'Morning rush');
+});
+test('cheapestWindow finds the minimum honestly', () => {
+  const tl = [{ ms: 1, total: 9 }, { ms: 2, total: 7 }, { ms: 3, total: 8 }];
+  assert.equal(E.cheapestWindow(tl).ms, 2);
+  assert.equal(E.cheapestWindow([]), null);
+});
+
+/* ── favourite captains ── */
+test('matchDriver: favourites win; without favourites best-ETA still wins', () => {
+  const pool = [
+    { name: 'Amir', etaMin: 2, rating: 4.9 },
+    { name: 'Layla', etaMin: 5, rating: 4.7 }
+  ];
+  assert.equal(E.matchDriver(pool).name, 'Amir');
+  assert.equal(E.matchDriver(pool, ['Layla']).name, 'Layla', 'favourite beats faster ETA');
+  assert.equal(E.matchDriver(pool, ['Nobody']).name, 'Amir');
+});
+
+/* ── business expenses ── */
+test('expenseReport: filters month + business + completed, sums exactly, text report', () => {
+  const mk = (fare, business, status, ms) => ({
+    business, status, fare,
+    startedMs: ms, quote: { fromId: 'home', toId: 'work' }
+  });
+  const AUG = Date.UTC(2026, 7, 10), SEP = Date.UTC(2026, 8, 10);
+  const trips = [
+    mk(10.5, true, 'COMPLETED', AUG),
+    mk(4.25, true, 'COMPLETED', AUG),
+    mk(99, false, 'COMPLETED', AUG),   // personal
+    mk(50, true, 'CANCELLED', AUG),    // not completed
+    mk(70, true, 'COMPLETED', SEP)     // wrong month
+  ];
+  const r = E.expenseReport(trips, '2026-08');
+  assert.equal(r.count, 2);
+  assert.equal(r.total, 14.75);
+  assert.match(r.text, /Total: £14\.75 \(2 rides\)/);
+  assert.match(r.text, /2026-08-10 {2}Home → The Exchange {2}£10\.50/);
+});
+
 test('fmtMoney formats sign and pence', () => {
   assert.equal(E.fmtMoney(7.5), '£7.50');
   assert.equal(E.fmtMoney(-3), '−£3.00');
