@@ -589,5 +589,40 @@ service cloud.firestore {
     match /aios_disks/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
+
+    // ── Bloom — the social network that's on your side (bloom/) ───────────
+    // Anonymous-auth users. Live posts are public to signed-in users; every
+    // write is scoped to its author. Reactions are the one shared surface:
+    // any signed-in user may update a post, but ONLY the reactions map and
+    // the commentCount counter — never the text, author or timestamp.
+    match /bloom_users/{uid} {
+      allow read:  if signedIn();
+      allow write: if isUser(uid);
+    }
+    // Who each user follows — private to its owner.
+    match /bloom_follows/{uid} {
+      allow read, write: if isUser(uid);
+    }
+    match /bloom_posts/{postId} {
+      allow read:   if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.authorUid == request.auth.uid
+        && request.resource.data.text is string
+        && request.resource.data.text.size() <= 600;
+      allow update: if signedIn()
+        && ( resource.data.authorUid == request.auth.uid
+             || request.resource.data.diff(resource.data).affectedKeys()
+                  .hasOnly(['reactions', 'commentCount']) );
+      allow delete: if signedIn() && resource.data.authorUid == request.auth.uid;
+
+      match /comments/{commentId} {
+        allow read:   if signedIn();
+        allow create: if signedIn()
+          && request.resource.data.authorUid == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() <= 600;
+        allow delete: if signedIn() && resource.data.authorUid == request.auth.uid;
+      }
+    }
   }
 }
