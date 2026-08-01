@@ -176,6 +176,79 @@
     return RIDE_CLASSES.map(function (c) { return quote(fromId, toId, c.id, when); }).filter(Boolean);
   }
 
+  /* ── the REAL marketplace: rider ↔ captain protocol ─────────────────
+   * Pure state machine for a ride request travelling between real humans
+   * (two tabs via BroadcastChannel, or two devices via Firestore). The
+   * transport moves objects; every legal transition is decided HERE, so
+   * both sides always agree and every rule is unit-testable.            */
+  var MARKET_FLOW = ['OPEN', 'CLAIMED', 'ARRIVING', 'ARRIVED', 'IN_TRIP', 'COMPLETED'];
+  var MARKET_OPEN_MS = 20000; // an OPEN request expires after 20 s
+  function mkRideRequest(f, nowMs) {
+    if (!f || !f.id || !f.riderUid || !place(f.fromId) || !place(f.toId) ||
+        f.fromId === f.toId || !rideClass(f.classId) || !(f.fare > 0)) return null;
+    return {
+      id: String(f.id), riderUid: String(f.riderUid),
+      riderName: String(f.riderName || 'Rider').slice(0, 24),
+      fromId: f.fromId, toId: f.toId, classId: f.classId,
+      fare: Math.round(f.fare * 100) / 100,
+      status: 'OPEN', ts: nowMs, captainUid: null, captain: null
+    };
+  }
+  function validRequest(r) {
+    return !!(r && typeof r === 'object' && r.id && r.riderUid &&
+      place(r.fromId) && place(r.toId) && r.fromId !== r.toId &&
+      rideClass(r.classId) && r.fare > 0 &&
+      MARKET_FLOW.concat(['CANCELLED']).indexOf(r.status) !== -1);
+  }
+  function requestExpired(r, nowMs) {
+    return r.status === 'OPEN' && nowMs - r.ts > MARKET_OPEN_MS;
+  }
+  function marketClaim(r, captain, nowMs) {
+    if (!validRequest(r)) return { ok: false, why: 'bad request' };
+    if (r.status !== 'OPEN') return { ok: false, why: 'already ' + r.status.toLowerCase() };
+    if (requestExpired(r, nowMs)) return { ok: false, why: 'request expired' };
+    if (!captain || !captain.uid) return { ok: false, why: 'bad captain' };
+    if (captain.uid === r.riderUid) return { ok: false, why: 'you can\'t drive yourself' };
+    var next = JSON.parse(JSON.stringify(r));
+    next.status = 'CLAIMED';
+    next.captainUid = String(captain.uid);
+    next.captain = {
+      name: String(captain.name || 'Captain').slice(0, 24),
+      car: String(captain.car || 'Car').slice(0, 32),
+      plate: String(captain.plate || '—').slice(0, 12),
+      rating: typeof captain.rating === 'number' ? captain.rating : 5
+    };
+    return { ok: true, ride: next };
+  }
+  function marketAdvance(r, actorUid) {
+    if (!validRequest(r)) return { ok: false, why: 'bad request' };
+    if (r.status === 'OPEN') return { ok: false, why: 'not claimed yet' };
+    if (actorUid !== r.captainUid) return { ok: false, why: 'only the assigned captain can advance the trip' };
+    var i = MARKET_FLOW.indexOf(r.status);
+    if (i < 0 || i >= MARKET_FLOW.length - 1) return { ok: false, why: 'already ' + r.status.toLowerCase() };
+    var next = JSON.parse(JSON.stringify(r));
+    next.status = MARKET_FLOW[i + 1];
+    return { ok: true, ride: next };
+  }
+  function marketCancel(r, actorUid) {
+    if (!validRequest(r)) return { ok: false, why: 'bad request' };
+    if (actorUid !== r.riderUid) return { ok: false, why: 'only the rider can cancel' };
+    if (r.status === 'IN_TRIP' || r.status === 'COMPLETED') return { ok: false, why: 'too late to cancel' };
+    var next = JSON.parse(JSON.stringify(r));
+    next.status = 'CANCELLED';
+    return { ok: true, ride: next };
+  }
+  /* the rider's tab is the authority on races: first valid claim wins */
+  function marketResolveClaim(current, incoming, nowMs) {
+    if (!validRequest(incoming) || incoming.id !== current.id) return current;
+    if (current.status === 'OPEN' && incoming.status === 'CLAIMED' &&
+        incoming.captainUid && incoming.riderUid === current.riderUid &&
+        incoming.fare === current.fare && !requestExpired(current, nowMs)) {
+      return incoming;
+    }
+    return current;
+  }
+
   /* ── Orbit Wheels: docked bikes & e-scooters ────────────────────── */
   var WHEELS = [
     { id: 'bike',    name: 'Bike',      emoji: '🚲', unlock: 0.50, perMin: 0.18, kmh: 14, minFare: 1.50 },
@@ -690,7 +763,11 @@
   }
 
   return {
-    version: '1.3.0',
+    version: '2.0.0',
+    MARKET_FLOW: MARKET_FLOW, MARKET_OPEN_MS: MARKET_OPEN_MS,
+    mkRideRequest: mkRideRequest, validRequest: validRequest, requestExpired: requestExpired,
+    marketClaim: marketClaim, marketAdvance: marketAdvance, marketCancel: marketCancel,
+    marketResolveClaim: marketResolveClaim,
     WHEELS: WHEELS, wheelMode: wheelMode, STATION_IDS: STATION_IDS, isStation: isStation,
     stationDocks: stationDocks, wheelsQuote: wheelsQuote,
     fareTimeline: fareTimeline, cheapestWindow: cheapestWindow,

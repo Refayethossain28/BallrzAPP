@@ -484,6 +484,65 @@ test('expenseReport: filters month + business + completed, sums exactly, text re
   assert.match(r.text, /2026-08-10 {2}Home → The Exchange {2}£10\.50/);
 });
 
+/* ── the real marketplace protocol ── */
+const REQ = () => E.mkRideRequest({ id: 'R1', riderUid: 'u-rider', riderName: 'Rafa', fromId: 'home', toId: 'airport', classId: 'go', fare: 23.5 }, CALM);
+test('mkRideRequest: validates fields; rejects junk', () => {
+  const r = REQ();
+  assert.equal(r.status, 'OPEN');
+  assert.equal(r.fare, 23.5);
+  assert.ok(E.validRequest(r));
+  assert.equal(E.mkRideRequest({ id: 'x', riderUid: 'u', fromId: 'home', toId: 'home', classId: 'go', fare: 5 }, CALM), null);
+  assert.equal(E.mkRideRequest({ id: 'x', riderUid: 'u', fromId: 'home', toId: 'work', classId: 'warp', fare: 5 }, CALM), null);
+  assert.equal(E.mkRideRequest({ id: 'x', riderUid: 'u', fromId: 'home', toId: 'work', classId: 'go', fare: -5 }, CALM), null);
+  assert.ok(!E.validRequest({ status: 'HACKED' }));
+});
+test('claim: happy path; double-claim, self-drive and expired all rejected', () => {
+  const cap = { uid: 'u-cap', name: 'Layla', car: 'Corolla', plate: 'M1', rating: 4.9 };
+  const c1 = E.marketClaim(REQ(), cap, CALM + 1000);
+  assert.ok(c1.ok);
+  assert.equal(c1.ride.status, 'CLAIMED');
+  assert.equal(c1.ride.captainUid, 'u-cap');
+  assert.equal(E.marketClaim(c1.ride, { uid: 'u-other' }, CALM + 2000).ok, false, 'double claim');
+  assert.equal(E.marketClaim(REQ(), { uid: 'u-rider' }, CALM + 1000).ok, false, 'self-drive');
+  assert.equal(E.marketClaim(REQ(), cap, CALM + E.MARKET_OPEN_MS + 1).ok, false, 'expired');
+  assert.ok(E.requestExpired(REQ(), CALM + E.MARKET_OPEN_MS + 1));
+});
+test('advance: only the assigned captain, strictly in order, stops at COMPLETED', () => {
+  const cap = { uid: 'u-cap', name: 'Layla' };
+  let r = E.marketClaim(REQ(), cap, CALM + 1000).ride;
+  assert.equal(E.marketAdvance(r, 'u-rider').ok, false, 'rider cannot advance');
+  assert.equal(E.marketAdvance(r, 'u-impostor').ok, false, 'impostor cannot advance');
+  for (const want of ['ARRIVING', 'ARRIVED', 'IN_TRIP', 'COMPLETED']) {
+    r = E.marketAdvance(r, 'u-cap').ride;
+    assert.equal(r.status, want);
+  }
+  assert.equal(E.marketAdvance(r, 'u-cap').ok, false, 'complete is final');
+  assert.equal(E.marketAdvance(REQ(), 'u-cap').ok, false, 'cannot advance an unclaimed request');
+});
+test('cancel: rider only, and never once the trip has started', () => {
+  const cap = { uid: 'u-cap' };
+  const open = REQ();
+  assert.equal(E.marketCancel(open, 'u-cap').ok, false);
+  assert.ok(E.marketCancel(open, 'u-rider').ok);
+  let r = E.marketClaim(REQ(), cap, CALM + 1000).ride;
+  assert.ok(E.marketCancel(r, 'u-rider').ok, 'cancellable while claimed');
+  r = E.marketAdvance(r, 'u-cap').ride; // ARRIVING
+  r = E.marketAdvance(r, 'u-cap').ride; // ARRIVED
+  r = E.marketAdvance(r, 'u-cap').ride; // IN_TRIP
+  assert.equal(E.marketCancel(r, 'u-rider').ok, false, 'in-trip is too late');
+});
+test('claim race: the rider tab applies the FIRST valid claim, ignores the rest', () => {
+  const open = REQ();
+  const a = E.marketClaim(open, { uid: 'u-a', name: 'A' }, CALM + 1000).ride;
+  const b = E.marketClaim(open, { uid: 'u-b', name: 'B' }, CALM + 1000).ride;
+  let state = E.marketResolveClaim(open, a, CALM + 1500);
+  assert.equal(state.captainUid, 'u-a');
+  state = E.marketResolveClaim(state, b, CALM + 1600);
+  assert.equal(state.captainUid, 'u-a', 'second claim bounces');
+  const tampered = { ...a, fare: 999 };
+  assert.equal(E.marketResolveClaim(open, tampered, CALM + 1500).status, 'OPEN', 'fare tampering rejected');
+});
+
 test('fmtMoney formats sign and pence', () => {
   assert.equal(E.fmtMoney(7.5), '£7.50');
   assert.equal(E.fmtMoney(-3), '−£3.00');

@@ -4,7 +4,7 @@
 the world's super-apps great and combining their signature moves, then adding a
 few of its own. Zero-build, single-file, offline-first, installable PWA. Every
 rule that touches money or state lives in a pure, deterministic, clock-injected
-engine ([`engine.js`](./engine.js)) with 55 unit tests
+engine ([`engine.js`](./engine.js)) with 60 unit tests
 (`npm run test:orbit`).
 
 ## The research — who Orbit steals from, and what it does better
@@ -81,17 +81,44 @@ And the parts most of them *won't* do, which Orbit treats as features:
   gross, net, acceptance rate). The 80/20 split is unit-tested and mirrors the
   repo's ApexVIP dispatch economics.
 
+## 👤 REAL mode — two humans, one ride
+
+The marketplace is **real**, not just simulated. Tap **"Ask REAL captains"**
+when booking and your request goes out to actual humans running this app in
+Captain mode:
+
+- **Zero setup, one device**: open a second tab, go online as a Captain, and
+  accept — the request travels over `BroadcastChannel`. A real person claims
+  it, drives every status (on my way → arrived → start → complete), and earns
+  the real 80% into their wallet. The rider watches it live.
+- **Cross-device**: [`config.js`](./config.js) + 3 minutes of Firebase setup
+  ([`SETUP.md`](./SETUP.md)) and the same marketplace syncs over Firestore —
+  a rider on one phone, a captain on another. The marketplace rules are
+  enforced **server-side** in [`../firestore.rules`](../firestore.rules): the
+  fare and route are frozen at creation, a captain can only claim an OPEN
+  request as themselves, only the assigned captain advances the trip, only
+  the rider cancels.
+- **Honest protocol**: every legal transition is a pure engine function
+  (`marketClaim` / `marketAdvance` / `marketCancel` / `marketResolveClaim`) —
+  double-claims bounce, impostor captains are rejected, fare tampering is
+  ignored, claim races resolve first-wins on the rider's side — all
+  unit-tested. No takers in 20 s? The app says so and the simulated fleet
+  takes over, clearly labelled 🤖.
+
 ## Honesty note
 
-There is no server and no fleet: drivers, couriers and kitchens are a
-deterministic simulation shaped like the real market (per-km/per-min tariffs,
-rush-hour surge and traffic, bid floors, seeded driver pools). Same question,
-same answer — which is what makes every rule testable. All state stays on your
-device in `localStorage`.
+The simulated fleet (drivers, couriers, kitchens) remains a deterministic
+simulation shaped like the real market — and rides between real humans are
+clearly labelled 👤 REAL. The money is in-app demo credit, not a payment rail
+(Concierge in this repo shows the Stripe pattern to wire real billing), and
+there's no vetting or insurance behind captains — see the honest limits in
+[`SETUP.md`](./SETUP.md). All local state stays on your device in
+`localStorage`; cloud mode stores ride requests (no PII beyond a chosen
+display name) in Firestore.
 
 ## Run it
 
 ```sh
 open orbit/index.html    # or serve the repo and browse to /orbit/
-npm run test:orbit       # 55 engine tests
+npm run test:orbit       # 60 engine tests
 ```
