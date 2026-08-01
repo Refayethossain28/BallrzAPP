@@ -1,6 +1,6 @@
 /* Orbit Real service worker — cache-first shell; map tiles and live APIs
    (OSM, Nominatim, OSRM, Firebase) always go to the network. */
-var CACHE = 'orbit-real-v1';
+var CACHE = 'orbit-real-v2';
 var SHELL = ['.', 'index.html', '../engine.js', '../config.js', 'icon.svg', 'manifest.webmanifest'];
 
 self.addEventListener('install', function (e) {
