@@ -546,6 +546,41 @@ service cloud.firestore {
       allow delete: if signedIn() && resource.data.riderUid == request.auth.uid;
     }
 
+    // Orbit REAL rides (orbit/real/) — the real-world app: requests carry
+    // actual coordinates and are paid in cash to the captain. Same
+    // marketplace contract as orbit_rides, same frozen-fare guarantee —
+    // here the frozen fields are the geo points and the metered fare.
+    match /orbit_real_rides/{rideId} {
+      function rFrozen() {
+        return request.resource.data.fare == resource.data.fare
+          && request.resource.data.riderUid == resource.data.riderUid
+          && request.resource.data.from == resource.data.from
+          && request.resource.data.to == resource.data.to
+          && request.resource.data.classId == resource.data.classId;
+      }
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.riderUid == request.auth.uid
+        && request.resource.data.status == 'OPEN'
+        && request.resource.data.fare is number && request.resource.data.fare > 0;
+      allow update: if signedIn() && rFrozen() && (
+        ( resource.data.riderUid == request.auth.uid
+          && request.resource.data.status == 'CANCELLED'
+          && resource.data.status != 'IN_TRIP' && resource.data.status != 'COMPLETED' )
+        || ( resource.data.status == 'OPEN'
+             && request.resource.data.status == 'CLAIMED'
+             && request.resource.data.captainUid == request.auth.uid
+             && request.auth.uid != resource.data.riderUid )
+        || ( resource.data.captainUid == request.auth.uid
+             && request.resource.data.captainUid == request.auth.uid
+             && ( (resource.data.status == 'CLAIMED'  && request.resource.data.status == 'ARRIVING')
+               || (resource.data.status == 'ARRIVING' && request.resource.data.status == 'ARRIVED')
+               || (resource.data.status == 'ARRIVED'  && request.resource.data.status == 'IN_TRIP')
+               || (resource.data.status == 'IN_TRIP'  && request.resource.data.status == 'COMPLETED') ) )
+      );
+      allow delete: if signedIn() && resource.data.riderUid == request.auth.uid;
+    }
+
     // ── AIOS — the AI operating system (aios/) ────────────────────────────
     // Optional cross-device sync: AIOS mirrors a user's whole serialized disk
     // to one document keyed by their anonymous uid. It is private to its owner

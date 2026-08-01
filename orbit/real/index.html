@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Orbit Real — real rides between real people</title>
+<meta name="description" content="The real version of Orbit: real map, real places, real road distances, real humans driving — and cash fares metered honestly.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0b0e1a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+:root {
+  --bg: #0b0e1a; --panel: #141a2e; --panel2: #1b2340; --line: #262f52;
+  --text: #eef1fb; --dim: #9aa4c7; --faint: #5b6488;
+  --accent: #22d3a5; --accent2: #6c5cff; --gold: #f5c04c; --red: #ff5d73;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--text); font: 15px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; overscroll-behavior: none; }
+#app { max-width: 520px; margin: 0 auto; min-height: 100dvh; display: flex; flex-direction: column; }
+header { display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px; }
+.logo { font-weight: 800; font-size: 19px; }
+.logo span { color: var(--accent); }
+.tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: rgba(34,211,165,.15); color: var(--accent); }
+.tag.sim { background: rgba(245,192,76,.15); color: var(--gold); }
+main { flex: 1; padding: 0 16px calc(16px + env(safe-area-inset-bottom)); }
+h2 { font-size: 17px; margin: 14px 0 8px; }
+.dim { color: var(--dim); } .faint { color: var(--faint); font-size: 12px; } .small { font-size: 13px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px; margin-bottom: 12px; }
+.card.flat { background: var(--panel2); }
+.row { display: flex; align-items: center; gap: 10px; }
+.grow { flex: 1; min-width: 0; }
+.btn { display: block; width: 100%; border: none; border-radius: 14px; cursor: pointer; background: var(--accent); color: #06281e; font: inherit; font-weight: 800; padding: 14px; font-size: 15px; text-align: center; }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn.ghost { background: var(--panel2); color: var(--text); border: 1px solid var(--line); }
+.btn.mini { width: auto; padding: 8px 14px; font-size: 13px; border-radius: 10px; display: inline-block; }
+.btn.danger { background: var(--red); color: #fff; }
+input[type=text] { width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 12px; font: inherit; }
+label.f { display: block; font-size: 12px; color: var(--dim); margin: 10px 0 5px; font-weight: 600; }
+.kv { display: flex; justify-content: space-between; font-size: 13.5px; padding: 3px 0; }
+.kv span:first-child { color: var(--dim); }
+.total { font-weight: 800; font-size: 16px; }
+.bigmoney { font-size: 34px; font-weight: 800; }
+.center { text-align: center; } .mt { margin-top: 10px; } .mb { margin-bottom: 10px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.banner { border-radius: 12px; padding: 10px 12px; font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+.banner.ok { background: rgba(34,211,165,.1); color: var(--accent); border: 1px solid rgba(34,211,165,.3); }
+.banner.warn { background: rgba(245,192,76,.12); color: var(--gold); border: 1px solid rgba(245,192,76,.35); }
+.pillrow { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+.pillrow::-webkit-scrollbar { display: none; }
+.pill { flex: 0 0 auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; cursor: pointer; text-align: center; min-width: 92px; }
+.pill.on { border-color: var(--accent); background: rgba(34,211,165,.12); }
+.pill .em { font-size: 22px; } .pill .nm { font-weight: 700; font-size: 13px; margin-top: 2px; } .pill .pr { font-size: 12px; color: var(--dim); }
+.steps { list-style: none; }
+.steps li { display: flex; gap: 10px; padding: 6px 0; color: var(--faint); font-size: 13.5px; align-items: center; }
+.steps li::before { content: ''; width: 10px; height: 10px; border-radius: 50%; background: var(--line); flex: 0 0 auto; }
+.steps li.done { color: var(--dim); } .steps li.done::before { background: var(--accent); }
+.steps li.now { color: var(--text); font-weight: 700; } .steps li.now::before { background: var(--accent2); box-shadow: 0 0 0 4px rgba(108,92,255,.25); }
+#map { width: 100%; height: 260px; border-radius: 16px; border: 1px solid var(--line); display: block; background: #0e1327; touch-action: none; cursor: grab; }
+.mapwrap { position: relative; }
+.zoomctl { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.zoomctl button { width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--line); background: rgba(20,26,46,.9); color: var(--text); font-size: 18px; font-weight: 800; cursor: pointer; }
+.results { background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; margin-top: 6px; overflow: hidden; }
+.results div { padding: 10px 12px; font-size: 13.5px; cursor: pointer; border-bottom: 1px solid var(--line); }
+.results div:last-child { border-bottom: none; }
+.results div:hover { background: rgba(34,211,165,.08); }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 26px; z-index: 60; background: var(--panel2); border: 1px solid var(--line); color: var(--text); padding: 10px 16px; border-radius: 12px; font-size: 13.5px; font-weight: 600; opacity: 0; transition: opacity .25s; pointer-events: none; max-width: 90vw; text-align: center; }
+.toast.show { opacity: 1; }
+.item { display: flex; gap: 12px; align-items: center; padding: 12px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); margin-bottom: 10px; }
+.item .em { font-size: 24px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo">O<span>rbit</span> Real</div>
+    <span class="tag">👤 REAL ONLY</span>
+    <div class="grow"></div>
+    <a class="faint" href="../" style="color:var(--faint);text-decoration:none">demo ↗</a>
+  </header>
+  <main id="main"></main>
+  <div class="toast" id="toast"></div>
+</div>
+
+<script src="../config.js"></script>
+<script src="../engine.js"></script>
+<script>
+'use strict';
+var E = OrbitEngine;
+
+/* ── state ─────────────────────────────────────────────────────────── */
+var S = load();
+function load() {
+  try { var raw = localStorage.getItem('orbit-real-state'); if (raw) return JSON.parse(raw); } catch (e) {}
+  return { name: '', role: null, uid: null, rides: [], earnings: [] };
+}
+function save() { try { localStorage.setItem('orbit-real-state', JSON.stringify(S)); } catch (e) {} }
+function $(id) { return document.getElementById(id); }
+function money(n) { return E.fmtMoney(n); }
+function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function toast(msg) {
+  var t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._t); toast._t = setTimeout(function () { t.classList.remove('show'); }, 2600);
+}
+
+var ui = {
+  screen: 'role',           // role | rider | captain
+  center: { lat: 51.5074, lon: -0.1278 }, zoom: 14, // London until GPS says otherwise
+  gps: null, pick: null, dest: null, setMode: 'dest',
+  route: null, routeSrc: null, cls: 'go', fares: null,
+  req: null, capReqs: {}, capRide: null, capPos: null,
+  results: [], searching: false
+};
+
+/* ── real transport: BroadcastChannel + optional Firestore ─────────── */
+var Net = {
+  uid: null, bc: null, db: null, cloud: false, live: false,
+  init: function () {
+    if (!S.uid) { S.uid = 'u' + Math.random().toString(36).slice(2, 12); save(); }
+    this.uid = S.uid;
+    var self = this;
+    try {
+      this.bc = new BroadcastChannel('orbit-real-market');
+      this.bc.onmessage = function (e) { if (e.data && e.data.ride) onRide(e.data.ride); };
+      this.live = true;
+    } catch (e) {}
+    var cfg = (typeof ORBIT_FIREBASE_CONFIG !== 'undefined') && ORBIT_FIREBASE_CONFIG;
+    if (!cfg || !cfg.projectId || location.protocol === 'file:') return;
+    var V = '10.12.2', parts = ['app', 'auth', 'firestore'];
+    (function loadNext(i) {
+      if (i >= parts.length) { boot(); return; }
+      var s = document.createElement('script');
+      s.src = 'https://www.gstatic.com/firebasejs/' + V + '/firebase-' + parts[i] + '-compat.js';
+      s.onload = function () { loadNext(i + 1); };
+      s.onerror = function () {};
+      document.head.appendChild(s);
+    })(0);
+    function boot() {
+      try {
+        var app = firebase.apps && firebase.apps.length ? firebase.app() : firebase.initializeApp(cfg);
+        firebase.auth(app).signInAnonymously().then(function (cred) {
+          self.uid = S.uid = cred.user.uid; save();
+          self.db = firebase.firestore(app);
+          self.cloud = true;
+          self.db.collection('orbit_real_rides').where('ts', '>', Date.now() - 15 * 60000)
+            .onSnapshot(function (snap) {
+              snap.docChanges().forEach(function (ch) { onRide(ch.doc.data()); });
+            }, function () {});
+          render();
+        }).catch(function () {});
+      } catch (e) {}
+    }
+  },
+  publish: function (ride) {
+    if (this.bc) { try { this.bc.postMessage({ ride: ride }); } catch (e) {} }
+    if (this.cloud) { try { this.db.collection('orbit_real_rides').doc(ride.id).set(JSON.parse(JSON.stringify(ride))); } catch (e) {} }
+  }
+};
+
+function onRide(ride) {
+  if (!E.validRealRequest(ride)) return;
+  /* rider: my request's fate */
+  if (ui.req && ride.id === ui.req.id) {
+    if (ride.status === 'CLAIMED' && ui.req.status === 'OPEN') {
+      var resolved = E.marketResolveClaim(ui.req, ride, Date.now());
+      if (resolved.status === 'CLAIMED') {
+        ui.req = resolved;
+        Net.publish(resolved);
+        toast('👤 ' + resolved.captain.name + ' is coming — pay ' + money(resolved.fare) + ' in cash at the end');
+      }
+    } else if (ride.captainUid && ui.req.captainUid === ride.captainUid &&
+               E.MARKET_FLOW.indexOf(ride.status) > E.MARKET_FLOW.indexOf(ui.req.status)) {
+      ui.req = ride;
+      if (ride.status === 'COMPLETED') {
+        S.rides.unshift({ id: ride.id, from: ride.from.label, to: ride.to.label, fare: ride.fare, captain: ride.captain.name, ms: Date.now() });
+        save();
+      }
+    }
+    if (ui.screen === 'rider') render();
+    return;
+  }
+  /* captain: the open pool + my claimed ride's fate */
+  if (ride.riderUid !== Net.uid) {
+    if (ride.status === 'OPEN' && !E.realExpired(ride, Date.now())) ui.capReqs[ride.id] = ride;
+    else delete ui.capReqs[ride.id];
+    if (ui.capRide && ride.id === ui.capRide.id) {
+      if (ride.status === 'CLAIMED' && ride.captainUid !== Net.uid) { ui.capRide = null; toast('Another captain got there first'); }
+      else if (ride.status === 'CANCELLED') { ui.capRide = null; toast('The rider cancelled'); }
+    }
+    if (ui.screen === 'captain') render();
+  }
+}
+
+/* ── real map: OSM tiles on canvas ─────────────────────────────────── */
+var TILE = 256, tileCache = {};
+function lon2x(lon, z) { return (lon + 180) / 360 * Math.pow(2, z); }
+function lat2y(lat, z) { var r = lat * Math.PI / 180; return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * Math.pow(2, z); }
+function x2lon(x, z) { return x / Math.pow(2, z) * 360 - 180; }
+function y2lat(y, z) { var n = Math.PI - 2 * Math.PI * y / Math.pow(2, z); return 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n))); }
+function drawMap() {
+  var cv = $('map'); if (!cv) return;
+  var ctx = cv.getContext('2d');
+  var W = cv.width = cv.clientWidth * 2, H = cv.height = 520;
+  var z = ui.zoom;
+  var cx = lon2x(ui.center.lon, z) * TILE, cy = lat2y(ui.center.lat, z) * TILE;
+  var x0 = cx - W / 2, y0 = cy - H / 2;
+  ctx.fillStyle = '#0e1327'; ctx.fillRect(0, 0, W, H);
+  var t0x = Math.floor(x0 / TILE), t0y = Math.floor(y0 / TILE);
+  var t1x = Math.floor((x0 + W) / TILE), t1y = Math.floor((y0 + H) / TILE);
+  var max = Math.pow(2, z);
+  for (var tx = t0x; tx <= t1x; tx++) {
+    for (var ty = t0y; ty <= t1y; ty++) {
+      if (ty < 0 || ty >= max) continue;
+      var wx = ((tx % max) + max) % max;
+      var key = z + '/' + wx + '/' + ty;
+      var img = tileCache[key];
+      if (!img) {
+        img = tileCache[key] = new Image();
+        img.onload = function () { if ($('map')) drawMap(); };
+        img.src = 'https://tile.openstreetmap.org/' + key + '.png';
+      }
+      if (img.complete && img.naturalWidth) {
+        ctx.globalAlpha = 0.88; // dim tiles into the app's dark theme
+        ctx.drawImage(img, tx * TILE - x0, ty * TILE - y0, TILE, TILE);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = 'rgba(11,14,26,.35)';
+        ctx.fillRect(tx * TILE - x0, ty * TILE - y0, TILE, TILE);
+      }
+    }
+  }
+  function px(p) { return { x: lon2x(p.lon, z) * TILE - x0, y: lat2y(p.lat, z) * TILE - y0 }; }
+  if (ui.route && ui.route.coords) {
+    ctx.strokeStyle = '#22d3a5'; ctx.lineWidth = 5; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ui.route.coords.forEach(function (c, i) {
+      var p = px({ lat: c[1], lon: c[0] });
+      if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+    });
+    ctx.stroke();
+  }
+  ctx.font = '30px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  if (ui.gps) { var g = px(ui.gps); ctx.fillText('🔵', g.x, g.y + 14); }
+  if (ui.pick) { var a = px(ui.pick); ctx.fillText('📍', a.x, a.y + 4); }
+  if (ui.dest) { var b = px(ui.dest); ctx.fillText('🏁', b.x, b.y + 4); }
+  if (ui.screen === 'captain') {
+    Object.keys(ui.capReqs).forEach(function (k) {
+      var p = px(ui.capReqs[k].from);
+      ctx.fillText('🙋', p.x, p.y + 4);
+    });
+    if (ui.capPos) { var c2 = px(ui.capPos); ctx.fillText('🧢', c2.x, c2.y + 4); }
+  }
+}
+function mapWire() {
+  var cv = $('map'); if (!cv || cv._wired) return;
+  cv._wired = true;
+  var drag = null;
+  cv.addEventListener('pointerdown', function (e) { drag = { x: e.clientX, y: e.clientY, moved: false }; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener('pointermove', function (e) {
+    if (!drag) return;
+    var dx = (e.clientX - drag.x) * 2, dy = (e.clientY - drag.y) * 2;
+    if (Math.abs(dx) + Math.abs(dy) > 6) drag.moved = true;
+    drag.x = e.clientX; drag.y = e.clientY;
+    var z = ui.zoom;
+    ui.center = {
+      lon: x2lon(lon2x(ui.center.lon, z) - dx / TILE, z),
+      lat: y2lat(lat2y(ui.center.lat, z) - dy / TILE, z)
+    };
+    drawMap();
+  });
+  cv.addEventListener('pointerup', function (e) {
+    if (drag && !drag.moved && ui.screen === 'rider' && !ui.req) {
+      var rect = cv.getBoundingClientRect();
+      var mx = (e.clientX - rect.left) * 2, my = (e.clientY - rect.top) * (520 / rect.height);
+      var z = ui.zoom;
+      var cx = lon2x(ui.center.lon, z) * TILE - cv.width / 2, cy = lat2y(ui.center.lat, z) * TILE - 260;
+      var pt = { lon: x2lon((cx + mx) / TILE, z), lat: y2lat((cy + my) / TILE, z), label: 'Dropped pin' };
+      if (ui.setMode === 'pick') { ui.pick = pt; toast('Pickup set 📍'); } else { ui.dest = pt; toast('Destination set 🏁'); }
+      routeAndQuote();
+    }
+    drag = null;
+  });
+}
+function zoomBy(d) { ui.zoom = Math.max(3, Math.min(18, ui.zoom + d)); drawMap(); }
+
+/* ── real location, places, roads ──────────────────────────────────── */
+function useGPS(cb) {
+  if (!navigator.geolocation) { toast('No GPS on this device — tap the map instead'); return; }
+  navigator.geolocation.getCurrentPosition(function (pos) {
+    ui.gps = { lat: pos.coords.latitude, lon: pos.coords.longitude, label: 'My location' };
+    ui.center = { lat: ui.gps.lat, lon: ui.gps.lon };
+    if (cb) cb(ui.gps);
+    render();
+  }, function () { toast('Location blocked — tap the map to set points'); }, { enableHighAccuracy: true, timeout: 8000 });
+}
+function searchPlace(q) {
+  if (!q || q.length < 3) { ui.results = []; render(); return; }
+  ui.searching = true;
+  fetch('https://nominatim.openstreetmap.org/search?format=json&limit=5&q=' + encodeURIComponent(q))
+    .then(function (r) { return r.json(); })
+    .then(function (list) {
+      ui.searching = false;
+      ui.results = (list || []).map(function (x) {
+        return { lat: parseFloat(x.lat), lon: parseFloat(x.lon), label: x.display_name.split(',').slice(0, 2).join(',') };
+      });
+      render();
+    })
+    .catch(function () { ui.searching = false; ui.results = []; toast('Search needs internet'); render(); });
+}
+function pickResult(i) {
+  var r = ui.results[i]; if (!r) return;
+  ui.dest = r; ui.results = [];
+  ui.center = { lat: r.lat, lon: r.lon };
+  routeAndQuote();
+}
+function routeAndQuote() {
+  ui.route = null; ui.fares = null;
+  if (!ui.pick || !ui.dest) { render(); return; }
+  var a = ui.pick, b = ui.dest;
+  render();
+  fetch('https://router.project-osrm.org/route/v1/driving/' + a.lon + ',' + a.lat + ';' + b.lon + ',' + b.lat + '?overview=full&geometries=geojson')
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      var rt = j.routes && j.routes[0];
+      if (!rt) throw new Error('no route');
+      ui.route = { km: rt.distance / 1000, mins: rt.duration / 60, coords: rt.geometry.coordinates, src: 'real roads (OSRM)' };
+      quoteAll();
+    })
+    .catch(function () {
+      var km = E.geoKm(a.lat, a.lon, b.lat, b.lon) * 1.3; // honest fallback: haversine + winding
+      ui.route = { km: km, mins: (km / 26) * 60, coords: [[a.lon, a.lat], [b.lon, b.lat]], src: 'estimated (router unreachable)' };
+      quoteAll();
+    });
+}
+function quoteAll() {
+  var now = Date.now();
+  ui.fares = {};
+  E.RIDE_CLASSES.forEach(function (c) {
+    ui.fares[c.id] = E.realFare(Math.max(0.1, ui.route.km), Math.max(1, ui.route.mins), c.id, now);
+  });
+  render();
+}
+
+/* ── rider flow ────────────────────────────────────────────────────── */
+function requestRide() {
+  var f = ui.fares && ui.fares[ui.cls];
+  if (!f || !ui.pick || !ui.dest) return;
+  var req = E.mkRealRequest({
+    id: 'RL' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    riderUid: Net.uid, riderName: S.name || 'Rider',
+    from: ui.pick, to: ui.dest, km: ui.route.km,
+    classId: ui.cls, fare: f.total
+  }, Date.now());
+  if (!req) { toast('Could not build the request'); return; }
+  ui.req = req;
+  Net.publish(req);
+  clearInterval(ui.reqTimer);
+  ui.reqTimer = setInterval(function () {
+    if (!ui.req) { clearInterval(ui.reqTimer); return; }
+    if (ui.req.status === 'OPEN' && E.realExpired(ui.req, Date.now())) {
+      clearInterval(ui.reqTimer);
+      var cx = E.marketCancel(ui.req, Net.uid);
+      if (cx.ok) Net.publish(cx.ride);
+      ui.req = null;
+      toast('No captains answered — nobody was online near you. That\'s the honest truth of a young network.');
+      render(); return;
+    }
+    var el = $('reqCount');
+    if (el && ui.req.status === 'OPEN') {
+      var left = Math.max(0, Math.ceil((E.REAL_OPEN_MS - (Date.now() - ui.req.ts)) / 1000));
+      el.textContent = Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
+    }
+  }, 500);
+  render();
+}
+function cancelRequest() {
+  if (!ui.req) return;
+  var cx = E.marketCancel(ui.req, Net.uid);
+  if (!cx.ok) { toast(cx.why); return; }
+  Net.publish(cx.ride);
+  clearInterval(ui.reqTimer);
+  ui.req = null;
+  toast('Cancelled');
+  render();
+}
+
+/* ── captain flow ──────────────────────────────────────────────────── */
+function capAccept(id) {
+  var req = ui.capReqs[id]; if (!req) return;
+  var me = { uid: Net.uid, name: S.name || 'Captain', car: S.car || 'My car', plate: S.plate || '—', rating: 5 };
+  var c = E.marketClaim(req, me, Date.now());
+  if (!c.ok) { toast(c.why); delete ui.capReqs[id]; render(); return; }
+  ui.capRide = c.ride;
+  delete ui.capReqs[id];
+  Net.publish(c.ride);
+  render();
+}
+function capAdvance() {
+  if (!ui.capRide) return;
+  var a = E.marketAdvance(ui.capRide, Net.uid);
+  if (!a.ok) { toast(a.why); return; }
+  ui.capRide = a.ride;
+  Net.publish(a.ride);
+  if (a.ride.status === 'COMPLETED') {
+    S.earnings.unshift({ id: a.ride.id, from: a.ride.from.label, to: a.ride.to.label, fare: a.ride.fare, rider: a.ride.riderName, ms: Date.now() });
+    save();
+    toast('Collect ' + money(a.ride.fare) + ' in cash — it\'s all yours 💷');
+    setTimeout(function () { ui.capRide = null; render(); }, 2600);
+  }
+  render();
+}
+
+/* ── views ─────────────────────────────────────────────────────────── */
+function render() {
+  var m = $('main');
+  if (ui.screen === 'role') m.innerHTML = viewRole();
+  else if (ui.screen === 'rider') m.innerHTML = viewRider();
+  else m.innerHTML = viewCaptain();
+  if ($('map')) { mapWire(); drawMap(); }
+}
+function viewRole() {
+  return '<h2>Real rides between real people</h2>' +
+    '<div class="card small dim">This is the <b>real version</b> of Orbit: a real map, real addresses, fares metered from real road distances — and the only drivers are <b>real humans</b> running this app. Fares are paid <b>in cash</b> to your captain; Orbit takes nothing. ' +
+    (Net.cloud ? '<span class="tag">🌐 network: cross-device</span>' : Net.live ? '<span class="tag sim">📡 network: this device\'s tabs — see ../SETUP.md for cross-device</span>' : '') + '</div>' +
+    '<label class="f">Your first name (your counterpart sees it)</label>' +
+    '<input type="text" id="nameIn" maxlength="24" value="' + esc(S.name) + '" placeholder="e.g. Rafa">' +
+    '<div class="grid2 mt">' +
+    '<button class="btn" onclick="setRole(\'rider\')">🙋 I need a ride</button>' +
+    '<button class="btn ghost" onclick="setRole(\'captain\')">🧢 I\'ll drive</button></div>' +
+    '<div class="card flat small mt"><b>Honest limits</b><div class="dim mt">No vetting, no insurance, no payment protection — this connects consenting people who already trust each other (friends, family, a campus, an office). It is not a licensed taxi service. Check your local law before charging strangers for rides.</div></div>';
+}
+function setRole(r) {
+  var n = $('nameIn').value.trim();
+  if (!n) { toast('Tell your counterpart who you are — add your name'); return; }
+  S.name = n; save();
+  ui.screen = r;
+  if (r === 'captain') useGPS(function (g) { ui.capPos = g; });
+  else useGPS(function (g) { if (!ui.pick) { ui.pick = { lat: g.lat, lon: g.lon, label: 'My location' }; routeAndQuote(); } });
+  render();
+}
+function mapBlock() {
+  return '<div class="mapwrap"><canvas id="map"></canvas>' +
+    '<div class="zoomctl"><button onclick="zoomBy(1)">+</button><button onclick="zoomBy(-1)">−</button></div></div>';
+}
+function viewRider() {
+  if (ui.req) return viewRiderTrip();
+  var h = '<div class="row mb"><button class="btn mini ghost" onclick="ui.screen=\'role\';render()">←</button><h2 style="margin:0">🙋 Where to, ' + esc(S.name) + '?</h2></div>';
+  h += mapBlock();
+  h += '<div class="grid2 mt">' +
+    '<button class="btn mini ghost" style="width:100%" onclick="useGPS(function(g){ui.pick={lat:g.lat,lon:g.lon,label:\'My location\'};routeAndQuote()})">📍 Pickup = my location</button>' +
+    '<button class="btn mini ghost" style="width:100%" onclick="ui.setMode=ui.setMode===\'pick\'?\'dest\':\'pick\';render()">Tap map sets: ' + (ui.setMode === 'pick' ? '📍 pickup' : '🏁 destination') + '</button></div>';
+  h += '<label class="f">Destination — any real address or place</label>' +
+    '<input type="text" id="destIn" placeholder="Search the real world…" oninput="searchPlace(this.value)">';
+  if (ui.searching) h += '<div class="faint mt">Searching…</div>';
+  if (ui.results.length) h += '<div class="results">' + ui.results.map(function (r, i) {
+    return '<div onclick="pickResult(' + i + ')">📌 ' + esc(r.label) + '</div>';
+  }).join('') + '</div>';
+  h += '<div class="kv mt"><span>📍 ' + esc(ui.pick ? ui.pick.label : 'no pickup yet') + '</span><span>🏁 ' + esc(ui.dest ? ui.dest.label : 'no destination yet') + '</span></div>';
+  if (ui.pick && ui.dest && !ui.route) h += '<div class="faint center mt">Measuring the real roads…</div>';
+  if (ui.route && ui.fares) {
+    h += '<div class="banner ok">' + (Math.round(ui.route.km * 10) / 10) + ' km · ~' + Math.round(ui.route.mins) + ' min · ' + esc(ui.route.src) + '</div>';
+    h += '<div class="pillrow">' + E.RIDE_CLASSES.map(function (c) {
+      var f = ui.fares[c.id];
+      return '<div class="pill' + (c.id === ui.cls ? ' on' : '') + '" onclick="ui.cls=\'' + c.id + '\';render()">' +
+        '<div class="em">' + c.emoji + '</div><div class="nm">' + c.name + '</div><div class="pr">' + (f ? money(f.total) : '—') + '</div></div>';
+    }).join('') + '</div>';
+    var f = ui.fares[ui.cls];
+    if (f) {
+      h += '<div class="card mt">' + f.breakdown.map(function (l) {
+        return '<div class="kv"><span>' + esc(l.label) + '</span><span>' + money(l.amount) + '</span></div>';
+      }).join('') + '<div class="kv total"><span style="color:var(--text)">💷 Cash to your captain</span><span>' + money(f.total) + '</span></div></div>';
+      h += '<button class="btn" onclick="requestRide()">Request ' + E.rideClass(ui.cls).name + ' · ' + money(f.total) + ' cash</button>';
+      h += '<div class="faint center mt">Goes to real captains ' + (Net.cloud ? 'on any device' : 'in other tabs on this device') + ' for ' + Math.round(E.REAL_OPEN_MS / 60000) + ' min. No fake drivers here — if nobody answers, we say so.</div>';
+    }
+  }
+  if (S.rides.length) {
+    h += '<h2>Your real rides</h2>' + S.rides.slice(0, 5).map(function (r) {
+      return '<div class="item"><div class="em">🚗</div><div class="grow"><b>' + esc(r.from) + ' → ' + esc(r.to) + '</b><div class="faint">with ' + esc(r.captain) + ' · ' + new Date(r.ms).toLocaleString() + '</div></div><div class="total">' + money(r.fare) + '</div></div>';
+    }).join('');
+  }
+  return h;
+}
+function viewRiderTrip() {
+  var r = ui.req;
+  var h = mapBlock();
+  if (r.status === 'OPEN') {
+    h += '<div class="card mt center"><b>Asking real captains…</b>' +
+      '<div class="bigmoney mt" id="reqCount">' + Math.round(E.REAL_OPEN_MS / 60000) + ':00</div>' +
+      '<div class="dim small">' + esc(r.from.label) + ' → ' + esc(r.to.label) + ' · ' + money(r.fare) + ' cash</div>' +
+      '<div class="faint mt">' + (Net.cloud ? 'Every captain online can see this.' : 'Captains in other tabs of this browser can see this — for other devices, see ../SETUP.md.') + '</div>' +
+      '<button class="btn ghost mt" onclick="cancelRequest()">Cancel</button></div>';
+    return h;
+  }
+  var labels = { CLAIMED: 'is coming', ARRIVING: 'is on the way', ARRIVED: 'is outside 🚗', IN_TRIP: 'is driving you', COMPLETED: 'dropped you off 🎉' };
+  h += '<div class="card mt"><b>👤 ' + esc(r.captain.name) + ' ' + labels[r.status] + '</b>' +
+    '<div class="small dim">' + esc(r.captain.car) + (r.captain.plate !== '—' ? ' · ' + esc(r.captain.plate) : '') + '</div>' +
+    '<ul class="steps mt">' + E.MARKET_FLOW.slice(1).map(function (st) {
+      var i = E.MARKET_FLOW.indexOf(st), cur = E.MARKET_FLOW.indexOf(r.status);
+      var lbl = { CLAIMED: 'Captain matched', ARRIVING: 'On the way', ARRIVED: 'At your pickup', IN_TRIP: 'On the road', COMPLETED: 'Arrived' }[st];
+      return '<li class="' + (i < cur ? 'done' : i === cur ? 'now' : '') + '">' + lbl + '</li>';
+    }).join('') + '</ul>' +
+    '<div class="kv mt"><span>Verify your captain — ask for the PIN</span><span class="total">' + E.tripPin(r.id) + '</span></div></div>';
+  if (r.status === 'COMPLETED') {
+    h += '<div class="card center"><div class="total">💷 Pay ' + esc(r.captain.name) + ' ' + money(r.fare) + ' in cash</div>' +
+      '<div class="faint mt">That\'s the whole transaction — Orbit holds none of it.</div>' +
+      '<button class="btn mt" onclick="clearInterval(ui.reqTimer);ui.req=null;render()">Done</button></div>';
+  } else if (r.status !== 'IN_TRIP') {
+    h += '<button class="btn ghost" onclick="cancelRequest()">Cancel ride</button>';
+  }
+  return h;
+}
+function viewCaptain() {
+  var h = '<div class="row mb"><button class="btn mini ghost" onclick="ui.screen=\'role\';render()">←</button><h2 style="margin:0">🧢 Captain ' + esc(S.name) + '</h2></div>';
+  if (ui.capRide) {
+    var r = ui.capRide;
+    var nextLabel = { CLAIMED: '🚗 I\'m on my way', ARRIVING: '📍 I\'ve arrived', ARRIVED: '▶️ Rider is in — start', IN_TRIP: '🏁 Complete — collect cash' }[r.status];
+    h += mapBlock();
+    h += '<div class="card mt"><b>' + esc(r.riderName) + '</b> · ' + esc(r.from.label) + ' → ' + esc(r.to.label) +
+      '<div class="kv mt"><span>Cash to collect at the end</span><span class="total" style="color:var(--accent)">' + money(r.fare) + '</span></div>' +
+      '<div class="kv"><span>Their verify-PIN (say it to the rider)</span><span class="total">' + E.tripPin(r.id) + '</span></div>' +
+      (r.status !== 'COMPLETED'
+        ? '<button class="btn mt" onclick="capAdvance()">' + nextLabel + '</button>'
+        : '<div class="banner ok mt">Done — ' + money(r.fare) + ' cash, all yours.</div>') + '</div>';
+    return h;
+  }
+  h += mapBlock();
+  h += '<button class="btn mini ghost mt" onclick="useGPS(function(g){ui.capPos=g;render()})">📍 Centre on me</button>';
+  var reqs = Object.keys(ui.capReqs).map(function (k) { return ui.capReqs[k]; })
+    .filter(function (r) { return !E.realExpired(r, Date.now()); });
+  if (reqs.length) {
+    h += reqs.map(function (r) {
+      var away = ui.capPos ? E.geoKm(ui.capPos.lat, ui.capPos.lon, r.from.lat, r.from.lon) : null;
+      return '<div class="card" style="border-color:var(--accent)"><b>🙋 ' + esc(r.riderName) + '</b> <span class="tag">REAL · CASH</span>' +
+        '<div class="small dim mt">' + esc(r.from.label) + ' → ' + esc(r.to.label) + '<br>' + r.km + ' km trip' + (away != null ? ' · ' + away + ' km from you' : '') + '</div>' +
+        '<div class="kv mt"><span>Cash fare — 100% yours</span><span class="total" style="color:var(--accent)">' + money(r.fare) + '</span></div>' +
+        '<button class="btn mt" onclick="capAccept(\'' + esc(r.id) + '\')">Accept</button></div>';
+    }).join('');
+  } else {
+    h += '<div class="card mt center dim">You\'re online. Real requests appear here the moment a rider asks' +
+      (Net.cloud ? ' — from any device on the network.' : ' — from another tab of this browser (cross-device needs the 3-minute setup in ../SETUP.md).') + '</div>';
+  }
+  if (S.earnings.length) {
+    var total = 0; S.earnings.forEach(function (e2) { total += e2.fare; });
+    h += '<h2>Cash collected</h2><div class="card"><div class="kv"><span>' + S.earnings.length + ' real ride' + (S.earnings.length > 1 ? 's' : '') + '</span><span class="total">' + money(Math.round(total * 100) / 100) + '</span></div>' +
+      S.earnings.slice(0, 5).map(function (e2) {
+        return '<div class="kv"><span>' + esc(e2.from) + ' → ' + esc(e2.to) + ' · ' + esc(e2.rider) + '</span><span>' + money(e2.fare) + '</span></div>';
+      }).join('') + '</div>';
+  }
+  return h;
+}
+
+/* ── boot ──────────────────────────────────────────────────────────── */
+Net.init();
+render();
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  navigator.serviceWorker.register('sw.js').catch(function () {});
+}
+</script>
+</body>
+</html>

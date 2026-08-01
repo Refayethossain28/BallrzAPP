@@ -543,6 +543,54 @@ test('claim race: the rider tab applies the FIRST valid claim, ignores the rest'
   assert.equal(E.marketResolveClaim(open, tampered, CALM + 1500).status, 'OPEN', 'fare tampering rejected');
 });
 
+/* ── Orbit Real: real-world geo, fares and requests ── */
+test('geoKm: London→Paris is the real ~344 km; zero for same point', () => {
+  const km = E.geoKm(51.5074, -0.1278, 48.8566, 2.3522);
+  assert.ok(km > 330 && km < 355, 'got ' + km);
+  assert.equal(E.geoKm(51.5, -0.12, 51.5, -0.12), 0);
+});
+test('realFare: same tariff card as the demo, real inputs; breakdown sums', () => {
+  const f = E.realFare(10, 25, 'go', CALM);
+  const cls = E.rideClass('go');
+  const expected = Math.round((Math.max(cls.base + 10 * cls.perKm + 25 * cls.perMin, cls.minFare) + E.BOOKING_FEE) * 100) / 100;
+  assert.equal(f.total, expected);
+  const sum = f.breakdown.reduce((s, l) => s + l.amount, 0);
+  assert.ok(Math.abs(sum - f.total) < 0.011);
+  assert.ok(E.realFare(10, 25, 'go', RUSH).total > f.total, 'surge applies to real rides too');
+  assert.equal(E.realFare(0, 25, 'go', CALM), null);
+});
+test('mkRealRequest: validates geo points; km defaults to haversine', () => {
+  const r = E.mkRealRequest({
+    id: 'RL1', riderUid: 'u-r', riderName: 'Rafa',
+    from: { lat: 51.5074, lon: -0.1278, label: 'Trafalgar Square' },
+    to: { lat: 51.5033, lon: -0.1195, label: 'Westminster' },
+    classId: 'go', fare: 6.5
+  }, CALM);
+  assert.ok(E.validRealRequest(r));
+  assert.equal(r.kind, 'real');
+  assert.ok(r.km > 0.4 && r.km < 1.5, 'got ' + r.km);
+  assert.equal(E.mkRealRequest({ id: 'x', riderUid: 'u', from: { lat: 99, lon: 0, label: 'bad' }, to: { lat: 0, lon: 0, label: 'ok' }, classId: 'go', fare: 5 }, CALM), null, 'lat out of range');
+  assert.equal(E.mkRealRequest({ id: 'x', riderUid: 'u', from: { lat: 0, lon: 0 }, to: { lat: 1, lon: 1, label: 'ok' }, classId: 'go', fare: 5 }, CALM), null, 'label required');
+});
+test('real requests ride the SAME protocol: claim/advance/cancel guards hold', () => {
+  const mk = () => E.mkRealRequest({
+    id: 'RL2', riderUid: 'u-r', from: { lat: 51.5, lon: -0.12, label: 'A' },
+    to: { lat: 51.52, lon: -0.10, label: 'B' }, classId: 'go', fare: 8
+  }, CALM);
+  const c = E.marketClaim(mk(), { uid: 'u-c', name: 'Layla' }, CALM + 1000);
+  assert.ok(c.ok);
+  assert.equal(E.marketClaim(c.ride, { uid: 'u-x' }, CALM + 2000).ok, false);
+  assert.equal(E.marketAdvance(c.ride, 'u-x').ok, false);
+  let r = c.ride;
+  for (const want of ['ARRIVING', 'ARRIVED', 'IN_TRIP', 'COMPLETED']) {
+    r = E.marketAdvance(r, 'u-c').ride;
+    assert.equal(r.status, want);
+  }
+  assert.ok(!E.realExpired(mk(), CALM + E.REAL_OPEN_MS - 1), 'real window is 5 min');
+  assert.ok(E.realExpired(mk(), CALM + E.REAL_OPEN_MS + 1));
+  assert.equal(E.marketClaim(mk(), { uid: 'u-c' }, CALM + E.REAL_OPEN_MS + 1).ok, false);
+});
+
 test('fmtMoney formats sign and pence', () => {
   assert.equal(E.fmtMoney(7.5), '£7.50');
   assert.equal(E.fmtMoney(-3), '−£3.00');
