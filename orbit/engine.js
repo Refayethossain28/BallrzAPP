@@ -176,6 +176,65 @@
     return RIDE_CLASSES.map(function (c) { return quote(fromId, toId, c.id, when); }).filter(Boolean);
   }
 
+  /* ── Orbit Real: the same honest tariffs over the real world ────────
+   * The real app (orbit/real/) prices rides from ACTUAL road km/minutes
+   * (OSRM) between ACTUAL places (GPS + geocoding). The maths is the
+   * same tariff card as the demo city — real inputs, same honesty.     */
+  function geoKm(aLat, aLon, bLat, bLon) {
+    var R = 6371, dLat = (bLat - aLat) * Math.PI / 180, dLon = (bLon - aLon) * Math.PI / 180;
+    var s = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(aLat * Math.PI / 180) * Math.cos(bLat * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return Math.round(R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s)) * 10) / 10;
+  }
+  function realFare(km, mins, classId, when) {
+    var cls = rideClass(classId);
+    if (!cls || !(km > 0) || !(mins > 0)) return null;
+    var s = surgeAt(when);
+    var metered = cls.base + km * cls.perKm + mins * cls.perMin;
+    var surged = metered * s.mult;
+    var subtotal = Math.max(surged, cls.minFare);
+    var total = Math.round((subtotal + BOOKING_FEE) * 100) / 100;
+    var breakdown = [
+      { label: 'Base fare', amount: cls.base },
+      { label: (Math.round(km * 10) / 10) + ' km × £' + cls.perKm.toFixed(2), amount: Math.round(km * cls.perKm * 100) / 100 },
+      { label: Math.round(mins) + ' min × £' + cls.perMin.toFixed(2), amount: Math.round(mins * cls.perMin * 100) / 100 }
+    ];
+    if (s.mult !== 1) breakdown.push({ label: (s.reason || 'Demand') + ' ×' + s.mult.toFixed(1), amount: Math.round((surged - metered) * 100) / 100 });
+    if (subtotal > surged) breakdown.push({ label: 'Minimum fare top-up', amount: Math.round((subtotal - surged) * 100) / 100 });
+    breakdown.push({ label: 'Booking fee', amount: BOOKING_FEE });
+    return { classId: classId, km: Math.round(km * 10) / 10, mins: Math.round(mins), surge: s, total: total, breakdown: breakdown, co2g: Math.round(km * cls.co2) };
+  }
+  function validGeoPoint(p) {
+    return !!(p && typeof p === 'object' &&
+      typeof p.lat === 'number' && p.lat >= -90 && p.lat <= 90 &&
+      typeof p.lon === 'number' && p.lon >= -180 && p.lon <= 180 &&
+      typeof p.label === 'string' && p.label.length > 0);
+  }
+  var REAL_OPEN_MS = 5 * 60000; // real requests wait for real humans: 5 min
+  function mkRealRequest(f, nowMs) {
+    if (!f || !f.id || !f.riderUid || !validGeoPoint(f.from) || !validGeoPoint(f.to) ||
+        !rideClass(f.classId) || !(f.fare > 0)) return null;
+    return {
+      kind: 'real',
+      id: String(f.id), riderUid: String(f.riderUid),
+      riderName: String(f.riderName || 'Rider').slice(0, 24),
+      from: { lat: f.from.lat, lon: f.from.lon, label: String(f.from.label).slice(0, 80) },
+      to:   { lat: f.to.lat,   lon: f.to.lon,   label: String(f.to.label).slice(0, 80) },
+      km: f.km != null ? Math.round(f.km * 10) / 10 : geoKm(f.from.lat, f.from.lon, f.to.lat, f.to.lon),
+      classId: f.classId, fare: Math.round(f.fare * 100) / 100,
+      status: 'OPEN', ts: nowMs, captainUid: null, captain: null
+    };
+  }
+  function validRealRequest(r) {
+    return !!(r && typeof r === 'object' && r.kind === 'real' && r.id && r.riderUid &&
+      validGeoPoint(r.from) && validGeoPoint(r.to) && rideClass(r.classId) && r.fare > 0 &&
+      MARKET_FLOW.concat(['CANCELLED']).indexOf(r.status) !== -1);
+  }
+  function realExpired(r, nowMs) {
+    return r.status === 'OPEN' && nowMs - r.ts > REAL_OPEN_MS;
+  }
+
   /* ── the REAL marketplace: rider ↔ captain protocol ─────────────────
    * Pure state machine for a ride request travelling between real humans
    * (two tabs via BroadcastChannel, or two devices via Firestore). The
@@ -203,10 +262,13 @@
   function requestExpired(r, nowMs) {
     return r.status === 'OPEN' && nowMs - r.ts > MARKET_OPEN_MS;
   }
+  /* both request shapes (demo place-ids, real lat/lon) share one guard set */
+  function anyValid(r) { return r && r.kind === 'real' ? validRealRequest(r) : validRequest(r); }
+  function anyExpired(r, nowMs) { return r.kind === 'real' ? realExpired(r, nowMs) : requestExpired(r, nowMs); }
   function marketClaim(r, captain, nowMs) {
-    if (!validRequest(r)) return { ok: false, why: 'bad request' };
+    if (!anyValid(r)) return { ok: false, why: 'bad request' };
     if (r.status !== 'OPEN') return { ok: false, why: 'already ' + r.status.toLowerCase() };
-    if (requestExpired(r, nowMs)) return { ok: false, why: 'request expired' };
+    if (anyExpired(r, nowMs)) return { ok: false, why: 'request expired' };
     if (!captain || !captain.uid) return { ok: false, why: 'bad captain' };
     if (captain.uid === r.riderUid) return { ok: false, why: 'you can\'t drive yourself' };
     var next = JSON.parse(JSON.stringify(r));
@@ -221,7 +283,7 @@
     return { ok: true, ride: next };
   }
   function marketAdvance(r, actorUid) {
-    if (!validRequest(r)) return { ok: false, why: 'bad request' };
+    if (!anyValid(r)) return { ok: false, why: 'bad request' };
     if (r.status === 'OPEN') return { ok: false, why: 'not claimed yet' };
     if (actorUid !== r.captainUid) return { ok: false, why: 'only the assigned captain can advance the trip' };
     var i = MARKET_FLOW.indexOf(r.status);
@@ -231,7 +293,7 @@
     return { ok: true, ride: next };
   }
   function marketCancel(r, actorUid) {
-    if (!validRequest(r)) return { ok: false, why: 'bad request' };
+    if (!anyValid(r)) return { ok: false, why: 'bad request' };
     if (actorUid !== r.riderUid) return { ok: false, why: 'only the rider can cancel' };
     if (r.status === 'IN_TRIP' || r.status === 'COMPLETED') return { ok: false, why: 'too late to cancel' };
     var next = JSON.parse(JSON.stringify(r));
@@ -240,10 +302,10 @@
   }
   /* the rider's tab is the authority on races: first valid claim wins */
   function marketResolveClaim(current, incoming, nowMs) {
-    if (!validRequest(incoming) || incoming.id !== current.id) return current;
+    if (!anyValid(incoming) || incoming.id !== current.id) return current;
     if (current.status === 'OPEN' && incoming.status === 'CLAIMED' &&
         incoming.captainUid && incoming.riderUid === current.riderUid &&
-        incoming.fare === current.fare && !requestExpired(current, nowMs)) {
+        incoming.fare === current.fare && !anyExpired(current, nowMs)) {
       return incoming;
     }
     return current;
@@ -763,7 +825,10 @@
   }
 
   return {
-    version: '2.0.0',
+    version: '2.1.0',
+    geoKm: geoKm, realFare: realFare, validGeoPoint: validGeoPoint,
+    REAL_OPEN_MS: REAL_OPEN_MS, mkRealRequest: mkRealRequest,
+    validRealRequest: validRealRequest, realExpired: realExpired,
     MARKET_FLOW: MARKET_FLOW, MARKET_OPEN_MS: MARKET_OPEN_MS,
     mkRideRequest: mkRideRequest, validRequest: validRequest, requestExpired: requestExpired,
     marketClaim: marketClaim, marketAdvance: marketAdvance, marketCancel: marketCancel,
