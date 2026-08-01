@@ -212,11 +212,27 @@
       typeof p.label === 'string' && p.label.length > 0);
   }
   var REAL_OPEN_MS = 5 * 60000; // real requests wait for real humans: 5 min
+  /* three real job types share the one marketplace: rides, parcels, errands */
+  var REAL_JOB_TYPES = ['ride', 'parcel', 'errand'];
+  function realParcelFare(km, sizeId) {
+    var size = parcelSize(sizeId);
+    if (!size || !(km > 0)) return null;
+    return Math.round(Math.max((2.2 + km * 0.75) * size.mult, 3.5) * 100) / 100;
+  }
+  function validJobClass(jobType, classId) {
+    if (jobType === 'ride') return !!rideClass(classId);
+    if (jobType === 'parcel') return !!parcelSize(classId);
+    if (jobType === 'errand') return classId === 'errand';
+    return false;
+  }
   function mkRealRequest(f, nowMs) {
     if (!f || !f.id || !f.riderUid || !validGeoPoint(f.from) || !validGeoPoint(f.to) ||
-        !rideClass(f.classId) || !(f.fare > 0)) return null;
-    return {
-      kind: 'real',
+        !(f.fare > 0)) return null;
+    var jobType = f.jobType || 'ride';
+    if (REAL_JOB_TYPES.indexOf(jobType) === -1 || !validJobClass(jobType, f.classId)) return null;
+    if (jobType === 'errand' && !(typeof f.note === 'string' && f.note.trim().length > 0)) return null;
+    var r = {
+      kind: 'real', jobType: jobType,
       id: String(f.id), riderUid: String(f.riderUid),
       riderName: String(f.riderName || 'Rider').slice(0, 24),
       from: { lat: f.from.lat, lon: f.from.lon, label: String(f.from.label).slice(0, 80) },
@@ -225,10 +241,14 @@
       classId: f.classId, fare: Math.round(f.fare * 100) / 100,
       status: 'OPEN', ts: nowMs, captainUid: null, captain: null
     };
+    if (jobType === 'errand') r.note = String(f.note).trim().slice(0, 120);
+    return r;
   }
   function validRealRequest(r) {
     return !!(r && typeof r === 'object' && r.kind === 'real' && r.id && r.riderUid &&
-      validGeoPoint(r.from) && validGeoPoint(r.to) && rideClass(r.classId) && r.fare > 0 &&
+      validGeoPoint(r.from) && validGeoPoint(r.to) &&
+      validJobClass(r.jobType || 'ride', r.classId) && r.fare > 0 &&
+      (r.jobType !== 'errand' || (typeof r.note === 'string' && r.note.length > 0)) &&
       MARKET_FLOW.concat(['CANCELLED']).indexOf(r.status) !== -1);
   }
   function realExpired(r, nowMs) {
@@ -825,9 +845,10 @@
   }
 
   return {
-    version: '2.1.0',
+    version: '2.2.0',
     geoKm: geoKm, realFare: realFare, validGeoPoint: validGeoPoint,
-    REAL_OPEN_MS: REAL_OPEN_MS, mkRealRequest: mkRealRequest,
+    REAL_OPEN_MS: REAL_OPEN_MS, REAL_JOB_TYPES: REAL_JOB_TYPES,
+    realParcelFare: realParcelFare, validJobClass: validJobClass, mkRealRequest: mkRealRequest,
     validRealRequest: validRealRequest, realExpired: realExpired,
     MARKET_FLOW: MARKET_FLOW, MARKET_OPEN_MS: MARKET_OPEN_MS,
     mkRideRequest: mkRideRequest, validRequest: validRequest, requestExpired: requestExpired,

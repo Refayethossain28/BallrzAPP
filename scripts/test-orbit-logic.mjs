@@ -591,6 +591,36 @@ test('real requests ride the SAME protocol: claim/advance/cancel guards hold', (
   assert.equal(E.marketClaim(mk(), { uid: 'u-c' }, CALM + E.REAL_OPEN_MS + 1).ok, false);
 });
 
+/* ── real job types: parcels & errands on the same protocol ── */
+test('realParcelFare: same maths as the demo courier, real km; floor holds', () => {
+  const m = E.parcelSize('m');
+  assert.equal(E.realParcelFare(10, 'm'), Math.round((2.2 + 10 * 0.75) * m.mult * 100) / 100);
+  assert.equal(E.realParcelFare(0.1, 's'), 3.5, 'minimum');
+  assert.equal(E.realParcelFare(10, 'xl'), null);
+});
+test('job classes: rides need a ride class, parcels a size, errands the errand tag', () => {
+  assert.ok(E.validJobClass('ride', 'go'));
+  assert.ok(!E.validJobClass('ride', 'm'));
+  assert.ok(E.validJobClass('parcel', 'm'));
+  assert.ok(!E.validJobClass('parcel', 'go'));
+  assert.ok(E.validJobClass('errand', 'errand'));
+  assert.ok(!E.validJobClass('pizza', 'go'));
+});
+test('parcel & errand requests: validated, errands need a note, same guards apply', () => {
+  const geo = { from: { lat: 51.5, lon: -0.12, label: 'A' }, to: { lat: 51.52, lon: -0.1, label: 'B' } };
+  const parcel = E.mkRealRequest({ id: 'P1', riderUid: 'u-r', jobType: 'parcel', classId: 'm', fare: 7, ...geo }, CALM);
+  assert.ok(E.validRealRequest(parcel));
+  assert.equal(parcel.jobType, 'parcel');
+  assert.equal(E.mkRealRequest({ id: 'E1', riderUid: 'u-r', jobType: 'errand', classId: 'errand', fare: 5, ...geo }, CALM), null, 'errand without a note');
+  const errand = E.mkRealRequest({ id: 'E1', riderUid: 'u-r', jobType: 'errand', classId: 'errand', fare: 5, note: 'Milk + bread from the corner shop', ...geo }, CALM);
+  assert.ok(E.validRealRequest(errand));
+  assert.equal(errand.note, 'Milk + bread from the corner shop');
+  const c = E.marketClaim(parcel, { uid: 'u-c', name: 'Layla' }, CALM + 1000);
+  assert.ok(c.ok);
+  assert.equal(E.marketAdvance(c.ride, 'u-x').ok, false, 'impostor blocked on parcels too');
+  assert.ok(E.marketCancel(errand, 'u-r').ok);
+});
+
 test('fmtMoney formats sign and pence', () => {
   assert.equal(E.fmtMoney(7.5), '£7.50');
   assert.equal(E.fmtMoney(-3), '−£3.00');
