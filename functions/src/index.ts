@@ -475,6 +475,41 @@ async function sendSms(to: string, body: string): Promise<void> {
   if (!res.ok) logger.warn('Twilio', res.status, await res.text().catch(() => ''));
 }
 
+// FCM push to every device the client has registered (web SW tokens and the
+// iOS shell both write into fcm_tokens/{uid}: legacy single `token` field plus
+// a `tokens` array). Dead registrations are pruned so the doc self-heals as
+// devices are wiped or reinstalled.
+async function sendPush(uid: string, title: string, body: string, data: Record<string, string>): Promise<void> {
+  if (!uid) return;
+  const ref = admin.firestore().collection('fcm_tokens').doc(uid);
+  const snap = await ref.get();
+  if (!snap.exists) return;
+  const d = snap.data() || {};
+  const tokens = Array.from(new Set([
+    ...(Array.isArray(d.tokens) ? d.tokens : []),
+    ...(typeof d.token === 'string' && d.token ? [d.token] : []),
+  ])).filter((t): t is string => typeof t === 'string' && t.length > 0);
+  if (!tokens.length) return;
+  const res = await admin.messaging().sendEachForMulticast({
+    tokens,
+    notification: { title, body },
+    data,
+    apns: { payload: { aps: { sound: 'default' } } },
+  });
+  const dead = tokens.filter((_, i) => {
+    const err = res.responses[i].error;
+    return !!err && /not-registered|invalid-registration|invalid-argument/i.test(`${err.code} ${err.message}`);
+  });
+  if (dead.length) {
+    await ref.set({ tokens: admin.firestore.FieldValue.arrayRemove(...dead) }, { merge: true }).catch(() => {});
+    // The legacy field can hold a dead token too — clear it rather than resend forever.
+    if (typeof d.token === 'string' && dead.includes(d.token)) {
+      await ref.set({ token: admin.firestore.FieldValue.delete() }, { merge: true }).catch(() => {});
+    }
+  }
+  logger.info('push sent', { uid, devices: tokens.length - dead.length, pruned: dead.length });
+}
+
 export const onBookingWrite = onDocumentWritten(
   { document: 'bookings/{bookingId}', secrets: [SENDGRID_API_KEY, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, SQUARE_ACCESS_TOKEN], region: 'us-central1' },
   async (event) => {
@@ -586,8 +621,14 @@ export const onBookingWrite = onDocumentWritten(
     const a = after as Booking;
     const email = a.clientEmail || a.email || '';
     const phone = a.clientPhone || a.phone || '';
+    const clientUid = typeof (a as Record<string, unknown>).clientId === 'string' ? String((a as Record<string, unknown>).clientId) : '';
     try {
-      await Promise.all([ sendEmail(email, subject, text), sendSms(phone, `ApexVIP: ${text}`) ]);
+      await Promise.all([
+        sendEmail(email, subject, text),
+        sendSms(phone, `ApexVIP: ${text}`),
+        sendPush(clientUid, subject, text, { ref: String(a.ref || event.params.bookingId), kind, screen: 'trips' })
+          .catch((err) => logger.warn('push', errMessage(err))),
+      ]);
       logger.info('booking notification sent', { kind, ref: a.ref || event.params.bookingId });
     } catch (err) {
       logger.error('onBookingWrite', errMessage(err));

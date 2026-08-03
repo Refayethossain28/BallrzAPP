@@ -944,6 +944,42 @@ function haptic(style) {
   }
 }
 
+// ── Native push (iOS shell) ────────────────────────────────────────────────
+// Inside the Capacitor shell the PushNotifications plugin handles permission,
+// APNs registration and notification taps; the AppDelegate maps the APNs token
+// to an FCM token before the 'registration' event fires, so what we store in
+// fcm_tokens/{uid} is directly sendable by the backend. Resolves true when the
+// native shell owns push (even if permission was declined) so the caller never
+// also runs the web service-worker path.
+function registerNativePush(){
+  const cap=window.Capacitor;
+  const PN=cap&&cap.isNativePlatform&&cap.isNativePlatform()&&cap.Plugins&&cap.Plugins.PushNotifications;
+  if(!PN)return Promise.resolve(false);
+  const saveToken=v=>{
+    if(!v||typeof auth==='undefined'||!auth||!auth.currentUser)return;
+    db.collection('fcm_tokens').doc(auth.currentUser.uid).set({
+      tokens:firebase.firestore.FieldValue.arrayUnion(v),
+      platform:'ios',
+      updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+    },{merge:true}).catch(reportError);
+  };
+  // Listeners survive re-auth; register them once per page load.
+  if(!state._pushListeners){
+    state._pushListeners=true;
+    PN.addListener('registration',t=>saveToken(t&&t.value));
+    PN.addListener('registrationError',e=>reportError(new Error('push registration: '+JSON.stringify(e||{}))));
+    PN.addListener('pushNotificationActionPerformed',a=>{
+      const d=(a&&a.notification&&a.notification.data)||{};
+      go(d.screen||'trips');
+    });
+  }
+  return PN.checkPermissions()
+    .then(p=>p&&p.receive==='prompt'?PN.requestPermissions():p)
+    .then(p=>{ if(p&&p.receive==='granted')return PN.register(); })
+    .then(()=>true)
+    .catch(e=>{reportError(e);return true;});
+}
+
 // ── Reliability: lightweight crash reporting ──────────────────────────────
 // Keeps the last 50 errors on-device and (when available) writes to a Firestore
 // `errors` collection. Swap in Sentry/Crashlytics later via the same entry point.
@@ -6725,8 +6761,11 @@ if(FIREBASE_ENABLED){
       } else {
         render();
       }
-      // Register FCM push token
-      if('serviceWorker' in navigator && FIREBASE_ENABLED){
+      // Register FCM push token — the native iOS shell first (Capacitor
+      // bridge → APNs → FCM via FirebaseMessaging in the AppDelegate); the
+      // browser service-worker path otherwise. Both land in fcm_tokens/{uid}.
+      if(FIREBASE_ENABLED)registerNativePush().then(native=>{
+        if(native||!('serviceWorker' in navigator))return;
         navigator.serviceWorker.register('firebase-messaging-sw.js')
           .then(reg=>{
             try{
@@ -6737,13 +6776,14 @@ if(FIREBASE_ENABLED){
               }).then(token=>{
                 if(token&&auth.currentUser){
                   db.collection('fcm_tokens').doc(auth.currentUser.uid).set({
-                    token,updatedAt:firebase.firestore.FieldValue.serverTimestamp()
-                  }).catch(reportError);
+                    token,tokens:firebase.firestore.FieldValue.arrayUnion(token),
+                    updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+                  },{merge:true}).catch(reportError);
                 }
               }).catch(reportError);
             }catch(e){}
           }).catch(reportError);
-      }
+      });
     }else{
       state.user=null;
       if(_unsub){_unsub();_unsub=null;}
