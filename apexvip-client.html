@@ -911,6 +911,23 @@ function showToast(msg, type='info', dur=3200) {
 }
 
 function haptic(style) {
+  // Inside the iOS shell the Capacitor bridge is injected into this page —
+  // route through the Taptic Engine there, since iOS has no navigator.vibrate.
+  const _cap = window.Capacitor;
+  if (_cap && _cap.isNativePlatform && _cap.isNativePlatform() && _cap.Plugins && _cap.Plugins.Haptics) {
+    const H = _cap.Plugins.Haptics;
+    const seqs = {
+      light:['L'], medium:['M'], heavy:['H'], success:['S'], error:['E'],
+      confirm:['M','M','H'], assigned:['L','M'], enroute:['L','L'],
+      arrived:['H','H','H'], onboard:['L'], complete:['M','M','H']
+    };
+    (seqs[style]||seqs.light).forEach((k, i) => setTimeout(() => {
+      if (k === 'S') H.notification({ type: 'SUCCESS' });
+      else if (k === 'E') H.notification({ type: 'ERROR' });
+      else H.impact({ style: k === 'L' ? 'LIGHT' : k === 'M' ? 'MEDIUM' : 'HEAVY' });
+    }, i * 140));
+    return;
+  }
   if (navigator.vibrate) {
     const patterns = {
       light:[8], medium:[20], heavy:[35], success:[10,40,20], error:[30,50,30],
