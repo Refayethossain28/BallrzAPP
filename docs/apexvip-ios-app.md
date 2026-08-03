@@ -22,6 +22,7 @@ inside a WKWebView, with native plugins bridged in.
 | Haptics | `haptic()` in the client detects the Capacitor bridge and plays real Taptic Engine sequences (iOS Safari has no `navigator.vibrate`, so this is native-only) |
 | Status bar / splash screen / app lifecycle plugins | Installed and registered in the Podfile |
 | Push notifications plugin | Installed — needs the Xcode capability + APNs key (below) |
+| Push token registration | **Wired end-to-end.** The client requests permission after sign-in, the AppDelegate exchanges the APNs token for an FCM token (FirebaseMessaging pod), and the token is stored in `fcm_tokens/{uid}` alongside web tokens. The backend's `onBookingWrite` now sends a push (with email/SMS) on every lifecycle event — confirmed, chauffeur assigned, en route, completed — and prunes dead tokens automatically. Tapping a notification deep-links to the trips screen. |
 
 ## Building on a Mac (first time)
 
@@ -51,10 +52,12 @@ In Xcode:
    **upload the .p8 key**.
 3. Register the iOS app (`uk.apexvip.app`) in Firebase console → Project
    settings → Add app → iOS, and drop the generated `GoogleService-Info.plist`
-   into `ios-app/ios/App/App/` (add to the Xcode target).
-4. Client-side registration (Capacitor `PushNotifications.register()` →
-   send the device token to Firestore) is the next code task — the plugin is
-   already in the binary.
+   into `ios-app/ios/App/App/` (add it to the App target in Xcode).
+4. The code side is already done: the AppDelegate configures Firebase and
+   exchanges the APNs token for an FCM token; the client stores it in
+   `fcm_tokens/{uid}` after sign-in; `onBookingWrite` sends the pushes.
+   The AppDelegate is guarded — the app runs fine before the plist exists,
+   push just stays off.
 
 ## App Store review notes (guideline 4.2 — "minimum functionality")
 
