@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Charter — mint your own preferred convertible stock</title>
+<meta name="description" content="Create a series of convertible preferred stock: set the term sheet, get the certificate, and see the liquidation waterfall, conversion breakeven, anti-dilution maths and cap table — all on-device.">
+<meta name="theme-color" content="#0b0e17">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Charter">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b0e17;
+    --ink: #e8ecf6;
+    --dim: #93a0c0;
+    --faint: #6b779a;
+    --line: rgba(255,255,255,0.09);
+    --card: rgba(255,255,255,0.04);
+    --gold: #f5c04a;
+    --teal: #39e6b4;
+    --blue: #6e8bff;
+    --red: #ff7a7a;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; }
+  body {
+    min-height: 100vh;
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(1200px 800px at 70% -10%, #241d33, var(--bg) 60%) fixed;
+    color: var(--ink);
+    padding: max(20px, env(safe-area-inset-top)) 18px max(40px, env(safe-area-inset-bottom));
+  }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  header { margin-bottom: 6px; }
+  h1 { font-size: 26px; margin: 0; letter-spacing: -0.02em; }
+  .sub { color: var(--dim); margin: 3px 0 0; font-size: 14px; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    padding: 18px; margin-top: 18px;
+  }
+  h2 { font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); margin: 0 0 12px; }
+  .hint { color: var(--faint); font-size: 12.5px; margin: 6px 0 0; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+  label.field { display: block; font-size: 12.5px; color: var(--dim); }
+  label.field b { display: block; margin-bottom: 4px; font-weight: 600; }
+  input[type=text], input[type=number], input[type=date], select {
+    width: 100%; font: inherit; font-size: 15px; color: var(--ink);
+    background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 10px;
+    padding: 9px 11px; outline: none;
+  }
+  input:focus, select:focus { border-color: rgba(245,192,74,0.55); }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); margin-top: 22px; }
+  .check input { width: 17px; height: 17px; accent-color: var(--gold); }
+
+  button {
+    font: inherit; font-size: 14px; font-weight: 650; cursor: pointer; color: var(--ink);
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 9px 14px;
+  }
+  button:hover { border-color: rgba(245,192,74,0.5); }
+  button.primary { background: linear-gradient(135deg, rgba(245,192,74,0.25), rgba(245,192,74,0.1)); border-color: rgba(245,192,74,0.55); }
+  .btnrow { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+
+  /* ---- the certificate ---- */
+  .certificate {
+    border: 3px double var(--gold); border-radius: 14px; padding: 26px 22px;
+    background:
+      radial-gradient(600px 300px at 50% -20%, rgba(245,192,74,0.10), transparent 70%),
+      repeating-linear-gradient(45deg, rgba(245,192,74,0.025) 0 8px, transparent 8px 16px),
+      rgba(0,0,0,0.25);
+    text-align: center; position: relative;
+  }
+  .cert-no { position: absolute; top: 12px; right: 16px; font-size: 11.5px; letter-spacing: .12em; color: var(--faint); }
+  .cert-shares-badge { position: absolute; top: 12px; left: 16px; font-size: 11.5px; letter-spacing: .12em; color: var(--faint); }
+  .cert-kicker { font-size: 11px; letter-spacing: .35em; text-transform: uppercase; color: var(--gold); }
+  .cert-company { font-size: 30px; font-weight: 800; letter-spacing: 0.01em; margin: 8px 0 2px; }
+  .cert-series { font-size: 14px; color: var(--dim); letter-spacing: .12em; text-transform: uppercase; }
+  .cert-body { max-width: 560px; margin: 16px auto 0; font-size: 14.5px; color: var(--ink); }
+  .cert-body b { color: var(--gold); }
+  .cert-terms { display: flex; justify-content: center; gap: 18px; flex-wrap: wrap; margin-top: 16px; font-size: 12px; color: var(--dim); }
+  .cert-terms span b { color: var(--ink); display: block; font-size: 13.5px; }
+  .cert-sigs { display: flex; justify-content: space-between; gap: 24px; max-width: 520px; margin: 26px auto 0; }
+  .cert-sig { flex: 1; border-top: 1px solid var(--line); padding-top: 6px; font-size: 11.5px; color: var(--faint); }
+  .cert-seal {
+    width: 74px; height: 74px; border-radius: 50%; margin: 18px auto 0;
+    border: 2px solid var(--gold); display: flex; align-items: center; justify-content: center;
+    font-size: 30px; background: radial-gradient(circle at 35% 30%, rgba(245,192,74,0.25), rgba(245,192,74,0.05));
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--dim); font-size: 12px; letter-spacing: .05em; text-transform: uppercase; }
+  td.term { color: var(--dim); white-space: nowrap; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  .readout { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 12px; }
+  .stat { background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+  .stat .k { font-size: 11.5px; color: var(--faint); letter-spacing: .05em; text-transform: uppercase; }
+  .stat .v { font-size: 18px; font-weight: 750; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .stat .v.gold { color: var(--gold); }
+  .stat .v.teal { color: var(--teal); }
+  .stat .v.blue { color: var(--blue); }
+
+  input[type=range] { width: 100%; accent-color: var(--gold); }
+  .slider-row { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+  .slider-row .val { min-width: 110px; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+  canvas { width: 100%; height: 240px; display: block; margin-top: 12px; border-radius: 12px; background: rgba(0,0,0,0.25); border: 1px solid var(--line); }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12.5px; color: var(--dim); margin-top: 8px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+
+  .bar { height: 26px; border-radius: 8px; overflow: hidden; display: flex; border: 1px solid var(--line); margin-top: 10px; }
+  .bar > div { display: flex; align-items: center; padding: 0 8px; font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; }
+  .bar .common { background: rgba(110,139,255,0.35); }
+  .bar .pref { background: rgba(245,192,74,0.4); }
+
+  .adrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-top: 12px; }
+  .adcard { background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 12px; padding: 12px; font-size: 13px; }
+  .adcard.active { border-color: rgba(245,192,74,0.6); }
+  .adcard .name { font-weight: 700; margin-bottom: 4px; }
+  .adcard .cp { font-size: 17px; font-weight: 750; color: var(--gold); font-variant-numeric: tabular-nums; }
+  .adcard .d { color: var(--faint); font-size: 12px; margin-top: 3px; }
+
+  ul.saved { list-style: none; margin: 0; padding: 0; }
+  ul.saved li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  ul.saved li .meta { color: var(--faint); font-size: 12.5px; }
+  ul.saved li b { flex: 1; }
+  ul.saved button { padding: 5px 10px; font-size: 12.5px; }
+  .empty { color: var(--faint); font-size: 13.5px; }
+
+  .note { font-size: 13px; color: var(--dim); border-left: 3px solid var(--gold); padding: 2px 0 2px 12px; margin-top: 18px; }
+
+  @media print {
+    body { background: #fff; color: #111; padding: 0; }
+    .no-print { display: none !important; }
+    .card { border: none; padding: 0; margin: 0 0 24px; }
+    .certificate { border-color: #b8860b; color: #111; background: #fffdf5; }
+    .certificate, .cert-body, .cert-terms span b { color: #111; }
+    .cert-kicker { color: #b8860b; }
+    .cert-company { color: #111; }
+    table, th, td { color: #111; border-color: #ddd; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>📜 Charter</h1>
+    <p class="sub">Mint your own preferred convertible stock — set the terms, get the certificate, see what it's worth at every exit.</p>
+  </header>
+
+  <section class="card no-print" aria-label="The deal">
+    <h2>The deal</h2>
+    <div class="grid">
+      <label class="field"><b>Company</b><input type="text" id="company" value="Ballrz Ltd"></label>
+      <label class="field"><b>Series name</b><input type="text" id="seriesName" value="Series A Preferred"></label>
+      <label class="field"><b>Issued to (holder)</b><input type="text" id="holder" value="The Investor"></label>
+      <label class="field"><b>Issue date</b><input type="date" id="issueDate"></label>
+      <label class="field"><b>Investment (£)</b><input type="number" id="investment" value="1000000" min="1" step="10000"></label>
+      <label class="field"><b>Pre-money valuation (£)</b><input type="number" id="preMoney" value="4000000" min="1" step="100000"></label>
+      <label class="field"><b>Founders' common shares</b><input type="number" id="commonShares" value="1000000" min="1" step="1000"></label>
+      <label class="field"><b>Dividend (% / yr)</b><input type="number" id="dividendPct" value="8" min="0" step="0.5"></label>
+      <label class="check"><input type="checkbox" id="cumulative" checked> Cumulative dividends</label>
+      <label class="field"><b>Liquidation preference (×)</b>
+        <select id="prefMultiple">
+          <option value="1" selected>1× — market standard</option>
+          <option value="1.5">1.5×</option>
+          <option value="2">2×</option>
+          <option value="3">3×</option>
+        </select>
+      </label>
+      <label class="field"><b>Participation</b>
+        <select id="participation">
+          <option value="none" selected>Non-participating (preference OR convert)</option>
+          <option value="full">Participating (preference AND pro-rata)</option>
+          <option value="capped">Participating, capped</option>
+        </select>
+      </label>
+      <label class="field" id="capField" style="display:none"><b>Participation cap (× investment)</b><input type="number" id="participationCap" value="3" min="1" step="0.5"></label>
+      <label class="field"><b>Anti-dilution</b>
+        <select id="antiDilution">
+          <option value="broad" selected>Broad-based weighted average</option>
+          <option value="ratchet">Full ratchet</option>
+          <option value="none">None</option>
+        </select>
+      </label>
+      <label class="field"><b>Years held (dividend accrual)</b><input type="number" id="yearsHeld" value="3" min="0" step="0.5"></label>
+    </div>
+    <div class="btnrow">
+      <button class="primary" id="saveBtn">💾 Save this instrument</button>
+      <button id="printBtn">🖨 Print certificate &amp; term sheet</button>
+    </div>
+  </section>
+
+  <section class="card" aria-label="Stock certificate">
+    <div class="certificate" id="certificate"></div>
+  </section>
+
+  <section class="card" aria-label="Term sheet">
+    <h2>Term sheet</h2>
+    <table id="termSheet"></table>
+  </section>
+
+  <section class="card no-print" aria-label="Exit waterfall">
+    <h2>Exit waterfall — what is it worth?</h2>
+    <p class="hint">Drag the exit value. At every exit the holder takes whichever pays more: the liquidation preference route, or converting to common for a pro-rata share.</p>
+    <div class="slider-row">
+      <input type="range" id="exitSlider" min="0" max="100" value="40" aria-label="Exit value">
+      <div class="val" id="exitVal"></div>
+    </div>
+    <div class="readout" id="waterfallReadout"></div>
+    <canvas id="chart" width="900" height="280" role="img" aria-label="Preferred and common payout versus exit value"></canvas>
+    <div class="legend">
+      <span><i style="background:var(--gold)"></i>Preferred payout</span>
+      <span><i style="background:var(--blue)"></i>Common payout</span>
+      <span><i style="background:var(--teal)"></i>Conversion breakeven</span>
+      <span><i style="background:var(--red)"></i>Chosen exit</span>
+    </div>
+  </section>
+
+  <section class="card no-print" aria-label="Down round lab">
+    <h2>Down-round lab — anti-dilution in action</h2>
+    <p class="hint">A later round priced below the conversion price triggers the protection. Compare what each regime does to the conversion price.</p>
+    <div class="grid">
+      <label class="field"><b>New round price (£ / share)</b><input type="number" id="drPrice" value="2" min="0.01" step="0.25"></label>
+      <label class="field"><b>New shares issued</b><input type="number" id="drShares" value="500000" min="1" step="10000"></label>
+    </div>
+    <div class="adrow" id="adCompare"></div>
+  </section>
+
+  <section class="card no-print" aria-label="Cap table">
+    <h2>Cap table — as converted</h2>
+    <div id="capTable"></div>
+  </section>
+
+  <section class="card no-print" aria-label="Saved instruments">
+    <h2>Saved instruments</h2>
+    <ul class="saved" id="savedList"></ul>
+  </section>
+
+  <p class="note no-print"><b>Honesty note.</b> Charter models the standard economics of venture preferred stock — the real thing is created by a company's board, its articles and a lawyer, not an app. Every figure here is your own assumption running through a deterministic, unit-tested engine (<code>charter/engine.js</code>).</p>
+</div>
+
+<script src="engine.js"></script>
+<script>
+  var E = window.Charter;
+  var $ = function (id) { return document.getElementById(id); };
+  var STORE = 'charter.instruments.v1';
+
+  var FIELDS = ['company', 'seriesName', 'holder', 'issueDate', 'investment', 'preMoney',
+    'commonShares', 'dividendPct', 'prefMultiple', 'participation', 'participationCap', 'antiDilution'];
+
+  function todayISO() {
+    var d = new Date();
+    var m = String(d.getMonth() + 1), day = String(d.getDate());
+    return d.getFullYear() + '-' + (m.length < 2 ? '0' + m : m) + '-' + (day.length < 2 ? '0' + day : day);
+  }
+
+  function readSeries() {
+    var raw = { cumulative: !!($('cumulative') && $('cumulative').checked) };
+    for (var i = 0; i < FIELDS.length; i++) raw[FIELDS[i]] = $(FIELDS[i]) && $(FIELDS[i]).value;
+    return E.normalize(raw);
+  }
+  function yearsHeld() {
+    var y = Number($('yearsHeld') && $('yearsHeld').value);
+    return isFinite(y) && y >= 0 ? y : 0;
+  }
+
+  /* ---- certificate ---- */
+  function renderCertificate(s) {
+    var shares = E.sharesFor(s);
+    var el = $('certificate');
+    el.innerHTML =
+      '<div class="cert-shares-badge">' + E.qty(shares) + ' SHARES</div>' +
+      '<div class="cert-no">No. ' + E.certificateNo(s) + '</div>' +
+      '<div class="cert-kicker">Certificate of Preferred Stock</div>' +
+      '<div class="cert-company">' + esc(s.company) + '</div>' +
+      '<div class="cert-series">' + esc(s.seriesName) + ' · Convertible Preferred</div>' +
+      '<div class="cert-body">This certifies that <b>' + esc(s.holder) + '</b> is the registered holder of <b>' +
+        E.qty(shares) + '</b> shares of ' + esc(s.seriesName) + ' convertible preferred stock of ' + esc(s.company) +
+        ', purchased for <b>' + E.money(s.investment) + '</b> at <b>£' + E.pricePerShare(s).toFixed(4) +
+        '</b> per share, transferable only on the books of the company.</div>' +
+      '<div class="cert-terms">' +
+        '<span><b>' + s.dividendPct + '%</b>' + (s.cumulative ? 'cumulative' : 'non-cumulative') + ' dividend</span>' +
+        '<span><b>' + s.prefMultiple + '×</b>liquidation preference</span>' +
+        '<span><b>' + E.conversionRatio(s).toFixed(2) + ':1</b>conversion ratio</span>' +
+        '<span><b>' + E.round2(E.prorataFrac(s) * 100).toFixed(2) + '%</b>as-converted</span>' +
+      '</div>' +
+      '<div class="cert-seal">📜</div>' +
+      '<div class="cert-sigs"><div class="cert-sig">Director</div><div class="cert-sig">' + esc(s.issueDate) + '<br>Date of issue</div><div class="cert-sig">Secretary</div></div>';
+  }
+
+  function esc(t) {
+    return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  /* ---- term sheet ---- */
+  function renderTermSheet(s) {
+    var rows = E.termSheet(s);
+    var html = '';
+    for (var i = 0; i < rows.length; i++) {
+      html += '<tr><td class="term">' + esc(rows[i].term) + '</td><td>' + esc(rows[i].detail) + '</td></tr>';
+    }
+    $('termSheet').innerHTML = html;
+  }
+
+  /* ---- waterfall ---- */
+  function maxExit(s) { return Math.max(E.postMoney(s) * 4, E.preferenceAmount(s, yearsHeld()) * 2); }
+
+  function chosenExit(s) {
+    var pct = Number($('exitSlider') && $('exitSlider').value);
+    if (!isFinite(pct)) pct = 40;
+    return (maxExit(s) * pct) / 100;
+  }
+
+  function renderWaterfall(s) {
+    var years = yearsHeld();
+    var exitValue = chosenExit(s);
+    var w = E.waterfall(s, exitValue, years);
+    var be = E.breakevenExit(s, years);
+    $('exitVal').textContent = E.money(exitValue);
+    $('waterfallReadout').innerHTML =
+      stat('Route taken', w.route === 'convert' ? 'Convert to common' : 'Liquidation preference', w.route === 'convert' ? 'teal' : 'gold') +
+      stat('Preferred receives', E.money(w.payout) + ' (' + w.moic + '×)', 'gold') +
+      stat('Common receives', E.money(w.common), 'blue') +
+      stat('Preference amount', E.money(w.preference), '') +
+      stat('Conversion breakeven', isFinite(be) ? E.money(be) : 'Never — always participates', 'teal');
+    drawChart(s, years, exitValue, be);
+  }
+  function stat(k, v, cls) {
+    return '<div class="stat"><div class="k">' + k + '</div><div class="v ' + cls + '">' + v + '</div></div>';
+  }
+
+  function drawChart(s, years, exitValue, be) {
+    var cv = $('chart');
+    var ctx = cv.getContext && cv.getContext('2d');
+    if (!ctx) return;
+    var W = cv.width, H = cv.height, padL = 56, padB = 26, padT = 12, padR = 12;
+    var mx = maxExit(s);
+    var pts = E.payoutCurve(s, years, mx, 80);
+    var top = 0;
+    for (var i = 0; i < pts.length; i++) top = Math.max(top, pts[i].preferred, pts[i].common);
+    if (top <= 0) top = 1;
+    var X = function (v) { return padL + ((W - padL - padR) * v) / mx; };
+    var Y = function (v) { return H - padB - ((H - padB - padT) * v) / top; };
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.fillStyle = 'rgba(147,160,192,0.9)';
+    ctx.font = '11px -apple-system, sans-serif';
+    ctx.lineWidth = 1;
+    for (var g = 0; g <= 4; g++) {
+      var gy = padT + ((H - padB - padT) * g) / 4;
+      ctx.beginPath(); ctx.moveTo(padL, gy); ctx.lineTo(W - padR, gy); ctx.stroke();
+      ctx.fillText(E.money((top * (4 - g)) / 4), 4, gy + 4);
+    }
+    for (var t = 0; t <= 4; t++) {
+      var vx = (mx * t) / 4;
+      ctx.fillText(E.money(vx), X(vx) - (t === 4 ? 60 : 12), H - 8);
+    }
+
+    var line = function (key, color) {
+      ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+      for (var i = 0; i < pts.length; i++) {
+        var x = X(pts[i].exit), y = Y(pts[i][key]);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    };
+    line('common', '#6e8bff');
+    line('preferred', '#f5c04a');
+
+    var vline = function (v, color) {
+      if (!isFinite(v) || v <= 0 || v > mx) return;
+      ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
+      ctx.beginPath(); ctx.moveTo(X(v), padT); ctx.lineTo(X(v), H - padB); ctx.stroke();
+      ctx.setLineDash([]);
+    };
+    vline(be, '#39e6b4');
+    vline(exitValue, '#ff7a7a');
+  }
+
+  /* ---- down-round lab ---- */
+  function renderDownRound(s) {
+    var price = Number($('drPrice') && $('drPrice').value) || 2;
+    var shares = Number($('drShares') && $('drShares').value) || 500000;
+    var regimes = ['none', 'broad', 'ratchet'];
+    var html = '';
+    for (var i = 0; i < regimes.length; i++) {
+      var r = regimes[i];
+      var copy = E.normalize(s); copy.antiDilution = r;
+      var adj = E.downRound(copy, price, shares);
+      html += '<div class="adcard' + (r === s.antiDilution ? ' active' : '') + '">' +
+        '<div class="name">' + E.ANTIDILUTION_LABEL[r] + (r === s.antiDilution ? ' · yours' : '') + '</div>' +
+        '<div class="cp">£' + adj.conversionPrice.toFixed(4) + '</div>' +
+        '<div class="d">ratio ' + E.conversionRatio(adj).toFixed(4) + ':1 → ' + E.qty(E.asConvertedShares(adj)) + ' common</div>' +
+        '</div>';
+    }
+    $('adCompare').innerHTML = html;
+  }
+
+  /* ---- cap table ---- */
+  function renderCapTable(s) {
+    var rows = E.capTable(s);
+    var html = '<table><tr><th>Holder</th><th class="num">Shares</th><th class="num">Ownership</th></tr>';
+    for (var i = 0; i < rows.length; i++) {
+      html += '<tr><td>' + esc(rows[i].holder) + '</td><td class="num">' + E.qty(rows[i].shares) +
+        '</td><td class="num">' + rows[i].pct.toFixed(2) + '%</td></tr>';
+    }
+    html += '</table>' +
+      '<div class="bar">' +
+      '<div class="common" style="width:' + rows[0].pct + '%">Founders ' + rows[0].pct.toFixed(1) + '%</div>' +
+      '<div class="pref" style="width:' + rows[1].pct + '%">Preferred ' + rows[1].pct.toFixed(1) + '%</div>' +
+      '</div>';
+    $('capTable').innerHTML = html;
+  }
+
+  /* ---- persistence ---- */
+  function loadSaved() {
+    try { return JSON.parse(localStorage.getItem(STORE) || '[]') || []; }
+    catch (e) { return []; }
+  }
+  function renderSaved() {
+    var list = loadSaved();
+    var el = $('savedList');
+    if (!list.length) {
+      el.innerHTML = '<li class="empty">Nothing saved yet — mint an instrument and 💾 save it.</li>';
+      return;
+    }
+    var html = '';
+    for (var i = 0; i < list.length; i++) {
+      var s = E.normalize(list[i]);
+      html += '<li><b>' + esc(s.company) + ' · ' + esc(s.seriesName) + '</b>' +
+        '<span class="meta">' + E.money(s.investment) + ' · ' + s.prefMultiple + '× · ' + esc(s.issueDate) + '</span>' +
+        '<button data-load="' + i + '">Load</button><button data-del="' + i + '">✕</button></li>';
+    }
+    el.innerHTML = html;
+  }
+
+  function saveCurrent() {
+    var list = loadSaved();
+    list.unshift(readSeries());
+    if (list.length > 20) list.length = 20;
+    try { localStorage.setItem(STORE, JSON.stringify(list)); } catch (e) {}
+    renderSaved();
+  }
+  function loadInstrument(i) {
+    var s = loadSaved()[i];
+    if (!s) return;
+    s = E.normalize(s);
+    for (var f = 0; f < FIELDS.length; f++) {
+      var el = $(FIELDS[f]);
+      if (el) el.value = s[FIELDS[f]];
+    }
+    if ($('cumulative')) $('cumulative').checked = !!s.cumulative;
+    renderAll();
+  }
+  function deleteInstrument(i) {
+    var list = loadSaved();
+    list.splice(i, 1);
+    try { localStorage.setItem(STORE, JSON.stringify(list)); } catch (e) {}
+    renderSaved();
+  }
+
+  /* ---- wire up ---- */
+  function renderAll() {
+    var s = readSeries();
+    if ($('capField')) $('capField').style.display = s.participation === 'capped' ? '' : 'none';
+    renderCertificate(s);
+    renderTermSheet(s);
+    renderWaterfall(s);
+    renderDownRound(s);
+    renderCapTable(s);
+  }
+
+  function init() {
+    if ($('issueDate') && !$('issueDate').value) $('issueDate').value = todayISO();
+    var inputs = document.querySelectorAll('input, select');
+    for (var i = 0; i < inputs.length; i++) {
+      inputs[i].addEventListener('input', renderAll);
+      inputs[i].addEventListener('change', renderAll);
+    }
+    if ($('saveBtn')) $('saveBtn').addEventListener('click', saveCurrent);
+    if ($('printBtn')) $('printBtn').addEventListener('click', function () { window.print(); });
+    if ($('savedList')) $('savedList').addEventListener('click', function (ev) {
+      var t = ev.target;
+      if (t && t.getAttribute) {
+        var l = t.getAttribute('data-load'), d = t.getAttribute('data-del');
+        if (l !== null) loadInstrument(Number(l));
+        if (d !== null) deleteInstrument(Number(d));
+      }
+    });
+    renderSaved();
+    renderAll();
+  }
+  init();
+</script>
+</body>
+</html>
