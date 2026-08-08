@@ -349,6 +349,11 @@
     color: #fff; background: rgba(0,0,0,0.55); padding: 2px 7px; border-radius: 8px;
     letter-spacing: 0.5px;
   }
+  #dashcamFlip {
+    position: absolute; top: 4px; right: 4px; width: 28px; height: 28px;
+    border-radius: 50%; background: rgba(0,0,0,0.55); font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+  }
   #dashcamRec .dot { color: #f87171; animation: recblink 1.2s steps(2) infinite; }
   @keyframes recblink { 50% { opacity: 0.15; } }
   #btnDashcam.rec { background: rgba(248,113,113,0.2); border-color: rgba(248,113,113,0.55); }
@@ -731,6 +736,7 @@
 <div id="dashcamBox">
   <video id="dashcamVideo" muted playsinline autoplay></video>
   <div id="dashcamRec"><span class="dot">●</span> REC <span id="dashcamTime">0:00</span></div>
+  <button id="dashcamFlip" aria-label="Switch camera">🔄</button>
 </div>
 
 <div id="arrivedCard">
@@ -796,11 +802,19 @@ function persistRecents() { save('atlas.recents', recents.slice(0, 12)); }
 var canvas = $('map'), ctx = canvas.getContext('2d');
 var DPR = Math.min(2.5, window.devicePixelRatio || 1);
 var view = {
-  lat: 51.5074, lon: -0.1278, zoom: 15.2,   // London until we get a fix
+  lat: 51.5074, lon: -0.1278, zoom: 15.2,   // London until we know better
   rot: 0,                                    // radians, 0 = north-up
   follow: false,                             // camera glued to the GPS dot
   navMode: false,                            // heading-up + anchor low on screen
+  touched: false,                            // user moved the map themselves
 };
+// start where you last were — instantly, before GPS even warms up
+(function () {
+  var lp = load('atlas.lastPos', null);
+  if (lp && typeof lp.lat === 'number' && typeof lp.lon === 'number') {
+    view.lat = lp.lat; view.lon = lp.lon; view.zoom = 14.5;
+  }
+})();
 var W = 0, H = 0;
 
 function resize() {
@@ -1248,6 +1262,7 @@ canvas.addEventListener('pointermove', function (e) {
   if (ids.length === 1) {
     var dx = e.clientX - p.x, dy = e.clientY - p.y;
     if (Math.abs(dx) + Math.abs(dy) > 1) {
+      view.touched = true;
       breakFollow();
       var cos = Math.cos(-view.rot), sin = Math.sin(-view.rot);
       var wx = dx * cos - dy * sin, wy = dx * sin + dy * cos;
@@ -1329,6 +1344,21 @@ function startGps() {
     gps.fix = { lat: c.latitude, lon: c.longitude, acc: c.accuracy,
       speed: (typeof c.speed === 'number' && isFinite(c.speed) && c.speed >= 0) ? c.speed : null,
       heading: (typeof c.heading === 'number' && isFinite(c.heading)) ? c.heading : gps.fix && gps.fix.heading };
+    // first live fix: centre on you (unless you're already moving the map),
+    // and remember where you are so next launch opens here instantly
+    var now = Date.now();
+    if (!gps.lastPosSave || now - gps.lastPosSave > 20000) {
+      gps.lastPosSave = now;
+      save('atlas.lastPos', { lat: c.latitude, lon: c.longitude });
+    }
+    if (!gps.hadFix) {
+      gps.hadFix = true;
+      if (!view.touched && !nav.active) {
+        view.follow = true;
+        view.zoom = Math.max(view.zoom, 15.5);
+        glueCamera(); updateLocateBtn(); apply3d();
+      }
+    }
     if (view.follow) glueCamera();
     if (nav.active && !nav.demo) onNavFix(gps.fix);
     needsDraw = true;
@@ -1942,7 +1972,7 @@ function fitRoute(route) {
     minLat = Math.min(minLat, p.lat); maxLat = Math.max(maxLat, p.lat);
     minLon = Math.min(minLon, p.lon); maxLon = Math.max(maxLon, p.lon);
   });
-  view.rot = 0; view.navMode = false; view.follow = false;
+  view.rot = 0; view.navMode = false; view.follow = false; view.touched = true;
   view.lat = (minLat + maxLat) / 2; view.lon = (minLon + maxLon) / 2;
   for (var z = 18; z >= 3; z -= 0.25) {
     view.zoom = z;
@@ -3027,7 +3057,7 @@ function startDashcam() {
   if (dashcam.active) return;
   if (!dashcamSupported()) { toast('Camera recording is not supported in this browser'); return; }
   navigator.mediaDevices.getUserMedia({
-    video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+    video: { facingMode: settings.dashFacing || 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
     audio: false,
   }).then(function (stream) {
     dashcam.stream = stream;
@@ -3141,6 +3171,31 @@ $('btnDashcam').addEventListener('click', function () {
   else startDashcam();
 });
 $('dashcamBox').addEventListener('click', function () { $('dashcamBox').classList.toggle('big'); });
+
+/* 🔄 flip rear ⇄ front (driver-facing) — even MID-RECORDING: the recorder
+   captures the compositing canvas, not the camera stream, so swapping the
+   source is seamless and the clip carries both views back to back. */
+$('dashcamFlip').addEventListener('click', function (e) {
+  e.stopPropagation();
+  if (!dashcam.active) return;
+  var facing = settings.dashFacing === 'user' ? 'environment' : 'user';
+  navigator.mediaDevices.getUserMedia({
+    video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } },
+    audio: false,
+  }).then(function (stream) {
+    var old = dashcam.stream;
+    dashcam.stream = stream;
+    var v = $('dashcamVideo');
+    v.srcObject = stream;
+    var p = v.play && v.play(); if (p && p.catch) p.catch(function () {});
+    if (old) old.getTracks().forEach(function (t) { t.stop(); });
+    settings.dashFacing = facing;
+    persistSettings();
+    toast(facing === 'user' ? '🤳 Front camera — still recording' : '📹 Rear camera — still recording');
+  }).catch(function () {
+    toast('Could not switch camera — this device may not have another one');
+  });
+});
 $('btnDashSave').addEventListener('click', function () {
   if (dashcam.lastClip) openPlayer(dashcam.lastClip);
 });
