@@ -3,6 +3,10 @@
 Product concepts and runnable prototypes for two consumer apps, plus an earlier
 trading-app build. Full write-ups live in [`concepts/`](./concepts/).
 
+> **© Refayet Hossain — all rights reserved.** This repository is published
+> for viewing only; no license is granted to copy, reuse, or redistribute the
+> code or assets. See [`LICENSE`](./LICENSE).
+
 ## ▶️ Live demos
 
 Live on GitHub Pages — open on desktop or mobile, no install needed:
